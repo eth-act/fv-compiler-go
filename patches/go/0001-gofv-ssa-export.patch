@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,989 @@
+@@ -0,0 +1,993 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -484,24 +484,28 @@
 +	if a == nil {
 +		return "-"
 +	}
++	if t, isType := a.(*types.Type); isType {
++		// Type aux values are numbered by type identity, like types, and are
++		// immutable: defined once, by the first object of that identity seen
++		// (identical types can differ in spelling, e.g. byte and uint8).
++		tn := x.types[t]
++		if tn == 0 {
++			x.typ(t)
++			tn = x.types[t]
++		}
++		if m, seen := x.auxTypes[tn]; seen {
++			return fmt.Sprintf("a%d", m)
++		}
++		n := x.nextAux()
++		x.auxTypes[tn] = n
++		def := x.auxDef(n, a)
++		x.auxLast[n] = def
++		x.defs.WriteString(def)
++		return fmt.Sprintf("a%d", n)
++	}
 +	n, ok := x.aux[a]
 +	if !ok {
-+		if t, isType := a.(*types.Type); isType {
-+			// Type aux values are numbered by type identity, like types.
-+			tn := x.types[t]
-+			if tn == 0 {
-+				x.typ(t)
-+				tn = x.types[t]
-+			}
-+			if m, seen := x.auxTypes[tn]; seen {
-+				x.aux[a] = m
-+				return fmt.Sprintf("a%d", m)
-+			}
-+			n = x.nextAux()
-+			x.auxTypes[tn] = n
-+		} else {
-+			n = x.nextAux()
-+		}
++		n = x.nextAux()
 +		x.aux[a] = n
 +	}
 +	def := x.auxDef(n, a)

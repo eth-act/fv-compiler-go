@@ -135,7 +135,11 @@ kind, the same `LinkString()` (unique per identical type, local types included) 
 `notinheap`/`noalg`/`shape` flags; `SSA` pseudo-types by name; `TUPLE`/`RESULTS` by their
 component numbers. A `*types.Type` used as aux is numbered by its type number the same way
 (one aux number per type number). A pass port compares types by number; the stock passes
-compare type pointers only between types that are identical in this sense.
+compare type pointers only between types that are identical in this sense. The definition
+(including its `t.String()` and, for a type aux, its `%v`) is that of the first object of the
+identity met in the file, so alias spellings (`byte`/`uint8`, `rune`/`int32`,
+`any`/`interface {}`) of later objects are not preserved; no pass reads them, but Go's own
+`f.String()` can print a different spelling.
 
 Objects first created by pass `k` are numbered while section `k` is written (block order, then
 value order, then names, …), so a Lean pass creating new objects must match them to section
