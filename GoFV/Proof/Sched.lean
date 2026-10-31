@@ -392,11 +392,393 @@ theorem schedValid_spec {vs : Array SNode} {o : Array ID} (h : schedValid vs o =
     refine ⟨a, ?_, (hnode a).1 hla, i, hki, hij, hia⟩
     unfold argsOf; rw [hn]; simpa using ha
 
+/-! ## The fallback scheduler -/
+
+theorem mem_eraseIdx_ids {rem : List SNode} (hd : (rem.map (·.id)).Nodup) {i : Nat}
+    (hi : i < rem.length) (n : SNode) : n ∈ rem.eraseIdx i ↔ n ∈ rem ∧ n.id ≠ rem[i].id := by
+  rw [List.mem_eraseIdx_iff_getElem]
+  constructor
+  · rintro ⟨j, hj, hji, rfl⟩
+    refine ⟨List.getElem_mem hj, fun he => hji ?_⟩
+    have : (rem.map (·.id))[j]'(by simpa using hj) = (rem.map (·.id))[i]'(by simpa using hi) := by
+      simpa using he
+    exact (hd.getElem_inj).1 this
+  · rintro ⟨hn, hne⟩
+    obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hn
+    exact ⟨j, hj, fun e => hne (by subst e; rfl), rfl⟩
+
+theorem argsOf_of_mem {vs : List SNode} (hd : (vs.map (·.id)).Nodup) {n : SNode} (h : n ∈ vs) :
+    argsOf vs n.id = n.args.toList := by
+  unfold argsOf; rw [nodeOf_of_mem hd h]; rfl
+
+theorem pureIn_of_mem {vs : List SNode} (hd : (vs.map (·.id)).Nodup) {n : SNode} (h : n ∈ vs) :
+    PureIn vs n.id ↔ n.prio = 0 := by
+  unfold PureIn; rw [nodeOf_of_mem hd h]
+  constructor
+  · intro hp; exact hp n rfl
+  · intro hp m hm; cases hm; exact hp
+
+theorem nodeIn_any {vs : List SNode} {a : ID} : vs.any (·.id == a) = true ↔ NodeIn vs a := by
+  simp [NodeIn]
+
+/-- The state of `greedy` after placing `P` (with `rem` left): `np` is 1 + the position of the
+last non-pure node placed (0: none), and every pure node left was not ready then. -/
+structure GInv (vs : List SNode) (rem : List SNode) (P : List ID) (np : Nat) : Prop where
+  remSub : ∀ n ∈ rem, n ∈ vs
+  remIds : (rem.map (·.id)).Nodup
+  nodup : P.Nodup
+  cover : ∀ n ∈ vs, n.id ∈ P ∨ n ∈ rem
+  disj : ∀ n ∈ rem, n.id ∉ P
+  nodes : ∀ x ∈ P, NodeIn vs x
+  topo : ∀ (j : Nat) x, P[j]? = some x → ∀ a ∈ argsOf vs x, NodeIn vs a → ∃ i < j, P[i]? = some a
+  pf : PureFirst (NodeIn vs) (argsOf vs) (PureIn vs) P
+  np0 : np = 0 → ∀ x ∈ P, PureIn vs x
+  np1 : ∀ K, np = K + 1 → (∃ y, P[K]? = some y ∧ ¬ PureIn vs y) ∧
+    (∀ k y, K < k → P[k]? = some y → PureIn vs y) ∧
+    ∀ n ∈ rem, n.prio = 0 → ∃ a ∈ n.args, NodeIn vs a ∧ a ∉ P.take K
+
+theorem getElem?_concat_self {P : List ID} {x : ID} : (P ++ [x])[P.length]? = some x := by simp
+
+theorem getElem?_concat_lt {P : List ID} {x : ID} {k : Nat} (h : k < P.length) :
+    (P ++ [x])[k]? = P[k]? := List.getElem?_append_left h
+
+theorem getElem?_concat_ge {P : List ID} {x : ID} {k : Nat} (h : P.length ≤ k)
+    (h' : (P ++ [x])[k]? = some y) : k = P.length ∧ y = x := by
+  rw [List.getElem?_append_right h] at h'
+  rcases hk : k - P.length with _ | n
+  · rw [hk] at h'; simp at h'; exact ⟨by omega, h'.symm⟩
+  · rw [hk] at h'; simp at h'
+
+theorem lt_length_of_getElem? {P : List ID} {k : Nat} {y : ID} (h : P[k]? = some y) :
+    k < P.length := by
+  rcases Nat.lt_or_ge k P.length with h' | h'
+  · exact h'
+  · rw [List.getElem?_eq_none h'] at h; cases h
+
+/-- Placing a ready node `n` (pure, or non-pure when no pure node is ready) keeps `GInv`. -/
+theorem GInv.step {vs rem : List SNode} {P : List ID} {np : Nat}
+    (hd : (vs.map (·.id)).Nodup) (hI : GInv vs rem P np) {i : Nat} (hi : i < rem.length)
+    (hready : ∀ a ∈ rem[i].args, NodeIn vs a → a ∈ P)
+    (hpure : rem[i].prio ≠ 0 → ∀ m ∈ rem, m.prio = 0 → ∃ a ∈ m.args, NodeIn vs a ∧ a ∉ P) :
+    GInv vs (rem.eraseIdx i) (P ++ [rem[i].id]) (if rem[i].prio = 0 then np else P.length + 1) := by
+  have hn : rem[i] ∈ vs := hI.remSub _ (List.getElem_mem hi)
+  have hnP : rem[i].id ∉ P := hI.disj _ (List.getElem_mem hi)
+  have hmem := mem_eraseIdx_ids hI.remIds hi
+  have hargs := argsOf_of_mem hd hn
+  have hpi := pureIn_of_mem hd hn
+  refine ⟨fun m hm => hI.remSub m ((hmem m).1 hm).1,
+    hI.remIds.sublist ((List.eraseIdx_sublist rem i).map _), ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [List.nodup_append]; exact ⟨hI.nodup, by simp, by simp; exact fun a ha e => hnP (e ▸ ha)⟩
+  · intro m hm
+    rcases hI.cover m hm with h | h
+    · exact .inl (List.mem_append_left _ h)
+    · by_cases he : m.id = rem[i].id
+      · exact .inl (by simp [he])
+      · exact .inr ((hmem m).2 ⟨h, he⟩)
+  · intro m hm hmP
+    obtain ⟨hm1, hm2⟩ := (hmem m).1 hm
+    rcases List.mem_append.1 hmP with h | h
+    · exact hI.disj m hm1 h
+    · simp at h; exact hm2 h
+  · intro x hx
+    rcases List.mem_append.1 hx with h | h
+    · exact hI.nodes x h
+    · simp at h; subst h; exact ⟨rem[i], hn, rfl⟩
+  · intro j x hx a ha hNa
+    rcases Nat.lt_or_ge j P.length with hj | hj
+    · rw [getElem?_concat_lt hj] at hx
+      obtain ⟨i', hi', h'⟩ := hI.topo j x hx a ha hNa
+      exact ⟨i', hi', by rw [getElem?_concat_lt (by omega)]; exact h'⟩
+    · obtain ⟨rfl, rfl⟩ := getElem?_concat_ge hj hx
+      rw [hargs] at ha
+      obtain ⟨i', hi'⟩ := List.getElem?_of_mem (hready a (by simpa using ha) hNa)
+      have := lt_length_of_getElem? hi'
+      exact ⟨i', this, by rw [getElem?_concat_lt this]; exact hi'⟩
+  · intro k j y x hkj hy hx hpy hpx
+    rcases Nat.lt_or_ge j P.length with hj | hj
+    · rw [getElem?_concat_lt hj] at hx
+      rw [getElem?_concat_lt (by omega)] at hy
+      obtain ⟨a, ha, hNa, i', hki, hij, h'⟩ := hI.pf k j y x hkj hy hx hpy hpx
+      exact ⟨a, ha, hNa, i', hki, hij, by rw [getElem?_concat_lt (by omega)]; exact h'⟩
+    · obtain ⟨rfl, rfl⟩ := getElem?_concat_ge hj hx
+      rw [getElem?_concat_lt hkj] at hy
+      have hp0 : rem[i].prio = 0 := hpi.1 hpx
+      -- some non-pure node was placed before: `np = K + 1` with `k ≤ K`
+      have hnp : np ≠ 0 := fun h0 => hpy (hI.np0 h0 y (List.mem_of_getElem? hy))
+      obtain ⟨K, hK⟩ : ∃ K, np = K + 1 := ⟨np - 1, by omega⟩
+      obtain ⟨⟨y', hy', _⟩, hafter, hpend⟩ := hI.np1 K hK
+      have hkK : k ≤ K := by
+        rcases Nat.lt_or_ge K k with h | h
+        · exact absurd (hafter k y h hy) hpy
+        · exact h
+      obtain ⟨a, ha, hNa, haK⟩ := hpend rem[i] (List.getElem_mem hi) hp0
+      obtain ⟨i', hi'⟩ := List.getElem?_of_mem (hready a ha hNa)
+      have hlt := lt_length_of_getElem? hi'
+      have hKi : K ≤ i' := by
+        rcases Nat.lt_or_ge i' K with h | h
+        · exact absurd (List.mem_of_getElem? (by rw [List.getElem?_take_of_lt h]; exact hi')) haK
+        · exact h
+      refine ⟨a, by rw [hargs]; simpa using ha, hNa, i', by omega, hlt, ?_⟩
+      rw [getElem?_concat_lt hlt]; exact hi'
+  · intro h0 x hx
+    split at h0
+    · next hp =>
+      rcases List.mem_append.1 hx with h | h
+      · exact hI.np0 h0 x h
+      · simp at h; subst h; exact hpi.2 hp
+    · omega
+  · intro K hK
+    split at hK
+    · next hp =>
+      obtain ⟨⟨y, hy, hny⟩, hafter, hpend⟩ := hI.np1 K hK
+      have hKl := lt_length_of_getElem? hy
+      refine ⟨⟨y, by rw [getElem?_concat_lt hKl]; exact hy, hny⟩, ?_, ?_⟩
+      · intro k z hk hz
+        rcases Nat.lt_or_ge k P.length with h | h
+        · rw [getElem?_concat_lt h] at hz; exact hafter k z hk hz
+        · obtain ⟨rfl, rfl⟩ := getElem?_concat_ge h hz; exact hpi.2 hp
+      · intro m hm hm0
+        obtain ⟨a, ha, hNa, haK⟩ := hpend m ((hmem m).1 hm).1 hm0
+        refine ⟨a, ha, hNa, ?_⟩
+        rwa [List.take_append_of_le_length (by omega)]
+    · next hp =>
+      have hK' : K = P.length := by omega
+      subst hK'
+      refine ⟨⟨rem[i].id, getElem?_concat_self, fun h => hp (hpi.1 h)⟩, ?_, ?_⟩
+      · intro k z hk hz
+        have : (P ++ [rem[i].id]).length ≤ k := by simp; omega
+        rw [List.getElem?_eq_none this] at hz; cases hz
+      · intro m hm hm0
+        obtain ⟨a, ha, hNa, haP⟩ := hpure hp m ((hmem m).1 hm).1 hm0
+        exact ⟨a, ha, hNa, by simpa using haP⟩
+
+/-- `greedy` places nodes so that `GInv` holds at the end. -/
+theorem greedy_inv {vs : List SNode} (hd : (vs.map (·.id)).Nodup) :
+    ∀ (fuel : Nat) (rem : List SNode) (P : List ID) (np : Nat) (o : List ID),
+      GInv vs rem P np → greedy vs fuel rem P.reverse = some o →
+        ∃ np', GInv vs [] o np' := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rem P np o hI h
+    cases rem with
+    | nil => simp [greedy] at h; subst h; exact ⟨np, hI⟩
+    | cons _ _ => simp [greedy] at h
+  | succ fuel ih =>
+    intro rem P np o hI h
+    cases rem with
+    | nil => simp [greedy] at h; subst h; exact ⟨np, hI⟩
+    | cons r rs =>
+      have hready : ∀ (n : SNode), (n.args.all fun a => !(vs.any (·.id == a)) ||
+          P.reverse.contains a) = true → ∀ a ∈ n.args, NodeIn vs a → a ∈ P := by
+        intro n hn a ha hNa
+        rw [Array.all_eq_true'] at hn
+        have := hn a ha
+        simp only [Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at this
+        rcases this with h | h
+        · exact absurd (nodeIn_any.2 hNa) (by rw [h]; simp)
+        · simpa using h
+      simp only [greedy] at h
+      split at h
+      · next i hi =>
+        obtain ⟨hlt, hpi, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
+        simp only [Bool.and_eq_true, beq_iff_eq] at hpi
+        rw [List.getElem?_eq_getElem hlt] at h
+        simp only [Option.map_some, Option.getD_some] at h
+        have hI' := hI.step hd hlt (hready _ hpi.2) (fun hp => absurd hpi.1 hp)
+        rw [if_pos hpi.1] at hI'
+        exact ih _ _ _ _ hI' (by simpa using h)
+      · next hnone =>
+        rw [List.findIdx?_eq_none_iff] at hnone
+        split at h
+        · next i hi =>
+          obtain ⟨hlt, hpi, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
+          rw [List.getElem?_eq_getElem hlt] at h
+          simp only [Option.map_some, Option.getD_some] at h
+          have hnp : ∀ m ∈ r :: rs, m.prio = 0 → ∃ a ∈ m.args, NodeIn vs a ∧ a ∉ P := by
+            intro m hm hm0
+            have h1 := hnone m hm
+            rw [hm0] at h1
+            simp only [beq_self_eq_true, Bool.true_and] at h1
+            refine Classical.byContradiction fun hc => ?_
+            have hall : (m.args.all fun a => !(vs.any (·.id == a)) || P.reverse.contains a) =
+                true := by
+              rw [Array.all_eq_true']
+              intro a ha
+              by_cases hNa : NodeIn vs a
+              · have : a ∈ P := Classical.byContradiction fun haP => hc ⟨a, ha, hNa, haP⟩
+                simp [this]
+              · have : (vs.any (·.id == a)) = false := by
+                  cases h : vs.any (·.id == a) with
+                  | false => rfl
+                  | true => exact absurd (nodeIn_any.1 h) hNa
+                simp [this]
+            rw [hall] at h1; cases h1
+          have hI' := hI.step hd hlt (hready _ hpi) (fun _ => hnp)
+          exact ih _ _ _ _ hI' (by simpa using h)
+        · cases h
+
+theorem GInv.start {vs : List SNode} (hd : (vs.map (·.id)).Nodup) : GInv vs vs [] 0 := by
+  refine ⟨fun _ h => h, hd, List.nodup_nil, fun _ h => .inr h, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro _ _ h; cases h
+  · intro _ h; cases h
+  · intro j x h; cases h
+  · intro k j y x _ h; cases h
+  · intro _ x h; cases h
+  · intro K h; omega
+
+theorem GInv.done {vs : List SNode} {o : List ID} {np : Nat} (hI : GInv vs [] o np) :
+    Topo (NodeIn vs) (argsOf vs) o ∧ PureFirst (NodeIn vs) (argsOf vs) (PureIn vs) o := by
+  refine ⟨⟨hI.nodup, fun x => ⟨hI.nodes x, fun ⟨n, hn, hx⟩ => ?_⟩, hI.topo⟩, hI.pf⟩
+  rcases hI.cover n hn with h | h
+  · exact hx ▸ h
+  · cases h
+
+/-- Some node left is ready, when the nodes have a dependency order. -/
+theorem GInv.exists_ready {vs rem : List SNode} {P : List ID} {np : Nat}
+    (hd : (vs.map (·.id)).Nodup) (hI : GInv vs rem P np) {T : List ID}
+    (hT : Topo (NodeIn vs) (argsOf vs) T) {r : SNode} (hr : r ∈ rem) :
+    ∃ n ∈ rem, ∀ a ∈ n.args, NodeIn vs a → a ∈ P := by
+  have key : ∀ (k : Nat) n, n ∈ rem → T[k]? = some n.id →
+      ∃ n ∈ rem, ∀ a ∈ n.args, NodeIn vs a → a ∈ P := by
+    intro k
+    induction k using Nat.strongRecOn with
+    | _ k ih =>
+      intro n hn hk
+      by_cases hready : ∀ a ∈ n.args, NodeIn vs a → a ∈ P
+      · exact ⟨n, hn, hready⟩
+      · obtain ⟨a, ha, hNa, haP⟩ : ∃ a ∈ n.args, NodeIn vs a ∧ a ∉ P :=
+          Classical.byContradiction fun hc => hready fun a ha hNa =>
+            Classical.byContradiction fun haP => hc ⟨a, ha, hNa, haP⟩
+        obtain ⟨m, hm, rfl⟩ := hNa
+        have hmr : m ∈ rem := (hI.cover m hm).resolve_left haP
+        have hargs := argsOf_of_mem hd (hI.remSub n hn)
+        obtain ⟨i, hi, hTi⟩ :=
+          hT.before k n.id hk m.id (by rw [hargs]; simpa using ha) ⟨m, hm, rfl⟩
+        exact ih i hi m hmr hTi
+  obtain ⟨k, hk⟩ := List.getElem?_of_mem ((hT.mem r.id).2 ⟨r, hI.remSub r hr, rfl⟩)
+  exact key k r hr hk
+
+theorem ready_of_all {vs : List SNode} {P : List ID} (m : SNode)
+    (hm : (m.args.all fun a => !(vs.any (·.id == a)) || P.reverse.contains a) = true) :
+    ∀ a ∈ m.args, NodeIn vs a → a ∈ P := by
+  intro a ha hNa
+  rw [Array.all_eq_true'] at hm
+  have := hm a ha
+  simp only [Bool.or_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at this
+  rcases this with h | h
+  · exact absurd (nodeIn_any.2 hNa) (by rw [h]; simp)
+  · simpa using h
+
+theorem all_of_ready {vs : List SNode} {P : List ID} (m : SNode)
+    (hm : ∀ a ∈ m.args, NodeIn vs a → a ∈ P) :
+    (m.args.all fun a => !(vs.any (·.id == a)) || P.reverse.contains a) = true := by
+  rw [Array.all_eq_true']
+  intro a ha
+  by_cases hNa : NodeIn vs a
+  · simp [hm a ha hNa]
+  · have : (vs.any (·.id == a)) = false := by
+      cases h : vs.any (·.id == a) with
+      | false => rfl
+      | true => exact absurd (nodeIn_any.1 h) hNa
+    simp [this]
+
+theorem greedy_complete {vs : List SNode} (hd : (vs.map (·.id)).Nodup) {T : List ID}
+    (hT : Topo (NodeIn vs) (argsOf vs) T) :
+    ∀ (fuel : Nat) (rem : List SNode) (P : List ID) (np : Nat), GInv vs rem P np →
+      rem.length ≤ fuel → ∃ o, greedy vs fuel rem P.reverse = some o := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    intro rem P np _ hl
+    cases rem with
+    | nil => exact ⟨_, rfl⟩
+    | cons _ _ => simp at hl
+  | succ fuel ih =>
+    intro rem P np hI hl
+    cases rem with
+    | nil => exact ⟨_, rfl⟩
+    | cons r rs =>
+      obtain ⟨n, hn, hnr⟩ := hI.exists_ready hd hT List.mem_cons_self
+      simp only [greedy]
+      split
+      · next i hi =>
+        obtain ⟨hlt, hpi, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
+        simp only [Bool.and_eq_true, beq_iff_eq] at hpi
+        rw [List.getElem?_eq_getElem hlt]
+        have hI' := hI.step hd hlt (ready_of_all _ hpi.2) (fun hp => absurd hpi.1 hp)
+        rw [if_pos hpi.1] at hI'
+        obtain ⟨o, ho⟩ := ih _ _ _ hI' (by
+          rw [List.length_eraseIdx_of_lt hlt]; simp at hl ⊢; omega)
+        exact ⟨o, by simpa using ho⟩
+      · next hnone =>
+        rw [List.findIdx?_eq_none_iff] at hnone
+        split
+        · next i hi =>
+          obtain ⟨hlt, hpi, _⟩ := List.findIdx?_eq_some_iff_getElem.1 hi
+          rw [List.getElem?_eq_getElem hlt]
+          have hnp : ∀ m ∈ r :: rs, m.prio = 0 → ∃ a ∈ m.args, NodeIn vs a ∧ a ∉ P := by
+            intro m hm hm0
+            have h1 := hnone m hm
+            rw [hm0] at h1
+            simp only [beq_self_eq_true, Bool.true_and] at h1
+            refine Classical.byContradiction fun hc => ?_
+            rw [all_of_ready m (fun a ha hNa => Classical.byContradiction fun haP =>
+              hc ⟨a, ha, hNa, haP⟩)] at h1
+            cases h1
+          have hI' := hI.step hd hlt (ready_of_all _ hpi) (fun _ => hnp)
+          obtain ⟨o, ho⟩ := ih _ _ _ hI' (by
+            rw [List.length_eraseIdx_of_lt hlt]; simp at hl ⊢; omega)
+          exact ⟨o, by simpa using ho⟩
+        · next hnone2 =>
+          rw [List.findIdx?_eq_none_iff] at hnone2
+          exact absurd (all_of_ready n hnr) (by rw [hnone2 n hn]; simp)
+
 /-- **What `schedule` guarantees.** -/
 theorem schedule_spec {f : Func} {b : Block} {o : Array ID} (h : schedule f b = some o) :
     SchedSpec (schedNodes f b).toList o.toList := by
   unfold schedule at h
-  rw [Option.filter_eq_some_iff] at h
-  exact schedValid_spec h.2
+  simp only at h
+  split at h
+  · next hd =>
+    have hlt : ∀ n ∈ (schedNodes f b).toList, n.id < maxNodeId (schedNodes f b) + 1 :=
+      fun n hn => id_lt_maxNodeId hn
+    have hdist := (idsDistinct_spec _ _ (by simpa using hlt) hd).1
+    split at h
+    · next o' ho =>
+      cases h
+      rw [Option.filter_eq_some_iff] at ho
+      exact schedValid_spec ho.2
+    · obtain ⟨o', ho', rfl⟩ := Option.map_eq_some_iff.1 h
+      obtain ⟨np, hI⟩ := greedy_inv hdist _ _ [] 0 o' (GInv.start hdist) ho'
+      obtain ⟨ht, hpf⟩ := hI.done
+      exact ⟨hdist, by simpa using ht, by simpa using hpf⟩
+  · cases h
+
+theorem idsDistinct_of_nodup : ∀ (l : List SNode) (seen : Array Bool),
+    (l.map (·.id)).Nodup → (∀ n ∈ l, seen.getD n.id false = false) → idsDistinct seen l = true
+  | [], _, _, _ => rfl
+  | n :: l, seen, hd, hs => by
+    have hd' := List.nodup_cons.1 (by simpa using hd : (n.id :: l.map (·.id)).Nodup)
+    simp only [idsDistinct, hs n List.mem_cons_self, Bool.not_false, Bool.true_and]
+    refine idsDistinct_of_nodup l _ (by simpa using hd'.2) fun m hm => ?_
+    have hne : n.id ≠ m.id := fun e => hd'.1 (List.mem_map.2 ⟨m, hm, e.symm⟩)
+    simpa [Array.getD_eq_getD_getElem?, Array.getElem?_setIfInBounds_ne hne]
+      using hs m (List.mem_cons_of_mem _ hm)
+
+/-- `schedule` is defined on every block whose non-`Phi` values have distinct IDs and a
+dependency order. -/
+theorem schedule_some {f : Func} {b : Block}
+    (hd : ((schedNodes f b).toList.map (·.id)).Nodup) {T : List ID}
+    (hT : Topo (NodeIn (schedNodes f b).toList) (argsOf (schedNodes f b).toList) T) :
+    ∃ o, schedule f b = some o := by
+  unfold schedule
+  rw [if_pos (idsDistinct_of_nodup _ _ hd fun n _ => by
+    simp [Array.getD_eq_getD_getElem?, Array.getElem?_replicate]; split <;> rfl)]
+  split
+  · exact ⟨_, rfl⟩
+  · obtain ⟨o, ho⟩ := greedy_complete hd hT (schedNodes f b).size _ [] 0 (GInv.start hd)
+      (by simp)
+    exact ⟨o.toArray, by simp only [List.reverse_nil] at ho; simp [ho]⟩
 
 end GoFV.Proof
