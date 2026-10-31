@@ -13,3 +13,11 @@ Upgrading any of these is an explicit migration: re-run the export parity corpus
 - Pass list: `third_party/go/src/cmd/compile/internal/ssa/compile.go` (`passes`)
 - Generic ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/genericOps.go`, `decOps.go`, `divisibleOps.go`, `divmodOps.go`
 - Rewrite rules: `_gen/generic.rules`, `dec.rules`, `divisible.rules`, `divmod.rules` (rule parser: `_gen/rulegen.go`)
+
+## Patched oracle toolchain
+
+- `patches/go/*.patch` (the per-pass SSA exporter, `docs/contracts/export.md`) applied to the pinned
+  tree by `scripts/build-go.sh` into `third_party/go-build` (not committed); bootstrap toolchain
+  `$GOROOT_BOOTSTRAP`, default `/home/kev/work/go` (go1.26).
+- Corpus: `scripts/export-corpus.sh` → `../gofv-corpus/<pin12>/` (not committed), manifest
+  `corpus/manifest.txt`.
