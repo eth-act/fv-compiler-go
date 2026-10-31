@@ -18,7 +18,8 @@ open GoFV.SSA
 
 /-- The facts prove reads about one type. -/
 structure TyInfo where
-  /-- `t.Size()`; `none` if the export has `?` (never calculated). -/
+  /-- `t.Size()` (`BADWIDTH` for an uncalculated `TSSA` type, as Go); `none` if the export has
+  `?` for another type (never calculated). -/
   size? : Option Int := none
   isBool : Bool := false
   isInteger : Bool := false
@@ -49,7 +50,10 @@ def tyInfo (tabs : Tables) (t : TypeRef) : TyInfo :=
     let elemSize? := match d.kind, d.tail with
       | .SLICE, .elem e => (tabs.type? e).bind (·.size)
       | _, _ => none
-    { size? := d.size, isBool := d.kind == .BOOL,
+    let size? := match d.size with
+      | some s => some s
+      | none => if d.kind == .SSA then some GoFV.Rules.Ty.badWidth else none
+    { size?, isBool := d.kind == .BOOL,
       isInteger := GoFV.Rules.Ty.isIntegerKind d.kind,
       isSigned := GoFV.Rules.Ty.isSignedKind d.kind,
       isPtrShaped := GoFV.Rules.Ty.isPtrShapedKind d.kind, elemSize? }

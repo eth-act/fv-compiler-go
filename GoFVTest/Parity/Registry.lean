@@ -19,6 +19,7 @@ import GoFV.Opt.PhiOpt
 import GoFV.Opt.BranchElim
 import GoFV.Opt.Opt
 import GoFV.Opt.CSE
+import GoFV.Opt.Prove.Pass
 
 /-!
 # Registered Lean passes
@@ -62,7 +63,8 @@ def registry : Array PassEntry := #[
   { fn := "knownBits", names := #["known bits"], run := knownBitsPass },
   { fn := "phiopt", names := #["phiopt"], run := phioptPass },
   { fn := "branchelim", names := #["branchelim"], run := branchelimPass },
-  { fn := "cse", names := #["generic cse"], run := csePass }
+  { fn := "cse", names := #["generic cse"], run := csePass },
+  { fn := "prove", names := #["prove"], run := provePass }
 ]
 
 end GoFVTest.Parity
