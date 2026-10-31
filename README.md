@@ -17,3 +17,9 @@ stock compiler on a corpus, and then proven to preserve the semantics of Go SSA.
 scripts/fetch-third-party.sh          # Go 1.27.3 source into third_party/go
 scripts/memcap.sh lake build
 ```
+
+## Checks
+
+```
+scripts/util-difftest.sh              # GoFV.Util (pdqsort, sparse set/maps) against Go on random cases
+```

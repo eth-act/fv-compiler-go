@@ -235,40 +235,61 @@ def breakPatterns {α : Type u} (d : Array α) (a b : Nat) : Array α :=
 section
 variable {α : Type u} [Inhabited α] (lt : α → α → Bool)
 
+/-- Pivot selection of `pdqsortCmpFunc`'s loop body (after the insertion-sort and heapsort
+exits): optional `breakPatterns`, `choosePivot`, optional reversal, optional
+`partialInsertionSort`. Returns `(data, limit, pivot, sorted)`. -/
+@[inline] def pdqPivot (d : Array α) (a b limit : Nat) (wasBalanced wasPartitioned : Bool) :
+    Array α × Nat × Nat × Bool :=
+  let (d, limit) := if !wasBalanced then (breakPatterns d a b, limit - 1) else (d, limit)
+  let (pivot, hint) := choosePivot lt d a b
+  let (d, pivot, hint) :=
+    if hint = .decreasing then (reverseRange d a b, (b - 1) - (pivot - a), Hint.increasing)
+    else (d, pivot, hint)
+  let (sorted, d) :=
+    if wasBalanced && wasPartitioned && hint = .increasing then partialInsertionSort lt d a b
+    else (false, d)
+  (d, limit, pivot, sorted)
+
+/-- Partitioning part of `pdqsortCmpFunc`'s loop body; `rec` continues on a shorter range (the
+recursive call, or the next loop iteration). -/
+@[inline] def pdqPartition
+    (rec : Array α → (a b limit : Nat) → (wasBalanced wasPartitioned : Bool) → Array α)
+    (d : Array α) (a b limit pivot : Nat) (wasBalanced wasPartitioned : Bool) : Array α :=
+  if a > 0 && !lt d[a - 1]! d[pivot]! then
+    let (mid, d) := partitionEqual lt d a b pivot
+    rec d mid b limit wasBalanced wasPartitioned
+  else
+    let (mid, alreadyPartitioned, d) := partition lt d a b pivot
+    let leftLen := mid - a
+    let rightLen := b - mid
+    let balanceThreshold := (b - a) / 8
+    if leftLen < rightLen then
+      let d := rec d a mid limit true true
+      rec d (mid + 1) b limit (leftLen ≥ balanceThreshold) alreadyPartitioned
+    else
+      let d := rec d (mid + 1) b limit true true
+      rec d a mid limit (rightLen ≥ balanceThreshold) alreadyPartitioned
+
+/-- One iteration of `pdqsortCmpFunc`'s loop. The body is split into `pdqPivot` and
+`pdqPartition`, and kept out of the recursive `pdqsort`, so that equation lemmas and proofs
+handle small terms (the permutation proof over the inlined body took 11 s); `@[inline]` keeps
+the compiled code the same. -/
+@[inline] def pdqStep (rec : Array α → (a b limit : Nat) → (wasBalanced wasPartitioned : Bool) →
+    Array α) (d : Array α) (a b limit : Nat) (wasBalanced wasPartitioned : Bool) : Array α :=
+  if b - a ≤ 12 then insertionSort lt d a b
+  else if limit = 0 then heapSort lt d a b
+  else
+    let (d, limit, pivot, sorted) := pdqPivot lt d a b limit wasBalanced wasPartitioned
+    if sorted then d
+    else pdqPartition lt rec d a b limit pivot wasBalanced wasPartitioned
+
 /-- `pdqsortCmpFunc(data, a, b, limit)`. Each loop iteration and each recursive call works on
 a strictly shorter range, so `fuel ≥ b - a` suffices (with fuel `0` the range is empty). -/
 def pdqsort : (fuel : Nat) → Array α → (a b limit : Nat) → (wasBalanced wasPartitioned : Bool) →
     Array α
   | 0, d, _, _, _, _, _ => d
   | fuel + 1, d, a, b, limit, wasBalanced, wasPartitioned =>
-    let length := b - a
-    if length ≤ 12 then insertionSort lt d a b
-    else if limit = 0 then heapSort lt d a b
-    else
-      let (d, limit) := if !wasBalanced then (breakPatterns d a b, limit - 1) else (d, limit)
-      let (pivot, hint) := choosePivot lt d a b
-      let (d, pivot, hint) :=
-        if hint = .decreasing then (reverseRange d a b, (b - 1) - (pivot - a), Hint.increasing)
-        else (d, pivot, hint)
-      let (sorted, d) :=
-        if wasBalanced && wasPartitioned && hint = .increasing then
-          partialInsertionSort lt d a b
-        else (false, d)
-      if sorted then d
-      else if a > 0 && !lt d[a - 1]! d[pivot]! then
-        let (mid, d) := partitionEqual lt d a b pivot
-        pdqsort fuel d mid b limit wasBalanced wasPartitioned
-      else
-        let (mid, alreadyPartitioned, d) := partition lt d a b pivot
-        let leftLen := mid - a
-        let rightLen := b - mid
-        let balanceThreshold := length / 8
-        if leftLen < rightLen then
-          let d := pdqsort fuel d a mid limit true true
-          pdqsort fuel d (mid + 1) b limit (leftLen ≥ balanceThreshold) alreadyPartitioned
-        else
-          let d := pdqsort fuel d (mid + 1) b limit true true
-          pdqsort fuel d a mid limit (rightLen ≥ balanceThreshold) alreadyPartitioned
+    pdqStep lt (pdqsort fuel) d a b limit wasBalanced wasPartitioned
 
 /-- Go's unstable sort with a `less` function: `sort.Sort` and `slices.SortFunc` with
 `less x y := cmp(x, y) < 0`. -/
@@ -441,58 +462,77 @@ theorem breakPatterns_perm (d : Array α) (a b : Nat) : (breakPatterns d a b).Pe
   · exact (hs ..).trans <| (hs ..).trans (hs ..)
   · exact .rfl
 
+theorem pdqPivot_perm (d : Array α) (a b limit : Nat) (wb wp : Bool) :
+    (pdqPivot lt d a b limit wb wp).1.Perm d := by
+  simp only [pdqPivot]
+  have h₁ : (if !wb then (breakPatterns d a b, limit - 1) else (d, limit)).1.Perm d := by
+    split
+    · exact breakPatterns_perm ..
+    · exact .rfl
+  generalize (if !wb then (breakPatterns d a b, limit - 1) else (d, limit)) = s₁ at h₁ ⊢
+  obtain ⟨d₁, limit₁⟩ := s₁
+  generalize choosePivot lt d₁ a b = cp
+  obtain ⟨pivot, hint⟩ := cp
+  have h₂ : (if hint = .decreasing then (reverseRange d₁ a b, (b - 1) - (pivot - a),
+      Hint.increasing) else (d₁, pivot, hint)).1.Perm d₁ := by
+    split
+    · exact reverseRange_perm ..
+    · exact .rfl
+  generalize (if hint = .decreasing then (reverseRange d₁ a b, (b - 1) - (pivot - a),
+      Hint.increasing) else (d₁, pivot, hint)) = s₂ at h₂ ⊢
+  obtain ⟨d₂, pivot₂, hint₂⟩ := s₂
+  have h₃ : (if wb && wp && hint₂ = .increasing then partialInsertionSort lt d₂ a b
+      else (false, d₂)).2.Perm d₂ := by
+    split
+    · exact partialInsertionSort_perm ..
+    · exact .rfl
+  generalize (if wb && wp && hint₂ = .increasing then partialInsertionSort lt d₂ a b
+      else (false, d₂)) = s₃ at h₃ ⊢
+  obtain ⟨sorted, d₃⟩ := s₃
+  exact h₃.trans (h₂.trans h₁)
+
+theorem pdqPartition_perm
+    (rec : Array α → (a b limit : Nat) → (wasBalanced wasPartitioned : Bool) → Array α)
+    (hrec : ∀ d a b limit wb wp, (rec d a b limit wb wp).Perm d)
+    (d : Array α) (a b limit pivot : Nat) (wb wp : Bool) :
+    (pdqPartition lt rec d a b limit pivot wb wp).Perm d := by
+  simp only [pdqPartition]
+  split
+  · have hp := partitionEqual_perm lt d a b pivot
+    generalize partitionEqual lt d a b pivot = pe at hp ⊢
+    obtain ⟨mid, d₁⟩ := pe
+    exact (hrec ..).trans hp
+  · have hp := partition_perm lt d a b pivot
+    generalize partition lt d a b pivot = pe at hp ⊢
+    obtain ⟨mid, ap, d₁⟩ := pe
+    simp only
+    split
+    · exact (hrec ..).trans <| (hrec ..).trans hp
+    · exact (hrec ..).trans <| (hrec ..).trans hp
+
+theorem pdqStep_perm
+    (rec : Array α → (a b limit : Nat) → (wasBalanced wasPartitioned : Bool) → Array α)
+    (hrec : ∀ d a b limit wb wp, (rec d a b limit wb wp).Perm d)
+    (d : Array α) (a b limit : Nat) (wb wp : Bool) :
+    (pdqStep lt rec d a b limit wb wp).Perm d := by
+  simp only [pdqStep]
+  split
+  · exact insertionSort_perm ..
+  split
+  · exact heapSort_perm ..
+  have hp := pdqPivot_perm lt d a b limit wb wp
+  generalize pdqPivot lt d a b limit wb wp = r at hp ⊢
+  obtain ⟨d₁, limit₁, pivot, sorted⟩ := r
+  simp only
+  split
+  · exact hp
+  · exact (pdqPartition_perm lt rec hrec ..).trans hp
+
 theorem pdqsort_perm (fuel : Nat) (d : Array α) (a b limit : Nat) (wb wp : Bool) :
     (pdqsort lt fuel d a b limit wb wp).Perm d := by
   induction fuel generalizing d a b limit wb wp with
   | zero => exact .rfl
-  | succ fuel ih =>
-    simp only [pdqsort]
-    split
-    · exact insertionSort_perm ..
-    split
-    · exact heapSort_perm ..
-    -- `d₁`: after breakPatterns, `d₂`: after the optional reverse, `d₃`: after the optional
-    -- partial insertion sort.
-    have h₁ : (if !wb then (breakPatterns d a b, limit - 1) else (d, limit)).1.Perm d := by
-      split
-      · exact breakPatterns_perm ..
-      · exact .rfl
-    generalize (if !wb then (breakPatterns d a b, limit - 1) else (d, limit)) = s₁ at h₁ ⊢
-    obtain ⟨d₁, limit₁⟩ := s₁
-    generalize choosePivot lt d₁ a b = cp
-    obtain ⟨pivot, hint⟩ := cp
-    have h₂ : (if hint = .decreasing then (reverseRange d₁ a b, (b - 1) - (pivot - a),
-        Hint.increasing) else (d₁, pivot, hint)).1.Perm d₁ := by
-      split
-      · exact reverseRange_perm ..
-      · exact .rfl
-    generalize (if hint = .decreasing then (reverseRange d₁ a b, (b - 1) - (pivot - a),
-        Hint.increasing) else (d₁, pivot, hint)) = s₂ at h₂ ⊢
-    obtain ⟨d₂, pivot₂, hint₂⟩ := s₂
-    have h₃ : (if wb && wp && hint₂ = .increasing then partialInsertionSort lt d₂ a b
-        else (false, d₂)).2.Perm d₂ := by
-      split
-      · exact partialInsertionSort_perm ..
-      · exact .rfl
-    generalize (if wb && wp && hint₂ = .increasing then partialInsertionSort lt d₂ a b
-        else (false, d₂)) = s₃ at h₃ ⊢
-    obtain ⟨sorted, d₃⟩ := s₃
-    have h₃' : d₃.Perm d := h₃.trans (h₂.trans h₁)
-    simp only
-    split
-    · exact h₃'
-    split
-    · have hp := partitionEqual_perm lt d₃ a b pivot₂
-      generalize partitionEqual lt d₃ a b pivot₂ = pe at hp ⊢
-      obtain ⟨mid, d₄⟩ := pe
-      exact (ih ..).trans (hp.trans h₃')
-    · have hp := partition_perm lt d₃ a b pivot₂
-      generalize partition lt d₃ a b pivot₂ = pe at hp ⊢
-      obtain ⟨mid, ap, d₄⟩ := pe
-      simp only
-      split
-      · exact (ih ..).trans <| (ih ..).trans (hp.trans h₃')
-      · exact (ih ..).trans <| (ih ..).trans (hp.trans h₃')
+  | succ fuel ih => exact pdqStep_perm lt _ ih ..
 
 /-- Go's sort returns a permutation of its input, for every `less` function. -/
 theorem sortBy_perm (d : Array α) : (sortBy lt d).Perm d :=
