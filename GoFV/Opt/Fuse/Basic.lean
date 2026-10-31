@@ -1,4 +1,5 @@
 import GoFV.SSA.Alloc
+import GoFV.SSA.TypePred
 
 /-!
 # fuse driver and block helpers
@@ -17,14 +18,18 @@ namespace GoFV.Opt.Fuse
 
 open GoFV.SSA
 
-/-- The type queries fuse needs: `t.IsMemory()` and `types.TypeVoid` (for `t.IsVoid()`). -/
+/-- The type tables and the `types.TypeMem`/`types.TypeVoid` numbers fuse needs. -/
 structure TypeView where
-  isMem : TypeRef → Bool
+  tabs : Tables
+  mem : TypeRef
   void : TypeRef
 
-/-- `v.removeable()` (`value.go:583`). -/
-def TypeView.removeable (tv : TypeView) (v : Value) : Bool :=
-  v.type != tv.void && !v.op.nilCheck && !tv.isMem v.type && !v.op.hasSideEffects
+/-- `t.IsMemory()`. -/
+@[inline] def TypeView.isMem (tv : TypeView) (t : TypeRef) : Bool := tv.tabs.isMemory tv.mem t
+
+/-- `v.removeable()`. -/
+@[inline] def TypeView.removeable (tv : TypeView) (v : Value) : Bool :=
+  tv.tabs.removeable tv.mem tv.void v
 
 /-- Bound on fuse rounds (Go loops until nothing changes; every round that changes something
 removes an edge, a block or a value use, so this is never reached on real input). -/
