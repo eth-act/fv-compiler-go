@@ -295,6 +295,23 @@ that code too. `decompose builtin` passes `leaveDeadValues` (no dead-value reset
   `Float64`, `SymOff/CallOff→int32`, `TypSize→int64`; aux side `String→string`,
   `Sym/SymOff/SymValAndOff→Sym`, `Call/CallOff→*AuxCall`, `Typ/TypSize→*types.Type`.
 
+## The interpreter (`GoFV/Rules`, `GoFV/Opt/Opt.lean`)
+
+| Module | Contents |
+| --- | --- |
+| `GoFV.Rules.GoVal` | `GVal` (runtime values of rule expressions) and Go integer/float semantics (wrapping, shifts, conversions, `math.RoundToEven`, bit counts) |
+| `GoFV.Rules.Env` | `RwEnv` (pass name, `Config` values, `typs`, type order, frontend tables), `RwState` (function, tables, `pendingLines`), the monad `RwM` |
+| `GoFV.Rules.Helpers.{Types,Sym,Ptr,Magic}` | pure ports of the `rewrite.go`/`magic.go` helpers (type queries, symbols and calls, pointer analyses, magic numbers) |
+| `GoFV.Rules.Helpers.Build` | helpers that build values or objects: `rewriteStructStore`/`Load`, `imakeOfStructMake`, `devirtLECall`, `needRaceCleanup`, `clobber`, `resetCopy`, `t.PtrTo()`, `typeToAux`, symbols by name (`fe.StringData`, relocation targets: input tables, then `PassEnv.frontend`) |
+| `GoFV.Rules.Eval` | `Eval.eval`: every `Expr` form, fields, methods, the helper calls by name |
+| `GoFV.Rules.Interp` | matcher (depth-first over the pattern in preorder, commutative choice 0 before 1, checks of not-yet-bound variables postponed to the end), result construction, block rules; `Interp.Table` (rules indexed by `Op.ctorIdx`) |
+| `GoFV.Rules.Apply` | `applyRewrite` (fixpoint loop, copy elimination, statement marks, final freeing) |
+| `GoFV.Rules.Run` | `rewritePass t removeDead : GoFV.Opt.Pass` |
+| `GoFV.Opt.Opt` | `opt` (= `middle opt`, `late opt`), `divisible`, `divmod` |
+
+Deviation: Go detects rewrite cycles by hashing and aborts compilation on a repeat; the port
+aborts after 100,000 iterations (no accepted function cycles). Parity: `docs/PARITY.md`.
+
 ## Helper inventory (scopes issue #7)
 
 Counts are over the exported rules (after `|` expansion): *Uses* = expression occurrences,

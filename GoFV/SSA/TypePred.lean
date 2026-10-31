@@ -18,4 +18,9 @@ def Tables.isMemory (tabs : Tables) (mem : TypeRef) (t : TypeRef) : Bool :=
     | some (TypeTail.results ts) => ts.back? == some mem
     | _ => false
 
+/-- `v.removeable()` (`value.go:583`): `v` may be deleted once unused — not void (`void` is
+`types.TypeVoid`), not a nil check, not memory, no side effects. -/
+def Tables.removeable (tabs : Tables) (mem void : TypeRef) (v : Value) : Bool :=
+  v.type != void && !v.op.nilCheck && !tabs.isMemory mem v.type && !v.op.hasSideEffects
+
 end GoFV.SSA

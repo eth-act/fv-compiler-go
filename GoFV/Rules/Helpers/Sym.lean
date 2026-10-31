@@ -131,6 +131,10 @@ def compatWithField (tabs : Tables) (t : TypeRef) (fld : RtField) : Except Strin
   -- Go: `t1.Compare(t2) == CMPeq`; a non-integer, non-pointer type never equals one
   return false
 
+/-- `objabi.R_WEAKADDR` (`R_WEAK | R_ADDR`) as the export spells it: `RelocType.String()` has
+no name for it. -/
+def weakAddr : String := "RelocType(-32767)"
+
 /-- What `isFixedLoad`/`rewriteFixedLoad` resolve a load to. -/
 inductive FixedLoad where
   /-- `Addr {sym}` of a relocation target (name and ABI). -/
@@ -150,7 +154,7 @@ def fixedLoad (tabs : Tables) (vty : TypeRef) (a : Option AuxRef) (off : Int)
   let s ← lsym tabs a
   if ((← Ty.isPtrShaped tabs vty) || (← Ty.isKind .UINTPTR tabs vty)) && s.kind == "SRODATA" then
     for r in s.relocs do
-      if (r.type == "R_ADDR" || r.type == "R_WEAKADDR") && r.off == off && r.add == 0 then
+      if (r.type == "R_ADDR" || r.type == weakAddr) && r.off == off && r.add == 0 then
         return some (.addr r.target r.targetAbi.toNat)
     return none
   let some t := s.typeInfo | return none

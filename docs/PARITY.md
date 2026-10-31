@@ -84,6 +84,11 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | gcse deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | known bits | knownBits | 9297 | 9297 | 0 | 100% | 35 functions changed by the pass |
 | generic deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| opt | opt | 9297 | 9285 | 12 | 99.87% | all 12: export gap #62 (nested generic dictionaries reached by `rewriteFixedLoad`) |
+| middle opt | opt | 9297 | 9297 | 0 | 100% | |
+| late opt | opt | 9297 | 9297 | 0 | 100% | |
+| divisible | divisible | 9297 | 9297 | 0 | 100% | |
+| divmod | divmod | 9297 | 9297 | 0 | 100% | |
 | zero arg cse | zcse | 9297 | 9297 | 0 | 100% | before the #52 export fix: 84 mismatches (`byte`/`uint8` type pointers) |
 | early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | expand calls | expandCalls | 9297 | 9297 | 0 | 100% | files with `InterLECall` 766, `ClosureLECall` 359, `TailLECall` 164, `TailLECallInter` 4, `Dereference` 185, `ArgFloatReg` (output) 204; no `SelectNAddr` |
