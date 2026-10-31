@@ -20,4 +20,5 @@ Upgrading any of these is an explicit migration: re-run the export parity corpus
   tree by `scripts/build-go.sh` into `third_party/go-build` (not committed); bootstrap toolchain
   `$GOROOT_BOOTSTRAP`, default `/home/kev/work/go` (go1.26).
 - Corpus: `scripts/export-corpus.sh` → `../gofv-corpus/<pin12>/` (not committed), manifest
-  `corpus/manifest.txt`.
+  `corpus/manifest.txt`; nightly corpus `--corpus full` → `../gofv-corpus/<pin12>/full/`,
+  manifest `corpus/manifest-full.txt`.
