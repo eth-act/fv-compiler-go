@@ -20,8 +20,8 @@ def cacheAppend (f : Func) (k : Int64) (v : ID) : Func :=
   match f.constLine? k with
   | some li => { f with consts := f.consts.modify li fun (k, vs) => (k, vs.push v) }
   | none =>
-    let at := (f.consts.findIdx? (·.1 > k)).getD f.consts.size
-    { f with consts := f.consts.insertIdx! at (k, #[v]) }
+    let pos := (f.consts.findIdx? (·.1 > k)).getD f.consts.size
+    { f with consts := f.consts.insertIdx! pos (k, #[v]) }
 
 /-- `f.constVal(op, t, c, setAuxInt)`. -/
 def constVal (f : Func) (sameType : TypeRef → TypeRef → Bool) (op : Op) (t : TypeRef)
