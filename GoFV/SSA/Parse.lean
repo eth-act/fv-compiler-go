@@ -6,11 +6,62 @@ import Std.Data.HashMap.Basic
 
 Parses a `gofv-ssa` file (`docs/contracts/export.md`) into an `ExportFile`. The parser is
 strict: it accepts exactly the canonical text `GoFV.SSA.Print` produces (one space between
-tokens, canonical string escapes, records in the documented order), so `print ∘ parse` is the
-identity on every file it accepts; anything else is an error naming the line.
+tokens, canonical numbers and string escapes, records in the documented order), so
+`print ∘ parse` is the identity on every file it accepts; anything else is an error naming the
+line. Words are parsed in place as byte slices of the input (no intermediate strings).
 -/
 
 namespace GoFV.SSA.Parse
+
+/-! ## Byte slices -/
+
+/-- Bytes `[start, stop)` of `data`. -/
+structure Sl where
+  data : ByteArray
+  start : Nat
+  stop : Nat
+  deriving Inhabited
+
+namespace Sl
+
+@[inline] def size (s : Sl) : Nat := s.stop - s.start
+@[inline] def get (s : Sl) (i : Nat) : UInt8 := s.data.get! (s.start + i)
+
+def toString (s : Sl) : String := String.fromUTF8! (s.data.extract s.start s.stop)
+
+instance : ToString Sl := ⟨Sl.toString⟩
+
+/-- Byte-wise equality with an ASCII string. -/
+def eqStr (s : Sl) (t : String) : Bool := Id.run do
+  if t.utf8ByteSize != s.size then return false
+  for i in [0:s.size] do
+    if h : (⟨i⟩ : String.Pos.Raw) < t.rawEndPos then
+      if t.getUTF8Byte ⟨i⟩ h != s.get i then return false
+    else return false
+  return true
+
+@[inline] def isDash (s : Sl) : Bool := s.size == 1 && s.get 0 == 45
+
+def drop (s : Sl) (n : Nat) : Sl := { s with start := min (s.start + n) s.stop }
+
+/-- Splits at every byte `c`. -/
+def split (s : Sl) (c : UInt8) : Array Sl := Id.run do
+  let mut out := #[]
+  let mut a := s.start
+  for i in [s.start:s.stop] do
+    if s.data.get! i == c then
+      out := out.push { s with start := a, stop := i }
+      a := i + 1
+  out.push { s with start := a }
+
+/-- Splits at the first byte `c`, if any. -/
+def split2 (s : Sl) (c : UInt8) : Option (Sl × Sl) := Id.run do
+  for i in [s.start:s.stop] do
+    if s.data.get! i == c then
+      return some ({ s with stop := i }, { s with start := i + 1 })
+  return none
+
+end Sl
 
 /-! ## Lexer -/
 
@@ -30,116 +81,106 @@ private def hexVal (b : UInt8) : Option UInt8 :=
   else if 97 ≤ b && b ≤ 102 then some (b - 87)
   else none
 
-/-- Tokenizes bytes `[start, stop)` of `data`: tokens separated by single spaces; a token
-starting with `"` is a string with the export's escapes. -/
-def tokens (data : ByteArray) (start stop : Nat) : Except String (Array Token) := do
-  let mut out := #[]
-  let mut i := start
-  if start == stop then throw "empty line"
-  -- fuel: every iteration consumes at least one byte
-  for _ in [start:stop+1] do
-    if i ≥ stop then break
-    if data.get! i == 34 then
-      let mut s := ByteArray.empty
-      let mut j := i + 1
-      let mut closed := false
-      for _ in [i+1:stop] do
-        if j ≥ stop then break
-        let b := data.get! j
-        if b == 34 then
-          closed := true
-          break
-        else if b == 92 then
-          if j + 1 ≥ stop then throw "dangling escape"
-          let c := data.get! (j + 1)
-          if c == 34 || c == 92 then
-            s := s.push c
-            j := j + 2
-          else if c == 120 && j + 3 < stop + 1 then
-            match hexVal (data.get! (j + 2)), hexVal (data.get! (j + 3)) with
-            | some h, some l =>
-              let v := h * 16 + l
-              if 0x20 ≤ v && v ≤ 0x7e && v != 34 && v != 92 then
-                throw "non-canonical escape"
-              s := s.push v
-              j := j + 4
-            | _, _ => throw "bad \\x escape"
-          else throw "bad escape"
-        else if 0x20 ≤ b && b ≤ 0x7e then
-          s := s.push b
-          j := j + 1
-        else throw "unescaped byte in string"
-      if !closed then throw "unterminated string"
-      out := out.push (.str ⟨s⟩)
-      i := j + 1
-    else
-      let mut j := i
-      for _ in [i:stop] do
-        if j ≥ stop || data.get! j == 32 then break
-        let b := data.get! j
-        if b < 0x21 || b > 0x7e then throw "non-printable byte"
-        j := j + 1
-      if j == i then throw "empty token (double space?)"
-      out := out.push (.word (String.fromUTF8! (data.extract i j)))
-      i := j
-    if i < stop then
-      if data.get! i != 32 then throw "missing space after token"
-      if i + 1 == stop then throw "trailing space"
-      i := i + 1
-  return out
+/-- End of the word starting at `i` (at the next space or `stop`); words are printable ASCII. -/
+def scanWord (data : ByteArray) (i stop : Nat) : Except String Nat := do
+  let mut j := i
+  for _ in [i:stop] do
+    let b := data.get! j
+    if b == 32 then break
+    if b < 0x21 || b > 0x7e then throw "non-printable byte"
+    j := j + 1
+  if j == i then throw "empty token (double space?)"
+  return j
 
-/-! ## Field parsers (on one word) -/
+/-- Decodes the string token starting with `"` at `i`; returns it and the index after the
+closing quote. -/
+def scanString (data : ByteArray) (i stop : Nat) : Except String (GoStr × Nat) := do
+  let mut s := ByteArray.empty
+  let mut j := i + 1
+  -- fuel: every iteration consumes at least one byte
+  for _ in [i+1:stop] do
+    if j ≥ stop then break
+    let b := data.get! j
+    if b == 34 then return (⟨s⟩, j + 1)
+    else if b == 92 then
+      if j + 1 ≥ stop then throw "dangling escape"
+      let c := data.get! (j + 1)
+      if c == 34 || c == 92 then
+        s := s.push c
+        j := j + 2
+      else if c == 120 && j + 3 < stop then
+        match hexVal (data.get! (j + 2)), hexVal (data.get! (j + 3)) with
+        | some h, some l =>
+          let v := h * 16 + l
+          if 0x20 ≤ v && v ≤ 0x7e && v != 34 && v != 92 then throw "non-canonical escape"
+          s := s.push v
+          j := j + 4
+        | _, _ => throw "bad \\x escape"
+      else throw "bad escape"
+    else if 0x20 ≤ b && b ≤ 0x7e then
+      s := s.push b
+      j := j + 1
+    else throw "unescaped byte in string"
+  throw "unterminated string"
+
+/-! ## Word parsers -/
 
 /-- Decimal natural number, canonical (no sign, no leading zeros). -/
-def natW (s : String) : Except String Nat :=
-  match s.toNat? with
-  | some n => if toString n == s then pure n else throw s!"non-canonical number {s}"
-  | none => throw s!"expected a natural number, got {s}"
+def natW (s : Sl) : Except String Nat := do
+  if s.size == 0 || (s.size > 1 && s.get 0 == 48) then throw s!"expected a natural number, got {s}"
+  let mut n := 0
+  for i in [0:s.size] do
+    let b := s.get i
+    if b < 48 || b > 57 then throw s!"expected a natural number, got {s}"
+    n := n * 10 + (b - 48).toNat
+  return n
 
-/-- Decimal integer, canonical. -/
-def intW (s : String) : Except String Int :=
-  match s.toInt? with
-  | some n => if toString n == s then pure n else throw s!"non-canonical number {s}"
-  | none => throw s!"expected an integer, got {s}"
+/-- Decimal integer, canonical (no `+`, no `-0`). -/
+def intW (s : Sl) : Except String Int := do
+  if s.size > 0 && s.get 0 == 45 then
+    let n ← natW (s.drop 1)
+    if n == 0 then throw s!"non-canonical number {s}"
+    return -(n : Int)
+  else return (← natW s)
 
-def int64W (s : String) : Except String Int64 := do
+def int64W (s : Sl) : Except String Int64 := do
   let n ← intW s
   if -2^63 ≤ n && n < 2^63 then pure (Int64.ofInt n) else throw s!"int64 out of range: {s}"
 
 /-- `<c><n>`, e.g. `v12`. -/
-def refW (c : Char) (s : String) : Except String Nat :=
-  if s.front == c then natW (s.drop 1).toString else throw s!"expected {c}<n>, got {s}"
+def refW (c : Char) (s : Sl) : Except String Nat :=
+  if s.size > 0 && s.get 0 == c.toUInt8 then natW (s.drop 1) else throw s!"expected {c}<n>, got {s}"
 
 /-- `<c><n>` or `-`. -/
-def optRefW (c : Char) (s : String) : Except String (Option Nat) :=
-  if s == "-" then pure none else some <$> refW c s
+def optRefW (c : Char) (s : Sl) : Except String (Option Nat) :=
+  if s.isDash then pure none else some <$> refW c s
 
 /-- An integer or `?`. -/
-def optIntW (s : String) : Except String (Option Int) :=
-  if s == "?" then pure none else some <$> intW s
+def optIntW (s : Sl) : Except String (Option Int) :=
+  if s.size == 1 && s.get 0 == 63 then pure none else some <$> intW s
 
 /-- `0` or `1`. -/
-def boolW (s : String) : Except String Bool :=
-  if s == "0" then pure false else if s == "1" then pure true else throw s!"expected 0/1, got {s}"
+def boolW (s : Sl) : Except String Bool :=
+  if s.eqStr "0" then pure false else if s.eqStr "1" then pure true
+  else throw s!"expected 0/1, got {s}"
 
 /-- Comma list, `-` for empty. -/
-def listW {α} (p : String → Except String α) (s : String) : Except String (Array α) :=
-  if s == "-" then pure #[] else (s.splitOn ",").toArray.mapM p
+def listW {α} (p : Sl → Except String α) (s : Sl) : Except String (Array α) :=
+  if s.isDash then pure #[] else (s.split 44).mapM p
 
-/-- Splits `s` at `sep` into exactly `n` parts. -/
-def partsW (s : String) (sep : String) (n : Nat) : Except String (Array String) :=
-  let ps := (s.splitOn sep).toArray
+/-- Splits `s` at byte `sep` into exactly `n` parts. -/
+def partsW (s : Sl) (sep : Char) (n : Nat) : Except String (Array Sl) :=
+  let ps := s.split sep.toUInt8
   if ps.size == n then pure ps else throw s!"expected {n} parts separated by {sep} in {s}"
 
 /-- A flag set as a comma list in table order, `-` for none. -/
-def flagsW {α} [Inhabited α] (table : List (String × (α → Bool) × (α → α))) (s : String) :
+def flagsW {α} [Inhabited α] (table : List (String × (α → Bool) × (α → α))) (s : Sl) :
     Except String α := do
-  if s == "-" then return default
-  let names := s.splitOn ","
+  if s.isDash then return default
   let mut f : α := default
   let mut rest := table
-  for n in names do
-    match rest.dropWhile (·.1 != n) with
+  for n in s.split 44 do
+    match rest.dropWhile (fun e => !n.eqStr e.1) with
     | (_, _, set) :: more =>
       f := set f
       rest := more
@@ -147,87 +188,101 @@ def flagsW {α} [Inhabited α] (table : List (String × (α → Bool) × (α →
   return f
 
 /-- `p<index>:<line>:<col>:<stmt>:<xlogue>`. -/
-def posW (s : String) : Except String Pos := do
-  let ps ← partsW s ":" 5
+def posW (s : Sl) : Except String Pos := do
+  let ps ← partsW s ':' 5
   return ⟨← refW 'p' ps[0]!, ← natW ps[1]!, ← natW ps[2]!, ← natW ps[3]!, ← natW ps[4]!⟩
 
 /-- `b<ID>:<i>`. -/
-def edgeW (s : String) : Except String Edge := do
-  let ps ← partsW s ":" 2
+def edgeW (s : Sl) : Except String Edge := do
+  let ps ← partsW s ':' 2
   return ⟨← refW 'b' ps[0]!, ← natW ps[1]!⟩
 
 /-- Inline slot `a<name>/t<type>/<off>/<splitof s|->/<splitoffset>`. -/
-def slotKeyW (s : String) : Except String SlotKey := do
-  let ps ← partsW s "/" 5
+def slotKeyW (s : Sl) : Except String SlotKey := do
+  let ps ← partsW s '/' 5
   return ⟨← refW 'a' ps[0]!, ← refW 't' ps[1]!, ← intW ps[2]!, ← optRefW 's' ps[3]!,
     ← intW ps[4]!⟩
 
 /-- Lower-case hex bytes, `-` for none. -/
-def hexW (s : String) : Except String (Option ByteArray) := do
-  if s == "-" then return none
-  let bs := s.toUTF8
-  if bs.size % 2 != 0 then throw s!"odd hex length"
+def hexW (s : Sl) : Except String (Option ByteArray) := do
+  if s.isDash then return none
+  if s.size % 2 != 0 then throw s!"odd hex length"
   let mut out := ByteArray.empty
-  for i in [0:bs.size/2] do
-    match hexVal (bs.get! (2*i)), hexVal (bs.get! (2*i+1)) with
+  for i in [0:s.size/2] do
+    match hexVal (s.get (2*i)), hexVal (s.get (2*i+1)) with
     | some h, some l => out := out.push (h * 16 + l)
     | _, _ => throw s!"bad hex {s}"
   return some out
 
 /-! ## Line parsers -/
 
+/-- The line being parsed: tokens are read from the state (byte index of the next token) up to
+`stop`. -/
+structure LineCtx where
+  data : ByteArray
+  stop : Nat
+
 /-- Parser over the tokens of one line. -/
-abbrev F := ReaderT (Array Token) (StateT Nat (Except String))
+abbrev F := ReaderT LineCtx (EStateM String Nat)
 
-def F.run {α} (toks : Array Token) (p : F α) : Except String α := do
-  let (a, i) ← (p toks).run 0
-  if i != toks.size then throw s!"{toks.size - i} unexpected trailing token(s)"
-  return a
+/-- Lifts an `Except` into any `EStateM String`-based parser. -/
+@[inline] def liftE {m α} [Monad m] [MonadExceptOf String m] (e : Except String α) : m α :=
+  match e with
+  | .ok a => pure a
+  | .error m => throw m
 
-def tok : F Token := fun toks => do
+/-- Moves past the separator after a token that ends at `j`. -/
+@[inline] def endTok (j : Nat) : F Unit := fun c => do
+  if j < c.stop then
+    if c.data.get! j != 32 then throw "missing space after token"
+    if j + 1 == c.stop then throw "trailing space"
+    set (j + 1)
+  else set c.stop
+
+def word : F Sl := fun c => do
   let i ← get
-  match toks[i]? with
-  | some t => set (i + 1); pure t
-  | none => throw "missing token"
+  if i ≥ c.stop then throw "missing token"
+  if c.data.get! i == 34 then throw "expected a word, got a string"
+  let j ← liftE (scanWord c.data i c.stop)
+  endTok j c
+  return ⟨c.data, i, j⟩
 
-def word : F String := do
-  match ← tok with
-  | .word s => pure s
-  | .str _ => throw "expected a word, got a string"
+def wordStr : F String := do return (← word).toString
 
-def str : F GoStr := do
-  match ← tok with
-  | .str s => pure s
-  | .word w => throw s!"expected a string, got {w}"
+def str : F GoStr := fun c => do
+  let i ← get
+  if i ≥ c.stop then throw "missing token"
+  if c.data.get! i != 34 then throw "expected a string"
+  let (s, j) ← liftE (scanString c.data i c.stop)
+  endTok j c
+  return s
 
 /-- A word parsed with `p`. -/
-def w {α} (p : String → Except String α) : F α := do
-  let s ← word
-  match p s with
-  | .ok a => pure a
-  | .error e => throw e
-
-def atEnd : F Bool := fun toks => do return (← get) == toks.size
+@[inline] def w {α} (p : Sl → Except String α) : F α := do liftE (p (← word))
 
 /-- The remaining tokens. -/
-def rest : F (Array Token) := fun toks => do
-  let i ← get
-  set toks.size
-  return toks.extract i toks.size
+def rest : F (Array Token) := fun c => do
+  let mut out := #[]
+  for _ in [(← get):c.stop] do
+    let i ← get
+    if i ≥ c.stop then break
+    if c.data.get! i == 34 then out := out.push (.str (← str c))
+    else out := out.push (.word (← word c).toString)
+  return out
 
 /-! ## Records -/
 
 /-- Lookup of op names. -/
-def opTable : Std.HashMap String Op :=
-  Op.all.foldl (fun m o => m.insert o.name o) {}
+def opTable : Std.HashMap ByteArray Op :=
+  Op.all.foldl (fun m o => m.insert o.name.toUTF8 o) {}
 
-def opW (s : String) : Except String Op :=
-  match opTable[s]? with
+def opW (s : Sl) : Except String Op :=
+  match opTable[s.data.extract s.start s.stop]? with
   | some o => pure o
   | none => throw s!"unknown op {s}"
 
-def blockKindW (s : String) : Except String BlockKind :=
-  match BlockKind.all.find? (·.name == s) with
+def blockKindW (s : Sl) : Except String BlockKind :=
+  match BlockKind.all.find? (s.eqStr ·.name) with
   | some k => pure k
   | none => throw s!"unknown block kind {s}"
 
@@ -239,7 +294,7 @@ def fieldLine (i : Nat) : F Field := do
 /-- `type t<n> …` up to the tail; returns the number of `field` lines that follow. -/
 def typeLine : F (TypeRef × TypeDef × Nat) := do
   let n ← w (refW 't')
-  let kind ← w fun s => match TypeKind.ofName? s with
+  let kind ← w fun s => match TypeKind.all.find? (s.eqStr ·.name) with
     | some k => pure k
     | none => throw s!"unknown type kind {s}"
   let size ← w optIntW
@@ -265,13 +320,13 @@ def typeLine : F (TypeRef × TypeDef × Nat) := do
   return (n, ⟨kind, size, align, ptrdata, flags, s, symName, tail⟩, nf)
 
 def relocLine : F Reloc := do
-  return ⟨← w intW, ← w intW, ← word, ← w intW, ← str, ← w intW⟩
+  return ⟨← w intW, ← w intW, ← wordStr, ← w intW, ← str, ← w intW⟩
 
 def rtypeLine : F RType := do
   return ⟨← w optIntW, ← w optIntW, ← w optIntW, ← w optIntW, ← str, ← str⟩
 
 def abiParamLine : F ABIParam := do
-  let dir ← word
+  let dir ← wordStr
   let out ← if dir == "in" then pure false else if dir == "out" then pure true
     else throw s!"expected in/out, got {dir}"
   return ⟨out, ← w natW, ← w (refW 't'), ← w (optRefW 'a'), ← w (listW natW), ← w intW⟩
@@ -286,17 +341,17 @@ inductive AuxMore where
 
 def auxLine : F (AuxRef × AuxDef × AuxMore) := do
   let n ← w (refW 'a')
-  let tag ← word
+  let tag ← wordStr
   let fmt ← str
   let (k, more) ← match tag with
     | "name" => do
-      let k := AuxKind.name (← str) (← w fun s => match NameClass.ofName? s with
+      let k := AuxKind.name (← str) (← w fun s => match NameClass.all.find? (s.eqStr ·.name) with
           | some c => pure c
           | none => throw s!"unknown class {s}")
         (← w (refW 't')) (← w intW) (← w natW) (← w (flagsW NameFlags.table)) (← w posW)
       pure (k, AuxMore.none)
     | "sym" => do
-      let name ← str; let abi ← w natW; let kind ← word; let size ← w intW
+      let name ← str; let abi ← w natW; let kind ← wordStr; let size ← w intW
       let flags ← w (flagsW SymFlags.table)
       let ti ← w (optRefW 't'); let ii ← w (optRefW 't')
       let data ← w hexW; let nr ← w natW
@@ -305,9 +360,9 @@ def auxLine : F (AuxRef × AuxDef × AuxMore) := do
     | "call" => do
       let fn ← w (optRefW 'a')
       let abi ← word
-      if abi == "-" then
+      if abi.isDash then
         for _ in [0:6] do
-          if (← word) != "0" then throw "call without ABI info must have zero fields"
+          if !(← word).eqStr "0" then throw "call without ABI info must have zero fields"
         pure (AuxKind.call fn none, AuxMore.none)
       else
         let abi ← match natW abi with | .ok a => pure a | .error e => throw e
@@ -358,48 +413,47 @@ def blockLine : F Block := do
   return ⟨id, kind, pos, lk, auxInt, aux, controls, succs, preds, #[]⟩
 
 /-- `consts` payload: `<key>=<v,…>` entries joined by commas (`-` for none). -/
-def constsW (s : String) : Except String (Array (Int64 × Array ID)) := do
-  if s == "-" then return #[]
+def constsW (s : Sl) : Except String (Array (Int64 × Array ID)) := do
+  if s.isDash then return #[]
   let mut out : Array (Int64 × Array ID) := #[]
-  for part in s.splitOn "," do
-    match part.splitOn "=" with
-    | [k, v] => out := out.push (← int64W k, #[← refW 'v' v])
-    | [v] =>
+  for part in s.split 44 do
+    match part.split2 61 with
+    | some (k, v) => out := out.push (← int64W k, #[← refW 'v' v])
+    | none =>
       let some (k, vs) := out.back? | throw s!"bad consts {s}"
-      out := out.pop.push (k, vs.push (← refW 'v' v))
-    | _ => throw s!"bad consts entry {part}"
+      out := out.pop.push (k, vs.push (← refW 'v' part))
   return out
 
-def splitEntryW (s : String) : Except String (SplitKey × SlotRef) := do
-  let kv ← partsW s "=" 2
-  let ps ← partsW kv[0]! "/" 3
+def splitEntryW (s : Sl) : Except String (SplitKey × SlotRef) := do
+  let kv ← partsW s '=' 2
+  let ps ← partsW kv[0]! '/' 3
   return (⟨← refW 's' ps[0]!, ← intW ps[1]!, ← refW 't' ps[2]!⟩, ← refW 's' kv[1]!)
 
-def canonEntryW (s : String) : Except String (SlotKey × SlotRef) := do
-  let kv ← partsW s "=" 2
+def canonEntryW (s : Sl) : Except String (SlotKey × SlotRef) := do
+  let kv ← partsW s '=' 2
   return (← slotKeyW kv[0]!, ← refW 's' kv[1]!)
 
 
-def sdomNodeW (s : String) : Except String SdomNode := do
-  let ps ← partsW s ":" 6
+def sdomNodeW (s : Sl) : Except String SdomNode := do
+  let ps ← partsW s ':' 6
   return ⟨← refW 'b' ps[0]!, ← optRefW 'b' ps[1]!, ← optRefW 'b' ps[2]!, ← optRefW 'b' ps[3]!,
     ← intW ps[4]!, ← intW ps[5]!⟩
 
-def idomEntryW (s : String) : Except String (ID × Option ID) := do
-  let ps ← partsW s ":" 2
+def idomEntryW (s : Sl) : Except String (ID × Option ID) := do
+  let ps ← partsW s ':' 2
   return (← refW 'b' ps[0]!, ← optRefW 'b' ps[1]!)
 
-def auxmapEntryW (s : String) : Except String (Option AuxRef × Int) := do
-  let ps ← partsW s ":" 2
+def auxmapEntryW (s : Sl) : Except String (Option AuxRef × Int) := do
+  let ps ← partsW s ':' 2
   return (← optRefW 'a' ps[0]!, ← intW ps[1]!)
 
-def lineRangeW (s : String) : Except String LineRange := do
-  let ps := (s.splitOn ":").toArray
+def lineRangeW (s : Sl) : Except String LineRange := do
+  let ps := s.split 58
   let index ← natW ps[0]!
-  if ps.size == 2 && ps[1]! == "-" then return ⟨index, none, #[]⟩
+  if ps.size == 2 && ps[1]!.isDash then return ⟨index, none, #[]⟩
   if ps.size < 3 then throw s!"bad linestarts entry {s}"
   let pending ← (ps.extract 3 ps.size).mapM fun p => do
-    let kv ← partsW p "=" 2
+    let kv ← partsW p '=' 2
     return (← intW kv[0]!, ← intW kv[1]!)
   return ⟨index, some (← intW ps[1]!, ← intW ps[2]!), pending⟩
 
@@ -410,12 +464,12 @@ structure Input where
   lines : Array (Nat × Nat)
 
 /-- Parser over lines; the state is the index of the next line. -/
-abbrev L := ReaderT Input (StateT Nat (Except String))
+abbrev L := ReaderT Input (EStateM String Nat)
 
 def lineNo : L Nat := get
 
 /-- Tag (first word) of the next line, if any. -/
-def peekTag : L (Option String) := fun inp => do
+def peekTagSl : L (Option Sl) := fun inp => do
   let i ← get
   match inp.lines[i]? with
   | none => pure none
@@ -424,18 +478,29 @@ def peekTag : L (Option String) := fun inp => do
     for _ in [a:b] do
       if inp.data.get! j == 32 then break
       j := j + 1
-    pure (some (String.fromUTF8! (inp.data.extract a j)))
+    pure (some ⟨inp.data, a, j⟩)
+
+/-- Whether the next line has tag `t`. -/
+def tagIs (t : String) : L Bool := do
+  match ← peekTagSl with
+  | some s => pure (s.eqStr t)
+  | none => pure false
+
+def peekTag : L (Option String) := do return (← peekTagSl).map (·.toString)
 
 /-- Parses the next line, which must have tag `tag`, with `p` on the remaining tokens. -/
 def line {α} (tag : String) (p : F α) : L α := fun inp => do
   let i ← get
   let some (a, b) := inp.lines[i]? | throw s!"line {i+1}: expected {tag}, got end of file"
   let r : Except String α := do
-    let toks ← tokens inp.data a b
-    match (toks[0]? : Option Token) with
-    | some (.word t) => if t != tag then throw s!"expected {tag}, got {t}" else pure ()
-    | _ => throw s!"expected {tag}"
-    F.run (toks.extract 1 toks.size) p
+    if a == b then throw "empty line"
+    let j ← scanWord inp.data a b
+    let t : Sl := ⟨inp.data, a, j⟩
+    if !t.eqStr tag then throw s!"expected {tag}, got {t}"
+    let c : LineCtx := ⟨inp.data, b⟩
+    match (do endTok j; let x ← p; pure x : F α) c |>.run j with
+    | .ok x k => if k != b then throw "unexpected trailing token(s)" else pure x
+    | .error e _ => throw e
   match r with
   | .ok x => set (i + 1); pure x
   | .error e => throw s!"line {i+1}: {e}"
@@ -480,39 +545,33 @@ def defs : L (Array Def) := do
     | _ => break
   return out
 
-private def put {α} (a : Array (Option α)) (i : Nat) (x : α) : Except String (Array (Option α)) := do
-  let a := if i < a.size then a else a ++ Array.replicate (i + 1 - a.size) none
-  if a[i]!.isSome then throw s!"duplicate ID {i}"
-  return a.set! i (some x)
-
-/-- Lifts an `Except` into `L`. -/
-def liftE {α} (e : Except String α) : L α := fun _ => match e with
-  | .ok a => pure a
-  | .error m => throw m
-
-def typsEntryW (s : String) : Except String (String × TypeRef) := do
-  let kv ← partsW s "=" 2
-  return (kv[0]!, ← refW 't' kv[1]!)
+def typsEntryW (s : Sl) : Except String (String × TypeRef) := do
+  let kv ← partsW s '=' 2
+  return (kv[0]!.toString, ← refW 't' kv[1]!)
 
 def func : L (Func × Option (Array (String × TypeRef))) := do
   let (entry, type, ownAux, vidLast, bidLast) ← line "f" do
     return (← w (refW 'b'), ← w (refW 't'), ← w (optRefW 'a'), ← w natW, ← w natW)
-  let typs ← if (← peekTag) == some "typs" then some <$> line "typs" (w (listW typsEntryW))
+  let typs ← if (← tagIs "typs") then some <$> line "typs" (w (listW typsEntryW))
     else pure none
   let mut blocks := #[]
-  let mut blockTab : Array (Option Block) := #[]
-  let mut valueTab : Array (Option Value) := #[]
+  let mut blockTab : Array (Option Block) := Array.replicate (bidLast + 1) none
+  let mut valueTab : Array (Option Value) := Array.replicate (vidLast + 1) none
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "b" then break
+    if !(← tagIs "b") then break
     let b ← line "b" blockLine
     let mut vs := #[]
     for _ in [0:(← read).lines.size] do
-      if (← peekTag) != some "v" then break
+      if !(← tagIs "v") then break
       let v ← line "v" (valueLine b.id)
-      valueTab ← liftE (put valueTab v.id v)
+      if v.id > vidLast then throw s!"line {← get}: value ID beyond vid.last"
+      if valueTab[v.id]!.isSome then throw s!"line {← get}: duplicate value ID"
+      valueTab := valueTab.set! v.id (some v)
       vs := vs.push v.id
     blocks := blocks.push b.id
-    blockTab ← liftE (put blockTab b.id { b with values := vs })
+    if b.id > bidLast then throw s!"block ID b{b.id} beyond bid.last"
+    if blockTab[b.id]!.isSome then throw s!"duplicate block ID b{b.id}"
+    blockTab := blockTab.set! b.id (some { b with values := vs })
   let names ← line "names" (w (listW (refW 's')))
   let mut named := #[]
   for s in names do
@@ -521,7 +580,7 @@ def func : L (Func × Option (Array (String × TypeRef))) := do
     named := named.push (s, vs)
   let mut namedx := #[]
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "namedx" then break
+    if !(← tagIs "namedx") then break
     namedx := namedx.push (← line "namedx" do return (← w slotKeyW, ← w (listW (refW 'v'))))
   let splits ← line "splits" (w (listW splitEntryW))
   let canon ← line "canon" (w (listW canonEntryW))
@@ -532,9 +591,9 @@ def func : L (Func × Option (Array (String × TypeRef))) := do
   -- cache lines in the order postorder, idom, sdom, loopnest, auxmap, linestarts
   let mut rank := 0
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "cache" then break
+    if !(← tagIs "cache") then break
     let (r, c) ← line "cache" do
-      match ← word with
+      match ← wordStr with
       | "postorder" => return (1, { cache with postorder := some (← w (listW (refW 'b'))) })
       | "idom" => return (2, { cache with idom := some (← w (listW idomEntryW)) })
       | "sdom" => return (3, { cache with sdom := some (← w (listW sdomNodeW)) })
@@ -558,7 +617,7 @@ def sectionP : L Section := do
   let (func, typs) ← func
   let mut warns := #[]
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "warn" then break
+    if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
   line "end" (pure ())
   return { index, pass, defs, func, typs, warns }
@@ -570,17 +629,17 @@ def file : L ExportFile := do
     return (← str, ← w natW, ← w boolW, ← w boolW)
   let mut config := #[]
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "config" then break
-    config := config.push (← line "config" do return (← word, ← rest))
+    if !(← tagIs "config") then break
+    config := config.push (← line "config" do return (← wordStr, ← rest))
   let mut sections := #[]
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "pass" then break
+    if !(← tagIs "pass") then break
     sections := sections.push (← sectionP)
   let mut warns := #[]
   for _ in [0:(← read).lines.size] do
-    if (← peekTag) != some "warn" then break
+    if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
-  let typeOrder ← line "typeorder" (w (listW fun g => (g.splitOn "=").toArray.mapM (refW 't')))
+  let typeOrder ← line "typeorder" (w (listW fun g => (g.split 61).mapM (refW 't')))
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
   return { version, pkg, name, abi, nosplit, pgohot, config, sections, warns, typeOrder }
@@ -590,7 +649,8 @@ end Parse
 /-- Parses a `gofv-ssa` file. -/
 def parseExport (data : ByteArray) : Except String ExportFile := do
   let ls ← Parse.lines data
-  let (f, _) ← (Parse.file ⟨data, ls⟩).run 0
-  return f
+  match (Parse.file ⟨data, ls⟩).run 0 with
+  | .ok f _ => pure f
+  | .error e _ => throw e
 
 end GoFV.SSA

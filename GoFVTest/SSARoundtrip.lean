@@ -35,18 +35,29 @@ structure Stats where
   blocks : Nat := 0
   values : Nat := 0
   gotext : Nat := 0
+  readNs : Nat := 0
+  parseNs : Nat := 0
+  printNs : Nat := 0
   gotextFailed : Nat := 0
 
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
+  let t0 ← IO.monoNanosNow
   let data ← IO.FS.readBinFile path
-  let st := { st with files := st.files + 1, bytes := st.bytes + data.size }
-  match parseExport data with
+  let t1 ← IO.monoNanosNow
+  let st := { st with files := st.files + 1, bytes := st.bytes + data.size,
+                      readNs := st.readNs + (t1 - t0) }
+  let r ← IO.lazyPure fun _ => parseExport data
+  let t2 ← IO.monoNanosNow
+  let st := { st with parseNs := st.parseNs + (t2 - t1) }
+  match r with
   | .error e =>
     IO.eprintln s!"FAIL {path}: parse error: {e}"
     return { st with failed := st.failed + 1 }
   | .ok e =>
-    let out := printExport e
+    let out ← IO.lazyPure fun _ => printExport e
+    let t3 ← IO.monoNanosNow
     let st := { st with
+      printNs := st.printNs + (t3 - t2),
       sections := st.sections + e.sections.size,
       blocks := e.sections.foldl (fun n s => n + s.func.blocks.size) st.blocks,
       values := e.sections.foldl (fun n s =>
@@ -87,7 +98,8 @@ def main (args : List String) : IO UInt32 := do
       st ← checkFile f st
   let ms := (← IO.monoMsNow) - t0
   IO.println s!"ssa-roundtrip: {st.files} files, {st.failed} failed, {st.bytes} bytes, \
-    {st.sections} sections, {st.blocks} blocks, {st.values} values, {ms} ms; \
+    {st.sections} sections, {st.blocks} blocks, {st.values} values, {ms} ms \
+    (read {st.readNs / 1000000}, parse {st.parseNs / 1000000}, print {st.printNs / 1000000}); \
     f.String(): {st.gotext} files, {st.gotextFailed} failed"
   return if st.failed == 0 && st.gotextFailed == 0 && st.files > 0 then 0 else 1
 
