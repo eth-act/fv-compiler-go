@@ -31,6 +31,8 @@ structure Section where
   /-- Definitions made in this section, in file order. -/
   defs : Array Def
   func : Func
+  /-- `typs` (section 0 only): the `Config.Types` fields (`Bool`, …, `ResultMem`) in order. -/
+  typs : Option (Array (String × TypeRef))
   /-- `warn` lines (exporter invariant failures), in order. -/
   warns : Array GoStr
   deriving DecidableEq, Inhabited

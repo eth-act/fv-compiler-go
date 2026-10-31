@@ -29,11 +29,12 @@ structure SdomNode where
   exit : Int
   deriving DecidableEq, Inhabited, Repr
 
-/-- One `cachedLineStarts` file range: `<index>:<first>:<last>`. -/
+/-- One `cachedLineStarts` entry: `<index>:<first>:<last>` followed by the leftover pending
+lines `:<line>=<val>` (dense order), or `<index>:-` (`bounds = none`, no pending lines). -/
 structure LineRange where
   index : Nat
-  first : Int
-  last : Int
+  bounds : Option (Int × Int)
+  pending : Array (Int × Int)
   deriving DecidableEq, Inhabited, Repr
 
 /-- The `f.cached*` analyses that are non-nil (`cache` lines). -/
@@ -44,8 +45,8 @@ structure Caches where
   sdom : Option (Array SdomNode) := none
   /-- Only presence is exported. -/
   loopnest : Bool := false
-  /-- `f.auxmap`: CSE's aux numbering, sorted by id. -/
-  auxmap : Option (Array (AuxRef × Int)) := none
+  /-- `f.auxmap`: CSE's aux numbering (`none` key = nil aux), sorted by id. -/
+  auxmap : Option (Array (Option AuxRef × Int)) := none
   lineStarts : Option (Array LineRange) := none
   deriving DecidableEq, Inhabited, Repr
 

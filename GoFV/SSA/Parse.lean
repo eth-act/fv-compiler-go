@@ -357,14 +357,18 @@ def blockLine : F Block := do
   let preds ← w (listW edgeW)
   return ⟨id, kind, pos, lk, auxInt, aux, controls, succs, preds, #[]⟩
 
-/-- Space-separated entries, or the single word `-` for none. -/
-def entries {α} (p : String → Except String α) : F (Array α) := do
-  let ts ← rest
-  if ts.size == 1 && ts[0]! == .word "-" then return #[]
-  if ts.isEmpty then throw "missing entries (use -)"
-  ts.mapM fun (t : Token) => match t with
-    | .word s => match p s with | .ok a => pure a | .error e => throw e
-    | .str _ => throw "unexpected string"
+/-- `consts` payload: `<key>=<v,…>` entries joined by commas (`-` for none). -/
+def constsW (s : String) : Except String (Array (Int64 × Array ID)) := do
+  if s == "-" then return #[]
+  let mut out : Array (Int64 × Array ID) := #[]
+  for part in s.splitOn "," do
+    match part.splitOn "=" with
+    | [k, v] => out := out.push (← int64W k, #[← refW 'v' v])
+    | [v] =>
+      let some (k, vs) := out.back? | throw s!"bad consts {s}"
+      out := out.pop.push (k, vs.push (← refW 'v' v))
+    | _ => throw s!"bad consts entry {part}"
+  return out
 
 def splitEntryW (s : String) : Except String (SplitKey × SlotRef) := do
   let kv ← partsW s "=" 2
@@ -375,9 +379,6 @@ def canonEntryW (s : String) : Except String (SlotKey × SlotRef) := do
   let kv ← partsW s "=" 2
   return (← slotKeyW kv[0]!, ← refW 's' kv[1]!)
 
-def constEntryW (s : String) : Except String (Int64 × Array ID) := do
-  let kv ← partsW s "=" 2
-  return (← int64W kv[0]!, ← listW (refW 'v') kv[1]!)
 
 def sdomNodeW (s : String) : Except String SdomNode := do
   let ps ← partsW s ":" 6
@@ -388,13 +389,19 @@ def idomEntryW (s : String) : Except String (ID × Option ID) := do
   let ps ← partsW s ":" 2
   return (← refW 'b' ps[0]!, ← optRefW 'b' ps[1]!)
 
-def auxmapEntryW (s : String) : Except String (AuxRef × Int) := do
+def auxmapEntryW (s : String) : Except String (Option AuxRef × Int) := do
   let ps ← partsW s ":" 2
-  return (← refW 'a' ps[0]!, ← intW ps[1]!)
+  return (← optRefW 'a' ps[0]!, ← intW ps[1]!)
 
 def lineRangeW (s : String) : Except String LineRange := do
-  let ps ← partsW s ":" 3
-  return ⟨← natW ps[0]!, ← intW ps[1]!, ← intW ps[2]!⟩
+  let ps := (s.splitOn ":").toArray
+  let index ← natW ps[0]!
+  if ps.size == 2 && ps[1]! == "-" then return ⟨index, none, #[]⟩
+  if ps.size < 3 then throw s!"bad linestarts entry {s}"
+  let pending ← (ps.extract 3 ps.size).mapM fun p => do
+    let kv ← partsW p "=" 2
+    return (← intW kv[0]!, ← intW kv[1]!)
+  return ⟨index, some (← intW ps[1]!, ← intW ps[2]!), pending⟩
 
 /-! ## File structure -/
 
@@ -483,9 +490,15 @@ def liftE {α} (e : Except String α) : L α := fun _ => match e with
   | .ok a => pure a
   | .error m => throw m
 
-def func : L Func := do
+def typsEntryW (s : String) : Except String (String × TypeRef) := do
+  let kv ← partsW s "=" 2
+  return (kv[0]!, ← refW 't' kv[1]!)
+
+def func : L (Func × Option (Array (String × TypeRef))) := do
   let (entry, type, ownAux, vidLast, bidLast) ← line "f" do
     return (← w (refW 'b'), ← w (refW 't'), ← w (optRefW 'a'), ← w natW, ← w natW)
+  let typs ← if (← peekTag) == some "typs" then some <$> line "typs" (w (listW typsEntryW))
+    else pure none
   let mut blocks := #[]
   let mut blockTab : Array (Option Block) := #[]
   let mut valueTab : Array (Option Value) := #[]
@@ -510,9 +523,9 @@ def func : L Func := do
   for _ in [0:(← read).lines.size] do
     if (← peekTag) != some "namedx" then break
     namedx := namedx.push (← line "namedx" do return (← w slotKeyW, ← w (listW (refW 'v'))))
-  let splits ← line "splits" (entries splitEntryW)
-  let canon ← line "canon" (entries canonEntryW)
-  let consts ← line "consts" (entries constEntryW)
+  let splits ← line "splits" (w (listW splitEntryW))
+  let canon ← line "canon" (w (listW canonEntryW))
+  let consts ← line "consts" (w constsW)
   let freeValues ← line "freev" (w (listW (refW 'v')))
   let freeBlocks ← line "freeb" (w (listW (refW 'b')))
   let mut cache : Caches := {}
@@ -532,19 +545,23 @@ def func : L Func := do
     if r ≤ rank then throw s!"line {(← get)}: cache line out of order"
     rank := r
     cache := c
-  return { entry, type, ownAux, vidLast, bidLast, blocks, blockTab, valueTab, names := named,
-           namedx, splits, canon, consts, freeValues, freeBlocks, cache }
+  let f : Func :=
+    { entry := entry, type := type, ownAux := ownAux, vidLast := vidLast, bidLast := bidLast
+      blocks := blocks, blockTab := blockTab, valueTab := valueTab, names := named
+      namedx := namedx, splits := splits, canon := canon, consts := consts
+      freeValues := freeValues, freeBlocks := freeBlocks, cache := cache }
+  return (f, typs)
 
 def sectionP : L Section := do
   let (index, pass) ← line "pass" do return (← w natW, ← str)
   let defs ← defs
-  let func ← func
+  let (func, typs) ← func
   let mut warns := #[]
   for _ in [0:(← read).lines.size] do
     if (← peekTag) != some "warn" then break
     warns := warns.push (← line "warn" str)
   line "end" (pure ())
-  return { index, pass, defs, func, warns }
+  return { index, pass, defs, func, typs, warns }
 
 def file : L ExportFile := do
   let version ← line "gofv-ssa" (w natW)
@@ -563,13 +580,7 @@ def file : L ExportFile := do
   for _ in [0:(← read).lines.size] do
     if (← peekTag) != some "warn" then break
     warns := warns.push (← line "warn" str)
-  let typeOrder ← line "typeorder" do
-    let ts ← rest
-    ts.mapM fun (t : Token) => match t with
-      | .word s => match (s.splitOn "=").toArray.mapM (refW 't') with
-        | .ok g => pure g
-        | .error e => throw e
-      | .str _ => throw "unexpected string in typeorder"
+  let typeOrder ← line "typeorder" (w (listW fun g => (g.splitOn "=").toArray.mapM (refW 't')))
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
   return { version, pkg, name, abi, nosplit, pgohot, config, sections, warns, typeOrder }

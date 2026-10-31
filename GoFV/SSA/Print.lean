@@ -137,14 +137,11 @@ def block (f : Func) (b : Block) : W Unit := do
     | some v => value v
     | none => s s!"v v{id} <missing>\n"
 
-/-- Space-separated entries, `-` if none. -/
-def entries {α} (p : α → W Unit) (xs : Array α) : W Unit := do
-  if xs.isEmpty then s " -"
-  else for x in xs do sp; p x
-
-def func (f : Func) : W Unit := do
+def func (f : Func) (typs : Option (Array (String × TypeRef))) : W Unit := do
   s "f "; ref 'b' f.entry; sp; ref 't' f.type; sp; optRef 'a' f.ownAux; sp; n f.vidLast; sp
   n f.bidLast; nl
+  if let some ts := typs then
+    s "typs "; list (fun (k, t) => do s k; s "="; ref 't' t) ts; nl
   for id in f.blocks do
     match f.block? id with
     | some b => block f b
@@ -154,11 +151,11 @@ def func (f : Func) : W Unit := do
     s "named "; ref 's' k; sp; list (ref 'v') vs; nl
   for (k, vs) in f.namedx do
     s "namedx "; slotKey k; sp; list (ref 'v') vs; nl
-  s "splits"
-  entries (fun (k, r) => do ref 's' k.parent; s "/"; i k.off; s "/"; ref 't' k.type; s "="; ref 's' r) f.splits
+  s "splits "
+  list (fun (k, r) => do ref 's' k.parent; s "/"; i k.off; s "/"; ref 't' k.type; s "="; ref 's' r) f.splits
   nl
-  s "canon"; entries (fun (k, r) => do slotKey k; s "="; ref 's' r) f.canon; nl
-  s "consts"; entries (fun (k, vs) => do i64 k; s "="; list (ref 'v') vs) f.consts; nl
+  s "canon "; list (fun (k, r) => do slotKey k; s "="; ref 's' r) f.canon; nl
+  s "consts "; list (fun (k, vs) => do i64 k; s "="; list (ref 'v') vs) f.consts; nl
   s "freev "; list (ref 'v') f.freeValues; nl
   s "freeb "; list (ref 'b') f.freeBlocks; nl
   let c := f.cache
@@ -174,15 +171,23 @@ def func (f : Func) : W Unit := do
     nl
   if c.loopnest then s "cache loopnest\n"
   if let some m := c.auxmap then
-    s "cache auxmap "; list (fun (a, k) => do ref 'a' a; s ":"; i k) m; nl
+    s "cache auxmap "; list (fun (a, k) => do optRef 'a' a; s ":"; i k) m; nl
   if let some ls := c.lineStarts then
-    s "cache linestarts "; list (fun (x : LineRange) => do n x.index; s ":"; i x.first; s ":"; i x.last) ls
+    s "cache linestarts "
+    list (fun (x : LineRange) => do
+      n x.index
+      match x.bounds with
+      | none => s ":-"
+      | some (a, b) =>
+        s ":"; i a; s ":"; i b
+        for (l, v) in x.pending do
+          s ":"; i l; s "="; i v) ls
     nl
 
 def sectionW (x : Section) : W Unit := do
   s "pass "; n x.index; sp; q x.pass; nl
   for d in x.defs do defn d
-  func x.func
+  func x.func x.typs
   for m in x.warns do
     s "warn "; q m; nl
   s "end\n"
@@ -198,14 +203,13 @@ def file (e : ExportFile) : W Unit := do
   for x in e.sections do sectionW x
   for m in e.warns do
     s "warn "; q m; nl
-  s "typeorder"
-  for g in e.typeOrder do
-    sp
+  s "typeorder "
+  list (fun g => do
     let mut first := true
     for t in g do
       if !first then s "="
       first := false
-      ref 't' t
+      ref 't' t) e.typeOrder
   nl
   s "eof\n"
 
