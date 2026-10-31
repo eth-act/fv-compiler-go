@@ -132,6 +132,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
 | branchelim | branchelim | 9297 | 9297 | 0 | 100% | 526 functions changed by the pass |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
+| sccp | sccp | 9297 | 9297 | 0 | 100% | stock pass changes 1163 functions (fold temporaries in all; folds in 25, rewires in 20); 0 sections need the map order replayed (no contested block); `tests/sccp-order` (16 exports, split 8/8 between the two orders): 48/48, 8 replayed |
 | dead auto elim | elimDeadAutosGeneric | 9297 | 9297 | 0 | 100% | stock pass changes 355 functions |
 | late fuse | fuseLate | 9297 | 9297 | 0 | 100% | 1381 functions changed by the pass (81 need `fuseBranchRedirect`, prove's facts table) |
 | dse | dse | 9297 | 9297 | 0 | 100% | stock pass changes 447 functions |
