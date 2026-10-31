@@ -18,6 +18,35 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect:** the whole generated `Op.lean` (446 constructors, 20 metadata functions,
   `DecidableEq`) builds in 7.5 s / 0.56 GB (#6).
 
+#### Large `match` on a variable: keep `simp` off it, generate equations in the defining module
+- **Problem:** `GoFV.SSA.Op` has 446 constructors and its 20 metadata functions are 446-arm
+  `match`es. When `simp` unfolds a function that matches on a *variable* of such a type (e.g.
+  a fold step `fun t op => op.effect t`), official Lean generates the splitter and all N match
+  equations in the importing module and tries each: Θ(N²), stored in that module's `.olean`.
+  Separately, `simp [f]` needs `f.eq_1..N`, which every importer regenerates unless some
+  upstream module already did.
+- **Trick:** give `simp` step lemmas (`block_nil`/`block_cons`, proved by `(rfl)`) or define
+  the recursion structurally; put `attribute [local simp] f` right after a big-`match` `f` that
+  importers will `simp` with; when one unfolding suffices use `unfold f` / `rw [f.eq_def]`.
+- **Effect** (lean-skills `examples/run.py stuck-match eqns-upstream`, rerun here on official
+  4.34.1, N = 400, load ~80): stuck `simp [block, Op.effect]` 25.0 s CPU, 64.9M heartbeats,
+  39.4 MB `.olean`; step lemmas 1.8 s, 196k, 11 kB. Four importers each `simp [Op.effect]`:
+  19–24 s and 39.7 MB each without upstream equations (94.5 s total), 0.6–0.8 s and 7 kB each
+  with `attribute [local simp]` in the defining module (30.5 s once; 33.2 s total). Same
+  numbers as lean-skills measured on 4.34.0.
+
+#### fast-lean (`dev-fast-v4.34.1`) is safe with the shared Lake cache; profiles use official Lean
+- Checked here: a module built by `fast-lean build` (proofs skipped, `#print axioms` →
+  `Lean.skippedProof`) gets a different Lake input hash than the official build (the trace
+  records the same toolchain string, but the hashes differ), so an official `lake build` in
+  another worktree sharing `../gofv-lake-cache` rebuilt it and printed no axioms. Iterating with
+  fast-lean cannot leak skipped proofs into gate builds through the cache.
+- Perf numbers (`perf/`, `docs/PERF.md`) are always taken with the official toolchain, which is
+  what the gates run. Faithful dev mode is a diagnostic: if `LEAN_DEV= fast-lean lean M.lean`
+  is much faster than official `lake env lean M.lean`, the module hits a pathology the dev
+  toolchain patches (stuck `match` in `simp`, leanprover/lean4#15755: 25.0 → 2.65 s CPU,
+  64.9M → 781k heartbeats in the N = 400 case above); fix the proof, since gates use official Lean.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
@@ -96,3 +125,35 @@ From [Th0rgal/evm.fast-dev](https://github.com/Th0rgal/evm.fast-dev) (`docs/PROO
 - **Remove repeated indexing:** proving repeated indexed extraction equal to one linear `flatMap` took a check from an unfinished 5 minutes to 39 s.
 - **Compact certificates:** `of_decide_eq_true (by kernel_rfl)` (with `kernel_rfl` = `goal.refl (check := false)`) instead of `decide_cbv` shrank a 30.6 MB `.olean` to 33 KB and halved replay. clifv's `RuleAll` already uses the `check := false` idea.
 - **Compact generated data:** typed DAG literals with small single-use nodes inlined shrank 9 MB ASTs to 0.3 MB (61 → 15 s).
+
+## From kevaundray/lean-skills (measured there on Lean 4.34.0 unless noted; `~/.agents/skills`)
+
+Skills `lean-proof-performance`, `lean-build-hygiene`, `lean-asm-proofs`, `fast-lean`; every
+number comes from `examples/` there (`examples/run.py <name>`) or from the projects it credits.
+Adopted: `weakLeanArgs` linters off (d891ea9) and the two entries under "gofv measurements"
+above. The rest applies as rules; move an entry up once measured in gofv.
+
+- **Deterministic `.olean`s:** linter warnings are stored in the `.olean` with the absolute
+  source path, so the same module built in two worktrees differs and every importer misses the
+  shared cache. Diagnostics-only options go in `weakLeanArgs` (not traced, no rebuild);
+  `leanOptions`/`moreLeanArgs` only for options that change results.
+- **`:= rfl` makes a lemma `@[defeq]`** (Lean 4.26–4.35): `simp` then uses it without a proof
+  step and the kernel re-derives it by unfolding. On big terms prove simp step lemmas with
+  `(rfl)`, `by rfl` or `rw` (ssz-fv: 38 → 964 s, one `(kernel) deep recursion`).
+- **Frame lemmas once, by `cases` + induction**, then apply them, letting unification fill big
+  arguments (`foo _ s`, `rw [foo]`): ten call sites 2.6 s by `simp` vs 0.3 s; restating a 60-op
+  program in `exact` hit the heartbeat limit after 10 s. Relevant to the SSA semantics proofs (G5/G6).
+- **Facts about literal data** (`prog[k]? = some i`, exported rule tables) by `decide`/`rfl`,
+  not `simp [prog]`: 60 lemmas 0.6 s / 1.6 s vs 4.6 s.
+- **`decide +kernel` by default** for closed computations: `decide` hit max recursion at
+  n = 150 where `decide +kernel` handled n = 3000; `native_decide` adds an axiom.
+- **Measure with `theorem`, not `example`:** constants realized inside an `example` are
+  discarded, hiding a 39.4 MB `.olean` (2.8 kB shown). On this loaded machine compare
+  heartbeats (`examples/lib/HB.lean`, `count_hb in`) or CPU, not wall time.
+- **`lake build --no-build <targets>`** names every out-of-date module in one call (exit 3 with
+  Lake 4.34): clifv's fully cached 3,138-module check 27.5 min → 1.9 s.
+- **Hard-linked cache outputs are read-only:** rebuilding over them fails with
+  `permission denied`; unlink a module's outputs first. Don't build the same module in two
+  worktrees at once (clifv serialises with a per-module `flock`).
+- **Opaque contracts for long blocks** (ssz-fv): a monolithic proof failing with kernel deep
+  recursion after ~112 s checked in ~4.5 s split into result/frame/control contracts.
