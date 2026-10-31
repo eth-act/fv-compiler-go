@@ -86,6 +86,7 @@ frontend
 <definitions>                          (the frontend block, see below)
 end
 warn "<text>"                         (zero or more)
+typecmp t<a> t<b> <lt|eq|gt>           (zero or more)
 typeorder <group> <group> …
 eof
 ```
@@ -197,11 +198,15 @@ the field offset is `BADWIDTH`, as for most `FUNC` parameters).
 pseudo-types `Mem`, `Flags`, `Void`, `Int128`, `ResultMem` (`types.TypeMem`, …), in that
 order. `types.Types[k]` for the other basic kinds are the `Config.Types` entries.
 
-`typeorder` (once, at the end of the file) lists every type of the file in ascending
-`types.(*Type).Compare` order; a group `t3=t9` holds types that compare `CMPeq`. Since `Compare`
-is a total preorder, the order restricted to the types of any section is that section's order,
-so a Lean `cmpTyp` is just a rank comparison. (CSE's `cmpVal` and `copyCompatibleType` use
-`Compare`.)
+`typeorder` (once, at the end of the file) lists every type of the file sorted by
+`types.(*Type).Compare` (Go's `sort.SliceStable`); a group `t3=t9` holds types adjacent in that
+order that compare `CMPeq`. `Compare` is not a total preorder (`*byte` is `CMPeq` `*uint8` by
+the byte/uint8 special case, while `cmpsym` orders names by length first, so `*abi.Kind` sorts
+between them, #68), so before it the exporter writes one `typecmp t<a> t<b> <o>` line (`a < b`
+by number, `o` = `Compare(a, b)`) for every pair of the file's types whose `Compare` differs
+from the comparison of their group ranks. `Compare(a, b)` is the `typecmp` entry if present,
+else the rank comparison (`GoFV.SSA.TypeOrder`). (CSE's `cmpVal`, the constant cache and
+`copyCompatibleType` use `Compare`.)
 
 `aux a<n> <tag> "<fmt %v>" <tag-specific>`, where `<fmt %v>` is Go's `fmt.Sprint(aux)` (what
 `LongString` prints inside `{…}`):

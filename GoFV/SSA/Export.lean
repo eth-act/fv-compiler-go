@@ -55,6 +55,9 @@ structure ExportFile where
   frontend : Array Def
   /-- `warn` lines written after the last section (before `typeorder`). -/
   warns : Array GoStr
+  /-- `typecmp` lines: pairs `(a, b, Compare(a, b))`, `a < b` by number, whose `Compare` result
+  disagrees with the `typeorder` ranks (`Compare` is not a total preorder, #68). -/
+  typeCmp : Array (TypeRef × TypeRef × Ordering)
   /-- `typeorder`: groups of `CMPeq` types in ascending `types.(*Type).Compare` order. -/
   typeOrder : Array (Array TypeRef)
   deriving DecidableEq, Inhabited
