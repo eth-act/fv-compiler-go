@@ -1,15 +1,24 @@
 # Agent rules
 
 - Read `docs/PLAN.md` and `LEARNINGS.md` first. Pins: `docs/PINS.md`.
-- Work is organised in GitHub issues on kevaundray/fv-compiler-go. Claim an issue by
-  commenting before starting; reference it in commits and PRs; post progress there.
+- Work is organised in GitHub issues on kevaundray/fv-compiler-go. Claim an issue before
+  starting (`gh issue edit N --add-assignee @me` + a comment naming your agent and branch);
+  reference it in commits and PRs; post progress there. Split large issues into sub-issues.
 - One worktree per agent: `scripts/agent-worktree.sh <name>` → `../fv-compiler-go-wt/<name>`,
   branch `agent/<name>`. Never edit the main checkout. Use absolute paths under your worktree
   for file tools; in bash, `cd` into the worktree in the same command.
-- Every lake/lean/go/test command goes through `scripts/memcap.sh` (default 8G cap). The
-  machine is shared with other heavy projects: never pattern-kill processes, never run more
-  than one heavy build at a time, temporary files under `$root/tmp/<agent>_*`, never `/tmp`.
+- Every lake/lean/go/test command goes through `scripts/memcap.sh` (default cap 8G, shared
+  Lake cache `../gofv-lake-cache`, `LEAN_NUM_THREADS=2`). One heavy process at a time per
+  agent; anything above 8G only under `flock ../gofv-heavy.lock`. The machine is shared with
+  other heavy projects: never pattern-kill (kill only PIDs you started), temporary files under
+  `<worktree>/tmp/`, never `/tmp`. Check `free -g` before large builds.
 - Never `git stash` (shared across worktrees). Commit on your own branch instead.
-- PRs are squash-merged (`gh pr merge --squash`) by the integrator.
-- No `sorry`, no new axioms on main. Generated files say which tool generated them.
+- Merge: the author merges. Once the per-PR checks pass (build of affected modules,
+  parity on the corpus for touched passes, `#print axioms` of new theorems), rebase on
+  origin/main, open the PR with the check results in its body and `gh pr merge --squash`.
+- No `sorry`, no new axioms on main. Every new top-level theorem gets a concrete non-vacuity
+  witness. Generated files say which tool generated them; never hand-edit them.
 - When a change makes a build measurably faster or slower, add an entry to `LEARNINGS.md`.
+- When you stop, post on your issue: merged PRs, unmerged branches and their state, exact new
+  theorem statements, check results, and precise next steps for a continuation agent. When
+  your work is merged, remove your worktree's `.lake`.

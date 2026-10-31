@@ -17,23 +17,29 @@
 # stdout/stderr pass through; one line on stderr says the fallback is in use. No RLIMIT_AS:
 # Lean reserves far more virtual memory than it uses.
 #
-# Why: runaway Lean elaboration or kernel reduction (e.g. `decide`/`rfl` over the exported ISLE
-# rule data) has reached 37-58 GB RSS on this 62 GB machine, which triggered global OOM kills.
-# Those kills aborted the agent harness, which kills every running agent.
+# Why: runaway Lean elaboration or kernel reduction (e.g. `decide`/`rfl` over exported rule
+# data) reached 37-58 GB RSS in clifv, which triggered global OOM kills. Those kills aborted
+# the agent harness, which kills every running agent. This machine is shared.
 set -euo pipefail
-# Shared Lake artifact cache (docs/PLAN.md "Build infrastructure"): with FV_LAKE_CACHE=<dir>, Lake stores each
-# built module in <dir> (content-addressed by its input trace) and hard-links it back into
-# .lake/build, so a worktree whose sources match an earlier build anywhere reuses it instead of
-# rebuilding. <dir> should be on the worktrees' filesystem (hard links; else Lake copies).
-if [ -n "${FV_LAKE_CACHE:-}" ]; then
+# Shared Lake artifact cache (docs/PLAN.md "Build infrastructure"): Lake stores each built
+# module in $FV_LAKE_CACHE (content-addressed by its input trace; default ../gofv-lake-cache,
+# FV_LAKE_CACHE=off disables) and hard-links it back into .lake/build, so a worktree whose
+# sources match an earlier build anywhere reuses it instead of rebuilding. The directory must
+# be on the worktrees' filesystem (hard links; else Lake copies).
+root=$(cd "$(dirname "$0")/.." && pwd)
+main_root=$(git -C "$root" worktree list --porcelain 2>/dev/null | sed -n '1s/^worktree //p')
+FV_LAKE_CACHE=${FV_LAKE_CACHE:-$(dirname "${main_root:-$root}")/gofv-lake-cache}
+if [ "$FV_LAKE_CACHE" != off ]; then
   export LAKE_ARTIFACT_CACHE=true LAKE_RESTORE_ARTIFACTS=true LAKE_CACHE_DIR="$FV_LAKE_CACHE"
 fi
+# One declaration dominates a module's time; more threads cost memory, not time (LEARNINGS.md).
+export LEAN_NUM_THREADS=${LEAN_NUM_THREADS:-2}
 if [ -n "${FV_MEMCAP_OFF:-}" ]; then
   exec "$@"
 fi
 if systemctl --user show-environment >/dev/null 2>&1; then
   # All scopes go into one slice ($FV_SLICE, default gofv.slice) so the sum of every agent's
-  # builds is capped too: the slice unit (~/.config/systemd/user/gofv.slice, see docs/USAGE.md)
+  # builds is capped too: the slice unit (~/.config/systemd/user/gofv.slice, copy of scripts/gofv.slice)
   # sets MemoryMax/MemoryHigh for gofv as a whole, and a runaway kills a gofv module (the
   # scheduler retries it) instead of the global OOM killer picking random processes.
   # Without that unit file systemd creates an uncapped slice, i.e. today's behaviour.

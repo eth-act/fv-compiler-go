@@ -71,8 +71,10 @@ GitHub issues track each milestone and pass (label `milestone:Gn`, `pass`).
 
 ## 5. Build infrastructure
 
-- `scripts/memcap.sh <cmd>`: per-command cgroup cap (`FV_MEMCAP`, default 8G); with
-  `FV_LAKE_CACHE=<dir>` every worktree shares one Lake artifact cache.
+- `scripts/memcap.sh <cmd>`: per-command cgroup cap (`FV_MEMCAP`, default 8G) inside
+  `gofv.slice` (`scripts/gofv.slice`, install into `~/.config/systemd/user/`; total 24G);
+  every worktree shares one Lake artifact cache (`FV_LAKE_CACHE`, default
+  `../gofv-lake-cache`, hard links); `LEAN_NUM_THREADS=2`.
 - `scripts/agent-worktree.sh <name>`: one worktree per agent at `../fv-compiler-go-wt/<name>`,
   branch `agent/<name>`.
 - `perf/`: per-module build time and peak RSS history, kept by the profiler agent
