@@ -53,6 +53,17 @@ avoiding): the problem, the trick, the numbers, where it is used.
   toolchain patches (stuck `match` in `simp`, leanprover/lean4#15755: 25.0 → 2.65 s CPU,
   64.9M → 781k heartbeats in the N = 400 case above); fix the proof, since gates use official Lean.
 
+#### All `.olean`s reproducible across worktrees, thanks to `weakLeanArgs`
+- **Check:** `scripts/perf-record.py --recheck` re-elaborates every module of main 47fa980 in
+  the profiler's worktree with Lake's arguments and compares the `.olean` byte for byte with the
+  copy other agents' worktrees put into the shared cache: 148/148 identical. Without the
+  lakefile's `weakLeanArgs` (d891ea9), `GoFV.SSA.Sem.Pure` and `GoFV.SSA.Analysis.LoopNest`
+  (unused-variable warnings) differ: the warning text with the absolute source path is stored
+  in the `.olean` (+1 kB), so a rebuild in another worktree would invalidate every importer.
+- **Rule:** keep diagnostics-only options in `weakLeanArgs`; the watch loop flags any module
+  whose `.olean` becomes non-reproducible (`repro` column, `docs/PERF.md`). In clifv such a
+  module caused a hidden 3 h CI rebuild (eth-act/clifv#726).
+
 #### Keep a fuel-recursive loop's body in small non-recursive `@[inline]` parts
 - **Problem:** `GoFV.Util.PdqSort.pdqsort` (fuel recursion, a ~30-line loop body with tuple
   `let`s and four recursive calls) took 11.6 s CPU to build, almost all of it `simp`/`split`/

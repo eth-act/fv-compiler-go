@@ -110,7 +110,7 @@ def main():
     scratch = root / "tmp" / "perf-bench"
     scratch.mkdir(parents=True, exist_ok=True)
     cdir, cid = snapshot(a.corpus)
-    env = dict(os.environ, FV_MEMCAP=a.cap, GOFV_BENCH_CORPUS=str(cdir))
+    env = dict(os.environ, FV_MEMCAP=a.cap, GOFV_BENCH_CORPUS=str(cdir), TMPDIR=str(scratch))
     hist = pathlib.Path(a.history)
     known = {}  # (bench, bin_hash) -> latest ok row
     if hist.exists():
