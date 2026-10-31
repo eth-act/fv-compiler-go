@@ -50,3 +50,7 @@ root = "GoFVTest.CopyRelProbe"
 [[lean_exe]]
 name = "sched-probe"
 root = "GoFVTest.SchedProbe"
+
+[[lean_exe]]
+name = "gofv-ssa-opt"
+root = "GoFVTest.Driver.Main"
