@@ -71,3 +71,4 @@ import GoFV.Opt.Prove.IndVar
 import GoFV.Opt.Prove.Downward
 import GoFV.Opt.Prove.Simplify
 import GoFV.Opt.Prove.Pass
+import GoFV.Opt.Decompose

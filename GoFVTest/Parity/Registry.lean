@@ -20,6 +20,7 @@ import GoFV.Opt.BranchElim
 import GoFV.Opt.Opt
 import GoFV.Opt.CSE
 import GoFV.Opt.Prove.Pass
+import GoFV.Opt.Decompose
 
 /-!
 # Registered Lean passes
@@ -64,7 +65,10 @@ def registry : Array PassEntry := #[
   { fn := "phiopt", names := #["phiopt"], run := phioptPass },
   { fn := "branchelim", names := #["branchelim"], run := branchelimPass },
   { fn := "cse", names := #["generic cse"], run := csePass },
-  { fn := "prove", names := #["prove"], run := provePass }
+  { fn := "prove", names := #["prove"], run := provePass },
+  { fn := "decomposeUser", names := #["decompose user"], run := Decompose.decomposeUserPass },
+  { fn := "postExpandCallsDecompose", names := #["decompose builtin"],
+    run := Decompose.postExpandCallsDecomposePass }
 ]
 
 end GoFVTest.Parity
