@@ -1,0 +1,1948 @@
+--- a/src/cmd/compile/internal/ssa/compile.go
++++ b/src/cmd/compile/internal/ssa/compile.go
+@@ -68,7 +68,8 @@
+ 	}
+ 	const logMemStats = false
+ 	gofv := gofvBegin(f) // gofv SSA exporter (GOFV_SSA_EXPORT)
+-	for _, p := range passes {
++	drv := gofvDriverStart(f) // gofv driver: Lean pipeline (GOFV_SSA_DRIVER)
++	for i, p := range passes {
+ 		if gofv != nil && p.name == "lower" {
+ 			gofv.finish()
+ 			gofv = nil
+@@ -76,6 +77,9 @@
+ 		if !f.Config.optimize && !p.required || p.disabled {
+ 			continue
+ 		}
++		if drv != nil && drv.skip(i) {
++			continue
++		}
+ 		f.pass = &p
+ 		phaseName = p.name
+ 		if f.Log() {
+@@ -168,6 +172,10 @@
+ 		fmt.Print(buf.String())
+ 	}
+ 
++	if drv != nil {
++		drv.finish()
++	}
++
+ 	// Squash error printing defer
+ 	phaseName = ""
+ }
+--- a/src/cmd/compile/internal/ssagen/ssa.go
++++ b/src/cmd/compile/internal/ssagen/ssa.go
+@@ -7994,6 +7994,12 @@
+ }
+ 
+ // SplitSlot returns a slot representing the data of parent starting at offset.
++// GOFVDclLen and GOFVDclTruncate let the gofv driver undo the autos SplitSlot made for an
++// import it abandons.
++func (e *ssafn) GOFVDclLen() int { return len(e.curfn.Dcl) }
++
++func (e *ssafn) GOFVDclTruncate(n int) { e.curfn.Dcl = e.curfn.Dcl[:n] }
++
+ func (e *ssafn) SplitSlot(parent *ssa.LocalSlot, suffix string, offset int64, t *types.Type) ssa.LocalSlot {
+ 	node := parent.N
+ 
+--- a/src/cmd/internal/src/xpos.go
++++ b/src/cmd/internal/src/xpos.go
+@@ -18,6 +18,12 @@
+ // NoXPos is a valid unknown position.
+ var NoXPos XPos
+ 
++// GOFVXPos returns the XPos with position base index index and raw line/column/statement
++// bits (gofv driver: importing SSA positions).
++func GOFVXPos(index int32, bits uint32) XPos {
++	return XPos{index, lico(bits)}
++}
++
+ // IsKnown reports whether the position p is known.
+ // XPos.IsKnown() matches Pos.IsKnown() for corresponding
+ // positions.
+--- a/src/cmd/compile/internal/ssa/driver_gofv.go
++++ b/src/cmd/compile/internal/ssa/driver_gofv.go
+@@ -0,0 +1,1882 @@
++// Copyright 2026 The gofv Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++package ssa
++
++// gofv driver (GOFV_SSA_DRIVER): run the Lean generic pipeline (gofv-ssa-opt) in place of
++// the stock passes before lower. The function is exported in the gofv-ssa format (the
++// exporter of export_gofv.go, in process), optimised by gofv-ssa-opt, and the result is
++// imported back into f: values and blocks are rebuilt, types, aux values and local slots
++// are resolved by table number into the compiler's own objects, and objects the Lean
++// passes created are rebuilt through the compiler's constructors. Every import is checked
++// by exporting the imported function again and comparing it with the Lean output byte for
++// byte; on any error, unported pass or mismatch f is left (or restored) as it was and the
++// stock passes run. See docs/DRIVER.md in the gofv repository.
++
++import (
++	"bytes"
++	"cmd/compile/internal/base"
++	"cmd/compile/internal/ir"
++	"cmd/compile/internal/reflectdata"
++	"cmd/compile/internal/types"
++	"cmd/internal/obj"
++	"cmd/internal/src"
++	"errors"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"regexp"
++	"slices"
++	"strconv"
++	"strings"
++	"sync"
++)
++
++type gofvDriverSettings struct {
++	path  string
++	mixed bool
++	pkg   *regexp.Regexp
++	fn    *regexp.Regexp
++	stats string
++	dump  string // GOFV_SSA_DRIVER_DUMP: directory for each run's input and output (debugging)
++	// ported[i]: passes[i] has a Lean port (gofv-ssa-opt --list).
++	ported []bool
++	lower  int
++}
++
++var gofvDriverOnce = sync.OnceValue(func() *gofvDriverSettings {
++	path := os.Getenv("GOFV_SSA_DRIVER")
++	if path == "" {
++		return nil
++	}
++	s := &gofvDriverSettings{path: path, stats: os.Getenv("GOFV_SSA_DRIVER_STATS"), dump: os.Getenv("GOFV_SSA_DRIVER_DUMP")}
++	switch m := os.Getenv("GOFV_SSA_DRIVER_MODE"); m {
++	case "", "full":
++	case "mixed":
++		s.mixed = true
++	default:
++		base.Fatalf("GOFV_SSA_DRIVER_MODE=%q: want full or mixed", m)
++	}
++	if p := os.Getenv("GOFV_SSA_DRIVER_PKG"); p != "" {
++		s.pkg = regexp.MustCompile(p)
++	}
++	if p := os.Getenv("GOFV_SSA_DRIVER_FUNC"); p != "" {
++		s.fn = regexp.MustCompile(p)
++	}
++	out, err := exec.Command(path, "--list").Output()
++	if err != nil {
++		base.Fatalf("gofv driver: %s --list: %v", path, err)
++	}
++	ported := map[string]bool{}
++	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
++		st, name, ok := strings.Cut(l, " ")
++		uq, err := strconv.Unquote(name)
++		if !ok || err != nil {
++			base.Fatalf("gofv driver: bad --list line %q", l)
++		}
++		ported[uq] = st == "ported"
++	}
++	s.ported = make([]bool, len(passes))
++	s.lower = -1
++	for i, p := range passes {
++		if p.name == "lower" {
++			s.lower = i
++			break
++		}
++		lp, known := ported[p.name]
++		if !known {
++			base.Fatalf("gofv driver: gofv-ssa-opt does not know pass %q", p.name)
++		}
++		s.ported[i] = lp
++	}
++	return s
++})
++
++// gofvDriver is the per-function driver state.
++type gofvDriver struct {
++	f   *Func
++	set *gofvDriverSettings
++	// resume is the index in passes of the next pass the stock loop runs; earlier passes
++	// were run by the Lean pipeline (or are being skipped after a successful import).
++	resume int
++	tried  bool
++	// per-function outcome counters (written to GOFV_SSA_DRIVER_STATS)
++	leanPasses, stockPasses int
++	nrun                    int
++	events                  []string
++}
++
++func gofvDriverStart(f *Func) *gofvDriver {
++	set := gofvDriverOnce()
++	if set == nil {
++		return nil
++	}
++	pkg := base.Ctxt.Pkgpath
++	if set.pkg != nil && !set.pkg.MatchString(pkg) {
++		return nil
++	}
++	if set.fn != nil && !set.fn.MatchString(pkg+"."+f.Name) {
++		return nil
++	}
++	return &gofvDriver{f: f, set: set}
++}
++
++// skip reports whether the stock loop skips the enabled pass passes[i]: the Lean pipeline
++// ran it, or runs it now.
++func (d *gofvDriver) skip(i int) bool {
++	if i >= d.set.lower {
++		return false
++	}
++	if i < d.resume {
++		return true
++	}
++	if d.set.mixed {
++		if !d.set.ported[i] {
++			d.stockPasses++
++			return false
++		}
++		d.segment(i)
++		if i >= d.resume {
++			d.stockPasses++ // the segment failed: the stock pass runs
++			return false
++		}
++		return true
++	}
++	if !d.tried {
++		d.tried = true
++		d.segment(i)
++	}
++	if i < d.resume {
++		return true
++	}
++	d.stockPasses++
++	return false
++}
++
++// gofvTypeRounds bounds how often a segment is run: when the Lean passes create types, the
++// segment is run again with those types added to the export, so that the type order
++// (types.Type.Compare, which the Lean passes read from the export) ranks them.
++const gofvTypeRounds = 3
++
++// segment runs gofv-ssa-opt from passes[i] and imports its result. Full mode imports only a
++// complete pipeline; mixed mode also imports the state before an unported or failing pass,
++// which the stock loop then runs.
++func (d *gofvDriver) segment(i int) {
++	f := d.f
++	f.pass = &passes[i] // read by loopnestfor during the import
++	var extras []*types.Type
++	var ex gofvExport
++	var res *gofvResult
++	for round := 0; round < gofvTypeRounds; round++ {
++		ex = gofvExportWith(f, extras)
++		var err error
++		if res, err = d.run(i, ex.x); err != nil {
++			return
++		}
++		if res.file == nil || round+1 == gofvTypeRounds {
++			break
++		}
++		news := gofvNewTypes(ex, f, res)
++		if len(news) == 0 {
++			break
++		}
++		extras = append(extras, news...)
++	}
++	stop := len(passes) // index of the pass the Lean run stopped at
++	switch res.status {
++	case "ok":
++		stop = d.set.lower
++	case "unported", "error":
++		if res.status == "unported" {
++			d.event("unported", res.pass)
++		} else {
++			d.event("error", res.pass+": "+res.msg)
++		}
++		for j := i; j < d.set.lower; j++ {
++			if passes[j].name == res.pass {
++				stop = j
++				break
++			}
++		}
++		if !d.set.mixed || stop == len(passes) || res.file == nil {
++			return
++		}
++	default:
++		d.event("status", res.status)
++		return
++	}
++	n := 0
++	for j := i; j < stop; j++ {
++		if passes[j].disabled || !f.Config.optimize && !passes[j].required {
++			continue
++		}
++		n++
++	}
++	if n == 0 {
++		// Nothing ran (the first pass is unported or failed): nothing to import.
++		return
++	}
++	if err := gofvImport(ex, f, res); err != nil {
++		d.event("import", err.Error())
++		return
++	}
++	d.leanPasses += n
++	d.resume = stop
++}
++
++// gofvExport is one export of f: the exporter (whose tables the import resolves numbers
++// with) and the first aux and type numbers of the frontend block (objects only the frontend
++// block defines; a Lean pass that uses one numbers it afresh).
++type gofvExport struct {
++	x                   *gofvExporter
++	auxFront, typeFront int
++	typeEnd             int // types numbered before this are the export's (incl. the frontend block)
++}
++
++// gofvExportWith exports f as one section "start", with the types extras defined in it too.
++func gofvExportWith(f *Func, extras []*types.Type) gofvExport {
++	x := gofvNewExporter(f, &gofvSettings{})
++	head := x.out.Len()
++	x.defs.Reset()
++	for _, t := range extras {
++		x.typ(t)
++	}
++	extra := x.defs.String()
++	x.section("start")
++	if extra != "" {
++		// Definitions may come in any order before the f line: put them right after the
++		// section's pass line.
++		b := x.out.Bytes()
++		nl := head + bytes.IndexByte(b[head:], '\n') + 1
++		out := make([]byte, 0, len(b)+len(extra))
++		out = append(append(append(out, b[:nl]...), extra...), b[nl:]...)
++		x.out.Reset()
++		x.out.Write(out)
++	}
++	e := gofvExport{x: x, auxFront: x.nAux + 1, typeFront: len(x.typeList) + 1}
++	x.tail()
++	e.typeEnd = len(x.typeList)
++	return e
++}
++
++// run runs gofv-ssa-opt from passes[i] on x's export.
++func (d *gofvDriver) run(i int, x *gofvExporter) (*gofvResult, error) {
++	args := []string{"--from", passes[i].name}
++	if d.set.mixed {
++		args = append(args, "--partial")
++	}
++	args = append(args, "/dev/stdin")
++	cmd := exec.Command(d.set.path, args...)
++	cmd.Stdin = bytes.NewReader(x.out.Bytes())
++	var stderr bytes.Buffer
++	cmd.Stderr = &stderr
++	out, err := cmd.Output()
++	if d.set.dump != "" {
++		d.nrun++
++		stem := filepath.Join(d.set.dump, filepath.FromSlash(base.Ctxt.Pkgpath), fmt.Sprintf("%s,%d.%d", gofvFileName(d.f.Name), d.f.ABISelf.Which(), d.nrun))
++		if err := os.MkdirAll(filepath.Dir(stem), 0o777); err == nil {
++			os.WriteFile(stem+".in.ssa", x.out.Bytes(), 0o666)
++			os.WriteFile(stem+".out", out, 0o666)
++		}
++	}
++	if err != nil {
++		d.event("exec", fmt.Sprintf("%v: %s", err, firstLine(stderr.String())))
++		return nil, err
++	}
++	res, err := gofvParseResult(out)
++	if err != nil {
++		d.event("parse", err.Error())
++		return nil, err
++	}
++	return res, nil
++}
++
++// gofvNewTypes builds the compiler's objects for the types res defines past x's tables
++// (nil if there are none or one cannot be built). x is not used afterwards.
++func gofvNewTypes(ex gofvExport, f *Func, res *gofvResult) (ts []*types.Type) {
++	x := ex.x
++	defer func() {
++		if recover() != nil {
++			ts = nil
++		}
++	}()
++	im := newGofvImporter(ex, f, res)
++	for _, d := range res.defs {
++		if d.kind != 't' || d.n <= len(x.typeList) {
++			continue
++		}
++		t, err := im.typeN(d.n)
++		if err != nil {
++			return nil
++		}
++		ts = append(ts, t)
++	}
++	return ts
++}
++
++func firstLine(s string) string {
++	l, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
++	return l
++}
++
++func (d *gofvDriver) event(kind, detail string) {
++	d.events = append(d.events, kind+" "+strconv.Quote(detail))
++}
++
++// finish appends this function's outcome to GOFV_SSA_DRIVER_STATS: one line of
++// tab-separated fields "<pkg>" "<func>" <abi> lean=<n> stock=<n> [<kind> "<detail>"]...
++// (n = passes before lower run by Lean and by the stock compiler; one field per event).
++func (d *gofvDriver) finish() {
++	if d.set.stats == "" {
++		return
++	}
++	line := fmt.Sprintf("%s\t%s\t%d\tlean=%d\tstock=%d", strconv.Quote(base.Ctxt.Pkgpath), strconv.Quote(d.f.Name),
++		d.f.ABISelf.Which(), d.leanPasses, d.stockPasses)
++	for _, e := range d.events {
++		line += "\t" + e
++	}
++	fd, err := os.OpenFile(d.set.stats, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
++	if err != nil {
++		base.Fatalf("gofv driver: %v", err)
++	}
++	_, err = fd.Write([]byte(line + "\n")) // one write: atomic append across compiles
++	if cerr := fd.Close(); err == nil {
++		err = cerr
++	}
++	if err != nil {
++		base.Fatalf("gofv driver: %v", err)
++	}
++}
++
++// ---------------------------------------------------------------------------------------
++// Reading gofv-ssa-opt's output.
++
++type gofvLine struct {
++	raw  string
++	toks []string // tokens; strings decoded
++}
++
++func (l *gofvLine) tag() string { return l.toks[0] }
++
++// gofvDefn is one definition (head line and its sub-lines) of the result section.
++type gofvDefn struct {
++	kind  byte // 't', 'a', 's', 'p'
++	n     int
++	lines []*gofvLine
++	text  string // the definition's lines, as printed
++}
++
++type gofvResult struct {
++	status, pass, msg string
++	file              []*gofvLine
++	defs              []*gofvDefn
++	body              []*gofvLine // f ... (up to, excluding, warn/end)
++	bodyText          string
++}
++
++func gofvTokens(s string) ([]string, error) {
++	var toks []string
++	for i := 0; i < len(s); {
++		if s[i] == '"' {
++			var b strings.Builder
++			j := i + 1
++			for ; j < len(s) && s[j] != '"'; j++ {
++				c := s[j]
++				if c != '\\' {
++					b.WriteByte(c)
++					continue
++				}
++				if j+1 >= len(s) {
++					return nil, fmt.Errorf("bad escape in %q", s)
++				}
++				switch s[j+1] {
++				case '"', '\\':
++					b.WriteByte(s[j+1])
++					j++
++				case 'x':
++					if j+3 >= len(s) {
++						return nil, fmt.Errorf("bad escape in %q", s)
++					}
++					v, err := strconv.ParseUint(s[j+2:j+4], 16, 8)
++					if err != nil {
++						return nil, err
++					}
++					b.WriteByte(byte(v))
++					j += 3
++				default:
++					return nil, fmt.Errorf("bad escape in %q", s)
++				}
++			}
++			if j >= len(s) {
++				return nil, fmt.Errorf("unterminated string in %q", s)
++			}
++			toks = append(toks, b.String())
++			i = j + 1
++		} else {
++			j := strings.IndexByte(s[i:], ' ')
++			if j < 0 {
++				j = len(s) - i
++			}
++			toks = append(toks, s[i:i+j])
++			i += j
++		}
++		if i < len(s) {
++			if s[i] != ' ' {
++				return nil, fmt.Errorf("missing space in %q", s)
++			}
++			i++
++		}
++	}
++	return toks, nil
++}
++
++func gofvParseResult(out []byte) (*gofvResult, error) {
++	text := string(out)
++	status, rest, _ := strings.Cut(text, "\n")
++	st, err := gofvTokens(status)
++	if err != nil || len(st) < 2 || st[0] != "status" {
++		return nil, fmt.Errorf("bad status line %q", status)
++	}
++	r := &gofvResult{status: st[1]}
++	if len(st) > 2 {
++		r.pass = st[2]
++	}
++	if len(st) > 3 {
++		r.msg = st[3]
++	}
++	if rest == "" {
++		return r, nil
++	}
++	lines := strings.Split(strings.TrimSuffix(rest, "\n"), "\n")
++	inBody := false
++	var body strings.Builder
++	for _, s := range lines {
++		toks, err := gofvTokens(s)
++		if err != nil {
++			return nil, err
++		}
++		if len(toks) == 0 {
++			return nil, fmt.Errorf("empty line")
++		}
++		l := &gofvLine{raw: s, toks: toks}
++		r.file = append(r.file, l)
++		switch tag := toks[0]; {
++		case tag == "f":
++			inBody = true
++		case tag == "warn" || tag == "end" || tag == "typeorder" || tag == "eof":
++			inBody = false
++		case !inBody && (tag == "type" || tag == "aux" || tag == "slot" || tag == "posbase"):
++			n, err := strconv.Atoi(toks[1][1:])
++			if err != nil {
++				return nil, fmt.Errorf("bad definition %q", s)
++			}
++			r.defs = append(r.defs, &gofvDefn{kind: toks[1][0], n: n})
++		}
++		if inBody {
++			r.body = append(r.body, l)
++			body.WriteString(s + "\n")
++			continue
++		}
++		switch toks[0] {
++		case "type", "aux", "slot", "posbase", "field", "abiparam", "reloc", "rtype":
++			if len(r.defs) == 0 {
++				return nil, fmt.Errorf("sub-line before a definition: %q", s)
++			}
++			d := r.defs[len(r.defs)-1]
++			d.lines = append(d.lines, l)
++			d.text += s + "\n"
++		}
++	}
++	if len(r.body) == 0 {
++		return nil, fmt.Errorf("no function in the result")
++	}
++	r.bodyText = body.String()
++	return r, nil
++}
++
++// ---------------------------------------------------------------------------------------
++// Importing.
++
++var gofvOpsOnce = sync.OnceValue(func() map[string]Op {
++	m := map[string]Op{}
++	for i := range opcodeTable {
++		if n := opcodeTable[i].name; n != "" {
++			if _, dup := m[n]; !dup {
++				m[n] = Op(i)
++			}
++		}
++	}
++	return m
++})
++
++var gofvKindsOnce = sync.OnceValue(func() map[string]BlockKind {
++	m := map[string]BlockKind{}
++	for i := range blockString {
++		if n := blockString[i]; n != "" {
++			if _, dup := m[n]; !dup {
++				m[n] = BlockKind(i)
++			}
++		}
++	}
++	return m
++})
++
++// gofvImporter resolves the result's references into compiler objects. x is the exporter
++// that wrote the input: its tables map numbers of existing objects to objects; new objects
++// are entered into them at the Lean numbers.
++type gofvImporter struct {
++	x      *gofvExporter
++	ex     gofvExport
++	f      *Func
++	res    *gofvResult
++	defs   map[[2]int]*gofvDefn // (kind, n) -> definition in the result
++	auxObj map[int]Aux
++	slotOb map[int]*LocalSlot
++	busy   map[[2]int]bool
++	err error // buildType's failed reference
++	// types: the object used for each existing type number
++	types map[int]*types.Type
++	// placeholder: entries of x.slots that only hold a number free (see slotN)
++	placeholder map[*LocalSlot]bool
++	blocks map[ID]*Block
++	values map[ID]*Value
++	// undo restores aux objects mutated in place (AuxCall.Fn redefinitions).
++	undo []func()
++}
++
++func gofvKey(kind byte, n int) [2]int { return [2]int{int(kind), n} }
++
++func gofvRef(tok string, prefix byte) (int, bool, error) {
++	if tok == "-" {
++		return 0, false, nil
++	}
++	if len(tok) < 2 || tok[0] != prefix {
++		return 0, false, fmt.Errorf("bad %c reference %q", prefix, tok)
++	}
++	n, err := strconv.Atoi(tok[1:])
++	if err != nil {
++		return 0, false, fmt.Errorf("bad %c reference %q", prefix, tok)
++	}
++	return n, true, nil
++}
++
++func (im *gofvImporter) typ(tok string) (*types.Type, error) {
++	n, ok, err := gofvRef(tok, 't')
++	if err != nil || !ok {
++		return nil, err
++	}
++	return im.typeN(n)
++}
++
++func (im *gofvImporter) typeN(n int) (*types.Type, error) {
++	x := im.x
++	if t := im.types[n]; t != nil {
++		return t, nil
++	}
++	if n >= 1 && n <= len(x.typeList) && x.typeList[n-1] != nil {
++		return x.typeList[n-1], nil
++	}
++	d := im.defs[gofvKey('t', n)]
++	if d == nil {
++		return nil, fmt.Errorf("type t%d: no definition", n)
++	}
++	k := gofvKey('t', n)
++	if im.busy[k] {
++		return nil, fmt.Errorf("type t%d: recursive new type", n)
++	}
++	im.busy[k] = true
++	defer delete(im.busy, k)
++	h := d.lines[0].toks // type t<n> <kind> <size> <align> <ptrdata> <flags> "<str>" "<sym>" tail...
++	if len(h) < 9 {
++		return nil, fmt.Errorf("type t%d: short line", n)
++	}
++	kind, str, tail := h[2], h[7], h[9:]
++	var t *types.Type
++	// A type of the export's frontend block (a symbol's type info that a pass copied from
++	// the frontend) is the compiler's object of that block, at the Lean number.
++	for j := im.ex.typeFront - 1; j < len(x.typeList) && j < im.ex.typeEnd; j++ {
++		c := x.typeList[j]
++		if c != nil && c.Kind().String() == kind && gofvTypeString(c) == str &&
++			(!c.GOFVSizeKnown() || types.TypeSymName(c) == h[8]) {
++			t = c
++			break
++		}
++	}
++	if t != nil {
++		// Claim number n for t, then resolve the types the Lean definition refers to: they may
++		// be frontend types the pass copied to new numbers too (possibly t itself, through a
++		// recursive type), which the rendering must use.
++		for p, m := range x.types {
++			if m == n {
++				delete(x.types, p)
++			}
++		}
++		x.types[t] = n
++		x.typeKeys[x.typeKey(t)] = n
++		refs := slices.Clone(tail)
++		for _, l := range d.lines[1:] {
++			if l.tag() == "field" && len(l.toks) > 3 {
++				refs = append(refs, l.toks[3])
++			}
++		}
++		for _, r := range refs {
++			for _, r := range strings.Split(r, ",") {
++				if len(r) > 1 && r[0] == 't' {
++					if m, _, _ := gofvRef(r, 't'); im.busy[gofvKey('t', m)] {
++						continue // being built: its number is claimed
++					}
++					if _, err := im.typ(r); err != nil {
++						return nil, err
++					}
++				}
++			}
++		}
++	} else {
++		t = im.buildType(n, kind, str, tail)
++	}
++	if im.err != nil {
++		err := im.err
++		im.err = nil
++		return nil, err
++	}
++	if t == nil {
++		return nil, fmt.Errorf("type t%d: cannot build a new %s %q", n, kind, str)
++	}
++	if got, err := im.renderType(n, t); err != nil {
++		return nil, err
++	} else if got != d.text {
++		return nil, fmt.Errorf("type t%d: rebuilt as\n%sLean:\n%s", n, got, d.text)
++	}
++	return t, nil
++}
++
++func gofvTypeString(t *types.Type) string {
++	s, _ := gofvTry(t.String)
++	return s
++}
++
++// buildType makes a new type with the compiler's constructors (nil if it cannot; im.err set
++// on a failed reference).
++func (im *gofvImporter) buildType(n int, kind, str string, tail []string) (t *types.Type) {
++	fail := func(err error) *types.Type {
++		im.err = err
++		return nil
++	}
++	switch kind {
++	case "PTR", "SLICE":
++		e, err := im.typ(tail[0])
++		if err != nil {
++			return fail(err)
++		}
++		if kind == "PTR" {
++			t = types.NewPtr(e)
++		} else {
++			t = types.NewSlice(e)
++		}
++	case "ARRAY":
++		e, err := im.typ(tail[0])
++		if err != nil {
++			return fail(err)
++		}
++		ne, err := strconv.ParseInt(tail[1], 10, 64)
++		if err != nil {
++			return fail(err)
++		}
++		t = types.NewArray(e, ne)
++	case "TUPLE":
++		a, err := im.typ(tail[0])
++		if err != nil {
++			return fail(err)
++		}
++		b, err := im.typ(tail[1])
++		if err != nil {
++			return fail(err)
++		}
++		t = types.NewTuple(a, b)
++	case "RESULTS":
++		var ts []*types.Type
++		if tail[1] != "-" {
++			for _, r := range strings.Split(tail[1], ",") {
++				e, err := im.typ(r)
++				if err != nil {
++					return fail(err)
++				}
++				ts = append(ts, e)
++			}
++		}
++		t = types.NewResults(ts)
++	case "SSA":
++		for _, c := range []*types.Type{types.TypeMem, types.TypeFlags, types.TypeVoid, types.TypeInt128, types.TypeResultMem} {
++			if c.String() == str {
++				t = c
++			}
++		}
++	default:
++		for _, c := range types.Types {
++			if c != nil && c.Kind().String() == kind && c.String() == str {
++				t = c
++				break
++			}
++		}
++	}
++	return t
++}
++
++// renderType numbers t as n and renders its definition with the exporter (which numbers a
++// new type len(typeList)+1; the types t refers to are numbered already). t may already have
++// a number m: as a frontend-block type (it takes the Lean number) or m == n (a redefinition).
++func (im *gofvImporter) renderType(n int, t *types.Type) (string, error) {
++	x := im.x
++	key := x.typeKey(t)
++	if m, ok := x.typeKeys[key]; ok && m != n && m < im.ex.typeFront {
++		return "", fmt.Errorf("type t%d: the compiler's object is t%d", n, m)
++	}
++	for p, m := range x.types {
++		if m == n || p == t {
++			delete(x.types, p)
++		}
++	}
++	delete(x.typeKeys, key)
++	for len(x.typeList) < n {
++		x.typeList = append(x.typeList, nil)
++	}
++	later := slices.Clone(x.typeList[n:])
++	x.typeList = x.typeList[:n-1]
++	x.defs.Reset()
++	got := x.typ(t)
++	x.typeList = append(x.typeList[:n], later...)
++	if got != fmt.Sprintf("t%d", n) {
++		return "", fmt.Errorf("type t%d: the compiler's object is %s", n, got)
++	}
++	im.types[n] = t
++	return x.defs.String(), nil
++}
++
++func (im *gofvImporter) aux(tok string) (Aux, error) {
++	n, ok, err := gofvRef(tok, 'a')
++	if err != nil || !ok {
++		return nil, err
++	}
++	return im.auxN(n)
++}
++
++func (im *gofvImporter) auxN(n int) (Aux, error) {
++	if a, ok := im.auxObj[n]; ok {
++		return a, nil
++	}
++	d := im.defs[gofvKey('a', n)]
++	if d == nil {
++		return nil, fmt.Errorf("aux a%d: no definition", n)
++	}
++	k := gofvKey('a', n)
++	if im.busy[k] {
++		return nil, fmt.Errorf("aux a%d: recursive new aux", n)
++	}
++	im.busy[k] = true
++	defer delete(im.busy, k)
++	h := d.lines[0].toks // aux a<n> <tag> "<render>" tail...
++	if len(h) < 4 {
++		return nil, fmt.Errorf("aux a%d: short line", n)
++	}
++	tag, tail := h[2], h[4:]
++	var a Aux
++	switch tag {
++	case "str":
++		a = stringAux(tail[0])
++	case "int":
++		v, err := strconv.ParseInt(tail[0], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		a = int64Aux(v)
++	case "mark":
++		a = AuxMark
++	case "pbc":
++		v, err := strconv.ParseInt(tail[0], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		a = PanicBoundsC{C: v}
++	case "pbcc":
++		v, err := strconv.ParseInt(tail[0], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		w, err := strconv.ParseInt(tail[1], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		a = PanicBoundsCC{Cx: v, Cy: w}
++	case "type":
++		t, err := im.typ(tail[0])
++		if err != nil {
++			return nil, err
++		}
++		a = t
++	case "nameoff":
++		nm, err := im.aux(tail[0])
++		if err != nil {
++			return nil, err
++		}
++		name, ok := nm.(*ir.Name)
++		if !ok {
++			return nil, fmt.Errorf("aux a%d: nameoff of a non-name", n)
++		}
++		off, err := strconv.ParseInt(tail[1], 10, 64)
++		if err != nil {
++			return nil, err
++		}
++		a = &AuxNameOffset{Name: name, Offset: off}
++	case "sym":
++		s, err := im.sym(n, tail)
++		if err != nil {
++			return nil, err
++		}
++		a = s
++	case "call":
++		c, err := im.call(n, d, tail, nil)
++		if err != nil {
++			return nil, err
++		}
++		a = c
++	case "name":
++		// Names are created by fe.SplitSlot, together with their slot (see slotN).
++		for _, sd := range im.res.defs {
++			if sd.kind == 's' && sd.lines[0].toks[2] == fmt.Sprintf("a%d", n) {
++				ls, err := im.slotN(sd.n)
++				if err != nil {
++					return nil, err
++				}
++				if got, ok := im.auxObj[n]; ok && got == Aux(ls.N) {
++					return got, nil
++				}
++			}
++		}
++		return nil, fmt.Errorf("aux a%d: new ir.Name not made by a slot split", n)
++	default:
++		return nil, fmt.Errorf("aux a%d: cannot build a new %s", n, tag)
++	}
++	return a, im.enterAux(n, a, d)
++}
++
++// enterAux numbers the new aux a as n and checks its rendering against the Lean definition.
++func (im *gofvImporter) enterAux(n int, a Aux, d *gofvDefn) error {
++	x := im.x
++	if t, isType := a.(*types.Type); isType {
++		tn := x.types[t]
++		if m, seen := x.auxTypes[tn]; seen && m != n {
++			return fmt.Errorf("aux a%d: type aux already numbered a%d", n, m)
++		}
++		x.auxTypes[tn] = n
++	} else {
++		if m, seen := x.aux[a]; seen && m != n && m < im.ex.auxFront {
++			return fmt.Errorf("aux a%d: the compiler's object is a%d", n, m)
++		}
++		x.aux[a] = n // an object of the frontend block takes the Lean number
++	}
++	if n > x.nAux {
++		x.nAux = n
++	}
++	im.auxObj[n] = a
++	x.defs.Reset()
++	got := x.auxDef(n, a)
++	if x.defs.Len() != 0 {
++		return fmt.Errorf("aux a%d: rendering defines new objects:\n%s", n, x.defs.String())
++	}
++	if got != d.text && !gofvSameSym(got, d) {
++		return fmt.Errorf("aux a%d: rebuilt as\n%sLean:\n%s", n, got, d.text)
++	}
++	x.auxLast[n] = got
++	return nil
++}
++
++// gofvSameSym reports whether the rendering got of a new symbol names the symbol d defines.
++// The symbol is the frontend's (fe.Syslook, reflectdata.TypeLinksym, by name): its other
++// fields (type info, contents) are what the frontend has at this point, which depends on what
++// the concurrent compilation has written.
++func gofvSameSym(got string, d *gofvDefn) bool {
++	h := d.lines[0].toks // aux a<n> sym "<render>" "<name>" <abi> ...
++	if len(h) < 6 || h[2] != "sym" {
++		return false
++	}
++	head, _, _ := strings.Cut(got, "\n")
++	g, err := gofvTokens(head)
++	return err == nil && len(g) >= 6 && slices.Equal(g[:6], h[:6])
++}
++
++// sym finds or creates the *obj.LSym of a new sym aux the way the stock passes obtain it:
++// fe.Syslook for the runtime symbols of the config, reflectdata.TypeLinksym for type
++// descriptors (which also makes the linker emit them), else by name.
++func (im *gofvImporter) sym(n int, tail []string) (*obj.LSym, error) {
++	name := tail[0]
++	abiN, err := strconv.Atoi(tail[1])
++	if err != nil {
++		return nil, err
++	}
++	for _, short := range []string{"writeBarrier", "wbZero", "wbMove", "cgoCheckPtrWrite", "cgoCheckMemmove", "goschedguarded"} {
++		if "runtime."+short == name {
++			if s := im.f.fe.Syslook(short); s.Name == name && int(s.ABI()) == abiN {
++				return s, nil
++			}
++		}
++	}
++	if tn, ok := strings.CutPrefix(name, "type:"); ok {
++		for _, t := range im.x.typeList {
++			if t != nil && t.GOFVSizeKnown() && types.TypeSymName(t) == tn {
++				return reflectdata.TypeLinksym(t), nil
++			}
++		}
++		return nil, fmt.Errorf("aux a%d: no type for symbol %s", n, name)
++	}
++	return base.Ctxt.LookupABI(name, obj.ABI(abiN)), nil
++}
++
++// call builds a new *AuxCall (or, with old != nil, checks a redefinition of old) from a
++// call definition: Fn, and the ABI analysis of the parameter and result types.
++func (im *gofvImporter) call(n int, d *gofvDefn, tail []string, old *AuxCall) (*AuxCall, error) {
++	// call "<render>" <fn a|-> <abi|-> <nin> <nout> ...
++	var fn *obj.LSym
++	if tail[0] != "-" {
++		a, err := im.aux(tail[0])
++		if err != nil {
++			return nil, err
++		}
++		s, ok := a.(*obj.LSym)
++		if !ok {
++			return nil, fmt.Errorf("aux a%d: call of a non-symbol", n)
++		}
++		fn = s
++	}
++	if old != nil {
++		if old.Fn != fn {
++			prev := old.Fn
++			old.Fn = fn
++			im.undo = append(im.undo, func() { old.Fn = prev })
++		}
++		return old, nil
++	}
++	if tail[1] == "-" {
++		return &AuxCall{Fn: fn}, nil
++	}
++	var cfg = im.f.ABI0
++	if tail[1] == "1" {
++		cfg = im.f.ABI1
++	}
++	var ins, outs []*types.Type
++	for _, l := range d.lines[1:] {
++		if l.tag() != "abiparam" {
++			continue
++		}
++		t, err := im.typ(l.toks[3])
++		if err != nil {
++			return nil, err
++		}
++		if l.toks[1] == "in" {
++			ins = append(ins, t)
++		} else {
++			outs = append(outs, t)
++		}
++	}
++	return &AuxCall{Fn: fn, abiInfo: cfg.ABIAnalyzeTypes(ins, outs)}, nil
++}
++
++func (im *gofvImporter) slot(tok string) (*LocalSlot, error) {
++	n, ok, err := gofvRef(tok, 's')
++	if err != nil || !ok {
++		return nil, err
++	}
++	return im.slotN(n)
++}
++
++func (im *gofvImporter) slotN(n int) (*LocalSlot, error) {
++	if s, ok := im.slotOb[n]; ok {
++		return s, nil
++	}
++	d := im.defs[gofvKey('s', n)]
++	if d == nil {
++		return nil, fmt.Errorf("slot s%d: no definition", n)
++	}
++	k := gofvKey('s', n)
++	if im.busy[k] {
++		return nil, fmt.Errorf("slot s%d: recursive", n)
++	}
++	im.busy[k] = true
++	defer delete(im.busy, k)
++	h := d.lines[0].toks // slot s<n> a<name> t<type> <off> <splitof s|-> <splitoffset>
++	t, err := im.typ(h[3])
++	if err != nil {
++		return nil, err
++	}
++	off, err := strconv.ParseInt(h[4], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	parent, err := im.slot(h[5])
++	if err != nil {
++		return nil, err
++	}
++	splitOff, err := strconv.ParseInt(h[6], 10, 64)
++	if err != nil {
++		return nil, err
++	}
++	an, _, err := gofvRef(h[2], 'a')
++	if err != nil {
++		return nil, err
++	}
++	var ls LocalSlot
++	if _, known := im.auxObj[an]; !known && im.defs[gofvKey('a', an)] != nil &&
++		im.defs[gofvKey('a', an)].lines[0].toks[2] == "name" {
++		// A new auto: fe.SplitSlot of the parent, with the suffix the new name adds.
++		if parent == nil || parent.N == nil || parent.N.Sym() == nil {
++			return nil, fmt.Errorf("slot s%d: new name without a parent slot", n)
++		}
++		newName := im.defs[gofvKey('a', an)].lines[0].toks[4]
++		pn := parent.N.Sym().Name
++		if !strings.HasPrefix(newName, pn) {
++			return nil, fmt.Errorf("slot s%d: name %q does not extend %q", n, newName, pn)
++		}
++		ls = im.f.fe.SplitSlot(parent, newName[len(pn):], splitOff, t)
++		if ls.N == nil || ls.N == parent.N {
++			return nil, fmt.Errorf("slot s%d: SplitSlot did not make a new name", n)
++		}
++		if err := im.enterAux(an, ls.N, im.defs[gofvKey('a', an)]); err != nil {
++			return nil, err
++		}
++	} else {
++		a, err := im.auxN(an)
++		if err != nil {
++			return nil, err
++		}
++		name, ok := a.(*ir.Name)
++		if !ok {
++			return nil, fmt.Errorf("slot s%d: name is not an ir.Name", n)
++		}
++		ls = LocalSlot{N: name, Type: t, Off: off, SplitOf: parent, SplitOffset: splitOff}
++	}
++	if ls.Type != t || ls.Off != off || ls.SplitOf != parent || ls.SplitOffset != splitOff {
++		return nil, fmt.Errorf("slot s%d: SplitSlot made %v", n, ls)
++	}
++	p := &ls
++	x := im.x
++	// The exporter numbers a new slot len(x.slots)+1: hide the slots numbered n and up (the
++	// parent may have a higher number), fill the gaps below n with placeholders.
++	var later []*LocalSlot
++	used := map[int]bool{}
++	for s, m := range x.slots {
++		switch {
++		case m == n && im.placeholder[s]:
++			delete(x.slots, s)
++			delete(im.placeholder, s)
++		case m == n:
++			return nil, fmt.Errorf("slot s%d: number taken", n)
++		case m > n:
++			later = append(later, s)
++		default:
++			used[m] = true
++		}
++	}
++	laterN := make([]int, len(later))
++	for j, s := range later {
++		laterN[j] = x.slots[s]
++		delete(x.slots, s)
++	}
++	for m := 1; m < n; m++ {
++		if !used[m] {
++			ph := &LocalSlot{}
++			x.slots[ph] = m
++			im.placeholder[ph] = true
++		}
++	}
++	x.defs.Reset()
++	got := x.slot(p)
++	for j, s := range later {
++		x.slots[s] = laterN[j]
++	}
++	if got != fmt.Sprintf("s%d", n) || x.defs.String() != d.text {
++		return nil, fmt.Errorf("slot s%d: rebuilt as %s\n%sLean:\n%s", n, got, x.defs.String(), d.text)
++	}
++	im.slotOb[n] = p
++	return p, nil
++}
++
++func gofvPos(tok string) (src.XPos, error) {
++	// p<index>:<line>:<col>:<stmt>:<xlogue>
++	ps := strings.Split(tok, ":")
++	if len(ps) != 5 || len(ps[0]) < 2 || ps[0][0] != 'p' {
++		return src.NoXPos, fmt.Errorf("bad position %q", tok)
++	}
++	var v [5]uint64
++	for i, p := range ps {
++		if i == 0 {
++			p = p[1:]
++		}
++		x, err := strconv.ParseUint(p, 10, 32)
++		if err != nil {
++			return src.NoXPos, fmt.Errorf("bad position %q", tok)
++		}
++		v[i] = x
++	}
++	return src.GOFVXPos(int32(v[0]), uint32(v[1]<<12|v[2]<<4|v[4]<<2|v[3])), nil
++}
++
++func (im *gofvImporter) block(tok string) (*Block, error) {
++	n, ok, err := gofvRef(tok, 'b')
++	if err != nil || !ok {
++		return nil, err
++	}
++	b := im.blocks[ID(n)]
++	if b == nil {
++		return nil, fmt.Errorf("unknown block %s", tok)
++	}
++	return b, nil
++}
++
++func (im *gofvImporter) valueList(tok string) ([]*Value, error) {
++	if tok == "-" {
++		return nil, nil
++	}
++	var vs []*Value
++	for _, r := range strings.Split(tok, ",") {
++		n, _, err := gofvRef(r, 'v')
++		if err != nil {
++			return nil, err
++		}
++		v := im.values[ID(n)]
++		if v == nil {
++			return nil, fmt.Errorf("unknown value %s in %s", r, tok)
++		}
++		vs = append(vs, v)
++	}
++	return vs, nil
++}
++
++func (im *gofvImporter) edges(tok string) ([]Edge, error) {
++	if tok == "-" {
++		return nil, nil
++	}
++	var es []Edge
++	for _, r := range strings.Split(tok, ",") {
++		bs, is, ok := strings.Cut(r, ":")
++		if !ok {
++			return nil, fmt.Errorf("bad edge %q", r)
++		}
++		b, err := im.block(bs)
++		if err != nil {
++			return nil, err
++		}
++		i, err := strconv.Atoi(is)
++		if err != nil {
++			return nil, err
++		}
++		es = append(es, Edge{b: b, i: i})
++	}
++	return es, nil
++}
++
++// inlineSlot parses a LocalSlot written inline: a<name>/t<type>/<off>/<splitof s|->/<splitoffset>.
++func (im *gofvImporter) inlineSlot(s string) (LocalSlot, error) {
++	ps := strings.Split(s, "/")
++	if len(ps) != 5 {
++		return LocalSlot{}, fmt.Errorf("bad slot %q", s)
++	}
++	a, err := im.aux(ps[0])
++	if err != nil {
++		return LocalSlot{}, err
++	}
++	name, _ := a.(*ir.Name)
++	t, err := im.typ(ps[1])
++	if err != nil {
++		return LocalSlot{}, err
++	}
++	off, err := strconv.ParseInt(ps[2], 10, 64)
++	if err != nil {
++		return LocalSlot{}, err
++	}
++	parent, err := im.slot(ps[3])
++	if err != nil {
++		return LocalSlot{}, err
++	}
++	so, err := strconv.ParseInt(ps[4], 10, 64)
++	if err != nil {
++		return LocalSlot{}, err
++	}
++	return LocalSlot{N: name, Type: t, Off: off, SplitOf: parent, SplitOffset: so}, nil
++}
++
++// gofvSizeScore counts the calculated sizes of t and of its elements, depth levels deep.
++func gofvSizeScore(t *types.Type, depth int) int {
++	if t == nil || depth == 0 || !t.GOFVSizeKnown() {
++		return 0
++	}
++	n := 1
++	switch t.Kind() {
++	case types.TPTR, types.TSLICE, types.TARRAY, types.TCHAN:
++		n += gofvSizeScore(t.Elem(), depth-1)
++	case types.TSTRUCT:
++		for _, f := range t.Fields() {
++			n += gofvSizeScore(f.Type, depth-1)
++		}
++	}
++	return n
++}
++
++func newGofvImporter(ex gofvExport, f *Func, res *gofvResult) *gofvImporter {
++	x := ex.x
++	im := &gofvImporter{x: x, ex: ex, f: f, res: res, defs: map[[2]int]*gofvDefn{}, auxObj: map[int]Aux{},
++		slotOb: map[int]*LocalSlot{}, busy: map[[2]int]bool{}, placeholder: map[*LocalSlot]bool{}, types: map[int]*types.Type{}, blocks: map[ID]*Block{}, values: map[ID]*Value{}}
++	for a, n := range x.aux {
++		im.auxObj[n] = a
++	}
++	// Several identical *types.Type objects can share a number (export_gofv.go typeKey), and
++	// whether their size (or their element's) is calculated depends on how they were reached:
++	// use the one with the most sizes known, as the stock code that calls Size() (e.g. lower's
++	// LocalAddr rule, on the element of a pointer) had such an object.
++	score := map[int]int{}
++	for t, n := range x.types {
++		if b, sc := im.types[n], gofvSizeScore(t, 4); b == nil || sc > score[n] {
++			im.types[n], score[n] = t, sc
++		}
++	}
++	for tn, n := range x.auxTypes {
++		im.auxObj[n] = im.types[tn]
++	}
++	for s, n := range x.slots {
++		im.slotOb[n] = s
++	}
++	for _, d := range res.defs {
++		im.defs[gofvKey(d.kind, d.n)] = d
++	}
++	return im
++}
++
++// gofvDcl is implemented by ssagen's frontend: the length of Curfn.Dcl, which fe.SplitSlot
++// appends to, and its truncation.
++type gofvDcl interface {
++	GOFVDclLen() int
++	GOFVDclTruncate(int)
++}
++
++// gofvSaved is the part of a Func an import replaces.
++type gofvSaved struct {
++	Type                 *types.Type
++	Blocks               []*Block
++	Entry                *Block
++	bid, vid             idAlloc
++	DeferReturn          *Block
++	NamedValues          map[LocalSlot][]*Value
++	Names                []*LocalSlot
++	CanonicalLocalSlots  map[LocalSlot]*LocalSlot
++	CanonicalLocalSplits map[LocalSlotSplitKey]*LocalSlot
++	OwnAux               *AuxCall
++	freeValues           *Value
++	freeBlocks           *Block
++	cachedPostorder      []*Block
++	cachedIdom           []*Block
++	cachedSdom           SparseTree
++	cachedLoopnest       *loopnest
++	cachedLineStarts     *xposmap
++	auxmap               auxmap
++	constants            map[int64][]*Value
++}
++
++func gofvSave(f *Func) gofvSaved {
++	return gofvSaved{f.Type, f.Blocks, f.Entry, f.bid, f.vid, f.DeferReturn, f.NamedValues, f.Names,
++		f.CanonicalLocalSlots, f.CanonicalLocalSplits, f.OwnAux, f.freeValues, f.freeBlocks,
++		f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts, f.auxmap, f.constants}
++}
++
++func (s gofvSaved) restore(f *Func) {
++	f.Type, f.Blocks, f.Entry, f.bid, f.vid, f.DeferReturn = s.Type, s.Blocks, s.Entry, s.bid, s.vid, s.DeferReturn
++	f.NamedValues, f.Names, f.CanonicalLocalSlots, f.CanonicalLocalSplits = s.NamedValues, s.Names, s.CanonicalLocalSlots, s.CanonicalLocalSplits
++	f.OwnAux, f.freeValues, f.freeBlocks = s.OwnAux, s.freeValues, s.freeBlocks
++	f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts = s.cachedPostorder, s.cachedIdom, s.cachedSdom, s.cachedLoopnest, s.cachedLineStarts
++	f.auxmap, f.constants = s.auxmap, s.constants
++}
++
++// gofvImport replaces f's state by the result res of running gofv-ssa-opt on x's export of
++// f, then exports f again with x and requires the Lean output byte for byte. On error f is
++// restored.
++func gofvImport(ex gofvExport, f *Func, res *gofvResult) (err error) {
++	x := ex.x
++	saved := gofvSave(f)
++	im := newGofvImporter(ex, f, res)
++	dcl, hasDcl := f.fe.(gofvDcl)
++	ndcl := 0
++	if hasDcl {
++		ndcl = dcl.GOFVDclLen()
++	}
++	defer func() {
++		if r := recover(); r != nil {
++			err = fmt.Errorf("panic: %v", r)
++		}
++		if err != nil {
++			saved.restore(f)
++			if hasDcl {
++				dcl.GOFVDclTruncate(ndcl) // autos made by fe.SplitSlot
++			}
++			for i := len(im.undo) - 1; i >= 0; i-- {
++				im.undo[i]()
++			}
++		}
++	}()
++	var redefs, typeRedefs []*gofvDefn
++	for _, d := range res.defs {
++		switch d.kind {
++		case 'p':
++			return errors.New("the result defines position bases")
++		case 't':
++			if im.types[d.n] != nil {
++				typeRedefs = append(typeRedefs, d)
++			}
++		case 's':
++			if _, ok := im.slotOb[d.n]; ok {
++				return fmt.Errorf("slot s%d redefined", d.n)
++			}
++		case 'a':
++			if _, ok := im.auxObj[d.n]; ok {
++				redefs = append(redefs, d)
++			}
++		}
++	}
++	// New objects, in number order, then redefinitions of existing aux values.
++	for _, d := range res.defs {
++		switch d.kind {
++		case 't':
++			if !slices.Contains(typeRedefs, d) {
++				_, err = im.typeN(d.n)
++			}
++		case 'a':
++			if _, known := im.auxObj[d.n]; !known {
++				_, err = im.auxN(d.n)
++			}
++		case 's':
++			_, err = im.slotN(d.n)
++		}
++		if err != nil {
++			return err
++		}
++	}
++	// Redefined types (e.g. a frontend type whose element the pass copied at a new number):
++	// the compiler's object, rendered now that the new objects are numbered, must be the Lean
++	// definition.
++	for _, d := range typeRedefs {
++		got, err := im.renderType(d.n, im.types[d.n])
++		if err != nil {
++			return err
++		}
++		if got != d.text {
++			return fmt.Errorf("type t%d redefined as\n%sthe compiler has\n%s", d.n, d.text, got)
++		}
++	}
++	for _, d := range redefs {
++		old, ok := im.auxObj[d.n].(*AuxCall)
++		if !ok || d.lines[0].toks[2] != "call" {
++			return fmt.Errorf("aux a%d: redefinition of a %T", d.n, im.auxObj[d.n])
++		}
++		if _, err := im.call(d.n, d, d.lines[0].toks[4:], old); err != nil {
++			return err
++		}
++		x.defs.Reset()
++		if got := x.auxDef(d.n, old); got != d.text || x.defs.Len() != 0 {
++			return fmt.Errorf("aux a%d: redefined as\n%sLean:\n%s", d.n, got, d.text)
++		}
++		x.auxLast[d.n] = d.text
++	}
++
++	// The type objects of the values of f, by ID.
++	oldType := map[ID]*types.Type{}
++	for _, b := range saved.Blocks {
++		for _, v := range b.Values {
++			oldType[v.ID] = v.Type
++		}
++	}
++
++	// Blocks and values.
++	type pending struct {
++		b    *Block
++		v    *Value
++		line *gofvLine
++	}
++	var ps []pending
++	var order []*Block
++	var cur *Block
++	var fl *gofvLine
++	ops, kinds := gofvOpsOnce(), gofvKindsOnce()
++	for _, l := range res.body {
++		t := l.toks
++		switch t[0] {
++		case "f":
++			fl = l
++		case "b": // b b<ID> <kind> <pos> <likely> <auxint> <aux> <controls> <succs> <preds>
++			id, _, err := gofvRef(t[1], 'b')
++			if err != nil {
++				return err
++			}
++			kind, ok := kinds[t[2]]
++			if !ok {
++				return fmt.Errorf("unknown block kind %s", t[2])
++			}
++			pos, err := gofvPos(t[3])
++			if err != nil {
++				return err
++			}
++			lk, err := strconv.Atoi(t[4])
++			if err != nil {
++				return err
++			}
++			ai, err := strconv.ParseInt(t[5], 10, 64)
++			if err != nil {
++				return err
++			}
++			aux, err := im.aux(t[6])
++			if err != nil {
++				return err
++			}
++			b := &Block{ID: ID(id), Kind: kind, Pos: pos, Likely: BranchPrediction(lk), AuxInt: ai, Aux: aux, Func: f}
++			b.Succs = b.succstorage[:0]
++			b.Preds = b.predstorage[:0]
++			b.Values = b.valstorage[:0]
++			if im.blocks[b.ID] != nil {
++				return fmt.Errorf("duplicate block b%d", id)
++			}
++			im.blocks[b.ID] = b
++			order = append(order, b)
++			cur = b
++			ps = append(ps, pending{b: b, line: l})
++		case "v": // v v<ID> <op> t<type> <auxint> <aux a|-> <pos> <uses> <args>
++			if cur == nil {
++				return errors.New("value before the first block")
++			}
++			id, _, err := gofvRef(t[1], 'v')
++			if err != nil {
++				return err
++			}
++			op, ok := ops[t[2]]
++			if !ok {
++				return fmt.Errorf("unknown op %s", t[2])
++			}
++			typ, err := im.typ(t[3])
++			if err != nil {
++				return err
++			}
++			if ot := oldType[ID(id)]; ot != nil && ot != typ && x.types[ot] == x.types[typ] {
++				typ = ot // the same value keeps its own object of that type number
++			}
++			ai, err := strconv.ParseInt(t[4], 10, 64)
++			if err != nil {
++				return err
++			}
++			aux, err := im.aux(t[5])
++			if err != nil {
++				return err
++			}
++			pos, err := gofvPos(t[6])
++			if err != nil {
++				return err
++			}
++			uses, err := strconv.ParseInt(t[7], 10, 32)
++			if err != nil {
++				return err
++			}
++			v := &Value{ID: ID(id), Op: op, Type: typ, AuxInt: ai, Aux: aux, Block: cur, Pos: pos, Uses: int32(uses)}
++			v.Args = v.argstorage[:0]
++			if im.values[v.ID] != nil {
++				return fmt.Errorf("duplicate value v%d", id)
++			}
++			im.values[v.ID] = v
++			cur.Values = append(cur.Values, v)
++			ps = append(ps, pending{v: v, line: l})
++		}
++	}
++	if fl == nil {
++		return errors.New("no f line")
++	}
++	for _, p := range ps {
++		t := p.line.toks
++		if p.v != nil {
++			args, err := im.valueList(t[8])
++			if err != nil {
++				return err
++			}
++			p.v.Args = append(p.v.Args, args...)
++			continue
++		}
++		ctl, err := im.valueList(t[7])
++		if err != nil {
++			return err
++		}
++		if len(ctl) > 2 {
++			return fmt.Errorf("b%d: %d controls", p.b.ID, len(ctl))
++		}
++		copy(p.b.Controls[:], ctl)
++		if p.b.Succs, err = im.edges(t[8]); err != nil {
++			return err
++		}
++		if p.b.Preds, err = im.edges(t[9]); err != nil {
++			return err
++		}
++		if len(p.b.Succs) <= len(p.b.succstorage) {
++			p.b.Succs = append(p.b.succstorage[:0], p.b.Succs...)
++		}
++		if len(p.b.Preds) <= len(p.b.predstorage) {
++			p.b.Preds = append(p.b.predstorage[:0], p.b.Preds...)
++		}
++	}
++
++	// f <entry b> <type t> <ownaux a|-> <vid.last> <bid.last>
++	ft := fl.toks
++	entry, err := im.block(ft[1])
++	if err != nil {
++		return err
++	}
++	ftyp, err := im.typ(ft[2])
++	if err != nil {
++		return err
++	}
++	own, err := im.aux(ft[3])
++	if err != nil {
++		return err
++	}
++	vl, err := strconv.ParseInt(ft[4], 10, 32)
++	if err != nil {
++		return err
++	}
++	bl, err := strconv.ParseInt(ft[5], 10, 32)
++	if err != nil {
++		return err
++	}
++	f.Blocks, f.Entry, f.Type = order, entry, ftyp
++	if own == nil {
++		f.OwnAux = nil
++	} else if oc, ok := own.(*AuxCall); ok {
++		f.OwnAux = oc
++	} else {
++		return errors.New("f.OwnAux is not an AuxCall")
++	}
++	f.vid.last, f.bid.last = ID(vl), ID(bl)
++	if f.DeferReturn != nil {
++		f.DeferReturn = im.blocks[f.DeferReturn.ID]
++	}
++	f.Names = nil
++	f.NamedValues = map[LocalSlot][]*Value{}
++	f.CanonicalLocalSlots = map[LocalSlot]*LocalSlot{}
++	f.CanonicalLocalSplits = map[LocalSlotSplitKey]*LocalSlot{}
++	f.constants = map[int64][]*Value{}
++	f.freeValues, f.freeBlocks = nil, nil
++	f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts, f.auxmap = nil, nil, nil, nil, nil, nil
++	loopnest := false
++	list := func(s string) []string {
++		if s == "-" {
++			return nil
++		}
++		return strings.Split(s, ",")
++	}
++	// Free lists first: NamedValues can still refer to freed values.
++	for _, l := range res.body {
++		t := l.toks
++		switch t[0] {
++		case "freev":
++			rs := list(t[1])
++			for i := len(rs) - 1; i >= 0; i-- {
++				n, _, err := gofvRef(rs[i], 'v')
++				if err != nil {
++					return err
++				}
++				v := &Value{ID: ID(n)}
++				if im.values[v.ID] != nil {
++					return fmt.Errorf("free value v%d is live", n)
++				}
++				im.values[v.ID] = v
++				v.argstorage[0] = f.freeValues
++				f.freeValues = v
++			}
++		case "freeb":
++			rs := list(t[1])
++			for i := len(rs) - 1; i >= 0; i-- {
++				n, _, err := gofvRef(rs[i], 'b')
++				if err != nil {
++					return err
++				}
++				b := &Block{ID: ID(n)}
++				if im.blocks[b.ID] != nil {
++					return fmt.Errorf("free block b%d is live", n)
++				}
++				im.blocks[b.ID] = b // stale caches can still name it
++				b.succstorage[0].b = f.freeBlocks
++				f.freeBlocks = b
++			}
++		}
++	}
++	for _, l := range res.body {
++		t := l.toks
++		switch t[0] {
++		case "names":
++			for _, r := range list(t[1]) {
++				s, err := im.slot(r)
++				if err != nil {
++					return err
++				}
++				f.Names = append(f.Names, s)
++			}
++		case "named":
++			s, err := im.slot(t[1])
++			if err != nil {
++				return err
++			}
++			vs, err := im.valueList(t[2])
++			if err != nil {
++				return err
++			}
++			f.NamedValues[*s] = vs
++		case "namedx":
++			k, err := im.inlineSlot(t[1])
++			if err != nil {
++				return err
++			}
++			vs, err := im.valueList(t[2])
++			if err != nil {
++				return err
++			}
++			f.NamedValues[k] = vs
++		case "splits":
++			for _, e := range list(t[1]) {
++				ks, vs, _ := strings.Cut(e, "=")
++				kp := strings.Split(ks, "/")
++				if len(kp) != 3 {
++					return fmt.Errorf("bad splits entry %q", e)
++				}
++				parent, err := im.slot(kp[0])
++				if err != nil {
++					return err
++				}
++				off, err := strconv.ParseInt(kp[1], 10, 64)
++				if err != nil {
++					return err
++				}
++				typ, err := im.typ(kp[2])
++				if err != nil {
++					return err
++				}
++				s, err := im.slot(vs)
++				if err != nil {
++					return err
++				}
++				f.CanonicalLocalSplits[LocalSlotSplitKey{parent, off, typ}] = s
++			}
++		case "canon":
++			for _, e := range list(t[1]) {
++				ks, vs, _ := strings.Cut(e, "=")
++				k, err := im.inlineSlot(ks)
++				if err != nil {
++					return err
++				}
++				s, err := im.slot(vs)
++				if err != nil {
++					return err
++				}
++				f.CanonicalLocalSlots[k] = s
++			}
++		case "consts":
++			var key int64
++			for _, e := range list(t[1]) {
++				if ks, vs, ok := strings.Cut(e, "="); ok {
++					if key, err = strconv.ParseInt(ks, 10, 64); err != nil {
++						return err
++					}
++					e = vs
++				}
++				v, err := im.valueList(e)
++				if err != nil {
++					return err
++				}
++				v[0].InCache = true
++				f.constants[key] = append(f.constants[key], v[0])
++			}
++		case "cache":
++			switch t[1] {
++			case "postorder":
++				po := []*Block{}
++				for _, r := range list(t[2]) {
++					b, err := im.block(r)
++					if err != nil {
++						return err
++					}
++					po = append(po, b)
++				}
++				f.cachedPostorder = po
++			case "idom":
++				idom := make([]*Block, f.NumBlocks())
++				for _, e := range list(t[2]) {
++					bs, ds, _ := strings.Cut(e, ":")
++					b, err := im.block(bs)
++					if err != nil {
++						return err
++					}
++					if ds == "?" {
++						return errors.New("idom cache shorter than the blocks")
++					}
++					if idom[b.ID], err = im.block(ds); err != nil {
++						return err
++					}
++				}
++				f.cachedIdom = idom
++			case "sdom":
++				sdom := make(SparseTree, f.NumBlocks())
++				for _, e := range list(t[2]) {
++					p := strings.Split(e, ":")
++					if len(p) != 6 {
++						return fmt.Errorf("bad sdom entry %q", e)
++					}
++					b, err := im.block(p[0])
++					if err != nil {
++						return err
++					}
++					n := &sdom[b.ID]
++					if n.parent, err = im.block(p[1]); err != nil {
++						return err
++					}
++					if n.child, err = im.block(p[2]); err != nil {
++						return err
++					}
++					if n.sibling, err = im.block(p[3]); err != nil {
++						return err
++					}
++					en, err1 := strconv.ParseInt(p[4], 10, 32)
++					ex, err2 := strconv.ParseInt(p[5], 10, 32)
++					if err1 != nil || err2 != nil {
++						return fmt.Errorf("bad sdom entry %q", e)
++					}
++					n.entry, n.exit = int32(en), int32(ex)
++				}
++				f.cachedSdom = sdom
++			case "loopnest":
++				loopnest = true
++			case "auxmap":
++				m := auxmap{}
++				for _, e := range list(t[2]) {
++					as, is, _ := strings.Cut(e, ":")
++					a, err := im.aux(as)
++					if err != nil {
++						return err
++					}
++					id, err := strconv.ParseInt(is, 10, 32)
++					if err != nil {
++						return err
++					}
++					m[a] = int32(id)
++				}
++				f.auxmap = m
++			case "linestarts":
++				m := &xposmap{maps: map[int32]*biasedSparseMap{}, lastIndex: -1}
++				for _, e := range list(t[2]) {
++					p := strings.Split(e, ":")
++					idx, err := strconv.ParseInt(p[0], 10, 32)
++					if err != nil {
++						return err
++					}
++					if len(p) == 2 && p[1] == "-" {
++						m.maps[int32(idx)] = newBiasedSparseMap(1, 0)
++						continue
++					}
++					if len(p) < 3 {
++						return fmt.Errorf("bad linestarts entry %q", e)
++					}
++					first, err1 := strconv.Atoi(p[1])
++					last, err2 := strconv.Atoi(p[2])
++					if err1 != nil || err2 != nil {
++						return fmt.Errorf("bad linestarts entry %q", e)
++					}
++					bm := newBiasedSparseMap(first, last)
++					for _, kv := range p[3:] {
++						ks, vs, _ := strings.Cut(kv, "=")
++						k, err1 := strconv.ParseUint(ks, 10, 32)
++						v, err2 := strconv.ParseInt(vs, 10, 32)
++						if err1 != nil || err2 != nil {
++							return fmt.Errorf("bad linestarts entry %q", e)
++						}
++						bm.set(uint(k), int32(v))
++					}
++					m.maps[int32(idx)] = bm
++				}
++				f.cachedLineStarts = m
++			default:
++				return fmt.Errorf("unknown cache %s", t[1])
++			}
++		}
++	}
++	if loopnest {
++		po, idom, sdom := f.cachedPostorder, f.cachedIdom, f.cachedSdom
++		f.cachedLoopnest = loopnestfor(f)
++		f.cachedPostorder, f.cachedIdom, f.cachedSdom = po, idom, sdom
++	}
++
++	// Check: the imported function, exported again, is the Lean output.
++	start := x.out.Len()
++	x.section("import check")
++	got := x.out.String()[start:]
++	_, got, _ = strings.Cut(got, "\n") // pass line
++	want := gofvMapOrder(res.bodyText + "end\n")
++	if got = gofvMapOrder(got); got != want {
++		return fmt.Errorf("re-export differs from the Lean output at %s", gofvFirstDiff(want, got))
++	}
++	// The imported values and blocks are not in f.Cache's storage, which newValue/NewBlock
++	// fill by ID and Cache.Reset clears up to the first unused ID: mark the IDs the import
++	// covers as used, so that the storage later passes take past them is cleared for the
++	// next function.
++	for i := 1; i <= int(f.vid.last) && i < len(f.Cache.values); i++ {
++		if f.Cache.values[i].ID == 0 {
++			f.Cache.values[i].ID = ID(i)
++		}
++	}
++	for i := 1; i <= int(f.bid.last) && i < len(f.Cache.blocks); i++ {
++		if f.Cache.blocks[i].ID == 0 {
++			f.Cache.blocks[i].ID = ID(i)
++		}
++	}
++	return nil
++}
++
++// gofvMapOrder puts the entries of the lines that list Go maps (namedx, splits, canon) in a
++// canonical order: the exporter orders them by object numbers, which differ between the Lean
++// numbering and the export walk's.
++func gofvMapOrder(text string) string {
++	lines := strings.Split(text, "\n")
++	var namedx []string
++	first := -1
++	for i, l := range lines {
++		switch {
++		case strings.HasPrefix(l, "splits ") || strings.HasPrefix(l, "canon "):
++			tag, list, _ := strings.Cut(l, " ")
++			es := strings.Split(list, ",")
++			slices.Sort(es)
++			lines[i] = tag + " " + strings.Join(es, ",")
++		case strings.HasPrefix(l, "namedx "):
++			if first < 0 {
++				first = i
++			}
++			namedx = append(namedx, l)
++		}
++	}
++	slices.Sort(namedx)
++	copy(lines[max(first, 0):], namedx)
++	return strings.Join(lines, "\n")
++}
++
++func gofvFirstDiff(want, got string) string {
++	a, b := strings.Split(want, "\n"), strings.Split(got, "\n")
++	for i := 0; i < len(a) || i < len(b); i++ {
++		var x, y string
++		if i < len(a) {
++			x = a[i]
++		}
++		if i < len(b) {
++			y = b[i]
++		}
++		if x != y {
++			return fmt.Sprintf("line %d: lean %q, import %q", i+1, x, y)
++		}
++	}
++	return "?"
++}
