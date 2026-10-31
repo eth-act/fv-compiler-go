@@ -90,6 +90,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | divisible | divisible | 9297 | 9297 | 0 | 100% | |
 | divmod | divmod | 9297 | 9297 | 0 | 100% | |
 | zero arg cse | zcse | 9297 | 9297 | 0 | 100% | before the #52 export fix: 84 mismatches (`byte`/`uint8` type pointers) |
+| nilcheckelim | nilcheckelim | 9297 | 9297 | 0 | 100% | stock pass changes 5008 functions (incl. `storeOrder` reorders) |
 | early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | expand calls | expandCalls | 9297 | 9297 | 0 | 100% | files with `InterLECall` 766, `ClosureLECall` 359, `TailLECall` 164, `TailLECallInter` 4, `Dereference` 185, `ArgFloatReg` (output) 204; no `SelectNAddr` |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
@@ -98,6 +99,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | dead auto elim | elimDeadAutosGeneric | 9297 | 9297 | 0 | 100% | stock pass changes 355 functions |
 | dse | dse | 9297 | 9297 | 0 | 100% | stock pass changes 447 functions |
 | memcombine | memcombine | 9297 | 9297 | 0 | 100% | stock pass changes 181 functions |
+| writebarrier | writebarrier | 9297 | 9297 | 0 | 100% | 967 functions get barriers; 20 take a `type:T` symbol first defined in this section from `PassEnv.frontend` |
 | insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |
 | cpufeatures | cpufeatures | — | — | 0 | disabled in 9297 | `exp.simd 0` |
 | rewrite tern | rewriteTern | — | — | 0 | disabled in 9297 | `exp.simd 0` |
