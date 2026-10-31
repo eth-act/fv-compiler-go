@@ -1,6 +1,10 @@
 # Agent rules
 
-- Read `docs/PLAN.md` and `LEARNINGS.md` first. Pins: `docs/PINS.md`.
+- Read `docs/PLAN.md` and `LEARNINGS.md` first. Pins: `docs/PINS.md`. Lean performance
+  skills (kevaundray/lean-skills, installed in `~/.agents/skills`): `lean-proof-performance`,
+  `lean-build-hygiene`, `lean-asm-proofs`, `fast-lean`. `fast-lean build <Module>` (dev
+  toolchain `dev-fast-v4.34.1`) is fine while iterating; checks before a PR use plain
+  `lake build` and `#print axioms` (no `skippedProof`).
 - Work is organised in GitHub issues on kevaundray/fv-compiler-go. Claim an issue before
   starting (`gh issue edit N --add-assignee @me` + a comment naming your agent and branch);
   reference it in commits and PRs; post progress there. Split large issues into sub-issues.
