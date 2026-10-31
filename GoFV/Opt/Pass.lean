@@ -80,6 +80,9 @@ end PassEnv
 `disabled` condition (`compile.go` pass table): a disabled pass does not run and the export has
 no section for it. -/
 structure PassEntry where
+  /-- The Go function (`deadcode`, `copyelim`, …): `pass-parity --pass <fn>` selects every
+  instance. -/
+  fn : String
   /-- Stock pass names this port implements (`"early deadcode"`, …, `"generic deadcode"`). -/
   names : Array String
   run : Pass

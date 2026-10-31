@@ -19,9 +19,12 @@ the semantics (G5) and the proofs (G6). Input format: `docs/contracts/export.md`
 | `GoFV.SSA.Export` | `ExportFile`, `Section`, `Def`, `Token`, `Tables` |
 | `GoFV.SSA.Parse` | `parseExport : ByteArray → Except String ExportFile` |
 | `GoFV.SSA.Print` | `printExport : ExportFile → String` (inverse of `parseExport`) |
-| `GoFV.SSA.Live` | `Func.reachableBlocks`, `Func.liveValues` (ports of `deadcode.go`'s `ReachableBlocks`/`liveValues`) |
+| `GoFV.SSA.Live` | `Func.reachableBlocks`, `Func.liveValuesOrder`/`liveValues` (ports of `deadcode.go`'s `ReachableBlocks`/`liveValues`, with `liveOrderStmts`) |
 | `GoFV.SSA.FmtFloat` | Go's `%g` for `float64` (exact shortest digits) |
 | `GoFV.SSA.GoString` | `GoString.funcString`, `ExportFile.goString`: Go's `f.String()` |
+| `GoFV.SSA.Alloc` | `newValue`/`newValueArgs`/`newBlock` (free lists first), `freeValue`/`freeBlock`, `unCache`, `setArg*`/`addArg*`/`resetArgs`/`resetValue`/`copyOf`, block controls (`setControl`, `replaceControl`, `resetBlock`, `resetWithControl*`, …), `truncateValues`, `invalidateCFG` (`func.go`, `value.go`, `block.go`) |
+| `GoFV.SSA.Edges` | `addEdgeTo`, `removePred`/`removeSucc`/`removeEdge`, `removePhiArg` + `phielimValue`, `swapSuccessors*` (no cache invalidation, as in Go) |
+| `GoFV.SSA.ConstCache` | `constVal` and the `Const*` constructors (`f.constants`, magic keys) |
 
 `GoFV.SSA.Op` imports only `OpInfo`; data modules import only what they use. Nothing in
 `GoFV.SSA` imports the umbrella `GoFV`.
@@ -55,7 +58,7 @@ Go-like cost.
 - `Func`: `blocks : Array ID` (`f.Blocks` order), `blockTab : Array (Option Block)` and
   `valueTab : Array (Option Value)` indexed by ID (`none` = not in the function, e.g. freed),
   `entry`, `type`, `ownAux`, `vidLast`/`bidLast` (last IDs handed out), `freeValues`/`freeBlocks`
-  (Go's free lists, head first: the IDs `newValue`/`NewBlock` reuse), `names`
+  (Go's free lists as `List ID`, head first: the IDs `newValue`/`NewBlock` reuse), `names`
   (`f.Names` with `f.NamedValues`), `namedx`, `splits`, `canon`, `consts` (`f.constants`) and
   `cache` (the `f.cached*` analyses and `auxmap`, which survive between passes).
   Accessors: `f.block? id`, `f.value? id`.

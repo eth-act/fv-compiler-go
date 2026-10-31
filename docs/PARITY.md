@@ -1,0 +1,71 @@
+# Per-pass stock parity
+
+The oracle of `docs/PLAN.md` §2: every Lean pass port must produce exactly what the stock
+`go1.27.3` pass produces from the same input — same value and block IDs, same order, same aux,
+positions, `Uses`, free lists, constant cache and CFG caches.
+
+## How it is checked
+
+`lake exe pass-parity` (`GoFVTest/Parity/Main.lean`) reads `gofv-ssa` export files
+(`docs/contracts/export.md`). For each file and each section `k ≥ 1` whose pass name is a
+selected stock pass:
+
+1. take section `k-1`'s function and the definition tables in force for it (definitions of
+   sections `0..k-1`);
+2. run the Lean port with a `PassEnv` (`GoFV/Opt/Pass.lean`: stock pass name, header, `config`
+   lines, `typs`, type order, tables);
+3. compare the result with section `k`: structural equality first, else both functions are
+   printed with the export printer (`Print.func`) and must be byte-identical; definitions the
+   pass created or redefined (tables entries that differ from the input's) must equal section
+   `k`'s at the same numbers.
+
+A mismatch reports the file, the section and the first differing line of the printed function
+(or the pass's error). A pass whose Go `disabled` condition holds (e.g. `insert resched checks`
+without `GOEXPERIMENT=preemptibleloops`) is checked to have no section in that file.
+
+Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays
+constant: the whole corpus (9,297 files, 1.25 GB) runs in about 45 s with 4 jobs and 130 MB.
+
+```
+lake exe pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+```
+
+- `--pass`: a Go function name selects all its instances (`deadcode` → the five deadcode
+  passes), a stock name selects one (`"opt deadcode"`); default all registered passes.
+- `--max-report`: mismatch reports printed per pass instance (default 10); counts are always
+  complete.
+- `--table`: also write the summary table (markdown) to a file.
+- Exit status 1 on any mismatch, pass error, parse error, or when no file was read.
+
+`scripts/parity.sh [-j jobs] [-o out.md] [-p pass]... [corpus...]` builds the tool, runs every
+registered pass over the corpus (default: the newest `../gofv-corpus/*/plain`) through
+`memcap`, and writes the table to `tmp/parity.md` and the mismatch reports to
+`tmp/parity.md.log`.
+
+## Registering a pass
+
+A port is a `GoFV.Opt.Pass` (`PassEnv → Func → Except String PassOut`; `Pass.ofFunc` for
+passes that do not create definitions). Add one `PassEntry` to
+`GoFVTest/Parity/Registry.lean`: `fn` (the Go function), `names` (the stock names of its
+pipeline instances) and, for passes the driver can disable, `disabled`. A pass that creates
+types or aux objects must currently give them section `k`'s numbers (the tables check compares
+at equal numbers).
+
+## Results
+
+Corpus `gofv-corpus/2aae1000ea1d/plain` (9,297 functions):
+
+| pass | fn | functions | match | mismatch | parity | notes |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| early phielim and copyelim | copyelim | 9297 | 9297 | 0 | 100% | |
+| early deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| pre-opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| gcse deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| generic deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| zero arg cse | zcse | 9297 | 9213 | 84 | 99.09% | all 84: export gap #52 (`byte`/`uint8` type pointers) |
+| softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
+| check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
+| insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |
+| cpufeatures | cpufeatures | — | — | 0 | disabled in 9297 | `exp.simd 0` |
+| rewrite tern | rewriteTern | — | — | 0 | disabled in 9297 | `exp.simd 0` |
