@@ -11,6 +11,8 @@ import GoFV.Opt.Fuse
 import GoFV.Opt.ElimDeadAutos
 import GoFV.Opt.DeadStore
 import GoFV.Opt.MemCombine
+import GoFV.Opt.KnownBits
+import GoFV.Opt.PhiOpt
 
 /-!
 # Registered Lean passes
@@ -43,7 +45,9 @@ def registry : Array PassEntry := #[
   { fn := "cpufeatures", names := #["cpufeatures"], run := cpufeaturesPass,
     disabled := simdDisabled },
   { fn := "rewriteTern", names := #["rewrite tern"], run := rewriteTernPass,
-    disabled := simdDisabled }
+    disabled := simdDisabled },
+  { fn := "knownBits", names := #["known bits"], run := knownBitsPass },
+  { fn := "phiopt", names := #["phiopt"], run := phioptPass }
 ]
 
 end GoFVTest.Parity
