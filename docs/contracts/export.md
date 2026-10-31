@@ -25,7 +25,7 @@ below), take the state of section `k-1`, run `p`, compare with section `k`.
 | `GOFV_SSA_EXPORT=<dir>` | enable; files go under `<dir>` (created if missing) |
 | `GOFV_SSA_PKG=<regexp>` | only packages whose import path matches (unanchored; default all) |
 | `GOFV_SSA_FUNC=<regexp>` | only functions whose `<pkgpath>.<f.Name>` matches (unanchored; default all) |
-| `GOFV_SSA_GOTEXT=1` | also write Go's own `f.String()` after each section to `<file>.txt` (printer cross-check) |
+| `GOFV_SSA_GOTEXT=1` | also write `<file>.txt`: for each section a line `pass <k> "<name>"` followed by Go's own `f.String()` verbatim (printer cross-check; debugging only — `f.String()` runs `findlive`, which uses the compiler's scratch caches, so do not combine it with parity runs) |
 
 Without `GOFV_SSA_EXPORT` the patched compiler behaves exactly like the stock one. With it,
 the exporter only reads compiler state: it never calls caching accessors (`f.Postorder()`,
@@ -36,11 +36,16 @@ One file per function: `<dir>/<pkgpath>/<name>,<abi>.ssa`, where `<pkgpath>` kee
 as directory separators and `<name>` is `f.Name` with every byte outside `[A-Za-z0-9._-]`
 written as `%XX` (two upper-case hex digits); `<abi>` is `f.ABISelf.Which()` (0 = ABI0,
 1 = ABIInternal). `main` packages of different programs collide, so drive one program per
-export directory (`scripts/export-corpus.sh` does). If a name repeats within one compile the
-second file gets `#2` before `.ssa`, and so on.
+export directory (`scripts/export-corpus.sh` does). If the escaped name is longer than 160
+bytes (generic instantiations), it is cut to its first 120 bytes followed by `~` and the first
+16 hex digits of the SHA-256 of `f.Name` (the `func` line has the full name). If a name
+repeats within one compile the second file gets `#2` before `.ssa`, and so on.
 
 The output is deterministic: the same compile produces byte-identical files (checked by
-`scripts/export-corpus.sh --check-determinism`).
+`scripts/export-corpus.sh --check-determinism`), also under the backend's concurrent
+compilation (`-c`). State that other functions' concurrent compilation mutates (kind, size and
+contents of symbols that are not yet read-only data; frame offsets of callees' parameter names)
+is deliberately not exported; no pass reads it.
 
 ## Lexical format
 
@@ -57,6 +62,8 @@ The output is deterministic: the same compile produces byte-identical files (che
   and position-base numbers are per-file table indices (`t`, `a`, `s` from 1, assigned in
   first-use order while the sections are written; `p` is the Go `XPos` index itself).
 - Lists are comma-separated without spaces (`v3,v4`); the empty list is `-`.
+- Flag lists are comma lists of the flag names that are set, always in the order the flag
+  names are listed in this document; `-` when none is set.
 - A position `pos` is `p<index>:<line>:<col>:<stmt>:<xlogue>`, the fields of Go's
   `src.XPos{index, lico}`: `lico = line<<12 | col<<4 | xlogue<<2 | stmt` (`lineBits = 20`,
   `colBits = 8`). `stmt`: 0 `PosDefaultStmt`, 1 `PosIsStmt`, 2 `PosNotStmt`. `XPos.Before`
@@ -83,6 +90,7 @@ A section:
 pass <k> "<pass name>"                  (k = 0 for "start")
 <definitions: posbase / type / field / aux / abiparam / reloc / rtype / slot lines>
 f <entry b> <type t> <ownaux a> <vid.last> <bid.last>
+typs <Name=t,…>                       (section 0 only)
 b …                                   (one per block, in f.Blocks order)
 v …                                   (the block's values, in b.Values order, right after their b line)
 …
@@ -94,15 +102,24 @@ canon <entries>                       (f.CanonicalLocalSlots)
 consts <entries>                      (f.constants)
 freev <v,…>                           (f.freeValues free list, head first)
 freeb <b,…>                           (f.freeBlocks free list, head first)
-cache <name> <payload>                (f.cached*, only those that are non-nil)
+cache <name> <payload>                (f.cached*, f.auxmap: only those that are non-nil)
+warn "<text>"                         (zero or more)
 end
 ```
+
+Presence: `typs` is present in section 0 only. `f`, `names`, `splits`, `canon`, `consts`, `freev`, `freeb` are always present
+(payload `-` when empty). `named` has one line per `f.Names` entry (none iff `names -`);
+`namedx` zero or more lines; each `cache <name>` line is present iff that cache is non-nil, in
+the order `postorder`, `idom`, `sdom`, `loopnest`, `auxmap`, `linestarts`. All `warn` lines of
+a section come together just before `end`, in emission order.
 
 ### Definitions (tables)
 
 Every type, aux object, local slot and position base referenced by a section is defined before
-the `f` line of the first section that references it (references inside definitions are
-defined earlier in the same section or before). A definition stays valid for later sections.
+the `f` line of the first section that references it. A definition refers to objects defined
+earlier, or (only for recursive types, e.g. `type T struct{ next *T }`) to objects whose
+definition follows later in the same definition block; a reader resolves references after
+reading a section's whole definition block. A definition stays valid for later sections.
 Aux objects that Go mutates in place (an `*AuxCall` whose `Fn` is rewritten by
 `devirtLECall`, `expand calls` filling in ABI data, …) are **redefined** with the same number
 in every section where their content differs from the last definition; a reader keeps the
@@ -116,17 +133,23 @@ value order, then names, …), so a Lean pass creating new objects must match th
 `k`'s definitions by content (or up to renaming), not by number.
 
 `posbase p<index> "<abs filename>" <line> <col> <inl>`: the `src.PosBase` of `XPos` index
-`<index>` (`base.Ctxt.PosTable`): absolute file name, base line/column (line directives), and
+`<index>` (index 0, the nil base, has no definition) (`base.Ctxt.PosTable`): absolute file name, base line/column (line directives), and
 `InliningIndex()` (−1 if not inlined; `deadcode` keeps an `InlMark` iff some live position has
 its `AuxInt` as inlining index).
 
-`type t<n> <kind> <size> <align> <ptrdata> <flags> "<t.String()>" <kind-specific>`
+`type t<n> <kind> <size> <align> <ptrdata> <flags> "<t.String()>" "<types.TypeSymName(t)>" <kind-specific>`
 
-- `kind`: `types.Kind` without the `T` prefix (`INT8`, `PTR`, `STRUCT`, `SSA`, `TUPLE`,
-  `RESULTS`, `FUNC`, …).
+`TypeSymName` is the name of the type's descriptor symbol without the `type:` prefix (what
+`reflectdata.TypeLinksym(t)` returns is the `LSym` named `type:<TypeSymName>`, used by
+`writebarrier` and `rewriteFixedLoad`); `""` for `SSA`/`TUPLE`/`RESULTS` types.
+
+- `kind`: `types.Kind.String()` (`INT8`, `PTR`, `STRUCT`, `SSA`, `TUPLE`, `RESULTS`, `FUNC`,
+  …; Go's `TINT8` etc.).
 - `size`, `align`, `ptrdata`: `t.Size()`, `t.Alignment()`, `types.PtrDataSize(t)`, or `?` when
-  the size was never calculated by the compiler (`widthCalculated()` false); `ptrdata` is `?`
-  as well for `SSA`/`TUPLE`/`RESULTS` kinds.
+  the size was never calculated by the compiler (`widthCalculated()` false; e.g. element types
+  only reached through a pointer); `ptrdata` is `?` as well for `SSA`/`TUPLE`/`RESULTS`
+  kinds. Flags `hasptr`, `direct`, `comparable` and the `TypeSymName` string need a calculated
+  size; when it is `?` they are absent / `""`.
 - `flags`: comma list from `hasptr` (`t.HasPointers()`), `notinheap`, `noalg`, `shape`,
   `direct` (`types.IsDirectIface`), `comparable` (`types.IsComparable`), `named`
   (`t.Sym() != nil`), `emptyiface`, `variadic`; or `-`. Size-dependent flags (`hasptr`) are
@@ -144,7 +167,16 @@ its `AuxInt` as inlining index).
     types (`mem`, `flags`, `void`, `int128`, `vec128`, …) are identified by their string.
 
 `field <i> "<name>" t<type> <offset> <embedded 0|1>`: field `i` of the preceding `type`
-(`Field.Sym.Name`, or `""` if none; `offset` is `?` when not calculated).
+(`Field.Sym.Name`, or `""` if none; `offset` is `?` when the type's size is not calculated or
+the field offset is `BADWIDTH`, as for most `FUNC` parameters).
+
+`typs <Name=t,…>` (section 0 only): the types rules and passes name directly: the
+`Config.Types` fields (`typ.*` in rules) `Bool`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`,
+`UInt16`, `UInt32`, `UInt64`, `Int`, `Float32`, `Float64`, `UInt`, `Uintptr`, `String`,
+`BytePtr`, `Int32Ptr`, `UInt32Ptr`, `IntPtr`, `UintptrPtr`, `Float32Ptr`, `Float64Ptr`,
+`BytePtrPtr`, then `Complex64`, `Complex128`, `UnsafePtr` (`types.Types[k]`) and the SSA
+pseudo-types `Mem`, `Flags`, `Void`, `Int128`, `ResultMem` (`types.TypeMem`, …), in that
+order. `types.Types[k]` for the other basic kinds are the `Config.Types` entries.
 
 `typeorder` (once, at the end of the file) lists every type of the file in ascending
 `types.(*Type).Compare` order; a group `t3=t9` holds types that compare `CMPeq`. Since `Compare`
@@ -157,8 +189,8 @@ so a Lean `cmpTyp` is just a rank comparison. (CSE's `cmpVal` and `copyCompatibl
 
 | Go type | tag | tail |
 | --- | --- | --- |
-| `*ir.Name` | `name` | `"<n.Sym().Name>" <class> t<type> <frameoffset> <flags> <pos>` — `class` is `ir.Class.String()` (`PAUTO`, `PPARAM`, `PPARAMOUT`, `PEXTERN`, `PFUNC`, …); flags from `addrtaken`, `used`, `autotmp`, `nonmergeable`, `opendeferslot`, `readonly`, `escnever`/`escheap`/`escnone` |
-| `*obj.LSym` | `sym` | `"<name>" <abi> <SymKind> <size> <flags> <typeinfo t\|-> <itabinfo t\|-> <data> <nrelocs>`, followed by `nrelocs` `reloc` lines and, when `typeinfo` is set, one `rtype` line |
+| `*ir.Name` | `name` | `"<n.Sym().Name>" <class> t<type> <frameoffset> <esc> <flags> <pos>` — `class` is `ir.Class.String()` (`PAUTO`, `PPARAM`, `PPARAMOUT`, `PEXTERN`, `PFUNC`, …); `esc` is `n.Esc()` (0 `EscUnknown`, 1 `EscNone`, 2 `EscHeap`, 3 `EscNever`); flags `addrtaken`, `used`, `autotmp`, `nonmergeable`, `opendeferslot`, `readonly`; `pos` is `n.Pos()` |
+| `*obj.LSym` | `sym` | `"<name>" <abi> <SymKind\|-> <size> <flags> <typeinfo t\|-> <itabinfo t\|-> <data> <nrelocs>`, followed by `nrelocs` `reloc` lines and, when `typeinfo` is set, one `rtype` line |
 | `stringAux` | `str` | `"<s>" "<StringData symbol name>"` |
 | `*AuxCall` | `call` | `<fn a\|-> <abi\|-> <nin> <nout> <spilloff> <spillsize> <inregs> <outregs>`, followed by `nin + nout` `abiparam` lines (`abi` is `abiInfo.Config().Which()`; with `abiInfo == nil` the tail is `<fn> - 0 0 0 0 0 0`) |
 | `*AuxNameOffset` | `nameoff` | `a<name> <offset>` |
@@ -169,14 +201,18 @@ so a Lean `cmpTyp` is just a rank comparison. (CSE's `cmpVal` and `copyCompatibl
 | `PanicBoundsCC` | `pbcc` | `<Cx> <Cy>` |
 | anything else | `unknown` | `"<%T>"` (a gap; counted by the stats tool, must stay at 0) |
 
-`sym` details: `abi` is `lsym.ABI()`; `SymKind` is `objabi.SymKind.String()` (e.g. `SRODATA`,
-`Sxxx` when not yet laid out); `flags` from `dupok`, `local`, `static`, `contentaddressable`,
-`wrapper`, `abiwrapper`, `noptr`; `data` is `lsym.P` as lower-case hex (`-` if empty) and is
+`sym` details: `abi` is `lsym.ABI()`. Kind, size, flags, data and relocations are only exported
+for read-only data, i.e. when `lsym.Type == objabi.SRODATA` (the only kind any in-scope pass
+tests: `symIsRO`, `symIsROZero`, `isFixedLoad`, `read8..64`, `IsReadOnlyGlobalAddr`); then
+`SymKind` is `SRODATA`, `size` is `lsym.Size` and `flags` are `dupok`, `local`, `static`,
+`contentaddressable`, `wrapper`, `abiwrapper`. For every other symbol the line has
+`- 0 -` there (`STEXT` sizes etc. change while other functions are assembled concurrently); `data` is `lsym.P` as lower-case hex (`-` if empty) and is
 only written when `SymKind` is `SRODATA` (the only case `symIsRO`, `read8..64`, `isFixedLoad`
 read it), else `-`. `typeinfo`/`itabinfo` are the types of `lsym.TypeInfo()`/`lsym.ItabInfo()`.
 
 `reloc <off> <siz> <type> <add> "<target name>" <target abi>`: `objabi.RelocType.String()`
-(`R_ADDR`, `R_WEAKADDR`, …); target name `""` if nil.
+(`R_ADDR`, `R_WEAKADDR`, …); target name `""` if nil. Relocations are written only for
+`SRODATA` symbols (`nrelocs` is 0 otherwise).
 
 `rtype <size> <ptrdata> <hash> <abikind> "<gcdata sym>" "<elem type sym>"`: what
 `rewriteFixedLoad` folds a load from a type descriptor to — `t.Size()`,
@@ -187,7 +223,9 @@ effects of those functions. Fields that need an uncalculated size are `?`.
 
 `abiparam <in|out> <i> t<type> <name a|-> <regs> <offset>`: `ABIParamAssignment` `i`:
 `Type`, `Name`, `Registers` (comma list of `abi.RegIndex`, `-` if on stack) and the raw
-`offset` field (stack offset, or spill offset for register parameters).
+`offset` field (stack offset, or spill offset for register parameters; −1 when unset). `Name`
+is exported only for `f.OwnAux` (`ParamAssignmentForArgName`, the only reader); for calls it
+is `-` (callee names belong to functions compiled concurrently).
 
 `slot s<n> a<name> t<type> <off> <splitof s|-> <splitoffset>`: a `*LocalSlot` (`N`, `Type`,
 `Off`, `SplitOf`, `SplitOffset`).
@@ -236,38 +274,54 @@ constants (`constNilMagic` = 1111, …).
 - `cache idom <b<ID>:b<idom>|b<ID>:-,…>` (indexed by block ID; only blocks of `f.Blocks`)
 - `cache sdom <b<ID>:<parent>:<child>:<sibling>:<entry>:<exit>,…>`
 - `cache loopnest` (presence only; contents not exported — see gaps)
-- `cache linestarts <index>:<first>:<last>,…`: the per-file line ranges of
-  `f.cachedLineStarts` (built by `number lines`, used as scratch by later passes; its entries
-  are empty between passes, which the exporter checks with a `warn`).
+- `cache auxmap <a:id,…>`: `f.auxmap` (CSE's aux numbering, which persists across `cse`
+  runs), sorted by id
+- `cache linestarts <entry>,…`: `f.cachedLineStarts`, built by `number lines` and used by later
+  passes as their `pendingLines` scratch map. One entry per file index, ascending:
+  `<index>:<first>:<last>` (the line range of that file's `biasedSparseMap`) followed by zero or
+  more `:<line>=<val>` (entries left over from the previous pass, in the sparse map's dense
+  order — passes do not always clear it), or `<index>:-` for an empty range.
 
-`warn "<text>"` may appear anywhere in a section: an invariant the exporter expected did not
-hold (e.g. a value's `Block` field differs from the block listing it). The stats tool counts
-them.
+`warn "<text>"`: an invariant the exporter expected did not hold (e.g. a value's `Block` field
+differs from the block listing it). Written just before `end`; `finish` may add `warn` lines
+before `typeorder`. The stats tool counts them; the corpus must have none.
 
 ## Fixed configuration (`config` lines)
 
 Everything else the in-scope passes read outside `Func` is constant for the corpus and recorded
-in `config` lines so a mismatch is visible:
+in `config <key> <value>` lines, one per key, in exactly this order (values as exported for the
+corpus):
 
 | key | source | corpus value |
 | --- | --- | --- |
 | `arch` | `Config.arch` | `arm64` |
 | `goos` | `buildcfg.GOOS` | `linux` |
-| `ptrsize`, `regsize` | `Config.PtrSize/RegSize` | 8, 8 |
-| `bigendian`, `unalignedok`, `havecondselect`, `havebswap64/32/16`, `hasgreg` | `Config` | 0,1,1,1/1/1,1 |
-| `softfloat`, `race`, `optimize` | `Config` | 0, 0, 1 |
-| `fixedframesize`, `archalign` | `ctxt.Arch.FixedFrameSize`, `Alignment` | 8, 1 |
-| `flagshared`, `flagdynlink` | `ctxt.Flag_shared/Flag_dynlink` | 0, 0 |
+| `ptrsize` | `Config.PtrSize` | 8 |
+| `regsize` | `Config.RegSize` | 8 |
+| `bigendian` | `Config.BigEndian` | 0 |
+| `unalignedok` | `Config.unalignedOK` | 1 |
+| `havecondselect` | `Config.haveCondSelect` | 1 |
+| `havebswap64`, `havebswap32`, `havebswap16` | `Config.haveBswap*` | 1, 1, 1 |
+| `hasgreg` | `Config.hasGReg` | 1 |
+| `softfloat` | `Config.SoftFloat` | 0 |
+| `race` | `Config.Race` | 0 |
+| `optimize` | `Config.optimize` (`-N` off) | 1 |
+| `fixedframesize` | `ctxt.Arch.FixedFrameSize` | 8 |
+| `archalign` | `ctxt.Arch.Alignment` | 1 |
+| `flagshared`, `flagdynlink` | `ctxt.Flag_shared`, `ctxt.Flag_dynlink` | 0, 0 |
 | `usewb` | `fe.UseWriteBarrier()` (`base.Flag.WB`) | 1 |
 | `debugnil` | `fe.Debug_checknil()` (`base.Debug.Nil`) | 0 |
 | `checkenabled` | `ssa.checkEnabled` (must be 0: it shuffles `b.Values`) | 0 |
+| `localpkg` | `types.LocalPkg.Path`, a string (`writebarrier` special-cases `runtime`) | the package path |
 | `exp.cgocheck2`, `exp.preemptibleloops`, `exp.simd` | `buildcfg.Experiment` | 0, 0, 0 |
-| `abi0`, `abi1` | `<intregs>:<floatregs>:<localsoffset>` of `Config.ABI0/ABI1` | `0:0:8`, `16:16:8` |
-| `abiself`, `abidefault` | `f.ABISelf/ABIDefault.Which()` | per function |
-| `syslook.<name>` | `fe.Syslook(name)` symbol names (`writeBarrier`, `wbZero`, `wbMove`, `cgoCheckPtrWrite`, `cgoCheckMemmove`, `goschedguarded`) | `runtime.writeBarrier`, … |
-| `zerobase` | `ir.Syms.Zerobase` | `runtime.zerobase` |
-| `rttype.<field>` | `<offset>:t<type>` of the `rttype.Type` fields used by `isFixedLoad` (`Size_`, `PtrBytes`, `Hash`, `Kind_`, `GCData`) and `rttype.PtrType` `Elem` | |
-| `mulrecipes` | keys `x:cost` of `Config.mulRecipes` (the recipe builders are arch code the port reproduces) | |
+| `abi0`, `abi1` | `<intregs>:<floatregs>:<localsoffset>` of `Config.ABI0`, `Config.ABI1` | `0:0:8`, `16:16:8` |
+| `abiself`, `abidefault` | `f.ABISelf.Which()`, `f.ABIDefault.Which()` | per function, `abidefault` 1 |
+| `syslook.writeBarrier`, `syslook.wbZero`, `syslook.wbMove`, `syslook.cgoCheckPtrWrite`, `syslook.cgoCheckMemmove`, `syslook.goschedguarded` | name of `fe.Syslook(name)`, a string | `"runtime.writeBarrier"`, … |
+| `zerobase` | name of `ir.Syms.Zerobase`, a string | `"runtime.zerobase"` |
+| `rttype.Size_`, `rttype.PtrBytes`, `rttype.Hash`, `rttype.Kind_`, `rttype.GCData`, `rttype.PtrType.Elem` | `<offset>:<kind>:<size>` of the runtime type descriptor fields `isFixedLoad` folds (`copyCompatibleType` needs kind and size) | `0:UINTPTR:8`, `8:UINTPTR:8`, `16:UINT32:4`, `23:UINT8:1`, `32:PTR:8`, `48:PTR:8` |
+
+`Config.mulRecipes` (used by the `canMulStrengthReduce` rules) is not exported: it is built
+deterministically by `config.go` from arm64 instruction costs, which the port reproduces.
 
 Per-pass debug flags (`-d=ssa/<pass>/debug`) are 0; logging (`f.pass.debug`, `Warnl`, rule
 logging) has no effect on the SSA.
@@ -280,8 +334,6 @@ one of them must raise it on #4.
 - `f.cachedLoopnest` contents (only presence). `loopnestfor` is deterministic in the CFG; a
   stale loop nest across passes is not expected (every in-scope pass that changes the CFG
   calls `invalidateCFG`), the presence flag lets a port check its assumption.
-- `f.auxmap` (CSE's aux ids): it is nil until `generic cse`, the only in-scope reader, which
-  fills it in value order; a port reproduces it.
 - `f.Cache` (scratch slices, posets, `Cache.values` storage): no observable state.
 - `f.HTMLWriter`, `ruleMatches`, `dumpFileSeq`, `PrintOrHtmlSSA`: debugging only.
 - `f.RegAlloc`, `tempRegs`, `RegArgs`, `CloSlot`, `scheduled`, `laidout`, `maxCPUFeatures`,
@@ -295,6 +347,24 @@ one of them must raise it on #4.
 - ABI analysis of new calls (`writebarrier`'s `wbZero`/`wbMove`/`cgoCheck*` calls get an
   `AuxCall` from `ABIDefault.ABIAnalyzeTypes`): the result appears in the next section; the
   port reimplements the analysis from `abi1`.
+- Kind, size, flags, data and relocations of symbols that are not (yet) `SRODATA`, and the
+  `ir.Name`s of callee parameters in call `AuxCall`s (see `sym` and `abiparam`).
+- `f.pass` other than its name: the section name is the pass name (rules depend on it, e.g.
+  some `Mul` rules fire only when `pass.name != "opt"`); `pass.debug`/`stats` are 0.
 - Side effects outside the SSA (`reflectdata.MarkTypeSymUsedInInterface`,
   `fe.Func().SetWBPos`, `StringData` creating the data symbol, warnings): they do not change
   the SSA of this or any other function.
+
+## Building and the corpus
+
+- `scripts/build-go.sh` builds the patched toolchain into `third_party/go-build` (fresh copy of
+  the pin, `patches/go/*.patch`, `make.bash` under `memcap`); `--compile` re-patches and
+  rebuilds only `cmd/compile`; `--diff` prints the current patch (to refresh
+  `patches/go/0001-gofv-ssa-export.patch` after editing `third_party/go-build`).
+- `scripts/export-corpus.sh [--check-determinism]` exports the corpus for `linux/arm64`
+  (`-trimpath`, fresh build cache): the std packages listed in the script (one unit `std`),
+  every `// run` program without build constraints in `test/*.go` and `test/ken/*.go` (one unit
+  each; those that do not build are listed as `skip`), and `examples/*/main.go`. Dumps go to
+  `../gofv-corpus/<pin12>/plain/<set>/<unit>/…` and `<set>.tar.zst`, outside git; the committed
+  `corpus/manifest.txt` lists every unit with its file count and digest, and the
+  `tools/ssastats` table (functions, values, per pass how many functions changed).
