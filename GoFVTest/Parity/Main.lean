@@ -1,4 +1,5 @@
 import GoFVTest.Parity.Registry
+import GoFVTest.Parity.Renumber
 import GoFV.SSA.Parse
 import GoFV.SSA.Print
 
@@ -73,21 +74,34 @@ def firstDiff (want got : String) : String := Id.run do
 
 def printFunc (f : Func) : String := (Print.func f none |>.run "").2
 
-/-- Indices where the tables `a` and `b` differ. -/
-def diffIdx {α} [DecidableEq α] (a b : Array (Option α)) : Array Nat := Id.run do
-  let mut out := #[]
-  for i in [0:max a.size b.size] do
-    if (a[i]?).join != (b[i]?).join then out := out.push i
-  return out
+private unsafe def sameObjImpl {α : Type} (a b : α) : Bool := ptrAddrUnsafe a == ptrAddrUnsafe b
 
-/-- Definitions the pass created or changed must be section `k`'s at the same numbers. -/
-def checkTables (input out want : Tables) : Option String := Id.run do
-  let chk {α} [DecidableEq α] (tag : String) (sel : Tables → Array (Option α)) : Option String :=
-    (diffIdx (sel input) (sel out)).findSome? fun i =>
-      if ((sel out)[i]?).join == ((sel want)[i]?).join then none
-      else some s!"definition {tag}{i} differs from the stock output section"
-  return chk "t" (·.types) <|> chk "a" (·.auxes) <|> chk "s" (·.slots) <|>
-    chk "p" (·.posBases)
+/-- Pointer equality (a fast path only: `false` is always safe). -/
+@[implemented_by sameObjImpl] def sameObj {α : Type} (_ _ : α) : Bool := false
+
+/-- Position bases the pass defined or changed must be section `k`'s (no pass creates them). -/
+def checkPosBases (input out want : Tables) : Option String := Id.run do
+  for i in [0:max input.posBases.size out.posBases.size] do
+    let o := out.posBase? i
+    if input.posBase? i != o && o != want.posBase? i then
+      return some s!"position base p{i} differs from the stock output section"
+  return none
+
+/-- Compare the pass result with section `k` (`stock`, with tables `want`). -/
+def compare (input : Tables) (out : PassOut) (want : Tables) (stock : Section) : Option String :=
+  -- fast path: the pass made no definitions and the stock section has none
+  let renamed : Except String Func :=
+    if sameObj out.tables input && stock.defs.isEmpty then pure out.func
+    else match checkPosBases input out.tables want with
+      | some d => throw d
+      | none => renumber input out.tables want out.func stock.func
+  match renamed with
+  | .error d => some d
+  | .ok f =>
+    if f == stock.func then none else
+    let w := printFunc stock.func
+    let g := printFunc f
+    if w == g then none else some (firstDiff w g)
 
 def addReport (st : Stats) (maxReport : Nat) (r : Report) : Stats :=
   if (st.reports.filter (·.inst == r.inst)).size < maxReport then
@@ -96,6 +110,9 @@ def addReport (st : Stats) (maxReport : Nat) (r : Report) : Stats :=
 
 def bump (st : Stats) (i : Nat) (g : Count → Count) : Stats :=
   { st with counts := st.counts.modify i g }
+
+/-- The pseudo pass instance of `--check-renumber`. -/
+def renumberCheck : String := "renumber self-check"
 
 def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (st : Stats) :
     IO Stats := do
@@ -122,6 +139,19 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
       tables := tables.addAll s.defs
       if k == 0 then sec0 := tables; continue
       let name := s.pass.toStringLossy
+      -- `--check-renumber`: stock output with renumbered new objects must compare equal
+      if let some ri := insts.findIdx? (·.name == renumberCheck) then
+        if !s.defs.isEmpty then
+          let (lf, lt) := shuffledStock prev s
+          if !seen[ri]! then
+            seen := seen.set! ri true
+            st := bump st ri fun c => { c with funcs := c.funcs + 1 }
+          st := bump st ri fun c => { c with runs := c.runs + 1 }
+          match compare prev { func := lf, tables := lt } tables s with
+          | none => st := bump st ri fun c => { c with same := c.same + 1 }
+          | some d =>
+            st := bump st ri fun c => { c with mismatches := c.mismatches + 1 }
+            st := addReport st maxReport ⟨ri, path.toString, k, d⟩
       for h : ii in [0:insts.size] do
         let inst := insts[ii]
         if inst.name != name then continue
@@ -136,14 +166,7 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
         st := bump st ii fun c => { c with runs := c.runs + 1, ns := c.ns + (t1 - t0) }
         let detail : Option String := match r with
           | .error msg => some s!"pass error: {msg}"
-          | .ok out =>
-            match checkTables prev out.tables tables with
-            | some d => some d
-            | none =>
-              if out.func == s.func then none else
-              let want := printFunc s.func
-              let got := printFunc out.func
-              if want == got then none else some (firstDiff want got)
+          | .ok out => compare prev out tables s
         match detail with
         | none => st := bump st ii fun c => { c with same := c.same + 1 }
         | some d =>
@@ -176,6 +199,7 @@ structure Opts where
   jobs : Nat := 1
   maxReport : Nat := 10
   table : Option String := none
+  checkRenumber : Bool := false
   paths : Array String := #[]
 
 partial def parseArgs : List String → Opts → Except String Opts
@@ -188,6 +212,7 @@ partial def parseArgs : List String → Opts → Except String Opts
     let some n := n.toNat? | throw s!"--max-report {n}: not a number"
     parseArgs rest { o with maxReport := n }
   | "--table" :: p :: rest, o => parseArgs rest { o with table := some p }
+  | "--check-renumber" :: rest, o => parseArgs rest { o with checkRenumber := true }
   | a :: rest, o =>
     if a.startsWith "--" then throw s!"unknown option {a}"
     else parseArgs rest { o with paths := o.paths.push a }
@@ -223,11 +248,15 @@ def main (args : List String) : IO UInt32 := do
     | .ok o => pure o
     | .error e => IO.eprintln e; return 2
   if o.paths.isEmpty then
-    IO.eprintln "usage: pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
+    IO.eprintln "usage: pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N] [--table FILE] [--check-renumber] <dir|file>..."
     return 2
   let insts ← match select o.passes with
     | .ok i => pure i
     | .error e => IO.eprintln e; return 2
+  let insts := if o.checkRenumber then
+      insts.push { name := renumberCheck,
+                   entry := { fn := "renumber", names := #[], run := fun _ _ => throw "" } }
+    else insts
   let t0 ← IO.monoMsNow
   let mut files := #[]
   for p in o.paths do files := files ++ (← ssaFiles p)
