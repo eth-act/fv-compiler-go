@@ -152,7 +152,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
           st := { st with lineStartsBad := st.lineStartsBad + 1 }
           bad := true
           IO.eprintln s!"FAIL {path}: section {k}: linestarts round trip"
-    let o := TypeOrder.ofGroups e.typeOrder
+    let o := TypeOrder.ofGroups e.typeOrder e.typeCmp
     for s in secs do
       for d in s.defs do
         if let .type n _ := d then

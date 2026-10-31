@@ -1,4 +1,4 @@
-# Contract: per-pass SSA export (`gofv-ssa` v1)
+# Contract: per-pass SSA export (`gofv-ssa` v2)
 
 Owner: Exporter (issue #4). Consumers: LeanIR (parser/printer, #21), RulesExport (#22), every
 pass port (G4). Changing the format bumps the version in the first line and is announced on #4.
@@ -75,13 +75,18 @@ is deliberately not exported; no pass reads it.
 ## File layout
 
 ```
-gofv-ssa 1
+gofv-ssa 2
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi> <nosplit 0|1> <pgohot 0|1>
 config <key> <value>                  (one line per key; table below)
 <section 0>
 <section 1>
 …
+frontend
+<definitions>                          (the frontend block, see below)
+end
+warn "<text>"                         (zero or more)
+typecmp t<a> t<b> <lt|eq|gt>           (zero or more)
 typeorder <group> <group> …
 eof
 ```
@@ -193,11 +198,15 @@ the field offset is `BADWIDTH`, as for most `FUNC` parameters).
 pseudo-types `Mem`, `Flags`, `Void`, `Int128`, `ResultMem` (`types.TypeMem`, …), in that
 order. `types.Types[k]` for the other basic kinds are the `Config.Types` entries.
 
-`typeorder` (once, at the end of the file) lists every type of the file in ascending
-`types.(*Type).Compare` order; a group `t3=t9` holds types that compare `CMPeq`. Since `Compare`
-is a total preorder, the order restricted to the types of any section is that section's order,
-so a Lean `cmpTyp` is just a rank comparison. (CSE's `cmpVal` and `copyCompatibleType` use
-`Compare`.)
+`typeorder` (once, at the end of the file) lists every type of the file sorted by
+`types.(*Type).Compare` (Go's `sort.SliceStable`); a group `t3=t9` holds types adjacent in that
+order that compare `CMPeq`. `Compare` is not a total preorder (`*byte` is `CMPeq` `*uint8` by
+the byte/uint8 special case, while `cmpsym` orders names by length first, so `*abi.Kind` sorts
+between them, #68), so before it the exporter writes one `typecmp t<a> t<b> <o>` line (`a < b`
+by number, `o` = `Compare(a, b)`) for every pair of the file's types whose `Compare` differs
+from the comparison of their group ranks. `Compare(a, b)` is the `typecmp` entry if present,
+else the rank comparison (`GoFV.SSA.TypeOrder`). (CSE's `cmpVal`, the constant cache and
+`copyCompatibleType` use `Compare`.)
 
 `aux a<n> <tag> "<fmt %v>" <tag-specific>`, where `<fmt %v>` is Go's `fmt.Sprint(aux)` (what
 `LongString` prints inside `{…}`):
@@ -301,6 +310,22 @@ constants (`constNilMagic` = 1111, …).
 differs from the block listing it). Written just before `end`; `finish` may add `warn` lines
 before `typeorder`. The stats tool counts them; the corpus must have none.
 
+## Frontend block
+
+After the last section, `frontend`, then definition lines (same records as in a section's
+definition block), then `end`. It defines the objects reachable from the frontend that a pass
+can reach without any section referencing them: `rewriteFixedLoad` folds a load from a
+read-only symbol to its relocation target (`Addr {r.Sym}`), and the rewrite loop can then fold
+a load from that target too (nested generic dictionaries, e.g.
+`internal/synctest..dict.Associate[sync.WaitGroup]` → `internal/abi..dict.Escape[*sync.WaitGroup]`
+→ `type:*sync.WaitGroup`, #62). The block holds the closure, over `R_ADDR`/`R_WEAKADDR`
+relocations, of every exported `SRODATA` generic dictionary (`..dict.` in the name): every
+target not defined by a section is defined here (with its own types), and targets that are
+themselves `SRODATA` dictionaries are followed. Other targets (type descriptors, itabs) are
+defined but not followed. The block is always present (possibly empty). Its numbers continue
+the file's tables; `ExportFile.frontendTables` (final tables plus the block) is what
+`PassEnv.frontend` holds.
+
 ## Fixed configuration (`config` lines)
 
 Everything else the in-scope passes read outside `Func` is constant for the corpus and recorded
@@ -382,4 +407,10 @@ one of them must raise it on #4.
   each; those that do not build are listed as `skip`), and `examples/*/main.go`. Dumps go to
   `../gofv-corpus/<pin12>/plain/<set>/<unit>/…` and `<set>.tar.zst`, outside git; the committed
   `corpus/manifest.txt` lists every unit with its file count and digest, and the
-  `tools/ssastats` table (functions, values, per pass how many functions changed).
+  `tools/ssastats` table (functions, values, per pass how many functions changed). This is the
+  quick corpus, the per-PR parity gate.
+- `scripts/export-corpus.sh --corpus full [--check-determinism]` exports the nightly corpus
+  (#63) into `../gofv-corpus/<pin12>/full/` (`plain/`, `*.tar.zst`; manifest
+  `corpus/manifest-full.txt`): every package of `go list std` (unit `stdall`), every non-main
+  package of `go list cmd` (unit `cmd`) and every command of cmd (units `cmdmain/<path>`, their
+  packages are all `main`). `scripts/parity.sh --corpus full` runs the registered passes on it.

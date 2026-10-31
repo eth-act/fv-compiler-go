@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1002 @@
+@@ -0,0 +1,1088 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -172,6 +172,15 @@
 +	if set.fn != nil && !set.fn.MatchString(pkg+"."+f.Name) {
 +		return nil
 +	}
++	x := gofvNewExporter(f, set)
++	x.section("start")
++	return x
++}
++
++// gofvNewExporter returns an exporter for f with the file header and config lines written
++// (no section yet). set may carry no directory when the caller does not write files.
++func gofvNewExporter(f *Func, set *gofvSettings) *gofvExporter {
++	pkg := base.Ctxt.Pkgpath
 +	x := &gofvExporter{
 +		f:        f,
 +		set:      set,
@@ -183,10 +192,9 @@
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-ssa 1\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
++	fmt.Fprintf(&x.out, "gofv-ssa 2\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
-+	x.section("start")
 +	return x
 +}
 +
@@ -1008,7 +1016,65 @@
 +}
 +
 +// finish writes the type order and the file.
++// frontend writes the definitions of the symbols reachable through R_ADDR/R_WEAKADDR
++// relocations of exported read-only symbols that no section defined: rewriteFixedLoad
++// folds a load from a read-only symbol to the relocation target, and the rewrite loop can
++// then fold a load from that target in turn (nested generic dictionaries), so a port needs
++// the targets' data although no section references them. The closure follows read-only
++// generic dictionaries ("..dict.") only; their other targets (type descriptors, itabs, ...)
++// are defined but not followed, which bounds the closure.
++func (x *gofvExporter) frontend() {
++	x.defs.Reset()
++	type numbered struct {
++		n int
++		s *obj.LSym
++	}
++	var syms []numbered
++	for a, n := range x.aux {
++		if s, ok := a.(*obj.LSym); ok {
++			syms = append(syms, numbered{n, s})
++		}
++	}
++	sort.Slice(syms, func(i, j int) bool { return syms[i].n < syms[j].n })
++	queue := make([]*obj.LSym, len(syms))
++	for i, e := range syms {
++		queue[i] = e.s
++	}
++	for len(queue) > 0 {
++		s := queue[0]
++		queue = queue[1:]
++		if s.Type != objabi.SRODATA || !strings.Contains(s.Name, "..dict.") {
++			continue
++		}
++		for _, r := range s.R {
++			if r.Sym == nil || r.Type != objabi.R_ADDR && r.Type != objabi.R_WEAKADDR {
++				continue
++			}
++			if _, done := x.aux[r.Sym]; done {
++				continue
++			}
++			x.auxRef(r.Sym)
++			queue = append(queue, r.Sym)
++		}
++	}
++	x.out.WriteString("frontend\n")
++	x.out.Write(x.defs.Bytes())
++	x.out.WriteString("end\n")
++}
++
++// finish completes the file (tail) and writes it.
 +func (x *gofvExporter) finish() {
++	x.tail()
++	x.write()
++}
++
++// tail appends the frontend block, file-level warns, typecmp and typeorder lines and eof.
++func (x *gofvExporter) tail() {
++	x.warns = x.warns[:0]
++	x.frontend()
++	for _, s := range x.warns {
++		fmt.Fprintf(&x.out, "warn %s\n", gofvQuote(s))
++	}
 +	ts := slices.Clone(x.typeList)
 +	cmp := func(a, b *types.Type) types.Cmp {
 +		c, ok := gofvTry(func() types.Cmp { return a.Compare(b) })
@@ -1019,6 +1085,7 @@
 +	}
 +	sort.SliceStable(ts, func(i, j int) bool { return cmp(ts[i], ts[j]) == types.CMPlt })
 +	var groups []string
++	rank := make(map[*types.Type]int, len(ts))
 +	for i, t := range ts {
 +		ref := fmt.Sprintf("t%d", x.types[t])
 +		if i > 0 && cmp(ts[i-1], t) == types.CMPeq {
@@ -1026,12 +1093,31 @@
 +		} else {
 +			groups = append(groups, ref)
 +		}
-+		if i > 0 && cmp(t, ts[i-1]) == types.CMPlt {
-+			fmt.Fprintf(&x.out, "warn %s\n", gofvQuote("typeorder: Compare not a total preorder at "+ref))
++		rank[t] = len(groups)
++	}
++	// Compare is not a total preorder (*byte == *uint8 by the byte/uint8 special case, but
++	// cmpsym orders by name length, so *abi.Kind sorts between them): list every pair whose
++	// Compare disagrees with the rank order (#68). typeList is in number order.
++	cmpName := map[types.Cmp]string{types.CMPlt: "lt", types.CMPeq: "eq", types.CMPgt: "gt"}
++	for i, a := range x.typeList {
++		for _, b := range x.typeList[i+1:] {
++			want := types.CMPeq
++			switch ra, rb := rank[a], rank[b]; {
++			case ra < rb:
++				want = types.CMPlt
++			case ra > rb:
++				want = types.CMPgt
++			}
++			if c := cmp(a, b); c != want {
++				fmt.Fprintf(&x.out, "typecmp t%d t%d %s\n", x.types[a], x.types[b], cmpName[c])
++			}
 +		}
 +	}
 +	fmt.Fprintf(&x.out, "typeorder %s\neof\n", gofvList(groups))
++}
 +
++// write writes the finished file under the export directory.
++func (x *gofvExporter) write() {
 +	dir := filepath.Join(x.set.dir, filepath.FromSlash(base.Ctxt.Pkgpath))
 +	if err := os.MkdirAll(dir, 0o777); err != nil {
 +		base.Fatalf("gofv export: %v", err)

@@ -646,14 +646,30 @@ def file : L ExportFile := do
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "pass") then break
     sections := sections.push (← sectionP)
+  line "frontend" (pure ())
+  let frontend ← defs
+  line "end" (pure ())
   let mut warns := #[]
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
+  let mut typeCmp := #[]
+  for _ in [0:(← read).lines.size] do
+    if !(← tagIs "typecmp") then break
+    typeCmp := typeCmp.push (← line "typecmp" do
+      let a ← w (refW 't')
+      let b ← w (refW 't')
+      let o ← match ← wordStr with
+        | "lt" => pure Ordering.lt
+        | "eq" => pure Ordering.eq
+        | "gt" => pure Ordering.gt
+        | x => throw s!"expected lt|eq|gt, got {x}"
+      return (a, b, o))
   let typeOrder ← line "typeorder" (w (listW fun g => (g.split 61).mapM (refW 't')))
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
-  return { version, pkg, name, abi, nosplit, pgohot, config, sections, warns, typeOrder }
+  return { version, pkg, name, abi, nosplit, pgohot, config, sections, frontend, warns, typeCmp,
+           typeOrder }
 
 end Parse
 

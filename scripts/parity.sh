@@ -4,27 +4,37 @@
 # pass instance is checked), writing the markdown table to <out> (default <repo>/tmp/parity.md)
 # and the mismatch reports to <out>.log. Exit status is pass-parity's (1 on any mismatch).
 #
-# usage: scripts/parity.sh [-j jobs] [-o out.md] [-p pass]... [corpus dir|file...]
-#        default corpus: the newest ../gofv-corpus/<pin12>/plain (directories named exactly by a
-#        12-hex pin; e.g. <pin12>.new being regenerated is skipped), jobs 4
+# usage: scripts/parity.sh [--corpus quick|full] [-j jobs] [-o out.md] [-p pass]... [corpus dir|file...]
+#        default corpus: the newest ../gofv-corpus/<pin12>/plain (quick, the per-PR gate) or
+#        ../gofv-corpus/<pin12>/full/plain (full, the nightly gate: all of std and cmd; issue #63)
+#        (directories named exactly by a 12-hex pin; e.g. <pin12>.new being regenerated is
+#        skipped), jobs 4
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 jobs=4
 out=$root/tmp/parity.md
 passes=()
-while getopts "j:o:p:" opt; do
-  case $opt in
-    j) jobs=$OPTARG ;;
-    o) out=$OPTARG ;;
-    p) passes+=(--pass "$OPTARG") ;;
-    *) echo "usage: $0 [-j jobs] [-o out.md] [-p pass]... [corpus...]" >&2; exit 2 ;;
+kind=quick
+usage="usage: $0 [--corpus quick|full] [-j jobs] [-o out.md] [-p pass]... [corpus...]"
+while [ $# -gt 0 ]; do
+  case $1 in
+    --corpus) kind=$2; shift 2 ;;
+    -j) jobs=$2; shift 2 ;;
+    -o) out=$2; shift 2 ;;
+    -p) passes+=(--pass "$2"); shift 2 ;;
+    -*) echo "$usage" >&2; exit 2 ;;
+    *) break ;;
   esac
 done
-shift $((OPTIND - 1))
+case $kind in
+  quick) sub=plain ;;
+  full) sub=full/plain ;;
+  *) echo "$usage" >&2; exit 2 ;;
+esac
 if [ $# -eq 0 ]; then
   main_root=$(git -C "$root" worktree list --porcelain | sed -n '1s/^worktree //p')
-  corpus=$(ls -dt "$(dirname "$main_root")"/gofv-corpus/*/plain 2>/dev/null \
-    | grep -E '/[0-9a-f]{12}/plain$' | head -n 1 || true)
+  corpus=$(ls -dt "$(dirname "$main_root")"/gofv-corpus/*/$sub 2>/dev/null \
+    | grep -E "/[0-9a-f]{12}/$sub\$" | head -n 1 || true)
   [ -n "$corpus" ] || { echo "parity: no corpus under ../gofv-corpus; pass one" >&2; exit 2; }
   set -- "$corpus"
 fi

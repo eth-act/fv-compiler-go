@@ -9,11 +9,12 @@
 #        scripts/build-go.sh --diff     print the current go-build changes against the pinned
 #                                       tree for the patched paths (to refresh a patch file)
 #
+# Build directory: $GOFV_GO_BUILD, default third_party/go-build (the parity oracle).
 # Bootstrap: $GOROOT_BOOTSTRAP, default /home/kev/work/go (go1.26), else `go env GOROOT`.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 src=$root/third_party/go
-dst=$root/third_party/go-build
+dst=${GOFV_GO_BUILD:-$root/third_party/go-build}  # GOFV_GO_BUILD: build elsewhere (e.g. a driver toolchain)
 pin=2aae1000ea1d4b28923b96db28acf4e3b99d6aff
 mode=${1:-full}
 
