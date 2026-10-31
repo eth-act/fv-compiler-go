@@ -80,6 +80,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | short circuit | shortcircuit | 9297 | 9297 | 0 | 100% | 4662 functions changed by the pass |
 | pre-opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| generic cse | cse | 9297 | 9293 | 4 | 99.95% | 4324 functions changed by the pass; all 4: export gap #68 (`Type.Compare` not a total preorder: `*byte` CMPeq `*uint8`) |
 | phiopt | phiopt | 9297 | 9297 | 0 | 100% | 214 functions changed by the pass |
 | gcse deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | known bits | knownBits | 9297 | 9297 | 0 | 100% | 35 functions changed by the pass |
