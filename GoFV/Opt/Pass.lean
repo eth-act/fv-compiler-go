@@ -109,5 +109,10 @@ structure PassEntry where
   run : Pass
   /-- `p.disabled` for this configuration (e.g. `!buildcfg.Experiment.PreemptibleLoops`). -/
   disabled : PassEnv → Except String Bool := fun _ => pure false
+  /-- For a pass whose stock result depends on Go's randomized map iteration (`sccp`): the
+  port rerun with the iteration order recovered from the stock output (arguments: input
+  function, stock output function). The harness calls it when the deterministic run differs
+  and counts an exact match as "order replayed" (`docs/PARITY.md`). -/
+  replay : Option (PassEnv → Func → Func → Except String PassOut) := none
 
 end GoFV.Opt

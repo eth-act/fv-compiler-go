@@ -37,13 +37,16 @@ structure Count where
   errors : Nat := 0
   /-- Files where the pass is disabled (and correctly has no section). -/
   disabled : Nat := 0
+  /-- Of the matches, how many needed the map order replayed from the stock output
+  (`PassEntry.replay`). -/
+  replayed : Nat := 0
   ns : Nat := 0
   deriving Inhabited
 
 def Count.add (a b : Count) : Count :=
   { funcs := a.funcs + b.funcs, runs := a.runs + b.runs, same := a.same + b.same
     mismatches := a.mismatches + b.mismatches, errors := a.errors + b.errors
-    disabled := a.disabled + b.disabled, ns := a.ns + b.ns }
+    disabled := a.disabled + b.disabled, replayed := a.replayed + b.replayed, ns := a.ns + b.ns }
 
 structure Report where
   inst : Nat
@@ -167,6 +170,15 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
         let detail : Option String := match r with
           | .error msg => some s!"pass error: {msg}"
           | .ok out => compare prev out tables s
+        -- randomized map order: retry with the order the stock output shows
+        let replayed := match detail, r, inst.entry.replay with
+          | some _, .ok _, some rp =>
+            match rp env input s.func with
+            | .ok out => (compare prev out tables s).isNone
+            | .error _ => false
+          | _, _, _ => false
+        let detail := if replayed then none else detail
+        if replayed then st := bump st ii fun c => { c with replayed := c.replayed + 1 }
         match detail with
         | none => st := bump st ii fun c => { c with same := c.same + 1 }
         | some d =>
@@ -232,15 +244,16 @@ def pct (a b : Nat) : String :=
 
 def tableText (insts : Array Inst) (st : Stats) (ms : Nat) : String := Id.run do
   let mut out := s!"files: {st.files}, parse errors: {st.parseErrors}, wall: {ms / 1000} s\n\n"
-  out := out ++ "| pass | fn | functions | runs | match | mismatch | errors | disabled in | parity | pass time (s) |\n"
-  out := out ++ "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+  out := out ++ "| pass | fn | functions | runs | match | of which order replayed | mismatch | errors | disabled in | parity | pass time (s) |\n"
+  out := out ++ "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
   for h : i in [0:insts.size] do
     let c := st.counts[i]!
     let inst := insts[i]
     let parity := if c.runs == 0 && c.mismatches == 0 then
         (if c.disabled > 0 then "disabled" else "-") else pct c.same c.runs
+    let replayed := if inst.entry.replay.isSome then toString c.replayed else "-"
     out := out ++ s!"| {inst.name} | {inst.entry.fn} | {c.funcs} | {c.runs} | {c.same} | \
-      {c.mismatches} | {c.errors} | {c.disabled} | {parity} | {c.ns / 1000000000}.{(c.ns / 100000000) % 10} |\n"
+      {replayed} | {c.mismatches} | {c.errors} | {c.disabled} | {parity} | {c.ns / 1000000000}.{(c.ns / 100000000) % 10} |\n"
   return out
 
 def main (args : List String) : IO UInt32 := do

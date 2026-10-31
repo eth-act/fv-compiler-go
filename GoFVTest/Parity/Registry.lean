@@ -21,6 +21,7 @@ import GoFV.Opt.Opt
 import GoFV.Opt.CSE
 import GoFV.Opt.Prove.Pass
 import GoFV.Opt.Decompose
+import GoFV.Opt.SccpReplay
 
 /-!
 # Registered Lean passes
@@ -50,6 +51,7 @@ def registry : Array PassEntry := #[
   { fn := "expandCalls", names := #["expand calls"], run := expandCallsPass },
   { fn := "fuseLate", names := #["late fuse"], run := fuseLatePass },
   { fn := "softfloat", names := #["softfloat"], run := softfloatPass },
+  { fn := "sccp", names := #["sccp"], run := sccpPass, replay := some sccpReplay },
   { fn := "checkbce", names := #["check bce"], run := checkbcePass },
   { fn := "elimDeadAutosGeneric", names := #["dead auto elim"], run := elimDeadAutosPass },
   { fn := "dse", names := #["dse"], run := dsePass },
