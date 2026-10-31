@@ -55,12 +55,22 @@ exporter of 0001 (`gofvNewExporter`, `section("start")`, `tail()`), pipes it int
    `types.NewPtr/NewSlice/NewArray/NewTuple/NewResults` or the predeclared/SSA types; symbols
    with `fe.Syslook` (the config's runtime symbols), `reflectdata.TypeLinksym` (type
    descriptors, so the linker emits them) or `base.Ctxt.LookupABI`; `*AuxCall`s with the ABI
-   analysis of their parameter types (`ABIAnalyzeTypes`); new autos with `fe.SplitSlot` of the
+   analysis of their parameter types (`ABIAnalyzeTypes`, with an empty `regInfo` when registers
+   are used, as `StaticAuxCall` makes it: without it `Reg` drops the register arguments); new autos with `fe.SplitSlot` of the
    parent slot (the suffix is what the new name adds to the parent's); `stringAux`, `int64Aux`,
-   `AuxNameOffset`, `PanicBoundsC(C)`, `auxMark` directly. An `*AuxCall` redefinition (`Fn`
-   rewritten by `devirtLECall`) is applied in place (undone if the import fails). Every new or
-   redefined object is rendered again by the exporter at its Lean number and must equal the
-   Lean definition byte for byte.
+   `AuxNameOffset`, `PanicBoundsC(C)`, `auxMark` directly. Objects of the export's `frontend`
+   block (and the types their symbols refer to) that a pass copied to new numbers are the
+   block's compiler objects, renumbered (a type's references are resolved first, so a
+   recursive type works). An `*AuxCall` redefinition (`Fn` rewritten by `devirtLECall`) is
+   applied in place (undone if the import fails); a type redefinition must be what the
+   compiler's object renders as. Every new or redefined object is rendered again by the
+   exporter at its Lean number and must equal the Lean definition byte for byte; for a new
+   symbol only its name and ABI must match (the symbol is the frontend's; its contents are
+   whatever the frontend has so far).
+   Several identical `*types.Type` objects can share a type number; the importer uses, for
+   each number, the object with the most sizes calculated (the exporter renders the first one
+   met, the stock passes call `Size()` on theirs), and a value keeps its own object when its
+   type number is unchanged.
 2. **Function.** Blocks and values are rebuilt from the IDs (`Values`, `Args`, `Controls`,
    `Succs`/`Preds` with edge indices, `Uses`, positions, `Likely`, aux), and `Entry`, `Type`,
    `OwnAux`, the ID allocators (`vid.last`, `bid.last`), the free lists (fresh `Value`/`Block`
@@ -70,7 +80,12 @@ exporter of 0001 (`gofvNewExporter`, `section("start")`, `tail()`), pipes it int
    leftover entries; a cached loop nest is recomputed with `loopnestfor`). `DeferReturn` is
    remapped by block ID.
 3. **Check.** `f` is exported again with the same exporter; the section must equal the Lean
-   output's function text byte for byte, with no new definitions.
+   output's function text byte for byte, with no new definitions, except that the entries of
+   `namedx`, `splits` and `canon` (Go maps, which the exporter sorts by object numbers) are
+   compared as sets.
+4. **Cache.** The imported values and blocks are not in `f.Cache`'s storage, which `Cache.Reset`
+   clears up to the first ID never used: their IDs are marked used there so the storage later
+   passes take is cleared for the next function.
 
 Any failure (exec, status, parse, an object that cannot be rebuilt, the check) restores `f`
 (fields saved before the import, aux mutations and `Dcl` additions undone) and is recorded as

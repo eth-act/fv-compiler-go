@@ -7,10 +7,12 @@
 # per-function statistics (GOFV_SSA_DRIVER_STATS).
 #
 # usage: scripts/driver-e2e.sh [--mode full|mixed] [--sets std,test,examples] [--out DIR] [-p N]
+#                              [--report-only]
 #
 #   --mode   GOFV_SSA_DRIVER_MODE (default full)
 #   --out    results directory (default tmp/driver-e2e-<mode>)
 #   -p       go build -p (default 4)
+#   --report-only  keep the builds in --out, only run the programs and write the report
 #
 # Toolchain: $GOFV_DRIVER_GO (default tmp/go-driver, built by
 # `GOFV_GO_BUILD=$PWD/tmp/go-driver scripts/build-go.sh`, patches 0001 and 0002). Lean
@@ -20,14 +22,15 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 gob=${GOFV_DRIVER_GO:-$root/tmp/go-driver}
 opt=$root/.lake/build/bin/gofv-ssa-opt
 gosrc=$root/third_party/go
-mode=full sets=std,test,examples par=4 out=
+mode=full sets=std,test,examples par=4 out= reportOnly=0
 while [ $# -gt 0 ]; do
   case $1 in
     --mode) mode=$2; shift 2 ;;
     --sets) sets=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
     -p) par=$2; shift 2 ;;
-    *) echo "usage: $0 [--mode full|mixed] [--sets std,test,examples] [--out DIR] [-p N]" >&2; exit 2 ;;
+    --report-only) reportOnly=1; shift ;;
+    *) echo "usage: $0 [--mode full|mixed] [--sets std,test,examples] [--out DIR] [-p N] [--report-only]" >&2; exit 2 ;;
   esac
 done
 out=${out:-$root/tmp/driver-e2e-$mode}
@@ -37,9 +40,9 @@ command -v qemu-aarch64-static >/dev/null || { echo "driver-e2e: qemu-aarch64-st
 
 mkdir -p "$root/tmp"
 export TMPDIR=$root/tmp GOTMPDIR=$root/tmp
-export GOOS=linux GOARCH=arm64 GOFLAGS=-trimpath GOTOOLCHAIN=local GO111MODULE=off
+export GOOS=linux GOARCH=arm64 GOFLAGS=-trimpath GOTOOLCHAIN=local GO111MODULE=off LC_ALL=C
 unset GOFV_SSA_EXPORT GOFV_SSA_DRIVER GOFV_SSA_DRIVER_PKG GOFV_SSA_DRIVER_FUNC
-rm -rf "$out"; mkdir -p "$out"
+[ "$reportOnly" = 1 ] || { rm -rf "$out"; mkdir -p "$out"; }
 gocmd=("$root/scripts/memcap.sh" "$gob/bin/go")
 
 # Same selection as scripts/export-corpus.sh.
@@ -88,10 +91,12 @@ build() {
   rm -rf "$cache"
 }
 
-echo "driver-e2e: stock build" >&2
-build stock
-echo "driver-e2e: driver build (mode $mode)" >&2
-build lean
+if [ "$reportOnly" = 0 ]; then
+  echo "driver-e2e: stock build" >&2
+  build stock
+  echo "driver-e2e: driver build (mode $mode)" >&2
+  build lean
+fi
 
 report=$out/report.md
 {

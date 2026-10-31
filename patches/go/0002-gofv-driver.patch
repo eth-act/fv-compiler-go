@@ -63,7 +63,7 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,1882 @@
+@@ -0,0 +1,1887 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1045,7 +1045,12 @@
 +			outs = append(outs, t)
 +		}
 +	}
-+	return &AuxCall{Fn: fn, abiInfo: cfg.ABIAnalyzeTypes(ins, outs)}, nil
++	info := cfg.ABIAnalyzeTypes(ins, outs)
++	var reg *regInfo // as StaticAuxCall etc.: Reg computes the register masks lazily into it
++	if info.InRegistersUsed()+info.OutRegistersUsed() > 0 {
++		reg = &regInfo{}
++	}
++	return &AuxCall{Fn: fn, abiInfo: info, reg: reg}, nil
 +}
 +
 +func (im *gofvImporter) slot(tok string) (*LocalSlot, error) {
