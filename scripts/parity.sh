@@ -33,7 +33,7 @@ cd "$root"
 scripts/memcap.sh lake build pass-parity >/dev/null
 status=0
 scripts/memcap.sh .lake/build/bin/pass-parity --jobs "$jobs" --max-report 20 --table "$out" \
-  "${passes[@]}" "$@" >"$out.log" 2>&1 || status=$?
+  --check-renumber "${passes[@]}" "$@" >"$out.log" 2>&1 || status=$?
 { echo; echo "corpus: $*"; echo "commit: $(git rev-parse --short HEAD)"; } >>"$out"
 cat "$out"
 grep -c '^MISMATCH' "$out.log" >/dev/null && echo "mismatch reports: $out.log"

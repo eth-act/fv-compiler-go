@@ -15,19 +15,32 @@ selected stock pass:
 2. run the Lean port with a `PassEnv` (`GoFV/Opt/Pass.lean`: stock pass name, header, `config`
    lines, `typs`, type order, tables);
 3. compare the result with section `k`: structural equality first, else both functions are
-   printed with the export printer (`Print.func`) and must be byte-identical; definitions the
-   pass created or redefined (tables entries that differ from the input's) must equal section
-   `k`'s at the same numbers.
+   printed with the export printer (`Print.func`) and must be byte-identical. Objects the pass
+   created (types, aux, slots at fresh numbers) are first paired with section `k`'s new
+   definitions and renamed (below); each pair, and every object redefined on either side, must
+   have the same definition.
+
+**New objects** (`GoFVTest/Parity/Renumber.lean`). A pass numbers the objects it creates
+itself (any numbers past the input tables); the export numbers them while writing section `k`.
+The harness walks both functions canonically — the function in print order (`f` line, block
+aux, value type and aux, names, `namedx`, `splits`, `canon`, `auxmap`), then breadth first
+through the references inside the new and the redefined definitions — and pairs the new
+references of each kind by position. Two results that are equal up to renaming give
+corresponding walks, so any real difference shows up as a definition or function mismatch.
+`--check-renumber` adds a self-check instance: for every section that defines objects, the
+stock output with its new objects moved to fresh numbers must compare equal (14,301 sections of
+8,067 functions on the corpus, all equal). Position bases are compared at equal numbers (no
+pass creates them).
 
 A mismatch reports the file, the section and the first differing line of the printed function
 (or the pass's error). A pass whose Go `disabled` condition holds (e.g. `insert resched checks`
 without `GOEXPERIMENT=preemptibleloops`) is checked to have no section in that file.
 
 Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays
-constant: the whole corpus (9,297 files, 1.25 GB) runs in about 45 s with 4 jobs and 130 MB.
+constant: the whole corpus (9,297 files, 1.25 GB) runs in about 25 s with 4 jobs and 130 MB.
 
 ```
-lake exe pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+lake exe pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N] [--table FILE] [--check-renumber] <dir|file>...
 ```
 
 - `--pass`: a Go function name selects all its instances (`deadcode` → the five deadcode
@@ -38,7 +51,7 @@ lake exe pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N]
 - Exit status 1 on any mismatch, pass error, parse error, or when no file was read.
 
 `scripts/parity.sh [-j jobs] [-o out.md] [-p pass]... [corpus...]` builds the tool, runs every
-registered pass over the corpus (default: the newest `../gofv-corpus/*/plain`) through
+registered pass over the corpus (default: the newest `../gofv-corpus/<pin12>/plain`) through
 `memcap`, and writes the table to `tmp/parity.md` and the mismatch reports to
 `tmp/parity.md.log`.
 
@@ -48,12 +61,13 @@ A port is a `GoFV.Opt.Pass` (`PassEnv → Func → Except String PassOut`; `Pass
 passes that do not create definitions). Add one `PassEntry` to
 `GoFVTest/Parity/Registry.lean`: `fn` (the Go function), `names` (the stock names of its
 pipeline instances) and, for passes the driver can disable, `disabled`. A pass that creates
-types or aux objects must currently give them section `k`'s numbers (the tables check compares
-at equal numbers).
+types, aux objects or slots returns them in `PassOut.tables` at fresh numbers (and mutated
+objects as redefinitions at their own numbers).
 
 ## Results
 
-Corpus `gofv-corpus/2aae1000ea1d/plain` (9,297 functions):
+Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types keyed by
+`String()` too; 9,297 functions):
 
 | pass | fn | functions | match | mismatch | parity | notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -63,7 +77,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` (9,297 functions):
 | opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | gcse deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | generic deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
-| zero arg cse | zcse | 9297 | 9213 | 84 | 99.09% | all 84: export gap #52 (`byte`/`uint8` type pointers) |
+| zero arg cse | zcse | 9297 | 9297 | 0 | 100% | before the #52 export fix: 84 mismatches (`byte`/`uint8` type pointers) |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
 | insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |
