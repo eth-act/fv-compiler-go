@@ -230,6 +230,7 @@ structure CStats where
   gaps : Nat := 0
   diffs : Nat := 0
   gapFuncs : Nat := 0
+  definedFuncs : Nat := 0
   outcomes : Std.HashMap String Nat := {}
   stuckMsgs : Std.HashMap String Nat := {}
 
@@ -250,6 +251,7 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
       let (calls, s') := randCalls l.params n s
       s := s'
       let mut gapHere := false
+      let mut definedHere := false
       for c in calls do
         let some args := (l.params.toList.zip c.toList).mapM fun (k, a) => parseVal k a
           | continue
@@ -266,6 +268,7 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
         | .outOfFuel => st := { st with stuck0 := st.stuck0 + 1 }
         | _ =>
           st := { st with defined0 := st.defined0 + 1 }
+          definedHere := true
           for k in [1:l.sections.size] do
             let o := runSection l k args
             let r := renderOutcome l.results o
@@ -283,11 +286,12 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
                   IO.println s!"DIFF {path} section {k} ({l.sections[k]!.1}) {c.toList}: {r} (section 0: {r0})"
                 st := { st with diffs := st.diffs + 1 }
       if gapHere then st := { st with gapFuncs := st.gapFuncs + 1 }
+      if definedHere then st := { st with definedFuncs := st.definedFuncs + 1 }
   let kinds := st.outcomes.toList.map (fun (k, n) => s!"{k} {n}")
   let top := (st.stuckMsgs.toList.toArray.qsort (fun a b => a.2 > b.2)).toList.take 15
   IO.println s!"sem-difftest corpus: {st.files} files, {st.eligible} with int/bool signatures, \
     {st.calls} calls (section 0: {", ".intercalate kinds}); {st.defined0} calls defined at \
-    section 0, {st.sectionRuns} later-section runs of them: {st.agree} agree, {st.diffs} \
+    section 0 (in {st.definedFuncs} functions), {st.sectionRuns} later-section runs of them: {st.agree} agree, {st.diffs} \
     differ, {st.gaps} stuck (gaps, in {st.gapFuncs} functions)"
   IO.println "section-0 stuck reasons (top 15):"
   for (k, c) in top do IO.println s!"  {c} {k}"

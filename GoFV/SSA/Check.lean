@@ -1,5 +1,8 @@
 import GoFV.SSA.Export
-import GoFV.SSA.CheckCfg
+import GoFV.SSA.TypePred
+import GoFV.SSA.Analysis.Postorder
+import GoFV.SSA.Analysis.Dom
+import GoFV.SSA.Analysis.LoopNest
 import Std.Data.HashSet
 
 /-!
@@ -12,46 +15,45 @@ is that of the machine-independent passes: `f.RegAlloc == nil`, `f.scheduled == 
 checks are skipped exactly as Go skips them.
 
 Inputs beyond the `Func`: the definition tables (types, aux values) and the `Config.Types` of
-the export (`typs`; `SP`/`SB` must be typed `Uintptr`, `StringLen` `Int`). Dominance, postorder
-and the loop nest are recomputed from the CFG (`CheckCfg`), never read from `f.cache`.
+the export (`typs`; `SP`/`SB` must be typed `Uintptr`, `StringLen` `Int`). Postorder, dominator
+tree and loop nest are recomputed from the CFG (`GoFV.SSA.Analysis.{Postorder,Dom,SparseTree,
+LoopNest}`), never read from the possibly stale `f.cache`.
 
 Which of these facts the pass proofs need: `docs/contracts/check.md`.
 -/
 
 namespace GoFV.SSA
 
-/-- What the checker reads besides the `Func`. -/
+/-- The type a `typs` entry names. -/
+def typsLookup (typs : Array (String × TypeRef)) (name : String) : Option TypeRef :=
+  (typs.find? (·.1 == name)).map (·.2)
+
+/-- What the checker reads besides the `Func`: the tables and the `Config.Types` / SSA
+pseudo-types of the export (`typs` line of section 0); the types the checks compare against
+are looked up once. -/
 structure CheckEnv where
   tabs : Tables
-  /-- `Config.Types` / SSA pseudo-types of the export (`typs` line of section 0). -/
   typs : Array (String × TypeRef)
+  mem : Option TypeRef := typsLookup typs "Mem"
+  uintptr : Option TypeRef := typsLookup typs "Uintptr"
+  int : Option TypeRef := typsLookup typs "Int"
+  void : Option TypeRef := typsLookup typs "Void"
 
 namespace CheckEnv
-
-def typ? (e : CheckEnv) (name : String) : Option TypeRef :=
-  (e.typs.find? (·.1 == name)).map (·.2)
-
-/-- `TypeMem` (`types.TypeMem`). -/
-def isMem (e : CheckEnv) (t : TypeRef) : Bool := e.typ? "Mem" == some t
 
 /-- `t.IsMemory()`: `mem`, a tuple whose second component is `mem`, a results type whose last
 component is `mem`. -/
 def isMemory (e : CheckEnv) (t : TypeRef) : Bool :=
-  e.isMem t ||
-    match e.tabs.type? t with
-    | some { kind := .TUPLE, tail := .tuple _ s, .. } => e.isMem s
-    | some { kind := .RESULTS, tail := .results ts, .. } =>
-      match ts.back? with
-      | some l => e.isMem l
-      | none => false
-    | _ => false
+  match e.mem with
+  | some mem => e.tabs.isMemory mem t
+  | none => false
 
 def kind? (e : CheckEnv) (t : TypeRef) : Option TypeKind := (e.tabs.type? t).map (·.kind)
 
 def isBoolean (e : CheckEnv) (t : TypeRef) : Bool := e.kind? t == some .BOOL
 def isTuple (e : CheckEnv) (t : TypeRef) : Bool := e.kind? t == some .TUPLE
 def isUintptr (e : CheckEnv) (t : TypeRef) : Bool := e.kind? t == some .UINTPTR
-def isVoid (e : CheckEnv) (t : TypeRef) : Bool := e.typ? "Void" == some t
+def isVoid (e : CheckEnv) (t : TypeRef) : Bool := e.void == some t
 
 /-- `t.IsInteger()` (the untyped constant types never reach SSA). -/
 def isInteger (e : CheckEnv) (t : TypeRef) : Bool :=
@@ -209,10 +211,10 @@ def checkTypes (e : CheckEnv) (f : Func) (v : Value) : Except String Unit := do
   let isMemArg (i : Nat) := (argT i).any e.isMemory
   match v.op with
   | .SP | .SB =>
-    if e.typ? "Uintptr" != some v.type then
+    if e.uintptr != some v.type then
       throw s!"bad {v.op.name} type: want uintptr, have t{v.type}"
   | .StringLen =>
-    if e.typ? "Int" != some v.type then
+    if e.int != some v.type then
       throw s!"bad {v.op.name} type: want int, have t{v.type}"
   | .Load =>
     if !isMemArg 1 then throw s!"bad arg 1 type to {v.op.name}: want mem"
@@ -222,7 +224,7 @@ def checkTypes (e : CheckEnv) (f : Func) (v : Value) : Except String Unit := do
   | .CondSelect =>
     if !(argT 2).any e.isBoolean then throw s!"bad arg 2 type to {v.op.name}: want boolean"
   | .AddPtr =>
-    if !(argT 0).any (fun t => e.isPtrShaped t || e.typ? "Uintptr" == some t) then
+    if !(argT 0).any (fun t => e.isPtrShaped t || e.uintptr == some t) then
       throw s!"bad arg 0 type to {v.op.name}: want ptr"
     if !(argT 1).any e.isInteger then throw s!"bad arg 1 type to {v.op.name}: want integer"
   | .VarDef =>
@@ -414,8 +416,8 @@ def check (e : CheckEnv) (f : Func) : Except String Unit := do
   for x in f.freeValues do
     if valueMark[x]?.getD false then throw s!"used value v{x} in free list"
   -- every argument dominates its use (a Phi argument the corresponding predecessor)
-  let po := CheckCfg.postorder f
-  let t := CheckCfg.dominators f po
+  let po := Analysis.postorder f
+  let t := Analysis.newSparseTree (f.bidLast + 1) f.entry po (Analysis.dominators f)
   let domCheck (x y : ID) : Bool := !t.isAncestorEq f.entry y || t.isAncestorEq x y
   for b in blocks do
     for vid in b.values do
@@ -429,10 +431,10 @@ def check (e : CheckEnv) (f : Func) : Except String Unit := do
       let x := (f.value? c).map (·.block) |>.getD 0
       if !domCheck x b.id then throw s!"control value v{c} for b{b.id} doesn't dominate"
   -- loop construction
-  let ln ← CheckCfg.loopnest f po t
+  let ln ← Analysis.loopnest f po t
   if !ln.hasIrreducible then
     for bid in po do
-      for bb in CheckCfg.succIDs f bid do
+      for bb in Analysis.succIDs f bid do
         let lb := ln.b2l[bid]?.join
         let lbb := ln.b2l[bb]?.join
         let notHeader := match lbb with
@@ -441,7 +443,7 @@ def check (e : CheckEnv) (f : Func) : Except String Unit := do
         if lb.isNone && lbb.isSome && notHeader then
           throw s!"block b{bid} not in loop branches to non-header block b{bb} in loop"
         if lb.isSome && lbb.isSome && notHeader &&
-            !CheckCfg.LoopNest.isWithinOrEq ln.loops lb lbb then
+            !Analysis.LoopNest.isWithinOrEq ln.loops lb lbb then
           throw s!"block b{bid} in loop branches to non-header block b{bb} in non-containing loop"
   -- use counts
   let mut uses : Array Nat := Array.replicate nv 0

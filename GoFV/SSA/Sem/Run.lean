@@ -294,6 +294,25 @@ def runLoop (env : Env) (ctx : Ctx) : Nat → Frame → ID → Nat → Outcome
         | .panic e m => .panicked e m
         | .stuck msg => .stuck msg
 
+@[simp] theorem runLoop_zero (env : Env) (ctx : Ctx) (fr : Frame) (b : ID) (i : Nat) :
+    runLoop env ctx 0 fr b i = .outOfFuel := (rfl)
+
+/-- One block entry: the unfolding a simulation proof steps with (never `simp [runLoop]`). -/
+theorem runLoop_succ (env : Env) (ctx : Ctx) (fuel : Nat) (fr : Frame) (bid : ID) (i : Nat) :
+    runLoop env ctx (fuel + 1) fr bid i =
+      match ctx.f.block? bid with
+      | none => .stuck s!"b{bid} is not in the function"
+      | some b =>
+        match enterBlock env ctx fr b i with
+        | .panic e m => .panicked e m
+        | .stuck msg => .stuck msg
+        | .ok fr =>
+          match stepTerm fr b with
+          | .ok (.goto e) => runLoop env ctx fuel fr e.b e.i
+          | .ok (.ret rs m) => .returned rs m
+          | .panic e m => .panicked e m
+          | .stuck msg => .stuck msg := (rfl)
+
 /-- Run `f` (with the definition tables `tabs` of its export section) on the Go-typed
 arguments `args` (receiver first) and memory `mem`, for at most `fuel` block entries. -/
 def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : Outcome :=
