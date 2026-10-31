@@ -10,8 +10,9 @@ against the stock compiler's text (`GOFV_SSA_GOTEXT=1`). Unscheduled order (all 
 `lower`): phis first, then values in dependency order. Type and aux texts come from the export
 (`t.String()`, `fmt.Sprint(aux)`).
 
-Known difference: `%q` of a string aux keeps every non-ASCII rune of valid UTF-8 as is (Go
-escapes the non-printable ones as `\u`/`\U`).
+Known differences: type spellings through aliases (`byte`, `rune`, `any`) follow the export,
+which keeps one spelling per type identity; `%q` of a string aux keeps every non-ASCII rune of
+valid UTF-8 as is (Go escapes the non-printable ones as `\u`/`\U`).
 -/
 
 namespace GoFV.SSA.GoString

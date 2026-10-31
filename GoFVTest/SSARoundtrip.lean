@@ -8,7 +8,9 @@ import GoFV.SSA.GoString
 Parses every `*.ssa` export file under the given directories (or files) and checks that
 printing the result reproduces the file byte for byte. When `<file>.txt` exists (written with
 `GOFV_SSA_GOTEXT=1`: per section a `pass <k> "<name>"` line and Go's `f.String()`), also checks
-that `ExportFile.goString` reproduces it.
+that `ExportFile.goString` reproduces it. The export numbers types by identity, so where Go
+spells a type through an alias (`byte`, `rune`, `any`) the export keeps one spelling; such
+files are counted as alias-only differences (texts equal after `normAliases`).
 
 usage: `lake exe ssa-roundtrip <dir|file>...`; exit status 1 if any file fails.
 -/
@@ -27,6 +29,22 @@ def firstDiff (a b : String) : String := Id.run do
     if x != y then return s!"line {k+1}:\n    file:    {x}\n    printed: {y}"
   return "no difference"
 
+/-- Spells the predeclared aliases `byte`, `rune`, `any` as `uint8`, `int32`, `interface {}`
+(whole identifiers only). -/
+def normAliases (s : String) : String := Id.run do
+  let isId (c : Char) := c.isAlphanum || c == '_'
+  let mut out := ""
+  let mut cur := ""
+  for c in s.toList do
+    if isId c then cur := cur.push c
+    else
+      out := out ++ (match cur with
+        | "byte" => "uint8" | "rune" => "int32" | "any" => "interface {}" | x => x)
+      cur := ""
+      out := out.push c
+  out ++ (match cur with
+    | "byte" => "uint8" | "rune" => "int32" | "any" => "interface {}" | x => x)
+
 structure Stats where
   files : Nat := 0
   failed : Nat := 0
@@ -39,6 +57,7 @@ structure Stats where
   parseNs : Nat := 0
   printNs : Nat := 0
   gotextFailed : Nat := 0
+  gotextAlias : Nat := 0
 
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let t0 ← IO.monoNanosNow
@@ -77,8 +96,11 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
       st := { st with gotext := st.gotext + 1 }
       if got.toUTF8 != want then
         let orig := String.fromUTF8? want |>.getD "<not UTF-8>"
-        IO.eprintln s!"FAIL {txt}: f.String() differs at {firstDiff orig got}"
-        st := { st with gotextFailed := st.gotextFailed + 1 }
+        if normAliases orig == normAliases got then
+          st := { st with gotextAlias := st.gotextAlias + 1 }
+        else
+          IO.eprintln s!"FAIL {txt}: f.String() differs (aliases normalized) at {firstDiff (normAliases orig) (normAliases got)}"
+          st := { st with gotextFailed := st.gotextFailed + 1 }
     return st
 
 def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -100,7 +122,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"ssa-roundtrip: {st.files} files, {st.failed} failed, {st.bytes} bytes, \
     {st.sections} sections, {st.blocks} blocks, {st.values} values, {ms} ms \
     (read {st.readNs / 1000000}, parse {st.parseNs / 1000000}, print {st.printNs / 1000000}); \
-    f.String(): {st.gotext} files, {st.gotextFailed} failed"
+    f.String(): {st.gotext} files, {st.gotextAlias} differ only in alias spellings, \
+    {st.gotextFailed} failed"
   return if st.failed == 0 && st.gotextFailed == 0 && st.files > 0 then 0 else 1
 
 end GoFVTest.SSARoundtrip

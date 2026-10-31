@@ -91,6 +91,9 @@ scans to be evaluated over `List`s with `@[csimp]` swaps to the `Array` versions
 
 `GoString.funcString name tables f` prints Go's `f.String()` (`print.go`, unscheduled order:
 phis first, then dependency order; `DEAD` from the ported `findlive`), with `Value.LongString`
-(`auxString`, including Go's `%g` for float aux values) and `Block.LongString`. One known
-difference: `%q` of a string aux keeps non-ASCII runes even where Go escapes non-printable
-ones. Export files written with `GOFV_SSA_GOTEXT=1` carry Go's own text for comparison.
+(`auxString`, including Go's `%g` for float aux values) and `Block.LongString`. Known
+differences: (1) the export numbers types by identity, so a type Go spells through an alias
+(`byte`/`uint8`, `rune`/`int32`, `any`/`interface {}`) has one spelling here; (2) `%q` of a
+string aux keeps non-ASCII runes even where Go escapes non-printable ones. Export files written
+with `GOFV_SSA_GOTEXT=1` carry Go's own text; `ssa-roundtrip` compares against it and counts
+alias-only differences separately.
