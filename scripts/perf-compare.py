@@ -12,13 +12,26 @@ Prints a Markdown report (for PR comments) and exits 1 when it flags a regressio
     120 on 32 cores, wall times of unchanged small modules grew 2-10x and CPU ~1.5x);
   * a module that failed or was killed at its cap in HEAD but built in BASE;
   * a new module above --new-rss MB or --new-time s;
+  * a module whose .olean is newly not reproducible (`repro` = differs, perf-record.py);
+  * the CPU critical path (`crit_s` of `_total`) grew > --pct % and > --crit-abs s; the report
+    then names the chain (scripts/perf-graph.py);
   * a benchmark whose wall time grew > --pct % and > --bench-time-abs s (and CPU > --pct %),
     or whose max RSS grew > --pct % and > --bench-rss-abs MB.
 Shrinks past the same thresholds are listed as wins.
 """
-import argparse, pathlib, subprocess, sys
+import argparse, importlib.util, pathlib, subprocess, sys
 
 here = pathlib.Path(__file__).resolve().parent.parent
+
+
+def critical_chain(history, repo, commit):
+    spec = importlib.util.spec_from_file_location("perf_graph", here / "scripts/perf-graph.py")
+    g = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(g)
+    try:
+        return g.chain_for(commit, history, repo)
+    except subprocess.CalledProcessError:
+        return []
 
 
 def load(path):
@@ -89,6 +102,7 @@ def main():
     ap.add_argument("--bench-time-abs", type=float, default=1, help="s")
     ap.add_argument("--bench-rss-abs", type=float, default=256, help="MB")
     ap.add_argument("--all", action="store_true", help="also list unflagged changed modules")
+    ap.add_argument("--crit-abs", type=float, default=30, help="s, critical path (CPU)")
     a = ap.parse_args()
 
     hist = load(pathlib.Path(a.history))
@@ -102,6 +116,9 @@ def main():
     reg, win, info = [], [], []
     for m in sorted(H.keys() - {"_total"}):
         h, b = H[m], B.get(m)
+        if h.get("repro") == "differs" and (b is None or b.get("repro") != "differs"):
+            reg.append((m, "non-reproducible .olean", (b or {}).get("repro") or "–", "differs",
+                        "importers miss the shared cache"))
         if b is None:
             r, t = num(h, "maxrss_mb"), num(h, "wall_s")
             bad = h["status"] in ("fail", "oom", "blocked")
@@ -128,6 +145,13 @@ def main():
             info.append((m, "changed", f"{fmt(wb, 's')}, {fmt(rb, 'MB')}",
                          f"{fmt(wh, 's')}, {fmt(rh, 'MB')}", change(wb, wh) if wb and wh else ""))
     removed = sorted(B.keys() - H.keys() - {"_total"})
+    tb, th = B.get("_total", {}), H.get("_total", {})
+    kb, kh = num(tb, "crit_s"), num(th, "crit_s")
+    for (x, y, lst) in ((kb, kh, reg), (kh, kb, win)):
+        if grew(x, y, a.pct, a.crit_abs):
+            path = [] if lst is win else critical_chain(a.history, a.repo, head)
+            lst.append(("_total", "critical path (CPU)", fmt(kb, "s"), fmt(kh, "s"),
+                        change(kb, kh) + (f"; chain {' → '.join(path)}" if path else "")))
 
     bB, bH = latest(bhist, base, "bench") or {}, latest(bhist, head, "bench") or {}
     for n in sorted(bH.keys() & bB.keys()):
@@ -152,12 +176,14 @@ def main():
             reg.append((f"bench {n}", "run", "ok", h.get("status", "?"), "broken"))
 
     print(f"### perf-compare `{base}` → `{head}`\n")
-    tb, th = B.get("_total", {}), H.get("_total", {})
     print(f"{len(H) - 1} modules ({len(H.keys() - B.keys())} new, {len(removed)} removed); "
-          f"serial module time {fmt(num(tb, 'wall_s'), 's')} → {fmt(num(th, 'wall_s'), 's')}, "
+          f"serial module time {fmt(num(tb, 'wall_s'), 's')} → {fmt(num(th, 'wall_s'), 's')} "
+          f"(cpu {fmt(num(tb, 'cpu_s'), 's')} → {fmt(num(th, 'cpu_s'), 's')}), "
+          f"critical path (CPU) {fmt(kb, 's')} → {fmt(kh, 's')}, "
           f"largest module peak {fmt(num(tb, 'maxrss_mb'), 'MB')} → {fmt(num(th, 'maxrss_mb'), 'MB')}. "
           f"Thresholds: +{a.pct:.0f}% and +{a.rss_abs:g} MB / +{a.time_abs:g} s; "
-          f"new modules > {a.new_rss / 1024:.0f} GB or > {a.new_time:.0f} s.\n")
+          f"new modules > {a.new_rss / 1024:.0f} GB or > {a.new_time:.0f} s; "
+          f"critical path +{a.crit_abs:g} s.\n")
     for title, lst in (("Regressions", reg), ("Wins", win), ("Other changes", info)):
         if lst:
             print(f"**{title}**\n\n| module | metric | base | head | change |\n|---|---|---|---|---|")

@@ -10,6 +10,7 @@ comments on PRs that cross the thresholds below. Anyone can run the same scripts
 | `scripts/perf-compare.py BASE HEAD` | Markdown report of regressions/wins between two recorded commits; exit 1 on a regression |
 | `scripts/perf-explain.py MODULE` | names the slow declarations of one module (`trace.profiler`) |
 | `scripts/perf-bench.py [NAME...]` | runs the executables listed in `perf/bench.tsv`, appends to `perf/bench-history.tsv` |
+| `scripts/perf-graph.py COMMIT` | critical path (CPU) through the import graph and the costliest rebuild cones |
 | `scripts/perf-watch.py` | one pass of the watch loop: records origin/main and open PR heads, writes compare reports |
 
 All builds and runs go through `scripts/memcap.sh` (8G cap per module, shared Lake cache), one
@@ -30,7 +31,16 @@ killed at 8G is retried once at 16G under `flock ../gofv-heavy.lock`. Raw logs:
 Modules restored from the shared Lake cache cost nothing to build. Their numbers come from the
 history row with the same Lake input hash (`dep_hash`, from the module's `.trace`), status
 `cached`. A cached module never measured before is elaborated once into `tmp/` with
-`lake env lean` (status `remeasured`), so every row of a recorded commit has numbers.
+`lake lean M.lean -- <lib args> -o …` (status `remeasured`; `lake lean` applies only the root
+package's arguments, so the recorder adds the lean_lib's `leanOptions`/`moreLeanArgs`/
+`weakLeanArgs`, else linter warnings land in the `.olean`), so every row of a recorded commit
+has numbers. All tools set `TMPDIR` to the worktree's `tmp/` (`lake lean` writes a setup file
+there; on the shared `/tmp` tmpfs it failed with errno 122). That second elaboration also checks reproducibility: its
+`.olean` must equal the cached one byte for byte (`repro`). A non-reproducible `.olean` (linter
+warnings with the absolute source path, see LEARNINGS.md; or nondeterministic elaboration,
+which clifv fixed with `-DElab.async=false` on the module) makes every importer miss the shared
+cache once the module is rebuilt anywhere; in clifv it caused a hidden 3 h rebuild in CI
+(eth-act/clifv#726).
 
 ## Columns of `perf/history.tsv`
 
@@ -46,6 +56,9 @@ history row with the same Lake input hash (`dep_hash`, from the module's `.trace
 | `dep_hash` | Lake input hash of the module |
 | `measured_at` | commit where the numbers were measured (differs from `commit` for `cached` rows) |
 | `load1` | 1-minute load average when the measurement started (the machine is shared; high load inflates wall time) |
+| `olean_hash` | sha256 (16 hex) of `M.olean` |
+| `repro` | `same`/`differs`: the remeasure's `.olean` vs the cached one (empty for `built` rows); `_total`: count of `differs` |
+| `crit_s` | CPU critical path ending at the module (own `cpu_s` + largest `crit_s` of its imports); `_total`: the maximum = modelled cold-build time with unlimited parallelism |
 
 Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commit);
 `awk -F'\t' '$4=="built"' perf/history.tsv | sort -t$'\t' -k7,7nr | head` (heaviest modules).
@@ -59,10 +72,19 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | new heavy module | a new module above 2 GB or 60 s |
 | broken | a module that built in BASE fails or is killed in HEAD |
 | benchmark regression | wall and CPU time both > 25% and > 1 s, or max RSS > 25% and > 256 MB |
+| non-reproducible `.olean` | a module's `repro` is `differs` in HEAD but not in BASE |
+| critical path | `_total` `crit_s` grew > 25% and > 30 s; the report names the chain |
 
 Shrinks past the same thresholds are listed as wins. Modules whose numbers are the same
 measurement in both commits (`measured_at` equal) are skipped. For a PR, BASE is its merge base
 with main; for main, the previous recorded main commit.
+
+`perf-graph.py COMMIT` shows where structural work pays (eth-act/clifv#726: removing unused
+imports and moving shared lemmas into lower modules took clifv's cold build 1,370 → 425 s):
+the critical chain module by module, and for each module the CPU of everything a change to it
+rebuilds. At f2e7f11: 148 modules, serial CPU 318 s, critical path 44 s over 17 modules
+(`GoFV.SSA.Op` 10.2 s and `GoFV.Rules.Eval` 10.5 s dominate); `GoFV.SSA.OpInfo`/`Op` sit
+under 125 of the 148 modules (281 s CPU per change).
 
 When a module regresses, `perf-explain.py M` prints its slowest declaration steps, e.g.
 
