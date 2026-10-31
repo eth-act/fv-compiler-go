@@ -1,0 +1,6 @@
+/.lake/
+/third_party/go/
+/third_party/go-build/
+/perf/raw/
+/tmp/
+*.olean
