@@ -40,6 +40,12 @@ structure PassEnv where
   typeOrder : TypeOrder
   /-- The definition tables in force for the input section. -/
   tables : Tables
+  /-- Frontend objects: the definitions of the whole export file (latest wins). Only for
+  objects a pass obtains from the frontend rather than computes (`fe.Syslook`,
+  `reflectdata.TypeLinksym`: `*obj.LSym` contents such as read-only data, relocations and
+  `rtype` facts), looked up by symbol name; never function state. The pass still numbers what
+  it creates itself. -/
+  frontend : Tables := {}
 
 /-- A pass's result. -/
 structure PassOut where
@@ -69,6 +75,21 @@ def typ? (e : PassEnv) (name : String) : Option TypeRef :=
 
 /-- The definition of type `t`. -/
 def type? (e : PassEnv) (t : TypeRef) : Option TypeDef := e.tables.type? t
+
+/-- The `*obj.LSym` aux named `name` (with ABI `abi`, if given) in `tabs`: its number and
+definition. LSyms are interned by name and ABI, so this is Go's pointer identity. -/
+def findSym? (tabs : Tables) (name : GoStr) (abi : Option Nat := none) :
+    Option (AuxRef × AuxDef) := Id.run do
+  for h : i in [0:tabs.auxes.size] do
+    if let some d := tabs.auxes[i] then
+      if let .sym n a .. := d.kind then
+        if n == name && abi.all (· == a) then return some (i, d)
+  return none
+
+/-- The frontend's definition of the symbol `name` (`frontend`): for symbols a pass obtains
+from the frontend (`fe.Syslook`, `reflectdata.TypeLinksym`, relocation targets). -/
+def frontendSym? (e : PassEnv) (name : GoStr) (abi : Option Nat := none) : Option AuxDef :=
+  (findSym? e.frontend name abi).map (·.2)
 
 end PassEnv
 
