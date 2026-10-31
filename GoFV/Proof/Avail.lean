@@ -116,6 +116,49 @@ theorem dinv_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env}
     rw [← hevy hne]
     exact (evalValue_congr hfr' fun a ha => (hout a (hna a ha)).symm).symm
 
+/-- Setting the `Phi`s keeps the registers typed. -/
+theorem typed_phis {ctx : Ctx} {blk : Block} {fr frP : Frame} {i : Nat}
+    (ht : Typed ctx fr) (hPs : frP.regs.size = fr.regs.size)
+    (hkeep : ∀ z, (z ∉ blk.values ∨ ∃ v, ctx.f.value? z = some v ∧ v.op ≠ .Phi) →
+      frP.regs[z]? = fr.regs[z]?)
+    (hphi : ∀ z ∈ blk.values, ∀ v, ctx.f.value? z = some v → v.op = .Phi → z < fr.regs.size →
+      ∃ a y, v.args[i]? = some a ∧ fr.regs[a]? = some (some y) ∧
+        frP.regs[z]? = some (some (y.retype (ctx.tys[z]?.getD .other))))
+    (hall : ∀ z ∈ blk.values, (ctx.f.value? z).isSome) : Typed ctx frP := by
+  intro z y hz
+  by_cases hph : z ∈ blk.values ∧ ∃ v, ctx.f.value? z = some v ∧ v.op = .Phi
+  · obtain ⟨hzb, v, hv, hp⟩ := hph
+    have hlt : z < fr.regs.size := by
+      rw [← hPs]
+      rcases Nat.lt_or_ge z frP.regs.size with h' | h'
+      · exact h'
+      · rw [Array.getElem?_eq_none h'] at hz; cases hz
+    obtain ⟨a, y0, -, -, hy⟩ := hphi z hzb v hv hp hlt
+    rw [hz] at hy; cases hy
+    exact retype_idem _ _
+  · have hk : z ∉ blk.values ∨ ∃ v, ctx.f.value? z = some v ∧ v.op ≠ .Phi := by
+      by_cases hzb : z ∈ blk.values
+      · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 (hall z hzb)
+        exact .inr ⟨v, hv, fun hp => hph ⟨hzb, v, hv, hp⟩⟩
+      · exact .inl hzb
+    rw [hkeep z hk] at hz
+    exact ht z y hz
+
+/-- Evaluating values with their own IDs keeps the registers typed. -/
+theorem typed_evalAll {env : Env} {ctx : Ctx} {o : List ID} {fr fr' : Frame}
+    (ht : Typed ctx fr) (hown : ∀ x ∈ o, ∀ v, ctx.f.value? x = some v → v.id = x)
+    (e3 : ∀ z, z ∉ o → fr'.regs[z]? = fr.regs[z]?)
+    (e4 : ∀ x ∈ o, ∃ v y, ctx.f.value? x = some v ∧ fr'.regs[x]? = some (some y) ∧
+      evalValue env ctx fr' v = .ok y) : Typed ctx fr' := by
+  intro z y hz
+  by_cases hzo : z ∈ o
+  · obtain ⟨v, y', hv, hy', hev'⟩ := e4 z hzo
+    rw [hz] at hy'; cases hy'
+    have := evalValue_typed hev'
+    rwa [hown z hzo v hv] at this
+  · rw [e3 z hzo] at hz
+    exact ht z y hz
+
 /-- **Entering a block keeps every register typed.** -/
 theorem typed_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} (hwf : WF ce f)
     {b : ID} {blk : Block} (hb : b ∈ f.blocks) (hbb : f.block? b = some blk) {fr fr' : Frame}
@@ -125,37 +168,13 @@ theorem typed_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} (hwf 
   have hown := valuesOwn hwf hb hbb
   obtain ⟨b', hb', hid⟩ := hwf.blockId b hb
   rw [hbb] at hb'; cases hb'
-  obtain ⟨frP, o, ho, hev, -, hPs, -, hkeep, hphi⟩ := enterBlock_spec hnd h
+  obtain ⟨frP, o, ho, hev, -, hPs, hall, hkeep, hphi⟩ := enterBlock_spec hnd h
   rw [hid, sched_make hbb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
-  obtain ⟨-, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
-  have hcf : (Ctx.make tabs f).f = f := rfl
-  rw [hcf] at hkeep hphi e4
-  intro z y hz
-  by_cases hzo : z ∈ o.toList
-  · obtain ⟨v, y', hv, hy', hev'⟩ := e4 z hzo
-    rw [hz] at hy'; cases hy'
-    obtain ⟨v', hv', hvid⟩ := hown z ((omem z).1 hzo).1
-    rw [hv] at hv'; cases hv'
-    have := evalValue_typed hev'
-    rwa [hvid] at this
-  · rw [e3 z hzo] at hz
-    by_cases hph : z ∈ blk.values ∧ ∃ v, f.value? z = some v ∧ v.op = .Phi
-    · obtain ⟨hzb, v, hv, hp⟩ := hph
-      have hlt : z < fr.regs.size := by
-        rw [← hPs]
-        rcases Nat.lt_or_ge z frP.regs.size with h' | h'
-        · exact h'
-        · rw [Array.getElem?_eq_none h'] at hz; cases hz
-      obtain ⟨a, y0, -, -, hy⟩ := hphi z hzb v hv hp hlt
-      rw [hz] at hy; cases hy
-      exact retype_idem _ _
-    · have hk : z ∉ blk.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi := by
-        by_cases hzb : z ∈ blk.values
-        · obtain ⟨v, hv, -⟩ := hown z hzb
-          exact .inr ⟨v, hv, fun hp => hph ⟨hzb, v, hv, hp⟩⟩
-        · exact .inl hzb
-      rw [hkeep z hk] at hz
-      exact ht z y hz
+  obtain ⟨-, -, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  refine typed_evalAll (typed_phis ht hPs hkeep hphi hall) (fun x hx v hv => ?_) e3 e4
+  obtain ⟨v', hv', hvid⟩ := hown x ((omem x).1 hx).1
+  change f.value? x = some v at hv
+  rw [hv] at hv'; cases hv'; exact hvid
 
 end GoFV.Proof

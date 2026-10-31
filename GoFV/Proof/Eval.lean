@@ -111,6 +111,28 @@ theorem evalValue_copy {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {w : ID}
   simp only [List.mapM_cons, List.mapM_nil, hw, Option.join, bind, Res.bind, Res.ofOption, pure, hop]
   rfl
 
+theorem evalValue_copy_inv {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {w : ID} {y : Val}
+    (hop : v.op = .Copy) (ha : v.args = #[w]) (h : evalValue env ctx fr v = .ok y) :
+    ∃ y0, fr.regs[w]? = some (some y0) ∧ y = y0.retype (ctx.tys[v.id]?.getD .other) := by
+  cases hw : fr.regs[w]? with
+  | some o =>
+    cases o with
+    | some y0 =>
+      rw [evalValue_copy hop ha hw] at h
+      cases h; exact ⟨y0, rfl, rfl⟩
+    | none =>
+      unfold evalValue at h
+      rw [ha] at h
+      simp only [List.mapM_cons, List.mapM_nil, hw, Option.join, bind, Res.bind,
+        Res.ofOption] at h
+      cases h
+  | none =>
+    unfold evalValue at h
+    rw [ha] at h
+    simp only [List.mapM_cons, List.mapM_nil, hw, Option.join, bind, Res.bind,
+      Res.ofOption] at h
+    cases h
+
 theorem mapM_ofOption_eq {m m' : ID → String} {r r' : ID → Option Val} :
     ∀ {l l' : List ID}, l.length = l'.length →
       (∀ (k : Nat) a, l[k]? = some a → ∃ a' y, l'[k]? = some a' ∧ r a = some y ∧ r' a' = some y) →
