@@ -11,12 +11,16 @@ scripts/memcap.sh scope via perf-record.py's probe. The row keeps the median wal
 time of that run and the largest max RSS. Run the binary directly (`.lake/build/bin/x`), not
 through `lake exe`: lake's own ~0.45 GB would dominate the RSS of small runs.
 
-Columns: date commit bench status wall_s cpu_s maxrss_mb runs load1
+A benchmark whose binary (`.lake/build/bin/<target>`, sha256) and command were already measured
+is not rerun: the earlier numbers are copied with status `cached` (--force reruns).
+
+Columns: date commit bench status wall_s cpu_s maxrss_mb runs load1 bin_hash
 """
-import argparse, datetime, json, os, pathlib, subprocess, sys, time
+import argparse, datetime, hashlib, json, os, pathlib, subprocess, sys, time
 
 here = pathlib.Path(__file__).resolve().parent.parent
-COLUMNS = ["date", "commit", "bench", "status", "wall_s", "cpu_s", "maxrss_mb", "runs", "load1"]
+COLUMNS = ["date", "commit", "bench", "status", "wall_s", "cpu_s", "maxrss_mb", "runs", "load1",
+           "bin_hash"]
 GiB = 1024 ** 3
 
 
@@ -36,6 +40,7 @@ def main():
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--cap", default="8G")
     ap.add_argument("--min-avail", type=float, default=10, help="GB; wait while below")
+    ap.add_argument("--force", action="store_true", help="rerun benchmarks of known binaries")
     a = ap.parse_args()
     root = pathlib.Path(a.root).resolve()
     memcap = root / "scripts/memcap.sh"
@@ -57,6 +62,14 @@ def main():
     scratch = root / "tmp" / "perf-bench"
     scratch.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, FV_MEMCAP=a.cap)
+    hist = pathlib.Path(a.history)
+    known = {}  # (bench, bin_hash) -> latest ok row
+    if hist.exists():
+        lines = hist.read_text().splitlines()
+        for line in lines[1:]:
+            r = dict(zip(lines[0].split("\t"), line.split("\t")))
+            if r.get("status") == "ok" and r.get("bin_hash"):
+                known[(r["bench"], r["bin_hash"])] = r
     rows, bad = [], 0
     for name, target, cmd in benches:
         log = open(scratch / f"{name}.log", "w")
@@ -65,6 +78,19 @@ def main():
                           stdout=log, stderr=subprocess.STDOUT).returncode != 0:
             row["status"] = "missing"
         else:
+            exe = root / ".lake/build/bin" / target
+            h = hashlib.sha256()
+            h.update(cmd.encode() + b"\0")
+            if exe.is_file():
+                h.update(exe.read_bytes())
+            row["bin_hash"] = h.hexdigest()[:16]
+            k = known.get((name, row["bin_hash"]))
+            if k and not a.force:
+                row.update({c: k[c] for c in ("wall_s", "cpu_s", "maxrss_mb", "runs", "load1")},
+                           status="cached")
+                rows.append(row)
+                print(f"{name}: cached (binary measured at {k['commit']})")
+                continue
             results = []
             for i in range(a.runs):
                 while mem_available() < a.min_avail * GiB:

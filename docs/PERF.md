@@ -58,7 +58,7 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | time regression | `wall_s` grew > 25% and > 5 s, and `cpu_s` grew > 25% (filters load noise) |
 | new heavy module | a new module above 2 GB or 60 s |
 | broken | a module that built in BASE fails or is killed in HEAD |
-| benchmark regression | wall time > 25% and > 1 s, or max RSS > 25% and > 256 MB |
+| benchmark regression | wall time > 25% and > 1 s and CPU time > 25%, or max RSS > 25% and > 256 MB |
 
 Shrinks past the same thresholds are listed as wins. Modules whose numbers are the same
 measurement in both commits (`measured_at` equal) are skipped. For a PR, BASE is its merge base
@@ -80,6 +80,14 @@ leaf-wise certificates, splitting the module).
 `perf/bench.tsv` lists `name<TAB>lake target<TAB>command`; `perf-bench.py` builds the target, runs
 the command 3 times (each in a memcap scope) and records the median wall time, its CPU time and
 the largest max RSS (`perf/bench-history.tsv`: `date commit bench status wall_s cpu_s maxrss_mb
-runs load1`; status `missing` when the target does not build at that commit). Call the binary
-(`.lake/build/bin/x`), not `lake exe x`. Entries are added as the export parser and the pass
-parity runners land; they should run over the corpus.
+runs load1 bin_hash`; status `missing` when the target does not build at that commit). Call the
+binary (`.lake/build/bin/x`), not `lake exe x`. A binary already measured with the same command
+(`bin_hash` = sha256 of command and binary) is not rerun (status `cached`), so commits that don't
+touch an executable cost nothing; `perf-compare.py` skips such pairs. The watch loop always uses
+the profiler's current registry, so a new benchmark also runs on older commits it records.
+
+| Benchmark | Runs |
+| --- | --- |
+| `ssa-roundtrip-corpus` | `ssa-roundtrip` (parse + print + compare) over the whole export corpus, `$GOFV_CORPUS/plain` (default `~/work/gofv-corpus/2aae1000ea1d`, 9,297 files, 1.25 GB) |
+
+Pass parity runners get an entry each as they land.

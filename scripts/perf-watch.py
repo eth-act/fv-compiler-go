@@ -58,10 +58,9 @@ def record(wt, sha, dry):
     sh("git", "checkout", "--quiet", "--detach", "--force", sha, cwd=wt)
     r1 = subprocess.run([sys.executable, str(here / "scripts/perf-record.py"), "--root", str(wt),
                          "--history", str(HISTORY)], cwd=wt)
-    reg = wt / "perf/bench.tsv"
-    reg = reg if reg.exists() else here / "perf/bench.tsv"
+    # the profiler's registry (not the commit's): benchmarks added later apply to older commits too
     subprocess.run([sys.executable, str(here / "scripts/perf-bench.py"), "--root", str(wt),
-                    "--registry", str(reg)], cwd=wt)
+                    "--registry", str(here / "perf/bench.tsv")], cwd=wt)
     return s in recorded() or r1.returncode == 0
 
 

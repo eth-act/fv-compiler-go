@@ -1,2 +1,3 @@
 # Runtime benchmarks run by scripts/perf-bench.py (docs/PERF.md), one per line:
 # name<TAB>lake target<TAB>shell command, run from the worktree root (call the binary, not `lake exe`)
+ssa-roundtrip-corpus	ssa-roundtrip	.lake/build/bin/ssa-roundtrip "${GOFV_CORPUS:-$HOME/work/gofv-corpus/2aae1000ea1d}/plain"
