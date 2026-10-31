@@ -55,17 +55,28 @@ def anc (c : Cert) (a b : ID) : Bool :=
 
 end Cert
 
-/-- The certificate of `f`: Go's immediate dominators and depths along the reverse postorder
-(a dominator precedes the blocks it dominates). -/
-def make (f : Func) : Cert := Id.run do
-  let idom := Analysis.dominators f
-  let mut depth : Array (Option Nat) := (Array.replicate (f.bidLast + 1) none).set! f.entry (some 0)
-  for b in (Analysis.postorder f).reverse do
-    if b == f.entry then continue
+/-- The control-flow graph of `f` alone (entry, block list, edges): what the dominator tree
+depends on, so functions with the same graph get the same certificate. -/
+def cfgView (f : Func) : Func :=
+  { (default : Func) with
+    entry := f.entry, bidLast := f.bidLast, blocks := f.blocks
+    blockTab := f.blockTab.map (Option.map fun b =>
+      { (default : Block) with id := b.id, succs := b.succs, preds := b.preds }) }
+
+/-- The certificate of a control-flow graph: Go's immediate dominators and depths along the
+reverse postorder (a dominator precedes the blocks it dominates). -/
+def ofView (v : Func) : Cert := Id.run do
+  let idom := Analysis.dominators v
+  let mut depth : Array (Option Nat) := (Array.replicate (v.bidLast + 1) none).set! v.entry (some 0)
+  for b in (Analysis.postorder v).reverse do
+    if b == v.entry then continue
     match idom[b]?.join with
     | some d => depth := depth.set! b ((depth[d]?.join).map (· + 1))
     | none => pure ()
   return { idom, depth }
+
+/-- The certificate of `f`. -/
+def make (f : Func) : Cert := ofView (cfgView f)
 
 /-- The block a value is defined in (0, never a block, if it is not in the function). -/
 @[inline] def blockOf (f : Func) (a : ID) : ID := ((f.value? a).map (·.block)).getD 0

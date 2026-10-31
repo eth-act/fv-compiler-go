@@ -1,8 +1,10 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.CopyElim
+import GoFV.SSA.Sem.Run
 
 open GoFV.SSA GoFV.Opt GoFV.SSA.DomCert
+deriving instance BEq for GoFV.SSA.Sem.Ty
 
 namespace GoFVTest.CopyRelProbe
 
@@ -10,7 +12,7 @@ def argRel (g : Func) (fa w : ID) : Bool :=
   fa == w || ((g.value? fa).any fun u => u.op == .Copy && u.args == #[w])
 
 /-- The copyelim relation on tree blocks; `none` if it holds, else the reason. -/
-def copyRel (f g : Func) : Option String × Nat × Nat := Id.run do
+def copyRel (tabs : Tables) (f g : Func) : Option String × Nat × Nat := Id.run do
   let c := make f
   let mut unk := 0
   let mut emp := 0
@@ -41,7 +43,51 @@ def copyRel (f g : Func) : Option String × Nat × Nat := Id.run do
         if (make f).anc (blockOf g w) bid && blockOf g w != bid then pure ()
         else return (some s!"phi v{x} copy of v{w} not strictly dominating", 0, 0)
       else return (some s!"v{x} op {fv.op.name} -> {gv.op.name}", 0, 0)
+      if gv.op == .Copy then
+        let w := gv.args[0]!
+        match g.value? w with
+        | some wv => if tabs.ty wv.type != tabs.ty gv.type then return (some s!"copy shape v{x}", 0, 0)
+        | none => return (some s!"copy arg v{w}", 0, 0)
   return (none, unk, emp)
+
+/-- In every tree block, consecutive roots of the schedule are dependency-chained. -/
+def rootsChained (f : Func) : Bool := Id.run do
+  let c := make f
+  for bid in f.blocks do
+    if !c.inTree bid then continue
+    let some b := f.block? bid | continue
+    let some o := GoFV.SSA.Sem.schedule f b | continue
+    let inb : Std.HashSet ID := Std.HashSet.ofList (o.toList)
+    let mut prev : Option ID := none
+    for r in o do
+      let some rv := f.value? r | continue
+      if GoFV.SSA.Sem.prio rv.op == 0 then continue
+      if let some p := prev then
+        -- does r depend (transitively, within the block) on p?
+        let mut seen : Std.HashSet ID := {}
+        let mut stack := #[r]
+        let mut found := false
+        for _ in [0:o.size + 1] do
+          let some x := stack.back? | break
+          stack := stack.pop
+          for a in ((f.value? x).map (·.args)).getD #[] do
+            if a == p then found := true
+            if inb.contains a && !seen.contains a then
+              seen := seen.insert a
+              stack := stack.push a
+          -- the loop bound is only fuel; continue until the stack empties
+        let mut stack2 := stack
+        while !stack2.isEmpty do
+          let some x := stack2.back? | break
+          stack2 := stack2.pop
+          for a in ((f.value? x).map (·.args)).getD #[] do
+            if a == p then found := true
+            if inb.contains a && !seen.contains a then
+              seen := seen.insert a
+              stack2 := stack2.push a
+        if !found then return false
+      prev := some r
+  return true
 
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
@@ -58,6 +104,7 @@ def main (args : List String) : IO UInt32 := do
   let mut emp := 0
   let mut errs := 0
   let mut shown := 0
+  let mut unchained := 0
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok ex := parseExport data | continue
@@ -77,7 +124,8 @@ def main (args : List String) : IO UInt32 := do
           if shown < 10 then
             IO.println s!"GFAIL {path} {s.index}: {match check env g with | .error m => m | _ => ""}"
             shown := shown + 1
-        let (r, u, e) := copyRel f g
+        let (r, u, e) := copyRel tabs f g
+        if !rootsChained f then unchained := unchained + 1
         unk := unk + u
         emp := emp + e
         match r with
@@ -87,7 +135,7 @@ def main (args : List String) : IO UInt32 := do
           if shown < 30 then
             IO.println s!"BAD {path} {s.index} ({s.pass.toStringLossy}): {msg}"
             shown := shown + 1
-  IO.println s!"sections {secs}: rel ok {ok}, bad {bad}, check(g) fails {gfail}, errors {errs}; tree Unknown {unk}, Empty {emp}"
+  IO.println s!"sections {secs}: rel ok {ok}, bad {bad}, check(g) fails {gfail}, errors {errs}; tree Unknown {unk}, Empty {emp}; roots not chained {unchained}"
   return 0
 
 end GoFVTest.CopyRelProbe
