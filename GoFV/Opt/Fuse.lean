@@ -4,7 +4,6 @@ import GoFV.Opt.Fuse.Plain
 import GoFV.Opt.Fuse.If
 import GoFV.Opt.Fuse.Comparisons
 import GoFV.Opt.Fuse.BranchRedirect
-import GoFV.SSA.TypePred
 
 /-!
 # early fuse and late fuse (`fuseEarly`, `fuseLate`, `fuse.go:13-18`)
@@ -41,7 +40,7 @@ def lateStep (tv : TypeView) (f : Func) (b : ID) : Except String (Func × Bool) 
 def typeView (env : PassEnv) : Except String TypeView := do
   let some mem := env.typ? "Mem" | throw "fuse: no typ Mem"
   let some void := env.typ? "Void" | throw "fuse: no typ Void"
-  return { isMem := env.tables.isMemory mem, void }
+  return { tabs := env.tables, mem, void }
 
 end Fuse
 
