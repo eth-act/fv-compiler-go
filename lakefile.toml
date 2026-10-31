@@ -30,3 +30,11 @@ root = "GoFVTest.Parity.Main"
 [[lean_exe]]
 name = "analysis-difftest"
 root = "GoFVTest.AnalysisDiff"
+
+[[lean_exe]]
+name = "sem-difftest"
+root = "GoFVTest.SemDiff"
+
+[[lean_exe]]
+name = "ssa-check"
+root = "GoFVTest.SSACheck"

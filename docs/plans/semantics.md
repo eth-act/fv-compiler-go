@@ -1,6 +1,6 @@
 # Plan: semantics of generic Go SSA (`GoFV.SSA.run`, issue #9)
 
-Status: plan (G5). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
+Status: plan (G5); phase P1 implemented (§9.1). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
 Source of truth for the ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/genericOps.go`
 (go1.27.3; "gO line" below) and the rules `_gen/{generic,dec,divisible,divmod}.rules`.
 `decOps.go`, `divisibleOps.go` and `divmodOps.go` define **no** ops (they only name rule sets),
@@ -71,8 +71,14 @@ inductive Val
   | poison                                        -- 3.5
 ```
 
-Every `Val` is checked against the value's exported type when produced (`stuck "type"` on a
-mismatch; well-formed SSA never hits it). Integer ops have no sign: signedness is in the op
+A value's meaning is fixed by its exported **type**, not only by its op: well-formed SSA does
+type integer results narrower than their op — `divmod.rules` builds `(Rsh64x64 <t> …)` and
+`(Rsh32x64 <t> …)` with `t` = `int32`/`int16` (found by the P1 difftest: `divconst` at section
+`divmod`; 990 such values in the corpus, all `Rsh64x64`/`Rsh32x64`, none wider than the op).
+So every produced integer is retyped to its value's width (`Val.retype`, `Sem/Layout.lean`):
+a narrower type keeps the low bits; a wider one would expose undefined high bits and is
+`poison`. Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+Integer ops have no sign: signedness is in the op
 (`Less64` vs `Less64U`, `Rsh64x64` vs `Rsh64Ux64`, `SignExt` vs `ZeroExt`), as in Go.
 `ConstN` auxints are sign-extended to 64 bits even for unsigned types (gO 339); `run` takes
 the low `N` bits. `bool` is separate from `int w8` because Go SSA keeps `Bool` distinct
@@ -399,6 +405,46 @@ panic, and `run` is executed on **every exported section** of the same function 
 arguments. Disagreement between sections of one function localises a semantic bug (or a
 miscompile) to one pass, before any proof exists.
 
+### 9.1 P1 as implemented (#10)
+
+Modules `GoFV/SSA/Sem/{Val,Int,Shift,Cmp,Conv,Pure,Env,Layout,Run}.lean`; entry point
+`GoFV.SSA.run env tabs f args mem fuel` (`tabs`: the export tables of `f`'s section).
+
+- **Value domain** P1 part: `int`, `bool`, `mem` (an opaque token `Mem` with no fields; P2
+  replaces the structure), `tuple`, `poison`.
+- **Out-of-phase ops.** A pure op outside P1 evaluates to `poison`; a root outside P1
+  (`Store`, `NilCheck`, `VarDef`, calls without a contract, …) is `stuck`. Every function's
+  section 0 has dead `SP`/`SB`/`LocalAddr` values, so out-of-phase pure values must not be
+  `stuck`; since `poison` is refined by anything and pure ops are monotone in it, a P1 outcome
+  that is `returned`/`panicked` is the outcome of the full semantics too, and roots run in
+  memory-chain order, so no unmodelled effect can be skipped.
+- **Evaluation order** (§3.6): `schedule` is Kahn's algorithm over a block's non-`Phi`
+  values; a ready pure value first, else the earliest-ready `NilCheck`, else the
+  earliest-ready other root (`isRoot`: `call`, `nilCheck`, `hasSideEffects`, `typ: Mem`,
+  `VarLive`). Computed once per block per run (`Ctx`); a cycle is `stuck`.
+- **Arguments**: Go-typed scalar parameters; `Arg {n} [0]` and `ArgIntReg {n+0}` read
+  parameter `n` (its index among `f.OwnAux`'s input ABI assignments), so the same arguments
+  run before and after `expand calls`. Results: `MakeResult` arguments but the last (the
+  memory); with scalar results these are the same Go-typed values in both forms.
+- **Contracts** (`Env.p1`): `runtime.panicdivide`, `panicshift`, `panicoverflow` panic;
+  called by `StaticLECall`/`StaticCall` with the memory as last argument.
+- `PanicBounds` reads `x` signed for the signed kinds (`BoundsKind.Code`), and `Panic.message`
+  reproduces the runtime's error text, so panics compare with native runs textually.
+- `JumpTable`: index read unsigned; out of range is `stuck`.
+- Shift amounts are capped at the width before shifting (same results; compiled code would
+  otherwise build `x <<< 2^63`).
+- `math/bits.Div64` is not an intrinsic on arm64 (a call), so `Div128u` is unreachable from
+  arm64 code; its semantics (§4.2) is untested natively.
+
+Difftest (`scripts/sem-difftest.sh`, `tools/semdiff/prog`, `lake exe sem-difftest`): 49
+integer/bool functions (all widths, signed/unsigned division and remainder by variables and by
+constants, variable and constant shifts, comparisons, short circuits, loops, jump table,
+`math/bits` intrinsics, `min`/`max`, multi-results), 200 random/edge-case calls each, compiled
+for linux/arm64 by the patched toolchain while exporting their SSA; native results under
+`qemu-aarch64-static` against `run` on **every** exported section: see #10 for the counts.
+`sem-difftest corpus` runs random calls on every corpus function with integer/bool signature
+and checks that every section agrees with section 0 whenever section 0 is defined.
+
 ## 10. Open questions and risks
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
@@ -416,8 +462,11 @@ miscompile) to one pass, before any proof exists.
   defined than lowering for large moves; check that no pass creates such a `Move`.
 - Store of `poison`: allowed (poison bytes). If a pass proof needs stores to observe defined
   values, tighten it to `stuck`.
-- `Unknown` as `poison` vs `stuck`: `poison` is required because `deadcode`/`phielim` may leave
-  `Unknown` arguments in `Phi`s of reachable blocks [INFERENCE; check in the corpus].
+- `Unknown` as `poison` vs `stuck` — **answered by P1**: `poison`. In the corpus `Unknown`
+  occurs only in the first three sections (before `early deadcode`; 298 files), and is used
+  mostly by `Phi`s (8,969 uses), then `MakeResult` (768), `NilCheck` (144), …: a `stuck`
+  `Unknown` would make section 0 stuck wherever such a dead-code value is computed eagerly.
+- Result types narrower than the op — **found and answered by P1**: §3.2 (`Val.retype`).
 - Interface method calls need itab layouts and method tables; `rtype`/`reloc` export lines
   must be enough to resolve `InterLECall` targets — otherwise `stuck`.
 
