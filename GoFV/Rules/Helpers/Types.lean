@@ -128,4 +128,21 @@ def fields (tabs : Tables) (t : TypeRef) : Except String (Array GoFV.SSA.Field) 
   | .struct fs => return fs
   | _ => throw s!"type t{t}: Fields of a non-struct"
 
+/-- `auxToType(aux)` (`aux.(*types.Type)`, panicking otherwise). -/
+def ofAux (tabs : Tables) (a : Option AuxRef) : Except String TypeRef := do
+  let some a := a | throw "auxToType of nil"
+  match tabs.aux? a with
+  | some { kind := .type t, .. } => return t
+  | some _ => throw s!"aux a{a} is not a *types.Type"
+  | none => throw s!"aux a{a} not defined"
+
+/-- `typeToAux(t)`: the aux number of the `*types.Type` `t` (one aux per type number), or a
+new `type` aux at a fresh number. -/
+def typeAux (tabs : Tables) (t : TypeRef) : Except String (Tables × AuxRef) := do
+  match tabs.auxes.findIdx? (fun d? => d?.any (·.kind == .type t)) with
+  | some i => return (tabs, i)
+  | none =>
+    let n := max tabs.auxes.size 1
+    return (tabs.add (.aux n { fmt := (← get tabs t).str, kind := .type t }), n)
+
 end GoFV.Rules.Ty
