@@ -78,16 +78,31 @@ leaf-wise certificates, splitting the module).
 ## Runtime benchmarks
 
 `perf/bench.tsv` lists `name<TAB>lake target<TAB>command`; `perf-bench.py` builds the target, runs
-the command 3 times (each in a memcap scope) and records the median wall time, its CPU time and
+the command once (`--runs N`: median of N; each run in a memcap scope; ~60–75 s CPU per corpus
+benchmark, so 5 benchmarks cost ~6 min CPU per changed binary set) and records wall time, CPU time and
 the largest max RSS (`perf/bench-history.tsv`: `date commit bench status wall_s cpu_s maxrss_mb
-runs load1 bin_hash`; status `missing` when the target does not build at that commit). Call the
-binary (`.lake/build/bin/x`), not `lake exe x`. A binary already measured with the same command
-(`bin_hash` = sha256 of command and binary) is not rerun (status `cached`), so commits that don't
-touch an executable cost nothing; `perf-compare.py` skips such pairs. The watch loop always uses
+runs load1 bin_hash corpus`; status `missing` when the target does not build at that commit).
+Call the binary (`.lake/build/bin/x`), not `lake exe x`. A binary already measured with the same
+command and corpus (`bin_hash`) is not rerun (status `cached`), so commits that don't touch an
+executable cost one `lake build`; `perf-compare.py` skips such pairs. The watch loop always uses
 the profiler's current registry, so a new benchmark also runs on older commits it records.
 
-| Benchmark | Runs |
-| --- | --- |
-| `ssa-roundtrip-corpus` | `ssa-roundtrip` (parse + print + compare) over the whole export corpus, `$GOFV_CORPUS/plain` (default `~/work/gofv-corpus/2aae1000ea1d`, 9,297 files, 1.25 GB) |
+The corpus is a private snapshot: the exporter regenerates `../gofv-corpus/<pin12>` in place
+(a benchmark reading it failed mid-run when it was swapped), so `perf-bench.py` copies the newest
+one (as `scripts/parity.sh` picks it) to `tmp/bench-corpus/<id>` of the profiler worktree
+(`id` = hash of `stats.txt` and `manifest.txt`; two newest kept) and passes it as
+`$GOFV_BENCH_CORPUS`. Rows of different corpora are not compared. The runners exit 1 on
+mismatches; commands accept that (`|| [ $? -eq 1 ]`), so only crashes count as `fail` —
+correctness is the runners' own gates, not this one. The first registry entry
+(`ssa-roundtrip-corpus`, which exits non-zero on any parse failure) is a gate: if it fails, the
+other benchmarks are recorded as `skipped`, since a corpus the commit cannot parse makes the
+runners reject every file in seconds-to-minutes and their numbers meaningless (seen at af5cb6a:
+the regenerated corpus had `frontend` lines its parser did not accept yet).
 
-Pass parity runners get an entry each as they land.
+| Benchmark | Runs on `$GOFV_BENCH_CORPUS/plain` (9,297 files, 1.25 GB) |
+| --- | --- |
+| `ssa-roundtrip-corpus` | `ssa-roundtrip`: parse, print, compare every export file |
+| `pass-parity-corpus` | `pass-parity --jobs 4`: every registered pass port against the stock sections |
+| `ssa-check-corpus` | `ssa-check`: the well-formedness checker on every section |
+| `analysis-difftest-corpus` | `analysis-difftest`: CFG analyses vs the stock compiler's caches |
+| `sem-difftest-corpus` | `sem-difftest corpus 2 1`: `GoFV.SSA.run` on every section, 2 random calls each |
