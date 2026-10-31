@@ -76,10 +76,10 @@ structure Func where
   canon : Array (SlotKey × SlotRef)
   /-- `f.constants`: non-empty entries, keys ascending, values in slice order. -/
   consts : Array (Int64 × Array ID)
-  /-- `f.freeValues`, head first. -/
-  freeValues : Array ID
+  /-- `f.freeValues`, head first (a `List`: `newValue` pops and `freeValue` pushes the head). -/
+  freeValues : List ID
   /-- `f.freeBlocks`, head first. -/
-  freeBlocks : Array ID
+  freeBlocks : List ID
   cache : Caches
   deriving DecidableEq, Inhabited
 

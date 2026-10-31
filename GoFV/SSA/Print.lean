@@ -156,8 +156,8 @@ def func (f : Func) (typs : Option (Array (String × TypeRef))) : W Unit := do
   nl
   s "canon "; list (fun (k, r) => do slotKey k; s "="; ref 's' r) f.canon; nl
   s "consts "; list (fun (k, vs) => do i64 k; s "="; list (ref 'v') vs) f.consts; nl
-  s "freev "; list (ref 'v') f.freeValues; nl
-  s "freeb "; list (ref 'b') f.freeBlocks; nl
+  s "freev "; list (ref 'v') f.freeValues.toArray; nl
+  s "freeb "; list (ref 'b') f.freeBlocks.toArray; nl
   let c := f.cache
   if let some po := c.postorder then
     s "cache postorder "; list (ref 'b') po; nl

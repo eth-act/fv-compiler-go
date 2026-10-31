@@ -608,7 +608,7 @@ def func : L (Func × Option (Array (String × TypeRef))) := do
     { entry := entry, type := type, ownAux := ownAux, vidLast := vidLast, bidLast := bidLast
       blocks := blocks, blockTab := blockTab, valueTab := valueTab, names := named
       namedx := namedx, splits := splits, canon := canon, consts := consts
-      freeValues := freeValues, freeBlocks := freeBlocks, cache := cache }
+      freeValues := freeValues.toList, freeBlocks := freeBlocks.toList, cache := cache }
   return (f, typs)
 
 def sectionP : L Section := do
