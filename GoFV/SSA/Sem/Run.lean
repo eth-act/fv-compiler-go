@@ -114,27 +114,39 @@ def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
           | _ => rootQ := rootQ.push u
   return if out.size == n then some out else none
 
-/-- Walk of `schedValid` (`nodes`: each node's arguments, by ID; `done`: the IDs listed so
-far): each listed ID is a node not listed before, and its arguments that are nodes are listed
-before it. -/
-def schedValidAux (nodes : Array (Option (Array ID))) : Array Bool → List ID → Bool
-  | _, [] => true
-  | done, x :: xs =>
+/-- Walk of `schedValid`. `nodes`: each node's arguments and whether it is pure (priority 0),
+by ID; `pos`: 1 + the position of each listed ID (0: not listed yet); `j`: the next position;
+`np`: 1 + the position of the last listed node that is not pure (0: none yet). Each listed ID
+is a node not listed before, its arguments that are nodes are listed before it, and a pure
+node listed after a non-pure one has an argument listed at or after that one (it was not ready
+when the non-pure node was chosen: pure nodes go first). -/
+def schedValidAux (nodes : Array (Option (Array ID × Bool))) :
+    Array Nat → Nat → Nat → List ID → Bool
+  | _, _, _, [] => true
+  | pos, j, np, x :: xs =>
     match nodes[x]?.join with
-    | some args =>
-      !done.getD x false && args.all (fun a => (nodes[a]?.join).isNone || done.getD a false) &&
-        schedValidAux nodes (done.set! x true) xs
+    | some (args, pure) =>
+      pos.getD x 0 == 0 &&
+      args.all (fun a => (nodes[a]?.join).isNone || pos.getD a 0 != 0) &&
+      (!pure || np == 0 || args.any (fun a => (nodes[a]?.join).isSome && np ≤ pos.getD a 0)) &&
+        schedValidAux nodes (pos.set! x (j + 1)) (j + 1) (if pure then np else j + 1) xs
     | none => false
 
+/-- The nodes' IDs are distinct (`seen`: the IDs met so far). -/
+def idsDistinct : Array Bool → List SNode → Bool
+  | _, [] => true
+  | seen, n :: ns => !seen.getD n.id false && idsDistinct (seen.set! n.id true) ns
+
 /-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
-arguments within the block: a dependency order. Validates `kahn`'s output, so proofs use this
-specification rather than the algorithm. -/
+arguments within the block (a dependency order), and pure nodes as early as their arguments
+allow relative to the other nodes (`schedValidAux`). Validates `kahn`'s output, so proofs use
+this specification rather than the algorithm. -/
 def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
   let m := maxNodeId vs + 1
-  let nodes : Array (Option (Array ID)) :=
-    vs.foldl (fun t n => t.set! n.id (some n.args)) (Array.replicate m none)
-  (nodes.filter Option.isSome).size == vs.size && o.size == vs.size &&
-    schedValidAux nodes (Array.replicate m false) o.toList
+  let nodes : Array (Option (Array ID × Bool)) :=
+    vs.foldl (fun t n => t.set! n.id (some (n.args, n.prio == 0))) (Array.replicate m none)
+  idsDistinct (Array.replicate m false) vs.toList && o.size == vs.size &&
+    schedValidAux nodes (Array.replicate m 0) 0 0 o.toList
 
 /-- The evaluation order of the non-`Phi` values of `b` (`none` if their arguments within
 the block form a cycle): `kahn`, validated by `schedValid`. -/
