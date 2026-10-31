@@ -36,7 +36,7 @@ theorem int2_comm (w : Width) (f : BitVec w.bits → BitVec w.bits → Val)
   cases rest with
   | cons _ _ => rfl
   | nil =>
-    simp only [int2]
+    rw [int2_eq, int2_eq]
     cases p.asInt w <;> cases q.asInt w <;> simp [hf]
 
 theorem int3_comm (w : Width) (f : BitVec w.bits → BitVec w.bits → BitVec w.bits → Val)
@@ -44,9 +44,10 @@ theorem int3_comm (w : Width) (f : BitVec w.bits → BitVec w.bits → BitVec w.
     int3 w f (p :: q :: rest) = int3 w f (q :: p :: rest) := by
   match rest with
   | [] => rfl
-  | [_] =>
-    simp only [int3]
-    cases p.asInt w <;> cases q.asInt w <;> simp [hf]
+  | [c] =>
+    rw [int3_eq, int3_eq]
+    cases p.asInt w <;> cases q.asInt w <;> simp only [Option.elim_none, Option.elim_some]
+    exact congrArg _ (funext fun z => hf _ _ z)
   | _ :: _ :: _ => rfl
 
 theorem bool2_comm (f : Bool → Bool → Bool) (hf : ∀ x y, f x y = f y x) (p q : Val)
@@ -54,7 +55,7 @@ theorem bool2_comm (f : Bool → Bool → Bool) (hf : ∀ x y, f x y = f y x) (p
   cases rest with
   | cons _ _ => rfl
   | nil =>
-    simp only [bool2]
+    rw [bool2_eq, bool2_eq]
     cases p.asBool <;> cases q.asBool <;> simp [hf]
 
 theorem commOpsP1_sound : ∀ o ∈ commOpsP1, CommSound o := by
@@ -69,7 +70,7 @@ theorem commOpsP1_sound : ∀ o ∈ commOpsP1, CommSound o := by
   first
   | exact int2_comm _ _ (fun x y => by
       simp only [BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, BitVec.or_comm,
-        BitVec.xor_comm, beq_comm, bne_comm, Nat.mul_comm]) _ _ _
+        BitVec.xor_comm, Bool.beq_comm, bne_comm, Nat.mul_comm, eq_comm]) _ _ _
   | exact int3_comm _ _ (fun x y z => by simp only [Nat.add_comm x.toNat y.toNat]) _ _ _
   | exact bool2_comm _ (fun x y => by cases x <;> cases y <;> rfl) _ _ _
 

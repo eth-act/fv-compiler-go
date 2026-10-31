@@ -102,7 +102,7 @@ def false_rules():
     out = {}
     for fn in os.listdir(PROOF):
         if fn.endswith(".lean"):
-            for m in re.finditer(r"^-- FALSE (r_\w+) (#\d+)", open(os.path.join(PROOF, fn)).read(),
+            for m in re.finditer(r"-- FALSE (r_\w+) (#\d+)", open(os.path.join(PROOF, fn)).read(),
                                  re.M):
                 out[m.group(1)] = m.group(2)
     return out
@@ -199,6 +199,10 @@ MOD_HDR = """import GoFV.Proof.Rules.Tactic
 -/
 
 namespace GoFV.Proof.Rules
+
+-- `bv_decide` proofs fail nondeterministically under parallel elaboration here (`grind failed`
+-- after a `bv_decide` that succeeds sequentially); the probe runs sequentially too.
+set_option Elab.async false
 
 """
 

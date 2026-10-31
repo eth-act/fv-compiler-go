@@ -252,7 +252,7 @@ macro "rule_close" : tactic => `(tactic| (
   first
   | done
   | with_reducible rfl
-  | bv_decide
+  | bv_decide (config := { enums := false, structures := false })
   | grind))
 
 /-- `rule_unfold`, the case splits, then `rule_close` on every remaining case. -/
