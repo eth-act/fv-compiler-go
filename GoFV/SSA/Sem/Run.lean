@@ -37,15 +37,25 @@ def isRoot (op : Op) : Bool :=
 /-- Scheduling priority of a non-`Phi` value: 0 pure, 1 `NilCheck`, 2 other roots. -/
 def prio (op : Op) : Nat := if op.nilCheck then 1 else if isRoot op then 2 else 0
 
-/-- The evaluation order of the non-`Phi` values of `b` (`none` if their arguments within
-the block form a cycle). Kahn's algorithm: a ready pure value first (any order would do: pure
-evaluation is total), else the earliest ready `NilCheck`, else the earliest ready other root,
-"earliest" in the order the value became ready (initially `b.Values` order). -/
-def schedule (f : Func) (b : Block) : Option (Array ID) := Id.run do
-  let vs : Array Value := b.values.filterMap fun id =>
+/-- A non-`Phi` value of a block as `schedule` sees it: its ID, arguments and priority. -/
+structure SNode where
+  id : ID
+  args : Array ID
+  prio : Nat
+  deriving Inhabited
+
+/-- The non-`Phi` values of `b`, in `b.Values` order. -/
+def schedNodes (f : Func) (b : Block) : Array SNode :=
+  b.values.filterMap fun id =>
     match f.value? id with
-    | some v => if v.op == .Phi then none else some v
+    | some v => if v.op == .Phi then none else some ⟨v.id, v.args, prio v.op⟩
     | none => none
+
+/-- Kahn's algorithm over `vs` (`none` if their arguments within the block form a cycle): a
+ready pure value first (any order would do: pure evaluation is total), else the earliest ready
+`NilCheck`, else the earliest ready other root, "earliest" in the order the value became ready
+(initially `vs` order). -/
+def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
   let n := vs.size
   let mut idx : Std.HashMap ID Nat := {}
   for h : i in [0:n] do
@@ -65,7 +75,7 @@ def schedule (f : Func) (b : Block) : Option (Array ID) := Id.run do
   let mut rootQ : Array Nat := #[]
   for h : i in [0:n] do
     if indeg[i]! == 0 then
-      match prio vs[i].op with
+      match vs[i].prio with
       | 0 => pureQ := pureQ.push i
       | 1 => nilQ := nilQ.push i
       | _ => rootQ := rootQ.push i
@@ -95,11 +105,35 @@ def schedule (f : Func) (b : Block) : Option (Array ID) := Id.run do
         let d := indeg[u]! - 1
         indeg := indeg.set! u d
         if d == 0 then
-          match prio vs[u]!.op with
+          match vs[u]!.prio with
           | 0 => pureQ := pureQ.push u
           | 1 => nilQ := nilQ.push u
           | _ => rootQ := rootQ.push u
   return if out.size == n then some out else none
+
+/-- Walk of `schedValid`: each listed ID is a node not listed before, and its arguments that
+are nodes are listed before it (`done`). -/
+def schedValidAux (nodes : Std.HashMap ID (Array ID)) : Std.HashSet ID → List ID → Bool
+  | _, [] => true
+  | done, x :: xs =>
+    match nodes[x]? with
+    | some args =>
+      !done.contains x && args.all (fun a => !nodes.contains a || done.contains a) &&
+        schedValidAux nodes (done.insert x) xs
+    | none => false
+
+/-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
+arguments within the block: a dependency order. Validates `kahn`'s output, so proofs use this
+specification rather than the algorithm. -/
+def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
+  let nodes : Std.HashMap ID (Array ID) := vs.foldl (fun m n => m.insert n.id n.args) {}
+  nodes.size == vs.size && o.size == vs.size && schedValidAux nodes {} o.toList
+
+/-- The evaluation order of the non-`Phi` values of `b` (`none` if their arguments within
+the block form a cycle): `kahn`, validated by `schedValid`. -/
+def schedule (f : Func) (b : Block) : Option (Array ID) :=
+  let vs := schedNodes f b
+  (kahn vs).filter (schedValid vs)
 
 /-- The static context of a function's runs, computed once. -/
 structure Ctx where
