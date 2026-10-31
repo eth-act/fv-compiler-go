@@ -27,6 +27,12 @@ def earlyStep (isMem : TypeRef → Bool) (f : Func) (b : ID) : Except String (Fu
   let (f, c4) := fuseBlockPlain f b
   pure (f, c1 || c2 || c3 || c4)
 
+/-- The late fuse per-block step: `fuseBlockIf`, then `fuseBlockPlain`. -/
+def lateStep (tv : TypeView) (f : Func) (b : ID) : Except String (Func × Bool) := do
+  let (f, c1) ← fuseBlockIf tv f b
+  let (f, c2) := fuseBlockPlain f b
+  pure (f, c1 || c2)
+
 /-- The fuse type queries from the pass environment. -/
 def typeView (env : PassEnv) : Except String TypeView := do
   let some mem := env.typ? "Mem" | throw "fuse: no typ Mem"
