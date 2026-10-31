@@ -22,3 +22,7 @@ root = "GoFVTest.SSARoundtrip"
 [[lean_exe]]
 name = "util-difftest"
 root = "GoFVTest.UtilDiff"
+
+[[lean_exe]]
+name = "pass-parity"
+root = "GoFVTest.Parity.Main"

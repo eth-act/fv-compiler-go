@@ -34,8 +34,12 @@ def Func.reachableBlocks (f : Func) : Array Bool := Id.run do
 def Tables.inliningIndex (t : Tables) (p : Pos) : Int :=
   (t.posBase? p.index).map (·.inl) |>.getD (-1)
 
-/-- The `live` result of `liveValues(f, reachable)` (before register allocation). -/
-def Func.liveValues (f : Func) (t : Tables) (reachable : Array Bool) : Array Bool := Id.run do
+/-- `liveValues(f, reachable)` (before register allocation): the `live` set and
+`liveOrderStmts`, the newly live values whose position is not `PosNotStmt`, in discovery order
+(roots in `f.Blocks` order, controls before values, then the LIFO closure; an `InlMark` root is
+recorded even when already live, as in Go). -/
+def Func.liveValuesOrder (f : Func) (t : Tables) (reachable : Array Bool) :
+    Array Bool × Array ID := Id.run do
   let n := f.vidLast + 1
   let mut inl : Std.HashSet Int := {}
   for bid in f.blocks do
@@ -48,6 +52,8 @@ def Func.liveValues (f : Func) (t : Tables) (reachable : Array Bool) : Array Boo
     if i ≥ 0 then inl := inl.insert i
   let mut live := Array.replicate n false
   let mut q : Array ID := #[]
+  let mut order : Array ID := #[]
+  let stmt (vid : ID) : Bool := ((f.value? vid).map (·.pos.isStmt != Pos.notStmt)).getD false
   for bid in f.blocks do
     if !reachable.getD bid false then continue
     let some b := f.block? bid | continue
@@ -55,15 +61,18 @@ def Func.liveValues (f : Func) (t : Tables) (reachable : Array Bool) : Array Boo
       if !live.getD c true then
         live := live.set! c true
         q := q.push c
+        if stmt c then order := order.push c
     for vid in b.values do
       let some v := f.value? vid | continue
       if (v.op.call || v.op.hasSideEffects || v.op.nilCheck) && !live.getD vid true then
         live := live.set! vid true
         q := q.push vid
+        if stmt vid then order := order.push vid
       if v.op == .InlMark then
         if !inl.contains v.auxInt.toInt then continue
         live := live.set! vid true
         q := q.push vid
+        if stmt vid then order := order.push vid
   -- an `InlMark` may be pushed twice, every other value at most once
   for _ in [0:2*n+1] do
     let some vid := q.back? | break
@@ -76,6 +85,11 @@ def Func.liveValues (f : Func) (t : Tables) (reachable : Array Bool) : Array Boo
       if !live.getD x true then
         live := live.set! x true
         q := q.push x
-  return live
+        if stmt x then order := order.push x
+  return (live, order)
+
+/-- The `live` result of `liveValues(f, reachable)`. -/
+def Func.liveValues (f : Func) (t : Tables) (reachable : Array Bool) : Array Bool :=
+  (f.liveValuesOrder t reachable).1
 
 end GoFV.SSA
