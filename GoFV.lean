@@ -43,3 +43,6 @@ import GoFV.Opt.NumberLines
 import GoFV.Opt.Speculate
 import GoFV.Opt.ShortCircuit
 import GoFV.Opt.Fuse
+import GoFV.Opt.ElimDeadAutos
+import GoFV.Opt.DeadStore
+import GoFV.Opt.MemCombine

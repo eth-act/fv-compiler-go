@@ -86,6 +86,9 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
+| dead auto elim | elimDeadAutosGeneric | 9297 | 9297 | 0 | 100% | stock pass changes 355 functions |
+| dse | dse | 9297 | 9297 | 0 | 100% | stock pass changes 447 functions |
+| memcombine | memcombine | 9297 | 9297 | 0 | 100% | stock pass changes 181 functions |
 | insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |
 | cpufeatures | cpufeatures | — | — | 0 | disabled in 9297 | `exp.simd 0` |
 | rewrite tern | rewriteTern | — | — | 0 | disabled in 9297 | `exp.simd 0` |
