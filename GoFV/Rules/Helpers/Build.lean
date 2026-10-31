@@ -1,6 +1,7 @@
 import GoFV.Rules.Env
 import GoFV.Rules.Helpers.Sym
 import GoFV.Opt.Pass
+import GoFV.SSA.TypeNew
 
 /-!
 # Helpers that build values or objects (`rewrite.go`)
@@ -63,22 +64,13 @@ def setAux (a : AuxRef) (d : AuxDef) : RwM Unit :=
 
 /-- `t.PtrTo()`: the unnamed pointer type to `t` (`types.NewPtr`, cached per element). -/
 def ptrTo (t : TypeRef) : RwM TypeRef := do
-  let tabs ← tables
-  let mut i := 0
-  for d? in tabs.types do
-    if let some d := d? then
-      if d.kind == .PTR && !d.flags.named && d.tail == .elem t then return i
-    i := i + 1
-  let e ← ty (Ty.get · t)
-  let ps := (← read).ptrSize
-  let notinheap := e.flags.notinheap
-  addType { kind := .PTR, size := some ps, align := some ps,
-            ptrdata := some (if notinheap then 0 else ps),
-            flags := { hasptr := !notinheap, direct := true, comparable := true },
-            str := ⟨"*".toUTF8 ++ e.str.bytes⟩,
-            symName := if e.symName.size == 0 then ⟨ByteArray.empty⟩
-                       else ⟨"*".toUTF8 ++ e.symName.bytes⟩,
-            tail := .elem t }
+  let env ← read
+  let s ← get
+  -- new types go past both the tables and the file's `typeorder` (`GoFV.SSA.TypeNew`)
+  let floor := max s.tables.types.size env.typeOrder.rank.size
+  let (p, tabs) ← liftE (s.tables.ptrTo floor env.ptrSize t)
+  set { s with tables := tabs }
+  return p
 
 /-- `typeToAux(t)` (`Ty.typeAux`). -/
 def typeAux (t : TypeRef) : RwM AuxRef := do
