@@ -133,7 +133,11 @@ def main():
     for n in sorted(bH.keys() & bB.keys()):
         b, h = bB[n], bH[n]
         if b.get("bin_hash") and b.get("bin_hash") == h.get("bin_hash"):
-            continue  # same binary and command: same measurement
+            continue  # same binary, command and corpus: same measurement
+        if b.get("corpus") != h.get("corpus"):
+            info.append((f"bench {n}", "corpus changed", b.get("corpus") or "–",
+                         h.get("corpus") or "–", "not compared"))
+            continue
         rb, rh, wb, wh = num(b, "maxrss_mb"), num(h, "maxrss_mb"), num(b, "wall_s"), num(h, "wall_s")
         cb, ch = num(b, "cpu_s"), num(h, "cpu_s")
         cpu_ok = cb is None or ch is None
@@ -144,7 +148,7 @@ def main():
         for (x, y, lst) in ((rb, rh, reg), (rh, rb, win)):
             if grew(x, y, a.pct, a.bench_rss_abs):
                 lst.append((f"bench {n}", "max RSS", fmt(rb, "MB"), fmt(rh, "MB"), change(rb, rh)))
-        if h.get("status") not in ("ok", "cached") and b.get("status") in ("ok", "cached"):
+        if h.get("status") not in ("ok", "cached", "skipped") and b.get("status") in ("ok", "cached"):
             reg.append((f"bench {n}", "run", "ok", h.get("status", "?"), "broken"))
 
     print(f"### perf-compare `{base}` → `{head}`\n")
