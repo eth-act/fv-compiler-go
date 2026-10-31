@@ -39,6 +39,35 @@ A mismatch reports the file, the section and the first differing line of the pri
 (or the pass's error). A pass whose Go `disabled` condition holds (e.g. `insert resched checks`
 without `GOEXPERIMENT=preemptibleloops`) is checked to have no section in that file.
 
+**Randomized map order (`sccp`).** Stock `sccp` is nondeterministic: `replaceConst` ranges over
+the Go map `latticeCells` (`docs/PASSES.md` §3). The port (`GoFV/Opt/Sccp.lean`) is
+deterministic and ranges over the keys in insertion order. Only one effect of the order is
+observable: when the rewiring of two or more *different* constant controls removes edges into
+the same block `c`, the swap-removes leave `c.Preds` — and, by the same permutation, the
+arguments of `c`'s phis and the back indices `Succs[k].i` of `c`'s predecessors — in an order
+that depends on the map order (value resets, rewires of different blocks and phis turned into
+copies or constants commute). Go's possible orders, by `internal/runtime/maps` (`Iter.Init`/
+`Next`, `putSlotSmall`): for at most 8 keys (one group, slots filled in insertion order,
+iteration from a random slot with wrap-around) exactly the rotations of the insertion order;
+for more keys the order follows the keys' address hashes under a random per-map seed, which
+the harness treats as any order (a superset). Measured with the host toolchain on
+`map[*V]lattice` (2,000 trials per size): sizes 2–8 gave exactly the n rotations, size 9 gave
+1,096 distinct orders (74 rotations), size 10 1,492. A registered pass may carry a `replay`
+(`PassEntry.replay`): when the deterministic result differs, the harness runs it with the stock
+output and compares its result exactly again; a match is counted in the "order replayed"
+column. For `sccp` (`GoFV/Opt/SccpReplay.lean`), the replay simulates the edge removals of
+each contested block on its initial predecessor list, finds an admissible order (a rotation
+for small maps; for large maps a combination of per-block relative orders consistent with one
+global order) that yields the stock `Preds` of every contested block, and reruns
+`replaceConst` in that order. So a section counts as a match iff the port, run with an
+admissible order of `latticeCells`, gives exactly the stock output; everything else (lattice,
+fold temporaries, IDs, resets, rewires) is still compared exactly.
+
+The quick corpus has no contested block (`sccp` folds in 25 functions and rewires in 20, never
+two values into one block). `tests/sccp-order/run.sh [n] [go-build]` exports a program that
+has one `n` times and runs the check: 16 stock exports split 8/8 between the two predecessor
+orders, and all match (8 by replay).
+
 Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays
 constant: the whole corpus (9,297 files, 1.25 GB) runs in about 25 s with 4 jobs and 130 MB.
 
@@ -67,7 +96,8 @@ passes that do not create definitions). Add one `PassEntry` to
 `GoFVTest/Parity/Registry.lean`: `fn` (the Go function), `names` (the stock names of its
 pipeline instances) and, for passes the driver can disable, `disabled`. A pass that creates
 types, aux objects or slots returns them in `PassOut.tables` at fresh numbers (and mutated
-objects as redefinitions at their own numbers).
+objects as redefinitions at their own numbers). A pass whose stock result depends on Go's
+randomized map iteration sets `replay` (above); no other pass may.
 
 ## Results
 
@@ -102,6 +132,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
 | branchelim | branchelim | 9297 | 9297 | 0 | 100% | 526 functions changed by the pass |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
+| sccp | sccp | 9297 | 9297 | 0 | 100% | stock pass changes 1163 functions (fold temporaries in all; folds in 25, rewires in 20); 0 sections need the map order replayed (no contested block); `tests/sccp-order` (16 exports, split 8/8 between the two orders): 48/48, 8 replayed |
 | dead auto elim | elimDeadAutosGeneric | 9297 | 9297 | 0 | 100% | stock pass changes 355 functions |
 | late fuse | fuseLate | 9297 | 9297 | 0 | 100% | 1381 functions changed by the pass (81 need `fuseBranchRedirect`, prove's facts table) |
 | dse | dse | 9297 | 9297 | 0 | 100% | stock pass changes 447 functions |
