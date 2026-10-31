@@ -418,10 +418,15 @@ Modules `GoFV/SSA/Sem/{Val,Int,Shift,Cmp,Conv,Pure,Env,Layout,Run}.lean`; entry 
   `stuck`; since `poison` is refined by anything and pure ops are monotone in it, a P1 outcome
   that is `returned`/`panicked` is the outcome of the full semantics too, and roots run in
   memory-chain order, so no unmodelled effect can be skipped.
-- **Evaluation order** (§3.6): `schedule` is Kahn's algorithm over a block's non-`Phi`
-  values; a ready pure value first, else the earliest-ready `NilCheck`, else the
-  earliest-ready other root (`isRoot`: `call`, `nilCheck`, `hasSideEffects`, `typ: Mem`,
-  `VarLive`). Computed once per block per run (`Ctx`); a cycle is `stuck`.
+- **Evaluation order** (§3.6): `schedule` is Kahn's algorithm (`kahn`) over a block's
+  non-`Phi` values (`schedNodes`: ID, arguments, priority); a ready pure value first, else the
+  earliest-ready `NilCheck`, else the earliest-ready other root (`isRoot`: `call`, `nilCheck`,
+  `hasSideEffects`, `typ: Mem`, `VarLive`). Its output is validated by `schedValid` (every node
+  once, each after its in-block arguments), so proofs use that specification, never the
+  algorithm. Computed once per block per run (`Ctx`); a cycle is `stuck`. The scheduler uses
+  arrays indexed by value ID, not hash maps: the kernel cannot evaluate `Std.HashMap` (its
+  `USize` arithmetic depends on the opaque `System.Platform.getNumBits`), and the proofs'
+  non-vacuity witnesses evaluate `run` with `decide +kernel` (`GoFV/Proof/Witness/Clamp.lean`).
 - **Arguments**: Go-typed scalar parameters; `Arg {n} [0]` and `ArgIntReg {n+0}` read
   parameter `n` (its index among `f.OwnAux`'s input ABI assignments), so the same arguments
   run before and after `expand calls`. Results: `MakeResult` arguments but the last (the

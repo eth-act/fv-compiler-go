@@ -72,3 +72,9 @@ import GoFV.Opt.Prove.Downward
 import GoFV.Opt.Prove.Simplify
 import GoFV.Opt.Prove.Pass
 import GoFV.Opt.Decompose
+import GoFV.Proof.Refine
+import GoFV.Proof.Cong
+import GoFV.Proof.Pass.NumberLines
+import GoFV.Proof.Pass.Identity
+import GoFV.Proof.Witness.Clamp
+import GoFV.Proof.Witness.Early

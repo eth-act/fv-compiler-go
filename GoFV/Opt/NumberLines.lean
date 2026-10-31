@@ -27,11 +27,11 @@ def isPoorStatementOp : Op → Bool
   | .Const64F | .SB | .SP | .ArgIntReg | .ArgFloatReg => true
   | _ => false
 
-@[inline] private def vpos (f : Func) (v : ID) : Pos := ((f.value? v).map (·.pos)).getD default
-@[inline] private def vop (f : Func) (v : ID) : Op := ((f.value? v).map (·.op)).getD default
-@[inline] private def setVPos (f : Func) (v : ID) (p : Pos) : Func :=
+@[inline] def vpos (f : Func) (v : ID) : Pos := ((f.value? v).map (·.pos)).getD default
+@[inline] def vop (f : Func) (v : ID) : Op := ((f.value? v).map (·.op)).getD default
+@[inline] def setVPos (f : Func) (v : ID) (p : Pos) : Func :=
   { f with valueTab := f.valueTab.modify v (Option.map fun x => { x with pos := p }) }
-@[inline] private def setBPos (f : Func) (b : ID) (p : Pos) : Func :=
+@[inline] def setBPos (f : Func) (b : ID) (p : Pos) : Func :=
   { f with blockTab := f.blockTab.modify b (Option.map fun x => { x with pos := p }) }
 
 /-- `nextGoodStatementIndex(v, i, b)` (`numberlines.go:31`): from a poor statement op at index
