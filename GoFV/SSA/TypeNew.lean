@@ -2,9 +2,9 @@ import GoFV.SSA.Export
 import GoFV.SSA.TypeCmp
 
 /-!
-# Types and type aux values created by passes
+# Types created by passes
 
-`types.NewPtr`, `types.NewResults` and `*types.Type` used as an aux value, over the export's
+`types.NewPtr` and `types.NewResults` over the export's
 tables. The export numbers types by identity key (kind, `LinkString`, flags, `String()`;
 `docs/contracts/export.md`), so a "new" Go type object whose key is already in the tables *is*
 that table entry; only a key the tables do not have gets a new definition. New definitions go at
@@ -72,17 +72,6 @@ def newResults (tabs : Tables) (floor : Nat) (mem resultMem : TypeRef) (ts : Arr
     { kind := .RESULTS, size := none, align := none, ptrdata := none, flags := {}, str
       symName := GoStr.ofString "", tail := .results ts }
   return tabs.mintType floor d
-
-/-- The aux number of `*types.Type` `t` used as an aux value (one per type number), creating it
-at the first free number `≥ floor` if needed. -/
-def typeAux (tabs : Tables) (floor : Nat) (t : TypeRef) : Except String (AuxRef × Tables) := do
-  let found := tabs.auxes.findIdx? fun a => match a with
-    | some { kind := .type u, .. } => u == t
-    | _ => false
-  if let some a := found then return (a, tabs)
-  let some d := tabs.type? t | throw s!"type aux: type t{t} not defined"
-  let n := max floor tabs.auxes.size
-  return (n, tabs.add (.aux n { fmt := d.str, kind := .type t }))
 
 /-- `t.Compare(u) == CMPeq` for types of the tables, including types created after `typeorder`
 was taken: ranked types compare by rank; otherwise two unnamed pointers compare by element. -/

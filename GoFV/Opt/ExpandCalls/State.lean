@@ -3,6 +3,7 @@ import GoFV.SSA.Alloc
 import GoFV.SSA.ConstCache
 import GoFV.SSA.ABI
 import GoFV.SSA.TypeNew
+import GoFV.Rules.Helpers.Types
 import Std.Data.HashMap.Basic
 
 /-!
@@ -118,11 +119,10 @@ def newResults (ts : Array TypeRef) : M TypeRef := do
   set { s with tabs }
   return r
 
-/-- `t` as an aux value (`NewValue*A(…, t, …)`). -/
+/-- `t` as an aux value (`NewValue*A(…, t, …)`, Go's `typeToAux`). -/
 def typeAux (t : TypeRef) : M AuxRef := do
-  let c ← read
   let s ← get
-  let (a, tabs) ← s.tabs.typeAux c.auxFloor t
+  let (tabs, a) ← GoFV.Rules.Ty.typeAux s.tabs t
   set { s with tabs }
   return a
 

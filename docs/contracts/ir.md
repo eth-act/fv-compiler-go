@@ -27,6 +27,8 @@ the semantics (G5) and the proofs (G6). Input format: `docs/contracts/export.md`
 | `GoFV.SSA.ConstCache` | `constVal` and the `Const*` constructors (`f.constants`, magic keys) |
 | `GoFV.SSA.XPosMap` | `xposmap`/`biasedSparseMap` (`f.cachedLineStarts` as a pass's `pendingLines`), `ofCache`/`toCache` |
 | `GoFV.SSA.TypeCmp` | `TypeOrder`: `types.(*Type).Compare` as a rank from `typeorder` |
+| `GoFV.SSA.TypeNew` | `Tables.ptrTo` (`types.NewPtr`), `Tables.newResults` (`types.NewResults`): existing entry by export identity key, else a new definition at a fresh number; `Tables.typeEq` (`Compare == CMPeq` including such new types) |
+| `GoFV.SSA.ABI` | `ABIConfig` (`config abi0`/`abi1`), `AuxCall`/`ABIParamAssignment` queries (`inParam`/`outParam`, `offsetOfResult`/`offsetOfArg`, `frameOffset`), `argOpAndRegisterFor`, `regCounts` (`Type.Registers`), `numParamRegs`, `registerTypes` (`abi.RegisterTypes`), `canSSA` |
 | `GoFV.SSA.StoreOrder` | `storeOrder` (`schedule.go`), `Tables.isMemory` |
 | `GoFV.SSA.Analysis.*` | `Postorder` (`postorderWithNumbering`), `Dom` (`dominatorsLTOrig`), `SparseTree` (`newSparseTree`, `isAncestorEq`), `CfgCache` (`Func.postorder`/`idom`/`sdom`: the cached accessors) |
 
