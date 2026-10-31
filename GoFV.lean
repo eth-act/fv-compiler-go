@@ -16,3 +16,7 @@ import GoFV.SSA.FmtFloat
 import GoFV.SSA.GoString
 import GoFV.Rules.Syntax
 import GoFV.Rules.Generated
+import GoFV.Util.PdqSort
+import GoFV.Util.SparseSet
+import GoFV.Util.SparseMap
+import GoFV.Util.SparseMapPos

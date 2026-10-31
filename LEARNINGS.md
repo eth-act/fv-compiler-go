@@ -53,6 +53,16 @@ avoiding): the problem, the trick, the numbers, where it is used.
   toolchain patches (stuck `match` in `simp`, leanprover/lean4#15755: 25.0 → 2.65 s CPU,
   64.9M → 781k heartbeats in the N = 400 case above); fix the proof, since gates use official Lean.
 
+#### Keep a fuel-recursive loop's body in small non-recursive `@[inline]` parts
+- **Problem:** `GoFV.Util.PdqSort.pdqsort` (fuel recursion, a ~30-line loop body with tuple
+  `let`s and four recursive calls) took 11.6 s CPU to build, almost all of it `simp`/`split`/
+  `generalize` over the unfolded body in the permutation proof (`rw [pdqsort]` alone: 4.6 s).
+- **Trick:** the recursion is `| fuel + 1, … => pdqStep lt (pdqsort fuel) …`; the body is
+  `pdqStep` taking the recursive call as an argument, itself split into `pdqPivot` and
+  `pdqPartition`, each `@[inline]` (same compiled code). Each part gets its own small lemma
+  with the recursive call abstracted (`hrec`), and the induction step is one `exact`.
+- **Effect:** the module went from 11.6 s / 0.51 GB to 1.9 s / 0.48 GB (#41).
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,

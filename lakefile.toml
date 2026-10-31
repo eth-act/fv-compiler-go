@@ -18,3 +18,7 @@ weakLeanArgs = ["-Dlinter.unusedVariables=false", "-Dlinter.unusedSimpArgs=false
 [[lean_exe]]
 name = "ssa-roundtrip"
 root = "GoFVTest.SSARoundtrip"
+
+[[lean_exe]]
+name = "util-difftest"
+root = "GoFVTest.UtilDiff"
