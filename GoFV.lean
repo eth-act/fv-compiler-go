@@ -1,5 +1,18 @@
 -- Umbrella module for the GoFV library. Hub modules must not import it (LEARNINGS.md).
 import GoFV.SSA.OpInfo
 import GoFV.SSA.Op
+import GoFV.SSA.GoStr
+import GoFV.SSA.Pos
+import GoFV.SSA.Type
+import GoFV.SSA.AuxData
+import GoFV.SSA.Value
+import GoFV.SSA.Block
+import GoFV.SSA.Func
+import GoFV.SSA.Export
+import GoFV.SSA.Parse
+import GoFV.SSA.Print
+import GoFV.SSA.Live
+import GoFV.SSA.FmtFloat
+import GoFV.SSA.GoString
 import GoFV.Rules.Syntax
 import GoFV.Rules.Generated

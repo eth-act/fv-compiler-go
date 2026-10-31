@@ -388,6 +388,10 @@ def idomEntryW (s : String) : Except String (ID × Option ID) := do
   let ps ← partsW s ":" 2
   return (← refW 'b' ps[0]!, ← optRefW 'b' ps[1]!)
 
+def auxmapEntryW (s : String) : Except String (AuxRef × Int) := do
+  let ps ← partsW s ":" 2
+  return (← refW 'a' ps[0]!, ← intW ps[1]!)
+
 def lineRangeW (s : String) : Except String LineRange := do
   let ps ← partsW s ":" 3
   return ⟨← natW ps[0]!, ← intW ps[1]!, ← intW ps[2]!⟩
@@ -512,29 +516,22 @@ def func : L Func := do
   let freeValues ← line "freev" (w (listW (refW 'v')))
   let freeBlocks ← line "freeb" (w (listW (refW 'b')))
   let mut cache : Caches := {}
+  -- cache lines in the order postorder, idom, sdom, loopnest, auxmap, linestarts
+  let mut rank := 0
   for _ in [0:(← read).lines.size] do
     if (← peekTag) != some "cache" then break
-    cache ← line "cache" do
+    let (r, c) ← line "cache" do
       match ← word with
-      | "postorder" =>
-        if cache.postorder.isSome || cache.idom.isSome || cache.sdom.isSome || cache.loopnest
-          || cache.lineStarts.isSome then throw "cache out of order"
-        return { cache with postorder := some (← w (listW (refW 'b'))) }
-      | "idom" =>
-        if cache.idom.isSome || cache.sdom.isSome || cache.loopnest || cache.lineStarts.isSome
-        then throw "cache out of order"
-        return { cache with idom := some (← w (listW idomEntryW)) }
-      | "sdom" =>
-        if cache.sdom.isSome || cache.loopnest || cache.lineStarts.isSome then
-          throw "cache out of order"
-        return { cache with sdom := some (← w (listW sdomNodeW)) }
-      | "loopnest" =>
-        if cache.loopnest || cache.lineStarts.isSome then throw "cache out of order"
-        return { cache with loopnest := true }
-      | "linestarts" =>
-        if cache.lineStarts.isSome then throw "cache out of order"
-        return { cache with lineStarts := some (← w (listW lineRangeW)) }
+      | "postorder" => return (1, { cache with postorder := some (← w (listW (refW 'b'))) })
+      | "idom" => return (2, { cache with idom := some (← w (listW idomEntryW)) })
+      | "sdom" => return (3, { cache with sdom := some (← w (listW sdomNodeW)) })
+      | "loopnest" => return (4, { cache with loopnest := true })
+      | "auxmap" => return (5, { cache with auxmap := some (← w (listW auxmapEntryW)) })
+      | "linestarts" => return (6, { cache with lineStarts := some (← w (listW lineRangeW)) })
       | c => throw s!"unknown cache {c}"
+    if r ≤ rank then throw s!"line {(← get)}: cache line out of order"
+    rank := r
+    cache := c
   return { entry, type, ownAux, vidLast, bidLast, blocks, blockTab, valueTab, names := named,
            namedx, splits, canon, consts, freeValues, freeBlocks, cache }
 
@@ -562,6 +559,10 @@ def file : L ExportFile := do
   for _ in [0:(← read).lines.size] do
     if (← peekTag) != some "pass" then break
     sections := sections.push (← sectionP)
+  let mut warns := #[]
+  for _ in [0:(← read).lines.size] do
+    if (← peekTag) != some "warn" then break
+    warns := warns.push (← line "warn" str)
   let typeOrder ← line "typeorder" do
     let ts ← rest
     ts.mapM fun (t : Token) => match t with
@@ -571,7 +572,7 @@ def file : L ExportFile := do
       | .str _ => throw "unexpected string in typeorder"
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
-  return { version, pkg, name, abi, nosplit, pgohot, config, sections, typeOrder }
+  return { version, pkg, name, abi, nosplit, pgohot, config, sections, warns, typeOrder }
 
 end Parse
 

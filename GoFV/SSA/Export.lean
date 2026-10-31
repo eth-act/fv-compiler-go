@@ -47,6 +47,8 @@ structure ExportFile where
   /-- `config` lines in order: key and value tokens. -/
   config : Array (String × Array Token)
   sections : Array Section
+  /-- `warn` lines written after the last section (before `typeorder`). -/
+  warns : Array GoStr
   /-- `typeorder`: groups of `CMPeq` types in ascending `types.(*Type).Compare` order. -/
   typeOrder : Array (Array TypeRef)
   deriving DecidableEq, Inhabited

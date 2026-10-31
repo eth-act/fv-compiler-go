@@ -63,7 +63,6 @@ structure SymFlags where
   contentaddressable : Bool := false
   wrapper : Bool := false
   abiwrapper : Bool := false
-  noptr : Bool := false
   deriving DecidableEq, Inhabited, Repr, Hashable
 
 def SymFlags.table : List (String × (SymFlags → Bool) × (SymFlags → SymFlags)) :=
@@ -72,8 +71,7 @@ def SymFlags.table : List (String × (SymFlags → Bool) × (SymFlags → SymFla
    ("static", (·.static), ({ · with static := true })),
    ("contentaddressable", (·.contentaddressable), ({ · with contentaddressable := true })),
    ("wrapper", (·.wrapper), ({ · with wrapper := true })),
-   ("abiwrapper", (·.abiwrapper), ({ · with abiwrapper := true })),
-   ("noptr", (·.noptr), ({ · with noptr := true }))]
+   ("abiwrapper", (·.abiwrapper), ({ · with abiwrapper := true }))]
 
 /-- A relocation of an `*obj.LSym` (`reloc` line). -/
 structure Reloc where
@@ -125,7 +123,8 @@ structure CallABI where
 
 /-- The Go dynamic type of an aux value with its contents. -/
 inductive AuxKind where
-  /-- `*ir.Name`. -/
+  /-- `*ir.Name`; `esc` is `n.Esc()` (0 `EscUnknown`, 1 `EscNone`, 2 `EscHeap`, 3 `EscNever`),
+  `pos` is `n.Pos()`. -/
   | name (sym : GoStr) (cls : NameClass) (type : TypeRef) (frameOffset : Int) (esc : Nat)
       (flags : NameFlags) (pos : Pos)
   /-- `*obj.LSym`. `data` is `lsym.P`, only for `SRODATA` symbols. -/

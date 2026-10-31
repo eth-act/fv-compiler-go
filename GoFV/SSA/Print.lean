@@ -173,6 +173,8 @@ def func (f : Func) : W Unit := do
       optRef 'b' x.sibling; s ":"; i x.entry; s ":"; i x.exit) d
     nl
   if c.loopnest then s "cache loopnest\n"
+  if let some m := c.auxmap then
+    s "cache auxmap "; list (fun (a, k) => do ref 'a' a; s ":"; i k) m; nl
   if let some ls := c.lineStarts then
     s "cache linestarts "; list (fun (x : LineRange) => do n x.index; s ":"; i x.first; s ":"; i x.last) ls
     nl
@@ -194,6 +196,8 @@ def file (e : ExportFile) : W Unit := do
     for t in ts do sp; token t
     nl
   for x in e.sections do sectionW x
+  for m in e.warns do
+    s "warn "; q m; nl
   s "typeorder"
   for g in e.typeOrder do
     sp

@@ -44,6 +44,8 @@ structure Caches where
   sdom : Option (Array SdomNode) := none
   /-- Only presence is exported. -/
   loopnest : Bool := false
+  /-- `f.auxmap`: CSE's aux numbering, sorted by id. -/
+  auxmap : Option (Array (AuxRef × Int)) := none
   lineStarts : Option (Array LineRange) := none
   deriving DecidableEq, Inhabited, Repr
 
