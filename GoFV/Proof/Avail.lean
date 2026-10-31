@@ -1,4 +1,4 @@
-import GoFV.Proof.Frame
+import GoFV.Proof.Eval
 import GoFV.Proof.DomCert
 
 /-!
@@ -115,5 +115,47 @@ theorem dinv_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env}
       exact hxb (Anc.antisymm hp hanc hua)
     rw [← hevy hne]
     exact (evalValue_congr hfr' fun a ha => (hout a (hna a ha)).symm).symm
+
+/-- **Entering a block keeps every register typed.** -/
+theorem typed_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} (hwf : WF ce f)
+    {b : ID} {blk : Block} (hb : b ∈ f.blocks) (hbb : f.block? b = some blk) {fr fr' : Frame}
+    {i : Nat} (hs : fr.regs.size = f.valueTab.size) (ht : Typed (Ctx.make tabs f) fr)
+    (h : enterBlock env (Ctx.make tabs f) fr blk i = .ok fr') : Typed (Ctx.make tabs f) fr' := by
+  have hnd := hwf.valuesNodup b blk ⟨hb, hbb⟩
+  have hown := valuesOwn hwf hb hbb
+  obtain ⟨b', hb', hid⟩ := hwf.blockId b hb
+  rw [hbb] at hb'; cases hb'
+  obtain ⟨frP, o, ho, hev, -, hPs, -, hkeep, hphi⟩ := enterBlock_spec hnd h
+  rw [hid, sched_make hbb] at ho
+  obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
+  obtain ⟨-, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  have hcf : (Ctx.make tabs f).f = f := rfl
+  rw [hcf] at hkeep hphi e4
+  intro z y hz
+  by_cases hzo : z ∈ o.toList
+  · obtain ⟨v, y', hv, hy', hev'⟩ := e4 z hzo
+    rw [hz] at hy'; cases hy'
+    obtain ⟨v', hv', hvid⟩ := hown z ((omem z).1 hzo).1
+    rw [hv] at hv'; cases hv'
+    have := evalValue_typed hev'
+    rwa [hvid] at this
+  · rw [e3 z hzo] at hz
+    by_cases hph : z ∈ blk.values ∧ ∃ v, f.value? z = some v ∧ v.op = .Phi
+    · obtain ⟨hzb, v, hv, hp⟩ := hph
+      have hlt : z < fr.regs.size := by
+        rw [← hPs]
+        rcases Nat.lt_or_ge z frP.regs.size with h' | h'
+        · exact h'
+        · rw [Array.getElem?_eq_none h'] at hz; cases hz
+      obtain ⟨a, y0, -, -, hy⟩ := hphi z hzb v hv hp hlt
+      rw [hz] at hy; cases hy
+      exact retype_idem _ _
+    · have hk : z ∉ blk.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi := by
+        by_cases hzb : z ∈ blk.values
+        · obtain ⟨v, hv, -⟩ := hown z hzb
+          exact .inr ⟨v, hv, fun hp => hph ⟨hzb, v, hv, hp⟩⟩
+        · exact .inl hzb
+      rw [hkeep z hk] at hz
+      exact ht z y hz
 
 end GoFV.Proof
