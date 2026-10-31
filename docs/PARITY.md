@@ -96,6 +96,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | branchelim | branchelim | 9297 | 9297 | 0 | 100% | 526 functions changed by the pass |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
 | dead auto elim | elimDeadAutosGeneric | 9297 | 9297 | 0 | 100% | stock pass changes 355 functions |
+| late fuse | fuseLate | 9297 | 9297 | 0 | 100% | 1381 functions changed by the pass (81 need `fuseBranchRedirect`, prove's facts table) |
 | dse | dse | 9297 | 9297 | 0 | 100% | stock pass changes 447 functions |
 | memcombine | memcombine | 9297 | 9297 | 0 | 100% | stock pass changes 181 functions |
 | insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |

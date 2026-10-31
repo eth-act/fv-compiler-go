@@ -42,6 +42,7 @@ def registry : Array PassEntry := #[
   { fn := "shortcircuit", names := #["short circuit"], run := shortcircuitPass },
   { fn := "fuseEarly", names := #["early fuse"], run := fuseEarlyPass },
   { fn := "expandCalls", names := #["expand calls"], run := expandCallsPass },
+  { fn := "fuseLate", names := #["late fuse"], run := fuseLatePass },
   { fn := "softfloat", names := #["softfloat"], run := softfloatPass },
   { fn := "checkbce", names := #["check bce"], run := checkbcePass },
   { fn := "elimDeadAutosGeneric", names := #["dead auto elim"], run := elimDeadAutosPass },

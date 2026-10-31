@@ -3,14 +3,18 @@ import GoFV.Opt.Fuse.Basic
 import GoFV.Opt.Fuse.Plain
 import GoFV.Opt.Fuse.If
 import GoFV.Opt.Fuse.Comparisons
+import GoFV.Opt.Fuse.BranchRedirect
 import GoFV.SSA.TypePred
 
 /-!
-# early fuse (`fuseEarly`, `fuse.go:13`)
+# early fuse and late fuse (`fuseEarly`, `fuseLate`, `fuse.go:13-18`)
 
-`fuse(f, fuseTypePlain | fuseTypeIntInRange | fuseTypeSingleBitDifference | fuseTypeNanCheck)`:
-per block (backwards over `f.Blocks`), `fuseIntInRange`, `fuseSingleBitDifference`,
-`fuseNanCheck`, then `fuseBlockPlain`, each on the same `b`.
+- `fuseEarly`: `fuse(f, fuseTypePlain | fuseTypeIntInRange | fuseTypeSingleBitDifference |
+  fuseTypeNanCheck)`: per block (backwards over `f.Blocks`), `fuseIntInRange`,
+  `fuseSingleBitDifference`, `fuseNanCheck`, then `fuseBlockPlain`, each on the same `b`.
+- `fuseLate`: `fuse(f, fuseTypePlain | fuseTypeIf | fuseTypeBranchRedirect)`: per block
+  `fuseBlockIf` then `fuseBlockPlain`; after each sweep `fuseBranchRedirect` (prove's facts
+  table).
 -/
 
 namespace GoFV.Opt
@@ -47,5 +51,13 @@ def fuseEarly (tv : TypeView) (f : Func) : Except String Func :=
 
 /-- The `early fuse` pass. -/
 def fuseEarlyPass : Pass := Pass.ofFunc fun env f => do fuseEarly (← Fuse.typeView env) f
+
+/-- `fuseLate(f)`. -/
+def fuseLate (tv : TypeView) (pv : Prove.Prover) (f : Func) : Except String Func :=
+  fuseLoop (Fuse.lateStep tv) (some (fuseBranchRedirect pv)) roundFuel f
+
+/-- The `late fuse` pass. -/
+def fuseLatePass : Pass := Pass.ofFunc fun env f => do
+  fuseLate (← Fuse.typeView env) (← Prove.Prover.ofEnv env) f
 
 end GoFV.Opt
