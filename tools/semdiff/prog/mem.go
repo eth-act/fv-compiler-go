@@ -1,5 +1,7 @@
 package main
 
+import "unsafe"
+
 // Functions of the P2 difftest: memory, pointers and composites (slices, strings, structs,
 // arrays, pointers), still without calls other than the runtime's panicking entry points:
 // no append/make/new/string concatenation/map/interface method calls.
@@ -38,7 +40,7 @@ func init() {
 		"arrParam": arrParam, "arrLocal": arrLocal, "arrRet": arrRet, "arr1": arr1,
 		"bigCopy": bigCopy, "bigZero": bigZero, "bigSum": bigSum,
 		"table": table, "table8": table8, "setPtr": setPtr, "nilSlice": nilSlice,
-		"ptrEq": ptrEq, "sliceAlias": sliceAlias,
+		"ptrEq": ptrEq, "sliceAlias": sliceAlias, "sliceData": sliceData, "strData": strData,
 	} {
 		funcs[k] = v
 	}
@@ -280,4 +282,23 @@ func sliceAlias(s []int, i int) int {
 	t := s[1:]
 	t[0] = i
 	return s[1] + t[0]
+}
+
+// sliceData dereferences the data pointer of a possibly-nil slice: the open question
+// "SlicePtr non-nil" of docs/plans/semantics.md §10 (nilcheckelim treats SlicePtr as non-nil).
+//
+//go:noinline
+func sliceData(s []int) int {
+	if s != nil && len(s) == 0 {
+		return -1 // the data pointer of an empty non-nil slice points past its allocation
+	}
+	return *unsafe.SliceData(s)
+}
+
+//go:noinline
+func strData(s string) byte {
+	if len(s) == 0 {
+		return 0
+	}
+	return *unsafe.StringData(s)
 }

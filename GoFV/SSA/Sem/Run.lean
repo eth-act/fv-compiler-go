@@ -325,7 +325,8 @@ def auxTy (tabs : Tables) (aux : Option AuxRef) : Ty :=
 
 /-- The memory roots of P2 (§3.4): `Store {T} p x mem`, `Move {T} [n] dst src mem`,
 `Zero {T} [n] p mem` (and their write-barrier forms, which have the same semantics),
-`VarDef {n} mem`, `VarLive {n} mem`, `KeepAlive x mem`, `NilCheck p mem` (§6). The address of
+`VarDef {n} mem`, `VarLive {n} mem`, `KeepAlive x mem`, `WBend mem` (the end of a
+write-barrier sequence: no memory effect), `NilCheck p mem` (§6). The address of
 a write and the pointer of a nil check are observation points. -/
 def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
   let what := s!"v{v.id}: {v.op.name}"
@@ -342,7 +343,7 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
     match v.aux with
     | some n => .ok (.mem (m.poisonBlock (.local ctx.act n)))
     | none => .stuck s!"{what}: no name"
-  | .VarLive, [.mem m] => .ok (.mem m)
+  | .VarLive, [.mem m] | .WBend, [.mem m] => .ok (.mem m)
   | .KeepAlive, [_, .mem m] => .ok (.mem m)
   | .NilCheck, [.ptr p, .mem m] => if p.isNil then .panic .nilDeref m else .ok (.ptr p)
   | _, _ => .stuck s!"{what}: undefined or ill-typed arguments"
@@ -385,7 +386,7 @@ def evalValue (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) : Res Val := do
     | some callee => callExtern env callee argv
     | none => .stuck s!"v{v.id}: call without callee"
   | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
-  | .NilCheck => memRoot ctx v argv
+  | .WBend | .NilCheck => memRoot ctx v argv
   | op =>
     match frameVal ctx v with
     | some x => pure x
