@@ -1,5 +1,6 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Sem.Run
+import GoFV.SSA.Sem.Image
 import Std.Data.HashMap
 
 /-!
@@ -8,115 +9,240 @@ import Std.Data.HashMap
 Three modes (driven by `scripts/sem-difftest.sh`):
 
 - `gen <dir> <n> <seed> <func>...`: for each function `<dir>/<func>,1.ssa` of the export,
-  print `n` calls `<func> <arg>...` with random and edge-case arguments of its parameter types
-  (integers and `bool` only).
+  print `n` calls `<func>\t<arg>...` with random and edge-case arguments of its parameter
+  types.
 - `run <dir> <calls> <native>`: run every call of `<calls>` on **every section** of the
   function's export with `GoFV.SSA.run`, and compare each outcome with the native result
   (`<native>`, the output of `tools/semdiff/prog` under `qemu-aarch64-static`, one line
   `<call> -> <outcome>` per call). Exit status 1 on any disagreement.
-- `corpus <n> <seed> <dir>...`: for every export file below the directories whose function has
-  integer/`bool` parameters and results only, run `n` random calls on every section and check
-  that every section agrees with section 0 whenever section 0 returns or panics (the stock
-  pipeline must preserve the semantics). Counts calls whose section 0 is stuck (outside P1)
-  separately; a later section that is stuck where section 0 is not is reported as a gap.
+- `corpus <n> <seed> <dir>...`: for every export file below the directories whose function's
+  parameter and result types the difftest can build and print, run `n` random calls on every
+  section and check that every section agrees with section 0 whenever section 0 returns or
+  panics (the stock pipeline must preserve the semantics). Counts calls whose section 0 is
+  stuck (outside the implemented phases) separately; a later section that is stuck where
+  section 0 is not is reported as a gap.
+
+Values are written in the syntax of `tools/semdiff/prog/main.go`: integers in decimal,
+`true`/`false`, Go-quoted strings, slices `nil` or `[e,…]`, arrays `[e,…]`, structs `{f,…}`,
+pointers `nil` or `&e`. A value is built as its in-memory bytes, with fresh heap allocations
+for what slices, strings and pointers point to; the outcome prints the results and then the
+arguments again (`||`), read from the final memory, so writes through pointers are compared.
 -/
 
 open GoFV.SSA GoFV.SSA.Sem
 
 namespace GoFVTest.SemDiff
 
-/-- A parameter or result type the difftest can pass and print. -/
-inductive Kind where
-  | int (w : Width) (signed : Bool)
-  | bool
+/-! ## Types the difftest supports -/
 
-def Kind.ofType (tabs : Tables) (t : TypeRef) : Option Kind := do
-  let d ← tabs.type? t
-  let w ← d.size.bind Width.ofSize?
-  match d.kind with
-  | .INT8 | .INT16 | .INT32 | .INT64 | .INT => some (.int w true)
-  | .UINT8 | .UINT16 | .UINT32 | .UINT64 | .UINT | .UINTPTR => some (.int w false)
-  | .BOOL => some .bool
-  | _ => none
+/-- `t` can be built, generated and printed (integers, `bool`, strings, slices, arrays,
+structs, pointers; `depth` bounds the recursion through pointers and elements). -/
+def supported (tabs : Tables) : Nat → TypeRef → Bool
+  | 0, _ => true
+  | d + 1, t =>
+    match tabs.type? t with
+    | none => false
+    | some td =>
+      if td.size.isNone then false else
+      match td.kind, td.tail with
+      | .INT8, _ | .INT16, _ | .INT32, _ | .INT64, _ | .INT, _ | .UINT8, _ | .UINT16, _
+      | .UINT32, _ | .UINT64, _ | .UINT, _ | .UINTPTR, _ | .BOOL, _ | .STRING, _ => true
+      | .SLICE, .elem e | .PTR, .elem e => supported tabs d e && (typeSize? tabs e).isSome
+      | .ARRAY, .array e _ => supported tabs d e
+      | .STRUCT, .struct fs => fs.all fun f => f.offset.isSome && supported tabs d f.type
+      | _, _ => false
 
-/-- Parameter and result kinds of `f`'s signature, if all are supported. -/
-def signature (tabs : Tables) (f : Func) : Option (Array Kind × Array Kind) := do
+/-- Parameter and result types of `f`'s signature, if all are supported. -/
+def signature (tabs : Tables) (f : Func) : Option (Array TypeRef × Array TypeRef) := do
   let d ← tabs.type? f.type
   match d.tail with
   | .func nrecv nparams nresults fields =>
-    let ks ← fields.mapM fun fd => Kind.ofType tabs fd.type
+    let ts := fields.map (·.type)
+    if !ts.all (supported tabs 6) then none
     let nin := nrecv + nparams
-    if ks.size != nin + nresults then none
-    else some (ks.extract 0 nin, ks.extract nin ks.size)
+    if ts.size != nin + nresults then none
+    else some (ts.extract 0 nin, ts.extract nin ts.size)
   | _ => none
 
-def parseVal : Kind → String → Option Val
-  | .bool, "true" => some (.bool true)
-  | .bool, "false" => some (.bool false)
-  | .bool, _ => none
-  | .int w _, s => s.toInt?.map fun n => .int w (BitVec.ofInt w.bits n)
+def isSigned : TypeKind → Bool
+  | .INT8 | .INT16 | .INT32 | .INT64 | .INT => true
+  | _ => false
 
-def renderVal : Kind → Val → String
-  | .int _ true, .int _ x => toString x.toInt
-  | .int _ false, .int _ x => toString x.toNat
-  | .bool, .bool b => toString b
-  | _, v => s!"<{v.render}>"
+/-! ## Parsing values into memory -/
 
-def renderOutcome (res : Array Kind) : Outcome → String
-  | .returned rs _ =>
-    "returned" ++ String.join ((rs.zip res.toList).map fun (v, k) => " " ++ renderVal k v) ++
-      (if rs.length == res.size then "" else s!" <{rs.length} results>")
-  | .panicked e _ => "panicked " ++ e.message
-  | .stuck msg => "stuck: " ++ msg
-  | .outOfFuel => "outOfFuel"
+structure PState where
+  s : Array Char
+  i : Nat
+  mem : Mem
 
-/-- splitmix64. -/
-def nextRand (s : UInt64) : UInt64 × UInt64 :=
-  let s := s + 0x9E3779B97F4A7C15
-  let z := s
-  let z := (z ^^^ (z >>> 30)) * 0xBF58476D1CE4E5B9
-  let z := (z ^^^ (z >>> 27)) * 0x94D049BB133111EB
-  (z ^^^ (z >>> 31), s)
+abbrev PM := StateT PState (Except String)
 
-/-- A random argument: an edge value, a small value, or random bits. -/
-def randArg (k : Kind) (s : UInt64) : String × UInt64 :=
-  let (r, s) := nextRand s
-  let (r2, s) := nextRand s
-  match k with
-  | .bool => (if r % 2 == 0 then "true" else "false", s)
-  | .int w signed =>
-    let n := w.bits
-    let edges : List Int :=
-      if signed then [0, 1, -1, 2, -2, 7, -(2 ^ (n - 1)), 2 ^ (n - 1) - 1, -(2 ^ (n - 1)) + 1,
-        2 ^ (n - 1) - 2, 2 ^ (n / 2), -(2 ^ (n / 2))]
-      else [0, 1, 2, 3, 7, 2 ^ n - 1, 2 ^ n - 2, 2 ^ (n - 1), 2 ^ (n - 1) - 1, 2 ^ (n / 2)]
-    let x : BitVec n :=
-      match r % 10 with
-      | 0 | 1 | 2 => BitVec.ofInt n (edges.getD (r2.toNat % edges.length) 0)
-      | 3 | 4 | 5 => BitVec.ofInt n ((r2.toNat % 41 : Nat) - 20 : Int)
-      | 6 => BitVec.ofNat n (r2.toNat % 1000)
-      | _ => BitVec.ofNat n r2.toNat
-    (if signed then toString x.toInt else toString x.toNat, s)
+def peek : PM (Option Char) := do let st ← get; return st.s[st.i]?
+def advance (n : Nat := 1) : PM Unit := modify fun st => { st with i := st.i + n }
+def eat (c : Char) : PM Bool := do
+  if (← peek) == some c then advance; return true else return false
+def expect (c : Char) : PM Unit := do
+  if !(← eat c) then throw s!"expected {c} at {(← get).i}"
+def lit (w : String) : PM Bool := do
+  let st ← get
+  let cs := w.toList
+  if (List.range cs.length).all fun k => st.s[st.i + k]? == cs[k]? then
+    advance cs.length; return true
+  else return false
+def word : PM String := do
+  let mut out := ""
+  for _ in [0:(← get).s.size] do
+    match ← peek with
+    | some c => if c == ',' || c == ']' || c == '}' then break else out := out.push c; advance
+    | none => break
+  return out
 
-/-- `n` random argument lists for `params`. -/
-def randCalls (params : Array Kind) (n : Nat) (s : UInt64) : Array (Array String) × UInt64 :=
-  Id.run do
-    let mut s := s
-    let mut out := #[]
-    for _ in [0:n] do
-      let mut args := #[]
-      for k in params do
-        let (a, s') := randArg k s
-        s := s'
-        args := args.push a
-      out := out.push args
-    return (out, s)
+/-- A Go-quoted string literal at the cursor, as bytes. -/
+def quoted : PM (Array UInt8) := do
+  let st ← get
+  if st.s[st.i]? != some '"' then throw "expected string"
+  let mut j := st.i + 1
+  for _ in [0:st.s.size] do
+    match st.s[j]? with
+    | some '\\' => j := j + 2
+    | some '"' => break
+    | some _ => j := j + 1
+    | none => throw "unterminated string"
+  let lit := String.ofList (st.s.extract st.i (j + 1)).toList
+  set { st with i := j + 1 }
+  match goUnquote lit with
+  | some bs => return bs
+  | none => throw s!"bad string {lit}"
 
-/-- A parsed export with each section's tables. -/
+def allocBytes (bs : Array Byte) : PM Ptr := do
+  let st ← get
+  let (p, m) := st.mem.allocHeap bs
+  set { st with mem := m }
+  return p
+
+/-- Parse a list `e,e,…close` (the opening bracket consumed) with `elem`. -/
+def listOf {α} (close : Char) (elem : PM α) : PM (Array α) := do
+  if ← eat close then return #[]
+  let mut out := #[]
+  for _ in [0:(← get).s.size + 1] do
+    out := out.push (← elem)
+    if ← eat close then return out
+    expect ','
+  throw "list too long"
+
+/-- The bytes of a value of type `t` written at the cursor. -/
+def parseBytes (tabs : Tables) : Nat → TypeRef → PM (Array Byte)
+  | 0, _ => throw "too deep"
+  | d + 1, t => do
+    let some td := tabs.type? t | throw s!"unknown type t{t}"
+    let size := (typeSize? tabs t).getD 0
+    match td.kind, td.tail with
+    | .BOOL, _ =>
+      match ← word with
+      | "true" => return #[.b 1]
+      | "false" => return #[.b 0]
+      | w => throw s!"bad bool {w}"
+    | .STRING, _ =>
+      let bs ← quoted
+      let p ← if bs.isEmpty then pure Ptr.null
+        else allocBytes (bs.map fun x => .b (BitVec.ofNat 8 x.toNat))
+      return ptrBytes p ++ intBytes 8 bs.size
+    | .SLICE, .elem e =>
+      if ← lit "nil" then return ptrBytes Ptr.null ++ intBytes 16 0
+      expect '['
+      let es ← listOf ']' (parseBytes tabs d e)
+      let p ← allocBytes (es.foldl (· ++ ·) #[])
+      return ptrBytes p ++ intBytes 8 es.size ++ intBytes 8 es.size
+    | .ARRAY, .array e _ =>
+      expect '['
+      let es ← listOf ']' (parseBytes tabs d e)
+      return es.foldl (· ++ ·) #[]
+    | .STRUCT, .struct fs =>
+      expect '{'
+      let mut buf : Array Byte := Array.replicate size (.b 0)
+      for h : k in [0:fs.size] do
+        if k > 0 then expect ','
+        let f := fs[k]
+        buf := putBytes buf (f.offset.getD 0).toNat (← parseBytes tabs d f.type)
+      expect '}'
+      return buf
+    | .PTR, .elem e =>
+      if ← lit "nil" then return ptrBytes Ptr.null
+      expect '&'
+      return ptrBytes (← allocBytes (← parseBytes tabs d e))
+    | k, _ =>
+      let w ← word
+      let some n := w.toInt? | throw s!"bad integer {w}"
+      if isSigned k || k == .UINT8 || k == .UINT16 || k == .UINT32 || k == .UINT64 || k == .UINT
+          || k == .UINTPTR then
+        return intBytes size (BitVec.ofInt (8 * size) n).toNat
+      else throw s!"unsupported type t{t}"
+
+/-! ## Printing values from memory -/
+
+/-- Go's `strconv.Quote` for ASCII (the generator writes ASCII only; other bytes as `\xHH`). -/
+def goQuote (bs : Array UInt8) : String := Id.run do
+  let hex := "0123456789abcdef".toList
+  let mut out := "\""
+  for b in bs do
+    let n := b.toNat
+    out := match n with
+      | 7 => out ++ "\\a" | 8 => out ++ "\\b" | 12 => out ++ "\\f" | 10 => out ++ "\\n"
+      | 13 => out ++ "\\r" | 9 => out ++ "\\t" | 11 => out ++ "\\v" | 92 => out ++ "\\\\"
+      | 34 => out ++ "\\\""
+      | _ => if 32 ≤ n && n < 127 then out.push (Char.ofNat n)
+        else out ++ "\\x" ++ String.ofList [hex[n / 16]!, hex[n % 16]!]
+  return out ++ "\""
+
+/-- The value of type `t` in `bs` at `off`, printed, reading what pointers point to in `m`. -/
+def renderBytes (tabs : Tables) (m : Mem) : Nat → TypeRef → Array Byte → Nat → String
+  | 0, _, _, _ => "<deep>"
+  | d + 1, t, bs, off =>
+    let ty := tabs.ty t
+    match tabs.type? t with
+    | none => "<?>"
+    | some td =>
+      let size := (typeSize? tabs t).getD 0
+      match td.kind, td.tail, decode bs off ty with
+      | .BOOL, _, .bool b => toString b
+      | .STRING, _, .agg [.ptr p, .int _ n] =>
+        if n.toNat == 0 then "\"\"" else
+        match m.read p n.toNat with
+        | some cs => match cs.mapM (fun | .b x => some (UInt8.ofNat x.toNat) | _ => none) with
+          | some u => goQuote u
+          | none => "<poison string>"
+        | none => "<bad string>"
+      | .SLICE, .elem e, .agg [.ptr p, .int _ n, _] =>
+        if p.isNil then "nil" else
+        let es := (typeSize? tabs e).getD 0
+        match m.read p (n.toNat * es) with
+        | some ebs => "[" ++ ",".intercalate ((List.range n.toNat).map fun k =>
+            renderBytes tabs m d e ebs (k * es)) ++ "]"
+        | none => "<bad slice>"
+      | .ARRAY, .array e n, _ =>
+        let es := (typeSize? tabs e).getD 0
+        "[" ++ ",".intercalate ((List.range n.toNat).map fun k =>
+          renderBytes tabs m d e bs (off + k * es)) ++ "]"
+      | .STRUCT, .struct fs, _ =>
+        "{" ++ ",".intercalate (fs.toList.map fun f =>
+          renderBytes tabs m d f.type bs (off + (f.offset.getD 0).toNat)) ++ "}"
+      | .PTR, .elem e, .ptr p =>
+        if p.isNil then "nil" else
+        let es := (typeSize? tabs e).getD 0
+        match m.read p es with
+        | some ebs => "&" ++ renderBytes tabs m d e ebs 0
+        | none => "<bad pointer>"
+      | k, _, .int _ x => if isSigned k then toString x.toInt else toString x.toNat
+      | _, _, v => if size == 0 then "<empty>" else s!"<{v.render}>"
+
+/-! ## Loading exports and running calls -/
+
+/-- A parsed export: each section's tables and function, the signature, the global image. -/
 structure Loaded where
   sections : Array (String × Tables × Func)
-  params : Array Kind
-  results : Array Kind
+  params : Array TypeRef
+  results : Array TypeRef
+  env : Env
 
 def load (path : System.FilePath) : IO (Except String Loaded) := do
   let data ← IO.FS.readBinFile path
@@ -133,14 +259,125 @@ def load (path : System.FilePath) : IO (Except String Loaded) := do
     | some (_, t0, f0) =>
       match signature t0 f0 with
       | none => return .error s!"{path}: signature outside the difftest's types"
-      | some (ps, rs) => return .ok { sections := secs, params := ps, results := rs }
+      | some (ps, rs) =>
+        return .ok { sections := secs, params := ps, results := rs,
+                     env := { Env.p1 with globals := globalImage e } }
 
 def fuel : Nat := 1000000
 
-def runSection (l : Loaded) (k : Nat) (args : List Val) : Outcome :=
+/-- The arguments of a call: their bytes and the memory holding what they point to. -/
+def buildArgs (tabs : Tables) (params : Array TypeRef) (texts : List String) :
+    Except String (Array (Array Byte) × Mem) := do
+  if texts.length != params.size then throw s!"{texts.length} arguments for {params.size}"
+  let mut mem : Mem := {}
+  let mut out := #[]
+  for (t, s) in params.toList.zip texts do
+    match (parseBytes tabs 8 t).run { s := s.toList.toArray, i := 0, mem } with
+    | .ok (bs, st) =>
+      if st.i != st.s.size then throw s!"trailing input in {s}"
+      mem := st.mem
+      out := out.push bs
+    | .error e => throw e
+  return (out, mem)
+
+/-- Run a call on section `k` and print the outcome as the native harness does. -/
+def runSection (l : Loaded) (k : Nat) (texts : List String) : String :=
   match l.sections[k]? with
-  | some (_, tabs, f) => run Env.p1 tabs f args {} fuel
-  | none => .stuck "no section"
+  | none => "stuck: no section"
+  | some (_, tabs, f) =>
+    match buildArgs tabs l.params texts with
+    | .error e => s!"stuck: bad arguments: {e}"
+    | .ok (imgs, mem) =>
+      let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)
+      match run l.env tabs f args mem fuel with
+      | .returned rs m =>
+        let rsT := (rs.zip l.results.toList).map fun (v, t) =>
+          renderBytes tabs m 8 t (encode (tabs.ty t) v) 0
+        let asT := (imgs.zip l.params).toList.map fun (bs, t) => renderBytes tabs m 8 t bs 0
+        "\t".intercalate ("returned" :: rsT ++ "||" :: asT) ++
+          (if rs.length == l.results.size then "" else s!"\t<{rs.length} results>")
+      | .panicked e _ => "panicked " ++ e.message
+      | .stuck msg => "stuck: " ++ msg
+      | .outOfFuel => "outOfFuel"
+
+/-! ## Random arguments -/
+
+/-- splitmix64. -/
+def nextRand (s : UInt64) : UInt64 × UInt64 :=
+  let s := s + 0x9E3779B97F4A7C15
+  let z := s
+  let z := (z ^^^ (z >>> 30)) * 0xBF58476D1CE4E5B9
+  let z := (z ^^^ (z >>> 27)) * 0x94D049BB133111EB
+  (z ^^^ (z >>> 31), s)
+
+abbrev RM := StateM UInt64
+
+def rand : RM Nat := do
+  let (r, s) := nextRand (← get)
+  set s
+  return r.toNat
+
+/-- A random integer of `n` bits: an edge value, a small value, or random bits. -/
+def randInt (n : Nat) (signed : Bool) : RM String := do
+  let r ← rand
+  let r2 ← rand
+  let edges : List Int :=
+    if signed then [0, 1, -1, 2, -2, 7, -(2 ^ (n - 1)), 2 ^ (n - 1) - 1, -(2 ^ (n - 1)) + 1,
+      2 ^ (n - 1) - 2, 2 ^ (n / 2), -(2 ^ (n / 2))]
+    else [0, 1, 2, 3, 7, 2 ^ n - 1, 2 ^ n - 2, 2 ^ (n - 1), 2 ^ (n - 1) - 1, 2 ^ (n / 2)]
+  let x : BitVec n :=
+    match r % 10 with
+    | 0 | 1 | 2 => BitVec.ofInt n (edges.getD (r2 % edges.length) 0)
+    | 3 | 4 | 5 => BitVec.ofInt n ((r2 % 41 : Nat) - 20 : Int)
+    | 6 => BitVec.ofNat n (r2 % 1000)
+    | _ => BitVec.ofNat n r2
+  return if signed then toString x.toInt else toString x.toNat
+
+/-- A random value of type `t` (`d` bounds the depth; beyond it pointers and slices are nil). -/
+def randVal (tabs : Tables) : Nat → TypeRef → RM String
+  | 0, _ => pure "nil"
+  | d + 1, t => do
+    let some td := tabs.type? t | return "?"
+    let size := (typeSize? tabs t).getD 0
+    match td.kind, td.tail with
+    | .BOOL, _ => return if (← rand) % 2 == 0 then "true" else "false"
+    | .STRING, _ =>
+      let r ← rand
+      if r % 7 == 0 then return "\"abc\""
+      let alphabet := "abcxyz 019,]{}\"\\".toList
+      let n := (← rand) % 9
+      let mut bs : Array UInt8 := #[]
+      for _ in [0:n] do
+        bs := bs.push (alphabet[(← rand) % alphabet.length]!).toNat.toUInt8
+      return goQuote bs
+    | .SLICE, .elem e =>
+      if (← rand) % 10 == 0 || d ≤ 1 then return "nil"
+      let n := (← rand) % 7
+      let mut es := #[]
+      for _ in [0:n] do es := es.push (← randVal tabs d e)
+      return "[" ++ ",".intercalate es.toList ++ "]"
+    | .ARRAY, .array e n =>
+      let mut es := #[]
+      for _ in [0:n.toNat] do es := es.push (← randVal tabs d e)
+      return "[" ++ ",".intercalate es.toList ++ "]"
+    | .STRUCT, .struct fs =>
+      let mut es := #[]
+      for f in fs do es := es.push (← randVal tabs d f.type)
+      return "{" ++ ",".intercalate es.toList ++ "}"
+    | .PTR, .elem e =>
+      if (← rand) % 7 == 0 || d ≤ 2 then return "nil"
+      return "&" ++ (← randVal tabs d e)
+    | k, _ => randInt (8 * size) (isSigned k)
+
+def randCalls (tabs : Tables) (params : Array TypeRef) (n : Nat) : RM (Array (List String)) := do
+  let mut out := #[]
+  for _ in [0:n] do
+    let mut args := []
+    for t in params do args := args ++ [← randVal tabs 6 t]
+    out := out.push args
+  return out
+
+/-! ## Modes -/
 
 def funcPath (dir : String) (name : String) : System.FilePath :=
   System.FilePath.mk dir / s!"{name},1.ssa"
@@ -151,10 +388,11 @@ def gen (dir : String) (n : Nat) (seed : Nat) (names : List String) : IO UInt32 
     match ← load (funcPath dir name) with
     | .error e => IO.eprintln e; return 1
     | .ok l =>
-      let (calls, s') := randCalls l.params n s
+      let tabs := l.sections[0]!.2.1
+      let (calls, s') := (randCalls tabs l.params n).run s
       s := s'
       for c in calls do
-        IO.println (" ".intercalate (name :: c.toList))
+        IO.println ("\t".intercalate (name :: c))
   return 0
 
 def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
@@ -164,7 +402,6 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
     IO.eprintln s!"{calls.size} calls but {native.size} native results"
     return 1
   let mut cache : Std.HashMap String Loaded := {}
-  let mut funcs : Std.HashMap String Unit := {}
   let mut nIn := 0
   let mut agree0 := 0
   let mut agreeLast := 0
@@ -174,7 +411,7 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
   let mut outcomes : Std.HashMap String Nat := {}
   for h : i in [0:calls.size] do
     let call := calls[i]
-    let toks := (call.splitOn " ").filter (· ≠ "")
+    let toks := call.splitOn "\t"
     let name := toks.headD ""
     let l ← match cache[name]? with
       | some l => pure l
@@ -183,19 +420,16 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
         | .error e => IO.eprintln e; return 1
         | .ok l => pure l
     cache := cache.insert name l
-    funcs := funcs.insert name ()
-    let some args := (l.params.toList.zip toks.tail).mapM fun (k, s) => parseVal k s
-      | IO.eprintln s!"bad call {call}"; return 1
     let want := match native[i]!.splitOn " -> " with
       | [c, o] => if c == call then o else s!"<native line {i} is for {c}>"
       | _ => s!"<bad native line {i}>"
     nIn := nIn + 1
-    let kind := (want.splitOn " ").headD ""
+    let kind := ((want.splitOn "\t").headD "").splitOn " " |>.headD ""
     outcomes := outcomes.insert kind (outcomes.getD kind 0 + 1)
     let mut allOk := true
     let last := l.sections.size - 1
     for k in [0:l.sections.size] do
-      let got := renderOutcome l.results (runSection l k args)
+      let got := runSection l k toks.tail
       sectionRuns := sectionRuns + 1
       if got == want then
         if k == 0 then agree0 := agree0 + 1
@@ -207,10 +441,31 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
         bad := bad + 1
     if allOk then agreeAll := agreeAll + 1
   let kinds := outcomes.toList.map (fun (k, n) => s!"{k} {n}")
-  IO.println s!"sem-difftest: {funcs.size} functions, {nIn} calls ({", ".intercalate kinds}), \
+  IO.println s!"sem-difftest: {cache.size} functions, {nIn} calls ({", ".intercalate kinds}), \
     {sectionRuns} section runs; native agrees with section 0 on {agree0}, with the last section \
     on {agreeLast}, with every section on {agreeAll}; {bad} section mismatches"
   return if bad == 0 && nIn > 0 then 0 else 1
+
+def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
+  if ← p.isDir then
+    let fs ← p.walkDir
+    return (fs.filter (·.extension == some "ssa")).qsort (·.toString < ·.toString)
+  else return #[p]
+
+structure CStats where
+  files : Nat := 0
+  eligible : Nat := 0
+  calls : Nat := 0
+  defined0 : Nat := 0
+  definedFuncs : Nat := 0
+  stuck0 : Nat := 0
+  sectionRuns : Nat := 0
+  agree : Nat := 0
+  gaps : Nat := 0
+  diffs : Nat := 0
+  gapFuncs : Nat := 0
+  outcomes : Std.HashMap String Nat := {}
+  stuckMsgs : Std.HashMap String Nat := {}
 
 /-- A stuck message without value/block IDs (for a histogram). -/
 def stuckKey (msg : String) : String :=
@@ -218,27 +473,6 @@ def stuckKey (msg : String) : String :=
     let w := if w.endsWith ":" then (w.dropEnd 1).toString else w
     (w.startsWith "v" || w.startsWith "b") && w.length ≥ 2 && (w.drop 1).all Char.isDigit
   " ".intercalate (((msg.splitOn " ").filter (!isRef ·)).take 8)
-
-structure CStats where
-  files : Nat := 0
-  eligible : Nat := 0
-  calls : Nat := 0
-  defined0 : Nat := 0
-  stuck0 : Nat := 0
-  sectionRuns : Nat := 0
-  agree : Nat := 0
-  gaps : Nat := 0
-  diffs : Nat := 0
-  gapFuncs : Nat := 0
-  definedFuncs : Nat := 0
-  outcomes : Std.HashMap String Nat := {}
-  stuckMsgs : Std.HashMap String Nat := {}
-
-def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
-  if ← p.isDir then
-    let fs ← p.walkDir
-    return (fs.filter (·.extension == some "ssa")).qsort (·.toString < ·.toString)
-  else return #[p]
 
 def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
   let mut st : CStats := {}
@@ -248,52 +482,44 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
       st := { st with files := st.files + 1 }
       let .ok l ← load path | continue
       st := { st with eligible := st.eligible + 1 }
-      let (calls, s') := randCalls l.params n s
+      let (calls, s') := (randCalls l.sections[0]!.2.1 l.params n).run s
       s := s'
       let mut gapHere := false
       let mut definedHere := false
       for c in calls do
-        let some args := (l.params.toList.zip c.toList).mapM fun (k, a) => parseVal k a
-          | continue
         st := { st with calls := st.calls + 1 }
-        let o0 := runSection l 0 args
-        let r0 := renderOutcome l.results o0
-        let key := (r0.splitOn " ").headD ""
+        let r0 := runSection l 0 c
+        let key := ((r0.splitOn "\t").headD "").splitOn " " |>.headD ""
         st := { st with outcomes := st.outcomes.insert key (st.outcomes.getD key 0 + 1) }
-        match o0 with
-        | .stuck msg =>
-          let k := stuckKey msg
+        if r0.startsWith "stuck" || r0 == "outOfFuel" then
+          let k := stuckKey (r0.drop 7).toString
           st := { st with stuck0 := st.stuck0 + 1,
                           stuckMsgs := st.stuckMsgs.insert k (st.stuckMsgs.getD k 0 + 1) }
-        | .outOfFuel => st := { st with stuck0 := st.stuck0 + 1 }
-        | _ =>
-          st := { st with defined0 := st.defined0 + 1 }
-          definedHere := true
-          for k in [1:l.sections.size] do
-            let o := runSection l k args
-            let r := renderOutcome l.results o
-            st := { st with sectionRuns := st.sectionRuns + 1 }
-            if r == r0 then st := { st with agree := st.agree + 1 }
-            else
-              match o with
-              | .stuck _ =>
-                if st.gaps < 30 then
-                  IO.println s!"GAP {path} section {k} ({l.sections[k]!.1}) {c.toList}: {r} (section 0: {r0})"
-                st := { st with gaps := st.gaps + 1 }
-                gapHere := true
-              | _ =>
-                if st.diffs < 30 then
-                  IO.println s!"DIFF {path} section {k} ({l.sections[k]!.1}) {c.toList}: {r} (section 0: {r0})"
-                st := { st with diffs := st.diffs + 1 }
+          continue
+        st := { st with defined0 := st.defined0 + 1 }
+        definedHere := true
+        for k in [1:l.sections.size] do
+          let r := runSection l k c
+          st := { st with sectionRuns := st.sectionRuns + 1 }
+          if r == r0 then st := { st with agree := st.agree + 1 }
+          else if r.startsWith "stuck" then
+            if st.gaps < 30 then
+              IO.println s!"GAP {path} section {k} ({l.sections[k]!.1}) {c}: {r} (section 0: {r0})"
+            st := { st with gaps := st.gaps + 1 }
+            gapHere := true
+          else
+            if st.diffs < 30 then
+              IO.println s!"DIFF {path} section {k} ({l.sections[k]!.1}) {c}: {r} (section 0: {r0})"
+            st := { st with diffs := st.diffs + 1 }
       if gapHere then st := { st with gapFuncs := st.gapFuncs + 1 }
       if definedHere then st := { st with definedFuncs := st.definedFuncs + 1 }
   let kinds := st.outcomes.toList.map (fun (k, n) => s!"{k} {n}")
-  let top := (st.stuckMsgs.toList.toArray.qsort (fun a b => a.2 > b.2)).toList.take 15
-  IO.println s!"sem-difftest corpus: {st.files} files, {st.eligible} with int/bool signatures, \
+  let top := (st.stuckMsgs.toList.toArray.qsort (fun a b => a.2 > b.2)).toList.take 20
+  IO.println s!"sem-difftest corpus: {st.files} files, {st.eligible} with supported signatures, \
     {st.calls} calls (section 0: {", ".intercalate kinds}); {st.defined0} calls defined at \
-    section 0 (in {st.definedFuncs} functions), {st.sectionRuns} later-section runs of them: {st.agree} agree, {st.diffs} \
-    differ, {st.gaps} stuck (gaps, in {st.gapFuncs} functions)"
-  IO.println "section-0 stuck reasons (top 15):"
+    section 0 (in {st.definedFuncs} functions), {st.sectionRuns} later-section runs of them: \
+    {st.agree} agree, {st.diffs} differ, {st.gaps} stuck (gaps, in {st.gapFuncs} functions)"
+  IO.println "section-0 stuck reasons (top 20):"
   for (k, c) in top do IO.println s!"  {c} {k}"
   return if st.diffs == 0 then 0 else 1
 

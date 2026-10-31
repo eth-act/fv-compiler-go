@@ -1,6 +1,7 @@
 import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Sem.Env
 import GoFV.SSA.Sem.Layout
+import GoFV.SSA.Sem.Mem
 
 /-!
 # `GoFV.SSA.run`: executable, fuel-bounded semantics (`docs/plans/semantics.md` §3.6, §7, §8)
@@ -12,16 +13,19 @@ Structure (bottom-up, each layer separately unfoldable, as clifv's `Clif.run`):
   runs every ready pure value first, then a ready `NilCheck`, then the next other root (§3.6;
   roots are `isRoot`). Generic SSA is unscheduled, so `b.Values` order only breaks ties between
   roots that are not ordered by their arguments (in P1 only stuck roots can be).
-* `evalValue` — one value from the registers: `evalPure`, the function's own arguments and
-  memory, and the roots P1 knows (`PanicBounds`, calls of `Env` contracts). Any other root is
-  `stuck` (its semantics belongs to a later phase), any other pure op `poison` (§9).
+* `evalValue` — one value from the registers: `evalPure`, the function's own arguments,
+  frame and global addresses, and the roots P1/P2 know (`PanicBounds`, calls of `Env`
+  contracts, `Store`/`Move`/`Zero` and their write-barrier forms, `VarDef`, `VarLive`,
+  `KeepAlive`, `NilCheck`). Any other root is `stuck` (its semantics belongs to a later phase),
+  any other pure op `poison` (§9).
 * `enterBlock` — `Phi`s in parallel from the incoming edge, then the schedule.
 * `stepTerm` — the terminator (§7): `Plain`, `First`, `If`, `JumpTable`, `Ret`, `Exit`.
-* `runLoop` — block entries bounded by `fuel`; `run` — the entry point.
+* `runLoop` — block entries bounded by `fuel`; `runCtx` — the activation: frame allocations,
+  argument images, the loop, Go-typed results; `run` — the entry point.
 
 `stuck` means a precondition failed: ill-formed SSA (undefined argument, cyclic block, missing
 block), an observation of `poison` (§3.5: a branch on it, a result, an argument of a contract),
-or an op/block kind outside phase P1.
+an invalid store, or an op/block kind outside phases P1/P2.
 -/
 
 namespace GoFV.SSA.Sem
@@ -192,6 +196,15 @@ structure Ctx where
   /-- The `*ir.Name` of each input parameter (receiver, then parameters), from `f.OwnAux`'s
   ABI assignments. -/
   params : Array (Option AuxRef)
+  /-- Shape of each input parameter's type. -/
+  paramTys : Array Ty := #[]
+  /-- Each result: its `*ir.Name`, shape, and number of registers (0: on the stack). -/
+  outs : Array (Option AuxRef × Ty × Nat) := #[]
+  /-- The frame variables (`PAUTO`/`PPARAM`/`PPARAMOUT` names the function refers to) with
+  their sizes, and the input parameter each `PPARAM` holds. -/
+  locals : Array (AuxRef × Nat × Option Nat) := #[]
+  /-- The activation number (frame blocks are `Blk.local act name`). -/
+  act : Nat := 0
 
 /-- The callee symbol of an `*AuxCall`. -/
 def _root_.GoFV.SSA.Tables.callee? (tabs : Tables) (a : AuxRef) : Option String :=
@@ -202,18 +215,52 @@ def _root_.GoFV.SSA.Tables.callee? (tabs : Tables) (a : AuxRef) : Option String 
     | _ => none
   | _ => none
 
-def Ctx.make (tabs : Tables) (f : Func) : Ctx where
-  f := f
-  tabs := tabs
-  tys := f.valueTab.map fun o => match o with
-    | some v => tabs.ty v.type
-    | none => .other
-  sched := f.blockTab.map fun o => o.bind (schedule f)
-  params :=
-    match f.ownAux.bind tabs.aux? with
-    | some { kind := .call _ (some abi), .. } =>
-      (abi.params.filter (!·.out)).map (·.name)
-    | _ => #[]
+/-- The ABI assignments of `f.OwnAux`. -/
+def abiParams (tabs : Tables) (f : Func) : Array ABIParam :=
+  match f.ownAux.bind tabs.aux? with
+  | some { kind := .call _ (some abi), .. } => abi.params
+  | _ => #[]
+
+/-- The frame variables of `f`: every `PAUTO`/`PPARAM`/`PPARAMOUT` `*ir.Name` a value refers
+to (directly or through an `*AuxNameOffset`) or that `f.OwnAux` names, with its size and, for
+a `PPARAM`, the index of the input parameter it holds. -/
+def frameLocals (tabs : Tables) (f : Func) (params : Array (Option AuxRef)) :
+    Array (AuxRef × Nat × Option Nat) := Id.run do
+  let mut seen : Std.HashMap AuxRef Unit := {}
+  let mut out := #[]
+  let mut names : Array AuxRef := (abiParams tabs f).filterMap (·.name)
+  for bid in f.blocks do
+    for vid in ((f.block? bid).map (·.values)).getD #[] do
+      if let some a := (f.value? vid).bind (·.aux) then
+        match tabs.aux? a with
+        | some { kind := .name .., .. } => names := names.push a
+        | some { kind := .nameOff n _, .. } => names := names.push n
+        | _ => pure ()
+  for n in names do
+    if seen.contains n then continue
+    seen := seen.insert n ()
+    match tabs.aux? n with
+    | some { kind := .name _ cls t .., .. } =>
+      if cls == .PAUTO || cls == .PPARAM || cls == .PPARAMOUT then
+        if let some sz := typeSize? tabs t then
+          out := out.push (n, sz, if cls == .PPARAM then params.findIdx? (· == some n) else none)
+    | _ => pure ()
+  return out
+
+def Ctx.make (tabs : Tables) (f : Func) : Ctx :=
+  let ps := abiParams tabs f
+  let ins := ps.filter (!·.out)
+  let params := ins.map (·.name)
+  { f := f
+    tabs := tabs
+    tys := f.valueTab.map fun o => match o with
+      | some v => tabs.ty v.type
+      | none => .other
+    sched := f.blockTab.map fun o => o.bind (schedule f)
+    params := params
+    paramTys := ins.map (tabs.ty ·.type)
+    outs := (ps.filter (·.out)).map fun p => (p.name, tabs.ty p.type, p.regs.size)
+    locals := frameLocals tabs f params }
 
 /-- The state of an activation: the latest value of each value ID (by ID), the function's
 arguments and initial memory. -/
@@ -221,16 +268,22 @@ structure Frame where
   regs : Array (Option Val)
   args : List Val
   mem0 : Mem
+  /-- The in-memory image of each argument (its encoding by the parameter's shape), which
+  `Arg`/`ArgIntReg` pieces are read from. -/
+  images : Array (Array Byte) := #[]
 
 /-- The value of input parameter `name` at byte offset `off`, as a value of shape `ty` (`Arg`,
-`ArgIntReg`). P1 has scalar parameters only: a piece of a composite is `poison`. -/
+`ArgIntReg`): decoded from the argument's image, so whole parameters (before `expand calls`)
+and their register or stack pieces (after) read the same bytes. -/
 def argVal (ctx : Ctx) (fr : Frame) (name : AuxRef) (off : Int) (ty : Ty) : Res Val :=
   match ctx.params.findIdx? (· == some name) with
   | none => .stuck s!"argument a{name} is not a parameter"
   | some i =>
-    match fr.args[i]? with
+    match fr.images[i]? with
     | none => .stuck s!"missing argument {i}"
-    | some a => .ok (if off == 0 && a.hasTy ty then a else .poison)
+    | some img =>
+      if off < 0 || img.size < off.toNat + ty.size then .ok .poison
+      else .ok (decode img off.toNat ty)
 
 /-- `PanicBounds [kind] x y mem` (§6): `x` read signed for the signed kinds (even, below
 `BoundsConvert` = 16), `y` signed. -/
@@ -259,6 +312,58 @@ def callExtern (env : Env) (callee : String) (args : List Val) : Res Val := do
       | .panicked e m => .panic e m
       | .stuck msg => .stuck msg
 
+/-- The shape of the type an aux names (`Store {T}`, `Move {T}`, `Zero {T}`). -/
+def auxTy (tabs : Tables) (aux : Option AuxRef) : Ty :=
+  match aux.bind tabs.aux? with
+  | some { kind := .type t, .. } => tabs.ty t
+  | _ => .other
+
+/-- A memory write of a root: `stuck` on an invalid access (§3.4). -/
+@[inline] def writeRes (what : String) : Option Mem → Res Val
+  | some m => .ok (.mem m)
+  | none => .stuck s!"{what}: invalid or read-only access"
+
+/-- The memory roots of P2 (§3.4): `Store {T} p x mem`, `Move {T} [n] dst src mem`,
+`Zero {T} [n] p mem` (and their write-barrier forms, which have the same semantics),
+`VarDef {n} mem`, `VarLive {n} mem`, `KeepAlive x mem`, `NilCheck p mem` (§6). The address of
+a write and the pointer of a nil check are observation points. -/
+def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
+  let what := s!"v{v.id}: {v.op.name}"
+  match v.op, argv with
+  | .Store, [.ptr p, x, .mem m] | .StoreWB, [.ptr p, x, .mem m] =>
+    writeRes what (m.write p (encode (auxTy ctx.tabs v.aux) x))
+  | .Move, [.ptr d, .ptr s, .mem m] | .MoveWB, [.ptr d, .ptr s, .mem m] =>
+    match m.read s v.auxInt.toInt.toNat with
+    | some bs => writeRes what (m.write d bs)
+    | none => .stuck s!"{what}: invalid source"
+  | .Zero, [.ptr p, .mem m] | .ZeroWB, [.ptr p, .mem m] =>
+    writeRes what (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0)))
+  | .VarDef, [.mem m] =>
+    match v.aux with
+    | some n => .ok (.mem (m.poisonBlock (.local ctx.act n)))
+    | none => .stuck s!"{what}: no name"
+  | .VarLive, [.mem m] => .ok (.mem m)
+  | .KeepAlive, [_, .mem m] => .ok (.mem m)
+  | .NilCheck, [.ptr p, .mem m] => if p.isNil then .panic .nilDeref m else .ok (.ptr p)
+  | _, _ => .stuck s!"{what}: undefined or ill-typed arguments"
+
+/-- Ops whose value depends on the activation or on symbols (not on `evalPure`'s inputs). -/
+def frameVal (ctx : Ctx) (v : Value) : Option Val :=
+  match v.op with
+  | .SP => some (.ptr ⟨.outargs ctx.act, 0⟩)
+  | .LocalAddr => v.aux.map fun n => .ptr ⟨.local ctx.act n, 0⟩
+  | .Addr =>
+    match v.aux.bind ctx.tabs.aux? with
+    | some { kind := .sym name .., .. } => some (.ptr ⟨.global name.toStringLossy, 0⟩)
+    | _ => some .poison
+  | .ConstString =>
+    match v.aux.bind ctx.tabs.aux? with
+    | some { kind := .str s dataSym, .. } =>
+      some (.agg [if s.size == 0 then .ptr Ptr.null else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
+        .i64 (BitVec.ofNat 64 s.size)])
+    | _ => some .poison
+  | _ => none
+
 /-- Evaluate value `v` from the registers (its arguments are already evaluated). -/
 def evalValue (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) : Res Val := do
   let argv ← v.args.toList.mapM fun a =>
@@ -279,9 +384,14 @@ def evalValue (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) : Res Val := do
     match v.aux.bind ctx.tabs.callee? with
     | some callee => callExtern env callee argv
     | none => .stuck s!"v{v.id}: call without callee"
+  | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
+  | .NilCheck => memRoot ctx v argv
   | op =>
-    if isRoot op then .stuck s!"v{v.id}: {op.name} is not in phase P1"
-    else pure ((evalPure op ty v.auxInt v.aux argv).retype ty)
+    match frameVal ctx v with
+    | some x => pure x
+    | none =>
+      if isRoot op then .stuck s!"v{v.id}: {op.name} is not in phases P1/P2"
+      else pure ((evalPure op ty v.auxInt v.aux argv).retype ty)
 
 /-- Evaluate the values listed in `ids`, in order, storing each in the registers. -/
 def evalAll (env : Env) (ctx : Ctx) (fr : Frame) : List ID → Res Frame
@@ -393,14 +503,89 @@ theorem runLoop_succ (env : Env) (ctx : Ctx) (fuel : Nat) (fr : Frame) (bid : ID
           | .panic e m => .panicked e m
           | .stuck msg => .stuck msg := (rfl)
 
+/-- The register-assigned leaves of a shape, at their offsets, in the order of the ABI's
+register assignment (fields in order; string: pointer, length; slice: pointer, length,
+capacity; interface: type word, data word). -/
+def leaves : Ty → List (Nat × Ty)
+  | .agg fs _ => leavesFields fs
+  | .empty => []
+  | .blob _ => []
+  | t => [(0, t)]
+where
+  leavesFields : List (Nat × Ty) → List (Nat × Ty)
+    | [] => []
+    | (o, t) :: fs => (leaves t).map (fun (o', t') => (o + o', t')) ++ leavesFields fs
+
+/-- `v` contains `poison` (anywhere inside a composite). -/
+def Val.hasPoison : Val → Bool
+  | .poison => true
+  | .agg vs => vs.attach.any fun ⟨v, _⟩ => v.hasPoison
+  | .tuple vs => vs.attach.any fun ⟨v, _⟩ => v.hasPoison
+  | _ => false
+
+/-- The Go-typed results of a `Ret` (§7), from the `MakeResult` components `rs` (memory
+removed) and the memory `m` at the return. Before `expand calls` the components are the
+Go-typed results; after it they are the register pieces of the register-assigned results
+(in ABI order), and stack-assigned results are in their `PPARAMOUT` variables. Both forms are
+reduced to the results' bytes and decoded by the result types, so every section yields the
+same values. A result containing `poison` is observed: `stuck`. -/
+def goResults (ctx : Ctx) (rs : List Val) (m : Mem) : Res (List Val) := do
+  let outs := ctx.outs.toList
+  let pre := rs.length == outs.length &&
+    (rs.zip outs).all fun (v, (_, t, _)) => v.hasTy t
+  let bytes ← if pre then
+      pure ((rs.zip outs).map fun (v, (_, t, _)) => encode t v)
+    else
+      let rec post (pieces : List Val) : List (Option AuxRef × Ty × Nat) → Res (List (Array Byte))
+        | [] => if pieces.isEmpty then .ok [] else .stuck "Ret: extra result pieces"
+        | (name, t, k) :: os =>
+          if k == 0 then do
+            let n ← Res.ofOption "Ret: stack result without name" name
+            let bs := (m.read ⟨.local ctx.act n, 0⟩ t.size).getD (Array.replicate t.size .poison)
+            return bs :: (← post pieces os)
+          else
+            let ls := leaves t
+            if ls.length != k || pieces.length < k then .stuck "Ret: result pieces do not match the ABI"
+            else do
+              let buf := (ls.zip (pieces.take k)).foldl
+                (fun buf ((o, lt), v) => putBytes buf o (encode lt v))
+                (Array.replicate t.size Byte.poison)
+              return buf :: (← post (pieces.drop k) os)
+      post rs outs
+  let vals := (bytes.zip outs).map fun (bs, (_, t, _)) => decode bs 0 t
+  if vals.any Val.hasPoison then .stuck "poison result" else .ok vals
+
+/-- The memory an activation starts with: `mem`, the global image of `env` (allocations not
+already in `mem`), and the frame: one allocation per frame variable, a `PPARAM` holding its
+argument's image, every other variable poison (§3.4). -/
+def frameMem (env : Env) (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) : Mem :=
+  let mem := env.globals.foldl (fun m (name, a) =>
+    if (m.find? (.global name)).isSome then m else m.set (.global name) a) mem
+  ctx.locals.foldl (fun m (n, sz, pi) =>
+    let data := match pi.bind (images[·]?) with
+      | some img => if img.size == sz then img else Array.replicate sz .poison
+      | none => Array.replicate sz .poison
+    m.set (.local ctx.act n) { data }) mem
+
 /-- Run `f` (with the definition tables `tabs` of its export section) on the Go-typed
-arguments `args` (receiver first) and memory `mem`, for at most `fuel` block entries. -/
+arguments `args` (receiver first) and memory `mem`, for at most `fuel` block entries: set up
+the frame, run, decode the Go-typed results and free the frame. -/
 def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : Outcome :=
   if args.length != ctx.params.size then
     .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
   else
-    runLoop env ctx fuel { regs := Array.replicate ctx.f.valueTab.size none, args, mem0 := mem }
-      ctx.f.entry 0
+    let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
+    let mem0 := frameMem env ctx images mem
+    match runLoop env ctx fuel
+        { regs := Array.replicate ctx.f.valueTab.size none, args, mem0, images }
+        ctx.f.entry 0 with
+    | .returned rs m =>
+      match goResults ctx rs m with
+      | .ok vals =>
+        .returned vals (ctx.locals.foldl (fun m (n, _, _) => m.kill (.local ctx.act n)) m)
+      | .panic e m => .panicked e m
+      | .stuck msg => .stuck msg
+    | o => o
 
 end GoFV.SSA.Sem
 

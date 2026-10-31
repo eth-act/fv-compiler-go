@@ -1,10 +1,11 @@
 /-!
-# Semantic values (`docs/plans/semantics.md` §3.2, phase P1)
+# Semantic values (`docs/plans/semantics.md` §3.2–§3.4)
 
-The value domain of `GoFV.SSA.run`. Phase P1 (integers, booleans, control flow) has integer
-values of the four widths, booleans, the memory as an opaque token, tuples (`TUPLE` and
-`RESULTS` types) and `poison` (§3.5). Pointers, composites, floats and real memory snapshots
-are added by later phases (P2–P4) as further constructors.
+The value domain of `GoFV.SSA.run`. Phase P1 (integers, booleans, control flow): integers of
+the four widths, booleans, tuples (`TUPLE` and `RESULTS` types) and `poison` (§3.5). Phase P2
+(memory, pointers, composites): pointers with provenance (`Ptr`), memory snapshots (`Mem`),
+composite values (`agg`), byte blobs of non-SSA-able values and zero-sized values. Floats
+(P4) are added as further constructors.
 
 Integers carry no sign: signedness lives in the op (`Less64` vs `Less64U`), as in Go.
 -/
@@ -22,16 +23,59 @@ namespace Width
 @[reducible] def bits : Width → Nat
   | .w8 => 8 | .w16 => 16 | .w32 => 32 | .w64 => 64
 
+/-- Number of bytes. -/
+def bytes (w : Width) : Nat := w.bits / 8
+
 /-- The width of an integer type of `size` bytes. -/
 def ofSize? : Int → Option Width
   | 1 => some .w8 | 2 => some .w16 | 4 => some .w32 | 8 => some .w64 | _ => none
 
 end Width
 
-/-- The memory. P1 treats it as an opaque token: no op of P1 reads or writes memory, and the
-ops that do (P2) are not evaluated (`docs/plans/semantics.md` §9). P2 replaces this structure by
-the allocation/byte model of §3.4. -/
+/-- An allocation (§3.3): the provenance part of a pointer. Globals are named by their link
+symbol, frame objects by activation and `*ir.Name` (aux number), heap objects by creation
+order. -/
+inductive Blk where
+  /-- No allocation: the nil pointer (offset 0) and integers converted to pointers that
+  point into no allocation. -/
+  | nil
+  | global (sym : String)
+  /-- A `PAUTO`/`PPARAM`/`PPARAMOUT` variable of activation `act`. -/
+  | local (act : Nat) (name : Nat)
+  /-- The outgoing-arguments area of activation `act` (what `SP` points to). -/
+  | outargs (act : Nat)
+  | heap (n : Nat)
+  deriving DecidableEq, Repr, Inhabited, Hashable
+
+/-- A pointer: an allocation and a byte offset (mod 2^64) (§3.3). -/
+structure Ptr where
+  blk : Blk
+  off : BitVec 64
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The nil pointer. -/
+def Ptr.null : Ptr := ⟨.nil, 0⟩
+
+/-- A byte of memory: a concrete byte, byte `i` of a stored pointer, or poison (§3.4). -/
+inductive Byte where
+  | b (x : BitVec 8)
+  | frag (p : Ptr) (i : Nat)
+  | poison
+  deriving DecidableEq, Repr, Inhabited
+
+/-- An allocation's state: its bytes (the size is `data.size`), writability, liveness. -/
+structure Alloc where
+  data : Array Byte
+  writable : Bool := true
+  live : Bool := true
+  deriving DecidableEq, Repr, Inhabited
+
+/-- A memory snapshot: the allocations that exist, by block. A block that is not listed has
+no bytes (every access to it is invalid). -/
 structure Mem where
+  blocks : Array (Blk × Alloc) := #[]
+  /-- Next fresh `Blk.heap` number. -/
+  nextHeap : Nat := 0
   deriving DecidableEq, Repr, Inhabited
 
 /-- A semantic value. -/
@@ -39,12 +83,23 @@ inductive Val where
   /-- An integer of any Go integer kind, as a bit pattern. -/
   | int (w : Width) (x : BitVec w.bits)
   | bool (b : Bool)
-  /-- A memory value (`InitMem`, the memory component of calls and `MakeResult`). -/
+  /-- A memory snapshot (`InitMem`, `Store`, …, the memory component of calls and
+  `MakeResult`). -/
   | mem (m : Mem)
   /-- `TUPLE` and `RESULTS` values (`MakeResult`, `Mul64uhilo`, call results). -/
   | tuple (vs : List Val)
-  /-- The result of a partial op outside its domain, of `Unknown`, and of ops whose semantics
-  belongs to a later phase (§3.5). Observing it is `stuck`. -/
+  /-- `*T`, `unsafe.Pointer`, map/chan/func words. -/
+  | ptr (p : Ptr)
+  /-- A composite value: struct fields, `[1]T`, string (ptr, len), slice (ptr, len, cap),
+  interface (itab/type, data); the shape comes from the SSA type. -/
+  | agg (vs : List Val)
+  /-- A non-SSA-able value (`Dereference`, `Load` of a big type after `expand calls`). -/
+  | blob (bs : List Byte)
+  /-- A zero-sized value (`Empty`). -/
+  | empty
+  /-- The result of a partial op outside its domain, of `Unknown`, of a read of
+  uninitialised or invalid memory, and of ops whose semantics belongs to a later phase
+  (§3.5). Observing it is `stuck`. -/
   | poison
   deriving Inhabited, Repr
 
@@ -62,8 +117,12 @@ def beq : Val → Val → Bool
   | .int w x, .int w' y =>
     if h : w = w' then (h ▸ x) == y else false
   | .bool a, .bool b => a == b
-  | .mem _, .mem _ => true
+  | .mem m, .mem m' => m == m'
   | .tuple as, .tuple bs => beqList as bs
+  | .ptr p, .ptr q => p == q
+  | .agg as, .agg bs => beqList as bs
+  | .blob as, .blob bs => as == bs
+  | .empty, .empty => true
   | .poison, .poison => true
   | _, _ => false
 def beqList : List Val → List Val → Bool
@@ -74,26 +133,41 @@ end
 
 instance : BEq Val := ⟨beq⟩
 
-/-- Short rendering for test output: `i64:-3`, `u8:255` style integers are printed signed
-(`toInt`), booleans as `true`/`false`. -/
+/-- Rendering of a block for test output (stable across sections of one function). -/
+def renderBlk : Blk → String
+  | .nil => "nil"
+  | .global s => s
+  | .local a n => s!"local{a}.a{n}"
+  | .outargs a => s!"outargs{a}"
+  | .heap n => s!"heap{n}"
+
+/-- Short rendering for test output: integers signed (`toInt`), pointers as block+offset. -/
 partial def render : Val → String
   | .int w x => s!"i{w.bits}:{x.toInt}"
   | .bool b => toString b
   | .mem _ => "mem"
   | .tuple vs => "(" ++ ", ".intercalate (vs.map render) ++ ")"
+  | .ptr p => s!"&{renderBlk p.blk}+{p.off.toNat}"
+  | .agg vs => "{" ++ ", ".intercalate (vs.map render) ++ "}"
+  | .blob bs => s!"blob[{bs.length}]"
+  | .empty => "empty"
   | .poison => "poison"
 
 end Val
 
 mutual
 /-- Refinement (§3.5): `Refines src tgt` iff `src` is `poison` or `src = tgt`, pointwise through
-tuples. A pass is correct when every value it computes refines the source's. -/
+tuples and composites. A pass is correct when every value it computes refines the source's. -/
 inductive Refines : Val → Val → Prop where
   | poison (v : Val) : Refines .poison v
   | int (w : Width) (x : BitVec w.bits) : Refines (.int w x) (.int w x)
   | bool (b : Bool) : Refines (.bool b) (.bool b)
   | mem (m : Mem) : Refines (.mem m) (.mem m)
   | tuple {as bs : List Val} : RefinesList as bs → Refines (.tuple as) (.tuple bs)
+  | ptr (p : Ptr) : Refines (.ptr p) (.ptr p)
+  | agg {as bs : List Val} : RefinesList as bs → Refines (.agg as) (.agg bs)
+  | blob (bs : List Byte) : Refines (.blob bs) (.blob bs)
+  | empty : Refines .empty .empty
 /-- Pointwise refinement of lists of equal length. -/
 inductive RefinesList : List Val → List Val → Prop where
   | nil : RefinesList [] []
@@ -107,25 +181,42 @@ theorem Refines.refl : (v : Val) → Refines v v
   | .bool b => .bool b
   | .mem m => .mem m
   | .tuple vs => .tuple (RefinesList.refl vs)
+  | .ptr p => .ptr p
+  | .agg vs => .agg (RefinesList.refl vs)
+  | .blob bs => .blob bs
+  | .empty => .empty
   | .poison => .poison _
 theorem RefinesList.refl : (vs : List Val) → RefinesList vs vs
   | [] => .nil
   | v :: vs => .cons (Refines.refl v) (RefinesList.refl vs)
 end
 
-/-- The shape of an SSA type, as far as P1 evaluates it (`Layout` in later phases). -/
+/-- The shape (layout) of an SSA type (`Sem/Layout.lean` computes it from the export). -/
 inductive Ty where
   | int (w : Width)
   | bool
   | mem
   /-- `TUPLE` (two components) and `RESULTS` (memory last). -/
   | tuple (ts : List Ty)
-  /-- Any type P1 does not evaluate (pointers, composites, floats, `void`, …). -/
+  /-- Any type the semantics does not evaluate and whose size is unknown (`void`, `flags`,
+  types the export has no size for, …). -/
   | other
+  /-- Pointer-shaped types; `elem` is the element size of `*T` (for `PtrIndex`). -/
+  | ptr (elem : Option Nat)
+  /-- An SSA-able composite: its fields at their byte offsets, and its size (string, slice,
+  interface, struct, `[1]T`). -/
+  | agg (fields : List (Nat × Ty)) (size : Nat)
+  /-- A type kept as bytes: arrays of more than one element. -/
+  | blob (size : Nat)
+  /-- A zero-sized type. -/
+  | empty
+  /-- A type of known size whose values a later phase evaluates (floats, complex: P4); loads
+  give `poison`, stores write poison bytes. -/
+  | opaque (size : Nat)
   deriving Inhabited, Repr
 
-/-- Why a run panicked (§6). P1 produces `bounds` (`PanicBounds`) and the panics of the
-runtime's panicking entry points it models (`runtime.panicdivide`, `runtime.panicshift`,
+/-- Why a run panicked (§6): `PanicBounds`, `NilCheck` of nil, and the runtime's panicking
+entry points the environment models (`runtime.panicdivide`, `runtime.panicshift`,
 `runtime.panicoverflow`). -/
 inductive Panic where
   /-- `PanicBounds [kind] x y`: `kind` is the `ssa.BoundsKind` auxint (`op.go:470-489`), `x`
@@ -137,6 +228,8 @@ inductive Panic where
   | overflow
   /-- Any other panicking runtime entry point, by symbol name. -/
   | runtime (name : String)
+  /-- `NilCheck` of a nil pointer (§6). -/
+  | nilDeref
   deriving DecidableEq, Repr, Inhabited
 
 namespace Panic
@@ -170,6 +263,7 @@ def message : Panic → String
   | .shift => "runtime error: negative shift amount"
   | .overflow => "runtime error: integer overflow"
   | .runtime name => s!"panic in {name}"
+  | .nilDeref => "runtime error: invalid memory address or nil pointer dereference"
 
 end Panic
 

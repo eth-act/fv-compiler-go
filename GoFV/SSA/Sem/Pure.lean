@@ -2,6 +2,7 @@ import GoFV.SSA.Op
 import GoFV.SSA.AuxData
 import GoFV.SSA.Sem.Shift
 import GoFV.SSA.Sem.Conv
+import GoFV.SSA.Sem.Ptr
 
 /-!
 # `evalPure`: the pure ops (`docs/plans/semantics.md` §4)
@@ -11,7 +12,9 @@ arguments. It is total: partial ops and ops whose semantics belongs to a later p
 `poison` (§3.5, §9), so evaluation order among pure values never matters.
 
 `ty` is the shape of the value's type (the result width of `Ctz`/`BitLen`/`PopCount`, which is
-`int` on arm64, and of `Slicemask`). `aux` is unused in P1 (P2 reads symbols and names).
+`int` on arm64, and of `Slicemask`), the element size of `PtrIndex`'s pointer type, the
+layout a `Load` decodes. `aux` is unused: the ops that read symbols or names (`Addr`,
+`LocalAddr`, `ConstString`, `Arg`) depend on the activation and are evaluated by `evalValue`.
 
 One arm per op, each calling its family's definition (`Sem/Int`, `Sem/Shift`, `Sem/Cmp`,
 `Sem/Conv`), so a rule lemma unfolds `evalPure` at a concrete op and then only its family.
@@ -25,7 +28,7 @@ def Ty.width? : Ty → Option Width
   | .int w => some w
   | _ => none
 
-/-- The value of pure op `op` (P1 subset; every other op is `poison`). -/
+/-- The value of pure op `op` (P1 and P2 subsets; every other op is `poison`). -/
 def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : List Val) :
     Val :=
   let flag := auxInt == 1
@@ -234,6 +237,42 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .MakeTuple => Tuple.make args
   | .Copy => match args with | [x] => x | _ => .poison
   | .MakeResult => .tuple args
+  | .OffPtr => PtrOps.offPtr auxInt args
+  | .AddPtr => PtrOps.addPtr args
+  | .PtrIndex => PtrOps.ptrIndex (match ty with | .ptr e => e | _ => none) args
+  | .SubPtr => PtrOps.subPtr args
+  | .EqPtr => PtrOps.eqPtr false args
+  | .NeqPtr => PtrOps.eqPtr true args
+  | .IsNonNil => PtrOps.isNonNil args
+  | .Convert => PtrOps.convert ty args
+  | .EqInter => PtrOps.eqFirst false args
+  | .NeqInter => PtrOps.eqFirst true args
+  | .EqSlice => PtrOps.eqFirst false args
+  | .NeqSlice => PtrOps.eqFirst true args
+  | .StringMake => Comp.make args
+  | .SliceMake => Comp.make args
+  | .IMake => Comp.make args
+  | .ComplexMake => Comp.make args
+  | .StructMake => Comp.make args
+  | .ArrayMake1 => Comp.make args
+  | .StringPtr => Comp.select 0 args
+  | .SlicePtr => Comp.select 0 args
+  | .SlicePtrUnchecked => Comp.select 0 args
+  | .ITab => Comp.select 0 args
+  | .ComplexReal => Comp.select 0 args
+  | .StringLen => Comp.select 1 args
+  | .SliceLen => Comp.select 1 args
+  | .IData => Comp.select 1 args
+  | .ComplexImag => Comp.select 1 args
+  | .SliceCap => Comp.select 2 args
+  | .StructSelect => Comp.selectAux auxInt args
+  | .ArraySelect => Comp.selectAux auxInt args
+  | .ConstNil => .ptr Ptr.null
+  | .ConstSlice => .agg [.ptr Ptr.null, .i64 0, .i64 0]
+  | .ConstInterface => .agg [.ptr Ptr.null, .ptr Ptr.null]
+  | .Empty => .empty
+  | .Load => loadOp ty args
+  | .Dereference => loadOp ty args
   | _ => .poison
 
 end GoFV.SSA.Sem

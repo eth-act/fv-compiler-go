@@ -24,6 +24,9 @@ abbrev Contract := List Val → Mem → COutcome
 structure Env where
   /-- Callees without SSA (the runtime), by link symbol name. -/
   extern : String → Option Contract := fun _ => none
+  /-- The global image (`Sem/Image.lean`, `globalImage`): initial allocations of the global
+  symbols, by name; a run adds those its memory does not have yet. -/
+  globals : List (String × Alloc) := []
 
 namespace Env
 
