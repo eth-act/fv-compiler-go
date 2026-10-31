@@ -46,18 +46,27 @@ observable: when the rewiring of two or more *different* constant controls remov
 the same block `c`, the swap-removes leave `c.Preds` — and, by the same permutation, the
 arguments of `c`'s phis and the back indices `Succs[k].i` of `c`'s predecessors — in an order
 that depends on the map order (value resets, rewires of different blocks and phis turned into
-copies or constants commute). Go's possible orders are, by `internal/runtime/maps`: for at
-most 8 keys (one group, slots filled in insertion order, iteration from a random slot with
-wrap-around) exactly the rotations of the insertion order; for more keys any order (hashes of
-the keys' addresses under a random seed). A registered pass may carry a `replay`
+copies or constants commute). Go's possible orders, by `internal/runtime/maps` (`Iter.Init`/
+`Next`, `putSlotSmall`): for at most 8 keys (one group, slots filled in insertion order,
+iteration from a random slot with wrap-around) exactly the rotations of the insertion order;
+for more keys the order follows the keys' address hashes under a random per-map seed, which
+the harness treats as any order (a superset). Measured with the host toolchain on
+`map[*V]lattice` (2,000 trials per size): sizes 2–8 gave exactly the n rotations, size 9 gave
+1,096 distinct orders (74 rotations), size 10 1,492. A registered pass may carry a `replay`
 (`PassEntry.replay`): when the deterministic result differs, the harness runs it with the stock
 output and compares its result exactly again; a match is counted in the "order replayed"
 column. For `sccp` (`GoFV/Opt/SccpReplay.lean`), the replay simulates the edge removals of
-each contested block on its initial predecessor list, finds a Go-possible order (a rotation
+each contested block on its initial predecessor list, finds an admissible order (a rotation
 for small maps; for large maps a combination of per-block relative orders consistent with one
 global order) that yields the stock `Preds` of every contested block, and reruns
-`replaceConst` in that order. So a section counts as a match iff some order Go can produce
-gives exactly the stock output.
+`replaceConst` in that order. So a section counts as a match iff the port, run with an
+admissible order of `latticeCells`, gives exactly the stock output; everything else (lattice,
+fold temporaries, IDs, resets, rewires) is still compared exactly.
+
+The quick corpus has no contested block (`sccp` folds in 25 functions and rewires in 20, never
+two values into one block). `tests/sccp-order/run.sh [n] [go-build]` exports a program that
+has one `n` times and runs the check: 16 stock exports split 8/8 between the two predecessor
+orders, and all match (8 by replay).
 
 Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays
 constant: the whole corpus (9,297 files, 1.25 GB) runs in about 25 s with 4 jobs and 130 MB.

@@ -207,10 +207,10 @@ Consolidated from the per-pass sections; posted on #4. All of it is in `docs/con
   whose control became constant. Two removed edges into the same successor that keeps ≥ 2
   predecessors swap-remove in map order, so that block's `Preds` and its phis' argument order
   differ between runs. Consequences: (1) the export must record what the compiler did
-  (it does — the next section is ground truth); (2) a Lean port picks one order (e.g. value-ID
-  order) and parity after `sccp` compares modulo a consistent permutation of the affected
-  `Preds`/phi args, after which the Lean pipeline continues from the *exported* state;
-  (3) worth an upstream Go issue (reproducible builds).
+  (it does — the next section is ground truth); (2) the Lean port ranges in insertion order,
+  and the parity harness replays the order the stock output shows (`docs/PARITY.md`,
+  "Randomized map order"), after which the Lean pipeline continues from the *exported* state;
+  (3) upstream candidate #87 (reproducible builds; repro `tests/sccp-order/`).
 - No other pass in scope has order-observable map iteration (each case is argued in its
   section: `number lines` ranges, `shortcircuit` `replaceUses`, `dead auto elim`, `insert
   resched checks` `newmemphis`, `poset.aliasnodes`, `expand calls`).
@@ -1012,7 +1012,7 @@ Finally every `elim` entry whose name is not `used` is turned into `Copy(MemoryA
   - **`rewireSuccessor` → `removeEdge` is not order-independent.** `removePred`/`removePhiArg` swap the last pred into the hole, so when ≥2 rewired edges from blocks with *different* control values enter the same successor, that successor's final `Preds` order and phi-argument order depend on map iteration. Example: preds `[P1,P2,X,Y]` with P1 then P2 removed gives `[Y,X]`; the opposite order gives `[X,Y]`.
   - `phielimValue` may also turn a Phi into a Copy at a different intermediate step. The final Phi/Copy outcome is the same, but the argument order of a surviving Phi can differ.
   - Blocks controlled by the *same* value are processed in `defBlock` order, which is deterministic.
-  - Mitigation for parity: compare sccp output modulo a consistent permutation of (Preds, phi args) per block, or have the exporter record the observed order. The Lean port cannot reproduce the order deterministically.
+  - Parity: the port ranges in insertion order; the harness recovers an admissible order from the stock `Preds` and reruns `replaceConst` with it (`GoFV/Opt/SccpReplay.lean`, `docs/PARITY.md`). Small maps (≤ 8 keys) iterate in a rotation of insertion order.
 - **Temporary-value pollution and ID consumption.** Every `computeLattice` call consumes one value ID (from the `f.freeValues` LIFO first, then `f.vid`) and appends one value (dead Const or OpInvalid, Pos = the original value's Pos) to the end of `f.Entry.Values`. None of them is freed in sccp. Consequences:
   - the number of calls and their order must be replicated exactly;
   - `generic deadcode` frees them, in its own order, which seeds `f.freeValues` for later passes;
@@ -1046,11 +1046,11 @@ Finally every `elim` entry whose name is not `used` is turned into `Copy(MemoryA
 
   The validator is simpler because the worklist order then only matters for ID parity, which the untrusted port reproduces.
 - Folding soundness reduces to the correctness of the generic constant-folding rules, which is shared work with opt.
-- The nondeterministic pred order needs a permutation-tolerant comparison.
+- The nondeterministic pred order is handled by replaying the stock order (`docs/PARITY.md`).
 
 **Issue summary:**
 - Enabled on linux/arm64 (off with -N). 412 code lines plus reuse of the generic rules for folding.
-- REAL nondeterminism: replaceConst ranges over map latticeCells and calls removeEdge, so the Preds/phi-arg order of a shared successor can vary between runs. Parity needs a permutation-tolerant comparison.
+- REAL nondeterminism: replaceConst ranges over map latticeCells and calls removeEdge, so the Preds/phi-arg order of a shared successor can vary between runs. Parity replays the stock order (upstream candidate #87).
 - Each fold attempt allocates a temp (ID from freeValues/vid) that is left in f.Entry.Values (dead Const or OpInvalid) until generic deadcode. The call count and order must be exact.
 - Likely is reset on rewired blocks. Float folding semantics come from the rules.
 - Difficulty M–L. Recommended: verbatim port plus a fixpoint-certificate validator.
