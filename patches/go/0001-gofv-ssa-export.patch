@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1145 @@
+@@ -0,0 +1,1169 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -101,10 +101,8 @@
 +	"cmd/internal/objabi"
 +	"cmd/internal/src"
 +	"crypto/sha256"
-+	"errors"
 +	"fmt"
 +	"internal/buildcfg"
-+	"io/fs"
 +	"os"
 +	"path/filepath"
 +	"regexp"
@@ -1174,36 +1172,62 @@
 +}
 +
 +// write writes the finished file under the export directory.
++// gofvWritten records the files this compile wrote (backend goroutines write
++// concurrently), by stem, so that functions sharing a name get deterministic file names.
++var gofvWritten = struct {
++	sync.Mutex
++	m map[string]string // stem -> path of the unsuffixed file, "" once suffixed
++}{m: map[string]string{}}
++
 +func (x *gofvExporter) write() {
 +	dir := filepath.Join(x.set.dir, filepath.FromSlash(base.Ctxt.Pkgpath))
 +	if err := os.MkdirAll(dir, 0o777); err != nil {
 +		base.Fatalf("gofv export: %v", err)
 +	}
-+	stem := gofvFileName(x.f.Name) + "," + strconv.Itoa(int(x.f.ABISelf.Which()))
-+	for i := 1; ; i++ {
-+		name := stem
-+		if i > 1 {
-+			name += "#" + strconv.Itoa(i)
-+		}
-+		path := filepath.Join(dir, name+".ssa")
-+		fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
-+		if errors.Is(err, fs.ErrExist) {
-+			continue
-+		}
-+		if err == nil {
-+			_, err = fd.Write(x.out.Bytes())
-+			if cerr := fd.Close(); err == nil {
-+				err = cerr
++	stem := filepath.Join(dir, gofvFileName(x.f.Name)+","+strconv.Itoa(int(x.f.ABISelf.Which())))
++	// The first function of a name gets <stem>.ssa. When a second one arrives (the order
++	// depends on concurrent compilation), every function of that name is renamed to
++	// <stem>#<first 16 hex digits of the SHA-256 of its file>.ssa, so the set of files
++	// does not depend on the order.
++	gofvWritten.Lock()
++	defer gofvWritten.Unlock()
++	path := stem + ".ssa"
++	if first, seen := gofvWritten.m[stem]; seen {
++		if first != "" {
++			data, err := os.ReadFile(first)
++			if err != nil {
++				base.Fatalf("gofv export: %v", err)
 +			}
++			moved := gofvHashedPath(stem, data)
++			if err := os.Rename(first, moved); err != nil {
++				base.Fatalf("gofv export: %v", err)
++			}
++			if x.set.gotext {
++				os.Rename(first+".txt", moved+".txt")
++			}
++			gofvWritten.m[stem] = ""
 +		}
-+		if err == nil && x.set.gotext {
-+			err = os.WriteFile(path+".txt", x.text.Bytes(), 0o666)
-+		}
-+		if err != nil {
-+			base.Fatalf("gofv export: %v", err)
-+		}
-+		return
++		path = gofvHashedPath(stem, x.out.Bytes())
++	} else {
++		gofvWritten.m[stem] = path
 +	}
++	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
++	if err == nil {
++		_, err = fd.Write(x.out.Bytes())
++		if cerr := fd.Close(); err == nil {
++			err = cerr
++		}
++	}
++	if err == nil && x.set.gotext {
++		err = os.WriteFile(path+".txt", x.text.Bytes(), 0o666)
++	}
++	if err != nil {
++		base.Fatalf("gofv export: %v", err)
++	}
++}
++
++func gofvHashedPath(stem string, data []byte) string {
++	return fmt.Sprintf("%s#%x.ssa", stem, sha256.Sum256(data))[:len(stem)+1+16] + ".ssa"
 +}
 +
 +func gofvFileName(s string) string {

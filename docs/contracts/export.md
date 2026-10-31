@@ -39,7 +39,9 @@ written as `%XX` (two upper-case hex digits); `<abi>` is `f.ABISelf.Which()` (0 
 export directory (`scripts/export-corpus.sh` does). If the escaped name is longer than 160
 bytes (generic instantiations), it is cut to its first 120 bytes followed by `~` and the first
 16 hex digits of the SHA-256 of `f.Name` (the `func` line has the full name). If a name
-repeats within one compile the second file gets `#2` before `.ssa`, and so on.
+repeats within one compile (e.g. generic instantiations compiled twice), every file of that
+name is called `<name>,<abi>#<h>.ssa` instead, with `<h>` the first 16 hex digits of the SHA-256
+of the file's contents (the order of concurrent compilation must not decide the names).
 
 The output is deterministic: the same compile produces byte-identical files (checked by
 `scripts/export-corpus.sh --check-determinism`), also under the backend's concurrent
