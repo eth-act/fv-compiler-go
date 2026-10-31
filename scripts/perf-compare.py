@@ -8,8 +8,8 @@ BASE/HEAD are git refs (resolved in --repo) or commit ids as written in the hist
 Prints a Markdown report (for PR comments) and exits 1 when it flags a regression:
 
   * module peak RSS (lean VmHWM, `maxrss_mb`) grew > --pct % and > --rss-abs MB;
-  * module time grew > --pct % and > --time-abs s, in wall time *and* CPU time (CPU filters
-    wall-clock noise from machine load);
+  * module time grew > --pct % and > --time-abs s, in wall time *and* CPU time (under load
+    120 on 32 cores, wall times of unchanged small modules grew 2-10x and CPU ~1.5x);
   * a module that failed or was killed at its cap in HEAD but built in BASE;
   * a new module above --new-rss MB or --new-time s;
   * a benchmark whose wall time grew > --pct % and > --bench-time-abs s (and CPU > --pct %),
@@ -121,7 +121,7 @@ def main():
             if grew(x, y, a.pct, a.rss_abs):
                 lst.append((m, "peak RSS", fmt(rb, "MB"), fmt(rh, "MB"), change(rb, rh)))
         for (x, y, cx, cy, lst) in ((wb, wh, cb, ch, reg), (wh, wb, ch, cb, win)):
-            if grew(x, y, a.pct, a.time_abs) and (cpu_ok or grew(cx, cy, a.pct, 0)):
+            if grew(x, y, a.pct, a.time_abs) and (cpu_ok or grew(cx, cy, a.pct, a.time_abs)):
                 lst.append((m, "time", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
                             f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh)))
         if a.all and (rb, wb) != (rh, wh):
@@ -142,7 +142,7 @@ def main():
         cb, ch = num(b, "cpu_s"), num(h, "cpu_s")
         cpu_ok = cb is None or ch is None
         for (x, y, cx, cy, lst) in ((wb, wh, cb, ch, reg), (wh, wb, ch, cb, win)):
-            if grew(x, y, a.pct, a.bench_time_abs) and (cpu_ok or grew(cx, cy, a.pct, 0)):
+            if grew(x, y, a.pct, a.bench_time_abs) and (cpu_ok or grew(cx, cy, a.pct, a.bench_time_abs)):
                 lst.append((f"bench {n}", "time", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
                             f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh)))
         for (x, y, lst) in ((rb, rh, reg), (rh, rb, win)):
