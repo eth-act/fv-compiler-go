@@ -124,9 +124,18 @@ Aux objects that Go mutates in place (an `*AuxCall` whose `Fn` is rewritten by
 `devirtLECall`, `expand calls` filling in ABI data, …) are **redefined** with the same number
 in every section where their content differs from the last definition; a reader keeps the
 latest one. Identity is Go identity: two references share a number iff the Go values are
-`==` (pointer identity for pointer-typed aux, value equality for `stringAux` and friends, pointer
-identity for `*types.Type` and `*LocalSlot`). This is what `Value.Aux != w.Aux`,
-`v.Type == w.Type` and CSE's `auxmap` observe.
+`==` (pointer identity for pointer-typed aux and `*LocalSlot`, value equality for `stringAux`
+and friends). This is what `Value.Aux != w.Aux` and CSE's `auxmap` observe.
+
+Types are the exception: they are numbered by **type identity**, not by pointer. The compiler
+sometimes holds several identical `*types.Type` objects (two `[2]int`, say), and which one a
+value or call signature ends up with depends on the concurrent compilation of other functions,
+so pointer identity is not reproducible. Two types share a number iff they have the same
+kind, the same `LinkString()` (unique per identical type, local types included) and the same
+`notinheap`/`noalg`/`shape` flags; `SSA` pseudo-types by name; `TUPLE`/`RESULTS` by their
+component numbers. A `*types.Type` used as aux is numbered by its type number the same way
+(one aux number per type number). A pass port compares types by number; the stock passes
+compare type pointers only between types that are identical in this sense.
 
 Objects first created by pass `k` are numbered while section `k` is written (block order, then
 value order, then names, …), so a Lean pass creating new objects must match them to section

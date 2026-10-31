@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,911 @@
+@@ -0,0 +1,989 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -149,9 +149,12 @@
 +	warns []string
 +
 +	types    map[*types.Type]int
++	typeKeys map[string]int // canonical type key -> number
 +	typeList []*types.Type
 +	aux      map[Aux]int
++	auxTypes map[int]int    // type number -> aux number of *types.Type aux values
 +	auxLast  map[int]string // last emitted definition per aux number
++	nAux     int
 +	slots    map[*LocalSlot]int
 +	posbases map[int32]bool
 +	nsec     int
@@ -173,7 +176,9 @@
 +		f:        f,
 +		set:      set,
 +		types:    map[*types.Type]int{},
++		typeKeys: map[string]int{},
 +		aux:      map[Aux]int{},
++		auxTypes: map[int]int{},
 +		auxLast:  map[int]string{},
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
@@ -357,8 +362,14 @@
 +	if n, ok := x.types[t]; ok {
 +		return fmt.Sprintf("t%d", n)
 +	}
++	key := x.typeKey(t)
++	if n, ok := x.typeKeys[key]; ok {
++		x.types[t] = n
++		return fmt.Sprintf("t%d", n)
++	}
 +	n := len(x.typeList) + 1
 +	x.types[t] = n
++	x.typeKeys[key] = n
 +	x.typeList = append(x.typeList, t)
 +
 +	k := t.Kind()
@@ -441,6 +452,33 @@
 +	return fmt.Sprintf("t%d", n)
 +}
 +
++// typeKey identifies t up to type identity. The compiler sometimes creates several
++// identical *types.Type objects (e.g. two [2]int) and which one a value ends up with
++// depends on concurrent compilation of other functions, so types are numbered by
++// identity, not by pointer: LinkString (unique per identical type, including local
++// types) plus the flags that make otherwise identical types behave differently.
++// SSA pseudo-types are singletons; tuples and results are keyed by their components.
++func (x *gofvExporter) typeKey(t *types.Type) string {
++	switch t.Kind() {
++	case types.TSSA:
++		return "SSA:" + t.String()
++	case types.TTUPLE:
++		return "TUPLE:" + x.typ(t.FieldType(0)) + "," + x.typ(t.FieldType(1))
++	case types.TRESULTS:
++		nr := t.NumFields()
++		rs := make([]string, nr)
++		for i := range nr {
++			rs[i] = x.typ(t.FieldType(i))
++		}
++		return "RESULTS:" + strings.Join(rs, ",")
++	}
++	ls, ok := gofvTry(t.LinkString)
++	if !ok {
++		ls = fmt.Sprintf("%p", t)
++	}
++	return fmt.Sprintf("%s:%s:%d%d%d", t.Kind(), ls, gofvBool(t.NotInHeap()), gofvBool(t.Noalg()), gofvBool(t.IsShape()))
++}
++
 +// auxRef returns the reference of an aux value, (re)defining it when new or changed.
 +func (x *gofvExporter) auxRef(a Aux) string {
 +	if a == nil {
@@ -448,7 +486,22 @@
 +	}
 +	n, ok := x.aux[a]
 +	if !ok {
-+		n = len(x.aux) + 1
++		if t, isType := a.(*types.Type); isType {
++			// Type aux values are numbered by type identity, like types.
++			tn := x.types[t]
++			if tn == 0 {
++				x.typ(t)
++				tn = x.types[t]
++			}
++			if m, seen := x.auxTypes[tn]; seen {
++				x.aux[a] = m
++				return fmt.Sprintf("a%d", m)
++			}
++			n = x.nextAux()
++			x.auxTypes[tn] = n
++		} else {
++			n = x.nextAux()
++		}
 +		x.aux[a] = n
 +	}
 +	def := x.auxDef(n, a)
@@ -457,6 +510,11 @@
 +		x.defs.WriteString(def)
 +	}
 +	return fmt.Sprintf("a%d", n)
++}
++
++func (x *gofvExporter) nextAux() int {
++	x.nAux++
++	return x.nAux
 +}
 +
 +func (x *gofvExporter) auxDef(n int, a Aux) string {
@@ -657,7 +715,27 @@
 +	return fmt.Sprintf("%s/%s/%d/%s/%d", x.auxRef(ls.N), x.typ(ls.Type), ls.Off, x.slot(ls.SplitOf), ls.SplitOffset)
 +}
 +
-+// slotKey is a content key that orders map entries deterministically before numbering.
++// slotOrder orders map entries holding *LocalSlot deterministically: slots that already
++// have a number by that number, the others after them by content (map iteration order is
++// random, and slot contents can coincide, e.g. for inlined copies of one variable).
++func (x *gofvExporter) slotOrder(ls *LocalSlot) string {
++	if n, ok := x.slots[ls]; ok {
++		return fmt.Sprintf("0%010d", n)
++	}
++	return "1" + gofvSlotKey(ls)
++}
++
++// slotValueOrder orders LocalSlot map keys: by the number of the slot's name if known,
++// then by content.
++func (x *gofvExporter) slotValueOrder(ls LocalSlot) string {
++	an := 1<<31 - 1
++	if n, ok := x.aux[ls.N]; ok {
++		an = n
++	}
++	return fmt.Sprintf("%010d|%s|%s", an, gofvSlotKey(&ls), x.slotOrder(ls.SplitOf))
++}
++
++// gofvSlotKey is a content key for a LocalSlot.
 +func gofvSlotKey(ls *LocalSlot) string {
 +	if ls == nil {
 +		return "-"
@@ -754,7 +832,7 @@
 +			extra = append(extra, k)
 +		}
 +	}
-+	sort.SliceStable(extra, func(i, j int) bool { return gofvSlotKey(&extra[i]) < gofvSlotKey(&extra[j]) })
++	sort.SliceStable(extra, func(i, j int) bool { return x.slotValueOrder(extra[i]) < x.slotValueOrder(extra[j]) })
 +	for _, k := range extra {
 +		fmt.Fprintf(w, "namedx %s %s\n", x.slotInline(k), x.values(f.NamedValues[k]))
 +	}
@@ -768,7 +846,7 @@
 +	var splits []splitEnt
 +	for k, v := range f.CanonicalLocalSplits {
 +		ts, _ := gofvTry(k.Type.LinkString)
-+		splits = append(splits, splitEnt{k, v, fmt.Sprintf("%s|%d|%s|%s", gofvSlotKey(k.parent), k.Off, ts, gofvSlotKey(v))})
++		splits = append(splits, splitEnt{k, v, fmt.Sprintf("%s|%020d|%s|%s", x.slotOrder(k.parent), uint64(k.Off)^(1<<63), ts, x.slotOrder(v))})
 +	}
 +	sort.SliceStable(splits, func(i, j int) bool { return splits[i].key < splits[j].key })
 +	ss := make([]string, len(splits))
@@ -783,7 +861,7 @@
 +	}
 +	var canon []canonEnt
 +	for k, v := range f.CanonicalLocalSlots {
-+		canon = append(canon, canonEnt{k, v, gofvSlotKey(&k) + "|" + gofvSlotKey(v)})
++		canon = append(canon, canonEnt{k, v, x.slotOrder(v) + "|" + x.slotValueOrder(k)})
 +	}
 +	sort.SliceStable(canon, func(i, j int) bool { return canon[i].key < canon[j].key })
 +	cs := make([]string, len(canon))
