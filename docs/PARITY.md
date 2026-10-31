@@ -77,11 +77,13 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | number lines | numberLines | 9297 | 9297 | 0 | 100% | corpus regenerated with raw stmt bits (export fix) |
 | early phielim and copyelim | copyelim | 9297 | 9297 | 0 | 100% | |
 | early deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| short circuit | shortcircuit | 9297 | 9297 | 0 | 100% | 4662 functions changed by the pass |
 | pre-opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | gcse deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | generic deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | zero arg cse | zcse | 9297 | 9297 | 0 | 100% | before the #52 export fix: 84 mismatches (`byte`/`uint8` type pointers) |
+| early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
 | insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |

@@ -6,6 +6,8 @@ import GoFV.Opt.CpuFeatures
 import GoFV.Opt.CopyElim
 import GoFV.Opt.ZCSE
 import GoFV.Opt.Deadcode
+import GoFV.Opt.ShortCircuit
+import GoFV.Opt.Fuse
 
 /-!
 # Registered Lean passes
@@ -26,6 +28,8 @@ def registry : Array PassEntry := #[
     names := #["early deadcode", "pre-opt deadcode", "opt deadcode", "gcse deadcode",
                "generic deadcode"] },
   { fn := "zcse", names := #["zero arg cse"], run := zcsePass },
+  { fn := "shortcircuit", names := #["short circuit"], run := shortcircuitPass },
+  { fn := "fuseEarly", names := #["early fuse"], run := fuseEarlyPass },
   { fn := "softfloat", names := #["softfloat"], run := softfloatPass },
   { fn := "checkbce", names := #["check bce"], run := checkbcePass },
   { fn := "insertLoopReschedChecks", names := #["insert resched checks"],

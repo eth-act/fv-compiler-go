@@ -40,3 +40,6 @@ import GoFV.Opt.CopyElim
 import GoFV.Opt.ZCSE
 import GoFV.Opt.Deadcode
 import GoFV.Opt.NumberLines
+import GoFV.Opt.Speculate
+import GoFV.Opt.ShortCircuit
+import GoFV.Opt.Fuse
