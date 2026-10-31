@@ -199,9 +199,9 @@ theorem idx {α : Type} {xs : Array α} {P : Nat → α → Prop}
 end CheckFacts
 
 open CheckFacts in
-/-- A passing `check` establishes the well-formedness facts `WF`. -/
-theorem check_wf {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) : WF ce f := by
-  unfold check at h
+/-- A passing Go check (`checkGo`) establishes the well-formedness facts `WF`. -/
+theorem checkGo_wf {ce : CheckEnv} {f : Func} (h : checkGo ce f = .ok ()) : WF ce f := by
+  unfold checkGo at h
   obtain ⟨⟨bm, vm⟩, h1, h⟩ := bind_ok h
   have I1 := forIn_array_inv (Loop1 ce f) ?init ?step h1
   case init =>
@@ -447,5 +447,20 @@ theorem check_wf {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) : WF ce f 
   · intro b hb
     rw [hb] at hep
     simpa using hep
+
+open CheckFacts in
+/-- A passing `check` establishes the well-formedness facts `WF`. -/
+theorem check_wf {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) : WF ce f := by
+  unfold check at h
+  obtain ⟨⟨⟩, h1, -⟩ := bind_ok h
+  exact checkGo_wf h1
+
+open CheckFacts in
+/-- A passing `check` has validated the dominator certificate. -/
+theorem check_domCert {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) :
+    DomCert.check f = .ok () := by
+  unfold check at h
+  obtain ⟨⟨⟩, -, h2⟩ := bind_ok h
+  exact h2
 
 end GoFV.Proof
