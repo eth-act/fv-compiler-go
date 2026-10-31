@@ -78,6 +78,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | early phielim and copyelim | copyelim | 9297 | 9297 | 0 | 100% | |
 | early deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | short circuit | shortcircuit | 9297 | 9297 | 0 | 100% | 4662 functions changed by the pass |
+| decompose user | decomposeUser | 9297 | 9297 | 0 | 100% | 1133 functions changed by the pass, 1091 get new slots (`SplitSlot`) |
 | pre-opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | generic cse | cse | 9297 | 9293 | 4 | 99.95% | 4324 functions changed by the pass; all 4: export gap #68 (`Type.Compare` not a total preorder: `*byte` CMPeq `*uint8`) |
@@ -95,6 +96,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | prove | prove | 9297 | 9297 | 0 | 100% | stock pass changes 7507 functions (incl. T2 value sorting); branches removed in 1255, downward-loop inversion in 64, `Mul`→`CondSelect` in 54, `Slicemask`→const in 111, signed→unsigned `Div` in 86 |
 | early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | expand calls | expandCalls | 9297 | 9297 | 0 | 100% | files with `InterLECall` 766, `ClosureLECall` 359, `TailLECall` 164, `TailLECallInter` 4, `Dereference` 185, `ArgFloatReg` (output) 204; no `SelectNAddr` |
+| decompose builtin | postExpandCallsDecompose | 9297 | 9297 | 0 | 100% | 5327 functions changed by the pass, 2897 get new slots; `namedx` present in 1001 |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
 | branchelim | branchelim | 9297 | 9297 | 0 | 100% | 526 functions changed by the pass |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
