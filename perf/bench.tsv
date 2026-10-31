@@ -1,0 +1,2 @@
+# Runtime benchmarks run by scripts/perf-bench.py (docs/PERF.md), one per line:
+# name<TAB>lake target<TAB>shell command, run from the worktree root (call the binary, not `lake exe`)
