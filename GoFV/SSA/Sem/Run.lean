@@ -1,7 +1,6 @@
 import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Sem.Env
 import GoFV.SSA.Sem.Layout
-import Std.Data.HashMap
 
 /-!
 # `GoFV.SSA.run`: executable, fuel-bounded semantics (`docs/plans/semantics.md` §3.6, §7, §8)
@@ -51,20 +50,24 @@ def schedNodes (f : Func) (b : Block) : Array SNode :=
     | some v => if v.op == .Phi then none else some ⟨v.id, v.args, prio v.op⟩
     | none => none
 
+/-- The largest node ID (0 if none). -/
+def maxNodeId (vs : Array SNode) : ID := vs.foldl (fun m v => max m v.id) 0
+
 /-- Kahn's algorithm over `vs` (`none` if their arguments within the block form a cycle): a
 ready pure value first (any order would do: pure evaluation is total), else the earliest ready
 `NilCheck`, else the earliest ready other root, "earliest" in the order the value became ready
 (initially `vs` order). -/
 def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
   let n := vs.size
-  let mut idx : Std.HashMap ID Nat := {}
+  -- position of each node by ID (arrays, not hash maps: the kernel can evaluate `run`)
+  let mut idx : Array (Option Nat) := Array.replicate (maxNodeId vs + 1) none
   for h : i in [0:n] do
-    idx := idx.insert vs[i].id i
+    idx := idx.set! vs[i].id (some i)
   let mut indeg : Array Nat := Array.replicate n 0
   let mut users : Array (Array Nat) := Array.replicate n #[]
   for h : i in [0:n] do
     for a in vs[i].args do
-      match idx[a]? with
+      match idx[a]?.join with
       | some j =>
         indeg := indeg.modify i (· + 1)
         users := users.modify j (·.push i)
@@ -111,23 +114,27 @@ def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
           | _ => rootQ := rootQ.push u
   return if out.size == n then some out else none
 
-/-- Walk of `schedValid`: each listed ID is a node not listed before, and its arguments that
-are nodes are listed before it (`done`). -/
-def schedValidAux (nodes : Std.HashMap ID (Array ID)) : Std.HashSet ID → List ID → Bool
+/-- Walk of `schedValid` (`nodes`: each node's arguments, by ID; `done`: the IDs listed so
+far): each listed ID is a node not listed before, and its arguments that are nodes are listed
+before it. -/
+def schedValidAux (nodes : Array (Option (Array ID))) : Array Bool → List ID → Bool
   | _, [] => true
   | done, x :: xs =>
-    match nodes[x]? with
+    match nodes[x]?.join with
     | some args =>
-      !done.contains x && args.all (fun a => !nodes.contains a || done.contains a) &&
-        schedValidAux nodes (done.insert x) xs
+      !done.getD x false && args.all (fun a => (nodes[a]?.join).isNone || done.getD a false) &&
+        schedValidAux nodes (done.set! x true) xs
     | none => false
 
 /-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
 arguments within the block: a dependency order. Validates `kahn`'s output, so proofs use this
 specification rather than the algorithm. -/
 def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
-  let nodes : Std.HashMap ID (Array ID) := vs.foldl (fun m n => m.insert n.id n.args) {}
-  nodes.size == vs.size && o.size == vs.size && schedValidAux nodes {} o.toList
+  let m := maxNodeId vs + 1
+  let nodes : Array (Option (Array ID)) :=
+    vs.foldl (fun t n => t.set! n.id (some n.args)) (Array.replicate m none)
+  (nodes.filter Option.isSome).size == vs.size && o.size == vs.size &&
+    schedValidAux nodes (Array.replicate m false) o.toList
 
 /-- The evaluation order of the non-`Phi` values of `b` (`none` if their arguments within
 the block form a cycle): `kahn`, validated by `schedValid`. -/
