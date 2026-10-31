@@ -6,7 +6,17 @@ avoiding): the problem, the trick, the numbers, where it is used.
 
 ## gofv measurements
 
-(none yet)
+#### Big enumeration inductives cost superlinear elaboration time
+- **Problem:** `GoFV.SSA.Op` with all 2,013 entries of Go's generic `opcodeTable` (445 generic
+  ops + 1,567 SIMD generic ops) took about 60 s / 1.0 GB for the bare `inductive` alone
+  (elaboration 34 s + type checking 24 s of the auxiliary constructions; `genSizeOf`,
+  `genSizeOfSpec`, `genInjectivity` off made no difference) and hit the heartbeat limit with
+  `deriving DecidableEq`. 500 constructors took about 6 s, i.e. roughly quadratic.
+- **Trick:** leave the SIMD generic ops out (they exist only under `GOEXPERIMENT=simd`, off in
+  go1.27.3 and in the corpus; `tools/opsgen/nosimd.go`). Metadata are `match` functions with
+  the most frequent value as wildcard default.
+- **Effect:** the whole generated `Op.lean` (446 constructors, 20 metadata functions,
+  `DecidableEq`) builds in 7.5 s / 0.56 GB (#6).
 
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
