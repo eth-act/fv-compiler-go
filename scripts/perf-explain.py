@@ -13,6 +13,10 @@ import argparse, os, pathlib, re, subprocess, sys
 
 here = pathlib.Path(__file__).resolve().parent.parent
 LINE = re.compile(r"^\[([\w.]+)\] \[([\d.]+)\] \S+\s+(.*)$")
+# An Elab.command message is the command's source; skip doc comments/attributes to its keyword.
+DECL = re.compile(r"^\s*(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|noncomputable|partial|unsafe|"
+                  r"nonrec)\s+)*((?:inductive|structure|class|def|theorem|lemma|abbrev|instance|"
+                  r"opaque|axiom|example|deriving instance|#eval|#guard_msgs|#print)\b.*)$")
 
 
 def main():
@@ -45,10 +49,20 @@ def main():
                             cwd=root, env=env, stdout=f, stderr=subprocess.STDOUT).returncode
     text = log.read_text(errors="replace")
     entries = []
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
         m = LINE.match(line)  # unindented: top-level entries only
         if m:
-            entries.append((float(m.group(2)), m.group(1), m.group(3)[:160]))
+            what = m.group(3)
+            if not DECL.match(what):
+                for cont in lines[i + 1:i + 40]:
+                    if not cont.startswith("    "):
+                        break
+                    d = DECL.match(cont)
+                    if d:
+                        what = d.group(1)
+                        break
+            entries.append((float(m.group(2)), m.group(1), what[:160]))
     entries.sort(reverse=True)
     print(f"{a.module}: {len(entries)} top-level profiler entries >= {a.threshold} ms "
           f"(sum {sum(e[0] for e in entries):.1f} s); lean exit {rc}; log {log}")

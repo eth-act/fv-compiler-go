@@ -1,2 +1,32 @@
 date	commit	module	status	wall_s	cpu_s	maxrss_mb	cgpeak_mb	olean_kb	dep_hash	measured_at	load1
 2026-10-31T19:31:59Z	508d0e26a5e1	_total	ok	0.0	0.0			0		508d0e26a5e1	
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.SSA.OpInfo	remeasured	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.SSA.Op	remeasured	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Syntax	remeasured	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Dec.Values00	remeasured	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Dec	remeasured	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divisible.Values00	remeasured	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divisible	remeasured	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divmod.Values00	remeasured	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divmod	remeasured	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Blocks	remeasured	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values00	remeasured	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values01	remeasured	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values02	remeasured	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values03	remeasured	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values04	remeasured	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values05	remeasured	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values06	remeasured	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values07	remeasured	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values08	remeasured	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values09	remeasured	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values10	remeasured	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values11	remeasured	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values12	remeasured	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values13	remeasured	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values14	remeasured	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic	remeasured	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated	remeasured	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFVTest.OpCheck	remeasured	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFVTest.Rules.Data	remeasured	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4
+2026-10-31T19:56:40Z	eb5adbe919c6	_total	ok	99.1	93.2	596	279	61819		eb5adbe919c6	
