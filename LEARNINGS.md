@@ -63,6 +63,30 @@ avoiding): the problem, the trick, the numbers, where it is used.
   with the recursive call abstracted (`hrec`), and the induction step is one `exact`.
 - **Effect:** the module went from 11.6 s / 0.51 GB to 1.9 s / 0.48 GB (#41).
 
+#### The kernel cannot evaluate `Std.HashMap`/`HashSet`: use ID-indexed arrays in semantics code
+- **Problem:** `decide +kernel` on `(({} : Std.HashMap Nat Nat).insert 3 4).size == 1` gets
+  stuck: bucket indices are `USize`, whose size depends on the opaque
+  `System.Platform.getNumBits`. `run`'s scheduler used a `HashMap`, so no witness could
+  evaluate `run` in the kernel.
+- **Trick:** the scheduler (`kahn`, `schedValid` in `GoFV/SSA/Sem/Run.lean`) indexes
+  `Array (Option Nat)` by value ID instead; same results (`sem-difftest corpus`: 7,503 defined
+  calls, 240,096 later-section runs agree, 0 differ, 0 gaps, as before).
+- **Effect:** `run` on the corpus function `clamp` (24 values, 5 blocks, three inputs) evaluates
+  by `decide +kernel` in 1.7 s CPU / 0.63 GB for the whole witness module
+  (`GoFV/Proof/Witness/Clamp.lean`).
+
+#### Kernel `defeq` of `f a` against `f b` unfolds `f`: keep big definitions out of `rfl`
+- **Problem:** in `bind_schedule_erase` (`GoFV/Proof/Cong.lean`) the case
+  `none.bind (schedule f) = (none.map g).bind (schedule g)` closed by `rfl` made the kernel
+  compare `schedule f` with `schedule g` (same head, different arguments), unfold `schedule`
+  and the whole Kahn loop: `(kernel) deterministic timeout` at 20,000 heartbeats (hung for
+  minutes at the default). `attribute [local irreducible]` does not help: the kernel ignores it.
+- **Trick:** close such goals by rewriting with the library lemmas (`simp only
+  [Option.map_none, Option.bind_none]`), never by `rfl`, when the two sides apply a big
+  definition to different arguments; pass explicit arguments to congruence lemmas
+  (`schedule_congr (f := f) (g := g) …`) so elaboration does not unify through it either.
+- **Effect:** the module checks in 0.7 s CPU.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,

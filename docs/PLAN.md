@@ -24,6 +24,10 @@ come later.
 semantics of generic Go SSA. A pass `p : Func → Func` is correct when, for every well-formed
 `f`, every terminating or panicking run of `p f` is a run of `f` (refinement; stuck or
 out-of-fuel source runs carry no obligation).
+Formally `GoFV.Proof.Refines tabs' (p f) tabs f` (`GoFV/Proof/Refine.lean`): every
+returning or panicking run of `f` is, up to value refinement, a run of `p f` with some fuel;
+by determinism and fuel monotonicity (`Refines.backward`) every defined run of `p f` is then a
+run of `f` whenever `f` is defined. Pass theorems: `GoFV/Proof/Pass/*.lean` (issue #11).
 
 ## 2. Stock parity (the oracle)
 

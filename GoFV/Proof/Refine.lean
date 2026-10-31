@@ -149,4 +149,22 @@ theorem Refines.backward {tabs tabs' : Tables} {f f' : Func} (h : Refines tabs' 
   rw [run_det h''.defined_right ht]
   exact h''
 
+/-- A source run returning one integer gives a target run returning the same integer (what
+the non-vacuity witnesses read off a refinement). -/
+theorem Refines.returned_int {tabs tabs' : Tables} {f f' : Func} (h : Refines tabs' f' tabs f)
+    {env : Env} {args : List Val} {mem m : Mem} {fuel : Nat} {w : Width} {x : BitVec w.bits}
+    (hs : run env tabs f args mem fuel = .returned [.int w x] m) :
+    ∃ fuel', run env tabs' f' args mem fuel' = .returned [.int w x] m := by
+  obtain ⟨fuel', ho⟩ := h env args mem fuel (by rw [hs]; trivial)
+  rw [hs] at ho
+  refine ⟨fuel', ?_⟩
+  generalize run env tabs' f' args mem fuel' = o at ho ⊢
+  cases ho with
+  | returned hl =>
+    cases hl with
+    | cons h1 t =>
+      cases t
+      cases h1
+      rfl
+
 end GoFV.Proof
