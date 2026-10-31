@@ -80,11 +80,14 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | short circuit | shortcircuit | 9297 | 9297 | 0 | 100% | 4662 functions changed by the pass |
 | pre-opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| phiopt | phiopt | 9297 | 9297 | 0 | 100% | 214 functions changed by the pass |
 | gcse deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
+| known bits | knownBits | 9297 | 9297 | 0 | 100% | 35 functions changed by the pass |
 | generic deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | zero arg cse | zcse | 9297 | 9297 | 0 | 100% | before the #52 export fix: 84 mismatches (`byte`/`uint8` type pointers) |
 | early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |
+| branchelim | branchelim | 9297 | 9297 | 0 | 100% | 526 functions changed by the pass |
 | check bce | checkbce | 9297 | 9297 | 0 | 100% | identity |
 | dead auto elim | elimDeadAutosGeneric | 9297 | 9297 | 0 | 100% | stock pass changes 355 functions |
 | dse | dse | 9297 | 9297 | 0 | 100% | stock pass changes 447 functions |
