@@ -66,7 +66,9 @@ is deliberately not exported; no pass reads it.
   names are listed in this document; `-` when none is set.
 - A position `pos` is `p<index>:<line>:<col>:<stmt>:<xlogue>`, the fields of Go's
   `src.XPos{index, lico}`: `lico = line<<12 | col<<4 | xlogue<<2 | stmt` (`lineBits = 20`,
-  `colBits = 8`). `stmt`: 0 `PosDefaultStmt`, 1 `PosIsStmt`, 2 `PosNotStmt`. `XPos.Before`
+  `colBits = 8`). `stmt` is the raw field: 0 `PosDefaultStmt`, 1 `PosIsStmt`, 2 `PosNotStmt`
+  (Go's `IsStmt()` reports `PosNotStmt` for `lico == 0`, i.e. `…:0:0:0:0`, whose raw field is
+  0; `withStmt` leaves `lico == 0` unchanged). `XPos.Before`
   compares `(index, lico)` lexicographically; `SameFileAndLine` compares `index` and `line`.
   `p0:0:0:0:0` is `src.NoXPos`.
 
@@ -127,19 +129,19 @@ latest one. Identity is Go identity: two references share a number iff the Go va
 `==` (pointer identity for pointer-typed aux and `*LocalSlot`, value equality for `stringAux`
 and friends). This is what `Value.Aux != w.Aux` and CSE's `auxmap` observe.
 
-Types are the exception: they are numbered by **type identity**, not by pointer. The compiler
-sometimes holds several identical `*types.Type` objects (two `[2]int`, say), and which one a
-value or call signature ends up with depends on the concurrent compilation of other functions,
-so pointer identity is not reproducible. Two types share a number iff they have the same
-kind, the same `LinkString()` (unique per identical type, local types included) and the same
-`notinheap`/`noalg`/`shape` flags; `SSA` pseudo-types by name; `TUPLE`/`RESULTS` by their
-component numbers. A `*types.Type` used as aux is numbered by its type number the same way
-(one aux number per type number). A pass port compares types by number; the stock passes
-compare type pointers only between types that are identical in this sense. The definition
-(including its `t.String()` and, for a type aux, its `%v`) is that of the first object of the
-identity met in the file, so alias spellings (`byte`/`uint8`, `rune`/`int32`,
-`any`/`interface {}`) of later objects are not preserved; no pass reads them, but Go's own
-`f.String()` can print a different spelling.
+Types are the exception: they are numbered by **type identity and spelling**, not by
+pointer. The compiler sometimes holds several identical `*types.Type` objects with the same
+spelling (two `[2]int`, say), and which one a value or call signature ends up with depends on
+the concurrent compilation of other functions, so pointer identity is not reproducible. Two
+types share a number iff they have the same kind, the same `LinkString()` (unique per
+identical type, local types included), the same `notinheap`/`noalg`/`shape` flags and the same
+`t.String()`; `SSA` pseudo-types by name; `TUPLE`/`RESULTS` by their component numbers.
+Including `String()` keeps apart the distinct objects that passes do compare by pointer and
+that are deterministic: `zcse` keys zero-argument values on the type pointer, and `byte` vs
+`uint8`, `*byte` vs `*uint8`, `rune` vs `int32`, `any` vs `interface {}` are distinct objects
+(issue #52). A `*types.Type` used as aux is numbered by its type number (one aux number per
+type number). A pass port compares types by number; `Compare`-based comparisons use
+`typeorder`, where such spellings fall into one `=` group.
 
 Objects first created by pass `k` are numbered while section `k` is written (block order, then
 value order, then names, …), so a Lean pass creating new objects must match them to section

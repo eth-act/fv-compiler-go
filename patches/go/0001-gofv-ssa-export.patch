@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,993 @@
+@@ -0,0 +1,1002 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -90,7 +90,6 @@
 +
 +import (
 +	"bytes"
-+	"crypto/sha256"
 +	"cmd/compile/internal/abi"
 +	"cmd/compile/internal/base"
 +	"cmd/compile/internal/ir"
@@ -101,6 +100,7 @@
 +	"cmd/internal/obj"
 +	"cmd/internal/objabi"
 +	"cmd/internal/src"
++	"crypto/sha256"
 +	"errors"
 +	"fmt"
 +	"internal/buildcfg"
@@ -320,7 +320,13 @@
 +			fmt.Fprintf(&x.defs, "posbase p%d %s %d %d %d\n", idx, gofvQuote(b.AbsFilename()), b.Line(), b.Col(), b.InliningIndex())
 +		}
 +	}
-+	return fmt.Sprintf("p%d:%d:%d:%d:%d", idx, p.Line(), p.Col(), p.IsStmt(), p.Xlogue())
++	// Raw lico fields: IsStmt() reports PosNotStmt for lico 0, whose stmt bits are 0
++	// (and WithIsStmt leaves lico 0 unchanged, which identifies it).
++	stmt := p.IsStmt()
++	if p.WithIsStmt().IsStmt() == src.PosNotStmt {
++		stmt = 0
++	}
++	return fmt.Sprintf("p%d:%d:%d:%d:%d", idx, p.Line(), p.Col(), stmt, p.Xlogue())
 +}
 +
 +// gofvDeepKnown reports whether the sizes of t and of every type stored inline in t
@@ -452,11 +458,13 @@
 +	return fmt.Sprintf("t%d", n)
 +}
 +
-+// typeKey identifies t up to type identity. The compiler sometimes creates several
-+// identical *types.Type objects (e.g. two [2]int) and which one a value ends up with
-+// depends on concurrent compilation of other functions, so types are numbered by
-+// identity, not by pointer: LinkString (unique per identical type, including local
-+// types) plus the flags that make otherwise identical types behave differently.
++// typeKey identifies t up to type identity and spelling. The compiler sometimes creates
++// several identical *types.Type objects (e.g. two [2]int) and which one a value ends up
++// with depends on concurrent compilation of other functions, so types are not numbered by
++// pointer but by LinkString (unique per identical type, including local types), the
++// flags that make otherwise identical types behave differently, and String(), which
++// keeps the deterministic distinct objects apart that passes do tell apart by pointer
++// (zcse keys on the type pointer: byte vs uint8, *byte vs *uint8, any vs interface {}).
 +// SSA pseudo-types are singletons; tuples and results are keyed by their components.
 +func (x *gofvExporter) typeKey(t *types.Type) string {
 +	switch t.Kind() {
@@ -476,7 +484,8 @@
 +	if !ok {
 +		ls = fmt.Sprintf("%p", t)
 +	}
-+	return fmt.Sprintf("%s:%s:%d%d%d", t.Kind(), ls, gofvBool(t.NotInHeap()), gofvBool(t.Noalg()), gofvBool(t.IsShape()))
++	str, _ := gofvTry(t.String)
++	return fmt.Sprintf("%s:%s:%d%d%d:%s", t.Kind(), ls, gofvBool(t.NotInHeap()), gofvBool(t.Noalg()), gofvBool(t.IsShape()), str)
 +}
 +
 +// auxRef returns the reference of an aux value, (re)defining it when new or changed.
