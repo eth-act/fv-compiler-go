@@ -73,6 +73,19 @@ def newResults (tabs : Tables) (floor : Nat) (mem resultMem : TypeRef) (ts : Arr
       symName := GoStr.ofString "", tail := .results ts }
   return tabs.mintType floor d
 
+/-- `types.NewTuple(t1, t2)` (`types/type.go:1752`): the `TUPLE` with these components (numbered
+by its components), `String()` the components' joined by `,`. -/
+def newTuple (tabs : Tables) (floor : Nat) (t1 t2 : TypeRef) : Except String (TypeRef × Tables) := do
+  if let some t := tabs.findType? (fun d => d.kind == .TUPLE && d.tail == .tuple t1 t2) then
+    return (t, tabs)
+  let some d1 := tabs.type? t1 | throw s!"NewTuple: type t{t1} not defined"
+  let some d2 := tabs.type? t2 | throw s!"NewTuple: type t{t2} not defined"
+  let d : TypeDef :=
+    { kind := .TUPLE, size := none, align := none, ptrdata := none, flags := {}
+      str := d1.str ++ GoStr.ofString "," ++ d2.str, symName := GoStr.ofString ""
+      tail := .tuple t1 t2 }
+  return tabs.mintType floor d
+
 /-- `t.Compare(u) == CMPeq` for types of the tables, including types created after `typeorder`
 was taken: ranked types compare by rank; otherwise two unnamed pointers compare by element. -/
 def typeEq (o : TypeOrder) (tabs : Tables) : Nat → TypeRef → TypeRef → Bool
