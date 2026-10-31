@@ -55,10 +55,10 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | Flag | Rule |
 | --- | --- |
 | peak RSS regression | `maxrss_mb` grew > 25% and > 512 MB |
-| time regression | `wall_s` grew > 25% and > 5 s, and `cpu_s` grew > 25% (filters load noise) |
+| time regression | `wall_s` and `cpu_s` both grew > 25% and > 5 s (load 120 inflated small modules' wall time 2–10× and CPU ~1.5×) |
 | new heavy module | a new module above 2 GB or 60 s |
 | broken | a module that built in BASE fails or is killed in HEAD |
-| benchmark regression | wall time > 25% and > 1 s and CPU time > 25%, or max RSS > 25% and > 256 MB |
+| benchmark regression | wall and CPU time both > 25% and > 1 s, or max RSS > 25% and > 256 MB |
 
 Shrinks past the same thresholds are listed as wins. Modules whose numbers are the same
 measurement in both commits (`measured_at` equal) are skipped. For a PR, BASE is its merge base
