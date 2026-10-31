@@ -10,6 +10,9 @@
 #                                       tree for the patched paths (to refresh a patch file)
 #
 # Build directory: $GOFV_GO_BUILD, default third_party/go-build (the parity oracle).
+# Patches: patches/go/*.patch in name order, except the driver patch (*-gofv-driver.patch,
+# docs/DRIVER.md), which only GOFV_GO_DRIVER=1 adds: the oracle is the exporter alone. Driver
+# toolchain: GOFV_GO_DRIVER=1 GOFV_GO_BUILD=$PWD/tmp/go-driver scripts/build-go.sh
 # Bootstrap: $GOROOT_BOOTSTRAP, default /home/kev/work/go (go1.26), else `go env GOROOT`.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -23,7 +26,11 @@ head=$(git -C "$src" rev-parse HEAD)
 [ "$head" = "$pin" ] || { echo "build-go: $src is at $head, pin is $pin" >&2; exit 1; }
 
 shopt -s nullglob
-patches=("$root"/patches/go/*.patch)
+patches=()
+for p in "$root"/patches/go/*.patch; do
+  case $p in *-gofv-driver.patch) [ "${GOFV_GO_DRIVER:-0}" = 1 ] || continue ;; esac
+  patches+=("$p")
+done
 [ ${#patches[@]} -gt 0 ] || { echo "build-go: no patches/go/*.patch" >&2; exit 1; }
 # Paths touched by the patches (relative to the Go root), from their +++ headers.
 touched() {
