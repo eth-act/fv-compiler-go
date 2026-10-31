@@ -12,8 +12,8 @@ Prints a Markdown report (for PR comments) and exits 1 when it flags a regressio
     wall-clock noise from machine load);
   * a module that failed or was killed at its cap in HEAD but built in BASE;
   * a new module above --new-rss MB or --new-time s;
-  * a benchmark whose wall time or max RSS grew > --pct % and > --bench-time-abs s /
-    --bench-rss-abs MB.
+  * a benchmark whose wall time grew > --pct % and > --bench-time-abs s (and CPU > --pct %),
+    or whose max RSS grew > --pct % and > --bench-rss-abs MB.
 Shrinks past the same thresholds are listed as wins.
 """
 import argparse, pathlib, subprocess, sys
@@ -132,14 +132,19 @@ def main():
     bB, bH = latest(bhist, base, "bench") or {}, latest(bhist, head, "bench") or {}
     for n in sorted(bH.keys() & bB.keys()):
         b, h = bB[n], bH[n]
+        if b.get("bin_hash") and b.get("bin_hash") == h.get("bin_hash"):
+            continue  # same binary and command: same measurement
         rb, rh, wb, wh = num(b, "maxrss_mb"), num(h, "maxrss_mb"), num(b, "wall_s"), num(h, "wall_s")
-        for (x, y, lst) in ((wb, wh, reg), (wh, wb, win)):
-            if grew(x, y, a.pct, a.bench_time_abs):
-                lst.append((f"bench {n}", "time", fmt(wb, "s"), fmt(wh, "s"), change(wb, wh)))
+        cb, ch = num(b, "cpu_s"), num(h, "cpu_s")
+        cpu_ok = cb is None or ch is None
+        for (x, y, cx, cy, lst) in ((wb, wh, cb, ch, reg), (wh, wb, ch, cb, win)):
+            if grew(x, y, a.pct, a.bench_time_abs) and (cpu_ok or grew(cx, cy, a.pct, 0)):
+                lst.append((f"bench {n}", "time", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
+                            f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh)))
         for (x, y, lst) in ((rb, rh, reg), (rh, rb, win)):
             if grew(x, y, a.pct, a.bench_rss_abs):
                 lst.append((f"bench {n}", "max RSS", fmt(rb, "MB"), fmt(rh, "MB"), change(rb, rh)))
-        if h.get("status") != "ok" and b.get("status") == "ok":
+        if h.get("status") not in ("ok", "cached") and b.get("status") in ("ok", "cached"):
             reg.append((f"bench {n}", "run", "ok", h.get("status", "?"), "broken"))
 
     print(f"### perf-compare `{base}` → `{head}`\n")
