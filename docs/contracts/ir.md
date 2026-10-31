@@ -10,7 +10,7 @@ the semantics (G5) and the proofs (G6). Input format: `docs/contracts/export.md`
 | `GoFV.SSA.OpInfo` | `AuxType` (Go `aux*` constants, same order), `SymEffect` |
 | `GoFV.SSA.Op` | **generated** by `scripts/gen-ops.sh` (`tools/opsgen`): `Op`, `BlockKind` and their `opcodeTable`/`blockData` metadata |
 | `GoFV.SSA.GoStr` | `GoStr`: Go strings as bytes, with the export's quoting |
-| `GoFV.SSA.Pos` | `Pos` (`src.XPos`), `PosBase` |
+| `GoFV.SSA.Pos` | `Pos` (`src.XPos`, raw `lico` fields), `PosBase`; `isStmt`/`withStmt` with Go's `lico == 0` rules, `sameFileAndLine` |
 | `GoFV.SSA.Type` | `TypeRef`, `TypeKind`, `TypeFlags`, `Field`, `TypeTail`, `TypeDef` |
 | `GoFV.SSA.AuxData` | `AuxRef`, `SlotRef`, `AuxDef`/`AuxKind` (`*ir.Name`, `*obj.LSym`, `*AuxCall`, …), `SlotDef` |
 | `GoFV.SSA.Value` | `ID`, `Value` |
@@ -25,6 +25,10 @@ the semantics (G5) and the proofs (G6). Input format: `docs/contracts/export.md`
 | `GoFV.SSA.Alloc` | `newValue`/`newValueArgs`/`newBlock` (free lists first), `freeValue`/`freeBlock`, `unCache`, `setArg*`/`addArg*`/`resetArgs`/`resetValue`/`copyOf`, block controls (`setControl`, `replaceControl`, `resetBlock`, `resetWithControl*`, …), `truncateValues`, `invalidateCFG` (`func.go`, `value.go`, `block.go`) |
 | `GoFV.SSA.Edges` | `addEdgeTo`, `removePred`/`removeSucc`/`removeEdge`, `removePhiArg` + `phielimValue`, `swapSuccessors*` (no cache invalidation, as in Go) |
 | `GoFV.SSA.ConstCache` | `constVal` and the `Const*` constructors (`f.constants`, magic keys) |
+| `GoFV.SSA.XPosMap` | `xposmap`/`biasedSparseMap` (`f.cachedLineStarts` as a pass's `pendingLines`), `ofCache`/`toCache` |
+| `GoFV.SSA.TypeCmp` | `TypeOrder`: `types.(*Type).Compare` as a rank from `typeorder` |
+| `GoFV.SSA.StoreOrder` | `storeOrder` (`schedule.go`), `Tables.isMemory` |
+| `GoFV.SSA.Analysis.*` | `Postorder` (`postorderWithNumbering`), `Dom` (`dominatorsLTOrig`), `SparseTree` (`newSparseTree`, `isAncestorEq`), `CfgCache` (`Func.postorder`/`idom`/`sdom`: the cached accessors) |
 
 `GoFV.SSA.Op` imports only `OpInfo`; data modules import only what they use. Nothing in
 `GoFV.SSA` imports the umbrella `GoFV`.
@@ -60,7 +64,9 @@ Go-like cost.
   `entry`, `type`, `ownAux`, `vidLast`/`bidLast` (last IDs handed out), `freeValues`/`freeBlocks`
   (Go's free lists as `List ID`, head first: the IDs `newValue`/`NewBlock` reuse), `names`
   (`f.Names` with `f.NamedValues`), `namedx`, `splits`, `canon`, `consts` (`f.constants`) and
-  `cache` (the `f.cached*` analyses and `auxmap`, which survive between passes).
+  `cache` (the `f.cached*` analyses and `auxmap`, which survive between passes; `idom` and
+  `sdom` are indexed by block ID like Go's slices, the printer projects them on `f.Blocks`;
+  read them through `GoFV.SSA.Analysis.CfgCache`, drop them with `invalidateCFG`).
   Accessors: `f.block? id`, `f.value? id`.
 - Types, aux values, local slots and position bases are not stored in the `Func`: they are
   per-file tables (`Tables`, indexed by table number) that a section's definitions extend or

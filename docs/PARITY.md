@@ -71,6 +71,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 
 | pass | fn | functions | match | mismatch | parity | notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
+| number lines | numberLines | 9297 | 9297 | 0 | 100% | corpus regenerated with raw stmt bits (export fix) |
 | early phielim and copyelim | copyelim | 9297 | 9297 | 0 | 100% | |
 | early deadcode | deadcode | 9297 | 9297 | 0 | 100% | |
 | pre-opt deadcode | deadcode | 9297 | 9297 | 0 | 100% | |

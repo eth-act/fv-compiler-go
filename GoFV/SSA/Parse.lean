@@ -434,14 +434,21 @@ def canonEntryW (s : Sl) : Except String (SlotKey × SlotRef) := do
   return (← slotKeyW kv[0]!, ← refW 's' kv[1]!)
 
 
-def sdomNodeW (s : Sl) : Except String SdomNode := do
+def sdomNodeW (s : Sl) : Except String (ID × SdomNode) := do
   let ps ← partsW s ':' 6
-  return ⟨← refW 'b' ps[0]!, ← optRefW 'b' ps[1]!, ← optRefW 'b' ps[2]!, ← optRefW 'b' ps[3]!,
-    ← intW ps[4]!, ← intW ps[5]!⟩
+  return (← refW 'b' ps[0]!, ⟨← optRefW 'b' ps[1]!, ← optRefW 'b' ps[2]!, ← optRefW 'b' ps[3]!,
+    ← intW ps[4]!, ← intW ps[5]!⟩)
 
 def idomEntryW (s : Sl) : Except String (ID × Option ID) := do
   let ps ← partsW s ':' 2
   return (← refW 'b' ps[0]!, ← optRefW 'b' ps[1]!)
+
+/-- A per-block cache (`idom`, `sdom`) as an array indexed by block ID (size `n`); its entries
+must name the blocks of `f.Blocks`, in order. -/
+def byBlockW {α} [Inhabited α] (blocks : Array ID) (n : Nat) (es : Array (ID × α)) :
+    Except String (Array α) := do
+  if es.map (·.1) != blocks then throw "cache entries do not list f.Blocks in order"
+  return es.foldl (fun a (b, x) => a.set! b x) (Array.replicate n default)
 
 def auxmapEntryW (s : Sl) : Except String (Option AuxRef × Int) := do
   let ps ← partsW s ':' 2
@@ -595,8 +602,12 @@ def func : L (Func × Option (Array (String × TypeRef))) := do
     let (r, c) ← line "cache" do
       match ← wordStr with
       | "postorder" => return (1, { cache with postorder := some (← w (listW (refW 'b'))) })
-      | "idom" => return (2, { cache with idom := some (← w (listW idomEntryW)) })
-      | "sdom" => return (3, { cache with sdom := some (← w (listW sdomNodeW)) })
+      | "idom" =>
+        let es ← w (listW idomEntryW)
+        return (2, { cache with idom := some (← liftE (byBlockW blocks (bidLast + 1) es)) })
+      | "sdom" =>
+        let es ← w (listW sdomNodeW)
+        return (3, { cache with sdom := some (← liftE (byBlockW blocks (bidLast + 1) es)) })
       | "loopnest" => return (4, { cache with loopnest := true })
       | "auxmap" => return (5, { cache with auxmap := some (← w (listW auxmapEntryW)) })
       | "linestarts" => return (6, { cache with lineStarts := some (← w (listW lineRangeW)) })

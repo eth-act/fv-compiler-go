@@ -1,3 +1,4 @@
+import GoFV.Opt.NumberLines
 import GoFV.Opt.CheckBCE
 import GoFV.Opt.SoftFloat
 import GoFV.Opt.ReschedChecks
@@ -19,6 +20,7 @@ namespace GoFVTest.Parity
 open GoFV.Opt
 
 def registry : Array PassEntry := #[
+  { fn := "numberLines", names := #["number lines"], run := numberLinesPass },
   { fn := "copyelim", names := #["early phielim and copyelim"], run := copyelimPass },
   { fn := "deadcode", run := deadcodePass,
     names := #["early deadcode", "pre-opt deadcode", "opt deadcode", "gcse deadcode",

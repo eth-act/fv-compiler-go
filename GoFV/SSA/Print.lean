@@ -161,13 +161,22 @@ def func (f : Func) (typs : Option (Array (String × TypeRef))) : W Unit := do
   let c := f.cache
   if let some po := c.postorder then
     s "cache postorder "; list (ref 'b') po; nl
+  -- `idom`/`sdom` are indexed by block ID; Go prints them for `f.Blocks` (`?` past the end).
   if let some d := c.idom then
-    s "cache idom "; list (fun (b, x) => do ref 'b' b; s ":"; optRef 'b' x) d; nl
+    s "cache idom "
+    list (fun b => do
+      ref 'b' b; s ":"
+      if h : b < d.size then optRef 'b' d[b] else s "?") f.blocks
+    nl
   if let some d := c.sdom then
     s "cache sdom "
-    list (fun (x : SdomNode) => do
-      ref 'b' x.block; s ":"; optRef 'b' x.parent; s ":"; optRef 'b' x.child; s ":"
-      optRef 'b' x.sibling; s ":"; i x.entry; s ":"; i x.exit) d
+    list (fun b => do
+      ref 'b' b; s ":"
+      if h : b < d.size then
+        let x := d[b]
+        optRef 'b' x.parent; s ":"; optRef 'b' x.child; s ":"
+        optRef 'b' x.sibling; s ":"; i x.entry; s ":"; i x.exit
+      else s "?") f.blocks
     nl
   if c.loopnest then s "cache loopnest\n"
   if let some m := c.auxmap then

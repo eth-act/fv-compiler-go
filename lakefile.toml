@@ -26,3 +26,7 @@ root = "GoFVTest.UtilDiff"
 [[lean_exe]]
 name = "pass-parity"
 root = "GoFVTest.Parity.Main"
+
+[[lean_exe]]
+name = "analysis-difftest"
+root = "GoFVTest.AnalysisDiff"
