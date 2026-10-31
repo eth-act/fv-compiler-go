@@ -1,3 +1,4 @@
+import GoFV.Opt.ExpandCalls
 import GoFV.Opt.NumberLines
 import GoFV.Opt.CheckBCE
 import GoFV.Opt.SoftFloat
@@ -36,6 +37,7 @@ def registry : Array PassEntry := #[
   { fn := "zcse", names := #["zero arg cse"], run := zcsePass },
   { fn := "shortcircuit", names := #["short circuit"], run := shortcircuitPass },
   { fn := "fuseEarly", names := #["early fuse"], run := fuseEarlyPass },
+  { fn := "expandCalls", names := #["expand calls"], run := expandCallsPass },
   { fn := "softfloat", names := #["softfloat"], run := softfloatPass },
   { fn := "checkbce", names := #["check bce"], run := checkbcePass },
   { fn := "elimDeadAutosGeneric", names := #["dead auto elim"], run := elimDeadAutosPass },
