@@ -15,6 +15,7 @@ import GoFV.Opt.MemCombine
 import GoFV.Opt.KnownBits
 import GoFV.Opt.PhiOpt
 import GoFV.Opt.BranchElim
+import GoFV.Opt.Opt
 
 /-!
 # Registered Lean passes
@@ -34,6 +35,9 @@ def registry : Array PassEntry := #[
   { fn := "deadcode", run := deadcodePass,
     names := #["early deadcode", "pre-opt deadcode", "opt deadcode", "gcse deadcode",
                "generic deadcode"] },
+  { fn := "opt", names := #["opt", "middle opt", "late opt"], run := opt },
+  { fn := "divisible", names := #["divisible"], run := divisible },
+  { fn := "divmod", names := #["divmod"], run := divmod },
   { fn := "zcse", names := #["zero arg cse"], run := zcsePass },
   { fn := "shortcircuit", names := #["short circuit"], run := shortcircuitPass },
   { fn := "fuseEarly", names := #["early fuse"], run := fuseEarlyPass },

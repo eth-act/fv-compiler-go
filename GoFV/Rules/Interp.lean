@@ -1,0 +1,350 @@
+import GoFV.Rules.Eval
+import GoFV.SSA.Edges
+
+/-!
+# The rule interpreter
+
+`rewriteValue rules v` / `rewriteBlock rules b` replay rulegen's generated
+`rewriteValue<file>`/`rewriteBlock<file>` (docs/contracts/rules.md, "Semantics the interpreter
+must replicate"): the rules of the op (block kind) in order, the first that fires wins; the
+commutative choices of a rule are enumerated in pattern preorder, lexicographically with 0
+(arguments in order) before 1 (swapped); `cond` is evaluated once per complete assignment;
+results are built in rulegen's statement order, so values get the same IDs.
+
+Checks are pure, so their order is free except that an `eq` field or a `same` argument whose
+variable is not bound yet (rulegen binds a trailing plain argument first) is checked once the
+whole pattern has matched.
+-/
+
+namespace GoFV.Rules
+
+open GoFV.SSA
+
+namespace Interp
+
+open RwM Eval
+
+/-- `auxIntTo<T>(i)` for an op's aux type. -/
+def auxIntVal (aty : AuxType) (i : Int64) : Except String GVal :=
+  let x := i.toInt
+  match aty with
+  | .Bool => .ok (.bool (i != 0))
+  | .Int8 => .ok (.int (wrapInt 8 true x))
+  | .Int16 => .ok (.int (wrapInt 16 true x))
+  | .Int32 | .SymOff | .CallOff => .ok (.int (wrapInt 32 true x))
+  | .Int64 | .TypSize => .ok (.int x)
+  | .UInt8 => .ok (.int (wrapInt 8 false x))
+  | .Float32 => .ok (.f32 (f64OfBits x).toFloat32)
+  | .Float64 => .ok (.f64 (f64OfBits x))
+  | a => .error s!"auxInt of aux type {repr a}"
+
+/-- `<T>ToAuxInt(x)`. -/
+def toAuxInt (aty : AuxType) (x : GVal) : Except String Int64 :=
+  match aty, x with
+  | .Bool, .bool b => .ok (if b then 1 else 0)
+  | .UInt8, .int i => .ok (Int64.ofInt (wrapInt 8 true i))
+  | .Float32, .f32 f => .ok (Int64.ofInt (f64Bits f.toFloat))
+  | .Float64, .f64 f => .ok (Int64.ofInt (f64Bits f))
+  | _, .int i => .ok (Int64.ofInt i)
+  | a, _ => .error s!"bad auxInt value for aux type {repr a}"
+
+/-- `auxTo<T>(a)` for an op's aux type. -/
+def auxVal (tabs : Tables) (aty : AuxType) (a : Option AuxRef) : Except String GVal := do
+  match aty with
+  | .String =>
+    let some a := a | throw "auxToString of nil"
+    match (← Sym.auxDef tabs a).kind with
+    | .str s _ => return .str s.bytes
+    | _ => throw s!"aux a{a} is not a string"
+  | .Typ | .TypSize => return .typ (← Ty.ofAux tabs a)
+  | _ => return .aux a
+
+/-- `<T>ToAux(x)`. -/
+def toAux (x : GVal) : RwM (Option AuxRef) := do
+  match x with
+  | .aux a => return a
+  | .nil => return none
+  | .typ t => return some (← typeAux t)
+  | _ => throw "unsupported aux value"
+
+/-- Whether every rule variable `e` reads is bound. -/
+partial def bound (binds : Array GVal) : Expr → Bool
+  | .var i => match binds[i]? with
+    | some .nil => false
+    | some _ => true
+    | none => false
+  | .field x _ _ | .conv _ x | .assert _ x | .unop _ x _ | .deref x _ => bound binds x
+  | .call _ as _ | .builtin _ as _ => as.all (bound binds)
+  | .method x _ as _ => bound binds x && as.all (bound binds)
+  | .binop _ x y _ | .index x y _ => bound binds x && bound binds y
+  | _ => true
+
+/-- A check postponed until the pattern has matched. -/
+inductive Pending where
+  | same (x : Nat) (w : ID)
+  | eq (e : Expr) (actual : GVal)
+
+/-- The match state: bindings (`nil` = unbound) and postponed checks. -/
+structure MState where
+  binds : Array GVal
+  pending : List Pending
+
+@[inline] def isUnbound (binds : Array GVal) (x : Nat) : Bool :=
+  match binds[x]? with
+  | some .nil => true
+  | _ => false
+
+/-- Check or bind a `<type>`/`[auxint]`/`{aux}` field; the field's value is computed only when
+the pattern looks at it (an op without AuxInt has no `auxIntTo<T>`). -/
+def field (sc : Scope) (st : MState) (fld : Field) (actual : Unit → RwM GVal) :
+    RwM (Option MState) := do
+  match fld with
+  | .any => return some st
+  | .bind x => return some { st with binds := st.binds.set! x (← actual ()) }
+  | .eq e =>
+    let actual ← actual ()
+    if bound st.binds e then
+      let want ← eval { sc with binds := st.binds } e
+      return if actual.beq want then some st else none
+    else return some { st with pending := .eq e actual :: st.pending }
+
+/-- Match the work list of `(pattern, value)` pairs in preorder, trying the commutative choices
+depth-first (0 before 1); `k` is called on each complete match and decides (by evaluating the
+condition) whether the search stops. -/
+partial def matchWork (sc : Scope) (work : List (Pat × ID)) (st : MState)
+    (k : MState → RwM Bool) : RwM Bool := do
+  match work with
+  | [] => k st
+  | (p, w) :: rest =>
+    match p with
+    | .wild => matchWork sc rest st k
+    | .bind x => matchWork sc rest { st with binds := st.binds.set! x (.val w) } k
+    | .same x =>
+      if isUnbound st.binds x then
+        matchWork sc rest { st with pending := .same x w :: st.pending } k
+      else if st.binds[x]!.beq (.val w) then matchWork sc rest st k
+      else return false
+    | .op o name ty ai ax arity args commute =>
+      let x ← val w
+      if x.op != o then return false
+      match arity with
+      | .exact n => if x.args.size != n then return false
+      | .atLeast n => if n ≥ 1 && o.argLen == -1 && x.args.size < n then return false
+      | _ => pure ()
+      let some st ← field sc st ty (fun _ => pure (.typ x.type)) | return false
+      let some st ← field sc st ai (fun _ => liftE (auxIntVal o.auxType x.auxInt)) | return false
+      let some st ← field sc st ax (fun _ => do liftE (auxVal (← tables) o.auxType x.aux))
+        | return false
+      let st := match name with
+        | some n => { st with binds := st.binds.set! n (.val w) }
+        | none => st
+      let pairs := args.zip x.args.toList
+      if commute then
+        match pairs with
+        | (p0, a0) :: (p1, a1) :: more =>
+          if ← matchWork sc ((p0, a0) :: (p1, a1) :: more ++ rest) st k then return true
+          matchWork sc ((p0, a1) :: (p1, a0) :: more ++ rest) st k
+        | _ => throw "commutative pattern with fewer than two arguments"
+      else matchWork sc (pairs ++ rest) st k
+
+/-- The postponed checks hold. -/
+def pendingOk (sc : Scope) (st : MState) : RwM Bool := do
+  for p in st.pending.reverse do
+    match p with
+    | .same x w => if !(st.binds[x]!.beq (.val w)) then return false
+    | .eq e actual =>
+      if !actual.beq (← eval { sc with binds := st.binds } e) then return false
+  return true
+
+/-- Build the nodes of a value rule's result (`Result.build`), starting from node `j`, which is
+the value `id`; `built` maps node indices to the values made so far. Returns `built`. -/
+partial def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) (j : Nat)
+    (id : ID) (built : Array (Option ID)) : RwM (Array (Option ID)) := do
+  let n := nodes[j]!
+  if let some e := n.auxInt then
+    let ai ← liftE (toAuxInt n.op.auxType (← eval sc e))
+    modF fun f => f.modV id fun x => { x with auxInt := ai }
+  if let some e := n.aux then
+    let a ← toAux (← eval sc e)
+    modF fun f => f.modV id fun x => { x with aux := a }
+  let mut built := built
+  let mut args : Array ID := #[]
+  for a in n.args do
+    match a with
+    | .var x => args := args.push (← liftE (sc.binds[x]!.asVal))
+    | .node k =>
+      match built[k]! with
+      | some c => args := args.push c
+      | none =>
+        let nk := nodes[k]!
+        let t ← match nk.ty with
+          | some e => liftE (← eval sc e).asTyp
+          | none => throw "result node without a type"
+        let c ← newValue blk pos nk.op t
+        built := built.set! k (some c)
+        built ← buildNode sc nodes blk pos k c built
+        args := args.push c
+  modF fun f => f.addArgs id args
+  return built
+
+/-- Apply the result of a fired value rule to `v`. -/
+def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
+  match r.result with
+  | .copy e =>
+    let w ← liftE (← eval sc e).asVal
+    copyOf v w
+  | .setOp o => modF fun f => f.modV v fun x => { x with op := o }
+  | .build nodes =>
+    let nodes := nodes.toArray
+    let x ← val v
+    let pos := x.pos
+    let n0 := nodes[0]!
+    let built0 : Array (Option ID) := Array.replicate nodes.size none
+    match r.block with
+    | none =>
+      reset v n0.op
+      if let some e := n0.ty then
+        let t ← liftE (← eval sc e).asTyp
+        modF fun f => f.modV v fun y => { y with type := t }
+      let _ ← buildNode sc nodes x.block pos 0 v (built0.set! 0 (some v))
+    | some be =>
+      let .blk blk ← eval sc be | throw "@ placement is not a block"
+      let t ← match n0.ty with
+        | some e => liftE (← eval sc e).asTyp
+        | none => pure x.type
+      let top ← newValue blk pos n0.op t
+      copyOf v top
+      let _ ← buildNode sc nodes blk pos 0 top (built0.set! 0 (some top))
+
+/-- A value rule with its variable types and an all-unbound binding array, computed once. -/
+structure CRule where
+  rule : Rule
+  vtys : Array GoTy
+  unbound : Array GVal
+
+def CRule.ofRule (r : Rule) : CRule :=
+  { rule := r, vtys := (r.vars.map (·.ty)).toArray, unbound := Array.replicate r.vars.length .nil }
+
+/-- Try rule `cr` on `v`; true if it fired. -/
+def tryRule (v : ID) (cr : CRule) : RwM Bool := do
+  let r := cr.rule
+  let x ← val v
+  let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
+  let st : MState := { binds := sc.binds, pending := [] }
+  matchWork sc [(r.pat, v)] st fun st => do
+    let sc := { sc with binds := st.binds }
+    if !(← pendingOk sc st) then return false
+    if let some c := r.cond then
+      if !(← liftE (← eval sc c).asBool) then return false
+    applyResult sc r v
+    return true
+
+/-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`. -/
+structure Table where
+  values : Array (Array CRule)
+  blocks : Array (Array BlockRule)
+
+def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
+  let mut values : Array (Array CRule) := Array.replicate (Op.all.size + 1) #[]
+  for (o, rs) in s.values do
+    values := values.set! o.ctorIdx (rs.toArray.map CRule.ofRule)
+  let mut blocks : Array (Array BlockRule) := Array.replicate (BlockKind.all.size + 1) #[]
+  for (k, rs) in s.blocks do
+    blocks := blocks.set! k.ctorIdx rs.toArray
+  return { values, blocks }
+
+/-- `rewriteValue<file>(v)`. -/
+def rewriteValue (t : Table) (v : ID) : RwM Bool := do
+  let o := (← val v).op
+  for r in t.values[o.ctorIdx]! do
+    if ← tryRule v r then return true
+  return false
+
+/-! ## Block rules -/
+
+/-- The value at `path` below `root` (argument indices). -/
+def valueAt (root : ID) : List Nat → RwM ID
+  | [] => pure root
+  | i :: is => do
+    match (← val root).args[i]? with
+    | some a => valueAt a is
+    | none => throw "bad control position path"
+
+/-- Build a new block control (`NewControl.build`): nodes created in `b`, node 0 is the
+control, no sharing. -/
+partial def buildCtrlNode (sc : Scope) (nodes : Array RNode) (b : ID) (pos : Pos) (j : Nat) :
+    RwM ID := do
+  let n := nodes[j]!
+  let t ← match n.ty with
+    | some e => liftE (← eval sc e).asTyp
+    | none => throw "control node without a type"
+  let id ← newValue b pos n.op t
+  if let some e := n.auxInt then
+    let ai ← liftE (toAuxInt n.op.auxType (← eval sc e))
+    modF fun f => f.modV id fun x => { x with auxInt := ai }
+  if let some e := n.aux then
+    let a ← toAux (← eval sc e)
+    modF fun f => f.modV id fun x => { x with aux := a }
+  let mut args : Array ID := #[]
+  for a in n.args do
+    match a with
+    | .var x => args := args.push (← liftE (sc.binds[x]!.asVal))
+    | .node k => args := args.push (← buildCtrlNode sc nodes b pos k)
+  modF fun f => f.addArgs id args
+  return id
+
+/-- Apply a fired block rule to `b`. -/
+def applyBlockResult (sc : Scope) (r : BlockRule) (b : ID) : RwM Unit := do
+  let blk0 ← blk b
+  let mut ctrls : Array ID := #[]
+  for (nc, cp) in r.newControls do
+    match nc with
+    | .var x => ctrls := ctrls.push (← liftE (sc.binds[x]!.asVal))
+    | .build nodes =>
+      let pos ← match cp with
+        | .block => pure blk0.pos
+        | .control i path => do pure (← val (← valueAt blk0.controls[i]! path)).pos
+      ctrls := ctrls.push (← buildCtrlNode sc nodes.toArray b pos 0)
+  match ctrls.size with
+  | 0 => modF fun f => f.resetBlock b r.newKind
+  | 1 => modF fun f => f.resetWithControl b r.newKind ctrls[0]!
+  | 2 => modF fun f => f.resetWithControl2 b r.newKind ctrls[0]! ctrls[1]!
+  | _ => throw "more than two controls"
+  if let some e := r.newAuxInt then
+    -- no block rule of the four files sets an AuxInt; generic block aux ints are plain int64
+    let ai ← liftE (toAuxInt .Int64 (← eval sc e))
+    modF fun f => f.modB b fun x => { x with auxInt := ai }
+  if let some e := r.newAux then
+    let a ← toAux (← eval sc e)
+    modF fun f => f.modB b fun x => { x with aux := a }
+  if r.swapSuccs then modF fun f => f.swapSuccessors b
+
+/-- Try block rule `r` on `b`. -/
+def tryBlockRule (b : ID) (r : BlockRule) : RwM Bool := do
+  let blk0 ← blk b
+  if blk0.controls.size < r.controls.length then return false
+  let sc : Scope := { v := none, b, binds := Array.replicate r.vars.length .nil,
+                      vtys := (r.vars.map (·.ty)).toArray }
+  let st : MState := { binds := sc.binds, pending := [] }
+  let work := r.controls.zip blk0.controls.toList
+  matchWork sc work st fun st => do
+    let sc := { sc with binds := st.binds }
+    let some st ← field sc st r.auxInt (fun _ => pure (.int blk0.auxInt.toInt)) | return false
+    let some st ← field sc st r.aux (fun _ => pure (.aux blk0.aux)) | return false
+    let sc := { sc with binds := st.binds }
+    if !(← pendingOk sc st) then return false
+    if let some c := r.cond then
+      if !(← liftE (← eval sc c).asBool) then return false
+    applyBlockResult sc r b
+    return true
+
+/-- `rewriteBlock<file>(b)`. -/
+def rewriteBlock (t : Table) (b : ID) : RwM Bool := do
+  let k := (← blk b).kind
+  for r in t.blocks[k.ctorIdx]! do
+    if ← tryBlockRule b r then return true
+  return false
+
+end Interp
+
+end GoFV.Rules
