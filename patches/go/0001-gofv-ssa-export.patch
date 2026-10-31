@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1088 @@
+@@ -0,0 +1,1145 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -151,6 +151,7 @@
 +	types    map[*types.Type]int
 +	typeKeys map[string]int // canonical type key -> number
 +	typeList []*types.Type
++	typeDefs []*gofvTypeDef // by number - 1
 +	aux      map[Aux]int
 +	auxTypes map[int]int    // type number -> aux number of *types.Type aux values
 +	auxLast  map[int]string // last emitted definition per aux number
@@ -379,13 +380,71 @@
 +	key := x.typeKey(t)
 +	if n, ok := x.typeKeys[key]; ok {
 +		x.types[t] = n
++		// Prefer an object whose size the compiler calculated: the definition is
++		// rendered from the representative when the file is finished.
++		if d := x.typeDefs[n-1]; !d.rep.GOFVSizeKnown() && t.GOFVSizeKnown() {
++			d.rep = t
++		}
 +		return fmt.Sprintf("t%d", n)
 +	}
 +	n := len(x.typeList) + 1
 +	x.types[t] = n
 +	x.typeKeys[key] = n
 +	x.typeList = append(x.typeList, t)
++	d := &gofvTypeDef{rep: t}
++	x.typeDefs = append(x.typeDefs, d)
 +
++	switch t.Kind() {
++	case types.TPTR, types.TSLICE:
++		d.tail = append(d.tail, x.typ(t.Elem()))
++	case types.TARRAY:
++		d.tail = append(d.tail, x.typ(t.Elem()), strconv.FormatInt(t.NumElem(), 10))
++	case types.TSTRUCT:
++		d.tail = append(d.tail, strconv.Itoa(len(t.Fields())))
++	case types.TFUNC:
++		d.tail = append(d.tail, strconv.Itoa(len(t.Recvs())), strconv.Itoa(len(t.Params())), strconv.Itoa(len(t.Results())))
++	case types.TTUPLE:
++		d.tail = append(d.tail, x.typ(t.FieldType(0)), x.typ(t.FieldType(1)))
++	case types.TRESULTS:
++		nr := t.NumFields()
++		rs := make([]string, nr)
++		for i := range nr {
++			rs[i] = x.typ(t.FieldType(i))
++		}
++		d.tail = append(d.tail, strconv.Itoa(nr), gofvList(rs))
++	}
++	for _, fl := range gofvTypeFields(t) {
++		d.fieldTypes = append(d.fieldTypes, x.typ(fl.Type))
++	}
++	// The definition is rendered at the end (resolveTypes), from the best object of
++	// this identity met in the whole file; references are fixed now.
++	fmt.Fprintf(&x.defs, "\x00T%d\n", n)
++	return fmt.Sprintf("t%d", n)
++}
++
++// gofvTypeDef is a type definition whose text is rendered when the file is finished.
++type gofvTypeDef struct {
++	rep        *types.Type // the object rendered: the first one met, or one with a known size
++	tail       []string    // kind-specific references (fixed at first sight)
++	fieldTypes []string    // references of the field types
++}
++
++// gofvTypeFields returns the field lines' fields of t: struct fields, or a function's
++// receiver, parameters and results.
++func gofvTypeFields(t *types.Type) []*types.Field {
++	switch t.Kind() {
++	case types.TSTRUCT:
++		return t.Fields()
++	case types.TFUNC:
++		return slices.Concat(t.Recvs(), t.Params(), t.Results())
++	}
++	return nil
++}
++
++// renderType renders the definition of type number n.
++func (x *gofvExporter) renderType(n int) string {
++	d := x.typeDefs[n-1]
++	t := d.rep
 +	k := t.Kind()
 +	special := k == types.TSSA || k == types.TTUPLE || k == types.TRESULTS
 +	known := t.GOFVSizeKnown()
@@ -420,38 +479,13 @@
 +		symName = types.TypeSymName(t)
 +	}
 +	str, _ := gofvTry(t.String)
-+
-+	var tail []string
-+	var fields []*types.Field
-+	switch k {
-+	case types.TPTR, types.TSLICE:
-+		tail = append(tail, x.typ(t.Elem()))
-+	case types.TARRAY:
-+		tail = append(tail, x.typ(t.Elem()), strconv.FormatInt(t.NumElem(), 10))
-+	case types.TSTRUCT:
-+		fields = t.Fields()
-+		tail = append(tail, strconv.Itoa(len(fields)))
-+	case types.TFUNC:
-+		r, p, q := t.Recvs(), t.Params(), t.Results()
-+		fields = append(append(append(fields, r...), p...), q...)
-+		tail = append(tail, strconv.Itoa(len(r)), strconv.Itoa(len(p)), strconv.Itoa(len(q)))
-+	case types.TTUPLE:
-+		tail = append(tail, x.typ(t.FieldType(0)), x.typ(t.FieldType(1)))
-+	case types.TRESULTS:
-+		nr := t.NumFields()
-+		rs := make([]string, nr)
-+		for i := range nr {
-+			rs[i] = x.typ(t.FieldType(i))
-+		}
-+		tail = append(tail, strconv.Itoa(nr), gofvList(rs))
-+	}
 +	var b strings.Builder
 +	fmt.Fprintf(&b, "type t%d %s %s %s %s %s %s %s", n, k.String(), size, align, ptrdata, flags, gofvQuote(str), gofvQuote(symName))
-+	for _, s := range tail {
++	for _, s := range d.tail {
 +		b.WriteString(" " + s)
 +	}
 +	b.WriteByte('\n')
-+	for i, fl := range fields {
++	for i, fl := range gofvTypeFields(t) {
 +		name := ""
 +		if fl.Sym != nil {
 +			name = fl.Sym.Name
@@ -460,10 +494,32 @@
 +		if known && fl.Offset != types.BADWIDTH {
 +			off = strconv.FormatInt(fl.Offset, 10)
 +		}
-+		fmt.Fprintf(&b, "field %d %s %s %s %d\n", i, gofvQuote(name), x.typ(fl.Type), off, gofvBool(fl.Embedded != 0))
++		fmt.Fprintf(&b, "field %d %s %s %s %d\n", i, gofvQuote(name), d.fieldTypes[i], off, gofvBool(fl.Embedded != 0))
 +	}
-+	x.defs.WriteString(b.String())
-+	return fmt.Sprintf("t%d", n)
++	return b.String()
++}
++
++// resolveTypes replaces the type definition placeholders in x.out by their text.
++func (x *gofvExporter) resolveTypes() {
++	src := x.out.Bytes()
++	var out bytes.Buffer
++	out.Grow(len(src) + len(src)/8)
++	for len(src) > 0 {
++		i := bytes.IndexByte(src, 0)
++		if i < 0 {
++			out.Write(src)
++			break
++		}
++		out.Write(src[:i])
++		end := bytes.IndexByte(src[i:], '\n')
++		n, err := strconv.Atoi(string(src[i+2 : i+end]))
++		if err != nil {
++			base.Fatalf("gofv export: bad type placeholder")
++		}
++		out.WriteString(x.renderType(n))
++		src = src[i+end+1:]
++	}
++	x.out = out
 +}
 +
 +// typeKey identifies t up to type identity and spelling. The compiler sometimes creates
@@ -1114,6 +1170,7 @@
 +		}
 +	}
 +	fmt.Fprintf(&x.out, "typeorder %s\neof\n", gofvList(groups))
++	x.resolveTypes()
 +}
 +
 +// write writes the finished file under the export directory.
