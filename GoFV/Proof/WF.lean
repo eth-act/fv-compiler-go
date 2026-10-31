@@ -6,8 +6,8 @@ import GoFV.SSA.Check
 `WF ce f` collects, declaratively, what a passing `check ce f` guarantees and the pass proofs
 use: IR integrity (listed blocks and values are in the tables with their IDs, each value is
 listed once, edges are crosslinked, arguments and controls are listed values), op shapes
-(arity, phi arity, `Bool` auxints) and the entry block. `GoFV.Proof.CheckFacts.check_wf`
-derives it from `check`.
+(arity, phi arity, `Bool` auxints) and the entry block. `GoFV.Proof.check_wf`
+(`GoFV/Proof/CheckFacts.lean`) derives it from `check`.
 -/
 
 namespace GoFV.Proof
