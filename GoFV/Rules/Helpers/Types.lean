@@ -21,11 +21,16 @@ open GoFV.SSA
 
 def kind (tabs : Tables) (t : TypeRef) : Except String TypeKind := return (← get tabs t).kind
 
-/-- `t.Size()`. -/
+/-- `types.BADWIDTH`: the width of a type whose size was never calculated. -/
+def badWidth : Int := -1000000000
+
+/-- `t.Size()`. For `TSSA` types Go returns the stored width without `CalcSize`, so an
+uncalculated (`?`) one is `BADWIDTH` (`mem`, `flags`, `void`). -/
 def size (tabs : Tables) (t : TypeRef) : Except String Int := do
-  match (← get tabs t).size with
+  let d ← get tabs t
+  match d.size with
   | some s => return s
-  | none => throw s!"type t{t}: size not calculated"
+  | none => if d.kind == .SSA then return badWidth else throw s!"type t{t}: size not calculated"
 
 /-- `t.Alignment()`. -/
 def alignment (tabs : Tables) (t : TypeRef) : Except String Int := do
