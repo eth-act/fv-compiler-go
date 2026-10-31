@@ -61,3 +61,7 @@ import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Sem.Env
 import GoFV.SSA.Sem.Layout
 import GoFV.SSA.Sem.Run
+import GoFV.Opt.Prove.Limit
+import GoFV.Opt.Prove.Poset
+import GoFV.Opt.Prove.Ctx
+import GoFV.Opt.Prove.FactsTable
