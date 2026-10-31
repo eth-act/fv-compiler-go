@@ -13,7 +13,10 @@ selected stock pass:
 1. take section `k-1`'s function and the definition tables in force for it (definitions of
    sections `0..k-1`);
 2. run the Lean port with a `PassEnv` (`GoFV/Opt/Pass.lean`: stock pass name, header, `config`
-   lines, `typs`, type order, tables);
+   lines, `typs`, type order, tables, and `frontend`: the whole file's definitions, from which
+   a pass takes the contents of symbols it obtains from the frontend instead of computing
+   them — `fe.Syslook`, `reflectdata.TypeLinksym`, relocation targets — by name
+   (`PassEnv.frontendSym?`); never function state);
 3. compare the result with section `k`: structural equality first, else both functions are
    printed with the export printer (`Print.func`) and must be byte-identical. Objects the pass
    created (types, aux, slots at fresh numbers) are first paired with section `k`'s new

@@ -127,7 +127,7 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
     let base : PassEnv :=
       { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
         pgohot := e.pgohot, config := e.config, typs, typeOrder := TypeOrder.ofGroups e.typeOrder
-        tables := {} }
+        tables := {}, frontend := e.tablesAt (e.sections.size - 1) }
     let mut st := st
     let mut seen := Array.replicate insts.size false
     let mut tables : Tables := {}
