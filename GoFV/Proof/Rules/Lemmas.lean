@@ -1,0 +1,417 @@
+import GoFV.Proof.Rules.Attr
+import GoFV.Proof.Rules.Den
+
+/-!
+# Lemmas of the rule-lemma tactics (`GoFV/Proof/Rules/Tactic.lean`)
+
+Facts about the P1 semantics (`GoFV.SSA.Sem`) and the denotation (`GoFV/Proof/Rules/Den.lean`)
+in the forms `rule_auto` needs, in the simp sets `rule_sem` and `rule_arith`
+(`GoFV/Proof/Rules/Attr.lean`).
+-/
+
+namespace GoFV.Proof.Rules
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
+
+/-! ## Values -/
+
+
+@[rule_sem] theorem val_asInt_int_ne {w w' : Width} (x : BitVec w.bits) (h : w ≠ w') :
+    (Val.int w x).asInt w' = none := by
+  simp [Val.asInt, h]
+
+@[rule_sem] theorem val_asInt_bool (b : Bool) (w : Width) : (Val.bool b).asInt w = none := rfl
+@[rule_sem] theorem val_asInt_poison (w : Width) : Val.poison.asInt w = none := rfl
+@[rule_sem] theorem val_asInt_tuple (vs : List Val) (w : Width) : (Val.tuple vs).asInt w = none := rfl
+@[rule_sem] theorem val_asInt_mem (m : Mem) (w : Width) : (Val.mem m).asInt w = none := rfl
+@[rule_sem] theorem val_asBool_bool (b : Bool) : (Val.bool b).asBool = some b := rfl
+@[rule_sem] theorem val_asBool_int (w : Width) (x : BitVec w.bits) : (Val.int w x).asBool = none := rfl
+@[rule_sem] theorem val_asBool_poison : Val.poison.asBool = none := rfl
+@[rule_sem] theorem val_asNat_int (w : Width) (x : BitVec w.bits) : (Val.int w x).asNat = some x.toNat :=
+  rfl
+@[rule_sem] theorem val_asNat_bool (b : Bool) : (Val.bool b).asNat = none := rfl
+@[rule_sem] theorem val_asNat_poison : Val.poison.asNat = none := rfl
+
+theorem val_asInt_eq_some {v : Val} {w : Width} {x : BitVec w.bits} :
+    v.asInt w = some x ↔ v = .int w x := by
+  constructor
+  · intro h
+    cases v with
+    | int w' y =>
+      simp only [Val.asInt] at h
+      split at h
+      · subst_vars; cases h; rfl
+      · cases h
+    | _ => cases h
+  · rintro rfl; simp
+
+theorem val_asBool_eq_some {v : Val} {b : Bool} : v.asBool = some b ↔ v = .bool b := by
+  cases v <;> simp [Val.asBool] <;> intro h <;> cases h
+
+
+/-- `t` is an integer shape of another width than `w`. -/
+def tyOtherInt (t : Ty) (w : Width) : Bool :=
+  match t with
+  | .int w' => w' != w
+  | _ => false
+
+@[rule_sem] theorem tyOtherInt_int (w w' : Width) : tyOtherInt (Ty.int w') w = (w' != w) := rfl
+@[rule_sem] theorem tyOtherInt_bool (w : Width) : tyOtherInt Ty.bool w = false := rfl
+
+@[rule_sem] theorem retype_int_same (w : Width) (x : BitVec w.bits) :
+    (Val.int w x).retype (.int w) = .int w x := by
+  simp [Val.retype]
+
+@[rule_sem] theorem retype_bool (t : Ty) (b : Bool) : (Val.bool b).retype t = .bool b := by
+  cases t <;> rfl
+
+@[rule_sem] theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by
+  cases t <;> rfl
+
+@[rule_sem] theorem retype_tuple (t : Ty) (vs : List Val) : (Val.tuple vs).retype t = .tuple vs := by
+  cases t <;> rfl
+
+@[rule_sem] theorem retype_bool_ty (v : Val) : v.retype .bool = v := by
+  cases v <;> rfl
+
+/-- An integer read at its own width through a retype: unchanged unless the type is an integer
+of another width. -/
+@[rule_sem] theorem asInt_retype_int (t : Ty) (w : Width) (x : BitVec w.bits) :
+    ((Val.int w x).retype t).asInt w = if tyOtherInt t w then none else some x := by
+  cases t with
+  | int w' =>
+    simp only [Val.retype, GoFV.Proof.Rules.tyOtherInt]
+    by_cases h : w' = w
+    · subst h; simp
+    · have : (w' != w) = true := by simpa using h
+      simp only [this, ite_true]
+      split
+      · exact val_asInt_int_ne _ h
+      · rfl
+  | _ => simp [Val.retype, tyOtherInt]
+
+@[rule_sem] theorem asBool_retype (t : Ty) (v : Val) :
+    (v.retype t).asBool = v.asBool := by
+  cases t <;> cases v <;> simp only [Val.retype] <;> (try split) <;> rfl
+
+@[rule_sem] theorem hasTy_int (w : Width) (x : BitVec w.bits) (t : Ty) :
+    (Val.int w x).hasTy t = true ↔ t = .int w := by
+  cases t with
+  | int w' => simp only [Val.hasTy, beq_iff_eq, Ty.int.injEq]; exact eq_comm
+  | _ => simp [Val.hasTy]
+
+@[rule_sem] theorem hasTy_bool (b : Bool) (t : Ty) : (Val.bool b).hasTy t = true ↔ t = .bool := by
+  cases t <;> simp [Val.hasTy]
+
+@[rule_sem] theorem hasTy_poison (t : Ty) : Val.poison.hasTy t = true := rfl
+
+/-! ## Refinement -/
+
+@[rule_sem] theorem refines_poison (v : Val) : Refines .poison v := .poison v
+
+@[rule_sem] theorem refines_int_int (w : Width) (x y : BitVec w.bits) :
+    Refines (.int w x) (.int w y) ↔ x = y := by
+  constructor
+  · intro h; cases h; rfl
+  · rintro rfl; exact .int w x
+
+@[rule_sem] theorem refines_bool_bool (a b : Bool) : Refines (.bool a) (.bool b) ↔ a = b := by
+  constructor
+  · intro h; cases h; rfl
+  · rintro rfl; exact .bool a
+
+@[rule_sem] theorem refines_int_poison (w : Width) (x : BitVec w.bits) :
+    Refines (.int w x) .poison ↔ False := by
+  constructor
+  · intro h; cases h
+  · intro h; cases h
+
+@[rule_sem] theorem refines_bool_poison (b : Bool) : Refines (.bool b) .poison ↔ False := by
+  constructor
+  · intro h; cases h
+  · intro h; cases h
+
+theorem refines_of_eq {a b : Val} (h : a = b) : Refines a b := h ▸ Refines.refl a
+
+@[rule_sem] theorem refines_tuple_tuple (as bs : List Val) :
+    Refines (.tuple as) (.tuple bs) ↔ RefinesList as bs := by
+  constructor
+  · intro h; cases h; assumption
+  · intro h; exact .tuple h
+
+@[rule_sem] theorem refinesList_nil : RefinesList [] [] := .nil
+
+@[rule_sem] theorem refinesList_cons (a b : Val) (as bs : List Val) :
+    RefinesList (a :: as) (b :: bs) ↔ Refines a b ∧ RefinesList as bs := by
+  constructor
+  · intro h; cases h; exact ⟨by assumption, by assumption⟩
+  · rintro ⟨h1, h2⟩; exact .cons h1 h2
+
+/-! ## Integer arithmetic of auxints -/
+
+theorem wrapInt_true (w : Nat) (x : Int) : wrapInt w true x = x.bmod (2 ^ w) := rfl
+theorem wrapInt_false (w : Nat) (x : Int) : wrapInt w false x = x.emod (2 ^ w) := rfl
+
+theorem ofInt_bmod_of_le {w k : Nat} (h : w ≤ k) (x : Int) :
+    BitVec.ofInt w (x.bmod (2 ^ k)) = BitVec.ofInt w x := by
+  apply BitVec.eq_of_toInt_eq
+  simp only [BitVec.toInt_ofInt]
+  exact Int.bmod_bmod_of_dvd (Nat.pow_dvd_pow 2 h)
+
+theorem ofInt_emod_of_le {w k : Nat} (h : w ≤ k) (x : Int) :
+    BitVec.ofInt w (x.emod (2 ^ k)) = BitVec.ofInt w x := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofInt]
+  congr 1
+  have : ((2 : Int) ^ w) ∣ 2 ^ k := by
+    have h' := Int.natCast_dvd_natCast.mpr (Nat.pow_dvd_pow 2 h)
+    simpa using h'
+  exact Int.emod_emod_of_dvd x this
+
+@[rule_sem] theorem const_w8 (a : Int64) : Conv.const .w8 a = .i8 (BitVec.ofInt 8 (wrapInt 8 true a.toInt)) := by
+  simp only [GoFV.SSA.Sem.Conv.const, GoFV.Proof.Rules.wrapInt_true, GoFV.SSA.Sem.Width.bits]
+  rw [ofInt_bmod_of_le (Nat.le_refl 8)]
+@[rule_sem] theorem const_w16 (a : Int64) :
+    Conv.const .w16 a = .i16 (BitVec.ofInt 16 (wrapInt 16 true a.toInt)) := by
+  simp only [GoFV.SSA.Sem.Conv.const, GoFV.Proof.Rules.wrapInt_true, GoFV.SSA.Sem.Width.bits]
+  rw [ofInt_bmod_of_le (Nat.le_refl 16)]
+@[rule_sem] theorem const_w32 (a : Int64) :
+    Conv.const .w32 a = .i32 (BitVec.ofInt 32 (wrapInt 32 true a.toInt)) := by
+  simp only [GoFV.SSA.Sem.Conv.const, GoFV.Proof.Rules.wrapInt_true, GoFV.SSA.Sem.Width.bits]
+  rw [ofInt_bmod_of_le (Nat.le_refl 32)]
+@[rule_sem] theorem const_w64 (a : Int64) : Conv.const .w64 a = .i64 (BitVec.ofInt 64 a.toInt) := rfl
+
+@[rule_arith] theorem ofInt_wrapInt_true {w k : Nat} (h : w ≤ k) (x : Int) :
+    BitVec.ofInt w (wrapInt k true x) = BitVec.ofInt w x := ofInt_bmod_of_le h x
+
+@[rule_arith] theorem ofInt_wrapInt_false {w k : Nat} (h : w ≤ k) (x : Int) :
+    BitVec.ofInt w (wrapInt k false x) = BitVec.ofInt w x := ofInt_emod_of_le h x
+
+@[rule_sem, rule_arith] theorem ofInt_int64_ofInt {w : Nat} (h : w ≤ 64) (x : Int) :
+    BitVec.ofInt w (Int64.ofInt x).toInt = BitVec.ofInt w x := by
+  rw [Int64.toInt_ofInt]
+  exact ofInt_bmod_of_le h x
+
+/-- Range of a signed auxint of width `w` (`w` = 8, 16, 32 in practice). -/
+theorem wrapInt_true_range (w : Nat) (x : Int) :
+    -(((2 ^ w : Nat) : Int) / 2) ≤ wrapInt w true x ∧ wrapInt w true x < (((2 ^ w : Nat) : Int) + 1) / 2 :=
+  ⟨Int.le_bmod (Nat.pos_of_ne_zero (by simp)), Int.bmod_lt (Nat.pos_of_ne_zero (by simp))⟩
+
+theorem wrapInt_false_range (w : Nat) (x : Int) :
+    0 ≤ wrapInt w false x ∧ wrapInt w false x < 2 ^ w := by
+  rw [wrapInt_false]
+  have : (0 : Int) < 2 ^ w := Int.pow_pos (by decide)
+  exact ⟨Int.emod_nonneg _ (by omega), Int.emod_lt_of_pos _ this⟩
+
+theorem int64_toInt_range (a : Int64) : -(2 ^ 63 : Int) ≤ a.toInt ∧ a.toInt < 2 ^ 63 :=
+  ⟨Int64.le_toInt a, Int64.toInt_lt a⟩
+
+@[rule_arith] theorem ofInt_sub' (w : Nat) (x y : Int) :
+    BitVec.ofInt w (x - y) = BitVec.ofInt w x - BitVec.ofInt w y := by
+  rw [Int.sub_eq_add_neg, BitVec.ofInt_add, BitVec.ofInt_neg, BitVec.sub_eq_add_neg]
+
+/-! ## Shifts and rotations as `BitVec` shifts by `BitVec` amounts (`bv_decide` form) -/
+
+@[rule_sem] theorem shiftLeft_min_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) :
+    x <<< min s.toNat w = x <<< s := by
+  rw [BitVec.shiftLeft_eq']
+  by_cases h : s.toNat ≤ w
+  · rw [Nat.min_eq_left h]
+  · rw [Nat.min_eq_right (by omega), BitVec.shiftLeft_eq_zero (Nat.le_refl w),
+      BitVec.shiftLeft_eq_zero (by omega)]
+
+@[rule_sem] theorem ushiftRight_min_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) :
+    x >>> min s.toNat w = x >>> s := by
+  rw [BitVec.ushiftRight_eq']
+  by_cases h : s.toNat ≤ w
+  · rw [Nat.min_eq_left h]
+  · rw [Nat.min_eq_right (by omega), BitVec.ushiftRight_eq_zero (Nat.le_refl w),
+      BitVec.ushiftRight_eq_zero (by omega)]
+
+@[rule_sem] theorem sshiftRight_min_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) :
+    x.sshiftRight (min s.toNat w) = x.sshiftRight' s := by
+  rw [BitVec.sshiftRight_eq']
+  by_cases h : s.toNat ≤ w
+  · rw [Nat.min_eq_left h]
+  · rw [Nat.min_eq_right (by omega)]
+    ext i hi
+    simp only [BitVec.getElem_sshiftRight]
+    have h1 : ¬ (w + i < w) := by omega
+    have h2 : ¬ (s.toNat + i < w) := by omega
+    simp [h1, h2]
+
+theorem rotateLeft_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) (hw : 0 < w) (h : w < 2 ^ v) :
+    x.rotateLeft s.toNat =
+      x <<< (s % BitVec.ofNat v w) ||| x >>> (BitVec.ofNat v w - s % BitVec.ofNat v w) := by
+  rw [BitVec.rotateLeft_def, BitVec.shiftLeft_eq', BitVec.ushiftRight_eq']
+  have hm : (s % BitVec.ofNat v w).toNat = s.toNat % w := by
+    rw [BitVec.toNat_umod, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+  have hs : (BitVec.ofNat v w - s % BitVec.ofNat v w).toNat = w - s.toNat % w := by
+    rw [BitVec.toNat_sub_of_le]
+    · rw [hm, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+    · rw [BitVec.le_def, hm, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+      exact Nat.le_of_lt (Nat.mod_lt _ hw)
+  rw [hm, hs]
+
+theorem umod_pow2 {v : Nat} (s : BitVec v) (k : Nat) (h : 2 ^ k < 2 ^ v) :
+    s % BitVec.ofNat v (2 ^ k) = s &&& BitVec.ofNat v (2 ^ k - 1) := by
+  apply BitVec.eq_of_toNat_eq
+  have h1 : 2 ^ k - 1 < 2 ^ v := Nat.lt_of_le_of_lt (Nat.sub_le _ _) h
+  simp only [BitVec.toNat_umod, BitVec.toNat_and, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h,
+    Nat.mod_eq_of_lt h1, Nat.and_two_pow_sub_one_eq_mod]
+
+/-- Rotation of a power-of-two width by a `BitVec` amount, as masked shifts. -/
+theorem rotateLeft_toNat_pow2 {v : Nat} (k : Nat) (x : BitVec (2 ^ k)) (s : BitVec v)
+    (h : 2 ^ k < 2 ^ v) :
+    x.rotateLeft s.toNat =
+      x <<< (s &&& BitVec.ofNat v (2 ^ k - 1)) |||
+        x >>> (BitVec.ofNat v (2 ^ k) - (s &&& BitVec.ofNat v (2 ^ k - 1))) := by
+  rw [rotateLeft_toNat x s (Nat.two_pow_pos k) h, umod_pow2 s k h]
+
+@[rule_sem] theorem rotateLeft_toNat8 {v : Nat} (x : BitVec 8) (s : BitVec v) (h : 8 < 2 ^ v) :
+    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 7) ||| x >>> (BitVec.ofNat v 8 - (s &&& BitVec.ofNat v 7)) :=
+  rotateLeft_toNat_pow2 3 x s h
+@[rule_sem] theorem rotateLeft_toNat16 {v : Nat} (x : BitVec 16) (s : BitVec v) (h : 16 < 2 ^ v) :
+    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 15) ||| x >>> (BitVec.ofNat v 16 - (s &&& BitVec.ofNat v 15)) :=
+  rotateLeft_toNat_pow2 4 x s h
+@[rule_sem] theorem rotateLeft_toNat32 {v : Nat} (x : BitVec 32) (s : BitVec v) (h : 32 < 2 ^ v) :
+    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 31) ||| x >>> (BitVec.ofNat v 32 - (s &&& BitVec.ofNat v 31)) :=
+  rotateLeft_toNat_pow2 5 x s h
+@[rule_sem] theorem rotateLeft_toNat64 {v : Nat} (x : BitVec 64) (s : BitVec v) (h : 64 < 2 ^ v) :
+    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 63) ||| x >>> (BitVec.ofNat v 64 - (s &&& BitVec.ofNat v 63)) :=
+  rotateLeft_toNat_pow2 6 x s h
+
+/-- A bound on a `BitVec`'s value as a `BitVec` comparison (`bv_decide` form). -/
+@[rule_sem] theorem le_toNat_iff {w : Nat} (n : Nat) (x : BitVec w) (h : n < 2 ^ w) :
+    n ≤ x.toNat ↔ BitVec.ofNat w n ≤ x := by
+  rw [BitVec.le_def, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
+
+@[rule_sem] theorem asNat_retype_of_not_other {t : Ty} {w : Width} (x : BitVec w.bits)
+    (h : tyOtherInt t w = false) : ((Val.int w x).retype t).asNat = some x.toNat := by
+  cases t with
+  | int w' =>
+    simp only [tyOtherInt, bne_eq_false_iff_eq] at h
+    subst h; simp [Val.retype, Val.asNat]
+  | _ => rfl
+
+@[rule_sem] theorem int64_zero_beq_one : ((0 : Int64) == 1) = false := by decide
+@[rule_sem] theorem int64_one_bne_zero : ((1 : Int64) != 0) = true := by decide
+
+/-! ## Conditions -/
+
+@[rule_sem] theorem binE_land_bool (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (b : Bool) (dz : DV) :
+    binE vtys .land ty y (.bool b) dz = some (cond b dz (.bool false)) := by
+  cases b <;> rfl
+@[rule_sem] theorem binE_lor_bool (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (b : Bool) (dz : DV) :
+    binE vtys .lor ty y (.bool b) dz = some (cond b (.bool true) dz) := by
+  cases b <;> rfl
+@[rule_sem] theorem dv_ite_land (b c : Bool) :
+    cond b (DV.bool c) (DV.bool false) = DV.bool (b && c) := by cases b <;> rfl
+@[rule_sem] theorem dv_ite_lor (b c : Bool) :
+    cond b (DV.bool true) (DV.bool c) = DV.bool (b || c) := by cases b <;> rfl
+@[rule_sem] theorem dv_land_true (b : Bool) (d : DV) :
+    (cond b d (DV.bool false) = DV.bool true) ↔ (b = true ∧ d = DV.bool true) := by
+  cases b <;> simp
+@[rule_sem] theorem dv_lor_true (b : Bool) (d : DV) :
+    (cond b (DV.bool true) d = DV.bool true) ↔ (b = true ∨ d = DV.bool true) := by
+  cases b <;> simp
+@[rule_sem] theorem binE_eq (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .eq ty y dy dz = binDV .eq (exprTy vtys y) dy dz := rfl
+@[rule_sem] theorem binE_ne (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .ne ty y dy dz = binDV .ne (exprTy vtys y) dy dz := rfl
+@[rule_sem] theorem binE_lt (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .lt ty y dy dz = binDV .lt (exprTy vtys y) dy dz := rfl
+@[rule_sem] theorem binE_le (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .le ty y dy dz = binDV .le (exprTy vtys y) dy dz := rfl
+@[rule_sem] theorem binE_gt (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .gt ty y dy dz = binDV .gt (exprTy vtys y) dy dz := rfl
+@[rule_sem] theorem binE_ge (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .ge ty y dy dz = binDV .ge (exprTy vtys y) dy dz := rfl
+@[rule_sem] theorem binE_add (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .add ty y dy dz = binDV .add ty dy dz := rfl
+@[rule_sem] theorem binE_sub (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .sub ty y dy dz = binDV .sub ty dy dz := rfl
+@[rule_sem] theorem binE_mul (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .mul ty y dy dz = binDV .mul ty dy dz := rfl
+@[rule_sem] theorem binE_quo (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .quo ty y dy dz = binDV .quo ty dy dz := rfl
+@[rule_sem] theorem binE_rem (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .rem ty y dy dz = binDV .rem ty dy dz := rfl
+@[rule_sem] theorem binE_and (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .and ty y dy dz = binDV .and ty dy dz := rfl
+@[rule_sem] theorem binE_or (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .or ty y dy dz = binDV .or ty dy dz := rfl
+@[rule_sem] theorem binE_xor (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .xor ty y dy dz = binDV .xor ty dy dz := rfl
+@[rule_sem] theorem binE_shl (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .shl ty y dy dz = binDV .shl ty dy dz := rfl
+@[rule_sem] theorem binE_shr (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .shr ty y dy dz = binDV .shr ty dy dz := rfl
+@[rule_sem] theorem binE_andNot (vtys : List GoTy) (ty : GoTy) (y : GoFV.Rules.Expr) (dy dz : DV) :
+    binE vtys .andNot ty y dy dz = binDV .andNot ty dy dz := rfl
+
+/-! ## The op families as `Option.elim` chains
+
+`rule_sem` rewrites the families with these instead of unfolding their `match`es: `simp` then
+needs no discharger for the `match` catch-all equations, and a case split on a leaf
+(`Val.asInt w (e.leaf p)`) reduces every chain through `Option.elim_none`/`elim_some`. -/
+
+@[rule_sem] theorem int1_eq (w : Width) (f : BitVec w.bits → Val) (a : Val) :
+    int1 w f [a] = (a.asInt w).elim .poison f := by
+  cases h : a.asInt w <;> simp [int1, h]
+
+@[rule_sem] theorem int2_eq (w : Width) (f : BitVec w.bits → BitVec w.bits → Val) (a b : Val) :
+    int2 w f [a, b] = (a.asInt w).elim .poison fun x => (b.asInt w).elim .poison (f x) := by
+  cases ha : a.asInt w <;> cases hb : b.asInt w <;> simp [int2, ha, hb]
+
+@[rule_sem] theorem int3_eq (w : Width) (f : BitVec w.bits → BitVec w.bits → BitVec w.bits → Val)
+    (a b c : Val) :
+    int3 w f [a, b, c] = (a.asInt w).elim .poison fun x => (b.asInt w).elim .poison fun y =>
+      (c.asInt w).elim .poison (f x y) := by
+  cases ha : a.asInt w <;> cases hb : b.asInt w <;> cases hc : c.asInt w <;> simp [int3, ha, hb, hc]
+
+@[rule_sem] theorem bool1_eq (f : Bool → Bool) (a : Val) :
+    bool1 f [a] = a.asBool.elim .poison fun x => .bool (f x) := by
+  cases h : a.asBool <;> simp [bool1, h]
+
+@[rule_sem] theorem bool2_eq (f : Bool → Bool → Bool) (a b : Val) :
+    bool2 f [a, b] = a.asBool.elim .poison fun x => b.asBool.elim .poison fun y => .bool (f x y) := by
+  cases ha : a.asBool <;> cases hb : b.asBool <;> simp [bool2, ha, hb]
+
+@[rule_sem] theorem shift_eq (w a : Width) (bounded : Bool)
+    (f : BitVec w.bits → Nat → BitVec w.bits) (x s : Val) :
+    Shift.shift w a bounded f [x, s] = (x.asInt w).elim .poison fun x => (s.asInt a).elim .poison
+      fun s => if bounded && w.bits ≤ s.toNat then .poison else .int w (f x (min s.toNat w.bits)) := by
+  cases hx : x.asInt w <;> cases hs : s.asInt a <;> simp [Shift.shift, hx, hs]
+
+@[rule_sem] theorem rotateLeft_eq (w : Width) (a b : Val) :
+    Sem.Int.rotateLeft w [a, b] =
+      (a.asInt w).elim .poison fun x => b.asNat.elim .poison fun n => .int w (x.rotateLeft n) := by
+  cases ha : a.asInt w <;> cases hb : b.asNat <;> simp [Sem.Int.rotateLeft, ha, hb]
+
+@[rule_sem] theorem condSelect_eq (x y c : Val) :
+    Cmp.condSelect [x, y, c] = c.asBool.elim .poison fun b => cond b x y := by
+  cases h : c.asBool with
+  | none => simp [Cmp.condSelect, h]
+  | some b => cases b <;> simp [Cmp.condSelect, h]
+
+@[rule_sem] theorem boolToUint8_eq (b : Val) :
+    Conv.boolToUint8 [b] = b.asBool.elim .poison fun b => .i8 (if b then 1 else 0) := by
+  cases h : b.asBool <;> simp [Conv.boolToUint8, h]
+
+@[rule_sem] theorem elim_ite_none {α β : Type} (c : Prop) [Decidable c] (x : α) (p : β)
+    (f : α → β) : (if c then none else some x).elim p f = if c then p else f x := by
+  split <;> rfl
+
+attribute [rule_sem] Option.elim_none Option.elim_some
+
+attribute [rule_sem] Sem.Int.add Sem.Int.sub Sem.Int.mul Sem.Int.and Sem.Int.or Sem.Int.xor
+  Sem.Int.neg Sem.Int.com Sem.Int.hmul Sem.Int.mulhilo Sem.Int.mulover Sem.Int.avgu
+  Sem.Int.divs Sem.Int.divu Sem.Int.mods Sem.Int.modu Sem.Int.ctz Sem.Int.bitLen
+  Sem.Int.popCount Sem.Int.bswap Sem.Int.bitRev Sem.Int.min Sem.Int.max Sem.Int.addcarry
+  Sem.Int.subborrow Sem.Int.slicemask Sem.Int.count Sem.Int.div128u Shift.lsh Shift.rsh
+  Shift.rshu Cmp.eq Cmp.neq Cmp.less Cmp.lessU Cmp.leq Cmp.leqU Cmp.andB Cmp.orB Cmp.eqB
+  Cmp.neqB Cmp.not Cmp.inBounds Cmp.spectreIndex Conv.signExt Conv.zeroExt Conv.trunc
+  Conv.constBool Tuple.select Tuple.make Ty.width? Val.asInt_int Width.bits
+
+end GoFV.Proof.Rules
