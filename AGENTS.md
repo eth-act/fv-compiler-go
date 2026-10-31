@@ -8,6 +8,9 @@
 - Work is organised in GitHub issues on kevaundray/fv-compiler-go. Claim an issue before
   starting (`gh issue edit N --add-assignee @me` + a comment naming your agent and branch);
   reference it in commits and PRs; post progress there. Split large issues into sub-issues.
+- Never file anything upstream with Go (issues, CLs, comments, mailing lists). Possible Go
+  bugs or upstream findings go into an issue here labelled `upstream-candidate` with a
+  minimal repro; the user files upstream manually.
 - One worktree per agent: `scripts/agent-worktree.sh <name>` → `../fv-compiler-go-wt/<name>`,
   branch `agent/<name>`. Never edit the main checkout. Use absolute paths under your worktree
   for file tools; in bash, `cd` into the worktree in the same command.
