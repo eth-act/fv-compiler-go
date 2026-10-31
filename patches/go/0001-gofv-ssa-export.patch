@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1053 @@
+@@ -0,0 +1,1070 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1070,6 +1070,7 @@
 +	}
 +	sort.SliceStable(ts, func(i, j int) bool { return cmp(ts[i], ts[j]) == types.CMPlt })
 +	var groups []string
++	rank := make(map[*types.Type]int, len(ts))
 +	for i, t := range ts {
 +		ref := fmt.Sprintf("t%d", x.types[t])
 +		if i > 0 && cmp(ts[i-1], t) == types.CMPeq {
@@ -1077,8 +1078,24 @@
 +		} else {
 +			groups = append(groups, ref)
 +		}
-+		if i > 0 && cmp(t, ts[i-1]) == types.CMPlt {
-+			fmt.Fprintf(&x.out, "warn %s\n", gofvQuote("typeorder: Compare not a total preorder at "+ref))
++		rank[t] = len(groups)
++	}
++	// Compare is not a total preorder (*byte == *uint8 by the byte/uint8 special case, but
++	// cmpsym orders by name length, so *abi.Kind sorts between them): list every pair whose
++	// Compare disagrees with the rank order (#68). typeList is in number order.
++	cmpName := map[types.Cmp]string{types.CMPlt: "lt", types.CMPeq: "eq", types.CMPgt: "gt"}
++	for i, a := range x.typeList {
++		for _, b := range x.typeList[i+1:] {
++			want := types.CMPeq
++			switch ra, rb := rank[a], rank[b]; {
++			case ra < rb:
++				want = types.CMPlt
++			case ra > rb:
++				want = types.CMPgt
++			}
++			if c := cmp(a, b); c != want {
++				fmt.Fprintf(&x.out, "typecmp t%d t%d %s\n", x.types[a], x.types[b], cmpName[c])
++			}
 +		}
 +	}
 +	fmt.Fprintf(&x.out, "typeorder %s\neof\n", gofvList(groups))
