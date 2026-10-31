@@ -254,6 +254,53 @@ theorem setPhis_mem : ∀ (ps : List (ID × Val)) (r : Array (Option Val)) (z : 
       rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_self]; simp [hz]
     · exact setPhis_mem ps _ z x hn.2 hm (by simpa using hz)
 
+/-- What setting the collected `Phi`s does. -/
+theorem phis_spec {ctx : Ctx} {fr : Frame} {b : Block} {i : Nat} {ps : List (ID × Val)}
+    (hnd : b.values.toList.Nodup) (hps : b.values.toList.filterMapM (phiStep ctx fr i) = .ok ps) :
+    (setPhis ps fr.regs).size = fr.regs.size ∧
+      (∀ z ∈ b.values, (ctx.f.value? z).isSome) ∧
+      (∀ z, (z ∉ b.values ∨ ∃ v, ctx.f.value? z = some v ∧ v.op ≠ .Phi) →
+        (setPhis ps fr.regs)[z]? = fr.regs[z]?) ∧
+      (∀ z ∈ b.values, ∀ v, ctx.f.value? z = some v → v.op = .Phi → z < fr.regs.size →
+        ∃ a y, v.args[i]? = some a ∧ fr.regs[a]? = some (some y) ∧
+          (setPhis ps fr.regs)[z]? = some (some (y.retype (ctx.tys[z]?.getD .other)))) := by
+  obtain ⟨hsub, hsome, hall⟩ := filterMapM_phi hps
+  have hnd' : (ps.map Prod.fst).Nodup := hsub.nodup hnd
+  refine ⟨setPhis_size ps fr.regs, fun z hz => ?_, fun z hz => ?_, fun z hz v hv hphi hlt => ?_⟩
+  · rcases hall z (Array.mem_toList_iff.2 hz) with ⟨p, hp, rfl⟩ | hn
+    · obtain ⟨-, v, -, -, hv, -⟩ := phiStep_some (hsome p hp); simp [hv]
+    · obtain ⟨v, hv, -⟩ := phiStep_none hn; simp [hv]
+  · refine setPhis_not_mem ps fr.regs z fun hm => ?_
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hm
+    obtain ⟨-, v, a, y, hv, hphi, -⟩ := phiStep_some (hsome p hp)
+    rcases hz with hz | ⟨v', hv', hne⟩
+    · exact hz (Array.mem_toList_iff.1 (hsub.subset (List.mem_map.2 ⟨p, hp, rfl⟩)))
+    · rw [hv] at hv'; cases hv'; exact hne hphi
+  · rcases hall z (Array.mem_toList_iff.2 hz) with ⟨p, hp, rfl⟩ | hn
+    · obtain ⟨_, v', a, y, hv', -, ha, hy, hp2⟩ := phiStep_some (hsome p hp)
+      rw [hv] at hv'; cases hv'
+      refine ⟨a, y, ha, hy, ?_⟩
+      rw [← hp2]
+      exact setPhis_mem ps fr.regs p.1 p.2 hnd' hp hlt
+    · obtain ⟨v', hv', hne⟩ := phiStep_none hn
+      rw [hv] at hv'; cases hv'; exact absurd hphi hne
+
+/-- The `Phi` collection succeeds when every value's step does. -/
+theorem filterMapM_phi_ok {ctx : Ctx} {fr : Frame} {i : Nat} :
+    ∀ {l : List ID}, (∀ z ∈ l, ∃ o, phiStep ctx fr i z = .ok o) →
+      ∃ ps, l.filterMapM (phiStep ctx fr i) = .ok ps
+  | [], _ => ⟨[], rfl⟩
+  | z :: l, h => by
+    obtain ⟨o, ho⟩ := h z List.mem_cons_self
+    obtain ⟨ps, hps⟩ := filterMapM_phi_ok (l := l) fun y hy => h y (List.mem_cons_of_mem _ hy)
+    rw [List.filterMapM_cons, ho]
+    cases o with
+    | none => exact ⟨ps, hps⟩
+    | some p =>
+      refine ⟨p :: ps, ?_⟩
+      change (List.filterMapM (phiStep ctx fr i) l).bind (fun r => .ok (p :: r)) = _
+      rw [hps]; rfl
+
 /-- **Entering a block.** The `Phi`s take the incoming edge's argument from the old frame;
 values outside the block and the block's non-`Phi`s keep their registers until the schedule
 runs. -/
@@ -279,27 +326,56 @@ theorem enterBlock_spec {env : Env} {ctx : Ctx} {fr fr' : Frame} {b : Block} {i 
     | some o =>
       rw [ho] at h
       change evalAll env ctx _ o.toList = .ok fr' at h
-      obtain ⟨hsub, hsome, hall⟩ := filterMapM_phi hps
-      have hnd' : (ps.map Prod.fst).Nodup := hsub.nodup hnd
-      refine ⟨_, o, rfl, h, rfl, setPhis_size ps fr.regs, fun z hz => ?_, fun z hz => ?_,
-        fun z hz v hv hphi hlt => ?_⟩
-      · rcases hall z (Array.mem_toList_iff.2 hz) with ⟨p, hp, rfl⟩ | hn
-        · obtain ⟨-, v, -, -, hv, -⟩ := phiStep_some (hsome p hp); simp [hv]
-        · obtain ⟨v, hv, -⟩ := phiStep_none hn; simp [hv]
-      · refine setPhis_not_mem ps fr.regs z fun hm => ?_
-        obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hm
-        obtain ⟨-, v, a, y, hv, hphi, -⟩ := phiStep_some (hsome p hp)
-        rcases hz with hz | ⟨v', hv', hne⟩
-        · exact hz (Array.mem_toList_iff.1 (hsub.subset (List.mem_map.2 ⟨p, hp, rfl⟩)))
-        · rw [hv] at hv'; cases hv'; exact hne hphi
-      · rcases hall z (Array.mem_toList_iff.2 hz) with ⟨p, hp, rfl⟩ | hn
-        · obtain ⟨_, v', a, y, hv', -, ha, hy, hp2⟩ := phiStep_some (hsome p hp)
-          rw [hv] at hv'; cases hv'
-          refine ⟨a, y, ha, hy, ?_⟩
-          rw [← hp2]
-          exact setPhis_mem ps fr.regs p.1 p.2 hnd' hp hlt
-        · obtain ⟨v', hv', hne⟩ := phiStep_none hn
-          rw [hv] at hv'; cases hv'; exact absurd hphi hne
+      obtain ⟨h1, h2, h3, h4⟩ := phis_spec hnd hps
+      exact ⟨_, o, rfl, h, rfl, h1, h2, h3, h4⟩
+
+theorem phiStep_not_panic {ctx : Ctx} {fr : Frame} {i : Nat} {z : ID} {e : Panic} {m : Mem} :
+    phiStep ctx fr i z ≠ .panic e m := by
+  unfold phiStep
+  split
+  · split
+    · split
+      · split <;> nofun
+      · nofun
+    · nofun
+  · nofun
+
+theorem filterMapM_phi_not_panic {ctx : Ctx} {fr : Frame} {i : Nat} {e : Panic} {m : Mem} :
+    ∀ {l : List ID}, l.filterMapM (phiStep ctx fr i) ≠ .panic e m
+  | [] => nofun
+  | z :: l => by
+    rw [List.filterMapM_cons]
+    cases hz : phiStep ctx fr i z with
+    | panic e' m' => exact absurd hz phiStep_not_panic
+    | stuck msg => nofun
+    | ok o =>
+      cases o with
+      | none => exact filterMapM_phi_not_panic
+      | some p =>
+        change (List.filterMapM (phiStep ctx fr i) l).bind (fun r => .ok (p :: r)) ≠ _
+        cases hl : List.filterMapM (phiStep ctx fr i) l with
+        | panic e' m' => exact absurd hl filterMapM_phi_not_panic
+        | stuck msg => nofun
+        | ok ps => nofun
+
+/-- Where a block entry panics: in its schedule, after the `Phi`s. -/
+theorem enterBlock_panic {env : Env} {ctx : Ctx} {fr : Frame} {b : Block} {i : Nat}
+    {e : Panic} {m : Mem} (h : enterBlock env ctx fr b i = .panic e m) :
+    ∃ ps o, b.values.toList.filterMapM (phiStep ctx fr i) = .ok ps ∧
+      (ctx.sched[b.id]?).join = some o ∧
+      evalAll env ctx { fr with regs := setPhis ps fr.regs } o.toList = .panic e m := by
+  rw [enterBlock_eq] at h
+  cases hps : b.values.toList.filterMapM (phiStep ctx fr i) with
+  | panic e' m' => exact absurd hps filterMapM_phi_not_panic
+  | stuck msg => rw [hps] at h; cases h
+  | ok ps =>
+    rw [hps] at h
+    change (Res.ofOption _ (ctx.sched[b.id]?).join).bind _ = _ at h
+    cases ho : (ctx.sched[b.id]?).join with
+    | none => rw [ho] at h; cases h
+    | some o =>
+      rw [ho] at h
+      exact ⟨ps, o, rfl, rfl, h⟩
 
 /-! ## The schedule of a well-formed block -/
 

@@ -174,6 +174,88 @@ theorem evalValue_eq_of_args {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v'
   rw [hop, haux, hai, hid, hty, htabs, hfr]
   simp only [argVal_regs, argVal_params hpar]
 
+theorem mapM_ofOption_def {m : ID → String} {r : ID → Option Val} :
+    ∀ {l : List ID} {L : List Val}, l.mapM (fun a => Res.ofOption (m a) (r a)) = .ok L →
+      ∀ a ∈ l, ∃ z, r a = some z
+  | [], _, _ => fun _ h => absurd h List.not_mem_nil
+  | a :: l, L, h => by
+    rw [List.mapM_cons] at h
+    cases ha : r a with
+    | none => rw [ha] at h; cases h
+    | some z =>
+      rw [ha] at h
+      change Res.bind (List.mapM (fun a => Res.ofOption (m a) (r a)) l) _ = _ at h
+      cases hl : l.mapM (fun a => Res.ofOption (m a) (r a)) with
+      | ok L' =>
+        intro b hb
+        rcases List.mem_cons.1 hb with rfl | hb
+        · exact ⟨z, ha⟩
+        · exact mapM_ofOption_def hl b hb
+      | panic e m' => rw [hl] at h; cases h
+      | stuck msg => rw [hl] at h; cases h
+
+theorem mapM_ofOption_ne_panic {m : ID → String} {r : ID → Option Val} {e : Panic} {mm : Mem} :
+    ∀ {l : List ID}, l.mapM (fun a => Res.ofOption (m a) (r a)) ≠ .panic e mm
+  | [] => nofun
+  | a :: l => by
+    rw [List.mapM_cons]
+    cases ha : r a with
+    | none => simp only [Res.ofOption]; nofun
+    | some z =>
+      simp only [Res.ofOption]
+      change Res.bind (List.mapM (fun a => Res.ofOption (m a) (r a)) l) _ ≠ _
+      cases hl : l.mapM (fun a => Res.ofOption (m a) (r a)) with
+      | ok L => nofun
+      | panic e' m' => exact absurd hl mapM_ofOption_ne_panic
+      | stuck msg => nofun
+
+/-- A value that evaluates (or panics) has all its arguments' registers. -/
+theorem evalValue_args_def {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    (h : ∀ msg, evalValue env ctx fr v ≠ .stuck msg) :
+    ∀ a ∈ v.args, ∃ z, fr.regs[a]? = some (some z) := by
+  intro a ha
+  unfold evalValue at h
+  cases hm : v.args.toList.mapM (fun a =>
+      Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
+  | ok L =>
+    obtain ⟨z, hz⟩ := mapM_ofOption_def hm a (Array.mem_toList_iff.2 ha)
+    cases hr : fr.regs[a]? with
+    | none => rw [hr] at hz; cases hz
+    | some o => rw [hr] at hz; cases o with
+      | none => cases hz
+      | some z' => exact ⟨z', rfl⟩
+  | panic e m => exact absurd hm mapM_ofOption_ne_panic
+  | stuck msg => rw [hm] at h; exact absurd rfl (h msg)
+
+/-- Only `PanicBounds` and calls panic. -/
+theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e : Panic} {m : Mem}
+    (h : evalValue env ctx fr v = .panic e m) :
+    v.op = .PanicBounds ∨ v.op = .StaticLECall ∨ v.op = .StaticCall := by
+  unfold evalValue at h
+  cases hm : v.args.toList.mapM (fun a =>
+      Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
+  | panic e' m' => exact absurd hm mapM_ofOption_ne_panic
+  | stuck msg => rw [hm] at h; cases h
+  | ok argv =>
+    rw [hm] at h
+    simp only [bind, Res.bind] at h
+    split at h
+    · cases h
+    · split at h
+      · unfold argVal at h; split at h
+        · cases h
+        · split at h <;> cases h
+      · cases h
+    · split at h
+      · unfold argVal at h; split at h
+        · cases h
+        · split at h <;> cases h
+      · cases h
+    · exact .inl ‹_›
+    · exact .inr (.inl ‹_›)
+    · exact .inr (.inr ‹_›)
+    · split at h <;> cases h
+
 theorem tys_make {tabs : Tables} {f : Func} {x : ID} {v : Value} (h : f.value? x = some v) :
     (Ctx.make tabs f).tys[x]? = some (tabs.ty v.type) := by
   unfold Func.value? at h
