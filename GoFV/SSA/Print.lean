@@ -210,6 +210,9 @@ def file (e : ExportFile) : W Unit := do
     for t in ts do sp; token t
     nl
   for x in e.sections do sectionW x
+  s "frontend\n"
+  for d in e.frontend do defn d
+  s "end\n"
   for m in e.warns do
     s "warn "; q m; nl
   s "typeorder "

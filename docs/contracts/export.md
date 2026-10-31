@@ -1,4 +1,4 @@
-# Contract: per-pass SSA export (`gofv-ssa` v1)
+# Contract: per-pass SSA export (`gofv-ssa` v2)
 
 Owner: Exporter (issue #4). Consumers: LeanIR (parser/printer, #21), RulesExport (#22), every
 pass port (G4). Changing the format bumps the version in the first line and is announced on #4.
@@ -75,13 +75,17 @@ is deliberately not exported; no pass reads it.
 ## File layout
 
 ```
-gofv-ssa 1
+gofv-ssa 2
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi> <nosplit 0|1> <pgohot 0|1>
 config <key> <value>                  (one line per key; table below)
 <section 0>
 <section 1>
 …
+frontend
+<definitions>                          (the frontend block, see below)
+end
+warn "<text>"                         (zero or more)
 typeorder <group> <group> …
 eof
 ```
@@ -300,6 +304,22 @@ constants (`constNilMagic` = 1111, …).
 `warn "<text>"`: an invariant the exporter expected did not hold (e.g. a value's `Block` field
 differs from the block listing it). Written just before `end`; `finish` may add `warn` lines
 before `typeorder`. The stats tool counts them; the corpus must have none.
+
+## Frontend block
+
+After the last section, `frontend`, then definition lines (same records as in a section's
+definition block), then `end`. It defines the objects reachable from the frontend that a pass
+can reach without any section referencing them: `rewriteFixedLoad` folds a load from a
+read-only symbol to its relocation target (`Addr {r.Sym}`), and the rewrite loop can then fold
+a load from that target too (nested generic dictionaries, e.g.
+`internal/synctest..dict.Associate[sync.WaitGroup]` → `internal/abi..dict.Escape[*sync.WaitGroup]`
+→ `type:*sync.WaitGroup`, #62). The block holds the closure, over `R_ADDR`/`R_WEAKADDR`
+relocations, of every exported `SRODATA` generic dictionary (`..dict.` in the name): every
+target not defined by a section is defined here (with its own types), and targets that are
+themselves `SRODATA` dictionaries are followed. Other targets (type descriptors, itabs) are
+defined but not followed. The block is always present (possibly empty). Its numbers continue
+the file's tables; `ExportFile.frontendTables` (final tables plus the block) is what
+`PassEnv.frontend` holds.
 
 ## Fixed configuration (`config` lines)
 

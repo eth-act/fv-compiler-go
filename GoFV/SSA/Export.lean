@@ -49,6 +49,10 @@ structure ExportFile where
   /-- `config` lines in order: key and value tokens. -/
   config : Array (String × Array Token)
   sections : Array Section
+  /-- The `frontend` block: definitions of the symbols reachable through relocations of
+  exported read-only generic dictionaries that no section defines (export.md, "Frontend
+  block"). -/
+  frontend : Array Def
   /-- `warn` lines written after the last section (before `typeorder`). -/
   warns : Array GoStr
   /-- `typeorder`: groups of `CMPeq` types in ascending `types.(*Type).Compare` order. -/
@@ -88,5 +92,10 @@ end Tables
 /-- The tables in force for section `k` (definitions of sections `0..k`). -/
 def ExportFile.tablesAt (e : ExportFile) (k : Nat) : Tables :=
   (e.sections.extract 0 (k + 1)).foldl (fun t s => t.addAll s.defs) {}
+
+/-- All definitions of the file: the final tables plus the `frontend` block (the frontend's
+objects a pass may look up by name, `PassEnv.frontend`). -/
+def ExportFile.frontendTables (e : ExportFile) : Tables :=
+  (e.tablesAt (e.sections.size - 1)).addAll e.frontend
 
 end GoFV.SSA
