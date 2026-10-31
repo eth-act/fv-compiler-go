@@ -72,7 +72,7 @@ func main() {
 		"GOWORK=off",
 		"GOFLAGS=",
 		"GOFV_OUT="+filepath.Join(root, "GoFV", "Rules", "Generated"),
-		"GOFV_INVENTORY="+filepath.Join(root, "docs", "contracts", "rules-inventory.md"),
+		"GOFV_INVENTORY="+filepath.Join(root, "docs", "contracts", "rules.md"),
 		"GOFV_GOROOT="+goroot,
 		"GOFV_TMP="+tmp,
 		"GOFV_GOVERSION="+strings.TrimSpace(strings.SplitN(string(version), "\n", 2)[0]),
