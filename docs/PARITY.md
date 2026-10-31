@@ -53,10 +53,12 @@ lake exe pass-parity [--pass <fn|stock name|all>]... [--jobs N] [--max-report N]
 - `--table`: also write the summary table (markdown) to a file.
 - Exit status 1 on any mismatch, pass error, parse error, or when no file was read.
 
-`scripts/parity.sh [-j jobs] [-o out.md] [-p pass]... [corpus...]` builds the tool, runs every
-registered pass over the corpus (default: the newest `../gofv-corpus/<pin12>/plain`) through
-`memcap`, and writes the table to `tmp/parity.md` and the mismatch reports to
-`tmp/parity.md.log`.
+`scripts/parity.sh [--corpus quick|full] [-j jobs] [-o out.md] [-p pass]... [corpus...]` builds
+the tool, runs every registered pass over the corpus (default: the newest
+`../gofv-corpus/<pin12>/plain`) through `memcap`, and writes the table to `tmp/parity.md` and
+the mismatch reports to `tmp/parity.md.log`. `--corpus full` selects the nightly corpus
+`../gofv-corpus/<pin12>/full/plain` (all of `go list std` and `go list cmd`, issue #63;
+`scripts/export-corpus.sh --corpus full`).
 
 ## Registering a pass
 

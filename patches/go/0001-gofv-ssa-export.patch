@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1070 @@
+@@ -0,0 +1,1088 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -172,6 +172,15 @@
 +	if set.fn != nil && !set.fn.MatchString(pkg+"."+f.Name) {
 +		return nil
 +	}
++	x := gofvNewExporter(f, set)
++	x.section("start")
++	return x
++}
++
++// gofvNewExporter returns an exporter for f with the file header and config lines written
++// (no section yet). set may carry no directory when the caller does not write files.
++func gofvNewExporter(f *Func, set *gofvSettings) *gofvExporter {
++	pkg := base.Ctxt.Pkgpath
 +	x := &gofvExporter{
 +		f:        f,
 +		set:      set,
@@ -186,7 +195,6 @@
 +	fmt.Fprintf(&x.out, "gofv-ssa 2\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
-+	x.section("start")
 +	return x
 +}
 +
@@ -1054,7 +1062,14 @@
 +	x.out.WriteString("end\n")
 +}
 +
++// finish completes the file (tail) and writes it.
 +func (x *gofvExporter) finish() {
++	x.tail()
++	x.write()
++}
++
++// tail appends the frontend block, file-level warns, typecmp and typeorder lines and eof.
++func (x *gofvExporter) tail() {
 +	x.warns = x.warns[:0]
 +	x.frontend()
 +	for _, s := range x.warns {
@@ -1099,7 +1114,10 @@
 +		}
 +	}
 +	fmt.Fprintf(&x.out, "typeorder %s\neof\n", gofvList(groups))
++}
 +
++// write writes the finished file under the export directory.
++func (x *gofvExporter) write() {
 +	dir := filepath.Join(x.set.dir, filepath.FromSlash(base.Ctxt.Pkgpath))
 +	if err := os.MkdirAll(dir, 0o777); err != nil {
 +		base.Fatalf("gofv export: %v", err)
