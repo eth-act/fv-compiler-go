@@ -17,6 +17,12 @@ avoiding): the problem, the trick, the numbers, where it is used.
   the most frequent value as wildcard default.
 - **Effect:** the whole generated `Op.lean` (446 constructors, 20 metadata functions,
   `DecidableEq`) builds in 7.5 s / 0.56 GB (#6).
+- **Also measured:** the bare 446-constructor `inductive` already writes a 12 MB `.olean`
+  (16 MB with the metadata functions; no equation lemmas or splitters stored). Forcing the
+  equation lemmas of six metadata functions (`attribute [local simp] Op.argLen …`) did not
+  finish within the default heartbeats (25 s CPU). So evaluate `Op` metadata on concrete ops
+  with `decide`/`rfl`; never `simp [Op.argLen]` on an op variable (see the
+  `lean-proof-performance` skill, "stuck match").
 
 #### Large `match` on a variable: keep `simp` off it, generate equations in the defining module
 - **Problem:** `GoFV.SSA.Op` has 446 constructors and its 20 metadata functions are 446-arm
