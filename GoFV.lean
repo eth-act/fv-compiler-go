@@ -17,6 +17,14 @@ import GoFV.SSA.GoString
 import GoFV.SSA.Alloc
 import GoFV.SSA.Edges
 import GoFV.SSA.ConstCache
+import GoFV.SSA.XPosMap
+import GoFV.SSA.TypeCmp
+import GoFV.SSA.TypePred
+import GoFV.SSA.StoreOrder
+import GoFV.SSA.Analysis.Postorder
+import GoFV.SSA.Analysis.Dom
+import GoFV.SSA.Analysis.SparseTree
+import GoFV.SSA.Analysis.CfgCache
 import GoFV.Rules.Syntax
 import GoFV.Rules.Generated
 import GoFV.Util.PdqSort
@@ -31,3 +39,4 @@ import GoFV.Opt.CpuFeatures
 import GoFV.Opt.CopyElim
 import GoFV.Opt.ZCSE
 import GoFV.Opt.Deadcode
+import GoFV.Opt.NumberLines

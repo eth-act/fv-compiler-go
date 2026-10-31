@@ -18,10 +18,9 @@ structure SplitKey where
   type : TypeRef
   deriving DecidableEq, Inhabited, Repr, Hashable
 
-/-- One `SparseTree` node of `cache sdom`: `b<ID>:<parent>:<child>:<sibling>:<entry>:<exit>`
-(`parent`/`child`/`sibling` are block IDs, `none` for nil). -/
+/-- `SparseTreeNode` (`sparsetree.go`): dominator-tree links (block IDs, `none` for nil) and
+the entry/exit numbers. The default is Go's zero node (blocks outside the tree). -/
 structure SdomNode where
-  block : ID
   parent : Option ID
   child : Option ID
   sibling : Option ID
@@ -40,8 +39,10 @@ structure LineRange where
 /-- The `f.cached*` analyses that are non-nil (`cache` lines). -/
 structure Caches where
   postorder : Option (Array ID) := none
-  /-- Per block of `f.Blocks` (in the exported order): its immediate dominator. -/
-  idom : Option (Array (ID × Option ID)) := none
+  /-- `f.cachedIdom`, indexed by block ID (size `NumBlocks()` when computed; `none` for the
+  entry and unreachable blocks). Exported for the blocks of `f.Blocks`, in that order. -/
+  idom : Option (Array (Option ID)) := none
+  /-- `f.cachedSdom`, indexed by block ID (exported like `idom`). -/
   sdom : Option (Array SdomNode) := none
   /-- Only presence is exported. -/
   loopnest : Bool := false
