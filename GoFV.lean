@@ -66,3 +66,8 @@ import GoFV.Opt.Prove.Poset
 import GoFV.Opt.Prove.Ctx
 import GoFV.Opt.Prove.FactsTable
 import GoFV.Opt.CSE
+import GoFV.Opt.Prove.Flow
+import GoFV.Opt.Prove.IndVar
+import GoFV.Opt.Prove.Downward
+import GoFV.Opt.Prove.Simplify
+import GoFV.Opt.Prove.Pass

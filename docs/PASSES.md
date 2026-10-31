@@ -1195,7 +1195,7 @@ need.
 | `GoFV/SSA/TypeCmp.lean` | `Type.Compare` as rank comparison from the export's `typeorder`; pointer identity | `types/type.go` | cse, constant cache, copyelim |
 | `GoFV/SSA/StoreOrder.lean` | `storeOrder` | `schedule.go:410-560` | nilcheckelim, writebarrier |
 | `GoFV/Rules/Apply.lean` (#7) | `applyRewrite` driver: iteration order, copy following, `Invalid` reset, final freeing order, cycle detection | `rewrite.go:41-232` | opt ×3, divisible, divmod, decompose builtin (dec rules), sccp (folding via `rewriteValuegeneric`) |
-| later: `GoFV/Opt/Prove/{FactsTable,Poset,IndVar}.lean` | verbatim ports | `prove.go`, `poset.go`, `loopbce.go` | prove, late fuse (`fuseBranchRedirect`) |
+| `GoFV/Opt/Prove/{Limit,Poset,Ctx,FactsTable,Flow,IndVar,Downward,Simplify,Pass}.lean` | verbatim ports (poset and limits difftested against Go: `scripts/prove-difftest.sh`) | `prove.go`, `poset.go`, `loopbce.go`, `downward_counting_loop.go` | prove, late fuse (`fuseBranchRedirect`) |
 | later: `GoFV/SSA/ABI.lean` | ABI assignment queries over the exported `abiparam` data; `ABIAnalyzeTypes` subset for new runtime calls | `abi/abiutils.go` | expand calls, writebarrier, resched |
 
 Every module keeps kernel-friendly definitions (`List` scans, structural recursion,
