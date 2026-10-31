@@ -5,7 +5,8 @@
 # and the mismatch reports to <out>.log. Exit status is pass-parity's (1 on any mismatch).
 #
 # usage: scripts/parity.sh [-j jobs] [-o out.md] [-p pass]... [corpus dir|file...]
-#        default corpus: ../gofv-corpus/<pin12>/plain (the newest one if several), jobs 4
+#        default corpus: the newest ../gofv-corpus/<pin12>/plain (directories named exactly by a
+#        12-hex pin; e.g. <pin12>.new being regenerated is skipped), jobs 4
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 jobs=4
@@ -22,7 +23,8 @@ done
 shift $((OPTIND - 1))
 if [ $# -eq 0 ]; then
   main_root=$(git -C "$root" worktree list --porcelain | sed -n '1s/^worktree //p')
-  corpus=$(ls -dt "$(dirname "$main_root")"/gofv-corpus/*/plain 2>/dev/null | head -n 1)
+  corpus=$(ls -dt "$(dirname "$main_root")"/gofv-corpus/*/plain 2>/dev/null \
+    | grep -E '/[0-9a-f]{12}/plain$' | head -n 1 || true)
   [ -n "$corpus" ] || { echo "parity: no corpus under ../gofv-corpus; pass one" >&2; exit 2; }
   set -- "$corpus"
 fi
