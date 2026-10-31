@@ -92,6 +92,7 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | divmod | divmod | 9297 | 9297 | 0 | 100% | |
 | zero arg cse | zcse | 9297 | 9297 | 0 | 100% | before the #52 export fix: 84 mismatches (`byte`/`uint8` type pointers) |
 | nilcheckelim | nilcheckelim | 9297 | 9297 | 0 | 100% | stock pass changes 5008 functions (incl. `storeOrder` reorders) |
+| prove | prove | 9297 | 9297 | 0 | 100% | stock pass changes 7507 functions (incl. T2 value sorting); branches removed in 1255, downward-loop inversion in 64, `Mul`→`CondSelect` in 54, `Slicemask`→const in 111, signed→unsigned `Div` in 86 |
 | early fuse | fuseEarly | 9297 | 9297 | 0 | 100% | 1576 functions changed by the pass |
 | expand calls | expandCalls | 9297 | 9297 | 0 | 100% | files with `InterLECall` 766, `ClosureLECall` 359, `TailLECall` 164, `TailLECallInter` 4, `Dereference` 185, `ArgFloatReg` (output) 204; no `SelectNAddr` |
 | softfloat | softfloat | 9297 | 9297 | 0 | 100% | `config softfloat 0`: identity |

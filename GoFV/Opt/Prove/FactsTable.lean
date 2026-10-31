@@ -314,7 +314,8 @@ arguments. -/
 def boolFacts (rc : Rec) (f : Func) (ft : FactsTable) (v : ID) (lim : Limit) : FactsTable :=
   let x := f.getV v
   let isTrue := lim.min == 1
-  let a0 := x.args[0]!
+  -- only read by the branches below, which exist for ops with arguments
+  let a0 := x.args[0]?.getD 0
   let ft := match domainRelation x.op with
     | some (d, r) =>
       let d := if d == dSigned && ft.isNonNegative a0 && ft.isNonNegative x.args[1]! then
