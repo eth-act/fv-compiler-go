@@ -1,5 +1,5 @@
 import GoFV.SSA.Type
-import Std.Data.HashMap
+import Std.Data.TreeMap
 
 /-!
 # `types.(*Type).Compare`
@@ -15,11 +15,15 @@ disagrees with the ranks (`typecmp`). `Compare` is a rank comparison with those 
 
 namespace GoFV.SSA
 
+/-- The lexicographic order on type-number pairs, the key order of `TypeOrder.exceptions` (a
+`TreeMap`, which the kernel can evaluate, unlike a `HashMap`). -/
+def typePairCmp (a b : TypeRef × TypeRef) : Ordering := (compare a.1 b.1).then (compare a.2 b.2)
+
 /-- The rank of each type number in `typeorder` (`none` for numbers it does not list) and the
 `typecmp` exceptions, keyed by `(a, b)` with `a < b`. -/
 structure TypeOrder where
   rank : Array (Option Nat)
-  exceptions : Std.HashMap (TypeRef × TypeRef) Ordering := {}
+  exceptions : Std.TreeMap (TypeRef × TypeRef) Ordering typePairCmp := {}
   deriving Inhabited
 
 namespace TypeOrder
