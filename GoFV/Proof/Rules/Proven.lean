@@ -375,7 +375,7 @@ theorem divmod_allSound : Proven.divmod.AllSound :=
     exact ⟨⟨Rule.checked_of_sound r_divmod_25_sound rfl, Rule.checked_of_sound r_divmod_93_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_159_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_29_sound rfl, Rule.checked_of_sound r_divmod_99_sound rfl, Rule.checked_of_sound r_divmod_121_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divmod_171_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divmod_171_sound rfl, Rule.checked_of_sound r_divmod_221_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_33_sound rfl, Rule.checked_of_sound r_divmod_113_sound rfl, Rule.checked_of_sound r_divmod_127_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_180_sound rfl, Rule.checked_of_sound r_divmod_206_sound rfl, Rule.checked_of_sound r_divmod_232_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_21_sound rfl, Rule.checked_of_sound r_divmod_87_sound rfl, trivial⟩,

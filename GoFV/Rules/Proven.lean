@@ -254,7 +254,7 @@ def divisible : RuleSet where
   structLoads := []
   structStores := []
 
-/-- `divmod.rules` restricted to its 16 proven value rules, 0 proven block rules, 0
+/-- `divmod.rules` restricted to its 17 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions and 0 struct-store splits. -/
 def divmod : RuleSet where
@@ -262,7 +262,7 @@ def divmod : RuleSet where
   values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
     (.Div16u, [Generated.Divmod.r_divmod_159]),
     (.Div32, [Generated.Divmod.r_divmod_29, Generated.Divmod.r_divmod_99, Generated.Divmod.r_divmod_121]),
-    (.Div32u, [Generated.Divmod.r_divmod_171]),
+    (.Div32u, [Generated.Divmod.r_divmod_171, Generated.Divmod.r_divmod_221]),
     (.Div64, [Generated.Divmod.r_divmod_33, Generated.Divmod.r_divmod_113, Generated.Divmod.r_divmod_127]),
     (.Div64u, [Generated.Divmod.r_divmod_180, Generated.Divmod.r_divmod_206, Generated.Divmod.r_divmod_232]),
     (.Div8, [Generated.Divmod.r_divmod_21, Generated.Divmod.r_divmod_87]),
