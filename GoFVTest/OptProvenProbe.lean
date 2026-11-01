@@ -73,13 +73,13 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond"
         else if !(match r.pat with
-          | .op o _ _ _ _ _ _ _ => topAll o e
+          | .op o _ _ _ _ _ _ _ => topAll o e || makeTop o (e.ty [])
           | _ => false) then "top"
         else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !leavesOK M I [] r.pat then "leaves"
         else if !resultOK tabs M ev or σ I r x defs then "result"
         else if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frame"
-        else if !condFrameOK tabs ev e I r.pat r.cond then "condFrame"
+        else if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) then "condFrame"
         else "ok"
     s!"{r.loc.file}:{r.loc.line} {rs}"
 
