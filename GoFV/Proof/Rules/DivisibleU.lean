@@ -125,7 +125,7 @@ macro "divisible_u" : tactic => `(tactic| (
   rule_unfold
   (try rule_ands)
   (try rule_clear_oracle)
-  clear hcond
+  (try clear hcond)
   divisible_gen
   rcases U with s | ⟨k, m, mx⟩
   · have hz := GoFV.Proof.Rules.Divisible.udivisible_err hU
