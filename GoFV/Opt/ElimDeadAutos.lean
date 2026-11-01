@@ -1,8 +1,8 @@
 import GoFV.Opt.Pass
 import GoFV.SSA.Alloc
 import GoFV.SSA.TypePred
-import Std.Data.HashMap.Basic
-import Std.Data.HashSet.Basic
+import Std.Data.TreeMap
+import Std.Data.TreeSet
 
 /-!
 # dead auto elim (`deadstore.go:240-429`, `elimDeadAutosGeneric`)
@@ -15,7 +15,8 @@ controls; if the 4th round still changes something, nothing is eliminated
 
 Go's map iterations here are order-independent: `usedAdd` computes a closure (ported as a
 worklist), and the final rewrite touches only each eliminated value itself; the port rewrites
-in first-recorded order.
+in first-recorded order. The maps are `Std.TreeMap`s (not hash maps) so that the kernel can
+evaluate the pass (`decide +kernel` in `dead_auto_elim_witness`).
 -/
 
 namespace GoFV.Opt
@@ -26,13 +27,13 @@ namespace ElimDeadAutos
 
 structure St where
   /-- `addr`: values the address of an auto reaches. -/
-  addr : Std.HashMap ID AuxRef := {}
+  addr : Std.TreeMap ID AuxRef := {}
   /-- `elim`: values to eliminate if their auto is unused, in first-recorded order. -/
-  elim : Std.HashMap ID AuxRef := {}
+  elim : Std.TreeMap ID AuxRef := {}
   elimOrder : Array ID := #[]
   /-- `move[y]`: sources `x` of `Move &y &x` while `y` is unused. -/
-  move : Std.HashMap AuxRef (Array AuxRef) := {}
-  used : Std.HashSet AuxRef := {}
+  move : Std.TreeMap AuxRef (Array AuxRef) := {}
+  used : Std.TreeSet AuxRef := {}
 
 /-- `usedAdd(n)`: add `n` (and transitively its pending `move` sources) to `used`; whether `n`
 was new. -/
@@ -42,7 +43,7 @@ def usedAdd (s : St) (n : AuxRef) : St × Bool := Id.run do
   let mut work := #[n]
   -- each round adds a fresh name to `used`; the names are aux numbers below the move-map
   -- total, so the fuel bound is the number of pending sources plus one
-  let fuel := s.move.fold (fun acc _ xs => acc + xs.size) 1
+  let fuel := s.move.foldl (fun acc _ xs => acc + xs.size) 1
   for _ in [0:fuel + 1] do
     match work.back? with
     | none => break

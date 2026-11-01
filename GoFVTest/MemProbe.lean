@@ -21,7 +21,9 @@ its changes by the argument a refinement proof needs:
   roots minus the removed checks in the same order.
 * dse: changed functions, those the checker `DSE.drel` accepts (`dseFrag`), and for the others
   the conditions it rejects (`dseWhy`).
-* dead auto elim: changed functions, those with calls or integer→pointer conversions.
+* dead auto elim: changed functions, those with calls or integer→pointer conversions. With
+  `--dae-candidates`, every accepted change of a function without calls (non-vacuity witness
+  candidates: file, section, values, blocks).
 -/
 
 open GoFV.SSA GoFV.Opt
@@ -242,7 +244,8 @@ def elimName (f : Func) (v : Value) : Option AuxRef := Id.run do
 
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
-  for a in args do
+  let cands := args.contains "--dae-candidates"
+  for a in args.filter (· != "--dae-candidates") do
     let p : System.FilePath := a
     if ← p.isDir then
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
@@ -373,6 +376,9 @@ def main (args : List String) : IO UInt32 := do
             let calls := ops.any (fun o => o == .StaticLECall || o == .StaticCall ||
               o == .ClosureLECall || o == .InterLECall || o == .TailLECall)
             if calls then aCalls := aCalls + 1
+            if cands && !calls && DAE.arel prev f g then
+              IO.println s!"dae candidate: {path} section {k} values {f.valueTab.size} blocks {f.blocks.size}"
+
             if ops.any (· == .Convert) then aConv := aConv + 1
             let mut addr := false
             for n in names do
