@@ -232,9 +232,21 @@ theorem encode_int_bytes (w : Width) (X : BitVec w.bits) :
 
 /-! ## Reads -/
 
+/-- An access ending inside a block's window ends inside it at a lower offset too. -/
+theorem endsInWindow_mono {b : Blk} {e e' : Nat} (h : b.endsInWindow e = true) (hle : e' ≤ e) :
+    b.endsInWindow e' = true := by
+  unfold Blk.endsInWindow at h ⊢
+  split
+  · rename_i w hw
+    rw [hw] at h
+    simp only [decide_eq_true_eq] at h ⊢
+    omega
+  · rfl
+
 theorem read_eq_some {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hn : n ≠ 0) :
     m.read p n = some bs ↔ ∃ a, m.find? p.blk = some a ∧ p.off.toNat + n ≤ a.data.size ∧
-      p.off.toNat + n < 2 ^ 64 ∧ bs = a.data.extract p.off.toNat (p.off.toNat + n) := by
+      p.off.toNat + n < 2 ^ 64 ∧ p.blk.endsInWindow (p.off.toNat + n) = true ∧
+      bs = a.data.extract p.off.toNat (p.off.toNat + n) := by
   unfold Mem.read
   simp only [beq_iff_eq, hn, ite_false]
   cases m.find? p.blk with
@@ -247,7 +259,7 @@ theorem read_eq_some {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hn : n ≠
       exact eq_comm
     · rename_i h
       simp only [reduceCtorEq, false_iff]
-      exact fun ⟨h1, h2, _⟩ => h ⟨h1, h2⟩
+      exact fun ⟨h1, h2, h3, _⟩ => h ⟨h1, h2, h3⟩
 
 theorem toNat_add_ofNat (o : BitVec 64) (d : Nat) :
     (o + BitVec.ofNat 64 d).toNat = (o.toNat + d) % 2 ^ 64 := by
@@ -278,12 +290,13 @@ theorem read_append {m : Mem} {p : Ptr} {a b : Nat} {x y : Array Byte}
     rw [read_zero] at hb
     cases hb
     rw [Nat.add_zero, ha, Array.append_empty]
-  obtain ⟨al, hf, h1, h2, rfl⟩ := (read_eq_some ha0).1 ha
-  obtain ⟨al', hf', h1', h2', rfl⟩ := (read_eq_some hb0).1 hb
+  obtain ⟨al, hf, h1, h2, -, rfl⟩ := (read_eq_some ha0).1 ha
+  obtain ⟨al', hf', h1', h2', h3', rfl⟩ := (read_eq_some hb0).1 hb
   rw [Ptr.add_blk, hf, Option.some.injEq] at hf'
   subst hf'
-  rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)] at h1' h2' ⊢
-  refine (read_eq_some (by omega)).2 ⟨al, hf, by omega, by omega, ?_⟩
+  rw [Ptr.add_blk] at h3'
+  rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)] at h1' h2' h3' ⊢
+  refine (read_eq_some (by omega)).2 ⟨al, hf, by omega, by omega, by rw [← Nat.add_assoc]; exact h3', ?_⟩
   rw [Array.extract_append_extract, Nat.min_eq_left (by omega), Nat.max_eq_right (by omega),
     Nat.add_assoc]
 
@@ -295,31 +308,32 @@ theorem read_extract {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (h : m.read
   · subst hk0
     rw [read_zero]
     simp [Nat.min_le_left]
-  obtain ⟨al, hf, h1, h2, rfl⟩ := (read_eq_some (n := n) (by omega)).1 h
+  obtain ⟨al, hf, h1, h2, h3, rfl⟩ := (read_eq_some (n := n) (by omega)).1 h
   refine (read_eq_some hk0).2 ⟨al, hf, ?_⟩
-  rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)]
-  refine ⟨by omega, by omega, ?_⟩
+  rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega), Ptr.add_blk]
+  refine ⟨by omega, by omega, endsInWindow_mono h3 (by omega), ?_⟩
   rw [Array.extract_extract, Nat.min_eq_left (by omega), Nat.add_assoc]
 
 /-- Ranges `[off + d, off + d + s)` that are each valid (modulo `2^64`, as a `Ptr.add` offset)
 and cover `[0, n)` from `off` lie below `size` and `2^64`. -/
-theorem cover_bound {off size n : Nat} (P : List (Nat × Nat)) (hoff : off < 2 ^ 64)
-    (hv : ∀ r ∈ P, 0 < r.2 → (off + r.1) % 2 ^ 64 + r.2 ≤ size ∧ (off + r.1) % 2 ^ 64 + r.2 < 2 ^ 64)
+theorem cover_bound {off size n : Nat} {B : Blk} (P : List (Nat × Nat)) (hoff : off < 2 ^ 64)
+    (hv : ∀ r ∈ P, 0 < r.2 → (off + r.1) % 2 ^ 64 + r.2 ≤ size ∧
+      (off + r.1) % 2 ^ 64 + r.2 < 2 ^ 64 ∧ B.endsInWindow ((off + r.1) % 2 ^ 64 + r.2) = true)
     (hc : ∀ k < n, ∃ r ∈ P, r.1 ≤ k ∧ k < r.1 + r.2) :
-    ∀ k < n, off + k + 1 ≤ size ∧ off + k + 1 < 2 ^ 64 := by
+    ∀ k < n, off + k + 1 ≤ size ∧ off + k + 1 < 2 ^ 64 ∧ B.endsInWindow (off + k + 1) = true := by
   intro k
   induction k using Nat.strongRecOn with
   | _ k ih =>
     intro hk
     obtain ⟨r, hr, h1, h2⟩ := hc k hk
-    obtain ⟨v1, v2⟩ := hv r hr (by omega)
+    obtain ⟨v1, v2, v3⟩ := hv r hr (by omega)
     have hnw : off + r.1 < 2 ^ 64 := by
       by_cases h0 : r.1 = 0
       · omega
-      · have := ih (r.1 - 1) (by omega) (by omega)
+      · have := (ih (r.1 - 1) (by omega) (by omega)).2.1
         omega
-    rw [Nat.mod_eq_of_lt hnw] at v1 v2
-    omega
+    rw [Nat.mod_eq_of_lt hnw] at v1 v2 v3
+    exact ⟨by omega, by omega, endsInWindow_mono v3 (by omega)⟩
 
 /-- Reads covering `[0, n)` from `Q` make the whole range readable. -/
 theorem read_cover {m : Mem} {Q : Ptr} {n : Nat} (hn : 0 < n) (rs : List (Nat × Nat))
@@ -330,14 +344,17 @@ theorem read_cover {m : Mem} {Q : Ptr} {n : Nat} (hn : 0 < n) (rs : List (Nat ×
   obtain ⟨bs0, hb0⟩ := hv r0 hr0
   obtain ⟨al, hf, -⟩ := (read_eq_some (by omega)).1 hb0
   rw [Ptr.add_blk] at hf
-  have hb := cover_bound (size := al.data.size) rs Q.off.isLt (fun r hr hpos => by
+  have hb := cover_bound (size := al.data.size) (B := Q.blk) rs Q.off.isLt (fun r hr hpos => by
     obtain ⟨bs, hbs⟩ := hv r hr
-    obtain ⟨al', hf', h1, h2, -⟩ := (read_eq_some (by omega)).1 hbs
+    obtain ⟨al', hf', h1, h2, h3, -⟩ := (read_eq_some (by omega)).1 hbs
     rw [Ptr.add_blk, hf, Option.some.injEq] at hf'
     subst hf'
-    rw [Ptr.add_off, toNat_add_ofNat] at h1 h2
-    exact ⟨h1, h2⟩) hc (n - 1) (by omega)
-  exact ⟨_, (read_eq_some (by omega)).2 ⟨al, hf, by omega, by omega, rfl⟩⟩
+    rw [Ptr.add_off, toNat_add_ofNat] at h1 h2 h3
+    rw [Ptr.add_blk] at h3
+    exact ⟨h1, h2, h3⟩) hc (n - 1) (by omega)
+  have h3 := hb.2.2
+  rw [Nat.add_assoc, Nat.sub_add_cancel (by omega)] at h3
+  exact ⟨_, (read_eq_some (by omega)).2 ⟨al, hf, by omega, by omega, h3, rfl⟩⟩
 
 /-! ## Writes -/
 
@@ -392,7 +409,7 @@ theorem write_spec {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     m1 = m.set p.blk { a with data :=
         (List.range bs.size).foldl (fun d i => d.set! (p.off.toNat + i) bs[i]!) a.data } ∧
       (0 < bs.size → a.writable = true ∧ p.off.toNat + bs.size ≤ a.data.size ∧
-        p.off.toNat + bs.size < 2 ^ 64) := by
+        p.off.toNat + bs.size < 2 ^ 64 ∧ p.blk.endsInWindow (p.off.toNat + bs.size) = true) := by
   unfold Mem.write at hw
   by_cases he : bs.isEmpty = true
   · have hsz : bs.size = 0 := Array.isEmpty_iff_size_eq_zero.1 he
@@ -406,7 +423,7 @@ theorem write_spec {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     · rename_i hc
       cases hw
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-      exact ⟨rfl, fun _ => ⟨hc.1.1, hc.1.2, hc.2⟩⟩
+      exact ⟨rfl, fun _ => ⟨hc.1.1.1, hc.1.1.2, hc.1.2, hc.2⟩⟩
     · cases hw
 
 theorem write_find {m m1 : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p bs = some m1)
@@ -424,7 +441,8 @@ theorem write_find {m m1 : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p bs =
 
 theorem write_of_valid {m : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     (hm : m.find? p.blk = some a) (hpos : 0 < bs.size) (hw : a.writable = true)
-    (h1 : p.off.toNat + bs.size ≤ a.data.size) (h2 : p.off.toNat + bs.size < 2 ^ 64) :
+    (h1 : p.off.toNat + bs.size ≤ a.data.size) (h2 : p.off.toNat + bs.size < 2 ^ 64)
+    (h3 : p.blk.endsInWindow (p.off.toNat + bs.size) = true) :
     m.write p bs = some (m.set p.blk { a with
       data := (List.range bs.size).foldl (fun d i => d.set! (p.off.toNat + i) bs[i]!) a.data })
     := by
@@ -435,7 +453,7 @@ theorem write_of_valid {m : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     have := Array.isEmpty_iff_size_eq_zero.1 h'
     omega
   simp only [he, Bool.false_eq_true, ite_false, hm, Option.bind_eq_bind, Option.bind_some, hw,
-    Bool.and_eq_true, decide_eq_true_eq, h1, h2, and_self, ite_true]
+    Bool.and_eq_true, decide_eq_true_eq, h1, h2, h3, and_self, ite_true]
 
 section Tiling
 
@@ -452,9 +470,9 @@ theorem tileStep_spec {m m1 : Mem} {p : Nat × Array Byte} {a : Alloc}
     m1 = m.set Q.blk { a with data :=
         (List.range p.2.size).foldl (fun d i => d.set! (tileOff Q p + i) p.2[i]!) a.data } ∧
       (0 < p.2.size → a.writable = true ∧ tileOff Q p + p.2.size ≤ a.data.size ∧
-        tileOff Q p + p.2.size < 2 ^ 64) := by
+        tileOff Q p + p.2.size < 2 ^ 64 ∧ Q.blk.endsInWindow (tileOff Q p + p.2.size) = true) := by
   have := write_spec (p := Q.add (BitVec.ofNat 64 p.1)) hm hw
-  rwa [Ptr.add_off, toNat_add_ofNat] at this
+  rwa [Ptr.add_off, toNat_add_ofNat, Ptr.add_blk] at this
 
 theorem fold_find : ∀ (ws : List (Nat × Array Byte)) (m mr : Mem),
     ws.foldlM (tileStep Q) m = some mr → (∃ p ∈ ws, 0 < p.2.size) → ∃ a, m.find? Q.blk = some a
@@ -479,7 +497,7 @@ theorem fold_find : ∀ (ws : List (Nat × Array Byte)) (m mr : Mem),
 theorem fold_valid : ∀ (ws : List (Nat × Array Byte)) (m mr : Mem) (a : Alloc),
     m.find? Q.blk = some a → ws.foldlM (tileStep Q) m = some mr →
     ∀ p ∈ ws, 0 < p.2.size → a.writable = true ∧ tileOff Q p + p.2.size ≤ a.data.size ∧
-      tileOff Q p + p.2.size < 2 ^ 64
+      tileOff Q p + p.2.size < 2 ^ 64 ∧ Q.blk.endsInWindow (tileOff Q p + p.2.size) = true
   | [], _, _, _, _, _, _, h, _ => absurd h List.not_mem_nil
   | p :: ws, m, mr, a, hm, hf, q, hq, hpos => by
     rw [List.foldlM_cons] at hf
@@ -578,11 +596,12 @@ theorem write_tiling {m0 mr : Mem} {Q : Ptr} {W : Nat} (ws : List (Nat × Array 
   obtain ⟨p0, hp0, h01, h02⟩ := hcov 0 (by omega)
   obtain ⟨a0, ha0⟩ := fold_find Q ws m0 mr hw ⟨p0, hp0, by omega⟩
   have hv := fold_valid Q ws m0 mr a0 ha0 hw
-  have hb := cover_bound (size := a0.data.size) (ws.map fun p => (p.1, p.2.size)) Q.off.isLt
+  have hb := cover_bound (size := a0.data.size) (B := Q.blk) (ws.map fun p => (p.1, p.2.size))
+    Q.off.isLt
     (fun r hr hpos => by
       obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hr
       have := hv p hp hpos
-      exact ⟨this.2.1, this.2.2⟩)
+      exact ⟨this.2.1, this.2.2.1, this.2.2.2⟩)
     (fun k hk => by
       obtain ⟨p, hp, h1, h2⟩ := hcov k hk
       exact ⟨_, List.mem_map_of_mem hp, h1, h2⟩) (W - 1) (by omega)
@@ -595,7 +614,9 @@ theorem write_tiling {m0 mr : Mem} {Q : Ptr} {W : Nat} (ws : List (Nat × Array 
   · have := hin _ h
     rw [Array.getElem?_extract, ite_eq_left (by simp at this ⊢; omega), ← Nat.add_assoc]
     exact hDw _ h t ht
-  · rw [write_of_valid ha0 (by omega) hwr (by omega) (by omega)]
+  · have h3 := hb.2.2
+    rw [Nat.add_assoc, Nat.sub_add_cancel (by omega)] at h3
+    rw [write_of_valid ha0 (by omega) hwr (by omega) (by omega) (by rw [hSs]; exact h3)]
     refine congrArg (fun d => some (m0.set Q.blk { a0 with data := d })) ?_
     apply Array.ext_getElem?
     intro j

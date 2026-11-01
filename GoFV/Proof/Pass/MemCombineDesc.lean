@@ -30,7 +30,7 @@ theorem read_size {M : Mem} {Q : Ptr} {n : Nat} {bs : Array Byte} (h : M.read Q 
     bs.size = n := by
   by_cases hn : n = 0
   · subst hn; cases h; rfl
-  · obtain ⟨a, -, h1, -, rfl⟩ := (read_eq_some hn).1 h
+  · obtain ⟨a, -, h1, -, -, rfl⟩ := (read_eq_some hn).1 h
     simp only [Array.size_extract]
     omega
 
