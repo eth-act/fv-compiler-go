@@ -243,7 +243,7 @@ order, or droppable (`dropAtom`: no panic, no memory effect). These are the pass
 are about (issue #113).
 
 `lake exe opt-proven-probe <corpus>` runs the full, proven-only and checked variants on every
-stock instance's input. Quick corpus (`quick-v1`, 9,297 functions; 993 proven rules; "rules
+stock instance's input. Quick corpus (`quick-v1`, 9,297 functions; 1,024 proven rules; "rules
 fired": value and block rules, `RwState.fired`, each instance run on the stock input):
 
 | Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Validator rejects | Checked parity |
@@ -251,12 +251,12 @@ fired": value and block rules, `RwState.fired`, each instance run on the stock i
 | opt | 100.00% | 43.34% | 69.28% | 99,454 | 17,343 | 17.44% | 1 | 43.34% |
 | middle opt | 100.00% | 77.47% | 94.26% | 11,934 | 1,662 | 13.93% | 6 | 77.43% |
 | late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% | 0 | 84.60% |
-| divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% | 0 | 99.92% |
-| divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% | 0 | 97.88% |
+| divisible | 100.00% | 99.96% | 62.33% | 9 | 4 | 44.44% | 0 | 99.96% |
+| divmod | 100.00% | 99.02% | 96.91% | 441 | 273 | 61.90% | 0 | 99.02% |
 
-Functions all of whose rewrite sections the checked passes reproduce exactly: 3,536 of 9,297
-(38.03%; the same with 957 rules: the 36 new rules change opt sections of functions that differ
-elsewhere).
+Functions all of whose rewrite sections the checked passes reproduce exactly: 3,547 of 9,297
+(38.15%; 3,536 with 957 and with 993 proven rules: the first divisible/divmod lemmas, #137, add
+the 11).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -266,6 +266,21 @@ opt; "Narrow result types", correct rejections) and 1 phi elimination (opt). Bef
 copy-argument replay 25 more firings were rejected (the rule matched after copy elimination had
 rewritten an argument the replay had not seen), and dead `GetClosurePtr`/`GetCallerSP` removal
 168 late opt results.
+
+**Proof structure.** Pure values are terms over the *atoms* (phis, roots, frame values):
+`GoFV.Proof.Term.den`, `TermRef`. Two theorems combine into the passes' refinement
+(`GoFV/Proof/Pass/Rewrite.lean`): the validator's soundness `validate_termRef` (an accepted log
+makes every atom argument and control of the output refine the input's as a term:
+`Term.AtomArgsRef`, `Term.ControlsRef`) and the atom simulation
+`GoFV.Proof.AtomSim.atomSim_refines` (two checked functions with the same atoms, schedule roots
+and terminators whose atom arguments and controls refine as terms: `RefinesUnder Env.Mono`;
+lock-step `runLoop_simE` with refined memories, `evalOp_mono` at atoms). The atom simulation's
+witness `GoFV.Proof.Witness.addZero_atomSim` runs `checkedRewrite` on the hand-written
+`addZero(n) = 0 + n` with the rule `(Add64 (Const64 [0]) x) => x` (kernel evaluation), discharges
+all premises (the rewritten argument `v4 → v2` and the `MakeResult` control by hand) and reads
+`addZero(7) = 7` off the output. The opt-family theorems (`opt_refines`, …) also need
+`Term.RetypeShapes` (register typing at integer shapes, issue #108), which is false on main
+today; they merge when the semantics proves it.
 
 ## Proof method (`GoFV/Proof/Rules/Tactic.lean`)
 

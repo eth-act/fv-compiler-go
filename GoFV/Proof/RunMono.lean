@@ -314,7 +314,7 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
 
 /-- `evalOp` reads of the context only its tables, parameters and activation, and of the frame
 only its initial memory and argument images. -/
-theorem evalOp_congr (env : Env) {ctx ctx' : Ctx}
+theorem evalOp_congr_ctx (env : Env) {ctx ctx' : Ctx}
     (hctx : ctx' = { ctx with f := ctx'.f, sched := ctx'.sched, tys := ctx'.tys })
     {fr fr' : Frame} (hargs : fr'.args = fr.args) (hmem : fr'.mem0 = fr.mem0)
     (himg : fr'.images = fr.images) (hclo : fr'.closure = fr.closure) (v : Value) (argv : List Val) (ty : Ty) :
@@ -344,7 +344,7 @@ theorem evalOp_mono_same {env : Env} (hE : env.Mono) (ctx : Ctx) (fr : Frame) (v
 /-- **`evalOp` is monotone** in every environment whose contracts are. -/
 theorem evalOp_mono : EvalOpMono Env.Mono := by
   intro env hE ctx ctx' hctx fr fr' hargs hmem himg hclo v ty argv argv' h
-  rw [evalOp_congr env hctx hargs hmem himg hclo]
+  rw [evalOp_congr_ctx env hctx hargs hmem himg hclo]
   exact evalOp_mono_same hE ctx fr v ty h
 
 
