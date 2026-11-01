@@ -53,6 +53,8 @@ structure RwState where
   pending : Option XPosMap
   /-- Frontend types copied into the tables: file number → table number. -/
   imported : Std.HashMap Nat Nat := {}
+  /-- Number of value and block rules fired (statistics: `opt-proven-probe`). -/
+  fired : Nat := 0
 
 /-- The rewrite monad. Errors are Go's `Fatalf`/panics or constructs the port does not cover. -/
 abbrev RwM := ReaderT RwEnv (EStateM String RwState)

@@ -237,6 +237,7 @@ def tryRule (v : ID) (cr : CRule) : RwM Bool := do
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
     applyResult sc r v
+    modify fun s => { s with fired := s.fired + 1 }
     return true
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`. -/
@@ -336,6 +337,7 @@ def tryBlockRule (b : ID) (r : BlockRule) : RwM Bool := do
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
     applyBlockResult sc r b
+    modify fun s => { s with fired := s.fired + 1 }
     return true
 
 /-- `rewriteBlock<file>(b)`. -/

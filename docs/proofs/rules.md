@@ -183,6 +183,32 @@ needs a later phase of the semantics.
 Regenerate both tables with `scripts/rule-proofs.py table` (it reruns the classifier if
 `tmp/rules/class.tsv` is missing).
 
+## Proven-only rewrite passes (issue #113)
+
+`scripts/rule-proofs.py proven` writes `GoFV/Rules/Proven.lean` (the `generic`, `divisible`
+and `divmod` rule sets restricted to the rules with a merged `Rule.Sound` lemma, in matching
+order, no block rules) and `GoFV/Proof/Rules/Proven.lean` (`generic_allSound`, … :
+`RuleSet.AllSound`, every value rule of the set is sound; `GoFV/Proof/Rules/AllSound.lean`).
+Rerun it whenever lemmas are added. `GoFV.Opt.optProven`/`divisibleProven`/`divmodProven` run
+`applyRewrite` with these sets (clifv's `--opt-proven-only`); the rewrite passes' theorems take
+`RuleSet.AllSound` of their rule set as hypothesis.
+
+`lake exe opt-proven-probe <corpus>` runs both variants on every stock instance's input. Quick
+corpus (`quick-v1`, 9,297 functions; 566 proven rules; "rules fired": value and block rules,
+`RwState.fired`, each instance run on the stock input):
+
+| Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept |
+| --- | --: | --: | --: | --: | --: | --: |
+| opt | 100.00% | 41.82% | 75.51% | 99,454 | 11,589 | 11.65% |
+| middle opt | 100.00% | 76.37% | 96.44% | 11,934 | 669 | 5.61% |
+| late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% |
+| divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% |
+| divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% |
+
+"No-op": the proven-only output equals the input (late opt's inputs carry dead values that
+every variant removes). The proven-only passes keep copy elimination, phi elimination and
+dead-value removal.
+
 ## Proof method (`GoFV/Proof/Rules/Tactic.lean`)
 
 `rule_auto` = `rule_unfold` (reduce `Rule.Sound r` for the concrete rule data: denotation

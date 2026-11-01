@@ -63,16 +63,21 @@ def ofPassEnv (e : PassEnv) : Except String RwEnv := do
 
 end RwEnv
 
-/-- A pass running `applyRewrite` with the rule table `t`; `removeDead` is Go's
-`removeDeadValues`. -/
-def rewritePass (t : Interp.Table) (removeDead : Bool) : Pass := fun env f => do
+/-- `rewritePass t removeDead` with the number of rules fired. -/
+def rewritePassFired (t : Interp.Table) (removeDead : Bool) (env : PassEnv) (f : Func) :
+    Except String (PassOut × Nat) := do
   let rw ← RwEnv.ofPassEnv env
   let st : RwState := { f, tables := env.tables, pending := XPosMap.ofCache f.cache.lineStarts }
   match (Apply.applyRewrite t removeDead).run rw |>.run st with
   | .ok _ s =>
     let f := s.f
     let f := { f with cache := { f.cache with lineStarts := s.pending.map (·.toCache) } }
-    return { func := f, tables := s.tables }
+    return ({ func := f, tables := s.tables }, s.fired)
   | .error e _ => throw e
+
+/-- A pass running `applyRewrite` with the rule table `t`; `removeDead` is Go's
+`removeDeadValues`. -/
+def rewritePass (t : Interp.Table) (removeDead : Bool) : Pass := fun env f =>
+  (·.1) <$> rewritePassFired t removeDead env f
 
 end GoFV.Rules
