@@ -626,12 +626,17 @@ def sectionP : L Section := do
   let (index, pass) ← line "pass" do return (← w natW, ← str)
   let defs ← defs
   let (func, typs) ← func
+  let zvar ← if ← tagIs "zvar" then
+      line "zvar" (w (listW fun e => do
+        let some (a, b) := e.split2 58 | throw s!"bad zvar entry {e}"
+        return (← refW 'v' a, ← natW b)))
+    else pure #[]
   let mut warns := #[]
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
   line "end" (pure ())
-  return { index, pass, defs, func, typs, warns }
+  return { index, pass, defs, func, typs, zvar, warns }
 
 def file : L ExportFile := do
   let version ← line "gofv-ssa" (w natW)

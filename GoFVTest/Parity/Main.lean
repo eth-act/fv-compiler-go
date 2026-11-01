@@ -116,7 +116,8 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
       for h : ii in [0:insts.size] do
         let inst := insts[ii]
         if inst.name != name then continue
-        let env := { base with passName := name, tables := prev }
+        let env := { base with passName := name, tables := prev
+                               zvar := e.sections[k-1]!.zvar.foldl (fun m (v, c) => m.insert v c) {} }
         let input := e.sections[k-1]!.func
         let t0 ← IO.monoNanosNow
         let r ← IO.lazyPure fun _ => inst.entry.run env input

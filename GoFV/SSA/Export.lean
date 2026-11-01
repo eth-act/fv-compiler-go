@@ -33,6 +33,9 @@ structure Section where
   func : Func
   /-- `typs` (section 0 only): the `Config.Types` fields (`Bool`, …, `ResultMem`) in order. -/
   typs : Option (Array (String × TypeRef))
+  /-- `zvar`: type-object classes of zero-argument values whose type number has several
+  `*types.Type` objects among them (`zcse` keys on the pointer); unlisted values: class 0. -/
+  zvar : Array (ID × Nat)
   /-- `warn` lines (exporter invariant failures), in order. -/
   warns : Array GoStr
   deriving DecidableEq, Inhabited

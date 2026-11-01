@@ -197,6 +197,10 @@ def sectionW (x : Section) : W Unit := do
   s "pass "; n x.index; sp; q x.pass; nl
   for d in x.defs do defn d
   func x.func x.typs
+  if !x.zvar.isEmpty then
+    s "zvar "
+    list (fun ((v, c) : ID × Nat) => do ref 'v' v; s ":"; n c) x.zvar
+    nl
   for m in x.warns do
     s "warn "; q m; nl
   s "end\n"

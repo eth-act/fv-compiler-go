@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1231 @@
+@@ -0,0 +1,1280 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1118,6 +1118,8 @@
 +		fmt.Fprintf(w, "cache linestarts %s\n", gofvList(rs))
 +	}
 +
++	x.zvar(w)
++
 +	fmt.Fprintf(&x.out, "pass %d %s\n", x.nsec, gofvQuote(name))
 +	x.out.Write(x.defs.Bytes())
 +	x.out.Write(x.body.Bytes())
@@ -1176,6 +1178,53 @@
 +	x.out.WriteString("frontend\n")
 +	x.out.Write(x.defs.Bytes())
 +	x.out.WriteString("end\n")
++}
++
++// zvar writes the type-object classes of zero-argument values (zcse keys them on the
++// *types.Type pointer, #63): types are numbered by identity, but the backend creates a fresh
++// *T object on every NewPtr (types.NewPtrCacheEnabled is false), so zero-argument values of
++// one type number can have distinct type objects. For every type number with at least two
++// distinct objects among the section's zero-argument values, each such value is listed
++// with the 1-based index of its object in order of first appearance (blocks, then values).
++func (x *gofvExporter) zvar(w *bytes.Buffer) {
++	type group struct {
++		objs []*types.Type
++		vals []*Value
++	}
++	groups := map[int]*group{}
++	for _, b := range x.f.Blocks {
++		for _, v := range b.Values {
++			if opcodeTable[v.Op].argLen != 0 || v.Type == nil {
++				continue
++			}
++			n := x.types[v.Type]
++			g := groups[n]
++			if g == nil {
++				g = &group{}
++				groups[n] = g
++			}
++			if !slices.Contains(g.objs, v.Type) {
++				g.objs = append(g.objs, v.Type)
++			}
++			g.vals = append(g.vals, v)
++		}
++	}
++	var es []string
++	for _, b := range x.f.Blocks {
++		for _, v := range b.Values {
++			if opcodeTable[v.Op].argLen != 0 || v.Type == nil {
++				continue
++			}
++			g := groups[x.types[v.Type]]
++			if len(g.objs) < 2 {
++				continue
++			}
++			es = append(es, fmt.Sprintf("v%d:%d", v.ID, slices.Index(g.objs, v.Type)+1))
++		}
++	}
++	if len(es) > 0 {
++		fmt.Fprintf(w, "zvar %s\n", strings.Join(es, ","))
++	}
 +}
 +
 +// finish completes the file (tail) and writes it.

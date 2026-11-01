@@ -12,7 +12,9 @@ in `f.Blocks` × `b.Values` order, is the representative; one outside `f.Entry` 
 end of `f.Entry.Values`, swap-removed from its block and the slot visited again. Phase 2: every
 zero-argument argument is pointed at its representative (`SetArg`, even when unchanged).
 Controls and `f.NamedValues` are not updated; nothing is freed (`docs/PASSES.md`, zero arg
-cse). Aux and type equality are the export's numbers (Go `==`). The key map is a `TreeMap`
+cse). Aux equality is the export's numbers (Go `==`); type equality is the number plus the
+type-object class `zvar` (Go compares the `*types.Type` pointer, and the backend creates a
+fresh object per `NewPtr`; `PassEnv.zvar`, export.md). The key map is a `TreeMap`
 (lookups only, so the result does not depend on the map; the kernel can evaluate it, unlike a
 `HashMap`, whose `mixHash` is opaque).
 
@@ -34,12 +36,15 @@ structure Key where
   ai : Int64
   ax : Option AuxRef
   t : TypeRef
+  /-- The type object within `t`'s number (`zvar` class). -/
+  tv : Nat
 
 /-- A total order on keys (any order does: the map is only searched). -/
 def Key.cmp (a b : Key) : Ordering :=
   (compare a.op.ctorIdx b.op.ctorIdx).then <|
     (compare a.ai.toBitVec.toNat b.ai.toBitVec.toNat).then <|
-      (compare ((a.ax.map (· + 1)).getD 0) ((b.ax.map (· + 1)).getD 0)).then (compare a.t b.t)
+      (compare ((a.ax.map (· + 1)).getD 0) ((b.ax.map (· + 1)).getD 0)).then <|
+        (compare a.t b.t).then (compare a.tv b.tv)
 
 /-- The representatives by key. -/
 abbrev Vals := Std.TreeMap Key ID Key.cmp
@@ -52,10 +57,10 @@ def keyFor (v : Value) : Int64 :=
   | .Const8 | .ConstBool => v.auxInt.toInt8.toInt64
   | _ => v.auxInt
 
-def key (v : Value) : Key := ⟨v.op, keyFor v, v.aux, v.type⟩
+def key (zvar : ID → Nat) (id : ID) (v : Value) : Key := ⟨v.op, keyFor v, v.aux, v.type, zvar id⟩
 
 /-- Phase 1 on block `b`. Fuel: each step advances `i` or removes a value from `b`. -/
-def scanBlock (entry b : ID) (st : Func × Vals) : Func × Vals :=
+def scanBlock (zvar : ID → Nat) (entry b : ID) (st : Func × Vals) : Func × Vals :=
   Id.run do
   let (f, vals) := st
   let mut f := f
@@ -67,7 +72,7 @@ def scanBlock (entry b : ID) (st : Func × Vals) : Func × Vals :=
       let v := vs[i]
       let x := f.getV v
       if x.op.argLen == 0 then
-        let k := key x
+        let k := key zvar v x
         if !vals.contains k then
           vals := vals.insert k v
           if b != entry then
@@ -83,9 +88,9 @@ def scanBlock (entry b : ID) (st : Func × Vals) : Func × Vals :=
 
 end ZCSE
 
-/-- `zcse(f)`. -/
-def zcse (f : Func) : Func := Id.run do
-  let (f, vals) := f.blocks.foldl (fun st b => ZCSE.scanBlock f.entry b st) (f, {})
+/-- `zcse(f)`. `zvar`: the input's type-object classes (`PassEnv.zvar`; class 0 if unlisted). -/
+def zcse (f : Func) (zvar : ID → Nat := fun _ => 0) : Func := Id.run do
+  let (f, vals) := f.blocks.foldl (fun st b => ZCSE.scanBlock zvar f.entry b st) (f, {})
   let mut f := f
   for b in f.blocks do
     for v in (f.getB b).values do
@@ -94,7 +99,7 @@ def zcse (f : Func) : Func := Id.run do
         let a := (f.getV v).args[i]!
         let x := f.getV a
         if x.op.argLen == 0 then
-          if let some rv := vals.get? (ZCSE.key x) then
+          if let some rv := vals.get? (ZCSE.key zvar a x) then
             f := f.setArg v i rv
   return f
 
@@ -181,11 +186,12 @@ def zrel (tabs : Tables) (f g : Func) : Bool :=
 end ZCSE
 
 /-- `zcse`, validated by `ZCSE.zrel` (the input if the checker rejects the result). -/
-def zcseChecked (tabs : Tables) (f : Func) : Func :=
-  let g := zcse f
+def zcseChecked (tabs : Tables) (f : Func) (zvar : ID → Nat := fun _ => 0) : Func :=
+  let g := zcse f zvar
   if ZCSE.zrel tabs f g then g else f
 
 /-- The `zero arg cse` pass. -/
-def zcsePass : Pass := Pass.ofFunc fun env f => pure (zcseChecked env.tables f)
+def zcsePass : Pass := Pass.ofFunc fun env f =>
+  pure (zcseChecked env.tables f fun i => env.zvar.getD i 0)
 
 end GoFV.Opt
