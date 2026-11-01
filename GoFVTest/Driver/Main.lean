@@ -632,13 +632,17 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
     if let some (p, v) := firstUnverified? r.st then
       st := { st with firstUnverified := bumpMap st.firstUnverified s!"{p}: {v}" }
     for (_, p, ws) in r.frag do
-      for w in ws do st := { st with fragAll := bumpMap st.fragAll s!"{p}: {w}" }
+      for w in ws do
+        let k := s!"{p}: {FragWhy.whyKey w}"
+        st := report { st with fragAll := bumpMap st.fragAll k } s!"fragment {k}" w
     let bad := (List.range r.st.log.size).filter fun i => !(r.st.log[i]!.2.ok)
     if let some i := bad.head? then
       if let some (_, p, ws) := r.frag.find? (·.1 == i) then
-        st := { st with fragFirst := bumpMap st.fragFirst s!"{p}: {" | ".intercalate ws.toList}" }
+        let ks := ws.toList.map FragWhy.whyKey
+        st := { st with fragFirst := bumpMap st.fragFirst s!"{p}: {" | ".intercalate ks}" }
       if bad.all fun j => r.frag.any (·.1 == j) then
-        let ws := (r.frag.filter fun (j, _) => bad.contains j).toList.flatMap fun (_, _, ws) => ws.toList
+        let ws := (r.frag.filter fun (j, _) => bad.contains j).toList.flatMap fun (_, _, ws) =>
+          ws.toList.map FragWhy.whyKey
         let key := " | ".intercalate (ws.eraseDups.mergeSort (· ≤ ·))
         st := { st with fragOnly := bumpMap st.fragOnly key }
     if let some (p, v, d) := r.diff then

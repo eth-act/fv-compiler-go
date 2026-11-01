@@ -6,8 +6,11 @@ import GoFV.Opt.Verified
 `fragWhy name env f`: for a deadcode instance or `early phielim and copyelim` whose guard
 (`deadGuard`, `copyGuard`) rejects `f`, the failing conditions in the guard's order, each with
 the first offending value (`copyFrag`: size, `shape <op> <arg shape> ~ <value shape>`,
-`copyNZ`, `acyclic`; `emptyFragB`: `empty <op> <shape>`). `gofv-ssa-opt --check --verified`
-reports them as a histogram (`fragment conditions`).
+`copyNZ`, `acyclic`; `emptyFragB`: `empty <op> <shape>`), followed by ` @` and the value and
+its type (`whyKey` drops that part). A `shape` failure is reported as `stable shape …` when
+every failing value is a `Phi` with two arguments whose copy chains end at distinct non-phis
+(`stablePhi`: phielim never turns it into a copy). `gofv-ssa-opt --check --verified` reports
+them as a histogram (`fragment conditions`) and lists examples as `FRAGMENT` reports.
 -/
 
 namespace GoFVTest.Driver.FragWhy
@@ -33,22 +36,41 @@ def shapeName : Ty → String
 def listed (f : Func) : Array ID :=
   f.blocks.foldl (fun acc bid => acc ++ (((f.block? bid).map (·.values)).getD #[])) #[]
 
+/-- The end of `x`'s copy chain within `n` steps. -/
+def chainEnd (V : ID → Option Value) : Nat → ID → Option ID
+  | 0, _ => none
+  | n + 1, x =>
+    match cstep V x with
+    | none => some x
+    | some (some y) => chainEnd V n y
+    | some none => none
+
+/-- Two arguments of `v` whose copy chains end at distinct non-phis (phielim never turns `v`
+into a copy). -/
+def stablePhi (f : Func) (v : Value) : Bool :=
+  let ends := v.args.filterMap fun a => (chainEnd f.value? (f.valueTab.size + 1) a).filter
+    fun r => (f.value? r).any (·.op != .Phi)
+  ends.any fun r => ends.any (· != r)
+
 /-- Why `copyFrag tabs f` fails (the first offending value), `none` if it holds. -/
 def copyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
   if !decide (f.valueTab.size ≤ f.vidLast + 1) then return some "size"
+  let mut stable : Option String := none
   for x in listed f do
     let some v := f.value? x | continue
     if v.op == .Copy || v.op == .Phi then
+      let st := v.op == .Phi && stablePhi f v
       for a in v.args do
         match f.value? a with
-        | none => return some s!"shape {v.op} undefined arg"
+        | none => return some s!"shape {v.op} undefined arg @v{x}"
         | some w =>
           if !retypeEqB (tabs.ty w.type) (tabs.ty v.type) then
-            return some s!"shape {v.op} {shapeName (tabs.ty w.type)} ~ {shapeName (tabs.ty v.type)}"
+            let s := s!"shape {v.op} {shapeName (tabs.ty w.type)} ~ {shapeName (tabs.ty v.type)} @v{x} t{v.type}, arg v{a} t{w.type}"
+            if st then stable := stable <|> some s!"stable {s}" else return some s
     if v.op == .Copy && zeroSizeB tabs v.type then
-      return some s!"copyNZ {shapeName (tabs.ty v.type)}"
-    if !chainEnds f.value? (f.valueTab.size + 1) x then return some "acyclic"
-  return none
+      return some s!"copyNZ {shapeName (tabs.ty v.type)} @v{x} t{v.type}"
+    if !chainEnds f.value? (f.valueTab.size + 1) x then return some s!"acyclic @v{x}"
+  return stable
 
 /-- Why `emptyFragB tabs f` fails (the first zero-size tree value), `none` if it holds. -/
 def emptyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
@@ -59,8 +81,11 @@ def emptyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
     for x in fb.values do
       let some v := f.value? x | continue
       if isOkTrue (zeroSizeAggregate tabs v.type) then
-        return some s!"empty {v.op} {shapeName (tabs.ty v.type)}"
+        return some s!"empty {v.op} {shapeName (tabs.ty v.type)} @v{x} t{v.type}"
   return none
+
+/-- A condition without its value location. -/
+def whyKey (s : String) : String := (s.splitOn " @").headD s
 
 /-- The failing conditions of `deadFragB tabs f`, in its order. -/
 def deadWhy (tabs : Tables) (f : Func) : Array String := Id.run do
