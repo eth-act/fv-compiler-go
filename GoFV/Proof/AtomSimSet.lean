@@ -1,4 +1,5 @@
 import GoFV.Proof.AtomSimStep
+import GoFV.Proof.TermStep
 
 /-!
 # Value sets of the atom simulation (issue #113)
@@ -99,6 +100,27 @@ theorem ControlsRef.toP {tabs : Tables} {f g : Func} (h : ControlsRef tabs f g) 
   obtain ⟨h1, h2⟩ := h b hb fb gb hfb hgb
   exact ⟨h1, fun k hk => TermRef.toP (h2 k hk) _ _⟩
 
+/-- The terminator of every block of `g` refines, as a function of its controls' terms under
+the invariant at the block (`StepRefP`), that of the same block of `f`, and the successors of
+`f`'s block are successors of `g`'s (issue #151: a rewrite may change a terminator's kind,
+controls and successor order). -/
+def StepRefsP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
+  ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
+    (∀ e ∈ fb.succs, e ∈ gb.succs) ∧ StepRefP (I.P b) (SAnc f b) f.value? tabs fb (listedDefs g) gb
+
+theorem TermStepRef.toStepRefsP {tabs : Tables} {f g : Func} (h : TermStepRef tabs f g)
+    (I : SrcInv tabs f) : StepRefsP I g := fun b hb fb gb hfb hgb =>
+  ⟨(h b hb fb gb hfb hgb).1, TermStepRef.toP h hb hfb hgb _ _⟩
+
+/-- Controls refining as terms in blocks of the same kind, successors and ID. -/
+theorem ControlsRefP.toStepRefsP {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
+    (h : ControlsRefP I g) (hk : ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb →
+      g.block? b = some gb → gb.kind = fb.kind ∧ gb.succs = fb.succs ∧ gb.id = fb.id) :
+    StepRefsP I g := fun b hb fb gb hfb hgb => by
+  obtain ⟨hk, hs, hid⟩ := hk b hb fb gb hfb hgb
+  obtain ⟨hsz, hc⟩ := h b hb fb gb hfb hgb
+  exact ⟨fun e he => hs ▸ he, stepRefP_of_controls hk hs hid hsz hc⟩
+
 /-- The hypotheses of the atom simulation. -/
 structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) (I : SrcInv tabs f) : Prop where
   wf : WF ce f
@@ -107,7 +129,7 @@ structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) (I : SrcInv tabs 
   cg : CertOK g
   ok : AtomsOK f g
   args : AtomArgsRefP I g
-  ctrls : ControlsRefP I g
+  ctrls : StepRefsP I g
 
 /-! ## Placed values -/
 

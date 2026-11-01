@@ -3,14 +3,16 @@ import GoFV.Proof.AtomSimPanic
 /-!
 # The atom simulation (issue #113)
 
-`atomSimInv_refines`: two checked functions with the same blocks, terminators and atoms
-(`RewriteCheck.atomsOK`), whose atoms' arguments and controls in `g` refine those of `f` as
-terms over the atoms for source valuations satisfying a source-side invariant `I`
-(`AtomArgsRefP`, `ControlsRefP`), refine each other under monotone contracts: lock-step
-simulation (`runLoop_simE`) with the relation `BRel` at block entries (`block_sim`: a block
-entry that does not panic, `enter_ok`, then refined controls, `stepTerm_mono2`; a panicking
-one, `enter_panic`; the invariant carried along by `Inv.edge`), entry frames equal but their
-registers (`entry_rel`), and `finish_refines`. `atomSim_refines`: the trivial invariant.
+`atomSimInv_refines`: two checked functions with the same blocks and atoms
+(`RewriteCheck.atomsOK`), whose atoms' arguments in `g` refine those of `f` as terms over the
+atoms and whose terminators refine as functions of their controls' terms (same edge, possibly
+another kind, controls or successor order, issue #151), for source valuations satisfying a
+source-side invariant `I` (`AtomArgsRefP`, `StepRefsP`), refine each other under monotone
+contracts: lock-step simulation (`runLoop_simE`) with the relation `BRel` at block entries
+(`block_sim`: a block entry that does not panic, `enter_ok`, then the terminators,
+`termStepRef_regs`; a panicking one, `enter_panic`; the invariant carried along by
+`Inv.edge`), entry frames equal but their registers (`entry_rel`), and `finish_refines`.
+`atomSim_refines`: the trivial invariant, `Term.TermStepRef`.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -32,30 +34,14 @@ theorem vt_placed : ∀ x, (V1 g b gb x ∨ x ∈ og.toList) → ∃ w, Placed g
     obtain ⟨hxb, w, hw, -⟩ := (B.mT x).1 hm
     exact ⟨w, (placed_in H.wg B.bmT B.hgb hxb hw).1⟩
 
-/-- **The terminators** on refined controls. -/
+/-- **The terminators** (`StepRefsP`). -/
 theorem term_sim {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {FS FT : Frame}
     (E : EndRel tabs f g I b fb gb of og FS FT) :
-    Res.Rel Next.Refines (stepTerm FS fb) (stepTerm FT gb) := by
-  refine stepTerm_mono2 B.ba.kind.symm B.ba.succs.symm B.ba.id.symm fun k => ?_
-  unfold Sem.control
-  cases hk : fb.controls[k]? with
-  | none => exact .stuck _ _
-  | some c =>
-    have hkl : k < fb.controls.size := (Array.getElem?_eq_some_iff.1 hk).1
-    have hkl' : k < gb.controls.size := B.ba.csize ▸ hkl
-    have hk' : gb.controls[k]? = some gb.controls[k] := by simp [hkl']
-    rw [hk']
-    have hc := (ctrl_in H.wf H.cf B.bmS B.hfb R.treeS B.mS (Array.mem_of_getElem? hk)).1
-    have hc' := (ctrl_in H.wg H.cg B.bmT B.hgb R.treeT B.mT (Array.getElem_mem hkl')).1
-    obtain ⟨-, hTR⟩ := H.ctrls b B.bmT fb gb B.hfb B.hgb
-    have hT := hTR k hkl'
-    rw [getElem!_pos fb.controls k hkl, getElem!_pos gb.controls k hkl',
-      (Array.getElem?_eq_some_iff.1 hk).2] at hT
-    have hr := termRef_regs H E.dS E.dT (vt_placed H B) E.rel E.tyS E.tyT E.inv
-      (fun a h => .inl (.inl h)) hT hc hc'
-    dsimp only
-    rw [reg_rv (E.dS c hc).1, reg_rv (E.dT _ hc').1]
-    exact .ok hr
+    Res.Rel Next.Refines (stepTerm FS fb) (stepTerm FT gb) :=
+  termStepRef_regs H E.dS E.dT (vt_placed H B) E.rel E.tyS E.tyT E.inv
+    (fun a h => .inl (.inl h)) (H.ctrls b B.bmT fb gb B.hfb B.hgb).2
+    (fun _ hc => (ctrl_in H.wf H.cf B.bmS B.hfb R.treeS B.mS hc).1)
+    (fun _ hc => (ctrl_in H.wg H.cg B.bmT B.hgb R.treeT B.mT hc).1)
 
 /-- Values placed in an ancestor of `b` are in `b`'s sets. -/
 theorem ancV_sets : ∀ x, AncV f b x → V1 f b fb x ∨ x ∈ of.toList := fun x ⟨v, hp, hanc⟩ => by
@@ -74,7 +60,7 @@ theorem next_rel {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {
   have he := stepTerm_goto_mem hS
   obtain ⟨n1, n2, n3, n4⟩ := next_sets H.wf H.cf B.bmS B.hfb R.treeS B.mS he
   obtain ⟨m1, m2, m3, -⟩ := next_sets H.wg H.cg B.bmT B.hgb R.treeT B.mT
-    (by rw [← B.ba.succs]; exact he)
+    ((H.ctrls b B.bmT fb gb B.hfb B.hgb).1 e he)
   obtain ⟨l, p, ph⟩ := I.edge b i fb FS e _ B.hfb R.live E.inv E.dS (ancV_sets H B) n2 hS
   exact { fr := E.fr, szS := E.szS, szT := E.szT, tyS := E.tyS, tyT := E.tyT, mem := n4,
           treeS := n3, treeT := m3, atoms := E.atoms,
@@ -158,7 +144,7 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
 theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefP I g) (h2 : ControlsRefP I g) :
+    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) :
     RefinesUnder Env.Mono tabs g tabs f := by
   have H : Hyp tabs f g ce ce' I := ⟨check_wf hf, check_wf hg, certOK_of_check (check_domCert hf),
     certOK_of_check (check_domCert hg), atomsOK_spec hA, h1, h2⟩
@@ -187,8 +173,9 @@ theorem atomSim_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : RewriteCheck.atomsOK f g = true)
     (_hcf : RewriteCheck.closedOK f = true) (_hcg : RewriteCheck.closedOK g = true)
-    (h1 : Term.AtomArgsRef tabs f g) (h2 : Term.ControlsRef tabs f g) :
+    (h1 : Term.AtomArgsRef tabs f g) (h2 : Term.TermStepRef tabs f g) :
     RefinesUnder Env.Mono tabs g tabs f :=
-  atomSimInv_refines hf hg hA (SrcInv.triv tabs f) (AtomArgsRef.toP h1 _) (ControlsRef.toP h2 _)
+  atomSimInv_refines hf hg hA (SrcInv.triv tabs f) (AtomArgsRef.toP h1 _)
+    (TermStepRef.toStepRefsP h2 _)
 
 end GoFV.Proof.AtomSim

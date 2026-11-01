@@ -26,9 +26,6 @@ def rootP (h : Func) (x : ID) : Bool := (h.value? x).any (Sem.isRoot ·.op)
 /-- One block of `atomsOK`. -/
 structure BlockAtoms (f g : Func) (fb gb : Block) : Prop where
   id : fb.id = gb.id
-  kind : fb.kind = gb.kind
-  succs : fb.succs = gb.succs
-  csize : fb.controls.size = gb.controls.size
   sub : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termOp w.op = false →
     x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ SameAtom u w
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
@@ -65,8 +62,8 @@ theorem atomsOK_spec {f g : Func} (h : atomsOK f g = true) : AtomsOK f g := by
   split at h
   · rename_i fb gb hfb hgb
     simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
-    obtain ⟨⟨⟨⟨hid, hk⟩, hs⟩, hc⟩, ⟨hsub, -⟩, hsch⟩ := h
-    refine ⟨fb, gb, hfb, hgb, hid, hk, hs, hc, fun x hx w hw ht => ?_, ?_⟩
+    obtain ⟨hid, ⟨hsub, -⟩, hsch⟩ := h
+    refine ⟨fb, gb, hfb, hgb, hid, fun x hx w hw ht => ?_, ?_⟩
     · have hm : x ∈ atomsOf g gb := mem_atomsOf.2 ⟨hx, w, hw, ht⟩
       have h2 := hsub x hm
       simp only [List.contains_iff_mem] at h2

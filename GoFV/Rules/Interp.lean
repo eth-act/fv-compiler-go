@@ -394,8 +394,8 @@ def applyBlockResult (sc : Scope) (r : BlockRule) (b : ID) : RwM Unit := do
     modF fun f => f.modB b fun x => { x with aux := a }
   if r.swapSuccs then modF fun f => f.swapSuccessors b
 
-/-- Try block rule `r` on `b`. -/
-def tryBlockRule (b : ID) (r : BlockRule) : RwM Bool := do
+/-- Try block rule `r` (index `idx` in its table row) on `b`. -/
+def tryBlockRule (b : ID) (r : BlockRule) (idx : Nat) : RwM Bool := do
   let blk0 ← blk b
   if blk0.controls.size < r.controls.length then return false
   let sc : Scope := { v := none, b, binds := Array.replicate r.vars.length .nil,
@@ -412,14 +412,17 @@ def tryBlockRule (b : ID) (r : BlockRule) : RwM Bool := do
       if !(← liftE (← eval sc c).asBool) then return false
     applyBlockResult sc r b
     modify fun s => { s with fired := s.fired + 1 }
-    logEv fun _ => .blockRule b
+    if (← get).log.isSome then
+      let ctrls := (← blk b).controls
+      logEv fun _ => .blockRule b idx ctrls
     return true
 
 /-- `rewriteBlock<file>(b)`. -/
 def rewriteBlock (t : Table) (b : ID) : RwM Bool := do
   let k := (← blk b).kind
-  for r in t.blocks[k.ctorIdx]! do
-    if ← tryBlockRule b r then return true
+  let rs := t.blocks[k.ctorIdx]!
+  for h : i in [0:rs.size] do
+    if ← tryBlockRule b rs[i] i then return true
   return false
 
 end Interp

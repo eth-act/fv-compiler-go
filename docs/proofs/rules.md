@@ -96,6 +96,105 @@ invariant of `GoFV.SSA.Sem`, of the checker or of the rule evaluator, not from t
   `GoFV.Opt.RewriteCheck.oracle` (`true` for every `bool` expression) and the oracles of
   `rule-sat` and `NonVacuous.lean` (`Oracle.const_boolTyped`) satisfy it.
 
+## Rules beyond `Rule.Sound`: blocks, effects, frame values (#151)
+
+`Rule.Sound` covers value rules whose pattern and result are `evalPure` terms. Three more kinds
+of rules matter for the proven-only passes (see "Firing frequency"): block rules, rules whose
+pattern contains an effectful value (memory ops, nil checks, calls), and rules on values the
+semantics evaluates from the tables rather than by `evalPure` (`ConstString`, `Addr`). Each gets
+its own obligation; the proven-only rule sets carry one list per obligation (`RuleSet.values`,
+`RuleSet.blocks`, and effect rules once the first is proven), and `RuleSet.AllSound` asks the
+matching obligation of every rule.
+
+### Block rules: `BlockRule.Sound` (`GoFV/Proof/Rules/Block.lean`, proven for all three)
+
+`Sem.stepTerm` reads an `If` block's control only as a boolean: `true` → `Succs[0]`, `false` →
+`Succs[1]`, anything else stuck. So swapping the successors is negating the control, and
+`First` is an `If` on the constant `true`. A block rule `(If ctrl yes no) && cond =>
+(If x no yes)` / `(If x yes no)` / `(First …)` is therefore sound when the *control rule*
+`BlockRule.ctrlRule br` — the value rule `ctrl && cond => (Not x)` (swapped), `=> x`, or
+`=> (ConstBool [!swapped])` (`First`) — satisfies `Rule.Sound`:
+
+```lean
+def BlockRule.Sound (br : BlockRule) : Prop := ∃ cr, BlockRule.ctrlRule br = some cr ∧ Rule.Sound cr
+```
+
+`generic.rules:1064–1066` (`If (Not c)` swapped, `If (ConstBool [c])` → `First`) are proven in
+`GoFV/Proof/Rules/BlockIf.lean` (`r_generic_1064_sound`, …; their control rules by `rule_auto`).
+Other block-rule shapes (more controls, other kinds, aux fields) have no control rule and cannot
+be proven under this obligation; there are none in the four rule files.
+
+**Validator.** A block-rule event now logs the rule index and the new controls
+(`RwEvent.blockRule b i ctrls`). `RewriteCheck.replay` keeps the replayed terminator of every
+block the log touched (`BState`: kind, controls, successors swapped or not; `bstate`): a
+`control b i c` event (copy elimination of a control) replaces control `i` when `c` is reached
+through compatible copies; a block-rule event is accepted when the block has two successors and
+is an `If` on one boolean-shaped control `c`, and the control rule fires at `c` as a value rule
+(`ruleOK`) with the definitions the new controls determine (`ctrlDefs`: `c` redefined in place as
+`Not nc`, `Copy nc` or the constant). `finalOK` checks every block of the output against its
+replayed terminator (kind, successors in the replayed order, controls up to copies);
+`atomsOK` no longer compares kinds, successors and controls.
+
+**Theorem.** The atom simulation's premise on terminators is no longer "same kind and
+successors, controls refining as terms" (`ControlsRef`) but `Term.TermStepRef`: every block of
+the output keeps the input's successors (as a set) and its terminator, as a function of its
+controls' terms (`stepVals`, `Sem.stepTerm` on control values), refines the input's
+(`GoFV/Proof/TermStep.lean`; under a source invariant `StepRefsP`, `GoFV/Proof/AtomSimSet.lean`).
+`validate_termRef` establishes it from the replay (`BInv`: the replayed terminators refine the
+input's, kept by every event, `GoFV/Proof/Pass/RewriteTermBlock.lean`; `eff_not`, `eff_copy`,
+`eff_const` turn the control rule's refinement into the terminators'). `checkedRewrite_refines`
+and `opt_refines`/`divisible_refines`/`divmod_refines` keep their statements; their rule-set
+hypothesis `RuleSet.AllSound` now also asks `BlockRule.Sound` of the block rules.
+
+### Effect rules: `EffectRule.Sound` (designed, not yet implemented)
+
+For rules whose pattern has effectful nodes: `NilCheck` elimination (`generic.rules:1381`
+`LocalAddr`, `1375` `Addr`, `1384` nil check of a nil check, `1367` malloc result), Load-of-Store
+forwarding (`800`, `806`), `Store`/`Move`/`Zero` rewrites. The denotation of a pattern node whose
+op is a root (`Sem.isRoot`) is not `evalPure` but `Sem.evalOp` (`memRoot`, `callOp`), a `Res`
+that may panic or be stuck. The obligation is a one-step local simulation at every frame where
+the matched values are available:
+
+```lean
+def EffectRule.Sound (r : Rule) : Prop :=
+  Pat.arityOk r.pat ∧ ∀ (e : PEnv) (or : Oracle) (env : Env) (ctx : Ctx) (fr : Frame),
+    Oracle.BoolTyped or → Pat.wf … → Pat.cons … → condHolds … → Pat.typed … →
+    -- every effectful inner node evaluated to its instance value (it is in the frame)
+    Pat.effOK env ctx fr e [] r.pat →
+    -- the matched top, if effectful, is refined by the result without panicking
+    Res.Refines ((Pat.evalTop env ctx fr e r.pat).map (·.retype (e.ty []))) (.ok (resDen …))
+```
+
+`Res.Refines` (`Res.Rel Sem.Refines`) has no case for a panicking source and a defined target,
+so a rule removing a `NilCheck` must show that the check cannot panic on the instance
+(`LocalAddr`/`Addr` point into an allocation, `GoFV.Proof.evalOp_nilCheck_blk`; a nil check of a
+nil check returned its argument only after not panicking). For `(Load p1 (Store {t2} p2 x _))`
+the `Store` node's value is the memory `memRoot` wrote; `Mem.read` of `Mem.write` at the same
+address and size (`isSamePtr` is an oracle atom today: the rule needs it modelled, as a pointer
+term identity) gives `x` back, so the obligation is provable once `isSamePtr` is.
+
+Validator and theorem: the pattern may match through root atoms (`matchPat` over non-term nodes,
+their values the registers); `Term.den` needs a joint premise on the valuation that each root
+atom's value is its `evalOp` on its arguments' terms when that is defined (an atom-definition
+invariant, discharged in the atom simulation from `evalValue`; the per-atom `SrcInv.P` of #153
+cannot express it). Replacing a root (`NilCheck → Copy`) changes the root sequence: `atomsOK`
+must allow a removed root whose evaluation never panics and is the term the result builds, and
+the simulation must show the remaining roots run in the same order (`sched_transfer_sub` of the
+deadcode proof, `GoFV/Proof/Pass/DeadRank.lean`).
+
+### Frame-value rules (`ConstString`, designed, not yet implemented)
+
+`ConstString {str}` and `Addr {sym} SB` are evaluated by `Sem.frameVal` from the tables (a string
+`agg [ptr ⟨global dataSym, 0⟩, i64 len]`, a global pointer), not by `evalPure`, and do not depend
+on the activation. They become term nodes: `Term.den` evaluates them by the table lookup
+(`tabVal tabs v`), the validator matches them, `evalOp_term` covers them. The obligation of a
+rule over such nodes is `Rule.Sound` with `Pat.den`/`nodeDen` using `tabVal` at these ops,
+quantified over the tables. `generic.rules:1022`'s result aux is `fe.StringData(str)` (a fresh
+or existing symbol): the obligation holds for every aux that the tables define as the symbol
+named by the string's `dataSym`, and the validator checks exactly that on the built `Addr`
+(`checkedRewrite` returns the *input's* tables, so it must also check that every aux the output
+refers to is defined, identically, in them).
+
 ## Classification
 
 `GoFVTest/Proof/RuleClass.lean` classifies each rule by the semantic phase of its ops
@@ -236,9 +335,10 @@ Regenerate both tables with `scripts/rule-proofs.py table` (it reruns the classi
 ## Proven-only rewrite passes (issue #113)
 
 `scripts/rule-proofs.py proven` writes `GoFV/Rules/Proven.lean` (the `generic`, `divisible`
-and `divmod` rule sets restricted to the rules with a merged `Rule.Sound` lemma, in matching
-order, no block rules) and `GoFV/Proof/Rules/Proven.lean` (`generic_allSound`, … :
-`RuleSet.AllSound`, every value rule of the set is sound; `GoFV/Proof/Rules/AllSound.lean`).
+and `divmod` rule sets restricted to the rules with a merged `Rule.Sound` lemma, and the block
+rules with a merged `BlockRule.Sound` lemma, in matching order) and `GoFV/Proof/Rules/Proven.lean`
+(`generic_allSound`, … : `RuleSet.AllSound`, every value rule of the set satisfies `Rule.Sound`
+and every block rule `BlockRule.Sound`; `GoFV/Proof/Rules/AllSound.lean`).
 Rerun it whenever lemmas are added. `GoFV.Opt.optProven`/`divisibleProven`/`divmodProven` run
 `applyRewrite` with these sets (clifv's `--opt-proven-only`); the rewrite passes' theorems take
 `RuleSet.AllSound` of their rule set as hypothesis.
@@ -255,7 +355,8 @@ producing its type's shape (`natShape`, or `ptrTop`: `OffPtr`/`AddPtr`/`PtrIndex
 at a pointer or `Convert` at the 64-bit integer shape, `evalPure_ptrTop`), argument shapes
 (`Pat.argsOK` on the matched types), integer-, boolean- or pointer-shaped leaves, built nodes = `resDen`, no cyclic
 match), a copy-argument replacement is replayed when its source is reached from the old argument
-through copies of compatible shape, no phi elimination or block rule, the arguments of listed
+through copies of compatible shape, a block rule as its control rule at the block's control (see
+"Rules beyond `Rule.Sound`"), no phi elimination, the arguments of listed
 values and the controls are listed (`closedOK`, input and output), and every definition and
 control of the result must be the replayed one up to copies of compatible shape; the atoms
 (phis, roots, frame values incl. `GetClosurePtr`/`GetCallerSP`) must be unchanged, in the same
@@ -278,7 +379,8 @@ Functions all of whose rewrite sections the checked passes reproduce exactly: 3,
 (38.15%; 3,536 with 957 and with 993 proven rules: the first divisible/divmod lemmas, #137, add
 the 11). Later counts are in "Firing frequency" (`scripts/rule-proofs.py fire`): 3,562 with
 1,048 proven rules, 3,597 (38.69%) with 1,056 (Mul by ±2^k), 4,701 (50.56%) with 1,060
-(`Pat.argsOK`, pointer leaves and tops in the validator, OffPtr/PtrIndex/AddPtr).
+(`Pat.argsOK`, pointer leaves and tops in the validator, OffPtr/PtrIndex/AddPtr), 4,762
+(51.22%) with 1,060 value and 3 block rules (#151).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -311,7 +413,10 @@ and its instances `opt_refines` (`optChecked`: `opt`, `middle opt`, `late opt`),
 (`GoFV.Rules.Proven`, regenerated by `scripts/rule-proofs.py proven`), so every merged rule lemma
 widens what the theorem covers without changing its statement. Register typing at the leaves
 (`Rule.Sound`'s `Pat.typed`) is `Term.retypeShapes` (#108). Witness:
-`GoFV.Proof.Witness.addZero_refines` (the theorem on the `addZero` run above). Validator
+`GoFV.Proof.Witness.addZero_refines` (the theorem on the `addZero` run above); for a block rule
+`GoFV.Proof.Witness.notIf_refines` (`if !b {return 1}; return 2` with `{generic.rules:1064}`:
+the entry becomes `If b` with swapped successors, kernel evaluation; the output returns
+`notIf(false) = 1`). Validator
 soundness: `validate_termRef` (`GoFV/Proof/Pass/RewriteTerm*.lean`).
 
 ## Firing frequency: what keeps the proven-only passes from stock (#69, #113)
@@ -328,39 +433,43 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 4701, under the checked passes 4701 (validator the only obstacle: 0). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 2, 1: 1240, 2: 1061, 3 or more: 2293.
+Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 4762, under the checked passes 4762 (validator the only obstacle: 0). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 4, 1: 1724, 2: 943, 3 or more: 1864.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
-| `generic.rules:1022 ConstString` | `r_generic_1022` | ptr | 6924 | 380 | 380 |
-| `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 127 | 127 |
-| `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 83 | 83 |
-| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 70 | 70 |
+| `generic.rules:1022 ConstString` | `r_generic_1022` | ptr | 6924 | 400 | 400 |
+| `generic.rules:1683 EqPtr` | `r_generic_1683` | P2 | 1734 | 348 | 348 |
+| `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 128 | 128 |
+| `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 100 | 100 |
+| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 75 | 75 |
+| `generic.rules:1684 NeqPtr` | `r_generic_1684` | P2 | 1246 | 69 | 69 |
+| `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 67 | 67 |
 | `generic.rules:974 Load` | `r_generic_974` | mem | 580 | 65 | 65 |
-| `block If` | `block` | block | 8570 | 63 | 63 |
-| `generic.rules:1684 NeqPtr` | `r_generic_1684` | P2 | 1246 | 63 | 63 |
-| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 41 | 41 |
-| `generic.rules:1057 ConstInterface` | `r_generic_1057` | P2 | 524 | 40 | 40 |
+| `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 36 | 50 |
+| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 42 | 42 |
+| `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 41 | 41 |
+| `generic.rules:1057 ConstInterface` | `r_generic_1057` | P2 | 524 | 41 | 41 |
 | `generic.rules:973 StructSelect` | `r_generic_973` | ptr | 5789 | 39 | 39 |
-| `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 33 | 33 |
-| `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 29 | 29 |
-| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 20 | 20 |
-| `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 17 | 17 |
+| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 21 | 21 |
+| `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 20 | 20 |
+| `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 17 | 17 |
+| `generic.rules:322 AndB` | `r_generic_322/r_generic_322_2` | P1 | 116 | 17 | 17 |
 | `generic.rules:1044 ConstSlice` | `r_generic_1044` | P2 | 381 | 16 | 16 |
-| `generic.rules:322 AndB` | `r_generic_322/r_generic_322_2` | P1 | 116 | 16 | 16 |
+| `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 16 | 16 |
+| `generic.rules:1646 EqPtr` | `r_generic_1646` | P2 | 269 | 16 | 16 |
 | `divmod.rules:180 Div64u` | `r_divmod_180` | P1 | 76 | 14 | 14 |
 | `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 12 | 12 |
+| `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 11 | 11 |
 | `generic.rules:610 Less64` | `r_generic_610_3` | P1 | 160 | 11 | 11 |
-| `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 9 | 9 |
 | `generic.rules:806 Load` | `r_generic_806` | mem | 488 | 6 | 6 |
-| `generic.rules:1683 EqPtr` | `r_generic_1683` | P2 | 1734 | 5 | 5 |
 | `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 5 | 5 |
+| `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 5 | 5 |
 | `generic.rules:336 AndB` | `r_generic_336/r_generic_336_2` | P1 | 37 | 5 | 5 |
 | `generic.rules:372 OrB` | `r_generic_372/r_generic_372_2/r_generic_372_3/r_generic_372_4` | P1 | 35 | 5 | 5 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 5 | 5 |
 | `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 5 | 5 |
-| `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 3 | 3 |
 | `generic.rules:992 ArraySelect` | `r_generic_992` | P2 | 361 | 3 | 3 |
+| `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 3 | 3 |
 | `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 3 | 3 |
 | `divmod.rules:171 Div32u` | `r_divmod_171` | P1 | 30 | 3 | 3 |
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 3 | 3 |
@@ -369,21 +478,29 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 2 | 2 |
 | `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 2 | 2 |
 | `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 2 | 2 |
+| `generic.rules:345 OrB` | `r_generic_345/r_generic_345_2` | P1 | 9 | 2 | 2 |
 | `generic.rules:1328 Mul64F` | `r_generic_1328` | float | 7 | 2 | 2 |
 | `generic.rules:346 OrB` | `r_generic_346/r_generic_346_2` | P1 | 6 | 2 | 2 |
 | `generic.rules:340 AndB` | `r_generic_340/r_generic_340_2` | P1 | 4 | 2 | 2 |
 | `generic.rules:1031 SliceLen` | `r_generic_1031` | P2 | 1524 | 1 | 1 |
 | `generic.rules:1730 SelectN` | `r_generic_1730/r_generic_1730_2` | call | 139 | 1 | 1 |
+| `generic.rules:277 IsSliceInBounds` | `r_generic_277` | P1 | 117 | 1 | 1 |
+| `generic.rules:821 Load` | `r_generic_821` | mem | 71 | 1 | 1 |
+| `generic.rules:253 IsInBounds` | `r_generic_253` | P1 | 56 | 1 | 1 |
 | `generic.rules:1592 MemEq` | `r_generic_1592` | P2 | 51 | 1 | 1 |
+| `generic.rules:333 AndB` | `r_generic_333/r_generic_333_2` | P1 | 47 | 1 | 1 |
+| `generic.rules:1833 Store` | `r_generic_1833` | mem | 43 | 1 | 1 |
 | `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 29 | 1 | 1 |
 | `generic.rules:1005 Store` | `r_generic_1005` | mem | 23 | 1 | 1 |
+| `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 22 | 1 | 1 |
 | `divmod.rules:159 Div16u` | `r_divmod_159` | P1 | 20 | 1 | 1 |
+| `generic.rules:623 Eq64F` | `r_generic_623` | float | 17 | 1 | 1 |
 | `generic.rules:321 AndB` | `r_generic_321/r_generic_321_2` | P1 | 16 | 1 | 1 |
+| `generic.rules:1183 Eq64` | `r_generic_1183_3` | P1 | 16 | 1 | 1 |
 | `generic.rules:919 Store` | `r_generic_919` | mem | 15 | 1 | 1 |
 | `generic.rules:2158 Zero` | `r_generic_2158` | mem | 13 | 1 | 1 |
 | `generic.rules:369 AndB` | `r_generic_369/r_generic_369_2/r_generic_369_3/r_generic_369_4` | P1 | 12 | 1 | 1 |
 | `generic.rules:2146 Move` | `r_generic_2146` | mem | 12 | 1 | 1 |
-| `generic.rules:345 OrB` | `r_generic_345/r_generic_345_2` | P1 | 9 | 1 | 1 |
 | `generic.rules:360 OrB` | `r_generic_360/r_generic_360_2` | P1 | 7 | 1 | 1 |
 | `generic.rules:1183 Eq32` | `r_generic_1183_2` | P1 | 6 | 1 | 1 |
 | `divmod.rules:232 Div64u` | `r_divmod_232` | P1 | 5 | 1 | 1 |
@@ -393,23 +510,24 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `divisible.rules:152 Eq64` | `r_divisible_152` | P1 | 2 | 1 | 1 |
 | `generic.rules:2166 Or64` | `r_generic_2166_2` | P1 | 2 | 1 | 1 |
 | `generic.rules:2168 Or16` | `r_generic_2168_2` | P1 | 1 | 1 | 1 |
+| `generic.rules:1742 Move` | `r_generic_1742` | mem | 1 | 1 | 1 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:357 OrB` | `r_generic_357/r_generic_357_2` | P1 | 1 | 1 | 1 |
-| `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 0 | 0 |
 | `generic.rules:1012 StringLen` | `r_generic_1012` | P2 | 1091 | 0 | 0 |
-| `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 0 | 0 |
 | `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 0 | 0 |
 | `generic.rules:1032 SliceCap` | `r_generic_1032` | P2 | 580 | 0 | 0 |
-| `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 0 | 0 |
-| `generic.rules:1646 EqPtr` | `r_generic_1646` | P2 | 269 | 0 | 0 |
 | `generic.rules:271 IsSliceInBounds` | `r_generic_271` | P1 | 247 | 0 | 0 |
 | `generic.rules:997 Store` | `r_generic_997` | mem | 241 | 0 | 0 |
 | `generic.rules:813 Load` | `r_generic_813` | mem | 224 | 0 | 0 |
-| `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 0 | 0 |
 | `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 0 | 0 |
 | `generic.rules:1035 SlicePtr` | `r_generic_1035` | P2 | 179 | 0 | 0 |
 | `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 0 | 0 |
 | `generic.rules:792 EqSlice` | `r_generic_792` | P2 | 138 | 0 | 0 |
+| `generic.rules:994 Load` | `r_generic_994` | P2 | 117 | 0 | 0 |
+| `generic.rules:790 EqInter` | `r_generic_790` | P2 | 116 | 0 | 0 |
+| `generic.rules:1037 SliceCap` | `r_generic_1037` | P2 | 114 | 0 | 0 |
+| `generic.rules:1362 Store` | `r_generic_1362` | call | 107 | 0 | 0 |
+| `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 100 | 0 | 0 |
 
 <!-- END fire -->
 

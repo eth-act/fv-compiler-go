@@ -1,4 +1,4 @@
-import GoFV.Proof.Rules.Den
+import GoFV.Proof.Rules.Block
 import GoFV.Rules.Run
 import GoFV.Opt.CSE
 
@@ -21,11 +21,19 @@ replays the log on a map of definitions, starting from the input `f`:
 * a copy-argument replacement (`copyArg v i src`, copy elimination before a rule matches) is
   replayed on the definitions when `src` is reached from the old argument through `Copy`s of
   compatible shape (`copyReach`);
-* a phi elimination or block rule rejects;
+* the terminators of the blocks whose controls copy elimination followed or a block rule
+  rewrote are replayed too (`BState`: kind, controls, successors swapped or not): a control
+  replacement (`control b i c`) when `c` is reached from the old control through copies; a
+  block-rule event (`blockRule b i ctrls`, issue #151) when the block has two successors and
+  is an `If` on one boolean control and the rule's control rule (`BlockRule.ctrlRule`) fires at that control as
+  a value rule (`ruleOK`) with the definitions the new controls `ctrls` determine (`ctrlDefs`;
+  for the generic rules they are the control's own definition);
+* a phi elimination rejects;
 * finally every value listed in the output `g` has the replayed definition up to copies:
   each argument (and each control of `g`) is the replayed one or reached from it through
   `Copy`s of the same shape (`copyReach`), which is how copy elimination and `copySource`'s
-  path compression rewrite arguments.
+  path compression rewrite arguments; every block of `g` has its replayed terminator (kind,
+  successors in the replayed order, controls up to copies).
 
 `Rule.Sound` of every rule of the table then gives that each definition of `g` refines the
 input's as a term over the unchanged values (`GoFV.Proof.Term`).
@@ -384,10 +392,74 @@ def copyReach (tabs : Tables) (M : Defs) : Nat → ID → ID → Bool
       copyReach tabs M n x.args[0]! w
     | none => false
 
-/-- Replay the log on the definitions of `f`; `none` if an event is not validated. -/
-def replay (tabs : Tables) (t : Interp.Table) : Defs → List RwEvent → Option Defs
-  | M, [] => some M
-  | M, .rule v i _ defs :: evs =>
+/-- The replayed terminator of a block (issue #151): kind, controls, and whether its successors
+are swapped relative to the input's. -/
+structure BState where
+  kind : BlockKind
+  ctrls : Array ID
+  swapped : Bool
+  deriving Inhabited
+
+/-- The replayed terminators of the blocks the log changed, latest first. -/
+abbrev BMap := List (ID × BState)
+
+/-- The terminator of `b` in the replay: the latest replayed one, else the input's. -/
+def bstate (f : Func) (B : BMap) (b : ID) : Option BState :=
+  match B.lookup b with
+  | some st => some st
+  | none => (f.block? b).map fun fb => { kind := fb.kind, ctrls := fb.controls, swapped := false }
+
+/-- Two successors swapped (`Func.swapSuccessors`). -/
+def swapS (s : Array Edge) : Array Edge := #[s[1]!, s[0]!]
+
+/-- The definitions (`ruleOK`'s `defs`) that the control rule `cr` of a block rule makes of the
+control `x` when the block's new controls are `nc` (`BlockRule.ctrlRule`): the in-place `build`
+of a `Not` of the new control or of the constant, or the `copy` of the new control. -/
+def ctrlDefs (cr : Rule) (x : Value) (nc : Array ID) : Option (List Value) :=
+  match cr.result, nc.toList with
+  | .build [n], [c] =>
+    let u := { x with op := n.op, args := #[c], auxInt := 0, aux := none }
+    some [u, u]
+  | .build [n], [] =>
+    let ai : Int64 := match n.auxInt with
+      | some (.lit _ (.bool true)) => 1
+      | _ => 0
+    let u := { x with op := n.op, args := #[], auxInt := ai, aux := none }
+    some [u, u]
+  | .copy _, [c] => some [{ x with op := .Copy, args := #[c], auxInt := 0, aux := none }]
+  | _, _ => none
+
+/-- The boolean shape. -/
+def isBool : Sem.Ty → Bool
+  | .bool => true
+  | _ => false
+
+/-- A block-rule event (rule `br`, new controls `nc`) on the replayed terminator `st`: `st` is an
+`If` on one control `c` of boolean shape, `br`'s control rule fires at `c` (`ruleOK`) with the
+definitions `ctrlDefs` makes, and the new terminator has `br`'s kind (with one control for `If`,
+none for `First`), the controls `nc` and the swap flag toggled by `br`'s swap. -/
+def blockOK (tabs : Tables) (M : Defs) (br : BlockRule) (st : BState) (nc : Array ID) :
+    Option (List Value × BState) :=
+  match BlockRule.ctrlRule br, st.kind, st.ctrls.toList with
+  | some cr, .If, [c] =>
+    match M.get? c with
+    | some x =>
+      match ctrlDefs cr x nc with
+      | some defs =>
+        if isBool (tabs.ty x.type) && nc.size == (if br.newKind == .If then 1 else 0) &&
+            ruleOK tabs M cr c defs then
+          some (defs, { kind := br.newKind, ctrls := nc, swapped := st.swapped != br.swapSuccs })
+        else none
+      | none => none
+    | none => none
+  | _, _, _ => none
+
+/-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
+if an event is not validated. -/
+def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
+    Defs → BMap → List RwEvent → Option (Defs × BMap)
+  | M, B, [] => some (M, B)
+  | M, B, .rule v i _ defs :: evs =>
     match M.get? v with
     | none => none
     | some x =>
@@ -395,20 +467,38 @@ def replay (tabs : Tables) (t : Interp.Table) : Defs → List RwEvent → Option
       | none => none
       | some cr =>
         if ruleOK tabs M cr.rule v defs.toList then
-          replay tabs t (defs.foldl (fun M u => M.put u.id u) M) evs
+          replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none
-  | M, .copyArg v i src :: evs =>
+  | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none
     | some x =>
       if h : i < x.args.size then
         if copyReach tabs M M.size x.args[i] src then
-          replay tabs t (M.put v { x with args := x.args.set i src }) evs
+          replay tabs t f (M.put v { x with args := x.args.set i src }) B evs
         else none
       else none
-  | M, .control .. :: evs => replay tabs t M evs
-  | _, .phielim .. :: _ => none
-  | _, .blockRule .. :: _ => none
+  | M, B, .control b i c :: evs =>
+    match bstate f B b with
+    | none => none
+    | some st =>
+      if h : i < st.ctrls.size then
+        if copyReach tabs M M.size st.ctrls[i] c then
+          replay tabs t f M ((b, { st with ctrls := st.ctrls.set i c }) :: B) evs
+        else none
+      else none
+  | _, _, .phielim .. :: _ => none
+  | M, B, .blockRule b i nc :: evs =>
+    match bstate f B b with
+    | none => none
+    | some st =>
+      if ((f.block? b).map (·.succs.size)) != some 2 then none else
+      match (t.blocks[st.kind.ctorIdx]?).bind (·[i]?) with
+      | none => none
+      | some br =>
+        match blockOK tabs M br st nc with
+        | none => none
+        | some (defs, st') => replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) ((b, st') :: B) evs
 
 /-- A value that is not a term node: phis, roots and frame-dependent values (`termOp`). -/
 @[inline] def isAtom (x : Value) : Bool := !termOp x.op
@@ -425,16 +515,15 @@ def dropAtom (op : Op) : Bool :=
   op matches .Phi | .Arg | .ArgIntReg | .SP | .LocalAddr | .Addr | .ConstString |
     .GetClosurePtr | .GetCallerSP
 
-/-- `f` and `g` have the same blocks and terminators, the atoms of `g` are atoms of `f` with the
-same fields and block, the atoms only `f` has are droppable (`dropAtom`), and each block
-evaluates its roots in the same order (`Sem.schedule`). -/
+/-- `f` and `g` have the same blocks, the atoms of `g` are atoms of `f` with the same fields and
+block, the atoms only `f` has are droppable (`dropAtom`), and each block evaluates its roots in
+the same order (`Sem.schedule`). The terminators are `finalOK`'s. -/
 def atomsOK (f g : Func) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
     match f.block? b, g.block? b with
     | some fb, some gb =>
-      fb.id == gb.id && fb.kind == gb.kind && fb.succs == gb.succs &&
-      fb.controls.size == gb.controls.size &&
+      fb.id == gb.id &&
       let af := atomsOf f fb
       let ag := atomsOf g gb
       ag.all (fun x => af.contains x && match f.value? x, g.value? x with
@@ -469,13 +558,18 @@ def closedOK (h : Func) : Bool :=
     | none => true
 
 /-- Every value listed in `g` has its replayed definition, up to copies in its arguments, and
-every control of `g` is reached from `f`'s through copies. -/
-def finalOK (tabs : Tables) (f g : Func) (M : Defs) : Bool :=
+every block of `g` its replayed terminator (`bstate`): the kind, the successors (swapped if the
+replay swapped them, then from two), the controls up to copies. -/
+def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
   let n := M.size
   g.blocks.all fun b =>
-    match f.block? b, g.block? b with
-    | some fb, some gb =>
-      (fb.controls.toList.zip gb.controls.toList).all (fun (c, c') => copyReach tabs M n c c') &&
+    match bstate f B b, f.block? b, g.block? b with
+    | some st, some fb, some gb =>
+      gb.kind == st.kind &&
+      (if st.swapped then fb.succs.size == 2 && gb.succs == swapS fb.succs
+       else gb.succs == fb.succs) &&
+      gb.controls.size == st.ctrls.size &&
+      (st.ctrls.toList.zip gb.controls.toList).all (fun (c, c') => copyReach tabs M n c c') &&
       gb.values.all fun x =>
         match M.get? x, g.value? x with
         | some m, some u =>
@@ -483,14 +577,14 @@ def finalOK (tabs : Tables) (f g : Func) (M : Defs) : Bool :=
           u.aux == m.aux && u.args.size == m.args.size &&
           (m.args.toList.zip u.args.toList).all fun (a, a') => copyReach tabs M n a a'
         | _, _ => false
-    | _, _ => false
+    | _, _, _ => false
 
 /-- **The validator**: `g` (the result of the rewrite pass with table `t` on `f`, which logged
 `log`) is related to `f` as the theorems need. -/
 def validate (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : Bool :=
   atomsOK f g && closedOK f && closedOK g &&
-  match replay tabs t f.valueTab log.toList with
-  | some M => finalOK tabs f g M
+  match replay tabs t f f.valueTab [] log.toList with
+  | some (M, B) => finalOK tabs f g M B
   | none => false
 
 end GoFV.Opt.RewriteCheck

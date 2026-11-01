@@ -108,6 +108,30 @@ theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     rw [this, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1)
   · rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
+/-- `StepRefP`'s terminators between two frames whose atoms are refined. -/
+theorem termStepRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
+    (H : Hyp tabs f g ce ce' I) {b : ID}
+    {G T : Frame} {VS VT : ID → Prop}
+    (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T VT)
+    (hVT : ∀ a, VT a → ∃ w, Placed g a w)
+    (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
+      Sem.Refines (rv G a) (rv T a))
+    (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
+    (hinv : ∀ a, I.P b a (rv G a)) (hSV : ∀ a, SAnc f b a → VS a)
+    {fb gb : Block} (hT : StepRefP (I.P b) (SAnc f b) f.value? tabs fb (listedDefs g) gb)
+    (hx : ∀ c ∈ fb.controls, VS c) (hy : ∀ c ∈ gb.controls, VT c) :
+    Res.Rel Next.Refines (stepTerm G fb) (stepTerm T gb) := by
+  have htyS' : ∀ a, VS a → ¬ IsTerm f.value? a →
+      (rv G a).retype (shape f.value? tabs a) = rv G a := fun a ha _ => by
+    rw [← tys_shape]; exact htyS a _ (reg_rv (hDS a ha).1)
+  refine termStepRef_apply hT hDS hx hDT hy (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
+    (fun a ha _ => ?_) (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom b) hSV
+  · obtain ⟨v, hp⟩ := hVT a ha
+    have : shape (listedDefs g) tabs a = shape g.value? tabs a := by
+      simp [shape, placed_listed hp, hp.1]
+    rw [this, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1)
+  · rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
+
 /-- The atoms the entry frames both hold are refined. -/
 theorem BRel.rel {tabs : Tables} {f g : Func} {I : SrcInv tabs f} {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) {VT VS : ID → Prop}

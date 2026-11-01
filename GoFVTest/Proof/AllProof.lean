@@ -118,6 +118,7 @@ import GoFV.Proof.Pass.PhiOptSetup
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Pass.RewriteCases
 import GoFV.Proof.Pass.RewriteTerm
+import GoFV.Proof.Pass.RewriteTermBlock
 import GoFV.Proof.Pass.RewriteTermDen
 import GoFV.Proof.Pass.RewriteTermEval
 import GoFV.Proof.Pass.RewriteTermMatch
@@ -152,6 +153,8 @@ import GoFV.Proof.Rules.AllSound
 import GoFV.Proof.Rules.And
 import GoFV.Proof.Rules.And2
 import GoFV.Proof.Rules.Attr
+import GoFV.Proof.Rules.Block
+import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
 import GoFV.Proof.Rules.Den
@@ -255,6 +258,7 @@ import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
 import GoFV.Proof.Term
+import GoFV.Proof.TermStep
 import GoFV.Proof.ValRefine
 import GoFV.Proof.WF
 import GoFV.Proof.Witness.AddZero
@@ -276,6 +280,7 @@ import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.NextPow2
+import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util

@@ -8,7 +8,7 @@ import GoFV.Opt.Opt
 For every `opt`/`middle opt`/`late opt`/`divisible`/`divmod` section of the given export files,
 runs the full rewrite pass with its log, the proven-only pass (`GoFV.Rules.Proven`) and the
 checked proven-only pass (as `opt-proven-probe`). Per rule (`file:line Op`, block rules as
-`block <Kind>`): its firings in the full passes, and
+`file:line block <Kind>`): its firings in the full passes, and
 
 - `sole`: functions not at stock under the proven-only passes whose sections off stock fire
   exactly one unproven rule in the full pass, this one;
@@ -25,9 +25,11 @@ namespace GoFVTest.RuleFireProbe
 
 def key (r : Rule) : String := s!"{r.loc.file}:{r.loc.line} {r.op.name}"
 
-def blockKey (k : BlockKind) : String := s!"block {k.name}"
+def blockKey (r : BlockRule) : String := s!"{r.loc.file}:{r.loc.line} block {r.kind.name}"
 
-def keysOf (s : RuleSet) : List String := s.values.foldl (fun acc (_, rs) => acc ++ rs.map key) []
+def keysOf (s : RuleSet) : List String :=
+  s.values.foldl (fun acc (_, rs) => acc ++ rs.map key) [] ++
+    s.blocks.foldl (fun acc (_, rs) => acc ++ rs.map blockKey) []
 
 def provenKeys : Std.HashSet String :=
   (keysOf Proven.generic ++ keysOf Proven.divisible ++ keysOf Proven.divmod).foldl
@@ -41,13 +43,14 @@ def variants : List (String × RuleSet × Interp.Table × Interp.Table) :=
    ("divisible", Generated.Divisible.ruleSet, divisibleTable, divisibleProvenTable),
    ("divmod", Generated.Divmod.ruleSet, divmodTable, divmodProvenTable)]
 
-/-- The proven rules of `s` and the rule (or block rules) `extra`, in matching order. -/
+/-- The proven rules of `s` and the rule `extra`, in matching order. -/
 def withExtra (s : RuleSet) (extra : String) : Interp.Table :=
   Interp.Table.ofRuleSet
     { s with
       values := s.values.map fun (o, rs) =>
         (o, rs.filter fun r => provenKeys.contains (key r) || key r == extra)
-      blocks := s.blocks.filter fun (k, _) => blockKey k == extra }
+      blocks := s.blocks.map fun (k, rs) =>
+        (k, rs.filter fun r => provenKeys.contains (blockKey r) || blockKey r == extra) }
 
 def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
   let m : Std.HashMap ID Nat := zv.foldl (fun m (v, c) => m.insert v c) {}
@@ -62,6 +65,7 @@ the value it fired at). -/
 def firedKeys (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String := Id.run do
   let mut M : RewriteCheck.Defs := f.valueTab
   let mut out := #[]
+  let mut kinds : Std.HashMap ID BlockKind := {}
   for ev in log do
     match ev with
     | .rule v i _ defs =>
@@ -72,8 +76,12 @@ def firedKeys (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String
       if let some x := M.get? v then
         if h : i < x.args.size then M := M.put v { x with args := x.args.set i src }
     | .phielim v d => M := M.put v d
-    | .blockRule b =>
-      if let some bl := f.block? b then out := out.push (blockKey bl.kind)
+    | .blockRule b i _ =>
+      let k? := (kinds.get? b).orElse fun _ => (f.block? b).map (·.kind)
+      if let some k := k? then
+        if let some r := (t.blocks[k.ctorIdx]?).bind (·[i]?) then
+          out := out.push (blockKey r)
+          kinds := kinds.insert b r.newKind
     | _ => pure ()
   return out
 

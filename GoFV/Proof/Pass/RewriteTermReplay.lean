@@ -15,7 +15,7 @@ denotations. Rule events use `RuleFacts.step` and `Rule.Sound` of the table's ru
 namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
-open GoFV.Rules (Pat Rule RuleSet RwEvent)
+open GoFV.Rules (Pat Rule RuleSet RwEvent BlockRule)
 
 /-! ## The rule table -/
 
@@ -63,7 +63,52 @@ theorem ofRuleSet_sound {s : RuleSet} (hs : s.AllSound) {k i : Nat} {cr : GoFV.R
     · have hm := Array.mem_of_getElem? h
       simp only [Array.mem_map, List.mem_toArray] at hm
       obtain ⟨r, hr, rfl⟩ := hm
-      exact hs p hp r hr
+      exact hs.1 p hp r hr
+
+theorem ofRuleSet_blocks (s : RuleSet) : (GoFV.Rules.Interp.Table.ofRuleSet s).blocks =
+    s.blocks.foldl (fun blocks (p : BlockKind × List BlockRule) =>
+      blocks.set! p.1.ctorIdx p.2.toArray)
+      (Array.replicate (BlockKind.all.size + 1) #[]) := by
+  unfold GoFV.Rules.Interp.Table.ofRuleSet
+  simp
+
+theorem foldl_brows (L : List (BlockKind × List BlockRule)) :
+    ∀ (l : List (BlockKind × List BlockRule)), (∀ p ∈ l, p ∈ L) →
+    ∀ (A : Array (Array BlockRule)),
+    (∀ (k : Nat) row, A[k]? = some row → row = #[] ∨ ∃ p ∈ L, row = p.2.toArray) →
+    ∀ (k : Nat) row, (l.foldl (fun blocks (p : BlockKind × List BlockRule) =>
+        blocks.set! p.1.ctorIdx p.2.toArray) A)[k]? = some row →
+      row = #[] ∨ ∃ p ∈ L, row = p.2.toArray
+  | [], _, _, hA => hA
+  | p :: l, hl, A, hA => by
+    simp only [List.foldl_cons]
+    refine foldl_brows L l (fun q hq => hl q (List.mem_cons_of_mem _ hq)) _ (fun k row h => ?_)
+    simp only [Array.set!, Array.getElem?_setIfInBounds] at h
+    split at h
+    · split at h
+      · cases h; exact .inr ⟨p, hl p List.mem_cons_self, rfl⟩
+      · cases h
+    · exact hA k row h
+
+/-- Every block rule of the table of a sound rule set is sound. -/
+theorem ofRuleSet_blockSound {s : RuleSet} (hs : s.AllSound) {k i : Nat} {br : BlockRule}
+    (h : ((GoFV.Rules.Interp.Table.ofRuleSet s).blocks[k]?).bind (·[i]?) = some br) :
+    GoFV.Proof.Rules.BlockRule.Sound br := by
+  cases hk : (GoFV.Rules.Interp.Table.ofRuleSet s).blocks[k]? with
+  | none => rw [hk] at h; cases h
+  | some row =>
+    rw [hk] at h
+    simp only [Option.bind_some] at h
+    rw [ofRuleSet_blocks] at hk
+    rcases foldl_brows s.blocks s.blocks (fun _ h => h) _ (fun k row h => by
+        rw [Array.getElem?_replicate] at h
+        split at h
+        · cases h; exact .inl rfl
+        · cases h) k row hk with rfl | ⟨p, hp, rfl⟩
+    · simp at h
+    · have hm := Array.mem_of_getElem? h
+      simp only [List.mem_toArray] at hm
+      exact hs.2 p hp br hm
 
 /-! ## `copyArg` events -/
 
@@ -273,47 +318,5 @@ theorem ReplayInv.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayInv
           fun ρ hρ n => hstep _ (hrest j hj).1 ρ hρ n⟩⟩
 
 end Inv
-
-/-- **Replay**: a successful replay of the log keeps the invariant. -/
-theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound) (hr : RetypeShapes)
-    {D₀ : ID → Option Value} {C₀ : ID → Prop} :
-    ∀ (evs : List RwEvent) (M M' : Defs) (C : ID → Prop),
-      replay tabs (GoFV.Rules.Interp.Table.ofRuleSet s) M evs = some M' →
-      ReplayInv tabs D₀ C₀ M C → ∃ C', ReplayInv tabs D₀ C₀ M' C'
-  | [], M, M', C, h, hI => by
-    simp only [replay, Option.some.injEq] at h; subst h; exact ⟨C, hI⟩
-  | .rule v i _ defs :: evs, M, M', C, h, hI => by
-    unfold replay at h
-    split at h
-    · cases h
-    rename_i x hx
-    split at h
-    · cases h
-    rename_i cr hcr
-    split at h
-    · rename_i hok
-      obtain ⟨F⟩ := ruleFacts hok
-      have hput : defs.foldl (fun M u => M.put u.id u) M = putAll M defs.toList := by
-        simp [putAll, Array.foldl_toList]
-      rw [hput] at h
-      exact replay_inv hs hr evs _ M' _ h (hI.rule (ofRuleSet_sound hs hcr) hr F)
-    · cases h
-  | .copyArg v i src :: evs, M, M', C, h, hI => by
-    unfold replay at h
-    split at h
-    · cases h
-    rename_i x hx
-    split at h
-    · rename_i hi
-      split at h
-      · rename_i hrc
-        exact replay_inv hs hr evs _ M' C h (hI.copy hx hi hrc)
-      · cases h
-    · cases h
-  | .control .. :: evs, M, M', C, h, hI => by
-    unfold replay at h
-    exact replay_inv hs hr evs M M' C h hI
-  | .phielim .. :: _, M, M', C, h, _ => by simp [replay] at h
-  | .blockRule .. :: _, M, M', C, h, _ => by simp [replay] at h
 
 end GoFV.Proof.Pass.Rewrite
