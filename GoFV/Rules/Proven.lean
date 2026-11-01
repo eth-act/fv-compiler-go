@@ -8,7 +8,7 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound`, `Rule.SoundT` or `Rule.MakeSel` lemma (value rules),
+rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel` or `Rule.LoadSel` lemma (value rules),
 `BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
@@ -210,12 +210,12 @@ def generic : RuleSet where
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975]
 
-/-- `dec.rules` restricted to its 24 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 26 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions and 0 struct-store splits. -/
 def dec : RuleSet where
   name := "dec"
-  values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126]),
+  values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126, Generated.Dec.r_dec_132]),
     (.ComplexImag, [Generated.Dec.r_dec_14]),
     (.ComplexReal, [Generated.Dec.r_dec_13]),
     (.IData, [Generated.Dec.r_dec_83, Generated.Dec.r_dec_146]),
@@ -227,7 +227,7 @@ def dec : RuleSet where
     (.SlicePtrUnchecked, [Generated.Dec.r_dec_61]),
     (.StringLen, [Generated.Dec.r_dec_43, Generated.Dec.r_dec_136]),
     (.StringPtr, [Generated.Dec.r_dec_42, Generated.Dec.r_dec_135]),
-    (.StructSelect, [Generated.Dec.r_dec_106, Generated.Dec.r_dec_115])]
+    (.StructSelect, [Generated.Dec.r_dec_106, Generated.Dec.r_dec_115, Generated.Dec.r_dec_141])]
   blocks := []
   nilChecks := []
   loads := []

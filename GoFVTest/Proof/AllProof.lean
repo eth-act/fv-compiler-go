@@ -204,6 +204,7 @@ import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Pass.RewriteCases
+import GoFV.Proof.Pass.RewriteLoadSel
 import GoFV.Proof.Pass.RewriteMakeSel
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.Pass.RewriteTermBlock
@@ -316,6 +317,7 @@ import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Convert
 import GoFV.Proof.Rules.Dec
 import GoFV.Proof.Rules.DecLoad
+import GoFV.Proof.Rules.DecLoadSel
 import GoFV.Proof.Rules.DecMakeSel
 import GoFV.Proof.Rules.DecShape
 import GoFV.Proof.Rules.Den
@@ -426,6 +428,7 @@ import GoFV.Proof.Rules.Rsh5
 import GoFV.Proof.Rules.Rsh6
 import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
+import GoFV.Proof.Rules.SelLoad
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask
 import GoFV.Proof.Rules.SignExt
@@ -490,6 +493,7 @@ import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd
+import GoFV.Proof.Witness.LoadSel
 import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3

@@ -404,34 +404,67 @@ shape `int8`). `evalE` models `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface
 (`kindE`: false at every other shape, the oracle's at the kind's shape, which a struct can
 share), `config.PtrSize` (8, `configField`) and the pointer `typ.*Ptr` types.
 
-**Proven** (14): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
+**Proven** (26): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
 `:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`; the
 matched value is then always `poison`, so `rule-sat` finds no instance: the rewrite never changes a
 defined value); `:106` (and `generic.rules:973`), the variadic `(StructSelect [i]
-x:(StructMake ___)) => x.Args[i]`, as `Rule.MakeSel` (below).
+x:(StructMake ___)) => x.Args[i]`, as `Rule.MakeSel` (below); the Load splits `:45`, `:63`,
+`:87` (`DecLoad.lean`: the condition fixes the string, slice or interface shape, `.other` gives
+`poison`; there the split is a struct-load expansion whose first component is read at the
+pointer itself, `loadSplit_ref` from `StructLoad.structLoad_ref`, the read bounded by the
+block's address window; `rule-sat` has no memory instances, so the non-vacuity witness is the
+pass execution `GoFV.Proof.Witness.ls_checkedRewrite`: `strLen`, `{dec.rules:45}`); the
+extractors of a `Load` `:135`, `:136`, `:144`, `:146`, `:150`, `:151`, `:154` (`DecLoad.lean`:
+component `k` of a `Load` of the kind's shape is refined by the `Load` of field `k` at its offset,
+`selLoad_ref`/`selLoad0_ref`, `SelLoad.lean`; witness `GoFV.Proof.Witness.xs_checkedRewrite`,
+`{dec.rules:136}`) and `:132`, `:141` as `Rule.LoadSel` (below).
 **False under the semantics**: `:119`, `:120` (a one-field pointer-shaped aggregate is `.agg [p]`,
 Go's is the pointer; `docs/plans/semantics.md` §10). **Not provable as `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
-`:102` (`imakeOfStructMake`). **Pending**: the Load splits `:45`, `:63`,
-`:87` (the validator accepts them; the lemma needs `Mem.read` bounded by the block's address
-window, so that `OffPtr [8]` of a pointer whose 16-byte load succeeds is not `poison` — RuleEffects6's
-Mem change), `:16`/`:28` (complex: `t.Size()` of an aggregate shape is not modelled); the
-extractors of a `Load` (`:132`–`:164`, `@x.Block` results, which `resultOK` rejects; `:132`/`:141`
-also need `t.Elem().Size()`/`t.FieldOff(i)` of aggregates); the `Store` splits (`:10`–`:93`,
-`:123`, `:129`: an effect obligation, as `rewriteStructStore`, issue #151).
+`:102` (`imakeOfStructMake`). **Pending**: `:16`/`:28` and the complex extractors `:158`–`:164`
+(`t.IsComplex()` and `t.Size()` of an aggregate shape are not modelled); the `Store` splits
+(`:10`–`:93`, `:123`, `:129`: an effect obligation, as `rewriteStructStore`, issue #151).
 
-**Variadic selections: `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`, `DecMakeSel.lean`).
-A `___` pattern has no `Rule.Sound` form (`Pat.arityOk`). `RuleSet.AllSound` asks of each value
-rule `Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (the rule has `makeSelShape`: `(StructSelect
-[i] x:(StructMake ___)) => x.Args[i]`); the replay validates such an event per instance
-(`RewriteCheck.makeSelOK`: `v = StructSelect [k] s`, `s = StructMake …` with argument `k` a value
-`a`, `v` becomes `Copy a` at `a`'s type, and where the `StructMake`'s shape has a component `k`,
-`a`'s shape is that component's and `v`'s, `shapeSub`). `MSFacts.step`
-(`GoFV/Proof/Pass/RewriteMakeSel.lean`) proves it refines the selection as a term at the same
-fuel: component `k` of the retyped `Make` is argument `k` retyped at the field's shape
-(`select_retype_make_get`), which keeps `a`'s denotation; only the selected argument's shape
-matters. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite` (`pick`,
-`{generic.rules:973}`). `generic.rules:973` is in `Proven.generic` too.
+**`@b` results** (`… => @x.Block (…)`). The block a result is built in is not read by the term
+denotations, so `resultOK` accepts a `build` whose node 0 is a fresh `t` (not `v`) with `v`
+redefined as `Copy t` at its own type, compatible with `t`'s (`RewriteCheck.blockTopOK`);
+`BuildRes` carries the top (`v`, or the fresh `t` with `BlockTop`), and `RuleFacts.top` reads `v`
+through the copy (`den_copy`; `stepK` grows by one for it). `Rule.Sound` is unchanged.
+
+**Unconditional selections of a `Load`: `Rule.LoadSel`** (`AllSound.lean`, `DecLoadSel.lean`,
+`GoFV/Proof/Pass/RewriteLoadSel.lean`). `(StructSelect [i] x:(Load <t> ptr mem)) => @x.Block
+(Load <v.Type> (OffPtr <v.Type.PtrTo()> [t.FieldOff(int(i))] ptr) mem)` (`:141`) and the
+`ArraySelect` form `:132` have no condition: nothing ties `v`'s type to the field's (a `Load` of
+the same bytes at another shape need not refine the field, e.g. a global pointer read as
+`int64`), so they are false as `Rule.Sound`. `Rule.Checked` gains `Rule.LoadSel` (`loadSelShape`:
+a selection op over a `Load`, `@b` build result, no condition); the replay validates such an
+event per instance, and only so (`RewriteCheck.loadSelOK`: the `Load`'s shape is `agg fs n` with
+`layoutsOK` and every offset below `n`, field `k` is `(o, t)`, `v` becomes `Copy top` at its type,
+`top` a fresh `Load` of shape `t` (`copyCompat` with `v`'s) on a fresh pointer-shaped `OffPtr [o]`
+of the `Load`'s pointer, from its memory). `LSFacts.step` proves it refines the denotations of a
+closed set with three times the fuel (`selLoad_ref` at `v`); `ReplayInv.loadSel` keeps the replay
+invariant. Pass execution witness: `GoFV.Proof.Witness.lsel_checkedRewrite` (`loadField`,
+`{dec.rules:141}`).
+
+**Selections of a `Make`: `makeSelOK`, `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`,
+`DecMakeSel.lean`, `GoFV/Proof/Pass/RewriteMakeSel.lean`). An event of a rule with
+`makeSelShape` (a selection op over a `Make` op pattern, copy result, no `@b`) is first validated
+per instance (`RewriteCheck.makeSelOK`): `v` selects component `k` (`selIndex?`) of `s = Make …`
+whose argument `k` is a value `a`, `v` becomes `Copy a` at `a`'s type, and where the `Make`'s
+shape has a component `k`, `a`'s shape is that component's and `v`'s (`shapeSub`), or `a` is an
+`Addr` and both are word shapes (`.int .w64` or a pointer: a global has no concrete address,
+so `retype` at both keeps it). Else the event is checked as a rule instance (`ruleOK`).
+`MSFacts.step` proves the per-instance case refines the selection as a term at the same fuel:
+component `k` of the retyped `Make` is argument `k` retyped at the field's shape
+(`select_retype_make_get`), so only the selected argument matters (`addr_den`, `retype_word`
+for an `Addr`). This accepts `(IData (IMake itab data))` whose itab is typed `*uint8` (the
+interface's itab word is `.int .w64`; `Pat.argsOK` asks it of every `Make` argument) and
+`(ITab (IMake itab _))` with an `Addr {go:itab.…}` itab (agreed with Semantics5: no semantic
+change; an itab with a concrete address is not kept by `retype` at `.int .w64`). A `___` pattern
+has no `Rule.Sound` form (`Pat.arityOk`): `RuleSet.AllSound` asks of each value rule
+`Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (`makeSelShape` and no `Pat.arityOk`), whose
+events only `makeSelOK` accepts. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite`
+(`pick`, `{generic.rules:973}`). `generic.rules:973` is in `Proven.generic` too.
 
 `lake exe dec-rewrite-probe <corpus>` (`GoFVTest/DecRewriteProbe.lean`) runs the step alone (input:
 the function after `decomposeUser` and the builtin phi splits) with all dec rules, the ptr-class
@@ -442,9 +475,9 @@ condition.
 
 | Corpus (sections) | Table | Rules fired | Step accepted | Full step reproduced and accepted | Checked pass at stock |
 | --- | --- | --: | --: | --: | --: |
-| quick-v3 (9,297) | all 47 | 5,147 | 7,612 | 7,612 | 7,612 |
-| quick-v3 | ptr class (21) | 4,824 | 7,947 | 6,852 | 6,852 |
-| quick-v3 | proven (14) | 4,823 | 8,059 | 6,852 | 6,852 |
+| quick-v3 (9,297) | all 47 | 5,147 | 8,385 | 8,385 | 8,385 |
+| quick-v3 | ptr class (21) | 4,824 | 8,732 | 7,415 | 7,415 |
+| quick-v3 | proven (26) | 5,115 | 8,825 | 8,381 | 8,381 |
 | quick-v3 | none | 0 | 9,297 | 4,150 | 4,150 |
 | full-v2 (96,531), 13 proven, before `Rule.MakeSel` | all 47 | 67,840 | 58,923 | — | 58,923 |
 | full-v2 | ptr class | 62,023 | 63,176 | — | 48,877 |
@@ -454,9 +487,13 @@ condition.
 Before the validator changes every firing section was rejected (quick: 4,150 accepted = the
 no-op sections; full 28,691). The full step extends the tables in 406 quick sections (types
 such as `t.Elem().PtrTo()`), so the step's refinement is in the output's tables under `tabsAgree`.
-Main obstacles (quick firings, all-rules table, after `Rule.MakeSel`): `ITab`/`IData` of an
-`IMake` whose itab is typed `*uint8` while the interface shape's itab word is `.int .w64`
-(`argsOK`/`topAll`, ~4,500); `@x.Block` extractors ~700; `Store` splits ~950 (not term ops).
+Main obstacles (quick, proven row, sections not reproduced, `CLASS` lines of the probe): `Store`
+splits ~280 sections (`:93` alone 100, `:72` 67, `:51` 34, both 38, `:123` 38); `ITab` of an
+`IMake` whose itab is not an `Addr` ~390 (`ArgIntReg`, `Convert`, `Load`, `Phi`, `SelectN`,
+`ConstNil`, `NilCheck`); `:120` (false in the model) 119; a phi elimination in the step's log 90
+(the validator rejects `phielim`); complex `Load` splits ~25. History (proven row, full step
+reproduced and accepted): 13 rules 6,131; `Rule.MakeSel` 6,852; `makeSelOK` for every selection of
+a `Make` and the Load splits 8,264; the extractors (`@b` results) 8,293; `Rule.LoadSel` 8,381.
 
 ## Classification
 

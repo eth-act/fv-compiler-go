@@ -54,6 +54,12 @@ def variants : Array (String × Interp.Table) :=
 def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : String :=
   if makeSelShape r && makeSelOK tabs M v defs then "ok" else
   if makeSelShape r && !Pat.arityOk r.pat then "makeSelOK" else
+  if loadSelShape r then (if loadSelOK tabs M v defs then "ok" else
+    match M.get? v with
+    | some x =>
+      let ys := ((x.args[0]?).bind M.get?).map fun y => s!"{y.op.name}:{reprStr (tabs.ty y.type)}"
+      s!"loadSelOK v:{reprStr (tabs.ty x.type)} ai {x.auxInt} of {ys} defs {defs.length}"
+    | none => "loadSelOK") else
   if !Pat.arityOk r.pat then "arity" else
   if !patOK r.pat then "patOK" else
   match M.get? v with
@@ -87,7 +93,10 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
           | .op o _ _ _ _ _ _ _ => topAll o e
           | _ => false) then "topAll" ++ shapes else
         if !Pat.argsOK e.ty [] r.pat then "argsOK" ++ shapes else
-        if !leavesOK M I [] r.pat then "leavesOK" else
+        if !leavesOK M I [] r.pat then
+          let ls := I.filterMap fun (p, w) => (M.get? w).map fun x =>
+            if p.length < 2 then "" else s!"{x.op.name}:{reprStr (tabs.ty x.type)}"
+          s!"leavesOK {ls.filter (· != "")}" else
         if !resultOK tabs M ev or σ I r x defs then
           (if r.block.isSome then "resultOK (@b block)" else "resultOK") else
         if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frameNodeOK" else
@@ -158,6 +167,10 @@ def replayWhy (tabs : Tables) (t : Interp.Table) (f : Func) :
       | some cr =>
         if makeSelShape cr.rule && makeSelOK tabs M v defs.toList then
           replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else if loadSelShape cr.rule then
+          if loadSelOK tabs M v defs.toList then
+            replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+          else .error s!"rule {key cr.rule}: loadSelOK"
         else if ruleOK tabs M cr.rule v defs.toList then
           replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else .error s!"rule {key cr.rule}: {why tabs M cr.rule v defs.toList}"
@@ -280,7 +293,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         st := { st with counts := st.counts.modify i fun (p, q, r, s) =>
           (p + b (n > 0), q + b acc, r + b par, s + b chk)
                         repro := st.repro.modify i (· + b rep) }
-        let whys := ruleWhys s1.tabs t s1.f log
+        let whys := ruleWhys out.tables t s1.f log
         if i == 0 then fullKeys := (whys.toList.map (·.1)).eraseDups
         if i == 2 && !rep then
           let un := (fullKeys.filter (!provenKeys.contains ·)).mergeSort (· ≤ ·)
