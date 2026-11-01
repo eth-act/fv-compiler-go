@@ -2,6 +2,7 @@ import GoFV.Proof.Pass.ECChain
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.Proof.MemRefine
+import GoFV.Proof.Pass.ECTree
 
 /-!
 # `expand calls`: stack-assigned call arguments (issue #28)
@@ -665,6 +666,34 @@ theorem ecs_chain_E {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : 
       exact ⟨hcl _ hm2 hn, (hL z hz.2 w hw).2 _ hm2 hn⟩
     · rw [List.mem_singleton.1 hz']; exact hz
 
+theorem ecs_storeChain_nil {g : Func} {nw : ID → Bool} :
+    ∀ {n : Nat} {z b : ID}, storeChain g nw n z b = some [] → z = b
+  | 0, _, _, h => by simp [storeChain] at h
+  | n + 1, z, b, h => by
+    rcases ecs_storeChain_step h with ⟨h1, -⟩ | ⟨w, zs', -, -, -, -, -, -, h2⟩
+    · exact h1
+    · simp at h2
+
+/-- The bottom of a chain of stores is a new value of `E` when its top is and it is new. -/
+theorem ecs_chain_base_E {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID → Prop}
+    (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
+    ∀ (n : Nat) {z b : ID} {zs : List ID}, storeChain g (isNewB f) n z b = some zs →
+      E z ∧ L z → isNewB f b = true → E b ∧ L b
+  | 0, _, _, _, h, _, _ => by simp [storeChain] at h
+  | n + 1, z, b, zs, h, hEL, hb => by
+    rcases ecs_storeChain_step h with ⟨rfl, rfl⟩ | ⟨w, zs', -, hw, -, -, hsz, hc, rfl⟩
+    · exact hEL
+    obtain ⟨-, w', -, hw', hcl, -⟩ := hNC z hEL.1
+    change g.value? z = some w' at hw'
+    rw [hw] at hw'; cases hw'
+    have hm2 : w.args[2]! ∈ w.args := by rw [← Array.mem_toList_iff, ecs_args_three hsz]; simp
+    have hn : isNewB f w.args[2]! = true := by
+      by_cases hne : zs' = []
+      · subst hne; rw [ecs_storeChain_nil hc]; exact hb
+      · exact ecs_storeChain_new hc hne
+    exact ecs_chain_base_E hNC hL n hc ⟨hcl _ hm2 hn, (hL z hEL.2 w hw).2 _ hm2 hn⟩ hb
+
 /-- A store of a chain heads the chain below it, a prefix of the chain. -/
 theorem ecs_chain_mem {g : Func} {nw : ID → Bool} :
     ∀ {n : Nat} {top b : ID} {zs : List ID}, storeChain g nw n top b = some zs → ∀ {z : ID}, z ∈ zs →
@@ -962,5 +991,189 @@ theorem ecs_storesOK_bounds {tabs : Tables} {sh : Array Ty} {g : Func} {nw : ID 
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hoff
       exact ⟨hoff.1.1.2, hoff.1.2⟩
     · exact ecs_storesOK_bounds h'.2 s' hs
+
+/-! ## Moves of wide arguments -/
+
+/-- `Move`'s copy (`memRoot`). -/
+theorem ecs_move_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Move)
+    (h : memRoot ctx u argv = .ok y) : ∃ d s M bs M', argv = [.ptr d, .ptr s, .mem M] ∧
+      M.read s u.auxInt.toInt.toNat = some bs ∧ M.write d bs = some M' ∧ y = .mem M' := by
+  unfold memRoot at h
+  rw [hu] at h
+  split at h
+  all_goals first
+    | contradiction
+    | (split at h
+       · simp only [writeRes] at h
+         split at h
+         · cases h; exact ⟨_, _, _, _, _, rfl, ‹_›, ‹_›, rfl⟩
+         · cases h
+       · cases h)
+    | (simp only at h; split at h <;> cases h)
+
+/-- A `Move`'s evaluation: the copy of the bytes at its source to its destination. -/
+theorem ecs_move_val {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {y : Val}
+    (hu : u.op = .Move) (hargs : u.args.toList = [u.args[0]!, u.args[1]!, u.args[2]!])
+    (hty : ctx.tys[u.id]?.getD .other = .mem) (h : evalValue env ctx fr u = .ok y) :
+    ∃ d s M bs M', rv fr u.args[0]! = .ptr d ∧ rv fr u.args[1]! = .ptr s ∧
+      rv fr u.args[2]! = .mem M ∧ M.read s u.auxInt.toInt.toNat = some bs ∧
+      M.write d bs = some M' ∧ y = .mem M' := by
+  have hreg := regs_of_ok h
+  rw [evalValue_of_regs hreg, hty, hargs] at h
+  have he : ∀ argv, evalOp env ctx fr u argv .mem = memRoot ctx u argv := fun _ => by
+    unfold evalOp; rw [hu]
+  simp only [List.map_cons, List.map_nil, he] at h
+  cases hr : memRoot ctx u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] with
+  | ok r =>
+    rw [hr] at h
+    obtain ⟨d, s, M, bs, M', hl, hrd, hw, rfl⟩ := ecs_move_inv hu hr
+    simp only [List.cons.injEq, and_true] at hl
+    obtain ⟨h1, h2, h3⟩ := hl
+    cases h
+    exact ⟨d, s, M, bs, M', h1, h2, h3, hrd, hw, rfl⟩
+  | panic e m => rw [hr] at h; cases h
+  | stuck msg => rw [hr] at h; cases h
+
+/-- A `Move` of shape `mem` whose read and write succeed evaluates to the copy. -/
+theorem ecs_move_eval {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (hu : u.op = .Move)
+    (hreg : ∀ a ∈ u.args, Reg fr a) (hargs : u.args.toList = [u.args[0]!, u.args[1]!, u.args[2]!])
+    (hty : ctx.tys[u.id]?.getD .other = .mem) {d s : Ptr} {M M' : Mem} {bs : Array Byte}
+    (hd : rv fr u.args[0]! = .ptr d) (hs : rv fr u.args[1]! = .ptr s)
+    (hm : rv fr u.args[2]! = .mem M) (hrd : M.read s u.auxInt.toInt.toNat = some bs)
+    (hw : M.write d bs = some M') :
+    evalValue env ctx fr u = .ok (.mem M') := by
+  rw [evalValue_of_regs hreg, hty, hargs]
+  have he : evalOp env ctx fr u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] .mem =
+      memRoot ctx u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] := by
+    unfold evalOp; rw [hu]
+  simp only [List.map_cons, List.map_nil]
+  rw [he, hd, hs, hm]
+  unfold memRoot
+  rw [hu]
+  dsimp only
+  rw [hrd]
+  dsimp only
+  rw [hw]
+  rfl
+
+mutual
+/-- What a `Load` reads refines what `decode` reads (an all-`poison` aggregate is `poison`). -/
+theorem ecs_decodeLoad_le (bs : Array Byte) (off : Nat) :
+    (t : Ty) → Sem.Refines (decodeLoad bs off t) (decode bs off t)
+  | .agg fs n => by
+    simp only [decodeLoad, decode]
+    split
+    · exact .poison _
+    · exact .agg (ecs_decodeLoadFields_le bs off fs)
+  | .int w => by simp only [decodeLoad]; exact Sem.Refines.refl _
+  | .bool => by simp only [decodeLoad]; exact Sem.Refines.refl _
+  | .ptr _ => by simp only [decodeLoad]; exact Sem.Refines.refl _
+  | .blob _ => by simp only [decodeLoad]; exact Sem.Refines.refl _
+  | .opaque _ => by simp only [decodeLoad]; exact Sem.Refines.refl _
+  | .empty => by simp only [decodeLoad, decode]; exact .empty
+  | .other => by simp only [decodeLoad]; exact .poison _
+  | .mem => by simp only [decodeLoad]; exact .poison _
+  | .tuple _ => by simp only [decodeLoad]; exact .poison _
+  | .str => by
+    simp only [decodeLoad]
+    split
+    · exact .poison _
+    · exact Sem.Refines.refl _
+  | .slice _ => by
+    simp only [decodeLoad]
+    split
+    · exact .poison _
+    · exact Sem.Refines.refl _
+theorem ecs_decodeLoadFields_le (bs : Array Byte) (off : Nat) :
+    (fs : List (Nat × Ty)) → Sem.RefinesList (decodeLoadFields bs off fs) (decodeFields bs off fs)
+  | [] => by simp only [decodeLoadFields, decodeFields]; exact .nil
+  | (o, t) :: fs => by
+    simp only [decodeLoadFields, decodeFields]
+    exact .cons (ecs_decodeLoad_le bs (off + o) t) (ecs_decodeLoadFields_le bs off fs)
+end
+
+/-- **A wide argument copied by a `Move`**: the source's `Dereference` of `P` (refined by the
+target's pointer `.ptr s`) at its memory `m` (refined by `M`) is refined by the bytes the target
+reads at `s` decoded at the parameter's shape `t`. -/
+theorem ecs_move_arg {m M : Mem} (hMR : Mem.Refines m M) {t ta : Ty} (hw : wf t = true)
+    (he : eqE ta t = true) (hmt : moveTy t = true) {P : Val} {s : Ptr} (hP : Sem.Refines P (.ptr s))
+    {bs : Array Byte} (hrd : M.read s t.size = some bs) :
+    Sem.Refines ((loadOp ta [P, .mem m]).retype ta) (decode bs 0 t) := by
+  have hdt : (decode bs 0 t).retype ta = decode bs 0 t := by
+    apply Val.retype_of_hasTy
+    rw [eqE_hasTy he]; exact decode_hasTy hw
+  cases hP with
+  | poison =>
+    simp only [loadOp]
+    rw [show Val.retype ta .poison = .poison by cases ta <;> rfl]
+    exact .poison _
+  | ptr p =>
+    simp only [loadOp]
+    rw [← hdt]
+    refine retype_mono ta ((load_mono hMR ta s).trans ?_)
+    have hsz := ecT_eqE_size he
+    unfold Mem.load
+    split
+    · have := Ty.eq_of_beq he
+      cases t <;> simp_all [erase, moveTy]
+    · exact .poison _
+    · exact .poison _
+    · exact .poison _
+    · rw [hsz, hrd]
+      dsimp only
+      rw [← ecT_eqE_decode he]
+      exact ecs_decodeLoad_le bs 0 ta
+
+theorem ecs_read_size {M : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (h : M.read p n = some bs) :
+    bs.size = n := by
+  unfold Mem.read at h
+  by_cases hn : n = 0
+  · simp only [hn, beq_self_eq_true, ite_true] at h; cases h; simp [hn]
+  · simp only [beq_iff_eq, hn, ite_false, Option.bind_eq_bind] at h
+    cases ha : M.find? p.blk with
+    | none => rw [ha] at h; cases h
+    | some a =>
+      rw [ha] at h
+      simp only [Option.bind_some] at h
+      split at h
+      · cases h; simp; omega
+      · cases h
+
+/-- **A moved argument reads back** after the stores above it, whose slots lie after its. -/
+theorem ecs_move_read {M M1 Mt : Mem} {o0 : Nat} {bs : Array Byte} {ss : List (Int × Ty)}
+    {ys : List Val} (hw1 : M.write (ecsSlot o0) bs = some M1)
+    (hw : writeAll M1 (List.zipWith ecsW ss ys) = some Mt)
+    (hle : ∀ s ∈ ss, ((o0 + bs.size : Nat) : Int) ≤ s.1 ∧ s.1 < 2 ^ 24) :
+    Mt.read (ecsSlot o0) bs.size = some bs := by
+  refine writeAll_read (A := []) (B := List.zipWith ecsW ss ys) (m := M) ?_ ?_
+  · simp only [List.nil_append, writeAll, hw1, Option.bind_some]; exact hw
+  · intro e he
+    obtain ⟨s, hs, y, rfl⟩ := ecs_mem_zipWith he
+    have h := hle s hs
+    refine .inr (.inr (.inr (.inl ?_)))
+    simp only [ecsW, ecsSlot, BitVec.toNat_ofNat]
+    rw [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
+    omega
+
+/-- A `Dereference` without `poison` read its bytes. -/
+theorem ecs_deref_read {ta : Ty} (hmt : moveTy ta = true) {P : Val} {m : Mem}
+    (h : ((loadOp ta [P, .mem m]).retype ta).hasPoison = false) :
+    ∃ p bs, P = .ptr p ∧ m.read p ta.size = some bs := by
+  have hpo : ∀ t : Ty, Val.retype t .poison = .poison := fun t => by cases t <;> rfl
+  cases P with
+  | ptr p =>
+    refine ⟨p, ?_⟩
+    simp only [loadOp] at h
+    cases hr : m.read p ta.size with
+    | some bs => exact ⟨bs, rfl, rfl⟩
+    | none =>
+      exfalso
+      unfold Mem.load at h
+      split at h
+      · simp [moveTy] at hmt
+      all_goals first
+        | (rw [hpo] at h; cases h)
+        | (rw [hr] at h; dsimp only at h; rw [hpo] at h; cases h)
+  | _ => simp only [loadOp, hpo, Val.hasPoison] at h; cases h
 
 end GoFV.Proof.EC

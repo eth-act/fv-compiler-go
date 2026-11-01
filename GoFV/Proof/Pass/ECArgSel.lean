@@ -549,7 +549,7 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
   rw [funext (ecCv_of_not_special (tabs := tabs) (ecA_sel_not_special hu hop hinv))]
   have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
   obtain ⟨yc, hyc⟩ := hRS c hcmem
-  obtain ⟨yc', hyc', hR⟩ := hfr c (by simp [ecFront, hu, hargs]) yc hyc
+  obtain ⟨yc', hyc', hR⟩ := hfr c (by simp [ecFront, hinv, hu, hargs]) yc hyc
   obtain ⟨hinvc, hoo, htup, hrtup⟩ := ecA_callOK_facts hcw hcok
   have hwfo := ec_outsOK_wf hoo
   rw [ecA_cv_call hcu hcall hinvc, ecT_shapeOf_value hcw] at hR

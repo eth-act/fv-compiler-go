@@ -58,7 +58,12 @@ def stackWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : L
     | some mw => s!"no store chain (memory arg {mw.op.name})"
     | none => "no store chain"
   | some zs =>
-    if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
+    let (sp, mv) := match callMove f g u w, sp with
+      | some z, e :: sp' => (sp', some (e, z))
+      | _, _ => (sp, none)
+    if (callMove f g u w).isSome && mv.isNone then "move without a stack parameter"
+    else if mv.any (fun ((p, a), z) => !moveOK tabs sh f g u p a z) then "move"
+    else if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
       s!"stores ({zs.length} for {(leafSlots tabs (sp.map (·.1))).length} slots)"
     else if !piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
       s!"store values: {piecesWhy tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
@@ -141,6 +146,28 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
   match schedule f fb, schedule g gb with
   | some of, some og =>
     if of.toList.filter (npOf f fb) != og.toList.filter (npOf f fb) then return "schedule"
+    let nodeF : ID → Bool := fun x => fb.values.contains x &&
+      match f.value? x with
+      | some u => u.op != .Phi
+      | none => false
+    let fuel := gb.values.size + 1
+    for y in fb.values do
+      if nodeF y && !invalidated g y then
+        if let some u := f.value? y then
+          for a in u.args do
+            if nodeF a && !(nodeG a && (depB g nodeG (isNewB f) fuel a y ||
+                depB g nodeG (fun _ => true) fuel a y)) &&
+                !(moveArgB f g y a && throughB f g nodeF nodeG fuel a y) then
+              let aop := ((f.value? a).map (·.op.name)).getD "?"
+              let gop := ((g.value? a).map (·.op.name)).getD "?"
+              let yop := u.op.name
+              let bad := ((f.value? a).map fun au => (au.args.toList.filter fun b =>
+                nodeF b && !(nodeG b && depB g nodeG (fun _ => true) fuel b y)).map fun b =>
+                  ((f.value? b).map (·.op.name)).getD "?").getD []
+              return s!"reach: {aop}→{gop} of {yop} move {moveArgB f g y a} pure {((f.value? a).map (Sem.prio ·.op == 0)).getD false} unreached args {bad}"
+    for z in gb.values do
+      if let some w := g.value? z then
+        if w.op != .Phi && w.args.any (invalidated g) then return "invalidated value read"
     for x in fb.values do
       for z in stackStores f g x do
         if !gb.values.contains z then return "stack store in other block"
@@ -150,6 +177,10 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
             depB g nodeG (fun _ => true) fuel (storeSP g z) z) then return "stack store SP not held"
         if !(!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
             depB g nodeG (fun _ => true) fuel (callMem f x) z) then return "stack store memory"
+      if let some u := f.value? x then
+        if !(u.args.all fun a => !moveArgB f g x a ||
+            (fb.values.contains a && beforeB og.toList a x)) then
+          return "move: Dereference placement"
   | _, _ => return "no schedule"
   for x in fb.values do
     for l in stackLoads tabs sh f g x do
