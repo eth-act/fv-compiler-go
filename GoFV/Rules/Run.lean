@@ -59,7 +59,8 @@ def ofPassEnv (e : PassEnv) : Except String RwEnv := do
     rtElemOff := elem.2.offset
     typs := e.typs
     typeOrder := e.typeOrder
-    frontend := e.frontend }
+    frontend := e.frontend
+    ptrCache := e.ptrCache }
 
 end RwEnv
 
@@ -72,7 +73,7 @@ def rewritePassFired (t : Interp.Table) (removeDead : Bool) (env : PassEnv) (f :
   | .ok _ s =>
     let f := s.f
     let f := { f with cache := { f.cache with lineStarts := s.pending.map (·.toCache) } }
-    return ({ func := f, tables := s.tables }, s.fired)
+    return ({ func := f, tables := s.tables, effects := s.effects, typeObjs := s.typeObjs }, s.fired)
   | .error e _ => throw e
 
 /-- A pass running `applyRewrite` with the rule table `t`; `removeDead` is Go's

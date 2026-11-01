@@ -75,15 +75,6 @@ def bump (st : Stats) (i : Nat) (g : Count → Count) : Stats :=
 /-- The pseudo pass instance of `--check-renumber`. -/
 def renumberCheck : String := "renumber self-check"
 
-/-- A section's `zvar` as a lookup (`PassEnv.zvar`). -/
-def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
-  let m : Std.HashMap ID Nat := zv.foldl (fun m (v, c) => m.insert v c) {}
-  fun i => m.getD i 0
-
-/-- The file's `ptrcache` as a predicate (`PassEnv.ptrCache`). -/
-def ptrCacheFn (ts : Array TypeRef) : TypeRef → Bool :=
-  let m : Std.HashMap TypeRef Unit := ts.foldl (fun m t => m.insert t ()) {}
-  fun t => m.contains t
 
 def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (st : Stats) :
     IO Stats := do

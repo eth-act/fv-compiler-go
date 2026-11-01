@@ -84,10 +84,12 @@ inductive Pending where
   | same (x : Nat) (w : ID)
   | eq (e : Expr) (actual : GVal)
 
-/-- The match state: bindings (`nil` = unbound) and postponed checks. -/
+/-- The match state: bindings (`nil` = unbound), postponed checks, and the values whose type
+the type variables were bound from (`Scope.tySrc`). -/
 structure MState where
   binds : Array GVal
   pending : List Pending
+  tySrc : List (Nat × ID) := []
 
 @[inline] def isUnbound (binds : Array GVal) (x : Nat) : Bool :=
   match binds[x]? with
@@ -132,6 +134,9 @@ partial def matchWork (sc : Scope) (work : List (Pat × ID)) (st : MState)
       | .atLeast n => if n ≥ 1 && o.argLen == -1 && x.args.size < n then return false
       | _ => pure ()
       let some st ← field sc st ty (fun _ => pure (.typ x.type)) | return false
+      let st := match ty with
+        | .bind tx => { st with tySrc := (tx, w) :: st.tySrc }
+        | _ => st
       let some st ← field sc st ai (fun _ => liftE (auxIntVal o.auxType x.auxInt)) | return false
       let some st ← field sc st ax (fun _ => do liftE (auxVal (← tables) o.auxType x.aux))
         | return false
@@ -156,6 +161,28 @@ def pendingOk (sc : Scope) (st : MState) : RwM Bool := do
       if !actual.beq (← eval { sc with binds := st.binds } e) then return false
   return true
 
+/-- The `*types.Type` object of a result node's type expression (#101): `t.PtrTo()` is a fresh
+object unless `t`'s pointer type is cached; `x.Type` and a type variable bound from a matched
+value are that value's object; anything else (`typ.<name>`, `t.Elem()`, …) is canonical. -/
+def typeObjOf (sc : Scope) (e : Expr) : RwM GoFV.Opt.TypeObj := do
+  match e with
+  | .method x "PtrTo" [] _ =>
+    match ← eval sc x with
+    | .typ t => return if (← read).ptrCache t then .canonical else .fresh
+    | _ => return .canonical
+  | .field x "Type" _ =>
+    match ← eval sc x with
+    | .val w => return .of w
+    | _ => return .canonical
+  | .var i => return match sc.tySrc.lookup i with
+    | some w => .of w
+    | none => .canonical
+  | _ => return .canonical
+
+/-- Record the type object of value `id` (`PassOut.typeObjs`). -/
+def recordTypeObj (id : ID) (o : GoFV.Opt.TypeObj) : RwM Unit :=
+  modify fun s => { s with typeObjs := s.typeObjs.push (id, o) }
+
 /-- Build the nodes of a value rule's result (`Result.build`), starting from node `j`, which is
 the value `id`; `built` maps node indices to the values made so far. Returns `built`. -/
 partial def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) (j : Nat)
@@ -177,10 +204,12 @@ partial def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) 
       | some c => args := args.push c
       | none =>
         let nk := nodes[k]!
-        let t ← match nk.ty with
-          | some e => liftE (← eval sc e).asTyp
+        let e ← match nk.ty with
+          | some e => pure e
           | none => throw "result node without a type"
+        let t ← liftE (← eval sc e).asTyp
         let c ← newValue blk pos nk.op t
+        recordTypeObj c (← typeObjOf sc e)
         built := built.set! k (some c)
         built ← buildNode sc nodes blk pos k c built
         args := args.push c
@@ -206,13 +235,15 @@ def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
       if let some e := n0.ty then
         let t ← liftE (← eval sc e).asTyp
         modF fun f => f.modV v fun y => { y with type := t }
+        recordTypeObj v (← typeObjOf sc e)
       let _ ← buildNode sc nodes x.block pos 0 v (built0.set! 0 (some v))
     | some be =>
       let .blk blk ← eval sc be | throw "@ placement is not a block"
-      let t ← match n0.ty with
-        | some e => liftE (← eval sc e).asTyp
-        | none => pure x.type
+      let (t, o) ← match n0.ty with
+        | some e => pure ((← liftE (← eval sc e).asTyp), (← typeObjOf sc e))
+        | none => pure (x.type, GoFV.Opt.TypeObj.of v)
       let top ← newValue blk pos n0.op t
+      recordTypeObj top o
       copyOf v top
       let _ ← buildNode sc nodes blk pos 0 top (built0.set! 0 (some top))
 
@@ -232,7 +263,7 @@ def tryRule (v : ID) (cr : CRule) : RwM Bool := do
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
   let st : MState := { binds := sc.binds, pending := [] }
   matchWork sc [(r.pat, v)] st fun st => do
-    let sc := { sc with binds := st.binds }
+    let sc := { sc with binds := st.binds, tySrc := st.tySrc }
     if !(← pendingOk sc st) then return false
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
@@ -276,10 +307,12 @@ control, no sharing. -/
 partial def buildCtrlNode (sc : Scope) (nodes : Array RNode) (b : ID) (pos : Pos) (j : Nat) :
     RwM ID := do
   let n := nodes[j]!
-  let t ← match n.ty with
-    | some e => liftE (← eval sc e).asTyp
+  let e ← match n.ty with
+    | some e => pure e
     | none => throw "control node without a type"
+  let t ← liftE (← eval sc e).asTyp
   let id ← newValue b pos n.op t
+  recordTypeObj id (← typeObjOf sc e)
   if let some e := n.auxInt then
     let ai ← liftE (toAuxInt n.op.auxType (← eval sc e))
     modF fun f => f.modV id fun x => { x with auxInt := ai }

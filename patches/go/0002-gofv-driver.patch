@@ -63,7 +63,7 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,1887 @@
+@@ -0,0 +1,1988 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -440,6 +440,7 @@
 +	defs              []*gofvDefn
 +	body              []*gofvLine // f ... (up to, excluding, warn/end)
 +	bodyText          string
++	effects           []*gofvLine // effect lines (before the file): frontend side effects
 +}
 +
 +func gofvTokens(s string) ([]string, error) {
@@ -529,6 +530,10 @@
 +		l := &gofvLine{raw: s, toks: toks}
 +		r.file = append(r.file, l)
 +		switch tag := toks[0]; {
++		case tag == "effect" && len(r.file) == 1:
++			r.file = r.file[:0]
++			r.effects = append(r.effects, l)
++			continue
 +		case tag == "f":
 +			inBody = true
 +		case tag == "warn" || tag == "end" || tag == "typeorder" || tag == "eof":
@@ -673,14 +678,33 @@
 +	if t != nil {
 +		// Claim number n for t, then resolve the types the Lean definition refers to: they may
 +		// be frontend types the pass copied to new numbers too (possibly t itself, through a
-+		// recursive type), which the rendering must use.
++		// recursive type), which the rendering must use. Every object of t's frontend number
++		// moves with it (identical objects share a number; e.g. a struct field's type can be
++		// another object than the block's).
++		old, hadOld := x.types[t]
++		var moved []*types.Type
 +		for p, m := range x.types {
-+			if m == n {
++			switch {
++			case hadOld && m == old:
++				moved = append(moved, p)
++			case m == n:
 +				delete(x.types, p)
 +			}
 +		}
++		for _, p := range moved {
++			x.types[p] = n
++		}
 +		x.types[t] = n
 +		x.typeKeys[x.typeKey(t)] = n
++		// The exporter keeps a definition per number (its representative); n's is rendered
++		// below, after the references: until then, t stands for it.
++		for len(x.typeDefs) < n {
++			x.typeList = append(x.typeList, nil)
++			x.typeDefs = append(x.typeDefs, nil)
++		}
++		if x.typeDefs[n-1] == nil {
++			x.typeDefs[n-1] = &gofvTypeDef{rep: t}
++		}
 +		refs := slices.Clone(tail)
 +		for _, l := range d.lines[1:] {
 +			if l.tag() == "field" && len(l.toks) > 3 {
@@ -807,17 +831,41 @@
 +	delete(x.typeKeys, key)
 +	for len(x.typeList) < n {
 +		x.typeList = append(x.typeList, nil)
++		x.typeDefs = append(x.typeDefs, nil)
 +	}
-+	later := slices.Clone(x.typeList[n:])
-+	x.typeList = x.typeList[:n-1]
++	later, laterDefs := slices.Clone(x.typeList[n:]), slices.Clone(x.typeDefs[n:])
++	x.typeList, x.typeDefs = x.typeList[:n-1], x.typeDefs[:n-1]
 +	x.defs.Reset()
 +	got := x.typ(t)
 +	x.typeList = append(x.typeList[:n], later...)
++	x.typeDefs = append(x.typeDefs[:n], laterDefs...)
 +	if got != fmt.Sprintf("t%d", n) {
 +		return "", fmt.Errorf("type t%d: the compiler's object is %s", n, got)
 +	}
 +	im.types[n] = t
-+	return x.defs.String(), nil
++	return gofvResolveDefs(x, x.defs.String()), nil
++}
++
++// gofvResolveDefs replaces the exporter's type definition placeholders in s (what x.typ
++// writes to x.defs; the exporter renders them when the file is finished) by their text.
++func gofvResolveDefs(x *gofvExporter, s string) string {
++	var b strings.Builder
++	for {
++		i := strings.IndexByte(s, 0)
++		if i < 0 {
++			b.WriteString(s)
++			return b.String()
++		}
++		b.WriteString(s[:i])
++		end := strings.IndexByte(s[i:], '\n')
++		n, err := strconv.Atoi(s[i+2 : i+end])
++		if err != nil || n < 1 || n > len(x.typeDefs) || x.typeDefs[n-1] == nil {
++			b.WriteString(s[i : i+end+1])
++		} else {
++			b.WriteString(x.renderType(n))
++		}
++		s = s[i+end+1:]
++	}
 +}
 +
 +func (im *gofvImporter) aux(tok string) (Aux, error) {
@@ -1165,7 +1213,24 @@
 +	for j, s := range later {
 +		x.slots[s] = laterN[j]
 +	}
-+	if got != fmt.Sprintf("s%d", n) || x.defs.String() != d.text {
++	// The exporter numbers a slot before its parent, so a new parent can have a higher number
++	// (it was hidden above and is rendered again after p): each such line must be the Lean
++	// definition at its number, and p's line the last.
++	ok := got == fmt.Sprintf("s%d", n) && strings.HasSuffix(x.defs.String(), d.text)
++	if ok {
++		for _, l := range strings.SplitAfter(strings.TrimSuffix(x.defs.String(), d.text), "\n") {
++			if l == "" {
++				continue
++			}
++			var m int
++			if _, err := fmt.Sscanf(l, "slot s%d ", &m); err != nil || !slices.Contains(laterN, m) ||
++				im.defs[gofvKey('s', m)] == nil || im.defs[gofvKey('s', m)].text != l {
++				ok = false
++				break
++			}
++		}
++	}
++	if !ok {
 +		return nil, fmt.Errorf("slot s%d: rebuilt as %s\n%sLean:\n%s", n, got, x.defs.String(), d.text)
 +	}
 +	im.slotOb[n] = p
@@ -1303,8 +1368,15 @@
 +	// Several identical *types.Type objects can share a number (export_gofv.go typeKey), and
 +	// whether their size (or their element's) is calculated depends on how they were reached:
 +	// use the one with the most sizes known, as the stock code that calls Size() (e.g. lower's
-+	// LocalAddr rule, on the element of a pointer) had such an object.
++	// LocalAddr rule, on the element of a pointer) had such an object; on a tie the
++	// exporter's representative (the object it renders), so the choice does not depend on
++	// map order.
 +	score := map[int]int{}
++	for n, d := range x.typeDefs {
++		if d != nil {
++			im.types[n+1], score[n+1] = d.rep, gofvSizeScore(d.rep, 4)
++		}
++	}
 +	for t, n := range x.types {
 +		if b, sc := im.types[n], gofvSizeScore(t, 4); b == nil || sc > score[n] {
 +			im.types[n], score[n] = t, sc
@@ -1618,6 +1690,12 @@
 +	if err != nil {
 +		return err
 +	}
++	if saved.Type != ftyp && x.types[saved.Type] == x.types[ftyp] {
++		// f keeps its own object of that type number: several function types can render
++		// alike, and the parameters' names (ABI analysis of f.Type, e.g. the debug info's
++		// PopulateABIInRegArgOps) are those of f's own object.
++		ftyp = saved.Type
++	}
 +	f.Blocks, f.Entry, f.Type = order, entry, ftyp
 +	if own == nil {
 +		f.OwnAux = nil
@@ -1892,6 +1970,25 @@
 +	if got = gofvMapOrder(got); got != want {
 +		return fmt.Errorf("re-export differs from the Lean output at %s", gofvFirstDiff(want, got))
 +	}
++	// Frontend side effects of the Lean passes, in the order the stock passes cause them.
++	var useIface []*obj.LSym
++	for _, l := range res.effects {
++		if len(l.toks) != 3 || l.toks[1] != "useiface" {
++			return fmt.Errorf("unknown effect %q", l.raw)
++		}
++		a, err := im.aux(l.toks[2])
++		if err != nil {
++			return err
++		}
++		s, ok := a.(*obj.LSym)
++		if !ok {
++			return fmt.Errorf("effect %q: a%s is not a symbol", l.raw, l.toks[2])
++		}
++		useIface = append(useIface, s)
++	}
++	for _, s := range useIface {
++		reflectdata.MarkTypeSymUsedInInterface(s, f.fe.Func().Linksym())
++	}
 +	// The imported values and blocks are not in f.Cache's storage, which newValue/NewBlock
 +	// fill by ID and Cache.Reset clears up to the first unused ID: mark the IDs the import
 +	// covers as used, so that the storage later passes take past them is cleared for the
@@ -1911,9 +2008,13 @@
 +
 +// gofvMapOrder puts the entries of the lines that list Go maps (namedx, splits, canon) in a
 +// canonical order: the exporter orders them by object numbers, which differ between the Lean
-+// numbering and the export walk's.
++// numbering and the export walk's. It drops the hint lines (zvar, ptrcache): they describe
++// the compiler's type objects for the next pass, not the function.
 +func gofvMapOrder(text string) string {
 +	lines := strings.Split(text, "\n")
++	lines = slices.DeleteFunc(lines, func(l string) bool {
++		return strings.HasPrefix(l, "zvar ") || strings.HasPrefix(l, "ptrcache ")
++	})
 +	var namedx []string
 +	first := -1
 +	for i, l := range lines {

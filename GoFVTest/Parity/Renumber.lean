@@ -103,8 +103,9 @@ def funcRefs (f : Func) : Array (RefKind × Nat) := Id.run do
       if let some a := a then out := out.push (.a, a)
   return out
 
-/-- The references inside a definition. -/
-def defRefs (tabs : Tables) : RefKind × Nat → Array (RefKind × Nat)
+/-- The references inside a definition. With `symNameOnly`, a symbol's references (its
+`typeinfo`/`itabinfo` types) are not followed: only its name and ABI are compared. -/
+def defRefs (tabs : Tables) (symNameOnly : Bool := false) : RefKind × Nat → Array (RefKind × Nat)
   | (.t, n) => match tabs.type? n with
     | none => #[]
     | some d => match d.tail with
@@ -117,7 +118,8 @@ def defRefs (tabs : Tables) : RefKind × Nat → Array (RefKind × Nat)
     | none => #[]
     | some d => match d.kind with
       | .name _ _ t _ _ _ _ => #[(.t, t)]
-      | .sym _ _ _ _ _ ti ii _ _ _ => (ti.toArray.map (.t, ·)) ++ ii.toArray.map (.t, ·)
+      | .sym _ _ _ _ _ ti ii _ _ _ =>
+        if symNameOnly then #[] else (ti.toArray.map (.t, ·)) ++ ii.toArray.map (.t, ·)
       | .call fn abi =>
         (fn.toArray.map (.a, ·)) ++ ((abi.map (·.params)).getD #[]).flatMap fun p =>
           #[(.t, p.type)] ++ p.name.toArray.map (.a, ·)
@@ -135,7 +137,8 @@ def isDefined (tabs : Tables) : RefKind × Nat → Bool
 
 /-- The references of `f` that are not defined in `input`, in walk order: the function, then
 breadth first through the definitions (in `out`) of the new references and of `seeds`. -/
-def newRefs (input out : Tables) (f : Func) (seeds : Array (RefKind × Nat)) : Walk := Id.run do
+def newRefs (input out : Tables) (f : Func) (seeds : Array (RefKind × Nat))
+    (symNameOnly : Bool := false) : Walk := Id.run do
   let mut w : Walk := {}
   let mut queue : Array (RefKind × Nat) := #[]
   let visit (w : Walk) (q : Array (RefKind × Nat)) (r : RefKind × Nat) :
@@ -154,12 +157,15 @@ def newRefs (input out : Tables) (f : Func) (seeds : Array (RefKind × Nat)) : W
   for _ in [0:seeds.size + (out.types.size + out.auxes.size + out.slots.size) + 1] do
     let some r := queue[i]? | break
     i := i + 1
-    for x in defRefs out r do (w, queue) := visit w queue x
+    for x in defRefs out symNameOnly r do (w, queue) := visit w queue x
   return w
 
 /-- Pair the Lean pass's new objects with the stock output's and rename the Lean function;
-an error describes the first definition that does not correspond. -/
-def renumber (input leanT stockT : Tables) (leanF stockF : Func) : Except String Func := do
+an error describes the first definition that does not correspond. With `symNameOnly`, a new
+symbol on both sides only needs the same name and ABI (the driver's importer: a new symbol is
+the frontend's, its contents are not the pass's). -/
+def renumber (input leanT stockT : Tables) (leanF stockF : Func) (symNameOnly : Bool := false) :
+    Except String Func := do
   -- objects that existed before and were redefined, on either side
   let mut seeds : Array (RefKind × Nat) := #[]
   for i in [0:input.types.size] do
@@ -171,8 +177,8 @@ def renumber (input leanT stockT : Tables) (leanF stockF : Func) : Except String
   for i in [0:input.slots.size] do
     if (input.slot? i).isSome && (leanT.slot? i != input.slot? i || stockT.slot? i != input.slot? i) then
       seeds := seeds.push (.s, i)
-  let wl := newRefs input leanT leanF seeds
-  let ws := newRefs input stockT stockF seeds
+  let wl := newRefs input leanT leanF seeds symNameOnly
+  let ws := newRefs input stockT stockF seeds symNameOnly
   if wl.t.size != ws.t.size || wl.a.size != ws.a.size || wl.s.size != ws.s.size then
     throw s!"new objects: lean {wl.t.size} types, {wl.a.size} aux, {wl.s.size} slots; \
       stock {ws.t.size}, {ws.a.size}, {ws.s.size}"
@@ -186,8 +192,12 @@ def renumber (input leanT stockT : Tables) (leanF stockF : Func) : Except String
     if (leanT.type? x).map r.typeDef != stockT.type? y then
       throw s!"new type t{y} (lean t{x}) differs from the stock definition\n    stock: \
         {showD ((stockT.type? y).map (.type y))}\n    lean:  {showD ((leanT.type? x).map (.type y ∘ r.typeDef))}"
+  let sameSym (x y : Option AuxDef) : Bool := match x, y with
+    | some { kind := .sym n abi .., .. }, some { kind := .sym n' abi' .., .. } => n == n' && abi == abi'
+    | _, _ => false
   for (x, y) in wl.a.zip ws.a do
-    if (leanT.aux? x).map r.auxDef != stockT.aux? y then
+    if (leanT.aux? x).map r.auxDef != stockT.aux? y &&
+        !(symNameOnly && sameSym (leanT.aux? x) (stockT.aux? y)) then
       throw s!"new aux a{y} (lean a{x}) differs from the stock definition\n    stock: \
         {showD ((stockT.aux? y).map (.aux y))}\n    lean:  {showD ((leanT.aux? x).map (.aux y ∘ r.auxDef))}"
   for (x, y) in wl.s.zip ws.s do
