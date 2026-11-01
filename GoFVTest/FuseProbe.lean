@@ -3,6 +3,7 @@ import GoFV.Opt.Fuse
 import GoFV.Opt.Fuse.PlainCheck
 import GoFV.Opt.Fuse.ComparisonsCheck
 import GoFV.Opt.Fuse.IfCheck
+import GoFV.Opt.Fuse.BranchRedirectCheck
 import GoFV.Opt.ShortCircuit
 import GoFV.Opt.SpecSafe
 
@@ -290,8 +291,40 @@ def classifyRedirect (f : Func) (cp cb : ID) : String := Id.run do
     return s!"cmp unrelated {fp}/{fb}"
   | _, _ => return s!"other {vp.op.name}/{vb.op.name}"
 
-/-- `fuseBranchRedirect` replayed, classifying every redirect. -/
-def redirectProbe (pv : Prove.Prover) (f : Func) (k : Counts) :
+/-- Shape facts of a redirect the checker relies on. -/
+def redirectShape (f : Func) (b : ID) (k out : Nat) (kc : Counts) : Counts := Id.run do
+  let mut kc := kc
+  let bb := f.getB b
+  let pk := bb.preds[k]!
+  let ctl := bb.controls[0]!
+  let cv := f.getV ctl
+  let child := bb.succs[out]!.b
+  if cv.block == b then kc := kc.bump "shape: ctl in b"
+  if cv.block == b && cv.op == .Phi then kc := kc.bump "shape: ctl Phi in b"
+  if cv.block == b && !RewriteCheck.termOp cv.op then kc := kc.bump "shape: ctl in b not term"
+  if cv.block == b && cv.args.contains ctl then kc := kc.bump "shape: ctl reads itself"
+  if bb.values.any (fun v => (f.getV v).op == .Phi) then kc := kc.bump "shape: b has Phi"
+  if child == f.entry then kc := kc.bump "shape: child is entry"
+  if child == pk.b then kc := kc.bump "shape: child = p"
+  if (f.getB pk.b).succs.size != 2 then kc := kc.bump "shape: p succs != 2"
+  if (f.getB pk.b).controls.size != 1 then kc := kc.bump "shape: p controls != 1"
+  -- b's values read outside b's control
+  let mut read := false
+  for h : i in [0:f.valueTab.size] do
+    match f.valueTab[i] with
+    | some y => if f.blocks.contains y.block && y.args.any (bb.values.contains ·) then read := true
+    | none => pure ()
+  for bid in f.blocks do
+    if bid != b && (f.getB bid).controls.any (bb.values.contains ·) then read := true
+  if read then kc := kc.bump "shape: b value read elsewhere"
+  let ai := bb.succs[out]!.i
+  if (f.getB child).values.any (fun v => let x := f.getV v; x.op == .Phi &&
+      (x.args[ai]?.any (bb.values.contains ·))) then kc := kc.bump "shape: child phi reads b value"
+  return kc
+
+/-- `fuseBranchRedirect` replayed, classifying every redirect and running the validator's
+decision on it (`Redir.decideOK`). -/
+def redirectProbe (tabs : Tables) (name : String) (pv : Prove.Prover) (f : Func) (k : Counts) :
     Except String (Func × Bool × Counts) := do
   let mut ft := (Prove.FactsTable.new pv.cx f).checkpoint
   let mut f := f
@@ -310,12 +343,33 @@ def redirectProbe (pv : Prove.Prover) (f : Func) (k : Counts) :
     for _ in [0:2 * n + 2] do
       if i < (f.getB b).preds.size then
         let pk := (f.getB b).preds[i]!
-        match tryPred pv f ft b i with
-        | (ft', some f') =>
+        match tryPredOut pv f ft b i with
+        | (ft', some out) =>
           let cp := (f.getB pk.b).controls[0]!
           let cb := (f.getB b).controls[0]!
           k := (k.bump "REDIRECT").bump s!"redirect: {classifyRedirect f cp cb}"
-          ft := ft'; f := f'; changed := true
+          let g := redirect f b i out
+          if Redir.stepOK tabs f g b i out then
+            k := k.bump "redirect VALIDATOR accepted"
+          else
+            let st := Redir.siteOf f b i out
+            let why :=
+              if !st.shapeOK f then "shape"
+              else if !st.unreadOK f then "unread"
+              else if !Redir.decideOK tabs f st.cp (st.pi == 0) st.ctl (st.out == 0) then
+                if !ProveCheck.decides f.value? tabs (Redir.asm f st.cp st.ctl (st.pi == 0))
+                    Redir.fuel Redir.fuel st.ctl (st.out == 0) then "decision"
+                else "topo"
+              else if !st.valTabOK f g then "values"
+              else if ![st.b, st.p, st.child, st.q].all (st.blockOK f g) then "blocks"
+              else "tables"
+            k := (k.bump "redirect VALIDATOR rejected").bump
+              s!"redirect rejected ({why}): {classifyRedirect f cp cb}"
+            if k.shown.size < 40 then
+              let msg := s!"{name} b{b} p{pk.b} ({why}): {(f.getV cp).op.name}{(f.getV cp).args} / {(f.getV cb).op.name}{(f.getV cb).args} pv {pk.i == 0} v {out == 0}"
+              k := { k with shown := k.shown.push msg }
+          k := redirectShape f b i out k
+          ft := ft'; f := redirect f b i out; changed := true
         | (ft', none) => ft := ft'; i := i + 1
     if (f.getB b).preds.size == 0 && b != f.entry then
       f := f.modB b fun x => { x with kind := .Invalid }
@@ -345,15 +399,18 @@ def loop (step : Func → ID → Counts → Except String (Func × Bool × Count
       | none => pure (f, ch, k)
     if ch then loop step final n f.invalidateCFG k else return (f, k)
 
+/-- `fuse-probe [--late] <dir|file>...`; `--late` replays late fuse only. -/
 def main (args : List String) : IO UInt32 := do
+  let lateOnly := args.contains "--late"
   let mut files := #[]
-  for a in args do
+  for a in args.filter (· != "--late") do
     let p : System.FilePath := a
     if ← p.isDir then
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
     else files := files.push p
   let mut ks : Array (String × Counts) :=
-    #[("early fuse", {}), ("late fuse", {}), ("short circuit", {})]
+    if lateOnly then #[("late fuse", {})]
+    else #[("early fuse", {}), ("late fuse", {}), ("short circuit", {})]
   let mut errs := 0
   for path in files do
     let .ok data ← (IO.FS.readBinFile path).toBaseIO | continue
@@ -397,7 +454,7 @@ def main (args : List String) : IO UInt32 := do
             let f := f'
             let k := analyze name f b k
             let (f, c2) := fuseBlockPlain f b
-            pure (f, c1 || c2, k)) (some (redirectProbe pv)) roundFuel f0 k
+            pure (f, c1 || c2, k)) (some (redirectProbe env.tables name pv)) roundFuel f0 k
         | _ =>
           let some boolT := env.typ? "Bool" | throw "no Bool"
           let isBool (t : TypeRef) : Bool := (env.type? t).map (·.kind) == some .BOOL

@@ -37,9 +37,10 @@ def redirect (f : Func) (b : ID) (k : Nat) (out : Nat) : Func := Id.run do
     if x.op == .Phi then f := f.addArg v x.args[ai]!
   return f
 
-/-- Try predecessor `k` of `b`: `some f'` if it was redirected (`k` is then reprocessed). -/
-def tryPred (pv : Prover) (f : Func) (ft : FactsTable) (b : ID) (k : Nat) :
-    FactsTable × Option Func := Id.run do
+/-- The facts-table decision for predecessor `k` of `b`: `some out` if `b`'s branch `1 - out` is
+unsatisfiable after `p`'s branch into `b` (and `b.Succs[out]` is not `b`). -/
+def tryPredOut (pv : Prover) (f : Func) (ft : FactsTable) (b : ID) (k : Nat) :
+    FactsTable × Option Nat := Id.run do
   let pk := (f.getB b).preds[k]!
   let p := pk.b
   if (f.getB p).kind != .If || p == b then return (ft, none)
@@ -52,8 +53,14 @@ def tryPred (pv : Prover) (f : Func) (ft : FactsTable) (b : ID) (k : Nat) :
     if !unsat then continue
     let out := 1 - j
     if (f.getB b).succs[out]!.b == b then continue
-    return (ft.restore, some (redirect f b k out))
+    return (ft.restore, some out)
   return (ft.restore, none)
+
+/-- Try predecessor `k` of `b`: `some f'` if it was redirected (`k` is then reprocessed). -/
+def tryPred (pv : Prover) (f : Func) (ft : FactsTable) (b : ID) (k : Nat) :
+    FactsTable × Option Func :=
+  let (ft, o) := tryPredOut pv f ft b k
+  (ft, o.map (redirect f b k))
 
 /-- The predecessor loop of one block (`k--` after a redirect reprocesses index `k`). -/
 def predLoop (pv : Prover) (b : ID) : Nat → Func → FactsTable → Nat → Bool →

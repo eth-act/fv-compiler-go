@@ -29,6 +29,17 @@ def FinalOK (ce : CheckEnv) (final : Option (Func → Except String (Func × Boo
   ∀ fin, final = some fin → ∀ (tabs : Tables) (f g : Func) (ch : Bool), fin f = .ok (g, ch) →
     WFDom ce f → Refines tabs g tabs f ∧ WFDom ce g
 
+/-- `FinalOK` at the tables `tabs` only: a final step whose checker reads the tables (late
+fuse's branch redirect decides comparisons with them). -/
+def FinalOKAt (ce : CheckEnv) (tabs : Tables) (final : Option (Func → Except String (Func × Bool))) :
+    Prop :=
+  ∀ fin, final = some fin → ∀ (f g : Func) (ch : Bool), fin f = .ok (g, ch) →
+    WFDom ce f → Refines tabs g tabs f ∧ WFDom ce g
+
+theorem FinalOK.at {ce : CheckEnv} {final : Option (Func → Except String (Func × Bool))}
+    (h : FinalOK ce final) (tabs : Tables) : FinalOKAt ce tabs final :=
+  fun fin hfin f g ch hf hw => h fin hfin tabs f g ch hf hw
+
 theorem finalOK_none {ce : CheckEnv} : FinalOK ce none := fun _ h => nomatch h
 
 /-- The loop invariant: refines the input, keeps `WFDom`. -/
@@ -93,7 +104,7 @@ theorem WFDom.invalidateCFG {ce : CheckEnv} {f : Func} (h : WFDom ce f) :
 theorem fuseLoop_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
     {step : Func → ID → Except String (Func × Bool)}
     {final : Option (Func → Except String (Func × Bool))} (hs : StepOK ce step)
-    (hfin : FinalOK ce final) :
+    (hfin : FinalOKAt ce tabs final) :
     ∀ (n : Nat) (f g : Func), fuseLoop step final n f = .ok g → Inv ce tabs f0 f →
       Inv ce tabs f0 g
   | 0, f, g, h, _ => by simp [fuseLoop, throw, throwThe, MonadExceptOf.throw] at h
@@ -128,7 +139,16 @@ theorem fuseLoop_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
           obtain ⟨f2, c2⟩ := r
           simp only [pure, Except.pure] at h
           rw [← hfn] at h
-          exact hnext f2 (c2 || c1) (hI1.step (hfin fin hfn tabs f1 f2 c2 hf)) h
+          exact hnext f2 (c2 || c1) (hI1.step (hfin fin hfn f1 f2 c2 hf)) h
+
+/-- **The fuse driver refines its input** and keeps `WFDom`, for any checked step and a final
+step checked at the tables `tabs`. -/
+theorem fuseLoop_refines_at {ce : CheckEnv} {tabs : Tables}
+    {step : Func → ID → Except String (Func × Bool)}
+    {final : Option (Func → Except String (Func × Bool))} (hs : StepOK ce step)
+    (hfin : FinalOKAt ce tabs final) {n : Nat} {f g : Func} (h : fuseLoop step final n f = .ok g)
+    (hf : WFDom ce f) : Refines tabs g tabs f ∧ WFDom ce g :=
+  fuseLoop_inv (f0 := f) hs hfin n f g h ⟨Refines.refl _ _, hf⟩
 
 /-- **The fuse driver refines its input** and keeps `WFDom`, for any checked step. -/
 theorem fuseLoop_refines {ce : CheckEnv} {tabs : Tables}
@@ -136,6 +156,6 @@ theorem fuseLoop_refines {ce : CheckEnv} {tabs : Tables}
     {final : Option (Func → Except String (Func × Bool))} (hs : StepOK ce step)
     (hfin : FinalOK ce final) {n : Nat} {f g : Func} (h : fuseLoop step final n f = .ok g)
     (hf : WFDom ce f) : Refines tabs g tabs f ∧ WFDom ce g :=
-  fuseLoop_inv (f0 := f) hs hfin n f g h ⟨Refines.refl _ _, hf⟩
+  fuseLoop_refines_at hs (hfin.at tabs) h hf
 
 end GoFV.Proof.Fuse

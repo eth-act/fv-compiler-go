@@ -147,6 +147,7 @@ import GoFV.Proof.Pass.FuseIfEnter
 import GoFV.Proof.Pass.FuseIfRel
 import GoFV.Proof.Pass.FuseIfSetup
 import GoFV.Proof.Pass.FuseIfSim
+import GoFV.Proof.Pass.FuseLatePass
 import GoFV.Proof.Pass.FuseLoop
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FusePlainFrame
@@ -156,6 +157,11 @@ import GoFV.Proof.Pass.FusePlainPres
 import GoFV.Proof.Pass.FusePlainRel
 import GoFV.Proof.Pass.FusePlainSetup
 import GoFV.Proof.Pass.FusePlainSim
+import GoFV.Proof.Pass.FuseRedirect
+import GoFV.Proof.Pass.FuseRedirectDecide
+import GoFV.Proof.Pass.FuseRedirectPres
+import GoFV.Proof.Pass.FuseRedirectRel
+import GoFV.Proof.Pass.FuseRedirectSim
 import GoFV.Proof.Pass.Identity
 import GoFV.Proof.Pass.KnownBits
 import GoFV.Proof.Pass.KnownBitsCore
@@ -442,6 +448,7 @@ import GoFV.Proof.Witness.ExpandCalls
 import GoFV.Proof.Witness.FormatBool
 import GoFV.Proof.Witness.FuseEarly
 import GoFV.Proof.Witness.FuseIf
+import GoFV.Proof.Witness.FuseLate
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits

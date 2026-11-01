@@ -3,7 +3,7 @@ import GoFV.Opt.Fuse.Basic
 import GoFV.Opt.Fuse.PlainCheck
 import GoFV.Opt.Fuse.ComparisonsCheck
 import GoFV.Opt.Fuse.IfCheck
-import GoFV.Opt.Fuse.BranchRedirect
+import GoFV.Opt.Fuse.BranchRedirectCheck
 
 /-!
 # early fuse and late fuse (`fuseEarly`, `fuseLate`, `fuse.go:13-18`)
@@ -20,12 +20,16 @@ import GoFV.Opt.Fuse.BranchRedirect
 error, and the pass then returns its input unchanged (`orInput`; never on the corpus). Early
 fuse's comparison fusions run checked too (`Cmp.fuseComparisonsChecked`, proof
 `GoFV.Proof.FuseCmp.fuseComparisonsChecked_refines`; a rejected rewrite is skipped). The step
-checkers need no `check` of their results (issue #147): early fuse runs the slim input check
-`wfDomCheck` once, on its input, and returns a function that fails it unchanged (every corpus
-input passes); its refinement theorem is `GoFV.Proof.FuseEarly.fuseEarly_refines`. Late fuse's
-`fuseBlockIf` runs checked (`fuseBlockIfChecked`, proof
-`GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`): its rare rewrites (1,586 on the full corpus) are
-checked with `check`, a rejected one is skipped (never on the corpus).
+checkers need no `check` of their results (issue #147): both passes run the slim input check
+`wfDomCheck` once, on their input, and return a function that fails it unchanged (every corpus
+input passes); the refinement theorems are `GoFV.Proof.FuseEarly.fuseEarly_refines` and
+`GoFV.Proof.FuseLate.fuseLate_refines`. Late fuse's `fuseBlockIf` runs checked
+(`fuseBlockIfChecked`, proof `GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`): its rare rewrites
+(1,586 on the full corpus) are checked with `check`, a rejected one is skipped (never on the
+corpus). Its branch redirects run checked (`fuseBranchRedirectChecked`: prove's validator
+decides each redirected branch, `Redir.stepOK`; proof
+`GoFV.Proof.FuseRedirect.fuseBranchRedirectChecked_ok`); a rejected redirect is skipped (never on
+the corpus).
 -/
 
 namespace GoFV.Opt
@@ -69,10 +73,13 @@ def fuseEarly (tv : TypeView) (f : Func) : Except String Func :=
 def fuseEarlyPass : Pass := Pass.ofFunc fun env f => do
   fuseEarly (← Fuse.typeView env) f
 
-/-- `fuseLate(f)`. -/
+/-- `fuseLate(f)`, every rewrite checked; the step checkers' proofs assume a well-formed input
+with dominated uses (`wfDomCheck`), so a function that fails it is returned unchanged. -/
 def fuseLate (ce : CheckEnv) (tv : TypeView) (pv : Prove.Prover) (f : Func) :
     Except String Func :=
-  orInput f (fuseLoop (Fuse.lateStep ce tv) (some (fuseBranchRedirect pv)) roundFuel f)
+  if !wfDomOK f then .ok f else
+  orInput f (fuseLoop (Fuse.lateStep ce tv) (some (fuseBranchRedirectChecked pv ce.tabs))
+    roundFuel f)
 
 /-- The `late fuse` pass. -/
 def fuseLatePass : Pass := Pass.ofFunc fun env f => do
