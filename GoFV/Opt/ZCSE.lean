@@ -146,8 +146,18 @@ def sameArgless (f g : Func) (fa ga : ID) : Bool :=
       u.auxInt == w.auxInt && u.type == w.type
   | _, _ => false
 
+/-- `x` is not a value of `g` that is a root (`Sem.isRoot`: an argument-free root is an
+`InitMem`). -/
+def notRoot (g : Func) (x : ID) : Bool := !(g.value? x).any (Sem.isRoot ·.op)
+
+/-- An argument-free root of `g`'s entry is a value of `f`'s entry: zcse moves only pure
+values (Go has one `InitMem`, in the entry), so the roots of each block stay put. -/
+def rootStays (f g : Func) (x : ID) : Bool :=
+  notRoot g x || ((f.block? f.entry).map (·.values.contains x)).getD false
+
 /-- Value `x` of `f` and `g`: same ID, op, aux, auxint and type; each argument the same or
-replaced by an argument-free value of `g`'s entry with the same key. -/
+replaced by a pure argument-free value of `g`'s entry with the same key (so the dependencies
+between roots are kept). -/
 def valueOK (f g : Func) (x : ID) : Bool :=
   match f.value? x with
   | none => true
@@ -159,7 +169,8 @@ def valueOK (f g : Func) (x : ID) : Bool :=
       gv.type == fv.type && gv.args.size == fv.args.size &&
       (List.range fv.args.size).all fun k =>
         fv.args[k]! == gv.args[k]! ||
-          (entryArgless g gv.args[k]! && sameArgless f g fv.args[k]! gv.args[k]!)
+          (entryArgless g gv.args[k]! && sameArgless f g fv.args[k]! gv.args[k]! &&
+            notRoot g gv.args[k]!)
 
 /-- Block `bid` of `f` and `g`: same kind and controls; the values the same except for
 argument-free values of `g`'s entry (moved there). -/
@@ -173,14 +184,14 @@ def blockOK (f g : Func) (bid : ID) : Bool :=
 
 /-- **zcse's output relation**, checked: `g` has `f`'s control-flow graph and blocks (kinds,
 controls) and values (`valueOK`), except that argument-free values of `g`'s entry may come
-from other blocks and replace argument-free arguments with the same key; those values
-evaluate in every frame (`safe`). -/
+from other blocks and replace pure argument-free arguments with the same key; those values
+evaluate in every frame (`safe`), and the roots among them are `f`'s entry's (`rootStays`). -/
 def zrel (tabs : Tables) (f g : Func) : Bool :=
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
   g.valueTab.size == f.valueTab.size &&
   f.blocks.all (blockOK f g) &&
   (((g.block? g.entry).map (·.values)).getD #[]).all (fun x =>
-    !entryArgless g x || (g.value? x).any (safe tabs (params tabs g))) &&
+    !entryArgless g x || ((g.value? x).any (safe tabs (params tabs g)) && rootStays f g x)) &&
   (List.range f.valueTab.size).all (valueOK f g)
 
 end ZCSE

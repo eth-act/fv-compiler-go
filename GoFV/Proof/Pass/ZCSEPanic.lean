@@ -1,20 +1,20 @@
 import GoFV.Proof.Pass.ZCSEBlock
+import GoFV.Proof.Pass.ZCSERank
 
 /-!
 # zcse: a block where the source panics
 
 `enter_panic`: the source panics at a root `r` of its schedule after a prefix `pre`; every
-source value the target evaluates before `r` is in `pre` (`Order.transfer`: the roots of `f`'s
-tree blocks are chained, and target dependency chains from `r` follow the source's,
-`depPres`), the others are representatives, so the target reaches `r` agreeing with `fill` of
-the source's frame and panics alike.
+source value the target evaluates before `r` is in `pre` (`schedTransfer`: the rank
+tie-break keeps the roots' order, #96), the others are representatives, so the target reaches
+`r` agreeing with `fill` of the source's frame and panics alike.
 -/
 
 namespace GoFV.Proof.ZCSE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.ZCSE Dom
 open GoFV.Proof.CopyElim (Tree refOK_prefix frame_ext stepV_of topoRem_at topoRem_append_left
-  prio_panicking)
+  prio_ne_zero_of_panic)
 
 variable {tabs : Tables} {f g : Func}
 
@@ -58,37 +58,17 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID}
   have hrS : r ∈ oS.toList := by rw [hsplit]; simp
   obtain ⟨hrb, fvr, hfvr, hrnph⟩ := (omem r).1 hrS
   rw [stepV_of hfvr] at hrp
-  have hrop : fvr.op = .PanicBounds ∨ fvr.op = .StaticLECall ∨ fvr.op = .StaticCall := by
-    rcases evalValue_panic_op hrp with h | h | h | h
-    · exact .inl h
-    · exact .inr (.inl h)
-    · exact .inr (.inr h)
-    · exact absurd h (S.noNil _ _ hfvr)
+  have hrop := evalValue_panic_op hrp
   have hrne := evalValue_panic_args hrp
   obtain ⟨gvr, hgvr, -, hgop, -⟩ := S.value hfvr
   have hrT : r ∈ oT.toList :=
     (omemT r).2 ⟨(hfg r hrb).resolve_right (not_ea S hfvr hrne), gvr, hgvr,
       by rw [hgop]; exact hrnph⟩
   obtain ⟨pre', post', hsplitT⟩ := List.append_of_mem hrT
-  have hspecS := schedule_spec hso
-  have hspecT := schedule_spec hoT
   have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
   have hk' : oT.toList[pre'.length]? = some r := by rw [hsplitT]; simp
-  have hnodeR : NodeIn (schedNodes f fb).toList r :=
-    (nodeIn_schedNodes hownF).2 ⟨hrb, fvr, hfvr, hrnph⟩
-  have hfrid : fvr.id = r := by
-    obtain ⟨v', hv', hid, -⟩ := hwf.valueId bid fb ⟨hbt.1, hfb⟩ r hrb
-    rw [hfvr] at hv'; cases hv'; exact hid
-  have hnotNil : ¬ NilIn (schedNodes f fb).toList r := by
-    intro hn
-    have hm : (⟨fvr.id, fvr.args, prio fvr.op⟩ : SNode) ∈ (schedNodes f fb).toList :=
-      mem_schedNodes.2 ⟨r, hrb, fvr, hfvr, hrnph, rfl⟩
-    have := hn _ (by rw [← hfrid]; exact nodeOf_of_mem (schedNodes_ids hownF hndF) hm)
-    simp only [prio_panicking hrop] at this; omega
-  have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk' hnotNil
-    (fun y hy hyn hyr => S.chained bid hbt.1 hbt.2 fb hfb y r hy hnodeR hyn hnotNil hyr)
-    (fun y _ _ hd => depPres S hbt.1 hfb hgbb
-      (fun fv hfv => by rw [hfvr] at hfv; cases hfv; exact hrne) y hd)
+  have htr := schedTransfer S hbt.1 hfb hgbb hso hoT hk hk'
+    ((npIn_sched hownF hndF).2 ⟨hrb, fvr, hfvr, hrnph, prio_ne_zero_of_panic hrop⟩)
   -- the target's prefix agrees with `fill` of the source's frame at the panic
   have hargsT : ∀ x gv, g.value? x = some gv → argsF (Ctx.make tabs g).f x = gv.args.toList :=
     fun x gv hgv => argsF_of (f := g) hgv
