@@ -67,6 +67,7 @@ structure St where
   acc : Std.HashMap String Nat := {}
   rej : Std.HashMap String Nat := {}
   same : Nat := 0
+  relFail : Nat := 0
   checkFail : Nat := 0
   cerrs : Nat := 0
   shown : Nat := 0
@@ -93,12 +94,21 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
     st := { st with secs := st.secs + 1 }
     let .ok out := provePass env f | st := { st with errs := st.errs + 1 }; continue
     let g := out.func
-    match ProveCheck.proveCheckedFunc env f with
+    match ProveCheck.proveCheckedStats env f with
     | .error _ => st := { st with cerrs := st.cerrs + 1 }
     | .ok (h, cs) =>
       for (k, n) in cs.acc.toList do st := { st with acc := bump st.acc k n }
       for (k, n) in cs.rej.toList do st := { st with rej := bump st.rej k n }
+      for (k, b, x) in cs.why do
+        if !(k.startsWith "args" || k.startsWith "Mul" || k.startsWith "Add" || k.startsWith "And" || k.startsWith "Or") then
+          IO.println s!"REJ {k} {path} b{b} v{x}"
       if h == g then st := { st with same := st.same + 1 }
+      if h == f && g != f then
+        st := { st with relFail := st.relFail + 1 }
+        let (h', _) := ProveCheck.revert prev false f g
+        let (C, F, inv) := ProveCheck.asmOf f prev
+        if h' != f then
+          IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} values {ProveCheck.valuesOK prev f h' F inv}"
       if (check { tabs := prev, typs } h).toBool == false then
         st := { st with checkFail := st.checkFail + 1 }
         if st.shown < 5 then
@@ -139,7 +149,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println "rewrites by class:"
   for (k, n) in st.classes.toList.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"  {n} {k}"
-  IO.println s!"checked output = stock output: {st.same}/{st.secs}; checked output fails check: {st.checkFail}; checked errors {st.cerrs}"
+  IO.println s!"checked output = stock output: {st.same}/{st.secs}; checked output fails check: {st.checkFail}; checked = input (relation fails or all undone) {st.relFail}; checked errors {st.cerrs}"
   IO.println "validator by class (accepted / rejected):"
   let keys := (st.acc.toList.map (·.1) ++ st.rej.toList.map (·.1)).eraseDups
   for k in keys.toArray.qsort (· < ·) do
