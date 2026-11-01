@@ -105,7 +105,8 @@ def proven():
 def proven_kinds():
     """Short rule name -> (proof module, obligation), from `theorem <name>_sound : <obligation>`
     (`Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel`, `Rule.LoadSel`, `BlockRule.Sound`, `EffectRule.NilElim`,
-    `EffectRule.LoadFwd`, `EffectRule.StructLoad`, `EffectRule.StructStore`, `EffectRule.Seg`)."""
+    `EffectRule.LoadFwd`, `EffectRule.StructLoad`, `EffectRule.StructStore`, `EffectRule.Seg`,
+    `EffectRule.PhiSel`)."""
     out = {}
     for fn in os.listdir(PROOF):
         if not fn.endswith(".lean") or fn[:-5] in INFRA:
@@ -310,7 +311,7 @@ rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel` or `Rule.LoadSel
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
 `EffectRule.StructStore` lemma (struct-store splits) or `EffectRule.Seg` lemma (segment
-rewrites; issue #151,
+rewrites; issue #151) or `EffectRule.PhiSel` lemma (selections of `Phi`s of `SliceMake`s; issue #69,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
 (`GoFV.Opt.optProven`, …; issue #113) and of the decompose builtin rewrite step (issue #17).
 -/
@@ -348,8 +349,8 @@ open GoFV.Rules
             for m in re.finditer(r"^def blocks_(\w+) : List BlockRule := \[(.*)\]$", s, re.M):
                 blks[m.group(1)] = [n.strip() for n in m.group(2).split(",") if n.strip()]
         effects = ("EffectRule.NilElim", "EffectRule.LoadFwd", "EffectRule.StructLoad",
-                   "EffectRule.StructStore", "EffectRule.Seg")
-        vals, bvals, nils, loads, sloads, sstores, segs = [], [], [], [], [], [], []
+                   "EffectRule.StructStore", "EffectRule.Seg", "EffectRule.PhiSel")
+        vals, bvals, nils, loads, sloads, sstores, segs, psels = [], [], [], [], [], [], [], []
         for op, key in order:
             rs = [n for n in ops[key] if n in done and kinds[n][1] not in effects]
             nils += [n for n in ops[key] if n in done and kinds[n][1] == "EffectRule.NilElim"]
@@ -357,6 +358,7 @@ open GoFV.Rules
             sloads += [n for n in ops[key] if n in done and kinds[n][1] == "EffectRule.StructLoad"]
             sstores += [n for n in ops[key] if n in done and kinds[n][1] == "EffectRule.StructStore"]
             segs += [n for n in ops[key] if n in done and kinds[n][1] == "EffectRule.Seg"]
+            psels += [n for n in ops[key] if n in done and kinds[n][1] == "EffectRule.PhiSel"]
             if rs:
                 vals.append((op, rs))
         for k, key in border:
@@ -365,14 +367,16 @@ open GoFV.Rules
                 bvals.append((k, rs))
         n = sum(len(rs) for _, rs in vals)
         nb = sum(len(rs) for _, rs in bvals)
-        total += n + nb + len(nils) + len(loads) + len(sloads) + len(sstores) + len(segs)
+        total += (n + nb + len(nils) + len(loads) + len(sloads) + len(sstores) + len(segs) +
+                  len(psels))
         q = f"Generated.{f}"
         body = ",\n    ".join(f"(.{op}, [{', '.join(q + '.' + r for r in rs)}])" for op, rs in vals)
         bbody = ",\n    ".join(f"(.{k}, [{', '.join(q + '.' + r for r in rs)}])" for k, rs in bvals)
         data += f"""
 /-- `{low}.rules` restricted to its {n} proven value rules, {nb} proven block rules, {len(nils)}
 nil-check eliminations, {len(loads)} Load-of-Store forwardings, {len(sloads)} struct-load
-expansions, {len(sstores)} struct-store splits and {len(segs)} segment rules. -/
+expansions, {len(sstores)} struct-store splits, {len(segs)} segment rules and {len(psels)} `Phi`
+selections. -/
 def {low} : RuleSet where
   name := "{low}"
   values := [{body}]
@@ -382,6 +386,7 @@ def {low} : RuleSet where
   structLoads := [{', '.join(q + '.' + r for r in sloads)}]
   structStores := [{', '.join(q + '.' + r for r in sstores)}]
   segs := [{', '.join(q + '.' + r for r in segs)}]
+  phiSels := [{', '.join(q + '.' + r for r in psels)}]
 """
         def conj(groups):
             if not groups:

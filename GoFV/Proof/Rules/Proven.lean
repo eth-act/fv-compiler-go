@@ -98,6 +98,7 @@ import GoFV.Proof.Rules.OrB
 import GoFV.Proof.Rules.OrB2
 import GoFV.Proof.Rules.OrB3
 import GoFV.Proof.Rules.OrB4
+import GoFV.Proof.Rules.PhiSel
 import GoFV.Proof.Rules.PtrIndex
 import GoFV.Proof.Rules.RotateLeft
 import GoFV.Proof.Rules.RotateLeft10

@@ -372,6 +372,10 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         else some s!"sl({k}): {why tabs t f f' (slTaken t tabs f log)}"
       | .ss => (ssRelWhy env tabs f f').map (s!"ss({k}): " ++ ·)
       | .seg => (segRelWhy env tabs f f').map (s!"seg({k}): " ++ ·)
+      | .ps =>
+        if RewriteCheck.layerOK env t tabs f0 L f log f' then none
+        else if !psRel tabs f f' then some s!"ps({k}): psRel"
+        else some s!"ps({k}): check"
       | .ld =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else some s!"ld({k}): {why tabs t f f' (ldTaken t tabs f log)}"
@@ -384,6 +388,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .sl => s!"sl({k})"
         | .ss => s!"ss({k})"
         | .seg => s!"seg({k})"
+        | .ps => s!"ps({k})"
         | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
@@ -459,9 +464,11 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         | .ok co => co
         | .error _ => { func := input, tables := prev }
       if !ok && !(out.func == input) then
-        -- `checkedRewrite`'s fallbacks (without segment rules, then without forwardings, then
-        -- without struct-store splits, then without nil-check eliminations): rejected, or accepted
-        let t0 := { proven with segs := #[] }
+        -- `checkedRewrite`'s fallbacks (without `Phi` selections, then without segment rules,
+        -- then without forwardings, then without struct-store splits, then without nil-check
+        -- eliminations): rejected, or accepted
+        let tp := { proven with phiSels := #[] }
+        let t0 := { tp with segs := #[] }
         let t' := { t0 with loads := #[] }
         let t'' := { t' with structStores := #[] }
         let t''' := { t'' with nilChecks := #[] }
@@ -472,7 +479,8 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
             some (if !tabsAgree prev o2.tables input then "tables"
               else segsWhy env o2.tables t' input o2.func 0 input #[] log2.toList)
           | .error e => some s!"error {e}"
-        let fb := if proven.segs.isEmpty then some "" else fbOf t0
+        let fb := if proven.phiSels.isEmpty then some "" else fbOf tp
+        let fb := if fb.isSome && !proven.segs.isEmpty then fbOf t0 else fb
         let fb := if fb.isSome && !proven.loads.isEmpty then fbOf t' else fb
         let fb := if fb.isSome && !proven.structStores.isEmpty then fbOf t'' else fb
         let fb := if fb.isSome && !proven.nilChecks.isEmpty then fbOf t''' else fb

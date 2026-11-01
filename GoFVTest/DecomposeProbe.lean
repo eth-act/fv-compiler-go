@@ -198,7 +198,7 @@ def layersWhy (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Func) (out : P
     else s!"validate: {validateWhy out.tables t f out.func log}"
   | L :: Ls, f, log =>
     let name := match L with
-      | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld" | .seg => "seg"
+      | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld" | .seg => "seg" | .ps => "ps"
     match L.pre t out.tables f log with
     | (f', log') =>
       if log'.size == log.size then layersWhy env t f0 out Ls f log

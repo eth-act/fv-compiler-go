@@ -258,7 +258,9 @@ expansions (`rewriteStructLoad`) tried on `Load` values after `loads`, validated
 `values`' `Store` row, validated per instance; `segs`: rules rewriting a segment of a block's
 memory roots (a `Zero` under `Store`s that tile it, a `memclrNoHeapPointers`/`memmove` call),
 tried on every value after the other tables, validated per instance (issue #151; the
-proven-only sets only). -/
+proven-only sets only); `phiSels`: selections of a `Phi` of `Make`s with a copy result
+(`generic.rules:1049`/`:1050`), tried on every value after `segs`, validated per instance
+(issue #69; the proven-only sets only). -/
 structure RuleSet where
   name : String
   values : List (Op × List Rule)
@@ -268,6 +270,7 @@ structure RuleSet where
   structLoads : List Rule := []
   structStores : List Rule := []
   segs : List Rule := []
+  phiSels : List Rule := []
 
 namespace RuleSet
 
