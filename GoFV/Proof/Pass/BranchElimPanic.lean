@@ -6,7 +6,7 @@ import GoFV.Proof.Pass.BranchElimOk
 `post_panic`: a panic of the source in `post` (after `dom` and the arm ran) is a panic of the
 merged block. `dom_panic`: a panic in `dom` is one too. In both, the target's schedule lists
 before the panicking node only values the source evaluated before it and speculation-safe
-values (`Order.transfer_rank`: the checker's `npSeqOK` makes the merged schedule list the
+values (`Order.transfer_rank`: the checker's `npSeqOK`, via `npSeqSem`, makes the merged schedule list the
 non-pure nodes of `dom` and then those of `post` in their source sequence); for `dom_panic` no
 non-pure node of `post` comes first (`not_before_append`).
 -/
@@ -56,17 +56,17 @@ theorem np_disj {D P : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.po
   rw [hc]; rfl
 
 /-- The merged block's schedule lists the non-pure nodes of `dom`, then those of `post`, in
-their source sequence (`npSeqOK`). -/
+their source sequence (`npSeqOK`, read through `npSeqSem`). -/
 theorem npSeq {D P D' : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
     (hD' : g.block? s.dom = some D') {oT : Array ID} (hoT : schedule g D' = some oT) :
     ∃ oD oP, schedule f D = some oD ∧ schedule f P = some oP ∧
       oT.toList.filter (fun x => npOf f D x || npOf f P x) =
         oD.toList.filter (npOf f D) ++ oP.toList.filter (npOf f P) := by
-  obtain ⟨D1, P1, D1', hD1, hP1, hD1', -, -, -, -, -, -, -, -, -, hn⟩ := merged_spec S.rel
+  obtain ⟨D1, P1, D1', hD1, hP1, hD1', -, -, -, -, -, -, -, -, -, hn⟩ := merged_spec S.rel S.wf S.wg
   rw [hD] at hD1; cases hD1
   rw [hP] at hP1; cases hP1
   rw [hD'] at hD1'; cases hD1'
-  unfold npSeqOK at hn
+  unfold npSeqSem at hn
   cases hoD : schedule f D with
   | none => rw [hoD] at hn; cases hn
   | some oD =>
@@ -243,7 +243,7 @@ theorem region_nodes {D' : Block} (hD' : g.block? s.dom = some D') {oT : Array I
     (∀ x ∈ P.values, x ∈ oT.toList) ∧ (∀ x, s.armVal f x = true → x ∈ oT.toList) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨ce', hwg⟩ := S.wg
-  obtain ⟨D1, P1, D1', hD1, hP1, hD1', -, -, -, -, -, -, hPin, harmin, -⟩ := merged_spec S.rel
+  obtain ⟨D1, P1, D1', hD1, hP1, hD1', -, -, -, -, -, -, hPin, harmin, -⟩ := merged_spec S.rel S.wf S.wg
   rw [hP] at hP1; cases hP1
   rw [hD'] at hD1'; cases hD1'
   have hdg := S.domInG
@@ -282,7 +282,7 @@ theorem dom_panic {tabs : Tables} {env : Env} {frS frT : Frame} {i : Nat}
   obtain ⟨psS, oS, pre, r, post, Gp, hpsS, hoS, hsplit, hpre, hrp, hGf, hGs, hGo, hGv, hGp, hrD, rv,
     hrv, hrnp, hrop⟩ := enter_panic_facts hwf S.domIn hD hs h1
   obtain ⟨D', psT, oT, hD', hpsT, hoT, hszT, hagT⟩ := S.targetPre hs hsz hag hD hpsS
-  obtain ⟨D1, P, D1', hD1, hP, hD1', hid', -, -, -, hreg, hDin, -, -, -⟩ := merged_spec S.rel
+  obtain ⟨D1, P, D1', hD1, hP, hD1', hid', -, -, -, hreg, hDin, -, -, -⟩ := merged_spec S.rel S.wf S.wg
   rw [hD] at hD1; cases hD1
   rw [hD'] at hD1'; cases hD1'
   obtain ⟨hPnode, hAnode⟩ := S.region_nodes hD' hoT hP

@@ -1,5 +1,6 @@
 import GoFV.Opt.SpecSafe
 import GoFV.Opt.Checked
+import GoFV.Opt.SchedFast
 
 /-!
 # branchelim, checked: one rewrite at a time
@@ -22,7 +23,8 @@ conditions that make the merged block evaluate as the source's path does:
 - `dom`'s non-`Phi` values and its control read nothing of `post`; `post`'s `Phi`s read nothing
   of `post`; `post`'s other values are no parameter reads;
 - the merged block has a schedule that lists the non-pure nodes (priority ≠ 0) of `dom` and
-  `post` in the sequence `dom`'s and then `post`'s schedule lists them (`npSeqOK`).
+  `post` in the sequence `dom`'s and then `post`'s schedule lists them (`npSeqOK`; schedules by
+  `SchedFast.schedFast`, which lists the non-pure nodes as `Sem.schedule` does).
 
 No `check` of `g`: the soundness proof is `GoFV.Proof.BranchElim.refines_of_step`, with the
 well-formedness and use dominance of `g` from `GoFV.Proof.BranchElim.DRel.wf_pres` and
@@ -34,9 +36,10 @@ namespace GoFV.Opt.BranchElim
 open GoFV.SSA
 
 /-- The merged block `D'` of `g` has a schedule listing the non-pure nodes of `D` and `P` (in
-`f`) in the sequence `D`'s schedule and then `P`'s lists them. -/
+`f`) in the sequence `D`'s schedule and then `P`'s lists them (schedules by
+`SchedFast.schedFast`: block-local IDs, the non-pure sequence of `Sem.schedule`). -/
 def npSeqOK (f g : Func) (D P D' : Block) : Bool :=
-  match Sem.schedule f D, Sem.schedule f P, Sem.schedule g D' with
+  match SchedFast.schedFast f D, SchedFast.schedFast f P, SchedFast.schedFast g D' with
   | some oD, some oP, some oT =>
     oT.toList.filter (fun x => npOf f D x || npOf f P x) ==
       oD.toList.filter (npOf f D) ++ oP.toList.filter (npOf f P)
@@ -217,7 +220,7 @@ def mergedOK (g : Func) : Bool :=
     D'.id == s.dom && D'.kind == P.kind && D'.controls == P.controls && D'.succs == P.succs &&
     D'.preds == D.preds.map s.redir &&
     D'.values == D.values ++ armVals f s.arm0 ++ armVals f s.arm1 ++ P.values &&
-    (Sem.schedule g D').isSome && npSeqOK f g D P D'
+    npSeqOK f g D P D'
   | _, _, _ => false
 
 /-- **One branchelim rewrite**, checked (see the module doc). The unchanged table entries are

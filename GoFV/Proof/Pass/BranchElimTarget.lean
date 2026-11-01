@@ -115,7 +115,7 @@ theorem merged_values {D D' : Block} (hD : f.block? s.dom = some D)
     (hgv : g.value? x = some gv) (hph : gv.op = .Phi) :
     x ∈ D.values ∧ ∃ fv, f.value? x = some fv ∧ fv.op = .Phi ∧ SemEq (some fv) (some gv) ∧
       gv.type = fv.type := by
-  obtain ⟨D1, P, D1', hD1, hP, hD1', -, -, -, -, hreg, -⟩ := merged_spec S.rel
+  obtain ⟨D1, P, D1', hD1, hP, hD1', -, -, -, -, hreg, -⟩ := merged_spec S.rel S.wf S.wg
   rw [hD] at hD1; cases hD1
   rw [hD'] at hD1'; cases hD1'
   have hr := hreg x hx
@@ -174,7 +174,7 @@ theorem targetPre {tabs : Tables} {frS frT : Frame} {i : Nat}
         (setPhis psT frT.regs)[a]? = (setPhis psS frS.regs)[a]? := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨ce', hwg⟩ := S.wg
-  obtain ⟨D1, P, D', hD1, hP, hD', hid', -, -, -, hreg, hDin, -, -, hsch, -⟩ := merged_spec S.rel
+  obtain ⟨D1, P, D', hD1, hP, hD', hid', -, -, -, hreg, hDin, -, -, hsch, -⟩ := merged_spec S.rel S.wf S.wg
   rw [hD] at hD1; cases hD1
   obtain ⟨oT, hoT⟩ := Option.isSome_iff_exists.1 hsch
   have hdg := S.domInG

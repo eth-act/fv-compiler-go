@@ -115,7 +115,7 @@ theorem post_step {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat
     rcases S.side_facts hD2 (by rw [hs2]; rfl) h1' with ⟨h', -⟩ | ⟨b, A, hb, -, -, -, -, -, -, hbp, -⟩
     · rw [h'] at h; cases h
     · rw [h] at hb; cases hb; exact hbp rfl
-  obtain ⟨-, P1, D1', -, hP1, hD1', -, hkP, hcP, hsuP, -⟩ := merged_spec S.rel
+  obtain ⟨-, P1, D1', -, hP1, hD1', -, hkP, hcP, hsuP, -⟩ := merged_spec S.rel S.wf S.wg
   rw [hP] at hP1; cases hP1
   have hctlP := (uses_spec S.rel S.postIn hP).2
   cases m with

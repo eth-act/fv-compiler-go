@@ -251,7 +251,7 @@ theorem merged_core {tabs : Tables} {env : Env} {frS frT G1 G' G3 : Frame} {i k 
   -- the target's `Phi`s and schedule
   obtain ⟨psS, hpsS⟩ := phis_of_enter (f := f) h1
   obtain ⟨D', psT, oT, hD', hpsT, hoT, hszT, hagT⟩ := S.targetPre hs hsz hag hD hpsS
-  obtain ⟨D1, P1, D1', hD1, hP1, hD1', hid', -, -, -, hreg, hDin, hPin, harmin, -⟩ := merged_spec S.rel
+  obtain ⟨D1, P1, D1', hD1, hP1, hD1', hid', -, -, -, hreg, hDin, hPin, harmin, -⟩ := merged_spec S.rel S.wf S.wg
   rw [hD] at hD1; cases hD1
   rw [hP] at hP1; cases hP1
   rw [hD'] at hD1'; cases hD1'
