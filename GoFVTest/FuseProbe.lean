@@ -22,6 +22,10 @@ structure Counts where
   len4 : Nat := 0
   accepted : Nat := 0
   rejected : Nat := 0
+  /-- comparison fusions (early fuse) -/
+  cmps : Nat := 0
+  /-- … whose shared successor has a `Phi` with different arguments along `p`'s and `b`'s edges -/
+  cmpPhiDiffer : Nat := 0
   shown : Array String := #[]
   deriving Inhabited
 
@@ -37,6 +41,27 @@ def analyze (ce : CheckEnv) (name : String) (f : Func) (b : ID) (k : Counts) : C
   else
     k := { k with rejected := k.rejected + 1 }
     if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} run {run}" }
+  return k
+
+/-- A comparison fusion at `b` (it fired): do the `Phi`s of the shared successor agree on the
+arguments along `p`'s and `b`'s edges? -/
+def analyzeCmp (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run do
+  let bb := f.getB b
+  let p := bb.preds[0]!.b
+  let pb := f.getB p
+  let mut k := { k with cmps := k.cmps + 1 }
+  for i in [0:2] do
+    if pb.succs[i]!.b != bb.succs[i]!.b then continue
+    let s := pb.succs[i]!.b
+    let jp := pb.succs[i]!.i
+    let jb := bb.succs[i]!.i
+    let differ := (f.getB s).values.any fun v =>
+      let x := f.getV v
+      x.op == .Phi && x.args[jp]? != x.args[jb]?
+    if differ then
+      k := { k with cmpPhiDiffer := k.cmpPhiDiffer + 1 }
+      if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} cmp b{b} p{p} s{s}" }
+    break
   return k
 
 /-- One backwards sweep with `step`, which also gets the counts. -/
@@ -97,9 +122,12 @@ def main (args : List String) : IO UInt32 := do
         match pass with
         | "early fuse" =>
           loop (fun f b k => do
-            let (f, c1) := fuseComparisons tv.isMem canOptIntInRange f b
-            let (f, c2) := fuseComparisons tv.isMem canOptSingleBitDifference f b
-            let (f, c3) := fuseComparisons tv.isMem canOptNanCheck f b
+            let cmp (canOpt : Func → Value → Value → Op → Bool) (f : Func) (k : Counts) :=
+              let (f', c) := fuseComparisons tv.isMem canOpt f b
+              (f', c, if c then analyzeCmp name f b k else k)
+            let (f, c1, k) := cmp canOptIntInRange f k
+            let (f, c2, k) := cmp canOptSingleBitDifference f k
+            let (f, c3, k) := cmp canOptNanCheck f k
             let k := analyze ce name f b k
             let (f, c4) := fuseBlockPlain f b
             pure (f, c1 || c2 || c3 || c4, k)) none roundFuel f0 k
@@ -123,7 +151,7 @@ def main (args : List String) : IO UInt32 := do
       | .ok (_, k') => ks := ks.set! idx (pass, k')
       | .error _ => errs := errs + 1
   for (p, k) in ks do
-    IO.println s!"{p}: plain fusions {k.runs} (run length 2: {k.len2}, 3: {k.len3}, ≥4: {k.len4}); accepted {k.accepted}, rejected {k.rejected}"
+    IO.println s!"{p}: plain fusions {k.runs} (run length 2: {k.len2}, 3: {k.len3}, ≥4: {k.len4}); accepted {k.accepted}, rejected {k.rejected}; comparison fusions {k.cmps}, shared successor phi args differ {k.cmpPhiDiffer}"
     for s in k.shown do IO.println s!"  REJECT {s}"
   IO.println s!"errors {errs}"
   return 0

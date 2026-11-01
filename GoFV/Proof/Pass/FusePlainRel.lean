@@ -83,7 +83,7 @@ theorem PRel.c_last (h : PRel f g run b0 c) {pre suf : List ID} (hr : run = pre 
   | cons y suf =>
     exfalso
     rw [List.getLast?_append, List.getLast?_cons_cons,
-      List.getLast?_eq_getLast (l := y :: suf) (List.cons_ne_nil _ _), Option.some_or] at hl
+      List.getLast?_eq_some_getLast (l := y :: suf) (List.cons_ne_nil _ _), Option.some_or] at hl
     have hcl : c ∈ y :: suf := by
       cases hl; exact List.getLast_mem _
     rw [List.nodup_append] at hnd

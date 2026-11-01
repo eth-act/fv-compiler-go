@@ -204,7 +204,7 @@ theorem chain {tabs : Tables} {env : Env} {n : Nat}
       DInv env (Ctx.make tabs f) (fun a => Anc (make f) a y ∧ a ≠ y) G →
       ((make f).depthOf y).isSome → G.regs.size = f.valueTab.size → m ≤ n + 1 →
       (runLoop env (Ctx.make tabs f) m G y idx).Defined →
-      ∃ fuelT, OutcomeRefines (runLoop env (Ctx.make tabs f) m G y idx)
+      ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) m G y idx)
         (runLoop env (Ctx.make tabs g) fuelT fr c i) := by
   intro suf
   induction suf with
@@ -224,7 +224,7 @@ theorem chain {tabs : Tables} {env : Env} {n : Nat}
       obtain ⟨C2, hC2, hT⟩ := S.merged_panic hr hfs htd hdi hA hfirst hY hpan
       refine ⟨1, ?_⟩
       rw [runLoop_panic hst, runLoop_panic (blockStep_of_panic (ctx := Ctx.make tabs g) hC2 hT)]
-      exact .panicked e mm
+      exact .panicked_refl e mm
     | ret rs mm =>
       obtain ⟨Y, G', hY, hG', hterm⟩ := blockStep_ret hst
       change f.block? y = some Y at hY
@@ -237,7 +237,7 @@ theorem chain {tabs : Tables} {env : Env} {n : Nat}
       refine ⟨1, ?_⟩
       rw [runLoop_ret hst, runLoop_ret (ctx := Ctx.make tabs g) (by
         rw [blockStep_of (ctx := Ctx.make tabs g) hC' hT, hterm'])]
-      exact .returned (RefinesList.refl rs)
+      exact .returned (RefinesList.refl rs) (Mem.Refines.refl _)
     | goto G' e =>
       obtain ⟨Y, hY, hG', hterm⟩ := blockStep_goto hst
       change f.block? y = some Y at hY
@@ -270,7 +270,7 @@ theorem chain {tabs : Tables} {env : Env} {n : Nat}
       obtain ⟨C2, hC2, hT⟩ := S.merged_panic hr hfs htd hdi hA hfirst hY2 hpan
       refine ⟨1, ?_⟩
       rw [runLoop_panic hst, runLoop_panic (blockStep_of_panic (ctx := Ctx.make tabs g) hC2 hT)]
-      exact .panicked e mm
+      exact .panicked_refl e mm
     | ret rs mm =>
       obtain ⟨Y2, G', hY2, -, hterm⟩ := blockStep_ret hst
       change f.block? y = some Y2 at hY2
@@ -296,7 +296,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f run b0 c) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : R env tabs f run b0 c frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hfT, hiT, hbT, hb, hnt, ht, hs, hdi⟩ := hR
   rw [hfT, hiT, hbT]
@@ -318,11 +318,11 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     | panic e m =>
       refine ⟨1, ?_⟩
       rw [runLoop_panic hst, runLoop_panic (hpan e m hst)]
-      exact .panicked e m
+      exact .panicked_refl e m
     | ret rs m =>
       refine ⟨1, ?_⟩
       rw [runLoop_ret hst, runLoop_ret (hret rs m hst)]
-      exact .returned (RefinesList.refl rs)
+      exact .returned (RefinesList.refl rs) (Mem.Refines.refl _)
     | goto G e =>
       obtain ⟨B, hB, hG, hterm⟩ := blockStep_goto hst
       change f.block? bS = some B at hB
@@ -358,8 +358,8 @@ theorem refines_of_step {tabs : Tables} : Refines tabs g tabs f := by
     have hent : (Ctx.make tabs g).f.entry = if f.entry = b0 then c else f.entry := by
       show g.entry = _
       by_cases h : f.entry = b0
-      · rw [if_pos h]; exact S.rel.entry.1 h
-      · rw [if_neg h]; exact S.rel.entry.2 h
+      · simp only [h, ↓reduceIte]; exact S.rel.entry.1 h
+      · simp only [h, ↓reduceIte]; exact S.rel.entry.2 h
     rw [hent]
     have hR0 : R env tabs f run b0 c (entryFrame env (Ctx.make tabs f) args mem) f.entry 0
         (entryFrame env (Ctx.make tabs f) args mem) (if f.entry = b0 then c else f.entry) 0 := by
