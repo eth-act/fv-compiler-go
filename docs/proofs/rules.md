@@ -166,37 +166,55 @@ the output against it with the remaining events. `checkedRewrite_refines` compos
 
 ### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 
-`(Load <t1> p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && … => x` replaces a `Load` (a term:
-`Sem.loadOp`, `poison` on an invalid access) by `Copy x`. The `Store` is a root, an atom of
-`Term.den`, so `Rule.SoundT` cannot see what it wrote; the rule is validated per instance, like
-the nil-check eliminations: `RuleSet.loads` (tried on a `Load` after its value row,
-`Interp.Table.loads`) holds the rules with `EffectRule.LoadFwd r := RewriteCheck.fwdShapeOK r =
-true` (the result is the value the `Load`'s memory `Store` stores). `RewriteCheck.fwdAccepts`
-takes the log's forwarding events out (`fwdPre`: `Load p m` → `Copy x` on the input), requires
-`fwdRel` between the input and that function and `check` of it, and validates the output against
-it with the remaining events. `fwdRel`: the same blocks and atoms, every value unchanged but for
-the forwarded `Load`s (`fwdRepOK`), each with `fwdOK` (its memory is a `Store`/`StoreWB` of `x`
-at a pointer that evaluates like the `Load`'s, `samePtrB`: the same value or congruent term
-nodes, which covers `isSamePtr`'s `OffPtr`/`AddPtr` chains and `Addr`s of one symbol; the `Load`,
-the `Store`'s type and `x` have one integer, boolean or pointer shape), and ranks ordering every
-listed non-`Phi` value after its arguments (`fwdRank`, `fwdRankOK`).
+`(Load <t1> p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && … => x` (`:800`) and its forms
+through one to three more `Store`s at addresses `disjoint` from the read (`:806`, `:813`, `:821`)
+replace a `Load` (a term: `Sem.loadOp`, `poison` on an invalid access) by `Copy x`. The `Store`
+is a root, an atom of `Term.den`, so `Rule.SoundT` cannot see what it wrote; the rule is
+validated per instance, like the nil-check eliminations: `RuleSet.loads` (tried on a `Load`
+after its value row, `Interp.Table.loads`) holds the rules with `EffectRule.LoadFwd r :=
+RewriteCheck.fwdShapeOK r = true` (the result is the value one of the up to four `Store`s of the
+`Load`'s memory chain stores). `RewriteCheck.fwdAccepts` takes the log's forwarding events out
+(`fwdPre`: `Load p m` → `Copy x` on the input; copy-argument replacements of the forwarded
+`Load` logged before it are dropped), requires `fwdRel` between the input and that function and
+`check` of it, and validates the output against it with the remaining events. `fwdRel`: the same
+blocks and atoms, every value unchanged but for the forwarded `Load`s (`fwdRepOK`), each with
+`fwdOK` = `fwdChain` (through at most eight memory `Copy`s and `Store`s at pointers disjoint from
+the read, a `Store`/`StoreWB` of `x` at a pointer equal to the `Load`'s; the `Load` and `x` have
+one integer, boolean or pointer shape, `fwdTyEq`, the `Store`'s type that shape or a pointer
+stored as `int64`, `fwdStoreTy`), and ranks ordering every listed non-`Phi` value after its
+arguments (`fwdRank`, `fwdRankOK`). Pointers: `ptrBase` (a base and a constant offset through
+`OffPtr`s and pointer `Copy`s), `baseSameB` (the same value, the start of one allocation:
+`LocalAddr`s of one variable or `Addr`s of one symbol, `baseBlk?`, or `AddPtr`/`PtrIndex` of
+equal bases by structurally equal indices, `termEqB`), `samePtrB` (equal bases, equal offsets),
+`disjointB` (equal bases at offsets whose byte ranges do not overlap modulo 2^64, `offSep`, or
+bases in different allocations).
 
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
 g = true → RefinesUnder Env.Mono tabs g tabs f`, by the atom simulation. It needs a fact about
 the source's memory roots that no valuation of the atoms has: `MemDefs` (on the source's `DenOK`
 set of a block entry, each `Store`/`Move`/`Zero` register is `memDef`, the write of its arguments'
-registers, which are in the set; established by `src_eval_mem` from `evalValue`, kept by
+registers, which are in the set, and each `LocalAddr` register its frame variable in activation
+0, where the atom simulation runs; established by `src_eval_mem` from `evalValue`, kept by
 `memDefs_phis` along edges) gives `termRef_apply` the premise `MemAtoms` of `TermRefP`/`StepRefP`
 (on the valuation it builds, every non-`poison` memory root is the write of its arguments'
-terms). With it, `fwd_den` (by induction on the rank) reads a forwarded `Load` through its
-`Store`'s register: the write of `x`'s term at the `Load`'s pointer (`samePtrB_den`), which a
-read gives back (`load_write`: `read_write_self`, `decode_encode`). The fuel of `TermRefP`'s
-right side may depend on the valuations (the stored value's term must be evaluated as deeply as
-the `Store`'s register). `checkedRewrite_refines` composes the nil-check eliminations, the
-forwardings and the atom simulation (statement unchanged). Proven: `generic.rules:800`; witness
-`GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`, kernel evaluation). Not yet: `:806`,
-`:813`, `:821` read through further `Store`s, which needs their disjointness (`disjoint`) decided
-on the instance and `read_write_sep`.
+terms, every `LocalAddr` its variable). With it, `fwd_den` (by induction on the rank) reads a
+forwarded `Load` through its chain (`chain_load`, `GoFV/Proof/Pass/LoadFwdPtr.lean`:
+`ptrBase_den`, `baseBlk_den`, `samePtr_den`, `disjoint_sep` + `load_write_sep` past the disjoint
+writes, `load_write` at the `Store` of `x`). The fuel of `TermRefP`'s right side may depend on
+the valuations. `checkedRewrite_refines` composes the nil-check eliminations, the forwardings and
+the atom simulation (statement unchanged). Proven: `generic.rules:800`, `:806`, `:813`, `:821`;
+witnesses `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`) and `sl2_checkedRewrite`
+(`p[0] = x; p[1] = y; return p[0]`, `:806`), kernel evaluation.
+
+**Fallback.** `checkedRewrite t` runs the pass again without the table's forwardings
+(`{t with loads := #[]}`) when the validator rejects the first result, so a forwarding the
+validator cannot relate costs only that function's forwardings (`checkedRewrite_cases`, statement
+unchanged: the validator does not read `loads`, `validate_noLoads`). Forwardings the validator
+does not relate (quick-v1, `opt-proven-probe` "Forwarding fallbacks": opt 46, middle opt 3, late
+opt 9): mostly aggregate shapes (interfaces, strings, structs: a `Load` decodes an `agg` of
+fields even from `poison` bytes, which a `poison` stored value does not refine, so these need a
+different argument), `Store`s of a `Load` of the same address left in the chain by an earlier
+rewrite, and `PtrIndex` offsets by constants.
 
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
@@ -410,6 +428,11 @@ constant at the interface shape of #169 (`ConstInterface` = `(int64 0, nil)`; #1
 constant ill-shaped, 470 `:1057` rejections and 5,245 at stock).
 Probe after RuleProofs9 (1,131 rules, extended tables): opt 58.46%, middle opt 94.76%, late opt
 95.26%, divisible 99.98%, divmod 99.02% checked parity.
+Probe after Load-of-Store forwarding (#151; 1,139 rules: `:800`, `:806`, `:813`, `:821` as
+forwardings, with the no-forwarding fallback): 6,115 of 9,297 functions (65.77%) at stock under
+the checked passes; opt 67.44%, middle opt 97.76%, late opt 96.44%, divisible 99.98%, divmod
+99.02% checked parity; validator rejects 1 / 6 / 0 / 0 / 0 (the phi elimination and the six
+narrow tops below), forwarding fallbacks 46 / 3 / 9 / 0 / 0.
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -466,46 +489,47 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 6051, under the checked passes 6045 (validator the only obstacle: 6). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 5, 1: 1124, 2: 790, 3 or more: 1327.
+Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 6130, under the checked passes 6115 (validator the only obstacle: 15). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 1141, 2: 748, 3 or more: 1272.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
+| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 173 | 173 |
 | `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 142 | 142 |
 | `generic.rules:974 Load` | `r_generic_974` | mem | 580 | 138 | 138 |
-| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 126 | 126 |
-| `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 81 | 81 |
+| `generic.rules:973 StructSelect` | `r_generic_973` | ptr | 5789 | 73 | 73 |
 | `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 72 | 72 |
-| `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 50 | 66 |
-| `generic.rules:973 StructSelect` | `r_generic_973` | ptr | 5789 | 64 | 64 |
-| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 64 | 64 |
-| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 38 | 38 |
-| `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 29 | 29 |
+| `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 51 | 68 |
+| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 66 | 66 |
+| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 40 | 40 |
+| `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 30 | 30 |
 | `generic.rules:790 EqInter` | `r_generic_790` | P2 | 116 | 29 | 29 |
-| `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 28 | 28 |
+| `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 27 | 27 |
 | `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 26 | 26 |
 | `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 22 | 22 |
+| `generic.rules:1646 EqPtr` | `r_generic_1646` | P2 | 269 | 19 | 19 |
 | `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 18 | 18 |
+| `divmod.rules:180 Div64u` | `r_divmod_180` | P1 | 76 | 17 | 17 |
 | `generic.rules:372 OrB` | `r_generic_372/r_generic_372_2/r_generic_372_3/r_generic_372_4` | P1 | 35 | 13 | 13 |
 | `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 12 | 12 |
-| `generic.rules:806 Load` | `r_generic_806` | mem | 488 | 12 | 12 |
 | `generic.rules:610 Less64` | `r_generic_610_3` | P1 | 160 | 12 | 12 |
 | `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 12 | 12 |
 | `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 10 | 10 |
-| `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 8 | 8 |
-| `generic.rules:830 Load` | `r_generic_830` | mem | 46 | 8 | 8 |
+| `generic.rules:830 Load` | `r_generic_830` | mem | 46 | 9 | 9 |
+| `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 29 | 9 | 9 |
+| `divmod.rules:171 Div32u` | `r_divmod_171` | P1 | 30 | 8 | 8 |
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 8 | 8 |
+| `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 7 | 7 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 7 | 7 |
 | `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 6 | 6 |
-| `generic.rules:813 Load` | `r_generic_813` | mem | 224 | 5 | 5 |
+| `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 6 | 6 |
 | `generic.rules:793 NeqSlice` | `r_generic_793` | P2 | 50 | 5 | 5 |
-| `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 5 | 5 |
 | `generic.rules:1005 Store` | `r_generic_1005` | mem | 23 | 4 | 4 |
 | `generic.rules:369 AndB` | `r_generic_369/r_generic_369_2/r_generic_369_3/r_generic_369_4` | P1 | 12 | 4 | 4 |
 | `generic.rules:1743 Move` | `r_generic_1743` | mem | 8 | 4 | 4 |
+| `divmod.rules:206 Div64u` | `r_divmod_206` | P1 | 6 | 4 | 4 |
 | `generic.rules:992 ArraySelect` | `r_generic_992` | P2 | 361 | 3 | 3 |
 | `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 3 | 3 |
 | `generic.rules:792 EqSlice` | `r_generic_792` | P2 | 138 | 3 | 3 |
-| `generic.rules:382 OrB` | `r_generic_382/r_generic_382_2` | float | 8 | 3 | 3 |
 | `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 2 | 2 |
 | `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 2 | 2 |
 | `generic.rules:821 Load` | `r_generic_821` | mem | 71 | 2 | 2 |
@@ -513,7 +537,9 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 56 | 2 | 2 |
 | `generic.rules:1638 SelectN` | `r_generic_1638/r_generic_1638_2` | call | 38 | 2 | 2 |
 | `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 2 | 2 |
+| `divmod.rules:159 Div16u` | `r_divmod_159` | P1 | 20 | 2 | 2 |
 | `generic.rules:623 Eq64F` | `r_generic_623` | float | 17 | 2 | 2 |
+| `generic.rules:382 OrB` | `r_generic_382/r_generic_382_2` | float | 8 | 2 | 2 |
 | `generic.rules:1328 Mul64F` | `r_generic_1328` | float | 7 | 2 | 2 |
 | `generic.rules:531 Rsh32Ux64` | `r_generic_531` | P1 | 3 | 2 | 2 |
 | `generic.rules:1031 SliceLen` | `r_generic_1031` | P2 | 1524 | 1 | 1 |
@@ -524,7 +550,7 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1833 Store` | `r_generic_1833` | mem | 43 | 1 | 1 |
 | `generic.rules:585 Neq8` | `r_generic_585_4` | P1 | 35 | 1 | 1 |
 | `generic.rules:1036 SliceLen` | `r_generic_1036` | P2 | 33 | 1 | 1 |
-| `generic.rules:585 Neq16` | `r_generic_585` | P1 | 33 | 1 | 1 |
+
 | `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 22 | 1 | 1 |
 | `generic.rules:1183 Eq64` | `r_generic_1183_3` | P1 | 16 | 1 | 1 |
 | `generic.rules:919 Store` | `r_generic_919` | mem | 15 | 1 | 1 |
@@ -539,18 +565,21 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `divisible.rules:152 Eq64` | `r_divisible_152` | P1 | 2 | 1 | 1 |
 | `generic.rules:2166 Or64` | `r_generic_2166_2` | P1 | 2 | 1 | 1 |
 | `generic.rules:1324 Mul64F` | `r_generic_1324_2` | float | 2 | 1 | 1 |
-| `divmod.rules:221 Div32u` | `r_divmod_221` | P1 | 2 | 1 | 1 |
+
 | `generic.rules:243 IsInBounds` | `r_generic_243` | P1 | 2 | 1 | 1 |
 | `generic.rules:2325 CondSelect` | `r_generic_2325/r_generic_2325_2/r_generic_2325_3` | P1 | 2 | 1 | 1 |
 | `generic.rules:2168 Or16` | `r_generic_2168_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:1331 Div64F` | `r_generic_1331` | float | 1 | 1 | 1 |
 | `generic.rules:1742 Move` | `r_generic_1742` | mem | 1 | 1 | 1 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 1 | 1 | 1 |
+| `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 0 | 0 |
 | `generic.rules:1012 StringLen` | `r_generic_1012` | P2 | 1091 | 0 | 0 |
 | `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 0 | 0 |
 | `generic.rules:1032 SliceCap` | `r_generic_1032` | P2 | 580 | 0 | 0 |
+| `generic.rules:806 Load` | `r_generic_806` | mem | 488 | 0 | 0 |
 | `generic.rules:271 IsSliceInBounds` | `r_generic_271` | P1 | 247 | 0 | 0 |
 | `generic.rules:997 Store` | `r_generic_997` | mem | 241 | 0 | 0 |
+| `generic.rules:813 Load` | `r_generic_813` | mem | 224 | 0 | 0 |
 | `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 0 | 0 |
 | `generic.rules:1035 SlicePtr` | `r_generic_1035` | P2 | 179 | 0 | 0 |
 | `generic.rules:994 Load` | `r_generic_994` | P2 | 117 | 0 | 0 |
@@ -558,9 +587,6 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1362 Store` | `r_generic_1362` | call | 107 | 0 | 0 |
 | `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 100 | 0 | 0 |
 | `generic.rules:785 Phi` | `r_generic_785` | phi | 89 | 0 | 0 |
-| `generic.rules:1049 SliceLen` | `r_generic_1049` | ptr | 79 | 0 | 0 |
-| `generic.rules:1584 MemEq` | `r_generic_1584` | P2 | 73 | 0 | 0 |
-| `generic.rules:1376 NilCheck` | `r_generic_1376` | mem | 70 | 0 | 0 |
 
 <!-- END fire -->
 
