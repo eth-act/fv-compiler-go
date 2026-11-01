@@ -100,7 +100,7 @@ and the semantics' "a use reads its definition's latest activation", §3.6 of
   whose immediate dominator is an ancestor of the edge's source, every non-entry tree block has
   a tree predecessor it does not dominate, every use in a tree block is defined in an ancestor
   (`Phi` argument `i`: of predecessor `i`, if that is a tree block). It never rejects what Go
-  accepts (corpus below). It certifies soundness (ancestors lie on every path:
+  accepts (corpus result above). It certifies soundness (ancestors lie on every path:
   `GoFV.Proof.Dom.use_dominated`), not that the tree is the complete dominator tree.
 
 **Memory** (P2 proofs: dse, memcombine, writebarrier, nilcheckelim; the semantics' single
