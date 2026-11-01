@@ -9,6 +9,7 @@ comments on PRs that cross the thresholds below. Anyone can run the same scripts
 | `scripts/perf-record.py [TARGET...]` | builds module by module, appends one row per (commit, module) to `perf/history.tsv` |
 | `scripts/perf-compare.py BASE HEAD` | Markdown report of regressions/wins between two recorded commits; exit 1 on a regression |
 | `scripts/perf-explain.py MODULE` | names the slow declarations of one module (`trace.profiler`) |
+| `scripts/olean-top.lean M.olean` | largest constants of an `.olean` (Expr nodes, string-literal bytes such as `bv_decide` certificates) |
 | `scripts/perf-bench.py [NAME...]` | runs the executables listed in `perf/bench.tsv`, appends to `perf/bench-history.tsv` |
 | `scripts/perf-graph.py COMMIT` | critical path (CPU) through the import graph and the costliest rebuild cones |
 | `scripts/perf-watch.py` | one pass of the watch loop: records origin/main and open PR heads, writes compare reports |
@@ -69,7 +70,8 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | --- | --- |
 | peak RSS regression | `maxrss_mb` grew > 25% and > 512 MB |
 | time regression | `wall_s` and `cpu_s` both grew > 25% and > 5 s (load 120 inflated small modules' wall time 2–10× and CPU ~1.5×) |
-| new heavy module | a new module above 2 GB or 60 s |
+| new heavy module | a new module above 2 GB, 60 s CPU, or 10 MB `.olean` |
+| `.olean` growth | a module's `.olean` grew > 25% and > 5 MB (exact bytes, no load noise; a proof-only module should stay well under 1 MB) |
 | broken | a module that built in BASE fails or is killed in HEAD |
 | benchmark regression | wall and CPU time both > 25% and > 1 s, or max RSS > 25% and > 256 MB |
 | non-reproducible `.olean` | a module's `repro` is `differs` in HEAD but not in BASE |
@@ -96,6 +98,11 @@ GoFV.X: 3 top-level profiler entries >= 100 ms (sum 41.0 s)
 
 and LEARNINGS.md usually has the fix (kernel-friendly `List` scans, structural recursion,
 leaf-wise certificates, splitting the module).
+
+For a big `.olean`, `lake env lean --run scripts/olean-top.lean M.olean [N]` lists the largest
+constants: shared `Expr` nodes of type+value and bytes of string literals (where `bv_decide`
+stores its LRAT certificates as `…._cert_def_N`). Many `match_N.eq_i`/splitters point at the
+stuck-`match` pathology instead (LEARNINGS.md).
 
 ## Runtime benchmarks
 

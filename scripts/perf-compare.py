@@ -11,7 +11,10 @@ Prints a Markdown report (for PR comments) and exits 1 when it flags a regressio
   * module time grew > --pct % and > --time-abs s, in wall time *and* CPU time (under load
     120 on 32 cores, wall times of unchanged small modules grew 2-10x and CPU ~1.5x);
   * a module that failed or was killed at its cap in HEAD but built in BASE;
-  * a new module above --new-rss MB or --new-time s;
+  * a new module above --new-rss MB, --new-time s (CPU) or --new-olean MB of .olean;
+  * a module whose .olean grew > --pct % and > --olean-abs MB (a proof-only module should stay
+    well under 1 MB; tens of MB are generated equations or bv_decide certificates, see
+    scripts/olean-top.lean);
   * a module whose .olean is newly not reproducible (`repro` = differs, perf-record.py);
   * the CPU critical path (`crit_s` of `_total`) grew > --pct % and > --crit-abs s; the report
     then names the chain (scripts/perf-graph.py);
@@ -103,6 +106,8 @@ def main():
     ap.add_argument("--bench-rss-abs", type=float, default=256, help="MB")
     ap.add_argument("--all", action="store_true", help="also list unflagged changed modules")
     ap.add_argument("--crit-abs", type=float, default=30, help="s, critical path (CPU)")
+    ap.add_argument("--new-olean", type=float, default=10, help="MB, new module .olean")
+    ap.add_argument("--olean-abs", type=float, default=5, help="MB, .olean growth")
     a = ap.parse_args()
 
     hist = load(pathlib.Path(a.history))
@@ -120,15 +125,23 @@ def main():
             reg.append((m, "non-reproducible .olean", (b or {}).get("repro") or "–", "differs",
                         "importers miss the shared cache"))
         if b is None:
-            r, t = num(h, "maxrss_mb"), num(h, "wall_s")
+            r, t, c = num(h, "maxrss_mb"), num(h, "wall_s"), num(h, "cpu_s")
             bad = h["status"] in ("fail", "oom", "blocked")
-            if bad or (r or 0) > a.new_rss or (t or 0) > a.new_time:
+            # CPU when known: under load wall time alone flagged a 22 s-CPU module at 101 s
+            slow = (c if c is not None else t or 0) > a.new_time
+            big = (num(h, "olean_kb") or 0) / 1024 > a.new_olean
+            if bad or (r or 0) > a.new_rss or slow or big:
                 reg.append((m, "new module", "–", (h["status"] + ", " if bad else "")
-                            + f"{fmt(t, 's')}, {fmt(r, 'MB')}", "new"))
+                            + f"{fmt(t, 's')} (cpu {fmt(c, 's')}), {fmt(r, 'MB')}, "
+                            + f"olean {fmt((num(h, 'olean_kb') or 0) / 1024, 'MB')}", "new"))
             continue
         if h["status"] in ("fail", "oom") and b["status"] not in ("fail", "oom", "blocked"):
             reg.append((m, "build", b["status"], f"{h['status']} (rss {h['maxrss_mb'] or '?'} MB)", "broken"))
             continue
+        ob, oh = num(b, "olean_kb"), num(h, "olean_kb")
+        for (x, y, lst) in ((ob, oh, reg), (oh, ob, win)):
+            if grew(x, y, a.pct, a.olean_abs * 1024):  # .olean bytes are exact, not load noise
+                lst.append((m, ".olean size", fmt(ob / 1024, "MB"), fmt(oh / 1024, "MB"), change(ob, oh)))
         if h.get("measured_at") and h.get("measured_at") == b.get("measured_at"):
             continue  # same measurement (module unchanged, numbers copied from the cache)
         rb, rh = num(b, "maxrss_mb"), num(h, "maxrss_mb")
@@ -182,7 +195,8 @@ def main():
           f"critical path (CPU) {fmt(kb, 's')} → {fmt(kh, 's')}, "
           f"largest module peak {fmt(num(tb, 'maxrss_mb'), 'MB')} → {fmt(num(th, 'maxrss_mb'), 'MB')}. "
           f"Thresholds: +{a.pct:.0f}% and +{a.rss_abs:g} MB / +{a.time_abs:g} s; "
-          f"new modules > {a.new_rss / 1024:.0f} GB or > {a.new_time:.0f} s; "
+          f"new modules > {a.new_rss / 1024:.0f} GB, > {a.new_time:.0f} s CPU or > {a.new_olean:g} MB .olean; "
+          f".olean +{a.olean_abs:g} MB; "
           f"critical path +{a.crit_abs:g} s.\n")
     for title, lst in (("Regressions", reg), ("Wins", win), ("Other changes", info)):
         if lst:
