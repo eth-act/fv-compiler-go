@@ -99,20 +99,21 @@ def allocHeap (m : Mem) (data : Array Byte) : Ptr × Mem :=
   (⟨b, 0⟩, { m.set b { data } with nextHeap := m.nextHeap + 1 })
 
 /-- `n` bytes at `p`, if the access is valid (an empty access always is: Go compares and
-copies zero bytes at nil pointers). -/
+copies zero bytes at nil pointers). A valid access ends below `2^64`: no access wraps around
+the address space, as on the machine (an allocation's bytes beyond are unreachable). -/
 def read (m : Mem) (p : Ptr) (n : Nat) : Option (Array Byte) := do
   if n == 0 then return #[]
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if off + n ≤ a.data.size then some (a.data.extract off (off + n)) else none
+  if off + n ≤ a.data.size ∧ off + n < 2 ^ 64 then some (a.data.extract off (off + n)) else none
 
-/-- Write `bs` at `p`, if the access is valid and the allocation writable (an empty write
-always is, and changes nothing). -/
+/-- Write `bs` at `p`, if the access is valid (in bounds, below `2^64`, as `read`) and the
+allocation writable (an empty write always is, and changes nothing). -/
 def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
   if bs.isEmpty then return m
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if a.writable && off + bs.size ≤ a.data.size then
+  if a.writable && off + bs.size ≤ a.data.size && off + bs.size < 2 ^ 64 then
     let data := (List.range bs.size).foldl (fun d i => d.set! (off + i) bs[i]!) a.data
     some (m.set p.blk { a with data })
   else none
