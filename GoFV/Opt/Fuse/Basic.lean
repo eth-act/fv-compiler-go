@@ -58,6 +58,12 @@ def fuseLoop (step : Func → ID → Except String (Func × Bool))
       | none => pure (f, changed)
     if changed then fuseLoop step final fuel f.invalidateCFG else return f
 
+/-- The result of a pass run, or its input `f` if the run failed (a checked step rejected a
+rewrite it had already made in place). Holding `f` here makes the run copy the tables once. -/
+def orInput (f : Func) : Except String Func → Except String Func
+  | .ok g => .ok g
+  | .error _ => .ok f
+
 /-- `b.replaceUses(old, new)` (`shortcircuit.go:500`): every argument and control of `b` equal to
 `old` becomes `new` (`SetArg` / `ReplaceControl`, in `b.Values` × `Args` order). -/
 def replaceUses (f : Func) (b old new : ID) : Func := Id.run do
