@@ -30,9 +30,6 @@ structure Cfg where
   u64 : TypeRef
   /-- `Type.Compare == CMPeq` (constant cache). -/
   sameType : TypeRef → TypeRef → Bool
-  /-- Run `memcombineStores` after `memcombineLoads`. The checked pass (`memcombineChecked`)
-  combines loads only (issue #35). -/
-  stores : Bool := true
 
 structure St where
   f : Func
