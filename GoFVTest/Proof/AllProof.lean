@@ -197,6 +197,7 @@ import GoFV.Proof.Pass.RewriteTermDen
 import GoFV.Proof.Pass.RewriteTermEval
 import GoFV.Proof.Pass.RewriteTermMatch
 import GoFV.Proof.Pass.RewriteTermNat
+import GoFV.Proof.Pass.RewriteTermNonNeg
 import GoFV.Proof.Pass.RewriteTermPat
 import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Pass.RewriteTermRule
