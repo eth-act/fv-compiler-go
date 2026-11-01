@@ -41,7 +41,7 @@ theorem RR.set {r r' : Array (Option Val)} (h : RR f r r') (hs : r.size ≤ r'.s
     · rw [Array.getElem?_setIfInBounds_self_of_lt hlt] at ha
       cases ha
       exact ⟨y, Array.getElem?_setIfInBounds_self_of_lt (Nat.lt_of_lt_of_le hlt hs), hxy⟩
-    · rw [Array.setIfInBounds, dite_cond_eq_false (eq_false hlt),
+    · rw [Array.setIfInBounds, dite_eq_right_of_eq_false (eq_false hlt),
         Array.getElem?_eq_none (Nat.le_of_not_lt hlt)] at ha
       cases ha
   · rw [Array.getElem?_setIfInBounds_ne hza] at ha ⊢
