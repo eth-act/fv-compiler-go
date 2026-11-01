@@ -99,6 +99,26 @@ avoiding): the problem, the trick, the numbers, where it is used.
   congruence chains over the unfolded denotation: 1–3 k distinct subterms per plain rule,
   7–11 k per rotate rule, ~25 bytes each; `probe` prints the count per rule).
 
+#### `LEAN_NUM_THREADS` does not limit `lean`; `-jN` does
+- **Measured** (official 4.34.1, `GoFV.Proof.Rules.Eq`, 30 theorems): with
+  `LEAN_NUM_THREADS=2` (as `scripts/memcap.sh` exports) or `=1`, `lean` still ran 36 threads,
+  up to 27 of them runnable, and used 80 s CPU in 20 s wall, the same as with the variable unset.
+  With `lean -j2` it used 55 s CPU in 41 s wall. So every Lake build of a module with several
+  theorems elaborates them in parallel (`Elab.async`) on up to all 32 cores, whatever the
+  environment says.
+- **Trade-off** (same session, load 60–80; CPU / wall / peak RSS):
+
+  | module | default | `-j4` | `-j2` |
+  | --- | --: | --: | --: |
+  | `Rules.Eq` | 69.4 s / 26.3 s / 1.79 GB | 62.4 s / 30.8 s / 1.71 GB | 61.2 s / 58.9 s / 1.69 GB |
+  | `Rules.Add2` | 28.4 s / 14.3 s / 1.80 GB | 26.1 s / 15.2 s / 1.73 GB | 25.4 s / 22.7 s / 1.74 GB |
+
+- **How:** `weakLeanArgs = ["-j4", …]` in a `lean_lib` reaches every `lean` that Lake starts.
+  It is not traced, so adding it rebuilds nothing (checked), and `-j2` gave byte-identical
+  `.olean`s (`SSA.Op`, `Proof.Frame`, `Rules.Neq`). It is not adopted yet: it trades wall time
+  for less CPU on the shared machine, which is a policy choice (#1). The clifv entry "Threads
+  per Lean process don't help us" below was probably measured with the same no-op variable.
+
 #### Generate `match` congruence equations upstream, or sibling modules cannot be imported together
 - **Problem:** `simp` in a rule-lemma module generated `binDV.match_4.congr_eq_*`,
   `fieldDV.match_1.congr_eq_*` and `Option.getD.match_1.congr_eq_*` (plus `_sparseCasesOn_*`)

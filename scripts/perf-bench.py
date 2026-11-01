@@ -58,18 +58,33 @@ def snapshot(src):
             sys.exit("perf-bench: no corpus under ../gofv-corpus")
         src = max(pins, key=lambda d: d.stat().st_mtime)
     src = pathlib.Path(src)
-    cid = corpus_id(src)
     base = here / "tmp" / "bench-corpus"
+
+    def newest_complete(why):
+        done = [d for d in base.glob("*") if (d / "COMPLETE").exists()] if base.is_dir() else []
+        if not done:
+            sys.exit(f"perf-bench: {why}, and no earlier snapshot")
+        d = max(done, key=lambda d: (d / "COMPLETE").stat().st_mtime)
+        print(f"perf-bench: {why}; using the previous snapshot {d.name}")
+        return d, d.name
+    try:
+        cid = corpus_id(src)
+    except OSError:  # being regenerated (stats.txt/manifest.txt are written last)
+        return newest_complete(f"corpus {src} incomplete")
     dst = base / cid
     if not (dst / "COMPLETE").exists():
         shutil.rmtree(dst, ignore_errors=True)
         dst.mkdir(parents=True)
-        shutil.copytree(src / "plain", dst / "plain", symlinks=True)
-        for f in ("stats.txt", "manifest.txt"):
-            shutil.copy2(src / f, dst / f)
-        if corpus_id(src) != cid:  # regenerated while copying
+        try:
+            shutil.copytree(src / "plain", dst / "plain", symlinks=True)
+            for f in ("stats.txt", "manifest.txt"):
+                shutil.copy2(src / f, dst / f)
+            same = corpus_id(src) == cid
+        except (OSError, shutil.Error):
+            same = False
+        if not same:  # regenerated while copying
             shutil.rmtree(dst)
-            sys.exit(f"perf-bench: corpus {src} changed while copying; retry later")
+            return newest_complete(f"corpus {src} changed while copying")
         (dst / "COMPLETE").write_text(f"{src}\n")
         for old in sorted(base.iterdir(), key=lambda d: d.stat().st_mtime)[:-2]:
             shutil.rmtree(old)  # keep the two newest snapshots
