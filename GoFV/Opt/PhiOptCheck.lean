@@ -28,9 +28,31 @@ open GoFV.SSA
 
 namespace PhiOpt
 
+/-- `s` is a **guard** of `c` holding `d`: a block other than the entry whose only predecessor
+is an `If` on `c` (`d`: `s` is its first successor), and `c` is placed in a strict ancestor of
+`s` in the certified dominator tree (so no block `s` dominates redefines `c`). -/
+def guard (f : Func) (t : DomCert.Cert) (c s : ID) : Option Bool :=
+  if s == f.entry then none else
+  match f.block? s, f.value? c with
+  | some sb, some cv =>
+    if sb.preds.size == 1 && t.anc cv.block s && cv.block != s then
+      match f.block? sb.preds[0]!.b with
+      | some b0 =>
+        if b0.kind == .If && b0.controls[0]? == some c then some (sb.preds[0]!.i == 0) else none
+      | none => none
+    else none
+  | _, _ => none
+
+/-- **Dominance fact**: on leaving block `y`, value `c` holds `d` (the result), since a guard of
+`c` holding `d` dominates `y` (is a tree ancestor of `y`). -/
+def domFact (f : Func) (c y : ID) : Option Bool :=
+  let t := DomCert.make f
+  f.blocks.findSome? fun s => if t.anc s y then guard f t c s else none
+
 /-- **Edge fact**: entering `x` along its edge `j`, value `c` holds `d` (the result), since the
 edge comes from an `If` on `c` (`d`: through its first successor), or from a block with a single
-predecessor that does not define `c` and that is entered with the fact. -/
+predecessor that does not define `c` and that is entered with the fact, or from a block a guard
+of `c` dominates (`domFact`). -/
 def edgeFact (f : Func) (c : ID) : Nat → ID → Nat → Option Bool
   | 0, _, _ => none
   | fuel + 1, x, j =>
@@ -44,8 +66,9 @@ def edgeFact (f : Func) (c : ID) : Nat → ID → Nat → Option Bool
         | none => none
         | some y =>
           if y.kind == .If && y.controls[0]? == some c then some (e.i == 0)
-          else if y.preds.size == 1 && !y.values.contains c then edgeFact f c fuel e.b 0
-          else none
+          else
+            (if y.preds.size == 1 && !y.values.contains c then edgeFact f c fuel e.b 0
+             else none) <|> domFact f c e.b
 
 /-- `x` is listed in block `b`. -/
 def listedIn (f : Func) (b x : ID) : Bool := ((f.block? b).map (·.values.contains x)).getD false
