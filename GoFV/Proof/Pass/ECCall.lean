@@ -243,6 +243,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   dsimp only
   rw [ecc_cv_result hu hop (ecf_not_invalidated hw (by rw [hwop]; decide)),
     ecf_convTuple (by rw [ecf_forall₂_length hG]), shapeOf, hw, ecf_valueTy]
+  rw [ecf_pieces_all_reg hreg']
   exact retype_mono _ (.tuple (RefinesList.append hP (.cons (ecc_retype_mem hymm) .nil)))
 
 /-- **The `MakeResult` obligation.** -/
@@ -334,20 +335,38 @@ theorem ecc_encodeResults_length {tabs : Tables} {act : Nat} :
       | none => rw [he] at h; cases h
       | some r' => simp only [List.length_cons, ecc_encodeResults_length he]
 
-/-- `encodeResults` of register-assigned results of their shapes: their pieces. -/
-theorem ecc_encodeResults {tabs : Tables} {act : Nat} (m : Mem) :
+/-- `encodeResults` of results of their shapes: their register pieces (the stack-assigned ones
+go to memory). -/
+theorem ecc_encodeResults {tabs : Tables} {act : Nat} :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, ecfReg tabs p) →
-      encodeResults tabs act ps rs m = some (ecfPieces tabs ps rs, m)
-  | _, _, .nil, _ => rfl
-  | p :: ps, r :: rs, .cons hr hf, hreg => by
-    obtain ⟨hne, hw, -⟩ := hreg p List.mem_cons_self
-    unfold encodeResults
-    simp only [hne, Bool.false_eq_true, ↓reduceIte,
-      ecc_encodeResults m hf fun q hq => hreg q (List.mem_cons_of_mem _ hq)]
-    simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons, toPieces_eq_leafVals hw hr]
-    rfl
+      (∀ p ∈ ps, wf (tabs.ty p.type) = true) → {m : Mem} → {res : List Val × Mem} →
+      encodeResults tabs act ps rs m = some res → res.1 = ecfPieces tabs ps rs
+  | _, _, .nil, _, _, _, h => by
+    simp only [encodeResults, Option.some.injEq] at h
+    subst h; rfl
+  | p :: ps, r :: rs, .cons hr hf, hw, m, res, h => by
+    have ih := @ecc_encodeResults tabs act ps rs hf (fun q hq => hw q (List.mem_cons_of_mem _ hq))
+    unfold encodeResults at h
+    dsimp only at h
+    split at h
+    · rename_i hst
+      cases hwr : m.write ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ (encode (tabs.ty p.type) r) with
+      | none => rw [hwr] at h; cases h
+      | some m' =>
+        rw [hwr] at h
+        rw [ih h]
+        simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons, regLeafVals_stack hst,
+          List.nil_append]
+    · rename_i hst
+      cases he : encodeResults tabs act ps rs m with
+      | none => rw [he] at h; cases h
+      | some r' =>
+        rw [he] at h
+        cases h
+        simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons,
+          regLeafVals_reg (Bool.eq_false_iff.2 hst), ← ih he,
+          toPieces_eq_leafVals (hw p List.mem_cons_self) hr]
 
 theorem ecc_retypeResults {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length →
@@ -414,7 +433,7 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
     (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
     (hpost : (w.op == .StaticCall || w.op == .ClosureCall || w.op == .InterCall) = true)
     (haux : w.aux = u.aux) {abi : CallABI} (habi : callABI? ctx.tabs u.aux = some abi)
-    (houts : ∀ p ∈ outsOf abi, ecfReg ctx.tabs p) {argv argv' G P' : List Val} {mv mv' : Val}
+    (houts : ∀ p ∈ outsOf abi, wf (ctx.tabs.ty p.type) = true) {argv argv' G P' : List Val} {mv mv' : Val}
     (hct : (callTarget ctx u argv).2.2 = G ++ [mv]) (hct' : (callTarget ctx' w argv').2.2 = P' ++ [mv'])
     (hcallee : (callTarget ctx u argv).1 = none ∨ (callTarget ctx' w argv').1 = (callTarget ctx u argv).1)
     (hclo : OptRefines (callTarget ctx u argv).2.1 (callTarget ctx' w argv').2.1)
@@ -488,8 +507,10 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
                 have hlen := ecc_encodeResults_length he
                 rw [ecc_retypeResults_length] at hlen
                 have hF := ecc_retypeResults (tabs := ctx.tabs) hlen
-                rw [ecc_encodeResults _ hF houts] at he
-                cases he
+                have hP := ecc_encodeResults hF houts he
+                obtain ⟨P1, M1⟩ := r
+                dsimp only at hP hr1 hr2 ⊢
+                subst hP
                 exact .ok ⟨_, _, _, rfl, hF,
                   .tuple (hr1.append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil)))⟩
             | panicked e hm' => exact .panic e hm'
@@ -679,7 +700,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     obtain ⟨hopu, hpre, hpost, hinv⟩ := ecc_callOpMap hmap
     subst hwop
     obtain ⟨hwid, hLw⟩ := hL x hLx w hw
-    have houts := ecf_reg_of houtsR
+    have houts := ec_outsOK_wf houtsR
     have hsu := ecc_args_split u.args k hkn
     have hsw := ecc_args_split w.args k hws
     rw [hlead] at hsw

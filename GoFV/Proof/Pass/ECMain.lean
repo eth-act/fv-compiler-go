@@ -61,7 +61,9 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   have himk := ecs_imk hwg hcg hbg hfb hgb hid hb
   refine ⟨gb, hgb, ecs_block hwf hwg hcg hcfg hbm hfb hgb hid hb
     (fun htree x hx u hu hphi => eco_obl hf hg hec hbm hfb hgb htree hx hu hphi
-      (fun hcv => himk x hx hcv u hu) (ecs_spHeld hwg hcg hbg hfb hgb hid hb x hx u hu)) ?_⟩
+      (fun hcv => himk x hx hcv u hu) (ecs_spHeld hwg hcg hbg hfb hgb hid hb x hx u hu)
+      (ecs_argDep hwf hwg hbm hbg hfb hgb hb x hx u hu hphi)
+      (ecs_loadsHeld hwg hcg hbg hfb hgb hid hb x hx)) ?_⟩
   intro hk c hc0
   obtain ⟨c', u, hc0', hu, hop⟩ := (ecs_parts hfb hgb hb).ret hk
   rw [hc0] at hc0'; cases hc0'

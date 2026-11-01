@@ -22,16 +22,21 @@ classes:
   `StringMake`, `IMake`, zero-sized parts `Empty`) of new values whose leaves read the
   parameter at the leaf offsets (`ArgIntReg`/`ArgFloatReg {name+off}`, `Arg {name} [off]`);
 * **call**: `StaticLECall`/`ClosureLECall`/`InterLECall` become `StaticCall`/`ClosureCall`/
-  `InterCall` with the same leading arguments and memory and, per input parameter, its
-  register pieces computed by selector chains (`SlicePtr`, `StructSelect [i]`, …) of the Go
-  argument; the call's type is the register types of its results (`regShapeOK`);
-* **select**: a call result `SelectN [i] c` becomes a Make-tree over `SelectN [firstReg + j] c`;
-  the call's memory `SelectN [#outs] c` becomes `SelectN [#pieces] c`;
+  `InterCall` with the same leading arguments and, per input parameter, its register pieces
+  computed by selector chains (`SlicePtr`, `StructSelect [i]`, …) of the Go argument, or for a
+  stack-assigned one a chain of new `Store`s of those pieces into its slots of the
+  outgoing-arguments area on the call's memory (`stackOK`); the call's type is the register types
+  of its register-assigned results (`regShapeOK`);
+* **select**: a register-assigned call result `SelectN [i] c` becomes a Make-tree over
+  `SelectN [firstReg + j] c`, a stack-assigned one a Make-tree of `Load`s of its leaf slots
+  `OffPtr [off + o] SP` from the call's memory (`stkLeavesOK`); the call's memory
+  `SelectN [#outs] c` becomes `SelectN [#pieces] c`;
 * **result**: a `MakeResult` becomes the register pieces of the results (selector chains).
 
-Fragment (`v1`): every ABI parameter of the converted calls and of the function's results is
-register-assigned with as many registers as its shape has leaves (no stack-assigned arguments
-or results, no complex numbers; `regParamsOK`).
+Fragment: the function's own results are register-assigned with as many registers as their
+shapes have leaves (`regParamsOK`); a converted call's parameters are register-assigned likewise
+or stack-assigned in disjoint slots inside the outgoing-arguments area (`insOK`, `outsOK`); no
+complex numbers.
 
 Structural recursion and `List` operations only: the checker runs compiled and in the kernel.
 -/
@@ -152,9 +157,10 @@ leaves as registers. -/
 def regParamsOK (tabs : Tables) (ps : List ABIParam) : Bool :=
   ps.all fun p => !p.regs.isEmpty && wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size
 
-/-- The leaf shapes of the parameters, in register order. -/
+/-- The leaf shapes of the register-assigned parameters, in register order (a stack-assigned
+parameter has no register pieces). -/
 def leafTys (tabs : Tables) (ps : List ABIParam) : List Ty :=
-  ps.flatMap fun p => (leaves (tabs.ty p.type)).map (·.2)
+  ps.flatMap fun p => if p.regs.isEmpty then [] else (leaves (tabs.ty p.type)).map (·.2)
 
 /-- `t` is a tuple of the shapes `ts` and memory. -/
 def tupleOf (ts : List Ty) (t : Ty) : Bool :=
@@ -337,6 +343,40 @@ def stackOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : Li
       (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
   | none => false
 
+/-! ## Stack-assigned results -/
+
+/-- The result parameters' shapes: a register-assigned one has as many registers as leaves, a
+stack-assigned one a slot inside the outgoing-arguments area's window; both well-formed; the
+stack slots disjoint, in increasing offset order. -/
+def outsOK (tabs : Tables) (ps : List ABIParam) : Bool :=
+  ps.all (fun p => wf (tabs.ty p.type) &&
+    (if p.regs.isEmpty then decide (0 ≤ p.offset) && decide (p.offset + (tabs.ty p.type).size < 2 ^ 24)
+     else (leaves (tabs.ty p.type)).length == p.regs.size)) &&
+    slotsSorted tabs (ps.filter (·.regs.isEmpty))
+
+/-- Value `m` of `g` is the memory of call `c` with `k` register pieces: `SelectN [k] c` of shape
+`mem`. -/
+def memSelOK (sh : Array Ty) (g : Func) (c : ID) (k : Nat) (m : ID) : Bool :=
+  match g.value? m with
+  | some mw => mw.op == .SelectN && mw.args.toList == [c] && mw.auxInt.toInt == (k : Int) &&
+      (match shapeOf sh g m with
+       | .mem => true
+       | _ => false)
+  | none => false
+
+/-- The leaves `ls` of the Make-tree of a stack-assigned call result at offset `off` read their
+leaf slots (leaf offsets and shapes `os`) from the call's memory: `Load (OffPtr [off + o] SP) m`
+with `m` the call `c`'s memory (`k` register pieces). -/
+def stkLeavesOK (sh : Array Ty) (g : Func) (nw : ID → Bool) (c : ID) (k : Nat) (off : Int) :
+    List (Nat × Ty) → List ID → Bool
+  | [], [] => true
+  | (o, _) :: os, l :: ls =>
+    (match g.value? l with
+     | some w => w.op == .Load && w.args.size == 2 && spOffOK sh g nw w.args[0]! (off + o) &&
+         memSelOK sh g c k w.args[1]!
+     | none => false) && stkLeavesOK sh g nw c k off os ls
+  | _, _ => false
+
 /-! ## The classes of source values -/
 
 /-- **call**: `u` (in `f`) and `w` (in `g`) at the same ID. -/
@@ -349,7 +389,7 @@ def callOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
     let as := (u.args.extract k (n - 1)).toList
     let rp := argPairs true ins as
     w.op == op && w.aux == u.aux && 0 < n && k + 1 ≤ n &&
-      regParamsOK tabs outs && insOK tabs ins && ins.length == as.length &&
+      outsOK tabs outs && insOK tabs ins && ins.length == as.length &&
       w.args.size ≥ k + 1 &&
       (w.args.extract 0 k).toList == (u.args.extract 0 k).toList &&
       stackOK tabs sh f g u w ins as &&
@@ -420,7 +460,10 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
           let first := (leafTys tabs (outs.take i)).length
           eqE (shapeOf sh f x) t &&
             match mkTree sh g (isNewB f) (tabs.types.size + 1) x t with
-            | some ls => ls.length == (leaves t).length && selLeavesOK g c first 0 ls
+            | some ls => ls.length == (leaves t).length &&
+                if p.regs.isEmpty then
+                  stkLeavesOK sh g (isNewB f) c (leafTys tabs outs).length p.offset (leaves t) ls
+                else selLeavesOK g c first 0 ls
             | none => false
         | none => false
     | none => false
@@ -702,7 +745,7 @@ def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
   | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake | .ComplexMake
   | .ComplexReal | .ComplexImag
   | .SlicePtr | .SliceLen | .SliceCap | .StringPtr | .StringLen | .ITab | .IData
-  | .StructSelect | .ArraySelect => true
+  | .StructSelect | .ArraySelect | .Load => true
   | _ => false
 
 /-- The memory argument of value `x` of `f`. -/
@@ -713,6 +756,32 @@ def stackStores (f g : Func) (x : ID) : List ID :=
   match f.value? x, g.value? x with
   | some u, some w => if (callOpMap u.op).isSome then (callStores f g u w).getD [] else []
   | _, _ => []
+
+/-- The leaves of the Make-tree of a stack-assigned call result `x` of `f` (`SelectN [i] c`; the
+`Load`s of `stkLeavesOK`); none for other values. -/
+def stackLoads (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : List ID :=
+  match f.value? x with
+  | some u =>
+    match u.args.toList with
+    | [c] =>
+      match f.value? c with
+      | some cu =>
+        if u.op == .SelectN && (callOpMap cu.op).isSome && decide (0 ≤ u.auxInt.toInt) then
+          match (callOuts tabs cu.aux)[u.auxInt.toInt.toNat]? with
+          | some p =>
+            if p.regs.isEmpty then
+              (mkTree sh g (isNewB f) (tabs.types.size + 1) x (tabs.ty p.type)).getD []
+            else []
+          | none => []
+        else []
+      | none => []
+    | _ => []
+  | none => []
+
+/-- The address's `SP` and the memory a `Load` `l` reads. -/
+def loadSP (g : Func) (l : ID) : ID :=
+  ((g.value? l).bind fun w => (g.value? w.args[0]!).map (·.args[0]!)).getD l
+def loadMem (g : Func) (l : ID) : ID := ((g.value? l).map (·.args[1]!)).getD l
 
 /-- `c` occurs in `l`, and no node with `np` comes before its first occurrence. -/
 def noNpUntil (np : ID → Bool) : List ID → ID → Bool
@@ -761,7 +830,8 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     -- every argument of a source node reaches it in `g`
     fb.values.all (fun y => !nodeF y ||
       match f.value? y with
-      | some u => u.args.all fun a => !nodeF a || (nodeG a && depB g nodeG (isNewB f) fuel a y)
+      | some u => u.args.all fun a => !nodeF a || (nodeG a &&
+          (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y))
       | none => false) &&
     -- per value
     fb.values.all (fun x => match f.value? x with
@@ -791,6 +861,13 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
          (!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
            depB g nodeG (fun _ => true) fuel (callMem f x) z)
      | none => false) &&
+    -- stack-result loads: the `SP` under the address and the call's memory are held (new,
+    -- placed in a strict dominator, or the result depends on them)
+    fb.values.all (fun x => (stackLoads tabs sh f g x).all fun l =>
+      (isNewB f (loadSP g l) || placedSDom g anc fb.id (loadSP g l) ||
+        depB g nodeG (fun _ => true) fuel (loadSP g l) x) &&
+      (isNewB f (loadMem g l) || placedSDom g anc fb.id (loadMem g l) ||
+        depB g nodeG (fun _ => true) fuel (loadMem g l) x)) &&
     -- new values; their new arguments are values of the block, of the entry block, or placed
     -- in a strict dominator
     let sts := fb.values.toList.flatMap (stackStores f g)

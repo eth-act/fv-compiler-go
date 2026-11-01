@@ -74,10 +74,8 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
     let as := (u.args.extract k (n - 1)).toList
     let rp := argPairs true ins as
     if !(w.op == op) then "op"
-    else if !regParamsOK tabs outs then
-      if outs.any (·.regs.isEmpty) then
-        if ins.any (·.regs.isEmpty) then "stack param (in+out)" else "stack param (out)"
-      else "result shape"
+    else if !outsOK tabs outs then
+      if outs.any (·.regs.isEmpty) then "stack result shape" else "result shape"
     else if !insOK tabs ins then "param shape"
     else if !stackOK tabs sh f g u w ins as then s!"stack args: {stackWhy tabs sh f g u w ins as}"
     else if !piecesOK tabs sh f g (rp.map (·.1)) (rp.map (·.2))
@@ -153,6 +151,13 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !(!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
             depB g nodeG (fun _ => true) fuel (callMem f x) z) then return "stack store memory"
   | _, _ => return "no schedule"
+  for x in fb.values do
+    for l in stackLoads tabs sh f g x do
+      let fuel := gb.values.size + 1
+      if !(isNewB f (loadSP g l) || placedSDom g anc fb.id (loadSP g l) ||
+          depB g nodeG (fun _ => true) fuel (loadSP g l) x) then return "stack result SP not held"
+      if !(isNewB f (loadMem g l) || placedSDom g anc fb.id (loadMem g l) ||
+          depB g nodeG (fun _ => true) fuel (loadMem g l) x) then return "stack result memory not held"
   let sts := fb.values.toList.flatMap (stackStores f g)
   for z in gb.values do
     if let some w := g.value? z then
