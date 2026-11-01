@@ -10,8 +10,9 @@
 //	<call> -> panicked <runtime.Error text>
 //
 // Values are written in a small syntax shared with GoFVTest/SemDiff.lean: integers in decimal,
-// true/false, strings Go-quoted, slices nil or [e,...], arrays [e,...], structs {f,...},
-// pointers nil or &e. The arguments are printed again after the call, so writes through
+// floats as their IEEE bit patterns in hex (0x3ff0000000000000; NaN payloads exact),
+// complex numbers {re,im}, true/false, strings Go-quoted, slices nil or [e,...], arrays
+// [e,...], structs {f,...}, pointers nil or &e. The arguments are printed again after the call, so writes through
 // pointers and slices are compared too.
 //
 // Built with the patched toolchain for linux/arm64 under GOFV_SSA_EXPORT, so the binary run
@@ -26,6 +27,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unsafe"
 )
 
 type parser struct {
@@ -85,6 +87,41 @@ func (p *parser) parse(t reflect.Type) (reflect.Value, error) {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		n, err := strconv.ParseUint(p.word(), 10, t.Bits())
 		v.SetUint(n)
+		return v, err
+	case reflect.Float32, reflect.Float64:
+		// bits written through memory: reflect's SetFloat converts through float64, which
+		// would quieten a float32 signalling NaN
+		n, err := strconv.ParseUint(p.word(), 0, t.Bits())
+		if t.Kind() == reflect.Float32 {
+			*(*uint32)(v.Addr().UnsafePointer()) = uint32(n)
+		} else {
+			*(*uint64)(v.Addr().UnsafePointer()) = n
+		}
+		return v, err
+	case reflect.Complex64, reflect.Complex128:
+		if !p.eat('{') {
+			return v, p.fail("expected {")
+		}
+		half := t.Bits() / 2
+		var parts []uint64
+		err := p.list('}', func() error {
+			n, err := strconv.ParseUint(p.word(), 0, half)
+			parts = append(parts, n)
+			return err
+		})
+		if err == nil && len(parts) != 2 {
+			err = p.fail("complex needs 2 parts")
+		}
+		if err == nil {
+			ptr := v.Addr().UnsafePointer()
+			if half == 32 {
+				*(*uint32)(ptr) = uint32(parts[0])
+				*(*uint32)(unsafe.Add(ptr, 4)) = uint32(parts[1])
+			} else {
+				*(*uint64)(ptr) = parts[0]
+				*(*uint64)(unsafe.Add(ptr, 8)) = parts[1]
+			}
+		}
 		return v, err
 	case reflect.String:
 		q, err := strconv.QuotedPrefix(p.s[p.i:])
@@ -185,8 +222,28 @@ func quoteBytes(s string) string {
 	return b.String()
 }
 
+// bitsOf reads the n-byte bit pattern at byte offset off of v (copied into memory first: a
+// float32 read through reflect's Float converts through float64).
+func bitsOf(v reflect.Value, off uintptr, n int) uint64 {
+	c := reflect.New(v.Type())
+	c.Elem().Set(v)
+	ptr := unsafe.Add(c.UnsafePointer(), off)
+	if n == 4 {
+		return uint64(*(*uint32)(ptr))
+	}
+	return *(*uint64)(ptr)
+}
+
 func render(v reflect.Value) string {
 	switch v.Kind() {
+	case reflect.Float32:
+		return fmt.Sprintf("0x%08x", bitsOf(v, 0, 4))
+	case reflect.Float64:
+		return fmt.Sprintf("0x%016x", bitsOf(v, 0, 8))
+	case reflect.Complex64:
+		return fmt.Sprintf("{0x%08x,0x%08x}", bitsOf(v, 0, 4), bitsOf(v, 4, 4))
+	case reflect.Complex128:
+		return fmt.Sprintf("{0x%016x,0x%016x}", bitsOf(v, 0, 8), bitsOf(v, 8, 8))
 	case reflect.Bool:
 		return strconv.FormatBool(v.Bool())
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:

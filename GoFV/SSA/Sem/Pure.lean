@@ -3,6 +3,7 @@ import GoFV.SSA.AuxData
 import GoFV.SSA.Sem.Shift
 import GoFV.SSA.Sem.Conv
 import GoFV.SSA.Sem.Ptr
+import GoFV.SSA.Sem.Float
 
 /-!
 # `evalPure`: the pure ops (`docs/plans/semantics.md` §4)
@@ -17,7 +18,8 @@ layout a `Load` decodes. `aux` is unused: the ops that read symbols or names (`A
 `LocalAddr`, `ConstString`, `Arg`) depend on the activation and are evaluated by `evalValue`.
 
 One arm per op, each calling its family's definition (`Sem/Int`, `Sem/Shift`, `Sem/Cmp`,
-`Sem/Conv`), so a rule lemma unfolds `evalPure` at a concrete op and then only its family.
+`Sem/Conv`, `Sem/Float`), so a rule lemma unfolds `evalPure` at a concrete op and then only its
+family.
 Never `simp [evalPure]` on an op variable (446-arm match, `docs/contracts/ir.md`).
 -/
 
@@ -28,7 +30,7 @@ def Ty.width? : Ty → Option Width
   | .int w => some w
   | _ => none
 
-/-- The value of pure op `op` (P1 and P2 subsets; every other op is `poison`). -/
+/-- The value of pure op `op` (P1, P2 and P4 subsets; every other op is `poison`). -/
 def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : List Val) :
     Val :=
   let flag := auxInt == 1
@@ -278,6 +280,60 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .MemEq => memEq args
   | .AtomicLoad8 | .AtomicLoad32 | .AtomicLoad64 | .AtomicLoadPtr | .AtomicLoadAcq32
   | .AtomicLoadAcq64 => atomicLoad ty args
+  | .Add32F => FOps.add .w32 args
+  | .Add64F => FOps.add .w64 args
+  | .Sub32F => FOps.sub .w32 args
+  | .Sub64F => FOps.sub .w64 args
+  | .Mul32F => FOps.mul .w32 args
+  | .Mul64F => FOps.mul .w64 args
+  | .Div32F => FOps.div .w32 args
+  | .Div64F => FOps.div .w64 args
+  | .Neg32F => FOps.neg .w32 args
+  | .Neg64F => FOps.neg .w64 args
+  | .Eq32F => FOps.eq .w32 args
+  | .Eq64F => FOps.eq .w64 args
+  | .Neq32F => FOps.neq .w32 args
+  | .Neq64F => FOps.neq .w64 args
+  | .Less32F => FOps.less .w32 args
+  | .Less64F => FOps.less .w64 args
+  | .Leq32F => FOps.leq .w32 args
+  | .Leq64F => FOps.leq .w64 args
+  | .Min32F => FOps.min .w32 args
+  | .Min64F => FOps.min .w64 args
+  | .Max32F => FOps.max .w32 args
+  | .Max64F => FOps.max .w64 args
+  | .Sqrt => FOps.sqrt .w64 args
+  | .Sqrt32 => FOps.sqrt .w32 args
+  | .Floor => FOps.roundInt .rmi .w64 args
+  | .Ceil => FOps.roundInt .rpi .w64 args
+  | .Trunc => FOps.roundInt .rz .w64 args
+  | .Round => FOps.roundInt .rna .w64 args
+  | .RoundToEven => FOps.roundInt .rne .w64 args
+  | .Abs => FOps.abs .w64 args
+  | .Copysign => FOps.copysign .w64 args
+  | .FMA => FOps.fma .w64 args
+  | .Round32F => FOps.round .w32 args
+  | .Round64F => FOps.round .w64 args
+  | .Cvt32to32F => FOps.ofInt false .w32 .w32 args
+  | .Cvt32to64F => FOps.ofInt false .w32 .w64 args
+  | .Cvt64to32F => FOps.ofInt false .w64 .w32 args
+  | .Cvt64to64F => FOps.ofInt false .w64 .w64 args
+  | .Cvt32Uto32F => FOps.ofInt true .w32 .w32 args
+  | .Cvt32Uto64F => FOps.ofInt true .w32 .w64 args
+  | .Cvt64Uto32F => FOps.ofInt true .w64 .w32 args
+  | .Cvt64Uto64F => FOps.ofInt true .w64 .w64 args
+  | .Cvt32Fto32 => FOps.toInt false .w32 .w32 args
+  | .Cvt32Fto64 => FOps.toInt false .w64 .w32 args
+  | .Cvt64Fto32 => FOps.toInt false .w32 .w64 args
+  | .Cvt64Fto64 => FOps.toInt false .w64 .w64 args
+  | .Cvt32Fto32U => FOps.toInt true .w32 .w32 args
+  | .Cvt32Fto64U => FOps.toInt true .w64 .w32 args
+  | .Cvt64Fto32U => FOps.toInt true .w32 .w64 args
+  | .Cvt64Fto64U => FOps.toInt true .w64 .w64 args
+  | .Cvt32Fto64F => FOps.f32to64 args
+  | .Cvt64Fto32F => FOps.f64to32 args
+  | .Const32F => FOps.const32 auxInt
+  | .Const64F => FOps.const64 auxInt
   | _ => .poison
 
 end GoFV.SSA.Sem

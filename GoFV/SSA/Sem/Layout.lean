@@ -6,9 +6,11 @@ import GoFV.SSA.Sem.Mem
 
 The shape (`Ty`) of an exported type: integer width (from the exported size), `bool`,
 pointer-shaped types (with the element size of `*T`), SSA-able composites as fields at their
-exported offsets (string, slice, interface, struct, `[1]T`), larger arrays as byte blobs,
-zero-sized types, and memory/tuples. Sizes are exported, never recomputed: a type whose size
-the export does not have is `other`.
+exported offsets (string, slice, interface, struct, `[1]T`, complex), larger arrays as byte
+blobs, zero-sized types, and memory/tuples. Floats are their IEEE bit patterns: `float32` and
+`float64` have the integer shapes of their size (`Sem/Float.lean`), `complex64`/`complex128`
+are pairs of them. Sizes are exported, never recomputed: a type whose size the export does
+not have is `other`.
 -/
 
 namespace GoFV.SSA.Sem
@@ -64,10 +66,15 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
         | some n, .array e 1 => .agg [(0, tyOf tabs fuel e)] n
         | some n, _ => .blob n
         | none, _ => .other
-      | .FLOAT32 | .FLOAT64 | .COMPLEX64 | .COMPLEX128 =>
-        match size with
-        | some n => .opaque n
+      | .FLOAT32 | .FLOAT64 =>
+        match d.size.bind Width.ofSize? with
+        | some w => .int w
         | none => .other
+      | .COMPLEX64 | .COMPLEX128 =>
+        match size with
+        | some 8 => .agg [(0, .int .w32), (4, .int .w32)] 8
+        | some 16 => .agg [(0, .int .w64), (8, .int .w64)] 16
+        | _ => .other
       | .SSA => if d.str == GoStr.ofString "mem" then .mem else .other
       | .TUPLE =>
         match d.tail with

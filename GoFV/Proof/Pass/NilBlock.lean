@@ -435,7 +435,8 @@ theorem evalOp_pure {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
     frameVal_none (by rcases hop with h | h <;> rw [h] <;> decide)
   rw [evalOp_tail hr (by rcases hop with h | h <;> rw [h] <;> decide)
     (by rcases hop with h | h <;> rw [h] <;> decide) (by rcases hop with h | h <;> rw [h] <;> decide)
-    (by rcases hop with h | h <;> rw [h] <;> decide), hfv]
+    (by rcases hop with h | h <;> rw [h] <;> decide) (by rcases hop with h | h <;> rw [h] <;> decide),
+    hfv]
   rfl
 
 omit K in
@@ -704,11 +705,11 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     apply safe_retype_ptr
     have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr) →
         isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
-          v.op ≠ .GetClosurePtr := by
+          v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
       intro h; rcases h with h | h | h | h <;> rw [h] <;> decide
     rcases hop with ⟨h1, hax⟩ | h1 | ⟨h1, a, ha, hsa⟩
-    · obtain ⟨hr1, hr2, hr3, hr4, hr5⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
-      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5] at hr
+    · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       obtain ⟨x, hx, hsx⟩ : ∃ x, frameVal (Ctx.make tabs f) v = some x ∧ Safe x := by
         rcases h1 with h1 | h1
         · exact frameVal_addr_safe h1
@@ -716,8 +717,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       rw [hx] at hr; cases hr; exact hsx
     · rw [evalOp_nilCheck h1] at hr
       exact nilCheck_ok_safe h1 hr
-    · obtain ⟨hr1, hr2, hr3, hr4, hr5⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
-      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5] at hr
+    · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       have hfv : frameVal (Ctx.make tabs f) v = none :=
         frameVal_none (by rcases h1 with h1 | h1 <;> rw [h1] <;> decide)
       rw [hfv] at hr; cases hr

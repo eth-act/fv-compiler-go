@@ -1,6 +1,6 @@
 # Plan: semantics of generic Go SSA (`GoFV.SSA.run`, issue #9)
 
-Status: plan (G5); phases P1 and P2 implemented (§9.1, §9.2). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
+Status: plan (G5); phases P1–P4 implemented (§9.1–§9.4). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
 Source of truth for the ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/genericOps.go`
 (go1.27.3; "gO line" below) and the rules `_gen/{generic,dec,divisible,divmod}.rules`.
 `decOps.go`, `divisibleOps.go` and `divmodOps.go` define **no** ops (they only name rule sets),
@@ -333,9 +333,13 @@ positive ↦ −1, negative ⇒ poison, gO 588).
 ### 4.6 Floats (phase P4)
 IEEE 754 binary32/binary64 on bit patterns, round to nearest even, the arm64 NaN rules with
 `FPCR = 0` (first signalling NaN quietened, else first quiet NaN, else default NaN) — exactly
-clifv's choice (`FV/Clif/FSem.lean`, `docs/plans/floats.md`); port clifv's `FV/Float` ASL
-library rather than writing a new IEEE model. Specifics: `Neg/Abs/Copysign` touch the sign bit
-only; `Sqrt`, `Floor/Ceil/Trunc/Round/RoundToEven` (gO 268-286; `Round` = ties away from
+clifv's choice (`FV/Clif/FSem.lean`, `docs/plans/floats.md`), by a port of clifv's `FV/Float`
+ASL library (`GoFV/SSA/Sem/Float/*`, namespace `GoFV.IEEE`). One deviation from the hardware:
+the ops Go marks commutative (`Add/Mul/Eq/Neq{32,64}F`) take their operands in the order of
+their encodings (`FOps.ordered`), so that two NaN operands of the same kind give the same NaN
+in either order (arm64 picks the first; `cse` sorts commutative arguments by value ID, §9.4).
+Specifics: `Neg/Abs/Copysign` touch the sign bit only (`Copysign x y` = `|x|` with `y`'s
+sign); `Sqrt`, `Floor/Ceil/Trunc/Round/RoundToEven` (gO 268-286; `Round` = ties away from
 zero); `FMA` single rounding with the gO 306-315 zero-sign rules; `Min/Max{32,64}F` are Go's
 `min`/`max` (NaN if any argument is NaN, −0 < +0); comparisons are unordered on NaN
 (`Neq` true, others false). `Cvt{32,64}to{32,64}F`, `Cvt64Uto*F` round to nearest even;
@@ -550,7 +554,7 @@ and checks that every section agrees with section 0 whenever section 0 is define
   by block; `Byte` = concrete, pointer fragment `frag p i`, or poison.
 - **Shapes** (`Ty`, `Sem/Layout.lean`) from the exported types: integer widths, `bool`, `ptr`
   (element size), `agg` (fields at exported offsets), `blob`, `empty`, `opaque` (floats and
-  complex until P4: loads give `poison`, stores write poison bytes).
+  complex until P4, §9.4: loads give `poison`, stores write poison bytes).
 - **Concrete addresses**: heap block `n` at `(n+1)·2^40`, frame blocks at `2^62 + act·2^42 +
   name·2^24`, `nil` at 0; globals have none (comparisons with them are by block). `Convert`
   and `uintptr`-typed values use them; `Val.retype` turns a `uintptr`-typed pointer into its
@@ -637,8 +641,8 @@ prints every block entry and value of one run.
 - **Frame state**: `GetCallerSP` = `2^62 + (act + 1)·2^42` (just above the activation's frame
   region); `GetClosurePtr` = the activation's closure context.
 - **Not in P3** (`stuck`): `TailLECall*`, `GetG`, write-barrier ops (`WB`, `gcWriteBarrier`),
-  channels, maps, `gorecover`/defer (P5), atomics other than loads (P5), `ArgFloatReg` (P4),
-  runtime entry points without a contract (`mcall`, `lock2`, `rand`, …).
+  channels, maps, `gorecover`/defer (P5), atomics other than loads (P5), `ArgFloatReg` (P4,
+  §9.4), runtime entry points without a contract (`mcall`, `lock2`, `rand`, …).
 - **NilCheck** panics on any pointer into `Blk.nil` (§6).
 
 Difftest additions (`tools/semdiff/prog/calls.go`): 32 functions with static, closure,
@@ -650,7 +654,72 @@ native. Corpus (quick-v1, 20 calls per function): 4,380 supported signatures, 39
 defined at section 0 in 2,266 functions, 1,251,134 later-section runs agree, 0 differ, 1,058
 stuck in 7 functions (the `nilcheckelim` gaps of §10).
 
+### 9.4 P4 as implemented (#10)
+
+- **Values**: a `float32`/`float64` is its IEEE bit pattern in `Val.int .w32`/`.w64`; the
+  shapes of `FLOAT32`/`FLOAT64` are the integer shapes of their size, `COMPLEX64`/`COMPLEX128`
+  are `agg`s of two (`Sem/Layout.lean`). Loads, stores, ABI pieces, `Copy` and bit casts
+  (`math.Float64bits` is a store and a load) need no float case, and no proof that matches on
+  `Val` or `Ty` changed. `Ty.opaque` remains only for structs without exported field offsets.
+- **IEEE core** (`Sem/Float/{Basic,Round,Arith,Convert}.lean`): clifv's `FV/Float` ported
+  (namespace `GoFV.IEEE`, Lean core only, kernel-reducible; `truncInt?`, CLIF-only, dropped).
+  Its witnesses and 40 Go-op witnesses (`evalPure` on the ops below) are
+  `GoFVTest/Float/Witness.lean` (`decide +kernel`).
+- **Ops** (`Sem/Float.lean`, `FOps`; one `evalPure` arm each, monotone by
+  `int1/int2/int3_mono`): every op is the AArch64 instruction `ARM64.rules` lowers it to, with
+  `FPCR = 0` and RNE: `Add/Sub/Mul/Div/Neg{32,64}F`, `Sqrt`/`Sqrt32`, `Floor/Ceil/Trunc/Round/
+  RoundToEven` (`FRINTM/P/Z/A/N`), `Abs`, `Copysign`, `FMA x y z` = `FMADDD z x y`,
+  `Min/Max{32,64}F` (`FMIN/FMAX`), the comparisons, `Cvt*` (`SCVTF/UCVTF` round to nearest
+  even; `FCVTZS/FCVTZU` truncate, saturate and map NaN to 0; `FCVT` between the formats),
+  `Round32F/Round64F` (identity), `Const32F/Const64F` (auxint = float64 bits).
+- **Commutativity** (§4.6): `cse` canonicalises the argument order of `Op.commutative` ops and
+  the rules match them both ways; with arm64's first-NaN-wins rule `Add64F x y` and `Add64F y
+  x` differ when both are NaNs of the same kind. The commutative float ops therefore order their
+  operands by encoding; `GoFV.Proof.CSE.evalPure_swap` covers them (`FOps.ordered_comm`).
+- **`ArgFloatReg {n+off}`** reads a parameter piece like `ArgIntReg` (`argFloat`); an
+  ill-formed one (a name that is not a parameter) is `poison`, not `stuck`, so it evaluates like
+  a pure value and the proofs' "not a parameter read" hypotheses (`≠ .Arg`, `≠ .ArgIntReg`) did
+  not change. It is not a term op of the rewrite validator (`RewriteCheck.termOp`; droppable
+  atom, `dropAtom`). Adapted: `CSE.evalOp_tail` (`≠ .ArgFloatReg`), `evalOp_total`,
+  `evalOp_ok_id`, `evalOp_congr`, `evalOp_argless`, `evalPure_mono`, `evalPure_swap`.
+- **Runtime**: `printfloat`, `printcomplex` (no effect). `complex128div` has no contract (the
+  runtime's own compiled division is FMA-fused, see below).
+- **Not modelled**: `lower` fuses `a + x*y` into `FMADD` (`ARM64.rules` `useFMA`, allowed by
+  the Go spec), so native code may differ from the generic ops on such expressions; the passes
+  up to `lower` never fuse. Difftest functions write such products as `float64(x*y)` (an
+  explicit conversion rounds, `Round64F`, and blocks the fusion); complex multiplication and
+  division are left out for the same reason.
+
+Difftest additions (`tools/semdiff/prog/floats.go`): 80 functions on float32/float64
+arithmetic, comparisons, conversions of every width and signedness (out-of-range and NaN
+included), the math intrinsics, `min`/`max`, bit casts, constants and folding, loops over
+float slices, structs and pointers with float fields, and complex values. Floats are written
+as their bit patterns in hex on both sides (`0x3ff0000000000000`; the Go harness reads and
+writes them through memory, since reflect's `SetFloat`/`Float` convert through float64 and
+would quieten a float32 signalling NaN), complex numbers as `{re,im}`; random floats are
+edge-biased (signed zeros, infinities, quiet and signalling NaNs with payloads, subnormals,
+extremes, integer-conversion boundaries, ties). Results: #10.
+
 ## 10. Open questions and risks
+
+- **NaN encodings and the rules** (P4): IEEE 754 and the Go spec leave the encoding of a NaN
+  result unspecified, and Go's optimisations rely on it. `generic.rules:1325-1326`
+  (`Mul{32,64}F x (Const [-1])` → `Neg{32,64}F x`) is not a refinement under the semantics:
+  a NaN `x` keeps its sign (and is quietened) under `FMUL`, but has its sign flipped under
+  `FNEG`. The native difftest shows it (`x * -1` on NaN inputs: section 0 differs from native
+  and from every section after `opt`). The semantics stays faithful to arm64 and these rules
+  stay out of the proven set (upstream-candidate issue with a reproducer; the Go spec may leave
+  a NaN's sign unspecified). `cse`'s argument sorting of commutative float ops is the other such
+  optimisation; the semantics absorbs it (§4.6).
+- **`VarDef` and `generic.rules:2159`, a model gap** (found by P4: the floats made `test/gcgort.newStructT`
+  defined): `(Zero [s] p (VarDef {x} (Zero [s] p _)))` → the `VarDef` drops the second `Zero`,
+  i.e. assumes `VarDef` keeps the variable's contents, while the semantics makes `VarDef`
+  re-poison the variable (§3.4: "about to be initialised"; stack slots are merged across
+  disjoint live ranges, which start at `VarDef`). Under the semantics the rule is not a
+  refinement (the target returns poison: a gap in `sem-difftest corpus`). This is a **model
+  gap**, not a Go bug: natively the two `Zero`s are adjacent on the memory chain and nothing can
+  clobber the slot in between; only the semantics' re-poisoning `VarDef` is stricter than what
+  Go relies on. The rule stays out of the proven set.
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
   `SlicePtr` as non-nil, but `EqSlice` (`generic.rules:792`) shows it is used on nil slices.
@@ -675,6 +744,13 @@ stuck in 7 functions (the `nilcheckelim` gaps of §10).
   such a gap in 7 runtime functions: `(*bitvector).ptrbit`, `bitCursor.write`, `dumpbv`
   above, and `argv_index`, `getGodebugEarly`, `goenvs_unix`, `sysargs`, whose section 0 now
   panics in the check of `nil + k`.
+  **Decided (#23, P4): accesses into `Blk.nil` do not panic.** A panicking `Load` would not be
+  pure (Go's `deadcode`/`cse`/speculation delete, merge and hoist loads; only `NilCheck` panics
+  in generic SSA), and it would not make `nilcheckelim`'s `If (IsNonNil p)` edge fact sound:
+  for `p = nil + k` the check panics while `IsNonNil p` holds, and without the check the panic
+  moves past intervening roots or disappears. The edge fact needs "no pointer into `Blk.nil`
+  but nil": a hypothesis, or a pointer model whose `Blk.nil` holds only nil (arithmetic leaving
+  offset 0 and nonzero integer addresses below 2^40 are `poison`), offered on #23.
 - Tie-break of §3.6 step 3: `writebarrier`'s `storeOrder` and the post-lower scheduler order
   `NilCheck`s by position with an unstable sort (see `docs/PASSES.md`, writebarrier); the
   semantics' choice (NilChecks first) must match the order the final code panics in for the
