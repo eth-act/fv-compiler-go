@@ -35,7 +35,8 @@ theorem step (S : Setup f g K) {tabs : Tables} {env : Env} {frS frT : Frame}
   simp only [show (Ctx.make tabs f).f = f from rfl, show (Ctx.make tabs g).f = g from rfl, hfb,
     hgb]
   cases hen : enterBlock env (Ctx.make tabs f) frS fb iS with
-  | panic e m => simp only [S.enter_panic hb hgb hfb hA hsz hP hen]; rfl
+  | panic e m =>
+    simp only [S.enter_panic hb hgb hfb hA hsz hP hen]; exact ⟨m, rfl, Mem.Refines.refl m⟩
   | stuck msg => exact True.intro
   | ok G =>
   obtain ⟨GT, hT, hAG, hszG⟩ := S.enter_ok hb hgb hfb hA hsz hP hen
@@ -52,7 +53,7 @@ theorem step (S : Setup f g K) {tabs : Tables} {env : Env} {frS frT : Frame}
     simp only [hgo]
     exact ⟨GT, e', rfl, heb, hbe, hAG, hszG, hPe⟩
   · simp only [hst']
-    exact ⟨rs, rfl, RefinesList.refl rs⟩
+    exact ⟨rs, m, rfl, RefinesList.refl rs, Mem.Refines.refl m⟩
 
 /-- **Keeping blocks, values and edges (`DeadRel`) refines.** -/
 theorem refines_of_deadRel {tabs : Tables} (S : Setup f g K) : Refines tabs g tabs f := by
