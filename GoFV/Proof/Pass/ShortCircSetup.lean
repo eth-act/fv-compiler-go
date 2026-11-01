@@ -209,10 +209,16 @@ theorem tabEqBy_spec {α : Type} {eq : Option α → Option α → Bool} {heq : 
     ∀ i, skip i = false → eq (a[i]?).join (b[i]?).join = true := by
   intro i hi
   unfold tabEqBy at h
-  rcases Nat.lt_or_ge i (max a.size b.size) with hlt | hge
+  rw [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨hsz, h⟩ := h
+  rcases Nat.lt_or_ge i a.size with hlt | hge
   · have := nat_all_spec h i hlt
-    rw [hi, Bool.false_or] at this
-    simpa [withPtrEq] using this
+    simp only [withPtrEq, hi, Bool.false_or] at this
+    have hb : i < b.size := hsz ▸ hlt
+    rw [getElem!_pos a i hlt, getElem!_pos b i hb] at this
+    rw [Array.getElem?_eq_getElem hlt, Array.getElem?_eq_getElem hb, Option.join_some,
+      Option.join_some]
+    exact this
   · rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
     exact heq _
 
@@ -255,7 +261,7 @@ theorem parts : (𝓘).preOK f = true ∧ g.blocks = f.blocks ∧ g.entry = f.en
     (𝓘).dsOK g = true ∧ (𝓘).closeOK g = true ∧ (∀ B ∈ (𝓘).K, (𝓘).domKOK f g B = true) := by
   have h := S.ok
   unfold scOK at h
-  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
+  simp only [withPtrEq, Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, hk1⟩, hk2⟩, hk3⟩, h8⟩, h9⟩, h10⟩,
     h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩, h17⟩ := h
   exact ⟨h1, h3, h4, h5, h6, h7, ⟨contains_iff.1 hk1, contains_iff.1 hk2, contains_iff.1 hk3⟩,

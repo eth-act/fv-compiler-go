@@ -77,13 +77,15 @@ def sameEntry : Option Value → Option Value → Bool
 theorem sameEntry_refl (o : Option Value) : sameEntry o o = true := by
   cases o <;> simp [sameEntry]
 
-/-- `a` and `b` agree at every index outside `skip`, by `eq` (`eq` holds on equal entries).
-Compiled, entries that are the same object are not compared. -/
+/-- `a` and `b` have the same size and agree at every index outside `skip`, by `eq` (`eq` holds
+on equal entries). Compiled, entries that are the same object are neither compared nor passed to
+`skip`, and nothing is allocated. -/
 def tabEqBy {α : Type} (eq : Option α → Option α → Bool)
     (heq : ∀ o, eq o o = true) (a b : Array (Option α)) (skip : Nat → Bool) : Bool :=
-  Nat.all (max a.size b.size) fun i _ =>
-    skip i || withPtrEq (a[i]?).join (b[i]?).join (fun _ => eq (a[i]?).join (b[i]?).join)
-      (fun h => by rw [h]; exact heq _)
+  a.size == b.size &&
+    Nat.all a.size fun i _ =>
+      withPtrEq a[i]! b[i]! (fun _ => skip i || eq a[i]! b[i]!)
+        (fun h => by rw [h, heq, Bool.or_true])
 
 /-- `p i a[i]` at every index `i` of `a`. -/
 def allIdx {α : Type} (a : Array α) (p : Nat → α → Bool) : Bool :=
@@ -487,12 +489,13 @@ default fact. -/
 def freeArg (a : ID) : Bool :=
   !I.bvals.contains a || (I.vs.contains a && I.look I.dflt a == some a)
 
-/-- Blocks outside `K` read only `freeArg` registers. -/
+/-- Blocks outside `K` read only `freeArg` registers (the tables read without allocating). -/
 def scanOK : Bool :=
   g.blocks.all fun B =>
     I.K.contains B ||
-      let gB := g.getB B
-      gB.controls.all I.freeArg && gB.values.all fun x => (g.getV x).args.all I.freeArg
+      (g.blockTab.getD B none).all fun gB =>
+        gB.controls.all I.freeArg &&
+          gB.values.all fun x => (g.valueTab.getD x none).all fun v => v.args.all I.freeArg
 
 /-- An edge from a checked block to another block carries the default facts. -/
 def exitOK (T : FactTab) : Bool :=
@@ -622,18 +625,10 @@ def infoOf (tabs : Tables) (f g : Func) (s : Site) : Info :=
   let vs := bvals.filter fun x => x != s.ctl && isPhiIn f x
   let region := (s.plan.map Plan.region).getD #[]
   let t := s.te.b
-  let base := addU (addU (region.foldl addU #[s.b]) t) s.p
-  let n := max f.blockTab.size g.blockTab.size
-  let K := (List.range n).foldl (fun K i =>
-    if withPtrEq (f.block? i) (g.block? i) (fun _ => decide (f.block? i = g.block? i))
-      (fun h => by simp [h]) then K else addU K i) base
-  let m := max f.valueTab.size g.valueTab.size
-  let K := (List.range m).foldl (fun K i =>
-    if withPtrEq (f.value? i) (g.value? i) (fun _ => sameEntry (f.value? i) (g.value? i))
-      (fun h => by rw [h]; exact sameEntry_refl _) then K
-    else
-      let K := match f.value? i with | some v => addU K v.block | none => K
-      match g.value? i with | some v => addU K v.block | none => K) K
+  -- the blocks `applySite` changes: `b`, `t`, `p`, the plan's blocks, and the block of `b`'s
+  -- last predecessor (`removePred` moves its edge); `frameOK` checks that nothing else changed
+  let K := addU (addU (addU (region.foldl addU #[s.b]) t) s.p)
+    ((B.preds[B.preds.size - 1]?.map (·.b)).getD s.b)
   let dflt : Facts := vs.map fun v =>
     let gv := g.getV v
     if gv.block != s.b && listedIn g v && gv.op != .Invalid then some v else none
@@ -644,7 +639,9 @@ def infoOf (tabs : Tables) (f g : Func) (s : Site) : Info :=
 def scOK (tabs : Tables) (f g : Func) (s : Site) : Bool :=
   let I := infoOf tabs f g s
   let T := I.factTab f g
-  I.preOK f && g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
+  I.preOK f && withPtrEq g.blocks f.blocks (fun _ => g.blocks == f.blocks)
+      (fun h => by rw [h]; exact beq_self_eq_true _) &&
+    g.entry == f.entry && g.ownAux == f.ownAux &&
     g.valueTab.size == f.valueTab.size && g.blockTab.size == f.blockTab.size &&
     I.K.contains s.b && I.K.contains I.t && I.K.contains s.p &&
     I.redirOK f g && I.regionOK g && I.frameOK f g && I.K.all (I.blockOK f g T) &&

@@ -458,9 +458,37 @@ theorem scan_spec {B : ID} (hBg : B ∈ g.blocks) (hBK : B ∉ (𝓘).K) :
   unfold Info.scanOK at h
   simp only [Array.all_eq_true'] at h
   have := h B hBg
-  simp only [Bool.or_eq_true, contains_iff, hBK, false_or, Bool.and_eq_true,
-    Array.all_eq_true'] at this
-  exact this
+  simp only [Bool.or_eq_true, contains_iff, hBK, false_or] at this
+  have hgd : ∀ {α : Type} (a : Array (Option α)) (i : Nat), a.getD i none = (a[i]?).join := by
+    intro α a i
+    unfold Array.getD
+    split
+    · rename_i hi; rw [Array.getElem?_eq_getElem hi]; rfl
+    · rename_i hi; rw [Array.getElem?_eq_none (by omega)]; rfl
+  rw [hgd] at this
+  change (g.block? B).all _ = true at this
+  unfold Func.getB
+  cases hB : g.block? B with
+  | none =>
+    have h1 : (default : Block).controls = #[] := rfl
+    have h2 : (default : Block).values = #[] := rfl
+    simp [h1, h2]
+  | some gB =>
+    rw [hB] at this
+    simp only [Option.all_some, Bool.and_eq_true, Array.all_eq_true'] at this
+    refine ⟨this.1, fun x hx a ha => ?_⟩
+    have h2 := this.2 x hx
+    rw [hgd] at h2
+    change (g.value? x).all _ = true at h2
+    unfold Func.getV at ha
+    cases hv : g.value? x with
+    | none =>
+      have h3 : (default : Value).args = #[] := rfl
+      rw [hv] at ha; simp [h3] at ha
+    | some v =>
+      rw [hv] at h2 ha
+      simp only [Option.all_some, Array.all_eq_true'] at h2
+      exact h2 a ha
 
 omit S in
 theorem freeArg_spec {a : ID} (h : (𝓘).freeArg a = true) :
