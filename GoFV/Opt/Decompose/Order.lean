@@ -152,8 +152,11 @@ def bytesLt (a b : ByteArray) : Bool := Id.run do
     if a[i]! > b[i]! then return false
   return a.size < b.size
 
-/-- Write the names state back into the function, with the export's map orders. -/
-def toFunc (s : St) (slotFloor auxFloor : Nat) : Except String Func := do
+/-- Write the names state back into the function, with the export's map orders, and the
+export numbers of the slots and names the section writing meets (`names`, then `namedx`,
+`splits` and `canon` in their written order, each sorted with the numbers given so far, as
+`section` does). -/
+def toFunc (s : St) (slotFloor auxFloor : Nat) : Except String (Func × Nums) := do
   let tabs := s.tabs
   let mut names : Array (SlotRef × Array ID) := #[]
   let mut inNames : Std.HashMap SlotDef Unit := {}
@@ -161,12 +164,12 @@ def toFunc (s : St) (slotFloor auxFloor : Nat) : Except String Func := do
     let some d := tabs.slot? n | throw s!"slot s{n} not defined"
     names := names.push (n, (s.nv[d]?).getD #[])
     inNames := inNames.insert d ()
-  let nums := exportNums tabs slotFloor auxFloor s.names
+  let mut nums := exportNums tabs slotFloor auxFloor s.names
   let extra := s.nv.fold (init := #[]) fun acc k vs =>
     if inNames.contains k then acc
     else acc.push (slotValueOrder tabs slotFloor auxFloor nums k, (k, vs))
   let extra := (extra.qsort (fun a b => bytesLt a.1 b.1)).map (·.2)
-  let nums := extra.foldl (fun n (k, _) => n.visitKey tabs slotFloor auxFloor k) nums
+  for (k, _) in extra do nums := nums.visitKey tabs slotFloor auxFloor k
   let namedx := extra.qsort (fun a b => slotValueLess slotFloor auxFloor nums a.1 b.1)
   let splits := s.splits.map fun (k, v) =>
     let key := slotOrder tabs slotFloor nums (some k.parent) ++ lit "|" ++
@@ -174,9 +177,9 @@ def toFunc (s : St) (slotFloor auxFloor : Nat) : Except String Func := do
       lit "|" ++ slotOrder tabs slotFloor nums (some v)
     (key, (k, v))
   let splits := (splits.qsort (fun a b => bytesLt a.1 b.1)).map (·.2)
-  let nums := splits.foldl (fun n (k, v) =>
-    let n := Nums.visit tabs slotFloor auxFloor typeFuel n k.parent
-    Nums.visit tabs slotFloor auxFloor typeFuel n v) nums
+  for (k, v) in splits do
+    nums := Nums.visit tabs slotFloor auxFloor typeFuel nums k.parent
+    nums := Nums.visit tabs slotFloor auxFloor typeFuel nums v
   let splits := splits.qsort fun (ka, va) (kb, vb) =>
     let pa := nums.slotNum slotFloor (some ka.parent)
     let pb := nums.slotNum slotFloor (some kb.parent)
@@ -184,6 +187,43 @@ def toFunc (s : St) (slotFloor auxFloor : Nat) : Except String Func := do
     if ka.off != kb.off then ka.off < kb.off else
     if ka.type != kb.type then ka.type < kb.type else
     nums.slotNum slotFloor (some va) < nums.slotNum slotFloor (some vb)
-  return { s.f with names, namedx, splits }
+  -- `canon` is numbered in content order (`slotOrder(v)|slotValueOrder(k)`) before it is sorted
+  let canonKey (e : SlotDef × SlotRef) : ByteArray :=
+    slotOrder tabs slotFloor nums (some e.2) ++ lit "|" ++
+      slotValueOrder tabs slotFloor auxFloor nums e.1
+  let canon := (s.f.canon.map fun e => (canonKey e, e)).qsort (fun a b => bytesLt a.1 b.1)
+  for (_, k, v) in canon do
+    nums := nums.visitKey tabs slotFloor auxFloor k
+    nums := Nums.visit tabs slotFloor auxFloor typeFuel nums v
+  return ({ s.f with names, namedx, splits }, nums)
+
+/-- Move the slots the pass created (`≥ slotFloor`) to the numbers the export gives them
+(`nums`; slots the export does not meet follow, in creation order). The stock compiler's
+slots are numbered by the export of each section, so a later pass that orders slots by number
+(`toFunc` sorting `splits` and `namedx` by the numbers of earlier slots) sees the stock order
+only with the export's numbering, not with creation order (#79). Names (aux values) keep their
+creation order: the driver creates the new autos in number order, which must be the order
+`fe.SplitSlot` appended them to `Curfn.Dcl`. -/
+def renumberSlots (slotFloor : Nat) (nums : Nums) (tabs : Tables) (f : Func) : Tables × Func :=
+  Id.run do
+  let mut ren : Std.HashMap SlotRef SlotRef := {}
+  let mut next := nums.nextSlot
+  for i in [slotFloor:tabs.slots.size] do
+    if (tabs.slot? i).isNone then continue
+    match nums.slots[i]? with
+    | some k => ren := ren.insert i k
+    | none => ren := ren.insert i next; next := next + 1
+  let sl (s : SlotRef) : SlotRef := ren.getD s s
+  let sd (d : SlotDef) : SlotDef := { d with splitOf := d.splitOf.map sl }
+  let mut slots := tabs.slots.extract 0 slotFloor
+  slots := slots ++ Array.replicate (next - slots.size) none
+  for i in [slotFloor:tabs.slots.size] do
+    if let some d := tabs.slot? i then slots := slots.set! (sl i) (some (sd d))
+  let f := { f with
+    names := f.names.map fun (s, vs) => (sl s, vs)
+    namedx := f.namedx.map fun (k, vs) => (sd k, vs)
+    splits := f.splits.map fun (k, s) => ({ k with parent := sl k.parent }, sl s)
+    canon := f.canon.map fun (k, s) => (sd k, sl s) }
+  return ({ tabs with slots }, f)
 
 end GoFV.Opt.Decompose
