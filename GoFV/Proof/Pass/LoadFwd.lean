@@ -103,13 +103,13 @@ theorem fwdTyEq_retype {t s : Ty} (h : fwdTyEq t s = true) : Val.retype t = Val.
     funext v
     cases v <;> first | rfl | simp only [Val.retype, fwdFieldsEq_retype hf]
 
-theorem fwdScalarEq_fwdScalar {t s : Ty} (h : fwdScalarEq t s = true) : fwdScalar t = true := by
-  cases t <;> cases s <;> simp_all [fwdScalarEq, fwdScalar]
+theorem fwdScalarEq_scalarTy {t s : Ty} (h : fwdScalarEq t s = true) : scalarTy t = true := by
+  cases t <;> cases s <;> simp_all [fwdScalarEq, scalarTy]
 
 theorem fwdTyEq_fwdTy {t s : Ty} (h : fwdTyEq t s = true) : fwdTy t = true := by
   unfold fwdTy
   rcases Bool.or_eq_true_iff.1 h with h | h
-  · rw [fwdScalarEq_fwdScalar h]; rfl
+  · rw [fwdScalarEq_scalarTy h]; rfl
   · obtain ⟨-, -, -, -, -, ha, -⟩ := fwdAggEq_spec h
     rw [ha, Bool.or_true]
 

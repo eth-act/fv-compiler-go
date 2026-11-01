@@ -1059,16 +1059,11 @@ def disjointB (tabs : Tables) (f : Func) (a : ID) (n : Nat) (b : ID) (k : Nat) :
   | some x, some y => x != y
   | _, _ => false
 
-/-- An integer, boolean or pointer shape. -/
-def fwdScalar : Sem.Ty → Bool
-  | .int _ | .bool | .ptr _ => true
-  | _ => false
-
-/-- Fields of `fwdScalar` shapes at increasing offsets from `lo` that do not overlap and end
+/-- Fields of `scalarTy` shapes at increasing offsets from `lo` that do not overlap and end
 inside `n` bytes. -/
 def fwdFields (n lo : Nat) : List (Nat × Sem.Ty) → Bool
   | [] => true
-  | (o, t) :: fs => fwdScalar t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
+  | (o, t) :: fs => scalarTy t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
       fwdFields n (o + t.size) fs
 
 /-- A non-empty aggregate of `fwdFields` (strings, interfaces, flat structs). -/
@@ -1077,10 +1072,10 @@ def fwdAgg : Sem.Ty → Bool
   | _ => false
 
 /-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`,
-`Sem.decodeLoad`): `fwdScalar`, or `fwdAgg` (which decodes `poison` from a `poison` store). -/
-def fwdTy (t : Sem.Ty) : Bool := fwdScalar t || fwdAgg t
+`Sem.decodeLoad`): `scalarTy`, or `fwdAgg` (which decodes `poison` from a `poison` store). -/
+def fwdTy (t : Sem.Ty) : Bool := scalarTy t || fwdAgg t
 
-/-- `fwdScalar` shapes that write, read and retype alike: equal up to pointers' element sizes
+/-- `scalarTy` shapes that write, read and retype alike: equal up to pointers' element sizes
 (`copyCompatibleType`). -/
 def fwdScalarEq : Sem.Ty → Sem.Ty → Bool
   | .int w, .int w' => w == w'

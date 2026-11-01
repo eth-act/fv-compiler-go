@@ -351,8 +351,26 @@ theorem sls_checkedRewrite :
         (f := slsFunc) (out := out) slRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
 /-- The forwarded shape is an aggregate: the string shape is `fwdAgg`, not a scalar. -/
-theorem sls_agg : slsTabs.ty 5 = .agg [(0, .ptr (some 1)), (8, .int .w64)] 16 ∧
-    RewriteCheck.fwdAgg (slsTabs.ty 5) = true ∧ RewriteCheck.fwdScalar (slsTabs.ty 5) = false := by
+theorem sls_agg : RewriteCheck.fwdAgg (slsTabs.ty 5) = true ∧
+    RewriteCheck.scalarTy (slsTabs.ty 5) = false := by
   decide +kernel
+
+/-- The shape of a string (`Layout`, `.STRING`). -/
+def slsStrTy : Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+
+/-- Non-vacuity of `LoadFwd.decodeLoad_encode` and `LoadFwd.load_write` at the string shape: a
+stored string (pointer and length) loads back, and a stored `poison` string loads as `poison`,
+where `decode` (register pieces, ABI) never gives `poison` at an aggregate. -/
+theorem sls_decodeLoad :
+    Sem.Refines (decodeLoad (encode slsStrTy (.agg [.ptr (Ptr.ofAddr 4096), .int .w64 5])) 0
+      slsStrTy) (.agg [.ptr (Ptr.ofAddr 4096), .int .w64 5]) ∧
+    decodeLoad (encode slsStrTy .poison) 0 slsStrTy = .poison ∧
+    decode (encode slsStrTy .poison) 0 slsStrTy ≠ .poison := by
+  have ht : RewriteCheck.fwdTy slsStrTy = true := by decide +kernel
+  refine ⟨GoFV.Proof.Pass.LoadFwd.decodeLoad_encode ht (by rfl), ?_, ?_⟩
+  · rw [encode_poison]
+    simp only [slsStrTy, decodeLoad, Sem.Ty.size,
+      GoFV.Proof.Pass.LoadFwd.allPoison_replicate (by decide : (16 : Nat) ≠ 0), ite_true]
+  · simp only [slsStrTy, decode, ne_eq, reduceCtorEq, not_false_eq_true]
 
 end GoFV.Proof.Witness
