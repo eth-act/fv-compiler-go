@@ -210,7 +210,7 @@ theorem panic_kept (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat
 theorem npOf_true {h : Func} {C : Block} {x : ID} {v : Value} (hx : x ∈ C.values)
     (hv : h.value? x = some v) (hp : prio v.op ≠ 0) (hnp : v.op ≠ .Phi) : npOf h C x = true := by
   unfold npOf
-  simp [Array.contains_iff_mem.2 hx, hv, hp, hnp]
+  simp [hv, hp, hnp, hx]
 
 theorem before_mem_pre {pre post : List ID} {y a x : ID} (hn : (pre ++ y :: post).Nodup)
     (hb : Order.Before (pre ++ y :: post) a x) (hx : x ∈ pre) : a ∈ pre := by
@@ -380,9 +380,135 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
   have hmh := (S.mem_held hr0).1
   cases bb with
   | true =>
-    sorry
+    obtain ⟨T', hT', -, hTg, hTk, hTs, -⟩ := S.t_block hr0
+    rw [hT] at hT'; cases hT'
+    obtain ⟨y, ys, hnpT, hyrole⟩ := hncT r hn
+    obtain ⟨oT, hoT, hfT⟩ : ∃ oT, schedule c.g T = some oT ∧
+        oT.toList.filter (npOf c.g T) = y :: ys := by
+      unfold Ctx.npSeq at hnpT
+      cases ho : schedule c.g T with
+      | none => rw [ho] at hnpT; cases hnpT
+      | some oT => rw [ho] at hnpT; exact ⟨oT, rfl, Option.some.inj hnpT⟩
+    obtain ⟨preT, postT, hsplitT, hpureT⟩ := filter_first hfT
+    obtain ⟨-, -, omemT⟩ :=
+      schedule_topo (valuesOwn hwg hTg hT) (hwg.valuesNodup _ T ⟨hTg, hT⟩) hoT
+    have hvT : ∀ x, x ∈ vals c.g r0.sp.t ↔ x ∈ T.values := fun x => by rw [vals_of hT]
+    have hyo : y ∈ oT.toList := by rw [hsplitT]; simp
+    obtain ⟨hyT, wy, hwy, -⟩ := (omemT y).1 hyo
+    obtain ⟨-, -, r', n', hr', hn', hcopy⟩ := roleOK_ncThen (S.tOK hr0 ((hvT y).2 hyT)) hwy hyrole
+    rw [hr0] at hr'; cases hr'
+    rw [hn] at hn'; cases hn'
+    have hen := enter_Q_panic (tabs := c.tabs) (env := env) (fr0 := frS) (Q := QR c rs Gr)
+      (e := 0) hwg hTg hT hoT hsplitT hR'.fr hR'.size
+      (fun x hx v hxv hp => absurd hp (S.t_nophi hr0 ((hvT x).2 hx) hxv))
+      (Avail c b B rs Gr (j0 + 1)) hR'.avail (fun a ha hm => S.avail_not_t hr0 ha ((hvT a).2 hm))
+      (fun x hx => by
+        have hxo : x ∈ oT.toList := by rw [hsplitT]; exact List.mem_append_left _ hx
+        obtain ⟨hxT, w, hw, -⟩ := (omemT x).1 hxo
+        have hxt : x ∈ vals c.g r0.sp.t := (hvT x).2 hxT
+        have hok := S.tOK hr0 hxt
+        have hpx := hpureT x hx
+        refine S.local_t SP.grOK.held SP.grOK.mems ⟨r0, hr0, hxt⟩ hw
+          (S.cov_intro SP.ev hPcl (fun _ hK' _ =>
+            (S.held_t ⟨r0, hr0, hxt⟩ (by simp [Ctx.held, hK'])).elim) ?_ ?_)
+        · rintro j' hρ r'' -
+          exfalso
+          rcases hρ with ⟨k', hρ⟩ | hρ | hρ
+          · obtain ⟨h, -⟩ := roleOK_tgt hok hw hρ; cases h
+          · obtain ⟨h, -⟩ := roleOK_ncEnd hok hw hρ; cases h
+          · obtain ⟨-, -, r3, n3, -, -, u3, w3, p3, mS3, -, hw3, -, hw3op, -⟩ :=
+              roleOK_ncThen hok hw hρ
+            rw [hw] at hw3; cases hw3
+            rw [npOf_true hxT hw (by rw [hw3op]; decide) (by rw [hw3op]; decide)] at hpx
+            cases hpx
+        · intro j' hρ
+          obtain ⟨-, rfl, -⟩ := roleOK_wb hok hw hρ
+          exact ⟨m, hM0⟩)
+      (fun x hx v hxv _ a ha hna =>
+        S.args_t SP.grOK.out hr0 ((hvT x).2 hx) hxv ha (fun hm => hna ((hvT a).1 hm)))
+      (fun g' hg' hargs' => by
+        obtain ⟨u3, w3, p3, mS3, -, hw3, -, -, -, -, hw3a, -⟩ := id hcopy
+        obtain ⟨z, hz', hq'⟩ := hargs' r0.sp.mem (by rw [argsF_of hw3, hw3a]; simp)
+        have := SP.grOK.held r0.sp.mem z (.mem m) hmh hq' hMr
+        subst this
+        exact S.panic_nc_step SP.grOK hr0 hn SP.pan (.inl hcopy) g' hg' hargs' hz')
+    refine ⟨2 + n, ?_⟩
+    rw [hwalk 2, show (2 : Nat) = 1 + 1 from rfl, runLoop_goto hbs]
+    exact runLoop_panic (blockStep_panic (ctx := Ctx.make c.tabs c.g) hT hen)
   | false =>
-    sorry
+    have hyo : yE ∈ oE.toList := by rw [hsplitE]; simp
+    obtain ⟨hyE', wy, hwy, -⟩ := (omemE yE).1 hyo
+    obtain ⟨-, -, r', n', hr', hn', hcopy, -⟩ :=
+      roleOK_ncEnd (S.segOK hse ((hvE yE).2 hyE')) hwy (hEro yE hyE)
+    rw [hr0] at hr'; cases hr'
+    rw [hn] at hn'; cases hn'
+    obtain ⟨-, -, -, -, -, ⟨pv, hpv, hpvop, -⟩, hphi0, -⟩ :=
+      runOf_spec ((chainRuns_spec S.ch).1 j0 r0 hr0).2.2.2
+    have hphiE : r0.phi ∈ vals c.g r0.sp.e := Array.mem_iff_getElem?.2 ⟨0, hphi0⟩
+    have hnob : m.find? .wbuf = none := (SP.grOK.mems _ _ hMr).nobuf
+    have hen := enter_Q_panic (tabs := c.tabs) (env := env) (fr0 := frS)
+      (Q := fun a z => QR c rs Gr a z ∧ (a = r0.phi → z = .mem m)) (e := 0) hwg
+      hEg hE hoE hsplitE hR'.fr hR'.size
+      (fun x hx v hxv hp => by
+        obtain ⟨r', hr', rfl, hrole, hargs, hty, -⟩ := S.phi_seg hse ((hvE x).2 hx) hxv hp
+        rw [hr0] at hr'; cases hr'
+        have hrt : (Val.mem m).retype ((Ctx.make c.tabs c.g).tys[r0.phi]?.getD .other) =
+            .mem m := by
+          rw [tys_of_value hxv, Option.getD_some, hty]; rfl
+        refine ⟨r0.sp.mem, .mem m, by rw [hargs]; rfl, hmem, ?_, fun _ => hrt⟩
+        simp only [QR, hrole]
+        exact ⟨m, m, hM0, hrt, W.refl hnob⟩)
+      (Avail c b B rs Gr (j0 + 1))
+      (fun a ha => by
+        obtain ⟨z, hz, hq⟩ := hR'.avail a ha
+        exact ⟨z, hz, hq, fun he => absurd (he ▸ hphiE) (S.avail_not_seg hse ha)⟩)
+      (fun a ha hm => S.avail_not_seg hse ha ((hvE a).2 hm))
+      (fun x hx => by
+        have hxo : x ∈ oE.toList := by rw [hsplitE]; exact List.mem_append_left _ hx
+        obtain ⟨hxE, w, hw, hwp⟩ := (omemE x).1 hxo
+        have hxs : x ∈ vals c.g r0.sp.e := (hvE x).2 hxE
+        have hok := S.segOK hse hxs
+        have hpx := hpureE x hx
+        refine localQ_mono (S.local_seg SP.grOK.fr SP.grOK.held SP.grOK.mems ⟨_, hse, hxs⟩ hw hwp
+          ?_) (fun a z h => h.1) (fun z hq => ⟨hq, fun he => ?_⟩)
+        · refine S.cov_intro SP.ev hPcl (fun _ hK' hp => ?_) ?_ ?_
+          · have hh : c.held x = true := by simp [Ctx.held, hK']
+            exact hApre x ⟨S.held_seg ⟨_, hse, hxs⟩ hh, hp, hh, .inr ⟨hxs, hx⟩⟩
+          · rintro j' hρ r'' -
+            exfalso
+            rcases hρ with ⟨k', hρ⟩ | hρ | hρ
+            · obtain ⟨-, -, r3, s3, hr3, hs3, -, ⟨u3, w3, hu3, hw3, hop3, -⟩, -⟩ :=
+                roleOK_tgt hok hw hρ
+              rw [hw] at hw3; cases hw3
+              obtain ⟨-, -, -, hsrcop, -⟩ := runOf_spec ((chainRuns_spec S.ch).1 _ r3 hr3).2.2.2
+              obtain ⟨u4, hu4, hop4, -⟩ := hsrcop _ s3 hs3
+              rw [hu3] at hu4; cases hu4
+              have hnp : npOf c.g E x = true := by
+                rcases hop4 with h | h | h <;>
+                  exact npOf_true hxE hw (by rw [hop3, h]; decide) (by rw [hop3, h]; decide)
+              rw [hnp] at hpx; cases hpx
+            · obtain ⟨-, -, r3, n3, -, -, ⟨u3, w3, p3, mS3, -, hw3, -, hw3op, -⟩, -⟩ :=
+                roleOK_ncEnd hok hw hρ
+              rw [hw] at hw3; cases hw3
+              rw [npOf_true hxE hw (by rw [hw3op]; decide) (by rw [hw3op]; decide)] at hpx
+              cases hpx
+            · obtain ⟨h, -⟩ := roleOK_ncThen hok hw hρ; cases h
+          · intro j' hρ
+            obtain ⟨h, -⟩ := roleOK_wb hok hw hρ; cases h
+        · exfalso
+          rw [he, hpv] at hw; cases hw; exact hwp hpvop)
+      (fun x hx v hxv hp a ha hna =>
+        S.args_seg SP.grOK.out hse ((hvE x).2 hx) hxv hp ha (fun hm => hna ((hvE a).1 hm)))
+      (fun g' hg' hargs' => by
+        obtain ⟨u3, w3, p3, mS3, -, hw3, -, -, -, -, hw3a, -⟩ := id hcopy
+        obtain ⟨z, hz', -, hzphi⟩ := hargs' r0.phi (by rw [argsF_of hw3, hw3a]; simp)
+        have := hzphi rfl
+        subst this
+        exact S.panic_nc_step SP.grOK hr0 hn SP.pan (.inr hcopy) g' hg'
+          (fun a ha => (hargs' a ha).imp fun _ h => ⟨h.1, h.2.1⟩) hz')
+    refine ⟨2 + n, ?_⟩
+    rw [hwalk 2, show (2 : Nat) = 1 + 1 from rfl, runLoop_goto hbs]
+    exact runLoop_panic (blockStep_panic (ctx := Ctx.make c.tabs c.g) hE hen)
 
 /-- **A panicking block entry.** -/
 theorem chain_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
