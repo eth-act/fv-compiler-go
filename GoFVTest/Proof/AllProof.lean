@@ -138,6 +138,11 @@ import GoFV.Proof.Pass.FuseCmpSetup
 import GoFV.Proof.Pass.FuseCmpSim
 import GoFV.Proof.Pass.FuseCmpTarget
 import GoFV.Proof.Pass.FuseEarlyPass
+import GoFV.Proof.Pass.FuseIf
+import GoFV.Proof.Pass.FuseIfEnter
+import GoFV.Proof.Pass.FuseIfRel
+import GoFV.Proof.Pass.FuseIfSetup
+import GoFV.Proof.Pass.FuseIfSim
 import GoFV.Proof.Pass.FuseLoop
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FusePlainFrame
@@ -252,7 +257,6 @@ import GoFV.Proof.Rules.AndB2
 import GoFV.Proof.Rules.AndB3
 import GoFV.Proof.Rules.AndB4
 import GoFV.Proof.Rules.Attr
-import GoFV.Proof.Rules.AttrCond
 import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
@@ -277,10 +281,7 @@ import GoFV.Proof.Rules.DivmodSBV
 import GoFV.Proof.Rules.DivmodSMagic
 import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Proof.Rules.DivmodU
-import GoFV.Proof.Rules.DivmodU2
-import GoFV.Proof.Rules.DivmodU3
 import GoFV.Proof.Rules.DivmodUMagic
-import GoFV.Proof.Rules.DivmodUMagic2
 import GoFV.Proof.Rules.Eq
 import GoFV.Proof.Rules.Eq2
 import GoFV.Proof.Rules.Eq3
@@ -365,7 +366,6 @@ import GoFV.Proof.Rules.Sub
 import GoFV.Proof.Rules.Sub2
 import GoFV.Proof.Rules.Sub3
 import GoFV.Proof.Rules.Tactic
-import GoFV.Proof.Rules.TacticCond
 import GoFV.Proof.Rules.TacticRange
 import GoFV.Proof.Rules.Trunc
 import GoFV.Proof.Rules.Trunc2
@@ -411,6 +411,7 @@ import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
 import GoFV.Proof.Witness.FuseEarly
+import GoFV.Proof.Witness.FuseIf
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
