@@ -131,6 +131,33 @@ def ab_bench(wt, base, head, bench, rounds=2):
     return (min(cpu[short(base)]), min(cpu[short(head)])), passes
 
 
+def lower(path, commit, key, values, col):
+    """In `path`, for rows of `commit`'s latest recording whose `key` is in `values`, set `col`
+    to min(current, values[key]). Rows are edited in place so the recording stays one set."""
+    if not path.exists():
+        return
+    lines = path.read_text().splitlines()
+    cols = lines[0].split("\t")
+    rows = [dict(zip(cols, l.split("\t"))) for l in lines[1:]]
+    mine = [r for r in rows if r.get("commit") == commit]
+    if not mine:
+        return
+    last = max(r["date"] for r in mine)
+    changed = False
+    for r in mine:
+        v = values.get(r.get(key))
+        if r["date"] == last and v is not None:
+            try:
+                cur = float(r[col])
+            except ValueError:
+                continue
+            if v < cur:
+                r[col] = f"{v:.2f}"
+                changed = True
+    if changed:
+        path.write_text("\n".join([lines[0]] + ["\t".join(r.get(c, "") for c in cols) for r in rows]) + "\n")
+
+
 def compare(base, head, label, header, wt=None):
     REPORTS.mkdir(parents=True, exist_ok=True)
     out = REPORTS / f"{label}-{short(head)}.md"
@@ -163,6 +190,13 @@ def compare(base, head, label, header, wt=None):
             if ab is None:
                 continue
             (cb, ch), per = ab
+            # the A/B re-measured head under alternating load: if it found lower numbers, they
+            # replace the recorded ones, so a load spike at recording time does not become the
+            # baseline of the next comparison (false wins at 2e7c2c5 after 64f0257)
+            lower(here / "perf/bench-history.tsv", short(head), "bench", {bn: ch}, "cpu_s")
+            if bn == "pass-parity-corpus":
+                lower(here / "perf/pass-history.tsv", short(head), "pass",
+                      {p: v[1] for p, v in per.items()}, "time_s")
             if f"bench {bn}" in regs:
                 real = ch > cb * 1.25 and ch - cb > 1
                 notes.append(f"- A/B runs of `{bn}` (interleaved, min of 2 each): {cb:.1f} s → "
