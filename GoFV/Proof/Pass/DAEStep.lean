@@ -46,6 +46,47 @@ theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv a
     ResRel U (memRoot ctx v argv) (memRoot ctx v argv') :=
   ⟨hok, fun _ _ h => absurd (memRoot_panic h) hn⟩
 
+/-- **A kept atomic root** on related memories. -/
+theorem atomicRoot_rel {v : Value} {L : List Val} {w w' : Val} (hw : VR U w w')
+    (hav : ∀ a ∈ L, Val.Avoids U a) :
+    ResRel U (atomicRoot v (L ++ [w])) (atomicRoot v (L ++ [w'])) := by
+  refine ⟨fun y h => ?_, fun e m h => absurd h atomicRoot_ne_panic⟩
+  obtain ⟨M, rfl⟩ := atomicRoot_ok_mem h
+  obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
+  rcases L with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, L⟩⟩⟩⟩ <;>
+    simp only [List.nil_append, List.cons_append, atomicRoot] at h ⊢
+  · unfold Atomic.barrier at h ⊢
+    by_cases hp : v.op = .PubBarrier <;> simp only [hp, ↓reduceIte] at h ⊢
+    · cases h; exact ⟨_, rfl, .mem hm⟩
+    · cases h
+  · unfold Atomic.prefetch at h ⊢
+    by_cases hp : v.op = .PrefetchCache ∨ v.op = .PrefetchCacheStreamed <;>
+      simp only [hp, ↓reduceIte] at h ⊢
+    · cases h; exact ⟨_, rfl, .mem hm⟩
+    · cases h
+  · unfold Atomic.rmwRoot at h ⊢
+    cases a with
+    | ptr p =>
+      dsimp only at h ⊢
+      cases hi : Atomic.info? v.op with
+      | none => simp only [hi, Atomic.unmodelled] at h; cases h
+      | some kt =>
+        obtain ⟨k, t⟩ := kt
+        simp only [hi] at h ⊢
+        exact atomicRmw_rel (hav (.ptr p) (by simp)) hm h
+    | _ => simp only [Atomic.unmodelled] at h; cases h
+  · unfold Atomic.casRoot at h ⊢
+    cases a with
+    | ptr p =>
+      dsimp only at h ⊢
+      cases hc : Atomic.casWidth? v.op with
+      | none => simp only [hc, Atomic.unmodelled] at h; cases h
+      | some cw =>
+        simp only [hc] at h ⊢
+        exact atomicCas_rel (hav (.ptr p) (by simp)) hm h
+    | _ => simp only [Atomic.unmodelled] at h; cases h
+  · rcases L with _ | ⟨e, L⟩ <;> cases h
+
 /-! ## The ops of `memOps` -/
 
 /-- **A kept op of `memOps`** on equal registers and a related last one. -/
@@ -144,9 +185,10 @@ theorem memOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {
   · exact calls (.inr (.inl h1))
   · exact calls (.inr (.inr h1))
   all_goals
-    obtain ⟨msg, hm⟩ := evalOp_atomic (env := env) (ctx := ctx) (fr := fr) (argv := L ++ [w])
-      (ty := ty) (v := v) (by simp [h1])
-    rw [hm]; exact resRel_stuck _ _
+    have he : ∀ argv, evalOp env ctx fr v argv ty = atomicRoot v argv :=
+      fun argv => evalOp_atomic (by simp [h1])
+    rw [he, he]
+    exact atomicRoot_rel hw fun a ha => hav (by rw [h1]; nofun) a (by simp [ha])
 
 /-! ## Registers -/
 

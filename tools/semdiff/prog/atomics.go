@@ -122,18 +122,18 @@ func atomSlice(s []int32, i int, d int32) int32 {
 }
 
 type atomFields struct {
-	a int32
-	b int64
-	c uint32
+	A int32
+	B int64
+	C uint32
 }
 
 func atomStruct(s *atomFields, d int64) int64 {
 	if s == nil {
 		return 0
 	}
-	atomic.AddInt32(&s.a, int32(d))
-	atomic.StoreUint32(&s.c, atomic.LoadUint32(&s.c)|uint32(d))
-	return atomic.AddInt64(&s.b, d)
+	atomic.AddInt32(&s.A, int32(d))
+	atomic.StoreUint32(&s.C, atomic.LoadUint32(&s.C)|uint32(d))
+	return atomic.AddInt64(&s.B, d)
 }
 
 func atomTyped64(x, d int64) (int64, bool, int64) {

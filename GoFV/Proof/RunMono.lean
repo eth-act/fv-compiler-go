@@ -311,8 +311,8 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
 
 /-! ## Atomics (`Sem/Atomic.lean`) -/
 
-theorem atomicStep_mono (k : Atomic.Kind) (w : Width) {o o' x x' : Val} (ho : Sem.Refines o o')
-    (hx : Sem.Refines x x') {m m' : Mem} (hm : Mem.Refines m m') :
+private theorem atomicStep_mono (k : Atomic.Kind) (w : Width) {o o' x x' : Val}
+    (ho : Sem.Refines o o') (hx : Sem.Refines x x') {m m' : Mem} (hm : Mem.Refines m m') :
     Sem.Refines (Atomic.step k w o x).1 (Atomic.step k w o' x').1 ∧
       Sem.Refines (Atomic.result (Atomic.step k w o x).2 m)
         (Atomic.result (Atomic.step k w o' x').2 m') := by
@@ -325,23 +325,23 @@ theorem atomicStep_mono (k : Atomic.Kind) (w : Width) {o o' x x' : Val} (ho : Se
     | exact .tuple (.cons ho (.cons (.mem hm) .nil))
     | exact .tuple (.cons (int2_mono _ _ h2) (.cons (.mem hm) .nil))
 
-theorem atomicRmw_mono (v : Value) (k : Atomic.Kind) (t : Ty) (p : Ptr) {x x' : Val}
+private theorem atomicRmw_mono (v : Value) (k : Atomic.Kind) (t : Ty) (p : Ptr) {x x' : Val}
     {m m' : Mem} (hx : Sem.Refines x x') (hm : Mem.Refines m m') :
     Res.Refines (Atomic.rmw v k t p x m) (Atomic.rmw v k t p x' m') := by
   unfold Atomic.rmw
   by_cases ha : Atomic.aligned p t.size = true
   · simp only [ha, ↓reduceIte]
-    have hs := atomicStep_mono k (Atomic.width t) (load_mono hm t p) hx
+    have hs := atomicStep_mono k (Atomic.width t) (load_mono hm t p) hx hm
     cases hw : m.write p (encode t (Atomic.step k (Atomic.width t) (m.load t p) x).1) with
     | none => exact .stuck _ _
     | some m1 =>
-      obtain ⟨m1', hw', hm1⟩ := hm.write (encode_mono t (hs hm).1) hw
+      obtain ⟨m1', hw', hm1⟩ := hm.write (encode_mono t hs.1) hw
       rw [hw']
-      exact .ok (hs hm1).2
+      exact .ok (atomicStep_mono k (Atomic.width t) (load_mono hm t p) hx hm1).2
   · simp only [ha, Bool.false_eq_true, ↓reduceIte]; exact .stuck _ _
 
-theorem atomicCas_mono (v : Value) (w : Width) (p : Ptr) {o o' n n' : Val} {m m' : Mem}
-    (ho : Sem.Refines o o') (hn : Sem.Refines n n') (hm : Mem.Refines m m') :
+private theorem atomicCas_mono (v : Value) (w : Width) (p : Ptr) {o o' n n' : Val}
+    {m m' : Mem} (ho : Sem.Refines o o') (hn : Sem.Refines n n') (hm : Mem.Refines m m') :
     Res.Refines (Atomic.cas v w p o n m) (Atomic.cas v w p o' n' m') := by
   unfold Atomic.cas
   by_cases ha : Atomic.aligned p w.bytes = true

@@ -252,14 +252,169 @@ theorem evalOp_panicBounds {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {arg
     {ty : Ty} (hop : v.op = .PanicBounds) : evalOp env ctx fr v argv ty = panicBounds v.auxInt argv := by
   simp only [evalOp, hop]
 
-/-- The P3 atomics of `memOps` are stuck. -/
+/-! ## Atomics (`Sem/Atomic.lean`) -/
+
+/-- The atomic roots of `memOps` are `atomicRoot`. -/
 theorem evalOp_atomic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op = .AtomicStore32 ∨ v.op = .AtomicStore64 ∨ v.op = .AtomicAdd32 ∨
       v.op = .AtomicAdd32Variant ∨ v.op = .AtomicAdd64 ∨ v.op = .AtomicCompareAndSwap32 ∨
       v.op = .AtomicCompareAndSwap32Variant ∨ v.op = .AtomicCompareAndSwap64 ∨
       v.op = .AtomicCompareAndSwap64Variant) :
-    ∃ msg, evalOp env ctx fr v argv ty = .stuck msg := by
+    evalOp env ctx fr v argv ty = atomicRoot v argv := by
   rcases hop with h | h | h | h | h | h | h | h | h <;>
-    exact ⟨_, by simp only [evalOp, frameVal, h]; rfl⟩
+    simp only [evalOp, frameVal, h] <;> rfl
+
+theorem int2_avoids (w : Width) (f : BitVec w.bits → BitVec w.bits → BitVec w.bits)
+    (l : List Val) : Val.Avoids U (int2 w (fun x y => .int w (f x y)) l) := by
+  unfold int2
+  split
+  · split <;> trivial
+  · trivial
+
+theorem atomicStep_avoids (k : Atomic.Kind) (w : Width) {o x : Val} (ho : Val.Avoids U o)
+    (hx : Val.Avoids U x) :
+    Val.Avoids U (Atomic.step k w o x).1 ∧ ∀ r, (Atomic.step k w o x).2 = some r → Val.Avoids U r := by
+  cases k <;> simp only [Atomic.step, Int.add, Int.and, Int.or] <;>
+    refine ⟨?_, fun r hr => ?_⟩ <;> (try cases hr) <;>
+    first | exact hx | exact ho | exact int2_avoids _ _ _
+
+theorem atomicResult_avoids {r : Option Val} {m : Mem} (hr : ∀ y, r = some y → Val.Avoids U y)
+    (hm : m.Avoids U) : Val.Avoids U (Atomic.result r m) := by
+  cases r with
+  | none => exact hm
+  | some y => exact ⟨hr y rfl, hm, trivial⟩
+
+theorem atomicResult_rel (r : Option Val) {m m' : Mem} (hm : Mem.EqOff U m m') :
+    VR U (Atomic.result r m) (Atomic.result r m') := by
+  cases r with
+  | none => exact .mem hm
+  | some y => exact .tuple (.cons (.refl y) (.cons (.mem hm) .nil))
+
+theorem atomicRmw_avoids (hU : TempU U) {v : Value} {k : Atomic.Kind} {t : Ty} {p : Ptr}
+    {x : Val} {m : Mem} {y : Val} (hp : ¬ U p.blk) (hx : Val.Avoids U x) (hm : m.Avoids U)
+    (h : Atomic.rmw v k t p x m = .ok y) : Val.Avoids U y := by
+  unfold Atomic.rmw at h
+  have hs := atomicStep_avoids k (Atomic.width t) (load_avoids hU hm t hp) hx
+  split at h
+  · split at h
+    · rename_i m1 hw
+      cases h
+      exact atomicResult_avoids hs.2 (memAvoids_write hm hw fun _ => encode_avoids t hs.1)
+    · cases h
+  · cases h
+
+theorem atomicRmw_rel {v : Value} {k : Atomic.Kind} {t : Ty} {p : Ptr} {x : Val} {m m' : Mem}
+    {y : Val} (hp : ¬ U p.blk) (hm : Mem.EqOff U m m') (h : Atomic.rmw v k t p x m = .ok y) :
+    ∃ y', Atomic.rmw v k t p x m' = .ok y' ∧ VR U y y' := by
+  unfold Atomic.rmw at h ⊢
+  rw [EqOff.load hm t p hp]
+  split at h
+  · rename_i ha
+    simp only [ha, ↓reduceIte]
+    split at h
+    · rename_i m1 hw
+      cases h
+      obtain ⟨m1', hw', hm1⟩ := EqOff.write hm hw
+      rw [hw']
+      exact ⟨_, rfl, atomicResult_rel _ hm1⟩
+    · cases h
+  · cases h
+
+theorem atomicCas_avoids {v : Value} {w : Width} {p : Ptr} {o n : Val} {m : Mem} {y : Val}
+    (hn : Val.Avoids U n) (hm : m.Avoids U) (h : Atomic.cas v w p o n m = .ok y) :
+    Val.Avoids U y := by
+  unfold Atomic.cas at h
+  split at h
+  · split at h
+    · split at h
+      · split at h
+        · rename_i m1 hw
+          cases h
+          exact ⟨trivial, memAvoids_write hm hw (fun _ => encode_avoids _ hn), trivial⟩
+        · cases h
+      · cases h
+        exact ⟨trivial, hm, trivial⟩
+    · cases h
+  · cases h
+
+theorem atomicCas_rel {v : Value} {w : Width} {p : Ptr} {o n : Val} {m m' : Mem} {y : Val}
+    (hp : ¬ U p.blk) (hm : Mem.EqOff U m m') (h : Atomic.cas v w p o n m = .ok y) :
+    ∃ y', Atomic.cas v w p o n m' = .ok y' ∧ VR U y y' := by
+  unfold Atomic.cas at h ⊢
+  rw [EqOff.load hm _ p hp]
+  revert h
+  generalize (m.load (.int w) p).asInt w = a
+  generalize o.asInt w = b
+  intro h
+  by_cases ha : Atomic.aligned p w.bytes = true
+  · simp only [ha, ↓reduceIte] at h ⊢
+    cases a with
+    | none => cases h
+    | some cur =>
+      cases b with
+      | none => cases h
+      | some old =>
+        dsimp only at h ⊢
+        by_cases he : cur = old
+        · simp only [he, ↓reduceIte] at h ⊢
+          cases hw : m.write p (encode (.int w) n) with
+          | none => rw [hw] at h; cases h
+          | some m1 =>
+            rw [hw] at h
+            cases h
+            obtain ⟨m1', hw', hm1⟩ := EqOff.write hm hw
+            rw [hw']
+            exact ⟨_, rfl, .tuple (.cons (.refl _) (.cons (.mem hm1) .nil))⟩
+        · simp only [he, ↓reduceIte] at h ⊢
+          cases h
+          exact ⟨_, rfl, .tuple (.cons (.refl _) (.cons (.mem hm) .nil))⟩
+  · simp only [ha, Bool.false_eq_true, ↓reduceIte] at h; cases h
+
+/-- An atomic root returns only on a memory last argument. -/
+theorem atomicRoot_ok_mem {v : Value} {L : List Val} {w y : Val}
+    (h : atomicRoot v (L ++ [w]) = .ok y) : ∃ m, w = .mem m := by
+  rcases L with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, L⟩⟩⟩⟩ <;>
+    simp only [List.nil_append, List.cons_append, atomicRoot] at h
+  · unfold Atomic.barrier at h; split at h
+    · exact ⟨_, rfl⟩
+    · cases h
+  · unfold Atomic.prefetch at h; split at h
+    · exact ⟨_, rfl⟩
+    · cases h
+  · unfold Atomic.rmwRoot at h; split at h
+    · exact ⟨_, rfl⟩
+    · cases h
+  · unfold Atomic.casRoot at h; split at h
+    · exact ⟨_, rfl⟩
+    · cases h
+  · rcases L with _ | ⟨e, L⟩ <;> cases h
+
+/-- **An atomic root returns a value avoiding `U`** when its arguments do. -/
+theorem atomicRoot_avoids (hU : TempU U) {v : Value} {argv : List Val} {y : Val}
+    (hargs : ∀ z ∈ argv, Val.Avoids U z) (h : atomicRoot v argv = .ok y) : Val.Avoids U y := by
+  unfold atomicRoot at h
+  split at h
+  · unfold Atomic.barrier at h; split at h
+    · split at h
+      · cases h; exact hargs _ List.mem_cons_self
+      · cases h
+    · cases h
+  · unfold Atomic.prefetch at h; split at h
+    · split at h
+      · cases h; exact hargs _ (by simp)
+      · cases h
+    · cases h
+  · unfold Atomic.rmwRoot at h; split at h
+    · split at h
+      · exact atomicRmw_avoids hU (hargs (.ptr _) (by simp)) (hargs _ (by simp))
+          (hargs (.mem _) (by simp)) h
+      · cases h
+    · cases h
+  · unfold Atomic.casRoot at h; split at h
+    · split at h
+      · exact atomicCas_avoids (hargs _ (by simp)) (hargs (.mem _) (by simp)) h
+      · cases h
+    · cases h
+  · cases h
 
 end GoFV.Proof.DAE

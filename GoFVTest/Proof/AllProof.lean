@@ -400,6 +400,7 @@ import GoFV.Proof.WFCheck
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.AddZeroRefines
 import GoFV.Proof.Witness.AddZeroSim
+import GoFV.Proof.Witness.Atomic
 import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE

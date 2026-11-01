@@ -133,7 +133,8 @@ theorem evalOp_congr {env : Env} {ctx ctx' : Ctx} {fr : Frame} {v v' : Value} {a
   obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
   dsimp only at htabs hpar hact
   subst htabs hpar hact
-  unfold evalOp frameVal memRoot callOp callTarget argFloat
+  unfold evalOp frameVal memRoot callOp callTarget argFloat atomicRoot Atomic.barrier
+    Atomic.prefetch Atomic.rmwRoot Atomic.casRoot Atomic.rmw Atomic.cas Atomic.unmodelled
   simp only [hop, haux, hai, hid]
   rfl
 
