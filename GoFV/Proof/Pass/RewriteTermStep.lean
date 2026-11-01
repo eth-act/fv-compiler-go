@@ -104,7 +104,7 @@ def resLen : Result → Nat
   | _ => 0
 
 /-- The fuel factor of a rule step. -/
-def stepK (r : Rule) : Nat := Pat.sz r.pat + resLen r.result + 1
+def stepK (r : Rule) : Nat := Pat.sz r.pat + resLen r.result + 2
 
 section Step
 
@@ -119,7 +119,7 @@ theorem CopyRes.put {F : RuleFacts tabs M r v defs} (R : CopyRes tabs M r v defs
   rw [show putAll M defs = putAll M [R.u] from congrArg _ R.hdefs]; simp [putAll, R.hid]
 
 theorem BuildRes.usids {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v defs F) :
-    R.us.map (·.id) = v :: (R.us.map (·.id)).drop 1 := by
+    R.us.map (·.id) = R.top :: (R.us.map (·.id)).drop 1 := by
   have h := R.hhead
   cases hu : R.us.map (·.id) with
   | nil => rw [hu] at h; cases h
@@ -134,9 +134,15 @@ theorem BuildRes.put {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v de
   rw [show putAll M defs = putAll M (R.u0 :: R.us) from congrArg _ R.hdefs]
   simp [putAll, R.hid0]
 
+theorem BuildRes.top_nmem {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v defs F) :
+    R.top ∉ (R.us.map (·.id)).drop 1 := by
+  rcases R.htop with h | h
+  · rw [h]; exact R.hnv
+  · exact h.2.2.1
+
 theorem BuildRes.nodup {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v defs F) :
     (R.us.map (·.id)).Nodup := by
-  rw [R.usids]; exact List.nodup_cons.2 ⟨R.hnv, R.hnodup⟩
+  rw [R.usids]; exact List.nodup_cons.2 ⟨R.top_nmem, R.hnodup⟩
 
 theorem BuildRes.len {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v defs F) :
     0 < R.nodes.length := by
@@ -150,7 +156,7 @@ theorem BuildRes.get {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v de
   rw [R.put]; exact get?_putAll_mem _ _ _ R.nodup (List.getElem_mem hk)
 
 theorem BuildRes.id0 {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v defs F)
-    (h0 : 0 < R.us.length) : R.us[0].id = v := by
+    (h0 : 0 < R.us.length) : R.us[0].id = R.top := by
   obtain ⟨u, l, hu⟩ : ∃ u l, R.us = u :: l := by
     cases h : R.us with
     | nil => simp [h] at h0
@@ -158,6 +164,15 @@ theorem BuildRes.id0 {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v de
   have h1 := R.hhead
   simp only [hu, List.map_cons, List.head?_cons, Option.some.injEq] at h1
   simp only [hu, List.getElem_cons_zero, h1]
+
+/-- An `@b` build leaves `v` its `Copy` of the fresh top. -/
+theorem BuildRes.getV {F : RuleFacts tabs M r v defs} (R : BuildRes tabs M r v defs F)
+    (hb : BlockTop tabs M v R.u0 R.us R.top) : (putAll M defs).get? v = some R.u0 := by
+  have hv : v ∉ R.us.map (·.id) := by
+    rw [R.usids]
+    simp only [List.mem_cons, not_or]
+    exact ⟨fun h => hb.1 h.symm, R.hnv⟩
+  rw [R.put, get?_putAll_not _ _ _ hv, get?_put]; simp
 
 theorem RuleFacts.frame (F : RuleFacts tabs M r v defs) :
     (∀ y, y ∉ defIds defs → (putAll M defs).get? y = M.get? y) ∧
@@ -183,12 +198,23 @@ theorem RuleFacts.frame (F : RuleFacts tabs M r v defs) :
       · exact .inl rfl
       · rw [R.usids] at hy
         rcases List.mem_cons.1 hy with rfl | hy
-        · exact .inl rfl
+        · rcases R.htop with h | h
+          · exact .inl h
+          · exact .inr h.2.1
         · exact .inr (R.hfresh y hy)
-    · have hy' : y ∈ R.us.map (·.id) := by
+    · have hy' : y ∈ R.us.map (·.id) ∨ (y = v ∧ BlockTop tabs M v R.u0 R.us R.top) := by
         rcases List.mem_cons.1 hy with rfl | hy
-        · rw [R.usids]; exact List.mem_cons_self
-        · exact hy
+        · rcases R.htop with h | h
+          · left; rw [R.usids, h]; exact List.mem_cons_self
+          · exact .inr ⟨rfl, h⟩
+        · exact .inl hy
+      rcases hy' with hy' | ⟨rfl, hb⟩
+      rotate_left
+      · refine ⟨R.u0, R.getV hb, by rw [hb.2.2.2.1]; exact termOp_copy, fun a ha => ?_⟩
+        rw [hb.2.2.2.2.1] at ha
+        simp only [List.mem_toArray, List.mem_singleton] at ha
+        subst ha
+        exact .inr (List.mem_cons_of_mem _ (by rw [R.usids]; exact List.mem_cons_self))
       obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hy'
       simp only [List.length_map] at hk
       simp only [List.getElem_map]
@@ -521,11 +547,11 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
       | some y => rw [h] at this; exact ⟨y, rfl, by simpa using this⟩
     have hkeep := F.keep hy R.hne
     have hdv : (putAll M defs).get? v = some R.u := by rw [R.put, get?_put]; simp
-    have hK : B + stepK r = (B + S) + 1 := by simp [stepK, resLen, R.hres, hS]; omega
+    have hK : B + stepK r = (B + S + 1) + 1 := by simp [stepK, resLen, R.hres, hS]; omega
     rw [hK, den_succ_term hdv (by rw [R.hop]; exact termOp_copy), R.hargs, R.hop]
-    show Sem.Refines _ ((den _ tabs ρ (B + S) (F.I.at R.p)).retype (tabs.ty R.u.type))
+    show Sem.Refines _ ((den _ tabs ρ (B + S + 1) (F.I.at R.p)).retype (tabs.ty R.u.type))
     rw [← hyt, ← shape_of (tabs := tabs) hkeep, den_retype hT _ _ (by rw [hkeep]; rfl)]
-    exact hlow.trans (hsound.trans hup)
+    exact hlow.trans (hsound.trans (hup.trans (den_fuel_mono _ _ _ _ _ _ (by omega))))
   · -- build
     obtain ⟨R⟩ := hR
     rw [R.hres] at hsound
@@ -588,8 +614,25 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
     have h0 := key R.nodes.length 0 R.len
     have hid := R.id0 (R.hlen ▸ R.len)
     simp only [hid] at h0
-    refine hlow.trans (hsound.trans (h0.trans (den_fuel_mono _ _ _ _ _ _ ?_)))
-    simp [stepK, resLen, R.hres, hS]; omega
+    rcases R.htop with htv | hb
+    · rw [htv] at h0
+      refine hlow.trans (hsound.trans (h0.trans (den_fuel_mono _ _ _ _ _ _ ?_)))
+      simp [stepK, resLen, R.hres, hS]; omega
+    · -- `@b`: `v` is a compatible copy of the fresh top
+      have hdv := R.getV hb
+      obtain ⟨-, -, -, hop, hargs, u, hu, hc⟩ := hb
+      rw [List.head?_eq_getElem?] at hu
+      obtain ⟨hl0, hu0⟩ := List.getElem?_eq_some_iff.1 hu
+      have hut : (putAll M defs).get? R.u0.args[0]! = some u := by
+        have := R.get 0 hl0
+        rw [R.id0 hl0, hu0] at this
+        rw [hargs]; exact this
+      have hK : B + stepK r = (B + S + R.nodes.length + 1) + 1 := by
+        simp [stepK, resLen, R.hres, hS]; omega
+      rw [hK, den_copy hT hdv hop (by rw [hargs]; rfl) hut hc]
+      have harg0 : R.u0.args[0]! = R.top := by rw [hargs]; rfl
+      rw [harg0]
+      exact hlow.trans (hsound.trans (h0.trans (den_fuel_mono _ _ _ _ _ _ (by omega))))
 
 /-- **One rule event**: on a set closed under arguments, the denotations after the event refine
 those before, with the fuel multiplied by `stepK r`. -/

@@ -104,7 +104,7 @@ def proven():
 
 def proven_kinds():
     """Short rule name -> (proof module, obligation), from `theorem <name>_sound : <obligation>`
-    (`Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel`, `BlockRule.Sound`, `EffectRule.NilElim`,
+    (`Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel`, `Rule.LoadSel`, `BlockRule.Sound`, `EffectRule.NilElim`,
     `EffectRule.LoadFwd`, `EffectRule.StructLoad`, `EffectRule.StructStore`)."""
     out = {}
     for fn in os.listdir(PROOF):
@@ -305,7 +305,7 @@ def proven_sets():
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound`, `Rule.SoundT` or `Rule.MakeSel` lemma (value rules),
+rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel` or `Rule.LoadSel` lemma (value rules),
 `BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
@@ -390,7 +390,9 @@ def {low} : RuleSet where
                 if k == "Rule.SoundT":
                     return f".inl {r}_sound"
                 if k == "Rule.MakeSel":
-                    return f".inr {r}_sound"
+                    return f".inr (.inl {r}_sound)"
+                if k == "Rule.LoadSel":
+                    return f".inr (.inr {r}_sound)"
                 return f"{r}_sound"
             proofs = ",\n    ".join(
                 "⟨" + ", ".join(pf(r) for r in rs) + ", trivial⟩" for _, rs in groups)

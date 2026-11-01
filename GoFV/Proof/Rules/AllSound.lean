@@ -4,8 +4,9 @@ import GoFV.Proof.Rules.Block
 # Sound rule sets
 
 `RuleSet.AllSound s`: every value rule of `s` satisfies `Rule.SoundT` (`DenT.lean`; a
-`Rule.Sound` lemma gives it for a rule without table-evaluated nodes, `Rule.soundT_of_sound`)
-or is a selection of a variadic `Make` (`Rule.MakeSel`, validated per instance), every block
+`Rule.Sound` lemma gives it for a rule without table-evaluated nodes, `Rule.soundT_of_sound`),
+is a selection of a variadic `Make` (`Rule.MakeSel`) or an unconditional selection of a `Load`
+(`Rule.LoadSel`), both validated per instance, and every block
 rule `BlockRule.Sound` (`Block.lean`). The rewrite passes' theorems (issue #113) take it as the
 hypothesis on their rule set; the proven-only rule sets satisfy it
 (`GoFV/Proof/Rules/Proven.lean`, generated).
@@ -53,8 +54,23 @@ def makeSelShape (r : Rule) : Bool :=
 `GoFV.Opt.RewriteCheck.makeSelOK`. -/
 def Rule.MakeSel (r : Rule) : Prop := makeSelShape r = true ∧ Pat.arityOk r.pat = false
 
-/-- What a value rule of a sound rule set satisfies: `Rule.SoundT`, or `Rule.MakeSel`. -/
-def Rule.Checked (r : Rule) : Prop := Rule.SoundT r ∨ Rule.MakeSel r
+/-- A selection of a `Load` without a condition whose result is built in another block:
+`(StructSelect [i] x:(Load <t> ptr mem)) => @x.Block (Load <v.Type> (OffPtr … ptr) mem)`
+(`dec.rules:141`, `:132`, issue #17). Its events are validated per instance only
+(`GoFV.Opt.RewriteCheck.loadSelOK`). -/
+def loadSelShape (r : Rule) : Bool :=
+  match r.pat, r.result, r.block, r.cond with
+  | .op o none _ _ _ _ [.op .Load _ _ _ _ _ _ _] _, .build _, some _, none => selOp o
+  | _, _, _, _ => false
+
+/-- **The obligation of an unconditional selection of a `Load`**: the rule has `loadSelShape`,
+so each of its events is validated by `GoFV.Opt.RewriteCheck.loadSelOK` (nothing in the rule
+ties the selection's type to the field's). -/
+def Rule.LoadSel (r : Rule) : Prop := loadSelShape r = true
+
+/-- What a value rule of a sound rule set satisfies: `Rule.SoundT`, `Rule.MakeSel` or
+`Rule.LoadSel`. -/
+def Rule.Checked (r : Rule) : Prop := Rule.SoundT r ∨ Rule.MakeSel r ∨ Rule.LoadSel r
 
 theorem Rule.checked_of_sound {r : Rule} (h : Rule.Sound r) (hp : Rule.pure r = true) :
     Rule.Checked r :=

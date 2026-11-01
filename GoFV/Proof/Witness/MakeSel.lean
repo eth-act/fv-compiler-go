@@ -99,7 +99,7 @@ theorem mks_checks :
 /-- The one-rule set is sound (its rule is validated per instance, `Rule.MakeSel`). -/
 theorem mksRules_allSound : mksRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨.inr GoFV.Proof.Rules.r_generic_973_sound, trivial⟩, trivial⟩ trivial
+    ⟨⟨.inr (.inl GoFV.Proof.Rules.r_generic_973_sound), trivial⟩, trivial⟩ trivial
 
 /-- **Pass execution witness** for `generic.rules:973` (and `dec.rules:106`): on `pick`, the
 checked rewrite pass makes the selection a copy of the `StructMake`'s argument, the result returns

@@ -1,6 +1,7 @@
 import GoFV.Proof.Rules.Dec
 import GoFV.Proof.Pass.StructLoadMem
 import GoFV.Proof.ValRefine
+import GoFV.Proof.Rules.SelLoad
 
 /-!
 # Rule lemmas: `dec` rules, `Load` splits (`dec.rules`, issue #17)
@@ -112,5 +113,96 @@ theorem r_dec_87_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_87 := by
   · rw [ho] at hty ⊢
     rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
     exact .poison _
+
+/-! ## Extractors of a `Load` (`dec.rules:135`–`:154`)
+
+`(StringPtr x:(Load <t> ptr mem)) && t.IsString() => @x.Block (Load <typ.BytePtr> ptr mem)` and
+the other components of strings, slices and interfaces: component `k` of a `Load` of an aggregate
+is refined by the `Load` of field `k` at its offset (`selLoad_ref`, from `structLoad_ref`; at
+offset 0 at the pointer itself, `selLoad0_ref`; `SelLoad.lean`). The `@x.Block` placement is the
+validator's (`RewriteCheck.blockTopOK`); the obligation is `Rule.Sound` of the result tree. -/
+
+/-- `dec.rules:135`: `(StringPtr x:(Load <t> ptr mem)) && t.IsString() => @x.Block (Load <typ.BytePtr> ptr mem)` -/
+theorem r_dec_135_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_135 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_135
+  have hk : kindE .string (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_string hk with hs | ho
+  · rw [strShape_eq hs]
+    exact selLoad0_ref (by decide) (by decide) _ _ rfl
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:136`: `(StringLen x:(Load <t> ptr mem)) && t.IsString() => @x.Block (Load <typ.Int> (OffPtr <typ.IntPtr> [config.PtrSize] ptr) mem)` -/
+theorem r_dec_136_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_136 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_136
+  have hk : kindE .string (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_string hk with hs | ho
+  · rw [strShape_eq hs]
+    exact selLoad_ref (by decide) (by decide) _ _ rfl (some 8)
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:144`: `(ITab x:(Load <t> ptr mem)) && t.IsInterface() => @x.Block (Load <typ.Uintptr> ptr mem)` -/
+theorem r_dec_144_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_144 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_144
+  have hk : kindE .inter (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_inter hk with hs | ho
+  · rw [interShape_eq hs]
+    exact selLoad0_ref (by decide) (by decide) _ _ rfl
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:146`: `(IData x:(Load <t> ptr mem)) && t.IsInterface() => @x.Block (Load <typ.BytePtr> (OffPtr <typ.BytePtrPtr> [config.PtrSize] ptr) mem)` -/
+theorem r_dec_146_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_146 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_146
+  have hk : kindE .inter (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_inter hk with hs | ho
+  · rw [interShape_eq hs]
+    exact selLoad_ref (by decide) (by decide) _ _ rfl (some 8)
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:150`: `(SlicePtr x:(Load <t> ptr mem)) && t.IsSlice() => @x.Block (Load <t.Elem().PtrTo()> ptr mem)` -/
+theorem r_dec_150_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_150 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_150
+  have hk : kindE .slice (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_slice hk with hs | ho
+  · obtain ⟨el, he⟩ := sliceShape_eq hs
+    rw [he]
+    dsimp only [strctField, List.find?]
+    exact selLoad0_ref
+      (by simp [GoFV.Opt.RewriteCheck.layoutsOK, GoFV.Opt.RewriteCheck.layoutOK, Sem.Ty.size]
+          <;> decide)
+      (by simp) _ _ rfl
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:151`: `(SliceLen x:(Load <t> ptr mem)) && t.IsSlice() => @x.Block (Load <typ.Int> (OffPtr <typ.IntPtr> [config.PtrSize] ptr) mem)` -/
+theorem r_dec_151_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_151 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_151
+  have hk : kindE .slice (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_slice hk with hs | ho
+  · obtain ⟨el, he⟩ := sliceShape_eq hs
+    rw [he]
+    exact selLoad_ref
+      (by simp [GoFV.Opt.RewriteCheck.layoutsOK, GoFV.Opt.RewriteCheck.layoutOK, Sem.Ty.size]
+          <;> decide)
+      (by simp) _ _ rfl (some 8)
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:154`: `(SliceCap x:(Load <t> ptr mem)) && t.IsSlice() => @x.Block (Load <typ.Int> (OffPtr <typ.IntPtr> [2*config.PtrSize] ptr) mem)` -/
+theorem r_dec_154_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_154 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_154
+  have hk : kindE .slice (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk] at hcond
+  rcases kindE_slice hk with hs | ho
+  · obtain ⟨el, he⟩ := sliceShape_eq hs
+    rw [he]
+    exact selLoad_ref
+      (by simp [GoFV.Opt.RewriteCheck.layoutsOK, GoFV.Opt.RewriteCheck.layoutOK, Sem.Ty.size]
+          <;> decide)
+      (by simp) _ _ rfl (some 8)
+  · rw [ho]; exact selLoad_other _ _ _
 
 end GoFV.Proof.Rules

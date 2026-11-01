@@ -21,7 +21,8 @@ replays the log on a map of definitions, starting from the input `f`:
   arguments have the shapes `argShapeOk`
   asks for, `Pat.argsOK`, checked at every op node, or a constant composite `constTop`), every
   leaf has an integer, boolean or pointer shape, and the built definitions are those of
-  `Rule.Sound`'s result denotation (`resDen`); only in-place `build` and `copy` results;
+  `Rule.Sound`'s result denotation (`resDen`); `copy` results and `build` results in place or,
+  for an `@b` result, with a fresh top of which `v` becomes a compatible copy (`blockTopOK`);
 * a copy-argument replacement (`copyArg v i src`, copy elimination before a rule matches) is
   replayed on the definitions when `src` is reached from the old argument through `Copy`s of
   compatible shape (`copyReach`);
@@ -37,6 +38,9 @@ replays the log on a map of definitions, starting from the input `f`:
 * a rule event of a selection of a `Make` (`GoFV.Proof.Rules.makeSelShape`, issue #17, e.g.
   `(ITab (IMake itab _)) => itab` or the variadic `(StructSelect [i] x:(StructMake ___)) =>
   x.Args[i]`) is first checked per instance (`makeSelOK`), else as a rule instance (`ruleOK`);
+* a rule event of an unconditional selection of a `Load` with an `@b` result
+  (`GoFV.Proof.Rules.loadSelShape`, issue #17, `dec.rules:132`, `:141`) is checked per instance
+  only (`loadSelOK`);
 * a phi elimination rejects;
 * finally every value listed in the output `g` has the replayed definition up to copies:
   each argument (and each control of `g`) is the replayed one or reached from it through
@@ -411,8 +415,22 @@ def nodeOK (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (I
   u.args.size == n.args.length &&
   (n.args.zip u.args.toList).all fun (a, w) => argID σ I ids a == some w
 
-/-- The built definitions are the result's (`resDen`): `copy` of a bound value, or an in-place
-`build` whose node 0 is `v` and whose other nodes are fresh. -/
+/-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
+pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/
+def copyCompat (s t : Sem.Ty) : Bool :=
+  GoFV.Opt.CSE.tyEq s t || (s matches .ptr _ && t matches .ptr _)
+
+/-- An `@b` result (`… => @x.Block (…)`, issue #17): node 0 is built fresh as `t` (in block
+`b`, which the term denotations do not read) and `v` becomes `Copy t` at its own type, the
+identity on `t`'s value (`copyCompat`). -/
+def blockTopOK (tabs : Tables) (M : Defs) (v u0 : Value) (us : List Value) (t : ID) : Bool :=
+  t != v.id && (M.get? t).isNone && !((us.map (·.id)).drop 1).contains t &&
+  u0.op == .Copy && u0.args == #[t] && u0.auxInt == 0 && u0.aux == none && u0.type == v.type &&
+  us.head?.any fun u => copyCompat (tabs.ty u0.type) (tabs.ty u.type)
+
+/-- The built definitions are the result's (`resDen`): `copy` of a bound value, or a `build`
+whose other nodes are fresh and whose node 0 is `v` (in place) or, for an `@b` result, fresh
+with `v` a copy of it (`blockTopOK`). -/
 def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV)
     (I : Inst) (r : Rule) (v : Value) (defs : List Value) : Bool :=
   let topTy := tabs.ty v.type
@@ -422,9 +440,15 @@ def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : N
     | some p => u.id == v.id && u.op == .Copy && u.args == #[I.at p] &&
         (M.get? (I.at p)).any (·.type == u.type) && I.at p != v.id && u.auxInt == 0 && u.aux == none
     | none => false
-  | .build nodes, none, u0 :: us =>
+  | .build nodes, b, u0 :: us =>
     let ids := us.map (·.id)
-    u0.id == v.id && ids.head? == some v.id && us.length == nodes.length &&
+    u0.id == v.id &&
+    (match ids.head? with
+      | some t => match b with
+        | none => t == v.id
+        | some _ => blockTopOK tabs M v u0 us t
+      | none => false) &&
+    us.length == nodes.length &&
     (ids.drop 1).all (fun x => (M.get? x).isNone) && (ids.drop 1).Nodup &&
     !(ids.drop 1).contains v.id &&
     (nodes.zip us).all fun (n, u) => nodeOK tabs ev or σ I ids topTy n u
@@ -598,11 +622,6 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
         condFrameOK tabs e I r.pat r.cond &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
-
-/-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
-pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/
-def copyCompat (s t : Sem.Ty) : Bool :=
-  GoFV.Opt.CSE.tyEq s t || (s matches .ptr _ && t matches .ptr _)
 
 /-- `w` is `a`, or reached from `a` through at most `n` `Copy`s each compatible with its
 argument (`copyCompat`: the identity on its argument's value). -/
@@ -782,6 +801,44 @@ def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
     | _, _ => false
   | _, _ => false
 
+/-! ## Selections of a `Load` without a condition (issue #17)
+
+`(StructSelect [i] x:(Load <t> ptr mem)) => @x.Block (Load <v.Type> (OffPtr <v.Type.PtrTo()>
+[t.FieldOff(int(i))] ptr) mem)` (`dec.rules:141`) and its `ArraySelect` form (`:132`,
+`[t.Elem().Size()*i]`; `GoFV.Proof.Rules.loadSelShape`) read component `k` of a `Load` as a
+`Load` of `v`'s type at an offset. Nothing in the rule ties `v`'s type to the field's, so each
+instance is validated (`loadSelOK`), and only so: the `Load`'s shape is `agg fs n` with every
+field inside it (`layoutsOK`) at an offset below `n`, field `k` is `(o, t)`, `v` becomes `Copy` of
+a fresh `Load` of shape `t` (compatible with `v`'s, `copyCompat`) on a fresh pointer-shaped
+`OffPtr [o]` of the `Load`'s pointer, from its memory. -/
+
+/-- The event `(v, [u0, top, off])` reads component `k` of the `Load` that `v` selects from as a
+`Load` at field `k`'s offset (above). -/
+def loadSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [u0, top, off] =>
+    match x.args.toList, selIndex? x.op x.auxInt with
+    | [s], some k =>
+      match M.get? s with
+      | some y =>
+        match tabs.ty y.type, y.args.toList with
+        | .agg fs n, [p, m] =>
+          match fs[k]? with
+          | some (o, t) =>
+            y.op == .Load && layoutsOK n fs && fs.all (·.1 < n) &&
+            u0.id == v && u0.op == .Copy && u0.args == #[top.id] && u0.type == x.type &&
+            u0.auxInt == 0 && u0.aux == none &&
+            (M.get? top.id).isNone && (M.get? off.id).isNone && top.id != off.id &&
+            top.op == .Load && top.args == #[off.id, m] && GoFV.Opt.CSE.tyEq (tabs.ty top.type) t &&
+            copyCompat (tabs.ty x.type) (tabs.ty top.type) &&
+            off.op == .OffPtr && off.args == #[p] && off.auxInt == Int64.ofNat o &&
+            (tabs.ty off.type matches .ptr _)
+          | none => false
+        | _, _ => false
+      | none => false
+    | _, _ => false
+  | _, _ => false
+
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
 if an event is not validated. -/
 def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
@@ -799,6 +856,10 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
       | some cr =>
         if makeSelShape cr.rule && makeSelOK tabs M v defs.toList then
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else if loadSelShape cr.rule then
+          if loadSelOK tabs M v defs.toList then
+            replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+          else none
         else if ruleOK tabs M cr.rule v defs.toList then
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none

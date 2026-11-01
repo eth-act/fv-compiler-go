@@ -1,5 +1,5 @@
 import GoFV.Proof.Pass.StructLoad
-import GoFV.Proof.Pass.RewriteMakeSel
+import GoFV.Proof.Pass.RewriteLoadSel
 import GoFV.Proof.TermStep
 import GoFV.Proof.Rules.Block
 
@@ -424,6 +424,15 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
       exact replay_inv hs evs _ M' B B' _ h (hI.makeSel F)
         (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ n y hy => F.step hI.closed hρ n y hy)
     split at h
+    · split at h
+      · rename_i hok
+        obtain ⟨u0, top, off, hd, ⟨F⟩⟩ := lsFacts hok
+        rw [hput, hd] at h
+        exact replay_inv hs evs _ M' B B' _ h (hI.loadSel F)
+          (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ n y hy => F.step hI.closed hρ n y hy)
+      · cases h
+    rename_i hnls
+    split at h
     · rename_i hok
       obtain ⟨F⟩ := ruleFacts hok
       rw [hput] at h
@@ -432,7 +441,9 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
         simp only [Bool.and_eq_true] at hok
         exact hok.1.1
       have hsd : GoFV.Proof.Rules.Rule.SoundT cr.rule :=
-        (ofRuleSet_sound hs hcr).resolve_right fun h' => by rw [h'.2] at har; cases har
+        ((ofRuleSet_sound hs hcr).resolve_right fun h' => h'.elim
+          (fun h' => by rw [h'.2] at har; cases har)
+          (fun h' => absurd h' hnls))
       exact replay_inv hs evs _ M' B B' _ h (hI.rule hsd F)
         (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ n y hy => F.step hsd hI.closed hρ n y hy)
     · cases h
