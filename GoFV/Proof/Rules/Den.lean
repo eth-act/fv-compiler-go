@@ -44,6 +44,14 @@ obligation assumes that every leaf value has its type's shape (`Pat.typed`): a m
 a register whose value `evalValue` retyped to its type (`docs/proofs/rules.md`, "Assumptions to
 discharge").
 
+**Argument shapes.** The obligation assumes that the arguments of pointer ops have the shapes
+the checker guarantees by type (`Pat.argsOK`, `argShapeOk`): the pointer argument of `OffPtr`,
+`AddPtr`, `PtrIndex`, `IsNonNil`, `EqPtr`, `NeqPtr` is pointer-typed, the offset of
+`AddPtr`/`PtrIndex` a 64-bit integer, a `Convert` goes between a pointer and a 64-bit integer.
+Without it `(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])` is false for a `uintptr` leaf
+under a pointer-typed inner node (the pointer `p + y` keeps its allocation, the integer does
+not). The rewrite validator checks it on the matched types (`GoFV.Opt.RewriteCheck.ruleOK`).
+
 What the interpreter proof has to supply, besides the match: the shapes of `typ.<T>` and
 `types.Types[k]` (`typShape`, `typesShape`) for the export's `Config.Types`, and that
 `t.Size()` of an integer or boolean shape is its byte size.

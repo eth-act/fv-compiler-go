@@ -8,6 +8,7 @@ import GoFV.Proof.Rules.Add4
 import GoFV.Proof.Rules.Add5
 import GoFV.Proof.Rules.Add6
 import GoFV.Proof.Rules.Add7
+import GoFV.Proof.Rules.AddPtr
 import GoFV.Proof.Rules.And
 import GoFV.Proof.Rules.And2
 import GoFV.Proof.Rules.Com
@@ -57,11 +58,13 @@ import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
+import GoFV.Proof.Rules.OffPtr
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
 import GoFV.Proof.Rules.Or3
 import GoFV.Proof.Rules.Or4
 import GoFV.Proof.Rules.Or5
+import GoFV.Proof.Rules.PtrIndex
 import GoFV.Proof.Rules.RotateLeft
 import GoFV.Proof.Rules.RotateLeft10
 import GoFV.Proof.Rules.RotateLeft11
@@ -112,6 +115,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨r_generic_122_sound, r_generic_420_2_sound, r_generic_427_2_sound, r_generic_646_2_sound, r_generic_655_2_sound, r_generic_661_2_sound, r_generic_675_2_sound, r_generic_678_2_sound, r_generic_778_2_sound, r_generic_779_2_sound, r_generic_1217_sound, r_generic_1223_sound, r_generic_1277_sound, r_generic_1283_sound, r_generic_2185_sound, r_generic_2186_sound, r_generic_2187_sound, r_generic_2188_sound, r_generic_2190_sound, r_generic_2191_sound, r_generic_2192_sound, r_generic_2193_sound, trivial⟩,
     ⟨r_generic_123_sound, r_generic_420_3_sound, r_generic_427_3_sound, r_generic_646_3_sound, r_generic_655_3_sound, r_generic_661_3_sound, r_generic_675_3_sound, r_generic_678_3_sound, r_generic_778_3_sound, r_generic_779_3_sound, r_generic_1216_sound, r_generic_1222_sound, r_generic_1276_sound, r_generic_1282_sound, r_generic_2175_sound, r_generic_2176_sound, r_generic_2177_sound, r_generic_2178_sound, r_generic_2180_sound, r_generic_2181_sound, r_generic_2182_sound, r_generic_2183_sound, trivial⟩,
     ⟨r_generic_120_sound, r_generic_420_4_sound, r_generic_427_4_sound, r_generic_646_4_sound, r_generic_655_4_sound, r_generic_661_4_sound, r_generic_675_4_sound, r_generic_678_4_sound, r_generic_778_4_sound, r_generic_779_4_sound, r_generic_1219_sound, r_generic_1225_sound, r_generic_1279_sound, r_generic_1285_sound, r_generic_2205_sound, r_generic_2206_sound, r_generic_2207_sound, r_generic_2208_sound, r_generic_2210_sound, r_generic_2211_sound, r_generic_2212_sound, r_generic_2213_sound, trivial⟩,
+    ⟨r_generic_126_sound, r_generic_127_sound, trivial⟩,
     ⟨r_generic_148_sound, r_generic_208_sound, r_generic_212_sound, r_generic_637_sound, r_generic_638_sound, r_generic_639_sound, r_generic_640_sound, r_generic_687_sound, r_generic_1254_sound, r_generic_1302_sound, trivial⟩,
     ⟨r_generic_149_sound, r_generic_208_2_sound, r_generic_212_2_sound, r_generic_637_2_sound, r_generic_638_2_sound, r_generic_639_2_sound, r_generic_640_2_sound, r_generic_687_2_sound, r_generic_1253_sound, r_generic_1301_sound, trivial⟩,
     ⟨r_generic_150_sound, r_generic_208_3_sound, r_generic_212_3_sound, r_generic_637_3_sound, r_generic_638_3_sound, r_generic_639_3_sound, r_generic_640_3_sound, r_generic_687_3_sound, r_generic_1252_sound, r_generic_1300_sound, trivial⟩,
@@ -187,10 +191,12 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨r_generic_286_4_sound, r_generic_298_4_sound, r_generic_301_4_sound, r_generic_304_4_sound, r_generic_307_4_sound, r_generic_310_4_sound, r_generic_313_4_sound, r_generic_318_2_sound, r_generic_1179_4_sound, r_generic_2397_sound, r_generic_2398_sound, trivial⟩,
     ⟨r_generic_286_5_sound, r_generic_287_sound, r_generic_288_sound, r_generic_289_sound, r_generic_290_sound, trivial⟩,
     ⟨r_generic_184_sound, r_generic_397_sound, r_generic_397_2_sound, r_generic_397_3_sound, r_generic_397_4_sound, r_generic_397_5_sound, r_generic_398_sound, r_generic_398_2_sound, r_generic_398_3_sound, r_generic_398_4_sound, r_generic_398_5_sound, r_generic_400_sound, r_generic_400_2_sound, r_generic_400_3_sound, r_generic_400_4_sound, r_generic_401_sound, r_generic_401_2_sound, r_generic_401_3_sound, r_generic_401_4_sound, r_generic_402_sound, r_generic_402_2_sound, r_generic_402_3_sound, r_generic_402_4_sound, r_generic_403_sound, r_generic_403_2_sound, r_generic_403_3_sound, r_generic_403_4_sound, trivial⟩,
+    ⟨r_generic_964_sound, r_generic_965_sound, trivial⟩,
     ⟨r_generic_153_sound, r_generic_209_sound, r_generic_213_sound, r_generic_632_sound, r_generic_633_sound, r_generic_634_sound, r_generic_635_sound, r_generic_688_sound, r_generic_1260_sound, r_generic_1308_sound, r_generic_2195_2_sound, r_generic_2196_2_sound, r_generic_2197_2_sound, r_generic_2198_2_sound, r_generic_2200_2_sound, r_generic_2201_2_sound, r_generic_2202_2_sound, r_generic_2203_2_sound, trivial⟩,
     ⟨r_generic_154_sound, r_generic_209_2_sound, r_generic_213_2_sound, r_generic_632_2_sound, r_generic_633_2_sound, r_generic_634_2_sound, r_generic_635_2_sound, r_generic_688_2_sound, r_generic_1259_sound, r_generic_1307_sound, r_generic_2185_2_sound, r_generic_2186_2_sound, r_generic_2187_2_sound, r_generic_2188_2_sound, r_generic_2190_2_sound, r_generic_2191_2_sound, r_generic_2192_2_sound, r_generic_2193_2_sound, trivial⟩,
     ⟨r_generic_155_sound, r_generic_209_3_sound, r_generic_213_3_sound, r_generic_632_3_sound, r_generic_633_3_sound, r_generic_634_3_sound, r_generic_635_3_sound, r_generic_688_3_sound, r_generic_1258_sound, r_generic_1306_sound, r_generic_2175_2_sound, r_generic_2176_2_sound, r_generic_2177_2_sound, r_generic_2178_2_sound, r_generic_2180_2_sound, r_generic_2181_2_sound, r_generic_2182_2_sound, r_generic_2183_2_sound, trivial⟩,
     ⟨r_generic_152_sound, r_generic_209_4_sound, r_generic_213_4_sound, r_generic_632_4_sound, r_generic_633_4_sound, r_generic_634_4_sound, r_generic_635_4_sound, r_generic_688_4_sound, r_generic_1261_sound, r_generic_1309_sound, r_generic_2205_2_sound, r_generic_2206_2_sound, r_generic_2207_2_sound, r_generic_2208_2_sound, r_generic_2210_2_sound, r_generic_2211_2_sound, r_generic_2212_2_sound, r_generic_2213_2_sound, trivial⟩,
+    ⟨r_generic_970_sound, trivial⟩,
     ⟨r_generic_479_sound, r_generic_2218_sound, r_generic_2218_2_sound, r_generic_2218_3_sound, r_generic_2218_4_sound, r_generic_2224_sound, r_generic_2224_2_sound, r_generic_2224_3_sound, r_generic_2224_4_sound, r_generic_2230_sound, r_generic_2230_2_sound, r_generic_2230_3_sound, r_generic_2230_4_sound, r_generic_2236_sound, r_generic_2236_2_sound, r_generic_2236_3_sound, r_generic_2236_4_sound, r_generic_2240_sound, r_generic_2245_sound, r_generic_2246_sound, r_generic_2247_sound, r_generic_2248_sound, trivial⟩,
     ⟨r_generic_478_sound, r_generic_2217_sound, r_generic_2217_2_sound, r_generic_2217_3_sound, r_generic_2217_4_sound, r_generic_2223_sound, r_generic_2223_2_sound, r_generic_2223_3_sound, r_generic_2223_4_sound, r_generic_2229_sound, r_generic_2229_2_sound, r_generic_2229_3_sound, r_generic_2229_4_sound, r_generic_2235_sound, r_generic_2235_2_sound, r_generic_2235_3_sound, r_generic_2235_4_sound, r_generic_2240_2_sound, r_generic_2245_2_sound, r_generic_2246_2_sound, r_generic_2247_2_sound, r_generic_2248_2_sound, trivial⟩,
     ⟨r_generic_477_sound, r_generic_2216_sound, r_generic_2216_2_sound, r_generic_2216_3_sound, r_generic_2216_4_sound, r_generic_2222_sound, r_generic_2222_2_sound, r_generic_2222_3_sound, r_generic_2222_4_sound, r_generic_2228_sound, r_generic_2228_2_sound, r_generic_2228_3_sound, r_generic_2228_4_sound, r_generic_2234_sound, r_generic_2234_2_sound, r_generic_2234_3_sound, r_generic_2234_4_sound, r_generic_2240_3_sound, r_generic_2245_3_sound, r_generic_2246_3_sound, r_generic_2247_3_sound, r_generic_2248_3_sound, trivial⟩,
