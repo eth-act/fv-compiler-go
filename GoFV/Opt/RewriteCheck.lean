@@ -1343,19 +1343,31 @@ def fwdConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
     fwdOK tabs f u x
   | none => false
 
-/-- An integer or boolean constant `0` (`isConstZero` but for pointers, floats and composites):
-`Const8`/`Const16`/`Const32`/`Const64`/`ConstBool` with auxint 0 at an integer or boolean shape,
-whose bytes are `0` or `poison` at every shape (a `ConstNil` is a pointer, whose bytes are
-fragments). -/
+/-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
+whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
+value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
+rules fold to a `Const64` only later in the log. -/
+def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
+  | 0, _ => none
+  | k + 1, a =>
+    match f.value? a with
+    | some v =>
+      if termOp v.op then
+        (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
+          (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
+            (tabs.ty v.type)
+      else none
+    | none => none
+
+/-- A constant term (`termConst`) whose value is a zero integer, `false` or `poison`
+(`isConstZero` but for pointers, floats and composites; whose bytes are `0` or `poison` at every
+shape; a `ConstNil` is a pointer, whose bytes are fragments): `Const64 [0]`, `ConstBool [0]`,
+`SliceLen (ConstSlice)`, … -/
 def zeroConst (tabs : Tables) (f : Func) (x : ID) : Bool :=
-  match f.value? x with
-  | some xv =>
-    (xv.op == .Const8 || xv.op == .Const16 || xv.op == .Const32 || xv.op == .Const64 ||
-      xv.op == .ConstBool) && xv.auxInt == 0 &&
-    match tabs.ty xv.type with
-    | .int _ | .bool => true
-    | _ => false
-  | none => false
+  match termConst tabs f 4 x with
+  | some .poison | some (.bool false) => true
+  | some (.int _ c) => c == 0
+  | _ => false
 
 /-- Memory `m` of `f` holds zero bytes at the `n` bytes at pointer `p`: through at most `d`
 `Copy`s and `Store`s at pointers disjoint from them (`disjointB`), a `Zero [k] q _` with `p` at
@@ -2048,22 +2060,6 @@ def chainSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (Li
       else none
     | none => none
   | none => none
-
-/-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
-whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
-value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
-rules fold to a `Const64` only later in the log. -/
-def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
-  | 0, _ => none
-  | k + 1, a =>
-    match f.value? a with
-    | some v =>
-      if termOp v.op then
-        (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
-          (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
-            (tabs.ty v.type)
-      else none
-    | none => none
 
 /-- `a` is a constant term of `f` (`termConst`, at most 4 deep) whose value is the 64-bit
 integer `n ≥ 0`. -/

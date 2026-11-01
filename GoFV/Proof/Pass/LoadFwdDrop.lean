@@ -5,8 +5,9 @@ import GoFV.Proof.Pass.DSEMem
 # Dropped identity writes (issue #151)
 
 The forwarding layer turns a memory root whose write changes no byte into a `Copy` of its memory
-(`RewriteCheck.dropOK`): a `Store` of a zero-sized type (`generic.rules:1005`), a `Store` of an
-integer or boolean constant `0` into bytes a `Zero` cleared (`:943`, `:948`, `:954`, `:961`), a
+(`RewriteCheck.dropOK`): a `Store` of a zero-sized type (`generic.rules:1005`), a `Store` of a
+constant term of value `0`, `false` or `poison` (`zeroConst`: `Const64 [0]`, `SliceLen (ConstSlice)`,
+…; `termConst_den`) into bytes a `Zero` cleared (`:943`, `:948`, `:954`, `:961`), a
 `Zero` of a `Zero` of the same size at an equal pointer (`:2158`). `drop_mem`: the dropped
 root's memory is refined by its memory argument's, as every byte written refines the byte
 already there (`write_refines_self`): the encoding of a `0`, `false` or `poison` has `0` or
@@ -108,22 +109,6 @@ theorem encode_zero {v : Val} (h : ZeroV v) (t : Ty) :
       | _ => simp only [encode]; exact replicate_poison_zero _
     | _ => simp only [encode]; exact replicate_poison_zero _
 
-/-- A zero value retyped at an integer or boolean shape stays one. -/
-theorem retype_zero {v : Val} (h : ZeroV v) {t : Ty} (ht : (∃ w, t = .int w) ∨ t = .bool) :
-    ZeroV (v.retype t) := by
-  rcases ht with ⟨w', rfl⟩ | rfl
-  · rcases h with rfl | rfl | ⟨w, rfl⟩
-    · exact .inl rfl
-    · exact .inl rfl
-    · simp only [Val.retype]
-      split
-      · exact .inr (.inr ⟨w', by simp⟩)
-      · exact .inl rfl
-  · rcases h with rfl | rfl | ⟨w, rfl⟩
-    · exact .inl rfl
-    · exact .inr (.inl rfl)
-    · exact .inl rfl
-
 /-! ## The dropped roots -/
 
 /-- `Val.retype` fixes `mem` only at the memory shape. -/
@@ -163,45 +148,67 @@ theorem memDef_zero {tabs : Tables} {s : Value} (hs : s.op = .Zero) {a c y : Val
   exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
 
 theorem zeroConst_spec {tabs : Tables} {f : Func} {x : ID} (h : zeroConst tabs f x = true) :
-    ∃ xv, f.value? x = some xv ∧
-      (xv.op = .Const8 ∨ xv.op = .Const16 ∨ xv.op = .Const32 ∨ xv.op = .Const64 ∨
-        xv.op = .ConstBool) ∧ xv.auxInt = 0 ∧
-      ((∃ w, tabs.ty xv.type = .int w) ∨ tabs.ty xv.type = .bool) := by
+    ∃ y, termConst tabs f 4 x = some y ∧ ZeroV y := by
   unfold zeroConst at h
-  cases hx : f.value? x with
-  | none => rw [hx] at h; cases h
-  | some xv =>
-    rw [hx] at h
-    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨hop, hai⟩, hty⟩ := h
-    refine ⟨xv, rfl, by simpa only [or_assoc] using hop, hai, ?_⟩
-    split at hty
-    · next w hw => exact .inl ⟨w, hw⟩
-    · next hb => exact .inr hb
-    · cases hty
+  split at h
+  · next hx => exact ⟨_, hx, .inl rfl⟩
+  · next hx => exact ⟨_, hx, .inr (.inl rfl)⟩
+  · next w c hx => exact ⟨_, hx, .inr (.inr ⟨w, by rw [beq_iff_eq.1 h]⟩)⟩
+  · cases h
+
+/-- A value refined by a zero value is one. -/
+theorem zeroV_of_refines {a b : Val} (h : Sem.Refines a b) (hb : ZeroV b) : ZeroV a := by
+  cases h with
+  | poison => exact .inl rfl
+  | int => exact hb
+  | bool => exact hb
+  | _ => rcases hb with h | h | ⟨_, h⟩ <;> cases h
 
 section
 variable {tabs : Tables} {f : Func} {ρ : ID → Val}
 
-/-- **A `zeroConst` denotes a zero value** at every fuel. -/
-theorem zeroConst_den {x : ID} (h : zeroConst tabs f x = true) :
-    ∀ k, ZeroV (den f.value? tabs ρ k x)
-  | 0 => .inl rfl
-  | k + 1 => by
-    obtain ⟨xv, hxv, hop, hai, hty⟩ := zeroConst_spec h
-    have ht : termOp xv.op = true := by
-      rcases hop with h | h | h | h | h <;> rw [h] <;> rfl
-    rw [den_succ_term hxv ht]
-    apply retype_zero _ hty
-    have hfo : GoFV.Proof.Rules.frameOp xv.op = false := by
-      rcases hop with h | h | h | h | h <;> rw [h] <;> rfl
-    rw [GoFV.Proof.Rules.opVal_pure hfo, hai]
-    rcases hop with h | h | h | h | h <;> rw [h]
-    · exact .inr (.inr ⟨.w8, rfl⟩)
-    · exact .inr (.inr ⟨.w16, rfl⟩)
-    · exact .inr (.inr ⟨.w32, rfl⟩)
-    · exact .inr (.inr ⟨.w64, rfl⟩)
-    · exact .inr (.inl rfl)
+/-- **A constant term denotes its value** at the fuel of its depth and above (`den_succ_term`). -/
+theorem termConst_den :
+    ∀ (k : Nat) (a : ID) (y : Val), termConst tabs f k a = some y →
+      ∀ n, k ≤ n → den f.value? tabs ρ n a = y
+  | 0, _, _, h, _, _ => by simp [termConst] at h
+  | k + 1, a, y, h, n + 1, hn => by
+    simp only [termConst] at h
+    split at h
+    next v hv =>
+      split at h
+      next ht =>
+        obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
+        have hl : ∀ (l : List ID) (cs : List Val), l.mapM (termConst tabs f k) = some cs →
+            l.map (den f.value? tabs ρ n) = cs := by
+          intro l
+          induction l with
+          | nil => intro cs h; simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; simp [h]
+          | cons b l ih =>
+            intro cs h
+            rw [List.mapM_cons] at h
+            cases hc : termConst tabs f k b with
+            | none => rw [hc] at h; cases h
+            | some c =>
+              cases hcs' : l.mapM (termConst tabs f k) with
+              | none => rw [hc, hcs'] at h; cases h
+              | some cs' =>
+                rw [hc, hcs'] at h
+                cases h
+                rw [List.map_cons, termConst_den k b c hc n (by omega), ih cs' hcs']
+        rw [den_succ_term hv ht, hl _ cs hcs]
+      next => cases h
+    next => cases h
+  | _ + 1, _, _, _, 0, hn => absurd hn (by omega)
+
+/-- **A `zeroConst` denotes a zero value** at every fuel: below the term's depth a value its
+value refines (`den_fuel_mono`). -/
+theorem zeroConst_den {x : ID} (h : zeroConst tabs f x = true) (k : Nat) :
+    ZeroV (den f.value? tabs ρ k x) := by
+  obtain ⟨y, hy, hz⟩ := zeroConst_spec h
+  have h2 := den_fuel_mono f.value? tabs ρ k (max k 4) x (Nat.le_max_left _ _)
+  rw [termConst_den 4 x y hy (max k 4) (Nat.le_max_right _ _)] at h2
+  exact zeroV_of_refines h2 hz
 
 /-- **Cleared bytes through a chain** (`zeroChain`): the memory holds zeros at the pointer, read
 through the disjoint writes from the `Zero` that cleared them. -/
