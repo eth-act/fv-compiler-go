@@ -6,7 +6,7 @@ import GoFV.Proof.AtomSimDen
 Facts about `GoFV.Proof.Term.den` used by the soundness proof of the rewrite validator
 (`GoFV.Proof.Pass.RewriteTerm`): `den` is monotone in the fuel and the valuation
 (`den_mono`), every denotation is fixed by `retype` at its value's shape under `Typed`
-(`den_retype`), so it has a sized shape (`den_hasTy`), and a value reached through compatible
+(`den_retype`), so it has its value's shape (`den_hasTy`), and a value reached through compatible
 `Copy`s (`copyReach`) has a larger denotation at the same fuel (`copyReach_den`).
 -/
 
@@ -95,17 +95,6 @@ theorem retype_copyCompat {s t : Ty} (h : copyCompat s t = true) {z : Val} (hz :
     rename_i e e'
     rw [retype_ptr_elem e e', hz]
 
-/-- Integer, boolean, pointer and memory shapes (the shapes of rule leaves, `leavesOK`). -/
-def sized : Ty → Bool
-  | .int _ | .bool | .ptr _ | .mem => true
-  | _ => false
-
-/-- A value retyped at an integer, boolean, pointer or memory shape has that shape. -/
-theorem retype_hasTy (hr : RetypeShapes) (v : Val) {s : Ty} (hs : sized s = true) :
-    (v.retype s).hasTy s = true := by
-  rcases s with w | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> simp [sized] at hs
-  all_goals first | exact hr v _ | exact Val.retype_hasTy _ _
-
 /-! ## `den` -/
 
 /-- `den` is monotone in the fuel and the valuation. -/
@@ -138,15 +127,12 @@ theorem shape_of {D : ID → Option Value} {tabs : Tables} {a : ID} {y : Value} 
     shape D tabs a = tabs.ty y.type := by
   simp only [shape, h, Option.map_some, Option.getD_some]
 
-theorem den_hasTy (hr : RetypeShapes) {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
-    (hT : Term.Typed D tabs ρ) (k : Nat) (a : ID) {s : Ty} (hsa : shape D tabs a = s)
-    (hs : sized s = true) : (den D tabs ρ k a).hasTy s = true := by
-  have hd : (D a).isSome = true := by
-    cases h : D a with
-    | none => simp [shape, h] at hsa; subst hsa; simp [sized] at hs
-    | some _ => rfl
-  rw [← den_retype hT k a hd, hsa]
-  exact retype_hasTy hr _ hs
+/-- Under `Typed`, the denotation of a defined value has its shape (`Val.retype_hasTy`). -/
+theorem den_hasTy {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
+    (hT : Term.Typed D tabs ρ) (k : Nat) {a : ID} {y : Value} (hy : D a = some y) :
+    (den D tabs ρ k a).hasTy (tabs.ty y.type) = true := by
+  rw [← den_retype hT k a (by rw [hy]; rfl), shape_of hy]
+  exact Val.retype_hasTy _ _
 
 theorem termOp_copy : termOp .Copy = true := by decide
 

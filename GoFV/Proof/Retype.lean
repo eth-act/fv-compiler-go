@@ -169,8 +169,4 @@ end
 theorem Val.retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t :=
   Val.retype_of_hasTy (Val.retype_hasTy t v)
 
-/-- The statement the rule interpreter needs (#108, #113). -/
-theorem Val.retype_int_hasTy (v : Val) (w : Width) : (v.retype (.int w)).hasTy (.int w) = true :=
-  Val.retype_hasTy _ v
-
 end GoFV.SSA.Sem

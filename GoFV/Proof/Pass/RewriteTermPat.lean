@@ -320,19 +320,14 @@ theorem cond_of {ev ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (ev x).erase = (
     rw [h c rfl] at h'
     exact (dv_eq_of_erase h' rfl).symm
 
-theorem sized_of {t : Ty}
-    (h : (match t with | .int _ | .bool | .ptr _ | .mem => true | _ => false) = true) :
-    sized t = true := by
-  cases t <;> first | rfl | cases h
-
 mutual
 theorem typed_of {M : Defs} {I : Inst} {tabs : Tables} {e : PEnv}
     (hty : ∀ p, e.ty p = ((M.get? (I.at p)).map fun x => tabs.ty x.type).getD .other)
-    (hleaf : ∀ p w x, (p, w) ∈ I → p ≠ [] → M.get? w = some x → sized (tabs.ty x.type) = true →
+    (hleaf : ∀ p w x, (p, w) ∈ I → p ≠ [] → M.get? w = some x →
       (e.leaf p).hasTy (tabs.ty x.type) = true)
     (hn : (I.map Prod.fst).Nodup) :
     ∀ (q : Pat) (p : Path) (w : ID), MatchOK M I q p w → p ≠ [] ∨ isOpPat q = true →
-      leavesOK tabs M I p q = true → Pat.typed e p q
+      leavesOK M I p q = true → Pat.typed e p q
   | .op o _ _ _ _ _ args _, p, w, hm, _, h => by
     simp only [leavesOK] at h
     simp only [Pat.typed]
@@ -343,18 +338,16 @@ theorem typed_of {M : Defs} {I : Inst} {tabs : Tables} {e : PEnv}
     have hat := inst_at (MatchOK.mem hm) hn
     simp only [leavesOK, hat] at h
     simp only [Pat.typed, hty, hat]
-    split at h
-    · rename_i x hx
-      simp only [hx, Option.map_some, Option.getD_some]
-      exact hleaf p w x (MatchOK.mem hm) hp' hx (sized_of h)
-    · cases h
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.1 h
+    simp only [hx, Option.map_some, Option.getD_some]
+    exact hleaf p w x (MatchOK.mem hm) hp' hx
 theorem typeds_of {M : Defs} {I : Inst} {tabs : Tables} {e : PEnv}
     (hty : ∀ p, e.ty p = ((M.get? (I.at p)).map fun x => tabs.ty x.type).getD .other)
-    (hleaf : ∀ p w x, (p, w) ∈ I → p ≠ [] → M.get? w = some x → sized (tabs.ty x.type) = true →
+    (hleaf : ∀ p w x, (p, w) ∈ I → p ≠ [] → M.get? w = some x →
       (e.leaf p).hasTy (tabs.ty x.type) = true)
     (hn : (I.map Prod.fst).Nodup) :
     ∀ (qs : List Pat) (p : Path) (i : Nat) (ids : List ID), MatchOKs M I qs p i ids →
-      leavessOK tabs M I p i qs = true → Pat.typeds e p i qs
+      leavessOK M I p i qs = true → Pat.typeds e p i qs
   | [], _, _, _, _, _ => by simp only [Pat.typeds]
   | q :: qs, p, i, a :: as, ⟨h1, h2⟩, h => by
     simp only [leavessOK, Bool.and_eq_true] at h

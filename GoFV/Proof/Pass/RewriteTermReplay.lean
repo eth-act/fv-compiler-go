@@ -266,18 +266,18 @@ theorem den_compose {M' : Defs} {y y' : ID} {g : Nat → Nat}
   exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans (h2 ρ (hty ρ hρ) m)⟩
 
 theorem ReplayInv.rule {r : Rule} {v : ID} {defs : List Value} (hI : ReplayInv tabs D₀ C₀ M C)
-    (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes) (F : RuleFacts tabs M r v defs) :
+    (hs : GoFV.Proof.Rules.Rule.SoundT r) (F : RuleFacts tabs M r v defs) :
     ReplayInv tabs D₀ C₀ (putAll M defs) (fun y => C y ∨ (C v ∧ y ∈ defIds defs)) where
   closed := F.closed hI.closed
   sub := fun y h => .inl (hI.sub y h)
   typed := fun ρ h => F.typed (hI.typed ρ h)
   denRef := fun y hy => den_compose (hI.denRef y hy) hI.typed
-    fun ρ hρ n => F.step hs hr hI.closed hρ n y (hI.sub y hy)
+    fun ρ hρ n => F.step hs hI.closed hρ n y (hI.sub y hy)
   atoms := fun y a hy ha hargs => by
     obtain ⟨a', ha', hat, hsz, hrest⟩ := hI.atoms y a hy ha hargs
     refine ⟨a', F.keepAtom ha' hat, hat, hsz, fun i hi => ⟨.inl (hrest i hi).1, ?_⟩⟩
     exact den_compose (hrest i hi).2 hI.typed
-      fun ρ hρ n => F.step hs hr hI.closed hρ n _ (hrest i hi).1
+      fun ρ hρ n => F.step hs hI.closed hρ n _ (hrest i hi).1
 
 theorem ReplayInv.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayInv tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (hi : i < x.args.size)
