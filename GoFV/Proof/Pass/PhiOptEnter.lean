@@ -29,6 +29,7 @@ structure At (env : Env) (tabs : Tables) (f : Func) (fr : Frame) (bid : ID) (i :
   path : PathOK f fr bid i
   pre : (bid = f.entry ∧ i = 0) ∨ ∃ p blkp, p ∈ f.blocks ∧ f.block? p = some blkp ∧
     ((make f).depthOf p).isSome ∧ (⟨bid, i⟩ : Edge) ∈ blkp.succs
+  dom : DomOK f fr bid
 
 /-- The target's frame: the source's inputs, and its registers on the values listed in `f`. -/
 def TR (f g : Func) (frS frT : Frame) : Prop :=

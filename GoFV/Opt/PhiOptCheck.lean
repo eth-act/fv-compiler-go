@@ -16,8 +16,10 @@ an available value or of a new `Not`.
 A rewritten `Phi` `v = Phi a₀ a₁` of block `b` is justified by **edge facts**
 (`edgeFact f c fuel b i = some dᵢ`): entering `b` along its edge `i`, the control `c` of an
 `If` holds `dᵢ`, because the run left that `If` through the successor named by `dᵢ` and then
-went only through single-predecessor blocks that do not define `c`. Its new form must yield
-`aᵢ`'s value whenever `c = dᵢ` (`formOK`): `Copy c`, `Not c` (constant arms), `OrB c n`,
+went only through single-predecessor blocks that do not define `c`, or because the edge leaves
+a block dominated by a **guard** of `c` (`domFact`: a single-predecessor successor of the `If`,
+strictly dominated by `c`'s block, as in phiopt's dominator-based second sweep). Its new form
+must yield `aᵢ`'s value whenever `c = dᵢ` (`formOK`): `Copy c`, `Not c` (constant arms), `OrB c n`,
 `AndB c n` (one arm constant or `c`, the other `n`, available), or phioptint's
 `ZeroExt8toN (CvtBoolToUint8 [Not] c)`/`Copy` of it (integer constant arms 0/1).
 -/
@@ -67,8 +69,10 @@ def edgeFact (f : Func) (c : ID) : Nat → ID → Nat → Option Bool
         | some y =>
           if y.kind == .If && y.controls[0]? == some c then some (e.i == 0)
           else
-            (if y.preds.size == 1 && !y.values.contains c then edgeFact f c fuel e.b 0
-             else none) <|> domFact f c e.b
+            match (if y.preds.size == 1 && !y.values.contains c then edgeFact f c fuel e.b 0
+                   else none) with
+            | some d => some d
+            | none => domFact f c e.b
 
 /-- `x` is listed in block `b`. -/
 def listedIn (f : Func) (b x : ID) : Bool := ((f.block? b).map (·.values.contains x)).getD false

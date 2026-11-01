@@ -83,9 +83,11 @@ theorem step (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID} {i : N
       obtain ⟨hdG, -, -⟩ := dinv_enter (tabs := tabs) hwf S.cf hbt.1 hfb hA.size hA.dinv hen
       refine ⟨_, rfl, ⟨hszG, arglessInv_enter hA.inv hnd hen,
         dinv_edge S.cf hbt.1 hfb hbt.2 he hdG,
-        path_step hwf ⟨hbt.1, hfb⟩ (hA.edge S hfb) hA.path
+        path_step hwf S.cf ⟨hbt.1, hfb⟩ (hA.edge S hfb) hA.path hA.dom
           (enter_keep hwf hbt.1 hfb hA.size hen) hst,
-        .inr ⟨bid, fb, hbt.1, hfb, hbt.2, by cases e; exact he⟩⟩, hTR⟩
+        .inr ⟨bid, fb, hbt.1, hfb, hbt.2, by cases e; exact he⟩,
+        dom_step hwf S.cf ⟨hbt.1, hfb⟩ hbt.2 hA.dom
+          (enter_keep hwf hbt.1 hfb hA.size hen) hst⟩, hTR⟩
     | ret rs m =>
       rw [hst']
       exact ⟨rs, rfl, RefinesList.refl rs⟩
@@ -112,7 +114,7 @@ theorem refines_of_rel (S : Setup tabs f g) : Refines tabs g tabs f := by
       show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from S.entry]
     have hA0 : At env tabs f (entryFrame env (Ctx.make tabs f) args mem) f.entry 0 :=
       ⟨by simp [Ctx.make, entryFrame], arglessInv_init _ _ _ _ rfl, dinv_entry S.cf _,
-        pathOK_entry hwf _, .inl ⟨rfl, rfl⟩⟩
+        pathOK_entry hwf _, .inl ⟨rfl, rfl⟩, domOK_entry S.cf _⟩
     have hT0 : TR f g (entryFrame env (Ctx.make tabs f) args mem)
         { entryFrame env (Ctx.make tabs f) args mem with
           regs := Array.replicate g.valueTab.size none } := by
