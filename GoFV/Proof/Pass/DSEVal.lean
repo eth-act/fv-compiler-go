@@ -21,6 +21,11 @@ evaluates in the target to a register related to `y` with its own pending set:
 pending ranges and panics alike.
 -/
 
+-- Parallel elaboration (-j4) wrote this module's constants in a different order on every build,
+-- so its `.olean` was never reproducible and importers missed the shared cache (#1, #34);
+-- sequential elaboration costs no CPU here (11.2 s either way).
+set_option Elab.async false
+
 namespace GoFV.Proof.DSE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.DSE GoFV.Proof.CSE GoFV.Proof.CSE.Mem
