@@ -6,6 +6,7 @@ import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Checked
+import GoFV.Proof.MemOpsPre
 import GoFV.Proof.Rules.Proven
 import GoFV.Opt.Opt
 
@@ -17,7 +18,8 @@ one `Rule.Sound` lemma per rule), the checked rewrite pass (`GoFV.Opt.checkedRew
 rewrite pass with its log, kept only if `RewriteCheck.validate` accepts it) refines its input
 `f` under `RwPre penv.tables f` (monotone contracts, `Env.Mono`; malloc-family contracts that
 return non-nil pointers and non-nil dictionary arguments, `NilPre`, for the nil-check
-eliminations of issue #151), in the pass's extended tables. A rejected result is the input
+eliminations of issue #151; the runtime's `memclrNoHeapPointers`/`memmove` contracts, if any,
+`Env.MemOps`), in the pass's extended tables. A rejected result is the input
 (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as terms in
 the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
@@ -53,16 +55,18 @@ theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {
 
 /-- The precondition of the checked rewrite passes on `f` in the tables `tabs`: monotone
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments
-(`NilPre`: the nil-check eliminations `generic.rules:1367`/`:1372`/`:1384`, issue #151). It
-depends on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`). -/
+(`NilPre`: the nil-check eliminations `generic.rules:1367`/`:1372`/`:1384`, issue #151), and
+`runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
+(`Env.MemOps`: for the `Zero`/`Move` of such calls, `generic.rules:1638`/`:1730`). It depends
+on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`). -/
 def RwPre (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
-  env.Mono ∧ NilPre tabs f env args mem
+  env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps
 
-/-- `RwPre` holds on `Env.p1` (no malloc-family contract) for a function without dictionary
-parameters. -/
+/-- `RwPre` holds on `Env.p1` (no malloc-family or memory runtime contract) for a function
+without dictionary parameters. -/
 theorem RwPre.p1 {tabs : Tables} {f : Func} (h : NilCheck.dictParams tabs f = [])
     (args : List Val) (mem : Mem) : RwPre tabs f Env.p1 args mem :=
-  ⟨Env.p1_mono, Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩
+  ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps⟩
 
 theorem RefinesUnder.toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
     (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
@@ -88,7 +92,7 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
         (Nil.nrel_sound hr))) R'⟩
     unfold NilPre
     rw [hd]
-    exact hp.2
+    exact hp.2.1
   | @fwd f f' g hr hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'

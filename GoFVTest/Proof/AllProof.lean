@@ -29,6 +29,7 @@ import GoFV.Proof.Enter
 import GoFV.Proof.Eval
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
+import GoFV.Proof.MemOpsPre
 import GoFV.Proof.MemRefine
 import GoFV.Proof.Merge
 import GoFV.Proof.Mixed
@@ -225,6 +226,7 @@ import GoFV.Proof.Pass.SccpCopy
 import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
+import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.ShortCircB
 import GoFV.Proof.Pass.ShortCircCpa
 import GoFV.Proof.Pass.ShortCircCpaMid

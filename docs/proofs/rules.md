@@ -209,8 +209,12 @@ malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobjec
 pointer shape) and a dictionary parameter (`NilCheck.dictArg`: an `Arg` of the input parameter
 named `.dict`, of pointer shape). Neither is non-nil by the semantics alone: the contracts are
 the environment's, the arguments the caller's. So the checked rewrite passes are proven under the
-precondition `RwPre tabs f env args mem := env.Mono ∧ NilPre tabs f env args mem`
-(`GoFV/Proof/Pass/Rewrite.lean`), `NilPre` = `Env.AllocNonNil` (every malloc-family contract
+precondition `RwPre tabs f env args mem := env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps`
+(`GoFV/Proof/Pass/Rewrite.lean`; `Env.MemOps`, `GoFV/Proof/MemOpsPre.lean`: the
+`runtime.memclrNoHeapPointers`/`runtime.memmove` contracts, if present, are the runtime's
+`Runtime.memclr`/`Runtime.memmove`, for the `Zero`/`Move` of such calls, `generic.rules:1638`/
+`:1730`; vacuous without them, `Env.p1_memOps`, `Env.runtime_memOps`), `NilPre` =
+`Env.AllocNonNil` (every malloc-family contract
 that returns gives a non-nil pointer first; the runtime's do, `Env.runtime_allocNonNil`) and
 `DictArgs (NilCheck.dictParams tabs f) args` (the dictionary arguments are non-nil pointers;
 `GoFV/Proof/NilPre.lean`). `NilCheck.dictParams` depends only on the ABI assignments of
@@ -226,7 +230,7 @@ RefinesFrom (NilPre tabs f) tabs g tabs f`; nilcheckelim itself keeps `nrel fals
 **Theorems**: `checkedRewrite_refines` (and `opt_refines`, `divisible_refines`,
 `divmod_refines`) now conclude `RefinesFrom (RwPre penv.tables f) out.tables out.func
 penv.tables f`. The verified pipeline (`GoFV/Proof/Pass/Pipeline.lean`) names this relation
-`Rel.rw`; `VPre k` adds `Env.AllocNonNil` and `DictArgs k`, with `k` the pipeline input's
+`Rel.rw`; `VPre k` adds `Env.AllocNonNil`, `DictArgs k` and `Env.MemOps`, with `k` the pipeline input's
 dictionary parameters (`VState.dict`; a proven pass whose input has other dictionary parameters
 is skipped), and `verifiedPipeline_refines` concludes `VRefines (NilCheck.dictParams env.tables
 f)`. Witness: `GoFV.Proof.Witness.nm_checkedRewrite` (`newInt(.dict)`: both nil checks removed,
@@ -851,8 +855,8 @@ all premises (the rewritten argument `v4 → v2` and the `MakeResult` control by
 tables, `refinesFrom_of_tabsAgree`): `checkedRewrite_refines (hs : s.AllSound)
 (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out) (hf : check ce f = .ok ())
 (hg : check ce' out.func = .ok ()) : RefinesFrom (RwPre penv.tables f) out.tables out.func
-penv.tables f` (`RwPre`: `Env.Mono` and, for the nil-check eliminations, `NilPre`; "Nil-check
-eliminations" above),
+penv.tables f` (`RwPre`: `Env.Mono`, for the nil-check eliminations `NilPre`, and for the
+memory runtime calls `Env.MemOps`; "Nil-check eliminations" above),
 and its instances `opt_refines` (`optChecked`: `opt`, `middle opt`, `late opt`),
 `divisible_refines`, `divmod_refines`, whose proofs are `generic_allSound`, `divisible_allSound`,
 `divmod_allSound`: the theorems are about the passes restricted to the proven rules
