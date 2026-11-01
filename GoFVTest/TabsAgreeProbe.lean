@@ -1,7 +1,7 @@
 import GoFVTest.Parity.Registry
 import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
-import GoFV.Opt.TabsAgree
+import GoFV.Opt.TabsAgreeMod
 
 /-!
 # `tabs-agree-probe`
@@ -55,6 +55,12 @@ def whyMod (tabs tabs' : Tables) (f : Func) : String := Id.run do
         else if !Ty.beq (auxTy tabs' (some a)) (auxTy tabs (some a)) then "auxTy"
         else "abi types"
       return s!"value aux: {part}"
+  for o in f.valueTab do
+    if let some fv := o then
+      if !tamOpOK tabs f fv then
+        let memArgs := !(stuckRoot fv.op || fv.op == .Phi || fv.args.all (DAE.plainArg tabs f) ||
+          (tamMemOps.contains fv.op && fv.args.pop.all (DAE.plainArg tabs f)))
+        return s!"op {fv.op.name}: {if memArgs then "memory/tuple argument" else "pointer-shaped result"}"
   return "?"
 
 /-- The extra frame variables of `tabs'` come after every frame variable of `tabs`. -/
