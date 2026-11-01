@@ -202,7 +202,7 @@ def stockPasses : Array StockPass := #[
   { name := "dead auto elim", step := .proven elimDeadAutosPass .frameSafe daeFrag },
   { name := "sccp", step := .proven sccpChecked .mono noGuard },
   { name := "generic deadcode", required := true, step := deadcodeStep },
-  { name := "late fuse", step := .stock fuseLatePass },
+  { name := "late fuse", step := .proven fuseLatePass .refines noGuard },
   { name := "check bce", step := .proven checkbcePass .refines noGuard },
   { name := "dse", step := .proven dsePass .refines dseFrag },
   { name := "memcombine", step := .proven memcombineChecked .mono noGuard },
