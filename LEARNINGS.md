@@ -131,6 +131,17 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (`scripts/rule-proofs.py axioms` imports all rule modules, which fails on such a clash).
 - **Effect:** 35 rule modules import together; no rebuild cost.
 
+#### `first | … | …` does not catch maximum recursion or heartbeats
+- **Problem:** six `Trunc` rule lemmas (`(Trunc16to8 (And16 (Const16 [y]) x)) && y&0xFF ==
+  0xFF`) failed with "maximum recursion depth" although the alternative that hit it
+  (`congr 1 <;> omega` in `rule_shamt`) sat inside `first`: runtime exceptions (recursion depth,
+  heartbeats) pass through `first`/`try`, so later alternatives never ran. `congr 1` at default
+  transparency had unfolded `BitVec.ofInt 16 c &&& x`.
+- **Trick:** run the structural steps of a closer at reducible transparency
+  (`with_reducible congr 1`), as already done for `apply`; isolate the culprit by running each
+  alternative of the `first` alone on the dumped goal.
+- **Effect:** the six lemmas close (`rule_ext`); all 957 rule lemmas rebuild unchanged.
+
 #### Keep a fuel-recursive loop's body in small non-recursive `@[inline]` parts
 - **Problem:** `GoFV.Util.PdqSort.pdqsort` (fuel recursion, a ~30-line loop body with tuple
   `let`s and four recursive calls) took 11.6 s CPU to build, almost all of it `simp`/`split`/
