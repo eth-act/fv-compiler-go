@@ -45,13 +45,12 @@ def storeWhy (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value
   | .int ww, some sv =>
     if intW (tabs.ty sv.type) != some ww then return "svType"
     match symOf tabs (listedD g) true tgtFuel w.args[1]! with
-    | some (bt, []) =>
+    | some (bt, sg) =>
       if bt.length != ww.bytes then return "btLen"
-      if !bt.all (!·.isMb) then return "btMb"
       if !bt.all (vbWidthOK tabs (listedD g)) then return "btWidth"
-      if !leavesIn M bt [] then return "leaves∉M"
-      if !tileOK recs o0 ww.bytes bt then
-        return s!"tile {sv.op.name} {repr bt} vs {repr (recs.map (·.2.2))}"
+      if !leavesIn M bt sg then return "leaves∉M"
+      if !tileOK recs o0 ww.bytes bt sg then
+        return s!"tile {sv.op.name} {repr bt} vs {repr (recs.map (·.2.2.1))}"
       return "?"
     | _ => return s!"svDesc {sv.op.name}"
   | _, _ => return "wType"

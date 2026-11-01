@@ -148,10 +148,10 @@ def chainTo (D : Defs) (m0 : ID) : Nat → ID → Option (List ID)
         else none
       | none => none
 
-/-- The bytes the `Store` `s` writes: its value's description, without memory bytes, at an
+/-- The bytes the `Store` `s` writes: its value's description (with the loads it reads) at an
 integer shape narrower than 8 bytes (the store's aux type's and the value's), or the byte of a
 `ConstBool` at the `bool` shape. -/
-def storedBytes (tabs : Tables) (D : Defs) (s : Value) : Option (List SB) :=
+def storedBytes (tabs : Tables) (D : Defs) (s : Value) : Option Desc :=
   let x := s.args[1]!
   match D x with
   | some xv =>
@@ -159,12 +159,12 @@ def storedBytes (tabs : Tables) (D : Defs) (s : Value) : Option (List SB) :=
     | .int w, .int w' =>
       if w = w' ∧ w.bytes < 8 then
         match symOf tabs D false srcFuel x with
-        | some (bs, []) => if bs.length = w.bytes then some bs else none
-        | _ => none
+        | some r => if r.1.length = w.bytes then some r else none
+        | none => none
       else none
     | .bool, .bool =>
       if xv.op == .ConstBool && xv.args.size == 0 then
-        some [.lit (if xv.auxInt != 0 then 1 else 0)]
+        some ([.lit (if xv.auxInt != 0 then 1 else 0)], [])
       else none
     | _, _ => none
   | none => none
@@ -180,24 +180,24 @@ def vbWidthOK (tabs : Tables) (E : Defs) : SB → Bool
   | _ => true
 
 /-- A store of a chain: its pointer, the pointer split (`splitP`) and its bytes. -/
-abbrev StoreRec := ID × (ID × Option ID × Int) × List SB
+abbrev StoreRec := ID × (ID × Option ID × Int) × Desc
 
 /-- The records of the stores `S`. -/
 def storeRecs (tabs : Tables) (D : Defs) (S : List ID) : Option (List StoreRec) :=
   S.mapM fun s => (D s).bind fun sv =>
     if sv.args.size == 3 then
-      (storedBytes tabs D sv).map fun bs => (sv.args[0]!, splitP tabs D 64 sv.args[0]! none 0, bs)
+      (storedBytes tabs D sv).map fun r => (sv.args[0]!, splitP tabs D 64 sv.args[0]! none 0, r)
     else none
 
-/-- The records `recs` tile `[0, W)` from offset `o0`, and the description `bt` has their bytes
-at their places and reads only values each of them reads. -/
-def tileOK (recs : List StoreRec) (o0 : Int) (W : Nat) (bt : List SB) : Bool :=
-  recs.all (fun (_, (_, _, o), bs) =>
+/-- The records `recs` tile `[0, W)` from offset `o0`, and the description `(bt, sg)` has their
+bytes at their places and reads only values (and loads) each of them reads. -/
+def tileOK (recs : List StoreRec) (o0 : Int) (W : Nat) (bt : List SB) (sg : List LoadRec) : Bool :=
+  recs.all (fun (_, (_, _, o), (bs, sf)) =>
     decide (o0 ≤ o) && decide ((o - o0).toNat + bs.length ≤ W) &&
     (List.range bs.length).all (fun k => bt[(o - o0).toNat + k]? == bs[k]?) &&
-    (vbIds bt).all (vbIds bs).contains) &&
+    (vbIds bt).all (vbIds bs).contains && sg.all (coveredOK sf)) &&
   (List.range W).all fun k =>
-    (recs.filter fun (_, (_, _, o), bs) =>
+    (recs.filter fun (_, (_, _, o), (bs, _)) =>
       decide (o ≤ o0 + k) && decide (o0 + k < o + bs.length)).length == 1
 
 /-- **A combined store** (see the module doc): the `Store` `u` of `f` with ID `x` became the
@@ -223,9 +223,9 @@ def storeOK (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value)
         | .int ww, some sv =>
           intW (tabs.ty sv.type) == some ww &&
           match symOf tabs (listedD g) true tgtFuel w.args[1]! with
-          | some (bt, []) =>
-            bt.length == ww.bytes && bt.all (!·.isMb) && bt.all (vbWidthOK tabs (listedD g)) &&
-              leavesIn M bt [] && tileOK recs o0 ww.bytes bt
+          | some (bt, sg) =>
+            bt.length == ww.bytes && bt.all (vbWidthOK tabs (listedD g)) &&
+              leavesIn M bt sg && tileOK recs o0 ww.bytes bt sg
           | _ => false
         | _, _ => false
 
