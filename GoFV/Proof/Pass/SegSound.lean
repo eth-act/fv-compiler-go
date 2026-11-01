@@ -19,12 +19,14 @@ namespace GoFV.Proof.Seg
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.RewriteCheck
 open GoFV.Proof.CSE.Mem (Avail)
 
-/-- **A segment's obligation**: in a source frame `S` with at least `g`'s registers whose
+/-- **A segment's obligation**: the segment's roots in `f` (its dropped roots and, if a root of
+`f`, its anchor) never panic; and in a source frame `S` with at least `g`'s registers whose
 available values `A` (evaluated, closed under arguments, `Avail`; typed, with their own IDs)
-include the segment's roots in `f` (its dropped roots and, if a root of `f`, its anchor), the
-target's definitions of the fresh values and the anchor evaluate in order from `S`, and if the
-anchor is available, the target's anchor refines the source's. -/
+include those roots, the target's definitions of the fresh values and the anchor evaluate in
+order from `S`, and if the anchor is available, the target's anchor refines the source's. -/
 def SegSound (env : Env) (tabs : Tables) (f g : Func) (x : ID) (D N : List ID) : Prop :=
+  (∀ s ∈ D ++ [x], CSE.rootNode f s = true → ∀ sv fr e m, f.value? s = some sv →
+    evalValue env (Ctx.make tabs f) fr sv ≠ .panic e m) ∧
   ∀ (S : Frame) (A : ID → Prop), Avail env tabs f S A → Proof.Typed (Ctx.make tabs f) S →
     (∀ z v, A z → f.value? z = some v → v.id = z) → g.valueTab.size ≤ S.regs.size →
     (∀ s ∈ D ++ [x], CSE.rootNode f s = true → A s) →
