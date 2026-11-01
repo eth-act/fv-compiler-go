@@ -187,13 +187,17 @@ partial def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) 
   modF fun f => f.addArgs id args
   return built
 
-/-- Apply the result of a fired value rule to `v`. -/
-def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
+/-- Apply the result of a fired value rule to `v`; returns the values of the result's nodes in
+node order (`Result.build`; empty otherwise). -/
+def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM (Array (Option ID)) := do
   match r.result with
   | .copy e =>
     let w ← liftE (← eval sc e).asVal
     copyOf v w
-  | .setOp o => modF fun f => f.modV v fun x => { x with op := o }
+    return #[]
+  | .setOp o =>
+    modF fun f => f.modV v fun x => { x with op := o }
+    return #[]
   | .build nodes =>
     let nodes := nodes.toArray
     let x ← val v
@@ -206,7 +210,7 @@ def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
       if let some e := n0.ty then
         let t ← liftE (← eval sc e).asTyp
         modF fun f => f.modV v fun y => { y with type := t }
-      let _ ← buildNode sc nodes x.block pos 0 v (built0.set! 0 (some v))
+      buildNode sc nodes x.block pos 0 v (built0.set! 0 (some v))
     | some be =>
       let .blk blk ← eval sc be | throw "@ placement is not a block"
       let t ← match n0.ty with
@@ -214,7 +218,7 @@ def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
         | none => pure x.type
       let top ← newValue blk pos n0.op t
       copyOf v top
-      let _ ← buildNode sc nodes blk pos 0 top (built0.set! 0 (some top))
+      buildNode sc nodes blk pos 0 top (built0.set! 0 (some top))
 
 /-- A value rule with its variable types and an all-unbound binding array, computed once. -/
 structure CRule where
@@ -225,8 +229,8 @@ structure CRule where
 def CRule.ofRule (r : Rule) : CRule :=
   { rule := r, vtys := (r.vars.map (·.ty)).toArray, unbound := Array.replicate r.vars.length .nil }
 
-/-- Try rule `cr` on `v`; true if it fired. -/
-def tryRule (v : ID) (cr : CRule) : RwM Bool := do
+/-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. -/
+def tryRule (v : ID) (cr : CRule) (idx : Nat) : RwM Bool := do
   let r := cr.rule
   let x ← val v
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
@@ -236,8 +240,12 @@ def tryRule (v : ID) (cr : CRule) : RwM Bool := do
     if !(← pendingOk sc st) then return false
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
-    applyResult sc r v
+    let built ← applyResult sc r v
     modify fun s => { s with fired := s.fired + 1 }
+    if (← get).log.isSome then
+      let f ← getF
+      let defs := (#[some v] ++ built).filterMap fun id => id.bind f.value?
+      logEv fun _ => .rule v idx st.binds defs
     return true
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`. -/
@@ -257,8 +265,9 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let o := (← val v).op
-  for r in t.values[o.ctorIdx]! do
-    if ← tryRule v r then return true
+  let rs := t.values[o.ctorIdx]!
+  for h : i in [0:rs.size] do
+    if ← tryRule v rs[i] i then return true
   return false
 
 /-! ## Block rules -/
@@ -338,6 +347,7 @@ def tryBlockRule (b : ID) (r : BlockRule) : RwM Bool := do
       if !(← liftE (← eval sc c).asBool) then return false
     applyBlockResult sc r b
     modify fun s => { s with fired := s.fired + 1 }
+    logEv fun _ => .blockRule b
     return true
 
 /-- `rewriteBlock<file>(b)`. -/

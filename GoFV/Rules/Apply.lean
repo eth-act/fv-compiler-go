@@ -82,6 +82,7 @@ def elimCopyArgs (v : ID) : RwM Bool := do
     if ax.op != .Copy then continue
     let aa ← modFGet fun f => GoFV.Opt.copySource f a
     modF fun f => f.setArg v i aa
+    logEv fun _ => .copyArg v i aa
     let ax ← val a
     if ax.pos.isStmt == Pos.isStmtMark then
       let aax ← val aa
@@ -118,6 +119,7 @@ def sweep (t : Interp.Table) (removeDead : Bool) (mem void : TypeRef) : RwM (Boo
         if cx.op != .Copy then break
         c := cx.args[0]!
         modF fun f => f.replaceControl b i c
+        logEv fun _ => .control b i c
     if ← Interp.rewriteBlock t b then change := true
     let vals := (← blk b).values
     for j in [0:vals.size] do
@@ -129,6 +131,9 @@ def sweep (t : Interp.Table) (removeDead : Bool) (mem void : TypeRef) : RwM (Boo
           deadChange := true
         continue
       let mut vchange ← modFGet fun f => f.phielimValue v
+      if vchange && (← get).log.isSome then
+        let x ← val v
+        logEv fun _ => .phielim v x
       if ← elimCopyArgs v then vchange := true
       if ← Interp.rewriteValue t v then
         vchange := true

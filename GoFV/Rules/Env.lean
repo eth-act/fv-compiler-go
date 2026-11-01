@@ -2,6 +2,7 @@ import GoFV.SSA.Alloc
 import GoFV.SSA.TypeCmp
 import GoFV.SSA.XPosMap
 import GoFV.Rules.Helpers.Sym
+import GoFV.Rules.GoVal
 import Std.Data.HashMap
 
 /-!
@@ -45,6 +46,22 @@ structure RwEnv where
   frontend : Tables := {}
   deriving Inhabited
 
+/-- One step of a rewrite pass, as the rewrite validator replays it (`GoFV.Opt.RewriteCheck`,
+issue #113). -/
+inductive RwEvent where
+  /-- Value rule `rule` (its index in `v`'s op row of the table) fired at `v` with bindings
+  `binds`; `defs`: `v` and then the result's nodes in node order (`Result.build`; empty
+  otherwise), as built. -/
+  | rule (v : ID) (rule : Nat) (binds : Array GVal) (defs : Array Value)
+  /-- Argument `i` of `v` replaced by `src`, the source of the copy it was. -/
+  | copyArg (v : ID) (i : Nat) (src : ID)
+  /-- Control `i` of block `b` replaced by `c`, the argument of the copy it was. -/
+  | control (b : ID) (i : Nat) (c : ID)
+  /-- The phi `v` became a copy (`phielimValue`); `def` is its new definition. -/
+  | phielim (v : ID) («def» : Value)
+  /-- A block rule fired at `b`. -/
+  | blockRule (b : ID)
+
 /-- Mutable state of a rewrite pass. -/
 structure RwState where
   f : Func
@@ -55,6 +72,8 @@ structure RwState where
   imported : Std.HashMap Nat Nat := {}
   /-- Number of value and block rules fired (statistics: `opt-proven-probe`). -/
   fired : Nat := 0
+  /-- The steps taken, if recorded (`some`). -/
+  log : Option (Array RwEvent) := none
 
 /-- The rewrite monad. Errors are Go's `Fatalf`/panics or constructs the port does not cover. -/
 abbrev RwM := ReaderT RwEnv (EStateM String RwState)
@@ -99,6 +118,15 @@ def typ (name : String) : RwM TypeRef := do
   match (← read).typs.find? (·.1 == name) with
   | some (_, t) => return t
   | none => throw s!"typs has no {name}"
+
+/-- Record a step if the log is on (`RwState.log`). -/
+@[inline] def logEv (e : Unit → RwEvent) : RwM Unit :=
+  modify fun s =>
+    let l := s.log
+    let s := { s with log := none }
+    match l with
+    | some l => { s with log := some (l.push (e ())) }
+    | none => s
 
 end RwM
 
