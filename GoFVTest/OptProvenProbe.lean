@@ -326,6 +326,39 @@ def dropWhy (tabs : Tables) (f : Func) (u w : Value) : String :=
     s!"arg v{w.args[0]!} vs mem v{u.args[1]!}"
   else s!"zero {desc tabs f 3 w.args[0]!} at {desc tabs f 3 u.args[0]!}"
 
+open GoFV.Rules GoFV.Proof.Rules RewriteCheck in
+/-- Which part of `psRel` fails (diagnostics). -/
+def psWhy (tabs : Tables) (f g : Func) : String := Id.run do
+  if DomCert.cfgView g != DomCert.cfgView f then return "cfg"
+  if g.ownAux != f.ownAux then return "ownAux"
+  if g.valueTab.size != f.valueTab.size then return "size"
+  for z in List.range f.valueTab.size do
+    match f.value? z, g.value? z with
+    | none, none => pure ()
+    | some fv, some gv =>
+      if !(ssSame fv gv || psOK tabs f g z) then
+        let sub : String := match psSel fv.op, fv.args[0]?, gv.args[0]? with
+          | some k, some p, some x =>
+            match f.value? p, f.value? x with
+            | some pv, some xv =>
+              let ms := pv.args.toList.map fun m => (f.value? m).map fun mv =>
+                (mv.op == .SliceMake, mv.args.size == 3 && (mv.args[k]?).any (psComp tabs f · x),
+                  isSliceTy (tabs.ty mv.type))
+              s!"k={k} phi={pv.op.name} entry={pv.block == f.entry} listed={(f.block? pv.block).any (·.values.contains p)} pslice={isSliceTy (tabs.ty pv.type)} xint={isInt64Ty (tabs.ty xv.type)} xblk={xv.block != pv.block} anc={(DomCert.make f).anc xv.block pv.block} ms={ms} gop={gv.op.name} vint={isInt64Ty (tabs.ty fv.type)}"
+            | _, _ => "missing p/x"
+          | _, _, _ => s!"sel {fv.op.name}->{gv.op.name}"
+        return s!"v{z}: {sub}; f: {desc tabs f 4 z}; g-arg: {desc tabs g 3 (gv.args[0]?.getD 0)}"
+    | _, _ => return s!"v{z} presence"
+  for b in f.blocks do
+    match f.block? b, g.block? b with
+    | some fb, some gb =>
+      if !(gb.kind == fb.kind && gb.controls == fb.controls && gb.values == fb.values) then
+        return s!"b{b} block"
+      if Sem.schedule g gb != Sem.schedule f fb then
+        return s!"b{b} schedule f={Sem.schedule f fb} g={Sem.schedule g gb}"
+    | _, _ => return s!"b{b} missing"
+  return "?"
+
 open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdRel`/`check` fails for the forwarded function `f'` of `f`, if any. -/
 def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
@@ -374,7 +407,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
       | .seg => (segRelWhy env tabs f f').map (s!"seg({k}): " ++ ·)
       | .ps =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
-        else if !psRel tabs f f' then some s!"ps({k}): psRel"
+        else if !psRel tabs f f' then some s!"ps({k}): psRel {psWhy tabs f f'}"
         else some s!"ps({k}): check"
       | .ld =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none

@@ -2304,8 +2304,29 @@ def psSel : Op → Option Nat
   | .SliceCap => some 2
   | _ => none
 
-/-- The value `x` a `psOK` selection `v` of `f` becomes a copy of: component `k` of the first
-`SliceMake` of its `Phi`. -/
+/-- The value a `SliceMake` component `c` of `f` stands for: `x` if `c` is `Sub64 x z` with `z` a
+`Const64 [0]` (the length `j - 0` of a slice `s[0:j]` before `generic.rules` simplifies it),
+else `c`. -/
+def psBase (f : Func) (c : ID) : ID :=
+  match f.value? c with
+  | some cv =>
+    match cv.op, cv.args[0]?, cv.args[1]? with
+    | .Sub64, some x, some z =>
+      if (f.value? z).any (fun zv => zv.op == .Const64 && zv.auxInt == 0) then x else c
+    | _, _, _ => c
+  | none => c
+
+/-- The `SliceMake` component `c` of `f` holds the value of `x`: it is `x`, or `Sub64 x z` of the
+`int64` shape with `z` a `Const64 [0]` of the `int64` shape. -/
+def psComp (tabs : Tables) (f : Func) (c x : ID) : Bool :=
+  c == x || (f.value? c).any fun cv =>
+    cv.op == .Sub64 && cv.args.size == 2 && cv.args[0]? == some x &&
+      isInt64Ty (tabs.ty cv.type) &&
+      (cv.args[1]?.bind f.value?).any fun zv =>
+        zv.op == .Const64 && zv.auxInt == 0 && isInt64Ty (tabs.ty zv.type)
+
+/-- The value `x` a `psOK` selection `v` of `f` becomes a copy of: what component `k` of the
+first `SliceMake` of its `Phi` stands for (`psBase`). -/
 def psSrc (f : Func) (v : ID) : Option ID := do
   let u ← f.value? v
   let k ← psSel u.op
@@ -2313,7 +2334,8 @@ def psSrc (f : Func) (v : ID) : Option ID := do
   let pv ← f.value? p
   let m ← pv.args[0]?
   let mv ← f.value? m
-  mv.args[k]?
+  let c ← mv.args[k]?
+  return psBase f c
 
 /-- The value `v` of `f` that event `ev` turns into a copy, and the copied value (`psSrc`), if
 it is a `phiSels` rule event (`psShapeOK`) of a rule on `v`'s op in `f`. -/
@@ -2346,10 +2368,10 @@ def psPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array Rw
   log.foldl (psStep t f) (f, #[])
 
 /-- The value `v` of `f`, `SliceLen`/`SliceCap` (component `k`, `psSel`) of a `Phi` `p`, is
-`Copy x` in `g`: every argument of `p` is a `SliceMake` whose argument `k` is `x`, `p` and those
-`SliceMake`s have slice shapes, `v` (in `f` and `g`) and `x` the `int64` shape, `p` is listed
-in its block, which is not the entry block, and `x` is defined in a strict dominator of `p`'s
-block. -/
+`Copy x` in `g`: every argument of `p` is a `SliceMake` whose argument `k` holds `x`'s value
+(`psComp`), `p` and those `SliceMake`s have slice shapes, `v` (in `f` and `g`) and `x` the
+`int64` shape, `p` is listed in its block, which is not the entry block, and `x` is defined in a
+strict dominator of `p`'s block. -/
 def psOK (tabs : Tables) (f g : Func) (v : ID) : Bool :=
   match f.value? v, g.value? v with
   | some u, some w =>
@@ -2364,8 +2386,8 @@ def psOK (tabs : Tables) (f g : Func) (v : ID) : Bool :=
             isInt64Ty (tabs.ty xv.type) && xv.block != pv.block &&
             (DomCert.make f).anc xv.block pv.block &&
             pv.args.all fun m => (f.value? m).any fun mv =>
-              mv.op == .SliceMake && mv.args.size == 3 && mv.args[k]? == some x &&
-                isSliceTy (tabs.ty mv.type)
+              mv.op == .SliceMake && mv.args.size == 3 &&
+                (mv.args[k]?).any (psComp tabs f · x) && isSliceTy (tabs.ty mv.type)
         | _, _ => false
     | _, _, _ => false
   | _, _ => false

@@ -6,8 +6,8 @@ import GoFV.Proof.Rules.Lemmas
 
 What the checker `GoFV.Opt.RewriteCheck.psRel` says, declaratively: a selection turned copy
 (`PSD`, from `psOK`: `v`, `SliceLen`/`SliceCap` (component `k`) of the `Phi` `p` whose arguments
-are `SliceMake`s with argument `k` the value `x`, is `Copy x` in `g`), and the relation's global
-and per-block facts (`psRel_spec`, `PSRel`).
+are `SliceMake`s with argument `k` holding the value of `x` (`PComp`: `x`, or `Sub64 x 0`), is
+`Copy x` in `g`), and the relation's global and per-block facts (`psRel_spec`, `PSRel`).
 -/
 
 namespace GoFV.Proof.PhiSel
@@ -15,6 +15,28 @@ namespace GoFV.Proof.PhiSel
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.RewriteCheck
 
 variable {tabs : Tables} {f g : Func}
+
+/-- What `psComp tabs f c x` says: `c` is `x`, or `Sub64 x z` of the `int64` shape with `z` a
+`Const64 [0]` of the `int64` shape. -/
+def PComp (tabs : Tables) (f : Func) (c x : ID) : Prop :=
+  c = x ∨ ∃ cv z zv, f.value? c = some cv ∧ cv.op = .Sub64 ∧ cv.args.size = 2 ∧
+    cv.args[0]? = some x ∧ cv.args[1]? = some z ∧ tabs.ty cv.type = .int .w64 ∧
+    f.value? z = some zv ∧ zv.op = .Const64 ∧ zv.auxInt = 0 ∧ tabs.ty zv.type = .int .w64
+
+theorem psComp_spec {c x : ID} (h : psComp tabs f c x = true) : PComp tabs f c x := by
+  unfold psComp at h
+  simp only [Bool.or_eq_true, beq_iff_eq, Option.any_eq_true, Bool.and_eq_true] at h
+  rcases h with h | ⟨cv, hcv, ⟨⟨⟨⟨hop, hsz⟩, h0⟩, hct⟩, hz⟩⟩
+  · exact .inl h
+  · right
+    obtain ⟨zv, hzb, ⟨⟨hzop, hza⟩, hzt⟩⟩ := hz
+    cases hz1 : cv.args[1]? with
+    | none => rw [hz1] at hzb; cases hzb
+    | some z =>
+      rw [hz1] at hzb
+      exact ⟨cv, z, zv, hcv, by simpa using hop, by simpa using hsz, by simpa using h0, hz1,
+        GoFV.Proof.Rules.isInt64Ty_iff.1 hct, hzb, by simpa using hzop, by simpa using hza,
+        GoFV.Proof.Rules.isInt64Ty_iff.1 hzt⟩
 
 /-- What `psOK tabs f g v` says. -/
 structure PSD (tabs : Tables) (f g : Func) (v : ID) where
@@ -49,7 +71,8 @@ structure PSD (tabs : Tables) (f g : Func) (v : ID) where
   hxb : xv.block ≠ pv.block
   hanc : (DomCert.make f).anc xv.block pv.block = true
   hm : ∀ m ∈ pv.args, ∃ mv, f.value? m = some mv ∧ mv.op = .SliceMake ∧ mv.args.size = 3 ∧
-    mv.args[k]? = some x ∧ GoFV.Proof.Rules.isSliceTy (tabs.ty mv.type) = true
+    (∃ c, mv.args[k]? = some c ∧ PComp tabs f c x) ∧
+    GoFV.Proof.Rules.isSliceTy (tabs.ty mv.type) = true
 
 theorem psSel_some {o : Op} {k : Nat} (h : psSel o = some k) :
     (o = .SliceLen ∧ k = 1) ∨ (o = .SliceCap ∧ k = 2) := by
@@ -95,8 +118,8 @@ theorem psOK_spec {v : ID} (h : psOK tabs f g v = true) : Nonempty (PSD tabs f g
   · obtain ⟨blk, hblk, hc⟩ := hpl
     exact ⟨blk, hblk, Array.contains_iff_mem.1 hc⟩
   obtain ⟨mv, hmv, hc⟩ := hm m hmm
-  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hc
-  exact ⟨mv, hmv, h1, h2, h3, h4⟩
+  obtain ⟨⟨⟨h1, h2⟩, c, h3, h3'⟩, h4⟩ := hc
+  exact ⟨mv, hmv, h1, h2, ⟨c, h3, psComp_spec h3'⟩, h4⟩
 
 /-- Two `PSD`s of one value agree. -/
 theorem PSD.eq {v : ID} (d d' : PSD tabs f g v) :
