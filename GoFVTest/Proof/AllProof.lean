@@ -228,7 +228,15 @@ import GoFV.Proof.Pass.Sccp
 import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
+import GoFV.Proof.Pass.SegBlock
 import GoFV.Proof.Pass.SegCall
+import GoFV.Proof.Pass.SegCallSeg
+import GoFV.Proof.Pass.SegChain
+import GoFV.Proof.Pass.SegEval
+import GoFV.Proof.Pass.SegRel
+import GoFV.Proof.Pass.SegSim
+import GoFV.Proof.Pass.SegSound
+import GoFV.Proof.Pass.SegZeroMem
 import GoFV.Proof.Pass.ShortCircB
 import GoFV.Proof.Pass.ShortCircCpa
 import GoFV.Proof.Pass.ShortCircCpaMid
@@ -440,6 +448,7 @@ import GoFV.Proof.Rules.Rsh6
 import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
 import GoFV.Proof.Rules.Rsh9
+import GoFV.Proof.Rules.Seg
 import GoFV.Proof.Rules.SelLoad
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask
@@ -530,6 +539,7 @@ import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
+import GoFV.Proof.Witness.Seg
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.StructCopy

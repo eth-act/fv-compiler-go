@@ -5,6 +5,7 @@ import GoFV.Opt.TabsAgree
 import GoFV.Opt.NilCheckRel
 import GoFV.Opt.Checked
 import GoFV.Opt.CopyRelCheck
+import GoFV.Opt.MemCall
 
 /-!
 # Validating a rewrite pass (`applyRewrite`) against its log (issue #113)
@@ -1827,6 +1828,321 @@ def ssRel (tabs : Tables) (f g : Func) : Bool :=
       | _, _ => true) &&
     f.blocks.all (ssBlockOK f g news S)
 
+/-! ## Segments (issue #151)
+
+`generic.rules:1833`/`:1844`/`:1857` replace `Store`s over a `Zero` that they tile by the same
+`Store`s over the `Zero`'s memory (`(Store op1 d1 (Store op2 d2 (Zero [n] p mem)))` becomes
+`(Store op1 d1 (Store op2 d2 mem))`), and `:1638`/`:1730` replace `SelectN [0]` of a call to
+`runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`. Each rewrites
+a *segment* of a block: the rule's value `x` (the anchor) is redefined in place, the values it
+clobbers (`D`: the inner `Store`s and the `Zero`, or the call) are gone, and fresh values (`N`:
+the new inner `Store`s) are put in. Only the anchor's memory agrees with the source's, so the
+validator takes these events out of the log as the struct-store splits: `segPre` applies them,
+`segRel` relates the input to that function, and `validate` the output to it with the other
+events. -/
+
+/-- A segment rule: a `Store` or `SelectN` rule with a built result in `v`'s block; each
+instance is validated by `segRel`. -/
+def segShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .Store .., .build _, none => true
+  | .op .SelectN .., .build _, none => true
+  | _, _, _ => false
+
+/-- The value `v` of `f` that event `ev` rewrites as a segment, its logged definition and the
+fresh values (logged parents first), if it is a `segs` rule event (`segShapeOK`) of a rule on
+`v`'s op in `f` (an event of a value the pass redefined earlier indexes another op's row). -/
+def segEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
+  | .rule v i _ defs =>
+    match f.value? v with
+    | some u =>
+      let n := t.segBase u.op
+      if n ≤ i then
+        match t.segs[i - n]?, defs.toList with
+        | some cr, w :: ds =>
+          if segShapeOK cr.rule && w.id == v &&
+              (match cr.rule.pat with | .op o .. => o == u.op | _ => false) then
+            some (v, w, ds.filter (·.id != v))
+          else none
+        | _, _ => none
+      else none
+    | none => none
+  | _ => none
+
+/-- The last argument of `w` (the memory of a memory op or call). -/
+def lastArg (w : Value) : ID := w.args.back?.getD 0
+
+/-- The memory a segment's new chain starts from: from `m` down the last arguments of the fresh
+values `ds`, the first value that is not one of them. -/
+def segBottom (ds : List Value) : Nat → ID → ID
+  | 0, m => m
+  | k + 1, m =>
+    match ds.find? (·.id == m) with
+    | some d => segBottom ds k (lastArg d)
+    | none => m
+
+/-- The values of `f` from `m` down the last arguments, up to the memory `m0` (excluded; at most
+`k`). -/
+def segChainF (f : Func) (m0 : ID) : Nat → ID → List ID
+  | 0, _ => []
+  | k + 1, m =>
+    if m == m0 then []
+    else match f.value? m with
+      | some s => m :: segChainF f m0 k (lastArg s)
+      | none => []
+
+/-- The values the segment rewrite of `u` into `w` with the fresh values `ds` drops: the call of
+a `SelectN`, else the chain below the anchor's memory, down to the new chain's start. -/
+def segDrops (f : Func) (u w : Value) (ds : List Value) : List ID :=
+  segChainF f (segBottom ds 8 (lastArg w)) 8
+    (if u.op == .SelectN then u.args[0]?.getD 0 else lastArg u)
+
+/-- Drop the value `d` of `f`: its arguments lose a use, it leaves its block's list and is freed. -/
+def segFree (f : Func) (d : ID) : Func :=
+  match f.value? d with
+  | some dv =>
+    let f := dv.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses - 1 }) f
+    (f.modB dv.block fun b => { b with values := b.values.filter (· != d) }).freeValue d
+  | none => f
+
+/-- The segment rewrite of `v` into `w` with the fresh values `ds`: `v`'s arguments lose a use,
+the fresh values are put in (children first), `w`'s arguments gain a use, `v` is redefined and
+the dropped values `D` are freed. -/
+def segApply (f : Func) (v : ID) (w : Value) (ds : List Value) (D : List ID) : Func :=
+  match f.value? v with
+  | some u =>
+    let f := u.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses - 1 }) f
+    let f := w.args.foldl Func.incUses (ds.reverse.foldl ssPut f)
+    let f := f.modV v fun z => { z with op := w.op, auxInt := w.auxInt, aux := w.aux, args := w.args }
+    D.foldl segFree f
+  | none => f
+
+/-- One event of `segPre`: a segment rewrite of a value of `f` is applied, any other event kept,
+but for the copy-argument replacements of its anchor and dropped values logged before it. -/
+def segStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match segEvent? t f ev with
+  | some (v, w, ds) =>
+    match f.value? v with
+    | some u =>
+      let D := segDrops f u w ds
+      (segApply p.1 v w ds D,
+        p.2.filter fun | .copyArg y _ _ => y != v && !D.contains y | _ => true)
+    | none => (p.1, p.2.push ev)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's segment rewrites applied, and the remaining events. -/
+def segPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (segStep t f) (f, #[])
+
+/-- The values of `g` from `m` down the last arguments while they are no values of `f` (a
+segment's fresh values), first first, and the value below them (at most `k`). -/
+def freshChain (f g : Func) : Nat → ID → List ID × ID
+  | 0, m => ([], m)
+  | k + 1, m =>
+    match f.value? m, g.value? m with
+    | none, some s => let r := freshChain f g k (lastArg s); (m :: r.1, r.2)
+    | _, _ => ([], m)
+
+/-- `k` `Store`s of `f` from `m` down their memory arguments, first first, and the memory below
+them. -/
+def storesF (f : Func) : Nat → ID → Option (List ID × ID)
+  | 0, m => some ([], m)
+  | k + 1, m =>
+    match f.value? m with
+    | some s =>
+      if s.op == .Store && s.args.size == 3 then
+        (storesF f k s.args[2]!).map fun r => (m :: r.1, r.2)
+      else none
+    | none => none
+
+/-- The `Store`s `ss` of `f` (last first) tile `[o, n)` of the pointer `p`: each at an `OffPtr` of
+`p` (up to copies) by the offset where the previous one ends (`o` for the first), of positive
+size, the last ending at `n`. -/
+def segTiles (tabs : Tables) (f : Func) (p : ID) : Nat → List Value → Nat → Bool
+  | o, [], n => o == n
+  | o, s :: ss, n =>
+    let sz := (Sem.auxTy tabs s.aux).size
+    decide (0 < sz) && s.args.size == 3 &&
+    (match f.value? s.args[0]! with
+     | some op =>
+       op.op == .OffPtr && op.args.size == 1 && op.auxInt.toInt == (o : Int) &&
+         copyEnd tabs f.valueTab f.valueTab.size op.args[0]! ==
+           copyEnd tabs f.valueTab f.valueTab.size p
+     | none => false) &&
+    segTiles tabs f p (o + sz) ss n
+
+/-- The `Store` `s` of `f` became the `Store` `s'` of `g` with the same type, aux, pointer and value
+(its memory aside), both in block `b`. -/
+def segStoreSame (b : ID) (s s' : Value) : Bool :=
+  s.op == .Store && s'.op == .Store && s.args.size == 3 && s'.args.size == 3 &&
+    s'.aux == s.aux && s'.type == s.type && s'.args[0]! == s.args[0]! &&
+    s'.args[1]! == s.args[1]! && s.block == b && s'.block == b
+
+/-- A chain segment at the `Store` `x` (`f`'s `fv`, `g`'s `gv`; `generic.rules:1833` family): in `f`
+`k ≥ 2` `Store`s from `x` over a `Zero [n] p mem` of `x`'s block, in `g` the same `Store`s (fresh
+but `x`) over `mem`, at `OffPtr`s of `p` tiling `[0, n)`. The dropped values (the inner `Store`s
+of `f` and the `Zero`) and the fresh ones (dependency order). -/
+def chainSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (List ID × List ID) :=
+  let (ns, m0) := freshChain f g 4 (lastArg gv)
+  match storesF f (ns.length + 1) x with
+  | some (fs, z) =>
+    match f.value? z with
+    | some zv =>
+      if fv.op == .Store && gv.op == .Store && zv.op == .Zero && zv.args.size == 2 &&
+          zv.args[1]! == m0 && zv.block == fv.block && decide (0 ≤ zv.auxInt.toInt) &&
+          1 ≤ ns.length &&
+          (fs.zip (x :: ns)).all (fun (a, b) => match f.value? a, g.value? b with
+            | some sa, some sb => segStoreSame fv.block sa sb
+            | _, _ => false) &&
+          segTiles tabs f zv.args[0]! 0 (fs.filterMap f.value?).reverse zv.auxInt.toInt.toNat then
+        some (fs.tail ++ [z], ns.reverse)
+      else none
+    | none => none
+  | none => none
+
+/-- `a` is a `Const64` of `f` at the 64-bit integer shape with the auxint `n ≥ 0`. -/
+def constSize (tabs : Tables) (f : Func) (a : ID) (n : Int64) : Bool :=
+  (f.value? a).any fun av => av.op == .Const64 && av.args.size == 0 && av.auxInt == n &&
+    decide (0 ≤ n.toInt) && Sem.Ty.beq (tabs.ty av.type) (.int .w64)
+
+/-- `a` is a value of `f` of pointer shape. -/
+def ptrArgB (tabs : Tables) (f : Func) (a : ID) : Bool :=
+  (f.value? a).any fun av => isPtrTy (tabs.ty av.type)
+
+/-- A call segment at `x` (`generic.rules:1638`, `:1730`): in `f` `SelectN [0]` of a call `c` of
+its block to `runtime.memclrNoHeapPointers` (pointer `p`, size `Const64 [n]`) or `runtime.memmove`
+(`dst`, `src`, size) whose arguments reach the callee as they are (`MemCall.simpleCall`), in `g`
+`Zero [n] p mem` or `Move [n] dst src mem`. The call is dropped, no value is fresh. -/
+def callSeg? (tabs : Tables) (f g : Func) (fv gv : Value) : Option (List ID × List ID) :=
+  match fv.op, fv.args.toList with
+  | .SelectN, [c] =>
+    match f.value? c with
+    | some cv =>
+      if fv.auxInt == 0 && cv.block == fv.block then
+        match cv.args.toList with
+        | [p, n, m] =>
+          if MemCall.simpleCall tabs cv 2 &&
+              MemCall.calleeIs tabs cv "runtime.memclrNoHeapPointers" &&
+              gv.op == .Zero && gv.args == #[p, m] && constSize tabs f n gv.auxInt &&
+              ptrArgB tabs f p then some ([c], [])
+          else none
+        | [d, s, n, m] =>
+          if MemCall.simpleCall tabs cv 3 && MemCall.calleeIs tabs cv "runtime.memmove" &&
+              gv.op == .Move && gv.args == #[d, s, m] && constSize tabs f n gv.auxInt &&
+              ptrArgB tabs f d && ptrArgB tabs f s then some ([c], [])
+          else none
+        | _ => none
+      else none
+    | none => none
+  | _, _ => none
+
+/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?` or `callSeg?`): listed in its
+block, a `Store` or `SelectN` redefined in place (its ID, block and type kept); its dropped values
+are listed in that block, its fresh values in that block of `g`; the fresh values and the anchor are roots of `g`,
+each of their arguments an earlier one of them, or an argument of a root of `f` of the segment (a
+dropped root, or the anchor) that is not dropped. The dropped and fresh values. -/
+def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
+  match f.value? x, g.value? x with
+  | some fv, some gv =>
+    let listed (z : ID) : Bool := (f.block? fv.block).any (·.values.contains z)
+    if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
+        (fv.op == .Store || fv.op == .SelectN) && f.blocks.contains fv.block && listed x then
+      match (chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv with
+      | some (D, N) =>
+        let L := N ++ [x]
+        let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
+          (D ++ [x]).any fun s => CSE.rootNode f s && (f.value? s).any (·.args.contains a)
+        if D.all listed && D.all (CSE.rootNode f) &&
+            N.all (fun n => (f.value? n).isNone && (g.block? fv.block).any (·.values.contains n) &&
+              (g.value? n).any (·.block == fv.block)) &&
+            L.all (CSE.rootNode g) &&
+            (List.range L.length).all (fun i => (g.value? (L.getD i 0)).all fun v =>
+              v.args.all fun a => (L.take i).contains a || ext a) then some (D, N)
+        else none
+      | none => none
+    else none
+  | _, _ => none
+
+/-- The segments of `f` in `g` by anchor (`segOK`). -/
+def segArr (tabs : Tables) (f g : Func) : Array (Option (List ID × List ID)) :=
+  (Array.range f.valueTab.size).map (segOK tabs f g)
+
+/-- The anchors with their segments (dropped and fresh values). -/
+def segList (A : Array (Option (List ID × List ID))) : List (ID × List ID × List ID) :=
+  (List.range A.size).filterMap fun x => (A[x]?.join).map (x, ·)
+
+/-- The anchor of the (first) segment of `segs` that drops `z`. -/
+def segOwner (segs : List (ID × List ID × List ID)) (z : ID) : Option ID :=
+  (segs.find? fun s => s.2.1.contains z).map (·.1)
+
+/-- The segment of `segs` value `z` is a root of: its own if it is an anchor, else its owner's. -/
+def segOf (segs : List (ID × List ID × List ID)) (z : ID) : Option ID :=
+  if segs.any (·.1 == z) then some z else segOwner segs z
+
+/-- The roots of `g` that the segment of anchor `x` puts in: its fresh values and the anchor. -/
+def segNew (g : Func) (segs : List (ID × List ID × List ID)) (x : ID) : List ID :=
+  ((segs.find? (·.1 == x)).map fun s => (s.2.2 ++ [x]).filter (CSE.rootNode g)).getD []
+
+/-- The roots `L` of `f` with each segment's roots (its dropped roots and its anchor) replaced,
+at the last of them, by its fresh roots and its anchor in `g` (`segNew`). -/
+def segRoots (g : Func) (segs : List (ID × List ID × List ID)) : List ID → List ID
+  | [] => []
+  | r :: L =>
+    match segOf segs r with
+    | some x =>
+      (if L.any (fun z => segOf segs z == some x) then [] else segNew g segs x) ++ segRoots g segs L
+    | none => r :: segRoots g segs L
+
+/-- Block `bid` of `g` has `f`'s kind and controls, `f`'s values but the dropped ones, then fresh
+values (in `news`) of `bid`; its schedule runs `f`'s roots with each segment's in its place
+(`segRoots`). -/
+def segBlockOK (f g : Func) (segs : List (ID × List ID × List ID)) (news : List ID) (bid : ID) :
+    Bool :=
+  match f.block? bid, g.block? bid with
+  | some fb, some gb =>
+    let kept := fb.values.filter fun z => (segOwner segs z).isNone
+    gb.kind == fb.kind && gb.controls == fb.controls && kept.size ≤ gb.values.size &&
+    gb.values.extract 0 kept.size == kept &&
+    (gb.values.extract kept.size gb.values.size).all
+      (fun x => (f.value? x).isNone && news.contains x && (g.value? x).any (·.block == bid)) &&
+    match Sem.schedule f fb with
+    | none => true
+    | some oS =>
+      match Sem.schedule g gb with
+      | some oT =>
+        oT.toList.filter (CSE.rootNode g) == segRoots g segs (oS.toList.filter (CSE.rootNode f))
+      | none => false
+  | _, _ => false
+
+/-- **The segment relation**: `g` is `f` with segments rewritten (`segOK`): the same control-flow
+graph, own aux and blocks (`segBlockOK`); every value of `f` kept but for its use count, an
+anchor, or dropped (gone in `g`, in one segment, used by no listed value or control of `f` but
+its segment's); the fresh values the only values `f` lacks. -/
+def segRel (tabs : Tables) (f g : Func) : Bool :=
+  let segs := segList (segArr tabs f g)
+  let drops := segs.flatMap (·.2.1)
+  let news := segs.flatMap (·.2.2)
+  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+    f.valueTab.size ≤ g.valueTab.size && decide drops.Nodup && decide news.Nodup &&
+    segs.all (fun s => (segOwner segs s.1).isNone) &&
+    (List.range f.valueTab.size).all (fun x => match f.value? x, g.value? x with
+      | none, _ => true
+      | some fv, some gv => ssSame fv gv || (segOK tabs f g x).isSome
+      | some _, none => (segOwner segs x).isSome) &&
+    drops.all (fun d => (g.value? d).isNone) &&
+    (List.range g.valueTab.size).all (fun x =>
+      (f.value? x).isSome || (g.value? x).isNone || news.contains x) &&
+    f.blocks.all (fun b => match f.block? b with
+      | some fb =>
+        fb.controls.all (fun c => (segOwner segs c).isNone) &&
+        fb.values.all fun z => (f.value? z).all fun zv => zv.args.all fun a =>
+          match segOwner segs a with
+          | some x => z == x || segOwner segs z == some x
+          | none => true
+      | none => false) &&
+    f.blocks.all (segBlockOK f g segs news)
+
 /-! ## Struct-load expansions as a layer (issue #151)
 
 A struct-store split of a `Store` of a `Load` that `generic.rules:974` expanded stores the
@@ -1923,24 +2239,26 @@ def ldTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) 
 
 /-! ## Layers (issue #151)
 
-The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions and
-struct-store splits are taken out of the log and applied to the input in layers, each related to
-its input by its own relation, before `validate` relates the last layer's function and the
-output with the remaining events. A selective layer (`sel`) applies only the events its relation
-holds of in its input; a later layer of the same kind applies the rest. Each kind needs another
-first: a struct-store split's pointer may be an eliminated nil check and its stored values
-forwarded `Load`s or an expanded `Load`, a split may split a field store of another (nested
-structs), a forwarded `Load` may read a field `Store` of a split, and an eliminated nil check's
-pointer may be a forwarded `Load`. -/
+The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions,
+struct-store splits and segment rewrites are taken out of the log and applied to the input in
+layers, each related to its input by its own relation, before `validate` relates the last
+layer's function and the output with the remaining events. A selective layer (`sel`) applies
+only the events its relation holds of in its input; a later layer of the same kind applies the
+rest. Each kind needs another first: a struct-store split's pointer may be an eliminated nil check
+and its stored values forwarded `Load`s or an expanded `Load`, a split may split a field store of
+another (nested structs), a forwarded `Load` may read a field `Store` of a split, an eliminated nil
+check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a split's field stores. -/
 
 /-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-load
-expansions (`slPre`), struct-store splits (`ssPre`), value-rule `Load` expansions (`ldPre`). -/
+expansions (`slPre`), struct-store splits (`ssPre`), value-rule `Load` expansions (`ldPre`),
+segment rewrites (`segPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
   | sl
   | ss
   | ld
+  | seg
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
@@ -1950,9 +2268,10 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .sl => slPre t tabs
   | .ss => ssPre t
   | .ld => ldPre t tabs
+  | .seg => segPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs). -/
-def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .fwd false, .nil false]
+def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/
@@ -2013,6 +2332,8 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
     RewriteCheck.validate tabs t f f' (RewriteCheck.slTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .seg, f, _, f' =>
+    RewriteCheck.segRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .ld, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.ldTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
@@ -2062,16 +2383,18 @@ def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func)
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   return if RewriteCheck.accepts env t f out log then some out else none
 
-/-- The tables `checkedRewrite` tries in order: `t`, then (a Load-of-Store forwarding, struct-store
-split or nil-check elimination the validator cannot relate, issue #151) `t` without its
-forwardings (`loads`), then also without its struct-store splits (`structStores`), then also
-without its nil-check eliminations (`nilChecks`), each only if it removes rules. -/
+/-- The tables `checkedRewrite` tries in order: `t`, then (a segment rewrite, Load-of-Store
+forwarding, struct-store split or nil-check elimination the validator cannot relate, issue #151)
+`t` without its segment rules (`segs`), then also without its forwardings (`loads`), then also
+without its struct-store splits (`structStores`), then also without its nil-check eliminations
+(`nilChecks`), each only if it removes rules. -/
 def checkedTiers (t : GoFV.Rules.Interp.Table) : List GoFV.Rules.Interp.Table :=
-  let t₁ := { t with loads := #[] }
+  let t₀ := { t with segs := #[] }
+  let t₁ := { t₀ with loads := #[] }
   let t₂ := { t₁ with structStores := #[] }
   let t₃ := { t₂ with nilChecks := #[] }
-  t :: ((if t.loads.isEmpty then [] else [t₁]) ++ (if t.structStores.isEmpty then [] else [t₂]) ++
-    (if t.nilChecks.isEmpty then [] else [t₃]))
+  t :: ((if t.segs.isEmpty then [] else [t₀]) ++ (if t.loads.isEmpty then [] else [t₁]) ++
+    (if t.structStores.isEmpty then [] else [t₂]) ++ (if t.nilChecks.isEmpty then [] else [t₃]))
 
 /-- The first of the tables whose run `checkedRun` accepts, and its result. -/
 def checkedFirst (env : PassEnv) (f : GoFV.SSA.Func) :

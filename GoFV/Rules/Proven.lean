@@ -12,7 +12,8 @@ rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel` or `Rule.LoadSel
 `BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
-`EffectRule.StructStore` lemma (struct-store splits; issue #151,
+`EffectRule.StructStore` lemma (struct-store splits) or `EffectRule.Seg` lemma (segment
+rewrites; issue #151,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
 (`GoFV.Opt.optProven`, …; issue #113) and of the decompose builtin rewrite step (issue #17).
 -/
@@ -23,7 +24,7 @@ open GoFV.Rules
 
 /-- `generic.rules` restricted to its 1191 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 13 Load-of-Store forwardings, 1 struct-load
-expansions and 1 struct-store splits. -/
+expansions, 1 struct-store splits and 6 segment rules. -/
 def generic : RuleSet where
   name := "generic"
   values := [(.Add16, [Generated.Generic.r_generic_121, Generated.Generic.r_generic_420, Generated.Generic.r_generic_427, Generated.Generic.r_generic_646, Generated.Generic.r_generic_655, Generated.Generic.r_generic_661, Generated.Generic.r_generic_675, Generated.Generic.r_generic_678, Generated.Generic.r_generic_778, Generated.Generic.r_generic_779, Generated.Generic.r_generic_1218, Generated.Generic.r_generic_1224, Generated.Generic.r_generic_1278, Generated.Generic.r_generic_1284, Generated.Generic.r_generic_2195, Generated.Generic.r_generic_2196, Generated.Generic.r_generic_2197, Generated.Generic.r_generic_2198, Generated.Generic.r_generic_2200, Generated.Generic.r_generic_2201, Generated.Generic.r_generic_2202, Generated.Generic.r_generic_2203]),
@@ -213,10 +214,11 @@ def generic : RuleSet where
   loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821, Generated.Generic.r_generic_827, Generated.Generic.r_generic_830, Generated.Generic.r_generic_832, Generated.Generic.r_generic_943, Generated.Generic.r_generic_948, Generated.Generic.r_generic_954, Generated.Generic.r_generic_961, Generated.Generic.r_generic_1005, Generated.Generic.r_generic_2158]
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975]
+  segs := [Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
 
 /-- `dec.rules` restricted to its 26 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
-expansions and 7 struct-store splits. -/
+expansions, 7 struct-store splits and 0 segment rules. -/
 def dec : RuleSet where
   name := "dec"
   values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126, Generated.Dec.r_dec_132]),
@@ -237,10 +239,11 @@ def dec : RuleSet where
   loads := []
   structLoads := []
   structStores := [Generated.Dec.r_dec_23, Generated.Dec.r_dec_35, Generated.Dec.r_dec_51, Generated.Dec.r_dec_72, Generated.Dec.r_dec_93, Generated.Dec.r_dec_123, Generated.Dec.r_dec_129]
+  segs := []
 
 /-- `divisible.rules` restricted to its 32 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
-expansions and 0 struct-store splits. -/
+expansions, 0 struct-store splits and 0 segment rules. -/
 def divisible : RuleSet where
   name := "divisible"
   values := [(.Eq16, [Generated.Divisible.r_divisible_17, Generated.Divisible.r_divisible_20, Generated.Divisible.r_divisible_48, Generated.Divisible.r_divisible_116]),
@@ -256,10 +259,11 @@ def divisible : RuleSet where
   loads := []
   structLoads := []
   structStores := []
+  segs := []
 
 /-- `divmod.rules` restricted to its 17 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
-expansions and 0 struct-store splits. -/
+expansions, 0 struct-store splits and 0 segment rules. -/
 def divmod : RuleSet where
   name := "divmod"
   values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
@@ -275,5 +279,6 @@ def divmod : RuleSet where
   loads := []
   structLoads := []
   structStores := []
+  segs := []
 
 end GoFV.Rules.Proven

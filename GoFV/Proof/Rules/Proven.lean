@@ -120,6 +120,7 @@ import GoFV.Proof.Rules.Rsh6
 import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
 import GoFV.Proof.Rules.Rsh9
+import GoFV.Proof.Rules.Seg
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask
 import GoFV.Proof.Rules.SignExt

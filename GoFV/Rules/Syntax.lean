@@ -255,7 +255,10 @@ as nil-check eliminations; `loads`: Load-of-Store forwarding rules on `Load` val
 `values`' `Load` row, validated per instance as forwardings; `structLoads`: struct-load
 expansions (`rewriteStructLoad`) tried on `Load` values after `loads`, validated per instance;
 `structStores`: struct-store splits (`rewriteStructStore`) tried on `Store` values after
-`values`' `Store` row, validated per instance (issue #151; the proven-only sets only). -/
+`values`' `Store` row, validated per instance; `segs`: rules rewriting a segment of a block's
+memory roots (a `Zero` under `Store`s that tile it, a `memclrNoHeapPointers`/`memmove` call),
+tried on every value after the other tables, validated per instance (issue #151; the
+proven-only sets only). -/
 structure RuleSet where
   name : String
   values : List (Op × List Rule)
@@ -264,6 +267,7 @@ structure RuleSet where
   loads : List Rule := []
   structLoads : List Rule := []
   structStores : List Rule := []
+  segs : List Rule := []
 
 namespace RuleSet
 
