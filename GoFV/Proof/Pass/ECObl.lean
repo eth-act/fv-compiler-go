@@ -5,16 +5,19 @@ import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
 import GoFV.Proof.Eval
+import GoFV.Proof.AtomSimSet
+import GoFV.Proof.DomCert
 
 /-!
 # `expand calls`: the local obligation of every source value (issue #28)
 
 `obl_invalid`: a value the pass invalidated (`OpInvalid` in the target, conversion `poison`) is
 pure in the source (`valueOK`: priority 0), so its evaluation does not panic, and the target's
-`Invalid` evaluates. `eco_obl` dispatches a non-`Phi` value of a block on `valueOK`'s classes
-(call, `MakeResult`, call result, invalidated, parameter, identity) to the class obligations,
-with the closure `L` of the target's new arguments (`x`, and new values of its block or of the
-entry block) and the `held` nodes the `IMake` arguments of converted values depend on.
+`Invalid` evaluates. `eco_obl` dispatches a non-`Phi` value of a tree block on `valueOK`'s
+classes (call, `MakeResult`, call result, invalidated, parameter, identity) to the class
+obligations, with the closure `L` of the target's new arguments (values of its block or of the
+entry block); the `IMake` arguments of converted values are held in source mode (`Held`: in the
+block and depended on, or placed in a strict dominator, `AtomSim.arg_anc`) or target mode.
 -/
 
 namespace GoFV.Proof.EC
@@ -26,11 +29,11 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.ECCheck GoFV.P
 
 /-- **The obligation of an invalidated value**: a pure source value whose target node is
 `Invalid`. -/
-theorem obl_invalid {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
+theorem obl_invalid {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hinv : w.op = .Invalid)
     (hprio : prio u.op = 0) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
-  intro u' w' hu' hw' env _ frS T _ _ E _ _ hRw _ _ _
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x := by
+  intro u' w' hu' hw' env _ frS T _ _ E _ _ hRw _ _ _ _
   rw [hu] at hu'
   cases hu'
   rw [hw] at hw'
@@ -58,13 +61,13 @@ theorem eco_ecCheck {tabs : Tables} {f g : Func} (h : ecCheck tabs f g = true) :
   exact ⟨h1, h2, h3, h4⟩
 
 /-- What the dispatch reads of `blockOK`: the target block, the source's values listed in it,
-`valueOK` of the non-`Phi` ones, and the new arguments of new values. -/
+`valueOK` of the non-`Phi` ones, and the new arguments of the target's values. -/
 theorem eco_blockOK {tabs : Tables} {f g : Func} {bid : ID} {fb : Block}
     (h : blockOK tabs (typeShapes tabs) f g bid = true) (hfb : f.block? bid = some fb) :
     ∃ gb, g.block? bid = some gb ∧ (∀ x ∈ fb.values, x ∈ gb.values) ∧
       (∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi →
         valueOK tabs (typeShapes tabs) f g x = true) ∧
-      (∀ z ∈ gb.values, isNewB f z = true → ∀ w, g.value? z = some w → ∀ a ∈ w.args,
+      (∀ z ∈ gb.values, ∀ w, g.value? z = some w → ∀ a ∈ w.args,
         isNewB f a = true → a ∈ gb.values ∨ a ∈ valsOf g g.entry) := by
   unfold blockOK at h
   rw [hfb] at h
@@ -74,15 +77,15 @@ theorem eco_blockOK {tabs : Tables} {f g : Func} {bid : ID} {fb : Block}
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
     obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, hnew⟩ := h
-    refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_, fun z hz hzn w hw a ha han => ?_⟩
+    refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_, fun z hz w hw a ha han => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
     · have := Array.all_eq_true'.1 hval x hx
       rw [hu] at this
       simp only [Bool.or_eq_true, beq_iff_eq] at this
       exact this.resolve_left hphi
     · have := Array.all_eq_true'.1 hnew z hz
-      rw [hzn, hw] at this
-      simp only [Bool.not_true, Bool.false_or, Bool.and_eq_true] at this
+      rw [hw] at this
+      simp only [Bool.and_eq_true] at this
       have := Array.all_eq_true'.1 this.2 a ha
       rw [han] at this
       simp only [Bool.not_true, Bool.false_or, Bool.or_eq_true, Array.contains_iff_mem] at this
@@ -150,24 +153,50 @@ theorem eco_selectOK {tabs : Tables} {f g : Func} {x c : ID} {u w cu : Value}
 
 /-! ## The dispatch -/
 
-/-- **The local obligation of a non-`Phi` source value** of block `bid` for `expand calls`,
-`held` the nodes of the target block that `x` depends on. -/
+/-- An `IMake` argument of a non-`Phi` value `x` of a tree block, checked by `imkArgOK`, is held
+in source mode (`Held`: a value of the block `x` depends on, or else placed in a strict
+dominator, `AtomSim.arg_anc`) or in target mode. -/
+theorem eco_imkHeld {ce : CheckEnv} {tabs : Tables} {f g : Func} {bid x a : ID} {fb gb : Block}
+    {u : Value} (Wf : WF ce f) (hc : CertOK f) (hbid : bid ∈ f.blocks)
+    (hfb : f.block? bid = some fb) (hfid : fb.id = bid) (hx : x ∈ fb.values)
+    (hu : f.value? x = some u) (hublk : u.block = bid) (hphi : u.op ≠ .Phi)
+    (htree : ((make f).depthOf fb.id).isSome) (ha : a ∈ u.args)
+    (h : EcImkOK tabs f g fb gb x a) :
+    EcoImkHeld tabs f g (Held f g fb gb x)
+      (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) a := by
+  intro aw haw hop
+  obtain ⟨-, ⟨au, hau, hauop, hau2, haud, hi, hsp, hsh, hdep⟩ | ⟨hi, hda, hdd⟩⟩ := h aw haw hop
+  · refine .inr ⟨?_, ⟨au, hau, hauop, hau2, haud⟩, hi, hsp, hsh⟩
+    by_cases hafb : a ∈ fb.values
+    · exact .inl ⟨hafb, hdep hafb⟩
+    · have hp : Placed f x u := ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
+      obtain ⟨va, ⟨hva, hvb, blk, hblk, hab⟩, hanc⟩ :=
+        AtomSim.arg_anc Wf hc hp (by rw [hublk, ← hfid]; exact htree) hphi ha
+      rw [hau] at hva
+      cases hva
+      rw [hublk, ← hfid] at hanc
+      refine .inr ⟨au, ⟨hau, hvb, blk, hblk, hab⟩, by rw [hauop]; decide, hanc, fun he => hafb ?_⟩
+      rw [he, hfid, hfb] at hblk
+      cases hblk
+      exact hab
+  · exact .inl ⟨hda, hdd, hi⟩
+
+/-- **The local obligation of a non-`Phi` source value** of tree block `bid` for
+`expand calls`, the source's `Held` values and the target's nodes of the block that `x` depends
+on holding their evaluations. -/
 theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {fb gb : Block}
     {u : Value}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hec : ecCheck tabs f g = true) (hbid : bid ∈ f.blocks)
     (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    (htree : ((make f).depthOf fb.id).isSome)
     (hx : x ∈ fb.values) (hu : f.value? x = some u) (hphi : u.op ≠ .Phi)
-    (hnewx : ∀ w, g.value? x = some w → ∀ a ∈ w.args, isNewB f a = true →
-      a ∈ gb.values ∨ EntryVal g a)
-    (himk : converted f x = true → ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
-      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x ∧
-      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) aw.args[1]! x ∧
-      ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x)
+    (himk : converted f x = true → ∀ a ∈ u.args, EcImkOK tabs f g fb gb x a) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) (Held f g fb gb x)
       (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) x := by
   have Wf := check_wf hf
   have Wg := check_wf hg
+  have hcert : CertOK f := certOK_of_check (check_domCert hf)
   obtain ⟨hcfg, hown, hreg, hblk⟩ := eco_ecCheck hec
   have hbidg : bid ∈ g.blocks := by rw [CopyElim.cfgView_blocks hcfg]; exact hbid
   obtain ⟨gb0, hgb0, hsub, hvals, hnewb⟩ := eco_blockOK (hblk bid hbid) hfb
@@ -175,20 +204,28 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
   cases hgb0
   have hcommon := hsub x hx
   have hv := hvals x hx u hu hphi
-  have huid : u.id = x := by
-    obtain ⟨v, hv', hvid, -⟩ := Wf.valueId bid fb ⟨hbid, hfb⟩ x hx
+  obtain ⟨huid, hublk⟩ : u.id = x ∧ u.block = bid := by
+    obtain ⟨v, hv', hvid, hvb⟩ := Wf.valueId bid fb ⟨hbid, hfb⟩ x hx
     rw [hu] at hv'
     cases hv'
-    exact hvid
+    exact ⟨hvid, hvb⟩
+  have hfid : fb.id = bid := by
+    obtain ⟨b, hb, hbid'⟩ := Wf.blockId bid hbid
+    rw [hfb] at hb
+    cases hb
+    exact hbid'
+  have hH : converted f x = true → ∀ a ∈ u.args, EcoImkHeld tabs f g (Held f g fb gb x)
+      (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) a :=
+    fun hconv a ha => eco_imkHeld Wf hcert hbid hfb hfid hx hu hublk hphi htree ha (himk hconv a ha)
   -- the closure of new arguments
   have hgid : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.id = z := fun z hz w hw => by
     obtain ⟨v, hv', hvid, -⟩ := Wg.valueId bid gb ⟨hbidg, hgb⟩ z hz
     rw [hw] at hv'
     cases hv'
     exact hvid
-  have hentry : ∀ z, EntryVal g z → isNewB f z = true → ∀ w, g.value? z = some w →
+  have hentry : ∀ z, EntryVal g z → ∀ w, g.value? z = some w →
       w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → EntryVal g a := by
-    intro z ⟨eb, heb, hz⟩ hzn w hw
+    intro z ⟨eb, heb, hz⟩ w hw
     have hfe : f.entry ∈ f.blocks := Wf.entry
     have hge : g.entry = f.entry := CopyElim.cfgView_entry hcfg
     obtain ⟨feb, hfeb, -⟩ := Wf.blockId f.entry hfe
@@ -199,21 +236,20 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     rw [hw] at hv'
     cases hv'
     refine ⟨hvid, fun a ha han => ?_⟩
-    rcases hnE z hz hzn _ hw a ha han with h | h
+    rcases hnE z hz _ hw a ha han with h | h
     · exact ⟨eb, heb, h⟩
     · exact eco_entryVal h
-  have hL : ∀ z, (z = x ∨ (isNewB f z = true ∧ (z ∈ gb.values ∨ EntryVal g z))) →
+  have hL : ∀ z, (z ∈ gb.values ∨ EntryVal g z) →
       ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true →
-        (a = x ∨ (isNewB f a = true ∧ (a ∈ gb.values ∨ EntryVal g a))) := by
-    rintro z (rfl | ⟨hzn, hz | hz⟩) w hw
-    · exact ⟨hgid z hcommon w hw, fun a ha han => .inr ⟨han, hnewx w hw a ha han⟩⟩
-    · refine ⟨hgid z hz w hw, fun a ha han => .inr ⟨han, ?_⟩⟩
-      rcases hnewb z hz hzn w hw a ha han with h | h
+        (a ∈ gb.values ∨ EntryVal g a) := by
+    rintro z (hz | hz) w hw
+    · refine ⟨hgid z hz w hw, fun a ha han => ?_⟩
+      rcases hnewb z hz w hw a ha han with h | h
       · exact .inl h
       · exact .inr (eco_entryVal h)
-    · obtain ⟨hid, hcl⟩ := hentry z hz hzn w hw
-      exact ⟨hid, fun a ha han => .inr ⟨han, .inr (hcl a ha han)⟩⟩
-  have hLx : x = x ∨ (isNewB f x = true ∧ (x ∈ gb.values ∨ EntryVal g x)) := .inl rfl
+    · obtain ⟨hid, hcl⟩ := hentry z hz w hw
+      exact ⟨hid, fun a ha han => .inr (hcl a ha han)⟩
+  have hLx : x ∈ gb.values ∨ EntryVal g x := .inl hcommon
   -- the classes
   unfold valueOK at hv
   rw [hu] at hv
@@ -226,13 +262,13 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     · rw [ite_eq_left hc] at hv
       have hconv : converted f x = true := by
         unfold converted; rw [hu]; dsimp only; rw [hc]; rfl
-      exact obl_call hu hw hc hv huid _ hLx hL (himk hconv)
+      exact obl_call hu hw hc hv huid _ hLx hL (hH hconv)
     rw [ite_eq_right hc] at hv
     by_cases hr : (u.op == .MakeResult) = true
     · rw [ite_eq_left hr] at hv
       have hconv : converted f x = true := by
         unfold converted; rw [hu]; dsimp only; rw [hr, Bool.or_true]
-      exact obl_result hu hw (beq_iff_eq.1 hr) hv hreg huid _ hLx hL (himk hconv)
+      exact obl_result hu hw (beq_iff_eq.1 hr) hv hreg huid _ hLx hL (hH hconv)
     rw [ite_eq_right hr] at hv
     by_cases hs : (u.op == .SelectN && u.args.size == 1 && converted f u.args[0]!) = true
     · rw [ite_eq_left hs] at hv

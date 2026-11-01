@@ -218,9 +218,9 @@ def imakeData (sh : Array Ty) (g : Func) (π : List (Nat × Ty)) (q a : ID) : Bo
       (d == q && (match shapeOf sh g q with
         | .ptr _ => true
         | _ => false)) ||
-      (match g.value? d with
-        | some dw => dw.op == .StructMake || dw.op == .ArrayMake1
-        | none => false)
+      (match g.value? d, shapeOf sh g d with
+        | some dw, .agg _ _ => dw.op == .StructMake || dw.op == .ArrayMake1
+        | _, _ => false)
   | _, _ => false
 
 /-- The pieces `pcs` of `g` are, parameter by parameter, the selector chains of the source
