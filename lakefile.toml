@@ -58,3 +58,7 @@ root = "GoFVTest.SchedProbe"
 [[lean_exe]]
 name = "gofv-ssa-opt"
 root = "GoFVTest.Driver.Main"
+
+[[lean_exe]]
+name = "rule-sat"
+root = "GoFVTest.Proof.RuleSat"
