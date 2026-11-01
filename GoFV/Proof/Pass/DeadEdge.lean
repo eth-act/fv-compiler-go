@@ -284,6 +284,170 @@ theorem removeSucc_spec (hX : XL F B) (hb : b ∈ B) (hn : n + 1 = (F.getB b).su
     by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
       simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
 
+/-- `XL` except at the predecessor slot `(c, j)` of the edge being removed: no successor points
+there, and its entry need not point back. -/
+structure XLx (F : Func) (B : Array ID) (c : ID) (j : Nat) : Prop where
+  pres : ∀ x ∈ B, (F.block? x).isSome
+  succ : ∀ x ∈ B, ∀ k e, sOf F x k = some e →
+    e.b ∈ B ∧ pOf F e.b e.i = some ⟨x, k⟩ ∧ ¬ (e.b = c ∧ e.i = j)
+  pred : ∀ y ∈ B, ∀ l e, ¬ (y = c ∧ l = j) → pOf F y l = some e →
+    e.b ∈ B ∧ sOf F e.b e.i = some ⟨y, l⟩
+
+variable {c : ID} {j m : Nat} {e3 : Edge}
+
+theorem getB_removePred (hpc : (F.block? c).isSome) (hp3 : j ≠ m → (F.block? e3.b).isSome)
+    (hm : m + 1 = (F.getB c).preds.size) (he3 : pOf F c m = some e3) :
+    (F.removePred c j).getB = if j = m then updAt c (setP Array.pop) F.getB else
+      updAt c (setP Array.pop) (updAt e3.b (setS fun ps => ps.modify e3.i fun p => { p with i := j })
+        (updAt c (setP fun ss => ss.set! j e3) F.getB)) := by
+  have hsz : (F.getB c).preds.size - 1 = m := by omega
+  have h2 : (F.getB c).preds[m]! = e3 := by
+    have hlt : m < (F.getB c).preds.size := by omega
+    rw [getElem!_pos ((F.getB c).preds) _ hlt]
+    exact Option.some.inj ((Array.getElem?_eq_getElem hlt).symm.trans he3)
+  unfold Func.removePred
+  simp only [hsz, h2]
+  funext x
+  rw [getB_invalidateCFG]
+  by_cases hjm : j = m
+  · subst hjm
+    simp only [bne_self_eq_false, Bool.false_eq_true, ite_false, ite_true]
+    rw [getB_modB_fun hpc]; rfl
+  · have hne : (j != m) = true := by simpa using hjm
+    simp only [hne, ite_true, hjm, ite_false]
+    have hp1 : ((F.modB c (setP fun ss => ss.set! j e3)).block? e3.b).isSome := by
+      rw [isSome_modB]; exact hp3 hjm
+    have hp1b : (((F.modB c (setP fun ss => ss.set! j e3)).modB e3.b
+        (setS fun ps => ps.modify e3.i fun p => { p with i := j })).block? c).isSome := by
+      rw [isSome_modB, isSome_modB]; exact hpc
+    show (((F.modB c (setP fun ss => ss.set! j e3)).modB e3.b
+        (setS fun ps => ps.modify e3.i fun p => { p with i := j })).modB c (setP Array.pop)).getB x
+      = _
+    rw [getB_modB_fun hp1b, getB_modB_fun hp1, getB_modB_fun hpc]
+
+/-- **`removePred c j`**: `c`'s predecessors lose slot `j` (the last, `m`, moves there), the
+moved edge's successor entry gets back index `j`; nothing else changes. -/
+theorem removePred_spec (hX : XLx F B c j) (hc : c ∈ B) (hm : m + 1 = (F.getB c).preds.size)
+    (hj : j ≤ m) :
+    (∀ l, pOf (F.removePred c j) c l = if l < m then pOf F c (predIdx j m l) else none) ∧
+    (∀ y, y ≠ c → ∀ l, pOf (F.removePred c j) y l = pOf F y l) ∧
+    (∀ x ∈ B, ∀ k, sOf (F.removePred c j) x k = (sOf F x k).map (renP c m j)) ∧
+    (∀ x, ((F.removePred c j).getB x).succs.size = (F.getB x).succs.size) ∧
+    (∀ x, ((F.removePred c j).getB x).preds.size =
+      if c = x then m else (F.getB x).preds.size) ∧
+    (∀ x, bview ((F.removePred c j).getB x) = bview (F.getB x)) ∧
+    (∀ x, ((F.removePred c j).block? x).isSome = (F.block? x).isSome) ∧
+    (F.removePred c j).valueTab = F.valueTab ∧ (F.removePred c j).blocks = F.blocks := by
+  have hpc := hX.pres c hc
+  have hml : m < (F.getB c).preds.size := by omega
+  obtain ⟨e3, he3⟩ : ∃ e3, pOf F c m = some e3 := ⟨_, Array.getElem?_eq_getElem hml⟩
+  have hE3 : j ≠ m → e3.b ∈ B ∧ sOf F e3.b e3.i = some ⟨c, m⟩ := fun hjm =>
+    hX.pred c hc m e3 (fun h => hjm h.2.symm) he3
+  have hG := getB_removePred (j := j) hpc (fun hjm => hX.pres _ (hE3 hjm).1) hm he3
+  have hsm : (F.getB c).preds.pop.size = m := by simp; omega
+  refine ⟨fun l => ?_, fun y hy l => ?_, fun x hx k => ?_, fun x => ?_, fun x => ?_, fun x => ?_,
+    fun x => ?_, ?_, ?_⟩
+  · simp only [pOf, hG]
+    split
+    · rename_i hjm; subst hjm
+      simp only [updAt, ite_true, setP_preds, Array.getElem?_pop]
+      have hs : (F.getB c).preds.size - 1 = j := by omega
+      rw [hs]; unfold predIdx
+      by_cases hl : l < j
+      · simp [hl, show l ≠ j by omega]
+      · simp [hl]
+    · rename_i hjm
+      rw [updAt_setP_preds, if_pos rfl, Array.getElem?_pop, updAt_setS_preds]
+      have hs1 : (updAt c (setP fun ss => ss.set! j e3) F.getB c).preds =
+          (F.getB c).preds.set! j e3 := by simp [updAt]
+      rw [hs1]
+      have hs : ((F.getB c).preds.set! j e3).size - 1 = m := by simp [Array.set!]; omega
+      rw [hs]
+      by_cases hl : l < m
+      · rw [if_pos hl, if_pos hl]; unfold predIdx
+        simp only [Array.set!, Array.getElem?_setIfInBounds]
+        by_cases hlj : j = l
+        · subst hlj
+          simp only [ite_true, show j < (F.getB c).preds.size by omega]
+          exact he3.symm
+        · simp only [hlj, ite_false, Ne.symm hlj]
+      · rw [if_neg hl, if_neg hl]
+  · simp only [pOf, hG]
+    split <;> simp [updAt, Ne.symm hy] <;> split <;> rfl
+  · simp only [sOf, hG]
+    have hgoal : (if e3.b = x ∧ j ≠ m then (F.getB x).succs.modify e3.i (fun p => { p with i := j })
+        else (F.getB x).succs)[k]? = ((F.getB x).succs[k]?).map (renP c m j) := by
+      by_cases hjm : j = m
+      · subst hjm
+        simp only [ne_eq, not_true_eq_false, and_false, ite_false]
+        cases (F.getB x).succs[k]? with
+        | none => rfl
+        | some e => simp only [Option.map_some, renP]; split <;> simp_all
+      obtain ⟨-, he3P⟩ := hE3 hjm
+      have hr : sOf F x k = some ⟨c, m⟩ ↔ x = e3.b ∧ k = e3.i := by
+        constructor
+        · intro h
+          have := (hX.pred c hc m e3 (fun h' => hjm h'.2.symm) he3).2
+          have h2 := (hX.succ x hx k _ h).2.1
+          rw [he3] at h2
+          cases h2; exact ⟨rfl, rfl⟩
+        · rintro ⟨rfl, rfl⟩; exact he3P
+      by_cases hcc : e3.b = x ∧ e3.i = k
+      · obtain ⟨rfl, rfl⟩ := hcc
+        have hP : (F.getB e3.b).succs[e3.i]? = some ⟨c, m⟩ := he3P
+        simp [hjm, Array.getElem?_modify, hP, renP]
+      · have hL : (if e3.b = x ∧ j ≠ m then (F.getB x).succs.modify e3.i (fun p => { p with i := j })
+            else (F.getB x).succs)[k]? = (F.getB x).succs[k]? := by
+          split
+          · rename_i hh
+            rw [Array.getElem?_modify]
+            have : ¬ (e3.i = k) := fun h' => hcc ⟨hh.1, h'⟩
+            simp [this]
+          · rfl
+        rw [hL]
+        cases h : (F.getB x).succs[k]? with
+        | none => rfl
+        | some e =>
+          simp only [Option.map_some, Option.some.injEq]
+          unfold renP; split
+          · rename_i hh; subst hh
+            exact absurd (hr.1 h) (fun h' => hcc ⟨h'.1.symm, h'.2.symm⟩)
+          · rfl
+    rw [← hgoal]
+    split
+    · rename_i hjm
+      simp [hjm]
+    · rename_i hjm
+      simp only [updAt_setP_succs, updAt_setS_succs]
+      by_cases he : e3.b = x <;> simp [he, hjm]
+  · rw [hG]; split
+    · simp only [updAt_setP_succs]
+    · simp only [updAt_setP_succs, updAt_setS_succs]
+      split <;> simp
+  · rw [hG]; split
+    · rename_i hjm; subst hjm
+      simp only [updAt_setP_preds]; split
+      · rename_i h; subst h; simp; omega
+      · rfl
+    · simp only [updAt_setP_preds, updAt_setS_preds]
+      by_cases hcy : c = x
+      · subst hcy; simp [Array.set!]; omega
+      · simp [hcy]
+  · rw [hG]; split
+    · exact bview_updAt _ _ _ _ (fun _ => rfl)
+    · rw [bview_updAt _ (setP Array.pop) _ _ (fun _ => rfl), bview_updAt _ (setS _) _ _
+        (fun _ => rfl), bview_updAt _ (setP _) _ _ (fun _ => rfl)]
+  · unfold Func.removePred
+    simp only [block?_invalidateCFG, isSome_modB]
+    by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
+      simp only [h, ite_true, ite_false, Bool.false_eq_true, isSome_modB]
+  · unfold Func.removePred
+    by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
+      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+  · unfold Func.removePred
+    by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
+      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+
 end
 
 end GoFV.Proof.Dead
