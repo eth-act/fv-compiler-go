@@ -424,11 +424,13 @@ def copyCompat (s t : Sem.Ty) : Bool :=
   GoFV.Opt.CSE.tyEq s t || (s matches .ptr _ && t matches .ptr _)
 
 /-- An `@b` result (`… => @x.Block (…)`, issue #17): node 0 is built fresh as `t` (in block
-`b`, which the term denotations do not read) and `v` becomes `Copy t` at its own type, the
-identity on `t`'s value (`copyCompat`). -/
+`b`, which the term denotations do not read) and `v` becomes `Copy t`, the identity on `t`'s
+value (`copyCompat`). The copy has `t`'s type, as Go's `copyOf` gives it, which need not be `v`'s
+type id (`(SlicePtr x:(Load <t> …)) => @x.Block (Load <t.Elem().PtrTo()> …)` at a selection typed
+`*go.shape.uint16` builds a `*uint16`). -/
 def blockTopOK (tabs : Tables) (M : Defs) (v u0 : Value) (us : List Value) (t : ID) : Bool :=
   t != v.id && (M.get? t).isNone && !((us.map (·.id)).drop 1).contains t &&
-  u0.op == .Copy && u0.args == #[t] && u0.auxInt == 0 && u0.aux == none && u0.type == v.type &&
+  u0.op == .Copy && u0.args == #[t] && u0.auxInt == 0 && u0.aux == none &&
   us.head?.any fun u => copyCompat (tabs.ty u0.type) (tabs.ty u.type)
 
 /-- The built definitions are the result's (`resDen`): `copy` of a bound value, or a `build`
@@ -2230,7 +2232,8 @@ def slEvent? (t : Interp.Table) (tabs : Tables) (f : Func) : RwEvent → Option 
   | _ => none
 
 /-- The expansion of the `Load` `v`: its arguments lose a use, the fresh values put in, and `v`
-redefined as the logged `StructMake`, whose arguments gain a use. -/
+redefined as the logged `StructMake` (or, for an `@b` result, the logged `Copy` with its type),
+whose arguments gain a use. -/
 def slApply (f : Func) (v : ID) : List Value → Func
   | [] => f
   | x' :: ds =>
@@ -2238,7 +2241,8 @@ def slApply (f : Func) (v : ID) : List Value → Func
     | some u =>
       let f := u.args.foldl (fun f a => f.modV a fun w => { w with uses := w.uses - 1 }) f
       let f := x'.args.foldl Func.incUses (ds.foldl ssPut f)
-      f.modV v fun w => { w with op := x'.op, auxInt := x'.auxInt, aux := x'.aux, args := x'.args }
+      f.modV v fun w =>
+        { w with op := x'.op, type := x'.type, auxInt := x'.auxInt, aux := x'.aux, args := x'.args }
     | none => f
 
 /-- One event of `slPre`: an expansion of `f` is applied, any other event kept, but for the
