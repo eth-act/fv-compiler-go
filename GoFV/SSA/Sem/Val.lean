@@ -50,6 +50,9 @@ inductive Blk where
   points into no allocation. -/
   | temp (act : Nat) (name : Nat)
   | heap (n : Nat)
+  /-- The write-barrier buffer (`WB`, §9): the entries a write-barrier sequence hands to the GC.
+  It has no address (`Ptr.ofAddr` never returns it), only `WB` creates it and `WBend` frees it. -/
+  | wbuf
   deriving DecidableEq, Repr, Inhabited, Hashable
 
 /-- A pointer: an allocation and a byte offset (mod 2^64) (§3.3). -/
@@ -149,6 +152,7 @@ def renderBlk : Blk → String
   | .outargs a => s!"outargs{a}"
   | .temp a n => s!"temp{a}.a{n}"
   | .heap n => s!"heap{n}"
+  | .wbuf => "wbuf"
 
 /-- Short rendering for test output: integers signed (`toInt`), pointers as block+offset. -/
 partial def render : Val → String

@@ -285,6 +285,7 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .MemEq => memEq args
   | .AtomicLoad8 | .AtomicLoad32 | .AtomicLoad64 | .AtomicLoadPtr | .AtomicLoadAcq32
   | .AtomicLoadAcq64 => atomicLoad ty args
+  | .WB => wbOp auxInt args
   | .Add32F => FOps.add .w32 args
   | .Add64F => FOps.add .w64 args
   | .Sub32F => FOps.sub .w32 args

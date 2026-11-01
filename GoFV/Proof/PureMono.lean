@@ -494,6 +494,17 @@ theorem atomicLoad_mono (t : Ty) : RefinesList as bs → Refines (atomicLoad t a
     | _ => exact .poison _
   | .cons _ (.cons _ (.cons _ _)) => by simp only [atomicLoad]; exact .poison _
 
+theorem wbOp_mono (n : Int64) : RefinesList as bs → Refines (wbOp n as) (wbOp n bs)
+  | .nil => by simp only [wbOp]; exact .poison _
+  | .cons h .nil => by
+    cases h with
+    | @mem m m' hm =>
+      simp only [wbOp, Mem.wbAlloc]
+      exact .tuple (.cons (.ptr _) (.cons (.mem (hm.set _ (Alloc.Refines.refl _))) .nil))
+    | poison => exact .poison _
+    | _ => exact .poison _
+  | .cons _ (.cons _ _) => by simp only [wbOp]; exact .poison _
+
 theorem memEq_mono : RefinesList as bs → Refines (memEq as) (memEq bs)
   | .nil => by simp only [memEq]; exact .poison _
   | .cons _ .nil => by simp only [memEq]; exact .poison _
@@ -803,6 +814,7 @@ theorem evalPure_mono (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef)
   case Dereference => exact loadOp_mono _ h
   case MemEq => exact memEq_mono h
   case AtomicLoadAcq64 => exact atomicLoad_mono _ h
+  case WB => exact wbOp_mono _ h
   case AtomicLoad8 => exact atomicLoad_mono _ h
   case AtomicLoad32 => exact atomicLoad_mono _ h
   case AtomicLoad64 => exact atomicLoad_mono _ h

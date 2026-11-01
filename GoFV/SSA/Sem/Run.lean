@@ -680,8 +680,8 @@ def auxTy (tabs : Tables) (aux : Option AuxRef) : Ty :=
 /-- The memory roots of P2 (§3.4): `Store {T} p x mem`, `Move {T} [n] dst src mem`,
 `Zero {T} [n] p mem` (and their write-barrier forms, which have the same semantics),
 `VarDef {n} mem`, `VarLive {n} mem`, `KeepAlive x mem`, `WBend mem` (the end of a
-write-barrier sequence: no memory effect), `NilCheck p mem` (§6). The address of
-a write and the pointer of a nil check are observation points. -/
+write-barrier sequence: the GC has taken the buffer, `Blk.wbuf` is freed), `NilCheck p mem`
+(§6). The address of a write and the pointer of a nil check are observation points. -/
 def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
   let what := s!"v{v.id}: {v.op.name}"
   match v.op, argv with
@@ -697,7 +697,8 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
     match v.aux with
     | some n => .ok (.mem (m.poisonBlock (frameBlk ctx.tabs ctx.act n)))
     | none => .stuck s!"{what}: no name"
-  | .VarLive, [.mem m] | .WBend, [.mem m] => .ok (.mem m)
+  | .VarLive, [.mem m] => .ok (.mem m)
+  | .WBend, [.mem m] => .ok (.mem (m.free .wbuf))
   | .KeepAlive, [_, .mem m] => .ok (.mem m)
   | .NilCheck, [.ptr p, .mem m] => if p.blk == .nil then .panic .nilDeref m else .ok (.ptr p)
   | .NilCheck, [.int .w64 x, .mem m] =>

@@ -21,7 +21,8 @@ same image:
 - other symbols the function takes the address of (`Addr`): zero bytes, writable, as large as
   the largest pointee type of those `Addr`s (their contents belong to the environment; zero is
   the state of `runtime.writeBarrier` with the GC off, and of package variables before their
-  initialisation).
+  initialisation); `runtime.writeBarrier` is read-only (only the GC, an environment contract,
+  changes it).
 -/
 
 namespace GoFV.SSA.Sem
@@ -143,6 +144,9 @@ def globalImage (e : ExportFile) : List (String × Alloc) := Id.run do
       if k.endsWith "·f" then
         let code := (k.dropEnd 2).toString
         img := img.insert k { data := ptrBytes ⟨.global code, 0⟩, writable := false }
+      -- the write-barrier flag belongs to the GC: read-only for programs (§9, writebarrier)
+      else if k == "runtime.writeBarrier" then
+        img := img.insert k { data := Array.replicate (max n 4) (.b 0), writable := false }
       else img := img.insert k { data := Array.replicate n (.b 0) }
   return img.toList
 

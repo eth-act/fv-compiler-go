@@ -327,6 +327,11 @@ def stringtoslicebyte : Contract := fun args _ m => ok? "stringtoslicebyte" do
 /-- Entry points with no effect the semantics models (`print*`: output is not modelled). -/
 def noEffect : Contract := fun _ _ m => .returned [] m
 
+/-- `runtime.wbZero(typ, dst)`, `runtime.wbMove(typ, dst, src)` (`mbarrier.go`): the GC's
+bookkeeping before a typed zeroing/copy by a write-barrier sequence (`writebarrier`); the
+zeroing/copy itself is the sequence's own `Zero`/`Move`. No effect the semantics models. -/
+def wbHelper : Contract := noEffect
+
 /-- A panicking entry point. -/
 def panics (e : Panic) : Contract := fun _ _ m => .panicked e m
 
@@ -370,6 +375,7 @@ def Env.runtime : Env where
     | "runtime.printint" | "runtime.printuint" | "runtime.printbool" | "runtime.printstring"
     | "runtime.printpointer" | "runtime.printhex" | "runtime.printslice"
     | "runtime.printfloat" | "runtime.printcomplex" => some noEffect
+    | "runtime.wbZero" | "runtime.wbMove" => some wbHelper
     | name =>
       if name.startsWith "runtime.mallocgcTinySC" || name.startsWith "runtime.mallocgcSmallNoScanSC" ||
           name.startsWith "runtime.mallocgcSmallScanNoHeaderSC" then some mallocSized

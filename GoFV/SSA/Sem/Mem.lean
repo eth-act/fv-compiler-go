@@ -26,7 +26,7 @@ def Blk.base? : Blk → Option Nat
   | .heap n => some ((n + 1) * 2 ^ 40)
   | .local a k | .temp a k => some (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24)
   | .outargs a => some (2 ^ 62 + a * 2 ^ 42)
-  | .global _ => none
+  | .global _ | .wbuf => none
 
 /-- The concrete address of a pointer (`none` for globals). -/
 def Ptr.addr? (p : Ptr) : Option (BitVec 64) :=
@@ -56,7 +56,7 @@ in-bounds and one-past-the-end pointers stay inside (§3.3). -/
 def Blk.window? : Blk → Option Nat
   | .nil | .heap _ => some (2 ^ 40)
   | .local _ _ | .temp _ _ | .outargs _ => some (2 ^ 24)
-  | .global _ => none
+  | .global _ | .wbuf => none
 
 /-- `p`'s offset is inside its block's address window. -/
 def Ptr.inWindow (p : Ptr) : Bool :=
@@ -82,7 +82,7 @@ def Ptr.convertible (p : Ptr) : Bool :=
   | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 2 ^ 20) &&
       decide (p.off.toNat < 2 ^ 24)
   | .outargs a => decide (a < 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
-  | .temp _ _ | .global _ => false
+  | .temp _ _ | .global _ | .wbuf => false
 
 /-- Pointer equality (`EqPtr`): the same block and offset (§3.3: pointers of different
 allocations are never equal; a pointer that left its allocation is `poison`). -/
@@ -140,6 +140,10 @@ def poisonBlock (m : Mem) (b : Blk) : Mem :=
 /-- Remove block `b` (the frame at return: pointers into it then point into no allocation,
 and which frame variables existed is not observable). -/
 def free (m : Mem) (b : Blk) : Mem := { m with blocks := m.blocks.filter (·.1 != b) }
+
+/-- `WB [n] m`: `m` with a fresh write-barrier buffer of `n` pointer-sized entries (poison). -/
+def wbAlloc (m : Mem) (n : Nat) : Mem :=
+  m.set .wbuf { data := Array.replicate (8 * n) .poison }
 
 /-- `m` without the frames of activation `act` and of every later one (`Blk.local a _`,
 `Blk.outargs a` with `a ≥ act`): the memory a panic of the activation `act` is compared by
