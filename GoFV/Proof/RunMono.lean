@@ -168,10 +168,11 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                   | stuck msg o => exact .stuck _ _
           · simp only [hpost, Bool.false_eq_true, ↓reduceIte]
             dsimp only [pure, Res.bind]
-            have ha := hpieces
+            have ha := retypeResults_mono ctx.tabs
+              ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)) hpieces
             revert ha
-            generalize rest.dropLast = A
-            generalize rest'.dropLast = A'
+            generalize retypeResults ctx.tabs _ rest.dropLast = A
+            generalize retypeResults ctx.tabs _ rest'.dropLast = A'
             intro ha
             split
             · exact .stuck _ _

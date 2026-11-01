@@ -448,6 +448,36 @@ theorem ec_imake {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {a q :
 
 /-! ## The pieces of the arguments -/
 
+/-- The register pieces `piecesOK` expects of an argument `r` of a parameter of shape `t`:
+`leafVals t r`, or (with `cast`) the pointer itself for a 64-bit integer parameter (`castOK`). -/
+def ecPieceVals (cast : Bool) (t : Ty) (r : Val) : List Val :=
+  match cast, t, r with
+  | true, .int .w64, .ptr p => [.ptr p]
+  | _, t, r => leafVals t r
+
+theorem ecPieceVals_false (t : Ty) (r : Val) : ecPieceVals false t r = leafVals t r := rfl
+
+/-- On an argument of the parameter's shape, the pieces are its leaf values (an address-less
+pointer at a 64-bit integer shape retypes to itself). -/
+theorem ecPieceVals_of_hasTy (cast : Bool) {t : Ty} {r : Val} (h : r.hasTy t = true) :
+    ecPieceVals cast t r = leafVals t r := by
+  cases cast with
+  | false => rfl
+  | true =>
+    unfold ecPieceVals
+    split
+    · simp only [Val.hasTy] at h
+      simp only [leafVals, Val.retype, List.cons.injEq, and_true]
+      revert h
+      split <;> simp_all
+    · rfl
+
+theorem ec_castOK {s t : Ty} (h : castOK s t = true) : (∃ e, s = .ptr e) ∧ t = .int .w64 := by
+  unfold castOK at h
+  split at h
+  · exact ⟨⟨_, rfl⟩, rfl⟩
+  · cases h
+
 theorem ec_pairs {P : List (Nat × Ty) × ID → Bool} {F : List (Nat × Ty) → Val} {G : ID → Val} :
     (paths : List (List (Nat × Ty))) → (qs : List ID) → qs.length = paths.length →
       (paths.zip qs).all P = true →
@@ -467,18 +497,19 @@ def EcArgRel (tabs : Tables) (f g : Func) (frS T : Frame) (a : ID) : Prop :=
     ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y'
 
 /-- **The register pieces of the arguments** (`piecesOK`): the target's registers of the pieces
-refine the leaf values of the source's registers of the arguments. -/
+refine the expected pieces (`ecPieceVals`: the leaf values) of the source's registers of the
+arguments. -/
 theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L : ID → Prop}
     (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ b ∈ w.args, isNewB f b = true → L b)
-    (hRS : RegsOK (Ctx.make tabs f) frS) :
-    ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs (typeShapes tabs) f g ps as pcs = true →
+    (hRS : RegsOK (Ctx.make tabs f) frS) (cast : Bool) :
+    ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs (typeShapes tabs) f g cast ps as pcs = true →
       (∀ p ∈ ps, wf (tabs.ty p.type) = true) →
       (∀ q ∈ pcs, Reg T q) → (∀ q ∈ pcs, isNewB f q = true → E q ∧ L q) →
       (∀ a ∈ as, EcArgRel tabs f g frS T a) → (∀ a ∈ as, EcImkFacts env tabs f g frS T a) →
       (∀ q ∈ pcs, ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false →
         ∃ yq', T.regs[q]? = some (some yq') ∧ Sem.Refines (ecCv tabs f g q yq) yq') →
-      Sem.RefinesList ((ps.zip (as.map (rv frS))).flatMap fun (p, r) => leafVals (tabs.ty p.type) r)
+      Sem.RefinesList ((ps.zip (as.map (rv frS))).flatMap fun (p, r) => ecPieceVals cast (tabs.ty p.type) r)
         (pcs.map (rv T))
   | [], [], [], _, _, _, _, _, _, _ => .nil
   | [], [], _ :: _, h, _, _, _, _, _, _ | [], _ :: _, _, h, _, _, _, _, _, _
@@ -489,31 +520,58 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
     obtain ⟨⟨⟨⟨heq, hlen⟩, hsp⟩, hall⟩, hrest⟩ := h
     have hw := hwf p List.mem_cons_self
     obtain ⟨y, hyS, hry, y', hyT, hyy⟩ := hrel a List.mem_cons_self
-    have hyt : y.hasTy (tabs.ty p.type) = true := by
-      have := hry.1
-      rw [← shapeOf_eq, eqE_hasTy heq] at this
-      exact this
     simp only [List.map_cons, List.zip_cons_cons, List.flatMap_cons, rv_of hyS]
     rw [← List.take_append_drop (leafPaths (tabs.ty p.type)).length pcs, List.map_append]
-    refine RefinesList.append ?_ (ec_pieces hNC hL hRS ps as _ hrest (fun q hq => hwf q
+    refine RefinesList.append ?_ (ec_pieces hNC hL hRS cast ps as _ hrest (fun q hq => hwf q
       (List.mem_cons_of_mem _ hq)) (fun q hq => hreg q (List.mem_of_mem_drop hq))
       (fun q hq => hEL q (List.mem_of_mem_drop hq)) (fun b hb => hrel b (List.mem_cons_of_mem _ hb))
       (fun b hb => himk b (List.mem_cons_of_mem _ hb)) (fun q hq => hfq q (List.mem_of_mem_drop hq)))
-    rw [ec_leafVals_paths _ hw hyt]
-    refine ec_pairs _ _ (by rw [List.length_take]; omega) hall fun x hx hP => ?_
-    have hπ : x.1 ∈ leafPaths (tabs.ty p.type) := (List.of_mem_zip hx).1
-    have hq : x.2 ∈ pcs := List.mem_of_mem_take (List.of_mem_zip hx).2
-    have hns : special f g a = false := by
-      rcases hsp with he | hs
-      · rw [List.isEmpty_iff] at he; rw [he] at hπ; cases hπ
-      · simpa using hs
-    rw [ecCv_of_not_special hns] at hyy
-    simp only [Bool.or_eq_true] at hP
-    rcases hP with hc | hi
-    · obtain ⟨yq, hyq, hr⟩ := ec_chain hNC hL hyT hyy _ _ hc (hEL _ hq)
-      rw [List.reverse_reverse] at hr
-      rw [rv_of hyq]
-      exact hr
-    · exact ec_imake hi hπ hyt hyS hyT hyy hRS (himk a List.mem_cons_self) (hreg _ hq) (hfq _ hq)
+    rcases heq with heq | ⟨rfl, hcast⟩
+    · have hyt : y.hasTy (tabs.ty p.type) = true := by
+        have := hry.1
+        rw [← shapeOf_eq, eqE_hasTy heq] at this
+        exact this
+      rw [ecPieceVals_of_hasTy cast hyt, ec_leafVals_paths _ hw hyt]
+      refine ec_pairs _ _ (by rw [List.length_take]; omega) hall fun x hx hP => ?_
+      have hπ : x.1 ∈ leafPaths (tabs.ty p.type) := (List.of_mem_zip hx).1
+      have hq : x.2 ∈ pcs := List.mem_of_mem_take (List.of_mem_zip hx).2
+      have hns : special f g a = false := by
+        rcases hsp with he | hs
+        · rw [List.isEmpty_iff] at he; rw [he] at hπ; cases hπ
+        · simpa using hs
+      rw [ecCv_of_not_special hns] at hyy
+      simp only [Bool.or_eq_true] at hP
+      rcases hP with hc | hi
+      · obtain ⟨yq, hyq, hr⟩ := ec_chain hNC hL hyT hyy _ _ hc (hEL _ hq)
+        rw [List.reverse_reverse] at hr
+        rw [rv_of hyq]
+        exact hr
+      · exact ec_imake hi hπ hyt hyS hyT hyy hRS (himk a List.mem_cons_self) (hreg _ hq) (hfq _ hq)
+    · -- a pointer argument of a 64-bit integer parameter: its piece is the argument itself
+      obtain ⟨⟨e, hs⟩, ht⟩ := ec_castOK hcast
+      have hyp : y.hasTy (.ptr e) = true := by
+        have := hry.1
+        rw [← shapeOf_eq, hs] at this
+        exact this
+      rw [ht] at hall hsp hlen ⊢
+      have hns : special f g a = false := by
+        rcases hsp with he | hs
+        · cases he
+        · simpa using hs
+      rw [ecCv_of_not_special hns] at hyy
+      obtain ⟨q, pcs', rfl⟩ : ∃ q pcs', pcs = q :: pcs' := by
+        cases pcs with
+        | nil => simp [leafPaths] at hlen
+        | cons q pcs' => exact ⟨q, pcs', rfl⟩
+      have hqa : q = a := by
+        simp [leafPaths, chainOK, imakeData] at hall
+        exact hall
+      subst hqa
+      simp only [leafPaths, List.length_cons, List.length_nil, Nat.zero_add, List.take_succ_cons,
+        List.take_zero, List.map_cons, List.map_nil, rv_of hyT]
+      cases y with
+      | ptr r => exact .cons hyy .nil
+      | poison => exact .cons (.poison _) .nil
+      | _ => simp [Val.hasTy] at hyp
 
 end GoFV.Proof.EC

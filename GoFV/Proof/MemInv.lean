@@ -424,7 +424,7 @@ theorem callOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx :
     have hA : ∀ a ∈ args, MemsOK P a := by
       first
       | exact decodeArgs_mems _ _ _ _ hR (ofOption_ok hargs)
-      | (cases hargs; exact hR)
+      | (cases hargs; exact retypeResults_mems ctx.tabs _ _ hR)
     split at h
     · cases h
     split at h

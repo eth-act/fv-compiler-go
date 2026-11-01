@@ -45,16 +45,16 @@ private theorem res_pure {α : Type} (a : α) : (pure a : Res α) = .ok a := rfl
 abbrev callParams (tabs : Tables) (v : Value) : List ABIParam :=
   ((callABI? tabs v.aux).map (·.params.toList)).getD []
 
-/-- A static call that returns: its callee's contract returned on the arguments (as they are
-before `expand calls`, decoded from the register pieces after) and the memory with the
-outgoing-arguments area poisoned, and the results were encoded. -/
+/-- A static call that returns: its callee's contract returned on the arguments (before `expand
+calls` retyped at the parameters' shapes, decoded from the register pieces after) and the memory
+with the outgoing-arguments area poisoned, and the results were encoded. -/
 theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
     (hop : v.op = .StaticLECall ∨ v.op = .StaticCall) (hc : callOp env ctx v argv = .ok y) :
     ∃ name M args c rs m' r, v.aux.bind ctx.tabs.callee? = some name ∧
       argv.getLast? = some (.mem M) ∧
       (if v.op = .StaticCall then
         decodeArgs ctx.tabs ctx.act M ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast = some args
-      else args = argv.dropLast) ∧
+      else args = retypeResults ctx.tabs ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast) ∧
       env.extern name = some c ∧ c args none (M.poisonBlock (.outargs ctx.act)) = .returned rs m' ∧
       encodeResults ctx.tabs ctx.act ((callParams ctx.tabs v).filter (·.out))
         (retypeResults ctx.tabs ((callParams ctx.tabs v).filter (·.out)) rs) m' = some r ∧
@@ -177,6 +177,17 @@ theorem simpleCall_post {tabs : Tables} {v : Value} {k : Nat} (hs : simpleCall t
   · exact ⟨_, ‹_›, h⟩
   · cases h
 
+theorem simpleCall_pre {tabs : Tables} {v : Value} {k : Nat} (hs : simpleCall tabs v k = true)
+    (hop : ¬ v.op = .StaticCall) :
+    callABI? tabs v.aux = none ∨ ∃ abi, callABI? tabs v.aux = some abi ∧ inShapes tabs k abi.params.toList = true := by
+  rcases simpleCall_op hs with h | h
+  · simp only [simpleCall, Bool.and_eq_true, h] at hs
+    obtain ⟨-, hs⟩ := hs
+    cases hc : callABI? tabs v.aux with
+    | none => exact .inl rfl
+    | some abi => rw [hc] at hs; exact .inr ⟨abi, rfl, hs⟩
+  · exact absurd h hop
+
 theorem calleeIs_eq {tabs : Tables} {v : Value} {name : String} (h : calleeIs tabs v name = true) :
     v.aux.bind tabs.callee? = some name := by
   simpa [calleeIs] using h
@@ -249,6 +260,35 @@ theorem decodeArgs_three {tabs : Tables} {act : Nat} {m : Mem} {ps : List ABIPar
     ofPieces_ptr, ofPieces_int]
   rfl
 
+theorem retype_int64 (x : BitVec 64) : (Val.int .w64 x).retype (.int .w64) = .int .w64 x := by
+  simp [Val.retype]
+
+/-- A pre-`expand calls` `simpleCall` passes pointer-shaped words and a 64-bit size as they are. -/
+theorem retypeArgs_two {tabs : Tables} {ps : List ABIParam} (h : inShapes tabs 2 ps = true) {a : Val}
+    (ha : ∀ o, a.retype (.ptr o) = a) (x : BitVec 64) :
+    retypeResults tabs (ps.filter (!·.out)) [a, .int .w64 x] = [a, .int .w64 x] := by
+  have hl : ps.length = 2 := by simp only [inShapes, Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1
+  rcases ps with _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, rest⟩⟩⟩ <;> simp at hl
+  simp only [inShapes, List.dropLast, List.all, List.getLast?_cons_cons, List.getLast?_singleton, Option.all,
+    Bool.and_eq_true, Bool.and_true] at h
+  obtain ⟨⟨-, h1⟩, h2⟩ := h
+  obtain ⟨h11, -, o, h13⟩ := inShape_ptr h1
+  obtain ⟨h21, -, h23⟩ := inShape_int h2
+  simp only [List.filter, h11, h21, Bool.not_false, retypeResults, h13, h23, ha, retype_int64]
+
+theorem retypeArgs_three {tabs : Tables} {ps : List ABIParam} (h : inShapes tabs 3 ps = true) {a b : Val}
+    (ha : ∀ o, a.retype (.ptr o) = a) (hb : ∀ o, b.retype (.ptr o) = b) (x : BitVec 64) :
+    retypeResults tabs (ps.filter (!·.out)) [a, b, .int .w64 x] = [a, b, .int .w64 x] := by
+  have hl : ps.length = 3 := by simp only [inShapes, Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1
+  rcases ps with _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, _ | ⟨p4, rest⟩⟩⟩⟩ <;> simp at hl
+  simp only [inShapes, List.dropLast, List.all, List.getLast?_cons_cons, List.getLast?_singleton, Option.all,
+    Bool.and_eq_true, Bool.and_true] at h
+  obtain ⟨⟨-, h1, h2⟩, h3⟩ := h
+  obtain ⟨h11, -, o, h13⟩ := inShape_ptr h1
+  obtain ⟨h21, -, o', h23⟩ := inShape_ptr h2
+  obtain ⟨h31, -, h33⟩ := inShape_int h3
+  simp only [List.filter, h11, h21, h31, Bool.not_false, retypeResults, h13, h23, h33, ha, hb, retype_int64]
+
 theorem encodeResults_nil {tabs : Tables} {act : Nat} {outs : List ABIParam} {m : Mem}
     {r : List Val × Mem} (h : encodeResults tabs act outs (retypeResults tabs outs []) m = some r) :
     outs = [] ∧ r = ([], m) := by
@@ -279,15 +319,20 @@ theorem callOp_args {ctx : Ctx} {v : Value} {k : Nat} {M : Mem} {pieces args : L
     (hs : simpleCall ctx.tabs v k = true)
     (hdec : ∀ ps, inShapes ctx.tabs k ps = true →
       decodeArgs ctx.tabs ctx.act M (ps.filter (!·.out)) pieces = some pieces)
+    (hret : ∀ ps, inShapes ctx.tabs k ps = true → retypeResults ctx.tabs (ps.filter (!·.out)) pieces = pieces)
     (hargs : if v.op = .StaticCall then
         decodeArgs ctx.tabs ctx.act M ((callParams ctx.tabs v).filter (!·.out)) pieces = some args
-      else args = pieces) : args = pieces := by
+      else args = retypeResults ctx.tabs ((callParams ctx.tabs v).filter (!·.out)) pieces) : args = pieces := by
   split at hargs
   · rename_i hpost
     obtain ⟨abi, habi, hsh⟩ := simpleCall_post hs hpost
     rw [callParams, habi, Option.map_some, Option.getD_some, hdec _ hsh] at hargs
     exact (Option.some.inj hargs).symm
-  · exact hargs
+  · rename_i hpre
+    rw [hargs]
+    rcases simpleCall_pre hs hpre with hn | ⟨abi, habi, hsh⟩
+    · rw [callParams, hn]; rfl
+    · rw [callParams, habi, Option.map_some, Option.getD_some, hret _ hsh]
 
 /-- A returning `memclrNoHeapPointers(P, x)` call refines the plain write of `x` zero bytes
 (`Zero`). -/
@@ -302,7 +347,8 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
   rw [calleeIs_eq hn] at hname; cases hname
   simp only [List.getLast?_cons_cons, List.getLast?_singleton, Option.some.injEq] at hm
   subst hm
-  have ha := callOp_args hs (fun ps h => decodeArgs_two h P x) hargs
+  have ha := callOp_args hs (fun ps h => decodeArgs_two h P x)
+    (fun ps h => retypeArgs_two h (fun _ => rfl) x) hargs
   subst ha
   obtain rfl := hE.1 c hx
   simp only [Runtime.memclr, Runtime.ok?, Runtime.asPtr, Runtime.asInt] at hr
@@ -333,7 +379,8 @@ theorem callOp_memmove {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P 
   rw [calleeIs_eq hn] at hname; cases hname
   simp only [List.getLast?_cons_cons, List.getLast?_singleton, Option.some.injEq] at hm
   subst hm
-  have ha := callOp_args hs (fun ps h => decodeArgs_three h P Q x) hargs
+  have ha := callOp_args hs (fun ps h => decodeArgs_three h P Q x)
+    (fun ps h => retypeArgs_three h (fun _ => rfl) (fun _ => rfl) x) hargs
   subst ha
   obtain rfl := hE.2 c hx
   simp only [Runtime.memmove, Runtime.ok?, Runtime.asPtr, Runtime.asInt] at hr

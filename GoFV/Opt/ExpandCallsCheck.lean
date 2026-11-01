@@ -244,17 +244,28 @@ def imakeData (sh : Array Ty) (g : Func) (π : List (Nat × Ty)) (q a : ID) : Bo
         | _, _ => false)
   | _, _ => false
 
+/-- An argument of shape `s` passed to a parameter of shape `t` that differs: an `unsafe.Pointer`
+(pointer-shaped) argument of a `uintptr` (64-bit integer) parameter, whose register piece is the
+pointer itself (the callee reads its word as an integer, `decodeArgs`; the pre-`expand calls`
+call retypes it alike, `retypeResults`). -/
+def castOK : Ty → Ty → Bool
+  | .ptr _, .int .w64 => true
+  | _, _ => false
+
 /-- The pieces `pcs` of `g` are, parameter by parameter, the selector chains of the source
-values `as` (each of the parameter's shape in `f`), or `IMake` data shortcuts. -/
-def piecesOK (tabs : Tables) (sh : Array Ty) (f g : Func) : List ABIParam → List ID → List ID → Bool
+values `as` (each of the parameter's shape in `f`, or with `cast` a pointer of a 64-bit integer
+parameter, `castOK`), or `IMake` data shortcuts. -/
+def piecesOK (tabs : Tables) (sh : Array Ty) (f g : Func) (cast : Bool) :
+    List ABIParam → List ID → List ID → Bool
   | [], [], [] => true
   | p :: ps, a :: as, pcs =>
     let t := tabs.ty p.type
     let paths := leafPaths t
-    eqE (shapeOf sh f a) t && paths.length ≤ pcs.length && (paths.isEmpty || !special f g a) &&
+    (eqE (shapeOf sh f a) t || cast && castOK (shapeOf sh f a) t) && paths.length ≤ pcs.length &&
+      (paths.isEmpty || !special f g a) &&
       (paths.zip (pcs.take paths.length)).all (fun (π, q) =>
         chainOK sh g (isNewB f) π.reverse q a || imakeData sh g π q a) &&
-      piecesOK tabs sh f g ps as (pcs.drop paths.length)
+      piecesOK tabs sh f g cast ps as (pcs.drop paths.length)
   | _, _, _ => false
 
 /-! ## Stack-assigned arguments -/
@@ -368,7 +379,7 @@ slots. -/
 def storeArgsOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u : Value)
     (sp : List (ABIParam × ID)) (zs : List ID) : Bool :=
   storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs &&
-    piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
+    piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
     (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
 
 /-- A shape a `Move` of a wide argument copies: not zero-sized `Empty`. -/
@@ -505,7 +516,7 @@ def callOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
       (w.args.extract 0 k).toList == (u.args.extract 0 k).toList &&
       stackOK tabs sh f g u w ins as &&
       (u.args.extract 0 k).toList.all (fun a => !special f g a) && !special f g u.args[n - 1]! &&
-      piecesOK tabs sh f g (rp.map (·.1)) (rp.map (·.2)) (w.args.extract k (w.args.size - 1)).toList &&
+      piecesOK tabs sh f g true (rp.map (·.1)) (rp.map (·.2)) (w.args.extract k (w.args.size - 1)).toList &&
       tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
       regTupleOf (leafTys tabs outs) (valueTy sh (some w))
   | _, _ => false
@@ -587,7 +598,7 @@ def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :
   w.op == .MakeResult && n == outs.length + 1 && w.args.size ≥ 1 &&
     w.args[w.args.size - 1]! == u.args[n - 1]! &&
     !special f g u.args[n - 1]! &&
-    piecesOK tabs sh f g outs (u.args.extract 0 (n - 1)).toList
+    piecesOK tabs sh f g false outs (u.args.extract 0 (n - 1)).toList
       (w.args.extract 0 (w.args.size - 1)).toList &&
     tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
     regTupleOf (leafTys tabs outs) (valueTy sh (some w))

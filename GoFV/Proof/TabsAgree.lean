@@ -123,10 +123,12 @@ theorem callOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (argv : List
     encodeResults_tabs act _ fun p hp => hP p (List.mem_filter.mp hp).1
   have hret := retypeResults_tabs (tabs := ctx.tabs) (tabs' := tabs') (P.filter (·.out))
     (fun p hp => hP p (List.mem_filter.mp hp).1)
+  have hreta := retypeResults_tabs (tabs := ctx.tabs) (tabs' := tabs') (P.filter (!·.out))
+    (fun p hp => hP p (List.mem_filter.mp hp).1)
   have hoa : ∀ act m, outargsOK tabs' act m (P.filter (!·.out)) =
       outargsOK ctx.tabs act m (P.filter (!·.out)) := fun act m =>
     outargsOK_tabs act m _ fun p hp => hP p (List.mem_filter.mp hp).1
-  simp only [hin, hout, hret, hoa]
+  simp only [hin, hout, hret, hreta, hoa]
 
 theorem memRoot_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (argv : List Val) :
     memRoot { ctx with tabs := tabs' } v argv = memRoot ctx v argv := by

@@ -29,13 +29,13 @@ def className (f g : Func) (u w : Value) : String :=
   else s!"ident {u.op.name}→{w.op.name}"
 
 /-- Why `piecesOK` fails. -/
-partial def piecesWhy (tabs : Tables) (sh : Array Ty) (f g : Func) :
+partial def piecesWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (cast : Bool) :
     List ABIParam → List ID → List ID → String
   | [], [], [] => "ok"
   | p :: ps, a :: as, pcs =>
     let t := tabs.ty p.type
     let paths := leafPaths t
-    if !eqE (shapeOf sh f a) t then
+    if !(eqE (shapeOf sh f a) t || cast && castOK (shapeOf sh f a) t) then
       let op := ((f.value? a).map (·.op.name)).getD "?"
       s!"arg shape ({op}) {repr (erase (shapeOf sh f a))} vs {repr (erase t)}"
     else if paths.length > pcs.length then "too few pieces"
@@ -43,7 +43,7 @@ partial def piecesWhy (tabs : Tables) (sh : Array Ty) (f g : Func) :
       match g.value? a with
       | some aw => if aw.op == .IMake then "chain (IMake shortcut)" else s!"chain (arg {aw.op.name})"
       | none => "chain"
-    else piecesWhy tabs sh f g ps as (pcs.drop paths.length)
+    else piecesWhy tabs sh f g cast ps as (pcs.drop paths.length)
   | [], _, _ => "extra args/pieces"
   | _, [], _ => "missing args"
 
@@ -65,8 +65,8 @@ def stackWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : L
     else if mv.any (fun ((p, a), z) => !moveOK tabs sh f g u p a z) then "move"
     else if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
       s!"stores ({zs.length} for {(leafSlots tabs (sp.map (·.1))).length} slots)"
-    else if !piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
-      s!"store values: {piecesWhy tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
+    else if !piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
+      s!"store values: {piecesWhy tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
     else "store value not an argument"
 
 /-- Why the call class fails. -/
@@ -80,12 +80,21 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
     let rp := argPairs true ins as
     if !(w.op == op) then "op"
     else if !outsOK tabs outs then
-      if outs.any (·.regs.isEmpty) then "stack result shape" else "result shape"
-    else if !insOK tabs ins then "param shape"
+      let bad := outs.filter fun p => !outsOK tabs [p]
+      let d := bad.map fun p =>
+        let t := tabs.ty p.type
+        s!"{repr (erase t)} regs {p.regs.size} leaves {(leaves t).length} wf {GoFV.Proof.ABI.wf t} off {p.offset}"
+      if outs.any (·.regs.isEmpty) then s!"stack result shape: {d}" else s!"result shape: {d}"
+    else if !insOK tabs ins then
+      let bad := ins.filter fun p => !insOK tabs [p]
+      let d := bad.map fun p =>
+        let t := tabs.ty p.type
+        s!"{repr (erase t)} regs {p.regs.size} leaves {(leaves t).length} wf {GoFV.Proof.ABI.wf t} off {p.offset}"
+      s!"param shape: {d}"
     else if !stackOK tabs sh f g u w ins as then s!"stack args: {stackWhy tabs sh f g u w ins as}"
-    else if !piecesOK tabs sh f g (rp.map (·.1)) (rp.map (·.2))
+    else if !piecesOK tabs sh f g true (rp.map (·.1)) (rp.map (·.2))
         (w.args.extract k (w.args.size - 1)).toList then
-      s!"pieces: {piecesWhy tabs sh f g (rp.map (·.1)) (rp.map (·.2))
+      s!"pieces: {piecesWhy tabs sh f g true (rp.map (·.1)) (rp.map (·.2))
         (w.args.extract k (w.args.size - 1)).toList}"
     else if !tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) then "source tuple type"
     else if !regTupleOf (leafTys tabs outs) (valueTy sh (some w)) then "register types"
@@ -141,9 +150,9 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
     else if c == "result" then
       let outs := ownOuts tabs f
       let n := u.args.size
-      if !piecesOK tabs sh f g outs (u.args.extract 0 (n - 1)).toList
+      if !piecesOK tabs sh f g false outs (u.args.extract 0 (n - 1)).toList
           (w.args.extract 0 (w.args.size - 1)).toList then
-        s!"result: pieces: {piecesWhy tabs sh f g outs (u.args.extract 0 (n - 1)).toList
+        s!"result: pieces: {piecesWhy tabs sh f g false outs (u.args.extract 0 (n - 1)).toList
           (w.args.extract 0 (w.args.size - 1)).toList}"
       else "result: types"
     else if c == "select" then

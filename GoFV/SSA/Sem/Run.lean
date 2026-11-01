@@ -609,9 +609,10 @@ def encodeResults (tabs : Tables) (act : Nat) :
       return (toPieces t r ++ pieces, m)
   | _, _, _ => none
 
-/-- A callee's results `rs` at the shapes of the result types `ps` of the call's ABI (the
-results a contract returns are Go-typed by the call, as the arguments it receives are); extra
-or missing results are left for `encodeResults` to reject. -/
+/-- Values `rs` at the shapes of the ABI parameters `ps`: a callee's results at the call's result
+types (the results a contract returns are Go-typed by the call), and a pre-`expand calls` call's
+arguments at its parameter types (as the post form decodes them from their pieces); extra or
+missing values are left for `encodeResults`/the contract to reject. -/
 def retypeResults (tabs : Tables) : List ABIParam → List Val → List Val
   | p :: ps, r :: rs => r.retype (tabs.ty p.type) :: retypeResults tabs ps rs
   | _, rs => rs
@@ -638,7 +639,9 @@ def outargsOK (tabs : Tables) (act : Nat) (m : Mem) (ins : List ABIParam) : Bool
 post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register pieces and
 stack arguments in the outgoing-arguments area, and yield the results' register pieces (stack
 results are stored back into the outgoing area). The callee is the `AuxCall`'s function or the
-code symbol the code pointer points to; its contract sees the Go-typed arguments. Arguments
+code symbol the code pointer points to; its contract sees the Go-typed arguments (the pre form's
+retyped at the parameters' shapes, `retypeResults`: an `unsafe.Pointer` passed to a `uintptr`
+parameter is its address, as the post form decodes it). Arguments
 and memory are observation points (`poison` ⇒ `stuck`). The callee owns the caller's
 outgoing-arguments area while it runs (it may spill its register arguments there): its contract
 sees that area poisoned, in both forms, so post-`expand calls` argument stores into it are
@@ -659,7 +662,7 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   let outs := params.filter (·.out)
   let args ← if post then
       Res.ofOption s!"call {callee}: arguments do not match the ABI" (decodeArgs ctx.tabs ctx.act m ins pieces)
-    else pure pieces
+    else pure (retypeResults ctx.tabs ins pieces)
   if args.any Val.hasPoison || (clo.map Val.hasPoison).getD false then
     .stuck s!"call {callee}: poison argument"
   else if !outargsOK ctx.tabs ctx.act m ins then
