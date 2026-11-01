@@ -365,12 +365,14 @@ theorem own {k : Nat} {z : ID} {v : Value} (hz : Base f bid z ∨ z ∈ oS.toLis
     rw [hv] at hv'; cases hv'; exact hid
 
 /-- **A split `Store` the source evaluated** wrote the registers of the `StructMake`'s arguments
-at the struct's fields. -/
+at the struct's fields, or (a string or slice `Make` whose lengths are invalid: `poison`) a memory
+that write refines. -/
 theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     {x : ID} {ps : List (ID × ID)} (d : SplitD tabs f g x ps) (hx : x ∈ oS.toList.take k) :
-    ∃ P M MS, S.regs[d.dst]? = some (some (.ptr P)) ∧ S.regs[d.mem]? = some (some (.mem M)) ∧
+    ∃ P M MS MS0, S.regs[d.dst]? = some (some (.ptr P)) ∧ S.regs[d.mem]? = some (some (.mem M)) ∧
       M.write P (encode (.agg d.fs d.n) (.agg (d.smv.args.toList.map (rv S)))) = some MS ∧
-      S.regs[x]? = some (some ((Val.mem MS).retype (tabs.ty d.fv.type))) := by
+      Mem.Refines MS0 MS ∧
+      S.regs[x]? = some (some ((Val.mem MS0).retype (tabs.ty d.fv.type))) := by
   have hL : ∀ y ∈ oS.toList.take k, Node f fb y := fun y hy => K.memS.1 (List.mem_of_mem_take hy)
   have H := K.avail hS
   have hT := K.typedS hS hL
@@ -409,7 +411,7 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
     fun a ha => H.cl smid d.smv hA1 hsmv (make_ne_phi d.hsmop) a ha
   rw [evalValue_of_regs (regs_of_ok hevs), evalOp_term (termOp_make d.hsmop),
     GoFV.Proof.Rules.opVal_pure (frameOp_make d.hsmop), evalPure_make d.hsmop,
-    hid smid d.smv hA1 hsmv, tys_of_value hsmv, Option.getD_some, d.hsmty] at hevs
+    hid smid d.smv hA1 hsmv, tys_of_value hsmv, Option.getD_some] at hevs
   simp only [pure, Res.bind, bind] at hevs
   cases hevs
   have hvs : Val.retypeFields d.fs (d.smv.args.toList.map (rv S)) =
@@ -453,15 +455,28 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
       rw [hrw, hya] at hyw
       cases hyw
       exact retype_w64_addrVal _ _ _
-  have hagg : Val.retype (.agg d.fs d.n) (.agg (d.smv.args.toList.map (rv S))) =
-      .agg (d.smv.args.toList.map (rv S)) := by
+  have hagg : Val.retype (tabs.ty d.smv.type) (.agg (d.smv.args.toList.map (rv S))) =
+        .agg (d.smv.args.toList.map (rv S)) ∨
+      Val.retype (tabs.ty d.smv.type) (.agg (d.smv.args.toList.map (rv S))) = .poison := by
+    rw [retype_asAgg, d.hsmty]
     simp only [Val.retype, hvs]
-  rw [hagg] at hysm
-  have hsmreg : rv S d.sm = .agg (d.smv.args.toList.map (rv S)) := by
-    simp only [rv, ← hr1, hysm, Option.join_some, Option.getD_some]
-  refine ⟨P, M, MS, hdst, hmm, ?_, ?_⟩
-  · rw [← hsmreg, ← d.haux]; exact hw
-  · rw [hy, hid x d.fv (.inr hx) d.hfv, tys_of_value d.hfv, Option.getD_some]
+    exact Val.checkLen_eq_or _ _
+  have hreg : S.regs[x]? = some (some ((Val.mem MS).retype (tabs.ty d.fv.type))) := by
+    rw [hy, hid x d.fv (.inr hx) d.hfv, tys_of_value d.hfv, Option.getD_some]
+  rw [encode_asAgg, show (Ctx.make tabs f).tabs = tabs from rfl, d.haux] at hw
+  rcases hagg with hagg | hagg
+  · rw [hagg] at hysm
+    have hsmreg : rv S d.sm = .agg (d.smv.args.toList.map (rv S)) := by
+      simp only [rv, ← hr1, hysm, Option.join_some, Option.getD_some]
+    rw [hsmreg] at hw
+    exact ⟨P, M, MS, MS, hdst, hmm, hw, Mem.Refines.refl _, hreg⟩
+  · rw [hagg] at hysm
+    have hsmreg : rv S d.sm = .poison := by
+      simp only [rv, ← hr1, hysm, Option.join_some, Option.getD_some]
+    rw [hsmreg] at hw
+    obtain ⟨MS', hw', hr⟩ := (Mem.Refines.refl M).write
+      (encode_mono (.agg d.fs d.n) (.poison (.agg (d.smv.args.toList.map (rv S))))) hw
+    exact ⟨P, M, MS', MS, hdst, hmm, hw', hr, hreg⟩
 
 end Src
 

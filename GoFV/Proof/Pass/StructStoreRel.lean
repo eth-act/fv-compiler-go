@@ -111,10 +111,10 @@ structure SplitD (tabs : Tables) (f g : Func) (x : ID) (ps : List (ID × ID)) wh
   hfargs : fv.args = #[dst, sm, mem]
   hop : fv.op = .Store
   hlisted : ∃ b, f.block? fv.block = some b ∧ x ∈ b.values
-  haux : auxTy tabs fv.aux = .agg fs n
+  haux : (auxTy tabs fv.aux).asAgg = .agg fs n
   hsmv : f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) = some smv
   hsmop : ssMakeOp smv.op = true
-  hsmty : tabs.ty smv.type = .agg fs n
+  hsmty : (tabs.ty smv.type).asAgg = .agg fs n
   hlay : layoutsOK n fs = true
   hlt : ∀ q ∈ fs, q.1 < n
   hsmsz : smv.args.size = fs.length
@@ -202,7 +202,7 @@ theorem ssStart_cases {b mem m0 : ID} (h : ssStart tabs f g b mem m0 = true) :
       ∃ yv gy, f.value? (copyEnd tabs f.valueTab f.valueTab.size mem) = some yv ∧
         g.value? (copyEnd tabs f.valueTab f.valueTab.size mem) = some gy ∧ yv.op = .Store ∧
         yv.block = b ∧ gy.op = .Copy ∧ gy.args = #[m0] ∧
-        ∃ q fs n, auxTy tabs yv.aux = .agg (q :: fs) n := by
+        ∃ q fs n, (auxTy tabs yv.aux).asAgg = .agg (q :: fs) n := by
   unfold ssStart at h
   simp only [Bool.or_eq_true] at h
   rcases h with h | h
