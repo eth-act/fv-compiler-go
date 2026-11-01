@@ -122,11 +122,11 @@ theorem runLoop_simE {env : Env} {ctxS ctxT : Ctx}
       rw [hS] at hs
       obtain ⟨rs', hT, hr⟩ := hs
       rw [r1 _ _ hS, r2 _ _ hT]
-      exact .returned hr
+      exact .returned hr (Mem.Refines.refl m)
     | panic e m =>
       rw [hS] at hs
       rw [p1 _ _ hS, p2 _ _ hs]
-      exact .panicked e m
+      exact .panicked e (Mem.Refines.refl m)
     | stuck => exact absurd hd (s1 hS)
 
 /-- The target's step matches a source step along the same edge (`R` relates the states at
