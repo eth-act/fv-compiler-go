@@ -178,8 +178,8 @@ theorem copyEqBase (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i :
     rw [hM.out u huP, hP]
     obtain ⟨wv, hwv, hsh⟩ := S.rel.copyShape bid hbt.1 hbt.2 fb hfb u hx gu w hgu hop hargs
     have := hA.tyT w y h2
-    rw [tys_make hwv] at this; simp only [Option.getD_some] at this
-    rw [tys_make hfv]; simp only [Option.getD_some]; rw [← hty, ← hsh, this]
+    rw [tys_of_value hwv] at this; simp only [Option.getD_some] at this
+    rw [tys_of_value hfv]; simp only [Option.getD_some]; rw [← hty, ← hsh, this]
   · -- the copy is defined in a strict dominator of `bid`
     have hcase : blockOf f u ≠ bid := by rw [hbo]; exact hbb
     rw [hbo] at hcase hu
@@ -267,8 +267,8 @@ theorem copyEq (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat
       obtain ⟨fw, gw, hfw, hgw, -, -, -, htyw, -⟩ := S.value hbw hfbw hxw
       rw [hgw] at hwv; cases hwv
       have := hM.typed w y hy
-      rw [tys_make hfw] at this; simp only [Option.getD_some] at this
-      rw [hfid, tys_make hfv]; simp only [Option.getD_some]
+      rw [tys_of_value hfw] at this; simp only [Option.getD_some] at this
+      rw [hfid, tys_of_value hfv]; simp only [Option.getD_some]
       rw [← hty, ← hsh, htyw, this]
     rcases hra with rfl | ⟨ufa, hufa, hopa, hargsa⟩
     · exact ⟨y0, by rw [hyu, hshape y0 hy0], hy0⟩

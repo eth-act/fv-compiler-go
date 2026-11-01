@@ -214,7 +214,7 @@ theorem placedG {b : ID} (hb : Tree f b) {fb : Block} (hfb : f.block? b = some f
 theorem tys {b : ID} (hb : Tree f b) {fb : Block} (hfb : f.block? b = some fb) {x : ID}
     (hx : x ∈ fb.values) : (Ctx.make tabs g).tys[x]? = (Ctx.make tabs f).tys[x]? := by
   obtain ⟨fv, gv, hfv, hgv, -, -, -, hty, -⟩ := S.value hb hfb hx
-  rw [tys_make hfv, tys_make hgv, hty]
+  rw [tys_of_value hfv, tys_of_value hgv, hty]
 
 theorem params : (Ctx.make tabs g).params = (Ctx.make tabs f).params := by
   simp only [Ctx.make, S.rel.ownAux]
@@ -259,9 +259,9 @@ theorem argEq {env : Env} {fr : Frame} {A : ID → Prop} {q a w : ID}
     obtain ⟨y0, hy0, rfl⟩ := evalValue_copy_inv hop hargs (hev (by rw [hop]; decide))
     obtain ⟨wv, hwv, hsh⟩ := S.rel.copyShape b hb.1 hb.2 fb hfb a hx gv w hgv hop hargs
     have := hT w y0 hy0
-    rw [tys_make hwv] at this
+    rw [tys_of_value hwv] at this
     try rw [hgid] at hy
-    rw [tys_make hgv] at hy
+    rw [tys_of_value hgv] at hy
     refine ⟨y0, ?_, hy0⟩
     simp only [Option.getD_some] at this
     rw [hy]; simp only [Option.getD_some]; rw [← hsh, this]

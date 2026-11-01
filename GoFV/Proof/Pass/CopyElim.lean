@@ -138,7 +138,7 @@ theorem step (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat}
   | ok psS =>
   rw [hpsS] at hen'
   change (Res.ofOption _ ((Ctx.make tabs f).sched[fb.id]?).join).bind _ = _ at hen'
-  rw [hfid, sched_make hfb] at hen'
+  rw [hfid, sched_of_block hfb] at hen'
   cases hsched : schedule f fb with
   | none => rw [hsched] at hen'; cases hen'
   | some oS =>

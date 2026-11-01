@@ -10,7 +10,7 @@ import GoFV.Proof.Sched
   evaluation in the final frame.
 * `enterBlock_spec`: entering a block sets its `Phi`s from the incoming edge's arguments in
   the old frame, then runs its schedule; nothing outside the block's values changes.
-* `schedNodes_*`, `sched_make`: the schedule of a block of a well-formed function is a
+* `schedNodes_*`, `sched_of_block`: the schedule of a block of a well-formed function is a
   dependency order of its non-`Phi` values with their own arguments.
 -/
 
@@ -379,7 +379,7 @@ theorem enterBlock_panic {env : Env} {ctx : Ctx} {fr : Frame} {b : Block} {i : N
 
 /-! ## The schedule of a well-formed block -/
 
-theorem sched_make {tabs : Tables} {f : Func} {bid : ID} {b : Block} (hb : f.block? bid = some b) :
+theorem sched_of_block {tabs : Tables} {f : Func} {bid : ID} {b : Block} (hb : f.block? bid = some b) :
     ((Ctx.make tabs f).sched[bid]?).join = schedule f b := by
   unfold Func.block? at hb
   simp only [Ctx.make, Array.getElem?_map]

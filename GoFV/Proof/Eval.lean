@@ -256,7 +256,7 @@ theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e :
     · exact .inr (.inr ‹_›)
     · split at h <;> cases h
 
-theorem tys_make {tabs : Tables} {f : Func} {x : ID} {v : Value} (h : f.value? x = some v) :
+theorem tys_of_value {tabs : Tables} {f : Func} {x : ID} {v : Value} (h : f.value? x = some v) :
     (Ctx.make tabs f).tys[x]? = some (tabs.ty v.type) := by
   unfold Func.value? at h
   simp only [Ctx.make, Array.getElem?_map]

@@ -271,7 +271,7 @@ theorem enter_ok (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
   | ok psS =>
   rw [hpsS] at h
   change (Res.ofOption _ ((Ctx.make tabs f).sched[fb.id]?).join).bind _ = _ at h
-  rw [hfid, sched_make hfb] at h
+  rw [hfid, sched_of_block hfb] at h
   cases hsched : schedule f fb with
   | none => rw [hsched] at h; cases h
   | some oS =>
@@ -327,7 +327,7 @@ theorem enter_ok (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
   refine ⟨gb, hgbb, ?_⟩
   rw [enterBlock_eq, hpsT]
   change (Res.ofOption _ ((Ctx.make tabs g).sched[gb.id]?).join).bind _ = _
-  rw [hgid, sched_make hgbb, hoT]
+  rw [hgid, sched_of_block hgbb, hoT]
   change evalAll env (Ctx.make tabs g) _ oT.toList = _
   rw [h1, hgG]
 
@@ -430,7 +430,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
   obtain ⟨fb', hfb', hfid⟩ := hwf.blockId bid hbt.1
   rw [hfb] at hfb'; cases hfb'
   obtain ⟨psS, oS, hpsS, hso, hev⟩ := enterBlock_panic h
-  rw [hfid, sched_make hfb] at hso
+  rw [hfid, sched_of_block hfb] at hso
   obtain ⟨pre, r, post, Gpre, hsplit, hpre, hrp⟩ := evalAll_panic_split hev
   obtain ⟨hM, hG1, hG2⟩ := mid_of S hA hfb hpsS hso hsplit hpre
   obtain ⟨gb, psT, oT, hgbb, hgid, hvals, hpsT, hoT, hagree, hszT⟩ := targetPre S hA hfb hpsS hso
@@ -545,7 +545,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
   refine ⟨gb, hgbb, ?_⟩
   rw [enterBlock_eq, hpsT]
   change (Res.ofOption _ ((Ctx.make tabs g).sched[gb.id]?).join).bind _ = _
-  rw [hgid, sched_make hgbb, hoT]
+  rw [hgid, sched_of_block hgbb, hoT]
   change evalAll env (Ctx.make tabs g) _ oT.toList = _
   rw [hsplitT, hpanT]
 

@@ -78,7 +78,7 @@ theorem dinv_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env}
   obtain ⟨b', hb', hid⟩ := hwf.blockId b hb
   rw [hbb] at hb'; cases hb'
   obtain ⟨frP, o, ho, hev, hP, hPs, -, hkeep, hphi⟩ := enterBlock_spec hnd h
-  rw [hid, sched_make hbb] at ho
+  rw [hid, sched_of_block hbb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
   have hcf : (Ctx.make tabs f).f = f := rfl
@@ -169,7 +169,7 @@ theorem typed_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} (hwf 
   obtain ⟨b', hb', hid⟩ := hwf.blockId b hb
   rw [hbb] at hb'; cases hb'
   obtain ⟨frP, o, ho, hev, -, hPs, hall, hkeep, hphi⟩ := enterBlock_spec hnd h
-  rw [hid, sched_make hbb] at ho
+  rw [hid, sched_of_block hbb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
   obtain ⟨-, -, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
   refine typed_evalAll (typed_phis ht hPs hkeep hphi hall) (fun x hx v hv => ?_) e3 e4
