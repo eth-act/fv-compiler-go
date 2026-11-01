@@ -85,6 +85,7 @@ theorem Ptr.ofAddr_addr {p : Ptr} {x : BitVec 64} (hc : p.convertible = true)
     simp
   | temp _ _ => simp [Ptr.convertible] at hc
   | global _ => simp [Ptr.convertible] at hc
+  | wbuf => simp [Ptr.convertible] at hc
 
 /-- **`Convert` round-trips**: converting a pointer to an integer and back gives the pointer,
 whenever the first conversion is defined. -/

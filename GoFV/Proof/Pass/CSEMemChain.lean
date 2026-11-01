@@ -37,10 +37,12 @@ def VAddr.add : VAddr → BitVec 64 → VAddr
 theorem VAddr.add_add (V : VAddr) (a b : BitVec 64) : (V.add a).add b = V.add (a + b) := by
   cases V <;> simp [VAddr.add, BitVec.add_assoc]
 
-/-- Where a pointer points. -/
+/-- Where a pointer points (the write-barrier buffer, which has no address either, as a global
+without a name). -/
 def ptrV (p : Ptr) : VAddr :=
   match p.blk with
   | .global s => .glob s p.off
+  | .wbuf => .glob "" p.off
   | _ => .conc (p.addr?.getD 0)
 
 /-- Where a pointer or a 64-bit integer (an address) points. -/
@@ -185,10 +187,11 @@ theorem rel_same {P Q : Ptr} {bv : Val} {kp kq : Int} (hp : Rel (.ptr P) bv kp)
   cases V with
   | glob s o =>
     cases pb <;> simp only [ptrV, VAddr.add, reduceCtorEq, VAddr.glob.injEq] at hp hq
-    obtain ⟨-, rfl⟩ := hp
-    obtain ⟨-, rfl⟩ := hq
-    simp only
-    bv_omega
+    all_goals
+      obtain ⟨-, rfl⟩ := hp
+      obtain ⟨-, rfl⟩ := hq
+      simp only
+      bv_omega
   | conc a =>
     cases pb <;> simp only [ptrV, VAddr.add, reduceCtorEq, VAddr.conc.injEq, Ptr.addr?,
       Blk.base?, Option.map_some, Option.getD_some] at hp hq <;> simp only <;> bv_omega

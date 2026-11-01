@@ -281,7 +281,7 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
     cases h.nil_inv
     cases h1 with | mem hm =>
     rw [heq]; dsimp only
-    exact .ok (.mem hm)
+    exact .ok (.mem (hm.free _))
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv

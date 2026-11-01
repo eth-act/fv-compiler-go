@@ -190,8 +190,9 @@ executable `Mem` can use a `Std.HashMap` per allocation with a `@[csimp]`-free f
   observable through provenance.
 - **Auto contents**: initially `poison` bytes. `VarDef {n} mem` resets the bytes of `n` to
   `poison` (the variable is "about to be initialised", gO 562); this is what lets `dse` drop
-  stores shadowed by a `VarDef` (`deadstore.go:54,282`). `VarLive`, `KeepAlive`, `WBend`,
-  `PubBarrier`, `PrefetchCache*` are the identity on memory (`KeepAlive` still forces arg 0).
+  stores shadowed by a `VarDef` (`deadstore.go:54,282`). `VarLive`, `KeepAlive`,
+  `PubBarrier`, `PrefetchCache*` are the identity on memory (`KeepAlive` still forces arg 0);
+  `WBend` frees the write-barrier buffer (§9.6).
 - **Heap**: only runtime contracts allocate (`newobject`, `makeslice`, `growslice`, …; §5),
   zeroed.
 - **Access rule** (as clifv): a load/store of `n` bytes at `⟨a, off⟩` is valid iff allocation
@@ -441,8 +442,8 @@ produce): `runtime.newobject`, `makeslice`, `growslice`, `memmove`, `typedmemmov
 `memclrNoHeapPointers`, `memequal*`, `concatstrings`/`slicebytetostring`/
 `stringtoslicebyte`, `convT*`, panicking entry points (`panicdivide`, `panicshift`,
 `panicwrap`, `panicnildottype`, `panicdottype*`, `gopanic`, `panicmem`: `panicked`),
-`gcWriteBarrier` (the `WB` op: returns a pointer to a fresh buffer allocation, memory
-otherwise unchanged), `wbZero`/`wbMove` (no memory effect besides the buffer), `goschedguarded`
+`gcWriteBarrier` (the `WB` op: a pure op that allocates the write-barrier buffer `Blk.wbuf`,
+§9.6), `wbZero`/`wbMove` (no memory effect), `goschedguarded`
 (identity; only with `GOEXPERIMENT=preemptibleloops`). Maps, channels, goroutines, `select`,
 reflection: `stuck` (no contract) until needed. `GetG` returns a pointer to an opaque `g`
 allocation owned by the environment.
@@ -762,6 +763,36 @@ elements and struct fields, and CAS loops.
 Results (`--n 100 --seed 3`): 225 functions, 22,500 calls; native agrees with every section on
 22,498, every atomic function included. The 2 others are `makeBad(16, 2^32)`: a 4 GiB
 `makeslice` above the executable model's allocation limit (`maxModelAlloc` = 2^24, `stuck`).
+
+### 9.6 Write barriers (#36)
+
+`writebarrier` expands a pointer store into a load of the GC's flag `runtime.writeBarrier`, a
+branch to a buffer block that records the pointers for the GC (`WB`, buffer `Store`s, or the
+`wbZero`/`wbMove` helpers for typed zeroing/copies), and the plain store followed by `WBend`.
+
+- **Buffer** (`Blk.wbuf`, `Sem/Val.lean`): a block with no address and no window (not
+  convertible: `Ptr.ofAddr` never returns it, so no program pointer reaches it). `WB [n] mem` is
+  a pure op (not a root): `(⟨wbuf, 0⟩, mem with a fresh buffer of 8·n poison bytes)`
+  (`wbOp`, `Mem.wbAlloc`); `WBend mem` frees it (`m.free .wbuf`), so the memory after a
+  write-barrier sequence is the memory of the plain store, whichever branch ran.
+- **Flag**: `runtime.writeBarrier` is read-only in the global image (`globalImage`, at least 4
+  zero bytes): programs never write it, only the GC (an environment contract) may change it. The
+  expansion must refine the plain store for either flag value; the loaded value is defined as
+  long as its bytes are (`GoFV.Proof.WB.load_flag`).
+- **Helpers**: `runtime.wbZero`, `runtime.wbMove` = `Runtime.wbHelper` (no effect the semantics
+  models; the zeroing/copy is the sequence's own `Zero`/`Move`). Calls clobber the caller's
+  outgoing-arguments area (`callOp`), so sequences with helper calls are outside the
+  writebarrier proof for now (#36).
+
+Difftest additions (`tools/semdiff/prog/wb.go`): 12 functions storing pointers into heap objects
+and through pointers (list building, struct/string fields, struct copies and clears, pointer
+slices and arrays, `append` of strings), so `writebarrier` expands them in the later sections.
+
+Results (`--n 100 --seed 3`): 237 functions, 23,700 calls; native agrees with every section on
+23,698, every write-barrier function included; the 2 others are `makeBad` (§9.5). Corpus
+(`sem-difftest corpus 2 1`, quick-v3 plain): 0 differ; 2 calls (1 function) fewer are defined at
+section 0 than on main: 6 more section-0 runs are stuck on a write to the now read-only flag
+(the runtime functions that switch the GC phase write it).
 
 ## 10. Open questions and risks
 
@@ -1107,8 +1138,8 @@ against Go's own evaluation).
 | StoreWB | 407 | 3 | Typ | Mem |  | mem | P3 | 0 | as Store/Move/Zero (write barrier is GC-only) (§3.4) |
 | MoveWB | 408 | 3 | TypSize | Mem |  | mem | P3 | 0 | as Store/Move/Zero (write barrier is GC-only) (§3.4) |
 | ZeroWB | 409 | 2 | TypSize | Mem |  | mem | P3 | 0 | as Store/Move/Zero (write barrier is GC-only) (§3.4) |
-| WBend | 410 | 1 |  | Mem |  | mem | P3 | 0 | identity on mem |
-| WB | 416 | 1 | Int64 | (BytePtr,Mem) |  | mem | P3 | 0 | runtime write-barrier buffer: Env contract (§5) |
+| WBend | 410 | 1 |  | Mem |  | mem | P3 | 0 | frees the write-barrier buffer `Blk.wbuf` (§9.6) |
+| WB | 416 | 1 | Int64 | (BytePtr,Mem) |  | mem | P3 | 0 | pure: (`⟨wbuf,0⟩`, mem with a fresh poison buffer of 8·auxint bytes) (§9.6) |
 | HasCPUFeature | 418 | 0 | Sym | bool |  | pure | P5 | 0 | reads runtime feature flag: Env (P5) |
 | PanicBounds | 425 | 3 | Int64 | Mem | call | call | P1 | 0 | outcome panicked(bounds kind=auxint, idx, len) (§6) |
 | PanicExtend | 426 | 4 | Int64 | Mem | call | call | 32b | 0 | 32-bit only; as PanicBounds with 64-bit index |

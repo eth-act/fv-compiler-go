@@ -155,4 +155,11 @@ def loadOp (t : Ty) : List Val → Val
   | [.ptr p, .mem m] => m.load t p
   | _ => .poison
 
+/-- `WB [n] mem` (the write-barrier buffer, §9): `(the buffer, mem)` with a fresh buffer of `n`
+pointer-sized entries (`Mem.wbAlloc`); the write-barrier sequence stores the entries for the GC
+into it, and `WBend` frees it. -/
+def wbOp (n : Int64) : List Val → Val
+  | [.mem m] => .tuple [.ptr ⟨.wbuf, 0⟩, .mem (m.wbAlloc n.toInt.toNat)]
+  | _ => .poison
+
 end GoFV.SSA.Sem
