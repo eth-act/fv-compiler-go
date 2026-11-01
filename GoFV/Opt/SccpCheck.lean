@@ -31,7 +31,7 @@ The certificate is the final lattice `C` (`latticeCells`), the executable edges 
   successor an executable block can take (by its kind and, for `If`/`JumpTable`, the value of a
   constant control) is an executable edge into an executable block;
 - the claims are a **post-fixpoint** (`fixOK`): a constant non-`Phi` value is a term node whose
-  arguments are all constant and which evaluates (`evalPure`, the semantics) on their constants
+  arguments are all constant and which evaluates (`Rules.opVal`, the semantics) on their constants
   to its own constant; a constant `Phi` has, on each executable in-edge, a constant argument with
   that constant. Folds are checked by evaluation, so no rewrite rule is trusted;
 - `h` is `f` but for values that became constants of their claimed value (`repOK`), new values
@@ -122,7 +122,7 @@ def fixOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (vis : Array Edge)
     else
       RewriteCheck.termOp v.op &&
       match v.args.toList.mapM (cval tabs f C) with
-      | some cs => scalarEq ((Sem.evalPure v.op t v.auxInt v.aux cs).retype t) c
+      | some cs => scalarEq ((GoFV.Proof.Rules.opVal tabs v.op t v.auxInt v.aux cs).retype t) c
       | none => false
   | _, _ => true
 
@@ -138,7 +138,7 @@ def repOK (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (x : ID) : Bool 
       w.args == u.args) ||
      (RewriteCheck.termOp w.op && w.args.isEmpty && w.type == u.type &&
       match cval tabs f C x with
-      | some c => scalarEq ((Sem.evalPure w.op (tabs.ty w.type) w.auxInt w.aux []).retype
+      | some c => scalarEq ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty w.type) w.auxInt w.aux []).retype
           (tabs.ty w.type)) c
       | none => false))
 

@@ -182,7 +182,8 @@ include hwf K
 /-- A term node keeps the invariant. -/
 theorem sc_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.op = true)
     (ρ : ID → Val) (hρ : ∀ a ∈ v.args, Claim tabs f C a (ρ a)) :
-    Claim tabs f C x ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
+    Claim tabs f C x ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
+      (v.args.toList.map ρ)).retype
       (tabs.ty v.type)) := by
   intro c hc
   have hfix := K.fix x (lt_of_value? hv)
@@ -191,7 +192,7 @@ theorem sc_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.o
   split at hfix
   · rename_i cs hcs
     rw [← scalarEq_eq hfix]
-    exact retype_mono _ (evalPure_mono _ _ _ _ (refinesList_mapM
+    exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (refinesList_mapM
       (fun a ha c hc => hρ a (Array.mem_toList_iff.1 ha) c hc) hcs))
   · cases hfix
 

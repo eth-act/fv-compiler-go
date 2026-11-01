@@ -113,7 +113,7 @@ theorem sc_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
       rcases hrep with ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, hargs⟩ | ⟨⟨⟨ht, hnil⟩, hty⟩, hc⟩
       · by_cases ht : termOp u.op = true
         · rw [den_succ_term hu ht, den_succ_term hL (hop ▸ ht), hop, hty, hai, hax, hargs]
-          apply retype_mono; apply evalPure_mono
+          apply retype_mono; apply GoFV.Proof.Rules.opVal_mono
           refine refinesList_map fun a ha => sc_ref hρ hP n a ?_
           exact (closedOK_facts K.cf b hb fb hfb).2 x hxv u hu a (Array.mem_toList_iff.1 ha)
         · rw [den_succ_atom (not_term_of hu ht), den_succ_atom (not_term_of hL (hop ▸ ht))]
