@@ -143,7 +143,8 @@ def compare(base, head, label, header, wt=None):
         # time flags: confirm by interleaved A/B (same code measured 46-76 s CPU an hour apart);
         # drop the ones that do not reproduce
         noise = []
-        for m in re.findall(r"^\| `([\w.]+)` \| time \|", r.stdout, re.M):
+        regs = r.stdout.split("**Regressions**", 1)[-1].split("**Wins**", 1)[0]
+        for m in re.findall(r"^\| `([\w.]+)` \| time \|", regs, re.M):
             ab = ab_cpu(wt, base, head, m)
             if ab is None:
                 continue
@@ -153,8 +154,8 @@ def compare(base, head, label, header, wt=None):
                          f"{cb:.1f} s → {ch:.1f} s CPU: {'confirmed' if real else 'noise, dropped'}")
             if not real:
                 noise.append(m)
-        benches = set(re.findall(r"^\| `bench ([\w-]+)` \| time \|", r.stdout, re.M))
-        passes = set(re.findall(r"^\| `pass ([^`]+)` \| runtime", r.stdout, re.M))
+        benches = set(re.findall(r"^\| `bench ([\w-]+)` \| time \|", regs, re.M))
+        passes = set(re.findall(r"^\| `pass ([^`]+)` \| runtime", regs, re.M))
         if passes:
             benches.add("pass-parity-corpus")
         for bn in sorted(benches):
@@ -162,7 +163,7 @@ def compare(base, head, label, header, wt=None):
             if ab is None:
                 continue
             (cb, ch), per = ab
-            if f"bench {bn}" in r.stdout:
+            if f"bench {bn}" in regs:
                 real = ch > cb * 1.25 and ch - cb > 1
                 notes.append(f"- A/B runs of `{bn}` (interleaved, min of 2 each): {cb:.1f} s → "
                              f"{ch:.1f} s CPU: {'confirmed' if real else 'noise, dropped'}")
