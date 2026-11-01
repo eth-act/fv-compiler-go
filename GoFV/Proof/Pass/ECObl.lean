@@ -1,3 +1,4 @@
+import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.ECIdent
 import GoFV.Proof.Pass.ECArgSel
 import GoFV.Proof.Pass.ECCall
@@ -68,18 +69,11 @@ theorem obl_tail {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT : ID �
   intro u' w' hu' hw' env _ frS T _ _ E _ _ _ hRu _ _ _
   rw [hu] at hu'
   cases hu'
-  rw [evalValue_of_regs hRu]
-  cases hS : evalOp env (Ctx.make tabs f) frS u (u.args.toList.map (rv frS))
-      ((Ctx.make tabs f).tys[u.id]?.getD .other) with
-  | stuck msg => exact .stuck msg _
-  | ok r =>
-    rcases tailOp_eq hop with h | h <;>
-      simp only [evalOp, frameVal, h, show isRoot .TailLECall = true from rfl,
-        show isRoot .TailLECallInter = true from rfl, ↓reduceIte] at hS <;> cases hS
-  | panic e m =>
-    rcases tailOp_eq hop with h | h <;>
-      simp only [evalOp, frameVal, h, show isRoot .TailLECall = true from rfl,
-        show isRoot .TailLECallInter = true from rfl, ↓reduceIte] at hS <;> cases hS
+  obtain ⟨msg, hS⟩ := evalOp_tail (env := env) (ctx := Ctx.make tabs f) (fr := frS)
+    (argv := u.args.toList.map (rv frS)) (ty := (Ctx.make tabs f).tys[u.id]?.getD .other)
+    (tailOp_eq hop)
+  rw [evalValue_of_regs hRu, hS]
+  exact .stuck msg _
 
 /-- **The obligation of a value reading a tail call**: no source register holds a tail call
 (`RegOK`), so the source never evaluates it. -/
@@ -275,7 +269,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       exact obl_result hu hw (beq_iff_eq.1 hr) hv hreg huid _ hLx hL (hH hconv)
     rw [ite_eq_right hr] at hv
     by_cases ht : (tailOp u.op || u.args.any (isTail f)) = true
-    · rcases (Bool.or_eq_true _ _).1 ht with h | h
+    · rcases Bool.or_eq_true_iff.1 ht with h | h
       · exact obl_tail hu h
       · obtain ⟨c, hc, hct⟩ := Array.any_eq_true'.1 h
         unfold isTail at hct

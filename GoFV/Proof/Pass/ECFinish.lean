@@ -709,7 +709,7 @@ theorem ret_result {tabs : Tables} {f g : Func} {c : ID} {u w : Value}
   obtain ⟨us, hus, husl, hue, -⟩ := ecf_tupleOf htup
   obtain ⟨rts, hus', hrts⟩ := ecf_regTupleOf hrt
   -- the source's register
-  obtain ⟨hty, hlen⟩ := hry
+  obtain ⟨hty, hlen, -⟩ := hry
   rw [tys_of_value hu, Option.getD_some, ← ecf_valueTy, hus] at hty
   cases y with
   | tuple vs =>
