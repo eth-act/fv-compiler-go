@@ -67,6 +67,7 @@ def stackWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : L
       s!"stores ({zs.length} for {(leafSlots tabs (sp.map (·.1))).length} slots)"
     else if !piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
       s!"store values: {piecesWhy tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
+    else if !sp.all (fun e => GoFV.Proof.ABI.wf (tabs.ty e.1.type)) then "stored param shape"
     else "store value not an argument"
 
 /-- Why the call class fails. -/

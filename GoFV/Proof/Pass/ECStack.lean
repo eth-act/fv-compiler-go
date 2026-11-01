@@ -1092,16 +1092,70 @@ theorem ecs_decodeLoadFields_le (bs : Array Byte) (off : Nat) :
     exact .cons (ecs_decodeLoad_le bs (off + o) t) (ecs_decodeLoadFields_le bs off fs)
 end
 
+theorem ecs_read_size {M : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (h : M.read p n = some bs) :
+    bs.size = n := by
+  unfold Mem.read at h
+  by_cases hn : n = 0
+  · simp only [hn, beq_self_eq_true, ite_true] at h; cases h; simp [hn]
+  · simp only [beq_iff_eq, hn, ite_false, Option.bind_eq_bind] at h
+    cases ha : M.find? p.blk with
+    | none => rw [ha] at h; cases h
+    | some a =>
+      rw [ha] at h
+      simp only [Option.bind_some] at h
+      split at h
+      · cases h; simp; omega
+      · cases h
+
+theorem ecs_movFields_le : {fs : List (Nat × Ty)} → {n s : Nat} → movFields fs n s = true → s ≤ n
+  | [], _, _, h => by simpa [movFields] using h
+  | (o, t) :: fs, n, s, h => by
+    simp only [movFields, Bool.and_eq_true, decide_eq_true_eq] at h
+    have := ecs_movFields_le h.2
+    omega
+
+mutual
+/-- Decoding enough bytes at a `movTy` shape gives a value of that shape. -/
+theorem ecs_decode_hasTy_mov : (t : Ty) → (bs : Array Byte) → (o : Nat) → movTy t = true →
+    o + t.size ≤ bs.size → (decode bs o t).hasTy t = true
+  | .int w, _, _, _, _ => decodeInt_hasTy w _
+  | .bool, bs, o, _, _ => by
+    simp only [decode]
+    split
+    · split <;> rfl
+    · rfl
+  | .ptr e, _, _, _, _ => decodePtr_hasTy e _
+  | .agg fs n, bs, o, h, hs => ecs_decodeFields_hasTy_mov fs n 0 bs o h hs
+  | .str, _, _, _, _ => Val.ofStr_hasTy_of (decodePtr_isPtrOrPoison _) _
+  | .slice e, _, _, _, _ => Val.ofSlice_hasTy_of (decodePtr_isPtrOrPoison _) e _ _
+  | .empty, _, _, _, _ | .opaque _, _, _, _, _ => rfl
+  | .blob n, bs, o, _, hs => by
+    simp only [Ty.size] at hs
+    simp only [decode, Val.hasTy, Array.length_toList, Array.size_extract, beq_iff_eq]
+    omega
+  | .mem, _, _, h, _ | .tuple _, _, _, h, _ | .other, _, _, h, _ => nomatch h
+theorem ecs_decodeFields_hasTy_mov : (fs : List (Nat × Ty)) → (n s : Nat) → (bs : Array Byte) →
+    (o : Nat) → movFields fs n s = true → o + n ≤ bs.size →
+    Val.hasTyList (decodeFields bs o fs) (fs.map (·.2)) = true
+  | [], _, _, _, _, _, _ => rfl
+  | (fo, ft) :: fs, n, s, bs, o, h, hs => by
+    simp only [movFields, Bool.and_eq_true, decide_eq_true_eq] at h
+    have hle := ecs_movFields_le h.2
+    simp only [decodeFields, List.map_cons, Val.hasTyList, Bool.and_eq_true]
+    exact ⟨ecs_decode_hasTy_mov ft bs (o + fo) h.1.2 (by omega),
+      ecs_decodeFields_hasTy_mov fs n _ bs o h.2 hs⟩
+end
+
 /-- **A wide argument copied by a `Move`**: the source's `Dereference` of `P` (refined by the
 target's pointer `.ptr s`) at its memory `m` (refined by `M`) is refined by the bytes the target
 reads at `s` decoded at the parameter's shape `t`. -/
-theorem ecs_move_arg {m M : Mem} (hMR : Mem.Refines m M) {t ta : Ty} (hw : wf t = true)
+theorem ecs_move_arg {m M : Mem} (hMR : Mem.Refines m M) {t ta : Ty} (hw : movTy t = true)
     (he : eqE ta t = true) (hmt : moveTy t = true) {P : Val} {s : Ptr} (hP : Sem.Refines P (.ptr s))
     {bs : Array Byte} (hrd : M.read s t.size = some bs) :
     Sem.Refines ((loadOp ta [P, .mem m]).retype ta) (decode bs 0 t) := by
   have hdt : (decode bs 0 t).retype ta = decode bs 0 t := by
     apply Val.retype_of_hasTy
-    rw [eqE_hasTy he]; exact decode_hasTy hw
+    rw [eqE_hasTy he]; exact ecs_decode_hasTy_mov t bs 0 hw (by rw [ecs_read_size hrd]; omega)
   cases hP with
   | poison =>
     simp only [loadOp]
@@ -1123,21 +1177,6 @@ theorem ecs_move_arg {m M : Mem} (hMR : Mem.Refines m M) {t ta : Ty} (hw : wf t 
       dsimp only
       rw [← ecT_eqE_decode he]
       exact ecs_decodeLoad_le bs 0 ta
-
-theorem ecs_read_size {M : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (h : M.read p n = some bs) :
-    bs.size = n := by
-  unfold Mem.read at h
-  by_cases hn : n = 0
-  · simp only [hn, beq_self_eq_true, ite_true] at h; cases h; simp [hn]
-  · simp only [beq_iff_eq, hn, ite_false, Option.bind_eq_bind] at h
-    cases ha : M.find? p.blk with
-    | none => rw [ha] at h; cases h
-    | some a =>
-      rw [ha] at h
-      simp only [Option.bind_some] at h
-      split at h
-      · cases h; simp; omega
-      · cases h
 
 /-- **A moved argument reads back** after the stores above it, whose slots lie after its. -/
 theorem ecs_move_read {M M1 Mt : Mem} {o0 : Nat} {bs : Array Byte} {ss : List (Int × Ty)}

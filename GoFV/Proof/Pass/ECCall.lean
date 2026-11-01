@@ -842,16 +842,23 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       rw [← Array.mem_toList_iff, hsw]; exact ha
     have hmas : ∀ a ∈ (u.args.extract k (u.args.size - 1)).toList, a ∈ u.args := fun a ha =>
       hmu a (List.mem_append_left _ (List.mem_append_right _ ha))
-    have hins : ∀ p ∈ insOf abi, wf (tabs.ty p.type) = true ∧
-        (if p.regs.isEmpty then 0 ≤ p.offset else (leaves (tabs.ty p.type)).length = p.regs.size) := by
-      intro p hp
+    have hinsR : ∀ p ∈ insOf abi, p.regs.isEmpty = false →
+        wf (tabs.ty p.type) = true ∧ (leaves (tabs.ty p.type)).length = p.regs.size := by
+      intro p hp hr
       have := List.all_eq_true.1 hinsOK p hp
-      rw [Bool.and_eq_true] at this
-      refine ⟨this.1, ?_⟩
-      have h2 := this.2
-      split
-      · next hr => rw [if_pos hr] at h2; exact of_decide_eq_true h2
-      · next hr => rw [if_neg hr] at h2; exact beq_iff_eq.1 h2
+      rw [hr, if_neg (by simp), Bool.and_eq_true] at this
+      exact ⟨this.1, beq_iff_eq.1 this.2⟩
+    have hinsS : ∀ p ∈ insOf abi, p.regs.isEmpty = true → movTy (tabs.ty p.type) = true ∧ 0 ≤ p.offset := by
+      intro p hp hr
+      have := List.all_eq_true.1 hinsOK p hp
+      rw [hr, if_pos rfl, Bool.and_eq_true] at this
+      exact ⟨this.1, of_decide_eq_true this.2⟩
+    have hregOf : ∀ {reg : Bool} {e : ABIParam × ID},
+        e ∈ argPairs reg (insOf abi) (u.args.extract k (u.args.size - 1)).toList →
+        e.1.regs.isEmpty = !reg := fun {reg e} he => by
+      have := (List.mem_filter.1 he).2
+      revert this
+      cases e.1.regs.isEmpty <;> cases reg <;> decide
     -- the Go-typed arguments
     have hrel : ∀ a ∈ (u.args.extract k (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
       fun a ha => ecc_argRel hi hu hRS hRu hfront (hmas a ha)
@@ -863,7 +870,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     have hP := ec_pieces hNC hL hRS true _ _ _ hpc
       (fun p hp => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-        exact (hins _ (hmemPair he).1).1)
+        exact (hinsR _ (hmemPair he).1 (hregOf he)).1)
       (fun q hq => hRw q (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))))
       (fun q hq hn' => have hq' := hmw q (List.mem_append_left _ (List.mem_append_right _ hq))
         ⟨hEw q hq' hn', hLw q hq' hn'⟩)
@@ -880,7 +887,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     obtain ⟨hsorted, zs, sp0, sp1, hcs, hsp01, hst, hmv0⟩ := ecc_stackOK_inv hstack
     unfold storeArgsOK at hst
     simp only [Bool.and_eq_true, List.all_eq_true] at hst
-    obtain ⟨⟨hsOK, hpcS⟩, hsrc⟩ := hst
+    obtain ⟨⟨⟨hsOK, hpcS⟩, hsrc⟩, hwfS⟩ := hst
     have hm1 : ∀ {e}, e ∈ sp1 → e ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList :=
       fun he => by rw [hsp01]; exact List.mem_append_right _ he
     have hcs' := hcs
@@ -907,7 +914,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     have hS := ec_pieces hNC hL hRS false _ _ _ hpcS
       (fun p hp => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-        exact (hins _ (hmemPair (hm1 he)).1).1)
+        exact hwfS _ he)
       (fun q hq => by
         obtain ⟨z, -, wz, -, hqa, -, hreg⟩ := hpcv q hq
         exact hreg q hqa)
@@ -1035,7 +1042,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         rw [ecCv_of_not_special hss] at hrys
         rw [rv_of hysT] at hs
         subst hs
-        have hP := ecs_move_arg hMR (hins _ (hmemPair hpa).1).1 heqa hmt hrys hrd'
+        have hP := ecs_move_arg hMR (hinsS _ (hmemPair hpa).1 (hregOf hpa)).1 heqa hmt hrys hrd'
         refine ⟨_, by rw [hbase]; exact rv_of hy, fun blk => ecs_find_write hW1 blk,
           ecs_poisonBlock_write hW1, fun e he => ?_⟩
         rw [List.mem_singleton.1 he]
@@ -1047,7 +1054,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       have hat : ∀ s ∈ leafSlots tabs (sp1.map Prod.fst), atom s.2 = true := fun s hs => by
         obtain ⟨p, hp, l, hl, rfl⟩ := ecs_mem_leafSlots hs
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-        exact (mem_leaves (hins _ (hmemPair (hm1 he)).1).1 hl).2
+        exact (mem_leaves (hwfS _ he) hl).2
       obtain ⟨Mt, hMt, hW⟩ := ecs_chain hNC hL _ hcs' htopEL hsOK hat
         (fun z hz wz qw hwz hqw hn => hHS _ ⟨z, .inl ⟨zs, hcs, hz⟩, wz, qw, hwz, hqw, hn, rfl⟩) M1 hM1
       have hblk : ∀ e ∈ List.zipWith ecsW (leafSlots tabs (sp1.map Prod.fst))
@@ -1099,7 +1106,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           rw [List.map_map]
           exact ecs_reads (ecs_leafSlots_pairwise (fun p hp => by
               obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-              exact (hins _ (hmemPair (hm1 he)).1).1)
+              exact hwfS _ he)
             hpw.2.1) (ecs_storesOK_bounds hsOK) hW)
         (by
           rw [List.map_map]
@@ -1108,8 +1115,8 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
           have hmz := (List.mem_filter.1 (hm1 he))
           have hr : e.1.regs.isEmpty = true := by simpa using hmz.2
-          obtain ⟨hwe, hoff⟩ := hins _ (hmemPair (hm1 he)).1
-          rw [if_pos hr] at hoff
+          have hwe := hwfS _ he
+          have hoff := (hinsS _ (hmemPair (hm1 he)).1 hr).2
           refine ⟨hwe, hpairs e hmz.1 hr, hoff, ?_⟩
           have := List.all_eq_true.1 hokM e.1 (hmemPair (hm1 he)).1
           rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff] at this
@@ -1119,10 +1126,9 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         ((w.args.extract k (w.args.size - 1)).toList.map (rv T))
         (fun xe hxe hr => by
           obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
-          have := (hins _ (List.of_mem_zip he).1)
           dsimp only at hr ⊢
-          rw [if_neg (by rw [hr]; exact Bool.false_ne_true)] at this
-          exact ⟨this.1, this.2, hpairsR e he hr⟩)
+          obtain ⟨h1, h2⟩ := hinsR _ (List.of_mem_zip he).1 hr
+          exact ⟨h1, h2, hpairsR e he hr⟩)
         (fun xe hxe hr => by
           have hmf : xe ∈ (((insOf abi).zip (u.args.extract k (u.args.size - 1)).toList).map
               fun e => (e.1, rv frS e.2)).filter (fun x => !x.1.regs.isEmpty == false) :=
@@ -1130,8 +1136,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           rw [ecc_argPairs_map, hsp01, List.map_append, List.mem_append] at hmf
           obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
           rw [Val.retype_of_hasTy (hpairs e he hr)]
-          obtain ⟨-, hoff⟩ := hins _ (List.of_mem_zip he).1
-          rw [if_pos hr] at hoff
+          have hoff := (hinsS _ (List.of_mem_zip he).1 hr).2
           rw [ecs_ofInt hoff]
           rcases hmf with h0 | h1
           · obtain ⟨e0, he0, hee⟩ := List.mem_map.1 h0
@@ -1427,7 +1432,7 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     have hain : a ∈ (u.args.extract k (u.args.size - 1)).toList := (List.of_mem_zip hpe.1).2
     have hr : p.regs.isEmpty = true := by simpa using hpe.2
     have hins := List.all_eq_true.1 hinsOK p hpin
-    rw [Bool.and_eq_true, if_pos hr] at hins
+    rw [hr, if_pos rfl, Bool.and_eq_true] at hins
     have hoff0 : 0 ≤ p.offset := of_decide_eq_true hins.2
     -- the source reached the call: its memory's stack-argument slots are writable, its arguments
     -- have no `poison`
@@ -1562,8 +1567,8 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     obtain ⟨-, zs0, sp0, sp1, hzs0, hsp01, hst, hmv0⟩ := ecc_stackOK_inv hstack
     rw [hzs] at hzs0; cases hzs0
     unfold storeArgsOK at hst
-    simp only [Bool.and_eq_true] at hst
-    obtain ⟨⟨hsOK, -⟩, -⟩ := hst
+    simp only [Bool.and_eq_true, List.all_eq_true] at hst
+    obtain ⟨⟨⟨hsOK, -⟩, -⟩, hwfS⟩ := hst
     have hcs' := hzs
     unfold callStores at hcs'
     obtain ⟨wz', n', zs', hwz', hnz, hop, hsz, hc, rest, hsplit⟩ := ecs_chain_mem hcs' hz
@@ -1635,11 +1640,11 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     have hpin : e.1 ∈ insOf abi := (List.of_mem_zip hpe.1).1
     have hr : e.1.regs.isEmpty = true := by simpa using hpe.2
     have hins := List.all_eq_true.1 hinsOK e.1 hpin
-    rw [Bool.and_eq_true, if_pos hr] at hins
+    rw [hr, if_pos rfl, Bool.and_eq_true] at hins
     have hoff0 : 0 ≤ e.1.offset := of_decide_eq_true hins.2
     have hcw := List.all_eq_true.1 hokM e.1 hpin
     rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff0] at hcw
-    have hl' := mem_leaves hins.1 hl
+    have hl' := mem_leaves (hwfS e he1) hl
     have hcw' := ecs_canWrite_sub (k := l.1) (l := l.2.size) hl'.1 hcw (by dsimp only at hsb; omega)
     rw [show e.1.offset.toNat + l.1 = (e.1.offset + (l.1 : Int)).toNat by omega,
       ← ecs_canWrite_congr hA0, ← ecs_canWrite_congr hA] at hcw'

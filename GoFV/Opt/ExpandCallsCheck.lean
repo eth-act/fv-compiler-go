@@ -275,12 +275,25 @@ stack (`reg = false`). -/
 def argPairs (reg : Bool) (ps : List ABIParam) (as : List ID) : List (ABIParam × ID) :=
   (ps.zip as).filter fun e => !e.1.regs.isEmpty == reg
 
-/-- The input parameters' shapes: a register-assigned one has as many registers as leaves, a
-stack-assigned one a non-negative offset; both well-formed. -/
+mutual
+/-- A shape a stack-assigned parameter may have: a well-formed one (`wf`), or one with byte blobs
+(arrays) inside, whose bytes a `Move` copies (`moveOK`; `storeArgsOK` needs `wf`). -/
+def movTy : Ty → Bool
+  | .agg fs n => movFields fs n 0
+  | .int _ | .bool | .ptr _ | .opaque _ | .empty | .str | .slice _ | .blob _ => true
+  | _ => false
+/-- `movTy` of fields in order, disjoint, within the size (as `wfFields`). -/
+def movFields : List (Nat × Ty) → Nat → Nat → Bool
+  | [], n, start => start ≤ n
+  | (o, t) :: fs, n, start => start ≤ o && movTy t && movFields fs n (o + t.size)
+end
+
+/-- The input parameters' shapes: a register-assigned one well-formed with as many registers as
+leaves, a stack-assigned one `movTy` at a non-negative offset. -/
 def insOK (tabs : Tables) (ps : List ABIParam) : Bool :=
-  ps.all fun p => wf (tabs.ty p.type) &&
-    (if p.regs.isEmpty then decide (0 ≤ p.offset)
-     else (leaves (tabs.ty p.type)).length == p.regs.size)
+  ps.all fun p =>
+    if p.regs.isEmpty then movTy (tabs.ty p.type) && decide (0 ≤ p.offset)
+    else wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size
 
 /-- The stack slots of the parameters `ps` are disjoint, in increasing offset order. -/
 def slotsSorted (tabs : Tables) : List ABIParam → Bool
@@ -372,15 +385,16 @@ target's memory argument down to `callBase` (empty if they are the same). -/
 def callStores (f g : Func) (u w : Value) : Option (List ID) :=
   storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! (callBase f g u w)
 
-/-- The stack parameters `sp` (with their arguments) of call `u` are written by the `Store`s
-`zs` (in leaf order, parameter by parameter, bottom of the chain first): selector chains of the
-Go arguments (`piecesOK`; a piece the source defines is one of the call's arguments) at their
-slots. -/
+/-- The stack parameters `sp` (with their arguments) of call `u`, of well-formed shapes, are
+written by the `Store`s `zs` (in leaf order, parameter by parameter, bottom of the chain first):
+selector chains of the Go arguments (`piecesOK`; a piece the source defines is one of the call's
+arguments) at their slots. -/
 def storeArgsOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u : Value)
     (sp : List (ABIParam × ID)) (zs : List ID) : Bool :=
   storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs &&
     piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
-    (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+    (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q) &&
+    sp.all (fun e => wf (tabs.ty e.1.type))
 
 /-- A shape a `Move` of a wide argument copies: not zero-sized `Empty`. -/
 def moveTy : Ty → Bool
