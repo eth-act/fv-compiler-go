@@ -521,10 +521,12 @@ inductive NNKind where
   | anyArg (w : Sem.Width)
   /-- When every argument is (`Or<w>`, `Xor<w>`, `Div<w>`, `Mod<w>`). -/
   | allArgs (w : Sem.Width)
+  /-- A length or capacity (`StringLen`, `SliceLen`, `SliceCap`) of a string or slice shaped
+  argument, at `int64`: `retype` gives values of these shapes `0 ≤ len ≤ cap`
+  (`Val.hasTy_str`, `Val.hasTy_slice`). -/
+  | len
 
-/-- The ops `isNonNegative` looks through, by kind. `StringLen`, `SliceLen`, `SliceCap` are
-left out: the semantics gives a composite any integer component, so their values may be
-negative (`docs/proofs/rules.md`, "Assumptions to discharge"). -/
+/-- The ops `isNonNegative` looks through, by kind. -/
 def nnTable : List (Op × NNKind) :=
   [(.Const64, .const .w64), (.Const32, .const .w32), (.Const16, .const .w16),
    (.Const8, .const .w8),
@@ -546,7 +548,7 @@ def nnTable : List (Op × NNKind) :=
    (.Div16, .allArgs .w16), (.Div8, .allArgs .w8), (.Or64, .allArgs .w64),
    (.Or32, .allArgs .w32), (.Or16, .allArgs .w16), (.Or8, .allArgs .w8),
    (.Xor64, .allArgs .w64), (.Xor32, .allArgs .w32), (.Xor16, .allArgs .w16),
-   (.Xor8, .allArgs .w8)]
+   (.Xor8, .allArgs .w8), (.StringLen, .len), (.SliceLen, .len), (.SliceCap, .len)]
 
 /-- The kind of `op` in `nnTable`. -/
 def nonNegKind (op : Op) : Option NNKind := (nnTable.find? (·.1 == op)).map (·.2)
@@ -555,6 +557,12 @@ def nonNegKind (op : Op) : Option NNKind := (nnTable.find? (·.1 == op)).map (·
 def isIntW (t : Sem.Ty) (w : Sem.Width) : Bool :=
   match t with
   | .int w' => w' == w
+  | _ => false
+
+/-- `t` is the string or a slice shape. -/
+def lenShape (t : Sem.Ty) : Bool :=
+  match t with
+  | .str | .slice _ => true
   | _ => false
 
 /-- `isNonNegative(x)` (`rewrite.go`) on the definitions `D`, with `k` levels: every
@@ -582,6 +590,9 @@ def nonNegD (tabs : Tables) (D : ID → Option Value) : Nat → ID → Bool
         | none => false
       | some (.anyArg w) => isIntW ty w && v.args.any (nonNegD tabs D k)
       | some (.allArgs w) => isIntW ty w && v.args.all (nonNegD tabs D k)
+      | some .len => isIntW ty .w64 && match v.args[0]?.bind D with
+        | some a => lenShape (tabs.ty a.type)
+        | none => false
 
 /-- Levels `nonNegD` looks through. -/
 def nnFuel : Nat := 16

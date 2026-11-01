@@ -429,7 +429,7 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
 instance (`nonNegD_den`). -/
 theorem nonNegOK_of {tabs : Tables} {D : ID → Option Value} {M : Defs} {I : Inst} {pat : Pat}
     {cond : Option GoFV.Rules.Expr} {ρ : ID → Val} {B : Nat}
-    (h : nonNegOKD tabs D I pat cond = true) :
+    (hT : Term.Typed D tabs ρ) (h : nonNegOKD tabs D I pat cond = true) :
     GoFV.Proof.Rules.Pat.nonNegOK (semEnv tabs M I (den D tabs ρ B)) pat cond = true := by
   cases cond with
   | none => rfl
@@ -440,7 +440,7 @@ theorem nonNegOK_of {tabs : Tables} {D : ID → Option Value} {M : Defs} {I : In
     revert hx'
     cases GoFV.Proof.Rules.Pat.leafPos x [] pat with
     | none => intro _; rfl
-    | some p => exact nonNegD_den tabs D ρ _ B _
+    | some p => exact nonNegD_den tabs D ρ hT _ B _
 
 /-- **The matched value**: its denotation before the event is refined by the one after. -/
 theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
@@ -488,7 +488,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
     rw [F.hpat] at ht ha ⊢
     exact raw_topAll hn ht ha
   have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
-  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of F.hnn)
+  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of hT F.hnn)
   -- lower bound
   have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
       (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
