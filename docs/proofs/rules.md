@@ -531,22 +531,22 @@ needs a later phase of the semantics.
 | File | Family | Proven | Pending (P1/P2) | False | Not pure | Total |
 | --- | --- | --: | --: | --: | --: | --: |
 | `dec` | ArrayMake | 0 | 0 | 1 | 0 | 1 |
-| `dec` | ArraySelect | 2 | 2 | 0 | 0 | 4 |
+| `dec` | ArraySelect | 3 | 1 | 0 | 0 | 4 |
 | `dec` | ComplexImag | 1 | 2 | 0 | 0 | 3 |
 | `dec` | ComplexReal | 1 | 2 | 0 | 0 | 3 |
-| `dec` | IData | 1 | 1 | 0 | 0 | 2 |
+| `dec` | IData | 2 | 0 | 0 | 0 | 2 |
 | `dec` | IMake | 0 | 1 | 0 | 1 | 2 |
-| `dec` | ITab | 1 | 1 | 0 | 0 | 2 |
+| `dec` | ITab | 2 | 0 | 0 | 0 | 2 |
 | `dec` | Load | 3 | 2 | 0 | 0 | 5 |
-| `dec` | SliceCap | 1 | 1 | 0 | 0 | 2 |
-| `dec` | SliceLen | 1 | 1 | 0 | 0 | 2 |
-| `dec` | SlicePtr | 1 | 1 | 0 | 0 | 2 |
+| `dec` | SliceCap | 2 | 0 | 0 | 0 | 2 |
+| `dec` | SliceLen | 2 | 0 | 0 | 0 | 2 |
+| `dec` | SlicePtr | 2 | 0 | 0 | 0 | 2 |
 | `dec` | SlicePtrUnchecked | 1 | 0 | 0 | 0 | 1 |
 | `dec` | Store | 0 | 0 | 0 | 8 | 8 |
-| `dec` | StringLen | 1 | 1 | 0 | 0 | 2 |
-| `dec` | StringPtr | 1 | 1 | 0 | 0 | 2 |
+| `dec` | StringLen | 2 | 0 | 0 | 0 | 2 |
+| `dec` | StringPtr | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StructMake | 0 | 0 | 1 | 0 | 1 |
-| `dec` | StructSelect | 2 | 3 | 0 | 1 | 5 |
+| `dec` | StructSelect | 3 | 2 | 0 | 1 | 5 |
 | `divisible` | Eq | 12 | 4 | 0 | 0 | 16 |
 | `divisible` | Neq | 12 | 4 | 0 | 0 | 16 |
 | `divmod` | Div | 16 | 7 | 4 | 2 | 29 |
@@ -562,7 +562,7 @@ needs a later phase of the semantics.
 | `generic` | CondSelect | 0 | 53 | 6 | 0 | 59 |
 | `generic` | ConstInterface | 1 | 0 | 0 | 0 | 1 |
 | `generic` | ConstSlice | 1 | 0 | 1 | 0 | 2 |
-| `generic` | ConstString | 1 | 0 | 0 | 4 | 4 |
+| `generic` | ConstString | 2 | 0 | 0 | 4 | 4 |
 | `generic` | Convert | 1 | 4 | 0 | 0 | 5 |
 | `generic` | Ctz | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
@@ -583,7 +583,7 @@ needs a later phase of the semantics.
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Load | 5 | 2 | 0 | 33 | 35 |
 | `generic` | Lsh | 65 | 23 | 0 | 0 | 88 |
-| `generic` | MemEq | 0 | 11 | 0 | 0 | 11 |
+| `generic` | MemEq | 1 | 10 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
@@ -593,7 +593,7 @@ needs a later phase of the semantics.
 | `generic` | NeqInter | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NeqPtr | 1 | 8 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
-| `generic` | NilCheck | 4 | 0 | 0 | 8 | 8 |
+| `generic` | NilCheck | 7 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
@@ -618,14 +618,14 @@ needs a later phase of the semantics.
 | `generic` | StaticLECall | 0 | 0 | 0 | 24 | 24 |
 | `generic` | Store | 1 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
-| `generic` | StringPtr | 0 | 0 | 0 | 1 | 1 |
+| `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1234 | 281 | 26 | 258 | 1762 |
+| all | | 1249 | 271 | 26 | 258 | 1762 |
 
 <!-- END coverage -->
 

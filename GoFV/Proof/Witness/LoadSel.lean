@@ -47,7 +47,8 @@ theorem xs_checkedRewrite :
       (((out.func.value? 5).bind (·.args[0]?)).bind out.func.value?).map (·.op == Op.Load) =
         some true ∧
       check { tabs := out.tables, typs := lsTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func lsPassEnv.tables lsFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lsPassEnv.tables lsFunc) out.tables out.func
+        lsPassEnv.tables lsFunc := by
   have h1 := ls_checks.1
   have h2 := xs_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet xsRules) lsPassEnv lsFunc with
@@ -87,7 +88,8 @@ theorem lsel_checkedRewrite :
       (((out.func.value? 5).bind (·.args[0]?)).bind out.func.value?).map (·.op == Op.Load) =
         some true ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func lfPassEnv.tables lfFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lfPassEnv.tables lfFunc) out.tables out.func
+        lfPassEnv.tables lfFunc := by
   have h1 := lf_checks.1
   have h2 := lsel_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet lselRules) lfPassEnv lfFunc with
