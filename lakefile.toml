@@ -78,3 +78,7 @@ root = "GoFVTest.CseProbe"
 [[lean_exe]]
 name = "opt-proven-probe"
 root = "GoFVTest.OptProvenProbe"
+
+[[lean_exe]]
+name = "phiopt-probe"
+root = "GoFVTest.PhiOptProbe"
