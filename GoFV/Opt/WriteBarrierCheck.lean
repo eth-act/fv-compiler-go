@@ -521,7 +521,7 @@ def runOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (j : Nat) (r : R
   (match c.g.block? s.c with
     | some C => C.id == s.c
     | none => false) &&
-  r.src.length == r.tgt.length && 0 < r.src.length &&
+  r.src.length == r.tgt.length && 0 < r.src.length && (vals c.g s.e).contains r.last &&
   r.src.all (fun x => B.values.contains x && !c.K.getD x false) &&
   (match r.nc with
     | some n => B.values.contains n && (c.f.value? n).any (·.op == .NilCheck)
@@ -539,10 +539,10 @@ def blockOK (b : ID) : Bool :=
     segs.getLast? == some l &&
     (segs ++ rs.map (·.sp.t)).Nodup &&
     rs.zipIdx.all (fun (r, j) => c.runOK b B segs rs j r) &&
-    -- every value of `b` is kept in a segment, a run's store or a dropped nil check
+    -- every value of `b` is kept and listed in a segment, a run's store or a dropped nil check
     B.values.all (fun x =>
-      (c.K.getD x false && segs.any fun s => (vals c.g s).contains x) ||
-        rs.any (fun r => r.src.contains x) || rs.any (fun r => r.nc == some x)) &&
+      if c.K.getD x false then segs.any fun s => (vals c.g s).contains x
+      else rs.any (fun r => r.src.contains x) || rs.any (fun r => r.nc == some x)) &&
     -- the values of the segments
     segs.zipIdx.all (fun (s, j) => (vals c.g s).all (c.roleOK b B segs rs false j)) &&
     c.npOK B rs segs

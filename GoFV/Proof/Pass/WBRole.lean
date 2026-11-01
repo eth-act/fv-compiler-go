@@ -5,28 +5,13 @@ import GoFV.Proof.Pass.WBSpec
 # writebarrier: roles as propositions (issue #36)
 
 `roleOK` (the checker's per-value condition) read for each role (`roleOK_*`), the ops of the
-buffer-block roles (`roleOf_then`), and `local_all`: a listed value of a chain whose role's
-source facts hold (`Cov`) evaluates as `QR` says.
+buffer-block roles (`roleOf_then`), and the roles of held values and of the flag address and
+constant.
 -/
 
 namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
-
-/-- The source evaluated `x` in `Gr`. -/
-def Ev (env : Env) (c : WBCheck.Ctx) (Gr : Frame) (x : ID) : Prop :=
-  ∃ u y, c.f.value? x = some u ∧ Gr.regs[x]? = some (some y) ∧
-    evalValue env (Ctx.make c.tabs c.f) Gr u = .ok y
-
-/-- The source facts a value of the chain needs, by role. -/
-def Cov (env : Env) (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) : Prop :=
-  match c.roleOf rs x with
-  | .held => c.K.getD x false = true → Ev env c Gr x
-  | .tgt j k => ∃ r s, rs[j]? = some r ∧ r.src[k]? = some s ∧ Ev env c Gr s
-  | .ncEnd j => ∃ r n, rs[j]? = some r ∧ r.nc = some n ∧ Ev env c Gr n
-  | .ncThen j => ∃ r n, rs[j]? = some r ∧ r.nc = some n ∧ Ev env c Gr n
-  | .wb j => ∃ M, RunMem Gr rs j M
-  | _ => True
 
 /-- `ncCopyOK` as a proposition. -/
 def NcCopy (c : WBCheck.Ctx) (B : Block) (segs : List ID) (j : Nat) (n y m : ID) : Prop :=
