@@ -395,107 +395,111 @@ def thenOp : Role → Option (Nat × Op)
   | .tload j => some (j, .Load)
   | _ => none
 
+theorem thenRole_then {v : Value} {j j' : Nat} {o : Op} (h : thenOp (thenRole v j) = some (j', o)) :
+    j' = j ∧ v.op = o := by
+  unfold thenRole at h
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  · simp [thenOp] at h
+
+theorem otherRole_then {g : Func} {x : ID} : thenOp (otherRole g x) = none := by
+  unfold otherRole
+  split
+  · split
+    · rfl
+    split <;> rfl
+  · rfl
+
 theorem roleRun_then {g : Func} {x : ID} :
-    ∀ {rs : List Run} {k j : Nat} {o : Op} {ρ : Role}, roleRun g x rs k = ρ →
-      thenOp ρ = some (j, o) → k ≤ j ∧ ∃ r, rs[j - k]? = some r ∧ x ∈ vals g r.sp.t ∧
-        ∃ w, g.value? x = some w ∧ w.op = o
-  | [], k, j, o, ρ, h, ht => by subst h; simp [roleRun, thenOp] at ht
-  | r :: rs, k, j, o, ρ, h, ht => by
-    unfold roleRun at h
-    split at h
-    · subst h; simp [thenOp] at ht
-    split at h
-    · subst h; simp [thenOp] at ht
-    split at h
-    · subst h; simp [thenOp] at ht
-    split at h
-    · subst h; simp [thenOp] at ht
-    split at h
-    · subst h; simp [thenOp] at ht
-    split at h
-    · rename_i hx
-      split at h
-      · rename_i v hv
-        have hx' : x ∈ vals g r.sp.t := by simpa using hx
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        split at h
-        · rename_i hop
-          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
-          obtain ⟨rfl, rfl⟩ := ht
-          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
-        · subst h; simp [thenOp] at ht
-      · subst h; simp [thenOp] at ht
-    · obtain ⟨hk, r', hr', hx, w, hw, ho⟩ := roleRun_then h ht
-      refine ⟨by omega, r', ?_, hx, w, hw, ho⟩
-      rw [show j - k = (j - (k + 1)) + 1 by omega]
-      simpa using hr'
+    ∀ {rs : List Run} {k j : Nat} {o : Op},
+      thenOp (roleRun g x rs k) = some (j, o) → k ≤ j ∧ ∃ r, rs[j - k]? = some r ∧
+        x ∈ vals g r.sp.t ∧ ∃ w, g.value? x = some w ∧ w.op = o
+  | [], k, j, o, ht => by simp [roleRun, thenOp] at ht
+  | r :: rs, k, j, o, ht => by
+    rw [roleRun] at ht
+    by_cases h1 : (x == r.sp.load) = true
+    · rw [if_pos h1] at ht; simp [thenOp] at ht
+    rw [if_neg h1] at ht
+    by_cases h2 : (x == r.sp.flag) = true
+    · rw [if_pos h2] at ht; simp [thenOp] at ht
+    rw [if_neg h2] at ht
+    by_cases h3 : (x == r.phi) = true
+    · rw [if_pos h3] at ht; simp [thenOp] at ht
+    rw [if_neg h3] at ht
+    by_cases h4 : (r.ncEnd == some x) = true
+    · rw [if_pos h4] at ht; simp [thenOp] at ht
+    rw [if_neg h4] at ht
+    cases hk : r.tgt.idxOf? x with
+    | some k' => rw [hk] at ht; simp [thenOp] at ht
+    | none =>
+      rw [hk] at ht
+      dsimp only at ht
+      by_cases h5 : (vals g r.sp.t).contains x = true
+      · rw [if_pos h5] at ht
+        cases hv : g.value? x with
+        | none => rw [hv] at ht; simp [thenOp] at ht
+        | some v =>
+          rw [hv] at ht
+          simp only [Option.map_some, Option.getD_some] at ht
+          obtain ⟨rfl, hop⟩ := thenRole_then ht
+          exact ⟨Nat.le_refl _, r, by simp, by simpa using h5, v, rfl, hop⟩
+      · rw [if_neg h5] at ht
+        obtain ⟨hk, r', hr', hx, w, hw, ho⟩ := roleRun_then ht
+        refine ⟨by omega, r', ?_, hx, w, hw, ho⟩
+        rw [show j - k = (j - (k + 1)) + 1 by omega]
+        simpa using hr'
 
 /-- A buffer-block role is found among the runs. -/
-theorem roleOf_then {c : WBCheck.Ctx} {rs : List Run} {x : ID} {j : Nat} {o : Op} {ρ : Role}
-    (h : c.roleOf rs x = ρ) (ht : thenOp ρ = some (j, o)) :
+theorem roleOf_then {c : WBCheck.Ctx} {rs : List Run} {x : ID} {j : Nat} {o : Op}
+    (ht : thenOp (c.roleOf rs x) = some (j, o)) :
     ∃ r, rs[j]? = some r ∧ x ∈ vals c.g r.sp.t ∧ ∃ w, c.g.value? x = some w ∧ w.op = o := by
-  unfold Ctx.roleOf at h
-  split at h
-  · subst h; simp [thenOp] at ht
-  split at h
-  · subst h; simp [thenOp] at ht
-  split at h
-  · subst h; simp [thenOp] at ht
-  generalize hR : roleRun c.g x rs 0 = R at h
+  unfold Ctx.roleOf at ht
+  by_cases h1 : c.isWbaddr x = true
+  · rw [if_pos h1] at ht; simp [thenOp] at ht
+  rw [if_neg h1] at ht
+  by_cases h2 : c.isConst0 x = true
+  · rw [if_pos h2] at ht; simp [thenOp] at ht
+  rw [if_neg h2] at ht
+  by_cases h3 : c.held x = true
+  · rw [if_pos h3] at ht; simp [thenOp] at ht
+  rw [if_neg h3] at ht
+  generalize hR : roleRun c.g x rs 0 = R at ht
   cases R
-  case none =>
-    split at h
-    · split at h
-      · subst h; simp [thenOp] at ht
-      split at h
-      · subst h; simp [thenOp] at ht
-      · subst h; simp [thenOp] at ht
-    · subst h; simp [thenOp] at ht
+  case none => rw [otherRole_then] at ht; cases ht
   all_goals
-    subst h
-    obtain ⟨-, r, hr, hx, w, hw, ho⟩ := roleRun_then hR ht
+    obtain ⟨-, r, hr, hx, w, hw, ho⟩ := roleRun_then (k := 0) (by rw [hR]; exact ht)
     exact ⟨r, by simpa using hr, hx, w, hw, ho⟩
 
 /-- A held value's role is `held`, or the flag address or constant. -/
 theorem role_of_held {c : WBCheck.Ctx} {rs : List Run} {a : ID} (h : c.held a = true) :
     c.roleOf rs a = .held ∨ c.roleOf rs a = .wbaddr ∨ c.roleOf rs a = .const0 := by
   unfold Ctx.roleOf
-  split
-  · exact .inr (.inl rfl)
-  split
-  · exact .inr (.inr rfl)
-  split
-  · exact .inl rfl
-  · contradiction
+  by_cases h1 : c.isWbaddr a = true
+  · rw [if_pos h1]; exact .inr (.inl rfl)
+  rw [if_neg h1]
+  by_cases h2 : c.isConst0 a = true
+  · rw [if_pos h2]; exact .inr (.inr rfl)
+  rw [if_neg h2, if_pos h]
+  exact .inl rfl
 
 theorem roleOf_wbaddr {c : WBCheck.Ctx} {rs : List Run} {a : ID} (h : c.isWbaddr a = true) :
     c.roleOf rs a = .wbaddr := by
@@ -505,5 +509,21 @@ theorem roleOf_const0 {c : WBCheck.Ctx} {rs : List Run} {a : ID} (h : c.isConst0
     (hne : c.isWbaddr a = false) : c.roleOf rs a = .const0 := by
   unfold Ctx.roleOf
   rw [if_neg (by simp [hne]), if_pos h]
+
+/-- The flag address and the constant are different values. -/
+theorem isWbaddr_of_const0 {tabs : Tables} {f g : Func} {c : WBCheck.Ctx}
+    (hc : ctxOf tabs f g = some c) {a : ID} (h : c.isConst0 a = true) : c.isWbaddr a = false := by
+  obtain ⟨-, -, -, -, -, hl⟩ := ctxOf_spec hc
+  unfold Ctx.isConst0 at h
+  unfold Ctx.isWbaddr
+  cases hz : c.lazy with
+  | none => rfl
+  | some p =>
+    obtain ⟨wa, c0⟩ := p
+    rw [hz] at h hl
+    have hne := lazyOK_ne hl
+    simp only [Option.any_some, beq_iff_eq] at h ⊢
+    subst h
+    simpa using hne
 
 end GoFV.Proof.WB

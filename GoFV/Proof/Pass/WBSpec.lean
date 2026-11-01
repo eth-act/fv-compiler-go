@@ -173,6 +173,16 @@ theorem lazyOK_some {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : I
         simp only [Bool.and_eq_true, beq_iff_eq] at this
         exact this
 
+theorem lazyOK_ne {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : ID}
+    (h : lazyOK tabs f g K Lst = some (some (wa, c0))) : wa ≠ c0 := by
+  obtain ⟨⟨w, hw, hop, -⟩, ⟨w', hw', hop', -⟩, -⟩ := lazyOK_some h
+  intro he
+  subst he
+  rw [hw] at hw'
+  cases hw'
+  rw [hop] at hop'
+  cases hop'
+
 theorem lazyOK_none {tabs : Tables} {f g : Func} {K Lst : Array Bool}
     (h : lazyOK tabs f g K Lst = some none) :
     ∀ b ∈ f.blocks, ∀ rs l, chainRuns? f g b = some (rs, l) → rs = [] := by

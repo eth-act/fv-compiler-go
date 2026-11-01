@@ -252,6 +252,17 @@ inductive Role where
   | none
   deriving DecidableEq, Repr, Inhabited
 
+/-- The role of value `v` of run `j`'s buffer block, by op. -/
+def thenRole (v : Value) (j : Nat) : Role :=
+  if v.op == .NilCheck then .ncThen j
+  else if v.op == .WB then .wb j
+  else if v.op == .Select0 then .sel0 j
+  else if v.op == .Select1 then .sel1 j
+  else if v.op == .OffPtr then .off j
+  else if v.op == .Store then .bstore j
+  else if v.op == .Load then .tload j
+  else .none
+
 /-- The role of `x` among the values of run `j` and the later runs. -/
 def roleRun (g : Func) (x : ID) : List Run → Nat → Role
   | [], _ => .none
@@ -263,19 +274,19 @@ def roleRun (g : Func) (x : ID) : List Run → Nat → Role
     else match r.tgt.idxOf? x with
       | some k => .tgt j k
       | none =>
-        if (vals g r.sp.t).contains x then
-          match g.value? x with
-          | some v =>
-            if v.op == .NilCheck then .ncThen j
-            else if v.op == .WB then .wb j
-            else if v.op == .Select0 then .sel0 j
-            else if v.op == .Select1 then .sel1 j
-            else if v.op == .OffPtr then .off j
-            else if v.op == .Store then .bstore j
-            else if v.op == .Load then .tload j
-            else .none
-          | none => .none
+        if (vals g r.sp.t).contains x then ((g.value? x).map (thenRole · j)).getD .none
         else roleRun g x rs (j + 1)
+
+/-- The role of a value of no run: an argument-free `Invalid`, or a lazily created value of
+`g`'s entry. -/
+def otherRole (g : Func) (x : ID) : Role :=
+  match g.value? x with
+  | some v =>
+    if v.op == .Invalid && v.args.isEmpty then .invalid
+    else if ((v.op == .SB || v.op == .SP || v.op == .Const32) && v.args.isEmpty) ||
+        (v.op == .Addr && v.args.size == 1) then .lazy
+    else .none
+  | none => .none
 
 /-- What the check reads besides the two functions. -/
 structure Ctx where
@@ -305,14 +316,7 @@ def roleOf (rs : List Run) (x : ID) : Role :=
   else if c.isConst0 x then .const0
   else if c.held x then .held
   else match roleRun c.g x rs 0 with
-    | .none =>
-      match c.g.value? x with
-      | some v =>
-        if v.op == .Invalid && v.args.isEmpty then .invalid
-        else if ((v.op == .SB || v.op == .SP || v.op == .Const32) && v.args.isEmpty) ||
-            (v.op == .Addr && v.args.size == 1) then .lazy
-        else .none
-      | none => .none
+    | .none => otherRole c.g x
     | r => r
 
 /-- `a` is an argument of a non-`Phi` value of block `b` of `f`. -/
