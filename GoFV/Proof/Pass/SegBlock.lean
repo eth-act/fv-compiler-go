@@ -299,6 +299,213 @@ theorem keptOk (hE : env.Mono) {S T : Frame} {k j : Nat}
 theorem hidA {k : Nat} : ∀ z v, (Base f bid z ∨ z ∈ oS.toList.take k) → f.value? z = some v →
     v.id = z := fun _ _ hz hv => K.own hz hv
 
+/-- **One target step** keeps `TFacts`. -/
+theorem tstep {S T : Frame} {pre : List ID} {j : Nat} {x : ID} (hj : oT.toList[j]? = some x)
+    (hT : TFacts env tabs f g F0T S T pre (oT.toList.take j)) {y : Val}
+    (hrel : x ∈ pre → ∃ yS, S.regs[x]? = some (some yS) ∧ Sem.Refines yS y)
+    (hseg : ∀ x' D N, segOK tabs f g x' = some (D, N) → Covered f pre x' D →
+      ∀ S', evalAll env (Ctx.make tabs g) (ext g.valueTab.size S) (segL x' N) = .ok S' →
+      x ∈ segL x' N → ∃ y0, S'.regs[x]? = some (some y0) ∧ Sem.Refines y0 y) :
+    TFacts env tabs f g F0T S (T.set x y) pre (oT.toList.take (j + 1)) := by
+  have hxlt : x < T.regs.size := by
+    obtain ⟨-, v, hv, -⟩ := K.memT.1 (List.mem_of_getElem? hj)
+    rw [hT.size, K.sizeT]; exact lt_of_value? hv
+  have hnot : x ∉ oT.toList.take j := CSE.not_mem_take_of K.ndT hj
+  rw [take_succ_eqT hj]
+  have hkeep : ∀ z, z ≠ x → (T.set x y).regs[z]? = T.regs[z]? := fun z hz =>
+    Frame.set_regs_ne (Ne.symm hz)
+  have hself : (T.set x y).regs[x]? = some (some y) := Frame.set_regs_self hxlt
+  refine ⟨?_, by simp [Frame.set, hT.size], fun z hz => ?_, fun z hz => ?_, fun z hz hzp => ?_,
+    fun x' D N hs hc S' hev n hn hnd => ?_⟩
+  · have hf := hT.frame
+    unfold Frame.set
+    conv => lhs; rw [hf]
+  · have hzx : z ≠ x := fun h => hz (by simp [h])
+    rw [hkeep z hzx, hT.out z (fun h => hz (List.mem_append_left _ h))]
+  · rcases List.mem_append.1 hz with hz | hz
+    · rw [hkeep z (fun h => hnot (h ▸ hz))]; exact hT.defd z hz
+    · simp only [List.mem_singleton] at hz; subst hz; exact ⟨y, hself⟩
+  · rcases List.mem_append.1 hz with hz | hz
+    · rw [hkeep z (fun h => hnot (h ▸ hz))]; exact hT.rel z hz hzp
+    · simp only [List.mem_singleton] at hz; subst hz
+      obtain ⟨yS, hyS, hv⟩ := hrel hzp
+      exact ⟨yS, y, hyS, hself, hv⟩
+  · rcases List.mem_append.1 hnd with hnd | hnd
+    · rw [hkeep n (fun h => hnot (h ▸ hnd))]; exact hT.seg x' D N hs hc S' hev n hn hnd
+    · simp only [List.mem_singleton] at hnd; subst hnd
+      obtain ⟨y0, hy0, hr⟩ := hseg x' D N hs hc S' hev hn
+      exact ⟨y0, y, hy0, hself, hr⟩
+
+/-- An anchor or fresh value lies in one segment. -/
+theorem seg_uniq {n x x' : ID} {D D' N N' : List ID} (hs : segOK tabs f g x = some (D, N))
+    (hs' : segOK tabs f g x' = some (D', N')) (hn : n ∈ segL x N) (hn' : n ∈ segL x' N') :
+    x = x' := by
+  obtain ⟨d⟩ := segOK_spec hs
+  obtain ⟨d'⟩ := segOK_spec hs'
+  simp only [segL, List.mem_append, List.mem_singleton] at hn hn'
+  rcases hn with hn | rfl <;> rcases hn' with hn' | rfl
+  · exact K.rel.freshUniq x x' D D' N N' n hs hs' hn hn'
+  · have := d'.hfv; rw [(d.hN n hn).1] at this; cases this
+  · have := d.hfv; rw [(d'.hN n hn').1] at this; cases this
+  · rfl
+
+/-- The source frame, extended to the target's registers, with the values from before the block
+and those the source evaluated available. -/
+theorem availExt {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :
+    Avail env tabs f (ext g.valueTab.size S) (fun a => Base f bid a ∨ a ∈ oS.toList.take k) := by
+  have H := K.avail hS
+  have hsz : S.regs.size = f.valueTab.size := by rw [hS.size, K.size]
+  refine ⟨fun z hz => ?_, H.cl⟩
+  obtain ⟨v, y, hv, hy, hev⟩ := H.val z hz
+  refine ⟨v, y, hv, by rw [ext_regs_lt (hsz ▸ lt_of_value? hv)]; exact hy, fun hph => ?_⟩
+  rw [ext_eval hsz fun a ha => ?_]
+  · exact hev hph
+  · obtain ⟨va, -, hva, -, -⟩ := H.val a (H.cl z v hz hv hph a ha)
+    exact lt_of_value? hva
+
+theorem typedExt {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :
+    Proof.Typed (Ctx.make tabs f) (ext g.valueTab.size S) := by
+  have hty := K.typedS hS (K.hLk k)
+  intro z y hz
+  by_cases hlt : z < S.regs.size
+  · rw [ext_regs_lt hlt] at hz; exact hty z y hz
+  · rcases ext_regs_none (n := g.valueTab.size) (Nat.le_of_not_lt hlt) with h | h <;>
+      rw [h] at hz <;> cases hz
+
+/-- A segment with a value in the target's block is of the block. -/
+theorem segBlock {x n : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
+    (d : SegD tabs f g x D N) (hn : n ∈ segL x N) (hnb : n ∈ gb.values) {gv : Value}
+    (hgv : g.value? n = some gv) : d.fv.block = bid := by
+  obtain ⟨ce, hwg⟩ := K.wg
+  obtain ⟨gv', hgv', -, hb⟩ := hwg.valueId bid gb ⟨K.bidG, K.hgb⟩ n hnb
+  rw [hgv] at hgv'; cases hgv'
+  simp only [segL, List.mem_append, List.mem_singleton] at hn
+  rcases hn with hn | rfl
+  · obtain ⟨-, -, v, hv, hvb⟩ := d.hN n hn
+    rw [hgv] at hv; cases hv
+    rw [← hvb, hb]
+  · rw [d.hgv] at hgv; cases hgv
+    rw [← d.hgbl, hb]
+
+/-- The values of a segment of the block are target nodes. -/
+theorem segNode {x a : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
+    {d : SegD tabs f g x D N} (hb : d.fv.block = bid) (ha : a ∈ segL x N) : Node g gb a := by
+  simp only [segL, List.mem_append, List.mem_singleton] at ha
+  rcases ha with ha | rfl
+  · obtain ⟨-, ⟨b, hgb, hab⟩, v, hv, -⟩ := d.hN a ha
+    rw [hb, K.hgb] at hgb; cases hgb
+    exact ⟨hab, v, hv, root_ne_phi (d.hroot a (by simp [segL, ha])) hv⟩
+  · obtain ⟨b, hfb, hxb⟩ := d.hlisted
+    rw [hb, K.hfb] at hfb; cases hfb
+    exact K.nodeG ⟨hxb, d.fv, d.hfv, d.hfph⟩ (K.rel.anchorNot a D N hs)
+
+/-- **A segment's value**: a fresh value or the anchor `n` of a segment whose roots the source
+evaluated evaluates in the target to a refinement of the target's definitions run on the source's
+frame (`SegSound`), and of the source's anchor. -/
+theorem segStep (hE : env.Mono) {S T : Frame} {k j : Nat}
+    (hS : SFacts env tabs f F0 S (oS.toList.take k))
+    (hT : TFacts env tabs f g F0T S T (oS.toList.take k) (oT.toList.take j)) {n : ID}
+    (hjT : oT.toList[j]? = some n) {x : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
+    (hc : Covered f (oS.toList.take k) x D) (hn : n ∈ segL x N) :
+    ∃ y, stepV env (Ctx.make tabs g) T n = .ok y ∧
+      TFacts env tabs f g F0T S (T.set n y) (oS.toList.take k) (oT.toList.take (j + 1)) := by
+  obtain ⟨d⟩ := segOK_spec hs
+  have H := K.avail hS
+  have hsz : S.regs.size = f.valueTab.size := by rw [hS.size, K.size]
+  have hszg : S.regs.size ≤ g.valueTab.size := hsz ▸ K.rel.size
+  -- the target's definitions run on the source's frame
+  obtain ⟨S', hev, hanc⟩ := (K.sound x D N hs).2 (ext g.valueTab.size S)
+    (fun a => Base f bid a ∨ a ∈ oS.toList.take k) (K.availExt hS) (K.typedExt hS) K.hidA
+    (Nat.le_of_eq (ext_size hszg).symm) (fun s hs' hr => .inr (hc s hs' hr))
+  have hnd := K.rel.lnd x D N hs
+  have htopo : TopoRem (argsF (Ctx.make tabs g).f) (segL x N) := by
+    refine topoRem_of hnd fun i y hy a ha haL => ?_
+    have hil : i < (segL x N).length := (List.getElem?_eq_some_iff.1 hy).1
+    have hyv : ∃ v, g.value? y = some v := by
+      have := (List.getElem?_eq_some_iff.1 hy).2
+      by_cases hyx : y = x
+      · exact ⟨d.gv, hyx ▸ d.hgv⟩
+      · have hyN : y ∈ N := by
+          have hm := List.mem_of_getElem? hy
+          simp only [segL, List.mem_append, List.mem_singleton] at hm
+          exact hm.resolve_right hyx
+        obtain ⟨-, -, v, hv, -⟩ := d.hN y hyN
+        exact ⟨v, hv⟩
+    obtain ⟨v, hv⟩ := hyv
+    have hgi : (segL x N).getD i 0 = y := by rw [List.getD_eq_getElem?_getD, hy]; rfl
+    rw [show (Ctx.make tabs g).f = g from rfl, argsF_of hv] at ha
+    rcases d.hargs i hil v (by rw [hgi]; exact hv) a (Array.mem_toList_iff.1 ha) with h | ⟨-, h, -⟩
+    · obtain ⟨i', hia⟩ := List.getElem?_of_mem h
+      have hi'l : i' < i := by
+        have := (List.getElem?_eq_some_iff.1 hia).1; simp at this; omega
+      exact ⟨i', hi'l, by rwa [List.getElem?_take_of_lt hi'l] at hia⟩
+    · exact absurd haL h
+  obtain ⟨hfr', -, hout', hall⟩ := evalAll_spec hnd htopo (by rw [ext_size hszg]; rfl) hev
+  obtain ⟨gv, y0, hgv, hy0, hev0⟩ := hall n hn
+  change g.value? n = some gv at hgv
+  -- the position of `n` in the segment
+  obtain ⟨i0, hi0⟩ := List.getElem?_of_mem hn
+  have hi0l : i0 < (segL x N).length := (List.getElem?_eq_some_iff.1 hi0).1
+  have hgi0 : (segL x N).getD i0 0 = n := by rw [List.getD_eq_getElem?_getD, hi0]; rfl
+  have hnT := K.memT.1 (List.mem_of_getElem? hjT)
+  -- the arguments: refined registers
+  have hargR : ∀ a ∈ gv.args, ∃ yS yT, S'.regs[a]? = some (some yS) ∧
+      T.regs[a]? = some (some yT) ∧ Sem.Refines yS yT := by
+    intro a ha
+    rcases d.hargs i0 hi0l gv (by rw [hgi0]; exact hgv) a ha with h | ⟨-, haL, s, hsm, hsr, sv, hsv, has⟩
+    · -- an earlier fresh value of the segment, which the target evaluated
+      have haL : a ∈ segL x N := List.mem_of_mem_take h
+      have haN : Node g gb a := K.segNode hs (d := d) (K.segBlock hs d hn hnT.1 hgv) haL
+      obtain ⟨y1, y2, h1, h2, h3⟩ := hT.seg x D N hs hc S' hev a haL (K.topoT hjT hgv ha haN)
+      exact ⟨y1, y2, h1, h2, h3⟩
+    · -- an argument of a root of the segment, which the source evaluated
+      have hsA : Base f bid s ∨ s ∈ oS.toList.take k := .inr (hc s hsm hsr)
+      have haA := H.cl s sv hsA hsv (root_ne_phi hsr hsv) a has
+      obtain ⟨yS, yT, h1, h2, h3⟩ := K.argRel hS hT hjT hgv ha haA
+      refine ⟨yS, yT, ?_, h2, h3⟩
+      rw [hout' a haL, ext_regs_lt]
+      · exact h1
+      · obtain ⟨va, -, hva, -, -⟩ := H.val a haA
+        exact hsz ▸ lt_of_value? hva
+  have hres : Res.Refines (evalValue env (Ctx.make tabs g) S' gv)
+      (evalValue env (Ctx.make tabs g) T gv) := by
+    refine AtomSim.atom_eval_mono hE rfl ?_ ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩ rfl
+      (regs_of_ok hev0) (fun a ha => by obtain ⟨-, yT, -, h, -⟩ := hargR a ha; exact ⟨yT, h⟩)
+      (fun i hi => ?_)
+    · calc T = { F0T with regs := T.regs } := hT.frame
+        _ = { F0 with regs := T.regs } := by rw [K.frT]
+        _ = { S with regs := T.regs } := by rw [hS.frame]
+        _ = { S' with regs := T.regs } := by rw [hfr']; rfl
+    · have hmem : gv.args[i]! ∈ gv.args := by
+        rw [getElem!_pos gv.args i hi]; exact Array.getElem_mem _
+      obtain ⟨yS, yT, h1, h2, h3⟩ := hargR _ hmem
+      rw [AtomSim.rv_of h1, AtomSim.rv_of h2]; exact h3
+  rw [hev0] at hres
+  generalize hT0 : evalValue env (Ctx.make tabs g) T gv = r at hres
+  cases hres with
+  | ok hr =>
+  rename_i y
+  refine ⟨y, by rw [stepV_of (ctx := Ctx.make tabs g) hgv, hT0], K.tstep hjT hT (fun hp => ?_)
+    fun x' D' N' hs' hc' S'' hev' hn' => ?_⟩
+  · -- the anchor the source evaluated
+    have hnx : n = x := by
+      refine Classical.byContradiction fun hne => ?_
+      have hnN : n ∈ N := by
+        simp only [segL, List.mem_append, List.mem_singleton] at hn
+        exact hn.resolve_right hne
+      obtain ⟨_, fv', hfv', _⟩ := K.hLk k n hp
+      rw [(d.hN n hnN).1] at hfv'; cases hfv'
+    subst hnx
+    obtain ⟨ya, yb, ha1, ha2, ha3⟩ := hanc (.inr hp)
+    rw [ext_regs_lt (hsz ▸ lt_of_value? d.hfv)] at ha1
+    rw [hy0] at ha2; cases ha2
+    exact ⟨ya, ha1, ha3.trans hr⟩
+  · have hxx := K.seg_uniq hs hs' hn hn'
+    subst hxx
+    rw [hs] at hs'; cases hs'
+    rw [hev] at hev'; cases hev'
+    exact ⟨y0, hy0, hr⟩
+
 end Blk
 
 end GoFV.Proof.Seg
