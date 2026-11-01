@@ -69,14 +69,6 @@ def Chained (f : Func) (B : ID → Prop) : Prop :=
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
 
-/-- Decidable sufficient condition for `Chained`: every block of `B` has at most one
-priority-2 root. -/
-def chainedB (f : Func) (B : Array ID) : Bool :=
-  B.all fun bid =>
-    match f.block? bid with
-    | none => true
-    | some fb => ((schedNodes f fb).toList.filter (fun n => n.prio == 2)).length ≤ 1
-
 /-- `f` has no `NilCheck`. -/
 def NoNil (f : Func) : Prop := ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
 
