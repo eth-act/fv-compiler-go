@@ -109,7 +109,7 @@ def sized : Ty → Bool
 theorem retype_hasTy (hr : RetypeShapes) (v : Val) {s : Ty} (hs : sized s = true) :
     (v.retype s).hasTy s = true := by
   rcases s with w | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> simp [sized] at hs
-  · exact hr v (.int w) (by simp)
+  · exact hr v w
   · cases v <;> rfl
 
 /-! ## `den` -/
