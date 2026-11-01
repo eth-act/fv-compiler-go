@@ -17,6 +17,73 @@ namespace GoFV.SSA.Sem
 `Mem.Refines m m'`, `stuck _ ⊑ r` for every `r`. -/
 abbrev Res.Refines : Res Val → Res Val → Prop := Res.Rel Sem.Refines
 
+theorem Res.Refines.refl : (r : Res Val) → Res.Refines r r
+  | .ok a => .ok (Sem.Refines.refl a)
+  | .panic e m => .panic e (Mem.Refines.refl m)
+  | .stuck msg => .stuck msg _
+
+/-- Outcomes of a contract: results and memory refined, the same panic with refined memories,
+a stuck source refined by anything. -/
+inductive COutcome.Refines : COutcome → COutcome → Prop where
+  | returned {rs rs' : List Val} {m m' : Mem} : RefinesList rs rs' → Mem.Refines m m' →
+      COutcome.Refines (.returned rs m) (.returned rs' m')
+  | panicked (e : Panic) {m m' : Mem} : Mem.Refines m m' →
+      COutcome.Refines (.panicked e m) (.panicked e m')
+  | stuck (msg : String) (o : COutcome) : COutcome.Refines (.stuck msg) o
+
+/-- A contract maps refined arguments and memories to a refined outcome. -/
+def Contract.Mono (c : Contract) : Prop :=
+  ∀ {args args' : List Val} {m m' : Mem}, RefinesList args args' → Mem.Refines m m' →
+    COutcome.Refines (c args m) (c args' m')
+
+/-- Every contract of the environment is monotone. -/
+def Env.Mono (env : Env) : Prop := ∀ name c, env.extern name = some c → c.Mono
+
+/-- Non-vacuity: the panicking runtime entry points of P1 are monotone. -/
+theorem Env.p1_mono : Env.p1.Mono := by
+  intro name c h
+  unfold Env.p1 at h
+  simp only at h
+  split at h <;> (try cases h) <;> intro _ _ _ _ _ hm <;> exact .panicked _ hm
+
+/-! ## Lists -/
+
+theorem RefinesList.cons_inv {a : Val} {as bs : List Val} (h : RefinesList (a :: as) bs) :
+    ∃ b bs', bs = b :: bs' ∧ Refines a b ∧ RefinesList as bs' := by
+  cases h with | cons h t => exact ⟨_, _, rfl, h, t⟩
+
+theorem RefinesList.nil_inv {bs : List Val} (h : RefinesList [] bs) : bs = [] := by
+  cases h; rfl
+
+theorem RefinesList.append {as bs cs ds : List Val} (h : RefinesList as bs)
+    (h' : RefinesList cs ds) : RefinesList (as ++ cs) (bs ++ ds) := by
+  induction as generalizing bs with
+  | nil => cases h; exact h'
+  | cons a as ih => cases h with | cons h1 t => exact .cons h1 (ih t)
+
+theorem RefinesList.dropLast : {as bs : List Val} → RefinesList as bs →
+    RefinesList as.dropLast bs.dropLast
+  | _, _, .nil => .nil
+  | _, _, .cons _ .nil => .nil
+  | _, _, .cons h (.cons h' t) => .cons h (RefinesList.dropLast (.cons h' t))
+
+theorem RefinesList.getLast? : {as bs : List Val} → RefinesList as bs →
+    (as.getLast? = none ∧ bs.getLast? = none) ∨
+      ∃ a b, as.getLast? = some a ∧ bs.getLast? = some b ∧ Refines a b
+  | _, _, .nil => .inl ⟨rfl, rfl⟩
+  | _, _, .cons h .nil => .inr ⟨_, _, rfl, rfl, h⟩
+  | _, _, .cons _ (.cons h' t) => by
+    simpa [List.getLast?_cons_cons] using RefinesList.getLast? (.cons h' t)
+
+/-- A predicate that a refinement can only falsify on its source (`poison` tests). -/
+theorem RefinesList.any_false {p : Val → Bool}
+    (hp : ∀ {a b}, Refines a b → p a = false → p b = false) :
+    {as bs : List Val} → RefinesList as bs → as.any p = false → bs.any p = false
+  | _, _, .nil, _ => rfl
+  | _, _, .cons h t, ha => by
+    simp only [List.any_cons, Bool.or_eq_false_iff] at ha ⊢
+    exact ⟨hp h ha.1, RefinesList.any_false hp t ha.2⟩
+
 end GoFV.SSA.Sem
 
 namespace GoFV.Proof
@@ -30,5 +97,199 @@ def EvalOpMono (P : Env → Prop) : Prop :=
     ∀ (fr fr' : Frame), fr'.args = fr.args → fr'.mem0 = fr.mem0 → fr'.images = fr.images →
     ∀ (v : Value) (ty : Ty) {argv argv' : List Val}, RefinesList argv argv' →
       Res.Refines (evalOp env ctx fr v argv ty) (evalOp env ctx' fr' v argv' ty)
+
+/-! ## The roots -/
+
+theorem panicBounds_mono (k : Int64) {as bs : List Val} (h : RefinesList as bs) :
+    Res.Refines (panicBounds k as) (panicBounds k bs) := by
+  unfold panicBounds
+  split
+  · obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm => exact .panic _ hm
+  · exact .stuck _ _
+
+theorem callExtern_mono {env : Env} (hE : env.Mono) (callee : String) {as bs : List Val}
+    (h : RefinesList as bs) : Res.Refines (callExtern env callee as) (callExtern env callee bs) := by
+  unfold callExtern
+  dsimp only
+  rcases h.getLast? with ⟨h1, h2⟩ | ⟨a, b, h1, h2, hab⟩
+  · rw [h1]; exact .stuck _ _
+  · rw [h1, h2]
+    cases hab with
+    | mem hm =>
+      dsimp only [bind, Res.bind]
+      split
+      · exact .stuck _ _
+      · next hp =>
+        have hq := RefinesList.any_false ?pf h.dropLast (Bool.eq_false_iff.2 hp)
+        case pf => intro a b hab ha; cases hab <;> simp_all
+        simp only [hq, Bool.false_eq_true, ↓reduceIte]
+        split
+        · exact .stuck _ _
+        · next c hc =>
+          have := hE _ _ hc h.dropLast hm
+          revert this
+          generalize c as.dropLast _ = o
+          generalize c bs.dropLast _ = o'
+          intro ho
+          cases ho with
+          | returned hr hm' => exact .ok (.tuple (hr.append (.cons (.mem hm') .nil)))
+          | panicked e hm' => exact .panic e hm'
+          | stuck msg o => exact .stuck _ _
+    | _ => exact .stuck _ _
+
+theorem writeRes_mono (w w' : String) {a b : Option Mem}
+    (h : ∀ m, a = some m → ∃ m', b = some m' ∧ Mem.Refines m m') :
+    Res.Refines (writeRes w a) (writeRes w' b) := by
+  cases a with
+  | none => exact .stuck _ _
+  | some m =>
+    obtain ⟨m', rfl, hm⟩ := h m rfl
+    exact .ok (.mem hm)
+
+theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList as bs) :
+    Res.Refines (memRoot ctx v as) (memRoot ctx v bs) := by
+  unfold memRoot
+  split
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    cases h.nil_inv; cases h1; cases h3 with | mem hm =>
+    rw [heq]; dsimp only
+    exact writeRes_mono _ _ fun m1 hw => hm.write (encode_mono _ h2) hw
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    cases h.nil_inv; cases h1; cases h3 with | mem hm =>
+    rw [heq]; dsimp only
+    exact writeRes_mono _ _ fun m1 hw => hm.write (encode_mono _ h2) hw
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
+    rw [heq]; dsimp only
+    cases hr : Mem.read _ _ _ with
+    | none => exact .stuck _ _
+    | some bs =>
+      obtain ⟨bs', hr', hb⟩ := hm.read hr
+      rw [hr']
+      exact writeRes_mono _ _ fun m1 hw => hm.write hb hw
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
+    rw [heq]; dsimp only
+    cases hr : Mem.read _ _ _ with
+    | none => exact .stuck _ _
+    | some bs =>
+      obtain ⟨bs', hr', hb⟩ := hm.read hr
+      rw [hr']
+      exact writeRes_mono _ _ fun m1 hw => hm.write hb hw
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1; cases h2 with | mem hm =>
+    rw [heq]; dsimp only
+    exact writeRes_mono _ _ fun m1 hw => hm.write (BytesRefineA.refl _) hw
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1; cases h2 with | mem hm =>
+    rw [heq]; dsimp only
+    exact writeRes_mono _ _ fun m1 hw => hm.write (BytesRefineA.refl _) hw
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1 with | mem hm =>
+    rw [heq]; dsimp only
+    split
+    · exact .ok (.mem (hm.poisonBlock _))
+    · exact .stuck _ _
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1 with | mem hm =>
+    rw [heq]; dsimp only
+    exact .ok (.mem hm)
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1 with | mem hm =>
+    rw [heq]; dsimp only
+    exact .ok (.mem hm)
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h2 with | mem hm =>
+    rw [heq]; dsimp only
+    exact .ok (.mem hm)
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1; cases h2 with | mem hm =>
+    rw [heq]; dsimp only
+    split
+    · exact .panic _ hm
+    · exact .ok (Sem.Refines.refl _)
+  · next heq =>
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    cases h.nil_inv
+    cases h1; cases h2 with | mem hm =>
+    rw [heq]; dsimp only
+    split
+    · exact .panic _ hm
+    · exact .ok (Sem.Refines.refl _)
+  · split <;> exact .stuck _ _
+
+
+/-! ## `evalOp` -/
+
+/-- `evalOp` reads of the context only its tables, parameters and activation, and of the frame
+only its initial memory and argument images. -/
+theorem evalOp_congr (env : Env) {ctx ctx' : Ctx}
+    (hctx : ctx' = { ctx with f := ctx'.f, sched := ctx'.sched, tys := ctx'.tys })
+    {fr fr' : Frame} (hargs : fr'.args = fr.args) (hmem : fr'.mem0 = fr.mem0)
+    (himg : fr'.images = fr.images) (v : Value) (argv : List Val) (ty : Ty) :
+    evalOp env ctx' fr' v argv ty = evalOp env ctx fr v argv ty := by
+  have hfr : fr' = { fr with regs := fr'.regs } := by
+    cases fr; cases fr'; simp_all
+  rw [hctx, hfr]
+  rfl
+
+/-- `evalOp` on refined arguments, in the same context and frame. -/
+theorem evalOp_mono_same {env : Env} (hE : env.Mono) (ctx : Ctx) (fr : Frame) (v : Value)
+    (ty : Ty) {argv argv' : List Val} (h : RefinesList argv argv') :
+    Res.Refines (evalOp env ctx fr v argv ty) (evalOp env ctx fr v argv' ty) := by
+  unfold evalOp
+  split
+  all_goals first
+    | exact Res.Refines.refl _
+    | exact panicBounds_mono _ h
+    | exact memRoot_mono ctx v h
+    | (split
+       · exact callExtern_mono hE _ h
+       · exact .stuck _ _)
+    | (split
+       · exact Res.Refines.refl _
+       · split
+         · exact .stuck _ _
+         · exact .ok (evalPure_mono _ _ _ _ h))
+
+/-- **`evalOp` is monotone** in every environment whose contracts are. -/
+theorem evalOp_mono : EvalOpMono Env.Mono := by
+  intro env hE ctx ctx' hctx fr fr' hargs hmem himg v ty argv argv' h
+  rw [evalOp_congr env hctx hargs hmem himg]
+  exact evalOp_mono_same hE ctx fr v ty h
 
 end GoFV.Proof
