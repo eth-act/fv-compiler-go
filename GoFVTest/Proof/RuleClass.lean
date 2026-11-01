@@ -9,6 +9,8 @@ the four rule files by the semantic phase its ops need (`docs/plans/semantics.md
 * `P1`: every op of the pattern and the result has a phase-P1 arm in `GoFV.SSA.Sem.evalPure`
   (integers, booleans, tuples), the pattern has no `___`/`...` arity and the result is a build
   or a copy of a rule variable;
+* `P2`: likewise, but some ops have only a later-phase arm in `evalPure` (pointers, composites,
+  `Load` from a memory value; `p2Names`): `Rule.Sound`'s denotation covers these rules too;
 * `mem`, `call`, `float`, `ptr` (pointers and composites), `phi`: the first later-phase op
   found, by that priority;
 * `block`: block rules.
@@ -48,6 +50,20 @@ def p1Names : List String :=
     [s!"Lsh{a}x{b}", s!"Rsh{a}x{b}", s!"Rsh{a}Ux{b}"])
 
 def isP1 (o : Op) : Bool := p1Names.contains o.name
+
+/-- The ops with an `evalPure` arm added after phase P1 (pointers, composites, loads from a
+memory value, tuples of calls; `GoFV/SSA/Sem/Pure.lean`, snapshot of #98/#141). A rule all of
+whose ops have an `evalPure` arm is covered by `Rule.Sound`'s denotation. -/
+def p2Names : List String :=
+  ["AddPtr", "ArrayMake1", "ArraySelect", "AtomicLoad32", "AtomicLoad64", "AtomicLoad8",
+   "AtomicLoadAcq32", "AtomicLoadAcq64", "AtomicLoadPtr", "ComplexImag", "ComplexMake",
+   "ComplexReal", "ConstInterface", "ConstNil", "ConstSlice", "Convert", "Dereference",
+   "Empty", "EqInter", "EqPtr", "EqSlice", "IData", "IMake", "ITab", "IsNonNil", "Load",
+   "MemEq", "NeqInter", "NeqPtr", "NeqSlice", "OffPtr", "PtrIndex", "SelectN", "SelectNAddr",
+   "SliceCap", "SliceLen", "SliceMake", "SlicePtr", "SlicePtrUnchecked", "StringLen",
+   "StringMake", "StringPtr", "StructMake", "StructSelect", "SubPtr"]
+
+def isP2 (o : Op) : Bool := p2Names.contains o.name
 
 def memNames : List String :=
   ["Load", "Store", "Move", "Zero", "StoreWB", "MoveWB", "ZeroWB", "WB", "NilCheck", "VarDef",
@@ -106,6 +122,8 @@ def classify (r : Rule) : String :=
       | .copy (.var _) => true
       | _ => false
     if patArityOk r.pat && resOk then "P1" else "ptr"
+  else if bad.all isP2 && patArityOk r.pat &&
+      (match r.result with | .build _ | .copy (.var _) => true | _ => false) then "P2"
   else
     let cs := bad.map opClass
     (classPrio.find? cs.contains).getD "ptr"
@@ -121,7 +139,7 @@ def files : List RuleSet :=
   [Generated.Generic.ruleSet, Generated.Dec.ruleSet, Generated.Divisible.ruleSet,
    Generated.Divmod.ruleSet]
 
-def classes : List String := ["P1", "mem", "call", "float", "ptr", "phi", "block"]
+def classes : List String := ["P1", "P2", "mem", "call", "float", "ptr", "phi", "block"]
 
 def main (args : List String) : IO Unit := do
   let list := args.contains "--list"
