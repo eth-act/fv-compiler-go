@@ -8,7 +8,8 @@ import GoFV.Opt.ShortCircuit
 
 For every `early fuse`, `late fuse` and `short circuit` section (input: the previous section),
 replays the pass and, at every `fuseBlockPlain` that fires, runs the step checker
-(`Fuse.Plain.stepOK`): counts accepted and rejected rewrites and the run lengths.
+(`Fuse.Plain.snapOf`, then `postOK` on the result): counts accepted and rejected rewrites and
+the run lengths.
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Opt.Fuse
@@ -37,7 +38,10 @@ def analyze (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run 
   if run.length == 2 then k := { k with len2 := k.len2 + 1 }
   else if run.length == 3 then k := { k with len3 := k.len3 + 1 }
   else k := { k with len4 := k.len4 + 1 }
-  if Plain.stepOK f g b then k := { k with accepted := k.accepted + 1 }
+  let ok := match Plain.snapOf f b with
+    | some s => Plain.postOK s g
+    | none => false
+  if ok then k := { k with accepted := k.accepted + 1 }
   else
     k := { k with rejected := k.rejected + 1 }
     if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} run {run}" }

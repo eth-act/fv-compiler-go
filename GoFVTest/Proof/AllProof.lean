@@ -109,6 +109,7 @@ import GoFV.Proof.Pass.DeadSim
 import GoFV.Proof.Pass.DeadTail
 import GoFV.Proof.Pass.DeadcodePass
 import GoFV.Proof.Pass.FusePlain
+import GoFV.Proof.Pass.FusePlainFrame
 import GoFV.Proof.Pass.FusePlainMerged
 import GoFV.Proof.Pass.FusePlainPanic
 import GoFV.Proof.Pass.FusePlainPres

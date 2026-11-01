@@ -15,10 +15,10 @@ import GoFV.Opt.Fuse.BranchRedirect
   `fuseBlockIf` then `fuseBlockPlain`; after each sweep `fuseBranchRedirect` (prove's facts
   table).
 
-`fuseBlockPlain` runs checked (`Plain.fuseBlockPlainChecked`, proof
-`GoFV.Proof.FusePlain.fuseBlockPlainChecked_refines`): a rewrite the checker rejects is skipped.
-The step checkers need no `check` of their results (issue #147): both passes run `check` once,
-on their input, and leave a function that fails it unchanged (every corpus input passes).
+`fuseBlockPlain` runs checked in place (`Plain.fuseBlockPlainChecked`, proof
+`GoFV.Proof.FusePlain.fuseBlockPlainChecked_refines`): a rewrite the checker rejects is an
+error, and the pass then returns its input unchanged (`orInput`; never on the corpus). The step
+checkers need no `check` of their results (issue #147).
 -/
 
 namespace GoFV.Opt
@@ -29,17 +29,17 @@ namespace Fuse
 
 /-- The early fuse per-block step. -/
 def earlyStep (isMem : TypeRef → Bool) (f : Func) (b : ID) :
-    Except String (Func × Bool) :=
+    Except String (Func × Bool) := do
   let (f, c1) := fuseComparisons isMem canOptIntInRange f b
   let (f, c2) := fuseComparisons isMem canOptSingleBitDifference f b
   let (f, c3) := fuseComparisons isMem canOptNanCheck f b
-  let (f, c4) := Plain.fuseBlockPlainChecked f b
+  let (f, c4) ← Plain.fuseBlockPlainChecked f b
   pure (f, c1 || c2 || c3 || c4)
 
 /-- The late fuse per-block step: `fuseBlockIf`, then `fuseBlockPlain`. -/
 def lateStep (tv : TypeView) (f : Func) (b : ID) : Except String (Func × Bool) := do
   let (f, c1) ← fuseBlockIf tv f b
-  let (f, c2) := Plain.fuseBlockPlainChecked f b
+  let (f, c2) ← Plain.fuseBlockPlainChecked f b
   pure (f, c1 || c2)
 
 /-- The fuse type queries from the pass environment. -/
@@ -52,7 +52,7 @@ end Fuse
 
 /-- `fuseEarly(f)`. -/
 def fuseEarly (ce : CheckEnv) (tv : TypeView) (f : Func) : Except String Func :=
-  fuseLoop (Fuse.earlyStep tv.isMem) none roundFuel f
+  orInput f (fuseLoop (Fuse.earlyStep tv.isMem) none roundFuel f)
 
 /-- The `early fuse` pass. -/
 def fuseEarlyPass : Pass := Pass.ofFunc fun env f => do
@@ -61,7 +61,7 @@ def fuseEarlyPass : Pass := Pass.ofFunc fun env f => do
 /-- `fuseLate(f)`. -/
 def fuseLate (ce : CheckEnv) (tv : TypeView) (pv : Prove.Prover) (f : Func) :
     Except String Func :=
-  fuseLoop (Fuse.lateStep tv) (some (fuseBranchRedirect pv)) roundFuel f
+  orInput f (fuseLoop (Fuse.lateStep tv) (some (fuseBranchRedirect pv)) roundFuel f)
 
 /-- The `late fuse` pass. -/
 def fuseLatePass : Pass := Pass.ofFunc fun env f => do

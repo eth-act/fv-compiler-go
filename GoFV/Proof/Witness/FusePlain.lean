@@ -71,24 +71,30 @@ theorem sum3_run : returnsInt (run Env.p1 max3Tabs sum3 max3Args {} 3) 12 = true
 theorem sum3_fuse :
     (checkOK sum3CE sum3 &&
       decide (Fuse.plainRun sum3 1 = some [1, 2, 3]) &&
-      (fuseBlockPlainChecked sum3 1).2 &&
-      decide ((fuseBlockPlainChecked sum3 1).1.entry = 3) &&
-      decide (((fuseBlockPlainChecked sum3 1).1.block? 3).map (·.kind) = some .Ret) &&
-      decide (((fuseBlockPlainChecked sum3 1).1.block? 3).map (·.values.size) = some 11))
+      match fuseBlockPlainChecked sum3 1 with
+      | .ok (g, ch) => ch && decide (g.entry = 3) &&
+          decide ((g.block? 3).map (·.kind) = some .Ret) &&
+          decide ((g.block? 3).map (·.values.size) = some 11)
+      | .error _ => false)
       = true := by
   decide +kernel
 
 theorem fusePlain_witness :
-    (fuseBlockPlainChecked sum3 1).2 = true ∧
-      (fuseBlockPlainChecked sum3 1).1.entry = 3 ∧
-      ∃ fuel m, run Env.p1 max3Tabs (fuseBlockPlainChecked sum3 1).1 max3Args {} fuel =
-        .returned [.i64 12] m := by
+    ∃ g, fuseBlockPlainChecked sum3 1 = .ok (g, true) ∧ g.entry = 3 ∧
+      ∃ fuel m, run Env.p1 max3Tabs g max3Args {} fuel = .returned [.i64 12] m := by
   have h := sum3_fuse
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h
-  obtain ⟨⟨⟨⟨⟨hck, -⟩, hch⟩, hent⟩, -⟩, -⟩ := h
-  obtain ⟨m, hm⟩ := returnsInt_iff.1 sum3_run
-  obtain ⟨fuel, m', h⟩ := Refines.returned_int
-    (fuseBlockPlainChecked_refines (tabs := max3Tabs) (b := 1) (Dom.WFDom.of_check (checkOK_sound hck))).1 hm
-  exact ⟨hch, hent, fuel, m', h⟩
+  obtain ⟨⟨hck, -⟩, h⟩ := h
+  split at h
+  · rename_i g ch hr
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨hch, hent⟩, -⟩, -⟩ := h
+    subst hch
+    obtain ⟨m, hm⟩ := returnsInt_iff.1 sum3_run
+    obtain ⟨fuel, m', h⟩ := Refines.returned_int
+      (fuseBlockPlainChecked_refines (tabs := max3Tabs) hr
+        (Dom.WFDom.of_check (checkOK_sound hck))).1 hm
+    exact ⟨g, hr, hent, fuel, m', h⟩
+  · cases h
 
 end GoFV.Proof.Witness

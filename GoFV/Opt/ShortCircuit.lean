@@ -249,17 +249,17 @@ def constPhiArgs (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef →
           f := f.setArg v i cf.get!
   return f
 
-/-- `fuseBlockPlain(b)` (checked, `Fuse.Plain.fuseBlockPlainChecked`) then
+/-- `fuseBlockPlain(b)` (checked in place, `Fuse.Plain.fuseBlockPlainChecked`) then
 `shortcircuitBlock(b)`. -/
-def step (f : Func) (b : ID) : Except String (Func × Bool) :=
-  let (f, c1) := Fuse.Plain.fuseBlockPlainChecked f b
+def step (f : Func) (b : ID) : Except String (Func × Bool) := do
+  let (f, c1) ← Fuse.Plain.fuseBlockPlainChecked f b
   let (f, c2) := shortcircuitBlock f b
   pure (f, c2 || c1)
 
-/-- `shortcircuit(f)`. -/
+/-- `shortcircuit(f)` (its input if a checked step rejects a rewrite: `Fuse.orInput`). -/
 def shortcircuit (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
     (boolT : TypeRef) (f : Func) : Except String Func :=
-  fuseLoop step none roundFuel (constPhiArgs isBool sameType boolT f)
+  Fuse.orInput f (fuseLoop step none roundFuel (constPhiArgs isBool sameType boolT f))
 
 end GoFV.Opt.ShortCircuit
 
