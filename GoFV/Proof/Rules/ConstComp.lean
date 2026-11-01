@@ -32,7 +32,7 @@ theorem r_generic_1057_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   obtain ⟨fs, n, rfl, h⟩ := ty_of_hasTy_agg hty
   rcases fs with _ | ⟨⟨o0, t0⟩, _ | ⟨⟨o1, t1⟩, _ | _⟩⟩ <;>
     simp only [List.map, Val.hasTyList, Bool.and_eq_true, Bool.false_eq_true, and_false] at h
-  obtain ⟨⟨el0, rfl⟩, ⟨el1, rfl⟩⟩ := And.intro (ty_of_hasTy_null h.1) (ty_of_hasTy_null h.2.1)
+  obtain ⟨rfl, ⟨el1, rfl⟩⟩ := And.intro (ty_of_hasTy_int64 h.1) (ty_of_hasTy_null h.2.1)
   exact Refines.refl _
 
 /-- `generic.rules:1044`: `(ConstSlice) && config.PtrSize == 8 => (SliceMake (ConstNil <v.Type.Elem().PtrTo()>) (Const64 <typ.Int> [0]) (Const64 <typ.Int> [0]))` -/

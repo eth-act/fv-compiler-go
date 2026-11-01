@@ -271,7 +271,7 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .ArraySelect => Comp.selectAux auxInt args
   | .ConstNil => .ptr Ptr.null
   | .ConstSlice => .agg [.ptr Ptr.null, .i64 0, .i64 0]
-  | .ConstInterface => .agg [.ptr Ptr.null, .ptr Ptr.null]
+  | .ConstInterface => .agg [.i64 0, .ptr Ptr.null]
   | .Empty => .empty
   | .Load => loadOp ty args
   | .Dereference => loadOp ty args

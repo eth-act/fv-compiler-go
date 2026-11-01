@@ -100,15 +100,22 @@ def azPassEnv : PassEnv where
 
 def azCheckEnv : CheckEnv := { tabs := azTabs, typs := #[("Int", 2), ("Mem", 29)] }
 
+/-- Tables are equal when their four arrays are. -/
+private theorem tables_eq {a b : Tables} (h : a.posBases = b.posBases ∧ a.types = b.types ∧
+    a.auxes = b.auxes ∧ a.slots = b.slots) : a = b := by
+  cases a; cases b; simp_all
+
 /-- By kernel evaluation: the input passes `check`, `checkedRewrite` fires the rule and keeps
-its result (`v5 = MakeResult v2 v1`, `v4` dropped), the result passes `check`, and
-`addZero(7) = 7` in one block entry. -/
+its result (`v5 = MakeResult v2 v1`, `v4` dropped) with unchanged tables, the result passes
+`check`, and `addZero(7) = 7` in one block entry. -/
 theorem addZero_checks :
     (check azCheckEnv addZero).toBool = true ∧
     (checkedRewrite (Interp.Table.ofRuleSet azRules) azPassEnv addZero).toOption.map
       (fun o => ((check azCheckEnv o.func).toBool,
-        (o.func.value? 5).map (·.args), (o.func.block? 1).map (·.values))) =
-      some (true, some #[2, 1], some #[1, 2, 5]) ∧
+        (o.func.value? 5).map (·.args), (o.func.block? 1).map (·.values),
+        decide (o.tables.posBases = azTabs.posBases ∧ o.tables.types = azTabs.types ∧
+          o.tables.auxes = azTabs.auxes ∧ o.tables.slots = azTabs.slots))) =
+      some (true, some #[2, 1], some #[1, 2, 5], true) ∧
     returnsInt (run Env.p1 azTabs addZero [.i64 7] {} 1) 7 = true := by
   decide +kernel
 
@@ -134,11 +141,11 @@ theorem addZero_checkedRewrite :
   | ok out =>
     rw [hc] at h2
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
-    obtain ⟨hg, h5, -⟩ := h2
-    obtain ⟨ht, hv⟩ := GoFV.Proof.Pass.Rewrite.checkedRewrite_cases hc
+    obtain ⟨hg, h5, -, ht⟩ := h2
+    have ht := tables_eq (of_decide_eq_true ht)
     refine ⟨out, rfl, ht, h5, ?_, ok_of_toBool h1, ok_of_toBool hg⟩
-    rcases hv with he | hv
+    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases hc with ⟨he, -⟩ | ⟨-, hv⟩
     · rw [he] at h5; exact absurd h5 (by decide +kernel)
-    · exact hv
+    · rw [← ht]; exact hv
 
 end GoFV.Proof.Witness

@@ -3,9 +3,10 @@ import GoFV.Opt.RewriteCheck
 /-!
 # What a checked rewrite pass returns (issue #113)
 
-`checkedRewrite t` keeps the input's tables and returns either its input or a result the
-validator (`GoFV.Opt.RewriteCheck.validate`) accepted against the rewrite log; a validated result
-has the atom, closure and replay facts the refinement proof consumes.
+`checkedRewrite t` returns either its input with the input's tables, or a result the validator
+(`GoFV.Opt.RewriteCheck.validate`) accepted against the rewrite log in the result's tables, which
+the input cannot tell from its own (`GoFV.Opt.tabsAgree`); a validated result has the atom,
+closure and replay facts the refinement proof consumes.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -14,8 +15,9 @@ open GoFV.SSA GoFV.Opt GoFV.Rules
 
 theorem checkedRewrite_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
     (h : checkedRewrite t penv f = .ok out) :
-    out.tables = penv.tables ∧
-      (out.func = f ∨ ∃ log, RewriteCheck.validate penv.tables t f out.func log = true) := by
+    (out.func = f ∧ out.tables = penv.tables) ∨
+      (tabsAgree penv.tables out.tables f = true ∧
+        ∃ log, RewriteCheck.validate out.tables t f out.func log = true) := by
   unfold checkedRewrite at h
   cases hr : rewriteRun t true true penv f with
   | error e => simp [hr, bind, Except.bind] at h
@@ -26,10 +28,11 @@ theorem checkedRewrite_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out
     · next hv =>
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
-      exact ⟨rfl, .inr ⟨log, hv⟩⟩
+      rw [RewriteCheck.accepts, Bool.and_eq_true] at hv
+      exact .inr ⟨hv.1, log, hv.2⟩
     · simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
-      exact ⟨rfl, .inl rfl⟩
+      exact .inl ⟨rfl, rfl⟩
 
 theorem validate_parts {tabs : Tables} {t : Interp.Table} {f g : Func} {log : Array RwEvent}
     (hv : RewriteCheck.validate tabs t f g log = true) :
