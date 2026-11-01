@@ -486,6 +486,7 @@ import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
+import GoFV.Proof.Witness.StructCopy
 import GoFV.Proof.Witness.StructLoad
 import GoFV.Proof.Witness.StructStore
 import GoFV.Proof.Witness.SumOfInt

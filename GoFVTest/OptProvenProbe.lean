@@ -236,8 +236,9 @@ def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
         else if smv.args.size != fs.length then "arity"
         else if !(gv.op == .Copy && gv.type == fv.type) then "copy"
         else if !(r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2) then
-          s!"walk ({fs.length} fields)"
-        else if !copyReach tabs f.valueTab f.valueTab.size mem r.2 then "chain start"
+          s!"walk ({fs.length} fields) {desc tabs g 2 last}"
+        else if !copyReach tabs f.valueTab f.valueTab.size mem r.2 then
+          s!"chain start {desc tabs f 2 mem} vs {desc tabs g 2 r.2}"
         else match (List.range fs.length).find? (fun k => !ssLink tabs f g fv.block dst fs smv.args r.1 r.2 k) with
           | some k => s!"field {k} of {fs.length}"
           | none => "ok"
@@ -292,9 +293,14 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         if !NilCheck.nrel true tabs f f' then some s!"{pre}: {nilWhy tabs f f'}"
         else if NilCheck.dictParams tabs f != NilCheck.dictParams env.tables f0 then
           some s!"{pre}: dictionary parameters differ between the tables"
-        else if !RewriteCheck.layerOK env tabs f0 L f f' then some s!"{pre}: check"
+        else if !RewriteCheck.layerOK env t tabs f0 L f log f' then some s!"{pre}: check"
         else none
       | .fwd sel => (fwdRelWhy env tabs f f').map (s!"fwd{if sel then "₁" else "₂"}({k}): " ++ ·)
+      | .sl =>
+        if RewriteCheck.layerOK env t tabs f0 L f log f' then none
+        else if let .error e := check { tabs := tabs, typs := env.typs } f' then
+          some s!"sl({k}): check {e}"
+        else some s!"sl({k}): {why tabs t f f' (slTaken t tabs f log)}"
       | .ss => (ssRelWhy env tabs f f').map (s!"ss({k}): " ++ ·)
     match r with
     | some s => s
@@ -302,6 +308,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
       let pre := match L with
         | .nil sel => s!"nil{if sel then "₁" else "₂"}({k})"
         | .fwd sel => s!"fwd{if sel then "₁" else "₂"}({k})"
+        | .sl => s!"sl({k})"
         | .ss => s!"ss({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
