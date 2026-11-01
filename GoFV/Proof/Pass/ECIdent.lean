@@ -88,11 +88,11 @@ theorem mapM_regs_refines {frS T : Frame} :
     exact .ok (.cons hyy hl)
 
 /-- **The obligation of an unchanged value.** -/
-theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} (hu : f.value? x = some u)
+theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop} (hu : f.value? x = some u)
     (hw : g.value? x = some w) (hux : u.id = x) (hwx : w.id = x)
     (hok : identOK f g u w = true) (hsp : special f g x = false) (hown : g.ownAux = f.ownAux) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) x := by
-  intro u' w' hu' hw' env hE frS T hT _ E _ _ hregT _ hfront
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
+  intro u' w' hu' hw' env hE frS T hT _ E _ _ hregT _ hfront _
   rw [hu] at hu'; cases hu'
   rw [hw] at hw'; cases hw'
   have hcv : ∀ y, ecCv tabs f g x y = y := ecCv_of_not_special hsp

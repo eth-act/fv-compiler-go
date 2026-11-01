@@ -81,11 +81,11 @@ def EcOblImk (tabs : Tables) (f g : Func) (x : ID) : Prop :=
       (evalValue env (Ctx.make tabs g) T w)
 
 /-- Without `IMake` arguments in `g`, `EcOblImk` is `Obl`. -/
-theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} (h : EcOblImk tabs f g x)
+theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {H : ID → Prop} (h : EcOblImk tabs f g x)
     (hu : f.value? x = some u)
     (hno : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op ≠ .IMake) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) x := by
-  intro u' w hu' hw env hE frS T hT hRS E hNC hEw hRw hRu hfront
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
+  intro u' w hu' hw env hE frS T hT hRS E hNC hEw hRw hRu hfront _
   rw [hu] at hu'
   cases hu'
   exact h u w hu hw env hE frS T hT hRS E hNC hEw hRw hRu hfront
@@ -202,14 +202,14 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   exact retype_mono _ (.tuple (RefinesList.append hP (.cons (ecc_retype_mem hymm) .nil)))
 
 /-- **The `MakeResult` obligation** (no `IMake` argument pieces). -/
-theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
+theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
     (hok : resultOK tabs (typeShapes tabs) f g u w = true) (_hown : g.ownAux = f.ownAux)
     (hreg : regParamsOK tabs (ownOuts tabs f) = true) (huid : u.id = x)
     (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
     (hno : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op ≠ .IMake) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) x :=
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x :=
   obl_of_imk (obl_result_imk hu hw hop hok hreg huid L hLx hL) hu hno
 
 /-! ## Calls: the semantic pieces -/
@@ -581,13 +581,13 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   · cases hok
 
 /-- **The call obligation** (no `IMake` argument pieces). -/
-theorem obl_call {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
+theorem obl_call {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hcall : (callOpMap u.op).isSome = true)
     (hok : callOK tabs (typeShapes tabs) f g u w = true) (_hown : g.ownAux = f.ownAux)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
     (hno : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op ≠ .IMake) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) x :=
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x :=
   obl_of_imk (obl_call_imk hu hw hcall hok huid L hLx hL) hu hno
 
 end GoFV.Proof.EC

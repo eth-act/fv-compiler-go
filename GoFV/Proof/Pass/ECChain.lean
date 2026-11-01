@@ -193,18 +193,13 @@ theorem ec_chain {tabs : Tables} {f g : Func} {env : Env} {T : Frame} {E L : ID 
 
 /-! ## The `IMake` data shortcut -/
 
-/-- The target register of `z` holds the evaluation of `z`'s node in `g`. -/
-def EcTgtHolds (env : Env) (tabs : Tables) (g : Func) (T : Frame) (z : ID) : Prop :=
-  ∀ w, g.value? z = some w → w.id = z ∧
-    ∃ y, T.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs g) T w = .ok y
-
 /-- What the `IMake` data shortcut needs of a source argument `a` whose node in `g` is an
-`IMake`: the target registers of `a` and of the `IMake`'s operands hold their evaluations (they
-are not new values, so `NewCons` does not say so; it follows from dominance), and `a`'s type in
-`g` is an interface (its data word pointer-shaped). -/
+`IMake`: the target registers of `a` and of the `IMake`'s data operand hold their evaluations
+(they are not new values, so `NewCons` does not say so; `CvBlock.obl` gives it for the nodes of
+the block `x` depends on), and `a`'s type in `g` is an interface (its data word pointer-shaped). -/
 def EcImkFacts (env : Env) (tabs : Tables) (g : Func) (T : Frame) (a : ID) : Prop :=
   ∀ aw, g.value? a = some aw → aw.op = .IMake →
-    EcTgtHolds env tabs g T a ∧ (∀ d ∈ aw.args, EcTgtHolds env tabs g T d) ∧
+    EcTgtHolds env tabs g T a ∧ EcTgtHolds env tabs g T aw.args[1]! ∧
     ∃ f0 o e n, shapeOf (typeShapes tabs) g a = .agg [f0, (o, .ptr e)] n
 
 theorem ec_leafPathsFields_head_hasTy : (fs : List (Nat × Ty)) → (i : Nat) → (vs : List Val) →
@@ -269,7 +264,7 @@ theorem ec_imake {tabs : Tables} {g : Func} {env : Env} {T : Frame} {a q : ID}
   split at himk
   · next s aw haw =>
     simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at himk
-    obtain ⟨⟨hop, h2⟩, hd⟩ := himk
+    obtain ⟨⟨⟨hop, h2⟩, -⟩, hd⟩ := himk
     obtain ⟨hTa, hTd, f0, o, e, n, hsh⟩ := hF aw haw hop
     obtain ⟨hid, ya2, hya2, hev⟩ := hTa aw haw
     rw [hya] at hya2
@@ -306,7 +301,7 @@ theorem ec_imake {tabs : Tables} {g : Func} {env : Env} {T : Frame} {a q : ID}
               | none => rw [hdw] at hsq; cases hsq
               | some dw =>
                 rw [hdw] at hsq
-                obtain ⟨hdid, yd, hyd, hevd⟩ := hTd _ hm1 dw hdw
+                obtain ⟨hdid, yd, hyd, hevd⟩ := hTd dw hdw
                 have hty := Proof.evalValue_hasTy hevd
                 rw [hdid, tys_of_value hdw, Option.getD_some, ← typeShapes_getD, ← valueTy, hsq] at hty
                 rw [rv_of hyd] at h1 ⊢
@@ -320,7 +315,7 @@ theorem ec_imake {tabs : Tables} {g : Func} {env : Env} {T : Frame} {a q : ID}
             split at hsm
             · next dw hdw =>
               simp only [Bool.or_eq_true, beq_iff_eq] at hsm
-              obtain ⟨hdid, yd, hyd, hevd⟩ := hTd _ hm1 dw hdw
+              obtain ⟨hdid, yd, hyd, hevd⟩ := hTd dw hdw
               have hvd := evalValue_term (by rcases hsm with h | h <;> rw [h] <;> decide) hevd
               rw [GoFV.Proof.Rules.opVal_pure (by rcases hsm with h | h <;> rw [h] <;> decide)]
                 at hvd

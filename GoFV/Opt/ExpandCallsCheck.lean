@@ -200,15 +200,20 @@ def invalidated (g : Func) (x : ID) : Bool :=
 /-- `x`'s conversion is not the identity. -/
 def special (f g : Func) (x : ID) : Bool := converted f x || invalidated g x
 
+/-- An interface shape: a type word and a pointer-shaped data word. -/
+def ifaceShape : Ty → Bool
+  | .agg [_, (_, .ptr _)] _ => true
+  | _ => false
+
 /-- `IMake` data shortcut (`decomposeAsNecessary`, `expand_calls.go:397`): the data-word piece
-`q` of an interface argument `a` whose node in `g` is `IMake tab d` is not `IData a` but `d`
-itself (`d` a pointer: the same word) or, when `d` is a one-field `StructMake`/`ArrayMake1`,
-its sized part (the source's data word is then `poison`: the interface shape's data word is a
-pointer, not an aggregate). -/
+`q` of an interface argument `a` (interface-shaped in `g`) whose node in `g` is `IMake tab d` is
+not `IData a` but `d` itself (`d` a pointer: the same word) or, when `d` is a one-field
+`StructMake`/`ArrayMake1`, its sized part (the source's data word is then `poison`: the
+interface shape's data word is a pointer, not an aggregate). -/
 def imakeData (sh : Array Ty) (g : Func) (π : List (Nat × Ty)) (q a : ID) : Bool :=
   match π, g.value? a with
   | [(1, _)], some aw =>
-    aw.op == .IMake && aw.args.size == 2 &&
+    aw.op == .IMake && aw.args.size == 2 && ifaceShape (shapeOf sh g a) &&
       let d := aw.args[1]!
       (d == q && (match shapeOf sh g q with
         | .ptr _ => true
@@ -365,6 +370,15 @@ def depB (g : Func) (node nw : ID → Bool) : Nat → ID → ID → Bool
       | some w => w.args.any fun z => node z && (z == a || (nw z && depB g node nw n a z))
       | none => false
 
+/-- An argument `a` of a converted value `x` whose node in `g` is an `IMake`: interface-shaped,
+and `a` and its data operand are nodes of the block that `x` depends on (`EC.EcImkFacts`: their
+target registers hold their evaluations when `x` is evaluated). -/
+def imkArgOK (sh : Array Ty) (g : Func) (node : ID → Bool) (fuel : Nat) (a x : ID) : Bool :=
+  match g.value? a with
+  | some aw => aw.op != .IMake || (aw.args.size == 2 && ifaceShape (shapeOf sh g a) &&
+      depB g node (fun _ => true) fuel a x && depB g node (fun _ => true) fuel aw.args[1]! x)
+  | none => true
+
 /-- A new value evaluates in every frame (`NewEval`): pure ops, frame values, and the pieces of
 the function's parameters. -/
 def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
@@ -425,6 +439,10 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
     fb.values.all (fun x => match f.value? x with
       | some u => u.op == .Phi || valueOK tabs sh f g x
       | none => false) &&
+    -- the `IMake` arguments of converted values
+    fb.values.all (fun x => !converted f x || match f.value? x with
+      | some u => u.args.all fun a => imkArgOK sh g nodeG fuel a x
+      | none => true) &&
     -- controls of non-`Ret` blocks are unconverted
     ((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) &&
     -- a `Ret` returns a `MakeResult`

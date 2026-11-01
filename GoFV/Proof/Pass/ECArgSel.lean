@@ -189,14 +189,14 @@ theorem ecA_arg_not_special {f g : Func} {x : ID} {u : Value} (hu : f.value? x =
   rfl
 
 /-- **The obligation of a parameter.** -/
-theorem obl_arg {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
+theorem obl_arg {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .Arg)
     (hinv : invalidated g x = false) (hid : identOK f g u w = false)
     (hok : argOK tabs (typeShapes tabs) f g x u = true) (hown : g.ownAux = f.ownAux)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) x := by
-  intro u' w' hu' hw' env _ frS T hT _ E hN hEw hRT hRS _
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
+  intro u' w' hu' hw' env _ frS T hT _ E hN hEw hRT hRS _ _
   rw [hu] at hu'
   cases hu'
   rw [hw] at hw'
@@ -523,7 +523,7 @@ theorem ecA_sel_not_special {f g : Func} {x : ID} {u : Value} (hu : f.value? x =
   rfl
 
 /-- **The obligation of a call result.** -/
-theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} {cu cw : Value}
+theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} {cu cw : Value} {H : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .SelectN)
     (hargs : u.args.toList = [c]) (hcu : f.value? c = some cu) (hcw : g.value? c = some cw)
     (hcall : (callOpMap cu.op).isSome = true)
@@ -532,8 +532,8 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
     (hown : g.ownAux = f.ownAux)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) x := by
-  intro u' w' hu' hw' env _ frS T _ hRegs E hN hEw hRT hRS hfr
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
+  intro u' w' hu' hw' env _ frS T _ hRegs E hN hEw hRT hRS hfr _
   rw [hu] at hu'
   cases hu'
   rw [hw] at hw'
