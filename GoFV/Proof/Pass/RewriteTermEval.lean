@@ -354,6 +354,12 @@ theorem evalE_good {P : Val → Path → Prop} (vtys : List GoFV.Rules.GoTy) (or
       · cases hd
     · split at hd
       · cases hd; exact good_strct (by simp [DV.flat])
+      · cases hd; exact good_strct (by simp [DV.flat])
+      · cases hd
+    · split at hd
+      · rename_i fs heq
+        obtain ⟨x, hx, rfl⟩ := strctField_mem hd
+        exact good_of_flat ((evalE_good vtys or e hσ htop hor y).2 fs heq x hx)
       · cases hd
     · cases hd
   | .builtin fn args _ => by

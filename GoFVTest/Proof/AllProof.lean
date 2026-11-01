@@ -165,6 +165,7 @@ import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
+import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
@@ -189,6 +190,7 @@ import GoFV.Proof.Rules.Eq4
 import GoFV.Proof.Rules.Eq5
 import GoFV.Proof.Rules.Eq6
 import GoFV.Proof.Rules.EqB
+import GoFV.Proof.Rules.EqPtr
 import GoFV.Proof.Rules.Lemmas
 import GoFV.Proof.Rules.Leq
 import GoFV.Proof.Rules.Leq2

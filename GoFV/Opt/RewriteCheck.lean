@@ -14,9 +14,9 @@ replays the log on a map of definitions, starting from the input `f`:
   hold), the pattern's checks (`Pat.cons`), the checker facts (`Pat.wf`) and the condition
   hold under `GoFV.Proof.Rules.evalE` with the oracle `oracle` (unmodelled expressions: `true`
   if boolean, the fields of the built nodes otherwise), the top op produces its value's shape
-  (`natShape`, or a pointer op `ptrTop` whose arguments have the shapes `argShapeOk` asks for,
-  `Pat.argsOK`, checked at every op node), every leaf has an integer, boolean or pointer
-  shape, and the built definitions are those of
+  (`topOK`: `natShape`, a pointer op `ptrTop` whose arguments have the shapes `argShapeOk`
+  asks for, `Pat.argsOK`, checked at every op node, or a constant composite `constTop`), every
+  leaf has an integer, boolean or pointer shape, and the built definitions are those of
   `Rule.Sound`'s result denotation (`resDen`); only in-place `build` and `copy` results;
 * a copy-argument replacement (`copyArg v i src`, copy elimination before a rule matches) is
   replayed on the definitions when `src` is reached from the old argument through `Copy`s of
@@ -76,7 +76,7 @@ def commOps : List Op :=
   [.Add8, .Add16, .Add32, .Add64, .Add64carry, .And8, .And16, .And32, .And64, .AndB, .Eq8,
    .Eq16, .Eq32, .Eq64, .EqB, .Mul8, .Mul16, .Mul32, .Mul64, .Mul32uhilo, .Mul32uover,
    .Mul64uhilo, .Mul64uover, .Neq8, .Neq16, .Neq32, .Neq64, .NeqB, .Or8, .Or16, .Or32, .Or64,
-   .OrB, .Xor8, .Xor16, .Xor32, .Xor64]
+   .OrB, .Xor8, .Xor16, .Xor32, .Xor64, .EqPtr, .NeqPtr]
 
 mutual
 /-- Match pattern `q` at value `w` (position `p`) in `M`. `sw`: the choices at commutative
@@ -227,12 +227,13 @@ def patOK (pat : Pat) : Bool :=
   (match pat with | .op _ none _ _ _ _ _ _ => true | _ => false) &&
   (Pat.sames pat).all fun x => !(Pat.opNames pat).contains x
 
-/-- Comparisons and boolean ops: their result is a boolean (or `poison`). -/
+/-- Comparisons (incl. pointer comparisons) and boolean ops: their result is a boolean (or
+`poison`). -/
 def boolOp : Op → Bool
   | .Eq8 | .Neq8 | .Less8 | .Less8U | .Leq8 | .Leq8U | .Eq16 | .Neq16 | .Less16 | .Less16U
   | .Leq16 | .Leq16U | .Eq32 | .Neq32 | .Less32 | .Less32U | .Leq32 | .Leq32U | .Eq64 | .Neq64
   | .Less64 | .Less64U | .Leq64 | .Leq64U | .AndB | .OrB | .EqB | .NeqB | .Not | .ConstBool
-  | .IsInBounds | .IsSliceInBounds => true
+  | .IsInBounds | .IsSliceInBounds | .EqPtr | .NeqPtr => true
   | _ => false
 
 /-- Integer ops whose result is an integer of width `w` (or `poison`); `Ctz`/`BitLen`/`PopCount`/
@@ -281,6 +282,17 @@ def ptrTop (op : Op) (ty : Sem.Ty) : Bool :=
   | .OffPtr | .AddPtr | .PtrIndex => isPtrTy ty
   | .Convert => isPtrTy ty || isInt64Ty ty
   | _ => false
+
+/-- Constant ops of a pointer or composite shape (`ConstNil`, `ConstSlice`, `ConstInterface`)
+whose constant has the shape `ty`; their value depends on nothing but the op. -/
+def constTop (op : Op) (ty : Sem.Ty) : Bool :=
+  (op matches .ConstNil | .ConstSlice | .ConstInterface) &&
+    (Sem.evalPure op ty 0 none []).hasTy ty
+
+/-- The top op of a match produces a value of its type's shape `ty` (`natShape`, `ptrTop` under
+`Pat.argsOK`, `constTop`). -/
+def topOK (op : Op) (ty : Sem.Ty) : Bool :=
+  natShape op ty || ptrTop op ty || constTop op ty
 
 mutual
 /-- Every leaf of the pattern has an integer, boolean or pointer shape. `Pat.typed` asks of the
@@ -366,7 +378,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) &&
         (match r.pat with
-          | .op o _ _ _ _ _ _ _ => natShape o (e.ty []) || ptrTop o (e.ty [])
+          | .op o _ _ _ _ _ _ _ => topOK o (e.ty [])
           | _ => false) &&
         Pat.argsOK e.ty [] r.pat &&
         leavesOK tabs M I [] r.pat &&

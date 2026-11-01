@@ -65,6 +65,12 @@ theorem inBounds_hasTy (s : Bool) (args : List Val) : (Cmp.inBounds s args).hasT
     · rfl
   · rfl
 
+theorem eqPtr_hasTy (neg : Bool) (args : List Val) :
+    (PtrOps.eqPtr neg args).hasTy .bool = true := by
+  unfold PtrOps.eqPtr; split
+  · split <;> rfl
+  · rfl
+
 theorem shift_hasTy {w a : Width} {b : Bool} {f : BitVec w.bits → Nat → BitVec w.bits}
     (args : List Val) : (Shift.shift w a b f args).hasTy (.int w) = true := by
   unfold Shift.shift; split
@@ -101,6 +107,7 @@ macro "natshape_close" : tactic => `(tactic| first
   | exact shift_hasTy _
   | exact rotateLeft_hasTy _ _
   | exact boolToUint8_hasTy _
+  | exact eqPtr_hasTy _ _
   | rfl)
 
 /-- **`natShape`**: the raw value of an op checked by `natShape` has the shape `ty`. -/
@@ -253,5 +260,27 @@ theorem raw_ptrTop {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
     simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
     simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs, Bool.and_eq_true] at ha
     exact ⟨_, ha.1.1, den_hasTy_typed _ _ ht.1⟩
+
+/-- **`constTop`**: a constant composite op checked by `constTop` has the shape `ty` (its value
+does not depend on the auxint, aux or arguments). -/
+theorem evalPure_constTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (args : List Val)
+    (h : constTop op ty = true) : (evalPure op ty ai ax args).hasTy ty = true := by
+  simp only [constTop, Bool.and_eq_true] at h
+  obtain ⟨ho, h⟩ := h
+  cases op <;> first | exact absurd ho (by decide) | exact h
+
+/-- **`topOK`**: the raw value of a pattern whose top op `topOK` accepts has the top type's
+shape. -/
+theorem raw_topOK {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+    {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
+    {cm : Bool} (hp : topOK o (e.ty []) = true)
+    (ht : GoFV.Proof.Rules.Pat.typed e [] (.op o nm pty pai pax par args cm))
+    (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
+    (GoFV.Proof.Rules.Pat.raw e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
+  simp only [topOK, Bool.or_eq_true] at hp
+  rcases hp with (hp | hp) | hp
+  · simp only [GoFV.Proof.Rules.Pat.raw]; exact evalPure_natShape _ _ _ hp
+  · exact raw_ptrTop hp ht ha
+  · simp only [GoFV.Proof.Rules.Pat.raw]; exact evalPure_constTop _ _ _ hp
 
 end GoFV.Proof.Pass.Rewrite

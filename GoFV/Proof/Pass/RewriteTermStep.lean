@@ -337,13 +337,10 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
       ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
     have hn := F.hnat
     rw [← hTop] at hn
-    simp only [Bool.or_eq_true] at hn
-    rcases hn with hn | hn
-    · rw [F.hpat]; simp only [Pat.raw]; exact evalPure_natShape _ _ _ hn
-    · have ht := htyped
-      have ha := hargs
-      rw [F.hpat] at ht ha ⊢
-      exact raw_ptrTop hn ht ha
+    have ht := htyped
+    have ha := hargs
+    rw [F.hpat] at ht ha ⊢
+    exact raw_topOK hn ht ha
   have hsound := hs.2 _ _ hbt hwf hcons hcond hraw htyped hargs
   -- lower bound
   have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)

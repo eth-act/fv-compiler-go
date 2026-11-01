@@ -1371,4 +1371,70 @@ theorem ptrRes_two_steps (p : Ptr) (a b : BitVec 64) (t : Ty) :
   · rw [ptr_add_add]; exact Refines.refl _
   · rw [Val.retype]; exact Refines.poison _
 
+/-! ## Constant composites (`generic.rules:1044`, `:1057`) -/
+
+/-- A shape of the nil pointer is a pointer shape (its concrete address is 0). -/
+theorem ty_of_hasTy_null {t : Ty} (h : (Val.ptr Ptr.null).hasTy t = true) :
+    ∃ el, t = .ptr el := by
+  cases t with
+  | ptr el => exact ⟨el, rfl⟩
+  | int w => cases w <;> simp [Val.hasTy, Ptr.null, Ptr.addr?, Blk.base?] at h
+  | _ => simp [Val.hasTy] at h
+
+theorem ty_of_hasTy_int64 {t : Ty} {x : BitVec 64} (h : (Val.int .w64 x).hasTy t = true) :
+    t = .int .w64 := by
+  cases t with
+  | int w => cases w <;> first | rfl | simp [Val.hasTy] at h
+  | _ => simp [Val.hasTy] at h
+
+theorem ty_of_hasTy_agg {vs : List Val} {t : Ty} (h : (Val.agg vs).hasTy t = true) :
+    ∃ fs n, t = .agg fs n ∧ Val.hasTyList vs (fs.map (·.2)) = true := by
+  cases t with
+  | agg fs n => exact ⟨fs, n, rfl, h⟩
+  | _ => simp [Val.hasTy] at h
+
+/-! ## Nil comparisons (`generic.rules:1683`, `:1684`) -/
+
+/-- A pointer equals the nil pointer iff it is nil (`Ptr.eq` compares block and offset). -/
+theorem null_eq (p : Ptr) : Ptr.null.eq p = p.isNil := by
+  simp only [Ptr.eq, Ptr.null, Ptr.isNil]
+  rw [Bool.eq_iff_iff]
+  simp only [Bool.and_eq_true, beq_iff_eq]
+  exact ⟨fun ⟨h1, h2⟩ => ⟨h1.symm, h2.symm⟩, fun ⟨h1, h2⟩ => ⟨h1.symm, h2.symm⟩⟩
+
+/-- `Ptr.ofAddr` gives the nil pointer exactly at address 0. -/
+theorem ofAddr_isNil (x : BitVec 64) : (Ptr.ofAddr x).isNil = (x == 0) := by
+  have hx := x.isLt
+  by_cases h1 : x.toNat < 2 ^ 40
+  · simp [Ptr.ofAddr, h1, Ptr.isNil]
+  have hne : (x == 0) = false := by
+    simp only [beq_eq_false_iff_ne, ne_eq]
+    intro h; subst h; simp at h1
+  rw [hne]
+  by_cases h2 : x.toNat < 2 ^ 62
+  · simp [Ptr.ofAddr, h1, h2, Ptr.isNil]
+  · unfold Ptr.ofAddr
+    simp only [h1, h2, ↓reduceIte]
+    split <;> simp [Ptr.isNil]
+
+/-- A value of a pointer-word shape (a pointer or a 64-bit integer) is `poison`, a 64-bit
+integer or a pointer. -/
+theorem val_of_hasTy_word {a : Val} {t : Ty} (ht : (∃ el, t = .ptr el) ∨ t = .int .w64)
+    (h : a.hasTy t = true) : a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p := by
+  rcases ht with ⟨el, rfl⟩ | rfl
+  · rcases val_of_hasTy_ptr h with h | h
+    · exact .inl h
+    · exact .inr (.inr h)
+  · rcases val_of_hasTy_int64 h with h | h | ⟨p, h, -⟩
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr ⟨p, h⟩)
+
+/-- The nil constant at a pointer-word shape reads as the nil pointer. -/
+theorem null_word {t : Ty} (ht : (∃ el, t = .ptr el) ∨ t = .int .w64) :
+    ((Val.ptr Ptr.null).retype t).asPtrWord = some Ptr.null := by
+  rcases ht with ⟨el, rfl⟩ | rfl <;> rfl
+
+theorem not_beq_bne {α : Type} [BEq α] (a b : α) : (!(a == b)) = (a != b) := rfl
+
 end GoFV.Proof.Rules

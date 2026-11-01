@@ -72,8 +72,9 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond"
         else if !(match r.pat with
-          | .op o _ _ _ _ _ _ _ => natShape o (e.ty [])
-          | _ => false) then "natShape"
+          | .op o _ _ _ _ _ _ _ => topOK o (e.ty [])
+          | _ => false) then "top"
+        else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !leavesOK tabs M I [] r.pat then
           let bad := I.filterMap fun (pw : Path × ID) => match M.get? pw.2 with
             | some x => if tabs.ty x.type matches .other then some x.op.name else none

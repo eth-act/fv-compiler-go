@@ -157,13 +157,14 @@ def exprTy (vtys : List GoTy) : Expr → GoTy
   | .var i => vtys.getD i (.named "?")
   | .rsv _ => .named "?"
 
-/-- The shape of `typ.<name>` (`Config.Types` on a 64-bit target). -/
+/-- The shape of `typ.<name>` (`Config.Types` on a 64-bit target; `BytePtr` is `*uint8`). -/
 def typShape : String → Option Ty
   | "Int8" | "UInt8" => some (.int .w8)
   | "Int16" | "UInt16" => some (.int .w16)
   | "Int32" | "UInt32" => some (.int .w32)
   | "Int64" | "UInt64" | "Int" | "UInt" | "Uintptr" => some (.int .w64)
   | "Bool" => some .bool
+  | "BytePtr" => some (.ptr (some 1))
   | _ => none
 
 /-- The shape of `types.Types[k]` (`types.Kind` numbering). -/
@@ -402,8 +403,11 @@ def callE (vtys : List GoTy) (e : PEnv) (fn : String) (args : List Expr) (dargs 
 
 /-- Method calls: `t.Size()` of an integer or boolean shape; `t.Elem()` of a pointer shape
 with a known element size `k` is the element type known by its size only, a record with the
-one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's). The
-method name is matched first, so that a method of an unknown type shape is still `none`. -/
+one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's); `t.Elem()`
+of a slice shape (an aggregate of at least two fields whose first is a pointer, the data
+pointer `.ptr el`) is the element type known by its pointer type only, the record with the one
+attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`). The method name is matched first, so that
+a method of an unknown type shape is still `none`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   match n, args with
   | "Size", [] => match dy with
@@ -412,6 +416,10 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
     | _ => none
   | "Elem", [] => match dy with
     | .ty (.ptr (some k)) => some (.strct [("Size", .int k)])
+    | .ty (.agg ((_, .ptr el) :: _ :: _) _) => some (.strct [("PtrTo", .ty (.ptr el))])
+    | _ => none
+  | "PtrTo", [] => match dy with
+    | .strct fs => strctField fs "PtrTo"
     | _ => none
   | _, _ => none
 
@@ -522,13 +530,14 @@ def convArgOk (ty t : Ty) : Bool :=
   | _ => true
 
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
-the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr`, a
+the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr` a
+pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
 64-bit integer offset of `AddPtr`/`PtrIndex`, and `Convert` between a pointer and a 64-bit
 integer (`convArgOk`). Other arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
   | .OffPtr | .IsNonNil => i != 0 || isPtrTy t
-  | .EqPtr | .NeqPtr => isPtrTy t
+  | .EqPtr | .NeqPtr => isPtrTy t || isInt64Ty t
   | .AddPtr | .PtrIndex => if i == 0 then isPtrTy t else i != 1 || isInt64Ty t
   | .Convert => i != 0 || convArgOk ty t
   | _ => true
