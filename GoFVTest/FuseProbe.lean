@@ -1,7 +1,9 @@
 import GoFV.SSA.Parse
 import GoFV.Opt.Fuse
 import GoFV.Opt.Fuse.PlainCheck
+import GoFV.Opt.Fuse.ComparisonsCheck
 import GoFV.Opt.ShortCircuit
+import GoFV.Opt.SpecSafe
 
 /-!
 # `lake exe fuse-probe <dir>...`: the checked fuse steps on the corpus
@@ -27,6 +29,18 @@ structure Counts where
   cmps : Nat := 0
   /-- … whose shared successor has a `Phi` with different arguments along `p`'s and `b`'s edges -/
   cmpPhiDiffer : Nat := 0
+  /-- … whose shared successor has a `Phi` -/
+  cmpSPhi : Nat := 0
+  /-- … where a `Phi` of the shared successor becomes a `Copy` -/
+  cmpPhiCopy : Nat := 0
+  /-- … where some value of `b` is not speculation-safe (`specSafeOp`) -/
+  cmpUnsafe : Nat := 0
+  /-- … where the shared successor is `p` -/
+  cmpSIsP : Nat := 0
+  /-- … where the new value's ID is beyond the input's value table -/
+  cmpNewBeyond : Nat := 0
+  /-- comparison fusions the step checker (`Cmp.stepOK`) rejects -/
+  cmpRejected : Nat := 0
   shown : Array String := #[]
   deriving Inhabited
 
@@ -47,21 +61,30 @@ def analyze (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run 
     if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} run {run}" }
   return k
 
-/-- A comparison fusion at `b` (it fired): do the `Phi`s of the shared successor agree on the
-arguments along `p`'s and `b`'s edges? -/
-def analyzeCmp (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run do
+/-- A comparison fusion at `b` (it fired, `g` the result): the shapes the proof relies on. -/
+def analyzeCmp (ce : CheckEnv) (name : String) (f g : Func) (b : ID) (k : Counts) : Counts := Id.run do
   let bb := f.getB b
   let p := bb.preds[0]!.b
   let pb := f.getB p
   let mut k := { k with cmps := k.cmps + 1 }
+  if !Cmp.stepOK ce f g b then
+    k := { k with cmpRejected := k.cmpRejected + 1 }
+    if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} cmp rejected b{b}" }
+  if bb.values.any (fun v => !specSafeOp (f.getV v).op) then k := { k with cmpUnsafe := k.cmpUnsafe + 1 }
+  let nv := (g.getB b).controls[0]!
+  if nv ≥ f.valueTab.size then k := { k with cmpNewBeyond := k.cmpNewBeyond + 1 }
   for i in [0:2] do
     if pb.succs[i]!.b != bb.succs[i]!.b then continue
     let s := pb.succs[i]!.b
     let jp := pb.succs[i]!.i
     let jb := bb.succs[i]!.i
-    let differ := (f.getB s).values.any fun v =>
+    if s == p then k := { k with cmpSIsP := k.cmpSIsP + 1 }
+    let phis := (f.getB s).values.filter fun v => (f.getV v).op == .Phi
+    if !phis.isEmpty then k := { k with cmpSPhi := k.cmpSPhi + 1 }
+    if phis.any (fun v => (g.getV v).op != .Phi) then k := { k with cmpPhiCopy := k.cmpPhiCopy + 1 }
+    let differ := phis.any fun v =>
       let x := f.getV v
-      x.op == .Phi && x.args[jp]? != x.args[jb]?
+      x.args[jp]? != x.args[jb]?
     if differ then
       k := { k with cmpPhiDiffer := k.cmpPhiDiffer + 1 }
       if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} cmp b{b} p{p} s{s}" }
@@ -127,7 +150,7 @@ def main (args : List String) : IO UInt32 := do
           loop (fun f b k => do
             let cmp (canOpt : Func → Value → Value → Op → Bool) (f : Func) (k : Counts) :=
               let (f', c) := fuseComparisons tv.isMem canOpt f b
-              (f', c, if c then analyzeCmp name f b k else k)
+              (f', c, if c then analyzeCmp ce name f f' b k else k)
             let (f, c1, k) := cmp canOptIntInRange f k
             let (f, c2, k) := cmp canOptSingleBitDifference f k
             let (f, c3, k) := cmp canOptNanCheck f k
@@ -154,7 +177,9 @@ def main (args : List String) : IO UInt32 := do
       | .ok (_, k') => ks := ks.set! idx (pass, k')
       | .error _ => errs := errs + 1
   for (p, k) in ks do
-    IO.println s!"{p}: plain fusions {k.runs} (run length 2: {k.len2}, 3: {k.len3}, ≥4: {k.len4}); accepted {k.accepted}, rejected {k.rejected}; comparison fusions {k.cmps}, shared successor phi args differ {k.cmpPhiDiffer}"
+    IO.println s!"{p}: plain fusions {k.runs} (run length 2: {k.len2}, 3: {k.len3}, ≥4: {k.len4}); accepted {k.accepted}, rejected {k.rejected}"
+    if k.cmps > 0 then
+      IO.println s!"  comparison fusions {k.cmps}: rejected {k.cmpRejected}; shared successor has a Phi {k.cmpSPhi}, Phi args differ {k.cmpPhiDiffer}, Phi becomes Copy {k.cmpPhiCopy}, s = p {k.cmpSIsP}, b not speculation-safe {k.cmpUnsafe}, new value beyond table {k.cmpNewBeyond}"
     for s in k.shown do IO.println s!"  REJECT {s}"
   IO.println s!"errors {errs}"
   return 0
