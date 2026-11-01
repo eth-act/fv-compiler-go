@@ -229,6 +229,7 @@ import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
 import GoFV.Proof.Pass.SegCall
+import GoFV.Proof.Pass.SegZeroMem
 import GoFV.Proof.Pass.ShortCircB
 import GoFV.Proof.Pass.ShortCircCpa
 import GoFV.Proof.Pass.ShortCircCpaMid
