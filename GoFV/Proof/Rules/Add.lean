@@ -30,6 +30,12 @@ result `x - 0`, `poison` when `x` is an address-less pointer in a 64-bit integer
 -- FALSE r_generic_2342 #69
 -- FALSE r_generic_2342_2 #69
 -- FALSE r_generic_2342_3 #69
+`generic.rules:2325` (`CondSelect` into `Add` and `Mul` by the condition): the same at
+`bool = false` (`x + c*0`), and the leaf `x` of the narrower forms is not constrained to the
+`Add`'s width (RuleProofs17).
+-- FALSE r_generic_2325 #69
+-- FALSE r_generic_2325_2 #69
+-- FALSE r_generic_2325_3 #69
 -/
 
 namespace GoFV.Proof.Rules
