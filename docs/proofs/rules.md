@@ -29,9 +29,19 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   instance's type at the leaf, and every leaf value has its type's shape. Without it a rule
   whose result uses a leaf's type (`(Neg64 <y.Type> y)`, `(Add64 <c.Type> c d)` under
   `c.Type.Size() == 8`) is unprovable: the leaf could be an 8-bit integer typed `int64`.
+- **Argument shapes** (`Pat.argsOK e.ty [] r.pat = true`, #69 RuleProofs7): at every op node
+  the arguments' types have the shapes `argShapeOk` asks for: the pointer argument of `OffPtr`,
+  `AddPtr`, `PtrIndex`, `IsNonNil` and both of `EqPtr`/`NeqPtr` pointer-typed, the offset of
+  `AddPtr`/`PtrIndex` a 64-bit integer, `Convert` between a pointer and a 64-bit integer (by
+  its result shape). With `Pat.typed` the leaves then have these shapes. Without it
+  `generic.rules:964` (`(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])`) is false: a
+  `uintptr` leaf `p = 2^40-8` under a pointer-typed inner `OffPtr` becomes the pointer
+  `Ptr.ofAddr p` plus `y` (its allocation kept), while the result adds `x+y` as an integer;
+  likewise `:970` with an `int32` index (`Mul64` of a narrower integer is `poison`).
 - **Expressions** (conditions, `[auxint]`, `<type>`) are evaluated by `evalE`, a total pure
   evaluator mirroring `GoFV.Rules.Eval.eval` on integers, booleans, op constants, type shapes
-  (`typ.<T>`, `types.Types[k]`, `t.Size()` of an integer/boolean shape) and the pure
+  (`typ.<T>`, `types.Types[k]`, `t.Size()` of an integer/boolean shape, `t.Elem().Size()` of a
+  pointer shape with a known element size: `t.Elem()` is the record `{Size}`) and the pure
   `rewrite.go` helpers (`isPowerOfTwo`, `log*`, `ntz*`, `nlz*`, `bits.*`, `uaddOvf`,
   `shiftIsBounded`, the `magic`/`divisible` helpers, …). Everything else — `x.Uses`,
   `clobber`, `config` fields, `canRotate`, symbol helpers, floats, `x.Op` — comes from an
@@ -63,8 +73,8 @@ shapes of `typShape`/`typesShape`, and `CommSound` for swapped matches. `Rule.So
 
 ### Assumptions to discharge (#108)
 
-`Rule.Sound` assumes three typing facts the interpreter's proof must establish from a semantic
-invariant of `GoFV.SSA.Sem` or of the rule evaluator, not from the rule:
+`Rule.Sound` assumes four typing facts the interpreter's proof must establish from a semantic
+invariant of `GoFV.SSA.Sem`, of the checker or of the rule evaluator, not from the rule:
 
 - **Register typing** (for `Pat.typed`): in every reachable state, every register `v` the
   match reads as a leaf holds a value of its type's shape,
@@ -76,6 +86,10 @@ invariant of `GoFV.SSA.Sem` or of the rule evaluator, not from the rule:
   `val_poison_of_asInt_none` gives `poison` or (at 64 bits) a pointer.
 - **Top type** (`hty`): the matched value's op computes a value of its type's shape before
   `retype`, i.e. no narrow result types (see "Narrow result types").
+- **Argument shapes** (`Pat.argsOK`): the checked rewrite passes' validator checks them on the
+  matched values' types (`RewriteCheck.ruleOK`), so `checkedRewrite_refines` discharges them
+  from the validator; Semantics' argument checks in `GoFV.SSA.check` make the validator never
+  reject for this reason.
 - **Typed oracle** (`Oracle.BoolTyped or := ∀ x, exprTy [] x = .bool → ∃ b, or.dv x = .bool b`):
   the oracle built from `GoFV.Rules.Eval.eval` answers a `bool`-typed expression with a
   boolean, i.e. `eval` of a well-typed `bool` expression that does not fail is a boolean.
@@ -138,7 +152,7 @@ needs a later phase of the semantics.
 | `divisible` | Neq | 12 | 4 | 0 | 0 | 16 |
 | `divmod` | Div | 11 | 12 | 4 | 2 | 29 |
 | `generic` | Add | 88 | 1 | 4 | 2 | 95 |
-| `generic` | AddPtr | 0 | 2 | 0 | 0 | 2 |
+| `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
 | `generic` | AndB | 0 | 36 | 0 | 0 | 36 |
 | `generic` | ArraySelect | 0 | 2 | 0 | 0 | 2 |
@@ -182,12 +196,12 @@ needs a later phase of the semantics.
 | `generic` | NeqSlice | 0 | 1 | 0 | 0 | 1 |
 | `generic` | NilCheck | 0 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
-| `generic` | OffPtr | 0 | 2 | 0 | 0 | 2 |
+| `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
 | `generic` | OrB | 0 | 36 | 0 | 20 | 56 |
 | `generic` | Phi | 0 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
-| `generic` | PtrIndex | 0 | 2 | 0 | 0 | 2 |
+| `generic` | PtrIndex | 1 | 1 | 0 | 0 | 2 |
 | `generic` | RotateLeft | 88 | 0 | 0 | 0 | 88 |
 | `generic` | Round | 0 | 0 | 0 | 2 | 2 |
 | `generic` | RoundToEven | 0 | 0 | 0 | 1 | 1 |
@@ -212,7 +226,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1056 | 432 | 16 | 258 | 1762 |
+| all | | 1060 | 428 | 16 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -237,7 +251,9 @@ definitions, each rule firing must be an instance of its rule as `Rule.Sound` st
 match on the definitions through term ops only, swapped only at `commOps`, `Pat.cons` with
 `same` only of leaf variables, `Pat.wf`, condition by `evalE` with an oracle read off the built
 nodes that answers every boolean-typed expression with a boolean (`Oracle.BoolTyped`), top op
-producing its type's shape, integer- or boolean-shaped leaves, built nodes = `resDen`, no cyclic
+producing its type's shape (`natShape`, or `ptrTop`: `OffPtr`/`AddPtr`/`PtrIndex`/`Convert`
+at a pointer or `Convert` at the 64-bit integer shape, `evalPure_ptrTop`), argument shapes
+(`Pat.argsOK` on the matched types), integer-, boolean- or pointer-shaped leaves, built nodes = `resDen`, no cyclic
 match), a copy-argument replacement is replayed when its source is reached from the old argument
 through copies of compatible shape, no phi elimination or block rule, the arguments of listed
 values and the controls are listed (`closedOK`, input and output), and every definition and
@@ -261,7 +277,8 @@ fired": value and block rules, `RwState.fired`, each instance run on the stock i
 Functions all of whose rewrite sections the checked passes reproduce exactly: 3,547 of 9,297
 (38.15%; 3,536 with 957 and with 993 proven rules: the first divisible/divmod lemmas, #137, add
 the 11). Later counts are in "Firing frequency" (`scripts/rule-proofs.py fire`): 3,562 with
-1,048 proven rules, 3,597 (38.69%) with 1,056 (Mul by ±2^k).
+1,048 proven rules, 3,597 (38.69%) with 1,056 (Mul by ±2^k), 4,701 (50.56%) with 1,060
+(`Pat.argsOK`, pointer leaves and tops in the validator, OffPtr/PtrIndex/AddPtr).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -311,66 +328,74 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 3597, under the checked passes 3597 (validator the only obstacle: 0). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 1, 1: 1488, 2: 1111, 3 or more: 3100.
+Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 4701, under the checked passes 4701 (validator the only obstacle: 0). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 2, 1: 1240, 2: 1061, 3 or more: 2293.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
-| `generic.rules:964 OffPtr` | `r_generic_964` | P2 | 12072 | 453 | 453 |
-| `generic.rules:1022 ConstString` | `r_generic_1022` | ptr | 6924 | 291 | 291 |
-| `generic.rules:970 PtrIndex` | `r_generic_970` | P2 | 10224 | 213 | 213 |
-| `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 65 | 65 |
-| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 56 | 56 |
-| `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 55 | 55 |
-| `block If` | `block` | block | 8570 | 43 | 43 |
-| `generic.rules:1684 NeqPtr` | `r_generic_1684` | P2 | 1246 | 35 | 35 |
-| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 35 | 35 |
-| `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 22 | 22 |
-| `generic.rules:1057 ConstInterface` | `r_generic_1057` | P2 | 524 | 18 | 18 |
-| `generic.rules:973 StructSelect` | `r_generic_973` | ptr | 5789 | 17 | 17 |
-| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 16 | 16 |
-| `generic.rules:1044 ConstSlice` | `r_generic_1044` | P2 | 381 | 14 | 14 |
-| `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 12 | 12 |
-| `generic.rules:322 AndB` | `r_generic_322/r_generic_322_2` | P1 | 116 | 12 | 12 |
-| `generic.rules:965 OffPtr` | `r_generic_965` | P2 | 1701 | 6 | 6 |
+| `generic.rules:1022 ConstString` | `r_generic_1022` | ptr | 6924 | 380 | 380 |
+| `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 127 | 127 |
+| `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 83 | 83 |
+| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 70 | 70 |
+| `generic.rules:974 Load` | `r_generic_974` | mem | 580 | 65 | 65 |
+| `block If` | `block` | block | 8570 | 63 | 63 |
+| `generic.rules:1684 NeqPtr` | `r_generic_1684` | P2 | 1246 | 63 | 63 |
+| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 41 | 41 |
+| `generic.rules:1057 ConstInterface` | `r_generic_1057` | P2 | 524 | 40 | 40 |
+| `generic.rules:973 StructSelect` | `r_generic_973` | ptr | 5789 | 39 | 39 |
+| `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 33 | 33 |
+| `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 29 | 29 |
+| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 20 | 20 |
+| `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 17 | 17 |
+| `generic.rules:1044 ConstSlice` | `r_generic_1044` | P2 | 381 | 16 | 16 |
+| `generic.rules:322 AndB` | `r_generic_322/r_generic_322_2` | P1 | 116 | 16 | 16 |
+| `divmod.rules:180 Div64u` | `r_divmod_180` | P1 | 76 | 14 | 14 |
+| `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 12 | 12 |
+| `generic.rules:610 Less64` | `r_generic_610_3` | P1 | 160 | 11 | 11 |
+| `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 9 | 9 |
+| `generic.rules:806 Load` | `r_generic_806` | mem | 488 | 6 | 6 |
+| `generic.rules:1683 EqPtr` | `r_generic_1683` | P2 | 1734 | 5 | 5 |
+| `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 5 | 5 |
+| `generic.rules:336 AndB` | `r_generic_336/r_generic_336_2` | P1 | 37 | 5 | 5 |
+| `generic.rules:372 OrB` | `r_generic_372/r_generic_372_2/r_generic_372_3/r_generic_372_4` | P1 | 35 | 5 | 5 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 5 | 5 |
-| `generic.rules:1683 EqPtr` | `r_generic_1683` | P2 | 1734 | 4 | 4 |
-| `generic.rules:806 Load` | `r_generic_806` | mem | 488 | 4 | 4 |
-| `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 4 | 4 |
+| `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 5 | 5 |
 | `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 3 | 3 |
+| `generic.rules:992 ArraySelect` | `r_generic_992` | P2 | 361 | 3 | 3 |
 | `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 3 | 3 |
-| `generic.rules:336 AndB` | `r_generic_336/r_generic_336_2` | P1 | 37 | 3 | 3 |
-| `generic.rules:372 OrB` | `r_generic_372/r_generic_372_2/r_generic_372_3/r_generic_372_4` | P1 | 35 | 3 | 3 |
+| `divmod.rules:171 Div32u` | `r_divmod_171` | P1 | 30 | 3 | 3 |
+| `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 3 | 3 |
 | `generic.rules:1743 Move` | `r_generic_1743` | mem | 8 | 3 | 3 |
-| `generic.rules:974 Load` | `r_generic_974` | mem | 580 | 61 | 2 |
-| `generic.rules:992 ArraySelect` | `r_generic_992` | P2 | 361 | 2 | 2 |
-| `divmod.rules:171 Div32u` | `r_divmod_171` | P1 | 30 | 2 | 2 |
+| `divmod.rules:206 Div64u` | `r_divmod_206` | P1 | 6 | 3 | 3 |
+| `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 2 | 2 |
+| `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 2 | 2 |
 | `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 2 | 2 |
-| `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 2 | 2 |
+| `generic.rules:1328 Mul64F` | `r_generic_1328` | float | 7 | 2 | 2 |
 | `generic.rules:346 OrB` | `r_generic_346/r_generic_346_2` | P1 | 6 | 2 | 2 |
-| `generic.rules:126 AddPtr` | `r_generic_126` | P2 | 7408 | 1 | 1 |
+| `generic.rules:340 AndB` | `r_generic_340/r_generic_340_2` | P1 | 4 | 2 | 2 |
 | `generic.rules:1031 SliceLen` | `r_generic_1031` | P2 | 1524 | 1 | 1 |
-| `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 1 | 1 |
-| `divmod.rules:180 Div64u` | `r_divmod_180` | P1 | 76 | 1 | 1 |
+| `generic.rules:1730 SelectN` | `r_generic_1730/r_generic_1730_2` | call | 139 | 1 | 1 |
 | `generic.rules:1592 MemEq` | `r_generic_1592` | P2 | 51 | 1 | 1 |
 | `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 29 | 1 | 1 |
-| `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 1 | 1 |
 | `generic.rules:1005 Store` | `r_generic_1005` | mem | 23 | 1 | 1 |
 | `divmod.rules:159 Div16u` | `r_divmod_159` | P1 | 20 | 1 | 1 |
 | `generic.rules:321 AndB` | `r_generic_321/r_generic_321_2` | P1 | 16 | 1 | 1 |
 | `generic.rules:919 Store` | `r_generic_919` | mem | 15 | 1 | 1 |
 | `generic.rules:2158 Zero` | `r_generic_2158` | mem | 13 | 1 | 1 |
 | `generic.rules:369 AndB` | `r_generic_369/r_generic_369_2/r_generic_369_3/r_generic_369_4` | P1 | 12 | 1 | 1 |
+| `generic.rules:2146 Move` | `r_generic_2146` | mem | 12 | 1 | 1 |
 | `generic.rules:345 OrB` | `r_generic_345/r_generic_345_2` | P1 | 9 | 1 | 1 |
 | `generic.rules:360 OrB` | `r_generic_360/r_generic_360_2` | P1 | 7 | 1 | 1 |
-| `generic.rules:1328 Mul64F` | `r_generic_1328` | float | 7 | 1 | 1 |
+| `generic.rules:1183 Eq32` | `r_generic_1183_2` | P1 | 6 | 1 | 1 |
+| `divmod.rules:232 Div64u` | `r_divmod_232` | P1 | 5 | 1 | 1 |
+| `generic.rules:334 AndB` | `r_generic_334/r_generic_334_2` | P1 | 5 | 1 | 1 |
 | `generic.rules:531 Rsh32Ux64` | `r_generic_531` | P1 | 3 | 1 | 1 |
 | `generic.rules:2355 CondSelect` | `r_generic_2355/r_generic_2355_2/r_generic_2355_3/r_generic_2355_4` | P1 | 3 | 1 | 1 |
+| `divisible.rules:152 Eq64` | `r_divisible_152` | P1 | 2 | 1 | 1 |
 | `generic.rules:2166 Or64` | `r_generic_2166_2` | P1 | 2 | 1 | 1 |
 | `generic.rules:2168 Or16` | `r_generic_2168_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:357 OrB` | `r_generic_357/r_generic_357_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 0 | 0 |
-| `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 0 | 0 |
 | `generic.rules:1012 StringLen` | `r_generic_1012` | P2 | 1091 | 0 | 0 |
 | `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 0 | 0 |
 | `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 0 | 0 |
@@ -384,6 +409,7 @@ Corpus `quick-v1/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 0 | 0 |
 | `generic.rules:1035 SlicePtr` | `r_generic_1035` | P2 | 179 | 0 | 0 |
 | `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 0 | 0 |
+| `generic.rules:792 EqSlice` | `r_generic_792` | P2 | 138 | 0 | 0 |
 
 <!-- END fire -->
 
@@ -457,6 +483,15 @@ or falls back to the `bool`-typed oracle answer), so that `&&`/`||` around it ev
 modelled conjuncts (`isPowerOfTwo(c)`, `smagicOK(c)`) become hypotheses. Comparisons that read
 instance fields (`c.Type.Size() == 8`) are left alone: they evaluate after the case splits.
 
+**Pointer rules** (#69, RuleProofs7; `OffPtr.lean`, `PtrIndex.lean`, `AddPtr.lean`). `rule_unfold` introduces
+the argument shapes as `hat` and, if the rule mentions an op `argShapeOk` constrains, reduces
+them to type equations (`isPtrTy_iff`, `isInt64Ty_iff`; otherwise `hat` is cleared, so the P1
+proofs are unchanged). The proofs are by hand: a pointer-shaped leaf is `poison` or a pointer
+(`val_of_hasTy_ptr`), a 64-bit one `poison`, an integer or an address-less pointer
+(`val_of_hasTy_int64`), offsets add (`ptr_add_add`), and the top value equals its retyping by
+`hty` (`refines_retype_of_hasTy`). `rule_auto` does not close them (it falls back to
+`bv_decide`).
+
 Match congruence equations (`binDV.match_4.congr_eq_*`, …) are generated once in
 `Tactic.lean`: generated by `simp` in two rule modules they are two public declarations of the
 same name and the modules cannot be imported together (`scripts/rule-proofs.py axioms` imports
@@ -493,7 +528,8 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `inst_r_generic_400` Not, `inst_r_generic_284` EqB, `inst_r_generic_290` NeqB,
   `inst_r_generic_173` Div, `inst_r_generic_1142` Mod, `inst_r_generic_1097` Div by a power
   of two, `inst_r_divisible_17` divisibility by a power of two, `inst_r_generic_1112`/`_1120`
-  Mul by ±2^k). `Rule.Inst` includes `Oracle.BoolTyped`; `Oracle.const b` satisfies it
+  Mul by ±2^k, `inst_r_generic_964` OffPtr and `inst_r_generic_970` PtrIndex at heap
+  pointers, `inst_r_generic_126` AddPtr). `Rule.Inst` includes `Oracle.BoolTyped` and `Pat.argsOK`; `Oracle.const b` satisfies it
   (`Oracle.const_boolTyped`), as does `Oracle.litFalse` (unmodelled literals `false`, other
   atoms `true`, for `v.Block.Func.pass.name != "opt"`).
 - `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
@@ -522,6 +558,14 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   non-negative, which Go establishes before (prove pass). Counterexamples (agent DivmodU):
   136 at `c = 3`, `x = 0xFFFF` (21845 vs 32767); 140 at `c = 3`, `x = 2^32-1`; 144 at `c = 7`,
   `x = 4294967291`; 148 at `c = 7`, `x = 2^64-3`. Marked `-- FALSE … #69` in `Div.lean`.
+
+- **`generic.rules:1071–1073` (`Convert` round trips)**: false under the semantics even with
+  `Pat.argsOK`, not a Go bug (RuleProofs7). `Convert` goes through concrete addresses
+  (`Ptr.addr?`, `Ptr.ofAddr`), which are not inverse for a pointer whose offset leaves its
+  allocation's address range: `(Convert (Convert p mem) mem) => p` at `p = ⟨heap 0, 2^40⟩`
+  gives `Ptr.ofAddr (2^41) = ⟨heap 1, 0⟩ ≠ p`; `:1071` likewise at `off = 0`. Needs a
+  semantic invariant bounding pointer offsets (or block-preserving `Convert`), Semantics'
+  decision; `:1684`/`:1683` (`NeqPtr`/`EqPtr` of `ConstNil`) are of the same kind.
 
 ## Narrow result types
 

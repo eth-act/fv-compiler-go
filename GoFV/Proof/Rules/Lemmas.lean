@@ -1316,4 +1316,34 @@ theorem binDV_cmp_bool {o : BinOp}
     | exact ⟨_, rfl⟩
     | (cases o <;> exact ⟨_, rfl⟩)
 
+/-! ## Pointers (`Pat.argsOK`; `generic.rules:964`, `:965`, `:970`) -/
+
+theorem isPtrTy_iff {t : Ty} : isPtrTy t = true ↔ ∃ el, t = .ptr el := by
+  unfold isPtrTy; split <;> simp_all
+
+theorem isInt64Ty_iff {t : Ty} : isInt64Ty t = true ↔ t = .int .w64 := by
+  unfold isInt64Ty; split <;> simp_all
+
+/-- A value of a pointer shape is `poison` or a pointer. -/
+theorem val_of_hasTy_ptr {a : Val} {el : Option Nat} (h : a.hasTy (.ptr el) = true) :
+    a = .poison ∨ ∃ p, a = .ptr p := by
+  cases a <;> simp_all [Val.hasTy]
+
+/-- A value of the 64-bit integer shape is `poison`, an integer, or a pointer without address. -/
+theorem val_of_hasTy_int64 {a : Val} (h : a.hasTy (.int .w64) = true) :
+    a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p ∧ p.addr? = none := by
+  cases a with
+  | poison => exact .inl rfl
+  | int w x => cases w <;> first | exact .inr (.inl ⟨x, rfl⟩) | simp [Val.hasTy] at h
+  | ptr p => exact .inr (.inr ⟨p, rfl, by simpa [Val.hasTy] using h⟩)
+  | _ => simp [Val.hasTy] at h
+
+theorem ptr_add_add (p : Ptr) (a b : BitVec 64) : (p.add a).add b = p.add (a + b) := by
+  simp [Ptr.add, BitVec.add_assoc]
+
+/-- A value refines its retyping at a shape it has. -/
+theorem refines_retype_of_hasTy {v : Val} {t : Ty} (h : v.hasTy t = true) :
+    Refines v (v.retype t) := by
+  rw [Val.retype_of_hasTy h]; exact Refines.refl _
+
 end GoFV.Proof.Rules

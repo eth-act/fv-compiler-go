@@ -324,7 +324,8 @@ theorem cond_of {ev ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (ev x).erase = (
     rw [h c rfl] at h'
     exact (dv_eq_of_erase h' rfl).symm
 
-theorem sized_of {t : Ty} (h : (match t with | .int _ | .bool => true | _ => false) = true) :
+theorem sized_of {t : Ty}
+    (h : (match t with | .int _ | .bool | .ptr _ => true | _ => false) = true) :
     sized t = true := by
   cases t <;> first | rfl | cases h
 

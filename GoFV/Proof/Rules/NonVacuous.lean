@@ -4,6 +4,7 @@ import GoFV.Rules.Generated.Generic.Values02
 import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values08
+import GoFV.Rules.Generated.Generic.Values09
 import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values05
 import GoFV.Rules.Generated.Generic.Values06
@@ -44,6 +45,7 @@ def Rule.Inst (r : Rule) (e : PEnv) (or : Oracle) : Prop :=
   condHolds (evalE (r.vars.map (·.ty)) (sigma e r.pat) or e (Pat.den e [] r.pat)) r.cond ∧
   (Pat.raw e r.pat).hasTy (e.ty []) = true ∧
   Pat.typed e [] r.pat ∧
+  Pat.argsOK e.ty [] r.pat = true ∧
   Pat.raw e r.pat ≠ .poison
 
 /-- The result value of `r` at an instance. -/
@@ -55,7 +57,7 @@ noncomputable def Rule.res (r : Rule) (e : PEnv) (or : Oracle) : Val :=
 value. -/
 theorem Rule.Sound.refines {r : Rule} (h : Rule.Sound r) {e : PEnv} {or : Oracle}
     (hi : Rule.Inst r e or) : Refines (Pat.raw e r.pat) (Rule.res r e or) :=
-  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1 hi.2.2.2.2.2.1
+  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1 hi.2.2.2.2.2.1 hi.2.2.2.2.2.2.1
 
 /-- An instance on which the result does not refine the matched value refutes `Rule.Sound`. -/
 theorem Rule.not_sound {r : Rule} {e : PEnv} {or : Oracle} (hi : Rule.Inst r e or)
@@ -116,7 +118,8 @@ noncomputable def Oracle.litFalse : Oracle where
   fun y _ => ⟨f y, rfl⟩
 
 -- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
-attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFalse litAtom Pat.den
+attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFalse litAtom
+  Pat.argsOK Pat.argsOKs argShapeOk isPtrTy isInt64Ty convArgOk Pat.den
   Pat.dens Pat.raw sigma
   Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Field.bindDV condHolds resDen
   nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map reduceEvalPure
@@ -309,5 +312,33 @@ theorem inst_r_generic_1120 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
   simp [GoFV.Rules.Generated.Generic.r_generic_1120]
   rule_eval
   rfl
+
+/-- `generic.rules:964`: `(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])` at a heap pointer
+`p` (offset 8), `y = 16`, `x = 8`, every node pointer-typed (`Pat.argsOK`). -/
+theorem inst_r_generic_964 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_964
+    (PEnv.ofLists [([0, 0], .ptr ⟨.heap 0, 8⟩)] [] (.ptr none) [([0], 16), ([], 8)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_964]
+  rule_eval
+  simp [PtrOps.offPtr, Val.retype]
+
+/-- `generic.rules:970`: `(PtrIndex <t> ptr idx) && config.PtrSize == 8 => (AddPtr ptr (Mul64
+<typ.Int> idx (Const64 <typ.Int> [t.Elem().Size()])))` at a heap pointer, `idx = 3`, element
+size 8. -/
+theorem inst_r_generic_970 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_970
+    (PEnv.ofLists [([0], .ptr ⟨.heap 0, 0⟩), ([1], .i64 3)] [([1], .int .w64)] (.ptr (some 8)) [])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_970]
+  rule_eval
+  simp [PtrOps.ptrIndex, asOffset]
+
+/-- `generic.rules:126`: `(AddPtr <t> x (Const64 [c])) => (OffPtr <t> x [c])` at a heap pointer,
+`c = 24`. -/
+theorem inst_r_generic_126 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_126
+    (PEnv.ofLists [([0], .ptr ⟨.heap 0, 8⟩)] [([1], .int .w64)] (.ptr none) [([1], 24)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_126]
+  rule_eval
+  simp [PtrOps.addPtr, asOffset]
 
 end GoFV.Proof.Rules

@@ -208,8 +208,22 @@ def randInt : IO Int := do
 
 def randWidth : IO Width := pick #[.w8, .w16, .w32, .w64]
 
+/-- The leaf read by `o` at argument `i` is a pointer (`argShapeOk`). -/
+def ptrArg (o : Option Op) (i : Nat) : Bool :=
+  match o with
+  | some o => (["OffPtr", "AddPtr", "PtrIndex", "IsNonNil"].contains o.name && i == 0) ||
+      ["EqPtr", "NeqPtr"].contains o.name
+  | none => false
+
+/-- A random pointer: nil, a heap or a global allocation, small offsets. -/
+def randPtr : IO Val := do
+  let blk ← pick #[Blk.nil, .heap 0, .heap 3, .global "g"]
+  let off ← pick #[(0 : Int), 8, 16, 1000]
+  return .ptr ⟨blk, BitVec.ofInt 64 off⟩
+
 /-- A random leaf value for a leaf read by `o` at argument `i`. -/
 def randLeaf (o : Option Op) (i : Nat) : IO Val := do
+  if ptrArg o i then return ← randPtr
   let boolish := match o with
     | some o => isBoolOp o || (o.name == "CondSelect" && i == 2)
     | none => false
@@ -244,9 +258,11 @@ def solve (r : Rule) (pos : List (Path × Pat)) (or : Oracle) (i : Inst) : Inst 
       let e := i.env
       let raw := evalPure o (e.ty p) (e.auxInt p) none (Pat.dens e p 0 (match q with
         | .op _ _ _ _ _ _ args _ => args | _ => []))
-      let t := match raw with
-        | .poison => (match e.ty p with | .other => tyOfTyp o.typ | t => t)
-        | v => shapeOf v
+      let t := match raw, e.ty p with
+        | .poison, .other => tyOfTyp o.typ
+        | .poison, t => t
+        | .ptr _, .ptr el => .ptr el
+        | v, _ => shapeOf v
       i := { i with ty := set i.ty p t }
     | _ => pure ()
   let e := i.env
@@ -275,7 +291,8 @@ def check (r : Rule) (or : Oracle) (i : Inst) : Option Bool :=
   let ev := evalE (r.vars.map (·.ty)) σ or e (Pat.den e [] r.pat)
   let raw := Pat.raw e r.pat
   let ok := Pat.arityOk r.pat && wfB e [] r.pat && consB ev σ e [] r.pat && condB ev r.cond &&
-    raw.hasTy (e.ty []) && typedB e [] r.pat && !(match raw with | .poison => true | _ => false)
+    raw.hasTy (e.ty []) && typedB e [] r.pat && Pat.argsOK e.ty [] r.pat &&
+    !(match raw with | .poison => true | _ => false)
   if ok then some (refinesB raw (resDen ev or σ (e.ty []) r.result)) else none
 
 def render (i : Inst) : String :=
@@ -298,7 +315,9 @@ def search (r : Rule) (trials : Nat) : IO (Option (Inst × Bool)) := do
       if let .op o .. := q then
         let a ← if o.auxType == .Bool then pure (Int64.ofInt (← IO.rand 0 1)) else
           pure (Int64.ofInt (← randInt))
-        i := { i with auxInt := set i.auxInt p a, ty := set i.ty p (tyOfTyp o.typ) }
+        let t ← if o == .PtrIndex then pure (Ty.ptr (some (← pick #[1, 4, 8, 24])))
+          else pure (tyOfTyp o.typ)
+        i := { i with auxInt := set i.auxInt p a, ty := set i.ty p t }
     for _ in [0:3] do
       i := solve r pos or i
     match check r or i with

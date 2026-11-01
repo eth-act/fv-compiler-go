@@ -44,6 +44,14 @@ obligation assumes that every leaf value has its type's shape (`Pat.typed`): a m
 a register whose value `evalValue` retyped to its type (`docs/proofs/rules.md`, "Assumptions to
 discharge").
 
+**Argument shapes.** The obligation assumes that the arguments of pointer ops have the shapes
+the checker guarantees by type (`Pat.argsOK`, `argShapeOk`): the pointer argument of `OffPtr`,
+`AddPtr`, `PtrIndex`, `IsNonNil`, `EqPtr`, `NeqPtr` is pointer-typed, the offset of
+`AddPtr`/`PtrIndex` a 64-bit integer, a `Convert` goes between a pointer and a 64-bit integer.
+Without it `(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])` is false for a `uintptr` leaf
+under a pointer-typed inner node (the pointer `p + y` keeps its allocation, the integer does
+not). The rewrite validator checks it on the matched types (`GoFV.Opt.RewriteCheck.ruleOK`).
+
 What the interpreter proof has to supply, besides the match: the shapes of `typ.<T>` and
 `types.Types[k]` (`typShape`, `typesShape`) for the export's `Config.Types`, and that
 `t.Size()` of an integer or boolean shape is its byte size.
@@ -392,11 +400,20 @@ def callE (vtys : List GoTy) (e : PEnv) (fn : String) (args : List Expr) (dargs 
   | some h => callH e h (dargs.zip (args.map (exprTy vtys)))
   | none => none
 
-/-- Method calls: `t.Size()` of an integer or boolean shape. -/
+/-- Method calls: `t.Size()` of an integer or boolean shape; `t.Elem()` of a pointer shape
+with a known element size `k` is the element type known by its size only, a record with the
+one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's). The
+method name is matched first, so that a method of an unknown type shape is still `none`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
-  match dy, n, args with
-  | .ty t, "Size", [] => (shapeSize t).map .int
-  | _, _, _ => none
+  match n, args with
+  | "Size", [] => match dy with
+    | .ty t => (shapeSize t).map .int
+    | .strct fs => strctField fs "Size"
+    | _ => none
+  | "Elem", [] => match dy with
+    | .ty (.ptr (some k)) => some (.strct [("Size", .int k)])
+    | _ => none
+  | _, _ => none
 
 /-- Builtins: `min` of two integers. -/
 def builtinE (fn : String) (dargs : List DV) : Option DV :=
@@ -486,6 +503,49 @@ def Pat.wfs (e : PEnv) (p : Path) (i : Nat) : List Pat → Prop
   | q :: qs => Pat.wf e (i :: p) q ∧ Pat.wfs e p (i + 1) qs
 end
 
+/-- A pointer shape. -/
+def isPtrTy : Ty → Bool
+  | .ptr _ => true
+  | _ => false
+
+/-- `.int .w64`. -/
+def isInt64Ty : Ty → Bool
+  | .int .w64 => true
+  | _ => false
+
+/-- The argument of a `Convert` of shape `ty`: a 64-bit integer to a pointer, a pointer to a
+64-bit integer. -/
+def convArgOk (ty t : Ty) : Bool :=
+  match ty with
+  | .ptr _ => isInt64Ty t
+  | .int .w64 => isPtrTy t
+  | _ => true
+
+/-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
+the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr`, a
+64-bit integer offset of `AddPtr`/`PtrIndex`, and `Convert` between a pointer and a 64-bit
+integer (`convArgOk`). Other arguments are unconstrained. -/
+def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
+  match o with
+  | .OffPtr | .IsNonNil => i != 0 || isPtrTy t
+  | .EqPtr | .NeqPtr => isPtrTy t
+  | .AddPtr | .PtrIndex => if i == 0 then isPtrTy t else i != 1 || isInt64Ty t
+  | .Convert => i != 0 || convArgOk ty t
+  | _ => true
+
+mutual
+/-- Every argument of every op node of the pattern at `p` has the shape `argShapeOk` asks for,
+by the instance's types `ty` (`docs/proofs/rules.md`, "Assumptions to discharge"). -/
+def Pat.argsOK (ty : Path → Ty) (p : Path) : Pat → Bool
+  | .op o _ _ _ _ _ args _ => Pat.argsOKs ty p o 0 args
+  | _ => true
+/-- `Pat.argsOK` of the arguments `i, i+1, …` of an `o` node at `p`. -/
+def Pat.argsOKs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat → Bool
+  | [] => true
+  | q :: qs => argShapeOk o (ty p) i (ty (i :: p)) && Pat.argsOK ty (i :: p) q &&
+      Pat.argsOKs ty p o (i + 1) qs
+end
+
 mutual
 /-- The argument counts are those of the pattern (no `___`, no ellipsis). -/
 def Pat.arityOk : Pat → Bool
@@ -561,9 +621,9 @@ def Oracle.BoolTyped (or : Oracle) : Prop :=
 
 /-- **The obligation of a value rule.** For every instance of the pattern whose auxints are
 well formed (`Pat.wf`), whose checks and condition hold, whose top value has its type's
-shape and whose leaves have their types' shapes (`Pat.typed`), and every oracle answering
-`bool` expressions with booleans (`Oracle.BoolTyped`), the rewritten value refines the
-matched one. -/
+shape, whose leaves have their types' shapes (`Pat.typed`) and whose op nodes' arguments the
+shapes the checker guarantees (`Pat.argsOK`), and every oracle answering `bool` expressions
+with booleans (`Oracle.BoolTyped`), the rewritten value refines the matched one. -/
 def Rule.Sound (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
   ∀ (e : PEnv) (or : Oracle), Oracle.BoolTyped or →
@@ -574,6 +634,7 @@ def Rule.Sound (r : Rule) : Prop :=
     condHolds ev r.cond →
     (Pat.raw e r.pat).hasTy (e.ty []) = true →
     Pat.typed e [] r.pat →
+    Pat.argsOK e.ty [] r.pat = true →
     Refines (Pat.raw e r.pat) (resDen ev or σ (e.ty []) r.result)
 
 
@@ -581,7 +642,7 @@ def Rule.Sound (r : Rule) : Prop :=
 /-! Equation lemmas of the denotation, generated here once rather than in every rule module
 (LEARNINGS.md, "Large `match` on a variable"). -/
 attribute [local simp] Pat.den Pat.dens Pat.raw Pat.binds Pat.bindss Pat.cons Pat.conss
-  Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk
+  Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Pat.argsOK Pat.argsOKs
   Pat.arityOk Pat.arityOks evalE evalEs nodeDen resDen condHolds sigma auxIntDV toAuxIntD
   litDV fieldE indexE convE binE callE callH methodE builtinE binDV unDV intBin fieldDV DV.valOr
   Field.bindDV

@@ -147,6 +147,7 @@ import GoFV.Proof.Rules.Add4
 import GoFV.Proof.Rules.Add5
 import GoFV.Proof.Rules.Add6
 import GoFV.Proof.Rules.Add7
+import GoFV.Proof.Rules.AddPtr
 import GoFV.Proof.Rules.AllSound
 import GoFV.Proof.Rules.And
 import GoFV.Proof.Rules.And2
@@ -208,12 +209,14 @@ import GoFV.Proof.Rules.NeqB
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
+import GoFV.Proof.Rules.OffPtr
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
 import GoFV.Proof.Rules.Or3
 import GoFV.Proof.Rules.Or4
 import GoFV.Proof.Rules.Or5
 import GoFV.Proof.Rules.Proven
+import GoFV.Proof.Rules.PtrIndex
 import GoFV.Proof.Rules.RotateLeft
 import GoFV.Proof.Rules.RotateLeft10
 import GoFV.Proof.Rules.RotateLeft11

@@ -14,7 +14,9 @@ replays the log on a map of definitions, starting from the input `f`:
   hold), the pattern's checks (`Pat.cons`), the checker facts (`Pat.wf`) and the condition
   hold under `GoFV.Proof.Rules.evalE` with the oracle `oracle` (unmodelled expressions: `true`
   if boolean, the fields of the built nodes otherwise), the top op produces its value's shape
-  (`natShape`), every leaf that is a pure value too, and the built definitions are those of
+  (`natShape`, or a pointer op `ptrTop` whose arguments have the shapes `argShapeOk` asks for,
+  `Pat.argsOK`, checked at every op node), every leaf has an integer, boolean or pointer
+  shape, and the built definitions are those of
   `Rule.Sound`'s result denotation (`resDen`); only in-place `build` and `copy` results;
 * a copy-argument replacement (`copyArg v i src`, copy elimination before a rule matches) is
   replayed on the definitions when `src` is reached from the old argument through `Copy`s of
@@ -263,16 +265,24 @@ def natShape (op : Op) (ty : Sem.Ty) : Bool :=
   | .int w => intOpWidth op w
   | _ => false
 
+/-- Pointer ops whose value has shape `ty` when their first argument has the shape
+`argShapeOk` asks for (`OffPtr`, `AddPtr`, `PtrIndex` at a pointer shape, `Convert` between a
+pointer and a 64-bit integer). -/
+def ptrTop (op : Op) (ty : Sem.Ty) : Bool :=
+  match op with
+  | .OffPtr | .AddPtr | .PtrIndex => isPtrTy ty
+  | .Convert => isPtrTy ty || isInt64Ty ty
+  | _ => false
+
 mutual
-/-- Every leaf of the pattern has an integer or boolean shape. `Pat.typed` asks of the leaves
-that their values have their type's shape: `Val.retype` at `bool` always produces a boolean or
-`poison`, at an integer shape that integer width under the register typing of issue #108
-(`GoFV.Proof.Term.RetypeShapes`). -/
+/-- Every leaf of the pattern has an integer, boolean or pointer shape. `Pat.typed` asks of the
+leaves that their values have their type's shape: `Val.retype` at a shape always produces a
+value of that shape (`Val.retype_hasTy`, issue #108). -/
 def leavesOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) : Pat → Bool
   | .op _ _ _ _ _ _ args _ => leavessOK tabs M I p 0 args
   | _ =>
     match M.get? (I.at p) with
-    | some x => (match tabs.ty x.type with | .int _ | .bool => true | _ => false)
+    | some x => (match tabs.ty x.type with | .int _ | .bool | .ptr _ => true | _ => false)
     | none => false
 def leavessOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) (i : Nat) : List Pat → Bool
   | [] => true
@@ -348,8 +358,9 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) &&
         (match r.pat with
-          | .op o _ _ _ _ _ _ _ => natShape o (e.ty [])
+          | .op o _ _ _ _ _ _ _ => natShape o (e.ty []) || ptrTop o (e.ty [])
           | _ => false) &&
+        Pat.argsOK e.ty [] r.pat &&
         leavesOK tabs M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs
 
