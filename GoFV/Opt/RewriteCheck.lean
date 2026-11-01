@@ -1139,14 +1139,29 @@ def isPtrTy : Sem.Ty → Bool
 def ptrVal (tabs : Tables) (f : Func) (x : ID) : Bool :=
   (f.value? x).any fun u => isPtrTy (tabs.ty u.type)
 
-/-- A constant index: a `Const64` of the 64-bit integer shape, its value. -/
+/-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
+whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
+value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
+rules fold to a `Const64` only later in the log. -/
+def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
+  | 0, _ => none
+  | k + 1, a =>
+    match f.value? a with
+    | some v =>
+      if termOp v.op then
+        (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
+          (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
+            (tabs.ty v.type)
+      else none
+    | none => none
+
+/-- A constant index: a constant term (`termConst`, at most four deep) of the 64-bit integer
+shape, its value; e.g. `Div64 (Sub64 (Const64 [32]) (Const64 [1])) (Const64 [32])`, which value
+rules fold to a `Const64` only later in the log. -/
 def constIdx? (tabs : Tables) (f : Func) (i : ID) : Option (BitVec 64) :=
-  match f.value? i with
-  | some iv =>
-    match iv.op, tabs.ty iv.type with
-    | .Const64, .int .w64 => some (BitVec.ofInt 64 iv.auxInt.toInt)
-    | _, _ => none
-  | none => none
+  match termConst tabs f 4 i with
+  | some (.int .w64 k) => some k
+  | _ => none
 
 /-- One step of `ptrBase`: an `OffPtr` or `Copy` of pointer shape on a pointer-shaped argument,
 or a `PtrIndex` of element size `e` (its pointer shape) by a constant index `k` (`constIdx?`),
@@ -1354,22 +1369,6 @@ def fwdConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
      | none => false) &&
     fwdOK tabs f u x
   | none => false
-
-/-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
-whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
-value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
-rules fold to a `Const64` only later in the log. -/
-def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
-  | 0, _ => none
-  | k + 1, a =>
-    match f.value? a with
-    | some v =>
-      if termOp v.op then
-        (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
-          (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
-            (tabs.ty v.type)
-      else none
-    | none => none
 
 /-- A constant term (`termConst`) whose value is a zero integer, `false` or `poison`
 (`isConstZero` but for pointers, floats and composites; whose bytes are `0` or `poison` at every
