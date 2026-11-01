@@ -522,6 +522,11 @@ def runOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (j : Nat) (r : R
     | some C => C.id == s.c
     | none => false) &&
   r.src.length == r.tgt.length && 0 < r.src.length && (vals c.g s.e).contains r.last &&
+  -- the run's values are listed where their roles say
+  r.tgt.all (vals c.g s.e).contains && r.ncEnd.all (vals c.g s.e).contains &&
+  (vals c.g s.c).contains s.load && (vals c.g s.c).contains s.flag &&
+  c.roleOf rs s.flag == .flag j && c.held s.mem &&
+  r.ncEnd.all (fun y => c.roleOf rs y == .ncEnd j) &&
   r.src.all (fun x => B.values.contains x && !c.K.getD x false) &&
   (match r.nc with
     | some n => B.values.contains n && (c.f.value? n).any (·.op == .NilCheck)
@@ -537,7 +542,7 @@ def blockOK (b : ID) : Bool :=
           L.controls == B.controls && L.succs == B.succs && B.controls.all c.held
       | _, _ => false) &&
     segs.getLast? == some l &&
-    (segs ++ rs.map (·.sp.t)).Nodup &&
+    (segs ++ rs.map (·.sp.t)).Nodup && (segs ++ rs.map (·.sp.t)).all c.g.blocks.contains &&
     rs.zipIdx.all (fun (r, j) => c.runOK b B segs rs j r) &&
     -- every value of `b` is kept and listed in a segment, a run's store or a dropped nil check
     B.values.all (fun x =>
