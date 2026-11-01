@@ -143,8 +143,11 @@ inductive FixedLoad where
   | constPtr (c : Int)
   | const32 (c : Int)
   | const8 (c : Int)
-  /-- `Addr` of a symbol known by name only (`GCData`, the `Elem` of a pointer type). -/
+  /-- `Addr` of a symbol known by name only (`GCData`). -/
   | addrName (name : GoStr)
+  /-- `Addr` of the `Elem` of a pointer type's descriptor, which `rewriteFixedLoad` also marks
+  as used in an interface. -/
+  | elem (name : GoStr)
 
 /-- The shared decision of `isFixedLoad(v, sym, off)` and `rewriteFixedLoad`: `none` when the
 load is not fixed. `fields` are the exported descriptor fields, `elemOff` the offset of
@@ -172,7 +175,7 @@ def fixedLoad (tabs : Tables) (vty : TypeRef) (a : Option AuxRef) (off : Int)
       | _ => return none
   if (← Ty.isKind .PTR tabs t) && off == elemOff then
     let some rt := s.rtype | throw s!"fixedLoad: no rtype for {s.name}"
-    return some (.addrName rt.elemSym)
+    return some (.elem rt.elemSym)
   return none
 
 end GoFV.Rules.Sym

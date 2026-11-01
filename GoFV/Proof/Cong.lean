@@ -70,10 +70,10 @@ theorem entryFrame_ctx {env : Env} {ctx ctx' : Ctx} (h : CtxEq ctx ctx')
     entryFrame env ctx args mem = entryFrame env ctx' args mem := by
   obtain ⟨f, tabs, tys, sched, params, paramTys, outs, locals, act⟩ := ctx
   obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
-  obtain ⟨-, -, -, -, h5, -, h7, h8, -, -⟩ := h
-  dsimp only at h5 h7 h8 hsize
-  subst h5 h7 h8
-  unfold entryFrame frameMem
+  obtain ⟨h1, -, -, -, h5, -, h7, h8, -, -⟩ := h
+  dsimp only at h1 h5 h7 h8 hsize
+  subst h1 h5 h7 h8
+  unfold entryFrame frameMem frameAllocs
   rw [hsize]
 
 theorem stepTerm_eraseB (fr : Frame) (b : Block) : stepTerm fr (eraseB b) = stepTerm fr b := (rfl)

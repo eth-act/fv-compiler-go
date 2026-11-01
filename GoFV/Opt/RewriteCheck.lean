@@ -419,7 +419,7 @@ rules create no definitions). -/
 def checkedRewrite (t : GoFV.Rules.Interp.Table) : Pass := fun env f => do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   if RewriteCheck.validate env.tables t f out.func log then
-    return { func := out.func, tables := env.tables }
+    return { out with tables := env.tables }
   else return { func := f, tables := env.tables }
 
 end GoFV.Opt

@@ -13,6 +13,11 @@ same image:
   pointer fragments to the target symbol (other relocation kinds: poison bytes);
 - string data symbols (`go:string."…"`) that are only named (relocation targets, the data
   symbol of a `str` aux): the string's bytes, read-only;
+- type descriptors (`type:T`, `typeinfo` set) that are not yet read-only data: the header the
+  runtime contracts and fixed loads read (`Size_` at 0, `PtrBytes` at 8, `Hash` at 16, `Kind_`
+  at 23, export `config rttype.*`) from the `rtype` line or the type table, the rest poison;
+- static closures (`F·f`, the `funcval` of a function without captured variables): one word
+  pointing to the code symbol `F`, read-only;
 - other symbols the function takes the address of (`Addr`): zero bytes, writable, as large as
   the largest pointee type of those `Addr`s (their contents belong to the environment; zero is
   the state of `runtime.writeBarrier` with the GC off, and of package variables before their
@@ -78,10 +83,24 @@ def rodataAlloc (data : ByteArray) (size : Int) (relocs : Array Reloc) : Alloc :
     if h : i < data.size then .b (BitVec.ofNat 8 data[i].toNat) else .b 0
   let bytes := relocs.foldl (fun bs r =>
     let off := r.off.toNat
-    if (r.type == "R_ADDR" || r.type == "R_WEAKADDR") && r.siz == 8 then
+    -- `RelocType(-32767)` is `R_WEAK | R_ADDR` (itab method entries)
+    if (r.type == "R_ADDR" || r.type == "R_WEAKADDR" || r.type == "RelocType(-32767)") &&
+        r.siz == 8 then
       putBytes bs off (ptrBytes ⟨.global r.target.toStringLossy, BitVec.ofInt 64 r.add⟩)
     else putBytes bs off (Array.replicate r.siz.toNat .poison)) bytes
   { data := bytes, writable := false }
+
+/-- The header of the type descriptor of `t` (56 bytes, `internal/abi.Type`). -/
+def typeDescAlloc (tabs : Tables) (t : TypeRef) (rt : Option RType) : Alloc :=
+  let size := (rt.bind (·.size)).orElse fun _ => (tabs.type? t).bind (·.size)
+  let ptr := (rt.bind (·.ptrdata)).orElse fun _ => (tabs.type? t).bind (·.ptrdata)
+  let word (o : Option Int) (n : Nat) : Array Byte :=
+    match o with
+    | some x => intBytes n (BitVec.ofInt (8 * n) x).toNat
+    | none => Array.replicate n .poison
+  let data := word size 8 ++ word ptr 8 ++ word (rt.bind (·.hash)) 4 ++
+    Array.replicate 3 .poison ++ word (rt.bind (·.abiKind)) 1 ++ Array.replicate 32 .poison
+  { data, writable := false }
 
 /-- The global image of an export file (`docs/plans/semantics.md` §3.4). -/
 def globalImage (e : ExportFile) : List (String × Alloc) := Id.run do
@@ -93,10 +112,15 @@ def globalImage (e : ExportFile) : List (String × Alloc) := Id.run do
     tabs := tabs.addAll s.defs
     for d in s.defs do
       match d with
-      | .aux _ { kind := .sym name _ kind size _ _ _ (some data) relocs _, .. } =>
-        if kind == "SRODATA" then
+      | .aux _ { kind := .sym name _ kind size _ ti _ data relocs rt, .. } =>
+        match kind, data, ti with
+        | "SRODATA", some data, _ =>
           img := img.insert name.toStringLossy (rodataAlloc data size relocs)
           for r in relocs do named := named.push r.target.toStringLossy
+        | _, _, some t =>
+          if !img.contains name.toStringLossy then
+            img := img.insert name.toStringLossy (typeDescAlloc tabs t rt)
+        | _, _, _ => pure ()
       | .aux _ { kind := .str _ dataSym, .. } => named := named.push dataSym.toStringLossy
       | _ => pure ()
     -- non-rodata symbols whose address is taken: size from the pointee types
@@ -115,7 +139,11 @@ def globalImage (e : ExportFile) : List (String × Alloc) := Id.run do
     if !img.contains k then
       if let some a := stringSymAlloc? k then img := img.insert k a
   for (k, n) in sizes.toList do
-    if !img.contains k then img := img.insert k { data := Array.replicate n (.b 0) }
+    if !img.contains k then
+      if k.endsWith "·f" then
+        let code := (k.dropEnd 2).toString
+        img := img.insert k { data := ptrBytes ⟨.global code, 0⟩, writable := false }
+      else img := img.insert k { data := Array.replicate n (.b 0) }
   return img.toList
 
 end GoFV.SSA.Sem

@@ -79,7 +79,11 @@ type integer results narrower than their op — `divmod.rules` builds `(Rsh64x64
 `divmod`; 990 such values in the corpus, all `Rsh64x64`/`Rsh32x64`, none wider than the op).
 So every produced integer is retyped to its value's width (`Val.retype`, `Sem/Layout.lean`):
 a narrower type keeps the low bits; a wider one would expose undefined high bits and is
-`poison`. Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+`poison`. A `bool`-typed value that is not a boolean is `poison` (every well-typed producer
+of a `bool` — comparisons, `Load` decoding a bool, `Phi`/`Copy`/`SelectN`/`StructSelect`
+passing one through — yields a boolean or `poison` anyway), so the register of a `bool`-typed
+value is always a boolean or `poison` (`Typed`; used by phiopt's `OrB`/`AndB` arms, §3.5).
+Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
 Integer ops have no sign: signedness is in the op
 (`Less64` vs `Less64U`, `Rsh64x64` vs `Rsh64Ux64`, `SignExt` vs `ZeroExt`), as in Go.
 `ConstN` auxints are sign-extended to 64 bits even for unsigned types (gO 339); `run` takes
@@ -172,7 +176,29 @@ Partial pure operations (division by zero, shifts with a false `bounded` flag, `
 of 0, `Slicemask` of a negative, a bad uintptr→ptr) and reads of uninitialised or invalid
 memory yield `poison` instead of failing. `Unknown` (gO 560, values in dead code) is `poison`.
 Pure ops propagate `poison` (any `poison` argument → `poison` result), except `CondSelect`,
-whose unselected arm may be `poison` (`branchelim`/`phiopt` speculate both arms).
+whose unselected arm may be `poison` (`branchelim` speculates both arms), and `AndB`/`OrB`,
+which are *parallel*: `AndB` is `false` as soon as one side is `false` and `OrB` is `true` as
+soon as one side is `true`, whatever the other side is (`poison` included); otherwise they are
+`poison` unless both sides are booleans. This is hardware's `&&`/`||` on 0/1 registers, and it
+is what makes `phiopt`'s `c ? true : x` → `OrB c x` and `c ? x : false` → `AndB c x` refine
+when the arm not taken (`x`) is `poison`; `fuse comparisons` likewise evaluates its second
+comparison speculatively in `OrB`/`AndB`.
+
+Consumers of `AndB`/`OrB` on the source side, for which the parallel form makes the source
+more defined (each still refines):
+- **generic.rules 321-388** (`AndB`/`OrB` of two comparisons of the same `x` with constants,
+  or `Neq64F x x` with a comparison of `x`): both sides are `poison` exactly when `x` is, so
+  ⟦lhs⟧ is the same under the strict and the parallel form. Rules with `AndB` only on the
+  right-hand side (1600-1628, `MemEq` splits) get a more defined target. The commutativity of
+  `AndB`/`OrB` used for `commute` patterns is re-proved (`Proof/Rules/Comm.lean`).
+- **generic cse** orders the arguments of commutative ops; `AndB`/`OrB` stay commutative
+  (`andB_swap`/`orB_swap` re-proved in `Proof/Pass/CSEComm.lean`).
+- **sccp** folds through the rules on constant arguments; constants are never `poison`.
+- **prove** does not decompose `AndB`/`OrB` (no `OpAndB`/`OpOrB` in `prove.go`): a branch on
+  one gives a fact about that value only.
+- **known bits**: one side known `false` (`true`) makes `AndB` (`OrB`) known `false` (`true`),
+  which is now the exact result rather than a refinement of `poison`.
+- **fuse comparisons** builds `OrB`/`AndB` (target side only; needs the parallel form).
 
 `poison` becomes `stuck` at the **observation points**: a branch on it (`If`, `JumpTable`),
 the address of a store/move/zero, a `NilCheck` argument, a call target, arguments and memory
@@ -285,8 +311,11 @@ a float32-exact value (gO 347); constants are never NaN (gO 342-346).
 ### 4.8 Tuples, results
 `Select0/Select1/MakeTuple` on `tuple`; `SelectN [i]` projects a call's `RESULTS` tuple (pre-
 expand: Go-typed results, memory last; post-expand: register pieces, memory last);
-`SelectNAddr [i]` (pre-expand, non-SSA-able result) is the address of result `i` in the
-caller's results area (§5); `MakeResult` builds the `Ret` control (§7).
+`SelectNAddr [i]` is the address of stack-assigned result `i` in the outgoing-arguments area
+(§5): a call's tuple carries, after its memory, the addresses of its results (`poison` for
+register results), so `SelectNAddr` is a pure op of its argument (`evalValue` never looks at
+other values of the function; `poison` for a register result); a tuple has the shape of its type when its first components do
+(`Val.hasTyPre`). `MakeResult` builds the `Ret` control (§7).
 
 ### 4.9 Pseudo and out-of-phase ops
 `Copy` identity; `Phi` §3.6; `Convert` §3.3 (memory argument only orders it). `InlMark` no
@@ -315,8 +344,9 @@ call the same contracts:
 
 - **Before `expand calls`**: `StaticLECall {AuxCall} args… mem` passes Go-typed values
   (composites as `agg`; non-SSA-able arguments as `blob`s made by `Dereference`, gO 435-440);
-  the result is `tuple (results ++ [mem])`, read by `SelectN`; a non-SSA-able result is
-  stored by the call into the caller's per-call results area, which `SelectNAddr` points to.
+  the result is `tuple (results ++ [mem, addrs])`, read by `SelectN`; stack-assigned results
+  are also stored in the caller's outgoing-arguments area, at the addresses `addrs`
+  (`SelectNAddr`, §4.8).
   `ClosureLECall code ctx args… mem`: `code` is a pointer into a `code` allocation resolved by
   `Env.codeSym`, `ctx` becomes the callee's `GetClosurePtr`. `InterLECall code args… mem`: the
   code pointer was loaded from an itab in read-only data (pointer fragments from `reloc` lines).
@@ -355,8 +385,11 @@ inductive Panic
   | runtime (name : String)           -- any other panicking contract
 ```
 
-`NilCheck p mem` (a root): `p` nil ⇒ `panicked nilDeref`; `p` poison ⇒ `stuck`; otherwise its
-value is `p`. `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
+`NilCheck p mem` (a root): `p` points into no allocation (`Blk.nil`, any offset; for a
+`uintptr` argument, `Ptr.ofAddr x` does) ⇒ `panicked nilDeref`; `p` poison ⇒ `stuck`; otherwise
+its value is `p`. (Since P3: a check of `nil + k` panics too, like the machine's load in page 0,
+so a pointer that passed a check is not nil-derived and `OffPtr`/`AddPtr` of it keep it so,
+which `nilcheckelim` relies on, `nilcheck.go:59`; `GoFV.Proof.evalOp_nilCheck_blk`.) `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
 after it is an `Exit` block. Recovery (`recover` in a deferred call) is P5: until then a
 `panicked` outcome ends the run and is compared by its `Panic` only (the memory at the panic is
 not observable without recovery).
@@ -526,6 +559,45 @@ writes through arguments (the harness prints the arguments again after the call)
 built as bytes with fresh heap allocations. `sem-difftest trace <file> <section> <args>`
 prints every block entry and value of one run.
 
+### 9.3 P3 as implemented (#10)
+
+- **Environment** (`Sem/Env.lean`): `Env.extern : String → Option Contract` with
+  `Contract := List Val → Option Val → Mem → COutcome` (Go-typed arguments, closure context,
+  memory). The runtime contracts are `Env.runtime` (`Sem/Runtime.lean`): `newobject`,
+  `makeslice` (+ `panicmakeslicelen/cap`), `growslice*` (runtime capacity growth and size
+  classes), `moveSlice*`, the size-specialised `mallocgc*SC*`, `memmove`,
+  `memclrNoHeapPointers`, `typedmemmove`, `typedslicecopy`, `memequal`, `convT*`,
+  `concatstring*`, `slicebytetostring`, `stringtoslicebyte`, `print*` (no effect), and the
+  panicking entry points (`panicdivide`, `panicshift`, `panicoverflow`, `panicdottype*`,
+  `gopanic`, …). Type descriptors are read from memory (`Size_`, `PtrBytes`), laid out by the
+  global image (`typeDescAlloc`); itab method entries are weak `R_ADDR` relocations
+  (`RelocType(-32767)`); a code pointer is the start of a `global` function symbol.
+- **Program functions** (`Env.withFuncs base funcs fuel d`): a callee with SSA runs as a new
+  activation (`runActivation`: activation number `Mem.nextAct`, its frame and outgoing area
+  allocated in the caller's memory, the closure context for `GetClosurePtr`, `finish` with the
+  frame freed), at most `d` calls deep, `fuel` block entries each; deeper calls use `base`.
+- **Calls** (`callOp`): `StaticLECall`/`ClosureLECall`/`InterLECall` pass Go-typed arguments;
+  `StaticCall`/`ClosureCall`/`InterCall` decode them from register pieces and the outgoing area
+  by the `AuxCall` ABI (`decodeArgs`) and encode results back (`encodeResults`). The tuple is
+  `results ++ [mem, addrs]`, `addrs` the stack results' addresses (`SelectNAddr`, §4.8). A
+  poison argument is `stuck`; a contract's panic is the call's panic. `Panicking op :=
+  op.call ∨ op = NilCheck` (`GoFV.Proof.evalValue_panic_op`).
+- **Frame state**: `GetCallerSP` = `2^62 + (act + 1)·2^42` (just above the activation's frame
+  region); `GetClosurePtr` = the activation's closure context.
+- **Not in P3** (`stuck`): `TailLECall*`, `GetG`, write-barrier ops (`WB`, `gcWriteBarrier`),
+  channels, maps, `gorecover`/defer (P5), atomics other than loads (P5), `ArgFloatReg` (P4),
+  runtime entry points without a contract (`mcall`, `lock2`, `rand`, …).
+- **NilCheck** panics on any pointer into `Blk.nil` (§6).
+
+Difftest additions (`tools/semdiff/prog/calls.go`): 32 functions with static, closure,
+interface, method-value and recursive calls, runtime allocation and growth, string building,
+large (stack-assigned) results, and runtime panics. The native harness quotes strings byte by
+byte (`quoteBytes`, as `goQuote`). `sem-difftest` loads the program's functions as callees
+(`programEnv`). Results: native 119 functions, 11,900 calls, every section agrees with
+native. Corpus (quick-v1, 20 calls per function): 4,380 supported signatures, 39,131 calls
+defined at section 0 in 2,266 functions, 1,251,134 later-section runs agree, 0 differ, 1,058
+stuck in 7 functions (the `nilcheckelim` gaps of §10).
+
 ## 10. Open questions and risks
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
@@ -544,7 +616,13 @@ prints every block entry and value of one run.
   like section 0: the access faults in page 0 and the runtime panics. Consequence for the proofs: the
   `nilcheckelim` theorem must take "no pointer arithmetic on nil" as a hypothesis, or the
   semantics must make an access within the first page of `Blk.nil` panic like a `NilCheck`
-  (then `Load` is no longer pure); decide when proving `nilcheckelim`.
+  (then `Load` is no longer pure); decide when proving `nilcheckelim`. **P3**: a `NilCheck`
+  of any pointer into `Blk.nil` panics (§6), so `NilCheck (OffPtr (NilCheck p))` chains are
+  removable (ProofMem, #23); the eliminations of a check whose argument is arithmetic on an
+  unchecked pointer remain a hypothesis of the proof. With the P3 `NilCheck`, the corpus shows
+  such a gap in 7 runtime functions: `(*bitvector).ptrbit`, `bitCursor.write`, `dumpbv`
+  above, and `argv_index`, `getGodebugEarly`, `goenvs_unix`, `sysargs`, whose section 0 now
+  panics in the check of `nil + k`.
 - Tie-break of §3.6 step 3: `writebarrier`'s `storeOrder` and the post-lower scheduler order
   `NilCheck`s by position with an unstable sort (see `docs/PASSES.md`, writebarrier); the
   semantics' choice (NilChecks first) must match the order the final code panics in for the
@@ -730,8 +808,8 @@ against Go's own evaluation).
 | Leq32F | 203 | 2 |  | Bool |  | pure | P4 | 1f | IEEE compare; NaN unordered (Neq true, others false) (§4.6) |
 | Leq64F | 204 | 2 |  | Bool |  | pure | P4 | 1f | IEEE compare; NaN unordered (Neq true, others false) (§4.6) |
 | CondSelect | 209 | 3 |  |  |  | pure | P1 | 25 | arg2 ? arg0 : arg1; unselected arm may be poison (§3.5) |
-| AndB | 212 | 2 |  | Bool | comm | pure | P1 | 17 | Bool, both args evaluated (no short circuit) |
-| OrB | 213 | 2 |  | Bool | comm | pure | P1 | 27 | Bool, both args evaluated (no short circuit) |
+| AndB | 212 | 2 |  | Bool | comm | pure | P1 | 17 | Bool, parallel: `false` if either side is `false`, even `poison` (§3.5) |
+| OrB | 213 | 2 |  | Bool | comm | pure | P1 | 27 | Bool, parallel: `true` if either side is `true`, even `poison` (§3.5) |
 | EqB | 214 | 2 |  | Bool | comm | pure | P1 | 5f | Bool, both args evaluated (no short circuit) |
 | NeqB | 215 | 2 |  | Bool | comm | pure | P1 | 5f | Bool, both args evaluated (no short circuit) |
 | Not | 216 | 1 |  | Bool |  | pure | P1 | 7f | Bool, both args evaluated (no short circuit) |

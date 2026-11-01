@@ -26,9 +26,17 @@ open GoFV.SSA
 def valShape (tabs : Tables) (f : Func) (v : Value) : Sem.Ty :=
   ((f.value? v.id).map fun w => tabs.ty w.type).getD .other
 
-/-- `Val.retype` at shape `t` keeps every pointer a pointer (`t` is not `uintptr`-shaped). -/
+/-- `Val.retype` at shape `t` keeps every pointer a pointer (`t` is neither `uintptr`- nor
+`bool`-shaped). -/
 def keepsPtr : Sem.Ty → Bool
   | .int .w64 => false
+  | .bool => false
+  | _ => true
+
+/-- `t` is not `bool`-shaped: `Val.retype` at `t` keeps a global pointer a pointer and a memory
+a memory (at `bool` shape, non-booleans are `poison`). -/
+def notBool : Sem.Ty → Bool
+  | .bool => false
   | _ => true
 
 /-- `baseAndOffset`: the base of an `OffPtr` chain and the summed offset. -/
@@ -48,12 +56,12 @@ inductive Alloc where
   | local (n : AuxRef)
   deriving DecidableEq
 
-/-- The allocation of base `b`, if it is an `Addr` of a symbol or a pointer-typed `LocalAddr`
-with a name. -/
+/-- The allocation of base `b`, if it is an `Addr` of a symbol (not `bool`-shaped) or a
+pointer-typed `LocalAddr` with a name. -/
 def allocOf (tabs : Tables) (f : Func) (b : ID) : Option Alloc :=
   match f.value? b with
   | some x =>
-    if x.op == .Addr then
+    if x.op == .Addr && notBool (valShape tabs f x) then
       match x.aux.bind tabs.aux? with
       | some { kind := .sym name .., .. } => some (.global name.toStringLossy)
       | _ => none
@@ -83,9 +91,9 @@ disjoint from the load of `w` bytes at `p`. -/
 def memSkip (tabs : Tables) (f : Func) (p : ID) (w : Nat) (m : ID) : Option ID :=
   match f.value? m with
   | some d =>
-    if d.op == .Store && d.args.size == 3 &&
+    if d.op == .Store && d.args.size == 3 && notBool (valShape tabs f d) &&
         disjointP tabs f p w d.args[0]! (Sem.auxTy tabs d.aux).size then some d.args[2]!
-    else if d.op == .Zero && d.args.size == 2 &&
+    else if d.op == .Zero && d.args.size == 2 && notBool (valShape tabs f d) &&
         disjointP tabs f p w d.args[0]! d.auxInt.toInt then some d.args[1]!
     else none
   | none => none

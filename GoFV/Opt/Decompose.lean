@@ -208,10 +208,12 @@ def runM (c : Ctx) (m : M Unit) (s : St) : Except String St :=
   | .ok _ s => .ok s
   | .error e _ => .error e
 
-/-- Write the state back as a pass result. -/
+/-- Write the state back as a pass result, the new slots at the export's numbers. -/
 def finish (env : PassEnv) (s : St) : Except String PassOut := do
-  let f ← toFunc s env.tables.slots.size env.tables.auxes.size
-  return { func := f, tables := s.tabs }
+  let slotFloor := env.tables.slots.size
+  let (f, nums) ← toFunc s slotFloor env.tables.auxes.size
+  let (tables, func) := renumberSlots slotFloor nums s.tabs f
+  return { func, tables }
 
 /-- "decompose user": `decomposeUser`. -/
 def decomposeUserPass : Pass := fun env f => do

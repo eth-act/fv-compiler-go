@@ -47,7 +47,8 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
 What the interpreter's proof must supply when it applies `Rule.Sound`: the instance read off
 the matched values (leaf values from the registers, node fields from the values), the
 condition's evaluation (`GoFV.Rules.Eval.eval` agrees with `evalE` where `evalE` does not
-defer to the oracle; `eval` is `partial` today and needs a structural rewrite for that proof),
+defer to the oracle; `eval` is total, with fuel for the nesting depth, as are the matcher and
+result construction),
 the checker facts, that `typ.<T>`/`types.Types[k]` of the export's `Config.Types` have the
 shapes of `typShape`/`typesShape`, and `CommSound` for swapped matches. `Rule.Sound` ignores
 `@b` placement and positions; a copy result's new type is the interpreter's concern
@@ -139,7 +140,7 @@ needs a later phase of the semantics.
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
 | `generic` | Div | 0 | 22 | 0 | 4 | 26 |
 | `generic` | Eq | 44 | 12 | 0 | 2 | 58 |
-| `generic` | EqB | 0 | 5 | 0 | 0 | 5 |
+| `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | EqPtr | 0 | 0 | 0 | 20 | 20 |
 | `generic` | EqSlice | 0 | 0 | 0 | 1 | 1 |
@@ -159,12 +160,12 @@ needs a later phase of the semantics.
 | `generic` | Mul | 36 | 16 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
 | `generic` | Neq | 40 | 12 | 0 | 2 | 54 |
-| `generic` | NeqB | 0 | 5 | 0 | 0 | 5 |
+| `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | NeqPtr | 0 | 0 | 0 | 20 | 20 |
 | `generic` | NeqSlice | 0 | 0 | 0 | 1 | 1 |
 | `generic` | NilCheck | 0 | 0 | 0 | 8 | 8 |
-| `generic` | Not | 0 | 27 | 0 | 6 | 33 |
+| `generic` | Not | 27 | 0 | 0 | 6 | 33 |
 | `generic` | OffPtr | 0 | 0 | 0 | 2 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
 | `generic` | OrB | 0 | 36 | 0 | 20 | 56 |
@@ -177,7 +178,7 @@ needs a later phase of the semantics.
 | `generic` | Rsh | 116 | 24 | 0 | 0 | 140 |
 | `generic` | Select | 0 | 3 | 0 | 0 | 3 |
 | `generic` | SelectN | 0 | 0 | 0 | 15 | 15 |
-| `generic` | SignExt | 0 | 15 | 0 | 0 | 15 |
+| `generic` | SignExt | 15 | 0 | 0 | 0 | 15 |
 | `generic` | SliceCap | 0 | 0 | 0 | 5 | 5 |
 | `generic` | SliceLen | 0 | 0 | 0 | 6 | 6 |
 | `generic` | SliceMake | 0 | 0 | 0 | 2 | 2 |
@@ -191,11 +192,11 @@ needs a later phase of the semantics.
 | `generic` | StringPtr | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 0 | 0 | 0 | 4 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
-| `generic` | Trunc | 0 | 32 | 0 | 1 | 33 |
+| `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
-| `generic` | ZeroExt | 0 | 12 | 0 | 0 | 12 |
-| all | | 861 | 522 | 12 | 367 | 1762 |
+| `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
+| all | | 957 | 426 | 12 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -212,21 +213,33 @@ Rerun it whenever lemmas are added. `GoFV.Opt.optProven`/`divisibleProven`/`divm
 `applyRewrite` with these sets (clifv's `--opt-proven-only`); the rewrite passes' theorems take
 `RuleSet.AllSound` of their rule set as hypothesis.
 
-`lake exe opt-proven-probe <corpus>` runs both variants on every stock instance's input. Quick
-corpus (`quick-v1`, 9,297 functions; 566 proven rules; "rules fired": value and block rules,
-`RwState.fired`, each instance run on the stock input):
+**Checked passes.** `GoFV.Opt.optChecked`/`divisibleChecked`/`divmodChecked` run the proven-only
+pass with its log on (`RwState.log`: every fired value rule with the definitions it built, copy
+and control replacements, phi eliminations, block rules) and keep the result only if
+`GoFV.Opt.RewriteCheck.validate` accepts it (else the input): replaying the log on the input's
+definitions, each rule firing must be an instance of its rule as `Rule.Sound` states it (pattern
+match on the definitions, `Pat.cons`, `Pat.wf`, condition by `evalE` with an oracle read off the
+built nodes, top op producing its type's shape, sized leaves, built nodes = `resDen`), no phi
+elimination or block rule, and every definition and control of the result must be the replayed
+one up to copies of compatible shape; the atoms (phis, roots, frame values) must be unchanged,
+in the same order. These are the passes the theorems are about (issue #113).
 
-| Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept |
-| --- | --: | --: | --: | --: | --: | --: |
-| opt | 100.00% | 41.82% | 75.51% | 99,454 | 11,589 | 11.65% |
-| middle opt | 100.00% | 76.37% | 96.44% | 11,934 | 669 | 5.61% |
-| late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% |
-| divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% |
-| divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% |
+`lake exe opt-proven-probe <corpus>` runs the full, proven-only and checked variants on every
+stock instance's input. Quick corpus (`quick-v1`, 9,297 functions; 957 proven rules; "rules
+fired": value and block rules, `RwState.fired`, each instance run on the stock input):
+
+| Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Validator rejects | Checked parity |
+| --- | --: | --: | --: | --: | --: | --: | --: | --: |
+| opt | 100.00% | 43.19% | 70.98% | 99,454 | 15,584 | 15.67% | 19 | 43.18% |
+| middle opt | 100.00% | 77.47% | 94.26% | 11,934 | 1,662 | 13.93% | 7 | 77.43% |
+| late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% | 0 | 84.60% |
+| divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% | 0 | 99.92% |
+| divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% | 0 | 97.88% |
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
-dead-value removal.
+dead-value removal. Validator rejections: a top op whose value is narrower than the op
+(`natShape`, "Narrow result types"), a phi elimination, a few result shapes.
 
 ## Proof method (`GoFV/Proof/Rules/Tactic.lean`)
 
@@ -261,6 +274,16 @@ bounds). The structural lemmas are applied `with_reducible`: at default transpar
 `rule_subst` replaces `subst_vars`, whose `whnf` of both sides evaluated conditions such as
 `bitwise int16 (· &&& ·) c 15 = 15` down to `2 ^ 64` (maximum recursion depth).
 
+Extensions and truncations (#69, RuleProofs5): constant folds of `ZeroExt`/`SignExt`/`Trunc`
+by `rule_arith` (`setWidth_ofInt_of_le`/`_of_ge`, `signExtend_ofInt`); a retype to a type that
+is not another integer width is the identity (`retype_int_of_not_other`, `rule_sem`); negated
+comparisons and boolean equations (`not_slt_eq`, …, `not_beq_eq`, `rule_close_s`); `rule_ext`
+closes a value truncated and extended again after a shift cleared or sign-filled its high bits
+(`ushr_setWidth_setWidth`, `sshr_setWidth_signExtend`), else both sides as `toNat` arithmetic
+(low-bit masks `a &&& 255` as `a % 256`, `rule_amt`). `rule_shamt` runs `congr 1` at reducible
+transparency: at default transparency it unfolded `BitVec.ofInt 16 c &&& x` into a
+maximum-recursion error, which `first` does not catch (runtime exceptions pass through it).
+
 Match congruence equations (`binDV.match_4.congr_eq_*`, …) are generated once in
 `Tactic.lean`: generated by `simp` in two rule modules they are two public declarations of the
 same name and the modules cannot be imported together (`scripts/rule-proofs.py axioms` imports
@@ -292,7 +315,9 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
 - Per op family, instances of representative proven rules (`inst_r_generic_675`: no
   condition; `inst_r_generic_2185`: a rotate rule whose condition needs a bounded shift and an
   oracle atom, `canRotate`; `inst_r_generic_479` RotateLeft, `inst_r_generic_453` Lsh,
-  `inst_r_generic_232` Rsh, `inst_r_generic_716` Less, `inst_r_generic_714` Leq).
+  `inst_r_generic_232` Rsh, `inst_r_generic_716` Less, `inst_r_generic_714` Leq,
+  `inst_r_generic_103` ZeroExt, `inst_r_generic_108` SignExt, `inst_r_generic_752` Trunc,
+  `inst_r_generic_400` Not, `inst_r_generic_284` EqB, `inst_r_generic_290` NeqB).
 - `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
   an instance of every exported rule at run time (random leaves, auxints from boundary values,
   `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
@@ -300,7 +325,7 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
   how the findings below were found. Last run (with `Pat.typed`: leaves typed by their
   values' shapes): P1 rules SAT 1332, CEX 9 (all `generic.rules:504–516`, "Narrow result
-  types"), NONE 54; all 861 proven rules SAT.
+  types"), NONE 54; all 957 proven rules SAT.
 
 `Comm.lean` has `sub16_not_comm` (the commutativity obligation is not trivial).
 

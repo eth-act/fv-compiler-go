@@ -161,7 +161,7 @@ theorem refines_of_rel (S : Setup tabs f g) : Refines tabs g tabs f := by
       S.rel.vsize
     have hentry : entryFrame env (Ctx.make tabs g) args mem =
         entryFrame env (Ctx.make tabs f) args mem := by
-      unfold entryFrame frameMem
+      unfold entryFrame frameMem frameAllocs
       rw [S.paramTys, S.locals, hsz]; rfl
     rw [hentry, S.outs, show (Ctx.make tabs g).act = (Ctx.make tabs f).act from rfl,
       show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from S.entry]

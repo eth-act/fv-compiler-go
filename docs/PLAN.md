@@ -25,7 +25,10 @@ semantics of generic Go SSA. A pass `p : Func → Func` is correct when, for eve
 `f`, every terminating or panicking run of `p f` is a run of `f` (refinement; stuck or
 out-of-fuel source runs carry no obligation).
 Formally `GoFV.Proof.Refines tabs' (p f) tabs f` (`GoFV/Proof/Refine.lean`): every
-returning or panicking run of `f` is, up to value refinement, a run of `p f` with some fuel;
+returning or panicking run of `f` is, up to refinement, a run of `p f` with some fuel (results
+refined pointwise, memory refined bytewise (`Mem.Refines`: a rewrite may make a poison value
+defined, which may then be stored); a panic's memory refined once the frames of the run and its
+callees are dropped, `Mem.dropFrames`, `OutcomeRefines act`);
 by determinism and fuel monotonicity (`Refines.backward`) every defined run of `p f` is then a
 run of `f` whenever `f` is defined. Pass theorems: `GoFV/Proof/Pass/*.lean` (issue #11).
 

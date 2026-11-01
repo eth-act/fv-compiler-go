@@ -1,6 +1,7 @@
 import GoFV.Opt.Pass
 import GoFV.Opt.Speculate
 import GoFV.Opt.CanCondSelect
+import GoFV.Opt.BranchElimCheck
 import GoFV.Opt.NumberLines
 import GoFV.SSA.TypePred
 import GoFV.SSA.Analysis.CfgCache
@@ -221,30 +222,59 @@ def loadAddrSet (tabs : Tables) (f : Func) (po : Array ID) : Except String (Arra
     if n == n0 then break
   return s
 
+/-- One sweep of the rewrite loop over `blocks`: at each block `elimIf`, else `elimIfElse`; a
+rewrite is kept only if the step checker `stepOK` accepts it (`branchelim.go:65-68`, checked). -/
+def sweep (c : Ctx) (ce : CheckEnv) : List ID → Func → Bool → Except String (Func × Bool)
+  | [], f, change => pure (f, change)
+  | b :: bs, f, change => do
+    match (← elimIf c f b).filter (stepOK ce f · b) with
+    | some f' => sweep c ce bs f' true
+    | none =>
+      match (← elimIfElse c f b).filter (stepOK ce f · b) with
+      | some f' => sweep c ce bs f' true
+      | none => sweep c ce bs f change
+
+/-- Sweeps until nothing changes (at most `n`). -/
+def rounds (c : Ctx) (ce : CheckEnv) : Nat → Func → Except String Func
+  | 0, f => pure f
+  | n + 1, f => do
+    let (f', change) ← sweep c ce f.blocks.toList f false
+    if change then rounds c ce n f' else pure f'
+
 end BranchElim
 
-open BranchElim in
-/-- `branchelim(f)`. -/
-def branchelim (env : PassEnv) (f : Func) : Except String Func := do
-  if !(← env.flag "havecondselect") then return f
+/-- A decimal integer (`String.toInt?` on the config's digits; written over `String.toList` so
+that the kernel can evaluate the pass in non-vacuity witnesses). -/
+def BranchElim.decInt? (s : String) : Option Int :=
+  let digits (cs : List Char) : Option Nat :=
+    if cs.isEmpty then none else
+    cs.foldl (fun acc c => acc.bind fun n =>
+      if c.isDigit then some (n * 10 + (c.toNat - '0'.toNat)) else none) (some 0)
+  match s.toList with
+  | '-' :: cs => (digits cs).map fun n => -(n : Int)
+  | cs => (digits cs).map Int.ofNat
+
+/-- What the rewrites read: the configuration and the `loadAddr` set of `f` (with its cached
+postorder `po`). -/
+def BranchElim.ctxOf (env : PassEnv) (f : Func) (po : Array ID) : Except String BranchElim.Ctx := do
   let some mem := env.typ? "Mem" | throw "branchelim: no typ.Mem"
   let some #[.word arch] := env.config? "arch" | throw "branchelim: config arch"
   let some #[.word rs] := env.config? "regsize" | throw "branchelim: config regsize"
-  let some regSize := rs.toInt? | throw "branchelim: config regsize"
+  let some regSize := BranchElim.decInt? rs | throw "branchelim: config regsize"
+  let loadAddr ← BranchElim.loadAddrSet env.tables f po
+  return { tabs := env.tables, isMem := env.tables.isMemory mem, arch, regSize, loadAddr }
+
+open BranchElim in
+/-- `branchelim(f)`, each rewrite checked (`BranchElim.stepOK`). -/
+def branchelim (env : PassEnv) (f : Func) : Except String Func := do
+  if !(← env.flag "havecondselect") then return f
   let (po, f) := f.postorder
-  let loadAddr ← loadAddrSet env.tables f po
-  let c : Ctx := { tabs := env.tables, isMem := env.tables.isMemory mem, arch, regSize, loadAddr }
-  let mut f := f
+  let c ← ctxOf env f po
+  let ce : CheckEnv := { tabs := env.tables, typs := env.typs }
+  -- the step checker's proof assumes a checked input (every corpus input passes)
+  if !checkOK ce f then return f
   -- each successful rewrite clobbers at least one block of `f.Blocks`
-  for _ in [0:f.blocks.size + 1] do
-    let mut change := false
-    for b in f.blocks do
-      if let some f' ← elimIf c f b then
-        f := f'; change := true
-      else if let some f' ← elimIfElse c f b then
-        f := f'; change := true
-    if !change then break
-  return f
+  rounds c ce (f.blocks.size + 1) f
 
 /-- The `branchelim` pass. -/
 def branchelimPass : Pass := Pass.ofFunc branchelim

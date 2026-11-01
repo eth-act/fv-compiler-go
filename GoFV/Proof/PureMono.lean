@@ -202,6 +202,89 @@ theorem Tuple.select_mono (i : Nat) : RefinesList as bs → Refines (Tuple.selec
     | _ => exact .poison _
   | .cons _ (.cons _ _) => by simp only [Tuple.select]; exact .poison _
 
+theorem Refines.asBool_cases (h : Refines a b) : a.asBool = none ∨ b.asBool = a.asBool := by
+  cases h <;> simp [Val.asBool]
+
+/-- The parallel `AndB`/`OrB` (`Cmp.andB`, `Cmp.orB`): every combination of the operands'
+booleans, the source's `none` refined by any target operand. -/
+theorem Cmp.andB_mono : RefinesList as bs → Refines (Cmp.andB as) (Cmp.andB bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons (a := a) (b := a') ha (.cons (a := b) (b := b') hb .nil) => by
+    simp only [Cmp.andB]
+    rcases ha.asBool_cases with hA | hA <;> rcases hb.asBool_cases with hB | hB <;> rw [hA, hB] <;>
+      generalize a.asBool = x <;> generalize b.asBool = y <;> generalize a'.asBool = x' <;>
+      generalize b'.asBool = y' <;>
+      rcases x with _ | _ | _ <;> rcases y with _ | _ | _ <;> rcases x' with _ | _ | _ <;>
+      rcases y' with _ | _ | _ <;> first | exact Refines.refl _ | exact .poison _
+  | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem Cmp.orB_mono : RefinesList as bs → Refines (Cmp.orB as) (Cmp.orB bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons (a := a) (b := a') ha (.cons (a := b) (b := b') hb .nil) => by
+    simp only [Cmp.orB]
+    rcases ha.asBool_cases with hA | hA <;> rcases hb.asBool_cases with hB | hB <;> rw [hA, hB] <;>
+      generalize a.asBool = x <;> generalize b.asBool = y <;> generalize a'.asBool = x' <;>
+      generalize b'.asBool = y' <;>
+      rcases x with _ | _ | _ <;> rcases y with _ | _ | _ <;> rcases x' with _ | _ | _ <;>
+      rcases y' with _ | _ | _ <;> first | exact Refines.refl _ | exact .poison _
+  | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem Tuple.selectN_mono (k : Int64) :
+    RefinesList as bs → Refines (Tuple.selectN k as) (Tuple.selectN k bs)
+  | .nil => by simp only [Tuple.selectN]; exact .poison _
+  | .cons h .nil => by
+    cases h with
+    | tuple ht =>
+      simp only [Tuple.selectN]
+      split
+      · exact .poison _
+      · exact ht.getD _
+    | poison => exact .poison _
+    | _ => exact .poison _
+  | .cons _ (.cons _ _) => by simp only [Tuple.selectN]; exact .poison _
+
+theorem RefinesList.getLast? : {as bs : List Val} → RefinesList as bs →
+    (as.getLast? = none ∧ bs.getLast? = none) ∨
+      ∃ a b, as.getLast? = some a ∧ bs.getLast? = some b ∧ Refines a b
+  | _, _, .nil => .inl ⟨rfl, rfl⟩
+  | _, _, .cons h .nil => .inr ⟨_, _, rfl, rfl, h⟩
+  | _, _, .cons _ (.cons h' t) => by
+    simpa [List.getLast?_cons_cons] using RefinesList.getLast? (.cons h' t)
+
+theorem RefinesList.getElem? : ∀ (i : Nat) {as bs : List Val}, RefinesList as bs →
+    (as[i]? = none ∧ bs[i]? = none) ∨ ∃ a b, as[i]? = some a ∧ bs[i]? = some b ∧ Refines a b
+  | _, _, _, .nil => .inl ⟨rfl, rfl⟩
+  | 0, _, _, .cons h _ => .inr ⟨_, _, rfl, rfl, h⟩
+  | i + 1, _, _, .cons _ t => by simpa using RefinesList.getElem? i t
+
+theorem Tuple.selectNAddr_mono (k : Int64) :
+    RefinesList as bs → Refines (Tuple.selectNAddr k as) (Tuple.selectNAddr k bs)
+  | .nil => by simp only [Tuple.selectNAddr]; exact .poison _
+  | .cons h .nil => by
+    cases h with
+    | tuple ht =>
+      simp only [Tuple.selectNAddr]
+      rcases ht.getLast? with ⟨h1, h2⟩ | ⟨x, y, h1, h2, hxy⟩
+      · rw [h1]; exact .poison _
+      · rw [h1, h2]
+        cases hxy with
+        | agg hl =>
+          dsimp only
+          split
+          · exact .poison _
+          · rcases hl.getElem? k.toInt.toNat with ⟨h3, h4⟩ | ⟨p, q, h3, h4, hpq⟩
+            · rw [h3]; exact .poison _
+            · rw [h3, h4]
+              cases hpq with
+              | ptr p => exact Refines.refl _
+              | _ => exact .poison _
+        | _ => exact .poison _
+    | poison => exact .poison _
+    | _ => exact .poison _
+  | .cons _ (.cons _ _) => by simp only [Tuple.selectNAddr]; exact .poison _
+
 theorem Tuple.make_mono : RefinesList as bs → Refines (Tuple.make as) (Tuple.make bs)
   | .nil => by simp only [Tuple.make]; exact .poison _
   | .cons _ .nil => by simp only [Tuple.make]; exact .poison _
@@ -605,8 +688,8 @@ theorem evalPure_mono (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef)
   case Less64U => exact int2_mono _ _ h
   case Leq64 => exact int2_mono _ _ h
   case Leq64U => exact int2_mono _ _ h
-  case AndB => exact bool2_mono _ h
-  case OrB => exact bool2_mono _ h
+  case AndB => exact Cmp.andB_mono h
+  case OrB => exact Cmp.orB_mono h
   case EqB => exact bool2_mono _ h
   case NeqB => exact bool2_mono _ h
   case Not => exact bool1_mono _ h
@@ -674,6 +757,8 @@ theorem evalPure_mono (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef)
   case Const64 => exact Refines.refl _
   case ConstBool => exact Refines.refl _
   case Select0 => exact Tuple.select_mono _ h
+  case SelectN => exact Tuple.selectN_mono _ h
+  case SelectNAddr => exact Tuple.selectNAddr_mono _ h
   case Select1 => exact Tuple.select_mono _ h
   case MakeTuple => exact Tuple.make_mono h
   case Copy => exact copy_case h

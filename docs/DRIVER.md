@@ -22,7 +22,7 @@ parity also makes the driver use it.
 ```
 gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
 gofv-ssa-opt --list
-gofv-ssa-opt --check [--mixed] [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 ```
 
 - Driver mode reads a `gofv-ssa` file whose first section is the function (section `start`),
@@ -91,6 +91,17 @@ Any failure (exec, status, parse, an object that cannot be rebuilt, the check) r
 (fields saved before the import, aux mutations and `Dcl` additions undone) and is recorded as
 an event; the stock passes then run.
 
+**Effects.** Some stock passes change compiler state outside the function and the definition
+tables. A Lean pass returns these as `PassOut.effects`; `gofv-ssa-opt` prints the effects of the
+passes it ran, in order, as `effect` lines between the status line and the file, and the importer
+replays them after a successful check. Implemented: `effect useiface a<n>` —
+`reflectdata.MarkTypeSymUsedInInterface(sym, curfn)` from `rewriteFixedLoad` (a type or itab
+loaded from a dictionary, or a pointer type's `Elem`), i.e. the function's `R_USEIFACE`
+relocations (and the DWARF `R_USETYPE` ones derived from them). `f.Type` keeps the compiler's
+own object when its type number is unchanged (the debug info's `PopulateABIInRegArgOps` reads
+the parameter names from it; another object of the same number made location lists differ
+run to run).
+
 **Type rounds.** The Lean passes read `types.(*Type).Compare` from the export's `typeorder`,
 which only ranks the types of the export. When a run creates types (e.g. `opt` making `*byte`,
 which `Compare` puts next to `*uint8`), the driver builds them in Go and runs the segment again
@@ -130,20 +141,26 @@ up to the first unported pass, first divergence at a pass, or a Lean pass error.
 `sccp` is documented as nondeterministic (permutations across runs); divergences at `sccp` are
 reported separately.
 
-`--check` gives the driver's view of new symbols: a pass that creates a symbol aux (e.g.
-`writebarrier`'s `type:T` for `typedmemmove`) defines it from what the driver's export has, which
-may lack the contents the stock section shows later; the importer only requires name and ABI of
-a new symbol, so such divergences (19 at `writebarrier` on the corpus) do not reach the compiler.
+`--check` compares as the importer does. A pass that creates a symbol aux (e.g.
+`writebarrier`'s `type:T` for `typedmemmove`, `opt`'s `*T` descriptors) defines it from what the
+driver's export has, which may lack the contents the stock section shows later; the importer
+only requires name and ABI of a new symbol (the symbol is the frontend's), so `--check` pairs new
+symbols by name and ABI and does not follow their `typeinfo`/`itabinfo` references. The entries
+of `namedx`, `splits` and `canon` are compared as sets. `--strict` compares every definition and
+the map lines' order, as `pass-parity`.
 
 ## Results
 
 Issue #12 has the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`, `std` and the corpus
-programs built for linux/arm64 by `scripts/driver-e2e.sh`). Known gaps at the time of writing:
+programs built for linux/arm64 by `scripts/driver-e2e.sh`). State of the known gaps:
 
-- Object files are not yet byte-identical everywhere the Lean pipeline was used, although the
-  imported state before `lower` equals the stock state (checked by re-export). The remaining
-  difference is compiler state outside the exported SSA; candidates are the order in which
-  `fe.SplitSlot` appends new autos to `Curfn.Dcl` (the import creates them in Lean number order,
-  stock in decompose order) and other frontend side effects of the passes (`docs/contracts/export.md`,
-  "Not exported").
-- `decompose builtin` diverges in 9 chained functions (#79).
+- Type-object identity for `zero arg cse` (#101): the pipeline tracks `*types.Type` object
+  classes itself. It starts from the input section's `zvar`. Each pass reports the objects of
+  the values it creates or retypes (`PassOut.typeObjs`). The rule interpreter reports
+  `t.PtrTo()` as a fresh object unless `ptrcache` lists `t`, `x.Type` and a type variable bound
+  from a matched value as that value's object, and anything else as canonical. The classes
+  become the next pass's `PassEnv.zvar` (`Pipeline.nextZvar`).
+- `expand calls`' constant cache compares types with `Tables.typeEq`, which honours the
+  `typecmp` exceptions (#93, fixed).
+- `decompose` creates its slots at the numbers the export gives them (`renumberSlots`), so a
+  chained `decompose builtin` orders slots as stock (#79, fixed).

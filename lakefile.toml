@@ -48,6 +48,10 @@ name = "copyrel-probe"
 root = "GoFVTest.CopyRelProbe"
 
 [[lean_exe]]
+name = "branchelim-probe"
+root = "GoFVTest.BranchElimProbe"
+
+[[lean_exe]]
 name = "zcse-probe"
 root = "GoFVTest.ZcseProbe"
 
@@ -74,3 +78,7 @@ root = "GoFVTest.CseProbe"
 [[lean_exe]]
 name = "opt-proven-probe"
 root = "GoFVTest.OptProvenProbe"
+
+[[lean_exe]]
+name = "phiopt-probe"
+root = "GoFVTest.PhiOptProbe"

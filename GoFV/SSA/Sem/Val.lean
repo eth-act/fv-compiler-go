@@ -76,6 +76,9 @@ structure Mem where
   blocks : Array (Blk × Alloc) := #[]
   /-- Next fresh `Blk.heap` number. -/
   nextHeap : Nat := 0
+  /-- Next fresh activation number (frame blocks of activation `a` are `Blk.local a _` and
+  `Blk.outargs a`; the run's own activation is 0). -/
+  nextAct : Nat := 1
   deriving DecidableEq, Repr, Inhabited
 
 /-- A semantic value. -/
@@ -186,13 +189,14 @@ theorem AllocsRefine.refl : (l : List (Blk × Alloc)) → AllocsRefine l l
   | [] => .nil
   | (b, a) :: l => .cons b ⟨rfl, BytesRefine.refl _⟩ (AllocsRefine.refl l)
 
-/-- Memory refinement (§3.5): the same allocations (blocks, order, sizes, writability) and heap
-counter, every byte refined. -/
+/-- Memory refinement (§3.5): the same allocations (blocks, order, sizes, writability), heap
+counter and activation counter, every byte refined. -/
 structure Mem.Refines (m m' : Mem) : Prop where
   nextHeap : m.nextHeap = m'.nextHeap
+  nextAct : m.nextAct = m'.nextAct
   blocks : AllocsRefine m.blocks.toList m'.blocks.toList
 
-theorem Mem.Refines.refl (m : Mem) : Mem.Refines m m := ⟨rfl, AllocsRefine.refl _⟩
+theorem Mem.Refines.refl (m : Mem) : Mem.Refines m m := ⟨rfl, rfl, AllocsRefine.refl _⟩
 
 mutual
 /-- Refinement (§3.5): `Refines src tgt` iff `src` is `poison` or `src = tgt`, pointwise through
@@ -268,6 +272,8 @@ inductive Panic where
   | overflow
   /-- Any other panicking runtime entry point, by symbol name. -/
   | runtime (name : String)
+  /-- A `runtime.Error` with the given text (`errorString`: `makeslice: len out of range`, …). -/
+  | error (msg : String)
   /-- `NilCheck` of a nil pointer (§6). -/
   | nilDeref
   deriving DecidableEq, Repr, Inhabited
@@ -303,6 +309,7 @@ def message : Panic → String
   | .shift => "runtime error: negative shift amount"
   | .overflow => "runtime error: integer overflow"
   | .runtime name => s!"panic in {name}"
+  | .error msg => "runtime error: " ++ msg
   | .nilDeref => "runtime error: invalid memory address or nil pointer dereference"
 
 end Panic

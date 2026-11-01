@@ -2,6 +2,7 @@ import GoFV.SSA.Alloc
 import GoFV.SSA.TypeCmp
 import GoFV.SSA.XPosMap
 import GoFV.Rules.Helpers.Sym
+import GoFV.Opt.Pass
 import GoFV.Rules.GoVal
 import Std.Data.HashMap
 
@@ -44,6 +45,8 @@ structure RwEnv where
   typeOrder : TypeOrder
   /-- The export file's final tables (`PassEnv.frontend`): symbols the frontend provides. -/
   frontend : Tables := {}
+  /-- `PassEnv.ptrCache`: whether `t.PtrTo()` returns a shared object. -/
+  ptrCache : TypeRef → Bool := fun _ => false
   deriving Inhabited
 
 /-- One step of a rewrite pass, as the rewrite validator replays it (`GoFV.Opt.RewriteCheck`,
@@ -72,6 +75,10 @@ structure RwState where
   imported : Std.HashMap Nat Nat := {}
   /-- Number of value and block rules fired (statistics: `opt-proven-probe`). -/
   fired : Nat := 0
+  /-- Frontend side effects so far (`PassOut.effects`). -/
+  effects : Array GoFV.Opt.Effect := #[]
+  /-- Type objects of the values made so far (`PassOut.typeObjs`). -/
+  typeObjs : Array (ID × GoFV.Opt.TypeObj) := #[]
   /-- The steps taken, if recorded (`some`). -/
   log : Option (Array RwEvent) := none
 

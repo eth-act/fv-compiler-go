@@ -33,6 +33,7 @@ theorem retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t := b
     cases v with
     | int w x => cases w <;> rfl
     | _ => rfl
+  | bool => cases v <;> rfl
   | _ => cases v <;> try rfl
   all_goals (rename_i w _; cases w <;> rfl)
 
@@ -142,7 +143,7 @@ theorem evalOp_congr {env : Env} {ctx ctx' : Ctx} {fr : Frame} {v v' : Value} {a
   obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
   dsimp only at htabs hpar hact
   subst htabs hpar hact
-  unfold evalOp frameVal memRoot
+  unfold evalOp frameVal memRoot callOp callTarget
   simp only [hop, haux, hai, hid]
   rfl
 
@@ -247,10 +248,81 @@ theorem memRoot_panic {ctx : Ctx} {v : Value} {argv : List Val} {e : Panic} {m :
     | (rename_i hop; exact hop)
   all_goals assumption
 
-/-- Only `PanicBounds`, calls and `NilCheck` panic. -/
+/-- The ops whose evaluation may panic: calls (`Op.call`, including `PanicBounds`) and
+`NilCheck`. -/
+def Panicking (op : Op) : Prop := op.call = true ∨ op = .NilCheck
+
+theorem nilCheck_eq {op : Op} (h : op.nilCheck = true) : op = .NilCheck := by
+  unfold Op.nilCheck at h; split at h
+  · rfl
+  · cases h
+
+/-- Calls are scheduled as side-effecting roots. -/
+theorem prio_call {op : Op} (h : op.call = true) : prio op = 2 := by
+  unfold prio isRoot
+  cases hn : op.nilCheck
+  · simp [h]
+  · rw [nilCheck_eq hn] at h; exact absurd h (by decide)
+
+/-- A value that can panic is not pure. -/
+theorem prio_panicking {op : Op} (h : Panicking op) : prio op ≠ 0 := by
+  rcases h with h | rfl
+  · rw [prio_call h]; decide
+  · decide
+
+/-- **A `NilCheck` that evaluates passed a pointer into an allocation** (or a `uintptr` whose
+`Ptr.ofAddr` is), and returns it. -/
+theorem evalOp_nilCheck_blk {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} {r : Val} (hop : v.op = .NilCheck) (h : evalOp env ctx fr v argv ty = .ok r) :
+    (∃ p m, argv = [.ptr p, .mem m] ∧ r = .ptr p ∧ p.blk ≠ .nil) ∨
+      (∃ x m, argv = [.int .w64 x, .mem m] ∧ r = .int .w64 x ∧ (Ptr.ofAddr x).blk ≠ .nil) := by
+  unfold evalOp at h; rw [hop] at h
+  change memRoot ctx v argv = .ok r at h
+  unfold memRoot at h; rw [hop] at h
+  split at h
+  all_goals first
+    | contradiction
+    | skip
+  · split at h
+    · cases h
+    · rename_i hb; cases h
+      exact .inl ⟨_, _, rfl, rfl, by simpa using hb⟩
+  · split at h
+    · cases h
+    · rename_i hb; cases h
+      exact .inr ⟨_, _, rfl, rfl, by simpa using hb⟩
+  · split at h <;> cases h
+
+/-- A call without arguments (it lacks its memory) is stuck. -/
+theorem callOp_nil_stuck {env : Env} {ctx : Ctx} {v : Value} :
+    ∃ msg, callOp env ctx v [] = .stuck msg := by
+  have hr : ∃ a b, callTarget ctx v [] = (a, b, []) := by
+    unfold callTarget; split <;> simp_all
+  obtain ⟨a, b, hr⟩ := hr
+  unfold callOp
+  rw [hr]
+  simp only [bind, Res.bind, Res.ofOption, List.getLast?_nil]
+  cases a <;> simp
+
+theorem callOp_nil {env : Env} {ctx : Ctx} {v : Value} {e : Panic} {m : Mem} :
+    callOp env ctx v [] ≠ .panic e m := by
+  obtain ⟨_, h⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
+  rw [h]; nofun
+
+/-- A panicking value other than a nil check is a side-effecting root. -/
+theorem prio_panicking_two {op : Op} (h : Panicking op) (hn : op ≠ .NilCheck) : prio op = 2 := by
+  rcases h with h | h
+  · exact prio_call h
+  · exact absurd h hn
+
+/-- Only calls (including `PanicBounds`) and `NilCheck` panic. -/
 theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e : Panic} {m : Mem}
-    (h : evalValue env ctx fr v = .panic e m) :
-    v.op = .PanicBounds ∨ v.op = .StaticLECall ∨ v.op = .StaticCall ∨ v.op = .NilCheck := by
+    (h : evalValue env ctx fr v = .panic e m) : Panicking v.op := by
+  by_cases hc : v.op.call = true
+  · exact .inl hc
+  by_cases hn : v.op = .NilCheck
+  · exact .inr hn
+  exfalso
   unfold evalValue at h
   cases hm : v.args.toList.mapM (fun a =>
       Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
@@ -265,21 +337,15 @@ theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e :
     | panic e' m' =>
       unfold evalOp at ho
       split at ho
-      · cases ho
-      · split at ho
-        · exact absurd ho argVal_not_panic
-        · cases ho
-      · split at ho
-        · exact absurd ho argVal_not_panic
-        · cases ho
-      · exact .inl ‹_›
-      · exact .inr (.inl ‹_›)
-      · exact .inr (.inr (.inl ‹_›))
       all_goals first
-        | exact .inr (.inr (.inr (memRoot_panic ho)))
-        | (split at ho
-           · cases ho
-           · split at ho <;> cases ho)
+        | cases ho
+        | exact absurd ho argVal_not_panic
+        | exact hn (memRoot_panic ho)
+        | (rename_i heq; exact hc (by rw [heq]; rfl))
+        | (split at ho <;> first
+            | cases ho
+            | exact absurd ho argVal_not_panic
+            | (split at ho <;> cases ho))
 
 theorem typeShapes_getD (tabs : Tables) (t : TypeRef) :
     (typeShapes tabs)[t]?.getD .other = tabs.ty t := by

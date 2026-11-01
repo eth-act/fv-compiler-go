@@ -31,6 +31,8 @@ theorem evalOp_argless {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v' : Val
   split at h <;> first | exact h | (cases h; done) | skip
   all_goals
     first
+      | (obtain ⟨_, hs⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
+         rw [hs] at h; cases h)
       | (unfold memRoot at h; simp at h; done)
       | (split at h <;> first | exact h | (cases h; done) | (simp only [pure] at h ⊢; split at h <;>
           first | exact h | (cases h; done) | (cases h; simp_all)))
@@ -103,6 +105,8 @@ theorem safe_ok {env : Env} {tabs : Tables} {g : Func} {fr : Frame} {v : Value}
       · cases hop
     all_goals first
       | (rename_i heq; simp [heq] at hop; done)
+      | (rename_i heq; rw [heq] at hop; simp [isRoot, Op.call] at hop; done)
+      | exact ⟨_, rfl⟩
       | skip
     have hop' : isRoot v.op = false := by
       revert hop; split <;> simp_all

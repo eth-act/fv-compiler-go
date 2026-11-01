@@ -86,13 +86,16 @@ the low 32 bits of the 64-bit shift. An integer narrower than the op keeps the l
 wider type would expose undefined high bits and is `poison`. A `uintptr`-typed value that
 holds a pointer (`ConstNil <uintptr>`, `Convert`) becomes its concrete address, an integer
 typed as a pointer the pointer at that address (§3.3); a global, which has no concrete
-address, stays a pointer. Other shapes are unchanged. -/
+address, stays a pointer. A `bool`-typed value that is not a boolean is `poison` (so a
+register of a `bool`-typed value is a boolean or `poison`). Other shapes are unchanged. -/
 def Val.retype : Ty → Val → Val
   | .int w', .int w x => if w'.bits ≤ w.bits then .int w' (x.setWidth w'.bits) else .poison
   | .ptr _, .int .w64 a => .ptr (Ptr.ofAddr a)
   | .int .w64, .ptr p => match p.addr? with
     | some a => .int .w64 a
     | none => .ptr p
+  | .bool, .bool b => .bool b
+  | .bool, _ => .poison
   | _, v => v
 
 mutual
@@ -102,7 +105,7 @@ def Val.hasTy : Val → Ty → Bool
   | .int w _, .int w' => w == w'
   | .bool _, .bool => true
   | .mem _, .mem => true
-  | .tuple vs, .tuple ts => Val.hasTyList vs ts
+  | .tuple vs, .tuple ts => Val.hasTyPre vs ts
   | .ptr _, .ptr _ => true
   | .agg vs, .agg fs _ => Val.hasTyList vs (fs.map (·.2))
   | .blob bs, .blob n => bs.length == n
@@ -112,6 +115,12 @@ def Val.hasTyList : List Val → List Ty → Bool
   | [], [] => true
   | v :: vs, t :: ts => Val.hasTy v t && Val.hasTyList vs ts
   | _, _ => false
+/-- The first components of `vs` have the shapes `ts` (a call's tuple carries its results'
+addresses after the components of its type, §5). -/
+def Val.hasTyPre : List Val → List Ty → Bool
+  | _, [] => true
+  | v :: vs, t :: ts => Val.hasTy v t && Val.hasTyPre vs ts
+  | [], _ :: _ => false
 end
 
 end GoFV.SSA.Sem

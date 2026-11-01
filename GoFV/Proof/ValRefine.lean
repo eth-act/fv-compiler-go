@@ -278,9 +278,9 @@ theorem retype_mono (t : Ty) {v v' : Val} (h : Refines v v') :
   | bool b => exact Refines.refl _
   | ptr p => exact Refines.refl _
   | empty => exact Refines.refl _
-  | mem h => cases t <;> exact .mem h
-  | tuple h => cases t <;> exact .tuple h
-  | agg h => cases t <;> exact .agg h
-  | blob h => cases t <;> exact .blob h
+  | mem h => cases t <;> first | exact .mem h | exact .poison _
+  | tuple h => cases t <;> first | exact .tuple h | exact .poison _
+  | agg h => cases t <;> first | exact .agg h | exact .poison _
+  | blob h => cases t <;> first | exact .blob h | exact .poison _
 
 end GoFV.SSA.Sem

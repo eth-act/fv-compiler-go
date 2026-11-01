@@ -36,9 +36,11 @@ theorem apart_sep {P Q : Ptr} {op oq wq : Int} {w k : Nat}
   right; right; right
   omega
 
-theorem retype_mem (t : Ty) (M : Sem.Mem) : (Val.mem M).retype t = .mem M := by
+theorem retype_mem {t : Ty} (h : CSE.notBool t = true) (M : Sem.Mem) :
+    (Val.mem M).retype t = .mem M := by
   cases t with
   | int w => cases w <;> rfl
+  | bool => cases h
   | _ => rfl
 
 theorem args_two {a : Array ID} (h : a.size = 2) : a = #[a[0]!, a[1]!] := by
@@ -59,6 +61,7 @@ theorem writeRes_ok {what : String} {o : Option Sem.Mem} {r : Val} (h : writeRes
 
 /-- A `Store`'s write. -/
 theorem store_val {v : Value} {q x m : ID} {qv xv mv y : Val} (hop : v.op = .Store)
+    (hnb : CSE.notBool (CSE.valShape tabs f v) = true)
     (ha : v.args = #[q, x, m]) (hq : fr.regs[q]? = some (some qv))
     (hx : fr.regs[x]? = some (some xv)) (hm : fr.regs[m]? = some (some mv))
     (h : evalValue env (Ctx.make tabs f) fr v = .ok y) :
@@ -76,12 +79,13 @@ theorem store_val {v : Value} {q x m : ID} {qv xv mv y : Val} (hop : v.op = .Sto
     | (rename_i hc
        obtain ⟨rfl, rfl, rfl⟩ := hc
        obtain ⟨M', hw, rfl⟩ := writeRes_ok ho
-       exact ⟨_, _, M', rfl, rfl, hw, retype_mem _ _⟩)
+       exact ⟨_, _, M', rfl, rfl, hw, by rw [tys_getD]; exact retype_mem hnb _⟩)
     | (split at ho <;> cases ho)
     | cases ho
 
 /-- A `Zero`'s write. -/
 theorem zero_val {v : Value} {q m : ID} {qv mv y : Val} (hop : v.op = .Zero)
+    (hnb : CSE.notBool (CSE.valShape tabs f v) = true)
     (ha : v.args = #[q, m]) (hq : fr.regs[q]? = some (some qv))
     (hm : fr.regs[m]? = some (some mv)) (h : evalValue env (Ctx.make tabs f) fr v = .ok y) :
     ∃ Q M M', qv = .ptr Q ∧ mv = .mem M ∧
@@ -98,7 +102,7 @@ theorem zero_val {v : Value} {q m : ID} {qv mv y : Val} (hop : v.op = .Zero)
     | (rename_i hc
        obtain ⟨rfl, rfl⟩ := hc
        obtain ⟨M', hw, rfl⟩ := writeRes_ok ho
-       exact ⟨_, _, M', rfl, rfl, hw, retype_mem _ _⟩)
+       exact ⟨_, _, M', rfl, rfl, hw, by rw [tys_getD]; exact retype_mem hnb _⟩)
     | (split at ho <;> cases ho)
     | cases ho
 
@@ -176,7 +180,7 @@ theorem memSkip_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} 
     split at hs
     · rename_i hc
       simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      obtain ⟨⟨hop, hsz⟩, hdj⟩ := hc
+      obtain ⟨⟨⟨hop, hsz⟩, hnb⟩, hdj⟩ := hc
       cases hs
       have hphi : d.op ≠ .Phi := by rw [hop]; decide
       have hmem : ∀ i, i < 3 → A d.args[i]! :=
@@ -185,14 +189,14 @@ theorem memSkip_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} 
       obtain ⟨qv, hqv⟩ := H.reg (hmem 0 (by decide))
       obtain ⟨xv, hxv⟩ := H.reg (hmem 1 (by decide))
       obtain ⟨Q, M, M', rfl, rfl, hw, rfl⟩ :=
-        store_val hop (args_three hsz) hqv hxv h2 (H.eval hm hv hphi h1)
+        store_val hop hnb (args_three hsz) hqv hxv h2 (H.eval hm hv hphi h1)
       refine load_mem_eq hw fun P hP => ?_
       subst hP
       exact disjointP_sep H hdj hp (hmem 0 (by decide)) hpv hqv (.inr (by rw [encode_size]))
     · split at hs
       · rename_i hc
         simp only [Bool.and_eq_true, beq_iff_eq] at hc
-        obtain ⟨⟨hop, hsz⟩, hdj⟩ := hc
+        obtain ⟨⟨⟨hop, hsz⟩, hnb⟩, hdj⟩ := hc
         cases hs
         have hphi : d.op ≠ .Phi := by rw [hop]; decide
         have hmem : ∀ i, i < 2 → A d.args[i]! :=
@@ -200,7 +204,7 @@ theorem memSkip_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} 
         refine ⟨hmem 1 (by decide), fun ai aux pv mv mv' hpv h1 h2 => ?_⟩
         obtain ⟨qv, hqv⟩ := H.reg (hmem 0 (by decide))
         obtain ⟨Q, M, M', rfl, rfl, hw, rfl⟩ :=
-          zero_val hop (args_two hsz) hqv h2 (H.eval hm hv hphi h1)
+          zero_val hop hnb (args_two hsz) hqv h2 (H.eval hm hv hphi h1)
         refine load_mem_eq hw fun P hP => ?_
         subst hP
         exact disjointP_sep H hdj hp (hmem 0 (by decide)) hpv hqv (by simp only [Array.size_replicate]; omega)

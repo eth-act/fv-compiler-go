@@ -103,6 +103,15 @@ def poisonBlock (m : Mem) (b : Blk) : Mem :=
 and which frame variables existed is not observable). -/
 def free (m : Mem) (b : Blk) : Mem := { m with blocks := m.blocks.filter (·.1 != b) }
 
+/-- `m` without the frames of activation `act` and of every later one (`Blk.local a _`,
+`Blk.outargs a` with `a ≥ act`): the memory a panic of the activation `act` is compared by
+(the frames of the panicking run and of its callees are not observable; the caller's frames,
+which have smaller activation numbers, and the heap and globals are). -/
+def dropFrames (act : Nat) (m : Mem) : Mem :=
+  { m with blocks := m.blocks.filter fun (b, _) => match b with
+    | .local a _ | .outargs a => decide (a < act)
+    | _ => true }
+
 end Mem
 
 /-! ## Encoding and decoding -/
@@ -139,7 +148,9 @@ def bytesPtr? (bs : Array Byte) : Option Ptr :=
   | _ => none
 
 /-- An integer of width `w` from its bytes: concrete bytes, or (64-bit) the concrete address
-of a stored pointer; otherwise `poison`. -/
+of a stored pointer; a stored pointer to a global, which has no concrete address, stays a
+pointer (a `uintptr` holding a code or data address, e.g. a closure's code word); otherwise
+`poison`. -/
 def decodeInt (w : Width) (bs : Array Byte) : Val :=
   match bytesNat? bs with
   | some n => .int w (BitVec.ofNat w.bits n)
@@ -147,7 +158,7 @@ def decodeInt (w : Width) (bs : Array Byte) : Val :=
     match w, bytesPtr? bs with
     | .w64, some p => match p.addr? with
       | some a => .int .w64 a
-      | none => .poison
+      | none => .ptr p
     | _, _ => .poison
 
 /-- A pointer from 8 bytes: its fragments, or a concrete address. -/

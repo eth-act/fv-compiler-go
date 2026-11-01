@@ -14,6 +14,16 @@ open GoFV.SSA GoFV.Opt
 
 namespace GoFVTest.Parity
 
+/-- A section's `zvar` as a lookup (`PassEnv.zvar`). -/
+def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
+  let m : Std.HashMap ID Nat := zv.foldl (fun m (v, c) => m.insert v c) {}
+  fun i => m.getD i 0
+
+/-- The file's `ptrcache` as a predicate (`PassEnv.ptrCache`). -/
+def ptrCacheFn (ts : Array TypeRef) : TypeRef → Bool :=
+  let m : Std.HashMap TypeRef Unit := ts.foldl (fun m t => m.insert t ()) {}
+  fun t => m.contains t
+
 /-- First differing line of two texts. -/
 def firstDiff (want got : String) : String := Id.run do
   let la := want.splitOn "\n"
@@ -39,20 +49,52 @@ def checkPosBases (input out want : Tables) : Option String := Id.run do
       return some s!"position base p{i} differs from the stock output section"
   return none
 
-/-- Compare the pass result with section `k` (`stock`, with tables `want`). -/
-def compare (input : Tables) (out : PassOut) (want : Tables) (stock : Section) : Option String :=
+/-- The printed function with the entries of `namedx`, `splits` and `canon` (Go maps, which the
+exporter sorts by object numbers) in sorted order: the importer's `gofvMapOrder`. -/
+def mapOrder (text : String) : String := Id.run do
+  let lines := (text.splitOn "\n").toArray
+  let sortStr (xs : Array String) : Array String := xs.qsort (· < ·)
+  let mut out := #[]
+  let mut namedx := #[]
+  let mut first : Option Nat := none
+  for l in lines do
+    if l.startsWith "splits " || l.startsWith "canon " then
+      let (tag, list) := match l.splitOn " " with
+        | tag :: rest => (tag, " ".intercalate rest)
+        | [] => ("", "")
+      out := out.push (tag ++ " " ++ ",".intercalate (sortStr (list.splitOn ",").toArray).toList)
+    else if l.startsWith "namedx " then
+      if first.isNone then first := some out.size
+      namedx := namedx.push l
+      out := out.push l
+    else out := out.push l
+  if let some i := first then
+    let sorted := sortStr namedx
+    let mut j := 0
+    for k in [i:out.size] do
+      if (out[k]!).startsWith "namedx " then
+        out := out.set! k sorted[j]!
+        j := j + 1
+  return "\n".intercalate out.toList
+
+/-- Compare the pass result with section `k` (`stock`, with tables `want`). With `loose`, as the
+driver's importer compares (`docs/DRIVER.md`): a new symbol by name and ABI only, the map lines
+(`namedx`, `splits`, `canon`) as sets. -/
+def compare (input : Tables) (out : PassOut) (want : Tables) (stock : Section)
+    (loose : Bool := false) : Option String :=
   -- fast path: the pass made no definitions and the stock section has none
   let renamed : Except String Func :=
     if sameObj out.tables input && stock.defs.isEmpty then pure out.func
     else match checkPosBases input out.tables want with
       | some d => throw d
-      | none => renumber input out.tables want out.func stock.func
+      | none => renumber input out.tables want out.func stock.func (symNameOnly := loose)
   match renamed with
   | .error d => some d
   | .ok f =>
     if f == stock.func then none else
     let w := printFunc stock.func
     let g := printFunc f
-    if w == g then none else some (firstDiff w g)
+    if w == g then none else
+    if loose && mapOrder w == mapOrder g then none else some (firstDiff w g)
 
 end GoFVTest.Parity

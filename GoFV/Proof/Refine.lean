@@ -22,37 +22,46 @@ open GoFV.SSA GoFV.SSA.Sem
 
 /-! ## Outcomes -/
 
-/-- The source outcome `o` is refined by the target outcome `o'`: the same panic with a refined
-memory, or results refined pointwise with a refined memory (`Mem.Refines`: a rewrite may make a
-poison value defined, which may then be stored). -/
-inductive OutcomeRefines : Outcome → Outcome → Prop where
+/-- The source outcome `o` is refined by the target outcome `o'` (for a run of activation
+`act`): results refined pointwise with a refined memory (`Mem.Refines`: a rewrite may make a
+poison value defined, which may then be stored), or the same panic with refined memories once
+the frames of `act` and of its callees are dropped (`Mem.dropFrames`: they are not observable
+after a panic; the caller's frames, the heap and the globals are). -/
+inductive OutcomeRefines (act : Nat) : Outcome → Outcome → Prop where
   | returned {rs rs' : List Val} {m m' : Mem} : RefinesList rs rs' → Mem.Refines m m' →
-      OutcomeRefines (.returned rs m) (.returned rs' m')
-  | panicked (e : Panic) {m m' : Mem} : Mem.Refines m m' →
-      OutcomeRefines (.panicked e m) (.panicked e m')
+      OutcomeRefines act (.returned rs m) (.returned rs' m')
+  | panicked (e : Panic) {m m' : Mem} : Mem.Refines (m.dropFrames act) (m'.dropFrames act) →
+      OutcomeRefines act (.panicked e m) (.panicked e m')
 
-theorem OutcomeRefines.refl {o : Outcome} (h : o.Defined) : OutcomeRefines o o := by
+theorem OutcomeRefines.refl {act : Nat} {o : Outcome} (h : o.Defined) : OutcomeRefines act o o := by
   cases o with
   | returned rs m => exact .returned (RefinesList.refl rs) (Mem.Refines.refl m)
-  | panicked e m => exact .panicked e (Mem.Refines.refl m)
+  | panicked e m => exact .panicked e (Mem.Refines.refl _)
   | stuck => exact h.elim
   | outOfFuel => exact h.elim
 
-theorem OutcomeRefines.trans {a b c : Outcome} :
-    OutcomeRefines a b → OutcomeRefines b c → OutcomeRefines a c
+theorem OutcomeRefines.trans {act : Nat} {a b c : Outcome} :
+    OutcomeRefines act a b → OutcomeRefines act b c → OutcomeRefines act a c
   | .returned h1 m1, .returned h2 m2 => .returned (Sem.RefinesList.trans h1 h2) (m1.trans m2)
   | .panicked e m1, .panicked _ m2 => .panicked e (m1.trans m2)
 
-theorem OutcomeRefines.defined_left {a b : Outcome} (h : OutcomeRefines a b) : a.Defined := by
+theorem OutcomeRefines.defined_left {act : Nat} {a b : Outcome} (h : OutcomeRefines act a b) :
+    a.Defined := by
   cases h <;> trivial
 
-theorem OutcomeRefines.defined_right {a b : Outcome} (h : OutcomeRefines a b) : b.Defined := by
+theorem OutcomeRefines.defined_right {act : Nat} {a b : Outcome} (h : OutcomeRefines act a b) :
+    b.Defined := by
   cases h <;> trivial
+
+/-- Equal memories at a panic refine each other (what lock-step simulations produce). -/
+theorem OutcomeRefines.panicked_refl {act : Nat} (e : Panic) (m : Mem) :
+    OutcomeRefines act (.panicked e m) (.panicked e m) :=
+  .panicked e (Mem.Refines.refl _)
 
 /-- `finish` (Go-typed results, frame removal) preserves outcome refinement. -/
-theorem finish_refines {outs : Array (Option AuxRef × Ty × Nat)} {act : Nat} {o o' : Outcome}
-    (hd : (finish outs act o).Defined) (h : OutcomeRefines o o') :
-    OutcomeRefines (finish outs act o) (finish outs act o') := by
+theorem finish_refines {outs : Array (Option AuxRef × Ty × Nat)} {act k : Nat} {o o' : Outcome}
+    (hd : (finish outs act o).Defined) (h : OutcomeRefines k o o') :
+    OutcomeRefines k (finish outs act o) (finish outs act o') := by
   cases h with
   | panicked e hm => exact .panicked e hm
   | @returned rs rs' m m' hr hm =>
@@ -67,7 +76,7 @@ theorem finish_refines {outs : Array (Option AuxRef × Ty × Nat)} {act : Nat} {
       generalize goResults outs act rs' m' = g' at hg ⊢
       cases hg with
       | ok hv => intro _; exact .returned hv (hm.freeFrame act)
-      | panic e hm' => intro _; exact .panicked e hm'
+      | panic e hm' => intro _; exact .panicked e (hm'.dropFrames k)
       | stuck msg r => intro hd; exact hd.elim
 
 /-! ## Fuel monotonicity -/
@@ -122,11 +131,12 @@ theorem run_det {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : 
 /-! ## Refinement of functions -/
 
 /-- `f'` (with tables `tabs'`) refines `f` (with tables `tabs`): every returning or panicking
-run of `f` is, up to value refinement, a run of `f'` with some fuel. -/
+run of `f` is, up to value refinement, a run of `f'` with some fuel (`OutcomeRefines 0`: a
+top-level run is activation `(Ctx.make tabs f).act = 0`). -/
 def Refines (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
   ∀ (env : Env) (args : List Val) (mem : Mem) (fuel : Nat),
     (run env tabs f args mem fuel).Defined →
-      ∃ fuel', OutcomeRefines (run env tabs f args mem fuel) (run env tabs' f' args mem fuel')
+      ∃ fuel', OutcomeRefines 0 (run env tabs f args mem fuel) (run env tabs' f' args mem fuel')
 
 theorem Refines.refl (tabs : Tables) (f : Func) : Refines tabs f tabs f :=
   fun _ _ _ fuel h => ⟨fuel, OutcomeRefines.refl h⟩
@@ -143,7 +153,7 @@ theorem Refines.trans {t1 t2 t3 : Tables} {f1 f2 f3 : Func} (h12 : Refines t2 f2
 def RefinesUnder (P : Env → Prop) (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
   ∀ (env : Env), P env → ∀ (args : List Val) (mem : Mem) (fuel : Nat),
     (run env tabs f args mem fuel).Defined →
-      ∃ fuel', OutcomeRefines (run env tabs f args mem fuel) (run env tabs' f' args mem fuel')
+      ∃ fuel', OutcomeRefines 0 (run env tabs f args mem fuel) (run env tabs' f' args mem fuel')
 
 theorem Refines.under (P : Env → Prop) {tabs tabs' : Tables} {f f' : Func}
     (h : Refines tabs' f' tabs f) : RefinesUnder P tabs' f' tabs f :=
@@ -172,7 +182,7 @@ every defined run of the target (with any fuel) is a run of the source, up to re
 theorem Refines.backward {tabs tabs' : Tables} {f f' : Func} (h : Refines tabs' f' tabs f)
     {env : Env} {args : List Val} {mem : Mem} {fuel fuel' : Nat}
     (hs : (run env tabs f args mem fuel).Defined) (ht : (run env tabs' f' args mem fuel').Defined) :
-    OutcomeRefines (run env tabs f args mem fuel) (run env tabs' f' args mem fuel') := by
+    OutcomeRefines 0 (run env tabs f args mem fuel) (run env tabs' f' args mem fuel') := by
   obtain ⟨fuel'', h''⟩ := h env args mem fuel hs
   rw [run_det h''.defined_right ht]
   exact h''

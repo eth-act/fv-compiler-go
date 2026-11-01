@@ -59,7 +59,8 @@ def ofPassEnv (e : PassEnv) : Except String RwEnv := do
     rtElemOff := elem.2.offset
     typs := e.typs
     typeOrder := e.typeOrder
-    frontend := e.frontend }
+    frontend := e.frontend
+    ptrCache := e.ptrCache }
 
 end RwEnv
 
@@ -74,7 +75,8 @@ def rewriteRun (t : Interp.Table) (removeDead logOn : Bool) (env : PassEnv) (f :
   | .ok _ s =>
     let f := s.f
     let f := { f with cache := { f.cache with lineStarts := s.pending.map (·.toCache) } }
-    return ({ func := f, tables := s.tables }, s.fired, s.log.getD #[])
+    return ({ func := f, tables := s.tables, effects := s.effects, typeObjs := s.typeObjs }, s.fired,
+      s.log.getD #[])
   | .error e _ => throw e
 
 /-- `rewritePass t removeDead` with the number of rules fired. -/

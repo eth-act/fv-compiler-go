@@ -2,7 +2,7 @@ import GoFV.SSA.Sem.Run
 import GoFV.Proof.ValRefine
 
 /-!
-# `goResults` and `Mem.freeFrame` are monotone in refinement
+# `goResults`, `Mem.freeFrame` and `Mem.dropFrames` are monotone in refinement
 
 `Res.Rel R`: results related by `R`, panics alike with refined memories, a stuck source
 related to anything. `goResults_mono`: Go-typed results of poison-free refined `MakeResult`
@@ -60,19 +60,23 @@ theorem Refines.noPoison : {a b : Val} → Refines a b → a.hasPoison = false �
     subst he; exact ⟨h, fun _ => rfl⟩
   | _, _, .tuple hl, h => by
     have := RefinesList.noPoison hl (by simpa [Val.hasPoison] using h)
-    exact ⟨by simpa [Val.hasPoison] using this.1, fun t => by cases t <;> simp [Val.hasTy, this.2]⟩
+    exact ⟨by simpa [Val.hasPoison] using this.1,
+      fun t => by cases t <;> simp [Val.hasTy, this.2.2]⟩
   | _, _, .agg hl, h => by
     have := RefinesList.noPoison hl (by simpa [Val.hasPoison] using h)
-    exact ⟨by simpa [Val.hasPoison] using this.1, fun t => by cases t <;> simp [Val.hasTy, this.2]⟩
+    exact ⟨by simpa [Val.hasPoison] using this.1,
+      fun t => by cases t <;> simp [Val.hasTy, this.2.1]⟩
 theorem RefinesList.noPoison : {as bs : List Val} → RefinesList as bs → Val.anyPoison as = false →
-    Val.anyPoison bs = false ∧ ∀ ts, Val.hasTyList as ts = Val.hasTyList bs ts
-  | _, _, .nil, _ => ⟨rfl, fun _ => rfl⟩
+    Val.anyPoison bs = false ∧ (∀ ts, Val.hasTyList as ts = Val.hasTyList bs ts) ∧
+      ∀ ts, Val.hasTyPre as ts = Val.hasTyPre bs ts
+  | _, _, .nil, _ => ⟨rfl, fun _ => rfl, fun _ => rfl⟩
   | _, _, .cons h t, hp => by
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
     have h1 := Refines.noPoison h hp.1
     have h2 := RefinesList.noPoison t hp.2
-    refine ⟨by simp [Val.anyPoison, h1.1, h2.1], fun ts => ?_⟩
-    cases ts <;> simp [Val.hasTyList, h1.2, h2.2]
+    refine ⟨by simp [Val.anyPoison, h1.1, h2.1], fun ts => ?_, fun ts => ?_⟩
+    · cases ts <;> simp [Val.hasTyList, h1.2, h2.2.1]
+    · cases ts <;> simp [Val.hasTyPre, h1.2, h2.2.2]
 end
 
 theorem RefinesList.length_eq : {as bs : List Val} → RefinesList as bs → as.length = bs.length
@@ -127,10 +131,18 @@ theorem AllocsRefine.filter_fst (q : Blk × Alloc → Bool) (hq : ∀ b a a', q 
 
 theorem Mem.Refines.freeFrame {m m' : Mem} (h : Mem.Refines m m') (act : Nat) :
     Mem.Refines (m.freeFrame act) (m'.freeFrame act) := by
-  rcases m with ⟨⟨l⟩, n⟩; rcases m' with ⟨⟨l'⟩, n'⟩
-  obtain ⟨hn, hl⟩ := h
-  refine ⟨hn, ?_⟩
+  rcases m with ⟨⟨l⟩, n, k⟩; rcases m' with ⟨⟨l'⟩, n', k'⟩
+  obtain ⟨hn, hk, hl⟩ := h
+  refine ⟨hn, hk, ?_⟩
   simp only [Mem.freeFrame, List.filter_toArray]
+  exact AllocsRefine.filter_fst _ (fun _ _ _ => rfl) hl
+
+theorem Mem.Refines.dropFrames {m m' : Mem} (h : Mem.Refines m m') (act : Nat) :
+    Mem.Refines (m.dropFrames act) (m'.dropFrames act) := by
+  rcases m with ⟨⟨l⟩, n, k⟩; rcases m' with ⟨⟨l'⟩, n', k'⟩
+  obtain ⟨hn, hk, hl⟩ := h
+  refine ⟨hn, hk, ?_⟩
+  simp only [Mem.dropFrames, List.filter_toArray]
   exact AllocsRefine.filter_fst _ (fun _ _ _ => rfl) hl
 
 /-! ## `goResults` -/

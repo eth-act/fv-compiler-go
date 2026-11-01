@@ -24,6 +24,9 @@ structure Scope where
   binds : Array GVal
   /-- The Go types of the rule variables. -/
   vtys : Array GoTy
+  /-- Type variables bound from a matched value's `<type>` field, with that value (the
+  variable stands for its `*types.Type` object, #101). -/
+  tySrc : List (Nat × ID) := []
 
 namespace GVal
 
@@ -294,10 +297,66 @@ def rewriteCondSelectIntoMath (arch : String) (op : Op) (c : Int) : Bool :=
 def rtFields (cfg : Array (String × Sym.RtField)) : Array Sym.RtField :=
   (cfg.filter (·.1 != "PtrType.Elem")).map (·.2)
 
+/-- `isDirectAndComparableType1` (`top = true`) / `…2` (`top = false`). -/
+def isDirectAndComparableType : Nat → ID → Bool → RwM Bool
+  | 0, _, _ => return false
+  | fuel + 1, v, top => do
+  let x ← val v
+  let tabs ← tables
+  if top then
+    match x.op with
+    | .ITab => isDirectAndComparableType fuel x.args[0]! false
+    | .Addr =>
+      let s ← lift (Sym.lsym tabs x.aux)
+      match s.typeInfo with
+      | some t => return (← lift (Ty.isDirectIface tabs t)) && (← lift (Ty.isComparable tabs t))
+      | none => return false
+    | _ => return false
+  else
+    match x.op with
+    | .IMake => isDirectAndComparableType fuel x.args[0]! true
+    | _ => return false
+
+/-- `isDirectAndComparableIface1` (`top = true`, an itab) / `…2` (`top = false`, an interface),
+with Go's depth bound. -/
+def isDirectAndComparableIface : Nat → ID → Bool → RwM Bool
+  | 0, _, _ => return false
+  | depth + 1, v, top => do
+  let x ← val v
+  let tabs ← tables
+  if top then
+    match x.op with
+    | .ITab => isDirectAndComparableIface depth x.args[0]! false
+    | .Addr =>
+      let s ← lift (Sym.lsym tabs x.aux)
+      match s.itabInfo with
+      | some t => return (← lift (Ty.isDirectIface tabs t)) && (← lift (Ty.isComparable tabs t))
+      | none => return false
+    | .ConstNil => return true
+    | _ => return false
+  else
+    match x.op with
+    | .IMake => isDirectAndComparableIface depth x.args[0]! true
+    | .Phi =>
+      for a in x.args do
+        if !(← isDirectAndComparableIface depth a false) then return false
+      return true
+    | _ => return false
+
+
+/-- Nesting bound of rule expressions (`evalF`'s fuel): the deepest exported expression is far
+shallower. -/
+def evalFuel : Nat := 256
+
 mutual
 
-/-- Evaluate `e`. -/
-partial def eval (sc : Scope) (e : Expr) : RwM GVal := do
+/-- Evaluate `e`, with fuel `fuel` for the nesting depth. -/
+def evalF : Nat → Scope → Expr → RwM GVal
+  | 0, _, _ => throw "rule expression nested too deep"
+  | fuel + 1, sc, e => do
+  let eval := evalF fuel
+  let method := methodF fuel
+  let call := callF fuel
   match e with
   | .lit _ c | .cnst _ _ c =>
     match c with
@@ -374,7 +433,10 @@ partial def eval (sc : Scope) (e : Expr) : RwM GVal := do
   | .deref _ _ => throw "unsupported dereference"
 
 /-- `x.name(args)`. -/
-partial def method (sc : Scope) (x : GVal) (name : String) (args : List Expr) : RwM GVal := do
+def methodF : Nat → Scope → GVal → String → List Expr → RwM GVal
+  | 0, _, _, _, _ => throw "rule expression nested too deep"
+  | fuel + 1, sc, x, name, args => do
+  let eval := evalF fuel
   match x with
   | .typ t =>
     let tq {α} (q : Tables → Except String α) : RwM α := ty q
@@ -410,8 +472,10 @@ partial def method (sc : Scope) (x : GVal) (name : String) (args : List Expr) : 
   | _ => throw s!"unsupported method {name}"
 
 /-- A call of a package-level function. -/
-partial def call (sc : Scope) (fn : String) (args : List Expr) (_ty : GoTy) : RwM GVal := do
-  let ev (e : Expr) : RwM GVal := eval sc e
+def callF : Nat → Scope → String → List Expr → GoTy → RwM GVal
+  | 0, _, _, _, _ => throw "rule expression nested too deep"
+  | fuel + 1, sc, fn, args, _ty => do
+  let ev (e : Expr) : RwM GVal := evalF fuel sc e
   let int (e : Expr) : RwM Int := do lift (← ev e).asInt
   let vl (e : Expr) : RwM ID := do lift (← ev e).asVal
   let tp (e : Expr) : RwM TypeRef := do lift (← ev e).asTyp
@@ -493,9 +557,21 @@ partial def call (sc : Scope) (fn : String) (args : List Expr) (_ty : GoTy) : Rw
       reset v op
       modF fun f => f.modV v fun y => { y with auxInt := Int64.ofInt c }
       return .val v
+    -- `reflectdata.MarkTypeSymUsedInInterface(sym, curfn)`: a type or itab loaded from a
+    -- dictionary, or the element type of a pointer type
+    let useIface (s : AuxRef) : RwM Unit :=
+      modify fun st => { st with effects := st.effects.push (.useIface s) }
     match r with
-    | some (.addr name abi) => addrOf (← symAux name (some abi) (plainSym name abi))
+    | some (.addr name abi) =>
+      let s ← symAux name (some abi) (plainSym name abi)
+      let n := name.toStringLossy
+      if n.startsWith "type:" || n.startsWith "go:itab" then useIface s
+      addrOf s
     | some (.addrName name) => addrOf (← symAux name none (plainSym name))
+    | some (.elem name) =>
+      let s ← symAux name none (plainSym name)
+      useIface s
+      addrOf s
     | some (.constPtr c) => const (if env.ptrSize == 4 then .Const32 else .Const64) c
     | some (.const32 c) => const .Const32 c
     | some (.const8 c) => const .Const8 c
@@ -633,51 +709,10 @@ partial def call (sc : Scope) (fn : String) (args : List Expr) (_ty : GoTy) : Rw
   | "isDirectAndComparableIface", [v] => return .bool (← isDirectAndComparableIface 9 (← vl v) true)
   | f, _ => throw s!"unsupported helper {f}"
 
-/-- `isDirectAndComparableType1` (`top = true`) / `…2` (`top = false`). -/
-partial def isDirectAndComparableType (fuel : Nat) (v : ID) (top : Bool) : RwM Bool := do
-  if fuel == 0 then return false
-  let x ← val v
-  let tabs ← tables
-  if top then
-    match x.op with
-    | .ITab => isDirectAndComparableType (fuel - 1) x.args[0]! false
-    | .Addr =>
-      let s ← lift (Sym.lsym tabs x.aux)
-      match s.typeInfo with
-      | some t => return (← lift (Ty.isDirectIface tabs t)) && (← lift (Ty.isComparable tabs t))
-      | none => return false
-    | _ => return false
-  else
-    match x.op with
-    | .IMake => isDirectAndComparableType (fuel - 1) x.args[0]! true
-    | _ => return false
-
-/-- `isDirectAndComparableIface1` (`top = true`, an itab) / `…2` (`top = false`, an interface),
-with Go's depth bound. -/
-partial def isDirectAndComparableIface (depth : Nat) (v : ID) (top : Bool) : RwM Bool := do
-  if depth == 0 then return false
-  let x ← val v
-  let tabs ← tables
-  if top then
-    match x.op with
-    | .ITab => isDirectAndComparableIface (depth - 1) x.args[0]! false
-    | .Addr =>
-      let s ← lift (Sym.lsym tabs x.aux)
-      match s.itabInfo with
-      | some t => return (← lift (Ty.isDirectIface tabs t)) && (← lift (Ty.isComparable tabs t))
-      | none => return false
-    | .ConstNil => return true
-    | _ => return false
-  else
-    match x.op with
-    | .IMake => isDirectAndComparableIface (depth - 1) x.args[0]! true
-    | .Phi =>
-      for a in x.args do
-        if !(← isDirectAndComparableIface (depth - 1) a false) then return false
-      return true
-    | _ => return false
-
 end
+
+/-- Evaluate rule expression `e`. -/
+def eval (sc : Scope) (e : Expr) : RwM GVal := evalF evalFuel sc e
 
 end Eval
 
