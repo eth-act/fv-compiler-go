@@ -178,10 +178,14 @@ def divisible : RuleSet where
     (.Neq8, [Generated.Divisible.r_divisible_40])]
   blocks := []
 
-/-- `divmod.rules` restricted to its 1 proven rules. -/
+/-- `divmod.rules` restricted to its 11 proven rules. -/
 def divmod : RuleSet where
   name := "divmod"
-  values := [(.Div8u, [Generated.Divmod.r_divmod_154])]
+  values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
+    (.Div32, [Generated.Divmod.r_divmod_29, Generated.Divmod.r_divmod_99, Generated.Divmod.r_divmod_121]),
+    (.Div64, [Generated.Divmod.r_divmod_33, Generated.Divmod.r_divmod_113, Generated.Divmod.r_divmod_127]),
+    (.Div8, [Generated.Divmod.r_divmod_21, Generated.Divmod.r_divmod_87]),
+    (.Div8u, [Generated.Divmod.r_divmod_154])]
   blocks := []
 
 end GoFV.Rules.Proven

@@ -18,6 +18,8 @@ import GoFV.Proof.Rules.DivisibleGen2
 import GoFV.Proof.Rules.DivisibleGen3
 import GoFV.Proof.Rules.DivisibleU
 import GoFV.Proof.Rules.DivisibleU2
+import GoFV.Proof.Rules.DivmodS
+import GoFV.Proof.Rules.DivmodS2
 import GoFV.Proof.Rules.DivmodU
 import GoFV.Proof.Rules.Eq
 import GoFV.Proof.Rules.Eq2
@@ -264,6 +266,10 @@ theorem divisible_allSound : Proven.divisible.AllSound :=
 theorem divmod_allSound : Proven.divmod.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.divmod, ForallL]
-    exact ⟨⟨r_divmod_154_sound, trivial⟩, trivial⟩)
+    exact ⟨⟨r_divmod_25_sound, r_divmod_93_sound, trivial⟩,
+    ⟨r_divmod_29_sound, r_divmod_99_sound, r_divmod_121_sound, trivial⟩,
+    ⟨r_divmod_33_sound, r_divmod_113_sound, r_divmod_127_sound, trivial⟩,
+    ⟨r_divmod_21_sound, r_divmod_87_sound, trivial⟩,
+    ⟨r_divmod_154_sound, trivial⟩, trivial⟩)
 
 end GoFV.Proof.Rules

@@ -132,7 +132,7 @@ needs a later phase of the semantics.
 | `dec` | StructSelect | 0 | 0 | 0 | 5 | 5 |
 | `divisible` | Eq | 4 | 12 | 0 | 0 | 16 |
 | `divisible` | Neq | 4 | 12 | 0 | 0 | 16 |
-| `divmod` | Div | 1 | 26 | 0 | 2 | 29 |
+| `divmod` | Div | 11 | 12 | 4 | 2 | 29 |
 | `generic` | Add | 88 | 1 | 4 | 2 | 95 |
 | `generic` | AddPtr | 0 | 0 | 0 | 2 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
@@ -208,7 +208,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1014 | 369 | 12 | 367 | 1762 |
+| all | | 1024 | 355 | 16 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -378,6 +378,12 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   constant signed; for `c = -1`, `d = w+1` both shifts give 0 but `RotateLeft x (Const64 [-1])`
   rotates by `w-1`. Missing precondition `c >= 0`. Marked `-- FALSE … #90` in
   `GoFV/Proof/Rules/Add.lean`; `Rule.Sound` is false for them.
+
+- **`divmod.rules:136–148`** (`Div16u/32u/64u` of a signed type by `smagic`): false under the
+  semantics, not a Go bug. `t.IsSigned()` is an oracle atom and nothing makes the dividend
+  non-negative, which Go establishes before (prove pass). Counterexamples (agent DivmodU):
+  136 at `c = 3`, `x = 0xFFFF` (21845 vs 32767); 140 at `c = 3`, `x = 2^32-1`; 144 at `c = 7`,
+  `x = 4294967291`; 148 at `c = 7`, `x = 2^64-3`. Marked `-- FALSE … #69` in `Div.lean`.
 
 ## Narrow result types
 
