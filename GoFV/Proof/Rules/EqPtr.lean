@@ -13,7 +13,7 @@ or a 64-bit integer, `uintptr` itabs), so the nil constant reads as the nil poin
 (`null_word`) and the other argument is `poison`, an integer or a pointer
 (`val_of_hasTy_word`); pointer equality compares block and offset (#156), so equality with nil
 is `Ptr.isNil` (`null_eq`; an integer address is nil iff it is 0, `ofAddr_isNil`), which
-`IsNonNil` negates. A pointer word equals itself (`ptr_eq_self`; `generic.rules:1646`).
+`IsNonNil` negates. A pointer word equals itself (`ptr_eq_self`; `generic.rules:1646`, `:1647`).
 -/
 
 namespace GoFV.Proof.Rules
@@ -69,6 +69,26 @@ theorem inst_r_generic_1646 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
     (PEnv.ofLists [([0], .ptr ⟨.heap 0, 8⟩), ([1], .ptr ⟨.heap 0, 8⟩)] [([], .bool)] (.ptr none) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1646]
+  rule_eval
+  simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
+
+/-- `generic.rules:1647`: `(NeqPtr x x) => (ConstBool [false])` -/
+theorem r_generic_1647_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1647 := by
+  rule_unfold
+  rw [hc] at hty ⊢
+  have hb : PtrOps.eqPtr true [e.leaf [0], e.leaf [0]] = .poison ∨
+      PtrOps.eqPtr true [e.leaf [0], e.leaf [0]] = .bool false := by
+    rcases val_of_hasTy_word hat.1 hlt.1 with hl | ⟨x, hl⟩ | ⟨p, hl⟩ <;> rw [hl] <;>
+      simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
+  rcases hb with hb | hb <;> rw [hb] at hty ⊢
+  · exact Refines.poison _
+  · exact refines_retype_of_hasTy hty
+
+/-- `generic.rules:1647` at a heap pointer. -/
+theorem inst_r_generic_1647 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1647
+    (PEnv.ofLists [([0], .ptr ⟨.heap 0, 8⟩), ([1], .ptr ⟨.heap 0, 8⟩)] [([], .bool)] (.ptr none) [])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1647]
   rule_eval
   simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
 

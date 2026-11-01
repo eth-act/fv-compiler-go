@@ -5,18 +5,19 @@ import GoFV.Proof.Pass.ECIdent
 # Selections of `Phi`s of `SliceMake`s refine their input (issue #69)
 
 `ps_refines`: if `g` is `f` with selections `v = SliceLen p` (or `SliceCap`) of a `Phi` `p` of
-`SliceMake`s with argument `x` turned `Copy x` (`RewriteCheck.psRel`, `generic.rules:1049`/
-`:1050`), both checked, `g` refines `f` under monotone contracts. Lock-step simulation
-(`runLoop_simE`) along the same edges, with `SimAt` at block entries: the target's registers
-refine the source's (`Seg.RR`), lemma (D) holds for the ancestors of the block left (`DInv`),
-and so does the selection fact (`PInv`, `Fact`): for every selection whose `Phi`'s block
-dominates the block left, the selection of the `Phi`'s register is refined by `x`'s register.
-Entering the `Phi`'s block along edge `i` sets the `Phi` to its `SliceMake` argument `i`, which
-lemma (D) re-evaluates from `x`'s register (`fact_entry`); `x` is defined in a strict dominator
-of the `Phi`'s block, so neither register changes in a block the `Phi`'s block dominates. A
-selection is evaluated in such a block (its argument's block dominates it), where the fact gives
-the refinement of the source's selection by the target's copy (`sel_step`); every other value
-is unchanged and evaluates to a refinement on refined arguments (`eval_ss`).
+`SliceMake`s with argument `x` (or `Sub64 x 0`, `PComp`) turned `Copy x` (`RewriteCheck.psRel`,
+`generic.rules:1049`/`:1050`), both checked, `g` refines `f` under monotone contracts. Lock-step
+simulation (`runLoop_simE`) along the same edges, with `SimAt` at block entries: the target's
+registers refine the source's (`Seg.RR`), lemma (D) holds for the ancestors of the block left
+(`DInv`), and so does the selection fact (`PInv`, `Fact`): for every selection whose `Phi`'s
+block dominates the block left, the selection of the `Phi`'s register is refined by `x`'s
+register. Entering the `Phi`'s block along edge `i` sets the `Phi` to its `SliceMake` argument
+`i`, which lemma (D) re-evaluates from `x`'s register, also through a `Sub64 x 0` (`sub0_ref`;
+`fact_entry`); `x` is defined in a strict dominator of the `Phi`'s block, so neither register
+changes in a block the `Phi`'s block dominates. A selection is evaluated in such a block (its
+argument's block dominates it), where the fact gives the refinement of the source's selection
+by the target's copy (`sel_step`); every other value is unchanged and evaluates to a refinement
+on refined arguments (`eval_ss`).
 -/
 
 namespace GoFV.Proof.PhiSel
@@ -49,6 +50,11 @@ theorem evalOp_sel {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : 
     (hop : v.op = .SliceLen ∨ v.op = .SliceCap ∨ v.op = .SliceMake) :
     evalOp env ctx fr v argv ty = .ok (evalPure v.op ty v.auxInt v.aux argv) := by
   rcases hop with h | h | h <;> (simp only [evalOp, frameVal, h]; rfl)
+
+theorem evalOp_pure {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (hop : v.op = .Sub64 ∨ v.op = .Const64) :
+    evalOp env ctx fr v argv ty = .ok (evalPure v.op ty v.auxInt v.aux argv) := by
+  rcases hop with h | h <;> (simp only [evalOp, frameVal, h]; rfl)
 
 /-- The registers `mapM` collects. -/
 theorem mapM_regs {m : ID → String} {r : ID → Option Val} :
@@ -106,6 +112,43 @@ theorem sel_make {el el' : Option Nat} {k : Nat} (hk : k = 1 ∨ k = 2) {argv : 
     · show Sem.Refines (Val.poison.retype (.int .w64)) yx
       exact .poison _
 
+/-- `Sub64 y 0` (at `int64`) is refined by `y`. -/
+theorem sub0_ref (y : Val) :
+    Sem.Refines ((Sem.Int.sub .w64 [y, .int .w64 0]).retype (.int .w64)) y := by
+  cases h : y.asInt .w64 with
+  | none =>
+    show Sem.Refines ((int2 .w64 _ [y, .int .w64 0]).retype (.int .w64)) y
+    simp only [int2, h]
+    exact .poison _
+  | some a =>
+    have hy : y = .int .w64 a := by
+      cases y with
+      | int w x =>
+        by_cases hw : w = .w64
+        · subst hw
+          simp only [Val.asInt_int, Option.some.injEq] at h
+          rw [h]
+        · simp [Val.asInt, hw] at h
+      | _ => simp [Val.asInt] at h
+    subst hy
+    show Sem.Refines ((int2 .w64 _ [.int .w64 a, .int .w64 0]).retype (.int .w64)) _
+    have h0 : a - (0 : BitVec Width.w64.bits) = a := BitVec.sub_zero a
+    simp only [int2, Val.asInt_int, h0, GoFV.Proof.Rules.retype_int_same]
+    exact Sem.Refines.refl _
+
+/-- A non-`Phi` value whose evaluation is known: its arguments' registers and the result. -/
+theorem eval_args {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hev : evalValue env ctx fr v = .ok y) : ∃ argv, v.args.toList.map (fun a => (fr.regs[a]?).join) =
+      argv.map some ∧ evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) >>= (fun r => .ok (r.retype (ctx.tys[v.id]?.getD .other))) = .ok y := by
+  unfold evalValue at hev
+  cases hargs : v.args.toList.mapM (fun a =>
+      Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
+  | panic e mm => rw [hargs] at hev; cases hev
+  | stuck msg => rw [hargs] at hev; cases hev
+  | ok argv =>
+    rw [hargs] at hev
+    exact ⟨argv, mapM_regs hargs, hev⟩
+
 /-! ## Where the registers of a selection's `Phi` and `x` change -/
 
 section
@@ -160,7 +203,7 @@ theorem fact_entry {frS : Frame} {bid : ID} {i : Nat}
     change (setPhis ps frS.regs)[d.p]? = some (some yp) at hyp
     rw [hset] at hyp
     cases hyp
-    obtain ⟨mv, hmv, hmop, hmsz, hmk, hms⟩ := d.hm m (Array.mem_of_getElem? hm)
+    obtain ⟨mv, hmv, hmop, hmsz, ⟨cc, hmk, hcomp⟩, hms⟩ := d.hm m (Array.mem_of_getElem? hm)
     obtain ⟨j, hj⟩ := Array.mem_iff_getElem?.1 he
     obtain ⟨-, c, hc', hpred⟩ := hwf.succLink P blkp ⟨hP, hPb⟩ j _ hj
     change f.block? bid = some c at hc'
@@ -192,12 +235,81 @@ theorem fact_entry {frS : Frame} {bid : ID} {i : Nat}
       have := congrArg List.length hmap
       simp only [List.length_map, Array.length_toList, hmsz] at this
       exact this.symm
-    obtain ⟨yx, hyx, hyk⟩ := map_some_get hmap (by rw [Array.getElem?_toList]; exact hmk)
-    have hyx' : frS.regs[d.x]? = some (some yx) := Option.join_eq_some_iff.1 hyx
+    obtain ⟨yc, hyc, hyk⟩ := map_some_get hmap (by rw [Array.getElem?_toList]; exact hmk)
+    have hyc' : frS.regs[cc]? = some (some yc) := Option.join_eq_some_iff.1 hyc
+    obtain ⟨yx, hyx', hcx, htc⟩ : ∃ yx, frS.regs[d.x]? = some (some yx) ∧ Sem.Refines yc yx ∧
+        yc.retype (.int .w64) = yc := by
+      rcases hcomp with rfl | ⟨cv, z, zv, hcv, hcop, hcsz, hc0, hc1, hct, hzv, hzop, hza, hzt⟩
+      · refine ⟨yc, hyc', Sem.Refines.refl _, ?_⟩
+        have := hty _ yc hyc'
+        rwa [tys_of_value d.hxv, Option.getD_some, d.hxt] at this
+      · have htc : yc.retype (.int .w64) = yc := by
+          have := hty _ yc hyc'
+          rwa [tys_of_value hcv, Option.getD_some, hct] at this
+        obtain ⟨cv', hplc, hcb⟩ := CSE.placed_arg hwf hbm hmin hmv (Array.mem_of_getElem? hmk)
+        have hcc : cv = cv' := Option.some.inj (hcv.symm.trans hplc.1)
+        subst hcc
+        have hAm : Anc (make f) bm P := by rw [← hmvb]; exact hA
+        have hAc : Anc (make f) cv.block P := by
+          have := hc.domRel.uses hbm.1 hbm.2 (Anc.left hp hAm) hmin hmv (by rw [hmop]; decide)
+            (Array.mem_of_getElem? hmk)
+          rw [hcb] at this
+          exact Anc.trans hp this hAm
+        obtain ⟨-, hcbIn, blkc, hblkc, hccin⟩ := hplc
+        obtain ⟨cv', hcv', hcid, -⟩ := hwf.valueId cv.block blkc ⟨hcbIn, hblkc⟩ cc hccin
+        rw [hcv] at hcv'; cases hcv'
+        obtain ⟨y', hy', hevc⟩ := hD cc cv ⟨hcv, hcbIn, blkc, hblkc, hccin⟩ hAc
+        rw [hyc'] at hy'; cases hy'
+        obtain ⟨argc, hmapc, hevc⟩ := eval_args (hevc (by rw [hcop]; decide))
+        have hcargs : cv.args.toList = [d.x, z] := by
+          rw [← Array.getElem?_toList] at hc0 hc1
+          have hl : cv.args.toList.length = 2 := by simp [hcsz]
+          match hlc : cv.args.toList, hl with
+          | [a0, a1], _ =>
+            rw [hlc] at hc0 hc1
+            simp only [List.getElem?_cons_zero, List.getElem?_cons_succ, Option.some.injEq]
+              at hc0 hc1
+            rw [hc0, hc1]
+        have hzin : z ∈ cv.args := by
+          rw [← Array.mem_toList_iff, hcargs]; simp
+        rw [hcargs] at hmapc
+        match argc, hmapc with
+        | [], h | [_], h | _ :: _ :: _ :: _, h => simp at h
+        | [ya, yz], hmapc =>
+        simp only [List.map_cons, List.map_nil, List.cons.injEq, and_true] at hmapc
+        obtain ⟨hya, hyz⟩ := hmapc
+        have hya' := Option.join_eq_some_iff.1 hya
+        have hyz' := Option.join_eq_some_iff.1 hyz
+        obtain ⟨zv', hplz, hzb⟩ := CSE.placed_arg hwf ⟨hcbIn, hblkc⟩ hccin hcv hzin
+        have hzz : zv = zv' := Option.some.inj (hzv.symm.trans hplz.1)
+        subst hzz
+        have hAz : Anc (make f) zv.block P := by
+          have := hc.domRel.uses hcbIn hblkc (Anc.left hp hAc) hccin hcv (by rw [hcop]; decide)
+            hzin
+          rw [hzb] at this
+          exact Anc.trans hp this hAc
+        obtain ⟨-, hzbIn, blkz, hblkz, hzzin⟩ := hplz
+        obtain ⟨zv', hzv', hzid, -⟩ := hwf.valueId zv.block blkz ⟨hzbIn, hblkz⟩ z hzzin
+        rw [hzv] at hzv'; cases hzv'
+        obtain ⟨y', hy', hevz⟩ := hD z zv ⟨hzv, hzbIn, blkz, hblkz, hzzin⟩ hAz
+        rw [hyz'] at hy'; cases hy'
+        obtain ⟨argz, -, hevz⟩ := eval_args (hevz (by rw [hzop]; decide))
+        rw [evalOp_pure (by rw [hzop]; decide), hzop, hzid, tys_of_value hzv, Option.getD_some,
+          hzt, hza] at hevz
+        change Res.ok _ = Res.ok _ at hevz
+        cases hevz
+        rw [evalOp_pure (by rw [hcop]; decide), hcop, hcid, tys_of_value hcv, Option.getD_some,
+          hct] at hevc
+        change Res.ok _ = Res.ok _ at hevc
+        cases hevc
+        refine ⟨ya, hya', ?_, htc⟩
+        have h0 : (evalPure .Const64 (.int .w64) 0 zv.aux argz).retype (.int .w64) =
+            .int .w64 0 := by
+          show (Conv.const .w64 0).retype (.int .w64) = _
+          simp [Conv.const, GoFV.Proof.Rules.retype_int_same]
+        rw [h0]
+        exact sub0_ref ya
     refine ⟨yx, by rw [hxk]; exact hyx', ?_⟩
-    have htx : yx.retype (.int .w64) = yx := by
-      have := hty d.x yx hyx'
-      rwa [tys_of_value d.hxv, Option.getD_some, d.hxt] at this
     obtain ⟨el, hel⟩ := GoFV.Proof.Rules.isSliceTy_iff.1 hms
     obtain ⟨el', hel'⟩ := GoFV.Proof.Rules.isSliceTy_iff.1 d.hps
     rw [hmid, tys_of_value d.hpv, Option.getD_some, hel', tys_of_value hmv, Option.getD_some, hel]
@@ -205,7 +317,7 @@ theorem fact_entry {frS : Frame} {bid : ID} {i : Nat}
       rcases psSel_some d.hk with ⟨-, h⟩ | ⟨-, h⟩
       · exact .inl h
       · exact .inr h
-    exact sel_make hk hlen hyk htx
+    exact Sem.Refines.trans (sel_make hk hlen hyk htc) hcx
   · have hBP : Anc (make f) d.pv.block P :=
       Anc.trans hp (hB.up hp hBb) (edge hc hP hPb hPt he).2.2
     refine (hQ v d hBP).congr ?_ hxk
