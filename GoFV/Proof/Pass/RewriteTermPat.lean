@@ -209,12 +209,7 @@ end Leaf
 /-! ## Checks -/
 
 theorem auxIntOk_of {aty : AuxType} {a : Int64} (h : auxIntOkB aty a = true) : auxIntOk aty a := by
-  unfold auxIntOkB at h; unfold auxIntOk
-  split
-  · split at h
-    · simpa using h
-    · contradiction
-  · trivial
+  cases aty <;> simp_all [auxIntOkB, auxIntOk]
 
 mutual
 theorem wf_of {e e' : PEnv} (hai : e.auxInt = e'.auxInt) :

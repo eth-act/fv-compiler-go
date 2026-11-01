@@ -397,7 +397,10 @@ def {low} : RuleSet where
             return f"""(by
     simp only [Proven.{low}, ForallL]
     exact ⟨{proofs}, trivial⟩)"""
-        thm += f"""/-- Every rule of `Proven.{low}` is sound. -/
+        # `simp only [Proven.generic, ForallL]` exceeds the default maxRecDepth (512) since
+        # generic's float ops were added (#69).
+        thm += f"""set_option maxRecDepth 4096 in
+/-- Every rule of `Proven.{low}` is sound. -/
 theorem {low}_allSound : Proven.{low}.AllSound :=
   RuleSet.allSound_of {conj(vals)}
     {conj(bvals)}

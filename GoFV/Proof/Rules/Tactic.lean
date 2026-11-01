@@ -208,7 +208,12 @@ elab "rule_cond_bool" : tactic => withMainContext do
 
 /-- The ops whose arguments `argShapeOk` constrains. -/
 def argShapeOps : List Name :=
-  [``Op.OffPtr, ``Op.AddPtr, ``Op.PtrIndex, ``Op.EqPtr, ``Op.NeqPtr, ``Op.IsNonNil, ``Op.Convert]
+  [``Op.OffPtr, ``Op.AddPtr, ``Op.PtrIndex, ``Op.EqPtr, ``Op.NeqPtr, ``Op.IsNonNil, ``Op.Convert,
+   ``Op.Add64F, ``Op.Sub64F, ``Op.Mul64F, ``Op.Div64F, ``Op.Neg64F, ``Op.Min64F, ``Op.Max64F,
+   ``Op.Eq64F, ``Op.Neq64F, ``Op.Less64F, ``Op.Leq64F, ``Op.Abs, ``Op.Copysign, ``Op.Sqrt,
+   ``Op.Floor, ``Op.Ceil, ``Op.Trunc, ``Op.Round, ``Op.RoundToEven, ``Op.FMA, ``Op.Round64F,
+   ``Op.Add32F, ``Op.Sub32F, ``Op.Mul32F, ``Op.Div32F, ``Op.Neg32F, ``Op.Min32F, ``Op.Max32F,
+   ``Op.Eq32F, ``Op.Neq32F, ``Op.Less32F, ``Op.Leq32F, ``Op.Sqrt32, ``Op.Round32F]
 
 /-- The comparisons whose arguments `argShapeOk` constrains to their width. `rule_unfold`
 clears their argument shapes (no proof it closes needs them); `rule_unfold_getd` keeps them. -/

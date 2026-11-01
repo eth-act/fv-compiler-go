@@ -311,6 +311,9 @@ import GoFV.Proof.Rules.Eq5
 import GoFV.Proof.Rules.Eq6
 import GoFV.Proof.Rules.EqB
 import GoFV.Proof.Rules.EqPtr
+import GoFV.Proof.Rules.FloatArith
+import GoFV.Proof.Rules.FloatCmp
+import GoFV.Proof.Rules.FloatRules
 import GoFV.Proof.Rules.Lemmas
 import GoFV.Proof.Rules.Leq
 import GoFV.Proof.Rules.Leq2
