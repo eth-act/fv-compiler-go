@@ -108,13 +108,17 @@ theorem copyPut_isTerm (hx : M.get? v = some x) (hi : i < x.args.size) (y : ID) 
 
 theorem copyPut_typed (hx : M.get? v = some x) (hi : i < x.args.size) {ρ : ID → Val}
     (hT : Term.Typed M.get? tabs ρ) : Term.Typed (copyPut M v x i src hi).get? tabs ρ := by
-  intro a ha
+  intro a ha hsome
   have hs : shape (copyPut M v x i src hi).get? tabs a = shape M.get? tabs a := by
     simp only [shape, copyPut_get]; split
     · subst a; rw [hx]; rfl
     · rfl
+  have hsome' : (M.get? a).isSome = true := by
+    rw [copyPut_get] at hsome; split at hsome
+    · subst a; rw [hx]; rfl
+    · exact hsome
   rw [hs]
-  exact hT a fun h => ha ((copyPut_isTerm hx hi a).2 h)
+  exact hT a (fun h => ha ((copyPut_isTerm hx hi a).2 h)) hsome'
 
 theorem copyPut_closed (hx : M.get? v = some x) (hi : i < x.args.size)
     (hr : copyReach tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C) :

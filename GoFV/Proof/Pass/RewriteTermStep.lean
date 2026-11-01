@@ -260,14 +260,14 @@ theorem RuleFacts.fields (F : RuleFacts tabs M r v defs) (L : ID → Val) :
 
 theorem RuleFacts.typed (F : RuleFacts tabs M r v defs) {ρ : ID → Val}
     (hT : Term.Typed M.get? tabs ρ) : Term.Typed (putAll M defs).get? tabs ρ := by
-  intro a ha
+  intro a ha hsome
   by_cases hd : a ∈ defIds defs
   · obtain ⟨u, hu, ht, -⟩ := F.frame.2.2.2 a hd
     exact absurd ⟨u, hu, ht⟩ ha
   · have he := F.frame.1 a hd
     have hshape : shape (putAll M defs).get? tabs a = shape M.get? tabs a := by simp [shape, he]
     rw [hshape]
-    exact hT a fun ⟨u, hu, ht⟩ => ha ⟨u, by rw [he]; exact hu, ht⟩
+    exact hT a (fun ⟨u, hu, ht⟩ => ha ⟨u, by rw [he]; exact hu, ht⟩) (he ▸ hsome)
 
 theorem RuleFacts.closed (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : DefClosed M C) :
     DefClosed (putAll M defs) (fun y => C y ∨ (C v ∧ y ∈ defIds defs)) := by
@@ -406,7 +406,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
     have hK : B + stepK r = (B + S) + 1 := by simp [stepK, resLen, R.hres, hS]; omega
     rw [hK, den_succ_term hdv (by rw [R.hop]; exact termOp_copy), R.hargs, R.hop]
     show Sem.Refines _ ((den _ tabs ρ (B + S) (F.I.at R.p)).retype (tabs.ty R.u.type))
-    rw [← hyt, ← shape_of (tabs := tabs) hkeep, den_retype hT]
+    rw [← hyt, ← shape_of (tabs := tabs) hkeep, den_retype hT _ _ (by rw [hkeep]; rfl)]
     exact hlow.trans (hsound.trans hup)
   · -- build
     obtain ⟨R⟩ := hR
