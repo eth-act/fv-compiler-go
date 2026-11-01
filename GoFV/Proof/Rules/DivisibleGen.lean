@@ -145,30 +145,11 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
-open Lean Elab Tactic in
-/-- `rule_unfold` with the `convE` tests of the helper's argument (`uint64(d)`) decided before
-`callH` is unfolded: `rule_unfold` meets `callH` on an undecided `if`, unfolds it to its
-23-arm `match` and generates that `match`'s splitter in the module (4.5 MB of `.olean`). -/
-elab "divisible_unfold" : tactic => do
-  let ty ← instantiateMVars (← (← getMainGoal).getType)
-  let some r := ty.getAppArgs[0]? | throwError "divisible_unfold: goal is not `Rule.Sound r`"
-  let some rn := r.constName? | throwError "divisible_unfold: rule is not a constant"
-  let rid := mkIdent rn
-  evalTactic (← `(tactic| (
-    refine ⟨rfl, ?_⟩
-    intro $(mkIdent `e):ident $(mkIdent `or):ident $(mkIdent `hbt):ident
-    dsimp only [$rid:ident, rule_unfold_ds]
-    simp only [Option.isSome_some, ite_true]
-    simp only [rule_helper, rule_unfold_s]
-    intro $(mkIdent `hwf):ident $(mkIdent `hc):ident $(mkIdent `hcond):ident
-      $(mkIdent `hty):ident $(mkIdent `hlt):ident
-    rule_oracle_bool)))
-
 set_option hygiene false in
 /-- `generic.rules:315–318`: the condition's first conjunct (`d` odd) evaluated, the
 `modularMultiplicativeInverse` call split (failure contradicts `d` odd), `eq_mul_inv`. -/
 macro "divisible_inv" : tactic => `(tactic| (
-  divisible_unfold
+  rule_unfold
   (try rule_ands)
   (try rule_clear_oracle)
   divisible_gen
@@ -192,7 +173,7 @@ macro "divisible_widen" : tactic => `(tactic| (
   rule_unfold
   (try rule_ands)
   (try rule_clear_oracle)
-  clear hcond
+  (try clear hcond)
   divisible_rest
   all_goals first
     | exact GoFV.Proof.Rules.Divisible.umod_widen (by decide) _ _

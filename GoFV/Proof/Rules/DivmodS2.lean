@@ -50,7 +50,7 @@ theorem r_divmod_113_sound : Rule.Sound r_divmod_113 := by
 theorem r_divmod_121_sound : Rule.Sound r_divmod_121 := by
   rule_unfold
   cases hok : Magic.smagicOK (wrapInt 32 true (e.auxInt [1]).toInt)
-  · simp only [hok, cond_false, binE, DV.bool.injEq, Bool.false_eq_true] at hcond
+  · simp only [hok, cond_false, binE, DV.bool.injEq, Bool.false_eq_true, false_and] at hcond
   (try rule_ands)
   divs_smagic
   divs_prefix

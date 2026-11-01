@@ -1207,4 +1207,97 @@ theorem isPow2_toNat {T : GoTy} {w : Nat} {c : Int} (hT : T.intInfo? = some (w, 
     have := (Nat.log2_lt (Nat.ne_of_gt hn0)).mpr hnl
     omega
 
+/-- `isPowerOfTwo(c)` of a signed `c` (`T` a signed type): `c` is `2 ^ k` with `k + 1 < w`. -/
+theorem isPow2_signed {T : GoTy} {w : Nat} {c : Int} (hT : T.intInfo? = some (w, true))
+    (hw : w ≤ 64) (h0 : 0 < c) (hhi : c < (((2 ^ w : Nat) : Int) + 1) / 2)
+    (h : wrapInt w true (andPred T c) = 0) :
+    ∃ k, (BitVec.ofInt w c).toNat = 2 ^ k ∧ k + 1 < w := by
+  obtain ⟨n, rfl⟩ : ∃ n : Nat, c = n := ⟨c.toNat, by omega⟩
+  have hn0 : 0 < n := by omega
+  have hp := Nat.two_pow_pos w
+  have h64 : 2 ^ w ≤ 2 ^ 64 := Nat.pow_le_pow_right (by decide) hw
+  have hn2 : 2 * n < 2 ^ w := by omega
+  have hp1 : pat64 (n : Int) = n := by
+    unfold pat64
+    rw [show (n : Int).emod (2 ^ 64) = (n : Int) % ((2 ^ 64 : Nat) : Int) by simp; rfl,
+      ← Int.natCast_emod, Int.toNat_natCast, Nat.mod_eq_of_lt (by omega)]
+  have hp2 : pat64 ((n : Int) - 1) = n - 1 := by
+    rw [show (n : Int) - 1 = ((n - 1 : Nat) : Int) by omega]
+    unfold pat64
+    rw [show ((n - 1 : Nat) : Int).emod (2 ^ 64) = ((n - 1 : Nat) : Int) % ((2 ^ 64 : Nat) : Int)
+      by simp; rfl, ← Int.natCast_emod, Int.toNat_natCast, Nat.mod_eq_of_lt (by omega)]
+  unfold andPred bitwise at h
+  rw [hT] at h
+  simp only [Option.getD_some, hp1, hp2] at h
+  have hand : n &&& (n - 1) ≤ n - 1 := Nat.and_le_right
+  have hz : n &&& (n - 1) = 0 := by
+    have hb : ∀ x : Nat, 2 * x < 2 ^ w → wrapInt w true (x : Int) = x := by
+      intro x hx
+      rw [wrapInt_true]
+      exact Int.bmod_eq_of_le (by omega) (by omega)
+    rw [hb _ (by omega), hb _ (by omega)] at h
+    omega
+  have hn := pow2_of_and_pred hn0 hz
+  refine ⟨bitsLen n - 1, ?_, ?_⟩
+  · rw [BitVec.toNat_ofInt]
+    rw [show ((n : Int) % ((2 ^ w : Nat) : Int)) = ((n % 2 ^ w : Nat) : Int) by push_cast; rfl]
+    rw [Int.toNat_natCast, Nat.mod_eq_of_lt (by omega)]
+    exact hn
+  · rw [hn] at hn2
+    have : 2 ^ (bitsLen n - 1 + 1) < 2 ^ w := by rw [Nat.pow_succ]; omega
+    exact (Nat.pow_lt_pow_iff_right (by decide)).mp this
+
+theorem beq_eq_sub_beq {w : Nat} (x z : BitVec w) : (x == z) = (x - z == 0#w) := by
+  rw [Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq, BitVec.sub_eq_iff_eq_add, BitVec.zero_add]
+
+theorem and_pred_pow2 {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k) :
+    (x &&& y - 1#w).toNat = x.toNat % 2 ^ k := by
+  rw [← umod_pow2_and x y k h, BitVec.toNat_umod, h]
+
+/-- `x == x / y * y` for `y = 2 ^ k`: the low `k` bits of `x` are zero (`divisible.rules:17`). -/
+theorem divisible_pow2_u {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k) :
+    (x == x / y * y) = (x &&& y - 1#w == 0#w) := by
+  rw [beq_eq_sub_beq, sub_udiv_mul, umod_pow2_and x y k h]
+
+/-- The signed form (`divisible.rules:20`): `y = 2 ^ k` is positive, `x.srem y = 0` iff
+`2 ^ k` divides `x.toInt` iff it divides `x.toNat`. -/
+theorem divisible_pow2_s {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k)
+    (hk : k + 1 < w) : (x == x.sdiv y * y) = (x &&& y - 1#w == 0#w) := by
+  rw [beq_eq_sub_beq, sub_sdiv_mul, Bool.eq_iff_iff, beq_iff_eq, beq_iff_eq,
+    ← BitVec.toInt_inj, BitVec.toInt_srem, ← BitVec.toNat_inj, and_pred_pow2 x y k h]
+  have hyi : y.toInt = ((2 ^ k : Nat) : Int) := by
+    rw [BitVec.toInt_eq_toNat_of_msb, h]
+    rw [BitVec.msb_eq_decide, h]
+    have : 2 ^ k < 2 ^ (w - 1) := Nat.pow_lt_pow_right (by decide) (by omega)
+    simp only [decide_eq_false_iff_not, Nat.not_le]
+    exact Nat.lt_of_lt_of_le this (Nat.le_refl _)
+  have hkw : ((2 ^ k : Nat) : Int) ∣ ((2 ^ w : Nat) : Int) :=
+    Int.natCast_dvd_natCast.mpr (Nat.pow_dvd_pow 2 (by omega))
+  have hx := x.isLt
+  rw [hyi, BitVec.toInt_zero, BitVec.toNat_zero, ← Int.dvd_iff_tmod_eq_zero,
+    Int.dvd_iff_emod_eq_zero, ← Int.emod_emod_of_dvd x.toInt hkw, BitVec.toInt_eq_toNat_bmod,
+    Int.bmod_emod, ← Int.natCast_emod, ← Int.natCast_emod, Nat.mod_eq_of_lt hx]
+  omega
+
+theorem divisible_pow2_u_ne {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k) :
+    (x != x / y * y) = (x &&& y - 1#w != 0#w) := by
+  rw [bne, bne, divisible_pow2_u x y k h]
+
+theorem divisible_pow2_s_ne {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k)
+    (hk : k + 1 < w) : (x != x.sdiv y * y) = (x &&& y - 1#w != 0#w) := by
+  rw [bne, bne, divisible_pow2_s x y k h hk]
+
+/-- A comparison's evaluation with the `bool` oracle as fallback is a boolean, whatever its
+operands (`rule_cond_bool`: `x.Op != OpConst64` on an oracle answer). -/
+theorem binDV_cmp_bool {o : BinOp}
+    (ho : o = .eq ∨ o = .ne ∨ o = .lt ∨ o = .le ∨ o = .gt ∨ o = .ge) (ty : GoTy) (X Y : DV)
+    (w : Bool) : ∃ b, (binDV o ty X Y).getD (.bool w) = .bool b := by
+  have hi : ∀ a b, ∃ c, (intBin o ty a b).getD (.bool w) = .bool c := by
+    intro a b
+    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨_, rfl⟩
+  cases X <;> cases Y <;> first
+    | exact hi _ _
+    | exact ⟨_, rfl⟩
+    | (cases o <;> exact ⟨_, rfl⟩)
+
 end GoFV.Proof.Rules

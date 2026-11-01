@@ -60,6 +60,21 @@ dsimproc reduceIntInfo (GoTy.intInfo? _) := fun e => do
   | some e' => return .done e'
   | none => return .continue
 
+/-- `callH e h args` at a helper constructor `h` whose argument list is concrete enough to
+select an arm: that arm. Unfolding `callH` by `simp` instead meets it on an undecided argument,
+unfolds it to its 26-arm `match` and generates that `match`'s equations and splitter in every
+rule module (`callH.match_5.eq_24`, 2.9 MB of `.olean`). -/
+dsimproc reduceCallH (callH _ _ _) := fun e => do
+  unless e.isAppOfArity ``callH 3 do return .continue
+  let some c := (e.getArg! 1).getAppFn.constName? | return .continue
+  unless (← getEnv).isConstructor c do return .continue
+  let some e1 ← delta? e | return .continue
+  let e1 := e1.headBeta
+  let some m := e1.getAppFn.constName? | return .continue
+  let e2 ← whnfCore e1
+  if e2.getAppFn.constName? == some m then return .continue
+  return .done e2
+
 /-! The lemma lists of the tactics, as simp sets (`Attr.lean`). -/
 
 attribute [rule_norm_s] or_true true_or or_false false_or and_true true_and and_false false_and
@@ -70,14 +85,14 @@ attribute [rule_norm_s] or_true true_or or_false false_or and_true true_and and_
   List.getD_cons_succ decide_eq_true_eq decide_eq_false_iff_not beq_iff_eq bne_iff_ne Nat.le_refl
   Nat.lt_irrefl BitVec.ofInt_ofNat Nat.reducePow Nat.reduceLT Nat.reduceLeDiff Nat.reduceAdd
   Nat.reduceSub Nat.reduceMod GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo DV.int.injEq
-  DV.bool.injEq callE callH Bool.cond_true Bool.cond_false Option.map_some
+  DV.bool.injEq callE reduceCallH Bool.cond_true Bool.cond_false Option.map_some
 
 attribute [rule_unfold_ds] GoFV.Proof.Rules.Pat.den GoFV.Proof.Rules.Pat.dens
   GoFV.Proof.Rules.Pat.raw GoFV.Proof.Rules.sigma GoFV.Proof.Rules.Pat.binds
   GoFV.Proof.Rules.Pat.bindss GoFV.Proof.Rules.Pat.cons GoFV.Proof.Rules.Pat.conss
   GoFV.Proof.Rules.Pat.wf GoFV.Proof.Rules.Pat.wfs GoFV.Proof.Rules.Pat.typed
   GoFV.Proof.Rules.Pat.typeds GoFV.Proof.Rules.auxIntOk
-  GoFV.Proof.Rules.Field.bindDV GoFV.Proof.Rules.condHolds GoFV.Proof.Rules.resDen
+  GoFV.Proof.Rules.Field.bindDV GoFV.Proof.Rules.resDen
   GoFV.Proof.Rules.nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map
   GoFV.Proof.Rules.reduceEvalPure GoFV.Proof.Rules.reduceAuxType GoFV.Proof.Rules.evalE
   GoFV.Proof.Rules.evalEs GoFV.Proof.Rules.auxIntDV List.lookup GoFV.Proof.Rules.toAuxIntD
@@ -90,7 +105,8 @@ attribute [rule_unfold_ds] GoFV.Proof.Rules.Pat.den GoFV.Proof.Rules.Pat.dens
   List.zip_nil_left List.zip_nil_right and_true true_and Nat.reduceAdd Nat.reduceBEq Nat.reduceBNe
   reduceIte
 
-attribute [rule_unfold_s] GoFV.Proof.Rules.callH GoFV.Proof.Rules.binE_land_bool
+attribute [rule_unfold_s] GoFV.Proof.Rules.reduceCallH Option.isSome_some ite_true ite_false
+  GoFV.Proof.Rules.binE_land_bool
   GoFV.Proof.Rules.binE_lor_bool GoFV.Proof.Rules.binE_eq GoFV.Proof.Rules.binE_ne
   GoFV.Proof.Rules.binE_lt GoFV.Proof.Rules.binE_le GoFV.Proof.Rules.binE_gt
   GoFV.Proof.Rules.binE_ge GoFV.Proof.Rules.binE_add GoFV.Proof.Rules.binE_sub
@@ -149,10 +165,53 @@ elab "rule_oracle_bool" : tactic => withMainContext do
         clear hbo)))
     catch _ => saved.restore
 
+/-- A comparison in the condition `hcond` that does not evaluate to a boolean literal (of an
+oracle answer: `x.Op != OpConst64`, `div.Uses == 1`) is still a boolean (`binDV_cmp_bool`: a
+comparison or the `bool` oracle's answer, `(binDV o t X Y).getD (.bool w)`). It is replaced by
+a fresh `Bool`, so that `&&`/`||` around it evaluate. Not a comparison that reads instance
+fields (`c.Type.Size() == 8`): it evaluates after the case splits, and replacing it would lose
+its value. -/
+elab "rule_cond_bool" : tactic => withMainContext do
+  let hcs := mkIdent `hcond
+  let mut tried : Array Lean.Expr := #[]
+  for _ in [0:16] do
+    let some hc := (← getLCtx).findFromUserName? `hcond | return
+    let ty ← instantiateMVars hc.type
+    -- `Option.getD (binDV …) (DV.bool w)` with `binDV` stuck, unfolded by `rule_unfold_ds`
+    let cands := subtermsWith (fun t => t.isAppOfArity ``Option.getD.match_1 5 &&
+      !t.hasLooseBVars && !tried.contains t &&
+      (match t.getArg! 4 with
+       | .lam _ _ b _ => b.isAppOfArity ``DV.bool 1
+       | _ => false) &&
+      ((t.getArg! 2).getAppFn.constName?.any fun n => n != ``DV.bool)) ty
+    -- the value of a `DV.val` is not read by a field other than `Type`/`AuxInt`
+    let readsInst (c : Lean.Expr) : Bool :=
+      let c' := c.replace fun t =>
+        if t.isAppOfArity ``DV.val 2 then some (mkConst ``True) else none
+      (c'.find? fun t => (t.isAppOfArity ``PEnv.ty 2 || t.isAppOfArity ``PEnv.auxInt 2) &&
+        !t.hasLooseBVars).isSome
+    let some c := cands.find? (!readsInst ·) | return
+    tried := tried.push c
+    let a ← Term.exprToSyntax c
+    for o in [``BinOp.eq, ``BinOp.ne, ``BinOp.lt, ``BinOp.le, ``BinOp.gt, ``BinOp.ge] do
+      let saved ← saveState
+      let ok ← try
+          evalTactic (← `(tactic| (
+            obtain ⟨_, hab⟩ : ∃ b, $a = DV.bool b :=
+              GoFV.Proof.Rules.binDV_cmp_bool (o := $(mkIdent o)) (by decide) .bool _ _ _
+            simp only [hab, rule_unfold_s] at $hcs:ident
+            clear hab)))
+          pure true
+        catch _ => saved.restore; pure false
+      if ok then break
+
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hbt` (`Oracle.BoolTyped`), `hwf` (checker facts), `hc` (pattern
 checks), `hcond` (condition, its `bool` oracle atoms replaced by booleans,
-`rule_oracle_bool`), `hty` (top type), `hlt` (leaf types). -/
+`rule_oracle_bool`, `rule_cond_bool`), `hty` (top type), `hlt` (leaf types). The condition is
+evaluated after the intros: evaluated in the same `dsimp` as the rest, the kernel's check of
+the resulting cast hits "deep recursion" on conditions with several helper calls
+(`divmod.rules:159`, `:180`). -/
 elab "rule_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
@@ -173,7 +232,10 @@ elab "rule_unfold" : tactic => do
     dsimp only [$rid:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
     intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident
-    rule_oracle_bool)))
+    (try dsimp only [GoFV.Proof.Rules.condHolds, rule_unfold_ds] at $hcond:ident)
+    (try simp only [rule_helper, rule_unfold_s] at $hcond:ident)
+    rule_oracle_bool
+    rule_cond_bool)))
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
 (`PEnv.leaf e p`), `tyOtherInt t w`, the condition of an `if`, or `Val.asInt w l` for a leaf
@@ -497,7 +559,9 @@ macro "rule_div" : tactic => `(tactic| (
 
 /-- An unsigned division or remainder by a power of two (`isPowerOfTwo(uintN(c))`, a
 hypothesis `wrapInt w false (andPred T (wrapInt w false c)) = 0`): the divisor's value by
-`isPow2_toNat`, then the shift (`udiv_pow2`, amount by `omega`) or mask (`umod_pow2_and`). -/
+`isPow2_toNat`, then the shift (`udiv_pow2`, amount by `omega`) or mask (`umod_pow2_and`).
+Divisibility by a signed power of two (`isPowerOfTwo(c)`, `wrapInt w true (andPred T c) = 0`,
+`divisible.rules:17–26`): `isPow2_signed`, then `divisible_pow2_u`/`_s` (and `_ne`). -/
 elab "rule_pow2" : tactic => withMainContext do
   for h in ← getLCtx do
     if h.isImplementationDetail then continue
@@ -507,6 +571,20 @@ elab "rule_pow2" : tactic => withMainContext do
       continue
     let ap := l.getArg! 2
     let inner := ap.getArg! 1
+    if (l.getArg! 1).isConstOf ``Bool.true then
+      let T ← Term.exprToSyntax (ap.getArg! 0)
+      let w ← Term.exprToSyntax (l.getArg! 0)
+      let c ← Term.exprToSyntax inner
+      let hs ← Term.exprToSyntax h.toExpr
+      evalTactic (← `(tactic| (
+        obtain ⟨k, hp2, hk⟩ := GoFV.Proof.Rules.isPow2_signed (T := $T) (w := $w) (c := $c) rfl
+          (by decide) (by omega) (by omega) $hs
+        first
+        | exact GoFV.Proof.Rules.divisible_pow2_u _ _ _ hp2
+        | exact GoFV.Proof.Rules.divisible_pow2_s _ _ _ hp2 hk
+        | exact GoFV.Proof.Rules.divisible_pow2_u_ne _ _ _ hp2
+        | exact GoFV.Proof.Rules.divisible_pow2_s_ne _ _ _ hp2 hk)))
+      return
     unless inner.isAppOfArity ``GoFV.Rules.wrapInt 3 do continue
     let T ← Term.exprToSyntax (ap.getArg! 0)
     let w ← Term.exprToSyntax (inner.getArg! 0)

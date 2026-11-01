@@ -11,8 +11,6 @@ Granlund–Montgomery bound `2^(w+s) ≤ M*d < 2^(w+s) + 2^s` (`USpec`). The `Na
 rules compute (`DivmodU.lean`).
 -/
 
-/-- `rule_unfold_ds` without `condHolds` (`divu_unfold`, `DivmodU.lean`). -/
-register_simp_attr divu_unfold_ds
 
 namespace GoFV.Proof.Rules.DivmodU
 

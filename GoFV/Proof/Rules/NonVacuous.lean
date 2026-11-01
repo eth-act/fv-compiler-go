@@ -12,6 +12,7 @@ import GoFV.Rules.Generated.Generic.Values11
 import GoFV.Rules.Generated.Generic.Values12
 import GoFV.Rules.Generated.Generic.Values13
 import GoFV.Rules.Generated.Generic.Values14
+import GoFV.Rules.Generated.Divisible.Values00
 
 /-!
 # Non-vacuity of `Rule.Sound` (`docs/proofs/rules.md`, "Non-vacuity")
@@ -247,5 +248,24 @@ theorem inst_r_generic_1142 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
   simp [GoFV.Rules.Generated.Generic.r_generic_1142]
   rule_eval
   simp
+
+/-- `generic.rules:1097`: `(Div8u n (Const8 [c])) && isPowerOfTwo(uint8(c)) =>
+(Rsh8Ux64 n (Const64 <typ.UInt64> [log8u(uint8(c))]))` at `n = 100`, `c = 4`. -/
+theorem inst_r_generic_1097 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1097
+    (PEnv.ofLists [([0], .i8 100)] [([1], .int .w8)] (.int .w8) [([1], 4)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1097]
+  rule_eval
+  rfl
+
+/-- `divisible.rules:17`: `(Eq16 x (Mul16 (Div16u x (Const16 [c])) (Const16 [c]))) &&
+isPowerOfTwo(c) => (Eq16 (And16 x (Const16 [c-1])) (Const16 [0]))` at `x = 12`, `c = 4`. -/
+theorem inst_r_divisible_17 : Rule.Inst GoFV.Rules.Generated.Divisible.r_divisible_17
+    (PEnv.ofLists [([0], .i16 12), ([0, 0, 1], .i16 12)] [([], .bool)] (.int .w16)
+      [([1, 0, 1], 4), ([1, 1], 4)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Divisible.r_divisible_17]
+  rule_eval
+  rfl
 
 end GoFV.Proof.Rules
