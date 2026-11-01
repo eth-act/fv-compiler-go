@@ -365,11 +365,10 @@ def frameVal (ctx : Ctx) (v : Value) : Option Val :=
     | _ => some .poison
   | _ => none
 
-/-- Evaluate value `v` from the registers (its arguments are already evaluated). -/
-def evalValue (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) : Res Val := do
-  let argv ← v.args.toList.mapM fun a =>
-    Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join
-  let ty := ctx.tys[v.id]?.getD .other
+/-- The result of value `v` from its evaluated arguments `argv`, before it takes the shape
+`ty` of its type (`evalValue`). -/
+def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (ty : Ty) :
+    Res Val :=
   match v.op with
   | .InitMem => pure (.mem fr.mem0)
   | .Arg =>
@@ -392,7 +391,16 @@ def evalValue (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) : Res Val := do
     | some x => pure x
     | none =>
       if isRoot op then .stuck s!"v{v.id}: {op.name} is not in phases P1/P2"
-      else pure ((evalPure op ty v.auxInt v.aux argv).retype ty)
+      else pure (evalPure op ty v.auxInt v.aux argv)
+
+/-- Evaluate value `v` from the registers (its arguments are already evaluated); the result
+takes the shape of the value's type (`Val.retype`, §3.2). -/
+def evalValue (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) : Res Val := do
+  let argv ← v.args.toList.mapM fun a =>
+    Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join
+  let ty := ctx.tys[v.id]?.getD .other
+  let r ← evalOp env ctx fr v argv ty
+  pure (r.retype ty)
 
 /-- Evaluate the values listed in `ids`, in order, storing each in the registers. -/
 def evalAll (env : Env) (ctx : Ctx) (fr : Frame) : List ID → Res Frame
@@ -523,6 +531,7 @@ def Val.hasPoison : Val → Bool
   | .poison => true
   | .agg vs => Val.anyPoison vs
   | .tuple vs => Val.anyPoison vs
+  | .blob bs => bs.contains .poison
   | _ => false
 /-- Some value of `vs` contains `poison`. -/
 def Val.anyPoison : List Val → Bool
@@ -589,9 +598,12 @@ def entryFrame (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) : Frame :=
     mem0 := frameMem env ctx images mem, images }
 
 /-- The outcome of an activation from its loop's outcome: Go-typed results (`goResults`) and
-the memory without the frame; other outcomes unchanged. -/
+the memory without the frame; other outcomes unchanged. A `MakeResult` component containing
+poison is observed (`stuck`) before decoding, so `finish` preserves refinement
+(`docs/plans/semantics.md` §3.5). -/
 def finish (outs : Array (Option AuxRef × Ty × Nat)) (act : Nat) : Outcome → Outcome
   | .returned rs m =>
+    if Val.anyPoison rs then .stuck "poison result" else
     match goResults outs act rs m with
     | .ok vals => .returned vals (m.freeFrame act)
     | .panic e m => .panicked e m

@@ -65,6 +65,40 @@ theorem OutcomeRefines.defined_left {a b : Outcome} (h : OutcomeRefines a b) : a
 theorem OutcomeRefines.defined_right {a b : Outcome} (h : OutcomeRefines a b) : b.Defined := by
   cases h <;> trivial
 
+mutual
+/-- A refinement whose source contains no poison is an equality. -/
+theorem Sem.Refines.eq_of_noPoison : {a b : Val} → Sem.Refines a b → a.hasPoison = false → a = b
+  | _, _, .poison _, h => by simp [Val.hasPoison] at h
+  | _, _, .int _ _, _ => rfl
+  | _, _, .bool _, _ => rfl
+  | _, _, .mem _, _ => rfl
+  | _, _, .ptr _, _ => rfl
+  | _, _, .blob _, _ => rfl
+  | _, _, .empty, _ => rfl
+  | _, _, .tuple hl, h => by
+    rw [Sem.RefinesList.eq_of_noPoison hl (by simpa [Val.hasPoison] using h)]
+  | _, _, .agg hl, h => by
+    rw [Sem.RefinesList.eq_of_noPoison hl (by simpa [Val.hasPoison] using h)]
+theorem Sem.RefinesList.eq_of_noPoison :
+    {as bs : List Val} → Sem.RefinesList as bs → Val.anyPoison as = false → as = bs
+  | _, _, .nil, _ => rfl
+  | _, _, .cons h t, hp => by
+    simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
+    rw [Sem.Refines.eq_of_noPoison h hp.1, Sem.RefinesList.eq_of_noPoison t hp.2]
+end
+
+/-- `finish` (Go-typed results, frame removal) preserves outcome refinement. -/
+theorem finish_refines {outs : Array (Option AuxRef × Ty × Nat)} {act : Nat} {o o' : Outcome}
+    (hd : (finish outs act o).Defined) (h : OutcomeRefines o o') :
+    OutcomeRefines (finish outs act o) (finish outs act o') := by
+  cases h with
+  | panicked e m => exact .panicked e m
+  | @returned rs rs' m hr =>
+    by_cases hp : Val.anyPoison rs = true
+    · simp only [finish, hp, if_true] at hd; exact hd.elim
+    · rw [← Sem.RefinesList.eq_of_noPoison hr (by simpa using hp)]
+      exact OutcomeRefines.refl hd
+
 /-! ## Fuel monotonicity -/
 
 /-- A defined `runLoop` outcome does not change with more fuel. -/
