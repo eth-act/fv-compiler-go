@@ -69,11 +69,11 @@ def tri3TV : TypeView := { tabs := max3Tabs, mem := 28, void := 30 }
 theorem tri3_run : returnsInt (run Env.p1 max3Tabs tri3 max3Args {} 3) 5 = true := by
   decide +kernel
 
-/-- `tri3` passes `check`; the checked step at `b1` fires: `b1` becomes `Plain`, `b3` is
+/-- `tri3` passes `wfDomCheck`; the checked step at `b1` fires: `b1` becomes `Plain`, `b3` is
 unlinked, and `a < b` (`v12`) and `b` (`v9`) are reset to `OpInvalid`. -/
 theorem tri3_fuse :
-    (checkOK tri3CE tri3 &&
-      match fuseBlockIfChecked tri3CE tri3TV tri3 1 with
+    (wfDomOK tri3 &&
+      match fuseBlockIfChecked tri3TV tri3 1 with
       | .ok (g, ch) => ch && decide ((g.block? 1).map (·.kind) = some .Plain) &&
           decide ((g.block? 3).map (·.kind) = some .Invalid) &&
           decide ((g.value? 12).map (·.op) = some .Invalid) &&
@@ -83,7 +83,7 @@ theorem tri3_fuse :
   decide +kernel
 
 theorem fuseIf_witness :
-    ∃ g, fuseBlockIfChecked tri3CE tri3TV tri3 1 = .ok (g, true) ∧
+    ∃ g, fuseBlockIfChecked tri3TV tri3 1 = .ok (g, true) ∧
       (g.block? 1).map (·.kind) = some .Plain ∧
       ∃ fuel m, run Env.p1 max3Tabs g max3Args {} fuel = .returned [.i64 5] m := by
   have h := tri3_fuse
@@ -96,8 +96,8 @@ theorem fuseIf_witness :
     subst hch
     obtain ⟨m, hm⟩ := returnsInt_iff.1 tri3_run
     obtain ⟨fuel, m', h⟩ := Refines.returned_int
-      (fuseBlockIfChecked_refines (tabs := max3Tabs) hr
-        (Dom.WFDom.of_check (checkOK_sound hck))).1 hm
+      (fuseBlockIfChecked_refines (tabs := max3Tabs) (ce := tri3CE) hr
+        (Dom.WFDom.of_wfDomCheck (wfDomOK_sound hck))).1 hm
     exact ⟨g, hr, hk, fuel, m', h⟩
   · cases h
 

@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.FuseIfSetup
+import GoFV.Proof.Pass.FuseIfPres
 import GoFV.Proof.Pass.FusePlainSim
 import GoFV.Proof.SimIH
 
@@ -83,7 +83,7 @@ theorem normal_step {env : Env} {tabs : Tables} {n : Nat}
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hb, hna, hI, ht, hs, hdi, hA⟩ := hR
   rw [hbT]
-  obtain ⟨Y, Y', hY, hY', -, -, -, -, hrest⟩ := S.block_core hb hna
+  obtain ⟨Y, Y', hY, hY', -, -, -, -, -, hrest⟩ := S.block_core hb hna
   obtain ⟨hBR, hk, hcs, hsu, hcX⟩ := S.brel_other hb hnb hna hY hY' hI
   have hfree := S.freeDef_other hb hY (hrest hnb).1 ht hdi hA
   have B : Blocks f g bS Y Y' := ⟨hb, hY, by rw [S.rel.blocks]; exact hb, hY'⟩
@@ -155,7 +155,7 @@ theorem side1_target {env : Env} {tabs : Tables} {G GT : Frame} (hAG : Agr (s.in
       (.inr (by decide)) S.not_dead_b
     rw [he1] at hnd
     have ha1m := S.arm1_mem ha1
-    obtain ⟨A1x, A1', hA1x, hA1', -, -, hsc, -, hrest⟩ := S.block_core ha1m hnd
+    obtain ⟨A1x, A1', hA1x, hA1', -, -, -, hsc, -, hrest⟩ := S.block_core ha1m hnd
     rw [hA1] at hA1x; cases hA1x
     obtain ⟨hv, hk', -, hsu'⟩ := hrest ha1b
     have hreach1 : Reachable f a1 := by

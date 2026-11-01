@@ -24,9 +24,9 @@ checkers need no `check` of their results (issue #147): both passes run the slim
 `wfDomCheck` once, on their input, and return a function that fails it unchanged (every corpus
 input passes); the refinement theorems are `GoFV.Proof.FuseEarly.fuseEarly_refines` and
 `GoFV.Proof.FuseLate.fuseLate_refines`. Late fuse's `fuseBlockIf` runs checked
-(`fuseBlockIfChecked`, proof `GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`): its rare rewrites
-(1,586 on the full corpus) are checked with `check`, a rejected one is skipped (never on the
-corpus). Its branch redirects run checked (`fuseBranchRedirectChecked`: prove's validator
+(`fuseBlockIfChecked`, proof `GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`), with no `check` of
+the result; a rejected rewrite is skipped (never on the corpus). Its branch redirects run checked
+(`fuseBranchRedirectChecked`: prove's validator
 decides each redirected branch, `Redir.stepOK`; proof
 `GoFV.Proof.FuseRedirect.fuseBranchRedirectChecked_ok`); a rejected redirect is skipped (never on
 the corpus).
@@ -49,9 +49,8 @@ def earlyStep (isMem : TypeRef → Bool) (f : Func) (b : ID) :
   pure (f, c1 || c2 || c3 || c4)
 
 /-- The late fuse per-block step: `fuseBlockIf`, then `fuseBlockPlain`. -/
-def lateStep (ce : CheckEnv) (tv : TypeView) (f : Func) (b : ID) :
-    Except String (Func × Bool) := do
-  let (f, c1) ← fuseBlockIfChecked ce tv f b
+def lateStep (tv : TypeView) (f : Func) (b : ID) : Except String (Func × Bool) := do
+  let (f, c1) ← fuseBlockIfChecked tv f b
   let (f, c2) ← Plain.fuseBlockPlainChecked f b
   pure (f, c1 || c2)
 
@@ -78,7 +77,7 @@ with dominated uses (`wfDomCheck`), so a function that fails it is returned unch
 def fuseLate (ce : CheckEnv) (tv : TypeView) (pv : Prove.Prover) (f : Func) :
     Except String Func :=
   if !wfDomOK f then .ok f else
-  orInput f (fuseLoop (Fuse.lateStep ce tv) (some (fuseBranchRedirectChecked pv ce.tabs))
+  orInput f (fuseLoop (Fuse.lateStep tv) (some (fuseBranchRedirectChecked pv ce.tabs))
     roundFuel f)
 
 /-- The `late fuse` pass. -/

@@ -21,11 +21,11 @@ namespace GoFV.Proof.FuseLate
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.Fuse GoFV.Proof Dom
 
 /-- **The late fuse step is a checked step.** -/
-theorem lateStep_ok {ce : CheckEnv} (tv : TypeView) : Fuse.StepOK ce (lateStep ce tv) := by
+theorem lateStep_ok {ce : CheckEnv} (tv : TypeView) : Fuse.StepOK ce (lateStep tv) := by
   intro tabs f b g ch h hf
   unfold lateStep at h
   simp only [bind, Except.bind] at h
-  cases h1 : fuseBlockIfChecked ce tv f b with
+  cases h1 : fuseBlockIfChecked tv f b with
   | error e => rw [h1] at h; cases h
   | ok r1 =>
     rw [h1] at h

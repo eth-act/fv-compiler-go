@@ -6,8 +6,9 @@ import GoFV.Proof.Pass.FuseIfSim
 `fuseBlockIfChecked_refines`: if `f` is well formed with its uses dominated on paths
 (`Dom.WFDom`), the result of the checked `fuseBlockIf` step (`Fuse.fuseBlockIfChecked`, late
 fuse) refines `f` and keeps `WFDom`. An accepted rewrite is one `Setup` (`IfC.stepOK`: the
-result is the rewrite at `siteOf tv f b` and passes `check`), refined by `refines_of_step`; a
-rejected one leaves `f`.
+result is the rewrite at `siteOf tv f b`), refined by `refines_of_step`; well-formedness and use
+dominance of the result follow from the relation (`Setup.wg`, `Setup.useDom_g`, no `check`); a
+rejected rewrite leaves `f`.
 -/
 
 namespace GoFV.Proof.FuseIf
@@ -15,7 +16,7 @@ namespace GoFV.Proof.FuseIf
 open GoFV.SSA GoFV.Opt GoFV.Opt.Fuse GoFV.Proof Dom
 
 theorem stepOK_sound {ce : CheckEnv} {tv : TypeView} {f g : Func} {b : ID} (hf : WFDom ce f)
-    (h : IfC.stepOK ce tv f g b = true) : ∃ s R, Setup ce f g s R := by
+    (h : IfC.stepOK tv f g b = true) : ∃ s R, Setup ce f g s R := by
   unfold IfC.stepOK at h
   split at h
   · rename_i s _
@@ -24,7 +25,7 @@ theorem stepOK_sound {ce : CheckEnv} {tv : TypeView} {f g : Func} {b : ID} (hf :
 
 /-- **The checked `fuseBlockIf` step refines its input** and keeps `WFDom`. -/
 theorem fuseBlockIfChecked_refines {tabs : Tables} {ce : CheckEnv} {tv : TypeView} {f g : Func}
-    {b : ID} {ch : Bool} (h : fuseBlockIfChecked ce tv f b = .ok (g, ch)) (hf : WFDom ce f) :
+    {b : ID} {ch : Bool} (h : fuseBlockIfChecked tv f b = .ok (g, ch)) (hf : WFDom ce f) :
     Refines tabs g tabs f ∧ WFDom ce g := by
   unfold fuseBlockIfChecked at h
   cases hfb : fuseBlockIf tv f b with
@@ -38,7 +39,7 @@ theorem fuseBlockIfChecked_refines {tabs : Tables} {ce : CheckEnv} {tv : TypeVie
       cases h
       rw [Bool.and_eq_true] at hok
       obtain ⟨s, R, S⟩ := stepOK_sound hf hok.2
-      exact ⟨S.refines_of_step, WFDom.of_check S.rel.wg⟩
+      exact ⟨S.refines_of_step, ⟨S.wg, S.useDom_g⟩⟩
     · cases h
       exact ⟨Refines.refl _ _, hf⟩
 

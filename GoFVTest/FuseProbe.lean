@@ -60,9 +60,9 @@ def Counts.bump (k : Counts) (s : String) (n : Nat := 1) : Counts :=
 def isRootOp (op : Op) : Bool := Sem.isRoot op
 
 /-- The checked fuseBlockIf step on one rewrite: accepted, or the first failing part. -/
-def checkIf (ce : CheckEnv) (tv : TypeView) (name : String) (f g : Func) (b : ID)
+def checkIf (tv : TypeView) (name : String) (f g : Func) (b : ID)
     (k : Counts) : Counts := Id.run do
-  if IfC.stepOK ce tv f g b then return k.bump "CHECK accepted"
+  if IfC.stepOK tv f g b then return k.bump "CHECK accepted"
   let k := k.bump "CHECK rejected"
   let some s := IfC.siteOf tv f b | return k.bump "reject: no site"
   let R := IfC.Site.resetOf f g
@@ -80,8 +80,8 @@ def checkIf (ce : CheckEnv) (tv : TypeView) (name : String) (f g : Func) (b : ID
         toString ((s.arm0.map (valsOf f)).getD #[] |>.toList.map fun x =>
           (x, (f.getV x).op.name, (f.getV x).uses, (f.getV x).type, (g.getV x).op.name, (g.getV x).block))
     else if !((List.range f.valueTab.size).all (s.valueOK f g R)) then "valueOK"
-    else if !(f.blocks.all (s.blockOK f g R)) then "blockOK"
-    else "checkOK"
+    else if !((List.range f.valueTab.size).all (s.blkOK f g)) then "blkOK"
+    else "blockOK"
   let k := k.bump s!"reject: {why}"
   if k.shown.size < 10 then return { k with shown := k.shown.push s!"{name} b{b}: {why}" }
   return k
@@ -451,7 +451,7 @@ def main (args : List String) : IO UInt32 := do
           loop (fun f b k => do
             let (f', c1) ← fuseBlockIf tv f b
             let k := if c1 then analyzeIf tv name f f' b k else k
-            let k := if c1 then checkIf { tabs := env.tables, typs := env.typs } tv name f f' b k else k
+            let k := if c1 then checkIf tv name f f' b k else k
             let f := f'
             let k := analyze name f b k
             let (f, c2) := fuseBlockPlain f b
