@@ -23,7 +23,7 @@ namespace GoFV.Rules.Proven
 open GoFV.Rules
 
 /-- `generic.rules` restricted to its 1191 proven value rules, 3 proven block rules, 7
-nil-check eliminations, 13 Load-of-Store forwardings, 1 struct-load
+nil-check eliminations, 15 Load-of-Store forwardings, 1 struct-load
 expansions, 1 struct-store splits and 6 segment rules. -/
 def generic : RuleSet where
   name := "generic"
@@ -211,7 +211,7 @@ def generic : RuleSet where
     (.ZeroExt8to64, [Generated.Generic.r_generic_102, Generated.Generic.r_generic_754])]
   blocks := [(.If, [Generated.Generic.r_generic_1064, Generated.Generic.r_generic_1065, Generated.Generic.r_generic_1066])]
   nilChecks := [Generated.Generic.r_generic_1062, Generated.Generic.r_generic_1367, Generated.Generic.r_generic_1372, Generated.Generic.r_generic_1375, Generated.Generic.r_generic_1381, Generated.Generic.r_generic_1384, Generated.Generic.r_generic_1388]
-  loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821, Generated.Generic.r_generic_827, Generated.Generic.r_generic_830, Generated.Generic.r_generic_832, Generated.Generic.r_generic_943, Generated.Generic.r_generic_948, Generated.Generic.r_generic_954, Generated.Generic.r_generic_961, Generated.Generic.r_generic_1005, Generated.Generic.r_generic_2158]
+  loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821, Generated.Generic.r_generic_827, Generated.Generic.r_generic_830, Generated.Generic.r_generic_832, Generated.Generic.r_generic_2146, Generated.Generic.r_generic_2155, Generated.Generic.r_generic_943, Generated.Generic.r_generic_948, Generated.Generic.r_generic_954, Generated.Generic.r_generic_961, Generated.Generic.r_generic_1005, Generated.Generic.r_generic_2158]
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975]
   segs := [Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]

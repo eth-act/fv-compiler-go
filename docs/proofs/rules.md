@@ -310,6 +310,20 @@ block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dr
 `Zero` leaves `poison` where the source has zeros; and stores of `ConstNil`/`SliceLen` of a
 constant slice (`isConstZero` cases beyond integer constants), which fall back.
 
+**Changed `Move` sources** (`:2146`, `:2155`): `(Move {t1} [s] dst tmp1 midmem:(Move {t2} [s] tmp2
+src _)) && isSamePtr(tmp1, tmp2) && isStackPtr(src) && disjoint(src, s, tmp2, s) && … => (Move
+{t1} [s] dst src midmem)` and its form with `midmem:(VarDef (Move …))` keep the root but change
+its source (`fwdShapeOK`'s `Move` cases; `Interp.rewriteValue` tries `loads` on a `Move` after its
+row; `fwdEvent?` accepts a `Move` definition). `fwdNewOK` accepts `moveSrcOK`: `w` is `u` with
+another source, its destination and memory reached from `u`'s through compatible copies, and
+`w`'s memory is a `Move` `im` of the same size, or a `VarDef` of one (`moveInnerOK`): `im`'s
+destination `samePtrB` to `u`'s source, its source reaching `w`'s through compatible copies and
+`disjointB` from its destination, and under a `VarDef` its source in a known allocation
+(`baseBlk?`) other than the `VarDef`'s frame variable in activation 0. A `VarDef` is a memory
+root of the atom simulation (`memOp`/`memDef`: its memory with the variable's block poisoned,
+`Sem.memRoot` in activation 0); `AtomArgsRefX` allows a changed `Move` like a changed `Store`
+(`ChgRefP`: the target's write on its arguments' terms refines the source's).
+
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
 g = true → RefinesUnder Env.Mono tabs g tabs f`, by the generalised atom simulation
 (`atomSimX_refines`; `AtomsX` allows a dropped root that is a `Store` or a `Zero`, neither of which
@@ -329,7 +343,12 @@ aggregate is all `poison` bytes, which a `Load` reads as `poison`, semantics.md 
 `decodeLoad`; then `copyReach_den` to `x`, whose rank `copyReach_rank` bounds). The fuel of
 `TermRefP`'s right side may depend on the valuations. A constant result reads the stored
 constant through its chain the same way (`chain_load`), which denotes the result's bits
-(`opVal_const64`, `fwdConstOK_spec`). A Move forwarding (`move_den`): the `Move`'s register is
+(`opVal_const64`, `fwdConstOK_spec`). A changed `Move` source (`moveSrc_chgRef`,
+`GoFV/Proof/Pass/LoadFwdMoveSrc.lean`): by `MemAtoms` the memory `w` reads is the `VarDef`'s,
+`M2 = M1.poisonBlock B` (or `M1`), with `M1` the inner `Move`'s copy of `src`'s bytes to `tmp`;
+`M2` is refined by `M1` (`poisonBlock_refines`), so the bytes the source reads at `tmp` are refined
+by `src`'s (`read_write_self`), which `M2` still holds (`read_write_sep`, `read_poisonBlock_ne`):
+`moveSrc_mem`; the target's arguments refine as terms (`fwd_den`). A Move forwarding (`move_den`): the `Move`'s register is
 its write of the bytes read at the source (`memDef_move`), the Load's pointer is the
 destination plus `o` (`ptrBase_den`, `baseSame_den`), and the bytes there are those of the source
 at `o` (`read_write_self`, `read_sub`, `load_congr_read`, `LoadFwdMem.lean`); the fresh
@@ -345,7 +364,7 @@ against the zeros `zeroChain_read` reads through the disjoint writes from the `Z
 (`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
 `generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:943`, `:948`, `:954`,
-`:961`, `:1005`, `:2158`; witnesses
+`:961`, `:1005`, `:2146`, `:2155`, `:2158`; witnesses
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
@@ -355,7 +374,9 @@ string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`
 `Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`) and
 `zd_checkedRewrite` (`*(*struct{})(p) = struct{}{}; *p = [2]int{}; *p = [2]int{}; p[1] = 0` with
 `:1005`, `:2158`, `:943`: the three writes dropped, the result returns the first `Zero`'s memory;
-`GoFV/Proof/Witness/FwdDrop.lean`), kernel evaluation.
+`GoFV/Proof/Witness/FwdDrop.lean`) and `mv_checkedRewrite` (`t = s; d = t` on `[2]int` frame
+variables with `:2155`: the second `Move` copies from `s`; `GoFV/Proof/Witness/MoveSrc.lean`),
+kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,

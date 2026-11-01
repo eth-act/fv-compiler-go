@@ -42,7 +42,7 @@ theorem mc_atomArgs : AtomArgsRefX (SrcInv.triv tabs f) g := by
     exact .inl ⟨u', hu', hop, hty, hai, (sameVal_spec hv).2.2.2.1, hsz, fun i hi =>
       ⟨fun _ => TermRef.toP (hT i hi) _ _ _, fun _ _ _ _ _ _ _ => TermRef.toP (hT i hi) _ _ _⟩⟩
   · obtain ⟨h1, h2⟩ := storeOK_op hv
-    exact .inr ⟨u', hu', h1, h2, store_chgRef hwf hwg K hu' hv⟩
+    exact .inr ⟨u', hu', h1.trans h2.symm, .inl h2, store_chgRef hwf hwg K hu' hv⟩
 
 end
 

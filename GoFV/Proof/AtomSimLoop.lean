@@ -79,11 +79,57 @@ theorem memRoot_of_memDef_store {ctx : Ctx} {v : Value} (hop : v.op = .Store) {a
     simp [memRoot, hop, hw, writeRes]
   | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at h
 
-/-- **`ChgRefP` on registers**: if the source's `Store` `u` writes on its arguments' registers
-(their terms' values over the atoms, `DenOK`), the target's `Store` `w` writes a refined memory
-on its arguments' registers. The valuations are those of `termRef_apply`. -/
+/-- A `Move`'s copy on refined arguments succeeds with a refined memory. -/
+theorem memDef_move_mono {tabs : Tables} {v : Value} (hop : v.op = .Move) {as bs : List Val}
+    (h : RefinesList as bs) {y : Val} (hy : memDef tabs v as = some y) :
+    ∃ y', memDef tabs v bs = some y' ∧ Sem.Refines y y' := by
+  obtain ⟨d, s, m0, cs, M', rfl, hr, hw, rfl⟩ : ∃ d s m0 cs M', as = [.ptr d, .ptr s, .mem m0] ∧
+      m0.read s v.auxInt.toInt.toNat = some cs ∧ m0.write d cs = some M' ∧ y = .mem M' := by
+    match as with
+    | [a, b, c] =>
+      cases a <;> try (simp [memDef, hop] at hy; done)
+      cases b <;> try (simp [memDef, hop] at hy; done)
+      cases c <;> try (simp [memDef, hop] at hy; done)
+      simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hy
+      obtain ⟨cs, hr, M', hw, rfl⟩ := hy
+      exact ⟨_, _, _, cs, M', rfl, hr, hw, rfl⟩
+    | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at hy
+  obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+  obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+  obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+  cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
+  obtain ⟨cs', hr', hcs⟩ := hm.read hr
+  obtain ⟨M'', hw', hMM⟩ := hm.write hcs hw
+  exact ⟨.mem M'', by simp [memDef, hop, hr', hw'], .mem hMM⟩
+
+/-- A `Move` whose copy succeeds evaluates to it. -/
+theorem memRoot_of_memDef_move {ctx : Ctx} {v : Value} (hop : v.op = .Move) {argv : List Val}
+    {y : Val} (h : memDef ctx.tabs v argv = some y) : memRoot ctx v argv = .ok y := by
+  match argv with
+  | [a, b, c] =>
+    cases a <;> try (simp [memDef, hop] at h; done)
+    cases b <;> try (simp [memDef, hop] at h; done)
+    cases c <;> try (simp [memDef, hop] at h; done)
+    simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+    obtain ⟨cs, hr, M', hw, rfl⟩ := h
+    simp [memRoot, hop, hr, hw, writeRes]
+  | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at h
+
+theorem memDef_chg_mono {tabs : Tables} {v : Value} (hop : v.op = .Store ∨ v.op = .Move)
+    {as bs : List Val} (h : RefinesList as bs) {y : Val} (hy : memDef tabs v as = some y) :
+    ∃ y', memDef tabs v bs = some y' ∧ Sem.Refines y y' :=
+  hop.elim (fun hop => memDef_store_mono hop h hy) fun hop => memDef_move_mono hop h hy
+
+theorem memRoot_of_memDef_chg {ctx : Ctx} {v : Value} (hop : v.op = .Store ∨ v.op = .Move)
+    {argv : List Val} {y : Val} (h : memDef ctx.tabs v argv = some y) : memRoot ctx v argv = .ok y :=
+  hop.elim (fun hop => memRoot_of_memDef_store hop h) fun hop => memRoot_of_memDef_move hop h
+
+/-- **`ChgRefP` on registers**: if the source's `Store` (`Move`) `u` writes on its arguments'
+registers (their terms' values over the atoms, `DenOK`), the target's `Store` (`Move`) `w` writes a
+refined memory on its arguments' registers. The valuations are those of `termRef_apply`. -/
 theorem chgRef_apply {D E : ID → Option Value} {tabs : Tables} {u w : Value}
-    (hC : ChgRefP D tabs u E w) (hws : w.op = .Store) {FS FT : Frame} {VS VT : ID → Prop}
+    (hC : ChgRefP D tabs u E w) (hws : w.op = .Store ∨ w.op = .Move) {FS FT : Frame}
+    {VS VT : ID → Prop}
     (hS : DenOK D tabs FS VS) (hG : DenOK E tabs FT VT)
     (hrel : ∀ a, VS a → ¬ IsTerm D a → VT a → ¬ IsTerm E a → Sem.Refines (rv FS a) (rv FT a))
     (htyS : ∀ a, VS a → ¬ IsTerm D a → (rv FS a).retype (shape D tabs a) = rv FS a)
@@ -128,7 +174,7 @@ theorem chgRef_apply {D E : ID → Option Value} {tabs : Tables} {u w : Value}
   have hl : RefinesList (w.args.toList.map (den E tabs ρ' m)) (w.args.toList.map (rv FT)) := by
     rw [← hM (max m M) (Nat.le_max_right m M)]
     exact refinesList_map fun a _ => den_fuel_mono E tabs ρ' m (max m M) a (Nat.le_max_left m M)
-  obtain ⟨y'', h1, h2⟩ := memDef_store_mono hws hl hy'
+  obtain ⟨y'', h1, h2⟩ := memDef_chg_mono hws hl hy'
   exact ⟨y'', h1, hyy.trans h2⟩
 
 /-- **One atom against the reference frame.** -/
@@ -172,23 +218,24 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
       (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
       (fun ρ hρ => I.qpois _ _ ρ hq hρ) hMS
     rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
-  · -- a changed store: the source's write, refined by the target's (`chgRef_apply`)
+  · -- a changed store or `Move`: the source's write, refined by the target's (`chgRef_apply`)
     rw [hu] at hu'; cases hu'
+    have hmw : memOp w.op = true := by rcases hws with h | h <;> rw [h] <;> rfl
     cases hev : evalValue env (Ctx.make tabs f) G u with
     | stuck msg => exact .stuck _ _
     | panic e m =>
       have := evalValue_panic_op hev
       rw [hus] at this
-      rcases this with h | h <;> cases h
+      rcases hws with h' | h' <;> rw [h'] at this <;> rcases this with h | h <;> cases h
     | ok y =>
-      obtain ⟨r, hr, rfl⟩ := evalValue_memOp rfl (by rw [hus]; rfl) hev
+      obtain ⟨r, hr, rfl⟩ := evalValue_memOp rfl (by rw [hus]; exact hmw) hev
       obtain ⟨r', hr', hrr⟩ := chgRef_apply hC hws hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
         htyS' (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
         (fun a ha hat hat' hdef _ => by rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat)
         hMS hargsS hargsT hr
       rw [evalValue_of_regs (fun a ha => (hDT a (hargsT a ha)).1),
-        evalOp_memOp (by rw [hws]; rfl) (by rw [hws]; decide),
-        memRoot_of_memDef_store (ctx := Ctx.make tabs g) hws hr', hty]
+        evalOp_memOp hmw (by rcases hws with h | h <;> rw [h] <;> decide),
+        memRoot_of_memDef_chg (ctx := Ctx.make tabs g) hws hr', hty]
       exact .ok (retype_mono _ hrr)
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/

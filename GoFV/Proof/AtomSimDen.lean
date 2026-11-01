@@ -251,8 +251,9 @@ theorem evalValue_term {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val
 
 /-! ## Memory roots as writes of their arguments (issue #151)
 
-A memory root (`memOp`: `Store`, `Move`, `Zero` and their write-barrier forms) evaluates to the
-write of its arguments' values (`memDef`, as `Sem.memRoot`), a `LocalAddr` to its symbol's
+A memory root (`memOp`: `Store`, `Move`, `Zero` and their write-barrier forms, `VarDef`)
+evaluates to the write of its arguments' values (`memDef`, as `Sem.memRoot`; a `VarDef` poisons
+its frame variable), a `LocalAddr` to its symbol's
 frame variable in the activation the atom simulation runs (`Ctx.make`: activation 0;
 `Sem.frameVal`). `MemDefs`: the roots of a set of values hold this value of their arguments'
 registers, which are in the set (the source's frame keeps this along a block entry: a root's
@@ -265,10 +266,11 @@ stored value's term, at a pointer `LocalAddr`s of one symbol give). -/
 /-- The atoms whose value is a function of their arguments and the tables: memory roots and
 `LocalAddr`. -/
 def memOp (op : Op) : Bool :=
-  op matches .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .LocalAddr
+  op matches .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .LocalAddr
 
 /-- The value of memory root `v` on argument values `argv`, if it does not get stuck
-(`Sem.memRoot`); of a `LocalAddr`, its frame variable in activation 0 (`Sem.frameVal`). -/
+(`Sem.memRoot`; a `VarDef`'s and a `LocalAddr`'s frame variable in activation 0, as
+`Sem.frameVal`). -/
 def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
   match v.op, argv with
   | .Store, [.ptr p, x, .mem m] | .StoreWB, [.ptr p, x, .mem m] =>
@@ -277,6 +279,7 @@ def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
     (m.read s v.auxInt.toInt.toNat).bind fun bs => (m.write d bs).map .mem
   | .Zero, [.ptr p, .mem m] | .ZeroWB, [.ptr p, .mem m] =>
     (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0))).map .mem
+  | .VarDef, [.mem m] => v.aux.map fun n => .mem (m.poisonBlock (frameBlk tabs 0 n))
   | .LocalAddr, _ => some ((v.aux.map fun n => Val.ptr ⟨frameBlk tabs 0 n, 0⟩).getD .poison)
   | _, _ => none
 
@@ -285,7 +288,7 @@ theorem memOp_not_term {op : Op} (h : memOp op = true) : termOp op = false := by
   split at h <;> first | rfl | cases h
 
 theorem memRoot_memDef {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
-    (hm : memOp v.op = true) (h : memRoot ctx v argv = .ok y) :
+    (hact : ctx.act = 0) (hm : memOp v.op = true) (h : memRoot ctx v argv = .ok y) :
     memDef ctx.tabs v argv = some y := by
   unfold memRoot at h
   split at h
@@ -337,7 +340,7 @@ theorem evalValue_memOp {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Va
   | ok r =>
     rw [hr] at h
     cases h
-    exact ⟨r, memRoot_memDef hm hr, rfl⟩
+    exact ⟨r, memRoot_memDef hact hm hr, rfl⟩
   | panic e m => rw [hr] at h; cases h
   | stuck msg => rw [hr] at h; cases h
 

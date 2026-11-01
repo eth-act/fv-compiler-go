@@ -353,7 +353,8 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
 set's `nilChecks`/`loads`, tried on a `NilCheck`/`Load` after its row (their index continues
 the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`;
 `structStores`: the rule set's `structStores`, tried on a `Store` after its row, then `loads`
-(dropped identity writes, also tried on a `Zero` after its row); `segs`: the rule set's `segs`,
+(dropped identity writes, also tried on a `Zero` after its row; changed `Move` sources on a
+`Move` after its row); `segs`: the rule set's `segs`,
 tried on every value after the others (from `segBase`). -/
 structure Table where
   values : Array (Array CRule)
@@ -370,7 +371,7 @@ def Table.segBase (t : Table) (o : Op) : Nat :=
   t.values[o.ctorIdx]!.size + (if o == .NilCheck then t.nilChecks.size else 0) +
     (if o == .Load then t.loads.size + t.structLoads.size else 0) +
     (if o == .Store then t.structStores.size + t.loads.size else 0) +
-    (if o == .Zero then t.loads.size else 0)
+    (if o == .Zero || o == .Move then t.loads.size else 0)
 
 def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   let mut values : Array (Array CRule) := Array.replicate (Op.all.size + 1) #[]
@@ -409,7 +410,7 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     let ls := t.loads
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + ss.size + i) then return true
-  if o == .Zero then
+  if o == .Zero || o == .Move then
     let ls := t.loads
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + i) then return true
