@@ -112,7 +112,7 @@ stuck-`match` pathology instead (LEARNINGS.md).
 ## Runtime benchmarks
 
 `perf/bench.tsv` lists `name<TAB>lake target<TAB>command`; `perf-bench.py` builds the target, runs
-the command once (`--runs N`: median of N; each run in a memcap scope; ~60–75 s CPU per corpus
+the command once (`--runs N`: minimum of N; each run in a memcap scope; ~60–75 s CPU per corpus
 benchmark, so 5 benchmarks cost ~6 min CPU per changed binary set) and records wall time, CPU time and
 the largest max RSS (`perf/bench-history.tsv`: `date commit bench status wall_s cpu_s maxrss_mb
 runs load1 bin_hash corpus`; status `missing` when the target does not build at that commit).
@@ -120,8 +120,10 @@ Call the binary (`.lake/build/bin/x`), not `lake exe x`. A binary already measur
 command and corpus (`bin_hash`) is not rerun (status `cached`), so commits that don't touch an
 executable cost one `lake build`; `perf-compare.py` skips such pairs. A single run whose CPU differs
 by more than 25% from the previous measurement on the same corpus gets two more runs and the
-median is kept (single runs varied by ~30% under load: pass-parity 71.5 vs 99.6 s CPU on the
-same binary). The watch loop always uses
+minimum is kept: contention only adds time, so the minimum is the steadiest estimate. Single runs
+varied by ~30% (pass-parity 71.5 vs 99.6 s CPU on the same binary) and sem-difftest by ~50%
+between hours with no change to its code (96.6 → 147.8 s CPU, a26f6a1 → 3c7fd2f). Hardware
+instruction counts would be load-independent, but `perf_event_paranoid=4` disables them for users. The watch loop always uses
 the profiler's current registry, so a new benchmark also runs on older commits it records.
 
 The corpus is a private snapshot: the exporter regenerates `../gofv-corpus/<pin12>` in place
@@ -149,7 +151,7 @@ parser did not accept yet); a few new-format files are fine (845db3d: 37/9,297 w
 
 Every `pass-parity-corpus` run prints a table with the time each registered pass instance
 spends on the quick corpus (`pass time (s)`, parsing excluded). `perf-bench.py` records it
-per pass: `date commit bench pass time_s runs corpus bin_hash` (median over the runs). If a pass
+per pass: `date commit bench pass time_s runs corpus bin_hash` (minimum over the runs). If a pass
 moves by more than 25% and 1 s compared with the previous measurement, the benchmark takes two
 more runs. `perf-compare.py` flags a pass whose time grew by more than 25% and 1 s; so does
 every PR report of the watch loop. Under machine load all passes shift together by about ±20%.

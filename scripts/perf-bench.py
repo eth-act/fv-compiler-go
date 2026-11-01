@@ -7,9 +7,10 @@ usage: scripts/perf-bench.py [--root DIR] [--registry perf/bench.tsv] [--runs 1]
 The registry lists one benchmark per line: `name<TAB>lake target<TAB>shell command`. For each,
 `lake build <target>` runs first (status `missing` if that fails, e.g. at commits before the
 executable existed); then the command runs --runs times from the worktree root, each in its own
-scripts/memcap.sh scope via perf-record.py's probe. The row keeps the median wall time, the CPU
-time of that run and the largest max RSS. Run the binary directly (`.lake/build/bin/x`), not
-through `lake exe`: lake's own ~0.45 GB would dominate the RSS of small runs.
+scripts/memcap.sh scope via perf-record.py's probe. The row keeps the minimum CPU time (with that
+run's wall time) and the largest max RSS: contention only adds time, so the minimum is the
+steadiest estimate. Run the binary directly (`.lake/build/bin/x`), not through `lake exe`:
+lake's own ~0.45 GB would dominate the RSS of small runs.
 
 A benchmark whose binary (`.lake/build/bin/<target>`, sha256), command and corpus were already
 measured is not rerun: the earlier numbers are copied with status `cached` (--force reruns).
@@ -242,7 +243,7 @@ def main():
                 if i == a.runs and len(results) < 3 and (
                         (p and abs(res["cpu_s"] - p) > 0.25 * p) or moved):
                     # single runs vary by ~30% under load (pass-parity: 71.5 vs 99.6 s CPU on the
-                    # same binary): confirm a move past the threshold with a median of three
+                    # same binary): confirm a move past the threshold with the minimum of three
                     print(f"{name}: CPU {p} -> {res['cpu_s']:.1f}s"
                           + (f", passes moved: {', '.join(moved)}" if moved else "")
                           + "; two more runs")
@@ -250,11 +251,11 @@ def main():
             if per_pass:
                 for s in per_pass[-1]:
                     ts = sorted(pp[s] for pp in per_pass if s in pp)
-                    prows.append(dict(bench=name, **{"pass": s}, time_s=f"{ts[len(ts) // 2]:.2f}",
+                    prows.append(dict(bench=name, **{"pass": s}, time_s=f"{ts[0]:.2f}",
                                       runs=len(ts), corpus=cid, bin_hash=row["bin_hash"]))
             if results:
                 results.sort(key=lambda r: r["cpu_s"])
-                med = results[len(results) // 2]
+                med = results[0]  # minimum CPU
                 row.update(wall_s=f"{med['wall_s']:.2f}", cpu_s=f"{med['cpu_s']:.2f}",
                            maxrss_mb=max(r["maxrss"] for r in results) // 2 ** 20, runs=len(results))
             row.setdefault("status", "ok")
