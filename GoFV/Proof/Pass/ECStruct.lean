@@ -39,7 +39,8 @@ theorem ecs_nodeIn {f : Func} {b : Block} (hown : ValuesOwn f b) {x : ID} :
   rw [ecs_node_iff, nodeIn_schedNodes hown]
 
 /-- The conjuncts of `blockOK`. -/
-structure ecs_Parts (tabs : Tables) (sh : Array Ty) (f g : Func) (fb gb : Block) : Prop where
+structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Func)
+    (fb gb : Block) : Prop where
   kind : gb.kind = fb.kind
   controls : gb.controls = fb.controls
   common : ∀ x ∈ fb.values, x ∈ gb.values
@@ -56,16 +57,17 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (f g : Func) (fb gb : Block)
       ecs_node g gb a = true ∧ depB g (ecs_node g gb) (isNewB f) (gb.values.size + 1) a y = true
   value : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → valueOK tabs sh f g x = true
   imk : ∀ x ∈ fb.values, converted f x = true → ∀ u, f.value? x = some u → ∀ a ∈ u.args,
-    imkArgOK sh f g fb (ecs_node g gb) (gb.values.size + 1) a x = true
+    imkArgOK sh f g anc fb (ecs_node g gb) (gb.values.size + 1) a x = true
   ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, special f g c = false
   ret : fb.kind = .Ret → ∃ c u, fb.controls[0]? = some c ∧ f.value? c = some u ∧ u.op = .MakeResult
   newv : ∀ z ∈ gb.values, ∀ w, g.value? z = some w →
     (isNewB f z = true → w.op ≠ .Phi ∧ newEvalB tabs g w = true) ∧
-      ∀ a ∈ w.args, isNewB f a = true → a ∈ gb.values ∨ a ∈ valsOf g g.entry
+      ∀ a ∈ w.args, isNewB f a = true →
+        a ∈ gb.values ∨ a ∈ valsOf g g.entry ∨ placedSDom g anc fb.id a = true
 
-theorem ecs_parts {tabs : Tables} {sh : Array Ty} {f g : Func} {bid : ID} {fb gb : Block}
-    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
-    (hb : blockOK tabs sh f g bid = true) : ecs_Parts tabs sh f g fb gb := by
+theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f g : Func} {bid : ID}
+    {fb gb : Block} (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    (hb : blockOK tabs sh anc f g bid = true) : ecs_Parts tabs sh anc f g fb gb := by
   unfold blockOK at hb
   rw [hfb, hgb] at hb
   simp only [Bool.and_eq_true, and_assoc] at hb
@@ -77,7 +79,7 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {f g : Func} {bid : ID} {fb gb
       | none => false) = true := Array.all_eq_true'.1 h6
   have h8' : ∀ x ∈ fb.values, (!converted f x ||
       match f.value? x with
-      | some u => u.args.all fun a => imkArgOK sh f g fb (ecs_node g gb) (gb.values.size + 1) a x
+      | some u => u.args.all fun a => imkArgOK sh f g anc fb (ecs_node g gb) (gb.values.size + 1) a x
       | none => true) = true := Array.all_eq_true'.1 h8
   refine ⟨beq_iff_eq.1 hk, beq_iff_eq.1 hc,
     fun x hx => Array.contains_iff_mem.1 (Array.all_eq_true'.1 h1 x hx), ?_, ?_, ?_, ?_, ?_, ?_, ?_,
@@ -149,9 +151,11 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {f g : Func} {bid : ID} {fb gb
     · rw [hzn, Bool.not_true, Bool.false_or, Bool.and_eq_true, bne_iff_ne] at hn
       exact hn
     · have := ha a ha'
-      rw [han, Bool.not_true, Bool.false_or, Bool.or_eq_true, Array.contains_iff_mem,
-        Array.contains_iff_mem] at this
-      exact this
+      simp only [han, Bool.not_true, Bool.false_or, Bool.or_eq_true, Array.contains_iff_mem] at this
+      rcases this with (h | h) | h
+      · exact .inl h
+      · exact .inr (.inl h)
+      · exact .inr (.inr h)
 
 /-- **`depB` is a dependency** through the block's schedule nodes. -/
 theorem ecs_depB_dep {g : Func} {gb : Block} (hown : ValuesOwn g gb)
@@ -252,21 +256,39 @@ theorem ecs_phiSame {u w : Value} (h : sameV u w = true) : PhiSame u w := by
   exact ⟨h.1.1, h.1.2, h.2⟩
 
 /-- Per non-`Phi` value of an accepted block, the class check `valueOK`. -/
-theorem ecs_valueOK {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
+theorem ecs_valueOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid : ID} {fb gb : Block}
     (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
-    (hb : blockOK tabs (typeShapes tabs) f g bid = true) :
+    (hb : blockOK tabs (typeShapes tabs) anc f g bid = true) :
     ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi →
       valueOK tabs (typeShapes tabs) f g x = true :=
   (ecs_parts hfb hgb hb).value
 
+/-- `placedSDom` with `g`'s certificate: a non-`Phi` value placed in a strict dominator. -/
+theorem ecs_placedSDom {g : Func} (hcg : Dom.CertOK g) {bid z : ID}
+    (h : placedSDom g (make g).anc bid z = true) :
+    ∃ v, Placed g z v ∧ v.op ≠ .Phi ∧ Dom.Anc (make g) v.block bid ∧ v.block ≠ bid := by
+  unfold placedSDom at h
+  cases hz : g.value? z with
+  | none => rw [hz] at h; cases h
+  | some w =>
+    rw [hz] at h; dsimp only at h
+    cases hgb : g.block? w.block with
+    | none => rw [hgb] at h; simp at h
+    | some b =>
+      rw [hgb] at h; dsimp only at h
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Array.contains_iff_mem] at h
+      obtain ⟨⟨⟨⟨hph, hne⟩, hbm⟩, hb⟩, ha⟩ := h
+      exact ⟨w, ⟨hz, hbm, b, hgb, hb⟩, hph, (Dom.anc_iff hcg.parents).1 ha, hne⟩
+
 /-- **The `IMake` arguments of converted values** (`imkArgOK`): source mode (the same
 interface-shaped `IMake` in `f`, its data operand unconverted and a pointer or an aggregate in
 both, `x` depending on it in `gb` when it is a value of `fb`) or target mode (interface-shaped in
-`g`, `x` depending on it and on its data operand in `gb`). -/
+`g`, it and its data operand held in the target, `HeldT`: nodes of `gb` that `x` depends on or
+values placed in strict dominators). -/
 theorem ecs_imk {tabs : Tables} {ce' : CheckEnv} {f g : Func} {bid : ID} {fb gb : Block}
-    (hwg : WF ce' g) (hbg : bid ∈ g.blocks)
-    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
-    (hb : blockOK tabs (typeShapes tabs) f g bid = true) :
+    (hwg : WF ce' g) (hcg : Dom.CertOK g) (hbg : bid ∈ g.blocks)
+    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb) (hid : fb.id = gb.id)
+    (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true) :
     ∀ x ∈ fb.values, converted f x = true → ∀ u, f.value? x = some u → ∀ a ∈ u.args,
       EcImkOK tabs f g fb gb x a := by
   intro x hx hcv u hu a ha
@@ -302,19 +324,26 @@ theorem ecs_imk {tabs : Tables} {ce' : CheckEnv} {f g : Func} {bid : ID} {fb gb 
     · rw [Array.contains_iff_mem.2 hafb] at hc; cases hc
     · exact ecs_depB_dep hown hnd hd'
   · unfold imkTgtOK at htgt
-    rw [Bool.and_eq_true, Bool.and_eq_true] at htgt
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at htgt
     obtain ⟨⟨hi, h1⟩, h2⟩ := htgt
-    exact .inr ⟨hi, ecs_depB_dep hown hnd h1, ecs_depB_dep hown hnd h2⟩
+    have hT : ∀ z, (placedSDom g (make g).anc fb.id z = true ∨
+        depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) z x = true) →
+        HeldT g gb x z := fun z hz => by
+      rcases hz with hp | hd
+      · rw [hid] at hp; exact .inr (ecs_placedSDom hcg hp)
+      · exact .inl (ecs_depB_dep hown hnd hd)
+    exact .inr ⟨hi, hT _ h1, hT _ h2⟩
 
 /-- **The structural soundness of `blockOK`**: an accepted block satisfies `CvBlock` for the
 conversion of `expand calls`, given its local obligations (`obl`) and its `Ret` field (`ret`). -/
 theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {fb gb : Block}
-    (hwf : WF ce f) (hwg : WF ce' g) (hcfg : cfgView g = cfgView f) (hbm : bid ∈ f.blocks)
-    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
-    (hb : blockOK tabs (typeShapes tabs) f g bid = true)
+    (hwf : WF ce f) (hwg : WF ce' g) (hcg : Dom.CertOK g) (hcfg : cfgView g = cfgView f)
+    (hbm : bid ∈ f.blocks) (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    (hid : fb.id = gb.id)
+    (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true)
     (hobl : ((make f).depthOf fb.id).isSome → ∀ x ∈ fb.values, ∀ u, f.value? x = some u →
       u.op ≠ .Phi → Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) (Held f g fb gb x)
-        (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) x)
+        (HeldT g gb x) x)
     (hret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', RegOK (Ctx.make tabs f) c y →
       Sem.Refines (ecCv tabs f g c y) y' →
       ∀ rs m, retOf y = some (rs, m) → Val.anyPoison rs = false →
@@ -365,13 +394,15 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
         obtain ⟨hph, he⟩ := (P.newv z hz w hw).1 hn
         exact ⟨hph, newEval_of_newEvalB he⟩
       newArgs := fun z hz w hw a ha hn => by
-        rcases (P.newv z hz w hw).2 a ha hn with h | h
+        rcases (P.newv z hz w hw).2 a ha hn with h | h | h
         · exact .inl h
-        · right
+        · refine .inr (.inl ?_)
           unfold valsOf at h
           cases he : g.block? g.entry with
           | none => rw [he] at h; simp at h
-          | some eb => rw [he] at h; exact ⟨eb, he, h⟩ }
+          | some eb => rw [he] at h; exact ⟨eb, he, h⟩
+        · rw [hid] at h
+          exact .inr (.inr (ecs_placedSDom hcg h)) }
   have hxg := P.common x hx
   obtain ⟨w, hw⟩ := hdefG x hxg
   unfold ecFront at ha

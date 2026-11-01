@@ -1,14 +1,16 @@
 import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.Retype
+import GoFV.Proof.AtomicSim
 
 /-!
 # The shapes of the source's registers (issue #28)
 
 `RegsOK` (`ECRel`): every register of the source holds a value of the shape of its value's
-type, a `MakeResult`'s register a tuple of one component per argument. A block entry keeps it:
-the `Phi`s store retyped values (`regsOK_phis`), every other value its `evalOp` result retyped
-at its type (`regOK_evalValue`, `regsOK_evalAll`); a `MakeResult`'s result is the tuple of its
-arguments, and retyping a tuple keeps its length or gives `poison`.
+type, a `MakeResult`'s register a tuple of one component per argument, and no register holds a
+tail call (`evalOp_tail`: `TailLECall*` is stuck). A block entry keeps it: the `Phi`s store
+retyped values (`regsOK_phis`), every other value its `evalOp` result retyped at its type
+(`regOK_evalValue`, `regsOK_evalAll`); a `MakeResult`'s result is the tuple of its arguments,
+and retyping a tuple keeps its length or gives `poison`.
 -/
 
 namespace GoFV.Proof.EC
@@ -40,6 +42,17 @@ theorem evalOp_makeResult {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv
     {ty : Ty} (h : v.op = .MakeResult) : evalOp env ctx fr v argv ty = .ok (.tuple argv) := by
   simp only [evalOp, frameVal, h]; rfl
 
+/-- **A tail call is stuck**: `TailLECall*` is a root outside the modelled atomics. -/
+theorem evalOp_tail {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (h : v.op = .TailLECall ∨ v.op = .TailLECallInter) :
+    ∃ msg, evalOp env ctx fr v argv ty = .stuck msg := by
+  have hm : Atomic.modelled v.op = false := by rcases h with h | h <;> rw [h] <;> rfl
+  obtain ⟨msg, hs⟩ := atomicRoot_unmodelled hm argv
+  refine ⟨msg, ?_⟩
+  rcases h with h | h <;>
+    simp only [evalOp, frameVal, h, show isRoot .TailLECall = true from rfl,
+      show isRoot .TailLECallInter = true from rfl, ite_true] <;> exact hs
+
 /-- The result of evaluating value `x` is `RegOK`. -/
 theorem regOK_evalValue {env : Env} {ctx : Ctx} {fr : Frame} {x : ID} {v : Value} {y : Val}
     (hv : ctx.f.value? x = some v) (hid : v.id = x) (h : evalValue env ctx fr v = .ok y) :
@@ -50,10 +63,16 @@ theorem regOK_evalValue {env : Env} {ctx : Ctx} {fr : Frame} {x : ID} {v : Value
   | stuck msg => rw [he] at h; cases h
   | ok r =>
     rw [he] at h; cases h
-    refine ⟨Val.retype_hasTy _ _, fun u vs hu hop hy => ?_⟩
-    rw [hv] at hu; cases hu
-    rw [evalOp_makeResult hop] at he; cases he
-    rw [retype_tuple_length hy]; simp
+    refine ⟨Val.retype_hasTy _ _, fun u vs hu hop hy => ?_, fun u hu => ?_⟩
+    · rw [hv] at hu; cases hu
+      rw [evalOp_makeResult hop] at he; cases he
+      rw [retype_tuple_length hy]; simp
+    · rw [hv] at hu; cases hu
+      refine ⟨fun hop => ?_, fun hop => ?_⟩ <;>
+        (obtain ⟨msg, hs⟩ := evalOp_tail (env := env) (ctx := ctx) (fr := fr)
+            (argv := v.args.toList.map (rv fr)) (ty := ctx.tys[x]?.getD .other)
+            (by first | exact .inl hop | exact .inr hop)
+         rw [hs] at he; cases he)
 
 theorem RegsOK.set {ctx : Ctx} {fr : Frame} (h : RegsOK ctx fr) {x : ID} {y : Val}
     (hy : RegOK ctx x y) : RegsOK ctx (fr.set x y) := by
@@ -97,8 +116,11 @@ theorem regsOK_setPhis {ctx : Ctx} :
 theorem regOK_phi {ctx : Ctx} {fr : Frame} {i : Nat} {p : ID × Val}
     (h : phiStep ctx fr i p.1 = .ok (some p)) : RegOK ctx p.1 p.2 := by
   obtain ⟨-, v, a, y, hv, hph, -, -, hp2⟩ := phiStep_some h
-  refine ⟨by rw [hp2]; exact Val.retype_hasTy _ _, fun u vs hu hop _ => ?_⟩
-  rw [hv] at hu; cases hu; rw [hph] at hop; cases hop
+  refine ⟨by rw [hp2]; exact Val.retype_hasTy _ _, fun u vs hu hop _ => ?_, fun u hu => ?_⟩
+  · rw [hv] at hu; cases hu; rw [hph] at hop; cases hop
+  · rw [hv] at hu; cases hu
+    rw [hph]
+    exact ⟨by decide, by decide⟩
 
 /-- Setting the collected `Phi`s keeps `RegsOK`. -/
 theorem regsOK_phis {ctx : Ctx} {fr : Frame} {i : Nat} {l : List ID} {ps : List (ID × Val)}

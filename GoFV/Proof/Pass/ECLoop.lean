@@ -9,8 +9,9 @@ import GoFV.Proof.AtomSimLoop
 source's evaluation of every source value of `L`, each value of `L` evaluates: a new one by
 `NewEval`, a source value by its obligation `Obl`, to a refinement of its conversion. The
 invariant `LInv`: registers outside `L` unchanged, source values of `L` refining their
-conversions, new values of `L` (and the entry's, `E0`) holding their own evaluations, and every
-value of `L` holding its evaluation (`EcTgtHolds`, the `held` premise of `Obl`).
+conversions, new values of `L` (and the initial set `E0`: new values placed in strict
+dominators) holding their own evaluations, and every value of `L` holding its evaluation
+(`EcTgtHolds`; with lemma (D) on the target, `TgtHyp.hdinvT`, the `HeldT` premise of `Obl`).
 -/
 
 namespace GoFV.Proof.EC
@@ -126,6 +127,10 @@ structure TgtHyp (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID 
   hdinv : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a fb.id ∧ a ≠ fb.id) G
   hidF : ∀ z u, Placed f z u → u.id = z
   hfbP : ∀ z ∈ fb.values, ∀ u, f.value? z = some u → Placed f z u
+  hdinvT : ∀ T : Frame, T = { T0 with regs := T.regs } →
+    (∀ z, z ∉ gb.values → T.regs[z]? = T0.regs[z]?) →
+    DInv env (Ctx.make tabs g) (fun a => Anc (make g) a gb.id ∧ a ≠ gb.id) T
+  hidG : ∀ z w, Placed g z w → w.id = z
 
 /-- **A source value of the schedule** evaluated by the target after the prefix `d`: a
 refinement of its conversion (or the same panic), by its obligation. -/
@@ -194,13 +199,22 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
     · rw [hP.1] at hu'; cases hu'
       obtain ⟨y, hy, hev⟩ := TH.hdinv z u' hP ⟨hanc, hne⟩
       exact ⟨TH.hidF z u' hP, y, hy, hev hph⟩
+  have hheldT : ∀ z, HeldT g gb x z → EcTgtHolds env tabs g T z := by
+    intro z hz w' hw'
+    rcases hz with hd | ⟨v, hP, hph, hanc, hne⟩
+    · exact hTH z (hdepd z hd) w' hw'
+    · rw [hP.1] at hw'; cases hw'
+      have hD := TH.hdinvT T hTf fun a ha =>
+        hTk a fun hd => ha ((TH.hmem a).1 (hdog a hd)).1
+      obtain ⟨y, hy, hev⟩ := hD z w' hP ⟨hanc, hne⟩
+      exact ⟨TH.hidG z w' hP, y, hy, hev hph⟩
   rw [hstepV]
   exact TH.B.obl TH.htree x hxfb u hu huphi u w hu hw env hE G T hT_G TH.hGok _ hTN
     (fun a ha han => by
       by_cases hm : a ∈ og.toList
       · exact .inl ⟨hargIn a ha hm, han⟩
       · exact .inr (TH.hnewArgs x hxog w hw a ha han hm))
-    hreg hGa hfront hheldS fun z hd => hTH z (hdepd z hd)
+    hreg hGa hfront hheldS hheldT
 
 /-- **The target's schedule prefix `L`.** -/
 theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 : ID → Prop}
@@ -210,7 +224,7 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
       G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
     ∃ T, evalAll env (Ctx.make tabs g) T0 L = .ok T ∧ LInv env tabs g cv isNew G T0 E0 L T := by
   obtain ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args, hnewArgs, hout,
-    hrel0, hGok, htree, hdinv, hidF, hfbP⟩ := TH
+    hrel0, hGok, htree, hdinv, hidF, hfbP, hdinvT, hidG⟩ := TH
   refine evalAll_induct L (LInv env tabs g cv isNew G T0 E0) ?_ L [] T0 rfl
     ⟨by cases T0; rfl, rfl, fun _ _ => rfl, fun _ h => absurd h List.not_mem_nil,
       hE0.mono (fun z hz => hz.resolve_left fun h => absurd h.1 List.not_mem_nil)
@@ -344,7 +358,7 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
   | false =>
     obtain ⟨u, y, hu, hGy, hevS⟩ := hsrc x hxL hn
     have hob := tgt_next hE ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args,
-      hnewArgs, hout, hrel0, hGok, htree, hdinv, hidF, hfbP⟩ hog'
+      hnewArgs, hout, hrel0, hGok, htree, hdinv, hidF, hfbP, hdinvT, hidG⟩ hog'
       ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩ hn hu (regs_of_ok hevS)
       (fun z hz hn' => hsrc z (by rw [hL]; exact List.mem_append_left _ hz) hn')
     rw [hevS] at hob

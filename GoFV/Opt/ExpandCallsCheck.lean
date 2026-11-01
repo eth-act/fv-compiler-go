@@ -14,7 +14,8 @@ output tables `tabs`) as the conversion simulation `GoFV.Proof.EC.CvRel` needs i
 CFG, own aux, block kinds and controls; every value of `f` listed in the same block of `g`; the
 same non-pure schedule sequence; every argument of a source node reaching it in `g`; new values
 (IDs `f` does not define) pure, frame values or argument pieces, with new arguments in their
-block or the entry block; and per source value one of these classes:
+block, the entry block or a strict dominator (`placedSDom`); and per source value one of these
+classes:
 
 * **identity**: the same op, type, auxint, aux and arguments, none of them a converted value;
 * **Arg**: an incoming parameter becomes a Make-tree (`StructMake`, `ArrayMake1`, `SliceMake`,
@@ -346,12 +347,26 @@ def identOK (f g : Func) (u w : Value) : Bool :=
     w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args &&
     u.args.all (fun a => !special f g a)
 
-/-- The class check of non-`Phi` source value `x`. -/
+/-- The pre-`expand calls` tail calls, outside the semantics' phases: their evaluation is
+`stuck`, so no source register ever holds one. -/
+def tailOp : Op → Bool
+  | .TailLECall | .TailLECallInter => true
+  | _ => false
+
+/-- `a` is a tail call of `f`. -/
+def isTail (f : Func) (a : ID) : Bool :=
+  match f.value? a with
+  | some u => tailOp u.op
+  | none => false
+
+/-- The class check of non-`Phi` source value `x`. A tail call (stuck in the source) and a value
+reading one (never evaluated by the source) are accepted with any target node. -/
 def valueOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | some u, some w =>
     if (callOpMap u.op).isSome then callOK tabs sh f g u w
     else if u.op == .MakeResult then resultOK tabs sh f g u w
+    else if tailOp u.op || u.args.any (isTail f) then true
     else if u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! then
       selectOK tabs sh f g x u w
     else if w.op == .Invalid then Sem.prio u.op == 0 && u.op != .Phi
@@ -540,20 +555,36 @@ def imkSrcOK (sh : Array Ty) (f g : Func) (fb : Block) (node : ID → Bool) (fue
       (!fb.values.contains a || depB g node (fun _ => true) fuel a x)
   | none => false
 
-/-- Target mode of `imkArgOK`: `a` is interface-shaped in `g`, and `x` depends in `g` on `a`
-and on its data operand (their target registers hold their evaluations). -/
-def imkTgtOK (sh : Array Ty) (g : Func) (node : ID → Bool) (fuel : Nat) (aw : Value) (a x : ID) :
-    Bool :=
-  ifaceShape (shapeOf sh g a) && depB g node (fun _ => true) fuel a x &&
-    depB g node (fun _ => true) fuel aw.args[1]! x
+/-- `z` is a non-`Phi` value of `g` listed in its block, a strict dominator of block `bid`
+(`anc`: the ancestor test of `g`'s dominator certificate, `DomCert.Cert.anc`). Its target
+register holds its evaluation in block `bid` (lemma (D), `Avail.DInv`). -/
+def placedSDom (g : Func) (anc : ID → ID → Bool) (bid z : ID) : Bool :=
+  match g.value? z with
+  | some w =>
+    w.op != .Phi && w.block != bid && g.blocks.contains w.block &&
+      (match g.block? w.block with
+       | some b => b.values.contains z
+       | none => false) &&
+      anc w.block bid
+  | none => false
+
+/-- Target mode of `imkArgOK`: `a` is interface-shaped in `g`, and `a` and its data operand are
+placed in strict dominators of `x`'s block `bid` or `x` depends on them in `g` (their target
+registers hold their evaluations). The placement test comes first: a failing `depB` search
+explores every path. -/
+def imkTgtOK (sh : Array Ty) (g : Func) (anc : ID → ID → Bool) (bid : ID) (node : ID → Bool)
+    (fuel : Nat) (aw : Value) (a x : ID) : Bool :=
+  ifaceShape (shapeOf sh g a) &&
+    (placedSDom g anc bid a || depB g node (fun _ => true) fuel a x) &&
+    (placedSDom g anc bid aw.args[1]! || depB g node (fun _ => true) fuel aw.args[1]! x)
 
 /-- An argument `a` of a converted value `x` of block `fb` whose node in `g` is an `IMake` (whose
 data word the `IMake` shortcut may pass directly; `EC.ec_imake`) in source or target mode. -/
-def imkArgOK (sh : Array Ty) (f g : Func) (fb : Block) (node : ID → Bool) (fuel : Nat)
-    (a x : ID) : Bool :=
+def imkArgOK (sh : Array Ty) (f g : Func) (anc : ID → ID → Bool) (fb : Block) (node : ID → Bool)
+    (fuel : Nat) (a x : ID) : Bool :=
   match g.value? a with
   | some aw => aw.op != .IMake || (aw.args.size == 2 &&
-      (imkSrcOK sh f g fb node fuel aw a x || imkTgtOK sh g node fuel aw a x))
+      (imkSrcOK sh f g fb node fuel aw a x || imkTgtOK sh g anc fb.id node fuel aw a x))
   | none => true
 
 /-- A new value evaluates in every frame (`NewEval`): pure ops, frame values, and the pieces of
@@ -567,15 +598,15 @@ def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
   | .Arg => match w.aux with
     | some n => (paramNames tabs g).contains (some n)
     | none => false
-  | .SP | .SB | .LocalAddr | .OffPtr | .SelectN | .Empty | .ArgFloatReg
+  | .SP | .GetCallerSP | .SB | .LocalAddr | .OffPtr | .SelectN | .Empty | .ArgFloatReg
   | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake | .ComplexMake
   | .ComplexReal | .ComplexImag
   | .SlicePtr | .SliceLen | .SliceCap | .StringPtr | .StringLen | .ITab | .IData
   | .StructSelect | .ArraySelect => true
   | _ => false
 
-/-- The checks of block `bid`. -/
-def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
+/-- The checks of block `bid` (`anc`: the ancestor test of `g`'s dominator certificate). -/
+def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Func) (bid : ID) : Bool :=
   match f.block? bid, g.block? bid with
   | some fb, some gb =>
     let nodeF : ID → Bool := fun x => fb.values.contains x &&
@@ -618,7 +649,7 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
       | none => false) &&
     -- the `IMake` arguments of converted values
     fb.values.all (fun x => !converted f x || match f.value? x with
-      | some u => u.args.all fun a => imkArgOK sh f g fb nodeG fuel a x
+      | some u => u.args.all fun a => imkArgOK sh f g anc fb nodeG fuel a x
       | none => true) &&
     -- controls of non-`Ret` blocks are unconverted
     ((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) &&
@@ -628,17 +659,19 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
         | some u => u.op == .MakeResult
         | none => false)
       | none => false) &&
-    -- new values
-    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && newEvalB tabs g w)) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a) | none => !isNewB f z)
+    -- new values; their new arguments are values of the block, of the entry block, or placed
+    -- in a strict dominator
+    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && newEvalB tabs g w)) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
   | _, _ => false
 
 /-- **The checker**: `g` is `f` after `expand calls`, both read in `tabs`. -/
 def ecCheck (tabs : Tables) (f g : Func) : Bool :=
   let sh := typeShapes tabs
   let outs := ownOuts tabs f
+  let dc := DomCert.make g
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
     regParamsOK tabs outs &&
-    f.blocks.all (blockOK tabs sh f g)
+    f.blocks.all (blockOK tabs sh dc.anc f g)
 
 end GoFV.Opt.ECCheck
 

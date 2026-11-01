@@ -22,7 +22,7 @@ variable {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool} {front : I
 
 /-- **A panicking block entry.** -/
 theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.Mono)
-    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv isNew frS frT b i)
+    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv frS frT b i)
     {fb : Block} (hfb : f.block? b = some fb) {e : Panic} {m : Mem}
     (hen : enterBlock env (Ctx.make tabs f) frS fb i = .panic e m) :
     ∃ gb m', g.block? b = some gb ∧ enterBlock env (Ctx.make tabs g) frT gb i = .panic e m' ∧
