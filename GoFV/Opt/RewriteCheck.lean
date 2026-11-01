@@ -1310,17 +1310,20 @@ def ssApply (f : Func) (v x : ID) (ds : List Value) : Func :=
   | some u => if u.op == .Store then (ds.foldl ssPut f).copyOf v x else f
   | none => f
 
-/-- One event of `ssPre`: a split of the function so far is applied, any other event kept, but
-for the copy-argument replacements of the split `Store` logged before it (copy elimination on
-its arguments, which the split validated in `f` through copies replaces). -/
-def ssStep (t : Interp.Table) (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
-  match ssEvent? t p.1 ev with
+/-- One event of `ssPre`: a split of a `Store` of `f` is applied, any other event kept (a split of
+a fresh field store of an earlier split, a nested struct, is left to a later layer), but for the
+copy-argument replacements of the split `Store` logged before it (copy elimination on its
+arguments, which the split validated in `f` through copies replaces). -/
+def ssStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match ssEvent? t f ev with
   | some (v, x, ds) => (ssApply p.1 v x ds, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
   | none => (p.1, p.2.push ev)
 
-/-- The input with the log's struct-store splits applied, and the remaining events. -/
+/-- The input with the log's struct-store splits of its `Store`s applied, and the remaining
+events. -/
 def ssPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
-  log.foldl (ssStep t) (f, #[])
+  log.foldl (ssStep t f) (f, #[])
 
 /-- `gv` is `fv` but for its use count. -/
 def ssSame (fv gv : Value) : Bool :=
@@ -1448,22 +1451,75 @@ def ssRel (tabs : Tables) (f g : Func) : Bool :=
       | _, _ => true) &&
     f.blocks.all (ssBlockOK f g news S)
 
+/-! ## Struct-load expansions as a layer (issue #151)
+
+A struct-store split of a `Store` of a `Load` that `generic.rules:974` expanded stores the
+expansion's fresh field `Load`s: the split layer needs the expansion applied first. `slPre`
+applies the log's expansions that `structLoadOK` validates on the layer's input (the `Load`
+becomes the `StructMake`, the fresh `OffPtr`s and `Load`s are put in), and the layer is related
+to its input by `validate` with those events alone. -/
+
+/-- The `Load` `v` of `f` that event `ev` expands (a `structLoads` rule event, `structLoadShapeOK`)
+and the logged definitions, if `structLoadOK` validates them on `f`'s definitions. -/
+def slEvent? (t : Interp.Table) (tabs : Tables) (f : Func) : RwEvent → Option (ID × List Value)
+  | .rule v i _ defs =>
+    match f.value? v with
+    | some u =>
+      let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
+      if u.op == .Load && n + t.loads.size ≤ i &&
+          (t.structLoads[i - n - t.loads.size]?).any (structLoadShapeOK ·.rule) &&
+          structLoadOK tabs f.valueTab v defs.toList then some (v, defs.toList)
+      else none
+    | none => none
+  | _ => none
+
+/-- The expansion of the `Load` `v`: its arguments lose a use, the fresh values put in, and `v`
+redefined as the logged `StructMake`, whose arguments gain a use. -/
+def slApply (f : Func) (v : ID) : List Value → Func
+  | [] => f
+  | x' :: ds =>
+    match f.value? v with
+    | some u =>
+      let f := u.args.foldl (fun f a => f.modV a fun w => { w with uses := w.uses - 1 }) f
+      let f := x'.args.foldl Func.incUses (ds.foldl ssPut f)
+      f.modV v fun w => { w with op := x'.op, auxInt := x'.auxInt, aux := x'.aux, args := x'.args }
+    | none => f
+
+/-- One event of `slPre`: an expansion of `f` is applied, any other event kept, but for the
+copy-argument replacements of the expanded `Load` logged before it. -/
+def slStep (t : Interp.Table) (tabs : Tables) (f : Func) (p : Func × Array RwEvent)
+    (ev : RwEvent) : Func × Array RwEvent :=
+  match slEvent? t tabs f ev with
+  | some (v, ds) => (slApply p.1 v ds, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's validated struct-load expansions applied, and the remaining events. -/
+def slPre (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) :
+    Func × Array RwEvent :=
+  log.foldl (slStep t tabs f) (f, #[])
+
+/-- The expansions `slPre` applies. -/
+def slTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) : Array RwEvent :=
+  log.filter fun ev => (slEvent? t tabs f ev).isSome
+
 /-! ## Layers (issue #151)
 
-The log's nil-check eliminations, Load-of-Store forwardings and struct-store splits are taken
-out of the log and applied to the input in layers, each related to its input by its own
-relation, before `validate` relates the last layer's function and the output with the remaining
-events. A selective layer (`sel`) applies only the events its relation holds of in its input;
-a later layer of the same kind applies the rest. Each kind needs another first: a struct-store
-split's pointer may be an eliminated nil check and its stored values forwarded `Load`s, a
-forwarded `Load` may read a field `Store` of a split, and an eliminated nil check's pointer
-may be a forwarded `Load`. -/
+The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions and
+struct-store splits are taken out of the log and applied to the input in layers, each related to
+its input by its own relation, before `validate` relates the last layer's function and the
+output with the remaining events. A selective layer (`sel`) applies only the events its relation
+holds of in its input; a later layer of the same kind applies the rest. Each kind needs another
+first: a struct-store split's pointer may be an eliminated nil check and its stored values
+forwarded `Load`s or an expanded `Load`, a split may split a field store of another (nested
+structs), a forwarded `Load` may read a field `Store` of a split, and an eliminated nil check's
+pointer may be a forwarded `Load`. -/
 
-/-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-store
-splits (`ssPre`). -/
+/-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-load
+expansions (`slPre`), struct-store splits (`ssPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
+  | sl
   | ss
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
@@ -1471,10 +1527,11 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
     Func × Array RwEvent
   | .nil sel => nilPre t tabs sel
   | .fwd sel => fwdPre t tabs sel
+  | .sl => slPre t tabs
   | .ss => ssPre t
 
-/-- The layers of `RewriteCheck.accepts`, in order. -/
-def layers : List Layer := [.nil true, .fwd true, .ss, .fwd false, .nil false]
+/-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs). -/
+def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .fwd false, .nil false]
 
 end GoFV.Opt.RewriteCheck
 
@@ -1488,13 +1545,19 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
   NilCheck.nrel true tabs f f' && checkOK { tabs := tabs, typs := env.typs } f' &&
     NilCheck.dictParams tabs f == NilCheck.dictParams env.tables f0
 
-/-- The layer `L` relates `f` (a layer's input, from the pass's input `f0`) and `f'`: `nilOK`,
-`fwdRel` or `ssRel`, and `f'` passes `check`. -/
-def RewriteCheck.layerOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 : GoFV.SSA.Func) :
-    RewriteCheck.Layer → GoFV.SSA.Func → GoFV.SSA.Func → Bool
-  | .nil _, f, f' => RewriteCheck.nilOK env tabs f0 f f'
-  | .fwd _, f, f' => RewriteCheck.fwdRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
-  | .ss, f, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+/-- The layer `L` relates `f` (a layer's input with the log `log`, from the pass's input `f0`)
+and `f'`: `nilOK`, `fwdRel`, `validate` with the expansions it applied (`slTaken`) or `ssRel`,
+and `f'` passes `check`. -/
+def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
+    (f0 : GoFV.SSA.Func) :
+    RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
+  | .nil _, f, _, f' => RewriteCheck.nilOK env tabs f0 f f'
+  | .fwd _, f, _, f' =>
+    RewriteCheck.fwdRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .sl, f, log, f' =>
+    RewriteCheck.validate tabs t f f' (RewriteCheck.slTaken t tabs f log) &&
+      checkOK { tabs := tabs, typs := env.typs } f'
+  | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
 
 /-- The layers `Ls` take their events out of the log, each a step `layerOK` accepts (a layer
 without events is skipped), and `validate` accepts `out` against the last function and the
@@ -1506,7 +1569,8 @@ def RewriteCheck.layersOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Go
     match L.pre t out.tables f log with
     | (f', log') =>
       if log'.size == log.size then RewriteCheck.layersOK env t f0 out Ls f log
-      else RewriteCheck.layerOK env out.tables f0 L f f' && RewriteCheck.layersOK env t f0 out Ls f' log'
+      else RewriteCheck.layerOK env t out.tables f0 L f log f' &&
+        RewriteCheck.layersOK env t f0 out Ls f' log'
 
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
 log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create

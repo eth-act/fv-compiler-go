@@ -315,23 +315,38 @@ The nil-check eliminations, forwardings and struct-store splits (`generic.rules:
 `ssPre`/`ssRel`, `StructStore.ss_refines`) change roots, so `RewriteCheck.accepts` takes their
 events out of the log and applies them to the input in layers (`RewriteCheck.layersOK` over
 `RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
-of, struct-store splits, the remaining forwardings, the remaining nil-check eliminations), each
-related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` + `check`, `ssRel` +
-`check`; a layer without events is skipped), and `validate` relates the last function and the
-output with the remaining events. A selective layer (`nilPre`/`fwdPre` with `sel`) applies only
-the events its relation holds of in its input, the later layer of its kind the rest: a split's
-pointer may be an eliminated nil check (a `Copy` after the first nil-check layer) and its
-`StructMake`'s arguments forwarded `Load`s, a forwarded field `Load` may read a split's field
-`Store` (only after the split layer), and an eliminated nil check's pointer may be a forwarded
-`Load` (`generic.rules:1367` after `:800`: only after the forwarding layers).
+of, struct-load expansions, struct-store splits of the input's `Store`s, those of the first
+layer's fresh field stores, the remaining forwardings, the remaining nil-check eliminations),
+each related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` + `check`,
+`validate` with the layer's events alone + `check`, `ssRel` + `check`; a layer without events
+is skipped), and `validate` relates the last function and the output with the remaining events.
+A selective layer (`nilPre`/`fwdPre` with `sel`) applies only the events its relation holds of in
+its input, the later layer of its kind the rest: a split's pointer may be an eliminated nil check
+(a `Copy` after the first nil-check layer) and its `StructMake`'s arguments forwarded `Load`s, a
+forwarded field `Load` may read a split's field `Store` (only after the split layer), and an
+eliminated nil check's pointer may be a forwarded `Load` (`generic.rules:1367` after `:800`:
+only after the forwarding layers).
 
-**Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (steps `layerOK` accepts)
-from the input to a function the output is validated against; `chain_refines`: a chain from a
-checked function ends in a checked function that refines it under `RwPre` of the pass input
-(`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines` per step);
-`checkedRewrite_refines` composes it with the atom simulation (statement unchanged). Witness:
+A `Store` of a `Load` that `:974` expanded (a struct copy `*p = *q`) stores the expansion's
+`StructMake` of fresh field `Load`s when `:975` splits it, which the split relation needs in its
+input: the struct-load layer (`slPre`) applies the log's expansions that `structLoadOK` validates
+on its input (the `Load` becomes the `StructMake`, the fresh `OffPtr`s and `Load`s are put in,
+`slApply`) and is related to its input by `validate` with these events (`slTaken`). The split
+layer applies only splits of its input's `Store`s (`ssStep` looks the event up in the layer's
+input), so a split of a fresh field store of another split (a nested struct) is left to the
+second split layer, where that store is a `Store` of the input.
+
+**Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (`nil`/`fwd`/`rw`/`ss` steps
+`layerOK` accepts; `LayerChain.congr` moves the `rw` steps to a table with the same value and
+block rules, `validate_congr`) from the input to a function the output is validated against;
+`chain_refines (hs : s.AllSound)`: a chain from a checked function ends in a checked function
+that refines it under `RwPre` of the pass input (`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`,
+`validate_termRef` + `AtomSim.atomSim_refines`, `StructStore.ss_refines` per step);
+`checkedRewrite_refines` composes it with the atom simulation (statement unchanged). Witnesses:
 `GoFV.Proof.Witness.nf_checkedRewrite` (`*pp = new(int); q := *pp; _ = *q`: the nil check of the
-forwarded `newobject` result removed, kernel evaluation).
+forwarded `newobject` result removed) and `sc_checkedRewrite` (`*p = *q` on `struct{ a, b int }`:
+the `Store` of the expanded `Load` split into field `Store`s of field `Load`s), kernel
+evaluation.
 
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 

@@ -70,36 +70,40 @@ theorem RefinesUnder.toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
 
 /-- **The layers refine**: each step of a `LayerChain` from a checked function refines it under
 `RwPre` of the pass's input `f0` (nil-check eliminations: nilcheckelim's relation with the rewrite
-passes' seeds, `Nil.refinesFrom_of_rel`; forwardings: `LoadFwd.fwd_refines`; struct-store splits:
+passes' seeds, `Nil.refinesFrom_of_rel`; forwardings: `LoadFwd.fwd_refines`; struct-load
+expansions: the validator and the atom simulation; struct-store splits:
 `StructStore.ss_refines`), and its end is checked. -/
-theorem chain_refines {penv : PassEnv} {tabs : Tables} {f0 f g : Func}
-    (hc : LayerChain penv tabs f0 f g) {ce : CheckEnv} (hf : check ce f = .ok ()) :
+theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : Tables}
+    {f0 f g : Func} (hc : LayerChain penv tabs f0 (Interp.Table.ofRuleSet s) f g) {ce : CheckEnv}
+    (hf : check ce f = .ok ()) :
     ∃ ce', check ce' g = .ok () ∧ RefinesFrom (RwPre penv.tables f0) tabs g tabs f := by
   induction hc generalizing ce with
   | refl f => exact ⟨ce, hf, RefinesUnder.toRw (RefinesUnder.refl _ _ _)⟩
-  | @step L f f' g hL _ ih =>
-    obtain ⟨ce₁, hf₁, R⟩ : ∃ ce₁, check ce₁ f' = .ok () ∧
-        RefinesFrom (RwPre penv.tables f0) tabs f' tabs f := by
-      cases L with
-      | nil sel =>
-        simp only [RewriteCheck.layerOK, RewriteCheck.nilOK, Bool.and_eq_true, beq_iff_eq] at hL
-        obtain ⟨⟨hr, hck⟩, hd⟩ := hL
-        refine ⟨_, checkOK_sound hck, RefinesFrom.mono (fun env args mem hp => ?_)
-          (Nil.refinesFrom_of_rel ⟨ce, check_wf hf⟩ (Dom.certOK_of_check (check_domCert hf))
-            (Nil.nrel_sound hr))⟩
-        unfold NilPre
-        rw [hd]
-        exact hp.2
-      | fwd sel =>
-        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
-        have hf' := checkOK_sound hL.2
-        exact ⟨_, hf', RefinesUnder.toRw (LoadFwd.fwd_refines hf hf' hL.1)⟩
-      | ss =>
-        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
-        have hf' := checkOK_sound hL.2
-        exact ⟨_, hf', RefinesUnder.toRw (StructStore.ss_refines hf hf' hL.1)⟩
-    obtain ⟨ce', hg, R'⟩ := ih hf₁
-    exact ⟨ce', hg, R.trans R'⟩
+  | @nil f f' g hL _ ih =>
+    simp only [RewriteCheck.nilOK, Bool.and_eq_true, beq_iff_eq] at hL
+    obtain ⟨⟨hr, hck⟩, hd⟩ := hL
+    obtain ⟨ce', hg, R'⟩ := ih (checkOK_sound hck)
+    refine ⟨ce', hg, RefinesFrom.trans (RefinesFrom.mono (fun env args mem hp => ?_)
+      (Nil.refinesFrom_of_rel ⟨ce, check_wf hf⟩ (Dom.certOK_of_check (check_domCert hf))
+        (Nil.nrel_sound hr))) R'⟩
+    unfold NilPre
+    rw [hd]
+    exact hp.2
+  | @fwd f f' g hr hck _ ih =>
+    have hf' := checkOK_sound hck
+    obtain ⟨ce', hg, R'⟩ := ih hf'
+    exact ⟨ce', hg, (RefinesUnder.toRw (LoadFwd.fwd_refines hf hf' hr)).trans R'⟩
+  | @rw f f' g evs hv hck _ ih =>
+    have hf' := checkOK_sound hck
+    obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
+    obtain ⟨h1, h2⟩ := validate_termRef hv hs
+    obtain ⟨ce', hg, R'⟩ := ih hf'
+    exact ⟨ce', hg,
+      (RefinesUnder.toRw (AtomSim.atomSim_refines hf hf' hA hcf hcg h1 h2)).trans R'⟩
+  | @ss f f' g hr hck _ ih =>
+    have hf' := checkOK_sound hck
+    obtain ⟨ce', hg, R'⟩ := ih hf'
+    exact ⟨ce', hg, (RefinesUnder.toRw (StructStore.ss_refines hf hf' hr)).trans R'⟩
 
 theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
@@ -110,8 +114,8 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
   · rw [he, ht]; exact RefinesUnder.toRw (RefinesUnder.refl _ _ _)
   obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
   obtain ⟨h1, h2⟩ := validate_termRef hv hs
-  -- the layers (nil-check eliminations, forwardings, struct-store splits)
-  obtain ⟨ce₃, hf₃, hL⟩ := chain_refines hc hf
+  -- the layers (nil-check eliminations, forwardings, struct-load expansions, struct-store splits)
+  obtain ⟨ce₃, hf₃, hL⟩ := chain_refines hs hc hf
   -- then the validated rewrite
   exact refinesFrom_of_tabsAgree hta
     (hL.trans (RefinesUnder.toRw (AtomSim.atomSim_refines hf₃ hg hA hcf hcg h1 h2)))

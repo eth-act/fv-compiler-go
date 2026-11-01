@@ -7,57 +7,14 @@ import GoFV.Opt.RewriteCheck
 (`GoFV.Opt.RewriteCheck.validate`) accepted in the result's tables, which the input cannot tell
 from its own (`GoFV.Opt.tabsAgree`), against the rewrite log and a function `g` obtained from the
 input by the layers of `RewriteCheck.layers` (`LayerChain`: steps of nil-check eliminations,
-`RewriteCheck.nilOK`, Load-of-Store forwardings, `RewriteCheck.fwdRel`, and struct-store splits,
-`RewriteCheck.ssRel`, all issue #151); a validated result has the atom, closure and replay facts
-the refinement proof consumes.
+`RewriteCheck.nilOK`, Load-of-Store forwardings, `RewriteCheck.fwdRel`, struct-load expansions,
+`RewriteCheck.validate`, and struct-store splits, `RewriteCheck.ssRel`, all issue #151); a
+validated result has the atom, closure and replay facts the refinement proof consumes.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.Opt GoFV.Rules
-
-/-- The steps of `RewriteCheck.layersOK` from `f` to `g` (`f0` the pass's input): each a layer
-`RewriteCheck.layerOK` accepts. -/
-inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) : Func → Func → Prop
-  | refl (f : Func) : LayerChain penv tabs f0 f f
-  | step {L : RewriteCheck.Layer} {f f' g : Func} :
-      RewriteCheck.layerOK penv tabs f0 L f f' = true → LayerChain penv tabs f0 f' g →
-      LayerChain penv tabs f0 f g
-
-theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} :
-    ∀ (Ls : List RewriteCheck.Layer) (f : Func) (log : Array RwEvent),
-      RewriteCheck.layersOK penv t f0 out Ls f log = true →
-      ∃ g log', LayerChain penv out.tables f0 f g ∧
-        RewriteCheck.validate out.tables t g out.func log' = true
-  | [], f, log, h => ⟨f, log, .refl f, h⟩
-  | L :: Ls, f, log, h => by
-    rw [RewriteCheck.layersOK] at h
-    split at h
-    next f' log' _ =>
-    split at h
-    · exact layersOK_cases Ls f log h
-    · rw [Bool.and_eq_true] at h
-      obtain ⟨g, l, hc, hv⟩ := layersOK_cases Ls f' log' h.2
-      exact ⟨g, l, .step h.1 hc, hv⟩
-
-/-- What an accepted run (`checkedRun`) returns. -/
-theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
-    (h : checkedRun t penv f = .ok (some out)) :
-    tabsAgree penv.tables out.tables f = true ∧
-      ∃ g log, LayerChain penv out.tables f f g ∧
-        RewriteCheck.validate out.tables t g out.func log = true := by
-  unfold checkedRun at h
-  cases hr : rewriteRun t true true penv f with
-  | error e => simp [hr, bind, Except.bind] at h
-  | ok r =>
-    obtain ⟨o, n, log⟩ := r
-    simp only [hr, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
-    split at h
-    · next hv =>
-      cases h
-      rw [RewriteCheck.accepts, Bool.and_eq_true] at hv
-      exact ⟨hv.1, layersOK_cases _ _ _ hv.2⟩
-    · cases h
 
 /-- The replay reads only the table's value and block rules. -/
 theorem replay_congr {t T : Interp.Table} (hv : T.values = t.values) (hb : T.blocks = t.blocks)
@@ -74,6 +31,86 @@ theorem validate_congr {t T : Interp.Table} (hv : T.values = t.values) (hb : T.b
     RewriteCheck.validate tabs T f g log = RewriteCheck.validate tabs t f g log := by
   simp only [RewriteCheck.validate, replay_congr hv hb]
 
+/-- The steps of `RewriteCheck.layersOK` from `f` to `g` (`f0` the pass's input, `t` the table
+whose value and block rules the expansion steps are validated with): each a layer
+`RewriteCheck.layerOK` accepts. -/
+inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Table) :
+    Func → Func → Prop
+  | refl (f : Func) : LayerChain penv tabs f0 t f f
+  /-- Nil-check eliminations. -/
+  | nil {f f' g : Func} : RewriteCheck.nilOK penv tabs f0 f f' = true →
+      LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
+  /-- Load-of-Store forwardings. -/
+  | fwd {f f' g : Func} : RewriteCheck.fwdRel tabs f f' = true →
+      checkOK { tabs := tabs, typs := penv.typs } f' = true →
+      LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
+  /-- Validated rewrite events (struct-load expansions). -/
+  | rw {f f' g : Func} {evs : Array RwEvent} : RewriteCheck.validate tabs t f f' evs = true →
+      checkOK { tabs := tabs, typs := penv.typs } f' = true →
+      LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
+  /-- Struct-store splits. -/
+  | ss {f f' g : Func} : RewriteCheck.ssRel tabs f f' = true →
+      checkOK { tabs := tabs, typs := penv.typs } f' = true →
+      LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
+
+/-- A chain validated with a table `T` is one with a table of the same value and block rules. -/
+theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Interp.Table}
+    (hv : T.values = t.values) (hb : T.blocks = t.blocks) {f g : Func}
+    (h : LayerChain penv tabs f0 T f g) : LayerChain penv tabs f0 t f g := by
+  induction h with
+  | refl f => exact .refl f
+  | nil h _ ih => exact .nil h ih
+  | fwd h hc _ ih => exact .fwd h hc ih
+  | rw h hc _ ih => exact .rw (by rwa [validate_congr hv hb] at h) hc ih
+  | ss h hc _ ih => exact .ss h hc ih
+
+theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} :
+    ∀ (Ls : List RewriteCheck.Layer) (f : Func) (log : Array RwEvent),
+      RewriteCheck.layersOK penv t f0 out Ls f log = true →
+      ∃ g log', LayerChain penv out.tables f0 t f g ∧
+        RewriteCheck.validate out.tables t g out.func log' = true
+  | [], f, log, h => ⟨f, log, .refl f, h⟩
+  | L :: Ls, f, log, h => by
+    rw [RewriteCheck.layersOK] at h
+    split at h
+    next f' log' _ =>
+    split at h
+    · exact layersOK_cases Ls f log h
+    · rw [Bool.and_eq_true] at h
+      obtain ⟨g, l, hc, hv⟩ := layersOK_cases Ls f' log' h.2
+      have hL := h.1
+      refine ⟨g, l, ?_, hv⟩
+      cases L with
+      | nil sel => exact .nil hL hc
+      | fwd sel =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        exact .fwd hL.1 hL.2 hc
+      | sl =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        exact .rw hL.1 hL.2 hc
+      | ss =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        exact .ss hL.1 hL.2 hc
+
+/-- What an accepted run (`checkedRun`) returns. -/
+theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
+    (h : checkedRun t penv f = .ok (some out)) :
+    tabsAgree penv.tables out.tables f = true ∧
+      ∃ g log, LayerChain penv out.tables f t f g ∧
+        RewriteCheck.validate out.tables t g out.func log = true := by
+  unfold checkedRun at h
+  cases hr : rewriteRun t true true penv f with
+  | error e => simp [hr, bind, Except.bind] at h
+  | ok r =>
+    obtain ⟨o, n, log⟩ := r
+    simp only [hr, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+    split at h
+    · next hv =>
+      cases h
+      rw [RewriteCheck.accepts, Bool.and_eq_true] at hv
+      exact ⟨hv.1, layersOK_cases _ _ _ hv.2⟩
+    · cases h
+
 /-- The tables `checkedRewrite` tries have `t`'s value and block rules. -/
 theorem checkedTiers_rules {t T : Interp.Table} (h : T ∈ checkedTiers t) :
     T.values = t.values ∧ T.blocks = t.blocks := by
@@ -89,7 +126,7 @@ theorem checkedFirst_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out :
     ∀ (Ts : List Interp.Table), (∀ T ∈ Ts, T.values = t.values ∧ T.blocks = t.blocks) →
       checkedFirst penv f Ts = .ok (some out) →
       tabsAgree penv.tables out.tables f = true ∧
-        ∃ g log, LayerChain penv out.tables f f g ∧
+        ∃ g log, LayerChain penv out.tables f t f g ∧
           RewriteCheck.validate out.tables t g out.func log = true
   | [], _, h => by simp [checkedFirst, pure, Except.pure] at h
   | T :: Ts, hT, h => by
@@ -103,7 +140,7 @@ theorem checkedFirst_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out :
         subst h
         obtain ⟨hta, g, log, hc, hv⟩ := checkedRun_cases h1
         obtain ⟨hvs, hbs⟩ := hT T List.mem_cons_self
-        exact ⟨hta, g, log, hc, by rwa [validate_congr hvs hbs] at hv⟩
+        exact ⟨hta, g, log, hc.congr hvs hbs, by rwa [validate_congr hvs hbs] at hv⟩
       | none =>
         simp only [h1] at h
         exact checkedFirst_cases Ts (fun T' hT' => hT T' (List.mem_cons_of_mem _ hT')) h
@@ -112,7 +149,7 @@ theorem checkedRewrite_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out
     (h : checkedRewrite t penv f = .ok out) :
     (out.func = f ∧ out.tables = penv.tables) ∨
       (tabsAgree penv.tables out.tables f = true ∧
-        ∃ g log, LayerChain penv out.tables f f g ∧
+        ∃ g log, LayerChain penv out.tables f t f g ∧
           RewriteCheck.validate out.tables t g out.func log = true) := by
   unfold checkedRewrite at h
   cases h1 : checkedFirst penv f (checkedTiers t) with
@@ -202,7 +239,7 @@ theorem ssEvent?_none {t : Interp.Table} (h : t.structStores = #[]) (f : Func) (
 theorem ssPre_none {t : Interp.Table} (h : t.structStores = #[]) (f : Func) (log : Array RwEvent) :
     RewriteCheck.ssPre t f log = (f, log) := by
   have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.ssStep t) (f, acc) = (f, acc ++ l.toArray) := by
+      l.foldl (RewriteCheck.ssStep t f) (f, acc) = (f, acc ++ l.toArray) := by
     intro l
     induction l with
     | nil => intro acc; simp
@@ -212,6 +249,34 @@ theorem ssPre_none {t : Interp.Table} (h : t.structStores = #[]) (f : Func) (log
       dsimp only
       rw [ih]; simp
   unfold RewriteCheck.ssPre
+  rw [← Array.foldl_toList, key]
+  simp
+
+/-- A table without struct-load expansions (`Interp.Table.structLoads`) has no expansion
+events. -/
+theorem slEvent?_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Tables) (f : Func)
+    (ev : RwEvent) : RewriteCheck.slEvent? t tabs f ev = none := by
+  cases ev with
+  | rule v i b d =>
+    simp only [RewriteCheck.slEvent?, h]
+    split
+    · simp
+    · rfl
+  | _ => rfl
+
+theorem slPre_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Tables) (f : Func)
+    (log : Array RwEvent) : RewriteCheck.slPre t tabs f log = (f, log) := by
+  have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
+      l.foldl (RewriteCheck.slStep t tabs f) (f, acc) = (f, acc ++ l.toArray) := by
+    intro l
+    induction l with
+    | nil => intro acc; simp
+    | cons ev l ih =>
+      intro acc
+      rw [List.foldl_cons, RewriteCheck.slStep, slEvent?_none h]
+      dsimp only
+      rw [ih]; simp
+  unfold RewriteCheck.slPre
   rw [← Array.foldl_toList, key]
   simp
 
@@ -227,10 +292,10 @@ theorem layersOK_none {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pas
     simp only [beq_self_eq_true, ite_true]
     exact layersOK_none Ls (fun L' hL' => h L' (List.mem_cons_of_mem _ hL'))
 
-/-- `checkedRewrite_cases` for a table without nil-check eliminations, forwardings and
-struct-store splits. -/
+/-- `checkedRewrite_cases` for a table without nil-check eliminations, forwardings, struct-load
+expansions and struct-store splits. -/
 theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
-    (h1 : t.loads = #[]) (h2 : t.structStores = #[]) {penv : PassEnv}
+    (h1 : t.loads = #[]) (h2 : t.structStores = #[]) (h4 : t.structLoads = #[]) {penv : PassEnv}
     {f : Func} {out : PassOut} (h : checkedRewrite t penv f = .ok out) :
     (out.func = f ∧ out.tables = penv.tables) ∨
       (tabsAgree penv.tables out.tables f = true ∧
@@ -268,6 +333,7 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
             cases L with
             | nil sel => exact nilPre_none h0 _ sel f log
             | fwd sel => exact fwdPre_none h1 _ sel f log
+            | sl => exact slPre_none h4 _ f log
             | ss => exact ssPre_none h2 f log
         · cases h3
 
