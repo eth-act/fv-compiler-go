@@ -70,6 +70,65 @@ structure SimFrag (tabs : Tables) (f : Func) : Prop where
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
 
+/-- `r` is `.ok true`. -/
+def isOkTrue : Except String Bool → Bool
+  | .ok true => true
+  | _ => false
+
+/-- Decidable sufficient condition for `SimFrag`: no tree value has a zero-size aggregate type,
+and every tree block has at most one priority-2 root (enough for small witnesses; the corpus
+check of the general condition is in `GoFVTest/CopyRelProbe.lean`). -/
+def simFragB (tabs : Tables) (f : Func) : Bool :=
+  f.blocks.all fun bid =>
+    !(make f).inTree bid ||
+    match f.block? bid with
+    | none => true
+    | some fb =>
+      fb.values.all (fun x => match f.value? x with
+        | some fv => !isOkTrue (zeroSizeAggregate tabs fv.type)
+        | none => true) &&
+      ((schedNodes f fb).toList.filter (fun n => n.prio == 2)).length ≤ 1
+
+theorem simFrag_of {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f)
+    (h : simFragB tabs f = true) : SimFrag tabs f := by
+  unfold simFragB at h
+  rw [Array.all_eq_true'] at h
+  refine ⟨fun bid hb ht fb hfb x hx fv hfv hz => ?_, fun bid hb ht fb hfb x y hx hy hnx hny hxy => ?_⟩
+  · have h := h bid hb
+    simp only [DomCert.Cert.inTree, ht, Bool.not_true, Bool.false_or, hfb, Bool.and_eq_true,
+      Array.all_eq_true'] at h
+    have := h.1 x hx
+    simp only [hfv, hz, isOkTrue] at this
+    cases this
+  · exfalso
+    have h := h bid hb
+    simp only [DomCert.Cert.inTree, ht, Bool.not_true, Bool.false_or, hfb, Bool.and_eq_true] at h
+    have h2 := h.2
+    obtain ⟨nx, hnxm, rfl⟩ := hx
+    obtain ⟨ny, hnym, rfl⟩ := hy
+    have hd : ((schedNodes f fb).toList.map (·.id)).Nodup :=
+      schedNodes_ids (valuesOwn hwf hb hfb) (hwf.valuesNodup _ _ ⟨hb, hfb⟩)
+    have hp2 : ∀ n ∈ (schedNodes f fb).toList, ¬ NilIn (schedNodes f fb).toList n.id →
+        n ∈ (schedNodes f fb).toList.filter (fun n => n.prio == 2) := by
+      intro n hn hnn
+      rw [List.mem_filter]
+      refine ⟨hn, ?_⟩
+      unfold NilIn at hnn
+      rw [nodeOf_of_mem hd hn] at hnn
+      have hle : n.prio ≤ 2 := by
+        obtain ⟨id, -, v, -, -, rfl⟩ := mem_schedNodes.1 hn
+        simp only [prio]; split <;> (try split) <;> omega
+      have : ¬ n.prio ≤ 1 := fun hle1 => hnn fun m hm => by cases hm; exact hle1
+      simp only [beq_iff_eq]; omega
+    have hx2 := hp2 nx hnxm hnx
+    have hy2 := hp2 ny hnym hny
+    generalize hl : (schedNodes f fb).toList.filter (fun n => n.prio == 2) = l at hx2 hy2 h2
+    match l, h2 with
+    | [], _ => cases hx2
+    | [a], _ =>
+      rw [List.mem_singleton] at hx2 hy2
+      exact hxy (by rw [hx2, hy2])
+
 /-- Everything the simulation uses about copyelim's input `f` and output `g`. -/
 structure Setup (tabs : Tables) (f g : Func) : Prop where
   wf : ∃ ce, WF ce f
