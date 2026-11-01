@@ -11,8 +11,8 @@ the same values possibly reordered, the `Phi`s in the same order) and values, ex
 * a `NilCheck p mem` may become `Copy nc` when `p` is known to point into an allocation there
   (`justified`): `nc` is a nil check of `p` (with `p`'s check's type) in a strict dominator of
   the block or listed before it in the block's schedule, or `nc = p` and `p`'s op makes it point
-  into an allocation (`safePtr`: `Addr`, `LocalAddr`, a nil check, or `OffPtr`/`AddPtr` of such
-  a pointer, all pointer-typed);
+  into an allocation (`safePtr`: `Addr`, `LocalAddr`, a nil check, `GetG`, or `OffPtr`/`AddPtr`
+  of such a pointer, all pointer-typed);
 * an `IsNonNil p` may become `ConstBool [1]` when a nil check of `p` justifies it;
 
 and every block's schedule in `g` runs the roots of `f`'s, minus the removed checks, in the same
@@ -35,7 +35,8 @@ def ptrShaped (tabs : Tables) (t : TypeRef) : Bool :=
   | _ => false
 
 /-- `x` is pointer-typed and points into an allocation whenever it is defined: an `Addr` or
-`LocalAddr` with a name, a nil check, or an `OffPtr`/`AddPtr` of such a value. -/
+`LocalAddr` with a name, a nil check, `GetG` (the goroutine's `g`, an allocation of the
+environment, `docs/plans/semantics.md` §5), or an `OffPtr`/`AddPtr` of such a value. -/
 def safePtr (tabs : Tables) (f : Func) : Nat → ID → Bool
   | 0, _ => false
   | n + 1, x =>
@@ -45,7 +46,7 @@ def safePtr (tabs : Tables) (f : Func) : Nat → ID → Bool
       ptrShaped tabs v.type &&
       match v.op with
       | .Addr | .LocalAddr => v.aux.isSome
-      | .NilCheck => true
+      | .NilCheck | .GetG => true
       | .OffPtr | .AddPtr =>
         match v.args[0]? with
         | some a => safePtr tabs f n a

@@ -448,6 +448,7 @@ import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
 import GoFV.Proof.Witness.NextPow2
+import GoFV.Proof.Witness.NilGetG
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Pipeline

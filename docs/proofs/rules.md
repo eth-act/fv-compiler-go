@@ -174,13 +174,15 @@ hypothesis `RuleSet.AllSound` now also asks `BlockRule.Sound` of the block rules
 nilcheckelim's checker rather than by a value refinement: `RuleSet.nilChecks` (tried on a
 `NilCheck` after its value row, `Interp.Table.nilChecks`) holds the rules with
 `EffectRule.NilElim r := RewriteCheck.nilElimOK r = true` (the result is the checked pointer, whose
-op is a `NilCheck.safePtr` seed: `Addr`, `LocalAddr` or `NilCheck`). `RewriteCheck.accepts` takes
+op is a `NilCheck.safePtr` seed: `Addr`, `LocalAddr`, `NilCheck` or `GetG`, whose value is the
+environment's `g` allocation `Blk.global "runtime.g"`). `RewriteCheck.accepts` takes
 the log's nil-check events out (`nilPre`: `NilCheck p mem` → `Copy p` on the input), requires
 `NilCheck.nrel` between the input and that function and `check` of it (`nilOK`), and validates
 the output against it with the remaining events. `checkedRewrite_refines` composes
-`Nil.refines_of_rel` with the atom simulation (statement unchanged). Proven: `generic.rules:1375`,
-`:1381`, `:1388`. Not provable this way (the pointer is no seed): `:1062` (`GetG`), `:1367`
-(`isMalloc` result), `:1384` (dictionary `Arg`), `:1376` (`Convert` of `Addr`).
+`Nil.refines_of_rel` with the atom simulation (statement unchanged). Proven: `generic.rules:1062`
+(witness `GoFV.Proof.Witness.gg_checkedRewrite`), `:1375`, `:1381`, `:1388`. Not provable this
+way (the pointer is no seed): `:1367` (`isMalloc` result), `:1384` (dictionary `Arg`), `:1376`
+(`Convert` of `Addr`).
 
 ### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 
