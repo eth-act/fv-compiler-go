@@ -1,11 +1,11 @@
 import GoFV.Opt.Fuse.If
-import GoFV.Opt.Checked
+import GoFV.Opt.Fuse.ComparisonsCheck
 import GoFV.Opt.SpecSafe
 
 /-!
 # fuseBlockIf, checked
 
-`IfC.Site.relB f g ce R` validates one `fuseBlockIf` rewrite of `f` into `g` at the site `s`
+`IfC.Site.relB f g R` validates one `fuseBlockIf` rewrite of `f` into `g` at the site `s`
 (`siteOf`, Go's choice of the two sides): the `If` block `b` (control `c`) has two sides, each
 an edge into the join block `ss` (at predecessor index `j0`/`j1`) or a speculation-safe `Plain`
 arm whose successor is `ss`.
@@ -13,18 +13,22 @@ arm whose successor is `ss`.
 - `ss`'s `Phi`s read the same argument along both sides, a value outside `X` (below);
 - in `g`, `b` is `Plain` without controls, continuing along side 1; one edge is gone (`rmT`,
   `rmJ`): `b`'s edge 0, or, when side 0's arm has `b` as its only predecessor (`unlinked`), the
-  arm's edge into `ss` (the arm's values move to `b`); the predecessor `rmJ` of `rmT` and the
-  `Phi` arguments `rmJ` are swap-removed (`rmE`, `phiRm`); every other listed block keeps its
-  values, kind and controls, with successors renumbered by `rmE`;
+  arm's edge into `ss` (the arm's values move to `b`, the arm keeps no values, edges or
+  controls); the predecessor `rmJ` of `rmT` and the `Phi` arguments `rmJ` are swap-removed
+  (`rmE`, `phiRm`), and `b`'s edge 1 becomes its edge 0 (`pmap`); every other listed block keeps
+  its values, kind and controls, with successors renumbered by `rmE` and predecessors by
+  `predsOf`;
 - the values `R` (`resetOf`: `Invalid` in `g`, not in `f`) are reset to `OpInvalid` with no
   arguments; in `f` each is a `Phi` or pure (`resetOK`); every other value keeps what the
-  semantics reads (the `Phi`s of `rmT` with their arguments renumbered);
+  semantics reads (the `Phi`s of `rmT` with their arguments renumbered); every value keeps its
+  block, but a moved arm value is `b`'s (`blkOK`);
 - no value of `g` outside `X` reads, and no control of `g` is, a value of `X` (the reset values
   and the arms' values);
-- every checked block of `g` has a schedule, and `g` passes `check` (rewrites are rare: 138 on
-  the quick corpus, 1,586 on the full one).
+- every checked block of `g` has a schedule.
 
-The soundness proof is `GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`.
+No `check` of `g` (issue #147): well-formedness and use dominance of `g` follow from the
+relation (`GoFV.Proof.FuseIf.Setup.wg`, `useDom_g`). The soundness proof is
+`GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`.
 -/
 
 namespace GoFV.Opt.Fuse
@@ -151,6 +155,30 @@ def invalidIn (x : ID) : Bool :=
   | some v => v.id == x && v.op == .Invalid && v.args.isEmpty
   | none => false
 
+/-- `b`'s edge 1 becomes its edge 0 (`b.removeSucc(0)` moves it). -/
+def pmap (e : Edge) : Edge := if e == ⟨s.b, 1⟩ then ⟨s.b, 0⟩ else e
+
+/-- The predecessors of block `bid` in `g`, from its predecessors `ps` in `f`. -/
+def predsOf (bid : ID) (ps : Array Edge) : Array Edge :=
+  (if bid == s.rmT f then Cmp.swapRemove ps (s.rmJ f) else ps).map s.pmap
+
+/-- `x` is a value of an unlinked arm (it moves to `b`). -/
+def moved (x : ID) : Bool := s.unlinked f && s.arm0.any fun a => (valsOf f a).contains x
+
+/-- Value `x` keeps its block, a moved one becomes `b`'s. -/
+def blkOK (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | some fv, some gv => gv.block == if s.moved f x then s.b else fv.block
+  | _, _ => true
+
+/-- An unlinked arm in `g`: its ID, no values, edges or controls. -/
+def goneOK (bid : ID) : Bool :=
+  match f.block? bid, g.block? bid with
+  | some fb, some gb =>
+    gb.id == fb.id && gb.values.isEmpty && gb.succs.isEmpty && gb.preds.isEmpty &&
+      gb.controls.isEmpty
+  | _, _ => false
+
 /-- A reset value: `Invalid` without arguments in `g`; a `Phi` or pure in `f`. -/
 def resetOK (r : ID) : Bool :=
   match f.value? r, g.value? r with
@@ -184,13 +212,15 @@ def valueOK (R : List ID) (x : ID) : Bool :=
   | _, _ => false
 
 /-- Block `bid` of `g`: `b` is `Plain` along side 1 with its values (and an unlinked arm's); an
-unlinked arm is not checked (no run of `g` enters it); every other block keeps its values, kind
-and controls, with successors renumbered; its controls are outside `X`; it has a schedule. -/
+unlinked arm keeps nothing (`goneOK`); every other block keeps its values, kind and controls,
+with successors renumbered; every block but the arm has its predecessors renumbered
+(`predsOf`), its controls outside `X` and a schedule. -/
 def blockOK (R : List ID) (bid : ID) : Bool :=
-  (s.unlinked f && s.arm0 == some bid) ||
+  (s.unlinked f && s.arm0 == some bid && goneOK f g bid) ||
   match f.block? bid, g.block? bid with
   | some fb, some gb =>
-    gb.id == fb.id && gb.controls.all (fun c => !s.inX f R c) && (Sem.schedule g gb).isSome &&
+    gb.id == fb.id && gb.preds == s.predsOf f bid fb.preds &&
+      gb.controls.all (fun c => !s.inX f R c) && (Sem.schedule g gb).isSome &&
       if bid == s.b then
         gb.kind == .Plain && gb.controls.isEmpty && gb.succs == #[s.rmE f s.e1] &&
           gb.values == fb.values ++ (if s.unlinked f then (s.arm0.map (valsOf f)).getD #[] else #[])
@@ -200,28 +230,28 @@ def blockOK (R : List ID) (bid : ID) : Bool :=
   | _, _ => false
 
 /-- **One `fuseBlockIf` rewrite** at site `s` with reset values `R`, checked (module doc). -/
-def relB (ce : CheckEnv) (R : List ID) : Bool :=
+def relB (R : List ID) : Bool :=
   s.shapeOK f R && g.entry == f.entry && g.ownAux == f.ownAux &&
     g.valueTab.size == f.valueTab.size && g.blocks == f.blocks &&
     R.all (resetOK f g) &&
     (!s.unlinked f || s.arm0.all fun a => (valsOf f a).all (invalidIn g)) &&
     (List.range f.valueTab.size).all (s.valueOK f g R) &&
-    f.blocks.all (s.blockOK f g R) && checkOK ce g
+    (List.range f.valueTab.size).all (s.blkOK f g) &&
+    f.blocks.all (s.blockOK f g R)
 
 end Site
 
 /-- **A checked `fuseBlockIf` step** at `b`: `g` is the rewrite at `siteOf tv f b`. -/
-def stepOK (ce : CheckEnv) (tv : TypeView) (f g : Func) (b : ID) : Bool :=
+def stepOK (tv : TypeView) (f g : Func) (b : ID) : Bool :=
   match siteOf tv f b with
-  | some s => s.relB f g ce (Site.resetOf f g)
+  | some s => s.relB f g (Site.resetOf f g)
   | none => false
 
 end IfC
 
 /-- **`fuseBlockIf`, checked**: the rewrite is kept only if `IfC.stepOK` accepts it. -/
-def fuseBlockIfChecked (ce : CheckEnv) (tv : TypeView) (f : Func) (b : ID) :
-    Except String (Func × Bool) := do
+def fuseBlockIfChecked (tv : TypeView) (f : Func) (b : ID) : Except String (Func × Bool) := do
   let (g, ch) ← fuseBlockIf tv f b
-  if ch && IfC.stepOK ce tv f g b then return (g, true) else return (f, false)
+  if ch && IfC.stepOK tv f g b then return (g, true) else return (f, false)
 
 end GoFV.Opt.Fuse
