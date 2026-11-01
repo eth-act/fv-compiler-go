@@ -1,4 +1,4 @@
-import GoFV.Opt.CSE
+import GoFV.Proof.Pass.CSE
 import GoFV.SSA.Check
 import GoFV.Proof.Witness.DecodedLenCse
 import Std.Data.String.ToInt
@@ -139,14 +139,10 @@ theorem decodedLenCse_pass :
     ok_of_toBool decodedLenCseOut_check, decodedLenCse_cseFrag, decodedLenCse_merge.2.2,
     decodedLenCseOut_run⟩
 
-/-! ## The witness
+/-! ## The witness -/
 
-Pending `GoFV.Proof.CSE.cse_refines` (`csePass penv f = .ok out → check ce f = .ok () →
-check ce' out.func = .ok () → cseFrag penv f = true → Refines out.tables out.func penv.tables f`):
-with its module imported, this closes the witness (checked against that statement taken as a
-hypothesis).
-
-```lean
+/-- **Non-vacuity of `cse_refines`**: cse merges `decodedLen`'s two `Div64 v7 v13` (`v23`
+becomes `Mul64 v13 v14`), and the validated output returns the source's result. -/
 theorem cse_witness :
     ∃ out, csePass dlCsePassEnv decodedLenCse = .ok out ∧
       (out.func.value? 23).map (·.args) = some #[13, 14] ∧
@@ -157,7 +153,5 @@ theorem cse_witness :
     (GoFV.Proof.CSE.cse_refines decodedLenCse_csePass (ok_of_toBool decodedLenCse_check)
       (ok_of_toBool decodedLenCseOut_check) decodedLenCse_cseFrag) hm
   exact ⟨fuel, m, h⟩
-```
--/
 
 end GoFV.Proof.Witness

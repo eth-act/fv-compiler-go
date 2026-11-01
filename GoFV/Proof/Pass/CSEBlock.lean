@@ -42,7 +42,6 @@ structure Blk (env : Env) (tabs : Tables) (f g : Func) (rw : Array (Option ID)) 
     (fb gb : Block) (F0 : Frame) (oS oT : Array ID) : Prop where
   rel : CRel tabs f g rw
   wf : ∃ ce, WF ce f
-  wg : ∃ ce, WF ce g
   cf : CertOK f
   tree : Tree f bid
   hfb : f.block? bid = some fb
@@ -150,10 +149,13 @@ theorem bidG : bid ∈ g.blocks := by
   rw [CopyElim.cfgView_blocks K.rel.cfg]; exact K.tree.1
 
 theorem ownG : ValuesOwn g gb := by
-  obtain ⟨ce, hwg⟩ := K.wg; exact valuesOwn hwg K.bidG K.hgb
+  intro x hx
+  rw [K.gvalues] at hx
+  obtain ⟨v, hv, hid, -⟩ := K.valueIn hx
+  obtain ⟨gv, hgv, hgid, -⟩ := K.rel.value x v hv
+  exact ⟨gv, hgv, hgid.trans hid⟩
 
-theorem ndG : gb.values.toList.Nodup := by
-  obtain ⟨ce, hwg⟩ := K.wg; exact hwg.valuesNodup bid gb ⟨K.bidG, K.hgb⟩
+theorem ndG : gb.values.toList.Nodup := by rw [K.gvalues]; exact K.ndF
 
 theorem memS {x : ID} : x ∈ oS.toList ↔ Node f fb x := (schedule_topo K.ownF K.ndF K.hoS).2.2 x
 
@@ -779,11 +781,11 @@ end Blk
 
 /-- **One block's evaluation in source and target** (`BlockOK`), for cse's relation. -/
 theorem blockOK {tabs : Tables} {f g : Func} {rw : Array (Option ID)} (hrel : CRel tabs f g rw)
-    (hwf : ∃ ce, WF ce f) (hwg : ∃ ce, WF ce g) (hc : CertOK f) (env : Env) :
+    (hwf : ∃ ce, WF ce f) (hc : CertOK f) (env : Env) :
     BlockOK env tabs f g rw := by
   intro bid fb gb F0 oS oT ht hfb hgb hsz hd hrep hphiD hphiR hoS hoT hroots
   have K : Blk env tabs f g rw bid fb gb F0 oS oT :=
-    ⟨hrel, hwf, hwg, hc, ht, hfb, hgb, hsz, hd, hrep, hphiD, hphiR, hoS, hoT, hroots⟩
+    ⟨hrel, hwf, hc, ht, hfb, hgb, hsz, hd, hrep, hphiD, hphiR, hoS, hoT, hroots⟩
   exact ⟨fun G h => K.okCase h, fun e m h => K.panicCase h⟩
 
 end GoFV.Proof.CSE

@@ -171,7 +171,7 @@ theorem phis_repInv {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hrel : CRel
   | some r =>
     have hrep : Opt.CSE.rep rw z = r := by simp [Opt.CSE.rep, hr]
     rw [hrep]
-    obtain ⟨-, fx, frv, gx, gr, hfx, hfr, hgx, hgr, ⟨hop, -, -, htys, hargs⟩, -, hblk, -, blk,
+    obtain ⟨-, fx, frv, gx, gr, hfx, hfr, hgx, hgr, ⟨hop, -, -, htys, hargs⟩, -, hblk, -, -, blk,
       hblkr, hrb⟩ := hrel.subst z r hr
     obtain ⟨hzv, -, blk', hblk', hzb⟩ := hz
     rw [hzv] at hfx; cases hfx
