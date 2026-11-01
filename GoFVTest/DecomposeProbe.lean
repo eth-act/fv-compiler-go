@@ -230,15 +230,15 @@ def unprovenWhy (env : PassEnv) (t1 : Tables) (g1 : Func) : String := Id.run do
   let provenLocs : List String :=
     (proven.values.toList.flatMap fun row => row.toList.map fun cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}") ++
       proven.structStores.toList.map fun cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}"
-  let mut M := g1.valueTab
+  let mut M : RewriteCheck.Defs := g1.valueTab
   for ev in log do
     match ev with
     | .rule v i _ defs =>
       let loc := ruleLoc Decompose.decTable M v i
       if !provenLocs.contains loc then
-        let op := ((M.get? v).map (·.op.name)).getD "?"
+        let op := ((RewriteCheck.Defs.get? M v).map (·.op.name)).getD "?"
         return s!"unproven {op} {loc}"
-      M := defs.foldl (fun M u => M.put u.id u) M
+      M := defs.foldl (fun M u => RewriteCheck.Defs.put M u.id u) M
     | _ => pure ()
   return "no unproven rule"
 
