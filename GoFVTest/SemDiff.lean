@@ -36,14 +36,16 @@ namespace GoFVTest.SemDiff
 /-! ## Types the difftest supports -/
 
 /-- `t` can be built, generated and printed (integers, `bool`, strings, slices, arrays,
-structs, pointers; `depth` bounds the recursion through pointers and elements). -/
+structs, pointers, each at most 1 KB; `depth` bounds the recursion through pointers and
+elements). -/
 def supported (tabs : Tables) : Nat → TypeRef → Bool
   | 0, _ => true
   | d + 1, t =>
     match tabs.type? t with
     | none => false
     | some td =>
-      if td.size.isNone then false else
+      -- values are built as text and bytes: keep them small (runtime's `traceBuf` is 64 KB)
+      if (td.size.getD 4096) > 1024 then false else
       match td.kind, td.tail with
       | .INT8, _ | .INT16, _ | .INT32, _ | .INT64, _ | .INT, _ | .UINT8, _ | .UINT16, _
       | .UINT32, _ | .UINT64, _ | .UINT, _ | .UINTPTR, _ | .BOOL, _ | .STRING, _ => true
@@ -59,6 +61,8 @@ def signature (tabs : Tables) (f : Func) : Option (Array TypeRef × Array TypeRe
   | .func nrecv nparams nresults fields =>
     let ts := fields.map (·.type)
     if !ts.all (supported tabs 6) then none
+    -- a generic shape instantiation's dictionary must be the right one, not a random pointer
+    if fields.any (·.name == GoStr.ofString ".dict") then none
     let nin := nrecv + nparams
     if ts.size != nin + nresults then none
     else some (ts.extract 0 nin, ts.extract nin ts.size)
@@ -239,7 +243,7 @@ def renderBytes (tabs : Tables) (m : Mem) : Nat → TypeRef → Array Byte → N
 
 /-- A parsed export: each section's tables and function, the signature, the global image. -/
 structure Loaded where
-  sections : Array (String × Tables × Func)
+  sections : Array (String × Tables × Func × Ctx)
   params : Array TypeRef
   results : Array TypeRef
   env : Env
@@ -253,17 +257,23 @@ def load (path : System.FilePath) : IO (Except String Loaded) := do
     let mut secs := #[]
     for s in e.sections do
       tabs := tabs.addAll s.defs
-      secs := secs.push (s.pass.toStringLossy, tabs, s.func)
+      secs := secs.push (s.pass.toStringLossy, tabs, s.func, Ctx.make tabs s.func)
     match secs[0]? with
     | none => return .error s!"{path}: no sections"
-    | some (_, t0, f0) =>
+    | some (_, t0, f0, _) =>
       match signature t0 f0 with
       | none => return .error s!"{path}: signature outside the difftest's types"
       | some (ps, rs) =>
         return .ok { sections := secs, params := ps, results := rs,
                      env := { Env.p1 with globals := globalImage e } }
 
+/-- Block entries per run against native results (the test programs loop at most a few
+thousand times). -/
 def fuel : Nat := 1000000
+
+/-- Block entries per run in `corpus` mode: corpus functions may loop 10^5 times and more
+(`test/gc1.go`); such runs end `outOfFuel` and count as not defined. -/
+def corpusFuel : Nat := 20000
 
 /-- The arguments of a call: their bytes and the memory holding what they point to. -/
 def buildArgs (tabs : Tables) (params : Array TypeRef) (texts : List String) :
@@ -281,15 +291,15 @@ def buildArgs (tabs : Tables) (params : Array TypeRef) (texts : List String) :
   return (out, mem)
 
 /-- Run a call on section `k` and print the outcome as the native harness does. -/
-def runSection (l : Loaded) (k : Nat) (texts : List String) : String :=
+def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel) : String :=
   match l.sections[k]? with
   | none => "stuck: no section"
-  | some (_, tabs, f) =>
+  | some (_, tabs, _, ctx) =>
     match buildArgs tabs l.params texts with
     | .error e => s!"stuck: bad arguments: {e}"
     | .ok (imgs, mem) =>
       let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)
-      match run l.env tabs f args mem fuel with
+      match runCtx l.env ctx args mem fuel with
       | .returned rs m =>
         let rsT := (rs.zip l.results.toList).map fun (v, t) =>
           renderBytes tabs m 8 t (encode (tabs.ty t) v) 0
@@ -466,6 +476,10 @@ structure CStats where
   gapFuncs : Nat := 0
   outcomes : Std.HashMap String Nat := {}
   stuckMsgs : Std.HashMap String Nat := {}
+  /-- First file and call per stuck reason. -/
+  stuckEx : Std.HashMap String String := {}
+  /-- Slowest files (ms). -/
+  slow : Array (Nat × String) := #[]
 
 /-- A stuck message without value/block IDs (for a histogram). -/
 def stuckKey (msg : String) : String :=
@@ -480,6 +494,7 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
   for d in dirs do
     for path in ← ssaFiles d do
       st := { st with files := st.files + 1 }
+      let t0 ← IO.monoMsNow
       let .ok l ← load path | continue
       st := { st with eligible := st.eligible + 1 }
       let (calls, s') := (randCalls l.sections[0]!.2.1 l.params n).run s
@@ -488,18 +503,20 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
       let mut definedHere := false
       for c in calls do
         st := { st with calls := st.calls + 1 }
-        let r0 := runSection l 0 c
+        let r0 := runSection l 0 c corpusFuel
         let key := ((r0.splitOn "\t").headD "").splitOn " " |>.headD ""
         st := { st with outcomes := st.outcomes.insert key (st.outcomes.getD key 0 + 1) }
         if r0.startsWith "stuck" || r0 == "outOfFuel" then
           let k := stuckKey (r0.drop 7).toString
           st := { st with stuck0 := st.stuck0 + 1,
-                          stuckMsgs := st.stuckMsgs.insert k (st.stuckMsgs.getD k 0 + 1) }
+                          stuckMsgs := st.stuckMsgs.insert k (st.stuckMsgs.getD k 0 + 1),
+                          stuckEx := if st.stuckEx.contains k then st.stuckEx
+                            else st.stuckEx.insert k s!"{path} {c}" }
           continue
         st := { st with defined0 := st.defined0 + 1 }
         definedHere := true
         for k in [1:l.sections.size] do
-          let r := runSection l k c
+          let r := runSection l k c corpusFuel
           st := { st with sectionRuns := st.sectionRuns + 1 }
           if r == r0 then st := { st with agree := st.agree + 1 }
           else if r.startsWith "stuck" then
@@ -513,15 +530,52 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
             st := { st with diffs := st.diffs + 1 }
       if gapHere then st := { st with gapFuncs := st.gapFuncs + 1 }
       if definedHere then st := { st with definedFuncs := st.definedFuncs + 1 }
+      let dt := (← IO.monoMsNow) - t0
+      if dt > 2000 then
+        st := { st with slow := st.slow.push (dt, path.toString) }
+        IO.eprintln s!"slow: {dt} ms {path}"
   let kinds := st.outcomes.toList.map (fun (k, n) => s!"{k} {n}")
   let top := (st.stuckMsgs.toList.toArray.qsort (fun a b => a.2 > b.2)).toList.take 20
   IO.println s!"sem-difftest corpus: {st.files} files, {st.eligible} with supported signatures, \
     {st.calls} calls (section 0: {", ".intercalate kinds}); {st.defined0} calls defined at \
     section 0 (in {st.definedFuncs} functions), {st.sectionRuns} later-section runs of them: \
     {st.agree} agree, {st.diffs} differ, {st.gaps} stuck (gaps, in {st.gapFuncs} functions)"
+  IO.println "slowest files (ms):"
+  for (ms, p) in ((st.slow.qsort (fun a b => a.1 > b.1)).toList.take 10) do
+    IO.println s!"  {ms} {p}"
   IO.println "section-0 stuck reasons (top 20):"
-  for (k, c) in top do IO.println s!"  {c} {k}"
+  for (k, c) in top do IO.println s!"  {c} {k}    e.g. {st.stuckEx.getD k ""}"
   return if st.diffs == 0 then 0 else 1
+
+/-- `trace <file> <section> <arg>...`: run one call on one section, printing every block entry
+and the values the block computed (for debugging a stuck or differing run). -/
+def trace (path : String) (k : Nat) (texts : List String) : IO UInt32 := do
+  let .ok l ← load path | IO.eprintln "load failed"; return 1
+  let some (_, tabs, f, ctx) := l.sections[k]? | IO.eprintln "no section"; return 1
+  let .ok (imgs, mem) := buildArgs tabs l.params texts | IO.eprintln "bad args"; return 1
+  let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)
+  let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
+  let mut fr : Frame := { regs := Array.replicate f.valueTab.size none, args,
+                          mem0 := frameMem l.env ctx images mem, images }
+  let mut bid := f.entry
+  let mut i := 0
+  for _ in [0:200] do
+    let some b := f.block? bid | IO.println s!"b{bid} missing"; return 1
+    IO.println s!"enter b{bid} from edge {i}"
+    match enterBlock l.env ctx fr b i with
+    | .stuck msg => IO.println s!"  stuck: {msg}"; return 0
+    | .panic e _ => IO.println s!"  panicked {e.message}"; return 0
+    | .ok fr' =>
+      fr := fr'
+      for vid in b.values do
+        let op := ((f.value? vid).map (·.op.name)).getD "?"
+        IO.println s!"  v{vid} {op} = {((fr.regs[vid]?).join.map Val.render).getD "-"}"
+      match stepTerm fr b with
+      | .ok (.goto e) => bid := e.b; i := e.i
+      | .ok (.ret rs _) => IO.println s!"return {rs.map Val.render}"; return 0
+      | .stuck msg => IO.println s!"  terminator stuck: {msg}"; return 0
+      | .panic e _ => IO.println s!"  panicked {e.message}"; return 0
+  return 0
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -529,6 +583,7 @@ def main (args : List String) : IO UInt32 := do
     gen dir n.toNat! seed.toNat! names
   | ["run", dir, calls, native] => runMode dir calls native
   | "corpus" :: n :: seed :: dirs => corpus n.toNat! seed.toNat! dirs
+  | "trace" :: file :: k :: texts => trace file k.toNat! texts
   | _ =>
     IO.eprintln "usage: sem-difftest gen <dir> <n> <seed> <func>... | run <dir> <calls> <native> | corpus <n> <seed> <dir>..."
     return 2

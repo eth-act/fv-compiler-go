@@ -111,6 +111,28 @@ def selectAux (auxInt : Int64) : List Val → Val :=
 
 end Comp
 
+/-- `AtomicLoad{8,32,64,Ptr} p mem`, `AtomicLoadAcq{32,64} p mem` (sequential semantics,
+§9 P5 pulled forward: they only read): `(value, mem)`. An access that is not naturally
+aligned within its allocation reads `poison`. -/
+def atomicLoad (t : Ty) : List Val → Val
+  | [.ptr p, .mem m] =>
+    match t with
+    | .tuple [vt, .mem] =>
+      let v := if vt.size == 0 || p.off.toNat % vt.size != 0 then .poison else m.load vt p
+      .tuple [v, .mem m]
+    | _ => .poison
+  | _ => .poison
+
+/-- `MemEq p q n mem`: the `n` bytes at `p` and `q` are equal; `poison` if either range is
+invalid or holds poison bytes. -/
+def memEq : List Val → Val
+  | [.ptr p, .ptr q, .int _ n, .mem m] =>
+    match m.read p n.toNat, m.read q n.toNat with
+    | some a, some b =>
+      if a.any (· == .poison) || b.any (· == .poison) then .poison else .bool (a == b)
+    | _, _ => .poison
+  | _ => .poison
+
 /-- `Load <T> p mem`, `Dereference <T> p mem`. -/
 def loadOp (t : Ty) : List Val → Val
   | [.ptr p, .mem m] => m.load t p

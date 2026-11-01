@@ -273,6 +273,9 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .Empty => .empty
   | .Load => loadOp ty args
   | .Dereference => loadOp ty args
+  | .MemEq => memEq args
+  | .AtomicLoad8 | .AtomicLoad32 | .AtomicLoad64 | .AtomicLoadPtr | .AtomicLoadAcq32
+  | .AtomicLoadAcq64 => atomicLoad ty args
   | _ => .poison
 
 end GoFV.SSA.Sem

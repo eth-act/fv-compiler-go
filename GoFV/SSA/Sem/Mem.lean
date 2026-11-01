@@ -7,7 +7,7 @@ Snapshots of allocations (`Mem`), concrete addresses of pointers, and typed load
 values are encoded to bytes and decoded from them by their type's shape (`Ty`, computed by
 `Sem/Layout.lean`), little-endian, pointers as eight `Byte.frag`s.
 
-Access rule (as clifv): an access of `n` bytes at `⟨blk, off⟩` is valid iff `blk` has a live
+Access rule (as clifv): an access of `n` bytes at `⟨blk, off⟩` is valid iff `blk` has an
 allocation and `off + n ≤ size`. Invalid loads give `poison` (loads are pure); invalid
 stores/moves/zeroes are `stuck` (the caller turns `none` into `stuck`); stores into
 read-only data (`writable = false`) likewise.
@@ -78,13 +78,13 @@ def allocHeap (m : Mem) (data : Array Byte) : Ptr × Mem :=
 def read (m : Mem) (p : Ptr) (n : Nat) : Option (Array Byte) := do
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if a.live && off + n ≤ a.data.size then some (a.data.extract off (off + n)) else none
+  if off + n ≤ a.data.size then some (a.data.extract off (off + n)) else none
 
 /-- Write `bs` at `p`, if the access is valid and the allocation writable. -/
 def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if a.live && a.writable && off + bs.size ≤ a.data.size then
+  if a.writable && off + bs.size ≤ a.data.size then
     let data := (List.range bs.size).foldl (fun d i => d.set! (off + i) bs[i]!) a.data
     some (m.set p.blk { a with data })
   else none
@@ -95,11 +95,9 @@ def poisonBlock (m : Mem) (b : Blk) : Mem :=
   | some a => m.set b { a with data := Array.replicate a.data.size .poison }
   | none => m
 
-/-- Mark block `b` dead (the frame at return). -/
-def kill (m : Mem) (b : Blk) : Mem :=
-  match m.find? b with
-  | some a => m.set b { a with live := false }
-  | none => m
+/-- Remove block `b` (the frame at return: pointers into it then point into no allocation,
+and which frame variables existed is not observable). -/
+def free (m : Mem) (b : Blk) : Mem := { m with blocks := m.blocks.filter (·.1 != b) }
 
 end Mem
 

@@ -63,11 +63,11 @@ inductive Byte where
   | poison
   deriving DecidableEq, Repr, Inhabited
 
-/-- An allocation's state: its bytes (the size is `data.size`), writability, liveness. -/
+/-- An allocation's state: its bytes (the size is `data.size`) and writability. Freed
+allocations are removed from the memory. -/
 structure Alloc where
   data : Array Byte
   writable : Bool := true
-  live : Bool := true
   deriving DecidableEq, Repr, Inhabited
 
 /-- A memory snapshot: the allocations that exist, by block. A block that is not listed has

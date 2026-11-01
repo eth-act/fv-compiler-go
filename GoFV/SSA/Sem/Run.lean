@@ -205,6 +205,7 @@ structure Ctx where
   locals : Array (AuxRef × Nat × Option Nat) := #[]
   /-- The activation number (frame blocks are `Blk.local act name`). -/
   act : Nat := 0
+  deriving Inhabited
 
 /-- The callee symbol of an `*AuxCall`. -/
 def _root_.GoFV.SSA.Tables.callee? (tabs : Tables) (a : AuxRef) : Option String :=
@@ -221,31 +222,21 @@ def abiParams (tabs : Tables) (f : Func) : Array ABIParam :=
   | some { kind := .call _ (some abi), .. } => abi.params
   | _ => #[]
 
-/-- The frame variables of `f`: every `PAUTO`/`PPARAM`/`PPARAMOUT` `*ir.Name` a value refers
-to (directly or through an `*AuxNameOffset`) or that `f.OwnAux` names, with its size and, for
-a `PPARAM`, the index of the input parameter it holds. -/
-def frameLocals (tabs : Tables) (f : Func) (params : Array (Option AuxRef)) :
-    Array (AuxRef × Nat × Option Nat) := Id.run do
-  let mut seen : Std.HashMap AuxRef Unit := {}
-  let mut out := #[]
-  let mut names : Array AuxRef := (abiParams tabs f).filterMap (·.name)
-  for bid in f.blocks do
-    for vid in ((f.block? bid).map (·.values)).getD #[] do
-      if let some a := (f.value? vid).bind (·.aux) then
-        match tabs.aux? a with
-        | some { kind := .name .., .. } => names := names.push a
-        | some { kind := .nameOff n _, .. } => names := names.push n
-        | _ => pure ()
-  for n in names do
-    if seen.contains n then continue
-    seen := seen.insert n ()
+/-- The frame variables: every `PAUTO`/`PPARAM`/`PPARAMOUT` `*ir.Name` the tables define
+(the export's tables are per function: these are the function's own variables, including those
+earlier passes stopped referring to), with its size and, for a `PPARAM`, the index of the input
+parameter it holds. Taken from the tables rather than from the values so that deleting a
+value (deadcode, dse) never changes the frame. -/
+def frameLocals (tabs : Tables) (params : Array (Option AuxRef)) :
+    Array (AuxRef × Nat × Option Nat) :=
+  (List.range tabs.auxes.size).toArray.filterMap fun n =>
     match tabs.aux? n with
     | some { kind := .name _ cls t .., .. } =>
       if cls == .PAUTO || cls == .PPARAM || cls == .PPARAMOUT then
-        if let some sz := typeSize? tabs t then
-          out := out.push (n, sz, if cls == .PPARAM then params.findIdx? (· == some n) else none)
-    | _ => pure ()
-  return out
+        (typeSize? tabs t).map fun sz =>
+          (n, sz, if cls == .PPARAM then params.findIdx? (· == some n) else none)
+      else none
+    | _ => none
 
 def Ctx.make (tabs : Tables) (f : Func) : Ctx :=
   let ps := abiParams tabs f
@@ -253,14 +244,17 @@ def Ctx.make (tabs : Tables) (f : Func) : Ctx :=
   let params := ins.map (·.name)
   { f := f
     tabs := tabs
-    tys := f.valueTab.map fun o => match o with
-      | some v => tabs.ty v.type
-      | none => .other
+    tys :=
+      -- one shape per type number, shared by the values of that type
+      let byType := (List.range tabs.types.size).toArray.map tabs.ty
+      f.valueTab.map fun o => match o with
+        | some v => byType[v.type]?.getD .other
+        | none => .other
     sched := f.blockTab.map fun o => o.bind (schedule f)
     params := params
     paramTys := ins.map (tabs.ty ·.type)
     outs := (ps.filter (·.out)).map fun p => (p.name, tabs.ty p.type, p.regs.size)
-    locals := frameLocals tabs f params }
+    locals := frameLocals tabs params }
 
 /-- The state of an activation: the latest value of each value ID (by ID), the function's
 arguments and initial memory. -/
@@ -346,7 +340,10 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
   | .VarLive, [.mem m] | .WBend, [.mem m] => .ok (.mem m)
   | .KeepAlive, [_, .mem m] => .ok (.mem m)
   | .NilCheck, [.ptr p, .mem m] => if p.isNil then .panic .nilDeref m else .ok (.ptr p)
-  | _, _ => .stuck s!"{what}: undefined or ill-typed arguments"
+  | .NilCheck, [.int .w64 x, .mem m] => if x == 0 then .panic .nilDeref m else .ok (.int .w64 x)
+  | _, args =>
+    if args.any (fun | .poison => true | _ => false) then .stuck s!"{what}: poison argument"
+    else .stuck s!"{what}: ill-typed arguments"
 
 /-- Ops whose value depends on the activation or on symbols (not on `evalPure`'s inputs). -/
 def frameVal (ctx : Ctx) (v : Value) : Option Val :=
@@ -556,6 +553,12 @@ def goResults (ctx : Ctx) (rs : List Val) (m : Mem) : Res (List Val) := do
   let vals := (bytes.zip outs).map fun (bs, (_, t, _)) => decode bs 0 t
   if vals.any Val.hasPoison then .stuck "poison result" else .ok vals
 
+/-- `m` without the frame of activation `act` (`Blk.local act _`, `Blk.outargs act`). -/
+def _root_.GoFV.SSA.Sem.Mem.freeFrame (m : Mem) (act : Nat) : Mem :=
+  { m with blocks := m.blocks.filter fun (b, _) => match b with
+    | .local a _ | .outargs a => a != act
+    | _ => true }
+
 /-- The memory an activation starts with: `mem`, the global image of `env` (allocations not
 already in `mem`), and the frame: one allocation per frame variable, a `PPARAM` holding its
 argument's image, every other variable poison (§3.4). -/
@@ -570,7 +573,7 @@ def frameMem (env : Env) (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) :
 
 /-- Run `f` (with the definition tables `tabs` of its export section) on the Go-typed
 arguments `args` (receiver first) and memory `mem`, for at most `fuel` block entries: set up
-the frame, run, decode the Go-typed results and free the frame. -/
+the frame, run, decode the Go-typed results and remove the frame from the memory. -/
 def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : Outcome :=
   if args.length != ctx.params.size then
     .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
@@ -583,7 +586,7 @@ def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : 
     | .returned rs m =>
       match goResults ctx rs m with
       | .ok vals =>
-        .returned vals (ctx.locals.foldl (fun m (n, _, _) => m.kill (.local ctx.act n)) m)
+        .returned vals (m.freeFrame ctx.act)
       | .panic e m => .panicked e m
       | .stuck msg => .stuck msg
     | o => o
