@@ -1,4 +1,4 @@
-import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.NonNeg
 import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values05
 
@@ -48,27 +48,107 @@ theorem r_generic_692_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generi
 theorem r_generic_694_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_694_4 := by rule_auto
 
 /-- `generic.rules:610`: `(Less16 (Const16 <t> [0]) x) && isNonNegative(x) => (Neq16 (Const16 <t> [0]) x)` -/
-theorem r_generic_610_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610 := by rule_auto
+theorem r_generic_610_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_zero_left_of_msb _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:611`: `(Less16 x (Const16 <t> [1])) && isNonNegative(x) => (Eq16 (Const16 <t> [0]) x)` -/
-theorem r_generic_611_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611 := by rule_auto
+theorem r_generic_611_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_one_right_of_msb (by decide) _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:610`: `(Less32 (Const32 <t> [0]) x) && isNonNegative(x) => (Neq32 (Const32 <t> [0]) x)` -/
-theorem r_generic_610_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_2 := by rule_auto
+theorem r_generic_610_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_2 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_zero_left_of_msb _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:611`: `(Less32 x (Const32 <t> [1])) && isNonNegative(x) => (Eq32 (Const32 <t> [0]) x)` -/
-theorem r_generic_611_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_2 := by rule_auto
+theorem r_generic_611_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_2 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_one_right_of_msb (by decide) _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:610`: `(Less64 (Const64 <t> [0]) x) && isNonNegative(x) => (Neq64 (Const64 <t> [0]) x)` -/
-theorem r_generic_610_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_3 := by rule_auto
+theorem r_generic_610_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_3 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_zero_left_of_msb _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:611`: `(Less64 x (Const64 <t> [1])) && isNonNegative(x) => (Eq64 (Const64 <t> [0]) x)` -/
-theorem r_generic_611_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_3 := by rule_auto
+theorem r_generic_611_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_3 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_one_right_of_msb (by decide) _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:610`: `(Less8 (Const8 <t> [0]) x) && isNonNegative(x) => (Neq8 (Const8 <t> [0]) x)` -/
-theorem r_generic_610_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_4 := by rule_auto
+theorem r_generic_610_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_4 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_zero_left_of_msb _ ‹_› _ (by decide)
+    | rule_close
 
 /-- `generic.rules:611`: `(Less8 x (Const8 <t> [1])) && isNonNegative(x) => (Eq8 (Const8 <t> [0]) x)` -/
-theorem r_generic_611_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_4 := by rule_auto
+theorem r_generic_611_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_4 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.slt_one_right_of_msb (by decide) _ ‹_› _ (by decide)
+    | rule_close
 
 end GoFV.Proof.Rules

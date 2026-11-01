@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.NonNeg
 import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Rules.Generated.Generic.Values06
 
@@ -86,6 +87,16 @@ theorem r_generic_1137_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   all_goals mods_pow2
 
 /-- `generic.rules:1138`: `(Mod64 n (Const64 [-1<<63])) && isNonNegative(n) => n` -/
-theorem r_generic_1138_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1138 := by rule_auto
+theorem r_generic_1138_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1138 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals first
+    | exact NonNegCmp.srem_intMin64_of_msb _ ‹_›
+    | rule_close
 
 end GoFV.Proof.Rules
