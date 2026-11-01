@@ -510,8 +510,10 @@ and checks that every section agrees with section 0 whenever section 0 is define
   `copyelim_refines` now takes only `EmptyFrag` (`GoFV/Proof/Pass/CopyElimRank.lean`:
   `sameNP_copy`, `depBack`, `feedsOf`), and `zcse_refines` nothing beyond its checker
   (`GoFV/Proof/Pass/ZCSERank.lean`: `sameNP`, `depBack`, `feeds`; the checker requires the
-  redirected arguments to be pure and the entry's argument-free roots to stay put); deadcode
-  still takes `NoNil` until its proof switches.
+  redirected arguments to be pure and the entry's argument-free roots to stay put). The
+  deadcode simulation (`refines_of_deadRel`) needs only `DeadRel`: the target keeps a closed
+  subset of the block's nodes, and the source schedule restricted to it is a schedule of the
+  target block (`GoFV/Proof/Pass/DeadRank.lean`: `schedSpec_restrict`, `sched_transfer_sub`).
 - `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
   recursive definition on its path is structural.
 

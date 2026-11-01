@@ -13,8 +13,9 @@ namespace GoFV.Proof.CopyElim
 open GoFV.SSA GoFV.Opt GoFV.Proof
 
 theorem keep_upd (V : ID → Option Value) (v : ID) (G : Value → Value)
-    (hG : ∀ y, (G y).block = y.block ∧ (G y).type = y.type) (x : ID) :
-    (upd V v G x).map (fun u => (u.block, u.type)) = (V x).map (fun u => (u.block, u.type)) := by
+    (hG : ∀ y, (G y).block = y.block ∧ (G y).type = y.type ∧ (G y).id = y.id) (x : ID) :
+    (upd V v G x).map (fun u => (u.block, u.type, u.id)) =
+      (V x).map (fun u => (u.block, u.type, u.id)) := by
   unfold upd
   split
   · cases V x with
@@ -57,12 +58,14 @@ variable {tabs : Tables} {ce : CheckEnv} {f F : Func}
 /-- Build `Inv` from facts about the view `V'` of `F'`. -/
 theorem Inv.mk' {tabs : Tables} {f F' : Func} {V' : ID → Option Value} (hW : vw F' = V')
     (hs : CopyElim.skel F' = CopyElim.skel f)
-    (keep : ∀ x, (V' x).map (fun u => (u.block, u.type)) = (vw f x).map (fun u => (u.block, u.type)))
+    (keep : ∀ x, (V' x).map (fun u => (u.block, u.type, u.id)) =
+      (vw f x).map (fun u => (u.block, u.type, u.id)))
     (mode : ∀ x, Listed f x → ∀ fv, f.value? x = some fv → ∃ v, V' x = some v ∧ Mode tabs V' fv v)
     (closed : ∀ x, Listed f x → ∀ v, V' x = some v → ∀ c ∈ v.args, Listed f c)
     (acyc : ∀ x, Listed f x → ∃ r n, Src V' x r n)
     (shape : ∀ x, Listed f x → ∀ w, cstep V' x = some (some w) →
-      ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧ tabs.ty wv.type = tabs.ty xv.type) :
+      ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧
+        RetypeEq (tabs.ty wv.type) (tabs.ty xv.type)) :
     Inv tabs f F' := by
   subst hW; exact ⟨hs, keep, mode, closed, acyc, shape⟩
 
@@ -136,7 +139,7 @@ theorem inv_setArg (hwf : WF ce f) (hI : Inv tabs f F) {v : ID} (hv : Listed f v
   refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_, ⟨hsink, ?_⟩, by rw [hself, ← hG], ?_, hsrc⟩
   · rw [skel_setArg]; exact hI.skel
   · intro x
-    rw [keep_upd (vw F) v G (by intro y; rw [← hG]; exact ⟨rfl, rfl⟩)]
+    rw [keep_upd (vw F) v G (by intro y; rw [← hG]; exact ⟨rfl, rfl, rfl⟩)]
     exact hI.keep x
   · intro x hx fv hfv
     obtain ⟨u0, hu0, hm⟩ := hI.mode x hx fv hfv
@@ -239,7 +242,7 @@ theorem inv_empty (hfrag : CopyFrag tabs f) (hI : Inv tabs f F) {v : ID}
   refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_, ⟨fun x => by rw [hall], ?_⟩, ?_⟩
   · rw [skel_resetValue]; exact hI.skel
   · intro x
-    rw [keep_upd (vw F) v G (by intro y; rw [← hG]; exact ⟨rfl, rfl⟩)]
+    rw [keep_upd (vw F) v G (by intro y; rw [← hG]; exact ⟨rfl, rfl, rfl⟩)]
     exact hI.keep x
   · intro x hx fv' hfv'
     by_cases hxv : x = v
@@ -412,7 +415,7 @@ theorem inv_phielim (hwf : WF ce f) (hfrag : CopyFrag tabs f) (hI : Inv tabs f F
   refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_, ?_, (fun h => by cases h), ?_, fun _ => ⟨?_, ?_⟩⟩
   · rw [skel_toCopy]; exact hI.skel
   · intro x
-    rw [keep_upd (vw F) v G (by intro y; rw [hGu]; exact ⟨rfl, rfl⟩)]
+    rw [keep_upd (vw F) v G (by intro y; rw [hGu]; exact ⟨rfl, rfl, rfl⟩)]
     exact hI.keep x
   · intro x hx fv' hfv'
     by_cases hxv : x = v

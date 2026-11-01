@@ -64,7 +64,7 @@ theorem deadcode_witness :
       rw [hc]; rfl
     refine ⟨_, hp, hb, hv, ?_⟩
     obtain ⟨fuel, h⟩ := Refines.returned_int
-      (deadcode_refines hp hf (ce' := np2CheckEnv) hg (deadFrag_of hf h3)) hm
+      (deadcode_refines hp hf (ce' := np2CheckEnv) hg (deadFrag_of h3)) hm
     exact ⟨fuel, m, h⟩
 
 end GoFV.Proof.Witness

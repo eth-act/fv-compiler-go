@@ -3,16 +3,15 @@ import GoFV.Proof.Pass.CopyElim
 /-!
 # Removing unreachable blocks and dead values: the static relation `DeadRel`
 
-`DeadRel f g` relates a function `f` and a function `g` obtained from it by keeping some of its
-blocks (the reachable ones), some of their values (the live ones) and some of their edges
-(deadcode): every kept block keeps its controls and its terminator (a `First` block may become
-`Plain`), a kept successor edge leads to the same block, possibly at another predecessor index,
-where each kept `Phi` reads along the new index what it read along the old one (`PhiArgs`);
-every kept value keeps its op, aux, arguments and type (a kept `Phi` stays a `Phi`); a dropped
-value of a kept block cannot panic. `Chained`: the side-effecting roots of each kept block are
-ordered by dependency, so a panicking root is reached by every schedule; `NoNil`: no
-`NilCheck` (a nil `NilCheck` panics, and the scheduler's order among ready `NilCheck`s is not
-determined by `schedule_spec`, #96).
+`DeadRel f g K` relates a function `f` and a function `g` obtained from it by keeping the blocks
+`K` (the reachable ones; `g` may list more, which no run enters), some of their values (the
+live ones) and some of their edges (deadcode): every kept block keeps its controls and its
+terminator (a `First` block may become `Plain`), a successor edge a run can take leads to the
+same block, again in `K`, possibly at another predecessor index, where each kept `Phi` reads
+along the new index what it read along the old one (`PhiArgs`); every kept value keeps its op,
+aux, arguments and type (a kept `Phi` stays a `Phi`); a dropped value of a kept block cannot
+panic. Nothing more is needed of `f`: the canonical rank tie-break of the scheduler (#96) keeps
+the order of the roots `g` keeps (`GoFV.Proof.Pass.DeadRank`).
 
 `refines_of_deadRel` (`GoFV.Proof.Pass.DeadSim`) derives the refinement from it, for `f` and
 `g` that are well formed (`WF`); no dominance is needed.
@@ -38,39 +37,33 @@ def PhiArgs (f g : Func) (c : ID) (iS iT : Nat) : Prop :=
 /-- Terminator kinds: the same, or `First` turned `Plain` (both continue along successor 0). -/
 def KindRel (fk gk : BlockKind) : Prop := gk = fk ∨ (fk = .First ∧ gk = .Plain)
 
-/-- `g` keeps blocks, values and edges of `f` (see the module doc). -/
-structure DeadRel (f g : Func) : Prop where
+/-- `g` keeps the blocks `K`, and values and edges of `f` (see the module doc). -/
+structure DeadRel (f g : Func) (K : ID → Prop) : Prop where
   entry : g.entry = f.entry
   ownAux : g.ownAux = f.ownAux
   vsize : g.valueTab.size = f.valueTab.size
+  /-- Runs start in a kept block. -/
+  entryK : K f.entry
+  /-- Kept blocks are listed in `g`. -/
+  sub : ∀ bid, K bid → bid ∈ g.blocks
+  /-- Values stay in their blocks. -/
+  vblock : ∀ x gv fv, g.value? x = some gv → f.value? x = some fv → gv.block = fv.block
   /-- A kept block: listed in `f`, same controls, related kind, a subset of the values. -/
-  block : ∀ bid ∈ g.blocks, ∀ gb, g.block? bid = some gb →
+  block : ∀ bid, K bid → ∀ gb, g.block? bid = some gb →
     ∃ fb, f.block? bid = some fb ∧ bid ∈ f.blocks ∧ KindRel fb.kind gb.kind ∧
       gb.controls = fb.controls ∧ ∀ x ∈ gb.values, x ∈ fb.values
   /-- Every successor a run can take (successor 0 of a `First` block) is kept. -/
-  edge : ∀ bid ∈ g.blocks, ∀ gb fb, g.block? bid = some gb → f.block? bid = some fb →
+  edge : ∀ bid, K bid → ∀ gb fb, g.block? bid = some gb → f.block? bid = some fb →
     ∀ (k : Nat) (e : Edge), fb.succs[k]? = some e → (fb.kind = .First → k = 0) →
-      ∃ e', gb.succs[k]? = some e' ∧ e'.b = e.b ∧ PhiArgs f g e.b e.i e'.i
+      ∃ e', gb.succs[k]? = some e' ∧ e'.b = e.b ∧ K e.b ∧ PhiArgs f g e.b e.i e'.i
   /-- A kept value: same type; a `Phi` iff it was one; otherwise same op, aux and arguments. -/
-  value : ∀ bid ∈ g.blocks, ∀ gb, g.block? bid = some gb → ∀ x ∈ gb.values, ∀ gv,
+  value : ∀ bid, K bid → ∀ gb, g.block? bid = some gb → ∀ x ∈ gb.values, ∀ gv,
     g.value? x = some gv → ∃ fv, f.value? x = some fv ∧ gv.type = fv.type ∧
       (gv.op = .Phi ↔ fv.op = .Phi) ∧
       (gv.op ≠ .Phi → gv.op = fv.op ∧ gv.aux = fv.aux ∧ gv.auxInt = fv.auxInt ∧ gv.args = fv.args)
   /-- A dropped value of a kept block cannot panic. -/
-  dropped : ∀ bid ∈ g.blocks, ∀ gb fb, g.block? bid = some gb → f.block? bid = some fb →
+  dropped : ∀ bid, K bid → ∀ gb fb, g.block? bid = some gb → f.block? bid = some fb →
     ∀ x ∈ fb.values, x ∉ gb.values → ∀ fv, f.value? x = some fv → ¬ Panicking fv.op
-
-/-- The side-effecting roots (priority 2) of the blocks `B` of `f` are pairwise ordered by
-dependency. -/
-def Chained (f : Func) (B : ID → Prop) : Prop :=
-  ∀ bid fb, B bid → f.block? bid = some fb →
-    ∀ x y, NodeIn (schedNodes f fb).toList x → NodeIn (schedNodes f fb).toList y →
-      ¬ NilIn (schedNodes f fb).toList x → ¬ NilIn (schedNodes f fb).toList y → x ≠ y →
-      Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
-      Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
-
-/-- `f` has no `NilCheck`. -/
-def NoNil (f : Func) : Prop := ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
 
 /-! ## Terminators -/
 

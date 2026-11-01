@@ -5,8 +5,9 @@ import GoFV.Proof.Pass.CopyElimChase
 
 One value of a sweep (`step_value`): the zero-size reset, `copyelimValue`, `phielimValue`. A
 sweep (`sweep_spec`) keeps `Inv`, lowers the phi count when a phi changed, and when none did,
-leaves every argument of every listed value a non-copy. `phielim` (`phielim_spec`) ends with a
-sweep that changed nothing: the loop bound `vid.last + 2` exceeds the number of phis.
+leaves every argument of every listed value a non-copy. `phielim` from any start in the invariant
+(`phielim_spec_of`; from the input itself, `phielim_spec`) ends with a sweep that changed nothing:
+the loop bound `vid.last + 2` exceeds the number of phis.
 -/
 
 namespace GoFV.Proof.CopyElim
@@ -98,7 +99,7 @@ theorem type_getV (hI : Inv tabs f F) (hwf : WF ce f) {v : ID} (hv : Listed f v)
     (hfv : f.value? v = some fv) : (F.getV v).type = fv.type := by
   obtain ⟨fv', u, hfv', hu, -⟩ := hI.value hwf hv
   rw [hfv] at hfv'; cases hfv'
-  obtain ⟨fv'', h1, -, h3⟩ := hI.keep_some hu
+  obtain ⟨fv'', h1, -, h3, -⟩ := hI.keep_some hu
   rw [hfv] at h1; cases h1
   rw [(getV_of_vw hu).2.2, h3]
 
@@ -213,19 +214,23 @@ theorem phiN_le_size (V : ID → Option Value) (N : Nat) : phiN V N ≤ N := by
   have := List.countP_le_length (p := fun x => (V x).any (·.op == .Phi)) (l := List.range N)
   simpa using this
 
-/-- `phielim` ends after a sweep that changed nothing: `Inv` holds and every argument of a
-listed value is a non-copy. -/
-theorem phielim_spec (hwf : WF ce f) (hfrag : CopyFrag tabs f) {G : Func}
-    (h : phielim tabs f = .ok G) : Inv tabs f G ∧ Settled f (vw G) := by
+/-- `phielim` from any start `F` in the invariant ends after a sweep that changed nothing:
+`Inv` holds and every argument of a listed value is a non-copy. -/
+theorem phielim_spec_of (hwf : WF ce f) (hfrag : CopyFrag tabs f) (hI : Inv tabs f F)
+    {G : Func} (h : phielim tabs F = .ok G) : Inv tabs f G ∧ Settled f (vw G) := by
+  have hvl : F.vidLast = f.vidLast := by
+    have := hI.skel
+    simp only [CopyElim.skel, Prod.mk.injEq] at this
+    exact this.2.2.2.2.1
   unfold phielim at h
   obtain ⟨s, h1, h2⟩ := CheckFacts.bind_ok h
   cases h2
   rw [Std.Legacy.Range.forIn_eq_forIn_range'] at h1
   have hres := forIn_list_inv'
-    (fun pre G => Inv tabs f G ∧ phiN (vw G) f.valueTab.size + pre.length ≤ phiN (vw f) f.valueTab.size)
-    (fun G => Inv tabs f G ∧ Settled f (vw G)) ⟨inv_init hwf hfrag, by simp⟩ ?_ h1
+    (fun pre G => Inv tabs f G ∧ phiN (vw G) f.valueTab.size + pre.length ≤ phiN (vw F) f.valueTab.size)
+    (fun G => Inv tabs f G ∧ Settled f (vw G)) ⟨hI, by simp⟩ ?_ h1
   · rcases hres with ⟨-, hcnt⟩ | hD
-    · have := phiN_le_size (vw f) f.valueTab.size
+    · have := phiN_le_size (vw F) f.valueTab.size
       have := hfrag.size
       simp [Std.Legacy.Range.size] at hcnt
       omega
@@ -246,6 +251,12 @@ theorem phielim_spec (hwf : WF ce f) (hfrag : CopyFrag tabs f) {G : Func}
     rw [hc] at hcnt'
     simp only [ite_true, List.length_append, List.length_singleton] at hcnt' ⊢
     omega
+
+/-- `phielim` ends after a sweep that changed nothing: `Inv` holds and every argument of a
+listed value is a non-copy. -/
+theorem phielim_spec (hwf : WF ce f) (hfrag : CopyFrag tabs f) {G : Func}
+    (h : phielim tabs f = .ok G) : Inv tabs f G ∧ Settled f (vw G) :=
+  phielim_spec_of hwf hfrag (inv_init hwf hfrag) h
 
 end
 

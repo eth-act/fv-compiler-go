@@ -25,8 +25,8 @@ def pmap (G : Func) (k : Nat) (cs : Array ID) : Array ID :=
   cs.mapIdx fun j c => if j < k then rc G c else c
 
 /-- What the control step keeps. -/
-def cskel (F : Func) : ID × Nat × Array ID × Option AuxRef × Nat × Nat :=
-  (F.entry, F.bidLast, F.blocks, F.ownAux, F.valueTab.size, F.blockTab.size)
+def cskel (F : Func) : ID × Nat × Array ID × Option AuxRef × Nat × Nat × Nat :=
+  (F.entry, F.bidLast, F.blocks, F.ownAux, F.valueTab.size, F.blockTab.size, F.vidLast)
 
 theorem pmap_get (G : Func) (k : Nat) (cs : Array ID) (i : Nat) :
     (pmap G k cs)[i]? = cs[i]?.map fun c => if i < k then rc G c else c := by

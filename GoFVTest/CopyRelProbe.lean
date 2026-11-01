@@ -3,6 +3,7 @@ import GoFV.SSA.Check
 import GoFV.Opt.CopyElim
 import GoFV.SSA.Sem.Run
 import GoFV.Proof.Pass.CopyFrag
+import Std.Data.HashSet
 
 open GoFV.SSA GoFV.Opt GoFV.SSA.DomCert
 deriving instance BEq for GoFV.SSA.Sem.Ty
@@ -47,7 +48,7 @@ def copyRel (tabs : Tables) (f g : Func) : Option String × Nat × Nat := Id.run
       if gv.op == .Copy then
         let w := gv.args[0]!
         match g.value? w with
-        | some wv => if tabs.ty wv.type != tabs.ty gv.type then return (some s!"copy shape v{x}", 0, 0)
+        | some wv => if !GoFV.Proof.CopyElim.retypeEqB (tabs.ty wv.type) (tabs.ty gv.type) then return (some s!"copy shape v{x}", 0, 0)
         | none => return (some s!"copy arg v{w}", 0, 0)
   return (none, unk, emp)
 
@@ -98,7 +99,7 @@ def fragWhy (tabs : Tables) (f : Func) : String := Id.run do
     for x in b.values do
       let some v := f.value? x | continue
       if (v.op == .Copy || v.op == .Phi) && !v.args.all (fun a => (f.value? a).any fun w =>
-          GoFV.Proof.CopyElim.tyEq (tabs.ty w.type) (tabs.ty v.type)) then
+          GoFV.Proof.CopyElim.retypeEqB (tabs.ty w.type) (tabs.ty v.type)) then
         return s!"shape {v.op.name}"
       if v.op == .Copy && GoFV.Proof.CopyElim.zeroSizeB tabs v.type then return "zero-size copy"
       if !GoFV.Proof.CopyElim.chainEnds f.value? (f.valueTab.size + 1) x then return "copy cycle"
