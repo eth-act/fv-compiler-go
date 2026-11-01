@@ -7,19 +7,23 @@ import GoFV.Opt.SccpCheck
 
 Runs sccp's analysis and `replaceConst` (insertion order) on the input of every `sccp` section
 of the given export files that passes `check`, and counts the inputs it changes and those where
-`Sccp.sccpOK` rejects the result (first failing condition; `blocks`: `replaceConst` removed
-edges); lists the smallest accepted changed inputs (witness candidates).
+the validated pass `sccpChecked` rejects the result (with the first failing condition of its
+checkers); lists the smallest accepted changed inputs (witness candidates).
 -/
 
 open GoFV.SSA GoFV.Rules GoFV.Opt GoFV.Opt.Sccp
 
 namespace GoFVTest.SccpProbe
 
-def why (ce : CheckEnv) (tabs : Tables) (f h g : Func) (C : Array (Option Lat)) (vis : Array Edge)
-    (R : Array Bool) : String := Id.run do
+def why (ce : CheckEnv) (tabs : Tables) (f h k g : Func) (C : Array (Option Lat))
+    (vis : Array Edge) (R : Array Bool) : String := Id.run do
   if !blocksOK tabs f h C then return "blocks"
-  if !deadOK h g then return "dead"
-  if !(check ce h).toBool then return s!"checkH {(check ce h)}"
+  if !deadOK h k then return "dead"
+  if !(check { ce with firstAny := true } h).toBool then
+    return s!"checkH {(check { ce with firstAny := true } h)}"
+  if k != g then
+    if !(check ce k).toBool then return s!"checkK {(check ce k)}"
+    if !copyOK tabs k g then return "copy"
   let g := h
   if !RewriteCheck.atomsOK f g then return "atoms"
   if !RewriteCheck.closedOK f then return "closedF"
@@ -72,10 +76,14 @@ def main (args : List String) : IO UInt32 := do
       let .ok a := analyze rw prev f | errs := errs + 1; continue
       let g := replace a a.keys
       let h := replace a a.keys rewireFirst
+      let k := replace a a.keys rewireKeep
       if g == f then continue
       changed := changed + 1
       let ce : CheckEnv := { tabs := prev, typs }
-      if sccpOK prev f h a.cells a.visited a.visitedBlock && deadOK h g && (check ce h).toBool then
+      let accepted := match sccpChecked env f with
+        | .ok o => o.func != f
+        | .error _ => false
+      if accepted then
         let nv := f.blocks.foldl (fun n b => n + ((f.block? b).map (·.values.size)).getD 0) 0
         let temps := (List.range g.valueTab.size).filter fun x =>
           (f.value? x).isNone && (g.value? x).isSome
@@ -85,7 +93,7 @@ def main (args : List String) : IO UInt32 := do
             s!"{path} {s.index} temps {temps.length} rewired {rewired}")
       else
         rejected := rejected + 1
-        let w := why ce prev f h g a.cells a.visited a.visitedBlock
+        let w := why ce prev f h k g a.cells a.visited a.visitedBlock
         let key := (w.splitOn " ").head!
         whys := whys.insert key (whys.getD key 0 + 1)
         let mut pc := 0

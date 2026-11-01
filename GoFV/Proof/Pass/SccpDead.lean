@@ -6,8 +6,9 @@ import GoFV.Proof.Pass.DeadSim
 
 `deadOK_spec`: if `Sccp.deadOK h g` accepts, `g` keeps all of `h`'s blocks, values and the edges a
 run can take (`Dead.DeadRel h g (· ∈ g.blocks)`), so `g` refines `h` when both are well formed
-(`Dead.refines_of_deadRel`). sccp's intermediate function `h` has a `First` block wherever `g`
-has an `If` rewired to `Plain`; its successor 1 is the edge `removeEdge` dropped.
+(`Dead.refines_of_deadRel`). sccp's intermediate function `h` has a `First` block wherever
+`replaceConst` rewires an `If` or `JumpTable` to `Plain`; its successors but 0 are the edges
+`removeEdge` drops (in sccp's second intermediate function, where `Phi`s only lose arguments).
 -/
 
 namespace GoFV.Proof.Sccp

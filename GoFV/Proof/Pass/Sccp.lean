@@ -1,18 +1,23 @@
 import GoFV.Proof.Pass.SccpTerm
 import GoFV.Proof.Pass.SccpDead
+import GoFV.Proof.Pass.SccpCopy
+import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Witness.Util
 
 /-!
 # sccp refines its input (issue #32)
 
 `sccp_refines`: the validated pass (`GoFV.Opt.sccpChecked`) refines its input under monotone
-contracts. A rejected or unchanged result is the input. An accepted one `g` goes through the
-intermediate function `h` (`replaceConst` with `rewireFirst`, which `check` accepts): `h` refines
-the input by the atom simulation under sccp's source invariant (`sccpInv`: registers with a
-constant cell hold `poison` or the constant, on executable blocks; premises `sc_atomArgs` and
-`sc_steps`, where an `If` on a constant became a `First` towards the successor it picks), and
-`g` refines `h` by deadcode's simulation (`deadOK_spec`, `Dead.refines_of_deadRel`: `g` is `h`
-with the second edge of those `First` blocks removed).
+contracts. A rejected or unchanged result is the input. An accepted one `g` goes through two
+intermediate functions (`GoFV.Opt.SccpCheck`): `h` (`replaceConst` with `rewireFirst`, which
+`check` accepts with `firstAny`) refines the input by the atom simulation under sccp's source
+invariant (`sccpInv`: registers with a constant cell hold `poison` or the constant, on
+executable blocks; premises `sc_atomArgs` and `sc_steps`, where an `If` or `JumpTable` on a
+constant became a `First` towards the successor it picks); `k` (the edges removed, `Phi`s only
+losing arguments) refines `h` by deadcode's simulation (`deadOK_spec`, `Dead.refines_of_deadRel`:
+`k` is `h` with the other edges of those `First` blocks removed); `g` is `k` or refines it by
+copyelim's simulation (`copyOK_spec`, `CopyElim.refines_of_rel`: `Phi`s that `removeEdge` turned
+into copies of their one remaining argument).
 -/
 
 namespace GoFV.Proof.Sccp
@@ -37,17 +42,26 @@ theorem sccp_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : Check
       split
       · rename_i hok
         simp only [hok, ↓reduceIte] at hg
-        simp only [Bool.and_eq_true] at hok
-        obtain ⟨⟨⟨-, hs⟩, hd⟩, hc⟩ := hok
+        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hok
+        obtain ⟨⟨⟨⟨-, hs⟩, hd⟩, hc⟩, hk⟩ := hok
         have K := sccpOK_spec hs
         have hwf := check_wf hf
-        have hch : check { tabs := penv.tables, typs := penv.typs } (Sccp.replace a a.keys
-            Sccp.rewireFirst) = .ok () := Witness.ok_of_toBool hc
+        have hch := Witness.ok_of_toBool hc
         have h1 := atomSimInv_refines hf hch K.atoms (sccpInv hwf K) (sc_atomArgs hwf K)
           (sc_steps hwf K)
-        have h2 := Dead.refines_of_deadRel (tabs := penv.tables)
-          ⟨⟨_, check_wf hch⟩, ⟨_, check_wf hg⟩, deadOK_spec hd⟩
-        exact h1.trans (h2.under Env.Mono)
+        rcases hk with hkg | ⟨hck, hco⟩
+        · rw [hkg] at hd
+          have h2 := Dead.refines_of_deadRel (tabs := penv.tables)
+            ⟨⟨_, check_wf hch⟩, ⟨_, check_wf hg⟩, deadOK_spec hd⟩
+          exact h1.trans (h2.under Env.Mono)
+        · have hck' := Witness.ok_of_toBool hck
+          have h2 := Dead.refines_of_deadRel (tabs := penv.tables)
+            ⟨⟨_, check_wf hch⟩, ⟨_, check_wf hck'⟩, deadOK_spec hd⟩
+          obtain ⟨hrel, hfr⟩ := copyOK_spec hco
+          have h3 := CopyElim.refines_of_rel (tabs := penv.tables)
+            ⟨⟨_, check_wf hck'⟩, ⟨_, check_wf hg⟩, Dom.certOK_of_check (check_domCert hck'),
+              Dom.certOK_of_check (check_domCert hg), hrel, hfr⟩
+          exact (h1.trans (h2.under Env.Mono)).trans (h3.under Env.Mono)
       · exact RefinesUnder.refl _ _ _
 
 end GoFV.Proof.Sccp

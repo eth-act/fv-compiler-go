@@ -42,25 +42,28 @@ theorem blocksOK_facts {tabs : Tables} {f g : Func} {C : Array (Option Lat)}
       · exact .inl ⟨h1, h2, h3⟩
       · exact .inr h
 
+theorem pickIdx_none (k : BlockKind) : pickIdx k none = none := by cases k <;> rfl
+
 theorem firstOK_spec {tabs : Tables} {f : Func} {C : Array (Option Lat)} {fb gb : Block}
     (h : firstOK tabs f C fb gb = true) :
-    fb.kind = .If ∧ gb.kind = .First ∧ gb.controls = #[] ∧ (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
-      ∃ c t e, fb.controls[0]? = some c ∧ cval tabs f C c = some (.bool t) ∧
-        fb.succs[if t then 0 else 1]? = some e ∧ gb.succs[0]? = some e := by
+    gb.kind = .First ∧ gb.controls = #[] ∧ (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
+      ∃ c v k e, fb.controls[0]? = some c ∧ cval tabs f C c = some v ∧
+        pickIdx fb.kind (some v) = some k ∧ fb.succs[k]? = some e ∧ gb.succs[0]? = some e := by
   unfold firstOK at h
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', Array.contains_iff_mem] at h
-  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
-  refine ⟨h1, h2, Array.isEmpty_iff.1 h3, h4, ?_⟩
-  cases hc : fb.controls[0]? with
-  | none => simp [hc] at h5
-  | some c =>
-    simp only [hc, Option.bind_some] at h5
+  obtain ⟨⟨⟨h2, h3⟩, h4⟩, h5⟩ := h
+  refine ⟨h2, Array.isEmpty_iff.1 h3, h4, ?_⟩
+  cases hcv : fb.controls[0]?.bind (cval tabs f C) with
+  | none => simp [hcv, pickIdx_none] at h5
+  | some v =>
+    obtain ⟨c, hc, hv⟩ := Option.bind_eq_some_iff.1 hcv
+    rw [hcv] at h5
     split at h5
-    · rename_i t ht
+    · rename_i k hk
       simp only [Bool.and_eq_true, beq_iff_eq] at h5
       obtain ⟨hs, he⟩ := h5
       obtain ⟨e, he'⟩ := Option.isSome_iff_exists.1 hs
-      exact ⟨c, t, e, rfl, ht, he', he.trans he'⟩
+      exact ⟨c, v, k, e, hc, hv, hk, he', he.trans he'⟩
     · cases h5
 
 theorem marked_g {tabs : Tables} {f g : Func} {C : Array (Option Lat)}
@@ -156,28 +159,44 @@ theorem sc_controlRef {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block
   sc_termRefP hwf K ((closedOK_facts K.cf b hb fb hfb).1 _
     (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) b _
 
-/-- An `If` turned `First` towards the successor its constant control picks. -/
+/-- An `If` or `JumpTable` turned `First` towards the successor its constant control picks. -/
 theorem sc_first {b : ID} {fb gb : Block} (hF : firstOK tabs f C fb gb = true) :
     StepRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs fb (listedDefs g) gb := by
-  obtain ⟨hkf, hkg, hcg, -, c, t, e, hc, hcv, he, he0⟩ := firstOK_spec hF
+  obtain ⟨hkg, -, -, c, v, k, e, hc, hcv, hk, he, he0⟩ := firstOK_spec hF
   intro n
   refine ⟨0, fun ρ ρ' _ _ _ hP _ => ?_⟩
-  have hcl := sc_den hwf K hP n c (.bool t) hcv
+  have hcl := sc_den hwf K hP n c v hcv
   have hT : stepVals gb (gb.controls.toList.map (den (listedDefs g) tabs ρ' 0)) = .ok (.goto e) := by
     unfold stepVals; rw [hkg]; unfold succ; rw [he0]; rfl
   rw [hT]
   have hcs : (fb.controls.toList.map (den f.value? tabs ρ n))[0]? = some (den f.value? tabs ρ n c) := by
     simp [hc]
-  unfold stepVals
-  rw [hkf]
-  simp only [ctlV, hcs, bind, Res.bind]
-  rcases refines_scalar (.inr ⟨t, rfl⟩) hcl with h0 | h0 <;> rw [h0]
-  · exact .stuck _ _
-  · cases t
-    · have : (Sem.succ fb 1) = .ok (.goto e) := by unfold succ; rw [show (1 : Nat) = if false = true then 0 else 1 from rfl, he]; rfl
-      simp only [this]; exact .ok (.goto e)
-    · have : (Sem.succ fb 0) = .ok (.goto e) := by unfold succ; rw [show (0 : Nat) = if true = true then 0 else 1 from rfl, he]; rfl
-      simp only [this]; exact .ok (.goto e)
+  have hs : Sem.succ fb k = .ok (.goto e) := by unfold succ; rw [he]; rfl
+  unfold pickIdx at hk
+  split at hk
+  · rename_i t hkind hv
+    cases hv
+    cases hk
+    unfold stepVals
+    rw [hkind]
+    simp only [ctlV, hcs, bind, Res.bind]
+    rcases refines_scalar (.inr ⟨t, rfl⟩) hcl with h0 | h0 <;> rw [h0]
+    · exact .stuck _ _
+    · cases t
+      · simp only [Bool.false_eq_true, ↓reduceIte] at hs
+        simp only [hs]; exact .ok (.goto e)
+      · simp only [↓reduceIte] at hs
+        simp only [hs]; exact .ok (.goto e)
+  · rename_i w x hkind hv
+    cases hv
+    cases hk
+    unfold stepVals
+    rw [hkind]
+    simp only [ctlV, hcs, bind, Res.bind]
+    rcases refines_scalar (.inl ⟨w, x, rfl⟩) hcl with h0 | h0 <;> rw [h0]
+    · exact .stuck _ _
+    · simp only [hs]; exact .ok (.goto e)
+  · cases hk
 
 /-- **Terminators.** -/
 theorem sc_steps : StepRefsP (sccpInv hwf K) g := by
@@ -190,7 +209,7 @@ theorem sc_steps : StepRefsP (sccpInv hwf K) g := by
       fun k hk' => ?_⟩
     rw [← hctl]
     exact sc_controlRef hwf K hbf hfb (hctl ▸ hk')
-  · exact ⟨(firstOK_spec hF).2.2.2.1, sc_first hwf K hF⟩
+  · exact ⟨(firstOK_spec hF).2.2.1, sc_first hwf K hF⟩
 
 end
 

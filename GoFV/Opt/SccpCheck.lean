@@ -1,6 +1,8 @@
 import GoFV.Opt.Sccp
 import GoFV.Opt.KnownBitsCheck
 import GoFV.SSA.Check
+import GoFV.Proof.Pass.CopyFrag
+import GoFV.Proof.Pass.DeadEdgeVal
 
 /-!
 # sccp's checker
@@ -8,9 +10,16 @@ import GoFV.SSA.Check
 `sccpChecked` is a translation validator: it runs sccp's analysis and `replaceConst` (with
 `latticeCells` in insertion order, as `sccpPass`) and keeps the result `g` only if the Bool
 checkers accept it, else returns the input (`GoFV.Proof.Sccp.sccp_refines`). The proof goes
-through an intermediate function `h`: `replaceConst` with `rewireFirst`, which turns an `If` it
-would rewire into a `First` block whose successor 0 is the one its constant picks (no edge
-removed); `g` is then `h` with the other edge removed (`deadOK`, deadcode's `DeadRel`).
+through two intermediate functions, built by `replaceConst` with other rewirings:
+- `h` (`rewireFirst`): an `If` or `JumpTable` it would rewire becomes a `First` block whose
+  successor 0 is the one its constant picks (no edge removed; `h` passes `check` with
+  `firstAny`, as such a `First` block keeps all successors of a `JumpTable`);
+- `k` (`rewireWith (removeEdgeG false)`): the edges are removed as in `g`, but the target's
+  `Phi`s only lose arguments, where `removeEdge` may turn a `Phi` into a `Copy`
+  (`phielimValue`).
+
+`k` is `h` with the edges no run takes removed (`deadOK`, deadcode's `DeadRel`), and `g` is
+`k` (often equal) with some `Phi`s turned copies (`copyOK`, copyelim's `CopyRel`).
 
 The certificate is the final lattice `C` (`latticeCells`), the executable edges `vis`
 (`visited`: `⟨b, i⟩` is the edge into `b` at its predecessor index `i`) and blocks `R`
@@ -28,13 +37,17 @@ The certificate is the final lattice `C` (`latticeCells`), the executable edges 
 - `h` is `f` but for values that became constants of their claimed value (`repOK`), new values
   only appended to blocks (the fold temporaries in the entry, `Const` or `Invalid` terms), the
   same atoms (`RewriteCheck.atomsOK`), and blocks with the same kinds, successors and controls
-  or an `If` with a constant control turned `First` towards the successor it picks (`blocksOK`);
-  both are closed under arguments.
+  or an `If`/`JumpTable` with a constant control turned `First` towards the successor it picks
+  (`blocksOK`); both are closed under arguments.
 
-`deadOK h g`: `g` keeps `h`'s blocks, values and the edges a run can take (successor 0 of a
+`deadOK h k`: `k` keeps `h`'s blocks, values and the edges a run can take (successor 0 of a
 `First` block), possibly at other predecessor indices with the `Phi` arguments following them
-(`DeadRel`; a `Phi` that `removeEdge` turned into a `Copy` is rejected). `JumpTable`s that
-`replaceConst` rewires are rejected (a `First` block has two successors).
+(`DeadRel`).
+
+`copyOK tabs k g`: `g` has `k`'s control-flow graph, blocks and values, except that a `Phi` of
+`k` may be `Copy w` in `g` where each of its arguments is `w` or a copy of `w` in `g`; copies of
+`g` retype like their argument, and no value of `k` has a zero-size aggregate type
+(`CopyElim.CopyRel` and `CopyElim.EmptyFrag`). Only checked, with `check k`, when `k ≠ g`.
 -/
 
 namespace GoFV.Opt
@@ -129,18 +142,22 @@ def repOK (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (x : ID) : Bool 
           (tabs.ty w.type)) c
       | none => false))
 
-/-- An `If` with a constant control became, in `h`, a `First` block (no controls) whose
-successor 0 is the one the constant picks, with the same successors. -/
+/-- The successor an `If` or `JumpTable` takes on the constant control `c`. -/
+def pickIdx : BlockKind → Option Sem.Val → Option Nat
+  | .If, some (.bool t) => some (if t then 0 else 1)
+  | .JumpTable, some (.int _ x) => some x.toNat
+  | _, _ => none
+
+/-- An `If` or `JumpTable` with a constant control became, in `h`, a `First` block (no
+controls) whose successor 0 is the one the constant picks, with the same successors. -/
 def firstOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (fb hb : Block) : Bool :=
-  fb.kind == .If && hb.kind == .First && hb.controls.isEmpty &&
-  fb.succs.all (hb.succs.contains ·) &&
-  match fb.controls[0]?.bind (cval tabs f C) with
-  | some (.bool t) => (fb.succs[if t then 0 else 1]?).isSome &&
-      hb.succs[0]? == fb.succs[if t then 0 else 1]?
-  | _ => false
+  hb.kind == .First && hb.controls.isEmpty && fb.succs.all (hb.succs.contains ·) &&
+  match pickIdx fb.kind (fb.controls[0]?.bind (cval tabs f C)) with
+  | some k => (fb.succs[k]?).isSome && hb.succs[0]? == fb.succs[k]?
+  | none => false
 
 /-- `h`'s blocks list `f`'s values first, with the same IDs, and the same kinds, successors and
-controls, or an `If` turned `First` (`firstOK`). -/
+controls, or an `If`/`JumpTable` turned `First` (`firstOK`). -/
 def blocksOK (tabs : Tables) (f h : Func) (C : Array (Option Lat)) : Bool :=
   f.blocks.all fun b =>
     match f.block? b, h.block? b with
@@ -157,14 +174,23 @@ def sccpOK (tabs : Tables) (f h : Func) (C : Array (Option Lat)) (vis : Array Ed
   blocksOK tabs f h C && reachOK tabs f C vis R &&
   (List.range f.valueTab.size).all (fun x => fixOK tabs f C vis x && repOK tabs f h C x)
 
-/-- `rewireSuccessor` without removing an edge: an `If` on constant `ai` becomes a `First`
-block whose successor 0 is the one `rewireSuccessor` keeps. -/
+/-- `rewireSuccessor` without removing an edge: an `If` or `JumpTable` on constant `ai` becomes
+a `First` block whose successor 0 is the one `rewireSuccessor` keeps. -/
 def rewireFirst (f : Func) (b : ID) (ai : Int64) : Func × Bool :=
-  match (f.getB b).kind with
-  | .If =>
-    let f := if ai.toInt.toNat == 0 then f.swapSuccessorsByIdx b 0 1 else f
-    ((f.modB b fun x => { x with kind := .First, likely := .unknown }).resetControls b, true)
+  let blk := f.getB b
+  let first (f : Func) : Func :=
+    (f.modB b fun x => { x with kind := .First, likely := .unknown }).resetControls b
+  match blk.kind with
+  | .If => (first (if ai.toInt.toNat == 0 then f.swapSuccessorsByIdx b 0 1 else f), true)
+  | .JumpTable =>
+    let idx := ai.toInt
+    if idx < 0 || idx ≥ blk.succs.size then (f, false) else
+    (first (f.swapSuccessorsByIdx b 0 idx.toNat), true)
   | _ => (f, false)
+
+/-- `rewireSuccessor` where the target's `Phi`s only lose arguments (no `phielimValue`). -/
+def rewireKeep : Func → ID → Int64 → Func × Bool :=
+  rewireWith (GoFV.Proof.Dead.removeEdgeG false)
 
 /-- The kept `Phi`s of `g`'s block `c` read along `iT` what `h`'s read along `iS`. -/
 def phiArgsOK (h g : Func) (c : ID) (iS iT : Nat) : Bool :=
@@ -213,19 +239,56 @@ def deadOK (h g : Func) : Bool :=
     | none, _ => true
     | some _, none => false
 
+/-- The argument `a` of a `Phi` that became `Copy w` in `g`: `w`, or a copy of `w` in `g`. -/
+def copyArg (g : Func) (w a : ID) : Bool :=
+  a == w || (g.value? a).any fun u => u.op == .Copy && u.args == #[w]
+
+/-- `g`'s value `x` (listed in block `kb` of `k`) is `k`'s or a `Phi` of `k` turned copy,
+copies of `g` retype like their argument, and `k`'s value has no zero-size aggregate type. -/
+def copyValueOK (tabs : Tables) (k g : Func) (x : ID) : Bool :=
+  (match k.value? x, g.value? x with
+    | some kv, some gv =>
+      gv.block == kv.block && gv.type == kv.type &&
+      (match zeroSizeAggregate tabs kv.type with | .ok true => false | _ => true) &&
+      ((gv.op == kv.op && gv.aux == kv.aux && gv.auxInt == kv.auxInt && gv.args == kv.args) ||
+        (kv.op == .Phi && gv.op == .Copy && gv.args == #[gv.args[0]!] &&
+          kv.args.all (copyArg g gv.args[0]!)))
+    | some _, none => false
+    | none, _ => true) &&
+  (g.value? x).all fun gv => gv.op != .Copy || gv.args.size != 1 ||
+    (g.value? gv.args[0]!).any fun wv =>
+      GoFV.Proof.CopyElim.retypeEqB (tabs.ty wv.type) (tabs.ty gv.type)
+
+/-- **`g` is `k` with some `Phi`s turned copies** (`CopyElim.CopyRel tabs k g` and
+`CopyElim.EmptyFrag tabs k`). -/
+def copyOK (tabs : Tables) (k g : Func) : Bool :=
+  DomCert.cfgView g == DomCert.cfgView k && g.ownAux == k.ownAux &&
+  g.valueTab.size == k.valueTab.size &&
+  k.blocks.all fun b =>
+    match k.block? b, g.block? b with
+    | some kb, some gb =>
+      gb.kind == kb.kind && gb.values == kb.values && gb.controls == kb.controls &&
+      kb.values.all (copyValueOK tabs k g)
+    | some _, none => false
+    | none, _ => true
+
 end Sccp
 
 /-- sccp, validated: `replaceConst` in insertion order, the result `g` if it changed and the
-checkers accept it (`sccpOK` from the input to the intermediate `h`, which passes `check`, and
-`deadOK` from `h` to `g`), else the input; the input's tables (the checked output creates no
+checkers accept it (`sccpOK` from the input to the intermediate `h`, which passes `check` with
+`firstAny`, `deadOK` from `h` to the intermediate `k`, and `k = g` or `copyOK` from `k`, which
+passes `check`, to `g`), else the input; the input's tables (the checked output creates no
 definitions). -/
 def sccpChecked : Pass := fun env f => do
   let rw ← RwEnv.ofPassEnv env
   let a ← Sccp.analyze rw env.tables f
   let g := Sccp.replace a a.keys
   let h := Sccp.replace a a.keys Sccp.rewireFirst
+  let k := Sccp.replace a a.keys Sccp.rewireKeep
+  let ce : CheckEnv := { tabs := env.tables, typs := env.typs }
   let ok := g != f && Sccp.sccpOK env.tables f h a.cells a.visited a.visitedBlock &&
-    Sccp.deadOK h g && (check { tabs := env.tables, typs := env.typs } h).toBool
+    Sccp.deadOK h k && (check { ce with firstAny := true } h).toBool &&
+    (k == g || ((check ce k).toBool && Sccp.copyOK env.tables k g))
   return { func := if ok then g else f, tables := env.tables }
 
 end GoFV.Opt

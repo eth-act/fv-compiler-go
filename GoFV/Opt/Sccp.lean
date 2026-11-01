@@ -310,20 +310,24 @@ def analyze (rw : RwEnv) (tables : Tables) (f : Func) : Except String Analysis :
                            visitedBlock := w.visitedBlock }
   | .error e _ => .error e
 
-/-- `rewireSuccessor(block, constVal)`; true if the block was rewired. -/
-def rewireSuccessor (f : Func) (b : ID) (ai : Int64) : Func × Bool :=
+/-- `rewireSuccessor(block, constVal)` with `rm` removing edges; true if the block was rewired.
+-/
+def rewireWith (rm : Func → ID → Nat → Func) (f : Func) (b : ID) (ai : Int64) : Func × Bool :=
   let blk := f.getB b
   let plain (f : Func) : Func :=
     (f.modB b fun x => { x with kind := .Plain, likely := .unknown }).resetControls b
   match blk.kind with
-  | .If => (plain (f.removeEdge b ai.toInt.toNat), true)
+  | .If => (plain (rm f b ai.toInt.toNat), true)
   | .JumpTable =>
     let idx := ai.toInt
     if idx < 0 || idx ≥ blk.succs.size then (f, false) else
     let f := f.swapSuccessorsByIdx b 0 idx.toNat
-    let f := (List.range (blk.succs.size - 1)).foldl (fun f _ => f.removeEdge b 1) f
+    let f := (List.range (blk.succs.size - 1)).foldl (fun f _ => rm f b 1) f
     (plain f, true)
   | _ => (f, false)
+
+/-- `rewireSuccessor(block, constVal)`; true if the block was rewired. -/
+def rewireSuccessor : Func → ID → Int64 → Func × Bool := rewireWith Func.removeEdge
 
 /-- `replaceConst()`, ranging over `latticeCells` in `order` (a permutation of `a.keys`), with
 `rewire` for `rewireSuccessor` (the checker's intermediate function uses another,
