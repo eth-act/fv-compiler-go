@@ -3,9 +3,10 @@ import GoFV.Proof.AtomSimDen
 /-!
 # Applying `TermRef` to registers (issue #113)
 
-`TermRefP P S`: `TermRef` for valuations satisfying a source-side invariant `P` (at the atoms,
-and eventually at the denotations of the values of `S`), the premise of the atom simulation
-under an invariant (`AtomSim.Inv`); `TermRef` implies it (`TermRef.toP`).
+`TermRefP P Q S`: `TermRef` for valuations satisfying a source-side invariant `P` (at the atoms,
+and eventually at the denotations of the values of `S`) and the frame-level invariant `Q`, the
+premise of the atom simulation under an invariant (`AtomSim.Inv`); `TermRef` implies it
+(`TermRef.toP`).
 
 `termRef_apply`: if `x`'s register in the source frame and `y`'s in the target frame are their
 terms' values over the atoms (`DenOK`), the atoms both frames hold are refined, the atoms'
@@ -19,18 +20,20 @@ namespace GoFV.Proof.AtomSim
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term
 
 /-- `y` in `E` refines `x` in `D` as a term over the atoms, for source valuations whose atoms
-satisfy `P` and whose values of `S` eventually denote values satisfying `P`. -/
-def TermRefP (P : ID → Val → Prop) (S : ID → Prop) (D : ID → Option Value) (tabs : Tables)
-    (x : ID) (E : ID → Option Value) (tabs' : Tables) (y : ID) : Prop :=
+satisfy `P`, whose values of `S` eventually denote values satisfying `P`, and which satisfy
+`Q`. -/
+def TermRefP (P : ID → Val → Prop) (Q : (ID → Val) → Prop) (S : ID → Prop)
+    (D : ID → Option Value) (tabs : Tables) (x : ID) (E : ID → Option Value) (tabs' : Tables)
+    (y : ID) : Prop :=
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs' ρ' →
     (∀ a, ¬ IsTerm D a → P a (ρ a)) → (∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a)) →
-    Sem.Refines (den D tabs ρ n x) (den E tabs' ρ' m y)
+    Q ρ → Sem.Refines (den D tabs ρ n x) (den E tabs' ρ' m y)
 
 theorem TermRef.toP {D E : ID → Option Value} {tabs tabs' : Tables} {x y : ID}
-    (h : TermRef D tabs x E tabs' y) (P : ID → Val → Prop) (S : ID → Prop) :
-    TermRefP P S D tabs x E tabs' y := fun n =>
+    (h : TermRef D tabs x E tabs' y) (P : ID → Val → Prop) (Q : (ID → Val) → Prop)
+    (S : ID → Prop) : TermRefP P Q S D tabs x E tabs' y := fun n =>
   let ⟨m, hm⟩ := h n
-  ⟨m, fun ρ ρ' h1 h2 h3 _ _ => hm ρ ρ' h1 h2 h3⟩
+  ⟨m, fun ρ ρ' h1 h2 h3 _ _ _ => hm ρ ρ' h1 h2 h3⟩
 
 theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by cases t <;> rfl
 
@@ -52,16 +55,17 @@ theorem tys_shape (tabs : Tables) (f : Func) (a : ID) :
       | some v => cases hv
 
 /-- **`TermRefP` on registers.** -/
-theorem termRef_apply {P : ID → Val → Prop} {S : ID → Prop} {D E : ID → Option Value}
-    {tabs : Tables} {x y : ID}
-    (hT : TermRefP P S D tabs x E tabs y) {FS FT : Frame} {VS VT : ID → Prop}
+theorem termRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S : ID → Prop}
+    {D E : ID → Option Value} {tabs : Tables} {x y : ID}
+    (hT : TermRefP P Q S D tabs x E tabs y) {FS FT : Frame} {VS VT : ID → Prop}
     (hS : DenOK D tabs FS VS) (hxS : VS x) (hG : DenOK E tabs FT VT) (hyT : VT y)
     (hrel : ∀ a, VS a → ¬ IsTerm D a → VT a → ¬ IsTerm E a → Sem.Refines (rv FS a) (rv FT a))
     (htyS : ∀ a, VS a → ¬ IsTerm D a → (rv FS a).retype (shape D tabs a) = rv FS a)
     (htyT : ∀ a, VT a → ¬ IsTerm E a → (rv FT a).retype (shape E tabs a) = rv FT a)
     (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a)
-    (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a) :
+    (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a)
+    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ) :
     Sem.Refines (rv FS x) (rv FT y) := by
   classical
   let ρ : ID → Val := fun a => if VS a ∧ ¬ IsTerm D a then rv FS a else .poison
@@ -95,7 +99,11 @@ theorem termRef_apply {P : ID → Val → Prop} {S : ID → Prop} {D E : ID → 
   have hPS : ∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a) := fun a ha => by
     obtain ⟨N', hN'⟩ := (hS a (hSV a ha)).2 ρ fun b hb hbt => by simp [ρ, hb, hbt]
     exact ⟨N', fun k hk => by rw [hN' k hk]; exact hP a⟩
-  have h := hm ρ ρ' hval htD htE hPρ hPS
+  have hQρ : Q ρ := hQ ρ fun a => by
+    by_cases h2 : VS a ∧ ¬ IsTerm D a
+    · exact .inl (if_pos h2)
+    · exact .inr (if_neg h2)
+  have h := hm ρ ρ' hval htD htE hPρ hPS hQρ
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]
   exact Sem.Refines.trans h (den_fuel_mono E tabs ρ' m (max m M) y (Nat.le_max_left m M))

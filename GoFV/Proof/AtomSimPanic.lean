@@ -117,9 +117,9 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
     typed_phis R.tyT pT1 pT3 pT4 pT2
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := src_eval H B R.treeS (P := pre) (Q := r :: post)
     hof hS1 (by rw [pS1, R.szS]) htyPS hpre
-  have hinvG : ∀ a, I.P b a (rv G a) :=
-    inv_evalAll B.hfb (fun x hx => sched_own H B x (by rw [hof]; exact List.mem_append_left _ hx))
-      hpre (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis)
+  obtain ⟨hinvG, hqG⟩ := inv_evalAll (I := I) B.hfb
+    (fun x hx => sched_own H B x (by rw [hof]; exact List.mem_append_left _ hx))
+      hpre (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis) (R.qinv fb psS B.hfb hpsS)
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { G with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))
@@ -179,7 +179,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
     (b := b) (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
       obtain ⟨hp, hwb, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
-      exact ⟨w, hp, hid, hph, hwb⟩) hinvG (fun a h => .inl (.inl h))
+      exact ⟨w, hp, hid, hph, hwb⟩) hinvG hqG (fun a h => .inl (.inl h))
     (sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT)
     (fun a ha hVS hat => by
       rcases hVS with h | h
@@ -219,7 +219,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
       · right
         have htop := B.tpT; rw [hog] at htop h
         exact topoRem_before htop (by rw [argsF_of hwr]; exact Array.mem_toList_iff.2 ha) h)
-    (hrblk ▸ hinvG) (hrblk ▸ fun a h => .inl (.inl h))
+    (hrblk ▸ hinvG) (hrblk ▸ hqG) (hrblk ▸ fun a h => .inl (.inl h))
   rw [hevr] at hrT
   obtain ⟨m', hT', hm⟩ := res_panic_of_refines hrT
   refine ⟨m', enterBlock_of hpsT (by rw [sched_eq B.hgb B.idT, B.sT]) ?_, hm⟩

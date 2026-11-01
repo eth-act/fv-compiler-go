@@ -76,8 +76,12 @@ theorem edge_taken {fr : Frame} {pb : Block} {e : Edge} (h : stepTerm fr pb = .o
 def proveInv (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv) : SrcInv tabs f where
   P := PInv tabs f F inv
   L b _ := b ∈ f.blocks
+  Q _ _ := True
   start := ⟨hwf.entry, fun a => ⟨retype_poison' _, fun _ v (hv : (a, v) ∈ factsAt F f.entry) => (by
     rw [hR.hF.entry] at hv; cases hv), fun _ _ _ _ h => (by cases h)⟩⟩
+  qstart := trivial
+  qpois _ _ _ _ _ := trivial
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
   poisonAtom b a hat := ⟨retype_poison' _, fun hb v hv => by
       obtain ⟨bb, hbb, -⟩ := hwf.blockId b hb
       obtain ⟨cv, hp, -, -, ht⟩ := fact_placed hc hR hb hbb hv
@@ -95,7 +99,7 @@ def proveInv (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv) : Src
     obtain ⟨zv, hzv, hph⟩ := inv_phi hR hz
     rw [hv] at hzv; cases hzv
     exact absurd hph hnp
-  edge p ip pb fr e V hpb hp hP hD hAnc hPhi hst := by
+  edge p ip pb fr e V hpb hp hP _ _ _ hD hAnc hPhi hst := by
     obtain ⟨k, hk, hown⟩ := edge_taken hst
     have hpt := hR.tree p hp
     obtain ⟨heb, -, hsub⟩ := hR.hF.succ p hp hpt pb hpb k e hk
@@ -121,7 +125,8 @@ def proveInv (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv) : Src
         refine ⟨cv, hpl, ?_⟩
         rw [← hbo]
         exact ctrlUse hc hp hpb (by simpa [Cert.inTree] using hpt) hcm
-    refine ⟨heb, fun a => ⟨(hP a).1, fun _ v hv => (hfacts a v (hsub _ hv)).1, (hP a).2.2⟩, ?_⟩
+    refine ⟨heb, fun a => ⟨(hP a).1, fun _ v hv => (hfacts a v (hsub _ hv)).1, (hP a).2.2⟩, ?_,
+      fun _ _ _ _ => trivial⟩
     intro bb hbb z hz v hv hph a ha
     refine ⟨by rw [shape_of hv, Val.retype_idem], fun hb v' hf => (fact_not_mem hwf hc hR hb hbb hz hf).elim,
       fun w r hzi yv hyv => ?_⟩

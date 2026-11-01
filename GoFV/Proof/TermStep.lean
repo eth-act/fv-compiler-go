@@ -163,25 +163,27 @@ def TermStepRef (tabs : Tables) (f g : Func) : Prop :=
         (stepVals gb (gb.controls.toList.map (den (listedDefs g) tabs ρ' m)))
 
 /-- `TermStepRef` for source valuations satisfying a source-side invariant `P` (at the atoms,
-and eventually at the denotations of the values of `S`), as `AtomSim.TermRefP`. -/
-def StepRefP (P : ID → Val → Prop) (S : ID → Prop) (D : ID → Option Value) (tabs : Tables)
-    (fb : Block) (E : ID → Option Value) (gb : Block) : Prop :=
+and eventually at the denotations of the values of `S`) and the frame-level invariant `Q`, as
+`AtomSim.TermRefP`. -/
+def StepRefP (P : ID → Val → Prop) (Q : (ID → Val) → Prop) (S : ID → Prop)
+    (D : ID → Option Value) (tabs : Tables) (fb : Block) (E : ID → Option Value) (gb : Block) :
+    Prop :=
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → Typed D tabs ρ → Typed E tabs ρ' →
     (∀ a, ¬ IsTerm D a → P a (ρ a)) → (∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a)) →
-    Res.Rel Next.Refines (stepVals fb (fb.controls.toList.map (den D tabs ρ n)))
+    Q ρ → Res.Rel Next.Refines (stepVals fb (fb.controls.toList.map (den D tabs ρ n)))
       (stepVals gb (gb.controls.toList.map (den E tabs ρ' m)))
 
 theorem TermStepRef.toP {tabs : Tables} {f g : Func} (h : TermStepRef tabs f g) {b : ID}
     (hb : b ∈ g.blocks) {fb gb : Block} (hfb : f.block? b = some fb) (hgb : g.block? b = some gb)
-    (P : ID → Val → Prop) (S : ID → Prop) :
-    StepRefP P S f.value? tabs fb (listedDefs g) gb := fun n =>
+    (P : ID → Val → Prop) (Q : (ID → Val) → Prop) (S : ID → Prop) :
+    StepRefP P Q S f.value? tabs fb (listedDefs g) gb := fun n =>
   let ⟨m, hm⟩ := (h b hb fb gb hfb hgb).2 n
-  ⟨m, fun ρ ρ' h1 h2 h3 _ _ => hm ρ ρ' h1 h2 h3⟩
+  ⟨m, fun ρ ρ' h1 h2 h3 _ _ _ => hm ρ ρ' h1 h2 h3⟩
 
 /-- **`StepRefP` on frames** (as `termRef_apply`): if every control's register is its term's
 value over the atoms (`DenOK`) on both sides, the terminators are related. -/
-theorem termStepRef_apply {P : ID → Val → Prop} {S : ID → Prop} {D E : ID → Option Value}
-    {tabs : Tables} {fb gb : Block} (hT : StepRefP P S D tabs fb E gb)
+theorem termStepRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S : ID → Prop}
+    {D E : ID → Option Value} {tabs : Tables} {fb gb : Block} (hT : StepRefP P Q S D tabs fb E gb)
     {FS FT : Frame} {VS VT : ID → Prop}
     (hS : DenOK D tabs FS VS) (hxS : ∀ c ∈ fb.controls, VS c) (hG : DenOK E tabs FT VT)
     (hyT : ∀ c ∈ gb.controls, VT c)
@@ -190,7 +192,8 @@ theorem termStepRef_apply {P : ID → Val → Prop} {S : ID → Prop} {D E : ID 
     (htyT : ∀ a, VT a → ¬ IsTerm E a → (rv FT a).retype (shape E tabs a) = rv FT a)
     (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a)
-    (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a) :
+    (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a)
+    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ) :
     Res.Rel Next.Refines (stepTerm FS fb) (stepTerm FT gb) := by
   classical
   let ρ : ID → Val := fun a => if VS a ∧ ¬ IsTerm D a then rv FS a else .poison
@@ -226,7 +229,11 @@ theorem termStepRef_apply {P : ID → Val → Prop} {S : ID → Prop} {D E : ID 
   have hPS : ∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a) := fun a ha => by
     obtain ⟨N', hN'⟩ := (hS a (hSV a ha)).2 ρ fun b hb hbt => by simp [ρ, hb, hbt]
     exact ⟨N', fun k hk => by rw [hN' k hk]; exact hP a⟩
-  have h := hm ρ ρ' hval htD htE hPρ hPS
+  have hQρ : Q ρ := hQ ρ fun a => by
+    by_cases h2 : VS a ∧ ¬ IsTerm D a
+    · exact .inl (if_pos h2)
+    · exact .inr (if_neg h2)
+  have h := hm ρ ρ' hval htD htE hPρ hPS hQρ
   rw [hN N (Nat.le_refl N)] at h
   have h2 := stepVals_right h (RefinesList.map _ _
     (fun c => den_fuel_mono E tabs ρ' m (max m M) c (Nat.le_max_left m M)) gb.controls.toList)
@@ -236,37 +243,38 @@ theorem termStepRef_apply {P : ID → Val → Prop} {S : ID → Prop} {D E : ID 
   exact h2
 
 /-- Same kind, successors and ID, and controls refining as terms: the terminators refine. -/
-theorem stepRefP_of_controls {P : ID → Val → Prop} {S : ID → Prop} {D E : ID → Option Value}
+theorem stepRefP_of_controls {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S : ID → Prop}
+    {D E : ID → Option Value}
     {tabs : Tables} {fb gb : Block} (hk : gb.kind = fb.kind) (hs : gb.succs = fb.succs)
     (hid : gb.id = fb.id) (hsz : fb.controls.size = gb.controls.size)
     (hc : ∀ k < gb.controls.size,
-      TermRefP P S D tabs fb.controls[k]! E tabs gb.controls[k]!) :
-    StepRefP P S D tabs fb E gb := by
+      TermRefP P Q S D tabs fb.controls[k]! E tabs gb.controls[k]!) :
+    StepRefP P Q S D tabs fb E gb := by
   have hall : ∀ (l : List Nat), (∀ k ∈ l, k < gb.controls.size) → ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' →
       Typed D tabs ρ → Typed E tabs ρ' → (∀ a, ¬ IsTerm D a → P a (ρ a)) →
-      (∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a)) → ∀ k ∈ l,
+      (∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a)) → Q ρ → ∀ k ∈ l,
         Sem.Refines (den D tabs ρ n fb.controls[k]!) (den E tabs ρ' m gb.controls[k]!) := by
     intro l
     induction l with
-    | nil => exact fun _ n => ⟨0, fun _ _ _ _ _ _ _ k hk => nomatch hk⟩
+    | nil => exact fun _ n => ⟨0, fun _ _ _ _ _ _ _ _ k hk => nomatch hk⟩
     | cons k l ih =>
       intro hl n
       obtain ⟨m1, h1⟩ := hc k (hl k List.mem_cons_self) n
       obtain ⟨m2, h2⟩ := ih (fun j hj => hl j (List.mem_cons_of_mem _ hj)) n
-      refine ⟨max m1 m2, fun ρ ρ' hv ht ht' hp hps j hj => ?_⟩
+      refine ⟨max m1 m2, fun ρ ρ' hv ht ht' hp hps hq j hj => ?_⟩
       rcases List.mem_cons.1 hj with rfl | hj
-      · exact (h1 ρ ρ' hv ht ht' hp hps).trans
+      · exact (h1 ρ ρ' hv ht ht' hp hps hq).trans
           (den_fuel_mono E tabs ρ' _ _ _ (Nat.le_max_left _ _))
-      · exact (h2 ρ ρ' hv ht ht' hp hps j hj).trans
+      · exact (h2 ρ ρ' hv ht ht' hp hps hq j hj).trans
           (den_fuel_mono E tabs ρ' _ _ _ (Nat.le_max_right _ _))
   intro n
   obtain ⟨m, hm⟩ := hall (List.range gb.controls.size) (fun k hk => List.mem_range.1 hk) n
-  refine ⟨m, fun ρ ρ' hv ht ht' hp hps => stepVals_mono hk hs hid ?_⟩
+  refine ⟨m, fun ρ ρ' hv ht ht' hp hps hq => stepVals_mono hk hs hid ?_⟩
   refine refinesList_idx (by simp [hsz]) fun k a a' ha ha' => ?_
   rw [Array.getElem?_toList] at ha ha'
   obtain ⟨h1, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
   obtain ⟨h2, rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
-  have := hm ρ ρ' hv ht ht' hp hps k (List.mem_range.2 h2)
+  have := hm ρ ρ' hv ht ht' hp hps hq k (List.mem_range.2 h2)
   rwa [getElem!_pos fb.controls k h1, getElem!_pos gb.controls k h2] at this
 
 /-- Controls refining as terms in blocks of the same kind, successors and ID give `TermStepRef`. -/
@@ -277,8 +285,8 @@ theorem ControlsRef.toTermStepRef {tabs : Tables} {f g : Func} (h : ControlsRef 
   obtain ⟨hk, hs, hid⟩ := hk b hb fb gb hfb hgb
   obtain ⟨hsz, hc⟩ := h b hb fb gb hfb hgb
   refine ⟨fun e he => hs ▸ he, fun n => ?_⟩
-  obtain ⟨m, hm⟩ := stepRefP_of_controls (P := fun _ _ => True) (S := fun _ => False) hk hs hid
-    hsz (fun k hk => AtomSim.TermRef.toP (hc k hk) _ _) n
-  exact ⟨m, fun ρ ρ' h1 h2 h3 => hm ρ ρ' h1 h2 h3 (fun _ _ => trivial) (fun _ h => h.elim)⟩
+  obtain ⟨m, hm⟩ := stepRefP_of_controls (P := fun _ _ => True) (Q := fun _ => True)
+    (S := fun _ => False) hk hs hid hsz (fun k hk => AtomSim.TermRef.toP (hc k hk) _ _ _) n
+  exact ⟨m, fun ρ ρ' h1 h2 h3 => hm ρ ρ' h1 h2 h3 (fun _ _ => trivial) (fun _ h => h.elim) trivial⟩
 
 end GoFV.Proof.Term

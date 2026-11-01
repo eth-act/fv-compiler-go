@@ -38,7 +38,7 @@ theorem vt_placed : ∀ x, (V1 g b gb x ∨ x ∈ og.toList) → ∃ w, Placed g
 theorem term_sim {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {FS FT : Frame}
     (E : EndRel tabs f g I b fb gb of og FS FT) :
     Res.Rel Next.Refines (stepTerm FS fb) (stepTerm FT gb) :=
-  termStepRef_regs H E.dS E.dT (vt_placed H B) E.rel E.tyS E.tyT E.inv
+  termStepRef_regs H E.dS E.dT (vt_placed H B) E.rel E.tyS E.tyT E.inv E.qinv
     (fun a h => .inl (.inl h)) (H.ctrls b B.bmT fb gb B.hfb B.hgb).2
     (fun _ hc => (ctrl_in H.wf H.cf B.bmS B.hfb R.treeS B.mS hc).1)
     (fun _ hc => (ctrl_in H.wg H.cg B.bmT B.hgb R.treeT B.mT hc).1)
@@ -61,12 +61,14 @@ theorem next_rel {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {
   obtain ⟨n1, n2, n3, n4⟩ := next_sets H.wf H.cf B.bmS B.hfb R.treeS B.mS he
   obtain ⟨m1, m2, m3, -⟩ := next_sets H.wg H.cg B.bmT B.hgb R.treeT B.mT
     ((H.ctrls b B.bmT fb gb B.hfb B.hgb).1 e he)
-  obtain ⟨l, p, ph⟩ := I.edge b i fb FS e _ B.hfb R.live E.inv E.dS (ancV_sets H B) n2 hS
+  obtain ⟨l, p, ph, q⟩ := I.edge b i fb FS e _ B.hfb R.live E.inv E.qinv E.tyS E.szS E.dS
+    (ancV_sets H B) n2 hS
   obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 he
   exact { fr := E.fr, szS := E.szS, szT := E.szT, tyS := E.tyS, tyT := E.tyT, mem := n4,
           treeS := n3, treeT := m3, atoms := E.atoms,
           den := ⟨_, _, E.dS, E.dT, vt_placed H B, n1, m1, n2, m2⟩, live := l, inv := p, phis := ph,
-          pre := .inr ⟨b, fb, k, _, B.bmS, B.hfb, hk, E.inv, E.dS, ancV_sets H B, n2⟩ }
+          qinv := q,
+          pre := .inr ⟨b, fb, k, _, B.bmS, B.hfb, hk, E.inv, E.qinv, E.dS, ancV_sets H B, n2⟩ }
 
 end
 
@@ -129,6 +131,25 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
   have hpois : ∀ a, rv (entryFrame env (Ctx.make tabs f) args mem) a = .poison := fun a => by
     simp [rv, entryFrame, Array.getElem?_replicate]
     split <;> rfl
+  -- the entry block reads no `Phi` arguments, so its `Phi`s leave the registers poison
+  have hq : PhisQ tabs f I.Q (entryFrame env (Ctx.make tabs f) args mem) f.entry 0 :=
+    fun bb ps hbb hps => by
+      obtain ⟨p1, p2, p3, p4⟩ := phis_spec (H.wf.valuesNodup _ _ ⟨H.wf.entry, hbb⟩) hps
+      have h : rv { entryFrame env (Ctx.make tabs f) args mem with
+          regs := setPhis ps (entryFrame env (Ctx.make tabs f) args mem).regs } =
+          fun _ => .poison := funext fun z => by
+        by_cases hlt : z < (entryFrame env (Ctx.make tabs f) args mem).regs.size
+        · by_cases hk : z ∉ bb.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi
+          · rw [← hpois z]; unfold rv
+            exact congrArg (fun o => (Option.join o).getD .poison) (p3 z hk)
+          · simp only [not_or, Decidable.not_not, not_exists, not_and] at hk
+            obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 (p2 z hk.1)
+            obtain ⟨a, -, ha, -⟩ := p4 z hk.1 v hv (hk.2 v hv) hlt
+            exact (hphi f ce H.wf (fun _ => False) bb hbb z hk.1 v hv (hk.2 v hv) a ha).elim
+        · unfold rv
+          rw [Array.getElem?_eq_none (show (setPhis ps _).size ≤ z by
+            rw [p1]; exact Nat.le_of_not_lt hlt)]; rfl
+      rw [h]; exact I.qstart
   exact
     { fr := by rw [hT], szS := by simp [entryFrame]; rfl, szT := by rw [hT]; simp,
       tyS := typed_replicate _ _ _ rfl, tyT := by rw [hT]; exact typed_replicate _ _ _ rfl,
@@ -141,6 +162,7 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       live := I.start.1, inv := fun a => by rw [hpois a]; exact I.start.2 a,
       phis := fun bb hbb z hz v hv hph a ha => (hphi f ce H.wf (fun _ => False) bb hbb z hz v hv hph
         a ha).elim,
+      qinv := hq,
       pre := .inl (hphi f ce H.wf _) }
 
 /-- **The atom simulation** under a source-side invariant. -/
