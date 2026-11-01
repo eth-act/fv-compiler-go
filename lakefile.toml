@@ -106,3 +106,7 @@ root = "GoFVTest.ProveProbe"
 [[lean_exe]]
 name = "tabs-agree-probe"
 root = "GoFVTest.TabsAgreeProbe"
+
+[[lean_exe]]
+name = "expand-calls-probe"
+root = "GoFVTest.ExpandCallsProbe"
