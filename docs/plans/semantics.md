@@ -152,6 +152,10 @@ in the function's shared aux table, so every section agrees. This makes `dead au
 provable: an eliminated store to an auto can only be observed through a pointer derived from its
 `LocalAddr`, and contracts that only follow the pointers they are given (`Env.FrameSafe`,
 `Sem/FrameSafe.lean`) cannot see it.
+Likewise for the split slots `decompose` adds to the tables (#17): their frame blocks are
+frame temporaries no value names, so running the input in the extended tables changes nothing
+observable for contracts that cannot tell whether temporaries they get no pointer to exist
+(`Env.TempOblivious`, memories compared after `Mem.erase`; `GoFV.Proof.run_tabsAgreeMod`).
 
 ### 3.4 Memory
 
