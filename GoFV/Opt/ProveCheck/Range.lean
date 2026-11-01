@@ -50,16 +50,26 @@ def nonneg (n : Nat) : Rng := ofS n 0 (2 ^ (n - 1) - 1)
 /-- One value. -/
 def point {n : Nat} (x : BitVec n) : Rng := ⟨x.toNat, x.toNat, x.toInt, x.toInt⟩
 
-/-- Exchange bounds between the readings: below `2 ^ (n-1)` they agree, at or above they differ
-by `2 ^ n`. -/
-def norm (n : Nat) (r : Rng) : Rng :=
-  let h : Nat := 2 ^ (n - 1)
-  let r := if r.uhi < h then ⟨r.ulo, r.uhi, max r.slo r.ulo, min r.shi r.uhi⟩ else r
-  let r := if h ≤ r.ulo then ⟨r.ulo, r.uhi, max r.slo (r.ulo - 2 ^ n), min r.shi (r.uhi - 2 ^ n)⟩
-    else r
-  let r := if 0 ≤ r.slo then ⟨max r.ulo r.slo.toNat, min r.uhi r.shi.toNat, r.slo, r.shi⟩ else r
+/-- Signed bounds from unsigned ones below `2 ^ (n-1)`, where the readings agree. -/
+def norm1 (n : Nat) (r : Rng) : Rng :=
+  if r.uhi < 2 ^ (n - 1) then ⟨r.ulo, r.uhi, max r.slo r.ulo, min r.shi r.uhi⟩ else r
+
+/-- Signed bounds from unsigned ones from `2 ^ (n-1)` on, where they differ by `2 ^ n`. -/
+def norm2 (n : Nat) (r : Rng) : Rng :=
+  if 2 ^ (n - 1) ≤ r.ulo then ⟨r.ulo, r.uhi, max r.slo (r.ulo - 2 ^ n), min r.shi (r.uhi - 2 ^ n)⟩
+  else r
+
+/-- Unsigned bounds from nonnegative signed ones. -/
+def norm3 (r : Rng) : Rng :=
+  if 0 ≤ r.slo then ⟨max r.ulo r.slo.toNat, min r.uhi r.shi.toNat, r.slo, r.shi⟩ else r
+
+/-- Unsigned bounds from negative signed ones. -/
+def norm4 (n : Nat) (r : Rng) : Rng :=
   if r.shi < 0 then ⟨max r.ulo (r.slo + 2 ^ n).toNat, min r.uhi (r.shi + 2 ^ n).toNat, r.slo, r.shi⟩
   else r
+
+/-- Exchange bounds between the two readings. -/
+def norm (n : Nat) (r : Rng) : Rng := norm4 n (norm3 (norm2 n (norm1 n r)))
 
 /-- Remove the single value `p` (if `p` is a point) from the ends of `r`. -/
 def excl (r p : Rng) : Rng :=
@@ -90,7 +100,6 @@ inductive ROp where
   | modu (w : Width)
   | add (w : Width)
   | sub (w : Width)
-  | ctz (w : Width) (nz : Bool)
   | bitLen (w : Width)
   | popCount (w : Width)
   | b2u
@@ -109,9 +118,6 @@ def rTab : List (Op × ROp) :=
    (.Mod8u, .modu .w8), (.Mod16u, .modu .w16), (.Mod32u, .modu .w32), (.Mod64u, .modu .w64),
    (.Add8, .add .w8), (.Add16, .add .w16), (.Add32, .add .w32), (.Add64, .add .w64),
    (.Sub8, .sub .w8), (.Sub16, .sub .w16), (.Sub32, .sub .w32), (.Sub64, .sub .w64),
-   (.Ctz8, .ctz .w8 false), (.Ctz16, .ctz .w16 false), (.Ctz32, .ctz .w32 false),
-   (.Ctz64, .ctz .w64 false), (.Ctz8NonZero, .ctz .w8 true), (.Ctz16NonZero, .ctz .w16 true),
-   (.Ctz32NonZero, .ctz .w32 true), (.Ctz64NonZero, .ctz .w64 true),
    (.BitLen8, .bitLen .w8), (.BitLen16, .bitLen .w16), (.BitLen32, .bitLen .w32),
    (.BitLen64, .bitLen .w64), (.PopCount8, .popCount .w8), (.PopCount16, .popCount .w16),
    (.PopCount32, .popCount .w32), (.PopCount64, .popCount .w64), (.CvtBoolToUint8, .b2u)]
@@ -211,8 +217,8 @@ def rOpRng (R : Width → ID → Rng) (w : Width) (c : ROp) (auxInt : Int64) (ar
   let a1 := args[1]?.getD 0
   match c with
   | .const w' => if w' == w then Rng.point (BitVec.ofInt n auxInt.toInt) else top
-  | .zext a b => if b == w then let r := R a a0; Rng.ofU n r.ulo r.uhi else top
-  | .sext a b => if b == w then let r := R a a0; Rng.ofS n r.slo r.shi else top
+  | .zext a b => if b == w && a.bits ≤ b.bits then let r := R a a0; Rng.ofU n r.ulo r.uhi else top
+  | .sext a b => if b == w && a.bits ≤ b.bits then let r := R a a0; Rng.ofS n r.slo r.shi else top
   | .and w' => if w' == w then Rng.ofU n 0 (min (R w a0).uhi (R w a1).uhi) else top
   | .modu w' =>
     if w' == w then
@@ -237,7 +243,7 @@ def rOpRng (R : Width → ID → Rng) (w : Width) (c : ROp) (auxInt : Int64) (ar
         Rng.ofS n (rx.slo - ry.shi) (rx.shi - ry.slo) else top
       u.meet s
     else top
-  | .ctz a _ | .bitLen a | .popCount a => Rng.ofU n 0 a.bits
+  | .bitLen a | .popCount a => Rng.ofU n 0 a.bits
   | .b2u => if w == .w8 then Rng.ofU n 0 1 else top
 
 /-- `v`'s type has the shape of `w`-bit integers. -/
