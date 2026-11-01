@@ -389,7 +389,7 @@ inductive Panic
 `uintptr` argument, `Ptr.ofAddr x` does) ⇒ `panicked nilDeref`; `p` poison ⇒ `stuck`; otherwise
 its value is `p`. (Since P3: a check of `nil + k` panics too, like the machine's load in page 0,
 so a pointer that passed a check is not nil-derived and `OffPtr`/`AddPtr` of it keep it so,
-which `nilcheckelim` relies on, `nilcheck.go:59`.) `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
+which `nilcheckelim` relies on, `nilcheck.go:59`; `GoFV.Proof.evalOp_nilCheck_blk`.) `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
 after it is an `Exit` block. Recovery (`recover` in a deferred call) is P5: until then a
 `panicked` outcome ends the run and is compared by its `Panic` only (the memory at the panic is
 not observable without recovery).
