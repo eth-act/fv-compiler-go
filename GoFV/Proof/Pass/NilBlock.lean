@@ -420,9 +420,10 @@ theorem idOf {x : ID} (hx : x ∈ fb.values) {v : Value} (hv : f.value? x = some
 
 omit K in
 theorem frameVal_none {ctx : Ctx} {v : Value}
-    (h : v.op ≠ .SP ∧ v.op ≠ .LocalAddr ∧ v.op ≠ .Addr ∧ v.op ≠ .ConstString) :
+    (h : v.op ≠ .SP ∧ v.op ≠ .GetCallerSP ∧ v.op ≠ .LocalAddr ∧ v.op ≠ .Addr ∧
+      v.op ≠ .ConstString) :
     frameVal ctx v = none := by
-  obtain ⟨h1, h2, h3, h4⟩ := h
+  obtain ⟨h1, h2, h3, h4, h5⟩ := h
   unfold frameVal; split <;> simp_all
 
 omit K in
