@@ -5,10 +5,11 @@ import GoFV.SSA.Sem.Run
 
 `evalOp_swap`: for an op with `Op.commutative` (the ops cse may compare with their first two
 arguments swapped, `CSE.swappable`), swapping the first two evaluated arguments does not change
-the result. All 55 such ops reach `evalPure`; the float ops and `Add32carry`,
-`Add32withcarry`, `Add32carrywithcarry` are `poison` there (later phases), the others are
-symmetric in their first two arguments family by family (`int2_swap`, `bool2_swap`,
-`eqPtr_swap`, `memEq_swap`, `addcarry_swap`).
+the result. All 55 such ops reach `evalPure`; `Add32carry`, `Add32withcarry`,
+`Add32carrywithcarry` are `poison` there (32-bit lowering only), the others are symmetric in
+their first two arguments family by family (`int2_swap`, `bool2_swap`, `eqPtr_swap`,
+`memEq_swap`, `addcarry_swap`; the commutative float ops take their operands in encoding order,
+`FOps.ordered_comm`).
 
 The 446-constructor `Op` is split once per lemma by `cases`, the non-commutative cases closed
 by evaluating `Op.commutative` on the constructor, the others by naming their family (never
@@ -205,7 +206,23 @@ theorem evalPure_swap {op : Op} {ty : Ty} {auxInt : Int64} {aux : Option AuxRef}
   case NeqB => exact neqB_swap a b rest
   case Add64carry => exact addcarry_swap a b rest
   case MemEq => exact memEq_swap a b rest
-  -- `poison` in phases P1/P2: floats and the 32-bit carry chain.
+  case Add32F =>
+    exact int2_swap (w := .w32) (fun x y => congrArg _ (FOps.ordered_comm (f := .b32) _ x y)) a b rest
+  case Add64F =>
+    exact int2_swap (w := .w64) (fun x y => congrArg _ (FOps.ordered_comm (f := .b64) _ x y)) a b rest
+  case Mul32F =>
+    exact int2_swap (w := .w32) (fun x y => congrArg _ (FOps.ordered_comm (f := .b32) _ x y)) a b rest
+  case Mul64F =>
+    exact int2_swap (w := .w64) (fun x y => congrArg _ (FOps.ordered_comm (f := .b64) _ x y)) a b rest
+  case Eq32F =>
+    exact int2_swap (w := .w32) (fun x y => congrArg _ (FOps.ordered_comm (f := .b32) _ x y)) a b rest
+  case Eq64F =>
+    exact int2_swap (w := .w64) (fun x y => congrArg _ (FOps.ordered_comm (f := .b64) _ x y)) a b rest
+  case Neq32F =>
+    exact int2_swap (w := .w32) (fun x y => congrArg _ (FOps.ordered_comm (f := .b32) _ x y)) a b rest
+  case Neq64F =>
+    exact int2_swap (w := .w64) (fun x y => congrArg _ (FOps.ordered_comm (f := .b64) _ x y)) a b rest
+  -- `poison`: the 32-bit carry chain.
   all_goals rfl
 
 /-- A commutative op is evaluated by `evalPure` (unless `frameVal` or `isRoot` decides). -/

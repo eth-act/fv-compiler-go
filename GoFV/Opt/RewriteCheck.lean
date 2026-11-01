@@ -65,7 +65,7 @@ def swap01 {α : Type} : List α → List α
 
 /-- Ops evaluated by `evalPure` (not roots, phis or frame-dependent ops): the nodes of terms. -/
 def termOp (op : Op) : Bool :=
-  !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .PanicBounds |
+  !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .ArgFloatReg | .PanicBounds |
     .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB |
     .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr | .Addr |
     .ConstString | .GetClosurePtr | .GetCallerSP | .Invalid)
@@ -524,7 +524,7 @@ def atomsOf (h : Func) (b : Block) : List ID :=
 /-- Atoms whose evaluation neither panics nor changes memory, which the rewrite pass may delete
 when they are dead. -/
 def dropAtom (op : Op) : Bool :=
-  op matches .Phi | .Arg | .ArgIntReg | .SP | .LocalAddr | .Addr | .ConstString |
+  op matches .Phi | .Arg | .ArgIntReg | .ArgFloatReg | .SP | .LocalAddr | .Addr | .ConstString |
     .GetClosurePtr | .GetCallerSP
 
 /-- `f` and `g` have the same blocks, the atoms of `g` are atoms of `f` with the same fields and

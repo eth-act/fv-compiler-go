@@ -24,6 +24,7 @@ Three modes (driven by `scripts/sem-difftest.sh`):
   section 0 is not is reported as a gap.
 
 Values are written in the syntax of `tools/semdiff/prog/main.go`: integers in decimal,
+floats as their bit patterns in hex (`0x3ff0000000000000`), complex numbers `{re,im}`,
 `true`/`false`, Go-quoted strings, slices `nil` or `[e,…]`, arrays `[e,…]`, structs `{f,…}`,
 pointers `nil` or `&e`. A value is built as its in-memory bytes, with fresh heap allocations
 for what slices, strings and pointers point to; the outcome prints the results and then the
@@ -36,7 +37,7 @@ namespace GoFVTest.SemDiff
 
 /-! ## Types the difftest supports -/
 
-/-- `t` can be built, generated and printed (integers, `bool`, strings, slices, arrays,
+/-- `t` can be built, generated and printed (integers, floats, complex, `bool`, strings, slices, arrays,
 structs, pointers, each at most 1 KB; `depth` bounds the recursion through pointers and
 elements). -/
 def supported (tabs : Tables) : Nat → TypeRef → Bool
@@ -50,6 +51,7 @@ def supported (tabs : Tables) : Nat → TypeRef → Bool
       match td.kind, td.tail with
       | .INT8, _ | .INT16, _ | .INT32, _ | .INT64, _ | .INT, _ | .UINT8, _ | .UINT16, _
       | .UINT32, _ | .UINT64, _ | .UINT, _ | .UINTPTR, _ | .BOOL, _ | .STRING, _ => true
+      | .FLOAT32, _ | .FLOAT64, _ | .COMPLEX64, _ | .COMPLEX128, _ => true
       | .SLICE, .elem e | .PTR, .elem e => supported tabs d e && (typeSize? tabs e).isSome
       | .ARRAY, .array e _ => supported tabs d e
       | .STRUCT, .struct fs => fs.all fun f => f.offset.isSome && supported tabs d f.type
@@ -68,6 +70,24 @@ def signature (tabs : Tables) (f : Func) : Option (Array TypeRef × Array TypeRe
     if ts.size != nin + nresults then none
     else some (ts.extract 0 nin, ts.extract nin ts.size)
   | _ => none
+
+def isFloat : TypeKind → Bool
+  | .FLOAT32 | .FLOAT64 => true
+  | _ => false
+
+/-- A natural number written in hex (`0x…`) or decimal. -/
+def parseNat (w : String) : Option Nat :=
+  if w.startsWith "0x" then
+    (w.drop 2).toString.foldl (fun acc c => acc.bind fun n =>
+      if c.isDigit then some (16 * n + (c.toNat - '0'.toNat))
+      else if 'a' ≤ c ∧ c ≤ 'f' then some (16 * n + (c.toNat - 'a'.toNat + 10))
+      else none) (some 0)
+  else w.toNat?
+
+/-- `x` as `0x` and `2 * bytes` hex digits. -/
+def hexBits (bytes : Nat) (x : Nat) : String :=
+  let hex := "0123456789abcdef".toList
+  "0x" ++ String.ofList ((List.range (2 * bytes)).reverse.map fun k => hex[x / 16 ^ k % 16]!)
 
 def isSigned : TypeKind → Bool
   | .INT8 | .INT16 | .INT32 | .INT64 | .INT => true
@@ -175,6 +195,17 @@ def parseBytes (tabs : Tables) : Nat → TypeRef → PM (Array Byte)
       if ← lit "nil" then return ptrBytes Ptr.null
       expect '&'
       return ptrBytes (← allocBytes (← parseBytes tabs d e))
+    | .COMPLEX64, _ | .COMPLEX128, _ =>
+      expect '{'
+      let some re := parseNat (← word) | throw "bad complex"
+      expect ','
+      let some im := parseNat (← word) | throw "bad complex"
+      expect '}'
+      return intBytes (size / 2) re ++ intBytes (size / 2) im
+    | .FLOAT32, _ | .FLOAT64, _ =>
+      let w ← word
+      let some n := parseNat w | throw s!"bad float {w}"
+      return intBytes size n
     | k, _ =>
       let w ← word
       let some n := w.toInt? | throw s!"bad integer {w}"
@@ -238,7 +269,11 @@ def renderBytes (tabs : Tables) (m : Mem) : Nat → TypeRef → Array Byte → N
         match m.read p es with
         | some ebs => "&" ++ renderBytes tabs m d e ebs 0
         | none => "<bad pointer>"
-      | k, _, .int _ x => if isSigned k then toString x.toInt else toString x.toNat
+      | .COMPLEX64, _, .agg [.int _ a, .int _ b] | .COMPLEX128, _, .agg [.int _ a, .int _ b] =>
+        "{" ++ hexBits (size / 2) a.toNat ++ "," ++ hexBits (size / 2) b.toNat ++ "}"
+      | k, _, .int _ x =>
+        if isFloat k then hexBits size x.toNat
+        else if isSigned k then toString x.toInt else toString x.toNat
       | _, _, v => if size == 0 then "<empty>" else s!"<{v.render}>"
 
 /-! ## Loading exports and running calls -/
@@ -375,6 +410,39 @@ def randInt (n : Nat) (signed : Bool) : RM String := do
     | _ => BitVec.ofNat n r2
   return if signed then toString x.toInt else toString x.toNat
 
+/-- A random float of `n` bits (32 or 64): an edge value (zeros, infinities, quiet and
+signalling NaNs with payloads, subnormals, extremes, values at integer-conversion boundaries
+and rounding ties), a small integer or half-integer, or random bits. -/
+def randFloat (n : Nat) : RM String := do
+  let r ← rand
+  let r2 ← rand
+  let (E, F) := if n == 32 then (8, 23) else (11, 52)
+  let bias := 2 ^ (E - 1) - 1
+  -- the bits of `±m · 2^e` for an exactly representable value (`m < 2^(F+1)`)
+  let enc (neg : Bool) (m : Nat) (e : Int) : Nat := Id.run do
+    if m == 0 then return if neg then 2 ^ (n - 1) else 0
+    let lg := m.log2
+    let be : Int := lg + e + bias
+    let frac := (m * 2 ^ (F - lg)) % 2 ^ F
+    return (if neg then 2 ^ (n - 1) else 0) + be.toNat * 2 ^ F + frac
+  let ones := 2 ^ E - 1
+  let edges : List Nat := [0, 2 ^ (n - 1), ones * 2 ^ F, 2 ^ (n - 1) + ones * 2 ^ F,
+    ones * 2 ^ F + 2 ^ (F - 1), 2 ^ (n - 1) + ones * 2 ^ F + 2 ^ (F - 1) + 5,
+    ones * 2 ^ F + 1, ones * 2 ^ F + 2 ^ (F - 2) + 3, 1, 2 ^ F - 1, 2 ^ F,
+    (ones - 1) * 2 ^ F + 2 ^ F - 1, 2 ^ (n - 1) + 2 ^ F - 1,
+    enc false 1 0, enc true 1 0, enc false 1 (-1), enc false 3 (-1), enc false 5 (-1),
+    enc true 5 (-1), enc false 7 (-1), enc false 1 31, enc true 1 31, enc false (2 ^ 32 - 1) (-1),
+    enc true (2 ^ 32 + 1) (-1), enc false 1 32, enc false 1 63, enc true 1 63, enc false 1 64,
+    enc false (2 ^ (F + 1) - 1) (63 - (F : Int)), enc false 1 (F + 1), enc false 3 F,
+    enc false 1 15, enc true 1 15, enc false 255 0, enc false 1 8, enc true 129 0]
+  let x : Nat :=
+    match r % 10 with
+    | 0 | 1 | 2 | 3 => edges.getD (r2 % edges.length) 0
+    | 4 | 5 => enc (r2 % 2 == 1) (r2 / 2 % 41) (if r2 / 128 % 2 == 0 then 0 else -1)
+    | 6 => enc (r2 % 2 == 1) (r2 / 2 % 2 ^ (F + 1) + 1) ((r2 / 2 ^ 40 % 64 : Nat) - 32 - (F : Int))
+    | _ => r2 % 2 ^ n
+  return hexBits (n / 8) x
+
 /-- A random value of type `t` (`d` bounds the depth; beyond it pointers and slices are nil). -/
 def randVal (tabs : Tables) : Nat → TypeRef → RM String
   | 0, _ => pure "nil"
@@ -409,6 +477,9 @@ def randVal (tabs : Tables) : Nat → TypeRef → RM String
     | .PTR, .elem e =>
       if (← rand) % 7 == 0 || d ≤ 2 then return "nil"
       return "&" ++ (← randVal tabs d e)
+    | .FLOAT32, _ | .FLOAT64, _ => randFloat (8 * size)
+    | .COMPLEX64, _ | .COMPLEX128, _ =>
+      return "{" ++ (← randFloat (4 * size)) ++ "," ++ (← randFloat (4 * size)) ++ "}"
     | k, _ => randInt (8 * size) (isSigned k)
 
 def randCalls (tabs : Tables) (params : Array TypeRef) (n : Nat) : RM (Array (List String)) := do

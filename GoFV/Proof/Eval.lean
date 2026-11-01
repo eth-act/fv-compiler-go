@@ -133,7 +133,7 @@ theorem evalOp_congr {env : Env} {ctx ctx' : Ctx} {fr : Frame} {v v' : Value} {a
   obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
   dsimp only at htabs hpar hact
   subst htabs hpar hact
-  unfold evalOp frameVal memRoot callOp callTarget
+  unfold evalOp frameVal memRoot callOp callTarget argFloat
   simp only [hop, haux, hai, hid]
   rfl
 

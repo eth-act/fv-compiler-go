@@ -25,7 +25,7 @@ theorem evalOp_argless {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v' : Val
     (hfr : fr' = { fr with regs := fr'.regs }) (h : evalOp env ctx fr v [] ty = .ok r) :
     evalOp env ctx' fr' v' [] ty = .ok r := by
   have hfv := frameVal_eq (ctx := ctx) (ctx' := ctx') hop haux htabs hact
-  unfold evalOp at h ⊢
+  unfold evalOp argFloat at h ⊢
   rw [hfv, hop, haux, hai, htabs, hfr]
   simp only [argVal_regs, argVal_params hpar]
   split at h <;> first | exact h | (cases h; done) | skip

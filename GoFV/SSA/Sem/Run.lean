@@ -501,6 +501,17 @@ def argVal (ctx : Ctx) (fr : Frame) (name : AuxRef) (off : Int) (ty : Ty) : Res 
       if off < 0 || img.size < off.toNat + ty.size then .ok .poison
       else .ok (decode img off.toNat ty)
 
+/-- `ArgFloatReg {name+off} [reg]` (P4): a float register piece of a parameter, read like
+`ArgIntReg`; an ill-formed one (no name, or a name that is not a parameter) is `poison`
+rather than `stuck`, so the op evaluates like a pure value. -/
+def argFloat (ctx : Ctx) (fr : Frame) (v : Value) (ty : Ty) : Val :=
+  match v.aux.bind ctx.tabs.aux? with
+  | some { kind := .nameOff n off, .. } =>
+    match argVal ctx fr n off ty with
+    | .ok x => x
+    | _ => .poison
+  | _ => .poison
+
 /-- `PanicBounds [kind] x y mem` (§6): `x` read signed for the signed kinds (even, below
 `BoundsConvert` = 16), `y` signed. -/
 def panicBounds (kind : Int64) : List Val → Res Val
@@ -727,6 +738,7 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
     match v.aux.bind ctx.tabs.aux? with
     | some { kind := .nameOff n off, .. } => argVal ctx fr n off ty
     | _ => .stuck s!"v{v.id}: ArgIntReg without name"
+  | .ArgFloatReg => pure (argFloat ctx fr v ty)
   | .PanicBounds => panicBounds v.auxInt argv
   | .StaticLECall | .StaticCall | .ClosureLECall | .ClosureCall | .InterLECall | .InterCall =>
     callOp env ctx v argv

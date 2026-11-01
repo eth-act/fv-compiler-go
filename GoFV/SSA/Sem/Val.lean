@@ -5,7 +5,7 @@ The value domain of `GoFV.SSA.run`. Phase P1 (integers, booleans, control flow):
 the four widths, booleans, tuples (`TUPLE` and `RESULTS` types) and `poison` (§3.5). Phase P2
 (memory, pointers, composites): pointers with provenance (`Ptr`), memory snapshots (`Mem`),
 composite values (`agg`), byte blobs of non-SSA-able values and zero-sized values. Floats
-(P4) are added as further constructors.
+(P4) are their IEEE 754 bit patterns in `int .w32`/`int .w64` (`Sem/Float.lean`).
 
 Integers carry no sign: signedness lives in the op (`Less64` vs `Less64U`), as in Go.
 -/
@@ -88,7 +88,7 @@ structure Mem where
 
 /-- A semantic value. -/
 inductive Val where
-  /-- An integer of any Go integer kind, as a bit pattern. -/
+  /-- An integer of any Go integer kind, or a `float32`/`float64` (P4), as a bit pattern. -/
   | int (w : Width) (x : BitVec w.bits)
   | bool (b : Bool)
   /-- A memory snapshot (`InitMem`, `Store`, …, the memory component of calls and
@@ -260,8 +260,8 @@ inductive Ty where
   | blob (size : Nat)
   /-- A zero-sized type. -/
   | empty
-  /-- A type of known size whose values a later phase evaluates (floats, complex: P4); loads
-  give `poison`, stores write poison bytes. -/
+  /-- A type of known size whose values the semantics does not decode (a struct whose field
+  offsets the export lacks); loads give `poison`, stores write poison bytes. -/
   | opaque (size : Nat)
   deriving Inhabited, Repr
 

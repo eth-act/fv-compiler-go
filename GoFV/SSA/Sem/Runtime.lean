@@ -368,7 +368,8 @@ def Env.runtime : Env where
     | "runtime.stringtoslicebyte" => some stringtoslicebyte
     | "runtime.printlock" | "runtime.printunlock" | "runtime.printnl" | "runtime.printsp"
     | "runtime.printint" | "runtime.printuint" | "runtime.printbool" | "runtime.printstring"
-    | "runtime.printpointer" | "runtime.printhex" | "runtime.printslice" => some noEffect
+    | "runtime.printpointer" | "runtime.printhex" | "runtime.printslice"
+    | "runtime.printfloat" | "runtime.printcomplex" => some noEffect
     | name =>
       if name.startsWith "runtime.mallocgcTinySC" || name.startsWith "runtime.mallocgcSmallNoScanSC" ||
           name.startsWith "runtime.mallocgcSmallScanNoHeaderSC" then some mallocSized
