@@ -2,6 +2,7 @@ import GoFV.Opt.BranchElimCheck
 import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Speculate
 import GoFV.Proof.Agree
+import GoFV.Proof.Merge
 
 /-!
 # branchelim: what the step checker establishes
@@ -20,9 +21,6 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.BranchElim GoFV.Proof
 structure DRel (f g : Func) (s : Site) : Prop where
   site : site? f s.dom s.post = some s
   rel : s.relB f g = true
-
-theorem valsOf_eq {f : Func} {b : ID} {B : Block} (h : f.block? b = some B) : valsOf f b = B.values := by
-  simp [valsOf, h]
 
 theorem inArm_iff {f : Func} {a? : Option ID} {x : ID} :
     Site.inArm f a? x = true ↔ ∃ a A, a? = some a ∧ f.block? a = some A ∧ x ∈ A.values := by

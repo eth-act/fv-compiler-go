@@ -17,39 +17,6 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.BranchElim GoFV.Pr
 
 variable {f g : Func} {s : Site}
 
-/-- An argument of a node listed before it in a dependency order. -/
-theorem topoRem_arg_prefix {D : ID → List ID} :
-    ∀ {L1 L2 : List ID}, TopoRem D (L1 ++ L2) → ∀ x ∈ L1, ∀ a ∈ D x, a ∈ L1 ++ L2 → a ∈ L1
-  | [], _, _, x, hx, _, _, _ => absurd hx List.not_mem_nil
-  | y :: L1, L2, ⟨h1, h2⟩, x, hx, a, ha, hm => by
-    rcases List.mem_cons.1 hx with rfl | hx
-    · exact absurd hm (h1 a ha)
-    · rcases List.mem_cons.1 hm with rfl | hm
-      · exact List.mem_cons_self
-      · exact List.mem_cons_of_mem _ (topoRem_arg_prefix h2 x hx a ha hm)
-
-/-- A block's non-pure schedule nodes are its `npOf` values. -/
-theorem npIn_schedNodes {f : Func} {B : Block} (hown : ValuesOwn f B)
-    (hnd : B.values.toList.Nodup) : npIn (schedNodes f B).toList = npOf f B := by
-  funext x
-  by_cases hx : x ∈ B.values ∧ ∃ v, f.value? x = some v ∧ v.op ≠ .Phi
-  · obtain ⟨hxB, v, hv, hp⟩ := hx
-    unfold npIn npOf
-    rw [CopyElim.nodeOf_schedNodes hown hnd hxB hv hp, hv]
-    simp [hxB, hp]
-  · have hn : ¬ NodeIn (schedNodes f B).toList x := fun h => hx ((nodeIn_schedNodes hown).1 h)
-    unfold npIn npOf
-    rw [CopyElim.nodeOf_none hn]
-    cases hc : B.values.contains x with
-    | false => rfl
-    | true =>
-      cases hv : f.value? x with
-      | none => rfl
-      | some v =>
-        have hph : v.op = .Phi := Classical.byContradiction fun hp =>
-          hx ⟨Array.contains_iff_mem.1 hc, v, hv, hp⟩
-        simp [hph]
-
 /-- Splitting a filtered list that is the concatenation of two disjointly filtered lists. -/
 theorem filter_split {a b : ID → Bool} {oT oD oP : List ID}
     (h : oT.filter (fun x => a x || b x) = oD.filter a ++ oP.filter b)
@@ -72,22 +39,6 @@ theorem filter_split {a b : ID → Bool} {oT oD oP : List ID}
     exact List.filter_congr fun x _ => by cases b x <;> cases a x <;> rfl
   exact ⟨by rw [e1, h, List.filter_append, i1, n1, List.append_nil],
     by rw [e2, h, List.filter_append, i2, n2, List.nil_append]⟩
-
-/-- In `L1 ++ L2` nothing outside `L1` comes before a member of `L1`. -/
-theorem not_before_append {L1 L2 : List ID} (hnd : (L1 ++ L2).Nodup) {x r : ID} (hr : r ∈ L1)
-    (hx : x ∉ L1) : ¬ Order.Before (L1 ++ L2) x r := by
-  rintro ⟨i, j, hij, hi, hj⟩
-  obtain ⟨j', hj'⟩ := List.getElem?_of_mem hr
-  have hj'lt : j' < L1.length := (List.getElem?_eq_some_iff.1 hj').1
-  have := Order.idx_unique hnd hj (by rw [List.getElem?_append_left hj'lt]; exact hj')
-  subst this
-  rw [List.getElem?_append_left (by omega)] at hi
-  exact hx (List.mem_of_getElem? hi)
-
-/-- The priority of a root is not 0. -/
-theorem prio_root {op : Op} (h : isRoot op = true) : prio op ≠ 0 := by
-  unfold prio
-  split <;> (try split) <;> simp_all
 
 namespace Setup
 
