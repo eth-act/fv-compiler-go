@@ -107,7 +107,8 @@ theorem load_flag {m : Mem} (h : MemOK m) :
   obtain ⟨n, hn⟩ := bytesNat?_four x0 x1 x2 x3
   refine ⟨BitVec.ofNat 32 n, ?_⟩
   unfold Mem.load
-  simp only [Ty.size, Width.bytes, Width.bits, Nat.reduceDiv, hr, hex, decode, decodeInt]
+  simp only [Ty.size, Width.bytes, Width.bits, Nat.reduceDiv, hr, hex, decodeLoad, decode,
+    decodeInt]
   rw [Array.extract_eq_self_of_le (by simp), hn]
 
 /-! ## The buffer -/
