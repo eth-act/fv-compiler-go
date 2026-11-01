@@ -58,6 +58,9 @@ structure ExportFile where
   frontend : Array Def
   /-- `warn` lines written after the last section (before `typeorder`). -/
   warns : Array GoStr
+  /-- `ptrcache`: type numbers whose canonical object has a cached pointer type (the backend's
+  `types.NewPtr` returns a shared object for them, a fresh one otherwise; #101). -/
+  ptrCache : Array TypeRef
   /-- `typecmp` lines: pairs `(a, b, Compare(a, b))`, `a < b` by number, whose `Compare` result
   disagrees with the `typeorder` ranks (`Compare` is not a total preorder, #68). -/
   typeCmp : Array (TypeRef × TypeRef × Ordering)

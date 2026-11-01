@@ -219,6 +219,7 @@ def file (e : ExportFile) : W Unit := do
   s "end\n"
   for m in e.warns do
     s "warn "; q m; nl
+  s "ptrcache "; list (ref 't') e.ptrCache; nl
   for (a, b, o) in e.typeCmp do
     s "typecmp "; ref 't' a; sp; ref 't' b; sp
     s (match o with | .lt => "lt" | .eq => "eq" | .gt => "gt"); nl

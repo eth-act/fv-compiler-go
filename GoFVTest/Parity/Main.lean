@@ -80,6 +80,11 @@ def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
   let m : Std.HashMap ID Nat := zv.foldl (fun m (v, c) => m.insert v c) {}
   fun i => m.getD i 0
 
+/-- The file's `ptrcache` as a predicate (`PassEnv.ptrCache`). -/
+def ptrCacheFn (ts : Array TypeRef) : TypeRef → Bool :=
+  let m : Std.HashMap TypeRef Unit := ts.foldl (fun m t => m.insert t ()) {}
+  fun t => m.contains t
+
 def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (st : Stats) :
     IO Stats := do
   let data ← IO.FS.readBinFile path
@@ -93,7 +98,7 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
     let base : PassEnv :=
       { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
         pgohot := e.pgohot, config := e.config, typs, typeOrder := TypeOrder.ofGroups e.typeOrder e.typeCmp
-        tables := {}, frontend := e.frontendTables }
+        tables := {}, frontend := e.frontendTables, ptrCache := ptrCacheFn e.ptrCache }
     let mut st := st
     let mut seen := Array.replicate insts.size false
     let mut tables : Tables := {}

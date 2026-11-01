@@ -658,6 +658,7 @@ def file : L ExportFile := do
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
+  let ptrCache ← line "ptrcache" (w (listW (refW 't')))
   let mut typeCmp := #[]
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "typecmp") then break
@@ -673,8 +674,8 @@ def file : L ExportFile := do
   let typeOrder ← line "typeorder" (w (listW fun g => (g.split 61).mapM (refW 't')))
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
-  return { version, pkg, name, abi, nosplit, pgohot, config, sections, frontend, warns, typeCmp,
-           typeOrder }
+  return { version, pkg, name, abi, nosplit, pgohot, config, sections, frontend, warns, ptrCache,
+           typeCmp, typeOrder }
 
 end Parse
 

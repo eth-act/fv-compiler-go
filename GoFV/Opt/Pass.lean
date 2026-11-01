@@ -49,6 +49,9 @@ structure PassEnv where
   /-- The input section's `zvar`: type-object class of zero-argument values whose type number
   has several `*types.Type` objects (`zcse` keys on the pointer); absent: class 0. -/
   zvar : ID → Nat := fun _ => 0
+  /-- The file's `ptrcache`: whether `types.NewPtr` of a type number returns a shared object
+  (else a fresh one; #101). -/
+  ptrCache : TypeRef → Bool := fun _ => false
 
 /-- A pass's result. -/
 structure PassOut where
