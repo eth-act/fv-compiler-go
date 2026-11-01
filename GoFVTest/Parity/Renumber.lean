@@ -1,4 +1,5 @@
 import GoFV.SSA.Export
+import GoFV.SSA.Print
 import Std.Data.HashMap.Basic
 import Std.Data.HashSet.Basic
 
@@ -178,15 +179,21 @@ def renumber (input leanT stockT : Tables) (leanF stockF : Func) : Except String
   let zipMap (xs ys : Array Nat) : Std.HashMap Nat Nat :=
     (xs.zip ys).foldl (fun m (x, y) => m.insert x y) {}
   let r : Ren := { t := zipMap wl.t ws.t, a := zipMap wl.a ws.a, s := zipMap wl.s ws.s }
+  let showD (d : Option Def) : String := match d with
+    | some d => (Print.defn d |>.run "").2.trimAsciiEnd.toString
+    | none => "(undefined)"
   for (x, y) in wl.t.zip ws.t do
     if (leanT.type? x).map r.typeDef != stockT.type? y then
-      throw s!"new type t{y} (lean t{x}) differs from the stock definition"
+      throw s!"new type t{y} (lean t{x}) differs from the stock definition\n    stock: \
+        {showD ((stockT.type? y).map (.type y))}\n    lean:  {showD ((leanT.type? x).map (.type y ∘ r.typeDef))}"
   for (x, y) in wl.a.zip ws.a do
     if (leanT.aux? x).map r.auxDef != stockT.aux? y then
-      throw s!"new aux a{y} (lean a{x}) differs from the stock definition"
+      throw s!"new aux a{y} (lean a{x}) differs from the stock definition\n    stock: \
+        {showD ((stockT.aux? y).map (.aux y))}\n    lean:  {showD ((leanT.aux? x).map (.aux y ∘ r.auxDef))}"
   for (x, y) in wl.s.zip ws.s do
     if (leanT.slot? x).map r.slotDef != stockT.slot? y then
-      throw s!"new slot s{y} (lean s{x}) differs from the stock definition"
+      throw s!"new slot s{y} (lean s{x}) differs from the stock definition\n    stock: \
+        {showD ((stockT.slot? y).map (.slot y))}\n    lean:  {showD ((leanT.slot? x).map (.slot y ∘ r.slotDef))}"
   for (k, i) in seeds do
     let ok := match k with
       | .t => (leanT.type? i).map r.typeDef == stockT.type? i
