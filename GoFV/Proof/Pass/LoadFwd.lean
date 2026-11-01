@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.LoadFwdMem
+import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.AtomSim
 
@@ -6,51 +6,21 @@ import GoFV.Proof.AtomSim
 # Load-of-Store forwarding refines its input (issue #151)
 
 `fwd_refines`: if `RewriteCheck.fwdRel tabs f g` (`g` is `f` with Loads replaced by `Copy x` of
-the value a `Store` wrote at a pointer that evaluates like the Load's, every other value
-unchanged), `g` refines `f`, by the atom simulation (`AtomSim.atomSimInv_refines`, trivial
-invariant). Its premises hold because every value listed in `f` is refined by the same value in
-`g` as a term (`fwd_den`), for valuations whose memory roots hold the writes of their arguments
+the value a `Store` wrote, through `Store`s at disjoint addresses, at a pointer equal to the
+Load's, every other value unchanged), `g` refines `f`, by the atom simulation
+(`AtomSim.atomSimInv_refines`, trivial invariant). Its premises hold because every value listed
+in `f` is refined by the same value in `g` as a term (`fwd_den`), for valuations whose memory
+roots hold the writes of their arguments and whose `LocalAddr`s their frame variables
 (`MemAtoms`): by induction on `fwdRank` (a replaced Load's stored value ranks below it), a
-replaced Load reads through its `Store`'s value, which `MemAtoms` gives as the write of the
-stored value's term at the Load's pointer (`samePtrB_den`), and reads that value back
-(`load_write`).
+replaced Load reads, through the writes of the disjoint `Store`s (`disjoint_sep`,
+`load_write_sep`), the write of the stored value's term at the Load's pointer (`samePtr_den`),
+and reads that value back (`load_write`): `chain_load`.
 -/
 
 namespace GoFV.Proof.Pass.LoadFwd
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
-open GoFV.Proof.Pass.Rewrite
-
-/-- `samePtrB`: the two pointers' terms evaluate equally, at every fuel. -/
-theorem samePtrB_den {tabs : Tables} {f : Func} (ρ : ID → Val) :
-    ∀ (n : Nat) (a b : ID), samePtrB tabs f n a b = true →
-      ∀ k, den f.value? tabs ρ k a = den f.value? tabs ρ k b
-  | 0, a, b, h, k => by simp only [samePtrB, beq_iff_eq] at h; rw [h]
-  | n + 1, a, b, h, k => by
-    unfold samePtrB at h
-    simp only [Bool.or_eq_true, beq_iff_eq] at h
-    rcases h with rfl | h
-    · rfl
-    split at h
-    · rename_i u w hu hw
-      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
-      obtain ⟨⟨⟨⟨⟨⟨ht, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := h
-      cases k with
-      | zero => rfl
-      | succ k =>
-        rw [den_succ_term hu ht, den_succ_term hw (hop ▸ ht), ← hop, ← tyEq_sound hty, hai, hax]
-        congr 2
-        apply List.ext_getElem (by simp [hsz])
-        intro i h1 h2
-        simp only [List.getElem_map, Array.getElem_toList]
-        have h1' : i < u.args.size := by simpa using h1
-        have h2' : i < w.args.size := by simpa using h2
-        refine samePtrB_den ρ n _ _ (hargs (u.args[i], w.args[i]) ?_) k
-        have hz : i < (u.args.toList.zip w.args.toList).length := by
-          simp only [List.length_zip, Array.length_toList]; omega
-        have := List.getElem_mem hz
-        simpa [List.getElem_zip] using this
-    · cases h
+open GoFV.Proof.Pass.Rewrite GoFV.Proof.CSE.Mem
 
 /-- What `fwdRel` establishes. -/
 structure FwdFacts (tabs : Tables) (f g : Func) : Prop where
@@ -87,18 +57,6 @@ theorem fwdRankOK_spec {f : Func} {rk : Array Nat} (h : fwdRankOK f rk = true) {
     · intro a ha
       simpa using (Array.all_eq_true_iff_forall_mem.1 h1) a ha
 
-theorem toList_two {a : Array ID} (h : a.size = 2) : a.toList = [a[0]!, a[1]!] := by
-  rcases a with ⟨_ | ⟨x, _ | ⟨y, _ | ⟨z, l⟩⟩⟩⟩ <;> simp_all
-
-theorem toList_three {a : Array ID} (h : a.size = 3) : a.toList = [a[0]!, a[1]!, a[2]!] := by
-  rcases a with ⟨_ | ⟨x, _ | ⟨y, _ | ⟨z, _ | ⟨z', l⟩⟩⟩⟩⟩ <;> simp_all
-
-theorem evalPure_copy (ty : Ty) (ai : Int64) (aux : Option AuxRef) (y : Val) :
-    evalPure .Copy ty ai aux [y] = y := rfl
-
-theorem evalPure_load (ty : Ty) (ai : Int64) (aux : Option AuxRef) (args : List Val) :
-    evalPure .Load ty ai aux args = loadOp ty args := rfl
-
 theorem loadOp_other {t : Ty} {p m : Val} (h : ¬ ∃ a M, p = .ptr a ∧ m = .mem M) :
     loadOp t [p, m] = .poison := by
   unfold loadOp
@@ -108,62 +66,59 @@ theorem loadOp_other {t : Ty} {p m : Val} (h : ¬ ∃ a M, p = .ptr a ∧ m = .m
     exact absurd ⟨a, M, heq.1, heq.2.1⟩ h
   · rfl
 
-theorem ptr_refines {p : Ptr} {v : Val} (h : Sem.Refines (.ptr p) v) : v = .ptr p := by
-  cases h; rfl
+/-- `fwdTyEq` shapes retype alike. -/
+theorem fwdTyEq_retype {t s : Ty} (h : fwdTyEq t s = true) : Val.retype t = Val.retype s := by
+  funext v
+  cases t <;> cases s <;> simp only [fwdTyEq, beq_iff_eq, reduceCtorEq] at h
+  · rw [h]
+  · rfl
+  · exact retype_ptr_elem _ _ v
 
-theorem not_term_of {D : ID → Option Value} {x : ID} {v : Value} (hv : D x = some v)
-    (ht : ¬ termOp v.op = true) : ¬ IsTerm D x := fun ⟨w, hw, hw'⟩ => by
-  rw [hv] at hw; cases hw; exact ht hw'
+theorem fwdTyEq_fwdTy {t s : Ty} (h : fwdTyEq t s = true) : fwdTy t = true := by
+  cases t <;> cases s <;> simp_all [fwdTyEq, fwdTy]
 
-/-- What `fwdOK` checks. -/
-theorem fwdOK_spec {tabs : Tables} {f : Func} {u : Value} {x : ID}
-    (h : fwdOK tabs f u x = true) :
-    u.op = .Load ∧ u.args.size = 2 ∧ ∃ s xv, f.value? u.args[1]! = some s ∧
-      f.value? x = some xv ∧ (s.op = .Store ∨ s.op = .StoreWB) ∧ s.args.size = 3 ∧
-      s.args[1]! = x ∧ samePtrB tabs f 8 u.args[0]! s.args[0]! = true ∧
-      fwdTy (tabs.ty u.type) = true ∧ tabs.ty u.type = auxTy tabs s.aux ∧
-      tabs.ty u.type = tabs.ty xv.type := by
-  unfold fwdOK at h
-  rw [Bool.and_eq_true, Bool.and_eq_true, beq_iff_eq, beq_iff_eq] at h
-  obtain ⟨⟨h1, h2⟩, h3⟩ := h
-  refine ⟨h1, h2, ?_⟩
-  cases hs : f.value? u.args[1]! with
-  | none => rw [hs] at h3; cases h3
-  | some s =>
-    cases hx : f.value? x with
-    | none => rw [hs, hx] at h3; cases h3
-    | some xv =>
-      rw [hs, hx] at h3
-      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h3
-      obtain ⟨⟨⟨⟨⟨⟨hsop, hssz⟩, hsx⟩, hsame⟩, hfty⟩, hsty⟩, hxty⟩ := h3
-      exact ⟨s, xv, rfl, rfl, hsop, hssz, hsx, hsame, hfty, tyEq_sound hsty, tyEq_sound hxty⟩
+/-- A `Store` at shape `s` (`fwdStoreTy t s`) writes a value of shape `t` as a write at `t`. -/
+theorem fwdStoreTy_encode {t s : Ty} (h : fwdStoreTy t s = true) {v : Val} (hv : v.retype t = v) :
+    encode s v = encode t v := by
+  unfold fwdStoreTy at h
+  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
+  rcases h with h | ⟨hp, hs⟩
+  · cases t <;> cases s <;> simp only [fwdTyEq, beq_iff_eq, reduceCtorEq] at h
+    · rw [h]
+    · rfl
+    · cases v with
+      | int w x => cases w <;> rfl
+      | _ => rfl
+  · obtain ⟨e, rfl⟩ : ∃ e, t = .ptr e := by cases t <;> simp_all [isPtrTy]
+    obtain rfl : s = .int .w64 := by
+      revert hs
+      cases s <;> first | (intro hs; cases hs) | skip
+      rename_i w
+      cases w <;> first | (intro; rfl) | (intro hs; cases hs)
+    rcases ptr_fixed (t := .ptr e) rfl hv with rfl | ⟨q, rfl⟩ <;> rfl
 
 /-- `Val.retype` fixes `mem` only at the memory shape. -/
 theorem retype_mem {t : Ty} {M M' : Mem} (h : (Val.mem M').retype t = .mem M) : M' = M := by
   cases t <;> simp [Val.retype] at h
   exact h
 
+/-- Only a memory retypes to a memory. -/
+theorem retype_eq_mem {t : Ty} {v : Val} {M : Mem} (h : v.retype t = .mem M) : v = .mem M := by
+  unfold Val.retype at h
+  split at h <;> (repeat' split at h) <;> simp_all
+
 /-- A `Store`'s write: a pointer, a memory and the written memory. -/
 theorem memDef_store {tabs : Tables} {s : Value} (hs : s.op = .Store ∨ s.op = .StoreWB)
     {a b c y : Val} (h : memDef tabs s [a, b, c] = some y) :
     ∃ q m0 M', a = .ptr q ∧ c = .mem m0 ∧ m0.write q (encode (auxTy tabs s.aux) b) = some M' ∧
       y = .mem M' := by
-  unfold memDef at h
-  rcases hs with hs | hs <;> rw [hs] at h <;>
-  · split at h
-    all_goals first
-      | (rename_i hop _; cases hop; done)
-      | skip
-    all_goals first
-      | (simp at h; done)
-      | skip
-    all_goals
-      rename_i heq
-      simp only [List.cons.injEq] at heq
-      obtain ⟨rfl, rfl, rfl, -⟩ := heq
-      cases hw : Mem.write _ _ _ with
-      | none => rw [hw] at h; cases h
-      | some M' => rw [hw] at h; cases h; exact ⟨_, _, _, rfl, rfl, hw, rfl⟩
+  rcases hs with hs | hs <;>
+  · cases a <;> try (simp [memDef, hs] at h; done)
+    cases c <;> try (simp [memDef, hs] at h; done)
+    rename_i q m0
+    simp only [memDef, hs, Option.map_eq_some_iff] at h
+    obtain ⟨M', hw, rfl⟩ := h
+    exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
 
 /-- The arguments of a list of values are refined by some fuel. -/
 theorem fuel_list {α : Type} {F : α → Val} {G : Nat → α → Val}
@@ -178,6 +133,60 @@ theorem fuel_list {α : Type} {F : α → Val} {G : Nat → α → Val}
     rcases List.mem_cons.1 hb with rfl | hb
     · exact h1.trans (hG _ _ _ (Nat.le_max_left _ _))
     · exact (h2 b hb).trans (hG _ _ _ (Nat.le_max_right _ _))
+
+/-- **A `Load` through a `Store` chain** (`fwdChain`): the memory read at the Load's pointer
+holds, through the disjoint writes, the write of the stored value, which it reads back. -/
+theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed f.value? tabs ρ)
+    (hM : MemAtoms f.value? tabs ρ) {p x : ID} {t : Ty} {kp : Nat} {P : Ptr}
+    (hp : den f.value? tabs ρ kp p = .ptr P) :
+    ∀ (d : Nat) (m : ID), fwdChain tabs f p t x d m = true → ∀ {k : Nat} {M : Mem},
+      den f.value? tabs ρ k m = .mem M → ∃ K, Sem.Refines (M.load t P) (den f.value? tabs ρ K x)
+  | 0, _, h, _, _, _ => by simp [fwdChain] at h
+  | d + 1, m, h, k, M, hm => by
+    unfold fwdChain at h
+    cases hs : f.value? m with
+    | none => rw [hs] at h; cases h
+    | some s =>
+    cases hx : f.value? x with
+    | none => rw [hs, hx] at h; cases h
+    | some xv =>
+    rw [hs, hx] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨hsop, hssz⟩, h⟩
+    · -- a `Copy` of memory
+      have ht : termOp s.op = true := by rw [hcop]; rfl
+      cases k with
+      | zero => simp [den] at hm
+      | succ k =>
+      rw [den_succ_term hs ht, toList_one hcsz, List.map_cons, List.map_nil, hcop,
+        GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy] at hm
+      have hm' : den f.value? tabs ρ k s.args[0]! = .mem M := retype_eq_mem hm
+      exact chain_load hT hM hp d _ hch hm'
+    have hmem : memOp s.op = true := by rcases hsop with h | h <;> rw [h] <;> rfl
+    -- `ρ` holds the `Store`'s write
+    cases k with
+    | zero => simp [den] at hm
+    | succ k =>
+    have hsat : ¬ IsTerm f.value? m := not_term_of hs (by rw [memOp_not_term hmem]; decide)
+    rw [den_succ_atom hsat] at hm
+    obtain ⟨N, hN⟩ := hM m s hs hmem (by rw [hm]; nofun)
+    obtain ⟨y, hy, hρs⟩ := hN N (Nat.le_refl _)
+    rw [toList_three hssz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
+    obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_store hsop hy
+    rw [hm] at hρs
+    have hMM := retype_mem hρs.symm
+    subst hMM
+    rcases h with ⟨⟨⟨⟨hsx, hsame⟩, hsty⟩, hxty⟩⟩ | ⟨hdis, hch⟩
+    · -- the `Store` of `x` at the Load's pointer
+      rw [samePtr_den hT hM hsame hp hq]
+      have hxk : (den f.value? tabs ρ N x).retype t = den f.value? tabs ρ N x := by
+        rw [fwdTyEq_retype hxty]; exact den_fix hT hx N
+      rw [hsx, fwdStoreTy_encode hsty hxk] at hwr
+      exact ⟨N, load_write (fwdTyEq_fwdTy hxty) hxk hwr⟩
+    · -- a `Store` at a disjoint pointer
+      have hsep := disjoint_sep hT hM hdis hp hq
+      rw [load_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact hsep)]
+      exact chain_load hT hM hp d _ hch hm0
 
 section
 variable {tabs : Tables} {f g : Func} (F : FwdFacts tabs f g)
@@ -217,6 +226,39 @@ theorem lm_arg {x : ID} {u : Value} (hx : LM f x) (hu : f.value? x = some u) :
   rw [hu] at hu'; cases hu'
   exact (closedOK_facts F.cf b hb fb hfb).2 x hxv u hu
 
+/-- The value a `Store` chain (`fwdChain`) reads back is listed and ranks below the chain's
+memory. -/
+theorem chain_rank {p x : ID} {t : Ty} :
+    ∀ (d : Nat) (m : ID), fwdChain tabs f p t x d m = true → LM f m →
+      LM f x ∧ (fwdRank f)[x]?.getD 0 < (fwdRank f)[m]?.getD 0
+  | 0, _, h, _ => by simp [fwdChain] at h
+  | d + 1, m, h, hm => by
+    unfold fwdChain at h
+    cases hs : f.value? m with
+    | none => rw [hs] at h; cases h
+    | some s =>
+    cases hx : f.value? x with
+    | none => rw [hs, hx] at h; cases h
+    | some xv =>
+    rw [hs, hx] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨hsop, hssz⟩, h⟩
+    · have hc : s.args[0]! ∈ s.args := by
+        rw [getElem!_pos s.args 0 (by omega)]; exact Array.getElem_mem _
+      have hph : s.op ≠ .Phi := by rw [hcop]; decide
+      obtain ⟨hlx, hrx⟩ := chain_rank d _ hch (lm_arg F hm hs _ hc)
+      exact ⟨hlx, Nat.lt_trans hrx (fwdRankOK_spec F.rank hm hs hph _ hc)⟩
+    have hsph : s.op ≠ .Phi := by rcases hsop with h | h <;> rw [h] <;> decide
+    have hmem : ∀ i, i < 3 → s.args[i]! ∈ s.args := fun i hi => by
+      rw [getElem!_pos s.args i (by omega)]; exact Array.getElem_mem _
+    rcases h with ⟨⟨⟨⟨hsx, -⟩, -⟩, -⟩⟩ | ⟨-, hch⟩
+    · rw [← hsx]
+      exact ⟨lm_arg F hm hs _ (hmem 1 (by omega)),
+        fwdRankOK_spec F.rank hm hs hsph _ (hmem 1 (by omega))⟩
+    · have hc := hmem 2 (by omega)
+      obtain ⟨hlx, hrx⟩ := chain_rank d _ hch (lm_arg F hm hs _ hc)
+      exact ⟨hlx, Nat.lt_trans hrx (fwdRankOK_spec F.rank hm hs hsph _ hc)⟩
+
 /-- **Values as terms**: each value listed in `f` is refined by the same value listed in `g`,
 for valuations whose memory roots hold the writes of their arguments. -/
 theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.value? tabs ρ)
@@ -253,90 +295,44 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   · -- `x` is a Load forwarded to `Copy c`
     obtain ⟨c, hc⟩ : ∃ c, c = w.args[0]?.getD 0 := ⟨_, rfl⟩
     rw [← hc] at hok
-    obtain ⟨hld, hsz2, s, xv, hs, hxv', hsop, hssz, hsx, hsame, hfty, hsty, hxty⟩ := fwdOK_spec hok
+    unfold fwdOK at hok
+    simp only [Bool.and_eq_true, beq_iff_eq] at hok
+    obtain ⟨⟨hld, hsz2⟩, hch⟩ := hok
     have hph : u.op ≠ .Phi := by rw [hld]; decide
     have hLt : termOp u.op = true := by rw [hld]; decide
-    have hr1 := fwdRankOK_spec F.rank hx hu hph
-    · -- the Load's arguments
-      have hu1 : u.args[1]! ∈ u.args := by
-        rw [getElem!_pos u.args 1 (by omega)]; exact Array.getElem_mem _
-      have hu0 : u.args[0]! ∈ u.args := by
-        rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
-      have huargs : u.args.toList = [u.args[0]!, u.args[1]!] := toList_two hsz2
-      have hsargs : s.args.toList = [s.args[0]!, c, s.args[2]!] := by
-        rw [toList_three hssz, hsx]
-      have hsc : c ∈ s.args := by
-        rw [← hsx, getElem!_pos s.args 1 (by omega)]; exact Array.getElem_mem _
-      -- the ranks: `c` below the `Store`, below the Load
-      have hls : LM f u.args[1]! := lm_arg F hx hu _ hu1
-      have hsph : s.op ≠ .Phi := by rcases hsop with h | h <;> rw [h] <;> decide
-      have hlc : LM f c := lm_arg F hls hs c hsc
-      have hrc : (fwdRank f)[c]?.getD 0 < r := by
-        have h1 := fwdRankOK_spec F.rank hls hs hsph c hsc
-        have h2 := hr1 _ hu1
-        omega
-      -- the target: `Copy c`
-      have hcopy : termOp Op.Copy = true := by decide
-      have hw0 : w.args.toList = [c] := by
-        apply List.ext_getElem (by simp [hsz])
-        intro i h1 h2
-        have : i = 0 := by simp [hsz] at h1; omega
-        subst this
-        simp [hc, Array.getElem?_eq_getElem (show 0 < w.args.size by omega)]
-      have hden_t : ∀ m, den (listedDefs g) tabs ρ' (m + 1) x =
-          (den (listedDefs g) tabs ρ' m c).retype (tabs.ty u.type) := fun m => by
-        rw [den_succ_term hL (hop ▸ hcopy), hop, hw0, List.map_cons, List.map_nil,
-          GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty]
-      -- the source: a Load through the `Store`
-      rw [den_succ_term hu hLt, huargs, List.map_cons, List.map_cons, List.map_nil, hld,
-        GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load]
-      by_cases hcase : ∃ a M, den f.value? tabs ρ n u.args[0]! = .ptr a ∧
-        den f.value? tabs ρ n u.args[1]! = .mem M
-      rotate_left
-      · rw [loadOp_other hcase, AtomSim.retype_poison]; exact ⟨0, .poison _⟩
-      · obtain ⟨a, M, hpa, hsM⟩ := hcase
-        rw [hpa, hsM, loadOp]
-        -- `ρ` holds the `Store`'s write
-        have hsn : n ≠ 0 := by rintro rfl; simp [den] at hsM
-        obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
-        have hsat : ¬ IsTerm f.value? u.args[1]! :=
-          not_term_of hs (by rw [memOp_not_term (by rcases hsop with h | h <;> rw [h] <;> rfl)]; decide)
-        rw [den_succ_atom hsat] at hsM
-        obtain ⟨N, hN⟩ := hM _ s hs (by rcases hsop with h | h <;> rw [h] <;> rfl)
-          (by rw [hsM]; nofun)
-        obtain ⟨y, hy, hρs⟩ := hN (max N (n' + 1)) (Nat.le_max_left _ _)
-        rw [hsargs, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
-        obtain ⟨q, m0, M', hq, -, hwr, rfl⟩ := memDef_store hsop hy
-        rw [hsM] at hρs
-        have hMM := retype_mem hρs.symm
-        subst hMM
-        -- the pointers agree
-        have hpk : den f.value? tabs ρ (max N (n' + 1)) u.args[0]! = .ptr a := by
-          have := den_fuel_mono f.value? tabs ρ (n' + 1) (max N (n' + 1)) u.args[0]!
-            (Nat.le_max_right _ _)
-          rw [hpa] at this
-          exact ptr_refines this
-        rw [samePtrB_den ρ 8 _ _ hsame, hq] at hpk
-        cases hpk
-        -- the stored value has the Load's shape
-        have hxk : (den f.value? tabs ρ (max N (n' + 1)) c).retype (tabs.ty u.type) =
-            den f.value? tabs ρ (max N (n' + 1)) c := by
-          obtain ⟨k, hk⟩ : ∃ k, max N (n' + 1) = k + 1 := ⟨max N (n' + 1) - 1, by omega⟩
-          rw [hk]
-          by_cases hct : IsTerm f.value? c
-          · obtain ⟨v, hv, hvt⟩ := hct
-            rw [hxv'] at hv; cases hv
-            rw [den_succ_term hxv' hvt, hxty, retype_idem]
-          · rw [den_succ_atom hct]
-            have := hT c hct (by rw [hxv']; rfl)
-            simp only [shape, hxv', Option.map_some, Option.getD_some] at this
-            rw [hxty]; exact this
-        rw [← hsty] at hwr
-        have hld' := load_write hfty hxk hwr
-        obtain ⟨m, hm⟩ := hIH c hrc hlc (max N (n' + 1))
-        refine ⟨m + 1, ?_⟩
-        rw [hden_t m]
-        exact retype_mono _ (hld'.trans hm)
+    have hu1 : u.args[1]! ∈ u.args := by
+      rw [getElem!_pos u.args 1 (by omega)]; exact Array.getElem_mem _
+    -- the ranks: `c` below the chain's memory, below the Load
+    have hls : LM f u.args[1]! := lm_arg F hx hu _ hu1
+    obtain ⟨hlc, hrc'⟩ := chain_rank F 8 _ hch hls
+    have hrc : (fwdRank f)[c]?.getD 0 < r := by
+      have := fwdRankOK_spec F.rank hx hu hph _ hu1
+      omega
+    -- the target: `Copy c`
+    have hcopy : termOp Op.Copy = true := by decide
+    have hw0 : w.args.toList = [c] := by
+      apply List.ext_getElem (by simp [hsz])
+      intro i h1 h2
+      have : i = 0 := by simp [hsz] at h1; omega
+      subst this
+      simp [hc, Array.getElem?_eq_getElem (show 0 < w.args.size by omega)]
+    have hden_t : ∀ m, den (listedDefs g) tabs ρ' (m + 1) x =
+        (den (listedDefs g) tabs ρ' m c).retype (tabs.ty u.type) := fun m => by
+      rw [den_succ_term hL (hop ▸ hcopy), hop, hw0, List.map_cons, List.map_nil,
+        GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty]
+    -- the source: a Load through the chain
+    rw [den_succ_term hu hLt, toList_two hsz2, List.map_cons, List.map_cons, List.map_nil, hld,
+      GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load]
+    by_cases hcase : ∃ a M, den f.value? tabs ρ n u.args[0]! = .ptr a ∧
+      den f.value? tabs ρ n u.args[1]! = .mem M
+    · obtain ⟨a, M, hpa, hsM⟩ := hcase
+      rw [hpa, hsM, loadOp]
+      obtain ⟨K, hK⟩ := chain_load hT hM hpa 8 _ hch hsM
+      obtain ⟨m, hm⟩ := hIH c hrc hlc K
+      refine ⟨m + 1, ?_⟩
+      rw [hden_t m]
+      exact retype_mono _ (hK.trans hm)
+    · rw [loadOp_other hcase, AtomSim.retype_poison]; exact ⟨0, .poison _⟩
 
 /-- Each value listed in `f` refines as a term in `g`, under any invariant. -/
 theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop) (Q : (ID → Val) → Prop)

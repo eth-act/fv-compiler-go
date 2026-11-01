@@ -157,6 +157,7 @@ import GoFV.Proof.Pass.KnownBitsShift
 import GoFV.Proof.Pass.KnownBitsTerm
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.LoadFwdMem
+import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.Pass.NilRel

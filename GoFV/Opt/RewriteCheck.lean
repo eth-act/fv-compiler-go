@@ -694,18 +694,47 @@ def nilPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array R
 /-! ## Load-of-Store forwarding (issue #151)
 
 A rule of the table's `loads` row, `(Load p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && … => x`
-(`fwdShapeOK`), replaces a `Load` (a term) by `Copy x` of the value a `Store` (a root) wrote at
-the same address. The validator takes these events out of the log like nil-check eliminations:
-`fwdPre` applies them to the input, `fwdRel` relates the input and that function (each replaced
-`Load` reads through a `Store` of `x` at a pointer that evaluates like the `Load`'s, at a shape a
-write and a read give back unchanged: `fwdOK`; every other value unchanged; ranks that order each
-listed non-`Phi` value after its arguments: `fwdRank`, `fwdRankOK`), and `validate` relates that
-function and the output with the remaining events. -/
+and its forms through up to three more `Store`s at disjoint addresses (`fwdShapeOK`), replaces a
+`Load` (a term) by `Copy x` of the value a `Store` (a root) wrote at the same address. The
+validator takes these events out of the log like nil-check eliminations: `fwdPre` applies them
+to the input, `fwdRel` relates the input and that function (each replaced `Load` reads, through
+`Store`s at disjoint addresses, a `Store` of `x` at a pointer that evaluates like the `Load`'s,
+at a shape a write and a read give back unchanged: `fwdOK`; every other value unchanged; ranks
+that order each listed non-`Phi` value after its arguments: `fwdRank`, `fwdRankOK`), and
+`validate` relates that function and the output with the remaining events. -/
 
-/-- Pointer terms that evaluate equally: the same value, or term nodes with the same op, shape
-and aux fields whose arguments evaluate equally (`isSamePtr`'s `OffPtr`/`AddPtr` chains and
-`Addr`s of one symbol). -/
-def samePtrB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
+/-- Pointer shapes, whatever their element size (only `PtrIndex` reads it). -/
+def isPtrTy : Sem.Ty → Bool
+  | .ptr _ => true
+  | _ => false
+
+/-- `x` is a value of `f` of pointer shape. -/
+def ptrVal (tabs : Tables) (f : Func) (x : ID) : Bool :=
+  (f.value? x).any fun u => isPtrTy (tabs.ty u.type)
+
+/-- One step of `ptrBase`: an `OffPtr` or `Copy` of pointer shape on a pointer-shaped argument,
+its argument and its offset. -/
+def ptrStep? (tabs : Tables) (f : Func) (a : ID) : Option (ID × BitVec 64) :=
+  match f.value? a with
+  | some u =>
+    if (u.op == .OffPtr || u.op == .Copy) && u.args.size == 1 && isPtrTy (tabs.ty u.type) &&
+        ptrVal tabs f u.args[0]! then
+      some (u.args[0]!, if u.op == .OffPtr then BitVec.ofInt 64 u.auxInt.toInt else 0)
+    else none
+  | none => none
+
+/-- Pointer `a` as a base and a constant offset: through at most `n` `OffPtr`s and `Copy`s
+(`ptrStep?`; `isSamePtr`'s `OffPtr` chains, copies that copy elimination looks through). -/
+def ptrBase (tabs : Tables) (f : Func) : Nat → ID → ID × BitVec 64
+  | 0, a => (a, 0)
+  | n + 1, a =>
+    match ptrStep? tabs f a with
+    | some (c, o) => ((ptrBase tabs f n c).1, (ptrBase tabs f n c).2 + o)
+    | none => (a, 0)
+
+/-- Terms that evaluate equally: the same value, or term nodes with the same op, shape and
+fields whose arguments evaluate equally (at most `n` deep). -/
+def termEqB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
   | 0, a, b => a == b
   | n + 1, a, b =>
     a == b ||
@@ -713,8 +742,68 @@ def samePtrB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
     | some u, some w =>
       termOp u.op && u.op == w.op && GoFV.Opt.CSE.tyEq (tabs.ty u.type) (tabs.ty w.type) &&
         u.auxInt == w.auxInt && u.aux == w.aux && u.args.size == w.args.size &&
-        (u.args.toList.zip w.args.toList).all fun (c, d) => samePtrB tabs f n c d
+        (u.args.toList.zip w.args.toList).all fun (c, d) => termEqB tabs f n c d
     | _, _ => false
+
+/-- Index values equal: `termEqB`. -/
+def idxSame (tabs : Tables) (f : Func) (i j : ID) : Bool := termEqB tabs f 4 i j
+
+/-- The allocation base pointer `a` points to at offset 0, where it is known statically: a
+`LocalAddr`'s frame variable (in activation 0, where the atom simulation runs: `Sem.frameVal`,
+`AtomSim.MemAtoms`) or an `Addr`'s global (`Sem.addrVal`). -/
+def baseBlk? (tabs : Tables) (f : Func) (a : ID) : Option Sem.Blk :=
+  match f.value? a with
+  | some u =>
+    if u.op == .LocalAddr then u.aux.map (Sem.frameBlk tabs 0)
+    else if u.op == .Addr then
+      match u.aux.bind tabs.aux? with
+      | some { kind := .sym name .., .. } => some (.global name.toStringLossy)
+      | _ => none
+    else none
+  | none => none
+
+/-- Base pointers equal where both are pointers: the same value, the start of one allocation
+(`baseBlk?`), or `AddPtr`/`PtrIndex` nodes of one shape on such pointers (`ptrBase`, the same
+offset) by equal indices (`idxSame`). -/
+def baseSameB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
+  | 0, a, b => a == b
+  | n + 1, a, b =>
+    a == b ||
+    (match baseBlk? tabs f a, baseBlk? tabs f b with
+     | some x, some y => x == y
+     | _, _ => false) ||
+    match f.value? a, f.value? b with
+    | some u, some w =>
+      (u.op == .AddPtr || u.op == .PtrIndex) && u.op == w.op && u.args.size == 2 &&
+        w.args.size == 2 && GoFV.Opt.CSE.tyEq (tabs.ty u.type) (tabs.ty w.type) &&
+        u.auxInt == w.auxInt && u.aux == w.aux &&
+        ptrVal tabs f u.args[0]! && ptrVal tabs f w.args[0]! &&
+        (ptrBase tabs f 8 u.args[0]!).2 == (ptrBase tabs f 8 w.args[0]!).2 &&
+        baseSameB tabs f n (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 w.args[0]!).1 &&
+        idxSame tabs f u.args[1]! w.args[1]!
+    | _, _ => false
+
+/-- Pointers equal where both are pointers (`isSamePtr`): equal bases (`baseSameB`) at the same
+offset (`ptrBase`). -/
+def samePtrB (tabs : Tables) (f : Func) (a b : ID) : Bool :=
+  (ptrBase tabs f 8 a).2 == (ptrBase tabs f 8 b).2 &&
+    baseSameB tabs f 8 (ptrBase tabs f 8 a).1 (ptrBase tabs f 8 b).1
+
+/-- Offsets `o` (`n` bytes) and `o'` (`k` bytes) from one base address disjoint byte ranges,
+modulo `2^64`: `o'` at least `n` above `o` and wrapping at most onto `o`, or the other way. -/
+def offSep (o : BitVec 64) (n : Nat) (o' : BitVec 64) (k : Nat) : Bool :=
+  (decide (n ≤ (o' - o).toNat) && decide ((o' - o).toNat + k ≤ 2 ^ 64)) ||
+  (decide (k ≤ (o - o').toNat) && decide ((o - o').toNat + n ≤ 2 ^ 64))
+
+/-- Pointer `a` (`n` bytes) and pointer `b` (`k` bytes) address disjoint bytes where both are
+pointers (`disjoint`): equal bases (`baseSameB`) at separate offsets (`offSep`), or bases in
+different allocations (`baseBlk?`). -/
+def disjointB (tabs : Tables) (f : Func) (a : ID) (n : Nat) (b : ID) (k : Nat) : Bool :=
+  (offSep (ptrBase tabs f 8 a).2 n (ptrBase tabs f 8 b).2 k &&
+    baseSameB tabs f 8 (ptrBase tabs f 8 a).1 (ptrBase tabs f 8 b).1) ||
+  match baseBlk? tabs f (ptrBase tabs f 8 a).1, baseBlk? tabs f (ptrBase tabs f 8 b).1 with
+  | some x, some y => x != y
+  | _, _ => false
 
 /-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`, `Sem.decode`): an
 integer, a boolean or a pointer. -/
@@ -722,18 +811,40 @@ def fwdTy : Sem.Ty → Bool
   | .int _ | .bool | .ptr _ => true
   | _ => false
 
-/-- The `Load` `u` of `f` reads back the value `x`: its memory is a `Store` of `x` at a pointer
-that evaluates like the `Load`'s (`samePtrB`), and the `Load`, the `Store`'s type and `x` have one
-shape `fwdTy`. -/
-def fwdOK (tabs : Tables) (f : Func) (u : Value) (x : ID) : Bool :=
-  u.op == .Load && u.args.size == 2 &&
-  match f.value? u.args[1]!, f.value? x with
-  | some s, some xv =>
-    (s.op == .Store || s.op == .StoreWB) && s.args.size == 3 && s.args[1]! == x &&
-      samePtrB tabs f 8 u.args[0]! s.args[0]! && fwdTy (tabs.ty u.type) &&
-      GoFV.Opt.CSE.tyEq (tabs.ty u.type) (Sem.auxTy tabs s.aux) &&
-      GoFV.Opt.CSE.tyEq (tabs.ty u.type) (tabs.ty xv.type)
+/-- Shapes `fwdTy` that write, read and retype alike: equal up to pointers' element sizes
+(`copyCompatibleType`). -/
+def fwdTyEq : Sem.Ty → Sem.Ty → Bool
+  | .int w, .int w' => w == w'
+  | .bool, .bool => true
+  | .ptr _, .ptr _ => true
   | _, _ => false
+
+/-- A `Store` at type shape `s` writes a value of shape `t` (`fwdTy`) as a write at `t` does:
+`fwdTyEq`, or a pointer stored as a 64-bit integer (`Sem.encode` writes a pointer's bytes at
+both). -/
+def fwdStoreTy (t s : Sem.Ty) : Bool :=
+  fwdTyEq t s || (isPtrTy t && s matches .int .w64)
+
+/-- Memory `m` of `f`, read at pointer `p` at shape `t`, holds `x`: through at most `d` `Copy`s
+and `Store`s at pointers disjoint from the read (`disjointB`), a `Store` of `x` at a pointer equal
+to `p` (`samePtrB`) at a type of shape `t` (`fwdStoreTy`), and `x` of shape `t` (`fwdTyEq`). -/
+def fwdChain (tabs : Tables) (f : Func) (p : ID) (t : Sem.Ty) (x : ID) : Nat → ID → Bool
+  | 0, _ => false
+  | d + 1, m =>
+    match f.value? m, f.value? x with
+    | some s, some xv =>
+      (s.op == .Copy && s.args.size == 1 && fwdChain tabs f p t x d s.args[0]!) ||
+      ((s.op == .Store || s.op == .StoreWB) && s.args.size == 3 &&
+       ((s.args[1]! == x && samePtrB tabs f p s.args[0]! && fwdStoreTy t (Sem.auxTy tabs s.aux) &&
+           fwdTyEq t (tabs.ty xv.type)) ||
+        (disjointB tabs f p t.size s.args[0]! (Sem.auxTy tabs s.aux).size &&
+           fwdChain tabs f p t x d s.args[2]!)))
+    | _, _ => false
+
+/-- The `Load` `u` of `f` reads back the value `x` (`fwdChain` through at most eight `Copy`s and
+`Store`s). -/
+def fwdOK (tabs : Tables) (f : Func) (u : Value) (x : ID) : Bool :=
+  u.op == .Load && u.args.size == 2 && fwdChain tabs f u.args[0]! (tabs.ty u.type) x 8 u.args[1]!
 
 /-- One pass of `fwdRank`, in ID order: each listed non-`Phi` value one above its arguments. -/
 def rankPass (f : Func) (L : Array Bool) (rk : Array Nat) : Array Nat :=
@@ -789,12 +900,12 @@ def storesBind (y : Nat) : Nat → Pat → Bool
     (match v with | .bind z => z == y | _ => false) || storesBind y n m
   | _, _ => false
 
-/-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by the `Store` `m`
-(`generic.rules:800`; the validator checks each instance by `fwdOK`, which reads through one
-`Store`). -/
+/-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by one of the up to four
+`Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`; the validator checks each
+instance by `fwdOK`, the `isSamePtr`/`disjoint` conditions included). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
-  | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 1 m
+  | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
   | _, _, _ => false
 
 /-- The `Load` `v` of `f` that event `ev` forwards and the value it becomes a copy of, if it is a
@@ -828,11 +939,13 @@ def fwdCopy (f : Func) (v x : ID) : Func :=
     else f
   | none => f
 
-/-- One event of `fwdPre`: a forwarding of `f` is applied, any other event kept. -/
+/-- One event of `fwdPre`: a forwarding of `f` is applied, any other event kept, but for the
+copy-argument replacements of the forwarded `Load` logged before it (copy elimination on the
+`Load`'s arguments, which the forwarding validated in `f` replaces). -/
 def fwdStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
     Func × Array RwEvent :=
   match fwdEvent? t f ev with
-  | some (v, x) => (fwdCopy p.1 v x, p.2)
+  | some (v, x) => (fwdCopy p.1 v x, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's Load-of-Store forwardings applied, and the remaining events. -/
@@ -874,12 +987,23 @@ def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     if log'.size == log.size then RewriteCheck.fwdAccepts env t f out log
     else RewriteCheck.nilOK env out.tables f f' && RewriteCheck.fwdAccepts env t f' out log'
 
-/-- The validated rewrite pass: `applyRewrite` with the table `t` and its log; the result with
-the pass's extended tables if `RewriteCheck.accepts` it, else the input. -/
-def checkedRewrite (t : GoFV.Rules.Interp.Table) : Pass := fun env f => do
+/-- `applyRewrite` with the table `t` and its log; the result if `RewriteCheck.accepts` it. -/
+def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func) :
+    Except String (Option PassOut) := do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
-  if RewriteCheck.accepts env t f out log then
-    return out
-  else return { func := f, tables := env.tables }
+  return if RewriteCheck.accepts env t f out log then some out else none
+
+/-- The validated rewrite pass: `applyRewrite` with the table `t` and its log, the result with
+the pass's extended tables if `RewriteCheck.accepts` it; else (a Load-of-Store forwarding the
+validator cannot relate, issue #151) the same without the table's forwardings (`loads`), if
+accepted; else the input. -/
+def checkedRewrite (t : GoFV.Rules.Interp.Table) : Pass := fun env f => do
+  match ← checkedRun t env f with
+  | some out => return out
+  | none =>
+    if t.loads.isEmpty then return { func := f, tables := env.tables } else
+    match ← checkedRun { t with loads := #[] } env f with
+    | some out => return out
+    | none => return { func := f, tables := env.tables }
 
 end GoFV.Opt

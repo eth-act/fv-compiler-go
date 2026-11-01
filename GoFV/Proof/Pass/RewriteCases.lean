@@ -28,6 +28,49 @@ theorem fwdAccepts_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : P
   · simp only [Bool.and_eq_true] at h
     exact ⟨f', log', .inr ⟨h.1.1, h.1.2⟩, h.2⟩
 
+/-- What an accepted run (`checkedRun`) returns. -/
+theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
+    (h : checkedRun t penv f = .ok (some out)) :
+    tabsAgree penv.tables out.tables f = true ∧
+      ∃ f₁, (f₁ = f ∨ RewriteCheck.nilOK penv out.tables f f₁ = true) ∧
+      ∃ f₂ log, (f₂ = f₁ ∨ (RewriteCheck.fwdRel out.tables f₁ f₂ = true ∧
+        checkOK { tabs := out.tables, typs := penv.typs } f₂ = true)) ∧
+        RewriteCheck.validate out.tables t f₂ out.func log = true := by
+  unfold checkedRun at h
+  cases hr : rewriteRun t true true penv f with
+  | error e => simp [hr, bind, Except.bind] at h
+  | ok r =>
+    obtain ⟨o, n, log⟩ := r
+    simp only [hr, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
+    split at h
+    · next hv =>
+      cases h
+      rw [RewriteCheck.accepts, Bool.and_eq_true] at hv
+      obtain ⟨hta, hv⟩ := hv
+      refine ⟨hta, ?_⟩
+      split at hv
+      next f' log' _ =>
+      split at hv
+      · exact ⟨f, .inl rfl, fwdAccepts_cases hv⟩
+      · rw [Bool.and_eq_true] at hv
+        exact ⟨f', .inr hv.1, fwdAccepts_cases hv.2⟩
+    · cases h
+
+/-- The replay does not read the table's forwardings. -/
+theorem replay_noLoads (tabs : Tables) (t : Interp.Table) (f : Func) :
+    ∀ (M : RewriteCheck.Defs) (B : RewriteCheck.BMap) (evs : List RwEvent),
+      RewriteCheck.replay tabs { t with loads := #[] } f M B evs =
+        RewriteCheck.replay tabs t f M B evs
+  | _, _, [] => rfl
+  | M, B, ev :: evs => by
+    cases ev <;> simp only [RewriteCheck.replay, replay_noLoads tabs t f _ _ evs]
+
+/-- The validator does not read the table's forwardings (`fwdPre` does). -/
+theorem validate_noLoads (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
+    RewriteCheck.validate tabs { t with loads := #[] } f g log =
+      RewriteCheck.validate tabs t f g log := by
+  simp only [RewriteCheck.validate, replay_noLoads]
+
 theorem checkedRewrite_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
     (h : checkedRewrite t penv f = .ok out) :
     (out.func = f ∧ out.tables = penv.tables) ∨
@@ -37,27 +80,36 @@ theorem checkedRewrite_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out
           checkOK { tabs := out.tables, typs := penv.typs } f₂ = true)) ∧
           RewriteCheck.validate out.tables t f₂ out.func log = true) := by
   unfold checkedRewrite at h
-  cases hr : rewriteRun t true true penv f with
-  | error e => simp [hr, bind, Except.bind] at h
+  cases h1 : checkedRun t penv f with
+  | error e => simp [h1, bind, Except.bind] at h
   | ok r =>
-    obtain ⟨o, n, log⟩ := r
-    simp only [hr, bind, Except.bind] at h
-    split at h
-    · next hv =>
+    simp only [h1, bind, Except.bind] at h
+    cases r with
+    | some o =>
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h
-      rw [RewriteCheck.accepts, Bool.and_eq_true] at hv
-      obtain ⟨hta, hv⟩ := hv
-      refine .inr ⟨hta, ?_⟩
-      split at hv
-      next f' log' _ =>
-      split at hv
-      · exact ⟨f, .inl rfl, fwdAccepts_cases hv⟩
-      · rw [Bool.and_eq_true] at hv
-        exact ⟨f', .inr hv.1, fwdAccepts_cases hv.2⟩
-    · simp only [pure, Except.pure, Except.ok.injEq] at h
-      subst h
-      exact .inl ⟨rfl, rfl⟩
+      exact .inr (checkedRun_cases h1)
+    | none =>
+      dsimp only at h
+      split at h
+      · simp only [pure, Except.pure, Except.ok.injEq] at h
+        subst h
+        exact .inl ⟨rfl, rfl⟩
+      cases h2 : checkedRun { t with loads := #[] } penv f with
+      | error e => simp [h2] at h
+      | ok r =>
+        simp only [h2] at h
+        cases r with
+        | some o =>
+          simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          have := checkedRun_cases h2
+          simp only [validate_noLoads] at this
+          exact .inr this
+        | none =>
+          simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          exact .inl ⟨rfl, rfl⟩
 
 /-- A table without nil-check eliminations (`Interp.Table.nilChecks`) has no nil-check events. -/
 theorem nilEvent?_none {t : Interp.Table} (h : t.nilChecks = #[]) (f : Func) (ev : RwEvent) :
@@ -125,23 +177,34 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
       (tabsAgree penv.tables out.tables f = true ∧
         ∃ log, RewriteCheck.validate out.tables t f out.func log = true) := by
   unfold checkedRewrite at h
-  cases hr : rewriteRun t true true penv f with
-  | error e => simp [hr, bind, Except.bind] at h
+  have hE : t.loads.isEmpty = true := by rw [h1]; rfl
+  cases h2 : checkedRun t penv f with
+  | error e => simp [h2, bind, Except.bind] at h
   | ok r =>
-    obtain ⟨o, n, log⟩ := r
-    simp only [hr, bind, Except.bind] at h
-    split at h
-    · next hv =>
-      simp only [pure, Except.pure, Except.ok.injEq] at h
-      subst h
-      rw [RewriteCheck.accepts, Bool.and_eq_true, nilPre_none h0] at hv
-      simp only [beq_self_eq_true, ite_true] at hv
-      rw [RewriteCheck.fwdAccepts, fwdPre_none h1] at hv
-      simp only [beq_self_eq_true, ite_true] at hv
-      exact .inr ⟨hv.1, log, hv.2⟩
-    · simp only [pure, Except.pure, Except.ok.injEq] at h
+    simp only [h2, bind, Except.bind] at h
+    cases r with
+    | none =>
+      simp only [hE, ite_true, pure, Except.pure, Except.ok.injEq] at h
       subst h
       exact .inl ⟨rfl, rfl⟩
+    | some o =>
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      unfold checkedRun at h2
+      cases hr : rewriteRun t true true penv f with
+      | error e => simp [hr, bind, Except.bind] at h2
+      | ok r =>
+        obtain ⟨o', n, log⟩ := r
+        simp only [hr, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h2
+        split at h2
+        · next hv =>
+          cases h2
+          rw [RewriteCheck.accepts, Bool.and_eq_true, nilPre_none h0] at hv
+          simp only [beq_self_eq_true, ite_true] at hv
+          rw [RewriteCheck.fwdAccepts, fwdPre_none h1] at hv
+          simp only [beq_self_eq_true, ite_true] at hv
+          exact .inr ⟨hv.1, log, hv.2⟩
+        · cases h2
 
 
 theorem validate_parts {tabs : Tables} {t : Interp.Table} {f g : Func} {log : Array RwEvent}

@@ -250,7 +250,7 @@ theorem src_eval_mem {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
   obtain ⟨hxb, v', hv', -⟩ := (B.mS x).1 (hPof x hx)
   rw [hv] at hv'; cases hv'
   have hid : v.id = x := (placed_in H.wf B.bmS B.hfb hxb hv).2.2
-  obtain ⟨r, hr, rfl⟩ := evalValue_memOp hm hevy
+  obtain ⟨r, hr, rfl⟩ := evalValue_memOp rfl hm hevy
   refine ⟨src_args H B htree hPQ x hx v hv, r, hr, ?_⟩
   rw [rv_of hy, hid, tys_shape]
 

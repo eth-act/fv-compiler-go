@@ -29,6 +29,7 @@ structure Count where
   vProven : Nat := 0
   checkedSame : Nat := 0
   rejected : Nat := 0
+  fallback : Nat := 0
 
 def numValues (f : Func) : Nat :=
   f.blocks.foldl (fun n b => n + ((f.block? b).map (·.values.size)).getD 0) 0
@@ -107,7 +108,11 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
         if h : i < x.args.size then
           if copyReach tabs M M.size x.args[i] src then
             M := M.put v { x with args := x.args.set i src }
-          else return s!"copyArg v{v} {i}: v{x.args[i]} does not reach v{src}"
+          else
+            let d := fun (a : ID) => match M.get? a with
+              | some u => s!"v{a}:{u.op.name}<{repr (tabs.ty u.type)}>({u.args.toList})"
+              | none => s!"v{a}?"
+            return s!"copyArg v{v}:{x.op.name} {i}: {d x.args[i]} does not reach {d src}"
         else return s!"copyArg v{v} {i}: no argument"
     | .control b i c =>
       match bstate f B b with
@@ -154,6 +159,68 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
     return "final"
   return "?"
 
+/-- A value's term, `d` levels deep (diagnostics). -/
+def desc (tabs : Tables) (f : Func) : Nat → ID → String
+  | 0, a => s!"v{a}"
+  | d + 1, a =>
+    match f.value? a with
+    | some u =>
+      let args := u.args.toList.map (desc tabs f d)
+      s!"v{a}:{u.op.name}<{repr (tabs.ty u.type)}>[{u.auxInt}]\{{(u.aux.map (fun x => s!"{x}")).getD ""}}({", ".intercalate args})"
+    | none => s!"v{a}?"
+
+open GoFV.Rules RewriteCheck in
+/-- Which part of `fwdOK` fails for the `Load` `u` forwarded to `x`, at the first `Store` of its
+chain that stores `x` (diagnostics). -/
+def fwdOKWhy (tabs : Tables) (f : Func) (u : Value) (x : ID) : String := Id.run do
+  if u.op != .Load then return s!"not a Load ({u.op.name})"
+  if u.args.size != 2 then return "Load arity"
+  let t := tabs.ty u.type
+  let p := u.args[0]!
+  let mut m := u.args[1]!
+  for d in [0:8] do
+    let some s := f.value? m | return s!"mem v{m} missing"
+    if s.op == .Copy && s.args.size == 1 then
+      m := s.args[0]!
+      continue
+    if !(s.op == .Store || s.op == .StoreWB) then return s!"depth {d}: mem is {s.op.name}"
+    if s.args.size != 3 then return "Store arity"
+    if s.args[1]! == x then
+      let some xv := f.value? x | return s!"x v{x} missing"
+      if !samePtrB tabs f p s.args[0]! then
+        return s!"depth {d}: ptr {desc tabs f 3 p} vs {desc tabs f 3 s.args[0]!}"
+      if !fwdStoreTy t (Sem.auxTy tabs s.aux) then
+        return s!"depth {d}: store type {repr t} vs {repr (Sem.auxTy tabs s.aux)}"
+      if !fwdTyEq t (tabs.ty xv.type) then
+        return s!"depth {d}: x type {repr t} vs {repr (tabs.ty xv.type)}"
+      return "?"
+    if !disjointB tabs f p t.size s.args[0]! (Sem.auxTy tabs s.aux).size then
+      return s!"depth {d}: not disjoint {desc tabs f 3 p} vs {desc tabs f 3 s.args[0]!}; stored {desc tabs f 2 s.args[1]!} != {desc tabs f 2 x}"
+    m := s.args[2]!
+  return "chain too long"
+
+open GoFV.Rules RewriteCheck in
+/-- Which part of `fwdAccepts` fails, with the forwardings of the log (`fwdPre`) (diagnostics). -/
+def fwdWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
+    String := Id.run do
+  let (f', log') := fwdPre t f log
+  if log'.size == log.size then return why tabs t f g log
+  let pre := s!"fwd({log.size - log'.size})"
+  if !atomsOK f f' then return s!"{pre}: atoms"
+  if !closedOK f' then return s!"{pre}: closed"
+  if !fwdRankOK f (fwdRank f) then return s!"{pre}: rank"
+  for z in List.range f.valueTab.size do
+    if !fwdRepOK tabs f f' z then
+      match f.value? z, f'.value? z with
+      | some u, some w =>
+        if w.op == .Copy && w.args.size == 1 then
+          return s!"{pre}: v{z} {fwdOKWhy tabs f u (w.args[0]?.getD 0)}"
+        else return s!"{pre}: v{z} rep {u.op.name}->{w.op.name}"
+      | _, _ => return s!"{pre}: v{z} rep"
+  if !fwdRel tabs f f' then return s!"{pre}: rel"
+  if !checkOK { tabs := tabs, typs := env.typs } f' then return s!"{pre}: check"
+  return s!"{pre}: {why tabs t f' g log'}"
+
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite
 section, and those whose every rewrite section the checked variant reproduces. -/
 def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × Nat) :
@@ -197,17 +264,34 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
     match GoFV.Rules.rewriteRun proven true true env input with
     | .ok (out, _, log) =>
       let ok := RewriteCheck.accepts env proven input out log
+      let co : PassOut := match checkedRewrite proven env input with
+        | .ok co => co
+        | .error _ => { func := input, tables := prev }
       if !ok && !(out.func == input) then
-        c := { c with rejected := c.rejected + 1 }
+        -- the run without forwardings (`checkedRewrite`'s fallback): rejected, or accepted
+        let t' := { proven with loads := #[] }
+        let fb : Option String := match GoFV.Rules.rewriteRun t' true true env input with
+          | .ok (o2, _, log2) =>
+            if RewriteCheck.accepts env t' input o2 log2 || o2.func == input then none else
+            let (f2, l2) := RewriteCheck.nilPre t' input log2
+            some (if !tabsAgree prev o2.tables input then "tables"
+              else if l2.size == log2.size then why o2.tables t' input o2.func log2
+              else if !RewriteCheck.nilOK env o2.tables input f2 then "nil"
+              else why o2.tables t' f2 o2.func l2)
+          | .error e => some s!"error {e}"
+        let fb := if proven.loads.isEmpty then some "" else fb
+        if fb.isSome then c := { c with rejected := c.rejected + 1 }
+        else c := { c with fallback := c.fallback + 1 }
         let (f', log') := RewriteCheck.nilPre proven input log
         let reason := if !tabsAgree prev out.tables input then
             "tables: the input tells the result's tables from its own (tabsAgree)"
-          else if log'.size == log.size then why out.tables proven input out.func log
+          else if log'.size == log.size then fwdWhy env out.tables proven input out.func log
           else if !NilCheck.nrel out.tables input f' then "nil: nilcheckelim's checker (nrel)"
           else if !RewriteCheck.nilOK env out.tables input f' then "nil: check"
-          else why out.tables proven f' out.func log'
-        IO.println s!"REJECT {name} {path}: {reason}"
-      let co : PassOut := if ok then out else { func := input, tables := prev }
+          else fwdWhy env out.tables proven f' out.func log'
+        IO.println s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"
+        if let some r2 := fb then
+          if !r2.isEmpty then IO.println s!"  without forwardings: {r2}"
       if (compare prev co tables s).isNone then
         c := { c with checkedSame := c.checkedSame + 1 }
       else allChecked := false
@@ -234,11 +318,11 @@ def main (args : List String) : IO UInt32 := do
     acc ← checkFile path acc
   let (st, fns, fnsChecked) := acc
   IO.println s!"Functions with a rewrite section: {fns}; every rewrite section at the stock result under the checked proven-only passes: {fnsChecked} ({pct fnsChecked fns})"
-  IO.println "| Pass | Runs | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Values stock | Values proven-only | Validator rejects | Checked parity | Errors |"
-  IO.println "| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |"
+  IO.println "| Pass | Runs | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Values stock | Values proven-only | Validator rejects | Forwarding fallbacks | Checked parity | Errors |"
+  IO.println "| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |"
   for (name, _, _) in variants do
     let c := st.getD name {}
-    IO.println s!"| {name} | {c.runs} | {pct c.fullSame c.runs} | {pct c.provenSame c.runs} | {pct c.provenNoop c.runs} | {c.firedFull} | {c.firedProven} | {pct c.firedProven c.firedFull} | {c.vStock} | {c.vProven} | {c.rejected} | {pct c.checkedSame c.runs} | {c.errors} |"
+    IO.println s!"| {name} | {c.runs} | {pct c.fullSame c.runs} | {pct c.provenSame c.runs} | {pct c.provenNoop c.runs} | {c.firedFull} | {c.firedProven} | {pct c.firedProven c.firedFull} | {c.vStock} | {c.vProven} | {c.rejected} | {c.fallback} | {pct c.checkedSame c.runs} | {c.errors} |"
   return 0
 
 end GoFVTest.OptProvenProbe

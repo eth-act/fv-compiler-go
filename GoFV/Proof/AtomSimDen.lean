@@ -252,20 +252,23 @@ theorem evalValue_term {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val
 /-! ## Memory roots as writes of their arguments (issue #151)
 
 A memory root (`memOp`: `Store`, `Move`, `Zero` and their write-barrier forms) evaluates to the
-write of its arguments' values (`memDef`, as `Sem.memRoot`). `MemDefs`: the roots of a set of
-values hold this write of their arguments' registers, which are in the set (the source's frame
-keeps this along a block entry: a root's arguments are evaluated before it and no later
-evaluation of the entry changes them). `MemAtoms`: a valuation whose memory roots, where not
-`poison`, are this write of their arguments' terms; `memAtoms_of` derives it for the valuations
-`termRef_apply` builds, so `TermRefP` may assume it (Load-of-Store forwarding reads a `Store`'s
-value back through its stored value's term). -/
+write of its arguments' values (`memDef`, as `Sem.memRoot`), a `LocalAddr` to its symbol's
+frame variable in the activation the atom simulation runs (`Ctx.make`: activation 0;
+`Sem.frameVal`). `MemDefs`: the roots of a set of values hold this value of their arguments'
+registers, which are in the set (the source's frame keeps this along a block entry: a root's
+arguments are evaluated before it and no later evaluation of the entry changes them).
+`MemAtoms`: a valuation whose memory roots, where not `poison`, are this value of their
+arguments' terms; `memAtoms_of` derives it for the valuations `termRef_apply` builds, so
+`TermRefP` may assume it (Load-of-Store forwarding reads a `Store`'s value back through its
+stored value's term, at a pointer `LocalAddr`s of one symbol give). -/
 
-/-- The memory roots whose value is a function of their arguments and the tables. -/
+/-- The atoms whose value is a function of their arguments and the tables: memory roots and
+`LocalAddr`. -/
 def memOp (op : Op) : Bool :=
-  op matches .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB
+  op matches .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .LocalAddr
 
 /-- The value of memory root `v` on argument values `argv`, if it does not get stuck
-(`Sem.memRoot`). -/
+(`Sem.memRoot`); of a `LocalAddr`, its frame variable in activation 0 (`Sem.frameVal`). -/
 def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
   match v.op, argv with
   | .Store, [.ptr p, x, .mem m] | .StoreWB, [.ptr p, x, .mem m] =>
@@ -274,6 +277,7 @@ def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
     (m.read s v.auxInt.toInt.toNat).bind fun bs => (m.write d bs).map .mem
   | .Zero, [.ptr p, .mem m] | .ZeroWB, [.ptr p, .mem m] =>
     (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0))).map .mem
+  | .LocalAddr, _ => some ((v.aux.map fun n => Val.ptr ⟨frameBlk tabs 0 n, 0⟩).getD .poison)
   | _, _ => none
 
 theorem memOp_not_term {op : Op} (h : memOp op = true) : termOp op = false := by
@@ -281,7 +285,8 @@ theorem memOp_not_term {op : Op} (h : memOp op = true) : termOp op = false := by
   split at h <;> first | rfl | cases h
 
 theorem memRoot_memDef {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
-    (hm : memOp v.op = true) (h : memRoot ctx v argv = .ok y) : memDef ctx.tabs v argv = some y := by
+    (hm : memOp v.op = true) (h : memRoot ctx v argv = .ok y) :
+    memDef ctx.tabs v argv = some y := by
   unfold memRoot at h
   split at h
   rotate_left 12
@@ -298,17 +303,36 @@ theorem memRoot_memDef {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
   all_goals simp_all
 
 theorem evalOp_memOp {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
-    (hm : memOp v.op = true) : evalOp env ctx fr v argv ty = memRoot ctx v argv := by
+    (hm : memOp v.op = true) (hl : v.op ≠ .LocalAddr) : evalOp env ctx fr v argv ty = memRoot ctx v argv := by
   unfold memOp at hm
   unfold evalOp
   split <;> simp_all
 
-/-- A memory root evaluates to the write of its arguments' registers. -/
+/-- A `LocalAddr` evaluates to its frame variable (`poison` without a symbol). -/
+theorem evalOp_localAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (hl : v.op = .LocalAddr) :
+    evalOp env ctx fr v argv ty =
+      .ok ((v.aux.map fun n => Val.ptr ⟨frameBlk ctx.tabs ctx.act n, 0⟩).getD .poison) := by
+  unfold evalOp
+  split <;> first | (rename_i h; rw [h] at hl; cases hl; done) | skip
+  unfold frameVal
+  rw [hl]
+  cases v.aux <;> rfl
+
+/-- A memory root evaluates to the write of its arguments' registers, a `LocalAddr` (in
+activation 0) to its frame variable. -/
 theorem evalValue_memOp {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
-    (hm : memOp v.op = true) (h : evalValue env ctx fr v = .ok y) :
+    (hact : ctx.act = 0) (hm : memOp v.op = true) (h : evalValue env ctx fr v = .ok y) :
     ∃ r, memDef ctx.tabs v (v.args.toList.map (rv fr)) = some r ∧
       y = r.retype (ctx.tys[v.id]?.getD .other) := by
-  rw [evalValue_of_regs (regs_of_ok h), evalOp_memOp hm] at h
+  rw [evalValue_of_regs (regs_of_ok h)] at h
+  by_cases hl : v.op = .LocalAddr
+  · rw [evalOp_localAddr hl, hact] at h
+    cases h
+    refine ⟨_, ?_, rfl⟩
+    unfold memDef
+    rw [hl]
+  rw [evalOp_memOp hm hl] at h
   cases hr : memRoot ctx v (v.args.toList.map (rv fr)) with
   | ok r =>
     rw [hr] at h
