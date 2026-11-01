@@ -202,11 +202,56 @@ def fwdOKWhy (tabs : Tables) (f : Func) (u : Value) (x : ID) : String := Id.run 
   return "chain too long"
 
 open GoFV.Rules RewriteCheck in
+/-- Which part of `ssSplit?` fails for the split `Store` `x` (diagnostics). -/
+def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
+  match f.value? x, g.value? x with
+  | some fv, some gv =>
+    match fv.args.toList, Sem.auxTy tabs fv.aux with
+    | [dst, sm, mem], .agg fs n =>
+      match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
+      | some smv =>
+        if smv.op != .StructMake then s!"stored {smv.op.name}"
+        else if !Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) then "StructMake shape"
+        else if !layoutsOK n fs then "layout"
+        else if smv.args.size != fs.length then "arity"
+        else if !(fs.zip smv.args.toList).all (fun ((_, t), a) => (f.value? a).any (fun av => Sem.Ty.beq (tabs.ty av.type) t))
+          then "field shapes"
+        else if !(gv.op == .Copy && gv.args.size == 1 && gv.type == fv.type) then "copy"
+        else match ssChain tabs f g fv.block dst mem (fs.zip smv.args.toList).reverse gv.args[0]! with
+          | some _ => "ok"
+          | none => s!"chain ({fs.length} fields)"
+      | none => "no StructMake"
+    | _, t => "store shape"
+  | _, _ => "missing"
+
+open GoFV.Rules RewriteCheck in
+/-- Which part of `ssAccepts` fails, with the struct-store splits of the log (`ssPre`). -/
+def ssWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
+    String := Id.run do
+  let (f', log') := ssPre t f log
+  if log'.size == log.size then return why tabs t f g log
+  let pre := s!"ss({log.size - log'.size})"
+  for z in List.range f.valueTab.size do
+    match f.value? z, f'.value? z with
+    | some u, some w =>
+      if !ssSame u w && (ssSplit? tabs f f' z).isNone then
+        return s!"{pre}: v{z} {ssSplitWhy tabs f f' z}"
+    | some _, none => return s!"{pre}: v{z} missing"
+    | none, _ => pure ()
+  if !ssRel tabs f f' then return s!"{pre}: rel"
+  if let .error e := check { tabs := tabs, typs := env.typs } f' then return s!"{pre}: check {e}"
+  let evs := log.toList.filterMap fun
+    | .copyArg v i src => some s!"cp v{v}[{i}]<-v{src}"
+    | .rule v i _ ds => some s!"rule v{v}#{i} {ds.toList.map (·.id)}"
+    | _ => none
+  return s!"{pre}: {why tabs t f' g log'} DEBUG {evs}"
+
+open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdAccepts` fails, with the forwardings of the log (`fwdPre`) (diagnostics). -/
 def fwdWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
     String := Id.run do
   let (f', log') := fwdPre t f log
-  if log'.size == log.size then return why tabs t f g log
+  if log'.size == log.size then return ssWhy env tabs t f g log
   let pre := s!"fwd({log.size - log'.size})"
   if !atomsOK f f' then return s!"{pre}: atoms"
   if !closedOK f' then return s!"{pre}: closed"
@@ -221,7 +266,7 @@ def fwdWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log 
       | _, _ => return s!"{pre}: v{z} rep"
   if !fwdRel tabs f f' then return s!"{pre}: rel"
   if !checkOK { tabs := tabs, typs := env.typs } f' then return s!"{pre}: check"
-  return s!"{pre}: {why tabs t f' g log'}"
+  return s!"{pre}: {ssWhy env tabs t f' g log'}"
 
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite
 section, and those whose every rewrite section the checked variant reproduces. -/
@@ -270,9 +315,12 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         | .ok co => co
         | .error _ => { func := input, tables := prev }
       if !ok && !(out.func == input) then
-        -- the run without forwardings (`checkedRewrite`'s fallback): rejected, or accepted
+        -- `checkedRewrite`'s fallbacks (without forwardings, then without struct-store
+        -- splits): rejected, or accepted
         let t' := { proven with loads := #[] }
-        let fb : Option String := match GoFV.Rules.rewriteRun t' true true env input with
+        let t'' := { t' with structStores := #[] }
+        let fbOf (t' : GoFV.Rules.Interp.Table) : Option String :=
+          match GoFV.Rules.rewriteRun t' true true env input with
           | .ok (o2, _, log2) =>
             if RewriteCheck.accepts env t' input o2 log2 || o2.func == input then none else
             let (f2, l2) := RewriteCheck.nilPre t' input log2
@@ -281,7 +329,8 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
               else if !RewriteCheck.nilOK env o2.tables input f2 then "nil"
               else why o2.tables t' f2 o2.func l2)
           | .error e => some s!"error {e}"
-        let fb := if proven.loads.isEmpty then some "" else fb
+        let fb := if proven.loads.isEmpty then some "" else fbOf t'
+        let fb := if fb.isSome && !proven.structStores.isEmpty then fbOf t'' else fb
         if fb.isSome then c := { c with rejected := c.rejected + 1 }
         else c := { c with fallback := c.fallback + 1 }
         let (f', log') := RewriteCheck.nilPre proven input log

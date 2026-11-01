@@ -929,11 +929,13 @@ def nilCopy (f : Func) (v : ID) : Func :=
     else f
   | none => f
 
-/-- One event of `nilPre`: a nil-check elimination of `f` is applied, any other event kept. -/
+/-- One event of `nilPre`: a nil-check elimination of `f` is applied, any other event kept, but
+for the copy-argument replacements of the eliminated check logged before it (the check becomes
+`Copy` of its pointer in `f`, which reaches the replaced argument through copies). -/
 def nilStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
     Func × Array RwEvent :=
   match nilEvent? t f ev with
-  | some v => (nilCopy p.1 v, p.2)
+  | some v => (nilCopy p.1 v, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's nil-check eliminations applied, and the remaining events. -/
@@ -1201,6 +1203,182 @@ def fwdStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEv
 def fwdPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
   log.foldl (fwdStep t f) (f, #[])
 
+/-! ## Struct-store splits (issue #151)
+
+`(Store _ (StructMake ___) _) => rewriteStructStore(v)` (`generic.rules:975`) replaces the root
+`v = Store {T} dst (StructMake a₁ … aₙ) mem` by a chain of fresh field stores
+`sᵢ = Store {Tᵢ} (OffPtr [oᵢ] dst) aᵢ sᵢ₋₁` (`s₀ = mem`), and `v` becomes `Copy sₙ`. The
+roots change, so the validator takes these events out of the log, as the forwardings: `ssPre`
+applies them to the input (the logged fresh values put in, then `v.copyOf(sₙ)`), `ssRel`
+relates the input to that function, and `validate` the output to it with the other events. -/
+
+/-- A struct-store split rule: `(Store …) => rewriteStructStore(v)`; each instance is validated
+by `ssRel`. -/
+def structStoreShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .Store .., .copy (.call "rewriteStructStore" [.rsv .v] _), none => true
+  | _, _, _ => false
+
+/-- The `Store` `v` of `f` that event `ev` splits, the value it becomes a copy of and the fresh
+values (`Interp.structStoreDefs`), if it is a `structStores` rule event (`structStoreShapeOK`)
+with a `Copy` result. -/
+def ssEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID × List Value)
+  | .rule v i _ defs =>
+    match f.value? v with
+    | some u =>
+      if u.op == .Store then
+        let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
+        if n ≤ i then
+          match t.structStores[i - n]?, defs.toList with
+          | some cr, w :: ds =>
+            if structStoreShapeOK cr.rule && w.op == .Copy && w.args.size == 1 then
+              some (v, w.args[0]!, ds)
+            else none
+          | _, _ => none
+        else none
+      else none
+    | none => none
+  | _ => none
+
+/-- Put the logged fresh value `u` into `f`: at its ID (taken off the free list, as the pass
+allocated it), listed last in its block, its arguments gaining a use. -/
+def ssPut (f : Func) (u : Value) : Func :=
+  let f := { f with valueTab := Func.tabPut f.valueTab u.id { u with uses := 0 },
+                    freeValues := f.freeValues.erase u.id, vidLast := max f.vidLast u.id }
+  let f := f.modB u.block fun b => { b with values := b.values.push u.id }
+  u.args.foldl Func.incUses f
+
+/-- The split of the `Store` `v`: the fresh values `ds` put in, then `v.copyOf(x)`. -/
+def ssApply (f : Func) (v x : ID) (ds : List Value) : Func :=
+  match f.value? v with
+  | some u => if u.op == .Store then (ds.foldl ssPut f).copyOf v x else f
+  | none => f
+
+/-- One event of `ssPre`: a split of the function so far is applied, any other event kept, but
+for the copy-argument replacements of the split `Store` logged before it (copy elimination on
+its arguments, which the split validated in `f` through copies replaces). -/
+def ssStep (t : Interp.Table) (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
+  match ssEvent? t p.1 ev with
+  | some (v, x, ds) => (ssApply p.1 v x ds, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's struct-store splits applied, and the remaining events. -/
+def ssPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (ssStep t) (f, #[])
+
+/-- `gv` is `fv` but for its use count. -/
+def ssSame (fv gv : Value) : Bool :=
+  gv.id == fv.id && gv.op == fv.op && gv.aux == fv.aux && gv.auxInt == fv.auxInt &&
+    gv.type == fv.type && gv.block == fv.block && gv.args == fv.args
+
+/-- The value `a` of `f` stands for through at most `n` `Copy`s each compatible with its
+argument (`copyReach` reaches it). -/
+def copyEnd (tabs : Tables) (M : Defs) : Nat → ID → ID
+  | 0, a => a
+  | n + 1, a =>
+    match M.get? a with
+    | some x =>
+      if x.op == .Copy && x.args.size == 1 &&
+          (match M.get? x.args[0]! with
+            | some y => copyCompat (tabs.ty x.type) (tabs.ty y.type)
+            | none => false) then copyEnd tabs M n x.args[0]!
+      else a
+    | none => a
+
+/-- The chain of field stores ending in `m` (in block `b`) for the fields `fl` (last first, each
+with its `StructMake` argument), down to `mem`: per field a fresh (not in `f`) `Store` of the
+argument (up to copies in `f`), of the field's shape, at a fresh `OffPtr` (pointer shape) by the
+field's offset of `dst` (up to copies); `mem` reaches the chain's start through copies. The pairs
+`(OffPtr, Store)`, first field first. -/
+def ssChain (tabs : Tables) (f g : Func) (b dst mem : ID) :
+    List ((Nat × Sem.Ty) × ID) → ID → Option (List (ID × ID))
+  | [], m => if copyReach tabs f.valueTab f.valueTab.size mem m then some [] else none
+  | ((o, t), a) :: rest, m =>
+    match g.value? m with
+    | some s =>
+      if (f.value? m).isNone && s.id == m && s.op == .Store && s.block == b && s.args.size == 3 &&
+          copyReach tabs f.valueTab f.valueTab.size a s.args[1]! &&
+          Sem.Ty.beq (Sem.auxTy tabs s.aux) t then
+        let p := s.args[0]!
+        match g.value? p with
+        | some op =>
+          if (f.value? p).isNone && op.id == p && op.op == .OffPtr && op.block == b &&
+              op.args.size == 1 && copyReach tabs f.valueTab f.valueTab.size dst op.args[0]! &&
+              op.auxInt == Int64.ofNat o && isPtrTy (tabs.ty op.type) then
+            (ssChain tabs f g b dst mem rest s.args[2]!).map (· ++ [(p, m)])
+          else none
+        | none => none
+      else none
+    | none => none
+
+/-- Value `x` of `f` is a split `Store` in `g`: in `f` a `Store` at an aggregate shape `agg fs n`
+(every field inside it, `layoutsOK`) of a `StructMake` (up to copies, `copyEnd`) of that shape
+whose arguments have the fields' shapes; in `g` `Copy` of the last store of the chain
+(`ssChain`) down to the `Store`'s memory. The chain's pairs. -/
+def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
+  match f.value? x, g.value? x with
+  | some fv, some gv =>
+    match fv.args.toList, Sem.auxTy tabs fv.aux with
+    | [dst, sm, mem], .agg fs n =>
+      match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
+      | some smv =>
+        if fv.op == .Store && smv.op == .StructMake && Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) &&
+            layoutsOK n fs && smv.args.size == fs.length &&
+            (fs.zip smv.args.toList).all (fun ((_, t), a) =>
+              (f.value? a).any (fun av => Sem.Ty.beq (tabs.ty av.type) t)) &&
+            gv.op == .Copy && gv.args.size == 1 && gv.id == x && gv.type == fv.type &&
+            gv.block == fv.block && gv.aux == none && gv.auxInt == 0 then
+          ssChain tabs f g fv.block dst mem (fs.zip smv.args.toList).reverse gv.args[0]!
+        else none
+      | none => none
+    | _, _ => none
+  | _, _ => none
+
+/-- The roots `l` of `f` with each split `Store` (`S`) replaced by its chain's stores. -/
+def ssRoots (S : Array (Option (List (ID × ID)))) (l : List ID) : List ID :=
+  l.flatMap fun x => match S[x]?.join with
+    | some ps => ps.map (·.2)
+    | none => [x]
+
+/-- Block `bid` of `g` has `f`'s kind and controls, `f`'s values then fresh values (`N`) of
+`bid`, and its schedule runs `f`'s roots with the splits' chains in their place (`ssRoots`). -/
+def ssBlockOK (f g : Func) (N : Array Bool) (S : Array (Option (List (ID × ID)))) (bid : ID) :
+    Bool :=
+  match f.block? bid, g.block? bid with
+  | some fb, some gb =>
+    gb.kind == fb.kind && gb.controls == fb.controls && fb.values.size ≤ gb.values.size &&
+    gb.values.extract 0 fb.values.size == fb.values &&
+    (gb.values.extract fb.values.size gb.values.size).all
+      (fun x => N[x]? == some true && (g.value? x).any (·.block == bid)) &&
+    match Sem.schedule f fb with
+    | none => true
+    | some oS =>
+      match Sem.schedule g gb with
+      | some oT => oT.toList.filter (CSE.rootNode g) == ssRoots S (oS.toList.filter (CSE.rootNode f))
+      | none => false
+  | _, _ => false
+
+/-- **The split relation**: `g` is `f` with `Store`s split (`ssSplit?`): the same control-flow
+graph, own aux and blocks (`ssBlockOK`); every value of `f` kept but for its use count, or split;
+the chains' fresh values distinct, listed in their split's block, and the only values `f` lacks. -/
+def ssRel (tabs : Tables) (f g : Func) : Bool :=
+  let S : Array (Option (List (ID × ID))) := (Array.range f.valueTab.size).map (ssSplit? tabs f g)
+  let news := S.toList.flatMap fun s => (s.getD []).flatMap fun (p, m) => [p, m]
+  let N := news.foldl (fun N x => N.set! x true) (Array.replicate g.valueTab.size false)
+  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+    f.valueTab.size ≤ g.valueTab.size && news.Nodup &&
+    (List.range f.valueTab.size).all (fun x => match f.value? x, g.value? x with
+      | none, _ => true
+      | some fv, some gv => ssSame fv gv || (S[x]?.join).isSome
+      | some _, none => false) &&
+    (List.range g.valueTab.size).all (fun x =>
+      (f.value? x).isSome || (g.value? x).isNone || N[x]? == some true) &&
+    (List.range f.valueTab.size).all (fun x => match S[x]?.join, f.value? x with
+      | some ps, some fv => (g.block? fv.block).any fun gb =>
+          ps.all fun (p, m) => gb.values.contains p && gb.values.contains m
+      | _, _ => true) &&
+    f.blocks.all (ssBlockOK f g N S)
+
 end GoFV.Opt.RewriteCheck
 
 namespace GoFV.Opt
@@ -1211,16 +1389,27 @@ the other roots keep their order), and `f'` passes `check`. -/
 def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f f' : GoFV.SSA.Func) : Bool :=
   NilCheck.nrel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
 
-/-- `RewriteCheck.validate` accepts `out` against `f` and the log, or, when the log forwards
+/-- `RewriteCheck.validate` accepts `out` against `f` and the log, or, when the log splits
+struct stores (`ssPre`, issue #151), `f` with these splits applied is related to `f` by
+`ssRel`, passes `check`, and `validate` accepts `out` against it and the remaining events. -/
+def RewriteCheck.ssAccepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
+    (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
+  match RewriteCheck.ssPre t f log with
+  | (f', log') =>
+    if log'.size == log.size then RewriteCheck.validate out.tables t f out.func log
+    else RewriteCheck.ssRel out.tables f f' && checkOK { tabs := out.tables, typs := env.typs } f' &&
+      RewriteCheck.validate out.tables t f' out.func log'
+
+/-- `RewriteCheck.ssAccepts` accepts `out` against `f` and the log, or, when the log forwards
 Loads of Stores (`fwdPre`, issue #151), `f` with these forwardings applied is related to `f` by
-`fwdRel`, passes `check`, and `validate` accepts `out` against it and the remaining events. -/
+`fwdRel`, passes `check`, and `ssAccepts` accepts `out` against it and the remaining events. -/
 def RewriteCheck.fwdAccepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
   match RewriteCheck.fwdPre t f log with
   | (f', log') =>
-    if log'.size == log.size then RewriteCheck.validate out.tables t f out.func log
+    if log'.size == log.size then RewriteCheck.ssAccepts env t f out log
     else RewriteCheck.fwdRel out.tables f f' && checkOK { tabs := out.tables, typs := env.typs } f' &&
-      RewriteCheck.validate out.tables t f' out.func log'
+      RewriteCheck.ssAccepts env t f' out log'
 
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
 log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create
@@ -1243,16 +1432,21 @@ def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func)
   return if RewriteCheck.accepts env t f out log then some out else none
 
 /-- The validated rewrite pass: `applyRewrite` with the table `t` and its log, the result with
-the pass's extended tables if `RewriteCheck.accepts` it; else (a Load-of-Store forwarding the
-validator cannot relate, issue #151) the same without the table's forwardings (`loads`), if
+the pass's extended tables if `RewriteCheck.accepts` it; else (a Load-of-Store forwarding or a
+struct-store split the validator cannot relate, issue #151) the same without the table's
+forwardings (`loads`), then also without its struct-store splits (`structStores`), if
 accepted; else the input. -/
 def checkedRewrite (t : GoFV.Rules.Interp.Table) : Pass := fun env f => do
   match ← checkedRun t env f with
   | some out => return out
   | none =>
-    if t.loads.isEmpty then return { func := f, tables := env.tables } else
-    match ← checkedRun { t with loads := #[] } env f with
+    let t₁ := { t with loads := #[] }
+    match ← (if t.loads.isEmpty then pure none else checkedRun t₁ env f) with
     | some out => return out
-    | none => return { func := f, tables := env.tables }
+    | none =>
+      if t.structStores.isEmpty then return { func := f, tables := env.tables } else
+      match ← checkedRun { t₁ with structStores := #[] } env f with
+      | some out => return out
+      | none => return { func := f, tables := env.tables }
 
 end GoFV.Opt

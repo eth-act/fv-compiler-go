@@ -253,8 +253,9 @@ block rules per block kind, each list in matching order. `nilChecks`: rules on `
 values tried after `values`' `NilCheck` row, which the checked rewrite validates per instance
 as nil-check eliminations; `loads`: Load-of-Store forwarding rules on `Load` values tried after
 `values`' `Load` row, validated per instance as forwardings; `structLoads`: struct-load
-expansions (`rewriteStructLoad`) tried on `Load` values after `loads`, validated per instance
-(issue #151; the proven-only sets only). -/
+expansions (`rewriteStructLoad`) tried on `Load` values after `loads`, validated per instance;
+`structStores`: struct-store splits (`rewriteStructStore`) tried on `Store` values after
+`values`' `Store` row, validated per instance (issue #151; the proven-only sets only). -/
 structure RuleSet where
   name : String
   values : List (Op × List Rule)
@@ -262,6 +263,7 @@ structure RuleSet where
   nilChecks : List Rule := []
   loads : List Rule := []
   structLoads : List Rule := []
+  structStores : List Rule := []
 
 namespace RuleSet
 
