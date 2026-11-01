@@ -57,4 +57,5 @@ def tabsAgree (tabs tabs' : Tables) (f : Func) : Bool :=
   outargsSize tabs' == outargsSize tabs &&
   f.valueTab.toList.all fun o => Ty.beq (valueTy sh' o) (valueTy sh o) && valueAuxAgree tabs tabs' o
 
+
 end GoFV.Opt

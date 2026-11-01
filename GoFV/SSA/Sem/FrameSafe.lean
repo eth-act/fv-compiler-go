@@ -58,6 +58,30 @@ def Contract.FrameSafe (c : Contract) : Prop :=
 /-- Every contract of the environment is frame-safe. -/
 def Env.FrameSafe (env : Env) : Prop := ∀ name c, env.extern name = some c → c.FrameSafe
 
+/-- `m` without the allocations of the blocks `X`. -/
+def Mem.erase (X : Blk → Bool) (m : Mem) : Mem :=
+  { m with blocks := m.blocks.filter fun e => !X e.1 }
+
+/-- A contract cannot tell whether `temp` blocks it is given no pointer to exist: given
+arguments, closure context and memory that hold no pointer into a set `X` of `temp` blocks, it
+behaves the same on memories that are equal once the blocks of `X` are removed (`Mem.erase`),
+and returns no pointer into them. `Contract.FrameSafe` relates memories with the same
+allocations only; this is what running a function in tables that add frame temporaries needs
+(`GoFV.Proof.run_tabsAgreeMod`, #17). -/
+def Contract.TempOblivious (c : Contract) : Prop :=
+  ∀ (X : Blk → Bool), (∀ b, X b = true → ∃ a n, b = .temp a n) →
+  ∀ args clo m m', (∀ v ∈ args, v.Avoids (X · = true)) → (∀ v ∈ clo, v.Avoids (X · = true)) →
+    m.Avoids (X · = true) → m.erase X = m'.erase X →
+    match c args clo m, c args clo m' with
+    | .stuck _, _ => True
+    | .returned rs r, .returned rs' r' =>
+      rs' = rs ∧ (∀ v ∈ rs, v.Avoids (X · = true)) ∧ r.Avoids (X · = true) ∧ r.erase X = r'.erase X
+    | .panicked e r, .panicked e' r' => e' = e ∧ r.Avoids (X · = true) ∧ r.erase X = r'.erase X
+    | _, _ => False
+
+/-- Every contract of the environment cannot tell whether unreachable `temp` blocks exist. -/
+def Env.TempOblivious (env : Env) : Prop := ∀ name c, env.extern name = some c → c.TempOblivious
+
 /-- The inputs of a run hold no pointer into a `temp` block and the memory has none yet: the
 arguments, the memory's other allocations and the global image avoid every `temp` block (a
 pointer into the run's frame temporaries cannot exist before the frame does). -/

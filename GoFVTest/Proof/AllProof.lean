@@ -370,6 +370,12 @@ import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
 import GoFV.Proof.TabsAgree
+import GoFV.Proof.TabsAgreeMod
+import GoFV.Proof.TabsAgreeModMem
+import GoFV.Proof.TabsAgreeModOps
+import GoFV.Proof.TabsAgreeModSim
+import GoFV.Proof.TabsAgreeModSrc
+import GoFV.Proof.TabsAgreeModStep
 import GoFV.Proof.Term
 import GoFV.Proof.TermStep
 import GoFV.Proof.ValRefine
@@ -409,6 +415,7 @@ import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
+import GoFV.Proof.Witness.TabsAgreeMod
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.WFCheck
