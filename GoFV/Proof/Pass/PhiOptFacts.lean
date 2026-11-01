@@ -38,15 +38,23 @@ theorem avail_spec {f : Func} {b x : ID} (h : avail f b x = true) :
     obtain ⟨blk, hb, hx⟩ := listedIn_iff.1 hl
     exact ⟨v, blk, rfl, hm, hb, hx, ha, hne, hnl⟩
 
-theorem constB_spec {f : Func} {a : ID} {d : Bool} (h : constB f a d = true) :
-    ∃ u, f.value? a = some u ∧ u.op = .ConstBool ∧ (u.auxInt != 0) = d := by
+theorem isBoolTy_spec {tabs : Tables} {t : TypeRef} (h : isBoolTy tabs t = true) :
+    tabs.ty t = .bool := by
+  unfold isBoolTy at h
+  split at h
+  · assumption
+  · cases h
+
+theorem constB_spec {tabs : Tables} {f : Func} {a : ID} {d : Bool} (h : constB tabs f a d = true) :
+    ∃ u, f.value? a = some u ∧ u.op = .ConstBool ∧ (u.auxInt != 0) = d ∧
+      tabs.ty u.type = .bool := by
   unfold constB at h
   cases hu : f.value? a with
   | none => rw [hu] at h; cases h
   | some u =>
     rw [hu] at h
     simp only [Bool.and_eq_true, beq_iff_eq] at h
-    exact ⟨u, rfl, h.1, h.2⟩
+    exact ⟨u, rfl, h.1.1, h.1.2, isBoolTy_spec h.2⟩
 
 theorem constI_spec {tabs : Tables} {f : Func} {a : ID} {w : Sem.Width} {k : Int64}
     (h : constI tabs f a w k = true) :
@@ -69,13 +77,6 @@ theorem isNew_spec {f g : Func} {b x : ID} (h : isNew f g b x = true) :
   unfold isNew at h
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none] at h
   exact ⟨h.1, listedIn_iff.1 h.2⟩
-
-theorem isBoolTy_spec {tabs : Tables} {t : TypeRef} (h : isBoolTy tabs t = true) :
-    tabs.ty t = .bool := by
-  unfold isBoolTy at h
-  split at h
-  · assumption
-  · cases h
 
 /-- What a new value is. -/
 theorem newOK_spec {f g : Func} {b x : ID} (h : newOK f g b x = true) :
@@ -141,13 +142,13 @@ theorem facts_spec {f : Func} {b c : ID} {d0 d1 : Bool} (h : facts f b c = some 
 abbrev fuelOf (f : Func) : Nat := f.blocks.size + 1
 
 /-- A boolean form yields arm `a` when its control `c` holds `d` (`armOK`). -/
-def BoolArm (f : Func) (b c : ID) (gv : Value) (a : ID) (d : Bool) : Prop :=
-  (gv.op = .Copy ∧ gv.args = #[c] ∧ armB f c a d d = true) ∨
-  (gv.op = .Not ∧ gv.args = #[c] ∧ armB f c a d (!d) = true) ∨
+def BoolArm (tabs : Tables) (f : Func) (b c : ID) (gv : Value) (a : ID) (d : Bool) : Prop :=
+  (gv.op = .Copy ∧ gv.args = #[c] ∧ armB tabs f c a d d = true) ∨
+  (gv.op = .Not ∧ gv.args = #[c] ∧ armB tabs f c a d (!d) = true) ∨
   (∃ n, gv.op = .OrB ∧ gv.args = #[c, n] ∧ avail f b n = true ∧
-    (if d then armB f c a d true = true else a = n)) ∨
+    (if d then armB tabs f c a d true = true else a = n)) ∨
   (∃ n, gv.op = .AndB ∧ gv.args = #[c, n] ∧ avail f b n = true ∧
-    (if d then a = n else armB f c a d false = true))
+    (if d then a = n else armB tabs f c a d false = true))
 
 theorem args_one {v : Value} (h : v.args.size = 1) : v.args = #[v.args[0]!] := by
   apply Array.ext
@@ -166,8 +167,8 @@ theorem args_two {v : Value} (h : v.args.size = 2) : v.args = #[v.args[0]!, v.ar
     · simp [getElem!_pos v.args 0 h1]
     · simp [getElem!_pos v.args 1 h1]
 
-theorem armOK_spec {f : Func} {b c a : ID} {gv : Value} {d : Bool} (hc : gv.args[0]? = some c)
-    (h : armOK f b c gv a d = true) : BoolArm f b c gv a d := by
+theorem armOK_spec {tabs : Tables} {f : Func} {b c a : ID} {gv : Value} {d : Bool} (hc : gv.args[0]? = some c)
+    (h : armOK tabs f b c gv a d = true) : BoolArm tabs f b c gv a d := by
   unfold armOK at h
   simp only [beq_iff_eq] at h
   have hc0 : ∀ hs : 0 < gv.args.size, gv.args[0]! = c := fun hs => by
@@ -210,13 +211,13 @@ def IntShape (tabs : Tables) (f g : Func) (b : ID) (fv gv : Value) (w : Sem.Widt
     cvv.op = .CvtBoolToUint8 ∧ tabs.ty cvv.type = .int .w8 ∧ cvv.args = #[x] ∧
     ((x = c ∧ neg = false) ∨
       (isNew f g b x = true ∧ ∃ nv, g.value? x = some nv ∧ nv.op = .Not ∧ nv.args = #[c] ∧
-        neg = true))
+        tabs.ty nv.type = .bool ∧ neg = true))
 
 /-- The form of a rewritten `Phi` and what it yields on each edge. -/
 def Form (tabs : Tables) (f g : Func) (b : ID) (fv gv : Value) : Prop :=
   (tabs.ty fv.type = .bool ∧ ∃ c, gv.args[0]? = some c ∧ avail f b c = true ∧
     ∀ i a, fv.args[i]? = some a → ∃ d, edgeFact f c (fuelOf f) b i = some d ∧
-      BoolArm f b c gv a d) ∨
+      BoolArm tabs f b c gv a d) ∨
   (∃ w c neg, IntShape tabs f g b fv gv w c neg ∧
     ∀ i a, fv.args[i]? = some a → ∃ d, edgeFact f c (fuelOf f) b i = some d ∧
       constI tabs f a w (if d != neg then 1 else 0) = true)
@@ -307,10 +308,11 @@ theorem rewriteOK_spec {tabs : Tables} {f g : Func} {fv gv : Value}
           split at hi
           · rename_i nv hnv
             simp only [Bool.and_eq_true, beq_iff_eq] at hi
-            obtain ⟨⟨hnop, hns⟩, hi⟩ := hi
+            obtain ⟨⟨⟨hnop, hns⟩, hnty⟩, hi⟩ := hi
             obtain ⟨hav, hall⟩ := intArms_spec hs hi
             exact ⟨w, _, true, ⟨intW_spec hw, hop, hav, cv, cvv, _, hcv', hnew, hcvv, hcop,
-              intW_spec hcty, hx, .inr ⟨hxn, nv, hnv, hnop, args_one hns, rfl⟩⟩, hall⟩
+              intW_spec hcty, hx, .inr ⟨hxn, nv, hnv, hnop, args_one hns, isBoolTy_spec hnty, rfl⟩⟩,
+              hall⟩
           · cases hi
         · obtain ⟨hav, hall⟩ := intArms_spec hs hi
           exact ⟨w, _, false, ⟨intW_spec hw, hop, hav, cv, cvv, _, hcv', hnew, hcvv, hcop,

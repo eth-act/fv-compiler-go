@@ -64,36 +64,48 @@ theorem RetypeEq.trans {t1 t2 t3 : Ty} (h1 : RetypeEq t1 t2) (h2 : RetypeEq t2 t
 theorem RetypeEq.of_eq {t1 t2 : Ty} (h : t1 = t2) : RetypeEq t1 t2 := h ▸ RetypeEq.refl t1
 
 mutual
-/-- Shape equality. -/
-def tyEqB : Ty → Ty → Bool
+/-- Shapes that `Val.retype` does not tell apart: equal up to pointers' element sizes and
+composites' sizes. -/
+def retypeEqB : Ty → Ty → Bool
   | .int w, .int w' => w == w'
-  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty => true
-  | .tuple ts, .tuple ts' => tysEqB ts ts'
-  | .ptr e, .ptr e' => e == e'
-  | .agg fs n, .agg fs' n' => fieldsEqB fs fs' && n == n'
+  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty | .ptr _, .ptr _ => true
+  | .tuple ts, .tuple ts' => retypeEqListB ts ts'
+  | .agg fs _, .agg fs' _ => retypeEqFieldsB fs fs'
   | .blob n, .blob n' => n == n'
-  | .opaque n, .opaque n' => n == n'
+  | .opaque _, .opaque _ => true
   | _, _ => false
-def tysEqB : List Ty → List Ty → Bool
+def retypeEqListB : List Ty → List Ty → Bool
   | [], [] => true
-  | t :: ts, t' :: ts' => tyEqB t t' && tysEqB ts ts'
+  | t :: ts, t' :: ts' => retypeEqB t t' && retypeEqListB ts ts'
   | _, _ => false
-def fieldsEqB : List (Nat × Ty) → List (Nat × Ty) → Bool
+def retypeEqFieldsB : List (Nat × Ty) → List (Nat × Ty) → Bool
   | [], [] => true
-  | (o, t) :: fs, (o', t') :: fs' => o == o' && tyEqB t t' && fieldsEqB fs fs'
+  | (_, t) :: fs, (_, t') :: fs' => retypeEqB t t' && retypeEqFieldsB fs fs'
   | _, _ => false
 end
 
 mutual
-theorem tyEqB_eq : ∀ {t t' : Ty}, tyEqB t t' = true → t = t'
-  | .int _, .int _, h => by simp only [tyEqB, beq_iff_eq] at h; rw [h]
-  | .bool, .bool, _ | .mem, .mem, _ | .other, .other, _ | .empty, .empty, _ => rfl
-  | .tuple _, .tuple _, h => by simp only [tyEqB] at h; rw [tysEqB_eq h]
-  | .ptr _, .ptr _, h => by simp only [tyEqB, beq_iff_eq] at h; rw [h]
-  | .agg _ _, .agg _ _, h => by
-    simp only [tyEqB, Bool.and_eq_true, beq_iff_eq] at h; rw [fieldsEqB_eq h.1, h.2]
-  | .blob _, .blob _, h | .opaque _, .opaque _, h => by
-    simp only [tyEqB, beq_iff_eq] at h; rw [h]
+theorem retypeEqB_sound : ∀ {t1 t2 : Ty}, retypeEqB t1 t2 = true → RetypeEq t1 t2
+  | .int w, .int w', h => by simp only [retypeEqB, beq_iff_eq] at h; subst h; exact RetypeEq.refl _
+  | .bool, .bool, _ | .mem, .mem, _ | .other, .other, _ | .empty, .empty, _ =>
+    RetypeEq.refl _
+  | .ptr _, .ptr _, _ => fun v => by cases v with
+    | int w _ => cases w <;> rfl
+    | _ => rfl
+  | .opaque _, .opaque _, _ => fun v => by cases v <;> rfl
+  | .blob _, .blob _, h => by simp only [retypeEqB, beq_iff_eq] at h; subst h; exact RetypeEq.refl _
+  | .tuple ts, .tuple ts', h => fun v => by
+    simp only [retypeEqB] at h
+    cases v with
+    | tuple vs => unfold Val.retype; rw [retypePre_eq h vs]
+    | int w _ => cases w <;> rfl
+    | _ => rfl
+  | .agg fs _, .agg fs' _, h => fun v => by
+    simp only [retypeEqB] at h
+    cases v with
+    | agg vs => unfold Val.retype; rw [retypeFields_eq h vs]
+    | int w _ => cases w <;> rfl
+    | _ => rfl
   | .int _, .bool, h | .int _, .mem, h | .int _, .tuple _, h | .int _, .other, h
   | .int _, .ptr _, h | .int _, .agg _ _, h | .int _, .blob _, h | .int _, .empty, h
   | .int _, .opaque _, h | .bool, .int _, h | .bool, .mem, h | .bool, .tuple _, h
@@ -118,37 +130,26 @@ theorem tyEqB_eq : ∀ {t t' : Ty}, tyEqB t t' = true → t = t'
   | .opaque _, .int _, h | .opaque _, .bool, h | .opaque _, .mem, h
   | .opaque _, .tuple _, h | .opaque _, .other, h | .opaque _, .ptr _, h
   | .opaque _, .agg _ _, h | .opaque _, .blob _, h | .opaque _, .empty, h => by
-    simp [tyEqB] at h
-theorem tysEqB_eq : ∀ {ts ts' : List Ty}, tysEqB ts ts' = true → ts = ts'
-  | [], [], _ => rfl
-  | _ :: _, _ :: _, h => by
-    simp only [tysEqB, Bool.and_eq_true] at h; rw [tyEqB_eq h.1, tysEqB_eq h.2]
-  | [], _ :: _, h | _ :: _, [], h => by simp [tysEqB] at h
-theorem fieldsEqB_eq : ∀ {fs fs' : List (Nat × Ty)}, fieldsEqB fs fs' = true → fs = fs'
-  | [], [], _ => rfl
-  | (_, _) :: _, (_, _) :: _, h => by
-    simp only [fieldsEqB, Bool.and_eq_true, beq_iff_eq] at h
-    rw [h.1.1, tyEqB_eq h.1.2, fieldsEqB_eq h.2]
-  | [], _ :: _, h | _ :: _, [], h => by simp [fieldsEqB] at h
+    simp [retypeEqB] at h
+theorem retypePre_eq : ∀ {ts ts' : List Ty}, retypeEqListB ts ts' = true →
+    ∀ vs, Val.retypePre ts vs = Val.retypePre ts' vs
+  | [], [], _, _ => rfl
+  | t :: ts, t' :: ts', h, vs => by
+    simp only [retypeEqListB, Bool.and_eq_true] at h
+    cases vs with
+    | nil => rfl
+    | cons v vs => simp only [Val.retypePre, retypeEqB_sound h.1 v, retypePre_eq h.2 vs]
+  | [], _ :: _, h, _ | _ :: _, [], h, _ => by simp [retypeEqListB] at h
+theorem retypeFields_eq : ∀ {fs fs' : List (Nat × Ty)}, retypeEqFieldsB fs fs' = true →
+    ∀ vs, Val.retypeFields fs vs = Val.retypeFields fs' vs
+  | [], [], _, _ => rfl
+  | (_, t) :: fs, (_, t') :: fs', h, vs => by
+    simp only [retypeEqFieldsB, Bool.and_eq_true] at h
+    cases vs with
+    | nil => rfl
+    | cons v vs => simp only [Val.retypeFields, retypeEqB_sound h.1 v, retypeFields_eq h.2 vs]
+  | [], _ :: _, h, _ | _ :: _, [], h, _ => by simp [retypeEqFieldsB] at h
 end
-
-/-- Decides a sufficient condition for `RetypeEq` (`retypeEqB_sound`): equal shapes, up to the
-element size of pointers. -/
-def retypeEqB : Ty → Ty → Bool
-  | .ptr _, .ptr _ => true
-  | t1, t2 => tyEqB t1 t2
-
-theorem retype_ptr (e e' : Option Nat) (v : Val) : v.retype (.ptr e) = v.retype (.ptr e') := by
-  cases v with
-  | int w _ => cases w <;> rfl
-  | _ => rfl
-
-theorem retypeEqB_sound {t1 t2 : Ty} (h : retypeEqB t1 t2 = true) : RetypeEq t1 t2 := by
-  intro v
-  unfold retypeEqB at h
-  split at h
-  · exact retype_ptr _ _ v
-  · rw [tyEqB_eq h]
 
 /-- `t` is a zero-size struct or array type (as `phielim` decides it). -/
 def zeroSize (tabs : Tables) (t : TypeRef) : Prop := zeroSizeAggregate tabs t = .ok true

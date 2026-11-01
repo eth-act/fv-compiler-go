@@ -57,8 +57,7 @@ theorem evalValue_bin {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {a b : ID
 
 /-! ## Values -/
 
-theorem retype_bool_val (t : Ty) (b : Bool) : (Val.bool b).retype t = .bool b := by
-  cases t <;> rfl
+theorem retype_bool_val (b : Bool) : (Val.bool b).retype .bool = .bool b := rfl
 
 theorem orB_false_left (y : Val) :
     (Cmp.orB [.bool false, y]).retype .bool = y.retype .bool := by
@@ -89,13 +88,14 @@ theorem evalPure_not (t : Ty) (k : Int64) (x : Option AuxRef) (d : Bool) :
 /-- A `ConstBool`'s register holds its constant. -/
 theorem constBool_reg {env : Env} {tabs : Tables} {f : Func} {fr : Frame}
     (hinv : ArglessInv env (Ctx.make tabs f) fr) {a : ID} {u : Value} (hu : f.value? a = some u)
-    (hop : u.op = .ConstBool) (hargs : u.args = #[]) {y : Val}
+    (hop : u.op = .ConstBool) (hty : tabs.ty u.type = .bool) (hid : u.id = a)
+    (hargs : u.args = #[]) {y : Val}
     (hy : fr.regs[a]? = some (some y)) : y = .bool (u.auxInt != 0) := by
   have h := hinv a u y hu hargs (by rw [hop]; decide) hy
   rw [evalValue_nil hargs (by unfold formOp; simp [hop])] at h
   cases h
-  rw [hop]
-  exact retype_bool_val _ _
+  rw [hop, hid, tys_of_value hu, hty]
+  rfl
 
 /-- The integer constant op of a width evaluates to its auxint's low bits. -/
 theorem evalPure_constOp (w : Sem.Width) (ty : Ty) (k : Int64) (x : Option AuxRef) :
@@ -118,10 +118,10 @@ theorem constI_reg {env : Env} {tabs : Tables} {f : Func} {fr : Frame}
   simp [Val.retype, BitVec.setWidth_eq]
 
 /-- An arm `armB` accepts holds the claimed boolean. -/
-theorem armB_val {f : Func} {fr : Frame} {c a : ID} {dc d : Bool}
+theorem armB_val {tabs : Tables} {f : Func} {fr : Frame} {c a : ID} {dc d : Bool}
     (hc : fr.regs[c]? = some (some (.bool dc)))
-    {y : Val} (hy : fr.regs[a]? = some (some y)) (hconst : ∀ d', constB f a d' = true → y = .bool d')
-    (h : armB f c a dc d = true) : y = .bool d := by
+    {y : Val} (hy : fr.regs[a]? = some (some y)) (hconst : ∀ d', constB tabs f a d' = true → y = .bool d')
+    (h : armB tabs f c a dc d = true) : y = .bool d := by
   unfold armB at h
   simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
   rcases h with ⟨rfl, rfl⟩ | h
@@ -130,10 +130,10 @@ theorem armB_val {f : Func} {fr : Frame} {c a : ID} {dc d : Bool}
 
 /-- **A boolean form yields the arm of the edge.** -/
 theorem boolArm_eval {env : Env} {tabs : Tables} {f g : Func} {b c a : ID} {gv : Value}
-    {d : Bool} (harm : BoolArm f b c gv a d) {fr : Frame}
+    {d : Bool} (harm : BoolArm tabs f b c gv a d) {fr : Frame}
     (hc : fr.regs[c]? = some (some (.bool d)))
     (havail : ∀ x, avail f b x = true → ∃ y, fr.regs[x]? = some (some y))
-    {y : Val} (hy : fr.regs[a]? = some (some y)) (hconst : ∀ d', constB f a d' = true → y = .bool d')
+    {y : Val} (hy : fr.regs[a]? = some (some y)) (hconst : ∀ d', constB tabs f a d' = true → y = .bool d')
     {g' : Frame}
     (hg' : ∀ x ∈ gv.args, g'.regs[x]? = fr.regs[x]?)
     (hty : (Ctx.make tabs g).tys[gv.id]?.getD .other = .bool) :
@@ -201,12 +201,12 @@ theorem intForm_eval {env : Env} {tabs : Tables} {f g : Func} {b c : ID} {fv gv 
   obtain ⟨-, hop, -, cv, cvv, x, hargs, hcvn, hcvv, hcop, hcty, hxargs, hx⟩ := hshape
   -- the byte argument of the conversion
   have hxval : H.regs[x]? = some (some (.bool (d != neg))) := by
-    rcases hx with ⟨rfl, rfl⟩ | ⟨hxn, nv, hnv, hnop, hnargs, rfl⟩
+    rcases hx with ⟨rfl, rfl⟩ | ⟨hxn, nv, hnv, hnop, hnargs, hnty, rfl⟩
     · simpa using hc
     · obtain ⟨z, hz, hev⟩ := hnew x hxn nv hnv
       rw [evalValue_un hnargs hc (by unfold formOp; simp [hnop]), hnop] at hev
       cases hev
-      rw [hz, evalPure_not, retype_bool_val]
+      rw [hz, evalPure_not, hids x nv hnv hxn, tys_of_value hnv, hnty]
       cases d <;> rfl
   obtain ⟨z, hz, hev⟩ := hnew cv hcvn cvv hcvv
   rw [evalValue_un hxargs hxval (by unfold formOp; simp [hcop]), hcop] at hev

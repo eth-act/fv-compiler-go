@@ -1,5 +1,6 @@
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.Den
+import GoFV.Proof.Retype
 
 /-!
 # Lemmas of the rule-lemma tactics (`GoFV/Proof/Rules/Tactic.lean`)
@@ -54,44 +55,61 @@ theorem val_asNat_cases (v : Val) : v.asNat = none ∨ ∃ w x, v = .int w x := 
   | int w x => exact Or.inr ⟨w, x, rfl⟩
   | _ => exact Or.inl rfl
 
-/-- A value of shape `Ty.int w` that is not a `w`-bit integer is `poison`. -/
+/-- A value of shape `Ty.int w` that is not a `w`-bit integer is `poison` or, at 64 bits, a
+pointer without a concrete address (a global held in a `uintptr`, `Val.hasTy`). -/
 theorem val_poison_of_asInt_none {v : Val} {w : Width} (h : v.asInt w = none)
-    (ht : v.hasTy (.int w) = true) : v = .poison := by
+    (ht : v.hasTy (.int w) = true) : v = .poison ∨ (w = .w64 ∧ ∃ p, v = .ptr p) := by
   cases v with
-  | poison => rfl
+  | poison => exact .inl rfl
   | int w' x =>
     simp only [Val.hasTy, beq_iff_eq] at ht
     subst ht; simp at h
+  | ptr p => cases w <;> simp_all [Val.hasTy]
   | _ => simp [Val.hasTy] at ht
 
 /-- An integer of width `w` read back at `w` through a retype to `t` fails: `t` is an integer
-shape of another width (narrower: the low bits; wider: `poison`), `bool` (`poison`) or, for
-`w = 64`, a pointer shape (`Val.retype`). -/
+shape of another width (narrower: the low bits; wider: `poison`) or not an integer shape (a
+pointer for `w = 64`, else `poison`; `Val.retype`). -/
 def tyOtherInt (t : Ty) (w : Width) : Bool :=
   match t with
   | .int w' => w' != w
-  | .ptr _ => w == .w64
-  | .bool => true
-  | _ => false
+  | _ => true
 
 @[rule_sem] theorem tyOtherInt_int (w w' : Width) : tyOtherInt (Ty.int w') w = (w' != w) := rfl
 @[rule_sem] theorem tyOtherInt_bool (w : Width) : tyOtherInt Ty.bool w = true := rfl
 @[rule_sem] theorem tyOtherInt_ptr (w : Width) (e : Option Nat) :
-    tyOtherInt (Ty.ptr e) w = (w == .w64) := rfl
+    tyOtherInt (Ty.ptr e) w = true := rfl
 
 @[rule_sem] theorem retype_int_same (w : Width) (x : BitVec w.bits) :
     (Val.int w x).retype (.int w) = .int w x := by
   simp [Val.retype, BitVec.setWidth_eq]
 
-@[rule_sem] theorem retype_bool (t : Ty) (b : Bool) : (Val.bool b).retype t = .bool b := by
+/-- `t` is the `bool` shape (a `Bool` test the rule tactic splits on). -/
+def tyIsBool : Ty → Bool
+  | .bool => true
+  | _ => false
+
+@[rule_sem] theorem tyIsBool_bool : tyIsBool .bool = true := rfl
+@[rule_sem] theorem tyIsBool_int (w : Width) : tyIsBool (.int w) = false := rfl
+@[rule_sem] theorem tyIsBool_ptr (e : Option Nat) : tyIsBool (.ptr e) = false := rfl
+
+theorem tyIsBool_eq {t : Ty} (h : tyIsBool t = true) : t = .bool := by
+  cases t <;> first | rfl | cases h
+
+@[rule_sem] theorem retype_bool (t : Ty) (b : Bool) :
+    (Val.bool b).retype t = if tyIsBool t then .bool b else .poison := by
   cases t <;> rfl
 
 @[rule_sem] theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by
   cases t <;> rfl
 
 @[rule_sem] theorem retype_tuple (t : Ty) (vs : List Val) :
-    (Val.tuple vs).retype t = match t with | .bool => .poison | _ => .tuple vs := by
-  cases t <;> rfl
+    (Val.tuple vs).retype t = match t with
+      | .tuple ts => (Val.retypePre ts vs).elim .poison .tuple
+      | _ => .poison := by
+  cases t with
+  | tuple ts => unfold Val.retype; cases h : Val.retypePre ts vs <;> simp [h]
+  | _ => rfl
 
 @[rule_sem] theorem retype_bool_ty (v : Val) :
     v.retype .bool = match v with | .bool b => .bool b | _ => .poison := by
@@ -111,19 +129,17 @@ def tyOtherInt (t : Ty) (w : Width) : Bool :=
       · exact val_asInt_int_ne _ h
       · rfl
   | ptr e => cases w <;> rfl
-  | bool => cases w <;> rfl
-  | _ => simp [Val.retype, tyOtherInt]
+  | _ => cases w <;> rfl
 
 @[rule_sem] theorem asBool_retype (t : Ty) (v : Val) :
-    (v.retype t).asBool = v.asBool := by
-  unfold Val.retype
-  split
-  · split <;> rfl
-  · rfl
-  · split <;> rfl
-  · rfl
-  · cases v <;> simp_all [Val.asBool]
-  · rfl
+    (v.retype t).asBool = if tyIsBool t then v.asBool else none := by
+  have hb := Val.retype_hasTy t v
+  cases t with
+  | bool => cases v <;> rfl
+  | _ =>
+    simp only [tyIsBool, Bool.false_eq_true, ite_false]
+    generalize Val.retype _ v = r at hb ⊢
+    cases r <;> simp_all [Val.hasTy, Val.asBool]
 
 @[rule_sem] theorem hasTy_int (w : Width) (x : BitVec w.bits) (t : Ty) :
     (Val.int w x).hasTy t = true ↔ t = .int w := by
@@ -378,15 +394,13 @@ shape or a `bool` shape (`poison`), or a pointer shape (`Val.retype`). -/
 def retypeNone (t : Ty) (w : Width) : Bool :=
   match t with
   | .int w' => decide (w.bits < w'.bits)
-  | .ptr _ => w == .w64
-  | .bool => true
-  | _ => false
+  | _ => true
 
 @[rule_sem] theorem retypeNone_int (w w' : Width) :
     retypeNone (.int w') w = decide (w.bits < w'.bits) := rfl
 @[rule_sem] theorem retypeNone_bool (w : Width) : retypeNone .bool w = true := rfl
 @[rule_sem] theorem retypeNone_ptr (e : Option Nat) (w : Width) :
-    retypeNone (.ptr e) w = (w == .w64) := rfl
+    retypeNone (.ptr e) w = true := rfl
 
 /-- A retype that keeps a `w`-bit integer an integer of width `w` keeps it an amount. -/
 @[rule_sem] theorem retypeNone_of_tyOtherInt {t : Ty} {w : Width} (h : tyOtherInt t w = false) :
@@ -395,9 +409,7 @@ def retypeNone (t : Ty) (w : Width) : Bool :=
   | int w' =>
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; simp [retypeNone]
-  | ptr e => simp only [tyOtherInt] at h; simp [retypeNone, h]
-  | bool => simp [tyOtherInt] at h
-  | _ => rfl
+  | _ => simp [tyOtherInt] at h
 
 theorem rotateLeft_mod_pow {W : Width} (y : BitVec W.bits) (n b : Nat) (hb : 8 ≤ b) :
     y.rotateLeft (n % 2 ^ b) = y.rotateLeft n := by
@@ -424,7 +436,7 @@ at most 64 bits does not read beyond). -/
       simp [h, h', Val.asNat]
   | ptr e =>
     cases w <;> simp [Val.retype, retypeNone, Val.asNat]
-  | _ => simp [Val.retype, retypeNone, Val.asNat]
+  | _ => cases w <;> simp [Val.retype, retypeNone, Val.asNat]
 
 theorem rotateLeft_rotateLeft {w : Nat} (x : BitVec w) (a b : Nat) :
     (x.rotateLeft a).rotateLeft b = x.rotateLeft (a + b) := by
@@ -698,9 +710,7 @@ theorem rotateLeft_toNat_pow2 {v : Nat} (k : Nat) (x : BitVec (2 ^ k)) (s : BitV
   | int w' =>
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; simp [Val.retype, Val.asNat, BitVec.setWidth_eq]
-  | ptr e => cases w <;> first | rfl | cases h
-  | bool => cases h
-  | _ => rfl
+  | _ => cases h
 
 @[rule_sem] theorem int64_zero_beq_one : ((0 : Int64) == 1) = false := by decide
 @[rule_sem] theorem int64_one_bne_zero : ((1 : Int64) != 0) = true := by decide
@@ -859,11 +869,7 @@ cleared or filled with the sign (`rule_ext`), negated comparisons and boolean eq
   | int w' =>
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; exact retype_int_same w' x
-  | ptr e =>
-    simp only [tyOtherInt, beq_eq_false_iff_ne, ne_eq] at h
-    cases w <;> simp_all [Val.retype]
-  | bool => simp [tyOtherInt] at h
-  | _ => rfl
+  | _ => simp [tyOtherInt] at h
 
 @[rule_arith] theorem setWidth_ofInt_of_le {w k : Nat} (h : w ≤ k) (c : Int) :
     (BitVec.ofInt w c).setWidth k = BitVec.ofInt k (wrapInt w false c) := by
