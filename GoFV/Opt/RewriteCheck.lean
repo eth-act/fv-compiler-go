@@ -1392,11 +1392,23 @@ def ssLink (tabs : Tables) (f g : Func) (b dst : ID) (fs : List (Nat × Sem.Ty))
     | _, _, _ => false
   | _, _, _ => false
 
+/-- The memory `m0` a split's chain starts from is the split `Store`'s memory `mem` (in block
+`b`): `mem` reaches it through copies in `f`, or `mem` stands through copies for another split
+`Store` of `b` with fields (in `g` its `Copy` of `m0`, the last store of its chain). -/
+def ssStart (tabs : Tables) (f g : Func) (b mem m0 : ID) : Bool :=
+  copyReach tabs f.valueTab f.valueTab.size mem m0 ||
+  let y := copyEnd tabs f.valueTab f.valueTab.size mem
+  match f.value? y, g.value? y with
+  | some yv, some gy =>
+    yv.op == .Store && yv.block == b && gy.op == .Copy && gy.args == #[m0] &&
+      (Sem.auxTy tabs yv.aux matches .agg (_ :: _) _)
+  | _, _ => false
+
 /-- Value `x` of `f` is a split `Store` in `g`: in `f` a `Store` listed in its block at an
 aggregate shape `agg fs n` (every field inside it, `layoutsOK`, at an offset below `n`) of a
 `StructMake` (up to copies, `copyEnd`) of that shape; in `g` `Copy` of the last store of the
-chain (`ssWalk`), each field linked (`ssLink`), from a memory the `Store`'s reaches through
-copies. The chain's pairs. -/
+chain (`ssWalk`), each field linked (`ssLink`), from the `Store`'s memory (`ssStart`). The
+chain's pairs. -/
 def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
@@ -1411,7 +1423,7 @@ def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
             gv.op == .Copy && gv.id == x && gv.type == fv.type &&
             gv.block == fv.block && gv.aux == none && gv.auxInt == 0 &&
             r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2 &&
-            copyReach tabs f.valueTab f.valueTab.size mem r.2 &&
+            ssStart tabs f g fv.block mem r.2 &&
             (List.range fs.length).all (ssLink tabs f g fv.block dst fs smv.args r.1 r.2) then
           some r.1
         else none

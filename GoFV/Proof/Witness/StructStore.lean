@@ -130,4 +130,93 @@ theorem ss_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := ssRules) (penv := ssPassEnv)
         (f := ssFunc) (out := out) ssRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
+/-! ## Consecutive splits: `storeS2` (a chain starting at another split's last store)
+
+```go
+func storeS2(p *P, x, y int) int {
+	*p = P{x, y}
+	*p = P{y, x}
+	return x
+}
+```
+
+as one block: `v6 = Store {P} v2 v5 v1`, `v8 = Store {P} v2 v7 v6` (`v5`, `v7` the two
+`StructMake`s). The rewrite splits `v6` first; copy elimination then gives the second split's
+chain the first chain's last store as its memory, which `v8`'s memory `v6` (a `Store` in the
+input) does not reach through copies: `RewriteCheck.ssStart` takes it as the last store of the
+split `v6`'s chain (`ss2_start`). -/
+
+/-- `storeS2`, the input of `opt`. -/
+def ss2Func : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 9
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[9] #[] #[] #[1, 2, 3, 4, 5, 6, 7, 8, 9])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 1 #[] 1),
+    some (mkV 2 .Arg 3 (some 3) p0 2 #[] 1),
+    some (mkV 3 .Arg 2 (some 4) p0 3 #[] 1),
+    some (mkV 4 .Arg 2 (some 5) p0 2 #[] 1),
+    some (mkVi 5 .StructMake 4 0 p0 1 #[3, 4] 1),
+    some (mkV 6 .Store 29 (some 7) p0 1 #[2, 5, 1] 1),
+    some (mkVi 7 .StructMake 4 0 p0 1 #[4, 3] 1),
+    some (mkV 8 .Store 29 (some 7) p0 1 #[2, 7, 6] 1),
+    some (mkVi 9 .MakeResult 35 0 p0 1 #[3, 8] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` keeps a result in which
+the result's memory is a field `Store` of `x` (`v3`, the second struct's last field), which
+passes `check`. -/
+theorem ss2_checks :
+    (check ssCheckEnv ss2Func).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet ssRules) ssPassEnv ss2Func).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slTyps } o.func).toBool,
+        ((o.func.value? 9).bind fun r => r.args[1]?).bind fun m =>
+          (o.func.value? m).map fun v => (v.op, v.args[1]?))) =
+      some (true, some (.Store, some 3)) := by
+  decide +kernel
+
+/-- The second split's chain starts at a store that `v8`'s memory does not reach through copies
+in the input: the last store of `v6`'s chain (`ssStart`'s second case). -/
+theorem ss2_start :
+    (GoFV.Rules.rewriteRun (Interp.Table.ofRuleSet ssRules) true true ssPassEnv ss2Func).toOption.map
+      (fun r => let g := (RewriteCheck.ssPre (Interp.Table.ofRuleSet ssRules) ss2Func r.2.2).1
+        let m0 := (RewriteCheck.ssWalk g 2 ((g.value? 8).bind (·.args[0]?) |>.getD 0)).2
+        (RewriteCheck.copyReach ssTabs ss2Func.valueTab ss2Func.valueTab.size 6 m0,
+          RewriteCheck.ssStart ssTabs ss2Func g 1 6 m0)) =
+      some (false, true) := by
+  decide +kernel
+
+/-- **Pass execution witness** for consecutive splits: on `storeS2`, the checked rewrite pass
+splits both struct `Store`s, the second chain starting at the first chain's last store, and the
+result refines the input (`checkedRewrite_refines`, through `StructStore.ss_refines`). -/
+theorem ss2_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet ssRules) ssPassEnv ss2Func = .ok out ∧
+      (((out.func.value? 9).bind fun r => r.args[1]?).bind fun m =>
+        (out.func.value? m).map fun v => (v.op, v.args[1]?)) = some (.Store, some 3) ∧
+      check ssCheckEnv ss2Func = .ok () ∧
+      check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre ssPassEnv.tables ss2Func) out.tables out.func
+        ssPassEnv.tables ss2Func := by
+  obtain ⟨h1, h2⟩ := ss2_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet ssRules) ssPassEnv ss2Func with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h3⟩ := h2
+    exact ⟨out, rfl, h3, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := ssRules) (penv := ssPassEnv)
+        (f := ss2Func) (out := out) ssRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
 end GoFV.Proof.Witness
