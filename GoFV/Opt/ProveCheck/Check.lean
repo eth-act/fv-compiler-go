@@ -19,8 +19,7 @@ relation `proveRel` (what the theorem needs) holds between `f` and it; otherwise
   (nonzero argument), `Slicemask` → `-1` (positive argument), `Mul` → `And` (both arguments
   0 or 1), each from the ranges of the arguments at the value's block (`rng`).
 * **Branch removal** (`branchOK`): an `If` turned `First` keeps the successor its control is
-  decided to take (`decides`). Not yet admitted by `proveRel` (the atom simulation keeps
-  terminators); counted by the probe.
+  decided to take (`decides`).
 
 Nothing here is trusted: `GoFV.Proof.ProveCheck` proves `proveRel` sound.
 -/
@@ -66,7 +65,7 @@ def edgeFact (f : Func) (s : ID) : Option (ID × Bool) :=
 def factOK (f : Func) (C : DomCert.Cert) (p : ID) (pb : Block) (c : ID) : Bool :=
   !pb.values.contains c &&
   match placed? f c, f.value? c with
-  | some e, some cv => e != p && C.anc e p && termOp cv.op
+  | some e, some cv => e != p && C.anc e p && termOp cv.op && f.blocks.contains e
   | _, _ => false
 
 /-- The path facts of every tree block, parents first: the parent's plus the block's own edge
@@ -275,27 +274,57 @@ def sameDef (u w : Value) : Bool :=
   u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && u.aux == w.aux && u.args == w.args
 
 /-- Every value listed in `f` is listed in the same block of `g`, with the same definition or a
-justified rewrite under its block's assumptions. -/
+justified rewrite under its block's assumptions; every block keeps its terminator or has its
+branch removed justifiably. -/
 def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
     (inv : List (ID × Width × Rng)) : Bool :=
   f.blocks.all fun b =>
     match f.block? b, g.block? b with
     | some fb, some gb =>
-      fb.controls == gb.controls &&
+      let A : Asm := { facts := factsAt F b, inv }
+      (fb.kind == gb.kind && fb.controls == gb.controls && fb.succs == gb.succs ||
+        branchOK f.value? tabs A fb gb) &&
       fb.values.all fun x =>
         gb.values.contains x &&
         match f.value? x, g.value? x with
         | some fv, some gv =>
-          gv.block == fv.block &&
-          (sameDef fv gv || valueOK f.value? tabs { facts := factsAt F b, inv } fv gv)
+          gv.block == fv.block && (sameDef fv gv || valueOK f.value? tabs A fv gv)
         | _, _ => false
     | _, _ => false
+
+/-- The rewritten values of `g` (listed in `f`, a different definition in `g`) and their blocks. -/
+def rewritten (f g : Func) : List (ID × ID) :=
+  f.blocks.toList.flatMap fun b =>
+    match f.block? b with
+    | some fb => fb.values.toList.filterMap fun x =>
+        match f.value? x, g.value? x with
+        | some fv, some gv => if sameDef fv gv then none else some (x, b)
+        | _, _ => none
+    | none => []
+
+/-- The argument of a `Phi` of block `b` is computed in the dominator subtree of its block `ba`;
+the rewritten values there that it may read are in ancestors of `b` (their facts hold at
+`b`). -/
+def phiArgsOK (f : Func) (C : DomCert.Cert) (rw : List (ID × ID)) : Bool :=
+  rw.isEmpty ||
+  f.blocks.all fun b =>
+    match f.block? b with
+    | some bb =>
+      bb.values.all fun z =>
+        match f.value? z with
+        | some zv =>
+          zv.op != .Phi || zv.args.all fun a =>
+            match placed? f a with
+            | some ba => C.anc ba b || rw.all fun (_, br) => !C.anc br ba || C.anc br b
+            | none => false
+        | none => false
+    | none => false
 
 /-- **The relation** the theorem needs between `f` and the checked output `g`. -/
 def proveRel (tabs : Tables) (f g : Func) : Bool :=
   let (C, F, inv) := asmOf f tabs
-  atomsOK f g && closedOK f && closedOK g && factsOK f C F && invOK f tabs C F inv inv &&
-  valuesOK tabs f g F inv
+  atomsOK f g && closedOK f && closedOK g && f.blocks.all C.inTree && factsOK f C F &&
+  invOK f tabs C F inv inv && valuesOK tabs f g F inv && phiArgsOK f C (rewritten f g)
 
 /-! ## The checked pass -/
 
@@ -365,6 +394,24 @@ def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.
       let ok := valueOK D tabs A fv gv
       st := st.add (classOf fv gv) ok b x
       if !ok then h := h.modV x fun hv => { fv with uses := hv.uses }
+  -- rewrites a `Phi` of a block they do not dominate may read (`phiArgsOK`)
+  let C := DomCert.make f
+  let anchors : List (ID × ID) := f.blocks.toList.flatMap fun b =>
+    match f.block? b with
+    | some bb => bb.values.toList.flatMap fun z =>
+        match f.value? z with
+        | some zv => if zv.op != .Phi then [] else zv.args.toList.filterMap fun a =>
+            match placed? f a with
+            | some ba => if C.anc ba b then none else some (ba, b)
+            | none => none
+        | none => []
+    | none => []
+  for (x, br) in rewritten f h do
+    if anchors.any (fun (ba, b) => C.anc br ba && !C.anc br b) then
+      let (some fv, some gv) := (f.value? x, h.value? x) | continue
+      st := { st with rej := st.rej.insert "phi-read" (st.rej.getD "phi-read" 0 + 1),
+                      why := st.why.push (s!"phi-read {classOf fv gv}", br, x) }
+      h := h.modV x fun hv => { fv with uses := hv.uses }
   return (fixup h, st)
 
 /-- `prove` with every unjustified rewrite undone, and its statistics; the input if the
@@ -372,7 +419,7 @@ relation fails. -/
 def proveCheckedStats (env : PassEnv) (f : Func) : Except String (Func × Stats) := do
   let p ← Prove.Prover.ofEnv env
   let g ← Prove.prove p f
-  let (h, st) := revert env.tables false f g
+  let (h, st) := revert env.tables true f g
   return (if proveRel env.tables f h then h else f, st)
 
 end GoFV.Opt.ProveCheck
