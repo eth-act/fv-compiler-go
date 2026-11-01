@@ -136,9 +136,11 @@ passes would be unsound. With provenance, an access must lie inside its own allo
 integer (`Tables.forgeable`: the exporter's `addrconv` flag, export format 3; parameters and
 results always forgeable) lives in `Blk.temp act name` instead of `Blk.local act name`. The flag
 is computed once from the `start` section: the variable's `LocalAddr` reaches a `Convert` to an
-integer through `OffPtr`/`AddPtr`/`PtrIndex`/`Copy`/`Convert`/`Phi` and 64-bit integer
-`Add`/`Sub`/`And`/`Or` (so `uintptr(unsafe.Pointer(&x))`, and the frontend's own conversions:
-a `range` over an array iterates its copy with `uintptr` arithmetic, `runtime.dumpScanStats`).
+integer backwards through the non-memory arguments of any value except `Load`/`Dereference`,
+calls included (so `uintptr(unsafe.Pointer(&x))`, and the frontend's own conversions: a `range`
+over an array iterates its copy with `uintptr` arithmetic, `runtime.dumpScanStats`; `append`
+into a stack buffer passes the buffer to `runtime.growsliceBuf` and converts the slice pointer
+it gets back to compare it with the stack bounds).
 Before format 3 the criterion was `addrtaken`, which made every address-taken variable
 forgeable. A conversion the function cannot see (the address stored to memory, or passed to a
 callee that converts it) is not flagged: converting such an integer back gives a pointer into

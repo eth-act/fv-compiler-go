@@ -3,8 +3,8 @@ import GoFV.SSA.Sem.Run
 /-!
 # Contracts that cannot see unreachable frame temporaries (#31)
 
-A `Blk.temp` is a frame variable whose address the program never takes as a user variable
-(`Tables.forgeable`); no integer converts back to it (`Ptr.ofAddr_ne_temp`). `Contract.FrameSafe`:
+A `Blk.temp` is a `PAUTO` whose address the function never converts to an integer (no
+`addrconv` flag, `Tables.forgeable`); no integer converts back to it (`Ptr.ofAddr_ne_temp`). `Contract.FrameSafe`:
 a callee given arguments, closure context and memory that hold no pointer into a set `U` of
 `temp` blocks behaves the same whatever those blocks hold, and returns no pointer into them.
 `dead auto elim`'s theorem holds for environments whose contracts are frame-safe
