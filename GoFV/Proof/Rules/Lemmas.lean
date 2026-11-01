@@ -374,16 +374,17 @@ width, and every integer width is a multiple of every rotation width. The rotate
 constants and adds the facts `omega` needs about the remaining atoms (`&&&`, `Int.tmod`). -/
 
 /-- Whether a `w`-bit integer retyped to `t` is no longer an integer amount: a wider integer
-shape (`poison`) or a pointer shape (`Val.retype`). -/
+shape or a `bool` shape (`poison`), or a pointer shape (`Val.retype`). -/
 def retypeNone (t : Ty) (w : Width) : Bool :=
   match t with
   | .int w' => decide (w.bits < w'.bits)
   | .ptr _ => w == .w64
+  | .bool => true
   | _ => false
 
 @[rule_sem] theorem retypeNone_int (w w' : Width) :
     retypeNone (.int w') w = decide (w.bits < w'.bits) := rfl
-@[rule_sem] theorem retypeNone_bool (w : Width) : retypeNone .bool w = false := rfl
+@[rule_sem] theorem retypeNone_bool (w : Width) : retypeNone .bool w = true := rfl
 @[rule_sem] theorem retypeNone_ptr (e : Option Nat) (w : Width) :
     retypeNone (.ptr e) w = (w == .w64) := rfl
 
@@ -395,6 +396,7 @@ def retypeNone (t : Ty) (w : Width) : Bool :=
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; simp [retypeNone]
   | ptr e => simp only [tyOtherInt] at h; simp [retypeNone, h]
+  | bool => simp [tyOtherInt] at h
   | _ => rfl
 
 theorem rotateLeft_mod_pow {W : Width} (y : BitVec W.bits) (n b : Nat) (hb : 8 ≤ b) :
