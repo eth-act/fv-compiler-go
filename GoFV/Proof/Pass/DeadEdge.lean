@@ -100,6 +100,22 @@ theorem getB_modB_fun {F : Func} {x : ID} (hx : (F.block? x).isSome) (g : Block 
     (F.modB x g).getB = updAt x g F.getB := by
   funext y; rw [getB_modB hx]; rfl
 
+@[simp] theorem updAt_setS_preds (x : ID) (h : Array Edge → Array Edge) (G : ID → Block) (y : ID) :
+    (updAt x (setS h) G y).preds = (G y).preds := by
+  unfold updAt; split <;> rfl
+
+@[simp] theorem updAt_setP_succs (x : ID) (h : Array Edge → Array Edge) (G : ID → Block) (y : ID) :
+    (updAt x (setP h) G y).succs = (G y).succs := by
+  unfold updAt; split <;> rfl
+
+theorem updAt_setS_succs (x : ID) (h : Array Edge → Array Edge) (G : ID → Block) (y : ID) :
+    (updAt x (setS h) G y).succs = if x = y then h (G y).succs else (G y).succs := by
+  unfold updAt; split <;> rfl
+
+theorem updAt_setP_preds (x : ID) (h : Array Edge → Array Edge) (G : ID → Block) (y : ID) :
+    (updAt x (setP h) G y).preds = if x = y then h (G y).preds else (G y).preds := by
+  unfold updAt; split <;> rfl
+
 section
 variable {F : Func} {B : Array ID} {b : ID} {i n : Nat} {e2 : Edge}
 
@@ -255,13 +271,18 @@ theorem removeSucc_spec (hX : XL F B) (hb : b ∈ B) (hn : n + 1 = (F.getB b).su
       · simp [hby]
   · rw [hG]; split
     · exact bview_updAt _ _ _ _ (fun _ => rfl)
-    · rw [bview_updAt _ _ _ _ (fun _ => rfl), bview_updAt _ _ _ _ (fun _ => rfl),
-        bview_updAt _ _ _ _ (fun _ => rfl)]
+    · rw [bview_updAt _ (setS Array.pop) _ _ (fun _ => rfl), bview_updAt _ (setP _) _ _
+        (fun _ => rfl), bview_updAt _ (setS _) _ _ (fun _ => rfl)]
   · unfold Func.removeSucc
     simp only [block?_invalidateCFG, isSome_modB]
-    split <;> simp only [isSome_modB]
-  · unfold Func.removeSucc; split <;> rfl
-  · unfold Func.removeSucc; split <;> rfl
+    by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
+      simp only [h, ite_true, ite_false, Bool.false_eq_true, isSome_modB]
+  · unfold Func.removeSucc
+    by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
+      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+  · unfold Func.removeSucc
+    by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
+      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
 
 end
 
