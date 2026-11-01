@@ -106,9 +106,7 @@ open Sem in
 /-- The names of the input parameters (`Sem.Ctx.make`'s `params`, without the rest of the
 context). -/
 def params (tabs : Tables) (f : Func) : Array (Option AuxRef) :=
-  match f.ownAux.bind tabs.aux? with
-  | some { kind := .call _ (some abi), .. } => (abi.params.filter (!·.out)).map (·.name)
-  | _ => #[]
+  ((Sem.abiParams tabs f).filter (!·.out)).map (·.name)
 
 /-- No arguments, not a `Phi`. -/
 def argless (v : Value) : Bool := v.args.isEmpty && v.op != .Phi
@@ -128,7 +126,8 @@ def safe (tabs : Tables) (ps : Array (Option AuxRef)) (v : Value) : Bool :=
     match v.aux.bind tabs.aux? with
     | some { kind := .nameOff n _, .. } => (ps.findIdx? (· == some n)).isSome
     | _ => false
-  | .PanicBounds | .StaticLECall | .StaticCall => false
+  | .PanicBounds | .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero
+  | .ZeroWB | .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck => false
   | op => !Sem.isRoot op
 
 /-- `x` is an argument-free value of `g`'s entry block (where zcse's representatives live). -/
@@ -172,7 +171,8 @@ controls) and values (`valueOK`), except that argument-free values of `g`'s entr
 from other blocks and replace argument-free arguments with the same key; those values
 evaluate in every frame (`safe`). -/
 def zrel (tabs : Tables) (f g : Func) : Bool :=
-  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux && g.valueTab.size == f.valueTab.size &&
+  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+  g.valueTab.size == f.valueTab.size &&
   f.blocks.all (blockOK f g) &&
   (((g.block? g.entry).map (·.values)).getD #[]).all (fun x =>
     !entryArgless g x || (g.value? x).any (safe tabs (params tabs g))) &&

@@ -72,7 +72,7 @@ def main (args : List String) : IO UInt32 := do
           IO.println s!"REJECT {path} {s.index} ({s.pass.toStringLossy}): {w}"
           shown := shown + 1
   IO.println s!"sections {secs}: zcse changes {changed}, checker rejects {rejected}"
-  IO.println s!"zero arg cse instances {inst}: zcse changes {instChanged}, checker rejects {instRejected}"
+  IO.println s!"zero arg cse inputs {inst}: zcse changes {instChanged}, rejects {instRejected}"
   IO.println s!"rejections by first failing condition: {whys.toList}"
   return 0
 

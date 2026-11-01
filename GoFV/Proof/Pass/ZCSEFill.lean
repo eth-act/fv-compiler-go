@@ -60,7 +60,7 @@ theorem fill_ea_eq {env : Env} {F F' : Frame} (hF : F' = { F with regs := F'.reg
 
 /-- An `EA g` value holds its constant in `fill`. -/
 theorem fill_ea {env : Env} (S : Setup tabs f g) {F : Frame} (hsz : F.regs.size = f.valueTab.size)
-    (hlen : F.args.length = (Ctx.make tabs f).params.size) {x : ID} (hx : EA g x) :
+    (hlen : F.images.size = (Ctx.make tabs f).params.size) {x : ID} (hx : EA g x) :
     ∃ v y, g.value? x = some v ∧ evalValue env (Ctx.make tabs g) F v = .ok y ∧
       (fill env tabs g F).regs[x]? = some (some y) := by
   obtain ⟨v, hv, hsafe⟩ := S.rel.safe x hx
@@ -79,7 +79,7 @@ theorem eval_cross {env : Env} (S : Setup tabs f g) {F : Frame} {a b : ID} {u w 
     (h : evalValue env (Ctx.make tabs f) F u = .ok y) :
     evalValue env (Ctx.make tabs g) F w = .ok y :=
   evalValue_argless (ctx := Ctx.make tabs f) (ctx' := Ctx.make tabs g) hua hwa hop hax hai
-    (by rw [hwid, huid, tys_of_value hu, tys_of_value hw, hty]) rfl S.params rfl h
+    (by rw [hwid, huid, tys_of_value hu, tys_of_value hw, hty]) rfl S.params rfl rfl h
 
 /-- **Reading a related argument.** Where the source reads `fa` (a listed value), the target
 reads `ga` (`fa` itself or a representative with the same key) from `fill` and gets the same. -/

@@ -4,7 +4,7 @@ import GoFV.Proof.Pass.CopyElimEnter
 /-!
 # zcse: one block entry
 
-`At`: the source-side invariant at a block entry (frame size, one argument per parameter,
+`At`: the source-side invariant at a block entry (frame size, one argument image per parameter,
 `ArglessInv`, the block reached from the entry or along an edge of a tree block). `TF`: the
 target's frame is the source's at the entry, `fill` of it elsewhere. `enter_ok`: a block the
 source enters to frame `G` the target enters to `fill G` (its `Phi`s read related arguments,
@@ -23,7 +23,7 @@ variable {tabs : Tables} {f g : Func}
 structure At (env : Env) (tabs : Tables) (f : Func) (fr : Frame) (bid : ID) (i : Nat) :
     Prop where
   size : fr.regs.size = f.valueTab.size
-  args : fr.args.length = (Ctx.make tabs f).params.size
+  images : fr.images.size = (Ctx.make tabs f).params.size
   inv : ArglessInv env (Ctx.make tabs f) fr
   pre : bid = f.entry ∨ ∃ p blkp, p ∈ f.blocks ∧ f.block? p = some blkp ∧
     ((make f).depthOf p).isSome ∧ (⟨bid, i⟩ : Edge) ∈ blkp.succs
@@ -62,7 +62,7 @@ theorem evalSame {env : Env} (S : Setup tabs f g) {F : Frame}
   rw [hfv] at hfv'; cases hfv'
   have hargsdef := evalValue_args_def hdef
   refine evalValue_eq_of_args hop hax hai hid hsz' (fun k fa hfa => ?_) hg'
-    (by rw [hfid]; exact S.tys hfv) rfl S.params
+    (by rw [hfid]; exact S.tys hfv) rfl S.params rfl
   obtain ⟨ga, hga, hr⟩ := hrel k fa hfa
   have hfam : fa ∈ fv.args := Array.mem_of_getElem? hfa
   obtain ⟨y, hy⟩ := hargsdef fa hfam

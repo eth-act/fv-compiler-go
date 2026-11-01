@@ -43,7 +43,16 @@ theorem blocks : g.blocks = f.blocks := CopyElim.cfgView_blocks S.rel.cfg
 theorem entry : g.entry = f.entry := CopyElim.cfgView_entry S.rel.cfg
 
 theorem params : (Ctx.make tabs g).params = (Ctx.make tabs f).params := by
-  simp only [Ctx.make, S.rel.ownAux]
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
+
+theorem paramTys : (Ctx.make tabs g).paramTys = (Ctx.make tabs f).paramTys := by
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
+
+theorem outs : (Ctx.make tabs g).outs = (Ctx.make tabs f).outs := by
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
+
+theorem locals : (Ctx.make tabs g).locals = (Ctx.make tabs f).locals := by
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
 
 /-- The target block of a block of `f`. -/
 theorem block {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb) :

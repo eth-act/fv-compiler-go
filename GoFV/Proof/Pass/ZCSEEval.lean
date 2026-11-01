@@ -13,24 +13,46 @@ namespace GoFV.Proof.ZCSE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.ZCSE Dom
 
+theorem frameVal_eq {ctx ctx' : Ctx} {v v' : Value} (hop : v'.op = v.op) (haux : v'.aux = v.aux)
+    (htabs : ctx'.tabs = ctx.tabs) (hact : ctx'.act = ctx.act) :
+    frameVal ctx' v' = frameVal ctx v := by
+  unfold frameVal; rw [hop, haux, htabs, hact]
+
+/-- Argument-free ops with the same op, aux and auxint give the same result. -/
+theorem evalOp_argless {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v' : Value} {ty : Ty}
+    {r : Val} (hop : v'.op = v.op) (haux : v'.aux = v.aux) (hai : v'.auxInt = v.auxInt)
+    (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params) (hact : ctx'.act = ctx.act)
+    (hfr : fr' = { fr with regs := fr'.regs }) (h : evalOp env ctx fr v [] ty = .ok r) :
+    evalOp env ctx' fr' v' [] ty = .ok r := by
+  have hfv := frameVal_eq (ctx := ctx) (ctx' := ctx') hop haux htabs hact
+  unfold evalOp at h ⊢
+  rw [hfv, hop, haux, hai, htabs, hfr]
+  simp only [argVal_regs, argVal_params hpar]
+  split at h <;> first | exact h | (cases h; done) | skip
+  all_goals
+    first
+      | (unfold memRoot at h; simp at h; done)
+      | (split at h <;> first | exact h | (cases h; done) | (simp only [pure] at h ⊢; split at h <;>
+          first | exact h | (cases h; done) | (cases h; simp_all)))
+
 /-- Argument-free values with the same op, aux, auxint and shape evaluate alike. -/
 theorem evalValue_argless {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v' : Value} {y : Val}
     (ha : v.args = #[]) (ha' : v'.args = #[]) (hop : v'.op = v.op) (haux : v'.aux = v.aux)
     (hai : v'.auxInt = v.auxInt) (hty : ctx'.tys[v'.id]? = ctx.tys[v.id]?)
-    (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params)
+    (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params) (hact : ctx'.act = ctx.act)
     (hfr : fr' = { fr with regs := fr'.regs }) (h : evalValue env ctx fr v = .ok y) :
     evalValue env ctx' fr' v' = .ok y := by
   unfold evalValue at h ⊢
   rw [ha] at h
-  rw [ha', hop, haux, hai, hty, htabs, hfr]
-  simp only [List.mapM_nil, argVal_regs, argVal_params hpar] at h ⊢
-  revert h
-  generalize ctx.tys[v.id]? = t
-  intro h
-  split at h <;> first | exact h | (cases h; done) | skip
-  all_goals
-    simp only [bind, Res.bind, pure] at h ⊢
-    split at h <;> first | exact h | (cases h; done) | (cases h; simp_all)
+  rw [ha', hty]
+  simp only [List.mapM_nil, bind, Res.bind, pure] at h ⊢
+  cases he : evalOp env ctx fr v [] (ctx.tys[v.id]?.getD .other) with
+  | ok r =>
+    rw [he] at h
+    rw [evalOp_argless hop haux hai htabs hpar hact hfr he]
+    exact h
+  | panic e m => rw [he] at h; cases h
+  | stuck msg => rw [he] at h; cases h
 
 /-- An argument-free value evaluates the same in all frames of an activation. -/
 theorem evalValue_argless_regs {env : Env} {ctx : Ctx} {fr fr' : Frame} {v : Value}
@@ -43,50 +65,54 @@ theorem params_make (tabs : Tables) (f : Func) : (Ctx.make tabs f).params = para
 /-- A parameter name's piece evaluates. -/
 theorem argVal_ok {ctx : Ctx} {fr : Frame} {n : AuxRef} {off : Int} {ty : Ty}
     (h : (ctx.params.findIdx? (· == some n)).isSome = true)
-    (hlen : fr.args.length = ctx.params.size) : ∃ y, argVal ctx fr n off ty = .ok y := by
+    (hlen : fr.images.size = ctx.params.size) : ∃ y, argVal ctx fr n off ty = .ok y := by
   unfold argVal
   obtain ⟨i, hi⟩ := Option.isSome_iff_exists.1 h
-  have hlt : i < ctx.params.size := by
-    have := Array.findIdx?_eq_some_iff_getElem.1 hi
-    exact this.1
+  have hlt : i < ctx.params.size := (Array.findIdx?_eq_some_iff_getElem.1 hi).1
   rw [hi]
   simp only
-  have : i < fr.args.length := hlen ▸ hlt
-  rw [List.getElem?_eq_getElem this]
-  exact ⟨_, rfl⟩
+  rw [Array.getElem?_eq_getElem (hlen ▸ hlt)]
+  simp only
+  split <;> exact ⟨_, rfl⟩
 
-/-- **A `safe` value evaluates** (in a frame with one argument per parameter). -/
+/-- **A `safe` value evaluates** (in a frame with one argument image per parameter). -/
 theorem safe_ok {env : Env} {tabs : Tables} {g : Func} {fr : Frame} {v : Value}
     (h : safe tabs (params tabs g) v = true)
-    (hlen : fr.args.length = (Ctx.make tabs g).params.size) :
+    (hlen : fr.images.size = (Ctx.make tabs g).params.size) :
     ∃ y, evalValue env (Ctx.make tabs g) fr v = .ok y := by
   unfold safe at h
   rw [Bool.and_eq_true] at h
   obtain ⟨hal, hop⟩ := h
   obtain ⟨ha, -⟩ := argless_iff.1 hal
   rw [← params_make] at hop
-  unfold evalValue
-  rw [ha]
-  simp only [List.mapM_nil, bind, Res.bind, pure]
-  split
-  · exact ⟨_, rfl⟩
-  · rename_i heq
-    simp only [heq] at hop
-    split at hop
-    · rename_i n hn; rw [hn]; exact argVal_ok hop hlen
-    · cases hop
-  · rename_i heq
-    simp only [heq] at hop
-    split at hop
-    · rename_i hn; rw [show (Ctx.make tabs g).tabs = tabs from rfl, hn]; exact argVal_ok hop hlen
-    · cases hop
-  · rename_i heq; simp [heq] at hop
-  · rename_i heq; simp [heq] at hop
-  · rename_i heq; simp [heq] at hop
-  · rename_i op h1 h2 h3 h4 h5 h6
+  obtain ⟨r, hr⟩ : ∃ r, evalOp env (Ctx.make tabs g) fr v []
+      ((Ctx.make tabs g).tys[v.id]?.getD .other) = .ok r := by
+    unfold evalOp
+    split
+    · exact ⟨_, rfl⟩
+    · rename_i heq
+      simp only [heq] at hop
+      split at hop
+      · rename_i n hn; rw [hn]; exact argVal_ok hop hlen
+      · cases hop
+    · rename_i heq
+      simp only [heq] at hop
+      split at hop
+      · rename_i hn; rw [show (Ctx.make tabs g).tabs = tabs from rfl, hn]
+        exact argVal_ok hop hlen
+      · cases hop
+    all_goals first
+      | (rename_i heq; simp [heq] at hop; done)
+      | skip
     have hop' : isRoot v.op = false := by
       revert hop; split <;> simp_all
-    simp [hop']
+    split
+    · exact ⟨_, rfl⟩
+    · simp only [hop', Bool.false_eq_true, ite_false]; exact ⟨_, rfl⟩
+  refine ⟨r.retype ((Ctx.make tabs g).tys[v.id]?.getD .other), ?_⟩
+  unfold evalValue
+  rw [ha]
+  simp only [List.mapM_nil, bind, Res.bind, pure, hr]
 
 /-- In the frames of a run, the register of every argument-free value holds its evaluation. -/
 def ArglessInv (env : Env) (ctx : Ctx) (fr : Frame) : Prop :=
