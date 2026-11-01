@@ -130,10 +130,16 @@ def sweep (t : Interp.Table) (removeDead : Bool) (mem void : TypeRef) : RwM (Boo
           reset v .Invalid
           deadChange := true
         continue
+      -- with the log on, the function before an elimination (only then: keeping it costs a copy)
+      let pre ← if (← get).log.isSome then do
+          let f ← getF
+          pure (if (f.phielimValue v).2 then some f else none)
+        else pure none
       let mut vchange ← modFGet fun f => f.phielimValue v
-      if vchange && (← get).log.isSome then
-        let x ← val v
-        logEv fun _ => .phielim v x
+      if vchange then
+        if let some pre := pre then
+          let x ← val v
+          logEv fun _ => .phielim v x pre
       if ← elimCopyArgs v then vchange := true
       if ← Interp.rewriteValue t v then
         vchange := true

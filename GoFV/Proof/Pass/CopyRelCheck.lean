@@ -1,19 +1,19 @@
-import GoFV.Opt.SccpCheck
+import GoFV.Opt.CopyRelCheck
 import GoFV.Proof.Pass.CopyElimSim
 
 /-!
-# sccp's `Phi`s turned copies: `copyOK` gives copyelim's `CopyRel` (issue #32)
+# `Phi`s turned copies: `copyOK` gives copyelim's `CopyRel` (issues #32, #69)
 
-`copyOK_spec`: if `Sccp.copyOK tabs k g` accepts, `g` is related to `k` by copyelim's static
-relation (`CopyElim.CopyRel tabs k g`: a `Phi` of `k` that `removeEdge`'s `phielimValue` turned
-into `Copy w` has only arguments `w` or copies of `w`; every other value is unchanged) and `k` is
-in copyelim's fragment `EmptyFrag`, so `g` refines `k` when both pass `check`
-(`CopyElim.refines_of_rel`).
+`copyOK_spec`: if `CopyCheck.copyOK tabs k g` accepts, `g` is related to `k` by copyelim's static
+relation (`CopyElim.CopyRel tabs k g`: a `Phi` of `k` that `phielimValue` turned into `Copy w`
+(sccp's `removeEdge`, `applyRewrite`) has only arguments `w` or copies of `w`; every other value
+is unchanged) and `k` is in copyelim's fragment `EmptyFrag`, so `g` refines `k` when both pass
+`check` (`CopyElim.refines_of_rel`).
 -/
 
-namespace GoFV.Proof.Sccp
+namespace GoFV.Proof.CopyRelCheck
 
-open GoFV.SSA GoFV.Opt GoFV.Opt.Sccp GoFV.Proof.CopyElim
+open GoFV.SSA GoFV.Opt GoFV.Opt.CopyCheck GoFV.Proof.CopyElim
 
 theorem copyValueOK_spec {tabs : Tables} {k g : Func} {x : ID}
     (H : copyValueOK tabs k g x = true) :
@@ -91,4 +91,4 @@ theorem copyOK_spec {tabs : Tables} {k g : Func} (H : copyOK tabs k g = true) :
     obtain ⟨-, -, -, -, hz, -⟩ := (copyValueOK_spec (h4 x hx)).1 kv hkv
     exact hz
 
-end GoFV.Proof.Sccp
+end GoFV.Proof.CopyRelCheck

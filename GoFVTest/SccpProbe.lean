@@ -23,7 +23,7 @@ def why (ce : CheckEnv) (tabs : Tables) (f h k g : Func) (C : Array (Option Lat)
     return s!"checkH {(check { ce with firstAny := true } h)}"
   if k != g then
     if !(check ce k).toBool then return s!"checkK {(check ce k)}"
-    if !copyOK tabs k g then return "copy"
+    if !CopyCheck.copyOK tabs k g then return "copy"
   let g := h
   if !RewriteCheck.atomsOK f g then return "atoms"
   if !RewriteCheck.closedOK f then return "closedF"

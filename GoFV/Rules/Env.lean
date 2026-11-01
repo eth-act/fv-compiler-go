@@ -60,8 +60,9 @@ inductive RwEvent where
   | copyArg (v : ID) (i : Nat) (src : ID)
   /-- Control `i` of block `b` replaced by `c`, the argument of the copy it was. -/
   | control (b : ID) (i : Nat) (c : ID)
-  /-- The phi `v` became a copy (`phielimValue`); `def` is its new definition. -/
-  | phielim (v : ID) («def» : Value)
+  /-- The phi `v` became a copy (`phielimValue`); `def` is its new definition, `pre` the
+  function just before (the validator splits the log there, issue #69). -/
+  | phielim (v : ID) («def» : Value) (pre : Func)
   /-- Block rule `rule` (its index in `b`'s kind row of the table) fired at `b`; `ctrls`: the
   block's controls after it. -/
   | blockRule (b : ID) (rule : Nat) (ctrls : Array ID)

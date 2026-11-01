@@ -126,6 +126,15 @@ theorem azRules_allSound : azRules.AllSound :=
     ⟨⟨GoFV.Proof.Rules.Rule.checked_of_sound GoFV.Proof.Rules.r_generic_646_3_sound rfl, trivial⟩,
       trivial⟩ trivial
 
+/-- By kernel evaluation: the rewrite of `addZero` logs no phi elimination. -/
+private theorem addZero_noPhi : ∀ r, rewriteRun (Interp.Table.ofRuleSet azRules) true true
+    azPassEnv addZero = .ok r → RewriteCheck.noPhiElim r.2.2 = true := by
+  intro r hr
+  have h : (rewriteRun (Interp.Table.ofRuleSet azRules) true true azPassEnv addZero).toOption.map
+      (fun r => RewriteCheck.noPhiElim r.2.2) = some true := by decide +kernel
+  rw [hr] at h
+  simpa [Except.toOption] using h
+
 /-- **Pass execution witness**: on `addZero`, the checked rewrite pass with the sound one-rule
 set changes the function (`v5 = MakeResult v2 v1`: `0 + n` became `n`), the validator accepted
 the result (it is not the input), and input and output pass `check`: the premises of
@@ -145,7 +154,8 @@ theorem addZero_checkedRewrite :
     obtain ⟨hg, h5, -, ht⟩ := h2
     have ht := tables_eq (of_decide_eq_true ht)
     refine ⟨out, rfl, ht, h5, ?_, ok_of_toBool h1, ok_of_toBool hg⟩
-    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl rfl rfl rfl hc with ⟨he, -⟩ | ⟨-, hv⟩
+    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl rfl rfl rfl addZero_noPhi hc
+      with ⟨he, -⟩ | ⟨-, hv⟩
     · rw [he] at h5; exact absurd h5 (by decide +kernel)
     · rw [← ht]; exact hv
 

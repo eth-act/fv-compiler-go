@@ -76,6 +76,7 @@ import GoFV.Proof.Pass.CopyElimSweep
 import GoFV.Proof.Pass.CopyElimView
 import GoFV.Proof.Pass.CopyElimWF
 import GoFV.Proof.Pass.CopyFrag
+import GoFV.Proof.Pass.CopyRelCheck
 import GoFV.Proof.Pass.DAE
 import GoFV.Proof.Pass.DAEAvoid
 import GoFV.Proof.Pass.DAEBlock
@@ -222,7 +223,6 @@ import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Pass.RewriteTermRule
 import GoFV.Proof.Pass.RewriteTermStep
 import GoFV.Proof.Pass.Sccp
-import GoFV.Proof.Pass.SccpCopy
 import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
