@@ -7,7 +7,7 @@ import GoFV.Rules.Helpers.Ptr
 import GoFV.SSA.DomCert
 import GoFV.SSA.Sem.Run
 import GoFV.Opt.CSEMem
-import Std.Data.HashMap.Basic
+import Std.Data.TreeMap
 
 /-!
 # generic cse (`cse.go`)
@@ -54,8 +54,16 @@ structure Ctx where
 /-- `lt2Cmp(isLt)`. -/
 @[inline] def lt2 (b : Bool) : Ordering := if b then .lt else .gt
 
+/-- A total order on auxes (`none` first), the key order of `AuxIDs`. -/
+def auxCmp (a b : Option AuxRef) : Ordering :=
+  compare ((a.map (· + 1)).getD 0) ((b.map (· + 1)).getD 0)
+
+/-- `auxIDs`: the number of each aux. A `TreeMap` (only searched, so any key order gives the same
+result), which the kernel can evaluate, unlike a `HashMap`. -/
+abbrev AuxIDs := Std.TreeMap (Option AuxRef) Int auxCmp
+
 /-- `cmpVal(v, w, auxIDs)`. -/
-def cmpVal (c : Ctx) (f : Func) (auxIDs : Std.HashMap (Option AuxRef) Int) (v w : ID) :
+def cmpVal (c : Ctx) (f : Func) (auxIDs : AuxIDs) (v w : ID) :
     Ordering :=
   let x := f.getV v
   let y := f.getV w
@@ -76,7 +84,7 @@ def cmpVal (c : Ctx) (f : Func) (auxIDs : Std.HashMap (Option AuxRef) Int) (v w 
     else .eq
 
 /-- `partitionValues(a, auxIDs)`. -/
-def partitionValues (c : Ctx) (f : Func) (auxIDs : Std.HashMap (Option AuxRef) Int)
+def partitionValues (c : Ctx) (f : Func) (auxIDs : AuxIDs)
     (a : Array ID) : Array (Array ID) := Id.run do
   let a := GoFV.Util.PdqSort.sortFunc (fun v w =>
     match cmpVal c f auxIDs v w with
@@ -315,7 +323,7 @@ open CSE in
 def cseRw (c : Ctx) (f : Func) : Except String (Func × Array (Option ID)) := do
   -- the non-memory values, numbering new auxes in `f.auxmap`
   let am := f.cache.auxmap.getD #[]
-  let mut auxIDs : Std.HashMap (Option AuxRef) Int :=
+  let mut auxIDs : AuxIDs :=
     am.foldl (fun m (a, k) => m.insert a k) {}
   let mut am := am
   let mut a : Array ID := #[]
