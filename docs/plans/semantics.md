@@ -191,10 +191,15 @@ executable `Mem` can use a `Std.HashMap` per allocation with a `@[csimp]`-free f
 - **Heap**: only runtime contracts allocate (`newobject`, `makeslice`, `growslice`, …; §5),
   zeroed.
 - **Access rule** (as clifv): a load/store of `n` bytes at `⟨a, off⟩` is valid iff allocation
-  `a` is live, `off + n ≤ size` and `off + n < 2^64` (no access wraps around the address space:
+  `a` is live, `off + n ≤ size`, `off + n < 2^64` (no access wraps around the address space:
   offsets add mod 2^64, so without the bound an allocation of 2^64 bytes or more would let
   `p` and `p + k` straddle the wrap, and `memcombine`'s wide access at `p` would not cover its
-  narrow ones; issue #35). Invalid **load** = `poison` (loads are pure in Go SSA:
+  narrow ones; issue #35) and `off + n` is inside the block's address window
+  (`Blk.endsInWindow`: `off + n ≤ window` for blocks with one, §3.3; issue #151). The window
+  bound makes every byte of a valid access addressable by an in-window pointer, so
+  `OffPtr [o] p` into a valid access of `p` is not `poison`: a struct `Load` splits into field
+  `Load`s (`rewriteStructLoad`, dec's string/slice/interface splits) for every memory, not only
+  for allocations smaller than their window. Invalid **load** = `poison` (loads are pure in Go SSA:
   `deadcode` deletes unused loads, so a load can never be the source of a panic; nil
   dereference panics come only from `NilCheck`, §6). Invalid **store/move/zero** = `stuck`.
   No alignment requirement for plain accesses (arm64 `unalignedOK`); atomics must be naturally

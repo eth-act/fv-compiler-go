@@ -55,7 +55,7 @@ theorem read_write_self {m m' : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p
       simp only [beq_iff_eq, hsz, ite_false]
       rw [find?_set]
       simp only [ite_true, Option.bind_eq_bind, Option.bind_some, foldl_set_size]
-      simp only [hok.1.2, hok.2, and_self, ↓reduceIte]
+      simp only [hok.1.1.2, hok.1.2, hok.2, and_self, ↓reduceIte]
       congr 1
       apply Array.ext
       · rw [Array.size_extract, foldl_set_size]; omega

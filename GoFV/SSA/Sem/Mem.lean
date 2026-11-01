@@ -8,7 +8,8 @@ values are encoded to bytes and decoded from them by their type's shape (`Ty`, c
 `Sem/Layout.lean`), little-endian, pointers as eight `Byte.frag`s.
 
 Access rule (as clifv): an access of `n` bytes at `⟨blk, off⟩` is valid iff `blk` has an
-allocation and `off + n ≤ size`. Invalid loads give `poison` (loads are pure); invalid
+allocation, `off + n ≤ size`, `off + n < 2^64` and `off + n` is inside `blk`'s address window
+(`Blk.endsInWindow`). Invalid loads give `poison` (loads are pure); invalid
 stores/moves/zeroes are `stuck` (the caller turns `none` into `stuck`); stores into
 read-only data (`writable = false`) likewise.
 -/
@@ -63,6 +64,14 @@ def Ptr.inWindow (p : Ptr) : Bool :=
   | some w => decide (p.off.toNat < w)
   | none => true
 
+/-- An access of block `b` ending at offset `e` stays inside its address window (globals have
+none): the bytes of a valid access are addressed by in-window pointers (`OffPtr` into it is not
+`poison`, issue #151). -/
+def Blk.endsInWindow (b : Blk) (e : Nat) : Bool :=
+  match b.window? with
+  | some w => decide (e ≤ w)
+  | none => true
+
 /-- `p` converts to an integer and back to itself (`Ptr.ofAddr_addr`): inside its window, its
 block's number small enough for the address encoding, and not a frame temporary (whose address
 the program never takes) or a global (no concrete address). -/
@@ -100,20 +109,24 @@ def allocHeap (m : Mem) (data : Array Byte) : Ptr × Mem :=
 
 /-- `n` bytes at `p`, if the access is valid (an empty access always is: Go compares and
 copies zero bytes at nil pointers). A valid access ends below `2^64`: no access wraps around
-the address space, as on the machine (an allocation's bytes beyond are unreachable). -/
+the address space, as on the machine (an allocation's bytes beyond are unreachable); and it
+ends inside its block's address window (`Blk.endsInWindow`). -/
 def read (m : Mem) (p : Ptr) (n : Nat) : Option (Array Byte) := do
   if n == 0 then return #[]
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if off + n ≤ a.data.size ∧ off + n < 2 ^ 64 then some (a.data.extract off (off + n)) else none
+  if off + n ≤ a.data.size ∧ off + n < 2 ^ 64 ∧ p.blk.endsInWindow (off + n) = true then
+    some (a.data.extract off (off + n))
+  else none
 
-/-- Write `bs` at `p`, if the access is valid (in bounds, below `2^64`, as `read`) and the
-allocation writable (an empty write always is, and changes nothing). -/
+/-- Write `bs` at `p`, if the access is valid (in bounds, below `2^64`, inside the window, as
+`read`) and the allocation writable (an empty write always is, and changes nothing). -/
 def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
   if bs.isEmpty then return m
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if a.writable && off + bs.size ≤ a.data.size && off + bs.size < 2 ^ 64 then
+  if a.writable && off + bs.size ≤ a.data.size && off + bs.size < 2 ^ 64 &&
+      p.blk.endsInWindow (off + bs.size) then
     let data := (List.range bs.size).foldl (fun d i => d.set! (off + i) bs[i]!) a.data
     some (m.set p.blk { a with data })
   else none
