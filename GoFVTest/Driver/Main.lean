@@ -61,21 +61,31 @@ def driverFrontend (e : ExportFile) (tables : Tables) : Tables := Id.run do
       if let some (n, td) := PassEnv.findSym? all r.target abi then
         fe := fe.add (.aux n td)
         queue := queue.push td
-        -- the exporter also defines the types the symbol refers to (typeinfo, itabinfo)
+        -- the exporter also defines the types the symbol refers to (typeinfo, itabinfo) and
+        -- their components, transitively (field types of a struct, …). A type enters `fe`
+        -- when it is pushed, so each is pushed once and `all.types.size` pops suffice.
         let .sym _ _ _ _ _ ti ii _ _ _ := td.kind | continue
-        let mut ts := ti.toArray ++ ii.toArray
+        let mut ts : Array TypeRef := #[]
+        for t in ti.toArray ++ ii.toArray do
+          if (fe.type? t).isNone then
+            if let some d := all.type? t then
+              fe := fe.add (.type t d)
+              ts := ts.push t
         for _ in [0:all.types.size + 1] do
           let some t := ts.back? | break
           ts := ts.pop
-          if (fe.type? t).isSome then continue
-          let some d := all.type? t | continue
-          fe := fe.add (.type t d)
-          ts := ts ++ match d.tail with
+          let some d := fe.type? t | continue
+          let comps : Array TypeRef := match d.tail with
             | .none => #[]
             | .elem x | .array x _ => #[x]
             | .struct fs | .func _ _ _ fs => fs.map (·.type)
             | .tuple x y => #[x, y]
             | .results xs => xs
+          for c in comps do
+            if (fe.type? c).isNone then
+              if let some dc := all.type? c then
+                fe := fe.add (.type c dc)
+                ts := ts.push c
   return fe
 
 /-- The pass environment of an export file's header with the given tables. As the driver's

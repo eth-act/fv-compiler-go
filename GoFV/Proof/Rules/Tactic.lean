@@ -70,7 +70,7 @@ attribute [rule_norm_s] or_true true_or or_false false_or and_true true_and and_
   List.getD_cons_succ decide_eq_true_eq decide_eq_false_iff_not beq_iff_eq bne_iff_ne Nat.le_refl
   Nat.lt_irrefl BitVec.ofInt_ofNat Nat.reducePow Nat.reduceLT Nat.reduceLeDiff Nat.reduceAdd
   Nat.reduceSub Nat.reduceMod GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo DV.int.injEq
-  DV.bool.injEq callE callH Bool.cond_true Bool.cond_false
+  DV.bool.injEq callE callH Bool.cond_true Bool.cond_false Option.map_some
 
 attribute [rule_unfold_ds] GoFV.Proof.Rules.Pat.den GoFV.Proof.Rules.Pat.dens
   GoFV.Proof.Rules.Pat.raw GoFV.Proof.Rules.sigma GoFV.Proof.Rules.Pat.binds
@@ -113,9 +113,46 @@ facts propagate, `hasTy` facts become type equations. -/
 macro "rule_norm" : tactic => `(tactic|
   simp_all (config := { decide := true }) only [rule_sem, rule_helper, rule_norm_s])
 
+/-- The subterms of `e` satisfying `p`, each once. -/
+partial def subtermsWith (p : Lean.Expr → Bool) (e : Lean.Expr) : Array Lean.Expr :=
+  (go e).run #[] |>.2
+where
+  go (e : Lean.Expr) : StateM (Array Lean.Expr) Unit := do
+    if p e && !(← get).contains e then modify (·.push e)
+    match e with
+    | .app f a => go f; go a
+    | .lam _ d b _ | .forallE _ d b _ => go d; go b
+    | .letE _ t v b _ => go t; go v; go b
+    | .mdata _ b | .proj _ _ b => go b
+    | _ => pure ()
+
+/-- Every oracle answer `or.dv X` in the condition `hcond` with `X` of Go type `bool` is a
+boolean (`Oracle.BoolTyped`, hypothesis `hbt`): replaced by a fresh `Bool`, so that `&&`/`||`
+with an oracle atom evaluate. -/
+elab "rule_oracle_bool" : tactic => withMainContext do
+  let some hbt := (← getLCtx).findFromUserName? `hbt | return
+  let some hc := (← getLCtx).findFromUserName? `hcond | return
+  let ty ← instantiateMVars hc.type
+  let atoms := subtermsWith (fun t => t.isAppOfArity ``Oracle.dv 2 &&
+    !(t.getArg! 1).hasFVar && !t.hasLooseBVars && !(t.getArg! 1).hasMVar) ty
+  let hbs ← Term.exprToSyntax hbt.toExpr
+  let hcs := mkIdent `hcond
+  for a in atoms do
+    let tyE := mkApp2 (mkConst ``exprTy) (← mkListLit (mkConst ``GoFV.Rules.GoTy) []) (a.getArg! 1)
+    unless ← withNewMCtxDepth (isDefEq tyE (mkConst ``GoFV.Rules.GoTy.bool)) do continue
+    let x ← Term.exprToSyntax (a.getArg! 1)
+    let saved ← saveState
+    try
+      evalTactic (← `(tactic| (
+        obtain ⟨_, hbo⟩ := $hbs $x (by rfl)
+        simp only [hbo] at $hcs:ident
+        clear hbo)))
+    catch _ => saved.restore
+
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
-result; the hypotheses are `hwf` (checker facts), `hc` (pattern checks), `hcond` (condition),
-`hty` (top type), `hlt` (leaf types). -/
+result; the hypotheses are `hbt` (`Oracle.BoolTyped`), `hwf` (checker facts), `hc` (pattern
+checks), `hcond` (condition, its `bool` oracle atoms replaced by booleans,
+`rule_oracle_bool`), `hty` (top type), `hlt` (leaf types). -/
 elab "rule_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
@@ -124,6 +161,7 @@ elab "rule_unfold" : tactic => do
   let rid := mkIdent rn
   let e := mkIdent `e
   let or := mkIdent `or
+  let hbt := mkIdent `hbt
   let hwf := mkIdent `hwf
   let hc := mkIdent `hc
   let hcond := mkIdent `hcond
@@ -131,10 +169,11 @@ elab "rule_unfold" : tactic => do
   let hlt := mkIdent `hlt
   evalTactic (← `(tactic| (
     refine ⟨rfl, ?_⟩
-    intro $e:ident $or:ident
+    intro $e:ident $or:ident $hbt:ident
     dsimp only [$rid:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
-    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident)))
+    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident
+    rule_oracle_bool)))
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
 (`PEnv.leaf e p`), `tyOtherInt t w`, the condition of an `if`, or `Val.asInt w l` for a leaf
@@ -318,19 +357,6 @@ partial def substLocals (g : MVarId) : MetaM MVarId := g.withContext do
 elab "rule_subst" : tactic => do
   replaceMainGoal [← substLocals (← getMainGoal)]
 
-/-- The subterms of `e` satisfying `p`, each once. -/
-partial def subtermsWith (p : Lean.Expr → Bool) (e : Lean.Expr) : Array Lean.Expr :=
-  (go e).run #[] |>.2
-where
-  go (e : Lean.Expr) : StateM (Array Lean.Expr) Unit := do
-    if p e && !(← get).contains e then modify (·.push e)
-    match e with
-    | .app f a => go f; go a
-    | .lam _ d b _ | .forallE _ d b _ => go d; go b
-    | .letE _ t v b _ => go t; go v; go b
-    | .mdata _ b | .proj _ _ b => go b
-    | _ => pure ()
-
 /-- The atoms `omega` cannot see into, with their facts as hypotheses: for `a &&& b` on `Nat`
 its bounds and, where `omega` proves that one side's low `k` bits are all ones or all zeros,
 its remainder by `m = 2 ^ k` (`m` the first power-of-two modulus of the goal); `Int.tmod` by
@@ -451,6 +477,49 @@ macro "rule_ext" : tactic => `(tactic| (
      rule_omega_facts
      omega)))
 
+/-- Division and remainder: constant folds (`sdiv_ofInt`, `srem_ofInt` with the auxint ranges
+by `omega`; `udiv_ofInt`, `umod_ofInt`), a negated divisor (`sdiv_neg_ofInt`,
+`srem_neg_right`), the minimal divisor (`sdiv_intMin_and_neg`), a remainder as
+`x - (x / y) * y` (`sub_udiv_mul`, `sub_sdiv_mul`), contradictory divisor facts by `omega`. -/
+macro "rule_div" : tactic => `(tactic| (
+  (try simp only [rule_bits, BitVec.neg_eq_zero_iff] at *)
+  (try simp (disch := omega) only [GoFV.Proof.Rules.sdiv_ofInt, GoFV.Proof.Rules.srem_ofInt,
+    GoFV.Proof.Rules.sdiv_neg_ofInt, GoFV.Proof.Rules.udiv_ofInt, GoFV.Proof.Rules.umod_ofInt,
+    GoFV.Proof.Rules.srem_neg_right, BitVec.neg_neg, BitVec.toNat_ofNat, Nat.reduceMod])
+  first
+  | done
+  | with_reducible rfl
+  | rw [GoFV.Proof.Rules.sub_udiv_mul]
+  | rw [GoFV.Proof.Rules.sub_sdiv_mul]
+  | rw [GoFV.Proof.Rules.sdiv_intMin_and_neg (by decide)]
+  | (exfalso; simp only [rule_cmp, rule_amt] at *; omega)))
+
+/-- An unsigned division or remainder by a power of two (`isPowerOfTwo(uintN(c))`, a
+hypothesis `wrapInt w false (andPred T (wrapInt w false c)) = 0`): the divisor's value by
+`isPow2_toNat`, then the shift (`udiv_pow2`, amount by `omega`) or mask (`umod_pow2_and`). -/
+elab "rule_pow2" : tactic => withMainContext do
+  for h in ← getLCtx do
+    if h.isImplementationDetail then continue
+    let ty ← instantiateMVars h.type
+    let some (_, l, _) := ty.eq? | continue
+    unless l.isAppOfArity ``GoFV.Rules.wrapInt 3 && (l.getArg! 2).isAppOfArity ``andPred 2 do
+      continue
+    let ap := l.getArg! 2
+    let inner := ap.getArg! 1
+    unless inner.isAppOfArity ``GoFV.Rules.wrapInt 3 do continue
+    let T ← Term.exprToSyntax (ap.getArg! 0)
+    let w ← Term.exprToSyntax (inner.getArg! 0)
+    let c ← Term.exprToSyntax (inner.getArg! 2)
+    let hs ← Term.exprToSyntax h.toExpr
+    evalTactic (← `(tactic| (
+      obtain ⟨hp2, hb1, hb2⟩ := GoFV.Proof.Rules.isPow2_toNat (T := $T) (w := $w) (c := $c) rfl
+        (by decide) (by first | assumption | omega) $hs
+      first
+      | (rw [GoFV.Proof.Rules.udiv_pow2 _ _ _ hp2]; congr 1; simp only [rule_amt] at *; omega)
+      | rw [GoFV.Proof.Rules.umod_pow2_and _ _ _ hp2])))
+    return
+  throwError "rule_pow2: no isPowerOfTwo condition"
+
 /-- Close the arithmetic left after the splits: auxint reads are generalized, constants
 pushed into `BitVec`, then `rfl`, a rotation (`rule_rot`, before `grind`: a failing `grind`
 spends seconds on rotation goals), a ring identity (`grind` after complements and constant
@@ -471,6 +540,8 @@ macro "rule_close" : tactic => `(tactic| (
   | rule_rotamt
   | rule_shamt
   | rule_cmpc
+  | rule_div
+  | rule_pow2
   | ((try simp only [GoFV.Proof.Rules.bv_not_eq, GoFV.Proof.Rules.bv_shl_nat, Nat.reducePow] at *)
      grind)
   | ((try simp only [rule_bits] at *)
