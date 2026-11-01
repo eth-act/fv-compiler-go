@@ -1,5 +1,6 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values00
+import GoFV.Rules.Generated.Generic.Values01
 import GoFV.Rules.Generated.Generic.Values02
 import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values07
@@ -370,5 +371,27 @@ theorem inst_r_generic_1683 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
   simp [GoFV.Rules.Generated.Generic.r_generic_1683]
   rule_eval
   simp [PtrOps.eqPtr, Val.retype, Val.asPtrWord]
+
+/-- `generic.rules:322`: `(AndB (Leq32 (Const32 [c]) x) (Less32 x (Const32 [d]))) && d >= c =>
+(Less32U (Sub32 <x.Type> x (Const32 <x.Type> [c])) (Const32 <x.Type> [d-c]))` at `c = 1`,
+`x = 5`, `d = 10`. -/
+theorem inst_r_generic_322 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_322
+    (PEnv.ofLists [([0, 1], .i32 5), ([1, 0], .i32 5)] [([], .bool), ([0], .bool), ([1], .bool)]
+      (.int .w32) [([0, 0], 1), ([1, 1], 10)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_322]
+  rule_eval
+  refine ⟨rfl, ?_⟩
+  simp [show (1#32).sle 5#32 = true from rfl, show (5#32).slt 10#32 = true from rfl]
+
+/-- `generic.rules:346`: `(OrB (Less32 (Const32 [c]) x) (Less32 x (Const32 [d]))) && c >= d =>
+(Less32U (Const32 <x.Type> [c-d]) (Sub32 <x.Type> x (Const32 <x.Type> [d])))` at `c = 10`,
+`x = 5`, `d = 1`. -/
+theorem inst_r_generic_346 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_346
+    (PEnv.ofLists [([0, 1], .i32 5), ([1, 0], .i32 5)] [([], .bool), ([0], .bool), ([1], .bool)]
+      (.int .w32) [([0, 0], 10), ([1, 1], 1)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_346]
+  rule_eval
+  refine ⟨rfl, ?_⟩
+  simp [show (10#32).slt 5#32 = false from rfl, show (5#32).slt 1#32 = false from rfl]
 
 end GoFV.Proof.Rules

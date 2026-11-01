@@ -188,6 +188,10 @@ import GoFV.Proof.Rules.AddPtr
 import GoFV.Proof.Rules.AllSound
 import GoFV.Proof.Rules.And
 import GoFV.Proof.Rules.And2
+import GoFV.Proof.Rules.AndB
+import GoFV.Proof.Rules.AndB2
+import GoFV.Proof.Rules.AndB3
+import GoFV.Proof.Rules.AndB4
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
@@ -256,8 +260,14 @@ import GoFV.Proof.Rules.Or2
 import GoFV.Proof.Rules.Or3
 import GoFV.Proof.Rules.Or4
 import GoFV.Proof.Rules.Or5
+import GoFV.Proof.Rules.OrB
+import GoFV.Proof.Rules.OrB2
+import GoFV.Proof.Rules.OrB3
+import GoFV.Proof.Rules.OrB4
 import GoFV.Proof.Rules.Proven
 import GoFV.Proof.Rules.PtrIndex
+import GoFV.Proof.Rules.RangeLemmas
+import GoFV.Proof.Rules.RangeLemmas2
 import GoFV.Proof.Rules.RotateLeft
 import GoFV.Proof.Rules.RotateLeft10
 import GoFV.Proof.Rules.RotateLeft11
@@ -283,6 +293,7 @@ import GoFV.Proof.Rules.Sub
 import GoFV.Proof.Rules.Sub2
 import GoFV.Proof.Rules.Sub3
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.TacticRange
 import GoFV.Proof.Rules.Trunc
 import GoFV.Proof.Rules.Trunc2
 import GoFV.Proof.Rules.Xor
