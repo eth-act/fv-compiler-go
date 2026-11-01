@@ -1,5 +1,6 @@
 import GoFV.Proof.MemRefine
 import GoFV.SSA.Sem.Layout
+import GoFV.Proof.Retype
 
 /-!
 # Encoding, decoding and retyping are monotone in refinement
@@ -95,6 +96,42 @@ theorem decodePtr_poison {bs : Array Byte} (h : HasPoisonByte bs) : decodePtr bs
 
 /-! ## Decoding -/
 
+theorem decodeInt_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (w : Width) (a b : Nat) :
+    Refines (decodeInt w (bs.extract a b)) (decodeInt w (bs'.extract a b)) := by
+  rcases bytesRefine_eq_or_poison (h.extract a b) with he | hp
+  · rw [he]; exact Refines.refl _
+  · rw [decodeInt_poison hp]; exact .poison _
+
+theorem decodePtr_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (a b : Nat) :
+    Refines (decodePtr (bs.extract a b)) (decodePtr (bs'.extract a b)) := by
+  rcases bytesRefine_eq_or_poison (h.extract a b) with he | hp
+  · rw [he]; exact Refines.refl _
+  · rw [decodePtr_poison hp]; exact .poison _
+
+/-- A string built from refined components refines (the length check is monotone). -/
+theorem ofStr_mono {vs vs' : List Val} (h : RefinesList vs vs') :
+    Refines (Val.ofStr vs) (Val.ofStr vs') := by
+  unfold Val.ofStr
+  by_cases hs : Val.strOK vs = true
+  · obtain ⟨p, l, rfl, hl⟩ := Val.strOK_iff.1 hs
+    rcases h with _ | ⟨hp, _ | ⟨hl', h3⟩⟩
+    cases hl'; cases h3
+    rw [if_pos hs, if_pos (by simp [Val.strOK, hl])]
+    exact .agg (.cons hp (.cons (.int _ _) .nil))
+  · rw [if_neg hs]; exact .poison _
+
+/-- A slice built from refined components refines. -/
+theorem ofSlice_mono {vs vs' : List Val} (h : RefinesList vs vs') :
+    Refines (Val.ofSlice vs) (Val.ofSlice vs') := by
+  unfold Val.ofSlice
+  by_cases hs : Val.sliceOK vs = true
+  · obtain ⟨p, l, c, rfl, hl, hc, hlc⟩ := Val.sliceOK_iff.1 hs
+    rcases h with _ | ⟨hp, _ | ⟨hl', _ | ⟨hc', h4⟩⟩⟩
+    cases hl'; cases hc'; cases h4
+    rw [if_pos hs, if_pos (by simp [Val.sliceOK, hl, hc, BitVec.ule, hlc])]
+    exact .agg (.cons hp (.cons (.int _ _) (.cons (.int _ _) .nil)))
+  · rw [if_neg hs]; exact .poison _
+
 mutual
 theorem decode_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : Nat) :
     (t : Ty) → Refines (decode bs off t) (decode bs' off t)
@@ -127,6 +164,13 @@ theorem decode_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : Nat) 
   | .other => by simp only [decode]; exact .poison _
   | .mem => by simp only [decode]; exact .poison _
   | .tuple _ => by simp only [decode]; exact .poison _
+  | .str => by
+    simp only [decode]
+    exact ofStr_mono (.cons (decodePtr_mono h _ _) (.cons (decodeInt_mono h _ _ _) .nil))
+  | .slice _ => by
+    simp only [decode]
+    exact ofSlice_mono (.cons (decodePtr_mono h _ _)
+      (.cons (decodeInt_mono h _ _ _) (.cons (decodeInt_mono h _ _ _) .nil)))
 theorem decodeFields_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : Nat) :
     (fs : List (Nat × Ty)) → RefinesList (decodeFields bs off fs) (decodeFields bs' off fs)
   | [] => by simp only [decodeFields]; exact .nil
@@ -172,6 +216,18 @@ theorem decodeLoad_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : N
   | .other => by simp only [decodeLoad]; exact .poison _
   | .mem => by simp only [decodeLoad]; exact .poison _
   | .tuple _ => by simp only [decodeLoad]; exact .poison _
+  | .str => by
+    simp only [decodeLoad]
+    by_cases hp : allPoison bs off 16 = true
+    · rw [if_pos hp]; exact .poison _
+    · rw [if_neg hp, if_neg fun h' => hp (allPoison_mono h off 16 h')]
+      exact decode_mono h off _
+  | .slice _ => by
+    simp only [decodeLoad]
+    by_cases hp : allPoison bs off 24 = true
+    · rw [if_pos hp]; exact .poison _
+    · rw [if_neg hp, if_neg fun h' => hp (allPoison_mono h off 24 h')]
+      exact decode_mono h off _
 theorem decodeLoadFields_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : Nat) :
     (fs : List (Nat × Ty)) → RefinesList (decodeLoadFields bs off fs) (decodeLoadFields bs' off fs)
   | [] => by simp only [decodeLoadFields]; exact .nil
@@ -208,6 +264,64 @@ theorem putBytes_size (d : Array Byte) (off : Nat) (src : Array Byte) :
     simp only [List.foldl_cons]
     rw [ih]
     split <;> simp
+
+theorem encodeWord_eq (e : Option Nat) (v : Val) : encodeWord v = encode (.ptr e) v := by
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
+
+theorem encodeWord_eq_i64 (v : Val) : encodeWord v = encode (.int .w64) v := by
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
+
+/-- `encodeWords` is `encodeFields` at word fields. -/
+theorem encodeWords_eq (buf : Array Byte) (os : List Nat) (ts : List Ty) (vs : List Val)
+    (hl : os.length = ts.length)
+    (ht : ∀ t ∈ ts, ∀ v, encodeWord v = encode t v) :
+    encodeWords buf os vs = encodeFields buf (os.zip ts) vs := by
+  induction os generalizing buf ts vs with
+  | nil => simp [encodeWords, encodeFields]
+  | cons o os ih =>
+    cases ts with
+    | nil => simp at hl
+    | cons t ts =>
+      cases vs with
+      | nil => simp [encodeWords, encodeFields]
+      | cons v vs =>
+        simp only [encodeWords, List.zip_cons_cons, encodeFields]
+        rw [ht t (List.mem_cons_self ..) v]
+        exact ih _ ts vs (by simpa using hl) fun t' h' => ht t' (List.mem_cons_of_mem _ h')
+
+/-- A string is encoded as the aggregate of its fields. -/
+theorem encode_str_agg (vs : List Val) :
+    encode .str (.agg vs) = encodeFields (Array.replicate 16 .poison)
+      [(0, .ptr (some 1)), (8, .int .w64)] vs := by
+  simp only [encode]
+  exact encodeWords_eq _ [0, 8] [.ptr (some 1), .int .w64] vs rfl (by
+    simp only [List.mem_cons, List.not_mem_nil, or_false]
+    rintro t (rfl | rfl) v
+    · exact encodeWord_eq _ v
+    · exact encodeWord_eq_i64 v)
+
+/-- A slice is encoded as the aggregate of its fields. -/
+theorem encode_slice_agg (e : Option Nat) (vs : List Val) :
+    encode (.slice e) (.agg vs) = encodeFields (Array.replicate 24 .poison)
+      [(0, .ptr e), (8, .int .w64), (16, .int .w64)] vs := by
+  simp only [encode]
+  exact encodeWords_eq _ [0, 8, 16] [.ptr e, .int .w64, .int .w64] vs rfl (by
+    simp only [List.mem_cons, List.not_mem_nil, or_false]
+    rintro t (rfl | rfl | rfl) v
+    · exact encodeWord_eq _ v
+    · exact encodeWord_eq_i64 v
+    · exact encodeWord_eq_i64 v)
+
+theorem encodeWords_size (buf : Array Byte) :
+    (os : List Nat) → (vs : List Val) → (encodeWords buf os vs).size = buf.size
+  | o :: os, v :: vs => by
+    simp only [encodeWords]; rw [encodeWords_size, putBytes_size]
+  | [], _ => by simp [encodeWords]
+  | _ :: _, [] => by simp [encodeWords]
 
 theorem encode_blob (t : Ty) (bs : List Byte) :
     encode t (.blob bs) = if bs.length == t.size then bs.toArray else Array.replicate t.size .poison := by
@@ -257,6 +371,11 @@ theorem encode_size : (t : Ty) → (v : Val) → (encode t v).size = t.size
   | .empty, .int _ _ | .empty, .bool _ | .empty, .ptr _ | .empty, .agg _ | .empty, .empty
   | .opaque _, .int _ _ | .opaque _, .bool _ | .opaque _, .ptr _ | .opaque _, .agg _
   | .opaque _, .empty => by simp [encode]
+  | .str, .agg vs => by simp only [encode, Ty.size]; rw [encodeWords_size]; simp
+  | .slice _, .agg vs => by simp only [encode, Ty.size]; rw [encodeWords_size]; simp
+  | .str, .int _ _ | .str, .bool _ | .str, .ptr _ | .str, .empty
+  | .slice _, .int _ _ | .slice _, .bool _ | .slice _, .ptr _ | .slice _, .empty => by
+    simp [encode]
 theorem encodeFields_size (buf : Array Byte) :
     (fs : List (Nat × Ty)) → (vs : List Val) → (encodeFields buf fs vs).size = buf.size
   | (o, t) :: fs, v :: vs => by
@@ -285,6 +404,12 @@ theorem encode_mono (t : Ty) : {v v' : Val} → Refines v v' → BytesRefineA (e
     | agg fs n =>
       simp only [encode]
       exact encodeFields_mono (BytesRefineA.refl _) fs h
+    | str =>
+      rw [encode_str_agg, encode_str_agg]
+      exact encodeFields_mono (BytesRefineA.refl _) _ h
+    | slice e =>
+      rw [encode_slice_agg, encode_slice_agg]
+      exact encodeFields_mono (BytesRefineA.refl _) _ h
     | int w => cases w <;> simp only [encode] <;> exact BytesRefineA.refl _
     | _ => simp only [encode]; exact BytesRefineA.refl _
 theorem encodeFields_mono {buf buf' : Array Byte} (hb : BytesRefineA buf buf') :
@@ -298,6 +423,32 @@ theorem encodeFields_mono {buf buf' : Array Byte} (hb : BytesRefineA buf buf') :
 end
 
 /-! ## Loads and retyping -/
+
+/-- `retype` at the string shape: the fields' retyping, then the length check. -/
+theorem retype_str_agg (vs : List Val) :
+    Val.retype .str (.agg vs) =
+      match Val.retypeFields [(0, .ptr (some 1)), (8, .int .w64)] vs with
+      | some vs' => Val.ofStr vs'
+      | none => .poison := by
+  match vs with
+  | [p, l] =>
+    show Val.ofStr [p.retypePtr, l.retypeI64] =
+      Val.ofStr [p.retype (.ptr (some 1)), l.retype (.int .w64)]
+    rw [Val.retypePtr_eq (some 1), Val.retypeI64_eq]
+  | [] | [_] | _ :: _ :: _ :: _ => rfl
+
+/-- `retype` at a slice shape: the fields' retyping, then the length check. -/
+theorem retype_slice_agg (e : Option Nat) (vs : List Val) :
+    Val.retype (.slice e) (.agg vs) =
+      match Val.retypeFields [(0, .ptr e), (8, .int .w64), (16, .int .w64)] vs with
+      | some vs' => Val.ofSlice vs'
+      | none => .poison := by
+  match vs with
+  | [p, l, c] =>
+    show Val.ofSlice [p.retypePtr, l.retypeI64, c.retypeI64] =
+      Val.ofSlice [p.retype (.ptr e), l.retype (.int .w64), c.retype (.int .w64)]
+    rw [Val.retypePtr_eq e, Val.retypeI64_eq, Val.retypeI64_eq]
+  | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => rfl
 
 theorem load_mono {m m' : Mem} (h : Mem.Refines m m') (t : Ty) (p : Ptr) :
     Refines (m.load t p) (m'.load t p) := by
@@ -345,6 +496,26 @@ theorem retype_mono : ∀ (t : Ty) {v v' : Val}, Refines v v' → Refines (v.ret
       · cases hr
       · cases hr
       · cases hr with | some hw => exact .agg hw
+    | str =>
+      rw [retype_str_agg, retype_str_agg]
+      have hr := retypeFields_mono [(0, .ptr (some 1)), (8, .int .w64)] h
+      cases ha : Val.retypeFields [(0, .ptr (some 1)), (8, .int .w64)] vs <;>
+        cases hb : Val.retypeFields [(0, .ptr (some 1)), (8, .int .w64)] vs' <;>
+        rw [ha, hb] at hr
+      · exact .poison _
+      · cases hr
+      · cases hr
+      · cases hr with | some hw => exact ofStr_mono hw
+    | slice e =>
+      rw [retype_slice_agg, retype_slice_agg]
+      have hr := retypeFields_mono [(0, .ptr e), (8, .int .w64), (16, .int .w64)] h
+      cases ha : Val.retypeFields [(0, .ptr e), (8, .int .w64), (16, .int .w64)] vs <;>
+        cases hb : Val.retypeFields [(0, .ptr e), (8, .int .w64), (16, .int .w64)] vs' <;>
+        rw [ha, hb] at hr
+      · exact .poison _
+      · cases hr
+      · cases hr
+      · cases hr with | some hw => exact ofSlice_mono hw
     | _ => exact .poison _
   | t, .blob bs, .blob bs', .blob h => by
     cases t with
@@ -385,5 +556,191 @@ theorem retypeFields_mono : ∀ (fs : List (Nat × Ty)) {vs vs' : List Val}, Ref
     · cases hr
     · cases hr with | some hw => exact .some (.cons (retype_mono t ha) hw)
 end
+
+/-! ## Strings and slices as aggregates
+
+Encoding, decoding, loading and retyping at a string or slice shape are those at its aggregate
+layout (`Ty.asAgg`) followed by the length check (`Val.checkLen`), which only adds `poison`
+(`Val.checkLen_refines`) and is monotone (`Val.checkLen_mono`). Proofs about aggregates so
+carry over to strings and slices. -/
+
+theorem Ty.size_asAgg (t : Ty) : t.asAgg.size = t.size := by cases t <;> rfl
+
+theorem Ty.asAgg_asAgg (t : Ty) : t.asAgg.asAgg = t.asAgg := by cases t <;> rfl
+
+/-- The length check keeps a value or makes it `poison`. -/
+theorem Val.checkLen_eq_or (t : Ty) (v : Val) : Val.checkLen t v = v ∨ Val.checkLen t v = .poison := by
+  cases t <;> cases v <;> first
+    | exact .inl rfl
+    | (simp only [Val.checkLen, Val.ofStr, Val.ofSlice]; split
+       · exact .inl rfl
+       · exact .inr rfl)
+
+theorem Val.checkLen_poison (t : Ty) : Val.checkLen t .poison = .poison := by cases t <;> rfl
+
+/-- The length check only makes a value `poison`. -/
+theorem Val.checkLen_refines (t : Ty) (v : Val) : Refines (Val.checkLen t v) v := by
+  cases t <;> cases v <;> first
+    | exact Refines.refl _
+    | (simp only [Val.checkLen, Val.ofStr, Val.ofSlice]; split
+       · exact Refines.refl _
+       · exact .poison _)
+
+theorem Val.checkLen_mono (t : Ty) {v v' : Val} (h : Refines v v') :
+    Refines (Val.checkLen t v) (Val.checkLen t v') := by
+  cases h with
+  | poison v' => rw [Val.checkLen_poison]; exact .poison _
+  | agg hl =>
+    cases t
+    case str => exact ofStr_mono hl
+    case slice => exact ofSlice_mono hl
+    all_goals exact .agg hl
+  | mem h => cases t <;> exact .mem h
+  | tuple h => cases t <;> exact .tuple h
+  | blob h => cases t <;> exact .blob h
+  | int w x => cases t <;> exact Refines.refl _
+  | bool b => cases t <;> exact Refines.refl _
+  | ptr p => cases t <;> exact Refines.refl _
+  | empty => cases t <;> exact Refines.refl _
+
+theorem decode_asAgg (bs : Array Byte) (off : Nat) (t : Ty) :
+    decode bs off t = Val.checkLen t (decode bs off t.asAgg) := by
+  cases t
+  case str =>
+    simp only [decode, decodeFields, Ty.asAgg, Ty.strAgg, Val.checkLen, Nat.add_zero,
+      Width.bytes, Width.bits, Nat.add_assoc]
+  case slice e =>
+    simp only [decode, decodeFields, Ty.asAgg, Ty.sliceAgg, Val.checkLen, Nat.add_zero,
+      Width.bytes, Width.bits, Nat.add_assoc]
+  all_goals rfl
+
+theorem decodeLoad_asAgg (bs : Array Byte) (off : Nat) (t : Ty) :
+    decodeLoad bs off t = Val.checkLen t (decodeLoad bs off t.asAgg) := by
+  cases t
+  case str =>
+    simp only [decodeLoad, Ty.asAgg, Ty.strAgg, decodeLoadFields]
+    split
+    · rfl
+    · rw [decode_asAgg]; rfl
+  case slice e =>
+    simp only [decodeLoad, Ty.asAgg, Ty.sliceAgg, decodeLoadFields]
+    split
+    · rfl
+    · rw [decode_asAgg]; rfl
+  all_goals rfl
+
+theorem load_asAgg (m : Mem) (t : Ty) (p : Ptr) :
+    m.load t p = Val.checkLen t (m.load t.asAgg p) := by
+  cases t
+  case str =>
+    simp only [Mem.load, Ty.asAgg, Ty.strAgg, Ty.size]
+    cases m.read p 16 with
+    | none => rfl
+    | some bs => exact decodeLoad_asAgg bs 0 .str
+  case slice e =>
+    simp only [Mem.load, Ty.asAgg, Ty.sliceAgg, Ty.size]
+    cases m.read p 24 with
+    | none => rfl
+    | some bs => exact decodeLoad_asAgg bs 0 (.slice e)
+  all_goals rfl
+
+theorem encode_asAgg (t : Ty) (v : Val) : encode t v = encode t.asAgg v := by
+  cases t
+  case str =>
+    cases v
+    case agg vs => exact encode_str_agg vs
+    all_goals simp [encode, Ty.asAgg, Ty.strAgg, Ty.size]
+  case slice e =>
+    cases v
+    case agg vs => exact encode_slice_agg e vs
+    all_goals simp [encode, Ty.asAgg, Ty.sliceAgg, Ty.size]
+  all_goals rfl
+
+theorem retype_asAgg (t : Ty) (v : Val) : v.retype t = Val.checkLen t (v.retype t.asAgg) := by
+  cases t
+  case str =>
+    cases v
+    case agg vs =>
+      rw [retype_str_agg]
+      simp only [Ty.asAgg, Ty.strAgg, Val.retype]
+      split <;> rename_i h <;> rw [h] <;> rfl
+    all_goals rfl
+  case slice e =>
+    cases v
+    case agg vs =>
+      rw [retype_slice_agg]
+      simp only [Ty.asAgg, Ty.sliceAgg, Val.retype]
+      split <;> rename_i h <;> rw [h] <;> rfl
+    all_goals rfl
+  all_goals rfl
+
+/-- A value of a shape has the shape's aggregate layout. -/
+theorem Val.hasTy_asAgg {v : Val} {t : Ty} (h : v.hasTy t = true) :
+    v.hasTy t.asAgg = true := by
+  cases t
+  case str =>
+    cases v with
+    | poison => rfl
+    | agg vs =>
+      obtain ⟨p, l, rfl, hp, -⟩ := Val.hasTy_agg_str.1 h
+      cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.strAgg, Val.hasTyList]
+    | _ => simp [Val.hasTy] at h
+  case slice e =>
+    cases v with
+    | poison => rfl
+    | agg vs =>
+      obtain ⟨p, l, c, rfl, hp, -⟩ := Val.hasTy_agg_slice.1 h
+      cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.sliceAgg, Val.hasTyList]
+    | _ => simp [Val.hasTy] at h
+  all_goals exact h
+
+/-- The length check of a value of a shape's aggregate layout has the shape. -/
+theorem Val.checkLen_hasTy {v : Val} {t : Ty} (h : v.hasTy t.asAgg = true) :
+    (Val.checkLen t v).hasTy t = true := by
+  cases t
+  case str =>
+    cases v with
+    | poison => rfl
+    | agg vs =>
+      simp only [Val.checkLen, Val.ofStr]
+      split
+      · next hs =>
+        obtain ⟨p, l, rfl, -⟩ := Val.strOK_iff.1 hs
+        cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.strAgg, Val.hasTyList]
+      · rfl
+    | _ => simp [Val.hasTy, Ty.asAgg, Ty.strAgg] at h
+  case slice e =>
+    cases v with
+    | poison => rfl
+    | agg vs =>
+      simp only [Val.checkLen, Val.ofSlice]
+      split
+      · next hs =>
+        obtain ⟨p, l, c, rfl, -⟩ := Val.sliceOK_iff.1 hs
+        cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.sliceAgg, Val.hasTyList]
+      · rfl
+    | _ => simp [Val.hasTy, Ty.asAgg, Ty.sliceAgg] at h
+  all_goals exact h
+
+/-- The length check keeps a value of the shape. -/
+theorem Val.checkLen_of_hasTy {v : Val} {t : Ty} (h : v.hasTy t = true) : Val.checkLen t v = v := by
+  cases t
+  case str =>
+    cases v with
+    | agg vs => exact Val.ofStr_of_ok (by simp only [Val.hasTy, Bool.and_eq_true] at h; exact h.1)
+    | _ => rfl
+  case slice e =>
+    cases v with
+    | agg vs => exact Val.ofSlice_of_ok (by simp only [Val.hasTy, Bool.and_eq_true] at h; exact h.1)
+    | _ => rfl
+  all_goals rfl
+
+/-- A string or slice value refines when its aggregate does: the source's length check only adds
+`poison`, the target's is monotone. -/
+theorem retype_checkLen_refines {t : Ty} {L R : Val}
+    (h : Refines (L.retype t.asAgg) (R.retype t.asAgg)) :
+    Refines ((Val.checkLen t L).retype t) (R.retype t) := by
+  rw [retype_asAgg t, retype_asAgg t R]
+  exact Val.checkLen_mono t ((retype_mono _ (Val.checkLen_refines t L)).trans h)
 
 end GoFV.SSA.Sem

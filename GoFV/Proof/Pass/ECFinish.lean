@@ -48,6 +48,18 @@ theorem ecf_refines_eq : (t : Ty) → wf t = true → {a b : Val} → Sem.Refine
       simp only [Val.hasPoison] at hp
       simp only [Val.hasTy] at hy
       exact ecf_refinesList_eq fs n 0 ht hl hp hy
+  | .str, ht, _, _, h, hp, hy => eq_base ht h hp hy fun as bs ha hb hl => by
+      subst ha hb
+      obtain ⟨p, l, rfl, hpp, -⟩ := Val.hasTy_agg_str.1 hy
+      rcases hl with _ | ⟨h1, _ | ⟨h2, h3⟩⟩
+      cases h3; cases h2
+      cases h1 <;> simp_all [Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
+  | .slice _, ht, _, _, h, hp, hy => eq_base ht h hp hy fun as bs ha hb hl => by
+      subst ha hb
+      obtain ⟨p, l, c, rfl, hpp, -⟩ := Val.hasTy_agg_slice.1 hy
+      rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, h4⟩⟩⟩
+      cases h4; cases h3; cases h2
+      cases h1 <;> simp_all [Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
   | .int _, ht, _, _, h, hp, hy | .bool, ht, _, _, h, hp, hy | .ptr _, ht, _, _, h, hp, hy
   | .opaque _, ht, _, _, h, hp, hy | .empty, ht, _, _, h, hp, hy | .blob _, ht, _, _, h, hp, hy
   | .mem, ht, _, _, h, hp, hy | .tuple _, ht, _, _, h, hp, hy | .other, ht, _, _, h, hp, hy =>
@@ -79,6 +91,20 @@ theorem ecf_leafVals_np : (t : Ty) → wf t = true → {v : Val} → v.hasPoison
       simp only [Val.hasPoison] at hp
       simp only [Val.hasTy] at hy
       exact ecf_leafValsFields_np fs vs n 0 hw hp hy
+    | poison => simp [Val.hasPoison] at hp
+    | _ => simp [Val.hasTy] at hy
+  | .str, _, v, hp, hy => by
+    cases v with
+    | agg vs =>
+      obtain ⟨p, l, rfl, hpp, -⟩ := Val.hasTy_agg_str.1 hy
+      cases p <;> simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
+    | poison => simp [Val.hasPoison] at hp
+    | _ => simp [Val.hasTy] at hy
+  | .slice _, _, v, hp, hy => by
+    cases v with
+    | agg vs =>
+      obtain ⟨p, l, c, rfl, hpp, -⟩ := Val.hasTy_agg_slice.1 hy
+      cases p <;> simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
     | poison => simp [Val.hasPoison] at hp
     | _ => simp [Val.hasTy] at hy
   | .blob _, h, _, _, _ | .mem, h, _, _, _ | .tuple _, h, _, _, _ | .other, h, _, _, _ => nomatch h
@@ -438,6 +464,7 @@ theorem ecf_single_reg {t : Ty} (hw : wf t = true) {r x : Val} (hr : r.hasTy t =
     · rw [e] at hx; exact (ecf_atom_agg hla hxl hx hxp).elim
     · rw [e] at hx; simp [Val.hasTy] at hx
   | empty => simp [leafVals] at hl
+  | str | slice => cases r <;> simp [leafVals] at hl
   | blob | mem | tuple | other => simp [wf] at hw
 
 theorem ecf_pieces_length_ge {tabs : Tables} :

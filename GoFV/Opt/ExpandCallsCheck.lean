@@ -61,6 +61,8 @@ mutual
 the field index and the field's shape. -/
 def leafPaths : Ty → List (List (Nat × Ty))
   | .agg fs _ => leafPathsFields 0 fs
+  | .str => [[(0, .ptr (some 1))], [(1, .int .w64)]]
+  | .slice e => [[(0, .ptr e)], [(1, .int .w64)], [(2, .int .w64)]]
   | .empty => []
   | .blob _ => []
   | _ => [[]]
@@ -76,6 +78,7 @@ do not depend on it. -/
 def erase : Ty → Ty
   | .ptr _ => .ptr none
   | .agg fs n => .agg (eraseFields fs) n
+  | .slice _ => .slice none
   | .tuple ts => .tuple (eraseList ts)
   | t => t
 def eraseFields : List (Nat × Ty) → List (Nat × Ty)
@@ -117,7 +120,7 @@ def mkTree (sh : Array Ty) (g : Func) (nw : ID → Bool) : Nat → ID → Ty →
     | none => none
     | some w =>
       if !eqE (valueTy sh (some w)) t then none else
-      match t with
+      match t.asAgg with
       | .agg fs _ =>
         if isMake w.op && w.args.size == fs.length then
           ((fs.zip w.args.toList).mapM fun (e : (Nat × Ty) × ID) =>

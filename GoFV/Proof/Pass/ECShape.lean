@@ -40,6 +40,8 @@ theorem hasTy_erase : ∀ (t : Ty) (v : Val), v.hasTy (erase t) = v.hasTy t
   | .blob _, v => rfl
   | .empty, v => rfl
   | .opaque _, v => rfl
+  | .str, v => rfl
+  | .slice _, v => by cases v <;> rfl
 theorem hasTyList_eraseFields : ∀ (fs : List (Nat × Ty)) (vs : List Val),
     Val.hasTyList vs ((eraseFields fs).map (·.2)) = Val.hasTyList vs (fs.map (·.2))
   | [], vs => rfl
@@ -83,6 +85,14 @@ theorem retype_erase : ∀ (t : Ty) (v : Val), v.retype (erase t) = v.retype t
   | .blob _, v => rfl
   | .empty, v => rfl
   | .opaque _, v => rfl
+  | .str, v => rfl
+  | .slice _, v => by
+    cases v with
+    | agg vs =>
+      match vs with
+      | [_, _, _] => rfl
+      | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => rfl
+    | _ => rfl
 theorem retypeFields_eraseFields : ∀ (fs : List (Nat × Ty)) (vs : List Val),
     Val.retypeFields (eraseFields fs) vs = Val.retypeFields fs vs
   | [], [] => rfl
@@ -118,6 +128,8 @@ theorem Ty.beq_refl : ∀ t : Ty, Ty.beq t t = true
   | .blob n => by simp [Ty.beq]
   | .empty => rfl
   | .opaque n => by simp [Ty.beq]
+  | .str => rfl
+  | .slice e => by simp [Ty.beq]
 theorem Ty.beqList_refl : ∀ ts : List Ty, Ty.beqList ts ts = true
   | [] => rfl
   | t :: ts => by simp only [Ty.beqList, Bool.and_eq_true]; exact ⟨Ty.beq_refl t, Ty.beqList_refl ts⟩

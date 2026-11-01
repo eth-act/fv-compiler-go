@@ -257,8 +257,8 @@ inductive Ty where
   | other
   /-- Pointer-shaped types; `elem` is the element size of `*T` (for `PtrIndex`). -/
   | ptr (elem : Option Nat)
-  /-- An SSA-able composite: its fields at their byte offsets, and its size (string, slice,
-  interface, struct, `[1]T`). -/
+  /-- An SSA-able composite: its fields at their byte offsets, and its size (interface,
+  struct, `[1]T`, complex). -/
   | agg (fields : List (Nat × Ty)) (size : Nat)
   /-- A type kept as bytes: arrays of more than one element. -/
   | blob (size : Nat)
@@ -267,7 +267,61 @@ inductive Ty where
   /-- A type of known size whose values the semantics does not decode (a struct whose field
   offsets the export lacks); loads give `poison`, stores write poison bytes. -/
   | opaque (size : Nat)
+  /-- A string: its data pointer (element size 1) at offset 0 and its length (`int`) at 8;
+  size 16. Its values have a nonnegative length (`Val.strOK`). -/
+  | str
+  /-- A slice: its data pointer (`elem` the element size) at offset 0, its length at 8 and
+  its capacity at 16 (`int`s); size 24. Its values have `0 ≤ len ≤ cap` (`Val.sliceOK`). -/
+  | slice (elem : Option Nat)
   deriving Inhabited, Repr
+
+namespace Val
+
+/-- A value of the pointer shape (`Val.hasTy _ (.ptr _)`): a pointer or `poison`. -/
+def isPtrOrPoison : Val → Bool
+  | .ptr _ | .poison => true
+  | _ => false
+
+/-- The lengths of a string value (`Ty.str`, components pointer and length) are valid: the
+length is a nonnegative signed `int` (sign bit clear). A `poison` length is not one. -/
+def strOK : List Val → Bool
+  | [_, .int .w64 l] => !l.msb
+  | _ => false
+
+/-- The lengths of a slice value (`Ty.slice`, components pointer, length, capacity) are valid:
+`0 ≤ len ≤ cap` as signed `int`s. -/
+def sliceOK : List Val → Bool
+  | [_, .int .w64 l, .int .w64 c] => !l.msb && !c.msb && l.ule c
+  | _ => false
+
+/-- The string with components `vs`, or `poison` if they are not valid (`strOK`). -/
+def ofStr (vs : List Val) : Val := if strOK vs then .agg vs else .poison
+
+/-- The slice with components `vs`, or `poison` if they are not valid (`sliceOK`). -/
+def ofSlice (vs : List Val) : Val := if sliceOK vs then .agg vs else .poison
+
+end Val
+
+/-- The layout of a string as an aggregate (`Ty.str` without its length invariant). -/
+def Ty.strAgg : Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+
+/-- The layout of a slice as an aggregate (`Ty.slice e` without its length invariant). -/
+def Ty.sliceAgg (e : Option Nat) : Ty := .agg [(0, .ptr e), (8, .int .w64), (16, .int .w64)] 24
+
+/-- A shape's aggregate layout: strings and slices as their aggregates, others unchanged.
+Encoding, decoding and retyping at `t` are those at `t.asAgg` followed by the length check
+`Val.checkLen t` (`GoFV/Proof/ValRefine.lean`). -/
+def Ty.asAgg : Ty → Ty
+  | .str => Ty.strAgg
+  | .slice e => Ty.sliceAgg e
+  | t => t
+
+/-- The length check of a string or slice shape on a value of its aggregate layout: `poison`
+unless the lengths are valid (`Val.ofStr`, `Val.ofSlice`); the identity at other shapes. -/
+def Val.checkLen : Ty → Val → Val
+  | .str, .agg vs => Val.ofStr vs
+  | .slice _, .agg vs => Val.ofSlice vs
+  | _, v => v
 
 /-- Why a run panicked (§6): `PanicBounds`, `NilCheck` of nil, and the runtime's panicking
 entry points the environment models (`runtime.panicdivide`, `runtime.panicshift`,

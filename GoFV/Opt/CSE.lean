@@ -415,6 +415,8 @@ def tyEq : Sem.Ty → Sem.Ty → Bool
   | .agg fs n, .agg fs' n' => fieldsEq fs fs' && n == n'
   | .blob n, .blob n' => n == n'
   | .opaque n, .opaque n' => n == n'
+  | .str, .str => true
+  | .slice e, .slice e' => e == e'
   | _, _ => false
 
 def tysEq : List Sem.Ty → List Sem.Ty → Bool

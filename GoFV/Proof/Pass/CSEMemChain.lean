@@ -108,6 +108,7 @@ theorem vaddr_retype (t : Ty) (v : Val) : vaddr (v.retype t) = none ∨ vaddr (v
     | exact .inl rfl
     | exact .inr rfl
     | (split <;> first | exact .inl rfl | exact .inr rfl)
+    | (simp only [Val.ofStr, Val.ofSlice]; split <;> first | exact .inl rfl | exact .inr rfl)
 
 theorem retype_keep {t : Ty} (h : CSE.keepsPtr t = true) (p : Ptr) : (Val.ptr p).retype t = .ptr p := by
   cases t <;> first | rfl | cases h

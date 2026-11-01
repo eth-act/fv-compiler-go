@@ -33,6 +33,8 @@ theorem ecT_decode_erase (bs : Array Byte) : ∀ (o : Nat) (t : Ty), decode bs o
   | _, .blob _ => rfl
   | _, .empty => rfl
   | _, .opaque _ => rfl
+  | _, .str => rfl
+  | _, .slice _ => rfl
 theorem ecT_decodeFields_erase (bs : Array Byte) :
     ∀ (o : Nat) (fs : List (Nat × Ty)), decodeFields bs o (eraseFields fs) = decodeFields bs o fs
   | _, [] => rfl
@@ -142,6 +144,52 @@ theorem ecT_retype_agg_congr {fs : List (Nat × Ty)} {m : Nat} {vs vs' : List Va
     (Val.agg vs).retype (.agg fs m) = (Val.agg vs').retype (.agg fs m) := by
   simp only [Val.retype, h]
 
+/-- The leaves of a shape whose aggregate layout (`Ty.asAgg`) has fields `fs`. -/
+theorem ecT_leaves_of_asAgg {t : Ty} {fs : List (Nat × Ty)} {m : Nat}
+    (ht : t.asAgg = .agg fs m) : leaves t = leaves.leavesFields fs := by
+  cases t <;> simp only [Ty.asAgg, Ty.strAgg, Ty.sliceAgg, Ty.agg.injEq, reduceCtorEq] at ht
+  case agg => rw [ht.1]; rfl
+  case str => rw [← ht.1]; rfl
+  case slice => rw [← ht.1]; rfl
+
+theorem ecT_eq_of_asAgg_empty {t : Ty} (h : t.asAgg = .empty) : t = .empty := by
+  cases t <;> simp_all [Ty.asAgg, Ty.strAgg, Ty.sliceAgg]
+
+theorem ecT_asAgg_of_atom {t : Ty} (h : atom t.asAgg = true) : t.asAgg = t := by
+  cases t <;> simp_all [Ty.asAgg, Ty.strAgg, Ty.sliceAgg, atom]
+
+theorem ecT_headD_take {l : List Val} : (l.take 1).headD .poison = l.headD .poison := by
+  cases l <;> rfl
+
+/-- A `Make` node retyped at a shape whose aggregate layout has fields `fs` is `build` of its
+children's values when the fields retype them alike. -/
+theorem ecT_retype_make_congr {t : Ty} {fs : List (Nat × Ty)} {m : Nat}
+    (ht : t.asAgg = .agg fs m) {vs ys : List Val}
+    (h : Val.retypeFields fs vs = Val.retypeFields fs (buildFields fs ys)) :
+    (Val.agg vs).retype t = (build t ys).retype t := by
+  cases t <;> simp only [Ty.asAgg, Ty.strAgg, Ty.sliceAgg, Ty.agg.injEq, reduceCtorEq] at ht
+  case agg fs' m' =>
+    obtain ⟨rfl, rfl⟩ := ht
+    exact ecT_retype_agg_congr h
+  case str =>
+    obtain ⟨rfl, rfl⟩ := ht
+    rw [retype_asAgg .str (.agg vs)]
+    simp only [Ty.asAgg, Ty.strAgg]
+    rw [ecT_retype_agg_congr h]
+    simp only [build, Val.retype_idem]
+    rw [retype_asAgg .str]
+    simp only [Ty.asAgg, Ty.strAgg, buildFields, leaves, List.length_cons, List.length_nil,
+      Nat.zero_add, build, ecT_headD_take]
+  case slice e =>
+    obtain ⟨rfl, rfl⟩ := ht
+    rw [retype_asAgg (.slice e) (.agg vs)]
+    simp only [Ty.asAgg, Ty.sliceAgg]
+    rw [ecT_retype_agg_congr h]
+    simp only [build, Val.retype_idem]
+    rw [retype_asAgg (.slice e)]
+    simp only [Ty.asAgg, Ty.sliceAgg, buildFields, leaves, List.length_cons, List.length_nil,
+      Nat.zero_add, build, ecT_headD_take, List.drop_drop, Nat.reduceAdd]
+
 theorem ecT_shapeOf_value {tabs : Tables} {g : Func} {z : ID} {w : Value} (hw : g.value? z = some w) :
     shapeOf (typeShapes tabs) g z = valueTy (typeShapes tabs) (some w) := by
   unfold shapeOf; rw [hw]
@@ -232,7 +280,7 @@ theorem ecT_node (hN : NewCons env (Ctx.make tabs g) nw T E)
     have hregs := regs_of_ok hev
     split at hm
     · -- a Make node
-      rename_i fs m
+      rename_i fs m hfs
       split at hm
       · rename_i hc
         simp only [Bool.and_eq_true, beq_iff_eq] at hc
@@ -246,12 +294,14 @@ theorem ecT_node (hN : NewCons env (Ctx.make tabs g) nw T E)
             lss (hc.2.symm.trans Array.length_toList.symm) hmap
             fun a ha hna => ⟨hE a (Array.mem_toList_iff.1 ha) hna,
               hPa a (Array.mem_toList_iff.1 ha) hna⟩
-          refine ⟨ys, F, by rw [leaves_agg]; exact S, ?_⟩
+          refine ⟨ys, F, by rw [ecT_leaves_of_asAgg hfs]; exact S, ?_⟩
           rw [ecT_eval_make hc.1 hregs, hty, eqE_retype hq] at hev
           cases hev
-          exact ecT_retype_agg_congr hrf
+          exact ecT_retype_make_congr hfs hrf
       · cases hm
     · -- a zero-sized node
+      rename_i h0
+      obtain rfl := ecT_eq_of_asAgg_empty h0
       split at hm
       · rename_i he
         cases hm
@@ -262,6 +312,7 @@ theorem ecT_node (hN : NewCons env (Ctx.make tabs g) nw T E)
     · -- a leaf
       split at hm
       · rename_i ha
+        rw [ecT_asAgg_of_atom ha] at ha
         cases hm
         refine ⟨[y], .cons ⟨w, hw, hid, hev⟩ .nil, ?_, ?_⟩
         · rw [leaves_atom ha]

@@ -149,7 +149,7 @@ theorem argsMeanOK_spec {m : Array (Option Mean)} {s : ID} {π : Path} :
 
 theorem makeOK_spec {sh : Array Ty} {g : Func} {m : Array (Option Mean)} {w : Value} {s : ID}
     {π : Path} (h : makeOK sh g m w s π = true) :
-    isMake w.op = true ∧ ∃ fs n, shapeOf sh g w.id = .agg fs n ∧ w.args.size = fs.length ∧
+    isMake w.op = true ∧ ∃ fs n, (shapeOf sh g w.id).asAgg = .agg fs n ∧ w.args.size = fs.length ∧
       ∀ k (hk : k < fs.length) (hk' : k < w.args.size),
         meanAt m w.args[k] = some (s, π ++ [(k, fs[k].2)]) := by
   unfold makeOK at h

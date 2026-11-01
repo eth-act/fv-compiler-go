@@ -89,6 +89,21 @@ without a concrete address (a global: a closure's code pointer loaded as `uintpt
 `Val.hasTy` accepts. Well-typed producers yield values of their shape anyway: the change left
 every difftest outcome unchanged (native 11,900 calls; corpus 39,131 defined calls, same
 counts). Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+**Strings and slices** have their own shapes, `Ty.str` (pointer, length) and `Ty.slice e`
+(pointer, length, capacity), with the layout of the aggregate they used to be (`Ty.asAgg`:
+offsets 0/8/16, sizes 16/24; `Sem/Layout.lean` maps `STRING`/`SLICE` to them). Their values
+have valid lengths: `0 ≤ len` for a string, `0 ≤ len ≤ cap` for a slice, as signed `int`s
+(`Val.strOK`, `Val.sliceOK`). The invariant holds wherever a value takes the shape, not only at
+`StringMake`/`SliceMake`: `decode` (loads, arguments, results), `Val.retype` (every op result,
+phi, contract result) and `Val.hasTy` give `poison` (resp. `false`) for a length that is
+negative, above the capacity or not a concrete integer, and `ConstString` is checked too. So
+`StringLen`, `SliceLen` and `SliceCap` of a register are nonnegative or `poison`
+(`Val.hasTy_str`, `Val.hasTy_slice`, `GoFV/Proof/Retype.lean`), which `isNonNegative` relies on.
+Encoding, decoding and retyping at `t` are those at `t.asAgg` followed by the length check
+`Val.checkLen t` (`decode_asAgg`, `retype_asAgg`, `load_asAgg`, `encode_asAgg`,
+`GoFV/Proof/ValRefine.lean`), which only adds `poison`, so proofs and checkers treat strings and
+slices as aggregates. The contracts already produce valid strings and slices (`makeslice`,
+`growslice` check their lengths).
 Integer ops have no sign: signedness is in the op
 (`Less64` vs `Less64U`, `Rsh64x64` vs `Rsh64Ux64`, `SignExt` vs `ZeroExt`), as in Go.
 `ConstN` auxints are sign-extended to 64 bits even for unsigned types (gO 339); `run` takes
@@ -376,7 +391,8 @@ identity (values are already exact bit patterns). `Const32F` auxints hold the fl
 a float32-exact value (gO 347); constants are never NaN (gO 342-346).
 
 ### 4.7 Composites
-`StringMake/SliceMake/IMake/ComplexMake/StructMake/ArrayMake1` build `agg`; `StringPtr/Len`,
+`StringMake/SliceMake/IMake/ComplexMake/StructMake/ArrayMake1` build `agg` (a string or slice
+with an invalid length is `poison` once retyped at its shape, §3.2); `StringPtr/Len`,
 `SlicePtr/Len/Cap`, `SlicePtrUnchecked`, `ITab/IData`, `ComplexReal/Imag`, `StructSelect [i]`,
 `ArraySelect [i]` project. `ConstString {s}` = (pointer to the string's read-only data symbol,
 `len s`) — the exporter writes the data symbol name (`str` aux); `ConstNil`, `ConstSlice`
@@ -579,7 +595,8 @@ and checks that every section agrees with section 0 whenever section 0 is define
   by block; `Byte` = concrete, pointer fragment `frag p i`, or poison.
 - **Shapes** (`Ty`, `Sem/Layout.lean`) from the exported types: integer widths, `bool`, `ptr`
   (element size), `agg` (fields at exported offsets), `blob`, `empty`, `opaque` (floats and
-  complex until P4, §9.4: loads give `poison`, stores write poison bytes).
+  complex until P4, §9.4: loads give `poison`, stores write poison bytes); since #10's length
+  change `str` and `slice` (element size), whose values have valid lengths (§3.2).
 - **Concrete addresses**: heap block `n` at `(n+1)·2^40`, frame blocks at `2^62 + act·2^42 +
   name·2^24`, `nil` at 0; globals have none (comparisons with them are by block). `Convert`
   and `uintptr`-typed values use them; `Val.retype` turns a `uintptr`-typed pointer into its

@@ -105,21 +105,29 @@ theorem fwdFieldsEq_retype : ∀ {fs fs' : List (Nat × Ty)}, fwdFieldsEq fs fs'
       simp only [Val.retypeFields, fwdScalarEq_retype h.1.2, fwdFieldsEq_retype h.2]
   | [], _ :: _, h | _ :: _, [], h => by simp [fwdFieldsEq] at h
 
-/-- The aggregates of `fwdAggEq`. -/
+/-- The shapes of `fwdAggEq`: aggregates, strings, slices. -/
 theorem fwdAggEq_spec {t s : Ty} (h : fwdAggEq t s = true) :
-    ∃ fs fs' n, t = .agg fs n ∧ s = .agg fs' n ∧ fwdAgg t = true ∧ fwdFieldsEq fs fs' = true := by
+    (∃ fs fs' n, t = .agg fs n ∧ s = .agg fs' n ∧ fwdAgg t = true ∧ fwdFieldsEq fs fs' = true) ∨
+      (t = .str ∧ s = .str) ∨ ∃ e e', t = .slice e ∧ s = .slice e' := by
   cases t <;> cases s <;> simp only [fwdAggEq, reduceCtorEq] at h
-  simp only [Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨rfl, ha⟩, hf⟩ := h
-  exact ⟨_, _, _, rfl, rfl, ha, hf⟩
+  · simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨rfl, ha⟩, hf⟩ := h
+    exact .inl ⟨_, _, _, rfl, rfl, ha, hf⟩
+  · exact .inr (.inl ⟨rfl, rfl⟩)
+  · exact .inr (.inr ⟨_, _, rfl, rfl⟩)
 
 /-- `fwdTyEq` shapes retype alike. -/
 theorem fwdTyEq_retype {t s : Ty} (h : fwdTyEq t s = true) : Val.retype t = Val.retype s := by
   rcases Bool.or_eq_true_iff.1 h with h | h
   · exact fwdScalarEq_retype h
-  · obtain ⟨fs, fs', n, rfl, rfl, -, hf⟩ := fwdAggEq_spec h
-    funext v
-    cases v <;> first | rfl | simp only [Val.retype, fwdFieldsEq_retype hf]
+  · rcases fwdAggEq_spec h with ⟨fs, fs', n, rfl, rfl, -, hf⟩ | ⟨rfl, rfl⟩ | ⟨e, e', rfl, rfl⟩
+    · funext v
+      cases v <;> first | rfl | simp only [Val.retype, fwdFieldsEq_retype hf]
+    · rfl
+    · funext v
+      cases v <;> try rfl
+      rename_i vs
+      rcases vs with _ | ⟨p, _ | ⟨l, _ | ⟨c, _ | ⟨d, vs⟩⟩⟩⟩ <;> rfl
 
 theorem fwdScalarEq_scalarTy {t s : Ty} (h : fwdScalarEq t s = true) : scalarTy t = true := by
   cases t <;> cases s <;> simp_all [fwdScalarEq, scalarTy]
@@ -128,8 +136,10 @@ theorem fwdTyEq_fwdTy {t s : Ty} (h : fwdTyEq t s = true) : fwdTy t = true := by
   unfold fwdTy
   rcases Bool.or_eq_true_iff.1 h with h | h
   · rw [fwdScalarEq_scalarTy h]; rfl
-  · obtain ⟨-, -, -, -, -, ha, -⟩ := fwdAggEq_spec h
-    rw [ha, Bool.or_true]
+  · rcases fwdAggEq_spec h with ⟨-, -, -, -, -, ha, -⟩ | ⟨rfl, -⟩ | ⟨e, -, rfl, -⟩
+    · rw [ha, Bool.or_true]
+    · rfl
+    · rfl
 
 /-- `fwdScalarEq` shapes encode alike. -/
 theorem fwdScalarEq_encode {t s : Ty} (h : fwdScalarEq t s = true) (v : Val) :
@@ -158,8 +168,10 @@ theorem fwdTyEq_encode {t s : Ty} (h : fwdTyEq t s = true) (v : Val) :
     encode s v = encode t v := by
   rcases Bool.or_eq_true_iff.1 h with h | h
   · exact fwdScalarEq_encode h v
-  · obtain ⟨fs, fs', n, rfl, rfl, -, hf⟩ := fwdAggEq_spec h
-    cases v <;> first | rfl | simp only [encode, fwdFieldsEq_encode hf]
+  · rcases fwdAggEq_spec h with ⟨fs, fs', n, rfl, rfl, -, hf⟩ | ⟨rfl, rfl⟩ | ⟨e, e', rfl, rfl⟩
+    · cases v <;> first | rfl | simp only [encode, fwdFieldsEq_encode hf]
+    · rfl
+    · cases v <;> rfl
 
 /-- A `Store` at shape `s` (`fwdStoreTy t s`) writes a value of shape `t` as a write at `t`. -/
 theorem fwdStoreTy_encode {t s : Ty} (h : fwdStoreTy t s = true) {v : Val} (hv : v.retype t = v) :
@@ -184,7 +196,8 @@ theorem retype_mem {t : Ty} {M M' : Mem} (h : (Val.mem M').retype t = .mem M) : 
 /-- Only a memory retypes to a memory. -/
 theorem retype_eq_mem {t : Ty} {v : Val} {M : Mem} (h : v.retype t = .mem M) : v = .mem M := by
   unfold Val.retype at h
-  split at h <;> (repeat' split at h) <;> simp_all
+  split at h <;> (repeat' split at h) <;>
+    (try simp only [Val.ofStr, Val.ofSlice] at h) <;> (try split at h) <;> simp_all
 
 /-- A `Store`'s write: a pointer, a memory and the written memory. -/
 theorem memDef_store {tabs : Tables} {s : Value} (hs : s.op = .Store ∨ s.op = .StoreWB)

@@ -364,6 +364,7 @@ theorem evalE_good {P : Val → Path → Prop} (vtys : List GoFV.Rules.GoTy) (or
     · split at hd
       · cases hd; exact good_strct (by simp [DV.flat])
       · cases hd; exact good_strct (by simp [DV.flat])
+      · cases hd; exact good_strct (by simp [DV.flat])
       · cases hd; exact good_of_flat rfl
       · cases hd
     · split at hd

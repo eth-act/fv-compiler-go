@@ -1,5 +1,6 @@
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Retype
+import GoFV.Proof.ValRefine
 
 /-!
 # Shapes of composites: selections of `Make`s (issue #17)
@@ -45,9 +46,14 @@ theorem retypeFields_get : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},
     | succ k => simpa using retypeFields_get hws k
   | [], _ :: _, _, h, _ | _ :: _, [], _, h, _ => by simp [Val.retypeFields] at h
 
-/-- **Selection of a `Make`**: component `k` of `Make vs` retyped at `T` is the `k`-th argument
-(or `poison`) when every argument has a shape `makeArgOk` accepts for `T`. -/
-theorem select_retype_make (T : Ty) (k : Nat) (vs : List Val) (ts : List Ty)
+theorem makeArgOk_asAgg (T : Ty) (i : Nat) (t : Ty) : makeArgOk T.asAgg i t = makeArgOk T i t := by
+  simp only [makeArgOk, fieldShape?, Ty.asAgg_asAgg]
+
+theorem fieldShape?_asAgg (T : Ty) (i : Nat) : fieldShape? T.asAgg i = fieldShape? T i := by
+  simp only [fieldShape?, Ty.asAgg_asAgg]
+
+private theorem select_retype_make_agg (T : Ty) (hT : T.asAgg = T) (k : Nat) (vs : List Val)
+    (ts : List Ty)
     (hv : ∀ i v t, vs[i]? = some v → ts[i]? = some t → v.hasTy t = true ∧ makeArgOk T i t = true)
     (hl : vs.length = ts.length) :
     Refines (Comp.select k [(Comp.make vs).retype T]) (vs.getD k .poison) := by
@@ -64,15 +70,27 @@ theorem select_retype_make (T : Ty) (k : Nat) (vs : List Val) (ts : List Ty)
           rw [← hl]; exact (List.getElem?_eq_some_iff.1 h1).1
         obtain ⟨t, ht⟩ : ∃ t, ts[k]? = some t := ⟨ts[k], List.getElem?_eq_getElem hk⟩
         obtain ⟨hvt, hm⟩ := hv k v t h1 ht
-        simp only [makeArgOk, fieldShape?, h2, Option.map_some] at hm
+        simp only [makeArgOk, fieldShape?, Ty.asAgg, h2, Option.map_some] at hm
         simp only [List.getD, h1, h3, Option.getD_some, retype_of_shapeSub hvt hm]
         exact Refines.refl _
     · exact .poison _
+  case str => simp [Ty.asAgg, Ty.strAgg] at hT
+  case slice => simp [Ty.asAgg, Ty.sliceAgg] at hT
   all_goals exact .poison _
 
-/-- Component `k` of `Make vs` retyped at `T`: `poison`, or argument `k` retyped at component
-`k`'s shape (the variadic selection `RewriteCheck.makeSelOK`, issue #17). -/
-theorem select_retype_make_get (T : Ty) (k : Nat) (vs : List Val) :
+/-- **Selection of a `Make`**: component `k` of `Make vs` retyped at `T` is the `k`-th argument
+(or `poison`) when every argument has a shape `makeArgOk` accepts for `T`. -/
+theorem select_retype_make (T : Ty) (k : Nat) (vs : List Val) (ts : List Ty)
+    (hv : ∀ i v t, vs[i]? = some v → ts[i]? = some t → v.hasTy t = true ∧ makeArgOk T i t = true)
+    (hl : vs.length = ts.length) :
+    Refines (Comp.select k [(Comp.make vs).retype T]) (vs.getD k .poison) := by
+  rw [retype_asAgg]
+  rcases Val.checkLen_eq_or T ((Comp.make vs).retype T.asAgg) with h | h <;> rw [h]
+  · exact select_retype_make_agg _ (Ty.asAgg_asAgg T) k vs ts
+      (fun i v t h1 h2 => by rw [makeArgOk_asAgg]; exact hv i v t h1 h2) hl
+  · exact .poison _
+
+private theorem select_retype_make_get_agg (T : Ty) (hT : T.asAgg = T) (k : Nat) (vs : List Val) :
     Comp.select k [(Comp.make vs).retype T] = .poison ∨
       ∃ f v, fieldShape? T k = some f ∧ vs[k]? = some v ∧
         Comp.select k [(Comp.make vs).retype T] = v.retype f := by
@@ -85,9 +103,23 @@ theorem select_retype_make_get (T : Ty) (k : Nat) (vs : List Val) :
       simp only [Comp.select]
       rcases retypeFields_get hr k with ⟨h1, -⟩ | ⟨v, f, h1, h2, h3⟩
       · exact .inl (by simp [List.getD, h1])
-      · exact .inr ⟨f.2, v, by simp [fieldShape?, h2], h1, by simp [List.getD, h3]⟩
+      · exact .inr ⟨f.2, v, by simp [fieldShape?, Ty.asAgg, h2], h1, by simp [List.getD, h3]⟩
     · exact .inl rfl
+  case str => simp [Ty.asAgg, Ty.strAgg] at hT
+  case slice => simp [Ty.asAgg, Ty.sliceAgg] at hT
   all_goals exact .inl rfl
+
+/-- Component `k` of `Make vs` retyped at `T`: `poison`, or argument `k` retyped at component
+`k`'s shape (the variadic selection `RewriteCheck.makeSelOK`, issue #17). -/
+theorem select_retype_make_get (T : Ty) (k : Nat) (vs : List Val) :
+    Comp.select k [(Comp.make vs).retype T] = .poison ∨
+      ∃ f v, fieldShape? T k = some f ∧ vs[k]? = some v ∧
+        Comp.select k [(Comp.make vs).retype T] = v.retype f := by
+  rw [retype_asAgg]
+  rcases Val.checkLen_eq_or T ((Comp.make vs).retype T.asAgg) with h | h <;> rw [h]
+  · rw [← fieldShape?_asAgg]
+    exact select_retype_make_get_agg _ (Ty.asAgg_asAgg T) k vs
+  · exact .inl rfl
 
 /-! ## The kind predicates (`kindE`) -/
 

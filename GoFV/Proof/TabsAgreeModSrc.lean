@@ -316,7 +316,7 @@ theorem frameVal_avoids (hX : TempX X) {ctx : Ctx} {v : Value} {x : Val}
     · exact hnot _ fun n hn => nomatch hn
     · trivial
   · split at hf <;> cases hf
-    · refine ⟨?_, trivial, trivial⟩
+    · refine DAE.ofStr_avoids ⟨?_, trivial, trivial⟩
       split
       · exact hnot _ fun n hn => by simp [Ptr.null] at hn
       · exact hnot _ fun n hn => nomatch hn

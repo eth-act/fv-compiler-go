@@ -1341,9 +1341,12 @@ theorem ty_of_hasTy_int64 {t : Ty} {x : BitVec 64} (h : (Val.int .w64 x).hasTy t
   | _ => simp [Val.hasTy] at h
 
 theorem ty_of_hasTy_agg {vs : List Val} {t : Ty} (h : (Val.agg vs).hasTy t = true) :
-    ∃ fs n, t = .agg fs n ∧ Val.hasTyList vs (fs.map (·.2)) = true := by
+    (∃ fs n, t = .agg fs n ∧ Val.hasTyList vs (fs.map (·.2)) = true) ∨ t = .str ∨
+      ∃ e, t = .slice e := by
   cases t with
-  | agg fs n => exact ⟨fs, n, rfl, h⟩
+  | agg fs n => exact .inl ⟨fs, n, rfl, h⟩
+  | str => exact .inr (.inl rfl)
+  | slice e => exact .inr (.inr ⟨e, rfl⟩)
   | _ => simp [Val.hasTy] at h
 
 /-! ## Nil comparisons (`generic.rules:1683`, `:1684`) -/

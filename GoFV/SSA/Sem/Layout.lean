@@ -24,7 +24,8 @@ def typeSize? (tabs : Tables) (t : TypeRef) : Option Nat :=
   | none => none
 
 /-- The shape of type `t` in `tabs` (`fuel` bounds the nesting of struct fields and arrays;
-pointers do not recurse). -/
+pointers do not recurse). Strings and slices have their own shapes (`Ty.str`, `Ty.slice`),
+whose values have valid lengths. -/
 def tyOf (tabs : Tables) : Nat → TypeRef → Ty
   | 0, _ => .other
   | fuel + 1, t =>
@@ -43,12 +44,11 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
         .ptr (match d.tail with
           | .elem e => typeSize? tabs e
           | _ => none)
-      | .STRING => .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+      | .STRING => .str
       | .SLICE =>
-        let e := match d.tail with
+        .slice (match d.tail with
           | .elem e => typeSize? tabs e
-          | _ => none
-        .agg [(0, .ptr e), (8, .int .w64), (16, .int .w64)] 24
+          | _ => none)
       -- the itab/type word is a `uintptr` and the data word a `*uint8`, as Go decomposes an
       -- interface (`ITab`/`IData`, `expand_calls.go`, `dec.rules`)
       | .INTER => .agg [(0, .int .w64), (8, .ptr (some 1))] 16
@@ -89,6 +89,20 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
 /-- The shape of `t`. -/
 def _root_.GoFV.SSA.Tables.ty (tabs : Tables) (t : TypeRef) : Ty := tyOf tabs 32 t
 
+/-- `Val.retype` at a pointer shape (`Val.retype_ptr`): the string and slice pointers. -/
+def Val.retypePtr : Val → Val
+  | .int .w64 a => .ptr (Ptr.ofAddr a)
+  | .ptr p => .ptr p
+  | _ => .poison
+
+/-- `Val.retype` at `.int .w64` (`Val.retype_i64`): the string and slice lengths. -/
+def Val.retypeI64 : Val → Val
+  | .int w x => if Width.w64.bits ≤ w.bits then .int .w64 (x.setWidth 64) else .poison
+  | .ptr p => match p.addr? with
+    | some a => .int .w64 a
+    | none => .ptr p
+  | _ => .poison
+
 mutual
 /-- A value as a value of type shape `t` (§3.2). Go types a value by its `Type`, not by its
 op: rules build e.g. `(Rsh64x64 <t> …)` with `t` = `int32` (`divmod.rules`), whose meaning is
@@ -98,7 +112,8 @@ holds a pointer (`ConstNil <uintptr>`, `Convert`) becomes its concrete address, 
 typed as a pointer the pointer at that address (§3.3); a global, which has no concrete
 address, is `poison` at an integer type. Composites are retyped componentwise (a call's tuple
 keeps its components beyond the type's). Every other mismatch of value and shape is `poison`,
-so `(v.retype t).hasTy t` always holds (#108). -/
+so `(v.retype t).hasTy t` always holds (#108). A string or slice whose length or capacity
+is not a valid signed `int` (`Val.strOK`, `Val.sliceOK`: `0 ≤ len ≤ cap`) is `poison`. -/
 def Val.retype : Ty → Val → Val
   | _, .poison => .poison
   | .int w', .int w x => if w'.bits ≤ w.bits then .int w' (x.setWidth w'.bits) else .poison
@@ -115,6 +130,8 @@ def Val.retype : Ty → Val → Val
   | .agg fs _, .agg vs => match Val.retypeFields fs vs with
     | some vs' => .agg vs'
     | none => .poison
+  | .str, .agg [p, l] => Val.ofStr [p.retypePtr, l.retypeI64]
+  | .slice _, .agg [p, l, c] => Val.ofSlice [p.retypePtr, l.retypeI64, c.retypeI64]
   | .blob n, .blob bs => if bs.length == n then .blob bs else .poison
   | .empty, .empty => .empty
   | _, _ => .poison
@@ -130,7 +147,7 @@ end
 
 mutual
 /-- `v` has shape `t` (`poison` has every shape; an address-less pointer has the 64-bit integer
-shape too). -/
+shape too; a string or slice has valid lengths, `Val.strOK`/`Val.sliceOK`). -/
 def Val.hasTy : Val → Ty → Bool
   | .poison, _ => true
   | .int w _, .int w' => w == w'
@@ -142,6 +159,8 @@ def Val.hasTy : Val → Ty → Bool
   -- pointers of closures, `unsafe.Pointer` ↔ `uintptr`)
   | .ptr p, .int .w64 => p.addr?.isNone
   | .agg vs, .agg fs _ => Val.hasTyList vs (fs.map (·.2))
+  | .agg vs, .str => Val.strOK vs && vs.head?.all Val.isPtrOrPoison
+  | .agg vs, .slice _ => Val.sliceOK vs && vs.head?.all Val.isPtrOrPoison
   | .blob bs, .blob n => bs.length == n
   | .empty, .empty => true
   | _, _ => false

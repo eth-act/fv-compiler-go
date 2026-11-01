@@ -39,6 +39,12 @@ theorem extract_congr {bs bs' : Array Byte} {o o' k : Nat}
   · simp only [hi, ite_true]; exact h i hi
   · simp only [hi, ite_false]
 
+/-- The `k` bytes at `o + a` agree when the `n ≥ a + k` bytes at `o` do. -/
+theorem extract_congr_at {bs bs' : Array Byte} {o o' n : Nat} (a k : Nat) (hk : a + k ≤ n)
+    (h : ∀ i, i < n → bs[o + i]? = bs'[o' + i]?) :
+    bs.extract (o + a) (o + a + k) = bs'.extract (o' + a) (o' + a + k) :=
+  extract_congr fun i hi => by rw [Nat.add_assoc, Nat.add_assoc]; exact h (a + i) (by omega)
+
 mutual
 /-- Decoding a well-laid-out shape reads only its own bytes. -/
 theorem decode_congr {bs bs' : Array Byte} {o o' : Nat} : (t : Ty) → layoutOK t = true →
@@ -61,6 +67,21 @@ theorem decode_congr {bs bs' : Array Byte} {o o' : Nat} : (t : Ty) → layoutOK 
   | .other, _, _ => rfl
   | .mem, _, _ => rfl
   | .tuple _, _, _ => rfl
+  | .str, _, h => by
+    simp only [decode]
+    have h0 := extract_congr_at 0 8 (by simp [Ty.size]) h
+    have h8 := extract_congr_at 8 8 (by simp [Ty.size]) h
+    simp only [Nat.add_zero] at h0
+    rw [show o + 16 = o + 8 + 8 by omega, show o' + 16 = o' + 8 + 8 by omega, h0, h8]
+  | .slice _, _, h => by
+    simp only [decode]
+    have h0 := extract_congr_at 0 8 (by simp [Ty.size]) h
+    have h8 := extract_congr_at 8 8 (by simp [Ty.size]) h
+    have h16 := extract_congr_at 16 8 (by simp [Ty.size]) h
+    simp only [Nat.add_zero] at h0
+    rw [show o + 16 = o + 8 + 8 by omega, show o' + 16 = o' + 8 + 8 by omega, h0, h8,
+      show o + 8 + 8 = o + 16 by omega, show o' + 8 + 8 = o' + 16 by omega,
+      show o + 24 = o + 16 + 8 by omega, show o' + 24 = o' + 16 + 8 by omega, h16]
 theorem decodeFields_congr {bs bs' : Array Byte} {o o' : Nat} (n : Nat) :
     (fs : List (Nat × Ty)) → layoutsOK n fs = true →
     (∀ i, i < n → bs[o + i]? = bs'[o' + i]?) → decodeFields bs o fs = decodeFields bs' o' fs
@@ -101,6 +122,12 @@ theorem decodeLoad_congr {bs bs' : Array Byte} {o o' : Nat} : (t : Ty) → layou
   | .other, _, _ => rfl
   | .mem, _, _ => rfl
   | .tuple _, _, _ => rfl
+  | .str, hl, h => by
+    simp only [decodeLoad]
+    rw [allPoison_congr (n := 16) h, decode_congr _ hl h]
+  | .slice _, hl, h => by
+    simp only [decodeLoad]
+    rw [allPoison_congr (n := 24) h, decode_congr _ hl h]
 theorem decodeLoadFields_congr {bs bs' : Array Byte} {o o' : Nat} (n : Nat) :
     (fs : List (Nat × Ty)) → layoutsOK n fs = true →
     (∀ i, i < n → bs[o + i]? = bs'[o' + i]?) →

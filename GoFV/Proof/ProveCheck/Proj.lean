@@ -89,14 +89,18 @@ theorem projOf_den (hT : Term.Typed D tabs ρ) {x y : ID} (h : projOf D tabs x =
           exact retype_poison' _
         · rw [den_succ_term hx ht, he, hargs]
           simp only [List.map_cons, List.map_nil]
-          rw [den_succ_term hs hst, hse, hty]
+          rw [den_succ_term hs hst, hse, retype_asAgg (tabs.ty sv.type), hty]
           simp only [Comp.make, Val.retype]
           cases hr : Val.retypeFields fs (sv.args.toList.map (den D tabs ρ m)) with
           | none =>
             left
-            simp only [Comp.select]
+            simp only [Val.checkLen_poison, Comp.select]
             exact retype_poison' _
           | some vs' =>
+          rcases (Val.checkLen_eq_or (tabs.ty sv.type) (.agg vs')).symm with hc | hc <;> rw [hc]
+          · left
+            simp only [Comp.select]
+            exact retype_poison' _
           right
           refine ⟨m, rfl, ?_⟩
           -- the field of `y`

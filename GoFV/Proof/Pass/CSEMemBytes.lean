@@ -1,4 +1,5 @@
 import GoFV.SSA.Sem.Ptr
+import GoFV.Proof.ValRefine
 
 /-!
 # cse's memory skips: reads after disjoint writes
@@ -169,18 +170,7 @@ theorem encodeFields_size : ∀ (buf : Array Byte) (fs : List (Nat × Ty)) (vs :
   | buf, _ :: _, [] => by rw [encodeFields]; intros; simp_all
 
 /-- `encode t x` is `t.size` bytes. -/
-theorem encode_size (t : Ty) (x : Val) : (encode t x).size = t.size := by
-  rw [encode.eq_def]
-  split
-  · split <;> simp [intBytes, Ty.size]
-  · simp [ptrBytes, Ty.size, Width.bytes]; rfl
-  · rfl
-  · simp [ptrBytes, Ty.size]
-  · simp [intBytes, Ty.size]
-  · simp [encodeFields_size, Ty.size]
-  · split
-    · rename_i h; simpa using h
-    · simp
-  · simp
+theorem encode_size (t : Ty) (x : Val) : (encode t x).size = t.size :=
+  GoFV.SSA.Sem.encode_size t x
 
 end GoFV.Proof.CSE.Mem

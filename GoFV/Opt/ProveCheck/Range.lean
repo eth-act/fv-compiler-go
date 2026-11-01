@@ -165,7 +165,7 @@ def projOf (D : ID → Option Value) (tabs : Tables) (x : ID) : Option ID :=
       match D s with
       | none => none
       | some sv =>
-        match mkTab.lookup sv.op, tabs.ty sv.type, sv.args[i]?, (tabs.ty v.type).width? with
+        match mkTab.lookup sv.op, (tabs.ty sv.type).asAgg, sv.args[i]?, (tabs.ty v.type).width? with
         | some (), .agg fs _, some y, some w =>
           if (fs[i]?.bind (·.2.width?)) == some w && widthOf D tabs y == some w then some y
           else none

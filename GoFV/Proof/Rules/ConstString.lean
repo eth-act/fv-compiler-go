@@ -31,7 +31,8 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
 theorem strVal_of_strAux {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
     (h : strAux? tabs a = some (s, d)) (hs : s.size ≠ 0) :
-    strVal tabs a = .agg [.ptr ⟨.global d.toStringLossy, 0⟩, .int .w64 (BitVec.ofNat 64 s.size)] := by
+    strVal tabs a =
+      Val.ofStr [.ptr ⟨.global d.toStringLossy, 0⟩, .int .w64 (BitVec.ofNat 64 s.size)] := by
   unfold strAux? at h
   unfold strVal
   split at h
@@ -79,8 +80,13 @@ theorem r_generic_1022_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   have hc : Conv.const .w64 (Int64.ofNat s.size) = .int .w64 (BitVec.ofNat 64 s.size) := by
     simp only [Conv.const, Width.bits, Int64.toInt, BitVec.ofInt_toInt]; rfl
   simp only [hc, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq]
-  rw [Val.retype_of_hasTy hty]
-  exact fun _ => Refines.refl _
+  unfold Val.ofStr at hty ⊢
+  split
+  · rename_i hok
+    rw [if_pos hok] at hty
+    rw [Val.retype_of_hasTy hty]
+    exact fun _ => Refines.refl _
+  · exact fun _ => .poison _
 
 theorem strVal_of_strAux_empty {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
     (h : strAux? tabs a = some (s, d)) (hs : s.size = 0) :

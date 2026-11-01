@@ -29,7 +29,10 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 theorem r_generic_1057_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1057 := by
   rule_unfold
   generalize e.ty [] = t at hty ⊢
-  obtain ⟨fs, n, rfl, h⟩ := ty_of_hasTy_agg hty
+  rcases ty_of_hasTy_agg hty with ⟨fs, n, rfl, h⟩ | rfl | ⟨el, rfl⟩
+  rotate_left
+  · simp [Val.hasTy, Val.strOK] at hty
+  · simp [Val.hasTy, Val.sliceOK] at hty
   rcases fs with _ | ⟨⟨o0, t0⟩, _ | ⟨⟨o1, t1⟩, _ | _⟩⟩ <;>
     simp only [List.map, Val.hasTyList, Bool.and_eq_true, Bool.false_eq_true, and_false] at h
   obtain ⟨rfl, ⟨el1, rfl⟩⟩ := And.intro (ty_of_hasTy_int64 h.1) (ty_of_hasTy_null h.2.1)
@@ -39,7 +42,10 @@ theorem r_generic_1057_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 theorem r_generic_1044_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1044 := by
   rule_unfold
   generalize e.ty [] = t at hty ⊢
-  obtain ⟨fs, n, rfl, h⟩ := ty_of_hasTy_agg hty
+  rcases ty_of_hasTy_agg hty with ⟨fs, n, rfl, h⟩ | rfl | ⟨el, rfl⟩
+  rotate_left
+  · simp [Val.hasTy, Val.strOK] at hty
+  · exact Refines.refl _
   rcases fs with _ | ⟨⟨o0, t0⟩, _ | ⟨⟨o1, t1⟩, _ | ⟨⟨o2, t2⟩, _ | _⟩⟩⟩ <;>
     simp only [List.map, Val.hasTyList, Bool.and_eq_true, Bool.false_eq_true, and_false] at h
   obtain ⟨⟨el0, rfl⟩, rfl, rfl⟩ := And.intro (ty_of_hasTy_null h.1)

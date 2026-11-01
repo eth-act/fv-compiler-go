@@ -320,7 +320,7 @@ def constTop (op : Op) (ty : Sem.Ty) : Bool :=
     (Sem.evalPure op ty 0 none []).hasTy ty
 
 /-- The string shape (`Sem.tyOf` of a `STRING`). -/
-def strTy : Sem.Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+def strTy : Sem.Ty := .str
 
 /-- Table-evaluated ops (`GoFV.Proof.Rules.opVal`) at the shape of their value: `Addr` (a
 pointer or `poison`) at a pointer shape, `ConstString` (a string or `poison`) at the string
@@ -348,7 +348,7 @@ def selIndex? (op : Op) (ai : Int64) : Option Nat :=
 (`shapeSub`) or missing (the selection is `poison`), or the argument is a scalar (the
 selection is `poison`). -/
 def selShapeOK (k : Nat) (ty argTy : Sem.Ty) : Bool :=
-  match argTy with
+  match argTy.asAgg with
   | .agg fs _ => match fs[k]? with
     | some (_, f) => shapeSub f ty
     | none => true
@@ -369,7 +369,8 @@ def scalarTy : Sem.Ty → Bool
 
 /-- Shapes a `Load` decodes to a value of the shape: scalars and aggregates of scalars (strings,
 slices, interfaces, complex numbers; issue #17). -/
-def loadShape : Sem.Ty → Bool
+def loadShape (t : Sem.Ty) : Bool :=
+  match t.asAgg with
   | .agg fs _ => fs.all (scalarTy ·.2)
   | t => scalarTy t
 
@@ -1196,8 +1197,10 @@ def fwdFields (n lo : Nat) : List (Nat × Sem.Ty) → Bool
   | (o, t) :: fs => scalarTy t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
       fwdFields n (o + t.size) fs
 
-/-- A non-empty aggregate of `fwdFields` (strings, interfaces, flat structs). -/
-def fwdAgg : Sem.Ty → Bool
+/-- A non-empty aggregate of `fwdFields` (strings, slices, interfaces, flat structs; strings
+and slices by their aggregate layout `Ty.asAgg`). -/
+def fwdAgg (t : Sem.Ty) : Bool :=
+  match t.asAgg with
   | .agg fs n => n != 0 && fwdFields n 0 fs
   | _ => false
 
@@ -1222,6 +1225,7 @@ def fwdFieldsEq : List (Nat × Sem.Ty) → List (Nat × Sem.Ty) → Bool
 /-- `fwdAgg` aggregates of one size with `fwdFieldsEq` fields. -/
 def fwdAggEq : Sem.Ty → Sem.Ty → Bool
   | .agg fs n, .agg fs' n' => n == n' && fwdAgg (.agg fs n) && fwdFieldsEq fs fs'
+  | .str, .str | .slice _, .slice _ => true
   | _, _ => false
 
 /-- Shapes `fwdTy` that write, read and retype alike: `fwdScalarEq` or `fwdAggEq`. -/
