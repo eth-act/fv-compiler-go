@@ -632,11 +632,24 @@ def makeArgOk (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | some f => shapeSub t f
   | none => true
 
+/-- An `EqInter`/`NeqInter` operand of shape `t`: its first component (the itab word) has the
+64-bit integer shape, so it holds an integer or a pointer without a concrete address and
+`ITab`'s `uintptr` retype keeps it. Unconstrained if `t` has no first component (the
+comparison is then `poison`). -/
+def ifaceArgOk (t : Ty) : Bool :=
+  match fieldShape? t 0 with
+  | some f => isInt64Ty f
+  | none => true
+
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
 the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr` a
 pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
 64-bit integer offset of `AddPtr`/`PtrIndex`, `Convert` between a pointer and a 64-bit
-integer (`convArgOk`), both arguments of `Eq<N>`/`Neq<N>` integers of width `N`, and the
+integer (`convArgOk`), both arguments of `Eq<N>`/`Neq<N>` integers of width `N`, both of
+`IsInBounds`/`IsSliceInBounds` 64-bit integers (`int` on the 64-bit target: the semantics
+compares at the first argument's width, the rules' `Const64` operands mean 64-bit values), the
+first word of an `EqInter`/`NeqInter` operand a 64-bit integer (the itab word of the interface
+shape, `ifaceArgOk`), the
 components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17), and the
 arguments of the float arithmetic and comparisons floats of their width (shape `.int w`). Other
 arguments are unconstrained. -/
@@ -650,6 +663,8 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .Eq32 | .Neq32 => isIntWTy .w32 t
   | .Eq16 | .Neq16 => isIntWTy .w16 t
   | .Eq8 | .Neq8 => isIntWTy .w8 t
+  | .IsInBounds | .IsSliceInBounds => isIntWTy .w64 t
+  | .EqInter | .NeqInter => ifaceArgOk t
   | .StringMake | .SliceMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 =>
     makeArgOk ty i t
   | .Add64F | .Sub64F | .Mul64F | .Div64F | .Neg64F | .Min64F | .Max64F | .Eq64F | .Neq64F
