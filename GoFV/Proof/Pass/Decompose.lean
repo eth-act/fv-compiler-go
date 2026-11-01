@@ -1,5 +1,7 @@
 import GoFV.Opt.DecomposeCheck
 import GoFV.Proof.Pass.DecPhiSim
+import GoFV.Proof.Pass.CopyRelCheck
+import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Rules.Proven
 import GoFV.Proof.TabsAgreeMod
@@ -17,7 +19,10 @@ each pass is a chain of checked stages, all read in the output tables `T`:
 3. decompose builtin: the dec-rule rewrite with the proven dec rules refines the phi stage
    (`Pass.Rewrite.layersOK_refines` with `dec_allSound`: its value-rule `Load` expansions, its
    `Store` splits (`StructStore.ss_refines`, in place for the builtin `Make`s), then the
-   validator with the other events);
+   validator with the other events); with phi eliminations in the log, in segments between them
+   (`decSegsOK`, as `RewriteCheck.segsOK`): each segment refines, and at each elimination the
+   function with the `Phi` turned copy refines the logged one by copyelim's simulation
+   (`CopyRelCheck.copyOK_spec`, `CopyElim.refines_of_rel`);
 4. the names stage only changes `f.Names`/`NamedValues`/the canonical splits, which the
    semantics never reads (`run_stripNames`).
 -/
@@ -76,6 +81,41 @@ theorem refinesFrom_of_decUserOK {penv : PassEnv} {f : Func} {out : PassOut} {ce
   exact refinesFrom_of_tabsAgreeMod decPre_tabs hok.1 hf
     (decPre_mono (DecPhi.decPhis_refines hok.2 hf hg))
 
+/-- The segments of the decompose rewrite's log refine (`decSegsOK`, as `Pass.Rewrite.segs_refines`
+with the decompose layers under `Env.Mono`). -/
+theorem refines_of_decSegsOK {penv : PassEnv} {T : Tables} {f0 g2 : Func}
+    (hg2 : check (decCheckEnv penv T) g2 = .ok ()) :
+    ∀ (evs : List Rules.RwEvent) (f : Func) (seg : Array Rules.RwEvent) {ce : CheckEnv},
+      check ce f = .ok () → decSegsOK penv T f0 g2 f seg evs = true →
+      RefinesUnder Env.Mono T g2 T f
+  | [], f, seg, _, hf, h =>
+    Pass.Rewrite.layersOK_refines (out := { func := g2, tables := T }) Rules.dec_allSound
+      hg2 RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) f seg hf h
+  | ev :: evs, f, seg, _, hf, h => by
+    cases ev with
+    | phielim v d pre =>
+      simp only [decSegsOK, Bool.and_eq_true] at h
+      obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+      have hh := checkOK_sound h2
+      have hh' := checkOK_sound h4
+      obtain ⟨hrel, hfr⟩ := CopyRelCheck.copyOK_spec h3
+      have R2 := CopyElim.refines_of_rel (tabs := T)
+        ⟨⟨_, check_wf hh⟩, ⟨_, check_wf hh'⟩, Dom.certOK_of_check (check_domCert hh),
+          Dom.certOK_of_check (check_domCert hh'), hrel, hfr⟩
+      exact ((Pass.Rewrite.layersOK_refines (out := { func := RewriteCheck.dropInvalid pre, tables := T })
+        Rules.dec_allSound hh RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) f seg hf
+        h1).trans (R2.under _)).trans (refines_of_decSegsOK hg2 evs _ #[] hh' h5)
+    | _ =>
+      simp only [decSegsOK] at h
+      exact refines_of_decSegsOK hg2 evs f _ hf h
+
+/-- The rewrite stage refines its input (`decRewriteOK`). -/
+theorem refines_of_decRewriteOK {penv : PassEnv} {T : Tables} {g1 g2 : Func}
+    {log : Array Rules.RwEvent} {ce : CheckEnv} (hok : decRewriteOK penv T g1 g2 log = true)
+    (hg1 : check ce g1 = .ok ()) (hg2 : check (decCheckEnv penv T) g2 = .ok ()) :
+    RefinesUnder Env.Mono T g2 T g1 :=
+  refines_of_decSegsOK hg2 log.toList g1 #[] hg1 hok
+
 /-- Checked stages of decompose builtin refine the input. -/
 theorem refinesFrom_of_decBuiltinStagesOK {penv : PassEnv} {f g1 g2 : Func}
     {log : Array Rules.RwEvent}
@@ -87,9 +127,7 @@ theorem refinesFrom_of_decBuiltinStagesOK {penv : PassEnv} {f g1 g2 : Func}
   have hg1 := check_of_isOk hc1
   have hg2 := check_of_isOk hc2
   have r1 := DecPhi.decPhis_refines hphi hf hg1
-  have r2 : RefinesUnder Env.Mono out.tables g2 out.tables g1 :=
-    Pass.Rewrite.layersOK_refines (out := { func := g2, tables := out.tables }) Rules.dec_allSound
-      hg2 RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) g1 log hg1 hv
+  have r2 : RefinesUnder Env.Mono out.tables g2 out.tables g1 := refines_of_decRewriteOK hv hg1 hg2
   have r3 : Refines out.tables out.func out.tables g2 := refines_of_sameCode hsame
   exact refinesFrom_of_tabsAgreeMod decPre_tabs hta hf
     (decPre_mono ((r1.trans r2).trans (r3.under _)))

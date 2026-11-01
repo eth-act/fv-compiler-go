@@ -491,6 +491,7 @@ import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.DSE
 import GoFV.Proof.Witness.DSECert
 import GoFV.Proof.Witness.Deadcode
+import GoFV.Proof.Witness.DecPhiElim
 import GoFV.Proof.Witness.DecPhis
 import GoFV.Proof.Witness.DecStore
 import GoFV.Proof.Witness.DecodedLen

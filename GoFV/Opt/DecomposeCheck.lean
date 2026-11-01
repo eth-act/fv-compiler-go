@@ -17,7 +17,8 @@ The two passes are checked in stages, every stage under the pass's output tables
   `RewriteCheck.decLayers`: its value-rule `Load` expansions, then its `Store` splits, then
   `RewriteCheck.validate` with the other events), and must give the pass's output up to
   positions, use counts, caches and the name bookkeeping (`stripNames`), which the semantics
-  never reads.
+  never reads. A log with phi eliminations is checked in segments between them, as the rewrite
+  validator does (`RewriteCheck.segsOK`): `decSegsOK`.
 
 `decUserFrag`/`decBuiltinFrag` look only at the pass input (a pass error is in the fragment,
 the pass then has no output), like `daeFrag`.
@@ -49,17 +50,38 @@ def decUserFrag (env : PassEnv) (f : Func) : Bool :=
   | .error _ => true
   | .ok out => decUserOK env f out
 
+/-- `RewriteCheck.segsOK` with the decompose layers: the segments of the log `evs` between its phi
+eliminations (`seg`: the events of the current one, from `f`), each accepted by `layersOK` with
+`RewriteCheck.decLayers` against the function logged at the phi elimination ending it (without
+`Invalid` values, `h`), which passes `check` and is related by copyelim's relation to `h` with
+the `Phi` turned copy (`h'`, which passes `check`), where the next segment starts; the last
+segment ends at `g2`. -/
+def decSegsOK (env : PassEnv) (T : Tables) (f0 g2 : Func) :
+    Func → Array Rules.RwEvent → List Rules.RwEvent → Bool
+  | f, seg, [] =>
+    RewriteCheck.layersOK env decProvenTable f0 { func := g2, tables := T } RewriteCheck.decLayers f seg
+  | f, seg, .phielim v d pre :: evs =>
+    let h := RewriteCheck.dropInvalid pre
+    let h' := RewriteCheck.phiElim h v d.args[0]!
+    RewriteCheck.layersOK env decProvenTable f0 { func := h, tables := T } RewriteCheck.decLayers f seg &&
+      checkOK (decCheckEnv env T) h && CopyCheck.copyOK T h h' && checkOK (decCheckEnv env T) h' &&
+      decSegsOK env T f0 g2 h' #[] evs
+  | f, seg, ev :: evs => decSegsOK env T f0 g2 f (seg.push ev) evs
+
+/-- The rewrite stage `g1` → `g2` (log `log`) in the output tables `T` (`decSegsOK`). -/
+def decRewriteOK (env : PassEnv) (T : Tables) (g1 g2 : Func) (log : Array Rules.RwEvent) : Bool :=
+  decSegsOK env T g1 g2 g1 #[] log.toList
+
 /-- The checks of decompose builtin's stages, given the phi stage `g1` of `f`, the proven
 dec rules' rewrite `g2` of `g1` with its log, and the pass output `out`: `g1` is `f` with its
-phis split, `g2` is a rewrite of `g1` validated in layers with `out`'s code, and the tables only
-add unforgeable frame names. -/
+phis split, `g2` is a rewrite of `g1` validated in layers (`decRewriteOK`) with `out`'s code, and
+the tables only add unforgeable frame names. -/
 def decBuiltinStagesOK (env : PassEnv) (f g1 g2 : Func) (log : Array Rules.RwEvent)
     (out : PassOut) : Bool :=
   let T := out.tables
   tabsAgreeMod env.tables T f && DecPhiCheck.decPhiCheck T f g1 &&
     (check (decCheckEnv env T) g1).isOk && (check (decCheckEnv env T) g2).isOk &&
-    RewriteCheck.layersOK env decProvenTable g1 { func := g2, tables := T }
-      RewriteCheck.decLayers g1 log && sameCode g2 out.func
+    decRewriteOK env T g1 g2 log && sameCode g2 out.func
 
 /-- decompose builtin's output `out` of `f` is checked (`decBuiltinStagesOK` of the phi stage
 `phiStage` and the proven dec rules' rewrite of it). -/

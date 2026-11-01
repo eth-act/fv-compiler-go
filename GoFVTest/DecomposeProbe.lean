@@ -155,7 +155,15 @@ def replayWhy (tabs : Tables) (t : GoFV.Rules.Interp.Table) (f : Func)
             let loc := match r with
               | some cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}"
               | none => if x.op == Op.Store then "store split" else s!"#{j}"
-            s!"rule {x.op.name} {loc}"
+            let extra := if x.op == Op.ITab || x.op == Op.SlicePtr || x.op == Op.StringPtr then
+                match x.args[0]? >>= M.get? with
+                | some a =>
+                  let a0 := (a.args[0]? >>= M.get?)
+                  s!" ty {(repr (tabs.ty x.type)).pretty.take 30} arg {a.op.name} arg0 " ++
+                    s!"{(a0.map (·.op.name)).getD "-"} {(a0.map fun a0 => (repr (tabs.ty a0.type)).pretty.take 30).getD ""}"
+                | none => " noarg"
+              else ""
+            s!"rule {x.op.name} {loc}{extra}"
           | none => "rule on missing value"
         | .copyArg .. => "copyArg"
         | .control .. => "control"
@@ -198,6 +206,62 @@ def layersWhy (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Func) (out : P
         | _ => s!"layer {name}"
       else layersWhy env t f0 out Ls f' log'
 
+/-- The location `file:line` of the rule of event `.rule v i …` of table `t` on definitions `M`. -/
+def ruleLoc (t : GoFV.Rules.Interp.Table) (M : RewriteCheck.Defs) (v i : Nat) : String :=
+  match M.get? v with
+  | none => "?"
+  | some x =>
+    let row := (t.values[x.op.ctorIdx]?).getD #[]
+    match row[i]? with
+    | some cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}"
+    | none =>
+      if x.op == Op.Store then
+        match t.structStores[i - row.size]? with
+        | some cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}"
+        | none => s!"Store #{i}"
+      else s!"{x.op.name} #{i}"
+
+/-- Why the proven dec rules' rewrite differs from the pass: the first rule of the full dec
+table's run on `g1` that the proven table lacks. -/
+def unprovenWhy (env : PassEnv) (t1 : Tables) (g1 : Func) : String := Id.run do
+  let .ok (_, _, log) := GoFV.Rules.rewriteRun Decompose.decTable false true { env with tables := t1 } g1
+    | return "full rewrite error"
+  let proven := Decompose.decProvenTable
+  let provenLocs : List String :=
+    (proven.values.toList.flatMap fun row => row.toList.map fun cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}") ++
+      proven.structStores.toList.map fun cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}"
+  let mut M : RewriteCheck.Defs := g1.valueTab
+  for ev in log do
+    match ev with
+    | .rule v i _ defs =>
+      let loc := ruleLoc Decompose.decTable M v i
+      if !provenLocs.contains loc then
+        let op := ((RewriteCheck.Defs.get? M v).map (·.op.name)).getD "?"
+        return s!"unproven {op} {loc}"
+      M := defs.foldl (fun M u => RewriteCheck.Defs.put M u.id u) M
+    | _ => pure ()
+  return "no unproven rule"
+
+/-- Which segment of `Decompose.decSegsOK` fails (`k`: phi eliminations so far). -/
+def segWhy (env : PassEnv) (T : Tables) (f0 g2 : Func) :
+    Nat → Func → Array GoFV.Rules.RwEvent → List GoFV.Rules.RwEvent → String
+  | k, f, seg, [] =>
+    let pre := if k == 0 then "" else s!"phielim seg {k}: "
+    pre ++ layersWhy env Decompose.decProvenTable f0 { func := g2, tables := T } RewriteCheck.decLayers f seg
+  | k, f, seg, .phielim v d p :: evs =>
+    let ce := Decompose.decCheckEnv env T
+    let h := RewriteCheck.dropInvalid p
+    let h' := RewriteCheck.phiElim h v d.args[0]!
+    if !RewriteCheck.layersOK env Decompose.decProvenTable f0 { func := h, tables := T }
+        RewriteCheck.decLayers f seg then
+      s!"phielim seg {k}: " ++
+        layersWhy env Decompose.decProvenTable f0 { func := h, tables := T } RewriteCheck.decLayers f seg
+    else if !checkOK ce h then s!"phielim {k}: check pre"
+    else if !CopyCheck.copyOK T h h' then s!"phielim {k}: copyOK"
+    else if !checkOK ce h' then s!"phielim {k}: check elim"
+    else segWhy env T f0 g2 (k + 1) h' #[] evs
+  | k, f, seg, ev :: evs => segWhy env T f0 g2 k f (seg.push ev) evs
+
 /-- The first failing conjunct of `decBuiltinOK`. -/
 def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
   match Decompose.phiStage env true f with
@@ -212,11 +276,10 @@ def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
       else if !decPhiCheck T f g1 then "decPhiCheck in output tables"
       else if !(check ce g1).isOk then "check phi stage"
       else if !(check ce o2.func).isOk then "check proven rewrite"
-      else if !RewriteCheck.layersOK env Decompose.decProvenTable g1 { func := o2.func, tables := T }
-          RewriteCheck.decLayers g1 log then
-        layersWhy env Decompose.decProvenTable g1 { func := o2.func, tables := T }
-          RewriteCheck.decLayers g1 log
-      else if !Decompose.sameCode o2.func out.func then "proven rewrite ≠ pass output"
+      else if !Decompose.decRewriteOK env T g1 o2.func log then
+        segWhy env T g1 o2.func 0 g1 #[] log.toList
+      else if !Decompose.sameCode o2.func out.func then
+        s!"proven rewrite ≠ pass output: {unprovenWhy env t1 g1}"
       else "?"
 
 def Counts.add (a b : Counts) : Counts :=

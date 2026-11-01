@@ -527,6 +527,16 @@ replay validates alone, related by `validate` with them (`LayerChain.rw`). Witne
 `GoFV.Proof.Witness.decStore_witness` (`*p = unsafe.String(q, n); *p = *r` with the proven dec
 rules, kernel evaluation).
 
+**Phi eliminations of the dec rewrite** (`Decompose.decSegsOK`, `Decompose.refines_of_decSegsOK`).
+The rewrite loop turns a split phi whose arguments the dec rules made copies of one value into
+`Copy w` (`phielimValue`; e.g. `Phi (SliceLen a) (SliceLen b)` of two slices of one length).
+Decompose builtin's rewrite check splits the log at these events as `RewriteCheck.segsOK` does
+(below), with the decompose layers (`RewriteCheck.decLayers`, `Pass.Rewrite.layersOK_refines`
+under `Env.Mono`) on each segment. Witness: `GoFV.Proof.Witness.decPhiElim_witness` (`pickLen`:
+a string phi's length component over two `StringMake q n`, kernel evaluation). Decompose
+builtin in the fragment: quick-v3 8645 → 8731 (87 sections had a phi elimination; the 3 still
+rejected fail on other classes), full-v4 81847 → 82590.
+
 **`@b` results** (`… => @x.Block (…)`). The block a result is built in is not read by the term
 denotations, so `resultOK` accepts a `build` whose node 0 is a fresh `t` (not `v`) with `v`
 redefined as `Copy t` at its own type, compatible with `t`'s (`RewriteCheck.blockTopOK`);
