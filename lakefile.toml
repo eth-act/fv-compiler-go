@@ -138,3 +138,7 @@ root = "GoFVTest.MemCombineProbe"
 [[lean_exe]]
 name = "decompose-probe"
 root = "GoFVTest.DecomposeProbe"
+
+[[lean_exe]]
+name = "wb-probe"
+root = "GoFVTest.WBProbe"

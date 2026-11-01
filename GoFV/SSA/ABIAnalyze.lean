@@ -1,4 +1,4 @@
-import GoFV.SSA.AuxData
+import GoFV.SSA.ABI
 
 /-!
 # `ABIConfig.ABIAnalyzeTypes` for scalar integer parameters
@@ -22,12 +22,11 @@ structure ABIConfig where
   offsetForLocals : Int
   deriving Inhabited, Repr
 
-/-- Parse `<intregs>:<floatregs>:<localsoffset>`. -/
+/-- Parse `<intregs>:<floatregs>:<localsoffset>` (on characters, `GoFV.SSA.ABIConfig.parse?`, so
+that the kernel can evaluate `writebarrier` in a non-vacuity witness). -/
 def ABIConfig.parse (which : Nat) (s : String) : Option ABIConfig :=
-  match s.splitOn ":" with
-  | [i, fl, o] => do
-    return { which, intRegs := ← i.toNat?, floatRegs := ← fl.toNat?, offsetForLocals := ← o.toInt? }
-  | _ => none
+  (GoFV.SSA.ABIConfig.parse? s).map fun c =>
+    { which, intRegs := c.intRegs, floatRegs := c.floatRegs, offsetForLocals := c.localsOffset }
 
 /-- `types.RoundUp(o, r)` for a power-of-two `r > 0`. -/
 @[inline] def roundUp (o r : Int) : Int := (o + r - 1) / r * r

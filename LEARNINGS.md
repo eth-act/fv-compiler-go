@@ -388,6 +388,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect:** the five `divmod` lemmas check (`DivmodU2.lean` 8.8 s / 1.6 MB, `DivmodU3.lean`
   4.0 s / 1.1 MB); no other module changes.
 
+#### Split a checker's long `if` chains into small definitions before proving about them (#36)
+- `roleRun` (writebarrier's checker) dispatched on seven ops in an `if` chain inside a list
+  recursion. `unfold roleRun at h; split at h` in `roleRun_then` hit the `whnf` heartbeat limit,
+  and `roleOf_then`'s fallback case stayed unsolved. Moving the op dispatch into `thenRole` and
+  the fallback into `otherRole` (same behaviour), with one lemma per helper
+  (`thenOp (thenRole v j) = some (j', o) → j' = j ∧ v.op = o`, `thenOp (otherRole g x) = none`)
+  and `by_cases` + `rw [if_pos h]`/`rw [if_neg h]` per branch of `roleRun`, made the whole module
+  check in under 3 s.
+- `rcases` patterns flatten conjunctions to the right: a lemma ending in `… ∧ P ∧ Q` where `P`
+  is an `∃` needs `⟨…, ⟨p1, p2, …⟩, -⟩`; a flat pattern sends `Q` into `cases`, which fails with
+  "dependent elimination failed" on an equation of a big term.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
