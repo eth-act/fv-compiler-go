@@ -1,4 +1,4 @@
-import GoFV.Proof.Rules.Block
+import GoFV.Proof.Rules.AllSound
 import GoFV.Rules.Run
 import GoFV.Opt.CSE
 import GoFV.Opt.TabsAgree
@@ -33,6 +33,8 @@ replays the log on a map of definitions, starting from the input `f`:
   for the generic rules they are the control's own definition);
 * a rule event outside the value's op row is a struct-load expansion (`structLoadOK`, issue
   #151: `rewriteStructLoad`, `Load <struct> p m` → `StructMake` of field `Load`s at `OffPtr`s);
+* a rule event of a variadic selection rule (`GoFV.Proof.Rules.makeSelShape`, issue #17:
+  `(StructSelect [i] x:(StructMake ___)) => x.Args[i]`) is checked per instance (`makeSelOK`);
 * a phi elimination rejects;
 * finally every value listed in the output `g` has the replayed definition up to copies:
   each argument (and each control of `g`) is the replayed one or reached from it through
@@ -697,6 +699,41 @@ def structLoadShapeOK (r : Rule) : Bool :=
   | .op .Load .., .copy (.call "rewriteStructLoad" [.rsv .v] _), none => true
   | _, _, _ => false
 
+/-! ## Selections of a variadic `Make` (issue #17)
+
+`(StructSelect [i] x:(StructMake ___)) => x.Args[i]` (`dec.rules:106`, `generic.rules:973`,
+`GoFV.Proof.Rules.makeSelShape`) makes the selection `v` a `Copy` of argument `i` of the
+`StructMake`. The `___` pattern has no `Rule.Sound` form; each instance is validated by
+`makeSelOK`. Component `k` of a `StructMake` retyped at an aggregate shape is argument `k`
+retyped at the field's shape, which keeps the argument when its shape is the field's and the
+selection's (`shapeSub`); without a field `k` the selection is `poison`. -/
+
+/-- The event `(v, defs)` selects an argument of a `StructMake`: `v` is `StructSelect [k] s` in
+`M` (`k ≥ 0`), `s` a `StructMake` whose argument `k` is a defined value `a`, `defs` is `v` as
+`Copy a` at `a`'s type (`copyOf`), and where the `StructMake`'s shape has a component `k`, `a`'s
+shape is that component's and `v`'s (`shapeSub`). -/
+def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [u] =>
+    match x.args.toList, selIndex? .StructSelect x.auxInt with
+    | [s], some k =>
+      match M.get? s with
+      | some y =>
+        match y.args[k]? with
+        | some a =>
+          match M.get? a with
+          | some w =>
+            x.op == .StructSelect && y.op == .StructMake && u.id == v && u.op == .Copy &&
+            u.args == #[a] && u.type == w.type &&
+            (match fieldShape? (tabs.ty y.type) k with
+              | some fk => shapeSub (tabs.ty w.type) fk && shapeSub (tabs.ty w.type) (tabs.ty x.type)
+              | none => true)
+          | none => false
+        | none => false
+      | none => false
+    | _, _ => false
+  | _, _ => false
+
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
 if an event is not validated. -/
 def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
@@ -712,7 +749,11 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none
       | some cr =>
-        if ruleOK tabs M cr.rule v defs.toList then
+        if makeSelShape cr.rule then
+          if makeSelOK tabs M v defs.toList then
+            replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+          else none
+        else if ruleOK tabs M cr.rule v defs.toList then
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none
   | M, B, .copyArg v i src :: evs =>

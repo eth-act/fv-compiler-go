@@ -8,7 +8,8 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma
+rules with a merged `Rule.Sound`, `Rule.SoundT` or `Rule.MakeSel` lemma (value rules),
+`BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings) or `EffectRule.StructLoad` lemma (struct-load expansions; issue #151,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
@@ -19,7 +20,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1118 proven value rules, 3 proven block rules, 3
+/-- `generic.rules` restricted to its 1119 proven value rules, 3 proven block rules, 3
 nil-check eliminations, 4 Load-of-Store forwardings and 1 struct-load
 expansions. -/
 def generic : RuleSet where
@@ -160,6 +161,7 @@ def generic : RuleSet where
     (.SignExt8to16, [Generated.Generic.r_generic_106, Generated.Generic.r_generic_766, Generated.Generic.r_generic_2407]),
     (.SignExt8to32, [Generated.Generic.r_generic_107, Generated.Generic.r_generic_764, Generated.Generic.r_generic_2407_2]),
     (.SignExt8to64, [Generated.Generic.r_generic_108, Generated.Generic.r_generic_761, Generated.Generic.r_generic_2407_3]),
+    (.StructSelect, [Generated.Generic.r_generic_973]),
     (.Sub16, [Generated.Generic.r_generic_130, Generated.Generic.r_generic_393, Generated.Generic.r_generic_422, Generated.Generic.r_generic_647, Generated.Generic.r_generic_659, Generated.Generic.r_generic_660, Generated.Generic.r_generic_674, Generated.Generic.r_generic_774, Generated.Generic.r_generic_775, Generated.Generic.r_generic_776, Generated.Generic.r_generic_777, Generated.Generic.r_generic_1230, Generated.Generic.r_generic_1236, Generated.Generic.r_generic_1242, Generated.Generic.r_generic_1248, Generated.Generic.r_generic_1290, Generated.Generic.r_generic_1296]),
     (.Sub32, [Generated.Generic.r_generic_131, Generated.Generic.r_generic_392, Generated.Generic.r_generic_422_2, Generated.Generic.r_generic_647_2, Generated.Generic.r_generic_659_2, Generated.Generic.r_generic_660_2, Generated.Generic.r_generic_674_2, Generated.Generic.r_generic_774_2, Generated.Generic.r_generic_775_2, Generated.Generic.r_generic_776_2, Generated.Generic.r_generic_777_2, Generated.Generic.r_generic_1229, Generated.Generic.r_generic_1235, Generated.Generic.r_generic_1241, Generated.Generic.r_generic_1247, Generated.Generic.r_generic_1289, Generated.Generic.r_generic_1295]),
     (.Sub64, [Generated.Generic.r_generic_132, Generated.Generic.r_generic_391, Generated.Generic.r_generic_422_3, Generated.Generic.r_generic_647_3, Generated.Generic.r_generic_659_3, Generated.Generic.r_generic_660_3, Generated.Generic.r_generic_674_3, Generated.Generic.r_generic_774_3, Generated.Generic.r_generic_775_3, Generated.Generic.r_generic_776_3, Generated.Generic.r_generic_777_3, Generated.Generic.r_generic_1228, Generated.Generic.r_generic_1234, Generated.Generic.r_generic_1240, Generated.Generic.r_generic_1246, Generated.Generic.r_generic_1288, Generated.Generic.r_generic_1294]),
@@ -185,7 +187,7 @@ def generic : RuleSet where
   loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821]
   structLoads := [Generated.Generic.r_generic_974]
 
-/-- `dec.rules` restricted to its 13 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 14 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings and 0 struct-load
 expansions. -/
 def dec : RuleSet where
@@ -201,7 +203,7 @@ def dec : RuleSet where
     (.SlicePtrUnchecked, [Generated.Dec.r_dec_61]),
     (.StringLen, [Generated.Dec.r_dec_43]),
     (.StringPtr, [Generated.Dec.r_dec_42]),
-    (.StructSelect, [Generated.Dec.r_dec_115])]
+    (.StructSelect, [Generated.Dec.r_dec_106, Generated.Dec.r_dec_115])]
   blocks := []
   nilChecks := []
   loads := []

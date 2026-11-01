@@ -104,8 +104,8 @@ def proven():
 
 def proven_kinds():
     """Short rule name -> (proof module, obligation), from `theorem <name>_sound : <obligation>`
-    (`Rule.Sound`, `Rule.SoundT`, `BlockRule.Sound`, `EffectRule.NilElim`, `EffectRule.LoadFwd`,
-    `EffectRule.StructLoad`)."""
+    (`Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel`, `BlockRule.Sound`, `EffectRule.NilElim`,
+    `EffectRule.LoadFwd`, `EffectRule.StructLoad`)."""
     out = {}
     for fn in os.listdir(PROOF):
         if not fn.endswith(".lean") or fn[:-5] in INFRA:
@@ -305,7 +305,8 @@ def proven_sets():
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma
+rules with a merged `Rule.Sound`, `Rule.SoundT` or `Rule.MakeSel` lemma (value rules),
+`BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings) or `EffectRule.StructLoad` lemma (struct-load expansions; issue #151,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
@@ -379,8 +380,13 @@ def {low} : RuleSet where
             if not groups:
                 return f"(by simp [Proven.{low}, ForallL])"
             def pf(r):
-                if kinds[r][1] == "Rule.Sound":
-                    return f"Rule.soundT_of_sound {r}_sound rfl"
+                k = kinds[r][1]
+                if k == "Rule.Sound":
+                    return f"Rule.checked_of_sound {r}_sound rfl"
+                if k == "Rule.SoundT":
+                    return f".inl {r}_sound"
+                if k == "Rule.MakeSel":
+                    return f".inr {r}_sound"
                 return f"{r}_sound"
             proofs = ",\n    ".join(
                 "⟨" + ", ".join(pf(r) for r in rs) + ", trivial⟩" for _, rs in groups)
