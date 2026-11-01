@@ -80,6 +80,24 @@ def justified (tabs : Tables) (c : DomCert.Cert) (f : Func) (bx x ptr nc : ID) (
           | none => false
     | _, _ => false
 
+/-- `nc`, the nil check `x` became a copy of, is listed right after `x` among the block's roots
+in its schedule and checks the same pointer with the same memory: when `x` panics in the source,
+`nc` panics alike in the target, and nothing runs in between. -/
+def after (f g : Func) (fv : Value) (x nc : ID) : Bool :=
+  match f.value? nc, f.block? fv.block, g.value? nc with
+  | some n, some fb, some gn =>
+    nc != x && n.op == .NilCheck && n.args == fv.args && n.type == fv.type &&
+      n.block == fv.block && gn.op == .NilCheck && gn.args == n.args && fb.values.contains nc &&
+      match Sem.schedule f fb with
+      | some o =>
+        match o.findIdx? (· == x), o.findIdx? (· == nc) with
+        | some i, some j =>
+          decide (i < j) && (List.range o.size).all fun k => !(decide (i < k) && decide (k < j)) ||
+            !root f o[k]!
+        | _, _ => false
+      | none => false
+  | _, _, _ => false
+
 /-- `x` is unchanged, a justified removed nil check, or a justified constant `IsNonNil`. -/
 def valueOK (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
@@ -89,7 +107,7 @@ def valueOK (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID) : Bool :=
     ((gv.op == fv.op && gv.args == fv.args && gv.aux == fv.aux && gv.auxInt == fv.auxInt) ||
      (fv.op == .NilCheck && gv.op == .Copy && gv.args.size == 1 &&
        match fv.args[0]?, gv.args[0]? with
-       | some p, some nc => justified tabs c f fv.block x p nc fv.type true
+       | some p, some nc => justified tabs c f fv.block x p nc fv.type true || after f g fv x nc
        | _, _ => false) ||
      (fv.op == .IsNonNil && gv.op == .ConstBool && gv.auxInt == 1 && gv.args.size == 0 &&
        fv.args.size == 1 &&

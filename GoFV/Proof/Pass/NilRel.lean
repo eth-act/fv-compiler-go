@@ -32,15 +32,27 @@ inductive Just (tabs : Tables) (f : Func) (bx x ptr nc : ID) (ty : TypeRef) : Bo
       f.block? bx = some fb → nc ∈ fb.values → Sem.schedule f fb = some o →
       listedBefore o nc x = true → Just tabs f bx x ptr nc ty s
 
+/-- The nil check `nc` (unchanged in `g`) checks `x`'s pointer with `x`'s memory and follows `x`
+directly among the roots of its block's schedule. -/
+inductive After (f g : Func) (fv : Value) (x nc : ID) : Prop where
+  | mk {n gn : Value} {fb : Block} {o : Array ID} {i j : Nat} : f.value? nc = some n → nc ≠ x →
+      n.op = .NilCheck → n.args = fv.args → n.type = fv.type → n.block = fv.block →
+      g.value? nc = some gn → gn.op = .NilCheck → gn.args = n.args →
+      f.block? fv.block = some fb → nc ∈ fb.values → Sem.schedule f fb = some o →
+      o[i]? = some x → o[j]? = some nc → i < j →
+      (∀ k y, i < k → k < j → o[k]? = some y → root f y = false) → After f g fv x nc
+
 /-- How value `x` of `f` (`fv`) became `gv`. -/
-inductive VRel (tabs : Tables) (f : Func) (x : ID) : Value → Value → Prop where
+inductive VRel (tabs : Tables) (f g : Func) (x : ID) : Value → Value → Prop where
   | same {fv gv : Value} : gv.op = fv.op → gv.args = fv.args → gv.aux = fv.aux →
-      gv.auxInt = fv.auxInt → VRel tabs f x fv gv
+      gv.auxInt = fv.auxInt → VRel tabs f g x fv gv
   | nc {fv gv : Value} {p nc : ID} : fv.op = .NilCheck → gv.op = .Copy → fv.args[0]? = some p →
-      gv.args.size = 1 → gv.args[0]? = some nc → Just tabs f fv.block x p nc fv.type true → VRel tabs f x fv gv
+      gv.args.size = 1 → gv.args[0]? = some nc → Just tabs f fv.block x p nc fv.type true → VRel tabs f g x fv gv
   | nn {fv gv : Value} {p nc : ID} : fv.op = .IsNonNil → gv.op = .ConstBool → gv.auxInt = 1 →
       gv.args.size = 0 → fv.args.size = 1 → fv.args[0]? = some p → nc ≠ p →
-      Just tabs f fv.block x p nc (f.getV nc).type false → VRel tabs f x fv gv
+      Just tabs f fv.block x p nc (f.getV nc).type false → VRel tabs f g x fv gv
+  | after {fv gv : Value} {nc : ID} : fv.op = .NilCheck → gv.op = .Copy → gv.args.size = 1 →
+      gv.args[0]? = some nc → After f g fv x nc → VRel tabs f g x fv gv
 
 /-- The declarative output relation. -/
 structure NRel (tabs : Tables) (f g : Func) : Prop where
@@ -52,7 +64,7 @@ structure NRel (tabs : Tables) (f g : Func) : Prop where
     gb.values.filter (fun z => (g.getV z).op == .Phi) =
       fb.values.filter (fun z => (f.getV z).op == .Phi)
   value : ∀ x fv, f.value? x = some fv → ∃ gv, g.value? x = some gv ∧ gv.id = fv.id ∧
-    gv.block = fv.block ∧ gv.type = fv.type ∧ VRel tabs f x fv gv
+    gv.block = fv.block ∧ gv.type = fv.type ∧ VRel tabs f g x fv gv
   sched : ∀ bid ∈ f.blocks, ∀ fb gb, f.block? bid = some fb → g.block? bid = some gb →
     ∀ oS, Sem.schedule f fb = some oS → ∃ oT, Sem.schedule g gb = some oT ∧
       oT.toList.filter (root g) = oS.toList.filter (root g)
@@ -103,6 +115,49 @@ theorem justified_sound {tabs : Tables} {f : Func} {bx x ptr nc : ID} {ty : Type
         rw [hnb] at hl
         exact .dom hnp hn hop ha hty hbl hanc hblk hnb (by simpa using hl)
 
+theorem after_sound {f g : Func} {fv : Value} {x nc : ID} (h : after f g fv x nc = true) :
+    After f g fv x nc := by
+  unfold after at h
+  cases hn : f.value? nc with
+  | none => rw [hn] at h; cases h
+  | some n =>
+  cases hfb : f.block? fv.block with
+  | none => rw [hn, hfb] at h; cases h
+  | some fb =>
+  cases hgn : g.value? nc with
+  | none => rw [hn, hfb, hgn] at h; cases h
+  | some gn =>
+  rw [hn, hfb, hgn] at h
+  simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Array.contains_iff_mem] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hne, hop⟩, hargs⟩, hty⟩, hbl⟩, hgop⟩, hgargs⟩, hmem⟩, hrest⟩ := h
+  cases ho : Sem.schedule f fb with
+  | none => rw [ho] at hrest; cases hrest
+  | some o =>
+  rw [ho] at hrest
+  dsimp only at hrest
+  cases hi : o.findIdx? (· == x) with
+  | none => rw [hi] at hrest; cases hrest
+  | some i =>
+  cases hj : o.findIdx? (· == nc) with
+  | none => rw [hi, hj] at hrest; cases hrest
+  | some j =>
+  rw [hi, hj] at hrest
+  simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.mem_range,
+    Bool.or_eq_true, Bool.not_eq_true', Bool.and_eq_false_iff, decide_eq_false_iff_not] at hrest
+  obtain ⟨hij, hgap⟩ := hrest
+  obtain ⟨hi1, hi2⟩ := Array.findIdx?_eq_some_iff_getElem.1 hi
+  obtain ⟨hj1, hj2⟩ := Array.findIdx?_eq_some_iff_getElem.1 hj
+  refine .mk hn (Ne.symm (fun h => hne h.symm)) hop hargs hty hbl hgn hgop hgargs hfb hmem ho
+    (i := i) (j := j) (by rw [Array.getElem?_eq_getElem hi1]; simpa using hi2.1)
+    (by rw [Array.getElem?_eq_getElem hj1]; simpa using hj2.1) hij ?_
+  intro k y hik hkj hy
+  have hk : k < o.size := (Array.getElem?_eq_some_iff.1 hy).1
+  have hyk : o[k]! = y := by rw [getElem!_pos o k hk]; exact (Array.getElem?_eq_some_iff.1 hy).2
+  rcases hgap k hk with (h1 | h1) | h1
+  · omega
+  · omega
+  · rw [hyk] at h1; exact h1
+
 /-- **The checker is sound.** -/
 theorem nrel_sound {tabs : Tables} {f g : Func} (h : nrel tabs f g = true) : NRel tabs f g := by
   unfold nrel at h
@@ -141,7 +196,10 @@ theorem nrel_sound {tabs : Tables} {f g : Func} (h : nrel tabs f g = true) : NRe
           | none => rw [hp, hn] at hj; cases hj
           | some nc =>
             rw [hp, hn] at hj
-            exact .nc hop hcp hp hs1 hn (justified_sound hj)
+            simp only [Bool.or_eq_true] at hj
+            rcases hj with hj | hj
+            · exact .nc hop hcp hp hs1 hn (justified_sound hj)
+            · exact .after hop hcp hs1 hn (after_sound hj)
       · cases hp : fv.args[0]? with
         | none => rw [hp] at hj; cases hj
         | some p =>

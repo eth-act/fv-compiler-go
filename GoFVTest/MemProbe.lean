@@ -63,6 +63,8 @@ def chainRoot (f : Func) : Nat → ID → String
       | op => op.name
     | none => "?"
 
+def rootG (g : Func) (x : ID) : Bool := CSE.rootNode g x
+
 def pos (o : Array ID) (x : ID) : Option Nat := o.findIdx? (· == x)
 
 /-- Source schedule of every block. -/
@@ -93,7 +95,15 @@ def why (c : DomCert.Cert) (f : Func) (os : Std.HashMap ID (Array ID)) (x ptr nc
       | none => "nosched"
       | some o =>
         match pos o nc, pos o x with
-        | some i, some j => if i < j then "same-before" else "same-after"
+        | some i, some j =>
+          if i < j then "same-before"
+          else
+            let rs := o.filter (rootG f)
+            let adj := match pos rs x, pos rs nc with
+              | some a, some b => b == a + 1
+              | _, _ => false
+            let sameMem := (f.getV x).args[1]? == (f.getV nc).args[1]?
+            s!"same-after-{if adj then "adj" else "far"}-{if sameMem then "mem" else "nomem"}"
         | _, _ => "nopos"
 
 /-- For an `IsNonNil ptr` turned constant: the best justification among the surviving checks. -/
@@ -114,7 +124,6 @@ def whyIsNonNil (c : DomCert.Cert) (f g : Func) (os : Std.HashMap ID (Array ID))
     return "edge"
   return best
 
-def rootG (g : Func) (x : ID) : Bool := CSE.rootNode g x
 
 /-- The target's roots, in order, are the source's minus the removed ones, per block. -/
 def rootsOK (f g : Func) : Bool := Id.run do
@@ -245,7 +254,9 @@ def main (args : List String) : IO UInt32 := do
                 if !kinds.contains w then kinds := w :: kinds
           if !kinds.isEmpty then
             nChanged := nChanged + 1
-            if NilCheck.nrel prev f g then nAcc := nAcc + 1
+            if NilCheck.nrel prev f g then
+              nAcc := nAcc + 1
+              pure ()
             let rok := rootsOK f g
             if !rok then nRootsBad := nRootsBad + 1
             let bad := kinds.filter fun w =>

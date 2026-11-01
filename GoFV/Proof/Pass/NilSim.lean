@@ -97,6 +97,7 @@ theorem phis_target {ce : CheckEnv} (hwf : WF ce f) (hrel : NRel tabs f g) {fr :
     | same hop hargs => exact ⟨hop, hargs⟩
     | nc h1 => rw [h1] at hph'; cases hph'
     | nn h1 => rw [h1] at hph'; cases hph'
+    | after h1 => rw [h1] at hph'; cases hph'
   have htys : (Ctx.make tabs g).tys[z]? = (Ctx.make tabs f).tys[z]? := by
     rw [tys_of_value hgv, tys_of_value hv, hty]
   unfold phiStep

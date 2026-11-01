@@ -55,11 +55,12 @@ variable {env : Env} {tabs : Tables} {f g : Func} {bid : ID}
   {fb gb : Block} {F0 : Frame} {oS oT : Array ID}
 
 /-- Phi-ness is kept. -/
-theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel tabs f x fv gv) : gv.op = .Phi ↔ fv.op = .Phi := by
+theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel tabs f g x fv gv) : gv.op = .Phi ↔ fv.op = .Phi := by
   cases h with
   | same hop => rw [hop]
   | nc h1 h2 => rw [h1, h2]; decide
   | nn h1 h2 => rw [h1, h2]; decide
+  | after h1 h2 => rw [h1, h2]; decide
 
 namespace Blk
 
@@ -224,6 +225,16 @@ theorem tgtArg {x : ID} (hx : Node f fb x) {gv : Value} (hgv : g.value? x = some
       exact .inr ⟨hm, _, hn', by rw [hop']; decide⟩
   | nn hop hcb hai hs0 =>
     rw [Array.eq_empty_of_size_eq_zero hs0] at ha; simp at ha
+  | @after nc hop hcp hs1 hn hA =>
+    have hanc : a = nc := by
+      obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 ha
+      have : k < 1 := hs1 ▸ (Array.getElem?_eq_some_iff.1 hk).1
+      have hk0 : k = 0 := by omega
+      subst hk0; rw [hn] at hk; exact (Option.some.inj hk).symm
+    subst hanc
+    obtain ⟨hn', -, hop', -, -, hbl', -, -, -, hfb', hm, -⟩ := hA
+    rw [hvb, K.hfb] at hfb'; cases hfb'
+    exact .inr ⟨hm, _, hn', by rw [hop']; decide⟩
 
 theorem base_not_node {x : ID} (hB : Base f bid x) (hn : Node f fb x) : False := by
   obtain ⟨v, hpl, -, hor⟩ := hB
@@ -324,36 +335,30 @@ theorem tArgsT {i : Nat} {x : ID} (hi : oT.toList[i]? = some x) {gv : Value}
 theorem take_mono {i k : Nat} (h : i ≤ k) {a : ID} (ha : a ∈ oS.toList.take i) :
     a ∈ oS.toList.take k := List.take_subset_take_left _ h ha
 
-/-- **A justifying nil check passed** on the pointer of the value at position `i ≤ k`. -/
-theorem just_nn {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
-    (hik : i ≤ k) {x : ID} (hi : oS.toList[i]? = some x) {p nc : ID} {ty : TypeRef} {s : Bool}
-    (hj : Just tabs f bid x p nc ty s) (hne : nc ≠ p) :
-    ∃ yp w, S.regs[p]? = some (some yp) ∧ NN yp ∧ S.regs[nc]? = some (some w) ∧
-      w = yp.retype (tabs.ty ty) ∧ (Base f bid nc ∨ nc ∈ oS.toList.take k) := by
+/-- An available value is listed in a block, with its ID. -/
+theorem listed_avail {k : Nat} {z : ID} (hz : Base f bid z ∨ z ∈ oS.toList.take k) {v : Value}
+    (hv : f.value? z = some v) :
+    ∃ b blk, BlockIn f b blk ∧ z ∈ blk.values ∧ v.id = z := by
   obtain ⟨ce, hwf⟩ := K.wf
-  obtain ⟨n, hn, hop, ha0, hty, havail⟩ : ∃ n, f.value? nc = some n ∧ n.op = .NilCheck ∧
-      n.args[0]? = some p ∧ n.type = ty ∧ (Base f bid nc ∨ nc ∈ oS.toList.take k) := by
-    cases hj with
-    | seed he => exact absurd he hne
-    | dom _ hn hop ha hty _ hanc hb hnb hm =>
-      exact ⟨_, hn, hop, ha, hty, .inl (K.base_of_dom hn (by assumption) hanc hb hnb hm)⟩
-    | same _ hn hop ha hty _ hfb' _ ho hl =>
-      obtain ⟨i', j', hij, hi', hj'⟩ := K.same_before hfb' ho hl
-      have := Order.idx_unique K.ndS hj' hi
-      subst this
-      exact ⟨_, hn, hop, ha, hty, .inr (K.take_mono hik
-        (List.mem_of_getElem? (by rw [List.getElem?_take_of_lt hij]; exact hi')))⟩
-  have hph : n.op ≠ .Phi := by rw [hop]; decide
-  obtain ⟨w, hw, hev⟩ := K.availS hS havail hn hph
-  have hl : ∃ b blk, BlockIn f b blk ∧ nc ∈ blk.values := by
-    rcases havail with hB | hx
+  obtain ⟨b, blk, hbin, hxb⟩ : ∃ b blk, BlockIn f b blk ∧ z ∈ blk.values := by
+    rcases hz with hB | hx
     · obtain ⟨v', ⟨-, hb, blk, hblk, hxb⟩, -⟩ := hB
       exact ⟨_, blk, ⟨hb, hblk⟩, hxb⟩
     · exact ⟨bid, fb, ⟨K.tree.1, K.hfb⟩, (K.memS.1 (List.mem_of_mem_take hx)).1⟩
-  obtain ⟨b, blk, hbin, hxb⟩ := hl
-  have hid : n.id = nc := by
-    obtain ⟨v', hv', hid, -⟩ := hwf.valueId b blk hbin nc hxb
-    rw [hn] at hv'; cases hv'; exact hid
+  obtain ⟨v', hv', hid, -⟩ := hwf.valueId b blk hbin z hxb
+  rw [hv] at hv'; cases hv'
+  exact ⟨b, blk, hbin, hxb, hid⟩
+
+/-- **An available nil check passed** on its pointer, and holds it. -/
+theorem nc_eval {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
+    {p nc : ID} {n : Value} (hn : f.value? nc = some n) (hop : n.op = .NilCheck)
+    (ha0 : n.args[0]? = some p) (havail : Base f bid nc ∨ nc ∈ oS.toList.take k) :
+    ∃ yp w, S.regs[p]? = some (some yp) ∧ NN yp ∧ S.regs[nc]? = some (some w) ∧
+      w = yp.retype (tabs.ty n.type) := by
+  obtain ⟨ce, hwf⟩ := K.wf
+  have hph : n.op ≠ .Phi := by rw [hop]; decide
+  obtain ⟨w, hw, hev⟩ := K.availS hS havail hn hph
+  obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail havail hn
   have hsz : n.args.size = 2 := by
     have := hwf.arity b blk nc n ⟨hbin, hxb, hn⟩ (by rw [hop]; decide)
     rw [hop, show Op.NilCheck.argLen = 2 by decide] at this
@@ -369,8 +374,29 @@ theorem just_nn {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.
   obtain ⟨a, hra, hnn⟩ := nilCheck_ok hop hr
   simp only [List.cons.injEq] at hra
   obtain ⟨rfl, -⟩ := hra
-  refine ⟨_, w, hyp, hnn, hw, ?_, havail⟩
-  rw [hwr, hid, tys_of_value hn, hty]; rfl
+  refine ⟨_, w, hyp, hnn, hw, ?_⟩
+  rw [hwr, hid, tys_of_value hn]; rfl
+
+/-- **A justifying nil check passed** on the pointer of the value at position `i ≤ k`. -/
+theorem just_nn {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
+    (hik : i ≤ k) {x : ID} (hi : oS.toList[i]? = some x) {p nc : ID} {ty : TypeRef} {s : Bool}
+    (hj : Just tabs f bid x p nc ty s) (hne : nc ≠ p) :
+    ∃ yp w, S.regs[p]? = some (some yp) ∧ NN yp ∧ S.regs[nc]? = some (some w) ∧
+      w = yp.retype (tabs.ty ty) ∧ (Base f bid nc ∨ nc ∈ oS.toList.take k) := by
+  obtain ⟨n, hn, hop, ha0, hty, havail⟩ : ∃ n, f.value? nc = some n ∧ n.op = .NilCheck ∧
+      n.args[0]? = some p ∧ n.type = ty ∧ (Base f bid nc ∨ nc ∈ oS.toList.take k) := by
+    cases hj with
+    | seed he => exact absurd he hne
+    | dom _ hn hop ha hty _ hanc hb hnb hm =>
+      exact ⟨_, hn, hop, ha, hty, .inl (K.base_of_dom hn (by assumption) hanc hb hnb hm)⟩
+    | same _ hn hop ha hty _ hfb' _ ho hl =>
+      obtain ⟨i', j', hij, hi', hj'⟩ := K.same_before hfb' ho hl
+      have := Order.idx_unique K.ndS hj' hi
+      subst this
+      exact ⟨_, hn, hop, ha, hty, .inr (K.take_mono hik
+        (List.mem_of_getElem? (by rw [List.getElem?_take_of_lt hij]; exact hi')))⟩
+  obtain ⟨yp, w, hyp, hnn, hw, hwe⟩ := K.nc_eval hS hn hop ha0 havail
+  exact ⟨yp, w, hyp, hnn, hw, by rw [hwe, hty], havail⟩
 
 omit K in
 theorem argVals_congr {S T : Frame} {as : Array ID} (h : ∀ a ∈ as, T.regs[a]? = S.regs[a]?) :
@@ -421,6 +447,7 @@ theorem isNonNil_nn {q : Val} (h : NN q) : PtrOps.isNonNil [q] = .bool true := b
 register. -/
 theorem sameOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     (hT : TFacts env tabs g F0 S T (oS.toList.take k) (oT.toList.take j))
+    (hroots : ∀ x ∈ oT.toList.take j, root g x = true → x ∈ oS.toList.take k)
     {x : ID} (hjT : oT.toList[j]? = some x) {i : Nat} (hiS : oS.toList[i]? = some x)
     (hik : i < k) :
     ∃ y, stepV env (Ctx.make tabs g) T x = .ok y ∧ S.regs[x]? = some (some y) := by
@@ -485,6 +512,42 @@ theorem sameOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       rw [evalValue_copy hcp hga hTn, hyr, hid, hxid, htys, hwe, tys_of_value hfv]
       simp only [Option.getD_some]
       exact congrArg _ (retype_idem _ _)
+  | @after nc hop hcp hs1 hn hA =>
+    obtain ⟨hn', hne', hop', hargs', hty', -, hgn, hgop, -, hfb', hm, -⟩ := hA
+    rw [hvb, K.hfb] at hfb'; cases hfb'
+    have hga : gv.args = #[nc] := by
+      apply Array.ext (by simp [hs1]); intro k h1 h2
+      have : k = 0 := by simp at h2; omega
+      subst this; simpa [Array.getElem?_eq_getElem h1] using hn
+    -- the copied check comes before `x` in the target, so the source reached it
+    have hncT : nc ∈ oT.toList.take j := by
+      rcases K.tArgsT (a := nc) hjT hgv (by rw [hga]; simp) with hB | hm'
+      · exact absurd (⟨hm, _, hn', by rw [hop']; decide⟩ : Node f fb nc) (K.base_not_node hB)
+      · exact hm'
+    have hncS : nc ∈ oS.toList.take k :=
+      hroots nc hncT (by
+        simp only [Opt.NilCheck.root, hgn, hgop, Option.map_some, Option.getD_some]; decide)
+    have hsz : fv.args.size = 2 := by
+      have := hwf.arity bid fb x fv ⟨⟨K.tree.1, K.hfb⟩, hxb, hfv⟩ (by rw [hop]; decide)
+      rw [hop, show Op.NilCheck.argLen = 2 by decide] at this
+      exact_mod_cast this
+    obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := fv)
+      (by rw [hev]; nofun)
+    obtain ⟨p', m', yp, ym, hargs, rfl, hyp, -⟩ := argVals_two hvs hsz
+    have hev' := hev
+    rw [evalValue_of_argVals hvs, evalOp_nilCheck hop] at hev'
+    obtain ⟨r, hr, hyr⟩ := bind_ok hev'
+    obtain ⟨a, hra, -⟩ := nilCheck_ok hop hr
+    simp only [List.cons.injEq] at hra
+    obtain ⟨rfl, -⟩ := hra
+    obtain ⟨yp', w, hyp', -, hw, hwe⟩ := K.nc_eval (p := p') hS hn' hop'
+      (by rw [hargs', hargs]; simp) (.inr hncS)
+    rw [hyp] at hyp'; cases hyp'
+    have hTn : T.regs[nc]? = some (some w) := by
+      rw [K.agreeT hS hT (.inr hncS) (.inr hncT), hw]
+    rw [evalValue_copy hcp hga hTn, hyr, hid, hxid, htys, hwe, hty', tys_of_value hfv]
+    simp only [Option.getD_some]
+    exact congrArg _ (retype_idem _ _)
   | @nn p nc hop hcb hai hs0 hs1 hp hne hj =>
     rw [hvb] at hj
     obtain ⟨yp, -, hyp, hnn, -⟩ := K.just_nn hS (Nat.le_of_lt hik) hiS hj hne
@@ -588,20 +651,6 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr tabs f (n + 1)
     · next a ha => exact .inr (.inr ⟨.inr h, a, ha, hop⟩)
     · cases hop
   · cases hop
-
-/-- An available value is listed in a block, with its ID. -/
-theorem listed_avail {k : Nat} {z : ID} (hz : Base f bid z ∨ z ∈ oS.toList.take k) {v : Value}
-    (hv : f.value? z = some v) :
-    ∃ b blk, BlockIn f b blk ∧ z ∈ blk.values ∧ v.id = z := by
-  obtain ⟨ce, hwf⟩ := K.wf
-  obtain ⟨b, blk, hbin, hxb⟩ : ∃ b blk, BlockIn f b blk ∧ z ∈ blk.values := by
-    rcases hz with hB | hx
-    · obtain ⟨v', ⟨-, hb, blk, hblk, hxb⟩, -⟩ := hB
-      exact ⟨_, blk, ⟨hb, hblk⟩, hxb⟩
-    · exact ⟨bid, fb, ⟨K.tree.1, K.hfb⟩, (K.memS.1 (List.mem_of_mem_take hx)).1⟩
-  obtain ⟨v', hv', hid, -⟩ := hwf.valueId b blk hbin z hxb
-  rw [hv] at hv'; cases hv'
-  exact ⟨b, blk, hbin, hxb, hid⟩
 
 omit K in
 theorem frameVal_addr_safe {ctx : Ctx} {v : Value} (h : v.op = .Addr) :
@@ -709,7 +758,8 @@ theorem seedNoPanic {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toL
 theorem panic_same {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     {r : ID} (hkS : oS.toList[k]? = some r) {fv : Value} (hfv : f.value? r = some fv)
     {e : Panic} {m : Mem} (hrp : evalValue env (Ctx.make tabs f) S fv = .panic e m)
-    {gv : Value} (hgv : g.value? r = some gv) :
+    {gv : Value} (hgv : g.value? r = some gv)
+    (hna : ∀ nc, ¬ (gv.op = .Copy ∧ gv.args[0]? = some nc ∧ After f g fv r nc ∧ fv.op = .NilCheck)) :
     gv.op = fv.op ∧ gv.args = fv.args ∧ gv.aux = fv.aux ∧ gv.auxInt = fv.auxInt := by
   obtain ⟨ce, hwf⟩ := K.wf
   obtain ⟨hxb, fv', hfv', hph⟩ := K.memS.1 (List.mem_of_getElem? hkS)
@@ -749,15 +799,18 @@ theorem panic_same {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     exfalso
     rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop)] at hrp
     cases hrp
+  | @after nc hop hcp hs1 hn hA => exact absurd ⟨hcp, hn, hA, hop⟩ (hna nc)
 
 /-- The root the source panics at is a root of the target. -/
 theorem panic_root {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     {r : ID} (hkS : oS.toList[k]? = some r) {e : Panic} {m : Mem}
-    (hrp : stepV env (Ctx.make tabs f) S r = .panic e m) : root g r = true := by
+    (hrp : stepV env (Ctx.make tabs f) S r = .panic e m)
+    (hna : ∀ fv gv nc, f.value? r = some fv → g.value? r = some gv →
+      ¬ (gv.op = .Copy ∧ gv.args[0]? = some nc ∧ After f g fv r nc ∧ fv.op = .NilCheck)) : root g r = true := by
   obtain ⟨hxb, fv, hfv, hph⟩ := K.memS.1 (List.mem_of_getElem? hkS)
   rw [stepV_of (ctx := Ctx.make tabs f) hfv] at hrp
   obtain ⟨gv, hgv, -⟩ := K.rel.value r fv hfv
-  obtain ⟨hop, -⟩ := K.panic_same hS hkS hfv hrp hgv
+  obtain ⟨hop, -⟩ := K.panic_same hS hkS hfv hrp hgv (hna fv gv · hfv hgv)
   have hpo := evalValue_panic_op hrp
   have : prio fv.op ≠ 0 := by
     rcases hpo with h1 | h1 | h1 | h1
@@ -771,12 +824,14 @@ theorem panic_root {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
 theorem panicSame {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     (hT : TFacts env tabs g F0 S T (oS.toList.take k) (oT.toList.take j))
     {r : ID} (hjT : oT.toList[j]? = some r) (hkS : oS.toList[k]? = some r) {e : Panic} {m : Mem}
-    (hrp : stepV env (Ctx.make tabs f) S r = .panic e m) :
+    (hrp : stepV env (Ctx.make tabs f) S r = .panic e m)
+    (hna : ∀ fv gv nc, f.value? r = some fv → g.value? r = some gv →
+      ¬ (gv.op = .Copy ∧ gv.args[0]? = some nc ∧ After f g fv r nc ∧ fv.op = .NilCheck)) :
     stepV env (Ctx.make tabs g) T r = .panic e m := by
   obtain ⟨hxb, fv, hfv, hph⟩ := K.memS.1 (List.mem_of_getElem? hkS)
   rw [stepV_of (ctx := Ctx.make tabs f) hfv] at hrp
   obtain ⟨gv, hgv, hid, hbl, hty, -⟩ := K.rel.value r fv hfv
-  obtain ⟨hop, hargs, hax, hai⟩ := K.panic_same hS hkS hfv hrp hgv
+  obtain ⟨hop, hargs, hax, hai⟩ := K.panic_same hS hkS hfv hrp hgv (hna fv gv · hfv hgv)
   have hxid := K.idOf hxb hfv
   have hsrc : ∀ a ∈ fv.args, Base f bid a ∨ a ∈ oS.toList.take k := fun a ha => K.srcArg hkS hfv ha
   have htys : (Ctx.make tabs g).tys[r]? = (Ctx.make tabs f).tys[r]? := by
@@ -946,7 +1001,8 @@ theorem okCase {G : Frame} (h : evalAll env (Ctx.make tabs f) F0 oS.toList = .ok
     (fun x hx _ => hall x (List.mem_of_mem_take hx)) (fun j x hj hjx T hT => by
       obtain ⟨i, hi⟩ := List.getElem?_of_mem (K.memS.2 (K.memT.1 (List.mem_of_getElem? hjx)))
       have hik : i < oS.toList.length := (List.getElem?_eq_some_iff.1 hi).1
-      obtain ⟨y, hy, hSy⟩ := K.sameOk hS hT hjx hi hik
+      obtain ⟨y, hy, hSy⟩ := K.sameOk hS hT (fun z hz _ => hall z (List.mem_of_mem_take hz))
+        hjx hi hik
       exact ⟨y, hy, fun _ => hSy⟩)
   simp only [List.take_length] at h1 hT'
   have hTG : T' = G := by
@@ -957,6 +1013,181 @@ theorem okCase {G : Frame} (h : evalAll env (Ctx.make tabs f) F0 oS.toList = .ok
       intro hm; rw [List.take_length] at hm
       exact hz (K.memT.2 (K.memS.1 hm))
   rw [h1, hTG]
+
+/-- **The target's prefix up to `K'`** when the source stopped at the root `r` (position
+`pre.length`): values the source reached evaluate alike, the others are pure. -/
+theorem prefixLoop {pre : List ID} {Gp : Frame}
+    (hS : SFacts env tabs f F0 Gp (oS.toList.take pre.length)) {r : ID}
+    (hk : oS.toList[pre.length]? = some r) (hrnp : ∀ rv, f.value? r = some rv → prio rv.op ≠ 0)
+    {K' : Nat} (hroots : ∀ x ∈ oT.toList.take K', root g x = true → x ∈ oS.toList.take pre.length)
+    (hxr : ∀ j x, j < K' → oT.toList[j]? = some x → x ≠ r) :
+    ∃ T', evalAll env (Ctx.make tabs g) F0 (oT.toList.take K') = .ok T' ∧
+      TFacts env tabs g F0 Gp T' (oS.toList.take pre.length) (oT.toList.take K') := by
+  obtain ⟨ce, hwf⟩ := K.wf
+  have hrS : r ∈ oS.toList := List.mem_of_getElem? hk
+  refine K.loop hroots (fun j x hj hjx T hT => ?_)
+  have hr' : ∀ z ∈ oT.toList.take j, root g z = true → z ∈ oS.toList.take pre.length :=
+    fun z hz hzr => hroots z (List.take_subset_take_left _ (Nat.le_of_lt hj) hz) hzr
+  have hxn := K.memT.1 (List.mem_of_getElem? hjx)
+  obtain ⟨i, hi⟩ := List.getElem?_of_mem (K.memS.2 hxn)
+  by_cases hik : i < pre.length
+  · obtain ⟨y, hy, hSy⟩ := K.sameOk hS hT hr' hjx hi hik
+    exact ⟨y, hy, fun _ => hSy⟩
+  · -- not reached by the source: pure in the target
+    obtain ⟨hxb, fv, hfv, hph⟩ := hxn
+    have hxr' := hxr j x hj hjx
+    have hki : pre.length < i := by
+      rcases Nat.lt_or_ge pre.length i with h' | h'
+      · exact h'
+      · have : i = pre.length := by omega
+        subst this; rw [hk] at hi; cases hi; exact absurd rfl hxr'
+    have hnotS : x ∉ oS.toList.take pre.length := fun hm => by
+      obtain ⟨i', hi'⟩ := List.getElem?_of_mem hm
+      have hi'k : i' < pre.length := by
+        have := (List.getElem?_eq_some_iff.1 hi').1; simp at this; omega
+      rw [List.getElem?_take_of_lt hi'k] at hi'
+      exact absurd (Order.idx_unique K.ndS hi' hi) (by omega)
+    have hxroot : root g x = false := by
+      cases hxr'' : root g x with
+      | false => rfl
+      | true =>
+        exact absurd (hroots x (List.mem_of_getElem?
+          (by rw [List.getElem?_take_of_lt hj]; exact hjx)) hxr'') hnotS
+    obtain ⟨gv, hgv, -, -, -, hrel⟩ := K.rel.value x fv hfv
+    have hnA : gv.op ≠ .Arg ∧ gv.op ≠ .ArgIntReg := by
+      cases hrel with
+      | nc _ hcp => rw [hcp]; decide
+      | nn _ hcb => rw [hcb]; decide
+      | after _ hcp => rw [hcp]; decide
+      | same hop =>
+        rw [hop]
+        have hp0 : prio fv.op = 0 := by
+          simpa [Opt.NilCheck.root, hgv, hop] using hxroot
+        obtain ⟨hrb, rv, hrv, hrph⟩ := K.memS.1 hrS
+        have hspec := schedule_spec K.hoS
+        obtain ⟨a, haD, -⟩ := hspec.pureFirst pre.length i r x hki hk hi
+          (fun hpu => by
+            have := hpu _ (K.nodeOf_x hrb hrv hrph)
+            exact hrnp rv hrv this)
+          (fun n hn => by rw [K.nodeOf_x hxb hfv hph] at hn; cases hn; exact hp0)
+        rw [argsOf_schedNodes K.ownF K.ndF hxb hfv hph] at haD
+        have hne : fv.args.size ≠ 0 := fun h0 => by
+          rw [Array.eq_empty_of_size_eq_zero h0] at haD; simp at haD
+        have hnA : ∀ op, fv.op = op → (op = .Arg ∨ op = .ArgIntReg) → False := by
+          intro op hop' hor
+          have har := hwf.arity bid fb x fv ⟨⟨K.tree.1, K.hfb⟩, hxb, hfv⟩
+            (by rw [hop', argLen_zero_of_arg hor]; decide)
+          rw [hop', argLen_zero_of_arg hor] at har
+          exact hne (by exact_mod_cast har)
+        exact ⟨fun h' => hnA _ h' (.inl rfl), fun h' => hnA _ h' (.inr rfl)⟩
+    obtain ⟨y, hy⟩ := K.pureEval hS hT hjx hxroot hgv hnA.1 hnA.2
+    exact ⟨y, hy, fun hm => absurd hm hnotS⟩
+
+/-- A target root is a source root. -/
+theorem root_f_of_g {y : ID} {fy : Value} (hfy : f.value? y = some fy) (hy : root g y = true) :
+    root f y = true := by
+  obtain ⟨gy, hgy, -, -, -, hr⟩ := K.rel.value y fy hfy
+  cases hr with
+  | same hop => simpa [Opt.NilCheck.root, hgy, hfy, hop] using hy
+  | nc _ hcp =>
+    simp only [Opt.NilCheck.root, hgy, hcp, Option.map_some, Option.getD_some] at hy
+    exact absurd hy (by decide)
+  | nn _ hcb =>
+    simp only [Opt.NilCheck.root, hgy, hcb, Option.map_some, Option.getD_some] at hy
+    exact absurd hy (by decide)
+  | after _ hcp =>
+    simp only [Opt.NilCheck.root, hgy, hcp, Option.map_some, Option.getD_some] at hy
+    exact absurd hy (by decide)
+
+/-- **The source panics at a removed check `r`** whose copied check `nc` follows it directly:
+the target runs the same roots up to `nc`, which panics alike. -/
+theorem panicAfter {e : Panic} {m : Mem} {pre post : List ID} {r : ID} {Gp : Frame}
+    (hsplit : oS.toList = pre ++ r :: post)
+    (hpre : evalAll env (Ctx.make tabs f) F0 pre = .ok Gp)
+    (hrp : stepV env (Ctx.make tabs f) Gp r = .panic e m) {fv gv : Value} {nc : ID}
+    (hfv : f.value? r = some fv) (hgv : g.value? r = some gv) (hcp : gv.op = .Copy)
+    (hgn0 : gv.args[0]? = some nc) (hA : After f g fv r nc) (hop : fv.op = .NilCheck) :
+    evalAll env (Ctx.make tabs g) F0 oT.toList = .panic e m := by
+  obtain ⟨ce, hwf⟩ := K.wf
+  have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
+  have htk : oS.toList.take pre.length = pre := by rw [hsplit]; simp
+  have hS : SFacts env tabs f F0 Gp (oS.toList.take pre.length) := by
+    rw [htk]; exact K.sfacts ⟨r :: post, hsplit⟩ hpre
+  obtain ⟨hrb, -⟩ := K.memS.1 (List.mem_of_getElem? hk)
+  have hvb := (K.placed_node hrb hfv).2
+  cases hA with
+  | @mk n gn fb' o i j hn _ hop' hargs' _ hbl' hgn hgop hgargs hfb' hm ho hi hj hij hgap =>
+  rw [hvb, K.hfb] at hfb'; cases hfb'
+  rw [K.hoS] at ho; cases ho
+  have hipre := Order.idx_unique K.ndS (by simpa using hi) hk
+  subst hipre
+  have hncN : Node f fb nc := ⟨hm, _, hn, by rw [hop']; decide⟩
+  obtain ⟨k'', hk''⟩ := List.getElem?_of_mem (K.memT.2 hncN)
+  have hrootnc : root g nc = true := by
+    simp only [Opt.NilCheck.root, hgn, hgop, Option.map_some, Option.getD_some]; decide
+  have hroots0 := roots_before K.roots K.ndT K.ndS hk'' (by simpa using hj) hrootnc
+  have hroots : ∀ y ∈ oT.toList.take k'', root g y = true → y ∈ oS.toList.take pre.length := by
+    intro y hy hry
+    have hyj := hroots0 y hy hry
+    obtain ⟨iy, hiy⟩ := List.getElem?_of_mem hyj
+    have hiyj : iy < j := by
+      have := (List.getElem?_eq_some_iff.1 hiy).1; simp at this
+      exact Nat.lt_of_lt_of_le (Nat.lt_of_succ_le this) (Nat.min_le_left _ _)
+    rw [List.getElem?_take_of_lt hiyj] at hiy
+    rcases Nat.lt_or_ge iy pre.length with h1 | h1
+    · exact List.mem_of_getElem? (by rw [List.getElem?_take_of_lt h1]; exact hiy)
+    · exfalso
+      rcases Nat.lt_or_ge pre.length iy with h2 | h2
+      · have hyS : y ∈ oS.toList := List.mem_of_getElem? (by simpa using hiy)
+        obtain ⟨-, fy, hfy, -⟩ := K.memS.1 hyS
+        have := hgap iy y h2 hiyj (by simpa using hiy)
+        rw [K.root_f_of_g hfy hry] at this; cases this
+      · have : iy = pre.length := by omega
+        subst this; rw [hk] at hiy; cases hiy
+        simp only [Opt.NilCheck.root, hgv, hcp, Option.map_some, Option.getD_some] at hry
+        exact absurd hry (by decide)
+  have hrnp : ∀ rv, f.value? r = some rv → prio rv.op ≠ 0 := by
+    intro rv hrv; rw [hfv] at hrv; cases hrv
+    rw [hop]; decide
+  have hxr : ∀ j x, j < k'' → oT.toList[j]? = some x → x ≠ r := by
+    intro j x hjk hjx hxr
+    subst hxr
+    have : nc ∈ gv.args := Array.mem_of_getElem? hgn0
+    obtain ⟨i', hi', hia⟩ := K.topoT hjx hgv this hncN
+    exact absurd (Order.idx_unique K.ndT hia hk'') (by omega)
+  obtain ⟨T', h1, hT'⟩ := K.prefixLoop hS hk hrnp hroots hxr
+  -- the source's check panicked on `[yp, mem m]`
+  rw [stepV_of (ctx := Ctx.make tabs f) hfv] at hrp
+  have hsz : fv.args.size = 2 := by
+    have := hwf.arity bid fb r fv ⟨⟨K.tree.1, K.hfb⟩, hrb, hfv⟩ (by rw [hop]; decide)
+    rw [hop, show Op.NilCheck.argLen = 2 by decide] at this
+    exact_mod_cast this
+  obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := Gp) (v := fv)
+    (by rw [hrp]; nofun)
+  obtain ⟨p', m', yp, ym, hargs, rfl, hyp, hym⟩ := argVals_two hvs hsz
+  rw [evalValue_of_argVals hvs, evalOp_nilCheck hop] at hrp
+  have hmr : memRoot (Ctx.make tabs f) fv [yp, ym] = .panic e m := by
+    cases h : memRoot (Ctx.make tabs f) fv [yp, ym] with
+    | ok z => rw [h] at hrp; cases hrp
+    | panic e' m' => rw [h] at hrp; exact hrp
+    | stuck msg => rw [h] at hrp; cases hrp
+  obtain ⟨q, hq, he, hnn, hsh⟩ := nilCheck_panic hop hmr
+  simp only [List.cons.injEq] at hq
+  obtain ⟨rfl, rfl, -⟩ := hq
+  subst he
+  -- the target's check reads the same registers and panics alike
+  have hTargs : ∀ a ∈ gn.args, T'.regs[a]? = Gp.regs[a]? := fun a ha =>
+    K.agreeT hS hT' (K.srcArg hk hfv (by rw [← hargs', ← hgargs]; exact ha))
+      (K.tArgsT hk'' hgn ha)
+  have hvsT : argVals T' gn.args = some [yp, .mem m] := by
+    rw [argVals_congr hTargs, hgargs, hargs', hvs]
+  have hstep : stepV env (Ctx.make tabs g) T' nc = .panic .nilDeref m := by
+    rw [stepV_of (ctx := Ctx.make tabs g) hgn, evalValue_of_argVals hvsT, evalOp_nilCheck hgop,
+      nilCheck_panic_of hgop hnn hsh]
+    rfl
+  rw [split_at hk'', evalAll_append, h1]
+  show evalAll env (Ctx.make tabs g) T' (nc :: oT.toList.drop (k'' + 1)) = _
+  rw [evalAll_cons, hstep]
 
 /-- The panic case. -/
 theorem panicCase {e : Panic} {m : Mem}
@@ -969,74 +1200,32 @@ theorem panicCase {e : Panic} {m : Mem}
   have hS : SFacts env tabs f F0 Gp (oS.toList.take pre.length) := by
     rw [htk]; exact K.sfacts ⟨r :: post, hsplit⟩ hpre
   have hrS : r ∈ oS.toList := List.mem_of_getElem? hk
+  obtain ⟨hrb, rv, hrv, -⟩ := K.memS.1 hrS
+  obtain ⟨gr, hgr, -⟩ := K.rel.value r rv hrv
+  by_cases hA : ∃ nc, gr.op = .Copy ∧ gr.args[0]? = some nc ∧ After f g rv r nc ∧
+      rv.op = .NilCheck
+  · obtain ⟨nc, hcp, hn0, hA, hop⟩ := hA
+    exact K.panicAfter hsplit hpre hrp hrv hgr hcp hn0 hA hop
+  have hna : ∀ fv gv nc, f.value? r = some fv → g.value? r = some gv →
+      ¬ (gv.op = .Copy ∧ gv.args[0]? = some nc ∧ After f g fv r nc ∧ fv.op = .NilCheck) := by
+    intro fv gv nc hfv hgv h'
+    rw [hrv] at hfv; cases hfv; rw [hgr] at hgv; cases hgv
+    exact hA ⟨nc, h'⟩
   obtain ⟨k', hk'⟩ := List.getElem?_of_mem (K.memT.2 (K.memS.1 hrS))
-  have hrroot : root g r = true := K.panic_root hS hk hrp
+  have hrroot : root g r = true := K.panic_root hS hk hrp hna
   have hroots := roots_before K.roots K.ndT K.ndS hk' hk hrroot
-  obtain ⟨T', h1, hT'⟩ := K.loop (S := Gp) (k := pre.length) (K' := k') hroots
-    (fun j x hj hjx T hT => by
-      have hxn := K.memT.1 (List.mem_of_getElem? hjx)
-      obtain ⟨i, hi⟩ := List.getElem?_of_mem (K.memS.2 hxn)
-      by_cases hik : i < pre.length
-      · obtain ⟨y, hy, hSy⟩ := K.sameOk hS hT hjx hi hik
-        exact ⟨y, hy, fun _ => hSy⟩
-      · -- not reached by the source: pure in the target
-        obtain ⟨hxb, fv, hfv, hph⟩ := hxn
-        have hxr : x ≠ r := fun he => by
-          subst he; exact absurd (Order.idx_unique K.ndT hjx hk') (by omega)
-        have hki : pre.length < i := by
-          rcases Nat.lt_or_ge pre.length i with h' | h'
-          · exact h'
-          · have : i = pre.length := by omega
-            subst this; rw [hk] at hi; cases hi; exact absurd rfl hxr
-        have hnotS : x ∉ oS.toList.take pre.length := fun hm => by
-          obtain ⟨i', hi'⟩ := List.getElem?_of_mem hm
-          have hi'k : i' < pre.length := by
-            have := (List.getElem?_eq_some_iff.1 hi').1; simp at this; omega
-          rw [List.getElem?_take_of_lt hi'k] at hi'
-          exact absurd (Order.idx_unique K.ndS hi' hi) (by omega)
-        have hxroot : root g x = false := by
-          cases hxr' : root g x with
-          | false => rfl
-          | true =>
-            exact absurd (hroots x (List.mem_of_getElem?
-              (by rw [List.getElem?_take_of_lt hj]; exact hjx)) hxr') hnotS
-        obtain ⟨gv, hgv, -, -, -, hrel⟩ := K.rel.value x fv hfv
-        have hnA : gv.op ≠ .Arg ∧ gv.op ≠ .ArgIntReg := by
-          cases hrel with
-          | nc _ hcp => rw [hcp]; decide
-          | nn _ hcb => rw [hcb]; decide
-          | same hop =>
-            rw [hop]
-            have hp0 : prio fv.op = 0 := by
-              simpa [Opt.NilCheck.root, hgv, hop] using hxroot
-            obtain ⟨hrb, rv, hrv, hrph⟩ := K.memS.1 hrS
-            have hspec := schedule_spec K.hoS
-            have hrp' : prio rv.op ≠ 0 := by
-              obtain ⟨gr, hgr, -⟩ := K.rel.value r rv hrv
-              have hop' := (K.panic_same hS hk hrv
-                (by rw [← stepV_of (ctx := Ctx.make tabs f) hrv]; exact hrp) hgr).1
-              simpa [Opt.NilCheck.root, hgr, hop'] using hrroot
-            obtain ⟨a, haD, -⟩ := hspec.pureFirst pre.length i r x hki hk hi
-              (fun hpu => by
-                have := hpu _ (K.nodeOf_x hrb hrv hrph)
-                exact hrp' this)
-              (fun n hn => by rw [K.nodeOf_x hxb hfv hph] at hn; cases hn; exact hp0)
-            rw [argsOf_schedNodes K.ownF K.ndF hxb hfv hph] at haD
-            have hne : fv.args.size ≠ 0 := fun h0 => by
-              rw [Array.eq_empty_of_size_eq_zero h0] at haD; simp at haD
-            have hnA : ∀ op, fv.op = op → (op = .Arg ∨ op = .ArgIntReg) → False := by
-              intro op hop' hor
-              have har := hwf.arity bid fb x fv ⟨⟨K.tree.1, K.hfb⟩, hxb, hfv⟩
-                (by rw [hop', argLen_zero_of_arg hor]; decide)
-              rw [hop', argLen_zero_of_arg hor] at har
-              exact hne (by exact_mod_cast har)
-            exact ⟨fun h' => hnA _ h' (.inl rfl), fun h' => hnA _ h' (.inr rfl)⟩
-        obtain ⟨y, hy⟩ := K.pureEval hS hT hjx hxroot hgv hnA.1 hnA.2
-        exact ⟨y, hy, fun hm => absurd hm hnotS⟩)
+  have hrnp : ∀ rv', f.value? r = some rv' → prio rv'.op ≠ 0 := by
+    intro rv' hrv'
+    have hop' := (K.panic_same hS hk hrv'
+      (by rw [← stepV_of (ctx := Ctx.make tabs f) hrv']; exact hrp) hgr
+      (hna rv' gr · hrv' hgr)).1
+    simpa [Opt.NilCheck.root, hgr, hop'] using hrroot
+  obtain ⟨T', h1, hT'⟩ := K.prefixLoop hS hk hrnp hroots (fun j x hj hjx he => by
+    subst he; exact absurd (Order.idx_unique K.ndT hjx hk') (by omega))
   have hsplitT := split_at hk'
   rw [hsplitT, evalAll_append, h1]
   show evalAll env (Ctx.make tabs g) T' (r :: oT.toList.drop (k' + 1)) = _
-  rw [evalAll_cons, K.panicSame hS hT' hk' hk hrp]
+  rw [evalAll_cons, K.panicSame hS hT' hk' hk hrp hna]
 
 end Blk
 
