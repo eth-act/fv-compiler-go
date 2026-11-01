@@ -10,6 +10,15 @@ import GoFV.Rules.Generated.Generic.Values02
 
 namespace GoFV.Proof.Rules
 
+-- `divmod.rules:136–148` (`(Div16u/32u/64u <t> x (Const [c])) && t.IsSigned() && smagicOK(c)`)
+-- are false under the semantics: `t.IsSigned()` is an oracle atom, nothing makes `x`
+-- non-negative (Go applies them after the prove pass showed it), e.g. 136 at c = 3,
+-- x = 0xFFFF: 21845 vs 32767 (agent DivmodU, docs/proofs/rules.md "Findings").
+-- FALSE r_divmod_136 #69
+-- FALSE r_divmod_140 #69
+-- FALSE r_divmod_144 #69
+-- FALSE r_divmod_148 #69
+
 /-- `generic.rules:173`: `(Div16 (Const16 [c]) (Const16 [d])) && d != 0 => (Const16 [c/d])` -/
 theorem r_generic_173_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_173 := by rule_auto
 
