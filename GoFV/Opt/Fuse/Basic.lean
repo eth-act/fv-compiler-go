@@ -35,17 +35,18 @@ structure TypeView where
 removes an edge, a block or a value use, so this is never reached on real input). -/
 def roundFuel : Nat := 1000000
 
+/-- `step` on `blocks[k-1] … blocks[0]`, threading the function and the change flag. -/
+def sweepAux (step : Func → ID → Except String (Func × Bool)) (blocks : Array ID) :
+    Nat → Func → Bool → Except String (Func × Bool)
+  | 0, f, changed => pure (f, changed)
+  | k + 1, f, changed => do
+    let (f', c) ← step f blocks[k]!
+    sweepAux step blocks k f' (c || changed)
+
 /-- One backwards sweep: `step` on `f.Blocks[n-1] … f.Blocks[0]`. -/
 def sweep (step : Func → ID → Except String (Func × Bool)) (f : Func) :
-    Except String (Func × Bool) := do
-  let blocks := f.blocks
-  let mut f := f
-  let mut changed := false
-  for k in [0:blocks.size] do
-    let (f', c) ← step f blocks[blocks.size - 1 - k]!
-    f := f'
-    changed := c || changed
-  return (f, changed)
+    Except String (Func × Bool) :=
+  sweepAux step f.blocks f.blocks.size f false
 
 /-- `fuse(f, typ)`: rounds of `sweep step` followed by `final` (if any) until nothing changes. -/
 def fuseLoop (step : Func → ID → Except String (Func × Bool))
