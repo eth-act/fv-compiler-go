@@ -110,6 +110,40 @@ def NewEval (tabs : Tables) (g : Func) (w : Value) : Prop :=
   ∀ (env : Env) (fr : Frame) (argv : List Val), fr.images.size = (Ctx.make tabs g).params.size →
     ∃ y, evalOp env (Ctx.make tabs g) fr w argv (tabs.ty w.type) = .ok y
 
+/-- The source has reached its value `c` in frame `G`: `c`'s evaluation completed or panicked. -/
+def Reached (env : Env) (tabs : Tables) (f : Func) (G : Frame) (c : ID) : Prop :=
+  ∀ u, f.value? c = some u →
+    (∃ y, evalValue env (Ctx.make tabs f) G u = .ok y) ∨
+      ∃ e m, evalValue env (Ctx.make tabs f) G u = .panic e m
+
+/-- **The obligation of a new value `z` anchored at source value `c`** (a store of a stack
+argument of call `c`): in frames of one activation where the source has reached `c`, `z`'s
+arguments have registers (its new ones holding their evaluations), the target's registers of
+the source values `front` refine their conversions and the target's of `heldT` hold their
+evaluations, the target evaluates `z`. -/
+def NewObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : List ID)
+    (heldT : ID → Prop) (c z : ID) : Prop :=
+  ∀ w, g.value? z = some w →
+  ∀ env : Env, ∀ G T : Frame, T = { G with regs := T.regs } →
+  ∀ E : ID → Prop, NewCons env (Ctx.make tabs g) isNew T E →
+    (∀ a ∈ w.args, isNew a = true → E a) → (∀ a ∈ w.args, Reg T a) →
+    (∀ a ∈ front, ∀ y, G.regs[a]? = some (some y) →
+      ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y') →
+    (∀ a, heldT a → EcTgtHolds env tabs g T a) → Reached env tabs f G c →
+    ∃ y, evalValue env (Ctx.make tabs g) T w = .ok y
+
+/-- New value `z` of block `gb` is anchored at a source value `c` of `fb`: its obligation
+`NewObl` (with a `front` of source values that reach it in `gb`, and the values `HeldT` in `g`),
+and in `g`'s schedule no source non-pure node lies between `z` and `c` (`z` runs only when the
+source reaches `c`). -/
+def AnchoredAt (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (fb gb : Block)
+    (z : ID) : Prop :=
+  ∃ c ∈ fb.values, ∃ fr : List ID, NewObl tabs f g cv isNew fr (HeldT g gb z) c z ∧
+    (∀ a ∈ fr, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
+      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a z)) ∧
+    ∀ og, schedule g gb = some og → ∀ A B, og.toList = A ++ z :: B →
+      ∃ P Q, B = P ++ c :: Q ∧ ∀ y ∈ P, npIn (schedNodes f fb).toList y = false
+
 /-- What a `Ret` terminator reads of its control: the results and the memory. -/
 def retOf : Val → Option (List Val × Mem)
   | .tuple vs =>
@@ -156,7 +190,8 @@ structure CvBlock (fb gb : Block) : Prop where
     Sem.Refines (cv c y) y' →
     ∀ rs m, retOf y = some (rs, m) → Val.anyPoison rs = false →
       ∃ rs' m', retOf y' = some (rs', m') ∧ RR rs m rs' m'
-  newOK : ∀ z ∈ gb.values, isNew z = true → ∀ w, g.value? z = some w → w.op ≠ .Phi ∧ NewEval tabs g w
+  newOK : ∀ z ∈ gb.values, isNew z = true → ∀ w, g.value? z = some w → w.op ≠ .Phi ∧
+    (NewEval tabs g w ∨ AnchoredAt tabs f g cv isNew fb gb z)
   newArgs : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → ∀ a ∈ w.args,
     isNew a = true → a ∈ gb.values ∨ EntryVal g a ∨ SDomPlaced g gb a
 

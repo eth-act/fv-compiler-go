@@ -91,7 +91,21 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
     obtain ⟨i', hi', hix⟩ := htr j x hjl (by rw [hogT, List.getElem?_append_left hjl]; exact hj) hN
     rw [hof, List.getElem?_append_left hi'] at hix
     exact g4 x (List.mem_of_getElem? hix)
-  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT hsrc
+  have hreach : ∀ c z, c ∈ fb.values → z ∈ preT → ∀ A P Q, og.toList = A ++ z :: (P ++ c :: Q) →
+      (∀ y ∈ P, npIn (schedNodes f fb).toList y = false) → Reached env tabs f G c := by
+    intro c z hc hz A P Q hA hP uc huc
+    obtain ⟨A', B', hpre'⟩ := List.append_of_mem hz
+    have hog2 : og.toList = A' ++ z :: (B' ++ r :: postT) := by rw [hogT, hpre']; simp
+    have hsuf := ecl_suffix_eq (by rw [← hA]; exact ogn) (hA.symm.trans hog2)
+    rcases ecl_gap hnp hsuf hP with hcB | hcr
+    · have hcn : isNew c = false := (B.common c hc).2
+      obtain ⟨u, y, hu, -, hev⟩ := hsrc c (by
+        rw [hpre']; exact List.mem_append_right _ (List.mem_cons_of_mem _ hcB)) hcn
+      rw [huc] at hu; cases hu
+      exact .inl ⟨y, hev⟩
+    · rw [hcr, hur] at huc; cases huc
+      exact .inr ⟨e, m, hevr⟩
+  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT hsrc hreach
   have hrn : isNew r = false := (B.common r hrfb).2
   have hob := tgt_next hE TH hogT hI hrn hur (regs_of_panic hevr) hsrc
   rw [hevr] at hob

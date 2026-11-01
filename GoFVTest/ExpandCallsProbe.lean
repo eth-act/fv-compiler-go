@@ -47,6 +47,23 @@ partial def piecesWhy (tabs : Tables) (sh : Array Ty) (f g : Func) :
   | [], _, _ => "extra args/pieces"
   | _, [], _ => "missing args"
 
+/-- Why `stackOK` fails. -/
+def stackWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : List ABIParam)
+    (as : List ID) : String :=
+  let sp := argPairs false ins as
+  if !slotsSorted tabs (sp.map (·.1)) then "slots not sorted"
+  else match callStores f g u w with
+  | none =>
+    match g.value? w.args[w.args.size - 1]! with
+    | some mw => s!"no store chain (memory arg {mw.op.name})"
+    | none => "no store chain"
+  | some zs =>
+    if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
+      s!"stores ({zs.length} for {(leafSlots tabs (sp.map (·.1))).length} slots)"
+    else if !piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
+      s!"store values: {piecesWhy tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
+    else "store value not an argument"
+
 /-- Why the call class fails. -/
 def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String :=
   match callOpMap u.op, callABI? tabs u.aux with
@@ -54,16 +71,18 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
     let ins := insOf abi
     let outs := outsOf abi
     let n := u.args.size
+    let as := (u.args.extract k (n - 1)).toList
+    let rp := argPairs true ins as
     if !(w.op == op) then "op"
-    else if !regParamsOK tabs abi.params.toList then
-      let si := ins.any (·.regs.isEmpty)
-      let so := outs.any (·.regs.isEmpty)
-      if si || so then s!"stack param ({if si then "in" else ""}{if si && so then "+" else ""}{if so then "out" else ""})"
-      else if abi.params.toList.any (fun p => !GoFV.Proof.ABI.wf (tabs.ty p.type)) then "param shape not wf"
-      else "regs ≠ leaves"
-    else if !piecesOK tabs sh f g ins (u.args.extract k (n - 1)).toList
+    else if !regParamsOK tabs outs then
+      if outs.any (·.regs.isEmpty) then
+        if ins.any (·.regs.isEmpty) then "stack param (in+out)" else "stack param (out)"
+      else "result shape"
+    else if !insOK tabs ins then "param shape"
+    else if !stackOK tabs sh f g u w ins as then s!"stack args: {stackWhy tabs sh f g u w ins as}"
+    else if !piecesOK tabs sh f g (rp.map (·.1)) (rp.map (·.2))
         (w.args.extract k (w.args.size - 1)).toList then
-      s!"pieces: {piecesWhy tabs sh f g ins (u.args.extract k (n - 1)).toList
+      s!"pieces: {piecesWhy tabs sh f g (rp.map (·.1)) (rp.map (·.2))
         (w.args.extract k (w.args.size - 1)).toList}"
     else if !tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) then "source tuple type"
     else if !regTupleOf (leafTys tabs outs) (valueTy sh (some w)) then "register types"
@@ -124,10 +143,20 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
   match schedule f fb, schedule g gb with
   | some of, some og =>
     if of.toList.filter (npOf f fb) != og.toList.filter (npOf f fb) then return "schedule"
+    for x in fb.values do
+      for z in stackStores f g x do
+        if !gb.values.contains z then return "stack store in other block"
+        if !gapOK (npOf f fb) og.toList z x then return "stack store before a non-pure node"
+        let fuel := gb.values.size + 1
+        if !(isNewB f (storeSP g z) || placedSDom g anc fb.id (storeSP g z) ||
+            depB g nodeG (fun _ => true) fuel (storeSP g z) z) then return "stack store SP not held"
+        if !(!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
+            depB g nodeG (fun _ => true) fuel (callMem f x) z) then return "stack store memory"
   | _, _ => return "no schedule"
+  let sts := fb.values.toList.flatMap (stackStores f g)
   for z in gb.values do
     if let some w := g.value? z then
-      if isNewB f z && !newEvalB tabs g w then return s!"new op {w.op.name}"
+      if isNewB f z && !newEvalB tabs g w && !sts.contains z then return s!"new op {w.op.name}"
       if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a ||
           placedSDom g anc fb.id a) then
         return if isNewB f z then "new arg in other block" else "new arg of source value in other block"
