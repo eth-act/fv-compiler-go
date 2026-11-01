@@ -211,19 +211,17 @@ theorem panicCase {e : Panic} {m : Mem}
     rw [htk]; exact K.sfacts ⟨r :: post, hsplit⟩ hpre
   have hrS : r ∈ oS.toList := List.mem_of_getElem? hk
   obtain ⟨hrb, rv, hrv, hrph⟩ := K.memS.1 hrS
-  have hrop : rv.op = .PanicBounds ∨ rv.op = .StaticLECall ∨ rv.op = .StaticCall ∨
-      rv.op = .NilCheck := by
+  have hrop : Panicking rv.op := by
     rw [stepV_of (ctx := Ctx.make tabs f) hrv] at hrp; exact evalValue_panic_op hrp
-  have hp2 : prio rv.op ≠ 0 := by
-    rcases hrop with h1 | h1 | h1 | h1 <;> rw [h1] <;> decide
+  have hp2 : prio rv.op ≠ 0 := prio_panicking hrop
   have hfroot : CSE.rootNode f r = true := by simp [CSE.rootNode, hrv, hp2]
   have hgroot : CSE.rootNode g r = true := by
     obtain ⟨gv, hgv, hsv⟩ := K.gval hrv
     rcases hsv with hs | he
     · simp [CSE.rootNode, hgv, (sameV_spec hs).2.1, hp2]
     · obtain ⟨h1, -⟩ := elimV_spec he
-      rcases hrop with h2 | h2 | h2 | h2 <;> rcases h1 with h1 | h1 | h1 <;> rw [h1] at h2 <;>
-        cases h2
+      rcases h1 with h1 | h1 | h1 <;> rw [h1] at hrop <;> rcases hrop with h2 | h2 <;>
+        exact absurd h2 (by decide)
   obtain ⟨k', hk'⟩ := List.getElem?_of_mem (K.memT.2 (K.memS.1 hrS))
   have hroots := CSE.roots_before K.roots K.ndT K.ndS hk' hk hgroot
   obtain ⟨T', h1, hT'⟩ := K.loop (S := Gp) (pre := oS.toList.take pre.length) (K' := k')

@@ -130,7 +130,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
       have hvsT : argVals T gv.args = some ([] ++ [.mem MT]) := by
         rw [hgargs]; exact argVals_last (L := []) (by simpa using hvs) hback hpop hTa
       refine ⟨_, by rw [hevT _ hvsT, evalOp_chain hop4]; simp only [List.nil_append, htgt]; rfl,
-        .inr ⟨_, _, retype_mem _ _, retype_mem _ _, (hMem.poison _).mono ?_⟩⟩
+        VRel.retype_mem _ ((hMem.poison _).mono ?_)⟩
       intro b k ⟨hq, hb⟩
       rw [pend_varDef hfv hgv hne hop hpend, hax, hpm]
       exact ivQ_filter hq hb
@@ -156,7 +156,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
         exact ivQ_not_alloc hall' k
       obtain ⟨M1', hw', hM1⟩ := hMem.write hw
       refine ⟨_, by rw [hevT _ hvsT, evalOp_chain hop4, List.cons_append, htgt MT M1' hrd hw']; rfl,
-        .inr ⟨_, _, retype_mem _ _, retype_mem _ _, hM1.mono ?_⟩⟩
+        VRel.retype_mem _ (hM1.mono ?_)⟩
       intro b k ⟨hq, hnr⟩
       have hPx : P x = match range? tabs f fv with
           | some r => (pm P fv).flatMap (sub r)
@@ -188,8 +188,11 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
     obtain ⟨vS, vT, hSa, hTa, hVa⟩ := hargs m (by rw [hgargs]; simp)
     rw [hSa] at hSM; cases hSM
     obtain ⟨MT, rfl, hMem⟩ := hVa.mem
-    refine ⟨_, evalValue_copy hgc hgargs hTa, .inr ⟨_, _, retype_mem _ _, retype_mem _ _,
-      (hMem.write_left hw).mono ?_⟩⟩
+    have htyG : (Ctx.make tabs g).tys[gv.id]? = (Ctx.make tabs f).tys[fv.id]? := by
+      rw [hgid, hid, tys_of_value hgv, tys_of_value hfv, hgty]
+    refine ⟨_, evalValue_copy hgc hgargs hTa, ?_⟩
+    rw [htyG]
+    refine VRel.retype_mem _ ((hMem.write_left hw).mono ?_)
     have hpm : pm P fv = P m := by unfold pm; rw [hback]
     intro b k hbk
     rw [hPx, hpm]
@@ -222,8 +225,8 @@ theorem step_panic (hrel : DRel tabs f g P) {S T : Frame} (hT : T = { S with reg
     rcases hsv with h | h
     · exact h
     · obtain ⟨h1, -⟩ := elimV_spec h
-      rcases hop with h2 | h2 | h2 | h2 <;> rcases h1 with h1 | h1 | h1 <;> rw [h1] at h2 <;>
-        cases h2
+      rcases h1 with h1 | h1 | h1 <;> rw [h1] at hop <;> rcases hop with h2 | h2 <;>
+        exact absurd h2 (by decide)
   obtain ⟨hgid, hgop, hgax, hgai, hgty, -, hgargs⟩ := sameV_spec hs
   rw [hgargs] at hargs
   have hall : ∀ a ∈ fv.args, P a = [] := by
@@ -232,9 +235,13 @@ theorem step_panic (hrel : DRel tabs f g P) {S T : Frame} (hT : T = { S with reg
     obtain ⟨-, -, hk⟩ := uses_spec hfv (hrel.uses x hx) ha hp
     rcases hk with hb | ⟨hc, -⟩
     · unfold blindOp at hb
-      rcases hop with h | h | h | h <;> rw [h] at hb <;> cases hb
+      simp only [Bool.or_eq_true, beq_iff_eq] at hb
+      rcases hb with h | h <;> rw [h] at hop <;> rcases hop with h2 | h2 <;>
+        exact absurd h2 (by decide)
     · unfold chainOp at hc
-      rcases hop with h | h | h | h <;> rw [h] at hc <;> cases hc
+      simp only [Bool.or_eq_true, beq_iff_eq] at hc
+      rcases hc with ((h | h) | h) | h <;> rw [h] at hop <;> rcases hop with h2 | h2 <;>
+        exact absurd h2 (by decide)
   obtain ⟨vs, hvs⟩ := argVals_some (fr := S) (as := fv.args) fun a ha => by
     obtain ⟨vS, -, h, -⟩ := hargs a ha
     exact ⟨vS, h⟩

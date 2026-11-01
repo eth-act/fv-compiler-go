@@ -42,6 +42,14 @@ theorem VRel.mem {Q : Blk → Nat → Prop} {mS : Mem} {vT : Val} (h : VRel Q (.
   · exact ⟨mS, rfl, MemEq.refl _ _⟩
   · cases h1; exact ⟨mT, rfl, hm⟩
 
+/-- Retyping two related memories: a `bool` type sends both to `poison`, others keep them. -/
+theorem VRel.retype_mem {Q : Blk → Nat → Prop} {mS mT : Mem} (t : Ty) (h : MemEq Q mS mT) :
+    VRel Q ((Val.mem mS).retype t) ((Val.mem mT).retype t) := by
+  cases t with
+  | bool => exact .inl rfl
+  | int w => cases w <;> exact .inr ⟨mS, mT, rfl, rfl, h⟩
+  | _ => exact .inr ⟨mS, mT, rfl, rfl, h⟩
+
 /-! ## Where a store writes -/
 
 variable {env : Env} {tabs : Tables} {f g : Func}
@@ -226,7 +234,7 @@ theorem write_shape {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
     rename_i p x M _
     obtain ⟨M1, hw, rfl⟩ := writeRes_ok h
     refine ⟨p, [x], M, _, M1, rfl, hw, rfl, ?_, (fun h => by rw [hop] at h; cases h), ?_⟩
-    · unfold wsize; rw [hop]; exact encode_size _ _
+    · unfold wsize; rw [hop]; exact Sem.encode_size _ _
     · intro M' M1' _ hw'
       simp only [List.cons_append, List.nil_append, memRoot, hop, hw']
       rfl

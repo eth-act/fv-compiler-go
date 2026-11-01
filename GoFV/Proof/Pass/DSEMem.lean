@@ -122,6 +122,9 @@ theorem set_toList (m : Mem) (b : Blk) (a : Alloc) :
 theorem set_nextHeap (m : Mem) (b : Blk) (a : Alloc) : (m.set b a).nextHeap = m.nextHeap := by
   unfold Mem.set; split <;> rfl
 
+theorem set_nextAct (m : Mem) (b : Blk) (a : Alloc) : (m.set b a).nextAct = m.nextAct := by
+  unfold Mem.set; split <;> rfl
+
 theorem find?_toList (m : Mem) (b : Blk) :
     m.find? b = (m.blocks.toList.find? (·.1 == b)).map (·.2) := by
   simp only [Mem.find?, ← Array.find?_toList]
@@ -180,45 +183,46 @@ theorem setL_self {b : Blk} {a : Alloc} : ∀ {l : List (Blk × Alloc)},
 
 /-- `m'` is `m` outside the bytes `Q`. -/
 def MemEq (Q : Blk → Nat → Prop) (m m' : Mem) : Prop :=
-  m'.nextHeap = m.nextHeap ∧ BlocksEq Q m.blocks.toList m'.blocks.toList
+  m'.nextHeap = m.nextHeap ∧ m'.nextAct = m.nextAct ∧ BlocksEq Q m.blocks.toList m'.blocks.toList
 
 theorem MemEq.refl (Q : Blk → Nat → Prop) (m : Mem) : MemEq Q m m :=
-  ⟨rfl, BlocksEq.refl _ _⟩
+  ⟨rfl, rfl, BlocksEq.refl _ _⟩
 
 theorem MemEq.mono {Q Q' : Blk → Nat → Prop} {m m' : Mem} (h : MemEq Q m m')
-    (hQ : ∀ b k, Q b k → Q' b k) : MemEq Q' m m' := ⟨h.1, h.2.mono hQ⟩
+    (hQ : ∀ b k, Q b k → Q' b k) : MemEq Q' m m' := ⟨h.1, h.2.1, h.2.2.mono hQ⟩
 
 theorem MemEq.eq {Q : Blk → Nat → Prop} {m m' : Mem} (h : MemEq Q m m')
     (hQ : ∀ b k, ¬ Q b k) : m' = m := by
-  obtain ⟨hh, hb⟩ := h
+  obtain ⟨hh, ha, hb⟩ := h
   have hl := hb.eq hQ
-  obtain ⟨⟨l⟩, nh⟩ := m
-  obtain ⟨⟨l'⟩, nh'⟩ := m'
-  simp only at hh hl
-  rw [hh, hl]
+  obtain ⟨⟨l⟩, nh, na⟩ := m
+  obtain ⟨⟨l'⟩, nh', na'⟩ := m'
+  simp only at hh ha hl
+  rw [hh, ha, hl]
 
 theorem MemEq.find {Q : Blk → Nat → Prop} {m m' : Mem} (h : MemEq Q m m') (b : Blk) :
     (m.find? b = none ∧ m'.find? b = none) ∨
       ∃ a a', m.find? b = some a ∧ m'.find? b = some a' ∧ AllocEq (Q b) a a' := by
   rw [find?_toList, find?_toList]
-  exact h.2.find b
+  exact h.2.2.find b
 
 theorem MemEq.set {Q Q' : Blk → Nat → Prop} {m m' : Mem} (h : MemEq Q m m') {b : Blk}
     {a a' : Alloc} (hQ : ∀ b' k, b' ≠ b → Q b' k → Q' b' k) (ha : AllocEq (Q' b) a a') :
     MemEq Q' (m.set b a) (m'.set b a') := by
-  refine ⟨by rw [set_nextHeap, set_nextHeap, h.1], ?_⟩
+  refine ⟨by rw [set_nextHeap, set_nextHeap, h.1], by rw [set_nextAct, set_nextAct, h.2.1], ?_⟩
   rw [set_toList, set_toList]
-  exact h.2.set hQ ha
+  exact h.2.2.set hQ ha
 
 theorem set_self {m : Mem} {b : Blk} {a : Alloc} (h : m.find? b = some a) : m.set b a = m := by
   have hl : (m.set b a).blocks.toList = m.blocks.toList := by
     rw [set_toList]; rw [find?_toList] at h; exact setL_self h
-  obtain ⟨⟨l⟩, nh⟩ := m
-  have hn := set_nextHeap ⟨⟨l⟩, nh⟩ b a
-  generalize Mem.set ⟨⟨l⟩, nh⟩ b a = m' at hl hn
-  obtain ⟨⟨l'⟩, nh'⟩ := m'
-  simp only at hl hn
-  rw [hl, hn]
+  obtain ⟨⟨l⟩, nh, na⟩ := m
+  have hn := set_nextHeap ⟨⟨l⟩, nh, na⟩ b a
+  have ht := set_nextAct ⟨⟨l⟩, nh, na⟩ b a
+  generalize Mem.set ⟨⟨l⟩, nh, na⟩ b a = m' at hl hn ht
+  obtain ⟨⟨l'⟩, nh', na'⟩ := m'
+  simp only at hl hn ht
+  rw [hl, hn, ht]
 
 /-- The bytes a write of `n` bytes at `p` touches. -/
 def Region (p : Ptr) (n : Nat) (b : Blk) (k : Nat) : Prop :=
@@ -309,9 +313,9 @@ theorem MemEq.poison {Q : Blk → Nat → Prop} {m m' : Mem} (h : MemEq Q m m') 
   unfold Mem.poisonBlock
   rcases h.find b with ⟨h1, h2⟩ | ⟨a, a', ha, ha', hA⟩
   · rw [h1, h2]
-    refine ⟨h.1, ?_⟩
+    refine ⟨h.1, h.2.1, ?_⟩
     rw [find?_toList] at h1
-    exact h.2.drop_absent h1
+    exact h.2.2.drop_absent h1
   · rw [ha, ha']
     refine h.set (fun b' k hb hq => ⟨hq, hb⟩) ⟨hA.1, by simp [hA.2.1], fun k _ => ?_⟩
     simp only [hA.2.1]

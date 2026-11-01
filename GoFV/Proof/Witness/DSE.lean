@@ -60,18 +60,31 @@ theorem f10_dseFrag : dseFrag f10PassEnv f10 = true := by
   rw [show f10PassEnv.tables = f10Tabs from rfl, f10_dse_ok]
   exact f10_checks.2.2
 
-/-- A source run returning values without poison gives a target run returning them, with the
-same memory. -/
-theorem Refines.returned_noPoison {tabs tabs' : Tables} {f f' : Func} (h : Refines tabs' f' tabs f)
-    {env : Env} {args : List Val} {mem m : Mem} {fuel : Nat} {rs : List Val}
-    (hp : Val.anyPoison rs = false) (hs : run env tabs f args mem fuel = .returned rs m) :
-    ∃ fuel', run env tabs' f' args mem fuel' = .returned rs m := by
+/-- Bytes without `poison` are refined only by themselves. -/
+theorem BytesRefine.eq_of_noPoison : {as bs : List Byte} → BytesRefine as bs →
+    as.contains .poison = false → as = bs
+  | _, _, .nil, _ => rfl
+  | _, _, .cons (.poison _) _, hp => by simp at hp
+  | _, _, .cons (.refl _) t, hp => by
+    rw [List.contains_cons, Bool.or_eq_false_iff] at hp
+    rw [BytesRefine.eq_of_noPoison t hp.2]
+
+/-- A source run returning one blob without `poison` bytes gives a target run returning it. -/
+theorem Refines.returned_blob {tabs tabs' : Tables} {f f' : Func} (h : Refines tabs' f' tabs f)
+    {env : Env} {args : List Val} {mem m : Mem} {fuel : Nat} {bs : List Byte}
+    (hp : bs.contains .poison = false) (hs : run env tabs f args mem fuel = .returned [.blob bs] m) :
+    ∃ fuel' m', run env tabs' f' args mem fuel' = .returned [.blob bs] m' := by
   obtain ⟨fuel', ho⟩ := h env args mem fuel (by rw [hs]; trivial)
   rw [hs] at ho
   refine ⟨fuel', ?_⟩
   generalize run env tabs' f' args mem fuel' = o at ho ⊢
   cases ho with
-  | returned hl => rw [← GoFV.Proof.Sem.RefinesList.eq_of_noPoison hl hp]
+  | @returned _ _ _ m' hl _ =>
+    cases hl with
+    | cons h1 t =>
+      cases t
+      cases h1 with
+      | blob hb => exact ⟨m', by rw [BytesRefine.eq_of_noPoison hb hp]⟩
 
 /-! ## The witness -/
 
@@ -84,9 +97,8 @@ theorem dse_witness :
   obtain ⟨h1, h2, -⟩ := f10_checks
   obtain ⟨m, hm⟩ := returnsBlob_iff.1 f10_run
   refine ⟨_, f10_dsePass, f10_elim.2, ?_⟩
-  obtain ⟨fuel, h⟩ := Refines.returned_noPoison
+  exact Refines.returned_blob
     (GoFV.Proof.DSE.dse_refines f10_dsePass (ok_of_toBool' h1) (ok_of_toBool' h2) f10_dseFrag)
     (by decide +kernel) hm
-  exact ⟨fuel, m, h⟩
 
 end GoFV.Proof.Witness
