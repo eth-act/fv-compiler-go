@@ -71,18 +71,23 @@ def retypeEqB : Ty → Ty → Bool
   | .ptr _, .ptr _ => true
   | .ptr _, _ => false
   | _, .ptr _ => false
+  | .bool, .bool => true
+  | .bool, _ => false
+  | _, .bool => false
   | _, _ => true
 
-/-- Neither an integer nor a pointer shape. -/
+/-- Neither an integer, a pointer nor a `bool` shape. -/
 def plainB : Ty → Bool
   | .int _ => false
   | .ptr _ => false
+  | .bool => false
   | _ => true
 
 theorem retype_plain {t : Ty} (h : plainB t = true) (v : Val) : v.retype t = v := by
   cases t with
   | int _ => cases h
   | ptr _ => cases h
+  | bool => cases h
   | _ =>
     cases v with
     | int w _ => cases w <;> rfl
@@ -106,10 +111,15 @@ theorem retypeEqB_sound {t1 t2 : Ty} (h : retypeEqB t1 t2 = true) : RetypeEq t1 
     cases t2 with
     | ptr e' => exact retype_ptr e e' v
     | _ => simp [retypeEqB] at h
+  | bool =>
+    cases t2 with
+    | bool => rfl
+    | _ => simp [retypeEqB] at h
   | _ =>
     cases t2 with
     | int _ => simp [retypeEqB] at h
     | ptr _ => simp [retypeEqB] at h
+    | bool => simp [retypeEqB] at h
     | _ => exact (retype_plain (by rfl) v).trans (retype_plain (by rfl) v).symm
 
 /-- `t` is a zero-size struct or array type (as `phielim` decides it). -/
