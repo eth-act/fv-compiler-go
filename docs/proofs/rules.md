@@ -688,10 +688,12 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 66 | 83 |
 | `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 73 | 73 |
 | `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 45 | 45 |
+| `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 37 | 37 |
 | `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 31 | 31 |
 | `generic.rules:790 EqInter` | `r_generic_790` | P2 | 116 | 29 | 29 |
 | `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 26 | 26 |
 | `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 18 | 18 |
+
 | `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 13 | 13 |
 | `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 12 | 12 |
 | `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 12 | 12 |
