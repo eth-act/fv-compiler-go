@@ -23,7 +23,8 @@ import GoFV.Opt.SchedFast
   other blocks of the run are emptied (`deadOK`); a predecessor of `b₀` outside the run is
   unchanged but for the same redirection; the entry moves from `b₀` to `c`.
 
-Every other table entry is unchanged by a proven frame lemma of `fuseRun`
+Schedules are computed by `SchedFast.schedFast` (block-local IDs; same non-pure sequence as
+`Sem.schedule`). Every other table entry is unchanged by a proven frame lemma of `fuseRun`
 (`GoFV.Proof.FusePlain.fuseRun_frame`), so the check costs about the size of the run. A rejected
 rewrite is an error: `f` is gone, and the passes fall back to their input. No `check` of `g` is
 needed: the soundness proof derives its well-formedness and use dominance from the relation
