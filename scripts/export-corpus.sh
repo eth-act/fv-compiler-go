@@ -9,19 +9,33 @@
 #         included), every non-main package of `go list cmd`, and every command of cmd (one
 #         unit each, their packages are all named main).
 #
-# usage: scripts/export-corpus.sh [--corpus quick|full] [--out DIR] [--sets SETS]
-#                                 [--check-determinism] [--no-plain] [--manifest FILE]
+# usage: scripts/export-corpus.sh [--corpus quick|full] [--sets SETS] [--check-determinism]
+#                                 [--no-plain] [--manifest FILE] [--no-switch]
+#        scripts/export-corpus.sh --switch <quick|full>-v<N>
 #
-#   --corpus              quick (default) or full; sets the default sets, DIR and manifest
-#   --out DIR             default ../gofv-corpus/<pin12> (quick) or ../gofv-corpus/<pin12>/full
+#   --corpus              quick (default) or full; sets the default sets and manifest
 #   --sets                unit sets to export: quick std,test,examples; full stdall,cmd,cmdmain
-#   --check-determinism   export everything twice (fresh build caches) and compare digests
-#   --no-plain            keep only the compressed archives (DIR/<set>.tar.zst)
+#   --check-determinism   export everything twice (fresh build caches) and compare digests;
+#                         a version that is not identical is never switched to
+#   --no-plain            keep only the compressed archives (<version>/<set>.tar.zst)
 #   --manifest FILE       default corpus/manifest.txt (quick), corpus/manifest-full.txt (full)
+#   --no-switch           export a new version but do not publish it (format changes: publish
+#                         with --switch after the PR that reads the new format has merged)
+#   --switch VERSION      publish an existing version (no export)
 #
-# Layout: DIR/plain/<set>/<unit>/<pkgpath>/<func>,<abi>.ssa (std: one unit "std"),
-# DIR/<set>.tar.zst, DIR/stats.txt. The manifest lists every unit with its file count and a
-# sha256 digest of its dumps, plus the stats table (tools/ssastats).
+# Published corpora are never modified in place (docs/PARITY.md, "Corpus versions"). Each
+# export writes a new version directory ../gofv-corpus/<pin12>/<kind>-v<N> (N one more than the
+# highest existing version of that kind) and then switches the published names atomically:
+#   ../gofv-corpus/<pin12>/plain -> quick-v<N>/plain     (quick)
+#   ../gofv-corpus/<pin12>/full  -> full-v<N>            (full; readers use full/plain)
+# and rewrites ../gofv-corpus/<pin12>/CURRENT ("quick quick-v<N>" / "full full-v<N>" lines). The
+# previous version stays; a version that has not been current for 24 hours is deleted by
+# later switches (its RETIRED file holds the time it stopped being current).
+#
+# Version layout: <version>/plain/<set>/<unit>/<pkgpath>/<func>,<abi>.ssa (std: one unit
+# "std"), <version>/<set>.tar.zst, stats.txt, manifest.txt (also copied to the committed
+# manifest: every unit with its file count and a sha256 digest of its dumps, plus the stats
+# table, tools/ssastats), determinism.diff.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 main_root=$(git -C "$root" worktree list --porcelain | sed -n '1s/^worktree //p')
@@ -29,24 +43,74 @@ gosrc=$root/third_party/go
 gob=$root/third_party/go-build
 pin=2aae1000ea1d4b28923b96db28acf4e3b99d6aff
 base=$(dirname "${main_root:-$root}")/gofv-corpus/${pin:0:12}
-corpus=quick out= sets= manifest=
-check=0 plain=1
+corpus=quick sets= manifest= switch_to=
+check=0 plain=1 publish=1
+usage="usage: $0 [--corpus quick|full] [--sets SETS] [--check-determinism] [--no-plain] [--manifest FILE] [--no-switch] | --switch VERSION"
 while [ $# -gt 0 ]; do
   case $1 in
     --corpus) corpus=$2; shift 2 ;;
-    --out) out=$2; shift 2 ;;
     --sets) sets=$2; shift 2 ;;
     --check-determinism) check=1; shift ;;
     --no-plain) plain=0; shift ;;
     --manifest) manifest=$2; shift 2 ;;
-    *) echo "usage: $0 [--corpus quick|full] [--out DIR] [--sets SETS] [--check-determinism] [--no-plain] [--manifest FILE]" >&2; exit 2 ;;
+    --no-switch) publish=0; shift ;;
+    --switch) switch_to=$2; shift 2 ;;
+    *) echo "$usage" >&2; exit 2 ;;
   esac
 done
 case $corpus in
-  quick) : "${out:=$base}" "${sets:=std,test,examples}" "${manifest:=$root/corpus/manifest.txt}" ;;
-  full) : "${out:=$base/full}" "${sets:=stdall,cmd,cmdmain}" "${manifest:=$root/corpus/manifest-full.txt}" ;;
+  quick) : "${sets:=std,test,examples}" "${manifest:=$root/corpus/manifest.txt}" ;;
+  full) : "${sets:=stdall,cmd,cmdmain}" "${manifest:=$root/corpus/manifest-full.txt}" ;;
   *) echo "export-corpus: --corpus quick|full" >&2; exit 2 ;;
 esac
+
+# switch_version <version>: publish an existing version directory atomically (a new symlink
+# renamed over the old name), record it in CURRENT, retire the previous version and delete
+# versions retired more than 24 hours ago.
+switch_version() {
+  local v=$1 kind link target prev now
+  kind=${v%%-v*}
+  [ -d "$base/$v" ] || { echo "export-corpus: no version $base/$v" >&2; exit 1; }
+  case $kind in
+    quick) link=$base/plain; target=$v/plain ;;
+    full) link=$base/full; target=$v ;;
+    *) echo "export-corpus: bad version $v" >&2; exit 2 ;;
+  esac
+  if grep -q '^determinism DIFFERENT' "$base/$v/manifest.txt" 2>/dev/null; then
+    echo "export-corpus: $v is not deterministic; not switching" >&2; exit 1
+  fi
+  prev=$(sed -n "s/^$kind //p" "$base/CURRENT" 2>/dev/null || true)
+  ln -sfn "$target" "$link.switch"
+  mv -T "$link.switch" "$link"
+  { grep -v "^$kind " "$base/CURRENT" 2>/dev/null || true; echo "$kind $v"; } | sort >"$base/CURRENT.new"
+  mv "$base/CURRENT.new" "$base/CURRENT"
+  now=$(date +%s)
+  if [ -n "$prev" ] && [ "$prev" != "$v" ] && [ -d "$base/$prev" ]; then
+    echo "$now" >"$base/$prev/RETIRED"
+  fi
+  local d r
+  for d in "$base"/"$kind"-v*/; do
+    d=${d%/}
+    [ -f "$d/RETIRED" ] || continue
+    [ "$(basename "$d")" = "$v" ] && { rm -f "$d/RETIRED"; continue; }
+    r=$(cat "$d/RETIRED")
+    if [ $((now - r)) -gt 86400 ]; then rm -rf "$d"; fi
+  done
+  echo "export-corpus: published $v ($link -> $target)" >&2
+}
+
+if [ -n "$switch_to" ]; then
+  switch_version "$switch_to"
+  exit 0
+fi
+n=0
+for d in "$base"/"$corpus"-v*; do
+  [ -e "$d" ] || continue
+  k=${d##*-v}; k=${k%.new}
+  [[ $k =~ ^[0-9]+$ ]] && [ "$k" -gt "$n" ] && n=$k
+done
+version=$corpus-v$((n + 1))
+out=$base/$version
 [ -x "$gob/bin/go" ] || { echo "export-corpus: no patched toolchain, run scripts/build-go.sh" >&2; exit 1; }
 
 # Std packages of the corpus: small leaf packages through runtime (write barriers, nosplit),
@@ -154,6 +218,7 @@ if [ "$check" = 1 ]; then
     determinism="identical ($(find "$work/plain" -name '*.ssa' | wc -l) files, two exports with fresh caches)"
   else
     determinism="DIFFERENT, see $out/determinism.diff"
+    publish=0
   fi
   rm -rf "$work/plain2"
   echo "export-corpus: determinism: $determinism" >&2
@@ -169,6 +234,7 @@ statsbin=$root/tmp/ssastats
   echo "patch $(cat "$root"/patches/go/*.patch | sha256sum | cut -c1-16)"
   echo "target GOOS=linux GOARCH=arm64 GOFLAGS=-trimpath"
   echo "corpus $corpus"
+  echo "version $version"
   echo "sets $sets"
   [ "$check" = 1 ] && echo "determinism $determinism"
   echo
@@ -193,8 +259,11 @@ for s in ${sets//,/ }; do
   tar -C "$work/plain" -cf - "$s" | zstd -q -T4 -10 --long=27 -o "$work/$s.tar.zst"
 done
 [ "$plain" = 1 ] || rm -rf "$work/plain"
-# The full corpus lives inside the quick corpus directory; keep it when replacing the latter.
-[ "$corpus" = quick ] && [ -d "$out/full" ] && mv "$out/full" "$work/full"
-rm -rf "$out"; mv "$work" "$out"
-echo "export-corpus: done: $out (manifest $manifest)" >&2
+mv "$work" "$out"
+echo "export-corpus: exported $out (manifest $manifest)" >&2
+if [ "$publish" = 1 ]; then
+  switch_version "$version"
+else
+  echo "export-corpus: not published; publish with: $0 --switch $version" >&2
+fi
 cat "$out/stats.txt"
