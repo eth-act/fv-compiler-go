@@ -68,9 +68,10 @@ theorem first_hasTy_int64 {x : Val} {t : Ty} (hx : x.hasTy t = true)
     | nil => simp [Val.hasTy, Val.hasTyList] at hx
     | cons f fs =>
       simp only [Val.hasTy, List.map_cons, Val.hasTyList, Bool.and_eq_true] at hx
-      simp only [fieldShape?, List.getElem?_cons_zero, Option.map_some] at ht
+      simp only [fieldShape?, Ty.asAgg, List.getElem?_cons_zero, Option.map_some] at ht
       rw [isInt64Ty_iff] at ht
       rw [← ht]; exact hx.1
+  | str | slice _ => simp [fieldShape?, Ty.asAgg, Ty.strAgg, Ty.sliceAgg, isInt64Ty] at ht
   | _ => simp [Val.hasTy] at hx
 
 /-- `generic.rules:790`: `(EqInter x y) => (EqPtr (ITab x) (ITab y))` -/

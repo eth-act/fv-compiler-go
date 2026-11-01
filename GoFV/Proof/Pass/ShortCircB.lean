@@ -16,7 +16,12 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ShortCircuit GoFV.Proof Dom
 
 theorem retype_bool {t : Ty} {x : Val} {bb : Bool} (h : x.retype t = .bool bb) : x = .bool bb := by
   unfold Val.retype at h
-  split at h <;> (try split at h) <;> first | (cases h; rfl) | cases h | simp_all
+  split at h <;> (try split at h) <;>
+    first
+      | (cases h; rfl)
+      | cases h
+      | (simp only [Val.ofStr, Val.ofSlice] at h; split at h <;> cases h)
+      | simp_all
 
 theorem evalOp_not {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op = .Not) : evalOp env ctx fr v argv ty = .ok (evalPure .Not ty v.auxInt v.aux argv) := by
