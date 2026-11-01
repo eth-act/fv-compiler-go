@@ -33,6 +33,11 @@ def evalOpArms : List Op :=
     .Move, .MoveWB, .Zero, .ZeroWB, .VarDef, .VarLive, .KeepAlive, .WBend, .NilCheck, .SP,
     .GetCallerSP, .LocalAddr, .Addr, .ConstString]
 
+/-- A root `Sem.evalOp` does not evaluate by name: `Sem.atomicRoot` (the P5 atomics, barriers and
+prefetches; `stuck` for the others). Its memory argument comes last and its result is a memory or a
+(value, memory) pair (`GoFV.Proof.atomicRoot_sim`). -/
+def atomicRootOp (op : Op) : Bool := isRoot op && !evalOpArms.contains op
+
 /-- A root `Sem.evalOp` does not evaluate: always `stuck` (tail calls, the ops `atomicRoot`
 does not model). -/
 def stuckRoot (op : Op) : Bool :=
@@ -53,14 +58,15 @@ def tamPtrOps : List Op :=
     .ConstInterface, .ConstString, .SP, .Mul32uhilo, .Mul32uover, .Mul64uhilo, .Mul64uover,
     .Div128u, .Add64carry, .Sub64borrow, .Invalid]
 
-/-- Value `fv` of `f`: a memory- or tuple-shaped argument only last and only for `tamMemOps`
-(any for a `Phi` or a `stuckRoot`), a result shape that may hold a pointer only for `tamPtrOps`
-(or a `stuckRoot`). -/
+/-- Value `fv` of `f`: a memory- or tuple-shaped argument only last and only for `tamMemOps` or an
+`atomicRootOp` (any for a `Phi` or a `stuckRoot`), a result shape that may hold a pointer only for
+`tamPtrOps` or an `atomicRootOp` (or a `stuckRoot`). -/
 def tamOpOK (tabs : Tables) (f : Func) (fv : Value) : Bool :=
   stuckRoot fv.op ||
   (fv.op == .Phi || fv.args.all (DAE.plainArg tabs f) ||
-      (tamMemOps.contains fv.op && fv.args.pop.all (DAE.plainArg tabs f))) &&
-    (tamPtrOps.contains fv.op || DAE.noPtrTy (tabs.ty fv.type))
+      ((tamMemOps.contains fv.op || atomicRootOp fv.op) &&
+        fv.args.pop.all (DAE.plainArg tabs f))) &&
+    (tamPtrOps.contains fv.op || atomicRootOp fv.op || DAE.noPtrTy (tabs.ty fv.type))
 
 /-- `tabsAgree` up to extra frame temporaries (see the module comment): the frame variables of
 `tabs'` that `tabs` defines are `tabs`' frame variables, every other one is not forgeable, and

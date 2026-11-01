@@ -147,9 +147,10 @@ theorem evalPure_rel {op : Op} (hop : op ∈ tamMemOps) (hn : op ∉ evalOpArms)
   · -- MakeTuple
     exact makeTuple_rel L hw
 
-/-- **An op of `tamMemOps`** on equal arguments but a related last one. -/
+/-- **An op of `tamMemOps` or an `atomicRootOp`** on equal arguments but a related last one. -/
 theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx} {fr : Frame}
-    {v : Value} {ty : Ty} (hop : v.op ∈ tamMemOps) {L : List Val} {w w' : Val} (hw : VR X w w')
+    {v : Value} {ty : Ty} (hop : v.op ∈ tamMemOps ∨ atomicRootOp v.op = true) {L : List Val}
+    {w w' : Val} (hw : VR X w w')
     (hav : ∀ z ∈ L ++ [w], Val.Avoids U z) :
     ResRel X (evalOp env ctx fr v (L ++ [w]) ty) (evalOp env ctx fr v (L ++ [w']) ty) := by
   have hL : ∀ z ∈ L, Val.Avoids U z := fun z hz => hav z (by simp [hz])
@@ -170,7 +171,12 @@ theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx
       · exact .tuple (.cons (.refl z) (.cons (.mem hm1) .nil))
     · have hr' : isRoot v.op = false := by simpa using hr
       rw [evalOp_pure_of harm hr', evalOp_pure_of harm hr']
-      exact resRel_ok (evalPure_rel hop harm _ _ _ hw hL)
+      rcases hop with hop | hop
+      · exact resRel_ok (evalPure_rel hop harm _ _ _ hw hL)
+      · simp only [atomicRootOp, Bool.and_eq_true] at hop; rw [hop.1] at hr'; cases hr'
+  have hop : v.op ∈ tamMemOps := hop.resolve_right fun h => by
+    simp only [atomicRootOp, Bool.and_eq_true, Bool.not_eq_true'] at h
+    rw [List.contains_iff_mem.2 harm] at h; cases h.2
   have excl : ∀ op, v.op = op → op ∉ tamMemOps →
       ResRel X (evalOp env ctx fr v (L ++ [w]) ty) (evalOp env ctx fr v (L ++ [w']) ty) :=
     fun op h1 hn => absurd (h1 ▸ hop) hn
@@ -241,8 +247,9 @@ theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx
 theorem tamOpOK_spec {tabs : Tables} {f : Func} {fv : Value} (h : tamOpOK tabs f fv = true) :
     stuckRoot fv.op = true ∨
       ((fv.op = .Phi ∨ (∀ a ∈ fv.args, DAE.plainArg tabs f a = true) ∨
-        (fv.op ∈ tamMemOps ∧ ∀ a ∈ fv.args.pop, DAE.plainArg tabs f a = true)) ∧
-      (fv.op ∈ tamPtrOps ∨ DAE.noPtrTy (tabs.ty fv.type) = true)) := by
+        ((fv.op ∈ tamMemOps ∨ atomicRootOp fv.op = true) ∧
+          ∀ a ∈ fv.args.pop, DAE.plainArg tabs f a = true)) ∧
+      ((fv.op ∈ tamPtrOps ∨ atomicRootOp fv.op = true) ∨ DAE.noPtrTy (tabs.ty fv.type) = true)) := by
   unfold tamOpOK at h
   simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, Array.all_eq_true',
     List.contains_iff_mem] at h
