@@ -368,7 +368,7 @@ theorem via_b {env : Env} {n : Nat}
     (hterm : stepTerm G P = .ok (.goto ⟨st.b, st.k⟩))
     (htyG : Proof.Typed (Ctx.make tabs f) G) (hAG : AgrP (XB B) G GT)
     (hd : (runLoop env (Ctx.make tabs f) n G st.b st.k).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) n G st.b st.k)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) n G st.b st.k)
       (runLoop env (Ctx.make tabs g) fuelT GT st.child st.cn) := by
   have hwf := S.wf
   have H := S.H
@@ -511,7 +511,7 @@ theorem sim_step {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f st B C) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : Rel env tabs f st B C frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hb, hI, ht, hs, hdi, hty, hA⟩ := hR
   rw [hbT]

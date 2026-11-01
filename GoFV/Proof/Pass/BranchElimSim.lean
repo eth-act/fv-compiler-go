@@ -101,7 +101,7 @@ theorem post_step {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat
     (hdiP : DInv env (Ctx.make tabs f) (fun a => SDom f a s.post ∧ a ≠ s.post) G')
     (hsG : G'.regs.size = f.valueTab.size) (htp : Reachable f s.post)
     (hd : (runLoop env (Ctx.make tabs f) m G' s.post j).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) m G' s.post j)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) m G' s.post j)
       (runLoop env (Ctx.make tabs g) fuelT frT s.dom i) := by
   obtain ⟨ce, hwf⟩ := S.wf
   have hpd : s.post ≠ s.dom := by obtain ⟨-, -, -, -, -, -, -, h, -⟩ := S.diamond; exact h
@@ -173,7 +173,7 @@ theorem dom_goto {tabs : Tables} {env : Env} {frS frT G1 : Frame} {i k : Nat}
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
     (hc : G1.regs[s.c]? = some (some (.bool (k == 0))))
     (hd : (runLoop env (Ctx.make tabs f) n G1 e.b e.i).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) n G1 e.b e.i)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) n G1 e.b e.i)
       (runLoop env (Ctx.make tabs g) fuelT frT s.dom i) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨P, hP, -⟩ := S.rel.shape
@@ -219,7 +219,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f s) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : R env tabs f s frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hiT, hb, hbp, hba0, hba1, ht, hs, hfr, hsz, hag, hdi⟩ := hR
   rw [hbT, hiT]

@@ -94,6 +94,9 @@ theorem panicBounds_mono (k : Int64) {as bs : List Val} (h : RefinesList as bs) 
     cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm => exact .panic _ hm
   · exact .stuck _ _
 
+/-- PLACEHOLDER (Semantics7, not for merge): `Env.atAct` keeps monotonicity. -/
+theorem Env.Mono.atAct {env : Env} (hE : env.Mono) (act : Nat) : (env.atAct act).Mono := sorry
+
 theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs : List Val}
     (h : RefinesList as bs) : Res.Refines (callOp env ctx v as) (callOp env ctx v bs) := by
   obtain ⟨hc, hclo, hrest⟩ := callTarget_mono ctx v h
@@ -149,7 +152,7 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                 | none => exact .stuck _ _
                 | some c =>
                   dsimp only
-                  have := hE _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
+                  have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
                   revert this
                   generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
                   generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
@@ -191,7 +194,7 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
               | none => exact .stuck _ _
               | some c =>
                 dsimp only
-                have := hE _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
+                have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
                 revert this
                 generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
                 generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
@@ -573,6 +576,7 @@ theorem stepTerm_mono {fr fr' : Frame} {b : Block} (h : ControlsRefine fr fr' b)
         | _ => exact .stuck _ _
     | _ => exact .stuck _ _
   · exact .stuck _ _
+  · exact succ_refl b 0
   · exact .stuck _ _
 
 end GoFV.Proof

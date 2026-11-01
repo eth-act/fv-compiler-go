@@ -1,4 +1,5 @@
 import GoFV.SSA.Sem.Runtime
+import GoFV.SSA.Sem.Run
 
 /-!
 # Environments whose memory runtime calls are the model's contracts (#151)
@@ -22,5 +23,10 @@ theorem Env.runtime_memOps : Env.runtime.MemOps :=
 
 theorem Env.p1_memOps : Env.p1.MemOps :=
   ⟨fun _ h => (by cases h), fun _ h => (by cases h)⟩
+
+/-- `Env.atAct` keeps `runtime.memclrNoHeapPointers` and `runtime.memmove`. -/
+theorem Env.MemOps.atAct {env : Env} (h : env.MemOps) (act : Nat) : (env.atAct act).MemOps :=
+  ⟨fun c hc => h.1 c (by rwa [Env.atAct_extern_of (by decide +kernel)] at hc),
+    fun c hc => h.2 c (by rwa [Env.atAct_extern_of (by decide +kernel)] at hc)⟩
 
 end GoFV.SSA.Sem

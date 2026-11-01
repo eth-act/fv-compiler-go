@@ -22,17 +22,17 @@ def SimUpTo (env : Env) (ctxS ctxT : Ctx) (R : Frame → ID → Nat → Frame �
     (n : Nat) : Prop :=
   ∀ fuel, fuel ≤ n → ∀ frS bS iS frT bT iT, R frS bS iS frT bT iT →
     (runLoop env ctxS fuel frS bS iS).Defined →
-      ∃ fuelT, OutcomeRefines ctxS.act (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuelT frT bT iT)
+      ∃ fuelT, LoopRefines Eq (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuelT frT bT iT)
 
 /-- **Macro-step simulation.** -/
 theorem runLoop_simIH {env : Env} {ctxS ctxT : Ctx}
     (R : Frame → ID → Nat → Frame → ID → Nat → Prop)
     (hsim : ∀ n, SimUpTo env ctxS ctxT R n → ∀ frS bS iS frT bT iT, R frS bS iS frT bT iT →
       (runLoop env ctxS (n + 1) frS bS iS).Defined →
-        ∃ fuelT, OutcomeRefines ctxS.act (runLoop env ctxS (n + 1) frS bS iS)
+        ∃ fuelT, LoopRefines Eq (runLoop env ctxS (n + 1) frS bS iS)
           (runLoop env ctxT fuelT frT bT iT)) :
     ∀ fuel frS bS iS frT bT iT, R frS bS iS frT bT iT → (runLoop env ctxS fuel frS bS iS).Defined →
-      ∃ fuelT, OutcomeRefines ctxS.act (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuelT frT bT iT) := by
+      ∃ fuelT, LoopRefines Eq (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuelT frT bT iT) := by
   have hall : ∀ n, SimUpTo env ctxS ctxT R n := by
     intro n
     induction n with

@@ -26,7 +26,7 @@ def R (f g : Func) (K : ID → Prop) (frS : Frame) (bS iS : Nat) (frT : Frame) (
 /-- **One block step.** -/
 theorem step (S : Setup f g K) {tabs : Tables} {env : Env} {frS frT : Frame}
     {bS iS bT iT : Nat} (hR : R f g K frS bS iS frT bT iT) :
-    StepSimE (R f g K) (blockStep env (Ctx.make tabs f) frS bS iS)
+    StepSimE Eq (R f g K) (blockStep env (Ctx.make tabs f) frS bS iS)
       (blockStep env (Ctx.make tabs g) frT bT iT) := by
   obtain ⟨rfl, hb, hA, hsz, hP⟩ := hR
   obtain ⟨ce', hwg⟩ := S.wg
@@ -36,7 +36,7 @@ theorem step (S : Setup f g K) {tabs : Tables} {env : Env} {frS frT : Frame}
     hgb]
   cases hen : enterBlock env (Ctx.make tabs f) frS fb iS with
   | panic e m =>
-    simp only [S.enter_panic hb hgb hfb hA hsz hP hen]; exact ⟨m, rfl, Mem.Refines.refl m⟩
+    simp only [S.enter_panic hb hgb hfb hA hsz hP hen]; exact ⟨m, rfl, rfl⟩
   | stuck msg => exact True.intro
   | ok G =>
   obtain ⟨GT, hT, hAG, hszG⟩ := S.enter_ok hb hgb hfb hA hsz hP hen

@@ -205,6 +205,10 @@ theorem retypeResults_avoids (hU : TempU U) (tabs : Tables) :
     · exact retype_avoids hU _ (h r List.mem_cons_self)
     · exact retypeResults_avoids hU tabs ps (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
 
+/-- PLACEHOLDER (Semantics7, not for merge). -/
+theorem _root_.GoFV.SSA.Sem.Env.FrameSafe.atAct {env : Env} (h : env.FrameSafe) (act : Nat) :
+    (env.atAct act).FrameSafe := sorry
+
 /-- **A call on related arguments.** -/
 theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {v : Value}
     {L : List Val} {w w' : Val} (hw : VR U w w') (hav : ∀ a ∈ L ++ [w], Val.Avoids U a) :
@@ -244,7 +248,7 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
           Res.stuck (toString "call " ++ toString callee ++ toString ": outgoing-arguments area not writable")
         else
           Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
-            (env.extern callee)) fun c =>
+            ((env.atAct ctx.act).extern callee)) fun c =>
           match c args clo (M.poisonBlock (.outargs ctx.act)) with
           | .returned rs m' =>
             Res.bind (Res.ofOption (toString "call " ++ toString callee ++
@@ -276,7 +280,7 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
           Res.stuck (toString "call " ++ toString callee ++ toString ": outgoing-arguments area not writable")
         else
           Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
-            (env.extern callee)) fun c =>
+            ((env.atAct ctx.act).extern callee)) fun c =>
           match c args clo (M'.poisonBlock (.outargs ctx.act)) with
           | .returned rs m' =>
             Res.bind (Res.ofOption (toString "call " ++ toString callee ++
@@ -307,11 +311,11 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     rw [EqOff.outargsOK hm]
     split
     · exact callRel_stuck _ _
-    cases hx : env.extern callee with
+    cases hx : (env.atAct ctx.act).extern callee with
     | none => exact callRel_stuck _ _
     | some c =>
     dsimp only [Res.ofOption, Res.bind]
-    have hc := hfs callee c hx U hTemp args clo (M.poisonBlock (.outargs ctx.act))
+    have hc := hfs.atAct ctx.act callee c hx U hTemp args clo (M.poisonBlock (.outargs ctx.act))
       (M'.poisonBlock (.outargs ctx.act)) hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
     revert hc
     generalize c args clo (M.poisonBlock (.outargs ctx.act)) = o

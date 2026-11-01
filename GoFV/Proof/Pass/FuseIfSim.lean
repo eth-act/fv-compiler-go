@@ -79,7 +79,7 @@ theorem normal_step {env : Env} {tabs : Tables} {n : Nat}
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f s R) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : Rel env tabs f s R frS bS iS frT bT iT)
     (hnb : bS ≠ s.b) (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hb, hna, hI, ht, hs, hdi, hA⟩ := hR
   rw [hbT]
@@ -135,9 +135,9 @@ theorem side1_target {env : Env} {tabs : Tables} {G GT : Frame} (hAG : Agr (s.in
     (hGs : G.regs.size = f.valueTab.size)
     (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.b) G) (hbr : Reachable f s.b) :
     ∃ GT2, Agr (s.inX f R) G GT2 ∧ ∀ (act : Nat) (o : Outcome),
-      (∃ fuel, OutcomeRefines act o
+      (∃ fuel, LoopRefines Eq o
         (runLoop env (Ctx.make tabs g) fuel GT2 s.ss (tIdx s f s.ss s.j1))) →
-      ∃ fuel, OutcomeRefines act o
+      ∃ fuel, LoopRefines Eq o
         (runLoop env (Ctx.make tabs g) fuel GT (s.rmE f s.e1).b (s.rmE f s.e1).i) := by
   have hs1 := S.rel.side1
   cases ha1 : s.arm1 with
@@ -208,7 +208,7 @@ theorem b_step {env : Env} {tabs : Tables} {n : Nat}
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f s R) n)
     {frS frT : Frame} {iS bT iT : Nat} (hR : Rel env tabs f s R frS s.b iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS s.b iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS s.b iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS s.b iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hb, hna, hI, ht, hs, hdi, hA⟩ := hR
   rw [hbT]
@@ -338,7 +338,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f s R) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : Rel env tabs f s R frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   by_cases hb : bS = s.b
   · subst hb; exact S.b_step ih hR hd

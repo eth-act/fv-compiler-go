@@ -397,7 +397,7 @@ index (their frame offset at SSA time), each with whether its frame block is `Bl
 structure DeferInfo where
   bits : Option (AuxRef × Bool) := none
   slots : Array (Option (AuxRef × Bool)) := #[]
-  deriving Inhabited
+  deriving Inhabited, DecidableEq
 
 /-- The static context of a function's runs, computed once. -/
 structure Ctx where
@@ -811,6 +811,18 @@ def _root_.GoFV.SSA.Sem.Env.atAct (env : Env) (act : Nat) : Env :=
       else if name == "runtime.deferreturn" then some (deferreturn env act)
       else if name == "runtime.gorecover" then some (gorecover act)
       else env.extern name }
+
+/-- The runtime entry points `Env.atAct` overrides. -/
+def isDeferName (name : String) : Bool :=
+  name == "runtime.deferproc" || name == "runtime.deferprocStack" ||
+    name == "runtime.deferreturn" || name == "runtime.gorecover"
+
+/-- Other callees are `env`'s. -/
+theorem _root_.GoFV.SSA.Sem.Env.atAct_extern_of {env : Env} {act : Nat} {name : String}
+    (h : isDeferName name = false) : (env.atAct act).extern name = env.extern name := by
+  simp only [isDeferName, Bool.or_eq_false_iff, beq_eq_false_iff_ne, ne_eq] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+  simp [Env.atAct, h1, h2, h3, h4]
 
 /-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
 `InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
