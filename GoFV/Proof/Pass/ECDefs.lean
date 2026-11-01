@@ -15,7 +15,7 @@ in the source and its non-new arguments in the target) and the relation of `Ret`
 
 namespace GoFV.Proof.EC
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.ECCheck GoFV.Proof.ABI
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.ECCheck GoFV.Proof.ABI GoFV.Proof.Order GoFV.Proof.AtomSim
 
 /-- The register pieces of the results `outs` of a tuple `(results…, rest…)`, followed by the
 rest (memory, result addresses). -/
@@ -53,6 +53,27 @@ def ecRR (tabs : Tables) (f : Func) (rs : List Val) (m : Mem) (rs' : List Val) (
       RefinesList (List.zipWith Val.retype rts
         (((ownOuts tabs f).zip rs).flatMap fun (p, r) => leafVals (tabs.ty p.type) r)) rs' ∧
       Mem.Refines m m'
+
+/-- What `blockOK`'s `imkArgOK` gives for an argument `a` of a converted value `x` of block `fb`
+whose node in `g` is an `IMake` (the `IMake` data shortcut, `ECCheck.imakeData`): the source
+mode (`a` is the same interface-shaped `IMake` in `f` with an unconverted data operand of the
+same constructor shape in both, and `x` depends on `a` in `gb` when `a` is a value of `fb`) or
+the target mode (`a` is interface-shaped in `g`, and `x` depends in `gb` on `a` and on its data
+operand). -/
+def EcImkOK (tabs : Tables) (f g : Func) (fb gb : Block) (x a : ID) : Prop :=
+  ∀ aw, g.value? a = some aw → aw.op = .IMake → aw.args.size = 2 ∧
+    ((∃ au, f.value? a = some au ∧ au.op = .IMake ∧ au.args.size = 2 ∧
+        au.args[1]! = aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) f a) = true ∧
+        special f g aw.args[1]! = false ∧
+        ((∃ e e', shapeOf (typeShapes tabs) f aw.args[1]! = .ptr e ∧
+            shapeOf (typeShapes tabs) g aw.args[1]! = .ptr e') ∨
+          (∃ fs n fs' n', shapeOf (typeShapes tabs) f aw.args[1]! = .agg fs n ∧
+            shapeOf (typeShapes tabs) g aw.args[1]! = .agg fs' n')) ∧
+        (a ∈ fb.values →
+          Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)) ∨
+      (ifaceShape (shapeOf (typeShapes tabs) g a) = true ∧
+        Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x ∧
+        Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) aw.args[1]! x))
 
 theorem ecCv_of_not_special {tabs : Tables} {f g : Func} {x : ID} (h : special f g x = false)
     (y : Val) : ecCv tabs f g x y = y := by
