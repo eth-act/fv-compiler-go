@@ -242,6 +242,26 @@ def unprovenWhy (env : PassEnv) (t1 : Tables) (g1 : Func) : String := Id.run do
     | _ => pure ()
   return "no unproven rule"
 
+/-- Which segment of `Decompose.decSegsOK` fails (`k`: phi eliminations so far). -/
+def segWhy (env : PassEnv) (T : Tables) (f0 g2 : Func) :
+    Nat → Func → Array GoFV.Rules.RwEvent → List GoFV.Rules.RwEvent → String
+  | k, f, seg, [] =>
+    let pre := if k == 0 then "" else s!"phielim seg {k}: "
+    pre ++ layersWhy env Decompose.decProvenTable f0 { func := g2, tables := T } RewriteCheck.decLayers f seg
+  | k, f, seg, .phielim v d p :: evs =>
+    let ce := Decompose.decCheckEnv env T
+    let h := RewriteCheck.dropInvalid p
+    let h' := RewriteCheck.phiElim h v d.args[0]!
+    if !RewriteCheck.layersOK env Decompose.decProvenTable f0 { func := h, tables := T }
+        RewriteCheck.decLayers f seg then
+      s!"phielim seg {k}: " ++
+        layersWhy env Decompose.decProvenTable f0 { func := h, tables := T } RewriteCheck.decLayers f seg
+    else if !checkOK ce h then s!"phielim {k}: check pre"
+    else if !CopyCheck.copyOK T h h' then s!"phielim {k}: copyOK"
+    else if !checkOK ce h' then s!"phielim {k}: check elim"
+    else segWhy env T f0 g2 (k + 1) h' #[] evs
+  | k, f, seg, ev :: evs => segWhy env T f0 g2 k f (seg.push ev) evs
+
 /-- The first failing conjunct of `decBuiltinOK`. -/
 def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
   match Decompose.phiStage env true f with
@@ -257,21 +277,7 @@ def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
       else if !(check ce g1).isOk then "check phi stage"
       else if !(check ce o2.func).isOk then "check proven rewrite"
       else if !Decompose.decRewriteOK env T g1 o2.func log then
-        match DecPhiElim.phStrip g1 o2.func log with
-        | none =>
-          layersWhy env Decompose.decProvenTable g1 { func := o2.func, tables := T }
-            RewriteCheck.decLayers g1 log
-        | some (h, k, log') =>
-          match check ce h, check ce k with
-          | .error e, _ => s!"phielim: check h: {e.take 40}"
-          | _, .error e => s!"phielim: check k: {e.take 40}"
-          | .ok _, .ok _ =>
-            if !RewriteCheck.layersOK env Decompose.decProvenTable g1 { func := h, tables := T }
-                RewriteCheck.decLayers g1 log' then
-              "phielim: " ++ layersWhy env Decompose.decProvenTable g1 { func := h, tables := T }
-                RewriteCheck.decLayers g1 log'
-            else if !DecPhiElim.phRelOK T h k then "phielim: phRelOK"
-            else "phielim: deadOK"
+        segWhy env T g1 o2.func 0 g1 #[] log.toList
       else if !Decompose.sameCode o2.func out.func then
         s!"proven rewrite ≠ pass output: {unprovenWhy env t1 g1}"
       else "?"

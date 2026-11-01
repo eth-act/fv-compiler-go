@@ -20,10 +20,10 @@ as decompose builtin sees it after its phi stage: the string `Phi`'s length comp
 dec rules turn both `StringLen`s into copies of `n` (`dec.rules:43`), the rewrite loop replaces
 the phi's arguments by `n` and eliminates the phi (`phielimValue`: `v9 = Copy n`), the result
 `v10` reads `n` and the dead `v9` is dropped. By kernel evaluation the decompose builtin stage
-checks accept it: the log without the phi elimination is validated against the output with `v9`
-kept a `Phi` (`DecPhiElim.phStrip`: `h`), copyelim's relation relates `h` to the output with
-`v9` listed as `Copy n` (`DecPhiElim.phRelOK`), and that to the output (`Sccp.deadOK`), so
-`refinesFrom_of_decBuiltinStagesOK` applies through `refines_of_decRewriteOK`.
+checks accept it in two segments (`decSegsOK`): the events before the elimination against the
+function logged with it, copyelim's relation from that function to the one with `v9 = Copy n`,
+and the rest against the output, so `refinesFrom_of_decBuiltinStagesOK` applies through
+`refines_of_decSegsOK`.
 -/
 
 namespace GoFV.Proof.Witness
@@ -123,7 +123,7 @@ theorem pkl_stages :
 /-- **Pass execution witness** for decompose builtin's phi eliminations: on `pickLen`, the
 proven dec rules' rewrite eliminates the length `Phi` (a phi elimination in its log; the result reads `n`),
 and the result refines the input for `DecPre` (`refinesFrom_of_decBuiltinStagesOK`, through
-`refines_of_decRewriteOK`, `DecPhiElim.phRelOK_spec` and `CopyElim.refines_of_rel`). -/
+`refines_of_decSegsOK`, `CopyRelCheck.copyOK_spec` and `CopyElim.refines_of_rel`). -/
 theorem decPhiElim_witness :
     ∃ o n log, Rules.rewriteRun decProvenTable false true pklPassEnv pklFunc = .ok (o, n, log) ∧
       hasPhielim log = true ∧ pklOpArgs o.func 10 = some (.MakeResult, #[3, 1]) ∧

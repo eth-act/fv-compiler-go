@@ -1,5 +1,4 @@
 import GoFV.Opt.DecPhiCheck
-import GoFV.Opt.DecPhiElim
 import GoFV.Opt.TabsAgreeMod
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Proven
@@ -18,9 +17,8 @@ The two passes are checked in stages, every stage under the pass's output tables
   `RewriteCheck.decLayers`: its value-rule `Load` expansions, then its `Store` splits, then
   `RewriteCheck.validate` with the other events), and must give the pass's output up to
   positions, use counts, caches and the name bookkeeping (`stripNames`), which the semantics
-  never reads. A log with phi eliminations is validated without them against the output with
-  those phis kept (`DecPhiElim.phStrip`), which copyelim's relation relates to the output
-  (`DecPhiElim.phRelOK`).
+  never reads. A log with phi eliminations is checked in segments between them, as the rewrite
+  validator does (`RewriteCheck.segsOK`): `decSegsOK`.
 
 `decUserFrag`/`decBuiltinFrag` look only at the pass input (a pass error is in the fragment,
 the pass then has no output), like `daeFrag`.
@@ -52,19 +50,27 @@ def decUserFrag (env : PassEnv) (f : Func) : Bool :=
   | .error _ => true
   | .ok out => decUserOK env f out
 
-/-- The rewrite stage `g1` → `g2` (log `log`) in the output tables `T`: `RewriteCheck.layersOK`
-with `RewriteCheck.decLayers`; with phi eliminations in the log, the stripped log against the
-stripped output `h` (`DecPhiElim.phStrip`), which is related to `k` by `DecPhiElim.phRelOK`,
-which is related to `g2` by `Sccp.deadOK`; `h` and `k` pass `check`. -/
+/-- `RewriteCheck.segsOK` with the decompose layers: the segments of the log `evs` between its phi
+eliminations (`seg`: the events of the current one, from `f`), each accepted by `layersOK` with
+`RewriteCheck.decLayers` against the function logged at the phi elimination ending it (without
+`Invalid` values, `h`), which passes `check` and is related by copyelim's relation to `h` with
+the `Phi` turned copy (`h'`, which passes `check`), where the next segment starts; the last
+segment ends at `g2`. -/
+def decSegsOK (env : PassEnv) (T : Tables) (f0 g2 : Func) :
+    Func → Array Rules.RwEvent → List Rules.RwEvent → Bool
+  | f, seg, [] =>
+    RewriteCheck.layersOK env decProvenTable f0 { func := g2, tables := T } RewriteCheck.decLayers f seg
+  | f, seg, .phielim v d pre :: evs =>
+    let h := RewriteCheck.dropInvalid pre
+    let h' := RewriteCheck.phiElim h v d.args[0]!
+    RewriteCheck.layersOK env decProvenTable f0 { func := h, tables := T } RewriteCheck.decLayers f seg &&
+      checkOK (decCheckEnv env T) h && CopyCheck.copyOK T h h' && checkOK (decCheckEnv env T) h' &&
+      decSegsOK env T f0 g2 h' #[] evs
+  | f, seg, ev :: evs => decSegsOK env T f0 g2 f (seg.push ev) evs
+
+/-- The rewrite stage `g1` → `g2` (log `log`) in the output tables `T` (`decSegsOK`). -/
 def decRewriteOK (env : PassEnv) (T : Tables) (g1 g2 : Func) (log : Array Rules.RwEvent) : Bool :=
-  match DecPhiElim.phStrip g1 g2 log with
-  | none => RewriteCheck.layersOK env decProvenTable g1 { func := g2, tables := T }
-      RewriteCheck.decLayers g1 log
-  | some (h, k, log') =>
-      (check (decCheckEnv env T) h).isOk && (check (decCheckEnv env T) k).isOk &&
-      RewriteCheck.layersOK env decProvenTable g1 { func := h, tables := T }
-        RewriteCheck.decLayers g1 log' &&
-      DecPhiElim.phRelOK T h k && Sccp.deadOK k g2
+  decSegsOK env T g1 g2 g1 #[] log.toList
 
 /-- The checks of decompose builtin's stages, given the phi stage `g1` of `f`, the proven
 dec rules' rewrite `g2` of `g1` with its log, and the pass output `out`: `g1` is `f` with its
