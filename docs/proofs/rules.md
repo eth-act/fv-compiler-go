@@ -290,8 +290,31 @@ dst src mem` that is the Load's memory, the `OffPtr` of pointer shape, `0 ≤ o`
 of positive size with `o + size ≤ n`, and the Load's pointer `dst + o` (`ptrBase` offsets,
 `baseSameB` bases).
 
+**Dropped identity writes** (`:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`): `(Store _ (Empty)
+mem) => mem`, `(Store {t} (OffPtr [o] p1) x mem:(Zero [n] p2 _)) && isConstZero(x) && … => mem`
+(also through one to three `Store`s at pointers `disjoint` from the write) and `(Zero {t} [s] dst1
+zero:(Zero {t} [s] dst2 _)) && isSamePtr(dst1, dst2) => zero` turn a memory root into a `Copy` of
+its memory (`fwdShapeOK`'s `Store`/`Zero` cases: the result is the pattern's memory argument,
+`patBinds`). `Interp.rewriteValue` tries `loads` on a `Store` after its `structStores` (index
+row + `structStores` + i) and on a `Zero` after its row; `fwdEvent?` takes the offset per op and
+`fwdCopy` installs the `Copy` on any op. `fwdNewOK` accepts `dropOK`: `w = Copy c` with `c`
+reached from the root's memory argument through compatible copies (`copyReach`), and the write
+changes no byte: a `Store` at a type of size 0; a `Store` of a `zeroConst` (`Const8`…`Const64`,
+`ConstBool` with auxint 0 at an integer or boolean shape; not `ConstNil`, whose bytes are pointer
+fragments, not `0`) at a pointer `p` whose bytes a `Zero [k] q _` cleared (`zeroChain`: through at
+most eight `Copy`s and `Store`s `disjointB` from the write, then `p = q + o` by `ptrBase`/`baseSameB`
+with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a `samePtrB` pointer. The
+dropped root is no root of `g`, so `fwdRel` compares atoms by `atomsXOK` (`atomsOK` but changed
+`Store`s and dropped `Store`/`Zero` roots; memcombine's check, now shared) instead of `atomsOK`.
+Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
+block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second
+`Zero` leaves `poison` where the source has zeros; and stores of `ConstNil`/`SliceLen` of a
+constant slice (`isConstZero` cases beyond integer constants), which fall back.
+
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
-g = true → RefinesUnder Env.Mono tabs g tabs f`, by the atom simulation. It needs a fact about
+g = true → RefinesUnder Env.Mono tabs g tabs f`, by the generalised atom simulation
+(`atomSimX_refines`; `AtomsX` allows a dropped root that is a `Store` or a `Zero`, neither of which
+panics, `enter_panic`). It needs a fact about
 the source's memory roots that no valuation of the atoms has: `MemDefs` (on the source's `DenOK`
 set of a block entry, each `Store`/`Move`/`Zero` register is `memDef`, the write of its arguments'
 registers, which are in the set, and each `LocalAddr` register its frame variable in activation
@@ -312,16 +335,28 @@ its write of the bytes read at the source (`memDef_move`), the Load's pointer is
 destination plus `o` (`ptrBase_den`, `baseSame_den`), and the bytes there are those of the source
 at `o` (`read_write_self`, `read_sub`, `load_congr_read`, `LoadFwdMem.lean`); the fresh
 `OffPtr` is in its window (`read_inWindow`) and the fresh `Load` reads them in a memory refining
-the `Move`'s (`load_mono`). `checkedRewrite_refines` composes the
+the `Move`'s (`load_mono`). A dropped root (`drop_den`, `GoFV/Proof/Pass/LoadFwdDrop.lean`): its
+register is its write (`MemAtoms`), and `drop_mem` shows that memory is refined by its memory
+argument's, hence by the `Copy` in `g` (`copyReach_den`, `copyReach_rank`): `write_refines_self`
+(`m.read p n = some bs0 → m.write p bs = some m1 → BytesRefineA bs bs0 → Mem.Refines m1 m`, by
+`write_read_id`: writing back the bytes a read gave changes nothing), with `encode_zero` (the bytes
+of a `0`, `false` or `poison` at any shape are `0` or `poison`; `zeroConst_den`, `retype_zero`)
+against the zeros `zeroChain_read` reads through the disjoint writes from the `Zero`
+(`read_write_sep`, `read_write_self`, `read_sub`); a zero-sized write is the identity
+(`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
-`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`; witnesses
+`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:943`, `:948`, `:954`,
+`:961`, `:1005`, `:2158`; witnesses
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
 `pi_checkedRewrite` (`PtrIndex p [0]` read through a `Store` at `PtrIndex p [1]`),
 `cf_checkedRewrite` (`*p = bits(1.5); return *(*float64)(p)` with `:830`: the `Load` becomes
-`Const64F` of the stored bits) and `ml_checkedRewrite` (`*p = *q; return p[1]` with `:827`: the
-`Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`), kernel evaluation.
+`Const64F` of the stored bits), `ml_checkedRewrite` (`*p = *q; return p[1]` with `:827`: the
+`Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`) and
+`zd_checkedRewrite` (`*(*struct{})(p) = struct{}{}; *p = [2]int{}; *p = [2]int{}; p[1] = 0` with
+`:1005`, `:2158`, `:943`: the three writes dropped, the result returns the first `Zero`'s memory;
+`GoFV/Proof/Witness/FwdDrop.lean`), kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,
