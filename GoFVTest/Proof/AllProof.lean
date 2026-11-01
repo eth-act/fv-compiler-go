@@ -498,6 +498,7 @@ import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NilFwd
 import GoFV.Proof.Witness.NilGetG
 import GoFV.Proof.Witness.NilMalloc
+import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Pipeline

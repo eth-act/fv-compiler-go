@@ -11,8 +11,9 @@ the same values possibly reordered, the `Phi`s in the same order) and values, ex
 * a `NilCheck p mem` may become `Copy nc` when `p` is known to point into an allocation there
   (`justified`): `nc` is a nil check of `p` (with `p`'s check's type) in a strict dominator of
   the block or listed before it in the block's schedule, or `nc = p` and `p`'s op makes it point
-  into an allocation (`safePtr`: `Addr`, `LocalAddr`, a nil check, `GetG`, or `OffPtr`/`AddPtr`
-  of such a pointer, all pointer-typed);
+  into an allocation (`safePtr`: `Addr`, `LocalAddr`, a nil check, `GetG`, the `StringPtr` of a
+  non-empty string constant, or `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a pointer or a
+  `StructSelect` of a `StructMake`'s pointer field that is one, all pointer-typed);
 * an `IsNonNil p` may become `ConstBool [1]` when a nil check of `p` justifies it;
 
 and every block's schedule in `g` runs the roots of `f`'s, minus the removed checks, in the same
@@ -81,12 +82,33 @@ def dictArg (tabs : Tables) (f : Func) (n : AuxRef) : Bool :=
     | none => false
   | none => false
 
+/-- A non-empty string constant: `ConstString` whose aux is a string of non-zero length (its data
+pointer is the start of a global, `Sem.frameVal`). -/
+def nonEmptyStr (tabs : Tables) (f : Func) (a : ID) : Bool :=
+  match f.value? a with
+  | some av =>
+    av.op == .ConstString &&
+      match av.aux.bind tabs.aux? with
+      | some { kind := .str s _, .. } => s.size != 0
+      | _ => false
+  | none => false
+
+/-- Field `i` of the aggregate shape of type `t` is pointer-shaped. -/
+def ptrField (tabs : Tables) (t : TypeRef) (i : Nat) : Bool :=
+  match tabs.ty t with
+  | .agg fs _ =>
+    match fs[i]? with
+    | some (_, .ptr _) => true
+    | _ => false
+  | _ => false
+
 /-- `x` is pointer-typed and points into an allocation whenever it is defined: an `Addr` or
 `LocalAddr` with a name, a nil check, `GetG` (the goroutine's `g`, an allocation of the
-environment, `docs/plans/semantics.md` §5), or an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a
-value. With `xt` (the checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also
-the first result of a malloc-family call (`mallocCall`) and a dictionary parameter
-(`dictArg`). -/
+environment, `docs/plans/semantics.md` §5), the `StringPtr` of a non-empty string constant
+(`nonEmptyStr`), an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a value, or a `StructSelect [i]`
+of a `StructMake` whose field `i` is pointer-shaped (`ptrField`) and such a value. With `xt` (the
+checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also the first result of
+a malloc-family call (`mallocCall`) and a dictionary parameter (`dictArg`). -/
 def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
   | 0, _ => false
   | n + 1, x =>
@@ -100,6 +122,22 @@ def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
       | .OffPtr | .AddPtr | .PtrIndex | .Copy =>
         match v.args[0]? with
         | some a => safePtr xt tabs f n a
+        | none => false
+      | .StringPtr =>
+        match v.args[0]? with
+        | some a => nonEmptyStr tabs f a
+        | none => false
+      | .StructSelect =>
+        match v.args[0]? with
+        | some a =>
+          match f.value? a with
+          | some sm =>
+            sm.op == .StructMake && decide (0 ≤ v.auxInt.toInt) &&
+              ptrField tabs sm.type v.auxInt.toInt.toNat &&
+              match sm.args[v.auxInt.toInt.toNat]? with
+              | some b => safePtr xt tabs f n b
+              | none => false
+          | none => false
         | none => false
       | .SelectN =>
         xt && v.auxInt == 0 &&
