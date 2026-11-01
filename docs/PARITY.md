@@ -89,6 +89,32 @@ the mismatch reports to `tmp/parity.md.log`. `--corpus full` selects the nightly
 `../gofv-corpus/<pin12>/full/plain` (all of `go list std` and `go list cmd`, issue #63;
 `scripts/export-corpus.sh --corpus full`).
 
+## Corpus versions
+
+Corpora live outside git in `../gofv-corpus/<pin12>/` and are never modified in place: other
+agents read them while new versions are made. `scripts/export-corpus.sh` writes every export to
+a new version directory `quick-v<N>/` or `full-v<N>/` (`plain/`, `*.tar.zst`, `manifest.txt`,
+`stats.txt`, `determinism.diff`), and then publishes it by renaming a new symlink over the
+published name, so a reader sees either the old or the new version, never a mix:
+
+| published path | points to |
+| --- | --- |
+| `../gofv-corpus/<pin12>/plain` | `quick-v<N>/plain` (the per-PR gate) |
+| `../gofv-corpus/<pin12>/full` | `full-v<N>` (the nightly gate; read `full/plain`) |
+
+`../gofv-corpus/<pin12>/CURRENT` holds one line per kind (`quick quick-v<N>`, `full full-v<N>`).
+`scripts/parity.sh` prints it, and the version directory each corpus argument resolves to, under
+the table. A version that is not deterministic (with `--check-determinism`) is never published.
+The previous version is kept: a switch writes the time into the old version's `RETIRED` file,
+and later switches delete versions retired more than 24 hours ago. Long runs that must not see
+a switch should read a version directory (`readlink -f ../gofv-corpus/<pin12>/plain`) instead
+of the published name.
+
+Format changes: export with `--no-switch` (the new version is written but not published), merge
+the PR whose parser reads the new format, then publish with
+`scripts/export-corpus.sh --switch quick-v<N>` (and `full-v<N>`). Every switch is announced to
+all agents with the format changes.
+
 ## Registering a pass
 
 A port is a `GoFV.Opt.Pass` (`PassEnv → Func → Except String PassOut`; `Pass.ofFunc` for

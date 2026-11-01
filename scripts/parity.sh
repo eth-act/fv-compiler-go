@@ -44,7 +44,19 @@ scripts/memcap.sh lake build pass-parity >/dev/null
 status=0
 scripts/memcap.sh .lake/build/bin/pass-parity --jobs "$jobs" --max-report 20 --table "$out" \
   --check-renumber "${passes[@]}" "$@" >"$out.log" 2>&1 || status=$?
-{ echo; echo "corpus: $*"; echo "commit: $(git rev-parse --short HEAD)"; } >>"$out"
+# The corpus version (docs/PARITY.md, "Corpus versions"): CURRENT of the pin directory and the
+# version directory each argument resolves to.
+versions=
+for c in "$@"; do
+  d=$(readlink -f "$c")
+  b=
+  for up in "$(dirname "$c")" "$(dirname "$(dirname "$c")")"; do
+    [ -f "$up/CURRENT" ] && b=$up && break
+  done
+  cur=$( [ -f "$b/CURRENT" ] && tr '\n' ' ' <"$b/CURRENT" || echo "-")
+  versions="$versions${versions:+; }$c -> $d (CURRENT: ${cur% })"
+done
+{ echo; echo "corpus: $*"; echo "corpus version: $versions"; echo "commit: $(git rev-parse --short HEAD)"; } >>"$out"
 cat "$out"
 grep -c '^MISMATCH' "$out.log" >/dev/null && echo "mismatch reports: $out.log"
 exit $status

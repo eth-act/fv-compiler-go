@@ -440,9 +440,10 @@ one of them must raise it on #4.
   `../gofv-corpus/<pin12>/plain/<set>/<unit>/…` and `<set>.tar.zst`, outside git; the committed
   `corpus/manifest.txt` lists every unit with its file count and digest, and the
   `tools/ssastats` table (functions, values, per pass how many functions changed). This is the
-  quick corpus, the per-PR parity gate.
+  quick corpus, the per-PR parity gate. Each export is a new version directory published by an
+  atomic symlink switch (`docs/PARITY.md`, "Corpus versions").
 - `scripts/export-corpus.sh --corpus full [--check-determinism]` exports the nightly corpus
-  (#63) into `../gofv-corpus/<pin12>/full/` (`plain/`, `*.tar.zst`; manifest
+  (#63), published as `../gofv-corpus/<pin12>/full/` (`plain/`, `*.tar.zst`; manifest
   `corpus/manifest-full.txt`): every package of `go list std` (unit `stdall`), every non-main
   package of `go list cmd` (unit `cmd`) and every command of cmd (units `cmdmain/<path>`, their
   packages are all `main`). `scripts/parity.sh --corpus full` runs the registered passes on it.
