@@ -94,8 +94,30 @@ unfolded) is `BoolTyped`. -/
 @[simp] theorem Oracle.const_boolTyped (b : Bool) : Oracle.BoolTyped (Oracle.const b) :=
   Oracle.boolTyped_const_dv b _ _ _ _
 
+/-- `false` at a literal, else `true`. -/
+def litAtom : Expr → Bool
+  | .lit _ _ => false
+  | _ => true
+
+/-- The oracle answering `false` for an unmodelled literal and `true` for every other
+unmodelled atom, so that an unmodelled string differs from a literal
+(`v.Block.Func.pass.name != "opt"`). -/
+noncomputable def Oracle.litFalse : Oracle where
+  dv x := .bool (litAtom x)
+  ty _ := .other
+  auxInt _ := 0
+  aux _ := none
+  val _ := .poison
+
+/-- An oracle answering every expression with a boolean is `BoolTyped`. -/
+@[rule_eval] theorem Oracle.boolTyped_bool_dv (f : Expr → Bool) (t : Expr → Ty)
+    (a : Expr → Int64) (x : Expr → Option AuxRef) (v : Expr → Val) :
+    Oracle.BoolTyped ⟨fun y => .bool (f y), t, a, x, v⟩ :=
+  fun y _ => ⟨f y, rfl⟩
+
 -- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
-attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Pat.den Pat.dens Pat.raw sigma
+attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFalse litAtom Pat.den
+  Pat.dens Pat.raw sigma
   Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Field.bindDV condHolds resDen
   nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map reduceEvalPure
   reduceAuxType evalE evalEs auxIntDV List.lookup toAuxIntD Option.getD List.cons_append
@@ -265,6 +287,26 @@ theorem inst_r_divisible_17 : Rule.Inst GoFV.Rules.Generated.Divisible.r_divisib
       [([1, 0, 1], 4), ([1, 1], 4)])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Divisible.r_divisible_17]
+  rule_eval
+  rfl
+
+/-- `generic.rules:1112`: `(Mul64 <t> x (Const64 [c])) && isPowerOfTwo(uint64(c)) &&
+v.Block.Func.pass.name != "opt" => (Lsh64x64 <t> x (Const64 <typ.UInt64> [log64u(uint64(c))]))`
+at `x = 5`, `c = 8`. -/
+theorem inst_r_generic_1112 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1112
+    (PEnv.ofLists [([0], .i64 5)] [] (.int .w64) [([1], 8)])
+    Oracle.litFalse := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1112]
+  rule_eval
+  rfl
+
+/-- `generic.rules:1120`: `(Mul64 <t> x (Const64 [c])) && isPowerOfTwo(uint64(-c)) &&
+v.Block.Func.pass.name != "opt" => (Neg64 (Lsh64x64 <t> x (Const64 <typ.UInt64>
+[log64u(uint64(-c))])))` at `x = 5`, `c = -8`. -/
+theorem inst_r_generic_1120 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1120
+    (PEnv.ofLists [([0], .i64 5)] [] (.int .w64) [([1], -8)])
+    Oracle.litFalse := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1120]
   rule_eval
   rfl
 

@@ -1168,6 +1168,22 @@ theorem umod_pow2_and {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k)
   rw [show 2 ^ w - 1 + 2 ^ k = (2 ^ k - 1) + 2 ^ w by omega, Nat.add_mod_right,
     Nat.mod_eq_of_lt (a := 2 ^ k - 1) (by omega), Nat.and_two_pow_sub_one_eq_mod]
 
+/-- A product with a power of two is a left shift (`generic.rules:1106–1112`). -/
+theorem mul_pow2 {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k) :
+    x * y = x <<< k := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_mul, BitVec.toNat_shiftLeft, h, Nat.shiftLeft_eq]
+
+/-- A product with a negated power of two is a negated left shift (`generic.rules:1114–1120`). -/
+theorem mul_negpow2 {w : Nat} (x y : BitVec w) (k : Nat) (h : (-y).toNat = 2 ^ k) :
+    x * y = -(x <<< k) := by
+  rw [← mul_pow2 x (-y) k h, BitVec.mul_neg, BitVec.neg_neg]
+
+/-- `uintN(-c)` as a `BitVec`: the negation of `c`'s. -/
+theorem ofInt_wrap_neg {w : Nat} (c : Int) :
+    BitVec.ofInt w (wrapInt w true (-c)) = -BitVec.ofInt w c := by
+  rw [ofInt_wrapInt_true (Nat.le_refl w), BitVec.ofInt_neg]
+
 
 theorem isPow2_toNat {T : GoTy} {w : Nat} {c : Int} (hT : T.intInfo? = some (w, false))
     (hw : w ≤ 64) (h0 : 0 < wrapInt w false c)

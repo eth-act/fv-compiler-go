@@ -18,7 +18,8 @@ line per rule:
 counterexample). The search is random (fixed seed): leaves get values of a width suggested by
 their consumer op, auxints come from a pool of boundary values, `[c]`/`<t>` checks and `same x`
 leaves are then solved for, node types are the shapes of the computed values, and unmodelled
-atoms (`Oracle`) are all `true` or all `false`, helper calls independently of the rest. The checks below mirror `Pat.wf`, `Pat.cons`,
+atoms (`Oracle`) are all `true` or all `false`, helper calls and unmodelled literals (`"opt"`)
+independently of the rest. The checks below mirror `Pat.wf`, `Pat.cons`,
 `condHolds` and `Refines` as `Bool` functions.
 -/
 
@@ -129,10 +130,13 @@ def set {α} (l : List (Path × α)) (p : Path) (a : α) : List (Path × α) :=
   (p, a) :: l.filter (·.1 != p)
 
 /-- Every oracle atom is `b`, except helper calls (`hasSmallRotate(config)`, `canRotate()`, …),
-which are `calls`: a condition may need a call atom false next to a field atom true. -/
-def oracle (b calls : Bool) : Oracle where
+which are `calls`, and unmodelled literals, which are `lits`: a condition may need a call atom
+false next to a field atom true, or a field different from a literal
+(`v.Block.Func.pass.name != "opt"`). -/
+def oracle (b calls lits : Bool) : Oracle where
   dv x := match x with
     | .call .. => .bool calls
+    | .lit .. => .bool lits
     | _ => .bool b
   ty _ := .other
   auxInt _ := 0
@@ -285,7 +289,8 @@ def search (r : Rule) (trials : Nat) : IO (Option (Inst × Bool)) := do
   let hints := leafHints pos
   let mut cex : Option (Inst × Bool) := none
   for t in [0:trials] do
-    let or := oracle (t % 2 == 0) (if t % 4 == 2 then false else t % 2 == 0)
+    let b := t % 2 == 0
+    let or := oracle b (if t % 4 == 2 then false else b) (if t % 8 ≥ 4 then !b else b)
     let mut i : Inst := {}
     for (p, o, k) in hints do
       i := { i with leaf := set i.leaf p (← randLeaf o k) }
