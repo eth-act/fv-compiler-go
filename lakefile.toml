@@ -70,3 +70,7 @@ root = "GoFVTest.DeadcodeProbe"
 [[lean_exe]]
 name = "cse-probe"
 root = "GoFVTest.CseProbe"
+
+[[lean_exe]]
+name = "deadplan-probe"
+root = "GoFVTest.DeadPlanProbe"
