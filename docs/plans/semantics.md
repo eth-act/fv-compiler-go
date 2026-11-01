@@ -508,8 +508,10 @@ and checks that every section agrees with section 0 whenever section 0 is define
   `sched_transfer'` generalises the argument hypothesis to `Feeds` (an argument reaches its
   user directly, or through pure source nodes the target bypasses), as copyelim needs:
   `copyelim_refines` now takes only `EmptyFrag` (`GoFV/Proof/Pass/CopyElimRank.lean`:
-  `sameNP_copy`, `depBack`, `feedsOf`); zcse and deadcode still take `NoNil` until their
-  proofs switch.
+  `sameNP_copy`, `depBack`, `feedsOf`), and `zcse_refines` nothing beyond its checker
+  (`GoFV/Proof/Pass/ZCSERank.lean`: `sameNP`, `depBack`, `feeds`; the checker requires the
+  redirected arguments to be pure and the entry's argument-free roots to stay put); deadcode
+  still takes `NoNil` until its proof switches.
 - `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
   recursive definition on its path is structural.
 

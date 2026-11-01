@@ -10,9 +10,9 @@ blocks (the reachable ones), some of their values (the live ones) and some of th
 where each kept `Phi` reads along the new index what it read along the old one (`PhiArgs`);
 every kept value keeps its op, aux, arguments and type (a kept `Phi` stays a `Phi`); a dropped
 value of a kept block cannot panic. `Chained`: the side-effecting roots of each kept block are
-ordered by dependency (as copyelim's `SimFrag.chained`), so a panicking root is reached by every
-schedule; `NoNil`: no `NilCheck` (a nil `NilCheck` panics, and the scheduler's order among
-ready `NilCheck`s is not determined by `schedule_spec`; as copyelim's `SimFrag.noNil`, #96).
+ordered by dependency, so a panicking root is reached by every schedule; `NoNil`: no
+`NilCheck` (a nil `NilCheck` panics, and the scheduler's order among ready `NilCheck`s is not
+determined by `schedule_spec`, #96).
 
 `refines_of_deadRel` (`GoFV.Proof.Pass.DeadSim`) derives the refinement from it, for `f` and
 `g` that are well formed (`WF`); no dominance is needed.

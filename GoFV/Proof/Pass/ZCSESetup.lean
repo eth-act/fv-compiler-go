@@ -4,29 +4,15 @@ import GoFV.Proof.Pass.CopyElimSim
 /-!
 # zcse: what the simulation uses
 
-`Setup tabs f g`: both functions are well-formed, `f`'s dominator certificate holds, `g` is
-related to `f` by `ZRel`, and `f` is in copyelim's fragment without its `Empty` condition: the
-side-effecting roots of its tree blocks are pairwise dependency-ordered (`Chained`) and it has
-no `NilCheck` (`NoNil`; a panicking nil check may float past others, `SimFrag.noNil`).
-Consequences: the target block of every block of `f`, and its schedule nodes (`nodeT`: the
-source's, less the argument-free values of `g`'s entry, which are nodes of the entry only).
+`Setup tabs f g`: both functions are well-formed, `f`'s dominator certificate holds, and `g`
+is related to `f` by `ZRel`. Consequences: the target block of every block of `f`, and its
+schedule nodes (`nodeT`: the source's, less the argument-free values of `g`'s entry, which are
+nodes of the entry only).
 -/
 
 namespace GoFV.Proof.ZCSE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.ZCSE Dom
-
-/-- The side-effecting roots (priority 2) of every tree block of `f` are pairwise ordered by
-dependency (`SimFrag.chained`). -/
-def Chained (f : Func) : Prop :=
-  ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
-    ∀ x y, NodeIn (schedNodes f fb).toList x → NodeIn (schedNodes f fb).toList y →
-      ¬ NilIn (schedNodes f fb).toList x → ¬ NilIn (schedNodes f fb).toList y → x ≠ y →
-      Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
-      Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
-
-/-- `f` has no `NilCheck` (`SimFrag.noNil`). -/
-def NoNil (f : Func) : Prop := ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
 
 /-- Everything the simulation uses about zcse's input `f` and output `g`. -/
 structure Setup (tabs : Tables) (f g : Func) : Prop where
@@ -34,8 +20,6 @@ structure Setup (tabs : Tables) (f g : Func) : Prop where
   wg : ∃ ce, WF ce g
   cf : CertOK f
   rel : ZRel tabs f g
-  chained : Chained f
-  noNil : NoNil f
 
 variable {tabs : Tables} {f g : Func}
 

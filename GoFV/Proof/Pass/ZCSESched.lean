@@ -5,8 +5,9 @@ import GoFV.Proof.Pass.ZCSESetup
 
 `targetSched`: the `EA g` values of the block (argument-free, so first) followed by the source
 schedule without them is a dependency order of the target block, so `schedule g gb` is defined.
-`depPres`: a target dependency chain follows every source chain from a root with arguments
-(such chains run through values with arguments only, which zcse neither moves nor redirects).
+`depPres`: a target dependency chain follows every source chain from a `Kept` value (one with
+arguments, or a root: zcse neither moves such a value out of its block, `nodeT_kept`, nor
+redirects its uses).
 -/
 
 namespace GoFV.Proof.ZCSE
@@ -142,10 +143,35 @@ theorem not_ea (S : Setup tabs f g) {x : ID} {fv : Value} (hfv : f.value? x = so
   rw [hva] at hsz
   exact hne (Array.eq_empty_of_size_eq_zero (by simpa using hsz.symm))
 
-/-- **Target dependencies on a source root with arguments are kept.** -/
+/-- `x` has arguments or is a root: zcse neither moves it out of its block (`rootEntry`) nor
+redirects a use of it (`replPure`). -/
+def Kept (f : Func) (x : ID) : Prop :=
+  ∀ fv, f.value? x = some fv → fv.args ≠ #[] ∨ Sem.isRoot fv.op = true
+
+/-- A kept source node of a block is a target node. -/
+theorem nodeT_kept (S : Setup tabs f g) {bid : ID} (hb : bid ∈ f.blocks) {fb gb : Block}
+    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb) {x : ID}
+    (hx : NodeIn (schedNodes f fb).toList x) (hk : Kept f x) :
+    NodeIn (schedNodes g gb).toList x := by
+  obtain ⟨ce, hwf⟩ := S.wf
+  refine (S.nodeT hb hfb hgb).2 ?_
+  by_cases hea : EA g x
+  · refine .inr ⟨hea, ?_⟩
+    obtain ⟨hxb, fv, hfv, -⟩ := (nodeIn_schedNodes (valuesOwn hwf hb hfb)).1 hx
+    obtain ⟨gv, hgv, -, hop, -, -, -, hsz, -⟩ := S.value hfv
+    obtain ⟨-, -, -, v, hv, hva, -⟩ := ea_iff.1 hea
+    have hga : gv.args = #[] := by rw [hv] at hgv; cases hgv; exact hva
+    have hr : Sem.isRoot gv.op = true := by
+      rcases hk fv hfv with h | h
+      · exact absurd (Array.eq_empty_of_size_eq_zero (by rw [← hsz, hga]; rfl)) h
+      · rw [hop]; exact h
+    obtain ⟨fE, hfE, hxE⟩ := S.rel.rootEntry x hea gv hgv hr
+    exact hwf.valueOnce bid fb f.entry fE ⟨hb, hfb⟩ ⟨hwf.entry, hfE⟩ x hxb hxE
+  · exact .inl ⟨hx, hea⟩
+
+/-- **Target dependencies on a kept source node are kept.** -/
 theorem depPres (S : Setup tabs f g) {bid : ID} (hb : bid ∈ f.blocks) {fb gb : Block}
-    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb) {r : ID}
-    (hra : ∀ fv, f.value? r = some fv → fv.args ≠ #[]) :
+    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb) {r : ID} (hra : Kept f r) :
     ∀ y, Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) r y →
       Order.Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) r y := by
   obtain ⟨ce, hwf⟩ := S.wf
@@ -157,8 +183,7 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hb : bid ∈ f.blocks) {fb gb :
   have hndG := hwg.valuesNodup _ _ ⟨hbg, hgb⟩
   let DT := Order.Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList)
   have key : ∀ x y, Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList)
-      x y → (x = r ∨ DT r x) → (∀ fv, f.value? x = some fv → fv.args ≠ #[]) →
-      DT r y ∧ ∀ fv, f.value? y = some fv → fv.args ≠ #[] := by
+      x y → (x = r ∨ DT r x) → Kept f x → DT r y ∧ Kept f y := by
     intro x y hd
     induction hd with
     | @arg x y hx hy hxy =>
@@ -166,8 +191,7 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hb : bid ∈ f.blocks) {fb gb :
       obtain ⟨hyb, fy, hfy, hyn⟩ := (nodeIn_schedNodes hownF).1 hy
       rw [argsOf_schedNodes hownF hndF hyb hfy hyn] at hxy
       have hya : fy.args ≠ #[] := fun he => by rw [he] at hxy; cases hxy
-      have hyA : ∀ fv, f.value? y = some fv → fv.args ≠ #[] := fun fv hfv => by
-        rw [hfy] at hfv; cases hfv; exact hya
+      have hyA : Kept f y := fun fv hfv => by rw [hfy] at hfv; cases hfv; exact .inl hya
       obtain ⟨hxb, fx, hfx, hxn⟩ := (nodeIn_schedNodes hownF).1 hx
       obtain ⟨gy, hgy, -, hop, -, -, -, hsz, hrel⟩ := S.value hfy
       obtain ⟨k, hk⟩ := List.getElem?_of_mem hxy
@@ -176,12 +200,15 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hb : bid ∈ f.blocks) {fb gb :
       have hgax : ga = x := by
         rcases hr with h | ⟨-, hs⟩
         · exact h
-        · obtain ⟨u, -, hu, -, hua, -⟩ := same_iff.1 hs
+        · refine Classical.byContradiction fun hne => ?_
+          obtain ⟨u, w, hu, hw, hua, -, -, -, huw, -⟩ := same_iff.1 hs
+          have hroot := S.rel.replPure y fy gy k x ga hfy hgy hk' hga hne w hw
           rw [hfx] at hu; cases hu
-          exact absurd hua (hxa _ hfx)
+          rcases hxa _ hfx with h | h
+          · exact h hua
+          · rw [huw, hroot] at h; cases h
       subst hgax
-      have hxT : NodeIn (schedNodes g gb).toList ga :=
-        (S.nodeT hb hfb hgb).2 (.inl ⟨hx, not_ea S hfx (hxa _ hfx)⟩)
+      have hxT : NodeIn (schedNodes g gb).toList ga := nodeT_kept S hb hfb hgb hx hxa
       have hyT : NodeIn (schedNodes g gb).toList y :=
         (S.nodeT hb hfb hgb).2 (.inl ⟨hy, not_ea S hfy hya⟩)
       obtain ⟨hygb, -⟩ := (nodeIn_schedNodes hownG).1 hyT

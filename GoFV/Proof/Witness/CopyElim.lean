@@ -19,7 +19,7 @@ def clampCheckEnv : CheckEnv :=
 theorem clamp_checks :
     (check clampCheckEnv clamp).toBool = true ∧
     ((copyelim clampTabs clamp).toOption.map (fun g => (check clampCheckEnv g).toBool)) = some true ∧
-    simFragB clampTabs clamp = true ∧ copyFrag clampTabs clamp = true := by
+    emptyFragB clampTabs clamp = true ∧ copyFrag clampTabs clamp = true := by
   decide +kernel
 
 theorem copyelim_witness :
@@ -42,8 +42,8 @@ theorem copyelim_witness :
       rw [hc]; rfl
     refine ⟨_, hp, ?_⟩
     obtain ⟨fuel, h⟩ := Refines.returned_int
-      (copyelim_refines hp hf (ce' := clampCheckEnv) hg (copyFrag_sound h4)
-        (simFrag_of (check_wf hf) h3).toEmpty) hm
+      (copyelim_refines hp hf (ce' := clampCheckEnv) hg (copyFrag_sound h4) (emptyFrag_of h3))
+      hm
     exact ⟨fuel, m, h⟩
 
 end GoFV.Proof.Witness

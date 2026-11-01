@@ -25,6 +25,8 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
   for x in ((g.block? g.entry).map (·.values)).getD #[] do
     if entryArgless g x && !(g.value? x).any (safe tabs (params tabs g)) then
       return s!"unsafe v{x} {((g.value? x).map (·.op.name)).getD "?"}"
+    if entryArgless g x && !rootStays f g x then
+      return s!"moved-root v{x} {((g.value? x).map (·.op.name)).getD "?"}"
   for x in List.range f.valueTab.size do
     if !valueOK f g x then return s!"value v{x}"
   return "?"

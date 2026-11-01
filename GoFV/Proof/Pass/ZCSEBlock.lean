@@ -5,9 +5,9 @@ import GoFV.Proof.Pass.ZCSEEnter
 
 `enter_ok`: a block the source enters to frame `G` the target enters to `fill G` (each target
 value evaluates, against `fill G`, to its register there: `evalSame` for the source's values,
-the constant for the representatives). `enter_panic`: a source panic at a root is reached by the
-target too; the target evaluates before it only values the source evaluated before it
-(`Order.transfer`, with `depPres`) and representatives.
+the constant for the representatives). `enter_panic` (`GoFV.Proof.Pass.ZCSEPanic`): a source
+panic at a root is reached by the target too; the target evaluates before it only values the
+source evaluated before it (`schedTransfer`) and representatives.
 -/
 
 namespace GoFV.Proof.ZCSE

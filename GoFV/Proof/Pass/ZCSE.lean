@@ -5,9 +5,9 @@ import GoFV.Proof.Pass.CopyElim
 # zero arg cse refines its input
 
 `refines_of_rel`: two well-formed functions related by `ZRel` (`f` passing the dominator
-certificate, its tree blocks' roots chained) run alike: lock-step simulation (`runLoop_sim`)
-where the target's frame is the source's at the entry and `fill` of it afterwards (`TF`), with
-the source-side invariant `At` at every block entry (`enter_ok`, `enter_panic`, `stepTerm`
+certificate) run alike: lock-step simulation (`runLoop_sim`) where the target's frame is the
+source's at the entry and `fill` of it afterwards (`TF`), with the source-side invariant `At`
+at every block entry (`enter_ok`, `enter_panic`, `stepTerm`
 reading the related controls). `zcse_refines`: the validated pass (`zcsePass`) refines its
 input, since it returns either the input or a result its checker accepted (`zrel_sound`).
 -/
@@ -173,10 +173,10 @@ theorem refines_of_rel (S : Setup tabs f g) : Refines tabs g tabs f := by
       ⟨hA0, .inl ⟨rfl, rfl⟩⟩ (finish_defined hd))
 
 /-- **zero arg cse refines its input.** The validated pass returns the input or a result its
-checker accepted; on a checked input in the fragment, either refines the input. -/
+checker accepted; on a checked input, either refines the input. -/
 theorem zcse_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
-    (h : zcsePass penv f = .ok out) (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ())
-    (hch : Chained f) (hnn : NoNil f) : Refines out.tables out.func penv.tables f := by
+    (h : zcsePass penv f = .ok out) (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
+    Refines out.tables out.func penv.tables f := by
   simp only [zcsePass, Pass.ofFunc, bind, Except.bind, pure, Except.pure] at h
   cases h
   simp only [zcseChecked] at hg ⊢
@@ -185,8 +185,7 @@ theorem zcse_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : Check
     simp only [hz, ite_true] at hg
     exact refines_of_rel
       { wf := ⟨ce, check_wf hf⟩, wg := ⟨ce', check_wf hg⟩,
-        cf := certOK_of_check (check_domCert hf), rel := zrel_sound hz, chained := hch,
-        noNil := hnn }
+        cf := certOK_of_check (check_domCert hf), rel := zrel_sound hz }
   · exact Refines.refl _ _
 
 end GoFV.Proof.ZCSE
