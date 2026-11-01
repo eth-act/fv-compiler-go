@@ -25,8 +25,8 @@ value's 64-bit pattern (integers sign-extended from their width, booleans 0/1) t
   only). Fixpoint order and the cycle cut of `fold` do not matter: only the final table is checked;
 - `g` is `f` but for values whose entry is fully known, which became `Copy c` of a constant `c`
   of `g` of that value at the value's shape (`repOK`); `g`'s blocks list `f`'s values first
-  (new constants are appended to the entry), same kinds, successors and controls
-  (`RewriteCheck.atomsOK`, `blocksOK`), and both are closed under arguments
+  (new constants are appended to the entry), same atoms (`RewriteCheck.atomsOK`), kinds,
+  successors, IDs and controls (`blocksOK`), and both are closed under arguments
   (`RewriteCheck.closedOK`).
 -/
 
@@ -254,11 +254,13 @@ def repOK (tabs : Tables) (f g : Func) (E : Array (Int64 × Int64)) (x : ID) : B
       CSE.tyEq (tabs.ty w.type) (tabs.ty u.type) &&
       constOK tabs g (tabs.ty u.type) (ent E x).1 (w.args[0]?.getD 0)))
 
-/-- `g`'s blocks list `f`'s values first, with the same controls. -/
+/-- `g`'s blocks list `f`'s values first, with the same kinds, successors, IDs and controls. -/
 def blocksOK (f g : Func) : Bool :=
   f.blocks.all fun b =>
     match f.block? b, g.block? b with
-    | some fb, some gb => fb.controls == gb.controls && fb.values == gb.values.extract 0 fb.values.size
+    | some fb, some gb =>
+      fb.kind == gb.kind && fb.succs == gb.succs && fb.id == gb.id &&
+      fb.controls == gb.controls && fb.values == gb.values.extract 0 fb.values.size
     | _, _ => false
 
 /-- **The checker.** -/

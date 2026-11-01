@@ -127,7 +127,8 @@ theorem blocks_eq : f.blocks = g.blocks := by
   exact hA.1.1.2
 
 theorem blocksOK_facts {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb) :
-    ∃ gb, g.block? b = some gb ∧ fb.controls = gb.controls ∧ ∀ x ∈ fb.values, x ∈ gb.values := by
+    ∃ gb, g.block? b = some gb ∧ fb.kind = gb.kind ∧ fb.succs = gb.succs ∧ fb.id = gb.id ∧
+      fb.controls = gb.controls ∧ ∀ x ∈ fb.values, x ∈ gb.values := by
   have h := K.blocks
   unfold blocksOK at h
   have := (Array.all_eq_true_iff_forall_mem.1 h) b hb
@@ -137,8 +138,9 @@ theorem blocksOK_facts {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.bloc
   | some gb =>
     rw [hgb] at this
     simp only [Bool.and_eq_true, beq_iff_eq] at this
-    refine ⟨gb, rfl, this.1, fun x hx => ?_⟩
-    rw [this.2] at hx
+    obtain ⟨⟨⟨⟨hk, hs⟩, hid⟩, hc⟩, hv⟩ := this
+    refine ⟨gb, rfl, hk, hs, hid, hc, fun x hx => ?_⟩
+    rw [hv] at hx
     obtain ⟨k, hk, rfl⟩ := Array.mem_extract_iff_getElem.1 hx
     exact Array.getElem_mem _
 
@@ -146,7 +148,7 @@ theorem blocksOK_facts {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.bloc
 theorem marked_g {x : ID} {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
     (hx : x ∈ fb.values) {w : Value} (hw : g.value? x = some w) (hwb : w.block = b) :
     ∃ gb, g.block? b = some gb ∧ x ∈ gb.values ∧ Marked g x := by
-  obtain ⟨gb, hgb, -, hsub⟩ := blocksOK_facts hwf K hb hfb
+  obtain ⟨gb, hgb, -, -, -, -, hsub⟩ := blocksOK_facts hwf K hb hfb
   have hxg := hsub x hx
   exact ⟨gb, hgb, hxg, b, blocks_eq hwf K ▸ hb, gb, hgb, hxg, w, hw, hwb⟩
 
@@ -236,13 +238,20 @@ theorem kb_atomArgs : AtomArgsRefP (kbInv hwf K) g := by
 theorem kb_controls : ControlsRefP (kbInv hwf K) g := by
   intro b hb fb gb hfb hgb
   have hbf : b ∈ f.blocks := blocks_eq hwf K ▸ hb
-  obtain ⟨gb', hgb', hctl, -⟩ := blocksOK_facts hwf K hbf hfb
+  obtain ⟨gb', hgb', -, -, -, hctl, -⟩ := blocksOK_facts hwf K hbf hfb
   rw [hgb] at hgb'; cases hgb'
   refine ⟨by rw [hctl], fun k hk => ?_⟩
   rw [← hctl]
   have hk' : k < fb.controls.size := hctl ▸ hk
   exact kb_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).1 _
     (by rw [getElem!_pos fb.controls k hk']; exact Array.getElem_mem hk')) b
+
+/-- **Terminators**: same kinds, successors and IDs, controls refining as terms. -/
+theorem kb_steps : StepRefsP (kbInv hwf K) g :=
+  ControlsRefP.toStepRefsP (kb_controls hwf K) fun b hb fb gb hfb hgb => by
+    obtain ⟨gb', hgb', hk, hs, hid, -⟩ := blocksOK_facts hwf K (blocks_eq hwf K ▸ hb) hfb
+    rw [hgb] at hgb'; cases hgb'
+    exact ⟨hk.symm, hs.symm, hid.symm⟩
 
 end
 

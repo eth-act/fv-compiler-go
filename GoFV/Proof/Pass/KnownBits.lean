@@ -6,7 +6,7 @@ import GoFV.Proof.Pass.KnownBitsTerm
 `knownBits_refines`: the validated pass (`GoFV.Opt.knownBitsPass`) refines its input under
 monotone contracts. A rejected or unchanged result is the input; an accepted one (`kbOK`) is the
 atom simulation under known bits' source invariant (`kbInv`: registers have the bits their final
-entries claim), whose premises are `kb_atomArgs` and `kb_controls`.
+entries claim), whose premises are `kb_atomArgs` and `kb_steps`.
 -/
 
 namespace GoFV.Proof.KnownBits
@@ -32,7 +32,7 @@ theorem knownBits_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : 
       simp only [Bool.and_eq_true] at hok
       have K := kbOK_spec hok.2
       have hwf := check_wf hf
-      exact atomSimInv_refines hf hg K.atoms (kbInv hwf K) (kb_atomArgs hwf K) (kb_controls hwf K)
+      exact atomSimInv_refines hf hg K.atoms (kbInv hwf K) (kb_atomArgs hwf K) (kb_steps hwf K)
     · exact RefinesUnder.refl _ _ _
 
 end GoFV.Proof.KnownBits
