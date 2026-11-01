@@ -107,7 +107,7 @@ export_all() {
   fi
   if [[ ,$sets, == *,cmd,* ]]; then
     local libs
-    libs=$(GO111MODULE= GOCACHE=$cache "$gob/bin/go" list -f '{{if ne .Name "main"}}{{.ImportPath}}{{end}}' cmd)
+    libs=$(GO111MODULE= GOCACHE=$cache "$gob/bin/go" list -f '{{if and .GoFiles (ne .Name "main")}}{{.ImportPath}}{{end}}' cmd)
     # shellcheck disable=SC2086
     GO111MODULE= GOCACHE=$cache GOFV_SSA_EXPORT=$dest/cmd/cmd GOFV_SSA_PKG='^cmd/' \
       "${gocmd[@]}" build -p 4 -o /dev/null $libs >>"$dest/log" 2>&1
@@ -115,7 +115,7 @@ export_all() {
   fi
   if [[ ,$sets, == *,cmdmain,* ]]; then
     local p u
-    for p in $(GO111MODULE= GOCACHE=$cache "$gob/bin/go" list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' cmd); do
+    for p in $(GO111MODULE= GOCACHE=$cache "$gob/bin/go" list -f '{{if and .GoFiles (eq .Name "main")}}{{.ImportPath}}{{end}}' cmd); do
       u=${p//\//_}
       if GO111MODULE= GOCACHE=$cache GOFV_SSA_EXPORT=$dest/cmdmain/$u GOFV_SSA_PKG='^main$' \
            "${gocmd[@]}" build -o /dev/null "$p" >>"$dest/log" 2>&1; then

@@ -46,6 +46,9 @@ structure PassEnv where
   `rtype` facts), looked up by symbol name; never function state. The pass still numbers what
   it creates itself. -/
   frontend : Tables := {}
+  /-- The input section's `zvar`: type-object class of zero-argument values whose type number
+  has several `*types.Type` objects (`zcse` keys on the pointer); absent: class 0. -/
+  zvar : ID → Nat := fun _ => 0
 
 /-- A pass's result. -/
 structure PassOut where

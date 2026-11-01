@@ -39,7 +39,9 @@ written as `%XX` (two upper-case hex digits); `<abi>` is `f.ABISelf.Which()` (0 
 export directory (`scripts/export-corpus.sh` does). If the escaped name is longer than 160
 bytes (generic instantiations), it is cut to its first 120 bytes followed by `~` and the first
 16 hex digits of the SHA-256 of `f.Name` (the `func` line has the full name). If a name
-repeats within one compile the second file gets `#2` before `.ssa`, and so on.
+repeats within one compile (e.g. generic instantiations compiled twice), every file of that
+name is called `<name>,<abi>#<h>.ssa` instead, with `<h>` the first 16 hex digits of the SHA-256
+of the file's contents (the order of concurrent compilation must not decide the names).
 
 The output is deterministic: the same compile produces byte-identical files (checked by
 `scripts/export-corpus.sh --check-determinism`), also under the backend's concurrent
@@ -110,6 +112,7 @@ consts <entries>                      (f.constants)
 freev <v,…>                           (f.freeValues free list, head first)
 freeb <b,…>                           (f.freeBlocks free list, head first)
 cache <name> <payload>                (f.cached*, f.auxmap: only those that are non-nil)
+zvar <v:class,…>                      (zero or one; see below)
 warn "<text>"                         (zero or more)
 end
 ```
@@ -117,8 +120,21 @@ end
 Presence: `typs` is present in section 0 only. `f`, `names`, `splits`, `canon`, `consts`, `freev`, `freeb` are always present
 (payload `-` when empty). `named` has one line per `f.Names` entry (none iff `names -`);
 `namedx` zero or more lines; each `cache <name>` line is present iff that cache is non-nil, in
-the order `postorder`, `idom`, `sdom`, `loopnest`, `auxmap`, `linestarts`. All `warn` lines of
-a section come together just before `end`, in emission order.
+the order `postorder`, `idom`, `sdom`, `loopnest`, `auxmap`, `linestarts`. `zvar` is present iff
+non-empty. All `warn` lines of a section come together just before `end`, in emission order.
+
+`zvar <v<ID>:<class>,…>`: type-object classes for `zcse`, which keys zero-argument values on
+the `*types.Type` **pointer**. Types are numbered by identity (above), but the backend creates
+a fresh `*T` object on every `types.NewPtr` (`types.NewPtrCacheEnabled` is false while the
+backend runs), so zero-argument values of one type number can carry distinct type objects
+that `zcse` does not merge. For every type number with at least two distinct objects among the
+section's zero-argument values (`opcodeTable[op].argLen == 0`), each such value is listed, in
+section order, with the 1-based index of its object in order of first appearance; all other
+values have class 0. `zvar` is an oracle hint for the input of `zcse`
+(`PassEnv.zvar`), not part of the function: parity does not compare it, and passes need not
+produce it. (Numbering every type by pointer instead would be faithful everywhere but is not
+deterministic: shared objects built concurrently differ between runs, and 6,388 of the 9,297
+quick-corpus functions have value types with several objects of one identity.)
 
 ### Definitions (tables)
 
@@ -389,6 +405,9 @@ one of them must raise it on #4.
   port reimplements the analysis from `abi1`.
 - Kind, size, flags, data and relocations of symbols that are not (yet) `SRODATA`, and the
   `ir.Name`s of callee parameters in call `AuxCall`s (see `sym` and `abiparam`).
+- Type pointer identity beyond `zvar`: types are numbered by identity and spelling; a pass
+  that compares `*types.Type` pointers of values other than `zcse`'s zero-argument keys would
+  need more (none in scope does).
 - `f.pass` other than its name: the section name is the pass name (rules depend on it, e.g.
   some `Mul` rules fire only when `pass.name != "opt"`); `pass.debug`/`stats` are 0.
 - Side effects outside the SSA (`reflectdata.MarkTypeSymUsedInInterface`,

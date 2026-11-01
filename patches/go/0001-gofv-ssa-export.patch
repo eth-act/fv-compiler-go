@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1088 @@
+@@ -0,0 +1,1280 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -101,10 +101,8 @@
 +	"cmd/internal/objabi"
 +	"cmd/internal/src"
 +	"crypto/sha256"
-+	"errors"
 +	"fmt"
 +	"internal/buildcfg"
-+	"io/fs"
 +	"os"
 +	"path/filepath"
 +	"regexp"
@@ -151,6 +149,7 @@
 +	types    map[*types.Type]int
 +	typeKeys map[string]int // canonical type key -> number
 +	typeList []*types.Type
++	typeDefs []*gofvTypeDef // by number - 1
 +	aux      map[Aux]int
 +	auxTypes map[int]int    // type number -> aux number of *types.Type aux values
 +	auxLast  map[int]string // last emitted definition per aux number
@@ -379,13 +378,71 @@
 +	key := x.typeKey(t)
 +	if n, ok := x.typeKeys[key]; ok {
 +		x.types[t] = n
++		// Prefer an object whose size the compiler calculated: the definition is
++		// rendered from the representative when the file is finished.
++		if d := x.typeDefs[n-1]; !d.rep.GOFVSizeKnown() && t.GOFVSizeKnown() {
++			d.rep = t
++		}
 +		return fmt.Sprintf("t%d", n)
 +	}
 +	n := len(x.typeList) + 1
 +	x.types[t] = n
 +	x.typeKeys[key] = n
 +	x.typeList = append(x.typeList, t)
++	d := &gofvTypeDef{rep: t}
++	x.typeDefs = append(x.typeDefs, d)
 +
++	switch t.Kind() {
++	case types.TPTR, types.TSLICE:
++		d.tail = append(d.tail, x.typ(t.Elem()))
++	case types.TARRAY:
++		d.tail = append(d.tail, x.typ(t.Elem()), strconv.FormatInt(t.NumElem(), 10))
++	case types.TSTRUCT:
++		d.tail = append(d.tail, strconv.Itoa(len(t.Fields())))
++	case types.TFUNC:
++		d.tail = append(d.tail, strconv.Itoa(len(t.Recvs())), strconv.Itoa(len(t.Params())), strconv.Itoa(len(t.Results())))
++	case types.TTUPLE:
++		d.tail = append(d.tail, x.typ(t.FieldType(0)), x.typ(t.FieldType(1)))
++	case types.TRESULTS:
++		nr := t.NumFields()
++		rs := make([]string, nr)
++		for i := range nr {
++			rs[i] = x.typ(t.FieldType(i))
++		}
++		d.tail = append(d.tail, strconv.Itoa(nr), gofvList(rs))
++	}
++	for _, fl := range gofvTypeFields(t) {
++		d.fieldTypes = append(d.fieldTypes, x.typ(fl.Type))
++	}
++	// The definition is rendered at the end (resolveTypes), from the best object of
++	// this identity met in the whole file; references are fixed now.
++	fmt.Fprintf(&x.defs, "\x00T%d\n", n)
++	return fmt.Sprintf("t%d", n)
++}
++
++// gofvTypeDef is a type definition whose text is rendered when the file is finished.
++type gofvTypeDef struct {
++	rep        *types.Type // the object rendered: the first one met, or one with a known size
++	tail       []string    // kind-specific references (fixed at first sight)
++	fieldTypes []string    // references of the field types
++}
++
++// gofvTypeFields returns the field lines' fields of t: struct fields, or a function's
++// receiver, parameters and results.
++func gofvTypeFields(t *types.Type) []*types.Field {
++	switch t.Kind() {
++	case types.TSTRUCT:
++		return t.Fields()
++	case types.TFUNC:
++		return slices.Concat(t.Recvs(), t.Params(), t.Results())
++	}
++	return nil
++}
++
++// renderType renders the definition of type number n.
++func (x *gofvExporter) renderType(n int) string {
++	d := x.typeDefs[n-1]
++	t := d.rep
 +	k := t.Kind()
 +	special := k == types.TSSA || k == types.TTUPLE || k == types.TRESULTS
 +	known := t.GOFVSizeKnown()
@@ -420,38 +477,13 @@
 +		symName = types.TypeSymName(t)
 +	}
 +	str, _ := gofvTry(t.String)
-+
-+	var tail []string
-+	var fields []*types.Field
-+	switch k {
-+	case types.TPTR, types.TSLICE:
-+		tail = append(tail, x.typ(t.Elem()))
-+	case types.TARRAY:
-+		tail = append(tail, x.typ(t.Elem()), strconv.FormatInt(t.NumElem(), 10))
-+	case types.TSTRUCT:
-+		fields = t.Fields()
-+		tail = append(tail, strconv.Itoa(len(fields)))
-+	case types.TFUNC:
-+		r, p, q := t.Recvs(), t.Params(), t.Results()
-+		fields = append(append(append(fields, r...), p...), q...)
-+		tail = append(tail, strconv.Itoa(len(r)), strconv.Itoa(len(p)), strconv.Itoa(len(q)))
-+	case types.TTUPLE:
-+		tail = append(tail, x.typ(t.FieldType(0)), x.typ(t.FieldType(1)))
-+	case types.TRESULTS:
-+		nr := t.NumFields()
-+		rs := make([]string, nr)
-+		for i := range nr {
-+			rs[i] = x.typ(t.FieldType(i))
-+		}
-+		tail = append(tail, strconv.Itoa(nr), gofvList(rs))
-+	}
 +	var b strings.Builder
 +	fmt.Fprintf(&b, "type t%d %s %s %s %s %s %s %s", n, k.String(), size, align, ptrdata, flags, gofvQuote(str), gofvQuote(symName))
-+	for _, s := range tail {
++	for _, s := range d.tail {
 +		b.WriteString(" " + s)
 +	}
 +	b.WriteByte('\n')
-+	for i, fl := range fields {
++	for i, fl := range gofvTypeFields(t) {
 +		name := ""
 +		if fl.Sym != nil {
 +			name = fl.Sym.Name
@@ -460,10 +492,32 @@
 +		if known && fl.Offset != types.BADWIDTH {
 +			off = strconv.FormatInt(fl.Offset, 10)
 +		}
-+		fmt.Fprintf(&b, "field %d %s %s %s %d\n", i, gofvQuote(name), x.typ(fl.Type), off, gofvBool(fl.Embedded != 0))
++		fmt.Fprintf(&b, "field %d %s %s %s %d\n", i, gofvQuote(name), d.fieldTypes[i], off, gofvBool(fl.Embedded != 0))
 +	}
-+	x.defs.WriteString(b.String())
-+	return fmt.Sprintf("t%d", n)
++	return b.String()
++}
++
++// resolveTypes replaces the type definition placeholders in x.out by their text.
++func (x *gofvExporter) resolveTypes() {
++	src := x.out.Bytes()
++	var out bytes.Buffer
++	out.Grow(len(src) + len(src)/8)
++	for len(src) > 0 {
++		i := bytes.IndexByte(src, 0)
++		if i < 0 {
++			out.Write(src)
++			break
++		}
++		out.Write(src[:i])
++		end := bytes.IndexByte(src[i:], '\n')
++		n, err := strconv.Atoi(string(src[i+2 : i+end]))
++		if err != nil {
++			base.Fatalf("gofv export: bad type placeholder")
++		}
++		out.WriteString(x.renderType(n))
++		src = src[i+end+1:]
++	}
++	x.out = out
 +}
 +
 +// typeKey identifies t up to type identity and spelling. The compiler sometimes creates
@@ -756,6 +810,32 @@
 +	return fmt.Sprintf("%010d|%s|%s", an, gofvSlotKey(&ls), x.slotOrder(ls.SplitOf))
 +}
 +
++// slotNum is the number of an already numbered slot (0 for nil).
++func (x *gofvExporter) slotNum(ls *LocalSlot) int {
++	if ls == nil {
++		return 0
++	}
++	return x.slots[ls]
++}
++
++// slotValueLess orders numbered LocalSlot values (map keys) by the numbers of their
++// fields: name, type, offset, split parent, split offset.
++func (x *gofvExporter) slotValueLess(a, b LocalSlot) bool {
++	if na, nb := x.aux[a.N], x.aux[b.N]; na != nb {
++		return na < nb
++	}
++	if ta, tb := x.types[a.Type], x.types[b.Type]; ta != tb {
++		return ta < tb
++	}
++	if a.Off != b.Off {
++		return a.Off < b.Off
++	}
++	if pa, pb := x.slotNum(a.SplitOf), x.slotNum(b.SplitOf); pa != pb {
++		return pa < pb
++	}
++	return a.SplitOffset < b.SplitOffset
++}
++
 +// gofvSlotKey is a content key for a LocalSlot.
 +func gofvSlotKey(ls *LocalSlot) string {
 +	if ls == nil {
@@ -853,7 +933,14 @@
 +			extra = append(extra, k)
 +		}
 +	}
++	// Number every object first (in a deterministic content order), then order by numbers:
++	// the order then depends only on the map's contents and the (stable) numbers, not on
++	// which objects happened to be numbered before this section (#63).
 +	sort.SliceStable(extra, func(i, j int) bool { return x.slotValueOrder(extra[i]) < x.slotValueOrder(extra[j]) })
++	for _, k := range extra {
++		x.slotInline(k)
++	}
++	sort.SliceStable(extra, func(i, j int) bool { return x.slotValueLess(extra[i], extra[j]) })
 +	for _, k := range extra {
 +		fmt.Fprintf(w, "namedx %s %s\n", x.slotInline(k), x.values(f.NamedValues[k]))
 +	}
@@ -870,6 +957,24 @@
 +		splits = append(splits, splitEnt{k, v, fmt.Sprintf("%s|%020d|%s|%s", x.slotOrder(k.parent), uint64(k.Off)^(1<<63), ts, x.slotOrder(v))})
 +	}
 +	sort.SliceStable(splits, func(i, j int) bool { return splits[i].key < splits[j].key })
++	for _, e := range splits {
++		x.slot(e.k.parent)
++		x.typ(e.k.Type)
++		x.slot(e.v)
++	}
++	sort.SliceStable(splits, func(i, j int) bool {
++		a, b := splits[i], splits[j]
++		if pa, pb := x.slotNum(a.k.parent), x.slotNum(b.k.parent); pa != pb {
++			return pa < pb
++		}
++		if a.k.Off != b.k.Off {
++			return a.k.Off < b.k.Off
++		}
++		if ta, tb := x.types[a.k.Type], x.types[b.k.Type]; ta != tb {
++			return ta < tb
++		}
++		return x.slotNum(a.v) < x.slotNum(b.v)
++	})
 +	ss := make([]string, len(splits))
 +	for i, e := range splits {
 +		ss[i] = fmt.Sprintf("%s/%d/%s=%s", x.slot(e.k.parent), e.k.Off, x.typ(e.k.Type), x.slot(e.v))
@@ -885,6 +990,17 @@
 +		canon = append(canon, canonEnt{k, v, x.slotOrder(v) + "|" + x.slotValueOrder(k)})
 +	}
 +	sort.SliceStable(canon, func(i, j int) bool { return canon[i].key < canon[j].key })
++	for _, e := range canon {
++		x.slotInline(e.k)
++		x.slot(e.v)
++	}
++	sort.SliceStable(canon, func(i, j int) bool {
++		a, b := canon[i], canon[j]
++		if x.slotValueLess(a.k, b.k) || x.slotValueLess(b.k, a.k) {
++			return x.slotValueLess(a.k, b.k)
++		}
++		return x.slotNum(a.v) < x.slotNum(b.v)
++	})
 +	cs := make([]string, len(canon))
 +	for i, e := range canon {
 +		cs[i] = fmt.Sprintf("%s=%s", x.slotInline(e.k), x.slot(e.v))
@@ -1002,6 +1118,8 @@
 +		fmt.Fprintf(w, "cache linestarts %s\n", gofvList(rs))
 +	}
 +
++	x.zvar(w)
++
 +	fmt.Fprintf(&x.out, "pass %d %s\n", x.nsec, gofvQuote(name))
 +	x.out.Write(x.defs.Bytes())
 +	x.out.Write(x.body.Bytes())
@@ -1062,6 +1180,53 @@
 +	x.out.WriteString("end\n")
 +}
 +
++// zvar writes the type-object classes of zero-argument values (zcse keys them on the
++// *types.Type pointer, #63): types are numbered by identity, but the backend creates a fresh
++// *T object on every NewPtr (types.NewPtrCacheEnabled is false), so zero-argument values of
++// one type number can have distinct type objects. For every type number with at least two
++// distinct objects among the section's zero-argument values, each such value is listed
++// with the 1-based index of its object in order of first appearance (blocks, then values).
++func (x *gofvExporter) zvar(w *bytes.Buffer) {
++	type group struct {
++		objs []*types.Type
++		vals []*Value
++	}
++	groups := map[int]*group{}
++	for _, b := range x.f.Blocks {
++		for _, v := range b.Values {
++			if opcodeTable[v.Op].argLen != 0 || v.Type == nil {
++				continue
++			}
++			n := x.types[v.Type]
++			g := groups[n]
++			if g == nil {
++				g = &group{}
++				groups[n] = g
++			}
++			if !slices.Contains(g.objs, v.Type) {
++				g.objs = append(g.objs, v.Type)
++			}
++			g.vals = append(g.vals, v)
++		}
++	}
++	var es []string
++	for _, b := range x.f.Blocks {
++		for _, v := range b.Values {
++			if opcodeTable[v.Op].argLen != 0 || v.Type == nil {
++				continue
++			}
++			g := groups[x.types[v.Type]]
++			if len(g.objs) < 2 {
++				continue
++			}
++			es = append(es, fmt.Sprintf("v%d:%d", v.ID, slices.Index(g.objs, v.Type)+1))
++		}
++	}
++	if len(es) > 0 {
++		fmt.Fprintf(w, "zvar %s\n", strings.Join(es, ","))
++	}
++}
++
 +// finish completes the file (tail) and writes it.
 +func (x *gofvExporter) finish() {
 +	x.tail()
@@ -1114,39 +1279,66 @@
 +		}
 +	}
 +	fmt.Fprintf(&x.out, "typeorder %s\neof\n", gofvList(groups))
++	x.resolveTypes()
 +}
 +
 +// write writes the finished file under the export directory.
++// gofvWritten records the files this compile wrote (backend goroutines write
++// concurrently), by stem, so that functions sharing a name get deterministic file names.
++var gofvWritten = struct {
++	sync.Mutex
++	m map[string]string // stem -> path of the unsuffixed file, "" once suffixed
++}{m: map[string]string{}}
++
 +func (x *gofvExporter) write() {
 +	dir := filepath.Join(x.set.dir, filepath.FromSlash(base.Ctxt.Pkgpath))
 +	if err := os.MkdirAll(dir, 0o777); err != nil {
 +		base.Fatalf("gofv export: %v", err)
 +	}
-+	stem := gofvFileName(x.f.Name) + "," + strconv.Itoa(int(x.f.ABISelf.Which()))
-+	for i := 1; ; i++ {
-+		name := stem
-+		if i > 1 {
-+			name += "#" + strconv.Itoa(i)
-+		}
-+		path := filepath.Join(dir, name+".ssa")
-+		fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
-+		if errors.Is(err, fs.ErrExist) {
-+			continue
-+		}
-+		if err == nil {
-+			_, err = fd.Write(x.out.Bytes())
-+			if cerr := fd.Close(); err == nil {
-+				err = cerr
++	stem := filepath.Join(dir, gofvFileName(x.f.Name)+","+strconv.Itoa(int(x.f.ABISelf.Which())))
++	// The first function of a name gets <stem>.ssa. When a second one arrives (the order
++	// depends on concurrent compilation), every function of that name is renamed to
++	// <stem>#<first 16 hex digits of the SHA-256 of its file>.ssa, so the set of files
++	// does not depend on the order.
++	gofvWritten.Lock()
++	defer gofvWritten.Unlock()
++	path := stem + ".ssa"
++	if first, seen := gofvWritten.m[stem]; seen {
++		if first != "" {
++			data, err := os.ReadFile(first)
++			if err != nil {
++				base.Fatalf("gofv export: %v", err)
 +			}
++			moved := gofvHashedPath(stem, data)
++			if err := os.Rename(first, moved); err != nil {
++				base.Fatalf("gofv export: %v", err)
++			}
++			if x.set.gotext {
++				os.Rename(first+".txt", moved+".txt")
++			}
++			gofvWritten.m[stem] = ""
 +		}
-+		if err == nil && x.set.gotext {
-+			err = os.WriteFile(path+".txt", x.text.Bytes(), 0o666)
-+		}
-+		if err != nil {
-+			base.Fatalf("gofv export: %v", err)
-+		}
-+		return
++		path = gofvHashedPath(stem, x.out.Bytes())
++	} else {
++		gofvWritten.m[stem] = path
 +	}
++	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
++	if err == nil {
++		_, err = fd.Write(x.out.Bytes())
++		if cerr := fd.Close(); err == nil {
++			err = cerr
++		}
++	}
++	if err == nil && x.set.gotext {
++		err = os.WriteFile(path+".txt", x.text.Bytes(), 0o666)
++	}
++	if err != nil {
++		base.Fatalf("gofv export: %v", err)
++	}
++}
++
++func gofvHashedPath(stem string, data []byte) string {
++	return fmt.Sprintf("%s#%x.ssa", stem, sha256.Sum256(data))[:len(stem)+1+16] + ".ssa"
 +}
 +
 +func gofvFileName(s string) string {
