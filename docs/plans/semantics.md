@@ -208,9 +208,11 @@ shuffles it under `-d=ssa/check/on`). `run` therefore never follows `b.Values` o
    uses (`deadcode.go:113`) plus the stores the memory chain reaches. A well-formed block has
    a single memory chain (#8), which totally orders calls and stores; `NilCheck`s are ordered
    only by their arguments. Fixed tie-break, matching the stock scheduler's priorities
-   (`schedule.go`, `ScoreNilCheck` before memory ops): a ready `NilCheck` runs before the next
-   memory-chain root. Ties between `NilCheck`s give the same outcome (`panicked nilDeref`), so
-   `run` is deterministic.
+   (`schedule.go`, `ScoreNilCheck` before memory ops): among the ready roots the one of least
+   **rank** runs next, rank = (priority, value ID) with a `NilCheck` before the other roots
+   (#96). The rank makes the sequence of roots a function of their dependencies alone, so a
+   pass that keeps the roots, their IDs and the dependencies between them keeps the order in
+   which they run — in particular which `NilCheck` panics first (`GoFV.Proof.sched_transfer`).
 4. **Terminator** (§7) chooses the successor or ends the activation.
 
 Values of `b` keep the values of `b`'s latest activation; SSA dominance guarantees a use in a
@@ -422,10 +424,13 @@ Modules `GoFV/SSA/Sem/{Val,Int,Shift,Cmp,Conv,Pure,Env,Layout,Run}.lean`; entry 
   memory-chain order, so no unmodelled effect can be skipped.
 - **Evaluation order** (§3.6): `schedule` is Kahn's algorithm (`kahn`) over a block's
   non-`Phi` values (`schedNodes`: ID, arguments, priority); a ready pure value first, else the
-  earliest-ready `NilCheck`, else the earliest-ready other root (`isRoot`: `call`, `nilCheck`,
+  ready root of least rank (`SNode.rankLt`: priority, then ID; `isRoot`: `call`, `nilCheck`,
   `hasSideEffects`, `typ: Mem`, `VarLive`). Its output is validated by `schedValid` (every node
-  once, each after its in-block arguments), so proofs use that specification, never the
-  algorithm. Computed once per block per run (`Ctx`); a cycle is `stuck`. The scheduler uses
+  once, each after its in-block arguments; pure nodes and nil checks as early as their arguments
+  allow; `rankOK`: a root listed after a root of greater rank was not ready then), so proofs use
+  that specification (`SchedSpec`), never the algorithm; the fallback `greedy` satisfies it too.
+  On the corpus every block's Kahn schedule passes the validator (`sched-probe`: 2,933,048
+  blocks). Computed once per block per run (`Ctx`); a cycle is `stuck`. The scheduler uses
   arrays indexed by value ID, not hash maps: the kernel cannot evaluate `Std.HashMap` (its
   `USize` arithmetic depends on the opaque `System.Platform.getNumBits`), and the proofs'
   non-vacuity witnesses evaluate `run` with `decide +kernel` (`GoFV/Proof/Witness/Clamp.lean`).
@@ -494,10 +499,12 @@ and checks that every section agrees with section 0 whenever section 0 is define
   including poison bytes of a blob) before decoding; so a defined source outcome's results
   are poison-free, refinement of them is equality, and `finish` preserves outcome refinement
   (`GoFV.Proof.finish_refines`).
-- **Proof impact**: a nil `NilCheck` panics, and the scheduler's FIFO tie-break between ready
-  `NilCheck`s is not invariant under a change of dependencies; `copyelim_refines` and
-  `deadcode_refines` therefore take "no `NilCheck` in `f`" in their fragments (`SimFrag`,
-  `DeadFrag`) until the canonical tie-break of #96.
+- **Proof impact**: a nil `NilCheck` panics. With the first-ready (FIFO) tie-break of P2 the
+  order of ready `NilCheck`s was not invariant under a change of dependencies, so
+  `copyelim_refines`, `deadcode_refines` and `zcse_refines` took "no `NilCheck` in `f`"
+  (`NoNil`). #96 replaced it by the rank tie-break; `sched_np_eq` (the roots run in the same
+  sequence) and `sched_transfer` (what the target evaluates before the panicking root, the
+  source evaluated before it) let those proofs drop `NoNil` and the `chained` fragment.
 - `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
   recursive definition on its path is structural.
 
