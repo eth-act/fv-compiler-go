@@ -36,26 +36,36 @@ theorem nilCheck_ok {ctx : Ctx} {n : Value} {argv : List Val} {r : Val} (hn : n.
     | (split at h <;> cases h)
     | skip
 
-theorem nilCheck_nn {ctx : Ctx} {n : Value} {q a : Val} (hn : n.op = .NilCheck) (hq : NN q) :
-    (∀ e m, memRoot ctx n [q, a] ≠ .panic e m) ∧ (∀ m, a = .mem m → memRoot ctx n [q, a] = .ok q) := by
-  match q, hq with
-  | .ptr p, hq =>
-    simp only [NN] at hq
-    constructor
-    · intro e m h
-      unfold memRoot at h; rw [hn] at h
-      split at h <;> (try simp only [reduceCtorEq] at *) <;> (try split at h) <;> simp_all
-    · rintro m rfl
-      unfold memRoot; rw [hn]; simp [hq]
-  | .int .w64 x, hq =>
-    simp only [NN] at hq
-    constructor
-    · intro e m h
-      unfold memRoot at h; rw [hn] at h
-      split at h <;> (try simp only [reduceCtorEq] at *) <;> (try split at h) <;> simp_all
-    · rintro m rfl
-      unfold memRoot; rw [hn]; simp only [beq_iff_eq, hq, ite_false]
+/-- A nil check that panics does so on a pointer or address it does not pass on, with its
+memory argument. -/
+theorem nilCheck_panic {ctx : Ctx} {n : Value} {argv : List Val} {e : Panic} {m : Mem}
+    (hn : n.op = .NilCheck) (h : memRoot ctx n argv = .panic e m) :
+    ∃ q, argv = [q, .mem m] ∧ ¬ NN q ∧ ((∃ p, q = .ptr p) ∨ ∃ x, q = .int .w64 x) := by
+  unfold memRoot at h
+  rw [hn] at h
+  split at h <;> (try simp only [reduceCtorEq] at *)
+  all_goals first
+    | (split at h <;> cases h <;> rename_i hh <;>
+        exact ⟨_, rfl, by simp only [NN, Classical.not_not]; simpa using hh, by simp⟩)
+    | (split at h <;> cases h)
+    | skip
 
+/-- A nil check on a value it passes on returns it, on any memory, and never panics. -/
+theorem nilCheck_nn {ctx : Ctx} {n : Value} {q a : Val} (hn : n.op = .NilCheck) (hq : NN q) :
+    (∀ e m, memRoot ctx n [q, a] ≠ .panic e m) ∧
+      (∀ m, a = .mem m → memRoot ctx n [q, a] = .ok q) := by
+  refine ⟨fun e m h => ?_, fun m ha => ?_⟩
+  · obtain ⟨q', hq', hnn, -⟩ := nilCheck_panic hn h
+    simp only [List.cons.injEq] at hq'
+    rw [hq'.1] at hq; exact hnn hq
+  · subst ha
+    match q, hq with
+    | .ptr p, hq =>
+      simp only [NN] at hq
+      unfold memRoot; rw [hn]; simp [hq]
+    | .int .w64 x, hq =>
+      simp only [NN] at hq
+      unfold memRoot; rw [hn]; simp only [beq_iff_eq, hq, ite_false]
 
 /-- A value no nil check panics on and that pointer arithmetic keeps so: a pointer into an
 allocation, an integer address of one, or any non-address value. -/
@@ -66,14 +76,23 @@ def Safe : Val → Prop
 
 theorem ofAddr_zero : (Ptr.ofAddr 0).blk = .nil := by decide
 
+theorem nn_of_safe {q : Val} (hq : Safe q) (hs : (∃ p, q = .ptr p) ∨ ∃ x, q = .int .w64 x) :
+    NN q := by
+  rcases hs with ⟨p, rfl⟩ | ⟨x, rfl⟩
+  · simp only [Safe] at hq
+    simp [NN, Ptr.isNil, hq]
+  · simp only [Safe] at hq
+    simp only [NN]
+    rintro rfl; exact hq ofAddr_zero
+
 /-- No nil check panics on a `Safe` value. -/
 theorem nilCheck_safe {ctx : Ctx} {n : Value} {q b : Val} (hn : n.op = .NilCheck) (hq : Safe q)
     {e : Panic} {m : Mem} : memRoot ctx n [q, b] ≠ .panic e m := by
   intro h
-  unfold memRoot at h
-  rw [hn] at h
-  split at h <;> (try simp only [reduceCtorEq] at *) <;> (try split at h) <;> try simp_all [Safe]
-  all_goals sorry
+  obtain ⟨q', hq', hnn, hs⟩ := nilCheck_panic hn h
+  simp only [List.cons.injEq] at hq'
+  rw [← hq'.1] at hs hnn
+  exact hnn (nn_of_safe hq hs)
 
 /-- A nil check that passes returns a `Safe` value (it checked the pointer points into an
 allocation). -/
