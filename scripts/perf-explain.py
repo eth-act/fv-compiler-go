@@ -33,9 +33,10 @@ def main():
     src = pathlib.Path(*a.module.split(".")).with_suffix(".lean")
     if not (root / src).exists():
         sys.exit(f"perf-explain: {root / src} not found")
-    env = dict(os.environ, FV_MEMCAP=a.cap)
     out = root / "tmp" / "perf-explain"
     out.mkdir(parents=True, exist_ok=True)
+    # AGENTS.md: temp files under the worktree; /tmp is a shared, nearly full tmpfs
+    env = dict(os.environ, FV_MEMCAP=a.cap, TMPDIR=str(out))
     log = out / f"{a.module}.log"
     r = subprocess.run([str(memcap), "lake", "build", "+" + a.module], cwd=root, env=env,
                        capture_output=True, text=True)

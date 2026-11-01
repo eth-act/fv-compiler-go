@@ -17,20 +17,30 @@ and import parsing follow clifv's scripts/lake-serial-build.py.
 Modules Lake restores from the shared cache (no "Built M" line) are not rebuilt: if the history
 already holds a measurement for the same Lake input hash (`depHash` of M's .trace), its numbers
 are copied with status `cached`; otherwise the module is re-elaborated once into tmp/ with
-`lake env lean` (status `remeasured`), so every row of a recorded commit carries numbers.
+`lake lean M.lean -- -o ...` (same arguments as Lake's build; status `remeasured`), so every row
+of a recorded commit carries numbers. That second elaboration doubles as a reproducibility
+check: `repro` = `same`/`differs` compares its .olean with the cached one. A module whose
+.olean is not reproducible makes every importer miss the shared cache after a rebuild
+elsewhere (clifv: StockValues, one variant per CI shard; RuleAll 3 h → 14 s once handled).
 
 A module killed at its cap is retried once at --retry-cap under `flock ../gofv-heavy.lock`
 (AGENTS.md: scopes above 8G only under that lock). Nothing starts while MemAvailable is below
 --min-avail; the recorder waits instead.
 
+`crit_s` is the CPU-time critical path through the import graph ending at the module (the
+module's own CPU plus the largest `crit_s` of its imports); in `_total` the maximum, i.e. the
+modelled cold-build time with unlimited parallelism. CPU, not wall, because the machine is
+shared (load 120 inflated wall times 2-10x).
+
 Columns of perf/history.tsv (one row per commit and module, plus `_total`):
   date commit module status wall_s cpu_s maxrss_mb cgpeak_mb olean_kb dep_hash measured_at load1
+  olean_hash repro crit_s
 """
-import argparse, datetime, json, os, pathlib, re, resource, subprocess, sys, time, tomllib
+import argparse, datetime, hashlib, json, os, pathlib, re, resource, subprocess, sys, time, tomllib
 
 GiB = 1024 ** 3
 COLUMNS = ["date", "commit", "module", "status", "wall_s", "cpu_s", "maxrss_mb", "cgpeak_mb",
-           "olean_kb", "dep_hash", "measured_at", "load1"]
+           "olean_kb", "dep_hash", "measured_at", "load1", "olean_hash", "repro", "crit_s"]
 MEASURED = ("built", "remeasured")
 
 
@@ -152,6 +162,23 @@ def load_modules(root):
     return libs, mods, imports
 
 
+def lib_args(root, libs):
+    """module -> the Lean arguments its lean_lib adds (`lake lean` only applies the root
+    package's; without the lib's weakLeanArgs the remeasure stored linter warnings and its
+    .olean differed from Lake's)."""
+    cfg = tomllib.loads((root / "lakefile.toml").read_text())
+
+    def opts(t):
+        return ([f"-D{k}={str(v).lower() if isinstance(v, bool) else v}"
+                 for k, v in t.get("leanOptions", {}).items()]
+                + list(t.get("moreLeanArgs", [])) + list(t.get("weakLeanArgs", [])))
+    out = {}
+    for lib in cfg.get("lean_lib", []):
+        for m in libs.get(lib["name"], ()):
+            out[m] = opts(cfg) + opts(lib)
+    return out
+
+
 def select(targets, libs, mods, imports):
     roots = set()
     for t in targets:
@@ -191,8 +218,11 @@ def select(targets, libs, mods, imports):
 def read_history(path):
     rows = []
     if path.exists():
-        for line in path.read_text().splitlines():
-            if line and not line.startswith(("#", "date\t")):
+        lines = path.read_text().splitlines()
+        if lines and lines[0].split("\t") != COLUMNS:
+            sys.exit(f"perf-record: {path} header is not {COLUMNS}")
+        for line in lines[1:]:
+            if line and not line.startswith("#"):
                 f = line.split("\t")
                 rows.append(dict(zip(COLUMNS, f + [""] * (len(COLUMNS) - len(f)))))
     return rows
@@ -235,6 +265,17 @@ def dep_hash(root, m):
         return ""
 
 
+def file_hash(p):
+    try:
+        return hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest()[:16]
+    except OSError:
+        return ""
+
+
+def olean_path(root, m):
+    return build_dir(root) / "lib" / "lean" / pathlib.Path(*m.split(".")).with_suffix(".olean")
+
+
 def main():
     if len(sys.argv) > 2 and sys.argv[1] == "--probe":
         if sys.argv[3] != "--":
@@ -253,6 +294,9 @@ def main():
     ap.add_argument("--force", action="store_true", help="record even if the commit has rows")
     ap.add_argument("--no-remeasure", action="store_true",
                     help="leave cache-restored modules without a known measurement empty")
+    ap.add_argument("--recheck", action="store_true",
+                    help="remeasure cache-restored modules even when measured before (fresh "
+                         "numbers and a reproducibility check for every module)")
     a = ap.parse_args()
 
     root = pathlib.Path(a.root).resolve()
@@ -269,6 +313,7 @@ def main():
     scratch.mkdir(parents=True, exist_ok=True)
 
     libs, mods, imports = load_modules(root)
+    extra = lib_args(root, libs)
     order = select(a.targets or list(libs), libs, mods, imports)
     old = read_history(history)
     if not a.force and any(r["commit"] == commit for r in old):
@@ -301,7 +346,9 @@ def main():
         if heavy:  # next to the shared Lake cache: ../gofv-heavy.lock of the main checkout
             main_root = git(root, "worktree", "list", "--porcelain").splitlines()[0].split(" ", 1)[1]
             full = ["flock", str(pathlib.Path(main_root).parent / "gofv-heavy.lock"), *full]
-        env = dict(os.environ, FV_MEMCAP=cap)
+        # AGENTS.md: temp files under the worktree (`lake lean` writes its setup file to
+        # $TMPDIR; on the shared /tmp tmpfs that failed with errno 122 / truncated headers)
+        env = dict(os.environ, FV_MEMCAP=cap, TMPDIR=str(scratch))
         log_path = raw / f"{m}.log"
         with open(log_path, "a") as f:
             start = f.tell()
@@ -348,10 +395,10 @@ def main():
             continue
         status[m] = "ok"
         h = dep_hash(root, m)
-        row.update(olean_kb=olean_kb(root, m), dep_hash=h)
-        if not built and h in known:
+        row.update(olean_kb=olean_kb(root, m), dep_hash=h, olean_hash=file_hash(olean_path(root, m)))
+        if not built and h in known and not a.recheck:
             k = known[h]
-            row.update({c: k[c] for c in ("wall_s", "cpu_s", "maxrss_mb", "cgpeak_mb", "load1")},
+            row.update({c: k[c] for c in ("wall_s", "cpu_s", "maxrss_mb", "cgpeak_mb", "load1", "repro")},
                        status="cached", measured_at=k["measured_at"] or k["commit"])
         elif not built and a.no_remeasure:
             row["status"] = "cached"
@@ -360,9 +407,10 @@ def main():
                 gate(min_avail)
                 row["load1"] = f"{os.getloadavg()[0]:.1f}"
                 stem = scratch / m
-                rc2, res, _ = run(m, ["lake", "env", "lean", str(mods[m].relative_to(root)),
-                                      "-o", f"{stem}.olean", "-i", f"{stem}.ilean",
-                                      "-c", f"{stem}.c"], a.cap)
+                rc2, res, _ = run(m, ["lake", "lean", str(mods[m].relative_to(root)), "--",
+                                      *extra.get(m, []), "-o", f"{stem}.olean",
+                                      "-i", f"{stem}.ilean", "-c", f"{stem}.c"], a.cap)
+                again = file_hash(f"{stem}.olean")
                 for ext in (".olean", ".ilean", ".c"):
                     pathlib.Path(f"{stem}{ext}").unlink(missing_ok=True)
                 if rc2 != 0 or res is None:
@@ -370,6 +418,9 @@ def main():
                     say(f"{m}: cached; remeasure failed rc={rc2}")
                     rows.append(row)
                     continue
+                row["repro"] = "same" if again == row["olean_hash"] else "differs"
+                if row["repro"] == "differs":
+                    say(f"{m}: .olean NOT reproducible ({row['olean_hash']} cached vs {again})")
             row.update(status="built" if built else "remeasured", measured_at=commit,
                        wall_s=f"{res['wall_s']:.1f}", cpu_s=f"{res['cpu_s']:.1f}",
                        maxrss_mb=res["maxrss"] // 2 ** 20,
@@ -380,6 +431,17 @@ def main():
             f"rss {row.get('maxrss_mb', '?')}M cg {row.get('cgpeak_mb', '?')}M "
             f"olean {row.get('olean_kb', '?')}K")
 
+    crit = {}
+    by_mod = {r["module"]: r for r in rows}
+    for m in order:  # imports first
+        r = by_mod.get(m, {})
+        try:
+            own = float(r.get("cpu_s") or 0)
+        except ValueError:
+            own = 0.0
+        crit[m] = own + max((crit[d] for d in imports[m]), default=0.0)
+        if m in by_mod:
+            by_mod[m]["crit_s"] = f"{crit[m]:.1f}"
     num = [r for r in rows if r.get("wall_s") not in (None, "") and r["status"] in
            ("built", "remeasured", "cached")]
     total = dict(module="_total", status="ok" if all(v == "ok" for v in status.values()) else "fail",
@@ -388,7 +450,8 @@ def main():
                  maxrss_mb=max((int(r["maxrss_mb"]) for r in num), default=""),
                  cgpeak_mb=max((int(r["cgpeak_mb"]) for r in num if r["cgpeak_mb"] != ""), default=""),
                  olean_kb=sum(int(r["olean_kb"] or 0) for r in rows if r.get("olean_kb") not in (None, "")),
-                 measured_at=commit)
+                 measured_at=commit, crit_s=f"{max(crit.values(), default=0.0):.1f}",
+                 repro=f"{sum(r.get('repro') == 'differs' for r in rows)} differ")
     rows.append(total)
     date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     for r in rows:

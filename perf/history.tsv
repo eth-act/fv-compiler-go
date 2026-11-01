@@ -1,374 +1,821 @@
-date	commit	module	status	wall_s	cpu_s	maxrss_mb	cgpeak_mb	olean_kb	dep_hash	measured_at	load1
-2026-10-31T19:31:59Z	508d0e26a5e1	_total	ok	0.0	0.0			0		508d0e26a5e1	
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.SSA.OpInfo	remeasured	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.SSA.Op	remeasured	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Syntax	remeasured	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Dec.Values00	remeasured	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Dec	remeasured	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divisible.Values00	remeasured	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divisible	remeasured	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divmod.Values00	remeasured	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divmod	remeasured	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Blocks	remeasured	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values00	remeasured	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values01	remeasured	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values02	remeasured	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values03	remeasured	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values04	remeasured	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values05	remeasured	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values06	remeasured	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values07	remeasured	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values08	remeasured	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values09	remeasured	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values10	remeasured	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values11	remeasured	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values12	remeasured	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values13	remeasured	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values14	remeasured	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic	remeasured	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated	remeasured	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFVTest.OpCheck	remeasured	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2
-2026-10-31T19:56:40Z	eb5adbe919c6	GoFVTest.Rules.Data	remeasured	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4
-2026-10-31T19:56:40Z	eb5adbe919c6	_total	ok	99.1	93.2	596	279	61819		eb5adbe919c6	
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.GoStr	remeasured	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Pos	remeasured	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Type	remeasured	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.AuxData	remeasured	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Value	remeasured	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Block	remeasured	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Func	remeasured	1.7	1.5	494	105	1039	4a22852a543dffcc	bbde7d617e72	46.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Export	remeasured	1.7	1.2	486	103	659	68ba7960e0f34d11	bbde7d617e72	46.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.TypeCmp	remeasured	1.1	0.7	458	84	146	aefd98a199179809	bbde7d617e72	46.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.Pass	remeasured	1.0	0.9	468	88	210	24355f7e986fef63	bbde7d617e72	46.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.CheckBCE	remeasured	0.9	0.7	468	87	17	44acecce468ac1f2	bbde7d617e72	46.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Alloc	remeasured	1.8	1.4	504	118	1296	0d442bc0b18277b1	bbde7d617e72	48.0
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Edges	remeasured	1.2	1.1	470	93	555	5434f6de6389ef25	bbde7d617e72	48.0
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.CopyElim	remeasured	1.1	1.0	473	98	367	60debd95c46f7bef	bbde7d617e72	49.6
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.CpuFeatures	remeasured	0.9	0.7	469	96	68	37f0b0a32a2a3fed	bbde7d617e72	49.6
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Live	remeasured	2.1	1.4	491	95	473	e617d7dde60f2761	bbde7d617e72	49.6
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.SparseMap	remeasured	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.XPosMap	remeasured	1.4	1.1	482	92	367	54f6fd99f736ce04	bbde7d617e72	51.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.Deadcode	remeasured	1.8	1.1	494	94	647	5872134a83c9a431	bbde7d617e72	51.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.ReschedChecks	remeasured	1.3	0.8	463	86	160	5b8ec03b614928bf	bbde7d617e72	51.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.SoftFloat	remeasured	1.9	0.7	450	83	32	ce37ebbd6066b9fa	bbde7d617e72	53.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.ZCSE	remeasured	3.6	1.3	507	108	707	c84c5e9e70fa8245	bbde7d617e72	53.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.ConstCache	remeasured	1.0	0.9	468	87	195	d458c61a840a9163	bbde7d617e72	58.1
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.FmtFloat	remeasured	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.GoString	remeasured	1.5	1.4	499	101	821	63d04040b42bf2da	bbde7d617e72	58.1
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Parse	remeasured	3.1	3.4	542	145	2816	71aac4c11c247541	bbde7d617e72	58.4
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Print	remeasured	1.5	1.5	491	105	926	5a144d20828c2cb5	bbde7d617e72	58.4
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.PdqSort	remeasured	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.SparseMapPos	remeasured	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.SparseSet	remeasured	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Parity.Registry	remeasured	0.7	0.6	474	89	79	b7d22907428fe4e4	bbde7d617e72	58.5
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Parity.Main	remeasured	2.5	2.0	511	119	1272	8d79adc1a980ebad	bbde7d617e72	57.6
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.SSARoundtrip	remeasured	1.7	1.4	488	96	555	839f95efe633c000	bbde7d617e72	57.6
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Util	remeasured	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8
-2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.UtilDiff	remeasured	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8
-2026-10-31T20:40:48Z	bbde7d617e72	_total	ok	157.2	144.4	607	279	83512		bbde7d617e72	
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.GoStr	cached	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Pos	cached	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Type	cached	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.AuxData	cached	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Value	cached	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Block	cached	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Func	remeasured	2.2	1.2	481	104	1008	65635b639d6b826c	af5cb6a1869c	63.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Export	remeasured	1.5	1.0	477	94	659	406b5084b9d23d9d	af5cb6a1869c	63.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Types	remeasured	1.3	1.0	467	101	374	959f455018c5ff59	af5cb6a1869c	65.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Alloc	remeasured	2.0	1.3	511	133	1295	c1435bc998ab22dd	af5cb6a1869c	65.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CanCondSelect	remeasured	1.6	1.0	489	112	331	20daeeb89b2b7773	af5cb6a1869c	65.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.TypeCmp	cached	1.1	0.7	458	84	146	aefd98a199179809	bbde7d617e72	46.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Pass	remeasured	1.1	0.8	480	94	288	cee53e0f5f8055e3	af5cb6a1869c	65.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.Dom	remeasured	1.4	0.9	468	93	356	41f7bc6c2c743027	af5cb6a1869c	67.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.Postorder	remeasured	1.7	0.8	472	87	140	7f3234fbff5419cf	af5cb6a1869c	67.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.SparseTree	remeasured	1.2	0.8	465	86	179	d42fd819e12c6681	af5cb6a1869c	66.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.CfgCache	remeasured	0.9	0.6	462	89	74	9e8039aa0e2ed0f2	af5cb6a1869c	66.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.SparseMap	cached	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.XPosMap	remeasured	1.3	0.9	481	96	367	531d62ce62e1ce22	af5cb6a1869c	67.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.NumberLines	remeasured	1.9	1.5	519	123	1058	9710e64e76da8399	af5cb6a1869c	67.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Speculate	remeasured	2.3	1.8	510	137	518	ae71230eb6405dfd	af5cb6a1869c	69.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.TypePred	remeasured	1.0	0.7	471	88	61	98600bb32493beed	af5cb6a1869c	69.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.BranchElim	remeasured	2.2	1.8	523	131	1438	ec263ff3352c7a7f	af5cb6a1869c	69.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Ptr	remeasured	4.0	2.5	519	128	1419	05f6830be93bac2c	af5cb6a1869c	72.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.PdqSort	cached	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CSE	remeasured	3.8	1.8	529	129	1693	d295c0d4b7436b9d	af5cb6a1869c	76.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CheckBCE	remeasured	2.3	0.7	458	86	17	ab2353f0fd98873d	af5cb6a1869c	77.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Edges	remeasured	2.5	1.3	476	90	555	cf59adfbbd2978f6	af5cb6a1869c	78.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CopyElim	remeasured	1.3	1.1	481	97	367	9eb89f9e0c7f4ecb	af5cb6a1869c	77.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CpuFeatures	remeasured	1.4	1.2	463	90	68	d6025381328542f2	af5cb6a1869c	77.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Sym	remeasured	1.8	1.1	481	103	656	ecd5b6e6f3e336b5	af5cb6a1869c	79.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.SparseSet	cached	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.DeadStore	remeasured	5.6	2.3	528	182	1118	fe4ac6ecf2262b11	af5cb6a1869c	79.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Live	remeasured	4.1	2.7	475	115	473	53bbd5ca953be7de	af5cb6a1869c	85.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Deadcode	remeasured	3.1	1.4	480	123	647	8f9480b96aabeb65	af5cb6a1869c	86.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ElimDeadAutos	remeasured	4.6	1.3	505	139	980	e3d198b5f31812ab	af5cb6a1869c	88.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.ABI	remeasured	2.7	1.2	485	116	653	acc0be5624d7b1ee	af5cb6a1869c	89.4
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.ConstCache	remeasured	3.5	0.9	469	90	195	7a9bde24cd9874e8	af5cb6a1869c	89.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.TypeNew	remeasured	2.3	0.9	462	94	285	99b8605828765bd4	af5cb6a1869c	90.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls.State	remeasured	2.0	1.3	496	111	853	a6cebf773db0e3a8	af5cb6a1869c	90.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls.Decompose	remeasured	4.0	3.8	518	141	2024	69b25a2e75658a23	af5cb6a1869c	90.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls.Select	remeasured	2.1	1.6	501	112	1061	6ab6248446fa83e3	af5cb6a1869c	88.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls	remeasured	2.7	1.8	520	145	1479	414ade2c850cd9eb	af5cb6a1869c	88.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.Basic	remeasured	1.2	0.9	473	109	284	1996efd1f0b04ea9	af5cb6a1869c	84.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.Ctx	remeasured	2.2	1.5	508	145	973	75f9627fd6d61ec6	af5cb6a1869c	84.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.Limit	remeasured	2.6	2.3	468	98	557	868663cdde7b2243	af5cb6a1869c	82.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.Poset	remeasured	3.0	1.6	487	373	1388	2c3b4edaec4692e2	af5cb6a1869c	82.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.FactsTable	remeasured	4.4	3.1	536	158	2764	ec7d4c752c3527bb	af5cb6a1869c	83.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.BranchRedirect	remeasured	2.8	1.0	480	95	423	69aa387bffdcb0d9	af5cb6a1869c	83.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.Comparisons	remeasured	2.8	1.6	513	143	1270	333a44164ce83db5	af5cb6a1869c	84.4
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.If	remeasured	1.7	0.9	465	96	414	274fdf2924de660c	af5cb6a1869c	84.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.Plain	remeasured	4.1	2.1	468	101	492	2487416c2e4a1c0c	af5cb6a1869c	83.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse	remeasured	3.8	2.8	472	103	95	b7229e8d2602f892	af5cb6a1869c	84.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.KnownBits	remeasured	8.4	4.6	463	180	1287	acc62a611fb89bfe	af5cb6a1869c	86.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine.Base	remeasured	2.7	1.8	473	181	504	a7a1b817a8df3471	af5cb6a1869c	80.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.MergePoint	remeasured	1.9	1.2	459	105	135	de6954f5f8b65fd0	af5cb6a1869c	82.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine.Loads	remeasured	2.8	2.1	495	143	1291	dcba01d803711773	af5cb6a1869c	82.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine.Stores	remeasured	2.7	2.3	504	117	1567	8709136ecd48a499	af5cb6a1869c	82.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine	remeasured	2.9	2.6	459	103	176	9df77e10e7d7d38e	af5cb6a1869c	82.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.StoreOrder	remeasured	1.9	1.2	477	111	714	75579622f2a6bca6	af5cb6a1869c	81.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.NilCheck	remeasured	2.1	1.5	517	138	1260	5e7b78908bf6931a	af5cb6a1869c	81.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.GoVal	remeasured	1.6	1.1	458	104	532	41b13f34d3e898a4	af5cb6a1869c	74.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Env	remeasured	2.1	1.2	592	100	259	adf28cffdc0b7804	af5cb6a1869c	74.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Build	remeasured	2.9	2.0	623	121	1154	a0791d4b7fb94d1c	af5cb6a1869c	73.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Magic	remeasured	1.1	1.0	451	90	171	5594181256ba0066	af5cb6a1869c	72.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Eval	remeasured	12.1	8.1	690	221	5161	12178f7c8ced79cd	af5cb6a1869c	72.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Interp	remeasured	2.7	1.8	627	145	1443	0a06450da8258e70	af5cb6a1869c	70.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Apply	remeasured	2.4	1.6	628	137	1220	b60ae7d2ba11dd9b	af5cb6a1869c	69.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Run	remeasured	1.1	0.8	598	103	233	8caaaaa7a1e35743	af5cb6a1869c	69.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Opt	remeasured	1.6	0.8	590	117	19	f3b7d3c3c7ef8470	af5cb6a1869c	69.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.PhiOpt	remeasured	1.9	1.3	492	116	969	68b316b105380c86	af5cb6a1869c	69.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ReschedChecks	remeasured	2.4	1.0	459	88	160	2668d13eeed6c45f	af5cb6a1869c	68.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ShortCircuit	remeasured	5.8	3.6	490	119	1505	fa3bb2b4289d5327	af5cb6a1869c	68.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.SoftFloat	remeasured	2.1	0.8	447	85	32	9a1a626f3376c1cd	af5cb6a1869c	69.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.WBHelpers	remeasured	4.2	1.7	512	131	1307	96fcc6f19c3a3932	af5cb6a1869c	69.6
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.ABIAnalyze	remeasured	3.6	0.9	461	90	242	c6ece6272b9e8c3e	af5cb6a1869c	73.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.WriteBarrier	remeasured	5.4	2.7	529	146	2585	03bdeb7bc86bb994	af5cb6a1869c	73.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ZCSE	remeasured	3.7	2.0	494	123	707	2ea7086627a7b3a5	af5cb6a1869c	74.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.LoopNest	remeasured	1.8	1.1	474	101	513	61da979b6c7ca88d	af5cb6a1869c	73.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Check	remeasured	5.0	3.8	657	166	2311	4058ecc7da0c990a	af5cb6a1869c	73.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.FmtFloat	cached	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.GoString	remeasured	1.7	1.4	490	103	821	3cfa28fe9e13b963	af5cb6a1869c	71.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Parse	remeasured	4.3	4.1	536	148	2866	aa446f08107ec46f	af5cb6a1869c	71.3
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Print	remeasured	2.2	2.1	489	109	932	3e6271d545aa824c	af5cb6a1869c	69.1
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Val	remeasured	2.0	1.5	474	103	898	9ca549e07b4c017b	af5cb6a1869c	67.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Int	remeasured	1.2	1.1	459	98	384	1e60ae16a5e0ba8f	af5cb6a1869c	67.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Cmp	remeasured	1.2	0.8	461	90	168	5b2f51b87ec53cd5	af5cb6a1869c	67.9
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Conv	remeasured	1.1	0.7	448	85	80	54b6c306764a7472	af5cb6a1869c	66.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Env	remeasured	1.1	0.9	455	89	345	d66fb9fe26cf02ee	af5cb6a1869c	66.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Layout	remeasured	1.0	0.9	461	89	190	a09aad1cbb53a1b1	af5cb6a1869c	64.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Shift	remeasured	0.8	0.8	446	85	74	9432f188940508ac	af5cb6a1869c	64.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Pure	remeasured	1.2	1.2	489	108	614	23db172f558b1bdb	af5cb6a1869c	64.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Run	remeasured	2.1	2.2	639	129	1296	ec202bbe570dbb65	af5cb6a1869c	62.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.SparseMapPos	cached	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.AnalysisDiff	built	1.8	1.7	501	114	1260	4862600e2288d93c	af5cb6a1869c	62.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Parity.Registry	remeasured	1.3	1.0	629	153	188	ca8414638343cf06	af5cb6a1869c	60.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Parity.Renumber	remeasured	1.6	1.6	502	113	1165	e7dbce20e5ede932	af5cb6a1869c	60.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Parity.Main	remeasured	3.0	2.5	661	177	1302	920af0d05ee55855	af5cb6a1869c	60.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.ProveDiff	remeasured	1.5	1.3	468	100	620	e705b1060c578265	af5cb6a1869c	60.7
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.SSACheck	built	1.7	1.4	620	120	1044	22b1f025ea35cd37	af5cb6a1869c	60.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.SSARoundtrip	remeasured	1.3	1.1	496	103	555	5da00c5ea4c02bdd	af5cb6a1869c	60.2
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.SemDiff	remeasured	3.4	2.3	621	137	1609	1f14e0b9d67619f5	af5cb6a1869c	61.0
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Util	cached	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8
-2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.UtilDiff	cached	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8
-2026-10-31T21:08:02Z	af5cb6a1869c	_total	ok	353.2	266.3	690	373	145468		af5cb6a1869c	
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.GoStr	cached	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Pos	cached	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Type	cached	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.AuxData	cached	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Value	cached	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Block	cached	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Func	cached	2.2	1.2	481	104	1008	65635b639d6b826c	af5cb6a1869c	63.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Export	remeasured	4.6	1.0	471	100	717	df1af2362d1f6617	9687fabb20de	148.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Types	remeasured	2.7	0.9	461	93	374	91a69141cff69d96	9687fabb20de	148.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Alloc	cached	2.0	1.3	511	133	1295	c1435bc998ab22dd	af5cb6a1869c	65.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CanCondSelect	remeasured	2.1	0.9	475	106	331	dd9c7903fddeab5b	9687fabb20de	147.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.TypeCmp	remeasured	2.2	0.9	563	97	287	c7a3da71848d8235	9687fabb20de	147.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Pass	remeasured	1.7	0.9	576	100	288	801c31674070d16d	9687fabb20de	144.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.Dom	cached	1.4	0.9	468	93	356	41f7bc6c2c743027	af5cb6a1869c	67.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.Postorder	cached	1.7	0.8	472	87	140	7f3234fbff5419cf	af5cb6a1869c	67.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.SparseTree	cached	1.2	0.8	465	86	179	d42fd819e12c6681	af5cb6a1869c	66.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.CfgCache	cached	0.9	0.6	462	89	74	9e8039aa0e2ed0f2	af5cb6a1869c	66.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.SparseMap	cached	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.XPosMap	cached	1.3	0.9	481	96	367	531d62ce62e1ce22	af5cb6a1869c	67.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.NumberLines	remeasured	4.1	1.6	611	126	1057	3cd66740a45b412f	9687fabb20de	140.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Speculate	cached	2.3	1.8	510	137	518	ae71230eb6405dfd	af5cb6a1869c	69.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.TypePred	remeasured	1.9	0.7	446	97	61	97764dd4d7d5654a	9687fabb20de	138.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.BranchElim	remeasured	9.1	2.0	614	143	1439	b097ae45acf9a938	9687fabb20de	134.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Ptr	remeasured	6.1	2.2	507	151	1419	ce4a46f9e5b938c4	9687fabb20de	134.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.PdqSort	cached	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CSE	remeasured	4.8	2.2	627	148	1694	cf665dcfe6d38cb3	9687fabb20de	130.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CheckBCE	remeasured	3.9	0.9	573	94	18	8316a029b07caed0	9687fabb20de	128.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Edges	cached	2.5	1.3	476	90	555	cf59adfbbd2978f6	af5cb6a1869c	78.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CopyElim	remeasured	3.0	1.6	580	109	367	7abf5170e638ff58	9687fabb20de	127.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CpuFeatures	remeasured	2.8	0.8	576	100	68	b7de484fef1f3edf	9687fabb20de	124.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Sym	remeasured	3.5	1.0	472	97	656	5e4c8de72703e16d	9687fabb20de	120.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.SparseSet	cached	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.DeadStore	remeasured	3.8	1.5	629	144	1118	8cb51c2a601224d1	9687fabb20de	118.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Live	remeasured	3.6	1.1	478	99	473	85621fe937e0c2c9	9687fabb20de	116.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Deadcode	remeasured	6.1	1.3	596	109	647	78300700eccf392c	9687fabb20de	116.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.TypeNew	remeasured	3.1	1.2	576	107	287	3d88f1654049b8c2	9687fabb20de	118.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose.State	remeasured	3.6	1.5	601	114	708	32e7c2ccd2fcd262	9687fabb20de	118.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose.Order	remeasured	5.2	1.2	597	110	668	6cc25937314fb3ee	9687fabb20de	115.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose.Phi	remeasured	3.7	1.7	587	113	455	1cadc2b255ba4d0b	9687fabb20de	115.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.GoVal	cached	1.6	1.1	458	104	532	41b13f34d3e898a4	af5cb6a1869c	74.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Env	remeasured	5.4	1.7	588	120	259	18e2d64714bac183	9687fabb20de	110.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Build	remeasured	7.9	2.3	625	429	1154	7f5f0233ca758695	9687fabb20de	109.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Magic	cached	1.1	1.0	451	90	171	5594181256ba0066	af5cb6a1869c	72.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Eval	remeasured	25.6	10.5	591	217	5160	49cf0e2e7df262e5	9687fabb20de	105.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Interp	remeasured	6.6	2.6	588	145	1443	4c83d18d56804517	9687fabb20de	98.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Apply	remeasured	5.1	2.1	589	141	1220	bbf118ce0acf541f	9687fabb20de	98.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Run	remeasured	3.6	1.2	567	124	233	367c7fcb2b714f45	9687fabb20de	98.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose	remeasured	4.2	2.1	584	125	914	e72c2cbfd91481e4	9687fabb20de	97.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ElimDeadAutos	remeasured	2.8	1.5	589	131	980	b07983f628f7e30a	9687fabb20de	96.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.ABI	remeasured	2.1	1.2	452	99	653	5b40389f1f2fba29	9687fabb20de	96.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.ConstCache	cached	3.5	0.9	469	90	195	7a9bde24cd9874e8	af5cb6a1869c	89.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls.State	remeasured	2.6	1.6	566	115	853	19bd5900bdf1a14e	9687fabb20de	94.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls.Decompose	remeasured	4.3	3.4	588	134	2024	7bee7a7ccb524ae0	9687fabb20de	91.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls.Select	remeasured	2.7	1.9	579	124	1061	b8597105b57973b8	9687fabb20de	90.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls	remeasured	3.9	2.4	607	147	1480	ce307d24e80553cb	9687fabb20de	90.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.Basic	remeasured	1.5	0.7	438	89	284	41b34feb48ae4a06	9687fabb20de	88.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Ctx	remeasured	4.5	1.6	588	131	978	d1093a7af46fec59	9687fabb20de	86.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Limit	cached	2.6	2.3	468	98	557	868663cdde7b2243	af5cb6a1869c	82.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Poset	cached	3.0	1.6	487	373	1388	2c3b4edaec4692e2	af5cb6a1869c	82.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.FactsTable	remeasured	13.4	4.7	612	158	2765	86ae7dfc490e9a31	9687fabb20de	86.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.BranchRedirect	remeasured	5.0	2.0	561	112	423	b2e862b1f823c308	9687fabb20de	96.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.Comparisons	cached	2.8	1.6	513	143	1270	333a44164ce83db5	af5cb6a1869c	84.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.If	remeasured	3.1	0.9	436	96	414	c9648b821e08a9d6	9687fabb20de	96.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.Plain	cached	4.1	2.1	468	101	492	2487416c2e4a1c0c	af5cb6a1869c	83.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse	remeasured	1.6	0.9	548	106	95	f1cc8811d86d5ac8	9687fabb20de	95.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.KnownBits	remeasured	4.3	2.5	615	160	1287	80dcf04c3bbb5217	9687fabb20de	95.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine.Base	remeasured	2.9	1.3	557	111	504	124c5222cfafaea8	9687fabb20de	92.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.MergePoint	cached	1.9	1.2	459	105	135	de6954f5f8b65fd0	af5cb6a1869c	82.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine.Loads	remeasured	5.3	2.5	587	129	1291	6a78876a2c480231	9687fabb20de	92.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine.Stores	remeasured	4.1	2.3	591	123	1567	f75e16dedbf73bde	9687fabb20de	94.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine	remeasured	1.3	0.9	546	103	176	830385d73d099f0a	9687fabb20de	94.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.StoreOrder	remeasured	2.4	1.2	455	102	714	6e773a65a2227813	9687fabb20de	93.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.NilCheck	remeasured	3.6	1.4	605	143	1259	22c70a6563df3747	9687fabb20de	94.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Opt	remeasured	3.1	1.2	554	125	19	8c04e6647e666439	9687fabb20de	94.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.PhiOpt	remeasured	9.3	2.0	521	130	969	c1dfb100b208fcb7	9687fabb20de	93.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.IndVar	remeasured	8.9	2.0	622	180	993	4db0d9d6c0b22c1e	9687fabb20de	97.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Downward	remeasured	14.9	2.6	621	242	698	64cb2835d9b2946f	9687fabb20de	104.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Flow	remeasured	25.2	6.6	558	193	3423	047f9e856bcae87c	9687fabb20de	107.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Simplify	remeasured	10.3	4.2	628	187	2483	666b0e98b7dd06b1	9687fabb20de	119.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Pass	remeasured	10.6	1.6	567	320	521	fd9edc11555a6b67	9687fabb20de	126.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ReschedChecks	remeasured	9.1	1.7	576	203	160	4f78808e459ff139	9687fabb20de	130.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ShortCircuit	remeasured	11.6	3.8	576	151	1505	fbb80bde890c02e1	9687fabb20de	129.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.SoftFloat	remeasured	6.3	1.4	481	141	32	89edb2c1e249cbe8	9687fabb20de	133.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.WBHelpers	remeasured	8.8	2.0	448	156	1307	0a63db8ea835c2a7	9687fabb20de	131.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.ABIAnalyze	cached	3.6	0.9	461	90	242	c6ece6272b9e8c3e	af5cb6a1869c	73.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.WriteBarrier	remeasured	13.1	4.4	556	169	2585	93f17c29b639033c	9687fabb20de	129.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ZCSE	remeasured	11.5	2.1	627	185	707	f0a81d762693d333	9687fabb20de	126.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.LoopNest	cached	1.8	1.1	474	101	513	61da979b6c7ca88d	af5cb6a1869c	73.3
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Check	remeasured	25.1	6.4	575	184	2311	793900274fc90864	9687fabb20de	126.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.FmtFloat	cached	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.GoString	remeasured	17.6	2.6	422	171	822	2f0f85643080c81c	9687fabb20de	131.1
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Parse	remeasured	15.1	5.0	469	168	2927	8c9ccbcf940a27b2	9687fabb20de	139.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Print	remeasured	9.2	2.7	413	147	960	1ffb579db16f6d33	9687fabb20de	143.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Val	cached	2.0	1.5	474	103	898	9ca549e07b4c017b	af5cb6a1869c	67.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Int	cached	1.2	1.1	459	98	384	1e60ae16a5e0ba8f	af5cb6a1869c	67.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Cmp	cached	1.2	0.8	461	90	168	5b2f51b87ec53cd5	af5cb6a1869c	67.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Conv	cached	1.1	0.7	448	85	80	54b6c306764a7472	af5cb6a1869c	66.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Env	cached	1.1	0.9	455	89	345	d66fb9fe26cf02ee	af5cb6a1869c	66.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Layout	remeasured	3.5	0.8	431	90	190	7815900f44a67a8b	9687fabb20de	150.9
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Shift	cached	0.8	0.8	446	85	74	9432f188940508ac	af5cb6a1869c	64.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Pure	cached	1.2	1.2	489	108	614	23db172f558b1bdb	af5cb6a1869c	64.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Run	remeasured	19.0	2.5	583	161	1296	f8eb053edf30c4de	9687fabb20de	147.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.SparseMapPos	cached	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.AnalysisDiff	remeasured	10.4	2.1	576	139	1262	bba0dc2de2dde612	9687fabb20de	149.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Parity.Registry	remeasured	5.1	1.0	597	177	207	521b820d5008ad50	9687fabb20de	142.6
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Parity.Renumber	remeasured	9.2	1.5	459	111	1165	2e446377e14d0475	9687fabb20de	141.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Parity.Main	remeasured	14.7	2.7	607	194	1304	dbe7dffbe6712d0f	9687fabb20de	144.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.ProveDiff	cached	1.5	1.3	468	100	620	e705b1060c578265	af5cb6a1869c	60.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.SSACheck	remeasured	8.4	1.9	592	126	1044	d9a14383beed361e	9687fabb20de	148.2
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.SSARoundtrip	remeasured	6.1	1.1	458	110	555	b4340cd195ef8f27	9687fabb20de	152.0
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.SemDiff	built	16.3	3.0	599	152	1610	ced99a588582a18f	9687fabb20de	152.7
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Util	cached	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8
-2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.UtilDiff	cached	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8
-2026-10-31T21:50:21Z	9687fabb20de	_total	ok	687.1	302.7	629	429	156653		9687fabb20de	
+date	commit	module	status	wall_s	cpu_s	maxrss_mb	cgpeak_mb	olean_kb	dep_hash	measured_at	load1	olean_hash	repro	crit_s
+2026-10-31T19:31:59Z	508d0e26a5e1	_total	ok	0.0	0.0			0		508d0e26a5e1				
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.SSA.OpInfo	remeasured	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.SSA.Op	remeasured	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Syntax	remeasured	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Dec.Values00	remeasured	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Dec	remeasured	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divisible.Values00	remeasured	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divisible	remeasured	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divmod.Values00	remeasured	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Divmod	remeasured	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Blocks	remeasured	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values00	remeasured	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values01	remeasured	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values02	remeasured	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values03	remeasured	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values04	remeasured	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values05	remeasured	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values06	remeasured	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values07	remeasured	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values08	remeasured	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values09	remeasured	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values10	remeasured	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values11	remeasured	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values12	remeasured	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values13	remeasured	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic.Values14	remeasured	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated.Generic	remeasured	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFV.Rules.Generated	remeasured	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFVTest.OpCheck	remeasured	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2			
+2026-10-31T19:56:40Z	eb5adbe919c6	GoFVTest.Rules.Data	remeasured	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4			
+2026-10-31T19:56:40Z	eb5adbe919c6	_total	ok	99.1	93.2	596	279	61819		eb5adbe919c6				
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.GoStr	remeasured	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Pos	remeasured	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Type	remeasured	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.AuxData	remeasured	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Value	remeasured	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Block	remeasured	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Func	remeasured	1.7	1.5	494	105	1039	4a22852a543dffcc	bbde7d617e72	46.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Export	remeasured	1.7	1.2	486	103	659	68ba7960e0f34d11	bbde7d617e72	46.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.TypeCmp	remeasured	1.1	0.7	458	84	146	aefd98a199179809	bbde7d617e72	46.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.Pass	remeasured	1.0	0.9	468	88	210	24355f7e986fef63	bbde7d617e72	46.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.CheckBCE	remeasured	0.9	0.7	468	87	17	44acecce468ac1f2	bbde7d617e72	46.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Alloc	remeasured	1.8	1.4	504	118	1296	0d442bc0b18277b1	bbde7d617e72	48.0			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Edges	remeasured	1.2	1.1	470	93	555	5434f6de6389ef25	bbde7d617e72	48.0			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.CopyElim	remeasured	1.1	1.0	473	98	367	60debd95c46f7bef	bbde7d617e72	49.6			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.CpuFeatures	remeasured	0.9	0.7	469	96	68	37f0b0a32a2a3fed	bbde7d617e72	49.6			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Live	remeasured	2.1	1.4	491	95	473	e617d7dde60f2761	bbde7d617e72	49.6			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.SparseMap	remeasured	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.XPosMap	remeasured	1.4	1.1	482	92	367	54f6fd99f736ce04	bbde7d617e72	51.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.Deadcode	remeasured	1.8	1.1	494	94	647	5872134a83c9a431	bbde7d617e72	51.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.ReschedChecks	remeasured	1.3	0.8	463	86	160	5b8ec03b614928bf	bbde7d617e72	51.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.SoftFloat	remeasured	1.9	0.7	450	83	32	ce37ebbd6066b9fa	bbde7d617e72	53.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Opt.ZCSE	remeasured	3.6	1.3	507	108	707	c84c5e9e70fa8245	bbde7d617e72	53.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.ConstCache	remeasured	1.0	0.9	468	87	195	d458c61a840a9163	bbde7d617e72	58.1			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.FmtFloat	remeasured	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.GoString	remeasured	1.5	1.4	499	101	821	63d04040b42bf2da	bbde7d617e72	58.1			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Parse	remeasured	3.1	3.4	542	145	2816	71aac4c11c247541	bbde7d617e72	58.4			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.SSA.Print	remeasured	1.5	1.5	491	105	926	5a144d20828c2cb5	bbde7d617e72	58.4			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.PdqSort	remeasured	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.SparseMapPos	remeasured	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFV.Util.SparseSet	remeasured	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Parity.Registry	remeasured	0.7	0.6	474	89	79	b7d22907428fe4e4	bbde7d617e72	58.5			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Parity.Main	remeasured	2.5	2.0	511	119	1272	8d79adc1a980ebad	bbde7d617e72	57.6			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.SSARoundtrip	remeasured	1.7	1.4	488	96	555	839f95efe633c000	bbde7d617e72	57.6			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.Util	remeasured	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8			
+2026-10-31T20:40:48Z	bbde7d617e72	GoFVTest.UtilDiff	remeasured	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8			
+2026-10-31T20:40:48Z	bbde7d617e72	_total	ok	157.2	144.4	607	279	83512		bbde7d617e72				
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.GoStr	cached	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Pos	cached	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Type	cached	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.AuxData	cached	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Value	cached	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Block	cached	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Func	remeasured	2.2	1.2	481	104	1008	65635b639d6b826c	af5cb6a1869c	63.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Export	remeasured	1.5	1.0	477	94	659	406b5084b9d23d9d	af5cb6a1869c	63.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Types	remeasured	1.3	1.0	467	101	374	959f455018c5ff59	af5cb6a1869c	65.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Alloc	remeasured	2.0	1.3	511	133	1295	c1435bc998ab22dd	af5cb6a1869c	65.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CanCondSelect	remeasured	1.6	1.0	489	112	331	20daeeb89b2b7773	af5cb6a1869c	65.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.TypeCmp	cached	1.1	0.7	458	84	146	aefd98a199179809	bbde7d617e72	46.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Pass	remeasured	1.1	0.8	480	94	288	cee53e0f5f8055e3	af5cb6a1869c	65.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.Dom	remeasured	1.4	0.9	468	93	356	41f7bc6c2c743027	af5cb6a1869c	67.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.Postorder	remeasured	1.7	0.8	472	87	140	7f3234fbff5419cf	af5cb6a1869c	67.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.SparseTree	remeasured	1.2	0.8	465	86	179	d42fd819e12c6681	af5cb6a1869c	66.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.CfgCache	remeasured	0.9	0.6	462	89	74	9e8039aa0e2ed0f2	af5cb6a1869c	66.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.SparseMap	cached	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.XPosMap	remeasured	1.3	0.9	481	96	367	531d62ce62e1ce22	af5cb6a1869c	67.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.NumberLines	remeasured	1.9	1.5	519	123	1058	9710e64e76da8399	af5cb6a1869c	67.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Speculate	remeasured	2.3	1.8	510	137	518	ae71230eb6405dfd	af5cb6a1869c	69.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.TypePred	remeasured	1.0	0.7	471	88	61	98600bb32493beed	af5cb6a1869c	69.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.BranchElim	remeasured	2.2	1.8	523	131	1438	ec263ff3352c7a7f	af5cb6a1869c	69.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Ptr	remeasured	4.0	2.5	519	128	1419	05f6830be93bac2c	af5cb6a1869c	72.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.PdqSort	cached	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CSE	remeasured	3.8	1.8	529	129	1693	d295c0d4b7436b9d	af5cb6a1869c	76.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CheckBCE	remeasured	2.3	0.7	458	86	17	ab2353f0fd98873d	af5cb6a1869c	77.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Edges	remeasured	2.5	1.3	476	90	555	cf59adfbbd2978f6	af5cb6a1869c	78.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CopyElim	remeasured	1.3	1.1	481	97	367	9eb89f9e0c7f4ecb	af5cb6a1869c	77.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.CpuFeatures	remeasured	1.4	1.2	463	90	68	d6025381328542f2	af5cb6a1869c	77.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Sym	remeasured	1.8	1.1	481	103	656	ecd5b6e6f3e336b5	af5cb6a1869c	79.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.SparseSet	cached	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.DeadStore	remeasured	5.6	2.3	528	182	1118	fe4ac6ecf2262b11	af5cb6a1869c	79.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Live	remeasured	4.1	2.7	475	115	473	53bbd5ca953be7de	af5cb6a1869c	85.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Deadcode	remeasured	3.1	1.4	480	123	647	8f9480b96aabeb65	af5cb6a1869c	86.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ElimDeadAutos	remeasured	4.6	1.3	505	139	980	e3d198b5f31812ab	af5cb6a1869c	88.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.ABI	remeasured	2.7	1.2	485	116	653	acc0be5624d7b1ee	af5cb6a1869c	89.4			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.ConstCache	remeasured	3.5	0.9	469	90	195	7a9bde24cd9874e8	af5cb6a1869c	89.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.TypeNew	remeasured	2.3	0.9	462	94	285	99b8605828765bd4	af5cb6a1869c	90.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls.State	remeasured	2.0	1.3	496	111	853	a6cebf773db0e3a8	af5cb6a1869c	90.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls.Decompose	remeasured	4.0	3.8	518	141	2024	69b25a2e75658a23	af5cb6a1869c	90.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls.Select	remeasured	2.1	1.6	501	112	1061	6ab6248446fa83e3	af5cb6a1869c	88.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ExpandCalls	remeasured	2.7	1.8	520	145	1479	414ade2c850cd9eb	af5cb6a1869c	88.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.Basic	remeasured	1.2	0.9	473	109	284	1996efd1f0b04ea9	af5cb6a1869c	84.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.Ctx	remeasured	2.2	1.5	508	145	973	75f9627fd6d61ec6	af5cb6a1869c	84.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.Limit	remeasured	2.6	2.3	468	98	557	868663cdde7b2243	af5cb6a1869c	82.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.Poset	remeasured	3.0	1.6	487	373	1388	2c3b4edaec4692e2	af5cb6a1869c	82.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Prove.FactsTable	remeasured	4.4	3.1	536	158	2764	ec7d4c752c3527bb	af5cb6a1869c	83.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.BranchRedirect	remeasured	2.8	1.0	480	95	423	69aa387bffdcb0d9	af5cb6a1869c	83.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.Comparisons	remeasured	2.8	1.6	513	143	1270	333a44164ce83db5	af5cb6a1869c	84.4			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.If	remeasured	1.7	0.9	465	96	414	274fdf2924de660c	af5cb6a1869c	84.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse.Plain	remeasured	4.1	2.1	468	101	492	2487416c2e4a1c0c	af5cb6a1869c	83.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Fuse	remeasured	3.8	2.8	472	103	95	b7229e8d2602f892	af5cb6a1869c	84.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.KnownBits	remeasured	8.4	4.6	463	180	1287	acc62a611fb89bfe	af5cb6a1869c	86.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine.Base	remeasured	2.7	1.8	473	181	504	a7a1b817a8df3471	af5cb6a1869c	80.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.MergePoint	remeasured	1.9	1.2	459	105	135	de6954f5f8b65fd0	af5cb6a1869c	82.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine.Loads	remeasured	2.8	2.1	495	143	1291	dcba01d803711773	af5cb6a1869c	82.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine.Stores	remeasured	2.7	2.3	504	117	1567	8709136ecd48a499	af5cb6a1869c	82.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.MemCombine	remeasured	2.9	2.6	459	103	176	9df77e10e7d7d38e	af5cb6a1869c	82.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.StoreOrder	remeasured	1.9	1.2	477	111	714	75579622f2a6bca6	af5cb6a1869c	81.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.NilCheck	remeasured	2.1	1.5	517	138	1260	5e7b78908bf6931a	af5cb6a1869c	81.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.GoVal	remeasured	1.6	1.1	458	104	532	41b13f34d3e898a4	af5cb6a1869c	74.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Env	remeasured	2.1	1.2	592	100	259	adf28cffdc0b7804	af5cb6a1869c	74.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Build	remeasured	2.9	2.0	623	121	1154	a0791d4b7fb94d1c	af5cb6a1869c	73.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Helpers.Magic	remeasured	1.1	1.0	451	90	171	5594181256ba0066	af5cb6a1869c	72.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Eval	remeasured	12.1	8.1	690	221	5161	12178f7c8ced79cd	af5cb6a1869c	72.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Interp	remeasured	2.7	1.8	627	145	1443	0a06450da8258e70	af5cb6a1869c	70.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Apply	remeasured	2.4	1.6	628	137	1220	b60ae7d2ba11dd9b	af5cb6a1869c	69.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Run	remeasured	1.1	0.8	598	103	233	8caaaaa7a1e35743	af5cb6a1869c	69.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.Opt	remeasured	1.6	0.8	590	117	19	f3b7d3c3c7ef8470	af5cb6a1869c	69.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.PhiOpt	remeasured	1.9	1.3	492	116	969	68b316b105380c86	af5cb6a1869c	69.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ReschedChecks	remeasured	2.4	1.0	459	88	160	2668d13eeed6c45f	af5cb6a1869c	68.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ShortCircuit	remeasured	5.8	3.6	490	119	1505	fa3bb2b4289d5327	af5cb6a1869c	68.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.SoftFloat	remeasured	2.1	0.8	447	85	32	9a1a626f3376c1cd	af5cb6a1869c	69.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.WBHelpers	remeasured	4.2	1.7	512	131	1307	96fcc6f19c3a3932	af5cb6a1869c	69.6			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.ABIAnalyze	remeasured	3.6	0.9	461	90	242	c6ece6272b9e8c3e	af5cb6a1869c	73.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.WriteBarrier	remeasured	5.4	2.7	529	146	2585	03bdeb7bc86bb994	af5cb6a1869c	73.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Opt.ZCSE	remeasured	3.7	2.0	494	123	707	2ea7086627a7b3a5	af5cb6a1869c	74.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Analysis.LoopNest	remeasured	1.8	1.1	474	101	513	61da979b6c7ca88d	af5cb6a1869c	73.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Check	remeasured	5.0	3.8	657	166	2311	4058ecc7da0c990a	af5cb6a1869c	73.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.FmtFloat	cached	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.GoString	remeasured	1.7	1.4	490	103	821	3cfa28fe9e13b963	af5cb6a1869c	71.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Parse	remeasured	4.3	4.1	536	148	2866	aa446f08107ec46f	af5cb6a1869c	71.3			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Print	remeasured	2.2	2.1	489	109	932	3e6271d545aa824c	af5cb6a1869c	69.1			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Val	remeasured	2.0	1.5	474	103	898	9ca549e07b4c017b	af5cb6a1869c	67.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Int	remeasured	1.2	1.1	459	98	384	1e60ae16a5e0ba8f	af5cb6a1869c	67.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Cmp	remeasured	1.2	0.8	461	90	168	5b2f51b87ec53cd5	af5cb6a1869c	67.9			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Conv	remeasured	1.1	0.7	448	85	80	54b6c306764a7472	af5cb6a1869c	66.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Env	remeasured	1.1	0.9	455	89	345	d66fb9fe26cf02ee	af5cb6a1869c	66.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Layout	remeasured	1.0	0.9	461	89	190	a09aad1cbb53a1b1	af5cb6a1869c	64.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Shift	remeasured	0.8	0.8	446	85	74	9432f188940508ac	af5cb6a1869c	64.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Pure	remeasured	1.2	1.2	489	108	614	23db172f558b1bdb	af5cb6a1869c	64.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.SSA.Sem.Run	remeasured	2.1	2.2	639	129	1296	ec202bbe570dbb65	af5cb6a1869c	62.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFV.Util.SparseMapPos	cached	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.AnalysisDiff	built	1.8	1.7	501	114	1260	4862600e2288d93c	af5cb6a1869c	62.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Parity.Registry	remeasured	1.3	1.0	629	153	188	ca8414638343cf06	af5cb6a1869c	60.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Parity.Renumber	remeasured	1.6	1.6	502	113	1165	e7dbce20e5ede932	af5cb6a1869c	60.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Parity.Main	remeasured	3.0	2.5	661	177	1302	920af0d05ee55855	af5cb6a1869c	60.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.ProveDiff	remeasured	1.5	1.3	468	100	620	e705b1060c578265	af5cb6a1869c	60.7			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.SSACheck	built	1.7	1.4	620	120	1044	22b1f025ea35cd37	af5cb6a1869c	60.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.SSARoundtrip	remeasured	1.3	1.1	496	103	555	5da00c5ea4c02bdd	af5cb6a1869c	60.2			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.SemDiff	remeasured	3.4	2.3	621	137	1609	1f14e0b9d67619f5	af5cb6a1869c	61.0			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.Util	cached	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	GoFVTest.UtilDiff	cached	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8			
+2026-10-31T21:08:02Z	af5cb6a1869c	_total	ok	353.2	266.3	690	373	145468		af5cb6a1869c				
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.GoStr	cached	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Pos	cached	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Type	cached	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.AuxData	cached	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Value	cached	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Block	cached	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Func	cached	2.2	1.2	481	104	1008	65635b639d6b826c	af5cb6a1869c	63.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Export	remeasured	4.6	1.0	471	100	717	df1af2362d1f6617	9687fabb20de	148.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Types	remeasured	2.7	0.9	461	93	374	91a69141cff69d96	9687fabb20de	148.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Alloc	cached	2.0	1.3	511	133	1295	c1435bc998ab22dd	af5cb6a1869c	65.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CanCondSelect	remeasured	2.1	0.9	475	106	331	dd9c7903fddeab5b	9687fabb20de	147.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.TypeCmp	remeasured	2.2	0.9	563	97	287	c7a3da71848d8235	9687fabb20de	147.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Pass	remeasured	1.7	0.9	576	100	288	801c31674070d16d	9687fabb20de	144.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.Dom	cached	1.4	0.9	468	93	356	41f7bc6c2c743027	af5cb6a1869c	67.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.Postorder	cached	1.7	0.8	472	87	140	7f3234fbff5419cf	af5cb6a1869c	67.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.SparseTree	cached	1.2	0.8	465	86	179	d42fd819e12c6681	af5cb6a1869c	66.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.CfgCache	cached	0.9	0.6	462	89	74	9e8039aa0e2ed0f2	af5cb6a1869c	66.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.SparseMap	cached	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.XPosMap	cached	1.3	0.9	481	96	367	531d62ce62e1ce22	af5cb6a1869c	67.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.NumberLines	remeasured	4.1	1.6	611	126	1057	3cd66740a45b412f	9687fabb20de	140.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Speculate	cached	2.3	1.8	510	137	518	ae71230eb6405dfd	af5cb6a1869c	69.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.TypePred	remeasured	1.9	0.7	446	97	61	97764dd4d7d5654a	9687fabb20de	138.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.BranchElim	remeasured	9.1	2.0	614	143	1439	b097ae45acf9a938	9687fabb20de	134.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Ptr	remeasured	6.1	2.2	507	151	1419	ce4a46f9e5b938c4	9687fabb20de	134.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.PdqSort	cached	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CSE	remeasured	4.8	2.2	627	148	1694	cf665dcfe6d38cb3	9687fabb20de	130.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CheckBCE	remeasured	3.9	0.9	573	94	18	8316a029b07caed0	9687fabb20de	128.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Edges	cached	2.5	1.3	476	90	555	cf59adfbbd2978f6	af5cb6a1869c	78.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CopyElim	remeasured	3.0	1.6	580	109	367	7abf5170e638ff58	9687fabb20de	127.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.CpuFeatures	remeasured	2.8	0.8	576	100	68	b7de484fef1f3edf	9687fabb20de	124.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Sym	remeasured	3.5	1.0	472	97	656	5e4c8de72703e16d	9687fabb20de	120.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.SparseSet	cached	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.DeadStore	remeasured	3.8	1.5	629	144	1118	8cb51c2a601224d1	9687fabb20de	118.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Live	remeasured	3.6	1.1	478	99	473	85621fe937e0c2c9	9687fabb20de	116.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Deadcode	remeasured	6.1	1.3	596	109	647	78300700eccf392c	9687fabb20de	116.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.TypeNew	remeasured	3.1	1.2	576	107	287	3d88f1654049b8c2	9687fabb20de	118.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose.State	remeasured	3.6	1.5	601	114	708	32e7c2ccd2fcd262	9687fabb20de	118.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose.Order	remeasured	5.2	1.2	597	110	668	6cc25937314fb3ee	9687fabb20de	115.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose.Phi	remeasured	3.7	1.7	587	113	455	1cadc2b255ba4d0b	9687fabb20de	115.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.GoVal	cached	1.6	1.1	458	104	532	41b13f34d3e898a4	af5cb6a1869c	74.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Env	remeasured	5.4	1.7	588	120	259	18e2d64714bac183	9687fabb20de	110.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Build	remeasured	7.9	2.3	625	429	1154	7f5f0233ca758695	9687fabb20de	109.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.Magic	cached	1.1	1.0	451	90	171	5594181256ba0066	af5cb6a1869c	72.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Eval	remeasured	25.6	10.5	591	217	5160	49cf0e2e7df262e5	9687fabb20de	105.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Interp	remeasured	6.6	2.6	588	145	1443	4c83d18d56804517	9687fabb20de	98.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Apply	remeasured	5.1	2.1	589	141	1220	bbf118ce0acf541f	9687fabb20de	98.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Run	remeasured	3.6	1.2	567	124	233	367c7fcb2b714f45	9687fabb20de	98.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Decompose	remeasured	4.2	2.1	584	125	914	e72c2cbfd91481e4	9687fabb20de	97.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ElimDeadAutos	remeasured	2.8	1.5	589	131	980	b07983f628f7e30a	9687fabb20de	96.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.ABI	remeasured	2.1	1.2	452	99	653	5b40389f1f2fba29	9687fabb20de	96.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.ConstCache	cached	3.5	0.9	469	90	195	7a9bde24cd9874e8	af5cb6a1869c	89.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls.State	remeasured	2.6	1.6	566	115	853	19bd5900bdf1a14e	9687fabb20de	94.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls.Decompose	remeasured	4.3	3.4	588	134	2024	7bee7a7ccb524ae0	9687fabb20de	91.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls.Select	remeasured	2.7	1.9	579	124	1061	b8597105b57973b8	9687fabb20de	90.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ExpandCalls	remeasured	3.9	2.4	607	147	1480	ce307d24e80553cb	9687fabb20de	90.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.Basic	remeasured	1.5	0.7	438	89	284	41b34feb48ae4a06	9687fabb20de	88.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Ctx	remeasured	4.5	1.6	588	131	978	d1093a7af46fec59	9687fabb20de	86.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Limit	cached	2.6	2.3	468	98	557	868663cdde7b2243	af5cb6a1869c	82.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Poset	cached	3.0	1.6	487	373	1388	2c3b4edaec4692e2	af5cb6a1869c	82.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.FactsTable	remeasured	13.4	4.7	612	158	2765	86ae7dfc490e9a31	9687fabb20de	86.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.BranchRedirect	remeasured	5.0	2.0	561	112	423	b2e862b1f823c308	9687fabb20de	96.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.Comparisons	cached	2.8	1.6	513	143	1270	333a44164ce83db5	af5cb6a1869c	84.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.If	remeasured	3.1	0.9	436	96	414	c9648b821e08a9d6	9687fabb20de	96.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse.Plain	cached	4.1	2.1	468	101	492	2487416c2e4a1c0c	af5cb6a1869c	83.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Fuse	remeasured	1.6	0.9	548	106	95	f1cc8811d86d5ac8	9687fabb20de	95.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.KnownBits	remeasured	4.3	2.5	615	160	1287	80dcf04c3bbb5217	9687fabb20de	95.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine.Base	remeasured	2.9	1.3	557	111	504	124c5222cfafaea8	9687fabb20de	92.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Helpers.MergePoint	cached	1.9	1.2	459	105	135	de6954f5f8b65fd0	af5cb6a1869c	82.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine.Loads	remeasured	5.3	2.5	587	129	1291	6a78876a2c480231	9687fabb20de	92.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine.Stores	remeasured	4.1	2.3	591	123	1567	f75e16dedbf73bde	9687fabb20de	94.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.MemCombine	remeasured	1.3	0.9	546	103	176	830385d73d099f0a	9687fabb20de	94.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.StoreOrder	remeasured	2.4	1.2	455	102	714	6e773a65a2227813	9687fabb20de	93.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.NilCheck	remeasured	3.6	1.4	605	143	1259	22c70a6563df3747	9687fabb20de	94.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Opt	remeasured	3.1	1.2	554	125	19	8c04e6647e666439	9687fabb20de	94.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.PhiOpt	remeasured	9.3	2.0	521	130	969	c1dfb100b208fcb7	9687fabb20de	93.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.IndVar	remeasured	8.9	2.0	622	180	993	4db0d9d6c0b22c1e	9687fabb20de	97.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Downward	remeasured	14.9	2.6	621	242	698	64cb2835d9b2946f	9687fabb20de	104.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Flow	remeasured	25.2	6.6	558	193	3423	047f9e856bcae87c	9687fabb20de	107.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Simplify	remeasured	10.3	4.2	628	187	2483	666b0e98b7dd06b1	9687fabb20de	119.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.Prove.Pass	remeasured	10.6	1.6	567	320	521	fd9edc11555a6b67	9687fabb20de	126.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ReschedChecks	remeasured	9.1	1.7	576	203	160	4f78808e459ff139	9687fabb20de	130.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ShortCircuit	remeasured	11.6	3.8	576	151	1505	fbb80bde890c02e1	9687fabb20de	129.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.SoftFloat	remeasured	6.3	1.4	481	141	32	89edb2c1e249cbe8	9687fabb20de	133.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.WBHelpers	remeasured	8.8	2.0	448	156	1307	0a63db8ea835c2a7	9687fabb20de	131.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.ABIAnalyze	cached	3.6	0.9	461	90	242	c6ece6272b9e8c3e	af5cb6a1869c	73.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.WriteBarrier	remeasured	13.1	4.4	556	169	2585	93f17c29b639033c	9687fabb20de	129.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Opt.ZCSE	remeasured	11.5	2.1	627	185	707	f0a81d762693d333	9687fabb20de	126.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Analysis.LoopNest	cached	1.8	1.1	474	101	513	61da979b6c7ca88d	af5cb6a1869c	73.3			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Check	remeasured	25.1	6.4	575	184	2311	793900274fc90864	9687fabb20de	126.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.FmtFloat	cached	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.GoString	remeasured	17.6	2.6	422	171	822	2f0f85643080c81c	9687fabb20de	131.1			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Parse	remeasured	15.1	5.0	469	168	2927	8c9ccbcf940a27b2	9687fabb20de	139.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Print	remeasured	9.2	2.7	413	147	960	1ffb579db16f6d33	9687fabb20de	143.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Val	cached	2.0	1.5	474	103	898	9ca549e07b4c017b	af5cb6a1869c	67.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Int	cached	1.2	1.1	459	98	384	1e60ae16a5e0ba8f	af5cb6a1869c	67.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Cmp	cached	1.2	0.8	461	90	168	5b2f51b87ec53cd5	af5cb6a1869c	67.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Conv	cached	1.1	0.7	448	85	80	54b6c306764a7472	af5cb6a1869c	66.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Env	cached	1.1	0.9	455	89	345	d66fb9fe26cf02ee	af5cb6a1869c	66.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Layout	remeasured	3.5	0.8	431	90	190	7815900f44a67a8b	9687fabb20de	150.9			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Shift	cached	0.8	0.8	446	85	74	9432f188940508ac	af5cb6a1869c	64.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Pure	cached	1.2	1.2	489	108	614	23db172f558b1bdb	af5cb6a1869c	64.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.SSA.Sem.Run	remeasured	19.0	2.5	583	161	1296	f8eb053edf30c4de	9687fabb20de	147.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFV.Util.SparseMapPos	cached	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.AnalysisDiff	remeasured	10.4	2.1	576	139	1262	bba0dc2de2dde612	9687fabb20de	149.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Parity.Registry	remeasured	5.1	1.0	597	177	207	521b820d5008ad50	9687fabb20de	142.6			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Parity.Renumber	remeasured	9.2	1.5	459	111	1165	2e446377e14d0475	9687fabb20de	141.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Parity.Main	remeasured	14.7	2.7	607	194	1304	dbe7dffbe6712d0f	9687fabb20de	144.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.ProveDiff	cached	1.5	1.3	468	100	620	e705b1060c578265	af5cb6a1869c	60.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.SSACheck	remeasured	8.4	1.9	592	126	1044	d9a14383beed361e	9687fabb20de	148.2			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.SSARoundtrip	remeasured	6.1	1.1	458	110	555	b4340cd195ef8f27	9687fabb20de	152.0			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.SemDiff	built	16.3	3.0	599	152	1610	ced99a588582a18f	9687fabb20de	152.7			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.Util	cached	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8			
+2026-10-31T21:50:21Z	9687fabb20de	GoFVTest.UtilDiff	cached	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8			
+2026-10-31T21:50:21Z	9687fabb20de	_total	ok	687.1	302.7	629	429	156653		9687fabb20de				
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.GoStr	cached	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Pos	cached	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Type	cached	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.AuxData	cached	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Value	cached	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Block	cached	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Func	cached	2.2	1.2	481	104	1008	65635b639d6b826c	af5cb6a1869c	63.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Export	cached	4.6	1.0	471	100	717	df1af2362d1f6617	9687fabb20de	148.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Helpers.Types	cached	2.7	0.9	461	93	374	91a69141cff69d96	9687fabb20de	148.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Alloc	cached	2.0	1.3	511	133	1295	c1435bc998ab22dd	af5cb6a1869c	65.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.CanCondSelect	cached	2.1	0.9	475	106	331	dd9c7903fddeab5b	9687fabb20de	147.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.TypeCmp	cached	2.2	0.9	563	97	287	c7a3da71848d8235	9687fabb20de	147.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Pass	cached	1.7	0.9	576	100	288	801c31674070d16d	9687fabb20de	144.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Analysis.Dom	cached	1.4	0.9	468	93	356	41f7bc6c2c743027	af5cb6a1869c	67.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Analysis.Postorder	cached	1.7	0.8	472	87	140	7f3234fbff5419cf	af5cb6a1869c	67.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Analysis.SparseTree	cached	1.2	0.8	465	86	179	d42fd819e12c6681	af5cb6a1869c	66.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Analysis.CfgCache	cached	0.9	0.6	462	89	74	9e8039aa0e2ed0f2	af5cb6a1869c	66.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Util.SparseMap	cached	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.XPosMap	cached	1.3	0.9	481	96	367	531d62ce62e1ce22	af5cb6a1869c	67.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.NumberLines	remeasured	6.7	1.6	564	122	1057	aceb55df35e29e97	f2e7f11c8df3	120.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Speculate	cached	2.3	1.8	510	137	518	ae71230eb6405dfd	af5cb6a1869c	69.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.TypePred	cached	1.9	0.7	446	97	61	97764dd4d7d5654a	9687fabb20de	138.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.BranchElim	remeasured	9.2	2.0	573	123	1439	fc1e432f2c7cd928	f2e7f11c8df3	119.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Helpers.Ptr	cached	6.1	2.2	507	151	1419	ce4a46f9e5b938c4	9687fabb20de	134.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Util.PdqSort	cached	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.CSE	cached	4.8	2.2	627	148	1694	cf665dcfe6d38cb3	9687fabb20de	130.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.CheckBCE	cached	3.9	0.9	573	94	18	8316a029b07caed0	9687fabb20de	128.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Edges	cached	2.5	1.3	476	90	555	cf59adfbbd2978f6	af5cb6a1869c	78.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.CopyElim	cached	3.0	1.6	580	109	367	7abf5170e638ff58	9687fabb20de	127.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.CpuFeatures	cached	2.8	0.8	576	100	68	b7de484fef1f3edf	9687fabb20de	124.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Helpers.Sym	cached	3.5	1.0	472	97	656	5e4c8de72703e16d	9687fabb20de	120.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Util.SparseSet	cached	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.DeadStore	cached	3.8	1.5	629	144	1118	8cb51c2a601224d1	9687fabb20de	118.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Live	cached	3.6	1.1	478	99	473	85621fe937e0c2c9	9687fabb20de	116.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Deadcode	cached	6.1	1.3	596	109	647	78300700eccf392c	9687fabb20de	116.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.TypeNew	cached	3.1	1.2	576	107	287	3d88f1654049b8c2	9687fabb20de	118.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Decompose.State	cached	3.6	1.5	601	114	708	32e7c2ccd2fcd262	9687fabb20de	118.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Decompose.Order	cached	5.2	1.2	597	110	668	6cc25937314fb3ee	9687fabb20de	115.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Decompose.Phi	cached	3.7	1.7	587	113	455	1cadc2b255ba4d0b	9687fabb20de	115.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.GoVal	cached	1.6	1.1	458	104	532	41b13f34d3e898a4	af5cb6a1869c	74.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Env	cached	5.4	1.7	588	120	259	18e2d64714bac183	9687fabb20de	110.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Helpers.Build	cached	7.9	2.3	625	429	1154	7f5f0233ca758695	9687fabb20de	109.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Helpers.Magic	cached	1.1	1.0	451	90	171	5594181256ba0066	af5cb6a1869c	72.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Eval	cached	25.6	10.5	591	217	5160	49cf0e2e7df262e5	9687fabb20de	105.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Interp	cached	6.6	2.6	588	145	1443	4c83d18d56804517	9687fabb20de	98.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Apply	cached	5.1	2.1	589	141	1220	bbf118ce0acf541f	9687fabb20de	98.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Run	cached	3.6	1.2	567	124	233	367c7fcb2b714f45	9687fabb20de	98.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Decompose	cached	4.2	2.1	584	125	914	e72c2cbfd91481e4	9687fabb20de	97.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ElimDeadAutos	cached	2.8	1.5	589	131	980	b07983f628f7e30a	9687fabb20de	96.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.ABI	cached	2.1	1.2	452	99	653	5b40389f1f2fba29	9687fabb20de	96.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.ConstCache	cached	3.5	0.9	469	90	195	7a9bde24cd9874e8	af5cb6a1869c	89.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls.State	cached	2.6	1.6	566	115	853	19bd5900bdf1a14e	9687fabb20de	94.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls.Decompose	cached	4.3	3.4	588	134	2024	7bee7a7ccb524ae0	9687fabb20de	91.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls.Select	cached	2.7	1.9	579	124	1061	b8597105b57973b8	9687fabb20de	90.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls	cached	3.9	2.4	607	147	1480	ce307d24e80553cb	9687fabb20de	90.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Fuse.Basic	cached	1.5	0.7	438	89	284	41b34feb48ae4a06	9687fabb20de	88.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Ctx	cached	4.5	1.6	588	131	978	d1093a7af46fec59	9687fabb20de	86.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Limit	cached	2.6	2.3	468	98	557	868663cdde7b2243	af5cb6a1869c	82.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Poset	cached	3.0	1.6	487	373	1388	2c3b4edaec4692e2	af5cb6a1869c	82.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.FactsTable	cached	13.4	4.7	612	158	2765	86ae7dfc490e9a31	9687fabb20de	86.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Fuse.BranchRedirect	cached	5.0	2.0	561	112	423	b2e862b1f823c308	9687fabb20de	96.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Fuse.Comparisons	cached	2.8	1.6	513	143	1270	333a44164ce83db5	af5cb6a1869c	84.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Fuse.If	cached	3.1	0.9	436	96	414	c9648b821e08a9d6	9687fabb20de	96.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Fuse.Plain	cached	4.1	2.1	468	101	492	2487416c2e4a1c0c	af5cb6a1869c	83.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Fuse	cached	1.6	0.9	548	106	95	f1cc8811d86d5ac8	9687fabb20de	95.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.KnownBits	cached	4.3	2.5	615	160	1287	80dcf04c3bbb5217	9687fabb20de	95.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.MemCombine.Base	cached	2.9	1.3	557	111	504	124c5222cfafaea8	9687fabb20de	92.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Helpers.MergePoint	cached	1.9	1.2	459	105	135	de6954f5f8b65fd0	af5cb6a1869c	82.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.MemCombine.Loads	cached	5.3	2.5	587	129	1291	6a78876a2c480231	9687fabb20de	92.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.MemCombine.Stores	cached	4.1	2.3	591	123	1567	f75e16dedbf73bde	9687fabb20de	94.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.MemCombine	cached	1.3	0.9	546	103	176	830385d73d099f0a	9687fabb20de	94.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.StoreOrder	cached	2.4	1.2	455	102	714	6e773a65a2227813	9687fabb20de	93.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.NilCheck	remeasured	9.1	1.6	615	137	1259	1a6e55b8600e9677	f2e7f11c8df3	146.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Opt	cached	3.1	1.2	554	125	19	8c04e6647e666439	9687fabb20de	94.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.PhiOpt	cached	9.3	2.0	521	130	969	c1dfb100b208fcb7	9687fabb20de	93.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.IndVar	cached	8.9	2.0	622	180	993	4db0d9d6c0b22c1e	9687fabb20de	97.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Downward	cached	14.9	2.6	621	242	698	64cb2835d9b2946f	9687fabb20de	104.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Flow	cached	25.2	6.6	558	193	3423	047f9e856bcae87c	9687fabb20de	107.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Simplify	cached	10.3	4.2	628	187	2483	666b0e98b7dd06b1	9687fabb20de	119.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.Prove.Pass	cached	10.6	1.6	567	320	521	fd9edc11555a6b67	9687fabb20de	126.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ReschedChecks	cached	9.1	1.7	576	203	160	4f78808e459ff139	9687fabb20de	130.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ShortCircuit	cached	11.6	3.8	576	151	1505	fbb80bde890c02e1	9687fabb20de	129.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.SoftFloat	cached	6.3	1.4	481	141	32	89edb2c1e249cbe8	9687fabb20de	133.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.WBHelpers	cached	8.8	2.0	448	156	1307	0a63db8ea835c2a7	9687fabb20de	131.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.ABIAnalyze	cached	3.6	0.9	461	90	242	c6ece6272b9e8c3e	af5cb6a1869c	73.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.WriteBarrier	cached	13.1	4.4	556	169	2585	93f17c29b639033c	9687fabb20de	129.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Opt.ZCSE	cached	11.5	2.1	627	185	707	f0a81d762693d333	9687fabb20de	126.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Val	cached	2.0	1.5	474	103	898	9ca549e07b4c017b	af5cb6a1869c	67.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Env	cached	1.1	0.9	455	89	345	d66fb9fe26cf02ee	af5cb6a1869c	66.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Layout	cached	3.5	0.8	431	90	190	7815900f44a67a8b	9687fabb20de	150.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Int	cached	1.2	1.1	459	98	384	1e60ae16a5e0ba8f	af5cb6a1869c	67.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Cmp	cached	1.2	0.8	461	90	168	5b2f51b87ec53cd5	af5cb6a1869c	67.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Conv	cached	1.1	0.7	448	85	80	54b6c306764a7472	af5cb6a1869c	66.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Shift	cached	0.8	0.8	446	85	74	9432f188940508ac	af5cb6a1869c	64.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Pure	cached	1.2	1.2	489	108	614	23db172f558b1bdb	af5cb6a1869c	64.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Sem.Run	remeasured	9.4	2.2	489	123	1328	20236e415e51f257	f2e7f11c8df3	148.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Proof.Refine	remeasured	10.5	1.1	463	102	466	65c20176e53e8148	f2e7f11c8df3	152.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Proof.Cong	remeasured	8.9	1.7	461	132	616	91c6dcd9750e2e65	f2e7f11c8df3	152.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Proof.Pass.Identity	remeasured	5.9	0.9	550	97	74	50eabd1aa9717169	f2e7f11c8df3	152.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Proof.Pass.NumberLines	remeasured	33.2	7.4	577	212	706	6ec2ac9e51271423	f2e7f11c8df3	151.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Proof.Witness.Clamp	remeasured	23.0	3.4	661	289	737	55697863a7f6869e	f2e7f11c8df3	149.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Proof.Witness.Early	remeasured	9.6	0.9	570	167	56	8f24d9b987af194c	f2e7f11c8df3	157.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Analysis.LoopNest	cached	1.8	1.1	474	101	513	61da979b6c7ca88d	af5cb6a1869c	73.3			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Check	cached	25.1	6.4	575	184	2311	793900274fc90864	9687fabb20de	126.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.FmtFloat	cached	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.GoString	cached	17.6	2.6	422	171	822	2f0f85643080c81c	9687fabb20de	131.1			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Parse	cached	15.1	5.0	469	168	2927	8c9ccbcf940a27b2	9687fabb20de	139.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.SSA.Print	cached	9.2	2.7	413	147	960	1ffb579db16f6d33	9687fabb20de	143.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFV.Util.SparseMapPos	cached	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.AnalysisDiff	cached	10.4	2.1	576	139	1262	bba0dc2de2dde612	9687fabb20de	149.6			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.Parity.Registry	remeasured	8.8	1.2	645	193	207	7acaf254fe4b438c	f2e7f11c8df3	176.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.Parity.Renumber	cached	9.2	1.5	459	111	1165	2e446377e14d0475	9687fabb20de	141.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.Parity.Main	remeasured	11.7	2.5	685	208	1304	56896fd175290c7c	f2e7f11c8df3	166.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.ProveDiff	cached	1.5	1.3	468	100	620	e705b1060c578265	af5cb6a1869c	60.7			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.SSACheck	cached	8.4	1.9	592	126	1044	d9a14383beed361e	9687fabb20de	148.2			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.SSARoundtrip	cached	6.1	1.1	458	110	555	b4340cd195ef8f27	9687fabb20de	152.0			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.SemDiff	remeasured	13.8	2.5	643	138	1610	a870843df19c071d	f2e7f11c8df3	155.9			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.Util	cached	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	GoFVTest.UtilDiff	cached	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8			
+2026-10-31T22:46:44Z	f2e7f11c8df3	_total	ok	775.0	317.5	685	429	159340		f2e7f11c8df3				
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.GoStr	cached	1.0	0.8	458	85	134	4d02030258606129	bbde7d617e72	44.2	a123f625d399c471		0.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Pos	cached	1.0	0.9	462	89	308	1cba019179073d16	bbde7d617e72	44.2	c0eba873ae7d4680		1.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Type	cached	1.8	1.9	494	115	1720	45ca95cde4da2082	bbde7d617e72	44.8	38d0c5e9c91dff3e		2.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.AuxData	cached	3.9	3.8	498	117	1844	9d22d8bb47e2447c	bbde7d617e72	44.8	97099b896ac57a1a		6.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.OpInfo	cached	1.6	1.3	441	97	593	44897c224c601873	eb5adbe919c6	59.9	741aae9d0c9d2abf		1.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Op	cached	13.7	10.2	596	279	15865	4521a28344955b8a	eb5adbe919c6	59.9	ff82d1c9a5021c75		11.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Value	cached	0.9	0.8	464	89	170	a67ea7405a4b0b5f	bbde7d617e72	45.7	4872f57e9cc8bfa3		12.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Block	cached	1.2	1.0	472	92	372	13b2535e280b03b6	bbde7d617e72	46.7	28f36785a25d7d3d		13.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Func	cached	2.2	1.2	481	104	1008	65635b639d6b826c	af5cb6a1869c	63.0	126a995af5c8c6f5		14.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Export	cached	4.6	1.0	471	100	717	df1af2362d1f6617	9687fabb20de	148.0	309aa1d2ff0892fc		15.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Helpers.Types	cached	2.7	0.9	461	93	374	91a69141cff69d96	9687fabb20de	148.1	62aac7005981bcd6		16.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Alloc	cached	2.0	1.3	511	133	1295	c1435bc998ab22dd	af5cb6a1869c	65.0	33242420f79f86c3		15.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.CanCondSelect	cached	2.1	0.9	475	106	331	dd9c7903fddeab5b	9687fabb20de	147.2	c516c55d92aa3895		17.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.TypeCmp	cached	2.2	0.9	563	97	287	c7a3da71848d8235	9687fabb20de	147.2	40f30019b2c5d812		3.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Pass	cached	1.7	0.9	576	100	288	801c31674070d16d	9687fabb20de	144.9	8cafc94cbe779052		16.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Analysis.Dom	cached	1.4	0.9	468	93	356	41f7bc6c2c743027	af5cb6a1869c	67.1	8495468a1ddbae1d		15.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Analysis.Postorder	cached	1.7	0.8	472	87	140	7f3234fbff5419cf	af5cb6a1869c	67.1	6c1a9ad30ceb40f4		15.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Analysis.SparseTree	cached	1.2	0.8	465	86	179	d42fd819e12c6681	af5cb6a1869c	66.9	99ed785dbb10d416		15.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Analysis.CfgCache	cached	0.9	0.6	462	89	74	9e8039aa0e2ed0f2	af5cb6a1869c	66.9	13ce9b0c58432dba		16.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Util.SparseMap	cached	2.4	2.3	490	115	645	297edbdc99c4a808	bbde7d617e72	51.5	b358b2a636fbc8c9		2.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.XPosMap	cached	1.3	0.9	481	96	367	531d62ce62e1ce22	af5cb6a1869c	67.9	57857d0707f162ad		15.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.NumberLines	cached	6.7	1.6	564	122	1057	aceb55df35e29e97	f2e7f11c8df3	120.9	be5b3c43a2ae6163		18.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Speculate	cached	2.3	1.8	510	137	518	ae71230eb6405dfd	af5cb6a1869c	69.5	13a76ef339bbc832		17.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.TypePred	cached	1.9	0.7	446	97	61	97764dd4d7d5654a	9687fabb20de	138.5	a2d322130fd1de1d		16.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.BranchElim	cached	9.2	2.0	573	123	1439	fc1e432f2c7cd928	f2e7f11c8df3	119.0	15d59a2246f863c8		20.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Helpers.Ptr	cached	6.1	2.2	507	151	1419	ce4a46f9e5b938c4	9687fabb20de	134.6	61774b0239904539		18.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Util.PdqSort	cached	3.6	6.0	501	127	1256	69dd53442cffce72	bbde7d617e72	58.5	0048cbd720b34ce0		6.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.CSE	cached	4.8	2.2	627	148	1694	cf665dcfe6d38cb3	9687fabb20de	130.6	f2d28ac6549ab667		20.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.CheckBCE	cached	3.9	0.9	573	94	18	8316a029b07caed0	9687fabb20de	128.8	62766fdfe35679bb		17.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Edges	cached	2.5	1.3	476	90	555	cf59adfbbd2978f6	af5cb6a1869c	78.7	332e200e0966d7a8		17.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.CopyElim	cached	3.0	1.6	580	109	367	7abf5170e638ff58	9687fabb20de	127.7	d30cb9841967194d		18.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.CpuFeatures	cached	2.8	0.8	576	100	68	b7de484fef1f3edf	9687fabb20de	124.7	4542fbd2db2ff76e		17.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Helpers.Sym	cached	3.5	1.0	472	97	656	5e4c8de72703e16d	9687fabb20de	120.8	1843674cfd156a5a		17.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Util.SparseSet	cached	1.7	2.1	487	113	640	edb9c332582d286a	bbde7d617e72	58.5	e850587bc53b996f		2.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.DeadStore	cached	3.8	1.5	629	144	1118	8cb51c2a601224d1	9687fabb20de	118.9	b8e9bcb5d510baf5		18.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Live	cached	3.6	1.1	478	99	473	85621fe937e0c2c9	9687fabb20de	116.9	b16c0c46d0ce50bc		16.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Deadcode	cached	6.1	1.3	596	109	647	78300700eccf392c	9687fabb20de	116.0	127368071fd78953		20.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.TypeNew	cached	3.1	1.2	576	107	287	3d88f1654049b8c2	9687fabb20de	118.5	2bc62e71389d9af3		16.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Decompose.State	cached	3.6	1.5	601	114	708	32e7c2ccd2fcd262	9687fabb20de	118.4	2ebae8c459f556e7		18.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Decompose.Order	cached	5.2	1.2	597	110	668	6cc25937314fb3ee	9687fabb20de	115.1	81c0b6a29cc694a6		19.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Decompose.Phi	cached	3.7	1.7	587	113	455	1cadc2b255ba4d0b	9687fabb20de	115.2	91e67bcbedcb0730		19.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Syntax	cached	4.8	2.8	500	156	2837	26bb80ba91657c2c	eb5adbe919c6	64.9	195b4859c8a6ee90		14.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Dec.Values00	cached	2.9	1.7	464	119	1086	65ee080a38f13ed1	eb5adbe919c6	64.5	88c0193afc911b09		16.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Dec	cached	2.0	1.4	419	98	74	8f29ee354879a4ab	eb5adbe919c6	66.7	b1043f42bf55e33e		17.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.GoVal	cached	1.6	1.1	458	104	532	41b13f34d3e898a4	af5cb6a1869c	74.3	12b2dfb3e5b80bf6		15.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Env	cached	5.4	1.7	588	120	259	18e2d64714bac183	9687fabb20de	110.3	f62a6e73ca944a44		19.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Helpers.Build	cached	7.9	2.3	625	429	1154	7f5f0233ca758695	9687fabb20de	109.8	d9234b408279f0bb		21.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Helpers.Magic	cached	1.1	1.0	451	90	171	5594181256ba0066	af5cb6a1869c	72.8	c3038152621e444d		16.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Eval	cached	25.6	10.5	591	217	5160	49cf0e2e7df262e5	9687fabb20de	105.9	efde25604279fbef		31.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Interp	cached	6.6	2.6	588	145	1443	4c83d18d56804517	9687fabb20de	98.6	3196828d177150a3		34.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Apply	cached	5.1	2.1	589	141	1220	bbf118ce0acf541f	9687fabb20de	98.2	5ba81c3575531da1		36.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Run	cached	3.6	1.2	567	124	233	367c7fcb2b714f45	9687fabb20de	98.0	920709506c6fbdd7		37.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Decompose	cached	4.2	2.1	584	125	914	e72c2cbfd91481e4	9687fabb20de	97.7	674dd107cf189e25		39.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ElimDeadAutos	cached	2.8	1.5	589	131	980	b07983f628f7e30a	9687fabb20de	96.4	a45c19b2dae7c09d		17.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.ABI	cached	2.1	1.2	452	99	653	5b40389f1f2fba29	9687fabb20de	96.4	d5778729d4141e79		16.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.ConstCache	cached	3.5	0.9	469	90	195	7a9bde24cd9874e8	af5cb6a1869c	89.9	0c725498059cf5a4		16.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls.State	cached	2.6	1.6	566	115	853	19bd5900bdf1a14e	9687fabb20de	94.1	4747b6b5e1a6bf38		18.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls.Decompose	cached	4.3	3.4	588	134	2024	7bee7a7ccb524ae0	9687fabb20de	91.2	8c4826b6f5110a18		21.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls.Select	cached	2.7	1.9	579	124	1061	b8597105b57973b8	9687fabb20de	90.0	5b497805ce29153c		20.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ExpandCalls	cached	3.9	2.4	607	147	1480	ce307d24e80553cb	9687fabb20de	90.0	927131e5d2a2ea89		24.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Fuse.Basic	cached	1.5	0.7	438	89	284	41b34feb48ae4a06	9687fabb20de	88.6	0449e35dff114c7f		16.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Ctx	cached	4.5	1.6	588	131	978	d1093a7af46fec59	9687fabb20de	86.5	469f668f6a067965		18.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Limit	cached	2.6	2.3	468	98	557	868663cdde7b2243	af5cb6a1869c	82.3	5f6f51d8cb2c132a		2.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Poset	cached	3.0	1.6	487	373	1388	2c3b4edaec4692e2	af5cb6a1869c	82.3	c470f0cdb73568bf		1.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.FactsTable	cached	13.4	4.7	612	158	2765	86ae7dfc490e9a31	9687fabb20de	86.8	c36786c31d8064e4		23.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Fuse.BranchRedirect	cached	5.0	2.0	561	112	423	b2e862b1f823c308	9687fabb20de	96.2	3becda6fb7147616		25.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Fuse.Comparisons	cached	2.8	1.6	513	143	1270	333a44164ce83db5	af5cb6a1869c	84.4	acc6b65ec9e00375		19.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Fuse.If	cached	3.1	0.9	436	96	414	c9648b821e08a9d6	9687fabb20de	96.5	9a59159b550a2710		18.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Fuse.Plain	cached	4.1	2.1	468	101	492	2487416c2e4a1c0c	af5cb6a1869c	83.8	0a3b5e8c10f0f7ae		17.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Fuse	cached	1.6	0.9	548	106	95	f1cc8811d86d5ac8	9687fabb20de	95.1	3844cd186a7bf0e4		26.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.KnownBits	cached	4.3	2.5	615	160	1287	80dcf04c3bbb5217	9687fabb20de	95.1	24c699447c9e6eac		19.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.MemCombine.Base	cached	2.9	1.3	557	111	504	124c5222cfafaea8	9687fabb20de	92.3	e9ab90a0f536cd2a		18.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Helpers.MergePoint	cached	1.9	1.2	459	105	135	de6954f5f8b65fd0	af5cb6a1869c	82.5	99b39aa90cbd3a64		17.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.MemCombine.Loads	cached	5.3	2.5	587	129	1291	6a78876a2c480231	9687fabb20de	92.0	9064eba29e36fde3		20.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.MemCombine.Stores	cached	4.1	2.3	591	123	1567	f75e16dedbf73bde	9687fabb20de	94.0	8762855dd11350f0		20.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.MemCombine	cached	1.3	0.9	546	103	176	830385d73d099f0a	9687fabb20de	94.1	a86feae96663cd83		21.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.StoreOrder	cached	2.4	1.2	455	102	714	6e773a65a2227813	9687fabb20de	93.3	2bc2ba3556c23fca		17.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.NilCheck	cached	9.1	1.6	615	137	1259	1a6e55b8600e9677	f2e7f11c8df3	146.9	ec220699a9b6cd14		19.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Divisible.Values00	cached	2.9	2.8	473	127	1123	3d256ae05dbf3e03	eb5adbe919c6	66.7	1b767cd4dc043052		17.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Divisible	cached	0.9	0.6	422	89	43	f408066318efd75c	eb5adbe919c6	65.7	e2669b28628c3751		17.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Divmod.Values00	cached	1.7	1.6	483	136	1373	f4d1163e3c753093	eb5adbe919c6	65.7	9be13fa37dba5007		15.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Divmod	cached	0.8	0.7	433	87	43	5697fc4dd0c650b5	eb5adbe919c6	64.3	ecafe3901f66f08e		16.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Blocks	cached	0.7	0.6	421	93	74	8d25f22909af63ef	eb5adbe919c6	64.3	45a8fcbd36918baf		14.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values00	cached	3.0	3.2	514	165	2408	3518080e65200d1e	eb5adbe919c6	64.3	e04505f4c85bd683		17.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values01	cached	3.2	3.0	499	151	1953	5180d8ae9a7252fa	eb5adbe919c6	63.5	49b8b207a24f0688		17.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values02	cached	5.2	5.8	521	172	2661	e5b7cb02b147b46b	eb5adbe919c6	62.9	dcf2e14b2367efc2		20.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values03	cached	3.5	4.0	509	160	2514	f5168c2275d0d6d3	eb5adbe919c6	62.2	1e774208d5fce7e0		18.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values04	cached	2.6	2.9	488	138	1725	8d38bfa11bd569b6	eb5adbe919c6	61.2	6ee1e43aa6f6c398		17.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values05	cached	2.9	3.9	522	174	3035	f60ca08f13935f01	eb5adbe919c6	61.2	8db669dc342e745c		18.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values06	cached	4.2	5.4	551	205	4533	d7ef5815d7f8a03d	eb5adbe919c6	58.5	aa9ac8dd74663fdc		19.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values07	cached	3.7	4.2	506	157	2444	266146efb4dd7eee	eb5adbe919c6	55.8	602d0f81c78fd277		18.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values08	cached	5.4	8.1	495	148	2122	f4060039b5e17b8c	eb5adbe919c6	54.3	676ab7e4ae84f9ed		22.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values09	cached	5.3	4.7	520	172	2595	4c6722a61c8d3b04	eb5adbe919c6	53.5	3f7e6c36fc348e62		19.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values10	cached	4.5	4.3	507	166	1716	41d39e836f00ea44	eb5adbe919c6	53.9	39639c4a609da46d		18.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values11	cached	3.3	3.1	503	162	1834	33bd9ef5e8ac09f0	eb5adbe919c6	55.4	fd0edcc97fef62f9		17.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values12	cached	5.7	5.2	547	201	4360	6c574ad832bb7ffa	eb5adbe919c6	56.0	837dd4c04cc0ebe8		19.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values13	cached	4.0	3.5	508	156	2322	84974232f557b759	eb5adbe919c6	57.4	e9612dc384dad452		17.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic.Values14	cached	2.5	2.4	475	122	1413	3c36d91f33d995ee	eb5adbe919c6	57.5	d77393047c704e41		16.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated.Generic	cached	1.7	1.2	478	143	855	9cd1f17a0843a7ff	eb5adbe919c6	57.0	eba27740031489c2		23.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Opt	cached	3.1	1.2	554	125	19	8c04e6647e666439	9687fabb20de	94.1	7a6caa7358670247		39.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.PhiOpt	cached	9.3	2.0	521	130	969	c1dfb100b208fcb7	9687fabb20de	93.8	7859ce5229e01231		18.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.IndVar	cached	8.9	2.0	622	180	993	4db0d9d6c0b22c1e	9687fabb20de	97.5	6934e20e6401fded		25.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Downward	cached	14.9	2.6	621	242	698	64cb2835d9b2946f	9687fabb20de	104.4	4e8ebeedc2b7f0e1		28.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Flow	cached	25.2	6.6	558	193	3423	047f9e856bcae87c	9687fabb20de	107.6	edf686029442ec83		30.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Simplify	cached	10.3	4.2	628	187	2483	666b0e98b7dd06b1	9687fabb20de	119.9	e479c64ae0ff533b		34.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.Prove.Pass	cached	10.6	1.6	567	320	521	fd9edc11555a6b67	9687fabb20de	126.0	599d5c3758b34b43		36.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ReschedChecks	cached	9.1	1.7	576	203	160	4f78808e459ff139	9687fabb20de	130.7	7e19d81a58b13e6e		18.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ShortCircuit	cached	11.6	3.8	576	151	1505	fbb80bde890c02e1	9687fabb20de	129.4	2c2dec3897a4374b		21.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.SoftFloat	cached	6.3	1.4	481	141	32	89edb2c1e249cbe8	9687fabb20de	133.6	01977a412dfd4428		17.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.WBHelpers	cached	8.8	2.0	448	156	1307	0a63db8ea835c2a7	9687fabb20de	131.3	2bbb43fd5292118f		19.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.ABIAnalyze	cached	3.6	0.9	461	90	242	c6ece6272b9e8c3e	af5cb6a1869c	73.1	0a327ca65ddff7e6		7.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.WriteBarrier	cached	13.1	4.4	556	169	2585	93f17c29b639033c	9687fabb20de	129.3	ef3106ef6009cb94		23.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Opt.ZCSE	cached	11.5	2.1	627	185	707	f0a81d762693d333	9687fabb20de	126.7	45c8d406d6074128		18.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Val	cached	2.0	1.5	474	103	898	9ca549e07b4c017b	af5cb6a1869c	67.9	73726044b2b7853a		1.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Env	cached	1.1	0.9	455	89	345	d66fb9fe26cf02ee	af5cb6a1869c	66.5	b7762a671de3f8a3		2.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Layout	cached	3.5	0.8	431	90	190	7815900f44a67a8b	9687fabb20de	150.9	9a50e1e3d5fb74cf		16.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Int	cached	1.2	1.1	459	98	384	1e60ae16a5e0ba8f	af5cb6a1869c	67.9	46622571af85b8cf		2.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Cmp	cached	1.2	0.8	461	90	168	5b2f51b87ec53cd5	af5cb6a1869c	67.9	6cdd860f9f091fca		3.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Conv	cached	1.1	0.7	448	85	80	54b6c306764a7472	af5cb6a1869c	66.5	a4317484a67a5c22		4.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Shift	cached	0.8	0.8	446	85	74	9432f188940508ac	af5cb6a1869c	64.5	3d0fd2704cf684c5		3.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Pure	cached	1.2	1.2	489	108	614	23db172f558b1bdb	af5cb6a1869c	64.5	65f784644c7058d4		12.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Sem.Run	cached	9.4	2.2	489	123	1328	20236e415e51f257	f2e7f11c8df3	148.8	191b4d7d20e200df		18.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Proof.Refine	cached	10.5	1.1	463	102	466	65c20176e53e8148	f2e7f11c8df3	152.5	c81ff611f55eb147		19.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Proof.Cong	cached	8.9	1.7	461	132	616	91c6dcd9750e2e65	f2e7f11c8df3	152.9	5110f161cf32dc9e		21.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Proof.Pass.Identity	cached	5.9	0.9	550	97	74	50eabd1aa9717169	f2e7f11c8df3	152.2	9d4de90a8aa6066e		20.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Proof.Pass.NumberLines	cached	33.2	7.4	577	212	706	6ec2ac9e51271423	f2e7f11c8df3	151.1	266c54fe2c9f3dd4		28.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Proof.Witness.Clamp	cached	23.0	3.4	661	289	737	55697863a7f6869e	f2e7f11c8df3	149.7	13865d78af818f65		21.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Proof.Witness.Early	cached	9.6	0.9	570	167	56	8f24d9b987af194c	f2e7f11c8df3	157.5	338017e6426741ea		29.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Rules.Generated	cached	3.4	2.4	425	89	2	4dff83eba3167451	eb5adbe919c6	58.2	29f0c00fe48516a1		26.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Analysis.LoopNest	cached	1.8	1.1	474	101	513	61da979b6c7ca88d	af5cb6a1869c	73.3	b178c80790a25dfc		16.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Check	cached	25.1	6.4	575	184	2311	793900274fc90864	9687fabb20de	126.5	b11a5c0d978c0f43		22.8
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.FmtFloat	cached	0.8	0.9	474	98	337	0477a5eebe1cd0c1	bbde7d617e72	58.1	29f39c17e6f83c0d		0.9
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.GoString	cached	17.6	2.6	422	171	822	2f0f85643080c81c	9687fabb20de	131.1	0a4d608ab4b56d9b		19.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Parse	cached	15.1	5.0	469	168	2927	8c9ccbcf940a27b2	9687fabb20de	139.0	dfbe38a6cec9ac37		20.5
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.SSA.Print	cached	9.2	2.7	413	147	960	1ffb579db16f6d33	9687fabb20de	143.8	1792e6751452a086		18.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFV.Util.SparseMapPos	cached	1.0	0.9	464	86	47	d97619985d8df20c	bbde7d617e72	58.5	22309e42addef0ff		3.2
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.AnalysisDiff	cached	10.4	2.1	576	139	1262	bba0dc2de2dde612	9687fabb20de	149.6	d81e804aba5bb710		22.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.OpCheck	cached	1.1	0.8	437	99	3	efb5b25a8048f98b	eb5adbe919c6	58.2	4c7f99ac69c92b23		12.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.Parity.Registry	cached	8.8	1.2	645	193	207	7acaf254fe4b438c	f2e7f11c8df3	176.7	c82d32ab83413d7c		41.1
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.Parity.Renumber	cached	9.2	1.5	459	111	1165	2e446377e14d0475	9687fabb20de	141.7	cc698342f175b7ba		17.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.Parity.Main	cached	11.7	2.5	685	208	1304	56896fd175290c7c	f2e7f11c8df3	166.4	2914325d7f95bd2c		43.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.ProveDiff	cached	1.5	1.3	468	100	620	e705b1060c578265	af5cb6a1869c	60.7	52ca9aa01b37143a		3.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.Rules.Data	cached	1.9	1.4	474	121	213	dbde049e1425f8d1	eb5adbe919c6	58.4	14f58b62224425a3		27.4
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.SSACheck	cached	8.4	1.9	592	126	1044	d9a14383beed361e	9687fabb20de	148.2	52db04ec2c1a4959		24.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.SSARoundtrip	cached	6.1	1.1	458	110	555	b4340cd195ef8f27	9687fabb20de	152.0	16a4563299780236		21.6
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.SemDiff	cached	13.8	2.5	643	138	1610	a870843df19c071d	f2e7f11c8df3	155.9	c97fd2aaf9c7a52e		23.0
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.Util	cached	1.6	1.3	492	118	4	a782fa47733462ca	bbde7d617e72	58.8	ecc2938d69541501		7.3
+2026-10-31T22:54:53Z	f2e7f11c8df3	GoFVTest.UtilDiff	cached	1.7	1.7	607	110	809	92123e8e310e0f85	bbde7d617e72	58.8	534871cf886ceb1b		7.7
+2026-10-31T22:54:53Z	f2e7f11c8df3	_total	ok	775.0	317.5	685	429	159340		f2e7f11c8df3			0 differ	43.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.GoStr	remeasured	0.9	0.7	457	92	134	4d02030258606129	47fa980497d8	74.1	a123f625d399c471	same	0.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Pos	remeasured	1.5	1.2	462	92	308	1cba019179073d16	47fa980497d8	74.1	c0eba873ae7d4680	same	1.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Type	remeasured	2.1	2.0	491	119	1720	45ca95cde4da2082	47fa980497d8	72.4	38d0c5e9c91dff3e	same	2.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.AuxData	remeasured	3.0	2.2	498	119	1844	9d22d8bb47e2447c	47fa980497d8	72.4	97099b896ac57a1a	same	4.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.OpInfo	remeasured	1.1	0.8	471	99	593	44897c224c601873	47fa980497d8	71.1	741aae9d0c9d2abf	same	0.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Op	remeasured	11.3	11.9	622	257	15865	4521a28344955b8a	47fa980497d8	71.1	ff82d1c9a5021c75	same	12.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Value	remeasured	1.7	1.1	473	95	170	a67ea7405a4b0b5f	47fa980497d8	65.5	4872f57e9cc8bfa3	same	13.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Block	remeasured	1.5	1.2	474	93	372	13b2535e280b03b6	47fa980497d8	65.5	28f36785a25d7d3d	same	15.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Func	remeasured	1.8	1.3	487	104	1008	65635b639d6b826c	47fa980497d8	65.5	126a995af5c8c6f5	same	16.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Export	remeasured	1.3	1.1	477	99	717	df1af2362d1f6617	47fa980497d8	66.6	309aa1d2ff0892fc	same	17.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Helpers.Types	remeasured	2.4	1.7	485	97	374	91a69141cff69d96	47fa980497d8	66.6	62aac7005981bcd6	same	19.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Alloc	remeasured	2.3	1.8	515	125	1295	c1435bc998ab22dd	47fa980497d8	66.4	33242420f79f86c3	same	18.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.CanCondSelect	remeasured	1.3	0.9	497	104	331	dd9c7903fddeab5b	47fa980497d8	66.5	c516c55d92aa3895	same	20.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.TypeCmp	remeasured	1.7	1.1	598	100	287	c7a3da71848d8235	47fa980497d8	66.5	40f30019b2c5d812	same	3.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Pass	remeasured	1.6	0.9	604	115	288	801c31674070d16d	47fa980497d8	66.5	8cafc94cbe779052	same	18.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Analysis.Dom	remeasured	1.7	1.6	472	104	356	41f7bc6c2c743027	47fa980497d8	66.2	8495468a1ddbae1d	same	17.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Analysis.Postorder	remeasured	1.2	1.0	465	88	140	7f3234fbff5419cf	47fa980497d8	66.2	6c1a9ad30ceb40f4	same	17.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Analysis.SparseTree	remeasured	1.6	1.4	472	91	179	d42fd819e12c6681	47fa980497d8	67.1	99ed785dbb10d416	same	17.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Analysis.CfgCache	remeasured	1.1	0.8	460	86	74	9e8039aa0e2ed0f2	47fa980497d8	67.1	13ce9b0c58432dba	same	18.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Util.SparseMap	remeasured	2.3	1.9	493	112	645	297edbdc99c4a808	47fa980497d8	67.1	b358b2a636fbc8c9	same	1.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.XPosMap	remeasured	1.7	1.1	473	92	367	531d62ce62e1ce22	47fa980497d8	65.8	57857d0707f162ad	same	17.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.NumberLines	remeasured	3.6	2.7	634	129	1057	aceb55df35e29e97	47fa980497d8	65.8	be5b3c43a2ae6163	same	21.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Speculate	remeasured	2.7	2.4	506	126	518	ae71230eb6405dfd	47fa980497d8	65.4	13a76ef339bbc832	same	20.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.TypePred	remeasured	1.2	0.7	472	90	61	97764dd4d7d5654a	47fa980497d8	65.7	a2d322130fd1de1d	same	18.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.BranchElim	remeasured	2.3	1.9	642	136	1439	fc1e432f2c7cd928	47fa980497d8	65.7	15d59a2246f863c8	same	23.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Helpers.Ptr	remeasured	2.6	2.1	526	130	1419	ce4a46f9e5b938c4	47fa980497d8	64.6	61774b0239904539	same	21.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Util.PdqSort	remeasured	3.5	3.5	503	128	1256	69dd53442cffce72	47fa980497d8	62.9	0048cbd720b34ce0	same	3.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.CSE	remeasured	3.0	2.3	647	137	1694	cf665dcfe6d38cb3	47fa980497d8	65.3	f2d28ac6549ab667	same	23.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.CheckBCE	remeasured	1.3	0.8	591	99	18	8316a029b07caed0	47fa980497d8	65.3	62766fdfe35679bb	same	19.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Edges	remeasured	2.0	0.9	478	93	555	cf59adfbbd2978f6	47fa980497d8	64.8	332e200e0966d7a8	same	19.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.CopyElim	remeasured	2.6	1.3	608	107	367	7abf5170e638ff58	47fa980497d8	64.8	d30cb9841967194d	same	20.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.CpuFeatures	remeasured	1.6	0.7	592	99	68	b7de484fef1f3edf	47fa980497d8	67.3	4542fbd2db2ff76e	same	19.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Helpers.Sym	remeasured	1.6	1.0	479	104	656	5e4c8de72703e16d	47fa980497d8	67.3	1843674cfd156a5a	same	20.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Util.SparseSet	remeasured	2.1	2.1	504	120	640	edb9c332582d286a	47fa980497d8	67.5	e850587bc53b996f	same	2.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.DeadStore	remeasured	2.7	2.1	638	136	1118	8cb51c2a601224d1	47fa980497d8	67.5	b8e9bcb5d510baf5	same	22.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Live	remeasured	1.9	1.3	493	101	473	85621fe937e0c2c9	47fa980497d8	66.5	b16c0c46d0ce50bc	same	18.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Deadcode	remeasured	2.0	1.5	618	114	647	78300700eccf392c	47fa980497d8	67.6	127368071fd78953	same	21.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.TypeNew	remeasured	1.4	1.0	595	103	287	3d88f1654049b8c2	47fa980497d8	67.6	2bc62e71389d9af3	same	18.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Decompose.State	remeasured	1.4	1.2	616	117	708	32e7c2ccd2fcd262	47fa980497d8	68.8	2ebae8c459f556e7	same	20.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Decompose.Order	remeasured	1.5	1.1	621	121	668	6cc25937314fb3ee	47fa980497d8	68.8	81c0b6a29cc694a6	same	21.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Decompose.Phi	remeasured	1.6	1.1	617	111	455	1cadc2b255ba4d0b	47fa980497d8	70.3	91e67bcbedcb0730	same	21.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Syntax	remeasured	3.3	2.6	529	144	2837	26bb80ba91657c2c	47fa980497d8	70.3	195b4859c8a6ee90	same	15.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Dec.Values00	remeasured	2.4	1.8	495	115	1086	65ee080a38f13ed1	47fa980497d8	71.5	88c0193afc911b09	same	17.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Dec	remeasured	1.1	0.8	471	87	74	8f29ee354879a4ab	47fa980497d8	71.5	b1043f42bf55e33e	same	17.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.GoVal	remeasured	1.5	1.0	487	99	532	41b13f34d3e898a4	47fa980497d8	72.7	12b2dfb3e5b80bf6	same	16.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Env	remeasured	1.6	1.0	608	102	259	18e2d64714bac183	47fa980497d8	72.7	f62a6e73ca944a44	same	21.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Helpers.Build	remeasured	3.2	2.8	645	136	1104	6f190bd444a8d228	47fa980497d8	72.8	5255d63f4dc1df1b	same	23.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Helpers.Magic	remeasured	1.1	0.9	480	94	171	5594181256ba0066	47fa980497d8	73.6	c3038152621e444d	same	17.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Eval	remeasured	8.3	7.0	718	208	5160	4e16b996cce58f51	47fa980497d8	73.6	efde25604279fbef	same	30.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Interp	remeasured	3.1	1.7	635	128	1443	50460832fefce50f	47fa980497d8	73.5	3196828d177150a3	same	32.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Apply	remeasured	2.8	1.7	637	129	1220	b426a4f829b360e7	47fa980497d8	73.5	5ba81c3575531da1	same	34.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Run	remeasured	1.6	1.0	616	105	233	0a83e700d75c60a1	47fa980497d8	74.5	920709506c6fbdd7	same	35.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Decompose	remeasured	3.2	2.4	621	118	914	38e4757ae9ab0616	47fa980497d8	74.9	674dd107cf189e25	same	37.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ElimDeadAutos	remeasured	2.0	1.6	643	127	980	b07983f628f7e30a	47fa980497d8	74.9	a45c19b2dae7c09d	same	19.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.ABI	remeasured	1.7	1.3	494	104	653	5b40389f1f2fba29	47fa980497d8	74.2	d5778729d4141e79	same	18.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.ConstCache	remeasured	1.1	0.8	470	90	195	7a9bde24cd9874e8	47fa980497d8	74.2	0c725498059cf5a4	same	18.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ExpandCalls.State	remeasured	2.0	1.5	609	113	853	19bd5900bdf1a14e	47fa980497d8	75.5	4747b6b5e1a6bf38	same	20.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ExpandCalls.Decompose	remeasured	2.9	2.8	644	149	2024	7bee7a7ccb524ae0	47fa980497d8	75.5	8c4826b6f5110a18	same	23.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ExpandCalls.Select	remeasured	1.9	1.7	625	118	1061	b8597105b57973b8	47fa980497d8	75.4	5b497805ce29153c	same	22.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ExpandCalls	remeasured	2.6	2.3	659	139	1480	ce307d24e80553cb	47fa980497d8	75.4	927131e5d2a2ea89	same	25.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Fuse.Basic	remeasured	1.3	1.0	473	98	284	41b34feb48ae4a06	47fa980497d8	75.1	0449e35dff114c7f	same	19.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Ctx	remeasured	2.0	1.8	637	130	978	d1093a7af46fec59	47fa980497d8	75.1	469f668f6a067965	same	21.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Limit	remeasured	1.8	1.5	479	98	557	868663cdde7b2243	47fa980497d8	75.5	5f6f51d8cb2c132a	same	1.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Poset	remeasured	2.2	1.8	498	111	1388	2c3b4edaec4692e2	47fa980497d8	75.5	c470f0cdb73568bf	same	1.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.FactsTable	remeasured	3.3	2.9	674	156	2765	86ae7dfc490e9a31	47fa980497d8	74.7	c36786c31d8064e4	same	24.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Fuse.BranchRedirect	remeasured	1.4	1.1	601	103	423	b2e862b1f823c308	47fa980497d8	73.6	3becda6fb7147616	same	25.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Fuse.Comparisons	remeasured	3.1	2.3	530	134	1270	333a44164ce83db5	47fa980497d8	73.6	acc6b65ec9e00375	same	22.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Fuse.If	remeasured	1.4	1.1	482	92	414	c9648b821e08a9d6	47fa980497d8	72.4	9a59159b550a2710	same	20.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Fuse.Plain	remeasured	2.2	1.1	487	98	492	2487416c2e4a1c0c	47fa980497d8	72.4	0a3b5e8c10f0f7ae	same	19.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Fuse	remeasured	1.3	0.8	596	98	95	f1cc8811d86d5ac8	47fa980497d8	71.6	3844cd186a7bf0e4	same	26.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.KnownBits	remeasured	2.8	2.4	660	145	1287	80dcf04c3bbb5217	47fa980497d8	71.6	24c699447c9e6eac	same	21.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.MemCombine.Base	remeasured	1.9	1.3	611	106	504	124c5222cfafaea8	47fa980497d8	71.0	e9ab90a0f536cd2a	same	20.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Helpers.MergePoint	remeasured	1.2	0.7	464	89	135	de6954f5f8b65fd0	47fa980497d8	71.0	99b39aa90cbd3a64	same	18.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.MemCombine.Loads	remeasured	2.6	2.0	639	124	1291	6a78876a2c480231	47fa980497d8	69.9	9064eba29e36fde3	same	22.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.MemCombine.Stores	remeasured	2.7	2.2	649	133	1567	f75e16dedbf73bde	47fa980497d8	69.9	8762855dd11350f0	same	22.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.MemCombine	remeasured	1.3	1.0	607	102	176	830385d73d099f0a	47fa980497d8	69.1	a86feae96663cd83	same	23.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.StoreOrder	remeasured	2.1	1.3	493	102	714	6e773a65a2227813	47fa980497d8	69.1	2bc2ba3556c23fca	same	19.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.NilCheck	remeasured	1.9	1.5	641	136	1259	1a6e55b8600e9677	47fa980497d8	68.2	ec220699a9b6cd14	same	22.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Divisible.Values00	remeasured	2.4	2.4	507	129	1123	3d256ae05dbf3e03	47fa980497d8	67.6	1b767cd4dc043052	same	17.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Divisible	remeasured	1.1	0.9	468	85	43	f408066318efd75c	47fa980497d8	67.6	e2669b28628c3751	same	18.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Divmod.Values00	remeasured	2.6	2.5	505	126	1373	f4d1163e3c753093	47fa980497d8	67.6	9be13fa37dba5007	same	17.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Divmod	remeasured	0.8	0.6	450	86	43	5697fc4dd0c650b5	47fa980497d8	66.3	ecafe3901f66f08e	same	18.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Blocks	remeasured	1.0	0.8	459	94	74	8d25f22909af63ef	47fa980497d8	66.3	45a8fcbd36918baf	same	16.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values00	remeasured	3.7	3.8	538	163	2408	3518080e65200d1e	47fa980497d8	65.2	e04505f4c85bd683	same	19.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values01	remeasured	4.2	3.5	532	151	1953	5180d8ae9a7252fa	47fa980497d8	67.3	49b8b207a24f0688	same	18.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values02	remeasured	6.7	4.3	553	173	2661	e5b7cb02b147b46b	47fa980497d8	68.5	dcf2e14b2367efc2	same	19.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values03	remeasured	4.9	3.6	541	171	2514	f5168c2275d0d6d3	47fa980497d8	69.6	1e774208d5fce7e0	same	18.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values04	remeasured	4.0	2.9	521	142	1725	8d38bfa11bd569b6	47fa980497d8	70.3	6ee1e43aa6f6c398	same	18.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values05	remeasured	5.6	4.2	553	176	3035	f60ca08f13935f01	47fa980497d8	69.7	8db669dc342e745c	same	19.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values06	remeasured	7.9	5.4	588	213	4533	d7ef5815d7f8a03d	47fa980497d8	71.2	aa9ac8dd74663fdc	same	20.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values07	remeasured	5.2	3.6	539	160	2444	266146efb4dd7eee	47fa980497d8	72.9	602d0f81c78fd277	same	18.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values08	remeasured	4.7	3.1	531	150	2122	f4060039b5e17b8c	47fa980497d8	72.1	676ab7e4ae84f9ed	same	18.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values09	remeasured	6.9	4.1	553	174	2595	4c6722a61c8d3b04	47fa980497d8	71.7	3f7e6c36fc348e62	same	19.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values10	remeasured	4.9	3.4	533	153	1716	41d39e836f00ea44	47fa980497d8	71.9	39639c4a609da46d	same	18.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values11	remeasured	9.5	4.5	525	158	1834	33bd9ef5e8ac09f0	47fa980497d8	71.8	fd0edcc97fef62f9	same	19.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values12	remeasured	11.8	6.6	565	203	4360	6c574ad832bb7ffa	47fa980497d8	73.0	837dd4c04cc0ebe8	same	21.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values13	remeasured	12.0	3.5	533	160	2322	84974232f557b759	47fa980497d8	81.7	e9612dc384dad452	same	18.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic.Values14	remeasured	8.1	2.2	500	123	1413	3c36d91f33d995ee	47fa980497d8	86.5	d77393047c704e41	same	17.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated.Generic	remeasured	5.0	1.4	516	150	855	9cd1f17a0843a7ff	47fa980497d8	89.6	eba27740031489c2	same	23.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Opt	remeasured	4.0	1.1	613	163	19	1d4ac900bee16e2f	47fa980497d8	89.0	7a6caa7358670247	same	36.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.PhiOpt	remeasured	8.9	1.6	639	163	969	c1dfb100b208fcb7	47fa980497d8	90.1	7859ce5229e01231	same	20.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.IndVar	remeasured	13.5	2.5	548	204	993	4db0d9d6c0b22c1e	47fa980497d8	96.6	6934e20e6401fded	same	27.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Downward	remeasured	33.6	2.8	539	339	698	64cb2835d9b2946f	47fa980497d8	101.9	4e8ebeedc2b7f0e1	same	30.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Flow	remeasured	31.0	5.9	539	427	3423	047f9e856bcae87c	47fa980497d8	124.0	edf686029442ec83	same	30.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Simplify	remeasured	14.8	3.5	592	403	2483	666b0e98b7dd06b1	47fa980497d8	126.3	e479c64ae0ff533b	same	34.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.Prove.Pass	remeasured	4.8	1.3	546	143	521	fd9edc11555a6b67	47fa980497d8	122.2	599d5c3758b34b43	same	35.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ReschedChecks	remeasured	5.2	0.9	537	109	160	4f78808e459ff139	47fa980497d8	123.6	7e19d81a58b13e6e	same	19.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ShortCircuit	remeasured	19.6	5.3	597	268	1505	fbb80bde890c02e1	47fa980497d8	127.0	2c2dec3897a4374b	same	24.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.SoftFloat	remeasured	5.2	0.9	533	104	32	89edb2c1e249cbe8	47fa980497d8	124.8	01977a412dfd4428	same	19.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.WBHelpers	remeasured	10.1	2.0	484	133	1307	0a63db8ea835c2a7	47fa980497d8	120.1	2bbb43fd5292118f	same	22.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.ABIAnalyze	remeasured	4.8	0.9	435	101	242	c6ece6272b9e8c3e	47fa980497d8	120.9	0a327ca65ddff7e6	same	5.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.WriteBarrier	remeasured	11.2	3.0	610	174	2585	93f17c29b639033c	47fa980497d8	121.5	ef3106ef6009cb94	same	25.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Opt.ZCSE	remeasured	8.6	1.3	573	135	707	f0a81d762693d333	47fa980497d8	121.6	45c8d406d6074128	same	19.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Val	remeasured	6.6	1.2	449	115	898	9ca549e07b4c017b	47fa980497d8	125.1	73726044b2b7853a	same	1.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Env	remeasured	9.3	1.3	458	209	345	d66fb9fe26cf02ee	47fa980497d8	127.4	b7762a671de3f8a3	same	2.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Layout	remeasured	4.3	0.8	468	110	190	7815900f44a67a8b	47fa980497d8	123.5	9a50e1e3d5fb74cf	same	18.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Int	remeasured	4.0	1.2	469	114	384	1e60ae16a5e0ba8f	47fa980497d8	121.1	46622571af85b8cf	same	2.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Cmp	remeasured	4.0	0.9	456	95	168	5b2f51b87ec53cd5	47fa980497d8	121.0	6cdd860f9f091fca	same	3.3
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Conv	remeasured	4.4	1.2	449	98	80	54b6c306764a7472	47fa980497d8	120.3	a4317484a67a5c22	same	4.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Shift	remeasured	3.3	0.7	444	93	74	9432f188940508ac	47fa980497d8	121.7	3d0fd2704cf684c5	same	3.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Pure	remeasured	6.1	1.1	477	119	614	23db172f558b1bdb	47fa980497d8	120.9	65f784644c7058d4	same	13.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Sem.Run	remeasured	11.1	2.3	508	141	1328	20236e415e51f257	47fa980497d8	122.6	191b4d7d20e200df	same	20.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Proof.Refine	remeasured	7.7	1.4	451	126	466	65c20176e53e8148	47fa980497d8	120.4	c81ff611f55eb147	same	21.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Proof.Cong	remeasured	6.4	2.0	438	163	616	91c6dcd9750e2e65	47fa980497d8	120.3	5110f161cf32dc9e	same	23.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Proof.Pass.Identity	remeasured	3.8	1.2	546	108	74	50eabd1aa9717169	47fa980497d8	118.9	9d4de90a8aa6066e	same	23.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Proof.Pass.NumberLines	remeasured	24.0	7.2	501	206	706	6ec2ac9e51271423	47fa980497d8	116.1	266c54fe2c9f3dd4	same	31.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Proof.Witness.Clamp	remeasured	19.4	5.0	458	312	737	55697863a7f6869e	47fa980497d8	107.4	13865d78af818f65	same	25.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Proof.Witness.Early	remeasured	6.5	1.4	607	116	56	8f24d9b987af194c	47fa980497d8	105.1	338017e6426741ea	same	32.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Rules.Generated	remeasured	4.4	0.9	461	114	2	4dff83eba3167451	47fa980497d8	102.3	29f0c00fe48516a1	same	24.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Analysis.LoopNest	remeasured	5.9	1.2	485	100	513	61da979b6c7ca88d	47fa980497d8	102.5	b178c80790a25dfc	same	18.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Check	remeasured	12.6	4.8	641	170	2311	793900274fc90864	47fa980497d8	103.2	b11a5c0d978c0f43	same	23.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.FmtFloat	remeasured	2.8	0.9	431	96	337	0477a5eebe1cd0c1	47fa980497d8	94.1	29f39c17e6f83c0d	same	0.9
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.GoString	remeasured	4.3	1.5	471	122	822	2f0f85643080c81c	47fa980497d8	98.0	0a4d608ab4b56d9b	same	20.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Parse	remeasured	8.0	4.0	514	205	2927	8c9ccbcf940a27b2	47fa980497d8	97.5	dfbe38a6cec9ac37	same	21.4
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.SSA.Print	remeasured	3.2	1.8	466	116	960	1ffb579db16f6d33	47fa980497d8	94.9	1792e6751452a086	same	19.2
+2026-10-31T23:41:41Z	47fa980497d8	GoFV.Util.SparseMapPos	remeasured	1.5	0.9	421	88	47	d97619985d8df20c	47fa980497d8	93.7	22309e42addef0ff	same	2.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.AnalysisDiff	remeasured	4.5	2.4	583	144	1262	bba0dc2de2dde612	47fa980497d8	93.7	d81e804aba5bb710	same	23.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.OpCheck	remeasured	3.6	1.4	449	104	3	efb5b25a8048f98b	47fa980497d8	89.7	4c7f99ac69c92b23	same	14.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.Parity.Registry	remeasured	2.4	1.1	611	175	207	11cdad81ce5f7471	47fa980497d8	89.7	c82d32ab83413d7c	same	38.8
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.Parity.Renumber	remeasured	4.1	2.1	481	113	1165	2e446377e14d0475	47fa980497d8	88.2	cc698342f175b7ba	same	19.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.Parity.Main	remeasured	5.0	2.3	654	137	1304	1a599a4e5c25c3f2	47fa980497d8	87.1	2914325d7f95bd2c	same	41.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.ProveDiff	remeasured	1.6	1.2	454	101	620	e705b1060c578265	47fa980497d8	87.4	52ca9aa01b37143a	same	3.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.Rules.Data	remeasured	4.3	1.4	474	123	213	dbde049e1425f8d1	47fa980497d8	87.3	14f58b62224425a3	same	25.6
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.SSACheck	remeasured	3.4	1.4	588	124	1044	d9a14383beed361e	47fa980497d8	87.7	52db04ec2c1a4959	same	25.1
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.SSARoundtrip	remeasured	2.3	1.3	465	104	555	b4340cd195ef8f27	47fa980497d8	86.8	16a4563299780236	same	22.7
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.SemDiff	remeasured	4.7	3.1	615	144	1610	a870843df19c071d	47fa980497d8	86.8	c97fd2aaf9c7a52e	same	24.5
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.Util	remeasured	2.8	1.5	468	119	4	a782fa47733462ca	47fa980497d8	83.2	ecc2938d69541501	same	5.0
+2026-10-31T23:41:41Z	47fa980497d8	GoFVTest.UtilDiff	remeasured	2.0	1.5	584	114	809	92123e8e310e0f85	47fa980497d8	83.2	534871cf886ceb1b	same	5.0
+2026-10-31T23:41:41Z	47fa980497d8	_total	ok	664.2	299.8	718	427	159290		47fa980497d8			0 differ	41.1

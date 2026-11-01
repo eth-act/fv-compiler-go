@@ -78,3 +78,5 @@ import GoFV.Proof.Pass.NumberLines
 import GoFV.Proof.Pass.Identity
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.Early
+import GoFV.Opt.Sccp
+import GoFV.Opt.SccpReplay
