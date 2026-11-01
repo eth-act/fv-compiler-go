@@ -88,6 +88,7 @@ frontend
 <definitions>                          (the frontend block, see below)
 end
 warn "<text>"                         (zero or more)
+ptrcache <t,…>
 typecmp t<a> t<b> <lt|eq|gt>           (zero or more)
 typeorder <group> <group> …
 eof
@@ -125,14 +126,18 @@ non-empty. All `warn` lines of a section come together just before `end`, in emi
 
 `zvar <v<ID>:<class>,…>`: type-object classes for `zcse`, which keys zero-argument values on
 the `*types.Type` **pointer**. Types are numbered by identity (above), but the backend creates
-a fresh `*T` object on every `types.NewPtr` (`types.NewPtrCacheEnabled` is false while the
-backend runs), so zero-argument values of one type number can carry distinct type objects
-that `zcse` does not merge. For every type number with at least two distinct objects among the
-section's zero-argument values (`opcodeTable[op].argLen == 0`), each such value is listed, in
-section order, with the 1-based index of its object in order of first appearance; all other
-values have class 0. `zvar` is an oracle hint for the input of `zcse`
-(`PassEnv.zvar`), not part of the function: parity does not compare it, and passes need not
-produce it. (Numbering every type by pointer instead would be faithful everywhere but is not
+a fresh `*T` object on every `types.NewPtr` whose element has no cached pointer type
+(`types.NewPtrCacheEnabled` is false while the backend runs), so zero-argument values of one
+type number can carry distinct type objects that `zcse` does not merge. Class 0 is the
+number's **canonical** object: for a pointer type the element's cached pointer type
+(`t.Elem()`'s `cache.ptr`; a pointer object is non-canonical when that is nil or another
+object), for any other type the first object met among the section's zero-argument values
+(`opcodeTable[op].argLen == 0`; blocks, then values). Every zero-argument value whose object is
+non-canonical is listed, in section order, with its class `1, 2, …`: one class per distinct
+non-canonical object of its type number, in order of first appearance. `zvar` is an oracle
+hint (`PassEnv.zvar`), not part of the function: parity does not compare it, and passes need
+not produce it; the chained pipeline (#101) tracks object identity itself, with `ptrcache`.
+(Numbering every type by pointer instead would be faithful everywhere but is not
 deterministic: shared objects built concurrently differ between runs, and 6,388 of the 9,297
 quick-corpus functions have value types with several objects of one identity.)
 
@@ -325,6 +330,14 @@ constants (`constNilMagic` = 1111, …).
 `warn "<text>"`: an invariant the exporter expected did not hold (e.g. a value's `Block` field
 differs from the block listing it). Written just before `end`; `finish` may add `warn` lines
 before `typeorder`. The stats tool counts them; the corpus must have none.
+
+## Pointer cache (`ptrcache`)
+
+`ptrcache <t,…>` (once per file, after the file-level `warn` lines; `-` if empty): the type
+numbers whose canonical object (the object the definition is rendered from) has a cached
+pointer type, i.e. for which the backend's `types.NewPtr` returns a shared object instead of a
+fresh one (rules' `t.PtrTo()`, decompose's `Split*`). Pointer caches are filled only before the
+backend runs, so one line describes every section. `PassEnv.ptrCache : TypeRef → Bool`.
 
 ## Frontend block
 
