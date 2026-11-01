@@ -101,15 +101,15 @@ needs a later phase of the semantics.
 | `divisible` | Eq | 0 | 16 | 0 | 0 | 16 |
 | `divisible` | Neq | 0 | 16 | 0 | 0 | 16 |
 | `divmod` | Div | 0 | 27 | 0 | 2 | 29 |
-| `generic` | Add | 87 | 2 | 4 | 2 | 95 |
+| `generic` | Add | 88 | 1 | 4 | 2 | 95 |
 | `generic` | AddPtr | 0 | 0 | 0 | 2 | 2 |
-| `generic` | And | 0 | 48 | 0 | 0 | 48 |
+| `generic` | And | 28 | 20 | 0 | 0 | 48 |
 | `generic` | AndB | 0 | 36 | 0 | 0 | 36 |
 | `generic` | ArraySelect | 0 | 0 | 0 | 2 | 2 |
 | `generic` | BitLen | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Block | 0 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
-| `generic` | Com | 0 | 12 | 0 | 0 | 12 |
+| `generic` | Com | 12 | 0 | 0 | 0 | 12 |
 | `generic` | CondSelect | 0 | 59 | 0 | 0 | 59 |
 | `generic` | ConstInterface | 0 | 0 | 0 | 1 | 1 |
 | `generic` | ConstSlice | 0 | 0 | 0 | 2 | 2 |
@@ -137,8 +137,8 @@ needs a later phase of the semantics.
 | `generic` | MemEq | 0 | 0 | 0 | 11 | 11 |
 | `generic` | Mod | 0 | 29 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
-| `generic` | Mul | 0 | 52 | 0 | 8 | 60 |
-| `generic` | Neg | 0 | 24 | 0 | 2 | 26 |
+| `generic` | Mul | 36 | 16 | 0 | 8 | 60 |
+| `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
 | `generic` | Neq | 0 | 52 | 0 | 2 | 54 |
 | `generic` | NeqB | 0 | 5 | 0 | 0 | 5 |
 | `generic` | NeqInter | 0 | 0 | 0 | 1 | 1 |
@@ -147,7 +147,7 @@ needs a later phase of the semantics.
 | `generic` | NilCheck | 0 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 0 | 27 | 0 | 6 | 33 |
 | `generic` | OffPtr | 0 | 0 | 0 | 2 | 2 |
-| `generic` | Or | 0 | 76 | 4 | 0 | 80 |
+| `generic` | Or | 60 | 16 | 4 | 0 | 80 |
 | `generic` | OrB | 0 | 36 | 0 | 20 | 56 |
 | `generic` | Phi | 0 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
@@ -171,12 +171,12 @@ needs a later phase of the semantics.
 | `generic` | StringLen | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StringPtr | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 0 | 0 | 0 | 4 | 4 |
-| `generic` | Sub | 0 | 68 | 0 | 2 | 70 |
+| `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 0 | 32 | 0 | 1 | 33 |
-| `generic` | Xor | 0 | 64 | 4 | 0 | 68 |
+| `generic` | Xor | 48 | 16 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 0 | 12 | 0 | 0 | 12 |
-| all | | 87 | 1296 | 12 | 367 | 1762 |
+| all | | 364 | 1019 | 12 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -229,8 +229,8 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
   mirrors of the hypotheses. `sat` fails if a proven rule has no instance or a
   counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
-  how the findings below were found. Last run: P1 rules SAT 1331, CEX 11, NONE 53; all 88
-  proven rules SAT.
+  how the findings below were found. Last run: P1 rules SAT 1331, CEX 9 (all `generic.rules:504–516`,
+  "Narrow result types"), NONE 55; all 364 proven rules SAT.
 
 `Comm.lean` has `sub16_not_comm` (the commutativity obligation is not trivial).
 
@@ -273,6 +273,10 @@ Official toolchain, each module alone under memcap, machine load ~100; CPU = use
 | `Add` (30 lemmas) | 34 | 1709 | 2.9 |
 | `Add2` (30) | 43 | 1634 | 3.2 |
 | `Add3` (27) | 41 | 1577 | 3.3 |
+| `Sub`, `Sub2`, `Mul`, `And`, `Neg` (24–30, no rotations) | — | ≤ 1730 | 1.0–1.7 |
+| `Or`, `Or2`, `Xor`, `Xor2` (30, 18; with rotate rules) | — | ≤ 1730 | 2.6–3.5 |
+
+All 23 modules of `GoFV/Proof/Rules` together: 95 s wall, 377 s CPU (dependencies cached).
 
 Before (PR #91 as first pushed): `Add`/`Add2`/`Add3` 16 / 69 / 57 MB, 54–85 s CPU, under
 `Elab.async false`; 90% of it `bv_decide` LRAT certificates (LEARNINGS.md). What remains is
