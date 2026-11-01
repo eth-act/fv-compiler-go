@@ -66,6 +66,9 @@ inductive RwEvent where
   /-- Block rule `rule` (its index in `b`'s kind row of the table) fired at `b`; `ctrls`: the
   block's controls after it. -/
   | blockRule (b : ID) (rule : Nat) (ctrls : Array ID)
+  /-- `pre`: the function just before a `phiSels` rule fires (the validator splits the log
+  there, so that the selection becomes a copy at its log position, issue #69). -/
+  | snap (pre : Func)
 
 /-- Mutable state of a rewrite pass. -/
 structure RwState where

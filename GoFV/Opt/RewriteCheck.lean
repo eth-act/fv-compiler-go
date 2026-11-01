@@ -913,6 +913,7 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
         else none
       else none
   | _, _, .phielim .. :: _ => none
+  | _, _, .snap .. :: _ => none
   | M, B, .blockRule b i nc :: evs =>
     match bstate f B b with
     | none => none
@@ -2591,7 +2592,9 @@ splits the log at these events (`segsOK`): each segment is validated (layers and
 against `pre` without the values reset to `Invalid` (`dropInvalid`; `applyRewrite`'s cleanup
 frees them at the end), `pre` and the function with the `Phi` turned copy (`phiElim`) are
 related by copyelim's relation (`CopyCheck.copyOK`), and the next segment starts from the
-latter. -/
+latter. The log is split likewise before every `Phi` selection (`RwEvent.snap pre`): the
+selection becomes a copy in the `ps` layer of the next segment, which starts from `pre`, so a
+rule logged before it matches the selection, not the copy. -/
 
 /-- `h` without the `Invalid` values listed in its blocks. -/
 def dropInvalid (h : Func) : Func :=
@@ -2602,12 +2605,12 @@ def dropInvalid (h : Func) : Func :=
 def phiElim (h : Func) (v w : ID) : Func :=
   (h.modV v fun y => { y with op := .Copy }).setArgs1 v w
 
-/-- The event is no phi elimination. -/
+/-- The event is no segment boundary: no phi elimination, no snapshot. -/
 def notPhiElim : RwEvent → Bool
-  | .phielim .. => false
+  | .phielim .. | .snap .. => false
   | _ => true
 
-/-- No phi elimination in the log. -/
+/-- No segment boundary in the log. -/
 def noPhiElim (log : Array RwEvent) : Bool := log.all notPhiElim
 
 end GoFV.Opt.RewriteCheck
@@ -2659,11 +2662,12 @@ def RewriteCheck.layersOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Go
       else RewriteCheck.layerOK env t out.tables f0 L f log f' &&
         RewriteCheck.layersOK env t f0 out Ls f' log'
 
-/-- The segments of the log between its phi eliminations (`seg`: the events of the current one,
-from `f`): `layersOK` accepts each against the function logged at the phi elimination ending it
-(without `Invalid` values, `h`), which passes `check` and is related by copyelim's relation to
-`h` with the `Phi` turned copy (`h'`, which passes `check`), where the next segment starts; the
-last segment ends at `out`. -/
+/-- The segments of the log between its phi eliminations and snapshots (`seg`: the events of the
+current one, from `f`): `layersOK` accepts each against the function logged at the event ending
+it (without `Invalid` values, `h`), which passes `check`; at a phi elimination `h` is related by
+copyelim's relation to `h` with the `Phi` turned copy (`h'`, which passes `check`), where the
+next segment starts, at a snapshot the next segment starts from `h`; the last segment ends at
+`out`. -/
 def RewriteCheck.segsOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : GoFV.SSA.Func)
     (out : PassOut) : GoFV.SSA.Func → Array GoFV.Rules.RwEvent → List GoFV.Rules.RwEvent → Bool
   | f, seg, [] => RewriteCheck.layersOK env t f0 out RewriteCheck.layers f seg
@@ -2674,6 +2678,11 @@ def RewriteCheck.segsOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : GoFV
     RewriteCheck.layersOK env t f0 { out with func := h } RewriteCheck.layers f seg &&
       checkOK ce h && CopyCheck.copyOK out.tables h h' && checkOK ce h' &&
       RewriteCheck.segsOK env t f0 out h' #[] evs
+  | f, seg, .snap pre :: evs =>
+    let h := RewriteCheck.dropInvalid pre
+    RewriteCheck.layersOK env t f0 { out with func := h } RewriteCheck.layers f seg &&
+      checkOK { tabs := out.tables, typs := env.typs } h &&
+      RewriteCheck.segsOK env t f0 out h #[] evs
   | f, seg, ev :: evs => RewriteCheck.segsOK env t f0 out f (seg.push ev) evs
 
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite

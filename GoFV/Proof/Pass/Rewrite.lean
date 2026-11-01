@@ -212,9 +212,10 @@ theorem layers_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
   -- then the validated rewrite
   exact hL.trans (RefinesUnder.toRw (AtomSim.atomSim_refines hf₃ hg hA hcf hcg h1 h2))
 
-/-- **The segments of the log** between its phi eliminations (issue #69): each segment refines
-(`layers_refines`), and at each phi elimination the function with the `Phi` turned copy refines
-the logged function by copyelim's simulation. -/
+/-- **The segments of the log** between its phi eliminations and snapshots (issue #69): each
+segment refines (`layers_refines`), at each phi elimination the function with the `Phi` turned
+copy refines the logged function by copyelim's simulation, and at a snapshot the next segment
+starts from the logged function. -/
 theorem segs_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
     (hvs : T.values = (Interp.Table.ofRuleSet s).values)
     (hbs : T.blocks = (Interp.Table.ofRuleSet s).blocks) {penv : PassEnv} {f0 : Func}
@@ -237,6 +238,12 @@ theorem segs_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
       exact ((layers_refines (out := { out with func := RewriteCheck.dropInvalid pre }) hs hvs hbs
         h1 hf hh).trans (RefinesUnder.toRw (R2.under Env.Mono))).trans
         (segs_refines hs hvs hbs hg evs _ #[] hh' h5)
+    | snap pre =>
+      simp only [RewriteCheck.segsOK, Bool.and_eq_true] at h
+      obtain ⟨⟨h1, h2⟩, h3⟩ := h
+      have hh := checkOK_sound h2
+      exact (layers_refines (out := { out with func := RewriteCheck.dropInvalid pre }) hs hvs hbs
+        h1 hf hh).trans (segs_refines hs hvs hbs hg evs _ #[] hh h3)
     | _ =>
       simp only [RewriteCheck.segsOK] at h
       exact segs_refines hs hvs hbs hg evs f _ hf h

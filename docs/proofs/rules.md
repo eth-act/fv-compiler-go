@@ -574,6 +574,17 @@ segment starts from the latter, the last ends at the output. `segs_refines` comp
 (only with the log on). quick-v3: all 20 sections the validator rejected for `phielim` accepted
 (opt rejections 146 → 126); fully at stock 8,146 → 8,153 on 567b299.
 
+**Snapshots before `Phi` selections.** The `ps` layer (`generic.rules:1049`/`:1050`) turns a
+selection into a copy before `validate` replays the log, so a rule logged earlier that matches the
+selection (`:278` `(IsSliceInBounds (SliceLen x) (SliceCap x))` on the selections of a `Phi`) no
+longer matched. `tryRule` with `snap` (the `phiSels` rules) logs `RwEvent.snap pre`, the function
+just before the rule's edit, ahead of the rule's event, and `segsOK` splits the log there too: the
+segment before it with `layersOK` against `dropInvalid pre`, which passes `check`, and the next
+segment starts from it, so the selection becomes a copy in that segment's `ps` layer, at its log
+position. `segs_refines` composes the two `layers_refines` directly. quick-v3: both remaining
+`ps` rejects (`strings.(*byteStringReplacer).Replace`, `runtime.reflect_rselect`) accepted; fully
+at stock 8,656 → 8,658 on 0ce15bb.
+
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
 `ConstString {str}` and `Addr {sym} SB` are term nodes evaluated from the tables

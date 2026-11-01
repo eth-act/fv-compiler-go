@@ -176,6 +176,7 @@ def replayWhy (tabs : Tables) (t : GoFV.Rules.Interp.Table) (f : Func)
         | .copyArg .. => "copyArg"
         | .control .. => "control"
         | .phielim .. => "phielim"
+        | .snap .. => "snap"
         | .blockRule .. => "blockRule"
   return "?"
 
