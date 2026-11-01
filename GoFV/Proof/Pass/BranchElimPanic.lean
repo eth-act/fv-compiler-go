@@ -82,8 +82,8 @@ theorem post_panic {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Na
     (hfr : frT = { frS with regs := frT.regs }) (hsz : frT.regs.size = frS.regs.size)
     (hs : frS.regs.size = f.valueTab.size)
     (hag : ∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?)
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {D P : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
     (htk : Taken s k arm j arm' j')
@@ -272,8 +272,8 @@ theorem dom_panic {tabs : Tables} {env : Env} {frS frT : Frame} {i : Nat}
     (hfr : frT = { frS with regs := frT.regs }) (hsz : frT.regs.size = frS.regs.size)
     (hs : frS.regs.size = f.valueTab.size)
     (hag : ∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?)
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {D : Block} (hD : f.block? s.dom = some D)
     {e : Panic} {m : Mem} (h1 : enterBlock env (Ctx.make tabs f) frS D i = .panic e m) :
     ∃ D', g.block? s.dom = some D' ∧ enterBlock env (Ctx.make tabs g) frT D' i = .panic e m := by

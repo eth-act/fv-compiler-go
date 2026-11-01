@@ -224,22 +224,22 @@ def loadAddrSet (tabs : Tables) (f : Func) (po : Array ID) : Except String (Arra
 
 /-- One sweep of the rewrite loop over `blocks`: at each block `elimIf`, else `elimIfElse`; a
 rewrite is kept only if the step checker `stepOK` accepts it (`branchelim.go:65-68`, checked). -/
-def sweep (c : Ctx) (ce : CheckEnv) : List ID → Func → Bool → Except String (Func × Bool)
+def sweep (c : Ctx) : List ID → Func → Bool → Except String (Func × Bool)
   | [], f, change => pure (f, change)
   | b :: bs, f, change => do
-    match (← elimIf c f b).filter (stepOK ce f · b) with
-    | some f' => sweep c ce bs f' true
+    match (← elimIf c f b).filter (stepOK f · b) with
+    | some f' => sweep c bs f' true
     | none =>
-      match (← elimIfElse c f b).filter (stepOK ce f · b) with
-      | some f' => sweep c ce bs f' true
-      | none => sweep c ce bs f change
+      match (← elimIfElse c f b).filter (stepOK f · b) with
+      | some f' => sweep c bs f' true
+      | none => sweep c bs f change
 
 /-- Sweeps until nothing changes (at most `n`). -/
-def rounds (c : Ctx) (ce : CheckEnv) : Nat → Func → Except String Func
+def rounds (c : Ctx) : Nat → Func → Except String Func
   | 0, f => pure f
   | n + 1, f => do
-    let (f', change) ← sweep c ce f.blocks.toList f false
-    if change then rounds c ce n f' else pure f'
+    let (f', change) ← sweep c f.blocks.toList f false
+    if change then rounds c n f' else pure f'
 
 end BranchElim
 
@@ -260,10 +260,11 @@ def branchelim (env : PassEnv) (f : Func) : Except String Func := do
   let (po, f) := f.postorder
   let c ← ctxOf env f po
   let ce : CheckEnv := { tabs := env.tables, typs := env.typs }
-  -- the step checker's proof assumes a checked input (every corpus input passes)
+  -- the step checker's proof assumes a checked input (every corpus input passes); the
+  -- rewrites keep well-formedness and use dominance, so no intermediate function is checked
   if !checkOK ce f then return f
   -- each successful rewrite clobbers at least one block of `f.Blocks`
-  rounds c ce (f.blocks.size + 1) f
+  rounds c (f.blocks.size + 1) f
 
 /-- The `branchelim` pass. -/
 def branchelimPass : Pass := Pass.ofFunc branchelim

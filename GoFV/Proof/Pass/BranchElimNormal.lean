@@ -37,7 +37,7 @@ theorem normal_step {tabs : Tables} {env : Env} {frS frT : Frame} {b : ID} {i : 
     unfold Site.regionBlock
     simp only [Bool.or_eq_false_iff, beq_eq_false_iff_ne, ne_eq]
     exact ⟨⟨⟨hbd, hbp⟩, ha0⟩, ha1⟩
-  obtain ⟨fb, gb, hfb, hgb, hba⟩ := block_spec S.rel hb hreg
+  obtain ⟨fb, gb, hfb, hgb, hba⟩ := block_spec S.rel hwf hb hreg
   have hown := valuesOwn hwf hb hfb
   have hnd := hwf.valuesNodup b fb ⟨hb, hfb⟩
   have hnotpost : ∀ x ∈ fb.values, s.postVal f x = false := fun x hx =>

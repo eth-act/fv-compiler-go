@@ -1,20 +1,22 @@
 import GoFV.Proof.Pass.BranchElimSim
+import GoFV.Proof.Pass.BranchElimPres
 import GoFV.Proof.Pass.NumberLines
 import GoFV.Opt.BranchElim
 
 /-!
 # branchelim refines its input
 
-`branchelim_refines`: the output of `branchelimPass` refines its input. The pass runs its
-rewrite loop with every rewrite checked (`stepOK`: the result passes `check` and is a diamond
-merge of the previous function, `DRel`); the loop keeps `Inv` (refines the input, passes
-`check`), each accepted rewrite by `refines_of_step`. The input's `postorder` cache does not
-change runs (`eraseF_postorder`).
+`branchelim_refines`: the output of `branchelimPass` refines its input. The pass checks its input
+once (`check`, giving `Dom.WFDom`: well formed, uses dominated on paths) and runs its rewrite
+loop with every rewrite checked (`stepOK`: the result is a diamond merge of the previous
+function, `DRel`, with no `check` of the result); the loop keeps `Inv` (refines the input,
+`WFDom`), each accepted rewrite by `refines_of_step`, `DRel.wf_pres` and `DRel.useDom_pres`.
+The input's `postorder` cache does not change runs (`eraseF_postorder`).
 -/
 
 namespace GoFV.Proof.BranchElim
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.BranchElim GoFV.Proof
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.BranchElim GoFV.Proof Dom
 
 theorem diamondB_sound {f g : Func} {dom post : ID} (h : diamondB f g dom post = true) :
     ∃ s, DRel f g s := by
@@ -25,24 +27,23 @@ theorem diamondB_sound {f g : Func} {dom post : ID} (h : diamondB f g dom post =
     exact ⟨s, ⟨by rw [h1, h2]; exact hs, h⟩⟩
   · cases h
 
-theorem stepOK_sound {ce : CheckEnv} {f g : Func} {dom : ID} (h : stepOK ce f g dom = true) :
-    check ce g = .ok () ∧ ∃ s, DRel f g s := by
+theorem stepOK_sound {f g : Func} {dom : ID} (h : stepOK f g dom = true) : ∃ s, DRel f g s := by
   unfold stepOK at h
-  rw [Bool.and_eq_true, List.any_eq_true] at h
-  obtain ⟨h1, post, -, h2⟩ := h
-  exact ⟨checkOK_sound h1, diamondB_sound h2⟩
+  rw [List.any_eq_true] at h
+  obtain ⟨post, -, h2⟩ := h
+  exact diamondB_sound h2
 
-/-- The loop invariant: refines the input, passes `check`. -/
+/-- The loop invariant: refines the input, well formed with uses dominated on paths. -/
 def Inv (tabs : Tables) (f0 f : Func) : Prop :=
-  Refines tabs f tabs f0 ∧ ∃ ce, check ce f = .ok ()
+  Refines tabs f tabs f0 ∧ ∃ ce, WFDom ce f
 
-theorem Inv.step {tabs : Tables} {f0 f g : Func} {ce : CheckEnv} {dom : ID} (hI : Inv tabs f0 f)
-    (h : stepOK ce f g dom = true) : Inv tabs f0 g := by
-  obtain ⟨hr, cf, hcf⟩ := hI
-  obtain ⟨hcg, s, hrel⟩ := stepOK_sound h
-  have S : Setup f g s := ⟨⟨cf, check_wf hcf⟩, ⟨ce, check_wf hcg⟩,
-    Dom.certOK_of_check (check_domCert hcf), hrel⟩
-  exact ⟨hr.trans S.refines_of_step, ce, hcg⟩
+theorem Inv.step {tabs : Tables} {f0 f g : Func} {dom : ID} (hI : Inv tabs f0 f)
+    (h : stepOK f g dom = true) : Inv tabs f0 g := by
+  obtain ⟨hr, ce, hwd⟩ := hI
+  obtain ⟨s, hrel⟩ := stepOK_sound h
+  have hwg := hrel.wf_pres hwd.wf
+  have S : Setup f g s := ⟨⟨⟨ce, hwd.wf⟩, hrel⟩, ⟨ce, hwg⟩, hwd.dom⟩
+  exact ⟨hr.trans S.refines_of_step, ce, hwg, hrel.useDom_pres hwd.wf hwd.dom⟩
 
 theorem filter_some {o : Option Func} {p : Func → Bool} {g : Func} (h : o.filter p = some g) :
     p g = true := by
@@ -54,9 +55,9 @@ theorem filter_some {o : Option Func} {p : Func → Bool} {g : Func} (h : o.filt
     · cases h; assumption
     · cases h
 
-theorem sweep_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} {ce : CheckEnv} :
+theorem sweep_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} :
     ∀ (bs : List ID) (f : Func) (ch : Bool) (f' : Func) (ch' : Bool),
-      sweep c ce bs f ch = .ok (f', ch') → Inv tabs f0 f → Inv tabs f0 f'
+      sweep c bs f ch = .ok (f', ch') → Inv tabs f0 f → Inv tabs f0 f'
   | [], f, ch, f', ch', h, hI => by
     simp only [sweep, pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
     rw [← h.1]; exact hI
@@ -67,7 +68,7 @@ theorem sweep_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} {ce : CheckEn
     | ok r1 =>
       rw [he1] at h
       simp only at h
-      cases hr1 : r1.filter (stepOK ce f · b) with
+      cases hr1 : r1.filter (stepOK f · b) with
       | some g =>
         rw [hr1] at h
         exact sweep_inv bs g true f' ch' h (hI.step (filter_some hr1))
@@ -79,7 +80,7 @@ theorem sweep_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} {ce : CheckEn
         | ok r2 =>
           rw [he2] at h
           simp only at h
-          cases hr2 : r2.filter (stepOK ce f · b) with
+          cases hr2 : r2.filter (stepOK f · b) with
           | some g =>
             rw [hr2] at h
             exact sweep_inv bs g true f' ch' h (hI.step (filter_some hr2))
@@ -87,14 +88,14 @@ theorem sweep_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} {ce : CheckEn
             rw [hr2] at h
             exact sweep_inv bs f ch f' ch' h hI
 
-theorem rounds_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} {ce : CheckEnv} :
-    ∀ (n : Nat) (f g : Func), rounds c ce n f = .ok g → Inv tabs f0 f → Inv tabs f0 g
+theorem rounds_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} :
+    ∀ (n : Nat) (f g : Func), rounds c n f = .ok g → Inv tabs f0 f → Inv tabs f0 g
   | 0, f, g, h, hI => by
     simp only [rounds, pure, Except.pure, Except.ok.injEq] at h
     rw [← h]; exact hI
   | n + 1, f, g, h, hI => by
     simp only [rounds, bind, Except.bind] at h
-    cases hs : sweep c ce f.blocks.toList f false with
+    cases hs : sweep c f.blocks.toList f false with
     | error e => rw [hs] at h; cases h
     | ok r =>
       rw [hs] at h
@@ -137,6 +138,6 @@ theorem branchelim_refines {penv : PassEnv} {f : Func} {out : PassOut}
           · rename_i hck
             have hck' : checkOK { tabs := penv.tables, typs := penv.typs } f.postorder.2 = true := by
               simpa using hck
-            exact (rounds_inv _ _ _ hg ⟨hpo, _, checkOK_sound hck'⟩).1
+            exact (rounds_inv _ _ _ hg ⟨hpo, _, WFDom.of_check (checkOK_sound hck')⟩).1
 
 end GoFV.Proof.BranchElim

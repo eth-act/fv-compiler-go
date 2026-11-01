@@ -112,8 +112,8 @@ theorem arm_facts {tabs : Tables} {env : Env} {k : Nat} {arm arm' : Option ID} {
 
 /-- An argument outside the diamond of a merged non-`Phi` is defined at `dom`'s entry. -/
 theorem region_arg_def {tabs : Tables} {env : Env} {frS : Frame}
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {x : ID} (hx : s.regionVal f x = true) {gv : Value} (hgv : g.value? x = some gv)
     (hgnp : gv.op ≠ .Phi) {a : ID} (ha : a ∈ gv.args) (hout : s.regionVal f a = false) :
     ∃ y, frS.regs[a]? = some (some y) := by
@@ -127,7 +127,7 @@ theorem region_arg_def {tabs : Tables} {env : Env} {frS : Frame}
   obtain ⟨fv, hfv⟩ := hfv
   -- a non-`Phi` of a listed tree block of the diamond
   have hnonphi : ∀ (X : ID) (B : Block), X ∈ f.blocks → f.block? X = some B →
-      ((make f).depthOf X).isSome → x ∈ B.values →
+      Reachable f X → x ∈ B.values →
       (∀ fv', f.value? x = some fv' → s.postVal f x = true → fv'.op ≠ .Phi) →
       (X = s.dom ∨ (s.arm0 = some X ∨ s.arm1 = some X) ∨ X = s.post) →
       ∃ y, frS.regs[a]? = some (some y) := by
@@ -138,7 +138,7 @@ theorem region_arg_def {tabs : Tables} {env : Env} {frS : Frame}
     rw [hgv] at hgv'; cases hgv'
     rw [hsem.2.2.2.2] at ha
     exact S.anc_region_def htd hdi (hwf.argListed X B x fv ⟨⟨hX, hB⟩, hxB, hfv⟩ a ha) hout hXr
-      (uses S.cf hX hB ht hxB hfv (fun h => hgnp (hop ▸ h)) ha)
+      (S.dom.uses hX hB ht hxB hfv (fun h => hgnp (hop ▸ h)) ha)
   unfold Site.regionVal at hx
   rcases Bool.or_eq_true_iff.1 hx with hx | hx
   · rcases Bool.or_eq_true_iff.1 hx with hx | hx
@@ -182,7 +182,7 @@ theorem region_arg_def {tabs : Tables} {env : Env} {frS : Frame}
             · have hem : em = e1 := by rw [hs] at hm; simp at hm; exact hm.symm
               subst hem; rw [h1] at hside; cases hside; exact .inr h
             · rw [hs] at hm; simp at hm
-        have hpt : ((make f).depthOf p.b).isSome := by
+        have hpt : Reachable f p.b := by
           rcases hX with h | (h | h) | h
           · rw [h]; exact htd
           · exact (S.tree_arm htd (.inl h)).1
@@ -190,7 +190,7 @@ theorem region_arg_def {tabs : Tables} {env : Env} {frS : Frame}
           · rw [h]; exact htp
         exact S.anc_region_def htd hdi
           (hwf.argListed s.post P x fv ⟨⟨S.postIn, hP⟩, hxP, hfv⟩ a (Array.mem_of_getElem? hk))
-          hout hX (phiUse S.cf S.postIn hP htp hxP hfv hph hk hpj hpt)
+          hout hX (S.dom.phiUse S.postIn hP htp hxP hfv hph hk hpj hpt)
       rw [hargs] at ha
       simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
       rcases ha with h | h | h
@@ -198,7 +198,7 @@ theorem region_arg_def {tabs : Tables} {env : Env} {frS : Frame}
       · exact hphiArg 1 e1 s.arm1 s.j1 (by rw [hs]; rfl) h1 hj1 h
       · subst h
         exact S.anc_region_def htd hdi (hwf.ctrlListed s.dom D ⟨S.domIn, hD⟩ s.c (by rw [hctl]; simp))
-          hout (.inl rfl) (ctrlUse S.cf S.domIn hD htd (by rw [hctl]; simp))
+          hout (.inl rfl) (S.dom.ctrlUse S.domIn hD htd (by rw [hctl]; simp))
     · exact hnonphi s.post P S.postIn hP htp hxP
         (fun fv' h _ => by rw [hfv] at h; cases h; exact hph) (.inr (.inr rfl))
 
@@ -210,8 +210,8 @@ theorem merged_core {tabs : Tables} {env : Env} {frS frT G1 G' G3 : Frame} {i k 
     (hfr : frT = { frS with regs := frT.regs }) (hsz : frT.regs.size = frS.regs.size)
     (hs : frS.regs.size = f.valueTab.size)
     (hag : ∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?)
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {D P : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
     (htk : Taken s k arm j arm' j')
@@ -243,7 +243,6 @@ theorem merged_core {tabs : Tables} {env : Env} {frS frT G1 G' G3 : Frame} {i k 
       (∀ x, Site.inArm f arm' x = true → s.armVal f x = true) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨ce', hwg⟩ := S.wg
-  have hp := S.cf.parents
   obtain ⟨-, -, hgsz, -⟩ := S.rel.parts.2.2
   obtain ⟨-, hown, -⟩ := S.rel.parts.2.2
   -- the source's path
@@ -569,8 +568,8 @@ theorem merged_ok {tabs : Tables} {env : Env} {frS frT G1 G' G3 : Frame} {i k : 
     (hfr : frT = { frS with regs := frT.regs }) (hsz : frT.regs.size = frS.regs.size)
     (hs : frS.regs.size = f.valueTab.size)
     (hag : ∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?)
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {D P : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
     (htk : Taken s k arm j arm' j')

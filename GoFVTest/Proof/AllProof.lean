@@ -33,6 +33,7 @@ import GoFV.Proof.Pass.BranchElimNormal
 import GoFV.Proof.Pass.BranchElimOk
 import GoFV.Proof.Pass.BranchElimPanic
 import GoFV.Proof.Pass.BranchElimPass
+import GoFV.Proof.Pass.BranchElimPres
 import GoFV.Proof.Pass.BranchElimRel
 import GoFV.Proof.Pass.BranchElimSetup
 import GoFV.Proof.Pass.BranchElimSim

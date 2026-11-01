@@ -6,10 +6,12 @@ import GoFV.Proof.SimIH
 /-!
 # branchelim: the setting of one checked rewrite
 
-`Setup f g s`: `f` and `g` are well formed, `f`'s dominator certificate holds, and `g` is `f`
-with the diamond `s` merged (`DRel`). Consequences used by the simulation: the blocks of the
-diamond are listed and distinct, their values are disjoint, a run enters an arm or `post` only
-from the diamond, and the two functions' contexts agree on unchanged values.
+`Base f g s`: `f` is well formed and `g` is `f` with the diamond `s` merged (`DRel`).
+`Setup f g s` adds that `g` is well formed and `f`'s uses are dominated on paths (`Dom.UseDom`,
+so path dominance `SDom f` is a dominance relation: `Setup.dom`). Consequences of `Base` used by
+the simulation and the preservation proofs: the blocks of the diamond are listed and distinct,
+their values are disjoint, a run enters an arm or `post` only from the diamond, and the two
+functions' contexts agree on unchanged values.
 -/
 
 namespace GoFV.Proof.BranchElim
@@ -17,11 +19,14 @@ namespace GoFV.Proof.BranchElim
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.BranchElim GoFV.Proof Dom
 
 /-- See the module doc. -/
-structure Setup (f g : Func) (s : Site) : Prop where
+structure Base (f g : Func) (s : Site) : Prop where
   wf : ∃ ce, WF ce f
-  wg : ∃ ce, WF ce g
-  cf : CertOK f
   rel : DRel f g s
+
+/-- See the module doc. -/
+structure Setup (f g : Func) (s : Site) : Prop extends Base f g s where
+  wg : ∃ ce, WF ce g
+  cf : UseDom f
 
 /-- Side `k` of the diamond is taken: its arm and `post`'s predecessor index, and the other
 side's. -/
@@ -35,9 +40,11 @@ theorem params_eq {tabs : Tables} (h : g.ownAux = f.ownAux) :
     (Ctx.make tabs g).params = (Ctx.make tabs f).params := by
   simp only [Ctx.make, abiParams, h]
 
-namespace Setup
+theorem Setup.dom (S : Setup f g s) : DomRel f (Reachable f) (SDom f) := S.cf.domRel
 
-variable (S : Setup f g s)
+namespace Base
+
+variable (S : Base f g s)
 include S
 
 theorem domIn : s.dom ∈ f.blocks := S.rel.parts.2.1
@@ -225,6 +232,6 @@ theorem ctxAgree {tabs : Tables} {l : List ID}
   obtain ⟨gv, hgv, hty, -⟩ := (semEq_of S.rel (hl x hx)).2 v hv
   rw [hid x hx v hv, tys_of_value hv, tys_of_value hgv, hty]
 
-end Setup
+end Base
 
 end GoFV.Proof.BranchElim
