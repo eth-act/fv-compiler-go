@@ -133,7 +133,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
         VRel.retype_mem _ ((hMem.poison _).mono ?_)⟩
       intro b k ⟨hq, hb⟩
       rw [pend_varDef hfv hgv hne hop hpend, hax, hpm]
-      exact ivQ_filter hq hb
+      exact ivQ_filter hq (by rw [blkOf_frameAlloc]; exact hb)
     all_goals
       have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
       obtain ⟨p, L, M, bs, M1, hvsE, hw, rfl, hbs, -, htgt⟩ := write_shape hop3 hr

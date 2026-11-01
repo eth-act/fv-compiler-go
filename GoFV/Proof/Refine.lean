@@ -171,6 +171,35 @@ theorem RefinesUnder.trans {P : Env → Prop} {t1 t2 t3 : Tables} {f1 f2 f3 : Fu
   obtain ⟨fuel3, h3⟩ := h23 env hP args mem fuel2 h2.defined_right
   exact ⟨fuel3, h2.trans h3⟩
 
+/-- `Refines` restricted to the inputs `(env, args, mem)` with `P` (e.g. frame-safe contracts
+and inputs that hold no pointer into the run's frame temporaries, `Sem.InitAvoids`). -/
+def RefinesFrom (P : Env → List Val → Mem → Prop) (tabs' : Tables) (f' : Func) (tabs : Tables)
+    (f : Func) : Prop :=
+  ∀ (env : Env) (args : List Val) (mem : Mem), P env args mem → ∀ (fuel : Nat),
+    (run env tabs f args mem fuel).Defined →
+      ∃ fuel', OutcomeRefines 0 (run env tabs f args mem fuel) (run env tabs' f' args mem fuel')
+
+theorem RefinesUnder.from {P : Env → Prop} {tabs tabs' : Tables} {f f' : Func}
+    (h : RefinesUnder P tabs' f' tabs f) : RefinesFrom (fun env _ _ => P env) tabs' f' tabs f :=
+  fun env args mem hP => h env hP args mem
+
+theorem Refines.from (P : Env → List Val → Mem → Prop) {tabs tabs' : Tables} {f f' : Func}
+    (h : Refines tabs' f' tabs f) : RefinesFrom P tabs' f' tabs f :=
+  fun env args mem _ => h env args mem
+
+theorem RefinesFrom.trans {P : Env → List Val → Mem → Prop} {t1 t2 t3 : Tables}
+    {f1 f2 f3 : Func} (h12 : RefinesFrom P t2 f2 t1 f1) (h23 : RefinesFrom P t3 f3 t2 f2) :
+    RefinesFrom P t3 f3 t1 f1 := by
+  intro env args mem hP fuel h
+  obtain ⟨fuel2, h2⟩ := h12 env args mem hP fuel h
+  obtain ⟨fuel3, h3⟩ := h23 env args mem hP fuel2 h2.defined_right
+  exact ⟨fuel3, h2.trans h3⟩
+
+theorem RefinesFrom.mono {P Q : Env → List Val → Mem → Prop} {tabs tabs' : Tables}
+    {f f' : Func} (hPQ : ∀ env args mem, Q env args mem → P env args mem)
+    (h : RefinesFrom P tabs' f' tabs f) : RefinesFrom Q tabs' f' tabs f :=
+  fun env args mem hQ => h env args mem (hPQ env args mem hQ)
+
 /-- Equal runs refine each other. -/
 theorem Refines.of_run_eq {tabs tabs' : Tables} {f f' : Func}
     (h : ∀ env args mem fuel, run env tabs' f' args mem fuel = run env tabs f args mem fuel) :

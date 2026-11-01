@@ -143,7 +143,7 @@ theorem pendStep_eq {tabs : Tables} {f g : Func} {P : ID → List Iv} {x : ID} {
           | none => none
       else if fv.op == .VarDef then
         some (match fv.aux with
-          | some n => (pm P fv).filter (·.1 != .local n)
+          | some n => (pm P fv).filter (·.1 != CSE.frameAlloc tabs n)
           | none => pm P fv)
       else some [] := by
   unfold pendStep
@@ -220,7 +220,7 @@ theorem pend_varDef {tabs : Tables} {f g : Func} {P : ID → List Iv} {x : ID} {
     (hfv : f.value? x = some fv) (hgv : g.value? x = some gv) (he : elimV fv gv = false)
     (hop : fv.op = .VarDef) (h : pendStep tabs f g P x = some (P x)) :
     P x = match fv.aux with
-      | some n => (pm P fv).filter (·.1 != .local n)
+      | some n => (pm P fv).filter (·.1 != CSE.frameAlloc tabs n)
       | none => pm P fv := by
   rw [pendStep_eq hfv hgv, he, hop] at h
   exact (Option.some.inj h).symm

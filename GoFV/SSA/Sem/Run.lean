@@ -227,9 +227,22 @@ structure Ctx where
   /-- The frame variables (`PAUTO`/`PPARAM`/`PPARAMOUT` names the function refers to) with
   their sizes, and the input parameter each `PPARAM` holds. -/
   locals : Array (AuxRef × Nat × Option Nat) := #[]
-  /-- The activation number (frame blocks are `Blk.local act name`). -/
+  /-- The activation number (frame blocks are `Blk.local act name`/`Blk.temp act name`). -/
   act : Nat := 0
   deriving Inhabited
+
+/-- A variable whose address the program takes (`addrtaken`; the frontend itself converts the
+addresses of some compiler temporaries to integers and back, e.g. the copy a `range` over an
+array iterates with `uintptr` arithmetic), or a parameter or result: its frame block is
+`Blk.local`, which an integer may convert back to; other `PAUTO`s are `Blk.temp` (§3.3). -/
+def _root_.GoFV.SSA.Tables.forgeable (tabs : Tables) (n : AuxRef) : Bool :=
+  match tabs.aux? n with
+  | some { kind := .name _ cls _ _ _ fl _, .. } => cls != .PAUTO || fl.addrtaken
+  | _ => true
+
+/-- The frame block of variable `n` of activation `act`. -/
+def frameBlk (tabs : Tables) (act : Nat) (n : AuxRef) : Blk :=
+  if tabs.forgeable n then .local act n else .temp act n
 
 /-- The callee symbol of an `*AuxCall`. -/
 def _root_.GoFV.SSA.Tables.callee? (tabs : Tables) (a : AuxRef) : Option String :=
@@ -478,7 +491,7 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
     writeRes what (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0)))
   | .VarDef, [.mem m] =>
     match v.aux with
-    | some n => .ok (.mem (m.poisonBlock (.local ctx.act n)))
+    | some n => .ok (.mem (m.poisonBlock (frameBlk ctx.tabs ctx.act n)))
     | none => .stuck s!"{what}: no name"
   | .VarLive, [.mem m] | .WBend, [.mem m] => .ok (.mem m)
   | .KeepAlive, [_, .mem m] => .ok (.mem m)
@@ -496,7 +509,7 @@ def frameVal (ctx : Ctx) (v : Value) : Option Val :=
   -- the caller's SP lies just above this activation's frame region (`Blk.base?`), so
   -- "is this pointer in my frame" checks (`append` of a stack slice) see the frame
   | .GetCallerSP => some (.int .w64 (BitVec.ofNat 64 (2 ^ 62 + (ctx.act + 1) * 2 ^ 42)))
-  | .LocalAddr => v.aux.map fun n => .ptr ⟨.local ctx.act n, 0⟩
+  | .LocalAddr => v.aux.map fun n => .ptr ⟨frameBlk ctx.tabs ctx.act n, 0⟩
   | .Addr =>
     match v.aux.bind ctx.tabs.aux? with
     | some { kind := .sym name .., .. } => some (.ptr ⟨.global name.toStringLossy, 0⟩)
@@ -691,7 +704,7 @@ def goResults (outs : Array (Option AuxRef × Ty × Nat)) (act : Nat) (rs : List
 /-- `m` without the frame of activation `act` (`Blk.local act _`, `Blk.outargs act`). -/
 def _root_.GoFV.SSA.Sem.Mem.freeFrame (m : Mem) (act : Nat) : Mem :=
   { m with blocks := m.blocks.filter fun (b, _) => match b with
-    | .local a _ | .outargs a => a != act
+    | .local a _ | .temp a _ | .outargs a => a != act
     | _ => true }
 
 /-- The size of the outgoing-arguments area: the end of the furthest stack-assigned argument or
@@ -716,7 +729,7 @@ def frameAllocs (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) : Mem :=
     let data := match pi.bind (images[·]?) with
       | some img => if img.size == sz then img else Array.replicate sz .poison
       | none => Array.replicate sz .poison
-    m.set (.local ctx.act n) { data }) mem
+    m.set (frameBlk ctx.tabs ctx.act n) { data }) mem
 
 /-- The memory an activation starts with: `mem`, the global image of `env` (allocations not
 already in `mem`), the outgoing-arguments area (poison) and the frame: one allocation per frame

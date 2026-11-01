@@ -365,8 +365,8 @@ theorem ivQ_sub {P : List DSE.Iv} {r : DSE.Iv} {b : Blk} {k : Nat} (h : IvQ P b 
   · exact ⟨(a, lo, hi), List.mem_flatMap.2 ⟨_, hm, by simp [DSE.sub, ha]⟩, hb, h1, h2⟩
 
 /-- Removing a variable keeps the bytes of the other blocks. -/
-theorem ivQ_filter {P : List DSE.Iv} {n : AuxRef} {b : Blk} {k : Nat} (h : IvQ P b k)
-    (hb : b ≠ blkOf (.local n)) : IvQ (P.filter (·.1 != .local n)) b k := by
+theorem ivQ_filter {P : List DSE.Iv} {a : CSE.Alloc} {b : Blk} {k : Nat} (h : IvQ P b k)
+    (hb : b ≠ blkOf a) : IvQ (P.filter (·.1 != a)) b k := by
   obtain ⟨iv, hm, hb', h1, h2⟩ := h
   refine ⟨iv, List.mem_filter.2 ⟨hm, ?_⟩, hb', h1, h2⟩
   simp only [bne_iff_ne, ne_eq]

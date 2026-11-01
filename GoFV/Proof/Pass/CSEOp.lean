@@ -111,7 +111,7 @@ theorem evalOp_ok_id {env : Env} {ctx : Ctx} {fr : Frame} {u v : Value} {argv : 
 
 theorem evalOp_localAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} {n : AuxRef} (hop : v.op = .LocalAddr) (hax : v.aux = some n) :
-    evalOp env ctx fr v argv ty = .ok (.ptr ⟨.local ctx.act n, 0⟩) := by
+    evalOp env ctx fr v argv ty = .ok (.ptr ⟨frameBlk ctx.tabs ctx.act n, 0⟩) := by
   delta evalOp frameVal; rw [hop, hax]; rfl
 
 private theorem ite_stuck_ne_ok {c : Prop} [Decidable c] {a b : String} {r : Val} :
@@ -170,7 +170,7 @@ example (env : Env) (ctx : Ctx) (fr : Frame) (ty : Ty) : Val.i64 3 = Val.i64 3 :
     (env := env) (ctx := ctx) (fr := fr) (ty := ty) rfl rfl rfl (by decide) (by rfl) (by rfl)
 
 example (env : Env) (ctx : Ctx) (fr : Frame) (ty : Ty) (n : AuxRef) :
-    evalOp env ctx fr (mkValue .LocalAddr 0 (some n)) [] ty = .ok (.ptr ⟨.local ctx.act n, 0⟩) :=
+    evalOp env ctx fr (mkValue .LocalAddr 0 (some n)) [] ty = .ok (.ptr ⟨frameBlk ctx.tabs ctx.act n, 0⟩) :=
   evalOp_localAddr rfl rfl
 
 example (env : Env) (ctx : Ctx) (fr : Frame) (ty : Ty) (m : Mem) :

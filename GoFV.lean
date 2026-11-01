@@ -66,6 +66,7 @@ import GoFV.SSA.Sem.Run
 import GoFV.SSA.Sem.Mem
 import GoFV.SSA.Sem.Ptr
 import GoFV.SSA.Sem.Image
+import GoFV.SSA.Sem.FrameSafe
 import GoFV.Opt.Prove.Limit
 import GoFV.Opt.Prove.Poset
 import GoFV.Opt.Prove.Ctx

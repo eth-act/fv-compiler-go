@@ -279,8 +279,8 @@ theorem write_shape {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
 /-- What a `VarDef` that succeeds does, and on another memory. -/
 theorem varDef_shape {ctx : Ctx} {v : Value} {argv : List Val} {y : Val} (hop : v.op = .VarDef)
     (h : memRoot ctx v argv = .ok y) :
-    ∃ M n, argv = [.mem M] ∧ v.aux = some n ∧ y = .mem (M.poisonBlock (.local ctx.act n)) ∧
-      ∀ M', memRoot ctx v [.mem M'] = .ok (.mem (M'.poisonBlock (.local ctx.act n))) := by
+    ∃ M n, argv = [.mem M] ∧ v.aux = some n ∧ y = .mem (M.poisonBlock (frameBlk ctx.tabs ctx.act n)) ∧
+      ∀ M', memRoot ctx v [.mem M'] = .ok (.mem (M'.poisonBlock (frameBlk ctx.tabs ctx.act n))) := by
   unfold memRoot at h
   simp only [hop] at h
   split at h
