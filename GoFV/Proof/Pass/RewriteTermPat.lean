@@ -78,23 +78,23 @@ end Binds
 
 section Good
 
-variable {M : Defs} {I : Inst} {e : PEnv} {P : Val → Path → Prop}
+variable {M : Defs} {I : Inst} {e : PEnv} {P : Val → Path → Prop} {S : Nat}
 
 mutual
 theorem binds_good
     (hleafP : ∀ p w, (p, w) ∈ I → p ≠ [] → P (e.leaf p) p)
-    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → P (Pat.den e p q) p) :
-    ∀ (q : Pat) (p : Path) (w : ID), MatchOK M I q p w → p ≠ [] →
+    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.den e p q) p) :
+    ∀ (q : Pat) (p : Path) (w : ID), MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S →
       ∀ y ∈ Pat.binds e p q, Good P y.2
-  | .wild, _, _, _, _, y, hy | .same _, _, _, _, _, y, hy => by simp [Pat.binds] at hy
-  | .bind x, p, w, hm, hp, y, hy => by
+  | .wild, _, _, _, _, _, y, hy | .same _, _, _, _, _, _, y, hy => by simp [Pat.binds] at hy
+  | .bind x, p, w, hm, hp, _, y, hy => by
     simp only [Pat.binds, List.mem_singleton] at hy
     subst hy
     exact ⟨fun w' p' h => by
       simp only [DV.val.injEq, Option.some.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
       exact hleafP _ _ hm hp, fun _ h => by cases h⟩
-  | .op o nm ty ai ax ar args cm, p, w, hm, hp, y, hy => by
+  | .op o nm ty ai ax ar args cm, p, w, hm, hp, hsz, y, hy => by
     simp only [Pat.binds, List.mem_append] at hy
     rcases hy with ((hy | hy) | hy) | hy
     · cases nm with
@@ -104,33 +104,35 @@ theorem binds_good
         exact ⟨fun w' p' h => by
           simp only [DV.val.injEq, Option.some.injEq] at h
           obtain ⟨rfl, rfl⟩ := h
-          exact hopP (.op o (some x) ty ai ax ar args cm) p w hm hp, fun _ h => by cases h⟩
+          exact hopP (.op o (some x) ty ai ax ar args cm) p w hm hp hsz, fun _ h => by cases h⟩
     · cases ty <;> simp at hy
       subst hy; exact good_of_flat rfl
     · cases ai <;> simp at hy
       subst hy; exact good_of_flat (auxIntDV_flat _ _)
     · obtain ⟨-, x, -, -, -, ids, -, hs⟩ := hm
-      exact bindss_good hleafP hopP args p 0 ids hs y hy
+      exact bindss_good hleafP hopP args p 0 ids hs (by simp only [Pat.sz] at hsz; omega) y hy
 theorem bindss_good
     (hleafP : ∀ p w, (p, w) ∈ I → p ≠ [] → P (e.leaf p) p)
-    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → P (Pat.den e p q) p) :
+    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.den e p q) p) :
     ∀ (qs : List Pat) (p : Path) (i : Nat) (ids : List ID), MatchOKs M I qs p i ids →
-      ∀ y ∈ Pat.bindss e p i qs, Good P y.2
-  | [], _, _, _, _, y, hy => by simp [Pat.bindss] at hy
-  | q :: qs, p, i, a :: as, ⟨h1, h2⟩, y, hy => by
+      Pat.szs qs ≤ S → ∀ y ∈ Pat.bindss e p i qs, Good P y.2
+  | [], _, _, _, _, _, y, hy => by simp [Pat.bindss] at hy
+  | q :: qs, p, i, a :: as, ⟨h1, h2⟩, hsz, y, hy => by
     simp only [Pat.bindss, List.mem_append] at hy
+    simp only [Pat.szs] at hsz
     rcases hy with hy | hy
-    · exact binds_good hleafP hopP q (i :: p) a h1 (List.cons_ne_nil _ _) y hy
-    · exact bindss_good hleafP hopP qs p (i + 1) as h2 y hy
-  | _ :: _, _, _, [], h, _, _ => h.elim
+    · exact binds_good hleafP hopP q (i :: p) a h1 (List.cons_ne_nil _ _) (by omega) y hy
+    · exact bindss_good hleafP hopP qs p (i + 1) as h2 (by omega) y hy
+  | _ :: _, _, _, [], h, _, _, _ => h.elim
 end
 
 /-- The variables of a pattern at the top whose node is unnamed are good. -/
 theorem sigma_good
     (hleafP : ∀ p w, (p, w) ∈ I → p ≠ [] → P (e.leaf p) p)
-    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → P (Pat.den e p q) p)
+    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.den e p q) p)
     {o : Op} {ty ai ax : GoFV.Rules.Field} {ar : GoFV.Rules.Arity} {args : List Pat} {cm : Bool}
-    {v : ID} (hm : MatchOK M I (.op o none ty ai ax ar args cm) [] v) (x : Nat) :
+    {v : ID} (hm : MatchOK M I (.op o none ty ai ax ar args cm) [] v)
+    (hS : Pat.sz (.op o none ty ai ax ar args cm) ≤ S) (x : Nat) :
     Good P (sigma e (.op o none ty ai ax ar args cm) x) := by
   simp only [sigma]
   cases hl : (Pat.binds e [] (.op o none ty ai ax ar args cm)).lookup x with
@@ -146,7 +148,7 @@ theorem sigma_good
     · cases ai <;> simp at hy
       obtain ⟨-, rfl⟩ := hy; exact good_of_flat (auxIntDV_flat _ _)
     · obtain ⟨-, x, -, -, -, ids, -, hs⟩ := hm
-      exact bindss_good hleafP hopP args [] 0 ids hs _ hy
+      exact bindss_good hleafP hopP args [] 0 ids hs (by simp only [Pat.sz] at hS; omega) _ hy
 
 end Good
 
