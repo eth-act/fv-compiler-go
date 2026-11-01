@@ -294,7 +294,7 @@ def diag (tabs : Tables) (f g : Func) (s : Site) : List String := Id.run do
     let phis := gB.values.toList.filter (isPhiIn g ·) |>.map fun z => (z, (g.getV z).args.toList)
     out := s!"R b{B}: gpreds {gB.preds.toList.map (·.b)} has54 {gB.values.contains 54} phis {phis} succs {gB.succs.toList.map (·.b)}" :: out
   if !I.preOK f then out := "preOK" :: out
-  if !wfOK g then out := "wfOK" :: out
+  if !wfDomOK g then out := "wfDomOK" :: out
   if !(g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
       g.valueTab.size == f.valueTab.size && g.blockTab.size == f.blockTab.size) then out := "blocks/entry/sizes" :: out
   if !I.redirOK f g then out := "redirOK" :: out
@@ -327,7 +327,7 @@ def diag (tabs : Tables) (f g : Func) (s : Site) : List String := Id.run do
       if !I.outOK f g fB gB pin out' then parts := "out" :: parts
       if !I.succOK fB gB B then parts := "succ" :: parts
       if !(gB.controls.zip fB.controls).all (fun (c', c) => I.argRel f g fB gB pin out' c' c) then parts := "ctrlRel" :: parts
-      for iT in List.range gB.preds.size do
+      for iT in List.range (max 1 gB.preds.size) do
         let (iS, E) := I.edgeIn f T B gB iT
         if !(I.redir B iT || fB.preds[iS]? == gB.preds[iT]?) then parts := s!"pred{iT}" :: parts
         if !I.phisOK f g fB gB pin iT iS E inR then parts := s!"phis{iT}(pin {pin} E {E})" :: parts

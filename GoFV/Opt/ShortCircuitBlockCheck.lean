@@ -49,8 +49,8 @@ edge comes from `b` along `te`), `blockOK` checks that
 values are unchanged (but for use counts), and read none of `b`'s values but the moved phis
 with default facts; an edge from a checked block to another block carries the default facts; a
 plan block is entered only from `b`, the plan's blocks, or along the redirected edge; the tables
-keep their sizes (no rewrite on the corpus grows them). Finally `g` passes `wfCheck`
-(well-formedness).
+keep their sizes (no rewrite on the corpus grows them). Finally `g` passes `wfDomCheck`
+(well formed, uses dominated: the invariant `WFDom` of the fuse loop).
 
 The soundness proof is `GoFV.Proof.ShortCirc.shortcircuitBlockChecked_refines`.
 -/
@@ -166,9 +166,11 @@ def redir (B iT : Nat) : Bool := B == I.t && iT == I.tn
 
 /-- The facts of block `B` (default unless checked). -/
 def factsOf (T : FactTab) (B : ID) : Facts × Facts :=
-  match T.find? (·.1 == B) with
-  | some (_, pin, out) => (pin, out)
-  | none => (I.dflt, I.dflt)
+  if I.K.contains B then
+    match T.find? (·.1 == B) with
+    | some (_, pin, out) => (pin, out)
+    | none => (I.dflt, I.dflt)
+  else (I.dflt, I.dflt)
 
 /-- The facts at the end of block `B`. -/
 def outOf (T : FactTab) (B : ID) : Facts := (I.factsOf T B).2
@@ -354,11 +356,9 @@ def blockOK (T : FactTab) (B : ID) : Bool :=
       I.newOK f fB gB && I.nodesOK f g fB gB pin out (inR || B == I.s.b) &&
       schedOK f g fB gB && I.outOK f g fB gB pin out && I.succOK fB gB B &&
       (gB.controls.zip fB.controls).all (fun (c', c) => I.argRel f g fB gB pin out c' c) &&
-      if gB.preds.isEmpty then I.phisOK f g fB gB pin 0 0 I.dflt inR
-      else (List.range gB.preds.size).all fun iT =>
-        let (iS, E) := I.edgeIn f T B gB iT
-        (I.redir B iT || fB.preds[iS]? == gB.preds[iT]?) &&
-          I.phisOK f g fB gB pin iT iS E inR)
+      (List.range (max 1 gB.preds.size)).all fun iT =>
+        (I.redir B iT || fB.preds[(I.edgeIn f T B gB iT).1]? == gB.preds[iT]?) &&
+          I.phisOK f g fB gB pin iT (I.edgeIn f T B gB iT).1 (I.edgeIn f T B gB iT).2 inR)
   | _, _ => false
 
 /-! ## Computing the facts (untrusted: `blockOK` checks them) -/
@@ -520,18 +520,13 @@ def infoOf (tabs : Tables) (f g : Func) (s : Site) : Info :=
     if gv.block != s.b && listedIn g v && gv.op != .Invalid then some v else none
   { tabs, s, bvals, vs, last := B.preds.size - 1, tn := (f.getB t).preds.size, region, K, dflt }
 
-/-- `g` passes `wfCheck`. -/
-def wfOK (g : Func) : Bool :=
-  match wfCheck g with
-  | .ok () => true
-  | .error _ => false
-
 /-- **One `shortcircuitBlock` rewrite at site `s`, checked** (see the module doc). -/
 def scOK (tabs : Tables) (f g : Func) (s : Site) : Bool :=
   let I := infoOf tabs f g s
   let T := I.factTab f g
-  I.preOK f && wfOK g && g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
+  I.preOK f && wfDomOK g && g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
     g.valueTab.size == f.valueTab.size && g.blockTab.size == f.blockTab.size &&
+    I.K.contains s.b && I.K.contains I.t && I.K.contains s.p &&
     I.redirOK f g && I.regionOK g && I.frameOK f g && I.K.all (I.blockOK f g T) &&
     I.exitOK g T && I.scanOK g
 
