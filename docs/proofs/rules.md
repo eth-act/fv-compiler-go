@@ -258,7 +258,7 @@ needs a later phase of the semantics.
 | `generic` | CondSelect | 0 | 59 | 0 | 0 | 59 |
 | `generic` | ConstInterface | 1 | 0 | 0 | 0 | 1 |
 | `generic` | ConstSlice | 1 | 0 | 1 | 0 | 2 |
-| `generic` | ConstString | 0 | 0 | 0 | 4 | 4 |
+| `generic` | ConstString | 1 | 0 | 0 | 4 | 4 |
 | `generic` | Convert | 0 | 5 | 0 | 0 | 5 |
 | `generic` | Ctz | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
@@ -289,7 +289,7 @@ needs a later phase of the semantics.
 | `generic` | NeqInter | 0 | 1 | 0 | 0 | 1 |
 | `generic` | NeqPtr | 1 | 8 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 0 | 1 | 0 | 0 | 1 |
-| `generic` | NilCheck | 0 | 0 | 0 | 8 | 8 |
+| `generic` | NilCheck | 3 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
@@ -321,7 +321,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1131 | 358 | 18 | 258 | 1762 |
+| all | | 1135 | 358 | 18 | 258 | 1762 |
 
 <!-- END coverage -->
 
