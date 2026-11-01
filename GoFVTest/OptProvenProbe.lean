@@ -246,44 +246,64 @@ def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
   | _, _ => "missing"
 
 open GoFV.Rules RewriteCheck in
-/-- Which part of `ssAccepts` fails, with the struct-store splits of the log (`ssPre`). -/
-def ssWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
-    String := Id.run do
-  let (f', log') := ssPre t f log
-  if log'.size == log.size then return why tabs t f g log
-  let pre := s!"ss({log.size - log'.size})"
+/-- Which part of `ssRel`/`check` fails for the split function `f'` of `f`, if any. -/
+def ssRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
   for z in List.range f.valueTab.size do
     match f.value? z, f'.value? z with
     | some u, some w =>
       if !ssSame u w && (ssSplit? tabs f f' z).isNone then
-        return s!"{pre}: v{z} {ssSplitWhy tabs f f' z}"
-    | some _, none => return s!"{pre}: v{z} missing"
+        return some s!"v{z} {ssSplitWhy tabs f f' z}"
+    | some _, none => return some s!"v{z} missing"
     | none, _ => pure ()
-  if !ssRel tabs f f' then return s!"{pre}: rel"
-  if let .error e := check { tabs := tabs, typs := env.typs } f' then return s!"{pre}: check {e}"
-  return s!"{pre}: {why tabs t f' g log'}"
+  if !ssRel tabs f f' then return some "rel"
+  if let .error e := check { tabs := tabs, typs := env.typs } f' then return some s!"check {e}"
+  return none
 
 open GoFV.Rules RewriteCheck in
-/-- Which part of `fwdAccepts` fails, with the forwardings of the log (`fwdPre`) (diagnostics). -/
-def fwdWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
-    String := Id.run do
-  let (f', log') := fwdPre t f log
-  if log'.size == log.size then return ssWhy env tabs t f g log
-  let pre := s!"fwd({log.size - log'.size})"
-  if !atomsOK f f' then return s!"{pre}: atoms"
-  if !closedOK f' then return s!"{pre}: closed"
-  if !fwdRankOK f (fwdRank f) then return s!"{pre}: rank"
+/-- Which part of `fwdRel`/`check` fails for the forwarded function `f'` of `f`, if any. -/
+def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
+  if !atomsOK f f' then return some "atoms"
+  if !closedOK f' then return some "closed"
+  if !fwdRankOK f (fwdRank f) then return some "rank"
   for z in List.range f.valueTab.size do
     if !fwdRepOK tabs f f' z then
       match f.value? z, f'.value? z with
       | some u, some w =>
         if w.op == .Copy && w.args.size == 1 then
-          return s!"{pre}: v{z} {fwdOKWhy tabs f u (w.args[0]?.getD 0)}"
-        else return s!"{pre}: v{z} rep {u.op.name}->{w.op.name}"
-      | _, _ => return s!"{pre}: v{z} rep"
-  if !fwdRel tabs f f' then return s!"{pre}: rel"
-  if !checkOK { tabs := tabs, typs := env.typs } f' then return s!"{pre}: check"
-  return s!"{pre}: {ssWhy env tabs t f' g log'}"
+          return some s!"v{z} {fwdOKWhy tabs f u (w.args[0]?.getD 0)}"
+        else return some s!"v{z} rep {u.op.name}->{w.op.name}"
+      | _, _ => return some s!"v{z} rep"
+  if !fwdRel tabs f f' then return some "rel"
+  if !checkOK { tabs := tabs, typs := env.typs } f' then return some "check"
+  return none
+
+open GoFV.Rules RewriteCheck in
+/-- Which layer of `RewriteCheck.layersOK` fails (`f0` the pass's input; diagnostics). -/
+def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
+    List Layer → Func → Array RwEvent → String
+  | [], f, log => why tabs t f g log
+  | L :: Ls, f, log =>
+    let (f', log') := L.pre t tabs f log
+    if log'.size == log.size then layersWhy env tabs t f0 g Ls f log else
+    let k := log.size - log'.size
+    let r : Option String := match L with
+      | .nil sel =>
+        let pre := s!"nil{if sel then "₁" else "₂"}({k})"
+        if !NilCheck.nrel true tabs f f' then some s!"{pre}: {nilWhy tabs f f'}"
+        else if NilCheck.dictParams tabs f != NilCheck.dictParams env.tables f0 then
+          some s!"{pre}: dictionary parameters differ between the tables"
+        else if !RewriteCheck.layerOK env tabs f0 L f f' then some s!"{pre}: check"
+        else none
+      | .fwd sel => (fwdRelWhy env tabs f f').map (s!"fwd{if sel then "₁" else "₂"}({k}): " ++ ·)
+      | .ss => (ssRelWhy env tabs f f').map (s!"ss({k}): " ++ ·)
+    match r with
+    | some s => s
+    | none =>
+      let pre := match L with
+        | .nil sel => s!"nil{if sel then "₁" else "₂"}({k})"
+        | .fwd sel => s!"fwd{if sel then "₁" else "₂"}({k})"
+        | .ss => s!"ss({k})"
+      s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite
 section, and those whose every rewrite section the checked variant reproduces. -/
@@ -301,6 +321,9 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
   let mut st := st
   let mut any := false
   let mut allChecked := true
+  -- every section's proven-only (unchecked) result at stock, and the checked failures' reasons
+  let mut allProven := true
+  let mut blockers : Array String := #[]
   let mut tables : Tables := {}
   for h : k in [0:e.sections.size] do
     let s := e.sections[k]
@@ -319,12 +342,16 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
       c := { c with firedFull := c.firedFull + n }
       if (compare prev out tables s).isNone then c := { c with fullSame := c.fullSame + 1 }
     | .error _ => c := { c with errors := c.errors + 1 }
+    let mut provenSec := false
     match GoFV.Rules.rewritePassFired proven true env input with
     | .ok (out, n) =>
       c := { c with vProven := c.vProven + numValues out.func, firedProven := c.firedProven + n }
-      if (compare prev out tables s).isNone then c := { c with provenSame := c.provenSame + 1 }
+      if (compare prev out tables s).isNone then
+        c := { c with provenSame := c.provenSame + 1 }
+        provenSec := true
       if out.func == input then c := { c with provenNoop := c.provenNoop + 1 }
     | .error _ => c := { c with errors := c.errors + 1 }
+    if !provenSec then allProven := false
     match GoFV.Rules.rewriteRun proven true true env input with
     | .ok (out, _, log) =>
       let ok := RewriteCheck.accepts env proven input out log
@@ -333,33 +360,27 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         | .error _ => { func := input, tables := prev }
       if !ok && !(out.func == input) then
         -- `checkedRewrite`'s fallbacks (without forwardings, then without struct-store
-        -- splits): rejected, or accepted
+        -- splits, then without nil-check eliminations): rejected, or accepted
         let t' := { proven with loads := #[] }
         let t'' := { t' with structStores := #[] }
+        let t''' := { t'' with nilChecks := #[] }
         let fbOf (t' : GoFV.Rules.Interp.Table) : Option String :=
           match GoFV.Rules.rewriteRun t' true true env input with
           | .ok (o2, _, log2) =>
             if RewriteCheck.accepts env t' input o2 log2 || o2.func == input then none else
-            let (f2, l2) := RewriteCheck.nilPre t' input log2
             some (if !tabsAgree prev o2.tables input then "tables"
-              else if l2.size == log2.size then why o2.tables t' input o2.func log2
-              else if !RewriteCheck.nilOK env o2.tables input f2 then "nil"
-              else why o2.tables t' f2 o2.func l2)
+              else layersWhy env o2.tables t' input o2.func RewriteCheck.layers input log2)
           | .error e => some s!"error {e}"
         let fb := if proven.loads.isEmpty then some "" else fbOf t'
         let fb := if fb.isSome && !proven.structStores.isEmpty then fbOf t'' else fb
+        let fb := if fb.isSome && !proven.nilChecks.isEmpty then fbOf t''' else fb
         if fb.isSome then c := { c with rejected := c.rejected + 1 }
         else c := { c with fallback := c.fallback + 1 }
-        let (f', log') := RewriteCheck.nilPre proven input log
         let reason := if !tabsAgree prev out.tables input then
             "tables: the input tells the result's tables from its own (tabsAgree)"
-          else if log'.size == log.size then fwdWhy env out.tables proven input out.func log
-          else if !NilCheck.nrel true out.tables input f' then "nil: " ++ nilWhy out.tables input f'
-          else if NilCheck.dictParams out.tables input != NilCheck.dictParams prev input then
-            "nil: dictionary parameters differ between the tables"
-          else if !RewriteCheck.nilOK env out.tables input f' then "nil: check"
-          else fwdWhy env out.tables proven f' out.func log'
+          else layersWhy env out.tables proven input out.func RewriteCheck.layers input log
         IO.println s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"
+        if provenSec then blockers := blockers.push s!"{name}: {reason.take 160}"
         if let some r2 := fb then
           if !r2.isEmpty then IO.println s!"  without forwardings: {r2}"
       if (compare prev co tables s).isNone then
@@ -369,6 +390,8 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
       c := { c with errors := c.errors + 1 }
       allChecked := false
     st := st.insert name c
+  if any && allProven && !allChecked then
+    IO.println s!"BLOCKED {path}: {" || ".intercalate blockers.toList}"
   return (st, if any then fns + 1 else fns, if any && allChecked then fnsChecked + 1 else fnsChecked)
 
 def pct (a b : Nat) : String :=

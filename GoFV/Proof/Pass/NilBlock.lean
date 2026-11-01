@@ -627,6 +627,20 @@ theorem addPtr_safe {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
   | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.addPtr, Safe]
 
 omit K in
+theorem ptrIndex_safe {el : Option Nat} {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
+    Safe (PtrOps.ptrIndex el [w, i]) := by
+  match w, hw with
+  | .ptr q, hw =>
+    unfold PtrOps.ptrIndex
+    simp only
+    split
+    · simp only [PtrOps.ptrRes]; split <;> simp_all [Safe, Ptr.add]
+    · trivial
+  | .int .w64 x, _ => exact absurd rfl (hni x)
+  | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
+  | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.ptrIndex, Safe]
+
+omit K in
 /-- A pointer-shaped register is no 64-bit integer. -/
 theorem not_int_of_ptr {y : Val} {e : Option Nat} (h : y.retype (.ptr e) = y) :
     ∀ x, y ≠ .int .w64 x := by
@@ -637,7 +651,7 @@ omit K in
 theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n + 1) z = true) :
     ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧
       (((v.op = .Addr ∨ v.op = .LocalAddr) ∧ v.aux.isSome = true) ∨ v.op = .NilCheck ∨
-        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr) ∧
+        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr ∨ v.op = .PtrIndex ∨ v.op = .Copy) ∧
           ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr xt tabs f n a = true) ∨
         (v.op = .SelectN ∧ xt = true ∧ v.auxInt = 0 ∧
           ∃ c, v.args[0]? = some c ∧ Opt.NilCheck.mallocCall tabs f c = true) ∨
@@ -667,7 +681,15 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n +
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr h, a, ha, hop⟩)))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inl h), a, ha, hop⟩)))
+    · cases hop
+  · next h =>
+    split at hop
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inl h)), a, ha, hop⟩)))
+    · cases hop
+  · next h =>
+    split at hop
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr h)), a, ha, hop⟩)))
     · cases hop
   · next h =>
     simp only [Bool.and_eq_true, beq_iff_eq] at hop
@@ -709,7 +731,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
     have hph : v.op ≠ .Phi := by
       intro hp
-      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ <;> rw [hp] at h1 <;>
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ <;> rw [hp] at h1 <;>
         cases h1
     obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
@@ -724,10 +746,11 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨r, hr, hyr⟩ := bind_ok hev
     subst hyr
     apply safe_retype_ptr
-    have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr) →
+    have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr ∨
+        v.op = .PtrIndex ∨ v.op = .Copy) →
         isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
-      intro h; rcases h with h | h | h | h <;> rw [h] <;> decide
+      intro h; rcases h with h | h | h | h | h | h <;> rw [h] <;> decide
     rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩ | ⟨h1, hxt, hai, c, hc, hmc⟩ |
       ⟨h1, hxt, hai, m, hm, hda⟩
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
@@ -748,37 +771,49 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       rw [hfv, h1] at hr; cases hr
       show Blk.global "runtime.g" ≠ Blk.nil
       nofun
-    · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+    · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ :=
+        hnr (by rcases h1 with h1 | h1 | h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       have hfv : frameVal (Ctx.make tabs f) v = none :=
-        frameVal_none (by rcases h1 with h1 | h1 <;> rw [h1] <;> decide)
+        frameVal_none (by rcases h1 with h1 | h1 | h1 | h1 <;> rw [h1] <;> decide)
       rw [hfv] at hr; cases hr
       have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
       obtain ⟨ya, hya, hsa', hni⟩ := safe_chain hS n a hsa haa
-      rcases h1 with h1 | h1
-      · have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
-        rw [h1, show Op.OffPtr.argLen = 1 by decide] at har
+      -- a one-argument op: its argument list is `[ya]`
+      have one : ∀ {o : Op}, v.op = o → o.argLen = 1 → vs = [ya] := by
+        intro o ho hl
+        have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [ho, hl]; decide)
+        rw [ho, hl] at har
         have hsz : v.args.size = 1 := by exact_mod_cast har
         have hva : v.args = #[a] := by
           apply Array.ext (by simp [hsz]); intro k h1' h2'
           have : k = 0 := by simp at h2'; omega
           subst this; simpa [Array.getElem?_eq_getElem h1'] using ha
-        have hvs' : vs = [ya] := by
-          rw [hva] at hvs; unfold argVals at hvs
-          simp [hya] at hvs; exact hvs.symm
-        subst hvs'
-        rw [h1]
-        exact offPtr_safe hsa' hni
-      · have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
-        rw [h1, show Op.AddPtr.argLen = 2 by decide] at har
+        rw [hva] at hvs; unfold argVals at hvs
+        simp [hya] at hvs; exact hvs.symm
+      -- a two-argument op: its argument list is `[ya, _]`
+      have two : ∀ {o : Op}, v.op = o → o.argLen = 2 → ∃ yi, vs = [ya, yi] := by
+        intro o ho hl
+        have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [ho, hl]; decide)
+        rw [ho, hl] at har
         have hsz : v.args.size = 2 := by exact_mod_cast har
         obtain ⟨a', i', ya'', yi, hargs, rfl, hya'', -⟩ := argVals_two hvs hsz
         rw [hargs] at ha
         simp only [List.getElem?_toArray, List.getElem?_cons_zero, Option.some.injEq] at ha
         subst ha
         rw [hya] at hya''; cases hya''
+        exact ⟨yi, rfl⟩
+      rcases h1 with h1 | h1 | h1 | h1
+      · rw [one h1 (by decide), h1]
+        exact offPtr_safe hsa' hni
+      · obtain ⟨yi, rfl⟩ := two h1 (by decide)
         rw [h1]
         exact addPtr_safe hsa' hni
+      · obtain ⟨yi, rfl⟩ := two h1 (by decide)
+        rw [h1]
+        exact ptrIndex_safe hsa' hni
+      · rw [one h1 (by decide), h1]
+        exact hsa'
     · -- the first result of a malloc-family call (`Env.AllocNonNil`)
       have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide

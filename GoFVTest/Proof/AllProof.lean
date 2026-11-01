@@ -475,6 +475,7 @@ import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
 import GoFV.Proof.Witness.NextPow2
+import GoFV.Proof.Witness.NilFwd
 import GoFV.Proof.Witness.NilGetG
 import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NotIf

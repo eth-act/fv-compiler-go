@@ -83,8 +83,8 @@ def dictArg (tabs : Tables) (f : Func) (n : AuxRef) : Bool :=
 
 /-- `x` is pointer-typed and points into an allocation whenever it is defined: an `Addr` or
 `LocalAddr` with a name, a nil check, `GetG` (the goroutine's `g`, an allocation of the
-environment, `docs/plans/semantics.md` §5), or an `OffPtr`/`AddPtr` of such a value. With `xt`
-(the checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also
+environment, `docs/plans/semantics.md` §5), or an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a
+value. With `xt` (the checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also
 the first result of a malloc-family call (`mallocCall`) and a dictionary parameter
 (`dictArg`). -/
 def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
@@ -97,7 +97,7 @@ def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
       match v.op with
       | .Addr | .LocalAddr => v.aux.isSome
       | .NilCheck | .GetG => true
-      | .OffPtr | .AddPtr =>
+      | .OffPtr | .AddPtr | .PtrIndex | .Copy =>
         match v.args[0]? with
         | some a => safePtr xt tabs f n a
         | none => false

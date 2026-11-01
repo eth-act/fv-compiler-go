@@ -941,18 +941,33 @@ def nilCopy (f : Func) (v : ID) : Func :=
     else f
   | none => f
 
-/-- One event of `nilPre`: a nil-check elimination of `f` is applied, any other event kept, but
-for the copy-argument replacements of the eliminated check logged before it (the check becomes
-`Copy` of its pointer in `f`, which reaches the replaced argument through copies). -/
-def nilStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
-    Func × Array RwEvent :=
+/-- The nil check `v` of `f` checks a pointer nilcheckelim's checker takes as non-nil by itself
+(`NilCheck.safePtr true`). -/
+def nilSafe (tabs : Tables) (f : Func) (v : ID) : Bool :=
+  match f.value? v with
+  | some x =>
+    match x.args[0]? with
+    | some p => NilCheck.safePtr true tabs f f.valueTab.size p
+    | none => false
+  | none => false
+
+/-- One event of `nilPre`: a nil-check elimination of `f` is applied (with `sel` only one of a
+`nilSafe` check), any other event kept, but for the copy-argument replacements of the eliminated
+check logged before it (the check becomes `Copy` of its pointer in `f`, which reaches the
+replaced argument through copies). -/
+def nilStep (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (p : Func × Array RwEvent)
+    (ev : RwEvent) : Func × Array RwEvent :=
   match nilEvent? t f ev with
-  | some v => (nilCopy p.1 v, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
+  | some v =>
+    if sel && !nilSafe tabs f v then (p.1, p.2.push ev)
+    else (nilCopy p.1 v, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
   | none => (p.1, p.2.push ev)
 
-/-- The input with the log's nil-check eliminations applied, and the remaining events. -/
-def nilPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
-  log.foldl (nilStep t f) (f, #[])
+/-- The input with the log's nil-check eliminations applied (with `sel` only those of `nilSafe`
+checks), and the remaining events. -/
+def nilPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (log : Array RwEvent) :
+    Func × Array RwEvent :=
+  log.foldl (nilStep t tabs sel f) (f, #[])
 
 /-! ## Load-of-Store forwarding (issue #151)
 
@@ -1226,18 +1241,23 @@ def fwdCopy (f : Func) (v x : ID) : Func :=
     else f
   | none => f
 
-/-- One event of `fwdPre`: a forwarding of `f` is applied, any other event kept, but for the
-copy-argument replacements of the forwarded `Load` logged before it (copy elimination on the
-`Load`'s arguments, which the forwarding validated in `f` replaces). -/
-def fwdStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
-    Func × Array RwEvent :=
+/-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdOK` holds of in
+`f`), any other event kept, but for the copy-argument replacements of the forwarded `Load`
+logged before it (copy elimination on the `Load`'s arguments, which the forwarding validated in
+`f` replaces). -/
+def fwdStep (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (p : Func × Array RwEvent)
+    (ev : RwEvent) : Func × Array RwEvent :=
   match fwdEvent? t f ev with
-  | some (v, x) => (fwdCopy p.1 v x, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
+  | some (v, x) =>
+    if sel && !(f.value? v).any (fwdOK tabs f · x) then (p.1, p.2.push ev)
+    else (fwdCopy p.1 v x, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
   | none => (p.1, p.2.push ev)
 
-/-- The input with the log's Load-of-Store forwardings applied, and the remaining events. -/
-def fwdPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
-  log.foldl (fwdStep t f) (f, #[])
+/-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdOK`
+holds of), and the remaining events. -/
+def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (log : Array RwEvent) :
+    Func × Array RwEvent :=
+  log.foldl (fwdStep t tabs sel f) (f, #[])
 
 /-! ## Struct-store splits (issue #151)
 
@@ -1428,54 +1448,74 @@ def ssRel (tabs : Tables) (f g : Func) : Bool :=
       | _, _ => true) &&
     f.blocks.all (ssBlockOK f g news S)
 
+/-! ## Layers (issue #151)
+
+The log's nil-check eliminations, Load-of-Store forwardings and struct-store splits are taken
+out of the log and applied to the input in layers, each related to its input by its own
+relation, before `validate` relates the last layer's function and the output with the remaining
+events. A selective layer (`sel`) applies only the events its relation holds of in its input;
+a later layer of the same kind applies the rest. Each kind needs another first: a struct-store
+split's pointer may be an eliminated nil check and its stored values forwarded `Load`s, a
+forwarded `Load` may read a field `Store` of a split, and an eliminated nil check's pointer
+may be a forwarded `Load`. -/
+
+/-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-store
+splits (`ssPre`). -/
+inductive Layer where
+  | nil (sel : Bool)
+  | fwd (sel : Bool)
+  | ss
+
+/-- The input with the layer's events of the log applied, and the remaining events. -/
+def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
+    Func × Array RwEvent
+  | .nil sel => nilPre t tabs sel
+  | .fwd sel => fwdPre t tabs sel
+  | .ss => ssPre t
+
+/-- The layers of `RewriteCheck.accepts`, in order. -/
+def layers : List Layer := [.nil true, .fwd true, .ss, .fwd false, .nil false]
+
 end GoFV.Opt.RewriteCheck
 
 namespace GoFV.Opt
 
-/-- The nil-check eliminations of the log, applied to `f` (`f'`, `RewriteCheck.nilPre`), are
-nilcheckelim's (`NilCheck.nrel true` in the result's tables `tabs`: each pointer is a
-`safePtr true` seed, the other roots keep their order), `f'` passes `check`, and `f`'s
-dictionary parameters are the same in both tables (the precondition `Sem.DictArgs` is
-stated in the input's). -/
-def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f f' : GoFV.SSA.Func) : Bool :=
+/-- The nil-check eliminations of a layer, applied to `f` (`f'`), are nilcheckelim's
+(`NilCheck.nrel true` in the result's tables `tabs`: each pointer is a `safePtr true` seed, the
+other roots keep their order), `f'` passes `check`, and `f`'s dictionary parameters are those of
+the pass's input `f0` in the pass's tables (the precondition `Sem.DictArgs` is stated there). -/
+def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.SSA.Func) : Bool :=
   NilCheck.nrel true tabs f f' && checkOK { tabs := tabs, typs := env.typs } f' &&
-    NilCheck.dictParams tabs f == NilCheck.dictParams env.tables f
+    NilCheck.dictParams tabs f == NilCheck.dictParams env.tables f0
 
-/-- `RewriteCheck.validate` accepts `out` against `f` and the log, or, when the log splits
-struct stores (`ssPre`, issue #151), `f` with these splits applied is related to `f` by
-`ssRel`, passes `check`, and `validate` accepts `out` against it and the remaining events. -/
-def RewriteCheck.ssAccepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
-    (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
-  match RewriteCheck.ssPre t f log with
-  | (f', log') =>
-    if log'.size == log.size then RewriteCheck.validate out.tables t f out.func log
-    else RewriteCheck.ssRel out.tables f f' && checkOK { tabs := out.tables, typs := env.typs } f' &&
-      RewriteCheck.validate out.tables t f' out.func log'
+/-- The layer `L` relates `f` (a layer's input, from the pass's input `f0`) and `f'`: `nilOK`,
+`fwdRel` or `ssRel`, and `f'` passes `check`. -/
+def RewriteCheck.layerOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 : GoFV.SSA.Func) :
+    RewriteCheck.Layer → GoFV.SSA.Func → GoFV.SSA.Func → Bool
+  | .nil _, f, f' => RewriteCheck.nilOK env tabs f0 f f'
+  | .fwd _, f, f' => RewriteCheck.fwdRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .ss, f, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
 
-/-- `RewriteCheck.ssAccepts` accepts `out` against `f` and the log, or, when the log forwards
-Loads of Stores (`fwdPre`, issue #151), `f` with these forwardings applied is related to `f` by
-`fwdRel`, passes `check`, and `ssAccepts` accepts `out` against it and the remaining events. -/
-def RewriteCheck.fwdAccepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
-    (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
-  match RewriteCheck.fwdPre t f log with
-  | (f', log') =>
-    if log'.size == log.size then RewriteCheck.ssAccepts env t f out log
-    else RewriteCheck.fwdRel out.tables f f' && checkOK { tabs := out.tables, typs := env.typs } f' &&
-      RewriteCheck.ssAccepts env t f' out log'
+/-- The layers `Ls` take their events out of the log, each a step `layerOK` accepts (a layer
+without events is skipped), and `validate` accepts `out` against the last function and the
+remaining events. -/
+def RewriteCheck.layersOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : GoFV.SSA.Func)
+    (out : PassOut) : List RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → Bool
+  | [], f, log => RewriteCheck.validate out.tables t f out.func log
+  | L :: Ls, f, log =>
+    match L.pre t out.tables f log with
+    | (f', log') =>
+      if log'.size == log.size then RewriteCheck.layersOK env t f0 out Ls f log
+      else RewriteCheck.layerOK env out.tables f0 L f f' && RewriteCheck.layersOK env t f0 out Ls f' log'
 
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
 log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create
 types such as `ConstNil <v.Type.Elem().PtrTo()>` and symbols such as `fe.StringData(s)`, but no
-definitions the input looks up), and `RewriteCheck.fwdAccepts` accepts it in the result's
-tables, against `f` and the log, or, when the log eliminates nil checks (`nilPre`, issue #151),
-against `f` with these eliminations applied (`nilOK`) and the remaining events. -/
+definitions the input looks up), and `RewriteCheck.layersOK` accepts it in the result's tables
+through the `RewriteCheck.layers`. -/
 def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
-  tabsAgree env.tables out.tables f &&
-  match RewriteCheck.nilPre t f log with
-  | (f', log') =>
-    if log'.size == log.size then RewriteCheck.fwdAccepts env t f out log
-    else RewriteCheck.nilOK env out.tables f f' && RewriteCheck.fwdAccepts env t f' out log'
+  tabsAgree env.tables out.tables f && RewriteCheck.layersOK env t f out RewriteCheck.layers f log
 
 /-- `applyRewrite` with the table `t` and its log; the result if `RewriteCheck.accepts` it. -/
 def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func) :
@@ -1483,22 +1523,31 @@ def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func)
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   return if RewriteCheck.accepts env t f out log then some out else none
 
-/-- The validated rewrite pass: `applyRewrite` with the table `t` and its log, the result with
-the pass's extended tables if `RewriteCheck.accepts` it; else (a Load-of-Store forwarding or a
-struct-store split the validator cannot relate, issue #151) the same without the table's
-forwardings (`loads`), then also without its struct-store splits (`structStores`), if
-accepted; else the input. -/
+/-- The tables `checkedRewrite` tries in order: `t`, then (a Load-of-Store forwarding, struct-store
+split or nil-check elimination the validator cannot relate, issue #151) `t` without its
+forwardings (`loads`), then also without its struct-store splits (`structStores`), then also
+without its nil-check eliminations (`nilChecks`), each only if it removes rules. -/
+def checkedTiers (t : GoFV.Rules.Interp.Table) : List GoFV.Rules.Interp.Table :=
+  let t₁ := { t with loads := #[] }
+  let t₂ := { t₁ with structStores := #[] }
+  let t₃ := { t₂ with nilChecks := #[] }
+  t :: ((if t.loads.isEmpty then [] else [t₁]) ++ (if t.structStores.isEmpty then [] else [t₂]) ++
+    (if t.nilChecks.isEmpty then [] else [t₃]))
+
+/-- The first of the tables whose run `checkedRun` accepts, and its result. -/
+def checkedFirst (env : PassEnv) (f : GoFV.SSA.Func) :
+    List GoFV.Rules.Interp.Table → Except String (Option PassOut)
+  | [] => pure none
+  | T :: Ts => do
+    match ← checkedRun T env f with
+    | some out => pure (some out)
+    | none => checkedFirst env f Ts
+
+/-- The validated rewrite pass: `applyRewrite` with the first table of `checkedTiers t` whose
+result (with the pass's extended tables) `RewriteCheck.accepts`, else the input. -/
 def checkedRewrite (t : GoFV.Rules.Interp.Table) : Pass := fun env f => do
-  match ← checkedRun t env f with
+  match ← checkedFirst env f (checkedTiers t) with
   | some out => return out
-  | none =>
-    let t₁ := { t with loads := #[] }
-    match ← (if t.loads.isEmpty then pure none else checkedRun t₁ env f) with
-    | some out => return out
-    | none =>
-      if t.structStores.isEmpty then return { func := f, tables := env.tables } else
-      match ← checkedRun { t₁ with structStores := #[] } env f with
-      | some out => return out
-      | none => return { func := f, tables := env.tables }
+  | none => return { func := f, tables := env.tables }
 
 end GoFV.Opt
