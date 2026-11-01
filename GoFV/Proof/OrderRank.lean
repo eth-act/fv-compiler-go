@@ -255,15 +255,24 @@ theorem np_filter_eq {N' : α → Prop} {D' : α → List α} {pure' : α → Pr
 
 end Unique
 
+/-- How a source argument `a` of `y` reaches `y` in the target: `a` is a target node `y`
+depends on, or `a` is pure and each of its arguments that is a source node reaches `y` (a
+pass that replaces a use of a copy by the copy's source keeps `Feeds` through the copy). -/
+inductive Feeds (N N' : α → Prop) (D : α → List α) (D' : α → List α) (pure : α → Prop) (y : α) :
+    α → Prop where
+  | direct {a : α} : N' a → Dep N' D' a y → Feeds N N' D D' pure y a
+  | through {a : α} : pure a → (∀ b ∈ D a, N b → Feeds N N' D D' pure y b) →
+      Feeds N N' D D' pure y a
+
 /-- **The panic transfer with the canonical rank.** If the source order `o` reaches the non-pure
 node `r` at position `k`, every source node the target order `o'` lists before `r` is listed
 before `r` by `o` — given that both orders list the non-pure nodes in the same sequence
-(`np_filter_eq`) and the target keeps every argument dependency of a source node it lists. -/
+(`np_filter_eq`) and every argument of a source node the target lists `Feeds` it. -/
 theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α → Prop} {np : α → Bool}
     {o o' : List α} (hs : Topo N D o) (hk : PureFirst N D pure o) (ht : Topo N' D' o')
     (hnp : ∀ x, np x = true ↔ N x ∧ ¬ pure x) (hseq : o.filter np = o'.filter np)
     {r : α} {k k' : Nat} (hr : o[k]? = some r) (hr' : o'[k']? = some r) (hrp : np r = true)
-    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → N' a ∧ Dep N' D' a y) :
+    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → Feeds N N' D D' pure y a) :
     ∀ j y, j < k' → o'[j]? = some y → N y → ∃ i < k, o[i]? = some y := by
   intro j
   induction j using Nat.strongRecOn with
@@ -282,15 +291,30 @@ theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α �
         · have : i = k := Nat.le_antisymm h' h
           subst this; rw [hr] at hi; cases hi; exact absurd rfl hyr
       have hpr : ¬ pure r := ((hnp r).1 hrp).2
+      have hN'y : N' y := (ht.mem y).1 (List.mem_of_getElem? hy)
+      -- an argument fed into `y` listed at or after `r` in the source is a contradiction
+      have feeds : ∀ a, Feeds N N' D D' pure y a → N a → ∀ i2, k ≤ i2 → o[i2]? = some a → False := by
+        intro a hf
+        induction hf with
+        | @direct a hN'a hd =>
+          intro hNa i2 hk2 hia
+          obtain ⟨ja, hja⟩ := List.getElem?_of_mem ((ht.mem a).2 hN'a)
+          have hjaj : ja < j := ht.dep_lt hd hja hy
+          obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa
+          have := idx_unique hs.nodup hia hai3
+          omega
+        | @through a hpa _ ihb =>
+          intro hNa i2 hk2 hia
+          have hk2' : k < i2 := by
+            rcases Nat.lt_or_ge k i2 with h' | h'
+            · exact h'
+            · have : i2 = k := Nat.le_antisymm h' hk2
+              subst this; rw [hr] at hia; cases hia; exact absurd hpa hpr
+          obtain ⟨b, hb, hNb, i4, hk4, _, hib⟩ := hk k i2 r a hk2' hr hia hpr hpa
+          exact ihb b hb hNb hNb i4 hk4 hib
       by_cases hpy : pure y
-      · obtain ⟨a, ha, hNa, i2, hk2, h2i, hia⟩ := hk k i r y hki hr hi hpr hpy
-        have hN'y : N' y := (ht.mem y).1 (List.mem_of_getElem? hy)
-        obtain ⟨hN'a, hd⟩ := pres a y hNa hNy ha hN'y
-        obtain ⟨ja, hja⟩ := List.getElem?_of_mem ((ht.mem a).2 hN'a)
-        have hjaj : ja < j := ht.dep_lt hd hja hy
-        obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa
-        have := idx_unique hs.nodup hia hai3
-        omega
+      · obtain ⟨a, ha, hNa, i2, hk2, _, hia⟩ := hk k i r y hki hr hi hpr hpy
+        exact feeds a (pres a y hNa hNy ha hN'y) hNa i2 hk2 hia
       · have hny : np y = true := (hnp y).2 ⟨hNy, hpy⟩
         have hb : Before (o'.filter np) y r := (before_filter np hny hrp o').2 ⟨j, k', hj, hy, hr'⟩
         rw [← hseq] at hb

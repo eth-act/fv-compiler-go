@@ -43,7 +43,7 @@ theorem copyelim_witness :
     refine ⟨_, hp, ?_⟩
     obtain ⟨fuel, h⟩ := Refines.returned_int
       (copyelim_refines hp hf (ce' := clampCheckEnv) hg (copyFrag_sound h4)
-        (simFrag_of (check_wf hf) h3)) hm
+        (simFrag_of (check_wf hf) h3).toEmpty) hm
     exact ⟨fuel, m, h⟩
 
 end GoFV.Proof.Witness

@@ -7,17 +7,17 @@ import GoFV.Proof.Order
 # copyelim: from the static relation to the refinement
 
 `refines_of_rel`: if input `f` and output `g` both pass `check`, are related by `CopyRel`, and
-`f` is in the fragment `CopyFrag` (no zero-size aggregate values and pairwise
-dependency-ordered side-effecting roots in tree blocks), every run of `g` from the entry is the
-run of `f`: the two runs visit the same blocks with equal frames.
+`f` has no zero-size aggregate values in tree blocks (`EmptyFrag`), every run of `g` from the
+entry is the run of `f`: the two runs visit the same blocks with equal frames.
 
 The block step (`enter_ok`, `enter_panic`): the target's `Phi`s read related arguments, which
 hold equal registers (lemma (D) of `g` at the predecessor, `ArgRel`); a `Phi` that became a
 copy reads a value of a strict dominator, unchanged by the block; every other target value
 evaluates, against the source's frame, to the source's register (`copyEq`: in the source frame
-a copy of `g` holds its argument's register). A source panic at a root is reached by the target
-too: the target evaluates before it only values the source evaluated before it
-(`Order.transfer`).
+a copy of `g` holds its argument's register). A source panic at a root (a call,
+`PanicBounds` or a nil `NilCheck`) is reached by the target too: the target evaluates before it
+only values the source evaluated before it (`sched_transfer'`, with `CopyElimRank`: the roots
+keep their order because their dependencies are kept, #96).
 -/
 
 namespace GoFV.Proof.CopyElim
@@ -56,13 +56,16 @@ theorem cfgView_block {f g : Func} (h : cfgView g = cfgView f) {bid : ID} {fb : 
         simp only [Option.map_some, Option.some.injEq, Block.mk.injEq] at ht
         exact ⟨gb, rfl, ht.1, ht.2.2.2.2.2.2.2.1, ht.2.2.2.2.2.2.2.2.1⟩
 
-/-- The input fragment of the simulation: no value of a tree block has a zero-size aggregate
-type (phielim would turn it into `Empty`), and the side-effecting roots (priority 2) of every
-tree block are pairwise ordered by dependency (so a panicking root is reached by every
-schedule; `NilCheck`s may float), and `f` has no `NilCheck` (since the P2 semantics a nil
-`NilCheck` panics, and the scheduler's FIFO tie-break between ready `NilCheck`s is not preserved
-by a change of dependencies; lifted by the canonical tie-break of #96). The first two hold on
-the corpus except where noted in `docs/contracts/check.md`. -/
+/-- The input fragment of copyelim's simulation: no value of a tree block has a zero-size
+aggregate type (phielim would turn it into `Empty`). -/
+structure EmptyFrag (tabs : Tables) (f : Func) : Prop where
+  noEmpty : ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
+    ∀ x ∈ fb.values, ∀ fv, f.value? x = some fv → zeroSizeAggregate tabs fv.type ≠ .ok true
+
+/-- The fragment of the first simulation proofs (zcse still uses it): `EmptyFrag`, the
+side-effecting roots (priority 2) of every tree block pairwise ordered by dependency, and no
+`NilCheck`. copyelim no longer needs the last two: the rank tie-break of the scheduler (#96)
+keeps the roots' order (`sched_transfer'`). -/
 structure SimFrag (tabs : Tables) (f : Func) : Prop where
   noEmpty : ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
     ∀ x ∈ fb.values, ∀ fv, f.value? x = some fv → zeroSizeAggregate tabs fv.type ≠ .ok true
@@ -72,6 +75,9 @@ structure SimFrag (tabs : Tables) (f : Func) : Prop where
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
   noNil : ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
+
+theorem SimFrag.toEmpty {tabs : Tables} {f : Func} (h : SimFrag tabs f) : EmptyFrag tabs f :=
+  ⟨h.noEmpty⟩
 
 /-- `r` is `.ok true`. -/
 def isOkTrue : Except String Bool → Bool
@@ -160,7 +166,7 @@ structure Setup (tabs : Tables) (f g : Func) : Prop where
   cf : CertOK f
   cg : CertOK g
   rel : CopyRel tabs f g
-  frag : SimFrag tabs f
+  frag : EmptyFrag tabs f
 
 variable {tabs : Tables} {f g : Func}
 

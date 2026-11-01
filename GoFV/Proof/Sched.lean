@@ -620,9 +620,22 @@ theorem sched_np_eq {vs vs' : List SNode} {o o' : List ID} (hS : SchedSpec vs o)
 /-- **The panic transfer between two schedules (#96).** If the source schedule `o` reaches the
 non-pure node `r` at position `k` and the target `o'` lists it at `k'`, every source node the
 target lists before `r` the source lists before `r` — for blocks with the same non-pure nodes
-and the same dependencies between them, when the target keeps the source's argument
-dependencies. This replaces `Order.transfer` (no `chain` fragment, and `r` may be a
-`NilCheck`). -/
+and the same dependencies between them, when every argument of a source node the target lists
+`Feeds` it in the target (`Feeds.direct`: the target keeps the dependency; `Feeds.through`: the
+argument is pure and its own arguments feed it, e.g. a copy the pass bypassed). This replaces
+`Order.transfer` (no `chain` fragment, and `r` may be a `NilCheck`). -/
+theorem sched_transfer' {vs vs' : List SNode} {o o' : List ID} (hS : SchedSpec vs o)
+    (hT : SchedSpec vs' o') (hsame : SameNP vs vs')
+    (hdep : ∀ x y, npIn vs x = true → npIn vs y = true →
+      (Dep (NodeIn vs) (argsOf vs) x y ↔ Dep (NodeIn vs') (argsOf vs') x y))
+    {r : ID} {k k' : Nat} (hr : o[k]? = some r) (hr' : o'[k']? = some r) (hrp : npIn vs r = true)
+    (pres : ∀ a y, NodeIn vs a → NodeIn vs y → a ∈ argsOf vs y → NodeIn vs' y →
+      Feeds (NodeIn vs) (NodeIn vs') (argsOf vs) (argsOf vs') (PureIn vs) y a) :
+    ∀ j y, j < k' → o'[j]? = some y → NodeIn vs y → ∃ i < k, o[i]? = some y :=
+  transfer_rank hS.topo hS.pureFirst hT.topo (fun x => npIn_iff) (sched_np_eq hS hT hsame hdep)
+    hr hr' hrp pres
+
+/-- `sched_transfer'` when the target keeps every argument dependency of a source node. -/
 theorem sched_transfer {vs vs' : List SNode} {o o' : List ID} (hS : SchedSpec vs o)
     (hT : SchedSpec vs' o') (hsame : SameNP vs vs')
     (hdep : ∀ x y, npIn vs x = true → npIn vs y = true →
@@ -631,8 +644,8 @@ theorem sched_transfer {vs vs' : List SNode} {o o' : List ID} (hS : SchedSpec vs
     (pres : ∀ a y, NodeIn vs a → NodeIn vs y → a ∈ argsOf vs y → NodeIn vs' y →
       NodeIn vs' a ∧ Dep (NodeIn vs') (argsOf vs') a y) :
     ∀ j y, j < k' → o'[j]? = some y → NodeIn vs y → ∃ i < k, o[i]? = some y :=
-  transfer_rank hS.topo hS.pureFirst hT.topo (fun x => npIn_iff) (sched_np_eq hS hT hsame hdep)
-    hr hr' hrp pres
+  sched_transfer' hS hT hsame hdep hr hr' hrp fun a y ha hy hay hy' =>
+    .direct (pres a y ha hy hay hy').1 (pres a y ha hy hay hy').2
 
 /-! ## The fallback scheduler -/
 
