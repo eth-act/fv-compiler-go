@@ -59,6 +59,62 @@ theorem get?_putAll_mem : ∀ (l : List Value) (M : Defs) (u : Value), (l.map (�
     · rw [get?_putAll_not l _ _ hn.1, get?_put]; simp
     · exact get?_putAll_mem l _ u hn.2 hu
 
+/-! ## Matched values are reached from the top -/
+
+theorem mem_swap01 {α : Type} {a : α} : ∀ {l : List α}, a ∈ swap01 l → a ∈ l
+  | _ :: _ :: _, h => by
+    simp only [swap01, List.mem_cons] at h ⊢
+    rcases h with h | h | h
+    · exact .inr (.inl h)
+    · exact .inl h
+    · exact .inr (.inr h)
+  | [], h => h
+  | [_], h => h
+
+/-- `C` contains the arguments of its values. -/
+def ArgClosed (M : Defs) (C : ID → Prop) : Prop :=
+  ∀ w x, C w → M.get? w = some x → ∀ a ∈ x.args, C a
+
+mutual
+theorem matchPat_closed {M : Defs} {C : ID → Prop} (hC : ArgClosed M C) :
+    ∀ {q : Pat} {p : Path} {w : ID} {sw sw' : List Bool} {I : Inst},
+      matchPat M q p w sw = some (I, sw') → C w → ∀ y ∈ I, C y.2
+  | .op o nm ty ai ax ar args comm, p, w, sw, sw', I, h, hw => by
+    obtain ⟨x, hx, -, -, ids, sw1, J, hids, hJ, rfl⟩ := matchPat_op h
+    intro y hy
+    rcases List.mem_cons.1 hy with rfl | hy
+    · exact hw
+    · refine matchPats_closed hC hJ (fun a ha => hC w x hw hx a ?_) y hy
+      rcases hids with rfl | ⟨-, rfl⟩
+      · exact Array.mem_toList_iff.1 ha
+      · exact Array.mem_toList_iff.1 (mem_swap01 ha)
+  | .wild, p, w, sw, sw', I, h, hw | .bind _, p, w, sw, sw', I, h, hw
+  | .same _, p, w, sw, sw', I, h, hw => by
+    simp only [matchPat, Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, -⟩ := h
+    intro y hy; simp only [List.mem_singleton] at hy; subst hy; exact hw
+theorem matchPats_closed {M : Defs} {C : ID → Prop} (hC : ArgClosed M C) :
+    ∀ {qs : List Pat} {p : Path} {i : Nat} {ids : List ID} {sw sw' : List Bool} {J : Inst},
+      matchPats M qs p i ids sw = some (J, sw') → (∀ a ∈ ids, C a) → ∀ y ∈ J, C y.2
+  | [], p, i, [], sw, sw', J, h, _ => by
+    simp only [matchPats, Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨rfl, -⟩ := h
+    intro y hy; cases hy
+  | q :: qs, p, i, a :: as, sw, sw', J, h, hids => by
+    simp only [matchPats] at h
+    split at h
+    · cases h
+    · rename_i I1 sw1 h1
+      split at h
+      · cases h
+      · rename_i J2 sw2 h2
+        cases h
+        intro y hy
+        rcases List.mem_append.1 hy with hy | hy
+        · exact matchPat_closed hC h1 (hids a List.mem_cons_self) y hy
+        · exact matchPats_closed hC h2 (fun b hb => hids b (List.mem_cons_of_mem _ hb)) y hy
+  | [], _, _, _ :: _, _, _, _, h, _ => by simp [matchPats] at h
+  | _ :: _, _, _, [], _, _, _, h, _ => by simp [matchPats] at h
+end
+
 /-! ## The static evaluation of a rule event -/
 
 def stVtys (r : Rule) : List GoFV.Rules.GoTy := r.vars.map (·.ty)
@@ -103,6 +159,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hnat : natShape o (tabs.ty xv.type) = true
   hleaves : leavesOK tabs M I [] r.pat = true
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
+  hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
 
 theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
     (h : ruleOK tabs M r v defs = true) : Nonempty (RuleFacts tabs M r v defs) := by
@@ -151,7 +208,8 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     xv := xv, I := I, o := o, pty := pty, pai := pai, pax := pax, par := par,
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hxv, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail', hcons := hcons,
-    hwf := hwf, hcond := hcond', hnat := hnat', hleaves := hleaves, hres := hres }⟩
+    hwf := hwf, hcond := hcond', hnat := hnat', hleaves := hleaves, hres := hres,
+    hreach := fun C hC hv => matchPat_closed hC hm hv }⟩
 
 /-! ## Facts about the matched instance -/
 
