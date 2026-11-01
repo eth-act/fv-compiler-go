@@ -4,7 +4,8 @@
 # previous 8 commits, or that sets a file back to exactly its state before the previous commit
 # that touched it. A commit whose message says "revert" is skipped (intended revert), and so is
 # a commit listed (short hash, first column) in scripts/reverts-ack.txt together with the issue
-# that tracks restoring the lost work.
+# that tracks restoring the lost work, or, for an intended revert (check-reverts.sh --allow), the
+# PR that says why.
 # Used by the nightly gate (docs/GATE.md); scripts/check-reverts.sh is the per-PR check.
 #
 # usage: scripts/scan-history-reverts.sh [count] [ref]   (exit 1 on findings)
