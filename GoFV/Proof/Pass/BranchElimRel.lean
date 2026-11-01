@@ -3,6 +3,7 @@ import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Speculate
 import GoFV.Proof.Agree
 import GoFV.Proof.Merge
+import GoFV.Proof.Pass.FusePlainRel
 
 /-!
 # branchelim: what the step checker establishes
@@ -365,13 +366,22 @@ theorem post_spec (h : DRel f g s) {P : Block} (hP : f.block? s.post = some P) :
       Bool.and_eq_true, bne_iff_ne, ne_eq] at this
     exact ⟨fun h' => absurd h' hp, fun _ => this⟩
 
+/-- The checker's `npSeqOK` with the semantics' schedules (`Sem.schedule`): what the simulation
+uses (`merged_spec`). -/
+def npSeqSem (f g : Func) (D P D' : Block) : Bool :=
+  match schedule f D, schedule f P, schedule g D' with
+  | some oD, some oP, some oT =>
+    oT.toList.filter (fun x => npOf f D x || npOf f P x) ==
+      oD.toList.filter (npOf f D) ++ oP.toList.filter (npOf f P)
+  | _, _, _ => false
+
 /-- The merged block of `g`, exactly. -/
 theorem merged_exact (h : DRel f g s) :
     ∃ D P D', f.block? s.dom = some D ∧ f.block? s.post = some P ∧ g.block? s.dom = some D' ∧
       D'.id = s.dom ∧ D'.kind = P.kind ∧ D'.controls = P.controls ∧ D'.succs = P.succs ∧
       D'.preds = D.preds.map s.redir ∧
       D'.values = D.values ++ Site.armVals f s.arm0 ++ Site.armVals f s.arm1 ++ P.values ∧
-      (schedule g D').isSome ∧ npSeqOK f g D P D' = true := by
+      npSeqOK f g D P D' = true := by
   have hm := h.parts.2.2.2.2.2.2
   unfold Site.mergedOK at hm
   cases hD : f.block? s.dom with
@@ -385,35 +395,8 @@ theorem merged_exact (h : DRel f g s) :
   | some D' =>
   rw [hD, hP, hD'] at hm
   simp only [Bool.and_eq_true, beq_iff_eq] at hm
-  obtain ⟨⟨⟨⟨⟨⟨⟨hid, hk⟩, hc⟩, hsu⟩, hpr⟩, hvs⟩, hsch⟩, hnp⟩ := hm
-  exact ⟨D, P, D', rfl, rfl, rfl, hid, hk, hc, hsu, hpr, hvs, hsch, hnp⟩
-
-/-- The merged block of `g`. -/
-theorem merged_spec (h : DRel f g s) :
-    ∃ D P D', f.block? s.dom = some D ∧ f.block? s.post = some P ∧ g.block? s.dom = some D' ∧
-      D'.id = s.dom ∧ D'.kind = P.kind ∧ D'.controls = P.controls ∧ D'.succs = P.succs ∧
-      (∀ x ∈ D'.values, s.regionVal f x = true) ∧ (∀ x ∈ D.values, x ∈ D'.values) ∧
-      (∀ x ∈ P.values, x ∈ D'.values) ∧ (∀ x, s.armVal f x = true → x ∈ D'.values) ∧
-      (schedule g D').isSome ∧ npSeqOK f g D P D' = true := by
-  obtain ⟨D, P, D', hD, hP, hD', hid, hk, hc, hsu, -, hvs, hsch, hnp⟩ := merged_exact h
-  refine ⟨D, P, D', hD, hP, hD', hid, hk, hc, hsu, fun x hx => ?_, fun x hx => ?_,
-    fun x hx => ?_, fun x hx => ?_, hsch, hnp⟩
-  · rw [hvs] at hx
-    simp only [Array.mem_append, mem_armVals] at hx
-    unfold Site.regionVal Site.armVal
-    rcases hx with ((hx | hx) | hx) | hx
-    · rw [valsOf_eq hD, Array.contains_iff_mem.2 hx]; rfl
-    · simp [hx]
-    · simp [hx]
-    · simp [postVal_iff.2 ⟨P, hP, hx⟩]
-  · rw [hvs]; simp [hx]
-  · rw [hvs]; simp [hx]
-  · rw [hvs]
-    unfold Site.armVal at hx
-    simp only [Array.mem_append, mem_armVals]
-    rcases Bool.or_eq_true_iff.1 hx with hx | hx
-    · exact .inl (.inl (.inr hx))
-    · exact .inl (.inr hx)
+  obtain ⟨⟨⟨⟨⟨⟨hid, hk⟩, hc⟩, hsu⟩, hpr⟩, hvs⟩, hnp⟩ := hm
+  exact ⟨D, P, D', rfl, rfl, rfl, hid, hk, hc, hsu, hpr, hvs, hnp⟩
 
 /-- Every value of `f` and `g`. -/
 theorem value_spec (h : DRel f g s) (x : ID) : s.valueOK f g x = true := by
@@ -493,6 +476,97 @@ theorem condSel_of (h : DRel f g s) {x : ID} {fv : Value} (hfv : f.value? x = so
       beq_iff_eq] at hv
     obtain ⟨⟨⟨⟨hid, hty⟩, haux⟩, hai⟩, hop, hargs⟩ := hv
     exact ⟨gv, rfl, hid, hty, haux, hai, hop, hargs⟩
+
+theorem npV_of_npOf {f : Func} {B : Block} {y : ID} (h : npOf f B y = true) :
+    Fuse.Plain.npV f y = true := by
+  unfold npOf at h
+  rw [Bool.and_eq_true] at h
+  unfold Fuse.Plain.npV
+  exact h.2
+
+/-- The checker's schedules (`SchedFast.schedFast`) give the semantics' (`npSeqSem`). -/
+theorem npSeqSem_of {ce ce' : CheckEnv} (h : DRel f g s) (hwf : WF ce f) (hwg : WF ce' g)
+    {D P D' : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
+    (hD' : g.block? s.dom = some D') (hn : npSeqOK f g D P D' = true) :
+    (schedule g D').isSome ∧ npSeqSem f g D P D' = true := by
+  unfold npSeqOK at hn
+  cases hfD : SchedFast.schedFast f D with
+  | none => rw [hfD] at hn; cases hn
+  | some fD =>
+  cases hfP : SchedFast.schedFast f P with
+  | none => rw [hfD, hfP] at hn; cases hn
+  | some fP =>
+  cases hfT : SchedFast.schedFast g D' with
+  | none => rw [hfD, hfP, hfT] at hn; cases hn
+  | some fT =>
+  rw [hfD, hfP, hfT, beq_iff_eq] at hn
+  have hdomG : s.dom ∈ g.blocks := by rw [h.parts.2.2.2.2.2.1]; exact h.parts.2.1
+  have hownD := valuesOwn hwf h.parts.2.1 hD
+  have hpostIn : s.post ∈ f.blocks := by
+    obtain ⟨-, -, D0, e0, e1, hD0, -, -, hs, -, h0, -⟩ := site_spec h.site
+    have he0 := (hwf.succLink s.dom D0 ⟨h.parts.2.1, hD0⟩ 0 e0 (by rw [hs]; rfl)).1
+    rcases sideOf_spec h0 with ⟨-, rfl⟩ | ⟨a, A, -, hea, hA, -, -, hsu, -, -⟩
+    · exact he0
+    · rw [hea] at he0
+      exact (hwf.succLink a A ⟨he0, hA⟩ 0 _ (by rw [hsu]; rfl)).1
+  have hownP := valuesOwn hwf hpostIn hP
+  have hownT := valuesOwn hwg hdomG hD'
+  obtain ⟨oD, hoD, hflD⟩ := SchedFast.schedFast_filter (p := npOf f D)
+    (fun y hp hn => FusePlain.npIn_of_npV hownD (npV_of_npOf hp) hn) hfD
+  obtain ⟨oP, hoP, hflP⟩ := SchedFast.schedFast_filter (p := npOf f P)
+    (fun y hp hn => FusePlain.npIn_of_npV hownP (npV_of_npOf hp) hn) hfP
+  have hT : ∀ y, (npOf f D y || npOf f P y) = true → Fuse.Plain.npV g y = true := by
+    intro y hy
+    have hfy : Fuse.Plain.npV f y = true := by
+      rcases Bool.or_eq_true_iff.1 hy with hy | hy
+      · exact npV_of_npOf hy
+      · exact npV_of_npOf hy
+    unfold Fuse.Plain.npV at hfy ⊢
+    cases hv : f.value? y with
+    | none => rw [hv] at hfy; cases hfy
+    | some fv =>
+      rw [hv] at hfy
+      have hph : fv.op ≠ .Phi := fun e => by simp [e] at hfy
+      obtain ⟨gv, hgv, -, hop⟩ := (semEq_of h fun fv' h' _ => by
+        rw [hv] at h'; cases h'; exact hph).2 fv hv
+      rw [hgv]; simp only at hfy ⊢; rw [hop]; exact hfy
+  obtain ⟨oT, hoT, hflT⟩ := SchedFast.schedFast_filter
+    (p := fun x => npOf f D x || npOf f P x)
+    (fun y hp hn => FusePlain.npIn_of_npV hownT (hT y hp) hn) hfT
+  refine ⟨by rw [hoT]; rfl, ?_⟩
+  unfold npSeqSem
+  rw [hoD, hoP, hoT, beq_iff_eq, hflD, hflP, hflT]
+  exact hn
+
+/-- The merged block of `g`. -/
+theorem merged_spec (h : DRel f g s) (hwf : ∃ ce, WF ce f) (hwg : ∃ ce, WF ce g) :
+    ∃ D P D', f.block? s.dom = some D ∧ f.block? s.post = some P ∧ g.block? s.dom = some D' ∧
+      D'.id = s.dom ∧ D'.kind = P.kind ∧ D'.controls = P.controls ∧ D'.succs = P.succs ∧
+      (∀ x ∈ D'.values, s.regionVal f x = true) ∧ (∀ x ∈ D.values, x ∈ D'.values) ∧
+      (∀ x ∈ P.values, x ∈ D'.values) ∧ (∀ x, s.armVal f x = true → x ∈ D'.values) ∧
+      (schedule g D').isSome ∧ npSeqSem f g D P D' = true := by
+  obtain ⟨D, P, D', hD, hP, hD', hid, hk, hc, hsu, -, hvs, hnp⟩ := merged_exact h
+  obtain ⟨ce, hwf⟩ := hwf
+  obtain ⟨ce', hwg⟩ := hwg
+  obtain ⟨hsch, hnp⟩ := npSeqSem_of h hwf hwg hD hP hD' hnp
+  refine ⟨D, P, D', hD, hP, hD', hid, hk, hc, hsu, fun x hx => ?_, fun x hx => ?_,
+    fun x hx => ?_, fun x hx => ?_, hsch, hnp⟩
+  · rw [hvs] at hx
+    simp only [Array.mem_append, mem_armVals] at hx
+    unfold Site.regionVal Site.armVal
+    rcases hx with ((hx | hx) | hx) | hx
+    · rw [valsOf_eq hD, Array.contains_iff_mem.2 hx]; rfl
+    · simp [hx]
+    · simp [hx]
+    · simp [postVal_iff.2 ⟨P, hP, hx⟩]
+  · rw [hvs]; simp [hx]
+  · rw [hvs]; simp [hx]
+  · rw [hvs]
+    unfold Site.armVal at hx
+    simp only [Array.mem_append, mem_armVals]
+    rcases Bool.or_eq_true_iff.1 hx with hx | hx
+    · exact .inl (.inl (.inr hx))
+    · exact .inl (.inr hx)
 
 /-- A listed block outside the diamond is unchanged in what entering it and its terminator
 read. -/
