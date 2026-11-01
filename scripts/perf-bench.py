@@ -95,12 +95,36 @@ def snapshot(src):
     return dst, cid
 
 
+PASS_COLUMNS = ["date", "commit", "bench", "pass", "time_s", "runs", "corpus", "bin_hash"]
+
+
+def pass_times(text):
+    """Per-pass times from the last markdown table with a `pass time (s)` column (pass-parity
+    prints one per run: time spent in each registered pass instance, parsing excluded)."""
+    out, cols = {}, None
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if "pass time (s)" in cells:
+            cols, out = cells, {}
+        elif cols and len(cells) == len(cols) and not cells[0].startswith("---"):
+            try:
+                out[cells[cols.index("pass")]] = float(cells[cols.index("pass time (s)")])
+            except ValueError:
+                pass
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("names", nargs="*")
     ap.add_argument("--root", default=".")
     ap.add_argument("--registry", default=str(here / "perf/bench.tsv"))
     ap.add_argument("--history", default=str(here / "perf/bench-history.tsv"))
+    ap.add_argument("--pass-history", default=str(here / "perf/pass-history.tsv"))
+    ap.add_argument("--pass-abs", type=float, default=1.0,
+                    help="s; a pass time moving more than this and 25%% triggers extra runs")
     ap.add_argument("--runs", type=int, default=1)
     ap.add_argument("--cap", default="8G")
     ap.add_argument("--min-avail", type=float, default=10, help="GB; wait while below")
@@ -144,7 +168,18 @@ def main():
                 prev_cpu[(r["bench"], r.get("corpus"))] = float(r["cpu_s"])
         if lines and lines[0].split("\t") != COLUMNS:
             sys.exit(f"perf-bench: {hist} has columns {lines[0].split()}; expected {COLUMNS}")
-    rows, bad = [], 0
+    phist = pathlib.Path(a.pass_history)
+    pknown = {}  # (bench, bin_hash) -> {pass: row}
+    prev_pass = {}  # (bench, corpus, pass) -> latest time
+    if phist.exists():
+        lines = phist.read_text().splitlines()
+        if lines and lines[0].split("\t") != PASS_COLUMNS:
+            sys.exit(f"perf-bench: {phist} has columns {lines[0].split()}; expected {PASS_COLUMNS}")
+        for line in lines[1:]:
+            r = dict(zip(PASS_COLUMNS, line.split("\t")))
+            pknown.setdefault((r["bench"], r["bin_hash"]), {})[r["pass"]] = r
+            prev_pass[(r["bench"], r["corpus"], r["pass"])] = float(r["time_s"])
+    rows, prows, bad = [], [], 0
     gate_failed = False
     for name, target, cmd in benches:
         log = open(scratch / f"{name}.log", "w")
@@ -169,9 +204,11 @@ def main():
                 row.update({c: k[c] for c in ("wall_s", "cpu_s", "maxrss_mb", "runs", "load1")},
                            status="cached")
                 rows.append(row)
+                for pr in pknown.get((name, row["bin_hash"]), {}).values():
+                    prows.append(dict(pr))
                 print(f"{name}: cached (binary measured at {k['commit']})")
                 continue
-            results = []
+            results, per_pass = [], []
             i = 0
             while i < a.runs:
                 i += 1
@@ -180,6 +217,8 @@ def main():
                 row["load1"] = f"{os.getloadavg()[0]:.1f}"
                 out = scratch / f"{name}.json"
                 out.unlink(missing_ok=True)
+                log.flush()
+                start = log.seek(0, 2)  # children write to the fd directly
                 rc = subprocess.run([str(memcap), sys.executable, str(here / "scripts/perf-record.py"),
                                      "--probe", str(out), "--", "bash", "-c", cmd],
                                     cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
@@ -191,13 +230,28 @@ def main():
                     row["status"] = "oom" if rc in (137, 143) or res is None else "fail"
                     break
                 results.append(res)
+                with open(scratch / f"{name}.log", errors="replace") as lf:
+                    lf.seek(start)
+                    pt = pass_times(lf.read())
+                if pt:
+                    per_pass.append(pt)
                 p = prev_cpu.get((name, cid))
-                if (i == a.runs and len(results) < 3 and p
-                        and abs(res["cpu_s"] - p) > 0.25 * p):
+                moved = [s for s, t in pt.items()
+                         if (q := prev_pass.get((name, cid, s))) is not None
+                         and abs(t - q) > max(0.25 * q, a.pass_abs)]
+                if i == a.runs and len(results) < 3 and (
+                        (p and abs(res["cpu_s"] - p) > 0.25 * p) or moved):
                     # single runs vary by ~30% under load (pass-parity: 71.5 vs 99.6 s CPU on the
                     # same binary): confirm a move past the threshold with a median of three
-                    print(f"{name}: CPU {p:.1f} -> {res['cpu_s']:.1f}s; two more runs")
+                    print(f"{name}: CPU {p} -> {res['cpu_s']:.1f}s"
+                          + (f", passes moved: {', '.join(moved)}" if moved else "")
+                          + "; two more runs")
                     i -= 3 - len(results)
+            if per_pass:
+                for s in per_pass[-1]:
+                    ts = sorted(pp[s] for pp in per_pass if s in pp)
+                    prows.append(dict(bench=name, **{"pass": s}, time_s=f"{ts[len(ts) // 2]:.2f}",
+                                      runs=len(ts), corpus=cid, bin_hash=row["bin_hash"]))
             if results:
                 results.sort(key=lambda r: r["cpu_s"])
                 med = results[len(results) // 2]
@@ -228,6 +282,14 @@ def main():
         for r in rows:
             r.update(date=date, commit=commit)
             f.write("\t".join(str(r.get(c, "")) for c in COLUMNS) + "\n")
+    if prows:
+        new = not phist.exists()
+        with open(phist, "a") as f:
+            if new:
+                f.write("\t".join(PASS_COLUMNS) + "\n")
+            for r in prows:
+                r.update(date=date, commit=commit)
+                f.write("\t".join(str(r.get(c, "")) for c in PASS_COLUMNS) + "\n")
     return 1 if bad else 0
 
 
