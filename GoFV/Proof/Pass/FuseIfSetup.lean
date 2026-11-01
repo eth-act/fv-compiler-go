@@ -23,7 +23,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.Fuse GoFV.Opt.Fuse.IfC GoFV.Proof D
 structure Setup (ce : CheckEnv) (f g : Func) (s : Site) (R : List ID) : Prop where
   wf : WF ce f
   dom : UseDom f
-  rel : IRel ce f g s R
+  rel : IRel f g s R
 
 /-- The target's predecessor index for the source's `i` at block `y`. -/
 def tIdx (s : Site) (f : Func) (y : ID) (i : Nat) : Nat := if y = s.rmT f then s.rmI f i else i
@@ -55,10 +55,6 @@ namespace Setup
 
 variable (S : Setup ce f g s R) {fr : Frame}
 include S
-
-theorem wg : WF ce g := check_wf S.rel.wg
-
-theorem two : Two f g := ⟨⟨ce, S.wf⟩, ⟨ce, S.wg⟩, S.rel.ownAux, S.rel.vsize⟩
 
 theorem domR : DomRel f (Reachable f) (SDom f) := S.dom.domRel
 
@@ -356,6 +352,7 @@ theorem phi_idx {y : ID} (hy : y ∈ f.blocks) {Y : Block} (hY : f.block? y = so
 theorem block_core {y : ID} (hy : y ∈ f.blocks)
     (hna : ¬ (s.unlinked f = true ∧ s.arm0 = some y)) :
     ∃ Y Y', f.block? y = some Y ∧ g.block? y = some Y' ∧ Y'.id = Y.id ∧
+      Y'.preds = s.predsOf f y Y.preds ∧
       (∀ c ∈ Y'.controls, s.inX f R c = false) ∧ (∃ o, Sem.schedule g Y' = some o) ∧
       (y = s.b → Y'.kind = .Plain ∧ Y'.controls = #[] ∧ Y'.succs = #[s.rmE f s.e1] ∧
         Y'.values = Y.values ++
@@ -367,14 +364,15 @@ theorem block_core {y : ID} (hy : y ∈ f.blocks)
   have h0 : (s.unlinked f && s.arm0 == some y) = false := by
     cases hu : s.unlinked f
     · rfl
-    · simp only [Bool.true_and, beq_eq_false_iff_ne, ne_eq]
-      exact fun ha => hna ⟨hu, ha⟩
-  rw [h0, Bool.false_or] at h
+    · simpa using fun ha => hna ⟨hu, ha⟩
+  rw [h0] at h
+  simp only [Bool.false_eq_true, ite_false] at h
   split at h
   · rename_i Y Y' hY hY'
     simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', Bool.not_eq_true'] at h
-    obtain ⟨⟨⟨hid, hc⟩, hsc⟩, hrest⟩ := h
-    refine ⟨Y, Y', hY, hY', hid, hc, Option.isSome_iff_exists.1 hsc, fun hb => ?_, fun hb => ?_⟩
+    obtain ⟨⟨⟨⟨hid, hpr⟩, hc⟩, hsc⟩, hrest⟩ := h
+    refine ⟨Y, Y', hY, hY', hid, hpr, hc, Option.isSome_iff_exists.1 hsc, fun hb => ?_,
+      fun hb => ?_⟩
     · split at hrest
       · simp only [Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at hrest
         exact ⟨hrest.1.1.1, hrest.1.1.2, hrest.1.2, hrest.2⟩
@@ -400,7 +398,7 @@ theorem brel_other {y : ID} (hy : y ∈ f.blocks) (hyb : y ≠ s.b)
     (hI : IdxRel s f y iS iT) :
     BRel f g (s.inX f R) Y Y' iS iT ∧ Y'.kind = Y.kind ∧ Y'.controls = Y.controls ∧
       Y'.succs = Y.succs.map (s.rmE f) ∧ (∀ c ∈ Y.controls, s.inX f R c = false) := by
-  obtain ⟨Y1, Y1', hY1, hY1', hid, hc, hsc, -, hrest⟩ := S.block_core hy hna
+  obtain ⟨Y1, Y1', hY1, hY1', hid, -, hc, hsc, -, hrest⟩ := S.block_core hy hna
   rw [hY] at hY1; cases hY1
   rw [hY'] at hY1'; cases hY1'
   obtain ⟨hv, hk, hcs, hsu⟩ := hrest hyb
@@ -422,7 +420,7 @@ theorem brel_b {B Bg : Block} (hB : f.block? s.b = some B) (hBg : g.block? s.b =
     (i : Nat) :
     BRel f g (s.inX f R) B Bg i i ∧ Bg.kind = .Plain ∧ Bg.controls = #[] ∧
       Bg.succs = #[s.rmE f s.e1] ∧ FreeDef g (s.inX f R) Bg fr := by
-  obtain ⟨B1, Bg1, hB1, hBg1, hid, -, hsc, hrest, -⟩ := S.block_core S.rel.bIn S.not_dead_b
+  obtain ⟨B1, Bg1, hB1, hBg1, hid, -, -, hsc, hrest, -⟩ := S.block_core S.rel.bIn S.not_dead_b
   rw [hB] at hB1; cases hB1
   rw [hBg] at hBg1; cases hBg1
   obtain ⟨hk, hcs, hsu, hv⟩ := hrest rfl

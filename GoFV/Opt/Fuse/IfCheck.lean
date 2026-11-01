@@ -216,7 +216,7 @@ unlinked arm keeps nothing (`goneOK`); every other block keeps its values, kind 
 with successors renumbered; every block but the arm has its predecessors renumbered
 (`predsOf`), its controls outside `X` and a schedule. -/
 def blockOK (R : List ID) (bid : ID) : Bool :=
-  (s.unlinked f && s.arm0 == some bid && goneOK f g bid) ||
+  if s.unlinked f && s.arm0 == some bid then goneOK f g bid else
   match f.block? bid, g.block? bid with
   | some fb, some gb =>
     gb.id == fb.id && gb.preds == s.predsOf f bid fb.preds &&

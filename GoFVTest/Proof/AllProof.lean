@@ -144,6 +144,7 @@ import GoFV.Proof.Pass.FuseCmpTarget
 import GoFV.Proof.Pass.FuseEarlyPass
 import GoFV.Proof.Pass.FuseIf
 import GoFV.Proof.Pass.FuseIfEnter
+import GoFV.Proof.Pass.FuseIfPres
 import GoFV.Proof.Pass.FuseIfRel
 import GoFV.Proof.Pass.FuseIfSetup
 import GoFV.Proof.Pass.FuseIfSim
