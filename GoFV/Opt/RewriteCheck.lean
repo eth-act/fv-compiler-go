@@ -17,7 +17,8 @@ replays the log on a map of definitions, starting from the input `f`:
   hold), the pattern's checks (`Pat.cons`), the checker facts (`Pat.wf`) and the condition
   hold under `GoFV.Proof.Rules.evalE` with the oracle `oracle` (unmodelled expressions: `true`
   if boolean, the fields of the built nodes otherwise), the top op produces its value's shape
-  (`topOK`: `natShape`, a pointer op `ptrTop` whose arguments have the shapes `argShapeOk`
+  (`topOK`: `natShape` for integer, float and boolean ops, a pointer op `ptrTop` whose
+  arguments have the shapes `argShapeOk`
   asks for, `Pat.argsOK`, checked at every op node, or a constant composite `constTop`), every
   leaf has an integer, boolean or pointer shape, and the built definitions are those of
   `Rule.Sound`'s result denotation (`resDen`); only in-place `build` and `copy` results;
@@ -87,7 +88,8 @@ def commOps : List Op :=
   [.Add8, .Add16, .Add32, .Add64, .Add64carry, .And8, .And16, .And32, .And64, .AndB, .Eq8,
    .Eq16, .Eq32, .Eq64, .EqB, .Mul8, .Mul16, .Mul32, .Mul64, .Mul32uhilo, .Mul32uover,
    .Mul64uhilo, .Mul64uover, .Neq8, .Neq16, .Neq32, .Neq64, .NeqB, .Or8, .Or16, .Or32, .Or64,
-   .OrB, .Xor8, .Xor16, .Xor32, .Xor64, .EqPtr, .NeqPtr]
+   .OrB, .Xor8, .Xor16, .Xor32, .Xor64, .EqPtr, .NeqPtr, .Add32F, .Add64F, .Mul32F, .Mul64F,
+   .Eq32F, .Eq64F, .Neq32F, .Neq64F]
 
 mutual
 /-- Match pattern `q` at value `w` (position `p`) in `M`. `sw`: the choices at commutative
@@ -241,17 +243,18 @@ def patOK (pat : Pat) : Bool :=
   (match pat with | .op _ none _ _ _ _ _ _ => true | _ => false) &&
   (Pat.sames pat).all fun x => !(Pat.opNames pat).contains x
 
-/-- Comparisons (incl. pointer comparisons) and boolean ops: their result is a boolean (or
-`poison`). -/
+/-- Comparisons (incl. pointer and float comparisons) and boolean ops: their result is a
+boolean (or `poison`). -/
 def boolOp : Op → Bool
   | .Eq8 | .Neq8 | .Less8 | .Less8U | .Leq8 | .Leq8U | .Eq16 | .Neq16 | .Less16 | .Less16U
   | .Leq16 | .Leq16U | .Eq32 | .Neq32 | .Less32 | .Less32U | .Leq32 | .Leq32U | .Eq64 | .Neq64
   | .Less64 | .Less64U | .Leq64 | .Leq64U | .AndB | .OrB | .EqB | .NeqB | .Not | .ConstBool
-  | .IsInBounds | .IsSliceInBounds | .EqPtr | .NeqPtr => true
+  | .IsInBounds | .IsSliceInBounds | .EqPtr | .NeqPtr
+  | .Eq32F | .Neq32F | .Less32F | .Leq32F | .Eq64F | .Neq64F | .Less64F | .Leq64F => true
   | _ => false
 
-/-- Integer ops whose result is an integer of width `w` (or `poison`); `Ctz`/`BitLen`/`PopCount`/
-`Slicemask` produce their type's width. -/
+/-- Integer and float ops whose result is an integer of width `w` (or `poison`; a float is its
+bits, `Sem/Float.lean`); `Ctz`/`BitLen`/`PopCount`/`Slicemask` produce their type's width. -/
 def intOpWidth (op : Op) (w : Sem.Width) : Bool :=
   match op with
   | .Add8 | .Sub8 | .Mul8 | .And8 | .Or8 | .Xor8 | .Neg8 | .Com8 | .Div8 | .Div8u | .Mod8
@@ -276,12 +279,19 @@ def intOpWidth (op : Op) (w : Sem.Width) : Bool :=
   | .ZeroExt8to64 | .SignExt16to64 | .ZeroExt16to64 | .SignExt32to64 | .ZeroExt32to64
   | .Lsh64x8 | .Rsh64x8 | .Rsh64Ux8 | .Lsh64x16 | .Rsh64x16 | .Rsh64Ux16 | .Lsh64x32
   | .Rsh64x32 | .Rsh64Ux32 | .Lsh64x64 | .Rsh64x64 | .Rsh64Ux64 => w == .w64
+  | .Add32F | .Sub32F | .Mul32F | .Div32F | .Neg32F | .Min32F | .Max32F | .Sqrt32 | .Round32F
+  | .Cvt32to32F | .Cvt64to32F | .Cvt32Uto32F | .Cvt64Uto32F | .Cvt32Fto32 | .Cvt64Fto32
+  | .Cvt32Fto32U | .Cvt64Fto32U | .Cvt64Fto32F | .Const32F => w == .w32
+  | .Add64F | .Sub64F | .Mul64F | .Div64F | .Neg64F | .Min64F | .Max64F | .Sqrt | .Floor | .Ceil
+  | .Trunc | .Round | .RoundToEven | .Abs | .Copysign | .FMA | .Round64F | .Cvt32to64F
+  | .Cvt64to64F | .Cvt32Uto64F | .Cvt64Uto64F | .Cvt32Fto64 | .Cvt64Fto64 | .Cvt32Fto64U
+  | .Cvt64Fto64U | .Cvt32Fto64F | .Const64F => w == .w64
   | .Ctz8 | .Ctz16 | .Ctz32 | .Ctz64 | .Ctz8NonZero | .Ctz16NonZero | .Ctz32NonZero
   | .Ctz64NonZero | .BitLen8 | .BitLen16 | .BitLen32 | .BitLen64 | .PopCount8 | .PopCount16
   | .PopCount32 | .PopCount64 | .Slicemask => true
   | _ => false
 
-/-- `evalPure op ty …` always has shape `ty` (P1 integer and boolean ops). -/
+/-- `evalPure op ty …` always has shape `ty` (integer, float and boolean ops). -/
 def natShape (op : Op) (ty : Sem.Ty) : Bool :=
   match ty with
   | .bool => boolOp op
