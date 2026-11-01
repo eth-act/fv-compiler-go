@@ -430,7 +430,10 @@ post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register
 stack arguments in the outgoing-arguments area, and yield the results' register pieces (stack
 results are stored back into the outgoing area). The callee is the `AuxCall`'s function or the
 code symbol the code pointer points to; its contract sees the Go-typed arguments. Arguments
-and memory are observation points (`poison` ⇒ `stuck`). -/
+and memory are observation points (`poison` ⇒ `stuck`). The callee owns the caller's
+outgoing-arguments area while it runs (it may spill its register arguments there): its contract
+sees that area poisoned, in both forms, so post-`expand calls` argument stores into it are
+invisible to the callee except through the decoded arguments. -/
 def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   let (callee?, clo, rest) := callTarget ctx v argv
   let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
@@ -449,7 +452,7 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
     .stuck s!"call {callee}: poison argument"
   else
     let c ← Res.ofOption s!"call {callee}: no contract" (env.extern callee)
-    match c args clo m with
+    match c args clo (m.poisonBlock (.outargs ctx.act)) with
     | .returned rs m' =>
       -- stack-assigned results are in the outgoing area in both forms; their addresses follow
       -- the memory (`SelectNAddr`)

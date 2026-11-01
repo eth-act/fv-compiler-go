@@ -140,10 +140,10 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                 | none => exact .stuck _ _
                 | some c =>
                   dsimp only
-                  have := hE _ _ hx hp.1 hp.2 ha hclo hm
+                  have := hE _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
                   revert this
-                  generalize c A clo m = o
-                  generalize c A' clo' m' = o'
+                  generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
+                  generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
                   intro ho
                   cases ho with
                   | returned hr hm' =>
@@ -178,10 +178,10 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
               | none => exact .stuck _ _
               | some c =>
                 dsimp only
-                have := hE _ _ hx hp.1 hp.2 ha hclo hm
+                have := hE _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
                 revert this
-                generalize c A clo m = o
-                generalize c A' clo' m' = o'
+                generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
+                generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
                 intro ho
                 cases ho with
                 | returned hr hm' =>
