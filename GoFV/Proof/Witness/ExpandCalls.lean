@@ -54,4 +54,22 @@ theorem expandCalls_witness :
     exact ⟨out, rfl, hle, hcall,
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag⟩
 
+/-! ## Non-vacuity of the call-argument lemmas (#28) -/
+
+/-- `ecc_ofPieces_arg` at a pointer argument of a `uintptr` parameter (`castOK`): the decoded
+argument refines the pointer retyped at the parameter's shape. -/
+theorem expandCalls_castArg_witness :
+    Sem.Refines ((Val.ptr ⟨.outargs 0, 8⟩).retype (.int .w64))
+      (ofPieces (.int .w64) [.ptr ⟨.outargs 0, 8⟩]) :=
+  GoFV.Proof.EC.ecc_ofPieces_arg rfl (.inr ⟨rfl, none, rfl⟩) (.cons (Sem.Refines.refl _) .nil)
+
+/-- `ecs_decode_hasTy_mov` at a blob (a `Move`-copied `[2]byte` stack argument). -/
+theorem expandCalls_movTy_witness : (decode #[.b 1, .b 2] 0 (.blob 2)).hasTy (.blob 2) = true :=
+  GoFV.Proof.EC.ecs_decode_hasTy_mov (.blob 2) _ 0 rfl (by decide)
+
+/-- `ecc_hasPoison_retype` at an aggregate with a `poison` field. -/
+theorem expandCalls_poisonArg_witness :
+    ((Val.agg [.poison]).retype (.agg [(0, .int .w64)] 8)).hasPoison = true :=
+  GoFV.Proof.EC.ecc_hasPoison_retype _ _ rfl
+
 end GoFV.Proof.Witness
