@@ -329,9 +329,9 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
     GoFV.Proof.Rules.FrameOK tabs (semEnv tabs M F.I L) ev' (stOr tabs r defs) r := by
   have hcf := F.hcf
   simp only [condFrameOK, Bool.and_eq_true] at hcf
-  refine ⟨fun n hn => ?_, fun x hx => ?_, fun xy hxy => ?_, fun x hx => ?_⟩
+  refine ⟨fun n hn => ?_, fun x hx => ?_, fun xy hxy => ?_, fun x hx => ?_, fun pq hpq => ?_⟩
   rotate_left
-  · have h := List.all_eq_true.1 hcf.1.1 x hx
+  · have h := List.all_eq_true.1 hcf.1.1.1 x hx
     simp only [strOf] at h
     cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
     | none => simp [hp] at h
@@ -343,14 +343,14 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
         obtain ⟨s, d⟩ := sd
         simp only [hs, beq_iff_eq] at h
         exact ⟨p, s, d, rfl, hs, h⟩
-  · have h := List.all_eq_true.1 hcf.1.2 xy hxy
+  · have h := List.all_eq_true.1 hcf.1.1.2 xy hxy
     revert h
     split
     · rename_i p q hp hq
       intro h
       exact ⟨p, q, hp, hq, by simp only [semEnv, beq_iff_eq.1 h]⟩
     · intro h; cases h
-  · have h := List.all_eq_true.1 hcf.2 x hx
+  · have h := List.all_eq_true.1 hcf.1.2 x hx
     revert h
     split
     · rename_i f n hd
@@ -360,6 +360,9 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
       · rw [← h', hd, beq_iff_eq.1 h]
       · rw [hd] at h'; cases h'
     · intro h; cases h
+  · obtain ⟨p, q⟩ := pq
+    have h := List.all_eq_true.1 hcf.2 (p, q) hpq
+    simp only [semEnv, beq_iff_eq.1 h]
   rcases F.result with hR | hR
   · obtain ⟨R⟩ := hR
     rw [R.hres] at hn; simp [GoFV.Rules.Result.nodes] at hn
@@ -480,27 +483,44 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
   have hargs : GoFV.Proof.Rules.Pat.argsOK
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
-  have hraw : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
-      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
-    have hn : topAll F.o (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) = true := F.hnat
-    have ht := htyped
-    have ha := hargs
-    rw [F.hpat] at ht ha ⊢
-    exact raw_topAll hn ht ha
-  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
-  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of hT F.hnn)
-  -- lower bound
-  have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
-      (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
+  -- lower bound, before the top's `retype`
+  have hlow0 : Sem.Refines (den M.get? tabs ρ (n + 1) v)
+      ((Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype
+        ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [])) := by
     have h1 := den_le_patDen (n := n) hF (fun p w hm k hk => by
         show Sem.Refines _ (den _ tabs ρ B (F.I.at p))
         rw [F.at_eq hm]
         exact Sem.Refines.trans (den_fuel_mono _ _ _ k n w hk) (hIH w (hIC p w hm)))
       r.pat [] v (n + 1) F.hmatch (Nat.le_refl _) (.inr (by rw [F.hpat]; rfl))
-    have h2 := hraw
-    rw [F.hpat] at h1 h2 ⊢
-    simp only [Pat.denT, Pat.rawT] at h1 h2 ⊢
-    rwa [GoFV.Proof.retype_of_hasTy h2] at h1
+    rw [F.hpat] at h1 ⊢
+    simp only [Pat.denT, Pat.rawT] at h1 ⊢
+    exact h1
+  have hraw0 : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
+      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true ∨
+      (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype
+        ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = .poison := by
+    have hn : (topAll F.o (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) ||
+        makeTop F.o ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [])) = true :=
+      F.hnat
+    have ht := htyped
+    have ha := hargs
+    rw [F.hpat] at ht ha ⊢
+    rcases Bool.or_eq_true_iff.1 hn with hn | hn
+    · exact .inl (raw_topAll hn ht ha)
+    · exact raw_makeTop hn ht ha
+  -- a `makeTop` whose raw value retypes to `poison`: the matched value is `poison`
+  by_cases hpois : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+      r.pat).retype ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = .poison
+  · rw [hpois] at hlow0
+    generalize den M.get? tabs ρ (n + 1) v = a at hlow0 ⊢
+    cases hlow0
+    exact .poison _
+  have hraw := hraw0.resolve_right hpois
+  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
+  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of hT F.hnn)
+  have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
+      (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
+    rwa [GoFV.Proof.retype_of_hasTy hraw] at hlow0
   -- values bound on the semantic side
   have hleafU : ∀ p w, (p, w) ∈ F.I → Sem.Refines
       ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).leaf p)

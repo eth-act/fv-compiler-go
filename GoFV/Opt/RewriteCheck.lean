@@ -383,6 +383,12 @@ selection from its first argument (`selTop`), or a `Load` (`loadTop`). -/
 def topAll (op : Op) (e : PEnv) : Bool :=
   topOK op (e.ty []) || selTop op (e.ty []) (e.auxInt []) (e.ty [0]) || loadTop op (e.ty [])
 
+/-- A `SliceMake` at a slice shape: retyping its value at the shape gives the value or `poison`
+(`Val.ofSlice`; the components have their shapes, `Pat.argsOK`), so the matched value is
+`poison` or the raw value, which then has the shape (`generic.rules:1053`). -/
+def makeTop (op : Op) (ty : Sem.Ty) : Bool :=
+  op == .SliceMake && GoFV.Proof.Rules.isSliceTy ty
+
 mutual
 /-- Every leaf of the pattern is a defined value. `Pat.typed` asks of the leaves that their
 values have their type's shape: `Val.retype` produces a value of the shape at every shape
@@ -492,11 +498,12 @@ def frameNodeOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (pat : 
     | none => true)
 
 /-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, its conjuncts
-`isSamePtr(x, y)` of leaves `x`, `y` match the same value, and its conjuncts
-`x.NumElem() == 1` have a type `x` of the shape of one field at offset 0 that fills it
+`isSamePtr(x, y)` of leaves `x`, `y` match the same value, its conjuncts
+`x.NumElem() == 1` have a type `x` of the shape of one field at offset 0 that fills it, and the
+positions `same` (`GoFV.Proof.Rules.sameLeaves`) match the same value
 (`GoFV.Proof.Rules.FrameOK`). -/
 def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : Inst) (pat : Pat)
-    (cond : Option GoFV.Rules.Expr) : Bool :=
+    (cond : Option GoFV.Rules.Expr) (same : List (Path × Path)) : Bool :=
   ((cond.map emptyStrVars).getD []).all (fun x => match strOf tabs e pat x with
     | some (s, _) => s.size == 0
     | none => false) &&
@@ -504,9 +511,10 @@ def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : In
     match Pat.leafPos x [] pat, Pat.leafPos y [] pat with
     | some p, some q => I.at p == I.at q
     | _, _ => false) &&
-  ((cond.map numElem1Vars).getD []).all fun x => match ev (.var x) with
+  ((cond.map numElem1Vars).getD []).all (fun x => match ev (.var x) with
     | .ty (.agg [(0, f)] n) => f.size == n
-    | _ => false
+    | _ => false) &&
+  same.all fun (p, q) => I.at p == I.at q
 
 /-- How `isNonNegative` (`rewrite.go`) decides an op whose value is an integer of width `w`. -/
 inductive NNKind where
@@ -635,13 +643,13 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) &&
         (match r.pat with
-          | .op o _ _ _ _ _ _ _ => topAll o e
+          | .op o _ _ _ _ _ _ _ => topAll o e || makeTop o (e.ty [])
           | _ => false) &&
         Pat.argsOK e.ty [] r.pat &&
         leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
-        condFrameOK tabs ev e I r.pat r.cond &&
+        condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
 
 /-- `w` is `a`, or reached from `a` through at most `n` `Copy`s each compatible with its
