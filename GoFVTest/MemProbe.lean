@@ -174,6 +174,30 @@ def dseWhy (tabs : Tables) (f g : Func) : List String := Id.run do
 
 /-! ## dead auto elim -/
 
+mutual
+/-- A shape that may hold a memory. -/
+partial def tyMem : Sem.Ty → Bool
+  | .mem => true
+  | .tuple ts => tysMem ts
+  | .agg fs _ => tysMem (fs.map (·.2))
+  | _ => false
+partial def tysMem : List Sem.Ty → Bool
+  | [] => false
+  | t :: ts => tyMem t || tysMem ts
+end
+
+mutual
+/-- A shape that may hold a pointer into a frame block. -/
+partial def tyPtr : Sem.Ty → Bool
+  | .ptr _ | .blob _ => true
+  | .tuple ts => tysPtr ts
+  | .agg fs _ => tysPtr (fs.map (·.2))
+  | _ => false
+partial def tysPtr : List Sem.Ty → Bool
+  | [] => false
+  | t :: ts => tyPtr t || tysPtr ts
+end
+
 /-- Why `DAE.arel` rejects `g` (each failing condition; `[]` if it accepts). -/
 def daeWhy (tabs : Tables) (f g : Func) : List String := Id.run do
   let A := DAE.tagArr tabs f
@@ -244,6 +268,8 @@ def main (args : List String) : IO UInt32 := do
   let mut aNames : Std.HashMap String Nat := {}
   let mut aFnNoAddr := 0
   let mut aAcc := 0
+  let mut aMemOps : Std.HashMap String Nat := {}
+  let mut aPtrOps : Std.HashMap String Nat := {}
   let mut aWhy : Std.HashMap String Nat := {}
   let mut aFnNoAddrNoCall := 0
   for path in files do
@@ -330,7 +356,13 @@ def main (args : List String) : IO UInt32 := do
                   if !names.contains n then names := n :: names
           if any then
             aChanged := aChanged + 1
-            if DAE.arel prev f g then aAcc := aAcc + 1
+            if DAE.arel prev f g then
+              aAcc := aAcc + 1
+              let ty := fun (x : ID) => prev.ty ((f.value? x).map (·.type) |>.getD 0)
+              for x in List.range f.valueTab.size do
+                if let some fx := f.value? x then
+                  if fx.args.any (fun a => tyMem (ty a)) then aMemOps := bump aMemOps fx.op.name
+                  if tyPtr (ty x) then aPtrOps := bump aPtrOps fx.op.name
             else
               let ws := daeWhy prev f g
               aWhy := bump aWhy (toString (ws.mergeSort (· ≤ ·)))
@@ -360,6 +392,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"  changed functions outside the fragment, by their reasons: {show' dFn}"
   IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, checker accepts {aAcc}, with calls {aCalls}, with Convert {aConv}"
   IO.println s!"  changed functions outside the fragment, by their reasons: {show' aWhy}"
+  IO.println s!"  accepted: ops with a memory-shaped argument: {show' aMemOps}"
+  IO.println s!"  accepted: ops with a pointer-capable result: {show' aPtrOps}"
   IO.println s!"  eliminated values by op: {show' aKinds}"
   IO.println s!"  eliminated names by class/flags: {show' aNames}"
   IO.println s!"  changed functions eliminating no user addrtaken name (addrtaken, not autotmp): {aFnNoAddr}, of which without calls: {aFnNoAddrNoCall}"
