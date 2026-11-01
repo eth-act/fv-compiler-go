@@ -2049,17 +2049,37 @@ def chainSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (Li
     | none => none
   | none => none
 
-/-- `a` is a `Const64` of `f` at the 64-bit integer shape with the auxint `n ≥ 0`. -/
+/-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
+whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
+value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
+rules fold to a `Const64` only later in the log. -/
+def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
+  | 0, _ => none
+  | k + 1, a =>
+    match f.value? a with
+    | some v =>
+      if termOp v.op then
+        (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
+          (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
+            (tabs.ty v.type)
+      else none
+    | none => none
+
+/-- `a` is a constant term of `f` (`termConst`, at most 4 deep) whose value is the 64-bit
+integer `n ≥ 0`. -/
 def constSize (tabs : Tables) (f : Func) (a : ID) (n : Int64) : Bool :=
-  (f.value? a).any fun av => av.op == .Const64 && av.args.size == 0 && av.auxInt == n &&
-    decide (0 ≤ n.toInt) && Sem.Ty.beq (tabs.ty av.type) (.int .w64)
+  decide (0 ≤ n.toInt) &&
+    match termConst tabs f 4 a with
+    | some (.int .w64 x) => x == BitVec.ofInt 64 n.toInt
+    | _ => false
 
 /-- `a` is a value of `f` of pointer shape. -/
 def ptrArgB (tabs : Tables) (f : Func) (a : ID) : Bool :=
   (f.value? a).any fun av => isPtrTy (tabs.ty av.type)
 
 /-- A call segment at `x` (`generic.rules:1638`, `:1730`): in `f` `SelectN [0]` of a call `c` of
-its block to `runtime.memclrNoHeapPointers` (pointer `p`, size `Const64 [n]`) or `runtime.memmove`
+its block to `runtime.memclrNoHeapPointers` (pointer `p`, a size `n` that is a constant term,
+`constSize`) or `runtime.memmove`
 (`dst`, `src`, size) whose arguments reach the callee as they are (`MemCall.simpleCall`), in `g`
 `Zero [n] p mem` or `Move [n] dst src mem`. The call is dropped, no value is fresh. -/
 def callSeg? (tabs : Tables) (f g : Func) (fv gv : Value) : Option (List ID × List ID) :=

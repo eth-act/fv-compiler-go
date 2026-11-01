@@ -438,7 +438,10 @@ relates its input to the result by `segRel`:
 - `segOK` at each anchor: `chainSeg?` (in `f` `k ≥ 2` `Store`s from `x` over a `Zero [n] p mem` of
   `x`'s block, in `g` the same `Store`s over `mem` at `OffPtr`s of `p` tiling `[0, n)`,
   `segTiles`) or `callSeg?` (the call's arguments reach the callee as they are,
-  `MemCall.simpleCall`, the size a `Const64`, `g`'s `Zero`/`Move` on the call's arguments), the
+  `MemCall.simpleCall`, the size a constant term `termConst` evaluates as the semantics does,
+  e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value rules fold to a `Const64`
+  only later in the log (`constSize`; `termConst_reg`: an available term's register is its
+  value), `g`'s `Zero`/`Move` on the call's arguments), the
   dropped values listed roots of the block, the fresh ones listed in `g`'s block, `N ++ [x]`
   roots of `g` in dependency order whose other arguments are arguments of the segment's roots;
 - each dropped value in exactly one segment and used only inside it; the blocks' kinds and
@@ -466,7 +469,8 @@ unchanged; `Env.MemOps` is a conjunct of `RwPre`). `checkedTiers` tries a table 
 first when the full table is rejected. Proven: `:1833`, `:1844`, `:1857`, `:1638`, `:1721`,
 `:1730`; witness `GoFV.Proof.Witness.zp_checkedRewrite` (`*p = [2]int{}; p[0] = x; p[1] = x`
 with `{:1833}`: the `Zero` and the first `Store` dropped, the anchor stores over a fresh `Store`
-on the input memory; kernel evaluation), `callSeg_witness` (`callSeg?` on a `memclr` call).
+on the input memory; kernel evaluation), `callSeg_witness` (`callSeg?` on a `memclr` call),
+`callSeg_witness_str` (its size `len("0123456789abcdef") * 1`).
 
 ### Layers (issue #151)
 
