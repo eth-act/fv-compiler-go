@@ -125,11 +125,12 @@ def env (tabs : Tables) (M : Defs) (I : Inst) : PEnv where
   auxInt p := ((M.get? (I.at p)).map (·.auxInt)).getD 0
   aux p := ((M.get? (I.at p)).map (·.aux)).getD none
 
-/-- The oracle of the validator: an unmodelled boolean expression is `true`, others `other`;
+/-- The oracle of the validator: an unmodelled boolean expression is `true` (so the oracle is
+`Oracle.BoolTyped`: every expression `exprTy` types `bool` gets a boolean), others `other`;
 result fields come from the built nodes (`fields`: per result node, its expressions and the
 built value). -/
 def oracle (vtys : List GoTy) (tabs : Tables) (nodes : List (RNode × Value)) : Oracle where
-  dv e := if exprTy vtys e == .bool then .bool true else .other
+  dv e := if exprTy [] e == .bool || exprTy vtys e == .bool then .bool true else .other
   ty e := ((nodes.find? fun (n, _) => match n.ty with
       | some te => reprStr te == reprStr e | none => false).map fun (_, u) => tabs.ty u.type).getD .other
   auxInt e := ((nodes.find? fun (n, _) => match n.auxInt with
@@ -263,13 +264,15 @@ def natShape (op : Op) (ty : Sem.Ty) : Bool :=
   | _ => false
 
 mutual
-/-- Every leaf of the pattern has a sized shape (not `.other`): registers have their type's shape
-(`Val.retype` shapes every result; issue #108), which `Pat.typed` asks of the leaves. -/
+/-- Every leaf of the pattern has an integer or boolean shape. `Pat.typed` asks of the leaves
+that their values have their type's shape: `Val.retype` at `bool` always produces a boolean or
+`poison`, at an integer shape that integer width under the register typing of issue #108
+(`GoFV.Proof.Term.RetypeShapes`). -/
 def leavesOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) : Pat → Bool
   | .op _ _ _ _ _ _ args _ => leavessOK tabs M I p 0 args
   | _ =>
     match M.get? (I.at p) with
-    | some x => !(tabs.ty x.type matches .other)
+    | some x => (match tabs.ty x.type with | .int _ | .bool => true | _ => false)
     | none => false
 def leavessOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) (i : Nat) : List Pat → Bool
   | [] => true
