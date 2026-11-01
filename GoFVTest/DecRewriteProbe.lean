@@ -52,6 +52,7 @@ def variants : Array (String × Interp.Table) :=
 
 /-- The first failing condition of `ruleOK tabs M r v defs`. -/
 def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : String :=
+  if makeSelShape r then (if makeSelOK tabs M v defs then "ok" else "makeSelOK") else
   if !Pat.arityOk r.pat then "arity" else
   if !patOK r.pat then "patOK" else
   match M.get? v with
@@ -76,10 +77,13 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
         if !(match r.cond with
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond" else
+        let shapes := if r.op == .ITab || r.op == .IData then
+          s!" {reprStr (e.ty [])} <- {reprStr (e.ty [0])} <- {reprStr (e.ty [0, 0])}, {reprStr (e.ty [1, 0])}"
+          else ""
         if !(match r.pat with
           | .op o _ _ _ _ _ _ _ => topAll o e
-          | _ => false) then "topAll" else
-        if !Pat.argsOK e.ty [] r.pat then "argsOK" else
+          | _ => false) then "topAll" ++ shapes else
+        if !Pat.argsOK e.ty [] r.pat then "argsOK" ++ shapes else
         if !leavesOK tabs M I [] r.pat then "leavesOK" else
         if !resultOK tabs M ev or σ I r x defs then
           (if r.block.isSome then "resultOK (@b block)" else "resultOK") else

@@ -70,6 +70,25 @@ theorem select_retype_make (T : Ty) (k : Nat) (vs : List Val) (ts : List Ty)
     · exact .poison _
   all_goals exact .poison _
 
+/-- Component `k` of `Make vs` retyped at `T`: `poison`, or argument `k` retyped at component
+`k`'s shape (the variadic selection `RewriteCheck.makeSelOK`, issue #17). -/
+theorem select_retype_make_get (T : Ty) (k : Nat) (vs : List Val) :
+    Comp.select k [(Comp.make vs).retype T] = .poison ∨
+      ∃ f v, fieldShape? T k = some f ∧ vs[k]? = some v ∧
+        Comp.select k [(Comp.make vs).retype T] = v.retype f := by
+  unfold Comp.make
+  cases T
+  case agg fs n =>
+    simp only [Val.retype]
+    split
+    · rename_i vs' hr
+      simp only [Comp.select]
+      rcases retypeFields_get hr k with ⟨h1, -⟩ | ⟨v, f, h1, h2, h3⟩
+      · exact .inl (by simp [List.getD, h1])
+      · exact .inr ⟨f.2, v, by simp [fieldShape?, h2], h1, by simp [List.getD, h3]⟩
+    · exact .inl rfl
+  all_goals exact .inl rfl
+
 /-! ## The kind predicates (`kindE`) -/
 
 /-- `IsPtrShaped` is true only of a pointer shape. -/

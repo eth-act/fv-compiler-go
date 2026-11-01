@@ -9,7 +9,7 @@ import GoFV.Proof.Rules.AllSound
 (`ReplayInv`), and the atoms of `D₀` whose arguments are in `C₀` keep their fields while their
 arguments (rewritten only by `copyArg` events, through compatible copies) keep refining
 denotations. Rule events use `RuleFacts.step` and `Rule.SoundT` of the table's rule
-(`ofRuleSet_sound`).
+(`ofRuleSet_sound`; the variadic selections `Rule.MakeSel` are `RewriteMakeSel.lean`'s).
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -44,10 +44,10 @@ theorem foldl_rows (L : List (Op × List Rule)) : ∀ (l : List (Op × List Rule
       · cases h
     · exact hA k row h
 
-/-- Every rule of the table of a sound rule set is sound. -/
+/-- Every rule of the table of a sound rule set is sound or a validated variadic selection. -/
 theorem ofRuleSet_sound {s : RuleSet} (hs : s.AllSound) {k i : Nat} {cr : GoFV.Rules.Interp.CRule}
     (h : ((GoFV.Rules.Interp.Table.ofRuleSet s).values[k]?).bind (·[i]?) = some cr) :
-    GoFV.Proof.Rules.Rule.SoundT cr.rule := by
+    GoFV.Proof.Rules.Rule.Checked cr.rule := by
   cases hk : (GoFV.Rules.Interp.Table.ofRuleSet s).values[k]? with
   | none => rw [hk] at h; cases h
   | some row =>

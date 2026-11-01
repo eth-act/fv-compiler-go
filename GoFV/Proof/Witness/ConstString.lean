@@ -101,7 +101,7 @@ theorem hi_checks :
 
 /-- The one-rule set is sound (`r_generic_1022_sound`, `Rule.SoundT`). -/
 theorem hiRules_allSound : hiRules.AllSound :=
-  GoFV.Proof.Rules.RuleSet.allSound_of ⟨⟨GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩, trivial⟩
+  GoFV.Proof.Rules.RuleSet.allSound_of ⟨⟨.inl GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩, trivial⟩
     trivial
 
 /-- **Pass execution witness**: on `hi`, the checked rewrite pass with `{generic.rules:1022}`

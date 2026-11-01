@@ -295,21 +295,34 @@ shape `int8`). `evalE` models `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface
 (`kindE`: false at every other shape, the oracle's at the kind's shape, which a struct can
 share), `config.PtrSize` (8, `configField`) and the pointer `typ.*Ptr` types.
 
-**Proven** (13): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
+**Proven** (14): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
 `:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`; the
 matched value is then always `poison`, so `rule-sat` finds no instance: the rewrite never changes a
-defined value).
+defined value); `:106` (and `generic.rules:973`), the variadic `(StructSelect [i]
+x:(StructMake ___)) => x.Args[i]`, as `Rule.MakeSel` (below).
 **False under the semantics**: `:119`, `:120` (a one-field pointer-shaped aggregate is `.agg [p]`,
 Go's is the pointer; `docs/plans/semantics.md` §10). **Not provable as `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
-`:102` (`imakeOfStructMake`), `:106` (variadic `StructSelect [i] (StructMake ___)`, as
-`generic.rules:973`: needs its own validator case). **Pending**: the Load splits `:45`, `:63`,
+`:102` (`imakeOfStructMake`). **Pending**: the Load splits `:45`, `:63`,
 `:87` (the validator accepts them; the lemma needs `Mem.read` bounded by the block's address
 window, so that `OffPtr [8]` of a pointer whose 16-byte load succeeds is not `poison` — RuleEffects6's
 Mem change), `:16`/`:28` (complex: `t.Size()` of an aggregate shape is not modelled); the
 extractors of a `Load` (`:132`–`:164`, `@x.Block` results, which `resultOK` rejects; `:132`/`:141`
 also need `t.Elem().Size()`/`t.FieldOff(i)` of aggregates); the `Store` splits (`:10`–`:93`,
 `:123`, `:129`: an effect obligation, as `rewriteStructStore`, issue #151).
+
+**Variadic selections: `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`, `DecMakeSel.lean`).
+A `___` pattern has no `Rule.Sound` form (`Pat.arityOk`). `RuleSet.AllSound` asks of each value
+rule `Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (the rule has `makeSelShape`: `(StructSelect
+[i] x:(StructMake ___)) => x.Args[i]`); the replay validates such an event per instance
+(`RewriteCheck.makeSelOK`: `v = StructSelect [k] s`, `s = StructMake …` with argument `k` a value
+`a`, `v` becomes `Copy a` at `a`'s type, and where the `StructMake`'s shape has a component `k`,
+`a`'s shape is that component's and `v`'s, `shapeSub`). `MSFacts.step`
+(`GoFV/Proof/Pass/RewriteMakeSel.lean`) proves it refines the selection as a term at the same
+fuel: component `k` of the retyped `Make` is argument `k` retyped at the field's shape
+(`select_retype_make_get`), which keeps `a`'s denotation; only the selected argument's shape
+matters. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite` (`pick`,
+`{generic.rules:973}`). `generic.rules:973` is in `Proven.generic` too.
 
 `lake exe dec-rewrite-probe <corpus>` (`GoFVTest/DecRewriteProbe.lean`) runs the step alone (input:
 the function after `decomposeUser` and the builtin phi splits) with all dec rules, the ptr-class
@@ -320,11 +333,11 @@ condition.
 
 | Corpus (sections) | Table | Rules fired | Step accepted | Full step reproduced and accepted | Checked pass at stock |
 | --- | --- | --: | --: | --: | --: |
-| quick-v3 (9,297) | all 47 | 5,147 | 6,819 | 6,819 | 6,819 |
-| quick-v3 | ptr class (21) | 4,824 | 7,121 | 6,131 | 6,131 |
-| quick-v3 | proven (13) | 4,171 | 8,059 | 6,131 | 6,131 |
+| quick-v3 (9,297) | all 47 | 5,147 | 7,612 | 7,612 | 7,612 |
+| quick-v3 | ptr class (21) | 4,824 | 7,947 | 6,852 | 6,852 |
+| quick-v3 | proven (14) | 4,823 | 8,059 | 6,852 | 6,852 |
 | quick-v3 | none | 0 | 9,297 | 4,150 | 4,150 |
-| full-v2 (96,531) | all 47 | 67,840 | 58,923 | — | 58,923 |
+| full-v2 (96,531), 13 proven, before `Rule.MakeSel` | all 47 | 67,840 | 58,923 | — | 58,923 |
 | full-v2 | ptr class | 62,023 | 63,176 | — | 48,877 |
 | full-v2 | proven (13) | 56,221 | 72,146 | — | 48,877 |
 | full-v2 | none | 0 | 96,531 | — | 28,691 |
@@ -332,10 +345,9 @@ condition.
 Before the validator changes every firing section was rejected (quick: 4,150 accepted = the
 no-op sections; full 28,691). The full step extends the tables in 406 quick sections (types
 such as `t.Elem().PtrTo()`), so the step's refinement is in the output's tables under `tabsAgree`.
-Main obstacles (quick firings, all-rules table): `:106` variadic select 4,645; `ITab`/`IData` of an
-`IMake` whose itab or data is typed differently from the interface shape's word (`argsOK`/`topAll`,
-~4,500: the itab word is `.int .w64`, Go also types it `*uint8`); `@x.Block` extractors ~700;
-`Store` splits ~950 (not term ops).
+Main obstacles (quick firings, all-rules table, after `Rule.MakeSel`): `ITab`/`IData` of an
+`IMake` whose itab is typed `*uint8` while the interface shape's itab word is `.int .w64`
+(`argsOK`/`topAll`, ~4,500); `@x.Block` extractors ~700; `Store` splits ~950 (not term ops).
 
 ## Classification
 
@@ -388,7 +400,7 @@ needs a later phase of the semantics.
 | `dec` | StringLen | 1 | 1 | 0 | 0 | 2 |
 | `dec` | StringPtr | 1 | 1 | 0 | 0 | 2 |
 | `dec` | StructMake | 0 | 0 | 1 | 0 | 1 |
-| `dec` | StructSelect | 1 | 3 | 0 | 1 | 5 |
+| `dec` | StructSelect | 2 | 3 | 0 | 1 | 5 |
 | `divisible` | Eq | 12 | 4 | 0 | 0 | 16 |
 | `divisible` | Neq | 12 | 4 | 0 | 0 | 16 |
 | `divmod` | Div | 16 | 7 | 4 | 2 | 29 |
@@ -461,13 +473,13 @@ needs a later phase of the semantics.
 | `generic` | Store | 0 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 0 | 1 | 0 | 0 | 1 |
 | `generic` | StringPtr | 0 | 0 | 0 | 1 | 1 |
-| `generic` | StructSelect | 0 | 3 | 0 | 1 | 4 |
+| `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1182 | 308 | 26 | 258 | 1762 |
+| all | | 1184 | 308 | 26 | 258 | 1762 |
 
 <!-- END coverage -->
 
