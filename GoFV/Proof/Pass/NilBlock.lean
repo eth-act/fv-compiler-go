@@ -516,6 +516,177 @@ theorem nodeOf_x {x : ID} {v : Value} (hx : x ∈ fb.values) (hv : f.value? x = 
   have := nodeOf_of_mem (schedNodes_ids K.ownF K.ndF) hm
   rw [hid] at this; exact this
 
+/-- An available value's arguments are available. -/
+theorem avail_args {k : Nat} {z : ID} {v : Value} (hz : Base f bid z ∨ z ∈ oS.toList.take k)
+    (hv : f.value? z = some v) (hph : v.op ≠ .Phi) {a : ID} (ha : a ∈ v.args) :
+    Base f bid a ∨ a ∈ oS.toList.take k := by
+  rcases hz with hB | hz
+  · exact .inl (K.base_closed hB hv hph ha)
+  · obtain ⟨iz, hiz⟩ := List.getElem?_of_mem hz
+    have hizk : iz < k := by
+      have := (List.getElem?_eq_some_iff.1 hiz).1; simp at this; omega
+    rw [List.getElem?_take_of_lt hizk] at hiz
+    exact (K.srcArg hiz hv ha).imp id (K.take_mono (Nat.le_of_lt hizk))
+
+omit K in
+theorem offPtr_safe {ai : Int64} {w : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
+    Safe (PtrOps.offPtr ai [w]) := by
+  match w, hw with
+  | .ptr q, hw => simpa [PtrOps.offPtr, Ptr.add, Safe] using hw
+  | .int .w64 x, _ => exact absurd rfl (hni x)
+  | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
+  | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.offPtr, Safe]
+
+omit K in
+theorem addPtr_safe {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
+    Safe (PtrOps.addPtr [w, i]) := by
+  match w, hw with
+  | .ptr q, hw =>
+    unfold PtrOps.addPtr
+    simp only
+    split <;> simp_all [Safe, Ptr.add]
+  | .int .w64 x, _ => exact absurd rfl (hni x)
+  | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
+  | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.addPtr, Safe]
+
+omit K in
+/-- A pointer-shaped register is no 64-bit integer. -/
+theorem not_int_of_ptr {y : Val} {e : Option Nat} (h : y.retype (.ptr e) = y) :
+    ∀ x, y ≠ .int .w64 x := by
+  rintro x rfl; simp [Val.retype] at h
+
+omit K in
+/-- What `safePtr` says of a value. -/
+theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr tabs f (n + 1) z = true) :
+    ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧
+      (((v.op = .Addr ∨ v.op = .LocalAddr) ∧ v.aux.isSome = true) ∨ v.op = .NilCheck ∨
+        ((v.op = .OffPtr ∨ v.op = .AddPtr) ∧
+          ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr tabs f n a = true)) := by
+  unfold Opt.NilCheck.safePtr at h
+  cases hv : f.value? z with
+  | none => rw [hv] at h; cases h
+  | some v =>
+  rw [hv] at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨hps, hop⟩ := h
+  obtain ⟨e, he⟩ : ∃ e, tabs.ty v.type = .ptr e := by
+    unfold Opt.NilCheck.ptrShaped at hps
+    split at hps
+    · exact ⟨_, by assumption⟩
+    · cases hps
+  refine ⟨v, e, rfl, he, ?_⟩
+  split at hop
+  · next h => exact .inl ⟨.inl h, hop⟩
+  · next h => exact .inl ⟨.inr h, hop⟩
+  · next h => exact .inr (.inl h)
+  · next h =>
+    split at hop
+    · next a ha => exact .inr (.inr ⟨.inl h, a, ha, hop⟩)
+    · cases hop
+  · next h =>
+    split at hop
+    · next a ha => exact .inr (.inr ⟨.inr h, a, ha, hop⟩)
+    · cases hop
+  · cases hop
+
+/-- An available value is listed in a block, with its ID. -/
+theorem listed_avail {k : Nat} {z : ID} (hz : Base f bid z ∨ z ∈ oS.toList.take k) {v : Value}
+    (hv : f.value? z = some v) :
+    ∃ b blk, BlockIn f b blk ∧ z ∈ blk.values ∧ v.id = z := by
+  obtain ⟨ce, hwf⟩ := K.wf
+  obtain ⟨b, blk, hbin, hxb⟩ : ∃ b blk, BlockIn f b blk ∧ z ∈ blk.values := by
+    rcases hz with hB | hx
+    · obtain ⟨v', ⟨-, hb, blk, hblk, hxb⟩, -⟩ := hB
+      exact ⟨_, blk, ⟨hb, hblk⟩, hxb⟩
+    · exact ⟨bid, fb, ⟨K.tree.1, K.hfb⟩, (K.memS.1 (List.mem_of_mem_take hx)).1⟩
+  obtain ⟨v', hv', hid, -⟩ := hwf.valueId b blk hbin z hxb
+  rw [hv] at hv'; cases hv'
+  exact ⟨b, blk, hbin, hxb, hid⟩
+
+omit K in
+theorem frameVal_addr_safe {ctx : Ctx} {v : Value} (h : v.op = .Addr) :
+    ∃ x, frameVal ctx v = some x ∧ Safe x := by
+  unfold frameVal; rw [h]
+  simp only
+  split <;> simp [Safe]
+
+omit K in
+theorem frameVal_local_safe {ctx : Ctx} {v : Value} (h : v.op = .LocalAddr)
+    (ha : v.aux.isSome = true) : ∃ x, frameVal ctx v = some x ∧ Safe x := by
+  unfold frameVal; rw [h]
+  obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 ha
+  simp [hn, Safe]
+
+/-- **`safePtr` values are `Safe`** in the source's frames. -/
+theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :
+    ∀ (n : Nat) (z : ID), Opt.NilCheck.safePtr tabs f n z = true →
+      (Base f bid z ∨ z ∈ oS.toList.take k) →
+        ∃ y, S.regs[z]? = some (some y) ∧ Safe y ∧ ∀ x, y ≠ .int .w64 x
+  | 0, _, h, _ => by simp [Opt.NilCheck.safePtr] at h
+  | n + 1, z, h, hz => by
+    obtain ⟨ce, hwf⟩ := K.wf
+    obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
+    have hph : v.op ≠ .Phi := by
+      intro hp
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | ⟨h1 | h1, -⟩ <;> rw [hp] at h1 <;> cases h1
+    obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
+    obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
+    have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = .ptr e := by
+      rw [hid, tys_of_value hv]; simpa using he
+    have htyp := evalValue_typed hev
+    rw [hty] at htyp
+    refine ⟨y, hy, ?_, not_int_of_ptr htyp⟩
+    obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := v)
+      (by rw [hev]; nofun)
+    rw [evalValue_of_argVals hvs, hty] at hev
+    obtain ⟨r, hr, hyr⟩ := bind_ok hev
+    subst hyr
+    apply safe_retype_ptr
+    have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr) →
+        isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg := by
+      intro h; rcases h with h | h | h | h <;> rw [h] <;> decide
+    rcases hop with ⟨h1, hax⟩ | h1 | ⟨h1, a, ha, hsa⟩
+    · obtain ⟨hr1, hr2, hr3, hr4⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+      rw [evalOp_tail hr1 hr2 hr3 hr4] at hr
+      obtain ⟨x, hx, hsx⟩ : ∃ x, frameVal (Ctx.make tabs f) v = some x ∧ Safe x := by
+        rcases h1 with h1 | h1
+        · exact frameVal_addr_safe h1
+        · exact frameVal_local_safe h1 hax
+      rw [hx] at hr; cases hr; exact hsx
+    · rw [evalOp_nilCheck h1] at hr
+      exact nilCheck_ok_safe h1 hr
+    · obtain ⟨hr1, hr2, hr3, hr4⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+      rw [evalOp_tail hr1 hr2 hr3 hr4] at hr
+      have hfv : frameVal (Ctx.make tabs f) v = none :=
+        frameVal_none (by rcases h1 with h1 | h1 <;> rw [h1] <;> decide)
+      rw [hfv] at hr; cases hr
+      have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
+      obtain ⟨ya, hya, hsa', hni⟩ := safe_chain hS n a hsa haa
+      rcases h1 with h1 | h1
+      · have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
+        rw [h1, show Op.OffPtr.argLen = 1 by decide] at har
+        have hsz : v.args.size = 1 := by exact_mod_cast har
+        have hva : v.args = #[a] := by
+          apply Array.ext (by simp [hsz]); intro k h1' h2'
+          have : k = 0 := by simp at h2'; omega
+          subst this; simpa [Array.getElem?_eq_getElem h1'] using ha
+        have hvs' : vs = [ya] := by
+          rw [hva] at hvs; unfold argVals at hvs
+          simp [hya] at hvs; exact hvs.symm
+        subst hvs'
+        rw [h1]
+        exact offPtr_safe hsa' hni
+      · have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
+        rw [h1, show Op.AddPtr.argLen = 2 by decide] at har
+        have hsz : v.args.size = 2 := by exact_mod_cast har
+        obtain ⟨a', i', ya'', yi, hargs, rfl, hya'', -⟩ := argVals_two hvs hsz
+        rw [hargs] at ha
+        simp only [List.getElem?_toArray, List.getElem?_cons_zero, Option.some.injEq] at ha
+        subst ha
+        rw [hya] at hya''; cases hya''
+        rw [h1]
+        exact addPtr_safe hsa' hni
+
 /-- A nil check of a pointer that `safePtr` holds of never panics. -/
 theorem seedNoPanic {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     {x : ID} (hi : oS.toList[i]? = some x) (hik : i ≤ k) {fv : Value} (hfv : f.value? x = some fv)
@@ -523,7 +694,16 @@ theorem seedNoPanic {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toL
     (hj : Just tabs f bid x p' p' fv.type true) {yp : Val} (hyp : S.regs[p']? = some (some yp))
     {ym : Val} {e : Panic} {m : Mem}
     (h : memRoot (Ctx.make tabs f) fv [yp, ym] = .panic e m) : False := by
-  sorry
+  have hsp : Opt.NilCheck.safePtr tabs f f.valueTab.size p' = true := by
+    cases hj with
+    | seed _ h => exact h
+    | dom hne => exact absurd rfl hne
+    | same hne => exact absurd rfl hne
+  have hav : Base f bid p' ∨ p' ∈ oS.toList.take k :=
+    (K.srcArg hi hfv (by rw [hargs]; simp)).imp id (K.take_mono hik)
+  obtain ⟨y, hy, hsafe, -⟩ := K.safe_chain hS _ p' hsp hav
+  rw [hyp] at hy; cases hy
+  exact nilCheck_safe hop hsafe h
 
 /-- The value the source panics at is unchanged in the target. -/
 theorem panic_same {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
