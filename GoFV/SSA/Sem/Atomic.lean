@@ -68,6 +68,11 @@ def casWidth? : Op → Option Width
   | .AtomicCompareAndSwap64 | .AtomicCompareAndSwap64Variant => some .w64
   | _ => none
 
+/-- The ops `atomicRoot` gives a meaning (every other root is `stuck`). -/
+def modelled (op : Op) : Bool :=
+  (info? op).isSome || (casWidth? op).isSome || op == .PubBarrier || op == .PrefetchCache ||
+    op == .PrefetchCacheStreamed
+
 /-- The value stored and the value returned (`none`: the op returns only memory), from the old
 value `old` and the operand `x` (`w`: the width of the integer forms). -/
 def step (k : Kind) (w : Width) (old x : Val) : Val × Option Val :=

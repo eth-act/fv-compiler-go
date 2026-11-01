@@ -21,7 +21,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof.DSE
 theorem evalOp_notArm {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hn : v.op ∉ evalOpArms) :
     evalOp env ctx fr v argv ty =
-      if isRoot v.op then .stuck s!"v{v.id}: {v.op.name} is not in phases P1–P3"
+      if isRoot v.op then atomicRoot v argv
       else pure (evalPure v.op ty v.auxInt v.aux argv) := by
   have hf : frameVal ctx v = none := by
     unfold frameVal
@@ -36,9 +36,9 @@ theorem evalOp_stuckRoot {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv 
   unfold stuckRoot at h
   simp only [Bool.and_eq_true, Bool.not_eq_true'] at h
   have hn : v.op ∉ evalOpArms := by
-    intro hm; rw [List.contains_iff_mem.2 hm] at h; cases h.2
-  rw [evalOp_notArm hn, h.1]
-  exact ⟨_, rfl⟩
+    intro hm; rw [List.contains_iff_mem.2 hm] at h; cases h.1.2
+  rw [evalOp_notArm hn, h.1.1]
+  exact atomicRoot_unmodelled h.2 argv
 
 /-- A non-root op `evalOp` does not evaluate by name is `evalPure`. -/
 theorem evalOp_pure_of {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
@@ -148,7 +148,8 @@ theorem evalPure_avoids (hX : TempX X) {op : Op} (hop : op ∈ tamPtrOps) (hn : 
   · -- CondSelect
     exact DAE.condSelect_avoids h
   · -- GetG
-    exact True.intro
+    show ¬ U (Blk.global "runtime.g")
+    intro hu; obtain ⟨n, hn⟩ := hX _ hu; cases hn
   · -- GetClosurePtr
     exact absurd (by decide) hn
   · -- Arg
@@ -336,7 +337,8 @@ theorem evalOp_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx :
   by_cases harm : v.op ∈ evalOpArms
   rotate_left
   · by_cases hr : isRoot v.op = true
-    · rw [evalOp_notArm harm, hr] at h; cases h
+    · rw [evalOp_notArm harm, hr] at h
+      exact DAE.atomicRoot_avoids hU hargs h
     · rw [evalOp_pure_of harm (by simpa using hr)] at h; cases h
       exact evalPure_avoids hX hop harm _ _ _ hargs
   have calls : v.op = .StaticLECall ∨ v.op = .StaticCall ∨ v.op = .ClosureLECall ∨
@@ -363,7 +365,9 @@ theorem evalOp_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx :
       exact frameVal_avoids hX hloc hf
     | none =>
       rcases ho with h1 | h1 | h1 | h1 | h1 <;>
-        (simp only [evalOp, h1, hf] at h; split at h <;> cases h; exact True.intro)
+        (simp only [evalOp, h1, hf] at h; split at h
+         · exact DAE.atomicRoot_avoids hU hargs h
+         · cases h; exact True.intro)
   simp only [evalOpArms, List.mem_cons, List.mem_nil_iff, or_false] at harm
   rcases harm with h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 |
     h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1

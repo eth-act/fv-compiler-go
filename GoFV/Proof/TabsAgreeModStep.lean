@@ -156,8 +156,18 @@ theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx
   by_cases harm : v.op ∈ evalOpArms
   rotate_left
   · by_cases hr : isRoot v.op = true
-    · rw [evalOp_notArm (argv := L ++ [w]) harm, hr]
-      exact resRel_stuck _ _
+    · rw [evalOp_notArm harm, evalOp_notArm harm, hr]
+      refine ⟨fun y h => ?_, fun e m h => absurd h atomicRoot_ne_panic⟩
+      obtain ⟨M, rfl⟩ := atomicRoot_ok_mem h
+      obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
+      have hR : AtomicSimRel (EqX X) (fun b => X b = false) :=
+        ⟨fun t p h hp => EqX.load h t p hp, fun _ _ h hp hw => EqX.write h hp hw⟩
+      obtain ⟨y', hy', m1, m1', hm1, hs⟩ := atomicRoot_sim hR
+        (fun p hp => by have := hL _ hp; simp only [Val.Avoids] at this; simpa using this) hm h
+      refine ⟨y', hy', ?_⟩
+      rcases hs with ⟨rfl, rfl⟩ | ⟨z, rfl, rfl⟩
+      · exact .mem hm1
+      · exact .tuple (.cons (.refl z) (.cons (.mem hm1) .nil))
     · have hr' : isRoot v.op = false := by simpa using hr
       rw [evalOp_pure_of harm hr', evalOp_pure_of harm hr']
       exact resRel_ok (evalPure_rel hop harm _ _ _ hw hL)

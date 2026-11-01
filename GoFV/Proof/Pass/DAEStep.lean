@@ -53,39 +53,13 @@ theorem atomicRoot_rel {v : Value} {L : List Val} {w w' : Val} (hw : VR U w w')
   refine ⟨fun y h => ?_, fun e m h => absurd h atomicRoot_ne_panic⟩
   obtain ⟨M, rfl⟩ := atomicRoot_ok_mem h
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
-  rcases L with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, L⟩⟩⟩⟩ <;>
-    simp only [List.nil_append, List.cons_append, atomicRoot] at h ⊢
-  · unfold Atomic.barrier at h ⊢
-    by_cases hp : v.op = .PubBarrier <;> simp only [hp, ↓reduceIte] at h ⊢
-    · cases h; exact ⟨_, rfl, .mem hm⟩
-    · cases h
-  · unfold Atomic.prefetch at h ⊢
-    by_cases hp : v.op = .PrefetchCache ∨ v.op = .PrefetchCacheStreamed <;>
-      simp only [hp, ↓reduceIte] at h ⊢
-    · cases h; exact ⟨_, rfl, .mem hm⟩
-    · cases h
-  · unfold Atomic.rmwRoot at h ⊢
-    cases a with
-    | ptr p =>
-      dsimp only at h ⊢
-      cases hi : Atomic.info? v.op with
-      | none => simp only [hi, Atomic.unmodelled] at h; cases h
-      | some kt =>
-        obtain ⟨k, t⟩ := kt
-        simp only [hi] at h ⊢
-        exact atomicRmw_rel (hav (.ptr p) (by simp)) hm h
-    | _ => simp only [Atomic.unmodelled] at h; cases h
-  · unfold Atomic.casRoot at h ⊢
-    cases a with
-    | ptr p =>
-      dsimp only at h ⊢
-      cases hc : Atomic.casWidth? v.op with
-      | none => simp only [hc, Atomic.unmodelled] at h; cases h
-      | some cw =>
-        simp only [hc] at h ⊢
-        exact atomicCas_rel (hav (.ptr p) (by simp)) hm h
-    | _ => simp only [Atomic.unmodelled] at h; cases h
-  · rcases L with _ | ⟨e, L⟩ <;> cases h
+  have hR : AtomicSimRel (Mem.EqOff U) (fun b => ¬ U b) :=
+    ⟨fun t p h hp => EqOff.load h t p hp, fun _ _ h _ hw => EqOff.write h hw⟩
+  obtain ⟨y', hy', m1, m1', hm1, hs⟩ := atomicRoot_sim hR (fun p hp => hav _ hp) hm h
+  refine ⟨y', hy', ?_⟩
+  rcases hs with ⟨rfl, rfl⟩ | ⟨z, rfl, rfl⟩
+  · exact .mem hm1
+  · exact .tuple (.cons (.refl z) (.cons (.mem hm1) .nil))
 
 /-! ## The ops of `memOps` -/
 

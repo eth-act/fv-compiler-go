@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.DAEOps
+import GoFV.Proof.AtomicSim
 
 /-!
 # dead auto elim: the memory roots on related memories
@@ -284,12 +285,6 @@ theorem atomicResult_avoids {r : Option Val} {m : Mem} (hr : ∀ y, r = some y �
   | none => exact hm
   | some y => exact ⟨hr y rfl, hm, trivial⟩
 
-theorem atomicResult_rel (r : Option Val) {m m' : Mem} (hm : Mem.EqOff U m m') :
-    VR U (Atomic.result r m) (Atomic.result r m') := by
-  cases r with
-  | none => exact .mem hm
-  | some y => exact .tuple (.cons (.refl y) (.cons (.mem hm) .nil))
-
 theorem atomicRmw_avoids (hU : TempU U) {v : Value} {k : Atomic.Kind} {t : Ty} {p : Ptr}
     {x : Val} {m : Mem} {y : Val} (hp : ¬ U p.blk) (hx : Val.Avoids U x) (hm : m.Avoids U)
     (h : Atomic.rmw v k t p x m = .ok y) : Val.Avoids U y := by
@@ -300,23 +295,6 @@ theorem atomicRmw_avoids (hU : TempU U) {v : Value} {k : Atomic.Kind} {t : Ty} {
     · rename_i m1 hw
       cases h
       exact atomicResult_avoids hs.2 (memAvoids_write hm hw fun _ => encode_avoids t hs.1)
-    · cases h
-  · cases h
-
-theorem atomicRmw_rel {v : Value} {k : Atomic.Kind} {t : Ty} {p : Ptr} {x : Val} {m m' : Mem}
-    {y : Val} (hp : ¬ U p.blk) (hm : Mem.EqOff U m m') (h : Atomic.rmw v k t p x m = .ok y) :
-    ∃ y', Atomic.rmw v k t p x m' = .ok y' ∧ VR U y y' := by
-  unfold Atomic.rmw at h ⊢
-  rw [EqOff.load hm t p hp]
-  split at h
-  · rename_i ha
-    simp only [ha, ↓reduceIte]
-    split at h
-    · rename_i m1 hw
-      cases h
-      obtain ⟨m1', hw', hm1⟩ := EqOff.write hm hw
-      rw [hw']
-      exact ⟨_, rfl, atomicResult_rel _ hm1⟩
     · cases h
   · cases h
 
@@ -336,58 +314,6 @@ theorem atomicCas_avoids {v : Value} {w : Width} {p : Ptr} {o n : Val} {m : Mem}
         exact ⟨trivial, hm, trivial⟩
     · cases h
   · cases h
-
-theorem atomicCas_rel {v : Value} {w : Width} {p : Ptr} {o n : Val} {m m' : Mem} {y : Val}
-    (hp : ¬ U p.blk) (hm : Mem.EqOff U m m') (h : Atomic.cas v w p o n m = .ok y) :
-    ∃ y', Atomic.cas v w p o n m' = .ok y' ∧ VR U y y' := by
-  unfold Atomic.cas at h ⊢
-  rw [EqOff.load hm _ p hp]
-  revert h
-  generalize (m.load (.int w) p).asInt w = a
-  generalize o.asInt w = b
-  intro h
-  by_cases ha : Atomic.aligned p w.bytes = true
-  · simp only [ha, ↓reduceIte] at h ⊢
-    cases a with
-    | none => cases h
-    | some cur =>
-      cases b with
-      | none => cases h
-      | some old =>
-        dsimp only at h ⊢
-        by_cases he : cur = old
-        · simp only [he, ↓reduceIte] at h ⊢
-          cases hw : m.write p (encode (.int w) n) with
-          | none => rw [hw] at h; cases h
-          | some m1 =>
-            rw [hw] at h
-            cases h
-            obtain ⟨m1', hw', hm1⟩ := EqOff.write hm hw
-            rw [hw']
-            exact ⟨_, rfl, .tuple (.cons (.refl _) (.cons (.mem hm1) .nil))⟩
-        · simp only [he, ↓reduceIte] at h ⊢
-          cases h
-          exact ⟨_, rfl, .tuple (.cons (.refl _) (.cons (.mem hm) .nil))⟩
-  · simp only [ha, Bool.false_eq_true, ↓reduceIte] at h; cases h
-
-/-- An atomic root returns only on a memory last argument. -/
-theorem atomicRoot_ok_mem {v : Value} {L : List Val} {w y : Val}
-    (h : atomicRoot v (L ++ [w]) = .ok y) : ∃ m, w = .mem m := by
-  rcases L with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, L⟩⟩⟩⟩ <;>
-    simp only [List.nil_append, List.cons_append, atomicRoot] at h
-  · unfold Atomic.barrier at h; split at h
-    · exact ⟨_, rfl⟩
-    · cases h
-  · unfold Atomic.prefetch at h; split at h
-    · exact ⟨_, rfl⟩
-    · cases h
-  · unfold Atomic.rmwRoot at h; split at h
-    · exact ⟨_, rfl⟩
-    · cases h
-  · unfold Atomic.casRoot at h; split at h
-    · exact ⟨_, rfl⟩
-    · cases h
-  · rcases L with _ | ⟨e, L⟩ <;> cases h
 
 /-- **An atomic root returns a value avoiding `U`** when its arguments do. -/
 theorem atomicRoot_avoids (hU : TempU U) {v : Value} {argv : List Val} {y : Val}
