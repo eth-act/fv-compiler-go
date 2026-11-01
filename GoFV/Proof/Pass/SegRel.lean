@@ -61,8 +61,8 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
       (fv.op == .Store || fv.op == .SelectN) && f.blocks.contains fv.block &&
       (f.block? fv.block).any (·.values.contains x)) = true
   rotate_left
-  · rw [if_neg hc] at h; cases h
-  rw [if_pos hc] at h
+  · rw [ite_eq_right hc] at h; cases h
+  rw [ite_eq_left hc] at h
   simp only [Bool.and_eq_true, beq_iff_eq] at hc
   obtain ⟨⟨⟨⟨⟨⟨hns, hgid⟩, hgbl⟩, hgty⟩, hfph⟩, hbm⟩, hli⟩ := hc
   have hbm' : fv.block ∈ f.blocks := by simpa using hbm

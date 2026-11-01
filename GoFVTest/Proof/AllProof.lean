@@ -232,7 +232,9 @@ import GoFV.Proof.Pass.SegBlock
 import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.SegCallSeg
 import GoFV.Proof.Pass.SegChain
+import GoFV.Proof.Pass.SegEval
 import GoFV.Proof.Pass.SegRel
+import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Pass.SegSound
 import GoFV.Proof.Pass.SegZeroMem
 import GoFV.Proof.Pass.ShortCircB
@@ -446,6 +448,7 @@ import GoFV.Proof.Rules.Rsh6
 import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
 import GoFV.Proof.Rules.Rsh9
+import GoFV.Proof.Rules.Seg
 import GoFV.Proof.Rules.SelLoad
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask

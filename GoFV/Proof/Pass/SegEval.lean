@@ -45,7 +45,7 @@ theorem segOf_some (R : SRel tabs f g) {z x : ID} (h : segOf (segList (segArr ta
 
 theorem segOf_anchor {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N)) :
     segOf (segList (segArr tabs f g)) x = some x := by
-  unfold segOf; rw [if_pos ((anchor_iff x).2 ⟨D, N, h⟩)]
+  unfold segOf; rw [ite_eq_left ((anchor_iff x).2 ⟨D, N, h⟩)]
 
 theorem segOf_drop (R : SRel tabs f g) {x z : ID} (h : Drop tabs f g x z) :
     segOf (segList (segArr tabs f g)) z = some x := by
@@ -53,7 +53,7 @@ theorem segOf_drop (R : SRel tabs f g) {x z : ID} (h : Drop tabs f g x z) :
   have hna : ¬ (segList (segArr tabs f g)).any (·.1 == z) = true := fun ha => by
     obtain ⟨D, N, hs⟩ := (anchor_iff z).1 ha
     exact R.anchorNot z D N hs x h
-  rw [if_neg hna]; exact (R.own z x).2 h
+  rw [ite_eq_right hna]; exact (R.own z x).2 h
 
 theorem mem_segNew {x y : ID} (hy : y ∈ segNew g (segList (segArr tabs f g)) x) :
     ∃ D N, segOK tabs f g x = some (D, N) ∧ y ∈ segL x N := by
@@ -96,8 +96,8 @@ theorem segRoots_prefix (h : Func) (S : List (ID × List ID × List ID)) (r : ID
       · simp only [List.cons_append, segRoots, ha, hPQ, List.append_assoc]
       · rcases List.mem_append.1 hy with hy | hy
         · by_cases hany : (L1 ++ r :: L2).any (fun z => segOf S z == some x) = true
-          · rw [if_pos hany] at hy; simp at hy
-          · rw [if_neg hany] at hy
+          · rw [ite_eq_left hany] at hy; simp at hy
+          · rw [ite_eq_right hany] at hy
             refine .inr ⟨x, hy, fun z hz hzx => ?_⟩
             rcases List.mem_cons.1 hz with rfl | hz
             · exact List.mem_cons_self
