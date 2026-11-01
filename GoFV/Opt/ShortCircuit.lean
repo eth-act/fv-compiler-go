@@ -251,15 +251,15 @@ def constPhiArgs (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef →
 
 /-- `fuseBlockPlain(b)` (checked, `Fuse.Plain.fuseBlockPlainChecked`) then
 `shortcircuitBlock(b)`. -/
-def step (ce : CheckEnv) (f : Func) (b : ID) : Except String (Func × Bool) :=
-  let (f, c1) := Fuse.Plain.fuseBlockPlainChecked ce f b
+def step (f : Func) (b : ID) : Except String (Func × Bool) :=
+  let (f, c1) := Fuse.Plain.fuseBlockPlainChecked f b
   let (f, c2) := shortcircuitBlock f b
   pure (f, c2 || c1)
 
 /-- `shortcircuit(f)`. -/
-def shortcircuit (ce : CheckEnv) (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
+def shortcircuit (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
     (boolT : TypeRef) (f : Func) : Except String Func :=
-  fuseLoop (step ce) none roundFuel (constPhiArgs isBool sameType boolT f)
+  fuseLoop step none roundFuel (constPhiArgs isBool sameType boolT f)
 
 end GoFV.Opt.ShortCircuit
 
@@ -271,7 +271,6 @@ open GoFV.SSA
 def shortcircuitPass : Pass := Pass.ofFunc fun env f => do
   let some boolT := env.typ? "Bool" | throw "shortcircuit: no typ.Bool"
   let isBool (t : TypeRef) : Bool := (env.type? t).map (·.kind) == some .BOOL
-  ShortCircuit.shortcircuit { tabs := env.tables, typs := env.typs } isBool env.typeOrder.eq
-    boolT f
+  ShortCircuit.shortcircuit isBool env.typeOrder.eq boolT f
 
 end GoFV.Opt

@@ -6,11 +6,14 @@ import GoFV.Proof.WF
 /-!
 # fuseBlockPlain: what the step checker establishes
 
-`PRel f g run b0 c`: the run `run` starts at `b0`, ends at `c`, and `Plain.relB f g run` holds
-(`GoFV.Opt.Fuse.PlainCheck`). This module unfolds the checker into the facts the simulation
-uses: the chain links (`link`), the later blocks (`later`), the reads of the run's values
-(`reads`), the unchanged values (`value_same`) and blocks (`block_out`), and the fused block
-(`merged`).
+`PRel f g run b0 c`: one checked plain fusion of the run `run` from `b0` to `c`
+(`Plain.relB`, `GoFV.Opt.Fuse.PlainCheck`), in declarative form (`relB_sound`, which needs `f`
+well formed: a block outside the run that is no predecessor of `b0` has no edge into `b0`).
+This module unfolds the checker into the facts the simulation uses: the chain links (`link`),
+the later blocks (`later`), the reads of the run's values (`reads`), the unchanged values
+(`value_same`) and blocks (`block_out`), and the fused block (`merged`); the remaining fields
+(`valEq` … `cpreds`) describe the result exactly enough to carry well-formedness and use
+dominance over (`FusePlainPres`).
 -/
 
 namespace GoFV.Proof.FusePlain
@@ -21,7 +24,25 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.Fuse GoFV.Opt.Fuse.Plain GoFV.Proof
 structure PRel (f g : Func) (run : List ID) (b0 c : ID) : Prop where
   head : run.head? = some b0
   last : run.getLast? = some c
-  rel : relB f g run = true
+  parts : b0 ≠ c ∧ run.Nodup ∧ (∀ x ∈ run, x ∈ f.blocks) ∧ chainOK f run = true ∧
+      (∀ y ∈ run.tail, laterOK f y = true) ∧ readsAllOK f run = true ∧ g.blocks = f.blocks ∧
+      (g.entry == (if f.entry == b0 then c else f.entry)) = true ∧ g.ownAux = f.ownAux ∧
+      g.valueTab.size = f.valueTab.size ∧ mergedOK f g run b0 c = true
+  /-- A value outside the run's blocks is unchanged. -/
+  valEq : ∀ x, (∀ y ∈ run, x ∉ (valsOf f y).toList) → g.value? x = f.value? x
+  /-- A value of the run moves to `c`. -/
+  moved : ∀ y ∈ run, ∀ x ∈ (valsOf f y).toList, ∃ fv gv, f.value? x = some fv ∧
+    g.value? x = some gv ∧ sameV fv gv = true ∧ gv.block = c
+  /-- A block outside the run that is no predecessor of `b0` is unchanged. -/
+  blkEq : ∀ bid, bid ∉ run → isPredOf f b0 bid = false → g.block? bid = f.block? bid
+  /-- A predecessor of `b0` outside the run has only its edges into `b0` redirected. -/
+  predB : ∀ e ∈ predsOf f b0, e.b ∉ run → ∃ P, f.block? e.b = some P ∧
+    g.block? e.b = some { P with succs := P.succs.map (redirect b0 c) }
+  /-- The run's blocks before `c` are emptied. -/
+  dead : ∀ y ∈ run.dropLast, ∃ Y', g.block? y = some Y' ∧ Y'.id = y ∧ Y'.values = #[] ∧
+    Y'.preds = #[] ∧ Y'.succs = #[] ∧ Y'.controls = #[]
+  /-- `c` takes `b0`'s predecessors. -/
+  cpreds : ∀ C', g.block? c = some C' → C'.preds = predsOf f b0
 
 variable {f g : Func} {run : List ID} {b0 c : ID}
 
@@ -32,28 +53,116 @@ theorem valsOf_mem {f : Func} {b x : ID} :
   | none => simp
   | some B => simp
 
-/-- The checker's conjuncts. -/
-theorem PRel.parts (h : PRel f g run b0 c) :
-    b0 ≠ c ∧ run.Nodup ∧ (∀ x ∈ run, x ∈ f.blocks) ∧ chainOK f run = true ∧
-      (∀ y ∈ run.tail, laterOK f y = true) ∧ readsAllOK f run = true ∧ g.blocks = f.blocks ∧
-      (g.entry == (if f.entry == b0 then c else f.entry)) = true ∧ g.ownAux = f.ownAux ∧
-      g.valueTab.size = f.valueTab.size ∧
-      (∀ x, x < f.valueTab.size → valueOK f g x = true) ∧
-      (∀ bid ∈ f.blocks, bid ∈ run ∨ blockOK f g b0 c bid = true) ∧
-      mergedOK f g run b0 c = true := by
-  have hr := h.rel
-  unfold relB at hr
-  rw [h.head, h.last] at hr
+theorem sameV_refl (v : Value) : sameV v v = true := by simp [sameV]
+
+/-- A chain of linked blocks starting at a listed block is listed. -/
+theorem chain_mem {ce : CheckEnv} (hwf : WF ce f) :
+    ∀ {run : List ID} {b0 : ID}, chainOK f run = true → run.head? = some b0 → b0 ∈ f.blocks →
+      ∀ x ∈ run, x ∈ f.blocks
+  | [], _, _, _, _, x, hx => absurd hx List.not_mem_nil
+  | [a], _, _, hh, hb, x, hx => by
+    cases hh; rw [List.mem_singleton] at hx; subst hx; exact hb
+  | a :: b :: rest, _, hch, hh, hb, x, hx => by
+    cases hh
+    unfold chainOK at hch
+    rw [Bool.and_eq_true] at hch
+    have hbm : b ∈ f.blocks := by
+      unfold linkOK at hch
+      obtain ⟨h1, -⟩ := hch
+      cases hX : f.block? a with
+      | none => rw [hX] at h1; cases h1
+      | some X =>
+        cases hY : f.block? b with
+        | none => rw [hX, hY] at h1; cases h1
+        | some Y =>
+          rw [hX, hY] at h1
+          simp only [Bool.and_eq_true, beq_iff_eq] at h1
+          have := hwf.succLink a X ⟨hb, hX⟩ 0 ⟨b, 0⟩ (by rw [h1.1.2]; rfl)
+          exact this.1
+    rcases List.mem_cons.1 hx with rfl | hx
+    · exact hb
+    · exact chain_mem hwf hch.2 rfl hbm x hx
+
+theorem map_redirect_self {b0 c : ID} {a : Array Edge} (h : ∀ e ∈ a, e.b ≠ b0) :
+    a.map (redirect b0 c) = a := by
+  apply Array.ext_getElem?
+  intro i
+  rw [Array.getElem?_map]
+  cases he : a[i]? with
+  | none => rfl
+  | some e =>
+    have hne := h e (Array.mem_of_getElem? he)
+    simp [redirect, hne]
+
+/-- **The checker's verdict in declarative form** (for well-formed `f`). -/
+theorem relB_sound {ce : CheckEnv} (hwf : WF ce f) (h : relB f g run = true) :
+    ∃ b0 c, PRel f g run b0 c := by
+  unfold relB at h
+  split at h
+  case h_2 => cases h
+  rename_i b0 c hb0 hc
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq, List.all_eq_true,
-    List.contains_iff_mem, Array.contains_iff_mem, List.mem_range, Bool.or_eq_true] at hr
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hne, hnd⟩, hin⟩, hch⟩, hlat⟩, hrd⟩, hbl⟩, hent⟩, hown⟩, hsz⟩, hval⟩,
-    hblk⟩, hm⟩ := hr
-  refine ⟨hne, hnd, hin, hch, hlat, hrd, by simpa using hbl, hent, by simpa using hown,
-    by simpa using hsz, hval, fun bid hb => ?_, hm⟩
-  have := (Array.all_eq_true'.1 hblk) bid hb
-  rcases Bool.or_eq_true_iff.1 this with h' | h'
-  · exact .inl (by simpa using h')
-  · exact .inr h'
+    List.contains_iff_mem, Array.contains_iff_mem, beq_iff_eq, Array.all_eq_true',
+    Bool.or_eq_true] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hne, hnd⟩, hb0m⟩, hch⟩, hlat⟩, hrd⟩, hbl⟩, hent⟩, hown⟩, hvt⟩, hmv⟩,
+    hbt⟩, hpr⟩, hdead⟩, hm⟩ := h
+  obtain ⟨hbs, hbl⟩ := tabEq_spec hbl
+  have hblocks : g.blocks = f.blocks :=
+    Array.ext_getElem? fun i => (hbl i rfl).symm
+  obtain ⟨hvs, hvt⟩ := tabEq_spec hvt
+  obtain ⟨-, hbt⟩ := tabEq_spec hbt
+  have hin := chain_mem hwf hch hb0 hb0m
+  have hvalEq : ∀ x, (∀ y ∈ run, x ∉ (valsOf f y).toList) → g.value? x = f.value? x := by
+    intro x hx
+    have hs : (run.any fun y => (valsOf f y).contains x) = false := by
+      rw [List.any_eq_false]
+      intro y hy hc'
+      exact hx y hy (Array.mem_toList_iff.2 (Array.contains_iff_mem.1 hc'))
+    unfold Func.value?; rw [hvt x hs]
+  have hmoved : ∀ y ∈ run, ∀ x ∈ (valsOf f y).toList, ∃ fv gv, f.value? x = some fv ∧
+      g.value? x = some gv ∧ sameV fv gv = true ∧ gv.block = c := by
+    intro y hy x hx
+    have := hmv y hy x (Array.mem_toList_iff.1 hx)
+    unfold movedOK at this
+    split at this
+    · rename_i fv gv hf hg
+      rw [Bool.and_eq_true, beq_iff_eq] at this
+      exact ⟨fv, gv, hf, hg, this.1, this.2⟩
+    · cases this
+  have hblkEq : ∀ bid, bid ∉ run → isPredOf f b0 bid = false → g.block? bid = f.block? bid := by
+    intro bid hn hp
+    unfold Func.block?
+    rw [hbt bid (by simp [hn, hp])]
+  have hpredB : ∀ e ∈ predsOf f b0, e.b ∉ run → ∃ P, f.block? e.b = some P ∧
+      g.block? e.b = some { P with succs := P.succs.map (redirect b0 c) } := by
+    intro e he hn
+    rcases hpr e he with h' | h'
+    · exact absurd h' hn
+    · unfold predOK at h'
+      split at h'
+      · rename_i P P' hP hP'
+        rw [beq_iff_eq] at h'
+        exact ⟨P, hP, by rw [hP', h']⟩
+      · cases h'
+  refine ⟨b0, c, ⟨hb0, hc, ⟨hne, hnd, hin, hch, hlat, hrd, hblocks, by simpa using hent, hown,
+    hvs.symm, hm⟩, hvalEq, hmoved, hblkEq, hpredB, fun y hy => ?_, fun C' hC' => ?_⟩⟩
+  · -- emptied blocks
+    have := hdead y hy
+    unfold deadOK at this
+    split at this
+    · rename_i Y' hY'
+      simp only [Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at this
+      obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := this
+      exact ⟨Y', hY', h1, h2, h3, h4, h5⟩
+    · cases this
+  · -- `c`'s predecessors
+    unfold mergedOK at hm
+    split at hm
+    · rename_i C C'' hC hC''
+      rw [hC''] at hC'; cases hC'
+      simp only [Bool.and_eq_true, beq_iff_eq] at hm
+      exact hm.1.1.2
+    · cases hm
 
 theorem PRel.entry (h : PRel f g run b0 c) :
     (f.entry = b0 → g.entry = c) ∧ (f.entry ≠ b0 → g.entry = f.entry) := by
@@ -200,53 +309,21 @@ theorem PRel.value_same (h : PRel f g run b0 c) (x : ID) :
     SemEq (f.value? x) (g.value? x) ∧
       ∀ fv, f.value? x = some fv → ∃ gv, g.value? x = some gv ∧ gv.type = fv.type ∧
         gv.op = fv.op ∧ gv.args = fv.args := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, hsz, hval, -⟩ := h.parts
-  rcases Nat.lt_or_ge x f.valueTab.size with hx | hx
-  · have hv := hval x hx
-    unfold valueOK at hv
+  by_cases hx : ∃ y ∈ run, x ∈ (valsOf f y).toList
+  · obtain ⟨y, hy, hxy⟩ := hx
+    obtain ⟨fv, gv, hf, hg, hs, -⟩ := h.moved y hy x hxy
+    unfold sameV at hs
+    simp only [Bool.and_eq_true, beq_iff_eq] at hs
+    obtain ⟨⟨⟨⟨⟨hid, hty⟩, haux⟩, hai⟩, hop⟩, hargs⟩ := hs
+    rw [hf, hg]
+    exact ⟨⟨hid, hop, haux, hai, hargs⟩, fun fv' h' => by
+      cases h'; exact ⟨gv, rfl, hty, hop, hargs⟩⟩
+  · rw [not_exists] at hx
+    rw [h.valEq x fun y hy hm => hx y ⟨hy, hm⟩]
     cases hf : f.value? x with
-    | none =>
-      rw [hf] at hv
-      cases hg : g.value? x with
-      | none => exact ⟨trivial, fun _ h => nomatch h⟩
-      | some _ => rw [hg] at hv; cases hv
-    | some fv =>
-      rw [hf] at hv
-      cases hg : g.value? x with
-      | none => rw [hg] at hv; cases hv
-      | some gv =>
-        rw [hg] at hv
-        unfold sameV at hv
-        simp only [Bool.and_eq_true, beq_iff_eq] at hv
-        obtain ⟨⟨⟨⟨⟨hid, hty⟩, haux⟩, hai⟩, hop⟩, hargs⟩ := hv
-        exact ⟨⟨hid, hop, haux, hai, hargs⟩, fun fv' h' => by
-          cases h'; exact ⟨gv, rfl, hty, hop, hargs⟩⟩
-  · have h1 : f.value? x = none := by simp [Func.value?, Array.getElem?_eq_none hx]
-    have h2 : g.value? x = none := by
-      simp [Func.value?, Array.getElem?_eq_none (show g.valueTab.size ≤ x by omega)]
-    rw [h1, h2]
-    exact ⟨trivial, fun _ h => nomatch h⟩
-
-/-- A listed block outside the run is unchanged but for edges into `b0`. -/
-theorem PRel.block_out (h : PRel f g run b0 c) {bid : ID} (hb : bid ∈ f.blocks)
-    (hn : bid ∉ run) :
-    ∃ fb gb, f.block? bid = some fb ∧ g.block? bid = some gb ∧ gb.id = fb.id ∧
-      gb.values = fb.values ∧ gb.kind = fb.kind ∧ gb.controls = fb.controls ∧
-      gb.succs = fb.succs.map (redirect b0 c) := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hblk, -⟩ := h.parts
-  rcases hblk bid hb with h' | h'
-  · exact absurd h' hn
-  · unfold blockOK at h'
-    cases hf : f.block? bid with
-    | none => rw [hf] at h'; cases h'
-    | some fb =>
-      cases hg : g.block? bid with
-      | none => rw [hf, hg] at h'; cases h'
-      | some gb =>
-        rw [hf, hg] at h'
-        simp only [Bool.and_eq_true, beq_iff_eq] at h'
-        obtain ⟨⟨⟨⟨hid, hv⟩, hk⟩, hc⟩, hs⟩ := h'
-        exact ⟨fb, gb, rfl, rfl, hid, hv, hk, hc, hs⟩
+    | none => exact ⟨trivial, fun _ h => nomatch h⟩
+    | some fv => exact ⟨⟨rfl, rfl, rfl, rfl, rfl⟩, fun fv' h' => by
+        cases h'; exact ⟨fv, rfl, rfl, rfl, rfl⟩⟩
 
 /-- The fused block `c` of `g`. -/
 theorem PRel.merged (h : PRel f g run b0 c) :
@@ -255,7 +332,7 @@ theorem PRel.merged (h : PRel f g run b0 c) :
       C'.controls = C.controls ∧ C'.succs = C.succs.map (redirect b0 c) ∧
       (∀ x ∈ run, (schedOf f x).isSome) ∧ schedule g C' = some oT ∧
       oT.toList.filter (fun y => run.any (npAt f · y)) = npSeq f run := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hm⟩ := h.parts
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, hm⟩ := h.parts
   unfold mergedOK at hm
   cases hC : f.block? c with
   | none => rw [hC] at hm; cases hm
@@ -265,7 +342,7 @@ theorem PRel.merged (h : PRel f g run b0 c) :
     | some C' =>
       rw [hC, hC'] at hm
       simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at hm
-      obtain ⟨⟨⟨⟨⟨⟨hid, hv⟩, hk⟩, hc⟩, hs⟩, hsch⟩, ho⟩ := hm
+      obtain ⟨⟨⟨⟨⟨⟨⟨hid, hv⟩, hk⟩, hc⟩, hs⟩, -⟩, hsch⟩, ho⟩ := hm
       cases hoT : schedule g C' with
       | none => rw [hoT] at ho; cases ho
       | some oT =>

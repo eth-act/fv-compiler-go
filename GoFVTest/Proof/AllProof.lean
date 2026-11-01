@@ -19,6 +19,7 @@ import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
 import GoFV.Proof.Cong
 import GoFV.Proof.DomCert
+import GoFV.Proof.DomRel
 import GoFV.Proof.Enter
 import GoFV.Proof.Eval
 import GoFV.Proof.FinishMono
@@ -110,6 +111,7 @@ import GoFV.Proof.Pass.DeadcodePass
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FusePlainMerged
 import GoFV.Proof.Pass.FusePlainPanic
+import GoFV.Proof.Pass.FusePlainPres
 import GoFV.Proof.Pass.FusePlainRel
 import GoFV.Proof.Pass.FusePlainSetup
 import GoFV.Proof.Pass.FusePlainSim

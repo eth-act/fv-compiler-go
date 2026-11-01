@@ -7,17 +7,22 @@ import GoFV.Opt.Checked
 `Plain.relB f g run` validates one `fuseBlockPlain` rewrite of `f` into `g` that fuses the run
 `b₀ … c` (`plainRun`):
 
-- in `f`, consecutive blocks of the run are linked alone: each but `c` is `Plain` with the next
-  as its only successor, which has it as its only predecessor (`chainOK`); the blocks after `b₀`
-  are not the entry and hold no `Phi` and no parameter read (`laterOK`); a non-`Phi` reads no
-  value of a later block of the run (`readsAllOK`);
-- in `g`, block `c` holds the run's values in run order, `c`'s kind and controls, and `c`'s
-  successors with edges into `b₀` redirected to `c` (`redirect`); its schedule lists the
-  non-pure nodes of the run block by block, each in its source sequence (`mergedOK`); every
-  block outside the run is unchanged but for the same redirection (`blockOK`); every value
-  is unchanged in what the semantics reads (`valueOK`); the entry moves from `b₀` to `c`.
+- in `f`, `b₀` is listed and consecutive blocks of the run are linked alone: each but `c` is
+  `Plain` with the next as its only successor, which has it as its only predecessor
+  (`chainOK`); the blocks after `b₀` are not the entry and hold no `Phi` and no parameter read
+  (`laterOK`); a non-`Phi` reads no value of a later block of the run (`readsAllOK`);
+- in `g`, every value of the run is unchanged in what the semantics reads and moved to `c`
+  (`movedOK`), every other value table entry is unchanged; block `c` holds the run's values in
+  run order, `b₀`'s predecessors, `c`'s kind and controls, and `c`'s successors with edges into
+  `b₀` redirected to `c` (`redirect`); its schedule lists the non-pure nodes of the run block by
+  block, each in its source sequence (`mergedOK`); the other blocks of the run are emptied
+  (`deadOK`); a predecessor of `b₀` outside the run is unchanged but for the same redirection
+  (`predOK`); every other block table entry is unchanged; the entry moves from `b₀` to `c`.
 
-The soundness proof is `GoFV.Proof.FusePlain.refines_of_step`.
+The unchanged table entries are compared with `tabEq` (pointer first), so the check costs about
+the size of the run, not of the function (issue #147). No `check` of `g` is needed: the
+soundness proof (`GoFV.Proof.FusePlain.refines_of_step`) derives the well-formedness and use
+dominance of `g` from the relation (`GoFV.Proof.FusePlain.wf_pres`, `useDom_pres`).
 -/
 
 namespace GoFV.Opt.Fuse
@@ -73,19 +78,34 @@ def sameV (fv gv : Value) : Bool :=
   gv.id == fv.id && gv.type == fv.type && gv.aux == fv.aux && gv.auxInt == fv.auxInt &&
     gv.op == fv.op && gv.args == fv.args
 
-/-- Value `x` is unchanged. -/
-def valueOK (f g : Func) (x : ID) : Bool :=
+/-- Value `x` of the run: unchanged in what the semantics reads, and moved to block `c`. -/
+def movedOK (f g : Func) (c x : ID) : Bool :=
   match f.value? x, g.value? x with
-  | some fv, some gv => sameV fv gv
-  | none, none => true
+  | some fv, some gv => sameV fv gv && gv.block == c
   | _, _ => false
 
-/-- Block `bid` (outside the run) is unchanged but for edges into `b0`, redirected to `c`. -/
-def blockOK (f g : Func) (b0 c bid : ID) : Bool :=
-  match f.block? bid, g.block? bid with
-  | some fb, some gb => gb.id == fb.id && gb.values == fb.values && gb.kind == fb.kind &&
-      gb.controls == fb.controls && gb.succs == fb.succs.map (redirect b0 c)
+/-- `p` is a predecessor of `b0` in `f`. -/
+def isPredOf (f : Func) (b0 p : ID) : Bool :=
+  match f.block? b0 with
+  | some B0 => B0.preds.any (·.b == p)
+  | none => false
+
+/-- The predecessors of `b0` in `f`. -/
+def predsOf (f : Func) (b0 : ID) : Array Edge := ((f.block? b0).map (·.preds)).getD #[]
+
+/-- Block `p` (a predecessor of `b0` outside the run) is unchanged but for edges into `b0`,
+redirected to `c`. -/
+def predOK (f g : Func) (b0 c p : ID) : Bool :=
+  match f.block? p, g.block? p with
+  | some P, some P' => P' == { P with succs := P.succs.map (redirect b0 c) }
   | _, _ => false
+
+/-- Block `y` (of the run, before `c`) is emptied in `g`. -/
+def deadOK (g : Func) (y : ID) : Bool :=
+  match g.block? y with
+  | some Y' => Y'.id == y && Y'.values.isEmpty && Y'.preds.isEmpty && Y'.succs.isEmpty &&
+      Y'.controls.isEmpty
+  | none => false
 
 /-- The schedule of block `x` of `f`. -/
 def schedOf (f : Func) (x : ID) : Option (Array ID) := (f.block? x).bind (Sem.schedule f)
@@ -106,7 +126,7 @@ def mergedOK (f g : Func) (run : List ID) (b0 c : ID) : Bool :=
   | some C, some C' =>
     C'.id == c && C'.values.toList == run.flatMap (fun x => (valsOf f x).toList) &&
     C'.kind == C.kind && C'.controls == C.controls && C'.succs == C.succs.map (redirect b0 c) &&
-    run.all (fun x => (schedOf f x).isSome) &&
+    C'.preds == predsOf f b0 && run.all (fun x => (schedOf f x).isSome) &&
     match Sem.schedule g C' with
     | some oT => oT.toList.filter (fun y => run.any (npAt f · y)) == npSeq f run
     | none => false
@@ -116,25 +136,28 @@ def mergedOK (f g : Func) (run : List ID) (b0 c : ID) : Bool :=
 def relB (f g : Func) (run : List ID) : Bool :=
   match run.head?, run.getLast? with
   | some b0, some c =>
-    b0 != c && decide run.Nodup && run.all f.blocks.contains && chainOK f run &&
+    b0 != c && decide run.Nodup && f.blocks.contains b0 && chainOK f run &&
       run.tail.all (laterOK f) && readsAllOK f run &&
-      g.blocks == f.blocks && g.entry == (if f.entry == b0 then c else f.entry) &&
-      g.ownAux == f.ownAux && g.valueTab.size == f.valueTab.size &&
-      (List.range f.valueTab.size).all (valueOK f g) &&
-      f.blocks.all (fun bid => run.contains bid || blockOK f g b0 c bid) &&
+      tabEq g.blocks f.blocks (fun _ => false) && g.entry == (if f.entry == b0 then c else f.entry) &&
+      g.ownAux == f.ownAux &&
+      tabEq f.valueTab g.valueTab (fun x => run.any fun y => (valsOf f y).contains x) &&
+      run.all (fun y => (valsOf f y).all (movedOK f g c)) &&
+      tabEq f.blockTab g.blockTab (fun bid => run.contains bid || isPredOf f b0 bid) &&
+      (predsOf f b0).all (fun e => run.contains e.b || predOK f g b0 c e.b) &&
+      run.dropLast.all (deadOK g) &&
       mergedOK f g run b0 c
   | _, _ => false
 
-/-- **A checked `fuseBlockPlain` step** at `b`: `g` passes `check` and fuses `plainRun f b`. -/
-def stepOK (ce : CheckEnv) (f g : Func) (b : ID) : Bool :=
-  checkOK ce g && match plainRun f b with
-    | some run => relB f g run
-    | none => false
+/-- **A checked `fuseBlockPlain` step** at `b`: `g` fuses `plainRun f b`. -/
+def stepOK (f g : Func) (b : ID) : Bool :=
+  match plainRun f b with
+  | some run => relB f g run
+  | none => false
 
 /-- **`fuseBlockPlain`, checked**: the rewrite is kept only if `stepOK` accepts it. -/
-def fuseBlockPlainChecked (ce : CheckEnv) (f : Func) (b : ID) : Func × Bool :=
+def fuseBlockPlainChecked (f : Func) (b : ID) : Func × Bool :=
   let (g, ch) := fuseBlockPlain f b
-  if ch && stepOK ce f g b then (g, true) else (f, false)
+  if ch && stepOK f g b then (g, true) else (f, false)
 
 end Plain
 

@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.FusePlainRel
+import GoFV.Proof.Pass.FusePlainPres
 import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Enter
 import GoFV.Proof.Mixed
@@ -8,8 +8,9 @@ import GoFV.Proof.Speculate
 /-!
 # fuseBlockPlain: the setting of one checked rewrite
 
-`Setup f g run b0 c`: `f` and `g` are well formed, `f`'s dominator certificate holds, and `g` is
-`f` with the run `run` (from `b0` to `c`) fused (`PRel`). `Acc … pre G`: `G` is the source's
+`Setup f g run b0 c`: `f` and `g` are well formed, `f`'s uses are dominated on paths
+(`Dom.UseDom`, so path dominance `SDom f` is a dominance relation: `dom`), and `g` is `f` with
+the run `run` (from `b0` to `c`) fused (`PRel`). `Acc … pre G`: `G` is the source's
 frame after the blocks `pre` of the run, entered from `fr` at `b0` with predecessor index `i`:
 it differs from `fr` only on their values, each non-`Phi` of them re-evaluates to its register,
 and `b0`'s `Phi`s hold their incoming arguments (`acc_step`).
@@ -24,7 +25,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.Fuse GoFV.Opt.Fuse
 structure Setup (f g : Func) (run : List ID) (b0 c : ID) : Prop where
   wf : ∃ ce, WF ce f
   wg : ∃ ce, WF ce g
-  cf : CertOK f
+  cf : UseDom f
   rel : PRel f g run b0 c
 
 /-- See the module doc. -/
@@ -57,6 +58,8 @@ namespace Setup
 
 variable (S : Setup f g run b0 c)
 include S
+
+theorem dom : DomRel f (Reachable f) (SDom f) := S.cf.domRel
 
 theorem runIn {x : ID} (hx : x ∈ run) : x ∈ f.blocks := S.rel.parts.2.2.1 x hx
 

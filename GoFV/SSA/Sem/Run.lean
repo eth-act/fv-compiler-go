@@ -157,6 +157,185 @@ def rankOK (vs : Array SNode) (isNode : ID → Bool) (o : Array ID) : Bool :=
         | none => false
     | _, _ => true
 
+/-! ### `rankOK`, compiled as a linear scan
+
+`rankOK` compares every pair of non-pure positions, scanning the gap between them: cubic in the
+block size, the dominant cost of the checked CFG passes (issue #147). `rankOKFast` checks each
+non-pure node `x` once, scanning backwards from its position up to the latest argument of `x`
+(`rankScan`): an earlier non-pure node of greater rank must lie before that argument.
+`rankOK_eq_rankOKFast` (`@[csimp]`) makes the compiled code use it; proofs keep `rankOK`. -/
+
+/-- The positions before `i` back to the latest argument (a node) of `x` hold no non-pure node
+of greater rank than `x`. -/
+def rankScan (T : Array (Option SNode)) (isNode : ID → Bool) (o : Array ID) (x : SNode) :
+    Nat → Bool
+  | 0 => true
+  | i + 1 =>
+    match o[i]? with
+    | some a =>
+      if x.args.contains a && isNode a then true
+      else (match T[a]?.join with
+        | some y => !(x.rankLt y)
+        | none => true) && rankScan T isNode o x i
+    | none => rankScan T isNode o x i
+
+/-- `rankOK`, one backward scan per non-pure node. -/
+def rankOKFast (vs : Array SNode) (isNode : ID → Bool) (o : Array ID) : Bool :=
+  let T := npTable vs
+  Nat.all o.size fun j _ =>
+    match o[j]?.bind fun x => T[x]?.join with
+    | some x => rankScan T isNode o x j
+    | none => true
+
+/-- What `rankOK` and `rankOKFast` check. -/
+def RankProp (T : Array (Option SNode)) (isNode : ID → Bool) (o : Array ID) : Prop :=
+  ∀ (j k : Nat) (xa : ID) (x : SNode) (ya : ID) (y : SNode), k < j → o[j]? = some xa → T[xa]?.join = some x → o[k]? = some ya →
+    T[ya]?.join = some y → x.rankLt y = true →
+    ∃ i a, k ≤ i ∧ i < j ∧ o[i]? = some a ∧ x.args.contains a = true ∧ isNode a = true
+
+theorem rankScan_iff (T : Array (Option SNode)) (isNode : ID → Bool) (o : Array ID) (x : SNode) :
+    ∀ n, rankScan T isNode o x n = true ↔ ∀ k ya y, k < n → o[k]? = some ya →
+      T[ya]?.join = some y → x.rankLt y = true →
+      ∃ i a, k ≤ i ∧ i < n ∧ o[i]? = some a ∧ x.args.contains a = true ∧ isNode a = true
+  | 0 => by simp [rankScan]
+  | n + 1 => by
+    have ih := rankScan_iff T isNode o x n
+    unfold rankScan
+    cases hn : o[n]? with
+    | none =>
+      simp only
+      rw [ih]
+      constructor
+      · intro h k ya y hk hya hy hr
+        have hkn : k ≠ n := fun e => by rw [e, hn] at hya; cases hya
+        obtain ⟨i, a, h1, h2, h3⟩ := h k ya y (by omega) hya hy hr
+        exact ⟨i, a, h1, by omega, h3⟩
+      · intro h k ya y hk hya hy hr
+        obtain ⟨i, a, h1, h2, h3, h4⟩ := h k ya y (by omega) hya hy hr
+        have hin : i ≠ n := fun e => by rw [e, hn] at h3; cases h3
+        exact ⟨i, a, h1, by omega, h3, h4⟩
+    | some a =>
+      simp only
+      by_cases han : (x.args.contains a && isNode a) = true
+      · rw [if_pos han]
+        simp only [true_iff]
+        intro k ya y hk _ _ _
+        rw [Bool.and_eq_true] at han
+        exact ⟨n, a, by omega, by omega, hn, han.1, han.2⟩
+      · rw [if_neg han, Bool.and_eq_true, ih]
+        constructor
+        · rintro ⟨hc, h⟩ k ya y hk hya hy hr
+          by_cases hkn : k = n
+          · subst hkn
+            rw [hn] at hya; cases hya
+            rw [hy] at hc
+            simp [hr] at hc
+          · obtain ⟨i, b, h1, h2, h3⟩ := h k ya y (by omega) hya hy hr
+            exact ⟨i, b, h1, by omega, h3⟩
+        · intro h
+          have hne : ∀ i b, i < n + 1 → o[i]? = some b → x.args.contains b = true →
+              isNode b = true → i < n := fun i b hi hb h1 h2 => by
+            refine Nat.lt_of_le_of_ne (by omega) fun e => han ?_
+            rw [e, hn] at hb; cases hb
+            rw [h1, h2]; rfl
+          refine ⟨?_, fun k ya y hk hya hy hr => ?_⟩
+          · cases hy : T[a]?.join with
+            | none => rfl
+            | some y =>
+              simp only [Bool.not_eq_true']
+              cases hr : x.rankLt y
+              · rfl
+              · obtain ⟨i, b, h1, h2, h3, h4, h5⟩ := h n a y (by omega) hn hy hr
+                exact absurd (hne i b h2 h3 h4 h5) (by omega)
+          · obtain ⟨i, b, h1, h2, h3, h4, h5⟩ := h k ya y (by omega) hya hy hr
+            exact ⟨i, b, h1, hne i b h2 h3 h4 h5, h3, h4, h5⟩
+
+theorem nat_all_iff {n : Nat} {f : (i : Nat) → i < n → Bool} :
+    Nat.all n f = true ↔ ∀ i (h : i < n), f i h = true := by
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    rw [Nat.all_succ, Bool.and_eq_true, ih]
+    constructor
+    · rintro ⟨h1, h2⟩ i hi
+      rcases Nat.lt_or_ge i n with hl | hl
+      · exact h1 i hl
+      · obtain rfl : i = n := by omega
+        exact h2
+    · intro h
+      exact ⟨fun i hi => h i (by omega), h n (by omega)⟩
+
+theorem rankOKFast_iff (vs : Array SNode) (isNode : ID → Bool) (o : Array ID) :
+    rankOKFast vs isNode o = true ↔ RankProp (npTable vs) isNode o := by
+  unfold rankOKFast RankProp
+  rw [nat_all_iff]
+  constructor
+  · intro h j k xa x ya y hkj hxa hx hya hy hr
+    have hj : j < o.size := (Array.getElem?_eq_some_iff.1 hxa).1
+    have := h j hj
+    rw [hxa] at this
+    simp only [Option.bind_some, hx] at this
+    exact (rankScan_iff _ _ _ _ j).1 this k ya y hkj hya hy hr
+  · intro h j hj
+    cases hxa : o[j]? with
+    | none => rfl
+    | some xa =>
+      simp only [Option.bind_some]
+      cases hx : (npTable vs)[xa]?.join with
+      | none => rfl
+      | some x =>
+        exact (rankScan_iff _ _ _ _ j).2 fun k ya y hkj hya hy hr =>
+          h j k xa x ya y hkj hxa hx hya hy hr
+
+theorem rankOK_iff (vs : Array SNode) (isNode : ID → Bool) (o : Array ID) :
+    rankOK vs isNode o = true ↔ RankProp (npTable vs) isNode o := by
+  unfold rankOK RankProp
+  simp only [List.all_eq_true, List.mem_filter, List.mem_range, Bool.or_eq_true,
+    Bool.not_eq_true', decide_eq_false_iff_not, Nat.not_lt]
+  constructor
+  · intro h j k xa x ya y hkj hxa hx hya hy hr
+    have hj : j < o.size := (Array.getElem?_eq_some_iff.1 hxa).1
+    have hk : k < o.size := by omega
+    have := h j ⟨hj, by simp [hxa, hx]⟩ k ⟨hk, by simp [hya, hy]⟩
+    rw [hya, hxa] at this
+    simp only [Option.bind_some, hy, hx, hr, Bool.not_true, Bool.false_or] at this
+    rcases this with h1 | h1
+    · omega
+    · obtain ⟨d, hd, hda⟩ := List.any_eq_true.1 h1
+      rw [List.mem_range] at hd
+      cases ha : o[k + d]? with
+      | none => rw [ha] at hda; cases hda
+      | some a =>
+        rw [ha, Bool.and_eq_true] at hda
+        exact ⟨k + d, a, by omega, by omega, ha, hda.1, hda.2⟩
+  · intro h j ⟨hj, hjn⟩ k ⟨hk, hkn⟩
+    by_cases hkj : k < j
+    · refine .inr ?_
+      cases hxa : o[j]? with
+      | none => rw [hxa] at hjn; simp at hjn
+      | some xa =>
+        cases hya : o[k]? with
+        | none => rw [hya] at hkn; simp at hkn
+        | some ya =>
+          rw [hxa] at hjn; rw [hya] at hkn
+          simp only [Option.bind_some] at hjn hkn ⊢
+          obtain ⟨x, hx⟩ := Option.isSome_iff_exists.1 hjn
+          obtain ⟨y, hy⟩ := Option.isSome_iff_exists.1 hkn
+          rw [hx, hy]
+          simp only
+          cases hr : x.rankLt y
+          · rfl
+          · obtain ⟨i, a, h1, h2, h3, h4, h5⟩ := h j k xa x ya y hkj hxa hx hya hy hr
+            simp only [Bool.not_true, Bool.false_or]
+            refine List.any_eq_true.2 ⟨i - k, List.mem_range.2 (by omega), ?_⟩
+            rw [show k + (i - k) = i by omega, h3]
+            simp only [h4, h5, Bool.and_self]
+    · exact .inl (by omega)
+
+@[csimp] theorem rankOK_eq_rankOKFast : @rankOK = @rankOKFast := by
+  funext vs isNode o
+  exact Bool.eq_iff_iff.2 ((rankOK_iff vs isNode o).trans (rankOKFast_iff vs isNode o).symm)
+
 /-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
 arguments within the block (a dependency order), pure nodes as early as their arguments allow
 relative to the other nodes, and nodes of priority ≤ 1 (pure or `NilCheck`) as early as their
@@ -167,10 +346,11 @@ def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
   let m := maxNodeId vs + 1
   let nodes (early : SNode → Bool) : Array (Option (Array ID × Bool)) :=
     vs.foldl (fun t n => t.set! n.id (some (n.args, early n))) (Array.replicate m none)
+  let pureNodes := nodes (·.prio == 0)
   idsDistinct (Array.replicate m false) vs.toList && o.size == vs.size &&
-    schedValidAux (nodes (·.prio == 0)) (Array.replicate m 0) 0 0 o.toList &&
+    schedValidAux pureNodes (Array.replicate m 0) 0 0 o.toList &&
     schedValidAux (nodes (·.prio ≤ 1)) (Array.replicate m 0) 0 0 o.toList &&
-    rankOK vs (fun a => ((nodes (·.prio == 0))[a]?.join).isSome) o
+    rankOK vs (fun a => (pureNodes[a]?.join).isSome) o
 
 /-- The index in `l` of the node of least rank (`SNode.rankLt`) among those with `p`. -/
 def minIdx (p : SNode → Bool) : List SNode → Option Nat

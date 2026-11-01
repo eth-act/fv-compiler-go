@@ -1,5 +1,5 @@
 import GoFV.Proof.Eval
-import GoFV.Proof.DomCert
+import GoFV.Proof.DomRel
 
 /-!
 # Lemma (D): available values hold their re-evaluation
@@ -12,7 +12,9 @@ value by another one that the run holds equal.
 
 `dinv_enter`: entering a tree block `b` with the strict ancestors of `b` available makes all
 ancestors of `b` available. `dinv_edge`: after `p`, the strict ancestors of a successor are
-available (`Dom.edge`). `dinv_entry`: at the entry nothing is needed.
+available (`Dom.edge`). `dinv_entry`: at the entry nothing is needed. The `_rel` forms hold for
+any dominance relation (`Dom.DomRel`: the certified tree or path dominance); the plain forms are
+their instances for the certified tree.
 -/
 
 namespace GoFV.Proof
@@ -50,29 +52,27 @@ theorem blockOf_placed {f : Func} {x : ID} {v : Value} (h : Placed f x v) :
     blockOf f x = v.block := by
   unfold blockOf; rw [h.1]; rfl
 
-/-- At the entry block no value is a strict ancestor's. -/
-theorem dinv_entry {env : Env} {ctx : Ctx} {f : Func} (hc : CertOK f) (fr : Frame) :
-    DInv env ctx (fun a => Anc (make f) a f.entry ∧ a ≠ f.entry) fr :=
-  fun _ _ _ ⟨ha, hne⟩ => absurd (anc_of_entry hc.parents ha) hne
+/-- At the entry block no value is a strict dominator's. -/
+theorem dinv_entry_rel {env : Env} {ctx : Ctx} {f : Func} {T : ID → Prop} {A : ID → ID → Prop}
+    (hD : DomRel f T A) (fr : Frame) : DInv env ctx (fun a => A a f.entry ∧ a ≠ f.entry) fr :=
+  fun _ _ _ ⟨ha, hne⟩ => absurd (hD.entry_anc ha) hne
 
-/-- After block `p`, the strict ancestors of a successor are ancestors of `p`. -/
-theorem dinv_edge {env : Env} {ctx : Ctx} {f : Func} (hc : CertOK f) {fr : Frame} {p : ID}
-    {blk : Block} (hp : p ∈ f.blocks) (hb : f.block? p = some blk)
-    (ht : ((make f).depthOf p).isSome) {e : Edge} (he : e ∈ blk.succs)
-    (h : DInv env ctx (fun a => Anc (make f) a p) fr) :
-    DInv env ctx (fun a => Anc (make f) a e.b ∧ a ≠ e.b) fr :=
-  h.mono fun _ ⟨ha, hne⟩ => Anc.trans hc.parents (ha.up hc.parents hne) (edge hc hp hb ht he).2.2
+/-- After block `p`, the strict dominators of a successor dominate `p`. -/
+theorem dinv_edge_rel {env : Env} {ctx : Ctx} {f : Func} {T : ID → Prop} {A : ID → ID → Prop}
+    (hD : DomRel f T A) {fr : Frame} {p : ID} {blk : Block} (hp : p ∈ f.blocks)
+    (hb : f.block? p = some blk) (ht : T p) {e : Edge} (he : e ∈ blk.succs)
+    (h : DInv env ctx (fun a => A a p) fr) : DInv env ctx (fun a => A a e.b ∧ a ≠ e.b) fr :=
+  h.mono fun a ⟨ha, hne⟩ => (hD.edge hp hb ht he).2 a ha hne
 
-/-- **Entering a tree block preserves lemma (D).** -/
-theorem dinv_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env}
-    (hwf : WF ce f) (hc : CertOK f) {b : ID} {blk : Block} (hb : b ∈ f.blocks)
-    (hbb : f.block? b = some blk) {fr fr' : Frame} {i : Nat}
+/-- **Entering a block preserves lemma (D)**, for any dominance relation. -/
+theorem dinv_enter_rel {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} {T : ID → Prop}
+    {A : ID → ID → Prop} (hwf : WF ce f) (hD : DomRel f T A) {b : ID} {blk : Block}
+    (hb : b ∈ f.blocks) (hbb : f.block? b = some blk) {fr fr' : Frame} {i : Nat}
     (hs : fr.regs.size = f.valueTab.size)
-    (hup : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b ∧ a ≠ b) fr)
+    (hup : DInv env (Ctx.make tabs f) (fun a => A a b ∧ a ≠ b) fr)
     (h : enterBlock env (Ctx.make tabs f) fr blk i = .ok fr') :
-    DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b) fr' ∧
+    DInv env (Ctx.make tabs f) (fun a => A a b) fr' ∧
       fr' = { fr with regs := fr'.regs } ∧ fr'.regs.size = fr.regs.size := by
-  have hp := hc.parents
   have hnd := hwf.valuesNodup b blk ⟨hb, hbb⟩
   have hown := valuesOwn hwf hb hbb
   obtain ⟨b', hb', hid⟩ := hwf.blockId b hb
@@ -108,13 +108,37 @@ theorem dinv_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env}
       rw [hv] at hv'; cases hv'; exact hxb hvb'
     refine ⟨y, by rw [hout x hxn, hy], fun hne => ?_⟩
     have hna : ∀ a ∈ v.args, a ∉ blk.values := fun a ha hm => by
-      have hua := uses hc hvb hblk' (Anc.left hp hanc) hxv hv hne ha
+      have hua := hD.uses hvb hblk' (hD.left hanc) hxv hv hne ha
       obtain ⟨va, hva, -, hvab⟩ := hwf.valueId b blk ⟨hb, hbb⟩ a hm
       have hba : blockOf f a = b := by unfold blockOf; rw [hva]; exact hvab
       rw [hba] at hua
-      exact hxb (Anc.antisymm hp hanc hua)
+      exact hxb (hD.antisymm hanc hua)
     rw [← hevy hne]
     exact (evalValue_congr hfr' fun a ha => (hout a (hna a ha)).symm).symm
+
+/-- At the entry block no value is a strict ancestor's. -/
+theorem dinv_entry {env : Env} {ctx : Ctx} {f : Func} (hc : CertOK f) (fr : Frame) :
+    DInv env ctx (fun a => Anc (make f) a f.entry ∧ a ≠ f.entry) fr :=
+  dinv_entry_rel hc.domRel fr
+
+/-- After block `p`, the strict ancestors of a successor are ancestors of `p`. -/
+theorem dinv_edge {env : Env} {ctx : Ctx} {f : Func} (hc : CertOK f) {fr : Frame} {p : ID}
+    {blk : Block} (hp : p ∈ f.blocks) (hb : f.block? p = some blk)
+    (ht : ((make f).depthOf p).isSome) {e : Edge} (he : e ∈ blk.succs)
+    (h : DInv env ctx (fun a => Anc (make f) a p) fr) :
+    DInv env ctx (fun a => Anc (make f) a e.b ∧ a ≠ e.b) fr :=
+  dinv_edge_rel hc.domRel hp hb ht he h
+
+/-- **Entering a tree block preserves lemma (D).** -/
+theorem dinv_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env}
+    (hwf : WF ce f) (hc : CertOK f) {b : ID} {blk : Block} (hb : b ∈ f.blocks)
+    (hbb : f.block? b = some blk) {fr fr' : Frame} {i : Nat}
+    (hs : fr.regs.size = f.valueTab.size)
+    (hup : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b ∧ a ≠ b) fr)
+    (h : enterBlock env (Ctx.make tabs f) fr blk i = .ok fr') :
+    DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b) fr' ∧
+      fr' = { fr with regs := fr'.regs } ∧ fr'.regs.size = fr.regs.size :=
+  dinv_enter_rel hwf hc.domRel hb hbb hs hup h
 
 /-- Setting the `Phi`s keeps the registers typed. -/
 theorem typed_phis {ctx : Ctx} {blk : Block} {fr frP : Frame} {i : Nat}

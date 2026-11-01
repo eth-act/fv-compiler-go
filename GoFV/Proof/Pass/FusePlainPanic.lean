@@ -92,11 +92,10 @@ theorem seq_part {y : ID} (hy : y ∈ run) {oY : Array ID} (hoY : schedOf f y = 
 
 /-- The dominator tree along the run: a block of the run is a tree block, and its ancestors are
 blocks of the run or strict ancestors of `b0`. -/
-theorem anc_run (htd : ((make f).depthOf b0).isSome) :
+theorem anc_run (htd : Reachable f b0) :
     ∀ (n : Nat) (pre suf : List ID) (y : ID), pre.length = n → run = pre ++ y :: suf →
-      ((make f).depthOf y).isSome ∧
-        ∀ a, Anc (make f) a y → a ∈ run ∨ (Anc (make f) a b0 ∧ a ≠ b0) := by
-  have hp := S.cf.parents
+      Reachable f y ∧
+        ∀ a, SDom f a y → a ∈ run ∨ (SDom f a b0 ∧ a ≠ b0) := by
   intro n
   induction n with
   | zero =>
@@ -120,24 +119,24 @@ theorem anc_run (htd : ((make f).depthOf b0).isSome) :
     obtain ⟨hdx, hax⟩ := ih pre0 (y :: suf) x (by simpa using hl) hr'
     obtain ⟨X, Y, hX, hY, -, hsu, -⟩ := S.rel.link hr'
     have hxIn := S.runIn (x := x) (by rw [hr']; simp)
-    obtain ⟨-, hdy, hup⟩ := edge S.cf hxIn hX hdx (e := ⟨y, 0⟩) (by rw [hsu]; simp)
+    obtain ⟨hdy, hup⟩ := S.dom.edge hxIn hX hdx (e := ⟨y, 0⟩) (by rw [hsu]; simp)
     refine ⟨hdy, fun a ha => ?_⟩
     by_cases hay : a = y
     · exact .inl (by rw [hay, hr]; simp)
-    · exact hax a (Anc.trans hp (ha.up hp hay) hup)
+    · exact hax a (hup a ha hay)
 
 /-- An argument of a non-`Phi` of the run that is no value of the run is defined at `b0`'s
 entry (lemma (D)). -/
 theorem arg_def {env : Env} {tabs : Tables} {fr : Frame}
-    (htd : ((make f).depthOf b0).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b0 ∧ a ≠ b0) fr)
+    (htd : Reachable f b0)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a b0 ∧ a ≠ b0) fr)
     {y : ID} (hy : y ∈ run) {Y : Block} (hY : f.block? y = some Y) {x : ID} (hxY : x ∈ Y.values)
     {fv : Value} (hfv : f.value? x = some fv) (hnp : fv.op ≠ .Phi) {a : ID} (ha : a ∈ fv.args)
     (hout : ∀ y' ∈ run, a ∉ (valsOf f y').toList) : ∃ r, fr.regs[a]? = some (some r) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨pre, suf, hr⟩ := S.split_mem hy
   obtain ⟨hdy, hanc⟩ := S.anc_run htd pre.length pre suf y rfl hr
-  have hu := uses S.cf (S.runIn hy) hY hdy hxY hfv hnp ha
+  have hu := S.dom.uses (S.runIn hy) hY hdy hxY hfv hnp ha
   have hl : Listed f a := hwf.argListed y Y x fv ⟨⟨S.runIn hy, hY⟩, hxY, hfv⟩ a ha
   obtain ⟨v, B, hP, hvb, hB, haB, -⟩ := blockOf_listed hwf hl
   rcases hanc _ hu with hin | ⟨hA, hne⟩
@@ -148,8 +147,8 @@ theorem arg_def {env : Env} {tabs : Tables} {fr : Frame}
 /-- **A panic in the run is a panic of the fused block** (see the module doc). -/
 theorem merged_panic {tabs : Tables} {env : Env} {fr G : Frame} {i idx : Nat}
     {pre suf : List ID} {y : ID} (hr : run = pre ++ y :: suf)
-    (hfs : fr.regs.size = f.valueTab.size) (htd : ((make f).depthOf b0).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b0 ∧ a ≠ b0) fr)
+    (hfs : fr.regs.size = f.valueTab.size) (htd : Reachable f b0)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a b0 ∧ a ≠ b0) fr)
     (hA : Acc env tabs f fr i b0 pre G) (hfirst : pre = [] → y = b0 ∧ idx = i)
     {Y : Block} (hY : f.block? y = some Y) {e : Panic} {m : Mem}
     (h : enterBlock env (Ctx.make tabs f) G Y idx = .panic e m) :
