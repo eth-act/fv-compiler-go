@@ -437,8 +437,10 @@ def strOf (tabs : Tables) (e : PEnv) (pat : Pat) (x : Nat) : Option (GoStr × Go
 
 /-- The frame helpers of a built node `u` of result node `n` (`GoFV.Proof.Rules.FrameOK`): an
 aux `fe.StringData(x)` names the data symbol of the non-empty string aux bound to `x`, an
-auxint `int64(len(x))` is the string's length, an aux `{x}` is the aux bound to `x`. -/
-def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) : Bool :=
+auxint `int64(len(x))` is the string's length, an aux `{x}` is the aux bound to `x`, an auxint
+shift `a << b`/`a >> b` shifts by a nonnegative amount. -/
+def frameNodeOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (pat : Pat) (n : RNode)
+    (u : Value) : Bool :=
   (match n.aux.bind strDataVar? with
     | some x => match strOf tabs e pat x with
       | some (s, d) => s.size != 0 && symName? tabs u.aux == some d
@@ -453,6 +455,11 @@ def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) :
     | some x => match Pat.auxPos x [] pat with
       | some p => u.aux == e.aux p
       | none => false
+    | none => true) &&
+  (match n.auxInt.bind shiftAmt? with
+    | some b => match ev b with
+      | .int i => decide (0 ≤ i)
+      | _ => false
     | none => true)
 
 /-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, and its conjuncts
@@ -588,7 +595,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         Pat.argsOK e.ty [] r.pat &&
         leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
-        nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) &&
+        nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
         condFrameOK tabs e I r.pat r.cond &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
 

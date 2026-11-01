@@ -339,8 +339,9 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
     have hf := F.hframe _ hmem
     obtain ⟨-, -, -, hai, hax, -, -⟩ := nodeOK_facts (R.hnode k hk hk')
     simp only [frameNodeOK, Bool.and_eq_true] at hf
-    obtain ⟨⟨hf1, hf2⟩, hf3⟩ := hf
-    refine ⟨fun xe x hxe hx => ?_, fun ae x hae hx => ?_, fun xe x hxe hx => ?_⟩
+    obtain ⟨⟨⟨hf1, hf2⟩, hf3⟩, hf4⟩ := hf
+    refine ⟨fun xe x hxe hx => ?_, fun ae x hae hx => ?_, fun xe x hxe hx => ?_,
+      fun ae b hae hb => ?_⟩
     · rw [hxe] at hf1
       simp only [Option.bind_some, hx, strOf] at hf1
       cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
@@ -376,6 +377,17 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
         refine ⟨p, rfl, ?_⟩
         show _ = (env tabs M F.I).aux p
         rw [← hf3, hax, axSel, hxe]
+    · rw [hae] at hf4
+      simp only [Option.bind_some, hb] at hf4
+      revert hf4
+      cases hd : stEv tabs M r defs F.I b with
+      | int i =>
+        intro h
+        refine ⟨i, ?_, of_decide_eq_true h⟩
+        rcases DV.erase_eq_cases (hev b) with h' | ⟨v, v', p, h', -⟩
+        · rw [← h', hd]
+        · rw [hd] at h'; cases h'
+      | _ => intro h; cases h
 
 /-- The validator's `nonNegOKD` gives `Rule.SoundT`'s premise `Pat.nonNegOK` on the semantic
 instance (`nonNegD_den`). -/
