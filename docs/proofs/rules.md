@@ -334,7 +334,13 @@ on its input (the `Load` becomes the `StructMake`, the fresh `OffPtr`s and `Load
 `slApply`) and is related to its input by `validate` with these events (`slTaken`). The split
 layer applies only splits of its input's `Store`s (`ssStep` looks the event up in the layer's
 input), so a split of a fresh field store of another split (a nested struct) is left to the
-second split layer, where that store is a `Store` of the input.
+second split layer, where that store is a `Store` of the input. A split's chain starts at the
+split `Store`'s memory up to copies, or, when that memory is another split `Store` of the block
+(with fields), at the last store of that split's chain (`ssStart`: copy elimination gives the
+second of two consecutive splits the first chain's last store); `StructStoreBlock.prevInv` then
+takes the chain's start from the other split's last field store (`startSplit`,
+`prevInv_succ`, `bufK_full`). Witness: `GoFV.Proof.Witness.ss2_checkedRewrite` (`*p = P{x, y};
+*p = P{y, x}`; `ss2_start`: the old condition fails, `ssStart` holds).
 
 **Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (`nil`/`fwd`/`rw`/`ss` steps
 `layerOK` accepts; `LayerChain.congr` moves the `rw` steps to a table with the same value and

@@ -501,6 +501,55 @@ theorem split_block {x : ID} {ps : List (ID × ID)} (d : SplitD tabs f g x ps) (
   obtain ⟨v, hv, -, hb⟩ := K.valueIn hx
   rw [d.hfv] at hv; cases hv; exact hb
 
+omit K in
+private theorem retype_mem_eq {t : Ty} {M M' : Mem} (h : (Val.mem M').retype t = .mem M) :
+    M' = M := by
+  cases t <;> simp [Val.retype] at h
+  exact h
+
+/-- **A split `Store` a chain starts from** (`ssStart`): the `Store` `y` whose `Copy` in `g` is of
+`m0`, at a shape with fields, is a split whose chain ends in `m0`. -/
+theorem startSplit {y m0 : ID} {yv gy : Value} (hyv : f.value? y = some yv)
+    (hgy : g.value? y = some gy) (hyop : yv.op = .Store) (hgop : gy.op = .Copy)
+    (hgargs : gy.args = #[m0]) {q : Nat × Ty} {fs : List (Nat × Ty)} {n : Nat}
+    (hax : auxTy tabs yv.aux = .agg (q :: fs) n) :
+    ∃ ps, ∃ _ : SplitD tabs f g y ps, ∃ p, ps[fs.length]? = some (p, m0) ∧
+      ps.length = fs.length + 1 := by
+  obtain ⟨gv, hgv, h⟩ := K.gval hyv
+  rw [hgy] at hgv; cases hgv
+  rcases h with h | ⟨ps, hs⟩
+  · rw [(ssSame_spec h).2.1, hyop] at hgop; cases hgop
+  obtain ⟨d⟩ := ssSplit_spec hs
+  have hfv : d.fv = yv := by have := d.hfv; rw [hyv] at this; cases this; rfl
+  have hgv : d.gv = gy := by have := d.hgv; rw [hgy] at this; cases this; rfl
+  have hfs : d.fs = q :: fs := by
+    have := d.haux; rw [hfv, hax] at this; injection this with h1; exact h1.symm
+  have hlen : ps.length = fs.length + 1 := by rw [d.hlen, hfs]; rfl
+  obtain ⟨⟨p, s⟩, hq⟩ : ∃ e, ps[fs.length]? = some e :=
+    ⟨_, List.getElem?_eq_getElem (by omega)⟩
+  have hlast := d.hgargs
+  rw [hgv, hgargs, getLast_prevId, hlen] at hlast
+  have hm : m0 = s := by simpa [prevId, hq] using hlast
+  subst hm
+  exact ⟨ps, d, p, hq, hlen⟩
+
+/-- **The last field store of a split** the source evaluated (an argument of the target's value
+`x`): a memory refining the struct write with the fields up to it. -/
+theorem prevInv_succ {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
+    (hT : TFacts tabs f g F0T S T (oS.toList.take k) (oT.toList.take j)) {x : ID}
+    (hjT : oT.toList[j]? = some x) {gv : Value} (hgv : g.value? x = some gv) {x' : ID}
+    {ps : List (ID × ID)} (d : SplitD tabs f g x' ps) (hx' : x' ∈ oS.toList.take k) {i : Nat}
+    (hil : i < ps.length) (harg : prevId ps d.m0 (i + 1) ∈ gv.args) {P : Ptr} {M : Mem}
+    (hP : S.regs[d.dst]? = some (some (.ptr P))) (hM : S.regs[d.mem]? = some (some (.mem M))) :
+    ∃ Mk M', M.write P (bufK S d (i + 1)) = some Mk ∧
+      T.regs[prevId ps d.m0 (i + 1)]? = some (some (.mem M')) ∧ Mem.Refines Mk M' := by
+  obtain ⟨⟨p, s⟩, hq⟩ : ∃ q, ps[i]? = some q := ⟨_, List.getElem?_eq_getElem hil⟩
+  have hpid : prevId ps d.m0 (i + 1) = s := by simp [prevId, hq]
+  rw [hpid] at harg ⊢
+  have hb := K.split_block d (K.hLk k x' hx').1
+  have hsT := K.topoT hjT hgv harg (K.fresh_node d hb hq).2
+  exact hT.store x' ps d hx' i p s P M hq hsT hP hM
+
 /-- **The memory before a field store** (or the split's `Copy`) refines the struct write with the
 fields before it. -/
 theorem prevInv {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
@@ -521,22 +570,42 @@ theorem prevInv {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     have hTy := K.typedS hS (K.hLk k)
     have hmA := H.cl x' d.fv (.inr hx') d.hfv (by rw [d.hop]; decide) d.mem
       (by rw [d.hfargs]; simp)
-    obtain ⟨hA0, hr0⟩ := copy_reg H hTy K.hidA _ hmA d.hm0
-    obtain ⟨yS, yT, h1, h2, h3⟩ := K.argRel hS hT hjT hgv harg hA0
-    rw [hr0, hM] at h1; cases h1
-    cases h3 with
-    | mem hMM =>
-      obtain ⟨MB, hMB⟩ := write_size_congr hMS (bs' := Array.replicate d.n .poison)
-        (by rw [Sem.encode_size]; simp [Ty.size])
-      exact ⟨MB, _, by rw [bufK_zero]; exact hMB, h2, write_poison_left hMM hMB⟩
-  | succ i =>
-    have hil : i < ps.length := by omega
-    obtain ⟨⟨p, s⟩, hq⟩ : ∃ q, ps[i]? = some q := ⟨_, List.getElem?_eq_getElem hil⟩
-    have hpid : prevId ps d.m0 (i + 1) = s := by simp [prevId, hq]
-    rw [hpid] at harg ⊢
-    have hb := K.split_block d (K.hLk k x' hx').1
-    have hsT := K.topoT hjT hgv harg (K.fresh_node d hb hq).2
-    exact hT.store x' ps d hx' i p s P M hq hsT hP hM
+    -- the chain's start holds a memory refining the split `Store`'s
+    obtain ⟨M', h2, hMM⟩ : ∃ M', T.regs[d.m0]? = some (some (.mem M')) ∧ Mem.Refines M M' := by
+      rcases ssStart_cases d.hm0 with hc | ⟨yv, gy, hyv, hgy, hyop, hyb, hgop, hga, q, fs, n, hax⟩
+      · obtain ⟨hA0, hr0⟩ := copy_reg H hTy K.hidA _ hmA hc
+        obtain ⟨yS, yT, h1, h2, h3⟩ := K.argRel hS hT hjT hgv harg hA0
+        rw [hr0, hM] at h1; cases h1
+        cases h3 with
+        | mem hMM => exact ⟨_, h2, hMM⟩
+      · -- `mem` stands for another split `Store` `y` of the block, whose chain ends in `m0`
+        have hce := copyReach_copyEnd (tabs := tabs) f.valueTab f.valueTab.size d.mem
+        generalize copyEnd tabs f.valueTab f.valueTab.size d.mem = y at hyv hgy hce
+        obtain ⟨hyA, hry⟩ := copy_reg H hTy K.hidA _ hmA hce
+        obtain ⟨ps', d', p', hq', hlen'⟩ := K.startSplit hyv hgy hyop hgop hga hax
+        have hfv' : d'.fv = yv := by have := d'.hfv; rw [hyv] at this; cases this; rfl
+        have hb' : d'.fv.block = bid := by
+          rw [hfv', hyb]; exact K.split_block d (K.hLk k x' hx').1
+        have hyk : y ∈ oS.toList.take k := by
+          rcases hyA with hB | hy
+          · exact absurd (K.split_node d' hb') (K.base_not_node hB)
+          · exact hy
+        obtain ⟨P', M0, MS', hP', hM', hMS', hyS⟩ := K.split_src hS d' hyk
+        have hpid : prevId ps' d'.m0 (fs.length + 1) = d.m0 := by simp [prevId, hq']
+        obtain ⟨Mk, M', hk1, hk2, hk3⟩ := K.prevInv_succ hS hT hjT hgv d' hyk (i := fs.length)
+          (by omega) (by rw [hpid]; exact harg) hP' hM'
+        rw [← hlen', bufK_full, hMS'] at hk1
+        cases hk1
+        rw [hpid] at hk2
+        rw [hry, hM] at hyS
+        have hMeq : (Val.mem MS').retype (tabs.ty d'.fv.type) = .mem M := by
+          simp only [Option.some.injEq] at hyS; exact hyS.symm
+        rw [retype_mem_eq hMeq] at hk3
+        exact ⟨M', hk2, hk3⟩
+    obtain ⟨MB, hMB⟩ := write_size_congr hMS (bs' := Array.replicate d.n .poison)
+      (by rw [Sem.encode_size]; simp [Ty.size])
+    exact ⟨MB, _, by rw [bufK_zero]; exact hMB, h2, write_poison_left hMM hMB⟩
+  | succ i => exact K.prevInv_succ hS hT hjT hgv d hx' (by omega) harg hP hM
 
 /-- **A fresh `OffPtr`** of a split the source evaluated: its field's address. -/
 theorem offVal {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
@@ -641,11 +710,17 @@ theorem splitPure {S T : Frame} {k j : Nat} {pre : List ID}
       rw [hl] at harg
       change d.m0 ∈ d.gv.args at harg
       show ∃ y, T.regs[d.m0]? = some (some y)
-      have hmN := K.n_arg (.inr hxF) d.hfv (by rw [d.hop]; decide)
-        (show d.mem ∈ d.fv.args by rw [d.hfargs]; simp)
-      rcases K.n_copy _ hmN d.hm0 with h | h
-      · exact K.argDefd hS hT hjT d.hgv harg (.inl h)
-      · exact K.argDefd hS hT hjT d.hgv harg (.inr (K.nodeG h))
+      rcases ssStart_cases d.hm0 with hc | ⟨yv, gy, hyv, hgy, hyop, hyb, hgop, hga, q, fs, n, hax⟩
+      · have hmN := K.n_arg (.inr hxF) d.hfv (by rw [d.hop]; decide)
+          (show d.mem ∈ d.fv.args by rw [d.hfargs]; simp)
+        rcases K.n_copy _ hmN hc with h | h
+        · exact K.argDefd hS hT hjT d.hgv harg (.inl h)
+        · exact K.argDefd hS hT hjT d.hgv harg (.inr (K.nodeG h))
+      · -- the last store of another split's chain
+        obtain ⟨ps', d', p', hq', -⟩ := K.startSplit hyv hgy hyop hgop hga hax
+        have hb' : d'.fv.block = bid := by
+          have := d'.hfv; rw [hyv] at this; cases this; rw [hyb]; exact hb
+        exact K.argDefd hS hT hjT d.hgv harg (.inr (K.fresh_node d' hb' hq').2)
     | succ n =>
       rw [hl] at harg
       have hn : n < ps.length := by omega

@@ -239,7 +239,7 @@ def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
         else if !(gv.op == .Copy && gv.type == fv.type) then "copy"
         else if !(r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2) then
           s!"walk ({fs.length} fields) {desc tabs g 2 last}"
-        else if !copyReach tabs f.valueTab f.valueTab.size mem r.2 then
+        else if !ssStart tabs f g fv.block mem r.2 then
           s!"chain start {desc tabs f 2 mem} vs {desc tabs g 2 r.2}"
         else match (List.range fs.length).find? (fun k => !ssLink tabs f g fv.block dst fs smv.args r.1 r.2 k) with
           | some k => s!"field {k} of {fs.length}"
