@@ -1,12 +1,13 @@
-import GoFV.Proof.Term
+import GoFV.Proof.Pass.RewriteTermDen
 
 /-!
 # `isNonNegative` on the definitions (issue #69)
 
 The rewrite validator decides `isNonNegative(x)` (`rewrite.go`) structurally on the
 definitions (`GoFV.Opt.RewriteCheck.nonNegD`). `nonNegD_den`: then every evaluation of `x` as a
-term (`GoFV.Proof.Term.den`, any fuel, any atom valuation) is a nonnegative integer or `poison`
-(`Val.nonNeg`), which is `Rule.Sound`'s premise `Pat.nonNegOK` at the leaf bound to `x`.
+term (`GoFV.Proof.Term.den`, any fuel, any atom valuation fixed by `retype` at the atoms'
+shapes) is a nonnegative integer or `poison` (`Val.nonNeg`), which is `Rule.Sound`'s premise
+`Pat.nonNegOK` at the leaf bound to `x`.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -198,6 +199,28 @@ theorem nn_bitLen (w : Width) (rw : Width) (args : List Val) :
     · exact .inl rfl
   · exact .inl rfl
 
+/-- A length or capacity: component 1 or 2 of a value of the string or a slice shape. -/
+theorem nn_select (i : Nat) (hi : i = 1 ∨ i = 2) (args : List Val)
+    (h : ∀ a, args.head? = some a → a.hasTy .str = true ∨ ∃ e, a.hasTy (.slice e) = true) :
+    NNW .w64 (Comp.select i args) := by
+  unfold Comp.select
+  split
+  · rename_i vs
+    rcases h _ rfl with hs | ⟨e, hs⟩
+    · rcases Val.hasTy_str hs with h0 | ⟨p, l, h0, hl, -⟩
+      · cases h0
+      · cases h0
+        rcases hi with rfl | rfl
+        · exact .inr ⟨l, rfl, hl⟩
+        · exact .inl rfl
+    · rcases Val.hasTy_slice hs with h0 | ⟨p, l, c, h0, hl, hc, -⟩
+      · cases h0
+      · cases h0
+        rcases hi with rfl | rfl
+        · exact .inr ⟨l, rfl, hl⟩
+        · exact .inr ⟨c, rfl, hc⟩
+  · exact .inl rfl
+
 /-- What `nonNegD` relies on for an op of kind `k`. -/
 def NNSem (op : Op) : NNKind → Prop
   | .const w => ∀ ty ai ax args, evalPure op ty ai ax args = Conv.const w ai
@@ -212,12 +235,15 @@ def NNSem (op : Op) : NNKind → Prop
       NNW w (evalPure op ty ai ax args)
   | .allArgs w => ∀ ty ai ax args, (∀ a ∈ args, a.nonNeg = true) →
       NNW w (evalPure op ty ai ax args)
+  | .len => ∀ ty ai ax args,
+      (∀ a, args.head? = some a → a.hasTy .str = true ∨ ∃ e, a.hasTy (.slice e) = true) →
+      NNW .w64 (evalPure op ty ai ax args)
 
 theorem nnTable_sound : ∀ p ∈ nnTable, NNSem p.1 p.2 ∧ GoFV.Proof.Rules.frameOp p.1 = false ∧
     termOp p.1 = true := by
   intro p hp
   simp only [nnTable, List.mem_cons, List.not_mem_nil, or_false] at hp
-  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  rcases hp with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   all_goals refine ⟨?_, rfl, rfl⟩
   all_goals dsimp only [NNSem]
   · exact fun _ _ _ _ => rfl
@@ -275,6 +301,9 @@ theorem nnTable_sound : ∀ p ∈ nnTable, NNSem p.1 p.2 ∧ GoFV.Proof.Rules.fr
   · exact fun _ _ _ args h => nn_xor .w32 args h
   · exact fun _ _ _ args h => nn_xor .w16 args h
   · exact fun _ _ _ args h => nn_xor .w8 args h
+  · exact fun _ _ _ args h => nn_select 1 (.inl rfl) args h
+  · exact fun _ _ _ args h => nn_select 1 (.inl rfl) args h
+  · exact fun _ _ _ args h => nn_select 2 (.inr rfl) args h
 
 theorem nonNegKind_mem {op : Op} {k : NNKind} (h : nonNegKind op = some k) : (op, k) ∈ nnTable := by
   unfold nonNegKind at h
@@ -318,9 +347,11 @@ theorem den_const64_pos {tabs : Tables} {D : ID → Option Value} {ρ : ID → V
       BitVec.toNat_ofInt]
     omega
 
-/-- **`isNonNegative` decided on the definitions is a fact about every evaluation.** -/
-theorem nonNegD_den (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val) :
-    ∀ k n x, nonNegD tabs D k x = true → (den D tabs ρ n x).nonNeg = true
+/-- **`isNonNegative` decided on the definitions is a fact about every evaluation** whose atoms
+are fixed by `retype` at their shapes (`Typed`: a length read from a string or slice atom is
+then nonnegative). -/
+theorem nonNegD_den (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val)
+    (hT : Term.Typed D tabs ρ) : ∀ k n x, nonNegD tabs D k x = true → (den D tabs ρ n x).nonNeg = true
   | 0, _, _, h => by simp [nonNegD] at h
   | _ + 1, 0, _, _ => rfl
   | k + 1, n + 1, x, h => by
@@ -335,7 +366,7 @@ theorem nonNegD_den (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val) 
       | some kd =>
         rw [hk] at h
         obtain ⟨hsem, hfr, -⟩ := nnTable_sound _ (nonNegKind_mem hk)
-        have IH := nonNegD_den tabs D ρ k n
+        have IH := nonNegD_den tabs D ρ hT k n
         have ht : termOp v.op = true := by
           revert h; cases termOp v.op <;> simp
         simp only [ht, Bool.true_and] at h
@@ -392,5 +423,30 @@ theorem nonNegD_den (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val) 
           intro a ha
           obtain ⟨b, hb, rfl⟩ := List.mem_map.1 ha
           exact IH b (h b hb)
+        | len =>
+          simp only [Bool.and_eq_true] at h
+          obtain ⟨hw, h⟩ := h
+          rw [isIntW_eq hw]
+          refine nnw_retype (hsem _ _ _ _ fun a ha => ?_)
+          rw [head?_map_toList] at ha
+          cases hb : v.args[0]? with
+          | none => rw [hb] at ha; cases ha
+          | some b =>
+            rw [hb] at ha h; cases ha
+            simp only [Option.bind_some] at h
+            cases hbD : D b with
+            | none => rw [hbD] at h; cases h
+            | some bv =>
+              rw [hbD] at h
+              have hty := den_hasTy hT n hbD
+              cases hs : tabs.ty bv.type with
+              | str => rw [hs] at hty; exact .inl hty
+              | slice e => rw [hs] at hty; exact .inr ⟨e, hty⟩
+              | _ => simp [hs, lenShape] at h
+
+/-- `nn_select` applies to the capacity of a defined slice (`len 2 ≤ cap 5`). -/
+example : NNW .w64 (Comp.select 2 [.agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]]) :=
+  nn_select 2 (.inr rfl) _ fun _ h => by
+    cases h; exact .inr ⟨some 8, by decide⟩
 
 end GoFV.Proof.Pass.Rewrite
