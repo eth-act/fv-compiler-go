@@ -36,7 +36,13 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   `AddPtr`/`PtrIndex` a 64-bit integer, `Convert` between a pointer and a 64-bit integer (by
   its result shape; a `Convert` of any other shape is excluded), both arguments of
   `Eq<N>`/`Neq<N>` `N`-bit integers (#69 RuleProofs11; `generic.rules:369`/`:372` reuse a
-  `Const64` node of the pattern in the result, which could otherwise be typed `int32`). With
+  `Const64` node of the pattern in the result, which could otherwise be typed `int32`), both
+  arguments of `IsInBounds`/`IsSliceInBounds` 64-bit integers (#69 RuleProofs14: `int` on the
+  64-bit target; the semantics compares at the first argument's width, so a `Const64` typed
+  `int32` would compare its low 32 bits while `:255`'s result compares the auxints), the first
+  word of an `EqInter`/`NeqInter` operand a 64-bit integer (`ifaceArgOk`, the interface shape's
+  itab word; `:790`/`:791` retype it to `uintptr`, which turns a pointer with an address into
+  that address). With
   `Pat.typed` the leaves then have these shapes. Without it
   `generic.rules:964` (`(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])`) is false: a
   `uintptr` leaf `p = 2^40-8` under a pointer-typed inner `OffPtr` becomes the pointer
@@ -428,7 +434,7 @@ needs a later phase of the semantics.
 | `dec` | IData | 1 | 1 | 0 | 0 | 2 |
 | `dec` | IMake | 0 | 1 | 0 | 1 | 2 |
 | `dec` | ITab | 1 | 1 | 0 | 0 | 2 |
-| `dec` | Load | 0 | 5 | 0 | 0 | 5 |
+| `dec` | Load | 3 | 2 | 0 | 0 | 5 |
 | `dec` | SliceCap | 1 | 1 | 0 | 0 | 2 |
 | `dec` | SliceLen | 1 | 1 | 0 | 0 | 2 |
 | `dec` | SlicePtr | 1 | 1 | 0 | 0 | 2 |
@@ -445,7 +451,7 @@ needs a later phase of the semantics.
 | `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
 | `generic` | AndB | 36 | 0 | 0 | 0 | 36 |
-| `generic` | ArraySelect | 0 | 2 | 0 | 0 | 2 |
+| `generic` | ArraySelect | 1 | 1 | 0 | 0 | 2 |
 | `generic` | BitLen | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
@@ -459,36 +465,36 @@ needs a later phase of the semantics.
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
 | `generic` | Div | 21 | 1 | 0 | 4 | 26 |
-| `generic` | Eq | 52 | 4 | 0 | 2 | 58 |
+| `generic` | Eq | 54 | 4 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
-| `generic` | EqInter | 0 | 1 | 0 | 0 | 1 |
+| `generic` | EqInter | 1 | 0 | 0 | 0 | 1 |
 | `generic` | EqPtr | 2 | 7 | 0 | 11 | 20 |
-| `generic` | EqSlice | 0 | 1 | 0 | 0 | 1 |
+| `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 0 | 1 | 0 | 1 | 2 |
 | `generic` | InterLECall | 0 | 0 | 0 | 1 | 1 |
-| `generic` | IsInBounds | 0 | 29 | 0 | 0 | 29 |
+| `generic` | IsInBounds | 8 | 21 | 0 | 0 | 29 |
 | `generic` | IsNonNil | 0 | 3 | 0 | 3 | 6 |
-| `generic` | IsSliceInBounds | 0 | 8 | 0 | 0 | 8 |
-| `generic` | Leq | 60 | 0 | 0 | 2 | 62 |
-| `generic` | Less | 60 | 0 | 0 | 2 | 62 |
+| `generic` | IsSliceInBounds | 4 | 4 | 0 | 0 | 8 |
+| `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
+| `generic` | Less | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Load | 5 | 2 | 0 | 33 | 35 |
 | `generic` | Lsh | 65 | 23 | 0 | 0 | 88 |
 | `generic` | MemEq | 0 | 11 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
-| `generic` | Mul | 44 | 8 | 0 | 8 | 60 |
+| `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
-| `generic` | Neq | 44 | 8 | 0 | 2 | 54 |
+| `generic` | Neq | 50 | 4 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
-| `generic` | NeqInter | 0 | 1 | 0 | 0 | 1 |
+| `generic` | NeqInter | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NeqPtr | 1 | 8 | 0 | 11 | 20 |
-| `generic` | NeqSlice | 0 | 1 | 0 | 0 | 1 |
-| `generic` | NilCheck | 3 | 0 | 0 | 8 | 8 |
+| `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
+| `generic` | NilCheck | 4 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
-| `generic` | OrB | 36 | 0 | 0 | 20 | 56 |
+| `generic` | OrB | 48 | 0 | 0 | 20 | 56 |
 | `generic` | Phi | 0 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
 | `generic` | PtrIndex | 1 | 1 | 0 | 0 | 2 |
@@ -499,16 +505,16 @@ needs a later phase of the semantics.
 | `generic` | Select | 0 | 3 | 0 | 0 | 3 |
 | `generic` | SelectN | 0 | 0 | 0 | 15 | 15 |
 | `generic` | SignExt | 15 | 0 | 0 | 0 | 15 |
-| `generic` | SliceCap | 0 | 4 | 0 | 1 | 5 |
-| `generic` | SliceLen | 0 | 3 | 0 | 3 | 6 |
+| `generic` | SliceCap | 1 | 3 | 0 | 1 | 5 |
+| `generic` | SliceLen | 1 | 2 | 0 | 3 | 6 |
 | `generic` | SliceMake | 0 | 1 | 1 | 0 | 2 |
 | `generic` | SlicePtr | 0 | 1 | 0 | 0 | 1 |
 | `generic` | Slicemask | 0 | 4 | 0 | 0 | 4 |
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticLECall | 0 | 0 | 0 | 24 | 24 |
-| `generic` | Store | 0 | 0 | 0 | 21 | 21 |
-| `generic` | StringLen | 0 | 1 | 0 | 0 | 1 |
+| `generic` | Store | 1 | 0 | 0 | 21 | 21 |
+| `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
@@ -516,7 +522,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1184 | 308 | 26 | 258 | 1762 |
+| all | | 1234 | 281 | 26 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -613,6 +619,12 @@ chains below); validator rejects 158 / 6 / 1 / 0 / 0 on both. At ccc1a85 (before
 After #69 RuleProofs14 (float ops in `natShape`, the float `Add`/`Mul`/`Eq`/`Neq` in `commOps`:
 the 11 float firings `:622`/`:623`/`:625`/`:1328` the validator rejected at the top or, matched
 swapped, as `nomatch`): 7,010 (75.40%) at e22af29 (7,004 before).
+With the bounds checks, `:585`, `:790–793`, `:992`, `:1012`, `:1031`, `:1032` (1,234 rules, at
+b5a909f): 7,317 (78.70%) at stock under the checked passes, 7,559 under the proven-only ones;
+7,624 (82.01%) / 7,876 at 8693405 (with the nil-check eliminations of #233).
+The validator still rejects every `:790–793` firing (`leavesOK`: the interface/slice operands
+are aggregate leaves; about 250 REJECT lines in opt), so these four are proven but have no
+effect yet.
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -671,55 +683,52 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 7085, under the checked passes 7010 (validator the only obstacle: 75). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 699, 2: 477, 3 or more: 1030.
+Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 7876, under the checked passes 7624 (validator the only obstacle: 252). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 497, 2: 397, 3 or more: 521.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
-| `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 142 | 142 |
-| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 84 | 84 |
-| `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 66 | 83 |
-| `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 73 | 73 |
-| `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 45 | 45 |
-| `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 31 | 31 |
-| `generic.rules:790 EqInter` | `r_generic_790` | P2 | 116 | 29 | 29 |
-| `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 26 | 26 |
-| `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 18 | 18 |
-| `generic.rules:1638 SelectN` | `r_generic_1638/r_generic_1638_2` | call | 38 | 17 | 17 |
+| `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 87 | 87 |
+| `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 73 | 73 |
+| `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 53 | 53 |
+| `generic.rules:1638 SelectN` | `r_generic_1638/r_generic_1638_2` | call | 38 | 26 | 26 |
+| `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 25 | 25 |
+| `generic.rules:994 Load` | `r_generic_994` | P2 | 117 | 22 | 22 |
+| `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 21 | 21 |
+| `generic.rules:1049 SliceLen` | `r_generic_1049` | ptr | 79 | 18 | 18 |
+| `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 16 | 16 |
 | `generic.rules:830 Load` | `r_generic_830` | mem | 46 | 16 | 16 |
-| `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 13 | 13 |
-| `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 12 | 12 |
-| `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 12 | 12 |
-| `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 8 | 8 |
-| `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 8 | 8 |
+| `generic.rules:1592 MemEq` | `r_generic_1592` | P2 | 51 | 11 | 11 |
+| `generic.rules:574 Lsh64x64` | `r_generic_574/r_generic_574_2` | P1 | 47 | 11 | 11 |
+| `generic.rules:1833 Store` | `r_generic_1833` | mem | 43 | 11 | 11 |
+| `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 9 | 9 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 8 | 8 |
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 8 | 8 |
-| `generic.rules:793 NeqSlice` | `r_generic_793` | P2 | 50 | 6 | 6 |
-| `generic.rules:574 Lsh64x64` | `r_generic_574/r_generic_574_2` | P1 | 47 | 6 | 6 |
+| `generic.rules:1844 Store` | `r_generic_1844` | mem | 38 | 6 | 6 |
 | `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 6 | 6 |
+| `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 5 | 5 |
+| `generic.rules:1857 Store` | `r_generic_1857` | mem | 40 | 5 | 5 |
 | `generic.rules:1005 Store` | `r_generic_1005` | mem | 23 | 4 | 4 |
 | `generic.rules:1743 Move` | `r_generic_1743` | mem | 8 | 4 | 4 |
-| `generic.rules:992 ArraySelect` | `r_generic_992` | P2 | 361 | 3 | 3 |
 | `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 3 | 3 |
-| `generic.rules:792 EqSlice` | `r_generic_792` | P2 | 138 | 3 | 3 |
 | `generic.rules:943 Store` | `r_generic_943` | mem | 35 | 3 | 3 |
+| `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 3 | 3 |
 | `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 2 | 2 |
-| `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 2 | 2 |
-| `generic.rules:253 IsInBounds` | `r_generic_253` | P1 | 56 | 2 | 2 |
 | `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 56 | 2 | 2 |
+| `generic.rules:1036 SliceLen` | `r_generic_1036` | P2 | 33 | 2 | 2 |
+| `generic.rules:770 Slicemask` | `r_generic_770` | P1 | 31 | 2 | 2 |
 | `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 29 | 2 | 2 |
-| `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 2 | 2 |
+| `generic.rules:1680 NeqPtr` | `r_generic_1680` | P2 | 7 | 2 | 2 |
 | `generic.rules:531 Rsh32Ux64` | `r_generic_531` | P1 | 3 | 2 | 2 |
-| `generic.rules:1031 SliceLen` | `r_generic_1031` | P2 | 1524 | 1 | 1 |
+| `generic.rules:744 Or32` | `r_generic_744` | P1 | 3 | 2 | 2 |
+| `divmod.rules:221 Div32u` | `r_divmod_221` | P1 | 2 | 2 | 2 |
+| `generic.rules:2325 CondSelect` | `r_generic_2325/r_generic_2325_2/r_generic_2325_3` | P1 | 2 | 2 | 2 |
+| `generic.rules:1035 SlicePtr` | `r_generic_1035` | P2 | 179 | 1 | 1 |
 | `generic.rules:1730 SelectN` | `r_generic_1730/r_generic_1730_2` | call | 139 | 1 | 1 |
-| `generic.rules:277 IsSliceInBounds` | `r_generic_277` | P1 | 117 | 1 | 1 |
+| `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 100 | 1 | 1 |
 | `generic.rules:1689 IsNonNil` | `r_generic_1689` | ptr | 58 | 1 | 1 |
-| `generic.rules:1592 MemEq` | `r_generic_1592` | P2 | 51 | 1 | 1 |
-| `generic.rules:1833 Store` | `r_generic_1833` | mem | 43 | 1 | 1 |
-| `generic.rules:585 Neq8` | `r_generic_585_4` | P1 | 35 | 1 | 1 |
-| `generic.rules:1036 SliceLen` | `r_generic_1036` | P2 | 33 | 1 | 1 |
-| `generic.rules:585 Neq16` | `r_generic_585` | P1 | 33 | 1 | 1 |
 | `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 22 | 1 | 1 |
 | `generic.rules:1183 Eq64` | `r_generic_1183_3` | P1 | 16 | 1 | 1 |
+| `generic.rules:981 IMake` | `r_generic_981` | ptr | 15 | 1 | 1 |
 | `generic.rules:919 Store` | `r_generic_919` | mem | 15 | 1 | 1 |
 | `generic.rules:2158 Zero` | `r_generic_2158` | mem | 13 | 1 | 1 |
 | `generic.rules:1687 IsNonNil` | `r_generic_1687` | P2 | 12 | 1 | 1 |
@@ -727,34 +736,30 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1651 NeqPtr` | `r_generic_1651` | ptr | 11 | 1 | 1 |
 | `generic.rules:1183 Eq32` | `r_generic_1183_2` | P1 | 6 | 1 | 1 |
 | `generic.rules:2355 CondSelect` | `r_generic_2355/r_generic_2355_2/r_generic_2355_3/r_generic_2355_4` | P1 | 3 | 1 | 1 |
-| `generic.rules:744 Or32` | `r_generic_744` | P1 | 3 | 1 | 1 |
 | `generic.rules:1564 Load` | `r_generic_1564` | mem | 2 | 1 | 1 |
 | `divisible.rules:152 Eq64` | `r_divisible_152` | P1 | 2 | 1 | 1 |
 | `generic.rules:2166 Or64` | `r_generic_2166_2` | P1 | 2 | 1 | 1 |
 | `generic.rules:1324 Mul64F` | `r_generic_1324_2` | float | 2 | 1 | 1 |
-| `divmod.rules:221 Div32u` | `r_divmod_221` | P1 | 2 | 1 | 1 |
-| `generic.rules:243 IsInBounds` | `r_generic_243` | P1 | 2 | 1 | 1 |
-| `generic.rules:2325 CondSelect` | `r_generic_2325/r_generic_2325_2/r_generic_2325_3` | P1 | 2 | 1 | 1 |
 | `generic.rules:2168 Or16` | `r_generic_2168_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:1331 Div64F` | `r_generic_1331` | float | 1 | 1 | 1 |
 | `generic.rules:1742 Move` | `r_generic_1742` | mem | 1 | 1 | 1 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:2368 CondSelect` | `r_generic_2368` | P1 | 1 | 1 | 1 |
+| `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 0 | 0 |
 | `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 0 | 0 |
-| `generic.rules:1012 StringLen` | `r_generic_1012` | P2 | 1091 | 0 | 0 |
 | `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 0 | 0 |
 | `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 0 | 0 |
 | `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 0 | 0 |
-| `generic.rules:1032 SliceCap` | `r_generic_1032` | P2 | 580 | 0 | 0 |
 | `generic.rules:974 Load` | `r_generic_974` | mem | 580 | 0 | 0 |
 | `generic.rules:806 Load` | `r_generic_806` | mem | 488 | 0 | 0 |
-| `generic.rules:271 IsSliceInBounds` | `r_generic_271` | P1 | 247 | 0 | 0 |
+| `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 0 | 0 |
 | `generic.rules:997 Store` | `r_generic_997` | mem | 241 | 0 | 0 |
 | `generic.rules:813 Load` | `r_generic_813` | mem | 224 | 0 | 0 |
 | `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 0 | 0 |
-| `generic.rules:1035 SlicePtr` | `r_generic_1035` | P2 | 179 | 0 | 0 |
-| `generic.rules:994 Load` | `r_generic_994` | P2 | 117 | 0 | 0 |
 | `generic.rules:1037 SliceCap` | `r_generic_1037` | P2 | 114 | 0 | 0 |
+| `generic.rules:1362 Store` | `r_generic_1362` | call | 107 | 0 | 0 |
+| `generic.rules:785 Phi` | `r_generic_785` | phi | 89 | 0 | 0 |
+| `generic.rules:1584 MemEq` | `r_generic_1584` | P2 | 73 | 0 | 0 |
 
 <!-- END fire -->
 
@@ -893,6 +898,27 @@ and `argShapeOk` gives the float ops' arguments the integer shape of their width
   infinity and zero cases agree as well), so `Mul64F v 2 = Add64F v v` for every value
   (`fops_mul_two64`).
 - 1324–1326 (`x * 1 → x`, `x * -1 → -x`) are not proved: they change a NaN's encoding (#176).
+
+**Bounds checks, comparisons, selections** (#69, RuleProofs14).
+- `IsInBounds.lean`, `IsSliceInBounds.lean`: `rule_auto` closes `:240`, `:242`, `:247`, `:250`,
+  `:252`, `:253`, `:273`, `:275`. The constant folds `:255`/`:277` close by `bounds_auto`
+  (`rule_auto` with `ult_ofInt64`/`ule_ofInt64`: for `d ≥ 0`, `c <ᵤ d` iff `0 ≤ c < d`); `x x`
+  (`:243`, `:271`) by `inBounds_self`. The 32-bit forms and `:257` (a `Mod32u` at a 64-bit
+  argument is always `poison`) have no instance with the 64-bit arguments `argShapeOk` asks
+  for; `:278` waits on nonnegative slice lengths (#10).
+- `NeqConst.lean` (`:585`, four widths): `neqc_auto` closes `ofInt c ≠ ofInt d` for distinct
+  auxints in range (`ofInt_ne_of_range`).
+- `IfaceCmp.lean` (`:790–793`): `eqFirst_refines`. The first words of the operands are
+  compared before and after `ITab`'s `uintptr` / `SlicePtr`'s `*byte` retype; a retype to a
+  pointer shape keeps a word's pointer, a retype to `uintptr` keeps a word of the 64-bit integer
+  shape (`ifaceArgOk`).
+- `SelMake.lean` (`:992`, `:1012`, `:1031`, `:1032`): as `Dec.lean`'s selections (`dec_unfold`,
+  `sel_make2`/`sel_make3`). Not proved: `:1035–1038` (a selection of a selection, retyped at the
+  inner and the outer type).
+- `:1071`/`:1075` (`(Convert (Add64 (Convert ptr mem) off) mem) => (AddPtr ptr off)`) are false
+  under the semantics: `Convert` of an integer is `Ptr.ofAddr` of any address, while `AddPtr`
+  is `poison` outside the allocation's window (§3.3). Go's unsafe rules make the
+  out-of-window case undefined; the model would need `Convert` to poison it.
 
 Match congruence equations (`binDV.match_4.congr_eq_*`, …) are generated once in
 `Tactic.lean`: generated by `simp` in two rule modules they are two public declarations of the

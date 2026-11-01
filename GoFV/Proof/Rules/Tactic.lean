@@ -209,6 +209,7 @@ elab "rule_cond_bool" : tactic => withMainContext do
 /-- The ops whose arguments `argShapeOk` constrains. -/
 def argShapeOps : List Name :=
   [``Op.OffPtr, ``Op.AddPtr, ``Op.PtrIndex, ``Op.EqPtr, ``Op.NeqPtr, ``Op.IsNonNil, ``Op.Convert,
+   ``Op.IsInBounds, ``Op.IsSliceInBounds, ``Op.EqInter, ``Op.NeqInter,
    ``Op.Add64F, ``Op.Sub64F, ``Op.Mul64F, ``Op.Div64F, ``Op.Neg64F, ``Op.Min64F, ``Op.Max64F,
    ``Op.Eq64F, ``Op.Neq64F, ``Op.Less64F, ``Op.Leq64F, ``Op.Abs, ``Op.Copysign, ``Op.Sqrt,
    ``Op.Floor, ``Op.Ceil, ``Op.Trunc, ``Op.Round, ``Op.RoundToEven, ``Op.FMA, ``Op.Round64F,
@@ -276,7 +277,8 @@ elab "rule_unfold" : tactic => do
     evalTactic (← `(tactic| try simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
       GoFV.Proof.Rules.argShapeOk, GoFV.Proof.Rules.isPtrTy_iff, GoFV.Proof.Rules.isInt64Ty_iff,
       GoFV.Proof.Rules.isIntWTy_iff,
-      GoFV.Proof.Rules.convArgOk, Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq,
+      GoFV.Proof.Rules.convArgOk, GoFV.Proof.Rules.ifaceArgOk, Bool.and_eq_true, Bool.or_eq_true,
+      bne_iff_ne, ne_eq,
       beq_iff_eq, Nat.reduceEqDiff, reduceIte, not_true_eq_false, false_or, true_or, or_true,
       and_true, true_and, Nat.succ_ne_zero, not_false_eq_true] at $hat:ident))
   else

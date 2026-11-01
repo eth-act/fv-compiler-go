@@ -323,6 +323,9 @@ import GoFV.Proof.Rules.EqPtr
 import GoFV.Proof.Rules.FloatArith
 import GoFV.Proof.Rules.FloatCmp
 import GoFV.Proof.Rules.FloatRules
+import GoFV.Proof.Rules.IfaceCmp
+import GoFV.Proof.Rules.IsInBounds
+import GoFV.Proof.Rules.IsSliceInBounds
 import GoFV.Proof.Rules.Lemmas
 import GoFV.Proof.Rules.Leq
 import GoFV.Proof.Rules.Leq2
@@ -352,6 +355,7 @@ import GoFV.Proof.Rules.Neq3
 import GoFV.Proof.Rules.Neq4
 import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
+import GoFV.Proof.Rules.NeqConst
 import GoFV.Proof.Rules.NilElim
 import GoFV.Proof.Rules.NonNeg
 import GoFV.Proof.Rules.NonVacuous
@@ -394,6 +398,7 @@ import GoFV.Proof.Rules.Rsh5
 import GoFV.Proof.Rules.Rsh6
 import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
+import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.SignExt
 import GoFV.Proof.Rules.StructLoad
 import GoFV.Proof.Rules.StructStore
