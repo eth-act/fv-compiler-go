@@ -184,9 +184,25 @@ theorem ecf_goResults_src {tabs : Tables} {ps : List ABIParam} {rs : List Val}
   rfl
 
 
-/-- The register pieces of the results. -/
+/-- The register pieces of the results (none for a stack-assigned one). -/
 abbrev ecfPieces (tabs : Tables) (ps : List ABIParam) (rs : List Val) : List Val :=
-  (ps.zip rs).flatMap fun (p, r) => leafVals (tabs.ty p.type) r
+  (ps.zip rs).flatMap fun (p, r) => regLeafVals tabs p r
+
+theorem ecf_pieces_cons {tabs : Tables} {p : ABIParam} (h : ecfReg tabs p) (ps : List ABIParam)
+    (r : Val) (rs : List Val) :
+    ecfPieces tabs (p :: ps) (r :: rs) = leafVals (tabs.ty p.type) r ++ ecfPieces tabs ps rs := by
+  simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons, regLeafVals_reg h.1]
+
+/-- Register-assigned results only: every result's leaf values. -/
+theorem ecf_pieces_all_reg {tabs : Tables} :
+    {ps : List ABIParam} → (∀ p ∈ ps, ecfReg tabs p) → (rs : List Val) →
+      ecfPieces tabs ps rs = (ps.zip rs).flatMap fun (p, r) => leafVals (tabs.ty p.type) r
+  | [], _, _ => rfl
+  | _ :: _, _, [] => rfl
+  | p :: ps, hreg, r :: rs => by
+    rw [ecf_pieces_cons (hreg p List.mem_cons_self),
+      ecf_pieces_all_reg (fun q hq => hreg q (List.mem_cons_of_mem _ hq)) rs]
+    simp only [List.zip_cons_cons, List.flatMap_cons]
 
 theorem ecf_pieces_np {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} →
@@ -195,7 +211,7 @@ theorem ecf_pieces_np {tabs : Tables} :
   | _, _, .nil, _, _ => rfl
   | p :: ps, r :: rs, .cons hr hf, hreg, hp => by
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
-    simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons]
+    rw [ecf_pieces_cons (hreg p List.mem_cons_self)]
     rw [ecf_anyPoison_append, ecf_leafVals_np _ (hreg p List.mem_cons_self).2.1 hp.1 hr,
       ecf_pieces_np hf (fun q hq => hreg q (List.mem_cons_of_mem _ hq)) hp.2]
     rfl
@@ -321,7 +337,7 @@ theorem ecf_pieces_hasTy {tabs : Tables} :
   | [], [], _, _ => .nil
   | _ :: _, [], hl, _ | [], _ :: _, hl, _ => by simp at hl
   | p :: ps, r :: rs, hl, hreg => by
-    simp only [ecfPieces, leafTys, List.zip_cons_cons, List.flatMap_cons]
+    rw [ecf_pieces_cons (hreg p List.mem_cons_self), leafTys_cons_reg tabs (hreg p List.mem_cons_self).1]
     exact List.Forall₂.append (ecf_forall₂_snd (leafVals_hasTy (hreg p List.mem_cons_self).2.1))
       (ecf_pieces_hasTy (by simpa using hl) (fun q hq => hreg q (List.mem_cons_of_mem _ hq)))
 
@@ -336,24 +352,21 @@ theorem ecf_forall₂_append_left {α β : Type} {R : α → β → Prop} : {A B
     obtain ⟨l1, l2, rfl, h1, h2⟩ := ecf_forall₂_append_left t
     exact ⟨_ :: l1, l2, rfl, .cons h h1, h2⟩
 
-theorem ecf_leafTys_cons (tabs : Tables) (p : ABIParam) (ps : List ABIParam) :
-    leafTys tabs (p :: ps) = (leaves (tabs.ty p.type)).map (·.2) ++ leafTys tabs ps := by
-  simp only [leafTys, List.flatMap_cons]
-
 /-- The retyped pieces of the first result, then of the others. -/
 theorem ecf_regs_cons {tabs : Tables} {p : ABIParam} {ps : List ABIParam} {r : Val} {rs : List Val}
-    (hw : wf (tabs.ty p.type) = true) {rts : List Ty}
+    (hp : ecfReg tabs p) {rts : List Ty}
     (h : List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs (p :: ps)) rts) :
     ∃ r1 r2,
       List.Forall₂ (fun lt rt => regShapeOK rt lt = true) ((leaves (tabs.ty p.type)).map (·.2)) r1 ∧
       List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs ps) r2 ∧
       ecfRegs tabs (p :: ps) (r :: rs) rts =
         List.zipWith Val.retype r1 (leafVals (tabs.ty p.type) r) ++ ecfRegs tabs ps rs r2 := by
-  rw [ecf_leafTys_cons] at h
+  rw [leafTys_cons_reg tabs hp.1] at h
   obtain ⟨r1, r2, rfl, h1, h2⟩ := ecf_forall₂_append_left h
   refine ⟨r1, r2, h1, h2, ?_⟩
-  simp only [ecfRegs, ecfPieces, List.zip_cons_cons, List.flatMap_cons]
-  rw [List.zipWith_append (by rw [ecf_forall₂_length h1, List.length_map, leafVals_length hw])]
+  simp only [ecfRegs]
+  rw [ecf_pieces_cons hp]
+  rw [List.zipWith_append (by rw [ecf_forall₂_length h1, List.length_map, leafVals_length hp.2.1])]
 
 theorem ecf_regs_length {tabs : Tables} {ps : List ABIParam} {rs : List Val} {rts : List Ty}
     (hl : rs.length = ps.length) (hreg : ∀ p ∈ ps, ecfReg tabs p)
@@ -394,7 +407,7 @@ theorem ecf_post_reg {tabs : Tables} (act : Nat) (m : Mem) :
   | p :: ps, r :: rs, .cons hr hf, hreg, hp, rts, hrts => by
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
     obtain ⟨hne, hw, hlen⟩ := hreg p List.mem_cons_self
-    obtain ⟨r1, r2, h1, h2, hQ⟩ := ecf_regs_cons (rs := rs) (r := r) hw hrts
+    obtain ⟨r1, r2, h1, h2, hQ⟩ := ecf_regs_cons (rs := rs) (r := r) (hreg p List.mem_cons_self) hrts
     obtain ⟨bufs, hb, hd⟩ :=
       ecf_post_reg act m hf (fun q hq => hreg q (List.mem_cons_of_mem _ hq)) hp.2 h2
     have hk : p.regs.size ≠ 0 := by
@@ -477,8 +490,8 @@ theorem ecf_pieces_length_ge {tabs : Tables} :
     have hk : p.regs.size ≠ 0 := by
       intro h0; rw [Array.isEmpty_iff_size_eq_zero.2 h0] at hne; cases hne
     have := ecf_pieces_length_ge hf (fun q hq => hreg q (List.mem_cons_of_mem _ hq))
-    simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons, List.length_append,
-      List.length_cons] at this ⊢
+    rw [ecf_pieces_cons (hreg p List.mem_cons_self)]
+    simp only [List.length_append, List.length_cons]
     rw [leafVals_length hw, hlen]
     omega
 
@@ -499,7 +512,7 @@ theorem ecf_pre_reg {tabs : Tables} :
     have hk : p.regs.size ≠ 0 := by
       intro h0; rw [Array.isEmpty_iff_size_eq_zero.2 h0] at hne; cases hne
     have hreg' : ∀ q ∈ ps, ecfReg tabs q := fun q hq => hreg q (List.mem_cons_of_mem _ hq)
-    obtain ⟨r1, r2, h1, h2, hQ⟩ := ecf_regs_cons (rs := rs) (r := r) hw hrts
+    obtain ⟨r1, r2, h1, h2, hQ⟩ := ecf_regs_cons (rs := rs) (r := r) (hreg p List.mem_cons_self) hrts
     have hge := ecf_pieces_length_ge hf hreg'
     have hl2 := ecf_regs_length (ecf_forall₂_length hf) hreg' h2
     have hz1 : (List.zipWith Val.retype r1 (leafVals (tabs.ty p.type) r)).length = p.regs.size := by

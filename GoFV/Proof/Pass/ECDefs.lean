@@ -6,8 +6,9 @@ import GoFV.Opt.ExpandCallsCheck
 
 The parameters of `CvRel` for `expand calls` (`GoFV.Opt.ECCheck.ecCheck`): the conversion `ecCv`
 (identity, except for calls and `MakeResult`s, whose tuple of Go-typed results becomes the
-register pieces of the results, `convTuple`, at the shape of the target's register types, and
-for the values the pass invalidated, which become `poison`), the new values (`isNewB`: IDs the
+register pieces of the register-assigned results, `convTuple`/`regLeafVals`, at the shape of
+the target's register types (a stack-assigned result stays in the call's memory, in both forms),
+and for the values the pass invalidated, which become `poison`), the new values (`isNewB`: IDs the
 source does not define), the source values a value's obligation reads (`ecFront`: its arguments
 in the source and its non-new arguments in the target) and the relation of `Ret` outcomes
 (`ecRR`: the target returns the register pieces of the source's results, at register shapes).
@@ -17,11 +18,45 @@ namespace GoFV.Proof.EC
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.ECCheck GoFV.Proof.ABI GoFV.Proof.Order GoFV.Proof.AtomSim
 
-/-- The register pieces of the results `outs` of a tuple `(results…, rest…)`, followed by the
+/-- The register pieces of result `v` of parameter `p`: none for a stack-assigned one. -/
+def regLeafVals (tabs : Tables) (p : ABIParam) (v : Val) : List Val :=
+  if p.regs.isEmpty then [] else leafVals (tabs.ty p.type) v
+
+theorem regLeafVals_reg {tabs : Tables} {p : ABIParam} (h : p.regs.isEmpty = false) (v : Val) :
+    regLeafVals tabs p v = leafVals (tabs.ty p.type) v := by
+  simp only [regLeafVals, h, Bool.false_eq_true, ite_false]
+
+theorem regLeafVals_stack {tabs : Tables} {p : ABIParam} (h : p.regs.isEmpty = true) (v : Val) :
+    regLeafVals tabs p v = [] := by
+  simp only [regLeafVals, h, ite_true]
+
+theorem leafTys_nil (tabs : Tables) : leafTys tabs [] = [] := rfl
+
+theorem leafTys_cons_reg (tabs : Tables) {p : ABIParam} (h : p.regs.isEmpty = false)
+    (ps : List ABIParam) :
+    leafTys tabs (p :: ps) = (leaves (tabs.ty p.type)).map (·.2) ++ leafTys tabs ps := by
+  simp only [leafTys, List.flatMap_cons, h, Bool.false_eq_true, ite_false]
+
+theorem leafTys_cons_stack (tabs : Tables) {p : ABIParam} (h : p.regs.isEmpty = true)
+    (ps : List ABIParam) : leafTys tabs (p :: ps) = leafTys tabs ps := by
+  simp only [leafTys, List.flatMap_cons, h, ite_true, List.nil_append]
+
+/-- The result shapes of an accepted call (`outsOK`): each well-formed. -/
+theorem ec_outsOK_wf {tabs : Tables} {ps : List ABIParam} (h : outsOK tabs ps = true) :
+    ∀ p ∈ ps, wf (tabs.ty p.type) = true := by
+  intro p hp
+  unfold outsOK at h
+  rw [Bool.and_eq_true, List.all_eq_true] at h
+  have := h.1 p hp
+  rw [Bool.and_eq_true] at this
+  exact this.1
+
+/-- The register pieces of the results `outs` of a tuple `(results…, rest…)` (none for a
+stack-assigned result, which the call writes into the outgoing-arguments area), followed by the
 rest (memory, result addresses). -/
 def convTuple (tabs : Tables) (outs : List ABIParam) : Val → Val
   | .tuple vs =>
-    .tuple ((outs.zip vs).flatMap (fun (p, v) => leafVals (tabs.ty p.type) v) ++ vs.drop outs.length)
+    .tuple ((outs.zip vs).flatMap (fun (p, v) => regLeafVals tabs p v) ++ vs.drop outs.length)
   | _ => .poison
 
 /-- **The conversion of `expand calls`.** -/
@@ -51,7 +86,7 @@ def ecRR (tabs : Tables) (f : Func) (rs : List Val) (m : Mem) (rs' : List Val) (
     ∃ rts : List Ty,
       List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs (ownOuts tabs f)) rts ∧
       RefinesList (List.zipWith Val.retype rts
-        (((ownOuts tabs f).zip rs).flatMap fun (p, r) => leafVals (tabs.ty p.type) r)) rs' ∧
+        (((ownOuts tabs f).zip rs).flatMap fun (p, r) => regLeafVals tabs p r)) rs' ∧
       Mem.Refines m m'
 
 /-- What `blockOK`'s `imkArgOK` gives for an argument `a` of a converted value `x` of block `fb`

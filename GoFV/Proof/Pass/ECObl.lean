@@ -1,7 +1,7 @@
 import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.ECIdent
 import GoFV.Proof.Pass.ECArgSel
-import GoFV.Proof.Pass.ECCall
+import GoFV.Proof.Pass.ECStackRes
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
@@ -15,11 +15,12 @@ import GoFV.Proof.DomCert
 `obl_invalid`: a value the pass invalidated (`OpInvalid` in the target, conversion `poison`) is
 pure in the source (`valueOK`: priority 0), so its evaluation does not panic, and the target's
 `Invalid` evaluates. `eco_obl` dispatches a non-`Phi` value of a tree block on `valueOK`'s
-classes (call, `MakeResult`, call result, invalidated, parameter, identity) to the class
-obligations, with the closure `L` of the target's new arguments (the values listed in `g`); the
-`IMake` arguments of converted values are held in source mode (`Held`: in the block and depended
-on, or placed in a strict dominator, `AtomSim.arg_anc`) or target mode (`HeldT`: likewise in
-`g`).
+classes (call, `MakeResult`, call result in registers or on the stack, invalidated, parameter,
+identity) to the class obligations, with the closure `L` of the target's new arguments (the values
+listed in `g`); the `IMake` arguments of converted values are held in source mode (`Held`: in the
+block and depended on, or placed in a strict dominator, `AtomSim.arg_anc`) or target mode
+(`HeldT`: likewise in `g`), and so are the call of a stack-assigned result (source mode) and its
+leaves' source `SP`s and memories (target mode).
 -/
 
 namespace GoFV.Proof.EC
@@ -114,7 +115,7 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
   | some gb =>
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
     refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
     · have := Array.all_eq_true'.1 hval x hx
@@ -122,13 +123,12 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
       simp only [Bool.or_eq_true, beq_iff_eq] at this
       exact this.resolve_left hphi
 
-/-- A call result's Make-tree has a node at its root: not `Invalid`. -/
-theorem eco_mkTree_sel {sh : Array Ty} {g : Func} {nw : ID → Bool} {x c : ID} {w : Value}
-    {first : Nat} (hw : g.value? x = some w) (hinv : w.op = .Invalid) :
-    ∀ {n : Nat} {t : Ty} {ls : List ID}, mkTree sh g nw n x t = some ls →
-      selLeavesOK g c first 0 ls = true → False
-  | 0, _, _, h, _ => by simp [mkTree] at h
-  | n + 1, t, ls, h, hs => by
+/-- A Make-tree whose root's node is `Invalid` is that leaf alone. -/
+theorem eco_mkTree_inv {sh : Array Ty} {g : Func} {nw : ID → Bool} {x : ID} {w : Value}
+    (hw : g.value? x = some w) (hinv : w.op = .Invalid) :
+    ∀ {n : Nat} {t : Ty} {ls : List ID}, mkTree sh g nw n x t = some ls → ls = [x]
+  | 0, _, _, h => by simp [mkTree] at h
+  | n + 1, t, ls, h => by
     simp only [mkTree, hw] at h
     split at h
     · cases h
@@ -145,10 +145,30 @@ theorem eco_mkTree_sel {sh : Array Ty} {g : Func} {nw : ID → Bool} {x c : ID} 
           exact absurd he (by decide)
         · cases h
       · split at h
+        · cases h; rfl
         · cases h
-          simp only [selLeavesOK, hw, Bool.and_eq_true, beq_iff_eq] at hs
-          exact absurd hs.1.1.1 (by rw [hinv]; decide)
-        · cases h
+
+/-- A call result's Make-tree has a node at its root: not `Invalid`. -/
+theorem eco_mkTree_sel {sh : Array Ty} {g : Func} {nw : ID → Bool} {x c : ID} {w : Value}
+    {first : Nat} (hw : g.value? x = some w) (hinv : w.op = .Invalid) {n : Nat} {t : Ty}
+    {ls : List ID} (h : mkTree sh g nw n x t = some ls) (hs : selLeavesOK g c first 0 ls = true) :
+    False := by
+  rw [eco_mkTree_inv hw hinv h] at hs
+  simp only [selLeavesOK, hw, Bool.and_eq_true, beq_iff_eq] at hs
+  exact absurd hs.1.1.1 (by rw [hinv]; decide)
+
+/-- A stack-assigned call result's Make-tree has a node at its root: not `Invalid`. -/
+theorem eco_mkTree_stk {sh : Array Ty} {g : Func} {nw : ID → Bool} {x c : ID} {w : Value}
+    {k : Nat} {off : Int} {os : List (Nat × Ty)} (hw : g.value? x = some w)
+    (hinv : w.op = .Invalid) {n : Nat} {t : Ty} {ls : List ID} (h : mkTree sh g nw n x t = some ls)
+    (hs : stkLeavesOK sh g nw c k off os ls = true) : False := by
+  rw [eco_mkTree_inv hw hinv h] at hs
+  cases os with
+  | nil => simp [stkLeavesOK] at hs
+  | cons e os =>
+    obtain ⟨o, lt⟩ := e
+    simp only [stkLeavesOK, hw, Bool.and_eq_true, beq_iff_eq] at hs
+    exact absurd hs.1.1.1.1 (by rw [hinv]; decide)
 
 /-- `selectOK`: the selected value is a call's, and the target's node is not `Invalid`. -/
 theorem eco_selectOK {tabs : Tables} {f g : Func} {x c : ID} {u w cu : Value}
@@ -172,7 +192,9 @@ theorem eco_selectOK {tabs : Tables} {f g : Func} {x c : ID} {u w cu : Value}
       split at h
       · rename_i ls hls
         simp only [Bool.and_eq_true] at h
-        exact eco_mkTree_sel hw hinv hls h.2
+        split at h
+        · exact eco_mkTree_stk hw hinv hls h.2
+        · exact eco_mkTree_sel hw hinv hls h.2
       · cases h
     · cases h
 
@@ -207,7 +229,9 @@ theorem eco_imkHeld {ce : CheckEnv} {tabs : Tables} {f g : Func} {bid x a : ID} 
 
 /-- **The local obligation of a non-`Phi` source value** of tree block `bid` for
 `expand calls`, the source's `Held` values and the target's `HeldT` values holding their
-evaluations (among them the `SP`s of a call's stack-argument stores, `hsp`). -/
+evaluations (among them the `SP`s of a call's stack-argument stores, `hsp`, and the `SP`s and
+memories of a stack-assigned result's loads, `hld`; `hdep`: `x` depends in `g` on its arguments
+that are nodes of the block). -/
 theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {fb gb : Block}
     {u : Value}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
@@ -217,7 +241,12 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     (hx : x ∈ fb.values) (hu : f.value? x = some u) (hphi : u.op ≠ .Phi)
     (himk : converted f x = true → ∀ a ∈ u.args, EcImkOK tabs f g fb gb x a)
     (hsp : (callOpMap u.op).isSome = true → ∀ w, g.value? x = some w → ∀ a, ecStackSP f g u w a →
-      HeldT g gb x a) :
+      HeldT g gb x a)
+    (hdep : ∀ a ∈ u.args, a ∈ fb.values → (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) →
+      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
+    (hld : ∀ l ∈ stackLoads tabs (typeShapes tabs) f g x,
+      (isNewB f (loadSP g l) = false → HeldT g gb x (loadSP g l)) ∧
+      (isNewB f (loadMem g l) = false → HeldT g gb x (loadMem g l))) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) (Held f g fb gb x) (HeldT g gb x) x := by
   have Wf := check_wf hf
   have Wg := check_wf hg
@@ -307,7 +336,32 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
           have hinv : invalidated g x = false := by
             unfold invalidated; rw [hw]; dsimp only
             exact Bool.eq_false_iff.2 fun h => hni (beq_iff_eq.1 h)
-          exact obl_select hu hw hsel hargs hcu hcw hcall hvc hinv hv hown huid _ hLx hL
+          by_cases hstp : ∃ p, (callOuts tabs cu.aux)[u.auxInt.toInt.toNat]? = some p ∧
+              p.regs.isEmpty = true
+          · obtain ⟨p, hp, hpst⟩ := hstp
+            -- the call is held in the source
+            have hHc : Held f g fb gb x u.args[0]! := by
+              by_cases hcf : u.args[0]! ∈ fb.values
+              · exact .inl ⟨hcf, hdep _ hcmem hcf fun ua hua => by
+                  rw [hcu] at hua; cases hua; exact hcphi⟩
+              · have hpl : Placed f x u :=
+                  ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
+                obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=
+                  AtomSim.arg_anc Wf hcert hpl (by rw [hublk, ← hfid]; exact htree) hphi hcmem
+                rw [hcu] at hva
+                cases hva
+                rw [hublk, ← hfid] at hanc
+                refine .inr ⟨cu, ⟨hcu, hvb, blk, hblk', hab⟩, hcphi, hanc, fun he => hcf ?_⟩
+                rw [he, hfid, hfb] at hblk'
+                cases hblk'
+                exact hab
+            exact obl_selectStack hu hw hsel hargs hcu hcw hcall hvc hinv hv hp hpst huid _ hLx hL
+              hHc hld
+          · refine obl_select hu hw hsel hargs hcu hcw hcall hvc hinv hv (fun p hp => ?_) hown huid
+              _ hLx hL
+            cases h : p.regs.isEmpty
+            · rfl
+            · exact absurd ⟨p, hp, h⟩ hstp
     rw [ite_eq_right hs] at hv
     by_cases hi : (w.op == .Invalid) = true
     · rw [ite_eq_left hi] at hv
