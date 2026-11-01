@@ -150,54 +150,46 @@ input's, kept by every event, `GoFV/Proof/Pass/RewriteTermBlock.lean`; `eff_not`
 and `opt_refines`/`divisible_refines`/`divmod_refines` keep their statements; their rule-set
 hypothesis `RuleSet.AllSound` now also asks `BlockRule.Sound` of the block rules.
 
-### Effect rules: `EffectRule.Sound` (designed, not yet implemented)
+### Nil-check eliminations: `EffectRule.NilElim` (`GoFV/Proof/Rules/NilElim.lean`)
 
-For rules whose pattern has effectful nodes: `NilCheck` elimination (`generic.rules:1381`
-`LocalAddr`, `1375` `Addr`, `1384` nil check of a nil check, `1367` malloc result), Load-of-Store
-forwarding (`800`, `806`), `Store`/`Move`/`Zero` rewrites. The denotation of a pattern node whose
-op is a root (`Sem.isRoot`) is not `evalPure` but `Sem.evalOp` (`memRoot`, `callOp`), a `Res`
-that may panic or be stuck. The obligation is a one-step local simulation at every frame where
-the matched values are available:
+`(NilCheck x:(Op …) _) => x` replaces a root by its pointer. Each instance is validated by
+nilcheckelim's checker rather than by a value refinement: `RuleSet.nilChecks` (tried on a
+`NilCheck` after its value row, `Interp.Table.nilChecks`) holds the rules with
+`EffectRule.NilElim r := RewriteCheck.nilElimOK r = true` (the result is the checked pointer, whose
+op is a `NilCheck.safePtr` seed: `Addr`, `LocalAddr` or `NilCheck`). `RewriteCheck.accepts` takes
+the log's nil-check events out (`nilPre`: `NilCheck p mem` → `Copy p` on the input), requires
+`NilCheck.nrel` between the input and that function and `check` of it (`nilOK`), and validates
+the output against it with the remaining events. `checkedRewrite_refines` composes
+`Nil.refines_of_rel` with the atom simulation (statement unchanged). Proven: `generic.rules:1375`,
+`:1381`, `:1388`. Not provable this way (the pointer is no seed): `:1062` (`GetG`), `:1367`
+(`isMalloc` result), `:1384` (dictionary `Arg`), `:1376` (`Convert` of `Addr`).
 
-```lean
-def EffectRule.Sound (r : Rule) : Prop :=
-  Pat.arityOk r.pat ∧ ∀ (e : PEnv) (or : Oracle) (env : Env) (ctx : Ctx) (fr : Frame),
-    Oracle.BoolTyped or → Pat.wf … → Pat.cons … → condHolds … → Pat.typed … →
-    -- every effectful inner node evaluated to its instance value (it is in the frame)
-    Pat.effOK env ctx fr e [] r.pat →
-    -- the matched top, if effectful, is refined by the result without panicking
-    Res.Refines ((Pat.evalTop env ctx fr e r.pat).map (·.retype (e.ty []))) (.ok (resDen …))
-```
+### Memory rules (Load of Store, designed, not yet implemented)
 
-`Res.Refines` (`Res.Rel Sem.Refines`) has no case for a panicking source and a defined target,
-so a rule removing a `NilCheck` must show that the check cannot panic on the instance
-(`LocalAddr`/`Addr` point into an allocation, `GoFV.Proof.evalOp_nilCheck_blk`; a nil check of a
-nil check returned its argument only after not panicking). For `(Load p1 (Store {t2} p2 x _))`
-the `Store` node's value is the memory `memRoot` wrote; `Mem.read` of `Mem.write` at the same
-address and size (`isSamePtr` is an oracle atom today: the rule needs it modelled, as a pointer
-term identity) gives `x` back, so the obligation is provable once `isSamePtr` is.
+`(Load p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2)` (`800`, `806`): the `Store` node's value is
+the memory `memRoot` wrote; `Mem.read` of `Mem.write` at the same address and size gives `x`
+back. Plan: (1) `isSamePtr` as a pointer identity: the validator decides `isSamePtr` on the
+instance (`Rules.Helpers.isSamePtr`) and the obligation gets, for each `isSamePtr(a, b)` atom of
+the condition, `Pat.den … a = Pat.den … b` as a hypothesis (sound because `isSamePtr` only
+equates IDs, `OffPtr`/`AddPtr` chains with equal offsets, and `Addr`/`LocalAddr` of the same
+symbol, all term nodes evaluating equally); (2) `Term.den` reads a root atom from `ρ`, so the
+matched `Store` and `Load` are atoms: the validator must match through root atoms, and the
+atom simulation needs an atom-definition invariant on `ρ` (each root atom's value is its
+`evalOp` on its arguments' terms when that is defined), discharged from `evalValue` in
+`AtomSimEnter`; (3) the `Load` root is removed (`Copy x`): `atomsOK` must allow it like
+nilcheckelim's relation (the remaining roots keep their order, `sched_transfer_sub`).
 
-Validator and theorem: the pattern may match through root atoms (`matchPat` over non-term nodes,
-their values the registers); `Term.den` needs a joint premise on the valuation that each root
-atom's value is its `evalOp` on its arguments' terms when that is defined (an atom-definition
-invariant, discharged in the atom simulation from `evalValue`; the per-atom `SrcInv.P` of #153
-cannot express it). Replacing a root (`NilCheck → Copy`) changes the root sequence: `atomsOK`
-must allow a removed root whose evaluation never panics and is the term the result builds, and
-the simulation must show the remaining roots run in the same order (`sched_transfer_sub` of the
-deadcode proof, `GoFV/Proof/Pass/DeadRank.lean`).
+### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
-### Frame-value rules (`ConstString`, designed, not yet implemented)
-
-`ConstString {str}` and `Addr {sym} SB` are evaluated by `Sem.frameVal` from the tables (a string
-`agg [ptr ⟨global dataSym, 0⟩, i64 len]`, a global pointer), not by `evalPure`, and do not depend
-on the activation. They become term nodes: `Term.den` evaluates them by the table lookup
-(`tabVal tabs v`), the validator matches them, `evalOp_term` covers them. The obligation of a
-rule over such nodes is `Rule.Sound` with `Pat.den`/`nodeDen` using `tabVal` at these ops,
-quantified over the tables. `generic.rules:1022`'s result aux is `fe.StringData(str)` (a fresh
-or existing symbol): the obligation holds for every aux that the tables define as the symbol
-named by the string's `dataSym`, and the validator checks exactly that on the built `Addr`
-(`checkedRewrite` returns the *input's* tables, so it must also check that every aux the output
-refers to is defined, identically, in them).
+`ConstString {str}` and `Addr {sym} SB` are term nodes evaluated from the tables
+(`Rules.opVal`: `strVal`/`addrVal`, as `Sem.frameVal`). The obligation `Rule.SoundT` is
+`Rule.Sound` with this denotation for all tables, under `FrameOK` (an aux `fe.StringData(x)` names
+the data symbol of the non-empty string aux bound to `x`, an auxint `int64(len(x))` is its
+length), which the validator checks on every built node (`frameNodeOK`). `Rule.soundT_of_sound`
+lifts the `Rule.Sound` lemmas of rules without such nodes. `fe.StringData` appends a symbol to the
+tables: `checkedRewrite` keeps the result's tables when the input cannot tell them from its own
+(`tabsAgree`). Proven: `generic.rules:1022` (`r_generic_1022_sound`); witness
+`GoFV.Proof.Witness.hi_checkedRewrite` (`func hi() string { return "hi" }`, kernel evaluation).
 
 ## Classification
 
