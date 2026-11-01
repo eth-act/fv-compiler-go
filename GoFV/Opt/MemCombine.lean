@@ -17,7 +17,8 @@ open GoFV.SSA GoFV.Opt.MemCombine
 def memcombine (c : Cfg) (unalignedOK : Bool) (tabs : Tables) (f : Func) :
     Except String (Func × Tables) := do
   if !unalignedOK then return (f, tabs)
-  let ((), s) ← (do memcombineLoads; memcombineStores : M Unit).run c |>.run { f, tabs }
+  let ((), s) ← (do memcombineLoads; if c.stores then memcombineStores : M Unit).run c
+    |>.run { f, tabs }
   return (s.f, s.tabs)
 
 /-- memcombine's configuration from the pass environment, and `Config.unalignedOK`. -/

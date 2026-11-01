@@ -30,11 +30,9 @@ structure Cfg where
   u64 : TypeRef
   /-- `Type.Compare == CMPeq` (constant cache). -/
   sameType : TypeRef → TypeRef → Bool
-  /-- Combine stores of consecutive loads (`memcombine.go:600-616`). The checked pass turns it
-  off: the semantics decodes each narrow load on its own, so a narrow load stays defined next
-  to a `poison` one (e.g. a pointer fragment), while the wide load is `poison` as a whole and
-  the wide store would lose the defined bytes (issue #35). -/
-  loadSource : Bool := true
+  /-- Run `memcombineStores` after `memcombineLoads`. The checked pass (`memcombineChecked`)
+  combines loads only (issue #35). -/
+  stores : Bool := true
 
 structure St where
   f : Func

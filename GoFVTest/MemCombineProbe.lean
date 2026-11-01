@@ -5,10 +5,10 @@ import GoFV.Opt.MemCombine.Check
 /-!
 # `memcombine-probe`: what memcombine's checker accepts
 
-Runs `memcombine` (stock), the variant without store-of-load combining and `memcombineChecked`
-on the inputs of the `memcombine` sections of the given export files that pass `check`.
-Counts the inputs the stock pass changes, those the variant changes, those `mcOK` accepts (the
-checked pass then equals the variant), and those whose checked result equals the stock output;
+Runs `memcombine` (stock), the loads-only variant and `memcombineChecked` on the inputs of the
+`memcombine` sections of the given export files that pass `check`. Counts the inputs the stock
+pass changes, those the variant changes, those `mcOK` accepts (the checked pass then equals the
+variant), and those whose checked result equals the stock output;
 names the first failing condition of each rejection (`--dump`: every rejection) and lists the
 smallest accepted inputs (witness candidates).
 -/
@@ -19,14 +19,18 @@ namespace GoFVTest.MemCombineProbe
 
 /-- The first condition of `mcOK` that fails. -/
 def why (tabs : Tables) (f g : Func) : String := Id.run do
-  if !mcAtomsOK f g then return "atoms"
+  if !RewriteCheck.atomsOK f g then return "atoms"
   if !RewriteCheck.closedOK f then return "closedF"
   if !RewriteCheck.closedOK g then return "closedG"
   if !KnownBits.blocksOK f g then return "blocks"
   let R := reachMarks g
   if !reachOK g R then return "reach"
+  let Lf := RewriteCheck.listedMarks f
+  let Lg := RewriteCheck.listedMarks g
+  let M := (List.range g.valueTab.size).toArray.map fun x =>
+    R.getD x false && Lf[x]? == some true && Lg[x]? == some true
   for x in List.range g.valueTab.size do
-    if !valOK tabs f g R x then
+    if !valOK tabs f g R M x then
       let d := match listedD f x, listedD g x with
         | some u, some w => s!"{u.op.name} → {w.op.name}"
         | none, some w => s!"new {w.op.name}"
@@ -34,8 +38,8 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
       let kind := match listedD f x, listedD g x with
         | some u, some w =>
           if RewriteCheck.termOp w.op then
-            if rootOK tabs f g x u w then "root?" else "root"
-          else if changedStore u w then "store" else "atom"
+            if rootOK tabs f g M x u w then "root?" else "root"
+          else "atom"
         | _, _ => "new"
       return s!"{kind} v{x} {d}"
   return "?"
@@ -80,7 +84,7 @@ def main (args : List String) : IO UInt32 := do
       checked := checked + 1
       let .ok (c, u) := memcombineCfg env | errs := errs + 1; continue
       let .ok (gs, _) := memcombine c u prev f | errs := errs + 1; continue
-      let .ok (g, tabs) := memcombine { c with loadSource := false } u prev f
+      let .ok (g, _) := memcombine { c with stores := false } u prev f
         | errs := errs + 1; continue
       if gs != f then stockCh := stockCh + 1
       if g == f then continue
@@ -93,7 +97,7 @@ def main (args : List String) : IO UInt32 := do
         cands := cands.push (nv, f.blocks.size, s!"{path} {s.index}")
       else
         rejected := rejected + 1
-        let w := if tabsAgree prev tabs f then why tabs f g else "tabsAgree"
+        let w := why prev f g
         let key := (w.splitOn " ").head!
         whys := whys.insert key (whys.getD key 0 + 1)
         if dump || shown < 20 then
