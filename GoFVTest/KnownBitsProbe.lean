@@ -16,7 +16,9 @@ open GoFV.SSA GoFV.Opt GoFV.Opt.KnownBits
 namespace GoFVTest.KnownBitsProbe
 
 /-- The first condition of `kbOK` that fails. -/
-def why (tabs : Tables) (f g : Func) (E : Array KB) (R : Array Bool) : String := Id.run do
+def hx (r : BB) : String := s!"({r.1.toHex}, {r.2.toHex})"
+
+def why (tabs : Tables) (f g : Func) (E : Array (Int64 × Int64)) (R : Array Bool) : String := Id.run do
   if !RewriteCheck.atomsOK f g then return "atoms"
   if !RewriteCheck.closedOK f then return "closedF"
   if !RewriteCheck.closedOK g then return "closedG"
@@ -25,9 +27,8 @@ def why (tabs : Tables) (f g : Func) (E : Array KB) (R : Array Bool) : String :=
   for x in List.range f.valueTab.size do
     if !fixOK tabs f R E x then
       let d := (f.value? x).map fun v =>
-        let t := tabs.ty v.type
-        let args := v.args.toList.map fun a => (a, ent E a, (f.value? a).map (·.op.name))
-        s!"{v.op.name} entry {ent E x} transfer {norm t (transfer E v)} args {args}"
+        let args := v.args.toList.map fun a => (a, hx (ent E a), (f.value? a).map (·.op.name))
+        s!"{v.op.name} auxInt {v.auxInt} entry {hx (ent E x)} args {args}"
       return s!"fix v{x} {d}"
     if !repOK tabs f g E x then
       return s!"rep v{x} {(f.value? x).map (·.op.name)} → {(g.value? x).map (·.op.name)}"
