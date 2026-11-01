@@ -7,8 +7,8 @@ import GoFV.Proof.AtomSimOK
 `proveRel_spec`: what `ProveCheck.proveRel tabs f g` guarantees (`RelSpec`): the atoms and
 terminators of the atom simulation, every block a dominator-tree block, the path facts
 (`FactsSpec`), the `Phi` invariants (`InvSpec`), and per listed value of `f` its block,
-definition (`sameDef`) or a justified rewrite (`valueOK`), per block its terminator or a
-justified branch removal (`branchOK`).
+definition justified (`defOK`: kept, a value rewrite `valueOK`, arguments folded to constants),
+per block its terminator or a justified branch removal (`branchOK`).
 -/
 
 namespace GoFV.Proof.ProveCheck
@@ -23,10 +23,12 @@ def InvSpec (tabs : Tables) (f : Func) (C : DomCert.Cert) (F : Array (List (ID �
     ∀ a fs, (a, fs) ∈ phiEdges f C F z → (∃ av, f.value? a = some av ∧ intAt tabs av w = true) ∧
       (rng f.value? tabs { facts := fs, inv } rngFuel w a).sub r = true
 
-/-- One listed value of `f`: kept, or rewritten justifiably under its block's assumptions. -/
-def ValSpec (tabs : Tables) (f g : Func) (A : Asm) (gb : Block) (x : ID) : Prop :=
+/-- One listed value of `f` (listed in `fb`): its definition justified under its block's
+assumptions (`defOK`). -/
+def ValSpec (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (A : Asm) (fb gb : Block) (x : ID) : Prop :=
   x ∈ gb.values ∧ ∃ fv gv, f.value? x = some fv ∧ g.value? x = some gv ∧ gv.block = fv.block ∧
-    (sameDef fv gv = true ∨ valueOK f.value? tabs A fv gv = true)
+    defOK f.value? tabs F inv A g fb fv gv = true
 
 /-- `proveRel` as propositions. -/
 structure RelSpec (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
@@ -40,7 +42,7 @@ structure RelSpec (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
   blocks : ∀ b ∈ f.blocks, ∀ fb, f.block? b = some fb → ∃ gb, g.block? b = some gb ∧
     (fb.kind = gb.kind ∧ fb.controls = gb.controls ∧ fb.succs = gb.succs ∨
       branchOK f.value? tabs { facts := factsAt F b, inv } fb gb = true) ∧
-    ∀ x ∈ fb.values, ValSpec tabs f g { facts := factsAt F b, inv } gb x
+    ∀ x ∈ fb.values, ValSpec tabs f g F inv { facts := factsAt F b, inv } fb gb x
 
 theorem invOK_spec {tabs : Tables} {f : Func} {C : DomCert.Cert} {F : Array (List (ID × Bool))}
     {inv : List (ID × Width × Rng)} (h : invOK f tabs C F inv inv = true) :
@@ -69,7 +71,7 @@ theorem valuesOK_spec {tabs : Tables} {f g : Func} {F : Array (List (ID × Bool)
     ∀ b ∈ f.blocks, ∀ fb, f.block? b = some fb → ∃ gb, g.block? b = some gb ∧
       (fb.kind = gb.kind ∧ fb.controls = gb.controls ∧ fb.succs = gb.succs ∨
         branchOK f.value? tabs { facts := factsAt F b, inv } fb gb = true) ∧
-      ∀ x ∈ fb.values, ValSpec tabs f g { facts := factsAt F b, inv } gb x := by
+      ∀ x ∈ fb.values, ValSpec tabs f g F inv { facts := factsAt F b, inv } fb gb x := by
   intro b hb fb hfb
   unfold valuesOK at h
   rw [Array.all_eq_true'] at h
@@ -95,7 +97,7 @@ theorem valuesOK_spec {tabs : Tables} {f g : Func} {F : Array (List (ID × Bool)
         | none => rw [hfv, hgv] at hd; cases hd
         | some gv =>
           rw [hfv, hgv] at hd
-          simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hd
+          simp only [Bool.and_eq_true, beq_iff_eq] at hd
           exact ⟨hxg, fv, gv, hfv, hgv, hd.1, hd.2⟩
 
 theorem proveRel_spec {tabs : Tables} {f g : Func} (h : proveRel tabs f g = true) :

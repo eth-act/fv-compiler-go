@@ -20,6 +20,11 @@ relation `proveRel` (what the theorem needs) holds between `f` and it; otherwise
   0 or 1), each from the ranges of the arguments at the value's block (`rng`).
 * **Branch removal** (`branchOK`): an `If` turned `First` keeps the successor its control is
   decided to take (`decides`).
+* **Constant-folded arguments** (`foldOK`, `argsOK`): an argument replaced by a constant listed in
+  the output, of the argument's shape, whose value the argument is decided to have — a boolean
+  by `decides`, an integer by a one-point range when the argument is never a pointer word
+  (`intOnly`: a range-table node or a side of a comparison fact). A `Phi`'s argument is read
+  under its predecessor's facts (`argAsm`). Folds combine with the value rewrites (`defOK`).
 
 Nothing here is trusted: `GoFV.Proof.ProveCheck` proves `proveRel` sound.
 -/
@@ -270,15 +275,69 @@ def branchOK (D : ID → Option Value) (tabs : Tables) (A : Asm) (fb gb : Block)
     (gb.succs == #[e1, e0] && decides D tabs A rngFuel rngFuel c false)
   | _, _ => false
 
+/-! ## Constant-folded arguments -/
+
+/-- The constant op of width `w`. -/
+def constOp : Width → Op
+  | .w8 => .Const8
+  | .w16 => .Const16
+  | .w32 => .Const32
+  | .w64 => .Const64
+
+/-- `a`'s value is never a pointer word: `a` is a range-table node or a side of a comparison
+fact. -/
+def intOnly (D : ID → Option Value) (tabs : Tables) (A : Asm) (a : ID) : Bool :=
+  (D a).any (fun av => termOp av.op && (rTab.lookup av.op).isSome) ||
+  A.facts.any fun fact => match relOf D tabs fact with
+    | some (x, y, _, _) => x == a || y == a
+    | none => false
+
+/-- Argument `a` (of `f`) became the constant `c` (listed in `g`), and `a` is decided to have
+`c`'s value: a boolean by `decides`, an integer by a one-point range. -/
+def foldOK (D : ID → Option Value) (tabs : Tables) (A : Asm) (g : Func) (a c : ID) : Bool :=
+  match D a, g.value? c with
+  | some av, some cv =>
+    (g.blocks.contains cv.block && (g.block? cv.block).any (·.values.contains c)) &&
+    termOp cv.op && cv.args.isEmpty &&
+    match tabs.ty av.type, tabs.ty cv.type with
+    | .bool, .bool => cv.op == .ConstBool && decides D tabs A rngFuel rngFuel a (cv.auxInt != 0)
+    | .int w, .int w' =>
+      w == w' && cv.op == constOp w && intOnly D tabs A a &&
+      let r := rng D tabs A rngFuel w a
+      r.ulo == r.uhi && r.ulo == (BitVec.ofInt w.bits cv.auxInt.toInt).toNat
+    | _, _ => false
+  | _, _ => false
+
+/-- The assumptions argument `i` of `fv` (listed in `fb`) is read under: a `Phi`'s, its
+predecessor's facts; the others', `A`. -/
+def argAsm (F : Array (List (ID × Bool))) (inv : List (ID × Width × Rng)) (A : Asm) (fb : Block)
+    (fv : Value) (i : Nat) : Asm :=
+  if fv.op == .Phi then { facts := factsAt F ((fb.preds[i]?.map (·.b)).getD 0), inv } else A
+
+/-- Every argument of `gv` is `fv`'s or a justified constant fold of it. -/
+def argsOK (D : ID → Option Value) (tabs : Tables) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (A : Asm) (g : Func) (fb : Block) (fv gv : Value) : Bool :=
+  gv.args.size == fv.args.size &&
+  (List.range fv.args.size).all fun i =>
+    fv.args[i]! == gv.args[i]! || foldOK D tabs (argAsm F inv A fb fv i) g fv.args[i]! gv.args[i]!
+
 /-! ## The relation -/
 
 /-- `u` and `w` define the same term (op, type, auxints, arguments). -/
 def sameDef (u w : Value) : Bool :=
   u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && u.aux == w.aux && u.args == w.args
 
-/-- Every value listed in `f` is listed in the same block of `g`, with the same definition or a
-justified rewrite under its block's assumptions; every block keeps its terminator or has its
-branch removed justifiably. -/
+/-- The definition `fv` (listed in `fb`) became `gv` justifiably under `A`: kept, rewritten, or
+with arguments folded to constants and otherwise kept or rewritten. -/
+def defOK (D : ID → Option Value) (tabs : Tables) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (A : Asm) (g : Func) (fb : Block) (fv gv : Value) : Bool :=
+  sameDef fv gv || valueOK D tabs A fv gv ||
+  (argsOK D tabs F inv A g fb fv gv &&
+    (sameDef fv { gv with args := fv.args } || valueOK D tabs A fv { gv with args := fv.args }))
+
+/-- Every value listed in `f` is listed in the same block of `g`, with a definition justified
+under its block's assumptions (`defOK`); every block keeps its terminator or has its branch
+removed justifiably. -/
 def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
     (inv : List (ID × Width × Rng)) : Bool :=
   f.blocks.all fun b =>
@@ -291,7 +350,7 @@ def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
         gb.values.contains x &&
         match f.value? x, g.value? x with
         | some fv, some gv =>
-          gv.block == fv.block && (sameDef fv gv || valueOK f.value? tabs A fv gv)
+          gv.block == fv.block && defOK f.value? tabs F inv A g fb fv gv
         | _, _ => false
     | _, _ => false
 
@@ -367,9 +426,25 @@ def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.
     for x in fb.values do
       let (some fv, some gv) := (f.value? x, g.value? x) | continue
       if sameDef fv gv then continue
-      let ok := valueOK D tabs A fv gv
-      st := st.add (classOf fv gv) ok b x
-      if !ok then h := h.modV x fun hv => { fv with uses := hv.uses }
+      if gv.args.size == fv.args.size then
+        -- keep the justified constant folds, then the op rewrite if justified
+        let mut args := fv.args
+        for i in [0:fv.args.size] do
+          let a := fv.args[i]!
+          let c := gv.args[i]!
+          if a == c then continue
+          let ok := foldOK D tabs (argAsm F inv A fb fv i) g a c
+          st := st.add s!"const arg {if fv.op == .Phi then "phi" else "value"}" ok b x
+          if ok then args := args.set! i c
+        let gv' := { gv with args := fv.args }
+        let opOK := sameDef fv gv' || valueOK D tabs A fv gv'
+        if !sameDef fv gv' then st := st.add (classOf fv gv) opOK b x
+        let kept := if opOK then gv' else fv
+        h := h.modV x fun hv => { kept with args, uses := hv.uses }
+      else
+        let ok := valueOK D tabs A fv gv
+        st := st.add (classOf fv gv) ok b x
+        if !ok then h := h.modV x fun hv => { fv with uses := hv.uses }
   return (fixup h, st)
 
 /-- `prove` with every unjustified rewrite undone, and its statistics; the input if the

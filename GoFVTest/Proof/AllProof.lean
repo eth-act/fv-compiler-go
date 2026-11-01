@@ -149,6 +149,7 @@ import GoFV.Proof.PhiMono
 import GoFV.Proof.ProveCheck.DecideSound
 import GoFV.Proof.ProveCheck.Den
 import GoFV.Proof.ProveCheck.Facts
+import GoFV.Proof.ProveCheck.Fold
 import GoFV.Proof.ProveCheck.Inv
 import GoFV.Proof.ProveCheck.Rng
 import GoFV.Proof.ProveCheck.RngOp

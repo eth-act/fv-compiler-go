@@ -1,4 +1,5 @@
 import GoFV.Proof.ProveCheck.Inv
+import GoFV.Proof.ProveCheck.Fold
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.TermStep
 
@@ -10,12 +11,14 @@ the premises of `AtomSim.atomSimInv_refines`:
 
 * `den_ref`: every value listed in `f` in an ancestor of `b0` is refined, as a term, by the same
   value listed in `g`, for valuations under which `b0`'s assumptions hold (`AsmHolds`). A kept
-  definition is monotone; a value rewrite (`valueOK`) refines by `valueOK_ref` under the
-  assumptions of its own block, a subset of `b0`'s (`facts_of_anc`).
+  definition is monotone; a value rewrite (`valueOK`) refines by `valueOK_ref` and a
+  constant-folded argument by `fold_ref`, under the assumptions of the value's own block, a
+  subset of `b0`'s (`facts_of_anc`).
 * `asm_of_premises`: the premises of `TermRefP`/`StepRefP` under `PInv` at `b` give `b`'s
   assumptions (facts are terms of strict ancestors, `Phi` invariants hold of the atoms).
-* `prove_atomArgs` (`AtomArgsRefP`): atoms keep their definitions; their arguments are listed in
-  ancestors of their block (`uses`) or, for a `Phi`, of the predecessor (`phiUse`).
+* `prove_atomArgs` (`AtomArgsRefP`): atoms keep their op and fields; each argument is kept,
+  listed in an ancestor of the atom's block (`uses`) or, for a `Phi`, of the predecessor
+  (`phiUse`), or folded to a constant under that block's assumptions (`fold_termRefP`).
 * `prove_steps` (`StepRefsP`): a kept terminator by `stepRefP_of_controls`; a removed branch
   (`branchOK`) goes along the successor its control is decided to take (`decides_sound`).
 -/
@@ -90,25 +93,60 @@ theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b
       have hnp : fv.op ≠ .Phi := fun e => by rw [e, termOp_phi] at ht; cases ht
       exact (uses hc hb hfb (by simpa [Cert.inTree] using hR.tree _ hb) hxv hfv hnp ha').trans
         hc.parents hanc
-    rcases hdef with hs | hok
-    · unfold sameDef at hs
-      simp only [Bool.and_eq_true, beq_iff_eq] at hs
-      obtain ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, has⟩ := hs
-      by_cases ht : termOp fv.op = true
-      · rw [den_succ_term hfv ht, den_succ_term hL (hop ▸ ht), ← hop, ← hty, ← hai, ← hax, ← has]
-        exact retype_mono _ (evalPure_mono _ _ _ _ (refinesList_map (hargs ht)))
-      · rw [den_succ_atom (not_isTerm hfv ht), den_succ_atom (not_isTerm hL (hop ▸ ht))]
-        exact hρ x
-    · obtain ⟨htf, htg, hty, hga⟩ := valueOK_shape hok
-      have hAx : AsmHolds f.value? tabs ρ { facts := factsAt F fv.block, inv } :=
-        ⟨fun c v hcv => hA.facts c v (facts_of_anc hR.hF hc.parents hanc hb0 _ hcv), hA.inv,
-          hA.typed⟩
-      rw [den_succ_term hfv htf, den_succ_term hL htg, ← hty]
-      refine retype_mono _ ((valueOK_ref hAx hok n).trans
-        (evalPure_mono _ _ _ _ (refinesList_map fun a ha => ?_)))
-      rcases hga with e | e
-      · rw [e] at ha; exact hargs htf a ha
-      · rw [e] at ha; cases ha
+    have hAx : AsmHolds f.value? tabs ρ { facts := factsAt F fv.block, inv } :=
+      ⟨fun c v hcv => hA.facts c v (facts_of_anc hR.hF hc.parents hanc hb0 _ hcv), hA.inv,
+        hA.typed⟩
+    by_cases ht : termOp fv.op = true
+    · have hnp : fv.op ≠ .Phi := fun e => by rw [e, termOp_phi] at ht; cases ht
+      -- arguments kept or folded to constants
+      have hfold : argsOK f.value? tabs F inv { facts := factsAt F fv.block, inv } g fb fv gv = true →
+          RefinesList (fv.args.toList.map (den f.value? tabs ρ n))
+            (gv.args.toList.map (den (listedDefs g) tabs ρ' n)) := fun hao => by
+        obtain ⟨hsz, hi⟩ := argsOK_spec hao
+        refine refinesList_zip (by simp [hsz]) fun i h1 h2 => ?_
+        simp only [Array.length_toList] at h1 h2
+        simp only [Array.getElem_toList]
+        have hi' := hi i h1
+        rw [getElem!_pos fv.args i h1, getElem!_pos gv.args i h2, argAsm_of_not_phi hnp] at hi'
+        rcases hi' with e | hf
+        · rw [← e]; exact hargs ht _ (Array.mem_toList_iff.2 (Array.getElem_mem h1))
+        · exact fold_ref hAx hf n
+      obtain ⟨htg, hty, L, h1, h2⟩ : termOp gv.op = true ∧ fv.type = gv.type ∧ ∃ L,
+          Sem.Refines
+            (evalPure fv.op (tabs.ty fv.type) fv.auxInt fv.aux (fv.args.toList.map (den f.value? tabs ρ n)))
+            (evalPure gv.op (tabs.ty fv.type) gv.auxInt gv.aux L) ∧
+          RefinesList L (gv.args.toList.map (den (listedDefs g) tabs ρ' n)) := by
+        rcases defOK_cases hdef with hs | hok | ⟨hao, hs | hok⟩
+        · unfold sameDef at hs
+          simp only [Bool.and_eq_true, beq_iff_eq] at hs
+          obtain ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, has⟩ := hs
+          refine ⟨hop ▸ ht, hty, _, by rw [hop, hai, hax]; exact .refl _, ?_⟩
+          rw [← has]; exact refinesList_map (hargs ht)
+        · obtain ⟨-, htg, hty, hga⟩ := valueOK_shape hok
+          refine ⟨htg, hty, _, valueOK_ref hAx hok n, ?_⟩
+          rcases hga with e | e
+          · rw [e]; exact refinesList_map (hargs ht)
+          · rw [e]; exact .nil
+        · unfold sameDef at hs
+          simp only [Bool.and_eq_true, beq_iff_eq] at hs
+          obtain ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, -⟩ := hs
+          exact ⟨hop ▸ ht, hty, _, by rw [hop, hai, hax]; exact .refl _, hfold hao⟩
+        · obtain ⟨-, htg, hty, -⟩ := valueOK_shape hok
+          exact ⟨htg, hty, _, valueOK_ref hAx hok n, hfold hao⟩
+      rw [den_succ_term hfv ht, den_succ_term hL htg, ← hty]
+      exact retype_mono _ (h1.trans (evalPure_mono _ _ _ _ h2))
+    · have htg : ¬ termOp gv.op = true := by
+        rcases defOK_cases hdef with hs | hok | ⟨-, hs | hok⟩
+        · unfold sameDef at hs
+          simp only [Bool.and_eq_true, beq_iff_eq] at hs
+          exact hs.1.1.1.1 ▸ ht
+        · exact absurd (valueOK_shape hok).1 ht
+        · unfold sameDef at hs
+          simp only [Bool.and_eq_true, beq_iff_eq] at hs
+          exact hs.1.1.1.1 ▸ ht
+        · exact absurd (valueOK_shape hok).1 ht
+      rw [den_succ_atom (not_isTerm hfv ht), den_succ_atom (not_isTerm hL htg)]
+      exact hρ x
 
 /-- The premises of `TermRefP`/`StepRefP` under `PInv` at `b` give `b`'s assumptions, if the
 facts of `b` are in `S`. -/
@@ -138,6 +176,13 @@ theorem prove_termRefP (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID}
   fun n => ⟨n, fun _ _ hρ hT _ hP hSP =>
     den_ref hc hR hb hρ (asm_of_premises hR hb hS hT hP hSP) n x hx hanc⟩
 
+/-- A constant fold justified under `b`'s assumptions refines as a term under `PInv` at `b`. -/
+theorem fold_termRefP (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
+    {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {a c : ID}
+    (h : foldOK f.value? tabs { facts := factsAt F b, inv } g a c = true) :
+    TermRefP (PInv tabs f F inv b) S f.value? tabs a (listedDefs g) tabs c :=
+  fun n => ⟨n, fun _ _ _ hT _ hP hSP => fold_ref (asm_of_premises hR hb hS hT hP hSP) h n⟩
+
 theorem facts_sanc (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID} {bb : Block}
     (hb : b ∈ f.blocks) (hbb : f.block? b = some bb) :
     ∀ c v, (c, v) ∈ factsAt F b → SAnc f b c := fun _ _ hcv =>
@@ -162,30 +207,44 @@ theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F 
   obtain ⟨-, fv, gv, hfv, hgv, -, hdef⟩ := hvals a haf
   rw [hu'] at hfv; cases hfv
   rw [hu] at hgv; cases hgv
-  have hargs : u.args = u'.args := by
-    rcases hdef with hs | hok
+  have htree : ((make f).depthOf b).isSome := by simpa [Cert.inTree] using hR.tree _ hbf
+  -- every argument kept or folded to a constant (a value rewrite is of a term)
+  have hper : ∀ i < u'.args.size, u'.args[i]! = u.args[i]! ∨
+      foldOK f.value? tabs (argAsm F inv { facts := factsAt F b, inv } fb u' i) g u'.args[i]!
+        u.args[i]! = true := by
+    rcases defOK_cases hdef with hs | hok | ⟨hao, hs | hok⟩
     · unfold sameDef at hs
       simp only [Bool.and_eq_true, beq_iff_eq] at hs
-      exact hs.2.symm
+      exact fun i _ => .inl (by rw [hs.2])
     · have := (valueOK_shape hok).2.1
       rw [ht] at this; cases this
-  have htree : ((make f).depthOf b).isSome := by simpa [Cert.inTree] using hR.tree _ hbf
+    · exact (argsOK_spec hao).2
+    · have := (valueOK_shape hok).2.1
+      simp only at this
+      rw [ht] at this; cases this
   refine ⟨u', hu', hop, hty, hai, hax, hsz, fun i hi => ?_⟩
   have hi' : i < u'.args.size := hsz ▸ hi
   have hmem : u'.args[i]! ∈ u'.args := by
     rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi'
   have hLM := (closedOK_facts hR.closedF b hbf fb hfb).2 a haf u' hu' _ hmem
-  rw [hargs]
   refine ⟨fun hnp => ?_, fun hph p pb k hp hpb hk => ?_⟩
-  · exact prove_termRefP hc hR hbf (facts_sanc hc hR hbf hfb) hLM
-      (uses hc hbf hfb htree haf hu' (hop ▸ hnp) hmem)
+  · rcases hper i hi' with e | hf
+    · rw [← e]
+      exact prove_termRefP hc hR hbf (facts_sanc hc hR hbf hfb) hLM
+        (uses hc hbf hfb htree haf hu' (hop ▸ hnp) hmem)
+    · rw [argAsm_of_not_phi (hop ▸ hnp)] at hf
+      exact fold_termRefP hR hbf (facts_sanc hc hR hbf hfb) hf
   · obtain ⟨-, cb, hcb, hpred⟩ := hwf.succLink p pb ⟨hp, hpb⟩ k _ hk
     rw [hfb] at hcb; cases hcb
-    have hpt : ((make f).depthOf p).isSome := by simpa [Cert.inTree] using hR.tree _ hp
-    have hget : u'.args[i]? = some u'.args[i]! := by
-      rw [getElem!_pos u'.args i hi']; exact Array.getElem?_eq_getElem hi'
-    exact prove_termRefP hc hR hp (facts_ancV hc hR hp hpb) hLM
-      (phiUse hc hbf hfb htree haf hu' (hop ▸ hph) hget hpred hpt)
+    rcases hper i hi' with e | hf
+    · rw [← e]
+      have hpt : ((make f).depthOf p).isSome := by simpa [Cert.inTree] using hR.tree _ hp
+      have hget : u'.args[i]? = some u'.args[i]! := by
+        rw [getElem!_pos u'.args i hi']; exact Array.getElem?_eq_getElem hi'
+      exact prove_termRefP hc hR hp (facts_ancV hc hR hp hpb) hLM
+        (phiUse hc hbf hfb htree haf hu' (hop ▸ hph) hget hpred hpt)
+    · rw [argAsm_of_phi (hop ▸ hph) hpred] at hf
+      exact fold_termRefP hR hp (facts_ancV hc hR hp hpb) hf
 
 /-- A removed branch: the `If`'s control, when not `poison`, takes the kept successor. -/
 theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
@@ -213,8 +272,7 @@ theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
       rw [hfc, hgc']
       have hdec := fun v (h : decides f.value? tabs { facts := factsAt F b, inv } rngFuel rngFuel c v
         = true) => decides_sound hA rngFuel c v h n
-      simp only [stepVals, hkf, hkg, List.map_toArray, List.map_cons, List.map_nil, ctlV,
-        List.getElem?_toArray, List.getElem?_cons_zero]
+      simp only [stepVals, hkf, hkg, List.map_cons, List.map_nil, ctlV, List.getElem?_cons_zero]
       cases hd : den f.value? tabs ρ n c with
       | bool bb =>
         rcases hm with ⟨hgs, hd1⟩ | ⟨hgs, hd0⟩
