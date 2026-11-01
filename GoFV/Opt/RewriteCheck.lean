@@ -1081,14 +1081,28 @@ def isPtrTy : Sem.Ty → Bool
 def ptrVal (tabs : Tables) (f : Func) (x : ID) : Bool :=
   (f.value? x).any fun u => isPtrTy (tabs.ty u.type)
 
+/-- A constant index: a `Const64` of the 64-bit integer shape, its value. -/
+def constIdx? (tabs : Tables) (f : Func) (i : ID) : Option (BitVec 64) :=
+  match f.value? i with
+  | some iv =>
+    match iv.op, tabs.ty iv.type with
+    | .Const64, .int .w64 => some (BitVec.ofInt 64 iv.auxInt.toInt)
+    | _, _ => none
+  | none => none
+
 /-- One step of `ptrBase`: an `OffPtr` or `Copy` of pointer shape on a pointer-shaped argument,
-its argument and its offset. -/
+or a `PtrIndex` of element size `e` (its pointer shape) by a constant index `k` (`constIdx?`),
+its argument and its offset (`k * e`). -/
 def ptrStep? (tabs : Tables) (f : Func) (a : ID) : Option (ID × BitVec 64) :=
   match f.value? a with
   | some u =>
     if (u.op == .OffPtr || u.op == .Copy) && u.args.size == 1 && isPtrTy (tabs.ty u.type) &&
         ptrVal tabs f u.args[0]! then
       some (u.args[0]!, if u.op == .OffPtr then BitVec.ofInt 64 u.auxInt.toInt else 0)
+    else if u.op == .PtrIndex && u.args.size == 2 && ptrVal tabs f u.args[0]! then
+      match tabs.ty u.type, constIdx? tabs f u.args[1]! with
+      | .ptr (some e), some k => some (u.args[0]!, k * BitVec.ofNat 64 e)
+      | _, _ => none
     else none
   | none => none
 
@@ -1218,9 +1232,19 @@ both). -/
 def fwdStoreTy (t s : Sem.Ty) : Bool :=
   fwdTyEq t s || (isPtrTy t && s matches .int .w64)
 
+/-- The value `a` a `Store` writes stands for `x`: `x` is reached from `a` through compatible
+copies (`copyReach`; copy elimination ran before the rule matched `x`), and `a` has a shape
+`fwdTyEq` to the read's `t`. -/
+def storedOK (tabs : Tables) (f : Func) (t : Sem.Ty) (a x : ID) : Bool :=
+  copyReach tabs f.valueTab f.valueTab.size a x &&
+    match f.value? a with
+    | some av => fwdTyEq t (tabs.ty av.type)
+    | none => false
+
 /-- Memory `m` of `f`, read at pointer `p` at shape `t`, holds `x`: through at most `d` `Copy`s
-and `Store`s at pointers disjoint from the read (`disjointB`), a `Store` of `x` at a pointer equal
-to `p` (`samePtrB`) at a type of shape `t` (`fwdStoreTy`), and `x` of shape `t` (`fwdTyEq`). -/
+and `Store`s at pointers disjoint from the read (`disjointB`), a `Store` of a value standing for
+`x` (`storedOK`) at a pointer equal to `p` (`samePtrB`) at a type of shape `t` (`fwdStoreTy`),
+and `x` of shape `t` (`fwdTyEq`). -/
 def fwdChain (tabs : Tables) (f : Func) (p : ID) (t : Sem.Ty) (x : ID) : Nat → ID → Bool
   | 0, _ => false
   | d + 1, m =>
@@ -1228,8 +1252,8 @@ def fwdChain (tabs : Tables) (f : Func) (p : ID) (t : Sem.Ty) (x : ID) : Nat →
     | some s, some xv =>
       (s.op == .Copy && s.args.size == 1 && fwdChain tabs f p t x d s.args[0]!) ||
       ((s.op == .Store || s.op == .StoreWB) && s.args.size == 3 &&
-       ((s.args[1]! == x && samePtrB tabs f p s.args[0]! && fwdStoreTy t (Sem.auxTy tabs s.aux) &&
-           fwdTyEq t (tabs.ty xv.type)) ||
+       ((storedOK tabs f t s.args[1]! x && samePtrB tabs f p s.args[0]! &&
+           fwdStoreTy t (Sem.auxTy tabs s.aux) && fwdTyEq t (tabs.ty xv.type)) ||
         (disjointB tabs f p t.size s.args[0]! (Sem.auxTy tabs s.aux).size &&
            fwdChain tabs f p t x d s.args[2]!)))
     | _, _ => false

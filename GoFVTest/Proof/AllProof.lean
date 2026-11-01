@@ -491,6 +491,7 @@ import GoFV.Proof.Witness.FuseEarly
 import GoFV.Proof.Witness.FuseIf
 import GoFV.Proof.Witness.FuseLate
 import GoFV.Proof.Witness.FusePlain
+import GoFV.Proof.Witness.FwdCopy
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd

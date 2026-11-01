@@ -130,6 +130,58 @@ theorem den_ptrVal (hT : Term.Typed f.value? tabs ρ) {x : ID} (hx : ptrVal tabs
     rw [hv] at hx
     exact ptr_fixed (by simpa using hx) (den_fix hT hv k)
 
+theorem constIdx_spec {i : ID} {kk : BitVec 64} (h : constIdx? tabs f i = some kk) :
+    ∃ iv, f.value? i = some iv ∧ iv.op = .Const64 ∧ tabs.ty iv.type = .int .w64 ∧
+      kk = BitVec.ofInt 64 iv.auxInt.toInt := by
+  unfold constIdx? at h
+  split at h
+  · next iv hiv =>
+    split at h
+    · next hop hty => cases h; exact ⟨iv, hiv, hop, hty, rfl⟩
+    · cases h
+  · cases h
+
+/-- A `Const64` of the 64-bit integer shape evaluates to its constant. -/
+theorem den_const64 {i : ID} {iv : Value} (hiv : f.value? i = some iv) (hop : iv.op = .Const64)
+    (hty : tabs.ty iv.type = .int .w64) (k : Nat) :
+    den f.value? tabs ρ (k + 1) i = .int .w64 (BitVec.ofInt 64 iv.auxInt.toInt) := by
+  have ht : termOp iv.op = true := by rw [hop]; rfl
+  have hfo : GoFV.Proof.Rules.frameOp iv.op = false := by rw [hop]; rfl
+  rw [den_succ_term hiv ht, GoFV.Proof.Rules.opVal_pure hfo, hop, hty]
+  rw [show ∀ (ty : Ty) (ai : Int64) (aux : Option AuxRef) (args : List Val),
+    evalPure .Const64 ty ai aux args = Conv.const .w64 ai from fun _ _ _ _ => rfl]
+  simp only [Conv.const, Val.retype]
+  simp
+
+/-- A `PtrIndex` by a constant index: the pointer plus the index times the element size. -/
+theorem ptrIndex_den (hT : Term.Typed f.value? tabs ρ) {a : ID} {u : Value}
+    (hu : f.value? a = some u) (hop : u.op = .PtrIndex) (hsz : u.args.size = 2)
+    (hpv : ptrVal tabs f u.args[0]! = true) {e : Nat} (hty : tabs.ty u.type = .ptr (some e))
+    {kk : BitVec 64} (hci : constIdx? tabs f u.args[1]! = some kk) {k : Nat} {p : Ptr}
+    (h : den f.value? tabs ρ k a = .ptr p) :
+    ∃ q, den f.value? tabs ρ (k - 1) u.args[0]! = .ptr q ∧ p = q.add (kk * BitVec.ofNat 64 e) := by
+  obtain ⟨iv, hiv, hiop, hity, rfl⟩ := constIdx_spec hci
+  have ht : termOp u.op = true := by rw [hop]; rfl
+  have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
+  cases k with
+  | zero => simp [den] at h
+  | succ k =>
+  simp only [Nat.add_sub_cancel]
+  rw [den_succ_term hu ht, toList_two hsz, List.map_cons, List.map_cons, List.map_nil,
+    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty] at h
+  cases k with
+  | zero => simp [den, PtrOps.ptrIndex, Val.retype] at h
+  | succ k =>
+  rw [den_const64 hiv hiop hity k] at h
+  rcases den_ptrVal hT hpv (k + 1) with h0 | ⟨q0, h0⟩
+  · rw [h0] at h; simp [PtrOps.ptrIndex, Val.retype] at h
+  · refine ⟨q0, h0, ?_⟩
+    rw [h0] at h
+    simp only [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes] at h
+    split at h
+    · rw [retype_ptr_eq h]; simp
+    · simp [Val.retype] at h
+
 /-- One `ptrStep?`: the argument's pointer plus the offset. -/
 theorem ptrStep_den (hT : Term.Typed f.value? tabs ρ) {a c : ID} {o : BitVec 64}
     (hs : ptrStep? tabs f a = some (c, o)) {k : Nat} {p : Ptr}
@@ -171,7 +223,17 @@ theorem ptrStep_den (hT : Term.Typed f.value? tabs ρ) {a c : ID} {o : BitVec 64
       · rw [hop, evalPure_copy] at h
         rw [retype_ptr_eq h, hop]
         simp [Ptr.add]
-  · cases hs
+  · split at hs
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨⟨hop, hsz⟩, hpv⟩ := hc
+      split at hs
+      · next e kk hty hci =>
+        simp only [Option.some.injEq, Prod.mk.injEq] at hs
+        obtain ⟨rfl, rfl⟩ := hs
+        exact ptrIndex_den hT hu hop hsz hpv hty hci h
+      · cases hs
+    · cases hs
 
 /-- **Base and offset**: a pointer is its `ptrBase`'s pointer plus the offset. -/
 theorem ptrBase_den (hT : Term.Typed f.value? tabs ρ) :

@@ -195,6 +195,17 @@ theorem fuel_list {α : Type} {F : α → Val} {G : Nat → α → Val}
     · exact h1.trans (hG _ _ _ (Nat.le_max_left _ _))
     · exact (h2 b hb).trans (hG _ _ _ (Nat.le_max_right _ _))
 
+theorem storedOK_spec {tabs : Tables} {f : Func} {t : Ty} {a x : ID}
+    (h : storedOK tabs f t a x = true) :
+    ∃ av, f.value? a = some av ∧ copyReach tabs f.valueTab f.valueTab.size a x = true ∧
+      fwdTyEq t (tabs.ty av.type) = true := by
+  unfold storedOK at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨hcr, h⟩ := h
+  split at h
+  · next av hav => exact ⟨av, hav, hcr, h⟩
+  · cases h
+
 /-- **A `Load` through a `Store` chain** (`fwdChain`): the memory read at the Load's pointer
 holds, through the disjoint writes, the write of the stored value, which it reads back. -/
 theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed f.value? tabs ρ)
@@ -237,13 +248,15 @@ theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed
     rw [hm] at hρs
     have hMM := retype_mem hρs.symm
     subst hMM
-    rcases h with ⟨⟨⟨⟨hsx, hsame⟩, hsty⟩, hxty⟩⟩ | ⟨hdis, hch⟩
-    · -- the `Store` of `x` at the Load's pointer
+    rcases h with ⟨⟨⟨⟨hst, hsame⟩, hsty⟩, -⟩⟩ | ⟨hdis, hch⟩
+    · -- the `Store` of a value standing for `x` at the Load's pointer
+      obtain ⟨av, hav, hcr, haty⟩ := storedOK_spec hst
       rw [samePtr_den hT hM hsame hp hq]
-      have hxk : (den f.value? tabs ρ N x).retype t = den f.value? tabs ρ N x := by
-        rw [fwdTyEq_retype hxty]; exact den_fix hT hx N
-      rw [hsx, fwdStoreTy_encode hsty hxk] at hwr
-      exact ⟨N, load_write (fwdTyEq_fwdTy hxty) hxk hwr⟩
+      have hak : (den f.value? tabs ρ N s.args[1]!).retype t = den f.value? tabs ρ N s.args[1]! := by
+        rw [fwdTyEq_retype haty]; exact den_fix hT hav N
+      rw [fwdStoreTy_encode hsty hak] at hwr
+      exact ⟨N, (load_write (fwdTyEq_fwdTy haty) hak hwr).trans
+        (copyReach_den (M := f.valueTab) hT _ _ _ hcr N)⟩
     · -- a `Store` at a disjoint pointer
       have hsep := disjoint_sep hT hM hdis hp hq
       rw [load_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact hsep)]
@@ -287,6 +300,30 @@ theorem lm_arg {x : ID} {u : Value} (hx : LM f x) (hu : f.value? x = some u) :
   rw [hu] at hu'; cases hu'
   exact (closedOK_facts F.cf b hb fb hfb).2 x hxv u hu
 
+/-- A value reached through copies from a listed value is listed and ranks no higher. -/
+theorem copyReach_rank : ∀ (N : Nat) {a w : ID}, copyReach tabs f.valueTab N a w = true →
+    LM f a → LM f w ∧ (fwdRank f)[w]?.getD 0 ≤ (fwdRank f)[a]?.getD 0
+  | 0, a, w, h, ha => by
+    simp only [copyReach, beq_iff_eq] at h; subst h; exact ⟨ha, Nat.le_refl _⟩
+  | N + 1, a, w, h, ha => by
+    unfold copyReach at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with rfl | h
+    · exact ⟨ha, Nat.le_refl _⟩
+    have hget : ∀ z, Defs.get? f.valueTab z = f.value? z := fun _ => rfl
+    rw [hget] at h
+    cases hx : f.value? a with
+    | none => rw [hx] at h; cases h
+    | some x =>
+      rw [hx] at h
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨⟨hop, hsz⟩, -⟩, hr⟩ := h
+      have hc0 : x.args[0]! ∈ x.args := by
+        rw [getElem!_pos x.args 0 (by omega)]; exact Array.getElem_mem _
+      have hph : x.op ≠ .Phi := by rw [hop]; decide
+      obtain ⟨hlw, hrw⟩ := copyReach_rank N hr (lm_arg F ha hx _ hc0)
+      exact ⟨hlw, Nat.le_trans hrw (Nat.le_of_lt (fwdRankOK_spec F.rank ha hx hph _ hc0))⟩
+
 /-- The value a `Store` chain (`fwdChain`) reads back is listed and ranks below the chain's
 memory. -/
 theorem chain_rank {p x : ID} {t : Ty} :
@@ -312,10 +349,10 @@ theorem chain_rank {p x : ID} {t : Ty} :
     have hsph : s.op ≠ .Phi := by rcases hsop with h | h <;> rw [h] <;> decide
     have hmem : ∀ i, i < 3 → s.args[i]! ∈ s.args := fun i hi => by
       rw [getElem!_pos s.args i (by omega)]; exact Array.getElem_mem _
-    rcases h with ⟨⟨⟨⟨hsx, -⟩, -⟩, -⟩⟩ | ⟨-, hch⟩
-    · rw [← hsx]
-      exact ⟨lm_arg F hm hs _ (hmem 1 (by omega)),
-        fwdRankOK_spec F.rank hm hs hsph _ (hmem 1 (by omega))⟩
+    rcases h with ⟨⟨⟨⟨hst, -⟩, -⟩, -⟩⟩ | ⟨-, hch⟩
+    · obtain ⟨av, hav, hcr, -⟩ := storedOK_spec hst
+      obtain ⟨hlx, hrx⟩ := copyReach_rank F _ hcr (lm_arg F hm hs _ (hmem 1 (by omega)))
+      exact ⟨hlx, Nat.lt_of_le_of_lt hrx (fwdRankOK_spec F.rank hm hs hsph _ (hmem 1 (by omega)))⟩
     · have hc := hmem 2 (by omega)
       obtain ⟨hlx, hrx⟩ := chain_rank d _ hch (lm_arg F hm hs _ hc)
       exact ⟨hlx, Nat.lt_trans hrx (fwdRankOK_spec F.rank hm hs hsph _ hc)⟩
