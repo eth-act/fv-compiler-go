@@ -14,6 +14,25 @@ namespace GoFV.SSA.Sem
 
 open GoFV.SSA
 
+/-! ## Transitivity -/
+
+mutual
+theorem Refines.trans : {a b c : Val} → Refines a b → Refines b c → Refines a c
+  | _, _, _, .poison _, _ => .poison _
+  | _, _, _, .int _ _, h => h
+  | _, _, _, .bool _, h => h
+  | _, _, _, .mem h1, .mem h2 => .mem (h1.trans h2)
+  | _, _, _, .tuple h1, .tuple h2 => .tuple (RefinesList.trans h1 h2)
+  | _, _, _, .ptr _, h => h
+  | _, _, _, .agg h1, .agg h2 => .agg (RefinesList.trans h1 h2)
+  | _, _, _, .blob h1, .blob h2 => .blob (h1.trans h2)
+  | _, _, _, .empty, h => h
+theorem RefinesList.trans : {a b c : List Val} → RefinesList a b → RefinesList b c →
+    RefinesList a c
+  | _, _, _, .nil, .nil => .nil
+  | _, _, _, .cons h1 t1, .cons h2 t2 => .cons (Refines.trans h1 h2) (RefinesList.trans t1 t2)
+end
+
 /-! ## Bytes without poison -/
 
 /-- A byte list that contains a poison byte. -/
