@@ -499,12 +499,20 @@ def CSE.inFrag (c : CSE.Ctx) (f : Func) : Bool :=
   | .ok (g, rw) => !CSE.crel c.tabs false f g rw || CSE.crel c.tabs true f g rw
   | .error _ => true
 
-/-- The `generic cse` pass. -/
-def csePass : Pass := Pass.ofFunc fun env f => do
+/-- What `generic cse` reads from the pass environment (`typ.Mem`, the pointer size). -/
+def cseCtx (env : PassEnv) : Except String CSE.Ctx := do
   let some mem := env.typ? "Mem" | throw "cse: no typ.Mem"
   let some #[.word ps] := env.config? "ptrsize" | throw "cse: config ptrsize"
   let some ptrSize := ps.toInt? | throw "cse: config ptrsize"
-  cseChecked
-    { tabs := env.tables, order := env.typeOrder, isMem := env.tables.isMemory mem, ptrSize } f
+  return { tabs := env.tables, order := env.typeOrder, isMem := env.tables.isMemory mem, ptrSize }
+
+/-- The `generic cse` pass. -/
+def csePass : Pass := Pass.ofFunc fun env f => do cseChecked (← cseCtx env) f
+
+/-- `cse_refines`' fragment for an input of the pass (`CSE.inFrag`). -/
+def cseFrag (env : PassEnv) (f : Func) : Bool :=
+  match cseCtx env with
+  | .ok c => CSE.inFrag c f
+  | .error _ => true
 
 end GoFV.Opt
