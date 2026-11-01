@@ -70,18 +70,18 @@ theorem sameNP_copy : SameNP (schedNodes f fb).toList (schedNodes g gb).toList :
             rw [hgv] at hv; cases hv; exact hne (hop.trans hph)]
         | phi _ _ hcop =>
           rw [nodeOf_schedNodes hownG hndG' hxg hgv (by rw [hcop]; decide), hcop]; rfl
-        | empty hzz => exact absurd hzz hz
+        | empty hzz => exact absurd hph (hz hzz).not_phi
       refine ⟨by rw [hT]; unfold npIn; rw [hnS], fun h => ?_⟩
       unfold npIn at h; rw [hnS] at h; cases h
-    · have hop : gv.op = fv.op := by
+    · have hgph : gv.op ≠ .Phi := fun hp => hph (valRel_phi hrel hp)
+      have hpr : prio gv.op = prio fv.op := by
         cases hrel with
-        | same hop => exact hop
+        | same hop => rw [hop]
         | phi _ hp => exact absurd hp hph
-        | empty hzz => exact absurd hzz hz
-      have hgph : gv.op ≠ .Phi := by rw [hop]; exact hph
+        | empty hzz hop => rw [hop, (hz hzz).prio]; rfl
       have hnS := nodeOf_schedNodes hownF hndF hx hfv hph
       have hnT := nodeOf_schedNodes hownG hndG' hxg hgv hgph
-      refine ⟨by unfold npIn; rw [hnS, hnT, hop], fun _ => ⟨_, _, hnS, hnT, by simp [hop]⟩⟩
+      refine ⟨by unfold npIn; rw [hnS, hnT, hpr], fun _ => ⟨_, _, hnS, hnT, by simp [hpr]⟩⟩
   · have hnS : nodeOf (schedNodes f fb).toList x = none := nodeOf_none fun hn =>
       hx ((nodeIn_schedNodes hownF).1 hn).1
     have hnT : nodeOf (schedNodes g gb).toList x = none := nodeOf_none fun hn =>
@@ -99,7 +99,7 @@ theorem nodeT_of_nodeS {x : ID} (hx : NodeIn (schedNodes f fb).toList x) :
   obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hxb
   rw [hfv] at hfv'; cases hfv'
   exact (nodeIn_schedNodes (valuesOwn hwg hbg hgbb)).2 ⟨by rw [hvals]; exact hxb, gv, hgv,
-    fun hp => hne (valRel_phi hrel hz hp)⟩
+    fun hp => hne (valRel_phi hrel hp)⟩
 
 end
 
@@ -131,7 +131,7 @@ theorem copyDep :
   obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hyb
   rw [hfv] at hfv'; cases hfv'
   rw [hgy] at hgv; cases hgv
-  obtain ⟨-, fa, hfargs, hra⟩ := copyArg hrel hnph hz hop hargs
+  obtain ⟨-, fa, hfargs, hra⟩ := copyArg hrel hnph hop hargs
   have hyN : NodeIn (schedNodes f fb).toList y := (nodeIn_schedNodes hownF).2 ⟨hyb, fv, hfv, hnph⟩
   have hargsY : argsOf (schedNodes f fb).toList y = [fa] := by
     rw [argsOf_schedNodes hownF hndF hyb hfv hnph, hfargs]
@@ -191,7 +191,7 @@ theorem edgeBack {gb : Block} (hgbb : g.block? bid = some gb) (hvals : gb.values
   | phi w hph hcop hw hr =>
     rw [hw] at hax; simp at hax; subst hax
     exact absurd hagb (S.phiOut hbt (hpe x hxb fv hfv hph) hfb hxb hfv hgv hph hcop hw hr).2
-  | empty hzz => exact absurd hzz hz
+  | empty _ _ hga => rw [hga] at hax; simp at hax
   | same hop _ _ hsz hargs' =>
     have hnph : fv.op ≠ .Phi := by rw [← hop]; exact hgn
     have hxN : NodeIn (schedNodes f fb).toList x := (nodeIn_schedNodes hownF).2 ⟨hxb, fv, hfv, hnph⟩
@@ -280,7 +280,7 @@ theorem feedsOf {gb : Block} (hgbb : g.block? bid = some gb) (hvals : gb.values 
   · obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hab
     rw [hfv] at hfv'; cases hfv'
     rw [hu] at hgv; cases hgv
-    obtain ⟨hcop, fa, hfargs, hra⟩ := copyArg hrel hnph hz hop hargs
+    obtain ⟨hcop, fa, hfargs, hra⟩ := copyArg hrel hnph hop hargs
     have hpure : PureIn (schedNodes f fb).toList a := by
       intro n hn
       rw [nodeOf_schedNodes hownF hndF hab hfv hnph] at hn

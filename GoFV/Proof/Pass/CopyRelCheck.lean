@@ -86,9 +86,9 @@ theorem copyOK_spec {tabs : Tables} {k g : Func} (H : copyOK tabs k g = true) :
   · intro bid hb _ kb hkb x hx gv w hgv hop hargs
     obtain ⟨-, -, -, -, -, h4⟩ := hblk bid hb kb hkb
     exact (copyValueOK_spec (h4 x hx)).2 gv w hgv hop hargs
-  · intro bid hb _ kb hkb x hx kv hkv
+  · intro bid hb _ kb hkb x hx kv hkv hz'
     obtain ⟨-, -, -, -, -, h4⟩ := hblk bid hb kb hkb
     obtain ⟨-, -, -, -, hz, -⟩ := (copyValueOK_spec (h4 x hx)).1 kv hkv
-    exact hz
+    exact absurd hz' hz
 
 end GoFV.Proof.CopyRelCheck

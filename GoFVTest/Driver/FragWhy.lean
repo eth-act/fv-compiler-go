@@ -6,7 +6,8 @@ import GoFV.Opt.Verified
 `fragWhy name env f`: for a deadcode instance or `early phielim and copyelim` whose guard
 (`deadGuard`, `copyGuard`) rejects `f`, the failing conditions in the guard's order, each with
 the first offending value (`copyFrag`: size, `shape <op> <arg shape> ~ <value shape>` (a
-`Stable` phi, `stableB`, is exempt), `copyNZ`, `acyclic`; `emptyFragB`: `empty <op> <shape>`),
+`Stable` phi, `stableB`, is exempt), `copyNZ`, `acyclic`; `emptyFragB`: `empty <op> <shape>`,
+a zero-size tree value that is not `EmptyOK`),
 followed by ` @` and the value and its type (`whyKey` drops that part). `gofv-ssa-opt --check
 --verified` reports them as a histogram (`fragment conditions`) and lists examples as
 `FRAGMENT` reports.
@@ -52,7 +53,8 @@ def copyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
     if !chainEnds f.value? (f.valueTab.size + 1) x then return some s!"acyclic @v{x}"
   return none
 
-/-- Why `emptyFragB tabs f` fails (the first zero-size tree value), `none` if it holds. -/
+/-- Why `emptyFragB tabs f` fails (the first zero-size tree value that is not `EmptyOK`), `none`
+if it holds. -/
 def emptyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
   let C := GoFV.SSA.DomCert.make f
   for bid in f.blocks do
@@ -60,7 +62,7 @@ def emptyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
     let some fb := f.block? bid | continue
     for x in fb.values do
       let some v := f.value? x | continue
-      if isOkTrue (zeroSizeAggregate tabs v.type) then
+      if isOkTrue (zeroSizeAggregate tabs v.type) && !emptyOKB tabs v then
         return some s!"empty {v.op} {shapeName (tabs.ty v.type)} @v{x} t{v.type}"
   return none
 

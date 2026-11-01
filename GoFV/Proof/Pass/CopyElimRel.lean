@@ -35,8 +35,9 @@ inductive ValRel (tabs : Tables) (g : Func) (fv gv : Value) : Prop where
   /-- phielim: a `Phi` all of whose arguments are related to `w` becomes `Copy w`. -/
   | phi (w : ID) : fv.op = .Phi → gv.op = .Copy → gv.args = #[w] →
       (∀ a ∈ fv.args, ArgRel g a w) → ValRel tabs g fv gv
-  /-- A value of a zero-size struct or array type becomes `Empty`. -/
-  | empty : zeroSizeAggregate tabs fv.type = .ok true → gv.op = .Empty → ValRel tabs g fv gv
+  /-- A value of a zero-size struct or array type becomes `Empty` (without arguments). -/
+  | empty : zeroSizeAggregate tabs fv.type = .ok true → gv.op = .Empty → gv.args = #[] →
+      ValRel tabs g fv gv
 
 /-- The static relation between copyelim's input `f` and output `g`. -/
 structure CopyRel (tabs : Tables) (f g : Func) : Prop where

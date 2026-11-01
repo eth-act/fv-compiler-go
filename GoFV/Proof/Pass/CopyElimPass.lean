@@ -6,7 +6,8 @@ import GoFV.Proof.Pass.CopyElimLoop
 
 `copyelim_refines`: `copyelim_rel` (the pass establishes `CopyRel`) and `refines_of_rel` (the
 relation gives refinement), for an input and output that pass `check`, with the input in the
-fragments `CopyFrag` (copy chains) and `EmptyFrag` (no zero-size aggregate values).
+fragments `CopyFrag` (copy chains) and `EmptyFrag` (zero-size aggregate values only `Empty`s
+and `Arg`s at offset 0 of shape `empty`, `EmptyOK`).
 -/
 
 namespace GoFV.Proof.CopyElim

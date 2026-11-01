@@ -38,7 +38,11 @@ theorem evalSame (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
   have hargsdef := evalValue_args_def hdef
   cases hrel with
   | phi _ hph => exact absurd hph hnph
-  | empty hzz => exact absurd hzz hz
+  | empty hzz hgop hgargs =>
+    have he := hz hzz
+    have htyf : (Ctx.make tabs f).tys[x]? = some .empty := by rw [tys_of_value hfv, he.1]
+    rw [evalValue_emptyOK he (by rw [hfid]; exact htyf) hdef]
+    exact evalValue_empty hgop hgargs (by rw [hgid, S.tys hbt hfb hx, htyf])
   | same hop haux hai hsz hargs' =>
     refine evalValue_eq_of_args hop haux hai (hgid.trans hfid.symm) hsz (fun k fa hfa => ?_) hg'
       (by rw [hfid]; exact S.tys hbt hfb hx) rfl S.params rfl
@@ -76,7 +80,7 @@ theorem evalFormer (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i :
   rw [hgv] at hgv'; cases hgv'
   cases hrel with
   | same hop => exact absurd (hop.trans hph) hgn
-  | empty hzz => exact absurd hzz hz
+  | empty hzz => exact absurd hph (hz hzz).not_phi
   | phi w _ hcop hw hr =>
     have hl : Listed f x := ⟨bid, fb, ⟨hbt.1, hfb⟩, hx⟩
     have hU : Anc (make f) (blockOf f x) bid := by
@@ -144,7 +148,7 @@ theorem targetPre (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : 
     rw [hgv] at hgv'; cases hgv'
     cases hrel with
     | phi _ _ hcop => rw [hcop] at hgph; cases hgph
-    | empty hzz' => exact absurd hzz' hzz
+    | empty hzz' => exact absurd hph (hzz hzz').not_phi
     | same _ _ _ hsz hargs' =>
       obtain ⟨ga, hga, hr⟩ := hargs' i a ha
       have hsz' := hwf.phiArity bid fb z fv ⟨⟨hbt.1, hfb⟩, hz, hfv⟩ hph
@@ -165,7 +169,7 @@ theorem targetPre (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : 
     rw [hvals, Array.mem_toList_iff] at hz
     obtain ⟨fv, gv, hfv, hgv, -, -, -, -, hrel, hzz⟩ := S.value hbt hfb hz
     by_cases hgph : gv.op = .Phi
-    · have hph := valRel_phi hrel hzz hgph
+    · have hph := valRel_phi hrel hgph
       have hlt : z < fr.regs.size := by rw [hA.size]; exact lt_of_value? hfv
       obtain ⟨a, y, -, -, ga, hga, hy⟩ := hphiEq z hz fv gv hfv hgv hph hgph hlt
       refine ⟨some (z, y.retype ((Ctx.make tabs g).tys[z]?.getD .other)), ?_⟩
@@ -187,7 +191,7 @@ theorem targetPre (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : 
   · obtain ⟨fv, gv, hfv, hgv, -, -, -, -, hrel, hzz⟩ := S.value hbt hfb hzb
     have hgph : gv.op = .Phi := Classical.byContradiction fun hne =>
       hz ((omemT z).2 ⟨by rw [hvals]; exact hzb, gv, hgv, hne⟩)
-    have hph := valRel_phi hrel hzz hgph
+    have hph := valRel_phi hrel hgph
     have hlt : z < fr.regs.size := by rw [hA.size]; exact lt_of_value? hfv
     obtain ⟨a, y, ha, hy, ga, hga, hgy⟩ := hphiEq z hzb fv gv hfv hgv hph hgph hlt
     obtain ⟨a', y', ha', hy', hS⟩ := hphiS z hzb fv hfv hph hlt
@@ -314,7 +318,7 @@ theorem enter_ok (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
       obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hab
       rw [hfv] at hfv'; cases hfv'
       exact (omemT a).2 ⟨by rw [hvals]; exact hab, gv, hgv,
-        fun hp => hne (valRel_phi hrel hz hp)⟩))]
+        fun hp => hne (valRel_phi hrel hp)⟩))]
   obtain ⟨g'', h1, h2, -, h4, -⟩ := evalAll_ref (S := fun a => a ∉ oT.toList)
     (g := { fr with regs := setPhis psT fr.regs }) hloc
     (refOK_prefix (L2 := []) (by rw [List.append_nil]; exact otopoT)
@@ -361,7 +365,7 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Block}
     obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hyb
     rw [hfv] at hfv'; cases hfv'
     exact (nodeIn_schedNodes hownG).2 ⟨by rw [hvals]; exact hyb, gv, hgv,
-      fun hp => hne (valRel_phi hrel hz hp)⟩
+      fun hp => hne (valRel_phi hrel hp)⟩
   let Q : ID → Prop := fun y => DT r y ∧
     ∀ gy w, g.value? y = some gy → gy.op = .Copy → gy.args = #[w] → w = r ∨ DT r w
   -- an argument related to a value `x` reached from `r`
@@ -384,7 +388,7 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Block}
       rw [argsOf_schedNodes hownF hndF hyb hfv hne] at hxy
       obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hyb
       rw [hfv] at hfv'; cases hfv'
-      have hgn : gv.op ≠ .Phi := fun hp => hne (valRel_phi hrel hz hp)
+      have hgn : gv.op ≠ .Phi := fun hp => hne (valRel_phi hrel hp)
       have hyT := hnodeT y hy
       have hargsT : argsOf (schedNodes g gb).toList y = gv.args.toList :=
         argsOf_schedNodes hownG hndG (by rw [hvals]; exact hyb) hgv hgn
@@ -397,7 +401,7 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Block}
         · exact .trans hd (.arg hd.right hyT (by rw [hargsT]; exact Array.mem_toList_iff.2 hw))
       cases hrel with
       | phi _ hph => exact absurd hph hne
-      | empty hzz => exact absurd hzz hz
+      | empty hzz => rw [(hz hzz).2.1] at hxy; simp at hxy
       | same hop haux hai hsz hargs' =>
         obtain ⟨k, hk⟩ := List.getElem?_of_mem hxy
         have hk' : fv.args[k]? = some x := by simpa using hk
@@ -448,7 +452,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
     cases hrelr with
     | same hop => exact hop
     | phi _ hph => exact absurd hph hrnph
-    | empty hzz => exact absurd hzz hzr
+    | empty hzz => exact absurd (hzr hzz).prio (prio_panicking hrop)
   have hrT : r ∈ oT.toList :=
     (omemT r).2 ⟨by rw [hvals]; exact hrb, gvr, hgvr, by rw [hgop]; exact hrnph⟩
   obtain ⟨pre', post', hsplitT⟩ := List.append_of_mem hrT
@@ -486,7 +490,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
       cases hrelx with
       | same hop => rw [← hop, hcx] at hpx; exact hpx rfl
       | phi _ hph => exact hfxn hph
-      | empty hzz => exact hzx hzz
+      | empty hzz => exact hpx (hzx hzz).prio
     · intro hd; exact (depBack S hbt hfb hpe hso hgbb hvals hd hxN).1
   have htr := sched_transfer' hspecS hspecT hsame hdep hk hk' hrnp (fun a y haN hyN hay hyT => by
     obtain ⟨hyb, fy, hfy, hfyn⟩ := (nodeIn_schedNodes hownF).1 hyN
@@ -497,7 +501,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
     have hk2' : fy.args[k]? = some a := by simpa using hk2
     cases hrely with
     | phi _ hph => exact absurd hph hfyn
-    | empty hzz => exact absurd hzz hzy
+    | empty hzz => rw [(hzy hzz).2.1] at hk2'; simp at hk2'
     | same hop _ _ hsz hargs' =>
       obtain ⟨w, hw, hra⟩ := hargs' k a hk2'
       have hgyn : gy.op ≠ .Phi := by rw [hop]; exact hfyn
@@ -515,7 +519,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
     obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hab
     rw [hfv] at hfv'; cases hfv'
     exact ha ((omemT a).2 ⟨by rw [hvals]; exact hab, gv, hgv,
-      fun hp => hne (valRel_phi hrel hz hp)⟩)
+      fun hp => hne (valRel_phi hrel hp)⟩)
   have hinPre : ∀ x, x ∈ oS.toList → (∃ i < pre.length, oS.toList[i]? = some x) → x ∈ pre := by
     rintro x - ⟨i, hi, hix⟩
     rw [hsplit, List.getElem?_append_left hi] at hix
