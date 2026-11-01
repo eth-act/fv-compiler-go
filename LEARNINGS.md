@@ -251,6 +251,28 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (`schedule_congr (f := f) (g := g) …`) so elaboration does not unify through it either.
 - **Effect:** the module checks in 0.7 s CPU.
 
+#### Literal fuel in a search makes the kernel expand it on symbolic arguments
+- **Problem:** `GoFV.Opt.SchedFast.rename ids a := bsearch ids a 64 0 ids.size` (binary search,
+  fuel 64). Each proof of `GoFV/Proof/SchedFast.lean` mentioning `rename` hit `(kernel)
+  deterministic timeout` after 3–7 minutes wall (66–111 min CPU per `lean` run): with a literal
+  fuel the kernel's defeq checks unfold `bsearch` 64 levels deep on a symbolic `ids`, a binary
+  tree of `if`s.
+- **Trick:** fuel `ids.size` (enough: `log₂ size + 1` steps): no literal to unfold, so the
+  symbolic `bsearch` stays stuck. Same compiled behaviour.
+- **Effect:** the module checks in 0.9 s wall.
+
+#### Checker scheduling over block-local IDs (`schedFast`, #147)
+- **Problem:** `Sem.schedule f b` allocates about seven arrays of size `maxNodeId` per call;
+  checked CFG passes reschedule blocks per rewrite, so on big functions this dominates.
+- **Trick:** `GoFV.Opt.SchedFast.schedFast` sorts the block's node IDs (`PdqSort.sortBy`,
+  kernel-evaluable), renames them to their index (binary search), runs `kahn` + `schedValid`
+  on the renamed block and maps back; `schedFast_spec`/`schedFast_filter` transport
+  `SchedSpec` through the monotone renaming.
+- **Effect:** `sched-fast-bench` on the 400 largest full-corpus files (8,832,498 blocks): output
+  identical on every block; `schedule` 142.7–214.3 s, `schedFast` 24.3–24.6 s (5.8–8.8×, two
+  runs on a loaded machine). Quick corpus (9,297 files, 2,961,638 blocks): identical, 13.7 s →
+  7.5 s.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
