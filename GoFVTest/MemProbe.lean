@@ -270,6 +270,7 @@ def main (args : List String) : IO UInt32 := do
   let mut aAcc := 0
   let mut aMemOps : Std.HashMap String Nat := {}
   let mut aPtrOps : Std.HashMap String Nat := {}
+  let mut aMemRes : Std.HashMap String Nat := {}
   let mut aWhy : Std.HashMap String Nat := {}
   let mut aFnNoAddrNoCall := 0
   for path in files do
@@ -363,6 +364,7 @@ def main (args : List String) : IO UInt32 := do
                 if let some fx := f.value? x then
                   if fx.args.any (fun a => tyMem (ty a)) then aMemOps := bump aMemOps fx.op.name
                   if tyPtr (ty x) then aPtrOps := bump aPtrOps fx.op.name
+                  if tyMem (ty x) then aMemRes := bump aMemRes fx.op.name
             else
               let ws := daeWhy prev f g
               aWhy := bump aWhy (toString (ws.mergeSort (· ≤ ·)))
@@ -394,6 +396,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"  changed functions outside the fragment, by their reasons: {show' aWhy}"
   IO.println s!"  accepted: ops with a memory-shaped argument: {show' aMemOps}"
   IO.println s!"  accepted: ops with a pointer-capable result: {show' aPtrOps}"
+  IO.println s!"  accepted: ops with a memory-shaped result: {show' aMemRes}"
   IO.println s!"  eliminated values by op: {show' aKinds}"
   IO.println s!"  eliminated names by class/flags: {show' aNames}"
   IO.println s!"  changed functions eliminating no user addrtaken name (addrtaken, not autotmp): {aFnNoAddr}, of which without calls: {aFnNoAddrNoCall}"
