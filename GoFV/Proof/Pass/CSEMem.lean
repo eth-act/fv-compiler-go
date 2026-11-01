@@ -236,8 +236,8 @@ end Mem
 open Mem in
 /-- A `Load` of `t` at `p` reads the same through memory `m` as through `CSE.memEnd tabs f p t m`
 (both in the frame of a run, for values whose registers hold their evaluation). -/
-theorem load_memEnd {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Sem.Env} {fr : Sem.Frame}
-    (hwf : WF ce f) {A : ID → Prop}
+theorem load_memEnd {tabs : Tables} {f : Func} {env : Sem.Env} {fr : Sem.Frame}
+    {A : ID → Prop}
     (hA : ∀ x, A x → ∃ v y, f.value? x = some v ∧ fr.regs[x]? = some (some y) ∧
       (v.op ≠ .Phi → Sem.evalValue env (Sem.Ctx.make tabs f) fr v = .ok y))
     (hcl : ∀ x v, A x → f.value? x = some v → v.op ≠ .Phi → ∀ a ∈ v.args, A a)

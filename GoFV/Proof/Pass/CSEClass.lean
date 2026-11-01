@@ -205,7 +205,7 @@ theorem argVals_head {fr : Frame} {as : Array ID} {r : Val} {rest : List Val} {a
   rcases as with ⟨l⟩
   match l, h, ha with
   | x :: l, h, ha =>
-    simp only [List.getElem?_cons_zero, Option.some.injEq] at ha
+    simp at ha
     subst ha
     simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff,
       Option.pure_def, Option.some.injEq, List.cons.injEq] at h
@@ -260,7 +260,7 @@ theorem step_corr : ∀ (j : Nat) (b : ID), pre[j]? = some b →
     (B (Opt.CSE.rep rw b) ∨ Opt.CSE.rep rw b ∈ pre') →
     T.regs[Opt.CSE.rep rw b]? = S.regs[b]? := by
   intro j
-  induction j using Nat.strong_induction_on with
+  induction j using Nat.strongRecOn with
   | _ j ih =>
   intro b hj hr
   have hbpre := List.mem_of_getElem? hj
@@ -311,7 +311,7 @@ theorem step_corr : ∀ (j : Nat) (b : ID), pre[j]? = some b →
       have hevx := C.eval_rel hfb hgx hbid fun a ha =>
         hargIH ha (hgA _ (heq ▸ C.rep_mem_of_argsRel hrelx ha))
       rw [hev, evalValue_of_argVals (heq ▸ hvT), htyx] at hevx
-      obtain ⟨r1, hr1, hr1s⟩ := bind_ok hevx.symm
+      obtain ⟨r1, hr1, hr1s⟩ := bind_ok hevx
       rw [hr1s]
       congr 1
       rcases hroot with hnr | hnc'
@@ -359,7 +359,7 @@ theorem step_corr : ∀ (j : Nat) (b : ID), pre[j]? = some b →
         rw [evalOp_load hld] at hr1
         rw [evalOp_load (by rw [hrop, hop]; exact hld)] at hr2
         cases hr1; cases hr2
-        rw [hrop, hop, hld, hrai, hai, hrax, hax]
+        rw [hrai, hai, hrax, hax]
         have hsz := C.load2 b fb hfb hld (.inr (.inl hbpre))
         have hszr := C.load2 c fr hfr (by rw [hop]; exact hld) (hr.elim .inl fun h => .inr (.inr h))
         obtain ⟨p, m, yp, ym, hfa, rfl, hyp, hym⟩ := argVals_two hvS hsz
@@ -382,14 +382,15 @@ theorem step_corr : ∀ (j : Nat) (b : ID), pre[j]? = some b →
           · rw [h]; simp [rep_none hm'n]
           · rw [hop, hld] at hc; exact absurd hc (by rw [hlc]; decide)
         rw [hgra] at hga
-        simp only [List.toArray_inj, List.cons.injEq] at hga
-        obtain ⟨rfl, rfl, -⟩ := hga
+        have hga' := congrArg Array.toList hga
+        simp only [List.cons.injEq, and_true] at hga'
+        obtain ⟨rfl, rfl⟩ := hga'
         -- the address
         have hpx : Opt.CSE.rep rw p ∈ gr.args := by
           rw [hgra, ← hrp]; simp
         obtain ⟨y0, hy0, hy0'⟩ := hargIH (by rw [hfa]; simp) (hgA _ hpx)
         rw [hyp] at hy0; cases hy0
-        rw [← hrp, hyp'] at hy0'; cases hy0'
+        rw [hrp, hyp'] at hy0'; cases hy0'
         -- the representative's memory argument is evaluated by the source, alike
         have hm'A : (B m' ∨ m' ∈ pre) ∧ T.regs[m']? = S.regs[m']? := by
           have hm'g : B m' ∨ m' ∈ pre' := hgA m' (by rw [hgra]; simp)
@@ -398,16 +399,44 @@ theorem step_corr : ∀ (j : Nat) (b : ID), pre[j]? = some b →
             exact ⟨.inl this, C.bT _ this⟩
           · rcases hm'g with hB | hp
             · exact ⟨.inl hB, C.bT _ hB⟩
-            · obtain ⟨gm, -, hgm, hgmph, hgmb, -⟩ := C.tPre m' hp
-              obtain ⟨-, -, hgcb, -⟩ := C.tPre c hcp
+            · obtain ⟨gm, ym0, hgm, hgmph, hgmb, -⟩ := C.tPre m' hp
+              obtain ⟨gc, yc0, hgc, -, hgcb, -⟩ := C.tPre c hcp
+              rw [hgr] at hgc; cases hgc
               obtain ⟨mv, hmv⟩ : ∃ mv, f.value? m' = some mv := by
                 cases h : f.value? m' with
                 | some mv => exact ⟨mv, rfl⟩
                 | none => rw [h] at hsimple; cases hsimple
               obtain ⟨gm', hgm', -, hmop, -, -, -, hmbl, -⟩ := C.gval hmv
-              obtain ⟨gc', hgc', -, -, -, -, -, -, -⟩ := C.tPre c hcp
-              sorry
-        sorry
+              rw [hgm] at hgm'; cases hgm'
+              rw [hmv] at hsimple
+              simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hsimple
+              have hroot : Opt.CSE.rootNode f m' = true := by
+                rcases hsimple with (h | h) | h
+                · exact absurd (by rw [← hmbl, hgmb, ← hgcb, hrbl]) h
+                · exact absurd (by rw [hmop]; exact h) hgmph
+                · simp [Opt.CSE.rootNode, hmv, h]
+              have hmp := C.roots m' hp hroot
+              exact ⟨.inr hmp, C.ts m' hmp hp⟩
+        -- the source loads alike through both memory chains
+        obtain ⟨hAf, hAc⟩ := C.memA_facts
+        have hpA : B p ∨ p ∈ pre := hAc b fb (.inr hbpre) hfb hph p (by rw [hfa]; simp)
+        have hmA : B m ∨ m ∈ pre := hAc b fb (.inr hbpre) hfb hph m (by rw [hfa]; simp)
+        obtain ⟨hEA, hE⟩ := load_memEnd (env := env) (fr := S) hAf hAc (t := fb.type) hpA hmA
+        obtain ⟨-, hE'⟩ := load_memEnd (env := env) (fr := S) hAf hAc (t := fb.type) hpA hm'A.1
+        obtain ⟨-, yE, -, hyE, -⟩ := hAf _ hEA
+        have hym'S : S.regs[m']? = some (some ym') := by rw [← hm'A.2, hym']
+        rw [hE fb.auxInt fb.aux yp ym yE hyp hym hyE,
+          hE' fb.auxInt fb.aux yp ym' yE hyp hym'S (hend ▸ hyE)]
+
+/-- **Representatives hold their values**: a source-evaluated value (or one from before the
+block) whose representative the target has evaluated (or is from before the block). -/
+theorem rep_corr {b : ID} (hb : B b ∨ b ∈ pre)
+    (hr : B (Opt.CSE.rep rw b) ∨ Opt.CSE.rep rw b ∈ pre') :
+    T.regs[Opt.CSE.rep rw b]? = S.regs[b]? := by
+  rcases hb with hB | hp
+  · exact (C.bT _ (C.bRep b hB).1).trans (C.bRep b hB).2
+  · obtain ⟨j, hj⟩ := List.getElem?_of_mem hp
+    exact C.step_corr j b hj hr
 
 end Corr
 
