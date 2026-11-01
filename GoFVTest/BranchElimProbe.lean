@@ -21,7 +21,7 @@ structure Counts where
   rejected : Nat := 0
 
 /-- `branchelim`'s rounds, counting proposed and accepted rewrites. -/
-def roundsCount (c : Ctx) (ce : CheckEnv) (f : Func) (k : Counts) : Func × Counts := Id.run do
+def roundsCount (c : Ctx) (f : Func) (k : Counts) : Func × Counts := Id.run do
   let mut f := f
   let mut k := k
   for _ in [0:f.blocks.size + 1] do
@@ -32,7 +32,7 @@ def roundsCount (c : Ctx) (ce : CheckEnv) (f : Func) (k : Counts) : Func × Coun
       match r1.orElse fun _ => r2 with
       | some g =>
         k := { k with proposed := k.proposed + 1 }
-        if stepOK ce f g b then
+        if stepOK f g b then
           k := { k with accepted := k.accepted + 1 }
           f := g; change := true
         else
@@ -77,7 +77,7 @@ def main (args : List String) : IO UInt32 := do
       if !checkOK ce f then continue
       checked := checked + 1
       let r0 := k.rejected
-      let (g, k') := roundsCount c ce f k
+      let (g, k') := roundsCount c f k
       k := k'
       if k.rejected != r0 && shown < 20 then
         IO.println s!"REJECT {path}"

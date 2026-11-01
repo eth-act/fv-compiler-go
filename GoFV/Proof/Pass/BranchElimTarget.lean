@@ -3,10 +3,10 @@ import GoFV.Proof.Pass.BranchElimNormal
 /-!
 # branchelim: the merged block before its schedule runs
 
-* The diamond in the dominator tree: arms and `post` are tree blocks below `dom`
-  (`tree_side`, `tree_post`); a value outside the diamond that a value of the diamond reads is
-  defined in a strict ancestor of `dom`, so it has a register when the run enters `dom`
-  (`anc_region_def`, from lemma (D)).
+* The diamond under path dominance: arms and `post` are reachable and their strict dominators
+  dominate `dom` (or an arm) (`tree_side`, `tree_post`); a value outside the diamond that a
+  value of the diamond reads is defined in a strict dominator of `dom`, so it has a register
+  when the run enters `dom` (`anc_region_def`, from lemma (D)).
 * `targetPre`: the merged block's `Phi`s are `dom`'s; the target collects them from the same
   arguments, has a schedule, and after the `Phi`s agrees with the source (after `dom`'s `Phi`s)
   outside the arm values and the merged block's schedule.
@@ -23,17 +23,17 @@ namespace Setup
 variable (S : Setup f g s)
 include S
 
-/-- Side `k`'s first block (an arm, or `post`) is a tree block below `dom`. -/
-theorem tree_side (htd : ((make f).depthOf s.dom).isSome) {k : Nat} {e : Edge} {D : Block}
+/-- Side `k`'s first block (an arm, or `post`) is reachable, and its strict dominators dominate
+`dom`. -/
+theorem tree_side (htd : Reachable f s.dom) {k : Nat} {e : Edge} {D : Block}
     (hD : f.block? s.dom = some D) (hk : D.succs[k]? = some e) :
-    ((make f).depthOf e.b).isSome ∧ Anc (make f) ((make f).up e.b) s.dom :=
-  let h := edge S.cf S.domIn hD htd (Array.mem_of_getElem? hk)
-  ⟨h.2.1, h.2.2⟩
+    Reachable f e.b ∧ ∀ a, SDom f a e.b → a ≠ e.b → SDom f a s.dom :=
+  S.dom.edge S.domIn hD htd (Array.mem_of_getElem? hk)
 
-/-- Every arm is a tree block whose parent is an ancestor of `dom`. -/
-theorem tree_arm (htd : ((make f).depthOf s.dom).isSome) {a : ID}
+/-- Every arm is reachable, and its strict dominators dominate `dom`. -/
+theorem tree_arm (htd : Reachable f s.dom) {a : ID}
     (ha : s.arm0 = some a ∨ s.arm1 = some a) :
-    ((make f).depthOf a).isSome ∧ Anc (make f) ((make f).up a) s.dom := by
+    Reachable f a ∧ ∀ b, SDom f b a → b ≠ a → SDom f b s.dom := by
   obtain ⟨D, e0, e1, hD, -, -, hs, -, h0, h1⟩ := S.diamond
   rcases ha with ha | ha
   · rcases S.side_facts hD (by rw [hs]; rfl) h0 with ⟨h, -⟩ | ⟨a', A, ha', he, -⟩
@@ -47,29 +47,29 @@ theorem tree_arm (htd : ((make f).depthOf s.dom).isSome) {a : ID}
       have := S.tree_side htd hD (k := 1) (e := e1) (by rw [hs]; rfl)
       rwa [he] at this
 
-/-- `post` is a tree block whose parent is an ancestor of `dom` or of an arm. -/
-theorem tree_post (htd : ((make f).depthOf s.dom).isSome) :
-    ((make f).depthOf s.post).isSome ∧ (Anc (make f) ((make f).up s.post) s.dom ∨
-      ∃ a, (s.arm0 = some a ∨ s.arm1 = some a) ∧ Anc (make f) ((make f).up s.post) a) := by
+/-- `post` is reachable, and its strict dominators dominate `dom` or an arm. -/
+theorem tree_post (htd : Reachable f s.dom) :
+    Reachable f s.post ∧ ((∀ b, SDom f b s.post → b ≠ s.post → SDom f b s.dom) ∨
+      ∃ a, (s.arm0 = some a ∨ s.arm1 = some a) ∧
+        ∀ b, SDom f b s.post → b ≠ s.post → SDom f b a) := by
   obtain ⟨D, e0, e1, hD, -, -, hs, -, h0, -⟩ := S.diamond
   rcases S.side_facts hD (by rw [hs]; rfl) h0 with ⟨-, he⟩ | ⟨a, A, ha, -, haIn, hA, -, -, hsu, -⟩
   · have := S.tree_side htd hD (k := 0) (e := e0) (by rw [hs]; rfl)
     rw [he] at this
     exact ⟨this.1, .inl this.2⟩
   · obtain ⟨hta, -⟩ := S.tree_arm htd (.inl ha)
-    have h := edge S.cf haIn hA hta (e := ⟨s.post, s.j0⟩) (by rw [hsu]; simp)
-    exact ⟨h.2.1, .inr ⟨a, .inl ha, h.2.2⟩⟩
+    have h := S.dom.edge haIn hA hta (e := ⟨s.post, s.j0⟩) (by rw [hsu]; simp)
+    exact ⟨h.1, .inr ⟨a, .inl ha, h.2⟩⟩
 
-/-- A value outside the diamond read from within it is defined in a strict ancestor of `dom`:
+/-- A value outside the diamond read from within it is defined in a strict dominator of `dom`:
 it has a register at `dom`'s entry. -/
 theorem anc_region_def {env : Env} {tabs : Tables} {frS : Frame}
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {b : ID} (hl : Listed f b) (hout : s.regionVal f b = false) {X : ID}
     (hX : X = s.dom ∨ (s.arm0 = some X ∨ s.arm1 = some X) ∨ X = s.post)
-    (hanc : Anc (make f) (blockOf f b) X) : ∃ y, frS.regs[b]? = some (some y) := by
+    (hanc : SDom f (blockOf f b) X) : ∃ y, frS.regs[b]? = some (some y) := by
   obtain ⟨ce, hwf⟩ := S.wf
-  have hp := S.cf.parents
   obtain ⟨v, B, hP, hvb, hB, hbB, hbIn⟩ := blockOf_listed hwf hl
   unfold Site.regionVal at hout
   simp only [Bool.or_eq_false_iff] at hout
@@ -92,19 +92,18 @@ theorem anc_region_def {env : Env} {tabs : Tables} {frS : Frame}
     rw [h] at hB
     have : s.postVal f b = true := postVal_iff.2 ⟨B, hB, hbB⟩
     rw [this] at hnp; cases hnp
-  have hdom : Anc (make f) (blockOf f b) s.dom → ∃ y, frS.regs[b]? = some (some y) := fun h => by
+  have hdom : SDom f (blockOf f b) s.dom → ∃ y, frS.regs[b]? = some (some y) := fun h => by
     obtain ⟨y, hy, -⟩ := hdi b v hP (by rw [hvb]; exact ⟨h, hnD⟩)
     exact ⟨y, hy⟩
-  have harm : ∀ a, (s.arm0 = some a ∨ s.arm1 = some a) → Anc (make f) (blockOf f b) a →
+  have harm : ∀ a, (s.arm0 = some a ∨ s.arm1 = some a) → SDom f (blockOf f b) a →
       ∃ y, frS.regs[b]? = some (some y) := fun a ha h =>
-    hdom (Anc.trans hp (h.up hp (hnA a ha)) (S.tree_arm htd ha).2)
+    hdom ((S.tree_arm htd ha).2 _ h (hnA a ha))
   rcases hX with rfl | ha | rfl
   · exact hdom hanc
   · exact harm X ha hanc
-  · have hup := hanc.up hp hnP
-    rcases (S.tree_post htd).2 with h | ⟨a, ha, h⟩
-    · exact hdom (Anc.trans hp hup h)
-    · exact harm a ha (Anc.trans hp hup h)
+  · rcases (S.tree_post htd).2 with h | ⟨a, ha, h⟩
+    · exact hdom (h _ hanc hnP)
+    · exact harm a ha (h _ hanc hnP)
 
 theorem domInG : s.dom ∈ g.blocks := by
   rw [S.rel.parts.2.2.2.2.2.1]; exact S.domIn

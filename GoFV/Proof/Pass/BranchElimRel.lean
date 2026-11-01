@@ -120,15 +120,146 @@ theorem sideOf_spec {f : Func} {dom post : ID} {k : Nat} {e : Edge} {a? : Option
 section
 variable {f g : Func} {s : Site}
 
+/-- The checker's conjuncts. -/
+theorem DRel.raw (h : DRel f g s) :
+    s.shapeOK f = true ∧ s.dom ∈ f.blocks ∧ g.entry = f.entry ∧ g.ownAux = f.ownAux ∧
+    tabEq g.blocks f.blocks (fun _ => false) = true ∧ s.mergedOK f g = true ∧
+    Site.deadOK g s.post = true ∧ Site.armDeadOK g s.arm0 = true ∧
+    Site.armDeadOK g s.arm1 = true ∧ (∀ t ∈ s.tgts f, s.targetOK f g t = true) ∧
+    (∀ x ∈ valsOf f s.post, (f.value? x).any (·.block == s.post) = true) ∧
+    (∀ x ∈ valsOf f s.dom, s.movedOK f g s.dom x = true) ∧
+    (∀ x ∈ Site.armVals f s.arm0, s.movedOK f g s.dom x = true) ∧
+    (∀ x ∈ Site.armVals f s.arm1, s.movedOK f g s.dom x = true) ∧
+    (∀ x ∈ valsOf f s.post, s.movedOK f g s.dom x = true) ∧
+    (∀ t ∈ s.tgts f, t = s.dom ∨ ∀ x ∈ valsOf f t, s.movedOK f g t x = true) ∧
+    s.movedOK f g (((f.value? s.c).map (·.block)).getD 0) s.c = true ∧
+    tabEq f.valueTab g.valueTab (s.skipV f) = true ∧
+    tabEq f.blockTab g.blockTab (s.changed f) = true := by
+  have := h.rel
+  simp only [Site.relB, Bool.and_eq_true] at this
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩, h13⟩,
+    h14⟩, h15⟩, h16⟩, h17⟩, h18⟩, h19⟩ := this
+  rw [Array.contains_iff_mem] at h2
+  rw [beq_iff_eq] at h3 h4
+  rw [Array.all_eq_true'] at h10 h11 h12 h13 h14 h15
+  refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, fun t ht => ?_, h17,
+    h18, h19⟩
+  have := (Array.all_eq_true'.1 h16) t ht
+  rw [Bool.or_eq_true, beq_iff_eq, Array.all_eq_true'] at this
+  exact this
+
 theorem DRel.parts (h : DRel f g s) :
     s.shapeOK f = true ∧ s.dom ∈ f.blocks ∧ g.entry = f.entry ∧ g.ownAux = f.ownAux ∧
-      g.valueTab.size = f.valueTab.size ∧ g.blocks = f.blocks ∧ s.mergedOK f g = true ∧
-      (∀ x, x < f.valueTab.size → s.valueOK f g x = true) ∧ (∀ b ∈ f.blocks, s.blockOK f g b = true) := by
-  have := h.rel
-  simp only [Site.relB, Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range,
-    Array.all_eq_true', Array.contains_iff_mem] at this
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h0⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := this
-  exact ⟨h1, h0, h2, h3, h4, h5, h6, h7, h8⟩
+      g.valueTab.size = f.valueTab.size ∧ g.blocks = f.blocks ∧ s.mergedOK f g = true := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, -, -, -, -, -, -, -, -, -, -, -, h18, -⟩ := h.raw
+  obtain ⟨-, hbl⟩ := tabEq_spec h5
+  exact ⟨h1, h2, h3, h4, (tabEq_spec h18).1.symm, Array.ext_getElem? fun i => (hbl i rfl).symm, h6⟩
+
+/-- A value outside the changed blocks (and not `dom`'s control) is unchanged. -/
+theorem DRel.valEq (h : DRel f g s) {x : ID} (hx : s.skipV f x = false) :
+    g.value? x = f.value? x := by
+  obtain ⟨-, hvt⟩ := tabEq_spec h.raw.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  unfold Func.value?; rw [hvt x hx]
+
+/-- A block other than the diamond's and `post`'s successors is unchanged. -/
+theorem DRel.blkEq (h : DRel f g s) {b : ID} (hb : s.changed f b = false) :
+    g.block? b = f.block? b := by
+  obtain ⟨-, hbt⟩ := tabEq_spec h.raw.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  unfold Func.block?; rw [hbt b hb]
+
+theorem regionBlock_iff {b : ID} :
+    s.regionBlock b = true ↔ b = s.dom ∨ b = s.post ∨ s.arm0 = some b ∨ s.arm1 = some b := by
+  unfold Site.regionBlock
+  simp only [Bool.or_eq_true, beq_iff_eq, or_assoc]
+
+theorem movedOK_spec {blk x : ID} (h : s.movedOK f g blk x = true) :
+    s.valueOK f g x = true ∧ ∃ gv, g.value? x = some gv ∧ gv.block = blk := by
+  unfold Site.movedOK at h
+  rw [Bool.and_eq_true] at h
+  refine ⟨h.1, ?_⟩
+  cases hg : g.value? x with
+  | none => rw [hg] at h; cases h.2
+  | some gv =>
+    rw [hg] at h
+    exact ⟨gv, rfl, beq_iff_eq.1 (by simpa using h.2)⟩
+
+theorem mem_armVals {a? : Option ID} {x : ID} :
+    x ∈ Site.armVals f a? ↔ Site.inArm f a? x = true := by
+  cases a? with
+  | none => simp [Site.armVals, Site.inArm]
+  | some a => simp [Site.armVals, Site.inArm, Array.contains_iff_mem]
+
+/-- A value listed in a changed block is checked on its own (`movedOK`): in `g` it lies in
+`dom` if the block is one of the diamond's, else in the same block. -/
+theorem DRel.moved_changed (h : DRel f g s) {b x : ID} (hb : s.changed f b = true)
+    (hx : x ∈ valsOf f b) : s.movedOK f g (if s.regionBlock b then s.dom else b) x = true := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, h12, h13, h14, h15, h16, -⟩ := h.raw
+  by_cases hr : s.regionBlock b = true
+  · rw [if_pos hr]
+    rcases regionBlock_iff.1 hr with rfl | rfl | ha | ha
+    · exact h12 x hx
+    · exact h15 x hx
+    · exact h13 x (mem_armVals.2 (by unfold Site.inArm; rw [ha]; simpa [Array.contains_iff_mem]))
+    · exact h14 x (mem_armVals.2 (by unfold Site.inArm; rw [ha]; simpa [Array.contains_iff_mem]))
+  · rw [if_neg hr]
+    unfold Site.changed at hb
+    rw [Bool.eq_false_iff.2 hr, Bool.false_or, Array.contains_iff_mem] at hb
+    rcases h16 b hb with hd | hall
+    · exact absurd (regionBlock_iff.2 (.inl hd)) hr
+    · exact hall x hx
+
+/-- `dom`'s control is checked on its own. -/
+theorem DRel.moved_c (h : DRel f g s) :
+    s.movedOK f g (((f.value? s.c).map (·.block)).getD 0) s.c = true :=
+  h.raw.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- The values of `post` lie in `post`. -/
+theorem DRel.post_block (h : DRel f g s) {x : ID} (hx : x ∈ valsOf f s.post) :
+    ∃ v, f.value? x = some v ∧ v.block = s.post := by
+  have := h.raw.2.2.2.2.2.2.2.2.2.2.1 x hx
+  cases hv : f.value? x with
+  | none => rw [hv] at this; cases this
+  | some v => rw [hv] at this; exact ⟨v, rfl, beq_iff_eq.1 (by simpa using this)⟩
+
+theorem deadOK_spec {b : ID} (h : Site.deadOK g b = true) :
+    ∃ B', g.block? b = some B' ∧ B'.id = b ∧ B'.values = #[] ∧ B'.preds = #[] ∧
+      B'.succs = #[] ∧ B'.controls = #[] := by
+  unfold Site.deadOK at h
+  split at h
+  · rename_i B' hB'
+    simp only [Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at h
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+    exact ⟨B', hB', h1, h2, h3, h4, h5⟩
+  · cases h
+
+/-- An arm and `post` are emptied in `g`. -/
+theorem DRel.dead (h : DRel f g s) {b : ID}
+    (hb : b = s.post ∨ s.arm0 = some b ∨ s.arm1 = some b) :
+    ∃ B', g.block? b = some B' ∧ B'.id = b ∧ B'.values = #[] ∧ B'.preds = #[] ∧
+      B'.succs = #[] ∧ B'.controls = #[] := by
+  obtain ⟨-, -, -, -, -, -, h7, h8, h9, -⟩ := h.raw
+  rcases hb with rfl | ha | ha
+  · exact deadOK_spec h7
+  · rw [ha] at h8; exact deadOK_spec (by simpa [Site.armDeadOK] using h8)
+  · rw [ha] at h9; exact deadOK_spec (by simpa [Site.armDeadOK] using h9)
+
+/-- A successor of `post` other than `dom`: outside the diamond, unchanged but for its
+predecessor edges from `post` (now from `dom`) and its position. -/
+theorem DRel.target (h : DRel f g s) {t : ID} (ht : t ∈ s.tgts f) (hd : t ≠ s.dom) :
+    s.regionBlock t = false ∧ ∃ T T', f.block? t = some T ∧ g.block? t = some T' ∧
+      T' = { T with preds := T.preds.map s.redir, pos := T'.pos } := by
+  have h10 := h.raw.2.2.2.2.2.2.2.2.2.1 t ht
+  unfold Site.targetOK at h10
+  rw [Bool.or_eq_true, beq_iff_eq] at h10
+  rcases h10 with h10 | h10
+  · exact absurd h10 hd
+  rw [Bool.and_eq_true, Bool.not_eq_true'] at h10
+  refine ⟨h10.1, ?_⟩
+  obtain ⟨-, h10⟩ := h10
+  split at h10
+  · rename_i T T' hT hT'
+    exact ⟨T, T', hT, hT', beq_iff_eq.1 h10⟩
+  · cases h10
 
 theorem DRel.shape (h : DRel f g s) :
     ∃ P, f.block? s.post = some P ∧ P.preds.size = 2 ∧ s.j0 ≠ s.j1 ∧ s.j0 < 2 ∧ s.j1 < 2 ∧
@@ -234,14 +365,14 @@ theorem post_spec (h : DRel f g s) {P : Block} (hP : f.block? s.post = some P) :
       Bool.and_eq_true, bne_iff_ne, ne_eq] at this
     exact ⟨fun h' => absurd h' hp, fun _ => this⟩
 
-/-- The merged block of `g`. -/
-theorem merged_spec (h : DRel f g s) :
+/-- The merged block of `g`, exactly. -/
+theorem merged_exact (h : DRel f g s) :
     ∃ D P D', f.block? s.dom = some D ∧ f.block? s.post = some P ∧ g.block? s.dom = some D' ∧
       D'.id = s.dom ∧ D'.kind = P.kind ∧ D'.controls = P.controls ∧ D'.succs = P.succs ∧
-      (∀ x ∈ D'.values, s.regionVal f x = true) ∧ (∀ x ∈ D.values, x ∈ D'.values) ∧
-      (∀ x ∈ P.values, x ∈ D'.values) ∧ (∀ x, s.armVal f x = true → x ∈ D'.values) ∧
+      D'.preds = D.preds.map s.redir ∧
+      D'.values = D.values ++ Site.armVals f s.arm0 ++ Site.armVals f s.arm1 ++ P.values ∧
       (schedule g D').isSome ∧ npSeqOK f g D P D' = true := by
-  have hm := h.parts.2.2.2.2.2.2.1
+  have hm := h.parts.2.2.2.2.2.2
   unfold Site.mergedOK at hm
   cases hD : f.block? s.dom with
   | none => rw [hD] at hm; cases hm
@@ -253,29 +384,69 @@ theorem merged_spec (h : DRel f g s) :
   | none => rw [hD, hP, hD'] at hm; cases hm
   | some D' =>
   rw [hD, hP, hD'] at hm
-  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', Array.contains_iff_mem] at hm
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hid, hk⟩, hc⟩, hsu⟩, hreg⟩, hDin⟩, hPin⟩, ha0⟩, ha1⟩, hsch⟩, hnp⟩ := hm
-  refine ⟨D, P, D', rfl, rfl, rfl, hid, hk, hc, hsu, hreg, hDin, hPin, fun x hx => ?_, hsch, hnp⟩
-  unfold Site.armVal at hx
-  rcases Bool.or_eq_true_iff.1 hx with hx | hx
-  · obtain ⟨a, A, ha, hA, hxA⟩ := inArm_iff.1 hx
-    rw [ha] at ha0
-    simp only [valsOf_eq hA, Array.all_eq_true', Array.contains_iff_mem] at ha0
-    exact ha0 x hxA
-  · obtain ⟨a, A, ha, hA, hxA⟩ := inArm_iff.1 hx
-    rw [ha] at ha1
-    simp only [valsOf_eq hA, Array.all_eq_true', Array.contains_iff_mem] at ha1
-    exact ha1 x hxA
+  simp only [Bool.and_eq_true, beq_iff_eq] at hm
+  obtain ⟨⟨⟨⟨⟨⟨⟨hid, hk⟩, hc⟩, hsu⟩, hpr⟩, hvs⟩, hsch⟩, hnp⟩ := hm
+  exact ⟨D, P, D', rfl, rfl, rfl, hid, hk, hc, hsu, hpr, hvs, hsch, hnp⟩
 
-/-- Every value of `f` and `g` (the tables have the same size). -/
+/-- The merged block of `g`. -/
+theorem merged_spec (h : DRel f g s) :
+    ∃ D P D', f.block? s.dom = some D ∧ f.block? s.post = some P ∧ g.block? s.dom = some D' ∧
+      D'.id = s.dom ∧ D'.kind = P.kind ∧ D'.controls = P.controls ∧ D'.succs = P.succs ∧
+      (∀ x ∈ D'.values, s.regionVal f x = true) ∧ (∀ x ∈ D.values, x ∈ D'.values) ∧
+      (∀ x ∈ P.values, x ∈ D'.values) ∧ (∀ x, s.armVal f x = true → x ∈ D'.values) ∧
+      (schedule g D').isSome ∧ npSeqOK f g D P D' = true := by
+  obtain ⟨D, P, D', hD, hP, hD', hid, hk, hc, hsu, -, hvs, hsch, hnp⟩ := merged_exact h
+  refine ⟨D, P, D', hD, hP, hD', hid, hk, hc, hsu, fun x hx => ?_, fun x hx => ?_,
+    fun x hx => ?_, fun x hx => ?_, hsch, hnp⟩
+  · rw [hvs] at hx
+    simp only [Array.mem_append, mem_armVals] at hx
+    unfold Site.regionVal Site.armVal
+    rcases hx with ((hx | hx) | hx) | hx
+    · rw [valsOf_eq hD, Array.contains_iff_mem.2 hx]; rfl
+    · simp [hx]
+    · simp [hx]
+    · simp [postVal_iff.2 ⟨P, hP, hx⟩]
+  · rw [hvs]; simp [hx]
+  · rw [hvs]; simp [hx]
+  · rw [hvs]
+    unfold Site.armVal at hx
+    simp only [Array.mem_append, mem_armVals]
+    rcases Bool.or_eq_true_iff.1 hx with hx | hx
+    · exact .inl (.inl (.inr hx))
+    · exact .inl (.inr hx)
+
+/-- Every value of `f` and `g`. -/
 theorem value_spec (h : DRel f g s) (x : ID) : s.valueOK f g x = true := by
-  obtain ⟨-, -, -, -, hsz, -, -, hv, -⟩ := h.parts
-  rcases Nat.lt_or_ge x f.valueTab.size with hx | hx
-  · exact hv x hx
-  · unfold Site.valueOK
-    have h1 : f.value? x = none := by simp [Func.value?, Array.getElem?_eq_none hx]
-    have h2 : g.value? x = none := by simp [Func.value?, Array.getElem?_eq_none (hsz ▸ hx)]
-    rw [h1, h2]
+  cases hk : s.skipV f x with
+  | true =>
+    unfold Site.skipV at hk
+    rcases Bool.or_eq_true_iff.1 hk with hc | hk
+    · rw [beq_iff_eq] at hc; subst hc; exact (movedOK_spec h.moved_c).1
+    · cases hv : f.value? x with
+      | none => rw [hv] at hk; cases hk
+      | some v =>
+        rw [hv, Bool.and_eq_true] at hk
+        exact (movedOK_spec (h.moved_changed hk.1 (Array.contains_iff_mem.1 hk.2))).1
+  | false =>
+    have heq := h.valEq hk
+    unfold Site.valueOK
+    rw [heq]
+    cases hv : f.value? x with
+    | none => rfl
+    | some fv =>
+      have hnp : (s.postVal f x && fv.op == .Phi) = false := by
+        cases hp : s.postVal f x with
+        | false => rfl
+        | true =>
+          exfalso
+          obtain ⟨P, hP, hxP⟩ := postVal_iff.1 hp
+          have hxv : x ∈ valsOf f s.post := by rw [valsOf_eq hP]; exact hxP
+          obtain ⟨v, hv', hvb⟩ := h.post_block hxv
+          rw [hv] at hv'; cases hv'
+          have : s.skipV f x = true := by
+            simp [Site.skipV, hv, hvb, Site.changed, Site.regionBlock, hxv]
+          rw [hk] at this; cases this
+      simp [hnp]
 
 /-- A value other than `post`'s `Phi`s is unchanged in what evaluation reads. -/
 theorem semEq_of (h : DRel f g s) {x : ID}
@@ -323,22 +494,25 @@ theorem condSel_of (h : DRel f g s) {x : ID} {fv : Value} (hfv : f.value? x = so
     obtain ⟨⟨⟨⟨hid, hty⟩, haux⟩, hai⟩, hop, hargs⟩ := hv
     exact ⟨gv, rfl, hid, hty, haux, hai, hop, hargs⟩
 
-/-- A block outside the diamond is unchanged. -/
-theorem block_spec (h : DRel f g s) {bid : ID} (hb : bid ∈ f.blocks) (hr : s.regionBlock bid = false) :
+/-- A listed block outside the diamond is unchanged in what entering it and its terminator
+read. -/
+theorem block_spec (h : DRel f g s) {ce : CheckEnv} (hwf : WF ce f) {bid : ID}
+    (hb : bid ∈ f.blocks) (hr : s.regionBlock bid = false) :
     ∃ fb gb, f.block? bid = some fb ∧ g.block? bid = some gb ∧ BlockAgree fb gb := by
-  have := h.parts.2.2.2.2.2.2.2.2 bid hb
-  unfold Site.blockOK at this
-  rw [hr, Bool.false_or] at this
-  cases hf : f.block? bid with
-  | none => rw [hf] at this; cases this
-  | some fb =>
-  cases hg : g.block? bid with
-  | none => rw [hf, hg] at this; cases this
-  | some gb =>
-  rw [hf, hg] at this
-  simp only [Bool.and_eq_true, beq_iff_eq] at this
-  obtain ⟨⟨⟨⟨hid, hv⟩, hk⟩, hc⟩, hs⟩ := this
-  exact ⟨fb, gb, rfl, rfl, ⟨hid, hv, hk, hc, hs⟩⟩
+  obtain ⟨fb, hfb, -⟩ := hwf.blockId bid hb
+  cases hc : s.changed f bid with
+  | false => exact ⟨fb, fb, hfb, by rw [h.blkEq hc, hfb], ⟨rfl, rfl, rfl, rfl, rfl⟩⟩
+  | true =>
+    have ht : bid ∈ s.tgts f := by
+      unfold Site.changed at hc
+      rw [hr, Bool.false_or] at hc
+      exact Array.contains_iff_mem.1 hc
+    have hd : bid ≠ s.dom := fun e => by
+      rw [e] at hr; simp [Site.regionBlock] at hr
+    obtain ⟨-, T, T', hT, hT', he⟩ := h.target ht hd
+    rw [hfb] at hT; cases hT
+    refine ⟨fb, T', hfb, hT', ?_⟩
+    rw [he]; exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 end
 
