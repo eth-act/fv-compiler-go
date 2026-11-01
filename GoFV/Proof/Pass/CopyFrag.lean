@@ -8,9 +8,11 @@ import GoFV.SSA.Sem.Layout
 `cstep V x` is the copy edge out of `x` in the value table `V` (`none`: `x` is not a copy;
 `some none`: a copy without exactly one argument). `Src V x r n`: following copy edges from
 `x` reaches the non-copy `r` in `n` steps. `CopyFrag tabs f` is what `copyelim_rel`
-(`GoFV.Proof.Pass.CopyElimLoop`) assumes beyond `check`: value IDs below `vid.last + 1`, copy and
-phi arguments whose type shape retypes like the value's (`RetypeEq`: equal up to pointer element
-sizes, which `Val.retype` ignores), no zero-size aggregate copies, and no copy cycle
+(`GoFV.Proof.Pass.CopyElimLoop`) assumes beyond `check`: value IDs below `vid.last + 1`, copy
+arguments, and arguments of phis that phielim may turn into copies, whose type shape retypes
+like the value's (`RetypeEq`: equal up to pointer and slice element sizes, which `Val.retype`
+ignores; a `Stable` phi, two of whose arguments' copy chains end at distinct non-phis, is
+never turned into a copy and is exempt), no zero-size aggregate copies, and no copy cycle
 reachable from a listed value. `copyFrag` decides it (`copyFrag_sound`); `lake exe
 copyrel-probe` counts the corpus sections that satisfy it.
 -/
@@ -171,12 +173,69 @@ theorem zeroSizeB_eq_false {tabs : Tables} {t : TypeRef} (h : zeroSizeB tabs t =
   · cases h
   · rename_i hne; exact hne
 
+/-- `r` is no `Phi` of `f`. -/
+def NotPhi (f : Func) (r : ID) : Prop := ∀ rv, f.value? r = some rv → rv.op ≠ .Phi
+
+/-- Two arguments of `v` have copy chains ending at distinct non-phis: as long as those stay
+non-copies, `phielim` never turns `v` into a copy (`inv_phielim`). -/
+def Stable (f : Func) (v : Value) : Prop :=
+  ∃ a₁ ∈ v.args, ∃ a₂ ∈ v.args, ∃ r₁ r₂ n₁ n₂, Src f.value? a₁ r₁ n₁ ∧ Src f.value? a₂ r₂ n₂ ∧
+    r₁ ≠ r₂ ∧ NotPhi f r₁ ∧ NotPhi f r₂
+
+/-- The end of `x`'s copy chain within `n` copy edges. -/
+def chainEnd (V : ID → Option Value) : Nat → ID → Option ID
+  | 0, _ => none
+  | n + 1, x =>
+    match cstep V x with
+    | none => some x
+    | some (some y) => chainEnd V n y
+    | some none => none
+
+theorem chainEnd_sound {V : ID → Option Value} :
+    ∀ {n x r}, chainEnd V n x = some r → ∃ m, Src V x r m
+  | 0, _, _, h => nomatch h
+  | n + 1, x, r, h => by
+    unfold chainEnd at h
+    split at h
+    · cases h; exact ⟨0, .sink ‹_›⟩
+    · obtain ⟨m, hs⟩ := chainEnd_sound h
+      exact ⟨m + 1, .step ‹_› hs⟩
+    · cases h
+
+/-- The chain ends of `v`'s arguments that are no `Phi`s. -/
+def stableEnds (f : Func) (v : Value) : List ID :=
+  v.args.toList.filterMap fun a => (chainEnd f.value? (f.valueTab.size + 1) a).filter
+    fun r => (f.value? r).all (·.op != .Phi)
+
+/-- Decides a sufficient condition for `Stable` (`stableB_sound`). -/
+def stableB (f : Func) (v : Value) : Bool :=
+  (stableEnds f v).any fun r => (stableEnds f v).any (· != r)
+
+theorem stableEnds_mem {f : Func} {v : Value} {r : ID} (h : r ∈ stableEnds f v) :
+    ∃ a ∈ v.args, ∃ n, Src f.value? a r n ∧ NotPhi f r := by
+  unfold stableEnds at h
+  obtain ⟨a, ha, he⟩ := List.mem_filterMap.1 h
+  obtain ⟨hc, hp⟩ := Option.filter_eq_some_iff.1 he
+  obtain ⟨n, hs⟩ := chainEnd_sound hc
+  refine ⟨a, Array.mem_toList_iff.1 ha, n, hs, fun rv hrv => ?_⟩
+  rw [hrv] at hp
+  simpa using hp
+
+theorem stableB_sound {f : Func} {v : Value} (h : stableB f v = true) : Stable f v := by
+  unfold stableB at h
+  obtain ⟨r₁, h₁, h⟩ := List.any_eq_true.1 h
+  obtain ⟨r₂, h₂, hne⟩ := List.any_eq_true.1 h
+  obtain ⟨a₁, ha₁, n₁, hs₁, hp₁⟩ := stableEnds_mem h₁
+  obtain ⟨a₂, ha₂, n₂, hs₂, hp₂⟩ := stableEnds_mem h₂
+  exact ⟨a₁, ha₁, a₂, ha₂, r₁, r₂, n₁, n₂, hs₁, hs₂, fun he => by simp [he] at hne, hp₁, hp₂⟩
+
 /-- What `copyelim_rel` assumes of copyelim's input beyond `check`. -/
 structure CopyFrag (tabs : Tables) (f : Func) : Prop where
   /-- Value IDs are below `vid.last + 1` (bounds the loops of `chase`, `copySource`, `phielim`). -/
   size : f.valueTab.size ≤ f.vidLast + 1
-  /-- Arguments of listed copies and phis retype like the value (`RetypeEq`). -/
-  shape : ∀ x, Listed f x → ∀ v, f.value? x = some v → (v.op = .Copy ∨ v.op = .Phi) →
+  /-- Arguments of listed copies and of listed phis that may become copies (not `Stable`)
+  retype like the value (`RetypeEq`). -/
+  shape : ∀ x, Listed f x → ∀ v, f.value? x = some v → (v.op = .Copy ∨ v.op = .Phi ∧ ¬ Stable f v) →
     ∀ a ∈ v.args, ∃ w, f.value? a = some w ∧ RetypeEq (tabs.ty w.type) (tabs.ty v.type)
   /-- No listed copy has a zero-size struct or array type. -/
   copyNZ : ∀ x, Listed f x → ∀ v, f.value? x = some v → v.op = .Copy → ¬ zeroSize tabs v.type
@@ -188,7 +247,7 @@ def valueOK (tabs : Tables) (f : Func) (x : ID) : Bool :=
   match f.value? x with
   | none => true
   | some v =>
-    ((v.op != .Copy && v.op != .Phi) ||
+    ((v.op != .Copy && v.op != .Phi) || (v.op == .Phi && stableB f v) ||
       v.args.all fun a => (f.value? a).any fun w => retypeEqB (tabs.ty w.type) (tabs.ty v.type)) &&
     (v.op != .Copy || !zeroSizeB tabs v.type) &&
     chainEnds f.value? (f.valueTab.size + 1) x
@@ -208,7 +267,7 @@ theorem copyFrag_sound {tabs : Tables} {f : Func} (h : copyFrag tabs f = true) :
     rw [hb, Option.map_some, Option.getD_some, Array.all_eq_true'] at this
     exact this x hx
   have hv' : ∀ x, Listed f x → ∀ v, f.value? x = some v →
-      (((v.op != .Copy && v.op != .Phi) = true) ∨
+      (((v.op != .Copy && v.op != .Phi) = true) ∨ (v.op == .Phi && stableB f v) = true ∨
         ∀ a ∈ v.args, (f.value? a).any (fun w => retypeEqB (tabs.ty w.type) (tabs.ty v.type)) = true) ∧
       ((v.op != .Copy) = true ∨ zeroSizeB tabs v.type = false) ∧
       chainEnds f.value? (f.valueTab.size + 1) x = true := by
@@ -216,12 +275,21 @@ theorem copyFrag_sound {tabs : Tables} {f : Func} (h : copyFrag tabs f = true) :
     have := hv x hx
     unfold valueOK at this
     rw [hxv] at this
-    simpa only [Bool.and_eq_true, Bool.or_eq_true, Array.all_eq_true', Bool.not_eq_true',
-      and_assoc] using this
+    simp only [Bool.and_eq_true, Bool.or_eq_true, Array.all_eq_true', Bool.not_eq_true'] at this
+    obtain ⟨⟨h1, h2⟩, h3⟩ := this
+    refine ⟨?_, h2, h3⟩
+    rcases h1 with (h1 | h1) | h1
+    · exact .inl (by simpa only [Bool.and_eq_true] using h1)
+    · exact .inr (.inl (by simpa only [Bool.and_eq_true] using h1))
+    · exact .inr (.inr h1)
   refine ⟨h.1, ?_, ?_, ?_⟩
   · intro x hx v hxv hop a ha
-    rcases (hv' x hx v hxv).1 with h1 | h1
-    · rcases hop with hop | hop <;> simp [hop] at h1
+    rcases (hv' x hx v hxv).1 with h1 | h1 | h1
+    · rcases hop with hop | ⟨hop, -⟩ <;> simp [hop] at h1
+    · rcases hop with hop | ⟨-, hns⟩
+      · simp [hop] at h1
+      · simp only [Bool.and_eq_true] at h1
+        exact absurd (stableB_sound h1.2) hns
     · have := h1 a ha
       cases hw : f.value? a with
       | none => rw [hw] at this; cases this

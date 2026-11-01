@@ -65,9 +65,10 @@ theorem Inv.mk' {tabs : Tables} {f F' : Func} {V' : ID → Option Value} (hW : v
     (acyc : ∀ x, Listed f x → ∃ r n, Src V' x r n)
     (shape : ∀ x, Listed f x → ∀ w, cstep V' x = some (some w) →
       ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧
-        RetypeEq (tabs.ty wv.type) (tabs.ty xv.type)) :
+        RetypeEq (tabs.ty wv.type) (tabs.ty xv.type))
+    (ends : ∀ x r n, Src (vw f) x r n → NotPhi f r → ∃ m, Src V' x r m) :
     Inv tabs f F' := by
-  subst hW; exact ⟨hs, keep, mode, closed, acyc, shape⟩
+  subst hW; exact ⟨hs, keep, mode, closed, acyc, shape, ends⟩
 
 /-! ## `setArg` to the end of the argument's chain -/
 
@@ -136,7 +137,7 @@ theorem inv_setArg (hwf : WF ce f) (hI : Inv tabs f F) {v : ID} (hv : Listed f v
     intro c' h'
     rw [← hG] at h'
     exact Array.mem_or_eq_of_mem_setIfInBounds h'
-  refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_, ⟨hsink, ?_⟩, by rw [hself, ← hG], ?_, hsrc⟩
+  refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_ ?_, ⟨hsink, ?_⟩, by rw [hself, ← hG], ?_, hsrc⟩
   · rw [skel_setArg]; exact hI.skel
   · intro x
     rw [keep_upd (vw F) v G (by intro y; rw [← hG]; exact ⟨rfl, rfl, rfl⟩)]
@@ -193,6 +194,9 @@ theorem inv_setArg (hwf : WF ce f) (hI : Inv tabs f F) {v : ID} (hv : Listed f v
         rw [h'] at hw'; cases hw'
     · rw [hne x hxv] at hw'
       exact hI.shape x hx w' hw'
+  · intro x r n h hr
+    obtain ⟨m, h'⟩ := hI.ends x r n h hr
+    exact (hsrc x r).2 ⟨m, h'⟩
   · intro x u' hu' c' hc'
     by_cases hxv : x = v
     · subst hxv
@@ -239,7 +243,7 @@ theorem inv_empty (hfrag : CopyFrag tabs f) (hI : Inv tabs f F) {v : ID}
   have hjoin : ∀ a c, Join (vw F) a c → Join (upd (vw F) v G) a c := fun a c h =>
     (join_iff_of_src hsrc).2 h
   have hnil : (G u).args = #[] := by rw [← hG]
-  refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_, ⟨fun x => by rw [hall], ?_⟩, ?_⟩
+  refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_ ?_, ⟨fun x => by rw [hall], ?_⟩, ?_⟩
   · rw [skel_resetValue]; exact hI.skel
   · intro x
     rw [keep_upd (vw F) v G (by intro y; rw [← hG]; exact ⟨rfl, rfl, rfl⟩)]
@@ -265,6 +269,9 @@ theorem inv_empty (hfrag : CopyFrag tabs f) (hI : Inv tabs f F) {v : ID}
   · intro x hx w' hw'
     rw [hall] at hw'
     exact hI.shape x hx w' hw'
+  · intro x r n h hr
+    obtain ⟨m, h'⟩ := hI.ends x r n h hr
+    exact (hsrc x r).2 ⟨m, h'⟩
   · intro x u' hu' c' hc'
     by_cases hxv : x = v
     · subst hxv
@@ -412,7 +419,26 @@ theorem inv_phielim (hwf : WF ce f) (hfrag : CopyFrag tabs f) (hI : Inv tabs f F
       exact ⟨w, n', 0, hn', .sink hws'⟩
     · exact hjoin _ _ hj
   have hwl : Listed f w := hI.closed v hv u hu w hw
-  refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_, ?_, (fun h => by cases h), ?_, fun _ => ⟨?_, ?_⟩⟩
+  -- a `Stable` phi is not turned into a copy: its two chain ends would both be `w`
+  have notStable : ¬ Stable f fv := by
+    rintro ⟨a₁, ha₁, a₂, ha₂, r₁, r₂, n₁, n₂, hs₁, hs₂, hne₁₂, hp₁, hp₂⟩
+    have hend : ∀ a ∈ fv.args, ∀ r n, Src f.value? a r n → NotPhi f r → r = w := by
+      intro a ha r n hs hp
+      obtain ⟨m, hm⟩ := hI.ends a r n (src_congr (by intro y; rw [cstep_vw]) hs) hp
+      obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 ha
+      obtain ⟨c, hc⟩ : ∃ c, u.args[k]? = some c := by
+        have : k < fv.args.size := (Array.getElem?_eq_some_iff.1 hk).1
+        exact ⟨u.args[k]'(by omega), by simp⟩
+      have hj := h5 k a c hk hc
+      rcases hall c (Array.mem_of_getElem? hc) with rfl | rfl
+      · obtain ⟨n', hn'⟩ := hj.sink hvs
+        have := (hm.unique hn').1
+        subst this
+        exact absurd hfop (hp fv hfv)
+      · obtain ⟨n', hn'⟩ := hj.sink hws
+        exact (hm.unique hn').1
+    exact hne₁₂ ((hend a₁ ha₁ r₁ n₁ hs₁ hp₁).trans (hend a₂ ha₂ r₂ n₂ hs₂ hp₂).symm)
+  refine ⟨Inv.mk' hW ?_ ?_ ?_ ?_ ?_ ?_ ?_, ?_, (fun h => by cases h), ?_, fun _ => ⟨?_, ?_⟩⟩
   · rw [skel_toCopy]; exact hI.skel
   · intro x
     rw [keep_upd (vw F) v G (by intro y; rw [hGu]; exact ⟨rfl, rfl, rfl⟩)]
@@ -449,12 +475,18 @@ theorem inv_phielim (hwf : WF ce f) (hfrag : CopyFrag tabs f) (hI : Inv tabs f F
       obtain ⟨bid, b, hb, hxb⟩ := hx
       have hal : Listed f a := hwf.argListed bid b x fv ⟨hb, hxb, hfv⟩ a (Array.mem_of_getElem? ha)
       obtain ⟨av, wv, hav, hwv', hty⟩ := hI.src_shape hwf hal hn
-      obtain ⟨av', hav', hty'⟩ := hfrag.shape x ⟨bid, b, hb, hxb⟩ fv hfv (.inr hfop) a
-        (Array.mem_of_getElem? ha)
+      obtain ⟨av', hav', hty'⟩ := hfrag.shape x ⟨bid, b, hb, hxb⟩ fv hfv
+        (.inr ⟨hfop, fun hst => notStable hst⟩) a (Array.mem_of_getElem? ha)
       rw [hav] at hav'; cases hav'
       exact ⟨fv, wv, hfv, hwv', hty.trans hty'⟩
     · rw [hne x hxv] at hw'
       exact hI.shape x hx w' hw'
+  · intro x r n hs hr
+    obtain ⟨m, hm⟩ := hI.ends x r n hs hr
+    obtain ⟨m', hm'⟩ := hlink hm
+    have hrv : r ≠ v := fun he => hr fv (he ▸ hfv) hfop
+    simp only [hrv, ↓reduceIte] at hm'
+    exact ⟨m', hm'⟩
   · intro x hx u' hu' c' hc'
     rw [List.mem_singleton] at hx
     subst hx
