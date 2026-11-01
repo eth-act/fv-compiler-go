@@ -166,6 +166,7 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
     st := { st with byCount := st.byCount.modify i (· + 1) }
     if unproven.size == 1 then
       let r := unproven[0]!
+      IO.eprintln s!"SOLE\t{r}\t{e.pkg}.{e.name}"
       st := { st with sole := st.sole.insert r (st.sole.getD r 0 + 1) }
     if unproven.size ≤ 2 then
       for r in unproven do

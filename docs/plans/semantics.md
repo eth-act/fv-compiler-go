@@ -618,7 +618,9 @@ and checks that every section agrees with section 0 whenever section 0 is define
   accepts a `uintptr`). An invalid or read-only write is `stuck`; an invalid read is `poison`;
   an empty access is always valid (Go copies and compares zero bytes at nil).
 - **Globals** (`Env.globals`, `globalImage`): `SRODATA` symbols with their bytes and `R_ADDR`
-  relocations as pointer fragments, string data symbols from their names, and zeroed writable
+  relocations as pointer fragments (an empty `data` without type or itab information, the
+  `..stmp_N` of zero composite literals: `size` zero bytes, `rodataBytes?`), string data
+  symbols from their names, and zeroed writable
   allocations for the other symbols an `Addr` names (sized by the pointee type).
   `ConstString` points to the string's data symbol.
 - **Pure P2 ops**: `OffPtr`, `AddPtr`, `PtrIndex`, `SubPtr`, `EqPtr`/`NeqPtr`, `IsNonNil`,

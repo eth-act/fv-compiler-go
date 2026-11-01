@@ -288,6 +288,26 @@ def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
     | _, _ => pure ()
   if !segRel tabs f f' then return some "rel"
   if let .error e := check { tabs := tabs, typs := env.typs } f' then return some s!"check {e}"
+  if !RewriteCheck.roSegsOK tabs (RewriteCheck.roSyms env.tables f) f f' then
+    let bad := f.blocks.foldl (init := (#[] : Array String)) fun acc b =>
+      (WBCheck.vals f b).foldl (init := acc) fun acc x => match f.value? x with
+        | some v => if WBCheck.memFree (tabs.ty v.type) || WBCheck.memOpOK v.op then acc
+          else acc.push s!"{v.op.name}:{repr (tabs.ty v.type)}"
+        | none => acc
+    let ro := RewriteCheck.roSyms env.tables f
+    let movs := (RewriteCheck.segList (RewriteCheck.segArr tabs f f')).filter fun s =>
+      (f.value? s.1).any (·.op == .Move)
+    let srcs := movs.map fun s => match f.value? s.1 with
+      | some fv => match fv.args.toList with
+        | [_, s, _] => match f.value? s with
+          | some sv => s!"v{s} {sv.op.name} {WBCheck.symName? tabs sv.aux} \
+              roSym {(RewriteCheck.roSym? tabs sv.aux).map (fun (e : String × Sem.Alloc) => e.1)} \
+              inRo {(WBCheck.symName? tabs sv.aux).map fun n => ro.any (·.1 == n)} \
+              ok {RewriteCheck.roSrcOK tabs ro f fv}"
+          | none => "src?"
+        | _ => "arity"
+      | none => "?"
+    return some s!"ro memTyOK {WBCheck.memTyOK tabs f} bad {bad.toList.eraseDups} srcs {srcs}"
   return none
 
 open GoFV.Rules RewriteCheck in
