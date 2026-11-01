@@ -191,7 +191,15 @@ pass's tables (`nilOK`), and validates the output against the last layer's funct
 remaining events. `safePtr` follows `OffPtr`, `AddPtr`, `PtrIndex` and `Copy` to its seeds (each
 keeps a non-nil pointer's allocation, `offPtr_safe`, `addPtr_safe`, `ptrIndex_safe`; a `Copy`
 is its argument), so a nil check whose pointer the log forwarded from a `Store` (a `Copy` after
-the forwarding layer) is justified by the stored pointer.
+the forwarding layer) is justified by the stored pointer. Two more cases cover pointers that the
+log's value rules turn into seeds after the nil-check layers ran: the `StringPtr` of a non-empty
+string constant (`NilCheck.nonEmptyStr`; the data pointer `Sem.frameVal` gives the constant is the
+start of a global, at every shape of the constant, `safe_str_select`; `:1022` + `:1011` make it an
+`Addr`, whose nil check `:1375` drops) and a `StructSelect [i]` of a `StructMake` whose field `i`
+has pointer shape (`NilCheck.ptrField`) and whose argument `i` is a `safePtr` pointer
+(`safe_struct_select`; `:973` makes it that argument). Witnesses:
+`GoFV.Proof.Witness.ns_checkedRewrite` and `sm_checkedRewrite` (`GoFV/Proof/Witness/NilSel.lean`,
+kernel evaluation).
 
 `safePtr true` (the rewrite passes' seeds) also takes as non-nil the first result of a
 malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobject` or a
@@ -730,6 +738,8 @@ defined, since `Val.retype` gives a value of the shape at every shape, so the in
 operands of `:790–793` are accepted): 7,759 (83.46%) / 7,876 at 97ccd7b.
 With the frame facts of aux-bound variables (`:1011`, `:1015`; 1,239 rules): 7,950 (85.51%) /
 8,066 at a853397 (7,772 before, with #237's validator layers).
+With the `StringPtr`/`StructSelect` cases of `safePtr` (nil checks of a string constant's data
+pointer and of a `StructMake`'s pointer field): 7,983 (85.87%) at 216e265 (7,979 before).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

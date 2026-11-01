@@ -656,7 +656,12 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n +
         (v.op = .SelectN ∧ xt = true ∧ v.auxInt = 0 ∧
           ∃ c, v.args[0]? = some c ∧ Opt.NilCheck.mallocCall tabs f c = true) ∨
         (v.op = .Arg ∧ xt = true ∧ v.auxInt = 0 ∧
-          ∃ m, v.aux = some m ∧ Opt.NilCheck.dictArg tabs f m = true)) := by
+          ∃ m, v.aux = some m ∧ Opt.NilCheck.dictArg tabs f m = true) ∨
+        (v.op = .StringPtr ∧ ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.nonEmptyStr tabs f a = true) ∨
+        (v.op = .StructSelect ∧ ∃ a sm b, v.args[0]? = some a ∧ f.value? a = some sm ∧
+          sm.op = .StructMake ∧ 0 ≤ v.auxInt.toInt ∧
+          Opt.NilCheck.ptrField tabs sm.type v.auxInt.toInt.toNat = true ∧
+          sm.args[v.auxInt.toInt.toNat]? = some b ∧ Opt.NilCheck.safePtr xt tabs f n b = true)) := by
   unfold Opt.NilCheck.safePtr at h
   cases hv : f.value? z with
   | none => rw [hv] at h; cases h
@@ -692,6 +697,24 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n +
     · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr h)), a, ha, hop⟩)))
     · cases hop
   · next h =>
+    split at hop
+    · next a ha => exact .inr (.inr (.inr (.inr (.inr (.inr (.inl ⟨h, a, ha, hop⟩))))))
+    · cases hop
+  · next h =>
+    split at hop
+    · next a ha =>
+      split at hop
+      · next sm hsm =>
+        simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hop
+        obtain ⟨⟨⟨hsop, h0⟩, hpf⟩, hb⟩ := hop
+        split at hb
+        · next b hb' =>
+          exact .inr (.inr (.inr (.inr (.inr (.inr (.inr
+            ⟨h, a, sm, b, ha, hsm, hsop, h0, hpf, hb', hb⟩))))))
+        · cases hb
+      · cases hop
+    · cases hop
+  · next h =>
     simp only [Bool.and_eq_true, beq_iff_eq] at hop
     obtain ⟨⟨hxt, hai⟩, hc⟩ := hop
     split at hc
@@ -701,7 +724,7 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n +
     simp only [Bool.and_eq_true, beq_iff_eq] at hop
     obtain ⟨⟨hxt, hai⟩, hc⟩ := hop
     split at hc
-    · next m hm => exact .inr (.inr (.inr (.inr (.inr ⟨h, hxt, hai, m, hm, hc⟩))))
+    · next m hm => exact .inr (.inr (.inr (.inr (.inr (.inl ⟨h, hxt, hai, m, hm, hc⟩)))))
     · cases hc
   · cases hop
 
@@ -720,6 +743,103 @@ theorem frameVal_local_safe {ctx : Ctx} {v : Value} (h : v.op = .LocalAddr)
   simp only [hn, Option.map_some, Option.some.injEq, exists_eq_left', Safe]
   unfold frameBlk; split <;> nofun
 
+omit K in
+private theorem mapM_at {r : ID → Option Val} : ∀ {l : List ID} {vs : List Val}, l.mapM r = some vs →
+    ∀ {k : Nat} {a : ID}, l[k]? = some a → ∃ v, vs[k]? = some v ∧ r a = some v
+  | [], _, _, _, _, hk => by simp at hk
+  | b :: l, vs, h, k, a, hk => by
+    simp only [List.mapM_cons, Option.bind_eq_bind, Option.bind_eq_some_iff,
+      Option.pure_def, Option.some.injEq] at h
+    obtain ⟨y, hy, ys, hys, rfl⟩ := h
+    cases k with
+    | zero => simp at hk; subst hk; exact ⟨y, rfl, hy⟩
+    | succ k => exact mapM_at hys (by simpa using hk)
+
+omit K in
+/-- A global pointer keeps its block at every shape. -/
+theorem safe_global_retype (s : String) (o : BitVec 64) (t : Ty) :
+    Safe ((Val.ptr ⟨.global s, o⟩).retype t) := by
+  cases t with
+  | int w => cases w <;> simp [Val.retype, Ptr.addr?, Blk.base?, Safe]
+  | _ => simp [Val.retype, Safe]
+
+omit K in
+/-- The data pointer of a non-empty string constant, at any shape of the constant. -/
+theorem safe_str_select (s : String) (x : Val) (t : Ty) :
+    Safe (Comp.select 0 [(Val.agg [.ptr ⟨.global s, 0⟩, x]).retype t]) := by
+  cases t with
+  | agg fs n =>
+    match fs with
+    | [] => simp [Val.retype, Val.retypeFields, Comp.select, Safe]
+    | (o, t0) :: fs =>
+      simp only [Val.retype, Val.retypeFields]
+      cases Val.retypeFields fs [x] with
+      | none => simp [Comp.select, Safe]
+      | some vs => simpa [Comp.select] using safe_global_retype s 0 t0
+  | _ => simp [Val.retype, Comp.select, Safe]
+
+omit K in
+theorem retypeFields_at : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},
+    Val.retypeFields fs vs = some vs' → ∀ {i : Nat} {o : Nat} {t : Ty} {y : Val},
+      fs[i]? = some (o, t) → vs[i]? = some y → vs'[i]? = some (y.retype t)
+  | [], [], _, _, _, _, _, _, hf, _ => by simp at hf
+  | (_, _) :: _, [], _, h, _, _, _, _, _, _ => by simp [Val.retypeFields] at h
+  | [], _ :: _, _, h, _, _, _, _, _, _ => by simp [Val.retypeFields] at h
+  | (_, t') :: fs, v :: vs, vs', h, i, o, t, y, hf, hv => by
+    simp only [Val.retypeFields, Option.map_eq_some_iff] at h
+    obtain ⟨ws, hws, rfl⟩ := h
+    cases i with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq, Prod.mk.injEq] at hf hv
+      obtain ⟨-, rfl⟩ := hf; subst hv; rfl
+    | succ i =>
+      simp only [List.getElem?_cons_succ] at hf hv ⊢
+      exact retypeFields_at hws hf hv
+
+omit K in
+/-- A pointer-shaped field of a `StructMake` keeps a `Safe` argument. -/
+theorem safe_struct_select {fs : List (Nat × Ty)} {N i o : Nat} {e' : Option Nat}
+    {vs : List Val} {y : Val} (hf : fs[i]? = some (o, .ptr e')) (hv : vs[i]? = some y)
+    (hy : Safe y) : Safe (Comp.select i [(Val.agg vs).retype (.agg fs N)]) := by
+  simp only [Val.retype]
+  cases h : Val.retypeFields fs vs with
+  | none => simp [Comp.select, Safe]
+  | some vs' =>
+    simp only [Comp.select]
+    rw [List.getD_eq_getElem?_getD, retypeFields_at h hf hv]
+    exact safe_retype_ptr e' hy
+
+omit K in
+theorem nonEmptyStr_spec {a : ID} (h : Opt.NilCheck.nonEmptyStr tabs f a = true) :
+    ∃ av, f.value? a = some av ∧ av.op = .ConstString ∧
+      ∃ s x, frameVal (Ctx.make tabs f) av = some (.agg [.ptr ⟨.global s, 0⟩, x]) := by
+  unfold Opt.NilCheck.nonEmptyStr at h
+  split at h
+  · next av hav =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨hop, h⟩ := h
+    refine ⟨av, hav, hop, ?_⟩
+    unfold frameVal
+    rw [hop]
+    split at h
+    · next _ _ _ str ds hs =>
+      simp only [show (Ctx.make tabs f).tabs = tabs from rfl, hs]
+      have hne : str.size ≠ 0 := by simpa using h
+      simp [hne]
+    · cases h
+  · cases h
+
+omit K in
+theorem ptrField_spec {t : TypeRef} {i : Nat} (h : Opt.NilCheck.ptrField tabs t i = true) :
+    ∃ fs N o e', tabs.ty t = .agg fs N ∧ fs[i]? = some (o, .ptr e') := by
+  unfold Opt.NilCheck.ptrField at h
+  split at h
+  · next fs N ht =>
+    split at h
+    · next o e' hfi => exact ⟨fs, N, o, e', ht, hfi⟩
+    · cases h
+  · cases h
+
 /-- **`safePtr` values are `Safe`** in the source's frames. -/
 theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :
     ∀ (n : Nat) (z : ID), Opt.NilCheck.safePtr xt tabs f n z = true →
@@ -731,8 +851,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
     have hph : v.op ≠ .Phi := by
       intro hp
-      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ <;> rw [hp] at h1 <;>
-        cases h1
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
+        ⟨h1, -⟩ <;> rw [hp] at h1 <;> cases h1
     obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
     have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = .ptr e := by
@@ -752,7 +872,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
       intro h; rcases h with h | h | h | h | h | h <;> rw [h] <;> decide
     rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩ | ⟨h1, hxt, hai, c, hc, hmc⟩ |
-      ⟨h1, hxt, hai, m, hm, hda⟩
+      ⟨h1, hxt, hai, m, hm, hda⟩ | ⟨h1, a, ha, hsa⟩ | ⟨h1, a, sm, bb, ha, hsm, hsop, h0, hpf, hbb, hsb⟩
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       obtain ⟨x, hx, hsx⟩ : ∃ x, frameVal (Ctx.make tabs f) v = some x ∧ Safe x := by
@@ -852,6 +972,85 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       have hD : DictFrame tabs f S := (K.ext hxt).2.images (by rw [hS.frame])
       simp only [evalOp, h1, hm, hai] at hr
       exact safe_argVal_dict hD hda hr
+    · -- the data pointer of a non-empty string constant: the start of a global
+      obtain ⟨av, hav, haop, s, x, hfx⟩ := nonEmptyStr_spec hsa
+      have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+          v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide
+      obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hg
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
+      have hfv : frameVal (Ctx.make tabs f) v = none := frameVal_none (by rw [h1]; decide)
+      rw [hfv, h1] at hr; cases hr
+      have hph' : av.op ≠ .Phi := by rw [haop]; decide
+      have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
+      obtain ⟨ya, hya, heva⟩ := K.availS hS haa hav hph'
+      have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
+      rw [h1, show Op.StringPtr.argLen = 1 by decide] at har
+      have hsz : v.args.size = 1 := by exact_mod_cast har
+      have hva : v.args = #[a] := by
+        apply Array.ext (by simp [hsz]); intro k h1' h2'
+        have : k = 0 := by simp at h2'; omega
+        subst this; simpa [Array.getElem?_eq_getElem h1'] using ha
+      have hvs' : vs = [ya] := by
+        rw [hva] at hvs; unfold argVals at hvs
+        simp [hya] at hvs; exact hvs.symm
+      subst hvs'
+      obtain ⟨vsa, hvsa⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S)
+        (v := av) (by rw [heva]; nofun)
+      have hga : isRoot av.op = false ∧ av.op ≠ .InitMem ∧ av.op ≠ .Arg ∧ av.op ≠ .ArgIntReg ∧
+          av.op ≠ .GetClosurePtr ∧ av.op ≠ .ArgFloatReg := by rw [haop]; decide
+      obtain ⟨ha1, ha2, ha3, ha4, ha5, ha6⟩ := hga
+      rw [evalValue_of_argVals hvsa, evalOp_tail ha1 ha2 ha3 ha4 ha5 ha6, hfx] at heva
+      obtain ⟨r', hr', hyr'⟩ := bind_ok heva
+      cases hr'
+      subst hyr'
+      exact safe_str_select s x _
+    · -- field `i` of a `StructMake`: its argument `i`, a `safePtr` pointer
+      have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+          v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide
+      obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hg
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
+      have hfv : frameVal (Ctx.make tabs f) v = none := frameVal_none (by rw [h1]; decide)
+      rw [hfv, h1] at hr; cases hr
+      have hph' : sm.op ≠ .Phi := by rw [hsop]; decide
+      have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
+      obtain ⟨-, -, -, -, haid⟩ := K.listed_avail haa hsm
+      obtain ⟨ysm, hysm, hevs⟩ := K.availS hS haa hsm hph'
+      have hba := K.avail_args haa hsm hph' (Array.mem_of_getElem? hbb)
+      obtain ⟨yb, hyb, hsb', -⟩ := safe_chain hS n bb hsb hba
+      have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
+      rw [h1, show Op.StructSelect.argLen = 1 by decide] at har
+      have hsz : v.args.size = 1 := by exact_mod_cast har
+      have hva : v.args = #[a] := by
+        apply Array.ext (by simp [hsz]); intro k h1' h2'
+        have : k = 0 := by simp at h2'; omega
+        subst this; simpa [Array.getElem?_eq_getElem h1'] using ha
+      have hvs' : vs = [ysm] := by
+        rw [hva] at hvs; unfold argVals at hvs
+        simp [hysm] at hvs; exact hvs.symm
+      subst hvs'
+      obtain ⟨vsm, hvsm⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S)
+        (v := sm) (by rw [hevs]; nofun)
+      have hgs : isRoot sm.op = false ∧ sm.op ≠ .InitMem ∧ sm.op ≠ .Arg ∧ sm.op ≠ .ArgIntReg ∧
+          sm.op ≠ .GetClosurePtr ∧ sm.op ≠ .ArgFloatReg := by rw [hsop]; decide
+      obtain ⟨hs1, hs2, hs3, hs4, hs5, hs6⟩ := hgs
+      have hsfv : frameVal (Ctx.make tabs f) sm = none := frameVal_none (by rw [hsop]; decide)
+      rw [evalValue_of_argVals hvsm, evalOp_tail hs1 hs2 hs3 hs4 hs5 hs6, hsfv, hsop] at hevs
+      obtain ⟨r', hr', hyr'⟩ := bind_ok hevs
+      cases hr'
+      subst hyr'
+      obtain ⟨fs, N, o, e', hts, hfi⟩ := ptrField_spec hpf
+      obtain ⟨yb', hyb', hrb⟩ := mapM_at hvsm (k := v.auxInt.toInt.toNat)
+        (by simpa using hbb)
+      rw [hyb] at hrb
+      simp only [Option.join_some, Option.some.injEq] at hrb
+      subst hrb
+      have htys : (Ctx.make tabs f).tys[sm.id]?.getD .other = .agg fs N := by
+        rw [haid, tys_of_value hsm]; simpa using hts
+      rw [htys]
+      show Safe (Comp.selectAux v.auxInt [(Comp.make vsm).retype (.agg fs N)])
+      unfold Comp.selectAux
+      simp only [show ¬ v.auxInt.toInt < 0 by omega, ↓reduceIte]
+      exact safe_struct_select hfi hyb' hsb'
 
 /-- A nil check of a pointer that `safePtr` holds of never panics. -/
 theorem seedNoPanic {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
