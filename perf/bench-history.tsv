@@ -100,3 +100,8 @@ date	commit	bench	status	wall_s	cpu_s	maxrss_mb	runs	load1	bin_hash	corpus
 2026-11-01T12:37:29Z	1cfaf242a370	ssa-check-corpus	ok	59.47	58.97	89	1	41.5	0735d7e0dbe0de5e	c01e426fea8b
 2026-11-01T12:37:29Z	1cfaf242a370	analysis-difftest-corpus	ok	84.12	54.56	90	1	33.3	e4fd7b5b4514fc56	c01e426fea8b
 2026-11-01T12:37:29Z	1cfaf242a370	sem-difftest-corpus	ok	180.50	92.49	91	1	47.2	050d92727f7c3964	c01e426fea8b
+2026-11-01T15:23:55Z	943fb6e0e02b	ssa-roundtrip-corpus	ok	71.10	67.80	115	1	38.6	6ee17ec3abeb04c6	c01e426fea8b
+2026-11-01T15:23:55Z	943fb6e0e02b	pass-parity-corpus	ok	28.22	100.09	135	1	31.3	a9117fafd4a38e71	c01e426fea8b
+2026-11-01T15:23:55Z	943fb6e0e02b	ssa-check-corpus	ok	70.04	68.66	86	1	30.5	e0d691476bdb8e0b	c01e426fea8b
+2026-11-01T15:23:55Z	943fb6e0e02b	analysis-difftest-corpus	ok	56.93	54.96	90	1	27.9	cbd81ebadd3c33f0	c01e426fea8b
+2026-11-01T15:23:55Z	943fb6e0e02b	sem-difftest-corpus	ok	86.14	84.63	89	1	28.0	c2dd56a3ab5898ca	c01e426fea8b
