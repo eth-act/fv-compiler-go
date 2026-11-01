@@ -114,4 +114,16 @@ theorem opTab_mem {fo go : Op} {w : Width} {k : Nat} (h : opTab.lookup (fo, go) 
     | exact .ctz (fun _ _ _ _ => rfl) (fun _ _ _ _ => rfl)
     | exact .mul (fun _ _ _ _ => rfl) (fun _ _ _ _ => rfl)
 
+theorem shTab_term {op : Op} {q : Width × Width × Nat} (h : shTab.lookup op = some q) :
+    GoFV.Opt.RewriteCheck.termOp op = true := by
+  have hm := mem_of_lookup h
+  simp only [shTab, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+  rcases hm with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
+
+theorem opTab_term {fo go : Op} {q : Width × Nat} (h : opTab.lookup (fo, go) = some q) :
+    GoFV.Opt.RewriteCheck.termOp fo = true ∧ GoFV.Opt.RewriteCheck.termOp go = true := by
+  have hm := mem_of_lookup h
+  simp only [opTab, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
+  rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ <;> exact ⟨rfl, rfl⟩
+
 end GoFV.Proof.ProveCheck

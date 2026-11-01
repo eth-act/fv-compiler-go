@@ -138,7 +138,7 @@ def Rng.sub (ra r : Rng) : Bool :=
 def invOK (f : Func) (tabs : Tables) (C : DomCert.Cert) (F : Array (List (ID × Bool)))
     (inv : List (ID × Width × Rng)) (es : List (ID × Width × Rng)) : Bool :=
   es.all fun (z, w, r) =>
-    (f.value? z).any (·.op == .Phi) &&
+    (f.value? z).any (fun zv => zv.op == .Phi && intAt tabs zv w) &&
     (phiEdges f C F z).all fun (a, fs) =>
       (f.value? a).any (intAt tabs · w) &&
       (rng f.value? tabs { facts := fs, inv } rngFuel w a).sub r
@@ -297,9 +297,10 @@ def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
 
 /-- **The relation** the theorem needs between `f` and the checked output `g`. -/
 def proveRel (tabs : Tables) (f g : Func) : Bool :=
-  let (C, F, inv) := asmOf f tabs
-  atomsOK f g && closedOK f && closedOK g && f.blocks.all C.inTree && factsOK f C F &&
-  invOK f tabs C F inv inv && valuesOK tabs f g F inv
+  let A := asmOf f tabs
+  atomsOK f g && closedOK f && closedOK g && f.blocks.all (DomCert.make f).inTree &&
+    factsOK f (DomCert.make f) A.2.1 && invOK f tabs (DomCert.make f) A.2.1 A.2.2 A.2.2 &&
+    valuesOK tabs f g A.2.1 A.2.2
 
 /-! ## The checked pass -/
 
