@@ -39,6 +39,11 @@ a narrower type as the low bits, `Val.retype`). The checker does not guarantee t
 (`docs/contracts/check.md`, "Argument sizes"); see `docs/proofs/rules.md`, "Narrow result
 types".
 
+**Leaf types.** A leaf's type is the instance's type at its position (`x.Type`), and the
+obligation assumes that every leaf value has its type's shape (`Pat.typed`): a matched leaf is
+a register whose value `evalValue` retyped to its type (`docs/proofs/rules.md`, "Assumptions to
+discharge").
+
 What the interpreter proof has to supply, besides the match: the shapes of `typ.<T>` and
 `types.Types[k]` (`typShape`, `typesShape`) for the export's `Config.Types`, and that
 `t.Size()` of an integer or boolean shape is its byte size.
@@ -52,7 +57,8 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 abbrev Path := List Nat
 
 /-- The value of a rule expression in the denotation. `val v p`: a `*Value` with semantic value
-`v`; `p = some path` if it is an op node of the pattern (then its fields are known). -/
+`v`; `p = some path` if it is a node of the pattern (then its fields are those of the instance
+at `path`: an op node's type, auxint, …; a leaf's type). -/
 inductive DV where
   | int (i : Int)
   | bool (b : Bool)
@@ -117,7 +123,7 @@ mutual
 /-- The bindings made by the pattern at `p`: `(variable, value)`. -/
 def Pat.binds (e : PEnv) (p : Path) : Pat → List (Nat × DV)
   | .wild | .same _ => []
-  | .bind x => [(x, .val (e.leaf p) none)]
+  | .bind x => [(x, .val (e.leaf p) (some p))]
   | pat@(.op o name ty ai _ _ args _) =>
     (match name with | some x => [(x, .val (Pat.den e p pat) (some p))] | none => []) ++
     (match ty with | .bind x => [(x, .ty (e.ty p))] | _ => []) ++
@@ -452,6 +458,17 @@ def Pat.conss (ev : Expr → DV) (σ : Nat → DV) (e : PEnv) (p : Path) (i : Na
   | q :: qs => Pat.cons ev σ e (i :: p) q ∧ Pat.conss ev σ e p (i + 1) qs
 end
 
+mutual
+/-- Every leaf of the pattern at `p` has its type's shape: a matched value is a register whose
+value `evalValue` retyped to its `Type` (docs/proofs/rules.md, "Assumptions to discharge"). -/
+def Pat.typed (e : PEnv) (p : Path) : Pat → Prop
+  | .op _ _ _ _ _ _ args _ => Pat.typeds e p 0 args
+  | _ => (e.leaf p).hasTy (e.ty p) = true
+def Pat.typeds (e : PEnv) (p : Path) (i : Nat) : List Pat → Prop
+  | [] => True
+  | q :: qs => Pat.typed e (i :: p) q ∧ Pat.typeds e p (i + 1) qs
+end
+
 /-- The checker's fact about an auxint of aux type `aty` that the rules rely on
 (`docs/contracts/check.md`, "Aux"): `Bool` auxints are 0 or 1. -/
 def auxIntOk (aty : AuxType) (a : Int64) : Prop :=
@@ -536,8 +553,9 @@ def condHolds (ev : Expr → DV) : Option Expr → Prop
   | none => True
 
 /-- **The obligation of a value rule.** For every instance of the pattern whose auxints are
-well formed (`Pat.wf`), whose checks and condition hold and whose top value has its type's
-shape, the rewritten value refines the matched one. -/
+well formed (`Pat.wf`), whose checks and condition hold, whose top value has its type's
+shape and whose leaves have their types' shapes (`Pat.typed`), the rewritten value refines the
+matched one. -/
 def Rule.Sound (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
   ∀ (e : PEnv) (or : Oracle),
@@ -547,6 +565,7 @@ def Rule.Sound (r : Rule) : Prop :=
     Pat.cons ev σ e [] r.pat →
     condHolds ev r.cond →
     (Pat.raw e r.pat).hasTy (e.ty []) = true →
+    Pat.typed e [] r.pat →
     Refines (Pat.raw e r.pat) (resDen ev or σ (e.ty []) r.result)
 
 
@@ -554,7 +573,7 @@ def Rule.Sound (r : Rule) : Prop :=
 /-! Equation lemmas of the denotation, generated here once rather than in every rule module
 (LEARNINGS.md, "Large `match` on a variable"). -/
 attribute [local simp] Pat.den Pat.dens Pat.raw Pat.binds Pat.bindss Pat.cons Pat.conss
-  Pat.wf Pat.wfs auxIntOk
+  Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk
   Pat.arityOk Pat.arityOks evalE evalEs nodeDen resDen condHolds sigma auxIntDV toAuxIntD
   litDV fieldE indexE convE binE callE callH methodE builtinE binDV unDV intBin fieldDV DV.valOr
   Field.bindDV

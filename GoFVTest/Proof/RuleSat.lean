@@ -80,6 +80,15 @@ def wfsB (e : PEnv) (p : Path) (i : Nat) : List Pat → Bool
   | q :: qs => wfB e (i :: p) q && wfsB e p (i + 1) qs
 end
 
+mutual
+def typedB (e : PEnv) (p : Path) : Pat → Bool
+  | .op _ _ _ _ _ _ args _ => typedsB e p 0 args
+  | _ => (e.leaf p).hasTy (e.ty p)
+def typedsB (e : PEnv) (p : Path) (i : Nat) : List Pat → Bool
+  | [] => true
+  | q :: qs => typedB e (i :: p) q && typedsB e p (i + 1) qs
+end
+
 def condB (ev : GoFV.Rules.Expr → DV) : Option GoFV.Rules.Expr → Bool
   | some c => match ev c with
     | .bool true => true
@@ -208,10 +217,19 @@ def nodesOf (pos : List (Path × Pat)) : List (Path × Pat) :=
   let ns := pos.filter fun (_, q) => match q with | .op .. => true | _ => false
   (ns.toArray.qsort (fun a b => a.1.length > b.1.length)).toList
 
-/-- One round of solving: node types from the computed values, then `<t>` and `[c]` checks and
-`same x` leaves from the current bindings. -/
-def solve (r : Rule) (pos : List (Path × Pat)) (or : Oracle) (i : Inst) : Inst := Id.run do
+/-- Every leaf typed by its value's shape (`Pat.typed`). -/
+def typeLeaves (pos : List (Path × Pat)) (i : Inst) : Inst := Id.run do
   let mut i := i
+  for (p, q) in pos do
+    match q with
+    | .op .. => pure ()
+    | _ => i := { i with ty := set i.ty p (shapeOf (i.env.leaf p)) }
+  return i
+
+/-- One round of solving: leaf types from their values, node types from the computed values,
+then `<t>` and `[c]` checks and `same x` leaves from the current bindings. -/
+def solve (r : Rule) (pos : List (Path × Pat)) (or : Oracle) (i : Inst) : Inst := Id.run do
+  let mut i := typeLeaves pos i
   for (p, q) in nodesOf pos do
     match q with
     | .op o .. =>
@@ -239,7 +257,7 @@ def solve (r : Rule) (pos : List (Path × Pat)) (or : Oracle) (i : Inst) : Inst 
     | .same x =>
       if let .val w _ := σ x then i := { i with leaf := set i.leaf p w }
     | _ => pure ()
-  return i
+  return typeLeaves pos i
 
 /-- The instance satisfies every hypothesis and the matched value is not `poison`; `some ok`
 with `ok` whether the result refines the matched value. -/
@@ -249,7 +267,7 @@ def check (r : Rule) (or : Oracle) (i : Inst) : Option Bool :=
   let ev := evalE (r.vars.map (·.ty)) σ or e (Pat.den e [] r.pat)
   let raw := Pat.raw e r.pat
   let ok := Pat.arityOk r.pat && wfB e [] r.pat && consB ev σ e [] r.pat && condB ev r.cond &&
-    raw.hasTy (e.ty []) && !(match raw with | .poison => true | _ => false)
+    raw.hasTy (e.ty []) && typedB e [] r.pat && !(match raw with | .poison => true | _ => false)
   if ok then some (refinesB raw (resDen ev or σ (e.ty []) r.result)) else none
 
 def render (i : Inst) : String :=
