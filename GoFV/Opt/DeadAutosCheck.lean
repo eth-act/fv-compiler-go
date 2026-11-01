@@ -22,10 +22,11 @@ nothing reads (`#31`).
   integer (`unforgeable`: a `PAUTO` whose address is not taken, `Blk.temp`) and is not an
   open-coded defer slot.
 * Every block's schedule in `g` lists the roots of `g` in `f`'s order (`DSE.schedOK`).
-* Every kept value whose arguments may hold a memory or a tuple (shape `mem`/`tuple`) has an op
-  of `memOps`, and every kept value whose shape may hold a pointer, a blob or a memory has an op
-  of `ptrOps` (`opOK`): the proof treats these ops one by one; any other value reads equal
-  arguments in source and target, and its result holds no pointer into an eliminated variable.
+* Every kept value with a memory- or tuple-shaped argument (shape `mem`/`tuple`) has it last
+  and an op of `memOps` (or is a `Phi`), and every kept value whose shape may hold a pointer, a
+  blob or a memory has an op of `ptrOps` (`opOK`): the proof treats these ops one by one; any
+  other value reads equal arguments in source and target, and its result holds no pointer into
+  an eliminated variable.
 -/
 
 namespace GoFV.Opt
@@ -118,9 +119,9 @@ def usesOK (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef) (x : ID) : 
           (el && i == 0 && fv.op != .VarDef) ||
           (el && i == 1 && fv.op == .Move)
 
-/-- Ops whose memory- or tuple-shaped arguments the proof handles. -/
+/-- Ops whose last argument may be memory- or tuple-shaped (the proof handles them). -/
 def memOps : List Op :=
-  [.Phi, .Copy, .LocalAddr, .Convert, .InlMark, .GetG, .GetCallerSP, .Select0, .Select1, .SelectN,
+  [.Copy, .LocalAddr, .Convert, .InlMark, .GetG, .GetCallerSP, .Select0, .Select1, .SelectN,
     .MakeResult, .Load, .AtomicLoad32, .AtomicLoad64, .AtomicLoadPtr, .MemEq, .Store, .Zero, .Move,
     .VarDef, .VarLive, .KeepAlive, .NilCheck, .PanicBounds, .StaticCall, .InterCall, .ClosureCall,
     .AtomicStore32, .AtomicStore64, .AtomicAdd32, .AtomicAdd32Variant, .AtomicAdd64,
@@ -154,13 +155,17 @@ def memTy : Sem.Ty → Bool
   | .mem | .tuple _ => true
   | _ => false
 
-/-- Kept value `fv`: memory- or tuple-shaped arguments only for `memOps`, a result shape that
-may hold a pointer only for `ptrOps`. -/
+/-- An argument that is not memory- or tuple-shaped. -/
+def plainArg (tabs : Tables) (f : Func) (a : ID) : Bool :=
+  match f.value? a with
+  | some av => !memTy (tabs.ty av.type)
+  | none => true
+
+/-- Kept value `fv`: a memory- or tuple-shaped argument only last and only for `memOps` (any
+for a `Phi`), a result shape that may hold a pointer only for `ptrOps`. -/
 def opOK (tabs : Tables) (f : Func) (fv : Value) : Bool :=
-  (memOps.contains fv.op || fv.args.all fun a =>
-      match f.value? a with
-      | some av => !memTy (tabs.ty av.type)
-      | none => true) &&
+  (fv.op == .Phi || fv.args.all (plainArg tabs f) ||
+      (memOps.contains fv.op && fv.args.pop.all (plainArg tabs f))) &&
     (ptrOps.contains fv.op || noPtrTy (tabs.ty fv.type))
 
 /-- Value `x`: eliminated, or a kept value with `opOK`. -/
