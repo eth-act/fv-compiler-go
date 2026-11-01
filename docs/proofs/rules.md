@@ -636,12 +636,16 @@ writes). The matching order is kept: the splits are the dec set's `structStores`
 tried after its (empty) `Store` row; `:10`, which Go tries first, is not among them, so a size-0
 `Store` it would remove makes the step differ from the pass (rejected, not unsound). A `Store` of
 a `Load` the step expands (`:45`, `:63`, `:87`) needs the expansion in the split's input: the
-value-rule `Load` expansion layer (`RewriteCheck.ldPre`) applies the log's events on `Load`s the
-replay validates alone, related by `validate` with them (`LayerChain.rw`). It also takes the
-extractors of a `Load` (`RewriteCheck.ldTarget`: `(StringPtr x:(Load …)) => @x.Block (Load …)`,
-`:132`–`:162`): the rewrite logs them before the `Load`'s own expansion, which would leave them
-no `Load` to match in the final `validate` (decompose builtin in the fragment: quick-v3 8731 →
-8756, full-v4 82590 → 82925; no new proof, the layer's is generic). Witness:
+value-rule `Load` expansion layer (`RewriteCheck.ldPre`) takes, in log order, the events the
+replay validates on the definitions of those taken before, related by `validate` with them
+(`LayerChain.rw`): the expansions of `Load`s; the extractors of a `Load`
+(`RewriteCheck.ldTarget`: `(StringPtr x:(Load …)) => @x.Block (Load …)`, `:132`–`:162`), which
+the rewrite logs before the `Load`'s own expansion, which would leave them no `Load` to match in
+the final `validate`; the selections of a `Make` whose results a split stores; and the
+copy-argument replacements of a `Load`'s argument or by a `Load`. An `@b` result's copy keeps the
+fresh node's type (`blockTopOK`, Go's `copyOf`; a `*go.shape.uint16` selection becomes a copy of
+a `*uint16` `Load`). Decompose builtin in the fragment: quick-v3 8731 → 8756 (extractors) → 8763,
+full-v4 82590 → 82925 → 83032; no new proof, the layer's is generic. Witness:
 `GoFV.Proof.Witness.decStore_witness` (`*p = unsafe.String(q, n); *p = *r` with the proven dec
 rules, kernel evaluation).
 
