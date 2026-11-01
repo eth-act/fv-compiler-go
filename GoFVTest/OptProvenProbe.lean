@@ -27,6 +27,8 @@ structure Count where
   firedProven : Nat := 0
   vStock : Nat := 0
   vProven : Nat := 0
+  checkedSame : Nat := 0
+  rejected : Nat := 0
 
 def numValues (f : Func) : Nat :=
   f.blocks.foldl (fun n b => n + ((f.block? b).map (·.values.size)).getD 0) 0
@@ -43,6 +45,78 @@ def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
 def ptrCacheFn (ts : Array TypeRef) : TypeRef → Bool :=
   let m : Std.HashMap TypeRef Unit := ts.foldl (fun m t => m.insert t ()) {}
   fun t => m.contains t
+
+open GoFV.Rules GoFV.Proof.Rules RewriteCheck in
+/-- Which part of `ruleOK` fails (diagnostics). -/
+def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : String :=
+  if !Pat.arityOk r.pat then "arity" else
+  match M.get? v with
+  | none => "no value"
+  | some x =>
+    if !termOp x.op then "not a term op" else
+    let rs := (choices (Pat.commutes r.pat)).map fun sw =>
+      match matchPat M r.pat [] v sw with
+      | none => "nomatch"
+      | some (I, _) =>
+        let e := env tabs M I
+        let vtys := r.vars.map (fun (x : Var) => x.ty)
+        let σ := sigma e r.pat
+        let nodes := match r.result, defs with
+          | .build ns, _ :: us => ns.zip us
+          | _, _ => []
+        let or := oracle vtys tabs nodes
+        let ev := evalE vtys σ or e (Pat.den e [] r.pat)
+        if !consOK ev σ e I [] r.pat then "cons"
+        else if !wfOK e [] r.pat then "wf"
+        else if !(match r.cond with
+          | some c => match ev c with | .bool true => true | _ => false
+          | none => true) then "cond"
+        else if !(match r.pat with
+          | .op o _ _ _ _ _ _ _ => natShape o (e.ty [])
+          | _ => false) then "natShape"
+        else if !leavesOK tabs M I [] r.pat then
+          let bad := I.filterMap fun (pw : Path × ID) => match M.get? pw.2 with
+            | some x => if tabs.ty x.type matches .other then some x.op.name else none
+            | none => none
+          s!"leaves {bad}"
+        else if !resultOK tabs M ev or σ I r x defs then "result"
+        else "ok"
+    s!"{r.loc.file}:{r.loc.line} {rs}"
+
+open GoFV.Rules RewriteCheck in
+def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : String := Id.run do
+  if !atomsOK f g then return "atoms"
+  let mut M : Defs := f.valueTab
+  for ev in log do
+    match ev with
+    | .rule v i _ defs =>
+      match M.get? v with
+      | none => return s!"rule at missing v{v}"
+      | some x =>
+        match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
+        | none => return "no rule"
+        | some cr =>
+          if ruleOK tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
+          else return s!"rule v{v}: {ruleWhy tabs M cr.rule v defs.toList}"
+    | .phielim .. => return "phielim"
+    | .blockRule .. => return "blockRule"
+    | _ => pure ()
+  if !finalOK tabs f g M then
+    for b in g.blocks do
+      let (some fb, some gb) := (f.block? b, g.block? b) | return s!"final: block b{b}"
+      for (c, c') in fb.controls.toList.zip gb.controls.toList do
+        if !copyReach tabs M M.size c c' then return s!"final: control b{b} v{c}->v{c'}"
+      for x in gb.values do
+        match M.get? x, g.value? x with
+        | some m, some u =>
+          if !(u.op == m.op && u.type == m.type && u.auxInt == m.auxInt && u.aux == m.aux) then
+            return s!"final: v{x} fields {m.op.name}->{u.op.name}"
+          for (a, a') in m.args.toList.zip u.args.toList do
+            if !copyReach tabs M M.size a a' then
+              return s!"final: v{x} {u.op.name} arg v{a}({((M.get? a).map (·.op.name)).getD "-"})->v{a'}"
+        | _, _ => return s!"final: v{x} missing"
+    return "final"
+  return "?"
 
 def checkFile (path : System.FilePath) (st : Std.HashMap String Count) :
     IO (Std.HashMap String Count) := do
@@ -78,6 +152,16 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count) :
       if (compare prev out tables s).isNone then c := { c with provenSame := c.provenSame + 1 }
       if out.func == input then c := { c with provenNoop := c.provenNoop + 1 }
     | .error _ => c := { c with errors := c.errors + 1 }
+    match GoFV.Rules.rewriteRun proven true true env input with
+    | .ok (out, _, log) =>
+      let ok := RewriteCheck.validate prev proven input out.func log
+      if !ok && !(out.func == input) then
+        c := { c with rejected := c.rejected + 1 }
+        if c.rejected ≤ 3 then IO.println s!"REJECT {name} {path}: {why prev proven input out.func log}"
+      let cf := if ok then out.func else input
+      if (compare prev { func := cf, tables := prev } tables s).isNone then
+        c := { c with checkedSame := c.checkedSame + 1 }
+    | .error _ => c := { c with errors := c.errors + 1 }
     st := st.insert name c
   return st
 
@@ -96,11 +180,11 @@ def main (args : List String) : IO UInt32 := do
   let mut st : Std.HashMap String Count := {}
   for path in files.qsort (·.toString < ·.toString) do
     st ← checkFile path st
-  IO.println "| Pass | Runs | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Values stock | Values proven-only | Errors |"
-  IO.println "| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |"
+  IO.println "| Pass | Runs | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Values stock | Values proven-only | Validator rejects | Checked parity | Errors |"
+  IO.println "| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |"
   for (name, _, _) in variants do
     let c := st.getD name {}
-    IO.println s!"| {name} | {c.runs} | {pct c.fullSame c.runs} | {pct c.provenSame c.runs} | {pct c.provenNoop c.runs} | {c.firedFull} | {c.firedProven} | {pct c.firedProven c.firedFull} | {c.vStock} | {c.vProven} | {c.errors} |"
+    IO.println s!"| {name} | {c.runs} | {pct c.fullSame c.runs} | {pct c.provenSame c.runs} | {pct c.provenNoop c.runs} | {c.firedFull} | {c.firedProven} | {pct c.firedProven c.firedFull} | {c.vStock} | {c.vProven} | {c.rejected} | {pct c.checkedSame c.runs} | {c.errors} |"
   return 0
 
 end GoFVTest.OptProvenProbe

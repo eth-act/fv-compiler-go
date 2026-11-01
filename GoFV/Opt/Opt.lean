@@ -3,6 +3,7 @@ import GoFV.Rules.Generated.Generic
 import GoFV.Rules.Generated.Divisible
 import GoFV.Rules.Generated.Divmod
 import GoFV.Rules.Proven
+import GoFV.Opt.RewriteCheck
 
 /-!
 # opt, middle opt, late opt, divisible, divmod (`opt.go`)
@@ -13,7 +14,8 @@ import GoFV.Rules.Proven
 
 The proven-only passes (`optProven`, `divisibleProven`, `divmodProven`) fire only the rules
 with a merged `Rule.Sound` lemma (`GoFV.Rules.Proven`, issue #113), like clifv's
-`--opt-proven-only`.
+`--opt-proven-only`. The checked passes (`optChecked`, …) are the proven-only passes validated
+against their logs (`GoFV.Opt.RewriteCheck`): the passes the theorems are about.
 -/
 
 namespace GoFV.Opt
@@ -47,5 +49,14 @@ def divisibleProven : Pass := rewritePass divisibleProvenTable true
 
 /-- `divmod` firing only proven rules. -/
 def divmodProven : Pass := rewritePass divmodProvenTable true
+
+/-- `opt` firing only proven rules, validated. -/
+def optChecked : Pass := checkedRewrite genericProvenTable
+
+/-- `divisible` firing only proven rules, validated. -/
+def divisibleChecked : Pass := checkedRewrite divisibleProvenTable
+
+/-- `divmod` firing only proven rules, validated. -/
+def divmodChecked : Pass := checkedRewrite divmodProvenTable
 
 end GoFV.Opt
