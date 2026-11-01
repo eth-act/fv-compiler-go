@@ -86,3 +86,7 @@ root = "GoFVTest.PhiOptProbe"
 [[lean_exe]]
 name = "fuse-probe"
 root = "GoFVTest.FuseProbe"
+
+[[lean_exe]]
+name = "mem-probe"
+root = "GoFVTest.MemProbe"
