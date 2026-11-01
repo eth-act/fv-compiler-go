@@ -60,7 +60,7 @@ def tyInfo (tabs : Tables) (t : TypeRef) : TyInfo :=
 
 def configInt (env : PassEnv) (key : String) : Except String Int :=
   match env.config? key with
-  | some #[.word w] => match w.toInt? with
+  | some #[.word w] => match decInt? w with
     | some i => pure i
     | none => throw s!"config {key}: not an integer"
   | _ => throw s!"config {key}: missing"

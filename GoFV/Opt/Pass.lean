@@ -90,6 +90,17 @@ structure PassOut where
 /-- A pass port. -/
 abbrev Pass := PassEnv → Func → Except String PassOut
 
+/-- A decimal integer (`String.toInt?` on the config's digits; written over `String.toList` so
+that the kernel can evaluate passes in non-vacuity witnesses). -/
+def decInt? (s : String) : Option Int :=
+  let digits (cs : List Char) : Option Nat :=
+    if cs.isEmpty then none else
+    cs.foldl (fun acc c => acc.bind fun n =>
+      if c.isDigit then some (n * 10 + (c.toNat - '0'.toNat)) else none) (some 0)
+  match s.toList with
+  | '-' :: cs => (digits cs).map fun n => -(n : Int)
+  | cs => (digits cs).map Int.ofNat
+
 namespace PassEnv
 
 /-- The value tokens of `config <key>`. -/

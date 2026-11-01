@@ -243,24 +243,13 @@ def rounds (c : Ctx) (ce : CheckEnv) : Nat → Func → Except String Func
 
 end BranchElim
 
-/-- A decimal integer (`String.toInt?` on the config's digits; written over `String.toList` so
-that the kernel can evaluate the pass in non-vacuity witnesses). -/
-def BranchElim.decInt? (s : String) : Option Int :=
-  let digits (cs : List Char) : Option Nat :=
-    if cs.isEmpty then none else
-    cs.foldl (fun acc c => acc.bind fun n =>
-      if c.isDigit then some (n * 10 + (c.toNat - '0'.toNat)) else none) (some 0)
-  match s.toList with
-  | '-' :: cs => (digits cs).map fun n => -(n : Int)
-  | cs => (digits cs).map Int.ofNat
-
 /-- What the rewrites read: the configuration and the `loadAddr` set of `f` (with its cached
 postorder `po`). -/
 def BranchElim.ctxOf (env : PassEnv) (f : Func) (po : Array ID) : Except String BranchElim.Ctx := do
   let some mem := env.typ? "Mem" | throw "branchelim: no typ.Mem"
   let some #[.word arch] := env.config? "arch" | throw "branchelim: config arch"
   let some #[.word rs] := env.config? "regsize" | throw "branchelim: config regsize"
-  let some regSize := BranchElim.decInt? rs | throw "branchelim: config regsize"
+  let some regSize := decInt? rs | throw "branchelim: config regsize"
   let loadAddr ← BranchElim.loadAddrSet env.tables f po
   return { tabs := env.tables, isMem := env.tables.isMemory mem, arch, regSize, loadAddr }
 

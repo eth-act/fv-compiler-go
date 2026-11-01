@@ -1,6 +1,7 @@
 import GoFV.Opt.Prove.Flow
 import GoFV.SSA.ConstCache
 import GoFV.SSA.Edges
+import GoFV.Util.PdqSort
 
 /-!
 # prove: the rewrites (`prove.go:2648-3177`)
@@ -257,7 +258,7 @@ def simplifyBlock (isAncestorEq : ID → ID → Bool) (st : St) (b : ID) : St :=
 
 /-- `getDependencyScore(scores, v)` for the values of one block, memoised in `scores`
 (`fuel` bounds the depth: same-block arguments of non-phis are acyclic). -/
-def depScore (f : Func) : Nat → Std.HashMap ID Nat → ID → Std.HashMap ID Nat × Nat
+def depScore (f : Func) : Nat → Std.TreeMap ID Nat → ID → Std.TreeMap ID Nat × Nat
   | 0, scores, _ => (scores, 0)
   | fuel + 1, scores, v =>
     match scores.get? v with
@@ -276,11 +277,11 @@ unique, so any correct sort gives Go's order. -/
 def topoSortValuesInBlock (f : Func) (b : ID) : Func :=
   let vs := (f.getB b).values
   let fuel := vs.size + 1
-  let (_, keyed) := vs.foldl (init := (({} : Std.HashMap ID Nat), (#[] : Array (Nat × ID))))
+  let (_, keyed) := vs.foldl (init := (({} : Std.TreeMap ID Nat), (#[] : Array (Nat × ID))))
     fun (scores, acc) v =>
       let (scores, s) := depScore f fuel scores v
       (scores, acc.push (s, v))
-  let sorted := keyed.qsort (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2))
+  let sorted := GoFV.Util.PdqSort.sortBy (fun a b => a.1 < b.1 || (a.1 == b.1 && a.2 < b.2)) keyed
   f.modB b fun x => { x with values := sorted.map (·.2) }
 
 end GoFV.Opt.Prove
