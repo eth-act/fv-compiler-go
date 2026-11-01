@@ -123,7 +123,8 @@ theorem addZero_checks :
 /-- The one-rule set is sound (`generic.rules:646`'s `Add64` lemma). -/
 theorem azRules_allSound : azRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨GoFV.Proof.Rules.r_generic_646_3_sound, trivial⟩, trivial⟩ trivial
+    ⟨⟨GoFV.Proof.Rules.Rule.soundT_of_sound GoFV.Proof.Rules.r_generic_646_3_sound rfl, trivial⟩,
+      trivial⟩ trivial
 
 /-- **Pass execution witness**: on `addZero`, the checked rewrite pass with the sound one-rule
 set changes the function (`v5 = MakeResult v2 v1`: `0 + n` became `n`), the validator accepted
@@ -144,7 +145,7 @@ theorem addZero_checkedRewrite :
     obtain ⟨hg, h5, -, ht⟩ := h2
     have ht := tables_eq (of_decide_eq_true ht)
     refine ⟨out, rfl, ht, h5, ?_, ok_of_toBool h1, ok_of_toBool hg⟩
-    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases hc with ⟨he, -⟩ | ⟨-, hv⟩
+    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl hc with ⟨he, -⟩ | ⟨-, hv⟩
     · rw [he] at h5; exact absurd h5 (by decide +kernel)
     · rw [← ht]; exact hv
 

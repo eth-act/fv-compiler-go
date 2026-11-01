@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Block
 import GoFV.Rules.Run
 import GoFV.Opt.CSE
 import GoFV.Opt.TabsAgree
+import GoFV.Opt.NilCheckRel
+import GoFV.Opt.Checked
 
 /-!
 # Validating a rewrite pass (`applyRewrite`) against its log (issue #113)
@@ -677,30 +679,46 @@ def nilCopy (f : Func) (v : ID) : Func :=
     else f
   | none => f
 
+/-- One event of `nilPre`: a nil-check elimination of `f` is applied, any other event kept. -/
+def nilStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match nilEvent? t f ev with
+  | some v => (nilCopy p.1 v, p.2)
+  | none => (p.1, p.2.push ev)
+
 /-- The input with the log's nil-check eliminations applied, and the remaining events. -/
 def nilPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
-  log.foldl (init := (f, #[])) fun (h, rest) ev =>
-    match nilEvent? t f ev with
-    | some v => (nilCopy h v, rest)
-    | none => (h, rest.push ev)
+  log.foldl (nilStep t f) (f, #[])
 
 end GoFV.Opt.RewriteCheck
 
 namespace GoFV.Opt
 
-/-- `checkedRewrite` keeps the rewrite result `out` of `f` (input tables `tabs`, rewrite log
-`log`): `RewriteCheck.validate` accepts it in the result's tables, and `f` cannot tell them from
-the input's (`tabsAgree`: rules create types such as `ConstNil <v.Type.Elem().PtrTo()>`, but
-no definitions the input looks up). -/
-def RewriteCheck.accepts (tabs : GoFV.SSA.Tables) (t : GoFV.Rules.Interp.Table)
+/-- The nil-check eliminations of the log, applied to `f` (`f'`, `RewriteCheck.nilPre`), are
+nilcheckelim's (`NilCheck.nrel` in the result's tables `tabs`: each pointer is a `safePtr` seed,
+the other roots keep their order), and `f'` passes `check`. -/
+def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f f' : GoFV.SSA.Func) : Bool :=
+  NilCheck.nrel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+
+/-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
+log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create
+types such as `ConstNil <v.Type.Elem().PtrTo()>` and symbols such as `fe.StringData(s)`, but no
+definitions the input looks up), and `RewriteCheck.validate` accepts it in the result's tables,
+against `f` and the log, or, when the log eliminates nil checks (`nilPre`, issue #151), against
+`f` with these eliminations applied (`nilOK`) and the remaining events. -/
+def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
-  tabsAgree tabs out.tables f && RewriteCheck.validate out.tables t f out.func log
+  tabsAgree env.tables out.tables f &&
+  match RewriteCheck.nilPre t f log with
+  | (f', log') =>
+    if log'.size == log.size then RewriteCheck.validate out.tables t f out.func log
+    else RewriteCheck.nilOK env out.tables f f' && RewriteCheck.validate out.tables t f' out.func log'
 
 /-- The validated rewrite pass: `applyRewrite` with the table `t` and its log; the result with
 the pass's extended tables if `RewriteCheck.accepts` it, else the input. -/
 def checkedRewrite (t : GoFV.Rules.Interp.Table) : Pass := fun env f => do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
-  if RewriteCheck.accepts env.tables t f out log then
+  if RewriteCheck.accepts env t f out log then
     return out
   else return { func := f, tables := env.tables }
 

@@ -256,6 +256,7 @@ import GoFV.Proof.Rules.Neq3
 import GoFV.Proof.Rules.Neq4
 import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
+import GoFV.Proof.Rules.NilElim
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
@@ -312,7 +313,6 @@ import GoFV.Proof.Sched
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
-import GoFV.Proof.TablesExt
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Term
 import GoFV.Proof.TermStep
