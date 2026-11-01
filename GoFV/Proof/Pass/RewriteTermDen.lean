@@ -95,12 +95,12 @@ theorem retype_copyCompat {s t : Ty} (h : copyCompat s t = true) {z : Val} (hz :
     rename_i e e'
     rw [retype_ptr_elem e e', hz]
 
-/-- Integer, boolean and pointer shapes (the shapes of rule leaves, `leavesOK`). -/
+/-- Integer, boolean, pointer and memory shapes (the shapes of rule leaves, `leavesOK`). -/
 def sized : Ty → Bool
-  | .int _ | .bool | .ptr _ => true
+  | .int _ | .bool | .ptr _ | .mem => true
   | _ => false
 
-/-- A value retyped at an integer, boolean or pointer shape has that shape. -/
+/-- A value retyped at an integer, boolean, pointer or memory shape has that shape. -/
 theorem retype_hasTy (hr : RetypeShapes) (v : Val) {s : Ty} (hs : sized s = true) :
     (v.retype s).hasTy s = true := by
   rcases s with w | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> simp [sized] at hs

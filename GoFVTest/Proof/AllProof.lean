@@ -249,6 +249,7 @@ import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
 import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString
+import GoFV.Proof.Rules.Convert
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Rules.Div
@@ -312,6 +313,8 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
 import GoFV.Proof.Rules.OffPtr
+import GoFV.Proof.Rules.OneBit
+import GoFV.Proof.Rules.OneBit2
 import GoFV.Proof.Rules.OpVal
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
