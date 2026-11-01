@@ -2042,13 +2042,14 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
     let listed (z : ID) : Bool := (f.block? fv.block).any (·.values.contains z)
-    if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type && listed x then
+    if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
+        fv.op != .Phi && listed x then
       match (chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv with
       | some (D, N) =>
         let L := N ++ [x]
         let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
           (D ++ [x]).any fun s => CSE.rootNode f s && (f.value? s).any (·.args.contains a)
-        if D.all listed &&
+        if D.all listed && D.all (CSE.rootNode f) &&
             N.all (fun n => (f.value? n).isNone && (g.block? fv.block).any (·.values.contains n) &&
               (g.value? n).any (·.block == fv.block)) &&
             L.all (CSE.rootNode g) &&
@@ -2059,35 +2060,44 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
     else none
   | _, _ => none
 
-/-- The anchor of the segment each dropped value belongs to (the last one listing it). -/
-def segOwners (n : Nat) (segs : List (ID × List ID × List ID)) : Array (Option ID) :=
-  segs.foldl (fun o s => s.2.1.foldl (fun o d => o.set! d (some s.1)) o) (Array.replicate n none)
+/-- The segments of `f` in `g` by anchor (`segOK`). -/
+def segArr (tabs : Tables) (f g : Func) : Array (Option (List ID × List ID)) :=
+  (Array.range f.valueTab.size).map (segOK tabs f g)
 
-/-- The segment value `z` belongs to: its own if it is an anchor, else its owner's. -/
-def segOf (A : Array (Option (List ID × List ID))) (own : Array (Option ID)) (z : ID) : Option ID :=
-  if (A[z]?.join).isSome then some z else own[z]?.join
+/-- The anchors with their segments (dropped and fresh values). -/
+def segList (A : Array (Option (List ID × List ID))) : List (ID × List ID × List ID) :=
+  (List.range A.size).filterMap fun x => (A[x]?.join).map (x, ·)
+
+/-- The anchor of the (first) segment of `segs` that drops `z`. -/
+def segOwner (segs : List (ID × List ID × List ID)) (z : ID) : Option ID :=
+  (segs.find? fun s => s.2.1.contains z).map (·.1)
+
+/-- The segment of `segs` value `z` is a root of: its own if it is an anchor, else its owner's. -/
+def segOf (segs : List (ID × List ID × List ID)) (z : ID) : Option ID :=
+  if segs.any (·.1 == z) then some z else segOwner segs z
+
+/-- The roots of `g` that the segment of anchor `x` puts in: its fresh values and the anchor. -/
+def segNew (g : Func) (segs : List (ID × List ID × List ID)) (x : ID) : List ID :=
+  ((segs.find? (·.1 == x)).map fun s => (s.2.2 ++ [x]).filter (CSE.rootNode g)).getD []
 
 /-- The roots `L` of `f` with each segment's roots (its dropped roots and its anchor) replaced,
-at the last of them, by its fresh roots and its anchor in `g`. -/
-def segRoots (g : Func) (A : Array (Option (List ID × List ID))) (own : Array (Option ID)) :
-    List ID → List ID
+at the last of them, by its fresh roots and its anchor in `g` (`segNew`). -/
+def segRoots (g : Func) (segs : List (ID × List ID × List ID)) : List ID → List ID
   | [] => []
   | r :: L =>
-    match segOf A own r with
+    match segOf segs r with
     | some x =>
-      (if L.any (fun z => segOf A own z == some x) then []
-       else ((A[x]?.join).map fun s => (s.2 ++ [x]).filter (CSE.rootNode g)).getD []) ++
-        segRoots g A own L
-    | none => r :: segRoots g A own L
+      (if L.any (fun z => segOf segs z == some x) then [] else segNew g segs x) ++ segRoots g segs L
+    | none => r :: segRoots g segs L
 
 /-- Block `bid` of `g` has `f`'s kind and controls, `f`'s values but the dropped ones, then fresh
 values (in `news`) of `bid`; its schedule runs `f`'s roots with each segment's in its place
 (`segRoots`). -/
-def segBlockOK (f g : Func) (A : Array (Option (List ID × List ID))) (own : Array (Option ID))
-    (news : List ID) (bid : ID) : Bool :=
+def segBlockOK (f g : Func) (segs : List (ID × List ID × List ID)) (news : List ID) (bid : ID) :
+    Bool :=
   match f.block? bid, g.block? bid with
   | some fb, some gb =>
-    let kept := fb.values.filter fun z => (own[z]?.join).isNone
+    let kept := fb.values.filter fun z => (segOwner segs z).isNone
     gb.kind == fb.kind && gb.controls == fb.controls && kept.size ≤ gb.values.size &&
     gb.values.extract 0 kept.size == kept &&
     (gb.values.extract kept.size gb.values.size).all
@@ -2097,7 +2107,7 @@ def segBlockOK (f g : Func) (A : Array (Option (List ID × List ID))) (own : Arr
     | some oS =>
       match Sem.schedule g gb with
       | some oT =>
-        oT.toList.filter (CSE.rootNode g) == segRoots g A own (oS.toList.filter (CSE.rootNode f))
+        oT.toList.filter (CSE.rootNode g) == segRoots g segs (oS.toList.filter (CSE.rootNode f))
       | none => false
   | _, _ => false
 
@@ -2106,30 +2116,28 @@ graph, own aux and blocks (`segBlockOK`); every value of `f` kept but for its us
 anchor, or dropped (gone in `g`, in one segment, used by no listed value or control of `f` but
 its segment's); the fresh values the only values `f` lacks. -/
 def segRel (tabs : Tables) (f g : Func) : Bool :=
-  let A := (Array.range f.valueTab.size).map (segOK tabs f g)
-  let segs := (List.range A.size).filterMap fun x => (A[x]?.join).map (x, ·)
+  let segs := segList (segArr tabs f g)
   let drops := segs.flatMap (·.2.1)
   let news := segs.flatMap (·.2.2)
-  let own := segOwners f.valueTab.size segs
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
     f.valueTab.size ≤ g.valueTab.size && decide drops.Nodup && decide news.Nodup &&
-    segs.all (fun s => (own[s.1]?.join).isNone) &&
+    segs.all (fun s => (segOwner segs s.1).isNone) &&
     (List.range f.valueTab.size).all (fun x => match f.value? x, g.value? x with
       | none, _ => true
-      | some fv, some gv => ssSame fv gv || (A[x]?.join).isSome
-      | some _, none => (own[x]?.join).isSome) &&
+      | some fv, some gv => ssSame fv gv || (segOK tabs f g x).isSome
+      | some _, none => (segOwner segs x).isSome) &&
     drops.all (fun d => (g.value? d).isNone) &&
     (List.range g.valueTab.size).all (fun x =>
       (f.value? x).isSome || (g.value? x).isNone || news.contains x) &&
     f.blocks.all (fun b => match f.block? b with
       | some fb =>
-        fb.controls.all (fun c => (own[c]?.join).isNone) &&
+        fb.controls.all (fun c => (segOwner segs c).isNone) &&
         fb.values.all fun z => (f.value? z).all fun zv => zv.args.all fun a =>
-          match own[a]?.join with
-          | some x => z == x || own[z]?.join == some x
+          match segOwner segs a with
+          | some x => z == x || segOwner segs z == some x
           | none => true
       | none => false) &&
-    f.blocks.all (segBlockOK f g A own news)
+    f.blocks.all (segBlockOK f g segs news)
 
 /-! ## Struct-load expansions as a layer (issue #151)
 
