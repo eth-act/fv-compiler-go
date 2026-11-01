@@ -35,7 +35,7 @@ def Subst (tabs : Tables) (rw : Array (Option ID)) (f g : Func) (x r : ID) : Pro
   rw.getD r none = none ∧ ∃ fx fr gx gr, f.value? x = some fx ∧ f.value? r = some fr ∧
     g.value? x = some gx ∧ g.value? r = some gr ∧ Congr tabs rw f fx fr gx gr ∧
     (Sem.isRoot fx.op = false ∨ fx.op = .NilCheck) ∧ (fx.op = .Phi → fr.block = fx.block) ∧
-    (DomCert.make f).anc fr.block fx.block = true ∧ ∃ blk, f.block? fr.block = some blk ∧ r ∈ blk.values
+    (DomCert.make f).anc fr.block fx.block = true ∧ fr.block ∈ f.blocks ∧ ∃ blk, f.block? fr.block = some blk ∧ r ∈ blk.values
 
 /-- The declarative output relation. -/
 structure CRel (tabs : Tables) (f g : Func) (rw : Array (Option ID)) : Prop where
@@ -208,9 +208,9 @@ theorem crel_sound {tabs : Tables} {f g : Func} {rw : Array (Option ID)}
     rw [hfx, hfr, hgx, hgr] at hrest
     simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq,
       bne_iff_ne, ne_eq] at hrest
-    obtain ⟨⟨⟨⟨hc, hroot⟩, hphi⟩, hanc⟩, hlist⟩ := hrest
+    obtain ⟨⟨⟨⟨⟨hc, hroot⟩, hphi⟩, hanc⟩, hmem⟩, hlist⟩ := hrest
     refine ⟨fx, fr, gx, gr, rfl, rfl, rfl, rfl, congr_sound hc, hroot, fun hp => ?_,
-      hanc, ?_⟩
+      hanc, by simpa using hmem, ?_⟩
     · rcases hphi with h1 | h1
       · exact absurd hp h1
       · exact h1

@@ -456,7 +456,7 @@ def substOK (tabs : Tables) (strict : Bool) (c : DomCert.Cert) (rw : Array (Opti
     | some fx, some fr, some gx, some gr =>
       congr tabs strict rw f fx fr gx gr && (!Sem.isRoot fx.op || fx.op == .NilCheck) &&
         (fx.op != .Phi || fr.block == fx.block) && c.anc fr.block fx.block &&
-        ((f.block? fr.block).map (·.values.contains r)).getD false
+        f.blocks.contains fr.block && ((f.block? fr.block).map (·.values.contains r)).getD false
     | _, _, _, _ => false
 
 /-- A root for the scheduler (priority 1 or 2: `NilCheck`s, calls, stores, …). -/

@@ -279,7 +279,7 @@ theorem step_corr : ∀ (j : Nat) (b : ID), pre[j]? = some b →
     rw [ht, hs]
   | some c =>
     rw [rep_some hrw] at hr ⊢
-    obtain ⟨hcr, fx, fr, gx, gr, hfx, hfr, hgx, hgr, hcg, hroot, -, -, -⟩ := C.rel.subst b c hrw
+    obtain ⟨hcr, fx, fr, gx, gr, hfx, hfr, hgx, hgr, hcg, hroot, -⟩ := C.rel.subst b c hrw
     rw [hfb] at hfx; cases hfx
     obtain ⟨hop, hax, hai, hty, hargs⟩ := hcg
     have hphr : fr.op ≠ .Phi := by rw [hop]; exact hph
