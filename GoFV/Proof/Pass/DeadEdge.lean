@@ -448,6 +448,181 @@ theorem removePred_spec (hX : XLx F B c j) (hc : c ∈ B) (hm : m + 1 = (F.getB 
     by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
       simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
 
+theorem succIdx_lt {i n k : Nat} (hi : i ≤ n) (hk : k < n) : succIdx i n k < n + 1 := by
+  unfold succIdx; split <;> omega
+
+theorem succIdx_ne {i n k : Nat} (hk : k < n) : succIdx i n k ≠ i := by
+  unfold succIdx; split <;> omega
+
+/-- **The CFG part of `removeEdge b i`** for the edge `b.succs[i] = ⟨c, j⟩` (`n`, `m`: the last
+successor index of `b`, predecessor index of `c`): crosslinks are kept; successor slots of `b`
+are renamed by `succIdx`, predecessor slots of `c` by `predIdx`, and the two moved edges get
+their new back indices (`renS`, `renP`). -/
+theorem edge_core (hX : XL F B) (hb : b ∈ B) (hn : n + 1 = (F.getB b).succs.size) (hi : i ≤ n)
+    (hbi : sOf F b i = some ⟨c, j⟩) (hm : m + 1 = (F.getB c).preds.size) :
+    XL ((F.removeSucc b i).removePred c j) B ∧ j ≤ m ∧
+    (∀ x ∈ B, ∀ k, sOf ((F.removeSucc b i).removePred c j) x k =
+      (if x = b then (if k < n then sOf F b (succIdx i n k) else none) else sOf F x k).map
+        (renP c m j)) ∧
+    (∀ l, pOf ((F.removeSucc b i).removePred c j) c l =
+      if l < m then (pOf F c (predIdx j m l)).map (renS b n i) else none) ∧
+    (∀ y ∈ B, y ≠ c → ∀ l, pOf ((F.removeSucc b i).removePred c j) y l =
+      (pOf F y l).map (renS b n i)) ∧
+    (∀ x, (((F.removeSucc b i).removePred c j).getB x).succs.size =
+      if b = x then n else (F.getB x).succs.size) ∧
+    (∀ x, (((F.removeSucc b i).removePred c j).getB x).preds.size =
+      if c = x then m else (F.getB x).preds.size) ∧
+    (∀ x, bview (((F.removeSucc b i).removePred c j).getB x) = bview (F.getB x)) ∧
+    (∀ x, (((F.removeSucc b i).removePred c j).block? x).isSome = (F.block? x).isSome) ∧
+    ((F.removeSucc b i).removePred c j).valueTab = F.valueTab ∧
+    ((F.removeSucc b i).removePred c j).blocks = F.blocks := by
+  obtain ⟨hcB, hcj⟩ := hX.succ b hb i _ hbi
+  dsimp only at hcB hcj
+  have hjm : j ≤ m := by
+    have := (Array.getElem?_eq_some_iff.1 hcj).1
+    omega
+  obtain ⟨s1, s2, s3, s4, s5, s6, s7, s8, s9⟩ := removeSucc_spec hX hb hn hi
+  -- `removeSucc` leaves the crosslinks broken only at the predecessor slot `(c, j)`
+  have hXx : XLx (F.removeSucc b i) B c j := by
+    refine ⟨fun x hx => by rw [s7]; exact hX.pres x hx, fun x hx k e he => ?_,
+      fun y hy l e hyl he => ?_⟩
+    · by_cases hxb : x = b
+      · subst hxb
+        rw [s1] at he
+        split at he
+        · rename_i hk
+          obtain ⟨heB, heP⟩ := hX.succ x hx _ e he
+          refine ⟨heB, ?_, fun ⟨h1, h2⟩ => ?_⟩
+          · rw [s3 e.b heB, heP]
+            simp only [Option.map_some, renS, Option.some.injEq]
+            unfold succIdx; split
+            · rename_i h; subst h; simp
+            · rename_i h; split
+              · rename_i h'; simp at h'; omega
+              · rfl
+          · rw [h1, h2, hcj] at heP
+            simp only [Option.some.injEq, Edge.mk.injEq, true_and] at heP
+            exact succIdx_ne hk heP.symm
+        · cases he
+      · rw [s2 x hxb] at he
+        obtain ⟨heB, heP⟩ := hX.succ x hx _ e he
+        refine ⟨heB, ?_, fun ⟨h1, h2⟩ => ?_⟩
+        · rw [s3 e.b heB, heP]
+          simp only [Option.map_some, renS, Option.some.injEq]
+          split
+          · rename_i h; simp at h; exact absurd h.1 hxb
+          · rfl
+        · rw [h1, h2, hcj] at heP
+          cases heP
+          exact hxb rfl
+    · rw [s3 y hy] at he
+      cases hpe : pOf F y l with
+      | none => rw [hpe] at he; cases he
+      | some e0 =>
+        rw [hpe] at he
+        cases he
+        obtain ⟨he0B, he0S⟩ := hX.pred y hy l e0 hpe
+        unfold renS
+        split
+        · rename_i h0
+          subst h0
+          refine ⟨hb, ?_⟩
+          rw [s1]; dsimp only
+          by_cases hin : i = n
+          · subst hin
+            rw [hbi] at he0S
+            cases he0S
+            exact absurd ⟨rfl, rfl⟩ hyl
+          · rw [if_pos (by omega)]
+            unfold succIdx; rw [if_pos rfl]; exact he0S
+        · rename_i h0
+          refine ⟨he0B, ?_⟩
+          by_cases hxb : e0.b = b
+          · have hlt : e0.i < (F.getB b).succs.size := by
+              rw [← hxb]; exact (Array.getElem?_eq_some_iff.1 he0S).1
+            have hne : e0.i ≠ n := fun h => h0 (by cases e0; simp_all)
+            have hni : e0.i ≠ i := by
+              intro h
+              rw [hxb, h, hbi] at he0S
+              cases he0S
+              exact hyl ⟨rfl, rfl⟩
+            rw [hxb, s1, if_pos (by omega)]
+            unfold succIdx; rw [if_neg hni]; rw [← hxb]; exact he0S
+          · rw [s2 _ hxb]; exact he0S
+  have hm' : m + 1 = ((F.removeSucc b i).getB c).preds.size := by rw [s4]; exact hm
+  obtain ⟨p1, p2, p3, p4, p5, p6, p7, p8, p9⟩ := removePred_spec hXx hcB hm' hjm
+  refine ⟨⟨fun x hx => by rw [p7, s7]; exact hX.pres x hx, fun x hx k e he => ?_,
+    fun y hy l e he => ?_⟩, hjm, fun x hx k => ?_, fun l => ?_, fun y hy hyc l => ?_,
+    fun x => ?_, fun x => ?_, fun x => ?_, fun x => ?_, by rw [p8, s8], by rw [p9, s9]⟩
+  · -- successors
+    rw [p3 x hx] at he
+    cases he1 : sOf (F.removeSucc b i) x k with
+    | none => rw [he1] at he; cases he
+    | some e1 =>
+      rw [he1] at he
+      cases he
+      obtain ⟨he1B, he1P, he1n⟩ := hXx.succ x hx k e1 he1
+      unfold renP
+      split
+      · rename_i h
+        subst h
+        refine ⟨hcB, ?_⟩
+        rw [p1]
+        have hjm' : j < m := by
+          rcases Nat.lt_or_eq_of_le hjm with h | h
+          · exact h
+          · exact absurd ⟨rfl, h.symm⟩ he1n
+        rw [if_pos hjm']
+        unfold predIdx; rw [if_pos rfl]; exact he1P
+      · rename_i h
+        refine ⟨he1B, ?_⟩
+        by_cases hc1 : e1.b = c
+        · have hlt : e1.i < m + 1 := by
+            rw [hm', ← hc1]; exact (Array.getElem?_eq_some_iff.1 he1P).1
+          have hne : e1.i ≠ m := fun h' => h (by cases e1; simp_all)
+          have hnj : e1.i ≠ j := fun h' => he1n ⟨hc1, h'⟩
+          rw [hc1, p1, if_pos (by omega)]
+          unfold predIdx; rw [if_neg hnj, ← hc1]; exact he1P
+        · rw [p2 _ hc1]; exact he1P
+  · -- predecessors
+    by_cases hyc : y = c
+    · subst hyc
+      rw [p1] at he
+      split at he
+      · rename_i hl
+        have hτ : ¬ (y = y ∧ predIdx j m l = j) := by
+          rintro ⟨-, h⟩; unfold predIdx at h; split at h <;> omega
+        obtain ⟨heB, heS⟩ := hXx.pred y hy _ e hτ he
+        refine ⟨heB, ?_⟩
+        rw [p3 _ heB, heS]
+        simp only [Option.map_some, renP, Option.some.injEq]
+        unfold predIdx; split
+        · rename_i h; subst h; simp
+        · rename_i h; split
+          · rename_i h'; simp at h'; omega
+          · rfl
+      · cases he
+    · rw [p2 y hyc] at he
+      obtain ⟨heB, heS⟩ := hXx.pred y hy l e (fun h => hyc h.1) he
+      refine ⟨heB, ?_⟩
+      rw [p3 _ heB, heS]
+      simp only [Option.map_some, renP, Option.some.injEq]
+      split
+      · rename_i h; simp at h; exact absurd h.1 hyc
+      · rfl
+  · rw [p3 x hx]
+    split
+    · rename_i h; subst h; rw [s1]
+    · rename_i h; rw [s2 x h]
+  · rw [p1]; split
+    · rw [s3 c hcB]
+    · rfl
+  · rw [p2 y hyc, s3 y hy]
+  · rw [p4, s5]
+  · rw [p5, s4]
+  · rw [p6, s6]
+  · rw [p7, s7]
+
 end
 
 end GoFV.Proof.Dead
