@@ -319,4 +319,24 @@ end
 theorem Val.retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t :=
   Val.retype_of_hasTy (Val.retype_hasTy t v)
 
+/-! ## Witnesses -/
+
+/-- `Val.hasTy_str` applies to a defined string of length 3 (and a negative length is not a
+string: it retypes to `poison`). -/
+example : ∃ p l, Val.agg [.ptr Ptr.null, .int .w64 3] = .agg [p, .int .w64 l] ∧ l.msb = false ∧
+    0 ≤ l.toInt :=
+  (Val.hasTy_str (v := .agg [.ptr Ptr.null, .int .w64 3]) (by decide)).resolve_left nofun
+
+example : (Val.agg [.ptr Ptr.null, .int .w64 (-1)]).retype .str = .poison := rfl
+
+/-- `Val.hasTy_slice` applies to a defined slice with `len 2 ≤ cap 5`. -/
+example : ∃ p l c, Val.agg [.ptr Ptr.null, .int .w64 2, .int .w64 5] =
+    .agg [p, .int .w64 l, .int .w64 c] ∧ l.msb = false ∧ c.msb = false ∧ 0 ≤ l.toInt ∧
+    l.toInt ≤ c.toInt :=
+  (Val.hasTy_slice (v := .agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]) (e := some 8)
+    (by decide)).resolve_left nofun
+
+example : (Val.agg [.ptr Ptr.null, .int .w64 5, .int .w64 2]).retype (.slice (some 8)) =
+    .poison := rfl
+
 end GoFV.SSA.Sem
