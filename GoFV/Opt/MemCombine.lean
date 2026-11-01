@@ -26,7 +26,7 @@ def memcombineCfg (env : PassEnv) : Except String (Cfg × Bool) := do
   let int (k : String) : Except String Int := do
     match env.config? k with
     | some #[.word w] =>
-      match w.toInt? with
+      match decInt? w with
       | some n => pure n
       | none => throw s!"config {k}: not an integer"
     | _ => throw s!"config {k}: missing"
