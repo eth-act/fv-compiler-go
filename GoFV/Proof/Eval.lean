@@ -270,6 +270,29 @@ theorem prio_panicking {op : Op} (h : Panicking op) : prio op ≠ 0 := by
   · rw [prio_call h]; decide
   · decide
 
+/-- **A `NilCheck` that evaluates passed a pointer into an allocation** (or a `uintptr` whose
+`Ptr.ofAddr` is), and returns it. -/
+theorem evalOp_nilCheck_blk {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} {r : Val} (hop : v.op = .NilCheck) (h : evalOp env ctx fr v argv ty = .ok r) :
+    (∃ p m, argv = [.ptr p, .mem m] ∧ r = .ptr p ∧ p.blk ≠ .nil) ∨
+      (∃ x m, argv = [.int .w64 x, .mem m] ∧ r = .int .w64 x ∧ (Ptr.ofAddr x).blk ≠ .nil) := by
+  unfold evalOp at h; rw [hop] at h
+  change memRoot ctx v argv = .ok r at h
+  unfold memRoot at h; rw [hop] at h
+  split at h
+  all_goals first
+    | contradiction
+    | skip
+  · split at h
+    · cases h
+    · rename_i hb; cases h
+      exact .inl ⟨_, _, rfl, rfl, by simpa using hb⟩
+  · split at h
+    · cases h
+    · rename_i hb; cases h
+      exact .inr ⟨_, _, rfl, rfl, by simpa using hb⟩
+  · split at h <;> cases h
+
 /-- A call without arguments (it lacks its memory) is stuck. -/
 theorem callOp_nil_stuck {env : Env} {ctx : Ctx} {v : Value} :
     ∃ msg, callOp env ctx v [] = .stuck msg := by
