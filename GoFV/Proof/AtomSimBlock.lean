@@ -98,14 +98,12 @@ theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp t
       (rv G a).retype (shape f.value? tabs a) = rv G a := fun a ha _ => by
     rw [← tys_shape]; exact htyS a _ (reg_rv (hDS a ha).1)
   refine termRef_apply hT hDS hx hDT hy (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
-    (fun a ha _ => ?_) fun a ha hat hat' _ => ?_
+    (fun a ha _ => ?_) fun a ha hat hat' hdef _ => ?_
   · obtain ⟨v, hp⟩ := hVT a ha
     have : shape (listedDefs g) tabs a = shape g.value? tabs a := by
       simp [shape, placed_listed hp, hp.1]
     rw [this, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1)
-  · rcases shape_atom H hat' with h | h
-    · rw [h, retype_other]
-    · rw [h]; exact htyS' a ha hat
+  · rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
 /-- The atoms the entry frames both hold are refined. -/
 theorem BRel.rel {tabs : Tables} {f g : Func} {frS frT : Frame} {b : ID} {i : Nat}

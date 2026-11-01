@@ -89,33 +89,32 @@ theorem ptrV_ofAddr (x : BitVec 64) : ptrV (Ptr.ofAddr x) = .conc x := ptrV_of_a
 theorem vaddr_retype (t : Ty) (v : Val) : vaddr (v.retype t) = none ∨ vaddr (v.retype t) = vaddr v := by
   unfold Val.retype
   split
+  · exact .inr rfl
   · rename_i w' w x
     split
     · rename_i h
       cases w' <;> cases w <;> simp_all [vaddr, Width.bits, BitVec.setWidth_eq]
     · exact .inl rfl
-  · exact .inr (by simp [vaddr, ptrV_ofAddr])
   · rename_i p
     split
     · rename_i a ha
       exact .inr (by simp [vaddr, ptrV_of_addr ha])
     · exact .inr rfl
+  · exact .inr (by simp [vaddr, ptrV_ofAddr])
   · exact .inr rfl
-  · exact .inl rfl
-  · exact .inr rfl
+  all_goals first
+    | exact .inl rfl
+    | exact .inr rfl
+    | (split <;> first | exact .inl rfl | exact .inr rfl)
 
 theorem retype_keep {t : Ty} (h : CSE.keepsPtr t = true) (p : Ptr) : (Val.ptr p).retype t = .ptr p := by
-  cases t with
-  | int w => cases w <;> first | rfl | cases h
-  | bool => cases h
-  | _ => rfl
+  cases t <;> first | rfl | cases h
 
-theorem retype_global {t : Ty} (h : CSE.notBool t = true) (s : String) (o : BitVec 64) :
+theorem retype_global {t : Ty} (h : CSE.keepsGlobal t = true) (s : String) (o : BitVec 64) :
     (Val.ptr ⟨.global s, o⟩).retype t = .ptr ⟨.global s, o⟩ := by
   cases t with
-  | int w => cases w <;> rfl
-  | bool => cases h
-  | _ => rfl
+  | int w => cases w <;> first | rfl | cases h
+  | _ => first | rfl | cases h
 
 theorem vaddr_offPtr (k : Int64) (v : Val) :
     vaddr (PtrOps.offPtr k [v]) = (vaddr v).map (·.add (BitVec.ofInt 64 k.toInt)) := by
@@ -347,9 +346,9 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
   | some x =>
     rw [hv] at ha
     simp only at ha
-    by_cases hop : x.op = .Addr ∧ CSE.notBool (CSE.valShape tabs f x) = true
+    by_cases hop : x.op = .Addr ∧ CSE.keepsGlobal (CSE.valShape tabs f x) = true
     · obtain ⟨hop, hkg⟩ := hop
-      simp only [show (x.op == .Addr && CSE.notBool (CSE.valShape tabs f x)) = true by
+      simp only [show (x.op == .Addr && CSE.keepsGlobal (CSE.valShape tabs f x)) = true by
         simp [hop, hkg], ↓reduceIte] at ha
       have he := H.eval hb hv (by rw [hop]; decide) hr
       obtain ⟨argv, r, -, ho, rfl⟩ := evalValue_ok he
@@ -368,8 +367,8 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
       rw [evalOp_frameVal (.inl hop) hf] at ho
       cases ho
       rw [tys_getD]; exact retype_global hkg _ _
-    · have hne : (x.op == .Addr && CSE.notBool (CSE.valShape tabs f x)) = false := by
-        cases h1 : (x.op == .Addr) <;> cases h2 : CSE.notBool (CSE.valShape tabs f x) <;>
+    · have hne : (x.op == .Addr && CSE.keepsGlobal (CSE.valShape tabs f x)) = false := by
+        cases h1 : (x.op == .Addr) <;> cases h2 : CSE.keepsGlobal (CSE.valShape tabs f x) <;>
           simp_all
       simp only [hne, Bool.false_eq_true, ↓reduceIte] at ha
       split at ha

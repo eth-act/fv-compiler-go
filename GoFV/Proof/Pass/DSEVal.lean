@@ -42,13 +42,13 @@ theorem VRel.mem {Q : Blk → Nat → Prop} {mS : Mem} {vT : Val} (h : VRel Q (.
   · exact ⟨mS, rfl, MemEq.refl _ _⟩
   · cases h1; exact ⟨mT, rfl, hm⟩
 
-/-- Retyping two related memories: a `bool` type sends both to `poison`, others keep them. -/
+/-- Retyping two related memories: the memory shape keeps them, others send both to
+`poison`. -/
 theorem VRel.retype_mem {Q : Blk → Nat → Prop} {mS mT : Mem} (t : Ty) (h : MemEq Q mS mT) :
     VRel Q ((Val.mem mS).retype t) ((Val.mem mT).retype t) := by
   cases t with
-  | bool => exact .inl rfl
-  | int w => cases w <;> exact .inr ⟨mS, mT, rfl, rfl, h⟩
-  | _ => exact .inr ⟨mS, mT, rfl, rfl, h⟩
+  | mem => exact .inr ⟨mS, mT, rfl, rfl, h⟩
+  | _ => exact .inl rfl
 
 /-! ## Where a store writes -/
 

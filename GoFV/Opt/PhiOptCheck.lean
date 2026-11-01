@@ -85,10 +85,16 @@ def avail (f : Func) (b x : ID) : Bool :=
       (DomCert.make f).anc v.block b && v.block != b && !listedIn f b x
   | none => false
 
+/-- A `bool` shape. -/
+def isBoolTy (tabs : Tables) (t : TypeRef) : Bool :=
+  match tabs.ty t with
+  | .bool => true
+  | _ => false
+
 /-- `a` is a `ConstBool` of `f` holding `d`. -/
-def constB (f : Func) (a : ID) (d : Bool) : Bool :=
+def constB (tabs : Tables) (f : Func) (a : ID) (d : Bool) : Bool :=
   match f.value? a with
-  | some u => u.op == .ConstBool && (u.auxInt != 0) == d
+  | some u => u.op == .ConstBool && (u.auxInt != 0) == d && isBoolTy tabs u.type
   | none => false
 
 /-- The width of an integer shape. -/
@@ -137,26 +143,21 @@ def facts (f : Func) (b c : ID) : Option (Bool × Bool) :=
   | _, _ => none
 
 /-- Arm `a` holds `d` when `c` holds `dc`: a `ConstBool` `d`, or `c` itself with `dc = d`. -/
-def armB (f : Func) (c a : ID) (dc d : Bool) : Bool := (a == c && dc == d) || constB f a d
-
-/-- A `bool` shape. -/
-def isBoolTy (tabs : Tables) (t : TypeRef) : Bool :=
-  match tabs.ty t with
-  | .bool => true
-  | _ => false
+def armB (tabs : Tables) (f : Func) (c a : ID) (dc d : Bool) : Bool :=
+  (a == c && dc == d) || constB tabs f a d
 
 /-- The boolean form `gv` (control `c`) yields arm `a` when `c` holds `d`: `Copy c` (`a` holds
 `d`), `Not c` (`a` holds `¬d`), `OrB c n` (`a` holds `true` if `d`, else `a = n`), `AndB c n`
 (`a = n` if `d`, else `a` holds `false`); `n` available. -/
-def armOK (f : Func) (b c : ID) (gv : Value) (a : ID) (d : Bool) : Bool :=
-  if gv.op == .Copy then gv.args.size == 1 && armB f c a d d
-  else if gv.op == .Not then gv.args.size == 1 && armB f c a d !d
+def armOK (tabs : Tables) (f : Func) (b c : ID) (gv : Value) (a : ID) (d : Bool) : Bool :=
+  if gv.op == .Copy then gv.args.size == 1 && armB tabs f c a d d
+  else if gv.op == .Not then gv.args.size == 1 && armB tabs f c a d !d
   else if gv.op == .OrB then
     gv.args.size == 2 && avail f b gv.args[1]! &&
-      (if d then armB f c a d true else a == gv.args[1]!)
+      (if d then armB tabs f c a d true else a == gv.args[1]!)
   else if gv.op == .AndB then
     gv.args.size == 2 && avail f b gv.args[1]! &&
-      (if d then a == gv.args[1]! else armB f c a d false)
+      (if d then a == gv.args[1]! else armB tabs f c a d false)
   else false
 
 /-- The boolean forms of a rewritten `Phi` (`fv`, with arms `a₀ a₁`, of `bool` shape) in block
@@ -169,7 +170,7 @@ def boolForm (tabs : Tables) (f : Func) (b : ID) (fv : Value) (a0 a1 : ID) (gv :
     avail f b c &&
     match facts f b c with
     | none => false
-    | some (d0, d1) => armOK f b c gv a0 d0 && armOK f b c gv a1 d1
+    | some (d0, d1) => armOK tabs f b c gv a0 d0 && armOK tabs f b c gv a1 d1
 
 /-- phioptint's arms: `c` available, and arm `aᵢ` the integer constant `dᵢ ≠ neg` of width
 `w`. -/
@@ -193,7 +194,9 @@ def intForm (tabs : Tables) (f g : Func) (b : ID) (fv gv : Value) (a0 a1 : ID) :
       cvv.op == .CvtBoolToUint8 && intW tabs cvv.type == some .w8 && cvv.args.size == 1 &&
       if isNew f g b cvv.args[0]! then
         match g.value? cvv.args[0]! with
-        | some nv => nv.op == .Not && nv.args.size == 1 && intArms tabs f b w a0 a1 nv.args[0]! true
+        | some nv =>
+          nv.op == .Not && nv.args.size == 1 && isBoolTy tabs nv.type &&
+            intArms tabs f b w a0 a1 nv.args[0]! true
         | none => false
       else intArms tabs f b w a0 a1 cvv.args[0]! false
     | none => false
