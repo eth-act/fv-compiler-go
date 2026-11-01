@@ -99,7 +99,7 @@ structure Counts where
 def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
   let some fv := f.value? x | return "no fv"
   let some gv := g.value? x | return "no gv"
-  match fv.args.toList, Sem.auxTy tabs fv.aux with
+  match fv.args.toList, (Sem.auxTy tabs fv.aux).asAgg with
   | [dst, sm, mem], .agg fs n =>
     let some smv := f.value? (RewriteCheck.copyEnd tabs f.valueTab f.valueTab.size sm) |
       return "no Make"
@@ -107,7 +107,7 @@ def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
     let last := if copy then gv.args[0]?.getD 0 else x
     let r := RewriteCheck.ssWalk g fs.length last
     if !(RewriteCheck.ssMakeOp smv.op) then return s!"stored {smv.op.name}"
-    if !Ty.beq (tabs.ty smv.type) (.agg fs n) then return "Make shape"
+    if !Ty.beq (tabs.ty smv.type).asAgg (.agg fs n) then return "Make shape"
     if !(RewriteCheck.layoutsOK n fs && fs.all (·.1 < n) && smv.args.size == fs.length) then
       return "layout"
     if !(gv.id == x && gv.type == fv.type && gv.block == fv.block) then return "target header"
@@ -190,7 +190,7 @@ def layersWhy (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Func) (out : P
     else s!"validate: {validateWhy out.tables t f out.func log}"
   | L :: Ls, f, log =>
     let name := match L with
-      | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld"
+      | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld" | .seg => "seg"
     match L.pre t out.tables f log with
     | (f', log') =>
       if log'.size == log.size then layersWhy env t f0 out Ls f log

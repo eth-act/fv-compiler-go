@@ -613,7 +613,11 @@ tried after its (empty) `Store` row; `:10`, which Go tries first, is not among t
 `Store` it would remove makes the step differ from the pass (rejected, not unsound). A `Store` of
 a `Load` the step expands (`:45`, `:63`, `:87`) needs the expansion in the split's input: the
 value-rule `Load` expansion layer (`RewriteCheck.ldPre`) applies the log's events on `Load`s the
-replay validates alone, related by `validate` with them (`LayerChain.rw`). Witness:
+replay validates alone, related by `validate` with them (`LayerChain.rw`). It also takes the
+extractors of a `Load` (`RewriteCheck.ldTarget`: `(StringPtr x:(Load …)) => @x.Block (Load …)`,
+`:132`–`:162`): the rewrite logs them before the `Load`'s own expansion, which would leave them
+no `Load` to match in the final `validate` (decompose builtin in the fragment: quick-v3 8731 →
+8756, full-v4 82590 → 82925; no new proof, the layer's is generic). Witness:
 `GoFV.Proof.Witness.decStore_witness` (`*p = unsafe.String(q, n); *p = *r` with the proven dec
 rules, kernel evaluation).
 
