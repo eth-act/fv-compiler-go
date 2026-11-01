@@ -146,6 +146,28 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
   match schedule f fb, schedule g gb with
   | some of, some og =>
     if of.toList.filter (npOf f fb) != og.toList.filter (npOf f fb) then return "schedule"
+    let nodeF : ID → Bool := fun x => fb.values.contains x &&
+      match f.value? x with
+      | some u => u.op != .Phi
+      | none => false
+    let fuel := gb.values.size + 1
+    for y in fb.values do
+      if nodeF y && !invalidated g y then
+        if let some u := f.value? y then
+          for a in u.args do
+            if nodeF a && !(nodeG a && (depB g nodeG (isNewB f) fuel a y ||
+                depB g nodeG (fun _ => true) fuel a y)) &&
+                !(moveArgB f g y a && throughB f g nodeF nodeG fuel a y) then
+              let aop := ((f.value? a).map (·.op.name)).getD "?"
+              let gop := ((g.value? a).map (·.op.name)).getD "?"
+              let yop := u.op.name
+              let bad := ((f.value? a).map fun au => (au.args.toList.filter fun b =>
+                nodeF b && !(nodeG b && depB g nodeG (fun _ => true) fuel b y)).map fun b =>
+                  ((f.value? b).map (·.op.name)).getD "?").getD []
+              return s!"reach: {aop}→{gop} of {yop} move {moveArgB f g y a} pure {((f.value? a).map (Sem.prio ·.op == 0)).getD false} unreached args {bad}"
+    for z in gb.values do
+      if let some w := g.value? z then
+        if w.op != .Phi && w.args.any (invalidated g) then return "invalidated value read"
     for x in fb.values do
       for z in stackStores f g x do
         if !gb.values.contains z then return "stack store in other block"
@@ -156,9 +178,8 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !(!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
             depB g nodeG (fun _ => true) fuel (callMem f x) z) then return "stack store memory"
       if let some u := f.value? x then
-        if !(u.args.all fun a => !moveArgB f g x a || (fb.values.contains a &&
-            beforeB og.toList a x && (stackMove f g x).all (beforeB og.toList a ·))) then
-          return "move: Dereference placement"
+        if !(u.args.all fun a => !moveArgB f g x a || fb.values.contains a) then
+          return "move: Dereference in another block"
   | _, _ => return "no schedule"
   for x in fb.values do
     for l in stackLoads tabs sh f g x do

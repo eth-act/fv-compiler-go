@@ -74,14 +74,21 @@ def EcTgtHolds (env : Env) (tabs : Tables) (g : Func) (T : Frame) (z : ID) : Pro
 def SchedBefore (g : Func) (gb : Block) (a x : ID) : Prop :=
   ∀ og, schedule g gb = some og → ∃ A B, og.toList = A ++ a :: B ∧ x ∈ B
 
+/-- The target node of `x` is `Invalid` (a source value the pass no longer uses). -/
+def TgtInvalid (g : Func) (x : ID) : Prop := ∃ w, g.value? x = some w ∧ w.op = .Invalid
+
+/-- `z` is a non-`Phi` value of block `fb` and a source argument of `x`. -/
+def SrcArg (f : Func) (fb : Block) (x z : ID) : Prop :=
+  z ∈ fb.values ∧ (∃ u, f.value? x = some u ∧ z ∈ u.args) ∧ ∀ uz, f.value? z = some uz → uz.op ≠ .Phi
+
 /-- The values whose source registers hold their evaluations when `x` of block `fb` is
 evaluated: values of `fb` that `x` depends on in the target's block `gb`, the non-`Phi` values
-placed in strict dominators of `fb` (`Avail.DInv`), and values of `fb` that precede `x` in the
-target's schedule. -/
+placed in strict dominators of `fb` (`Avail.DInv`), values of `fb` that precede `x` in the
+target's schedule, and `x`'s source arguments in `fb` (the source evaluated them before `x`). -/
 def Held (f g : Func) (fb gb : Block) (x z : ID) : Prop :=
   (z ∈ fb.values ∧ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) ∨
     (∃ v, Placed f z v ∧ v.op ≠ .Phi ∧ Anc (make f) v.block fb.id ∧ v.block ≠ fb.id) ∨
-    (z ∈ fb.values ∧ SchedBefore g gb z x)
+    (z ∈ fb.values ∧ ¬ TgtInvalid g z ∧ SchedBefore g gb z x) ∨ SrcArg f fb x z
 
 /-- `z` is a non-`Phi` value of `g` placed in a strict dominator of block `gb` (its target
 register holds its evaluation in `gb`, `Avail.DInv` on the target). -/
@@ -139,14 +146,17 @@ def NewObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front :
     Reached env tabs f G c →
     ∃ y, evalValue env (Ctx.make tabs g) T w = .ok y
 
-/-- New value `z` of block `gb` is anchored at a source value `c` of `fb`: its obligation
-`NewObl` (with a `front` of source values that reach it in `gb`, the values of `fb` before it in
-the target's schedule, and the values `HeldT` in `g`), and in `g`'s schedule no source non-pure
-node lies between `z` and `c` (`z` runs only when the source reaches `c`). -/
+/-- New value `z` of block `gb` is anchored at a source value `c` of `fb` (whose target node is
+not `Invalid`): its obligation `NewObl` (with a `front` of source values that reach it in `gb`,
+the values of `fb` before it in the target's schedule, and the values `HeldT` in `g`), and in
+`g`'s schedule no source non-pure node lies between `z` and `c` (`z` runs only when the source
+reaches `c`). -/
 def AnchoredAt (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (fb gb : Block)
     (z : ID) : Prop :=
-  ∃ c ∈ fb.values, ∃ fr : List ID,
-    NewObl tabs f g cv isNew fr (fun a => a ∈ fb.values ∧ SchedBefore g gb a z) (HeldT g gb z) c z ∧
+  ∃ c ∈ fb.values, ¬ TgtInvalid g c ∧ ∃ fr : List ID,
+    NewObl tabs f g cv isNew fr
+      (fun a => (a ∈ fb.values ∧ ¬ TgtInvalid g a ∧ SchedBefore g gb a z) ∨ SrcArg f fb c a)
+      (HeldT g gb z) c z ∧
     (∀ a ∈ fr, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a z)) ∧
     ∀ og, schedule g gb = some og → ∀ A B, og.toList = A ++ z :: B →
@@ -184,10 +194,14 @@ structure CvBlock (fb gb : Block) : Prop where
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (npIn (schedNodes f fb).toList) = og.toList.filter (npIn (schedNodes f fb).toList)
   feeds : ∀ a y, NodeIn (schedNodes f fb).toList a → NodeIn (schedNodes f fb).toList y →
-    a ∈ argsOf (schedNodes f fb).toList y → NodeIn (schedNodes g gb).toList y →
+    a ∈ argsOf (schedNodes f fb).toList y → NodeIn (schedNodes g gb).toList y → ¬ TgtInvalid g y →
     Feeds (NodeIn (schedNodes f fb).toList) (NodeIn (schedNodes g gb).toList)
       (argsOf (schedNodes f fb).toList) (argsOf (schedNodes g gb).toList)
       (PureIn (schedNodes f fb).toList) y a
+  invalid : ∀ x ∈ fb.values, TgtInvalid g x →
+    (∀ y, cv x y = .poison) ∧ ∀ w, g.value? x = some w → NewEval tabs g w
+  invArgs : ∀ a b, NodeIn (schedNodes g gb).toList b → a ∈ argsOf (schedNodes g gb).toList b →
+    ¬ TgtInvalid g a
   obl : ((make f).depthOf fb.id).isSome → ∀ x ∈ fb.values, ∀ u, f.value? x = some u →
     u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x) (HeldT g gb x) x
   front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧

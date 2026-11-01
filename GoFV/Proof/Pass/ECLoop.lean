@@ -238,7 +238,9 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
     (hog' : og.toList = d ++ x :: s) {T : Frame}
     (hI : LInv env tabs g cv isNew G T0 E0 d T) (hn : isNew x = false) {u : Value}
     (hu : f.value? x = some u) (hGa : ∀ a ∈ u.args, Reg G a)
-    (hsrcd : ∀ z ∈ d, isNew z = false → ∃ u y, f.value? z = some u ∧
+    (hsrcd : ∀ z ∈ d, isNew z = false → ¬ TgtInvalid g z → ∃ u y, f.value? z = some u ∧
+      G.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y)
+    (hsrcA : ∀ z, SrcArg f fb x z → ∃ u y, f.value? z = some u ∧
       G.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
     ResCv (cv x) (evalValue env (Ctx.make tabs f) G u) (stepV env (Ctx.make tabs g) T x) := by
   obtain ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩ := hI
@@ -280,16 +282,22 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
   have hheldS : ∀ z, Held f g fb gb x z → EcSrcHolds env tabs f G z := by
     intro z hz u' hu'
     unfold Held at hz
-    rcases hz with ⟨hzf, hd⟩ | ⟨v, hP, hph, hanc, hne⟩ | ⟨hzf, hb⟩
+    rcases hz with ⟨hzf, hd⟩ | ⟨v, hP, hph, hanc, hne⟩ | ⟨hzf, hzi, hb⟩ | hza
     · have hzid := TH.hidF z u' (TH.hfbP z hzf u' hu')
+      obtain ⟨b, hNb, hzb⟩ := hd.left_arg
       obtain ⟨u2, y, hu2, hy, hev⟩ := hsrcd z (hdepd z hd) (TH.B.common z hzf).2
+        (TH.B.invArgs z b hNb hzb)
       rw [hu'] at hu2; cases hu2
       exact ⟨hzid, y, hy, hev⟩
     · rw [hP.1] at hu'; cases hu'
       obtain ⟨y, hy, hev⟩ := TH.hdinv z u' hP ⟨hanc, hne⟩
       exact ⟨TH.hidF z u' hP, y, hy, hev hph⟩
     · have hzid := TH.hidF z u' (TH.hfbP z hzf u' hu')
-      obtain ⟨u2, y, hu2, hy, hev⟩ := hsrcd z (ecl_before TH.hsg TH.hnd hog' hb) (TH.B.common z hzf).2
+      obtain ⟨u2, y, hu2, hy, hev⟩ := hsrcd z (ecl_before TH.hsg TH.hnd hog' hb) (TH.B.common z hzf).2 hzi
+      rw [hu'] at hu2; cases hu2
+      exact ⟨hzid, y, hy, hev⟩
+    · have hzid := TH.hidF z u' (TH.hfbP z hza.1 u' hu')
+      obtain ⟨u2, y, hu2, hy, hev⟩ := hsrcA z hza
       rw [hu'] at hu2; cases hu2
       exact ⟨hzid, y, hy, hev⟩
   have hheldT : ∀ z, HeldT g gb x z → EcTgtHolds env tabs g T z := by
@@ -313,10 +321,14 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
 theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 : ID → Prop}
     (TH : TgtHyp env tabs f g cv isNew front RR fb gb og G T0 E0)
     {L M : List ID} (hog : og.toList = L ++ M)
-    (hsrc : ∀ x ∈ L, isNew x = false → ∃ u y, f.value? x = some u ∧
+    (hsrc : ∀ x ∈ L, isNew x = false → ¬ TgtInvalid g x → ∃ u y, f.value? x = some u ∧
       G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y)
-    (hreach : ∀ c z, c ∈ fb.values → z ∈ L → ∀ A P Q, og.toList = A ++ z :: (P ++ c :: Q) →
-      (∀ y ∈ P, npIn (schedNodes f fb).toList y = false) → Reached env tabs f G c) :
+    (hsrcA : ∀ x ∈ L, isNew x = false → ¬ TgtInvalid g x → ∀ z, SrcArg f fb x z → ∃ u y,
+      f.value? z = some u ∧ G.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y)
+    (hreach : ∀ c z, c ∈ fb.values → ¬ TgtInvalid g c → z ∈ L → ∀ A P Q,
+      og.toList = A ++ z :: (P ++ c :: Q) → (∀ y ∈ P, npIn (schedNodes f fb).toList y = false) →
+      Reached env tabs f G c ∧ ∀ z, SrcArg f fb c z → ∃ u y, f.value? z = some u ∧
+        G.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
     ∃ T, evalAll env (Ctx.make tabs g) T0 L = .ok T ∧ LInv env tabs g cv isNew G T0 E0 L T := by
   have TH0 := TH
   obtain ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args, hnewArgs, hout,
@@ -419,27 +431,31 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
   cases hn : isNew x with
   | true =>
     obtain ⟨y0, hev⟩ : ∃ y0, evalValue env (Ctx.make tabs g) T w = .ok y0 := by
-      rcases (B.newOK x hxgb hn w hw).2 with hne | ⟨c, hc, fr, hob, hfr, hgap⟩
+      rcases (B.newOK x hxgb hn w hw).2 with hne | ⟨c, hc, hci, fr, hob, hfr, hgap⟩
       · obtain ⟨r, hr⟩ := hne env T (w.args.toList.map (rv T)) himgT
         have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = tabs.ty w.type := by
           rw [hwid, tys_of_value hw]; rfl
         exact ⟨_, by rw [evalValue_of_regs hreg, hty, hr]; rfl⟩
       · have hI : LInv env tabs g cv isNew G T0 E0 d T := ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩
         obtain ⟨P, Q, hB, hP⟩ := hgap og hsg d (s ++ M) hog'
-        have hRc := hreach c x hc hxL d P Q (by rw [hog', hB]) hP
+        obtain ⟨hRc, hRa⟩ := hreach c x hc hci hxL d P Q (by rw [hog', hB]) hP
         refine hob w hw env G T (by rw [hTf, hT0]) _ hTN (fun a ha han => ?_) hreg
           (fun a ha => ecl_front TH0 hog' hI (hfr a ha).1 fun hag => ((hfr a ha).2 hag).imp_right Or.inl)
-          (ecl_heldT TH0 hog' hI) (fun a ⟨haf, hb⟩ u' hu' => ?_) hRc
+          (ecl_heldT TH0 hog' hI) (fun a ha u' hu' => ?_) hRc
         · rcases hEx a ha han with ⟨hm, hn'⟩ | h0
           · rcases List.mem_append.1 hm with h | h
             · exact .inl ⟨h, hn'⟩
             · exact absurd (by rw [← List.mem_singleton.1 h]; exact ha) hxw
           · exact .inr h0
-        · have had := ecl_before hsg hnd hog' hb
-          obtain ⟨u2, y, hu2, hy, hev⟩ := hsrc a (by rw [hL]; exact List.mem_append_left _ had)
-            (B.common a haf).2
-          rw [hu'] at hu2; cases hu2
-          exact ⟨hidF a u' (hfbP a haf u' hu'), y, hy, hev⟩
+        · rcases ha with ⟨haf, hai, hb⟩ | hsa
+          · have had := ecl_before hsg hnd hog' hb
+            obtain ⟨u2, y, hu2, hy, hev⟩ := hsrc a (by rw [hL]; exact List.mem_append_left _ had)
+              (B.common a haf).2 hai
+            rw [hu'] at hu2; cases hu2
+            exact ⟨hidF a u' (hfbP a haf u' hu'), y, hy, hev⟩
+          · obtain ⟨u2, y, hu2, hy, hev⟩ := hRa a hsa
+            rw [hu'] at hu2; cases hu2
+            exact ⟨hidF a u' (hfbP a hsa.1 u' hu'), y, hy, hev⟩
     refine ⟨_, by rw [hstepV, hev], ?_⟩
     obtain ⟨c1, c2, c3, c4, c5⟩ := common y0
     refine ⟨c1, c2, c3, fun a ha hna ya hya => ?_, ?_, c4, holdsSet _ hev⟩
@@ -468,11 +484,29 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
         · exact .inl ⟨List.mem_append_left _ had, hn'⟩
         · exact .inr h0
   | false =>
-    obtain ⟨u, y, hu, hGy, hevS⟩ := hsrc x hxL hn
+    have hxfb : x ∈ fb.values := Classical.byContradiction fun h => by
+      rw [B.fresh x hxgb h] at hn; cases hn
+    by_cases hxi : TgtInvalid g x
+    · -- an invalidated value: the target evaluates it, its conversion is `poison`
+      obtain ⟨hcv, hne⟩ := B.invalid x hxfb hxi
+      obtain ⟨r, hr⟩ := hne w hw env T (w.args.toList.map (rv T)) himgT
+      have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = tabs.ty w.type := by
+        rw [hwid, tys_of_value hw]; rfl
+      have hev : evalValue env (Ctx.make tabs g) T w = .ok (r.retype (tabs.ty w.type)) := by
+        rw [evalValue_of_regs hreg, hty, hr]; rfl
+      refine ⟨_, by rw [hstepV, hev], ?_⟩
+      obtain ⟨c1, c2, c3, c4, c5⟩ := common (r.retype (tabs.ty w.type))
+      refine ⟨c1, c2, c3, fun a ha hna ya hya => ?_, newSet _ hn, c4, holdsSet _ hev⟩
+      rcases List.mem_append.1 ha with ha | ha
+      · exact c5 a ha hna ya hya
+      · rw [List.mem_singleton.1 ha, hcv]
+        exact ⟨_, Frame.set_regs_self hxlt, .poison _⟩
+    obtain ⟨u, y, hu, hGy, hevS⟩ := hsrc x hxL hn hxi
     have hob := tgt_next hE ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args,
       hnewArgs, hout, hrel0, hGok, htree, hdinv, hidF, hfbP, hdinvT, hidG⟩ hog'
       ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩ hn hu (regs_of_ok hevS)
-      (fun z hz hn' => hsrc z (by rw [hL]; exact List.mem_append_left _ hz) hn')
+      (fun z hz hn' hzi => hsrc z (by rw [hL]; exact List.mem_append_left _ hz) hn' hzi)
+      (hsrcA x hxL hn hxi)
     rw [hevS] at hob
     generalize hT' : stepV env (Ctx.make tabs g) T x = rT at hob
     cases hob with

@@ -362,11 +362,18 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
       obtain ⟨⟨w', hgu, hsw⟩, -⟩ := B.phiS x hxf u hu hp
       rw [hw] at hgu; cases hgu; exact hph (hsw.1.trans hp)
     exact e4 x ((ofm x).2 ⟨hxf, u, hu, huphi⟩)
+  have hsrcF : ∀ x z, SrcArg f fb x z → ∃ u y, f.value? z = some u ∧
+      GS.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) GS u = .ok y := by
+    intro x z hz
+    obtain ⟨hzf, -, hzp⟩ := hz
+    obtain ⟨uz, huz, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ z hzf
+    exact e4 z ((ofm z).2 ⟨hzf, uz, huz, hzp uz huz⟩)
   obtain ⟨T, hT, hTf, hTs, hTk, hTr, -, -, -⟩ := tgt_loop hE TH (L := og.toList) (M := [])
-    (by simp) hsrc fun c z hc _ A P Q hA _ uc huc => by
+    (by simp) (fun x hx hn _ => hsrc x hx hn) (fun x _ _ _ z hz => hsrcF x z hz)
+    fun c z hc _ _ A P Q hA _ => ⟨fun uc huc => by
       obtain ⟨u, y, hu, -, hev⟩ := hsrc c (by rw [hA]; simp) (B.common c hc).2
       rw [huc] at hu; cases hu
-      exact .inl ⟨y, hev⟩
+      exact .inl ⟨y, hev⟩, fun z hz => hsrcF c z hz⟩
   have hGT : T = { GS with regs := T.regs } := by rw [TH.hT0] at hTf; exact hTf
   refine ⟨gb, T, hgb, B, by rw [hentT, hT], hGT, by rw [hTs]; simp [pT1, hA.szT],
     by rw [e2, pS1, hA.szS],

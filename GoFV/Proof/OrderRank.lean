@@ -264,20 +264,25 @@ inductive Feeds (N N' : α → Prop) (D : α → List α) (D' : α → List α) 
   | through {a : α} : pure a → (∀ b ∈ D a, N b → Feeds N N' D D' pure y b) →
       Feeds N N' D D' pure y a
 
-/-- **The panic transfer with the canonical rank.** If the source order `o` reaches the non-pure
-node `r` at position `k`, every source node the target order `o'` lists before `r` is listed
-before `r` by `o` — given that both orders list the non-pure nodes in the same sequence
-(`np_filter_eq`) and every argument of a source node the target lists `Feeds` it. -/
-theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α → Prop} {np : α → Bool}
+/-- A node something depends on is an argument of a node. -/
+theorem Dep.left_arg {N : α → Prop} {D : α → List α} {a y : α} : Dep N D a y → ∃ b, N b ∧ a ∈ D b
+  | .arg _ hy h => ⟨_, hy, h⟩
+  | .trans h _ => h.left_arg
+
+/-- **The panic transfer with the canonical rank, with exempt nodes.** `transfer_rank` for the
+source nodes outside a set `X` of target nodes that are no target node's arguments (whose
+source arguments need not `Feed` them). -/
+theorem transfer_rank_ex {N N' : α → Prop} {D D' : α → List α} {pure : α → Prop} {np : α → Bool}
     {o o' : List α} (hs : Topo N D o) (hk : PureFirst N D pure o) (ht : Topo N' D' o')
     (hnp : ∀ x, np x = true ↔ N x ∧ ¬ pure x) (hseq : o.filter np = o'.filter np)
     {r : α} {k k' : Nat} (hr : o[k]? = some r) (hr' : o'[k']? = some r) (hrp : np r = true)
-    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → Feeds N N' D D' pure y a) :
-    ∀ j y, j < k' → o'[j]? = some y → N y → ∃ i < k, o[i]? = some y := by
+    (X : α → Prop) (hX : ∀ a b, N' b → a ∈ D' b → ¬ X a)
+    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → ¬ X y → Feeds N N' D D' pure y a) :
+    ∀ j y, j < k' → o'[j]? = some y → N y → ¬ X y → ∃ i < k, o[i]? = some y := by
   intro j
   induction j using Nat.strongRecOn with
   | _ j ih =>
-    intro y hj hy hNy
+    intro y hj hy hNy hXy
     obtain ⟨i, hi⟩ := List.getElem?_of_mem ((hs.mem y).2 hNy)
     refine ⟨i, ?_, hi⟩
     rcases Nat.lt_or_ge i k with h | h
@@ -300,7 +305,8 @@ theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α �
           intro hNa i2 hk2 hia
           obtain ⟨ja, hja⟩ := List.getElem?_of_mem ((ht.mem a).2 hN'a)
           have hjaj : ja < j := ht.dep_lt hd hja hy
-          obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa
+          obtain ⟨b, hNb, hab⟩ := hd.left_arg
+          obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa (hX a b hNb hab)
           have := idx_unique hs.nodup hia hai3
           omega
         | @through a hpa _ ihb =>
@@ -314,11 +320,24 @@ theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α �
           exact ihb b hb hNb hNb i4 hk4 hib
       by_cases hpy : pure y
       · obtain ⟨a, ha, hNa, i2, hk2, _, hia⟩ := hk k i r y hki hr hi hpr hpy
-        exact feeds a (pres a y hNa hNy ha hN'y) hNa i2 hk2 hia
+        exact feeds a (pres a y hNa hNy ha hN'y hXy) hNa i2 hk2 hia
       · have hny : np y = true := (hnp y).2 ⟨hNy, hpy⟩
         have hb : Before (o'.filter np) y r := (before_filter np hny hrp o').2 ⟨j, k', hj, hy, hr'⟩
         rw [← hseq] at hb
         have := idx_lt_of_before hs.nodup ((before_filter np hny hrp o).1 hb) hi hr
         omega
+
+/-- **The panic transfer with the canonical rank.** If the source order `o` reaches the non-pure
+node `r` at position `k`, every source node the target order `o'` lists before `r` is listed
+before `r` by `o` — given that both orders list the non-pure nodes in the same sequence
+(`np_filter_eq`) and every argument of a source node the target lists `Feeds` it. -/
+theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α → Prop} {np : α → Bool}
+    {o o' : List α} (hs : Topo N D o) (hk : PureFirst N D pure o) (ht : Topo N' D' o')
+    (hnp : ∀ x, np x = true ↔ N x ∧ ¬ pure x) (hseq : o.filter np = o'.filter np)
+    {r : α} {k k' : Nat} (hr : o[k]? = some r) (hr' : o'[k']? = some r) (hrp : np r = true)
+    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → Feeds N N' D D' pure y a) :
+    ∀ j y, j < k' → o'[j]? = some y → N y → ∃ i < k, o[i]? = some y :=
+  fun j y hj hy hNy => transfer_rank_ex hs hk ht hnp hseq hr hr' hrp (fun _ => False)
+    (fun _ _ _ _ h => h) (fun a y ha hy hay hy' _ => pres a y ha hy hay hy') j y hj hy hNy id
 
 end GoFV.Proof.Order

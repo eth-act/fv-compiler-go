@@ -72,10 +72,12 @@ def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
   | none => y
 
 /-- The source values the obligation of `x` reads: its arguments in the source and its
-arguments in the target that the source defines. -/
+arguments (and, for a call, its wide stack argument's `Move`'s arguments) in the target that the
+source defines. -/
 def ecFront (f g : Func) (x : ID) : List ID :=
   ((f.value? x).map (·.args.toList)).getD [] ++
-    (((g.value? x).map (·.args.toList)).getD []).filter (fun a => !isNewB f a)
+    ((((g.value? x).map (·.args.toList)).getD []) ++
+      (((stackMove f g x).bind g.value?).map (·.args.toList)).getD []).filter (fun a => !isNewB f a)
 
 /-- **The relation of `Ret` outcomes**: the source's results, one per result of the function,
 each of its result's shape; the target's refine the register pieces of the source's, each

@@ -835,11 +835,6 @@ def throughB (f g : Func) (nodeF nodeG : ID → Bool) (fuel : Nat) (a y : ID) : 
       au.args.all fun b => !nodeF b || (nodeG b && depB g nodeG (fun _ => true) fuel b y)
   | none => false
 
-/-- `a` occurs in `l`, and `y` after its first occurrence. -/
-def beforeB : List ID → ID → ID → Bool
-  | [], _, _ => false
-  | z :: l, a, y => if z == a then l.contains y else beforeB l a y
-
 /-- The leaves of the Make-tree of a stack-assigned call result `x` of `f` (`SelectN [i] c`; the
 `Load`s of `stkLeavesOK`); none for other values. -/
 def stackLoads (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : List ID :=
@@ -910,13 +905,18 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     (match schedule f fb, schedule g gb with
       | some of, some og => of.toList.filter (npOf f fb) == og.toList.filter (npOf f fb)
       | _, _ => false) &&
-    -- every argument of a source node reaches it in `g`
-    fb.values.all (fun y => !nodeF y ||
+    -- every argument of a source node reaches it in `g` (but those of a value the pass
+    -- invalidated, and the `Dereference` a call's `Move` copies, whose own arguments reach it)
+    fb.values.all (fun y => !nodeF y || invalidated g y ||
       match f.value? y with
       | some u => u.args.all fun a => !nodeF a || (nodeG a &&
           (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y)) ||
           (moveArgB f g y a && throughB f g nodeF nodeG fuel a y)
       | none => false) &&
+    -- no node of `gb` reads an invalidated value
+    gb.values.all (fun z => match g.value? z with
+      | some w => w.op == .Phi || w.args.all (fun a => !invalidated g a)
+      | none => true) &&
     -- per value
     fb.values.all (fun x => match f.value? x with
       | some u => u.op == .Phi || valueOK tabs sh f g x
@@ -937,8 +937,7 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     -- and its call in `g`'s schedule (a store runs only when the source reaches the call); a
     -- source `SP` under its address and the call's source memory reach it (their target
     -- registers hold their evaluations, refine the source's); the `Dereference` a move copies is
-    -- a value of the block before the call and the move in `g`'s schedule (its source register
-    -- holds its evaluation)
+    -- a value of the block (the source evaluates it before the call)
     (match schedule g gb with
      | some og => fb.values.all fun x => (stackStores f g x).all (fun z =>
          gb.values.contains z && gapOK (npOf f fb) og.toList z x &&
@@ -947,8 +946,7 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
          (!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
            depB g nodeG (fun _ => true) fuel (callMem f x) z)) &&
          match f.value? x with
-         | some u => u.args.all fun a => !moveArgB f g x a || (fb.values.contains a &&
-             beforeB og.toList a x && (stackMove f g x).all (beforeB og.toList a ·))
+         | some u => u.args.all fun a => !moveArgB f g x a || fb.values.contains a
          | none => true
      | none => false) &&
     -- stack-result loads: the `SP` under the address and the call's memory are held (new,
