@@ -96,6 +96,10 @@ name = "rule-fire-probe"
 root = "GoFVTest.RuleFireProbe"
 
 [[lean_exe]]
+name = "dec-rewrite-probe"
+root = "GoFVTest.DecRewriteProbe"
+
+[[lean_exe]]
 name = "knownbits-probe"
 root = "GoFVTest.KnownBitsProbe"
 

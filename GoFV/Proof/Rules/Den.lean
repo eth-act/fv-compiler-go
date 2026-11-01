@@ -2,6 +2,7 @@ import GoFV.Rules.Syntax
 import GoFV.Rules.Helpers.Magic
 import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Sem.Layout
+import GoFV.SSA.Sem.TyEq
 
 /-!
 # The denotation of a value rule (`docs/proofs/rules.md`)
@@ -158,14 +159,18 @@ def exprTy (vtys : List GoTy) : Expr → GoTy
   | .var i => vtys.getD i (.named "?")
   | .rsv _ => .named "?"
 
-/-- The shape of `typ.<name>` (`Config.Types` on a 64-bit target; `BytePtr` is `*uint8`). -/
+/-- The shape of `typ.<name>` (`Config.Types` on a 64-bit target; `BytePtr` is `*uint8`, the
+other pointer types point to their element: `IntPtr` is `*int`, …; floats have the integer
+shapes of their width, as `Sem.tyOf`). -/
 def typShape : String → Option Ty
   | "Int8" | "UInt8" => some (.int .w8)
   | "Int16" | "UInt16" => some (.int .w16)
-  | "Int32" | "UInt32" => some (.int .w32)
-  | "Int64" | "UInt64" | "Int" | "UInt" | "Uintptr" => some (.int .w64)
+  | "Int32" | "UInt32" | "Float32" => some (.int .w32)
+  | "Int64" | "UInt64" | "Int" | "UInt" | "Uintptr" | "Float64" => some (.int .w64)
   | "Bool" => some .bool
   | "BytePtr" => some (.ptr (some 1))
+  | "Int32Ptr" | "UInt32Ptr" | "Float32Ptr" => some (.ptr (some 4))
+  | "IntPtr" | "UintptrPtr" | "Float64Ptr" | "BytePtrPtr" => some (.ptr (some 8))
   | _ => none
 
 /-- The shape of `types.Types[k]` (`types.Kind` numbering). -/
@@ -181,6 +186,43 @@ def typesShape : Int → Option Ty
 def shapeSize : Ty → Option Int
   | .int w => some (w.bits / 8)
   | .bool => some 1
+  | _ => none
+
+/-- The shape of a string (`Sem.tyOf` of `STRING`). -/
+def strShape : Ty → Bool
+  | .agg [(0, .ptr (some 1)), (8, .int .w64)] 16 => true
+  | _ => false
+
+/-- The shape of a slice. -/
+def sliceShape : Ty → Bool
+  | .agg [(0, .ptr _), (8, .int .w64), (16, .int .w64)] 24 => true
+  | _ => false
+
+/-- The shape of an interface. -/
+def interShape : Ty → Bool
+  | .agg [(0, .int .w64), (8, .ptr (some 1))] 16 => true
+  | _ => false
+
+/-- The type predicates `kindE` models. -/
+inductive KindPred where
+  | ptrShaped | string | slice | inter
+
+/-- `t.IsPtrShaped()`, `t.IsString()`, `t.IsSlice()`, `t.IsInterface()` of a type of shape `t`,
+as far as the shape decides it (`Sem.tyOf`): a pointer shape is exactly a pointer-shaped type
+(`PTR`, `UNSAFEPTR`, `MAP`, `CHAN`, `FUNC`); a string, slice or interface has the kind's
+shape, so the predicate is false at every other shape, and at the kind's shape (which a
+struct can share) and at `.other` (an unknown type) it is the oracle's. -/
+def kindE : KindPred → Ty → Option Bool
+  | _, .other => none
+  | .ptrShaped, .ptr _ => some true
+  | .ptrShaped, _ => some false
+  | .string, t => if strShape t then none else some false
+  | .slice, t => if sliceShape t then none else some false
+  | .inter, t => if interShape t then none else some false
+
+/-- `kindE` of a type value. -/
+def kindDV (k : KindPred) : DV → Option DV
+  | .ty t => (kindE k t).map .bool
   | _ => none
 
 /-- Field `n` of a struct value. -/
@@ -363,10 +405,19 @@ def litDV : Lit → Option DV
   | .bool b => some (.bool b)
   | _ => none
 
-/-- `y.n`, given `y` and its value (`typ.<T>` is a type shape). -/
+/-- `config.<name>` (a 64-bit target: `PtrSize` is 8, the size of the semantics' pointers,
+`Ty.size`); the other fields are the oracle's. -/
+def configField : String → Option Int
+  | "PtrSize" => some 8
+  | _ => none
+
+/-- `y.n`, given `y` and its value (`typ.<T>` is a type shape, `config.<n>` by `configField`). -/
 def fieldE (e : PEnv) (y : Expr) (dy : DV) (n : String) : Option DV :=
   match y with
   | .rsv .typ => (typShape n).map .ty
+  | .rsv .config => match configField n with
+    | some i => some (.int i)
+    | none => fieldDV e dy n
   | _ => fieldDV e dy n
 
 /-- `y[k]` (only `types.Types[k]`). -/
@@ -407,8 +458,8 @@ with a known element size `k` is the element type known by its size only, a reco
 one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's); `t.Elem()`
 of a slice shape (an aggregate of at least two fields whose first is a pointer, the data
 pointer `.ptr el`) is the element type known by its pointer type only, the record with the one
-attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`). The method name is matched first, so that
-a method of an unknown type shape is still `none`. -/
+attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); the kind predicates by `kindE`. The method
+name is matched first, so that a method of an unknown type shape is still `none`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   match n, args with
   | "Size", [] => match dy with
@@ -422,6 +473,10 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   | "PtrTo", [] => match dy with
     | .strct fs => strctField fs "PtrTo"
     | _ => none
+  | "IsPtrShaped", [] => kindDV .ptrShaped dy
+  | "IsString", [] => kindDV .string dy
+  | "IsSlice", [] => kindDV .slice dy
+  | "IsInterface", [] => kindDV .inter dy
   | _, _ => none
 
 /-- Builtins: `min` of two integers. -/
@@ -535,11 +590,29 @@ def convArgOk (ty t : Ty) : Bool :=
   | .int .w64 => isPtrTy t
   | _ => false
 
+/-- A value of shape `t` has shape `f` too (and `retype f` keeps it, `retype_of_hasTy`): the
+same shape, or two pointer shapes (`Val.hasTy` and `Val.retype` at a pointer shape ignore the
+element size). -/
+def shapeSub (t f : Ty) : Bool := Ty.beq t f || (isPtrTy t && isPtrTy f)
+
+/-- The shape of component `i` of a composite shape. -/
+def fieldShape? : Ty → Nat → Option Ty
+  | .agg fs _, i => fs[i]?.map (·.2)
+  | _, _ => none
+
+/-- Argument `i` (of shape `t`) of a `Make` op of shape `ty` has the shape of component `i`
+(`shapeSub`); unconstrained if `ty` has no component `i` (the `Make` is then `poison`). -/
+def makeArgOk (ty : Ty) (i : Nat) (t : Ty) : Bool :=
+  match fieldShape? ty i with
+  | some f => shapeSub t f
+  | none => true
+
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
 the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr` a
 pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
 64-bit integer offset of `AddPtr`/`PtrIndex`, `Convert` between a pointer and a 64-bit
-integer (`convArgOk`), and both arguments of `Eq<N>`/`Neq<N>` integers of width `N`. Other
+integer (`convArgOk`), both arguments of `Eq<N>`/`Neq<N>` integers of width `N`, and the
+components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17). Other
 arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
@@ -551,6 +624,8 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .Eq32 | .Neq32 => isIntWTy .w32 t
   | .Eq16 | .Neq16 => isIntWTy .w16 t
   | .Eq8 | .Neq8 => isIntWTy .w8 t
+  | .StringMake | .SliceMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 =>
+    makeArgOk ty i t
   | _ => true
 
 mutual

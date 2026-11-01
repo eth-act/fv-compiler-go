@@ -291,7 +291,7 @@ def emit(fam, chunk, tactic="rule_auto"):
 
 PROVEN_DATA = os.path.join(ROOT, "GoFV", "Rules", "Proven.lean")
 PROVEN_THM = os.path.join(PROOF, "Proven.lean")
-PROVEN_SETS = [("Generic", "generic"), ("Divisible", "divisible"), ("Divmod", "divmod")]
+PROVEN_SETS = [("Generic", "generic"), ("Dec", "dec"), ("Divisible", "divisible"), ("Divmod", "divmod")]
 
 
 def proven_sets():
@@ -305,12 +305,12 @@ def proven_sets():
 /-!
 # Proven-only rule sets
 
-The rule sets of `opt`, `divisible` and `divmod` restricted to the rules with a merged
-`Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma (block rules),
-`EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma (Load-of-Store
-forwardings) or `EffectRule.StructLoad` lemma (struct-load expansions; issue #151,
+The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
+rules with a merged `Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma
+(block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
+(Load-of-Store forwardings) or `EffectRule.StructLoad` lemma (struct-load expansions; issue #151,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
-(`GoFV.Opt.optProven`, …; issue #113).
+(`GoFV.Opt.optProven`, …; issue #113) and of the decompose builtin rewrite step (issue #17).
 -/
 
 namespace GoFV.Rules.Proven

@@ -59,6 +59,9 @@ theorem fieldE_rel (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) (y : GoFV.R
     (h : d.erase = d'.erase) (n : String) : fieldE e y d n = fieldE e' y d' n := by
   unfold fieldE; split
   · rfl
+  · split
+    · rfl
+    · exact fieldDV_rel hty hai h n
   · exact fieldDV_rel hty hai h n
 
 theorem methodE_rel {d d' : DV} (h : d.erase = d'.erase) (n : String) (args : List GoFV.Rules.Expr) :
@@ -281,18 +284,24 @@ theorem strctField_mem {fs : List (String × DV)} {n : String} {d : DV} (h : str
 theorem fieldE_good {P : Val → Path → Prop} {e : PEnv} {y : GoFV.Rules.Expr} {dy : DV} {n : String}
     (hy : Good P dy) : ∀ d, fieldE e y dy n = some d → Good P d := by
   intro d h
-  unfold fieldE at h
-  split at h
-  · simp only [Option.map_eq_some_iff] at h
-    obtain ⟨t, -, rfl⟩ := h
-    exact good_of_flat rfl
-  · unfold fieldDV at h
+  have hdv : fieldDV e dy n = some d → Good P d := by
+    intro h
+    unfold fieldDV at h
     split at h
     · cases h; exact good_of_flat rfl
     · cases h; exact good_of_flat rfl
     · obtain ⟨x, hx, rfl⟩ := strctField_mem h
       exact good_of_flat (hy.2 _ rfl x hx)
     · cases h
+  unfold fieldE at h
+  split at h
+  · simp only [Option.map_eq_some_iff] at h
+    obtain ⟨t, -, rfl⟩ := h
+    exact good_of_flat rfl
+  · split at h
+    · cases h; exact good_of_flat rfl
+    · exact hdv h
+  · exact hdv h
 
 theorem callH_good {P : Val → Path → Prop} {e : PEnv} {h : Helper} {l : List (DV × GoFV.Rules.GoTy)} :
     ∀ d, callH e h l = some d → Good P d := by
@@ -361,7 +370,12 @@ theorem evalE_good {P : Val → Path → Prop} (vtys : List GoFV.Rules.GoTy) (or
         obtain ⟨x, hx, rfl⟩ := strctField_mem hd
         exact good_of_flat ((evalE_good vtys or e hσ htop hor y).2 fs heq x hx)
       · cases hd
-    · cases hd
+    all_goals first
+      | cases hd
+      | (unfold GoFV.Proof.Rules.kindDV at hd
+         split at hd
+         · simp only [Option.map_eq_some_iff] at hd; obtain ⟨_, _, rfl⟩ := hd; exact good_of_flat rfl
+         · cases hd)
   | .builtin fn args _ => by
     simp only [evalE]
     refine good_getD (flat_good_opt fun d hd => ?_) (hor _)

@@ -311,10 +311,58 @@ def frameTop (op : Op) (ty : Sem.Ty) : Bool :=
 def topOK (op : Op) (ty : Sem.Ty) : Bool :=
   natShape op ty || ptrTop op ty || constTop op ty || frameTop op ty
 
+/-- The component a selection op reads (`Comp.select`, `Comp.selectAux`): `StringPtr`,
+`SlicePtr`, `SlicePtrUnchecked`, `ITab`, `ComplexReal` 0; `StringLen`, `SliceLen`, `IData`,
+`ComplexImag` 1; `SliceCap` 2; `StructSelect [i]`, `ArraySelect [i]` the auxint `i ≥ 0`. -/
+def selIndex? (op : Op) (ai : Int64) : Option Nat :=
+  match op with
+  | .StringPtr | .SlicePtr | .SlicePtrUnchecked | .ITab | .ComplexReal => some 0
+  | .StringLen | .SliceLen | .IData | .ComplexImag => some 1
+  | .SliceCap => some 2
+  | .StructSelect | .ArraySelect => if ai.toInt < 0 then none else some ai.toInt.toNat
+  | _ => none
+
+/-- Component `k` of a value of shape `argTy` has shape `ty`: the component's shape is `ty`'s
+(`shapeSub`) or missing (the selection is `poison`), or the argument is a scalar (the
+selection is `poison`). -/
+def selShapeOK (k : Nat) (ty argTy : Sem.Ty) : Bool :=
+  match argTy with
+  | .agg fs _ => match fs[k]? with
+    | some (_, f) => shapeSub f ty
+    | none => true
+  | .int _ | .bool | .ptr _ => true
+  | _ => false
+
+/-- A selection op of shape `ty` (auxint `ai`) whose argument has shape `argTy` produces a value
+of shape `ty` (issue #17: the dec rules' tops). -/
+def selTop (op : Op) (ty : Sem.Ty) (ai : Int64) (argTy : Sem.Ty) : Bool :=
+  match selIndex? op ai with
+  | some k => selShapeOK k ty argTy
+  | none => false
+
+/-- Integer, boolean and pointer shapes. -/
+def scalarTy : Sem.Ty → Bool
+  | .int _ | .bool | .ptr _ => true
+  | _ => false
+
+/-- Shapes a `Load` decodes to a value of the shape: scalars and aggregates of scalars (strings,
+slices, interfaces, complex numbers; issue #17). -/
+def loadShape : Sem.Ty → Bool
+  | .agg fs _ => fs.all (scalarTy ·.2)
+  | t => scalarTy t
+
+/-- A `Load` at a `loadShape`. -/
+def loadTop (op : Op) (ty : Sem.Ty) : Bool := op == .Load && loadShape ty
+
+/-- The top op of a match at the instance `e` produces a value of its type's shape: `topOK`, a
+selection from its first argument (`selTop`), or a `Load` (`loadTop`). -/
+def topAll (op : Op) (e : PEnv) : Bool :=
+  topOK op (e.ty []) || selTop op (e.ty []) (e.auxInt []) (e.ty [0]) || loadTop op (e.ty [])
+
 mutual
-/-- Every leaf of the pattern has an integer, boolean, pointer or memory shape. `Pat.typed` asks of the
-leaves that their values have their type's shape: `Val.retype` at a shape always produces a
-value of that shape (`Val.retype_hasTy`, issue #108). -/
+/-- Every leaf of the pattern has an integer, boolean, pointer or memory shape. `Pat.typed`
+asks of the leaves that their values have their type's shape: `Val.retype` at a shape always
+produces a value of that shape (`Val.retype_hasTy`, issue #108). -/
 def leavesOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) : Pat → Bool
   | .op _ _ _ _ _ _ args _ => leavessOK tabs M I p 0 args
   | _ =>
@@ -504,7 +552,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) &&
         (match r.pat with
-          | .op o _ _ _ _ _ _ _ => topOK o (e.ty [])
+          | .op o _ _ _ _ _ _ _ => topAll o e
           | _ => false) &&
         Pat.argsOK e.ty [] r.pat &&
         leavesOK tabs M I [] r.pat &&

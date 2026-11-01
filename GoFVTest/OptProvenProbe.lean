@@ -73,7 +73,7 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond"
         else if !(match r.pat with
-          | .op o _ _ _ _ _ _ _ => topOK o (e.ty [])
+          | .op o _ _ _ _ _ _ _ => topAll o e
           | _ => false) then "top"
         else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !leavesOK tabs M I [] r.pat then

@@ -403,12 +403,11 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
   have hraw : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
       ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
-    have hn := F.hnat
-    rw [← hTop] at hn
+    have hn : topAll F.o (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) = true := F.hnat
     have ht := htyped
     have ha := hargs
     rw [F.hpat] at ht ha ⊢
-    exact raw_topOK hn ht ha
+    exact raw_topAll hn ht ha
   have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
   have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of F.hnn)
   -- lower bound
