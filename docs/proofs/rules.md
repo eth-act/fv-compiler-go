@@ -261,6 +261,42 @@ keeps the replay invariant (`GoFV/Proof/Pass/StructLoad.lean`), so `replay_inv`,
 `GoFV.Proof.Witness.lf_checkedRewrite` (`s := *p; return s.a` on `struct{ a, b int }`, kernel
 evaluation).
 
+### Struct-store splits: `EffectRule.StructStore` (`GoFV/Proof/Rules/StructStore.lean`)
+
+`(Store _ (StructMake ___) _) => rewriteStructStore(v)` (`:975`) replaces the root
+`v = Store {T} dst (StructMake a₁ … aₙ) mem` by a chain of fresh field stores
+`sᵢ = Store {Tᵢ} (OffPtr [oᵢ] dst) aᵢ sᵢ₋₁` (`s₀ = mem`), and `v` becomes `Copy sₙ`. The roots
+change (one `Store` becomes `n`), so the validator takes these events out of the log, as the
+forwardings: `RuleSet.structStores` (tried on a `Store` after its row,
+`Interp.Table.structStores`; `EffectRule.StructStore r := RewriteCheck.structStoreShapeOK r =
+true`) logs the fresh `(OffPtr, Store)` pairs (`Interp.structStoreDefs`); `ssPre` applies the
+splits to the input (dropping earlier copy-argument events on the split `Store`), and
+`ssRel` relates the input to it: the same graph and own aux; every value kept but for its use
+count, or split (`ssSplit?`: a `Store` listed in its block at a shape `agg fs n`, every field
+inside it and at an offset below `n`, of a `StructMake` up to copies; in the target `Copy` of the
+chain's last store; each field linked, `ssLink`: a fresh memory-typed `Store` of the field's
+argument up to copies at the field's shape, at a fresh pointer-shaped `OffPtr [oᵢ]` of `dst` up to
+copies, on the previous store, `m0` reached from `mem` through copies for the first); the fresh
+values the only ones the input lacks, listed after the block's values; each block's schedule
+runs the input's roots with each split's chain in its place (`ssRoots`). `checkedRewrite` gets a
+third fallback: the run without `loads`, then also without `structStores`.
+
+**Theorem.** `GoFV.Proof.StructStore.ss_refines : check ce f = .ok () → check ce' g = .ok () →
+ssRel tabs f g = true → RefinesUnder Env.Mono tabs g tabs f`: lock-step simulation
+(`StructStoreSim.lean`) with the target's registers refining the source's on the source's values
+(`RR`). In a block (`StructStoreBlock.lean`, `StructStoreEval.lean`) the source evaluates first
+(`Src`, `split_src`: a split `Store` wrote `encode (agg fs n) (agg vs)` at `P`); the target
+follows its schedule (`TFacts`): a kept value on refined arguments (`AtomSim.atom_eval_mono`), a
+fresh `OffPtr` holds `P + oᵢ` (inside the window: the struct write was valid), a fresh field store
+holds a memory refining `M.write P (bufK (i+1))`, the struct's bytes `poison` but for the first
+`i+1` fields (`write_putBytes`, `write_poison_left`, `Mem.Refines.write`, `StructStoreMem.lean`),
+so the split's `Copy` refines the struct write. If the source panics, the target's roots before
+the panicking one are the source's with the chains of splits it evaluated (`rootsBefore`).
+`checkedRewrite_cases` gains the split layer (`ssAccepts_cases`, `validate_noSS`);
+`checkedRewrite_refines` keeps its statement. Proven: `:975`; witness
+`GoFV.Proof.Witness.ss_checkedRewrite` (`*p = P{x, y}` on `struct{ a, b int }`, kernel
+evaluation).
+
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
 `ConstString {str}` and `Addr {sym} SB` are term nodes evaluated from the tables

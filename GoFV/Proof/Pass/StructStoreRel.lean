@@ -89,6 +89,7 @@ structure SplitD (tabs : Tables) (f g : Func) (x : ID) (ps : List (ID × ID)) wh
   hgv : g.value? x = some gv
   hfargs : fv.args = #[dst, sm, mem]
   hop : fv.op = .Store
+  hlisted : ∃ b, f.block? fv.block = some b ∧ x ∈ b.values
   haux : auxTy tabs fv.aux = .agg fs n
   hsmv : f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) = some smv
   hsmop : smv.op = .StructMake
@@ -104,6 +105,7 @@ structure SplitD (tabs : Tables) (f g : Func) (x : ID) (ps : List (ID × ID)) wh
   hlen : ps.length = fs.length
   hm0 : copyReach tabs f.valueTab f.valueTab.size mem m0 = true
   hlink : ∀ k < fs.length, ssLink tabs f g fv.block dst fs smv.args ps m0 k = true
+  hsplit : ssSplit? tabs f g x = some ps
 
 theorem toList_eq3 {xs : Array ID} {a b c : ID} (h : xs.toList = [a, b, c]) : xs = #[a, b, c] := by
   rcases xs with ⟨l⟩; simp only [List.toList_toArray] at h; rw [h]
@@ -113,6 +115,7 @@ theorem toList_eq1 {xs : Array ID} {a : ID} (h : xs.toList = [a]) : xs = #[a] :=
 
 theorem ssSplit_spec {x : ID} {ps : List (ID × ID)} (h : ssSplit? tabs f g x = some ps) :
     Nonempty (SplitD tabs f g x ps) := by
+  have h0 := h
   unfold ssSplit? at h
   split at h
   next fv gv hfv hgv =>
@@ -126,12 +129,13 @@ theorem ssSplit_spec {x : ID} {ps : List (ID × ID)} (h : ssSplit? tabs f g x = 
           cases h
           simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, decide_eq_true_eq,
             List.mem_range, and_assoc] at hc
-          obtain ⟨hop, hsmop, hsmty, hlay, hlt, hsz, hgop, hgid, hgty, hgbl, hgax, hgai, hlen, hlast,
-            hm0, hlink⟩ := hc
+          obtain ⟨hop, hli, hsmop, hsmty, hlay, hlt, hsz, hgop, hgid, hgty, hgbl, hgax, hgai, hlen,
+            hlast, hm0, hlink⟩ := hc
+          simp only [Option.any_eq_true, Array.contains_iff_mem] at hli
           exact ⟨⟨fv, gv, smv, dst, sm, mem, (ssWalk g fs.length last).2, fs, n, hfv, hgv,
-            toList_eq3 hfa, hop, hax, hsmv, hsmop, Ty.eq_of_beq hsmty, hlay,
+            toList_eq3 hfa, hop, hli, hax, hsmv, hsmop, Ty.eq_of_beq hsmty, hlay,
             fun q hq => by simpa using hlt q hq, hsz, hgop, hgid, hgty, hgbl,
-            by rw [toList_eq1 hga]; exact congrArg (fun y => #[y]) hlast, hlen, hm0, fun k hk => hlink k hk⟩⟩
+            by rw [toList_eq1 hga]; exact congrArg (fun y => #[y]) hlast, hlen, hm0, fun k hk => hlink k hk, h0⟩⟩
         next => simp at h
       next => simp at h
     next => simp at h

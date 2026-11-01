@@ -1320,10 +1320,11 @@ def ssLink (tabs : Tables) (f g : Func) (b dst : ID) (fs : List (Nat × Sem.Ty))
     | _, _, _ => false
   | _, _, _ => false
 
-/-- Value `x` of `f` is a split `Store` in `g`: in `f` a `Store` at an aggregate shape `agg fs n`
-(every field inside it, `layoutsOK`, at an offset below `n`) of a `StructMake` (up to copies,
-`copyEnd`) of that shape; in `g` `Copy` of the last store of the chain (`ssWalk`), each field
-linked (`ssLink`), from a memory the `Store`'s reaches through copies. The chain's pairs. -/
+/-- Value `x` of `f` is a split `Store` in `g`: in `f` a `Store` listed in its block at an
+aggregate shape `agg fs n` (every field inside it, `layoutsOK`, at an offset below `n`) of a
+`StructMake` (up to copies, `copyEnd`) of that shape; in `g` `Copy` of the last store of the
+chain (`ssWalk`), each field linked (`ssLink`), from a memory the `Store`'s reaches through
+copies. The chain's pairs. -/
 def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
@@ -1332,7 +1333,8 @@ def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
       match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
       | some smv =>
         let r := ssWalk g fs.length last
-        if fv.op == .Store && smv.op == .StructMake && Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) &&
+        if fv.op == .Store && ((f.block? fv.block).any fun b => b.values.contains x) &&
+            smv.op == .StructMake && Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) &&
             layoutsOK n fs && fs.all (·.1 < n) && smv.args.size == fs.length &&
             gv.op == .Copy && gv.id == x && gv.type == fv.type &&
             gv.block == fv.block && gv.aux == none && gv.auxInt == 0 &&

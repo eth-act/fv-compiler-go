@@ -177,4 +177,34 @@ theorem split_mem {M M' MS : Mem} {P : Ptr} {fs : List (Nat × Ty)} {n : Nat} {v
   rw [hw'] at h1; cases h1
   exact ⟨MT, h2, h3⟩
 
+/-- A pointer moved inside the bytes of a successful write stays inside its block's window. -/
+theorem inWindow_of_write {M M1 : Mem} {P : Ptr} {bs : Array Byte} (hw : M.write P bs = some M1)
+    {o : Nat} (ho : o < bs.size) : (P.add (BitVec.ofNat 64 o)).inWindow = true := by
+  obtain ⟨a, ha⟩ := write_find hw (by omega)
+  obtain ⟨-, hv⟩ := write_spec ha hw
+  obtain ⟨-, -, h3, h4⟩ := hv (by omega)
+  have hoff : (P.add (BitVec.ofNat 64 o)).off.toNat = P.off.toNat + o := by
+    rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)]
+  unfold Ptr.inWindow
+  rw [Ptr.add_blk, hoff]
+  unfold Blk.endsInWindow at h4
+  cases hw' : P.blk.window? with
+  | none => rfl
+  | some w => rw [hw'] at h4; simp only [decide_eq_true_eq] at h4 ⊢; omega
+
+/-- The fields written one more. -/
+theorem encodeFields_take_succ : ∀ (k : Nat) (buf : Array Byte) (fs : List (Nat × Ty))
+    (vs : List Val) (o : Nat) (t : Ty) (v : Val), fs[k]? = some (o, t) → vs[k]? = some v →
+    encodeFields buf (fs.take (k + 1)) (vs.take (k + 1)) =
+      putBytes (encodeFields buf (fs.take k) (vs.take k)) o (encode t v)
+  | 0, buf, (o', t') :: fs, v' :: vs, o, t, v, hf, hv => by
+    simp only [List.getElem?_cons_zero, Option.some.injEq, Prod.mk.injEq] at hf hv
+    obtain ⟨rfl, rfl⟩ := hf; subst hv
+    simp [encodeFields]
+  | k + 1, buf, (o', t') :: fs, v' :: vs, o, t, v, hf, hv => by
+    simp only [List.take_succ_cons, encodeFields]
+    exact encodeFields_take_succ k _ fs vs o t v (by simpa using hf) (by simpa using hv)
+  | _, _, [], _, _, _, _, hf, _ => by simp at hf
+  | _, _, _ :: _, [], _, _, _, _, hv => by simp at hv
+
 end GoFV.Proof.StructStore
