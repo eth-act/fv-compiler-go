@@ -24,8 +24,8 @@ namespace GoFV.Proof.Rules
 open GoFV.Rules
 
 /-- **The obligation of a Load-of-Store forwarding rule**: `(Load _ (Store _ x _)) => x`, also
-through up to three more `Store`s (`RewriteCheck.fwdShapeOK`); each instance is validated by
-`RewriteCheck.fwdRel`. -/
+through up to three more `Store`s, or `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and
+its converse (`RewriteCheck.fwdShapeOK`); each instance is validated by `RewriteCheck.fwdRel`. -/
 def EffectRule.LoadFwd (r : Rule) : Prop := GoFV.Opt.RewriteCheck.fwdShapeOK r = true
 
 /-- `generic.rules:800`: `(Load <t1> p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && copyCompatibleType(t1, x.Type) && t1.Size() == t2.Size() => x` -/
@@ -39,6 +39,12 @@ theorem r_generic_813_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_
 
 /-- `generic.rules:821`: `(Load <t1> p1 (Store {t2} p2 _ (Store {t3} p3 _ (Store {t4} p4 _ (Store {t5} p5 x _))))) && isSamePtr(p1, p5) && … => x` -/
 theorem r_generic_821_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_821 := rfl
+
+/-- `generic.rules:830`: `(Load <t1> p1 (Store {t2} p2 (Const64 [x]) _)) && isSamePtr(p1,p2) && t2.Size() == 8 && is64BitFloat(t1) && !math.IsNaN(math.Float64frombits(uint64(x))) => (Const64F [math.Float64frombits(uint64(x))])` -/
+theorem r_generic_830_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_830 := rfl
+
+/-- `generic.rules:832`: `(Load <t1> p1 (Store {t2} p2 (Const64F [x]) _)) && isSamePtr(p1,p2) && t2.Size() == 8 && is64BitInt(t1) => (Const64 [int64(math.Float64bits(x))])` -/
+theorem r_generic_832_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_832 := rfl
 
 /-- Non-vacuity: the Move forwarding `:827` (a `Load` rebuilt through a `Move`) does not have the
 shape. -/

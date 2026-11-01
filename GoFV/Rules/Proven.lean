@@ -22,7 +22,7 @@ namespace GoFV.Rules.Proven
 open GoFV.Rules
 
 /-- `generic.rules` restricted to its 1170 proven value rules, 3 proven block rules, 7
-nil-check eliminations, 4 Load-of-Store forwardings, 1 struct-load
+nil-check eliminations, 6 Load-of-Store forwardings, 1 struct-load
 expansions and 1 struct-store splits. -/
 def generic : RuleSet where
   name := "generic"
@@ -207,7 +207,7 @@ def generic : RuleSet where
     (.ZeroExt8to64, [Generated.Generic.r_generic_102, Generated.Generic.r_generic_754])]
   blocks := [(.If, [Generated.Generic.r_generic_1064, Generated.Generic.r_generic_1065, Generated.Generic.r_generic_1066])]
   nilChecks := [Generated.Generic.r_generic_1062, Generated.Generic.r_generic_1367, Generated.Generic.r_generic_1372, Generated.Generic.r_generic_1375, Generated.Generic.r_generic_1381, Generated.Generic.r_generic_1384, Generated.Generic.r_generic_1388]
-  loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821]
+  loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821, Generated.Generic.r_generic_830, Generated.Generic.r_generic_832]
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975]
 

@@ -262,6 +262,16 @@ equal bases by structurally equal indices, `termEqB`), `samePtrB` (equal bases, 
 `disjointB` (equal bases at offsets whose byte ranges do not overlap modulo 2^64, `offSep`, or
 bases in different allocations).
 
+**Constants** (`:830`, `:832`): `(Load <float64> p1 (Store {t2} p2 (Const64 [x]) _)) && … =>
+(Const64F [math.Float64frombits(uint64(x))])` and its converse rebuild the `Load` as a constant
+instead of a `Copy` (`fwdShapeOK`'s second case: a one-`Store` chain of a `const64Op`, a
+one-node argument-less `const64Op` result). Floats are integers of their width in the semantics
+(`tyOf`, `FOps.const64`), so `Const64 [c]` and `Const64F [c]` denote the same `.int .w64` value:
+`fwdNewOK` accepts, besides `Copy x` with `fwdOK`, a new definition `w` with `fwdConstOK` (the
+first `Store` at the Load's pointer, `fwdStored`, writes a `const64Op` value of `w`'s auxint at a
+shape `fwdTyEq` to the Load's, and `fwdOK` reads it back). `fwdEvent?` returns the new definition,
+which `fwdCopy` installs.
+
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
 g = true → RefinesUnder Env.Mono tabs g tabs f`, by the atom simulation. It needs a fact about
 the source's memory roots that no valuation of the atoms has: `MemDefs` (on the source's `DenOK`
@@ -277,13 +287,17 @@ forwarded `Load` through its chain (`chain_load`, `GoFV/Proof/Pass/LoadFwdPtr.le
 `decodeLoad_encode`, at an aggregate field by field, `fields_encode`, and a stored `poison`
 aggregate is all `poison` bytes, which a `Load` reads as `poison`, semantics.md §3.4
 `decodeLoad`; then `copyReach_den` to `x`, whose rank `copyReach_rank` bounds). The fuel of
-`TermRefP`'s right side may depend on the valuations. `checkedRewrite_refines` composes the
+`TermRefP`'s right side may depend on the valuations. A constant result reads the stored
+constant through its chain the same way (`chain_load`), which denotes the result's bits
+(`opVal_const64`, `fwdConstOK_spec`). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
-`generic.rules:800`, `:806`, `:813`, `:821`; witnesses `GoFV.Proof.Witness.sl_checkedRewrite`
-(`*p = x; return *p`), `sl2_checkedRewrite` (`p[0] = x; p[1] = y; return p[0]`, `:806`),
-`sls_checkedRewrite` (`*p = s; return *p` at a string; `sls_decodeLoad`), `fc_checkedRewrite`
-(the stored value a `Copy` of `x`) and `pi_checkedRewrite` (`PtrIndex p [0]` read through a
-`Store` at `PtrIndex p [1]`; `GoFV/Proof/Witness/FwdCopy.lean`), kernel evaluation.
+`generic.rules:800`, `:806`, `:813`, `:821`, `:830`, `:832`; witnesses
+`GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
+(`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
+string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
+`pi_checkedRewrite` (`PtrIndex p [0]` read through a `Store` at `PtrIndex p [1]`) and
+`cf_checkedRewrite` (`*p = bits(1.5); return *(*float64)(p)` with `:830`: the `Load` becomes
+`Const64F` of the stored bits; `GoFV/Proof/Witness/FwdCopy.lean`), kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,

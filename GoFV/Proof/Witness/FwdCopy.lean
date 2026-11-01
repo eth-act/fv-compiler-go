@@ -1,7 +1,7 @@
 import GoFV.Proof.Witness.LoadFwd
 
 /-!
-# Witness functions for forwarding through copies and constant `PtrIndex`es (issue #151)
+# Witness functions for forwarding through copies, constant `PtrIndex`es and constants (issue #151)
 
 ```go
 func storeLoadCopy(p *int, x int) int {
@@ -184,5 +184,111 @@ theorem pi_checkedRewrite :
     exact ⟨out, rfl, h12, ok_of_toBool h1, ok_of_toBool hg,
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := sl2Rules) (penv := piPassEnv)
         (f := piFunc) (out := out) sl2Rules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
+/-! ## A float read back from an integer constant: `storeLoadF` (`generic.rules:830`)
+
+```go
+func storeLoadF(p *int) float64 {
+	*p = 0x3ff8000000000000 // the bits of 1.5
+	return *(*float64)(unsafe.Pointer(p))
+}
+```
+
+as one block: `v4 = Store {int} v2 (Const64 [bits]) v1`, `v5 = Load <float64> v2 v4`. The rule
+makes `v5` the constant `Const64F [1.5]`, which has the stored bits
+(`RewriteCheck.fwdConstOK`). -/
+
+/-- `abiInfo` of `storeLoadF`: one pointer register parameter, one result. -/
+def cfABI : CallABI :=
+  { abi := 1, nin := 1, nout := 1, spillOff := 8, spillSize := 8, inRegs := 1, outRegs := 1,
+    params := #[{ out := false, index := 0, type := 3, name := some 3, regs := #[0], offset := 0 },
+                { out := true, index := 0, type := 4, name := some 5, regs := #[0],
+                  offset := -1 }] }
+
+/-- The definition tables: `float64` is type 4, `Store {int}` names its type by aux 6. -/
+def cfTabs : Tables where
+  types :=
+    let t := slTabs.types
+    let t := t.set! 1 (some (mkT .FUNC (some 8) "func(*int) float64" (.func 0 1 1 #[])))
+    let t := t.set! 4 (some (mkT .FLOAT64 (some 8) "float64"))
+    t.set! 35 (some (mkT .RESULTS none "float64,mem" (.results #[4, 29])))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.storeLoadF}", kind := .call (some 2) (some cfABI) },
+    some { fmt := GoStr.ofString "main.storeLoadF",
+           kind := .sym (GoStr.ofString "main.storeLoadF") 1 "" 0 default none none none #[] none },
+    some (paramNameT "p" .PPARAM 3 0), none,
+    some (paramNameT "~r0" .PPARAMOUT 4 0),
+    some { fmt := GoStr.ofString "int", kind := .type 2 }]
+
+/-- `storeLoadF`, the input of `opt`. -/
+def cfFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 6
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[6] #[] #[] #[1, 2, 3, 4, 5, 6])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 1 #[] 1),
+    some (mkV 2 .Arg 3 (some 3) p0 2 #[] 1),
+    some (mkVi 3 .Const64 2 4609434218613702656 p0 1 #[] 1),
+    some (mkV 4 .Store 29 (some 6) p0 2 #[2, 3, 1] 1),
+    some (mkVi 5 .Load 4 0 p0 1 #[2, 4] 1),
+    some (mkVi 6 .MakeResult 35 0 p0 1 #[5, 4] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- The one-rule set `{generic.rules:830}`, as a forwarding. -/
+def cfRules : RuleSet where
+  name := "generic"
+  values := []
+  blocks := []
+  loads := [Generated.Generic.r_generic_830]
+
+theorem cfRules_allSound : cfRules.AllSound :=
+  GoFV.Proof.Rules.RuleSet.allSound_of trivial trivial
+
+def cfPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "storeLoadF", typs := slTyps, tables := cfTabs }
+
+def cfCheckEnv : CheckEnv := { tabs := cfTabs, typs := slTyps }
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` keeps a result in which
+the Load `v5` is `Const64F` of the stored bits, which passes `check`. -/
+theorem cf_checks :
+    (check cfCheckEnv cfFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet cfRules) cfPassEnv cfFunc).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slTyps } o.func).toBool,
+        (o.func.value? 5).map fun v => (v.op, v.auxInt))) =
+      some (true, some (.Const64F, 4609434218613702656)) := by
+  decide +kernel
+
+/-- **Pass execution witness** for `generic.rules:830`: on `storeLoadF`, the checked rewrite pass
+replaces the float Load by the constant `Const64F` of the stored bits, and the result refines the
+input (`checkedRewrite_refines`, through `LoadFwd.fwd_refines`). -/
+theorem cf_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet cfRules) cfPassEnv cfFunc = .ok out ∧
+      (out.func.value? 5).map (fun v => (v.op, v.auxInt)) = some (.Const64F, 4609434218613702656) ∧
+      check cfCheckEnv cfFunc = .ok () ∧
+      check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre cfPassEnv.tables cfFunc) out.tables out.func
+        cfPassEnv.tables cfFunc := by
+  obtain ⟨h1, h2⟩ := cf_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet cfRules) cfPassEnv cfFunc with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h5⟩ := h2
+    exact ⟨out, rfl, h5, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := cfRules) (penv := cfPassEnv)
+        (f := cfFunc) (out := out) cfRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
 end GoFV.Proof.Witness
