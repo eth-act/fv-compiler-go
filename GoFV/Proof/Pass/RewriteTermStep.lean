@@ -9,7 +9,8 @@ import GoFV.Proof.Pass.RewriteTermNonNeg
 and fresh IDs, undefined before), each to a term node over matched values and the event's IDs.
 `rule_step`: on a set `C` closed under arguments, every value's denotation after the event
 refines the one before, with the fuel multiplied by `stepK r` (`Rule.SoundT` at the matched
-instance, `evalPure_natShape`, `Comm` swaps, leaf independence of the checks).
+instance, or `Rule.SoundW` for an `anyTop` rule (`Rule.SoundTop`), `evalPure_natShape`, `Comm`
+swaps, leaf independence of the checks).
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -446,7 +447,7 @@ theorem nonNegOK_of {tabs : Tables} {D : ID → Option Value} {M : Defs} {I : In
     | some p => exact nonNegD_den tabs D ρ hT _ B _
 
 /-- **The matched value**: its denotation before the event is refined by the one after. -/
-theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
+theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundTop r)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : ArgClosed M C) (hv : C v)
     {ρ : ID → Val} (hT : Term.Typed (putAll M defs).get? tabs ρ) {n B : Nat}
     (hIH : ∀ y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ B y)) :
@@ -483,6 +484,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
   have hargs : GoFV.Proof.Rules.Pat.argsOK
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
+  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
   -- lower bound, before the top's `retype`
   have hlow0 : Sem.Refines (den M.get? tabs ρ (n + 1) v)
       ((Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype
@@ -495,32 +497,38 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
     rw [F.hpat] at h1 ⊢
     simp only [Pat.denT, Pat.rawT] at h1 ⊢
     exact h1
-  have hraw0 : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
-      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true ∨
-      (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype
-        ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = .poison := by
-    have hn : (topAll F.o (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) ||
-        makeTop F.o ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [])) = true :=
-      F.hnat
-    have ht := htyped
-    have ha := hargs
-    rw [F.hpat] at ht ha ⊢
-    rcases Bool.or_eq_true_iff.1 hn with hn | hn
-    · exact .inl (raw_topAll hn ht ha)
-    · exact raw_makeTop hn ht ha
-  -- a `makeTop` whose raw value retypes to `poison`: the matched value is `poison`
-  by_cases hpois : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
-      r.pat).retype ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = .poison
-  · rw [hpois] at hlow0
-    generalize den M.get? tabs ρ (n + 1) v = a at hlow0 ⊢
-    cases hlow0
-    exact .poison _
-  have hraw := hraw0.resolve_right hpois
-  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
-  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of hT F.hnn)
-  have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
-      (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
-    rwa [GoFV.Proof.retype_of_hasTy hraw] at hlow0
+  -- the matched value `X` between the denotation before and the result's
+  obtain ⟨X, hlow, hsound⟩ : ∃ X, Sem.Refines (den M.get? tabs ρ (n + 1) v) X ∧
+      Sem.Refines X (GoFV.Proof.Rules.resDenT tabs
+        (evalE (stVtys r) (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+          (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+          (Pat.denT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat))
+        (stOr tabs r defs) (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+        ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) r.result) := by
+    rcases Bool.or_eq_true_iff.1 F.hnat with hn | ha
+    · -- `topAll`/`makeTop`: the raw value has the shape, or the matched value is `poison`
+      have hraw0 : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
+          ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true ∨
+          (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype
+            ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = .poison := by
+        have hn' : (topAll F.o (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) ||
+            makeTop F.o ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [])) = true :=
+          hn
+        have ht := htyped
+        have ha := hargs
+        rw [F.hpat] at ht ha ⊢
+        rcases Bool.or_eq_true_iff.1 hn' with hn' | hn'
+        · exact .inl (raw_topAll hn' ht ha)
+        · exact raw_makeTop hn' ht ha
+      rcases hraw0 with hraw | hpois
+      · refine ⟨_, ?_, hs.1.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs
+          (nonNegOK_of hT F.hnn)⟩
+        rwa [GoFV.Proof.retype_of_hasTy hraw] at hlow0
+      · rw [hpois] at hlow0
+        exact ⟨_, hlow0, .poison _⟩
+    · -- `anyTop`: `Rule.SoundW` compares the retyped raw value
+      exact ⟨_, hlow0, (hs.2 ha).2 tabs _ _ hbt hframe hwf hcons hcond htyped hargs
+        (nonNegOK_of hT F.hnn)⟩
   -- values bound on the semantic side
   have hleafU : ∀ p w, (p, w) ∈ F.I → Sem.Refines
       ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).leaf p)
@@ -666,7 +674,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
 
 /-- **One rule event**: on a set closed under arguments, the denotations after the event refine
 those before, with the fuel multiplied by `stepK r`. -/
-theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.SoundT r)
+theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.SoundTop r)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : DefClosed M C) {ρ : ID → Val}
     (hT : Term.Typed M.get? tabs ρ) :
     ∀ n y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ (n * stepK r) y) := by

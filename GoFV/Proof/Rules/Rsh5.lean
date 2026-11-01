@@ -18,16 +18,8 @@ theorem r_generic_226_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
 theorem r_generic_508_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_508 := by rule_auto
 
 
-/-- `generic.rules:1189`: `(Rsh64x64 [false] x con:(Const64 [c])) && 0 < c && c < 64 => (Rsh64x64 [true] x con)` -/
-theorem r_generic_1189_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1189_3 := by rule_auto
-
-
 /-- `generic.rules:436`: `(Rsh64x8 x (Const8 [c])) => (Rsh64x64 x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))` -/
 theorem r_generic_436_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_436 := by rule_auto
-
-
-/-- `generic.rules:1189`: `(Rsh64x8 [false] x con:(Const8 [c])) && 0 < c && c < 64 => (Rsh64x8 [true] x con)` -/
-theorem r_generic_1189_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1189_4 := by rule_auto
 
 
 /-- `generic.rules:468`: `(Rsh8Ux16 x (Const16 [c])) => (Rsh8Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))` -/

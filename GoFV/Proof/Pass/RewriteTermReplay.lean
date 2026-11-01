@@ -8,7 +8,7 @@ import GoFV.Proof.Rules.AllSound
 `D₀`, the values of a set `C₀` closed under arguments keep a refining denotation
 (`ReplayInv`), and the atoms of `D₀` whose arguments are in `C₀` keep their fields while their
 arguments (rewritten only by `copyArg` events, through compatible copies) keep refining
-denotations. Rule events use `RuleFacts.step` and `Rule.SoundT` of the table's rule
+denotations. Rule events use `RuleFacts.step` and `Rule.SoundTop` of the table's rule
 (`ofRuleSet_sound`; the variadic selections `Rule.MakeSel` are `RewriteMakeSel.lean`'s).
 -/
 
@@ -266,7 +266,7 @@ theorem den_compose {M' : Defs} {y y' : ID} {g : Nat → Nat}
   exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans (h2 ρ (hty ρ hρ) m)⟩
 
 theorem ReplayInv.rule {r : Rule} {v : ID} {defs : List Value} (hI : ReplayInv tabs D₀ C₀ M C)
-    (hs : GoFV.Proof.Rules.Rule.SoundT r) (F : RuleFacts tabs M r v defs) :
+    (hs : GoFV.Proof.Rules.Rule.SoundTop r) (F : RuleFacts tabs M r v defs) :
     ReplayInv tabs D₀ C₀ (putAll M defs) (fun y => C y ∨ (C v ∧ y ∈ defIds defs)) where
   closed := F.closed hI.closed
   sub := fun y h => .inl (hI.sub y h)

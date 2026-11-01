@@ -3,8 +3,9 @@ import GoFV.Proof.Rules.Block
 /-!
 # Sound rule sets
 
-`RuleSet.AllSound s`: every value rule of `s` satisfies `Rule.SoundT` (`DenT.lean`; a
-`Rule.Sound` lemma gives it for a rule without table-evaluated nodes, `Rule.soundT_of_sound`),
+`RuleSet.AllSound s`: every value rule of `s` satisfies `Rule.SoundTop` (`SoundW.lean`:
+`Rule.SoundT` of `DenT.lean`, which a `Rule.Sound` lemma gives for a rule without
+table-evaluated nodes, `Rule.soundT_of_sound`, and `Rule.SoundW` for the `anyTop` rules),
 is a selection of a variadic `Make` (`Rule.MakeSel`) or an unconditional selection of a `Load`
 (`Rule.LoadSel`), both validated per instance, and every block
 rule `BlockRule.Sound` (`Block.lean`). The rewrite passes' theorems (issue #113) take it as the
@@ -68,13 +69,21 @@ so each of its events is validated by `GoFV.Opt.RewriteCheck.loadSelOK` (nothing
 ties the selection's type to the field's). -/
 def Rule.LoadSel (r : Rule) : Prop := loadSelShape r = true
 
-/-- What a value rule of a sound rule set satisfies: `Rule.SoundT`, `Rule.MakeSel` or
+/-- What a value rule of a sound rule set satisfies: `Rule.SoundTop` (`Rule.SoundT`, and
+`Rule.SoundW` for the rules the checker accepts at any top type, `anyTop`), `Rule.MakeSel` or
 `Rule.LoadSel`. -/
-def Rule.Checked (r : Rule) : Prop := Rule.SoundT r ∨ Rule.MakeSel r ∨ Rule.LoadSel r
+def Rule.Checked (r : Rule) : Prop := Rule.SoundTop r ∨ Rule.MakeSel r ∨ Rule.LoadSel r
 
-theorem Rule.checked_of_sound {r : Rule} (h : Rule.Sound r) (hp : Rule.pure r = true) :
+theorem Rule.checked_of_soundT {r : Rule} (h : Rule.SoundT r) (ha : anyTop r = false := by rfl) :
     Rule.Checked r :=
-  .inl (Rule.soundT_of_sound h hp)
+  .inl (Rule.soundTop_of_soundT h ha)
+
+theorem Rule.checked_of_sound {r : Rule} (h : Rule.Sound r) (hp : Rule.pure r = true)
+    (ha : anyTop r = false := by rfl) : Rule.Checked r :=
+  Rule.checked_of_soundT (Rule.soundT_of_sound h hp) ha
+
+theorem Rule.checked_of_soundW {r : Rule} (h : Rule.SoundW r) : Rule.Checked r :=
+  .inl (Rule.soundTop_of_soundW h)
 
 /-- Every value rule of `s` satisfies `Rule.Checked`, every block rule `BlockRule.Sound`. -/
 def _root_.GoFV.Rules.RuleSet.AllSound (s : RuleSet) : Prop :=

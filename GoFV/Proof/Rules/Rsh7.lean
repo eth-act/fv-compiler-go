@@ -14,10 +14,6 @@ namespace GoFV.Proof.Rules
 theorem r_generic_437_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_437 := by rule_auto
 
 
-/-- `generic.rules:1190`: `(Rsh64Ux32 [false] x con:(Const32 [c])) && 0 < c && c < 64 => (Rsh64Ux32 [true] x con)` -/
-theorem r_generic_1190_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1190_2 := by rule_auto
-
-
 /-- `generic.rules:227`: `(Rsh64Ux64 (Const64 [c]) (Const64 [d])) => (Const64 [int64(uint64(c) >> uint64(d))])` -/
 theorem r_generic_227_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_227 := by rule_auto
 
@@ -30,31 +26,16 @@ theorem r_generic_497_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generi
 theorem r_generic_513_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_513 := by rule_auto
 
 
-/-- `generic.rules:1190`: `(Rsh64Ux64 [false] x con:(Const64 [c])) && 0 < c && c < 64 => (Rsh64Ux64 [true] x con)` -/
-theorem r_generic_1190_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1190_3 := by rule_auto
-
-
 /-- `generic.rules:439`: `(Rsh64Ux8 x (Const8 [c])) => (Rsh64Ux64 x (Const64 <types.Types[types.TUINT64]> [int64(uint8(c))]))` -/
 theorem r_generic_439_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_439 := by rule_auto
-
-
-/-- `generic.rules:1190`: `(Rsh64Ux8 [false] x con:(Const8 [c])) && 0 < c && c < 64 => (Rsh64Ux8 [true] x con)` -/
-theorem r_generic_1190_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1190_4 := by rule_auto
 
 
 /-- `generic.rules:435`: `(Rsh64x16 x (Const16 [c])) => (Rsh64x64 x (Const64 <types.Types[types.TUINT64]> [int64(uint16(c))]))` -/
 theorem r_generic_435_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_435 := by rule_auto
 
 
-/-- `generic.rules:1189`: `(Rsh64x16 [false] x con:(Const16 [c])) && 0 < c && c < 64 => (Rsh64x16 [true] x con)` -/
-theorem r_generic_1189_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1189 := by rule_auto
-
-
 /-- `generic.rules:434`: `(Rsh64x32 x (Const32 [c])) => (Rsh64x64 x (Const64 <types.Types[types.TUINT64]> [int64(uint32(c))]))` -/
 theorem r_generic_434_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_434 := by rule_auto
 
-
-/-- `generic.rules:1189`: `(Rsh64x32 [false] x con:(Const32 [c])) && 0 < c && c < 64 => (Rsh64x32 [true] x con)` -/
-theorem r_generic_1189_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1189_2 := by rule_auto
 
 end GoFV.Proof.Rules

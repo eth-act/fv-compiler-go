@@ -306,7 +306,7 @@ end BlockEv
 /-- **A block-rule event keeps `BInv`.** -/
 theorem BInv.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M : Defs} {C : ID → Prop} {B : BMap} (h : BInv tabs f D₀ C₀ M C B)
-    (hI : ReplayInv tabs D₀ C₀ M C) {cr : Rule} (hs : GoFV.Proof.Rules.Rule.SoundT cr)
+    (hI : ReplayInv tabs D₀ C₀ M C) {cr : Rule} (hs : GoFV.Proof.Rules.Rule.SoundTop cr)
     {c : ID} {defs : List Value} (F : RuleFacts tabs M cr c defs)
     {b : ID} {st : BState} (hst : bstate f B b = some st)
     (h2 : (f.block? b).map (·.succs.size) = some 2) {br : BlockRule}
@@ -440,7 +440,7 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
         unfold ruleOK at hok
         simp only [Bool.and_eq_true] at hok
         exact hok.1.1
-      have hsd : GoFV.Proof.Rules.Rule.SoundT cr.rule :=
+      have hsd : GoFV.Proof.Rules.Rule.SoundTop cr.rule :=
         ((ofRuleSet_sound hs hcr).resolve_right fun h' => h'.elim
           (fun h' => by rw [h'.2] at har; cases har)
           (fun h' => absurd h' hnls))

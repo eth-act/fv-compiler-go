@@ -8,7 +8,7 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.MakeSel` or `Rule.LoadSel` lemma (value rules),
+rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel` or `Rule.LoadSel` lemma (value rules),
 `BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or

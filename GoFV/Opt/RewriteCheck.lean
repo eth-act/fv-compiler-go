@@ -645,7 +645,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) &&
         (match r.pat with
-          | .op o _ _ _ _ _ _ _ => topAll o e || makeTop o (e.ty [])
+          | .op o _ _ _ _ _ _ _ => topAll o e || makeTop o (e.ty []) || GoFV.Proof.Rules.anyTop r
           | _ => false) &&
         Pat.argsOK e.ty [] r.pat &&
         leavesOK M I [] r.pat &&
