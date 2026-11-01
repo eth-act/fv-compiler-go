@@ -87,7 +87,7 @@ theorem v1_disj {ce : CheckEnv} {h : Func} (hwf : WF ce h) {b : ID} {hb : Block}
   · rw [hv] at hv'; cases hv'; exact hph hph'
 
 /-- A scheduled atom of `g` is scheduled in `f`, with the same fields. -/
-theorem atom_sched {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem atom_sched {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
     {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w) (ht : termOp w.op = false) :
     ∃ u, f.value? x = some u ∧ SameAtom u w ∧ x ∈ of.toList ∧ Placed g x w := by
@@ -98,7 +98,7 @@ theorem atom_sched {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
   exact ⟨u, hu, hs, (B.mS x).2 ⟨hxf, u, hu, hs.1 ▸ hph⟩, hpw⟩
 
 /-- An atom of `g` is not a term node of `f`. -/
-theorem not_term_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem not_term_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {a : ID} {w : Value} (hp : Placed g a w) (ht : termOp w.op = false) : ¬ IsTerm f.value? a := by
   intro ⟨u', hu', ht'⟩
   obtain ⟨u, hpu, hs⟩ := gatom_f H hp ht
@@ -112,7 +112,7 @@ theorem atom_of_not_term {g : Func} {a : ID} {w : Value} (hp : Placed g a w)
   · exact absurd ⟨w, placed_listed hp, h⟩ hat
 
 /-- Atoms placed outside `b` keep their registers through block `b`, in `f` too. -/
-theorem atom_out {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem atom_out {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
     {a : ID} {w : Value} (hp : Placed g a w) (ht : termOp w.op = false) (hne : w.block ≠ b) :
     a ∉ gb.values ∧ a ∉ fb.values := by
@@ -121,8 +121,8 @@ theorem atom_out {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     not_mem_of_placed H.wf hpu B.bmS B.hfb (hs.2.2.2.2.2.1 ▸ hne)⟩
 
 /-- The frames after a block entry. -/
-structure EndRel (tabs : Tables) (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID)
-    (FS FT : Frame) : Prop where
+structure EndRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (b : ID) (fb gb : Block)
+    (of og : Array ID) (FS FT : Frame) : Prop where
   fr : FT = { FS with regs := FT.regs }
   szS : FS.regs.size = f.valueTab.size
   szT : FT.regs.size = g.valueTab.size
@@ -134,15 +134,16 @@ structure EndRel (tabs : Tables) (f g : Func) (b : ID) (fb gb : Block) (of og : 
     ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a → Sem.Refines (rv FS a) (rv FT a)
   atoms : ∀ a w, Placed g a w → termOp w.op = false → ∀ y', FT.regs[a]? = some (some y') →
     ∃ y, FS.regs[a]? = some (some y) ∧ Sem.Refines y y'
+  inv : ∀ a, I.P b a (rv FS a)
 
 /-- **A block entry without panic.** -/
-theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
-    (R : BRel tabs f g frS frT b i) {fb gb : Block} {of og : Array ID}
+    (R : BRel tabs f g I frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData f g b fb gb of og) {FS : Frame}
     (he : enterBlock env (Ctx.make tabs f) frS fb i = .ok FS) :
     ∃ FT, enterBlock env (Ctx.make tabs g) frT gb i = .ok FT ∧
-      EndRel tabs f g b fb gb of og FS FT := by
+      EndRel tabs f g I b fb gb of og FS FT := by
   obtain ⟨psS, o, hpsS, ho, hevS⟩ := enterBlock_ok_split he
   rw [sched_eq B.hfb B.idS, B.sS] at ho; cases ho
   obtain ⟨psT, hpsT, hphis⟩ := tgt_phis H R B hpsS
@@ -159,6 +160,8 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     typed_phis R.tyT pT1 pT3 pT4 pT2
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := src_eval H B R.treeS (P := of.toList) (Q := [])
     (by simp) hS1 (by rw [pS1, R.szS]) htyPS hevS
+  have hinvFS : ∀ a, I.P b a (rv FS a) :=
+    inv_evalAll B.hfb (sched_own H B) hevS (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis)
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { FS with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))
@@ -190,10 +193,10 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
   obtain ⟨FT, hevT, l1, l2, l3, l4, l5, l6⟩ := tgt_loop H hE (og := og.toList) (L := og.toList)
     (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrel0 B.ndT B.tpT
-    (fun x hx => by
+    (b := b) (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
-      obtain ⟨hp, -, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
-      exact ⟨w, hp, hid, hph⟩)
+      obtain ⟨hp, hwb, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
+      exact ⟨w, hp, hid, hph, hwb⟩) hinvFS (fun a h => .inl (.inl h))
     (sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT)
     (fun a ha _ hat => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 ha
@@ -210,7 +213,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
   refine ⟨FT, enterBlock_of hpsT (by rw [sched_eq B.hgb B.idT, B.sT]) hevT, ?_⟩
   have hfr : FT = { FS with regs := FT.regs } := frame_trans l1 hfrT
   refine ⟨hfr, by rw [g2, pS1, R.szS], by rw [l2, pT1, R.szT], g3, l3, g4, l4,
-    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_⟩
+    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_, hinvFS⟩
   by_cases hwb : w.block = b
   · have haz : a ∈ gb.values := by
       obtain ⟨-, -, blk, hblk, hx⟩ := hpw

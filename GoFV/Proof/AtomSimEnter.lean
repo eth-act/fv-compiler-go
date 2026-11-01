@@ -134,7 +134,7 @@ theorem termsOK_of_topo {f : Func} {tabs : Tables} {G : Frame} :
         · exact .inr h
 
 /-- **The source's schedule prefix `P`**, from the frame after the `Phi`s. -/
-theorem src_eval {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem src_eval {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
     (htree : ((make f).depthOf b).isSome) {frP G : Frame} {P Q : List ID}
     (hPQ : of.toList = P ++ Q) (hD : DenOK f.value? tabs frP (V1 f b fb))
@@ -179,5 +179,95 @@ theorem src_eval {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     change f.value? x = some v' at hv'
     rw [hv] at hv'; cases hv'
     rw [hy, evalValue_term hop hevy, (hown x hx v hv).1, tys_of_value hv]; rfl
+
+/-! ## The source-side invariant along a block entry -/
+
+theorem rv_set {T : Frame} {x a : ID} {y : Val} :
+    rv (T.set x y) a = if x = a ∧ x < T.regs.size then y else rv T a := by
+  by_cases h : x = a
+  · subst h
+    by_cases hlt : x < T.regs.size
+    · simp only [hlt, and_self, ite_true]; unfold rv; rw [Frame.set_regs_self hlt]; rfl
+    · simp only [hlt, and_false, ite_false]
+      unfold rv
+      simp [Frame.set, Array.set!_eq_setIfInBounds, Array.setIfInBounds, hlt]
+  · simp only [h, false_and, ite_false]; unfold rv; rw [Frame.set_regs_ne h]
+
+/-- The `Phi`s keep the invariant. -/
+theorem inv_phis {tabs : Tables} {f : Func} {I : SrcInv tabs f} {fr : Frame} {b : ID} {i : Nat}
+    {fb : Block} (hfb : f.block? b = some fb) (hnd : fb.values.toList.Nodup)
+    {ps : List (ID × Val)} (hps : fb.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) = .ok ps)
+    (hsz : fr.regs.size = f.valueTab.size)
+    (hinv : ∀ a, I.P b a (rv fr a)) (hph : PhisP tabs f I.P fr b i) :
+    ∀ a, I.P b a (rv { fr with regs := setPhis ps fr.regs } a) := by
+  obtain ⟨-, p2, p3, p4⟩ := phis_spec hnd hps
+  have hkeep : ∀ z, (z ∉ fb.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi) →
+      rv { fr with regs := setPhis ps fr.regs } z = rv fr z := fun z hz => by
+    unfold rv; exact congrArg (fun o => (Option.join o).getD .poison) (p3 z hz)
+  intro z
+  by_cases hz : z ∈ fb.values
+  · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 (p2 z hz)
+    by_cases hop : v.op = .Phi
+    · obtain ⟨a, y, ha, hy, hset⟩ := p4 z hz v hv hop (by rw [hsz]; exact lt_of_value? hv)
+      have h := hph fb hfb z hz v hv hop a ha
+      rw [rv_of hy, ← Option.getD_some (a := tabs.ty v.type) (b := Sem.Ty.other),
+        ← tys_of_value hv] at h
+      rwa [rv_of hset]
+    · rw [hkeep z (.inr ⟨v, hv, hop⟩)]; exact hinv z
+  · rw [hkeep z (.inl hz)]; exact hinv z
+
+/-- Evaluating values of block `b` keeps the invariant. -/
+theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {b : ID} {fb : Block}
+    (hfb : f.block? b = some fb) :
+    ∀ {L : List ID} {fr G : Frame},
+      (∀ x ∈ L, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values) →
+      evalAll env (Ctx.make tabs f) fr L = .ok G →
+      (∀ a, I.P b a (rv fr a)) → ∀ a, I.P b a (rv G a)
+  | [], _, _, _, h, hinv => by cases h; exact hinv
+  | x :: L, fr, G, hL, h, hinv => by
+    rw [evalAll_cons] at h
+    unfold stepV at h
+    change (match (match f.value? x with
+      | none => Res.stuck s!"v{x} is not in the function"
+      | some v => evalValue env (Ctx.make tabs f) fr v) with
+      | .ok y => evalAll env (Ctx.make tabs f) (fr.set x y) L
+      | .panic e m => .panic e m
+      | .stuck msg => .stuck msg) = .ok G at h
+    cases hv : f.value? x with
+    | none => rw [hv] at h; cases h
+    | some v =>
+      rw [hv] at h; dsimp only at h
+      obtain ⟨hid, hph, hxb⟩ := hL x List.mem_cons_self v hv
+      cases he : evalValue env (Ctx.make tabs f) fr v with
+      | panic e m => rw [he] at h; cases h
+      | stuck msg => rw [he] at h; cases h
+      | ok y =>
+        rw [he] at h
+        have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = tabs.ty v.type := by
+          rw [hid, tys_of_value hv]; rfl
+        have hy : I.P b x y := by
+          cases ht : termOp v.op with
+          | true =>
+            rw [evalValue_term ht he, hty]
+            exact I.term b fb hfb x hxb v hv ht (rv fr) fun a _ => hinv a
+          | false =>
+            have := evalValue_typed he
+            rw [hty] at this
+            rw [← this]; exact I.atom b fb hfb x hxb v hv ht hph y
+        refine inv_evalAll hfb (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h fun a => ?_
+        rw [rv_set]
+        split
+        · next hh => obtain ⟨rfl, -⟩ := hh; exact hy
+        · exact hinv a
+
+/-- The source schedule's values are own non-`Phi` values of the block. -/
+theorem sched_own {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
+    (H : Hyp tabs f g ce ce' I) {b : ID} {fb gb : Block} {of og : Array ID}
+    (B : BlockData f g b fb gb of og) :
+    ∀ x ∈ of.toList, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values :=
+  fun x hx v hv => by
+    obtain ⟨hxb, v', hv', hph⟩ := (B.mS x).1 hx
+    rw [hv] at hv'; cases hv'
+    exact ⟨(placed_in H.wf B.bmS B.hfb hxb hv).2.2, hph, hxb⟩
 
 end GoFV.Proof.AtomSim

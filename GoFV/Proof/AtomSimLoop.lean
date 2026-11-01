@@ -46,7 +46,7 @@ theorem rv_set_ne {T : Frame} {x a : ID} {y : Val} (h : x ≠ a) : rv (T.set x y
   unfold rv; rw [Frame.set_regs_ne h]
 
 /-- **One atom against the reference frame.** -/
-theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {G T : Frame} {VS VT : ID → Prop}
     (hfr : T = { G with regs := T.regs })
     (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T VT)
@@ -55,7 +55,8 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp t
       Sem.Refines (rv G a) (rv T a))
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
     {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : SameAtom u w)
-    (ht : termOp w.op = false) (hargsS : ∀ a ∈ u.args, VS a) (hargsT : ∀ a ∈ w.args, VT a) :
+    (ht : termOp w.op = false) (hargsS : ∀ a ∈ u.args, VS a) (hargsT : ∀ a ∈ w.args, VT a)
+    (hinv : ∀ a, I.P w.block a (rv G a)) (hSV : ∀ a, SAnc f w.block a → VS a) :
     Res.Refines (evalValue env (Ctx.make tabs f) G u) (evalValue env (Ctx.make tabs g) T w) := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
   obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
@@ -76,7 +77,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp t
     refine termRef_apply (hTR i hi') hDS (hargsS _ (getElem!_mem' hi)) hDT
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
-      fun a ha hat hat' hdef _ => ?_
+      (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
     rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/
@@ -100,7 +101,7 @@ def LoopInv (tabs : Tables) (g : Func) (G T0 : Frame) (VS VT1 : ID → Prop) (D 
       Sem.Refines (rv G a) (rv T a))
 
 /-- **The target's schedule prefix `L`.** -/
-theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {G T0 : Frame} {VS VT1 : ID → Prop} {og L M P : List ID}
     (hog : og = L ++ M) (hfr : T0 = { G with regs := T0.regs })
     (hsz : T0.regs.size = g.valueTab.size)
@@ -110,7 +111,8 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     (hrel0 : ∀ a, VT1 a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T0 a))
     (hnd : og.Nodup) (htopo : TopoRem (argsF g) og)
-    (hplaced : ∀ x ∈ og, ∃ w, Placed g x w ∧ w.id = x ∧ w.op ≠ .Phi)
+    {b : ID} (hplaced : ∀ x ∈ og, ∃ w, Placed g x w ∧ w.id = x ∧ w.op ≠ .Phi ∧ w.block = b)
+    (hinv : ∀ a, I.P b a (rv G a)) (hSV : ∀ a, SAnc f b a → VS a)
     (hargsT : ∀ x ∈ og, ∀ w, g.value? x = some w → ∀ a ∈ w.args, VT1 a ∨ a ∈ og)
     (hVSog : ∀ a ∈ og, VS a → ¬ IsTerm (listedDefs g) a → a ∈ P)
     (hatom : ∀ x ∈ L, ∀ w, g.value? x = some w → termOp w.op = false →
@@ -131,7 +133,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     rw [hog'] at hnd
     exact (List.nodup_append.1 hnd).2.2 x hm x List.mem_cons_self rfl
   have hxV : ¬ (VT1 x ∨ x ∈ d) := fun h => h.elim (hdisj x hxog) hxd
-  obtain ⟨w, hpw, hwid, hwphi⟩ := hplaced x hxog
+  obtain ⟨w, hpw, hwid, hwphi, hwb⟩ := hplaced x hxog
   have hw := hpw.1
   have hxlt : x < T.regs.size := by rw [hTs, hsz]; exact lt_of_value? hw
   have hargs : ∀ a ∈ w.args, VT1 a ∨ a ∈ d := fun a ha => by
@@ -190,6 +192,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
             exact ⟨w, hp⟩
         have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hTD hVTd
           (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt hpw hu hs hterm hargsS hargs
+          (hwb ▸ hinv) (hwb ▸ hSV)
         rw [hevS] at hr
         obtain ⟨y', hT, hyy⟩ := res_ok_of_refines hr
         exact ⟨y', hT, fun _ => ⟨y, hGy, hyy⟩⟩
