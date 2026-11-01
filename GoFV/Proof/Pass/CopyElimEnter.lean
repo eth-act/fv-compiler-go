@@ -331,4 +331,222 @@ theorem enter_ok (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
   change evalAll env (Ctx.make tabs g) _ oT.toList = _
   rw [h1, hgG]
 
+/-- In a dependency order, the arguments of a listed value are not at or after it. -/
+theorem topoRem_at {D : ID → List ID} :
+    ∀ {L1 L2 : List ID} {x : ID}, TopoRem D (L1 ++ x :: L2) → ∀ a ∈ D x, a ∉ x :: L2
+  | [], _, _, ⟨h1, _⟩ => h1
+  | _ :: L1, _, _, ⟨_, h2⟩ => topoRem_at (L1 := L1) h2
+
+/-- Target dependencies on a source root are kept: a chain of source arguments from the root
+becomes a chain of target arguments (through the copies' sources). -/
+theorem depPres (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Block}
+    (hfb : f.block? bid = some fb) {gb : Block} (hgbb : g.block? bid = some gb)
+    (hvals : gb.values = fb.values) {r : ID}
+    (hrS : NodeIn (schedNodes f fb).toList r)
+    (hrnc : ∀ gr, g.value? r = some gr → gr.op ≠ .Copy) :
+    ∀ y, Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) r y →
+      Order.Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) r y := by
+  obtain ⟨ce, hwf⟩ := S.wf
+  obtain ⟨ce', hwg⟩ := S.wg
+  have hbg : bid ∈ g.blocks := by rw [S.blocks]; exact hbt.1
+  have hownF := valuesOwn hwf hbt.1 hfb
+  have hndF := hwf.valuesNodup _ _ ⟨hbt.1, hfb⟩
+  have hownG := valuesOwn hwg hbg hgbb
+  have hndG := hwg.valuesNodup _ _ ⟨hbg, hgbb⟩
+  let DT := Order.Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList)
+  -- target nodes: the source nodes stay nodes
+  have hnodeT : ∀ y, NodeIn (schedNodes f fb).toList y → NodeIn (schedNodes g gb).toList y := by
+    intro y hy
+    obtain ⟨hyb, fv, hfv, hne⟩ := (nodeIn_schedNodes hownF).1 hy
+    obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hyb
+    rw [hfv] at hfv'; cases hfv'
+    exact (nodeIn_schedNodes hownG).2 ⟨by rw [hvals]; exact hyb, gv, hgv,
+      fun hp => hne (valRel_phi hrel hz hp)⟩
+  let Q : ID → Prop := fun y => DT r y ∧
+    ∀ gy w, g.value? y = some gy → gy.op = .Copy → gy.args = #[w] → w = r ∨ DT r w
+  -- an argument related to a value `x` reached from `r`
+  have hR : ∀ x w, (x = r ∨ Q x) → ArgRel g x w → w = r ∨ DT r w := by
+    intro x w hx hr
+    rcases hr with rfl | ⟨u, hu, hop, hargs⟩
+    · rcases hx with rfl | hQ
+      · exact .inl rfl
+      · exact .inr hQ.1
+    · rcases hx with rfl | hQ
+      · exact absurd hop (hrnc u hu)
+      · exact hQ.2 u w hu hop hargs
+  have key : ∀ x y, Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList)
+      x y → (x = r ∨ Q x) → Q y := by
+    intro x y hd
+    induction hd with
+    | @arg x y hx hy hxy =>
+      intro hxQ
+      obtain ⟨hyb, fv, hfv, hne⟩ := (nodeIn_schedNodes hownF).1 hy
+      rw [argsOf_schedNodes hownF hndF hyb hfv hne] at hxy
+      obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hyb
+      rw [hfv] at hfv'; cases hfv'
+      have hgn : gv.op ≠ .Phi := fun hp => hne (valRel_phi hrel hz hp)
+      have hyT := hnodeT y hy
+      have hargsT : argsOf (schedNodes g gb).toList y = gv.args.toList :=
+        argsOf_schedNodes hownG hndG (by rw [hvals]; exact hyb) hgv hgn
+      have hrT := hnodeT r hrS
+      -- the target edge into `y`
+      have hedge : ∀ w, w ∈ gv.args → (w = r ∨ DT r w) → DT r y := by
+        intro w hw hwr
+        rcases hwr with rfl | hd
+        · exact .arg hrT hyT (by rw [hargsT]; exact Array.mem_toList_iff.2 hw)
+        · exact .trans hd (.arg hd.right hyT (by rw [hargsT]; exact Array.mem_toList_iff.2 hw))
+      cases hrel with
+      | phi _ hph => exact absurd hph hne
+      | empty hzz => exact absurd hzz hz
+      | same hop haux hai hsz hargs' =>
+        obtain ⟨k, hk⟩ := List.getElem?_of_mem hxy
+        have hk' : fv.args[k]? = some x := by simpa using hk
+        obtain ⟨w, hw, hr⟩ := hargs' k x hk'
+        refine ⟨hedge w (Array.mem_of_getElem? hw) (hR x w hxQ hr), fun gy w' hgy hop' hargs'' => ?_⟩
+        rw [hgv] at hgy; cases hgy
+        rw [hargs''] at hw
+        have : k = 0 ∧ w = w' := by
+          have := (Array.getElem?_eq_some_iff.1 hw)
+          obtain ⟨hlt, heq⟩ := this
+          simp at hlt; subst hlt; simpa using heq.symm
+        obtain ⟨rfl, rfl⟩ := this
+        exact hR x w hxQ hr
+    | trans _ _ ih1 ih2 => exact fun h => ih2 (.inr (ih1 h))
+  intro y hd
+  exact (key r y hd (.inl rfl)).1
+
+theorem prio_panicking {op : Op}
+    (h : op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall) : prio op = 2 := by
+  rcases h with rfl | rfl | rfl <;> rfl
+
+/-- **A block the source panics in makes the target panic alike.** -/
+theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat}
+    (hA : At env tabs f g fr bid i) {fb : Block} (hfb : f.block? bid = some fb) {e : Panic}
+    {m : Mem} (h : enterBlock env (Ctx.make tabs f) fr fb i = .panic e m) :
+    ∃ gb, g.block? bid = some gb ∧ enterBlock env (Ctx.make tabs g) fr gb i = .panic e m := by
+  obtain ⟨ce, hwf⟩ := S.wf
+  obtain ⟨ce', hwg⟩ := S.wg
+  have hbt := hA.tree S
+  obtain ⟨fb', hfb', hfid⟩ := hwf.blockId bid hbt.1
+  rw [hfb] at hfb'; cases hfb'
+  obtain ⟨psS, oS, hpsS, hso, hev⟩ := enterBlock_panic h
+  rw [hfid, sched_make hfb] at hso
+  obtain ⟨pre, r, post, Gpre, hsplit, hpre, hrp⟩ := evalAll_panic_split hev
+  obtain ⟨hM, hG1, hG2⟩ := mid_of S hA hfb hpsS hso hsplit hpre
+  obtain ⟨gb, psT, oT, hgbb, hgid, hvals, hpsT, hoT, hagree, hszT⟩ := targetPre S hA hfb hpsS hso
+  have hbg : bid ∈ g.blocks := by rw [S.blocks]; exact hbt.1
+  have hownF := valuesOwn hwf hbt.1 hfb
+  have hndF := hwf.valuesNodup _ _ ⟨hbt.1, hfb⟩
+  have hownG := valuesOwn hwg hbg hgbb
+  have hndG := hwg.valuesNodup _ _ ⟨hbg, hgbb⟩
+  obtain ⟨ondT, otopoT, omemT⟩ := schedule_topo hownG hndG hoT
+  obtain ⟨ond, otopo, omem⟩ := schedule_topo hownF hndF hso
+  -- the panicking root
+  have hrS : r ∈ oS.toList := by rw [hsplit]; simp
+  obtain ⟨hrb, fvr, hfvr, hrnph⟩ := (omem r).1 hrS
+  obtain ⟨fvr', gvr, hfvr', hgvr, -, hfrid, -, -, hrelr, hzr⟩ := S.value hbt hfb hrb
+  rw [hfvr] at hfvr'; cases hfvr'
+  rw [stepV_of hfvr] at hrp
+  have hrop := evalValue_panic_op hrp
+  have hgop : gvr.op = fvr.op := by
+    cases hrelr with
+    | same hop => exact hop
+    | phi _ hph => exact absurd hph hrnph
+    | empty hzz => exact absurd hzz hzr
+  have hrT : r ∈ oT.toList :=
+    (omemT r).2 ⟨by rw [hvals]; exact hrb, gvr, hgvr, by rw [hgop]; exact hrnph⟩
+  obtain ⟨pre', post', hsplitT⟩ := List.append_of_mem hrT
+  -- what the target evaluates before `r`, the source evaluated before `r`
+  have hspecS := schedule_spec hso
+  have hspecT := schedule_spec hoT
+  have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
+  have hk' : oT.toList[pre'.length]? = some r := by rw [hsplitT]; simp
+  have hnodeR : NodeIn (schedNodes f fb).toList r :=
+    (nodeIn_schedNodes hownF).2 ⟨hrb, fvr, hfvr, hrnph⟩
+  have hnotNil : ¬ NilIn (schedNodes f fb).toList r := by
+    intro hn
+    have hm : (⟨fvr.id, fvr.args, prio fvr.op⟩ : SNode) ∈ (schedNodes f fb).toList :=
+      mem_schedNodes.2 ⟨r, hrb, fvr, hfvr, hrnph, rfl⟩
+    have := hn _ (by rw [← hfrid]; exact nodeOf_of_mem (schedNodes_ids hownF hndF) hm)
+    simp only [prio_panicking hrop] at this; omega
+  have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk' hnotNil
+    (fun y hy hyn hyr => S.frag.chained bid hbt.1 hbt.2 fb hfb y r hy hnodeR hyn hnotNil hyr)
+    (fun y _ _ hd => depPres S hbt hfb hgbb hvals hnodeR
+      (fun gr hgr => by rw [hgvr] at hgr; cases hgr; rw [hgop]; rcases hrop with h | h | h <;>
+        rw [h] <;> decide) y hd)
+  -- the target's prefix agrees with the source's frame at the panic
+  have hargsT : ∀ x gv, g.value? x = some gv → argsF (Ctx.make tabs g).f x = gv.args.toList :=
+    fun x gv hgv => argsF_of (f := g) hgv
+  have hnotS : ∀ a, a ∉ oT.toList → a ∉ oS.toList := by
+    intro a ha ham
+    obtain ⟨hab, fv, hfv, hne⟩ := (omem a).1 ham
+    obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hab
+    rw [hfv] at hfv'; cases hfv'
+    exact ha ((omemT a).2 ⟨by rw [hvals]; exact hab, gv, hgv,
+      fun hp => hne (valRel_phi hrel hz hp)⟩)
+  have hinPre : ∀ x, x ∈ oS.toList → (∃ i < pre.length, oS.toList[i]? = some x) → x ∈ pre := by
+    rintro x - ⟨i, hi, hix⟩
+    rw [hsplit, List.getElem?_append_left hi] at hix
+    exact List.mem_of_getElem? hix
+  -- arguments of a value of `pre` (or of `r`) in the block are in `pre`
+  have hdepPre : ∀ x, (∃ k ≤ pre.length, oS.toList[k]? = some x) → ∀ fv, f.value? x = some fv →
+      ∀ a ∈ fv.args, a ∈ fb.values → (∃ v, f.value? a = some v ∧ v.op ≠ .Phi) → a ∈ pre := by
+    rintro x ⟨k, hkl, hkx⟩ fv hfv a ha hab han
+    obtain ⟨j, hj, hja⟩ := topoRem_before otopo hkx (by rw [argsF_of hfv]; simpa using ha)
+      ((omem a).2 ⟨hab, han⟩)
+    exact hinPre a ((omem a).2 ⟨hab, han⟩) ⟨j, by omega, hja⟩
+  have hloc : LocalOK env (Ctx.make tabs g) Gpre pre' := by
+    intro x hx
+    have hxT : x ∈ oT.toList := by rw [hsplitT]; exact List.mem_append_left _ hx
+    obtain ⟨hxb, gv, hgv, hgn⟩ := (omemT x).1 hxT
+    rw [hvals] at hxb
+    obtain ⟨fv, -, hfv, -⟩ := S.value hbt hfb hxb
+    by_cases hph : fv.op = .Phi
+    · obtain ⟨y, h1, h2⟩ := evalFormer S hA hfb hM hxb hfv hgv hph hgn
+      exact ⟨y, h1, fun g' hg' hag => by
+        rw [stepV_of (ctx := Ctx.make tabs g) hgv]
+        exact h2 g' hg' fun a ha => hag a (by rw [hargsT x gv hgv]; exact Array.mem_toList_iff.2 ha)⟩
+    · obtain ⟨j, hj⟩ := List.getElem?_of_mem hx
+      have hjl := lt_length_of_getElem? hj
+      have hjT : oT.toList[j]? = some x := by rw [hsplitT, List.getElem?_append_left hjl]; exact hj
+      obtain ⟨i', hi', hix⟩ := htr j x hjl hjT ((nodeIn_schedNodes hownF).2 ⟨hxb, fv, hfv, hph⟩)
+      have hxS : x ∈ oS.toList := (omem x).2 ⟨hxb, fv, hfv, hph⟩
+      have hxP := hinPre x hxS ⟨i', hi', hix⟩
+      obtain ⟨v', y, hv', hy, hevx⟩ := hM.eval x hxP
+      rw [hfv] at hv'; cases hv'
+      refine ⟨y, hy, fun g' hg' hag => ?_⟩
+      rw [stepV_of (ctx := Ctx.make tabs g) hgv, ← hevx]
+      exact evalSame S hA hfb hM hxb hfv hgv hph
+        (hdepPre x ⟨i', by omega, hix⟩ fv hfv)
+        (fun msg he => by rw [hevx] at he; cases he) hg'
+        (fun a ha => hag a (by rw [hargsT x gv hgv]; exact Array.mem_toList_iff.2 ha))
+  have hS : ∀ a, a ∉ oT.toList → (setPhis psT fr.regs)[a]? = Gpre.regs[a]? := by
+    intro a ha
+    rw [hagree a ha, hM.out a (fun hm => hnotS a ha (by rw [hsplit]; exact List.mem_append_left _ hm))]
+  have htopoT : TopoRem (argsF (Ctx.make tabs g).f) (pre' ++ r :: post') := by
+    rw [← hsplitT]; exact otopoT
+  have hpanT := evalAll_ref_panic (S := fun a => a ∉ oT.toList) (post := post')
+    (g := { fr with regs := setPhis psT fr.regs }) hloc
+    (refOK_prefix htopoT (fun a ha => by rw [hsplitT]; exact ha))
+    hS (by rw [hG1]) (by rw [hG2]; exact hszT)
+    (fun a ha => by
+      by_cases haT : a ∈ oT.toList
+      · rw [hsplitT] at haT
+        rcases List.mem_append.1 haT with h' | h'
+        · exact .inr h'
+        · exact absurd h' (topoRem_at htopoT a ha)
+      · exact .inl haT)
+    (fun g' hg' hag => by
+      rw [stepV_of (ctx := Ctx.make tabs g) hgvr, ← hrp]
+      exact evalSame S hA hfb hM hrb hfvr hgvr hrnph
+        (hdepPre r ⟨pre.length, Nat.le_refl _, hk⟩ fvr hfvr)
+        (fun msg he => by rw [hrp] at he; cases he) hg'
+        (fun a ha => hag a (by rw [hargsT r gvr hgvr]; exact Array.mem_toList_iff.2 ha)))
+  refine ⟨gb, hgbb, ?_⟩
+  rw [enterBlock_eq, hpsT]
+  change (Res.ofOption _ ((Ctx.make tabs g).sched[gb.id]?).join).bind _ = _
+  rw [hgid, sched_make hgbb, hoT]
+  change evalAll env (Ctx.make tabs g) _ oT.toList = _
+  rw [hsplitT, hpanT]
+
 end GoFV.Proof.CopyElim
