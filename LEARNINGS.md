@@ -396,6 +396,30 @@ avoiding): the problem, the trick, the numbers, where it is used.
   branchelim 1.0 → 0.8 s (−20%); quick/full within load noise. Kernel-evaluated witnesses
   that run `check`/`wfDomOK` got faster too (9 modules, median CPU 36.0 → 29.3 s).
 
+#### Short circuit's checked `shortcircuitBlock`: WFDom of the result from local checks (#16, #147)
+- **Problem:** `scOK` (#236) ran `wfDomOK g` (the whole-function `wfCheck` + dominator
+  certificate) on every one of the 66,494 rewrites of full-v4, diffed both tables to find the
+  changed blocks, compared both tables again (`frameOK`) and scanned all values (`scanOK`);
+  `schedOK` computed two `Sem.schedule`s (tables of size max-value-ID) per checked block.
+- **Trick:** (1) no `wfDomOK g`: `WF ce g` (`ShortCircPres`) from `f`'s and per-block checks of
+  the touched blocks `K` (`wfKOK`: `wfCheck`'s block loops, edges to blocks outside `K` keep their
+  indices); `UseDom g` (`ShortCircUseDom`) from `UseDom f`: a path of `g` maps to a path of `f`
+  with `b` inserted (`p → t` ↦ `p → b → t`), uses shared with `f` keep their blocks, and the new
+  uses are checked locally (`useOK`: defined in the use's block, a `Phi` argument of `b` at a
+  block every path to which passes `b` (`dsOK`: a closed set, the *largest* one, since the plan's
+  blocks can form loops), a moved phi outside the plan's blocks (`closeOK`: paths leave the plan's
+  blocks only through the moved phi's block)); (2) `K` = the blocks `applySite` touches (`b`, `t`,
+  `p`, the plan's blocks, `b`'s last predecessor's block) instead of a table diff; `frameOK`/
+  `scanOK` compare raw entries pointer-first without allocating; (3) `schedOK` skips the
+  schedules when the block's schedule nodes are unchanged (same schedule).
+- **Effect** (`pass-parity --pass "short circuit"`, pre-#236 main f3bb926 / main 801a98c /
+  this, alternated, two rounds): full-v4 `--jobs 4` (load 48–142) 13.1/14.8 → 50.6/48.1 →
+  18.2/18.7 s (1.3× the unchecked step); 400 largest full-v4 files `--jobs 1` (load 26–62)
+  3.1/2.7 → 18.0/24.3 → 4.5/4.0 s. Ablations on those 400 files: `wfDomOK g` was 23 of the 30 s
+  overhead; with it gone, the table diff + `frameOK` 3.7 s and `scanOK` 2.2 s (`--jobs 4`), then
+  `schedOK` about half of the rest; the table copy that keeping `f` costs is within noise (a
+  snapshot/in-place step would not pay here). What remains is `blockOK`'s per-block work.
+
 #### Rule lemmas: kernel "deep recursion" from `rfl` simp lemmas (#69, RuleProofs10)
 - **Problem:** `divmod.rules:171/180/206/232` and `generic.rules:369/372` elaborated, but the
   kernel rejected the theorem with "(kernel) deep recursion detected" as soon as the proof used
