@@ -286,8 +286,22 @@ structure CRule where
 def CRule.ofRule (r : Rule) : CRule :=
   { rule := r, vtys := (r.vars.map (·.ty)).toArray, unbound := Array.replicate r.vars.length .nil }
 
-/-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. -/
-def tryRule (v : ID) (cr : CRule) (idx : Nat) : RwM Bool := do
+/-- The values `rewriteStructLoad` built at `v` (`StructMake` of field `Load`s at `OffPtr`s),
+in the order `RewriteCheck.structLoadOK` reads them: per argument of `v` its `OffPtr` and
+itself. -/
+def structLoadDefs (f : Func) (v : ID) : Array Value :=
+  match f.value? v with
+  | some x => x.args.foldl (init := #[]) fun acc a =>
+      match f.value? a with
+      | some l => match l.args[0]?.bind f.value? with
+        | some o => (acc.push o).push l
+        | none => acc.push l
+      | none => acc
+  | none => #[]
+
+/-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. `slDefs`: log the
+values a struct-load expansion built (`structLoadDefs`) after `v`. -/
+def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) : RwM Bool := do
   let r := cr.rule
   let x ← val v
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
@@ -302,17 +316,19 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) : RwM Bool := do
     if (← get).log.isSome then
       let f ← getF
       let defs := (#[some v] ++ built).filterMap fun id => id.bind f.value?
+      let defs := if slDefs then defs ++ structLoadDefs f v else defs
       logEv fun _ => .rule v idx st.binds defs
     return true
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`; `nilChecks`/`loads`: the rule
 set's `nilChecks`/`loads`, tried on a `NilCheck`/`Load` after its row (their index continues
-the row's). -/
+the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`. -/
 structure Table where
   values : Array (Array CRule)
   blocks : Array (Array BlockRule)
   nilChecks : Array CRule := #[]
   loads : Array CRule := #[]
+  structLoads : Array CRule := #[]
 
 def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   let mut values : Array (Array CRule) := Array.replicate (Op.all.size + 1) #[]
@@ -322,7 +338,8 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   for (k, rs) in s.blocks do
     blocks := blocks.set! k.ctorIdx rs.toArray
   return { values, blocks, nilChecks := (s.nilChecks.map CRule.ofRule).toArray,
-           loads := (s.loads.map CRule.ofRule).toArray }
+           loads := (s.loads.map CRule.ofRule).toArray,
+           structLoads := (s.structLoads.map CRule.ofRule).toArray }
 
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
@@ -338,6 +355,9 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     let ls := t.loads
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + i) then return true
+    let ss := t.structLoads
+    for h : i in [0:ss.size] do
+      if ← tryRule v ss[i] (rs.size + ls.size + i) (slDefs := true) then return true
   return false
 
 /-! ## Block rules -/
