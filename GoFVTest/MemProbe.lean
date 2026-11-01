@@ -3,7 +3,7 @@ import GoFV.SSA.Check
 import GoFV.SSA.DomCert
 import GoFV.Opt.NilCheckRel
 import GoFV.Opt.DeadStoreCheck
-import GoFV.Opt.ElimDeadAutos
+import GoFV.Opt.DeadAutosCheck
 import GoFV.Opt.CSE
 
 /-!
@@ -174,6 +174,33 @@ def dseWhy (tabs : Tables) (f g : Func) : List String := Id.run do
 
 /-! ## dead auto elim -/
 
+/-- Why `DAE.arel` rejects `g` (each failing condition; `[]` if it accepts). -/
+def daeWhy (tabs : Tables) (f g : Func) : List String := Id.run do
+  let A := DAE.tagArr tabs f
+  let T := fun x => A.getD x none
+  let E := DAE.names f g T
+  let mut ws : List String := []
+  let add (ws : List String) (w : String) := if ws.contains w then ws else w :: ws
+  if DomCert.cfgView g != DomCert.cfgView f || g.ownAux != f.ownAux ||
+      g.valueTab.size != f.valueTab.size then ws := add ws "shape"
+  for n in E do
+    if !DAE.unforgeable tabs n then
+      ws := add ws (match tabs.aux? n with
+        | some { kind := .name _ _ _ _ _ fl _, .. } =>
+          if fl.opendeferslot then "opendeferslot" else "forgeable"
+        | _ => "not-a-name")
+  for b in f.blocks do
+    if !DAE.blockOK f g T E b then ws := add ws "control"
+    if !DSE.schedOK f g b then ws := add ws "roots"
+  for x in List.range f.valueTab.size do
+    let some fv := f.value? x | continue
+    if !DAE.valueOK f g T E x then ws := add ws "value"
+    if DAE.tagStep tabs T fv != T x then ws := add ws "tag"
+    if !DAE.usesOK f g T E x then
+      let el := (g.value? x).any (DAE.elimV fv ·)
+      ws := add ws s!"use-{fv.op.name}{if el then "-elim" else ""}"
+  return ws
+
 /-- The name an eliminated value of dead auto elim writes: `VarDef`'s aux, or the `LocalAddr`
 under the destination's `OffPtr`s. -/
 def elimName (f : Func) (v : Value) : Option AuxRef := Id.run do
@@ -216,6 +243,8 @@ def main (args : List String) : IO UInt32 := do
   let mut aKinds : Std.HashMap String Nat := {}
   let mut aNames : Std.HashMap String Nat := {}
   let mut aFnNoAddr := 0
+  let mut aAcc := 0
+  let mut aWhy : Std.HashMap String Nat := {}
   let mut aFnNoAddrNoCall := 0
   for path in files do
     let data ← IO.FS.readBinFile path
@@ -301,6 +330,10 @@ def main (args : List String) : IO UInt32 := do
                   if !names.contains n then names := n :: names
           if any then
             aChanged := aChanged + 1
+            if DAE.arel prev f g then aAcc := aAcc + 1
+            else
+              let ws := daeWhy prev f g
+              aWhy := bump aWhy (toString (ws.mergeSort (· ≤ ·)))
             let ops := (List.range f.valueTab.size).filterMap fun x => (f.value? x).map (·.op)
             let calls := ops.any (fun o => o == .StaticLECall || o == .StaticCall ||
               o == .ClosureLECall || o == .InterLECall || o == .TailLECall)
@@ -325,7 +358,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"dse: inputs {dInst}, changed {dChanged}, in fragment {dFrag}"
   IO.println s!"  eliminated stores, and rejected functions by reason: {show' dWhy}"
   IO.println s!"  changed functions outside the fragment, by their reasons: {show' dFn}"
-  IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, with calls {aCalls}, with Convert {aConv}"
+  IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, checker accepts {aAcc}, with calls {aCalls}, with Convert {aConv}"
+  IO.println s!"  changed functions outside the fragment, by their reasons: {show' aWhy}"
   IO.println s!"  eliminated values by op: {show' aKinds}"
   IO.println s!"  eliminated names by class/flags: {show' aNames}"
   IO.println s!"  changed functions eliminating no user addrtaken name (addrtaken, not autotmp): {aFnNoAddr}, of which without calls: {aFnNoAddrNoCall}"
