@@ -2200,19 +2200,25 @@ The decompose rules expand a `Load` of a builtin composite by a value rule
 (`(Load <t> ptr mem) && t.IsString() => (StringMake (Load …) (Load … (OffPtr …)))`), and a
 `Store` of that value is then split in place: as for the struct-load expansions, the split layer
 needs the expansion applied first. `ldPre` applies the log's value-rule events on `Load`s of the
-layer's input that the replay validates alone on its definitions (`v` redefined as logged, the
-fresh values put in: `slApply`), and the layer is related to its input by `validate` with those
-events alone. -/
+layer's input, and on one-argument values of a `Load` (the extractors `dec.rules:132`–`:162`,
+`(StringPtr x:(Load <t> ptr mem)) => @x.Block (Load …)`: the rewrite logs them before the `Load`'s
+own expansion, which would turn their argument into a `Make` they no longer match), that the
+replay validates alone on its definitions (`v` redefined as logged, the fresh values put in:
+`slApply`), and the layer is related to its input by `validate` with those events alone. -/
 
-/-- The `Load` `v` of `f` that the value-rule event `ev` rewrites and the logged definitions, if
-the replay validates `ev` alone on `f`'s definitions. -/
+/-- `u` is a `Load` of `f` or has one argument, a `Load` of `f`. -/
+def ldTarget (f : Func) (u : Value) : Bool :=
+  u.op == .Load || (u.args.size == 1 && (u.args[0]?.bind f.value?).any (·.op == .Load))
+
+/-- The value `v` of `f` (`ldTarget`) that the value-rule event `ev` rewrites and the logged
+definitions, if the replay validates `ev` alone on `f`'s definitions. -/
 def ldEvent? (t : Interp.Table) (tabs : Tables) (f : Func) (ev : RwEvent) :
     Option (ID × List Value) :=
   match ev with
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
-      if u.op == .Load && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 &&
+      if ldTarget f u && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 &&
           (replay tabs t f f.valueTab [] [ev]).isSome then
         some (v, match defs.toList with | w :: ds => w :: (ds.filter (·.id != v)).reverse | [] => [])
       else none
