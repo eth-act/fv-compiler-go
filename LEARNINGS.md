@@ -343,6 +343,25 @@ avoiding): the problem, the trick, the numbers, where it is used.
   r; dsimp only at h k` per step keeps it to a second; without the `dsimp` the pair `match`
   stays and the next `generalize` silently misses its target.
 
+#### Checked CFG passes: a slim input check instead of `check` (#147)
+- **Problem:** branchelim and early fuse ran the full `check` on their input only to get
+  `Dom.WFDom` (`WF` + `UseDom`). Most of `check` is facts these proofs never use: types, aux
+  kinds, block kinds, Go's dominator tree, loop nest, use counts, `memCheck`, argument shapes.
+- **Trick:** `GoFV.SSA.wfDomCheck` = `wfCheck` (`checkGo`'s structural loops, one per-value
+  shape test `WFCheck.valueOK`: arity, `Phi` arity, `Bool` auxint, block) then
+  `DomCert.check`; `wfDomCheck_wf`, `Dom.WFDom.of_wfDomCheck` (UseDom through the shared core
+  `Dom.use_dominated_of`/`UseDom.of_cert`). The `checkGo_wf` proof carries over almost
+  verbatim (same `Loop1`/`Loop2` invariants, `valueOK_spec` instead of `checkValue_ok`).
+- **Effect** (`lake exe check-bench`, all sections, accepted by both): quick-v1 306,801
+  sections, `check` 14.7 s → `wfDomCheck` 3.3 s (`wfCheck` 1.1 s, `DomCert.check` 2.2 s of
+  which `DomCert.make` 1.1 s); full-v2 3,185,523 sections, 369 s → 85 s. Pass time
+  (`pass-parity`, old/new binaries alternated, two rounds, load 29–61): early fuse full-v2
+  14.9/23.6 s → 8.4/12.1 s, quick 0.8/0.6 → 0.3/0.3 s; branchelim full-v2 11.0/15.3 s →
+  6.8/8.9 s, quick 0.6/0.5 → 0.2/0.2 s. Parity 100% on both corpora.
+- **What is left:** `DomCert.make` (Lengauer–Tarjan + postorder on a `cfgView` copy) is half of
+  the slim check; its proofs rely on `make f = ofView (cfgView f)` (`make_eq` across functions
+  with the same CFG), so speeding it up needs a `@[csimp]` lemma, not a new definition.
+
 #### Rule lemmas: kernel "deep recursion" from `rfl` simp lemmas (#69, RuleProofs10)
 - **Problem:** `divmod.rules:171/180/206/232` and `generic.rules:369/372` elaborated, but the
   kernel rejected the theorem with "(kernel) deep recursion detected" as soon as the proof used

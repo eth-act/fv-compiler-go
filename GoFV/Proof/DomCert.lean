@@ -320,10 +320,10 @@ theorem Reach.dom {ce : CheckEnv} {f : Func} (hwf : WF ce f) (hc : CertOK f) {b 
     · subst hae; exact List.mem_cons_self
     · exact List.mem_cons_of_mem _ (hl a (Anc.trans hc.parents (ha.up hc.parents hae) h3))
 
-/-- **Use dominance.** On every path from the entry to a block `b`, the block of every value
-that a non-`Phi` value or a control of `b` uses occurs; for argument `i` of a `Phi`, it occurs
-on every path to predecessor `i`. -/
-theorem use_dominated {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) {b : ID}
+/-- **Use dominance** of a well-formed function with a passing certificate. On every path from
+the entry to a block `b`, the block of every value that a non-`Phi` value or a control of `b`
+uses occurs; for argument `i` of a `Phi`, it occurs on every path to predecessor `i`. -/
+theorem use_dominated_of {ce : CheckEnv} {f : Func} (hwf : WF ce f) (hc : CertOK f) {b : ID}
     {blk : Block} (hbm : b ∈ f.blocks) (hb : f.block? b = some blk) :
     (∀ l, Reach f b l → ∀ vid ∈ blk.values, ∀ v, f.value? vid = some v → v.op ≠ .Phi →
       ∀ a ∈ v.args, blockOf f a ∈ l) ∧
@@ -331,8 +331,6 @@ theorem use_dominated {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) {b : 
     (∀ vid ∈ blk.values, ∀ v, f.value? vid = some v → v.op = .Phi →
       ∀ (i : Nat) (a : ID) (e : Edge) (l : List ID), v.args[i]? = some a →
         blk.preds[i]? = some e → Reach f e.b l → blockOf f a ∈ l) := by
-  have hwf := check_wf h
-  have hc := certOK_of_check (check_domCert h)
   refine ⟨fun l hr vid hv v hvv hphi a ha => ?_, fun l hr x hx => ?_,
     fun vid hv v hvv hphi i a e l ha he hr => ?_⟩
   · obtain ⟨hm, ht, hl⟩ := hr.dom hwf hc
@@ -344,5 +342,16 @@ theorem use_dominated {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) {b : 
     obtain ⟨hm, ht, -⟩ := hrb.dom hwf hc
     obtain ⟨hpm, hpt, hl⟩ := hr.dom hwf hc
     exact hl _ (phiUse hc hm hb ht hv hvv hphi ha he hpt)
+
+/-- **Use dominance** of a function that passes `check` (`use_dominated_of`). -/
+theorem use_dominated {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) {b : ID}
+    {blk : Block} (hbm : b ∈ f.blocks) (hb : f.block? b = some blk) :
+    (∀ l, Reach f b l → ∀ vid ∈ blk.values, ∀ v, f.value? vid = some v → v.op ≠ .Phi →
+      ∀ a ∈ v.args, blockOf f a ∈ l) ∧
+    (∀ l, Reach f b l → ∀ x ∈ blk.controls, blockOf f x ∈ l) ∧
+    (∀ vid ∈ blk.values, ∀ v, f.value? vid = some v → v.op = .Phi →
+      ∀ (i : Nat) (a : ID) (e : Edge) (l : List ID), v.args[i]? = some a →
+        blk.preds[i]? = some e → Reach f e.b l → blockOf f a ∈ l) :=
+  use_dominated_of (check_wf h) (certOK_of_check (check_domCert h)) hbm hb
 
 end GoFV.Proof.Dom

@@ -6,9 +6,10 @@ import GoFV.Opt.Fuse
 /-!
 # early fuse refines its input
 
-`fuseEarly_refines`: the output of `fuseEarlyPass` refines its input. The pass runs `check` on
-its input once (a failing input is returned unchanged) and then the fuse driver with the early
-per-block step, whose four rewrites are each checked: three comparison fusions
+`fuseEarly_refines`: the output of `fuseEarlyPass` refines its input. The pass runs the slim
+input check `wfDomCheck` once (`Dom.WFDom.of_wfDomCheck`; a failing input is returned
+unchanged) and then the fuse driver with the early per-block step, whose four rewrites are each
+checked: three comparison fusions
 (`fuseComparisonsChecked_refines`) and plain fusion (`fuseBlockPlainChecked_refines`), each
 keeping `WFDom` (`earlyStep_ok`). The driver keeps refinement and `WFDom` for any such step
 (`Fuse.fuseLoop_refines`).
@@ -59,7 +60,7 @@ theorem fuseEarly_refines {penv : PassEnv} {f : Func} {out : PassOut}
   | ok tv =>
     rw [htv] at h
     simp only at h
-    cases hg : fuseEarly { tabs := penv.tables, typs := penv.typs } tv f with
+    cases hg : fuseEarly tv f with
     | error e => rw [hg] at h; cases h
     | ok g =>
       rw [hg] at h
@@ -68,14 +69,15 @@ theorem fuseEarly_refines {penv : PassEnv} {f : Func} {out : PassOut}
       split at hg
       · cases hg; exact Refines.refl _ _
       · rename_i hck
-        have hck' : checkOK { tabs := penv.tables, typs := penv.typs } f = true := by
+        have hck' : wfDomOK f = true := by
           simpa using hck
         unfold orInput at hg
         split at hg
         · rename_i g' hl
           cases hg
           exact (Fuse.fuseLoop_refines (earlyStep_ok tv.isMem) Fuse.finalOK_none hl
-            (WFDom.of_check (checkOK_sound hck'))).1
+            (WFDom.of_wfDomCheck (ce := { tabs := penv.tables, typs := penv.typs })
+              (wfDomOK_sound hck'))).1
         · cases hg; exact Refines.refl _ _
 
 end GoFV.Proof.FuseEarly

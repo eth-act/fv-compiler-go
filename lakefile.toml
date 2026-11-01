@@ -122,3 +122,7 @@ root = "GoFVTest.SccpProbe"
 [[lean_exe]]
 name = "shortcirc-probe"
 root = "GoFVTest.ShortCircProbe"
+
+[[lean_exe]]
+name = "check-bench"
+root = "GoFVTest.CheckBench"

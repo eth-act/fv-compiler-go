@@ -259,10 +259,9 @@ def branchelim (env : PassEnv) (f : Func) : Except String Func := do
   if !(← env.flag "havecondselect") then return f
   let (po, f) := f.postorder
   let c ← ctxOf env f po
-  let ce : CheckEnv := { tabs := env.tables, typs := env.typs }
-  -- the step checker's proof assumes a checked input (every corpus input passes); the
-  -- rewrites keep well-formedness and use dominance, so no intermediate function is checked
-  if !checkOK ce f then return f
+  -- the step checker's proof assumes a well-formed input with dominated uses (`wfDomCheck`;
+  -- every corpus input passes); the rewrites keep both, so no intermediate function is checked
+  if !wfDomOK f then return f
   -- each successful rewrite clobbers at least one block of `f.Blocks`
   rounds c (f.blocks.size + 1) f
 

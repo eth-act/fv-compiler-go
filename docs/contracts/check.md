@@ -102,6 +102,14 @@ and the semantics' "a use reads its definition's latest activation", §3.6 of
   (`Phi` argument `i`: of predecessor `i`, if that is a tree block). It never rejects what Go
   accepts (corpus result above). It certifies soundness (ancestors lie on every path:
   `GoFV.Proof.Dom.use_dominated`), not that the tree is the complete dominator tree.
+- **Slim input check** (#147): a proof that needs only the IR-integrity facts above (without
+  free lists and use counts), arity, `Phi` arity, `Bool` auxints and dominance (`WF` +
+  `UseDom` = `Dom.WFDom`) can guard on `GoFV.SSA.wfDomCheck f` instead: `checkGo`'s structural
+  loops (`wfCheck`, per value `WFCheck.valueOK`) and `DomCert.check`, no types/aux kinds/block
+  kinds, Go dominator tree, loop nest, use counts, `memCheck` or argument shapes.
+  `GoFV.Proof.wfDomCheck_wf`, `GoFV.Proof.Dom.WFDom.of_wfDomCheck`. Used by branchelim and early
+  fuse (`wfDomOK`); quick-v1: accepts all 306,801 sections, 3.7 s vs 15.7 s for `check`
+  (`lake exe check-bench`).
 
 **Memory** (P2 proofs: dse, memcombine, writebarrier, nilcheckelim; the semantics' single
 memory chain):
