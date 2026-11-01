@@ -103,7 +103,7 @@ attribute [rule_unfold_s] GoFV.Proof.Rules.callH GoFV.Proof.Rules.binE_land_bool
   reduceCtorEq true_or or_true and_true true_and beq_self_eq_true Bool.cond_false Bool.cond_true
   GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo
 
-attribute [rule_close_s] Nat.reduceLeDiff Nat.reducePow Nat.reduceLT ite_true ite_false
+attribute [rule_close_s] GoFV.Proof.Rules.reduceIntInfo Option.getD_some Nat.reduceLeDiff Nat.reducePow Nat.reduceLT ite_true ite_false
   BitVec.ofInt_add BitVec.ofInt_mul BitVec.ofInt_neg BitVec.ofInt_ofNat Nat.le_refl
   GoFV.SSA.Sem.Width.bits GoFV.Proof.Rules.DV.int.injEq GoFV.Proof.Rules.DV.bool.injEq
 
@@ -292,6 +292,10 @@ macro "rule_close" : tactic => `(tactic| (
   | rule_rot
   | ((try simp only [GoFV.Proof.Rules.bv_not_eq, GoFV.Proof.Rules.bv_shl_nat, Nat.reducePow] at *)
      grind)
+  | ((try simp only [rule_bits] at *)
+     ext i hi
+     simp
+     done)
   | ((try simp only [rule_bv, Nat.reducePow, Nat.reduceLT] at *)
      bv_decide (config := { enums := false, structures := false }))))
 
@@ -305,5 +309,13 @@ macro "rule_auto" : tactic => `(tactic| (
   all_goals (repeat rule_split1)
   all_goals (try rule_widths)
   all_goals rule_close))
+
+-- The congruence equations of the `match`es `simp` meets in the rule lemmas, generated here
+-- once: generated in two rule modules they are two public declarations of the same name, and
+-- the modules cannot be imported together (`scripts/rule-proofs.py axioms` imports all).
+run_meta do
+  for n in [``Option.getD.match_1, ``GoFV.Proof.Rules.binDV.match_4,
+      ``GoFV.Proof.Rules.fieldDV.match_1] do
+    discard <| Lean.Meta.Match.genMatchCongrEqns n
 
 end GoFV.Proof.Rules

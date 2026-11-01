@@ -99,6 +99,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
   congruence chains over the unfolded denotation: 1–3 k distinct subterms per plain rule,
   7–11 k per rotate rule, ~25 bytes each; `probe` prints the count per rule).
 
+#### Generate `match` congruence equations upstream, or sibling modules cannot be imported together
+- **Problem:** `simp` in a rule-lemma module generated `binDV.match_4.congr_eq_*`,
+  `fieldDV.match_1.congr_eq_*` and `Option.getD.match_1.congr_eq_*` (plus `_sparseCasesOn_*`)
+  as *public* constants of that module. `Eq.lean` and `Eq2.lean` both did, and a file importing
+  both failed: `environment already contains 'GoFV.Proof.Rules.fieldDV.match_1.congr_eq_1…'`.
+  Each module builds fine alone, so only an importer of both notices.
+- **Trick:** generate them once in the shared upstream module (`Tactic.lean`):
+  `run_meta for n in [``binDV.match_4, …] do discard <| Lean.Meta.Match.genMatchCongrEqns n`.
+  Check: read every `.olean`'s `constNames` and report public names defined twice
+  (`scripts/rule-proofs.py axioms` imports all rule modules, which fails on such a clash).
+- **Effect:** 35 rule modules import together; no rebuild cost.
+
 #### Keep a fuel-recursive loop's body in small non-recursive `@[inline]` parts
 - **Problem:** `GoFV.Util.PdqSort.pdqsort` (fuel recursion, a ~30-line loop body with tuple
   `let`s and four recursive calls) took 11.6 s CPU to build, almost all of it `simp`/`split`/
