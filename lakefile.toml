@@ -90,3 +90,7 @@ root = "GoFVTest.FuseProbe"
 [[lean_exe]]
 name = "mem-probe"
 root = "GoFVTest.MemProbe"
+
+[[lean_exe]]
+name = "rule-fire-probe"
+root = "GoFVTest.RuleFireProbe"
