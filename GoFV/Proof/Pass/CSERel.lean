@@ -173,7 +173,7 @@ theorem crel_sound {tabs : Tables} {f g : Func} {rw : Array (Option ID)}
       · left; rw [← getElem!_pos gb.controls k hkg, h1, hc']
       · right; rw [← getElem!_pos gb.controls k hkg, h1, hc']
   · have := hval x (lt_of_value? hfv)
-    unfold valueOK at this
+    unfold GoFV.Opt.CSE.valueOK at this
     rw [hfv] at this
     cases hgv : g.value? x with
     | none => rw [hgv] at this; cases this

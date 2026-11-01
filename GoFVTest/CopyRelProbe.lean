@@ -3,6 +3,7 @@ import GoFV.SSA.Check
 import GoFV.Opt.CopyElim
 import GoFV.SSA.Sem.Run
 import GoFV.Proof.Pass.CopyFrag
+import Std.Data.HashSet
 
 open GoFV.SSA GoFV.Opt GoFV.SSA.DomCert
 deriving instance BEq for GoFV.SSA.Sem.Ty
