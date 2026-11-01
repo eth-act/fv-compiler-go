@@ -68,6 +68,34 @@ def memKind (f : Func) (fx fr : Value) : String :=
       "mem-selectn-root"
     else s!"mem-{m.op.name}"
 
+
+/-- Why `memEnd` stops at def `d` that Go's `getEffectiveMemoryArg` skips for a load at `p`. -/
+def stopRule (c : CSE.Ctx) (f : Func) (p : ID) (d : ID) : String :=
+  let x := f.getV d
+  match x.op with
+  | .VarDef => "VarDef"
+  | .Store | .Zero =>
+    let q := x.args[0]!
+    if (GoFV.Rules.Ptr.disjointTypes c.tabs c.ptrSize (f.getV q).type (f.getV p).type).toOption
+        == some true then "types"
+    else
+      let (b1, _) := GoFV.Rules.Ptr.baseAndOffset f GoFV.Rules.Ptr.fuel0 q 0
+      let (b2, _) := GoFV.Rules.Ptr.baseAndOffset f GoFV.Rules.Ptr.fuel0 p 0
+      s!"other:{(f.getV b1).op.name}/{(f.getV b2).op.name}"
+  | op => s!"other:{op.name}"
+
+/-- The reasons a `Load` merge `x ↦ r` leaves the fragment (`memEnd` stops before Go's def). -/
+def fragReasons (c : CSE.Ctx) (f : Func) (x r : ID) : List String := Id.run do
+  let fx := f.getV x
+  let fr := f.getV r
+  let p := fx.args[0]!
+  let mut out := []
+  for (y, m) in [(x, fx.args[1]!), (r, fr.args[1]!)] do
+    let d := memEnd c.tabs f p fx.type m
+    let e := ((effectiveMemoryArg c f y).toOption.map (·.1)).getD m
+    if d != e then out := stopRule c f p d :: out
+  return out
+
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
   for a in args do
@@ -87,6 +115,8 @@ def main (args : List String) : IO UInt32 := do
   let mut fragWhys : Std.HashMap String Nat := {}
   let mut loadWhys : Std.HashMap String Nat := {}
   let mut memKinds : Std.HashMap String Nat := {}
+  let mut stopRules : Std.HashMap String Nat := {}
+  let mut fnReasons : Std.HashMap String Nat := {}
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok e := parseExport data | continue
@@ -117,6 +147,7 @@ def main (args : List String) : IO UInt32 := do
         let n := (rw.filter (·.isSome)).size
         substs := substs + n
         if n > 0 then changed := changed + 1
+        let mut fnR : List String := []
         for x in List.range rw.size do
           if let some r := rw.getD x none then
             if let (some fx, some fr, some gx, some gr) :=
@@ -125,6 +156,11 @@ def main (args : List String) : IO UInt32 := do
                 let w := whyLoad prev rw f fx fr
                 loadWhys := bump loadWhys w
                 if w == "ok" then memKinds := bump memKinds (memKind f fx fr)
+                if w == "memEnd-differs" then
+                  for rl in fragReasons c f x r do
+                    stopRules := bump stopRules rl
+                    let key := if rl.startsWith "other" then "other" else rl
+                    if !fnR.contains key then fnR := key :: fnR
         if !crel prev false f g rw then
           rejected := rejected + 1
           let w := why prev false f g rw
@@ -134,6 +170,7 @@ def main (args : List String) : IO UInt32 := do
             shown := shown + 1
         else if !crel prev true f g rw then
           outFrag := outFrag + 1
+          fnReasons := bump fnReasons (toString (fnR.mergeSort (· ≤ ·)))
           let w := why prev true f g rw
           fragWhys := bump fragWhys ((w.splitOn " ").head! ++ " " ++ ((w.splitOn " ").getLast!))
   IO.println s!"generic cse inputs {inst} (failing check {unchecked}, errors {errs}): cse changes {changed} ({substs} substitutions), checker rejects {rejected}, outside the fragment {outFrag}"
@@ -141,6 +178,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"outside the fragment by first failing condition: {fragWhys.toList}"
   IO.println s!"Load merges through different memory, by loadOK outcome: {loadWhys.toList}"
   IO.println s!"loadOK merges by the representative's memory argument: {memKinds.toList}"
+  IO.println s!"memEnd-differs merges: Go skips memEnd does not, by rule: {stopRules.toList}"
+  IO.println s!"functions outside the fragment by the rules they need: {fnReasons.toList}"
   return 0
 
 end GoFVTest.CseProbe
