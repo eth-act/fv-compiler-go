@@ -158,6 +158,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (`scripts/rule-proofs.py axioms` imports all rule modules, which fails on such a clash).
 - **Effect:** 35 rule modules import together; no rebuild cost.
 
+#### Audit axioms in one process over all proof modules, not one process per module
+- **Measured** (4.34.1, 271 `GoFV/Proof` modules, all built): `scripts/axioms-audit.sh` with one
+  `lean` per module (`xargs -P4`) took 118 s wall, 18 min CPU. One `lean` importing all of them
+  took 2.5 s wall: the per-module cost was the import, and since 4.34 `collectAxioms` reads
+  imported constants' axioms from a precomputed extension instead of walking their bodies.
+  Same axioms reported. It counts 11037 theorems instead of 11346: the auxiliary lemmas that
+  several modules realize independently (`f.eq_1`, `f.eq_def`, `_sparseCasesOn_N.else_eq`,
+  `congr_simp`) are one constant in the joint environment. These do not clash on import; plain
+  declarations (and the `match_N.congr_eq_*` of the entry above) do.
+- **Requires:** all proof modules import together (issue #133). The nightly gate's `allproof`
+  step builds `GoFVTest/Proof/AllProof.lean` (`scripts/gen-allproof.sh`) to keep it so.
+
 #### `first | … | …` does not catch maximum recursion or heartbeats
 - **Problem:** six `Trunc` rule lemmas (`(Trunc16to8 (And16 (Const16 [y]) x)) && y&0xFF ==
   0xFF`) failed with "maximum recursion depth" although the alternative that hit it

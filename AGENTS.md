@@ -23,6 +23,9 @@
 - Merge: the author merges. Once the per-PR checks pass (build of affected modules,
   parity on the corpus for touched passes, `#print axioms` of new theorems), rebase on
   origin/main, open the PR with the check results in its body and `gh pr merge --squash`.
+- All `GoFV/Proof` modules import together (no name declared twice; docs/GATE.md `allproof`).
+  A PR that adds or removes one reruns `scripts/gen-allproof.sh` and builds
+  `GoFVTest.Proof.AllProof`; shared helpers go into a common module, local ones are `private`.
 - No `sorry`, no new axioms on main. Every new top-level theorem gets a concrete non-vacuity
   witness. Generated files say which tool generated them; never hand-edit them.
 - When a change makes a build measurably faster or slower, add an entry to `LEARNINGS.md`.
