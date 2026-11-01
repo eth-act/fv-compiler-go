@@ -323,10 +323,19 @@ def schedScan (pos : ID → Nat) (root : ID → Bool) : Option Nat → List ID �
   | m, r :: rest =>
     (!root r || m.all (· < pos r)) && schedScan pos root (some (max (m.getD 0) (pos r))) rest
 
+/-- Two lists of schedule nodes alike. -/
+def sameSNodes : List Sem.SNode → List Sem.SNode → Bool
+  | [], [] => true
+  | x :: xs, y :: ys => x.id == y.id && x.args == y.args && x.prio == y.prio && sameSNodes xs ys
+  | _, _ => false
+
 /-- Every source non-`Phi` the target's schedule lists before a source root (a non-pure
 non-`Phi`), the source's schedule lists before it too: if the source panics at a root, the
-target has evaluated only values the source evaluated. -/
+target has evaluated only values the source evaluated. Blocks whose schedule nodes are
+unchanged have the same schedule; the schedules (tables of the size of the largest value ID)
+are computed only for the others. -/
 def schedOK : Bool :=
+  sameSNodes (Sem.schedNodes g gB).toList (Sem.schedNodes f fB).toList ||
   match Sem.schedule f fB, Sem.schedule g gB with
   | some oS, some oT =>
     schedScan (oS.toList.idxOf ·) (fun r => Sem.prio (f.getV r).op != 0) none
