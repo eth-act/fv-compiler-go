@@ -245,6 +245,10 @@ example : evals .Add64F [.i64 0x7FF8000000000001, .i64 0x7FF8000000000002] (.i64
   decide +kernel
 example : evals .Sub64F [.i64 0x7FF8000000000002, .i64 0x7FF8000000000001] (.i64 0x7FF8000000000002) := by
   decide +kernel
+-- `FOps.ordered_comm` at two different NaNs
+example : FOps.ordered (GoFV.IEEE.add .b64 .rne) 0x7FF8000000000002#64 0x7FF8000000000001#64 =
+    FOps.ordered (GoFV.IEEE.add .b64 .rne) 0x7FF8000000000001#64 0x7FF8000000000002#64 :=
+  FOps.ordered_comm _ _ _
 -- a signalling NaN wins over a quiet one in either order (quietened)
 example : evals .Mul32F [.i32 0x7FC00005, .i32 0xFF800001] (.i32 0xFFC00001) := by decide +kernel
 -- sqrt(2) in float32; ill-typed arguments are poison

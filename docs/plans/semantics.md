@@ -710,6 +710,14 @@ extremes, integer-conversion boundaries, ties). Results: #10.
   and from every section after `opt`); the rule proofs must list it as false (or take
   "`x` is not NaN"). `cse`'s argument sorting of commutative float ops is the other such
   optimisation; the semantics absorbs it (§4.6).
+- **`VarDef` and `generic.rules:2159`** (found by P4: the floats made `test/gcgort.newStructT`
+  defined): `(Zero [s] p (VarDef {x} (Zero [s] p _)))` → the `VarDef` drops the second `Zero`,
+  i.e. assumes `VarDef` keeps the variable's contents, while the semantics makes `VarDef`
+  re-poison the variable (§3.4: "about to be initialised"; stack slots are merged across
+  disjoint live ranges, which start at `VarDef`). Under the semantics the rule is not a
+  refinement (the target returns poison: a gap in `sem-difftest corpus`); the rule proofs must
+  list it as false. Natively the two `Zero`s are adjacent on the memory chain, so nothing can
+  clobber the slot in between.
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
   `SlicePtr` as non-nil, but `EqSlice` (`generic.rules:792`) shows it is used on nil slices.
@@ -734,6 +742,13 @@ extremes, integer-conversion boundaries, ties). Results: #10.
   such a gap in 7 runtime functions: `(*bitvector).ptrbit`, `bitCursor.write`, `dumpbv`
   above, and `argv_index`, `getGodebugEarly`, `goenvs_unix`, `sysargs`, whose section 0 now
   panics in the check of `nil + k`.
+  **Decided (#23, P4): accesses into `Blk.nil` do not panic.** A panicking `Load` would not be
+  pure (Go's `deadcode`/`cse`/speculation delete, merge and hoist loads; only `NilCheck` panics
+  in generic SSA), and it would not make `nilcheckelim`'s `If (IsNonNil p)` edge fact sound:
+  for `p = nil + k` the check panics while `IsNonNil p` holds, and without the check the panic
+  moves past intervening roots or disappears. The edge fact needs "no pointer into `Blk.nil`
+  but nil": a hypothesis, or a pointer model whose `Blk.nil` holds only nil (arithmetic leaving
+  offset 0 and nonzero integer addresses below 2^40 are `poison`), offered on #23.
 - Tie-break of §3.6 step 3: `writebarrier`'s `storeOrder` and the post-lower scheduler order
   `NilCheck`s by position with an unstable sort (see `docs/PASSES.md`, writebarrier); the
   semantics' choice (NilChecks first) must match the order the final code panics in for the

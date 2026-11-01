@@ -203,4 +203,8 @@ example (env : Env) (ctx : Ctx) (fr : Frame) (ty : Ty) (argv : List Val) :
 
 example : Op.argLen .ArgIntReg = 0 := argLen_zero_of_arg (.inr rfl)
 
+example (env : Env) (ctx : Ctx) (fr : Frame) (ty : Ty) :
+    evalOp env ctx fr (mkValue .ArgFloatReg) [] ty = .ok (argFloat ctx fr (mkValue .ArgFloatReg) ty) :=
+  evalOp_argFloat rfl
+
 end GoFV.Proof.CSE

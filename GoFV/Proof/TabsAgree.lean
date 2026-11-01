@@ -137,12 +137,24 @@ theorem frameVal_tabs (h : AuxAgree ctx.tabs tabs' v.aux) :
   unfold frameVal
   rw [h.lookup, hl]
 
+theorem argFloat_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (fr : Frame) (ty : Ty) :
+    argFloat { ctx with tabs := tabs' } fr v ty = argFloat ctx fr v ty := by
+  unfold argFloat
+  rw [h.lookup]
+  rfl
+
 theorem evalOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (fr : Frame)
     (argv : List Val) (ty : Ty) :
     evalOp env { ctx with tabs := tabs' } fr v argv ty = evalOp env ctx fr v argv ty := by
   have ha : argVal { ctx with tabs := tabs' } fr = argVal ctx fr := rfl
   unfold evalOp
-  rw [callOp_tabs h, memRoot_tabs h, frameVal_tabs h, ha, h.lookup]
+  rw [callOp_tabs h, memRoot_tabs h, frameVal_tabs h, argFloat_tabs h, ha, h.lookup]
+
+/-- `argFloat_tabs` applies (an aux-less value agrees in any tables). -/
+example (ctx : Ctx) (tabs' : Tables) (fr : Frame) (ty : Ty) :
+    argFloat { ctx with tabs := tabs' } fr { (default : Value) with aux := none } ty =
+      argFloat ctx fr { (default : Value) with aux := none } ty :=
+  argFloat_tabs (AuxAgree.none _ _) fr ty
 
 theorem evalValue_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (fr : Frame) :
     evalValue env { ctx with tabs := tabs' } fr v = evalValue env ctx fr v := by
