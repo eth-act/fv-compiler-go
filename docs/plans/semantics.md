@@ -190,8 +190,9 @@ executable `Mem` can use a `Std.HashMap` per allocation with a `@[csimp]`-free f
   observable through provenance.
 - **Auto contents**: initially `poison` bytes. `VarDef {n} mem` resets the bytes of `n` to
   `poison` (the variable is "about to be initialised", gO 562); this is what lets `dse` drop
-  stores shadowed by a `VarDef` (`deadstore.go:54,282`). `VarLive`, `KeepAlive`, `WBend`,
-  `PubBarrier`, `PrefetchCache*` are the identity on memory (`KeepAlive` still forces arg 0).
+  stores shadowed by a `VarDef` (`deadstore.go:54,282`). `VarLive`, `KeepAlive`,
+  `PubBarrier`, `PrefetchCache*` are the identity on memory (`KeepAlive` still forces arg 0);
+  `WBend` frees the write-barrier buffer (§9.6).
 - **Heap**: only runtime contracts allocate (`newobject`, `makeslice`, `growslice`, …; §5),
   zeroed.
 - **Access rule** (as clifv): a load/store of `n` bytes at `⟨a, off⟩` is valid iff allocation
@@ -441,8 +442,8 @@ produce): `runtime.newobject`, `makeslice`, `growslice`, `memmove`, `typedmemmov
 `memclrNoHeapPointers`, `memequal*`, `concatstrings`/`slicebytetostring`/
 `stringtoslicebyte`, `convT*`, panicking entry points (`panicdivide`, `panicshift`,
 `panicwrap`, `panicnildottype`, `panicdottype*`, `gopanic`, `panicmem`: `panicked`),
-`gcWriteBarrier` (the `WB` op: returns a pointer to a fresh buffer allocation, memory
-otherwise unchanged), `wbZero`/`wbMove` (no memory effect besides the buffer), `goschedguarded`
+`gcWriteBarrier` (the `WB` op: a pure op that allocates the write-barrier buffer `Blk.wbuf`,
+§9.6), `wbZero`/`wbMove` (no memory effect), `goschedguarded`
 (identity; only with `GOEXPERIMENT=preemptibleloops`). Maps, channels, goroutines, `select`,
 reflection: `stuck` (no contract) until needed. `GetG` returns a pointer to an opaque `g`
 allocation owned by the environment.
@@ -1107,8 +1108,8 @@ against Go's own evaluation).
 | StoreWB | 407 | 3 | Typ | Mem |  | mem | P3 | 0 | as Store/Move/Zero (write barrier is GC-only) (§3.4) |
 | MoveWB | 408 | 3 | TypSize | Mem |  | mem | P3 | 0 | as Store/Move/Zero (write barrier is GC-only) (§3.4) |
 | ZeroWB | 409 | 2 | TypSize | Mem |  | mem | P3 | 0 | as Store/Move/Zero (write barrier is GC-only) (§3.4) |
-| WBend | 410 | 1 |  | Mem |  | mem | P3 | 0 | identity on mem |
-| WB | 416 | 1 | Int64 | (BytePtr,Mem) |  | mem | P3 | 0 | runtime write-barrier buffer: Env contract (§5) |
+| WBend | 410 | 1 |  | Mem |  | mem | P3 | 0 | frees the write-barrier buffer `Blk.wbuf` (§9.6) |
+| WB | 416 | 1 | Int64 | (BytePtr,Mem) |  | mem | P3 | 0 | pure: (`⟨wbuf,0⟩`, mem with a fresh poison buffer of 8·auxint bytes) (§9.6) |
 | HasCPUFeature | 418 | 0 | Sym | bool |  | pure | P5 | 0 | reads runtime feature flag: Env (P5) |
 | PanicBounds | 425 | 3 | Int64 | Mem | call | call | P1 | 0 | outcome panicked(bounds kind=auxint, idx, len) (§6) |
 | PanicExtend | 426 | 4 | Int64 | Mem | call | call | 32b | 0 | 32-bit only; as PanicBounds with 64-bit index |
