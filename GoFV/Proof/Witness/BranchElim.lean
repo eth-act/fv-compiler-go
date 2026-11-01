@@ -46,7 +46,7 @@ theorem branchelim_witness :
   | ok out =>
     rw [hp] at h1
     simp only [Bool.and_eq_true, decide_eq_true_eq] at h1
-    obtain ⟨fuel, h⟩ := Refines.returned_int (branchelim_refines hp) hm
-    exact ⟨out, rfl, h1.1.1, fuel, m, h⟩
+    obtain ⟨fuel, m', h⟩ := Refines.returned_int (branchelim_refines hp) hm
+    exact ⟨out, rfl, h1.1.1, fuel, m', h⟩
 
 end GoFV.Proof.Witness

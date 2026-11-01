@@ -189,13 +189,14 @@ theorem AllocsRefine.refl : (l : List (Blk × Alloc)) → AllocsRefine l l
   | [] => .nil
   | (b, a) :: l => .cons b ⟨rfl, BytesRefine.refl _⟩ (AllocsRefine.refl l)
 
-/-- Memory refinement (§3.5): the same allocations (blocks, order, sizes, writability) and heap
-counter, every byte refined. -/
+/-- Memory refinement (§3.5): the same allocations (blocks, order, sizes, writability), heap
+counter and activation counter, every byte refined. -/
 structure Mem.Refines (m m' : Mem) : Prop where
   nextHeap : m.nextHeap = m'.nextHeap
+  nextAct : m.nextAct = m'.nextAct
   blocks : AllocsRefine m.blocks.toList m'.blocks.toList
 
-theorem Mem.Refines.refl (m : Mem) : Mem.Refines m m := ⟨rfl, AllocsRefine.refl _⟩
+theorem Mem.Refines.refl (m : Mem) : Mem.Refines m m := ⟨rfl, rfl, AllocsRefine.refl _⟩
 
 mutual
 /-- Refinement (§3.5): `Refines src tgt` iff `src` is `poison` or `src = tgt`, pointwise through

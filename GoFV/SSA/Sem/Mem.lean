@@ -103,6 +103,15 @@ def poisonBlock (m : Mem) (b : Blk) : Mem :=
 and which frame variables existed is not observable). -/
 def free (m : Mem) (b : Blk) : Mem := { m with blocks := m.blocks.filter (·.1 != b) }
 
+/-- `m` without the frames of activation `act` and of every later one (`Blk.local a _`,
+`Blk.outargs a` with `a ≥ act`): the memory a panic of the activation `act` is compared by
+(the frames of the panicking run and of its callees are not observable; the caller's frames,
+which have smaller activation numbers, and the heap and globals are). -/
+def dropFrames (act : Nat) (m : Mem) : Mem :=
+  { m with blocks := m.blocks.filter fun (b, _) => match b with
+    | .local a _ | .outargs a => decide (a < act)
+    | _ => true }
+
 end Mem
 
 /-! ## Encoding and decoding -/

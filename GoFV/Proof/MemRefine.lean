@@ -123,7 +123,8 @@ theorem AllocsRefine.trans : {a b c : List (Blk × Alloc)} → AllocsRefine a b 
   | _, _, _, .cons _ h1 t1, .cons _ h2 t2 => .cons _ (h1.trans h2) (AllocsRefine.trans t1 t2)
 
 theorem Mem.Refines.trans {a b c : Mem} (h1 : Mem.Refines a b) (h2 : Mem.Refines b c) :
-    Mem.Refines a c := ⟨h1.nextHeap.trans h2.nextHeap, h1.blocks.trans h2.blocks⟩
+    Mem.Refines a c :=
+  ⟨h1.nextHeap.trans h2.nextHeap, h1.nextAct.trans h2.nextAct, h1.blocks.trans h2.blocks⟩
 
 theorem AllocsRefine.keys : {l l' : List (Blk × Alloc)} → AllocsRefine l l' →
     l.map (·.1) = l'.map (·.1)
@@ -183,9 +184,9 @@ theorem find?_some (h : Mem.Refines m m') {b : Blk} {a : Alloc} (ha : m.find? b 
 
 theorem set (h : Mem.Refines m m') (b : Blk) {a a' : Alloc} (ha : Alloc.Refines a a') :
     Mem.Refines (m.set b a) (m'.set b a') := by
-  rcases m with ⟨⟨l⟩, n⟩; rcases m' with ⟨⟨l'⟩, n'⟩
-  obtain ⟨hn, hl⟩ := h
-  simp only at hn hl
+  rcases m with ⟨⟨l⟩, n, k⟩; rcases m' with ⟨⟨l'⟩, n', k'⟩
+  obtain ⟨hn, hk', hl⟩ := h
+  simp only at hn hk' hl
   have hk := hl.keys
   have hidx : l.findIdx? (·.1 == b) = l'.findIdx? (·.1 == b) := by
     have e1 : l.findIdx? (·.1 == b) = (l.map (·.1)).findIdx? (· == b) := by
@@ -197,9 +198,9 @@ theorem set (h : Mem.Refines m m') (b : Blk) {a a' : Alloc} (ha : Alloc.Refines 
   simp only [List.findIdx?_toArray]
   rw [← hidx]
   cases hi : l.findIdx? (·.1 == b) with
-  | none => exact ⟨hn, by simpa using hl.append (.cons b ha .nil)⟩
+  | none => exact ⟨hn, hk', by simpa using hl.append (.cons b ha .nil)⟩
   | some i =>
-    refine ⟨hn, ?_⟩
+    refine ⟨hn, hk', ?_⟩
     simp only [Array.set!_eq_setIfInBounds, Array.toList_setIfInBounds]
     refine AllocsRefine.set i b hl ha fun c hc => ?_
     have := List.findIdx?_eq_some_iff_getElem.1 hi
@@ -217,9 +218,9 @@ theorem poisonBlock (h : Mem.Refines m m') (b : Blk) :
       simp only [Array.toList_replicate, ha.size_eq]; exact BytesRefine.refl _⟩
 
 theorem free (h : Mem.Refines m m') (b : Blk) : Mem.Refines (m.free b) (m'.free b) := by
-  rcases m with ⟨⟨l⟩, n⟩; rcases m' with ⟨⟨l'⟩, n'⟩
-  obtain ⟨hn, hl⟩ := h
-  exact ⟨hn, by simpa [Mem.free] using hl.filter (· != b)⟩
+  rcases m with ⟨⟨l⟩, n, k⟩; rcases m' with ⟨⟨l'⟩, n', k'⟩
+  obtain ⟨hn, hk, hl⟩ := h
+  exact ⟨hn, hk, by simpa [Mem.free] using hl.filter (· != b)⟩
 
 theorem allocHeap (h : Mem.Refines m m') {d d' : Array Byte} (hd : BytesRefineA d d') :
     (m.allocHeap d).1 = (m'.allocHeap d').1 ∧
@@ -227,8 +228,9 @@ theorem allocHeap (h : Mem.Refines m m') {d d' : Array Byte} (hd : BytesRefineA 
   have hs := (h.set (Blk.heap m'.nextHeap) (a := { data := d }) (a' := { data := d' }) ⟨rfl, hd⟩)
   unfold Mem.allocHeap
   simp only [h.nextHeap]
-  refine ⟨by simp, ?_, ?_⟩
+  refine ⟨by simp, ?_, ?_, ?_⟩
   · simp
+  · exact hs.nextAct
   · exact hs.blocks
 
 theorem read (h : Mem.Refines m m') {p : Ptr} {n : Nat} {bs : Array Byte}
