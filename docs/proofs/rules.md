@@ -183,11 +183,15 @@ nilcheckelim's checker rather than by a value refinement: `RuleSet.nilChecks` (t
 `NilCheck` after its value row, `Interp.Table.nilChecks`) holds the rules with
 `EffectRule.NilElim r := RewriteCheck.nilElimOK r = true` (the result is the checked pointer, whose
 op can be a `NilCheck.safePtr true` seed: `Addr`, `LocalAddr`, `NilCheck`, `GetG`, `OffPtr`,
-`SelectN`, `Arg`). `RewriteCheck.accepts` takes the log's nil-check events out (`nilPre`:
-`NilCheck p mem` → `Copy p` on the input), requires `NilCheck.nrel true` between the input and
-that function, `check` of it, and the input's dictionary parameters to be the same in the
-result's and the pass's tables (`nilOK`), and validates the output against it with the remaining
-events.
+`SelectN`, `Arg`). `RewriteCheck.accepts` takes the log's nil-check events out in its nil-check
+layers (`nilPre`: `NilCheck p mem` → `Copy p` on the layer's input; see "Layers" below),
+requires `NilCheck.nrel true` between the layer's input and that function, `check` of it, and
+the layer input's dictionary parameters in the result's tables to be the pass input's in the
+pass's tables (`nilOK`), and validates the output against the last layer's function with the
+remaining events. `safePtr` follows `OffPtr`, `AddPtr`, `PtrIndex` and `Copy` to its seeds (each
+keeps a non-nil pointer's allocation, `offPtr_safe`, `addPtr_safe`, `ptrIndex_safe`; a `Copy`
+is its argument), so a nil check whose pointer the log forwarded from a `Store` (a `Copy` after
+the forwarding layer) is justified by the stored pointer.
 
 `safePtr true` (the rewrite passes' seeds) also takes as non-nil the first result of a
 malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobject` or a
@@ -229,10 +233,10 @@ is a root, an atom of `Term.den`, so `Rule.SoundT` cannot see what it wrote; the
 validated per instance, like the nil-check eliminations: `RuleSet.loads` (tried on a `Load`
 after its value row, `Interp.Table.loads`) holds the rules with `EffectRule.LoadFwd r :=
 RewriteCheck.fwdShapeOK r = true` (the result is the value one of the up to four `Store`s of the
-`Load`'s memory chain stores). `RewriteCheck.fwdAccepts` takes the log's forwarding events out
-(`fwdPre`: `Load p m` → `Copy x` on the input; copy-argument replacements of the forwarded
-`Load` logged before it are dropped), requires `fwdRel` between the input and that function and
-`check` of it, and validates the output against it with the remaining events. `fwdRel`: the same
+`Load`'s memory chain stores). `RewriteCheck.accepts` takes the log's forwarding events out in
+its forwarding layers (`fwdPre`: `Load p m` → `Copy x` on the layer's input; copy-argument
+replacements of the forwarded `Load` logged before it are dropped; see "Layers" below), requires
+`fwdRel` between the layer's input and that function and `check` of it. `fwdRel`: the same
 blocks and atoms, every value unchanged but for the forwarded `Load`s (`fwdRepOK`), each with
 `fwdOK` = `fwdChain` (through at most eight memory `Copy`s and `Store`s at pointers disjoint from
 the read, a `Store`/`StoreWB` of `x` at a pointer equal to the `Load`'s; the `Load` and `x` have
@@ -261,20 +265,21 @@ forwarded `Load` through its chain (`chain_load`, `GoFV/Proof/Pass/LoadFwdPtr.le
 writes, `load_write` at the `Store` of `x`: `decodeLoad_encode`, at an aggregate field by field,
 `fields_encode`, and a stored `poison` aggregate is all `poison` bytes, which a `Load` reads as
 `poison`, semantics.md §3.4 `decodeLoad`). The fuel of `TermRefP`'s right side may depend on
-the valuations. `checkedRewrite_refines` composes the nil-check eliminations, the forwardings and
-the atom simulation (statement unchanged). Proven: `generic.rules:800`, `:806`, `:813`, `:821`;
+the valuations. `checkedRewrite_refines` composes the layers (`chain_refines`) and the atom
+simulation (statement unchanged). Proven: `generic.rules:800`, `:806`, `:813`, `:821`;
 witnesses `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`) and `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), kernel evaluation.
 
-**Fallback.** `checkedRewrite t` runs the pass again without the table's forwardings
-(`{t with loads := #[]}`) when the validator rejects the first result, so a forwarding the
-validator cannot relate costs only that function's forwardings (`checkedRewrite_cases`, statement
-unchanged: the validator does not read `loads`, `validate_noLoads`). Forwardings the validator
-does not relate (quick-v3 at ccc1a85, `opt-proven-probe` "Forwarding fallbacks", after aggregate
-forwarding: opt 12, middle opt 3, late opt 9; opt 50 before): chains with a `Store` the validator cannot
-prove disjoint (`Addr`s or `LocalAddr`s of one symbol at unknown or `PtrIndex` offsets), a `Store`
-of a `Load` of the same address left in the chain by an earlier rewrite, and (late opt) a
+**Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
+the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,
+then also without its nil-check eliminations, each only if it removes rules (`checkedFirst`), so
+a forwarding, split or nil-check elimination the validator cannot relate costs only that
+function's events of that kind (`checkedRewrite_cases`: the validator reads only the table's
+value and block rules, `validate_congr`, `checkedTiers_rules`). Forwardings the validator does
+not relate: chains with a `Store` the validator cannot prove disjoint (`Addr`s or `LocalAddr`s
+of one symbol at unknown or `PtrIndex` offsets, an `Arg` pointer against a `LocalAddr`), a
+`Store` of a `Load` of the same address left in the chain by an earlier rewrite, and (late opt) a
 one-pointer struct stored at the pointer type.
 
 ### Struct-load expansions: `EffectRule.StructLoad` (`GoFV/Proof/Rules/StructLoad.lean`)
@@ -303,6 +308,30 @@ keeps the replay invariant (`GoFV/Proof/Pass/StructLoad.lean`), so `replay_inv`,
 `checkedRewrite_refines` and the pass theorems keep their statements. Proven: `:974`; witness
 `GoFV.Proof.Witness.lf_checkedRewrite` (`s := *p; return s.a` on `struct{ a, b int }`, kernel
 evaluation).
+
+### Layers (issue #151)
+
+The nil-check eliminations, forwardings and struct-store splits (`generic.rules:975`,
+`ssPre`/`ssRel`, `StructStore.ss_refines`) change roots, so `RewriteCheck.accepts` takes their
+events out of the log and applies them to the input in layers (`RewriteCheck.layersOK` over
+`RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
+of, struct-store splits, the remaining forwardings, the remaining nil-check eliminations), each
+related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` + `check`, `ssRel` +
+`check`; a layer without events is skipped), and `validate` relates the last function and the
+output with the remaining events. A selective layer (`nilPre`/`fwdPre` with `sel`) applies only
+the events its relation holds of in its input, the later layer of its kind the rest: a split's
+pointer may be an eliminated nil check (a `Copy` after the first nil-check layer) and its
+`StructMake`'s arguments forwarded `Load`s, a forwarded field `Load` may read a split's field
+`Store` (only after the split layer), and an eliminated nil check's pointer may be a forwarded
+`Load` (`generic.rules:1367` after `:800`: only after the forwarding layers).
+
+**Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (steps `layerOK` accepts)
+from the input to a function the output is validated against; `chain_refines`: a chain from a
+checked function ends in a checked function that refines it under `RwPre` of the pass input
+(`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines` per step);
+`checkedRewrite_refines` composes it with the atom simulation (statement unchanged). Witness:
+`GoFV.Proof.Witness.nf_checkedRewrite` (`*pp = new(int); q := *pp; _ = *q`: the nil check of the
+forwarded `newobject` result removed, kernel evaluation).
 
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
