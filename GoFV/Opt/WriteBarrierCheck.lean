@@ -381,9 +381,10 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
           else u.args.all (c.availIn B segs j)
         | none => false
       else (match j, rs[j - 1]? with
-        | _ + 1, some r => r.last == x && w.op == .WBend && w.args.size == 1 &&
+        | j' + 1, some r => r.last == x && w.op == .WBend && w.args.size == 1 &&
             w.args[0]? == r.tgt.getLast? && w.aux.isNone && tyIs c.tabs w isMemTy &&
-            (c.f.value? x).any (·.type == w.type)
+            (c.f.value? x).any (·.type == w.type) &&
+            c.roleOf rs w.args[0]! == .tgt j' (r.tgt.length - 1)
         | _, _ => false))
     | .wbaddr | .const0 | .lazy =>
       !inT && b == c.f.entry && j == 0 && (!c.held x || B.values.contains x) &&
@@ -400,7 +401,8 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
       !inT && i == j &&
       (match rs[i]? with
         | some r => w.op == .Neq32 && w.args == #[r.sp.load, r.sp.const0] &&
-            (match c.tabs.ty w.type with | .bool => true | _ => false) && c.isConst0 r.sp.const0
+            (match c.tabs.ty w.type with | .bool => true | _ => false) && c.isConst0 r.sp.const0 &&
+            c.roleOf rs r.sp.load == .load i
         | none => false)
     | .phi i =>
       !inT && j == i + 1 &&
@@ -415,7 +417,7 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
       !inT && j == i + 1 &&
       (match rs[i]? with
         | some r => (match r.nc with
-            | some n => c.ncCopyOK B segs j n x r.phi
+            | some n => c.ncCopyOK B segs j n x r.phi && c.roleOf rs r.phi == .phi i
             | none => false)
         | none => false)
     | .tgt i k =>
@@ -424,7 +426,9 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
         | some r =>
           match r.src[k]?, r.tgt[k]? with
           | some s, some y => y == x &&
-              c.copyOK B segs j r.nc r.ncEnd s x (if k == 0 then r.phi else r.tgt[k - 1]!)
+              c.copyOK B segs j r.nc r.ncEnd s x (if k == 0 then r.phi else r.tgt[k - 1]!) &&
+              c.roleOf rs (if k == 0 then r.phi else r.tgt[k - 1]!) ==
+                (if k == 0 then .phi i else .tgt i (k - 1))
           | _, _ => false
         | none => false)
     | .ncThen i =>
