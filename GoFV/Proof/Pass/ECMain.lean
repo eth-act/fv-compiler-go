@@ -53,7 +53,7 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     rw [← hbl] at h; exact h
   have himk := ecs_imk hwg hbg hfb hgb hb
   refine ⟨gb, hgb, ecs_block hwf hwg hcfg hbm hfb hgb hb
-    (fun htree x hx u hu hphi => eco_obl hf hg hec hbm hfb hgb hx hu hphi htree
+    (fun htree x hx u hu hphi => eco_obl hf hg hec hbm hfb hgb htree hx hu hphi
       (fun hcv => himk x hx hcv u hu)) ?_⟩
   intro hk c hc0
   obtain ⟨c', u, hc0', hu, hop⟩ := (ecs_parts hfb hgb hb).ret hk
@@ -61,7 +61,7 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   obtain ⟨cbid, cb, ⟨hcbm, hcb⟩, hccb⟩ :=
     hwf.ctrlListed bid fb ⟨hbm, hfb⟩ c (Array.mem_of_getElem? hc0)
   have hphi : u.op ≠ .Phi := by rw [hop]; decide
-  obtain ⟨-, -, hval, -⟩ := eco_blockOK (hblk cbid hcbm) hcb
+  obtain ⟨-, -, -, hval, -⟩ := eco_blockOK (hblk cbid hcbm) hcb
   obtain ⟨w, hw, hok⟩ := ecm_valueOK_result (hval c hccb u hu hphi) hu hop
   exact ret_result hu hw hop hok hreg
 
