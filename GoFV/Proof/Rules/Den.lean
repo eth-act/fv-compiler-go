@@ -552,13 +552,21 @@ def condHolds (ev : Expr → DV) : Option Expr → Prop
   | some c => ev c = .bool true
   | none => True
 
+/-- The oracle answers every unmodelled expression of Go type `bool` with a boolean (Go's
+evaluation of a well-typed `bool` expression gives a boolean). Without it an oracle atom in a
+conjunct (`div.Uses == 1 && …`) could make `&&` see a non-boolean, and the whole condition
+would be the oracle's, unrelated to the modelled conjuncts. -/
+def Oracle.BoolTyped (or : Oracle) : Prop :=
+  ∀ x : Expr, exprTy [] x = .bool → ∃ b, or.dv x = .bool b
+
 /-- **The obligation of a value rule.** For every instance of the pattern whose auxints are
 well formed (`Pat.wf`), whose checks and condition hold, whose top value has its type's
-shape and whose leaves have their types' shapes (`Pat.typed`), the rewritten value refines the
+shape and whose leaves have their types' shapes (`Pat.typed`), and every oracle answering
+`bool` expressions with booleans (`Oracle.BoolTyped`), the rewritten value refines the
 matched one. -/
 def Rule.Sound (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
-  ∀ (e : PEnv) (or : Oracle),
+  ∀ (e : PEnv) (or : Oracle), Oracle.BoolTyped or →
     let σ := sigma e r.pat
     let ev := evalE (r.vars.map (·.ty)) σ or e (Pat.den e [] r.pat)
     Pat.wf e [] r.pat →

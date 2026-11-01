@@ -946,4 +946,259 @@ attribute [rule_close_s] not_slt_eq not_sle_eq not_ult_eq not_ule_eq not_beq_eq 
 @[rule_amt] theorem nat_and_4294967295 (a : Nat) : a &&& 4294967295 = a % 4294967296 :=
   Nat.and_two_pow_sub_one_eq_mod a 32
 
+
+/-! ## Division and remainder (#69)
+
+Constant folds of `Div`/`Mod` (`sdiv_ofInt`, `srem_ofInt`: Go's truncated `/`, `%` on auxints in
+range; `udiv_ofInt`, `umod_ofInt` on the low bits), `x % y = x - (x / y) * y`
+(`sub_udiv_mul`, `sub_sdiv_mul`), division by a negated or minimal constant (`rule_div`). -/
+
+theorem toInt_ofInt_of_range {w : Nat} {c : Int} (h1 : -(((2 ^ w : Nat) : Int) / 2) ≤ c)
+    (h2 : c < (((2 ^ w : Nat) : Int) + 1) / 2) : (BitVec.ofInt w c).toInt = c := by
+  rw [BitVec.toInt_ofInt]; exact Int.bmod_eq_of_le h1 h2
+
+theorem sdiv_ofInt {w : Nat} {c d : Int} (h1 : -(((2 ^ w : Nat) : Int) / 2) ≤ c)
+    (h2 : c < (((2 ^ w : Nat) : Int) + 1) / 2) (h3 : -(((2 ^ w : Nat) : Int) / 2) ≤ d)
+    (h4 : d < (((2 ^ w : Nat) : Int) + 1) / 2) :
+    (BitVec.ofInt w c).sdiv (BitVec.ofInt w d) = BitVec.ofInt w (goQuo c d) := by
+  apply BitVec.eq_of_toInt_eq
+  rw [BitVec.toInt_sdiv, toInt_ofInt_of_range h1 h2, toInt_ofInt_of_range h3 h4,
+    BitVec.toInt_ofInt]
+  rfl
+
+theorem tmod_range (c d : Int) : (0 ≤ c → 0 ≤ c.tmod d ∧ c.tmod d ≤ c) ∧
+    (c < 0 → c ≤ c.tmod d ∧ c.tmod d ≤ 0) := by
+  have key : ∀ a : Int, 0 ≤ a → 0 ≤ a % d ∧ a % d ≤ a := by
+    intro a ha
+    obtain ⟨n, rfl⟩ := Int.eq_ofNat_of_zero_le ha
+    obtain ⟨k, rfl | rfl⟩ := Int.eq_nat_or_neg d
+    · rw [← Int.natCast_emod]; exact ⟨Int.natCast_nonneg _, Int.ofNat_le.mpr (Nat.mod_le n k)⟩
+    · rw [Int.emod_neg, ← Int.natCast_emod]
+      exact ⟨Int.natCast_nonneg _, Int.ofNat_le.mpr (Nat.mod_le n k)⟩
+  obtain ⟨f1, f2⟩ := tmod_facts c d
+  constructor
+  · intro hc; rw [f1 hc]; exact key c hc
+  · intro hc; rw [f2 hc]; have := key (-c) (by omega); omega
+
+theorem srem_ofInt {w : Nat} {c d : Int} (h1 : -(((2 ^ w : Nat) : Int) / 2) ≤ c)
+    (h2 : c < (((2 ^ w : Nat) : Int) + 1) / 2) (h3 : -(((2 ^ w : Nat) : Int) / 2) ≤ d)
+    (h4 : d < (((2 ^ w : Nat) : Int) + 1) / 2) :
+    (BitVec.ofInt w c).srem (BitVec.ofInt w d) = BitVec.ofInt w (goRem c d) := by
+  apply BitVec.eq_of_toInt_eq
+  rw [BitVec.toInt_srem, toInt_ofInt_of_range h1 h2, toInt_ofInt_of_range h3 h4,
+    BitVec.toInt_ofInt]
+  have := tmod_range c d
+  unfold goRem
+  rw [Int.bmod_eq_of_le] <;> omega
+
+/-- The low `w` bits of `c` as a natural number below `2 ^ w`. -/
+theorem emod_pow_nat (w : Nat) (c : Int) :
+    ∃ n : Nat, c % 2 ^ w = n ∧ n < 2 ^ w ∧ (BitVec.ofInt w c).toNat = n := by
+  have hp : (0 : Int) < 2 ^ w := Int.pow_pos (by decide)
+  have h0 := Int.emod_nonneg c (Int.ne_of_gt hp)
+  have h1 := Int.emod_lt_of_pos c hp
+  obtain ⟨n, hn⟩ := Int.eq_ofNat_of_zero_le h0
+  refine ⟨n, hn, ?_, ?_⟩
+  · have : (n : Int) < ((2 ^ w : Nat) : Int) := by rw [← hn]; simpa using h1
+    exact_mod_cast this
+  · rw [BitVec.toNat_ofInt]
+    have : ((2 ^ w : Nat) : Int) = 2 ^ w := by simp
+    rw [this, hn]; rfl
+
+theorem udiv_ofInt (w : Nat) (c d : Int) :
+    BitVec.ofInt w c / BitVec.ofInt w d =
+      BitVec.ofInt w (goQuo (wrapInt w false c) (wrapInt w false d)) := by
+  apply BitVec.eq_of_toNat_eq
+  obtain ⟨n, hn, hnl, hnt⟩ := emod_pow_nat w c
+  obtain ⟨k, hk, hkl, hkt⟩ := emod_pow_nat w d
+  rw [BitVec.toNat_udiv, hnt, hkt, wrapInt_false, wrapInt_false, int_emod_eq, int_emod_eq, hn, hk,
+    goQuo, Int.tdiv_eq_ediv_of_nonneg (Int.natCast_nonneg _), ← Int.natCast_ediv]
+  obtain ⟨m, hm, hml, hmt⟩ := emod_pow_nat w ((n / k : Nat) : Int)
+  rw [hmt]
+  have : ((n / k : Nat) : Int) % 2 ^ w = ((n / k : Nat) : Int) := by
+    apply Int.emod_eq_of_lt (Int.natCast_nonneg _)
+    have : n / k < 2 ^ w := Nat.lt_of_le_of_lt (Nat.div_le_self n k) hnl
+    have : ((n / k : Nat) : Int) < ((2 ^ w : Nat) : Int) := by exact_mod_cast this
+    simpa using this
+  rw [this] at hm
+  exact_mod_cast hm
+
+theorem umod_ofInt (w : Nat) (c d : Int) :
+    BitVec.ofInt w c % BitVec.ofInt w d =
+      BitVec.ofInt w (goRem (wrapInt w false c) (wrapInt w false d)) := by
+  apply BitVec.eq_of_toNat_eq
+  obtain ⟨n, hn, hnl, hnt⟩ := emod_pow_nat w c
+  obtain ⟨k, hk, hkl, hkt⟩ := emod_pow_nat w d
+  rw [BitVec.toNat_umod, hnt, hkt, wrapInt_false, wrapInt_false, int_emod_eq, int_emod_eq, hn, hk,
+    goRem, Int.tmod_eq_emod_of_nonneg (Int.natCast_nonneg _), ← Int.natCast_emod]
+  obtain ⟨m, hm, hml, hmt⟩ := emod_pow_nat w ((n % k : Nat) : Int)
+  rw [hmt]
+  have : ((n % k : Nat) : Int) % 2 ^ w = ((n % k : Nat) : Int) := by
+    apply Int.emod_eq_of_lt (Int.natCast_nonneg _)
+    have : n % k < 2 ^ w := Nat.lt_of_le_of_lt (Nat.mod_le n k) hnl
+    have : ((n % k : Nat) : Int) < ((2 ^ w : Nat) : Int) := by exact_mod_cast this
+    simpa using this
+  rw [this] at hm
+  exact_mod_cast hm
+
+theorem sub_udiv_mul {w : Nat} (x y : BitVec w) : x - x / y * y = x % y := by
+  rw [BitVec.sub_eq_iff_eq_add]
+  apply BitVec.eq_of_toNat_eq
+  have hx := x.isLt
+  have h1 : x.toNat / y.toNat * y.toNat ≤ x.toNat := Nat.div_mul_le_self _ _
+  have h2 := Nat.mod_add_div x.toNat y.toNat
+  simp only [BitVec.toNat_add, BitVec.toNat_mul, BitVec.toNat_udiv, BitVec.toNat_umod]
+  rw [Nat.mod_eq_of_lt (a := x.toNat / y.toNat * y.toNat) (by omega)]
+  rw [Nat.mod_eq_of_lt (by rw [Nat.mul_comm] at h2; omega)]
+  rw [Nat.mul_comm] at h2; omega
+
+theorem sub_sdiv_mul {w : Nat} (x y : BitVec w) : x - x.sdiv y * y = x.srem y := by
+  apply BitVec.eq_of_toInt_eq
+  rw [BitVec.toInt_sub, BitVec.toInt_mul, BitVec.toInt_sdiv, BitVec.toInt_srem, Int.sub_bmod_bmod,
+    Int.sub_bmod, Int.bmod_mul_bmod, ← Int.sub_bmod, Int.mul_comm, ← Int.tmod_def,
+    ← BitVec.toInt_srem, BitVec.toInt_bmod_cancel]
+
+theorem srem_neg_right {w : Nat} (x y : BitVec w) : x.srem (-y) = x.srem y := by
+  by_cases h : y = BitVec.intMin w
+  · subst h; rw [BitVec.neg_intMin]
+  · apply BitVec.eq_of_toInt_eq
+    rw [BitVec.toInt_srem, BitVec.toInt_srem, BitVec.toInt_neg_of_ne_intMin h, Int.tmod_neg]
+
+theorem ofInt_ne_intMin {w : Nat} {c : Int} (h1 : -(((2 ^ w : Nat) : Int) / 2) ≤ c)
+    (h2 : c < (((2 ^ w : Nat) : Int) + 1) / 2) (h3 : c ≠ -(((2 ^ w : Nat) : Int) / 2)) :
+    BitVec.ofInt w c ≠ BitVec.intMin w := by
+  intro h
+  have := congrArg BitVec.toInt h
+  rw [toInt_ofInt_of_range h1 h2] at this
+  rcases Nat.eq_zero_or_pos w with hw | hw
+  · subst hw; simp at h1 h2; omega
+  · rw [BitVec.toInt_intMin_of_pos hw] at this
+    have e : ((2 ^ w : Nat) : Int) / 2 = ((2 ^ (w - 1) : Nat) : Int) := by
+      rw [show w = (w - 1) + 1 by omega, Nat.pow_succ]; simp
+    rw [e] at h3
+    exact h3 (by rw [this]; simp)
+
+theorem sdiv_neg_ofInt {w : Nat} {c : Int} (x : BitVec w)
+    (h1 : -(((2 ^ w : Nat) : Int) / 2) ≤ c) (h2 : c < (((2 ^ w : Nat) : Int) + 1) / 2)
+    (h3 : c ≠ -(((2 ^ w : Nat) : Int) / 2)) :
+    x.sdiv (-BitVec.ofInt w c) = -(x.sdiv (BitVec.ofInt w c)) :=
+  BitVec.sdiv_neg (ofInt_ne_intMin h1 h2 h3)
+
+theorem ushr_pred_eq_msb {w : Nat} (hw : 0 < w) (y : BitVec w) :
+    y >>> (w - 1) = if y.msb then 1#w else 0#w := by
+  apply BitVec.eq_of_toNat_eq
+  have hy := y.isLt
+  have hp : 2 ^ w = 2 * 2 ^ (w - 1) := by
+    rw [← Nat.pow_succ']; congr 1; omega
+  have h1 : 1 < 2 ^ w := Nat.one_lt_two_pow (by omega)
+  rw [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow, BitVec.msb_eq_toNat]
+  by_cases h : y.toNat ≥ 2 ^ (w - 1)
+  · simp only [h, decide_true, ite_true, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h1]
+    apply Nat.div_eq_of_lt_le <;> omega
+  · simp only [h, decide_false, Bool.false_eq_true, ite_false, BitVec.toNat_ofNat, Nat.zero_mod]
+    exact Nat.div_eq_of_lt (by omega)
+
+theorem sdiv_intMin_and_neg {w : Nat} (hw : 0 < w) (x : BitVec w) :
+    x.sdiv (BitVec.intMin w) = (x &&& -x) >>> (w - 1) := by
+  rw [BitVec.sdiv_intMin, ushr_pred_eq_msb hw]
+  by_cases h : x = BitVec.intMin w
+  · subst h; simp [BitVec.neg_intMin, BitVec.msb_intMin, hw]
+  · simp only [h, ite_false, BitVec.msb_and, BitVec.msb_neg]
+    by_cases h0 : x = 0#w
+    · subst h0; simp
+    · cases hm : x.msb <;> simp [h, h0]
+
+@[rule_bits] theorem intMin8 : (-128#8 : BitVec 8) = BitVec.intMin 8 := by decide
+@[rule_bits] theorem intMin16 : (-32768#16 : BitVec 16) = BitVec.intMin 16 := by decide
+@[rule_bits] theorem intMin32 : (-2147483648#32 : BitVec 32) = BitVec.intMin 32 := by decide
+@[rule_bits] theorem intMin64 :
+    (-9223372036854775808#64 : BitVec 64) = BitVec.intMin 64 := by decide
+
+
+/-! ## Division by powers of two (`rule_pow2`)
+
+`isPowerOfTwo(uintN(c))` makes the divisor `2 ^ (bitsLen c - 1)` (`isPow2_toNat`); an unsigned
+division is then a shift (`udiv_pow2`), a remainder a mask (`umod_pow2_and`). -/
+theorem testBit_of_range {x k : Nat} (h1 : 2 ^ k ≤ x) (h2 : x < 2 ^ (k + 1)) :
+    x.testBit k = true := by
+  rw [Nat.testBit_eq_decide_div_mod_eq, decide_eq_true_eq]
+  have hp := Nat.two_pow_pos k
+  have : x / 2 ^ k = 1 := by
+    apply Nat.div_eq_of_lt_le
+    · omega
+    · rw [Nat.pow_succ] at h2; omega
+  rw [this]
+
+theorem pow2_of_and_pred {d : Nat} (h0 : 0 < d) (h : d &&& (d - 1) = 0) :
+    d = 2 ^ (bitsLen d - 1) := by
+  have hb : bitsLen d - 1 = d.log2 := by unfold bitsLen; simp [Nat.ne_of_gt h0]
+  rw [hb]
+  have hl := Nat.log2_self_le (Nat.ne_of_gt h0)
+  have hu : d < 2 ^ (d.log2 + 1) := Nat.lt_log2_self
+  false_or_by_contra
+  rename_i hne
+  have h1 : d.testBit d.log2 = true := testBit_of_range hl hu
+  have h2 : (d - 1).testBit d.log2 = true := testBit_of_range (by omega) (by omega)
+  have : (d &&& (d - 1)).testBit d.log2 = true := by rw [Nat.testBit_and, h1, h2]; rfl
+  rw [h] at this
+  simp at this
+
+theorem udiv_pow2 {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k) :
+    x / y = x >>> k := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_udiv, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow, h]
+
+theorem umod_pow2_and {w : Nat} (x y : BitVec w) (k : Nat) (h : y.toNat = 2 ^ k) :
+    x % y = x &&& (y - 1#w) := by
+  apply BitVec.eq_of_toNat_eq
+  have hy := y.isLt
+  have hk : 0 < 2 ^ k := Nat.two_pow_pos k
+  have hw : 0 < w := by
+    rcases Nat.eq_zero_or_pos w with h0 | h0
+    · subst h0; simp at hy; omega
+    · exact h0
+  have h1 : (1#w).toNat = 1 := by simp [Nat.mod_eq_of_lt (Nat.one_lt_two_pow (Nat.ne_of_gt hw))]
+  rw [BitVec.toNat_umod, BitVec.toNat_and, BitVec.toNat_sub, h, h1]
+  rw [show 2 ^ w - 1 + 2 ^ k = (2 ^ k - 1) + 2 ^ w by omega, Nat.add_mod_right,
+    Nat.mod_eq_of_lt (a := 2 ^ k - 1) (by omega), Nat.and_two_pow_sub_one_eq_mod]
+
+
+theorem isPow2_toNat {T : GoTy} {w : Nat} {c : Int} (hT : T.intInfo? = some (w, false))
+    (hw : w ≤ 64) (h0 : 0 < wrapInt w false c)
+    (h : wrapInt w false (andPred T (wrapInt w false c)) = 0) :
+    (BitVec.ofInt w c).toNat = 2 ^ (bitsLen (wrapInt w false c).toNat - 1) ∧
+      1 ≤ bitsLen (wrapInt w false c).toNat ∧ bitsLen (wrapInt w false c).toNat ≤ w := by
+  obtain ⟨n, hn, hnl, hnt⟩ := emod_pow_nat w c
+  have hd : wrapInt w false c = n := by rw [wrapInt_false]; exact hn
+  rw [hd] at h0 h ⊢
+  rw [hnt, Int.toNat_natCast]
+  have hn0 : 0 < n := by omega
+  have h64 : 2 ^ w ≤ 2 ^ 64 := Nat.pow_le_pow_right (by decide) hw
+  have hp1 : pat64 (n : Int) = n := by
+    unfold pat64
+    rw [show (n : Int).emod (2 ^ 64) = (n : Int) % ((2 ^ 64 : Nat) : Int) by simp; rfl,
+      ← Int.natCast_emod, Int.toNat_natCast, Nat.mod_eq_of_lt (by omega)]
+  have hp2 : pat64 ((n : Int) - 1) = n - 1 := by
+    rw [show (n : Int) - 1 = ((n - 1 : Nat) : Int) by omega]
+    unfold pat64
+    rw [show ((n - 1 : Nat) : Int).emod (2 ^ 64) = ((n - 1 : Nat) : Int) % ((2 ^ 64 : Nat) : Int)
+      by simp; rfl, ← Int.natCast_emod, Int.toNat_natCast, Nat.mod_eq_of_lt (by omega)]
+  unfold andPred bitwise at h
+  rw [hT] at h
+  simp only [Option.getD_some, hp1, hp2] at h
+  have hand : n &&& (n - 1) < 2 ^ w := Nat.lt_of_le_of_lt Nat.and_le_left hnl
+  have hk : ((n &&& (n - 1) : Nat) : Int) % 2 ^ w = ((n &&& (n - 1) : Nat) : Int) := by
+    apply Int.emod_eq_of_lt (Int.natCast_nonneg _)
+    have : ((n &&& (n - 1) : Nat) : Int) < ((2 ^ w : Nat) : Int) := by exact_mod_cast hand
+    simpa using this
+  have hz : n &&& (n - 1) = 0 := by
+    simp only [wrapInt_false, int_emod_eq, hk] at h
+    omega
+  refine ⟨pow2_of_and_pred hn0 hz, ?_, ?_⟩
+  · unfold bitsLen; simp [Nat.ne_of_gt hn0]
+  · unfold bitsLen
+    simp only [Nat.ne_of_gt hn0, ite_false]
+    have := (Nat.log2_lt (Nat.ne_of_gt hn0)).mpr hnl
+    omega
+
 end GoFV.Proof.Rules

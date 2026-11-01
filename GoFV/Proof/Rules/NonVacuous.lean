@@ -1,10 +1,12 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values00
+import GoFV.Rules.Generated.Generic.Values02
 import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values08
 import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values05
+import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values10
 import GoFV.Rules.Generated.Generic.Values11
 import GoFV.Rules.Generated.Generic.Values12
@@ -34,6 +36,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 /-- `e`, `or` instantiate `r`: every hypothesis of `Rule.Sound r` holds and the matched value
 is not `poison`. -/
 def Rule.Inst (r : Rule) (e : PEnv) (or : Oracle) : Prop :=
+  Oracle.BoolTyped or ∧
   Pat.wf e [] r.pat ∧
   Pat.cons (evalE (r.vars.map (·.ty)) (sigma e r.pat) or e (Pat.den e [] r.pat)) (sigma e r.pat)
     e [] r.pat ∧
@@ -51,7 +54,7 @@ noncomputable def Rule.res (r : Rule) (e : PEnv) (or : Oracle) : Val :=
 value. -/
 theorem Rule.Sound.refines {r : Rule} (h : Rule.Sound r) {e : PEnv} {or : Oracle}
     (hi : Rule.Inst r e or) : Refines (Pat.raw e r.pat) (Rule.res r e or) :=
-  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1
+  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1 hi.2.2.2.2.2.1
 
 /-- An instance on which the result does not refine the matched value refutes `Rule.Sound`. -/
 theorem Rule.not_sound {r : Rule} {e : PEnv} {or : Oracle} (hi : Rule.Inst r e or)
@@ -79,6 +82,16 @@ noncomputable def Oracle.const (b : Bool) : Oracle where
   auxInt _ := 0
   aux _ := none
   val _ := .poison
+
+/-- An oracle answering every expression with the boolean `b` (`Oracle.const b` once
+unfolded) is `BoolTyped`. -/
+@[rule_eval] theorem Oracle.boolTyped_const_dv (b : Bool) (t : Expr → Ty) (a : Expr → Int64)
+    (x : Expr → Option AuxRef) (v : Expr → Val) :
+    Oracle.BoolTyped ⟨fun _ => .bool b, t, a, x, v⟩ :=
+  fun _ _ => ⟨b, rfl⟩
+
+@[simp] theorem Oracle.const_boolTyped (b : Bool) : Oracle.BoolTyped (Oracle.const b) :=
+  Oracle.boolTyped_const_dv b _ _ _ _
 
 -- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
 attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Pat.den Pat.dens Pat.raw sigma
@@ -216,5 +229,23 @@ theorem inst_r_generic_290 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_29
     (PEnv.ofLists [([0, 0], .bool true), ([1], .bool true)] [] .bool []) (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_290]
   rule_eval
+
+/-- `generic.rules:173`: `(Div16 (Const16 [c]) (Const16 [d])) && d != 0 => (Const16 [c/d])` at
+`c = -7`, `d = 2`. -/
+theorem inst_r_generic_173 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_173
+    (PEnv.ofLists [] [([0], .int .w16), ([1], .int .w16)] (.int .w16) [([0], -7), ([1], 2)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_173]
+  rule_eval
+  simp
+
+/-- `generic.rules:1142`: `(Mod16 <t> n (Const16 [c])) && c < 0 && c != -1<<15 =>
+(Mod16 <t> n (Const16 <t> [-c]))` at `n = -100`, `c = -7`. -/
+theorem inst_r_generic_1142 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1142
+    (PEnv.ofLists [([0], .i16 (-100))] [([1], .int .w16)] (.int .w16) [([1], -7)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1142]
+  rule_eval
+  simp
 
 end GoFV.Proof.Rules
