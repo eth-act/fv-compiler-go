@@ -321,4 +321,97 @@ theorem raw_topOK {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Opt
     exact evalPure_constTop _ _ _ hp
   · exact rawT_frameTop hp
 
+/-! ## Selections (`selTop`, issue #17) -/
+
+theorem hasTyList_get : ∀ {vs : List Val} {ts : List Ty}, Val.hasTyList vs ts = true → ∀ k : Nat,
+    (vs[k]? = none ∧ ts[k]? = none) ∨
+      ∃ (v : Val) (t : Ty), vs[k]? = some v ∧ ts[k]? = some t ∧ Val.hasTy v t = true
+  | [], [], _, _ => .inl ⟨rfl, rfl⟩
+  | v :: vs, t :: ts, h, k => by
+    simp only [Val.hasTyList, Bool.and_eq_true] at h
+    cases k with
+    | zero => exact .inr ⟨v, t, rfl, rfl, h.1⟩
+    | succ k => simpa using hasTyList_get h.2 k
+  | [], _ :: _, h, _ | _ :: _, [], h, _ => by simp [Val.hasTyList] at h
+
+/-- `shapeSub f t`: a value of shape `f` has shape `t`. -/
+theorem shapeSub_hasTy {f t : Ty} (h : GoFV.Proof.Rules.shapeSub f t = true) {v : Val}
+    (hv : v.hasTy f = true) : v.hasTy t = true := by
+  simp only [GoFV.Proof.Rules.shapeSub, Bool.or_eq_true, Bool.and_eq_true] at h
+  rcases h with h | ⟨hf, ht⟩
+  · rw [← Ty.eq_of_beq h]; exact hv
+  · obtain ⟨_, rfl⟩ := eq_of_isPtrTy hf
+    obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht
+    cases v <;> simp_all [Val.hasTy]
+
+/-- `Comp.select k` of an argument of shape `argTy` has shape `ty` under `selShapeOK`. -/
+theorem select_hasTy {k : Nat} {ty argTy : Ty} (h : selShapeOK k ty argTy = true)
+    (args : List Val) (h0 : ∀ a, args.head? = some a → a.hasTy argTy = true) :
+    (Comp.select k args).hasTy ty = true := by
+  unfold Comp.select
+  split
+  · rename_i vs
+    have ha := h0 _ rfl
+    unfold selShapeOK at h
+    split at h
+    · rename_i fs n
+      simp only [Val.hasTy] at ha
+      rcases hasTyList_get ha k with ⟨hv, -⟩ | ⟨v, t, hv, ht, hvt⟩
+      · simp [List.getD, hv, Val.hasTy]
+      · rw [List.getElem?_map] at ht
+        rcases hfs : fs[k]? with _ | ⟨o', f'⟩
+        · rw [hfs] at ht; cases ht
+        · rw [hfs] at ht h
+          simp only [Option.map_some, Option.some.injEq] at ht
+          subst ht
+          simp only [List.getD, hv, Option.getD_some]
+          exact shapeSub_hasTy h hvt
+    all_goals first | (simp [Val.hasTy] at ha; done) | cases h
+  · rfl
+
+/-- A selection op evaluates to `Comp.select` of its component. -/
+theorem evalPure_sel {op : Op} {ai : Int64} {k : Nat} (h : selIndex? op ai = some k) (ty : Ty)
+    (ax : Option AuxRef) (args : List Val) : evalPure op ty ai ax args = Comp.select k args := by
+  unfold selIndex? at h
+  split at h
+  all_goals first
+    | (cases h; rfl)
+    | (split at h
+       · cases h
+       · cases h
+         show Comp.selectAux ai args = _
+         unfold Comp.selectAux
+         split
+         · contradiction
+         · rfl)
+    | cases h
+
+/-- **`topAll`**: the raw value of a pattern whose top op `topAll` accepts has the top type's
+shape. -/
+theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+    {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
+    {cm : Bool} (hp : topAll o e = true)
+    (ht : GoFV.Proof.Rules.Pat.typed e [] (.op o nm pty pai pax par args cm))
+    (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
+    (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
+  simp only [topAll, Bool.or_eq_true] at hp
+  rcases hp with hp | hp
+  · exact raw_topOK hp ht ha
+  · unfold selTop at hp
+    split at hp
+    · rename_i k hk
+      have hf : GoFV.Proof.Rules.frameOp o = false := frameOp_false
+        (by rintro rfl; simp [selIndex?] at hk) (by rintro rfl; simp [selIndex?] at hk)
+      simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure hf, evalPure_sel hk]
+      apply select_hasTy hp
+      intro a hh
+      cases args with
+      | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
+      | cons q qs =>
+        simp only [GoFV.Proof.Rules.Pat.densT, List.head?_cons, Option.some.injEq] at hh
+        subst hh
+        simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
+        exact den_hasTy_typed _ _ ht.1
+    · cases hp
+
 end GoFV.Proof.Pass.Rewrite

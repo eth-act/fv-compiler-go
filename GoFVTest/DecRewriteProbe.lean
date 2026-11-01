@@ -77,8 +77,8 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond" else
         if !(match r.pat with
-          | .op o _ _ _ _ _ _ _ => topOK o (e.ty [])
-          | _ => false) then "topOK" else
+          | .op o _ _ _ _ _ _ _ => topAll o e
+          | _ => false) then "topAll" else
         if !Pat.argsOK e.ty [] r.pat then "argsOK" else
         if !leavesOK tabs M I [] r.pat then "leavesOK" else
         if !resultOK tabs M ev or σ I r x defs then
