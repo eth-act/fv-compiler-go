@@ -862,6 +862,7 @@ cleared or filled with the sign (`rule_ext`), negated comparisons and boolean eq
   | ptr e =>
     simp only [tyOtherInt, beq_eq_false_iff_ne, ne_eq] at h
     cases w <;> simp_all [Val.retype]
+  | bool => simp [tyOtherInt] at h
   | _ => rfl
 
 @[rule_arith] theorem setWidth_ofInt_of_le {w k : Nat} (h : w ≤ k) (c : Int) :
