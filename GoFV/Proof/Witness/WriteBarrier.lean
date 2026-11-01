@@ -1,0 +1,205 @@
+import GoFV.Proof.Pass.WBSim
+import GoFV.Proof.Witness.Clamp
+import GoFV.Proof.Witness.InitF10
+import GoFV.Proof.Witness.Util
+
+/-!
+# Non-vacuity witness: writebarrier on `runtime/pprof.runtime_setProfLabel`
+
+`std/std/runtime/runtime_setProfLabel,1.ssa`, the output of section 31 (`memcombine`, the input
+of `writebarrier`), of the corpus `gofv-corpus/2aae1000ea1d/quick-v3`, with the definition tables
+of the sections before it that the pass and `check` read, transcribed by hand:
+
+```go
+func runtime_setProfLabel(labels unsafe.Pointer) {
+	getg().labels = labels // the field at offset 352 of the current `g`
+}
+```
+
+One block: `v9 = Store {unsafe.Pointer} (OffPtr [352] (GetG v1)) v5 v1` stores the pointer
+argument `v5` into a heap slot, which needs a write barrier. writebarrier splits the block on the
+flag `Neq32 (Load (Addr {runtime.writeBarrier} SB) v1) (Const32 [0])`: the buffer block records
+the new and the old pointer (`WB [2]`, two buffer `Store`s), the end block merges the memory
+(`Phi`), re-emits the store and ends in the `WBend` marker made from `v9`. The checker
+`WBCheck.wbOK` accepts the result, input and output pass `check` (kernel evaluation), so
+`writebarrier_refines` applies; its precondition `WbPre` holds, e.g., on `Env.p1` with a
+read-only `runtime.writeBarrier` flag (`wbPre_witness`).
+-/
+
+namespace GoFV.Proof.Witness
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof
+
+/-- `abiInfo` of `runtime_setProfLabel`: one pointer parameter in a register, no result. -/
+def spABI : CallABI :=
+  { abi := 1, nin := 1, nout := 0, spillOff := 8, spillSize := 8, inRegs := 1, outRegs := 0,
+    params := #[{ out := false, index := 0, type := 2, name := some 3, regs := #[0],
+                  offset := 0 }] }
+
+/-- A pointer type (`hasptr,direct,comparable`) to `elem`. -/
+def spPtr (str symName : String) (elem : TypeRef) : TypeDef :=
+  mkTy .PTR (some 8) (some 8) (some 8) true true true false str symName (.elem elem)
+
+/-- A scalar type (`comparable,named`). -/
+def spScalar (kind : TypeKind) (size : Int) (s : String) : TypeDef :=
+  mkTy kind (some size) (some size) (some 0) false false true true s s
+
+/-- An SSA pseudo-type. -/
+def spPseudo (kind : TypeKind) (s : String) (tail : TypeTail := .none) : TypeDef :=
+  mkTy kind none none none false false false false s "" tail
+
+/-- The definition tables of sections 0–31 that `writebarrier`, its checker and `check` read. -/
+def spTabs : Tables where
+  posBases := (Array.replicate 172 (none : Option PosBase)).set! 171
+    (some { file := GoStr.ofString "runtime/proflabel.go", line := 1, col := 1, inl := -1 })
+  types :=
+    let t := Array.replicate 36 (none : Option TypeDef)
+    let t := t.set! 1 (some (mkTy .FUNC (some 8) (some 8) (some 8) true true false false
+      "func(unsafe.Pointer)" "func(unsafe.Pointer)"
+      (.func 0 1 0 #[f10Field "labels" 2 none])))
+    let t := t.set! 2 (some (mkTy .UNSAFEPTR (some 8) (some 8) (some 8) true true true true
+      "unsafe.Pointer" "unsafe.Pointer"))
+    let t := t.set! 3 (some (spScalar .BOOL 1 "bool"))
+    let t := t.set! 10 (some (spScalar .UINT32 4 "uint32"))
+    let t := t.set! 16 (some (spScalar .UINTPTR 8 "uintptr"))
+    let t := t.set! 20 (some (spPtr "*uint32" "*uint32" 10))
+    let t := t.set! 22 (some (spPtr "*uintptr" "*uintptr" 16))
+    let t := t.set! 28 (some (spPseudo .SSA "mem"))
+    let t := t.set! 32 (some (spPseudo .RESULTS "mem" (.results #[28])))
+    let t := t.set! 33 (some (spPtr "*unsafe.Pointer" "*unsafe.Pointer" 2))
+    t.set! 34 (some (spPtr "*g" "*runtime.g" 35))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{runtime/pprof.runtime_setProfLabel}",
+           kind := .call (some 2) (some spABI) },
+    some { fmt := GoStr.ofString "runtime/pprof.runtime_setProfLabel",
+           kind := .sym (GoStr.ofString "runtime/pprof.runtime_setProfLabel") 1 "-" 0 {} none
+             none none #[] none },
+    some { fmt := GoStr.ofString "labels",
+           kind := .name (GoStr.ofString "labels") .PPARAM 2 0 1 { used := true }
+             (pos 171 20 27 0) },
+    some { fmt := GoStr.ofString "unsafe.Pointer", kind := .type 2 },
+    some { fmt := GoStr.ofString "labels+0", kind := .nameOff 3 0 }]
+  slots := #[none, some { name := 3, type := 2, off := 0, splitOf := none, splitOffset := 0 }]
+
+/-- A value of `runtime_setProfLabel`. -/
+def spV (id : ID) (op : Op) (t : TypeRef) (auxInt : Int64) (aux : Option AuxRef) (p : Pos)
+    (uses : Nat) (args : Array ID) : Value :=
+  { id, op, type := t, auxInt, aux, pos := p, uses, args, block := 1 }
+
+/-- The values of section 31, by ID. -/
+def spValues : Array (Option Value) :=
+  let t := Array.replicate 11 (none : Option Value)
+  let t := t.set! 1 (some (spV 1 .InitMem 28 0 none p0 2 #[]))
+  let t := t.set! 5 (some (spV 5 .ArgIntReg 2 0 (some 5) (pos 171 43 1 0) 1 #[]))
+  let t := t.set! 6 (some (spV 6 .GetG 34 0 none (pos 171 42 6 1) 1 #[1]))
+  let t := t.set! 8 (some (spV 8 .OffPtr 33 352 none (pos 171 42 8 0) 1 #[6]))
+  let t := t.set! 9 (some (spV 9 .Store 28 0 (some 4) (pos 171 42 16 0) 1 #[8, 5, 1]))
+  t.set! 10 (some (spV 10 .MakeResult 32 0 none (pos 171 43 1 1) 1 #[9]))
+
+/-- `runtime_setProfLabel`, section 31 (the input of `writebarrier`). -/
+def spFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 10
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret (pos 171 43 1 0) #[10] #[] #[] #[1, 5, 6, 8, 9, 10])]
+  valueTab := spValues
+  names := #[(1, #[5])]
+  namedx := #[]
+  splits := #[]
+  canon := #[({ name := 3, type := 2, off := 0, splitOf := none, splitOffset := 0 }, 1)]
+  consts := #[]
+  freeValues := [3, 4, 7, 2]
+  freeBlocks := []
+  cache := { postorder := some #[1], idom := some #[none, none],
+             sdom := some #[{ parent := none, child := none, sibling := none, entry := 0, exit := 0 },
+               { parent := none, child := none, sibling := none, entry := 2, exit := 5 }],
+             auxmap := some #[(some 3, 1), (none, 2)],
+             lineStarts := some #[⟨171, some (42, 43), #[]⟩] }
+
+/-- `Config.Types` (the `typs` line of section 0). -/
+def spTyps : Array (String × TypeRef) :=
+  #[("Bool", 3), ("Int8", 4), ("Int16", 5), ("Int32", 6), ("Int64", 7), ("UInt8", 8),
+    ("UInt16", 9), ("UInt32", 10), ("UInt64", 11), ("Int", 12), ("Float32", 13), ("Float64", 14),
+    ("UInt", 15), ("Uintptr", 16), ("String", 17), ("BytePtr", 18), ("Int32Ptr", 19),
+    ("UInt32Ptr", 20), ("IntPtr", 21), ("UintptrPtr", 22), ("Float32Ptr", 23),
+    ("Float64Ptr", 24), ("BytePtrPtr", 25), ("Complex64", 26), ("Complex128", 27),
+    ("UnsafePtr", 2), ("Mem", 28), ("Flags", 29), ("Void", 30), ("Int128", 31),
+    ("ResultMem", 32)]
+
+def spCheckEnv : CheckEnv := { tabs := spTabs, typs := spTyps }
+
+/-- What `writebarrier` reads of the export's environment. -/
+def spPassEnv : PassEnv where
+  passName := "writebarrier"
+  pkg := GoStr.ofString "runtime"
+  funcName := GoStr.ofString "runtime_setProfLabel"
+  abi := 1
+  nosplit := false
+  pgohot := false
+  config := #[("arch", #[.word "arm64"]), ("ptrsize", #[.word "8"]), ("regsize", #[.word "8"]),
+    ("usewb", #[.word "1"]), ("localpkg", #[.str (GoStr.ofString "runtime")]),
+    ("exp.cgocheck2", #[.word "0"]), ("abi0", #[.word "0:0:8"]), ("abi1", #[.word "16:16:8"]),
+    ("abidefault", #[.word "1"]),
+    ("syslook.writeBarrier", #[.str (GoStr.ofString "runtime.writeBarrier")]),
+    ("syslook.wbZero", #[.str (GoStr.ofString "runtime.wbZero")]),
+    ("syslook.wbMove", #[.str (GoStr.ofString "runtime.wbMove")])]
+  typs := spTyps
+  typeOrder := default
+  tables := spTabs
+
+/-! ## Kernel evaluation -/
+
+theorem sp_check : (check spCheckEnv spFunc).toBool = true := by decide +kernel
+
+/-- The pass succeeds, the checker accepts its result, which differs from the input and passes
+`check`. -/
+theorem sp_pass :
+    (match writebarrierChecked spPassEnv spFunc with
+      | .ok out => out.func != spFunc &&
+          (check { tabs := out.tables, typs := spTyps } out.func).toBool
+      | .error _ => false) = true := by
+  decide +kernel
+
+/-! ## The witness -/
+
+/-- **Non-vacuity of `writebarrier_refines`**: writebarrier expands the barrier store of
+`runtime_setProfLabel`, the checker accepts it, both functions pass `check`, and the result
+refines the input on `WbPre` inputs. -/
+theorem writebarrier_witness :
+    ∃ out, writebarrierChecked spPassEnv spFunc = .ok out ∧ out.func ≠ spFunc ∧
+      check spCheckEnv spFunc = .ok () ∧
+      check { tabs := out.tables, typs := spTyps } out.func = .ok () ∧
+      RefinesFrom WB.WbPre out.tables out.func spPassEnv.tables spFunc := by
+  have hpc := sp_pass
+  cases h : writebarrierChecked spPassEnv spFunc with
+  | error e => rw [h] at hpc; cases hpc
+  | ok out =>
+    rw [h] at hpc
+    simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hpc
+    obtain ⟨hne, hc⟩ := hpc
+    have hg : check { tabs := out.tables, typs := spTyps } out.func = .ok () := ok_of_toBool hc
+    have hf : check spCheckEnv spFunc = .ok () := ok_of_toBool sp_check
+    exact ⟨out, rfl, hne, hf, hg, GoFV.Proof.writebarrier_refines h hf hg⟩
+
+/-- `Env.p1` with a read-only, zero `runtime.writeBarrier` flag. -/
+def spEnv : Env :=
+  { Env.p1 with
+    globals := [("runtime.writeBarrier", { data := #[.b 0, .b 0, .b 0, .b 0], writable := false })] }
+
+/-- **Non-vacuity of `WbPre`**: `spEnv` (whose contracts only panic) on the empty memory. -/
+theorem wbPre_witness : WB.WbPre spEnv [.ptr ⟨.heap 0, 0⟩] {} := by
+  refine ⟨⟨⟨{ data := #[.b 0, .b 0, .b 0, .b 0], writable := false }, by decide +kernel,
+    rfl, by decide, fun i hi => ?_⟩, by decide +kernel⟩, ?_⟩
+  · match i, hi with
+    | 0, _ => exact ⟨0, rfl⟩
+    | 1, _ => exact ⟨0, rfl⟩
+    | 2, _ => exact ⟨0, rfl⟩
+    | 3, _ => exact ⟨0, rfl⟩
+  · intro name c hc args clo m _ _ _
+    simp only [spEnv, Env.p1] at hc
+    split at hc <;> cases hc <;> trivial
+
+end GoFV.Proof.Witness

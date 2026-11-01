@@ -11,7 +11,8 @@ Ports of the address classifiers and the known-zero analysis of `writebarrier.go
 `f.ABIDefault == f.ABI1` with integer parameter registers, as on arm64), `ZeroRegion`,
 `computeZeroMap`, `mightBeHeapPointer`, `mightContainHeapPointer`, `needwb`, `needWBsrc`,
 `needWBdst`. Values are compared by ID (Go compares `*Value`s; a freed value's struct is reused
-with its ID). The zero map is keyed by memory value ID, like Go's `map[ID]ZeroRegion`.
+with its ID). The zero map is keyed by memory value ID, like Go's `map[ID]ZeroRegion` (an
+association list: the kernel evaluates the pass in a non-vacuity witness).
 `Except.error` is Go's `Fatalf` or a failed type assertion.
 -/
 
@@ -100,8 +101,25 @@ structure ZeroRegion where
   mask : UInt64 := 0
   deriving BEq, Inhabited
 
-/-- `zeroes map[ID]ZeroRegion`. -/
-abbrev ZeroMap := Std.HashMap ID ZeroRegion
+/-- `zeroes map[ID]ZeroRegion`: an association list (latest entry first, one per key), so that
+the kernel can evaluate the pass (`Std.HashMap` is opaque to it); Go only looks entries up. -/
+structure ZeroMap where
+  entries : List (ID × ZeroRegion) := []
+  deriving Inhabited
+
+namespace ZeroMap
+
+/-- `zeroes[k]`, if present. -/
+def get? (z : ZeroMap) (k : ID) : Option ZeroRegion := (z.entries.find? (·.1 == k)).map (·.2)
+
+/-- `zeroes[k]`, or `d` if absent. -/
+def getD (z : ZeroMap) (k : ID) (d : ZeroRegion) : ZeroRegion := (z.get? k).getD d
+
+/-- `zeroes[k] = r`. -/
+def insert (z : ZeroMap) (k : ID) (r : ZeroRegion) : ZeroMap :=
+  ⟨(k, r) :: z.entries.filter (·.1 != k)⟩
+
+end ZeroMap
 
 /-- Go's `x << n` on `uint64` (0 for `n ≥ 64`). -/
 @[inline] def shl (x : UInt64) (n : Int) : UInt64 :=
@@ -131,7 +149,7 @@ def computeZeroMap (f : Func) (tabs : Tables) (ptrSize : Int) (localPkgRuntime :
       for v in (f.getB b).values do
         let x := f.getV v
         if x.op != .Store then continue
-        let some z0 := zeroes[memArg f v]? | continue
+        let some z0 := zeroes.get? (memArg f v) | continue
         let mut z := z0
         let t ← GoFV.Rules.Ty.ofAux tabs x.aux
         let mut size ← GoFV.Rules.Ty.size tabs t

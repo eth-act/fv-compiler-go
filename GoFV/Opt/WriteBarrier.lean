@@ -245,9 +245,10 @@ def expandRun (c : Ctx) (s : St) (lz : Lazy) (b : ID) : Except String (St × Nat
     s := { s with f }
     nilcheckThen := v
   let mut n := 0
-  -- buffer entries for the StoreWBs
-  let mut srcs : Std.HashSet ID := {}
-  let mut dsts : Std.HashSet ID := {}
+  -- buffer entries for the StoreWBs (`srcs`/`dsts` as lists: `Std.HashSet` is opaque to the
+  -- kernel, which evaluates the pass in a non-vacuity witness)
+  let mut srcs : List ID := []
+  let mut dsts : List ID := []
   for w in stores do
     let x := s.f.getV w
     if x.op != .StoreWB then continue
@@ -256,10 +257,10 @@ def expandRun (c : Ctx) (s : St) (lz : Lazy) (b : ID) : Except String (St × Nat
     let val := x.args[1]!
     if !srcs.contains val then
       if ← WB.needWBsrc s.f s.tabs val then
-        srcs := srcs.insert val
+        srcs := val :: srcs
         (s, buf) ← addEntry c s bThen pos wpos val buf
     if !dsts.contains ptr && WB.needWBdst s.f c.ptrSize ptr x.args[2]! c.zeroes then
-      dsts := dsts.insert ptr
+      dsts := ptr :: dsts
       let p := if nilcheck == some ptr then nilcheckThen else ptr
       let (f, old) := s.f.newValueArgs bThen wpos .Load c.tUintptr (args := #[p, buf.memThen])
       s := { s with f }
@@ -375,7 +376,7 @@ def writebarrier (env : PassEnv) (f : Func) : Except String PassOut := do
   if env.config? "abidefault" != some #[.word "1"] || abi1.intRegs < 3 then
     throw "writebarrier: stack-argument ABI not ported"
   let ptrSize ← match env.config? "ptrsize" with
-    | some #[.word s] => (s.toInt?).elim (.error "config ptrsize: bad") .ok
+    | some #[.word s] => (decInt? s).elim (.error "config ptrsize: bad") .ok
     | _ => .error "config ptrsize: missing"
   let localPkgRuntime := env.config? "localpkg" == some #[.str "runtime"]
   let typ (n : String) : Except String TypeRef :=
