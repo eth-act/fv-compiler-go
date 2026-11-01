@@ -158,6 +158,14 @@ import GoFV.Proof.Pass.KnownBitsTerm
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.LoadFwdPtr
+import GoFV.Proof.Pass.MemCombine
+import GoFV.Proof.Pass.MemCombineBytes
+import GoFV.Proof.Pass.MemCombineComplete
+import GoFV.Proof.Pass.MemCombineDesc
+import GoFV.Proof.Pass.MemCombineList
+import GoFV.Proof.Pass.MemCombineSem
+import GoFV.Proof.Pass.MemCombineSound
+import GoFV.Proof.Pass.MemCombineSplit
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.Pass.NilRel
@@ -405,6 +413,7 @@ import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Witness.Max3
+import GoFV.Proof.Witness.MemCombine
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
