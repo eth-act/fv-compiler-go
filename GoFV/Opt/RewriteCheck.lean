@@ -2035,9 +2035,9 @@ def callSeg? (tabs : Tables) (f g : Func) (fv gv : Value) : Option (List ID × L
 
 /-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?` or `callSeg?`): listed in its
 block, redefined in place (its ID, block and type kept); its dropped values are listed in that
-block, its fresh values in that block of `g`; every argument of the fresh values and the anchor
-in `g` is fresh or an argument of a root of `f` of the segment (a dropped root, or the anchor), and
-not dropped. The dropped and fresh values. -/
+block, its fresh values in that block of `g`; the fresh values and the anchor are roots of `g`,
+each of their arguments an earlier one of them, or an argument of a root of `f` of the segment (a
+dropped root, or the anchor) that is not dropped. The dropped and fresh values. -/
 def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
@@ -2045,12 +2045,15 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
     if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type && listed x then
       match (chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv with
       | some (D, N) =>
-        let ext (a : ID) : Bool := !D.contains a && (N.contains a ||
-          (D ++ [x]).any fun s => CSE.rootNode f s && (f.value? s).any (·.args.contains a))
+        let L := N ++ [x]
+        let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
+          (D ++ [x]).any fun s => CSE.rootNode f s && (f.value? s).any (·.args.contains a)
         if D.all listed &&
             N.all (fun n => (f.value? n).isNone && (g.block? fv.block).any (·.values.contains n) &&
               (g.value? n).any (·.block == fv.block)) &&
-            (N ++ [x]).all (fun n => (g.value? n).all (·.args.all ext)) then some (D, N)
+            L.all (CSE.rootNode g) &&
+            (List.range L.length).all (fun i => (g.value? (L.getD i 0)).all fun v =>
+              v.args.all fun a => (L.take i).contains a || ext a) then some (D, N)
         else none
       | none => none
     else none
@@ -2224,24 +2227,26 @@ def ldTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) 
 
 /-! ## Layers (issue #151)
 
-The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions and
-struct-store splits are taken out of the log and applied to the input in layers, each related to
-its input by its own relation, before `validate` relates the last layer's function and the
-output with the remaining events. A selective layer (`sel`) applies only the events its relation
-holds of in its input; a later layer of the same kind applies the rest. Each kind needs another
-first: a struct-store split's pointer may be an eliminated nil check and its stored values
-forwarded `Load`s or an expanded `Load`, a split may split a field store of another (nested
-structs), a forwarded `Load` may read a field `Store` of a split, and an eliminated nil check's
-pointer may be a forwarded `Load`. -/
+The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions,
+struct-store splits and segment rewrites are taken out of the log and applied to the input in
+layers, each related to its input by its own relation, before `validate` relates the last
+layer's function and the output with the remaining events. A selective layer (`sel`) applies
+only the events its relation holds of in its input; a later layer of the same kind applies the
+rest. Each kind needs another first: a struct-store split's pointer may be an eliminated nil check
+and its stored values forwarded `Load`s or an expanded `Load`, a split may split a field store of
+another (nested structs), a forwarded `Load` may read a field `Store` of a split, an eliminated nil
+check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a split's field stores. -/
 
 /-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-load
-expansions (`slPre`), struct-store splits (`ssPre`), value-rule `Load` expansions (`ldPre`). -/
+expansions (`slPre`), struct-store splits (`ssPre`), value-rule `Load` expansions (`ldPre`),
+segment rewrites (`segPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
   | sl
   | ss
   | ld
+  | seg
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
@@ -2251,9 +2256,10 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .sl => slPre t tabs
   | .ss => ssPre t
   | .ld => ldPre t tabs
+  | .seg => segPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs). -/
-def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .fwd false, .nil false]
+def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/
@@ -2314,6 +2320,8 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
     RewriteCheck.validate tabs t f f' (RewriteCheck.slTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .seg, f, _, f' =>
+    RewriteCheck.segRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .ld, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.ldTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
@@ -2363,16 +2371,18 @@ def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func)
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   return if RewriteCheck.accepts env t f out log then some out else none
 
-/-- The tables `checkedRewrite` tries in order: `t`, then (a Load-of-Store forwarding, struct-store
-split or nil-check elimination the validator cannot relate, issue #151) `t` without its
-forwardings (`loads`), then also without its struct-store splits (`structStores`), then also
-without its nil-check eliminations (`nilChecks`), each only if it removes rules. -/
+/-- The tables `checkedRewrite` tries in order: `t`, then (a segment rewrite, Load-of-Store
+forwarding, struct-store split or nil-check elimination the validator cannot relate, issue #151)
+`t` without its segment rules (`segs`), then also without its forwardings (`loads`), then also
+without its struct-store splits (`structStores`), then also without its nil-check eliminations
+(`nilChecks`), each only if it removes rules. -/
 def checkedTiers (t : GoFV.Rules.Interp.Table) : List GoFV.Rules.Interp.Table :=
-  let t₁ := { t with loads := #[] }
+  let t₀ := { t with segs := #[] }
+  let t₁ := { t₀ with loads := #[] }
   let t₂ := { t₁ with structStores := #[] }
   let t₃ := { t₂ with nilChecks := #[] }
-  t :: ((if t.loads.isEmpty then [] else [t₁]) ++ (if t.structStores.isEmpty then [] else [t₂]) ++
-    (if t.nilChecks.isEmpty then [] else [t₃]))
+  t :: ((if t.segs.isEmpty then [] else [t₀]) ++ (if t.loads.isEmpty then [] else [t₁]) ++
+    (if t.structStores.isEmpty then [] else [t₂]) ++ (if t.nilChecks.isEmpty then [] else [t₃]))
 
 /-- The first of the tables whose run `checkedRun` accepts, and its result. -/
 def checkedFirst (env : PassEnv) (f : GoFV.SSA.Func) :
