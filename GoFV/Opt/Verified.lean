@@ -2,7 +2,7 @@ import GoFV.Opt.NumberLines
 import GoFV.Opt.CopyElim
 import GoFV.Opt.Deadcode
 import GoFV.Opt.ShortCircuit
-import GoFV.Opt.Decompose
+import GoFV.Opt.DecomposeCheck
 import GoFV.Opt.Opt
 import GoFV.Opt.ZCSE
 import GoFV.Opt.CSE
@@ -86,6 +86,10 @@ inductive Rel where
   /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
   read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/
   | wb
+  /-- `RefinesFrom DecPre` (decompose user/builtin): monotone contracts that cannot tell whether
+  unreachable frame temporaries exist (`Env.TempOblivious`) and inputs holding no pointer into a
+  frame temporary (`InitAvoids`). -/
+  | dec
   deriving DecidableEq, Repr, Inhabited
 
 /-- How the verified pipeline runs a stock pass. -/
@@ -168,7 +172,8 @@ def stockPasses : Array StockPass := #[
   { name := "early phielim and copyelim", step := .proven copyelimPass .refines copyGuard },
   { name := "early deadcode", step := deadcodeStep },
   { name := "short circuit", step := .proven shortcircuitPass .refines noGuard },
-  { name := "decompose user", required := true, step := .stock Decompose.decomposeUserPass },
+  { name := "decompose user", required := true,
+    step := .proven Decompose.decomposeUserPass .dec Decompose.decUserFrag },
   { name := "pre-opt deadcode", step := deadcodeStep },
   { name := "opt", required := true, step := optStep, full := some opt },
   { name := "zero arg cse", required := true, step := .proven zcsePass .refines noGuard },
@@ -188,7 +193,7 @@ def stockPasses : Array StockPass := #[
   { name := "expand calls", required := true,
     step := .proven expandCallsPass .mono expandCallsFrag },
   { name := "decompose builtin", required := true,
-    step := .stock Decompose.postExpandCallsDecomposePass },
+    step := .proven Decompose.postExpandCallsDecomposePass .dec Decompose.decBuiltinFrag },
   { name := "softfloat", required := true, step := .proven softfloatPass .refines noGuard },
   { name := "branchelim", step := .proven branchelimPass .refines noGuard },
   { name := "late opt", required := true, step := optStep, full := some opt },
