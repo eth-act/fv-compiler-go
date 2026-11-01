@@ -101,16 +101,20 @@ theorem vaddr_retype (t : Ty) (v : Val) : vaddr (v.retype t) = none ∨ vaddr (v
       exact .inr (by simp [vaddr, ptrV_of_addr ha])
     · exact .inr rfl
   · exact .inr rfl
+  · exact .inl rfl
+  · exact .inr rfl
 
 theorem retype_keep {t : Ty} (h : CSE.keepsPtr t = true) (p : Ptr) : (Val.ptr p).retype t = .ptr p := by
   cases t with
   | int w => cases w <;> first | rfl | cases h
+  | bool => cases h
   | _ => rfl
 
-theorem retype_global (t : Ty) (s : String) (o : BitVec 64) :
+theorem retype_global {t : Ty} (h : CSE.notBool t = true) (s : String) (o : BitVec 64) :
     (Val.ptr ⟨.global s, o⟩).retype t = .ptr ⟨.global s, o⟩ := by
   cases t with
   | int w => cases w <;> rfl
+  | bool => cases h
   | _ => rfl
 
 theorem vaddr_offPtr (k : Int64) (v : Val) :
@@ -343,8 +347,10 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
   | some x =>
     rw [hv] at ha
     simp only at ha
-    by_cases hop : x.op = .Addr
-    · simp only [show (x.op == .Addr) = true by simp [hop], ↓reduceIte] at ha
+    by_cases hop : x.op = .Addr ∧ CSE.notBool (CSE.valShape tabs f x) = true
+    · obtain ⟨hop, hkg⟩ := hop
+      simp only [show (x.op == .Addr && CSE.notBool (CSE.valShape tabs f x)) = true by
+        simp [hop, hkg], ↓reduceIte] at ha
       have he := H.eval hb hv (by rw [hop]; decide) hr
       obtain ⟨argv, r, -, ho, rfl⟩ := evalValue_ok he
       obtain ⟨s, rfl, hf⟩ : ∃ s, al = .global s ∧
@@ -361,8 +367,11 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
         · cases ha
       rw [evalOp_frameVal (.inl hop) hf] at ho
       cases ho
-      exact retype_global _ _ _
-    · simp only [show (x.op == .Addr) = false by simp [hop], Bool.false_eq_true, ↓reduceIte] at ha
+      rw [tys_getD]; exact retype_global hkg _ _
+    · have hne : (x.op == .Addr && CSE.notBool (CSE.valShape tabs f x)) = false := by
+        cases h1 : (x.op == .Addr) <;> cases h2 : CSE.notBool (CSE.valShape tabs f x) <;>
+          simp_all
+      simp only [hne, Bool.false_eq_true, ↓reduceIte] at ha
       split at ha
       · rename_i hc
         simp only [Bool.and_eq_true, beq_iff_eq] at hc

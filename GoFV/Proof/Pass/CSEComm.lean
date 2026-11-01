@@ -131,12 +131,20 @@ theorem neq_swap (w : Width) (a b : Val) (rest : List Val) :
   int2_swap (fun _ _ => congrArg Val.bool bne_comm) a b rest
 
 theorem andB_swap (a b : Val) (rest : List Val) :
-    Cmp.andB (b :: a :: rest) = Cmp.andB (a :: b :: rest) :=
-  bool2_swap Bool.and_comm a b rest
+    Cmp.andB (b :: a :: rest) = Cmp.andB (a :: b :: rest) := by
+  cases rest with
+  | nil =>
+    delta Cmp.andB; dsimp only
+    rcases a.asBool with _ | _ | _ <;> rcases b.asBool with _ | _ | _ <;> rfl
+  | cons _ _ => rfl
 
 theorem orB_swap (a b : Val) (rest : List Val) :
-    Cmp.orB (b :: a :: rest) = Cmp.orB (a :: b :: rest) :=
-  bool2_swap Bool.or_comm a b rest
+    Cmp.orB (b :: a :: rest) = Cmp.orB (a :: b :: rest) := by
+  cases rest with
+  | nil =>
+    delta Cmp.orB; dsimp only
+    rcases a.asBool with _ | _ | _ <;> rcases b.asBool with _ | _ | _ <;> rfl
+  | cons _ _ => rfl
 
 theorem eqB_swap (a b : Val) (rest : List Val) :
     Cmp.eqB (b :: a :: rest) = Cmp.eqB (a :: b :: rest) :=

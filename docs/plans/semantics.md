@@ -191,6 +191,8 @@ more defined (each still refines):
   ⟦lhs⟧ is the same under the strict and the parallel form. Rules with `AndB` only on the
   right-hand side (1600-1628, `MemEq` splits) get a more defined target. The commutativity of
   `AndB`/`OrB` used for `commute` patterns is re-proved (`Proof/Rules/Comm.lean`).
+- **generic cse** orders the arguments of commutative ops; `AndB`/`OrB` stay commutative
+  (`andB_swap`/`orB_swap` re-proved in `Proof/Pass/CSEComm.lean`).
 - **sccp** folds through the rules on constant arguments; constants are never `poison`.
 - **prove** does not decompose `AndB`/`OrB` (no `OpAndB`/`OpOrB` in `prove.go`): a branch on
   one gives a fact about that value only.
