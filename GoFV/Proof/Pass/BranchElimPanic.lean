@@ -5,9 +5,10 @@ import GoFV.Proof.Pass.BranchElimOk
 
 `post_panic`: a panic of the source in `post` (after `dom` and the arm ran) is a panic of the
 merged block. `dom_panic`: a panic in `dom` is one too. In both, the target's schedule lists
-before the panicking root only values the source evaluated before it (`Order.transfer`, with
-the roots of `dom` and `post` chained) and speculation-safe values; for `dom_panic` the merged
-block's roots are chained too, so no root of `post` comes first (`dep_closed`).
+before the panicking node only values the source evaluated before it and speculation-safe
+values (`Order.transfer_rank`: the checker's `npSeqOK` makes the merged schedule list the
+non-pure nodes of `dom` and then those of `post` in their source sequence); for `dom_panic` no
+non-pure node of `post` comes first (`not_before_append`).
 -/
 
 namespace GoFV.Proof.BranchElim
@@ -15,25 +16,6 @@ namespace GoFV.Proof.BranchElim
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.BranchElim GoFV.Proof Dom
 
 variable {f g : Func} {s : Site}
-
-/-- A dependency among the nodes of one block is one among the nodes of a block containing
-them with the same arguments. -/
-theorem dep_sub {vs vs' : List SNode} (hsub : ∀ x, NodeIn vs x → NodeIn vs' x)
-    (hargs : ∀ x, NodeIn vs x → argsOf vs' x = argsOf vs x) {a b : ID} :
-    Order.Dep (NodeIn vs) (argsOf vs) a b → Order.Dep (NodeIn vs') (argsOf vs') a b := by
-  intro h
-  induction h with
-  | arg hx hy hxy => exact .arg (hsub _ hx) (hsub _ hy) (by rw [hargs _ hy]; exact hxy)
-  | trans _ _ ih1 ih2 => exact .trans ih1 ih2
-
-/-- A set of nodes closed under arguments contains whatever its members depend on. -/
-theorem dep_closed {vs : List SNode} {P : ID → Prop}
-    (hcl : ∀ z, P z → NodeIn vs z → ∀ a ∈ argsOf vs z, NodeIn vs a → P a) {y z : ID} :
-    Order.Dep (NodeIn vs) (argsOf vs) y z → P z → P y := by
-  intro h
-  induction h with
-  | arg hx hy hxy => exact fun hz => hcl _ hz hy _ hxy hx
-  | trans _ _ ih1 ih2 => exact fun hz => ih1 (ih2 hz)
 
 /-- An argument of a node listed before it in a dependency order. -/
 theorem topoRem_arg_prefix {D : ID → List ID} :
@@ -46,54 +28,102 @@ theorem topoRem_arg_prefix {D : ID → List ID} :
       · exact List.mem_cons_self
       · exact List.mem_cons_of_mem _ (topoRem_arg_prefix h2 x hx a ha hm)
 
-/-- The root a run panics at is not a `NilCheck`-or-pure node (`f` has no `NilCheck`). -/
-theorem not_nilIn {f : Func} {B : Block} (hown : ValuesOwn f B) (hnd : B.values.toList.Nodup)
-    {r : ID} {rv : Value} (hrB : r ∈ B.values) (hrv : f.value? r = some rv) (hrnp : rv.op ≠ .Phi)
-    (hop : prio rv.op = 2) :
-    ¬ NilIn (schedNodes f B).toList r := by
-  intro hn
-  obtain ⟨v', hv', hvid⟩ := hown r hrB
-  rw [hrv] at hv'; cases hv'
-  have hm : (⟨rv.id, rv.args, prio rv.op⟩ : SNode) ∈ (schedNodes f B).toList :=
-    mem_schedNodes.2 ⟨r, hrB, rv, hrv, hrnp, rfl⟩
-  have := hn _ (by rw [← hvid]; exact nodeOf_of_mem (schedNodes_ids hown hnd) hm)
-  simp only [hop] at this; omega
+/-- A block's non-pure schedule nodes are its `npOf` values. -/
+theorem npIn_schedNodes {f : Func} {B : Block} (hown : ValuesOwn f B)
+    (hnd : B.values.toList.Nodup) : npIn (schedNodes f B).toList = npOf f B := by
+  funext x
+  by_cases hx : x ∈ B.values ∧ ∃ v, f.value? x = some v ∧ v.op ≠ .Phi
+  · obtain ⟨hxB, v, hv, hp⟩ := hx
+    unfold npIn npOf
+    rw [CopyElim.nodeOf_schedNodes hown hnd hxB hv hp, hv]
+    simp [hxB, hp]
+  · have hn : ¬ NodeIn (schedNodes f B).toList x := fun h => hx ((nodeIn_schedNodes hown).1 h)
+    unfold npIn npOf
+    rw [CopyElim.nodeOf_none hn]
+    cases hc : B.values.contains x with
+    | false => rfl
+    | true =>
+      cases hv : f.value? x with
+      | none => rfl
+      | some v =>
+        have hph : v.op = .Phi := Classical.byContradiction fun hp =>
+          hx ⟨Array.contains_iff_mem.1 hc, v, hv, hp⟩
+        simp [hph]
 
-theorem nilCheck_eq {op : Op} (h : op.nilCheck = true) : op = .NilCheck := by
-  unfold Op.nilCheck at h
-  split at h
-  · rfl
-  · cases h
+/-- Splitting a filtered list that is the concatenation of two disjointly filtered lists. -/
+theorem filter_split {a b : ID → Bool} {oT oD oP : List ID}
+    (h : oT.filter (fun x => a x || b x) = oD.filter a ++ oP.filter b)
+    (hab : ∀ x, a x = true → b x = false) :
+    oT.filter a = oD.filter a ∧ oT.filter b = oP.filter b := by
+  have hba : ∀ x, b x = true → a x = false := fun x hb =>
+    Bool.eq_false_iff.2 fun ha => by rw [hab x ha] at hb; cases hb
+  have n1 : (oP.filter b).filter a = [] := List.filter_eq_nil_iff.2 fun x hx => by
+    rw [hba x (List.mem_filter.1 hx).2]; decide
+  have n2 : (oD.filter a).filter b = [] := List.filter_eq_nil_iff.2 fun x hx => by
+    rw [hab x (List.mem_filter.1 hx).2]; decide
+  have i1 : (oD.filter a).filter a = oD.filter a := by
+    rw [List.filter_filter]; exact List.filter_congr fun x _ => by cases a x <;> rfl
+  have i2 : (oP.filter b).filter b = oP.filter b := by
+    rw [List.filter_filter]; exact List.filter_congr fun x _ => by cases b x <;> rfl
+  have e1 : oT.filter a = (oT.filter (fun x => a x || b x)).filter a := by
+    rw [List.filter_filter]; exact List.filter_congr fun x _ => by cases a x <;> rfl
+  have e2 : oT.filter b = (oT.filter (fun x => a x || b x)).filter b := by
+    rw [List.filter_filter]
+    exact List.filter_congr fun x _ => by cases b x <;> cases a x <;> rfl
+  exact ⟨by rw [e1, h, List.filter_append, i1, n1, List.append_nil],
+    by rw [e2, h, List.filter_append, i2, n2, List.nil_append]⟩
 
-theorem panicking_of {f : Func} (hnn : Dead.NoNil f) {r : ID} {rv : Value}
-    (hrv : f.value? r = some rv)
-    (h : rv.op = .PanicBounds ∨ rv.op = .StaticLECall ∨ rv.op = .StaticCall ∨ rv.op = .NilCheck) :
-    rv.op = .PanicBounds ∨ rv.op = .StaticLECall ∨ rv.op = .StaticCall := by
-  rcases h with h | h | h | h
-  · exact .inl h
-  · exact .inr (.inl h)
-  · exact .inr (.inr h)
-  · exact absurd h (hnn r rv hrv)
+/-- In `L1 ++ L2` nothing outside `L1` comes before a member of `L1`. -/
+theorem not_before_append {L1 L2 : List ID} (hnd : (L1 ++ L2).Nodup) {x r : ID} (hr : r ∈ L1)
+    (hx : x ∉ L1) : ¬ Order.Before (L1 ++ L2) x r := by
+  rintro ⟨i, j, hij, hi, hj⟩
+  obtain ⟨j', hj'⟩ := List.getElem?_of_mem hr
+  have hj'lt : j' < L1.length := (List.getElem?_eq_some_iff.1 hj').1
+  have := Order.idx_unique hnd hj (by rw [List.getElem?_append_left hj'lt]; exact hj')
+  subst this
+  rw [List.getElem?_append_left (by omega)] at hi
+  exact hx (List.mem_of_getElem? hi)
+
+/-- The priority of a root is not 0. -/
+theorem prio_root {op : Op} (h : isRoot op = true) : prio op ≠ 0 := by
+  unfold prio
+  split <;> (try split) <;> simp_all
 
 namespace Setup
 
 variable (S : Setup f g s)
 include S
 
-/-- The roots of `dom` and `post` in `f`, and of the merged block in `g`, are chained. -/
-theorem chained :
-    Dead.Chained f (· ∈ #[s.dom, s.post]) ∧ ∀ D', g.block? s.dom = some D' →
-      Dead.Chained g (· ∈ #[s.dom]) := by
-  obtain ⟨ce, hwf⟩ := S.wf
-  obtain ⟨ce', hwg⟩ := S.wg
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hcg, hcf⟩ := merged_spec S.rel
-  refine ⟨Dead.chained_of hwf (fun b hb => ?_) hcf, fun _ _ => Dead.chained_of hwg (fun b hb => ?_) hcg⟩
-  · simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hb
-    rcases hb with rfl | rfl
-    · exact S.domIn
-    · exact S.postIn
-  · simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hb
-    subst hb; exact S.domInG
+/-- `dom`'s and `post`'s non-`Phi` values are distinct. -/
+theorem np_disj {D P : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
+    (x : ID) (h : npOf f D x = true) : npOf f P x = false := by
+  unfold npOf at h ⊢
+  have hx : x ∈ D.values := Array.contains_iff_mem.1 (Bool.and_eq_true_iff.1 h).1
+  have hnp := (S.dom_not hD hx).1
+  have hc : P.values.contains x = false := Bool.eq_false_iff.2 fun hc => by
+    rw [postVal_iff.2 ⟨P, hP, Array.contains_iff_mem.1 hc⟩] at hnp; cases hnp
+  rw [hc]; rfl
+
+/-- The merged block's schedule lists the non-pure nodes of `dom`, then those of `post`, in
+their source sequence (`npSeqOK`). -/
+theorem npSeq {D P D' : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
+    (hD' : g.block? s.dom = some D') {oT : Array ID} (hoT : schedule g D' = some oT) :
+    ∃ oD oP, schedule f D = some oD ∧ schedule f P = some oP ∧
+      oT.toList.filter (fun x => npOf f D x || npOf f P x) =
+        oD.toList.filter (npOf f D) ++ oP.toList.filter (npOf f P) := by
+  obtain ⟨D1, P1, D1', hD1, hP1, hD1', -, -, -, -, -, -, -, -, -, hn⟩ := merged_spec S.rel
+  rw [hD] at hD1; cases hD1
+  rw [hP] at hP1; cases hP1
+  rw [hD'] at hD1'; cases hD1'
+  unfold npSeqOK at hn
+  cases hoD : schedule f D with
+  | none => rw [hoD] at hn; cases hn
+  | some oD =>
+    cases hoP : schedule f P with
+    | none => rw [hoD, hoP] at hn; cases hn
+    | some oP =>
+      rw [hoD, hoP, hoT] at hn
+      exact ⟨oD, oP, rfl, rfl, by simpa using hn⟩
 
 /-- **A panic in `post`** (after `dom` and the arm) is a panic of the merged block. -/
 theorem post_panic {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat}
@@ -117,7 +147,6 @@ theorem post_panic {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Na
   obtain ⟨eaf, eas, -, -⟩ := S.arm_facts htk (by rw [e1s, hs]) hpath
   obtain ⟨psP, oP, pre, r, post, Gp, hpsP, hoP, hsplit, hpre, hrp, hGf, hGs, hGo, hGv, hGp, hrP, rv,
     hrv, hrnp, hrop⟩ := enter_panic_facts hwf S.postIn hP (by rw [eas, e1s, hs]) h3
-  have hrop3 := panicking_of S.noNil hrv hrop
   obtain ⟨D', psT, oT, hD', hid', hpsT, hoT, ondT, otopoT, omemT, hPnode, hg0, hsz0, hGs', hT0, hSd,
       hmix, hAnode, hFarm⟩ := S.merged_core hfr hsz hs hag htd hdi hD hP h1 htk hc hpath
     (G3 := Gp) (by rw [hGf, eaf, e1f]) (by rw [hGs, eas, e1s, hs]) hGo hGp (· ∈ pre)
@@ -165,12 +194,16 @@ theorem post_panic {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Na
     rw [argsOf_schedNodes hownP hndP hxP hfv hnp,
       argsOf_schedNodes hownD' hndD' ((omemT x).1 (hPnode x hxP)).1 hgv (by rw [hop]; exact hnp),
       hargs]
-  have hchain := (S.chained.1) s.post P (by simp) hP
-  have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk'
-    (not_nilIn hownP hndP hrP hrv hrnp (CopyElim.prio_panicking hrop3))
-    (fun y hy hyn hyr => hchain y r hy ((hnodeP r).2 ⟨hrP, rv, hrv, hrnp⟩) hyn
-      (not_nilIn hownP hndP hrP hrv hrnp (CopyElim.prio_panicking hrop3)) hyr)
-    (fun y _ _ hd => dep_sub hsubN hargsN hd)
+  obtain ⟨oD, oP', -, hoP', hseqA⟩ := S.npSeq hD hP hD' hoT
+  rw [hoP] at hoP'; cases hoP'
+  have hseq := (filter_split hseqA (S.np_disj hD hP)).2
+  rw [← npIn_schedNodes hownP hndP] at hseq
+  have hrnpP : npIn (schedNodes f P).toList r = true := by
+    rw [npIn_schedNodes hownP hndP]
+    simp [npOf, hrP, hrv, hrnp, CopyElim.prio_ne_zero_of_panic hrop]
+  have htr := Order.transfer_rank hspecS.topo hspecS.pureFirst hspecT.topo (fun _ => npIn_iff)
+    hseq.symm hk hk' hrnpP (fun a y ha hy hay hy' =>
+      .direct (hsubN a ha) (.arg (hsubN a ha) hy' (by rw [hargsN y hy]; exact hay)))
   -- a value of `post` the target lists before `r` the source evaluated before `r`
   have hQ : ∀ x ∈ pre', ∀ fv, f.value? x = some fv → x ∈ P.values → fv.op ≠ .Phi → x ∈ pre := by
     intro x hx fv hfv hxP hnp
@@ -297,7 +330,6 @@ theorem dom_panic {tabs : Tables} {env : Env} {frS frT : Frame} {i : Nat}
   obtain ⟨ce', hwg⟩ := S.wg
   obtain ⟨psS, oS, pre, r, post, Gp, hpsS, hoS, hsplit, hpre, hrp, hGf, hGs, hGo, hGv, hGp, hrD, rv,
     hrv, hrnp, hrop⟩ := enter_panic_facts hwf S.domIn hD hs h1
-  have hrop3 := panicking_of S.noNil hrv hrop
   obtain ⟨D', psT, oT, hD', hpsT, hoT, hszT, hagT⟩ := S.targetPre hs hsz hag hD hpsS
   obtain ⟨D1, P, D1', hD1, hP, hD1', hid', -, -, -, hreg, hDin, -, -, -⟩ := merged_spec S.rel
   rw [hD] at hD1; cases hD1
@@ -374,11 +406,17 @@ theorem dom_panic {tabs : Tables} {env : Env} {frS frT : Frame} {i : Nat}
     obtain ⟨gv, hgv, hsem, -⟩ := hDsem x hxD fv hfv
     rw [argsOf_schedNodes hownD hndD hxD hfv hnp,
       argsOf_schedNodes hownD' hndD' (hDin x hxD) hgv (by rw [hsem.2.1]; exact hnp), hsem.2.2.2.2]
-  have hchain := (S.chained.1) s.dom D (by simp) hD
-  have hrNil := not_nilIn hownD hndD hrD hrv hrnp (CopyElim.prio_panicking hrop3)
-  have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk' hrNil
-    (fun y hy hyn hyr => hchain y r hy ((hnodeD r).2 ⟨hrD, rv, hrv, hrnp⟩) hyn hrNil hyr)
-    (fun y _ _ hd => dep_sub hsubN hargsN hd)
+  obtain ⟨oD', oP, hoD', -, hseqA⟩ := S.npSeq hD hP hD' hoT
+  rw [hoS] at hoD'; cases hoD'
+  have hseq := (filter_split hseqA (S.np_disj hD hP)).1
+  rw [← npIn_schedNodes hownD hndD] at hseq
+  have hrnpD' : npOf f D r = true := by
+    simp [npOf, hrD, hrv, hrnp, CopyElim.prio_ne_zero_of_panic hrop]
+  have hrnpD : npIn (schedNodes f D).toList r = true := by
+    rw [npIn_schedNodes hownD hndD]; exact hrnpD'
+  have htr := Order.transfer_rank hspecS.topo hspecS.pureFirst hspecT.topo (fun _ => npIn_iff)
+    hseq.symm hk hk' hrnpD (fun a y ha hy hay hy' =>
+      .direct (hsubN a ha) (.arg (hsubN a ha) hy' (by rw [hargsN y hy]; exact hay)))
   -- arguments of `dom`'s non-`Phi`s are neither arm nor `post` values
   have hDargs : ∀ x ∈ D.values, ∀ fv, f.value? x = some fv → fv.op ≠ .Phi → ∀ a ∈ fv.args, ¬ F a := by
     intro x hx fv hfv hnp a ha
@@ -440,49 +478,19 @@ theorem dom_panic {tabs : Tables} {env : Env} {frS frT : Frame} {i : Nat}
       exfalso
       obtain ⟨P2, hP2, hxP⟩ := postVal_iff.1 hxp
       rw [hP] at hP2; cases hP2
-      obtain ⟨-, hv'⟩ := semEq_of S.rel fun fv' h _ => by rw [hfv] at h; cases h; exact hph
-      obtain ⟨gv, hgv, -, hop⟩ := hv' fv hfv
-      have hprio : prio gv.op = 2 := by
-        rw [hop]; unfold prio
-        have : Op.nilCheck fv.op = false := by
-          cases h : Op.nilCheck fv.op with
-          | false => rfl
-          | true => exact absurd (nilCheck_eq h) (S.noNil x fv hfv)
-        simp [this, hiso]
-      have hxT := hpreT x hx
-      obtain ⟨hxD', gv2, hgv2, hgnp2⟩ := (omemT x).1 hxT
-      rw [hgv] at hgv2; cases hgv2
-      have hxnil := not_nilIn hownD' hndD' hxD' hgv hgnp2 hprio
-      obtain ⟨grv, hgrv, hgrsem, -⟩ := hDsem r hrD rv hrv
-      have hrnilT := not_nilIn hownD' hndD' (hDin r hrD) hgrv (by rw [hgrsem.2.1]; exact hrnp)
-        (by rw [hgrsem.2.1]; exact CopyElim.prio_panicking hrop3)
-      have hxr : x ≠ r := fun h => by
-        subst h; rw [(S.dom_not hD hrD).1] at hxp; cases hxp
-      rcases (S.chained.2 D' hD') s.dom D' (by simp) hD' x r ((hnodeT x).2 ⟨hxD', gv, hgv, hgnp2⟩)
-        ((hnodeT r).2 ⟨hDin r hrD, grv, hgrv, by rw [hgrsem.2.1]; exact hrnp⟩) hxnil hrnilT hxr
-        with hd | hd
-      · -- `r` depends on `x`: `x` would be a value of `dom`
-        have hxD : x ∈ D.values := dep_closed (vs := (schedNodes g D').toList)
-          (P := fun z => z ∈ D.values) (fun z hz hzn a ha han => by
-            obtain ⟨hzD', gz, hgz, hgznp⟩ := (hnodeT z).1 hzn
-            obtain ⟨fz, hfz⟩ := hval z gz hgz
-            obtain ⟨gz', hgz', hzsem, -⟩ := hDsem z hz fz hfz
-            rw [hgz] at hgz'; cases hgz'
-            rw [argsOf_schedNodes hownD' hndD' hzD' hgz hgznp, hzsem.2.2.2.2] at ha
-            have hnF := hDargs z hz fz hfz (fun h => hgznp (hzsem.2.1 ▸ h)) a (Array.mem_toList_iff.1 ha)
-            have hr := hreg a ((hnodeT a).1 han).1
-            unfold Site.regionVal at hr
-            rcases Bool.or_eq_true_iff.1 hr with hr | hr
-            · rcases Bool.or_eq_true_iff.1 hr with hr | hr
-              · obtain ⟨D2, hD2, h2⟩ := domVal_iff.1 hr; rw [hD] at hD2; cases hD2; exact h2
-              · exact absurd (.inl hr) hnF
-            · exact absurd (.inr hr) hnF) hd hrD
-        rw [(S.dom_not hD hxD).1] at hxp; cases hxp
-      · -- `x` depends on `r` but comes first
-        obtain ⟨jx, hjx⟩ := List.getElem?_of_mem hx
-        have hjl : jx < pre'.length := (List.getElem?_eq_some_iff.1 hjx).1
-        have := hspecT.topo.dep_lt hd hk' (by rw [hsplitT, List.getElem?_append_left hjl]; exact hjx)
-        omega
+      have hxnp : npOf f P x = true := by
+        simp [npOf, hxP, hfv, hph, prio_root hiso]
+      have hxD : npOf f D x = false := Bool.eq_false_iff.2 fun h => by
+        rw [S.np_disj hD hP x h] at hxnp; cases hxnp
+      obtain ⟨jx, hjx⟩ := List.getElem?_of_mem hx
+      have hjl : jx < pre'.length := (List.getElem?_eq_some_iff.1 hjx).1
+      have hb : Order.Before oT.toList x r :=
+        ⟨jx, pre'.length, hjl, by rw [hsplitT, List.getElem?_append_left hjl]; exact hjx, hk'⟩
+      rw [← Order.before_filter (fun x => npOf f D x || npOf f P x) (by simp [hxnp])
+        (by simp [hrnpD']), hseqA] at hb
+      exact not_before_append (hseqA ▸ ondT.filter _)
+        (List.mem_filter.2 ⟨List.mem_of_getElem? hk, hrnpD'⟩)
+        (fun h => by rw [(List.mem_filter.1 h).2] at hxD; cases hxD) hb
   -- `MixOK` on the target's prefix
   have hmix : MixOK env (Ctx.make tabs g) Gp F pre' := by
     intro x hx

@@ -1,7 +1,6 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.BranchElim
-import GoFV.Proof.Pass.DeadFrag
 
 /-!
 # `lake exe branchelim-probe <dir>...`: branchelim's step checker and fragment on the corpus
@@ -9,8 +8,7 @@ import GoFV.Proof.Pass.DeadFrag
 For every `branchelim` section (input: the previous section), runs the Lean pass with each
 rewrite instrumented: counts the inputs that pass `check` (the pass's gate), the rewrites
 `elimIf`/`elimIfElse` propose and the step checker (`BranchElim.stepOK`) accepts or rejects,
-and the functions branchelim changes that are in the fragment of `branchelim_refines` (no
-`NilCheck`, `Dead.noNilB`).
+and the functions branchelim changes.
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Opt.BranchElim
@@ -53,7 +51,6 @@ def main (args : List String) : IO UInt32 := do
   let mut inputs := 0
   let mut checked := 0
   let mut changed := 0
-  let mut frag := 0
   let mut k : Counts := {}
   let mut shown := 0
   for path in files do
@@ -85,12 +82,10 @@ def main (args : List String) : IO UInt32 := do
       if k.rejected != r0 && shown < 20 then
         IO.println s!"REJECT {path}"
         shown := shown + 1
-      if g != f then
-        changed := changed + 1
-        if GoFV.Proof.Dead.noNilB f0 then frag := frag + 1
+      if g != f then changed := changed + 1
   IO.println s!"branchelim inputs {inputs}, passing check {checked}"
   IO.println s!"rewrites proposed {k.proposed}, accepted {k.accepted}, rejected {k.rejected}"
-  IO.println s!"functions changed {changed}, of which without NilCheck (fragment) {frag}"
+  IO.println s!"functions changed {changed}"
   return 0
 
 end GoFVTest.BranchElimProbe

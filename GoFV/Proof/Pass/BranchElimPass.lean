@@ -5,11 +5,11 @@ import GoFV.Opt.BranchElim
 /-!
 # branchelim refines its input
 
-`branchelim_refines`: on an input without `NilCheck`, the output of `branchelimPass`
-refines the input. The pass runs its rewrite loop with every rewrite checked (`stepOK`: the
-result passes `check` and is a diamond merge of the previous function, `DRel`); the loop keeps
-`Inv` (refines the input, passes `check`, no `NilCheck`), each accepted rewrite by
-`refines_of_step`. The input's `postorder` cache does not change runs (`eraseF_postorder`).
+`branchelim_refines`: the output of `branchelimPass` refines its input. The pass runs its
+rewrite loop with every rewrite checked (`stepOK`: the result passes `check` and is a diamond
+merge of the previous function, `DRel`); the loop keeps `Inv` (refines the input, passes
+`check`), each accepted rewrite by `refines_of_step`. The input's `postorder` cache does not
+change runs (`eraseF_postorder`).
 -/
 
 namespace GoFV.Proof.BranchElim
@@ -38,34 +38,17 @@ theorem stepOK_sound {ce : CheckEnv} {f g : Func} {dom : ID} (h : stepOK ce f g 
   obtain ⟨h1, post, -, h2⟩ := h
   exact ⟨checkOK_sound h1, diamondB_sound h2⟩
 
-/-- A checked rewrite introduces no `NilCheck`. -/
-theorem noNil_step {f g : Func} {s : Site} (h : DRel f g s) (hn : Dead.NoNil f) : Dead.NoNil g := by
-  intro x gv hgv
-  have hv := value_spec h x
-  unfold Site.valueOK at hv
-  cases hfv : f.value? x with
-  | none => rw [hfv, hgv] at hv; cases hv
-  | some fv =>
-    rw [hfv, hgv] at hv
-    simp only [Bool.and_eq_true, beq_iff_eq] at hv
-    obtain ⟨-, hv⟩ := hv
-    split at hv
-    · simp only [Bool.and_eq_true, beq_iff_eq] at hv
-      rw [hv.1]; decide
-    · simp only [Bool.and_eq_true, beq_iff_eq] at hv
-      rw [hv.1]; exact hn x fv hfv
-
-/-- The loop invariant: refines the input, passes `check`, has no `NilCheck`. -/
+/-- The loop invariant: refines the input, passes `check`. -/
 def Inv (tabs : Tables) (f0 f : Func) : Prop :=
-  Refines tabs f tabs f0 ∧ (∃ ce, check ce f = .ok ()) ∧ Dead.NoNil f
+  Refines tabs f tabs f0 ∧ ∃ ce, check ce f = .ok ()
 
 theorem Inv.step {tabs : Tables} {f0 f g : Func} {ce : CheckEnv} {dom : ID} (hI : Inv tabs f0 f)
     (h : stepOK ce f g dom = true) : Inv tabs f0 g := by
-  obtain ⟨hr, ⟨cf, hcf⟩, hn⟩ := hI
+  obtain ⟨hr, cf, hcf⟩ := hI
   obtain ⟨hcg, s, hrel⟩ := stepOK_sound h
   have S : Setup f g s := ⟨⟨cf, check_wf hcf⟩, ⟨ce, check_wf hcg⟩,
-    Dom.certOK_of_check (check_domCert hcf), hrel, hn⟩
-  exact ⟨hr.trans S.refines_of_step, ⟨ce, hcg⟩, noNil_step hrel hn⟩
+    Dom.certOK_of_check (check_domCert hcf), hrel⟩
+  exact ⟨hr.trans S.refines_of_step, ce, hcg⟩
 
 theorem filter_some {o : Option Func} {p : Func → Bool} {g : Func} (h : o.filter p = some g) :
     p g = true := by
@@ -129,16 +112,9 @@ theorem rounds_inv {tabs : Tables} {f0 : Func} {c : BranchElim.Ctx} {ce : CheckE
       · simp only [pure, Except.pure, Except.ok.injEq] at h
         rw [← h]; exact hI'
 
-theorem noNil_postorder {f : Func} (h : Dead.NoNil f) : Dead.NoNil f.postorder.2 := by
-  intro x v hv
-  apply h x v
-  revert hv
-  unfold Func.postorder
-  split <;> exact id
-
-/-- **branchelim refines its input** (checked input, no `NilCheck`). -/
+/-- **branchelim refines its input.** -/
 theorem branchelim_refines {penv : PassEnv} {f : Func} {out : PassOut}
-    (h : branchelimPass penv f = .ok out) (hnn : Dead.NoNil f) :
+    (h : branchelimPass penv f = .ok out) :
     Refines out.tables out.func penv.tables f := by
   simp only [branchelimPass, Pass.ofFunc, bind, Except.bind, pure, Except.pure] at h
   split at h
@@ -167,6 +143,6 @@ theorem branchelim_refines {penv : PassEnv} {f : Func} {out : PassOut}
           · rename_i hck
             have hck' : checkOK { tabs := penv.tables, typs := penv.typs } f.postorder.2 = true := by
               simpa using hck
-            exact (rounds_inv _ _ _ hg ⟨hpo, ⟨_, checkOK_sound hck'⟩, noNil_postorder hnn⟩).1
+            exact (rounds_inv _ _ _ hg ⟨hpo, _, checkOK_sound hck'⟩).1
 
 end GoFV.Proof.BranchElim

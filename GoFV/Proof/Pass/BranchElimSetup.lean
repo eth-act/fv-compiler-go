@@ -6,11 +6,10 @@ import GoFV.Proof.SimIH
 /-!
 # branchelim: the setting of one checked rewrite
 
-`Setup f g s`: `f` and `g` are well formed, `f`'s dominator certificate holds, `g` is `f` with
-the diamond `s` merged (`DRel`), and `f` has no `NilCheck` (the fragment of copyelim, deadcode
-and zcse; #96 removes it). Consequences used by the simulation: the blocks of the diamond are
-listed and distinct, their values are disjoint, a run enters an arm or `post` only from the
-diamond, and the two functions' contexts agree on unchanged values.
+`Setup f g s`: `f` and `g` are well formed, `f`'s dominator certificate holds, and `g` is `f`
+with the diamond `s` merged (`DRel`). Consequences used by the simulation: the blocks of the
+diamond are listed and distinct, their values are disjoint, a run enters an arm or `post` only
+from the diamond, and the two functions' contexts agree on unchanged values.
 -/
 
 namespace GoFV.Proof.BranchElim
@@ -23,7 +22,6 @@ structure Setup (f g : Func) (s : Site) : Prop where
   wg : ∃ ce, WF ce g
   cf : CertOK f
   rel : DRel f g s
-  noNil : Dead.NoNil f
 
 /-- Side `k` of the diamond is taken: its arm and `post`'s predecessor index, and the other
 side's. -/

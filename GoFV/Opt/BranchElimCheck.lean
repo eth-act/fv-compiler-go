@@ -1,5 +1,4 @@
 import GoFV.Opt.SpecSafe
-import GoFV.Opt.Chain
 import GoFV.SSA.Check
 
 /-!
@@ -17,8 +16,8 @@ block evaluate as the source's path does:
   their side, by `post`'s `Phi`s, and read nothing of `post` or the other arm;
 - `dom`'s non-`Phi` values and its control read nothing of `post`; `post`'s `Phi`s read nothing
   of `post`; `post`'s other values are no parameter reads;
-- the merged block has a schedule and its side-effecting roots are chained, as are those of
-  `dom` and `post` in `f` (`chainedB`).
+- the merged block has a schedule that lists the non-pure nodes (priority ≠ 0) of `dom` and
+  `post` in the sequence `dom`'s and then `post`'s schedule lists them (`npSeqOK`).
 
 The soundness proof is `GoFV.Proof.BranchElim.refines_of_step`.
 -/
@@ -29,6 +28,22 @@ open GoFV.SSA
 
 /-- The values of block `b` (none if `b` is not a block). -/
 def valsOf (f : Func) (b : ID) : Array ID := ((f.block? b).map (·.values)).getD #[]
+
+/-- `x` is a non-pure node of block `B` of `f`: a non-`Phi` value of priority ≠ 0. -/
+def npOf (f : Func) (B : Block) (x : ID) : Bool :=
+  B.values.contains x &&
+    match f.value? x with
+    | some v => v.op != .Phi && Sem.prio v.op != 0
+    | none => false
+
+/-- The merged block `D'` of `g` has a schedule listing the non-pure nodes of `D` and `P` (in
+`f`) in the sequence `D`'s schedule and then `P`'s lists them. -/
+def npSeqOK (f g : Func) (D P D' : Block) : Bool :=
+  match Sem.schedule f D, Sem.schedule f P, Sem.schedule g D' with
+  | some oD, some oP, some oT =>
+    oT.toList.filter (fun x => npOf f D x || npOf f P x) ==
+      oD.toList.filter (npOf f D) ++ oP.toList.filter (npOf f P)
+  | _, _, _ => false
 
 /-- One side of the diamond at `dom`, along successor `k` (edge `e`): the arm block (`none`:
 the edge enters `post` directly) and the predecessor index of `post` the side enters by. -/
@@ -168,7 +183,7 @@ def mergedOK (g : Func) : Bool :=
     D.values.all D'.values.contains && P.values.all D'.values.contains &&
     (match s.arm0 with | some a => (valsOf f a).all D'.values.contains | none => true) &&
     (match s.arm1 with | some a => (valsOf f a).all D'.values.contains | none => true) &&
-    (Sem.schedule g D').isSome && chainedB g #[s.dom] && chainedB f #[s.dom, s.post]
+    (Sem.schedule g D').isSome && npSeqOK f g D P D'
   | _, _, _ => false
 
 /-- **One branchelim rewrite**, checked (see the module doc). -/

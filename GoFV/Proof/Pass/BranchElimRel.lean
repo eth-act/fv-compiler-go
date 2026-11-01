@@ -1,5 +1,5 @@
 import GoFV.Opt.BranchElimCheck
-import GoFV.Proof.Pass.DeadChain
+import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Speculate
 import GoFV.Proof.Agree
 
@@ -242,7 +242,7 @@ theorem merged_spec (h : DRel f g s) :
       D'.id = s.dom ∧ D'.kind = P.kind ∧ D'.controls = P.controls ∧ D'.succs = P.succs ∧
       (∀ x ∈ D'.values, s.regionVal f x = true) ∧ (∀ x ∈ D.values, x ∈ D'.values) ∧
       (∀ x ∈ P.values, x ∈ D'.values) ∧ (∀ x, s.armVal f x = true → x ∈ D'.values) ∧
-      (schedule g D').isSome ∧ chainedB g #[s.dom] = true ∧ chainedB f #[s.dom, s.post] = true := by
+      (schedule g D').isSome ∧ npSeqOK f g D P D' = true := by
   have hm := h.parts.2.2.2.2.2.2.1
   unfold Site.mergedOK at hm
   cases hD : f.block? s.dom with
@@ -256,8 +256,8 @@ theorem merged_spec (h : DRel f g s) :
   | some D' =>
   rw [hD, hP, hD'] at hm
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', Array.contains_iff_mem] at hm
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hid, hk⟩, hc⟩, hsu⟩, hreg⟩, hDin⟩, hPin⟩, ha0⟩, ha1⟩, hsch⟩, hcg⟩, hcf⟩ := hm
-  refine ⟨D, P, D', rfl, rfl, rfl, hid, hk, hc, hsu, hreg, hDin, hPin, fun x hx => ?_, hsch, hcg, hcf⟩
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hid, hk⟩, hc⟩, hsu⟩, hreg⟩, hDin⟩, hPin⟩, ha0⟩, ha1⟩, hsch⟩, hnp⟩ := hm
+  refine ⟨D, P, D', rfl, rfl, rfl, hid, hk, hc, hsu, hreg, hDin, hPin, fun x hx => ?_, hsch, hnp⟩
   unfold Site.armVal at hx
   rcases Bool.or_eq_true_iff.1 hx with hx | hx
   · obtain ⟨a, A, ha, hA, hxA⟩ := inArm_iff.1 hx
