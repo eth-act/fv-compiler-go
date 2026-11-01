@@ -195,6 +195,41 @@ theorem fuel_list {α : Type} {F : α → Val} {G : Nat → α → Val}
     · exact h1.trans (hG _ _ _ (Nat.le_max_left _ _))
     · exact (h2 b hb).trans (hG _ _ _ (Nat.le_max_right _ _))
 
+theorem const64Op_cases {op : Op} (h : const64Op op = true) : op = .Const64 ∨ op = .Const64F := by
+  unfold const64Op at h
+  simpa only [Bool.or_eq_true, beq_iff_eq] using h
+
+theorem const64_term {op : Op} (h : const64Op op = true) : termOp op = true := by
+  rcases const64Op_cases h with rfl | rfl <;> rfl
+
+/-- `Const64` and `Const64F` denote the 64-bit integer of their auxint. -/
+theorem opVal_const64 {tabs : Tables} {op : Op} (h : const64Op op = true) (ty : Ty) (ai : Int64)
+    (ax : Option AuxRef) (args : List Val) :
+    GoFV.Proof.Rules.opVal tabs op ty ai ax args = .int .w64 (BitVec.ofInt 64 ai.toInt) := by
+  rcases const64Op_cases h with rfl | rfl <;>
+    rw [GoFV.Proof.Rules.opVal_pure rfl] <;> rfl
+
+theorem fwdConstOK_spec {tabs : Tables} {f : Func} {u w : Value}
+    (h : fwdConstOK tabs f u w = true) :
+    u.op = .Load ∧ u.args.size = 2 ∧ const64Op w.op = true ∧ ∃ c cv, f.value? c = some cv ∧
+      const64Op cv.op = true ∧ cv.auxInt = w.auxInt ∧
+      fwdTyEq (tabs.ty u.type) (tabs.ty cv.type) = true ∧ fwdOK tabs f u c = true := by
+  unfold fwdConstOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hld, hsz⟩, hwc⟩, -⟩, h⟩ := h
+  refine ⟨hld, hsz, hwc, ?_⟩
+  split at h
+  · next c _ =>
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨h, hok⟩ := h
+    split at h
+    · next cv hcv =>
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨hcc, hai⟩, hty⟩ := h
+      exact ⟨c, cv, hcv, hcc, hai, hty, hok⟩
+    · cases h
+  · cases h
+
 theorem storedOK_spec {tabs : Tables} {f : Func} {t : Ty} {a x : ID}
     (h : storedOK tabs f t a x = true) :
     ∃ av, f.value? a = some av ∧ copyReach tabs f.valueTab f.valueTab.size a x = true ∧
@@ -278,9 +313,10 @@ theorem marked_g {x : ID} {u w : Value} (hx : LM f x) (hu : f.value? x = some u)
 theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     ∃ w, g.value? x = some w ∧ w.id = u.id ∧ w.block = u.block ∧ w.type = u.type ∧
       ((w.op = u.op ∧ w.auxInt = u.auxInt ∧ w.aux = u.aux ∧ w.args = u.args) ∨
-       (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true)) := by
+       (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true) ∨
+       fwdConstOK tabs f u w = true) := by
   have h := F.rep x (lt_of_value? hu)
-  unfold fwdRepOK at h
+  unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
   cases hw : g.value? x with
   | none => rw [hw] at h; cases h
@@ -289,9 +325,10 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
-    rcases h with ⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ⟨⟨hop, hsz⟩, hok⟩
+    rcases h with ⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ⟨⟨hop, hsz⟩, hok⟩ | hc
     · exact .inl ⟨hop, hai, hax, hargs⟩
-    · exact .inr ⟨hop, hsz, hok⟩
+    · exact .inr (.inl ⟨hop, hsz, hok⟩)
+    · exact .inr (.inr hc)
 
 /-- The arguments of a value listed in `f` are listed. -/
 theorem lm_arg {x : ID} {u : Value} (hx : LM f x) (hu : f.value? x = some u) :
@@ -376,7 +413,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   have hIH : ∀ a, (fwdRank f)[a]?.getD 0 < r → LM f a → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla => ih _ ha a rfl hla
-  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩
+  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok
   · by_cases ht : termOp u.op = true
     · have hph : u.op ≠ .Phi := fun h => by rw [h] at ht; cases ht
       obtain ⟨m, hm⟩ := fuel_list (F := fun a => den f.value? tabs ρ n a)
@@ -431,6 +468,27 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
       rw [hden_t m]
       exact retype_mono _ (hK.trans hm)
     · rw [loadOp_other hcase, AtomSim.retype_poison]; exact ⟨0, .poison _⟩
+  · -- `x` is a Load replaced by the constant of the bits it reads back
+    obtain ⟨hld, hsz2, hwc, c, cv, hcv, hcc, hai, hty, hok⟩ := fwdConstOK_spec hok
+    unfold fwdOK at hok
+    simp only [Bool.and_eq_true, beq_iff_eq] at hok
+    obtain ⟨-, hch⟩ := hok
+    have hLt : termOp u.op = true := by rw [hld]; decide
+    rw [den_succ_term hu hLt, toList_two hsz2, List.map_cons, List.map_cons, List.map_nil, hld,
+      GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load]
+    refine ⟨0 + 1, ?_⟩
+    rw [den_succ_term hL (const64_term hwc), opVal_const64 hwc, hwty]
+    by_cases hcase : ∃ a M, den f.value? tabs ρ n u.args[0]! = .ptr a ∧
+      den f.value? tabs ρ n u.args[1]! = .mem M
+    · obtain ⟨a, M, hpa, hsM⟩ := hcase
+      rw [hpa, hsM, loadOp]
+      obtain ⟨K, hK⟩ := chain_load hT hM hpa 8 _ hch hsM
+      have h1 := hK.trans (den_fuel_mono _ _ _ K (K + 1) c (Nat.le_succ K))
+      rw [den_succ_term hcv (const64_term hcc), opVal_const64 hcc, hai,
+        ← fwdTyEq_retype hty] at h1
+      have h2 := retype_mono (tabs.ty u.type) h1
+      rwa [retype_idem] at h2
+    · rw [loadOp_other hcase, AtomSim.retype_poison]; exact .poison _
 
 /-- Each value listed in `f` refines as a term in `g`, under any invariant. -/
 theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop) (Q : (ID → Val) → Prop)
@@ -445,9 +503,10 @@ theorem fwd_atomArgs : AtomArgsRefP (SrcInv.triv tabs f) g := by
   obtain ⟨w, hw, -, -, -, hrep⟩ := rep_of F hu'
   rw [hu] at hw; cases hw
   have hargs : u.args = u'.args := by
-    rcases hrep with ⟨-, -, -, h⟩ | ⟨h, -⟩
+    rcases hrep with ⟨-, -, -, h⟩ | ⟨h, -⟩ | h
     · exact h
     · rw [h] at ht; cases ht
+    · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
   have hbf : b ∈ f.blocks := F.blocks ▸ hb
   have hi' : i < u'.args.size := hargs ▸ hi
   rw [hargs]

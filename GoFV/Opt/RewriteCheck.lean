@@ -1263,6 +1263,42 @@ def fwdChain (tabs : Tables) (f : Func) (p : ID) (t : Sem.Ty) (x : ID) : Nat →
 def fwdOK (tabs : Tables) (f : Func) (u : Value) (x : ID) : Bool :=
   u.op == .Load && u.args.size == 2 && fwdChain tabs f u.args[0]! (tabs.ty u.type) x 8 u.args[1]!
 
+/-- The value the memory `m` of `f` stores at a pointer equal to `p` (`samePtrB`): through at
+most `d` `Copy`s and `Store`s at other pointers, the first `Store` at `p` (the candidate `x` of
+`fwdConstOK`; `fwdChain` checks it). -/
+def fwdStored (tabs : Tables) (f : Func) (p : ID) : Nat → ID → Option ID
+  | 0, _ => none
+  | d + 1, m =>
+    match f.value? m with
+    | some s =>
+      if s.op == .Copy && s.args.size == 1 then fwdStored tabs f p d s.args[0]!
+      else if (s.op == .Store || s.op == .StoreWB) && s.args.size == 3 then
+        if samePtrB tabs f p s.args[0]! then some s.args[1]! else fwdStored tabs f p d s.args[2]!
+      else none
+    | none => none
+
+/-- `Const64` and `Const64F`: both denote the 64-bit integer of their auxint (a float is its bits). -/
+def const64Op (op : Op) : Bool := op == .Const64 || op == .Const64F
+
+/-- The `Load` `u` of `f` becomes the constant `w` (`generic.rules:830`, `:832`: a `Const64F` read
+back from a `Store` of a `Const64` of its bits, and the other way): `fwdOK` reading back a
+`const64Op` value `x` (the first `Store` at the Load's pointer, `fwdStored`) of the auxint of the
+argument-less `const64Op` `w`, at a shape `fwdTyEq` to the Load's. -/
+def fwdConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  u.op == .Load && u.args.size == 2 && const64Op w.op && w.args.size == 0 &&
+  match fwdStored tabs f u.args[0]! 8 u.args[1]! with
+  | some x =>
+    (match f.value? x with
+     | some xv => const64Op xv.op && xv.auxInt == w.auxInt && fwdTyEq (tabs.ty u.type) (tabs.ty xv.type)
+     | none => false) &&
+    fwdOK tabs f u x
+  | none => false
+
+/-- The new definition `w` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads back
+(`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`). -/
+def fwdNewOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w
+
 /-- One pass of `fwdRank`, in ID order: each listed non-`Phi` value one above its arguments. -/
 def rankPass (f : Func) (L : Array Bool) (rk : Array Nat) : Array Nat :=
   (List.range f.valueTab.size).foldl (init := rk) fun rk z =>
@@ -1294,8 +1330,8 @@ def fwdRankOK (f : Func) (rk : Array Nat) : Bool :=
     | some u => u.op == .Phi || u.args.all fun a => rk[a]?.getD 0 < rk[z]?.getD 0
     | none => true
 
-/-- Value `x` of `f` is unchanged in `g` (but for its use count), or a `Load` became `Copy` of
-the value it reads back (`fwdOK`). -/
+/-- Value `x` of `f` is unchanged in `g` (but for its use count), or a `Load` got a new definition
+`fwdNewOK` accepts. -/
 def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | none, _ => true
@@ -1303,7 +1339,7 @@ def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
   | some u, some w =>
     w.id == u.id && w.block == u.block && w.type == u.type &&
     ((w.op == u.op && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args) ||
-     (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)))
+     fwdNewOK tabs f u w)
 
 /-- `g` is `f` with Loads forwarded: the same blocks and atoms, every value as `fwdRepOK`
 says, ranks ordering `f`'s listed values after their arguments. -/
@@ -1318,16 +1354,19 @@ def storesBind (y : Nat) : Nat → Pat → Bool
   | _, _ => false
 
 /-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by one of the up to four
-`Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`; the validator checks each
-instance by `fwdOK`, the `isSamePtr`/`disjoint` conditions included). -/
+`Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`), or
+`(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`); the
+validator checks each instance by `fwdNewOK`, the `isSamePtr`/`disjoint` conditions included. -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
+  | .op .Load none _ _ _ .fixed [_, .op .Store none _ _ _ .fixed [_, .op o none _ _ _ .fixed [] _, _] _]
+      _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
   | _, _, _ => false
 
-/-- The `Load` `v` of `f` that event `ev` forwards and the value it becomes a copy of, if it is a
-`loads` rule event (`fwdShapeOK`) with a `Copy` result. -/
-def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID)
+/-- The `Load` `v` of `f` that event `ev` forwards and its new definition (a `Copy` or a
+constant), if it is a `loads` rule event (`fwdShapeOK`). -/
+def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
@@ -1335,8 +1374,9 @@ def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID)
         let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
         if n ≤ i then
           match t.loads[i - n]?, defs.toList with
-          | some cr, [w] =>
-            if fwdShapeOK cr.rule && w.op == .Copy && w.args.size == 1 then some (v, w.args[0]!)
+          | some cr, w :: _ =>
+            if fwdShapeOK cr.rule && ((w.op == .Copy && w.args.size == 1) || const64Op w.op) then
+              some (v, w)
             else none
           | _, _ => none
         else none
@@ -1344,31 +1384,31 @@ def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID)
     | none => none
   | _ => none
 
-/-- `v.reset(OpCopy); v.AddArg(x)`: the `Load` `v` of `f` becomes `Copy x`, its arguments lose
-a use, `x` gains one. -/
-def fwdCopy (f : Func) (v x : ID) : Func :=
+/-- `v.reset(OpCopy); v.AddArg(x)` (or `v.reset(OpConst64F); v.AuxInt = …`): the `Load` `v` of `f`
+gets the definition `w`, its arguments lose a use, `w`'s gain one. -/
+def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
   match f.value? v with
   | some u =>
     if u.op == .Load then
-      let f := u.args.foldl (fun f a => f.modV a fun w => { w with uses := w.uses - 1 }) f
-      let f := f.modV x fun w => { w with uses := w.uses + 1 }
-      f.modV v fun w => { w with op := .Copy, auxInt := 0, aux := none, args := #[x] }
+      let f := u.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses - 1 }) f
+      let f := w.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses + 1 }) f
+      f.modV v fun z => { z with op := w.op, auxInt := w.auxInt, aux := w.aux, args := w.args }
     else f
   | none => f
 
-/-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdOK` holds of in
-`f`), any other event kept, but for the copy-argument replacements of the forwarded `Load`
+/-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdNewOK` holds of
+in `f`), any other event kept, but for the copy-argument replacements of the forwarded `Load`
 logged before it (copy elimination on the `Load`'s arguments, which the forwarding validated in
 `f` replaces). -/
 def fwdStep (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (p : Func × Array RwEvent)
     (ev : RwEvent) : Func × Array RwEvent :=
   match fwdEvent? t f ev with
-  | some (v, x) =>
-    if sel && !(f.value? v).any (fwdOK tabs f · x) then (p.1, p.2.push ev)
-    else (fwdCopy p.1 v x, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
+  | some (v, w) =>
+    if sel && !(f.value? v).any (fwdNewOK tabs f · w) then (p.1, p.2.push ev)
+    else (fwdCopy p.1 v w, p.2.filter fun | .copyArg z _ _ => z != v | _ => true)
   | none => (p.1, p.2.push ev)
 
-/-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdOK`
+/-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdNewOK`
 holds of), and the remaining events. -/
 def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (log : Array RwEvent) :
     Func × Array RwEvent :=
