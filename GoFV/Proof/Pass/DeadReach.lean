@@ -158,7 +158,7 @@ theorem runSuccs_of {blk : Block} {k : Nat} {e : Edge} (h : blk.succs[k]? = some
 section
 variable {ce : CheckEnv} {f : Func}
 
-theorem succ_ok (hwf : WF ce f) (hbid : ∀ b ∈ f.blocks, b ≤ f.bidLast) {b0 : ID} {blk : Block}
+theorem reach_succ_ok (hwf : WF ce f) (hbid : ∀ b ∈ f.blocks, b ≤ f.bidLast) {b0 : ID} {blk : Block}
     {e : Edge} (hb0 : b0 ∈ f.blocks) (hblk : f.block? b0 = some blk) (he : e ∈ runSuccs blk) :
     e.b ∈ f.blocks ∧ e.b < f.bidLast + 1 := by
   obtain ⟨j, hj⟩ := mem_runSuccs he
@@ -213,7 +213,7 @@ theorem mark_step (hwf : WF ce f) (hbid : ∀ b ∈ f.blocks, b ≤ f.bidLast) {
     (hblk : f.block? b0 = some blk) (he : e ∈ runSuccs blk) (hm : (!r.getD e.b true) = true)
     (hI : IInv f t b0 pre r s) :
     IInv f t b0 (pre ++ [e]) (r.set! e.b true) (s.push e.b) := by
-  obtain ⟨hlist, hlt⟩ := succ_ok hwf hbid hI.home hblk he
+  obtain ⟨hlist, hlt⟩ := reach_succ_ok hwf hbid hI.home hblk he
   have hlt' : e.b < r.size := hI.size ▸ hlt
   have hg := fun x => getD_set (x := x) hlt'
   have h0 : r.getD e.b true = false := by simpa using hm
@@ -248,7 +248,7 @@ theorem skip_step (hwf : WF ce f) (hbid : ∀ b ∈ f.blocks, b ≤ f.bidLast) {
     {blk : Block} {pre : List Edge} {e : Edge} {r : Array Bool} {s : Array ID}
     (hblk : f.block? b0 = some blk) (he : e ∈ runSuccs blk) (hm : ¬(!r.getD e.b true) = true)
     (hI : IInv f t b0 pre r s) : IInv f t b0 (pre ++ [e]) r s := by
-  obtain ⟨-, hlt⟩ := succ_ok hwf hbid hI.home hblk he
+  obtain ⟨-, hlt⟩ := reach_succ_ok hwf hbid hI.home hblk he
   have hlt' : e.b < r.size := hI.size ▸ hlt
   have h1 : r.getD e.b false = true := by
     rw [getD_irrel hlt' false true]; simpa using hm

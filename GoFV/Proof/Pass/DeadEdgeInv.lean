@@ -48,6 +48,7 @@ structure EI (f : Func) (r : Array Bool) (F : Func) : Prop where
   edge : ∀ b ∈ f.blocks, r.getD b false = true → ∀ k e, sOf f b k = some e →
     ((f.getB b).kind = .First → k = 0) →
     ∃ e', sOf F b k = some e' ∧ e'.b = e.b ∧ PA f F e.b e.i e'.i
+  psize : ∀ y, (F.getB y).preds.size ≤ (f.getB y).preds.size
 
 theorem dropArg_get {args : Array ID} {j m l : Nat} (hs : args.size = m + 1) (hj : j ≤ m) :
     ((args.set! j args[m]!).pop)[l]? = if l < m then args[predIdx j m l]? else none := by
@@ -182,7 +183,7 @@ theorem ei_step {ce : CheckEnv} {f F : Func} {r : Array Bool} (hwf : WF ce f) (h
       subst hbb
       rw [if_pos hkn, hσ, he]; rfl
     · rw [he]; rfl
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · rw [s1]; exact hE.entry
   · rw [s3]; exact hE.blocks
   · rw [s6]; exact hE.ownAux
@@ -300,5 +301,11 @@ theorem ei_step {ce : CheckEnv} {f F : Func} {r : Array Bool} (hwf : WF ce f) (h
       split
       · rename_i h; exact absurd (by rw [← heb, h]) hbc
       · exact hargs
+  · intro y
+    rw [hG, c7 y]
+    have := hE.psize y
+    split
+    · rename_i h; subst h; omega
+    · exact this
 
 end GoFV.Proof.Dead

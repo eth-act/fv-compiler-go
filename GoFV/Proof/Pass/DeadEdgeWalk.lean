@@ -29,7 +29,7 @@ theorem ei_init {ce : CheckEnv} {f : Func} (hwf : WF ce f) (r : Array Bool) : EI
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, ⟨hpres, fun x hx k e he => ?_, fun y hy l e he => ?_⟩,
     fun _ => rfl, fun _ => rfl, fun _ => .inl rfl, fun _ => rfl, fun _ _ h _ => h,
     fun x u u' h h' a ha => by rw [h] at h'; cases h'; exact ha, fun y hy x hx u hu hop => ?_,
-    fun b hb _ k e he _ => ⟨e, he, rfl, fun x _ u hu _ => ⟨u, hu, rfl⟩⟩⟩
+    fun b hb _ k e he _ => ⟨e, he, rfl, fun x _ u hu _ => ⟨u, hu, rfl⟩⟩, fun _ => Nat.le_refl _⟩
   · obtain ⟨b, hb, hg⟩ := hgetB x hx
     unfold sOf at he; rw [hg] at he
     obtain ⟨hm, p, hp, hps⟩ := hwf.succLink x b ⟨hx, hb⟩ k e he
@@ -129,7 +129,7 @@ theorem ei_plain {f F : Func} {r : Array Bool} (hE : EI f r F) {b : ID} (hb : b 
     fun y => by rw [isSome_modB]; exact hE.pres y, fun y => by rw [hK]; exact hE.kv y,
     fun y => ?_, hE.vals, hE.nonphi, hE.sub,
     fun y hy x hx u hu hop => by rw [hV] at hx; rw [hP]; exact hE.arity y hy x hx u hu hop,
-    fun b' hb' hr' k e he hk' => ?_⟩
+    fun b' hb' hr' k e he hk' => ?_, fun y => by rw [hP]; exact hE.psize y⟩
   · rw [hG]; split
     · rename_i h; subst h; exact .inr ⟨hr, hk, rfl⟩
     · exact hE.kind y
