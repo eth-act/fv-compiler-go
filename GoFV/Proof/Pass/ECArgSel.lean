@@ -479,7 +479,7 @@ theorem ecA_callOK_facts {tabs : Tables} {f g : Func} {c : ID} {cu cw : Value}
     have houts : callOuts tabs cu.aux = outsOf abi := by
       unfold callOuts; rw [habi]; rfl
     rw [houts]
-    obtain ⟨hwop, -, -, -, hreg, -, -, -, -, -, -, htup, hrtup⟩ := h
+    obtain ⟨hwop, -, -, -, hreg, -, -, -, -, -, -, -, -, htup, hrtup⟩ := h
     rw [beq_iff_eq] at hwop
     refine ⟨?_, fun p hp => ?_, htup, hrtup⟩
     · unfold invalidated
@@ -490,8 +490,7 @@ theorem ecA_callOK_facts {tabs : Tables} {f g : Func} {c : ID} {cu cw : Value}
       split at hop <;> cases hop <;> rfl
     · unfold regParamsOK at hreg
       rw [List.all_eq_true] at hreg
-      have hp' : p ∈ abi.params.toList := (List.mem_filter.1 hp).1
-      have := hreg p hp'
+      have := hreg p hp
       simp only [Bool.and_eq_true] at this
       exact this.1.2
   · cases h

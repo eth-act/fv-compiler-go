@@ -352,16 +352,21 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
       by_cases hxf : x ∈ fb.values
       · exact ⟨b, fb, ⟨hbm, hfb⟩, hxf⟩
       · rw [pS3 x (.inl hxf)] at hy; exact hA.listed x y hy
+  have hsrc : ∀ x ∈ og.toList, isNew x = false → ∃ u y, f.value? x = some u ∧
+      GS.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) GS u = .ok y := fun x hx hn => by
+    obtain ⟨hxg, w, hw, hph⟩ := (ogm x).1 hx
+    have hxf : x ∈ fb.values := Classical.byContradiction fun h => by
+      rw [B.fresh x hxg h] at hn; cases hn
+    obtain ⟨u, hu, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ x hxf
+    have huphi : u.op ≠ .Phi := fun hp => by
+      obtain ⟨⟨w', hgu, hsw⟩, -⟩ := B.phiS x hxf u hu hp
+      rw [hw] at hgu; cases hgu; exact hph (hsw.1.trans hp)
+    exact e4 x ((ofm x).2 ⟨hxf, u, hu, huphi⟩)
   obtain ⟨T, hT, hTf, hTs, hTk, hTr, -, -, -⟩ := tgt_loop hE TH (L := og.toList) (M := [])
-    (by simp) (fun x hx hn => by
-      obtain ⟨hxg, w, hw, hph⟩ := (ogm x).1 hx
-      have hxf : x ∈ fb.values := Classical.byContradiction fun h => by
-        rw [B.fresh x hxg h] at hn; cases hn
-      obtain ⟨u, hu, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ x hxf
-      have huphi : u.op ≠ .Phi := fun hp => by
-        obtain ⟨⟨w', hgu, hsw⟩, -⟩ := B.phiS x hxf u hu hp
-        rw [hw] at hgu; cases hgu; exact hph (hsw.1.trans hp)
-      exact e4 x ((ofm x).2 ⟨hxf, u, hu, huphi⟩))
+    (by simp) hsrc fun c z hc _ A P Q hA _ uc huc => by
+      obtain ⟨u, y, hu, -, hev⟩ := hsrc c (by rw [hA]; simp) (B.common c hc).2
+      rw [huc] at hu; cases hu
+      exact .inl ⟨y, hev⟩
   have hGT : T = { GS with regs := T.regs } := by rw [TH.hT0] at hTf; exact hTf
   refine ⟨gb, T, hgb, B, by rw [hentT, hT], hGT, by rw [hTs]; simp [pT1, hA.szT],
     by rw [e2, pS1, hA.szS],

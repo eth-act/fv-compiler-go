@@ -131,6 +131,14 @@ def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
     some (m.set p.blk { a with data })
   else none
 
+/-- A write of `n` bytes at `p` would succeed (`write`'s conditions, whatever the bytes). -/
+def canWrite (m : Mem) (p : Ptr) (n : Nat) : Bool :=
+  n == 0 ||
+    match m.find? p.blk with
+    | some a => a.writable && p.off.toNat + n ≤ a.data.size && p.off.toNat + n < 2 ^ 64 &&
+        p.blk.endsInWindow (p.off.toNat + n)
+    | none => false
+
 /-- Make every byte of block `b` poison (`VarDef`); no effect on a missing block. -/
 def poisonBlock (m : Mem) (b : Blk) : Mem :=
   match m.find? b with

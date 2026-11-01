@@ -173,6 +173,16 @@ theorem EqX.load {m m' : Mem} (h : EqX X m m') (t : Ty) (p : Ptr) (hb : X p.blk 
   unfold Mem.load
   simp only [EqX.read h p _ hb]
 
+/-- The same writable stack-argument slots (`outargs` is not in `X`). -/
+theorem EqX.outargsOK (hX : TempX X) {m m' : Mem} (h : EqX X m m') (tabs : Tables) (act : Nat)
+    (ps : List ABIParam) : outargsOK tabs act m' ps = outargsOK tabs act m ps := by
+  have hb : X (.outargs act) = false := by
+    cases hx : X (.outargs act)
+    · rfl
+    · obtain ⟨n, hn⟩ := hX _ hx; cases hn
+  unfold Sem.outargsOK Mem.canWrite
+  simp only [EqX.find h hb]
+
 /-- `poisonBlock` on both sides (any block). -/
 theorem EqX.poison {m m' : Mem} (h : EqX X m m') (b : Blk) :
     EqX X (m.poisonBlock b) (m'.poisonBlock b) := by

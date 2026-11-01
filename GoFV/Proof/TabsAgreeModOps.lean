@@ -330,6 +330,9 @@ theorem callOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ct
       CallRel X
         (if (args.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true then
           Res.stuck (toString "call " ++ toString callee ++ toString ": poison argument")
+        else if (!outargsOK ctx.tabs ctx.act M (List.filter (fun x => !x.out)
+            ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))) = true then
+          Res.stuck (toString "call " ++ toString callee ++ toString ": outgoing-arguments area not writable")
         else
           Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
             (env.extern callee)) fun c =>
@@ -359,6 +362,9 @@ theorem callOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ct
           | .stuck msg => .stuck msg)
         (if (args.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true then
           Res.stuck (toString "call " ++ toString callee ++ toString ": poison argument")
+        else if (!outargsOK ctx.tabs ctx.act M' (List.filter (fun x => !x.out)
+            ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))) = true then
+          Res.stuck (toString "call " ++ toString callee ++ toString ": outgoing-arguments area not writable")
         else
           Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
             (env.extern callee)) fun c =>
@@ -387,6 +393,9 @@ theorem callOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ct
           | .panicked e m' => .panic e m'
           | .stuck msg => .stuck msg) := by
     intro args hargs post
+    split
+    · exact callRel_stuck _ _
+    rw [EqX.outargsOK hX hm]
     split
     · exact callRel_stuck _ _
     cases hx : env.extern callee with

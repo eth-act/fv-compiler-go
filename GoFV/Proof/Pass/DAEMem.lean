@@ -178,6 +178,20 @@ theorem EqOff.write {U : Blk → Prop} {m m' m1 : Mem} (h : Mem.EqOff U m m') {p
     · simp only; rw [hd hu]
   · cases hw
 
+/-- Memories with the same allocations have the same writable ranges. -/
+theorem EqOff.canWrite {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (p : Ptr) (n : Nat) :
+    m'.canWrite p n = m.canWrite p n := by
+  unfold Mem.canWrite
+  rcases EqOff.find h p.blk with ⟨h1, h2⟩ | ⟨a, a', ha, ha', hA⟩
+  · rw [h1, h2]
+  · obtain ⟨-, hs, hwr, -⟩ := hA
+    rw [ha, ha']; dsimp only at hs hwr ⊢; rw [hs, hwr]
+
+theorem EqOff.outargsOK {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (tabs : Tables)
+    (act : Nat) (ps : List ABIParam) : outargsOK tabs act m' ps = outargsOK tabs act m ps := by
+  unfold Sem.outargsOK
+  simp only [EqOff.canWrite h]
+
 /-- **A source-only write into a block of `U`.** -/
 theorem EqOff.write_left {U : Blk → Prop} {m m' m1 : Mem} (h : Mem.EqOff U m m') {p : Ptr}
     {bs : Array Byte} (hw : m.write p bs = some m1) (hu : U p.blk) : Mem.EqOff U m1 m' := by

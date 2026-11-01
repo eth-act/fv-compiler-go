@@ -626,6 +626,13 @@ def callTarget (ctx : Ctx) (v : Value) (argv : List Val) : Option String × Opti
   | .InterLECall, code :: rest | .InterCall, code :: rest => (codeTarget? code, none, rest)
   | _, _ => (v.aux.bind ctx.tabs.callee?, none, argv)
 
+/-- The slots of the stack-assigned input parameters `ins` in the outgoing-arguments area of
+activation `act` are writable in `m` (`Mem.canWrite`): where post-`expand calls` code stores
+the stack arguments before the call. -/
+def outargsOK (tabs : Tables) (act : Nat) (m : Mem) (ins : List ABIParam) : Bool :=
+  ins.all fun p => !p.regs.isEmpty ||
+    m.canWrite ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ (tabs.ty p.type).size
+
 /-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
 `InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
 post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register pieces and
@@ -635,7 +642,10 @@ code symbol the code pointer points to; its contract sees the Go-typed arguments
 and memory are observation points (`poison` ⇒ `stuck`). The callee owns the caller's
 outgoing-arguments area while it runs (it may spill its register arguments there): its contract
 sees that area poisoned, in both forms, so post-`expand calls` argument stores into it are
-invisible to the callee except through the decoded arguments. -/
+invisible to the callee except through the decoded arguments. In both forms the call is
+`stuck` unless the slots of its stack-assigned arguments are writable in its memory
+(`outargsOK`; always so in a run, whose frame allocates the area): the post form's argument
+stores into them then cannot fail where the pre form's call succeeds. -/
 def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   let (callee?, clo, rest) := callTarget ctx v argv
   let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
@@ -652,6 +662,8 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
     else pure pieces
   if args.any Val.hasPoison || (clo.map Val.hasPoison).getD false then
     .stuck s!"call {callee}: poison argument"
+  else if !outargsOK ctx.tabs ctx.act m ins then
+    .stuck s!"call {callee}: outgoing-arguments area not writable"
   else
     let c ← Res.ofOption s!"call {callee}: no contract" (env.extern callee)
     match c args clo (m.poisonBlock (.outargs ctx.act)) with

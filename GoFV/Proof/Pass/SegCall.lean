@@ -69,6 +69,8 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
   · split at hc
     · cases hc
     split at hc
+    · cases hc
+    split at hc
     · rename_i c hx
       simp only [res_ok_bind] at hc
       split at hc
@@ -85,6 +87,8 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
   · split at hc
     · rename_i args hd
       simp only [res_ok_bind] at hc
+      split at hc
+      · cases hc
       split at hc
       · cases hc
       split at hc
@@ -119,6 +123,8 @@ theorem callOp_panic {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {e : 
   · split at hc
     · cases hc
     split at hc
+    · cases hc
+    split at hc
     · rename_i c hx
       simp only [res_ok_bind] at hc
       split at hc
@@ -130,6 +136,8 @@ theorem callOp_panic {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {e : 
     · simp only [res_stuck_bind] at hc; cases hc
   · split at hc
     · simp only [res_ok_bind] at hc
+      split at hc
+      · cases hc
       split at hc
       · cases hc
       split at hc

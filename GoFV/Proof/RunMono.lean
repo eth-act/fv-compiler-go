@@ -61,6 +61,12 @@ theorem RefinesList.any_false {p : Val → Bool}
     simp only [List.any_cons, Bool.or_eq_false_iff] at ha ⊢
     exact ⟨hp h ha.1, RefinesList.any_false hp t ha.2⟩
 
+/-- Refined memories have the same writable stack-argument slots. -/
+theorem Mem.Refines.outargsOK {m m' : Mem} (h : Mem.Refines m m') (tabs : Tables) (act : Nat)
+    (ps : List ABIParam) : Sem.outargsOK tabs act m' ps = Sem.outargsOK tabs act m ps := by
+  unfold Sem.outargsOK
+  simp only [h.canWrite]
+
 end GoFV.SSA.Sem
 
 namespace GoFV.Proof
@@ -136,6 +142,9 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                   | none => rfl
                   | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
                 simp only [hp1, hp2, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
+                rw [hm.outargsOK]
+                split
+                · exact .stuck _ _
                 cases hx : env.extern callee with
                 | none => exact .stuck _ _
                 | some c =>
@@ -174,6 +183,9 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                 | none => rfl
                 | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
               simp only [hp1, hp2, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
+              rw [hm.outargsOK]
+              split
+              · exact .stuck _ _
               cases hx : env.extern callee with
               | none => exact .stuck _ _
               | some c =>

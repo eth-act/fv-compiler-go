@@ -241,6 +241,102 @@ def piecesOK (tabs : Tables) (sh : Array Ty) (f g : Func) : List ABIParam → Li
       piecesOK tabs sh f g ps as (pcs.drop paths.length)
   | _, _, _ => false
 
+/-! ## Stack-assigned arguments -/
+
+/-- The input parameters with their arguments assigned to registers (`reg = true`) or to the
+stack (`reg = false`). -/
+def argPairs (reg : Bool) (ps : List ABIParam) (as : List ID) : List (ABIParam × ID) :=
+  (ps.zip as).filter fun e => !e.1.regs.isEmpty == reg
+
+/-- The input parameters' shapes: a register-assigned one has as many registers as leaves, a
+stack-assigned one a non-negative offset; both well-formed. -/
+def insOK (tabs : Tables) (ps : List ABIParam) : Bool :=
+  ps.all fun p => wf (tabs.ty p.type) &&
+    (if p.regs.isEmpty then decide (0 ≤ p.offset)
+     else (leaves (tabs.ty p.type)).length == p.regs.size)
+
+/-- The stack slots of the parameters `ps` are disjoint, in increasing offset order. -/
+def slotsSorted (tabs : Tables) : List ABIParam → Bool
+  | p :: q :: ps => decide (p.offset + (tabs.ty p.type).size ≤ q.offset) && slotsSorted tabs (q :: ps)
+  | _ => true
+
+/-- The leaf slots (offset in the outgoing-arguments area, shape) of stack parameters `ps`. -/
+def leafSlots (tabs : Tables) (ps : List ABIParam) : List (Int × Ty) :=
+  ps.flatMap fun p => (leaves (tabs.ty p.type)).map fun (o, lt) => (p.offset + o, lt)
+
+/-- The chain of `Store`s from `z` down to the memory `b`, bottom first: new (`nw`) `Store`
+nodes, each on the memory of the one below. -/
+def storeChain (g : Func) (nw : ID → Bool) : Nat → ID → ID → Option (List ID)
+  | 0, _, _ => none
+  | n + 1, z, b =>
+    if z == b then some [] else
+    match g.value? z with
+    | some w =>
+      if nw z && w.op == .Store && w.args.size == 3 then
+        (storeChain g nw n w.args[2]! b).map (· ++ [z])
+      else none
+    | none => none
+
+/-- The value a `Store` writes. -/
+def storeVal (g : Func) (z : ID) : ID := ((g.value? z).map (·.args[1]!)).getD z
+
+/-- `q` is new `OffPtr [off]` of an `SP` (`OffPtr` pointer-shaped, `SP` a pointer or a
+`uintptr`): the address `off` in the outgoing-arguments area. -/
+def spOffOK (sh : Array Ty) (g : Func) (nw : ID → Bool) (q : ID) (off : Int) : Bool :=
+  nw q && decide (0 ≤ off) && decide (off < 2 ^ 24) &&
+    match g.value? q with
+    | some w =>
+      w.op == .OffPtr && w.auxInt.toInt == off && w.args.size == 1 &&
+        (match shapeOf sh g q with
+         | .ptr _ => true
+         | _ => false) &&
+        let s := w.args[0]!
+        (match g.value? s with
+         | some sw => sw.op == .SP
+         | none => false) &&
+        (match shapeOf sh g s with
+         | .ptr _ | .int .w64 => true
+         | _ => false)
+    | none => false
+
+/-- The `Store`s `zs` write the leaf slots: per store, the slot's shape at its offset; a store
+is a memory. -/
+def storesOK (tabs : Tables) (sh : Array Ty) (g : Func) (nw : ID → Bool) :
+    List (Int × Ty) → List ID → Bool
+  | [], [] => true
+  | (off, lt) :: ss, z :: zs =>
+    (match g.value? z with
+     | some w => eqE (auxTy tabs w.aux) lt && spOffOK sh g nw w.args[0]! off &&
+         (match shapeOf sh g z with
+          | .mem => true
+          | _ => false)
+     | none => false) && storesOK tabs sh g nw ss zs
+  | _, _ => false
+
+/-- The `SP` under the address of `Store` `z`. -/
+def storeSP (g : Func) (z : ID) : ID :=
+  ((g.value? z).bind fun w => (g.value? w.args[0]!).map (·.args[0]!)).getD z
+
+/-- The `Store`s of the stack arguments of call `u` (in `f`; `w` in `g`): the chain from the
+target's memory argument down to the source's (empty if they are the same). -/
+def callStores (f g : Func) (u w : Value) : Option (List ID) :=
+  storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! u.args[u.args.size - 1]!
+
+/-- The stack arguments of call `u`: per stack parameter the `Store`s of its leaves (in leaf
+order, parameter by parameter, bottom of the chain first) write selector chains of its Go
+argument (`piecesOK`; a piece the source defines is one of the call's arguments) at their slots,
+and the slots are disjoint. -/
+def stackOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : List ABIParam)
+    (as : List ID) : Bool :=
+  let sp := argPairs false ins as
+  slotsSorted tabs (sp.map (·.1)) &&
+  match callStores f g u w with
+  | some zs =>
+    storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs &&
+      piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
+      (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+  | none => false
+
 /-! ## The classes of source values -/
 
 /-- **call**: `u` (in `f`) and `w` (in `g`) at the same ID. -/
@@ -250,14 +346,15 @@ def callOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
     let ins := insOf abi
     let outs := outsOf abi
     let n := u.args.size
+    let as := (u.args.extract k (n - 1)).toList
+    let rp := argPairs true ins as
     w.op == op && w.aux == u.aux && 0 < n && k + 1 ≤ n &&
-      regParamsOK tabs abi.params.toList &&
+      regParamsOK tabs outs && insOK tabs ins && ins.length == as.length &&
       w.args.size ≥ k + 1 &&
       (w.args.extract 0 k).toList == (u.args.extract 0 k).toList &&
-      w.args[w.args.size - 1]! == u.args[n - 1]! &&
+      stackOK tabs sh f g u w ins as &&
       (u.args.extract 0 k).toList.all (fun a => !special f g a) && !special f g u.args[n - 1]! &&
-      piecesOK tabs sh f g ins (u.args.extract k (n - 1)).toList
-        (w.args.extract k (w.args.size - 1)).toList &&
+      piecesOK tabs sh f g (rp.map (·.1)) (rp.map (·.2)) (w.args.extract k (w.args.size - 1)).toList &&
       tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
       regTupleOf (leafTys tabs outs) (valueTy sh (some w))
   | _, _ => false
@@ -608,6 +705,26 @@ def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
   | .StructSelect | .ArraySelect => true
   | _ => false
 
+/-- The memory argument of value `x` of `f`. -/
+def callMem (f : Func) (x : ID) : ID := ((f.value? x).map fun u => u.args[u.args.size - 1]!).getD x
+
+/-- The stack-argument `Store`s of value `x` of `f` (`callStores`; none unless `x` is a call). -/
+def stackStores (f g : Func) (x : ID) : List ID :=
+  match f.value? x, g.value? x with
+  | some u, some w => if (callOpMap u.op).isSome then (callStores f g u w).getD [] else []
+  | _, _ => []
+
+/-- `c` occurs in `l`, and no node with `np` comes before its first occurrence. -/
+def noNpUntil (np : ID → Bool) : List ID → ID → Bool
+  | [], _ => false
+  | y :: l, c => y == c || (!np y && noNpUntil np l c)
+
+/-- `z` occurs in `l`, then `c` after it, and no node with `np` lies strictly between the first `z`
+and the first `c` after it. -/
+def gapOK (np : ID → Bool) : List ID → ID → ID → Bool
+  | [], _, _ => false
+  | y :: l, z, c => if y == z then noNpUntil np l c else gapOK np l z c
+
 /-- The checks of block `bid` (`anc`: the ancestor test of `g`'s dominator certificate). -/
 def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Func) (bid : ID) : Bool :=
   match f.block? bid, g.block? bid with
@@ -662,9 +779,22 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
         | some u => u.op == .MakeResult
         | none => false)
       | none => false) &&
+    -- stack-argument stores: values of the block, no source non-pure node between one and its
+    -- call in `g`'s schedule (a store runs only when the source reaches the call); a source
+    -- `SP` under its address and the call's source memory reach it (their target registers
+    -- hold their evaluations, refine the source's)
+    (match schedule g gb with
+     | some og => fb.values.all fun x => (stackStores f g x).all fun z =>
+         gb.values.contains z && gapOK (npOf f fb) og.toList z x &&
+         (isNewB f (storeSP g z) || placedSDom g anc fb.id (storeSP g z) ||
+           depB g nodeG (fun _ => true) fuel (storeSP g z) z) &&
+         (!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
+           depB g nodeG (fun _ => true) fuel (callMem f x) z)
+     | none => false) &&
     -- new values; their new arguments are values of the block, of the entry block, or placed
     -- in a strict dominator
-    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && newEvalB tabs g w)) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
+    let sts := fb.values.toList.flatMap (stackStores f g)
+    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
   | _, _ => false
 
 /-- **The checker**: `g` is `f` after `expand calls`, both read in `tabs`. -/

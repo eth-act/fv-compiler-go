@@ -47,6 +47,23 @@ partial def piecesWhy (tabs : Tables) (sh : Array Ty) (f g : Func) :
   | [], _, _ => "extra args/pieces"
   | _, [], _ => "missing args"
 
+/-- Why `stackOK` fails. -/
+def stackWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : List ABIParam)
+    (as : List ID) : String :=
+  let sp := argPairs false ins as
+  if !slotsSorted tabs (sp.map (·.1)) then "slots not sorted"
+  else match callStores f g u w with
+  | none =>
+    match g.value? w.args[w.args.size - 1]! with
+    | some mw => s!"no store chain (memory arg {mw.op.name})"
+    | none => "no store chain"
+  | some zs =>
+    if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
+      s!"stores ({zs.length} for {(leafSlots tabs (sp.map (·.1))).length} slots)"
+    else if !piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
+      s!"store values: {piecesWhy tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
+    else "store value not an argument"
+
 /-- Why the call class fails. -/
 def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String :=
   match callOpMap u.op, callABI? tabs u.aux with
@@ -54,14 +71,18 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
     let ins := insOf abi
     let outs := outsOf abi
     let n := u.args.size
+    let as := (u.args.extract k (n - 1)).toList
+    let rp := argPairs true ins as
     if !(w.op == op) then "op"
-    else if !regParamsOK tabs abi.params.toList then
-      if abi.params.toList.any (·.regs.isEmpty) then "stack param"
-      else if abi.params.toList.any (fun p => !GoFV.Proof.ABI.wf (tabs.ty p.type)) then "param shape not wf"
-      else "regs ≠ leaves"
-    else if !piecesOK tabs sh f g ins (u.args.extract k (n - 1)).toList
+    else if !regParamsOK tabs outs then
+      if outs.any (·.regs.isEmpty) then
+        if ins.any (·.regs.isEmpty) then "stack param (in+out)" else "stack param (out)"
+      else "result shape"
+    else if !insOK tabs ins then "param shape"
+    else if !stackOK tabs sh f g u w ins as then s!"stack args: {stackWhy tabs sh f g u w ins as}"
+    else if !piecesOK tabs sh f g (rp.map (·.1)) (rp.map (·.2))
         (w.args.extract k (w.args.size - 1)).toList then
-      s!"pieces: {piecesWhy tabs sh f g ins (u.args.extract k (n - 1)).toList
+      s!"pieces: {piecesWhy tabs sh f g (rp.map (·.1)) (rp.map (·.2))
         (w.args.extract k (w.args.size - 1)).toList}"
     else if !tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) then "source tuple type"
     else if !regTupleOf (leafTys tabs outs) (valueTy sh (some w)) then "register types"
@@ -82,6 +103,13 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
         s!"result: pieces: {piecesWhy tabs sh f g outs (u.args.extract 0 (n - 1)).toList
           (w.args.extract 0 (w.args.size - 1)).toList}"
       else "result: types"
+    else if c == "select" then
+      let outs := ((f.value? u.args[0]!).map (callOuts tabs ·.aux)).getD []
+      let i := u.auxInt.toInt.toNat
+      match outs[i]? with
+      | some p => if p.regs.isEmpty then s!"select: stack result (target {w.op.name})"
+          else s!"select: register result (target {w.op.name})"
+      | none => "select: memory"
     else c
   | _, _ => "absent"
 
@@ -115,10 +143,20 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
   match schedule f fb, schedule g gb with
   | some of, some og =>
     if of.toList.filter (npOf f fb) != og.toList.filter (npOf f fb) then return "schedule"
+    for x in fb.values do
+      for z in stackStores f g x do
+        if !gb.values.contains z then return "stack store in other block"
+        if !gapOK (npOf f fb) og.toList z x then return "stack store before a non-pure node"
+        let fuel := gb.values.size + 1
+        if !(isNewB f (storeSP g z) || placedSDom g anc fb.id (storeSP g z) ||
+            depB g nodeG (fun _ => true) fuel (storeSP g z) z) then return "stack store SP not held"
+        if !(!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
+            depB g nodeG (fun _ => true) fuel (callMem f x) z) then return "stack store memory"
   | _, _ => return "no schedule"
+  let sts := fb.values.toList.flatMap (stackStores f g)
   for z in gb.values do
     if let some w := g.value? z then
-      if isNewB f z && !newEvalB tabs g w then return s!"new op {w.op.name}"
+      if isNewB f z && !newEvalB tabs g w && !sts.contains z then return s!"new op {w.op.name}"
       if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a ||
           placedSDom g anc fb.id a) then
         return if isNewB f z then "new arg in other block" else "new arg of source value in other block"
@@ -145,6 +183,29 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
     if !blockOK tabs sh anc f g b then return blockWhy tabs sh anc f g b
   return "?"
 
+/-- Every rejection reason of a function (all failing values of every block, deduplicated and
+sorted): the classes whose fix alone would accept it. -/
+def whyAll (tabs : Tables) (f g : Func) : String := Id.run do
+  let sh := typeShapes tabs
+  let anc := (DomCert.make g).anc
+  let outs := ownOuts tabs f
+  if DomCert.cfgView g != DomCert.cfgView f then return "cfg"
+  if g.ownAux != f.ownAux then return "ownAux"
+  let mut rs : Array String := #[]
+  if !regParamsOK tabs outs then
+    rs := rs.push (if outs.any (·.regs.isEmpty) then "own: stack result" else "own: result shape")
+  for b in f.blocks do
+    if !blockOK tabs sh anc f g b then
+      let mut vs : Array String := #[]
+      if let some fb := f.block? b then
+        for x in fb.values do
+          if let some u := f.value? x then
+            if u.op != .Phi && !valueOK tabs sh f g x then vs := vs.push (valueWhy tabs sh f g x)
+      if vs.isEmpty then vs := #[blockWhy tabs sh anc f g b]
+      for r in vs do
+        if !rs.contains r then rs := rs.push r
+  return " | ".intercalate (rs.qsort (· < ·)).toList
+
 structure Stats where
   files : Nat := 0
   parseErrors : Nat := 0
@@ -154,6 +215,13 @@ structure Stats where
   tabsFail : Nat := 0
   whys : Array (String × Nat) := #[]
   examples : Array (String × String) := #[]
+  /-- Rejections by their full reason set (`whyAll`). -/
+  sets : Array (String × Nat) := #[]
+
+def bump (a : Array (String × Nat)) (key : String) (n : Nat) : Array (String × Nat) :=
+  match a.findIdx? (·.1 == key) with
+  | some i => a.modify i fun (k, m) => (k, m + n)
+  | none => a.push (key, n)
 
 def Stats.addWhy (st : Stats) (key ex : String) : Stats :=
   match st.whys.findIdx? (·.1 == key) with
@@ -170,6 +238,7 @@ def Stats.merge (a b : Stats) : Stats := Id.run do
       | none => { st with whys := st.whys.push (k, n) }
   for (k, ex) in b.examples do
     if (st.examples.findIdx? (·.1 == k)).isNone then st := { st with examples := st.examples.push (k, ex) }
+  for (k, n) in b.sets do st := { st with sets := bump st.sets k n }
   return st
 
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
@@ -206,6 +275,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         else
           let w := why out.tables f out.func
           st := st.addWhy w s!"{path} section {k}"
+          st := { st with sets := bump st.sets (whyAll out.tables f out.func) 1 }
     return st
 
 def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -238,6 +308,7 @@ def main (args : List String) : IO UInt32 := do
   let whys := st.whys.qsort fun x y => x.2 > y.2
   for (k, n) in whys do IO.println s!"REJECT {n}: {k}"
   for (k, ex) in st.examples.qsort (fun a b => a.1 < b.1) do IO.println s!"EXAMPLE {k}: {ex}"
+  for (k, n) in st.sets.qsort (fun x y => x.2 > y.2) do IO.println s!"SET {n}: {k}"
   return 0
 
 end GoFVTest.ExpandCallsProbe

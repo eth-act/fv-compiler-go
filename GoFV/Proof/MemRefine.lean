@@ -286,6 +286,14 @@ theorem write (h : Mem.Refines m m') {p : Ptr} {bs bs' : Array Byte} (hb : Bytes
         exact h.set _ ⟨rfl, write_fold _ hb _ har.data⟩
       · cases hw
 
+/-- Refined memories have the same writable ranges. -/
+theorem canWrite (h : Mem.Refines m m') (p : Ptr) (n : Nat) :
+    m'.canWrite p n = m.canWrite p n := by
+  unfold Mem.canWrite
+  rcases h.find? p.blk with ⟨h1, h2⟩ | ⟨a, a', h1, h2, h3⟩
+  · rw [h1, h2]
+  · rw [h1, h2]; dsimp only; rw [h3.writable, h3.size_eq]
+
 end Mem.Refines
 
 end GoFV.SSA.Sem

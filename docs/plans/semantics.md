@@ -445,7 +445,9 @@ call the same contracts:
   (exported `abiparam` lines: per parameter its registers or stack offset) decodes the
   Go-typed arguments from the register pieces and from the stack-assigned bytes stored at
   `SP+offset` in the outgoing-arguments area; after the callee returns, results are encoded
-  back (register pieces into the `RESULTS` tuple, stack results into the outgoing area). The
+  back (register pieces into the `RESULTS` tuple, stack results into the outgoing area). In
+  both forms the callee sees that area poisoned, and the call is `stuck` unless the slots of
+  its stack-assigned arguments are writable (`outargsOK`, §9.3). The
   function's own parameters likewise arrive as `ArgIntReg/ArgFloatReg {name+off} [regindex]`
   pieces (arm64 ABIInternal: 16 integer, 16 float registers, export `config abi1 16:16:8`) and
   `Arg {name} [off]` pieces; its results leave through `MakeResult` pieces plus stores to the
@@ -678,7 +680,12 @@ prints every block entry and value of one run.
   `StaticCall`/`ClosureCall`/`InterCall` decode them from register pieces and the outgoing area
   by the `AuxCall` ABI (`decodeArgs`) and encode results back (`encodeResults`). The tuple is
   `results ++ [mem, addrs]`, `addrs` the stack results' addresses (`SelectNAddr`, §4.8). A
-  poison argument is `stuck`; a contract's panic is the call's panic. `Panicking op :=
+  poison argument is `stuck`; a contract's panic is the call's panic. The contract sees the
+  caller's outgoing-arguments area poisoned (`Mem.poisonBlock (.outargs act)`), and in both
+  forms the call is `stuck` unless the slots of its stack-assigned input parameters are
+  writable in its memory (`outargsOK`, built on `Mem.canWrite`; #28): a run's frame always
+  allocates the area, so post-`expand calls` stores of stack arguments into it cannot fail
+  where the pre form's call succeeds. `Panicking op :=
   op.call ∨ op = NilCheck` (`GoFV.Proof.evalValue_panic_op`).
 - **Frame state**: `GetCallerSP` = `2^62 + (act + 1)·2^42` (just above the activation's frame
   region); `GetClosurePtr` = the activation's closure context.
