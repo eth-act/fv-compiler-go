@@ -133,6 +133,19 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect:** all 22 lemmas kernel-checked, no extra axioms; the five KnownBits proof modules
   build in about 16 s together (`KnownBitsDomain` 11 s, as before).
 
+#### Close repeated residual goals by one general lemma, not `omega` per goal
+- **Problem:** the 64 range-check rules (`generic.rules:321–366`, #69) leave ~5 residual
+  comparison goals each. Closed by `omega` on the `toNat`/`toInt` arithmetic (every signed
+  reading an `if`, given to `omega` as a disjunction), each lemma stored ~37k proof terms incl.
+  `_proof_N` auxiliaries (27k of them from `omega`), ~800 kB of `.olean`: 8 lemmas per module
+  gave 4.2–8.7 MB `.olean`s and 20–42 s per module.
+- **Trick:** prove the 16 comparison identities once for any width (`range_*` in
+  `GoFV/Proof/Rules/RangeLemmas*.lean`, `omega` with `2 ^ w` an atom) and close each residual goal
+  by rewriting with one of them plus `simp_all` on the case hypotheses.
+- **Effect:** ~12k proof terms per lemma; the eight modules of 8 lemmas are 1.9–2.6 MB and
+  11–13 s each (the identities: two modules; the signed ones with `+ 1` alone take
+  ~85k proof terms, three `if`s per goal for `omega`).
+
 #### `LEAN_NUM_THREADS` does not limit `lean`; `-jN` does
 - **Measured** (official 4.34.1, `GoFV.Proof.Rules.Eq`, 30 theorems): with
   `LEAN_NUM_THREADS=2` (as `scripts/memcap.sh` exports) or `=1`, `lean` still ran 36 threads,

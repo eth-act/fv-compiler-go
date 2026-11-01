@@ -2,10 +2,11 @@
 """Rule-lemma bookkeeping (docs/proofs/rules.md).
 
   scripts/rule-proofs.py classify           # run the Lean classifier -> tmp/rules/class.tsv
-  scripts/rule-proofs.py probe FAM... [-j N] [--all]
-                                            # try `rule_auto` on the pending P1/P2 rules of the
-                                            # op families -> tmp/rules/probe-<FAM>.tsv
-  scripts/rule-proofs.py emit FAM [--chunk N]
+  scripts/rule-proofs.py probe FAM... [-j N] [--all] [--tactic T]
+                                            # try `rule_auto` (or tactic T of TACTICS) on the
+                                            # pending P1/P2 rules of the op families
+                                            # -> tmp/rules/probe-<FAM>.tsv
+  scripts/rule-proofs.py emit FAM [--chunk N] [--tactic T]
                                             # append theorems for the probed-OK rules to
                                             # GoFV/Proof/Rules/<FAM>[N].lean
   scripts/rule-proofs.py table              # rewrite the tables of docs/proofs/rules.md
@@ -123,8 +124,11 @@ def short(q):
     return q.rsplit(".", 1)[1]
 
 
+# The rule-lemma tactics and the module defining each (`--tactic`).
+TACTICS = {"rule_auto": "GoFV.Proof.Rules.Tactic", "rule_range": "GoFV.Proof.Rules.TacticRange"}
+
 PROBE_HDR = """import Lean
-import GoFV.Proof.Rules.Tactic
+import {tacmod}
 {imports}
 open Lean Elab Command
 
@@ -153,7 +157,7 @@ elab "#probe " ids:ident* : command => do
     let msgs0 := (← get).messages
     modify fun s => {{ s with messages := {{}} }}
     let ((size : Nat), (certs : Nat)) ← withoutModifyingEnv do
-      elabCommand (← `(theorem $(mkIdent `probe) : GoFV.Proof.Rules.Rule.Sound $id := by rule_auto))
+      elabCommand (← `(theorem $(mkIdent `probe) : GoFV.Proof.Rules.Rule.Sound $id := by {tactic}))
       let env ← getEnv
       let size : Nat := match env.find? `probe with
         | some c => dagSize ((c.value? (allowOpaque := true)).getD (.sort .zero))
@@ -177,9 +181,10 @@ set_option Elab.async false
 """
 
 
-def probe_one(fam, rules, idx):
+def probe_one(fam, rules, idx, tactic):
     mods = sorted({r["mod"] for r in rules})
-    src = PROBE_HDR.format(imports="\n".join(f"import {m}" for m in mods))
+    src = PROBE_HDR.format(imports="\n".join(f"import {m}" for m in mods), tacmod=TACTICS[tactic],
+                           tactic=tactic)
     src += "#probe " + " ".join(r["q"] for r in rules) + "\n"
     path = os.path.join(TMP, f"Probe_{fam}_{idx}.lean")
     open(path, "w").write(src)
@@ -199,7 +204,7 @@ def probe_one(fam, rules, idx):
     return res
 
 
-def probe(fams, jobs, include_proven, chunk, fails_only=False):
+def probe(fams, jobs, include_proven, chunk, fails_only=False, tactic="rule_auto"):
     rows = load_class()
     done = proven()
     tasks = []
@@ -211,7 +216,7 @@ def probe(fams, jobs, include_proven, chunk, fails_only=False):
             okq = {l.split("\t")[0] for l in open(prev) if l.split("\t")[1] == "OK"}
             rules = [r for r in rules if r["q"] not in okq]
         for i in range(0, len(rules), chunk):
-            tasks.append((fam, rules[i:i + chunk], i // chunk))
+            tasks.append((fam, rules[i:i + chunk], i // chunk, tactic))
     results = collections.defaultdict(list)
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
         futs = {ex.submit(probe_one, *t): t[0] for t in tasks}
@@ -231,7 +236,7 @@ def probe(fams, jobs, include_proven, chunk, fails_only=False):
         print(f"{fam}: {ok}/{len(res)} OK")
 
 
-MOD_HDR = """import GoFV.Proof.Rules.Tactic
+MOD_HDR = """import {tacmod}
 {imports}
 
 /-!
@@ -246,7 +251,7 @@ namespace GoFV.Proof.Rules
 """
 
 
-def emit(fam, chunk):
+def emit(fam, chunk, tactic="rule_auto"):
     rows = {r["q"]: r for r in load_class()}
     path = os.path.join(TMP, f"probe-{fam}.tsv")
     ok = [line.split("\t")[0] for line in open(path) if line.split("\t")[1] == "OK"]
@@ -264,11 +269,12 @@ def emit(fam, chunk):
         name = fam if part == 1 else f"{fam}{part}"
         mods = sorted({rows[q]["mod"] for q in group})
         src = MOD_HDR.format(imports="\n".join(f"import {m}" for m in mods), fam=fam,
+                             tacmod=TACTICS[tactic],
                              part="" if part == 1 else f" (part {part})")
         for q in group:
             doc = rows[q]["doc"]
             src += f"/-- {doc} -/\n" if doc else ""
-            src += f"theorem {short(q)}_sound : Rule.Sound {q} := by rule_auto\n\n"
+            src += f"theorem {short(q)}_sound : Rule.Sound {q} := by {tactic}\n\n"
         src += "end GoFV.Proof.Rules\n"
         out = os.path.join(PROOF, name + ".lean")
         assert not os.path.exists(out), out
@@ -560,14 +566,15 @@ def main():
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--chunk", type=int, default=40)
     ap.add_argument("--fails", action="store_true", help="re-probe only the rules that failed")
+    ap.add_argument("--tactic", choices=sorted(TACTICS), default="rule_auto")
     a = ap.parse_args()
     if a.cmd == "classify":
         classify()
     elif a.cmd == "probe":
-        probe(a.fams, a.jobs, a.all, a.chunk, a.fails)
+        probe(a.fams, a.jobs, a.all, a.chunk, a.fails, a.tactic)
     elif a.cmd == "emit":
         for fam in a.fams:
-            emit(fam, a.chunk)
+            emit(fam, a.chunk, a.tactic)
     elif a.cmd == "sat":
         sat()
     elif a.cmd == "axioms":
