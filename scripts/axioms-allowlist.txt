@@ -1,0 +1,5 @@
+# Allowlist of scripts/axioms-audit.sh (docs/GATE.md): the `_native` axioms that bv_decide or
+# native_decide generate (e.g. `GoFV.Proof.Foo.bar._native.bv_decide.ax_1_3`), one exact name
+# per line, each for a deliberate use (docs/PLAN.md §0). propext, Classical.choice and
+# Quot.sound are always allowed; every other axiom is a violation. Add an entry in the PR that
+# introduces the use, with a comment naming the theorem.

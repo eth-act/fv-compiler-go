@@ -15,10 +15,12 @@ A benchmark whose binary (`.lake/build/bin/<target>`, sha256), command and corpu
 measured is not rerun: the earlier numbers are copied with status `cached` (--force reruns).
 
 Corpus: commands read `$GOFV_BENCH_CORPUS` (e.g. `"$GOFV_BENCH_CORPUS/plain"`), a private copy of
-the newest export corpus (`../gofv-corpus/<pin12>`, as scripts/parity.sh picks it) under
-<profiler worktree>/tmp/bench-corpus/<id>, id = hash of its stats.txt and manifest.txt. The
-exporter regenerates the corpus in place of the original, so benchmarks never read it directly;
-a new corpus gives a new snapshot, and perf-compare.py only compares rows of the same corpus.
+the newest quick export corpus (`../gofv-corpus/<pin12>/plain`, as scripts/parity.sh picks it;
+since #116 a symlink to a versioned `quick-vN/plain` whose directory holds stats.txt and
+manifest.txt) under <profiler worktree>/tmp/bench-corpus/<id>, id = hash of stats.txt and
+manifest.txt. Old versions can be removed while a benchmark runs, so benchmarks never read the
+original; a new corpus gives a new snapshot, and perf-compare.py only compares rows of the
+same corpus.
 Exit status 1 of a command means "ran, found mismatches" for the difftest/parity runners; wrap
 them as `cmd || [ $? -eq 1 ]` so only crashes count as `fail`.
 
@@ -58,6 +60,8 @@ def snapshot(src):
             sys.exit("perf-bench: no corpus under ../gofv-corpus")
         src = max(pins, key=lambda d: d.stat().st_mtime)
     src = pathlib.Path(src)
+    if (src / "plain").is_symlink():  # versioned layout: <pin>/plain -> quick-vN/plain
+        src = (src / "plain").resolve().parent
     base = here / "tmp" / "bench-corpus"
 
     def newest_complete(why):
