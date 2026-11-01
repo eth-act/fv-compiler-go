@@ -1,12 +1,16 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Check
+import GoFV.SSA.WFCheck
 
 /-!
 # `check-bench`: where `check` spends its time
 
 For every section of every `.ssa` file under the arguments, the time of `check` and of its
 parts: `checkGo` (Go's `checkFunc`), `DomCert.check`, `checkArgShapes`, and inside `checkGo`
-the dominator tree (`postorder` + `dominators` + `newSparseTree`), the loop nest and `memCheck`.
+the dominator tree (`postorder` + `dominators` + `newSparseTree`), the loop nest and `memCheck`;
+then the slim input check of the checked CFG passes (`wfDomCheck`), its structural part
+(`wfCheck`) and the certificate construction (`DomCert.make`). `wfDomCheck` must accept every
+section `check` accepts.
 -/
 
 open GoFV.SSA
@@ -21,10 +25,11 @@ def main (args : List String) : IO UInt32 := do
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
     else files := files.push p
   let names := #["check", "checkGo", "DomCert.check", "checkArgShapes", "dom tree", "loopnest",
-    "memCheck"]
+    "memCheck", "wfDomCheck", "wfCheck", "DomCert.make"]
   let mut t : Array Nat := Array.replicate names.size 0
   let mut n := 0
   let mut bad := 0
+  let mut wfBad := 0
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok ex := parseExport data | continue
@@ -54,10 +59,18 @@ def main (args : List String) : IO UInt32 := do
       let t6 ← IO.monoNanosNow
       let _ ← IO.lazyPure fun _ => ok (Check.memCheck ce f)
       let t7 ← IO.monoNanosNow
+      let r8 ← IO.lazyPure fun _ => ok (wfDomCheck f)
+      let t8 ← IO.monoNanosNow
+      let _ ← IO.lazyPure fun _ => ok (wfCheck f)
+      let t9 ← IO.monoNanosNow
+      let _ ← IO.lazyPure fun _ => (DomCert.make f).depth.size
+      let t10 ← IO.monoNanosNow
       if !r0 then bad := bad + 1
+      if r0 && !r8 then wfBad := wfBad + 1
       t := #[t[0]! + (t1 - t0), t[1]! + (t2 - t1), t[2]! + (t3 - t2), t[3]! + (t4 - t3),
-        t[4]! + (t5 - t4), t[5]! + (t6 - t5), t[6]! + (t7 - t6)]
-  IO.println s!"sections {n}, check fails {bad}"
+        t[4]! + (t5 - t4), t[5]! + (t6 - t5), t[6]! + (t7 - t6), t[7]! + (t8 - t7),
+        t[8]! + (t9 - t8), t[9]! + (t10 - t9)]
+  IO.println s!"sections {n}, check fails {bad}, wfDomCheck fails where check passes {wfBad}"
   for h : k in [0:names.size] do
     IO.println s!"{names[k]}: {(t[k]! / 1000000 : Nat)} ms"
   return 0

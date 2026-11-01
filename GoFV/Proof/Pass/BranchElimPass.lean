@@ -7,10 +7,11 @@ import GoFV.Opt.BranchElim
 # branchelim refines its input
 
 `branchelim_refines`: the output of `branchelimPass` refines its input. The pass checks its input
-once (`check`, giving `Dom.WFDom`: well formed, uses dominated on paths) and runs its rewrite
-loop with every rewrite checked (`stepOK`: the result is a diamond merge of the previous
-function, `DRel`, with no `check` of the result); the loop keeps `Inv` (refines the input,
-`WFDom`), each accepted rewrite by `refines_of_step`, `DRel.wf_pres` and `DRel.useDom_pres`.
+once (the slim `wfDomCheck`, giving `Dom.WFDom`: well formed, uses dominated on paths) and runs
+its rewrite loop with every rewrite checked (`stepOK`: the result is a diamond merge of the
+previous function, `DRel`, with no `check` of the result); the loop keeps `Inv` (refines the
+input, `WFDom`), each accepted rewrite by `refines_of_step`, `DRel.wf_pres` and
+`DRel.useDom_pres`.
 The input's `postorder` cache does not change runs (`eraseF_postorder`).
 -/
 
@@ -136,8 +137,9 @@ theorem branchelim_refines {penv : PassEnv} {f : Func} {out : PassOut}
           split at hg
           · cases hg; exact hpo
           · rename_i hck
-            have hck' : checkOK { tabs := penv.tables, typs := penv.typs } f.postorder.2 = true := by
+            have hck' : wfDomOK f.postorder.2 = true := by
               simpa using hck
-            exact (rounds_inv _ _ _ hg ⟨hpo, _, WFDom.of_check (checkOK_sound hck')⟩).1
+            exact (rounds_inv _ _ _ hg ⟨hpo, _, WFDom.of_wfDomCheck
+              (ce := { tabs := penv.tables, typs := penv.typs }) (wfDomOK_sound hck')⟩).1
 
 end GoFV.Proof.BranchElim

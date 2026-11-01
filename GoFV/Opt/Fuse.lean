@@ -20,9 +20,9 @@ import GoFV.Opt.Fuse.BranchRedirect
 error, and the pass then returns its input unchanged (`orInput`; never on the corpus). Early
 fuse's comparison fusions run checked too (`Cmp.fuseComparisonsChecked`, proof
 `GoFV.Proof.FuseCmp.fuseComparisonsChecked_refines`; a rejected rewrite is skipped). The step
-checkers need no `check` of their results (issue #147): early fuse runs `check` once, on its
-input, and returns a function that fails it unchanged (every corpus input passes); its
-refinement theorem is `GoFV.Proof.FuseEarly.fuseEarly_refines`.
+checkers need no `check` of their results (issue #147): early fuse runs the slim input check
+`wfDomCheck` once, on its input, and returns a function that fails it unchanged (every corpus
+input passes); its refinement theorem is `GoFV.Proof.FuseEarly.fuseEarly_refines`.
 -/
 
 namespace GoFV.Opt
@@ -55,15 +55,15 @@ def typeView (env : PassEnv) : Except String TypeView := do
 
 end Fuse
 
-/-- `fuseEarly(f)`, every rewrite checked; the step checkers' proofs assume an input that passes
-`check`, so a function that fails it is returned unchanged. -/
-def fuseEarly (ce : CheckEnv) (tv : TypeView) (f : Func) : Except String Func :=
-  if !checkOK ce f then .ok f else
+/-- `fuseEarly(f)`, every rewrite checked; the step checkers' proofs assume a well-formed input
+with dominated uses (`wfDomCheck`), so a function that fails it is returned unchanged. -/
+def fuseEarly (tv : TypeView) (f : Func) : Except String Func :=
+  if !wfDomOK f then .ok f else
   orInput f (fuseLoop (Fuse.earlyStep tv.isMem) none roundFuel f)
 
 /-- The `early fuse` pass. -/
 def fuseEarlyPass : Pass := Pass.ofFunc fun env f => do
-  fuseEarly { tabs := env.tables, typs := env.typs } (← Fuse.typeView env) f
+  fuseEarly (← Fuse.typeView env) f
 
 /-- `fuseLate(f)`. -/
 def fuseLate (ce : CheckEnv) (tv : TypeView) (pv : Prove.Prover) (f : Func) :

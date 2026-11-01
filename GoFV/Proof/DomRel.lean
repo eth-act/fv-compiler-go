@@ -1,4 +1,5 @@
 import GoFV.Proof.DomCert
+import GoFV.Proof.WFCheck
 
 /-!
 # Abstract dominance (`DomRel`) and path dominance (`SDom`)
@@ -72,18 +73,29 @@ def UseDom (f : Func) : Prop :=
       ∀ (i : Nat) (a : ID) (e : Edge) (l : List ID), v.args[i]? = some a →
         blk.preds[i]? = some e → Reach f e.b l → blockOf f a ∈ l)
 
+/-- Use dominance of a well-formed function with a passing certificate (`use_dominated_of`). -/
+theorem UseDom.of_cert {ce : CheckEnv} {f : Func} (hwf : WF ce f) (hc : CertOK f) : UseDom f :=
+  fun _ _ hbm hb => use_dominated_of hwf hc hbm hb
+
 theorem useDom_of_check {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) : UseDom f :=
-  fun _ _ hbm hb => use_dominated h hbm hb
+  UseDom.of_cert (ce := ce) (check_wf h) (certOK_of_check (check_domCert h))
 
 /-- **The invariant of the checked CFG passes** (issue #147): `f` is well formed and its uses
-are dominated on paths. `check` establishes it once per pass (`WFDom.of_check`); every checked
-step keeps it, so no intermediate function is checked. -/
+are dominated on paths. The slim input check `wfDomCheck` establishes it once per pass
+(`WFDom.of_wfDomCheck`; `check` too, `WFDom.of_check`); every checked step keeps it, so no
+intermediate function is checked. -/
 structure WFDom (ce : CheckEnv) (f : Func) : Prop where
   wf : WF ce f
   dom : UseDom f
 
 theorem WFDom.of_check {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) : WFDom ce f :=
   ⟨check_wf h, useDom_of_check h⟩
+
+/-- **A passing slim input check gives the invariant** of the checked CFG passes. -/
+theorem WFDom.of_wfDomCheck {ce : CheckEnv} {f : Func} (h : wfDomCheck f = .ok ()) :
+    WFDom ce f :=
+  ⟨wfDomCheck_wf h, UseDom.of_cert (ce := ce) (wfDomCheck_wf h)
+    (certOK_of_check (wfDomCheck_domCert h))⟩
 
 /-- `b` is reachable from the entry. -/
 def Reachable (f : Func) (b : ID) : Prop := ∃ l, Reach f b l

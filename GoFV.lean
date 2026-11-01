@@ -55,6 +55,7 @@ import GoFV.Opt.CanCondSelect
 import GoFV.Opt.BranchElim
 import GoFV.SSA.Analysis.LoopNest
 import GoFV.SSA.Check
+import GoFV.SSA.WFCheck
 import GoFV.SSA.Sem.Val
 import GoFV.SSA.Sem.Int
 import GoFV.SSA.Sem.Shift

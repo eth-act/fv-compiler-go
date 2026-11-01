@@ -371,6 +371,7 @@ import GoFV.Proof.Term
 import GoFV.Proof.TermStep
 import GoFV.Proof.ValRefine
 import GoFV.Proof.WF
+import GoFV.Proof.WFCheck
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.AddZeroRefines
 import GoFV.Proof.Witness.AddZeroSim
@@ -407,4 +408,5 @@ import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
+import GoFV.Proof.Witness.WFCheck
 import GoFV.Proof.Witness.ZCSE
