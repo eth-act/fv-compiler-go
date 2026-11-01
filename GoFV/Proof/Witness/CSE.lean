@@ -1,6 +1,7 @@
 import GoFV.Proof.Pass.CSE
 import GoFV.SSA.Check
 import GoFV.Proof.Witness.DecodedLenCse
+import GoFV.Proof.Witness.Util
 import Std.Data.String.ToInt
 
 /-!
@@ -101,9 +102,6 @@ theorem decodedLenCse_merge :
   decide +kernel
 
 /-! ## The pass -/
-
-theorem ok_of_toBool {e : Except String Unit} (h : e.toBool = true) : e = .ok () := by
-  revert h; cases e <;> simp [Except.toBool]
 
 /-- `csePass` keeps a result its checker accepts (with `cseRw` abstract, so the kernel never
 evaluates it here). -/

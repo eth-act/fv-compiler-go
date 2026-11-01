@@ -2,6 +2,8 @@
 # Nightly gate (docs/GATE.md): on the newest origin/main, in the dedicated detached worktree
 # ../fv-compiler-go-wt/nightly-gate, run
 #   build     lake build of every module (GoFV, GoFVTest) and the executables the gate uses
+#   allproof  GoFVTest/Proof/AllProof.lean (regenerated if stale: scripts/gen-allproof.sh) builds:
+#             every GoFV/Proof module imports together (no name declared twice)
 #   no-sorry  scripts/no-sorry.py
 #   axioms    scripts/axioms-audit.sh (every theorem under GoFV.Proof)
 #   ssa-check ssa-check on the full corpus
@@ -41,7 +43,7 @@ main() {
       --force) force=1; shift ;;
       --install) install=1; shift ;;
       --steps) steps=1; rev=$2; run=$3; shift 3 ;;  # internal: run the steps in this worktree
-      *) sed -n '2,25s/^# \{0,1\}//p' "$self" >&2; exit 2 ;;
+      *) sed -n '2,27s/^# \{0,1\}//p' "$self" >&2; exit 2 ;;
     esac
   done
   export PATH=$HOME/.elan/bin:$HOME/.local/bin:$PATH
@@ -140,7 +142,7 @@ gate_post_status() {
     if [ -z "$n" ]; then
       n=$(gh issue create --title "Nightly gate" --label nightly-gate --body "$(cat <<'EOF'
 Status of the nightly gate (`scripts/nightly-gate.sh`, docs/GATE.md). One comment per night:
-build, no-sorry, axioms audit, ssa-check, full-corpus parity, whole-pipeline `--check`, driver
+build, all-proof import, no-sorry, axioms audit, ssa-check, full-corpus parity, whole-pipeline `--check`, driver
 e2e (full mode). A red night opens an issue labelled `gate-red` for its first failure.
 EOF
 )")
@@ -185,6 +187,7 @@ gate_steps() {
 
   step build scripts/memcap.sh lake build GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check
   [ "${results[-1]}" = pass ] || built=0
+  step allproof gate_allproof
   step no-sorry python3 scripts/no-sorry.py
   if [ "$built" = 1 ]; then
     step axioms scripts/axioms-audit.sh --out "$run/axioms"
@@ -234,6 +237,13 @@ gate_steps() {
     gate_post_status "$root" "$(cat "$sum")"
   fi
   [ -z "$first" ]
+}
+
+# gate_allproof: the import of all proof modules builds (regenerated first when stale, so a
+# module its author did not add is covered too; the next run's checkout resets the file).
+gate_allproof() {
+  scripts/gen-allproof.sh --check || scripts/gen-allproof.sh || return
+  scripts/memcap.sh lake build GoFVTest.Proof.AllProof
 }
 
 # gate_e2e <run>: the driver toolchain for this commit's patches (rebuilt when they changed),

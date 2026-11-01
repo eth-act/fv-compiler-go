@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.DSE
 import GoFV.Proof.Witness.DSECert
+import GoFV.Proof.Witness.Util
 
 /-!
 # Non-vacuity witness: dse on `f10` of `test/initialize`
@@ -40,9 +41,6 @@ theorem f10_run :
   decide +kernel
 
 /-! ## The pass -/
-
-theorem ok_of_toBool' {e : Except String Unit} (h : e.toBool = true) : e = .ok () := by
-  revert h; cases e <;> simp [Except.toBool]
 
 theorem f10_dse_ok : dse f10Tabs 31 f10 = .ok f10Out := by
   have h := f10_dse
@@ -98,7 +96,7 @@ theorem dse_witness :
   obtain ⟨m, hm⟩ := returnsBlob_iff.1 f10_run
   refine ⟨_, f10_dsePass, f10_elim.2, ?_⟩
   exact Refines.returned_blob
-    (GoFV.Proof.DSE.dse_refines f10_dsePass (ok_of_toBool' h1) (ok_of_toBool' h2) f10_dseFrag)
+    (GoFV.Proof.DSE.dse_refines f10_dsePass (ok_of_toBool h1) (ok_of_toBool h2) f10_dseFrag)
     (by decide +kernel) hm
 
 end GoFV.Proof.Witness

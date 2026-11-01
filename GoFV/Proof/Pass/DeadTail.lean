@@ -130,7 +130,7 @@ theorem value?_modV (F : Func) (v : ID) (g : Value → Value) (x : ID) :
     | some o => cases o <;> rfl
   · rfl
 
-theorem block?_modB (F : Func) (b : ID) (k : Block → Block) (x : ID) :
+private theorem block?_modB (F : Func) (b : ID) (k : Block → Block) (x : ID) :
     (F.modB b k).block? x = if b = x then (F.block? x).map k else F.block? x := by
   unfold Func.modB Func.block?
   simp only [Array.getElem?_modify]

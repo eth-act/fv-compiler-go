@@ -4,6 +4,7 @@ import GoFV.SSA.Check
 import GoFV.Proof.Pass.RewriteCases
 import GoFV.Proof.Rules.Add6
 import GoFV.Proof.Rules.AllSound
+import GoFV.Proof.Witness.Util
 
 /-!
 # Witness function for the rewrite passes: `addZero` (hand-written)
@@ -117,9 +118,6 @@ theorem azRules_allSound : azRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
     ⟨⟨GoFV.Proof.Rules.r_generic_646_3_sound, trivial⟩, trivial⟩
 
-theorem ok_of_toBool' {e : Except String Unit} (h : e.toBool = true) : e = .ok () := by
-  revert h; cases e <;> simp [Except.toBool]
-
 /-- **Pass execution witness**: on `addZero`, the checked rewrite pass with the sound one-rule
 set changes the function (`v5 = MakeResult v2 v1`: `0 + n` became `n`), the validator accepted
 the result (it is not the input), and input and output pass `check`: the premises of
@@ -138,7 +136,7 @@ theorem addZero_checkedRewrite :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
     obtain ⟨hg, h5, -⟩ := h2
     obtain ⟨ht, hv⟩ := GoFV.Proof.Pass.Rewrite.checkedRewrite_cases hc
-    refine ⟨out, rfl, ht, h5, ?_, ok_of_toBool' h1, ok_of_toBool' hg⟩
+    refine ⟨out, rfl, ht, h5, ?_, ok_of_toBool h1, ok_of_toBool hg⟩
     rcases hv with he | hv
     · rw [he] at h5; exact absurd h5 (by decide +kernel)
     · exact hv
