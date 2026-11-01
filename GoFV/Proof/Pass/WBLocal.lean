@@ -423,7 +423,7 @@ theorem evalValue_inv_panic {env : Env} {ctx : Sem.Ctx} {fr : Frame} {v : Value}
   | panic e mm => exact absurd hm mapM_regs_ne_panic
   | stuck msg => rw [hm] at h; cases h
 
-/-- The memories `Gr` holds are `MemOK` (from the source invariant `SInv`). -/
+/-- The memories `Gr` holds are `MemOK` (from the source invariant `MemInv.SInv`). -/
 abbrev MemsGr (Gr : Frame) : Prop := ∀ (a : ID) (M : Mem), Gr.regs[a]? = some (some (Val.mem M)) → MemOK M
 
 /-- **The flag load.** -/

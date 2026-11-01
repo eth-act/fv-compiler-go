@@ -399,8 +399,8 @@ frame, and its anchor holds the source's. -/
 theorem chainSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N : List ID}
     (hfv : f.value? x = some fv) (hgv : g.value? x = some gv)
     (h : chainSeg? tabs f g x fv gv = some (D, N))
-    (hgid : ∀ n ∈ N ++ [x], ∀ v, g.value? n = some v → v.id = n) (env : Env) :
-    SegSound env tabs f g x D N := by
+    (hgid : ∀ n ∈ N ++ [x], ∀ v, g.value? n = some v → v.id = n) (Q : Mem → Prop) (env : Env) :
+    SegSound Q env tabs f g x D N := by
   unfold chainSeg? at h
   generalize hfc : freshChain f g 4 (lastArg gv) = r at h
   obtain ⟨ns, m0⟩ := r
@@ -446,7 +446,7 @@ theorem chainSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D 
       · rw [hfv] at hsv; cases hsv; exact .inl hfop
     rcases Proof.evalValue_panic_op hp with hp | hp <;> rcases hop with hop | hop <;>
       rw [hop] at hp <;> cases hp
-  intro S A H hT hid hsize hroots
+  intro S A H hT _ hid hsize hroots
   have hxA : A x := hroots x (by simp) (by simp [CSE.rootNode, hfv, hfop, prio_store])
   have hzA : A z := hroots z (by simp) (by simp [CSE.rootNode, hzv, hzop, prio_zero])
   -- the `Zero`

@@ -21,8 +21,8 @@ open GoFV.Proof.CSE (Base Node SFacts)
 open GoFV.Proof.AtomSim (Reg rv evalValue_of_regs regs_of_ok)
 open GoFV.Proof.StructStore (Src ssSame_spec pureEval)
 
-variable {env : Env} {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block} {F0 F0T : Frame}
-  {oS oT : Array ID}
+variable {Q : Mem → Prop} {env : Env} {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
+  {F0 F0T : Frame} {oS oT : Array ID}
 
 /-! ## The segments' list -/
 
@@ -117,7 +117,7 @@ def Cov (tabs : Tables) (f g : Func) (pre : List ID) (n : ID) : Prop :=
 
 namespace Blk
 
-variable (K : Blk env tabs f g bid fb gb F0 F0T oS oT)
+variable (K : Blk Q env tabs f g bid fb gb F0 F0T oS oT)
 include K
 
 /-- **One target step.** -/
@@ -127,7 +127,8 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {n : ID}
     (hjT : oT.toList[j]? = some n)
     (hcov : CSE.rootNode g n = true → Cov tabs f g (oS.toList.take k) n)
     (hpure : ∀ fv, f.value? n = some fv → n ∉ oS.toList.take k →
-      fv.op ≠ .Arg ∧ fv.op ≠ .ArgIntReg) :
+      fv.op ≠ .Arg ∧ fv.op ≠ .ArgIntReg)
+    (hinv : ∀ (z : ID) (y : Val), S.regs[z]? = some (some y) → MemInv.MemsOK Q y) :
     ∃ y, stepV env (Ctx.make tabs g) T n = .ok y ∧
       TFacts env tabs f g F0T S (T.set n y) (oS.toList.take k) (oT.toList.take (j + 1)) := by
   obtain ⟨hnb, gv, hgv, hgph⟩ := K.memT.1 (List.mem_of_getElem? hjT)
@@ -155,7 +156,7 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {n : ID}
       have hss : ssSame fv gv = true := hsv.resolve_right fun ⟨D, N, h⟩ => hna D N h
       obtain ⟨y, hy, yS, hyS, hr⟩ := K.keptOk hE hS hT hjT hnp hgv hfv hss
       exact keptStep fv hfv hss y hy fun _ => ⟨yS, hyS, hr⟩
-    · exact K.segStep hE hS hT hjT hs hc hn
+    · exact K.segStep hE hS hT hjT hs hc hn hinv
   · have hroot' : CSE.rootNode g n = false := by simpa using hroot
     cases hfv : f.value? n with
     | none =>
@@ -249,7 +250,7 @@ theorem okCase (hE : env.Mono) {G : Frame}
   obtain ⟨T', h1, hT'⟩ := loop (env := env) (S := G) (pre := oS.toList.take oS.toList.length)
     (K' := oT.toList.length) fun j x hj hjx T hT => by
       have hxT := K.memT.1 (List.mem_of_getElem? hjx)
-      refine K.step hE hS hT hjx (fun hr => ?_) (fun fv hfv hn => ?_)
+      refine K.step hE hS hT hjx (fun hr => ?_) (fun fv hfv hn => ?_) (K.inv _ G (List.prefix_refl _) h)
       · cases hfx : f.value? x with
         | some fv =>
           cases hsx : segOK tabs f g x with
@@ -374,6 +375,7 @@ theorem panicCase (hE : env.Mono) {e : Panic} {m : Mem}
       have hxmem : x ∈ oT.toList.take k' :=
         List.mem_of_getElem? (by rw [List.getElem?_take_of_lt hj]; exact hjx)
       refine K.step hE hS hT hjx (fun hr => hroots x hxmem hr) (fun fv hfv hn => ?_)
+        (K.inv pre Gp ⟨r :: post, hsplit.symm⟩ hpre)
       obtain ⟨hxn, -⟩ := K.nodeF (K.memT.1 (List.mem_of_getElem? hjx)) hfv
       obtain ⟨hxb, fv', hfv', hph⟩ := hxn
       rw [hfv] at hfv'; cases hfv'

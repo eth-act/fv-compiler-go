@@ -144,6 +144,7 @@ theorem nf_checkedRewrite :
     exact ⟨out, rfl, h9, ok_of_toBool h1, ok_of_toBool hg,
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := nfRules) (penv := nfPassEnv)
         (f := nfFunc) (out := out) nfRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg),
-      fun args mem => GoFV.Proof.Pass.Rewrite.RwPre.p1 nf_dictParams args mem⟩
+      fun args mem => GoFV.Proof.Pass.Rewrite.RwPre.p1 nf_dictParams
+        (by decide +kernel) args mem⟩
 
 end GoFV.Proof.Witness

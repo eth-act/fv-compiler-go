@@ -6,6 +6,8 @@ import GoFV.Opt.NilCheckRel
 import GoFV.Opt.Checked
 import GoFV.Opt.CopyRelCheck
 import GoFV.Opt.MemCall
+import GoFV.Opt.MemTy
+import GoFV.SSA.Sem.Image
 
 /-!
 # Validating a rewrite pass (`applyRewrite`) against its log (issue #113)
@@ -1902,8 +1904,9 @@ def ssRel (tabs : Tables) (f g : Func) : Bool :=
 
 `generic.rules:1833`/`:1844`/`:1857` replace `Store`s over a `Zero` that they tile by the same
 `Store`s over the `Zero`'s memory (`(Store op1 d1 (Store op2 d2 (Zero [n] p mem)))` becomes
-`(Store op1 d1 (Store op2 d2 mem))`), and `:1638`/`:1730` replace `SelectN [0]` of a call to
-`runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`. Each rewrites
+`(Store op1 d1 (Store op2 d2 mem))`), `:1638`/`:1730` replace `SelectN [0]` of a call to
+`runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`, and `:1743`
+replaces a `Move` from a read-only symbol whose bytes are zero by a `Zero`. Each rewrites
 a *segment* of a block: the rule's value `x` (the anchor) is redefined in place, the values it
 clobbers (`D`: the inner `Store`s and the `Zero`, or the call) are gone, and fresh values (`N`:
 the new inner `Store`s) are put in. Only the anchor's memory agrees with the source's, so the
@@ -1911,12 +1914,13 @@ validator takes these events out of the log as the struct-store splits: `segPre`
 `segRel` relates the input to that function, and `validate` the output to it with the other
 events. -/
 
-/-- A segment rule: a `Store` or `SelectN` rule with a built result in `v`'s block; each
+/-- A segment rule: a `Store`, `SelectN` or `Move` rule with a built result in `v`'s block; each
 instance is validated by `segRel`. -/
 def segShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Store .., .build _, none => true
   | .op .SelectN .., .build _, none => true
+  | .op .Move .., .build _, none => true
   | _, _, _ => false
 
 /-- The value `v` of `f` that event `ev` rewrites as a segment, its logged definition and the
@@ -2111,18 +2115,33 @@ def callSeg? (tabs : Tables) (f g : Func) (fv gv : Value) : Option (List ID × L
     | none => none
   | _, _ => none
 
-/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?` or `callSeg?`): listed in its
-block, a `Store` or `SelectN` redefined in place (its ID, block and type kept); its dropped values
-are listed in that block, its fresh values in that block of `g`; the fresh values and the anchor are roots of `g`,
-each of their arguments an earlier one of them, or an argument of a root of `f` of the segment (a
-dropped root, or the anchor) that is not dropped. The dropped and fresh values. -/
+/-- A read-only segment at `x` (`generic.rules:1743`): in `f` `Move [n] dst src mem` from an
+`Addr` of a symbol (`src`), in `g` `Zero [n] dst mem`. Nothing is dropped or fresh; that the
+symbol is a read-only one of the precondition with zero bytes is `roSegsOK`'s. -/
+def roSeg? (tabs : Tables) (f : Func) (fv gv : Value) : Option (List ID × List ID) :=
+  match fv.op, fv.args.toList with
+  | .Move, [d, s, m] =>
+    if gv.op == .Zero && gv.args == #[d, m] && gv.auxInt == fv.auxInt &&
+        (f.value? s).any (fun sv => sv.op == .Addr && (WBCheck.symName? tabs sv.aux).isSome) then
+      some ([], [])
+    else none
+  | _, _ => none
+
+/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?` or `roSeg?`): listed in
+its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block and type kept); its
+dropped values are listed in that block, its fresh values in that block of `g`; the fresh values
+and the anchor are roots of `g`, each of their arguments an earlier one of them, or an argument of
+a root of `f` of the segment (a dropped root, or the anchor) that is not dropped. The dropped and
+fresh values. -/
 def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
     let listed (z : ID) : Bool := (f.block? fv.block).any (·.values.contains z)
     if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
-        (fv.op == .Store || fv.op == .SelectN) && f.blocks.contains fv.block && listed x then
-      match (chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv with
+        (fv.op == .Store || fv.op == .SelectN || fv.op == .Move) && f.blocks.contains fv.block &&
+        listed x then
+      match ((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
+          fun _ => roSeg? tabs f fv gv with
       | some (D, N) =>
         let L := N ++ [x]
         let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
@@ -2216,6 +2235,35 @@ def segRel (tabs : Tables) (f g : Func) : Bool :=
           | none => true
       | none => false) &&
     f.blocks.all (segBlockOK f g segs news)
+
+/-- The read-only data symbol `aux` names in `tabs` (`SRODATA` with exported bytes), with its
+allocation in the global image (`Sem.rodataAlloc`). -/
+def roSym? (tabs : Tables) (aux : Option AuxRef) : Option (String × Sem.Alloc) :=
+  match aux.bind tabs.aux? with
+  | some { kind := .sym name _ "SRODATA" size _ _ _ (some data) relocs _, .. } =>
+    some (name.toStringLossy, Sem.rodataAlloc data size relocs)
+  | _ => none
+
+/-- The read-only data symbols `f`'s `Addr`s name in `tabs`, with their allocations: the
+symbols the precondition `RoImage` of the rewrite passes pins for their input. -/
+def roSyms (tabs : Tables) (f : Func) : List (String × Sem.Alloc) :=
+  f.valueTab.toList.filterMap fun o => o.bind fun v =>
+    if v.op == .Addr then roSym? tabs v.aux else none
+
+/-- The source of the `Move` `fv` of `f` is an `Addr` of a symbol of `ro` whose bytes are zero. -/
+def roSrcOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (fv : Value) : Bool :=
+  match fv.args.toList with
+  | [_, s, _] => (f.value? s).any fun sv => (WBCheck.symName? tabs sv.aux).any fun n =>
+      ro.any fun e => e.1 == n && e.2.data.all (· == .b 0)
+  | _ => false
+
+/-- The read-only segments (`roSeg?`; the anchors that are `Move`s of `f`) copy from symbols of
+`ro` whose bytes are zero, and `f` passes `WBCheck.memTyOK` (so every memory a run of `f` holds
+has the symbols of `ro`, `GoFV.Proof.MemInv`). -/
+def roSegsOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) : Bool :=
+  let movs := (segList (segArr tabs f g)).filter fun s => (f.value? s.1).any (·.op == .Move)
+  movs.isEmpty ||
+    (WBCheck.memTyOK tabs f && movs.all fun s => (f.value? s.1).all (roSrcOK tabs ro f))
 
 /-! ## Selections of `Phi`s of `SliceMake`s as a layer (issue #69)
 
@@ -2537,8 +2585,9 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
     NilCheck.dictParams tabs f == NilCheck.dictParams env.tables f0
 
 /-- The layer `L` relates `f` (a layer's input with the log `log`, from the pass's input `f0`)
-and `f'`: `nilOK`, `fwdRel`, `validate` with the expansions it applied (`slTaken`, `ldTaken`) or
-`ssRel`, and `f'` passes `check`. -/
+and `f'`: `nilOK`, `fwdRel`, `validate` with the expansions it applied (`slTaken`, `ldTaken`),
+`ssRel`, or `segRel` with its read-only segments' symbols among `f0`'s (`roSegsOK`, `roSyms`), and
+`f'` passes `check`. -/
 def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
     (f0 : GoFV.SSA.Func) :
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
@@ -2550,7 +2599,9 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
       checkOK { tabs := tabs, typs := env.typs } f'
   | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .seg, f, _, f' =>
-    RewriteCheck.segRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+    RewriteCheck.segRel tabs f f' &&
+      RewriteCheck.roSegsOK tabs (RewriteCheck.roSyms env.tables f0) f f' &&
+      checkOK { tabs := tabs, typs := env.typs } f'
   | .ps, f, _, f' =>
     RewriteCheck.psRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .ld, f, log, f' =>

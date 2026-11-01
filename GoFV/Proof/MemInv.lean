@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.WBMem
+import GoFV.Proof.TabsAgreeModMem
 import GoFV.Proof.Pass.DAEOps
 import GoFV.Proof.Pass.DAERoot
 import GoFV.Proof.Frame
@@ -8,25 +8,27 @@ import GoFV.Proof.TabsAgreeModSrc
 import GoFV.Opt.WriteBarrierCheck
 
 /-!
-# writebarrier: the source's memories (issue #36)
+# Memory invariants of a source run (issues #36, #151)
 
-Along a run of a function `f` that `WBCheck.memTyOK` accepts, every memory a register holds is
-`MemOK` (`SInv`): the write-barrier flag stays defined and no write-barrier buffer appears, when
-the initial memory is `MemOK` and the environment's contracts keep it (`ContractsOK`).
+A predicate `P` on memories that writes, `set`s of blocks that are neither globals nor the
+write-barrier buffer, and freeing the buffer keep (`MemPred`: the write-barrier flag's `WB.MemOK`,
+issue #36; the read-only symbols' `RoMem`, issue #151). Along a run of a function `f` that
+`WBCheck.memTyOK` accepts, every memory a register holds is `P` (`SInv P`), when the initial memory
+is `P` and the environment's contracts keep it (`ContractsOK P`).
 
 A register of a shape without memories holds none (`retype_memFree`); the values whose shape may
 hold one are memory ops (`memOpOK`), whose results are built from their arguments' memories, by
-writes and `poisonBlock`s of other blocks (`MemOK.write`, `MemOK.poison`), and by contracts
+writes and `poisonBlock`s of frame blocks (`MemPred.write`, `MemPred.poison`), and by contracts
 (`evalOp_mems`; atomic roots by `atomicRoot_mems`, `evalPure`'s tuple ops and atomic loads by
-`evalPure_mems`). `SInv` holds at entry (`sinv_entry`: the frame allocations are neither the flag
-nor the buffer) and is kept by the `Phi`s (`sinv_phis`), the schedule (`sinv_evalAll`) and so by
-`enterBlock` (`sinv_enter`).
+`evalPure_mems`). `SInv P` holds at entry (`sinv_entry`: the frame allocations are neither
+globals nor the buffer) and is kept by the `Phi`s (`sinv_phis`), the schedule (`sinv_evalAll`)
+and so by `enterBlock` (`sinv_enter`).
 -/
 
 namespace GoFV.SSA.Sem
 
 mutual
-/-- The memories inside a value (`GoFV.Proof.WB.MemsOK`). -/
+/-- The memories inside a value (`GoFV.Proof.MemInv.MemsOK`). -/
 def Val.mems : Val → List Mem
   | .mem m => [m]
   | .tuple vs => Val.memsL vs
@@ -40,14 +42,32 @@ end
 
 end GoFV.SSA.Sem
 
-namespace GoFV.Proof.WB
+namespace GoFV.Proof.MemInv
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck
 
+/-- A memory predicate kept by writes, by `set`s of blocks that are neither globals nor the
+write-barrier buffer (frame allocations, `poisonBlock`s of frame blocks) and by freeing the
+buffer. -/
+structure MemPred (P : Mem → Prop) : Prop where
+  write : ∀ {m m' : Mem} {p : Ptr} {bs : Array Byte}, P m → m.write p bs = some m' → P m'
+  set : ∀ {m : Mem} {b : Blk} (a : Alloc), P m → (∀ n, b ≠ .global n) → b ≠ .wbuf →
+    P (m.set b a)
+  free_wbuf : ∀ {m : Mem}, P m → P (m.free .wbuf)
+
+theorem MemPred.poison {P : Mem → Prop} (hP : MemPred P) {m : Mem} (h : P m) {b : Blk}
+    (hg : ∀ n, b ≠ .global n) (hw : b ≠ .wbuf) : P (m.poisonBlock b) := by
+  unfold Mem.poisonBlock
+  split
+  · exact hP.set _ h hg hw
+  · exact h
+
+variable {P : Mem → Prop}
+
 /-! ## The memories of a value -/
 
-/-- Every memory inside `v` is `MemOK`. -/
-def MemsOK (v : Val) : Prop := ∀ m ∈ v.mems, MemOK m
+/-- Every memory inside `v` is `P`. -/
+def MemsOK (P : Mem → Prop) (v : Val) : Prop := ∀ m ∈ v.mems, P m
 
 theorem memsL_mem {vs : List Val} {m : Mem} (h : m ∈ Val.memsL vs) : ∃ v ∈ vs, m ∈ v.mems := by
   induction vs with
@@ -58,17 +78,17 @@ theorem memsL_mem {vs : List Val} {m : Mem} (h : m ∈ Val.memsL vs) : ∃ v ∈
     · exact ⟨v, List.mem_cons_self, h⟩
     · obtain ⟨w, hw, hm⟩ := ih h; exact ⟨w, List.mem_cons_of_mem _ hw, hm⟩
 
-theorem memsOK_list {vs : List Val} (h : ∀ v ∈ vs, MemsOK v) : ∀ m ∈ Val.memsL vs, MemOK m :=
+theorem memsOK_list {vs : List Val} (h : ∀ v ∈ vs, MemsOK P v) : ∀ m ∈ Val.memsL vs, P m :=
   fun m hm => by obtain ⟨v, hv, hm⟩ := memsL_mem hm; exact h v hv m hm
 
-theorem memsOK_tuple {vs : List Val} (h : ∀ v ∈ vs, MemsOK v) : MemsOK (.tuple vs) :=
+theorem memsOK_tuple {vs : List Val} (h : ∀ v ∈ vs, MemsOK P v) : MemsOK P (.tuple vs) :=
   memsOK_list h
 
-theorem memsOK_of_mems_nil {v : Val} (h : v.mems = []) : MemsOK v := fun m hm => by
+theorem memsOK_of_mems_nil {v : Val} (h : v.mems = []) : MemsOK P v := fun m hm => by
   rw [h] at hm; cases hm
 
-theorem memsOK_getD {vs : List Val} (h : ∀ v ∈ vs, MemsOK v) (i : Nat) :
-    MemsOK (vs.getD i .poison) := by
+theorem memsOK_getD {vs : List Val} (h : ∀ v ∈ vs, MemsOK P v) (i : Nat) :
+    MemsOK P (vs.getD i .poison) := by
   rw [List.getD_eq_getElem?_getD]
   cases hi : vs[i]? with
   | none => exact memsOK_of_mems_nil rfl
@@ -84,7 +104,7 @@ theorem mem_memsL {vs : List Val} {v : Val} (hv : v ∈ vs) {m : Mem} (hm : m �
     · exact .inl hm
     · exact .inr (ih hv)
 
-theorem memsOK_of_tuple {vs : List Val} (h : MemsOK (.tuple vs)) : ∀ v ∈ vs, MemsOK v :=
+theorem memsOK_of_tuple {vs : List Val} (h : MemsOK P (.tuple vs)) : ∀ v ∈ vs, MemsOK P v :=
   fun _ hv _ hm => h _ (mem_memsL hv hm)
 
 /-! ## Decoding and retyping -/
@@ -251,31 +271,29 @@ theorem retypeFields_mems : (fs : List (Nat × Ty)) → (vs : List Val) → ∀ 
   | _ :: _, [], _, h => by simp [Val.retypeFields] at h
 end
 
-theorem MemsOK.retype {v : Val} (h : MemsOK v) (t : Ty) : MemsOK (v.retype t) :=
+theorem MemsOK.retype {v : Val} (h : MemsOK P v) (t : Ty) : MemsOK P (v.retype t) :=
   fun m hm => h m (retype_mems t v m hm)
 
-theorem memsOK_poison : MemsOK .poison := memsOK_of_mems_nil rfl
+theorem memsOK_poison : MemsOK P .poison := memsOK_of_mems_nil rfl
 
-theorem memsOK_mem {m : Mem} (h : MemOK m) : MemsOK (.mem m) := fun m' hm' => by
+theorem memsOK_mem {m : Mem} (h : P m) : MemsOK P (.mem m) := fun m' hm' => by
   simp only [Val.mems, List.mem_singleton] at hm'; subst hm'; exact h
 
-theorem MemsOK.mem {m : Mem} (h : MemsOK (.mem m)) : MemOK m := h m (by simp [Val.mems])
+theorem MemsOK.mem {m : Mem} (h : MemsOK P (.mem m)) : P m := h m (by simp [Val.mems])
 
 /-! ## Calls -/
 
-/-- The environment's contracts keep memories `MemOK` and values `MemsOK`. -/
-def ContractsOK (env : Env) : Prop :=
-  ∀ name c, env.extern name = some c → ∀ args clo m, (∀ a ∈ args, MemsOK a) →
-    (∀ a ∈ clo, MemsOK a) → MemOK m →
+/-- The environment's contracts keep memories `P` and values `MemsOK P`. -/
+def ContractsOK (P : Mem → Prop) (env : Env) : Prop :=
+  ∀ name c, env.extern name = some c → ∀ args clo m, (∀ a ∈ args, MemsOK P a) →
+    (∀ a ∈ clo, MemsOK P a) → P m →
     match c args clo m with
-    | .returned rs m' => MemOK m' ∧ ∀ r ∈ rs, MemsOK r
+    | .returned rs m' => P m' ∧ ∀ r ∈ rs, MemsOK P r
     | _ => True
 
-theorem outargs_ne_flag (a : Nat) : Blk.outargs a ≠ flagBlk := by simp [flagBlk]
-
 theorem decodeArgs_mems (tabs : Tables) (act : Nat) (m : Mem) :
-    ∀ (ps : List ABIParam) {pieces args : List Val}, (∀ p ∈ pieces, MemsOK p) →
-      decodeArgs tabs act m ps pieces = some args → ∀ a ∈ args, MemsOK a
+    ∀ (ps : List ABIParam) {pieces args : List Val}, (∀ p ∈ pieces, MemsOK P p) →
+      decodeArgs tabs act m ps pieces = some args → ∀ a ∈ args, MemsOK P a
   | [], [], _, _, hd => by simp only [decodeArgs] at hd; cases hd; simp
   | [], _ :: _, _, _, hd => by simp [decodeArgs] at hd
   | p :: ps, pieces, args, hp, hd => by
@@ -307,9 +325,9 @@ theorem decodeArgs_mems (tabs : Tables) (act : Nat) (m : Mem) :
           · exact memsOK_of_mems_nil (decode_mems _ _ _)
           · exact decodeArgs_mems tabs act m ps (fun x hx => hp x (List.mem_of_mem_drop hx)) hn a ha
 
-theorem encodeResults_mems (tabs : Tables) (act : Nat) :
+theorem encodeResults_mems (hP : MemPred P) (tabs : Tables) (act : Nat) :
     ∀ (ps : List ABIParam) (rs : List Val) {m : Mem} {r : List Val × Mem},
-      MemOK m → encodeResults tabs act ps rs m = some r → MemOK r.2 ∧ ∀ p ∈ r.1, MemsOK p
+      P m → encodeResults tabs act ps rs m = some r → P r.2 ∧ ∀ p ∈ r.1, MemsOK P p
   | [], [], m, r, hm, he => by
     simp only [encodeResults] at he; cases he; exact ⟨hm, by simp⟩
   | [], _ :: _, _, _, _, he => by simp [encodeResults] at he
@@ -322,13 +340,13 @@ theorem encodeResults_mems (tabs : Tables) (act : Nat) :
       | none => rw [hw] at he; cases he
       | some m1 =>
         rw [hw] at he
-        exact encodeResults_mems tabs act ps xs (hm.write hw) he
+        exact encodeResults_mems hP tabs act ps xs (hP.write hm hw) he
     · cases hn : encodeResults tabs act ps xs m with
       | none => simp [hn, bind, Option.bind] at he
       | some q =>
         simp only [hn, bind, Option.bind, pure] at he
         cases he
-        obtain ⟨h1, h2⟩ := encodeResults_mems tabs act ps xs hm hn
+        obtain ⟨h1, h2⟩ := encodeResults_mems hP tabs act ps xs hm hn
         refine ⟨h1, fun y hy => ?_⟩
         rcases List.mem_append.1 hy with hy | hy
         · simp only [toPieces, List.mem_map] at hy
@@ -337,8 +355,8 @@ theorem encodeResults_mems (tabs : Tables) (act : Nat) :
         · exact h2 y hy
 
 theorem retypeResults_mems (tabs : Tables) :
-    ∀ (ps : List ABIParam) (rs : List Val), (∀ r ∈ rs, MemsOK r) →
-      ∀ x ∈ retypeResults tabs ps rs, MemsOK x
+    ∀ (ps : List ABIParam) (rs : List Val), (∀ r ∈ rs, MemsOK P r) →
+      ∀ x ∈ retypeResults tabs ps rs, MemsOK P x
   | p :: ps, r :: rs, h => by
     intro x hx
     simp only [retypeResults, List.mem_cons] at hx
@@ -373,10 +391,10 @@ theorem ofOption_ok {α : Type} {msg : String} {o : Option α} {a : α}
   | none => cases h
   | some b => cases h; rfl
 
-/-- **A call's result is `MemsOK`.** -/
-theorem callOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {v : Value}
-    {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a) {r : Val} (h : callOp env ctx v argv = .ok r) :
-    MemsOK r := by
+/-- **A call's result is `MemsOK P`.** -/
+theorem callOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx : Sem.Ctx} {v : Value}
+    {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a) {r : Val} (h : callOp env ctx v argv = .ok r) :
+    MemsOK P r := by
   unfold callOp at h
   have hsub := callTarget_sub ctx v argv
   generalize callTarget ctx v argv = T at h hsub
@@ -384,16 +402,16 @@ theorem callOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {v : Valu
   obtain ⟨hclo, hrest⟩ := hsub
   dsimp only at h hclo hrest
   obtain ⟨callee, -, h⟩ := bind_ok_inv h
-  have hR : ∀ a ∈ rest.dropLast, MemsOK a := fun a h' => ha a (hrest a (List.dropLast_subset _ h'))
-  have hcl : ∀ a ∈ clo, MemsOK a := fun a h' => ha a (hclo a h')
+  have hR : ∀ a ∈ rest.dropLast, MemsOK P a := fun a h' => ha a (hrest a (List.dropLast_subset _ h'))
+  have hcl : ∀ a ∈ clo, MemsOK P a := fun a h' => ha a (hclo a h')
   split at h
   rotate_left
   · cases h
   rename_i M hl
-  have hM : MemOK M := (ha _ (hrest _ (List.mem_of_getLast? hl))).mem
+  have hM : P M := (ha _ (hrest _ (List.mem_of_getLast? hl))).mem
   obtain ⟨M', hw, h⟩ := bind_ok_inv h
-  have hM' : MemOK M' := by cases hw; exact hM
-  have haddr : ∀ (ps : List ABIParam), MemsOK (Val.agg (ps.map fun p =>
+  have hM' : P M' := by cases hw; exact hM
+  have haddr : ∀ (ps : List ABIParam), MemsOK P (Val.agg (ps.map fun p =>
       if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
       else Val.poison)) := by
     intro ps
@@ -403,7 +421,7 @@ theorem callOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {v : Valu
     split <;> exact memsOK_of_mems_nil rfl
   split at h <;> obtain ⟨args, hargs, h⟩ := bind_ok_inv h
   all_goals
-    have hA : ∀ a ∈ args, MemsOK a := by
+    have hA : ∀ a ∈ args, MemsOK P a := by
       first
       | exact decodeArgs_mems _ _ _ _ hR (ofOption_ok hargs)
       | (cases hargs; exact hR)
@@ -413,7 +431,7 @@ theorem callOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {v : Valu
     · cases h
     obtain ⟨c, hc, h⟩ := bind_ok_inv h
     have hcc := hE callee c (ofOption_ok hc) args clo (M'.poisonBlock (.outargs ctx.act)) hA hcl
-      (hM'.poison (outargs_ne_flag _) (by simp))
+      (hP.poison hM' (fun _ h => by cases h) (by simp))
     cases hco : c args clo (M'.poisonBlock (.outargs ctx.act)) with
     | stuck msg => rw [hco] at h; cases h
     | panicked e m' => rw [hco] at h; cases h
@@ -422,8 +440,8 @@ theorem callOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {v : Valu
       obtain ⟨hm', hrs⟩ := hcc
       dsimp only at h
       obtain ⟨x, hx, h⟩ := bind_ok_inv h
-      obtain ⟨h1, h2⟩ := encodeResults_mems ctx.tabs ctx.act _ _ hm' (ofOption_ok hx)
-      have hrs' : ∀ ps, ∀ x ∈ retypeResults ctx.tabs ps rs, MemsOK x :=
+      obtain ⟨h1, h2⟩ := encodeResults_mems hP ctx.tabs ctx.act _ _ hm' (ofOption_ok hx)
+      have hrs' : ∀ ps, ∀ x ∈ retypeResults ctx.tabs ps rs, MemsOK P x :=
         fun ps => retypeResults_mems ctx.tabs ps rs hrs
       cases h
       refine memsOK_tuple fun a ha => ?_
@@ -477,25 +495,19 @@ theorem int2_mems (w : Width) (g : BitVec w.bits → BitVec w.bits → Val)
   · rfl
 
 theorem frameBlk_ne (tabs : Tables) (act : Nat) (n : AuxRef) :
-    frameBlk tabs act n ≠ flagBlk ∧ frameBlk tabs act n ≠ .wbuf := by
-  unfold frameBlk; split <;> simp [flagBlk]
-
-theorem MemOK.free_wbuf {m : Mem} (h : MemOK m) : MemOK (m.free .wbuf) := by
-  obtain ⟨a, ha, hok⟩ := h.flag
-  refine ⟨⟨a, ?_, hok⟩, ?_⟩
-  · rw [free_eq_erase, TabsMod.erase_find (by rfl)]; exact ha
-  · rw [free_eq_erase]; exact erase_find_wbuf m
+    (∀ s, frameBlk tabs act n ≠ .global s) ∧ frameBlk tabs act n ≠ .wbuf := by
+  unfold frameBlk; split <;> simp
 
 /-- **A memory root's result** (any op `memRoot` evaluates). -/
-theorem memRoot_mems {ctx : Sem.Ctx} {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a)
-    {r : Val} (h : memRoot ctx v argv = .ok r) : MemsOK r := by
-  have hm : ∀ m, Val.mem m ∈ argv → MemOK m := fun m hm => (ha _ hm).mem
-  have wr : ∀ {what : String} {m : Mem} {p : Ptr} {bs : Array Byte}, MemOK m →
-      writeRes what (m.write p bs) = .ok r → MemsOK r := by
+theorem memRoot_mems (hP : MemPred P) {ctx : Sem.Ctx} {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a)
+    {r : Val} (h : memRoot ctx v argv = .ok r) : MemsOK P r := by
+  have hm : ∀ m, Val.mem m ∈ argv → P m := fun m hm => (ha _ hm).mem
+  have wr : ∀ {what : String} {m : Mem} {p : Ptr} {bs : Array Byte}, P m →
+      writeRes what (m.write p bs) = .ok r → MemsOK P r := by
     intro what m p bs hm h
     unfold writeRes at h
     split at h
-    · rename_i m' hw; cases h; exact memsOK_mem (hm.write hw)
+    · rename_i m' hw; cases h; exact memsOK_mem (hP.write hm hw)
     · cases h
   unfold memRoot at h
   split at h
@@ -503,13 +515,13 @@ theorem memRoot_mems {ctx : Sem.Ctx} {v : Value} {argv : List Val} (ha : ∀ a �
     | exact wr (hm _ (by simp)) h
     | (cases h; done)
     | (cases h; exact memsOK_of_mems_nil rfl)
-    | (cases h; exact memsOK_mem (hm _ (by simp)).free_wbuf)
+    | (cases h; exact memsOK_mem (hP.free_wbuf (hm _ (by simp))))
     | (cases h; exact ha _ (by simp))
     | (split at h <;> first
        | exact wr (hm _ (by simp)) h
        | (cases h; done)
        | (cases h; exact memsOK_of_mems_nil rfl)
-       | (cases h; exact memsOK_mem ((hm _ (by simp)).poison (frameBlk_ne _ _ _).1
+       | (cases h; exact memsOK_mem (hP.poison (hm _ (by simp)) (frameBlk_ne _ _ _).1
            (frameBlk_ne _ _ _).2)))
 
 /-- A read-modify-write returns the old value or an integer. -/
@@ -521,9 +533,9 @@ theorem step_mems (k : Atomic.Kind) (w : Width) (m : Mem) (t : Ty) (p : Ptr) (x 
     | exact int2_mems _ _ (fun _ _ => rfl) _
 
 /-- **An atomic root's result.** -/
-theorem atomicRoot_mems {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a) {r : Val}
-    (h : atomicRoot v argv = .ok r) : MemsOK r := by
-  have hm : ∀ m, Val.mem m ∈ argv → MemOK m := fun m hm => (ha _ hm).mem
+theorem atomicRoot_mems (hP : MemPred P) {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a) {r : Val}
+    (h : atomicRoot v argv = .ok r) : MemsOK P r := by
+  have hm : ∀ m, Val.mem m ∈ argv → P m := fun m hm => (ha _ hm).mem
   unfold atomicRoot at h
   split at h
   · unfold Atomic.barrier at h
@@ -541,7 +553,7 @@ theorem atomicRoot_mems {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, Mems
   · unfold Atomic.rmwRoot at h
     split at h
     · rename_i p x m
-      have hm0 : MemOK m := hm _ (by simp)
+      have hm0 : P m := hm _ (by simp)
       split at h
       · rename_i k t _
         unfold Atomic.rmw at h
@@ -549,7 +561,7 @@ theorem atomicRoot_mems {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, Mems
         · split at h
           · rename_i m' hw
             cases h
-            have hm' := hm0.write hw
+            have hm' := hP.write hm0 hw
             unfold Atomic.result
             split
             · rename_i y hy
@@ -566,7 +578,7 @@ theorem atomicRoot_mems {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, Mems
   · unfold Atomic.casRoot at h
     split at h
     · rename_i p o n m
-      have hm0 : MemOK m := hm _ (by simp)
+      have hm0 : P m := hm _ (by simp)
       split at h
       · unfold Atomic.cas at h
         split at h
@@ -579,7 +591,7 @@ theorem atomicRoot_mems {v : Value} {argv : List Val} (ha : ∀ a ∈ argv, Mems
                 simp only [List.mem_cons, List.not_mem_nil, or_false] at hz
                 rcases hz with rfl | rfl
                 · exact memsOK_of_mems_nil rfl
-                · exact memsOK_mem (hm0.write hw)
+                · exact memsOK_mem (hP.write hm0 hw)
               · cases h
             · cases h
               refine memsOK_tuple fun z hz => ?_
@@ -609,15 +621,15 @@ theorem memOps_split : ∀ o ∈ memOps, o ∈ pureMemOps ∨ o = .InitMem ∨ o
     (o = .StaticCall ∨ o = .ClosureCall ∨ o = .InterCall ∨ o = .StaticLECall ∨
       o = .ClosureLECall ∨ o = .InterLECall) := by decide
 
-theorem select_mems (i : Nat) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a) :
-    MemsOK (Tuple.select i argv) := by
+theorem select_mems (i : Nat) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a) :
+    MemsOK P (Tuple.select i argv) := by
   unfold Tuple.select
   split
   · exact memsOK_getD (memsOK_of_tuple (ha _ (by simp))) _
   · exact memsOK_poison
 
-theorem selectN_mems (k : Int64) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a) :
-    MemsOK (Tuple.selectN k argv) := by
+theorem selectN_mems (k : Int64) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a) :
+    MemsOK P (Tuple.selectN k argv) := by
   unfold Tuple.selectN
   split
   · split
@@ -625,8 +637,8 @@ theorem selectN_mems (k : Int64) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK 
     · exact memsOK_getD (memsOK_of_tuple (ha _ (by simp))) _
   · exact memsOK_poison
 
-theorem atomicLoad_mems (t : Ty) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a) :
-    MemsOK (atomicLoad t argv) := by
+theorem atomicLoad_mems (t : Ty) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a) :
+    MemsOK P (atomicLoad t argv) := by
   unfold atomicLoad
   split
   · split
@@ -641,13 +653,13 @@ theorem atomicLoad_mems (t : Ty) {argv : List Val} (ha : ∀ a ∈ argv, MemsOK 
   · exact memsOK_poison
 
 theorem copy_mems (ty : Ty) (k : Int64) (ax : Option AuxRef) :
-    ∀ {argv : List Val}, (∀ a ∈ argv, MemsOK a) → MemsOK (evalPure .Copy ty k ax argv)
+    ∀ {argv : List Val}, (∀ a ∈ argv, MemsOK P a) → MemsOK P (evalPure .Copy ty k ax argv)
   | [x], ha => ha x List.mem_cons_self
   | [], _ => memsOK_poison
   | _ :: _ :: _, _ => memsOK_poison
 
 theorem evalPure_mems {o : Op} (ho : o ∈ pureMemOps) (ty : Ty) (k : Int64) (ax : Option AuxRef)
-    {argv : List Val} (ha : ∀ a ∈ argv, MemsOK a) : MemsOK (evalPure o ty k ax argv) := by
+    {argv : List Val} (ha : ∀ a ∈ argv, MemsOK P a) : MemsOK P (evalPure o ty k ax argv) := by
   simp only [pureMemOps, List.mem_cons, List.not_mem_nil, or_false] at ho
   rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
   · exact memsOK_poison
@@ -659,11 +671,11 @@ theorem evalPure_mems {o : Op} (ho : o ∈ pureMemOps) (ty : Ty) (k : Int64) (ax
   all_goals exact atomicLoad_mems ty ha
 
 /-- **A memory op's result** (`WBCheck.memOpOK`), from arguments and an initial memory whose
-memories are `MemOK`. -/
-theorem evalOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {fr : Frame}
-    (h0 : MemOK fr.mem0) {v : Value} (hop : memOpOK v.op = true) {argv : List Val}
-    (ha : ∀ a ∈ argv, MemsOK a) {ty : Ty} {r : Val} (h : evalOp env ctx fr v argv ty = .ok r) :
-    MemsOK r := by
+memories are `P`. -/
+theorem evalOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx : Sem.Ctx} {fr : Frame}
+    (h0 : P fr.mem0) {v : Value} (hop : memOpOK v.op = true) {argv : List Val}
+    (ha : ∀ a ∈ argv, MemsOK P a) {ty : Ty} {r : Val} (h : evalOp env ctx fr v argv ty = .ok r) :
+    MemsOK P r := by
   have hop' : v.op ∈ memOps ∨ v.op ∈ atomicRootOps := by
     simpa only [memOpOK, Bool.or_eq_true, List.contains_iff_mem] using hop
   rcases hop' with hm | hm
@@ -675,14 +687,14 @@ theorem evalOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {fr : Fra
     · simp only [evalOp, hp] at h; cases h; exact memsOK_mem h0
     · rw [DAE.evalOp_panicBounds hp] at h; exact absurd h panicBounds_not_ok
     · rw [DAE.evalOp_memRoot (by rcases hp with h | h | h | h | h | h <;> simp [h])] at h
-      exact memRoot_mems ha h
+      exact memRoot_mems hP ha h
     · have he : evalOp env ctx fr v argv ty = callOp env ctx v argv := by
         rcases hp with h | h | h | h | h | h <;> simp only [evalOp, h]
       rw [he] at h
-      exact callOp_mems hE ha h
+      exact callOp_mems hP hE ha h
   · obtain ⟨hn, hr⟩ := atomicRootOps_root _ hm
     rw [TabsMod.evalOp_notArm hn, if_pos hr] at h
-    exact atomicRoot_mems ha h
+    exact atomicRoot_mems hP ha h
 
 /-! ## Retyping to a shape without memories -/
 
@@ -736,9 +748,9 @@ end
 /-! ## Registers -/
 
 theorem regs_set_mems {r : Array (Option Val)}
-    (hr : ∀ (z : Nat) (y : Val), r[z]? = some (some y) → MemsOK y)
-    {i : Nat} {x : Val} (hx : MemsOK x) :
-    ∀ (z : Nat) (y : Val), (r.set! i (some x))[z]? = some (some y) → MemsOK y := by
+    (hr : ∀ (z : Nat) (y : Val), r[z]? = some (some y) → MemsOK P y)
+    {i : Nat} {x : Val} (hx : MemsOK P x) :
+    ∀ (z : Nat) (y : Val), (r.set! i (some x))[z]? = some (some y) → MemsOK P y := by
   intro z y hz
   rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds] at hz
   split at hz
@@ -748,8 +760,8 @@ theorem regs_set_mems {r : Array (Option Val)}
   · exact hr z y hz
 
 theorem setPhis_mems : ∀ (ps : List (ID × Val)) (r : Array (Option Val)),
-    (∀ p ∈ ps, MemsOK p.2) → (∀ (z : Nat) (y : Val), r[z]? = some (some y) → MemsOK y) →
-    ∀ (z : Nat) (y : Val), (setPhis ps r)[z]? = some (some y) → MemsOK y
+    (∀ p ∈ ps, MemsOK P p.2) → (∀ (z : Nat) (y : Val), r[z]? = some (some y) → MemsOK P y) →
+    ∀ (z : Nat) (y : Val), (setPhis ps r)[z]? = some (some y) → MemsOK P y
   | [], _, _, hr => hr
   | (id, x) :: ps, r, hp, hr => by
     unfold setPhis; rw [List.foldl_cons]
@@ -757,9 +769,9 @@ theorem setPhis_mems : ∀ (ps : List (ID × Val)) (r : Array (Option Val)),
       (regs_set_mems hr (hp _ List.mem_cons_self))
 
 theorem mapM_ofOption_mems {m : ID → String} {r : ID → Option Val}
-    (hr : ∀ a z, r a = some z → MemsOK z) :
+    (hr : ∀ a z, r a = some z → MemsOK P z) :
     ∀ {l : List ID} {L : List Val}, l.mapM (fun a => Res.ofOption (m a) (r a)) = .ok L →
-      ∀ y ∈ L, MemsOK y
+      ∀ y ∈ L, MemsOK P y
   | [], L, h => by
     rw [List.mapM_nil] at h; cases h; intro y hy; cases hy
   | a :: l, L, h => by
@@ -780,13 +792,13 @@ theorem mapM_ofOption_mems {m : ID → String} {r : ID → Option Val}
       | panic e m' => rw [hl] at h; cases h
       | stuck msg => rw [hl] at h; cases h
 
-/-- A value evaluated from registers whose memories are `MemOK`, by an op that keeps them. -/
+/-- A value evaluated from registers whose memories are `P`, by an op that keeps them. -/
 theorem evalValue_mems {env : Env} {ctx : Sem.Ctx} {fr : Frame} {v : Value} {y : Val}
-    (hr : ∀ (a : Nat) (z : Val), fr.regs[a]? = some (some z) → MemsOK z)
-    (hop : ∀ argv, (∀ a ∈ argv, MemsOK a) → ∀ r,
+    (hr : ∀ (a : Nat) (z : Val), fr.regs[a]? = some (some z) → MemsOK P z)
+    (hop : ∀ argv, (∀ a ∈ argv, MemsOK P a) → ∀ r,
       evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) = .ok r →
-      MemsOK (r.retype (ctx.tys[v.id]?.getD .other)))
-    (h : evalValue env ctx fr v = .ok y) : MemsOK y := by
+      MemsOK P (r.retype (ctx.tys[v.id]?.getD .other)))
+    (h : evalValue env ctx fr v = .ok y) : MemsOK P y := by
   unfold evalValue at h
   cases hm : v.args.toList.mapM (fun a =>
       Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
@@ -795,7 +807,7 @@ theorem evalValue_mems {env : Env} {ctx : Sem.Ctx} {fr : Frame} {v : Value} {y :
   | ok argv =>
     rw [hm] at h
     simp only [bind, Res.bind] at h
-    have ha : ∀ a ∈ argv, MemsOK a :=
+    have ha : ∀ a ∈ argv, MemsOK P a :=
       mapM_ofOption_mems (fun a z hz => hr a z (Option.join_eq_some_iff.1 hz)) hm
     cases ho : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
     | ok r => rw [ho] at h; cases h; exact hop argv ha r ho
@@ -805,12 +817,12 @@ theorem evalValue_mems {env : Env} {ctx : Sem.Ctx} {fr : Frame} {v : Value} {y :
 /-! ## The source invariant -/
 
 /-- The frame of a run of the source: its initial memory and every memory a register holds are
-`MemOK`. -/
-def SInv (fr : Frame) : Prop :=
-  MemOK fr.mem0 ∧ ∀ (x : ID) (y : Val), fr.regs[x]? = some (some y) → MemsOK y
+`P`. -/
+def SInv (P : Mem → Prop) (fr : Frame) : Prop :=
+  P fr.mem0 ∧ ∀ (x : ID) (y : Val), fr.regs[x]? = some (some y) → MemsOK P y
 
-theorem SInv.set {fr : Frame} (hs : SInv fr) {id : ID} {x : Val} (hx : MemsOK x) :
-    SInv (fr.set id x) :=
+theorem SInv.set {fr : Frame} (hs : SInv P fr) {id : ID} {x : Val} (hx : MemsOK P x) :
+    SInv P (fr.set id x) :=
   ⟨hs.1, regs_set_mems hs.2 hx⟩
 
 theorem wb_foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β)
@@ -818,22 +830,22 @@ theorem wb_foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β)
   | [], _, h => h
   | a :: L, b, h => wb_foldl_inv P f hf L (f b a) (hf b a h)
 
-theorem sinv_entry {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : Mem}
-    (h : MemOK (addGlobals env mem)) : SInv (entryFrame env (Ctx.make tabs f) args mem) := by
+theorem sinv_entry (hP : MemPred P) {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : Mem}
+    (h : P (addGlobals env mem)) : SInv P (entryFrame env (Ctx.make tabs f) args mem) := by
   refine ⟨?_, fun x y hx => ?_⟩
   · simp only [entryFrame, frameMem, frameAllocs]
     rw [← Array.foldl_toList]
-    refine wb_foldl_inv MemOK _ (fun m a hm => ?_) _ _
-      (h.set (outargs_ne_flag _) (by simp) _)
+    refine wb_foldl_inv P _ (fun m a hm => ?_) _ _
+      (hP.set _ h (fun _ h => by cases h) (by simp))
     obtain ⟨n, sz, pi⟩ := a
-    exact hm.set (frameBlk_ne _ _ _).1 (frameBlk_ne _ _ _).2 _
+    exact hP.set _ hm (frameBlk_ne _ _ _).1 (frameBlk_ne _ _ _).2
   · change (Array.replicate _ none)[x]? = some (some y) at hx
     rw [Array.getElem?_replicate] at hx
     split at hx <;> cases hx
 
 theorem sinv_phis {ctx : Sem.Ctx} {fr : Frame} {B : Block} {i : Nat} {ps : List (ID × Val)}
-    (hs : SInv fr) (hps : B.values.toList.filterMapM (phiStep ctx fr i) = .ok ps) :
-    SInv { fr with regs := setPhis ps fr.regs } := by
+    (hs : SInv P fr) (hps : B.values.toList.filterMapM (phiStep ctx fr i) = .ok ps) :
+    SInv P { fr with regs := setPhis ps fr.regs } := by
   obtain ⟨-, hsome, -⟩ := filterMapM_phi hps
   refine ⟨hs.1, setPhis_mems ps fr.regs (fun p hp => ?_) hs.2⟩
   obtain ⟨-, v, a, y, -, -, -, hy, hp2⟩ := phiStep_some (hsome p hp)
@@ -866,11 +878,11 @@ theorem tys_memFree {tabs : Tables} {f : Func} {x : ID} {v : Value} (hv : f.valu
   · rw [List.getElem?_range hlt]; exact hm
   · rw [List.getElem?_eq_none (by simpa using hlt)]; rfl
 
-/-- One value of a listed block keeps the memories `MemOK`. -/
-theorem sinv_step {env : Env} (hE : ContractsOK env) {ce : CheckEnv} {tabs : Tables} {f : Func}
+/-- One value of a listed block keeps the memories `P`. -/
+theorem sinv_step (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : CheckEnv} {tabs : Tables} {f : Func}
     (hwf : WF ce f) (hm : memTyOK tabs f = true) {x : ID}
-    (hx : ∃ b ∈ f.blocks, x ∈ vals f b) {fr : Frame} (hs : SInv fr) {y : Val}
-    (h : stepV env (Ctx.make tabs f) fr x = .ok y) : MemsOK y := by
+    (hx : ∃ b ∈ f.blocks, x ∈ vals f b) {fr : Frame} (hs : SInv P fr) {y : Val}
+    (h : stepV env (Ctx.make tabs f) fr x = .ok y) : MemsOK P y := by
   obtain ⟨b, hb, hxb⟩ := hx
   obtain ⟨B, hB, -⟩ := hwf.blockId b hb
   have hxB : x ∈ B.values := by
@@ -881,34 +893,34 @@ theorem sinv_step {env : Env} (hE : ContractsOK env) {ce : CheckEnv} {tabs : Tab
   refine evalValue_mems hs.2 (fun argv ha r hr => ?_) h
   rcases hok with hfree | hop
   · rw [hvid]; exact memsOK_of_mems_nil (retype_memFree _ (tys_memFree hv hfree) r)
-  · exact (evalOp_mems hE hs.1 hop ha hr).retype _
+  · exact (evalOp_mems hP hE hs.1 hop ha hr).retype _
 
-theorem sinv_evalAll_aux {env : Env} (hE : ContractsOK env) {ce : CheckEnv} {tabs : Tables}
+theorem sinv_evalAll_aux (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : CheckEnv} {tabs : Tables}
     {f : Func} (hwf : WF ce f) (hm : WBCheck.memTyOK tabs f = true) :
     ∀ {o : List ID}, (∀ x ∈ o, ∃ b ∈ f.blocks, x ∈ WBCheck.vals f b) → ∀ {fr fr' : Frame},
-      SInv fr → evalAll env (Ctx.make tabs f) fr o = .ok fr' → SInv fr'
+      SInv P fr → evalAll env (Ctx.make tabs f) fr o = .ok fr' → SInv P fr'
   | [], _, fr, fr', hs, h => by cases h; exact hs
   | x :: o, ho, fr, fr', hs, h => by
     rw [evalAll_cons] at h
     cases hst : stepV env (Ctx.make tabs f) fr x with
     | ok y =>
       rw [hst] at h
-      exact sinv_evalAll_aux hE hwf hm (fun z hz => ho z (List.mem_cons_of_mem _ hz))
-        (hs.set (sinv_step hE hwf hm (ho x List.mem_cons_self) hs hst)) h
+      exact sinv_evalAll_aux hP hE hwf hm (fun z hz => ho z (List.mem_cons_of_mem _ hz))
+        (hs.set (sinv_step hP hE hwf hm (ho x List.mem_cons_self) hs hst)) h
     | panic e m => rw [hst] at h; cases h
     | stuck msg => rw [hst] at h; cases h
 
 /-- every value `o` lists is listed in a block of `f` -/
-theorem sinv_evalAll {env : Env} (hE : ContractsOK env) {ce : CheckEnv} {tabs : Tables} {f : Func}
+theorem sinv_evalAll (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : CheckEnv} {tabs : Tables} {f : Func}
     (hwf : WF ce f) (hm : WBCheck.memTyOK tabs f = true) {o : List ID}
-    (ho : ∀ x ∈ o, ∃ b ∈ f.blocks, x ∈ WBCheck.vals f b) {fr fr' : Frame} (hs : SInv fr)
-    (h : evalAll env (Ctx.make tabs f) fr o = .ok fr') : SInv fr' :=
-  sinv_evalAll_aux hE hwf hm ho hs h
+    (ho : ∀ x ∈ o, ∃ b ∈ f.blocks, x ∈ WBCheck.vals f b) {fr fr' : Frame} (hs : SInv P fr)
+    (h : evalAll env (Ctx.make tabs f) fr o = .ok fr') : SInv P fr' :=
+  sinv_evalAll_aux hP hE hwf hm ho hs h
 
-theorem sinv_enter {env : Env} (hE : ContractsOK env) {ce : CheckEnv} {tabs : Tables} {f : Func}
+theorem sinv_enter (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : CheckEnv} {tabs : Tables} {f : Func}
     (hwf : WF ce f) (hm : WBCheck.memTyOK tabs f = true) {b : ID} {B : Block} (hb : b ∈ f.blocks)
-    (hB : f.block? b = some B) {fr fr' : Frame} {i : Nat} (hs : SInv fr)
-    (h : enterBlock env (Ctx.make tabs f) fr B i = .ok fr') : SInv fr' := by
+    (hB : f.block? b = some B) {fr fr' : Frame} {i : Nat} (hs : SInv P fr)
+    (h : enterBlock env (Ctx.make tabs f) fr B i = .ok fr') : SInv P fr' := by
   rw [enterBlock_eq] at h
   cases hps : B.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) with
   | panic e m => rw [hps] at h; cases h
@@ -927,8 +939,37 @@ theorem sinv_enter {env : Env} (hE : ContractsOK env) {ce : CheckEnv} {tabs : Ta
       rw [hB] at hb'; cases hb'
       rw [hid, sched_of_block hB] at ho
       obtain ⟨-, -, omem⟩ := schedule_topo hown hnd ho
-      refine sinv_evalAll hE hwf hm (fun x hx => ⟨b, hb, ?_⟩) (sinv_phis hs hps) h
+      refine sinv_evalAll hP hE hwf hm (fun x hx => ⟨b, hb, ?_⟩) (sinv_phis hs hps) h
       unfold vals; rw [hB]
       exact ((omem x).1 hx).1
 
-end GoFV.Proof.WB
+/-! ## Invariants under a hypothesis -/
+
+/-- `P` under a hypothesis `c` (a check of the function) is a memory invariant. -/
+theorem MemPred.imp {c : Prop} (hP : MemPred P) : MemPred (fun m => c → P m) where
+  write h hw := fun hc => hP.write (h hc) hw
+  set a h hg hw := fun hc => hP.set a (h hc) hg hw
+  free_wbuf h := fun hc => hP.free_wbuf (h hc)
+
+theorem ContractsOK.imp {c : Prop} {env : Env} (h : c → ContractsOK P env) :
+    ContractsOK (fun m => c → P m) env := by
+  intro name e he args clo m ha hcl hm
+  by_cases hc : c
+  · have H := h hc name e he args clo m (fun a h' M hM => ha a h' M hM hc)
+      (fun a h' M hM => hcl a h' M hM hc) (hm hc)
+    cases hco : e args clo m with
+    | returned rs m' =>
+      rw [hco] at H
+      exact ⟨fun _ => H.1, fun r hr M hM _ => H.2 r hr M hM⟩
+    | panicked _ _ => trivial
+    | stuck _ => trivial
+  · cases e args clo m with
+    | returned rs m' => exact ⟨fun h' => absurd h' hc, fun _ _ _ _ h' => absurd h' hc⟩
+    | panicked _ _ => trivial
+    | stuck _ => trivial
+
+/-- Without the hypothesis, the invariant holds of every frame. -/
+theorem SInv.of_not {c : Prop} (hc : ¬ c) (fr : Frame) : SInv (fun m => c → P m) fr :=
+  ⟨fun h => absurd h hc, fun _ _ _ _ _ h => absurd h hc⟩
+
+end GoFV.Proof.MemInv

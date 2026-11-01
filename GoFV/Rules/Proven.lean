@@ -24,8 +24,12 @@ open GoFV.Rules
 
 /-- `generic.rules` restricted to its 1197 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 15 Load-of-Store forwardings, 1 struct-load
+<<<<<<< HEAD
 expansions, 1 struct-store splits, 6 segment rules and 2 `Phi`
 selections. -/
+=======
+expansions, 1 struct-store splits and 7 segment rules. -/
+>>>>>>> db87213 (RoImage precondition; MemInv generalises WBInv; generic.rules:1743 as a read-only segment (#151))
 def generic : RuleSet where
   name := "generic"
   values := [(.Add16, [Generated.Generic.r_generic_121, Generated.Generic.r_generic_420, Generated.Generic.r_generic_427, Generated.Generic.r_generic_646, Generated.Generic.r_generic_655, Generated.Generic.r_generic_661, Generated.Generic.r_generic_675, Generated.Generic.r_generic_678, Generated.Generic.r_generic_778, Generated.Generic.r_generic_779, Generated.Generic.r_generic_1218, Generated.Generic.r_generic_1224, Generated.Generic.r_generic_1278, Generated.Generic.r_generic_1284, Generated.Generic.r_generic_2195, Generated.Generic.r_generic_2196, Generated.Generic.r_generic_2197, Generated.Generic.r_generic_2198, Generated.Generic.r_generic_2200, Generated.Generic.r_generic_2201, Generated.Generic.r_generic_2202, Generated.Generic.r_generic_2203]),
@@ -217,8 +221,12 @@ def generic : RuleSet where
   loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821, Generated.Generic.r_generic_827, Generated.Generic.r_generic_830, Generated.Generic.r_generic_832, Generated.Generic.r_generic_2146, Generated.Generic.r_generic_2155, Generated.Generic.r_generic_943, Generated.Generic.r_generic_948, Generated.Generic.r_generic_954, Generated.Generic.r_generic_961, Generated.Generic.r_generic_1005, Generated.Generic.r_generic_2158]
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975]
+<<<<<<< HEAD
   segs := [Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
   phiSels := [Generated.Generic.r_generic_1050, Generated.Generic.r_generic_1049]
+=======
+  segs := [Generated.Generic.r_generic_1743, Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
+>>>>>>> db87213 (RoImage precondition; MemInv generalises WBInv; generic.rules:1743 as a read-only segment (#151))
 
 /-- `dec.rules` restricted to its 26 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load

@@ -28,10 +28,11 @@ structure SegD (tabs : Tables) (f g : Func) (x : ID) (D N : List ID) where
   hgbl : gv.block = fv.block
   hgty : gv.type = fv.type
   hfph : fv.op ≠ .Phi
-  hfop : fv.op = .Store ∨ fv.op = .SelectN
+  hfop : fv.op = .Store ∨ fv.op = .SelectN ∨ fv.op = .Move
   hbm : fv.block ∈ f.blocks
   hlisted : ∃ b, f.block? fv.block = some b ∧ x ∈ b.values
-  hkind : chainSeg? tabs f g x fv gv = some (D, N) ∨ callSeg? tabs f g fv gv = some (D, N)
+  hkind : chainSeg? tabs f g x fv gv = some (D, N) ∨ callSeg? tabs f g fv gv = some (D, N) ∨
+    roSeg? tabs f fv gv = some (D, N)
   hD : ∀ d ∈ D, (∃ b, f.block? fv.block = some b ∧ d ∈ b.values) ∧ CSE.rootNode f d = true
   hN : ∀ n ∈ N, f.value? n = none ∧ (∃ b, g.block? fv.block = some b ∧ n ∈ b.values) ∧
     ∃ v, g.value? n = some v ∧ v.block = fv.block
@@ -58,7 +59,7 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
   rw [hfv, hgv] at h
   dsimp only at h
   by_cases hc : (!ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
-      (fv.op == .Store || fv.op == .SelectN) && f.blocks.contains fv.block &&
+      (fv.op == .Store || fv.op == .SelectN || fv.op == .Move) && f.blocks.contains fv.block &&
       (f.block? fv.block).any (·.values.contains x)) = true
   rotate_left
   · rw [ite_eq_right hc] at h; cases h
@@ -67,9 +68,10 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
   obtain ⟨⟨⟨⟨⟨⟨hns, hgid⟩, hgbl⟩, hgty⟩, hfph⟩, hbm⟩, hli⟩ := hc
   have hbm' : fv.block ∈ f.blocks := by simpa using hbm
   have hns' : ssSame fv gv = false := by simpa using hns
-  have hfop : fv.op = .Store ∨ fv.op = .SelectN := by simpa using hfph
-  have hfph' : fv.op ≠ .Phi := by rcases hfop with h | h <;> rw [h] <;> decide
-  generalize hk : (chainSeg? tabs f g x fv gv).orElse (fun _ => callSeg? tabs f g fv gv) = k at h
+  have hfop : fv.op = .Store ∨ fv.op = .SelectN ∨ fv.op = .Move := by simpa [or_assoc] using hfph
+  have hfph' : fv.op ≠ .Phi := by rcases hfop with h | h | h <;> rw [h] <;> decide
+  generalize hk : ((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
+    (fun _ => roSeg? tabs f fv gv) = k at h
   cases k with
   | none => cases h
   | some p =>
@@ -79,10 +81,13 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
   next hcond =>
     cases h
     have hkind : chainSeg? tabs f g x fv gv = some (D, N) ∨
-        callSeg? tabs f g fv gv = some (D, N) := by
+        callSeg? tabs f g fv gv = some (D, N) ∨ roSeg? tabs f fv gv = some (D, N) := by
       cases hch : chainSeg? tabs f g x fv gv with
       | some q => rw [hch] at hk; exact .inl hk
-      | none => rw [hch] at hk; exact .inr hk
+      | none =>
+        cases hca : callSeg? tabs f g fv gv with
+        | some q => rw [hch, hca] at hk; exact .inr (.inl hk)
+        | none => rw [hch, hca] at hk; exact .inr (.inr hk)
     simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range, Bool.or_eq_true,
       Option.isNone_iff_eq_none, Option.all_eq_true, List.contains_iff_mem,
       Bool.not_eq_true', decide_eq_true_eq] at hcond

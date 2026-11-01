@@ -20,12 +20,13 @@ no write-barrier buffer, and environments whose contracts keep that (`WbPre`), a
 namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
+open GoFV.Proof.MemInv (SInv ContractsOK sinv_enter sinv_entry)
 
 /-- The inputs of `writebarrier_refines`: the memory with the global image has a defined,
 read-only write-barrier flag and no write-barrier buffer, and the environment's contracts keep
 that. -/
 def WbPre (env : Env) (_args : List Val) (mem : Mem) : Prop :=
-  MemOK (addGlobals env mem) ∧ ContractsOK env
+  MemOK (addGlobals env mem) ∧ ContractsOK MemOK env
 
 /-- The global facts of an accepted `writebarrier` result. -/
 structure Glob (c : WBCheck.Ctx) (ce ce' : CheckEnv) : Prop where
@@ -210,7 +211,7 @@ theorem lazy_after (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat
 
 /-- **A block entry that succeeds.** -/
 theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
-    {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f) {env : Env} (hE : ContractsOK env)
+    {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f) {env : Env} (hE : ContractsOK MemOK env)
     {frS frT : Frame} {i : Nat} (hA : SimAt env c frS frT b i) {G : Frame}
     (hen : enterBlock env (Ctx.make c.tabs c.f) frS B i = .ok G) :
     ∃ n F eL L T, (∀ fuel, runLoop env (Ctx.make c.tabs c.g) (fuel + n) frT b i =
@@ -219,7 +220,7 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
       (∀ nx, stepTerm G B = .ok nx → stepTerm T L = .ok nx) ∧
       (∀ e, stepTerm G B = .ok (.goto e) → SimAt env c G T e.b e.i) := by
   obtain ⟨hGf, hGs, hGo, hGv, hGp⟩ := enter_ok_facts hwf S.hb S.hB hA.sizeS hen
-  have hsinv : SInv G := sinv_enter hE hwf S.memTy S.hb S.hB hA.sinv hen
+  have hsinv : SInv MemOK G := sinv_enter memOK_pred hE hwf S.memTy S.hb S.hB hA.sinv hen
   have hP : ∀ x ∈ B.values, ∀ u, c.f.value? x = some u → u.op ≠ .Phi → Ev env c G x :=
     fun x hx u hu hp => by
       obtain ⟨y, hy, hev⟩ := hGv x hx u hu hp
@@ -298,7 +299,7 @@ def R (env : Env) (c : WBCheck.Ctx) (frS : Frame) (bS : ID) (iS : Nat) (frT : Fr
 
 /-- **One macro step.** -/
 theorem step {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {env : Env}
-    (hE : ContractsOK env) (n : Nat)
+    (hE : ContractsOK MemOK env) (n : Nat)
     (ih : SimUpTo env (Ctx.make c.tabs c.f) (Ctx.make c.tabs c.g) (R env c) n)
     (frS : Frame) (bS : ID) (iS : Nat) (frT : Frame) (bT : ID) (iT : Nat)
     (hR : R env c frS bS iS frT bT iT)
@@ -391,7 +392,7 @@ theorem refines_of_glob {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce c
         { entryFrame env (Ctx.make c.tabs c.f) args mem with
           regs := Array.replicate c.g.valueTab.size none } c.f.entry 0 := by
       refine ⟨.inl rfl, by simp [entryFrame, Ctx.make], by simp, rfl, fun a hh => ?_,
-        sinv_entry hpre.1, fun h => absurd rfl h, fun _ a y h => ?_⟩
+        sinv_entry memOK_pred hpre.1, fun h => absurd rfl h, fun _ a y h => ?_⟩
       · obtain ⟨h1, h2⟩ := held_lt hGl hh
         simp only [entryFrame, Ctx.make, Array.getElem?_replicate, h1, h2, ↓reduceIte]
       · simp only [entryFrame, Array.getElem?_replicate] at h

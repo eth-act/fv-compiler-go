@@ -1,4 +1,5 @@
 import GoFV.Proof.TabsAgreeModMem
+import GoFV.Proof.MemInv
 import GoFV.Proof.Pass.CSEMemBytes
 import GoFV.Proof.ValRefine
 
@@ -217,5 +218,18 @@ theorem Buf.write {M m : Mem} {n : Nat} (h : Buf M n m) {j : Nat} (hj : j < n) {
   · rw [erase_set_X (by rfl)]; exact he
   · show (List.foldl _ a.data _).size = _; rw [CSE.Mem.foldl_set_size]; exact hsz
   · exact hwr
+
+theorem MemOK.free_wbuf {m : Mem} (h : MemOK m) : MemOK (m.free .wbuf) := by
+  obtain ⟨a, ha, hok⟩ := h.flag
+  refine ⟨⟨a, ?_, hok⟩, ?_⟩
+  · rw [free_eq_erase, TabsMod.erase_find (by rfl)]; exact ha
+  · rw [free_eq_erase]; exact erase_find_wbuf m
+
+/-- **`MemOK` is a memory invariant** (`MemInv.MemPred`): the flag is a global, the buffer
+absent. -/
+theorem memOK_pred : MemInv.MemPred MemOK where
+  write h hw := h.write hw
+  set a h hg hw := h.set (hg "runtime.writeBarrier") hw a
+  free_wbuf h := h.free_wbuf
 
 end GoFV.Proof.WB

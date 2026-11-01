@@ -2,6 +2,7 @@ import GoFV.Proof.Pass.SegEval
 import GoFV.Proof.Pass.SegChain
 import GoFV.Proof.Pass.SegCallSeg
 import GoFV.Proof.Pass.StructStoreSim
+import GoFV.Proof.Pass.SegRo
 
 /-!
 # Segment rewrites refine their input (issue #151)
@@ -26,23 +27,29 @@ variable {env : Env} {tabs : Tables} {f g : Func}
 
 /-- Every segment of `segRel` is sound under monotone contracts with the runtime's memory
 contracts. -/
-theorem segs_sound (R : SRel tabs f g) (hM : env.MemOps) {x : ID} {D N : List ID}
+theorem segs_sound (R : SRel tabs f g) (hM : env.MemOps) {ro : List (String × Alloc)}
+    (hro : roSegsOK tabs ro f g = true) {x : ID} {D N : List ID}
     (hs : segOK tabs f g x = some (D, N)) (hgid : ∀ n ∈ segL x N, ∀ v, g.value? n = some v → v.id = n) :
-    SegSound env tabs f g x D N := by
+    SegSound (RoQ tabs ro f) env tabs f g x D N := by
   obtain ⟨d⟩ := segOK_spec hs
-  rcases d.hkind with h | h
-  · exact chainSeg_sound d.hfv d.hgv h hgid env
+  rcases d.hkind with h | h | h
+  · exact chainSeg_sound d.hfv d.hgv h hgid _ env
   · exact callSeg_sound d.hfv d.hgv d.hgid d.hgty h hM
+  · obtain ⟨-, -, hop, -⟩ := roSeg_spec h
+    obtain ⟨hm, hsrc⟩ := roSegsOK_spec hro hs d.hfv hop
+    exact roSeg_sound d.hfv d.hgv d.hgid d.hgty h hsrc hm env
 
 /-- The simulation relation at the entry of block `bid` along edge `i`. -/
-structure SimAt (env : Env) (tabs : Tables) (f g : Func) (frS frT : Frame) (bid : ID) (i : Nat) :
-    Prop where
+structure SimAt (Q : Mem → Prop) (env : Env) (tabs : Tables) (f g : Func) (frS frT : Frame)
+    (bid : ID) (i : Nat) : Prop where
   size : frS.regs.size = f.valueTab.size
   sizeT : frT.regs.size = g.valueTab.size
   frame : frT = { frS with regs := frT.regs }
   rr : RR f g frS.regs frT.regs
   typed : Proof.Typed (Ctx.make tabs f) frS
   pre : CSE.Pre env tabs f #[] frS bid i
+  /-- The source's memory invariant. -/
+  inv : MemInv.SInv Q frS
 
 theorem RR.set {r r' : Array (Option Val)} (h : RR f g r r') (hs : r.size ≤ r'.size) (z : ID)
     {x y : Val} (hxy : Sem.Refines x y) : RR f g (r.set! z (some x)) (r'.set! z (some y)) := by
@@ -188,16 +195,28 @@ theorem term_rel {G GT : Frame} (hr : RR f g G.regs GT.regs) {bid : ID} {fb gb :
 end
 
 /-- The simulation relation: the same block and edge, `SimAt`. -/
-def SimR (env : Env) (tabs : Tables) (f g : Func) (frS : Frame) (bS : ID) (iS : Nat) (frT : Frame)
-    (bT : ID) (iT : Nat) : Prop :=
-  bT = bS ∧ iT = iS ∧ SimAt env tabs f g frS frT bS iS
+def SimR (Q : Mem → Prop) (env : Env) (tabs : Tables) (f g : Func) (frS : Frame) (bS : ID)
+    (iS : Nat) (frT : Frame) (bT : ID) (iT : Nat) : Prop :=
+  bT = bS ∧ iT = iS ∧ SimAt Q env tabs f g frS frT bS iS
+
+/-- A block's schedule lists values of the block. -/
+theorem sched_listed {ce : CheckEnv} (hwf : WF ce f) {b : ID} {B : Block} (hb : b ∈ f.blocks)
+    (hB : f.block? b = some B) {o : Array ID} (ho : schedule f B = some o) :
+    ∀ x ∈ o.toList, ∃ b' ∈ f.blocks, x ∈ WBCheck.vals f b' := by
+  have hnd := hwf.valuesNodup b B ⟨hb, hB⟩
+  have hown := valuesOwn hwf hb hB
+  obtain ⟨-, -, omem⟩ := schedule_topo hown hnd ho
+  intro x hx
+  exact ⟨b, hb, by unfold WBCheck.vals; rw [hB]; exact ((omem x).1 hx).1⟩
 
 /-- **One block step.** -/
 theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g)
-    (R : SRel tabs f g) (hE : env.Mono)
-    (hsound : ∀ x D N, segOK tabs f g x = some (D, N) → SegSound env tabs f g x D N)
-    {frS frT : Frame} {bid : ID} {i : Nat} (hA : SimAt env tabs f g frS frT bid i) :
-    StepSimE (SimR env tabs f g) (blockStep env (Ctx.make tabs f) frS bid i)
+    (R : SRel tabs f g) (hE : env.Mono) {Q : Mem → Prop}
+    (hsound : ∀ x D N, segOK tabs f g x = some (D, N) → SegSound Q env tabs f g x D N)
+    (hQ : ∀ fr fr' o, MemInv.SInv Q fr → (∀ x ∈ o, ∃ b ∈ f.blocks, x ∈ WBCheck.vals f b) →
+      evalAll env (Ctx.make tabs f) fr o = .ok fr' → MemInv.SInv Q fr')
+    {frS frT : Frame} {bid : ID} {i : Nat} (hA : SimAt Q env tabs f g frS frT bid i) :
+    StepSimE (SimR Q env tabs f g) (blockStep env (Ctx.make tabs f) frS bid i)
       (blockStep env (Ctx.make tabs g) frT bid i) := by
   have hbt := CSE.pre_tree hwf hc hA.pre
   unfold blockStep
@@ -275,7 +294,7 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
       PhisRefine ps ps' → schedule f fb = some oS → schedule g gb = some oT →
       oT.toList.filter (CSE.rootNode g) =
         segRoots g (segList (segArr tabs f g)) (oS.toList.filter (CSE.rootNode f)) →
-      Blk env tabs f g bid fb gb { frS with regs := setPhis ps frS.regs }
+      Blk Q env tabs f g bid fb gb { frS with regs := setPhis ps frS.regs }
         { frT with regs := setPhis ps' frT.regs } oS oT := by
     intro ps ps' oS oT hps hpr hoS hoT hfilt
     have hnd := hwf.valuesNodup _ _ ⟨hbt.1, hfb⟩
@@ -284,7 +303,9 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
       DSE.phis_strict hwf hc hA.pre hfb hps, fun z hz v hv hph => ?_,
       typed_phis hA.typed p1 p3 p4 p2, hoS⟩, R, ⟨ce', hwg⟩, hgb, BS, hoT, hfilt, ?_,
       by simp [setPhis_size, hA.sizeT],
-      setPhis_rr hpr hA.rr (by rw [hA.size, hA.sizeT]; exact hsz), hsound⟩
+      setPhis_rr hpr hA.rr (by rw [hA.size, hA.sizeT]; exact hsz), hsound,
+      fun L S hL hev => (hQ _ S L (MemInv.sinv_phis hA.inv hps) (fun x hx =>
+        sched_listed hwf hbt.1 hfb hoS x (hL.subset hx)) hev).2⟩
     · obtain ⟨a, y, -, -, h⟩ := p4 z hz v hv hph (by rw [hA.size]; exact lt_of_value? hv)
       exact ⟨_, h⟩
     · conv => lhs; rw [hA.frame]
@@ -298,6 +319,8 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
   | ok G =>
   obtain ⟨ps, ps', oS, oT, hps, hpr, hoS, hoT, hfilt, hev, hT⟩ := parts _ hen nofun
   obtain ⟨GT, hGT, hGTf, hGTs, hGTr⟩ := (blk ps ps' oS oT hps hpr hoS hoT hfilt).okCase hE hev
+  have hinvG : MemInv.SInv Q G := hQ _ G _ (MemInv.sinv_phis hA.inv hps)
+    (sched_listed hwf hbt.1 hfb hoS) hev
   rw [hT, hGT]
   simp only
   obtain ⟨hD, -, hGsz⟩ := dinv_enter hwf hc hbt.1 hfb hA.size (CSE.pre_strict hc hA.pre).1 hen
@@ -311,24 +334,27 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
     cases hn with
     | goto e =>
       refine ⟨GT, e, rfl, rfl, rfl, by rw [hGsz, hA.size], hGTs, hGTf, hGTr, hty,
-        .inr ⟨bid, fb, hbt.1, hfb, hbt.2, ?_, hD, DSE.repInv_nil _ _⟩⟩
+        .inr ⟨bid, fb, hbt.1, hfb, hbt.2, ?_, hD, DSE.repInv_nil _ _⟩, hinvG⟩
       cases e; exact stepTerm_goto_mem hS
     | ret hl hm => exact ⟨_, _, rfl, hl, hm⟩
   | panic e hm => exact ⟨_, rfl, hm⟩
   | stuck msg r => exact True.intro
 
 /-- **Segment rewrites refine** under monotone contracts whose memory runtime contracts are the
-runtime's. -/
+runtime's, and (for the read-only segments, `roSegsOK`) read-only symbols `ro` in the initial
+memory that the contracts keep (`RoImage`). -/
 theorem seg_refines {ce ce' : CheckEnv} (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
-    (hrel : segRel tabs f g = true) :
-    RefinesUnder (fun env => env.Mono ∧ env.MemOps) tabs g tabs f := by
+    (hrel : segRel tabs f g = true) {ro : List (String × Alloc)}
+    (hro : roSegsOK tabs ro f g = true) :
+    RefinesFrom (fun env _ mem => env.Mono ∧ env.MemOps ∧ RoImage ro env mem) tabs g tabs f := by
   have hwf := check_wf hf
   have hwg := check_wf hg
   have hc := certOK_of_check (check_domCert hf)
   have R := segRel_spec hrel
-  intro env ⟨hE, hM⟩ args mem fuel hd
-  have hsound : ∀ x D N, segOK tabs f g x = some (D, N) → SegSound env tabs f g x D N :=
-    fun x D N hs => segs_sound R hM hs fun n hn v hv => by
+  intro env args mem ⟨hE, hM, hRo⟩ fuel hd
+  have hsound : ∀ x D N, segOK tabs f g x = some (D, N) →
+      SegSound (RoQ tabs ro f) env tabs f g x D N :=
+    fun x D N hs => segs_sound R hM hro hs fun n hn v hv => by
       obtain ⟨d⟩ := segOK_spec hs
       simp only [segL, List.mem_append, List.mem_singleton] at hn
       rcases hn with hn | rfl
@@ -355,7 +381,7 @@ theorem seg_refines {ce ce' : CheckEnv} (hf : check ce f = .ok ()) (hg : check c
         { entryFrame env (Ctx.make tabs f) args mem with
           regs := Array.replicate g.valueTab.size none } :=
       AtomSim.entryFrame_eq R.ownAux.symm args mem
-    have hA0 : SimAt env tabs f g (entryFrame env (Ctx.make tabs f) args mem)
+    have hA0 : SimAt (RoQ tabs ro f) env tabs f g (entryFrame env (Ctx.make tabs f) args mem)
         (entryFrame env (Ctx.make tabs g) args mem) f.entry 0 :=
       { size := by simp [entryFrame]; rfl
         sizeT := by rw [hT]; simp
@@ -363,11 +389,13 @@ theorem seg_refines {ce ce' : CheckEnv} (hf : check ce f = .ok ()) (hg : check c
         rr := fun a v x hv _ h => by
           simp [entryFrame, Array.getElem?_replicate] at h
         typed := typed_replicate _ _ _ rfl
-        pre := .inl rfl }
+        pre := .inl rfl
+        inv := roQ_entry hRo args }
     rw [show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from cfgView_entry R.cfg]
-    refine finish_refines hd (runLoop_simE (SimR env tabs f g)
+    refine finish_refines hd (runLoop_simE (SimR (RoQ tabs ro f) env tabs f g)
       (fun frS bS iS frT bT iT hR => ?_) fuel _ _ _ _ _ _ ⟨rfl, rfl, hA0⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, hA⟩ := hR
-    exact step hwf hc hwg R hE hsound hA
+    exact step hwf hc hwg R hE hsound
+      (fun _ _ _ hs ho hev => roQ_evalAll hRo.1 hwf ho hs hev) hA
 
 end GoFV.Proof.Seg
