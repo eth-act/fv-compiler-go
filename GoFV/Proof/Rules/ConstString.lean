@@ -166,7 +166,7 @@ theorem inst_r_generic_1015 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1015, FrameOK, Result.nodes, emptyStrVars,
-    Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?, Pat.rawT, Pat.densT,
+    samePtrVars, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?, Pat.rawT, Pat.densT,
     opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT, Pat.denT]
   rule_eval
   refine ⟨fun ae x h => ?_, ?_⟩

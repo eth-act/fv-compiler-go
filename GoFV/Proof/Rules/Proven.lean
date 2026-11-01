@@ -63,6 +63,7 @@ import GoFV.Proof.Rules.Lsh2
 import GoFV.Proof.Rules.Lsh3
 import GoFV.Proof.Rules.Lsh4
 import GoFV.Proof.Rules.Lsh5
+import GoFV.Proof.Rules.MemEqSame
 import GoFV.Proof.Rules.Mod
 import GoFV.Proof.Rules.Mod2
 import GoFV.Proof.Rules.Mod3
@@ -218,6 +219,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.checked_of_sound r_generic_461_sound rfl, Rule.checked_of_sound r_generic_492_2_sound rfl, Rule.checked_of_sound r_generic_1197_2_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_234_sound rfl, Rule.checked_of_sound r_generic_472_4_sound rfl, Rule.checked_of_sound r_generic_492_3_sound rfl, Rule.checked_of_sound r_generic_500_sound rfl, Rule.checked_of_sound r_generic_528_sound rfl, Rule.checked_of_sound r_generic_528_2_sound rfl, Rule.checked_of_sound r_generic_1197_3_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_463_sound rfl, Rule.checked_of_sound r_generic_492_4_sound rfl, Rule.checked_of_sound r_generic_1197_4_sound rfl, trivial⟩,
+    ⟨.inl r_generic_1592_sound, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_216_sound rfl, Rule.checked_of_sound r_generic_1135_sound rfl, Rule.checked_of_sound r_generic_1142_sound rfl, Rule.checked_of_sound r_generic_1152_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_221_sound rfl, Rule.checked_of_sound r_generic_1128_sound rfl, Rule.checked_of_sound r_generic_1160_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_217_sound rfl, Rule.checked_of_sound r_generic_1136_sound rfl, Rule.checked_of_sound r_generic_1143_sound rfl, Rule.checked_of_sound r_generic_1154_sound rfl, trivial⟩,
