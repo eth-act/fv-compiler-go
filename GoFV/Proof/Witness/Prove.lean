@@ -141,4 +141,116 @@ theorem proveChecked_witness :
         cases h1
         exact ⟨_, rfl⟩
 
+/-! ## A bounds check in a downward loop, decided by a relation
+
+```go
+func at(i, n int) int { // `at`'s signature and tables; `i` is unused
+	if n < 0 {
+		return 1
+	}
+	for j := n - 1; j >= 0; j-- {
+		if !(0 <= j && j < n) { // the bounds check of s[j] with len(s) = n
+			return 2 // panicIndex in Go
+		}
+	}
+	return 0
+}
+```
+
+The loop header `b2` has `v15 = Phi(v13, v17)` with `v13 = n - 1` and `v17 = v15 - 1`; `b3` checks
+`v18 = IsInBounds v15 v3`. `prove` removes `b3`'s branch. The path facts give only `0 ≤ v15`;
+the validator re-derives the upper bound from the relation `v15 - n ≤ -1`, checked on both edges
+into `b2` (`n - 1` with `n ≥ 0`; `v15 - 1` with `v15 ≥ 0` and the relation at `b4`). -/
+
+/-- The values of the downward loop, by ID. -/
+def downValues : Array (Option Value) := #[none,
+  some (mkVi 1 .InitMem 29 0 p0 3 #[] 1),
+  some (mkV 2 .Arg 2 (some 3) p0 0 #[] 1),
+  some (mkV 3 .Arg 2 (some 4) p0 3 #[] 1),
+  none,
+  some (mkVi 5 .Less64 4 0 p0 1 #[3, 14] 1),
+  none, none, none, none, none, none,
+  some (mkVi 12 .Const64 2 (-1) p0 2 #[] 1),
+  some (mkVi 13 .Add64 2 0 p0 1 #[12, 3] 8),
+  some (mkVi 14 .Const64 2 0 p0 3 #[] 1),
+  some (mkVi 15 .Phi 2 0 p0 3 #[13, 17] 2),
+  some (mkVi 16 .Leq64 4 0 p0 1 #[14, 15] 2),
+  some (mkVi 17 .Add64 2 0 p0 1 #[12, 15] 4),
+  some (mkVi 18 .IsInBounds 4 0 p0 1 #[15, 3] 3),
+  none,
+  some (mkVi 20 .MakeResult 35 0 p0 1 #[14, 1] 5),
+  some (mkVi 21 .Const64 2 2 p0 1 #[] 6),
+  some (mkVi 22 .MakeResult 35 0 p0 1 #[21, 1] 6),
+  some (mkVi 23 .Const64 2 1 p0 1 #[] 7),
+  some (mkVi 24 .MakeResult 35 0 p0 1 #[23, 1] 7)]
+
+/-- The downward loop, the input of `prove`. -/
+def downFn : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 24
+  bidLast := 8
+  blocks := #[1, 7, 8, 2, 3, 4, 5, 6]
+  blockTab := #[none,
+    some (mkB 1 .If p0 #[5] #[⟨7, 0⟩, ⟨8, 0⟩] #[] #[1, 2, 3, 5, 12, 14]),
+    some (mkB 2 .If p0 #[16] #[⟨3, 0⟩, ⟨5, 0⟩] #[⟨8, 0⟩, ⟨4, 0⟩] #[15, 16]),
+    some (mkB 3 .If p0 #[18] #[⟨4, 0⟩, ⟨6, 0⟩] #[⟨2, 0⟩] #[18]),
+    some (mkB 4 .Plain p0 #[] #[⟨2, 1⟩] #[⟨3, 0⟩] #[17]),
+    some (mkB 5 .Ret p0 #[20] #[] #[⟨2, 1⟩] #[20]),
+    some (mkB 6 .Ret p0 #[22] #[] #[⟨3, 1⟩] #[21, 22]),
+    some (mkB 7 .Ret p0 #[24] #[] #[⟨1, 0⟩] #[23, 24]),
+    some (mkB 8 .Plain p0 #[] #[⟨2, 0⟩] #[⟨1, 1⟩] #[13])]
+  valueTab := downValues
+  names := #[(1, #[2]), (2, #[3])]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[(-1, #[12]), (0, #[14]), (2, #[21]), (1, #[23])]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- By kernel evaluation: the input passes `check`; `proveChecked` turns `b3` into a `First`
+block towards `b4` and its result passes `check`; the loop returns `0` for `n = 3`. -/
+theorem downFn_checks :
+    (check pwCheckEnv downFn).toBool = true ∧
+    (proveChecked pwPassEnv downFn).toOption.map
+      (fun o => ((check pwCheckEnv o.func).toBool,
+        (o.func.block? 3).map (fun b => (b.kind, b.succs.map (·.b))))) =
+      some (true, some (.First, #[4, 6])) ∧
+    returnsInt (run Env.p1 pwTabs downFn [.i64 1, .i64 3] {} 20) 0 = true := by
+  decide +kernel
+
+/-- **Witness of `proveChecked_refines` with a relation**: on the downward loop, the checked
+prove removes the bounds check (`b3` becomes `First`), and the output returns `0` for `n = 3`, as
+the source does. -/
+theorem proveChecked_relWitness :
+    ∃ out, proveChecked pwPassEnv downFn = .ok out ∧
+      (out.func.block? 3).map (fun b => (b.kind, b.succs.map (·.b))) = some (.First, #[4, 6]) ∧
+      RefinesUnder Env.Mono out.tables out.func pwTabs downFn ∧
+      ∃ fuel m, run Env.p1 out.tables out.func [.i64 1, .i64 3] {} fuel = .returned [.i64 0] m := by
+  obtain ⟨h1, h2, h3⟩ := downFn_checks
+  cases hc : proveChecked pwPassEnv downFn with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, hb⟩ := h2
+    have hR := ProveCheck.proveChecked_refines hc (ok_of_toBool h1) (ok_of_toBool hg)
+    rw [show pwPassEnv.tables = pwTabs from rfl] at hR
+    refine ⟨out, rfl, hb, hR, ?_⟩
+    obtain ⟨m, hm⟩ := returnsInt_iff.1 h3
+    obtain ⟨fuel', ho⟩ := hR Env.p1 Env.p1_mono [.i64 1, .i64 3] {} 20 (by rw [hm]; trivial)
+    rw [hm] at ho
+    refine ⟨fuel', ?_⟩
+    generalize run Env.p1 out.tables out.func [.i64 1, .i64 3] {} fuel' = o at ho ⊢
+    cases ho with
+    | returned hl =>
+      cases hl with
+      | cons h1 t =>
+        cases t
+        cases h1
+        exact ⟨_, rfl⟩
+
 end GoFV.Proof.Witness
