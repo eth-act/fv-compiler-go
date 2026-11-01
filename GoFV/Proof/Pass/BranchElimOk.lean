@@ -43,38 +43,6 @@ theorem Taken.ne {k : Nat} {arm arm' : Option ID} {j j' : Nat} (h : Taken s k ar
   · exact hj
   · exact Ne.symm hj
 
-/-- Two frames of one activation. -/
-theorem frame_same {a b c : Frame} (h1 : a = { c with regs := a.regs })
-    (h2 : b = { c with regs := b.regs }) : a = { b with regs := a.regs } := by
-  obtain ⟨ra, aa, ma, ia⟩ := a
-  obtain ⟨rb, ab, mb, ib⟩ := b
-  obtain ⟨rc, ac, mc, ic⟩ := c
-  simp only [Frame.mk.injEq] at h1 h2 ⊢
-  simp_all
-
-/-- The phis of `dom` collected by the source. -/
-theorem phis_of_enter {tabs : Tables} {env : Env} {fr G : Frame} {B : Block} {i : Nat}
-    (h : enterBlock env (Ctx.make tabs f) fr B i = .ok G) :
-    ∃ ps, B.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) = .ok ps := by
-  rw [enterBlock_eq] at h
-  cases hps : B.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) with
-  | ok ps => exact ⟨ps, rfl⟩
-  | panic e m => rw [hps] at h; cases h
-  | stuck msg => rw [hps] at h; cases h
-
-theorem with_regs_same {a b c : Frame} (h1 : a = { c with regs := a.regs })
-    (h2 : b = { c with regs := b.regs }) (X : Array (Option Val)) :
-    ({ a with regs := X } : Frame) = { b with regs := X } := by
-  obtain ⟨ra, aa, ma, ia⟩ := a
-  obtain ⟨rb, ab, mb, ib⟩ := b
-  obtain ⟨rc, ac, mc, ic⟩ := c
-  simp only [Frame.mk.injEq] at h1 h2 ⊢
-  simp_all
-
-theorem mixOK_of_single {env : Env} {ctx : Ctx} {G : Frame} {F : ID → Prop} {L : List ID}
-    (h : ∀ x ∈ L, MixOK env ctx G F [x]) : MixOK env ctx G F L :=
-  fun x hx => h x hx x List.mem_cons_self
-
 namespace Setup
 
 variable (S : Setup f g s)

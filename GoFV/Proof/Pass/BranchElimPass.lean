@@ -16,12 +16,6 @@ namespace GoFV.Proof.BranchElim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.BranchElim GoFV.Proof
 
-theorem checkOK_sound {ce : CheckEnv} {f : Func} (h : checkOK ce f = true) : check ce f = .ok () := by
-  unfold checkOK at h
-  split at h
-  · rename_i h'; exact h'
-  · cases h
-
 theorem diamondB_sound {f g : Func} {dom post : ID} (h : diamondB f g dom post = true) :
     ∃ s, DRel f g s := by
   unfold diamondB at h

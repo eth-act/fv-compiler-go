@@ -1,5 +1,5 @@
 import GoFV.Opt.SpecSafe
-import GoFV.SSA.Check
+import GoFV.Opt.Checked
 
 /-!
 # branchelim, checked: one rewrite at a time
@@ -25,16 +25,6 @@ The soundness proof is `GoFV.Proof.BranchElim.refines_of_step`.
 namespace GoFV.Opt.BranchElim
 
 open GoFV.SSA
-
-/-- The values of block `b` (none if `b` is not a block). -/
-def valsOf (f : Func) (b : ID) : Array ID := ((f.block? b).map (·.values)).getD #[]
-
-/-- `x` is a non-pure node of block `B` of `f`: a non-`Phi` value of priority ≠ 0. -/
-def npOf (f : Func) (B : Block) (x : ID) : Bool :=
-  B.values.contains x &&
-    match f.value? x with
-    | some v => v.op != .Phi && Sem.prio v.op != 0
-    | none => false
 
 /-- The merged block `D'` of `g` has a schedule listing the non-pure nodes of `D` and `P` (in
 `f`) in the sequence `D`'s schedule and then `P`'s lists them. -/
@@ -206,12 +196,6 @@ def postCandidates (f : Func) (dom : ID) : List ID :=
   | some D => (D.succs.toList.map (·.b)) ++
       D.succs.toList.filterMap fun e => (f.block? e.b).bind fun B => B.succs[0]?.map (·.b)
   | none => []
-
-/-- `f` passes `check`. -/
-def checkOK (ce : CheckEnv) (f : Func) : Bool :=
-  match check ce f with
-  | .ok () => true
-  | .error _ => false
 
 /-- **A checked branchelim step**: `g` (the rewrite at `dom`) passes `check` and is a diamond
 merge of `f`. -/

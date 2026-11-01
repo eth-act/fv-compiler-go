@@ -18,18 +18,6 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.BranchElim GoFV.Pr
 
 variable {f g : Func} {s : Site}
 
-/-- A listed value is listed in its block. -/
-theorem blockOf_listed {ce : CheckEnv} (hwf : WF ce f) {a : ID} (hl : Listed f a) :
-    ∃ v B, Placed f a v ∧ v.block = blockOf f a ∧ f.block? (blockOf f a) = some B ∧
-      a ∈ B.values ∧ blockOf f a ∈ f.blocks := by
-  obtain ⟨bid, B, ⟨hb, hB⟩, ha⟩ := hl
-  obtain ⟨v, hP, hvb, -⟩ := placed_of_mem hwf hb hB ha
-  have hbo := blockOf_placed hP
-  refine ⟨v, B, hP, hbo.symm, ?_, ?_, ?_⟩
-  · rw [hbo, hvb]; exact hB
-  · exact ha
-  · rw [hbo, hvb]; exact hb
-
 namespace Setup
 
 variable (S : Setup f g s)

@@ -1,6 +1,6 @@
 import GoFV.Opt.Pass
 import GoFV.Opt.Fuse.Basic
-import GoFV.Opt.Fuse.Plain
+import GoFV.Opt.Fuse.PlainCheck
 import GoFV.SSA.ConstCache
 import GoFV.SSA.Edges
 
@@ -249,16 +249,17 @@ def constPhiArgs (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef →
           f := f.setArg v i cf.get!
   return f
 
-/-- `fuseBlockPlain(b)` then `shortcircuitBlock(b)`. -/
-def step (f : Func) (b : ID) : Except String (Func × Bool) :=
-  let (f, c1) := fuseBlockPlain f b
+/-- `fuseBlockPlain(b)` (checked, `Fuse.Plain.fuseBlockPlainChecked`) then
+`shortcircuitBlock(b)`. -/
+def step (ce : CheckEnv) (f : Func) (b : ID) : Except String (Func × Bool) :=
+  let (f, c1) := Fuse.Plain.fuseBlockPlainChecked ce f b
   let (f, c2) := shortcircuitBlock f b
   pure (f, c2 || c1)
 
 /-- `shortcircuit(f)`. -/
-def shortcircuit (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
+def shortcircuit (ce : CheckEnv) (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
     (boolT : TypeRef) (f : Func) : Except String Func :=
-  fuseLoop step none roundFuel (constPhiArgs isBool sameType boolT f)
+  fuseLoop (step ce) none roundFuel (constPhiArgs isBool sameType boolT f)
 
 end GoFV.Opt.ShortCircuit
 
@@ -270,6 +271,7 @@ open GoFV.SSA
 def shortcircuitPass : Pass := Pass.ofFunc fun env f => do
   let some boolT := env.typ? "Bool" | throw "shortcircuit: no typ.Bool"
   let isBool (t : TypeRef) : Bool := (env.type? t).map (·.kind) == some .BOOL
-  ShortCircuit.shortcircuit isBool env.typeOrder.eq boolT f
+  ShortCircuit.shortcircuit { tabs := env.tables, typs := env.typs } isBool env.typeOrder.eq
+    boolT f
 
 end GoFV.Opt
