@@ -121,6 +121,7 @@ import GoFV.Proof.Rules.Rsh9
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask
 import GoFV.Proof.Rules.SignExt
+import GoFV.Proof.Rules.Slicemask
 import GoFV.Proof.Rules.StructLoad
 import GoFV.Proof.Rules.StructStore
 import GoFV.Proof.Rules.Sub
@@ -305,6 +306,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.checked_of_sound r_generic_108_sound rfl, Rule.checked_of_sound r_generic_761_sound rfl, Rule.checked_of_sound r_generic_2407_3_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_1032_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_1031_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_generic_770_sound rfl, Rule.checked_of_sound r_generic_771_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_1012_sound rfl, trivial⟩,
     ⟨.inl r_generic_1011_sound, trivial⟩,
     ⟨.inr (.inl r_generic_973_sound), trivial⟩,

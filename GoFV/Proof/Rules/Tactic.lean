@@ -209,7 +209,7 @@ elab "rule_cond_bool" : tactic => withMainContext do
 /-- The ops whose arguments `argShapeOk` constrains. -/
 def argShapeOps : List Name :=
   [``Op.OffPtr, ``Op.AddPtr, ``Op.PtrIndex, ``Op.EqPtr, ``Op.NeqPtr, ``Op.IsNonNil, ``Op.Convert,
-   ``Op.IsInBounds, ``Op.IsSliceInBounds, ``Op.EqInter, ``Op.NeqInter,
+   ``Op.IsInBounds, ``Op.IsSliceInBounds, ``Op.Slicemask, ``Op.EqInter, ``Op.NeqInter,
    ``Op.Add64F, ``Op.Sub64F, ``Op.Mul64F, ``Op.Div64F, ``Op.Neg64F, ``Op.Min64F, ``Op.Max64F,
    ``Op.Eq64F, ``Op.Neq64F, ``Op.Less64F, ``Op.Leq64F, ``Op.Abs, ``Op.Copysign, ``Op.Sqrt,
    ``Op.Floor, ``Op.Ceil, ``Op.Trunc, ``Op.Round, ``Op.RoundToEven, ``Op.FMA, ``Op.Round64F,

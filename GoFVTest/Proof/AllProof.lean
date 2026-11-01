@@ -438,6 +438,7 @@ import GoFV.Proof.Rules.SelLoad
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask
 import GoFV.Proof.Rules.SignExt
+import GoFV.Proof.Rules.Slicemask
 import GoFV.Proof.Rules.StructLoad
 import GoFV.Proof.Rules.StructStore
 import GoFV.Proof.Rules.Sub
