@@ -109,7 +109,24 @@ where Go exposes addresses:
   machine;
 - `SubPtr` (unused by the frontend today) is the difference of concrete addresses.
 
-`AddPtr`, `OffPtr`, `PtrIndex` keep the allocation and add to `off` mod 2^64. Why
+`AddPtr`, `OffPtr`, `PtrIndex` keep the allocation and add to `off` mod 2^64; a result whose
+offset leaves its block's **address window** (`Blk.window?`: `nil` and heap blocks `2^40`, frame
+blocks `2^24`; globals unbounded) is `poison` (#156). Every allocation is smaller than its
+window, so in-bounds and one-past-the-end pointers are unaffected; Go's unsafe rules make
+anything else invalid. `EqPtr`/`NeqPtr` compare block and offset (pointers into different
+allocations are never equal; `Ptr.eq_iff`), so `EqPtr (ConstNil) p` is `!IsNonNil p`.
+`Convert` ptr→uintptr is `poison` unless the pointer is `Ptr.convertible` (inside its window,
+its block number small enough for the address encoding, not a frame temporary or global);
+then `Ptr.ofAddr` of its address is the pointer again (`Ptr.ofAddr_addr`,
+`GoFV/Proof/PtrAddr.lean`), so `Convert (Convert p)` is `p` (`convert_convert`).
+Consequence: `generic.rules:1071/1075` (`Convert (Add (Convert p) off)` → `AddPtr p off`) do
+not refine when `off` leaves the allocation — the source's integer arithmetic lands, through
+`Ptr.ofAddr`, in some other block, while the target's `AddPtr` is `poison`. Go makes that case
+undefined (unsafe rule 3), but the model's integers carry no provenance, so the source cannot
+be undefined there; these two rules stay outside the proven rule set. The corpus difftest
+shows exactly this: 9 runtime helpers called with random offsets (`add`, `addb`,
+`subtract1`, `(*gcBits).bitp/bytep`, `stackmapdata`, …) are `stuck` from `opt` on (2,600
+section runs), while section 0 returns a pointer into another block. Why
 provenance: `dse`, `dead auto elim`, `memcombine` and `writebarrier` (`IsStackAddr`,
 `IsGlobalAddr`, `IsNewObject`, `disjoint`) reason "different autos/globals/new objects do not
 alias"; with flat addresses an out-of-bounds offset could land in another object and those

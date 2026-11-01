@@ -117,22 +117,27 @@ theorem retype_global {t : Ty} (h : CSE.keepsGlobal t = true) (s : String) (o : 
   | _ => first | rfl | cases h
 
 theorem vaddr_offPtr (k : Int64) (v : Val) :
-    vaddr (PtrOps.offPtr k [v]) = (vaddr v).map (·.add (BitVec.ofInt 64 k.toInt)) := by
+    vaddr (PtrOps.offPtr k [v]) = none ∨
+      vaddr (PtrOps.offPtr k [v]) = (vaddr v).map (·.add (BitVec.ofInt 64 k.toInt)) := by
   cases v with
-  | ptr p => simp [PtrOps.offPtr, vaddr, ptrV_add]
-  | int w x => cases w <;> simp [PtrOps.offPtr, vaddr, VAddr.add]
-  | _ => rfl
+  | ptr p =>
+    simp only [PtrOps.offPtr, PtrOps.ptrRes]
+    split
+    · exact .inr (by simp [vaddr, ptrV_add])
+    · exact .inl rfl
+  | int w x => exact .inr (by cases w <;> simp [PtrOps.offPtr, vaddr, VAddr.add])
+  | _ => exact .inl rfl
 
-/-- `v` points `k` bytes past `bv`. -/
+/-- `v` points `k` bytes past `bv` (or is `poison`: the arithmetic left the allocation). -/
 def Rel (v bv : Val) (k : Int) : Prop :=
   (vaddr v = none ∨ ∃ V, vaddr bv = some V ∧ vaddr v = some (V.add (BitVec.ofInt 64 k))) ∧
-  ∀ B o, bv = .ptr ⟨B, o⟩ → v = .ptr ⟨B, o + BitVec.ofInt 64 k⟩
+  ∀ B o, bv = .ptr ⟨B, o⟩ → v = .poison ∨ v = .ptr ⟨B, o + BitVec.ofInt 64 k⟩
 
 theorem rel_refl (v : Val) : Rel v v 0 :=
   ⟨by cases h : vaddr v with
       | none => exact .inl rfl
       | some V => exact .inr ⟨V, rfl, by cases V <;> simp [VAddr.add]⟩,
-   fun B o h => by simp [h]⟩
+   fun B o h => .inr (by simp [h])⟩
 
 theorem rel_step {ty : Ty} (hty : CSE.keepsPtr ty = true) {av bv : Val} {K : Int} (k : Int64)
     (h : Rel av bv K) : Rel ((PtrOps.offPtr k [av]).retype ty) bv (K + k.toInt) := by
@@ -140,13 +145,22 @@ theorem rel_step {ty : Ty} (hty : CSE.keepsPtr ty = true) {av bv : Val} {K : Int
   refine ⟨?_, fun B o hb => ?_⟩
   · rcases vaddr_retype ty (PtrOps.offPtr k [av]) with h | h
     · exact .inl h
-    · rw [h, vaddr_offPtr]
+    · rw [h]
+      rcases vaddr_offPtr k av with h0 | h0
+      · exact .inl h0
+      rw [h0]
       rcases h1 with h1 | ⟨V, hV, h1⟩
       · exact .inl (by rw [h1]; rfl)
       · refine .inr ⟨V, hV, ?_⟩
         rw [h1, Option.map_some, VAddr.add_add, BitVec.ofInt_add]
-  · rw [h2 B o hb]
-    simp only [PtrOps.offPtr, Ptr.add, retype_keep hty, BitVec.ofInt_add, BitVec.add_assoc]
+  · rcases h2 B o hb with h2 | h2
+    · left; rw [h2]; simp [PtrOps.offPtr, Val.retype]
+    rw [h2]
+    simp only [PtrOps.offPtr, PtrOps.ptrRes, Ptr.add]
+    simp only [BitVec.ofInt_add, BitVec.add_assoc]
+    split
+    · right; rw [retype_keep hty]
+    · left; cases ty <;> rfl
 
 /-- Two pointers relating to one value point `kq - kp` bytes apart within a block. -/
 theorem rel_same {P Q : Ptr} {bv : Val} {kp kq : Int} (hp : Rel (.ptr P) bv kp)

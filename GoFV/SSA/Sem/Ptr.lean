@@ -42,16 +42,20 @@ def asOffset : Val → Option (BitVec 64)
 
 namespace PtrOps
 
+/-- The result of pointer arithmetic: `poison` when it leaves its block's address window
+(Go's unsafe rules: arithmetic stays inside the allocation or one past its end; §3.3). -/
+def ptrRes (p : Ptr) : Val := if p.inWindow then .ptr p else .poison
+
 /-- `OffPtr [off] p`: `p + off` (an integer `p`, e.g. a `uintptr`, adds as an integer). -/
 def offPtr (auxInt : Int64) : List Val → Val
-  | [.ptr p] => .ptr (p.add (BitVec.ofInt 64 auxInt.toInt))
+  | [.ptr p] => ptrRes (p.add (BitVec.ofInt 64 auxInt.toInt))
   | [.int .w64 x] => .int .w64 (x + BitVec.ofInt 64 auxInt.toInt)
   | _ => .poison
 
 /-- `AddPtr p i`: `p + i`. -/
 def addPtr : List Val → Val
   | [.ptr p, i] => match asOffset i with
-    | some k => .ptr (p.add k)
+    | some k => ptrRes (p.add k)
     | none => .poison
   | [.int .w64 x, i] => match asOffset i with
     | some k => .int .w64 (x + k)
@@ -61,7 +65,7 @@ def addPtr : List Val → Val
 /-- `PtrIndex <*T> p i`: `p + i·sizeof(T)` (`elem` from the result type). -/
 def ptrIndex (elem : Option Nat) : List Val → Val
   | [.ptr p, i] => match elem, asOffset i with
-    | some e, some k => .ptr (p.add (k * BitVec.ofNat 64 e))
+    | some e, some k => ptrRes (p.add (k * BitVec.ofNat 64 e))
     | _, _ => .poison
   | _ => .poison
 
@@ -85,13 +89,14 @@ def isNonNil : List Val → Val
   | [.int _ x] => .bool (x != 0)
   | _ => .poison
 
-/-- `Convert x mem` to shape `t`: pointer → integer by concrete address, integer → pointer
-by `Ptr.ofAddr`; the memory argument only orders it. -/
+/-- `Convert x mem` to shape `t`: pointer → integer by concrete address (`poison` unless the
+pointer converts back to itself, `Ptr.convertible`), integer → pointer by `Ptr.ofAddr`; the
+memory argument only orders it. -/
 def convert (t : Ty) : List Val → Val
   | [x, _] => match t, x with
-    | .int .w64, .ptr p => match p.addr? with
-      | some a => .int .w64 a
-      | none => .poison
+    | .int .w64, .ptr p => match p.convertible, p.addr? with
+      | true, some a => .int .w64 a
+      | _, _ => .poison
     | .ptr _, .int .w64 a => .ptr (Ptr.ofAddr a)
     | _, x => x
   | _ => .poison

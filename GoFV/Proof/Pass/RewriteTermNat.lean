@@ -165,7 +165,9 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
     show (PtrOps.offPtr ai args).hasTy ty = true
     unfold PtrOps.offPtr
     split
-    · exact isPtrTy_hasTy h _
+    · unfold PtrOps.ptrRes; split
+      · exact isPtrTy_hasTy h _
+      · rfl
     · obtain ⟨t, ht, hx⟩ := h0 _ rfl
       simp only [GoFV.Proof.Rules.argShapeOk, bne_self_eq_false, Bool.false_or] at ht
       rw [int_not_hasTy_ptr ht] at hx; cases hx
@@ -176,7 +178,9 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
     unfold PtrOps.addPtr
     split
     · split
-      · exact isPtrTy_hasTy h _
+      · unfold PtrOps.ptrRes; split
+        · exact isPtrTy_hasTy h _
+        · rfl
       · rfl
     · obtain ⟨t, ht, hx⟩ := h0 _ rfl
       simp only [GoFV.Proof.Rules.argShapeOk, beq_self_eq_true, ite_true] at ht
@@ -188,7 +192,9 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
     unfold PtrOps.ptrIndex
     split
     · split
-      · exact isPtrTy_hasTy h _
+      · unfold PtrOps.ptrRes; split
+        · exact isPtrTy_hasTy h _
+        · rfl
       · rfl
     · rfl
   case Convert =>

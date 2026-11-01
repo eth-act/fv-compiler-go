@@ -47,13 +47,37 @@ def Ptr.ofAddr (x : BitVec 64) : Ptr :=
 /-- `p` is the nil pointer (concrete address 0). -/
 def Ptr.isNil (p : Ptr) : Bool := p.blk == .nil && p.off == 0
 
-/-- Pointer equality (`EqPtr`): same allocation and offset, or equal concrete addresses. Two
-different globals, or a global and another block, are different. -/
-def Ptr.eq (p q : Ptr) : Bool :=
-  if p.blk == q.blk then p.off == q.off
-  else match p.addr?, q.addr? with
-    | some a, some b => a == b
-    | _, _ => false
+/-- The address window of a block: offsets below it keep a pointer's concrete address inside
+the block's encoding (`nil` and heap blocks `2^40`, frame blocks `2^24`; globals have no
+addresses). Every allocation is smaller than its window (heap allocations at most
+`Runtime.maxModelAlloc = 2^24`, frame variables below Go's 10 MB stack-variable limit), so
+in-bounds and one-past-the-end pointers stay inside (§3.3). -/
+def Blk.window? : Blk → Option Nat
+  | .nil | .heap _ => some (2 ^ 40)
+  | .local _ _ | .temp _ _ | .outargs _ => some (2 ^ 24)
+  | .global _ => none
+
+/-- `p`'s offset is inside its block's address window. -/
+def Ptr.inWindow (p : Ptr) : Bool :=
+  match p.blk.window? with
+  | some w => decide (p.off.toNat < w)
+  | none => true
+
+/-- `p` converts to an integer and back to itself (`Ptr.ofAddr_addr`): inside its window, its
+block's number small enough for the address encoding, and not a frame temporary (whose address
+the program never takes) or a global (no concrete address). -/
+def Ptr.convertible (p : Ptr) : Bool :=
+  match p.blk with
+  | .nil => decide (p.off.toNat < 2 ^ 40)
+  | .heap n => decide (n + 1 < 2 ^ 22) && decide (p.off.toNat < 2 ^ 40)
+  | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 2 ^ 20) &&
+      decide (p.off.toNat < 2 ^ 24)
+  | .outargs a => decide (a < 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
+  | .temp _ _ | .global _ => false
+
+/-- Pointer equality (`EqPtr`): the same block and offset (§3.3: pointers of different
+allocations are never equal; a pointer that left its allocation is `poison`). -/
+def Ptr.eq (p q : Ptr) : Bool := p.blk == q.blk && p.off == q.off
 
 /-! ## Allocations -/
 

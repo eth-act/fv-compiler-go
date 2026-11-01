@@ -599,7 +599,11 @@ omit K in
 theorem offPtr_safe {ai : Int64} {w : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
     Safe (PtrOps.offPtr ai [w]) := by
   match w, hw with
-  | .ptr q, hw => simpa [PtrOps.offPtr, Ptr.add, Safe] using hw
+  | .ptr q, hw =>
+    simp only [PtrOps.offPtr, PtrOps.ptrRes]
+    split
+    · simpa [Ptr.add, Safe] using hw
+    · trivial
   | .int .w64 x, _ => exact absurd rfl (hni x)
   | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
   | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.offPtr, Safe]
@@ -611,7 +615,9 @@ theorem addPtr_safe {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
   | .ptr q, hw =>
     unfold PtrOps.addPtr
     simp only
-    split <;> simp_all [Safe, Ptr.add]
+    split
+    · simp only [PtrOps.ptrRes]; split <;> simp_all [Safe, Ptr.add]
+    · trivial
   | .int .w64 x, _ => exact absurd rfl (hni x)
   | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
   | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.addPtr, Safe]

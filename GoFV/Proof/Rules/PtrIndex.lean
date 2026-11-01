@@ -27,12 +27,18 @@ theorem r_generic_970_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
   · simp [PtrOps.ptrIndex, asOffset]; exact Refines.poison _
   · rcases hT : e.ty [] with _ | _ | _ | _ | _ | (_ | k) | _ | _ | _ | _ <;>
       simp [PtrOps.ptrIndex, hT, asOffset] at hty ⊢ <;> try exact Refines.poison _
-    simp [PtrOps.addPtr, Sem.Int.mul, int2, Conv.const, Val.retype, asOffset, Val.asInt,
-      strctField] at hty ⊢
     have hk : BitVec.ofInt Width.w64.bits ((k : Int).bmod Int64.size) = BitVec.ofNat 64 k := by
       have hs : Int64.size = 2 ^ 64 := rfl
       rw [hs, ofInt_bmod_of_le (w := Width.w64.bits) (k := 64) (by decide), BitVec.ofInt_natCast]
-    rw [hk]
+    suffices key : ∀ M, M = Val.int .w64 (x * BitVec.ofNat 64 k) →
+        Refines (PtrOps.ptrRes (p.add (x * BitVec.ofNat 64 k)))
+          (Val.retype (Ty.ptr (some k)) (PtrOps.addPtr [Val.ptr p, M])) by
+      apply key
+      simp [Sem.Int.mul, int2, Conv.const, Val.retype, Val.asInt, strctField]
+      rw [hk]
+    rintro M rfl
+    have hse : (x * BitVec.ofNat 64 k).signExtend 64 = x * BitVec.ofNat 64 k := by simp
+    simp only [PtrOps.addPtr, asOffset, hse, retype_ptrRes_ptr]
     exact Refines.refl _
   · simp [PtrOps.ptrIndex, asOffset]; exact Refines.poison _
 

@@ -320,7 +320,7 @@ theorem inst_r_generic_964 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_96
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_964]
   rule_eval
-  simp [PtrOps.offPtr, Val.retype]
+  simp [PtrOps.offPtr, Val.retype, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
 
 /-- `generic.rules:970`: `(PtrIndex <t> ptr idx) && config.PtrSize == 8 => (AddPtr ptr (Mul64
 <typ.Int> idx (Const64 <typ.Int> [t.Elem().Size()])))` at a heap pointer, `idx = 3`, element
@@ -330,7 +330,7 @@ theorem inst_r_generic_970 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_97
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_970]
   rule_eval
-  simp [PtrOps.ptrIndex, asOffset]
+  simp [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
 
 /-- `generic.rules:126`: `(AddPtr <t> x (Const64 [c])) => (OffPtr <t> x [c])` at a heap pointer,
 `c = 24`. -/
@@ -339,6 +339,6 @@ theorem inst_r_generic_126 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_12
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_126]
   rule_eval
-  simp [PtrOps.addPtr, asOffset]
+  simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
 
 end GoFV.Proof.Rules

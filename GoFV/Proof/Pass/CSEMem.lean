@@ -138,8 +138,8 @@ theorem disjointP_sep (H : Avail env tabs f fr A) {p q : ID} {w k : Nat} {wq : I
       have ep := allocOf_val H hAp hpa hbvp
       have eq := allocOf_val H hAq hqb hbvq
       subst ep eq
-      have e1 := Val.ptr.inj (rp.2 _ _ rfl)
-      have e2 := Val.ptr.inj (rq.2 _ _ rfl)
+      have e1 := Val.ptr.inj ((rp.2 _ _ rfl).resolve_left nofun)
+      have e2 := Val.ptr.inj ((rq.2 _ _ rfl).resolve_left nofun)
       subst e1 e2
       have hab := blkOf_inj hb
       subst hab
