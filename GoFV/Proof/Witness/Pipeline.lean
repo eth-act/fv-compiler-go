@@ -139,7 +139,7 @@ theorem plRunEnv_initAvoids : InitAvoids plRunEnv [] {} := by
 
 theorem plF_dict : GoFV.Opt.NilCheck.dictParams plEnv.tables plF = [] := by decide +kernel
 
-theorem plF_ro : GoFV.Opt.RewriteCheck.roSyms plEnv.tables plF = [] := by decide +kernel
+theorem plF_ro : GoFV.Opt.Verified.pipelineRo plEnv plF = [] := by decide +kernel
 
 theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
   refine ⟨⟨⟨{ data := #[.b 0, .b 0, .b 0, .b 0], writable := false }, by decide +kernel,
@@ -154,7 +154,7 @@ theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
     split at hc <;> cases hc <;> trivial
 
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF)
-    (GoFV.Opt.RewriteCheck.roSyms plEnv.tables plF) plRunEnv [] {} :=
+    (GoFV.Opt.Verified.pipelineRo plEnv plF) plRunEnv [] {} :=
   ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
     by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, p1_tempOblivious, Env.p1_memOps,
     by rw [plF_ro]; exact RoImage.nil (env := plRunEnv) (fun name c hc => Env.p1_keepsRo name c hc) {}⟩
