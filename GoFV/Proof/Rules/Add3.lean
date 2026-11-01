@@ -10,10 +10,6 @@ import GoFV.Rules.Generated.Generic.Values00
 
 namespace GoFV.Proof.Rules
 
--- `bv_decide` proofs fail nondeterministically under parallel elaboration here (`grind failed`
--- after a `bv_decide` that succeeds sequentially); the probe runs sequentially too.
-set_option Elab.async false
-
 /-- `generic.rules:2177`: `(Add64 left:(Lsh64x16 x y) right:(Rsh64Ux16 x (Sub16 (Const16 [64]) y))) && (shiftIsBounded(left) || shiftIsBounded(right)) && canRotate(config, 64) => (RotateLeft64 x y)` -/
 theorem r_generic_2177_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_2177 := by rule_auto
 

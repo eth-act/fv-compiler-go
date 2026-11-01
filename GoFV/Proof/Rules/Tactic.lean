@@ -11,11 +11,12 @@ import GoFV.Proof.Rules.Names
    conditions and constants (`simp` with `rule_helper`);
 2. split the hypotheses into atoms, drop those about oracle values only, normalise with
    `rule_norm` (`simp_all` with `rule_sem`);
-3. case splits: disjunctions, then whether a leaf is an integer of the width its consumer
-   reads (the leaf is then replaced by that integer), whether a node's type is an integer of
-   another width, `if` conditions;
+3. case splits: whether a leaf is an integer of the width its consumer reads (the leaf is
+   then replaced by that integer), whether a node's type is an integer of another width, `if`
+   conditions, and when none is left the disjunctions (splitting these last keeps the shared
+   part of the proof once: 31% smaller proofs of the rotate rules);
 4. `rule_close`: auxint reads generalized to bounded `Int`s and pushed into `BitVec`, then
-   `rfl`, `bv_decide` or `grind`.
+   `rfl`, a rotation (`rule_rot`), `grind`, and as the last resort `bv_decide`.
 
 `evalPure` and `Op.auxType` are 446-arm `match`es: `simp` never unfolds them (LEARNINGS.md);
 the dsimprocs below evaluate them at a constructor (one `delta` + `whnfCore`, a definitional
@@ -48,6 +49,17 @@ dsimproc reduceAuxType (Op.auxType _) := fun e => do
   | some e' => return .done e'
   | none => return .continue
 
+/-- `GoTy.intInfo? t` at a constructor `t`. Unfolding it by `simp` instead generates its
+wildcard `match` equations and splitter in every rule module (~5000 terms, 0.2 MB of
+`.olean` per module). -/
+dsimproc reduceIntInfo (GoTy.intInfo? _) := fun e => do
+  unless e.isAppOfArity ``GoFV.Rules.GoTy.intInfo? 1 do return .continue
+  let some c := (e.getArg! 0).getAppFn.constName? | return .continue
+  unless (← getEnv).isConstructor c do return .continue
+  match ← reduceAtOp e with
+  | some e' => return .done e'
+  | none => return .continue
+
 /-- `simp_all` with the semantics simp set: the families become `BitVec`/`Bool` terms, case
 facts propagate, `hasTy` facts become type equations. -/
 macro "rule_norm" : tactic => `(tactic|
@@ -60,7 +72,7 @@ macro "rule_norm" : tactic => `(tactic|
     Option.getD_none, List.getD_cons_zero, List.getD_cons_succ, decide_eq_true_eq,
     decide_eq_false_iff_not, beq_iff_eq, bne_iff_ne, Nat.le_refl, Nat.lt_irrefl,
     BitVec.ofInt_ofNat, Nat.reducePow, Nat.reduceLT, Nat.reduceLeDiff, Nat.reduceAdd,
-    Nat.reduceSub, Nat.reduceMod, GoFV.Rules.wrapTo, GoFV.Rules.GoTy.intInfo?, DV.int.injEq,
+    Nat.reduceSub, Nat.reduceMod, GoFV.Rules.wrapTo, GoFV.Proof.Rules.reduceIntInfo, DV.int.injEq,
     DV.bool.injEq, callE, callH, Bool.cond_true, Bool.cond_false])
 
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
@@ -91,7 +103,7 @@ elab "rule_unfold" : tactic => do
       GoFV.Proof.Rules.evalE, GoFV.Proof.Rules.evalEs, GoFV.Proof.Rules.auxIntDV, List.lookup,
       GoFV.Proof.Rules.toAuxIntD, Option.getD, List.cons_append, List.nil_append,
       GoFV.Proof.Rules.intBin, GoFV.Proof.Rules.binDV, GoFV.Rules.wrapTo,
-      GoFV.Rules.GoTy.intInfo?, GoFV.Proof.Rules.litDV, GoFV.Proof.Rules.fieldE,
+      GoFV.Proof.Rules.reduceIntInfo, GoFV.Proof.Rules.litDV, GoFV.Proof.Rules.fieldE,
       GoFV.Proof.Rules.indexE, GoFV.Proof.Rules.convE, GoFV.Proof.Rules.callE,
       GoFV.Proof.Rules.methodE, GoFV.Proof.Rules.builtinE, GoFV.Proof.Rules.unDV,
       GoFV.Proof.Rules.fieldDV, GoFV.Proof.Rules.DV.valOr, GoFV.Proof.Rules.typesShape,
@@ -112,7 +124,7 @@ elab "rule_unfold" : tactic => do
       GoFV.Proof.Rules.intBin, GoFV.Proof.Rules.fieldDV, Option.map_some, Option.map_none,
       Option.getD_some, Option.getD_none, reduceCtorEq, true_or, or_true, and_true, true_and,
       beq_self_eq_true, Bool.cond_false, Bool.cond_true, GoFV.Rules.wrapTo,
-      GoFV.Rules.GoTy.intInfo?]
+      GoFV.Proof.Rules.reduceIntInfo]
     intro $hwf:ident $hc:ident $hcond:ident $hty:ident)))
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
@@ -237,23 +249,47 @@ elab "rule_widths" : tactic => withMainContext do
       g ← g.changeLocalDecl h.fvarId (mkApp (mkConst ``BitVec) (mkNatLit k))
   replaceMainGoal [g]
 
+/-- A rotation written as a sum, `or` or `xor` of two shifts of the same value: by `y` and
+`w - y` (`rot_add_sub` …; the bound `y ≤ w` by `bv_omega` from the bounded shift), or by
+amounts that add up to the width (`rot_add` …). -/
+macro "rule_rot" : tactic => `(tactic| (
+  first
+  | rw [GoFV.Proof.Rules.rot_add_sub] | rw [GoFV.Proof.Rules.rot_add_sub']
+  | rw [GoFV.Proof.Rules.rot_or_sub] | rw [GoFV.Proof.Rules.rot_or_sub']
+  | rw [GoFV.Proof.Rules.rot_xor_sub] | rw [GoFV.Proof.Rules.rot_xor_sub']
+  | rw [GoFV.Proof.Rules.rot_add] | rw [GoFV.Proof.Rules.rot_add']
+  | rw [GoFV.Proof.Rules.rot_or] | rw [GoFV.Proof.Rules.rot_or']
+  | rw [GoFV.Proof.Rules.rot_xor] | rw [GoFV.Proof.Rules.rot_xor']
+  all_goals first
+    | with_reducible rfl
+    | decide
+    | (apply GoFV.Proof.Rules.rotateLeft_congr; bv_omega)
+    | bv_omega))
+
 /-- Close the arithmetic left after the splits: auxint reads are generalized, constants
-pushed into `BitVec`, then `rfl`, `bv_decide` or `grind`. -/
+pushed into `BitVec`, then `rfl`, a rotation (`rule_rot`, before `grind`: a failing `grind`
+spends seconds on rotation goals), a ring identity (`grind` after complements and constant
+shifts become ring terms), and as the last resort `bv_decide` on the `BitVec`-amount form
+(`rule_bv`), whose LRAT certificate is stored in the `.olean` (megabytes for a 64-bit goal;
+`scripts/rule-proofs.py probe` marks such rules `BV`). -/
 macro "rule_close" : tactic => `(tactic| (
   repeat rule_gen1
   try simp only [GoFV.Proof.Rules.DV.int.injEq, GoFV.Proof.Rules.DV.bool.injEq] at *
   try rule_ands
   try subst_vars
   try rule_norm
-  try simp_all only [rule_arith, Nat.min_def, Nat.reduceLeDiff, Nat.reducePow, Nat.reduceLT,
+  try simp_all only [rule_arith, Nat.reduceLeDiff, Nat.reducePow, Nat.reduceLT,
     ite_true, ite_false, BitVec.ofInt_add, BitVec.ofInt_mul, BitVec.ofInt_neg,
     BitVec.ofInt_ofNat, Nat.le_refl, GoFV.SSA.Sem.Width.bits, GoFV.Proof.Rules.DV.int.injEq,
     GoFV.Proof.Rules.DV.bool.injEq]
   first
   | done
   | with_reducible rfl
-  | bv_decide (config := { enums := false, structures := false })
-  | grind))
+  | rule_rot
+  | ((try simp only [GoFV.Proof.Rules.bv_not_eq, GoFV.Proof.Rules.bv_shl_nat, Nat.reducePow] at *)
+     grind)
+  | ((try simp only [rule_bv, Nat.reducePow, Nat.reduceLT] at *)
+     bv_decide (config := { enums := false, structures := false }))))
 
 /-- `rule_unfold`, the case splits, then `rule_close` on every remaining case. -/
 macro "rule_auto" : tactic => `(tactic| (
@@ -262,7 +298,6 @@ macro "rule_auto" : tactic => `(tactic| (
   (try rule_clear_oracle)
   (try rule_norm)
   (try rule_ands)
-  all_goals (repeat rule_split_or)
   all_goals (repeat rule_split1)
   all_goals (try rule_widths)
   all_goals rule_close))

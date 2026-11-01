@@ -7,8 +7,10 @@
                                             # op families -> tmp/rules/probe-<FAM>.tsv
   scripts/rule-proofs.py emit FAM [--chunk N]
                                             # append theorems for the probed-OK rules to
-                                            # GoFV/Proof/Rules/<FAM>[N].lean
   scripts/rule-proofs.py table              # rewrite the tables of docs/proofs/rules.md
+  scripts/rule-proofs.py sat                # run `lake exe rule-sat` (satisfying instance per
+                                            # rule) -> tmp/rules/sat.tsv; fails if a proven
+                                            # rule has no instance or a counterexample
 
 Every Lean command runs under scripts/memcap.sh. Temporary files live in tmp/rules/.
 """
@@ -117,13 +119,39 @@ import GoFV.Proof.Rules.Tactic
 {imports}
 open Lean Elab Command
 
+/-- Distinct subterms of a proof (its share of the `.olean`, ~25 bytes each). -/
+partial def dagSize (e : Lean.Expr) : Nat := Id.run do
+  let mut seen : Std.HashSet Lean.Expr := {{}}
+  let mut stack := [e]
+  while true do
+    match stack with
+    | [] => break
+    | t :: rest =>
+      stack := rest
+      if seen.contains t then continue
+      seen := seen.insert t
+      match t with
+      | .app f a => stack := f :: a :: stack
+      | .lam _ d b _ | .forallE _ d b _ => stack := d :: b :: stack
+      | .letE _ t v b _ => stack := t :: v :: b :: stack
+      | .mdata _ b | .proj _ _ b => stack := b :: stack
+      | _ => pure ()
+  return seen.size
+
 elab "#probe " ids:ident* : command => do
   for id in ids do
     let t0 ← IO.monoMsNow
     let msgs0 := (← get).messages
     modify fun s => {{ s with messages := {{}} }}
-    withoutModifyingEnv do
-      elabCommand (← `(theorem probe : GoFV.Proof.Rules.Rule.Sound $id := by rule_auto))
+    let ((size : Nat), (certs : Nat)) ← withoutModifyingEnv do
+      elabCommand (← `(theorem $(mkIdent `probe) : GoFV.Proof.Rules.Rule.Sound $id := by rule_auto))
+      let env ← getEnv
+      let size : Nat := match env.find? `probe with
+        | some c => dagSize ((c.value? (allowOpaque := true)).getD (.sort .zero))
+        | none => 0
+      let certs : Nat := env.constants.map₂.foldl (fun n k _ =>
+        if (`probe).isPrefixOf k && (k.toString.splitOn "_cert").length > 1 then n + 1 else n) 0
+      return (size, certs)
     let ms := (← get).messages
     let ok := !ms.hasErrors
     let t1 ← IO.monoMsNow
@@ -132,8 +160,10 @@ elab "#probe " ids:ident* : command => do
       if m.severity == .error && err == "" then
         err := (← m.data.toString).replace "\\n" " ⏎ "
     modify fun s => {{ s with messages := msgs0 }}
-    logInfo m!"PROBE {{id}} {{if ok then "OK" else "FAIL"}} {{t1 - t0}}ms {{(err.take 600).toString}}"
+    logInfo m!"PROBE {{id}} {{if ok then "OK" else "FAIL"}} {{t1 - t0}}ms {{size}} {{certs}} {{(err.take 600).toString}}"
 
+-- Sequential: an asynchronously elaborated proof would report its errors after `#probe` has
+-- read the messages.
 set_option Elab.async false
 """
 
@@ -147,11 +177,15 @@ def probe_one(fam, rules, idx):
     r = lean(os.path.relpath(path, ROOT))
     res = []
     for line in (r.stdout + r.stderr).splitlines():
-        m = re.search(r"PROBE (\S+) (OK|FAIL) (\d+)ms ?(.*)", line)
+        m = re.search(r"PROBE (\S+) (OK|FAIL) (\d+)ms (\d+) (\d+) ?(.*)", line)
         if m:
-            res.append((m.group(1), m.group(2), m.group(3), m.group(4)))
+            ok = m.group(2)
+            if ok == "OK" and m.group(5) != "0":
+                ok = "BV"  # closed by `bv_decide`: an LRAT certificate in the `.olean`
+            res.append((m.group(1), ok, m.group(3), m.group(4), m.group(6)))
     if not res:
-        res = [(r_["q"], "FAIL", "0", "probe crashed: " + (r.stderr + r.stdout)[-300:].replace("\n", " "))
+        res = [(r_["q"], "FAIL", "0", "0",
+                "probe crashed: " + (r.stderr + r.stdout)[-300:].replace("\n", " "))
                for r_ in rules]
     return res
 
@@ -199,10 +233,6 @@ MOD_HDR = """import GoFV.Proof.Rules.Tactic
 -/
 
 namespace GoFV.Proof.Rules
-
--- `bv_decide` proofs fail nondeterministically under parallel elaboration here (`grind failed`
--- after a `bv_decide` that succeeds sequentially); the probe runs sequentially too.
-set_option Elab.async false
 
 """
 
@@ -276,9 +306,45 @@ def table():
     print(f"proven {tot[0]}, pending {tot[1]}, false {tot[2]}, not P1 {tot[3]}, total {tot[4]}")
 
 
+def sat():
+    """Satisfying instances (`GoFVTest/Proof/RuleSat.lean`) joined with the classification."""
+    names = rule_names()
+    cmd = [os.path.join(ROOT, "scripts", "memcap.sh"), "lake", "exe", "rule-sat"]
+    r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+    if r.returncode != 0:
+        sys.exit(r.stderr + r.stdout)
+    cls = {r_["q"]: r_ for r_ in load_class()}
+    done = proven()
+    bad = false_rules()
+    rows = []
+    for line in r.stdout.splitlines():
+        parts = line.split(" ", 3)
+        if len(parts) < 3:
+            continue
+        q = names[(parts[0], parts[1])][0]
+        rows.append((q, parts[2], parts[3] if len(parts) > 3 else ""))
+    with open(os.path.join(TMP, "sat.tsv"), "w") as fh:
+        for row in rows:
+            fh.write("\t".join(row) + "\n")
+    cnt = collections.Counter((cls[q]["cls"] == "P1", st) for q, st, _ in rows)
+    print(f"P1: SAT {cnt[(True, 'SAT')]}, CEX {cnt[(True, 'CEX')]}, NONE {cnt[(True, 'NONE')]}; "
+          f"other: SAT {cnt[(False, 'SAT')]}, CEX {cnt[(False, 'CEX')]}, "
+          f"NONE {cnt[(False, 'NONE')]}")
+    for q, st, inst in rows:
+        if st == "CEX" and cls[q]["cls"] == "P1":
+            mark = " (false: " + bad[short(q)] + ")" if short(q) in bad else ""
+            print(f"CEX {short(q)}{mark}: {cls[q]['doc']}\n    {inst}")
+    fails = [(q, st) for q, st, _ in rows if short(q) in done and st != "SAT"]
+    for q, st in fails:
+        print(f"proven but {st}: {short(q)}")
+    print(f"proven: {len(done)}, with an instance: {len(done) - len(fails)}")
+    if fails:
+        sys.exit(1)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["classify", "probe", "emit", "table"])
+    ap.add_argument("cmd", choices=["classify", "probe", "emit", "table", "sat"])
     ap.add_argument("fams", nargs="*")
     ap.add_argument("-j", "--jobs", type=int, default=2)
     ap.add_argument("--all", action="store_true")
@@ -292,6 +358,8 @@ def main():
     elif a.cmd == "emit":
         for fam in a.fams:
             emit(fam, a.chunk)
+    elif a.cmd == "sat":
+        sat()
     else:
         table()
 

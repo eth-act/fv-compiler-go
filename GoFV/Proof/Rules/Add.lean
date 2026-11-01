@@ -25,10 +25,6 @@ import GoFV.Rules.Generated.Generic.Values00
 
 namespace GoFV.Proof.Rules
 
--- `bv_decide` proofs fail nondeterministically under parallel elaboration here (`grind failed`
--- after a `bv_decide` that succeeds sequentially); the probe runs sequentially too.
-set_option Elab.async false
-
 /-- `generic.rules:121`: `(Add16 (Const16 [c]) (Const16 [d])) => (Const16 [c+d])` -/
 theorem r_generic_121_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_121 := by rule_auto
 

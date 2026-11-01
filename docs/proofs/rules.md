@@ -191,22 +191,48 @@ that unfold once at a constructor or string literal, so `simp` never sees the 44
 `match`es) → `rule_norm` (`simp_all` with the op families unfolded to `BitVec`/`Bool` terms)
 → case splits (`rule_split1`: whether a leaf is an integer of the width its consumer reads
 — the leaf is then replaced by that integer —, whether a node's type is an integer of another
-width, `if` conditions, disjunctions) → `rule_close` (auxint reads generalized to bounded
-`Int`s, constants pushed into `BitVec.ofInt`, shifts and rotations by `BitVec` amounts, then
-`rfl`, `bv_decide` or `grind`). `bv_decide` adds its `Lean.ofReduceBool` certificate axiom
-(allowed, `docs/PLAN.md` §0); the axioms of each module are listed below.
+width, `if` conditions, and only when none is left the disjunctions: the checker's `Bool`
+auxints, `||` in conditions) → `rule_close` (auxint reads generalized to bounded `Int`s,
+constants pushed into `BitVec.ofInt`, then `rfl`; a rotation written as two shifts by one
+rewrite with `rot_add_sub`/`rot_or_sub`/… and the amount bound by `bv_omega` (`rule_rot`); a
+ring identity by `grind` after complements and constant shifts become ring terms; `bv_decide`
+only as the last resort).
+
+`bv_decide` stores an LRAT certificate per goal in the `.olean` (`<thm>._cert_def_N`, up to
+9 MB for one 64-bit ring identity) and adds `Lean.ofReduceBool` axioms; no proven rule needs it
+now (`probe` reports `BV` for a rule closed by it). Its order after `grind`/`rule_rot` and
+the dropped `bv_decide` cases removed the need for `set_option Elab.async false` in the rule
+modules (LEARNINGS.md, "`bv_decide` certificates in rule-lemma `.olean`s").
 
 `scripts/rule-proofs.py probe <Family>` tries `rule_auto` on the pending rules of a family
-(`tmp/rules/probe-<Family>.tsv`); `emit <Family>` writes the module for the rules that passed.
+(`tmp/rules/probe-<Family>.tsv`: rule, `OK`/`BV`/`FAIL`, ms, distinct subterms of the proof
+— about 25 bytes of `.olean` each —, error); `emit <Family>` writes the module for the rules
+that passed.
 
 ## Non-vacuity
 
 `Rule.Sound` is one definition for all rules, so its non-vacuity is shown once and per family
-rather than per lemma (agreed with Main): a theorem that a mutated rule is not sound, per
-op-family module concrete instances of representative rules whose hypotheses hold with a
-non-poison source value, and a generated runtime check (test exe) that finds such an instance
-for every proven rule. **Not done yet** (see #69); so far `Comm.lean` has
-`sub16_not_comm` (the commutativity obligation is not trivial).
+rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
+
+- `Rule.Inst r e or`: every hypothesis of `Rule.Sound r` holds at the instance `e`, `or` and
+  the matched value is not `poison`. There `Rule.Sound r` gives `Refines (Pat.raw e r.pat)
+  (Rule.res r e or)` with a non-poison left side, i.e. the result equals the matched value
+  (`Rule.Sound.refines`); an instance where it does not refutes `Rule.Sound r`
+  (`Rule.not_sound`).
+- `mut646_not_sound : ¬ Rule.Sound mut646`, `mut646` being `generic.rules:646` with the
+  constant changed (`(Add16 (Const16 [1]) x) => x`).
+- Per op family, instances of representative proven rules (`inst_r_generic_675`: no
+  condition; `inst_r_generic_2185`: a rotate rule whose condition needs a bounded shift and an
+  oracle atom, `canRotate`).
+- `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
+  an instance of every exported rule at run time (random leaves, auxints from boundary values,
+  `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
+  mirrors of the hypotheses. `sat` fails if a proven rule has no instance or a
+  counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
+  how the findings below were found. Last run: P1 rules SAT 1331, CEX 11, NONE 53; all 88
+  proven rules SAT.
+
+`Comm.lean` has `sub16_not_comm` (the commutativity obligation is not trivial).
 
 ## Findings
 
