@@ -80,26 +80,48 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
 /-- The shape of `t`. -/
 def _root_.GoFV.SSA.Tables.ty (tabs : Tables) (t : TypeRef) : Ty := tyOf tabs 32 t
 
+mutual
 /-- A value as a value of type shape `t` (§3.2). Go types a value by its `Type`, not by its
 op: rules build e.g. `(Rsh64x64 <t> …)` with `t` = `int32` (`divmod.rules`), whose meaning is
 the low 32 bits of the 64-bit shift. An integer narrower than the op keeps the low bits; a
 wider type would expose undefined high bits and is `poison`. A `uintptr`-typed value that
 holds a pointer (`ConstNil <uintptr>`, `Convert`) becomes its concrete address, an integer
 typed as a pointer the pointer at that address (§3.3); a global, which has no concrete
-address, stays a pointer. A `bool`-typed value that is not a boolean is `poison` (so a
-register of a `bool`-typed value is a boolean or `poison`). Other shapes are unchanged. -/
+address, is `poison` at an integer type. Composites are retyped componentwise (a call's tuple
+keeps its components beyond the type's). Every other mismatch of value and shape is `poison`,
+so `(v.retype t).hasTy t` always holds (#108). -/
 def Val.retype : Ty → Val → Val
+  | _, .poison => .poison
   | .int w', .int w x => if w'.bits ≤ w.bits then .int w' (x.setWidth w'.bits) else .poison
-  | .ptr _, .int .w64 a => .ptr (Ptr.ofAddr a)
   | .int .w64, .ptr p => match p.addr? with
     | some a => .int .w64 a
     | none => .ptr p
+  | .ptr _, .int .w64 a => .ptr (Ptr.ofAddr a)
+  | .ptr _, .ptr p => .ptr p
   | .bool, .bool b => .bool b
-  | .bool, _ => .poison
-  | _, v => v
+  | .mem, .mem m => .mem m
+  | .tuple ts, .tuple vs => match Val.retypePre ts vs with
+    | some vs' => .tuple vs'
+    | none => .poison
+  | .agg fs _, .agg vs => match Val.retypeFields fs vs with
+    | some vs' => .agg vs'
+    | none => .poison
+  | .blob n, .blob bs => if bs.length == n then .blob bs else .poison
+  | .empty, .empty => .empty
+  | _, _ => .poison
+def Val.retypePre : List Ty → List Val → Option (List Val)
+  | [], vs => some vs
+  | t :: ts, v :: vs => (Val.retypePre ts vs).map (Val.retype t v :: ·)
+  | _ :: _, [] => none
+def Val.retypeFields : List (Nat × Ty) → List Val → Option (List Val)
+  | [], [] => some []
+  | (_, t) :: fs, v :: vs => (Val.retypeFields fs vs).map (Val.retype t v :: ·)
+  | _, _ => none
+end
 
 mutual
-/-- `v` has shape `t` (`poison` has every shape). -/
+/-- `v` has shape `t` (`poison` has every shape; an address-less pointer has the 64-bit integer
+shape too). -/
 def Val.hasTy : Val → Ty → Bool
   | .poison, _ => true
   | .int w _, .int w' => w == w'
@@ -107,6 +129,9 @@ def Val.hasTy : Val → Ty → Bool
   | .mem _, .mem => true
   | .tuple vs, .tuple ts => Val.hasTyPre vs ts
   | .ptr _, .ptr _ => true
+  -- a `uintptr`/`int64` may hold a pointer without a concrete address (a global: code
+  -- pointers of closures, `unsafe.Pointer` ↔ `uintptr`)
+  | .ptr p, .int .w64 => p.addr?.isNone
   | .agg vs, .agg fs _ => Val.hasTyList vs (fs.map (·.2))
   | .blob bs, .blob n => bs.length == n
   | .empty, .empty => true

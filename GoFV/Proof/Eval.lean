@@ -1,10 +1,12 @@
 import GoFV.Proof.Frame
+import GoFV.Proof.Retype
 
 /-!
 # Facts about one value's evaluation
 
 * `evalValue_typed`: a value's result is fixed by `Val.retype` at its own type shape, so every
-  register of a run is (`Typed`, preserved by `enterBlock`: `typed_enter`).
+  register of a run is (`Typed`, preserved by `enterBlock`: `typed_enter`); equivalently it has
+  that shape (`evalValue_hasTy`, `Typed.hasTy`, from `Val.retype_hasTy`, #108).
 * `evalValue_copy`: a `Copy` yields its argument at the copy's shape.
 * `evalValue_eq_of_args`: two values with the same op, aux, auxint and ID whose arguments hold
   the same registers evaluate alike (in contexts agreeing on the value's shape, the tables and
@@ -15,33 +17,11 @@ namespace GoFV.Proof
 
 open GoFV.SSA GoFV.SSA.Sem
 
-theorem retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t := by
-  cases t with
-  | int w' =>
-    cases v with
-    | int w x =>
-      by_cases h : w'.bits ≤ w.bits
-      · simp [Val.retype, h]
-      · simp [Val.retype, h]
-    | ptr p =>
-      cases w' <;> try rfl
-      rcases ha : p.addr? with _ | a
-      · simp only [Val.retype, ha]
-      · simp only [Val.retype, ha, Width.bits, Nat.le_refl, ite_true, BitVec.setWidth_eq]
-    | _ => cases w' <;> rfl
-  | ptr e =>
-    cases v with
-    | int w x => cases w <;> rfl
-    | _ => rfl
-  | bool => cases v <;> rfl
-  | _ => cases v <;> try rfl
-  all_goals (rename_i w _; cases w <;> rfl)
+theorem retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t :=
+  Val.retype_idem t v
 
-theorem retype_of_hasTy {t : Ty} {v : Val} (h : v.hasTy t = true) : v.retype t = v := by
-  cases t <;> cases v <;> (try rfl) <;> (try (simp [Val.hasTy] at h; done))
-  all_goals first
-    | (rename_i w' w x; simp only [Val.hasTy, beq_iff_eq] at h; subst h; simp [Val.retype])
-    | (rename_i w; cases w <;> rfl)
+theorem retype_of_hasTy {t : Ty} {v : Val} (h : v.hasTy t = true) : v.retype t = v :=
+  Val.retype_of_hasTy h
 
 /-- Every register of a frame is fixed by `retype` at its value's shape. -/
 def Typed (ctx : Ctx) (fr : Frame) : Prop :=
@@ -72,6 +52,16 @@ theorem evalValue_typed {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Va
     | ok r => rw [ho] at h; cases h; exact retype_idem _ _
     | panic e m => rw [ho] at h; cases h
     | stuck msg => rw [ho] at h; cases h
+
+/-- **A value's result has its own shape** (#108). -/
+theorem evalValue_hasTy {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (h : evalValue env ctx fr v = .ok y) : y.hasTy (ctx.tys[v.id]?.getD .other) = true := by
+  rw [← evalValue_typed h]; exact Val.retype_hasTy _ _
+
+/-- **Every register of a `Typed` frame has its value's shape** (#108). -/
+theorem Typed.hasTy {ctx : Ctx} {fr : Frame} (h : Typed ctx fr) {x : ID} {y : Val}
+    (hx : fr.regs[x]? = some (some y)) : y.hasTy (ctx.tys[x]?.getD .other) = true := by
+  rw [← h x y hx]; exact Val.retype_hasTy _ _
 
 theorem evalOp_copy {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op = .Copy) : evalOp env ctx fr v argv ty = .ok (evalPure .Copy ty v.auxInt v.aux argv) := by

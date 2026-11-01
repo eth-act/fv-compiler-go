@@ -79,11 +79,16 @@ type integer results narrower than their op — `divmod.rules` builds `(Rsh64x64
 `divmod`; 990 such values in the corpus, all `Rsh64x64`/`Rsh32x64`, none wider than the op).
 So every produced integer is retyped to its value's width (`Val.retype`, `Sem/Layout.lean`):
 a narrower type keeps the low bits; a wider one would expose undefined high bits and is
-`poison`. A `bool`-typed value that is not a boolean is `poison` (every well-typed producer
-of a `bool` — comparisons, `Load` decoding a bool, `Phi`/`Copy`/`SelectN`/`StructSelect`
-passing one through — yields a boolean or `poison` anyway), so the register of a `bool`-typed
-value is always a boolean or `poison` (`Typed`; used by phiopt's `OrB`/`AndB` arms, §3.5).
-Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+`poison`. `retype` is **total-shaping** (#108): every value that does not fit the shape is
+`poison` (a non-boolean at `bool`, a boolean or memory at an integer shape, a 32-bit integer at a
+pointer shape, …), composites are retyped componentwise, so `(v.retype t).hasTy t` always holds
+(`Val.retype_hasTy`, `GoFV/Proof/Retype.lean`) and every register has its value's shape
+(`GoFV.Proof.evalValue_hasTy`, `Typed.hasTy`). The one mix Go relies on is kept: a pointer
+without a concrete address (a global: a closure's code pointer loaded as `uintptr`,
+`unsafe.Pointer` ↔ `uintptr` of a global) stays a pointer at the 64-bit integer shape, which
+`Val.hasTy` accepts. Well-typed producers yield values of their shape anyway: the change left
+every difftest outcome unchanged (native 11,900 calls; corpus 39,131 defined calls, same
+counts). Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
 Integer ops have no sign: signedness is in the op
 (`Less64` vs `Less64U`, `Rsh64x64` vs `Rsh64Ux64`, `SignExt` vs `ZeroExt`), as in Go.
 `ConstN` auxints are sign-extended to 64 bits even for unsigned types (gO 339); `run` takes

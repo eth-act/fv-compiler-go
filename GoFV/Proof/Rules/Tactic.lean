@@ -234,7 +234,8 @@ elab "rule_split1" : tactic => withMainContext do
     evalTactic (← `(tactic| (
       rcases hsplit : $stx with _ | xs <;>
         (try have hv := val_asInt_eq_some.mp hsplit) <;>
-        (try have hv := val_poison_of_asInt_none hsplit (by with_reducible assumption)) <;>
+        (try (have hv0 := val_poison_of_asInt_none hsplit (by with_reducible assumption)) <;>
+          rcases hv0 with hv | ⟨hw64, pv, hv⟩) <;>
         (try rule_norm))))
   else if c.isAppOfArity ``GoFV.SSA.Sem.Val.asBool 1 then
     evalTactic (← `(tactic| (
