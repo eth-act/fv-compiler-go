@@ -399,16 +399,67 @@ keeps the replay invariant (`GoFV/Proof/Pass/StructLoad.lean`), so `replay_inv`,
 `GoFV.Proof.Witness.lf_checkedRewrite` (`s := *p; return s.a` on `struct{ a, b int }`, kernel
 evaluation).
 
+### Segments: `EffectRule.Seg` (`GoFV/Proof/Rules/Seg.lean`)
+
+`generic.rules:1833`/`:1844`/`:1857` replace two to four `Store`s over a `Zero` they tile by
+the same `Store`s over the `Zero`'s memory, and `:1638`/`:1721`/`:1730` replace `SelectN [0]` of a
+call to `runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`. Each
+rewrites a *segment* of a block: the rule's value `x` (the anchor) is redefined in place, the
+values it clobbers (`D`: the inner `Store`s and the `Zero`, or the call) are gone, and fresh
+values (`N`: the new inner `Store`s) are put in. Only the anchor's memory agrees with the
+source's, so neither the replay nor the atom simulation applies. `RuleSet.segs` (tried on every
+value after the op's other tables, from `Interp.Table.segBase`) holds the rules with
+`EffectRule.Seg r := RewriteCheck.segShapeOK r = true` (a `Store` or `SelectN` rule with a built
+result in `v`'s block). The segment layer (`Layer.seg`, after the split layers) applies the log's
+segment events (`segPre`: `segEvent?` takes only events of a rule on the value's op in the
+layer's input; `segApply` redefines the anchor, puts the fresh values in, frees `segDrops`) and
+relates its input to the result by `segRel`:
+
+- `segOK` at each anchor: `chainSeg?` (in `f` `k ≥ 2` `Store`s from `x` over a `Zero [n] p mem` of
+  `x`'s block, in `g` the same `Store`s over `mem` at `OffPtr`s of `p` tiling `[0, n)`,
+  `segTiles`) or `callSeg?` (the call's arguments reach the callee as they are,
+  `MemCall.simpleCall`, the size a `Const64`, `g`'s `Zero`/`Move` on the call's arguments), the
+  dropped values listed roots of the block, the fresh ones listed in `g`'s block, `N ++ [x]`
+  roots of `g` in dependency order whose other arguments are arguments of the segment's roots;
+- each dropped value in exactly one segment and used only inside it; the blocks' kinds and
+  controls unchanged, their schedules `f`'s roots with each segment's roots replaced, at the
+  last of them, by its fresh roots and its anchor (`segRoots`, `segBlockOK`).
+
+**Theorems** (`GoFV/Proof/Pass/Seg*.lean`). Each segment kind discharges `Seg.SegSound`: the
+segment's roots in `f` never panic, and in a source frame whose available values include them
+(`CSE.Mem.Avail`) the target's definitions of `N ++ [x]` evaluate in order and refine the
+source's anchor: `chainSeg_sound` (`SegChain.lean`, with `SegZeroMem.writes_over_zero`: writes
+tiling a zeroed region equal the writes over the original memory) and `callSeg_sound
+(hE : env.MemOps)` (`SegCallSeg.lean`, with `SegCall.callOp_memclr`/`callOp_memmove`: the call's
+memory is refined by the plain write). The simulation (`SegRel.lean` `segRel_spec`,
+`SegBlock.lean` `segStep`, `SegEval.lean`, `SegSim.lean`) runs the target against the source
+with registers refined except at the dropped values:
+
+```lean
+theorem seg_refines (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
+    (hrel : segRel tabs f g = true) :
+    RefinesUnder (fun env => env.Mono ∧ env.MemOps) tabs g tabs f
+```
+
+`LayerChain.seg` and `chain_refines` take it into `checkedRewrite_refines` (statement
+unchanged; `Env.MemOps` is a conjunct of `RwPre`). `checkedTiers` tries a table without `segs`
+first when the full table is rejected. Proven: `:1833`, `:1844`, `:1857`, `:1638`, `:1721`,
+`:1730`; witness `GoFV.Proof.Witness.zp_checkedRewrite` (`*p = [2]int{}; p[0] = x; p[1] = x`
+with `{:1833}`: the `Zero` and the first `Store` dropped, the anchor stores over a fresh `Store`
+on the input memory; kernel evaluation), `callSeg_witness` (`callSeg?` on a `memclr` call).
+
 ### Layers (issue #151)
 
-The nil-check eliminations, forwardings and struct-store splits (`generic.rules:975`,
-`ssPre`/`ssRel`, `StructStore.ss_refines`) change roots, so `RewriteCheck.accepts` takes their
+The nil-check eliminations, forwardings, struct-store splits (`generic.rules:975`,
+`ssPre`/`ssRel`, `StructStore.ss_refines`) and segment rewrites (`segPre`/`segRel`,
+`Seg.seg_refines`) change roots, so `RewriteCheck.accepts` takes their
 events out of the log and applies them to the input in layers (`RewriteCheck.layersOK` over
 `RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
 of, struct-load expansions, struct-store splits of the input's `Store`s, those of the first
-layer's fresh field stores, the remaining forwardings, the remaining nil-check eliminations),
-each related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` + `check`,
-`validate` with the layer's events alone + `check`, `ssRel` + `check`; a layer without events
+layer's fresh field stores, segment rewrites, the remaining forwardings, the remaining nil-check
+eliminations), each related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` +
+`check`, `validate` with the layer's events alone + `check`, `ssRel` + `check`, `segRel` +
+`check`; a layer without events
 is skipped), and `validate` relates the last function and the output with the remaining events.
 A selective layer (`nilPre`/`fwdPre` with `sel`) applies only the events its relation holds of in
 its input, the later layer of its kind the rest: a split's pointer may be an eliminated nil check
@@ -432,12 +483,13 @@ takes the chain's start from the other split's last field store (`startSplit`,
 `prevInv_succ`, `bufK_full`). Witness: `GoFV.Proof.Witness.ss2_checkedRewrite` (`*p = P{x, y};
 *p = P{y, x}`; `ss2_start`: the old condition fails, `ssStart` holds).
 
-**Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (`nil`/`fwd`/`rw`/`ss` steps
+**Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (`nil`/`fwd`/`rw`/`ss`/`seg` steps
 `layerOK` accepts; `LayerChain.congr` moves the `rw` steps to a table with the same value and
 block rules, `validate_congr`) from the input to a function the output is validated against;
 `chain_refines (hs : s.AllSound)`: a chain from a checked function ends in a checked function
 that refines it under `RwPre` of the pass input (`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`,
-`validate_termRef` + `AtomSim.atomSim_refines`, `StructStore.ss_refines` per step);
+`validate_termRef` + `AtomSim.atomSim_refines`, `StructStore.ss_refines`, `Seg.seg_refines` per
+step);
 `checkedRewrite_refines` composes it with the atom simulation (statement unchanged). Witnesses:
 `GoFV.Proof.Witness.nf_checkedRewrite` (`*pp = new(int); q := *pp; _ = *q`: the nil check of the
 forwarded `newobject` result removed) and `sc_checkedRewrite` (`*p = *q` on `struct{ a, b int }`:

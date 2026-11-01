@@ -539,6 +539,7 @@ import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
+import GoFV.Proof.Witness.Seg
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.StructCopy
