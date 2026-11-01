@@ -130,6 +130,20 @@ up to the first unported pass, first divergence at a pass, or a Lean pass error.
 `sccp` is documented as nondeterministic (permutations across runs); divergences at `sccp` are
 reported separately.
 
+`--check` gives the driver's view of new symbols: a pass that creates a symbol aux (e.g.
+`writebarrier`'s `type:T` for `typedmemmove`) defines it from what the driver's export has, which
+may lack the contents the stock section shows later; the importer only requires name and ABI of
+a new symbol, so such divergences (19 at `writebarrier` on the corpus) do not reach the compiler.
+
 ## Results
 
-See issue #12 for the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`).
+Issue #12 has the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`, `std` and the corpus
+programs built for linux/arm64 by `scripts/driver-e2e.sh`). Known gaps at the time of writing:
+
+- Object files are not yet byte-identical everywhere the Lean pipeline was used, although the
+  imported state before `lower` equals the stock state (checked by re-export). The remaining
+  difference is compiler state outside the exported SSA; candidates are the order in which
+  `fe.SplitSlot` appends new autos to `Curfn.Dcl` (the import creates them in Lean number order,
+  stock in decompose order) and other frontend side effects of the passes (`docs/contracts/export.md`,
+  "Not exported").
+- `decompose builtin` diverges in 9 chained functions (#79).
