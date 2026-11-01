@@ -1,6 +1,7 @@
 import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.WriteBarrier
+import GoFV.Proof.Witness.TabsAgreeMod
 
 /-!
 # Non-vacuity witness: the verified pipeline on `f0` of `test/stack`, with a global store
@@ -152,7 +153,7 @@ theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
 
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF) plRunEnv [] {} :=
   ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
-    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre⟩
+    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, p1_tempOblivious⟩
 
 /-! ## The witness -/
 
