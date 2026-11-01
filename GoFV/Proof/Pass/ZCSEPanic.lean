@@ -13,8 +13,7 @@ tie-break keeps the roots' order, #96), the others are representatives, so the t
 namespace GoFV.Proof.ZCSE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.ZCSE Dom
-open GoFV.Proof.CopyElim (Tree refOK_prefix frame_ext stepV_of topoRem_at topoRem_append_left
-  prio_ne_zero_of_panic)
+open GoFV.Proof.CopyElim (Tree refOK_prefix frame_ext stepV_of topoRem_at topoRem_append_left)
 
 variable {tabs : Tables} {f g : Func}
 
@@ -59,6 +58,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID}
   obtain ⟨hrb, fvr, hfvr, hrnph⟩ := (omem r).1 hrS
   rw [stepV_of hfvr] at hrp
   have hrop := evalValue_panic_op hrp
+
   have hrne := evalValue_panic_args hrp
   obtain ⟨gvr, hgvr, -, hgop, -⟩ := S.value hfvr
   have hrT : r ∈ oT.toList :=
@@ -68,7 +68,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID}
   have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
   have hk' : oT.toList[pre'.length]? = some r := by rw [hsplitT]; simp
   have htr := schedTransfer S hbt.1 hfb hgbb hso hoT hk hk'
-    ((npIn_sched hownF hndF).2 ⟨hrb, fvr, hfvr, hrnph, prio_ne_zero_of_panic hrop⟩)
+    ((npIn_sched hownF hndF).2 ⟨hrb, fvr, hfvr, hrnph, prio_panicking hrop⟩)
   -- the target's prefix agrees with `fill` of the source's frame at the panic
   have hargsT : ∀ x gv, g.value? x = some gv → argsF (Ctx.make tabs g).f x = gv.args.toList :=
     fun x gv hgv => argsF_of (f := g) hgv

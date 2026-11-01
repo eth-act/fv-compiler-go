@@ -195,6 +195,8 @@ theorem live_root {f : Func} {t : Tables} {r : Array Bool}
 /-- Every op that may panic is a liveness root. -/
 theorem panicking_root {op : Op} (h : Panicking op) :
     (op.call || op.hasSideEffects || op.nilCheck) = true := by
-  rcases h with rfl | rfl | rfl | rfl <;> decide
+  rcases h with h | rfl
+  · simp [h]
+  · decide
 
 end GoFV.Proof.Dead

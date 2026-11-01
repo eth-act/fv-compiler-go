@@ -311,8 +311,10 @@ a float32-exact value (gO 347); constants are never NaN (gO 342-346).
 ### 4.8 Tuples, results
 `Select0/Select1/MakeTuple` on `tuple`; `SelectN [i]` projects a call's `RESULTS` tuple (pre-
 expand: Go-typed results, memory last; post-expand: register pieces, memory last);
-`SelectNAddr [i]` (pre-expand, non-SSA-able result) is the address of result `i` in the
-caller's results area (§5); `MakeResult` builds the `Ret` control (§7).
+`SelectNAddr [i]` (address of a non-SSA-able result) is `stuck`: it does not occur in the
+corpus, and its value depends on the call's ABI, which `evalValue` would have to read from the
+function (pass proofs rely on `evalValue` seeing only the value and its arguments);
+`MakeResult` builds the `Ret` control (§7).
 
 ### 4.9 Pseudo and out-of-phase ops
 `Copy` identity; `Phi` §3.6; `Convert` §3.3 (memory argument only orders it). `InlMark` no
@@ -341,8 +343,8 @@ call the same contracts:
 
 - **Before `expand calls`**: `StaticLECall {AuxCall} args… mem` passes Go-typed values
   (composites as `agg`; non-SSA-able arguments as `blob`s made by `Dereference`, gO 435-440);
-  the result is `tuple (results ++ [mem])`, read by `SelectN`; a non-SSA-able result is
-  stored by the call into the caller's per-call results area, which `SelectNAddr` points to.
+  the result is `tuple (results ++ [mem])`, read by `SelectN`; stack-assigned results are
+  also stored in the caller's outgoing-arguments area (`SelectNAddr` is `stuck`, §4.8).
   `ClosureLECall code ctx args… mem`: `code` is a pointer into a `code` allocation resolved by
   `Env.codeSym`, `ctx` becomes the callee's `GetClosurePtr`. `InterLECall code args… mem`: the
   code pointer was loaded from an itab in read-only data (pointer fragments from `reloc` lines).

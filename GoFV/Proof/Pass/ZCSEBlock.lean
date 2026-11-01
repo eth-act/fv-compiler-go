@@ -13,8 +13,7 @@ source evaluated before it (`schedTransfer`) and representatives.
 namespace GoFV.Proof.ZCSE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.ZCSE Dom
-open GoFV.Proof.CopyElim (Tree refOK_prefix frame_ext stepV_of topoRem_at topoRem_append_left
-  prio_panicking)
+open GoFV.Proof.CopyElim (Tree refOK_prefix frame_ext stepV_of topoRem_at topoRem_append_left)
 
 variable {tabs : Tables} {f g : Func}
 
@@ -27,7 +26,6 @@ theorem frame_with {a b : Frame} (h1 : a.args = b.args) (h2 : a.mem0 = b.mem0)
 theorem evalValue_panic_args {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e : Panic}
     {m : Mem} (h : evalValue env ctx fr v = .panic e m) : v.args ≠ #[] := by
   intro ha
-  have hop := evalValue_panic_op h
   unfold evalValue at h
   rw [ha] at h
   simp only [List.mapM_nil, bind, Res.bind, pure] at h
@@ -36,15 +34,17 @@ theorem evalValue_panic_args {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e
     cases evalOp env ctx fr v [] (ctx.tys[v.id]?.getD .other) <;> simp
   obtain ⟨e', m', he⟩ := he
   unfold evalOp at he
-  rcases hop with hop | hop | hop | hop <;> rw [hop] at he <;> simp only at he
-  · simp [panicBounds] at he
-  · split at he
-    · simp [callExtern, bind, Res.bind] at he
-    · cases he
-  · split at he
-    · simp [callExtern, bind, Res.bind] at he
-    · cases he
-  · simp [memRoot, hop] at he
+  split at he
+  all_goals first
+    | cases he
+    | exact absurd he argVal_not_panic
+    | exact absurd he callOp_nil
+    | simp [panicBounds] at he
+    | simp [memRoot] at he
+    | (split at he <;> first
+        | cases he
+        | exact absurd he argVal_not_panic
+        | (split at he <;> cases he))
 
 /-- The source frame after the `Phi`s keeps `ArglessInv`. -/
 theorem arglessInv_phis {env : Env} {ctx : Ctx} {fr : Frame} {b : Block} {i : Nat}

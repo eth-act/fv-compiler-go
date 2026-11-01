@@ -84,7 +84,7 @@ theorem refines_of_deadRel {tabs : Tables} (S : Setup f g K) : Refines tabs g ta
       S.rel.vsize
     have hentry : entryFrame env (Ctx.make tabs g) args mem =
         entryFrame env (Ctx.make tabs f) args mem := by
-      unfold entryFrame frameMem
+      unfold entryFrame frameMem frameAllocs
       rw [hsz]
       simp only [Ctx.make, abiParams, S.rel.ownAux]
     have houts : (Ctx.make tabs g).outs = (Ctx.make tabs f).outs := by

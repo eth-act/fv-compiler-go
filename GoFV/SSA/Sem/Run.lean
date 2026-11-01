@@ -401,6 +401,16 @@ def encodeResults (tabs : Tables) (act : Nat) :
       return (toPieces t r ++ pieces, m)
   | _, _, _ => none
 
+/-- The callee, closure context and remaining arguments of call value `v` on arguments
+`argv`: a closure call's code pointer and context, an interface call's code pointer, or the
+static call's `AuxCall` function. -/
+def callTarget (ctx : Ctx) (v : Value) (argv : List Val) : Option String × Option Val × List Val :=
+  match v.op, argv with
+  | .ClosureLECall, code :: c :: rest | .ClosureCall, code :: c :: rest =>
+    (codeTarget? code, some c, rest)
+  | .InterLECall, code :: rest | .InterCall, code :: rest => (codeTarget? code, none, rest)
+  | _, _ => (v.aux.bind ctx.tabs.callee?, none, argv)
+
 /-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
 `InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
 post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register pieces and
@@ -409,11 +419,7 @@ results are stored back into the outgoing area). The callee is the `AuxCall`'s f
 code symbol the code pointer points to; its contract sees the Go-typed arguments. Arguments
 and memory are observation points (`poison` ⇒ `stuck`). -/
 def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
-  let (callee?, clo, rest) := match v.op, argv with
-    | .ClosureLECall, code :: c :: rest | .ClosureCall, code :: c :: rest =>
-      (codeTarget? code, some c, rest)
-    | .InterLECall, code :: rest | .InterCall, code :: rest => (codeTarget? code, none, rest)
-    | _, _ => (v.aux.bind ctx.tabs.callee?, none, argv)
+  let (callee?, clo, rest) := callTarget ctx v argv
   let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
   let m ← match rest.getLast? with
     | some (.mem m) => .ok m
@@ -517,16 +523,9 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
   | .StaticLECall | .StaticCall | .ClosureLECall | .ClosureCall | .InterLECall | .InterCall =>
     callOp env ctx v argv
   | .GetClosurePtr => pure (fr.closure.getD .poison)
-  | .SelectNAddr =>
-    -- the address of stack-assigned result `i` of the call in the outgoing area
-    let off := do
-      let call ← v.args[0]? >>= ctx.f.value?
-      let abi ← callABI? ctx.tabs call.aux
-      let p ← (abi.params.filter (·.out))[v.auxInt.toInt.toNat]?
-      if p.regs.isEmpty then some p.offset else none
-    match off with
-    | some o => pure (.ptr ⟨.outargs ctx.act, BitVec.ofInt 64 o⟩)
-    | none => .stuck s!"v{v.id}: SelectNAddr of a result not on the stack"
+  -- not emitted by the stock compiler (0 occurrences in the corpus); its result depends on the
+  -- call's ABI, which `evalValue` would have to read from the function
+  | .SelectNAddr => .stuck s!"v{v.id}: SelectNAddr is not supported"
   | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
   | .WBend | .NilCheck => memRoot ctx v argv
   | op =>

@@ -415,16 +415,6 @@ theorem depPres (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Block}
   intro y hd
   exact (key r y hd (.inl rfl)).1
 
-theorem prio_panicking {op : Op}
-    (h : op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall) : prio op = 2 := by
-  rcases h with rfl | rfl | rfl <;> rfl
-
-/-- A value that can panic is not pure. -/
-theorem prio_ne_zero_of_panic {op : Op}
-    (h : op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall ∨ op = .NilCheck) :
-    prio op ≠ 0 := by
-  rcases h with rfl | rfl | rfl | rfl <;> decide
-
 /-- **A block the source panics in makes the target panic alike.** -/
 theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat}
     (hA : At env tabs f g fr bid i) {fb : Block} (hfb : f.block? bid = some fb) {e : Panic}
@@ -475,7 +465,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
   have hrnp : npIn (schedNodes f fb).toList r = true := by
     unfold npIn
     rw [← hfrid, nodeOf_schedNodes hownF hndF (hfrid ▸ hrb) (hfrid ▸ hfvr) hrnph]
-    simpa using prio_ne_zero_of_panic hrop
+    simpa using prio_panicking hrop
   have hdep : ∀ x y, npIn (schedNodes f fb).toList x = true →
       npIn (schedNodes f fb).toList y = true →
       (Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ↔
