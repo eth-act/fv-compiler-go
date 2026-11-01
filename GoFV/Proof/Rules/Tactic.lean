@@ -209,6 +209,11 @@ elab "rule_cond_bool" : tactic => withMainContext do
 def argShapeOps : List Name :=
   [``Op.OffPtr, ``Op.AddPtr, ``Op.PtrIndex, ``Op.EqPtr, ``Op.NeqPtr, ``Op.IsNonNil, ``Op.Convert]
 
+/-- The comparisons whose arguments `argShapeOk` constrains to their width. `rule_unfold`
+clears their argument shapes (no proof it closes needs them); `rule_unfold_getd` keeps them. -/
+def eqShapeOps : List Name :=
+  [``Op.Eq8, ``Op.Eq16, ``Op.Eq32, ``Op.Eq64, ``Op.Neq8, ``Op.Neq16, ``Op.Neq32, ``Op.Neq64]
+
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hbt` (`Oracle.BoolTyped`), `hwf` (checker facts), `hc` (pattern
 checks), `hcond` (condition, its `bool` oracle atoms replaced by booleans,
@@ -249,6 +254,7 @@ elab "rule_unfold" : tactic => do
   if usesArgShape then
     evalTactic (← `(tactic| try simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
       GoFV.Proof.Rules.argShapeOk, GoFV.Proof.Rules.isPtrTy_iff, GoFV.Proof.Rules.isInt64Ty_iff,
+      GoFV.Proof.Rules.isIntWTy_iff,
       GoFV.Proof.Rules.convArgOk, Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq,
       beq_iff_eq, Nat.reduceEqDiff, reduceIte, not_true_eq_false, false_or, true_or, or_true,
       and_true, true_and, Nat.succ_ne_zero, not_false_eq_true] at $hat:ident))

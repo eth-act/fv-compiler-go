@@ -120,7 +120,7 @@ noncomputable def Oracle.litFalse : Oracle where
 
 -- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
 attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFalse litAtom
-  Pat.argsOK Pat.argsOKs argShapeOk isPtrTy isInt64Ty convArgOk Pat.den
+  Pat.argsOK Pat.argsOKs argShapeOk isPtrTy isInt64Ty isIntWTy convArgOk Pat.den
   Pat.dens Pat.raw sigma
   Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Field.bindDV condHolds resDen
   nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map reduceEvalPure

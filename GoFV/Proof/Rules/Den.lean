@@ -44,10 +44,11 @@ obligation assumes that every leaf value has its type's shape (`Pat.typed`): a m
 a register whose value `evalValue` retyped to its type (`docs/proofs/rules.md`, "Assumptions to
 discharge").
 
-**Argument shapes.** The obligation assumes that the arguments of pointer ops have the shapes
-the checker guarantees by type (`Pat.argsOK`, `argShapeOk`): the pointer argument of `OffPtr`,
-`AddPtr`, `PtrIndex`, `IsNonNil`, `EqPtr`, `NeqPtr` is pointer-typed, the offset of
-`AddPtr`/`PtrIndex` a 64-bit integer, a `Convert` goes between a pointer and a 64-bit integer.
+**Argument shapes.** The obligation assumes that the arguments of pointer ops and integer
+comparisons have the shapes the checked types give them (`Pat.argsOK`, `argShapeOk`): the
+pointer argument of `OffPtr`, `AddPtr`, `PtrIndex`, `IsNonNil`, `EqPtr`, `NeqPtr` is
+pointer-typed, the offset of `AddPtr`/`PtrIndex` a 64-bit integer, a `Convert` goes between a
+pointer and a 64-bit integer, both arguments of `Eq<N>`/`Neq<N>` are `N`-bit integers.
 Without it `(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])` is false for a `uintptr` leaf
 under a pointer-typed inner node (the pointer `p + y` keeps its allocation, the integer does
 not). The rewrite validator checks it on the matched types (`GoFV.Opt.RewriteCheck.ruleOK`).
@@ -521,25 +522,35 @@ def isInt64Ty : Ty → Bool
   | .int .w64 => true
   | _ => false
 
+/-- `.int w`. -/
+def isIntWTy : Width → Ty → Bool
+  | .w8, .int .w8 | .w16, .int .w16 | .w32, .int .w32 | .w64, .int .w64 => true
+  | _, _ => false
+
 /-- The argument of a `Convert` of shape `ty`: a 64-bit integer to a pointer, a pointer to a
-64-bit integer. -/
+64-bit integer; nothing else. -/
 def convArgOk (ty t : Ty) : Bool :=
   match ty with
   | .ptr _ => isInt64Ty t
   | .int .w64 => isPtrTy t
-  | _ => true
+  | _ => false
 
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
 the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr` a
 pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
-64-bit integer offset of `AddPtr`/`PtrIndex`, and `Convert` between a pointer and a 64-bit
-integer (`convArgOk`). Other arguments are unconstrained. -/
+64-bit integer offset of `AddPtr`/`PtrIndex`, `Convert` between a pointer and a 64-bit
+integer (`convArgOk`), and both arguments of `Eq<N>`/`Neq<N>` integers of width `N`. Other
+arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
   | .OffPtr | .IsNonNil => i != 0 || isPtrTy t
   | .EqPtr | .NeqPtr => isPtrTy t || isInt64Ty t
   | .AddPtr | .PtrIndex => if i == 0 then isPtrTy t else i != 1 || isInt64Ty t
   | .Convert => i != 0 || convArgOk ty t
+  | .Eq64 | .Neq64 => isIntWTy .w64 t
+  | .Eq32 | .Neq32 => isIntWTy .w32 t
+  | .Eq16 | .Neq16 => isIntWTy .w16 t
+  | .Eq8 | .Neq8 => isIntWTy .w8 t
   | _ => true
 
 mutual
