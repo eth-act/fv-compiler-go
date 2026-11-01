@@ -206,7 +206,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     refine retype_mono _ ?_
     obtain ⟨-, hwb', blk, hblk', hzv⟩ := hpw
     obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := (H.args w.block hwb' blk hblk' z hzv w hw ht).resolve_right
-      fun ⟨_, _, _, hst, _⟩ => by rw [hph] at hst; cases hst
+      fun ⟨_, _, _, hst, _⟩ => by rw [hph] at hst; rcases hst with h | h <;> cases h
     rw [hpu.1] at hu'; cases hu'
     rcases R.pre with hno | ⟨p, pb, k, VP, hpm, hpb, hk, hinvP, hqP, hDP, hAncP, hPhiP, hMP⟩
     · exact (hno fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha).elim

@@ -180,6 +180,7 @@ import GoFV.Proof.Pass.KnownBitsTerm
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.LoadFwdDrop
 import GoFV.Proof.Pass.LoadFwdMem
+import GoFV.Proof.Pass.LoadFwdMoveSrc
 import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.Pass.MemCombine
 import GoFV.Proof.Pass.MemCombineBytes
@@ -530,6 +531,7 @@ import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
 import GoFV.Proof.Witness.MemCombineStore
+import GoFV.Proof.Witness.MoveSrc
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NilFwd
 import GoFV.Proof.Witness.NilGetG

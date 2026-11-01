@@ -1395,12 +1395,44 @@ def dropOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
         samePtrB tabs f u.args[0]! z.args[0]!
     | none => false))
 
+/-- The inner `Move` `im` of a changed `Move` source (`moveSrcOK`): of `u`'s size, its
+destination equal to `u`'s source (`samePtrB`), its source reaching `w`'s through compatible
+copies and disjoint from its destination (`disjointB`); under a `VarDef` of the frame variable
+`B` (`some B`), its source in a known allocation other than `B` (`baseBlk?`). -/
+def moveInnerOK (tabs : Tables) (f : Func) (u w im : Value) (B : Option Sem.Blk) : Bool :=
+  im.op == .Move && im.args.size == 3 && im.auxInt == u.auxInt &&
+  samePtrB tabs f u.args[1]! im.args[0]! &&
+  copyReach tabs f.valueTab f.valueTab.size im.args[1]! w.args[1]! &&
+  disjointB tabs f im.args[1]! u.auxInt.toInt.toNat im.args[0]! u.auxInt.toInt.toNat &&
+  match B with
+  | none => true
+  | some b => (baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1).any (· != b)
+
+/-- The `Move` `u` of `f` becomes the `Move` `w` that reads its bytes where the `Move` below its
+memory copied them from (`generic.rules:2146`, `:2155`): `w` is `u` with another source, its
+destination and memory reached from `u`'s through compatible copies (`copyReach`), and `w`'s
+memory is a `Move` `moveInnerOK` accepts, or a `VarDef` (of activation 0's frame variable, as
+`Sem.frameBlk`) of one. -/
+def moveSrcOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  u.op == .Move && w.op == .Move && u.args.size == 3 && w.args.size == 3 &&
+  w.auxInt == u.auxInt && w.aux == u.aux &&
+  copyReach tabs f.valueTab f.valueTab.size u.args[0]! w.args[0]! &&
+  copyReach tabs f.valueTab f.valueTab.size u.args[2]! w.args[2]! &&
+  match f.value? w.args[2]! with
+  | some mv =>
+    moveInnerOK tabs f u w mv none ||
+    (mv.op == .VarDef && mv.args.size == 1 &&
+      match mv.aux, f.value? mv.args[0]! with
+      | some n, some im => moveInnerOK tabs f u w im (some (Sem.frameBlk tabs 0 n))
+      | _, _ => false)
+  | none => false
+
 /-- The new definition `w` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads back
 (`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`); or of the memory root `u`, a
-`Copy` of its memory (`dropOK`). -/
+`Copy` of its memory (`dropOK`), or a `Move` from another source (`moveSrcOK`). -/
 def fwdNewOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
-    dropOK tabs f u w
+    dropOK tabs f u w || moveSrcOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -1511,8 +1543,9 @@ def patBinds (y : Nat) : Pat → Bool
 `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`), or
 `(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src) mem)` (`:827`); or
 a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005`, `:943`,
-`:948`, `:954`, `:961`, `:2158`); the validator checks each instance by `fwdNewOK` or
-`fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included. -/
+`:948`, `:954`, `:961`, `:2158`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
+=> (Move dst src m)` and its form through a `VarDef` (`:2146`, `:2155`); the validator checks
+each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included. -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -1522,17 +1555,20 @@ def fwdShapeOK (r : Rule) : Bool :=
     n0.op == .Load && n1.op == .OffPtr
   | .op .Store none _ _ _ .fixed [_, _, m] _, .copy (.var y), none => patBinds y m
   | .op .Zero none _ _ _ .fixed [_, m] _, .copy (.var y), none => patBinds y m
+  | .op .Move none _ _ _ .fixed [_, _, .op .Move ..] _, .build [n], none => n.op == .Move
+  | .op .Move none _ _ _ .fixed [_, _, .op .VarDef _ _ _ _ .fixed [.op .Move ..] _] _, .build [n],
+      none => n.op == .Move
   | _, _, _ => false
 
-/-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops), its new
-definition (a `Copy` or a constant) and the fresh values to put in first (`:827`: the `OffPtr`,
-then the `Load`), if it is a `loads` rule event (`fwdShapeOK`; tried on a `Store` after its
-`structStores`, `Interp.rewriteValue`). -/
+/-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, or the `Move`
+whose source it changes), its new definition (a `Copy`, a constant or a `Move`) and the fresh
+values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads` rule event
+(`fwdShapeOK`; tried on a `Store` after its `structStores`, `Interp.rewriteValue`). -/
 def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
-      if u.op == .Load || u.op == .Store || u.op == .Zero then
+      if u.op == .Load || u.op == .Store || u.op == .Zero || u.op == .Move then
         let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 +
           if u.op == .Store then t.structStores.size else 0
         if n ≤ i then
@@ -1542,7 +1578,8 @@ def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value ×
               some (v, w, [offp, top])
             else none
           | some cr, w :: _ =>
-            if fwdShapeOK cr.rule && ((w.op == .Copy && w.args.size == 1) || const64Op w.op) then
+            if fwdShapeOK cr.rule &&
+                ((w.op == .Copy && w.args.size == 1) || const64Op w.op || w.op == .Move) then
               some (v, w, [])
             else none
           | _, _ => none

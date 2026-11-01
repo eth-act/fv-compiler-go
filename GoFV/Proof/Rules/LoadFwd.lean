@@ -69,6 +69,14 @@ theorem r_generic_1005_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2158`: `(Zero {t} [s] dst1 zero:(Zero {t} [s] dst2 _)) && isSamePtr(dst1, dst2) => zero` -/
 theorem r_generic_2158_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2158 := rfl
 
+/-- `generic.rules:2146`: `(Move {t1} [s] dst tmp1 midmem:(Move {t2} [s] tmp2 src _)) && … &&
+isSamePtr(tmp1, tmp2) && … && disjoint(src, s, tmp2, s) && … => (Move {t1} [s] dst src midmem)` -/
+theorem r_generic_2146_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2146 := rfl
+
+/-- `generic.rules:2155`: `(Move {t1} [s] dst tmp1 midmem:(VarDef (Move {t2} [s] tmp2 src _))) &&
+… => (Move {t1} [s] dst src midmem)` -/
+theorem r_generic_2155_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2155 := rfl
+
 /-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
 `Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e
 mem)`, a changed write) do not have the shape. -/

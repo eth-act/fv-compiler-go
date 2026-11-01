@@ -310,6 +310,20 @@ block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dr
 `Zero` leaves `poison` where the source has zeros; and stores of `ConstNil`/`SliceLen` of a
 constant slice (`isConstZero` cases beyond integer constants), which fall back.
 
+**Changed `Move` sources** (`:2146`, `:2155`): `(Move {t1} [s] dst tmp1 midmem:(Move {t2} [s] tmp2
+src _)) && isSamePtr(tmp1, tmp2) && isStackPtr(src) && disjoint(src, s, tmp2, s) && … => (Move
+{t1} [s] dst src midmem)` and its form with `midmem:(VarDef (Move …))` keep the root but change
+its source (`fwdShapeOK`'s `Move` cases; `Interp.rewriteValue` tries `loads` on a `Move` after its
+row; `fwdEvent?` accepts a `Move` definition). `fwdNewOK` accepts `moveSrcOK`: `w` is `u` with
+another source, its destination and memory reached from `u`'s through compatible copies, and
+`w`'s memory is a `Move` `im` of the same size, or a `VarDef` of one (`moveInnerOK`): `im`'s
+destination `samePtrB` to `u`'s source, its source reaching `w`'s through compatible copies and
+`disjointB` from its destination, and under a `VarDef` its source in a known allocation
+(`baseBlk?`) other than the `VarDef`'s frame variable in activation 0. A `VarDef` is a memory
+root of the atom simulation (`memOp`/`memDef`: its memory with the variable's block poisoned,
+`Sem.memRoot` in activation 0); `AtomArgsRefX` allows a changed `Move` like a changed `Store`
+(`ChgRefP`: the target's write on its arguments' terms refines the source's).
+
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
 g = true → RefinesUnder Env.Mono tabs g tabs f`, by the generalised atom simulation
 (`atomSimX_refines`; `AtomsX` allows a dropped root that is a `Store` or a `Zero`, neither of which
@@ -329,7 +343,12 @@ aggregate is all `poison` bytes, which a `Load` reads as `poison`, semantics.md 
 `decodeLoad`; then `copyReach_den` to `x`, whose rank `copyReach_rank` bounds). The fuel of
 `TermRefP`'s right side may depend on the valuations. A constant result reads the stored
 constant through its chain the same way (`chain_load`), which denotes the result's bits
-(`opVal_const64`, `fwdConstOK_spec`). A Move forwarding (`move_den`): the `Move`'s register is
+(`opVal_const64`, `fwdConstOK_spec`). A changed `Move` source (`moveSrc_chgRef`,
+`GoFV/Proof/Pass/LoadFwdMoveSrc.lean`): by `MemAtoms` the memory `w` reads is the `VarDef`'s,
+`M2 = M1.poisonBlock B` (or `M1`), with `M1` the inner `Move`'s copy of `src`'s bytes to `tmp`;
+`M2` is refined by `M1` (`poisonBlock_refines`), so the bytes the source reads at `tmp` are refined
+by `src`'s (`read_write_self`), which `M2` still holds (`read_write_sep`, `read_poisonBlock_ne`):
+`moveSrc_mem`; the target's arguments refine as terms (`fwd_den`). A Move forwarding (`move_den`): the `Move`'s register is
 its write of the bytes read at the source (`memDef_move`), the Load's pointer is the
 destination plus `o` (`ptrBase_den`, `baseSame_den`), and the bytes there are those of the source
 at `o` (`read_write_self`, `read_sub`, `load_congr_read`, `LoadFwdMem.lean`); the fresh
@@ -345,7 +364,7 @@ against the zeros `zeroChain_read` reads through the disjoint writes from the `Z
 (`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
 `generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:943`, `:948`, `:954`,
-`:961`, `:1005`, `:2158`; witnesses
+`:961`, `:1005`, `:2146`, `:2155`, `:2158`; witnesses
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
@@ -355,7 +374,9 @@ string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`
 `Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`) and
 `zd_checkedRewrite` (`*(*struct{})(p) = struct{}{}; *p = [2]int{}; *p = [2]int{}; p[1] = 0` with
 `:1005`, `:2158`, `:943`: the three writes dropped, the result returns the first `Zero`'s memory;
-`GoFV/Proof/Witness/FwdDrop.lean`), kernel evaluation.
+`GoFV/Proof/Witness/FwdDrop.lean`) and `mv_checkedRewrite` (`t = s; d = t` on `[4]int` frame
+variables with `:2155`: the second `Move` copies from `s`; `GoFV/Proof/Witness/MoveSrc.lean`),
+kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,
@@ -958,6 +979,8 @@ With the segment layer (`:1833`, `:1844`, `:1857`, `:1638`, `:1721`, `:1730`; 1,
 (all `memmove` calls whose size is still `Mul64 (StringLen (ConstString …)) (Const64 [1])` or a
 `SliceLen` product in the layer's input: value rules fold it to the constant `callSeg?` asks for
 only later in the log) and 3 `Store` (`hash/fnv.New128`, `New128a`, `traceLocker.GoSysCall`).
+With the changed `Move` sources in the forwarding layer (`:2146`, `:2155`; 1,306 rules): 8,387
+(90.21%) on 6bf5bb5 (8,296 on its base 7eb5906; proven-only at stock 8,345 → 8,437).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -1018,12 +1041,11 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 8345, under the checked passes 8296 (validator the only obstacle: 49). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 376, 2: 216, 3 or more: 354.
+Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 8437, under the checked passes 8387 (validator the only obstacle: 50). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 292, 2: 210, 3 or more: 352.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
 | `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 91 | 91 |
-| `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 83 | 83 |
 | `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 82 | 82 |
 | `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 21 | 21 |
 | `generic.rules:1049 SliceLen` | `r_generic_1049` | ptr | 79 | 19 | 19 |
@@ -1048,7 +1070,6 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 22 | 1 | 1 |
 | `generic.rules:981 IMake` | `r_generic_981` | ptr | 15 | 1 | 1 |
 | `generic.rules:919 Store` | `r_generic_919` | mem | 15 | 1 | 1 |
-| `generic.rules:2146 Move` | `r_generic_2146` | mem | 12 | 1 | 1 |
 | `generic.rules:1651 NeqPtr` | `r_generic_1651` | ptr | 11 | 1 | 1 |
 | `generic.rules:1564 Load` | `r_generic_1564` | mem | 2 | 1 | 1 |
 | `generic.rules:1663 NeqPtr` | `r_generic_1663` | P2 | 2 | 1 | 1 |
@@ -1071,9 +1092,9 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:997 Store` | `r_generic_997` | mem | 241 | 0 | 0 |
 | `generic.rules:813 Load` | `r_generic_813` | mem | 224 | 0 | 0 |
 | `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 0 | 0 |
+| `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 0 | 0 |
 | `generic.rules:1730 SelectN` | `r_generic_1730/r_generic_1730_2` | call | 139 | 0 | 0 |
 | `generic.rules:1037 SliceCap` | `r_generic_1037` | P2 | 114 | 0 | 0 |
-| `generic.rules:1362 Store` | `r_generic_1362` | call | 107 | 0 | 0 |
 
 <!-- END fire -->
 

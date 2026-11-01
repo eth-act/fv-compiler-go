@@ -153,18 +153,18 @@ theorem ControlsRefP.toStepRefsP {tabs : Tables} {f g : Func} {I : SrcInv tabs f
   obtain ⟨hsz, hc⟩ := h b hb fb gb hfb hgb
   exact ⟨fun e he => hs ▸ he, stepRefP_of_controls hk hs hid hsz hc⟩
 
-/-- **A changed store** (issue #35): the target's `Store` `w`, on its arguments' terms, writes a
-memory refining the write of the source's `Store` `u` on its arguments' terms, for source
-valuations whose memory roots hold the writes of their arguments (`MemAtoms`). -/
+/-- **A changed store** (issue #35) **or `Move`** (issue #151): the target's root `w`, on its
+arguments' terms, writes a memory refining the write of the source's root `u` on its arguments'
+terms, for source valuations whose memory roots hold the writes of their arguments (`MemAtoms`). -/
 def ChgRefP (D : ID → Option Value) (tabs : Tables) (u : Value) (E : ID → Option Value)
     (w : Value) : Prop :=
   ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs ρ' → MemAtoms D tabs ρ →
     ∀ n y, memDef tabs u (u.args.toList.map (den D tabs ρ n)) = some y →
       ∃ m y', memDef tabs w (w.args.toList.map (den E tabs ρ' m)) = some y' ∧ Sem.Refines y y'
 
-/-- `AtomArgsRefP`, or a changed store: every atom of `g` has the fields of the atom of `f`
-with its ID and arguments refining as terms, or both are `Store`s and `g`'s writes a memory
-refining `f`'s (`ChgRefP`). -/
+/-- `AtomArgsRefP`, or a changed store or `Move`: every atom of `g` has the fields of the atom of
+`f` with its ID and arguments refining as terms, or both are `Store`s or both `Move`s and `g`'s
+writes a memory refining `f`'s (`ChgRefP`). -/
 def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termOp u.op = false →
@@ -178,7 +178,7 @@ def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
           pb.succs[k]? = some (⟨b, i⟩ : Edge) →
           TermRefP (I.P p) (I.Q p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!)) ∨
-    (∃ u', f.value? a = some u' ∧ u'.op = .Store ∧ u.op = .Store ∧
+    (∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ (u.op = .Store ∨ u.op = .Move) ∧
       ChgRefP f.value? tabs u' (listedDefs g) u)
 
 theorem AtomArgsRefP.toX {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
