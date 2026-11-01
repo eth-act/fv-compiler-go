@@ -63,14 +63,14 @@ def descr (f : Func) : Nat → ID → String
       s!"{n}({", ".intercalate (v.args.toList.map (descr f d))})"
     | none => "?"
 
-/-- `f` as text, one value per line, with each block's path facts and the `Phi` invariants
-(`--dump`). -/
+/-- `f` as text, one value per line, with each block's path facts and relations and the `Phi`
+invariants (`--dump`). -/
 def dump (f : Func) (tabs : Tables) : String := Id.run do
-  let (_, F, inv) := ProveCheck.asmOf f tabs
+  let (_, F, inv, RB) := ProveCheck.asmOf f tabs
   let mut s := ""
   for b in f.blocks do
     let some bb := f.block? b | continue
-    s := s ++ s!"b{b} {repr bb.kind} preds {bb.preds.toList.map (·.b)} succs {bb.succs.toList.map (·.b)} ctl {bb.controls.toList} facts {ProveCheck.factsAt F b}\n"
+    s := s ++ s!"b{b} {repr bb.kind} preds {bb.preds.toList.map (·.b)} succs {bb.succs.toList.map (·.b)} ctl {bb.controls.toList} facts {ProveCheck.factsAt F b} rels {(ProveCheck.relsAt RB b).map fun (z, y, w, c) => (z, y, w.bits, c)}\n"
     for x in bb.values do
       let some v := f.value? x | continue
       s := s ++ s!"  v{x} = {v.op.name} {v.args.toList} [{v.auxInt}] : {repr (tabs.ty v.type)}\n"
@@ -142,9 +142,9 @@ def checkFile (path : System.FilePath) (st : St) (dumpIt : Bool := false) : IO S
       if h == f && g != f then
         st := { st with relFail := st.relFail + 1 }
         let (h', _) := ProveCheck.revert prev true f g
-        let (C, F, inv) := ProveCheck.asmOf f prev
+        let (C, F, inv, RB) := ProveCheck.asmOf f prev
         if h' != f then
-          IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} values {ProveCheck.valuesOK prev f h' F inv} tree {f.blocks.all C.inTree}"
+          IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} rels {ProveCheck.relsOK f prev C F inv RB} values {ProveCheck.valuesOK prev f h' F inv RB} tree {f.blocks.all C.inTree}"
         else
           IO.println s!"ALLUNDONE {path}: every rewrite rejected, the reverted output is the input"
       if (check { tabs := prev, typs } h).toBool == false then

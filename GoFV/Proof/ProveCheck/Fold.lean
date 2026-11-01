@@ -208,10 +208,11 @@ theorem fold_ref {g : Func} {ρ' : ID → Val} (hA : AsmHolds D tabs ρ A) {a c 
 /-! ## The relation's definitions -/
 
 theorem defOK_cases {D : ID → Option Value} {tabs : Tables} {F : Array (List (ID × Bool))}
-    {inv : List (ID × Width × Rng)} {A : Asm} {g : Func} {fb : Block} {fv gv : Value}
-    (h : defOK D tabs F inv A g fb fv gv = true) :
+    {inv : List (ID × Width × Rng)} {RB : Array (List (ID × ID × Width × Int))} {A : Asm}
+    {g : Func} {fb : Block} {fv gv : Value}
+    (h : defOK D tabs F inv RB A g fb fv gv = true) :
     sameDef fv gv = true ∨ valueOK D tabs A fv gv = true ∨
-      (argsOK D tabs F inv A g fb fv gv = true ∧
+      (argsOK D tabs F inv RB A g fb fv gv = true ∧
         (sameDef fv { gv with args := fv.args } = true ∨
           valueOK D tabs A fv { gv with args := fv.args } = true)) := by
   unfold defOK at h
@@ -222,23 +223,26 @@ theorem defOK_cases {D : ID → Option Value} {tabs : Tables} {F : Array (List (
   · exact .inr (.inr h)
 
 theorem argsOK_spec {D : ID → Option Value} {tabs : Tables} {F : Array (List (ID × Bool))}
-    {inv : List (ID × Width × Rng)} {A : Asm} {g : Func} {fb : Block} {fv gv : Value}
-    (h : argsOK D tabs F inv A g fb fv gv = true) :
+    {inv : List (ID × Width × Rng)} {RB : Array (List (ID × ID × Width × Int))} {A : Asm}
+    {g : Func} {fb : Block} {fv gv : Value}
+    (h : argsOK D tabs F inv RB A g fb fv gv = true) :
     gv.args.size = fv.args.size ∧ ∀ i < fv.args.size, fv.args[i]! = gv.args[i]! ∨
-      foldOK D tabs (argAsm F inv A fb fv i) g fv.args[i]! gv.args[i]! = true := by
+      foldOK D tabs (argAsm F inv RB A fb fv i) g fv.args[i]! gv.args[i]! = true := by
   unfold argsOK at h
   simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range, Bool.or_eq_true] at h
   exact ⟨h.1, fun i hi => h.2 i hi⟩
 
 theorem argAsm_of_not_phi {F : Array (List (ID × Bool))} {inv : List (ID × Width × Rng)}
-    {A : Asm} {fb : Block} {fv : Value} (h : fv.op ≠ .Phi) (i : Nat) : argAsm F inv A fb fv i = A := by
+    {RB : Array (List (ID × ID × Width × Int))} {A : Asm} {fb : Block} {fv : Value}
+    (h : fv.op ≠ .Phi) (i : Nat) : argAsm F inv RB A fb fv i = A := by
   have : (fv.op == .Phi) = false := by simpa using h
   simp [argAsm, this]
 
 theorem argAsm_of_phi {F : Array (List (ID × Bool))} {inv : List (ID × Width × Rng)}
-    {A : Asm} {fb : Block} {fv : Value} (h : fv.op = .Phi) {i : Nat} {e : Edge}
-    (he : fb.preds[i]? = some e) : argAsm F inv A fb fv i = { facts := factsAt F e.b, inv } := by
-  simp [argAsm, h, he]
+    {RB : Array (List (ID × ID × Width × Int))} {A : Asm} {fb : Block} {fv : Value}
+    (h : fv.op = .Phi) {i : Nat} {e : Edge} (he : fb.preds[i]? = some e) :
+    argAsm F inv RB A fb fv i = asmAt F inv RB e.b := by
+  simp [argAsm, asmAt, h, he]
 
 theorem refinesList_zip {f g : ID → Val} : ∀ {l1 l2 : List ID}, l1.length = l2.length →
     (∀ i (h1 : i < l1.length) (h2 : i < l2.length), Sem.Refines (f l1[i]) (g l2[i])) →

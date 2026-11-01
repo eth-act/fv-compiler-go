@@ -7,7 +7,9 @@ The edges `(u, v, c)` the validator reads off the path facts (`factEdges`) say
 `V(u) - V(v) ≤ c` for the values' readings `V` (`readV`: signed `toInt` or unsigned `toNat`) at
 enough fuel (`factEdges_sound`); a side `x` of a fact stands for `base + c` when it is an `Add`
 or `Sub` with a constant that cannot wrap around (`offOf_sound`). Paths of edges add up
-(`distFrom_sound`), so `diffLe es x y c` gives `V(x) - V(y) ≤ c` (`diffLe_sound`).
+(`distFrom_sound`), so `diffLe es x y c` gives `V(x) - V(y) ≤ c` (`diffLe_sound`). A relation
+`z - y ≤ c` (`AsmHolds.rels`) holds only between defined values, so it serves as the last edge
+of a path (`diffLeR_sound`, `relEdges_sound`, `linLe_sound`).
 -/
 
 namespace GoFV.Proof.ProveCheck
@@ -339,13 +341,13 @@ theorem distFrom_sound {es : List (ID × ID × Int)}
 
 end
 
-/-- **Differences along paths**: if every edge holds at fuel `K`, `diffLe` bounds
-`V(x) - V(y)`. -/
-theorem diffLe_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {s : Bool}
+/-- **Differences along paths**, from `x`: if every edge holds at fuel `K` and `diffLe` bounds
+`V(x) - V(y)`, then `y` is defined and the bound holds. -/
+theorem diffLe_sound' {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {s : Bool}
     {w : Width} {K : Nat} {es : List (ID × ID × Int)}
     (hes : ∀ e ∈ es, EdgeHolds D tabs ρ s w K e) {x y : ID} {c : Int}
-    (hd : diffLe es x y c = true) {X Y : BitVec w.bits} (hx : den D tabs ρ K x = .int w X)
-    (hy : den D tabs ρ K y = .int w Y) : readV s X - readV s Y ≤ c := by
+    (hd : diffLe es x y c = true) {X : BitVec w.bits} (hx : den D tabs ρ K x = .int w X) :
+    ∃ Y : BitVec w.bits, den D tabs ρ K y = .int w Y ∧ readV s X - readV s Y ≤ c := by
   let P : ID → Int → Prop := fun z d =>
     ∃ Z : BitVec w.bits, den D tabs ρ K z = .int w Z ∧ readV s X - readV s Z ≤ d
   have hP : ∀ z e, (z, e) ∈ distFrom es x → P z e := by
@@ -360,7 +362,80 @@ theorem diffLe_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hze
   obtain ⟨rfl, hle⟩ := hze
   obtain ⟨Z, hZ, hz⟩ := hP _ _ hm
-  rw [hy] at hZ; cases val_int_eq hZ
-  omega
+  exact ⟨Z, hZ, by omega⟩
+
+/-- **Differences along paths**: if every edge holds at fuel `K`, `diffLe` bounds
+`V(x) - V(y)`. -/
+theorem diffLe_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {s : Bool}
+    {w : Width} {K : Nat} {es : List (ID × ID × Int)}
+    (hes : ∀ e ∈ es, EdgeHolds D tabs ρ s w K e) {x y : ID} {c : Int}
+    (hd : diffLe es x y c = true) {X Y : BitVec w.bits} (hx : den D tabs ρ K x = .int w X)
+    (hy : den D tabs ρ K y = .int w Y) : readV s X - readV s Y ≤ c := by
+  obtain ⟨Y', hY', hle⟩ := diffLe_sound' hes hd hx
+  rw [hy] at hY'; cases val_int_eq hY'
+  exact hle
+
+/-- **Differences along paths with a last edge that holds only between defined ends.** -/
+theorem diffLeR_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {s : Bool}
+    {w : Width} {K : Nat} {es rs : List (ID × ID × Int)}
+    (hes : ∀ e ∈ es, EdgeHolds D tabs ρ s w K e)
+    (hrs : ∀ z y c, (z, y, c) ∈ rs → ∀ Z Y : BitVec w.bits, den D tabs ρ K z = .int w Z →
+      den D tabs ρ K y = .int w Y → readV s Z - readV s Y ≤ c)
+    {x y : ID} {c : Int} (hd : diffLeR es rs x y c = true) {X Y : BitVec w.bits}
+    (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) :
+    readV s X - readV s Y ≤ c := by
+  unfold diffLeR at hd
+  rcases Bool.or_eq_true_iff.1 hd with hd | hd
+  · exact diffLe_sound hes hd hx hy
+  · obtain ⟨⟨z, y', c'⟩, hm, hz⟩ := List.any_eq_true.1 hd
+    simp only [Bool.and_eq_true, beq_iff_eq] at hz
+    obtain ⟨rfl, hz⟩ := hz
+    obtain ⟨Z, hZ, hle⟩ := diffLe_sound' hes hz hx
+    have := hrs z y' c' hm Z Y hZ hy
+    omega
+
+section
+variable {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {A : Asm} {k : Nat}
+
+/-- **The relations' edges into `y` hold** between defined ends. -/
+theorem relEdges_sound (h : AsmHolds D tabs ρ A) {w : Width} {y : ID} {K : Nat} :
+    ∀ z y' c, (z, y', c) ∈ relEdges D tabs A k w y → ∀ Z Y : BitVec w.bits,
+      den D tabs ρ K z = .int w Z → den D tabs ρ K y' = .int w Y →
+        readV true Z - readV true Y ≤ c := by
+  intro z y' c hm Z Y hZ hY
+  unfold relEdges at hm
+  dsimp only at hm
+  split at hm
+  · rename_i hc
+    simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hc
+    obtain ⟨⟨z0, y0, w0, c0⟩, hm', he⟩ := List.mem_filterMap.1 hm
+    dsimp only at he
+    split at he
+    · rename_i hw
+      simp only [Bool.and_eq_true, beq_iff_eq] at hw
+      obtain ⟨rfl, rfl⟩ := hw
+      simp only [Option.some.injEq, Prod.mk.injEq] at he
+      obtain ⟨rfl, rfl, rfl⟩ := he
+      obtain ⟨-, -, m1, -⟩ := rng_sound h k _ _ K Y hY
+      simp only [readV, ite_true]
+      exact h.rels _ _ _ _ hm' K Z Y hZ hY (by omega)
+    · cases he
+  · simp at hm
+
+/-- **Differences from the path facts and a last relation edge are sound.** -/
+theorem linLe_sound (h : AsmHolds D tabs ρ A) {s : Bool} {w : Width} {x y : ID} {c : Int}
+    (hp : diffLeR (linFacts D tabs A k s w) (linRels D tabs A k s w y) x y c = true) {K : Nat}
+    {X Y : BitVec w.bits} (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) :
+    readV s X - readV s Y ≤ c := by
+  obtain ⟨N, hN⟩ := allEdges_sound (k := k) h s w
+  have hx' := den_stable_int hx (Nat.le_max_right N K)
+  have hy' := den_stable_int hy (Nat.le_max_right N K)
+  refine diffLeR_sound (hN _ (Nat.le_max_left N K)) (fun z y c hm Z Y hZ hY => ?_) hp hx' hy'
+  cases s
+  · simp [linRels] at hm
+  · simp only [linRels, ite_true] at hm
+    exact relEdges_sound h z y c hm Z Y hZ hY
+
+end
 
 end GoFV.Proof.ProveCheck

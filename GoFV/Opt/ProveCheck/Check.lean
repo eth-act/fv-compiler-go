@@ -13,7 +13,10 @@ relation `proveRel` (what the theorem needs) holds between `f` and it; otherwise
   an `If` block `p` holds `.bool (k == 0)` in the blocks dominated by `p`'s `k`-th successor
   when that successor has `p` as its only predecessor — and range invariants of `Phi`s
   (candidates: induction variables counting up, `Phi`s of bounded values), kept only if they
-  hold on every incoming edge. `factsOK`/`invOK` re-check them in `proveRel`.
+  hold on every incoming edge. `factsOK`/`invOK` re-check them in `proveRel`. Relations
+  `z - y ≤ c` (signed, for `y ≥ 0`) between a `Phi` `z` and a value `y` of a strict ancestor of
+  `z`'s block, in the blocks `z`'s block dominates (candidates: each argument of `z` as `y + c`),
+  kept only if they hold on every edge into `z`'s block; `relsOK` re-checks them.
 * **Value rewrites** (`valueOK`): the bounded-shift mark (amount below the width), signed →
   unsigned `Rsh` (nonnegative value), `Div`/`Mod` (both nonnegative), `Ctz` → `CtzNonZero`
   (nonzero argument), `Slicemask` → `-1` (positive argument), `Mul` → `And` (both arguments
@@ -195,14 +198,138 @@ def invFix (f : Func) (tabs : Tables) (C : DomCert.Cert) (F : Array (List (ID ×
     let keep := inv.filter fun e => invOK f tabs C F inv [e]
     if keep.length == inv.length then inv else invFix f tabs C F fuel keep
 
-/-- The assumptions of `f`: the dominator certificate, per block path facts, `Phi` invariants. -/
+/-! ## Relations between a `Phi` and a value of a strict ancestor -/
+
+/-- The relations of block `b`. -/
+@[inline] def relsAt (RB : Array (List (ID × ID × Width × Int))) (b : ID) :
+    List (ID × ID × Width × Int) := RB[b]?.getD []
+
+/-- Relation `(z, y, w, c)` is usable in block `b`: `z` is a `Phi` of shape `int w`, `y` is
+placed in a strict ancestor of `b`. -/
+def relHere (f : Func) (tabs : Tables) (C : DomCert.Cert) (b : ID)
+    (r : ID × ID × Width × Int) : Bool :=
+  (f.value? r.1).any (fun zv => zv.op == .Phi && intAt tabs zv r.2.2.1) &&
+  match placed? f r.2.1 with
+  | some e => e != b && C.anc e b && f.blocks.contains e
+  | none => false
+
+/-- The assumptions along successor `k` of block `p` (`pb`) for a relation to `y` at width `w`:
+`p`'s facts and the branch taken, `p`'s relations, and `y` nonnegative. -/
+def edgeAsm (F : Array (List (ID × Bool))) (inv : List (ID × Width × Rng))
+    (RB : Array (List (ID × ID × Width × Int))) (p : ID) (pb : Block) (k : Nat) (y : ID)
+    (w : Width) : Asm :=
+  { facts := ownFact pb k ++ factsAt F p, inv := (y, w, Rng.nonneg w.bits) :: inv,
+    rels := relsAt RB p }
+
+/-- Relation `r` of the successor `e` (block `eb`) of block `p` (`pb`, successor `k`) holds after
+`eb`'s `Phi`s: `p` has it and its `Phi` is not `eb`'s, or its `Phi` is `eb`'s and takes an
+argument whose difference to `y` is decided under the assumptions along the edge
+(`edgeAsm`). -/
+def relEdgeOK (f : Func) (tabs : Tables) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) (p : ID)
+    (pb : Block) (k : Nat) (e : Edge) (eb : Block) (r : ID × ID × Width × Int) : Bool :=
+  let (z, y, w, c) := r
+  if eb.values.contains z then
+    (f.value? z).any fun zv =>
+      match zv.args[e.i]? with
+      | some a =>
+        (f.value? a).any (intAt tabs · w) &&
+          diffDecides f.value? tabs (edgeAsm F inv RB p pb k y w) linFuel a y w c
+      | none => false
+  else (relsAt RB p).contains r
+
+/-- The relations hold: each block's are usable there and include its parent's, and along every
+edge of a tree block the successor's hold after its `Phi`s (`relEdgeOK`). -/
+def relsOK (f : Func) (tabs : Tables) (C : DomCert.Cert) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) : Bool :=
+  f.blocks.all fun p =>
+    !C.inTree p ||
+    match f.block? p with
+    | none => false
+    | some pb =>
+      (relsAt RB p).all (relHere f tabs C p) &&
+      (p == f.entry || (relsAt RB (C.up p)).all fun r => (relsAt RB p).contains r) &&
+      (List.range pb.succs.size).all fun k =>
+        match pb.succs[k]? with
+        | none => false
+        | some e =>
+          match f.block? e.b with
+          | none => false
+          | some eb => (relsAt RB e.b).all (relEdgeOK f tabs F inv RB p pb k e eb)
+
+/-- A candidate relation and its `Phi`'s block. -/
+abbrev RelC := (ID × ID × Width × Int) × ID
+
+/-- Each candidate in the tree blocks its `Phi`'s block is an ancestor of. -/
+def relsBlocks (f : Func) (C : DomCert.Cert) (R : List RelC) : Array (List RelC) := Id.run do
+  let mut RB : Array (List RelC) := Array.replicate f.blockTab.size []
+  for b in f.blocks do
+    if !C.inTree b then continue
+    RB := RB.set! b (R.filter fun (_, h) => C.anc h b)
+  return RB
+
+/-- Candidate relations: a `Phi` `z` of shape `int w` and each argument as `y + c` (`addConst`),
+or `y`, for `y` placed in a strict ancestor of `z`'s block and not a constant. -/
+def relCands (f : Func) (tabs : Tables) (C : DomCert.Cert) : List RelC := Id.run do
+  let mut out : List RelC := []
+  for b in f.blocks do
+    if !C.inTree b then continue
+    let some bb := f.block? b | continue
+    for z in bb.values do
+      let some zv := f.value? z | continue
+      if zv.op != .Phi then continue
+      let some w := (tabs.ty zv.type).width? | continue
+      for a in zv.args do
+        let a := canon f.value? tabs a
+        let (y, c) := (addConst f.value? w a).getD (a, 0)
+        let y := canon f.value? tabs y
+        if (f.value? y).any (fun yv => termOp yv.op && yv.args.isEmpty) then continue
+        let r := (z, y, w, c)
+        if relHere f tabs C b r && !out.any (·.1 == r) then out := (r, b) :: out
+  return out
+
+/-- The candidates that fail along some edge into a block that has them: into their `Phi`'s
+block by `relEdgeOK`, elsewhere unless the source block has them. -/
+def relFails (f : Func) (tabs : Tables) (C : DomCert.Cert) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (RBH : Array (List RelC))
+    (RB : Array (List (ID × ID × Width × Int))) : List (ID × ID × Width × Int) := Id.run do
+  let mut bad : List (ID × ID × Width × Int) := []
+  for p in f.blocks do
+    if !C.inTree p then continue
+    let some pb := f.block? p | continue
+    for k in [0:pb.succs.size] do
+      let some e := pb.succs[k]? | continue
+      let some eb := f.block? e.b | continue
+      for (r, h) in RBH[e.b]?.getD [] do
+        if bad.contains r then continue
+        let ok := if h == e.b then relEdgeOK f tabs F inv RB p pb k e eb r else C.anc h p
+        if !ok then bad := r :: bad
+  return bad
+
+/-- Drop candidates that fail until the rest hold; their table per block. -/
+def relFix (f : Func) (tabs : Tables) (C : DomCert.Cert) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) : Nat → List RelC → Array (List (ID × ID × Width × Int))
+  | 0, _ => Array.replicate f.blockTab.size []
+  | fuel + 1, R =>
+    let RBH := relsBlocks f C R
+    let RB := RBH.map (·.map (·.1))
+    let bad := relFails f tabs C F inv RBH RB
+    if bad.isEmpty then RB else relFix f tabs C F inv fuel (R.filter fun (r, _) => !bad.contains r)
+
+/-- The assumptions of `f`: the dominator certificate, per block path facts, `Phi` invariants,
+per block relations. -/
 def asmOf (f : Func) (tabs : Tables) :
-    DomCert.Cert × Array (List (ID × Bool)) × List (ID × Width × Rng) :=
+    DomCert.Cert × Array (List (ID × Bool)) × List (ID × Width × Rng) ×
+      Array (List (ID × ID × Width × Int)) :=
   let C := DomCert.make f
   let F := factsOf f C
   let F := if factsOK f C F then F else Array.replicate f.blockTab.size []
   let cands := invCands f tabs C F
-  (C, F, invFix f tabs C F (cands.length + 1) cands)
+  let inv := invFix f tabs C F (cands.length + 1) cands
+  let rc := relCands f tabs C
+  let RB := if rc.isEmpty then Array.replicate f.blockTab.size []
+    else relFix f tabs C F inv (rc.length + 1) rc
+  (C, F, inv, if relsOK f tabs C F inv RB then RB else Array.replicate f.blockTab.size [])
 
 /-! ## Per-rewrite checks -/
 
@@ -311,17 +438,23 @@ def foldOK (D : ID → Option Value) (tabs : Tables) (A : Asm) (g : Func) (a c :
   | _, _ => false
 
 /-- The assumptions argument `i` of `fv` (listed in `fb`) is read under: a `Phi`'s, its
-predecessor's facts; the others', `A`. -/
-def argAsm (F : Array (List (ID × Bool))) (inv : List (ID × Width × Rng)) (A : Asm) (fb : Block)
-    (fv : Value) (i : Nat) : Asm :=
-  if fv.op == .Phi then { facts := factsAt F ((fb.preds[i]?.map (·.b)).getD 0), inv } else A
+predecessor's facts and relations; the others', `A`. -/
+def argAsm (F : Array (List (ID × Bool))) (inv : List (ID × Width × Rng))
+    (RB : Array (List (ID × ID × Width × Int))) (A : Asm) (fb : Block) (fv : Value) (i : Nat) :
+    Asm :=
+  if fv.op == .Phi then
+    let p := (fb.preds[i]?.map (·.b)).getD 0
+    { facts := factsAt F p, inv, rels := relsAt RB p }
+  else A
 
 /-- Every argument of `gv` is `fv`'s or a justified constant fold of it. -/
 def argsOK (D : ID → Option Value) (tabs : Tables) (F : Array (List (ID × Bool)))
-    (inv : List (ID × Width × Rng)) (A : Asm) (g : Func) (fb : Block) (fv gv : Value) : Bool :=
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) (A : Asm)
+    (g : Func) (fb : Block) (fv gv : Value) : Bool :=
   gv.args.size == fv.args.size &&
   (List.range fv.args.size).all fun i =>
-    fv.args[i]! == gv.args[i]! || foldOK D tabs (argAsm F inv A fb fv i) g fv.args[i]! gv.args[i]!
+    fv.args[i]! == gv.args[i]! ||
+      foldOK D tabs (argAsm F inv RB A fb fv i) g fv.args[i]! gv.args[i]!
 
 /-! ## The relation -/
 
@@ -332,27 +465,33 @@ def sameDef (u w : Value) : Bool :=
 /-- The definition `fv` (listed in `fb`) became `gv` justifiably under `A`: kept, rewritten, or
 with arguments folded to constants and otherwise kept or rewritten. -/
 def defOK (D : ID → Option Value) (tabs : Tables) (F : Array (List (ID × Bool)))
-    (inv : List (ID × Width × Rng)) (A : Asm) (g : Func) (fb : Block) (fv gv : Value) : Bool :=
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) (A : Asm)
+    (g : Func) (fb : Block) (fv gv : Value) : Bool :=
   sameDef fv gv || valueOK D tabs A fv gv ||
-  (argsOK D tabs F inv A g fb fv gv &&
+  (argsOK D tabs F inv RB A g fb fv gv &&
     (sameDef fv { gv with args := fv.args } || valueOK D tabs A fv { gv with args := fv.args }))
+
+/-- The assumptions at block `b`. -/
+def asmAt (F : Array (List (ID × Bool))) (inv : List (ID × Width × Rng))
+    (RB : Array (List (ID × ID × Width × Int))) (b : ID) : Asm :=
+  { facts := factsAt F b, inv, rels := relsAt RB b }
 
 /-- Every value listed in `f` is listed in the same block of `g`, with a definition justified
 under its block's assumptions (`defOK`); every block keeps its terminator or has its branch
 removed justifiably. -/
 def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
-    (inv : List (ID × Width × Rng)) : Bool :=
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) : Bool :=
   f.blocks.all fun b =>
     match f.block? b, g.block? b with
     | some fb, some gb =>
-      let A : Asm := { facts := factsAt F b, inv }
+      let A := asmAt F inv RB b
       (fb.kind == gb.kind && fb.controls == gb.controls && fb.succs == gb.succs ||
         branchOK f.value? tabs A fb gb) &&
       fb.values.all fun x =>
         gb.values.contains x &&
         match f.value? x, g.value? x with
         | some fv, some gv =>
-          gv.block == fv.block && defOK f.value? tabs F inv A g fb fv gv
+          gv.block == fv.block && defOK f.value? tabs F inv RB A g fb fv gv
         | _, _ => false
     | _, _ => false
 
@@ -360,8 +499,9 @@ def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
 def proveRel (tabs : Tables) (f g : Func) : Bool :=
   let A := asmOf f tabs
   atomsOK f g && closedOK f && closedOK g && f.blocks.all (DomCert.make f).inTree &&
-    factsOK f (DomCert.make f) A.2.1 && invOK f tabs (DomCert.make f) A.2.1 A.2.2 A.2.2 &&
-    valuesOK tabs f g A.2.1 A.2.2
+    factsOK f (DomCert.make f) A.2.1 && invOK f tabs (DomCert.make f) A.2.1 A.2.2.1 A.2.2.1 &&
+    relsOK f tabs (DomCert.make f) A.2.1 A.2.2.1 A.2.2.2 &&
+    valuesOK tabs f g A.2.1 A.2.2.1 A.2.2.2
 
 /-! ## The checked pass -/
 
@@ -410,13 +550,13 @@ def classOf (fv gv : Value) : String :=
 /-- Keep the rewrites of `g` (prove's output on `f`) the validator accepts, undo the others;
 branch removals are undone unless `branches`. -/
 def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.run do
-  let (_, F, inv) := asmOf f tabs
+  let (_, F, inv, RB) := asmOf f tabs
   let D := f.value?
   let mut st : Stats := {}
   let mut h := g
   for b in f.blocks do
     let (some fb, some gb) := (f.block? b, g.block? b) | continue
-    let A : Asm := { facts := factsAt F b, inv }
+    let A := asmAt F inv RB b
     if !(fb.kind == gb.kind && fb.controls == gb.controls && fb.succs == gb.succs) then
       let ok := branchOK D tabs A fb gb
       let cop := ((fb.controls[0]?.bind D).map (·.op.name)).getD "?"
@@ -435,7 +575,7 @@ def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.
           let a := fv.args[i]!
           let c := gv.args[i]!
           if a == c then continue
-          let ok := foldOK D tabs (argAsm F inv A fb fv i) g a c
+          let ok := foldOK D tabs (argAsm F inv RB A fb fv i) g a c
           st := st.add s!"const arg {if fv.op == .Phi then "phi" else "value"}" ok b x
           if ok then args := args.set! i c
         let gv' := { gv with args := fv.args }

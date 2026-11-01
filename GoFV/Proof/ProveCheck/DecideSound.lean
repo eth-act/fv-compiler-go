@@ -262,21 +262,18 @@ theorem linIn_sound (h : AsmHolds D tabs ρ A) {s : Bool} {x y : ID} {w : Width}
     {v : Bool} (ht : ∀ s' st, t = .lt s' st → s' = s) (hp : linIn D tabs A k s x y w t v = true)
     {K : Nat} {X Y : BitVec w.bits} (hx : den D tabs ρ K x = .int w X)
     (hy : den D tabs ρ K y = .int w Y) : relVal t X Y = v := by
-  obtain ⟨N, hN⟩ := allEdges_sound (k := k) h s w
-  have hx' := den_stable_int hx (Nat.le_max_right N K)
-  have hy' := den_stable_int hy (Nat.le_max_right N K)
-  have hes := hN (max N K) (Nat.le_max_left N K)
-  obtain ⟨BX, hBX, ex⟩ := offOf_sound (k := k) (s := s) h hx'
-  obtain ⟨BY, hBY, ey⟩ := offOf_sound (k := k) (s := s) h hy'
+  obtain ⟨BX, hBX, ex⟩ := offOf_sound (k := k) (s := s) h hx
+  obtain ⟨BY, hBY, ey⟩ := offOf_sound (k := k) (s := s) h hy
   unfold linIn at hp
-  generalize A.facts.flatMap (factEdges D tabs A k s w) = es at hp hes
   generalize offOf D tabs A k s w x = ox at hp hBX ex
   generalize offOf D tabs A k s w y = oy at hp hBY ey
   obtain ⟨bx, cx⟩ := ox
   obtain ⟨by', cy⟩ := oy
   dsimp only at hp hBX ex hBY ey
-  have d1 := fun c (hd : diffLe es bx by' c = true) => diffLe_sound hes hd hBX hBY
-  have d2 := fun c (hd : diffLe es by' bx c = true) => diffLe_sound hes hd hBY hBX
+  have d1 := fun c (hd : diffLeR (linFacts D tabs A k s w) (linRels D tabs A k s w by') bx by' c
+    = true) => linLe_sound h hd hBX hBY
+  have d2 := fun c (hd : diffLeR (linFacts D tabs A k s w) (linRels D tabs A k s w bx) by' bx c
+    = true) => linLe_sound h hd hBY hBX
   cases t with
   | lt s' st =>
     cases ht s' st rfl
@@ -314,16 +311,54 @@ theorem linIn_sound (h : AsmHolds D tabs ρ A) {s : Bool} {x y : ID} {w : Width}
         · have := d2 _ hd; omega
       cases b <;> cases v <;> simp_all [relVal]
 
+/-- An unsigned order between nonnegative values is the signed one. -/
+theorem relVal_unsigned {n : Nat} {st : Bool} {X Y : BitVec n} (hx : 0 ≤ X.toInt)
+    (hy : 0 ≤ Y.toInt) : relVal (.lt false st) X Y = relVal (.lt true st) X Y := by
+  cases e : relVal (.lt true st) X Y
+  · cases e' : relVal (.lt false st) X Y
+    · rfl
+    · have := ord_ord (s := false) (s' := true) (st' := st) (xNN := true) (yNN := true)
+        (by cases st <;> rfl) (relVal_lt.1 e') (fun _ => hx) (fun _ => hy)
+      rw [← relVal_lt, e] at this; cases this
+  · exact relVal_lt.2 (ord_ord (s := true) (s' := false) (st' := st) (xNN := true) (yNN := true)
+      (by cases st <;> rfl) (relVal_lt.1 e) (fun _ => hx) (fun _ => hy))
+
 theorem linDecides_sound (h : AsmHolds D tabs ρ A) {x y : ID} {w : Width} {t : Rel} {v : Bool}
     (hp : linDecides D tabs A k x y w t v = true) {K : Nat} {X Y : BitVec w.bits}
     (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) : relVal t X Y = v := by
   unfold linDecides at hp
   cases t with
-  | lt s st => exact linIn_sound h (fun _ _ e => by cases e; rfl) hp hx hy
+  | lt s st =>
+    rcases Bool.or_eq_true_iff.1 hp with hp1 | hp2
+    · exact linIn_sound h (fun _ _ e => by cases e; rfl) hp1 hx hy
+    · simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hp2
+      obtain ⟨⟨⟨hs, hnx⟩, hny⟩, hq⟩ := hp2
+      subst hs
+      obtain ⟨-, -, m1, -⟩ := rng_sound h k w x K X hx
+      obtain ⟨-, -, m2, -⟩ := rng_sound h k w y K Y hy
+      rw [relVal_unsigned (by omega) (by omega)]
+      exact linIn_sound h (fun _ _ e => by cases e; rfl) hq hx hy
   | eq b =>
     rcases Bool.or_eq_true_iff.1 hp with hp | hp
     · exact linIn_sound h (fun _ _ e => by cases e) hp hx hy
     · exact linIn_sound h (fun _ _ e => by cases e) hp hx hy
+
+/-- **`diffDecides` is sound**: the signed difference of `x` and `y` is at most `c`. -/
+theorem diffDecides_sound (h : AsmHolds D tabs ρ A) {x y : ID} {w : Width} {c : Int}
+    (hp : diffDecides D tabs A k x y w c = true) {K : Nat} {X Y : BitVec w.bits}
+    (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) :
+    X.toInt - Y.toInt ≤ c := by
+  obtain ⟨BX, hBX, ex⟩ := offOf_sound (k := k) (s := true) h hx
+  obtain ⟨BY, hBY, ey⟩ := offOf_sound (k := k) (s := true) h hy
+  unfold diffDecides at hp
+  generalize offOf D tabs A k true w x = ox at hp hBX ex
+  generalize offOf D tabs A k true w y = oy at hp hBY ey
+  obtain ⟨bx, cx⟩ := ox
+  obtain ⟨by', cy⟩ := oy
+  dsimp only at hp hBX ex hBY ey
+  have := linLe_sound h hp hBX hBY
+  simp only [readV, ite_true] at ex ey this
+  omega
 
 theorem relDecides_sound (h : AsmHolds D tabs ρ A) {x y : ID} {w : Width} {t : Rel} {v : Bool}
     (hp : relDecides D tabs A k x y w t v = true) {K : Nat} {X Y : BitVec w.bits}
@@ -432,7 +467,7 @@ theorem decides_sound (h : AsmHolds D tabs ρ A) :
                               simp only [Bool.not_eq_true] at hmsb
                               rw [this] at hmsb; simp at hmsb
                               exact Rng.mem_nonneg (Width.one_le _) hmsb
-                            · exact h.inv z w r hz n'' y hy, h.typed⟩
+                            · exact h.inv z w r hz n'' y hy, h.rels, h.typed⟩
                         rw [← e]
                         cases v with
                         | true =>

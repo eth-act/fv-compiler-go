@@ -65,13 +65,19 @@ private theorem not_isTerm {D : ID → Option Value} {x : ID} {v : Value} (hv : 
 
 section
 variable {tabs : Tables} {f g : Func} {ce : CheckEnv} {F : Array (List (ID × Bool))}
-  {inv : List (ID × Width × Rng)}
+  {inv : List (ID × Width × Rng)} {RB : Array (List (ID × ID × Width × Int))}
+
+/-- The relations of a block include those of its ancestors. -/
+theorem rels_of_anc (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {a b : ID}
+    (h : Anc (make f) a b) (hb : b ∈ f.blocks) : ∀ r ∈ relsAt RB a, r ∈ relsAt RB b :=
+  table_of_anc (T := relsAt RB) (fun p hp ht hne => ⟨(hR.hF.up p hp ht hne).1,
+    hR.hrels.up p hp ht hne⟩) hc.parents h hb
 
 /-- **Values as terms**: under `b0`'s assumptions, each value listed in `f` in an ancestor of
 `b0` is refined by the same value listed in `g`. -/
-theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b0 ∈ f.blocks)
+theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {b0 : ID} (hb0 : b0 ∈ f.blocks)
     {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
-    (hA : AsmHolds f.value? tabs ρ { facts := factsAt F b0, inv }) :
+    (hA : AsmHolds f.value? tabs ρ (asmAt F inv RB b0)) :
     ∀ n x, LM f x → Anc (make f) (blockOf f x) b0 →
       Sem.Refines (den f.value? tabs ρ n x) (den (listedDefs g) tabs ρ' n x)
   | 0, _, _, _ => .poison _
@@ -93,13 +99,13 @@ theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b
       have hnp : fv.op ≠ .Phi := fun e => by rw [e, termOp_phi] at ht; cases ht
       exact (uses hc hb hfb (by simpa [Cert.inTree] using hR.tree _ hb) hxv hfv hnp ha').trans
         hc.parents hanc
-    have hAx : AsmHolds f.value? tabs ρ { facts := factsAt F fv.block, inv } :=
+    have hAx : AsmHolds f.value? tabs ρ (asmAt F inv RB fv.block) :=
       ⟨fun c v hcv => hA.facts c v (facts_of_anc hR.hF hc.parents hanc hb0 _ hcv), hA.inv,
-        hA.typed⟩
+        fun z y w c hr => hA.rels z y w c (rels_of_anc hc hR hanc hb0 _ hr), hA.typed⟩
     by_cases ht : termOp fv.op = true
     · have hnp : fv.op ≠ .Phi := fun e => by rw [e, termOp_phi] at ht; cases ht
       -- arguments kept or folded to constants
-      have hfold : argsOK f.value? tabs F inv { facts := factsAt F fv.block, inv } g fb fv gv = true →
+      have hfold : argsOK f.value? tabs F inv RB (asmAt F inv RB fv.block) g fb fv gv = true →
           RefinesList (fv.args.toList.map (den f.value? tabs ρ n))
             (gv.args.toList.map (den (listedDefs g) tabs ρ' n)) := fun hao => by
         obtain ⟨hsz, hi⟩ := argsOK_spec hao
@@ -149,15 +155,16 @@ theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b
       rw [den_succ_atom (not_isTerm hfv ht), den_succ_atom (not_isTerm hL htg)]
       exact hρ x
 
-/-- The premises of `TermRefP`/`StepRefP` under `PInv` at `b` give `b`'s assumptions, if the
-facts of `b` are in `S`. -/
-theorem asm_of_premises (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
+/-- The premises of `TermRefP`/`StepRefP` under `PInv` and `QRel` at `b` give `b`'s
+assumptions, if the facts of `b` are in `S`. -/
+theorem asm_of_premises (hR : RelSpec tabs f g F inv RB) {b : ID} (hb : b ∈ f.blocks)
     {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {ρ : ID → Val}
     (hT : Term.Typed f.value? tabs ρ)
     (hP : ∀ a, ¬ IsTerm f.value? a → PInv tabs f F inv b a (ρ a))
-    (hSP : ∀ a, S a → ∃ N, ∀ k, N ≤ k → PInv tabs f F inv b a (den f.value? tabs ρ k a)) :
-    AsmHolds f.value? tabs ρ { facts := factsAt F b, inv } := by
-  refine ⟨fun c v hcv => ?_, fun z w r hz n y hd => ?_, hT⟩
+    (hSP : ∀ a, S a → ∃ N, ∀ k, N ≤ k → PInv tabs f F inv b a (den f.value? tabs ρ k a))
+    (hQ : QRel tabs f RB b ρ) :
+    AsmHolds f.value? tabs ρ (asmAt F inv RB b) := by
+  refine ⟨fun c v hcv => ?_, fun z w r hz n y hd => ?_, hQ hb, hT⟩
   · obtain ⟨N, hN⟩ := hSP c (hS c v hcv)
     exact ⟨N, fun k hk => (hN k hk).2.1 hb v hcv⟩
   · obtain ⟨zv, hzv, hph⟩ := inv_phi hR hz
@@ -169,36 +176,39 @@ theorem asm_of_premises (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blo
       rw [den_succ_atom hat] at hd
       exact (hP z hat).2.2 w r hz y hd
 
-/-- A value listed in `f` in an ancestor of `b` refines as a term under `PInv` at `b`. -/
-theorem prove_termRefP (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID}
-    (hb : b ∈ f.blocks) {Q : (ID → Val) → Prop} {S : ID → Prop}
+/-- A value listed in `f` in an ancestor of `b` refines as a term under `PInv` and `QRel` at
+`b`. -/
+theorem prove_termRefP (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {b : ID}
+    (hb : b ∈ f.blocks) {S : ID → Prop}
     (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {x : ID}
     (hx : LM f x) (hanc : Anc (make f) (blockOf f x) b) :
-    TermRefP (PInv tabs f F inv b) Q S f.value? tabs x (listedDefs g) tabs x :=
-  fun n => ⟨n, fun _ _ hρ hT _ hP hSP _ =>
-    den_ref hc hR hb hρ (asm_of_premises hR hb hS hT hP hSP) n x hx hanc⟩
+    TermRefP (PInv tabs f F inv b) (QRel tabs f RB b) S f.value? tabs x (listedDefs g) tabs x :=
+  fun n => ⟨n, fun _ _ hρ hT _ hP hSP hQ =>
+    den_ref hc hR hb hρ (asm_of_premises hR hb hS hT hP hSP hQ) n x hx hanc⟩
 
-/-- A constant fold justified under `b`'s assumptions refines as a term under `PInv` at `b`. -/
-theorem fold_termRefP (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
-    {Q : (ID → Val) → Prop} {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {a c : ID}
-    (h : foldOK f.value? tabs { facts := factsAt F b, inv } g a c = true) :
-    TermRefP (PInv tabs f F inv b) Q S f.value? tabs a (listedDefs g) tabs c :=
-  fun n => ⟨n, fun _ _ _ hT _ hP hSP _ => fold_ref (asm_of_premises hR hb hS hT hP hSP) h n⟩
+/-- A constant fold justified under `b`'s assumptions refines as a term under `PInv` and `QRel`
+at `b`. -/
+theorem fold_termRefP (hR : RelSpec tabs f g F inv RB) {b : ID} (hb : b ∈ f.blocks)
+    {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {a c : ID}
+    (h : foldOK f.value? tabs (asmAt F inv RB b) g a c = true) :
+    TermRefP (PInv tabs f F inv b) (QRel tabs f RB b) S f.value? tabs a (listedDefs g) tabs c :=
+  fun n => ⟨n, fun _ _ _ hT _ hP hSP hQ =>
+    fold_ref (asm_of_premises hR hb hS hT hP hSP hQ) h n⟩
 
-theorem facts_sanc (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID} {bb : Block}
+theorem facts_sanc (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {b : ID} {bb : Block}
     (hb : b ∈ f.blocks) (hbb : f.block? b = some bb) :
     ∀ c v, (c, v) ∈ factsAt F b → SAnc f b c := fun _ _ hcv =>
   let ⟨cv, hpl, hne, hanc, _⟩ := fact_placed hc hR hb hbb hcv
   ⟨cv, hpl, hanc, hne⟩
 
-theorem facts_ancV (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID} {bb : Block}
+theorem facts_ancV (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {b : ID} {bb : Block}
     (hb : b ∈ f.blocks) (hbb : f.block? b = some bb) :
     ∀ c v, (c, v) ∈ factsAt F b → AncV f b c := fun _ _ hcv =>
   let ⟨cv, hpl, _, hanc, _⟩ := fact_placed hc hR hb hbb hcv
   ⟨cv, hpl, hanc⟩
 
 /-- **Atoms' arguments.** -/
-theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv) :
+theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) :
     AtomArgsRefP (proveInv hwf hc hR) g := by
   intro b hb gb hgb a ha u hu ht
   have hbf : b ∈ f.blocks := (atomsOK_spec hR.atoms).blocks ▸ hb
@@ -212,7 +222,7 @@ theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F 
   have htree : ((make f).depthOf b).isSome := by simpa [Cert.inTree] using hR.tree _ hbf
   -- every argument kept or folded to a constant (a value rewrite is of a term)
   have hper : ∀ i < u'.args.size, u'.args[i]! = u.args[i]! ∨
-      foldOK f.value? tabs (argAsm F inv { facts := factsAt F b, inv } fb u' i) g u'.args[i]!
+      foldOK f.value? tabs (argAsm F inv RB (asmAt F inv RB b) fb u' i) g u'.args[i]!
         u.args[i]! = true := by
     rcases defOK_cases hdef with hs | hok | ⟨hao, hs | hok⟩
     · unfold sameDef at hs
@@ -249,11 +259,11 @@ theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F 
       exact fold_termRefP hR hp (facts_ancV hc hR hp hpb) hf
 
 /-- A removed branch: the `If`'s control, when not `poison`, takes the kept successor. -/
-theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
-    {Q : (ID → Val) → Prop} {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {fb gb : Block}
-    (hbr : branchOK f.value? tabs { facts := factsAt F b, inv } fb gb = true) :
+theorem branch_step (hR : RelSpec tabs f g F inv RB) {b : ID} (hb : b ∈ f.blocks)
+    {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {fb gb : Block}
+    (hbr : branchOK f.value? tabs (asmAt F inv RB b) fb gb = true) :
     (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
-      StepRefP (PInv tabs f F inv b) Q S f.value? tabs fb (listedDefs g) gb := by
+      StepRefP (PInv tabs f F inv b) (QRel tabs f RB b) S f.value? tabs fb (listedDefs g) gb := by
   unfold branchOK at hbr
   simp only [Bool.and_eq_true, beq_iff_eq] at hbr
   obtain ⟨⟨⟨hkf, hkg⟩, hgc⟩, hm⟩ := hbr
@@ -263,16 +273,16 @@ theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
     have hfs : fb.succs = #[e0, e1] := by apply Array.ext'; rw [hsl]
     have hgc' : gb.controls = #[] := Array.isEmpty_iff.1 hgc
     simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hm
-    refine ⟨?_, fun n => ⟨0, fun ρ ρ' _ hT _ hP hSP _ => ?_⟩⟩
+    refine ⟨?_, fun n => ⟨0, fun ρ ρ' _ hT _ hP hSP hQ => ?_⟩⟩
     · intro e he
       rw [hfs] at he
       rcases hm with ⟨hgs, -⟩ | ⟨hgs, -⟩ <;> rw [hgs] <;> simp only [List.mem_toArray,
         List.mem_cons, List.not_mem_nil, or_false] at he ⊢
       · exact he
       · exact he.symm
-    · have hA := asm_of_premises hR hb hS hT hP hSP
+    · have hA := asm_of_premises hR hb hS hT hP hSP hQ
       rw [hfc, hgc']
-      have hdec := fun v (h : decides f.value? tabs { facts := factsAt F b, inv } rngFuel rngFuel c v
+      have hdec := fun v (h : decides f.value? tabs (asmAt F inv RB b) rngFuel rngFuel c v
         = true) => decides_sound hA rngFuel c v h n
       simp only [stepVals, hkf, hkg, List.map_cons, List.map_nil, ctlV, List.getElem?_cons_zero]
       cases hd : den f.value? tabs ρ n c with
@@ -288,7 +298,7 @@ theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
   · cases hm
 
 /-- **Terminators.** -/
-theorem prove_steps (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv) :
+theorem prove_steps (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) :
     StepRefsP (proveInv hwf hc hR) g := by
   intro b hb fb gb hfb hgb
   have hbf : b ∈ f.blocks := (atomsOK_spec hR.atoms).blocks ▸ hb
