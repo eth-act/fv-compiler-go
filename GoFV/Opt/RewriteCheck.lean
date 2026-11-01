@@ -33,8 +33,9 @@ replays the log on a map of definitions, starting from the input `f`:
   for the generic rules they are the control's own definition);
 * a rule event outside the value's op row is a struct-load expansion (`structLoadOK`, issue
   #151: `rewriteStructLoad`, `Load <struct> p m` → `StructMake` of field `Load`s at `OffPtr`s);
-* a rule event of a variadic selection rule (`GoFV.Proof.Rules.makeSelShape`, issue #17:
-  `(StructSelect [i] x:(StructMake ___)) => x.Args[i]`) is checked per instance (`makeSelOK`);
+* a rule event of a selection of a `Make` (`GoFV.Proof.Rules.makeSelShape`, issue #17, e.g.
+  `(ITab (IMake itab _)) => itab` or the variadic `(StructSelect [i] x:(StructMake ___)) =>
+  x.Args[i]`) is first checked per instance (`makeSelOK`), else as a rule instance (`ruleOK`);
 * a phi elimination rejects;
 * finally every value listed in the output `g` has the replayed definition up to copies:
   each argument (and each control of `g`) is the replayed one or reached from it through
@@ -699,23 +700,33 @@ def structLoadShapeOK (r : Rule) : Bool :=
   | .op .Load .., .copy (.call "rewriteStructLoad" [.rsv .v] _), none => true
   | _, _, _ => false
 
-/-! ## Selections of a variadic `Make` (issue #17)
+/-! ## Selections of a `Make` (issue #17)
 
-`(StructSelect [i] x:(StructMake ___)) => x.Args[i]` (`dec.rules:106`, `generic.rules:973`,
-`GoFV.Proof.Rules.makeSelShape`) makes the selection `v` a `Copy` of argument `i` of the
-`StructMake`. The `___` pattern has no `Rule.Sound` form; each instance is validated by
-`makeSelOK`. Component `k` of a `StructMake` retyped at an aggregate shape is argument `k`
-retyped at the field's shape, which keeps the argument when its shape is the field's and the
-selection's (`shapeSub`); without a field `k` the selection is `poison`. -/
+A rule `(Sel (Make …)) => …` with a copy result (`GoFV.Proof.Rules.makeSelShape`: `(ITab (IMake
+itab _)) => itab`, `(StringLen (StringMake _ len)) => len`, the variadic `(StructSelect [i]
+x:(StructMake ___)) => x.Args[i]` of `dec.rules:106`/`generic.rules:973`, …) makes the selection
+`v` a `Copy` of the selected argument. Each such event is first validated per instance
+(`makeSelOK`); the variadic ones have no `Rule.Sound` form and only this check. Component `k`
+of a `Make` retyped at an aggregate shape is argument `k` retyped at the field's shape, so only
+the selected argument matters: it is kept when its shape is the field's and the selection's
+(`shapeSub`), or when it is an `Addr` (a global pointer, which has no concrete address: a
+64-bit integer or pointer shape keeps it, e.g. an itab `Addr {go:itab.…}` typed `*uint8` under
+the interface's `uintptr` itab word); without a field `k` the selection is `poison`. -/
 
-/-- The event `(v, defs)` selects an argument of a `StructMake`: `v` is `StructSelect [k] s` in
-`M` (`k ≥ 0`), `s` a `StructMake` whose argument `k` is a defined value `a`, `defs` is `v` as
-`Copy a` at `a`'s type (`copyOf`), and where the `StructMake`'s shape has a component `k`, `a`'s
-shape is that component's and `v`'s (`shapeSub`). -/
+/-- A 64-bit integer or pointer shape: `retype` at it keeps a pointer without a concrete address. -/
+def wordTy : Sem.Ty → Bool
+  | .int .w64 | .ptr _ => true
+  | _ => false
+
+/-- The event `(v, defs)` selects an argument of a `Make`: `v` is a selection of component `k`
+(`selIndex?`) of `s` in `M`, `s` a `Make` whose argument `k` is a defined value `a`, `defs` is
+`v` as `Copy a` at `a`'s type (`copyOf`), and where the `Make`'s shape has a component `k`, `a`'s
+shape is that component's and `v`'s (`shapeSub`), or `a` is an `Addr` and both are word shapes
+(`wordTy`). -/
 def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
   match M.get? v, defs with
   | some x, [u] =>
-    match x.args.toList, selIndex? .StructSelect x.auxInt with
+    match x.args.toList, selIndex? x.op x.auxInt with
     | [s], some k =>
       match M.get? s with
       | some y =>
@@ -723,10 +734,11 @@ def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
         | some a =>
           match M.get? a with
           | some w =>
-            x.op == .StructSelect && y.op == .StructMake && u.id == v && u.op == .Copy &&
-            u.args == #[a] && u.type == w.type &&
+            makeOp y.op && u.id == v && u.op == .Copy && u.args == #[a] && u.type == w.type &&
             (match fieldShape? (tabs.ty y.type) k with
-              | some fk => shapeSub (tabs.ty w.type) fk && shapeSub (tabs.ty w.type) (tabs.ty x.type)
+              | some fk =>
+                (shapeSub (tabs.ty w.type) fk && shapeSub (tabs.ty w.type) (tabs.ty x.type)) ||
+                (w.op == .Addr && wordTy fk && wordTy (tabs.ty x.type))
               | none => true)
           | none => false
         | none => false
@@ -749,10 +761,8 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none
       | some cr =>
-        if makeSelShape cr.rule then
-          if makeSelOK tabs M v defs.toList then
-            replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
-          else none
+        if makeSelShape cr.rule && makeSelOK tabs M v defs.toList then
+          replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else if ruleOK tabs M cr.rule v defs.toList then
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none

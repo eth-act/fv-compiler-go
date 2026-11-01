@@ -187,7 +187,7 @@ def generic : RuleSet where
   loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821]
   structLoads := [Generated.Generic.r_generic_974]
 
-/-- `dec.rules` restricted to its 14 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 17 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings and 0 struct-load
 expansions. -/
 def dec : RuleSet where
@@ -197,6 +197,7 @@ def dec : RuleSet where
     (.ComplexReal, [Generated.Dec.r_dec_13]),
     (.IData, [Generated.Dec.r_dec_83]),
     (.ITab, [Generated.Dec.r_dec_82]),
+    (.Load, [Generated.Dec.r_dec_45, Generated.Dec.r_dec_63, Generated.Dec.r_dec_87]),
     (.SliceCap, [Generated.Dec.r_dec_60]),
     (.SliceLen, [Generated.Dec.r_dec_59]),
     (.SlicePtr, [Generated.Dec.r_dec_58]),

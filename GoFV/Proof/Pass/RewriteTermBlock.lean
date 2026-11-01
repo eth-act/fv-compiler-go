@@ -418,19 +418,21 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound) (hr : RetypeS
     rename_i cr hcr
     split at h
     · rename_i hms
-      split at h
-      · rename_i hok
-        obtain ⟨u, hd, ⟨F⟩⟩ := msFacts hok
-        rw [hput, hd] at h
-        exact replay_inv hs hr evs _ M' B B' _ h (hI.makeSel F)
-          (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ n y hy => F.step hI.closed hρ n y hy)
-      · cases h
+      simp only [Bool.and_eq_true] at hms
+      obtain ⟨u, hd, ⟨F⟩⟩ := msFacts hms.2
+      rw [hput, hd] at h
+      exact replay_inv hs hr evs _ M' B B' _ h (hI.makeSel F)
+        (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ n y hy => F.step hI.closed hρ n y hy)
     split at h
-    · rename_i hms hok
+    · rename_i hok
       obtain ⟨F⟩ := ruleFacts hok
       rw [hput] at h
+      have har : GoFV.Proof.Rules.Pat.arityOk cr.rule.pat = true := by
+        unfold ruleOK at hok
+        simp only [Bool.and_eq_true] at hok
+        exact hok.1.1
       have hsd : GoFV.Proof.Rules.Rule.SoundT cr.rule :=
-        (ofRuleSet_sound hs hcr).resolve_right fun h' => hms h'
+        (ofRuleSet_sound hs hcr).resolve_right fun h' => by rw [h'.2] at har; cases har
       exact replay_inv hs hr evs _ M' B B' _ h (hI.rule hsd hr F)
         (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ n y hy => F.step hsd hr hI.closed hρ n y hy)
     · cases h
