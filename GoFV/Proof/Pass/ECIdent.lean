@@ -114,8 +114,8 @@ theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} (hu : f.va
   unfold evalValue
   rw [hargs]
   have hrel := mapM_regs_refines u.args.toList hfr (fun (a : ID) => s!"v{u.id}: argument v{a} has no value")
-  have hmsg : (fun a => Res.ofOption s!"v{w.id}: argument v{a} has no value" (T.regs[a]?).join) =
-      (fun a => Res.ofOption s!"v{u.id}: argument v{a} has no value" (T.regs[a]?).join) := by
+  have hmsg : (fun (a : ID) => Res.ofOption s!"v{w.id}: argument v{a} has no value" (T.regs[a]?).join) =
+      (fun (a : ID) => Res.ofOption s!"v{u.id}: argument v{a} has no value" (T.regs[a]?).join) := by
     rw [hux, hwx]
   rw [hmsg]
   have htys : (Ctx.make tabs g).tys[w.id]?.getD .other = (Ctx.make tabs f).tys[u.id]?.getD .other := by
@@ -129,7 +129,8 @@ theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} (hu : f.va
   | stuck msg r => exact .stuck _ _
   | panic e hm => exact .panic e hm
   | @ok argv argv' hl =>
-    simp only [Res.bind]
+    show Res.Refines (Res.bind (Res.ok argv) _) (Res.bind (Res.ok argv') _)
+    simp only [Res.bind_ok]
     rw [evalOp_of_identOK hok (hwx.trans hux.symm)]
     have hctx := AtomSim.ctx_eq (tabs := tabs) hown.symm
     have hm := evalOp_mono env hE (Ctx.make tabs f) (Ctx.make tabs g) hctx frS T

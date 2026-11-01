@@ -129,18 +129,19 @@ theorem ec_select_mono (k : Nat) {v v' : Val} (h : Sem.Refines v v') :
   | _ => exact .poison _
 
 theorem ec_sel {w : Value} {k : Nat} (h : selIdx? w = some k) :
-    GoFV.Opt.RewriteCheck.termOp w.op = true ∧ ∀ ty args, evalPure w.op ty w.auxInt w.aux args = Comp.select k args := by
+    GoFV.Opt.RewriteCheck.termOp w.op = true ∧ GoFV.Proof.Rules.frameOp w.op = false ∧
+      ∀ ty args, evalPure w.op ty w.auxInt w.aux args = Comp.select k args := by
   unfold selIdx? at h
   split at h
   all_goals first
-    | (next hop => cases h; rw [hop]; exact ⟨by decide, fun _ _ => rfl⟩)
+    | (next hop => cases h; rw [hop]; exact ⟨by decide, by decide, fun _ _ => rfl⟩)
     | (next hop =>
         by_cases hlt : w.auxInt.toInt < 0
         · simp [hlt] at h
         · simp only [hlt, ↓reduceIte, Option.some.injEq] at h
           subst h
           rw [hop]
-          refine ⟨by decide, fun _ _ => ?_⟩
+          refine ⟨by decide, by decide, fun _ _ => ?_⟩
           show Comp.selectAux w.auxInt _ = _
           unfold Comp.selectAux
           simp only [hlt, ↓reduceIte])
@@ -182,9 +183,9 @@ theorem ec_chain {tabs : Tables} {f g : Func} {env : Env} {T : Frame} {E L : ID 
       rw [← Array.mem_toList_iff, hargs]; exact List.mem_cons_self
     obtain ⟨yq, hyq, hr⟩ := ec_chain hNC hL ha hy rp w.args[0]! hch fun hq =>
       ⟨hcl _ hmem hq, hLa _ hmem hq⟩
-    obtain ⟨hterm, hpure⟩ := ec_sel hk
+    obtain ⟨hterm, hfr, hpure⟩ := ec_sel hk
     have hval := evalValue_term hterm hev
-    rw [hpure, hid, tys_of_value hw, Option.getD_some, hargs, List.map_cons, List.map_nil,
+    rw [GoFV.Proof.Rules.opVal_pure hfr, hpure, hid, tys_of_value hw, Option.getD_some, hargs, List.map_cons, List.map_nil,
       rv_of hyq, ← typeShapes_getD, ← valueTy, eqE_retype hs] at hval
     refine ⟨yp, hyp, ?_⟩
     rw [hval, List.reverse_cons, ecPathVal_append_one]
@@ -321,6 +322,8 @@ theorem ec_imake {tabs : Tables} {g : Func} {env : Env} {T : Frame} {a q : ID}
               simp only [Bool.or_eq_true, beq_iff_eq] at hsm
               obtain ⟨hdid, yd, hyd, hevd⟩ := hTd _ hm1 dw hdw
               have hvd := evalValue_term (by rcases hsm with h | h <;> rw [h] <;> decide) hevd
+              rw [GoFV.Proof.Rules.opVal_pure (by rcases hsm with h | h <;> rw [h] <;> decide)]
+                at hvd
               have hmk : ∀ ty args, evalPure dw.op ty dw.auxInt dw.aux args = Comp.make args := by
                 rcases hsm with h | h <;> rw [h] <;> intro _ _ <;> rfl
               rw [hmk] at hvd

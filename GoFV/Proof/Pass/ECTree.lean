@@ -101,29 +101,31 @@ theorem ecT_make_term {op : Op} (h : isMake op = true) :
   rcases ecT_make_cases h with rfl | rfl | rfl | rfl | rfl | rfl <;>
     exact ⟨by decide, fun _ _ _ _ => rfl⟩
 
-/-- A pure value whose arguments have registers evaluates by `evalPure`. -/
+/-- A pure, non-frame value whose arguments have registers evaluates by `evalPure`. -/
 theorem ecT_eval_term {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} (ht : termOp w.op = true)
-    (hr : ∀ a ∈ w.args, Reg fr a) :
+    (hfr : GoFV.Proof.Rules.frameOp w.op = false) (hr : ∀ a ∈ w.args, Reg fr a) :
     evalValue env ctx fr w = .ok ((evalPure w.op (ctx.tys[w.id]?.getD .other) w.auxInt w.aux
       (w.args.toList.map (rv fr))).retype (ctx.tys[w.id]?.getD .other)) := by
-  rw [evalValue_of_regs hr, evalOp_term ht]; rfl
+  rw [evalValue_of_regs hr, evalOp_term ht, GoFV.Proof.Rules.opVal_pure hfr]; rfl
 
 theorem ecT_eval_make {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} (h : isMake w.op = true)
     (hr : ∀ a ∈ w.args, Reg fr a) :
     evalValue env ctx fr w =
       .ok ((Val.agg (w.args.toList.map (rv fr))).retype (ctx.tys[w.id]?.getD .other)) := by
-  rw [ecT_eval_term (ecT_make_term h).1 hr, (ecT_make_term h).2]
+  have hfr : GoFV.Proof.Rules.frameOp w.op = false := by
+    rcases ecT_make_cases h with e | e | e | e | e | e <;> rw [e] <;> decide
+  rw [ecT_eval_term (ecT_make_term h).1 hfr hr, (ecT_make_term h).2]
 
 theorem ecT_eval_empty {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} (h : w.op = .Empty)
     (hr : ∀ a ∈ w.args, Reg fr a) :
     evalValue env ctx fr w = .ok (Val.empty.retype (ctx.tys[w.id]?.getD .other)) := by
-  rw [ecT_eval_term (by rw [h]; decide) hr, h]; rfl
+  rw [ecT_eval_term (by rw [h]; decide) (by rw [h]; decide) hr, h]; rfl
 
 theorem ecT_eval_selectN {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} (h : w.op = .SelectN)
     (hr : ∀ a ∈ w.args, Reg fr a) :
     evalValue env ctx fr w = .ok ((Tuple.selectN w.auxInt (w.args.toList.map (rv fr))).retype
       (ctx.tys[w.id]?.getD .other)) := by
-  rw [ecT_eval_term (by rw [h]; decide) hr, h]; rfl
+  rw [ecT_eval_term (by rw [h]; decide) (by rw [h]; decide) hr, h]; rfl
 
 /-! ## Make-trees -/
 

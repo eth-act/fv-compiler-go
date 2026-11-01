@@ -183,7 +183,8 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   -- the evaluations
   have hRw' : ∀ a ∈ w.args, Reg T a := hRw
   rw [evalValue_of_regs hRu, evalValue_of_regs hRw', evalOp_term (by rw [hop]; decide),
-    evalOp_term (by rw [hwop]; decide), hop, hwop, ecc_evalPure_result, ecc_evalPure_result,
+    evalOp_term (by rw [hwop]; decide), hop, hwop, GoFV.Proof.Rules.opVal_pure (by decide),
+    GoFV.Proof.Rules.opVal_pure (by decide), ecc_evalPure_result, ecc_evalPure_result,
     huid, hwid, tys_of_value hu, tys_of_value hw, Option.getD_some, Option.getD_some, hsu, hsw,
     List.map_append, List.map_append, List.map_cons, List.map_cons, List.map_nil, List.map_nil,
     rv_of hym]
