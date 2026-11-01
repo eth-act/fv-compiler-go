@@ -167,40 +167,6 @@ theorem zeroV_of_refines {a b : Val} (h : Sem.Refines a b) (hb : ZeroV b) : Zero
 section
 variable {tabs : Tables} {f : Func} {ρ : ID → Val}
 
-/-- **A constant term denotes its value** at the fuel of its depth and above (`den_succ_term`). -/
-theorem termConst_den :
-    ∀ (k : Nat) (a : ID) (y : Val), termConst tabs f k a = some y →
-      ∀ n, k ≤ n → den f.value? tabs ρ n a = y
-  | 0, _, _, h, _, _ => by simp [termConst] at h
-  | k + 1, a, y, h, n + 1, hn => by
-    simp only [termConst] at h
-    split at h
-    next v hv =>
-      split at h
-      next ht =>
-        obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
-        have hl : ∀ (l : List ID) (cs : List Val), l.mapM (termConst tabs f k) = some cs →
-            l.map (den f.value? tabs ρ n) = cs := by
-          intro l
-          induction l with
-          | nil => intro cs h; simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; simp [h]
-          | cons b l ih =>
-            intro cs h
-            rw [List.mapM_cons] at h
-            cases hc : termConst tabs f k b with
-            | none => rw [hc] at h; cases h
-            | some c =>
-              cases hcs' : l.mapM (termConst tabs f k) with
-              | none => rw [hc, hcs'] at h; cases h
-              | some cs' =>
-                rw [hc, hcs'] at h
-                cases h
-                rw [List.map_cons, termConst_den k b c hc n (by omega), ih cs' hcs']
-        rw [den_succ_term hv ht, hl _ cs hcs]
-      next => cases h
-    next => cases h
-  | _ + 1, _, _, _, 0, hn => absurd hn (by omega)
-
 /-- **A `zeroConst` denotes a zero value** at every fuel: below the term's depth a value its
 value refines (`den_fuel_mono`). -/
 theorem zeroConst_den {x : ID} (h : zeroConst tabs f x = true) (k : Nat) :

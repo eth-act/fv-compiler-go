@@ -130,62 +130,79 @@ theorem den_ptrVal (hT : Term.Typed f.value? tabs ρ) {x : ID} (hx : ptrVal tabs
     rw [hv] at hx
     exact ptr_fixed (by simpa using hx) (den_fix hT hv k)
 
+/-- **A constant term denotes its value** at the fuel of its depth and above (`den_succ_term`). -/
+theorem termConst_den :
+    ∀ (k : Nat) (a : ID) (y : Val), termConst tabs f k a = some y →
+      ∀ n, k ≤ n → den f.value? tabs ρ n a = y
+  | 0, _, _, h, _, _ => by simp [termConst] at h
+  | k + 1, a, y, h, n + 1, hn => by
+    simp only [termConst] at h
+    split at h
+    next v hv =>
+      split at h
+      next ht =>
+        obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
+        have hl : ∀ (l : List ID) (cs : List Val), l.mapM (termConst tabs f k) = some cs →
+            l.map (den f.value? tabs ρ n) = cs := by
+          intro l
+          induction l with
+          | nil => intro cs h; simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; simp [h]
+          | cons b l ih =>
+            intro cs h
+            rw [List.mapM_cons] at h
+            cases hc : termConst tabs f k b with
+            | none => rw [hc] at h; cases h
+            | some c =>
+              cases hcs' : l.mapM (termConst tabs f k) with
+              | none => rw [hc, hcs'] at h; cases h
+              | some cs' =>
+                rw [hc, hcs'] at h
+                cases h
+                rw [List.map_cons, termConst_den k b c hc n (by omega), ih cs' hcs']
+        rw [den_succ_term hv ht, hl _ cs hcs]
+      next => cases h
+    next => cases h
+  | _ + 1, _, _, _, 0, hn => absurd hn (by omega)
+
 theorem constIdx_spec {i : ID} {kk : BitVec 64} (h : constIdx? tabs f i = some kk) :
-    ∃ iv, f.value? i = some iv ∧ iv.op = .Const64 ∧ tabs.ty iv.type = .int .w64 ∧
-      kk = BitVec.ofInt 64 iv.auxInt.toInt := by
+    termConst tabs f 4 i = some (.int .w64 kk) := by
   unfold constIdx? at h
   split at h
-  · next iv hiv =>
-    split at h
-    · next hop hty => cases h; exact ⟨iv, hiv, hop, hty, rfl⟩
-    · cases h
+  · next hk => cases h; exact hk
   · cases h
 
-/-- A `Const64` of the 64-bit integer shape evaluates to its constant. -/
-theorem den_const64 {i : ID} {iv : Value} (hiv : f.value? i = some iv) (hop : iv.op = .Const64)
-    (hty : tabs.ty iv.type = .int .w64) (k : Nat) :
-    den f.value? tabs ρ (k + 1) i = .int .w64 (BitVec.ofInt 64 iv.auxInt.toInt) := by
-  have ht : termOp iv.op = true := by rw [hop]; rfl
-  have hfo : GoFV.Proof.Rules.frameOp iv.op = false := by rw [hop]; rfl
-  rw [den_succ_term hiv ht, GoFV.Proof.Rules.opVal_pure hfo, hop, hty]
-  rw [show ∀ (ty : Ty) (ai : Int64) (aux : Option AuxRef) (args : List Val),
-    evalPure .Const64 ty ai aux args = Conv.const .w64 ai from fun _ _ _ _ => rfl]
-  simp only [Conv.const, Val.retype]
-  simp
-
-/-- A `PtrIndex` by a constant index: the pointer plus the index times the element size. -/
+/-- A `PtrIndex` by a constant index: the pointer plus the index times the element size (at a
+fuel where the index term is evaluated, `termConst_den`; `den` only grows with the fuel,
+`den_fuel_mono`). -/
 theorem ptrIndex_den (hT : Term.Typed f.value? tabs ρ) {a : ID} {u : Value}
     (hu : f.value? a = some u) (hop : u.op = .PtrIndex) (hsz : u.args.size = 2)
     (hpv : ptrVal tabs f u.args[0]! = true) {e : Nat} (hty : tabs.ty u.type = .ptr (some e))
     {kk : BitVec 64} (hci : constIdx? tabs f u.args[1]! = some kk) {k : Nat} {p : Ptr}
     (h : den f.value? tabs ρ k a = .ptr p) :
-    ∃ q, den f.value? tabs ρ (k - 1) u.args[0]! = .ptr q ∧ p = q.add (kk * BitVec.ofNat 64 e) := by
-  obtain ⟨iv, hiv, hiop, hity, rfl⟩ := constIdx_spec hci
+    ∃ k' q, den f.value? tabs ρ k' u.args[0]! = .ptr q ∧ p = q.add (kk * BitVec.ofNat 64 e) := by
   have ht : termOp u.op = true := by rw [hop]; rfl
   have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
-  cases k with
-  | zero => simp [den] at h
-  | succ k =>
-  simp only [Nat.add_sub_cancel]
+  have hK : den f.value? tabs ρ (max k 4 + 1) a = .ptr p := by
+    have h2 := den_fuel_mono f.value? tabs ρ k (max k 4 + 1) a (by omega)
+    rw [h] at h2
+    generalize den f.value? tabs ρ (max k 4 + 1) a = y at h2 ⊢
+    cases h2; rfl
   rw [den_succ_term hu ht, toList_two hsz, List.map_cons, List.map_cons, List.map_nil,
-    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty] at h
-  cases k with
-  | zero => simp [den, PtrOps.ptrIndex, Val.retype] at h
-  | succ k =>
-  rw [den_const64 hiv hiop hity k] at h
-  rcases den_ptrVal hT hpv (k + 1) with h0 | ⟨q0, h0⟩
-  · rw [h0] at h; simp [PtrOps.ptrIndex, Val.retype] at h
-  · refine ⟨q0, h0, ?_⟩
-    rw [h0] at h
-    simp only [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes] at h
-    split at h
-    · rw [retype_ptr_eq h]; simp
-    · simp [Val.retype] at h
+    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty,
+    termConst_den 4 _ _ (constIdx_spec hci) (max k 4) (Nat.le_max_right _ _)] at hK
+  rcases den_ptrVal hT hpv (max k 4) with h0 | ⟨q0, h0⟩
+  · rw [h0] at hK; simp [PtrOps.ptrIndex, Val.retype] at hK
+  · refine ⟨max k 4, q0, h0, ?_⟩
+    rw [h0] at hK
+    simp only [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes] at hK
+    split at hK
+    · rw [retype_ptr_eq hK]; simp
+    · simp [Val.retype] at hK
 
 /-- One `ptrStep?`: the argument's pointer plus the offset. -/
 theorem ptrStep_den (hT : Term.Typed f.value? tabs ρ) {a c : ID} {o : BitVec 64}
     (hs : ptrStep? tabs f a = some (c, o)) {k : Nat} {p : Ptr}
-    (h : den f.value? tabs ρ k a = .ptr p) : ∃ q, den f.value? tabs ρ (k - 1) c = .ptr q ∧ p = q.add o := by
+    (h : den f.value? tabs ρ k a = .ptr p) : ∃ k' q, den f.value? tabs ρ k' c = .ptr q ∧ p = q.add o := by
   unfold ptrStep? at hs
   cases hu : f.value? a with
   | none => rw [hu] at hs; cases hs
@@ -204,7 +221,7 @@ theorem ptrStep_den (hT : Term.Typed f.value? tabs ρ) {a c : ID} {o : BitVec 64
     cases k with
     | zero => simp [den] at h
     | succ k =>
-    simp only [Nat.add_sub_cancel]
+    refine ⟨k, ?_⟩
     rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
       GoFV.Proof.Rules.opVal_pure hfo] at h
     rcases den_ptrVal hT hpv k with h0 | ⟨q0, h0⟩
@@ -249,8 +266,8 @@ theorem ptrBase_den (hT : Term.Typed f.value? tabs ρ) :
     | some co =>
       obtain ⟨c, o⟩ := co
       simp only [ptrBase, hs]
-      obtain ⟨q0, h0, rfl⟩ := ptrStep_den hT hs h
-      obtain ⟨k', q, hq, rfl⟩ := ptrBase_den hT n c (k - 1) q0 h0
+      obtain ⟨k0, q0, h0, rfl⟩ := ptrStep_den hT hs h
+      obtain ⟨k', q, hq, rfl⟩ := ptrBase_den hT n c k0 q0 h0
       exact ⟨k', q, hq, ptr_add_add q _ o⟩
 
 /-- A `LocalAddr`/`Addr` with a known allocation (`baseBlk?`) evaluates to its start. -/
