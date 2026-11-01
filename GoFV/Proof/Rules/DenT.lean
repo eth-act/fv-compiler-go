@@ -164,6 +164,7 @@ def Rule.SoundT (r : Rule) : Prop :=
     (Pat.rawT tabs e r.pat).hasTy (e.ty []) = true →
     Pat.typed e [] r.pat →
     Pat.argsOK e.ty [] r.pat = true →
+    Pat.nonNegOK e r.pat r.cond = true →
     Refines (Pat.rawT tabs e r.pat) (resDenT tabs ev or σ (e.ty []) r.result)
 
 /-! ## Rules without table-evaluated nodes -/
@@ -268,7 +269,7 @@ theorem Rule.soundT_of_sound {r : Rule} (hs : Rule.Sound r) (hp : Rule.pure r = 
   refine ⟨hs.1, fun tabs e or hbt => ?_⟩
   simp only [sigmaT_pure tabs e hp.1, Pat.denT_pure tabs e [] r.pat hp.1, Pat.rawT_pure tabs e hp.1,
     resDenT_pure tabs _ or _ _ hp.2]
-  intro _ hwf hcons hcond hraw htyped hargs
-  exact hs.2 e or hbt hwf hcons hcond hraw htyped hargs
+  intro _ hwf hcons hcond hraw htyped hargs hnn
+  exact hs.2 e or hbt hwf hcons hcond hraw htyped hargs hnn
 
 end GoFV.Proof.Rules

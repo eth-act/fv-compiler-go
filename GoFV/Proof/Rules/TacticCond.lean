@@ -145,7 +145,7 @@ elab "rule_unfold_getd" : tactic => do
     intro $e:ident $or:ident $hbt:ident
     dsimp only [$rid:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
-    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident $hat:ident
+    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident $hat:ident $(mkIdent `hnn):ident
     (try dsimp only [GoFV.Proof.Rules.condHolds, rule_cond_ds] at $hcond:ident)
     (try simp only [rule_helper, rule_cond_s] at $hcond:ident)
     rule_oracle_bool
@@ -159,5 +159,6 @@ elab "rule_unfold_getd" : tactic => do
       and_true, true_and, Nat.succ_ne_zero, not_false_eq_true] at $hat:ident))
   else
     evalTactic (← `(tactic| clear $hat:ident))
+  ruleNonNeg ci
 
 end GoFV.Proof.Rules

@@ -566,6 +566,40 @@ def Pat.argsOKs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat → 
       Pat.argsOKs ty p o (i + 1) qs
 end
 
+/-- A nonnegative integer (sign bit clear at its width) or `poison`. -/
+def _root_.GoFV.SSA.Sem.Val.nonNeg : Val → Bool
+  | .poison => true
+  | .int _ x => !x.msb
+  | _ => false
+
+/-- The rule variables `x` of the conjuncts `isNonNegative(x)` of a condition. -/
+def nonNegVars : Expr → List Nat
+  | .binop .land a b _ => nonNegVars a ++ nonNegVars b
+  | .call fn [.var x] _ => if fn == "isNonNegative" then [x] else []
+  | _ => []
+
+mutual
+/-- The position of the first leaf of the pattern at `p` that binds `x`. -/
+def Pat.leafPos (x : Nat) (p : Path) : Pat → Option Path
+  | .bind y => if y == x then some p else none
+  | .op _ _ _ _ _ _ args _ => Pat.leafPoss x p 0 args
+  | _ => none
+/-- `Pat.leafPos` in the arguments `i, i+1, …` of a node at `p`. -/
+def Pat.leafPoss (x : Nat) (p : Path) (i : Nat) : List Pat → Option Path
+  | [] => none
+  | q :: qs => (Pat.leafPos x (i :: p) q).orElse fun _ => Pat.leafPoss x p (i + 1) qs
+end
+
+/-- For every conjunct `isNonNegative(x)` of the condition with `x` bound at a leaf, the leaf's
+value is a nonnegative integer or `poison` (`Val.nonNeg`; `docs/proofs/rules.md`, "Assumptions
+to discharge"). The rewrite validator decides `isNonNegative` on the matched value's
+definitions (`GoFV.Opt.RewriteCheck.nonNegD`), where it implies this of every evaluation. -/
+def Pat.nonNegOK (e : PEnv) (pat : Pat) : Option Expr → Bool
+  | some c => (nonNegVars c).all fun x => match Pat.leafPos x [] pat with
+    | some p => (e.leaf p).nonNeg
+    | none => true
+  | none => true
+
 mutual
 /-- The argument counts are those of the pattern (no `___`, no ellipsis). -/
 def Pat.arityOk : Pat → Bool
@@ -641,9 +675,10 @@ def Oracle.BoolTyped (or : Oracle) : Prop :=
 
 /-- **The obligation of a value rule.** For every instance of the pattern whose auxints are
 well formed (`Pat.wf`), whose checks and condition hold, whose top value has its type's
-shape, whose leaves have their types' shapes (`Pat.typed`) and whose op nodes' arguments the
-shapes the checker guarantees (`Pat.argsOK`), and every oracle answering `bool` expressions
-with booleans (`Oracle.BoolTyped`), the rewritten value refines the matched one. -/
+shape, whose leaves have their types' shapes (`Pat.typed`), whose op nodes' arguments the
+shapes the checker guarantees (`Pat.argsOK`) and whose `isNonNegative` leaves are nonnegative
+(`Pat.nonNegOK`), and every oracle answering `bool` expressions with booleans
+(`Oracle.BoolTyped`), the rewritten value refines the matched one. -/
 def Rule.Sound (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
   ∀ (e : PEnv) (or : Oracle), Oracle.BoolTyped or →
@@ -655,6 +690,7 @@ def Rule.Sound (r : Rule) : Prop :=
     (Pat.raw e r.pat).hasTy (e.ty []) = true →
     Pat.typed e [] r.pat →
     Pat.argsOK e.ty [] r.pat = true →
+    Pat.nonNegOK e r.pat r.cond = true →
     Refines (Pat.raw e r.pat) (resDen ev or σ (e.ty []) r.result)
 
 

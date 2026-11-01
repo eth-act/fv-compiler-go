@@ -294,6 +294,7 @@ def check (r : Rule) (or : Oracle) (i : Inst) : Option Bool :=
   let raw := Pat.raw e r.pat
   let ok := Pat.arityOk r.pat && wfB e [] r.pat && consB ev σ e [] r.pat && condB ev r.cond &&
     raw.hasTy (e.ty []) && typedB e [] r.pat && Pat.argsOK e.ty [] r.pat &&
+    Pat.nonNegOK e r.pat r.cond &&
     !(match raw with | .poison => true | _ => false)
   if ok then some (refinesB raw (resDen ev or σ (e.ty []) r.result)) else none
 

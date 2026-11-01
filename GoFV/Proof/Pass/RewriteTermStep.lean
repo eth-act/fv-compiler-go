@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.RewriteTermRule
 import GoFV.Proof.Pass.RewriteTermNat
+import GoFV.Proof.Pass.RewriteTermNonNeg
 
 /-!
 # One rule event refines the denotations (issue #113)
@@ -345,6 +346,23 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
           refine ⟨p, s, d, rfl, hs, ?_⟩
           rw [← hf2, hai, aiSel_eq hev, aiSel, hae]
 
+/-- The validator's `nonNegOKD` gives `Rule.SoundT`'s premise `Pat.nonNegOK` on the semantic
+instance (`nonNegD_den`). -/
+theorem nonNegOK_of {tabs : Tables} {D : ID → Option Value} {M : Defs} {I : Inst} {pat : Pat}
+    {cond : Option GoFV.Rules.Expr} {ρ : ID → Val} {B : Nat}
+    (h : nonNegOKD tabs D I pat cond = true) :
+    GoFV.Proof.Rules.Pat.nonNegOK (semEnv tabs M I (den D tabs ρ B)) pat cond = true := by
+  cases cond with
+  | none => rfl
+  | some c =>
+    simp only [nonNegOKD, GoFV.Proof.Rules.Pat.nonNegOK, List.all_eq_true] at h ⊢
+    intro x hx
+    have hx' := h x hx
+    revert hx'
+    cases GoFV.Proof.Rules.Pat.leafPos x [] pat with
+    | none => intro _; rfl
+    | some p => exact nonNegD_den tabs D ρ _ B _
+
 /-- **The matched value**: its denotation before the event is refined by the one after. -/
 theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : ArgClosed M C) (hv : C v)
@@ -392,7 +410,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
     rw [F.hpat] at ht ha ⊢
     exact raw_topOK hn ht ha
   have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
-  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs
+  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs (nonNegOK_of F.hnn)
   -- lower bound
   have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
       (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
