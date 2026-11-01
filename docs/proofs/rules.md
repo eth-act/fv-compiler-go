@@ -406,6 +406,25 @@ forwarded `newobject` result removed) and `sc_checkedRewrite` (`*p = *q` on `str
 the `Store` of the expanded `Load` split into field `Store`s of field `Load`s), kernel
 evaluation.
 
+### Phi eliminations (issue #69)
+
+`applyRewrite` runs `phielimValue` on every value: a `Phi` whose arguments are one value `w` or
+the `Phi` itself becomes `Copy w`. The arguments usually became equal through the rewrites before
+it (`StructSelect` of `StructMake` became copies of the selected argument, then the copies were
+eliminated), so the elimination is no fact about the input, and the replay rejects the event.
+The event `RwEvent.phielim v def pre` logs the function `pre` just before the elimination, and
+`RewriteCheck.accepts` validates the log in segments between these events (`segsOK`): each segment
+with `layersOK` against `pre` without the values reset to `Invalid` (`dropInvalid`), which passes
+`check`; `pre` and `pre` with the `Phi` turned `Copy w` (`phiElim`, which passes `check`) related
+by copyelim's relation (`CopyCheck.copyOK`, shared with sccp, `GoFV/Opt/CopyRelCheck.lean`: every
+argument of the `Phi` is `w`, a copy of `w` or the `Phi`, other values unchanged); the next
+segment starts from the latter, the last ends at the output. `segs_refines` composes
+`layers_refines` (a segment: `layersOK_cases`, `chain_refines`, the atom simulation) with
+`CopyRelCheck.copyOK_spec` and `CopyElim.refines_of_rel` at each elimination; the statement of
+`checkedRewrite_refines` is unchanged. Logging `pre` costs a copy of the function per elimination
+(only with the log on). quick-v3: all 20 sections the validator rejected for `phielim` accepted
+(opt rejections 146 → 126); fully at stock 8,145 → 8,152 at 2e7c2c5.
+
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
 `ConstString {str}` and `Addr {sym} SB` are term nodes evaluated from the tables
@@ -745,7 +764,7 @@ at a pointer or `Convert` at the 64-bit integer shape, `evalPure_ptrTop`; `const
 (`Pat.argsOK` on the matched types), integer-, boolean- or pointer-shaped leaves, built nodes = `resDen`, no cyclic
 match), a copy-argument replacement is replayed when its source is reached from the old argument
 through copies of compatible shape, a block rule as its control rule at the block's control (see
-"Rules beyond `Rule.Sound`"), no phi elimination, the arguments of listed
+"Rules beyond `Rule.Sound`"), phi eliminations by segments of the log (see "Phi eliminations"), the arguments of listed
 values and the controls are listed (`closedOK`, input and output), and every definition and
 control of the result must be the replayed one up to copies of compatible shape; the atoms
 (phis, roots, frame values incl. `GetClosurePtr`/`GetCallerSP`) must be unchanged, in the same
@@ -828,12 +847,15 @@ With `Slicemask`'s argument a 64-bit integer (`argShapeOk`) and `:770`/`:771` (1
 With the signed `divisible.rules` lemmas `:98–161` (`sdiv_rot`: `c * r` maps to `A + r`): 8,145
 (87.61%) / 8,231 on f838a9c (1,282 rules; 8,144 before; the proven-only `divisible` pass at 100%
 parity); 8,146 (87.62%) / 8,231 on f77289d (1,289 rules).
+With the phi eliminations validated by segments of the log (see "Phi eliminations"): 8,152
+(87.68%) at 2e7c2c5 (8,145 before).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
-dead-value removal. Validator rejections (all REJECT lines of the probe): 6 top ops whose value
-is narrower than the op (`natShape`, `generic.rules:1189/1192` on divmod-built values in middle
-opt; "Narrow result types", correct rejections) and 1 phi elimination (opt). The 59 firings of
+dead-value removal. Validator rejections (all REJECT lines of the probe) before the nonnegative
+lengths and the phi eliminations: 6 top ops whose value is narrower than the op (`natShape`,
+`generic.rules:1189/1192` on divmod-built values in middle opt; "Narrow result types", correct
+rejections) and 1 phi elimination (opt). The 59 firings of
 `:1044` (opt) whose `ConstNil <v.Type.Elem().PtrTo()>` has a pointer type the interpreter
 created were rejected while `checkedRewrite` kept the input's tables (the type is `.other`
 there); they are accepted since the validator runs in the result's tables. Before the
