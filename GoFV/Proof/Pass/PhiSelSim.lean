@@ -5,18 +5,19 @@ import GoFV.Proof.Pass.ECIdent
 # Selections of `Phi`s of `SliceMake`s refine their input (issue #69)
 
 `ps_refines`: if `g` is `f` with selections `v = SliceLen p` (or `SliceCap`) of a `Phi` `p` of
-`SliceMake`s with argument `x` turned `Copy x` (`RewriteCheck.psRel`, `generic.rules:1049`/
-`:1050`), both checked, `g` refines `f` under monotone contracts. Lock-step simulation
-(`runLoop_simE`) along the same edges, with `SimAt` at block entries: the target's registers
-refine the source's (`Seg.RR`), lemma (D) holds for the ancestors of the block left (`DInv`),
-and so does the selection fact (`PInv`, `Fact`): for every selection whose `Phi`'s block
-dominates the block left, the selection of the `Phi`'s register is refined by `x`'s register.
-Entering the `Phi`'s block along edge `i` sets the `Phi` to its `SliceMake` argument `i`, which
-lemma (D) re-evaluates from `x`'s register (`fact_entry`); `x` is defined in a strict dominator
-of the `Phi`'s block, so neither register changes in a block the `Phi`'s block dominates. A
-selection is evaluated in such a block (its argument's block dominates it), where the fact gives
-the refinement of the source's selection by the target's copy (`sel_step`); every other value
-is unchanged and evaluates to a refinement on refined arguments (`eval_ss`).
+`SliceMake`s with argument `x` (or `Sub64 x 0`, `PComp`) turned `Copy x` (`RewriteCheck.psRel`,
+`generic.rules:1049`/`:1050`), both checked, `g` refines `f` under monotone contracts. Lock-step
+simulation (`runLoop_simE`) along the same edges, with `SimAt` at block entries: the target's
+registers refine the source's (`Seg.RR`), lemma (D) holds for the ancestors of the block left
+(`DInv`), and so does the selection fact (`PInv`, `Fact`): for every selection whose `Phi`'s
+block dominates the block left, the selection of the `Phi`'s register is refined by `x`'s
+register. Entering the `Phi`'s block along edge `i` sets the `Phi` to its `SliceMake` argument
+`i`, which lemma (D) re-evaluates from `x`'s register, also through a `Sub64 x 0` (`sub0_ref`;
+`fact_entry`); `x` is defined in a strict dominator of the `Phi`'s block, so neither register
+changes in a block the `Phi`'s block dominates. A selection is evaluated in such a block (its
+argument's block dominates it), where the fact gives the refinement of the source's selection
+by the target's copy (`sel_step`); every other value is unchanged and evaluates to a refinement
+on refined arguments (`eval_ss`).
 -/
 
 namespace GoFV.Proof.PhiSel

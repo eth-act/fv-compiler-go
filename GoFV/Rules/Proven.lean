@@ -22,7 +22,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1197 proven value rules, 3 proven block rules, 7
+/-- `generic.rules` restricted to its 1198 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 15 Load-of-Store forwardings, 1 struct-load
 expansions, 1 struct-store splits, 7 segment rules and 2 `Phi`
 selections. -/
@@ -132,7 +132,7 @@ def generic : RuleSet where
     (.Neq8, [Generated.Generic.r_generic_286_4, Generated.Generic.r_generic_298_4, Generated.Generic.r_generic_301_4, Generated.Generic.r_generic_304_4, Generated.Generic.r_generic_307_4, Generated.Generic.r_generic_310_4, Generated.Generic.r_generic_313_4, Generated.Generic.r_generic_318_2, Generated.Generic.r_generic_585_4, Generated.Generic.r_generic_1179_4, Generated.Generic.r_generic_1185_4, Generated.Generic.r_generic_2397, Generated.Generic.r_generic_2398]),
     (.NeqB, [Generated.Generic.r_generic_286_5, Generated.Generic.r_generic_287, Generated.Generic.r_generic_288, Generated.Generic.r_generic_289, Generated.Generic.r_generic_290]),
     (.NeqInter, [Generated.Generic.r_generic_791]),
-    (.NeqPtr, [Generated.Generic.r_generic_1680, Generated.Generic.r_generic_1684]),
+    (.NeqPtr, [Generated.Generic.r_generic_1647, Generated.Generic.r_generic_1680, Generated.Generic.r_generic_1684]),
     (.NeqSlice, [Generated.Generic.r_generic_793]),
     (.Not, [Generated.Generic.r_generic_184, Generated.Generic.r_generic_397, Generated.Generic.r_generic_397_2, Generated.Generic.r_generic_397_3, Generated.Generic.r_generic_397_4, Generated.Generic.r_generic_397_5, Generated.Generic.r_generic_398, Generated.Generic.r_generic_398_2, Generated.Generic.r_generic_398_3, Generated.Generic.r_generic_398_4, Generated.Generic.r_generic_398_5, Generated.Generic.r_generic_400, Generated.Generic.r_generic_400_2, Generated.Generic.r_generic_400_3, Generated.Generic.r_generic_400_4, Generated.Generic.r_generic_401, Generated.Generic.r_generic_401_2, Generated.Generic.r_generic_401_3, Generated.Generic.r_generic_401_4, Generated.Generic.r_generic_402, Generated.Generic.r_generic_402_2, Generated.Generic.r_generic_402_3, Generated.Generic.r_generic_402_4, Generated.Generic.r_generic_403, Generated.Generic.r_generic_403_2, Generated.Generic.r_generic_403_3, Generated.Generic.r_generic_403_4]),
     (.OffPtr, [Generated.Generic.r_generic_964, Generated.Generic.r_generic_965]),
