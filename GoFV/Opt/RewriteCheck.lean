@@ -486,17 +486,22 @@ def frameNodeOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (pat : 
       | _ => false
     | none => true)
 
-/-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, and its conjuncts
-`isSamePtr(x, y)` of leaves `x`, `y` match the same value (`GoFV.Proof.Rules.FrameOK`). -/
-def condFrameOK (tabs : Tables) (e : PEnv) (I : Inst) (pat : Pat)
+/-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, its conjuncts
+`isSamePtr(x, y)` of leaves `x`, `y` match the same value, and its conjuncts
+`x.NumElem() == 1` have a type `x` of the shape of one field at offset 0 that fills it
+(`GoFV.Proof.Rules.FrameOK`). -/
+def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : Inst) (pat : Pat)
     (cond : Option GoFV.Rules.Expr) : Bool :=
   ((cond.map emptyStrVars).getD []).all (fun x => match strOf tabs e pat x with
     | some (s, _) => s.size == 0
     | none => false) &&
-  ((cond.map samePtrVars).getD []).all fun (x, y) =>
+  ((cond.map samePtrVars).getD []).all (fun (x, y) =>
     match Pat.leafPos x [] pat, Pat.leafPos y [] pat with
     | some p, some q => I.at p == I.at q
-    | _, _ => false
+    | _, _ => false) &&
+  ((cond.map numElem1Vars).getD []).all fun x => match ev (.var x) with
+    | .ty (.agg [(0, f)] n) => f.size == n
+    | _ => false
 
 /-- How `isNonNegative` (`rewrite.go`) decides an op whose value is an integer of width `w`. -/
 inductive NNKind where
@@ -620,7 +625,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
-        condFrameOK tabs e I r.pat r.cond &&
+        condFrameOK tabs ev e I r.pat r.cond &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
 
 /-- `w` is `a`, or reached from `a` through at most `n` `Copy`s each compatible with its

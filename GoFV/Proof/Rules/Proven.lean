@@ -15,6 +15,7 @@ import GoFV.Proof.Rules.AndB
 import GoFV.Proof.Rules.AndB2
 import GoFV.Proof.Rules.AndB3
 import GoFV.Proof.Rules.AndB4
+import GoFV.Proof.Rules.ArrayLoad
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.ConstComp
@@ -205,6 +206,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.checked_of_sound r_generic_589_sound rfl, Rule.checked_of_sound r_generic_612_3_sound rfl, Rule.checked_of_sound r_generic_692_3_sound rfl, Rule.checked_of_sound r_generic_694_3_sound rfl, Rule.checked_of_sound r_generic_716_3_sound rfl, Rule.checked_of_sound r_generic_717_3_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_586_4_sound rfl, Rule.checked_of_sound r_generic_610_4_sound rfl, Rule.checked_of_sound r_generic_611_4_sound rfl, Rule.checked_of_sound r_generic_616_4_sound rfl, Rule.checked_of_sound r_generic_619_4_sound rfl, Rule.checked_of_sound r_generic_699_sound rfl, Rule.checked_of_sound r_generic_707_sound rfl, Rule.checked_of_sound r_generic_729_sound rfl, Rule.checked_of_sound r_generic_733_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_592_sound rfl, Rule.checked_of_sound r_generic_612_4_sound rfl, Rule.checked_of_sound r_generic_692_4_sound rfl, Rule.checked_of_sound r_generic_694_4_sound rfl, Rule.checked_of_sound r_generic_716_4_sound rfl, Rule.checked_of_sound r_generic_717_4_sound rfl, trivial⟩,
+    ⟨.inl r_generic_994_sound, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_452_sound rfl, Rule.checked_of_sound r_generic_489_sound rfl, Rule.checked_of_sound r_generic_1194_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_451_sound rfl, Rule.checked_of_sound r_generic_489_2_sound rfl, Rule.checked_of_sound r_generic_1194_2_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_231_sound rfl, Rule.checked_of_sound r_generic_472_sound rfl, Rule.checked_of_sound r_generic_489_3_sound rfl, Rule.checked_of_sound r_generic_499_sound rfl, Rule.checked_of_sound r_generic_527_sound rfl, Rule.checked_of_sound r_generic_527_2_sound rfl, Rule.checked_of_sound r_generic_1194_3_sound rfl, trivial⟩,
