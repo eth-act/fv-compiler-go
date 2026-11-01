@@ -228,8 +228,11 @@ import GoFV.Proof.Pass.Sccp
 import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
+import GoFV.Proof.Pass.SegBlock
 import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.SegCallSeg
+import GoFV.Proof.Pass.SegChain
+import GoFV.Proof.Pass.SegRel
 import GoFV.Proof.Pass.SegSound
 import GoFV.Proof.Pass.SegZeroMem
 import GoFV.Proof.Pass.ShortCircB
