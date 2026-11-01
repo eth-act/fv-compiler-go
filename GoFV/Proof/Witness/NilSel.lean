@@ -190,7 +190,7 @@ theorem sm_checks :
 
 theorem smRules_allSound : smRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨.inr GoFV.Proof.Rules.r_generic_973_sound, trivial⟩, trivial⟩ trivial
+    ⟨⟨.inr (.inl GoFV.Proof.Rules.r_generic_973_sound), trivial⟩, trivial⟩ trivial
 
 /-- **Pass execution witness** for the `StructSelect` seed: on `selG`, the checked rewrite pass
 removes the nil check of the selected field (`v6 = MakeResult v2 v1`), and the result refines
