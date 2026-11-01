@@ -320,9 +320,14 @@ def main():
         print(f"perf-record: {commit} already in {history} (--force to re-record)")
         return 0
     known = {}  # depHash -> latest measured row
+    last_cpu = {}  # module -> CPU of its latest measurement (any input hash)
     for r in old:
         if r["status"] in MEASURED and r["dep_hash"]:
             known[r["dep_hash"]] = r
+            try:
+                last_cpu[r["module"]] = float(r["cpu_s"])
+            except ValueError:
+                pass
     log = open(raw / "record.log", "a")
 
     def say(s):
@@ -403,24 +408,37 @@ def main():
         elif not built and a.no_remeasure:
             row["status"] = "cached"
         else:
-            if not built:  # restored from the cache, never measured: elaborate once into tmp/
+            def remeasure():
                 gate(min_avail)
-                row["load1"] = f"{os.getloadavg()[0]:.1f}"
                 stem = scratch / m
-                rc2, res, _ = run(m, ["lake", "lean", str(mods[m].relative_to(root)), "--",
-                                      *extra.get(m, []), "-o", f"{stem}.olean",
-                                      "-i", f"{stem}.ilean", "-c", f"{stem}.c"], a.cap)
+                rc2, res2, _ = run(m, ["lake", "lean", str(mods[m].relative_to(root)), "--",
+                                       *extra.get(m, []), "-o", f"{stem}.olean",
+                                       "-i", f"{stem}.ilean", "-c", f"{stem}.c"], a.cap)
                 again = file_hash(f"{stem}.olean")
                 for ext in (".olean", ".ilean", ".c"):
                     pathlib.Path(f"{stem}{ext}").unlink(missing_ok=True)
-                if rc2 != 0 or res is None:
+                return (res2, again) if rc2 == 0 and res2 is not None else (None, rc2)
+
+            if not built:  # restored from the cache, never measured: elaborate once into tmp/
+                row["load1"] = f"{os.getloadavg()[0]:.1f}"
+                res, again = remeasure()
+                if res is None:
                     row["status"] = "cached"
-                    say(f"{m}: cached; remeasure failed rc={rc2}")
+                    say(f"{m}: cached; remeasure failed rc={again}")
                     rows.append(row)
                     continue
                 row["repro"] = "same" if again == row["olean_hash"] else "differs"
                 if row["repro"] == "differs":
                     say(f"{m}: .olean NOT reproducible ({row['olean_hash']} cached vs {again})")
+            prev = last_cpu.get(m)
+            if prev is not None and res["cpu_s"] > prev * 1.25 and res["cpu_s"] - prev > 5:
+                # one outlier under memory pressure read 18 s CPU for a 3 s module: confirm
+                res2, _ = remeasure()
+                if res2 is not None:
+                    say(f"{m}: CPU {prev:.1f} -> {res['cpu_s']:.1f}s; confirmation run "
+                        f"{res2['cpu_s']:.1f}s, keeping the smaller")
+                    res = dict(res, **{k: min(res[k], res2[k]) for k in ("wall_s", "cpu_s", "maxrss")})
+            last_cpu[m] = res["cpu_s"]
             row.update(status="built" if built else "remeasured", measured_at=commit,
                        wall_s=f"{res['wall_s']:.1f}", cpu_s=f"{res['cpu_s']:.1f}",
                        maxrss_mb=res["maxrss"] // 2 ** 20,

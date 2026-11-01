@@ -86,6 +86,8 @@ def main():
     ap.add_argument("--cap", default="8G")
     ap.add_argument("--min-avail", type=float, default=10, help="GB; wait while below")
     ap.add_argument("--force", action="store_true", help="rerun benchmarks of known binaries")
+    ap.add_argument("--gate-max-fail", type=float, default=0.01,
+                    help="fraction of corpus files the gate may fail (default 1%%)")
     ap.add_argument("--corpus", default=None,
                     help="export corpus to snapshot (default: newest ../gofv-corpus/<pin12>)")
     a = ap.parse_args()
@@ -172,6 +174,16 @@ def main():
                 row.update(wall_s=f"{med['wall_s']:.2f}", cpu_s=f"{med['cpu_s']:.2f}",
                            maxrss_mb=max(r["maxrss"] for r in results) // 2 ** 20, runs=len(results))
             row.setdefault("status", "ok")
+            if name == gate and row["status"] == "ok":
+                # the gate command accepts exit 1 (some files fail); judge its summary line
+                # `ssa-roundtrip: N files, M failed`: the exporter can run ahead of main's parser
+                # (37/9297 files with new `zvar` lines), which must not void every benchmark
+                text = (scratch / f"{name}.log").read_text(errors="replace")
+                mm = re.findall(r"(\d+) files, (\d+) failed", text)
+                if mm and int(mm[-1][1]) > a.gate_max_fail * int(mm[-1][0]):
+                    row["status"] = "unparsable"
+                    print(f"{name}: {mm[-1][1]}/{mm[-1][0]} files failed "
+                          f"(> {a.gate_max_fail:.0%}): corpus not parsable at this commit")
         bad += row["status"] != "ok"
         gate_failed = name == gate and row["status"] != "ok"
         rows.append(row)
