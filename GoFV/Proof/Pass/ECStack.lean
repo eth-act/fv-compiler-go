@@ -641,6 +641,79 @@ theorem ecs_chain {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID
     simp only [List.map_cons, List.map_nil, List.zipWith_cons_cons, List.zipWith_nil_right, ecsW, hsv]
     exact hW
 
+/-- The stores of a chain whose top is a new value of `E` are new values of `E`. -/
+theorem ecs_chain_E {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID → Prop}
+    (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
+    ∀ (n : Nat) {z b : ID} {zs : List ID}, storeChain g (isNewB f) n z b = some zs →
+      (zs ≠ [] → E z ∧ L z) → ∀ z' ∈ zs, E z' ∧ L z'
+  | 0, _, _, _, h, _, _, _ => by simp [storeChain] at h
+  | n + 1, z, b, zs, h, hEL, z', hz' => by
+    rcases ecs_storeChain_step h with ⟨-, rfl⟩ | ⟨w, zs', -, hw, -, -, hsz, hc, rfl⟩
+    · exact absurd hz' List.not_mem_nil
+    have hz := hEL (by simp)
+    rcases List.mem_append.1 hz' with hz' | hz'
+    · refine ecs_chain_E hNC hL n hc (fun hne => ?_) z' hz'
+      obtain ⟨-, w', -, hw', hcl, -⟩ := hNC z hz.1
+      change g.value? z = some w' at hw'
+      rw [hw] at hw'; cases hw'
+      have hm2 : w.args[2]! ∈ w.args := by rw [← Array.mem_toList_iff, ecs_args_three hsz]; simp
+      have hn := ecs_storeChain_new hc hne
+      exact ⟨hcl _ hm2 hn, (hL z hz.2 w hw).2 _ hm2 hn⟩
+    · rw [List.mem_singleton.1 hz']; exact hz
+
+/-- A store of a chain heads the chain below it, a prefix of the chain. -/
+theorem ecs_chain_mem {g : Func} {nw : ID → Bool} :
+    ∀ {n : Nat} {top b : ID} {zs : List ID}, storeChain g nw n top b = some zs → ∀ {z : ID}, z ∈ zs →
+      ∃ wz n' zs', g.value? z = some wz ∧ nw z = true ∧ wz.op = .Store ∧ wz.args.size = 3 ∧
+        storeChain g nw n' wz.args[2]! b = some zs' ∧ ∃ rest, zs = zs' ++ [z] ++ rest
+  | 0, _, _, _, h, _, _ => by simp [storeChain] at h
+  | n + 1, top, b, zs, h, z, hz => by
+    rcases ecs_storeChain_step h with ⟨-, rfl⟩ | ⟨w, zs', -, hw, hnw, hop, hsz, hc, rfl⟩
+    · exact absurd hz List.not_mem_nil
+    rcases List.mem_append.1 hz with hz | hz
+    · obtain ⟨wz, n', zs'', h1, h2, h3, h4, h5, rest, hr⟩ := ecs_chain_mem hc hz
+      exact ⟨wz, n', zs'', h1, h2, h3, h4, h5, rest ++ [top], by rw [hr]; simp⟩
+    · rw [List.mem_singleton.1 hz]
+      exact ⟨w, n, zs', hw, hnw, hop, hsz, hc, [], by simp⟩
+
+/-- The top of a chain of stores is a memory with the bottom's writable ranges. -/
+theorem ecs_chain_attr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID → Prop}
+    (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
+    ∀ (n : Nat) {z b : ID} {zs : List ID}, storeChain g (isNewB f) n z b = some zs →
+      (zs ≠ [] → E z ∧ L z) → ∀ {ss : List (Int × Ty)},
+      storesOK tabs (typeShapes tabs) g (isNewB f) ss zs = true →
+      ∀ M, rv T b = .mem M → ∃ M', rv T z = .mem M' ∧
+        ∀ blk, (M'.find? blk).map ecsAttr = (M.find? blk).map ecsAttr
+  | 0, _, _, _, h, _, _, _, _, _ => by simp [storeChain] at h
+  | n + 1, z, b, zs, h, hEL, ss, hss, M, hM => by
+    rcases ecs_storeChain_step h with ⟨rfl, rfl⟩ | ⟨w, zs', hzb, hw, hnz, hop, hsz, hc, rfl⟩
+    · exact ⟨M, hM, fun _ => rfl⟩
+    obtain ⟨hEz, hLz⟩ := hEL (by simp)
+    obtain ⟨s1, s2, rfl, h1, h2⟩ := ecs_storesOK_append hss
+    have hl2 := ecs_storesOK_length h2
+    obtain ⟨s, rfl⟩ : ∃ s, s2 = [s] := by
+      match s2, hl2 with
+      | [s], _ => exact ⟨s, rfl⟩
+    obtain ⟨w', hw', -, -, hsh⟩ := ecs_storesOK_one h2
+    rw [hw] at hw'; cases hw'
+    obtain ⟨-, w', y, hw', hcl, hy, hev⟩ := hNC z hEz
+    change g.value? z = some w' at hw'
+    rw [hw] at hw'; cases hw'
+    obtain ⟨hwid, hLcl⟩ := hL z hLz w hw
+    have hargs := ecs_args_three hsz
+    have hm2 : w.args[2]! ∈ w.args := by rw [← Array.mem_toList_iff, hargs]; simp
+    have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = .mem := by
+      rw [hwid, ← shapeOf_eq]; exact hsh
+    obtain ⟨P, M0, M1, -, hM0, hW, rfl⟩ := ecs_store_val hop hargs hty hev
+    have hEL' : zs' ≠ [] → E w.args[2]! ∧ L w.args[2]! := fun hne => by
+      have hn := ecs_storeChain_new hc hne
+      exact ⟨hcl _ hm2 hn, hLcl _ hm2 hn⟩
+    obtain ⟨M0', hM0', hA⟩ := ecs_chain_attr hNC hL n hc hEL' h1 M hM
+    rw [hM0] at hM0'; cases hM0'
+    exact ⟨M1, rv_of hy, fun blk => (ecs_find_write hW blk).trans (hA blk)⟩
+
 /-! ## Reading the stack arguments back -/
 
 theorem ecs_rl_length : ∀ {as bs : List Val}, Sem.RefinesList as bs → as.length = bs.length
