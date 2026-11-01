@@ -156,7 +156,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hcons : consOK (stEv tabs M r defs I) (stσ tabs M r I) (env tabs M I) I [] r.pat = true
   hwf : wfOK (env tabs M I) [] r.pat = true
   hcond : ∀ c, r.cond = some c → stEv tabs M r defs I c = .bool true
-  hnat : (natShape o (tabs.ty xv.type) || ptrTop o (tabs.ty xv.type)) = true
+  hnat : topOK o (tabs.ty xv.type) = true
   hargs : GoFV.Proof.Rules.Pat.argsOK (env tabs M I).ty [] r.pat = true
   hleaves : leavesOK tabs M I [] r.pat = true
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
@@ -201,7 +201,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     split at hcond
     · rename_i heq; exact heq
     · cases hcond
-  have hnat' : (natShape o (tabs.ty xv.type) || ptrTop o (tabs.ty xv.type)) = true := by
+  have hnat' : topOK o (tabs.ty xv.type) = true := by
     simp only [env, hat, hxv, Option.map_some, Option.getD_some] at hnat; exact hnat
   have htail' : ∀ y ∈ I.tail, y.2 ≠ v := by
     simp only [List.all_eq_true, bne_iff_ne, ne_eq] at htail; exact htail

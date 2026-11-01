@@ -143,14 +143,16 @@ def oracle (b calls lits : Bool) : Oracle where
   aux _ := none
   val _ := .poison
 
-/-- The shape of a computed value. -/
+/-- The shape of a computed value (an aggregate's fields at 8-byte offsets). -/
 partial def shapeOf : Val → Ty
   | .int w _ => .int w
   | .bool _ => .bool
   | .mem _ => .mem
   | .tuple vs => .tuple (vs.map shapeOf)
   | .ptr _ => .ptr none
-  | .agg _ | .blob _ | .poison => .other
+  | .agg vs => .agg (((List.range vs.length).zip vs).map fun (i, v) => (8 * i, shapeOf v))
+      (8 * vs.length)
+  | .blob _ | .poison => .other
   | .empty => .empty
 
 /-- The shape of an op's Go result type (`Op.typ`). -/

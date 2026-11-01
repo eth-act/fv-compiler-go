@@ -341,4 +341,34 @@ theorem inst_r_generic_126 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_12
   rule_eval
   simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
 
+/-- `generic.rules:1057`: `(ConstInterface) => (IMake (ConstNil <typ.Uintptr>) (ConstNil
+<typ.BytePtr>))` at the interface shape. -/
+theorem inst_r_generic_1057 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1057
+    (PEnv.ofLists [] [] (.agg [(0, .ptr none), (8, .ptr none)] 16) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1057]
+  rule_eval
+
+/-- `generic.rules:1044`: `(ConstSlice) && config.PtrSize == 8 => (SliceMake (ConstNil
+<v.Type.Elem().PtrTo()>) (Const64 <typ.Int> [0]) (Const64 <typ.Int> [0]))` at the shape of
+`[]int64`. -/
+theorem inst_r_generic_1044 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1044
+    (PEnv.ofLists [] [] (.agg [(0, .ptr (some 8)), (8, .int .w64), (16, .int .w64)] 24) [])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1044]
+  rule_eval
+
+/-- `generic.rules:1684`: `(NeqPtr (ConstNil) p) => (IsNonNil p)` at a heap pointer. -/
+theorem inst_r_generic_1684 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1684
+    (PEnv.ofLists [([1], .ptr ⟨.heap 0, 8⟩)] [([], .bool)] (.ptr none) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1684]
+  rule_eval
+  simp [PtrOps.eqPtr, Val.retype, Val.asPtrWord]
+
+/-- `generic.rules:1683`: `(EqPtr (ConstNil) p) => (Not (IsNonNil p))` at the nil pointer. -/
+theorem inst_r_generic_1683 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1683
+    (PEnv.ofLists [([1], .ptr Ptr.null)] [([], .bool)] (.ptr none) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1683]
+  rule_eval
+  simp [PtrOps.eqPtr, Val.retype, Val.asPtrWord]
+
 end GoFV.Proof.Rules
