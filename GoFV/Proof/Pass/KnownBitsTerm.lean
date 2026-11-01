@@ -106,32 +106,15 @@ theorem not_term_of {D : ID → Option Value} {x : ID} {v : Value} (hv : D x = s
     (ht : ¬ termOp v.op = true) : ¬ IsTerm D x := fun ⟨w, hw, hw'⟩ => by
   rw [hv] at hw; cases hw; exact ht hw'
 
-section
-variable {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array Bool} {ce : CheckEnv}
-  (hwf : WF ce f) (K : KbFacts tabs f g E R)
-include hwf K
-
-/-- Every value has, as a term, the bits its entry claims if the atoms have theirs. -/
-theorem kb_den {ρ : ID → Val} (hP : ∀ a, ¬ IsTerm f.value? a → Gam (ent E a) (ρ a)) :
-    ∀ n x, Gam (ent E x) (den f.value? tabs ρ n x)
-  | 0, _ => Gam.poison _
-  | n + 1, x => by
-    by_cases ht : IsTerm f.value? x
-    · obtain ⟨v, hv, hop⟩ := ht
-      rw [den_succ_term hv hop]
-      exact kb_term hwf K hv hop _ fun a _ => kb_den hP n a
-    · rw [den_succ_atom ht]; exact hP x ht
-
-theorem blocks_eq : f.blocks = g.blocks := by
-  have hA := K.atoms
+theorem blocks_eq {f g : Func} (hA : atomsOK f g = true) : f.blocks = g.blocks := by
   unfold atomsOK at hA
   simp only [Bool.and_eq_true, beq_iff_eq] at hA
   exact hA.1.1.2
 
-theorem blocksOK_facts {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb) :
+theorem blocksOK_facts {f g : Func} (h : blocksOK f g = true) {b : ID} (hb : b ∈ f.blocks)
+    {fb : Block} (hfb : f.block? b = some fb) :
     ∃ gb, g.block? b = some gb ∧ fb.kind = gb.kind ∧ fb.succs = gb.succs ∧ fb.id = gb.id ∧
       fb.controls = gb.controls ∧ ∀ x ∈ fb.values, x ∈ gb.values := by
-  have h := K.blocks
   unfold blocksOK at h
   have := (Array.all_eq_true_iff_forall_mem.1 h) b hb
   rw [hfb] at this
@@ -147,12 +130,39 @@ theorem blocksOK_facts {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.bloc
     exact Array.getElem_mem _
 
 /-- A value listed in `f` is listed in `g`, as `g`'s value. -/
-theorem marked_g {x : ID} {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
+theorem marked_g {f g : Func} (hA : atomsOK f g = true) (hB : blocksOK f g = true) {x : ID}
+    {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
     (hx : x ∈ fb.values) {w : Value} (hw : g.value? x = some w) (hwb : w.block = b) :
     ∃ gb, g.block? b = some gb ∧ x ∈ gb.values ∧ Marked g x := by
-  obtain ⟨gb, hgb, -, -, -, -, hsub⟩ := blocksOK_facts hwf K hb hfb
+  obtain ⟨gb, hgb, -, -, -, -, hsub⟩ := blocksOK_facts hB hb hfb
   have hxg := hsub x hx
-  exact ⟨gb, hgb, hxg, b, blocks_eq hwf K ▸ hb, gb, hgb, hxg, w, hw, hwb⟩
+  exact ⟨gb, hgb, hxg, b, blocks_eq hA ▸ hb, gb, hgb, hxg, w, hw, hwb⟩
+
+/-- Same kinds, successors and IDs (`blocksOK`) and controls refining as terms: the
+terminators refine. -/
+theorem steps_of_controls {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
+    (hA : atomsOK f g = true) (hB : blocksOK f g = true) (h : ControlsRefP I g) :
+    StepRefsP I g :=
+  ControlsRefP.toStepRefsP h fun b hb fb gb hfb hgb => by
+    obtain ⟨gb', hgb', hk, hs, hid, -⟩ := blocksOK_facts hB (blocks_eq hA ▸ hb) hfb
+    rw [hgb] at hgb'; cases hgb'
+    exact ⟨hk.symm, hs.symm, hid.symm⟩
+
+section
+variable {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array Bool} {ce : CheckEnv}
+  (hwf : WF ce f) (K : KbFacts tabs f g E R)
+include hwf K
+
+/-- Every value has, as a term, the bits its entry claims if the atoms have theirs. -/
+theorem kb_den {ρ : ID → Val} (hP : ∀ a, ¬ IsTerm f.value? a → Gam (ent E a) (ρ a)) :
+    ∀ n x, Gam (ent E x) (den f.value? tabs ρ n x)
+  | 0, _ => Gam.poison _
+  | n + 1, x => by
+    by_cases ht : IsTerm f.value? x
+    · obtain ⟨v, hv, hop⟩ := ht
+      rw [den_succ_term hv hop]
+      exact kb_term hwf K hv hop _ fun a _ => kb_den hP n a
+    · rw [den_succ_atom ht]; exact hP x ht
 
 /-- **Values as terms**: each value listed in `f` is refined, one fuel later, by the same value
 listed in `g`, for valuations whose atoms have the bits their entries claim. -/
@@ -171,7 +181,7 @@ theorem kb_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.va
       rw [hw] at hrep
       simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hrep
       obtain ⟨⟨-, hblk⟩, hrep⟩ := hrep
-      obtain ⟨gb, hgb, hxg, hmg⟩ := marked_g hwf K hb hfb hxv hw (hblk.trans hub)
+      obtain ⟨gb, hgb, hxg, hmg⟩ := marked_g K.atoms K.blocks hb hfb hxv hw (hblk.trans hub)
       have hL : listedDefs g x = some w := by rw [listedDefs_of_marked hmg, hw]
       rcases hrep with ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, hargs⟩ | ⟨⟨⟨⟨hop, hsz⟩, hfull⟩, hty⟩, hc⟩
       · by_cases ht : termOp u.op = true
@@ -192,7 +202,7 @@ theorem kb_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.va
           have : i = 0 := by simp [hsz] at h1; omega
           subst this; simp
         have hcm : LM g (w.args[0]?.getD 0) := by
-          refine (closedOK_facts K.cg b (blocks_eq hwf K ▸ hb) gb hgb).2 x hxg w hw _ ?_
+          refine (closedOK_facts K.cg b (blocks_eq K.atoms ▸ hb) gb hgb).2 x hxg w hw _ ?_
           rw [← Array.mem_toList_iff, hc0]; exact List.mem_cons_self
         have hLc : listedDefs g (w.args[0]?.getD 0) = some cv := by
           rw [listedDefs_of_marked (listedMarks_sound g _ hcm), hcv]
@@ -231,7 +241,7 @@ theorem kb_atomArgs : AtomArgsRefP (kbInv hwf K) g := by
     rcases hrep.2 with ⟨-, h⟩ | ⟨⟨⟨⟨h, -⟩, -⟩, -⟩, -⟩
     · exact h
     · rw [h] at ht; cases ht
-  have hbf : b ∈ f.blocks := blocks_eq hwf K ▸ hb
+  have hbf : b ∈ f.blocks := blocks_eq K.atoms ▸ hb
   have hi' : i < u'.args.size := hargs ▸ hi
   rw [hargs]
   have hx := (closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' u'.args[i]!
@@ -241,8 +251,8 @@ theorem kb_atomArgs : AtomArgsRefP (kbInv hwf K) g := by
 /-- **Controls.** -/
 theorem kb_controls : ControlsRefP (kbInv hwf K) g := by
   intro b hb fb gb hfb hgb
-  have hbf : b ∈ f.blocks := blocks_eq hwf K ▸ hb
-  obtain ⟨gb', hgb', -, -, -, hctl, -⟩ := blocksOK_facts hwf K hbf hfb
+  have hbf : b ∈ f.blocks := blocks_eq K.atoms ▸ hb
+  obtain ⟨gb', hgb', -, -, -, hctl, -⟩ := blocksOK_facts K.blocks hbf hfb
   rw [hgb] at hgb'; cases hgb'
   refine ⟨by rw [hctl], fun k hk => ?_⟩
   rw [← hctl]
@@ -250,12 +260,8 @@ theorem kb_controls : ControlsRefP (kbInv hwf K) g := by
   exact kb_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).1 _
     (by rw [getElem!_pos fb.controls k hk']; exact Array.getElem_mem hk')) b _ _
 
-/-- **Terminators**: same kinds, successors and IDs, controls refining as terms. -/
-theorem kb_steps : StepRefsP (kbInv hwf K) g :=
-  ControlsRefP.toStepRefsP (kb_controls hwf K) fun b hb fb gb hfb hgb => by
-    obtain ⟨gb', hgb', hk, hs, hid, -⟩ := blocksOK_facts hwf K (blocks_eq hwf K ▸ hb) hfb
-    rw [hgb] at hgb'; cases hgb'
-    exact ⟨hk.symm, hs.symm, hid.symm⟩
+/-- **Terminators**. -/
+theorem kb_steps : StepRefsP (kbInv hwf K) g := steps_of_controls K.atoms K.blocks (kb_controls hwf K)
 
 end
 

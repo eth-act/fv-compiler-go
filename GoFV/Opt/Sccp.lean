@@ -278,6 +278,9 @@ structure Analysis where
   /-- `latticeCells` keys in insertion order. -/
   keys : Array ID
   defBlock : Array (Array ID)
+  /-- The executable edges (`visited`) and blocks (`visitedBlock`). -/
+  visited : Array Edge
+  visitedBlock : Array Bool
 
 /-- The lattice cell of `v` (`none`: no entry). -/
 def Analysis.cell? (a : Analysis) (v : ID) : Option Lat := a.cells[v]?.join
@@ -293,7 +296,8 @@ def analyze (rw : RwEnv) (tables : Tables) (f : Func) : Except String Analysis :
   let st : RwState := { f, tables, pending := XPosMap.ofCache f.cache.lineStarts }
   match ((loop (sccpFuel f)).run w |>.run rw).run st with
   | .ok ((), w) s => .ok { f := s.f, tables := s.tables, cells := w.cells, keys := w.keys,
-                           defBlock := w.defBlock }
+                           defBlock := w.defBlock, visited := w.visited.toArray,
+                           visitedBlock := w.visitedBlock }
   | .error e _ => .error e
 
 /-- `rewireSuccessor(block, constVal)`; true if the block was rewired. -/
