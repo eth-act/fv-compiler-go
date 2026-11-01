@@ -325,6 +325,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
   0.7 s (only 729 rewrites on quick). The remaining time is the rewrites themselves, the
   `loadAddr` set and the single input `check`.
 
+#### early fuse: the single input `check` dominates (#187)
+- **Measurement:** with every rewrite checked locally (comparison fusion `tabEq`/pointer-first,
+  plain fusion in place) early fuse takes 14.0 s on full-v2 (`pass-parity`); without the one
+  `checkOK ce f` on the pass input (unsound ablation) 6.3 s, unchecked port 2.3 s. The
+  comparison checker itself is within noise (5,847 fusions on full-v2). Next lever for the
+  checked CFG passes: the input `check`, not the step checkers.
+- **Proof elaboration:** composing pure checked steps inside a `do`/`let (f, c) := …` step
+  (`earlyStep_ok`) by `simp [earlyStep]` or `rfl` against a projection form times out at 200k
+  heartbeats (`whnf` unfolds the checkers). `generalize step f b = r at h k; obtain ⟨f1, c1⟩ :=
+  r; dsimp only at h k` per step keeps it to a second; without the `dsimp` the pair `match`
+  stays and the next `generalize` silently misses its target.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
