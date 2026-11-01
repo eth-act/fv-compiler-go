@@ -114,33 +114,72 @@ def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
           | _ => rootQ := rootQ.push u
   return if out.size == n then some out else none
 
-/-- Walk of `schedValid` (`nodes`: each node's arguments, by ID; `done`: the IDs listed so
-far): each listed ID is a node not listed before, and its arguments that are nodes are listed
-before it. -/
-def schedValidAux (nodes : Array (Option (Array ID))) : Array Bool → List ID → Bool
-  | _, [] => true
-  | done, x :: xs =>
+/-- Walk of `schedValid`. `nodes`: each node's arguments and whether it is early (a flag: pure,
+or priority ≤ 1), by ID; `pos`: 1 + the position of each listed ID (0: not listed yet); `j`: the
+next position; `np`: 1 + the position of the last listed node that is not early (0: none yet).
+Each listed ID is a node not listed before, its arguments that are nodes are listed before it,
+and an early node listed after a non-early one has an argument listed at or after that one (it
+was not ready when the non-early node was chosen: early nodes go first). -/
+def schedValidAux (nodes : Array (Option (Array ID × Bool))) :
+    Array Nat → Nat → Nat → List ID → Bool
+  | _, _, _, [] => true
+  | pos, j, np, x :: xs =>
     match nodes[x]?.join with
-    | some args =>
-      !done.getD x false && args.all (fun a => (nodes[a]?.join).isNone || done.getD a false) &&
-        schedValidAux nodes (done.set! x true) xs
+    | some (args, pure) =>
+      pos.getD x 0 == 0 &&
+      args.all (fun a => (nodes[a]?.join).isNone || pos.getD a 0 != 0) &&
+      (!pure || np == 0 || args.any (fun a => (nodes[a]?.join).isSome && np ≤ pos.getD a 0)) &&
+        schedValidAux nodes (pos.set! x (j + 1)) (j + 1) (if pure then np else j + 1) xs
     | none => false
 
+/-- The nodes' IDs are distinct (`seen`: the IDs met so far). -/
+def idsDistinct : Array Bool → List SNode → Bool
+  | _, [] => true
+  | seen, n :: ns => !seen.getD n.id false && idsDistinct (seen.set! n.id true) ns
+
 /-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
-arguments within the block: a dependency order. Validates `kahn`'s output, so proofs use this
-specification rather than the algorithm. -/
+arguments within the block (a dependency order), pure nodes as early as their arguments allow
+relative to the other nodes, and nodes of priority ≤ 1 (pure or `NilCheck`) as early as their
+arguments allow relative to the other roots (`schedValidAux`, once per flag). Validates
+`kahn`'s output, so proofs use this specification rather than the algorithm. -/
 def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
   let m := maxNodeId vs + 1
-  let nodes : Array (Option (Array ID)) :=
-    vs.foldl (fun t n => t.set! n.id (some n.args)) (Array.replicate m none)
-  (nodes.filter Option.isSome).size == vs.size && o.size == vs.size &&
-    schedValidAux nodes (Array.replicate m false) o.toList
+  let nodes (early : SNode → Bool) : Array (Option (Array ID × Bool)) :=
+    vs.foldl (fun t n => t.set! n.id (some (n.args, early n))) (Array.replicate m none)
+  idsDistinct (Array.replicate m false) vs.toList && o.size == vs.size &&
+    schedValidAux (nodes (·.prio == 0)) (Array.replicate m 0) 0 0 o.toList &&
+    schedValidAux (nodes (·.prio ≤ 1)) (Array.replicate m 0) 0 0 o.toList
 
-/-- The evaluation order of the non-`Phi` values of `b` (`none` if their arguments within
-the block form a cycle): `kahn`, validated by `schedValid`. -/
+/-- A simple scheduler, used only if `kahn`'s output fails validation (never on the corpus):
+repeatedly the first ready pure node, else the first ready `NilCheck`, else the first ready
+node (`fuel`: one step per node). It makes `schedule` provably defined on every acyclic block
+without a proof of `kahn`. -/
+def greedy (vs : List SNode) : Nat → List SNode → List ID → Option (List ID)
+  | _, [], acc => some acc.reverse
+  | 0, _ :: _, _ => none
+  | fuel + 1, rem@(_ :: _), acc =>
+    let ready (n : SNode) : Bool :=
+      n.args.all fun a => !(vs.any (·.id == a)) || acc.contains a
+    match rem.findIdx? (fun n => n.prio == 0 && ready n) with
+    | some i => greedy vs fuel (rem.eraseIdx i) ((rem[i]?.map (·.id)).getD 0 :: acc)
+    | none =>
+      match rem.findIdx? (fun n => n.prio == 1 && ready n) with
+      | some i => greedy vs fuel (rem.eraseIdx i) ((rem[i]?.map (·.id)).getD 0 :: acc)
+      | none =>
+        match rem.findIdx? ready with
+        | some i => greedy vs fuel (rem.eraseIdx i) ((rem[i]?.map (·.id)).getD 0 :: acc)
+        | none => none
+
+/-- The evaluation order of the non-`Phi` values of `b` (`none` if their IDs are not distinct
+or their arguments within the block form a cycle): `kahn`, validated by `schedValid`, else
+`greedy`. -/
 def schedule (f : Func) (b : Block) : Option (Array ID) :=
   let vs := schedNodes f b
-  (kahn vs).filter (schedValid vs)
+  if idsDistinct (Array.replicate (maxNodeId vs + 1) false) vs.toList then
+    match (kahn vs).filter (schedValid vs) with
+    | some o => some o
+    | none => (greedy vs.toList vs.size vs.toList []).map List.toArray
+  else none
 
 /-- The static context of a function's runs, computed once. -/
 structure Ctx where

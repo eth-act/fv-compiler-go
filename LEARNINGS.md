@@ -208,3 +208,10 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   worktrees at once (clifv serialises with a per-module `flock`).
 - **Opaque contracts for long blocks** (ssz-fv): a monolithic proof failing with kernel deep
   recursion after ~112 s checked in ~4.5 s split into result/frame/control contracts.
+- **Kernel evaluation of `check` on small functions is cheap** (`decide +kernel` on
+  `(check ce clamp).toBool = true`, Lengauer–Tarjan and the dominator certificate included:
+  1.6 s CPU, 0.69 GB), so witnesses can discharge `check` hypotheses directly.
+- **`nomatch h, …` inside `⟨…⟩` parses as one `nomatch` with several discriminants**; write
+  `(nomatch h)` in anonymous-constructor lists.
+- **`variable (S : Setup …)` in a namespace needs `include S`** for theorems that use `S` only
+  in their proofs (Lean 4 includes section variables by the statement).

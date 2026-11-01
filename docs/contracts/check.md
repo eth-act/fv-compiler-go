@@ -45,7 +45,8 @@ passes — 306,801 sections, 2,961,638 blocks, 16,825,576 values, about 95 s. Th
 (`--mutate`) corrupts every passing section in up to four ways (use count +1, an argument
 outside the function, a broken reverse edge index, an entry-block use of a later block's
 value) and requires each corruption to be rejected with the expected message: 806,559 mutants,
-all rejected as expected.
+all rejected as expected. With the dominator certificate (`DomCert.check`) every section still
+passes (306,801/306,801, 70 s CPU).
 
 ## Facts the pass proofs need
 
@@ -92,6 +93,15 @@ and the semantics' "a use reads its definition's latest activation", §3.6 of
 - Every argument's block dominates the using block, for a `Phi` argument `i` the block of
   predecessor `i`; every control's block dominates its block. Unreachable using blocks are
   exempt (Go's `domCheck`).
+- Go's check trusts its Lengauer–Tarjan dominators; the proofs cannot. So `check` is Go's
+  `checkFunc` (`checkGo`) followed by a **dominator certificate** (`GoFV.SSA.DomCert.check`,
+  on the control-flow graph alone, `cfgView`): depths (entry 0, every other tree block one
+  below its immediate dominator), every successor of a tree block is a non-entry tree block
+  whose immediate dominator is an ancestor of the edge's source, every non-entry tree block has
+  a tree predecessor it does not dominate, every use in a tree block is defined in an ancestor
+  (`Phi` argument `i`: of predecessor `i`, if that is a tree block). It never rejects what Go
+  accepts (corpus result above). It certifies soundness (ancestors lie on every path:
+  `GoFV.Proof.Dom.use_dominated`), not that the tree is the complete dominator tree.
 
 **Memory** (P2 proofs: dse, memcombine, writebarrier, nilcheckelim; the semantics' single
 memory chain):

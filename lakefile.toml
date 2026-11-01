@@ -42,3 +42,11 @@ root = "GoFVTest.SSACheck"
 [[lean_exe]]
 name = "prove-difftest"
 root = "GoFVTest.ProveDiff"
+
+[[lean_exe]]
+name = "copyrel-probe"
+root = "GoFVTest.CopyRelProbe"
+
+[[lean_exe]]
+name = "sched-probe"
+root = "GoFVTest.SchedProbe"

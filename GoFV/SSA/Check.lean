@@ -3,6 +3,7 @@ import GoFV.SSA.TypePred
 import GoFV.SSA.Analysis.Postorder
 import GoFV.SSA.Analysis.Dom
 import GoFV.SSA.Analysis.LoopNest
+import GoFV.SSA.DomCert
 import Std.Data.HashSet
 
 /-!
@@ -363,7 +364,7 @@ end Check
 
 open Check in
 /-- `checkFunc(f)` (`check.go`): `ok ()` iff every check passes, else Go's first failure. -/
-def check (e : CheckEnv) (f : Func) : Except String Unit := do
+def checkGo (e : CheckEnv) (f : Func) : Except String Unit := do
   let nb := f.blockTab.size
   let nv := f.valueTab.size
   let mut blockMark : Array Bool := Array.replicate nb false
@@ -460,5 +461,11 @@ def check (e : CheckEnv) (f : Func) : Except String Unit := do
       if v.uses != uses[vid]! then
         throw s!"v{vid} has {uses[vid]!} uses, but has Uses={v.uses}"
   memCheck e f
+
+/-- The well-formedness checker: Go's `checkFunc` (`checkGo`), then the validation of the
+dominator tree it relies on (`DomCert.check`), which the pass proofs use for dominance. -/
+def check (e : CheckEnv) (f : Func) : Except String Unit := do
+  checkGo e f
+  DomCert.check f
 
 end GoFV.SSA
