@@ -1,14 +1,16 @@
 import GoFV.Proof.PureMono
 import GoFV.Proof.Retype
 import GoFV.Opt.RewriteCheck
+import GoFV.Proof.Rules.OpVal
 
 /-!
 # Values as terms over atoms (issue #113)
 
-A value whose op is a term op (`RewriteCheck.termOp`: evaluated by `evalPure`) is a term over
-the *atoms* (phis, roots, frame-dependent values): `den D tabs ρ n x` evaluates `x`'s definition
-in `D` recursively with fuel `n`, reading atoms (and values `D` does not define) from `ρ`, as
-`evalValue` does (`evalPure` at the shape of the value's type, then `Val.retype`).
+A value whose op is a term op (`RewriteCheck.termOp`: evaluated by `evalPure`, or from the
+tables for `Addr`/`ConstString`, `Rules.opVal`) is a term over the *atoms* (phis, roots,
+activation-dependent values): `den D tabs ρ n x` evaluates `x`'s definition in `D` recursively
+with fuel `n`, reading atoms (and values `D` does not define) from `ρ`, as `evalValue` does
+(`opVal` at the shape of the value's type, then `Val.retype`).
 
 `TermRef D x E y`: for every fuel on the left there is one on the right such that, for any
 valuations `ρ ⊑ ρ'` whose atom values are fixed by `retype` at their shapes (registers are,
@@ -35,10 +37,22 @@ def den (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) : Nat → ID
     match D x with
     | some v =>
       if termOp v.op then
-        (evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map (den D tabs ρ n))).retype
-          (tabs.ty v.type)
+        (Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
+          (v.args.toList.map (den D tabs ρ n))).retype (tabs.ty v.type)
       else ρ x
     | none => ρ x
+
+/-- `opVal` is monotone in the argument values (`evalPure_mono`; the table lookups ignore
+them). -/
+theorem _root_.GoFV.Proof.Rules.opVal_mono (tabs : Tables) (op : Op) (ty : Ty) (ai : Int64)
+    (ax : Option AuxRef) {as bs : List Val} (h : RefinesList as bs) :
+    Refines (Rules.opVal tabs op ty ai ax as) (Rules.opVal tabs op ty ai ax bs) := by
+  unfold Rules.opVal
+  split
+  · exact .refl _
+  · split
+    · exact .refl _
+    · exact evalPure_mono _ _ _ _ h
 
 /-- Pointwise refinement of valuations. -/
 def ValRef (ρ ρ' : ID → Val) : Prop := ∀ a, Refines (ρ a) (ρ' a)

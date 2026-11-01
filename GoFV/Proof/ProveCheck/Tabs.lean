@@ -1,12 +1,14 @@
 import GoFV.Opt.ProveCheck.Check
+import GoFV.Proof.Rules.OpVal
 
 /-!
 # The op tables of prove's validator, semantically (issue #24)
 
 Each table entry of `GoFV.Opt.ProveCheck` (`rTab`, `cTab`, `shTab`, `opTab`) evaluates as its
 family: `evalPure` at the entry's op is the family function (`rTab_eval`, `cTab_eval`,
-`shTab_eval`, `opTab_mem`). Proved by enumerating the tables (each entry by `rfl` at a
-concrete op), never by splitting on `Op`.
+`shTab_eval`, `opTab_mem`), and so is the term-node value `Rules.opVal` (`rTab_opVal`,
+`cTab_opVal`: no entry is a table-evaluated op). Proved by enumerating the tables (each entry by
+`rfl` at a concrete op), never by splitting on `Op`.
 -/
 
 namespace GoFV.Proof.ProveCheck
@@ -125,5 +127,17 @@ theorem opTab_term {fo go : Op} {q : Width × Nat} (h : opTab.lookup (fo, go) = 
   have hm := mem_of_lookup h
   simp only [opTab, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
   rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ <;> exact ⟨rfl, rfl⟩
+
+theorem rTab_opVal {op : Op} {c : ROp} (h : rTab.lookup op = some c) (tabs : Tables) (ty : Ty)
+    (ai : Int64) (aux : Option AuxRef) (args : List Val) :
+    GoFV.Proof.Rules.opVal tabs op ty ai aux args = rOpEval c ty.width? ai args := by
+  have hf : ∀ p ∈ rTab, GoFV.Proof.Rules.frameOp p.1 = false := by decide
+  rw [GoFV.Proof.Rules.opVal_pure (hf _ (mem_of_lookup h)), rTab_eval h]
+
+theorem cTab_opVal {op : Op} {k : CmpK} (h : cTab.lookup op = some k) (tabs : Tables) (ty : Ty)
+    (ai : Int64) (aux : Option AuxRef) (args : List Val) :
+    GoFV.Proof.Rules.opVal tabs op ty ai aux args = cmpEval k args := by
+  have hf : ∀ p ∈ cTab, GoFV.Proof.Rules.frameOp p.1 = false := by decide
+  rw [GoFV.Proof.Rules.opVal_pure (hf _ (mem_of_lookup h)), cTab_eval h]
 
 end GoFV.Proof.ProveCheck

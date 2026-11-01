@@ -195,7 +195,7 @@ theorem final_den {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
     have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
     by_cases ht : termOp m.op = true
     · rw [den_succ_term hm ht, den_succ_term hL (hop ▸ ht), hop, hty, hai, hax]
-      apply retype_mono; apply evalPure_mono
+      apply retype_mono; apply GoFV.Proof.Rules.opVal_mono
       refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
       simp only [Array.getElem_toList]
       exact (copyReach_den hT _ _ _ (hargs j (by simpa using h1) (by simpa using h2)) n).trans

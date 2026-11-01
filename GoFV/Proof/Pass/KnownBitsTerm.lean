@@ -66,7 +66,8 @@ theorem ref_const_bool {y : Val} {z : BitVec 64} {ai : Int64}
 value of shape `t` that has all bits of `val`. -/
 theorem const_ref {tabs : Tables} {g : Func} {t : Ty} {val : BitVec 64} {c : ID}
     (hc : constOK tabs g t val c = true) :
-    ∃ cv, g.value? c = some cv ∧ termOp cv.op = true ∧ cv.args = #[] ∧ tabs.ty cv.type = t ∧
+    ∃ cv, g.value? c = some cv ∧ termOp cv.op = true ∧ GoFV.Proof.Rules.frameOp cv.op = false ∧
+      cv.args = #[] ∧ tabs.ty cv.type = t ∧
       ∀ y : Val, y.hasTy t = true → Gam (val, BitVec.allOnes 64) y →
         Sem.Refines y ((evalPure cv.op t cv.auxInt cv.aux []).retype t) := by
   unfold constOK at hc
@@ -77,7 +78,8 @@ theorem const_ref {tabs : Tables} {g : Func} {t : Ty} {val : BitVec 64} {c : ID}
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
     obtain ⟨⟨⟨⟨hargs, -⟩, hty⟩, hai⟩, hop⟩ := hc
     replace hty := Pass.Rewrite.tyEq_sound hty
-    refine ⟨cv, rfl, ?_, Array.isEmpty_iff.1 hargs, hty, fun y hy hG => ?_⟩
+    refine ⟨cv, rfl, ?_, ?_, Array.isEmpty_iff.1 hargs, hty, fun y hy hG => ?_⟩
+    · split at hop <;> first | (cases hop; done) | (rename_i h; rw [h]; decide)
     · split at hop <;> first | (cases hop; done) | (rename_i h; rw [h]; decide)
     rcases hG with rfl | hk | ⟨z, hz, ha⟩
     · exact .poison _
@@ -174,14 +176,14 @@ theorem kb_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.va
       rcases hrep with ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, hargs⟩ | ⟨⟨⟨⟨hop, hsz⟩, hfull⟩, hty⟩, hc⟩
       · by_cases ht : termOp u.op = true
         · rw [den_succ_term hu ht, den_succ_term hL (hop ▸ ht), hop, hty, hai, hax, hargs]
-          apply retype_mono; apply evalPure_mono
+          apply retype_mono; apply GoFV.Proof.Rules.opVal_mono
           refine refinesList_map fun a ha => kb_ref hρ hT hP n a ?_
           exact (closedOK_facts K.cf b hb fb hfb).2 x hxv u hu a (Array.mem_toList_iff.1 ha)
         · rw [den_succ_atom (not_term_of hu ht), den_succ_atom (not_term_of hL (hop ▸ ht))]
           exact hρ x
       · -- `x` became `Copy c` of a constant `c` of its fully known entry
         have hty := Pass.Rewrite.tyEq_sound hty
-        obtain ⟨cv, hcv, hct, hcargs, hcty, hcref⟩ := const_ref hc
+        obtain ⟨cv, hcv, hct, hcf, hcargs, hcty, hcref⟩ := const_ref hc
         have hc0 : w.args.toList = [w.args[0]?.getD 0] := by
           have h0 : 0 < w.args.size := by omega
           rw [Array.getElem?_eq_getElem h0, Option.getD_some]
@@ -197,7 +199,8 @@ theorem kb_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.va
         have hcopy : termOp Op.Copy = true := by decide
         rw [den_succ_term hL (hop ▸ hcopy), hop, hc0, List.map_cons, List.map_nil,
           den_succ_term hLc hct, hcargs, hcty, hty]
-        simp only [evalPure_copy, Array.toList_empty, List.map_nil, Val.retype_idem]
+        simp only [GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, GoFV.Proof.Rules.opVal_pure hcf,
+          evalPure_copy, Array.toList_empty, List.map_nil, Val.retype_idem]
         -- the source's value has shape `t` and all bits of the entry
         have hG := kb_den hwf K hP (n + 1) x
         have hE : ent E x = ((ent E x).1, BitVec.allOnes 64) := Prod.ext rfl hfull

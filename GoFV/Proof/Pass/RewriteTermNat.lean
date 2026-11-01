@@ -1,5 +1,6 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Proof.Retype
+import GoFV.Proof.Pass.RewriteTermDen
 
 /-!
 # `natShape`: the op's raw result has the value's shape (issue #113)
@@ -236,26 +237,26 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
   all_goals exact absurd h (by simp [ptrTop])
 
 /-- The value of a pattern node has its instance type's shape when its leaves do. -/
-theorem den_hasTy_typed {e : GoFV.Proof.Rules.PEnv} :
+theorem den_hasTy_typed {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} :
     ∀ (p : GoFV.Proof.Rules.Path) (q : GoFV.Rules.Pat), GoFV.Proof.Rules.Pat.typed e p q →
-      (GoFV.Proof.Rules.Pat.den e p q).hasTy (e.ty p) = true
-  | p, .op .., _ => by simp only [GoFV.Proof.Rules.Pat.den]; exact Val.retype_hasTy _ _
+      (GoFV.Proof.Rules.Pat.denT tabs e p q).hasTy (e.ty p) = true
+  | p, .op .., _ => by simp only [GoFV.Proof.Rules.Pat.denT]; exact Val.retype_hasTy _ _
   | _, .wild, h | _, .bind _, h | _, .same _, h => h
 
 /-- The raw value of a pattern whose top op is checked by `ptrTop` has the top type's shape. -/
-theorem raw_ptrTop {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+theorem raw_ptrTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
     {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
-    {cm : Bool} (hp : ptrTop o (e.ty []) = true)
+    {cm : Bool} (hf : GoFV.Proof.Rules.frameOp o = false) (hp : ptrTop o (e.ty []) = true)
     (ht : GoFV.Proof.Rules.Pat.typed e [] (.op o nm pty pai pax par args cm))
     (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
-    (GoFV.Proof.Rules.Pat.raw e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
-  simp only [GoFV.Proof.Rules.Pat.raw]
+    (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
+  simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure hf]
   apply evalPure_ptrTop _ _ _ hp
   intro a hh
   cases args with
-  | nil => simp [GoFV.Proof.Rules.Pat.dens] at hh
+  | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
   | cons q qs =>
-    simp only [GoFV.Proof.Rules.Pat.dens, List.head?_cons, Option.some.injEq] at hh
+    simp only [GoFV.Proof.Rules.Pat.densT, List.head?_cons, Option.some.injEq] at hh
     subst hh
     simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
     simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs, Bool.and_eq_true] at ha
@@ -269,18 +270,55 @@ theorem evalPure_constTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) 
   obtain ⟨ho, h⟩ := h
   cases op <;> first | exact absurd ho (by decide) | exact h
 
+theorem frameOp_false {o : Op} (h1 : o ≠ .Addr) (h2 : o ≠ .ConstString) :
+    GoFV.Proof.Rules.frameOp o = false := by
+  unfold GoFV.Proof.Rules.frameOp
+  cases h : o == .Addr <;> cases h' : o == .ConstString <;> simp_all
+
+theorem natShape_frame {ty : Ty} : natShape .Addr ty = false ∧ natShape .ConstString ty = false := by
+  cases ty <;> exact ⟨rfl, rfl⟩
+
+/-- The raw value of a table-evaluated top op checked by `frameTop` has the top type's shape. -/
+theorem rawT_frameTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+    {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
+    {cm : Bool} (hp : frameTop o (e.ty []) = true) :
+    (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
+  simp only [frameTop, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hp
+  simp only [GoFV.Proof.Rules.Pat.rawT]
+  rcases hp with ⟨rfl, hp⟩ | ⟨rfl, hp⟩
+  · rw [GoFV.Proof.Rules.opVal_addr]
+    obtain ⟨el, he⟩ := eq_of_isPtrTy hp
+    rw [he]; unfold GoFV.Proof.Rules.addrVal
+    split <;> rfl
+  · rw [GoFV.Proof.Rules.opVal_constString, tyEq_sound hp]
+    unfold GoFV.Proof.Rules.strVal
+    split
+    · rename_i s d _
+      cases s.size == 0 <;> rfl
+    · rfl
+
 /-- **`topOK`**: the raw value of a pattern whose top op `topOK` accepts has the top type's
 shape. -/
-theorem raw_topOK {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+theorem raw_topOK {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
     {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
     {cm : Bool} (hp : topOK o (e.ty []) = true)
     (ht : GoFV.Proof.Rules.Pat.typed e [] (.op o nm pty pai pax par args cm))
     (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
-    (GoFV.Proof.Rules.Pat.raw e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
+    (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
   simp only [topOK, Bool.or_eq_true] at hp
-  rcases hp with (hp | hp) | hp
-  · simp only [GoFV.Proof.Rules.Pat.raw]; exact evalPure_natShape _ _ _ hp
-  · exact raw_ptrTop hp ht ha
-  · simp only [GoFV.Proof.Rules.Pat.raw]; exact evalPure_constTop _ _ _ hp
+  rcases hp with ((hp | hp) | hp) | hp
+  · have hf : GoFV.Proof.Rules.frameOp o = false := frameOp_false
+      (by rintro rfl; rw [natShape_frame.1] at hp; cases hp)
+      (by rintro rfl; rw [natShape_frame.2] at hp; cases hp)
+    simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure hf]
+    exact evalPure_natShape _ _ _ hp
+  · have hf : GoFV.Proof.Rules.frameOp o = false := frameOp_false
+      (by rintro rfl; cases hp) (by rintro rfl; cases hp)
+    exact raw_ptrTop hf hp ht ha
+  · have hf : GoFV.Proof.Rules.frameOp o = false := frameOp_false
+      (by rintro rfl; cases hp) (by rintro rfl; cases hp)
+    simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure hf]
+    exact evalPure_constTop _ _ _ hp
+  · exact rawT_frameTop hp
 
 end GoFV.Proof.Pass.Rewrite

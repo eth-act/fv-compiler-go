@@ -201,7 +201,9 @@ import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
 import GoFV.Proof.Rules.ConstComp
+import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Den
+import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
 import GoFV.Proof.Rules.Div3
@@ -254,10 +256,12 @@ import GoFV.Proof.Rules.Neq3
 import GoFV.Proof.Rules.Neq4
 import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
+import GoFV.Proof.Rules.NilElim
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
 import GoFV.Proof.Rules.OffPtr
+import GoFV.Proof.Rules.OpVal
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
 import GoFV.Proof.Rules.Or3
@@ -321,6 +325,7 @@ import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE
 import GoFV.Proof.Witness.Clamp
+import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim
 import GoFV.Proof.Witness.CopyElimRel
 import GoFV.Proof.Witness.DAE

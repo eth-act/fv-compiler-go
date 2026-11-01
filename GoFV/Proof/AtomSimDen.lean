@@ -43,7 +43,7 @@ def DenOK (D : ID → Option Value) (tabs : Tables) (fr : Frame) (V : ID → Pro
 
 theorem den_succ_term {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {n : Nat} {x : ID}
     {v : Value} (hx : D x = some v) (ht : termOp v.op = true) :
-    den D tabs ρ (n + 1) x = (evalPure v.op (tabs.ty v.type) v.auxInt v.aux
+    den D tabs ρ (n + 1) x = (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
       (v.args.toList.map (den D tabs ρ n))).retype (tabs.ty v.type) := by
   simp only [den, hx, ht, ite_true]
 
@@ -73,7 +73,7 @@ theorem den_fuel_mono (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val
     by_cases ht : IsTerm D x
     · obtain ⟨v, hx, hv⟩ := ht
       rw [den_succ_term hx hv, den_succ_term hx hv]
-      exact retype_mono _ (evalPure_mono _ _ _ _
+      exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _
         (refinesList_map fun a _ => den_fuel_mono D tabs ρ n m a (by omega)))
     · rw [den_succ_atom ht, den_succ_atom ht]; exact Sem.Refines.refl _
 
@@ -144,7 +144,7 @@ theorem DenOK.list {D : ID → Option Value} {tabs : Tables} {fr : Frame} {V : I
 theorem DenOK.term {D : ID → Option Value} {tabs : Tables} {fr fr' : Frame} {V : ID → Prop}
     {x : ID} {v : Value} (h : DenOK D tabs fr V) (hk : ∀ a, V a → fr'.regs[a]? = fr.regs[a]?)
     (hxV : ¬ V x) (hx : D x = some v) (ht : termOp v.op = true) (hargs : ∀ a ∈ v.args, V a)
-    (hreg : fr'.regs[x]? = some (some ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux
+    (hreg : fr'.regs[x]? = some (some ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
       (v.args.toList.map (rv fr))).retype (tabs.ty v.type)))) :
     DenOK D tabs fr' (fun a => V a ∨ a = x) := by
   intro z hz
@@ -194,26 +194,57 @@ theorem regs_of_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e : Pani
     (h : evalValue env ctx fr v = .panic e m) : ∀ a ∈ v.args, Reg fr a :=
   evalValue_args_def fun msg hm => by rw [h] at hm; cases hm
 
-/-- A term node evaluates by `evalPure`. -/
+/-- `Addr`/`ConstString` are frame values the tables determine. -/
+theorem frameVal_tab {ctx : Ctx} {v : Value} (ty : Ty) (argv : List Val)
+    (h : v.op = .Addr ∨ v.op = .ConstString) :
+    frameVal ctx v = some (GoFV.Proof.Rules.opVal ctx.tabs v.op ty v.auxInt v.aux argv) := by
+  rcases h with h | h
+  · unfold frameVal; rw [h, GoFV.Proof.Rules.opVal_addr]; unfold GoFV.Proof.Rules.addrVal
+    dsimp only
+    generalize v.aux.bind ctx.tabs.aux? = o
+    rcases o with _ | ⟨fmt, kind⟩
+    · rfl
+    · cases kind <;> rfl
+  · unfold frameVal; rw [h, GoFV.Proof.Rules.opVal_constString]; unfold GoFV.Proof.Rules.strVal
+    dsimp only
+    generalize v.aux.bind ctx.tabs.aux? = o
+    rcases o with _ | ⟨fmt, kind⟩
+    · rfl
+    · cases kind <;> rfl
+
+/-- A term node evaluates by `opVal`: `evalPure`, or the tables for `Addr`/`ConstString`. -/
 theorem evalOp_term {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
-    (ht : termOp v.op = true) : evalOp env ctx fr v argv ty = .ok (evalPure v.op ty v.auxInt v.aux argv) := by
+    (ht : termOp v.op = true) :
+    evalOp env ctx fr v argv ty = .ok (GoFV.Proof.Rules.opVal ctx.tabs v.op ty v.auxInt v.aux argv) := by
   have hr : isRoot v.op = false := by
     unfold termOp at ht
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht
     exact ht.1
-  have hf : frameVal ctx v = none := by
-    unfold frameVal
+  by_cases hfr : v.op = .Addr ∨ v.op = .ConstString
+  · have hf := frameVal_tab (ctx := ctx) ty argv hfr
+    unfold evalOp
     split <;> first
-      | rfl
       | (rename_i h; rw [h] at ht; exact absurd ht (by decide))
-  unfold evalOp
-  split <;> first
-    | (rename_i h; rw [h] at ht; exact absurd ht (by decide))
-    | (rw [hf]; simp only [hr, Bool.false_eq_true, ite_false]; rfl)
+      | (rw [hf]; rfl)
+  · have hf : frameVal ctx v = none := by
+      unfold frameVal
+      split <;> first
+        | rfl
+        | (rename_i h; rw [h] at ht; exact absurd ht (by decide))
+        | (rename_i h; exact (hfr (.inl h)).elim)
+        | (rename_i h; exact (hfr (.inr h)).elim)
+    have hp : GoFV.Proof.Rules.frameOp v.op = false := by
+      unfold GoFV.Proof.Rules.frameOp
+      cases h1 : v.op == .Addr <;> cases h2 : v.op == .ConstString <;> simp_all
+    rw [GoFV.Proof.Rules.opVal_pure hp]
+    unfold evalOp
+    split <;> first
+      | (rename_i h; rw [h] at ht; exact absurd ht (by decide))
+      | (rw [hf]; simp only [hr, Bool.false_eq_true, ite_false]; rfl)
 
 theorem evalValue_term {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
     (ht : termOp v.op = true) (h : evalValue env ctx fr v = .ok y) :
-    y = (evalPure v.op (ctx.tys[v.id]?.getD .other) v.auxInt v.aux
+    y = (GoFV.Proof.Rules.opVal ctx.tabs v.op (ctx.tys[v.id]?.getD .other) v.auxInt v.aux
       (v.args.toList.map (rv fr))).retype (ctx.tys[v.id]?.getD .other) := by
   rw [evalValue_of_regs (regs_of_ok h), evalOp_term ht] at h
   cases h; rfl

@@ -163,7 +163,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   cases hterm : termOp w.op with
   | true =>
     have hev : evalValue env (Ctx.make tabs g) T w =
-        .ok ((evalPure w.op (tabs.ty w.type) w.auxInt w.aux (w.args.toList.map (rv T))).retype
+        .ok ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty w.type) w.auxInt w.aux (w.args.toList.map (rv T))).retype
           (tabs.ty w.type)) := by
       rw [evalValue_of_regs hreg, evalOp_term hterm, hty]; rfl
     refine ⟨_, by rw [hstepV, hev], ?_⟩

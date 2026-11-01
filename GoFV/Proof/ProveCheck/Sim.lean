@@ -113,8 +113,9 @@ theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b
         · exact fold_ref hAx hf n
       obtain ⟨htg, hty, L, h1, h2⟩ : termOp gv.op = true ∧ fv.type = gv.type ∧ ∃ L,
           Sem.Refines
-            (evalPure fv.op (tabs.ty fv.type) fv.auxInt fv.aux (fv.args.toList.map (den f.value? tabs ρ n)))
-            (evalPure gv.op (tabs.ty fv.type) gv.auxInt gv.aux L) ∧
+            (GoFV.Proof.Rules.opVal tabs fv.op (tabs.ty fv.type) fv.auxInt fv.aux
+              (fv.args.toList.map (den f.value? tabs ρ n)))
+            (GoFV.Proof.Rules.opVal tabs gv.op (tabs.ty fv.type) gv.auxInt gv.aux L) ∧
           RefinesList L (gv.args.toList.map (den (listedDefs g) tabs ρ' n)) := by
         rcases defOK_cases hdef with hs | hok | ⟨hao, hs | hok⟩
         · unfold sameDef at hs
@@ -123,7 +124,7 @@ theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b
           refine ⟨hop ▸ ht, hty, _, by rw [hop, hai, hax]; exact .refl _, ?_⟩
           rw [← has]; exact refinesList_map (hargs ht)
         · obtain ⟨-, htg, hty, hga⟩ := valueOK_shape hok
-          refine ⟨htg, hty, _, valueOK_ref hAx hok n, ?_⟩
+          refine ⟨htg, hty, _, valueOK_refT hAx hok n, ?_⟩
           rcases hga with e | e
           · rw [e]; exact refinesList_map (hargs ht)
           · rw [e]; exact .nil
@@ -132,9 +133,9 @@ theorem den_ref (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b0 : ID} (hb0 : b
           obtain ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, -⟩ := hs
           exact ⟨hop ▸ ht, hty, _, by rw [hop, hai, hax]; exact .refl _, hfold hao⟩
         · obtain ⟨-, htg, hty, -⟩ := valueOK_shape hok
-          exact ⟨htg, hty, _, valueOK_ref hAx hok n, hfold hao⟩
+          exact ⟨htg, hty, _, valueOK_refT hAx hok n, hfold hao⟩
       rw [den_succ_term hfv ht, den_succ_term hL htg, ← hty]
-      exact retype_mono _ (h1.trans (evalPure_mono _ _ _ _ h2))
+      exact retype_mono _ (h1.trans (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ h2))
     · have htg : ¬ termOp gv.op = true := by
         rcases defOK_cases hdef with hs | hok | ⟨-, hs | hok⟩
         · unfold sameDef at hs

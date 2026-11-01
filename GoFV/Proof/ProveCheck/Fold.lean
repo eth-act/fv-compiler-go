@@ -122,7 +122,7 @@ theorem intOnly_not_ptr (hA : AsmHolds D tabs ρ A) {a : ID} (h : intOnly D tabs
       cases m with
       | zero => exact noPtr_poison
       | succ m =>
-        rw [den_succ_term hav ht, rTab_eval hc, width_some hw]
+        rw [den_succ_term hav ht, rTab_opVal hc, width_some hw]
         exact noPtr_retype_int (rOpEval_noPtr _ _ _ _)
     · obtain ⟨⟨c, v⟩, hf, hm⟩ := List.any_eq_true.1 h
       split at hm
@@ -145,8 +145,8 @@ theorem listedDefs_of {g : Func} {c : ID} {cv : Value} (hc : g.value? c = some c
     listedDefs g c = some cv := by
   simp only [listedDefs, hc, Option.filter, hl.1, hl.2, Bool.and_self, ↓reduceIte]
 
-theorem constOp_eval (w : Width) (aux : Option AuxRef) (ai : Int64) :
-    (evalPure (constOp w) (.int w) ai aux []).retype (.int w) =
+theorem constOp_eval (tabs : Tables) (w : Width) (aux : Option AuxRef) (ai : Int64) :
+    (GoFV.Proof.Rules.opVal tabs (constOp w) (.int w) ai aux []).retype (.int w) =
       .int w (BitVec.ofInt w.bits ai.toInt) := by
   cases w
   all_goals exact retype_int_self _ _

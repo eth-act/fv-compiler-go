@@ -11,13 +11,13 @@ definition of the matched value in `M` is a term node of the pattern's op whose 
 `Inst.at` reads the matched values (`inst_at`).
 
 `den_le_patDen`, `patDen_le_den`: the denotation of the matched value bounds the pattern's
-denotation `Pat.den` from below and above when the leaves are bounded accordingly.
+denotation `Pat.denT` from below and above when the leaves are bounded accordingly.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
-open GoFV.Proof.Rules (Path PEnv Pat.den Pat.dens)
+open GoFV.Proof.Rules (Path PEnv Pat.denT Pat.densT)
 
 mutual
 /-- `I` is a match of `q` at `p` on value `w` in `M`. -/
@@ -211,12 +211,19 @@ theorem evalPure_swap {o : Op} (ho : o ∈ commOps) (t : Ty) (a : Int64) (x : Op
   | [] => rfl
   | [_] => rfl
 
-theorem evalPure_ids {o : Op} {ids l : List ID}
+theorem frameOp_of_comm {o : Op} (ho : o ∈ commOps) : GoFV.Proof.Rules.frameOp o = false := by
+  have := List.all_eq_true.1
+    (show commOps.all (fun o => !GoFV.Proof.Rules.frameOp o) = true by decide) o ho
+  simpa using this
+
+theorem opVal_ids {tabs : Tables} {o : Op} {ids l : List ID}
     (h : ids = l ∨ (o ∈ commOps ∧ ids = swap01 l)) (t : Ty) (a : Int64) (x : Option AuxRef)
-    (f : ID → Val) : evalPure o t a x (ids.map f) = evalPure o t a x (l.map f) := by
+    (f : ID → Val) :
+    GoFV.Proof.Rules.opVal tabs o t a x (ids.map f) = GoFV.Proof.Rules.opVal tabs o t a x (l.map f) := by
   rcases h with rfl | ⟨ho, rfl⟩
   · rfl
-  · rw [map_swap01, evalPure_swap ho]
+  · rw [GoFV.Proof.Rules.opVal_pure (frameOp_of_comm ho), GoFV.Proof.Rules.opVal_pure (frameOp_of_comm ho),
+      map_swap01, evalPure_swap ho]
 
 /-! ## Denotation bounds -/
 
@@ -240,7 +247,7 @@ denotations (at fuel `≤ n`) refine the instance's leaves. -/
 theorem den_le_patDen {ρ : ID → Val} {n : Nat} (hF : FieldsOK M I tabs e)
     (hleaf : ∀ p w, (p, w) ∈ I → ∀ k ≤ n, Sem.Refines (den M.get? tabs ρ k w) (e.leaf p)) :
     ∀ (q : Pat) (p : Path) (w : ID) (k : Nat), MatchOK M I q p w → k ≤ n + 1 →
-      (k ≤ n ∨ isOpPat q = true) → Sem.Refines (den M.get? tabs ρ k w) (Pat.den e p q)
+      (k ≤ n ∨ isOpPat q = true) → Sem.Refines (den M.get? tabs ρ k w) (Pat.denT tabs e p q)
   | .op o nm ty ai ax ar args comm, p, w, k, hm, hk, _ => by
     obtain ⟨hmem, x, hx, hop, ht, ids, hids, hs⟩ := hm
     cases k with
@@ -248,23 +255,23 @@ theorem den_le_patDen {ρ : ID → Val} {n : Nat} (hF : FieldsOK M I tabs e)
     | succ j =>
       rw [den_succ_term hx (hop ▸ ht)]
       obtain ⟨h1, h2, h3⟩ := hF p w x hmem hx
-      simp only [Pat.den, h1, h2, h3, hop]
+      simp only [GoFV.Proof.Rules.Pat.denT, h1, h2, h3, hop]
       apply retype_mono
-      rw [← evalPure_ids hids]
-      exact evalPure_mono _ _ _ _ (dens_le hF hleaf args p 0 ids j hs (by omega))
+      rw [← opVal_ids hids]
+      exact GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (dens_le hF hleaf args p 0 ids j hs (by omega))
   | .wild, p, w, k, hm, hk, hk' => by
-    simp only [Pat.den]
+    simp only [GoFV.Proof.Rules.Pat.denT]
     exact hleaf p w hm k (by simpa [isOpPat] using hk')
   | .bind _, p, w, k, hm, hk, hk' => by
-    simp only [Pat.den]
+    simp only [GoFV.Proof.Rules.Pat.denT]
     exact hleaf p w hm k (by simpa [isOpPat] using hk')
   | .same _, p, w, k, hm, hk, hk' => by
-    simp only [Pat.den]
+    simp only [GoFV.Proof.Rules.Pat.denT]
     exact hleaf p w hm k (by simpa [isOpPat] using hk')
 theorem dens_le {ρ : ID → Val} {n : Nat} (hF : FieldsOK M I tabs e)
     (hleaf : ∀ p w, (p, w) ∈ I → ∀ k ≤ n, Sem.Refines (den M.get? tabs ρ k w) (e.leaf p)) :
     ∀ (qs : List Pat) (p : Path) (i : Nat) (ids : List ID) (j : Nat), MatchOKs M I qs p i ids →
-      j ≤ n → RefinesList (ids.map (den M.get? tabs ρ j)) (Pat.dens e p i qs)
+      j ≤ n → RefinesList (ids.map (den M.get? tabs ρ j)) (Pat.densT tabs e p i qs)
   | [], _, _, [], _, _, _ => .nil
   | q :: qs, p, i, a :: as, j, ⟨h1, h2⟩, hj =>
     .cons (den_le_patDen hF hleaf q (i :: p) a j h1 (by omega) (.inl hj))
@@ -292,25 +299,25 @@ theorem patDen_le_den {D' : ID → Option Value} {ρ : ID → Val} {B : Nat}
     (hD : ∀ p w x, (p, w) ∈ I → p ≠ [] → M.get? w = some x → D' w = some x)
     (hleaf : ∀ p w, (p, w) ∈ I → Sem.Refines (e.leaf p) (den D' tabs ρ B w)) :
     ∀ (q : Pat) (p : Path) (w : ID) (m : Nat), MatchOK M I q p w → p ≠ [] → B + Pat.sz q ≤ m →
-      Sem.Refines (Pat.den e p q) (den D' tabs ρ m w)
+      Sem.Refines (Pat.denT tabs e p q) (den D' tabs ρ m w)
   | .op o nm ty ai ax ar args comm, p, w, m, hm, hp, hle => by
     obtain ⟨hmem, x, hx, hop, ht, ids, hids, hs⟩ := hm
     simp only [Pat.sz] at hle
     obtain ⟨j, rfl⟩ : ∃ j, m = j + 1 := ⟨m - 1, by omega⟩
     rw [den_succ_term (hD p w x hmem hp hx) (hop ▸ ht)]
     obtain ⟨h1, h2, h3⟩ := hF p w x hmem hx
-    simp only [Pat.den, h1, h2, h3, hop]
+    simp only [GoFV.Proof.Rules.Pat.denT, h1, h2, h3, hop]
     apply retype_mono
-    rw [← evalPure_ids hids]
-    exact evalPure_mono _ _ _ _ (dens_le_den hF hD hleaf args p 0 ids j hs (by omega))
+    rw [← opVal_ids hids]
+    exact GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (dens_le_den hF hD hleaf args p 0 ids j hs (by omega))
   | .wild, p, w, m, hm, _, hle => by
-    simp only [Pat.den]
+    simp only [GoFV.Proof.Rules.Pat.denT]
     exact Sem.Refines.trans (hleaf p w hm) (den_fuel_mono _ _ _ _ _ _ (by simpa [Pat.sz] using hle))
   | .bind _, p, w, m, hm, _, hle => by
-    simp only [Pat.den]
+    simp only [GoFV.Proof.Rules.Pat.denT]
     exact Sem.Refines.trans (hleaf p w hm) (den_fuel_mono _ _ _ _ _ _ (by simpa [Pat.sz] using hle))
   | .same _, p, w, m, hm, _, hle => by
-    simp only [Pat.den]
+    simp only [GoFV.Proof.Rules.Pat.denT]
     exact Sem.Refines.trans (hleaf p w hm) (den_fuel_mono _ _ _ _ _ _ (by simpa [Pat.sz] using hle))
 theorem dens_le_den {D' : ID → Option Value} {ρ : ID → Val} {B : Nat}
     (hF : FieldsOK M I tabs e)
@@ -318,7 +325,7 @@ theorem dens_le_den {D' : ID → Option Value} {ρ : ID → Val} {B : Nat}
     (hleaf : ∀ p w, (p, w) ∈ I → Sem.Refines (e.leaf p) (den D' tabs ρ B w)) :
     ∀ (qs : List Pat) (p : Path) (i : Nat) (ids : List ID) (j : Nat), MatchOKs M I qs p i ids →
       B + Pat.szs qs ≤ j →
-      RefinesList (Pat.dens e p i qs) (ids.map (den D' tabs ρ j))
+      RefinesList (Pat.densT tabs e p i qs) (ids.map (den D' tabs ρ j))
   | [], _, _, [], _, _, _ => .nil
   | q :: qs, p, i, a :: as, j, ⟨h1, h2⟩, hj => by
     simp only [Pat.szs] at hj

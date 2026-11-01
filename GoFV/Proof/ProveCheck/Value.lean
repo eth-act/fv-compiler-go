@@ -232,6 +232,43 @@ theorem valueOK_ref (h : AsmHolds D tabs ρ A) {fv gv : Value} (hv : valueOK D t
           | (rcases hgo with ⟨hg, rfl⟩ | ⟨hg, rfl⟩ <;> rw [hg] <;> exact .int _ _)
       · cases hw
 
+/-- The ops of a value rewrite are not table-evaluated (`Rules.frameOp`): table entries, or
+`Slicemask` → `Const64`/`Const32`. -/
+theorem valueOK_frame {fv gv : Value} (hv : valueOK D tabs A fv gv = true) :
+    GoFV.Proof.Rules.frameOp fv.op = false ∧ GoFV.Proof.Rules.frameOp gv.op = false := by
+  unfold valueOK at hv
+  simp only [Bool.and_eq_true] at hv
+  obtain ⟨-, hv⟩ := hv
+  have hsh : ∀ p ∈ shTab, GoFV.Proof.Rules.frameOp p.1 = false := by decide
+  have hop : ∀ p ∈ opTab, GoFV.Proof.Rules.frameOp p.1.1 = false ∧
+      GoFV.Proof.Rules.frameOp p.1.2 = false := by decide
+  split at hv
+  · rename_i hf hg
+    exact ⟨hsh _ (mem_of_lookup hf), hsh _ (mem_of_lookup hg)⟩
+  · split at hv
+    · rename_i hk; exact hop _ (mem_of_lookup hk)
+    · rename_i hk; exact hop _ (mem_of_lookup hk)
+    · rename_i hk; exact hop _ (mem_of_lookup hk)
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hv
+      obtain ⟨⟨⟨hs, -⟩, -⟩, hw⟩ := hv
+      split at hw
+      · simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hw
+        rw [hs]
+        rcases hw with ⟨hg, -⟩ | ⟨hg, -⟩ <;> rw [hg] <;> exact ⟨rfl, rfl⟩
+      · cases hw
+
+/-- `valueOK_ref` for term-node values (`Rules.opVal`). -/
+theorem valueOK_refT (h : AsmHolds D tabs ρ A) {fv gv : Value} (hv : valueOK D tabs A fv gv = true)
+    (m : Nat) :
+    Sem.Refines
+      (GoFV.Proof.Rules.opVal tabs fv.op (tabs.ty fv.type) fv.auxInt fv.aux
+        (fv.args.toList.map (den D tabs ρ m)))
+      (GoFV.Proof.Rules.opVal tabs gv.op (tabs.ty fv.type) gv.auxInt gv.aux
+        (gv.args.toList.map (den D tabs ρ m))) := by
+  obtain ⟨h1, h2⟩ := valueOK_frame hv
+  rw [GoFV.Proof.Rules.opVal_pure h1, GoFV.Proof.Rules.opVal_pure h2]
+  exact valueOK_ref h hv m
+
 end
 
 end GoFV.Proof.ProveCheck

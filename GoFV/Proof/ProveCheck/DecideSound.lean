@@ -302,7 +302,7 @@ theorem decides_sound (h : AsmHolds D tabs ρ A) :
           split at hd
           · rename_i ck hk
             rw [show cv.args.toList.map (den D tabs ρ m) = [den D tabs ρ m a, den D tabs ρ m b] by
-              rw [hl]; rfl, cTab_eval hk] at hc
+              rw [hl]; rfl, cTab_opVal hk] at hc
             unfold cmpDecides at hd
             cases ck with
             | lt w s st =>

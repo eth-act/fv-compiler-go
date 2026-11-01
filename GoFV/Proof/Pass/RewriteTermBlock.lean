@@ -291,7 +291,7 @@ theorem stBlock_if_size (h2 : fb.succs.size = 2) :
 /-- The step of the control's denotation that the event's new definition `u` of `c` gives. -/
 theorem den_new {M' : Defs} {u : Value} (hu : M'.get? c = some u) (ht : termOp u.op = true)
     {ρ : ID → Val} (m : Nat) :
-    den M'.get? tabs ρ (m + 1) c = (evalPure u.op (tabs.ty u.type) u.auxInt u.aux
+    den M'.get? tabs ρ (m + 1) c = (GoFV.Proof.Rules.opVal tabs u.op (tabs.ty u.type) u.auxInt u.aux
       (u.args.toList.map (den M'.get? tabs ρ m))).retype (tabs.ty u.type) :=
   den_succ_term hu ht
 
@@ -305,7 +305,7 @@ end BlockEv
 /-- **A block-rule event keeps `BInv`.** -/
 theorem BInv.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M : Defs} {C : ID → Prop} {B : BMap} (h : BInv tabs f D₀ C₀ M C B)
-    (hI : ReplayInv tabs D₀ C₀ M C) {cr : Rule} (hs : GoFV.Proof.Rules.Rule.Sound cr)
+    (hI : ReplayInv tabs D₀ C₀ M C) {cr : Rule} (hs : GoFV.Proof.Rules.Rule.SoundT cr)
     (hr : RetypeShapes) {c : ID} {defs : List Value} (F : RuleFacts tabs M cr c defs)
     {b : ID} {st : BState} (hst : bstate f B b = some st)
     (h2 : (f.block? b).map (·.succs.size) = some 2) {br : BlockRule}

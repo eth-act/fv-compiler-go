@@ -8,7 +8,7 @@ import GoFV.Proof.Rules.AllSound
 `D₀`, the values of a set `C₀` closed under arguments keep a refining denotation
 (`ReplayInv`), and the atoms of `D₀` whose arguments are in `C₀` keep their fields while their
 arguments (rewritten only by `copyArg` events, through compatible copies) keep refining
-denotations. Rule events use `RuleFacts.step` and `Rule.Sound` of the table's rule
+denotations. Rule events use `RuleFacts.step` and `Rule.SoundT` of the table's rule
 (`ofRuleSet_sound`).
 -/
 
@@ -47,7 +47,7 @@ theorem foldl_rows (L : List (Op × List Rule)) : ∀ (l : List (Op × List Rule
 /-- Every rule of the table of a sound rule set is sound. -/
 theorem ofRuleSet_sound {s : RuleSet} (hs : s.AllSound) {k i : Nat} {cr : GoFV.Rules.Interp.CRule}
     (h : ((GoFV.Rules.Interp.Table.ofRuleSet s).values[k]?).bind (·[i]?) = some cr) :
-    GoFV.Proof.Rules.Rule.Sound cr.rule := by
+    GoFV.Proof.Rules.Rule.SoundT cr.rule := by
   cases hk : (GoFV.Rules.Interp.Table.ofRuleSet s).values[k]? with
   | none => rw [hk] at h; cases h
   | some row =>
@@ -197,7 +197,7 @@ theorem copyPut_den (hx : M.get? v = some x) (hi : i < x.args.size)
         have hnew : (copyPut M v x i src hi).get? v = some { x with args := x.args.set i src hi } := by
           rw [copyPut_get]; simp
         rw [den_succ_term hx hop, den_succ_term hnew hop]
-        apply retype_mono; apply evalPure_mono
+        apply retype_mono; apply GoFV.Proof.Rules.opVal_mono
         refine refinesList_idx (by simp) fun j h1 h2 => ?_
         simp only [Array.getElem_toList, Array.getElem_set]
         split
@@ -209,7 +209,7 @@ theorem copyPut_den (hx : M.get? v = some x) (hi : i < x.args.size)
       · have hkeep : (copyPut M v x i src hi).get? y = some m := by
           rw [copyPut_get]; simp [hyv, hm]
         rw [den_succ_term hm hop, den_succ_term hkeep hop]
-        exact retype_mono _ (evalPure_mono _ _ _ _ (refinesList_map fun a ha =>
+        exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (refinesList_map fun a ha =>
           copyPut_den hx hi hr hC hT n a (hargs a (Array.mem_toList_iff.1 ha))))
     · have ht' : ¬ IsTerm (copyPut M v x i src hi).get? y := fun h =>
         ht ((copyPut_isTerm hx hi y).1 h)
@@ -266,7 +266,7 @@ theorem den_compose {M' : Defs} {y y' : ID} {g : Nat → Nat}
   exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans (h2 ρ (hty ρ hρ) m)⟩
 
 theorem ReplayInv.rule {r : Rule} {v : ID} {defs : List Value} (hI : ReplayInv tabs D₀ C₀ M C)
-    (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes) (F : RuleFacts tabs M r v defs) :
+    (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes) (F : RuleFacts tabs M r v defs) :
     ReplayInv tabs D₀ C₀ (putAll M defs) (fun y => C y ∨ (C v ∧ y ∈ defIds defs)) where
   closed := F.closed hI.closed
   sub := fun y h => .inl (hI.sub y h)

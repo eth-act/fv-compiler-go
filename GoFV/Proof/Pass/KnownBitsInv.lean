@@ -95,7 +95,8 @@ theorem argE_eq {v : Value} {i : Nat} (hi : i < v.args.size) : argE E v i = ent 
 /-- A term node keeps the invariant. -/
 theorem kb_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.op = true)
     (ρ : ID → Val) (hρ : ∀ a ∈ v.args, Gam (ent E a) (ρ a)) :
-    Gam (ent E x) ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
+    Gam (ent E x) ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
+      (v.args.toList.map ρ)).retype
       (tabs.ty v.type)) := by
   have hfix := K.fix x (lt_of_value? hv)
   have hph : v.op ≠ .Phi := fun h => by rw [h, termOp_phi] at ht; cases ht
@@ -118,6 +119,10 @@ theorem kb_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.o
     exact gam_any _ hfix _
   | some k =>
     rw [hk] at hfix
+    have hfo : GoFV.Proof.Rules.frameOp v.op = false := by
+      simp only [GoFV.Proof.Rules.frameOp, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+      exact ⟨fun h => (by rw [h] at hk; cases hk), fun h => (by rw [h] at hk; cases hk)⟩
+    rw [GoFV.Proof.Rules.opVal_pure hfo]
     obtain ⟨hsem, hvalid⟩ := kind_spec hk (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)
     rw [hsem]
     cases k with

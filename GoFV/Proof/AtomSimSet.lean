@@ -57,7 +57,7 @@ structure SrcInv (tabs : Tables) (f : Func) where
       L e.b e.i ∧ (∀ a, P e.b a (rv fr a)) ∧ PhisP tabs f P fr e.b e.i
   term : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
     termOp v.op = true → ∀ ρ : ID → Val, (∀ a ∈ v.args, P b a (ρ a)) →
-      P b x ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
+      P b x ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
         (tabs.ty v.type))
   atom : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
     termOp v.op = false → v.op ≠ .Phi → ∀ y : Val, P b x (y.retype (tabs.ty v.type))
@@ -276,7 +276,7 @@ def TermsOK (D : ID → Option Value) (tabs : Tables) (fr : Frame) : (ID → Pro
   | _, [] => True
   | V, x :: s => Reg fr x ∧
       (∀ v, D x = some v → termOp v.op = true → (∀ a ∈ v.args, V a) ∧
-        fr.regs[x]? = some (some ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux
+        fr.regs[x]? = some (some ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
           (v.args.toList.map (rv fr))).retype (tabs.ty v.type)))) ∧
       TermsOK D tabs fr (fun a => V a ∨ a = x) s
 
