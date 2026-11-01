@@ -239,4 +239,120 @@ theorem sl2_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := sl2Rules) (penv := sl2PassEnv)
         (f := sl2Func) (out := out) sl2Rules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
+/-! ## An aggregate: `storeLoadStr` (`generic.rules:800` at a string)
+
+```go
+func storeLoadStr(p *string, s string) string {
+	*p = s
+	return *p
+}
+```
+
+as one block: `v4 = Store {string} v2 v3 v1`, `v5 = Load <string> v2 v4`. The string shape
+`agg [(0, ptr), (8, int64)] 16` is `RewriteCheck.fwdAgg` (non-overlapping scalar fields), so the
+forwarding is validated: a `Load`'s `decodeLoad` reads back a stored string, and a stored
+`poison` string (all `poison` bytes) as `poison`. -/
+
+/-- `abiInfo` of `storeLoadStr`: the pointer in one register, the string in two, the string
+result in two. -/
+def slsABI : CallABI :=
+  { abi := 1, nin := 2, nout := 1, spillOff := 8, spillSize := 24, inRegs := 3, outRegs := 2,
+    params := #[{ out := false, index := 0, type := 7, name := some 3, regs := #[0], offset := 0 },
+                { out := false, index := 1, type := 5, name := some 4, regs := #[1, 2],
+                  offset := 8 },
+                { out := true, index := 0, type := 5, name := some 5, regs := #[0, 1],
+                  offset := -1 }] }
+
+/-- The definition tables: `Store {string}` names its type by aux 6. -/
+def slsTabs : Tables where
+  types :=
+    let t := Array.replicate 36 (none : Option TypeDef)
+    let t := t.set! 1 (some (mkT .FUNC (some 8) "func(*string, string) string" (.func 0 2 1 #[])))
+    let t := t.set! 2 (some (mkT .UINT8 (some 1) "uint8"))
+    let t := t.set! 3 (some (mkT .PTR (some 8) "*uint8" (.elem 2)))
+    let t := t.set! 5 (some { mkT .STRING (some 16) "string" with align := some 8 })
+    let t := t.set! 6 (some (mkT .INT (some 8) "int"))
+    let t := t.set! 7 (some (mkT .PTR (some 8) "*string" (.elem 5)))
+    let t := t.set! 29 (some (mkT .SSA none "mem"))
+    let t := t.set! 31 (some (mkT .SSA none "void"))
+    t.set! 35 (some (mkT .RESULTS none "string,mem" (.results #[5, 29])))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.storeLoadStr}",
+           kind := .call (some 2) (some slsABI) },
+    some { fmt := GoStr.ofString "main.storeLoadStr",
+           kind := .sym (GoStr.ofString "main.storeLoadStr") 1 "" 0 default none none none #[]
+             none },
+    some (paramNameT "p" .PPARAM 7 0), some (paramNameT "s" .PPARAM 5 8),
+    some (paramNameT "~r0" .PPARAMOUT 5 0),
+    some { fmt := GoStr.ofString "string", kind := .type 5 }]
+
+/-- `storeLoadStr`, the input of `opt`. -/
+def slsFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 6
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[6] #[] #[] #[1, 2, 3, 4, 5, 6])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 1 #[] 1),
+    some (mkV 2 .Arg 7 (some 3) p0 2 #[] 1),
+    some (mkV 3 .Arg 5 (some 4) p0 1 #[] 1),
+    some (mkV 4 .Store 29 (some 6) p0 2 #[2, 3, 1] 1),
+    some (mkVi 5 .Load 5 0 p0 1 #[2, 4] 1),
+    some (mkVi 6 .MakeResult 35 0 p0 1 #[5, 4] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+def slsTyps : Array (String × TypeRef) := #[("Int", 6), ("Mem", 29), ("Void", 31)]
+
+def slsPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "storeLoadStr", typs := slsTyps, tables := slsTabs }
+
+def slsCheckEnv : CheckEnv := { tabs := slsTabs, typs := slsTyps }
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` with `{generic.rules:800}`
+keeps a result whose `MakeResult` reads the string `s` (`v3`) instead of the Load, which passes
+`check`. -/
+theorem sls_checks :
+    (check slsCheckEnv slsFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet slRules) slsPassEnv slsFunc).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slsTyps } o.func).toBool,
+        (o.func.value? 6).map (·.args))) =
+      some (true, some #[3, 4]) := by
+  decide +kernel
+
+/-- **Pass execution witness** for aggregate forwarding: on `storeLoadStr`, the checked rewrite
+pass with `{generic.rules:800}` forwards the stored string `s` to the `return`
+(`v6 = MakeResult v3 v4`), and the result refines the input (`checkedRewrite_refines`, through
+`LoadFwd.fwd_refines` at the string shape). -/
+theorem sls_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet slRules) slsPassEnv slsFunc = .ok out ∧
+      (out.func.value? 6).map (·.args) = some #[3, 4] ∧
+      check slsCheckEnv slsFunc = .ok () ∧
+      check { tabs := out.tables, typs := slsTyps } out.func = .ok () ∧
+      RefinesUnder Env.Mono out.tables out.func slsPassEnv.tables slsFunc := by
+  obtain ⟨h1, h2⟩ := sls_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet slRules) slsPassEnv slsFunc with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h6⟩ := h2
+    exact ⟨out, rfl, h6, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := slRules) (penv := slsPassEnv)
+        (f := slsFunc) (out := out) slRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
+/-- The forwarded shape is an aggregate: the string shape is `fwdAgg`, not a scalar. -/
+theorem sls_agg : slsTabs.ty 5 = .agg [(0, .ptr (some 1)), (8, .int .w64)] 16 ∧
+    RewriteCheck.fwdAgg (slsTabs.ty 5) = true ∧ RewriteCheck.fwdScalar (slsTabs.ty 5) = false := by
+  decide +kernel
+
 end GoFV.Proof.Witness

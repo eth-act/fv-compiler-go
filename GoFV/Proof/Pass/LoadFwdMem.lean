@@ -1,15 +1,18 @@
 import GoFV.Proof.Pass.CSEMemBytes
 import GoFV.Proof.ValRefine
+import GoFV.Proof.ABIBytes
 import GoFV.Opt.RewriteCheck
 
 /-!
 # Load-of-Store forwarding: a read after a write (issue #151)
 
 `read_write_self`: reading the bytes just written at the same pointer gives them back.
-`decode_encode`: at an integer, boolean or pointer shape (`RewriteCheck.fwdTy`), decoding the
-encoding of a value of that shape (fixed by `Val.retype`) gives the value back, or `poison` (for
-`poison`). `load_write`: a `Load` of shape `t` at `p` after a `Store` of `x` at `p` with shape
-`t` reads `x` back.
+`decode_encode`: at an integer, boolean or pointer shape (`RewriteCheck.fwdScalar`), decoding
+the encoding of a value of that shape (fixed by `Val.retype`) gives the value back, or `poison`
+(for `poison`). `decodeLoad_encode`: so does a `Load`'s `decodeLoad` at a shape `fwdTy`, also an
+aggregate of non-overlapping such fields (`fields_encode`; a `poison` aggregate is all `poison`
+bytes, which `decodeLoad` reads as `poison`). `load_write`: a `Load` of shape `t` at `p` after a
+`Store` of `x` at `p` with shape `t` reads `x` back.
 -/
 
 namespace GoFV.Proof.Pass.LoadFwd
@@ -110,8 +113,8 @@ theorem decode_poison_int (w : Width) :
     decode (Array.replicate w.bytes Byte.poison) 0 (.int w) = .poison := by
   cases w <;> rfl
 
-/-- **Decoding an encoding** at a shape `fwdTy` gives a value of that shape back. -/
-theorem decode_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val}
+/-- **Decoding an encoding** at a shape `fwdScalar` gives a value of that shape back. -/
+theorem decode_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdScalar t = true) {x : Val}
     (hx : x.retype t = x) : Sem.Refines (decode (encode t x) 0 t) x := by
   cases t with
   | int w =>
@@ -163,7 +166,83 @@ theorem decode_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : 
     | int w v =>
       cases w <;> simp [Val.retype] at hx
     | _ => simp [Val.retype] at hx
-  | _ => simp [GoFV.Opt.RewriteCheck.fwdTy] at ht
+  | _ => simp [GoFV.Opt.RewriteCheck.fwdScalar] at ht
+
+/-- `fwdFields` are laid out as `ABI.wfFields` says. -/
+theorem fwdFields_wf {n : Nat} : ∀ {lo : Nat} {fs : List (Nat × Ty)},
+    GoFV.Opt.RewriteCheck.fwdFields n lo fs = true → lo ≤ n → GoFV.Proof.ABI.wfFields fs n lo = true
+  | _, [], _, hl => by simpa [GoFV.Proof.ABI.wfFields] using hl
+  | _, (o, t) :: fs, h, _ => by
+    simp only [GoFV.Opt.RewriteCheck.fwdFields, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨hs, hlo⟩, hon⟩, hf⟩ := h
+    simp only [GoFV.Proof.ABI.wfFields, Bool.and_eq_true, decide_eq_true_eq]
+    refine ⟨⟨hlo, ?_⟩, fwdFields_wf hf hon⟩
+    cases t <;> first | rfl | simp [GoFV.Opt.RewriteCheck.fwdScalar] at hs
+
+/-- A `fwdScalar` shape loads as it decodes. -/
+theorem decodeLoad_scalar {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdScalar t = true)
+    (bs : Array Byte) (o : Nat) : decodeLoad bs o t = decode bs o t := by
+  cases t <;> first | rfl | simp [GoFV.Opt.RewriteCheck.fwdScalar] at ht
+
+/-- The fields of an `encodeFields` of retype-fixed values at `fwdFields` decode back. -/
+theorem fields_encode {n : Nat} {B : Array Byte} : ∀ {lo : Nat} {fs : List (Nat × Ty)}
+    {vs : List Val} {buf : Array Byte}, GoFV.Opt.RewriteCheck.fwdFields n lo fs = true →
+    lo ≤ n → buf.size = n → Val.retypeFields fs vs = some vs → B = encodeFields buf fs vs →
+    Sem.RefinesList (decodeLoadFields B 0 fs) vs
+  | _, [], [], _, _, _, _, _, _ => by simp only [decodeLoadFields]; exact .nil
+  | _, [], _ :: _, _, _, _, _, hr, _ => by simp [Val.retypeFields] at hr
+  | _, _ :: _, [], _, _, _, _, hr, _ => by simp [Val.retypeFields] at hr
+  | lo, (o, t) :: fs, v :: vs, buf, h, hlo, hb, hr, hB => by
+    have hw := fwdFields_wf h hlo
+    have hag := GoFV.Proof.ABI.encodeFields_agree (v := v) (vs := vs) hw hb
+    rw [← hB] at hag
+    simp only [Val.retypeFields, Option.map_eq_some_iff, List.cons.injEq] at hr
+    obtain ⟨vs', hvs', hv, rfl⟩ := hr
+    simp only [GoFV.Opt.RewriteCheck.fwdFields, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨hs, -⟩, hon⟩, hf⟩ := h
+    simp only [decodeLoadFields, Nat.zero_add]
+    refine .cons ?_ (fields_encode (buf := putBytes buf o (encode t v)) hf hon
+      (by rw [putBytes_size, hb]) hvs' (by rw [hB]; rfl))
+    rw [decodeLoad_scalar hs, GoFV.Proof.ABI.decode_agree t (by
+      cases t <;> first | rfl | simp [GoFV.Opt.RewriteCheck.fwdScalar] at hs) hag]
+    exact decode_encode hs hv
+
+/-- `n ≠ 0` `poison` bytes are `allPoison`. -/
+theorem allPoison_replicate {n : Nat} (hn : n ≠ 0) :
+    allPoison (Array.replicate n Byte.poison) 0 n = true := by
+  unfold allPoison
+  rw [Nat.zero_add, Array.extract_eq_self_of_le (by simp), ← Array.all_toList,
+    Array.toList_replicate]
+  simp [hn]
+
+/-- **Decoding a `Load` of an encoding** at a shape `fwdTy` gives a value of that shape back. -/
+theorem decodeLoad_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val}
+    (hx : x.retype t = x) : Sem.Refines (decodeLoad (encode t x) 0 t) x := by
+  rcases Bool.or_eq_true_iff.1 ht with hs | ha
+  · rw [decodeLoad_scalar hs]
+    exact decode_encode hs hx
+  cases t with
+  | agg fs n =>
+    simp only [GoFV.Opt.RewriteCheck.fwdAgg, Bool.and_eq_true, bne_iff_ne, ne_eq] at ha
+    cases x with
+    | poison =>
+      rw [encode_poison]
+      simp only [decodeLoad, Ty.size, allPoison_replicate ha.1, ite_true]
+      exact .poison _
+    | agg vs =>
+      simp only [Val.retype] at hx
+      split at hx
+      · rename_i vs' hr
+        injection hx with hx
+        subst hx
+        simp only [decodeLoad]
+        split
+        · exact .poison _
+        · exact .agg (fields_encode (buf := Array.replicate n .poison) ha.2 (Nat.zero_le _)
+            (by simp) hr (by simp only [encode]))
+      · cases hx
+    | _ => simp [Val.retype] at hx
+  | _ => simp [GoFV.Opt.RewriteCheck.fwdAgg] at ha
 
 /-- **A `Load` after a `Store` at the same pointer** reads the stored value back (or `poison`). -/
 theorem load_write {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val}
@@ -171,10 +250,11 @@ theorem load_write {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val
     Sem.Refines (m'.load t p) x := by
   have hr := read_write_self hw
   rw [Sem.encode_size] at hr
-  have hl : m'.load t p = decode (encode t x) 0 t := by
+  have hl : m'.load t p = decodeLoad (encode t x) 0 t := by
     unfold Mem.load
-    cases t <;> simp_all [GoFV.Opt.RewriteCheck.fwdTy]
+    cases t <;> simp_all [GoFV.Opt.RewriteCheck.fwdTy, GoFV.Opt.RewriteCheck.fwdScalar,
+      GoFV.Opt.RewriteCheck.fwdAgg]
   rw [hl]
-  exact decode_encode ht hx
+  exact decodeLoad_encode ht hx
 
 end GoFV.Proof.Pass.LoadFwd

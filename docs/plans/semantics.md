@@ -214,8 +214,15 @@ executable `Mem` can use a `Std.HashMap` per allocation with a `@[csimp]`-free f
   (`Config.BigEndian = false`). A pointer piece decodes from 8 consecutive `frag p 0..7`;
   decoding an integer from fragments uses the concrete address; decoding a pointer from
   concrete bytes goes through the uintptr→ptr rule; any `poison` byte makes the piece `poison`.
-  `Store {T}` encodes symmetrically (`poison` pieces store `poison` bytes). A `Load` of a
-  non-SSA-able type (only after `expand calls` retypes `Dereference` to `Load`,
+  `Store {T}` encodes symmetrically (`poison` pieces store `poison` bytes). A `Load`
+  decodes with `decodeLoad` (`Mem.load`): as `decode`, except that an aggregate whose bytes
+  (fields and padding, at least one byte) are all `poison` loads as `poison`, at every
+  aggregate level. So a stored `poison` aggregate loads back as `poison` (Load-of-Store
+  forwarding of strings, interfaces, flat structs, #151), and a struct load still equals the
+  `StructMake` of its field loads (`rewriteStructLoad`), since a field load applies the same
+  check to the field's bytes. `decode` itself (register pieces `ofPieces`/`toPieces`, ABI
+  arguments and results) keeps decoding such bytes to an aggregate of `poison` fields. A
+  `Load` of a non-SSA-able type (only after `expand calls` retypes `Dereference` to `Load`,
   `expand_calls.go` `rewriteCallArgs`; it then only feeds a `Move`) yields a `blob`, like
   `Dereference`.
 - **Move** `{T} [n] dst src mem` copies `n` bytes with memmove semantics (all loads before all
