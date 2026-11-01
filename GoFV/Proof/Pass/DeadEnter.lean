@@ -15,7 +15,7 @@ namespace GoFV.Proof.Dead
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
 open GoFV.Proof.CopyElim (stepV_of topoRem_append_left topoRem_at topoRem_before prio_panicking)
 
-variable {f g : Func}
+variable {f g : Func} {K : ID → Prop}
 
 theorem with_regs {a b : Frame} (h : a = { b with regs := a.regs }) (X : Array (Option Val)) :
     ({ a with regs := X } : Frame) = { b with regs := X } := by
@@ -27,12 +27,12 @@ theorem params_eq {tabs : Tables} (h : g.ownAux = f.ownAux) :
 
 namespace Setup
 
-variable (S : Setup f g)
+variable (S : Setup f g K)
 include S
 
 /-- A kept non-`Phi`, in a frame agreeing with `G` on its arguments, evaluates in the target as
 the source value does in `G`. -/
-theorem evalKept {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Block}
+theorem evalKept {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb : Block}
     (hgb : g.block? bid = some gb) (hfb : f.block? bid = some fb) {x : ID} (hx : x ∈ gb.values)
     {gv fv : Value} (hgv : g.value? x = some gv) (hfv : f.value? x = some fv)
     (hgn : gv.op ≠ .Phi) {G g' : Frame} {r : Res Val}
@@ -54,7 +54,7 @@ theorem evalKept {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) 
     hy]
 
 /-- **The target's `Phi`s and schedule.** -/
-theorem targetPre {tabs : Tables} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Block}
+theorem targetPre {tabs : Tables} {bid : ID} (hb : K bid) {gb fb : Block}
     (hgb : g.block? bid = some gb) (hfb : f.block? bid = some fb) {frS frT : Frame}
     {iS iT : Nat} (hA : Agree g frS frT) (hsz : frS.regs.size = f.valueTab.size)
     (hP : PhiArgs f g bid iS iT) {psS : List (ID × Val)}
@@ -68,7 +68,8 @@ theorem targetPre {tabs : Tables} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Bl
   obtain ⟨ce', hwg⟩ := S.wg
   obtain ⟨-, -, hbf, -, -, hsub⟩ := S.blockFacts hb hgb hfb
   have hndF := hwf.valuesNodup _ _ ⟨hbf, hfb⟩
-  have hndG := hwg.valuesNodup _ _ ⟨hb, hgb⟩
+  have hbm := S.rel.sub bid hb
+  have hndG := hwg.valuesNodup _ _ ⟨hbm, hgb⟩
   obtain ⟨-, -, hkeepS, hphiS⟩ := phis_spec hndF hpsS
   obtain ⟨-, -, omemS⟩ := schedule_topo (valuesOwn hwf hbf hfb) hndF hso
   -- a kept `Phi` reads the same register in both
@@ -83,7 +84,7 @@ theorem targetPre {tabs : Tables} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Bl
     obtain ⟨fv', hfv', hga⟩ := hP gb hgb z hz gv hgv hgph
     rw [hfv] at hfv'; cases hfv'
     rw [ha] at hga
-    have hl : Listed g a := hwg.argListed _ _ _ _ ⟨⟨hb, hgb⟩, hz, hgv⟩ a (Array.mem_of_getElem? hga)
+    have hl : Listed g a := hwg.argListed _ _ _ _ ⟨⟨hbm, hgb⟩, hz, hgv⟩ a (Array.mem_of_getElem? hga)
     exact ⟨a, y, ha, hy, hga, by rw [hA.2.2 a hl]; exact hy⟩
   obtain ⟨psT, hpsT⟩ : ∃ psT, gb.values.toList.filterMapM (phiStep (Ctx.make tabs g) frT iT) =
       .ok psT := by
@@ -103,7 +104,7 @@ theorem targetPre {tabs : Tables} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Bl
         show (gv.op == .Phi) = false by simpa using hgph]
       rfl
   obtain ⟨oT, hoT⟩ := S.targetSched hb hgb hfb hso
-  obtain ⟨-, -, omemT⟩ := schedule_topo (valuesOwn hwg hb hgb) hndG hoT
+  obtain ⟨-, -, omemT⟩ := schedule_topo (valuesOwn hwg hbm hgb) hndG hoT
   obtain ⟨hszT, -, hkeepT, hphiT⟩ := phis_spec hndG hpsT
   refine ⟨psT, oT, hpsT, hoT, by rw [hszT, hA.2.1], fun a hl ha => ?_⟩
   by_cases haf : a ∈ fb.values
@@ -129,7 +130,7 @@ theorem targetPre {tabs : Tables} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Bl
 
 /-- **A block the source enters successfully is entered by the target**, to a frame agreeing
 with the source's on the kept values. -/
-theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Block}
+theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb : Block}
     (hgb : g.block? bid = some gb) (hfb : f.block? bid = some fb) {frS frT : Frame}
     {iS iT : Nat} (hA : Agree g frS frT) (hsz : frS.regs.size = f.valueTab.size)
     (hP : PhiArgs f g bid iS iT) {G : Frame}
@@ -140,7 +141,8 @@ theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) 
   obtain ⟨ce', hwg⟩ := S.wg
   obtain ⟨hgid, hfid, hbf, -, -, -⟩ := S.blockFacts hb hgb hfb
   have hndF := hwf.valuesNodup _ _ ⟨hbf, hfb⟩
-  have hndG := hwg.valuesNodup _ _ ⟨hb, hgb⟩
+  have hbm := S.rel.sub bid hb
+  have hndG := hwg.valuesNodup _ _ ⟨hbm, hgb⟩
   rw [enterBlock_eq] at h
   cases hpsS : fb.values.toList.filterMapM (phiStep (Ctx.make tabs f) frS iS) with
   | panic e m => rw [hpsS] at h; cases h
@@ -156,7 +158,7 @@ theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) 
   change evalAll env (Ctx.make tabs f) _ oS.toList = .ok G at h
   obtain ⟨psT, oT, hpsT, hoT, hszT, hagree⟩ := S.targetPre hb hgb hfb hA hsz hP hpsS hso
   obtain ⟨ond, otopo, omemS⟩ := schedule_topo (valuesOwn hwf hbf hfb) hndF hso
-  obtain ⟨ondT, otopoT, omemT⟩ := schedule_topo (valuesOwn hwg hb hgb) hndG hoT
+  obtain ⟨ondT, otopoT, omemT⟩ := schedule_topo (valuesOwn hwg hbm hgb) hndG hoT
   obtain ⟨hszP, -, -, -⟩ := phis_spec hndF hpsS
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by simp [hszP, hsz]; rfl) h
   -- the kept values outside the target's schedule agree with `G`
@@ -183,7 +185,7 @@ theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) 
     (refOK_of_topo otopoT fun x hx a ha hna => by
       obtain ⟨hxg, gv, hgv, -⟩ := (omemT x).1 hx
       rw [show (Ctx.make tabs g).f = g from rfl, argsF_of hgv] at ha
-      exact ⟨hna, hout a (hwg.argListed _ _ _ _ ⟨⟨hb, hgb⟩, hxg, hgv⟩ a
+      exact ⟨hna, hout a (hwg.argListed _ _ _ _ ⟨⟨hbm, hgb⟩, hxg, hgv⟩ a
         (Array.mem_toList_iff.1 ha)) hna⟩)
     (fun a ha => ha.2) hinit (by rw [e2]; simpa [hszP] using hszT)
   refine ⟨GT, ?_, ⟨h2, h3, fun a hl => h4 a ?_⟩, by rw [e2]; simpa [hsz] using hszP⟩
@@ -196,7 +198,7 @@ theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) 
     · exact .inl ⟨ha, hout a hl ha⟩
 
 /-- **A block the source panics in makes the target panic alike.** -/
-theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) {gb fb : Block}
+theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb : Block}
     (hgb : g.block? bid = some gb) (hfb : f.block? bid = some fb) {frS frT : Frame}
     {iS iT : Nat} (hA : Agree g frS frT) (hsz : frS.regs.size = f.valueTab.size)
     (hP : PhiArgs f g bid iS iT) {e : Panic} {m : Mem}
@@ -207,8 +209,9 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.block
   obtain ⟨hgid, hfid, hbf, -, -, -⟩ := S.blockFacts hb hgb hfb
   have hownF := valuesOwn hwf hbf hfb
   have hndF := hwf.valuesNodup _ _ ⟨hbf, hfb⟩
-  have hownG := valuesOwn hwg hb hgb
-  have hndG := hwg.valuesNodup _ _ ⟨hb, hgb⟩
+  have hbm := S.rel.sub bid hb
+  have hownG := valuesOwn hwg hbm hgb
+  have hndG := hwg.valuesNodup _ _ ⟨hbm, hgb⟩
   obtain ⟨psS, oS, hpsS, hso, hev⟩ := enterBlock_panic h
   rw [hfid, sched_of_block hfb] at hso
   obtain ⟨pre, r, post, Gpre, hsplit, hpre, hrp⟩ := evalAll_panic_split hev
@@ -304,14 +307,14 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.block
       have haT : a ∉ oT.toList := fun h => hna (hargPre x a (.inl hx) ha h)
       obtain ⟨hxg, gv, hgv, -⟩ := (omemT x).1 (by rw [hsplitT]; exact List.mem_append_left _ hx)
       rw [show (Ctx.make tabs g).f = g from rfl, argsF_of hgv] at ha
-      exact ⟨haT, hout a (hwg.argListed _ _ _ _ ⟨⟨hb, hgb⟩, hxg, hgv⟩ a
+      exact ⟨haT, hout a (hwg.argListed _ _ _ _ ⟨⟨hbm, hgb⟩, hxg, hgv⟩ a
         (Array.mem_toList_iff.1 ha)) haT⟩)
     (fun a ha => ha.2) hinit (by rw [e2]; simpa [hszP] using hszT)
     (fun a ha => by
       by_cases haT : a ∈ oT.toList
       · exact .inr (hargPre r a (.inr rfl) ha haT)
       · rw [show (Ctx.make tabs g).f = g from rfl, argsF_of hgvr] at ha
-        exact .inl ⟨haT, hout a (hwg.argListed _ _ _ _ ⟨⟨hb, hgb⟩, hrg, hgvr⟩ a
+        exact .inl ⟨haT, hout a (hwg.argListed _ _ _ _ ⟨⟨hbm, hgb⟩, hrg, hgvr⟩ a
           (Array.mem_toList_iff.1 ha)) haT⟩)
     (fun g' hg' hag => S.evalKept hb hgb hfb hrg hgvr hfvr hgrn hrp (fun _ h => nomatch h) hg' hag)
   rw [enterBlock_eq, hpsT]
