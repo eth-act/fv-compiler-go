@@ -38,7 +38,7 @@ structure Inv (tabs : Tables) (f F : Func) : Prop where
   acyc : ∀ x, Listed f x → ∃ r n, Src (vw F) x r n
   shape : ∀ x, Listed f x → ∀ w, cstep (vw F) x = some (some w) →
     ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧
-      RetypeEq (tabs.ty wv.type) (tabs.ty xv.type)
+      RetypeInto (tabs.ty wv.type) (tabs.ty xv.type)
   ends : ∀ x r n, Src (vw f) x r n → NotPhi f r → ∃ m, Src (vw F) x r m
 
 /-- The non-copies are kept, and each argument is old or a non-copy. -/
@@ -110,7 +110,7 @@ theorem Inv.src_listed (hI : Inv tabs f F) :
 theorem Inv.src_shape (hwf : WF ce f) (hI : Inv tabs f F) :
     ∀ {x r n}, Listed f x → Src (vw F) x r n →
       ∃ xv rv, f.value? x = some xv ∧ f.value? r = some rv ∧
-        RetypeEq (tabs.ty rv.type) (tabs.ty xv.type)
+        RetypeInto (tabs.ty rv.type) (tabs.ty xv.type)
   | _, _, _, hx, .sink _ => by
     obtain ⟨fv, hfv⟩ := listed_value hwf hx
     exact ⟨fv, fv, hfv, hfv, .refl _⟩

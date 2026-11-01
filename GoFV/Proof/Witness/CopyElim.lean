@@ -12,7 +12,8 @@ kernel evaluation), so `copyelim_refines` applies: the output returns `clamp(5, 
 `copyFrag_stable_witness`: `CopyFrag`'s shape condition exempts `Stable` phis. `pzBool` is
 `pz` with its `Phi` `v6` typed `bool` while its arguments are `int64`s (`Const64`, `Add64`):
 their shapes differ, but the `Phi` is stable (two distinct non-phi arguments), so `copyFrag`
-holds.
+holds. `retypeInto_other_witness`: a copy of an `int64` from an argument of shape `other` (whose
+values are all `poison`) is accepted (`retypeIntoB`), although the shapes differ.
 -/
 
 namespace GoFV.Proof.Witness
@@ -59,6 +60,10 @@ def pzBool : Func :=
 theorem copyFrag_stable_witness :
     copyFrag peTabs pzBool = true ∧ (pzBool.value? 6).any (stableB pzBool) = true ∧
     retypeEqB (peTabs.ty 10) (peTabs.ty 6) = false := by
+  decide +kernel
+
+theorem retypeInto_other_witness :
+    retypeIntoB .other (.int .w64) = true ∧ retypeEqB .other (.int .w64) = false := by
   decide +kernel
 
 end GoFV.Proof.Witness

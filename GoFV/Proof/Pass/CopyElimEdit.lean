@@ -65,7 +65,7 @@ theorem Inv.mk' {tabs : Tables} {f F' : Func} {V' : ID → Option Value} (hW : v
     (acyc : ∀ x, Listed f x → ∃ r n, Src V' x r n)
     (shape : ∀ x, Listed f x → ∀ w, cstep V' x = some (some w) →
       ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧
-        RetypeEq (tabs.ty wv.type) (tabs.ty xv.type))
+        RetypeInto (tabs.ty wv.type) (tabs.ty xv.type))
     (ends : ∀ x r n, Src (vw f) x r n → NotPhi f r → ∃ m, Src V' x r m) :
     Inv tabs f F' := by
   subst hW; exact ⟨hs, keep, mode, closed, acyc, shape, ends⟩

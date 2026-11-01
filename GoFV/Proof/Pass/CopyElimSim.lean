@@ -236,7 +236,7 @@ theorem argEq {env : Env} {fr : Frame} {A : ID → Prop} {q a w : ID}
     rw [tys_of_value hgv] at hy
     refine ⟨y0, ?_, hy0⟩
     simp only [Option.getD_some] at this
-    rw [hy]; simp only [Option.getD_some]; rw [← hsh y0, this]
+    rw [hy]; simp only [Option.getD_some]; rw [hsh.apply this]
 
 /-- A `Phi` of a non-entry tree block that became `Copy w` copies a value of a strict
 dominator. -/

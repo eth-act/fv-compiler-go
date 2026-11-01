@@ -45,7 +45,7 @@ def copyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
         match f.value? a with
         | none => return some s!"shape {v.op} undefined arg @v{x}"
         | some w =>
-          if !retypeEqB (tabs.ty w.type) (tabs.ty v.type) then
+          if !retypeIntoB (tabs.ty w.type) (tabs.ty v.type) then
             return some s!"shape {v.op} {shapeName (tabs.ty w.type)} ~ {shapeName (tabs.ty v.type)} @v{x} t{v.type}, arg v{a} t{w.type}"
     if v.op == .Copy && zeroSizeB tabs v.type then
       return some s!"copyNZ {shapeName (tabs.ty v.type)} @v{x} t{v.type}"
