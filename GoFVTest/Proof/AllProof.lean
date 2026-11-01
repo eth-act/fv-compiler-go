@@ -461,10 +461,12 @@ import GoFV.Proof.Rules.Rsh9
 import GoFV.Proof.Rules.Seg
 import GoFV.Proof.Rules.SelLoad
 import GoFV.Proof.Rules.SelMake
+import GoFV.Proof.Rules.ShiftBounded
 import GoFV.Proof.Rules.ShiftMask
 import GoFV.Proof.Rules.SignExt
 import GoFV.Proof.Rules.SliceMask
 import GoFV.Proof.Rules.Slicemask
+import GoFV.Proof.Rules.SoundW
 import GoFV.Proof.Rules.StructLoad
 import GoFV.Proof.Rules.StructStore
 import GoFV.Proof.Rules.Sub

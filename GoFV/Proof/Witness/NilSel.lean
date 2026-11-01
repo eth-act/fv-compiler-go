@@ -108,8 +108,8 @@ theorem ns_checks :
 
 theorem nsRules_allSound : nsRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨.inl GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩,
-      ⟨.inl GoFV.Proof.Rules.r_generic_1011_sound, trivial⟩, trivial⟩ trivial
+    ⟨⟨GoFV.Proof.Rules.Rule.checked_of_soundT GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩,
+      ⟨GoFV.Proof.Rules.Rule.checked_of_soundT GoFV.Proof.Rules.r_generic_1011_sound, trivial⟩, trivial⟩ trivial
 
 /-- **Pass execution witness** for the `StringPtr` seed: on `strData`, the checked rewrite pass
 removes the nil check of the string constant's data pointer (`v5 = MakeResult v3 v1`), and the
