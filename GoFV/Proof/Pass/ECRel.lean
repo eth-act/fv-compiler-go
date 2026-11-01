@@ -58,19 +58,30 @@ def RegOK (ctx : Ctx) (x : ID) (y : Val) : Prop :=
 def RegsOK (ctx : Ctx) (fr : Frame) : Prop :=
   ∀ x y, fr.regs[x]? = some (some y) → RegOK ctx x y
 
+/-- The source register of `z` holds the evaluation of `z`'s node in `f`. -/
+def EcSrcHolds (env : Env) (tabs : Tables) (f : Func) (fr : Frame) (z : ID) : Prop :=
+  ∀ u, f.value? z = some u → u.id = z ∧
+    ∃ y, fr.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) fr u = .ok y
+
 /-- The target register of `z` holds the evaluation of `z`'s node in `g`. -/
 def EcTgtHolds (env : Env) (tabs : Tables) (g : Func) (T : Frame) (z : ID) : Prop :=
   ∀ w, g.value? z = some w → w.id = z ∧
     ∃ y, T.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs g) T w = .ok y
 
+/-- The values whose source registers hold their evaluations when `x` of block `fb` is
+evaluated: values of `fb` that `x` depends on in the target's block `gb`, and the non-`Phi`
+values placed in strict dominators of `fb` (`Avail.DInv`). -/
+def Held (f g : Func) (fb gb : Block) (x z : ID) : Prop :=
+  (z ∈ fb.values ∧ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) ∨
+    ∃ v, Placed f z v ∧ v.op ≠ .Phi ∧ Anc (make f) v.block fb.id ∧ v.block ≠ fb.id
+
 /-- **The local obligation of value `x`.** In frames of one activation, where the source's
 arguments of `x` have registers (each `RegOK`) and the target's arguments of `x` too (its new
 ones holding their evaluations), the target's registers of the source values `front` refine
-their conversions, and the target's registers of the values `held` (nodes of the block that
-`x` depends on) hold their evaluations, the target's evaluation of `x` refines the conversion of
-the source's. -/
+their conversions, the source's registers of the values `heldS` and the target's of `heldT`
+hold their evaluations, the target's evaluation of `x` refines the conversion of the source's. -/
 def Obl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : List ID)
-    (held : ID → Prop) (x : ID) : Prop :=
+    (heldS heldT : ID → Prop) (x : ID) : Prop :=
   ∀ u w, f.value? x = some u → g.value? x = some w →
   ∀ env : Env, env.Mono → ∀ frS T : Frame, T = { frS with regs := T.regs } →
   RegsOK (Ctx.make tabs f) frS →
@@ -78,7 +89,7 @@ def Obl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : Li
     (∀ a ∈ w.args, isNew a = true → E a) → (∀ a ∈ w.args, Reg T a) → (∀ a ∈ u.args, Reg frS a) →
     (∀ a ∈ front, ∀ y, frS.regs[a]? = some (some y) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y') →
-    (∀ z, held z → EcTgtHolds env tabs g T z) →
+    (∀ z, heldS z → EcSrcHolds env tabs f frS z) → (∀ z, heldT z → EcTgtHolds env tabs g T z) →
     ResCv (cv x) (evalValue env (Ctx.make tabs f) frS u) (evalValue env (Ctx.make tabs g) T w)
 
 /-- A new value evaluates in every frame whose argument images are complete, whatever its
@@ -123,8 +134,8 @@ structure CvBlock (fb gb : Block) : Prop where
     Feeds (NodeIn (schedNodes f fb).toList) (NodeIn (schedNodes g gb).toList)
       (argsOf (schedNodes f fb).toList) (argsOf (schedNodes g gb).toList)
       (PureIn (schedNodes f fb).toList) y a
-  obl : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi →
-    Obl tabs f g cv isNew (front x)
+  obl : ((make f).depthOf fb.id).isSome → ∀ x ∈ fb.values, ∀ u, f.value? x = some u →
+    u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x)
       (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) x
   front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
   ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, ∀ y, cv c y = y

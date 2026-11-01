@@ -100,8 +100,15 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
   for x in fb.values do
     if converted f x then
       if let some u := f.value? x then
-        if !u.args.all (fun a => imkArgOK sh g nodeG (gb.values.size + 1) a x) then
-          return "IMake arg not held"
+        if !u.args.all (fun a => imkArgOK sh f g fb nodeG (gb.values.size + 1) a x) then
+          let fuel := gb.values.size + 1
+          let bad := u.args.toList.filter (fun a => !imkArgOK sh f g fb nodeG fuel a x)
+          let why := bad.map fun a => match g.value? a, f.value? a with
+            | some aw, some au =>
+              let dSh := s!"{repr (erase (shapeOf sh f aw.args[1]!))}/{repr (erase (shapeOf sh g aw.args[1]!))}"
+              s!"f-op {au.op.name} same-d {au.args[1]! == aw.args[1]!} iface {ifaceShape (shapeOf sh f a)} special-d {special f g aw.args[1]!} d {dSh} dep {!fb.values.contains a || depB g nodeG (fun _ => true) fuel a x}"
+            | _, _ => "?"
+          return s!"IMake arg: {why.headD "?"}"
   if !((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) then
     return "converted control"
   match schedule f fb, schedule g gb with

@@ -370,13 +370,38 @@ def depB (g : Func) (node nw : ID → Bool) : Nat → ID → ID → Bool
       | some w => w.args.any fun z => node z && (z == a || (nw z && depB g node nw n a z))
       | none => false
 
-/-- An argument `a` of a converted value `x` whose node in `g` is an `IMake`: interface-shaped,
-and `a` and its data operand are nodes of the block that `x` depends on (`EC.EcImkFacts`: their
-target registers hold their evaluations when `x` is evaluated). -/
-def imkArgOK (sh : Array Ty) (g : Func) (node : ID → Bool) (fuel : Nat) (a x : ID) : Bool :=
+/-- Source mode of `imkArgOK` (`aw` the `IMake` node of `a` in `g`): `a` is the same
+interface-shaped `IMake` in `f`, its data operand `d` is unconverted, a pointer or an aggregate
+in both, and when `a` is a value of `fb`, `x` depends on it in `g` (`EC.Held`: the source
+register of `a` holds its evaluation when `x` is evaluated; outside `fb`, `a` is placed in a
+strict dominator). -/
+def imkSrcOK (sh : Array Ty) (f g : Func) (fb : Block) (node : ID → Bool) (fuel : Nat)
+    (aw : Value) (a x : ID) : Bool :=
+  match f.value? a with
+  | some au =>
+    au.op == .IMake && au.args.size == 2 && au.args[1]! == aw.args[1]! &&
+      ifaceShape (shapeOf sh f a) && !special f g aw.args[1]! &&
+      (match shapeOf sh f aw.args[1]!, shapeOf sh g aw.args[1]! with
+       | .ptr _, .ptr _ => true
+       | .agg _ _, .agg _ _ => true
+       | _, _ => false) &&
+      (!fb.values.contains a || depB g node (fun _ => true) fuel a x)
+  | none => false
+
+/-- Target mode of `imkArgOK`: `a` is interface-shaped in `g`, and `x` depends in `g` on `a`
+and on its data operand (their target registers hold their evaluations). -/
+def imkTgtOK (sh : Array Ty) (g : Func) (node : ID → Bool) (fuel : Nat) (aw : Value) (a x : ID) :
+    Bool :=
+  ifaceShape (shapeOf sh g a) && depB g node (fun _ => true) fuel a x &&
+    depB g node (fun _ => true) fuel aw.args[1]! x
+
+/-- An argument `a` of a converted value `x` of block `fb` whose node in `g` is an `IMake` (whose
+data word the `IMake` shortcut may pass directly; `EC.ec_imake`) in source or target mode. -/
+def imkArgOK (sh : Array Ty) (f g : Func) (fb : Block) (node : ID → Bool) (fuel : Nat)
+    (a x : ID) : Bool :=
   match g.value? a with
-  | some aw => aw.op != .IMake || (aw.args.size == 2 && ifaceShape (shapeOf sh g a) &&
-      depB g node (fun _ => true) fuel a x && depB g node (fun _ => true) fuel aw.args[1]! x)
+  | some aw => aw.op != .IMake || (aw.args.size == 2 &&
+      (imkSrcOK sh f g fb node fuel aw a x || imkTgtOK sh g node fuel aw a x))
   | none => true
 
 /-- A new value evaluates in every frame (`NewEval`): pure ops, frame values, and the pieces of
@@ -441,7 +466,7 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
       | none => false) &&
     -- the `IMake` arguments of converted values
     fb.values.all (fun x => !converted f x || match f.value? x with
-      | some u => u.args.all fun a => imkArgOK sh g nodeG fuel a x
+      | some u => u.args.all fun a => imkArgOK sh f g fb nodeG fuel a x
       | none => true) &&
     -- controls of non-`Ret` blocks are unconverted
     ((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) &&
