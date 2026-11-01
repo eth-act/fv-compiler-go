@@ -3,6 +3,7 @@ import GoFV.Opt.Checked
 import GoFV.SSA.Sem.TyEq
 import GoFV.SSA.DomCert
 import GoFV.Proof.ABIBuild
+import GoFV.Opt.TabsAgree
 
 /-!
 # The checker of `expand calls` (`ECCheck.ecCheck`, issue #28)
@@ -17,8 +18,7 @@ block or the entry block; and per source value one of these classes:
 * **identity**: the same op, type, auxint, aux and arguments, none of them a converted value;
 * **Arg**: an incoming parameter becomes a Make-tree (`StructMake`, `ArrayMake1`, `SliceMake`,
   `StringMake`, `IMake`, zero-sized parts `Empty`) of new values whose leaves read the
-  parameter at the leaf offsets (`ArgIntReg {name+off}`, `Arg {name} [off]`, `ArgFloatReg` for
-  opaque leaves);
+  parameter at the leaf offsets (`ArgIntReg`/`ArgFloatReg {name+off}`, `Arg {name} [off]`);
 * **call**: `StaticLECall`/`ClosureLECall`/`InterLECall` become `StaticCall`/`ClosureCall`/
   `InterCall` with the same leading arguments and memory and, per input parameter, its
   register pieces computed by selector chains (`SlicePtr`, `StructSelect [i]`, …) of the Go
@@ -42,14 +42,14 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Proof.ABI
 
 /-- The ops that build a composite of their arguments (`Comp.make`). -/
 def isMake : Op → Bool
-  | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake => true
+  | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake | .ComplexMake => true
   | _ => false
 
 /-- The component a selector picks (`Comp.select`, `Comp.selectAux`). -/
 def selIdx? (w : Value) : Option Nat :=
   match w.op with
-  | .SlicePtr | .StringPtr | .ITab => some 0
-  | .SliceLen | .StringLen | .IData => some 1
+  | .SlicePtr | .StringPtr | .ITab | .ComplexReal => some 0
+  | .SliceLen | .StringLen | .IData | .ComplexImag => some 1
   | .SliceCap => some 2
   | .StructSelect | .ArraySelect => if w.auxInt.toInt < 0 then none else some w.auxInt.toInt.toNat
   | _ => none
@@ -67,6 +67,25 @@ def leafPathsFields : Nat → List (Nat × Ty) → List (List (Nat × Ty))
   | _, [] => []
   | i, (_, t) :: fs => (leafPaths t).map ((i, t) :: ·) ++ leafPathsFields (i + 1) fs
 end
+
+mutual
+/-- A shape with every pointer's element size forgotten: values, `retype`, `encode` and `decode`
+do not depend on it. -/
+def erase : Ty → Ty
+  | .ptr _ => .ptr none
+  | .agg fs n => .agg (eraseFields fs) n
+  | .tuple ts => .tuple (eraseList ts)
+  | t => t
+def eraseFields : List (Nat × Ty) → List (Nat × Ty)
+  | [] => []
+  | (o, t) :: fs => (o, erase t) :: eraseFields fs
+def eraseList : List Ty → List Ty
+  | [] => []
+  | t :: ts => erase t :: eraseList ts
+end
+
+/-- Equal shapes up to pointers' element sizes. -/
+def eqE (s t : Ty) : Bool := Ty.beq (erase s) (erase t)
 
 /-- A register of shape `rt` holds a piece of shape `lt` without loss: `lt`-retyping undoes
 `rt`-retyping on values of shape `lt` (the same shape, pointers to other element sizes, or an
@@ -95,7 +114,7 @@ def mkTree (sh : Array Ty) (g : Func) (nw : ID → Bool) : Nat → ID → Ty →
     match g.value? x with
     | none => none
     | some w =>
-      if !Ty.beq (valueTy sh (some w)) t then none else
+      if !eqE (valueTy sh (some w)) t then none else
       match t with
       | .agg fs _ =>
         if isMake w.op && w.args.size == fs.length then
@@ -113,7 +132,7 @@ def chainOK (sh : Array Ty) (g : Func) (nw : ID → Bool) : List (Nat × Ty) →
     nw p &&
       match g.value? p with
       | some w =>
-        selIdx? w == some k && Ty.beq (valueTy sh (some w)) s && w.args.size == 1 &&
+        selIdx? w == some k && eqE (valueTy sh (some w)) s && w.args.size == 1 &&
           chainOK sh g nw rp w.args[0]! a
       | none => false
 
@@ -135,7 +154,7 @@ def leafTys (tabs : Tables) (ps : List ABIParam) : List Ty :=
 /-- `t` is a tuple of the shapes `ts` and memory. -/
 def tupleOf (ts : List Ty) (t : Ty) : Bool :=
   match t with
-  | .tuple us => us.length == ts.length + 1 && (ts.zip us).all (fun (a, b) => Ty.beq b a) &&
+  | .tuple us => us.length == ts.length + 1 && (ts.zip us).all (fun (a, b) => eqE b a) &&
       match us.getLast? with
       | some .mem => true
       | _ => false
@@ -149,18 +168,6 @@ def regTupleOf (lts : List Ty) (t : Ty) : Bool :=
       | some .mem => true
       | _ => false
   | _ => false
-
-/-- The pieces `pcs` of `g` are, parameter by parameter, the selector chains of the source
-values `as` (each of the parameter's shape in `f`). -/
-def piecesOK (tabs : Tables) (sh : Array Ty) (f g : Func) : List ABIParam → List ID → List ID → Bool
-  | [], [], [] => true
-  | p :: ps, a :: as, pcs =>
-    let t := tabs.ty p.type
-    let paths := leafPaths t
-    Ty.beq (shapeOf sh f a) t && paths.length ≤ pcs.length &&
-      (paths.zip (pcs.take paths.length)).all (fun (π, q) => chainOK sh g (isNewB f) π.reverse q a) &&
-      piecesOK tabs sh f g ps as (pcs.drop paths.length)
-  | _, _, _ => false
 
 /-- The post-`expand calls` op of a call op and its number of leading arguments. -/
 def callOpMap : Op → Option (Op × Nat)
@@ -183,6 +190,47 @@ def converted (f : Func) (x : ID) : Bool :=
   | some u => (callOpMap u.op).isSome || u.op == .MakeResult
   | none => false
 
+/-- `x` is a value the pass invalidated (an argument it no longer uses: `OpInvalid` in `g`; its
+conversion is `poison`). -/
+def invalidated (g : Func) (x : ID) : Bool :=
+  match g.value? x with
+  | some w => w.op == .Invalid
+  | none => false
+
+/-- `x`'s conversion is not the identity. -/
+def special (f g : Func) (x : ID) : Bool := converted f x || invalidated g x
+
+/-- `IMake` data shortcut (`decomposeAsNecessary`, `expand_calls.go:397`): the data-word piece
+`q` of an interface argument `a` whose node in `g` is `IMake tab d` is not `IData a` but `d`
+itself (`d` a pointer: the same word) or, when `d` is a one-field `StructMake`/`ArrayMake1`,
+its sized part (the source's data word is then `poison`: the interface shape's data word is a
+pointer, not an aggregate). -/
+def imakeData (sh : Array Ty) (g : Func) (π : List (Nat × Ty)) (q a : ID) : Bool :=
+  match π, g.value? a with
+  | [(1, _)], some aw =>
+    aw.op == .IMake && aw.args.size == 2 &&
+      let d := aw.args[1]!
+      (d == q && (match shapeOf sh g q with
+        | .ptr _ => true
+        | _ => false)) ||
+      (match g.value? d with
+        | some dw => dw.op == .StructMake || dw.op == .ArrayMake1
+        | none => false)
+  | _, _ => false
+
+/-- The pieces `pcs` of `g` are, parameter by parameter, the selector chains of the source
+values `as` (each of the parameter's shape in `f`), or `IMake` data shortcuts. -/
+def piecesOK (tabs : Tables) (sh : Array Ty) (f g : Func) : List ABIParam → List ID → List ID → Bool
+  | [], [], [] => true
+  | p :: ps, a :: as, pcs =>
+    let t := tabs.ty p.type
+    let paths := leafPaths t
+    eqE (shapeOf sh f a) t && paths.length ≤ pcs.length && (paths.isEmpty || !special f g a) &&
+      (paths.zip (pcs.take paths.length)).all (fun (π, q) =>
+        chainOK sh g (isNewB f) π.reverse q a || imakeData sh g π q a) &&
+      piecesOK tabs sh f g ps as (pcs.drop paths.length)
+  | _, _, _ => false
+
 /-! ## The classes of source values -/
 
 /-- **call**: `u` (in `f`) and `w` (in `g`) at the same ID. -/
@@ -197,7 +245,7 @@ def callOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
       w.args.size ≥ k + 1 &&
       (w.args.extract 0 k).toList == (u.args.extract 0 k).toList &&
       w.args[w.args.size - 1]! == u.args[n - 1]! &&
-      (u.args.extract 0 (n - 1)).toList.all (fun a => !converted f a) &&
+      (u.args.extract 0 k).toList.all (fun a => !special f g a) && !special f g u.args[n - 1]! &&
       piecesOK tabs sh f g ins (u.args.extract k (n - 1)).toList
         (w.args.extract k (w.args.size - 1)).toList &&
       tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
@@ -221,14 +269,11 @@ def argLeavesOK (tabs : Tables) (g : Func) (n : AuxRef) (off : Int) :
     (match g.value? l with
      | some w =>
        match w.op with
-       | .ArgIntReg =>
+       | .ArgIntReg | .ArgFloatReg =>
          match w.aux.bind tabs.aux? with
          | some { kind := .nameOff n' off', .. } => n' == n && off' == off + o
          | _ => false
        | .Arg => w.aux == some n && w.auxInt.toInt == off + o
-       | .ArgFloatReg => match lt with
-         | .opaque _ => true
-         | _ => false
        | _ => false
      | none => false) && argLeavesOK tabs g n off os ls
   | _, _ => false
@@ -266,7 +311,7 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
         | some p =>
           let t := tabs.ty p.type
           let first := (leafTys tabs (outs.take i)).length
-          Ty.beq (shapeOf sh f x) t &&
+          eqE (shapeOf sh f x) t &&
             match mkTree sh g (isNewB f) (tabs.types.size + 1) x t with
             | some ls => ls.length == (leaves t).length && selLeavesOK g c first 0 ls
             | none => false
@@ -280,16 +325,20 @@ def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :
   let n := u.args.size
   w.op == .MakeResult && n == outs.length + 1 && w.args.size ≥ 1 &&
     w.args[w.args.size - 1]! == u.args[n - 1]! &&
-    !converted f u.args[n - 1]! &&
+    !special f g u.args[n - 1]! &&
     piecesOK tabs sh f g outs (u.args.extract 0 (n - 1)).toList
       (w.args.extract 0 (w.args.size - 1)).toList &&
     tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
     regTupleOf (leafTys tabs outs) (valueTy sh (some w))
 
+/-- Two `Phi`s that evaluate alike (`EC.PhiSame`): the same op, arguments and type. -/
+def sameV (u w : Value) : Bool := w.op == u.op && w.args == u.args && w.type == u.type
+
 /-- **identity**. -/
-def identOK (f : Func) (u w : Value) : Bool :=
-  w.op == u.op && w.type == u.type && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args &&
-    u.args.all (fun a => !converted f a)
+def identOK (f g : Func) (u w : Value) : Bool :=
+  (w.op == u.op || (u.op == .Dereference && w.op == .Load)) && w.type == u.type &&
+    w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args &&
+    u.args.all (fun a => !special f g a)
 
 /-- The class check of non-`Phi` source value `x`. -/
 def valueOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : Bool :=
@@ -299,19 +348,21 @@ def valueOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : Bool :=
     else if u.op == .MakeResult then resultOK tabs sh f g u w
     else if u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! then
       selectOK tabs sh f g x u w
-    else if u.op == .Arg && !identOK f u w then argOK tabs sh f g x u
-    else identOK f u w
+    else if w.op == .Invalid then Sem.prio u.op == 0 && u.op != .Phi
+    else if u.op == .Arg && !identOK f g u w then argOK tabs sh f g x u
+    else identOK f g u w
   | _, _ => false
 
 /-! ## Blocks -/
 
-/-- `y` depends on `a` through arguments that are nodes of `gb` (`Order.Dep`). -/
-def depB (g : Func) (node : ID → Bool) : Nat → ID → ID → Bool
+/-- `y` depends on `a` through arguments that are nodes of `gb` (`Order.Dep`), searching
+through new nodes (`nw`) only. -/
+def depB (g : Func) (node nw : ID → Bool) : Nat → ID → ID → Bool
   | 0, _, _ => false
   | n + 1, a, y =>
     node y &&
       match g.value? y with
-      | some w => w.args.any fun z => node z && (z == a || depB g node n a z)
+      | some w => w.args.any fun z => node z && (z == a || (nw z && depB g node nw n a z))
       | none => false
 
 /-- A new value evaluates in every frame (`NewEval`): pure ops, frame values, and the pieces of
@@ -326,7 +377,8 @@ def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
     | some n => (paramNames tabs g).contains (some n)
     | none => false
   | .SP | .SB | .LocalAddr | .OffPtr | .SelectN | .Empty | .ArgFloatReg
-  | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake
+  | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake | .ComplexMake
+  | .ComplexReal | .ComplexImag
   | .SlicePtr | .SliceLen | .SliceCap | .StringPtr | .StringLen | .ITab | .IData
   | .StructSelect | .ArraySelect => true
   | _ => false
@@ -349,11 +401,16 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
     gb.values.all (fun x => fb.values.contains x || isNewB f x) &&
     -- Phis: unchanged, unconverted
     gb.values.all (fun x => match g.value? x with
-      | some w => w.op != .Phi || (fb.values.contains x && f.value? x == some w)
+      | some w => w.op != .Phi || (fb.values.contains x &&
+          match f.value? x with
+          | some u => sameV u w
+          | none => false)
       | none => true) &&
     fb.values.all (fun x => match f.value? x with
       | some u => u.op != .Phi ||
-          (g.value? x == some u && !converted f x && u.args.all (fun a => !converted f a))
+          ((match g.value? x with
+            | some w => sameV u w
+            | none => false) && !special f g x && u.args.all (fun a => !special f g a))
       | none => true) &&
     -- the same non-pure sequence
     (match schedule f fb, schedule g gb with
@@ -362,14 +419,20 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
     -- every argument of a source node reaches it in `g`
     fb.values.all (fun y => !nodeF y ||
       match f.value? y with
-      | some u => u.args.all fun a => !nodeF a || (nodeG a && depB g nodeG fuel a y)
+      | some u => u.args.all fun a => !nodeF a || (nodeG a && depB g nodeG (isNewB f) fuel a y)
       | none => false) &&
     -- per value
     fb.values.all (fun x => match f.value? x with
       | some u => u.op == .Phi || valueOK tabs sh f g x
       | none => false) &&
     -- controls of non-`Ret` blocks are unconverted
-    (fb.kind == .Ret || fb.controls.all (fun c => !converted f c)) &&
+    ((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) &&
+    -- a `Ret` returns a `MakeResult`
+    (fb.kind != .Ret || match fb.controls[0]? with
+      | some c => (match f.value? c with
+        | some u => u.op == .MakeResult
+        | none => false)
+      | none => false) &&
     -- new values
     gb.values.all (fun z => !isNewB f z ||
       match g.value? z with
@@ -384,7 +447,18 @@ def ecCheck (tabs : Tables) (f g : Func) : Bool :=
   let outs := ownOuts tabs f
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
     regParamsOK tabs outs &&
-    ((leafTys tabs outs).length != outs.length || outs.all (fun p => atom (tabs.ty p.type))) &&
     f.blocks.all (blockOK tabs sh f g)
 
 end GoFV.Opt.ECCheck
+
+namespace GoFV.Opt
+
+/-- **The fragment of `expandCalls_refines`**: the pass's output is accepted by `ecCheck` (read
+in the output tables) and the input runs the same in the output tables (`tabsAgree`). `lake exe
+expand-calls-probe` counts it on the corpus. -/
+def expandCallsFrag (penv : PassEnv) (f : SSA.Func) : Bool :=
+  match expandCallsPass penv f with
+  | .ok out => tabsAgree penv.tables out.tables f && ECCheck.ecCheck out.tables f out.func
+  | .error _ => true
+
+end GoFV.Opt

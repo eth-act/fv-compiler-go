@@ -21,12 +21,31 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ECCheck
 namespace GoFVTest.ExpandCallsProbe
 
 /-- The class name of source value `u`. -/
-def className (f : Func) (u w : Value) : String :=
+def className (f g : Func) (u w : Value) : String :=
   if (callOpMap u.op).isSome then s!"call {u.op.name}"
   else if u.op == .MakeResult then "result"
   else if u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! then "select"
-  else if u.op == .Arg && !identOK f u w then "arg"
+  else if u.op == .Arg && !identOK f g u w then "arg"
   else s!"ident {u.op.name}→{w.op.name}"
+
+/-- Why `piecesOK` fails. -/
+partial def piecesWhy (tabs : Tables) (sh : Array Ty) (f g : Func) :
+    List ABIParam → List ID → List ID → String
+  | [], [], [] => "ok"
+  | p :: ps, a :: as, pcs =>
+    let t := tabs.ty p.type
+    let paths := leafPaths t
+    if !eqE (shapeOf sh f a) t then
+      let op := ((f.value? a).map (·.op.name)).getD "?"
+      s!"arg shape ({op}) {repr (erase (shapeOf sh f a))} vs {repr (erase t)}"
+    else if paths.length > pcs.length then "too few pieces"
+    else if !(paths.zip (pcs.take paths.length)).all (fun (π, q) => chainOK sh g (isNewB f) π.reverse q a) then
+      match g.value? a with
+      | some aw => if aw.op == .IMake then "chain (IMake shortcut)" else s!"chain (arg {aw.op.name})"
+      | none => "chain"
+    else piecesWhy tabs sh f g ps as (pcs.drop paths.length)
+  | [], _, _ => "extra args/pieces"
+  | _, [], _ => "missing args"
 
 /-- Why the call class fails. -/
 def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String :=
@@ -41,7 +60,9 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
       else if abi.params.toList.any (fun p => !GoFV.Proof.ABI.wf (tabs.ty p.type)) then "param shape not wf"
       else "regs ≠ leaves"
     else if !piecesOK tabs sh f g ins (u.args.extract k (n - 1)).toList
-        (w.args.extract k (w.args.size - 1)).toList then "pieces"
+        (w.args.extract k (w.args.size - 1)).toList then
+      s!"pieces: {piecesWhy tabs sh f g ins (u.args.extract k (n - 1)).toList
+        (w.args.extract k (w.args.size - 1)).toList}"
     else if !tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) then "source tuple type"
     else if !regTupleOf (leafTys tabs outs) (valueTy sh (some w)) then "register types"
     else "other"
@@ -51,13 +72,15 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
 def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
   match f.value? x, g.value? x with
   | some u, some w =>
-    let c := className f u w
+    let c := className f g u w
     if c.startsWith "call" then s!"{c}: {callWhy tabs sh f g u w}"
     else if c == "result" then
       let outs := ownOuts tabs f
       let n := u.args.size
       if !piecesOK tabs sh f g outs (u.args.extract 0 (n - 1)).toList
-          (w.args.extract 0 (w.args.size - 1)).toList then "result: pieces"
+          (w.args.extract 0 (w.args.size - 1)).toList then
+        s!"result: pieces: {piecesWhy tabs sh f g outs (u.args.extract 0 (n - 1)).toList
+          (w.args.extract 0 (w.args.size - 1)).toList}"
       else "result: types"
     else c
   | _, _ => "absent"
@@ -70,7 +93,8 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
   for x in fb.values do
     if let some u := f.value? x then
       if u.op != .Phi && !valueOK tabs sh f g x then return valueWhy tabs sh f g x
-  if !(fb.kind == .Ret || fb.controls.all (fun c => !converted f c)) then return "converted control"
+  if !((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) then
+    return "converted control"
   match schedule f fb, schedule g gb with
   | some of, some og =>
     if of.toList.filter (npOf f fb) != og.toList.filter (npOf f fb) then return "schedule"
@@ -81,7 +105,16 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
         if !newEvalB tabs g w then return s!"new op {w.op.name}"
         if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a) then
           return "new arg in other block"
-  return "phi/feeds"
+  for x in gb.values do
+    if let some w := g.value? x then
+      if w.op == .Phi then
+        if !(fb.values.contains x && match f.value? x with
+            | some u => sameV u w
+            | none => false) then return "phi changed"
+  for x in fb.values do
+    if let some u := f.value? x then
+      if u.op == .Phi && u.args.any (special f g) then return "phi of converted"
+  return "feeds"
 
 def why (tabs : Tables) (f g : Func) : String := Id.run do
   let sh := typeShapes tabs
@@ -90,8 +123,6 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
   if g.ownAux != f.ownAux then return "ownAux"
   if !regParamsOK tabs outs then
     return if outs.any (·.regs.isEmpty) then "own: stack result" else "own: result shape"
-  if !((leafTys tabs outs).length != outs.length || outs.all (fun p => GoFV.Proof.ABI.atom (tabs.ty p.type))) then
-    return "own: #pieces = #results"
   for b in f.blocks do
     if !blockOK tabs sh f g b then return blockWhy tabs sh f g b
   return "?"

@@ -47,14 +47,26 @@ def NewCons (env : Env) (ctx : Ctx) (isNew : ID → Bool) (T : Frame) (E : ID �
     (∀ a ∈ w.args, isNew a = true → E a) ∧ T.regs[z]? = some (some y) ∧
     evalValue env ctx T w = .ok y
 
+/-- What a source register of value `x` holds: a value of the shape of `x`'s type, and a tuple
+of exactly one component per argument for a `MakeResult` (`evalValue` retypes the result of
+`evalOp` at the value's shape; a tuple keeps its length). -/
+def RegOK (ctx : Ctx) (x : ID) (y : Val) : Prop :=
+  y.hasTy (ctx.tys[x]?.getD .other) = true ∧
+    ∀ u vs, ctx.f.value? x = some u → u.op = .MakeResult → y = .tuple vs → vs.length = u.args.size
+
+/-- Every register of frame `fr` satisfies `RegOK`. -/
+def RegsOK (ctx : Ctx) (fr : Frame) : Prop :=
+  ∀ x y, fr.regs[x]? = some (some y) → RegOK ctx x y
+
 /-- **The local obligation of value `x`.** In frames of one activation, where the source's
-arguments of `x` have registers and the target's arguments of `x` too (its new ones holding
-their evaluations), and the target's registers of the source values `front` refine their
-conversions, the target's evaluation of `x` refines the conversion of the source's. -/
+arguments of `x` have registers (each `RegOK`) and the target's arguments of `x` too (its new
+ones holding their evaluations), and the target's registers of the source values `front` refine
+their conversions, the target's evaluation of `x` refines the conversion of the source's. -/
 def Obl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : List ID) (x : ID) :
     Prop :=
   ∀ u w, f.value? x = some u → g.value? x = some w →
   ∀ env : Env, env.Mono → ∀ frS T : Frame, T = { frS with regs := T.regs } →
+  RegsOK (Ctx.make tabs f) frS →
   ∀ E : ID → Prop, NewCons env (Ctx.make tabs g) isNew T E →
     (∀ a ∈ w.args, isNew a = true → E a) → (∀ a ∈ w.args, Reg T a) → (∀ a ∈ u.args, Reg frS a) →
     (∀ a ∈ front, ∀ y, frS.regs[a]? = some (some y) →
@@ -78,6 +90,10 @@ def retOf : Val → Option (List Val × Mem)
 /-- The values listed in the entry block of `g`. -/
 def EntryVal (g : Func) (x : ID) : Prop := ∃ eb, g.block? g.entry = some eb ∧ x ∈ eb.values
 
+/-- Two `Phi`s that evaluate alike: the same op, arguments and type (use counts and positions
+may differ). -/
+def PhiSame (u w : Value) : Prop := w.op = u.op ∧ w.args = u.args ∧ w.type = u.type
+
 section
 variable (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : ID → List ID)
   (RR : List Val → Mem → List Val → Mem → Prop)
@@ -88,9 +104,10 @@ structure CvBlock (fb gb : Block) : Prop where
   controls : gb.controls = fb.controls
   common : ∀ x ∈ fb.values, x ∈ gb.values ∧ isNew x = false
   fresh : ∀ x ∈ gb.values, x ∉ fb.values → isNew x = true
-  phiT : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → w.op = .Phi → x ∈ fb.values ∧ f.value? x = some w
+  phiT : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → w.op = .Phi →
+    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ PhiSame u w
   phiS : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op = .Phi →
-    g.value? x = some u ∧ (∀ y, cv x y = y) ∧ ∀ a ∈ u.args, ∀ y, cv a y = y
+    (∃ w, g.value? x = some w ∧ PhiSame u w) ∧ (∀ y, cv x y = y) ∧ ∀ a ∈ u.args, ∀ y, cv a y = y
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (npIn (schedNodes f fb).toList) = og.toList.filter (npIn (schedNodes f fb).toList)
   feeds : ∀ a y, NodeIn (schedNodes f fb).toList a → NodeIn (schedNodes f fb).toList y →
@@ -102,8 +119,9 @@ structure CvBlock (fb gb : Block) : Prop where
   front : ∀ x ∈ fb.values, ∀ a ∈ front x, isNew a = false ∧
     (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
-  ctrl : fb.kind ≠ .Ret → ∀ c ∈ fb.controls, ∀ y, cv c y = y
-  ret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', Sem.Refines (cv c y) y' →
+  ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, ∀ y, cv c y = y
+  ret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', RegOK (Ctx.make tabs f) c y →
+    Sem.Refines (cv c y) y' →
     ∀ rs m, retOf y = some (rs, m) → ∃ rs' m', retOf y' = some (rs', m') ∧ RR rs m rs' m'
   newOK : ∀ z ∈ gb.values, isNew z = true → ∀ w, g.value? z = some w → w.op ≠ .Phi ∧ NewEval tabs g w
   newArgs : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → ∀ a ∈ w.args,
