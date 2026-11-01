@@ -5,10 +5,11 @@ import GoFV.Proof.Pass.CopyElimSim
 # zcse: what the simulation uses
 
 `Setup tabs f g`: both functions are well-formed, `f`'s dominator certificate holds, `g` is
-related to `f` by `ZRel`, and the side-effecting roots of `f`'s tree blocks are pairwise
-dependency-ordered (`Chained`, the `chained` half of copyelim's `SimFrag`). Consequences: the
-target block of every block of `f`, and its schedule nodes (`nodeT`: the source's, less the
-argument-free values of `g`'s entry, which are nodes of the entry only).
+related to `f` by `ZRel`, and `f` is in copyelim's fragment without its `Empty` condition: the
+side-effecting roots of its tree blocks are pairwise dependency-ordered (`Chained`) and it has
+no `NilCheck` (`NoNil`; a panicking nil check may float past others, `SimFrag.noNil`).
+Consequences: the target block of every block of `f`, and its schedule nodes (`nodeT`: the
+source's, less the argument-free values of `g`'s entry, which are nodes of the entry only).
 -/
 
 namespace GoFV.Proof.ZCSE
@@ -24,6 +25,9 @@ def Chained (f : Func) : Prop :=
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
 
+/-- `f` has no `NilCheck` (`SimFrag.noNil`). -/
+def NoNil (f : Func) : Prop := ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
+
 /-- Everything the simulation uses about zcse's input `f` and output `g`. -/
 structure Setup (tabs : Tables) (f g : Func) : Prop where
   wf : ∃ ce, WF ce f
@@ -31,6 +35,7 @@ structure Setup (tabs : Tables) (f g : Func) : Prop where
   cf : CertOK f
   rel : ZRel tabs f g
   chained : Chained f
+  noNil : NoNil f
 
 variable {tabs : Tables} {f g : Func}
 
