@@ -4,7 +4,6 @@ import GoFV.SSA.Analysis.Postorder
 import GoFV.SSA.Analysis.Dom
 import GoFV.SSA.Analysis.LoopNest
 import GoFV.SSA.DomCert
-import Std.Data.HashSet
 
 /-!
 # `GoFV.SSA.check`: well-formedness checker (port of `ssa/check.go`, issue #8)
@@ -325,12 +324,13 @@ def memCheck (e : CheckEnv) (f : Func) : Except String Unit := do
   let mut lastmem : Array (Option ID) := Array.replicate f.blockTab.size none
   for b in blocks do
     let vs := values b
-    let mut overwritten : Std.HashSet ID := {}
+    -- by value ID (an array, not a hash set: the kernel can evaluate `check`)
+    let mut overwritten : Array Bool := Array.replicate f.valueTab.size false
     for v in vs do
       if v.op == .Phi || !e.isMemory v.type then continue
-      if let some m := memoryArg v then overwritten := overwritten.insert m
+      if let some m := memoryArg v then overwritten := overwritten.set! m true
     for v in vs do
-      if !e.isMemory v.type || overwritten.contains v.id then continue
+      if !e.isMemory v.type || overwritten.getD v.id false then continue
       if let some l := lastmem[b.id]! then
         throw s!"two live memory values in b{b.id}: v{l} and v{v.id}"
       lastmem := lastmem.set! b.id (some v.id)
