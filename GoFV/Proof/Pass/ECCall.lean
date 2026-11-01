@@ -14,8 +14,9 @@ contract sees refined arguments and memory (`Contract.Mono`), and the target's r
 Go-typed results. `obl_result`: a `MakeResult` of Go-typed results becomes one of their pieces.
 
 Both are proved first in the form `EcOblImk`, `Obl` with the frame facts of the `IMake` data
-shortcut (`EcImkFacts`, which `Obl` does not provide); `obl_call`/`obl_result` are the `Obl`s
-when no argument's node in `g` is an `IMake` (the shortcut cannot apply).
+shortcut (`EcImkFacts`); `obl_call`/`obl_result` are the `Obl`s when every `IMake` argument
+node and its data operand are `held` (their target registers hold their evaluations) and the
+argument is interface-shaped (`obl_of_imk`).
 -/
 
 namespace GoFV.Proof.EC
@@ -80,16 +81,27 @@ def EcOblImk (tabs : Tables) (f g : Func) (x : ID) : Prop :=
     ResCv (ecCv tabs f g x) (evalValue env (Ctx.make tabs f) frS u)
       (evalValue env (Ctx.make tabs g) T w)
 
-/-- Without `IMake` arguments in `g`, `EcOblImk` is `Obl`. -/
-theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {H : ID → Prop} (h : EcOblImk tabs f g x)
-    (hu : f.value? x = some u)
-    (hno : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op ≠ .IMake) :
+/-- An interface shape is a two-field aggregate with a pointer data word. -/
+theorem eco_ifaceShape {t : Ty} (h : ifaceShape t = true) :
+    ∃ f0 o e n, t = .agg [f0, (o, .ptr e)] n := by
+  unfold ifaceShape at h
+  split at h
+  · exact ⟨_, _, _, _, rfl⟩
+  · cases h
+
+/-- `EcOblImk` is `Obl` when each `IMake` argument node and its data operand are `held` and the
+argument is interface-shaped. -/
+theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {H : ID → Prop}
+    (h : EcOblImk tabs f g x) (hu : f.value? x = some u)
+    (hH : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
+      H a ∧ H aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
-  intro u' w hu' hw env hE frS T hT hRS E hNC hEw hRw hRu hfront _
+  intro u' w hu' hw env hE frS T hT hRS E hNC hEw hRw hRu hfront hheld
   rw [hu] at hu'
   cases hu'
-  exact h u w hu hw env hE frS T hT hRS E hNC hEw hRw hRu hfront
-    fun a ha aw haw hop => absurd hop (hno a ha aw haw)
+  exact h u w hu hw env hE frS T hT hRS E hNC hEw hRw hRu hfront fun a ha aw haw hop =>
+    have ⟨h1, h2, h3⟩ := hH a ha aw haw hop
+    ⟨hheld a h1, hheld _ h2, eco_ifaceShape h3⟩
 
 /-- `EcArgRel` of the source arguments of `x` in an obligation's frames. -/
 theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Frame}
@@ -201,16 +213,17 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     ecf_convTuple (by rw [ecf_forall₂_length hG]), shapeOf, hw, ecf_valueTy]
   exact retype_mono _ (.tuple (RefinesList.append hP (.cons (ecc_retype_mem hymm) .nil)))
 
-/-- **The `MakeResult` obligation** (no `IMake` argument pieces). -/
+/-- **The `MakeResult` obligation.** -/
 theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
-    (hok : resultOK tabs (typeShapes tabs) f g u w = true) (_hown : g.ownAux = f.ownAux)
+    (hok : resultOK tabs (typeShapes tabs) f g u w = true)
     (hreg : regParamsOK tabs (ownOuts tabs f) = true) (huid : u.id = x)
     (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
-    (hno : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op ≠ .IMake) :
+    (hH : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
+      H a ∧ H aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x :=
-  obl_of_imk (obl_result_imk hu hw hop hok hreg huid L hLx hL) hu hno
+  obl_of_imk (obl_result_imk hu hw hop hok hreg huid L hLx hL) hu hH
 
 /-! ## Calls: the semantic pieces -/
 
@@ -580,14 +593,15 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     | stuck msg r => exact .stuck msg _
   · cases hok
 
-/-- **The call obligation** (no `IMake` argument pieces). -/
+/-- **The call obligation.** -/
 theorem obl_call {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hcall : (callOpMap u.op).isSome = true)
-    (hok : callOK tabs (typeShapes tabs) f g u w = true) (_hown : g.ownAux = f.ownAux)
+    (hok : callOK tabs (typeShapes tabs) f g u w = true)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
-    (hno : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op ≠ .IMake) :
+    (hH : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
+      H a ∧ H aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x :=
-  obl_of_imk (obl_call_imk hu hw hcall hok huid L hLx hL) hu hno
+  obl_of_imk (obl_call_imk hu hw hcall hok huid L hLx hL) hu hH
 
 end GoFV.Proof.EC
