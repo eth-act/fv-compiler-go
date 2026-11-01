@@ -487,6 +487,16 @@ and checks that every section agrees with section 0 whenever section 0 is define
   `Convert`, `Eq/NeqInter`, `Eq/NeqSlice`, composite make/select ops, `ConstNil`,
   `ConstSlice`, `ConstInterface`, `Empty`, `Load`, `Dereference`, `MemEq`, and the atomic
   loads (sequential semantics, P5 pulled forward because they only read).
+- **Typing**: `evalValue` = `evalOp` (the op's raw result) followed by `Val.retype` at the
+  value's type shape, for every op (§3.2), so every register is fixed by `retype` at its
+  value's shape (`GoFV.Proof.evalValue_typed`).
+- **Results**: `finish` rejects a `MakeResult` component that contains poison (deeply,
+  including poison bytes of a blob) before decoding; so a defined source outcome's results
+  are poison-free, refinement of them is equality, and `finish` preserves outcome refinement
+  (`GoFV.Proof.finish_refines`).
+- **Proof impact**: a nil `NilCheck` panics, and the scheduler's FIFO tie-break between ready
+  `NilCheck`s is not invariant under a change of dependencies; `copyelim_refines` therefore
+  takes "no `NilCheck` in `f`" in its fragment `SimFrag` until the canonical tie-break of #96.
 - `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
   recursive definition on its path is structural.
 
@@ -509,8 +519,8 @@ prints every block entry and value of one run.
   which is not assumed non-nil); no corpus run showed a `SlicePtr` case.
 - `nilcheck.go:59` also treats `AddPtr`/`OffPtr`/`Add64`/`Sub64` results as non-nil
   ("unsafe pointer arithmetic generates non-nil pointers", golang/go#27180, a deliberate
-  choice). **Seen by P2**: in 3 runtime functions (`(*bitvector).ptrbit`, `bitCursor.write`,
-  `(*rwmutex).rlock`) a random call whose section 0 panics in a `NilCheck` of `nil + k` is
+  choice). **Seen by P2**: in 5 runtime functions (`(*bitvector).ptrbit`, `bitCursor.write`,
+  `dumpbv`, `(*rwmutex).rlock`, `restoreGsignalStack`) a random call whose section 0 panics in a `NilCheck` of `nil + k` is
   `stuck` from section 13 (`nilcheckelim`) on: the check is gone and the access through
   `nil + k` is invalid (a load is `poison`, a store `stuck`). The criterion of §1 does
   not catch it (only the target's defined runs carry obligations), but the machine behaves
