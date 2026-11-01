@@ -138,6 +138,11 @@ import GoFV.Proof.Pass.FuseCmpSetup
 import GoFV.Proof.Pass.FuseCmpSim
 import GoFV.Proof.Pass.FuseCmpTarget
 import GoFV.Proof.Pass.FuseEarlyPass
+import GoFV.Proof.Pass.FuseIf
+import GoFV.Proof.Pass.FuseIfEnter
+import GoFV.Proof.Pass.FuseIfRel
+import GoFV.Proof.Pass.FuseIfSetup
+import GoFV.Proof.Pass.FuseIfSim
 import GoFV.Proof.Pass.FuseLoop
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FusePlainFrame
@@ -411,6 +416,7 @@ import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
 import GoFV.Proof.Witness.FuseEarly
+import GoFV.Proof.Witness.FuseIf
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
