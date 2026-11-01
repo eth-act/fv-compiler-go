@@ -237,7 +237,7 @@ theorem refines_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel tabs
       hrel.vsize
     have hentry : entryFrame env (Ctx.make tabs g) args mem =
         entryFrame env (Ctx.make tabs f) args mem := by
-      unfold entryFrame frameMem
+      unfold entryFrame frameMem frameAllocs
       rw [hpty, hloc, hsz]; rfl
     rw [hentry, houts, show (Ctx.make tabs g).act = (Ctx.make tabs f).act from rfl,
       show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from cfgView_entry hrel.cfg]

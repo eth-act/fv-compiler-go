@@ -152,8 +152,8 @@ theorem nilcheck_witness :
   | ok out =>
     rw [h] at hpc
     obtain ⟨m, hm⟩ := returnsInt_iff.1 bufIn_run
-    obtain ⟨fuel, hr⟩ := Refines.returned_int
+    obtain ⟨fuel, m', hr⟩ := Refines.returned_int
       (GoFV.Proof.Nil.nilcheck_refines h (buf_ok_of_toBool bufIn_check) buf_nilFrag) hm
-    exact ⟨out, rfl, by simpa using hpc, fuel, m, hr⟩
+    exact ⟨out, rfl, by simpa using hpc, fuel, m', hr⟩
 
 end GoFV.Proof.Witness

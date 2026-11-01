@@ -15,10 +15,11 @@ namespace GoFV.Proof.Nil
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof.CSE
 
-/-- A nil check passes on `q`. -/
+/-- A nil check passes on `q`: a pointer into an allocation, or an address `Ptr.ofAddr` maps
+into one (§6: a check of any pointer into `Blk.nil` panics). -/
 def NN : Val → Prop
-  | .ptr p => p.isNil = false
-  | .int .w64 x => x ≠ 0
+  | .ptr p => p.blk ≠ .nil
+  | .int .w64 x => (Ptr.ofAddr x).blk ≠ .nil
   | _ => False
 
 theorem evalOp_nilCheck {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
@@ -56,11 +57,10 @@ theorem nilCheck_panic_of {ctx : Ctx} {n : Value} {q : Val} {m : Mem} (hn : n.op
     (hq : ¬ NN q) (hs : (∃ p, q = .ptr p) ∨ ∃ x, q = .int .w64 x) :
     memRoot ctx n [q, .mem m] = .panic .nilDeref m := by
   rcases hs with ⟨p, rfl⟩ | ⟨x, rfl⟩
-  · simp only [NN, Bool.not_eq_false] at hq
+  · simp only [NN, Classical.not_not] at hq
     unfold memRoot; rw [hn]; simp [hq]
   · simp only [NN, Classical.not_not] at hq
-    subst hq
-    unfold memRoot; rw [hn]; simp
+    unfold memRoot; rw [hn]; simp [hq]
 
 /-- A nil check on a value it passes on returns it, on any memory, and never panics. -/
 theorem nilCheck_nn {ctx : Ctx} {n : Value} {q a : Val} (hn : n.op = .NilCheck) (hq : NN q) :
@@ -77,7 +77,7 @@ theorem nilCheck_nn {ctx : Ctx} {n : Value} {q a : Val} (hn : n.op = .NilCheck) 
       unfold memRoot; rw [hn]; simp [hq]
     | .int .w64 x, hq =>
       simp only [NN] at hq
-      unfold memRoot; rw [hn]; simp only [beq_iff_eq, hq, ite_false]
+      unfold memRoot; rw [hn]; simp [hq]
 
 /-- A value no nil check panics on and that pointer arithmetic keeps so: a pointer into an
 allocation, an integer address of one, or any non-address value. -/
@@ -91,11 +91,8 @@ theorem ofAddr_zero : (Ptr.ofAddr 0).blk = .nil := by decide
 theorem nn_of_safe {q : Val} (hq : Safe q) (hs : (∃ p, q = .ptr p) ∨ ∃ x, q = .int .w64 x) :
     NN q := by
   rcases hs with ⟨p, rfl⟩ | ⟨x, rfl⟩
-  · simp only [Safe] at hq
-    simp [NN, Ptr.isNil, hq]
-  · simp only [Safe] at hq
-    simp only [NN]
-    rintro rfl; exact hq ofAddr_zero
+  · exact hq
+  · exact hq
 
 /-- No nil check panics on a `Safe` value. -/
 theorem nilCheck_safe {ctx : Ctx} {n : Value} {q b : Val} (hn : n.op = .NilCheck) (hq : Safe q)
@@ -110,7 +107,12 @@ theorem nilCheck_safe {ctx : Ctx} {n : Value} {q b : Val} (hn : n.op = .NilCheck
 allocation). -/
 theorem nilCheck_ok_safe {ctx : Ctx} {n : Value} {argv : List Val} {r : Val}
     (hn : n.op = .NilCheck) (h : memRoot ctx n argv = .ok r) : Safe r := by
-  sorry
+  obtain ⟨-, -, hr⟩ := nilCheck_ok hn h
+  unfold NN at hr
+  split at hr
+  · exact hr
+  · exact hr
+  · exact hr.elim
 
 /-- `Safe` survives taking a pointer shape. -/
 theorem safe_retype_ptr {v : Val} (e : Option Nat) (h : Safe v) : Safe (v.retype (.ptr e)) := by

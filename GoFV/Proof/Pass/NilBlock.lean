@@ -433,15 +433,18 @@ theorem evalOp_pure {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
   have hfv : frameVal ctx v = none :=
     frameVal_none (by rcases hop with h | h <;> rw [h] <;> decide)
   rw [evalOp_tail hr (by rcases hop with h | h <;> rw [h] <;> decide)
-    (by rcases hop with h | h <;> rw [h] <;> decide) (by rcases hop with h | h <;> rw [h] <;> decide),
-    hfv]
+    (by rcases hop with h | h <;> rw [h] <;> decide) (by rcases hop with h | h <;> rw [h] <;> decide)
+    (by rcases hop with h | h <;> rw [h] <;> decide), hfv]
   rfl
 
 omit K in
 theorem isNonNil_nn {q : Val} (h : NN q) : PtrOps.isNonNil [q] = .bool true := by
   match q, h with
-  | .ptr p, h => simp only [NN] at h; simp [PtrOps.isNonNil, h]
-  | .int .w64 x, h => simp only [NN] at h; simpa [PtrOps.isNonNil] using h
+  | .ptr p, h => simp only [NN] at h; simp [PtrOps.isNonNil, Ptr.isNil, h]
+  | .int .w64 x, h =>
+    simp only [NN] at h
+    have hx : x ≠ 0 := by rintro rfl; exact h ofAddr_zero
+    simpa [PtrOps.isNonNil] using hx
 
 /-- **A value the source evaluated before it stops** evaluates in the target to the source's
 register. -/
@@ -692,11 +695,12 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     subst hyr
     apply safe_retype_ptr
     have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr) →
-        isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg := by
+        isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+          v.op ≠ .GetClosurePtr := by
       intro h; rcases h with h | h | h | h <;> rw [h] <;> decide
     rcases hop with ⟨h1, hax⟩ | h1 | ⟨h1, a, ha, hsa⟩
-    · obtain ⟨hr1, hr2, hr3, hr4⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
-      rw [evalOp_tail hr1 hr2 hr3 hr4] at hr
+    · obtain ⟨hr1, hr2, hr3, hr4, hr5⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5] at hr
       obtain ⟨x, hx, hsx⟩ : ∃ x, frameVal (Ctx.make tabs f) v = some x ∧ Safe x := by
         rcases h1 with h1 | h1
         · exact frameVal_addr_safe h1
@@ -704,8 +708,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       rw [hx] at hr; cases hr; exact hsx
     · rw [evalOp_nilCheck h1] at hr
       exact nilCheck_ok_safe h1 hr
-    · obtain ⟨hr1, hr2, hr3, hr4⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
-      rw [evalOp_tail hr1 hr2 hr3 hr4] at hr
+    · obtain ⟨hr1, hr2, hr3, hr4, hr5⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5] at hr
       have hfv : frameVal (Ctx.make tabs f) v = none :=
         frameVal_none (by rcases h1 with h1 | h1 <;> rw [h1] <;> decide)
       rw [hfv] at hr; cases hr
@@ -812,12 +816,7 @@ theorem panic_root {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
   obtain ⟨gv, hgv, -⟩ := K.rel.value r fv hfv
   obtain ⟨hop, -⟩ := K.panic_same hS hkS hfv hrp hgv (hna fv gv · hfv hgv)
   have hpo := evalValue_panic_op hrp
-  have : prio fv.op ≠ 0 := by
-    rcases hpo with h1 | h1 | h1 | h1
-    · rw [prio_panicking (.inl h1)]; decide
-    · rw [prio_panicking (.inr (.inl h1))]; decide
-    · rw [prio_panicking (.inr (.inr h1))]; decide
-    · rw [h1]; decide
+  have : prio fv.op ≠ 0 := prio_panicking hpo
   simp [Opt.NilCheck.root, hgv, hop, this]
 
 /-- **The root the source panics at** panics alike in the target. -/
