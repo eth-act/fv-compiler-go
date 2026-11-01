@@ -1346,4 +1346,29 @@ theorem refines_retype_of_hasTy {v : Val} {t : Ty} (h : v.hasTy t = true) :
     Refines v (v.retype t) := by
   rw [Val.retype_of_hasTy h]; exact Refines.refl _
 
+/-- A pointer-arithmetic result refines the pointer (it is the pointer or `poison`, #156). -/
+theorem ptrRes_refines (p : Ptr) : Refines (PtrOps.ptrRes p) (.ptr p) := by
+  unfold PtrOps.ptrRes; split
+  · exact Refines.refl _
+  · exact Refines.poison _
+
+theorem retype_ptrRes_ptr (e : Option Nat) (p : Ptr) :
+    (PtrOps.ptrRes p).retype (.ptr e) = PtrOps.ptrRes p := by
+  unfold PtrOps.ptrRes; split <;> rfl
+
+/-- `OffPtr` of a pointer-arithmetic result: `poison` if the first step left the window. -/
+theorem offPtr_ptrRes (k : Int64) (q : Ptr) :
+    PtrOps.offPtr k [PtrOps.ptrRes q] =
+      if q.inWindow then PtrOps.ptrRes (q.add (BitVec.ofInt 64 k.toInt)) else .poison := by
+  unfold PtrOps.ptrRes; split <;> rfl
+
+/-- Two steps of pointer arithmetic refine one step by the sum (the intermediate pointer may
+leave the window where the sum does not). -/
+theorem ptrRes_two_steps (p : Ptr) (a b : BitVec 64) (t : Ty) :
+    Refines ((if (p.add a).inWindow then PtrOps.ptrRes ((p.add a).add b) else .poison).retype t)
+      ((PtrOps.ptrRes (p.add (a + b))).retype t) := by
+  split
+  · rw [ptr_add_add]; exact Refines.refl _
+  · rw [Val.retype]; exact Refines.poison _
+
 end GoFV.Proof.Rules
