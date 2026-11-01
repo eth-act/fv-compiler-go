@@ -444,4 +444,9 @@ theorem nonNegD_den (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val)
               | slice e => rw [hs] at hty; exact .inr ⟨e, hty⟩
               | _ => simp [hs, lenShape] at h
 
+/-- `nn_select` applies to the capacity of a defined slice (`len 2 ≤ cap 5`). -/
+example : NNW .w64 (Comp.select 2 [.agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]]) :=
+  nn_select 2 (.inr rfl) _ fun _ h => by
+    cases h; exact .inr ⟨some 8, by decide⟩
+
 end GoFV.Proof.Pass.Rewrite
