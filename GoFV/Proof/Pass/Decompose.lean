@@ -15,7 +15,9 @@ each pass is a chain of checked stages, all read in the output tables `T`:
    contracts ignore such temporaries and inputs holding no pointer into a frame temporary);
 2. the phi splits refine `f` (`decPhis_refines`);
 3. decompose builtin: the dec-rule rewrite with the proven dec rules refines the phi stage
-   (`validate_refines` with `dec_allSound`);
+   (`Pass.Rewrite.layersOK_refines` with `dec_allSound`: its value-rule `Load` expansions, its
+   `Store` splits (`StructStore.ss_refines`, in place for the builtin `Make`s), then the
+   validator with the other events);
 4. the names stage only changes `f.Names`/`NamedValues`/the canonical splits, which the
    semantics never reads (`run_stripNames`).
 -/
@@ -81,11 +83,13 @@ theorem refinesFrom_of_decBuiltinStagesOK {penv : PassEnv} {f g1 g2 : Func}
     (hf : check ce f = .ok ()) :
     RefinesFrom DecPre out.tables out.func penv.tables f := by
   simp only [decBuiltinStagesOK, Bool.and_eq_true] at hok
-  obtain ⟨⟨⟨⟨⟨⟨hta, hphi⟩, hc1⟩, hc2⟩, hagree⟩, hv⟩, hsame⟩ := hok
+  obtain ⟨⟨⟨⟨⟨hta, hphi⟩, hc1⟩, hc2⟩, hv⟩, hsame⟩ := hok
   have hg1 := check_of_isOk hc1
   have hg2 := check_of_isOk hc2
   have r1 := DecPhi.decPhis_refines hphi hf hg1
-  have r2 := Pass.Rewrite.validate_refines Rules.dec_allSound hv hagree hg1 hg2
+  have r2 : RefinesUnder Env.Mono out.tables g2 out.tables g1 :=
+    Pass.Rewrite.layersOK_refines (out := { func := g2, tables := out.tables }) Rules.dec_allSound
+      hg2 RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) g1 log hg1 hv
   have r3 : Refines out.tables out.func out.tables g2 := refines_of_sameCode hsame
   exact refinesFrom_of_tabsAgreeMod decPre_tabs hta hf
     (decPre_mono ((r1.trans r2).trans (r3.under _)))

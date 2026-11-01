@@ -44,24 +44,21 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
     obtain ⟨-, v, hv, -⟩ := K.hLk k z hz; exact ⟨v, hv⟩
   cases hfx : f.value? x with
   | some fv =>
-    have hne : ∀ x' ps (d : SplitD tabs f g x' ps) (i : Nat) (p s : ID), ps[i]? = some (p, s) →
-        p ≠ x ∧ s ≠ x := fun x' ps d i p s hi => by
+    -- a store of a chain that is a value of `f` is its split `Store` itself (in place)
+    have hself : ∀ x' ps (d : SplitD tabs f g x' ps) (i : Nat) (p : ID), ps[i]? = some (p, x) →
+        x = x' := fun x' ps d i p hi => by
       obtain ⟨o, t, a, av, sv, ov, -, -, L⟩ := link_at d hi
-      exact ⟨fun h => (by have := L.hpf; rw [h, hfx] at this; cases this),
-        fun h => (by have := L.hsf; rw [h, hfx] at this; cases this)⟩
+      rcases L.hsf with h | ⟨h, -⟩
+      · rw [hfx] at h; cases h
+      · exact h
     have hxF : Node f fb x := K.nodeF ⟨hxgb, gv, hgv, hgph⟩ hfx
     obtain ⟨gv', hgv', hsv⟩ := K.gval hfx
     rw [hgv] at hgv'; cases hgv'
     have hvoff : ∀ (y : Val) x' ps (d : SplitD tabs f g x' ps), x' ∈ oS.toList.take k →
         ∀ (i : Nat) (s : ID) (o : Nat) (t : Ty) (P : Ptr), ps[i]? = some (x, s) →
-        d.fs[i]? = some (o, t) → S.regs[d.dst]? = some (some (.ptr P)) →
+        d.fs[i]? = some (o, t) → f.value? x = none → S.regs[d.dst]? = some (some (.ptr P)) →
         y = .ptr (P.add (BitVec.ofNat 64 o)) :=
-      fun y x' ps d _ i s o t P hi => absurd rfl (hne x' ps d i x s hi).1
-    have hvst : ∀ (y : Val) x' ps (d : SplitD tabs f g x' ps), x' ∈ oS.toList.take k →
-        ∀ (i : Nat) (p : ID) (P : Ptr) (M : Mem), ps[i]? = some (p, x) →
-        S.regs[d.dst]? = some (some (.ptr P)) → S.regs[d.mem]? = some (some (.mem M)) →
-        ∃ Mk M', M.write P (bufK S d (i + 1)) = some Mk ∧ y = .mem M' ∧ Mem.Refines Mk M' :=
-      fun y x' ps d _ i p P M hi => absurd rfl (hne x' ps d i p x hi).2
+      fun y x' ps d _ i s o t P _ _ hn => by rw [hfx] at hn; cases hn
     by_cases hxS : x ∈ oS.toList.take k
     · obtain ⟨y, hy, hr⟩ : ∃ y, evalValue env (Ctx.make tabs g) T gv = .ok y ∧
           ∃ yS, S.regs[x]? = some (some yS) ∧ Sem.Refines yS y := by
@@ -70,19 +67,33 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
         · obtain ⟨d⟩ := ssSplit_spec hps
           have h := d.hgv; rw [hgv] at h; cases h
           exact K.splitOk hS hT hjT hxS d
-      exact ⟨y, hy, K.tstep hjT hT (fun _ => hr) (hvoff y) (hvst y)⟩
-    · obtain ⟨y, hy⟩ : ∃ y, evalValue env (Ctx.make tabs g) T gv = .ok y := by
+      refine ⟨y, hy, K.tstep hjT hT (fun _ => hr) (hvoff y) ?_⟩
+      intro x' ps d hx' i p P M hi hP hM
+      obtain ⟨sv, M2, M2', hsv', he, hw2, hr2⟩ := K.storeAt hS hT hjT d hx' hi hP hM
+      rw [hgv] at hsv'; cases hsv'
+      rw [hy] at he; cases he
+      exact ⟨M2, M2', hw2, rfl, hr2⟩
+    · have hvst : ∀ (y : Val) x' ps (d : SplitD tabs f g x' ps), x' ∈ oS.toList.take k →
+          ∀ (i : Nat) (p : ID) (P : Ptr) (M : Mem), ps[i]? = some (p, x) →
+          S.regs[d.dst]? = some (some (.ptr P)) → S.regs[d.mem]? = some (some (.mem M)) →
+          ∃ Mk M', M.write P (bufK S d (i + 1)) = some Mk ∧ y = .mem M' ∧ Mem.Refines Mk M' :=
+        fun y x' ps d hx' i p P M hi => by
+          have := hself x' ps d i p hi; subst this; exact absurd hx' hxS
+      have hcovx : CSE.rootNode g x = true → False := fun hr => by
+        rcases hcov hr with h | ⟨x', ps, hps, hx', q, hq, hqx⟩
+        · exact hxS h
+        · obtain ⟨d⟩ := ssSplit_spec hps
+          obtain ⟨i, hi⟩ := List.getElem?_of_mem hq
+          obtain ⟨q1, q2⟩ := q
+          simp only at hqx; subst hqx
+          have := hself x' ps d i q1 hi; subst this; exact hxS hx'
+      obtain ⟨y, hy⟩ : ∃ y, evalValue env (Ctx.make tabs g) T gv = .ok y := by
         rcases hsv with hs | ⟨ps, hps⟩
         · obtain ⟨-, hop, -, -, -, -, hga⟩ := ssSame_spec hs
           have hroot : CSE.rootNode g x = false := by
             cases hr : CSE.rootNode g x with
             | false => rfl
-            | true =>
-              rcases hcov hr with h | ⟨x', ps, hps, -, q, hq, hqx⟩
-              · exact absurd h hxS
-              · obtain ⟨d⟩ := ssSplit_spec hps
-                obtain ⟨i, hi⟩ := List.getElem?_of_mem hq
-                exact absurd hqx (hne x' ps d i q.1 q.2 hi).2
+            | true => exact (hcovx hr).elim
           have hp0 : Sem.prio gv.op = 0 := by simpa [CSE.rootNode, hgv] using hroot
           obtain ⟨ha, hb⟩ := hpure fv hfx hxS
           refine pureEval (fun a ha' => ?_) (CSE.Blk.isRoot_of_prio hp0) (by rw [hop]; exact ha)
@@ -94,7 +105,12 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
           · exact K.argDefd hS hT hjT hgv ha' (.inr (K.nodeG hn))
         · obtain ⟨d⟩ := ssSplit_spec hps
           have h := d.hgv; rw [hgv] at h; cases h
-          exact K.splitPure hS hT hjT d
+          rcases d.hmode with ⟨hgop, -⟩ | ⟨hgst, -⟩
+          · exact K.splitPure hS hT hjT d hgop
+          · -- in place: a root, which the source evaluated
+            refine (hcovx ?_).elim
+            unfold CSE.rootNode; rw [hgv]; simp only [Option.map_some, Option.getD_some, hgst]
+            decide
       exact ⟨y, hy, K.tstep hjT hT (fun h => absurd h hxS) (hvoff y) (hvst y)⟩
   | none =>
     have hnpre : x ∉ oS.toList.take k := fun h => by
@@ -113,7 +129,8 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
     rcases hxq with hx | hx
     · -- a fresh `OffPtr`
       simp only at hx; subst hx
-      obtain ⟨o0, t0, a0, av0, sv0, ov0, hf0, ha0, L0⟩ := link_at d0 hi0
+      obtain ⟨o0, t0, a0, av0, sv0, ov0, hf0, ha0, L1⟩ := link_at d0 hi0
+      have L0 := L1.hoff hfx
       rw [L0.hp] at hgv; cases hgv
       have hb : d0.fv.block = bid := by rw [← L0.hpbl]; exact hvb
       have hx0 : Node f fb x0 := K.split_node d0 hb
@@ -131,9 +148,10 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
           · exact K.argDefd hS hT hjT L0.hp ha (.inr (K.nodeG h)))
         (by rw [L0.hpop]; decide) (by rw [L0.hpop]; decide) (by rw [L0.hpop]; decide)
       refine ⟨y, hy, K.tstep hjT hT (fun h => absurd h hnpre) ?_ ?_⟩
-      · intro x' ps d hx' i s o t P hi hfi hP
-        obtain ⟨o', t', a, av, sv, ov, hfi', -, L⟩ := link_at d hi
+      · intro x' ps d hx' i s o t P hi hfi hpf hP
+        obtain ⟨o', t', a, av, sv, ov, hfi', -, L1⟩ := link_at d hi
         rw [hfi] at hfi'; cases hfi'
+        have L := L1.hoff hpf
         have h := L.hp; rw [L0.hp] at h; cases h
         have := K.offVal hS hT hjT d hx' hfi L hP
         rw [hy] at this; cases this; rfl
@@ -158,8 +176,9 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
       obtain ⟨sv, M2, M2', hsv, he, -, -⟩ := K.storeAt hS hT hjT d1 hx1 hi1 hP1 hM1
       rw [L0.hs] at hsv; cases hsv
       refine ⟨_, he, K.tstep hjT hT (fun h => absurd h hnpre) ?_ ?_⟩
-      · intro x' ps d hx' i s o t P hi
-        obtain ⟨o', t', a, av, sv, ov, -, -, L⟩ := link_at d hi
+      · intro x' ps d hx' i s o t P hi _ hpf
+        obtain ⟨o', t', a, av, sv, ov, -, -, L1⟩ := link_at d hi
+        have L := L1.hoff hpf
         have h := L.hp; rw [L0.hs] at h; cases h
         exact absurd (L0.hsop.symm.trans L.hpop) (by decide)
       · intro x' ps d hx' i p P M hi hP hM
@@ -256,7 +275,9 @@ theorem rootsBefore {k k' : Nat} {r : ID} (hk : oS.toList[k]? = some r)
         obtain ⟨d⟩ := ssSplit_spec hs
         obtain ⟨i, hi⟩ := List.getElem?_of_mem hq
         obtain ⟨o, t, a, av, sv, ov, -, -, L⟩ := link_at d hi
-        have := L.hsf; rw [hqr, hrv] at this; cases this)
+        rcases L.hsf with h | ⟨h, -⟩
+        · rw [hqr, hrv] at h; cases h
+        · rw [hqr] at h; subst h; rw [hrs] at hs; cases hs)
   have hm : y ∈ (oT.toList.take k').filter (CSE.rootNode g) := List.mem_filter.2 ⟨hy, hry⟩
   rw [heq] at hm
   rcases mem_ssRoots hm with h | ⟨z, ps, hz, hs, q, hq, hqy⟩
@@ -326,12 +347,14 @@ theorem panicCase (hE : env.Mono) {e : Panic} {m : Mem}
         cases hxr' : CSE.rootNode g x with
         | false => rfl
         | true =>
-          rcases hroots x hxmem hxr' with h' | ⟨x', ps, hps, -, q, hq, hqx⟩
+          rcases hroots x hxmem hxr' with h' | ⟨x', ps, hps, hx', q, hq, hqx⟩
           · exact absurd h' hn
           · obtain ⟨d⟩ := ssSplit_spec hps
             obtain ⟨i', hi'⟩ := List.getElem?_of_mem hq
             obtain ⟨o, t, a, av, sv, ov, -, -, L⟩ := link_at d hi'
-            have := L.hsf; rw [hqx, hfv] at this; cases this
+            rcases L.hsf with h | ⟨h, -⟩
+            · rw [hqx, hfv] at h; cases h
+            · rw [hqx] at h; subst h; exact absurd hx' hn
       have hnA : ∀ op, fv.op = op → (op = .Arg ∨ op = .ArgIntReg) → False := by
         intro op hop hor
         obtain ⟨gv, hgv, hsv⟩ := K.gval hfv

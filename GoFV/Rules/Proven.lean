@@ -214,7 +214,7 @@ def generic : RuleSet where
 
 /-- `dec.rules` restricted to its 26 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
-expansions and 0 struct-store splits. -/
+expansions and 7 struct-store splits. -/
 def dec : RuleSet where
   name := "dec"
   values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126, Generated.Dec.r_dec_132]),
@@ -234,7 +234,7 @@ def dec : RuleSet where
   nilChecks := []
   loads := []
   structLoads := []
-  structStores := []
+  structStores := [Generated.Dec.r_dec_23, Generated.Dec.r_dec_35, Generated.Dec.r_dec_51, Generated.Dec.r_dec_72, Generated.Dec.r_dec_93, Generated.Dec.r_dec_123, Generated.Dec.r_dec_129]
 
 /-- `divisible.rules` restricted to its 24 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load

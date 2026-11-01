@@ -324,6 +324,7 @@ import GoFV.Proof.Rules.DecLoad
 import GoFV.Proof.Rules.DecLoadSel
 import GoFV.Proof.Rules.DecMakeSel
 import GoFV.Proof.Rules.DecShape
+import GoFV.Proof.Rules.DecStore
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Rules.Div
@@ -488,6 +489,7 @@ import GoFV.Proof.Witness.DSE
 import GoFV.Proof.Witness.DSECert
 import GoFV.Proof.Witness.Deadcode
 import GoFV.Proof.Witness.DecPhis
+import GoFV.Proof.Witness.DecStore
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Decompose

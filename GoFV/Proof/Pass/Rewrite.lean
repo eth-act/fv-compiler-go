@@ -105,6 +105,58 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesUnder.toRw (StructStore.ss_refines hf hf' hr)).trans R'⟩
 
+/-- **Layers without nil-check eliminations refine** under monotone contracts alone (issue #17,
+the decompose builtin rewrite step, `RewriteCheck.decLayers`): each layer `layersOK` takes is
+related by its own refinement (forwardings `LoadFwd.fwd_refines`; struct-load and value-rule
+`Load` expansions the validator and the atom simulation; splits `StructStore.ss_refines`), and
+the output to the last layer's function by `validate`. -/
+theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : Func}
+    {out : PassOut} {ce' : CheckEnv} (hg : check ce' out.func = .ok ()) :
+    ∀ (Ls : List RewriteCheck.Layer), (∀ sel, RewriteCheck.Layer.nil sel ∉ Ls) →
+      ∀ (f : Func) (log : Array RwEvent) {ce : CheckEnv}, check ce f = .ok () →
+      RewriteCheck.layersOK penv (Interp.Table.ofRuleSet s) f0 out Ls f log = true →
+      RefinesUnder Env.Mono out.tables out.func out.tables f
+  | [], _, f, log, ce, hf, h => by
+    rw [RewriteCheck.layersOK] at h
+    obtain ⟨hA, hcf, hcg⟩ := validate_parts h
+    obtain ⟨h1, h2⟩ := validate_termRef h hs
+    exact AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2
+  | L :: Ls, hn, f, log, ce, hf, h => by
+    have hn' : ∀ sel, RewriteCheck.Layer.nil sel ∉ Ls :=
+      fun sel hm => hn sel (List.mem_cons_of_mem _ hm)
+    rw [RewriteCheck.layersOK] at h
+    split at h
+    next f' log' _ =>
+    split at h
+    · exact layersOK_refines hs hg Ls hn' f log hf h
+    · rw [Bool.and_eq_true] at h
+      obtain ⟨hL, hr⟩ := h
+      cases L with
+      | nil sel => exact absurd List.mem_cons_self (hn sel)
+      | fwd sel =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        have hf' := checkOK_sound hL.2
+        exact (LoadFwd.fwd_refines hf hf' hL.1).trans (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+      | sl =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        have hf' := checkOK_sound hL.2
+        obtain ⟨hA, hcf, hcg⟩ := validate_parts hL.1
+        obtain ⟨h1, h2⟩ := validate_termRef hL.1 hs
+        exact (AtomSim.atomSim_refines hf hf' hA hcf hcg h1 h2).trans
+          (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+      | ld =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        have hf' := checkOK_sound hL.2
+        obtain ⟨hA, hcf, hcg⟩ := validate_parts hL.1
+        obtain ⟨h1, h2⟩ := validate_termRef hL.1 hs
+        exact (AtomSim.atomSim_refines hf hf' hA hcf hcg h1 h2).trans
+          (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+      | ss =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        have hf' := checkOK_sound hL.2
+        exact (StructStore.ss_refines hf hf' hL.1).trans
+          (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+
 theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)

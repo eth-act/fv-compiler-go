@@ -241,7 +241,7 @@ def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
           s!"walk ({fs.length} fields) {desc tabs g 2 last}"
         else if !ssStart tabs f g fv.block mem r.2 then
           s!"chain start {desc tabs f 2 mem} vs {desc tabs g 2 r.2}"
-        else match (List.range fs.length).find? (fun k => !ssLink tabs f g fv.block dst fs smv.args r.1 r.2 k) with
+        else match (List.range fs.length).find? (fun k => !ssLink tabs f g fv.block dst x fs smv.args r.1 r.2 k) with
           | some k => s!"field {k} of {fs.length}"
           | none => "ok"
       | none => "no StructMake"
@@ -328,6 +328,9 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
           some s!"sl({k}): check {e}"
         else some s!"sl({k}): {why tabs t f f' (slTaken t tabs f log)}"
       | .ss => (ssRelWhy env tabs f f').map (s!"ss({k}): " ++ ·)
+      | .ld =>
+        if RewriteCheck.layerOK env t tabs f0 L f log f' then none
+        else some s!"ld({k}): {why tabs t f f' (ldTaken t tabs f log)}"
     match r with
     | some s => s
     | none =>
@@ -336,6 +339,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .fwd sel => s!"fwd{if sel then "₁" else "₂"}({k})"
         | .sl => s!"sl({k})"
         | .ss => s!"ss({k})"
+        | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite

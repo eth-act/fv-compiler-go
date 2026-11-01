@@ -123,7 +123,8 @@ theorem phiStep_rel {frS frT : Frame} (hr : RR f frS.regs frT.regs) {bid : ID} {
   · obtain ⟨d⟩ := ssSplit_spec hps
     rw [d.hfv] at hfv; cases hfv
     rw [d.hgv] at hgv; cases hgv
-    have h1 : (d.gv.op == .Phi) = false := by rw [d.hgop]; rfl
+    have h1 : (d.gv.op == .Phi) = false := by
+      rcases d.hmode with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
     have h2 : (d.fv.op == .Phi) = false := by rw [d.hop]; rfl
     simp only [h1, h2, Bool.false_eq_true, ↓reduceIte]
     exact .ok .none
@@ -201,9 +202,11 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
         obtain ⟨d⟩ := ssSplit_spec hps0
         obtain ⟨i0, hi0⟩ := List.getElem?_of_mem hq0
         obtain ⟨o, t, a, av, sv, ov, -, -, L⟩ := link_at d hi0
+        have hzf : f.value? z = none := (hEf z (Array.mem_toList_iff.1 hz)).1
         have hnp : v.op ≠ .Phi := by
           rcases hzq with rfl | rfl
-          · rw [L.hp] at hv; cases hv; rw [L.hpop]; decide
+          · have P := L.hoff hzf
+            rw [P.hp] at hv; cases hv; rw [P.hpop]; decide
           · rw [L.hs] at hv; cases hv; rw [L.hsop]; decide
         unfold phiStep
         simp only [show (Ctx.make tabs g).f = g from rfl, hv]
