@@ -175,8 +175,9 @@ data symbol of the (non-empty) string aux bound to `x`, an auxint `int64(len(x))
 `a >> b` shifts by a nonnegative amount (Go panics on a negative one, so the rewriter built no
 such node); a conjunct `x == ""` of the condition holds of the string aux bound to `x`; a
 conjunct `isSamePtr(x, y)` of leaves `x`, `y` holds of their values (the validator: the same
-value); and a conjunct `x.NumElem() == 1` makes the type `x` a one-element array, whose shape
-(`Sem.tyOf`) is an aggregate of one field at offset 0 that fills it. -/
+value); a conjunct `x.NumElem() == 1` makes the type `x` a one-element array, whose shape
+(`Sem.tyOf`) is an aggregate of one field at offset 0 that fills it; and the positions of
+`sameLeaves r` hold the same value. -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
   (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
@@ -193,7 +194,8 @@ def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rul
   (∀ xy ∈ (r.cond.map samePtrVars).getD [],
     ∃ p q, Pat.leafPos xy.1 [] r.pat = some p ∧ Pat.leafPos xy.2 [] r.pat = some q ∧
       e.leaf p = e.leaf q) ∧
-  ∀ x ∈ (r.cond.map numElem1Vars).getD [], ∃ f, ev (.var x) = .ty (.agg [(0, f)] f.size)
+  (∀ x ∈ (r.cond.map numElem1Vars).getD [], ∃ f, ev (.var x) = .ty (.agg [(0, f)] f.size)) ∧
+  ∀ pq ∈ sameLeaves r, e.leaf pq.1 = e.leaf pq.2
 
 /-- **The obligation of a value rule over table-evaluated nodes**: `Rule.Sound` with the
 denotation `opVal tabs`, for all tables, under the frame helpers' facts (`FrameOK`). -/

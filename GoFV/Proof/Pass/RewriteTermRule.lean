@@ -158,13 +158,14 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hcons : consOK (stEv tabs M r defs I) (stσ tabs M r I) (env tabs M I) I [] r.pat = true
   hwf : wfOK (env tabs M I) [] r.pat = true
   hcond : ∀ c, r.cond = some c → stEv tabs M r defs I c = .bool true
-  hnat : topAll o (env tabs M I) = true
+  hnat : (topAll o (env tabs M I) || makeTop o ((env tabs M I).ty [])) = true
   hargs : GoFV.Proof.Rules.Pat.argsOK (env tabs M I).ty [] r.pat = true
   hleaves : leavesOK M I [] r.pat = true
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
   hframe : ∀ nu ∈ stNodes r defs,
     frameNodeOK tabs (stEv tabs M r defs I) (env tabs M I) r.pat nu.1 nu.2 = true
-  hcf : condFrameOK tabs (stEv tabs M r defs I) (env tabs M I) I r.pat r.cond = true
+  hcf : condFrameOK tabs (stEv tabs M r defs I) (env tabs M I) I r.pat r.cond
+    (GoFV.Proof.Rules.sameLeaves r) = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
   hnn : nonNegOKD tabs (putAll M defs).get? I r.pat r.cond = true
 
@@ -210,7 +211,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     split at hcond
     · rename_i heq; exact heq
     · cases hcond
-  have hnat' : topAll o (env tabs M I) = true := hnat
+  have hnat' : (topAll o (env tabs M I) || makeTop o ((env tabs M I).ty [])) = true := hnat
   have htail' : ∀ y ∈ I.tail, y.2 ≠ v := by
     simp only [List.all_eq_true, bne_iff_ne, ne_eq] at htail; exact htail
   exact ⟨{

@@ -43,7 +43,7 @@ theorem r_generic_994_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic
     Pat.rawT_pure tabs e (pat := GoFV.Rules.Generated.Generic.r_generic_994.pat) rfl,
     resDenT_pure tabs _ or _ _ (res := GoFV.Rules.Generated.Generic.r_generic_994.result) rfl]
   intro hfr
-  obtain ⟨f, hf⟩ := hfr.2.2.2 0
+  obtain ⟨f, hf⟩ := hfr.2.2.2.1 0
     (by simp [GoFV.Rules.Generated.Generic.r_generic_994, numElem1Vars])
   clear hfr
   dsimp only [GoFV.Rules.Generated.Generic.r_generic_994, rule_unfold_ds] at hf ⊢
@@ -85,7 +85,7 @@ theorem inst_r_generic_994 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_9
       auxInt := fun _ => 0, aux := fun _ => none }
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
-  simp [GoFV.Rules.Generated.Generic.r_generic_994, FrameOK, Result.nodes, emptyStrVars,
+  simp [GoFV.Rules.Generated.Generic.r_generic_994, FrameOK, Result.nodes, emptyStrVars, sameLeaves,
     samePtrVars, numElem1Vars, shiftAmt?, Pat.rawT, Pat.densT, Pat.denT, sigmaT, Pat.bindsT,
     Pat.bindssT, opVal]
   rule_eval

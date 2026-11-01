@@ -22,7 +22,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1196 proven value rules, 3 proven block rules, 7
+/-- `generic.rules` restricted to its 1197 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 15 Load-of-Store forwardings, 1 struct-load
 expansions, 1 struct-store splits and 6 segment rules. -/
 def generic : RuleSet where
@@ -185,6 +185,7 @@ def generic : RuleSet where
     (.SignExt8to64, [Generated.Generic.r_generic_108, Generated.Generic.r_generic_761, Generated.Generic.r_generic_2407_3]),
     (.SliceCap, [Generated.Generic.r_generic_1032, Generated.Generic.r_generic_1037, Generated.Generic.r_generic_1038]),
     (.SliceLen, [Generated.Generic.r_generic_1031, Generated.Generic.r_generic_1036]),
+    (.SliceMake, [Generated.Generic.r_generic_1053]),
     (.SlicePtr, [Generated.Generic.r_generic_1035]),
     (.Slicemask, [Generated.Generic.r_generic_770, Generated.Generic.r_generic_771]),
     (.StringLen, [Generated.Generic.r_generic_1012]),

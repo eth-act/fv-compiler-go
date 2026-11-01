@@ -541,5 +541,53 @@ theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Op
       GoFV.Proof.Rules.opVal_pure (op := .Load) (by decide)]
     exact loadOp_hasTy hp _
 
+/-- A value of a slice's data pointer shape keeps `retypePtr`, one of `int64` `retypeI64`. -/
+theorem retype_slice_three {el : Option Nat} {p l c : Val} (hp : p.hasTy (.ptr el) = true)
+    (hl : l.hasTy (.int .w64) = true) (hc : c.hasTy (.int .w64) = true) :
+    (Val.agg [p, l, c]).hasTy (.slice el) = true ∨ (Val.agg [p, l, c]).retype (.slice el) = .poison := by
+  have hp' : p.retypePtr = p := by
+    rw [Val.retypePtr_eq el]; exact Val.retype_of_hasTy hp
+  have hl' : l.retypeI64 = l := by rw [Val.retypeI64_eq]; exact Val.retype_of_hasTy hl
+  have hc' : c.retypeI64 = c := by rw [Val.retypeI64_eq]; exact Val.retype_of_hasTy hc
+  have h : (Val.agg [p, l, c]).retype (.slice el) = Val.ofSlice [p, l, c] := by
+    simp only [Val.retype, hp', hl', hc']
+  rw [h]
+  unfold Val.ofSlice
+  split
+  · left
+    rw [← Val.ofSlice_of_ok (by assumption)]
+    rw [← h]; exact Val.retype_hasTy _ _
+  · exact .inr rfl
+
+/-- **`makeTop`**: the raw value of a `SliceMake` at a slice shape whose components have their
+shapes (`Pat.argsOK`) has the shape, or retypes to `poison`. -/
+theorem raw_makeTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+    {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
+    {cm : Bool} (hp : makeTop o (e.ty []) = true)
+    (ht : GoFV.Proof.Rules.Pat.typed e [] (.op o nm pty pai pax par args cm))
+    (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
+    (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true ∨
+      (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).retype (e.ty []) =
+        .poison := by
+  simp only [makeTop, Bool.and_eq_true, beq_iff_eq] at hp
+  obtain ⟨rfl, hs⟩ := hp
+  obtain ⟨el, hel⟩ : ∃ el, e.ty [] = .slice el := by
+    revert hs; cases e.ty [] <;> simp [GoFV.Proof.Rules.isSliceTy]
+  simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure (op := .SliceMake) (by decide)]
+  rw [hel]
+  show (Comp.make _).hasTy _ = true ∨ (Comp.make _).retype _ = .poison
+  rcases args with _ | ⟨q0, _ | ⟨q1, _ | ⟨q2, _ | ⟨q3, qs⟩⟩⟩⟩
+  all_goals try (right; simp [GoFV.Proof.Rules.Pat.densT, Comp.make, Val.retype]; done)
+  simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
+  simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
+    GoFV.Proof.Rules.argShapeOk, hel, Bool.and_eq_true] at ha
+  obtain ⟨⟨⟨-, h0⟩, -⟩, ⟨⟨-, h1⟩, -⟩, ⟨⟨-, h2⟩, -⟩, -⟩ := ha
+  simp only [GoFV.Proof.Rules.makeArgOk, GoFV.Proof.Rules.fieldShape?, Ty.asAgg, Ty.sliceAgg,
+    List.getElem?_cons_zero, List.getElem?_cons_succ, Option.map_some] at h0 h1 h2
+  simp only [GoFV.Proof.Rules.Pat.densT, Comp.make]
+  exact retype_slice_three
+    (GoFV.Proof.Rules.shapeSub_hasTy h0 (den_hasTy_typed _ _ ht.1))
+    (GoFV.Proof.Rules.shapeSub_hasTy h1 (den_hasTy_typed _ _ ht.2.1))
+    (GoFV.Proof.Rules.shapeSub_hasTy h2 (den_hasTy_typed _ _ ht.2.2.1))
 
 end GoFV.Proof.Pass.Rewrite

@@ -680,7 +680,9 @@ width `N`, both of
 rules' `Const64` operands mean 64-bit values), the
 first word of an `EqInter`/`NeqInter` operand a 64-bit integer (the itab word of the interface
 shape, `ifaceArgOk`), the
-components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17), the
+components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17), a
+`SliceMake` itself of a slice shape (whose `retype` checks `0 ≤ len ≤ cap`: `generic.rules:1053`
+needs it), the
 argument of `SlicePtr`/`SliceLen`/`SliceCap` a slice (so it is `poison` or has
 `0 ≤ len ≤ cap`: `generic.rules:278`), and the
 arguments of the float arithmetic and comparisons floats of their width (shape `.int w`). Other
@@ -698,8 +700,8 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .Eq8 | .Neq8 => isIntWTy .w8 t
   | .IsInBounds | .IsSliceInBounds | .Slicemask => isIntWTy .w64 t
   | .EqInter | .NeqInter => ifaceArgOk t
-  | .StringMake | .SliceMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 =>
-    makeArgOk ty i t
+  | .StringMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 => makeArgOk ty i t
+  | .SliceMake => isSliceTy ty && makeArgOk ty i t
   | .SlicePtr | .SliceLen | .SliceCap => isSliceTy t
   | .Add64F | .Sub64F | .Mul64F | .Div64F | .Neg64F | .Min64F | .Max64F | .Eq64F | .Neq64F
   | .Less64F | .Leq64F | .Abs | .Copysign | .Sqrt | .Floor | .Ceil | .Trunc | .Round
@@ -707,6 +709,15 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .Add32F | .Sub32F | .Mul32F | .Div32F | .Neg32F | .Min32F | .Max32F | .Eq32F | .Neq32F
   | .Less32F | .Leq32F | .Sqrt32 | .Round32F => isIntWTy .w32 t
   | _ => true
+
+/-- Leaf positions of a rule's pattern that hold the same value although the rule does not say
+so, as the compiler builds them: `generic.rules:1053` (`(SliceMake (AddPtr <t> x (And64 y
+(Slicemask _))) w:(Const64 [c]) z) && c > 0`) relies on the `Slicemask` argument being the
+capacity `z` (`ssagen`'s slicing builds `SliceMake (AddPtr ptr (And64 delta (Slicemask cap)))
+len cap`; Go: "len > 0 implies cap > 0 implies Slicemask is all 1"). The rewrite validator
+checks them on the instance (`RewriteCheck.condFrameOK`: the same value). -/
+def sameLeaves (r : Rule) : List (Path × Path) :=
+  if r.loc = ⟨"generic", 1053⟩ then [([0, 1, 1, 0], [2])] else []
 
 mutual
 /-- Every argument of every op node of the pattern at `p` has the shape `argShapeOk` asks for,
