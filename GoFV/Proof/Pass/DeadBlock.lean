@@ -22,6 +22,7 @@ structure Setup (f g : Func) : Prop where
   wg : ∃ ce, WF ce g
   rel : DeadRel f g
   chain : Chained f (· ∈ g.blocks)
+  noNil : NoNil f
 
 /-- The target frame agrees with the source frame on the values `g` keeps. -/
 def Agree (g : Func) (frS frT : Frame) : Prop :=

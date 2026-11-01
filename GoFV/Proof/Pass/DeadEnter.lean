@@ -23,7 +23,7 @@ theorem with_regs {a b : Frame} (h : a = { b with regs := a.regs }) (X : Array (
 
 theorem params_eq {tabs : Tables} (h : g.ownAux = f.ownAux) :
     (Ctx.make tabs g).params = (Ctx.make tabs f).params := by
-  simp only [Ctx.make, h]
+  simp only [Ctx.make, abiParams, h]
 
 namespace Setup
 
@@ -47,7 +47,7 @@ theorem evalKept {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.blocks) 
   have hdef := evalValue_args_def (fun msg he => hr msg (hev ▸ he))
   refine evalValue_eq_of_args hop haux hai (hgid.trans hfid.symm) (by rw [hargs])
     (fun k a hk => ?_) hg' (by rw [hfid, tys_of_value hgv, tys_of_value hfv, hty]) rfl
-    (params_eq S.rel.ownAux)
+    (params_eq S.rel.ownAux) rfl
   obtain ⟨y, hy⟩ := hdef a (Array.mem_of_getElem? hk)
   refine ⟨a, y, by rw [hargs]; exact hk, hy, ?_⟩
   rw [hag a (by rw [argsF_of hgv, hargs]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? hk)),
@@ -224,6 +224,12 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.block
   obtain ⟨hrf, fvr, hfvr, hrnph⟩ := (omemS r).1 hrS
   rw [stepV_of hfvr] at hrp
   have hrop := evalValue_panic_op hrp
+  have hrop3 : fvr.op = .PanicBounds ∨ fvr.op = .StaticLECall ∨ fvr.op = .StaticCall := by
+    rcases hrop with h | h | h | h
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr h)
+    · exact absurd h (S.noNil _ _ hfvr)
   have hrg : r ∈ gb.values := Classical.byContradiction fun hn =>
     S.rel.dropped bid hb gb fb hgb hfb r hrf hn fvr hfvr hrop
   obtain ⟨gvr, fvr', hgvr, hfvr', hgrid, hfrid, -, -, hphr, hsamer⟩ := S.value hb hgb hfb hrg
@@ -243,7 +249,7 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : bid ∈ g.block
     have hm : (⟨fvr.id, fvr.args, prio fvr.op⟩ : SNode) ∈ (schedNodes f fb).toList :=
       mem_schedNodes.2 ⟨r, hrf, fvr, hfvr, hrnph, rfl⟩
     have := hn _ (by rw [← hfrid]; exact nodeOf_of_mem (schedNodes_ids hownF hndF) hm)
-    simp only [prio_panicking hrop] at this; omega
+    simp only [prio_panicking hrop3] at this; omega
   have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk' hnotNil
     (fun y hy hyn hyr => S.chain bid fb hb hfb y r hy hnodeR hyn hnotNil hyr)
     (fun y _ hy' hd => S.depT hb hgb hfb hd hy')

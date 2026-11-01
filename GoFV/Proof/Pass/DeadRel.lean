@@ -11,7 +11,8 @@ where each kept `Phi` reads along the new index what it read along the old one (
 every kept value keeps its op, aux, arguments and type (a kept `Phi` stays a `Phi`); a dropped
 value of a kept block cannot panic. `Chained`: the side-effecting roots of each kept block are
 ordered by dependency (as copyelim's `SimFrag.chained`), so a panicking root is reached by every
-schedule.
+schedule; `NoNil`: no `NilCheck` (a nil `NilCheck` panics, and the scheduler's order among
+ready `NilCheck`s is not determined by `schedule_spec`; as copyelim's `SimFrag.noNil`, #96).
 
 `refines_of_deadRel` (`GoFV.Proof.Pass.DeadSim`) derives the refinement from it, for `f` and
 `g` that are well formed (`WF`); no dominance is needed.
@@ -25,7 +26,8 @@ namespace GoFV.Proof.Dead
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
 
 /-- Ops whose evaluation may panic (`evalValue_panic_op`). -/
-def Panicking (op : Op) : Prop := op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall
+def Panicking (op : Op) : Prop :=
+  op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall ∨ op = .NilCheck
 
 /-- The `Phi`s `g` keeps in block `c` read, along predecessor index `iT`, the argument `f`'s
 read along `iS`. -/
@@ -74,6 +76,9 @@ def chainedB (f : Func) (B : Array ID) : Bool :=
     match f.block? bid with
     | none => true
     | some fb => ((schedNodes f fb).toList.filter (fun n => n.prio == 2)).length ≤ 1
+
+/-- `f` has no `NilCheck`. -/
+def NoNil (f : Func) : Prop := ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
 
 /-! ## Terminators -/
 
