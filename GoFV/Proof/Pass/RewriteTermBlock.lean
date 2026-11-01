@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.RewriteTermReplay
+import GoFV.Proof.Pass.StructLoad
 import GoFV.Proof.TermStep
 import GoFV.Proof.Rules.Block
 
@@ -404,14 +404,20 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound) (hr : RetypeS
     split at h
     · cases h
     rename_i x hx
+    have hput : defs.foldl (fun M u => M.put u.id u) M = putAll M defs.toList := by
+      simp [putAll, Array.foldl_toList]
     split at h
-    · cases h
+    · split at h
+      · rename_i hok
+        obtain ⟨F⟩ := slFacts hok
+        rw [hput] at h
+        exact replay_inv hs hr evs _ M' B B' _ h (hI.structLoad F)
+          (hB.mono (fun y hy => .inl hy) hI.typed fun _ _ n y hy => F.step hI.closed n y hy)
+      · cases h
     rename_i cr hcr
     split at h
     · rename_i hok
       obtain ⟨F⟩ := ruleFacts hok
-      have hput : defs.foldl (fun M u => M.put u.id u) M = putAll M defs.toList := by
-        simp [putAll, Array.foldl_toList]
       rw [hput] at h
       have hsd := ofRuleSet_sound hs hcr
       exact replay_inv hs hr evs _ M' B B' _ h (hI.rule hsd hr F)

@@ -31,6 +31,8 @@ replays the log on a map of definitions, starting from the input `f`:
   is an `If` on one boolean control and the rule's control rule (`BlockRule.ctrlRule`) fires at that control as
   a value rule (`ruleOK`) with the definitions the new controls `ctrls` determine (`ctrlDefs`;
   for the generic rules they are the control's own definition);
+* a rule event outside the value's op row is a struct-load expansion (`structLoadOK`, issue
+  #151: `rewriteStructLoad`, `Load <struct> p m` → `StructMake` of field `Load`s at `OffPtr`s);
 * a phi elimination rejects;
 * finally every value listed in the output `g` has the replayed definition up to copies:
   each argument (and each control of `g`) is the replayed one or reached from it through
@@ -502,6 +504,54 @@ def blockOK (tabs : Tables) (M : Defs) (br : BlockRule) (st : BState) (nc : Arra
     | none => none
   | _, _, _ => none
 
+/-! ## Struct-load expansions (issue #151)
+
+`(Load <t> _ _) && t.IsStruct() && … => rewriteStructLoad(v)` (`generic.rules:974`) turns
+`Load <t> p m` into `StructMake` of `Load <tᵢ> (OffPtr [oᵢ] p) m`, one per field, built fresh;
+the event logs `v`'s new definition, then each field's `OffPtr` and `Load`
+(`GoFV.Rules.Interp.structLoadDefs`). As terms over the atoms this refines the `Load` for every
+memory value: a valid read of the struct's bytes reads each field's bytes at its offset, whose
+pointer stays inside the block's window (`Sem.Mem.read`). -/
+
+mutual
+/-- Every field of an aggregate shape lies inside it, recursively: `decode` of the shape reads
+only its own bytes. -/
+def layoutOK : Sem.Ty → Bool
+  | .agg fs n => layoutsOK n fs
+  | _ => true
+/-- `layoutOK` of the fields of an aggregate of `n` bytes. -/
+def layoutsOK (n : Nat) : List (Nat × Sem.Ty) → Bool
+  | [] => true
+  | (o, t) :: fs => decide (o + t.size ≤ n) && layoutOK t && layoutsOK n fs
+end
+
+/-- The fields of a struct-load expansion of `Load <agg fs n> ptr mem`: arguments `as` of the
+`StructMake`, built values `ds` (per field its `OffPtr [o] ptr` and `Load <t> that mem`). -/
+def slFieldsOK (tabs : Tables) (ptr mem : ID) : List (Nat × Sem.Ty) → List ID → List Value → Bool
+  | [], [], [] => true
+  | (o, t) :: fs, a :: as, op :: ld :: ds =>
+    op.op == .OffPtr && op.args == #[ptr] && op.auxInt == Int64.ofNat o &&
+    (tabs.ty op.type matches .ptr _) &&
+    ld.op == .Load && ld.args == #[op.id, mem] && GoFV.Opt.CSE.tyEq (tabs.ty ld.type) t &&
+    a == ld.id &&
+    slFieldsOK tabs ptr mem fs as ds
+  | _, _, _ => false
+
+/-- The event `(v, defs)` is a struct-load expansion of the `Load` `v` of `M`: `defs` is `v`'s new
+definition, a `StructMake` of the same type, then the fresh `OffPtr` and `Load` of each field of
+the `Load`'s aggregate shape, whose layout is well formed with every offset inside it. -/
+def structLoadOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, x' :: ds =>
+    match tabs.ty x.type, x.args.toList with
+    | .agg fs n, [ptr, mem] =>
+      x.op == .Load && x.id == v && x'.id == v && x'.op == .StructMake && x'.type == x.type &&
+      layoutsOK n fs && fs.all (·.1 < n) &&
+      (ds.map (·.id)).all (fun y => (M.get? y).isNone) && (ds.map (·.id)).Nodup &&
+      slFieldsOK tabs ptr mem fs x'.args.toList ds
+    | _, _ => false
+  | _, _ => false
+
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
 if an event is not validated. -/
 def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
@@ -512,7 +562,10 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
     | none => none
     | some x =>
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
-      | none => none
+      | none =>
+        if structLoadOK tabs M v defs.toList then
+          replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else none
       | some cr =>
         if ruleOK tabs M cr.rule v defs.toList then
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
