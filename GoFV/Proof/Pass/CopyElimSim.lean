@@ -120,6 +120,15 @@ theorem value {b : ID} (hb : Tree f b) {fb : Block} (hfb : f.block? b = some fb)
   exact ⟨fv, gv, hfv, hgv, hblk, hid, h1.trans hblk, h2, h3,
     S.frag.noEmpty b hb.1 hb.2 fb hfb x hx fv hfv⟩
 
+/-- Target values of tree blocks have their own ID. -/
+theorem gid {b : ID} (hb : Tree f b) {fb : Block} (hfb : f.block? b = some fb) {x : ID}
+    (hx : x ∈ fb.values) {gv : Value} (hgv : g.value? x = some gv) : gv.id = x := by
+  obtain ⟨ce', hwg⟩ := S.wg
+  obtain ⟨gb, hgbb, -, -, -, -, hvals, -⟩ := S.block hb hfb
+  obtain ⟨gv', hgv', hid, -⟩ := hwg.valueId b gb ⟨by rw [S.blocks]; exact hb.1, hgbb⟩ x
+    (by rw [hvals]; exact hx)
+  rw [hgv] at hgv'; cases hgv'; exact hid
+
 /-- A value used in a tree block is listed in a tree block, the same one in `g`. -/
 theorem used {a q : ID} (hl : Listed f a) (ha : Anc (make f) (blockOf f a) q) :
     ∃ b fb, Tree f b ∧ f.block? b = some fb ∧ a ∈ fb.values ∧ blockOf f a = b ∧
