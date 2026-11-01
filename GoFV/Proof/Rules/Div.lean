@@ -18,6 +18,8 @@ namespace GoFV.Proof.Rules
 -- FALSE r_divmod_140 #69
 -- FALSE r_divmod_144 #69
 -- FALSE r_divmod_148 #69
+-- `generic.rules:1090` (`isNonNegative(x)`, an oracle atom; RuleProofs10):
+-- FALSE r_generic_1090 #69
 
 /-- `generic.rules:173`: `(Div16 (Const16 [c]) (Const16 [d])) && d != 0 => (Const16 [c/d])` -/
 theorem r_generic_173_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_173 := by rule_auto

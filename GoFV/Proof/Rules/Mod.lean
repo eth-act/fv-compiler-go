@@ -8,6 +8,15 @@ import GoFV.Rules.Generated.Generic.Values06
 `Mod` family (`docs/proofs/rules.md`).
 -/
 
+/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
+`isNonNegative(n)` is an oracle atom: nothing makes `n` non-negative (#69, RuleProofs10).
+-- FALSE r_generic_1134 #69
+-- FALSE r_generic_1135 #69
+-- FALSE r_generic_1136 #69
+-- FALSE r_generic_1137 #69
+-- FALSE r_generic_1138 #69
+-/
+
 namespace GoFV.Proof.Rules
 
 /-- `generic.rules:216`: `(Mod16 (Const16 [c]) (Const16 [d])) && d != 0 => (Const16 [c % d])` -/
