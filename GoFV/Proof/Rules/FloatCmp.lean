@@ -1,13 +1,15 @@
-import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.TacticRange
 
 /-!
 # Float comparisons (`docs/proofs/rules.md`, #69)
 
 Facts about `GoFV.IEEE.compare` (`FPCompare`): swapping the operands swaps `lt`/`gt`
 (`compare_swap`), a non-NaN is `eq` to itself (`compare_self`), a NaN operand gives `un`;
-`FPAbs` keeps NaN-ness (`isNaN_abs`). The float ops of `GoFV.SSA.Sem.FOps` as `int1`/`int2` of
-their width for `rule_sem` (`Eq`/`Neq` drop `ordered`: they are symmetric). `float_cmp` closes
-the Boolean goals the `OrB (Neq x x) …` rules (`generic.rules:375–386`) leave.
+`FPAbs` and `FPNeg` keep NaN-ness (`isNaN_abs`, `isNaN_neg`). The float ops of
+`GoFV.SSA.Sem.FOps` as `int1`/`int2` of their width for `rule_sem` (`Eq`/`Neq` drop `ordered`:
+they are symmetric). `float_cmp` closes the Boolean goals the `OrB (Neq x x) …` rules
+(`generic.rules:375–386`) leave; `float_auto` is `rule_auto` for them, `float_const` for the
+constant folds `generic.rules:622–629`.
 -/
 
 namespace GoFV.Proof.Rules.FloatCmp
@@ -18,6 +20,9 @@ def swapCmp : Cmp → Cmp
   | .lt => .gt
   | .gt => .lt
   | c => c
+
+theorem cmp_beq (a b : Cmp) : (a == b) = decide (a = b) := rfl
+theorem cmp_bne (a b : Cmp) : (a != b) = !decide (a = b) := rfl
 
 theorem signed_not (s : Bool) (m : Nat) : signed (!s) m = -signed s m := by
   cases s <;> simp [signed]
@@ -99,6 +104,19 @@ theorem isNaN_abs (f : Fmt) (a : Bits f) : isNaN f (abs f a) = isNaN f a := by
   simp only [expOf_abs, fracOf_abs]
   split <;> (try split) <;> (try split) <;> (try split) <;> rfl
 
+theorem abs_neg (f : Fmt) (a : Bits f) : abs f (neg f a) = abs f a := by
+  unfold abs neg
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_and, BitVec.getLsbD_xor, BitVec.getLsbD_ofNat, Nat.testBit_two_pow,
+    Nat.testBit_two_pow_sub_one]
+  by_cases h : i < f.E + f.F
+  · simp [h, hi, show f.E + f.F ≠ i by omega]
+  · simp [h]
+
+theorem isNaN_neg (f : Fmt) (a : Bits f) : isNaN f (neg f a) = isNaN f a := by
+  rw [← isNaN_abs, abs_neg, isNaN_abs]
+
 /-- `ordered` under a condition that does not see the operand order. -/
 theorem ordered_cmp (f : Fmt) (c : Cmp → Bool) (hc : ∀ k, c (swapCmp k) = c k) (x y : Bits f) :
     GoFV.SSA.Sem.FOps.ordered (fun a b => c (IEEE.compare f a b)) x y = c (IEEE.compare f x y) := by
@@ -144,7 +162,13 @@ open GoFV.SSA GoFV.SSA.Sem
 @[rule_sem] theorem fops_abs64 (a : Val) :
     FOps.abs .w64 [a] = int1 .w64 (fun x => .int .w64 (IEEE.abs .b64 x)) [a] := rfl
 
+@[rule_sem] theorem fops_neg64 (a : Val) :
+    FOps.neg .w64 [a] = int1 .w64 (fun x => .int .w64 (IEEE.neg .b64 x)) [a] := rfl
+
 @[rule_sem] theorem fops_const64 (a : Int64) : FOps.const64 a = .int .w64 (BitVec.ofInt 64 a.toInt) := rfl
+
+@[rule_sem] theorem fops_const32 (a : Int64) :
+    FOps.const32 a = .int .w32 (IEEE.convert .b64 .b32 .rne (BitVec.ofInt 64 a.toInt)) := rfl
 
 /-- A comparison of non-NaN encodings by its result. -/
 theorem compare_cases (f : Fmt) (a b : Bits f) (ha : isNaN f a = false) (hb : isNaN f b = false) :
@@ -167,14 +191,16 @@ partial def collectCmp (e : Lean.Expr) (acc : Array Lean.Expr) : Array Lean.Expr
 
 open Lean Meta Elab Tactic in
 /-- Close a goal about `OrB (Neq x x) (cmp x c)`-style Boolean combinations of `IEEE.compare`
-on a leaf `x` (or `abs x`) and constants that are not NaN (`hwf`): a NaN `x` makes every
-comparison `un`; otherwise the self-comparison is `eq`, comparisons with `x` second are
-swapped to have it first, and the remaining comparisons are split by their result. -/
+on a leaf `x` (or `abs x`, `neg x`) and constants that are not NaN (`hwf`): a NaN `x` makes
+every comparison `un`; otherwise the self-comparison is `eq`, comparisons with `x` second are
+swapped to have it first, and the remaining comparisons are split by their result. Rewrites the
+hypotheses too (`hty` of the top value). -/
 elab "float_cmp" : tactic => withMainContext do
   let tgt ← instantiateMVars (← getMainTarget)
   let leaf? (a : Lean.Expr) : Option Lean.Expr :=
     if a.isFVar then some a
-    else if a.isAppOfArity ``IEEE.abs 2 && (a.getArg! 1).isFVar then some (a.getArg! 1)
+    else if (a.isAppOfArity ``IEEE.abs 2 || a.isAppOfArity ``IEEE.neg 2) && (a.getArg! 1).isFVar
+    then some (a.getArg! 1)
     else none
   let some t := tgt.find? fun t => t.isAppOfArity ``IEEE.compare 3 &&
       ((leaf? (t.getArg! 1)).isSome || (leaf? (t.getArg! 2)).isSome)
@@ -188,14 +214,21 @@ elab "float_cmp" : tactic => withMainContext do
     | simp only [GoFV.Proof.Rules.FloatCmp.compare_self $f $x $hnan:ident,
         GoFV.Proof.Rules.FloatCmp.compare_self $f (IEEE.abs $f $x)
           ((GoFV.Proof.Rules.FloatCmp.isNaN_abs $f $x).trans $hnan:ident),
+        GoFV.Proof.Rules.FloatCmp.compare_self $f (IEEE.neg $f $x)
+          ((GoFV.Proof.Rules.FloatCmp.isNaN_neg $f $x).trans $hnan:ident),
         GoFV.Proof.Rules.FloatCmp.compare_swap $f $x,
-        GoFV.Proof.Rules.FloatCmp.compare_swap $f (IEEE.abs $f $x)]
+        GoFV.Proof.Rules.FloatCmp.compare_swap $f (IEEE.abs $f $x),
+        GoFV.Proof.Rules.FloatCmp.compare_swap $f (IEEE.neg $f $x)] at *
     | simp only [GoFV.Proof.Rules.FloatCmp.compare_nan_left $f _ _ $hnan:ident,
         GoFV.Proof.Rules.FloatCmp.compare_nan_right $f _ _ $hnan:ident,
         GoFV.Proof.Rules.FloatCmp.compare_nan_left $f _ _
           ((GoFV.Proof.Rules.FloatCmp.isNaN_abs $f $x).trans $hnan:ident),
         GoFV.Proof.Rules.FloatCmp.compare_nan_right $f _ _
-          ((GoFV.Proof.Rules.FloatCmp.isNaN_abs $f $x).trans $hnan:ident)])))
+          ((GoFV.Proof.Rules.FloatCmp.isNaN_abs $f $x).trans $hnan:ident),
+        GoFV.Proof.Rules.FloatCmp.compare_nan_left $f _ _
+          ((GoFV.Proof.Rules.FloatCmp.isNaN_neg $f $x).trans $hnan:ident),
+        GoFV.Proof.Rules.FloatCmp.compare_nan_right $f _ _
+          ((GoFV.Proof.Rules.FloatCmp.isNaN_neg $f $x).trans $hnan:ident)] at *)))
   let mut out := #[]
   for g in ← getGoals do
     setGoals [g]
@@ -207,10 +240,64 @@ elab "float_cmp" : tactic => withMainContext do
       let b ← Term.exprToSyntax (c.getArg! 2)
       evalTactic (← `(tactic| all_goals (try (
         rcases GoFV.Proof.Rules.FloatCmp.compare_cases $fc $a $b
-          (by simp only [GoFV.Proof.Rules.FloatCmp.isNaN_abs]; assumption)
-          (by simp only [GoFV.Proof.Rules.FloatCmp.isNaN_abs]; assumption) with hk | hk | hk <;>
-        simp only [hk]))))
+          (by (try simp only [GoFV.Proof.Rules.FloatCmp.isNaN_abs,
+                GoFV.Proof.Rules.FloatCmp.isNaN_neg]); assumption)
+          (by (try simp only [GoFV.Proof.Rules.FloatCmp.isNaN_abs,
+                GoFV.Proof.Rules.FloatCmp.isNaN_neg]); assumption) with hk | hk | hk <;>
+        simp only [hk] at *))))
     out := out ++ (← getGoals)
   setGoals out.toList
+
+set_option hygiene false in
+/-- Close a residual goal `Refines v w` whose comparisons are decided: `v` and `w` equal, `v`
+`poison`, or `v` a Boolean while `hty` says the top type is not `bool`. -/
+macro "float_close" : tactic => `(tactic| (
+  try simp only [GoFV.Proof.Rules.FloatCmp.swapCmp, GoFV.Proof.Rules.FloatCmp.cmp_beq,
+    GoFV.Proof.Rules.FloatCmp.cmp_bne, reduceCtorEq, decide_true, decide_false, Bool.not_true,
+    Bool.not_false, Bool.or_true, Bool.or_false, Bool.true_or, Bool.false_or] at *
+  first
+  | done
+  | exact GoFV.SSA.Sem.Refines.refl _
+  | exact GoFV.Proof.Rules.refines_poison _
+  | (exfalso
+     have h := (GoFV.Proof.Rules.hasTy_bool _ _).mp hty
+     simp_all only [GoFV.Proof.Rules.tyIsBool_bool, Bool.true_eq_false]
+     done)))
+
+/-- `rule_auto` for the float comparison rules: the case splits, `float_cmp` on the
+comparisons of the leaf, `float_close`. Goals with a mistyped (`none`) operand of `OrB` are left
+with the other operand's Boolean unsplit: a second round with `bool_split1` (after `float_cmp`,
+which needs the comparisons unsplit). -/
+macro "float_auto" : tactic => `(tactic| (
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_norm)
+  all_goals (try float_cmp)
+  all_goals (try float_close)
+  all_goals (repeat' (first | rule_split1 | bool_split1))
+  all_goals (try rule_norm)
+  all_goals (try float_cmp)
+  all_goals float_close))
+
+/-- `rule_auto` for the float constant folds `(Eq64F (Const64F [c]) (Const64F [d])) =>
+(ConstBool [c == d])` and relatives (`generic.rules:622–629`): both sides compare the same
+encodings (`floatCmp` in the rule's condition language, `FOps` in the semantics), so a case split
+on the comparison's result closes them. -/
+macro "float_const" : tactic => `(tactic| (
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_norm)
+  all_goals (
+    simp only [GoFV.Proof.Rules.floatCmp]
+    generalize IEEE.compare _ _ _ = k
+    cases k <;> rfl)))
 
 end GoFV.Proof.Rules.FloatCmp
