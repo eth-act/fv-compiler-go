@@ -268,19 +268,76 @@ theorem load_mono {m m' : Mem} (h : Mem.Refines m m') (t : Ty) (p : Ptr) :
       rw [hr']
       exact decode_mono hb 0 t
 
-theorem retype_mono (t : Ty) {v v' : Val} (h : Refines v v') :
-    Refines (v.retype t) (v'.retype t) := by
-  cases h with
-  | poison v' =>
+mutual
+theorem retype_mono : ∀ (t : Ty) {v v' : Val}, Refines v v' → Refines (v.retype t) (v'.retype t)
+  | t, _, _, .poison v' => by
     have : Val.retype t .poison = .poison := by cases t <;> rfl
     rw [this]; exact .poison _
-  | int w x => exact Refines.refl _
-  | bool b => exact Refines.refl _
-  | ptr p => exact Refines.refl _
-  | empty => exact Refines.refl _
-  | mem h => cases t <;> first | exact .mem h | exact .poison _
-  | tuple h => cases t <;> first | exact .tuple h | exact .poison _
-  | agg h => cases t <;> first | exact .agg h | exact .poison _
-  | blob h => cases t <;> first | exact .blob h | exact .poison _
+  | _, _, _, .int w x => Refines.refl _
+  | _, _, _, .bool b => Refines.refl _
+  | _, _, _, .ptr p => Refines.refl _
+  | _, _, _, .empty => Refines.refl _
+  | t, _, _, .mem h => by cases t <;> first | exact .mem h | exact .poison _
+  | t, .tuple vs, .tuple vs', .tuple h => by
+    cases t with
+    | tuple ts =>
+      unfold Val.retype
+      have hr := retypePre_mono ts h
+      cases ha : Val.retypePre ts vs <;> cases hb : Val.retypePre ts vs' <;> rw [ha, hb] at hr
+      · exact .poison _
+      · cases hr
+      · cases hr
+      · cases hr with | some hw => exact .tuple hw
+    | _ => exact .poison _
+  | t, .agg vs, .agg vs', .agg h => by
+    cases t with
+    | agg fs n =>
+      unfold Val.retype
+      have hr := retypeFields_mono fs h
+      cases ha : Val.retypeFields fs vs <;> cases hb : Val.retypeFields fs vs' <;> rw [ha, hb] at hr
+      · exact .poison _
+      · cases hr
+      · cases hr
+      · cases hr with | some hw => exact .agg hw
+    | _ => exact .poison _
+  | t, .blob bs, .blob bs', .blob h => by
+    cases t with
+    | blob n =>
+      unfold Val.retype
+      rw [← BytesRefine.length_eq h]
+      split
+      · exact .blob h
+      · exact .poison _
+    | _ => exact .poison _
+
+theorem retypePre_mono : ∀ (ts : List Ty) {vs vs' : List Val}, RefinesList vs vs' →
+    Option.Rel RefinesList (Val.retypePre ts vs) (Val.retypePre ts vs')
+  | [], _, _, h => .some h
+  | _ :: _, _, _, .nil => .none
+  | t :: ts, _, _, .cons ha hs => by
+    simp only [Val.retypePre]
+    have hr := retypePre_mono ts hs
+    revert hr
+    cases Val.retypePre ts _ <;> cases Val.retypePre ts _ <;> intro hr
+    · exact .none
+    · cases hr
+    · cases hr
+    · cases hr with | some hw => exact .some (.cons (retype_mono t ha) hw)
+
+theorem retypeFields_mono : ∀ (fs : List (Nat × Ty)) {vs vs' : List Val}, RefinesList vs vs' →
+    Option.Rel RefinesList (Val.retypeFields fs vs) (Val.retypeFields fs vs')
+  | [], _, _, .nil => .some .nil
+  | [], _, _, .cons _ _ => .none
+  | _ :: _, _, _, .nil => .none
+  | (_, t) :: fs, _, _, .cons ha hs => by
+    simp only [Val.retypeFields]
+    have hr := retypeFields_mono fs hs
+    revert hr
+    cases Val.retypeFields fs _ <;> cases Val.retypeFields fs _ <;> intro hr
+    · exact .none
+    · cases hr
+    · cases hr
+    · cases hr with | some hw => exact .some (.cons (retype_mono t ha) hw)
+end
 
 end GoFV.SSA.Sem

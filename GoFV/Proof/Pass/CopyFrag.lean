@@ -63,35 +63,80 @@ theorem RetypeEq.trans {t1 t2 t3 : Ty} (h1 : RetypeEq t1 t2) (h2 : RetypeEq t2 t
 
 theorem RetypeEq.of_eq {t1 t2 : Ty} (h : t1 = t2) : RetypeEq t1 t2 := h ▸ RetypeEq.refl t1
 
-/-- Decides a sufficient condition for `RetypeEq` (`retypeEqB_sound`). -/
-def retypeEqB : Ty → Ty → Bool
+mutual
+/-- Shape equality. -/
+def tyEqB : Ty → Ty → Bool
   | .int w, .int w' => w == w'
-  | .int _, _ => false
-  | _, .int _ => false
+  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty => true
+  | .tuple ts, .tuple ts' => tysEqB ts ts'
+  | .ptr e, .ptr e' => e == e'
+  | .agg fs n, .agg fs' n' => fieldsEqB fs fs' && n == n'
+  | .blob n, .blob n' => n == n'
+  | .opaque n, .opaque n' => n == n'
+  | _, _ => false
+def tysEqB : List Ty → List Ty → Bool
+  | [], [] => true
+  | t :: ts, t' :: ts' => tyEqB t t' && tysEqB ts ts'
+  | _, _ => false
+def fieldsEqB : List (Nat × Ty) → List (Nat × Ty) → Bool
+  | [], [] => true
+  | (o, t) :: fs, (o', t') :: fs' => o == o' && tyEqB t t' && fieldsEqB fs fs'
+  | _, _ => false
+end
+
+mutual
+theorem tyEqB_eq : ∀ {t t' : Ty}, tyEqB t t' = true → t = t'
+  | .int _, .int _, h => by simp only [tyEqB, beq_iff_eq] at h; rw [h]
+  | .bool, .bool, _ | .mem, .mem, _ | .other, .other, _ | .empty, .empty, _ => rfl
+  | .tuple _, .tuple _, h => by simp only [tyEqB] at h; rw [tysEqB_eq h]
+  | .ptr _, .ptr _, h => by simp only [tyEqB, beq_iff_eq] at h; rw [h]
+  | .agg _ _, .agg _ _, h => by
+    simp only [tyEqB, Bool.and_eq_true, beq_iff_eq] at h; rw [fieldsEqB_eq h.1, h.2]
+  | .blob _, .blob _, h | .opaque _, .opaque _, h => by
+    simp only [tyEqB, beq_iff_eq] at h; rw [h]
+  | .int _, .bool, h | .int _, .mem, h | .int _, .tuple _, h | .int _, .other, h
+  | .int _, .ptr _, h | .int _, .agg _ _, h | .int _, .blob _, h | .int _, .empty, h
+  | .int _, .opaque _, h | .bool, .int _, h | .bool, .mem, h | .bool, .tuple _, h
+  | .bool, .other, h | .bool, .ptr _, h | .bool, .agg _ _, h | .bool, .blob _, h
+  | .bool, .empty, h | .bool, .opaque _, h | .mem, .int _, h | .mem, .bool, h
+  | .mem, .tuple _, h | .mem, .other, h | .mem, .ptr _, h | .mem, .agg _ _, h
+  | .mem, .blob _, h | .mem, .empty, h | .mem, .opaque _, h | .tuple _, .int _, h
+  | .tuple _, .bool, h | .tuple _, .mem, h | .tuple _, .other, h | .tuple _, .ptr _, h
+  | .tuple _, .agg _ _, h | .tuple _, .blob _, h | .tuple _, .empty, h
+  | .tuple _, .opaque _, h | .other, .int _, h | .other, .bool, h | .other, .mem, h
+  | .other, .tuple _, h | .other, .ptr _, h | .other, .agg _ _, h | .other, .blob _, h
+  | .other, .empty, h | .other, .opaque _, h | .ptr _, .int _, h | .ptr _, .bool, h
+  | .ptr _, .mem, h | .ptr _, .tuple _, h | .ptr _, .other, h | .ptr _, .agg _ _, h
+  | .ptr _, .blob _, h | .ptr _, .empty, h | .ptr _, .opaque _, h | .agg _ _, .int _, h
+  | .agg _ _, .bool, h | .agg _ _, .mem, h | .agg _ _, .tuple _, h | .agg _ _, .other, h
+  | .agg _ _, .ptr _, h | .agg _ _, .blob _, h | .agg _ _, .empty, h
+  | .agg _ _, .opaque _, h | .blob _, .int _, h | .blob _, .bool, h | .blob _, .mem, h
+  | .blob _, .tuple _, h | .blob _, .other, h | .blob _, .ptr _, h | .blob _, .agg _ _, h
+  | .blob _, .empty, h | .blob _, .opaque _, h | .empty, .int _, h | .empty, .bool, h
+  | .empty, .mem, h | .empty, .tuple _, h | .empty, .other, h | .empty, .ptr _, h
+  | .empty, .agg _ _, h | .empty, .blob _, h | .empty, .opaque _, h
+  | .opaque _, .int _, h | .opaque _, .bool, h | .opaque _, .mem, h
+  | .opaque _, .tuple _, h | .opaque _, .other, h | .opaque _, .ptr _, h
+  | .opaque _, .agg _ _, h | .opaque _, .blob _, h | .opaque _, .empty, h => by
+    simp [tyEqB] at h
+theorem tysEqB_eq : ∀ {ts ts' : List Ty}, tysEqB ts ts' = true → ts = ts'
+  | [], [], _ => rfl
+  | _ :: _, _ :: _, h => by
+    simp only [tysEqB, Bool.and_eq_true] at h; rw [tyEqB_eq h.1, tysEqB_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [tysEqB] at h
+theorem fieldsEqB_eq : ∀ {fs fs' : List (Nat × Ty)}, fieldsEqB fs fs' = true → fs = fs'
+  | [], [], _ => rfl
+  | (_, _) :: _, (_, _) :: _, h => by
+    simp only [fieldsEqB, Bool.and_eq_true, beq_iff_eq] at h
+    rw [h.1.1, tyEqB_eq h.1.2, fieldsEqB_eq h.2]
+  | [], _ :: _, h | _ :: _, [], h => by simp [fieldsEqB] at h
+end
+
+/-- Decides a sufficient condition for `RetypeEq` (`retypeEqB_sound`): equal shapes, up to the
+element size of pointers. -/
+def retypeEqB : Ty → Ty → Bool
   | .ptr _, .ptr _ => true
-  | .ptr _, _ => false
-  | _, .ptr _ => false
-  | .bool, .bool => true
-  | .bool, _ => false
-  | _, .bool => false
-  | _, _ => true
-
-/-- Neither an integer, a pointer nor a `bool` shape. -/
-def plainB : Ty → Bool
-  | .int _ => false
-  | .ptr _ => false
-  | .bool => false
-  | _ => true
-
-theorem retype_plain {t : Ty} (h : plainB t = true) (v : Val) : v.retype t = v := by
-  cases t with
-  | int _ => cases h
-  | ptr _ => cases h
-  | bool => cases h
-  | _ =>
-    cases v with
-    | int w _ => cases w <;> rfl
-    | _ => rfl
+  | t1, t2 => tyEqB t1 t2
 
 theorem retype_ptr (e e' : Option Nat) (v : Val) : v.retype (.ptr e) = v.retype (.ptr e') := by
   cases v with
@@ -100,27 +145,10 @@ theorem retype_ptr (e e' : Option Nat) (v : Val) : v.retype (.ptr e) = v.retype 
 
 theorem retypeEqB_sound {t1 t2 : Ty} (h : retypeEqB t1 t2 = true) : RetypeEq t1 t2 := by
   intro v
-  cases t1 with
-  | int w =>
-    cases t2 with
-    | int w' =>
-      have : w = w' := by simpa [retypeEqB] using h
-      rw [this]
-    | _ => simp [retypeEqB] at h
-  | ptr e =>
-    cases t2 with
-    | ptr e' => exact retype_ptr e e' v
-    | _ => simp [retypeEqB] at h
-  | bool =>
-    cases t2 with
-    | bool => rfl
-    | _ => simp [retypeEqB] at h
-  | _ =>
-    cases t2 with
-    | int _ => simp [retypeEqB] at h
-    | ptr _ => simp [retypeEqB] at h
-    | bool => simp [retypeEqB] at h
-    | _ => exact (retype_plain (by rfl) v).trans (retype_plain (by rfl) v).symm
+  unfold retypeEqB at h
+  split at h
+  · exact retype_ptr _ _ v
+  · rw [tyEqB_eq h]
 
 /-- `t` is a zero-size struct or array type (as `phielim` decides it). -/
 def zeroSize (tabs : Tables) (t : TypeRef) : Prop := zeroSizeAggregate tabs t = .ok true
