@@ -132,7 +132,60 @@ theorem den_const64 {n : Nat} {x : ID} {c : Int} (h : const64 tabs D x = some c)
 theorem addConst_sound {y j : ID} {c : Int} {n : Nat} {K : BitVec 64}
     (h : addConst tabs D y = some (c, j)) (hK : asOffset (den D tabs ρ n y) = some K) :
     ∃ J, asOffset (den D tabs ρ n j) = some J ∧ K = BitVec.ofInt 64 c + J := by
-  sorry -- WIP: draft in tmp/addConst_sound_draft.lean hits a kernel type mismatch (simp on `Val.retype`)
+  unfold addConst at h
+  cases hD : D y with
+  | none => rw [hD] at h; cases h
+  | some v =>
+    rw [hD] at h
+    dsimp only at h
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨⟨hop, hsz⟩, hw⟩ := hc
+      have hty : tabs.ty v.type = .int .w64 := by
+        unfold intW at hw; split at hw <;> cases hw; assumption
+      cases n with
+      | zero => cases hK
+      | succ n =>
+      rw [den_term hD (by rw [hop]; decide) (by rw [hop]; decide), hop, hty, args_two hsz] at hK
+      change asOffset ((Sem.Int.add .w64 [den D tabs ρ n v.args[0]!, den D tabs ρ n v.args[1]!]).retype
+        (.int .w64)) = some K at hK
+      cases h0 : (den D tabs ρ n v.args[0]!).asInt .w64 with
+      | none => simp [Sem.Int.add, int2, h0, retype_poison, asOffset] at hK
+      | some x =>
+      cases h1 : (den D tabs ρ n v.args[1]!).asInt .w64 with
+      | none => simp [Sem.Int.add, int2, h0, h1, retype_poison, asOffset] at hK
+      | some y' =>
+      have e0 := asInt_eq h0
+      have e1 := asInt_eq h1
+      have hK' : K = x + y' := by
+        rw [e0, e1] at hK
+        have h2 : some (((x + y').setWidth 64).signExtend 64) = some K := hK
+        rw [BitVec.setWidth_eq, BitVec.signExtend_eq] at h2
+        exact (Option.some.inj h2).symm
+      cases n with
+      | zero => cases e0
+      | succ n =>
+      split at h
+      · rename_i c' hc'
+        cases h
+        rw [den_const64 hc'] at e0
+        cases e0
+        refine ⟨y', ?_, hK'⟩
+        rw [den_lift_int (Nat.le_succ _) e1]
+        show some ((y' : BitVec 64).signExtend 64) = some y'
+        rw [BitVec.signExtend_eq]
+      · rename_i c' hc0 hc'
+        cases h
+        rw [den_const64 hc'] at e1
+        cases e1
+        refine ⟨x, ?_, by rw [hK', BitVec.add_comm]⟩
+        rw [den_lift_int (Nat.le_succ _) e0]
+        show some ((x : BitVec 64).signExtend 64) = some x
+        rw [BitVec.signExtend_eq]
+      · cases h
+    · cases h
+
 
 /-- **`splitP` is sound**: `p` (its value at fuel `n`) plus the index (values at fuel `m ≥ n`)
 and offset so far is `base + idx' + off'`. -/

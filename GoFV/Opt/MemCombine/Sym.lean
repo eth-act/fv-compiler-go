@@ -172,71 +172,6 @@ def shiftBytes (tabs : Tables) (D : Defs) (w : Sem.Width) (s : ID) : Option Nat 
   | some c => if 0 ≤ c ∧ c % 8 = 0 ∧ c < w.bits then some (c / 8).toNat else none
   | none => none
 
-/-- The bytes of `v`'s op result (`wt`: the width of `v`'s type; `rec`: the description of an
-argument; `ld`: look into `Load`s, else they are opaque). -/
-def symOp (tabs : Tables) (D : Defs) (ld : Bool) (rec : ID → Option (List SB × List LoadRec))
-    (v : Value) (wt : Sem.Width) : Option (List SB × List LoadRec) :=
-  let arg (i : Nat) (w : Sem.Width) : Option (List SB × List LoadRec) :=
-    match v.args[i]? with
-    | some a => (rec a).bind fun (bs, sd) =>
-        if bs.length = w.bytes then some (bs, sd) else none
-    | none => none
-  if let some w := constW v.op then
-    if v.args.size = 0 then some (litBytes w.bytes v.auxInt.toInt, []) else none
-  else if v.op = .Copy then
-    if v.args.size = 1 then rec v.args[0]! else none
-  else if v.op = .Load then
-    if ld && v.args.size = 2 then
-      let p := v.args[0]!
-      let (b, i, o) := splitP tabs D 64 p none 0
-      if ptrTyped tabs D b then
-        some ((List.range wt.bytes).map fun (k : Nat) => .mb v.args[1]! b i (o + (k : Int)),
-          [⟨p, v.args[1]!, b, i, o, wt.bytes⟩])
-      else none
-    else none
-  else if let some (w, w') := zextW v.op then
-    if v.args.size = 1 then (arg 0 w).map fun (bs, sd) => (bs ++ zeros (w'.bytes - w.bytes), sd)
-    else none
-  else if let some (w, w') := truncW v.op then
-    if v.args.size = 1 then (arg 0 w).map fun (bs, sd) => (bs.take w'.bytes, sd) else none
-  else if let some w := lshW v.op then
-    if v.args.size = 2 then
-      match shiftBytes tabs D w v.args[1]! with
-      | some k => (arg 0 w).map fun (bs, sd) => (zeros k ++ bs.take (w.bytes - k), sd)
-      | none => none
-    else none
-  else if let some w := rshuW v.op then
-    if v.args.size = 2 then
-      match shiftBytes tabs D w v.args[1]! with
-      | some k => (arg 0 w).map fun (bs, sd) => (bs.drop k ++ zeros k, sd)
-      | none => none
-    else none
-  else if let some w := bswapW v.op then
-    if v.args.size = 1 then (arg 0 w).map fun (bs, sd) => (bs.reverse, sd) else none
-  else if let some w := orW v.op then
-    if v.args.size = 2 then do
-      let (a, sa) ← arg 0 w
-      let (b, sb) ← arg 1 w
-      let c ← orBytes a b
-      return (c, sa ++ sb)
-    else none
-  else none
-
-/-- The bytes of `x`'s value at its type's integer width, and the pointers of the loads read. -/
-def symOf (tabs : Tables) (D : Defs) (ld : Bool) : Nat → ID → Option (List SB × List LoadRec)
-  | 0, _ => none
-  | n + 1, x =>
-    match D x with
-    | none => none
-    | some v =>
-      match intW (tabs.ty v.type) with
-      | none => none
-      | some wt =>
-        match (symOp tabs D ld (symOf tabs D ld n) v wt).bind fun (bs, sd) =>
-            if wt.bytes ≤ bs.length then some (bs.take wt.bytes, sd) else none with
-        | some r => some r
-        | none => some ((List.range wt.bytes).map (.vb x), [])
-
 /-- The values a description reads: opaque values, memories, bases and indices. -/
 def SB.ids : SB → List ID
   | .lit _ => []
@@ -252,5 +187,99 @@ def SB.vbId? : SB → Option ID
 def SB.isMb : SB → Bool
   | .mb .. => true
   | _ => false
+
+/-- No byte is an opaque value's (`vb`). -/
+def noVb (l : List SB) : Bool := l.all fun s => s.vbId?.isNone
+
+/-- A description: symbolic bytes and the loads they read through. -/
+abbrev Desc := List SB × List LoadRec
+
+/-- The description of the argument `a`, if it has `w`'s bytes. -/
+def symArg (rec : ID → Option Desc) (a : ID) (w : Sem.Width) : Option Desc :=
+  (rec a).bind fun r => if r.1.length = w.bytes then some r else none
+
+/-- The bytes `kept` (with the loads `sd`) of a description that drops `dropped`; the target
+(`tgt`) never drops an opaque value's byte. -/
+def keepB (tgt : Bool) (kept dropped : List SB) (sd : List LoadRec) : Option Desc :=
+  if !tgt || noVb dropped then some (kept, sd) else none
+
+/-- A `Load` of `wt`'s bytes through a pointer `splitP` takes apart. -/
+def symLoad (tabs : Tables) (D : Defs) (tgt : Bool) (v : Value) (wt : Sem.Width) : Option Desc :=
+  if v.args.size = 2 && (tgt || wt.bytes < 8) then
+    let s := splitP tabs D 64 v.args[0]! none 0
+    if ptrTyped tabs D s.1 then
+      some ((List.range wt.bytes).map fun (k : Nat) => .mb v.args[1]! s.1 s.2.1 (s.2.2 + (k : Int)),
+        [⟨v.args[0]!, v.args[1]!, s.1, s.2.1, s.2.2, wt.bytes⟩])
+    else none
+  else none
+
+/-- `Lsh` by `k` bytes. -/
+def symLsh (tabs : Tables) (D : Defs) (tgt : Bool) (rec : ID → Option Desc) (w : Sem.Width)
+    (v : Value) : Option Desc :=
+  if v.args.size = 2 then
+    match shiftBytes tabs D w v.args[1]! with
+    | some k => (symArg rec v.args[0]! w).bind fun r =>
+      keepB tgt (zeros k ++ r.1.take (w.bytes - k)) (r.1.drop (w.bytes - k)) r.2
+    | none => none
+  else none
+
+/-- `Rsh…U` by `k` bytes. -/
+def symRsh (tabs : Tables) (D : Defs) (tgt : Bool) (rec : ID → Option Desc) (w : Sem.Width)
+    (v : Value) : Option Desc :=
+  if v.args.size = 2 then
+    match shiftBytes tabs D w v.args[1]! with
+    | some k => (symArg rec v.args[0]! w).bind fun r => keepB tgt (r.1.drop k ++ zeros k) (r.1.take k) r.2
+    | none => none
+  else none
+
+/-- `Or` of byte-disjoint operands. -/
+def symOr (rec : ID → Option Desc) (w : Sem.Width) (v : Value) : Option Desc :=
+  if v.args.size = 2 then
+    (symArg rec v.args[0]! w).bind fun a => (symArg rec v.args[1]! w).bind fun b =>
+      (orBytes a.1 b.1).map fun c => (c, a.2 ++ b.2)
+  else none
+
+/-- The bytes of `v`'s op result (`wt`: the width of `v`'s type; `rec`: the description of an
+argument). `tgt` (the target's descriptions): look into `Load`s of every size, and never drop an
+opaque value's byte (`Trunc`, shifts, a narrower type), so a description whose bytes are defined
+has every opaque value it reads defined. Otherwise (the source's) only into `Load`s narrower than
+8 bytes: an 8-byte load of a pointer's bytes is an integer without concrete bytes. -/
+def symOp (tabs : Tables) (D : Defs) (tgt : Bool) (rec : ID → Option Desc) (v : Value)
+    (wt : Sem.Width) : Option Desc :=
+  if let some w := constW v.op then
+    if v.args.size = 0 then some (litBytes w.bytes v.auxInt.toInt, []) else none
+  else if v.op = .Copy then
+    if v.args.size = 1 then rec v.args[0]! else none
+  else if v.op = .Load then symLoad tabs D tgt v wt
+  else if let some (w, w') := zextW v.op then
+    if v.args.size = 1 then
+      (symArg rec v.args[0]! w).map fun r => (r.1 ++ zeros (w'.bytes - w.bytes), r.2)
+    else none
+  else if let some (w, w') := truncW v.op then
+    if v.args.size = 1 then
+      (symArg rec v.args[0]! w).bind fun r => keepB tgt (r.1.take w'.bytes) (r.1.drop w'.bytes) r.2
+    else none
+  else if let some w := lshW v.op then symLsh tabs D tgt rec w v
+  else if let some w := rshuW v.op then symRsh tabs D tgt rec w v
+  else if let some w := bswapW v.op then
+    if v.args.size = 1 then (symArg rec v.args[0]! w).map fun r => (r.1.reverse, r.2) else none
+  else if let some w := orW v.op then symOr rec w v
+  else none
+
+/-- The bytes of `x`'s value at its type's integer width, and the pointers of the loads read. -/
+def symOf (tabs : Tables) (D : Defs) (tgt : Bool) : Nat → ID → Option Desc
+  | 0, _ => none
+  | n + 1, x =>
+    match D x with
+    | none => none
+    | some v =>
+      match intW (tabs.ty v.type) with
+      | none => none
+      | some wt =>
+        match (symOp tabs D tgt (symOf tabs D tgt n) v wt).bind fun r =>
+            if wt.bytes ≤ r.1.length then keepB tgt (r.1.take wt.bytes) (r.1.drop wt.bytes) r.2
+            else none with
+        | some r => some r
+        | none => some ((List.range wt.bytes).map (.vb x), [])
 
 end GoFV.Opt.MemCombine.Check

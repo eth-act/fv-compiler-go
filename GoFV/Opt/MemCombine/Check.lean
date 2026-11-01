@@ -68,10 +68,13 @@ def reachMarks (g : Func) : Array Bool := Id.run do
     st := next
   return R
 
-/-- The IDs a description reads, and the pointers of its loads, are marked in `M` (the values
-the proof relates: reached in `g`, listed in both functions). -/
+/-- The values a load of a description reads: pointer, memory, base and index. -/
+def LoadRec.ids (r : LoadRec) : List ID := [r.ptr, r.mem, r.base] ++ r.idx.toList
+
+/-- The IDs a description reads, and those of its loads, are marked in `M` (the values the
+proof relates: reached in `g`, listed in both functions). -/
 def leavesIn (M : Array Bool) (bs : List SB) (sg : List LoadRec) : Bool :=
-  bs.all (fun s => s.ids.all (M.getD · false)) && sg.all fun r => M.getD r.ptr false
+  bs.all (fun s => s.ids.all (M.getD · false)) && sg.all fun r => r.ids.all (M.getD · false)
 
 /-- Source fuel of `symOf` (an `Or` tree of eight loads is 10 deep). -/
 def srcFuel : Nat := 16
@@ -94,7 +97,7 @@ which do not read `x` itself and are marked in `M`; every load of `g` it goes th
 covered by loads of `f` (`coveredOK`). -/
 def rootOK (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value) : Bool :=
   (orW u.op).isSome && w.op == .Copy && w.args.size == 1 && w.type == u.type &&
-  match symOf tabs f.value? true srcFuel x, symOf tabs (listedD g) true tgtFuel x with
+  match symOf tabs f.value? false srcFuel x, symOf tabs (listedD g) true tgtFuel x with
   | some (bs, sf), some (bt, sg) =>
     bs == bt && bs.all (·.vbId? != some x) && sg.all (coveredOK sf) && leavesIn M bt sg
   | _, _ => false
