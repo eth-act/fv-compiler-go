@@ -4,6 +4,9 @@ import GoFV.SSA.TypePred
 import GoFV.SSA.Analysis.CfgCache
 import GoFV.Util.PdqSort
 import GoFV.Rules.Helpers.Ptr
+import GoFV.SSA.DomCert
+import GoFV.SSA.Sem.Run
+import GoFV.Opt.CSEMem
 import Std.Data.HashMap.Basic
 
 /-!
@@ -308,8 +311,8 @@ def applyRewrites (f : Func) (rewrite : Array (Option ID)) : Func := Id.run do
 end CSE
 
 open CSE in
-/-- `cse(f)`. -/
-def cse (c : Ctx) (f : Func) : Except String Func := do
+/-- `cse(f)` with its substitution (`rewrite[w] = v`: uses of `w` now read `v`). -/
+def cseRw (c : Ctx) (f : Func) : Except String (Func × Array (Option ID)) := do
   -- the non-memory values, numbering new auxes in `f.auxmap`
   let am := f.cache.auxmap.getD #[]
   let mut auxIDs : Std.HashMap (Option AuxRef) Int :=
@@ -348,13 +351,160 @@ def cse (c : Ctx) (f : Func) : Except String Func := do
   for e in s.partition do
     let e := GoFV.Util.PdqSort.sortFunc (cmpDom c f sdom s.mem) e
     rewrite := classRewrites f sdom e rewrite
-  return applyRewrites f rewrite
+  return (applyRewrites f rewrite, rewrite)
+
+/-- `cse(f)`. -/
+def cse (c : CSE.Ctx) (f : Func) : Except String Func := (·.1) <$> cseRw c f
+
+namespace CSE
+
+/-! ## The checker -/
+
+/-- The representative of `x` under the substitution `rw` (`x` itself if not replaced). -/
+def rep (rw : Array (Option ID)) (x : ID) : ID := (rw.getD x none).getD x
+
+/-- Ops whose first two arguments cse may have swapped. -/
+def swappable (op : Op) : Bool := op.commutative
+
+/-- `g`'s arguments `ga` are `f`'s `fa` through `rep`, the first two possibly swapped. -/
+def argsOK (rw : Array (Option ID)) (op : Op) (fa ga : Array ID) : Bool :=
+  ga == fa.map (rep rw) ||
+    (swappable op && 2 ≤ fa.size && ga == (fa.swapIfInBounds 0 1).map (rep rw))
+
+/-- Value `x` of `f` and `g`: the same but for its arguments (`argsOK`). -/
+def valueOK (rw : Array (Option ID)) (f g : Func) (x : ID) : Bool :=
+  match f.value? x with
+  | none => true
+  | some fv =>
+    match g.value? x with
+    | none => false
+    | some gv =>
+      gv.id == fv.id && gv.op == fv.op && gv.aux == fv.aux && gv.auxInt == fv.auxInt &&
+      gv.type == fv.type && gv.block == fv.block && argsOK rw fv.op fv.args gv.args
+
+/-- Block `bid` of `f` and `g`: same kind and values; each control kept or its representative. -/
+def blockOK (rw : Array (Option ID)) (f g : Func) (bid : ID) : Bool :=
+  match f.block? bid, g.block? bid with
+  | some fb, some gb =>
+    gb.kind == fb.kind && gb.values == fb.values && gb.controls.size == fb.controls.size &&
+      (List.range fb.controls.size).all fun k =>
+        gb.controls[k]! == fb.controls[k]! || gb.controls[k]! == rep rw fb.controls[k]!
+  | _, _ => false
+
+mutual
+/-- Equality of type shapes (`Sem.Ty` derives no `BEq`). -/
+def tyEq : Sem.Ty → Sem.Ty → Bool
+  | .int w, .int w' => w == w'
+  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty => true
+  | .tuple ts, .tuple ts' => tysEq ts ts'
+  | .ptr e, .ptr e' => e == e'
+  | .agg fs n, .agg fs' n' => fieldsEq fs fs' && n == n'
+  | .blob n, .blob n' => n == n'
+  | .opaque n, .opaque n' => n == n'
+  | _, _ => false
+
+def tysEq : List Sem.Ty → List Sem.Ty → Bool
+  | [], [] => true
+  | t :: ts, t' :: ts' => tyEq t t' && tysEq ts ts'
+  | _, _ => false
+
+def fieldsEq : List (Nat × Sem.Ty) → List (Nat × Sem.Ty) → Bool
+  | [], [] => true
+  | (o, t) :: fs, (o', t') :: fs' => o == o' && tyEq t t' && fieldsEq fs fs'
+  | _, _ => false
+end
+
+/-- The memory chains of the loads `x` (of `f`) and its representative `r` reach the same def
+through disjoint stores (`memEnd`, both walked for `x`'s address and type), and no value on
+them is replaced. -/
+def loadOK (tabs : Tables) (rw : Array (Option ID)) (f : Func) (fx fr : Value) : Bool :=
+  match fx.args[0]?, fr.args[0]?, fx.args[1]?, fr.args[1]? with
+  | some p, some p', some m, some m' =>
+    p == p' && memEnd tabs f p fx.type m == memEnd tabs f p fx.type m' &&
+      (rw.getD m none).isNone && (rw.getD m' none).isNone
+  | _, _, _, _ => false
+
+/-- The replaced value `x` and its representative `r` are congruent: same op, aux, auxint and
+type shape, and the same (already substituted) arguments in `g`, except: `LocalAddr` (a named
+local's address, independent of its memory argument) and `NilCheck` (its pointer, if it does
+not panic) compare their first argument only; a `Load` may read through different memory
+arguments, which with `strict` must pass `loadOK`. -/
+def congr (tabs : Tables) (strict : Bool) (rw : Array (Option ID)) (f : Func)
+    (fx fr gx gr : Value) : Bool :=
+  fr.op == fx.op && fr.aux == fx.aux && fr.auxInt == fx.auxInt &&
+    (fr.type == fx.type || tyEq (tabs.ty fr.type) (tabs.ty fx.type)) &&
+    (gx.args == gr.args ||
+      gx.args.size == gr.args.size && gx.args[0]? == gr.args[0]? &&
+        ((fx.op == .LocalAddr && fx.aux.isSome) || fx.op == .NilCheck ||
+          (fx.op == .Load && (!strict || loadOK tabs rw f fx fr))))
+
+/-- The substitution of `x`, if any, is sound: its representative is not replaced, is listed
+in its block, is congruent to it (`congr`), its block is an ancestor of `x`'s in `f`'s
+dominator certificate, a `Phi` representative sits in `x`'s block, and the op is not a root
+other than `NilCheck`. -/
+def substOK (tabs : Tables) (strict : Bool) (c : DomCert.Cert) (rw : Array (Option ID))
+    (f g : Func) (x : ID) : Bool :=
+  match rw.getD x none with
+  | none => true
+  | some r =>
+    (rw.getD r none).isNone &&
+    match f.value? x, f.value? r, g.value? x, g.value? r with
+    | some fx, some fr, some gx, some gr =>
+      congr tabs strict rw f fx fr gx gr && (!Sem.isRoot fx.op || fx.op == .NilCheck) &&
+        (fx.op != .Phi || fr.block == fx.block) && c.anc fr.block fx.block &&
+        ((f.block? fr.block).map (·.values.contains r)).getD false
+    | _, _, _, _ => false
+
+/-- A root for the scheduler (priority 1 or 2: `NilCheck`s, calls, stores, …). -/
+def rootNode (f : Func) (x : ID) : Bool := ((f.value? x).map (Sem.prio ·.op)).getD 0 != 0
+
+/-- Block `bid`: if `f`'s block has a schedule, `g`'s has one listing the roots in the same
+order. -/
+def schedOK (f g : Func) (bid : ID) : Bool :=
+  match f.block? bid, g.block? bid with
+  | some fb, some gb =>
+    match Sem.schedule f fb with
+    | none => true
+    | some oS =>
+      match Sem.schedule g gb with
+      | some oT => oT.filter (rootNode f) == oS.filter (rootNode f)
+      | none => false
+  | _, _ => false
+
+/-- **cse's output relation**, checked against the substitution `rw`: `g` has `f`'s
+control-flow graph, blocks and values, each argument and control redirected through `rw`
+(arguments of commutative ops possibly swapped); every substitution is sound (`substOK`), and
+every block of `g` has a schedule with the roots in `f`'s order (`schedOK`). -/
+def crel (tabs : Tables) (strict : Bool) (f g : Func) (rw : Array (Option ID)) : Bool :=
+  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+  g.valueTab.size == f.valueTab.size &&
+  f.blocks.all (blockOK rw f g) &&
+  (List.range f.valueTab.size).all (valueOK rw f g) &&
+  (List.range rw.size).all (substOK tabs strict (DomCert.make f) rw f g) &&
+  f.blocks.all (schedOK f g)
+
+end CSE
+
+/-- `cse`, validated by `CSE.crel` (the input if the checker rejects the result). A `Load`
+merge through different memory arguments is accepted as Go found it; the proof covers it when
+the stricter check (`CSE.inFrag`) re-derives it. -/
+def cseChecked (c : CSE.Ctx) (f : Func) : Except String Func := do
+  let (g, rw) ← cseRw c f
+  return if CSE.crel c.tabs false f g rw then g else f
+
+/-- The fragment `cse_refines` covers: cse fails, or its `Load` merges through different
+memory arguments pass `CSE.loadOK` (the checker with `strict`). -/
+def CSE.inFrag (c : CSE.Ctx) (f : Func) : Bool :=
+  match cseRw c f with
+  | .ok (g, rw) => !CSE.crel c.tabs false f g rw || CSE.crel c.tabs true f g rw
+  | .error _ => true
 
 /-- The `generic cse` pass. -/
 def csePass : Pass := Pass.ofFunc fun env f => do
   let some mem := env.typ? "Mem" | throw "cse: no typ.Mem"
   let some #[.word ps] := env.config? "ptrsize" | throw "cse: config ptrsize"
   let some ptrSize := ps.toInt? | throw "cse: config ptrsize"
-  cse { tabs := env.tables, order := env.typeOrder, isMem := env.tables.isMemory mem, ptrSize } f
+  cseChecked
+    { tabs := env.tables, order := env.typeOrder, isMem := env.tables.isMemory mem, ptrSize } f
 
 end GoFV.Opt
