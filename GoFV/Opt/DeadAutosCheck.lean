@@ -22,6 +22,10 @@ nothing reads (`#31`).
   integer (`unforgeable`: a `PAUTO` whose address is not taken, `Blk.temp`) and is not an
   open-coded defer slot.
 * Every block's schedule in `g` lists the roots of `g` in `f`'s order (`DSE.schedOK`).
+* Every kept value whose arguments may hold a memory or a tuple (shape `mem`/`tuple`) has an op
+  of `memOps`, and every kept value whose shape may hold a pointer, a blob or a memory has an op
+  of `ptrOps` (`opOK`): the proof treats these ops one by one; any other value reads equal
+  arguments in source and target, and its result holds no pointer into an eliminated variable.
 -/
 
 namespace GoFV.Opt
@@ -114,6 +118,57 @@ def usesOK (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef) (x : ID) : 
           (el && i == 0 && fv.op != .VarDef) ||
           (el && i == 1 && fv.op == .Move)
 
+/-- Ops whose memory- or tuple-shaped arguments the proof handles. -/
+def memOps : List Op :=
+  [.Phi, .Copy, .LocalAddr, .Convert, .InlMark, .GetG, .GetCallerSP, .Select0, .Select1, .SelectN,
+    .MakeResult, .Load, .AtomicLoad32, .AtomicLoad64, .AtomicLoadPtr, .MemEq, .Store, .Zero, .Move,
+    .VarDef, .VarLive, .KeepAlive, .NilCheck, .PanicBounds, .StaticCall, .InterCall, .ClosureCall,
+    .AtomicStore32, .AtomicStore64, .AtomicAdd32, .AtomicAdd32Variant, .AtomicAdd64,
+    .AtomicCompareAndSwap32, .AtomicCompareAndSwap32Variant, .AtomicCompareAndSwap64,
+    .AtomicCompareAndSwap64Variant]
+
+/-- Ops whose pointer-, blob- or memory-shaped results the proof handles. -/
+def ptrOps : List Op :=
+  [.Phi, .Copy, .OffPtr, .AddPtr, .PtrIndex, .LocalAddr, .Addr, .ConstNil, .Convert, .CondSelect,
+    .GetG, .GetClosurePtr, .Arg, .ArgIntReg, .InitMem, .Select0, .Select1, .SelectN, .MakeResult,
+    .Load, .AtomicLoad32, .AtomicLoad64, .AtomicLoadPtr, .Store, .Zero, .Move, .VarDef, .VarLive,
+    .KeepAlive, .NilCheck, .PanicBounds, .StaticCall, .InterCall, .ClosureCall, .AtomicStore32,
+    .AtomicStore64, .AtomicAdd32, .AtomicAdd32Variant, .AtomicAdd64, .AtomicCompareAndSwap32,
+    .AtomicCompareAndSwap32Variant, .AtomicCompareAndSwap64, .AtomicCompareAndSwap64Variant]
+
+mutual
+/-- A shape whose values hold no pointer, blob or memory: integers (a 64-bit one holds at most
+an address-less global), booleans, zero-sized, opaque and unknown shapes, composites of
+those. -/
+def noPtrTy : Sem.Ty → Bool
+  | .int _ | .bool | .empty | .opaque _ | .other => true
+  | .agg fs _ => noPtrFields fs
+  | _ => false
+def noPtrFields : List (Nat × Sem.Ty) → Bool
+  | [] => true
+  | (_, t) :: fs => noPtrTy t && noPtrFields fs
+end
+
+/-- A memory or tuple shape. -/
+def memTy : Sem.Ty → Bool
+  | .mem | .tuple _ => true
+  | _ => false
+
+/-- Kept value `fv`: memory- or tuple-shaped arguments only for `memOps`, a result shape that
+may hold a pointer only for `ptrOps`. -/
+def opOK (tabs : Tables) (f : Func) (fv : Value) : Bool :=
+  (memOps.contains fv.op || fv.args.all fun a =>
+      match f.value? a with
+      | some av => !memTy (tabs.ty av.type)
+      | none => true) &&
+    (ptrOps.contains fv.op || noPtrTy (tabs.ty fv.type))
+
+/-- Value `x`: eliminated, or a kept value with `opOK`. -/
+def keptOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | some fv, some gv => elimV fv gv || opOK tabs f fv
+  | _, _ => true
+
 /-- Block `bid`: the same kind, values and controls, no tainted control. -/
 def blockOK (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef) (bid : ID) : Bool :=
   match f.block? bid, g.block? bid with
@@ -132,7 +187,7 @@ def arel (tabs : Tables) (f g : Func) : Bool :=
   E.all (unforgeable tabs) &&
   f.blocks.all (blockOK f g T E) &&
   (List.range f.valueTab.size).all (fun x =>
-    valueOK f g T E x && usesOK f g T E x &&
+    valueOK f g T E x && usesOK f g T E x && keptOK tabs f g x &&
       match f.value? x with
       | some fv => tagStep tabs T fv == T x
       | none => T x == none) &&

@@ -223,6 +223,7 @@ def daeWhy (tabs : Tables) (f g : Func) : List String := Id.run do
     if !DAE.usesOK f g T E x then
       let el := (g.value? x).any (DAE.elimV fv ·)
       ws := add ws s!"use-{fv.op.name}{if el then "-elim" else ""}"
+    if !DAE.keptOK tabs f g x then ws := add ws s!"op-{fv.op.name}"
   return ws
 
 /-- The name an eliminated value of dead auto elim writes: `VarDef`'s aux, or the `LocalAddr`
