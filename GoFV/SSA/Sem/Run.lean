@@ -319,18 +319,6 @@ def panicBounds (kind : Int64) : List Val → Res Val
 
 /-! ## Calls (§5, phase P3) -/
 
-/-- `SelectNAddr [i] call` (§4.8): the address of stack-assigned result `i` of the call in the
-outgoing-arguments area, which the call's tuple carries after its memory. -/
-def selectNAddr (id : ID) (i : Int64) : List Val → Res Val
-  | [.tuple vs] =>
-    match vs.getLast? with
-    | some (.agg addrs) =>
-      match addrs[i.toInt.toNat]? with
-      | some (.ptr p) => if i.toInt < 0 then .stuck s!"v{id}: SelectNAddr index" else .ok (.ptr p)
-      | _ => .stuck s!"v{id}: SelectNAddr of a result not on the stack"
-    | _ => .stuck s!"v{id}: SelectNAddr of a value that is not a call"
-  | _ => .stuck s!"v{id}: SelectNAddr of a value that is not a call"
-
 /-- The `*AuxCall` ABI assignments of a call value's aux. -/
 def callABI? (tabs : Tables) (aux : Option AuxRef) : Option CallABI :=
   match aux.bind tabs.aux? with
@@ -538,7 +526,6 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
   | .StaticLECall | .StaticCall | .ClosureLECall | .ClosureCall | .InterLECall | .InterCall =>
     callOp env ctx v argv
   | .GetClosurePtr => pure (fr.closure.getD .poison)
-  | .SelectNAddr => selectNAddr v.id v.auxInt argv
   | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
   | .WBend | .NilCheck => memRoot ctx v argv
   | op =>

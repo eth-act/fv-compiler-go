@@ -248,17 +248,6 @@ theorem memRoot_panic {ctx : Ctx} {v : Value} {argv : List Val} {e : Panic} {m :
     | (rename_i hop; exact hop)
   all_goals assumption
 
-theorem selectNAddr_not_panic {id : ID} {i : Int64} {argv : List Val} {e : Panic} {m : Mem}
-    (h : selectNAddr id i argv = .panic e m) : False := by
-  unfold selectNAddr at h
-  split at h
-  · split at h
-    · split at h
-      · split at h <;> cases h
-      · cases h
-    · cases h
-  · cases h
-
 /-- The ops whose evaluation may panic: calls (`Op.call`, including `PanicBounds`) and
 `NilCheck`. -/
 def Panicking (op : Op) : Prop := op.call = true ∨ op = .NilCheck
@@ -329,7 +318,6 @@ theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e :
         | cases ho
         | exact absurd ho argVal_not_panic
         | exact hn (memRoot_panic ho)
-        | exact selectNAddr_not_panic ho
         | (rename_i heq; exact hc (by rw [heq]; rfl))
         | (split at ho <;> first
             | cases ho

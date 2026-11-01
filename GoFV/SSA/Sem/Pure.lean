@@ -233,6 +233,7 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .Const64 => Conv.const .w64 auxInt
   | .ConstBool => Conv.constBool auxInt
   | .SelectN => Tuple.selectN auxInt args
+  | .SelectNAddr => Tuple.selectNAddr auxInt args
   | .Select0 => Tuple.select 0 args
   | .Select1 => Tuple.select 1 args
   | .MakeTuple => Tuple.make args

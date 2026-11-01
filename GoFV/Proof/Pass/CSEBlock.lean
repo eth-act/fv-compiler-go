@@ -602,12 +602,7 @@ theorem root_of_panic {G : Frame} {r : ID} {e : Panic} {m : Mem}
   | some v =>
     simp only [show (Ctx.make tabs f).f = f from rfl, hv] at h
     have hop := evalValue_panic_op h
-    have : prio v.op ≠ 0 := by
-      rcases hop with h1 | h1 | h1 | h1
-      · rw [prio_panicking (.inl h1)]; decide
-      · rw [prio_panicking (.inr (.inl h1))]; decide
-      · rw [prio_panicking (.inr (.inr h1))]; decide
-      · rw [h1]; decide
+    have : prio v.op ≠ 0 := prio_panicking hop
     simp [Opt.CSE.rootNode, hv, this]
 
 

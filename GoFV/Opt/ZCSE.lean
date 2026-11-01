@@ -132,7 +132,7 @@ def safe (tabs : Tables) (ps : Array (Option AuxRef)) (v : Value) : Bool :=
     | some { kind := .nameOff n _, .. } => (ps.findIdx? (· == some n)).isSome
     | _ => false
   | .PanicBounds | .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero
-  | .ZeroWB | .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SelectNAddr => false
+  | .ZeroWB | .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck => false
   | op => !Sem.isRoot op
 
 /-- `x` is an argument-free value of `g`'s entry block (where zcse's representatives live). -/

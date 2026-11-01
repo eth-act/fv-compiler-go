@@ -313,8 +313,8 @@ a float32-exact value (gO 347); constants are never NaN (gO 342-346).
 expand: Go-typed results, memory last; post-expand: register pieces, memory last);
 `SelectNAddr [i]` is the address of stack-assigned result `i` in the outgoing-arguments area
 (§5): a call's tuple carries, after its memory, the addresses of its results (`poison` for
-register results), so `SelectNAddr` reads only its argument (`evalValue` never looks at other
-values of the function); a tuple has the shape of its type when its first components do
+register results), so `SelectNAddr` is a pure op of its argument (`evalValue` never looks at
+other values of the function; `poison` for a register result); a tuple has the shape of its type when its first components do
 (`Val.hasTyPre`). `MakeResult` builds the `Ret` control (§7).
 
 ### 4.9 Pseudo and out-of-phase ops
