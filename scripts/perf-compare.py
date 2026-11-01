@@ -29,14 +29,29 @@ import argparse, importlib.util, pathlib, subprocess, sys
 here = pathlib.Path(__file__).resolve().parent.parent
 
 
-def critical_chain(history, repo, commit):
+def perf_graph():
     spec = importlib.util.spec_from_file_location("perf_graph", here / "scripts/perf-graph.py")
     g = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(g)
+    return g
+
+
+def critical_chain(history, repo, commit):
     try:
-        return g.chain_for(commit, history, repo)
+        return perf_graph().chain_for(commit, history, repo)
     except subprocess.CalledProcessError:
         return []
+
+
+def import_peaks(repo, commit, H):
+    """module -> largest peak RSS (MB) among its direct imports at `commit`: a lean process
+    maps its imports, so a module above 2 GB may only inherit that from them."""
+    try:
+        imports = perf_graph().graph_at(repo, commit)
+    except subprocess.CalledProcessError:
+        return {}
+    return {m: max((num(H[d], "maxrss_mb") or 0 for d in ds if d in H), default=0)
+            for m, ds in imports.items()}
 
 
 def load(path):
@@ -126,7 +141,9 @@ def main():
               file=sys.stderr)
         B, H = {}, {}
 
+
     reg, win, info = [], [], []
+    peaks = None
     for m in sorted(H.keys() - {"_total"}):
         h, b = H[m], B.get(m)
         if h.get("repro") == "differs" and (b is None or b.get("repro") != "differs"):
@@ -138,7 +155,12 @@ def main():
             # CPU when known: under load wall time alone flagged a 22 s-CPU module at 101 s
             slow = (c if c is not None else t or 0) > a.new_time
             big = (num(h, "olean_kb") or 0) / 1024 > a.new_olean
-            if bad or (r or 0) > a.new_rss or slow or big:
+            heavy = (r or 0) > a.new_rss
+            if heavy:  # only what the module adds over its heaviest import counts
+                if peaks is None:
+                    peaks = import_peaks(a.repo, head, H)
+                heavy = (r or 0) - peaks.get(m, 0) > a.rss_abs
+            if bad or heavy or slow or big:
                 reg.append((m, "new module", "–", (h["status"] + ", " if bad else "")
                             + f"{fmt(t, 's')} (cpu {fmt(c, 's')}), {fmt(r, 'MB')}, "
                             + f"olean {fmt((num(h, 'olean_kb') or 0) / 1024, 'MB')}", "new"))
@@ -197,8 +219,12 @@ def main():
         cpu_ok = cb is None or ch is None
         for (x, y, cx, cy, lst) in ((wb, wh, cb, ch, reg), (wh, wb, ch, cb, win)):
             if grew(x, y, a.pct, a.bench_time_abs) and (cpu_ok or grew(cx, cy, a.pct, a.bench_time_abs)):
-                lst.append((f"bench {n}", "time", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
-                            f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh)))
+                row = (f"bench {n}", "time", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
+                       f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh))
+                if lst is reg and f"bench {n}" in a.ignore:
+                    lst = info
+                    row = (row[0], "time (A/B: noise)", *row[2:])
+                lst.append(row)
         for (x, y, lst) in ((rb, rh, reg), (rh, rb, win)):
             if grew(x, y, a.pct, a.bench_rss_abs):
                 lst.append((f"bench {n}", "max RSS", fmt(rb, "MB"), fmt(rh, "MB"), change(rb, rh)))
@@ -217,8 +243,12 @@ def main():
         sb, sh = num(b, "time_s"), num(h, "time_s")
         for (x, y, lst) in ((sb, sh, reg), (sh, sb, win)):
             if grew(x, y, a.pct, a.pass_abs):
-                lst.append((f"pass {h['pass']}", "runtime (quick corpus)", fmt(sb, "s"),
-                            fmt(sh, "s"), change(sb, sh)))
+                row = (f"pass {h['pass']}", "runtime (quick corpus)", fmt(sb, "s"),
+                       fmt(sh, "s"), change(sb, sh))
+                if lst is reg and f"pass {h['pass']}" in a.ignore:
+                    lst = info
+                    row = (row[0], "runtime (A/B: noise)", *row[2:])
+                lst.append(row)
 
     print(f"### perf-compare `{base}` → `{head}`\n")
     print(f"{len(H.keys() - {'_total'})} modules ({len(H.keys() - B.keys() - {'_total'})} new, {len(removed)} removed); "
