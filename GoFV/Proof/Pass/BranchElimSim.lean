@@ -198,7 +198,10 @@ theorem arm_no_panic {env : Env} {tabs : Tables} {a : ID} (ha : s.arm0 = some a 
   obtain ⟨v, hv, hsafe, -⟩ := armVal_spec S.rel hra
   rw [hrv] at hv; cases hv
   have hroot : isRoot rv.op = true := by
-    rcases hrop with h | h | h | h <;> rw [h] <;> decide
+    unfold isRoot
+    rcases hrop with h | h
+    · simp [h]
+    · rw [h]; decide
   simp [specSafeOp, hroot] at hsafe
 
 /-- **The source's `post` step** (after `dom` and the side's arm), matched by the target's
@@ -415,7 +418,7 @@ theorem refines_of_step {tabs : Tables} : Refines tabs g tabs f := by
     simp only [hn] at hd
     have hentry : entryFrame env (Ctx.make tabs g) args mem =
         entryFrame env (Ctx.make tabs f) args mem := by
-      unfold entryFrame frameMem
+      unfold entryFrame frameMem frameAllocs
       rw [show (Ctx.make tabs g).f.valueTab.size = (Ctx.make tabs f).f.valueTab.size from hgsz]
       simp only [Ctx.make, abiParams, hown]
     have houts : (Ctx.make tabs g).outs = (Ctx.make tabs f).outs := by

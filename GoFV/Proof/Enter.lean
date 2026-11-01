@@ -76,7 +76,7 @@ theorem enter_panic_facts (hwf : WF ce f) {bid : ID} {B : Block} (hb : bid ∈ f
         ∃ a y, v.args[i]? = some a ∧ fr.regs[a]? = some (some y) ∧
           Gpre.regs[x]? = some (some (y.retype ((Ctx.make tabs f).tys[x]?.getD .other)))) ∧
       r ∈ B.values ∧ ∃ rv, f.value? r = some rv ∧ rv.op ≠ .Phi ∧
-        (rv.op = .PanicBounds ∨ rv.op = .StaticLECall ∨ rv.op = .StaticCall ∨ rv.op = .NilCheck) := by
+        Panicking rv.op := by
   have hnd := hwf.valuesNodup bid B ⟨hb, hB⟩
   have hown := valuesOwn hwf hb hB
   obtain ⟨b', hb', hid⟩ := hwf.blockId bid hb

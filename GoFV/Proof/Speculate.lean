@@ -61,6 +61,7 @@ theorem evalValue_specSafe {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
   · exact absurd ‹_› hspec.2
   all_goals first
     | exact absurd ‹v.op = _› (hne _ (by decide))
+    | exact ⟨_, rfl⟩
     | skip
   split
   · exact ⟨_, rfl⟩
