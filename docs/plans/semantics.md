@@ -788,6 +788,12 @@ Difftest additions (`tools/semdiff/prog/wb.go`): 12 functions storing pointers i
 and through pointers (list building, struct/string fields, struct copies and clears, pointer
 slices and arrays, `append` of strings), so `writebarrier` expands them in the later sections.
 
+Results (`--n 100 --seed 3`): 237 functions, 23,700 calls; native agrees with every section on
+23,698, every write-barrier function included; the 2 others are `makeBad` (§9.5). Corpus
+(`sem-difftest corpus 2 1`, quick-v3 plain): 0 differ; 2 calls (1 function) fewer are defined at
+section 0 than on main: 6 more section-0 runs are stuck on a write to the now read-only flag
+(the runtime functions that switch the GC phase write it).
+
 ## 10. Open questions and risks
 
 - **NaN encodings and the rules** (P4): IEEE 754 and the Go spec leave the encoding of a NaN
