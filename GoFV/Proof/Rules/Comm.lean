@@ -58,6 +58,27 @@ theorem bool2_comm (f : Bool → Bool → Bool) (hf : ∀ x y, f x y = f y x) (p
     rw [bool2_eq, bool2_eq]
     cases p.asBool <;> cases q.asBool <;> simp [hf]
 
+theorem asBool_cases (v : Val) : v.asBool = none ∨ v = .bool true ∨ v = .bool false := by
+  cases v <;> simp [Val.asBool]
+
+theorem asBool_bool (b : Bool) : (Val.bool b).asBool = some b := rfl
+
+theorem andB_comm (p q : Val) (rest : List Val) :
+    Cmp.andB (p :: q :: rest) = Cmp.andB (q :: p :: rest) := by
+  cases rest with
+  | cons _ _ => rfl
+  | nil =>
+    rcases asBool_cases p with hp | rfl | rfl <;> rcases asBool_cases q with hq | rfl | rfl <;>
+      simp_all [Cmp.andB, asBool_bool]
+
+theorem orB_comm (p q : Val) (rest : List Val) :
+    Cmp.orB (p :: q :: rest) = Cmp.orB (q :: p :: rest) := by
+  cases rest with
+  | cons _ _ => rfl
+  | nil =>
+    rcases asBool_cases p with hp | rfl | rfl <;> rcases asBool_cases q with hq | rfl | rfl <;>
+      simp_all [Cmp.orB, asBool_bool]
+
 theorem commOpsP1_sound : ∀ o ∈ commOpsP1, CommSound o := by
   intro o ho t a x p q rest
   simp only [commOpsP1, List.mem_cons, List.not_mem_nil, or_false] at ho
@@ -65,14 +86,16 @@ theorem commOpsP1_sound : ∀ o ∈ commOpsP1, CommSound o := by
     rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
     rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
   simp only [reduceEvalPure, Sem.Int.add, Sem.Int.mul, Sem.Int.and, Sem.Int.or, Sem.Int.xor,
-    Sem.Int.mulhilo, Sem.Int.mulover, Sem.Int.addcarry, Cmp.eq, Cmp.neq, Cmp.andB, Cmp.orB,
-    Cmp.eqB, Cmp.neqB] <;>
+    Sem.Int.mulhilo, Sem.Int.mulover, Sem.Int.addcarry, Cmp.eq, Cmp.neq, Cmp.eqB,
+    Cmp.neqB] <;>
   first
   | exact int2_comm _ _ (fun x y => by
       simp only [BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, BitVec.or_comm,
         BitVec.xor_comm, Bool.beq_comm, bne_comm, Nat.mul_comm, eq_comm]) _ _ _
   | exact int3_comm _ _ (fun x y z => by simp only [Nat.add_comm x.toNat y.toNat]) _ _ _
   | exact bool2_comm _ (fun x y => by cases x <;> cases y <;> rfl) _ _ _
+  | exact andB_comm _ _ _
+  | exact orB_comm _ _ _
 
 /-- Non-vacuity: `Add16` is commutative on concrete arguments (and `Sub16` is not, so
 `CommSound` is not trivial). -/

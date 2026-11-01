@@ -79,7 +79,11 @@ type integer results narrower than their op — `divmod.rules` builds `(Rsh64x64
 `divmod`; 990 such values in the corpus, all `Rsh64x64`/`Rsh32x64`, none wider than the op).
 So every produced integer is retyped to its value's width (`Val.retype`, `Sem/Layout.lean`):
 a narrower type keeps the low bits; a wider one would expose undefined high bits and is
-`poison`. Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+`poison`. A `bool`-typed value that is not a boolean is `poison` (every well-typed producer
+of a `bool` — comparisons, `Load` decoding a bool, `Phi`/`Copy`/`SelectN`/`StructSelect`
+passing one through — yields a boolean or `poison` anyway), so the register of a `bool`-typed
+value is always a boolean or `poison` (`Typed`; used by phiopt's `OrB`/`AndB` arms, §3.5).
+Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
 Integer ops have no sign: signedness is in the op
 (`Less64` vs `Less64U`, `Rsh64x64` vs `Rsh64Ux64`, `SignExt` vs `ZeroExt`), as in Go.
 `ConstN` auxints are sign-extended to 64 bits even for unsigned types (gO 339); `run` takes
@@ -172,7 +176,29 @@ Partial pure operations (division by zero, shifts with a false `bounded` flag, `
 of 0, `Slicemask` of a negative, a bad uintptr→ptr) and reads of uninitialised or invalid
 memory yield `poison` instead of failing. `Unknown` (gO 560, values in dead code) is `poison`.
 Pure ops propagate `poison` (any `poison` argument → `poison` result), except `CondSelect`,
-whose unselected arm may be `poison` (`branchelim`/`phiopt` speculate both arms).
+whose unselected arm may be `poison` (`branchelim` speculates both arms), and `AndB`/`OrB`,
+which are *parallel*: `AndB` is `false` as soon as one side is `false` and `OrB` is `true` as
+soon as one side is `true`, whatever the other side is (`poison` included); otherwise they are
+`poison` unless both sides are booleans. This is hardware's `&&`/`||` on 0/1 registers, and it
+is what makes `phiopt`'s `c ? true : x` → `OrB c x` and `c ? x : false` → `AndB c x` refine
+when the arm not taken (`x`) is `poison`; `fuse comparisons` likewise evaluates its second
+comparison speculatively in `OrB`/`AndB`.
+
+Consumers of `AndB`/`OrB` on the source side, for which the parallel form makes the source
+more defined (each still refines):
+- **generic.rules 321-388** (`AndB`/`OrB` of two comparisons of the same `x` with constants,
+  or `Neq64F x x` with a comparison of `x`): both sides are `poison` exactly when `x` is, so
+  ⟦lhs⟧ is the same under the strict and the parallel form. Rules with `AndB` only on the
+  right-hand side (1600-1628, `MemEq` splits) get a more defined target. The commutativity of
+  `AndB`/`OrB` used for `commute` patterns is re-proved (`Proof/Rules/Comm.lean`).
+- **generic cse** orders the arguments of commutative ops; `AndB`/`OrB` stay commutative
+  (`andB_swap`/`orB_swap` re-proved in `Proof/Pass/CSEComm.lean`).
+- **sccp** folds through the rules on constant arguments; constants are never `poison`.
+- **prove** does not decompose `AndB`/`OrB` (no `OpAndB`/`OpOrB` in `prove.go`): a branch on
+  one gives a fact about that value only.
+- **known bits**: one side known `false` (`true`) makes `AndB` (`OrB`) known `false` (`true`),
+  which is now the exact result rather than a refinement of `poison`.
+- **fuse comparisons** builds `OrB`/`AndB` (target side only; needs the parallel form).
 
 `poison` becomes `stuck` at the **observation points**: a branch on it (`If`, `JumpTable`),
 the address of a store/move/zero, a `NilCheck` argument, a call target, arguments and memory
@@ -730,8 +756,8 @@ against Go's own evaluation).
 | Leq32F | 203 | 2 |  | Bool |  | pure | P4 | 1f | IEEE compare; NaN unordered (Neq true, others false) (§4.6) |
 | Leq64F | 204 | 2 |  | Bool |  | pure | P4 | 1f | IEEE compare; NaN unordered (Neq true, others false) (§4.6) |
 | CondSelect | 209 | 3 |  |  |  | pure | P1 | 25 | arg2 ? arg0 : arg1; unselected arm may be poison (§3.5) |
-| AndB | 212 | 2 |  | Bool | comm | pure | P1 | 17 | Bool, both args evaluated (no short circuit) |
-| OrB | 213 | 2 |  | Bool | comm | pure | P1 | 27 | Bool, both args evaluated (no short circuit) |
+| AndB | 212 | 2 |  | Bool | comm | pure | P1 | 17 | Bool, parallel: `false` if either side is `false`, even `poison` (§3.5) |
+| OrB | 213 | 2 |  | Bool | comm | pure | P1 | 27 | Bool, parallel: `true` if either side is `true`, even `poison` (§3.5) |
 | EqB | 214 | 2 |  | Bool | comm | pure | P1 | 5f | Bool, both args evaluated (no short circuit) |
 | NeqB | 215 | 2 |  | Bool | comm | pure | P1 | 5f | Bool, both args evaluated (no short circuit) |
 | Not | 216 | 1 |  | Bool |  | pure | P1 | 7f | Bool, both args evaluated (no short circuit) |
