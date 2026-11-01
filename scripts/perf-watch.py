@@ -14,7 +14,7 @@ build worktree ../fv-compiler-go-wt/lean-profiler-run and recorded with scripts/
 Each comparison is written to perf/raw/reports/<main|prN>-<commit>.md; the paths of new
 reports, and whether they flag a regression, are printed. Posting them is up to the caller.
 """
-import argparse, json, pathlib, subprocess, sys
+import argparse, json, os, pathlib, re, subprocess, sys
 
 here = pathlib.Path(__file__).resolve().parent.parent
 HISTORY = here / "perf/history.tsv"
@@ -64,14 +64,66 @@ def record(wt, sha, dry):
     return s in recorded() or r1.returncode == 0
 
 
-def compare(base, head, label, header):
+def ab_cpu(wt, base, head, module, rounds=2):
+    """Interleaved A/B re-timing (base, head, base, head, …) of one module's elaboration in the
+    build worktree; returns (min CPU at base, min CPU at head). Back-to-back confirmation runs of
+    the recorder share one load period; alternating commits cancels it."""
+    import importlib.util, json, re as _re
+    spec = importlib.util.spec_from_file_location("perf_record", here / "scripts/perf-record.py")
+    pr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pr)
+    tmp = wt / "tmp" / "perf-ab"
+    tmp.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, TMPDIR=str(tmp), FV_MEMCAP="8G")
+    memcap = here / "scripts/memcap.sh"
+    times = {base: [], head: []}
+    for _ in range(rounds):
+        for c in (base, head):
+            sh("git", "checkout", "--quiet", "--detach", "--force", c, cwd=wt)
+            libs, mods, _imp = pr.load_modules(wt)
+            if module not in mods:
+                return None
+            extra = pr.lib_args(wt, libs).get(module, [])
+            subprocess.run([str(memcap), "lake", "build", "+" + module], cwd=wt, env=env,
+                           capture_output=True)
+            out = tmp / "probe.json"
+            out.unlink(missing_ok=True)
+            subprocess.run([str(memcap), sys.executable, str(here / "scripts/perf-record.py"),
+                            "--probe", str(out), "--", "lake", "lean",
+                            str(mods[module].relative_to(wt)), "--", *extra,
+                            "-o", str(tmp / "x.olean")], cwd=wt, env=env, capture_output=True)
+            try:
+                times[c].append(json.loads(out.read_text())["cpu_s"])
+            except (OSError, ValueError, KeyError):
+                return None
+    return min(times[base]), min(times[head])
+
+
+def compare(base, head, label, header, wt=None):
     REPORTS.mkdir(parents=True, exist_ok=True)
     out = REPORTS / f"{label}-{short(head)}.md"
     if out.exists():
         return None
-    r = subprocess.run([sys.executable, str(here / "scripts/perf-compare.py"), short(base), short(head)],
-                       capture_output=True, text=True)
-    out.write_text(header + "\n\n" + r.stdout + r.stderr)
+    cmd = [sys.executable, str(here / "scripts/perf-compare.py"), short(base), short(head)]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    notes = []
+    if r.returncode == 1 and wt is not None:
+        # module time flags: confirm by interleaved A/B; drop the ones that do not reproduce
+        flagged = re.findall(r"^\| `([\w.]+)` \| time \|", r.stdout, re.M)
+        noise = []
+        for m in flagged:
+            ab = ab_cpu(wt, base, head, m)
+            if ab is None:
+                continue
+            cb, ch = ab
+            real = ch > cb * 1.25 and ch - cb > 5
+            notes.append(f"- A/B re-timing of `{m}` (interleaved, min of 2 each): "
+                         f"{cb:.1f} s → {ch:.1f} s CPU: {'confirmed' if real else 'noise, dropped'}")
+            if not real:
+                noise.append(m)
+        if noise:
+            r = subprocess.run(cmd + [f"--ignore={m}" for m in noise], capture_output=True, text=True)
+    out.write_text(header + "\n\n" + r.stdout + r.stderr + ("\n" + "\n".join(notes) + "\n" if notes else ""))
     return out, r.returncode == 1
 
 
@@ -93,7 +145,7 @@ def main():
         if prev and short(main_sha) in recorded():
             log = sh("git", "log", "--oneline", "--first-parent", f"{prev}..{main_sha}")
             res = compare(prev, main_sha, "main", f"main `{short(prev)}` → `{short(main_sha)}`:\n"
-                          + "\n".join("    " + l for l in log.splitlines()))
+                          + "\n".join("    " + l for l in log.splitlines()), wt=wt)
             if res:
                 new.append(res)
     for pr in prs:
@@ -108,7 +160,7 @@ def main():
         if not (record(wt, base, a.dry_run) and record(wt, head, a.dry_run)):
             continue
         res = compare(base, head, f"pr{pr['number']}",
-                      f"PR #{pr['number']} ({pr['headRefName']}: {pr['title']}) {pr['url']}")
+                      f"PR #{pr['number']} ({pr['headRefName']}: {pr['title']}) {pr['url']}", wt=wt)
         if res:
             new.append(res)
     for path, regressed in new:

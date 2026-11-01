@@ -82,7 +82,12 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | pass runtime (#147) | a registered pass's `pass time (s)` in `pass-parity-corpus` grew > 25% and > 1 s (same corpus, different binary) |
 | critical path | `_total` `crit_s` grew > 25% and > 30 s; the report names the chain |
 
-Shrinks past the same thresholds are listed as wins. Modules whose numbers are the same
+Shrinks past the same thresholds are listed as wins. The watch loop re-checks every module time flag
+with an interleaved A/B re-timing in its build worktree (base, head, base, head; `lake lean` of
+the module; minimum CPU of each side) and drops the flag unless the head is still > 25% and
+> 5 s slower. Back-to-back confirmation runs share one load period, alternating commits does
+not. On main 28334f3, `GoFV.Proof.Pass.RewriteTermNat` was flagged at 14.9 → 23.6 s CPU
+(confirmed by a back-to-back rerun); the A/B gave 16.3 → 19.7 s and the flag was dropped. Modules whose numbers are the same
 measurement in both commits (`measured_at` equal) are skipped. For a PR, BASE is its merge base
 with main; for main, the previous recorded main commit.
 

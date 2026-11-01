@@ -110,6 +110,8 @@ def main():
     ap.add_argument("--bench-rss-abs", type=float, default=256, help="MB")
     ap.add_argument("--all", action="store_true", help="also list unflagged changed modules")
     ap.add_argument("--crit-abs", type=float, default=30, help="s, critical path (CPU)")
+    ap.add_argument("--ignore", action="append", default=[],
+                    help="module whose time flag an A/B re-timing showed to be noise")
     ap.add_argument("--new-olean", type=float, default=10, help="MB, new module .olean")
     ap.add_argument("--olean-abs", type=float, default=5, help="MB, .olean growth")
     a = ap.parse_args()
@@ -158,6 +160,10 @@ def main():
                 lst.append((m, "peak RSS", fmt(rb, "MB"), fmt(rh, "MB"), change(rb, rh)))
         for (x, y, cx, cy, lst) in ((wb, wh, cb, ch, reg), (wh, wb, ch, cb, win)):
             if grew(x, y, a.pct, a.time_abs) and (cpu_ok or grew(cx, cy, a.pct, a.time_abs)):
+                if lst is reg and m in a.ignore:  # interleaved A/B re-timing said: noise
+                    info.append((m, "time (A/B: noise)", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
+                                 f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh)))
+                    continue
                 lst.append((m, "time", f"{fmt(wb, 's')} (cpu {fmt(cb, 's')})",
                             f"{fmt(wh, 's')} (cpu {fmt(ch, 's')})", change(wb, wh)))
         if a.all and (rb, wb) != (rh, wh):
