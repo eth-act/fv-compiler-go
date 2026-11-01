@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.ShortCircCpa
+import GoFV.Proof.Pass.ShortCircPass
 import GoFV.Proof.Witness.FusePlain
 
 /-!
@@ -13,6 +13,11 @@ and `a < b` from `b1`; `b3` branches on it to `b4`/`b5`, which join at the `Ret`
 `a < b` is `false`) by a new `ConstBool false` of the entry (accepted by `cpaOK`; by kernel
 evaluation). By `constPhiArgsChecked_refines` the result returns `andLt(1, 7, 4) = 4`, as the
 source does.
+
+The whole pass (`shortcircuitPass`, theorem `shortcircuit_refines`) then runs the checked
+`shortcircuitBlock` at `b3`: `v18`'s argument from `b1` is the constant `false`, so `b3` would
+branch to `b5`; `b1`'s `false` edge is redirected straight to `b5` (by kernel evaluation), `b2`
+is fused into `b3` (`b2` becomes `Invalid`), and the output still returns `andLt(1, 7, 4) = 4`.
 -/
 
 namespace GoFV.Proof.Witness
@@ -100,5 +105,41 @@ theorem shortCircCpa_witness :
       (constPhiArgsChecked_refines (ce := sum3CE) hr (wfDomOK_sound hck)).1 hm
     exact ⟨g, hr, hargs, fuel, m', h⟩
   · cases h
+
+/-- The pass environment of the witness (the tables of `max3`; type 3 is `bool`). -/
+def andLtPassEnv : PassEnv where
+  passName := "short circuit"
+  pkg := GoStr.ofString "main"
+  funcName := GoStr.ofString "andLt"
+  abi := 1
+  nosplit := false
+  pgohot := false
+  config := #[("arch", #[.word "arm64"]), ("regsize", #[.word "8"])]
+  typs := #[("Bool", 3), ("Int", 2), ("Uintptr", 15), ("Mem", 28), ("Void", 30)]
+  typeOrder := default
+  tables := max3Tabs
+
+/-- Short circuit redirects `b1`'s `false` edge from `b3` to `b5` and empties `b2` into `b3`. -/
+theorem andLt_shortcircuit :
+    (match shortcircuitPass andLtPassEnv andLt with
+      | .ok out => decide ((out.func.block? 1).map (·.succs) = some #[⟨3, 0⟩, ⟨5, 1⟩]) &&
+          decide ((out.func.block? 5).map (·.preds) = some #[⟨3, 1⟩, ⟨1, 1⟩]) &&
+          decide ((out.func.block? 2).map (·.kind) = some .Invalid)
+      | .error _ => false) = true := by
+  decide +kernel
+
+theorem shortcircuit_witness :
+    ∃ out, shortcircuitPass andLtPassEnv andLt = .ok out ∧
+      (out.func.block? 1).map (·.succs) = some #[⟨3, 0⟩, ⟨5, 1⟩] ∧
+      ∃ fuel m, run Env.p1 out.tables out.func max3Args {} fuel = .returned [.i64 4] m := by
+  have h1 := andLt_shortcircuit
+  obtain ⟨m, hm⟩ := returnsInt_iff.1 andLt_run
+  cases hp : shortcircuitPass andLtPassEnv andLt with
+  | error e => rw [hp] at h1; simp at h1
+  | ok out =>
+    rw [hp] at h1
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at h1
+    obtain ⟨fuel, m', h⟩ := Refines.returned_int (ShortCirc.shortcircuit_refines hp) hm
+    exact ⟨out, rfl, h1.1.1, fuel, m', h⟩
 
 end GoFV.Proof.Witness
