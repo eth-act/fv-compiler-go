@@ -134,12 +134,14 @@ def main():
     env = dict(os.environ, FV_MEMCAP=a.cap, GOFV_BENCH_CORPUS=str(cdir), TMPDIR=str(scratch))
     hist = pathlib.Path(a.history)
     known = {}  # (bench, bin_hash) -> latest ok row
+    prev_cpu = {}  # (bench, corpus) -> CPU of the latest ok measurement
     if hist.exists():
         lines = hist.read_text().splitlines()
         for line in lines[1:]:
             r = dict(zip(lines[0].split("\t"), line.split("\t")))
             if r.get("status") == "ok" and r.get("bin_hash"):
                 known[(r["bench"], r["bin_hash"])] = r
+                prev_cpu[(r["bench"], r.get("corpus"))] = float(r["cpu_s"])
         if lines and lines[0].split("\t") != COLUMNS:
             sys.exit(f"perf-bench: {hist} has columns {lines[0].split()}; expected {COLUMNS}")
     rows, bad = [], 0
@@ -170,7 +172,9 @@ def main():
                 print(f"{name}: cached (binary measured at {k['commit']})")
                 continue
             results = []
-            for i in range(a.runs):
+            i = 0
+            while i < a.runs:
+                i += 1
                 while mem_available() < a.min_avail * GiB:
                     time.sleep(60)
                 row["load1"] = f"{os.getloadavg()[0]:.1f}"
@@ -187,8 +191,15 @@ def main():
                     row["status"] = "oom" if rc in (137, 143) or res is None else "fail"
                     break
                 results.append(res)
+                p = prev_cpu.get((name, cid))
+                if (i == a.runs and len(results) < 3 and p
+                        and abs(res["cpu_s"] - p) > 0.25 * p):
+                    # single runs vary by ~30% under load (pass-parity: 71.5 vs 99.6 s CPU on the
+                    # same binary): confirm a move past the threshold with a median of three
+                    print(f"{name}: CPU {p:.1f} -> {res['cpu_s']:.1f}s; two more runs")
+                    i -= 3 - len(results)
             if results:
-                results.sort(key=lambda r: r["wall_s"])
+                results.sort(key=lambda r: r["cpu_s"])
                 med = results[len(results) // 2]
                 row.update(wall_s=f"{med['wall_s']:.2f}", cpu_s=f"{med['cpu_s']:.2f}",
                            maxrss_mb=max(r["maxrss"] for r in results) // 2 ** 20, runs=len(results))
