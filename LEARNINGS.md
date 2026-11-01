@@ -98,6 +98,11 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect:** `run` on the corpus function `clamp` (24 values, 5 blocks, three inputs) evaluates
   by `decide +kernel` in 1.7 s CPU / 0.63 GB for the whole witness module
   (`GoFV/Proof/Witness/Clamp.lean`).
+- **Also:** `check`'s `memCheck` used a `HashSet` once a function has no memory `Copy`s (clamp
+  has some, so it was not hit); now an ID-indexed `Array Bool`, so `check` evaluates by
+  `decide +kernel` on such functions too (`decodedLen` witness, #84). For lookup-only maps keyed
+  by a structure (zcse's `vkey`), `Std.TreeMap` with a hand-written `compare` is
+  kernel-evaluable and needs no proof about the map: the pass is validated by a checker.
 
 #### Kernel `defeq` of `f a` against `f b` unfolds `f`: keep big definitions out of `rfl`
 - **Problem:** in `bind_schedule_erase` (`GoFV/Proof/Cong.lean`) the case

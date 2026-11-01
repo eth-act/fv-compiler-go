@@ -48,6 +48,10 @@ name = "copyrel-probe"
 root = "GoFVTest.CopyRelProbe"
 
 [[lean_exe]]
+name = "zcse-probe"
+root = "GoFVTest.ZcseProbe"
+
+[[lean_exe]]
 name = "sched-probe"
 root = "GoFVTest.SchedProbe"
 
