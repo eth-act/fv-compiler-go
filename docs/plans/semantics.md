@@ -495,8 +495,9 @@ and checks that every section agrees with section 0 whenever section 0 is define
   are poison-free, refinement of them is equality, and `finish` preserves outcome refinement
   (`GoFV.Proof.finish_refines`).
 - **Proof impact**: a nil `NilCheck` panics, and the scheduler's FIFO tie-break between ready
-  `NilCheck`s is not invariant under a change of dependencies; `copyelim_refines` therefore
-  takes "no `NilCheck` in `f`" in its fragment `SimFrag` until the canonical tie-break of #96.
+  `NilCheck`s is not invariant under a change of dependencies; `copyelim_refines` and
+  `deadcode_refines` therefore take "no `NilCheck` in `f`" in their fragments (`SimFrag`,
+  `DeadFrag`) until the canonical tie-break of #96.
 - `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
   recursive definition on its path is structural.
 
