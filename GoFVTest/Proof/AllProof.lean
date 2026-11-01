@@ -99,6 +99,13 @@ import GoFV.Proof.Pass.FusePlainRel
 import GoFV.Proof.Pass.FusePlainSetup
 import GoFV.Proof.Pass.FusePlainSim
 import GoFV.Proof.Pass.Identity
+import GoFV.Proof.Pass.KnownBits
+import GoFV.Proof.Pass.KnownBitsCore
+import GoFV.Proof.Pass.KnownBitsDomain
+import GoFV.Proof.Pass.KnownBitsInv
+import GoFV.Proof.Pass.KnownBitsKind
+import GoFV.Proof.Pass.KnownBitsShift
+import GoFV.Proof.Pass.KnownBitsTerm
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.Pass.NilRel
@@ -279,6 +286,7 @@ import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
+import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf

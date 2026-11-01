@@ -14,7 +14,7 @@ import GoFV.Opt.Fuse
 import GoFV.Opt.ElimDeadAutos
 import GoFV.Opt.DeadStore
 import GoFV.Opt.MemCombine
-import GoFV.Opt.KnownBits
+import GoFV.Opt.KnownBitsCheck
 import GoFV.Opt.PhiOpt
 import GoFV.Opt.PhiOptCheck
 import GoFV.Opt.BranchElim

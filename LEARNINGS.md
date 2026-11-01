@@ -121,6 +121,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
   congruence chains over the unfolded denotation: 1–3 k distinct subterms per plain rule,
   7–11 k per rotate rule, ~25 bytes each; `probe` prints the count per rule).
 
+#### Bitwise 64-bit lemmas without `bv_decide`: per-bit specialisation + `grind`
+- **Problem:** known bits' transfer lemmas (#26: `&&&`/`|||`/`^^^`/`~~~`, `setWidth`, constants,
+  bitwise hypotheses `… = 0`) closed by `bv_decide` added 22 `_native.bv_decide.ax_*` axioms
+  to `knownBits_refines`.
+- **Trick:** `kb_bits` (`GoFV/Proof/Pass/KnownBitsCore.lean`): rewrite every bit-vector
+  equation to `∀ i < n, getLsbD … = getLsbD …`, instantiate each such hypothesis at the goal's
+  `i` and at `0` (an `elab` that tries `specialize h i (by omega)` under
+  `Term.withoutErrToSorry`, restoring the state on failure), push `getLsbD` through the
+  operators with `simp only`, close the Boolean formula with `grind`.
+- **Effect:** all 22 lemmas kernel-checked, no extra axioms; the five KnownBits proof modules
+  build in about 16 s together (`KnownBitsDomain` 11 s, as before).
+
 #### `LEAN_NUM_THREADS` does not limit `lean`; `-jN` does
 - **Measured** (official 4.34.1, `GoFV.Proof.Rules.Eq`, 30 theorems): with
   `LEAN_NUM_THREADS=2` (as `scripts/memcap.sh` exports) or `=1`, `lean` still ran 36 threads,

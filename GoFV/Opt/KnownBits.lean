@@ -221,8 +221,10 @@ def mkConst (f : Func) (eq : TypeRef → TypeRef → Bool) (t : TypeRef) (isBool
 end KnownBits
 
 open KnownBits in
-/-- `knownBits(f)`. -/
-def knownBits (tabs : Tables) (order : TypeOrder) (f : Func) : Except String Func := do
+/-- `knownBits(f)`, with its final entries `(value, known)` by value ID and its reachable
+blocks (the checker's certificate, `GoFV.Opt.KnownBitsCheck`). -/
+def knownBitsWith (tabs : Tables) (order : TypeOrder) (f : Func) :
+    Except String (Func × Array (Int64 × Int64) × Array Bool) := do
   let (po, f) := f.postorder
   let reachable := po.foldl (fun r b => r.set! b true) (Array.replicate (f.bidLast + 1) false)
   let n := f.vidLast + 1
@@ -245,9 +247,10 @@ def knownBits (tabs : Tables) (order : TypeOrder) (f : Func) : Except String Fun
       if known != -1 then continue
       let (f', cv) ← mkConst f order.eq x.type isBool (← Rules.Ty.size tabs x.type) val
       f := f'.copyOf v cv
-  return f
+  return (f, st.entries, reachable)
 
-/-- The `known bits` pass. -/
-def knownBitsPass : Pass := Pass.ofFunc fun env f => knownBits env.tables env.typeOrder f
+/-- `knownBits(f)`. -/
+def knownBits (tabs : Tables) (order : TypeOrder) (f : Func) : Except String Func :=
+  (·.1) <$> knownBitsWith tabs order f
 
 end GoFV.Opt
