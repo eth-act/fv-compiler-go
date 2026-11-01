@@ -1,0 +1,13 @@
+# Installed by `scripts/nightly-gate.sh --install`; docs/GATE.md. Fires hourly from 02:00 to
+# 06:00 local time: the first attempt with enough free memory runs the gate, the later ones see
+# that today's gate ran and exit (the 06:00 attempt posts "skipped" if none could run).
+[Unit]
+Description=gofv nightly gate, 02:00 local (retries hourly until 06:00)
+
+[Timer]
+OnCalendar=*-*-* 02..06:00:00
+Persistent=false
+Unit=gofv-nightly-gate.service
+
+[Install]
+WantedBy=timers.target
