@@ -41,9 +41,9 @@ theorem copyelim_witness :
       simp only [copyelimPass, Pass.ofFunc, clampPassEnv]
       rw [hc]; rfl
     refine ⟨_, hp, ?_⟩
-    obtain ⟨fuel, h⟩ := Refines.returned_int
+    obtain ⟨fuel, m', h⟩ := Refines.returned_int
       (copyelim_refines hp hf (ce' := clampCheckEnv) hg (copyFrag_sound h4) (emptyFrag_of h3))
       hm
-    exact ⟨fuel, m, h⟩
+    exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness

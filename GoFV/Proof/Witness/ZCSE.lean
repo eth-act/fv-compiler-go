@@ -52,7 +52,7 @@ theorem zcse_witness :
   have hp : zcsePass dlPassEnv decodedLen =
       .ok { func := zcseChecked dlTabs decodedLen, tables := dlTabs } := rfl
   refine ⟨_, hp, by rw [hz]; exact h4, ?_⟩
-  obtain ⟨fuel, h⟩ := Refines.returned_int (zcse_refines hp hf hg) hm
-  exact ⟨fuel, m, h⟩
+  obtain ⟨fuel, m', h⟩ := Refines.returned_int (zcse_refines hp hf hg) hm
+  exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness
