@@ -5,6 +5,7 @@
 #   allproof  GoFVTest/Proof/AllProof.lean (regenerated if stale: scripts/gen-allproof.sh) builds:
 #             every GoFV/Proof module imports together (no name declared twice)
 #   no-sorry  scripts/no-sorry.py
+#   reverts   scripts/scan-history-reverts.sh: no recent squash merge silently undid earlier work
 #   axioms    scripts/axioms-audit.sh (every theorem under GoFV.Proof)
 #   ssa-check ssa-check on the full corpus
 #   parity    scripts/parity.sh on the full corpus
@@ -189,6 +190,7 @@ gate_steps() {
   [ "${results[-1]}" = pass ] || built=0
   step allproof gate_allproof
   step no-sorry python3 scripts/no-sorry.py
+  step reverts scripts/scan-history-reverts.sh 80
   if [ "$built" = 1 ]; then
     step axioms scripts/axioms-audit.sh --out "$run/axioms"
   else
