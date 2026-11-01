@@ -165,38 +165,45 @@ elab "rule_oracle_bool" : tactic => withMainContext do
         clear hbo)))
     catch _ => saved.restore
 
-/-- A first operand of `&&`/`||` in the condition `hcond` that is a comparison not evaluating
-to a boolean literal (of an oracle answer: `x.Op != OpConst64`, `div.Uses == 1`) is still a
-boolean (`binDV_cmp_bool`: a comparison or the `bool` oracle's answer). It is replaced by a
-fresh `Bool`, so that the other operand of `&&`/`||` evaluates. Not an operand that reads
-instance fields (`c.Type.Size() == 8`): it evaluates after the case splits, and replacing it
-would lose its value. -/
+/-- A comparison in the condition `hcond` that does not evaluate to a boolean literal (of an
+oracle answer: `x.Op != OpConst64`, `div.Uses == 1`) is still a boolean (`binDV_cmp_bool`: a
+comparison or the `bool` oracle's answer, `(binDV o t X Y).getD (.bool w)`). It is replaced by
+a fresh `Bool`, so that `&&`/`||` around it evaluate. Not a comparison that reads instance
+fields (`c.Type.Size() == 8`): it evaluates after the case splits, and replacing it would lose
+its value. -/
 elab "rule_cond_bool" : tactic => withMainContext do
-  let some hc := (← getLCtx).findFromUserName? `hcond | return
-  let ty ← instantiateMVars hc.type
-  let cands := subtermsWith (fun t => t.isAppOfArity ``binE 6 &&
-    ((t.getArg! 1).isConstOf ``BinOp.land || (t.getArg! 1).isConstOf ``BinOp.lor) &&
-    !(t.getArg! 4).isAppOfArity ``DV.bool 1 && !t.hasLooseBVars) ty
   let hcs := mkIdent `hcond
-  for c in cands do
-    let y := c.getArg! 3
-    unless y.isAppOfArity ``GoFV.Rules.Expr.binop 4 do continue
-    -- an operand on instance fields (`c.Type.Size() == 8`) evaluates after the case splits
-    -- (the value of a `DV.val` is not read by a field other than `Type`/`AuxInt`)
-    let opd := (c.getArg! 4).replace fun t =>
-      if t.isAppOfArity ``DV.val 2 then some (mkConst ``True) else none
-    if (opd.find? fun t => (t.isAppOfArity ``PEnv.ty 2 || t.isAppOfArity ``PEnv.auxInt 2) &&
-        !t.hasLooseBVars).isSome then continue
-    let a ← Term.exprToSyntax (c.getArg! 4)
-    let o ← Term.exprToSyntax (y.getArg! 0)
-    let saved ← saveState
-    try
-      evalTactic (← `(tactic| (
-        obtain ⟨_, hab⟩ : ∃ b, $a = DV.bool b :=
-          GoFV.Proof.Rules.binDV_cmp_bool (o := $o) (by decide) .bool _ _ _
-        simp only [hab, rule_unfold_s] at $hcs:ident
-        clear hab)))
-    catch _ => saved.restore
+  let mut tried : Array Lean.Expr := #[]
+  for _ in [0:16] do
+    let some hc := (← getLCtx).findFromUserName? `hcond | return
+    let ty ← instantiateMVars hc.type
+    -- `Option.getD (binDV …) (DV.bool w)` with `binDV` stuck, unfolded by `rule_unfold_ds`
+    let cands := subtermsWith (fun t => t.isAppOfArity ``Option.getD.match_1 5 &&
+      !t.hasLooseBVars && !tried.contains t &&
+      (match t.getArg! 4 with
+       | .lam _ _ b _ => b.isAppOfArity ``DV.bool 1
+       | _ => false) &&
+      ((t.getArg! 2).getAppFn.constName?.any fun n => n != ``DV.bool)) ty
+    -- the value of a `DV.val` is not read by a field other than `Type`/`AuxInt`
+    let readsInst (c : Lean.Expr) : Bool :=
+      let c' := c.replace fun t =>
+        if t.isAppOfArity ``DV.val 2 then some (mkConst ``True) else none
+      (c'.find? fun t => (t.isAppOfArity ``PEnv.ty 2 || t.isAppOfArity ``PEnv.auxInt 2) &&
+        !t.hasLooseBVars).isSome
+    let some c := cands.find? (!readsInst ·) | return
+    tried := tried.push c
+    let a ← Term.exprToSyntax c
+    for o in [``BinOp.eq, ``BinOp.ne, ``BinOp.lt, ``BinOp.le, ``BinOp.gt, ``BinOp.ge] do
+      let saved ← saveState
+      let ok ← try
+          evalTactic (← `(tactic| (
+            obtain ⟨_, hab⟩ : ∃ b, $a = DV.bool b :=
+              GoFV.Proof.Rules.binDV_cmp_bool (o := $(mkIdent o)) (by decide) .bool _ _ _
+            simp only [hab, rule_unfold_s] at $hcs:ident
+            clear hab)))
+          pure true
+        catch _ => saved.restore; pure false
+      if ok then break
 
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hbt` (`Oracle.BoolTyped`), `hwf` (checker facts), `hc` (pattern
