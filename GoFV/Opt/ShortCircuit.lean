@@ -1,6 +1,7 @@
 import GoFV.Opt.Pass
 import GoFV.Opt.Fuse.Basic
 import GoFV.Opt.Fuse.PlainCheck
+import GoFV.Opt.ShortCircuitCheck
 import GoFV.SSA.ConstCache
 import GoFV.SSA.Edges
 
@@ -249,6 +250,12 @@ def constPhiArgs (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef →
           f := f.setArg v i cf.get!
   return f
 
+/-- `constPhiArgs`, checked once on the whole function (`cpaOK`; an error if it rejects). -/
+def constPhiArgsChecked (tabs : Tables) (isBool : TypeRef → Bool)
+    (sameType : TypeRef → TypeRef → Bool) (boolT : TypeRef) (f : Func) : Except String Func :=
+  let g := constPhiArgs isBool sameType boolT f
+  if cpaOK tabs f g then .ok g else .error "shortcircuit: constPhiArgs rewrite rejected"
+
 /-- `fuseBlockPlain(b)` (checked in place, `Fuse.Plain.fuseBlockPlainChecked`) then
 `shortcircuitBlock(b)`. -/
 def step (f : Func) (b : ID) : Except String (Func × Bool) := do
@@ -256,10 +263,14 @@ def step (f : Func) (b : ID) : Except String (Func × Bool) := do
   let (f, c2) := shortcircuitBlock f b
   pure (f, c2 || c1)
 
-/-- `shortcircuit(f)` (its input if a checked step rejects a rewrite: `Fuse.orInput`). -/
-def shortcircuit (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
+/-- `shortcircuit(f)`: its input if it fails `check` (the checkers' proofs assume a checked
+input; every corpus input passes) or if a checker rejects a rewrite (`Fuse.orInput`). -/
+def shortcircuit (ce : CheckEnv) (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
     (boolT : TypeRef) (f : Func) : Except String Func :=
-  Fuse.orInput f (fuseLoop step none roundFuel (constPhiArgs isBool sameType boolT f))
+  if !checkOK ce f then .ok f else
+  Fuse.orInput f do
+    let f ← constPhiArgsChecked ce.tabs isBool sameType boolT f
+    fuseLoop step none roundFuel f
 
 end GoFV.Opt.ShortCircuit
 
@@ -271,6 +282,6 @@ open GoFV.SSA
 def shortcircuitPass : Pass := Pass.ofFunc fun env f => do
   let some boolT := env.typ? "Bool" | throw "shortcircuit: no typ.Bool"
   let isBool (t : TypeRef) : Bool := (env.type? t).map (·.kind) == some .BOOL
-  ShortCircuit.shortcircuit isBool env.typeOrder.eq boolT f
+  ShortCircuit.shortcircuit { tabs := env.tables, typs := env.typs } isBool env.typeOrder.eq boolT f
 
 end GoFV.Opt
