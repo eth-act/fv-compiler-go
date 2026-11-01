@@ -28,6 +28,20 @@ theorem loadOp_asAgg (t : Ty) (args : List Val) :
   · exact load_asAgg _ _ _
   · exact (Val.checkLen_poison t).symm
 
+/-- Component `k` of a length-checked string or slice: refined by whatever refines component `k`
+of the aggregate layout (the check keeps the value or makes it `poison`). -/
+theorem select_checkLen_ref {t : Ty} {k : Nat} {L X : Val}
+    (h : Refines (Comp.select k [L.retype t.asAgg]) X) :
+    Refines (Comp.select k [(Val.checkLen t L).retype t]) X := by
+  have h2 : (Val.checkLen t L).retype t = L.retype t.asAgg ∨
+      (Val.checkLen t L).retype t = .poison := by
+    rcases Val.checkLen_eq_or t L with h1 | h1 <;> rw [h1]
+    · rw [retype_asAgg]; exact Val.checkLen_eq_or _ _
+    · right; cases t <;> rfl
+  rcases h2 with h2 | h2 <;> rw [h2]
+  · exact h
+  · exact .poison _
+
 /-- A `Load` of an aggregate whose first field is at offset 0 is refined by the `Make` of the
 `Load` of the first field at the pointer itself and the field `Load`s at `OffPtr`s. -/
 theorem loadSplit_ref {t0 : Ty} {fs : List (Nat × Ty)} {n : Nat}
@@ -137,7 +151,9 @@ theorem r_dec_135_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_135 := by
   have hk : kindE .string (e.ty [0]) ≠ some false := by
     intro hk; simp [kindDV_ty, hk] at hcond
   rcases kindE_string hk with hs | ho
-  · rw [strShape_eq hs]
+  · rw [strShape_eq hs, loadOp_asAgg .str]
+    refine select_checkLen_ref ?_
+    simp only [Ty.asAgg, Ty.strAgg]
     exact selLoad0_ref (by decide) (by decide) _ _ rfl
   · rw [ho]; exact selLoad_other _ _ _
 
@@ -147,7 +163,9 @@ theorem r_dec_136_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_136 := by
   have hk : kindE .string (e.ty [0]) ≠ some false := by
     intro hk; simp [kindDV_ty, hk] at hcond
   rcases kindE_string hk with hs | ho
-  · rw [strShape_eq hs]
+  · rw [strShape_eq hs, loadOp_asAgg .str]
+    refine select_checkLen_ref ?_
+    simp only [Ty.asAgg, Ty.strAgg]
     exact selLoad_ref (by decide) (by decide) _ _ rfl (some 8)
   · rw [ho]; exact selLoad_other _ _ _
 
@@ -178,7 +196,9 @@ theorem r_dec_150_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_150 := by
     intro hk; simp [kindDV_ty, hk] at hcond
   rcases kindE_slice hk with hs | ho
   · obtain ⟨el, he⟩ := sliceShape_eq hs
-    rw [he]
+    rw [he, loadOp_asAgg (.slice el)]
+    refine select_checkLen_ref ?_
+    simp only [Ty.asAgg, Ty.sliceAgg]
     dsimp only [strctField, List.find?]
     exact selLoad0_ref
       (by simp [GoFV.Opt.RewriteCheck.layoutsOK, GoFV.Opt.RewriteCheck.layoutOK, Sem.Ty.size]
@@ -193,7 +213,9 @@ theorem r_dec_151_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_151 := by
     intro hk; simp [kindDV_ty, hk] at hcond
   rcases kindE_slice hk with hs | ho
   · obtain ⟨el, he⟩ := sliceShape_eq hs
-    rw [he]
+    rw [he, loadOp_asAgg (.slice el)]
+    refine select_checkLen_ref ?_
+    simp only [Ty.asAgg, Ty.sliceAgg]
     exact selLoad_ref
       (by simp [GoFV.Opt.RewriteCheck.layoutsOK, GoFV.Opt.RewriteCheck.layoutOK, Sem.Ty.size]
           <;> decide)
@@ -207,7 +229,9 @@ theorem r_dec_154_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_154 := by
     intro hk; simp [kindDV_ty, hk] at hcond
   rcases kindE_slice hk with hs | ho
   · obtain ⟨el, he⟩ := sliceShape_eq hs
-    rw [he]
+    rw [he, loadOp_asAgg (.slice el)]
+    refine select_checkLen_ref ?_
+    simp only [Ty.asAgg, Ty.sliceAgg]
     exact selLoad_ref
       (by simp [GoFV.Opt.RewriteCheck.layoutsOK, GoFV.Opt.RewriteCheck.layoutOK, Sem.Ty.size]
           <;> decide)

@@ -31,7 +31,8 @@ open GoFV.Proof.AtomSim
 
 theorem retype_eq_mem' {t : Ty} {v : Val} {M : Mem} (h : v.retype t = .mem M) : v = .mem M := by
   unfold Val.retype at h
-  split at h <;> (repeat' split at h) <;> simp_all
+  split at h <;> (try unfold Val.ofStr at h) <;> (try unfold Val.ofSlice at h) <;>
+    (repeat' split at h) <;> simp_all
 
 theorem args_three {α : Type} {a : Array ID} (h : a.size = 3) (F : ID → α) :
     a.toList.map F = [F a[0]!, F a[1]!, F a[2]!] := by
