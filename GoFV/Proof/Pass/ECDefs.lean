@@ -73,8 +73,9 @@ def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
 
 /-- The source values the obligation of `x` reads: its arguments in the source and its
 arguments (and, for a call, its wide stack argument's `Move`'s arguments) in the target that the
-source defines. -/
+source defines; none for a value the pass invalidated (its target node reads nothing). -/
 def ecFront (f g : Func) (x : ID) : List ID :=
+  if invalidated g x then [] else
   ((f.value? x).map (·.args.toList)).getD [] ++
     ((((g.value? x).map (·.args.toList)).getD []) ++
       (((stackMove f g x).bind g.value?).map (·.args.toList)).getD []).filter (fun a => !isNewB f a)

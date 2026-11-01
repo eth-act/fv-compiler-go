@@ -178,8 +178,9 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !(!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
             depB g nodeG (fun _ => true) fuel (callMem f x) z) then return "stack store memory"
       if let some u := f.value? x then
-        if !(u.args.all fun a => !moveArgB f g x a || fb.values.contains a) then
-          return "move: Dereference in another block"
+        if !(u.args.all fun a => !moveArgB f g x a ||
+            (fb.values.contains a && beforeB og.toList a x)) then
+          return "move: Dereference placement"
   | _, _ => return "no schedule"
   for x in fb.values do
     for l in stackLoads tabs sh f g x do
