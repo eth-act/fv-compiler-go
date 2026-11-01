@@ -4,8 +4,10 @@
 # patches/go/*.patch applied in name order, built by make.bash under scripts/memcap.sh.
 #
 # usage: scripts/build-go.sh            full rebuild (fresh copy, patches, make.bash; a few minutes)
-#        scripts/build-go.sh --compile  re-copy and re-patch only the files the patches touch,
-#                                       then rebuild cmd/compile with the existing toolchain
+#        scripts/build-go.sh --compile  rebuild cmd/compile from the current go-build tree (keeps
+#                                       edits made there; refresh the patch with --diff first)
+#        scripts/build-go.sh --repatch  re-copy and re-patch only the files the patches touch,
+#                                       then rebuild cmd/compile (discards edits in go-build)
 #        scripts/build-go.sh --diff     print the current go-build changes against the pinned
 #                                       tree for the patched paths (to refresh a patch file)
 #
@@ -71,6 +73,10 @@ case "$mode" in
     ;;
   --compile)
     [ -x "$dst/bin/go" ] || { echo "build-go: no toolchain in $dst yet; run without --compile" >&2; exit 1; }
+    (cd "$dst/src" && GOCACHE=$root/tmp/go-build-cache "$root/scripts/memcap.sh" "$dst/bin/go" install cmd/compile)
+    ;;
+  --repatch)
+    [ -x "$dst/bin/go" ] || { echo "build-go: no toolchain in $dst yet; run without --repatch" >&2; exit 1; }
     for f in $(touched); do
       if git -C "$src" cat-file -e "$pin:$f" 2>/dev/null; then
         git -C "$src" show "$pin:$f" > "$dst/$f"
@@ -81,6 +87,6 @@ case "$mode" in
     apply_patches
     (cd "$dst/src" && GOCACHE=$root/tmp/go-build-cache "$root/scripts/memcap.sh" "$dst/bin/go" install cmd/compile)
     ;;
-  *) echo "usage: $0 [--compile|--diff]" >&2; exit 2 ;;
+  *) echo "usage: $0 [--compile|--repatch|--diff]" >&2; exit 2 ;;
 esac
 "$dst/bin/go" version

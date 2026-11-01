@@ -77,7 +77,7 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1169 @@
+@@ -0,0 +1,1231 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -810,6 +810,32 @@
 +	return fmt.Sprintf("%010d|%s|%s", an, gofvSlotKey(&ls), x.slotOrder(ls.SplitOf))
 +}
 +
++// slotNum is the number of an already numbered slot (0 for nil).
++func (x *gofvExporter) slotNum(ls *LocalSlot) int {
++	if ls == nil {
++		return 0
++	}
++	return x.slots[ls]
++}
++
++// slotValueLess orders numbered LocalSlot values (map keys) by the numbers of their
++// fields: name, type, offset, split parent, split offset.
++func (x *gofvExporter) slotValueLess(a, b LocalSlot) bool {
++	if na, nb := x.aux[a.N], x.aux[b.N]; na != nb {
++		return na < nb
++	}
++	if ta, tb := x.types[a.Type], x.types[b.Type]; ta != tb {
++		return ta < tb
++	}
++	if a.Off != b.Off {
++		return a.Off < b.Off
++	}
++	if pa, pb := x.slotNum(a.SplitOf), x.slotNum(b.SplitOf); pa != pb {
++		return pa < pb
++	}
++	return a.SplitOffset < b.SplitOffset
++}
++
 +// gofvSlotKey is a content key for a LocalSlot.
 +func gofvSlotKey(ls *LocalSlot) string {
 +	if ls == nil {
@@ -907,7 +933,14 @@
 +			extra = append(extra, k)
 +		}
 +	}
++	// Number every object first (in a deterministic content order), then order by numbers:
++	// the order then depends only on the map's contents and the (stable) numbers, not on
++	// which objects happened to be numbered before this section (#63).
 +	sort.SliceStable(extra, func(i, j int) bool { return x.slotValueOrder(extra[i]) < x.slotValueOrder(extra[j]) })
++	for _, k := range extra {
++		x.slotInline(k)
++	}
++	sort.SliceStable(extra, func(i, j int) bool { return x.slotValueLess(extra[i], extra[j]) })
 +	for _, k := range extra {
 +		fmt.Fprintf(w, "namedx %s %s\n", x.slotInline(k), x.values(f.NamedValues[k]))
 +	}
@@ -924,6 +957,24 @@
 +		splits = append(splits, splitEnt{k, v, fmt.Sprintf("%s|%020d|%s|%s", x.slotOrder(k.parent), uint64(k.Off)^(1<<63), ts, x.slotOrder(v))})
 +	}
 +	sort.SliceStable(splits, func(i, j int) bool { return splits[i].key < splits[j].key })
++	for _, e := range splits {
++		x.slot(e.k.parent)
++		x.typ(e.k.Type)
++		x.slot(e.v)
++	}
++	sort.SliceStable(splits, func(i, j int) bool {
++		a, b := splits[i], splits[j]
++		if pa, pb := x.slotNum(a.k.parent), x.slotNum(b.k.parent); pa != pb {
++			return pa < pb
++		}
++		if a.k.Off != b.k.Off {
++			return a.k.Off < b.k.Off
++		}
++		if ta, tb := x.types[a.k.Type], x.types[b.k.Type]; ta != tb {
++			return ta < tb
++		}
++		return x.slotNum(a.v) < x.slotNum(b.v)
++	})
 +	ss := make([]string, len(splits))
 +	for i, e := range splits {
 +		ss[i] = fmt.Sprintf("%s/%d/%s=%s", x.slot(e.k.parent), e.k.Off, x.typ(e.k.Type), x.slot(e.v))
@@ -939,6 +990,17 @@
 +		canon = append(canon, canonEnt{k, v, x.slotOrder(v) + "|" + x.slotValueOrder(k)})
 +	}
 +	sort.SliceStable(canon, func(i, j int) bool { return canon[i].key < canon[j].key })
++	for _, e := range canon {
++		x.slotInline(e.k)
++		x.slot(e.v)
++	}
++	sort.SliceStable(canon, func(i, j int) bool {
++		a, b := canon[i], canon[j]
++		if x.slotValueLess(a.k, b.k) || x.slotValueLess(b.k, a.k) {
++			return x.slotValueLess(a.k, b.k)
++		}
++		return x.slotNum(a.v) < x.slotNum(b.v)
++	})
 +	cs := make([]string, len(canon))
 +	for i, e := range canon {
 +		cs[i] = fmt.Sprintf("%s=%s", x.slotInline(e.k), x.slot(e.v))
