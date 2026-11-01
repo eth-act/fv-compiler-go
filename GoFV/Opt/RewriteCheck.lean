@@ -455,12 +455,17 @@ def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) :
       | none => false
     | none => true)
 
-/-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`
-(`GoFV.Proof.Rules.FrameOK`). -/
-def condFrameOK (tabs : Tables) (e : PEnv) (pat : Pat) (cond : Option GoFV.Rules.Expr) : Bool :=
-  ((cond.map emptyStrVars).getD []).all fun x => match strOf tabs e pat x with
+/-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, and its conjuncts
+`isSamePtr(x, y)` of leaves `x`, `y` match the same value (`GoFV.Proof.Rules.FrameOK`). -/
+def condFrameOK (tabs : Tables) (e : PEnv) (I : Inst) (pat : Pat)
+    (cond : Option GoFV.Rules.Expr) : Bool :=
+  ((cond.map emptyStrVars).getD []).all (fun x => match strOf tabs e pat x with
     | some (s, _) => s.size == 0
-    | none => false
+    | none => false) &&
+  ((cond.map samePtrVars).getD []).all fun (x, y) =>
+    match Pat.leafPos x [] pat, Pat.leafPos y [] pat with
+    | some p, some q => I.at p == I.at q
+    | _, _ => false
 
 /-- How `isNonNegative` (`rewrite.go`) decides an op whose value is an integer of width `w`. -/
 inductive NNKind where
