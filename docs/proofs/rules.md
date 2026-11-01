@@ -374,7 +374,7 @@ needs a later phase of the semantics.
 | `generic` | Add | 88 | 1 | 4 | 2 | 95 |
 | `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
-| `generic` | AndB | 32 | 4 | 0 | 0 | 36 |
+| `generic` | AndB | 36 | 0 | 0 | 0 | 36 |
 | `generic` | ArraySelect | 0 | 2 | 0 | 0 | 2 |
 | `generic` | BitLen | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
@@ -384,7 +384,7 @@ needs a later phase of the semantics.
 | `generic` | ConstInterface | 1 | 0 | 0 | 0 | 1 |
 | `generic` | ConstSlice | 1 | 0 | 1 | 0 | 2 |
 | `generic` | ConstString | 1 | 0 | 0 | 4 | 4 |
-| `generic` | Convert | 0 | 5 | 0 | 0 | 5 |
+| `generic` | Convert | 1 | 4 | 0 | 0 | 5 |
 | `generic` | Ctz | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
@@ -418,7 +418,7 @@ needs a later phase of the semantics.
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
-| `generic` | OrB | 32 | 4 | 0 | 20 | 56 |
+| `generic` | OrB | 36 | 0 | 0 | 20 | 56 |
 | `generic` | Phi | 0 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
 | `generic` | PtrIndex | 1 | 1 | 0 | 0 | 2 |
@@ -446,7 +446,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1158 | 317 | 40 | 258 | 1762 |
+| all | | 1167 | 308 | 40 | 258 | 1762 |
 
 <!-- END coverage -->
 
