@@ -124,6 +124,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID}
     · rw [hTfr, fill_frame, hG]
     · rw [hTfr, fill_frame, hG]
     · rw [hTfr, fill_frame, hG]
+    · rw [hTfr, fill_frame, hG]
   have htopoT : TopoRem (argsF (Ctx.make tabs g).f) (pre' ++ r :: post') := by
     rw [← hsplitT]; exact otopoT
   have hpanT := evalAll_ref_panic (S := fun a => a ∉ oT.toList) (post := post')

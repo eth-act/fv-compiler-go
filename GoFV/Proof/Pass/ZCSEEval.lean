@@ -105,7 +105,8 @@ theorem safe_ok {env : Env} {tabs : Tables} {g : Func} {fr : Frame} {v : Value}
       · cases hop
     all_goals first
       | (rename_i heq; simp [heq] at hop; done)
-      | (rename_i heq; rw [heq] at hop; exact absurd hop (by decide))
+      | (rename_i heq; rw [heq] at hop; simp [isRoot, Op.call] at hop; done)
+      | exact ⟨_, rfl⟩
       | skip
     have hop' : isRoot v.op = false := by
       revert hop; split <;> simp_all

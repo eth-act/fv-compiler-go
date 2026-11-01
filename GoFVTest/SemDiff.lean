@@ -185,7 +185,8 @@ def parseBytes (tabs : Tables) : Nat → TypeRef → PM (Array Byte)
 
 /-! ## Printing values from memory -/
 
-/-- Go's `strconv.Quote` for ASCII (the generator writes ASCII only; other bytes as `\xHH`). -/
+/-- Go's `strconv.Quote` byte by byte: non-ASCII bytes as `\xHH` even inside valid UTF-8
+(`quoteBytes` in `tools/semdiff/prog/main.go`). -/
 def goQuote (bs : Array UInt8) : String := Id.run do
   let hex := "0123456789abcdef".toList
   let mut out := "\""

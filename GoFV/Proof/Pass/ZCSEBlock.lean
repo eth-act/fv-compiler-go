@@ -18,7 +18,7 @@ open GoFV.Proof.CopyElim (Tree refOK_prefix frame_ext stepV_of topoRem_at topoRe
 variable {tabs : Tables} {f g : Func}
 
 theorem frame_with {a b : Frame} (h1 : a.args = b.args) (h2 : a.mem0 = b.mem0)
-    (h3 : a.images = b.images) (r : Array (Option Val)) :
+    (h3 : a.images = b.images) (h4 : a.closure = b.closure) (r : Array (Option Val)) :
     ({ a with regs := r } : Frame) = { b with regs := r } := by
   cases a; cases b; simp_all
 
@@ -39,8 +39,8 @@ theorem evalValue_panic_args {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e
     | cases he
     | exact absurd he argVal_not_panic
     | exact absurd he callOp_nil
-    | simp [panicBounds] at he
-    | simp [memRoot] at he
+    | (simp [panicBounds] at he; done)
+    | (simp [memRoot] at he; done)
     | (split at he <;> first
         | cases he
         | exact absurd he argVal_not_panic
@@ -134,6 +134,7 @@ theorem enter_ok (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID} {i
   have hframe : ({ frT with regs := setPhis psT frT.regs } : Frame) =
       { fill env tabs g G with regs := setPhis psT frT.regs } := by
     apply frame_with
+    · rw [hTfr, fill_frame, hG]
     · rw [hTfr, fill_frame, hG]
     · rw [hTfr, fill_frame, hG]
     · rw [hTfr, fill_frame, hG]

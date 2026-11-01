@@ -122,7 +122,7 @@ def makeslice : Contract := fun args _ m =>
       | none => .stuck "makeslice: bad type"
       | some (size, _) =>
         let bad (n : Int) := n < 0 || size * n.toNat > maxAlloc
-        if bad cap || len > cap then
+        if bad cap || len < 0 || len > cap then
           if bad len then .panicked (.error "makeslice: len out of range") m
           else .panicked (.error "makeslice: cap out of range") m
         else ok? "makeslice" do

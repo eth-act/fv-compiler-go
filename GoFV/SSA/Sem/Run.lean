@@ -319,6 +319,18 @@ def panicBounds (kind : Int64) : List Val → Res Val
 
 /-! ## Calls (§5, phase P3) -/
 
+/-- `SelectNAddr [i] call` (§4.8): the address of stack-assigned result `i` of the call in the
+outgoing-arguments area, which the call's tuple carries after its memory. -/
+def selectNAddr (id : ID) (i : Int64) : List Val → Res Val
+  | [.tuple vs] =>
+    match vs.getLast? with
+    | some (.agg addrs) =>
+      match addrs[i.toInt.toNat]? with
+      | some (.ptr p) => if i.toInt < 0 then .stuck s!"v{id}: SelectNAddr index" else .ok (.ptr p)
+      | _ => .stuck s!"v{id}: SelectNAddr of a result not on the stack"
+    | _ => .stuck s!"v{id}: SelectNAddr of a value that is not a call"
+  | _ => .stuck s!"v{id}: SelectNAddr of a value that is not a call"
+
 /-- The `*AuxCall` ABI assignments of a call value's aux. -/
 def callABI? (tabs : Tables) (aux : Option AuxRef) : Option CallABI :=
   match aux.bind tabs.aux? with
@@ -438,11 +450,14 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
     let c ← Res.ofOption s!"call {callee}: no contract" (env.extern callee)
     match c args clo m with
     | .returned rs m' =>
-      -- stack-assigned results are in the outgoing area in both forms (`SelectNAddr`)
+      -- stack-assigned results are in the outgoing area in both forms; their addresses follow
+      -- the memory (`SelectNAddr`)
       let (ps, m'') ← Res.ofOption s!"call {callee}: results do not match the ABI"
         (encodeResults ctx.tabs ctx.act outs rs m')
-      if post then pure (.tuple (ps ++ [.mem m'']))
-      else pure (.tuple (rs ++ [.mem m'']))
+      let addrs := Val.agg (outs.map fun p =>
+        if p.regs.isEmpty then .ptr ⟨.outargs ctx.act, BitVec.ofInt 64 p.offset⟩ else .poison)
+      if post then pure (.tuple (ps ++ [.mem m'', addrs]))
+      else pure (.tuple (rs ++ [.mem m'', addrs]))
     | .panicked e m' => .panic e m'
     | .stuck msg => .stuck msg
 
@@ -523,9 +538,7 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
   | .StaticLECall | .StaticCall | .ClosureLECall | .ClosureCall | .InterLECall | .InterCall =>
     callOp env ctx v argv
   | .GetClosurePtr => pure (fr.closure.getD .poison)
-  -- not emitted by the stock compiler (0 occurrences in the corpus); its result depends on the
-  -- call's ABI, which `evalValue` would have to read from the function
-  | .SelectNAddr => .stuck s!"v{v.id}: SelectNAddr is not supported"
+  | .SelectNAddr => selectNAddr v.id v.auxInt argv
   | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
   | .WBend | .NilCheck => memRoot ctx v argv
   | op =>
