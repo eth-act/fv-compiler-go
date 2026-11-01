@@ -654,10 +654,18 @@ def runVerifiedCheck (o : Opts) : IO UInt32 := do
   let t0 ← IO.monoMsNow
   let mut files := #[]
   for p in o.paths do files := files ++ (← ssaFiles p)
-  let tasks ← (List.range o.jobs).toArray.mapM fun j => IO.asTask (prio := .dedicated) do
+  -- a shared queue: a few functions take minutes (`prove`'s validator), so a static split
+  -- would leave workers idle
+  let next ← IO.mkRef 0
+  let tasks ← (List.range o.jobs).toArray.mapM fun _ => IO.asTask (prio := .dedicated) do
     let mut st : VStats := {}
-    for h : i in [0:files.size] do
-      if i % o.jobs == j then st ← verifiedFile o.wholeFile o.maxReport files[i] st
+    for _ in [0:files.size] do
+      let i ← next.modifyGet fun i => (i, i + 1)
+      let some file := files[i]? | break
+      let t0 ← IO.monoMsNow
+      st ← verifiedFile o.wholeFile o.maxReport file st
+      let ms := (← IO.monoMsNow) - t0
+      if ms ≥ 60000 then IO.eprintln s!"SLOW {ms / 1000} s: {file}"
     return st
   let mut st : VStats := {}
   for t in tasks do
