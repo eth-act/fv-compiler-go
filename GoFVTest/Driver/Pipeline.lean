@@ -4,11 +4,10 @@ import GoFV.Opt.Verified
 /-!
 # The Lean generic pipeline
 
-`compile.go`'s `passes` table from `number lines` up to (not including) `lower`, with each
-pass's `required` flag; `disabled` comes from the registered port (`PassEntry.disabled`). A pass
-runs iff `optimize || required` and it is not disabled, as in `ssa.Compile`. The pipeline
-chains the registered Lean ports and stops at the first enabled pass without a port
-(`docs/DRIVER.md`).
+`GoFV.Opt.stockPasses` (`compile.go`'s `passes` table from `number lines` up to, not including,
+`lower`), with `StockPass.enabled` (`optimize || required`, not `disabled`, as in
+`ssa.Compile`). The pipeline chains the registered Lean ports and stops at the first enabled pass
+without a port (`docs/DRIVER.md`). `GoFV.Opt.verifiedPipeline` is the verified variant.
 -/
 
 namespace GoFVTest.Driver
