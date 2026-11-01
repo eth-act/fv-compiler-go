@@ -4,6 +4,7 @@ import GoFV.SSA.Sem.TyEq
 import GoFV.SSA.DomCert
 import GoFV.Proof.ABIBuild
 import GoFV.Opt.TabsAgree
+import Std.Data.HashMap.Lemmas
 
 /-!
 # The checker of `expand calls` (`ECCheck.ecCheck`, issue #28)
@@ -369,6 +370,157 @@ def depB (g : Func) (node nw : ID → Bool) : Nat → ID → ID → Bool
       match g.value? y with
       | some w => w.args.any fun z => node z && (z == a || (nw z && depB g node nw n a z))
       | none => false
+
+/-! `depB` searches every path back from `y`, which is exponential in a block whose values share
+arguments (a `--check --verified` run spent 90 min on `cmd/compile/internal/walk.maplit`).
+`depBFast` (`@[csimp] depB_eq_depBFast`) is the same search with a table of failures: `M[z]? =
+some m` records `depB m a z = false`, so `z` is skipped with any fuel `≤ m` (`depB_mono`). -/
+
+theorem depB_mono {g : Func} {node nw : ID → Bool} {a : ID} :
+    ∀ {n : Nat} {y : ID}, depB g node nw n a y = true → depB g node nw (n + 1) a y = true
+  | 0, _, h => by simp [depB] at h
+  | n + 1, y, h => by
+    rw [depB] at h ⊢
+    simp only [Bool.and_eq_true] at h ⊢
+    refine ⟨h.1, ?_⟩
+    revert h
+    cases g.value? y with
+    | none => simp
+    | some w =>
+      simp only [Array.any_eq_true, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq]
+      rintro ⟨-, i, hi, hz, hd⟩
+      exact ⟨i, hi, hz, hd.imp id fun h => ⟨h.1, depB_mono h.2⟩⟩
+
+theorem depB_mono_le {g : Func} {node nw : ID → Bool} {a z : ID} {n m : Nat} (hnm : n ≤ m)
+    (h : depB g node nw n a z = true) : depB g node nw m a z = true := by
+  induction hnm with
+  | refl => exact h
+  | step _ ih => exact depB_mono ih
+
+theorem depB_false_le {g : Func} {node nw : ID → Bool} {a z : ID} {n m : Nat} (hnm : n ≤ m)
+    (h : depB g node nw m a z = false) : depB g node nw n a z = false := by
+  cases hd : depB g node nw n a z
+  · rfl
+  · exact absurd (depB_mono_le hnm hd) (by simp [h])
+
+/-- The failure table's invariant. -/
+def DepMemoOK (g : Func) (node nw : ID → Bool) (a : ID) (M : Std.HashMap ID Nat) : Prop :=
+  ∀ z m, M[z]? = some m → depB g node nw m a z = false
+
+/-- `zs.any` of `depB`'s argument test at fuel `n`, `rec` the search one level down. -/
+def depBArgs (node nw : ID → Bool) (a : ID) (n : Nat)
+    (rec : ID → Std.HashMap ID Nat → Bool × Std.HashMap ID Nat) :
+    List ID → Std.HashMap ID Nat → Bool × Std.HashMap ID Nat
+  | [], M => (false, M)
+  | z :: zs, M =>
+    if node z && z == a then (true, M)
+    else if node z && nw z && !(M[z]?.any (n ≤ ·)) then
+      let r := rec z M
+      if r.1 then (true, r.2) else depBArgs node nw a n rec zs r.2
+    else depBArgs node nw a n rec zs M
+
+/-- `depB` with the failure table `M`. -/
+def depBMemo (g : Func) (node nw : ID → Bool) (a : ID) :
+    Nat → ID → Std.HashMap ID Nat → Bool × Std.HashMap ID Nat
+  | 0, _, M => (false, M)
+  | n + 1, y, M =>
+    if node y then
+      match g.value? y with
+      | some w =>
+        let r := depBArgs node nw a n (depBMemo g node nw a n) w.args.toList M
+        (r.1, if r.1 then r.2 else r.2.insert y (n + 1))
+      | none => (false, M)
+    else (false, M)
+
+def depBFast (g : Func) (node nw : ID → Bool) (n : Nat) (a y : ID) : Bool :=
+  (depBMemo g node nw a n y {}).1
+
+theorem depBArgs_spec {g : Func} {node nw : ID → Bool} {a : ID} {n : Nat}
+    {rec : ID → Std.HashMap ID Nat → Bool × Std.HashMap ID Nat}
+    (hrec : ∀ z M, DepMemoOK g node nw a M →
+      (rec z M).1 = depB g node nw n a z ∧ DepMemoOK g node nw a (rec z M).2) :
+    ∀ (zs : List ID) (M : Std.HashMap ID Nat), DepMemoOK g node nw a M →
+      (depBArgs node nw a n rec zs M).1 =
+          zs.any (fun z => node z && (z == a || (nw z && depB g node nw n a z))) ∧
+        DepMemoOK g node nw a (depBArgs node nw a n rec zs M).2
+  | [], M, hM => ⟨rfl, hM⟩
+  | z :: zs, M, hM => by
+    have ih := depBArgs_spec hrec zs
+    unfold depBArgs
+    by_cases h1 : (node z && z == a) = true
+    · simp only [h1, ↓reduceIte, List.any_cons]
+      simp only [Bool.and_eq_true, beq_iff_eq] at h1
+      obtain ⟨hz, rfl⟩ := h1
+      simp [hz, hM]
+    · simp only [h1, Bool.false_eq_true, ↓reduceIte, List.any_cons]
+      by_cases h2 : (node z && nw z && !(M[z]?.any (n ≤ ·))) = true
+      · simp only [h2, ↓reduceIte]
+        obtain ⟨hr1, hr2⟩ := hrec z M hM
+        cases hr : (rec z M).1
+        · simp only [Bool.false_eq_true, ↓reduceIte]
+          obtain ⟨i1, i2⟩ := ih _ hr2
+          refine ⟨?_, i2⟩
+          rw [i1, ← hr1, hr]
+          simp only [Bool.and_eq_true, beq_iff_eq] at h1
+          cases hz : node z <;> simp_all
+        · simp only [↓reduceIte]
+          refine ⟨?_, hr2⟩
+          simp only [Bool.and_eq_true, Bool.not_eq_true'] at h2
+          rw [← hr1, hr]; simp [h2.1.1, h2.1.2]
+      · simp only [h2, Bool.false_eq_true, ↓reduceIte]
+        obtain ⟨i1, i2⟩ := ih M hM
+        refine ⟨?_, i2⟩
+        rw [i1]
+        have hf : (node z && (z == a || (nw z && depB g node nw n a z))) = false := by
+          cases hz : node z
+          · rfl
+          · cases hza : (z == a)
+            · cases hn : nw z
+              · rfl
+              · cases hm : M[z]? with
+                | none => simp [hz, hn, hm] at h2
+                | some m =>
+                  have hle : n ≤ m := by simpa [hz, hn, hm] using h2
+                  simp [depB_false_le hle (hM z m hm)]
+            · simp [hz, hza] at h1
+        simp [hf]
+
+theorem depBMemo_spec {g : Func} {node nw : ID → Bool} {a : ID} :
+    ∀ (n : Nat) (y : ID) (M : Std.HashMap ID Nat), DepMemoOK g node nw a M →
+      (depBMemo g node nw a n y M).1 = depB g node nw n a y ∧
+        DepMemoOK g node nw a (depBMemo g node nw a n y M).2
+  | 0, _, M, hM => ⟨rfl, hM⟩
+  | n + 1, y, M, hM => by
+    unfold depBMemo
+    rw [depB]
+    cases hy : node y
+    · exact ⟨rfl, hM⟩
+    · simp only [↓reduceIte, Bool.true_and]
+      cases hw : g.value? y with
+      | none => exact ⟨rfl, hM⟩
+      | some w =>
+        obtain ⟨h1, h2⟩ := depBArgs_spec (fun z M hM => depBMemo_spec n z M hM) w.args.toList M hM
+        refine ⟨by rw [h1, Array.any_toList], ?_⟩
+        dsimp only
+        split
+        · exact h2
+        · rename_i hf
+          intro z m hz
+          rw [Std.HashMap.getElem?_insert] at hz
+          split at hz
+          · rename_i hzy
+            have : y = z := by simpa using hzy
+            subst this
+            cases hz
+            rw [depB, hy, hw, Bool.true_and]
+            dsimp only
+            rw [← Array.any_toList, ← h1]
+            simpa using hf
+          · exact h2 z m hz
+
+@[csimp] theorem depB_eq_depBFast : @depB = @depBFast := by
+  funext g node nw n a y
+  exact ((depBMemo_spec n y {} (fun z m h => by simp at h)).1).symm
 
 /-- Source mode of `imkArgOK` (`aw` the `IMake` node of `a` in `g`): `a` is the same
 interface-shaped `IMake` in `f`, its data operand `d` is unconverted, a pointer or an aggregate

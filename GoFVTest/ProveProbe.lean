@@ -141,8 +141,8 @@ def checkFile (path : System.FilePath) (st : St) (dumpIt : Bool := false) : IO S
       if h == g then st := { st with same := st.same + 1 }
       if h == f && g != f then
         st := { st with relFail := st.relFail + 1 }
-        let (h', _) := ProveCheck.revert prev true f g
         let (C, F, inv, RB) := ProveCheck.asmOf f prev
+        let (h', _) := ProveCheck.revert prev true F inv RB f g
         if h' != f then
           IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} rels {ProveCheck.relsOK f prev C F inv RB} values {ProveCheck.valuesOK prev f h' F inv RB} tree {f.blocks.all C.inTree}"
         else

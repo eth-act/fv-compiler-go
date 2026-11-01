@@ -144,6 +144,15 @@ tab-separated. A function whose line says `verified` is, by `verifiedPipeline_re
 by the output. The output differs from stock wherever a checked variant undoes a rewrite, so
 the importer's check against the Lean text still applies but stock identity does not.
 
+How each pass of `GoFV.Opt.stockPasses` runs (`stockPasses_sound` checks every `proven`/`guarded`
+entry against its theorem):
+
+| status | passes |
+| --- | --- |
+| proven (theorem, no fragment test) | number lines; short circuit; opt, middle opt, late opt (`optChecked`); zero arg cse; phiopt; prove (`proveChecked`; size guard `proveGuard`: skipped, reported as `fragment`, above `proveMaxValues` = 20,000 value IDs); divisible, divmod (`…Checked`); known bits; early fuse; softfloat; branchelim; sccp (`sccpChecked`); check bce; memcombine (`memcombineChecked`: loads only, so a verified run combines no stores) |
+| guarded (theorem on a fragment, decided at run time: an optional pass outside it is skipped, a required one unverified) | early phielim and copyelim (`copyFrag`, `emptyFragB`); the five deadcodes (`deadFragB`); generic cse (`cseFrag`); nilcheckelim (`nilFrag`); expand calls (`expandCallsFrag`, required); dead auto elim (`daeFrag`, `RefinesFrom (FrameSafe ∧ InitAvoids)`); dse (`dseFrag`); writebarrier (`wbGuard`: `writebarrierChecked`'s acceptance, `RefinesFrom WbPre`, required) |
+| unverified (stock port, no theorem yet) | decompose user; decompose builtin; late fuse; insert resched checks; cpufeatures; rewrite tern |
+
 `scripts/driver-e2e.sh --verified` builds std and the programs with
 `GOFV_SSA_DRIVER=<wrapper running gofv-ssa-opt --verified --vstats …>` in full mode, counts the
 byte-identical archives and binaries without failing on the others, and fails only when a build

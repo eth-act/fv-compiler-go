@@ -12,7 +12,7 @@ import GoFV.Opt.NilCheckRel
 import GoFV.Opt.ProveCheck.Check
 import GoFV.Opt.KnownBitsCheck
 import GoFV.Opt.Fuse
-import GoFV.Opt.ExpandCalls
+import GoFV.Opt.ExpandCallsCheck
 import GoFV.Opt.SoftFloat
 import GoFV.Opt.BranchElim
 import GoFV.Opt.ElimDeadAutos
@@ -21,8 +21,8 @@ import GoFV.Opt.SccpCheck
 import GoFV.Opt.CheckBCE
 import GoFV.Opt.DeadStore
 import GoFV.Opt.DeadStoreCheck
-import GoFV.Opt.MemCombine
-import GoFV.Opt.WriteBarrier
+import GoFV.Opt.MemCombine.Check
+import GoFV.Opt.WriteBarrierCheck
 import GoFV.Opt.ReschedChecks
 import GoFV.Opt.CpuFeatures
 import GoFV.Opt.TabsAgree
@@ -83,6 +83,9 @@ inductive Rel where
   monotone contracts, malloc-family contracts that return non-nil pointers
   (`Env.AllocNonNil`) and non-nil dictionary arguments (`NilCheck.dictParams tabs f`). -/
   | rw
+  /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
+  read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/
+  | wb
   deriving DecidableEq, Repr, Inhabited
 
 /-- How the verified pipeline runs a stock pass. -/
@@ -133,6 +136,22 @@ def deadGuard (env : PassEnv) (f : Func) : Bool := deadFragB env.tables f
 /-- No fragment hypothesis. -/
 def noGuard (_ : PassEnv) (_ : Func) : Bool := true
 
+/-- Largest value table `proveChecked` validates (the largest corpus functions have about 5,000
+values and take a few seconds). -/
+def proveMaxValues : Nat := 20000
+
+/-- `prove`'s guard: a size limit, not a fragment of its theorem. Skipping the optional pass keeps
+the input, which is sound; it keeps `proveChecked`'s cost bounded on generated giants. -/
+def proveGuard (_ : PassEnv) (f : Func) : Bool := f.valueTab.size ≤ proveMaxValues
+
+/-- `writebarrier_refines`' acceptance test (`writebarrierChecked` without the error): the stock
+result is accepted by `WBCheck.wbOK` and the input runs alike in its tables. A rejected result is
+kept (the pass is required) and marked unverified. -/
+def wbGuard (env : PassEnv) (f : Func) : Bool :=
+  match writebarrier env f with
+  | .ok out => tabsAgree env.tables out.tables f && WBCheck.wbOK out.tables f out.func
+  | .error _ => true
+
 def deadcodeStep : Step := .proven deadcodePass .refines deadGuard
 def optStep : Step := .proven optChecked .rw noGuard
 
@@ -144,7 +163,7 @@ def stockPasses : Array StockPass := #[
   { name := "number lines", required := true, step := .proven numberLinesPass .refines noGuard },
   { name := "early phielim and copyelim", step := .proven copyelimPass .refines copyGuard },
   { name := "early deadcode", step := deadcodeStep },
-  { name := "short circuit", step := .stock shortcircuitPass },
+  { name := "short circuit", step := .proven shortcircuitPass .refines noGuard },
   { name := "decompose user", required := true, step := .stock Decompose.decomposeUserPass },
   { name := "pre-opt deadcode", step := deadcodeStep },
   { name := "opt", required := true, step := optStep },
@@ -154,13 +173,14 @@ def stockPasses : Array StockPass := #[
   { name := "phiopt", step := .proven phioptPass .refines noGuard },
   { name := "gcse deadcode", required := true, step := deadcodeStep },
   { name := "nilcheckelim", step := .proven nilcheckelimPass .refines nilFrag },
-  { name := "prove", step := .proven proveChecked .mono noGuard },
+  { name := "prove", step := .proven proveChecked .mono proveGuard },
   { name := "divisible", required := true, step := .proven divisibleChecked .rw noGuard },
   { name := "divmod", required := true, step := .proven divmodChecked .rw noGuard },
   { name := "middle opt", required := true, step := optStep },
   { name := "known bits", step := .proven knownBitsPass .mono noGuard },
-  { name := "early fuse", step := .stock fuseEarlyPass },
-  { name := "expand calls", required := true, step := .stock expandCallsPass },
+  { name := "early fuse", step := .proven fuseEarlyPass .refines noGuard },
+  { name := "expand calls", required := true,
+    step := .proven expandCallsPass .mono expandCallsFrag },
   { name := "decompose builtin", required := true,
     step := .stock Decompose.postExpandCallsDecomposePass },
   { name := "softfloat", required := true, step := .proven softfloatPass .refines noGuard },
@@ -172,8 +192,9 @@ def stockPasses : Array StockPass := #[
   { name := "late fuse", step := .stock fuseLatePass },
   { name := "check bce", step := .proven checkbcePass .refines noGuard },
   { name := "dse", step := .proven dsePass .refines dseFrag },
-  { name := "memcombine", step := .stock memcombinePass },
-  { name := "writebarrier", required := true, step := .stock writebarrierPass },
+  { name := "memcombine", step := .proven memcombineChecked .mono noGuard },
+  { name := "writebarrier", required := true,
+    step := .proven writebarrierPass .wb wbGuard },
   { name := "insert resched checks", disabled := reschedChecksDisabled,
     step := .stock reschedChecksPass },
   { name := "cpufeatures", requiredSimd := true, disabled := simdDisabled,

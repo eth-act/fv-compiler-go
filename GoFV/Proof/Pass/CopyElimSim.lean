@@ -69,8 +69,9 @@ def isOkTrue : Except String Bool → Bool
 
 /-- Decides `EmptyFrag`: no tree value has a zero-size aggregate type. -/
 def emptyFragB (tabs : Tables) (f : Func) : Bool :=
+  let C := make f
   f.blocks.all fun bid =>
-    !(make f).inTree bid ||
+    !C.inTree bid ||
     match f.block? bid with
     | none => true
     | some fb =>
@@ -81,6 +82,7 @@ def emptyFragB (tabs : Tables) (f : Func) : Bool :=
 theorem emptyFrag_of {tabs : Tables} {f : Func} (h : emptyFragB tabs f = true) :
     EmptyFrag tabs f := by
   unfold emptyFragB at h
+  dsimp only at h
   rw [Array.all_eq_true'] at h
   refine ⟨fun bid hb ht fb hfb x hx fv hfv hz => ?_⟩
   have h := h bid hb

@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Witness.DAE
+import GoFV.Proof.Witness.WriteBarrier
 
 /-!
 # Non-vacuity witness: the verified pipeline on `f0` of `test/stack`, with a global store
@@ -13,9 +14,10 @@ listed in `scripts/axioms-allowlist.txt`: `decide +kernel` gets stuck comparing 
 results' CFG caches), `verifiedPipeline` returns a `verified` state: every pass run is proven or
 the identity, and `dead auto elim` and `generic deadcode` removed the `Zero`s (`v8` is gone).
 By kernel
-evaluation, the input returns (no results) with an environment holding `main.g`; the
-environment's contracts are monotone and frame-safe and the empty memory holds no pointer, so
-`verifiedPipeline_refines` gives that the output returns too.
+evaluation, the input returns (no results) with an environment holding `main.g` and a
+read-only `runtime.writeBarrier` flag; the environment's contracts are monotone, frame-safe and
+keep the flag, and the empty memory holds no pointer, so `verifiedPipeline_refines` gives that
+the output returns too.
 -/
 
 namespace GoFV.Proof.Witness
@@ -100,8 +102,12 @@ def plEnv : PassEnv :=
     ("rttype.GCData", #[.word "32:PTR:8"]),
     ("rttype.PtrType.Elem", #[.word "48:PTR:8"])] }
 
-/-- `Env.p1` with the global `main.g` (8 zero bytes). -/
-def plRunEnv : Env := { Env.p1 with globals := [("main.g", { data := Array.replicate 8 (.b 0) })] }
+/-- `Env.p1` with the global `main.g` (8 zero bytes) and a read-only, zero
+`runtime.writeBarrier` flag. -/
+def plRunEnv : Env :=
+  { Env.p1 with
+    globals := [("main.g", { data := Array.replicate 8 (.b 0) }),
+      ("runtime.writeBarrier", { data := #[.b 0, .b 0, .b 0, .b 0], writable := false })] }
 
 /-! ## Certificates -/
 
@@ -121,17 +127,32 @@ theorem plRunEnv_initAvoids : InitAvoids plRunEnv [] {} := by
   intro a n
   refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun g hg x hx => ?_⟩
   · simp at h
-  · simp only [plRunEnv, List.mem_singleton] at hg
-    subst hg
-    simp only [Array.toList_replicate, List.mem_replicate] at hx
-    rw [hx.2]
-    trivial
+  · simp only [plRunEnv, List.mem_cons, List.not_mem_nil, or_false] at hg
+    rcases hg with rfl | rfl
+    · simp only [Array.toList_replicate, List.mem_replicate] at hx
+      rw [hx.2]
+      trivial
+    · simp only [List.mem_cons, List.not_mem_nil, or_false, or_self] at hx
+      rw [hx]
+      trivial
 
 theorem plF_dict : GoFV.Opt.NilCheck.dictParams plEnv.tables plF = [] := by decide +kernel
 
+theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
+  refine ⟨⟨⟨{ data := #[.b 0, .b 0, .b 0, .b 0], writable := false }, by decide +kernel,
+    rfl, by decide, fun i hi => ?_⟩, by decide +kernel⟩, ?_⟩
+  · match i, hi with
+    | 0, _ => exact ⟨0, rfl⟩
+    | 1, _ => exact ⟨0, rfl⟩
+    | 2, _ => exact ⟨0, rfl⟩
+    | 3, _ => exact ⟨0, rfl⟩
+  · intro name c hc args clo m _ _ _
+    simp only [plRunEnv, Env.p1] at hc
+    split at hc <;> cases hc <;> trivial
+
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF) plRunEnv [] {} :=
   ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
-    by rw [plF_dict]; exact DictArgs.nil []⟩
+    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre⟩
 
 /-! ## The witness -/
 

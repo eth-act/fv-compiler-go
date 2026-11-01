@@ -66,20 +66,22 @@ late opt, generic deadcode, writebarrier.
 `GoFV.Opt.verifiedPipeline` (`GoFV/Opt/Verified.lean`) runs this table (`GoFV.Opt.stockPasses`,
 with the same enabled test) on one function. A pass with a refinement theorem runs in the
 variant the theorem is about (`optChecked`, `divisibleChecked`, `divmodChecked`, `proveChecked`,
-`sccpChecked`, the validated `csePass`, …); the others run their stock port. The function is
+`sccpChecked`, `memcombineChecked`, the validated `csePass`, …); the others run their stock port
+(per-pass status: `docs/DRIVER.md`, "Verified mode"). The function is
 checked (`GoFV.SSA.check`) once on the input and once per changed result, never inside a pass.
 Each pass run gets a verdict:
 
 | verdict | when | result kept |
 | --- | --- | --- |
-| `proven` | the pass has a theorem, the input passes `check` and the theorem's fragment test (`copyFrag`/`emptyFragB`, `deadFragB`, `cseFrag`, `nilFrag`, `daeFrag`, `dseFrag`), and the output passes `check` | yes |
+| `proven` | the pass has a theorem, the input passes `check` and the theorem's fragment test (`copyFrag`/`emptyFragB`, `deadFragB`, `cseFrag`, `nilFrag`, `expandCallsFrag`, `daeFrag`, `dseFrag`), and the output passes `check` | yes |
 | `identity` | same function, and same tables or tables the function cannot tell apart (`tabsAgree`) | yes |
 | `skipped` | an optional pass with a theorem whose input fails `check` or the fragment test, or whose output fails `check` | no (the input is kept) |
 | `unverified` | a stock port that changed the function, or a required pass in one of the `skipped` situations | yes |
 
-The pass theorems conclude `Refines`, `RefinesUnder Env.Mono` or `RefinesFrom (FrameSafe ∧
-InitAvoids)`. All three imply `RefinesFrom VPre` with `VPre env args mem := env.Mono ∧
-env.FrameSafe ∧ InitAvoids env args mem` (`GoFV/Proof/Pass/Pipeline.lean`), which composes.
+The pass theorems conclude `Refines`, `RefinesUnder Env.Mono`, `RefinesFrom (FrameSafe ∧
+InitAvoids)`, `RefinesFrom (RwPre tabs f)` or `RefinesFrom WbPre`. All of them imply `RefinesFrom (VPre k)` with `VPre k env args mem := env.Mono ∧
+env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧ WbPre env args mem`
+(`k` the input's dictionary parameters; `GoFV/Proof/Pass/Pipeline.lean`), which composes.
 `stockPasses_sound` checks each theorem against its table entry.
 `verifiedPipeline_refines`: a result without an `unverified` run refines the input under
 `VPre`. `verifiedPipeline_witness` (`GoFV/Proof/Witness/Pipeline.lean`) runs the whole table on

@@ -311,4 +311,144 @@ def rng : Nat → Width → ID → Rng
     let r := (r.norm n)
     (A.facts.foldl (factExcl D tabs R w x) r).norm n
 
+/-! ## Compiled `rng`: one evaluation per level and value
+
+`rng` recomputes the range of a value once per path through the facts and arguments that reach
+it, which grows as (facts about a value) ^ depth: a function with many bounds checks on the same
+index spent seconds per decided branch. `rngFast` evaluates each level once per value: it
+collects the keys each level needs from the top down (`rngDeps`, deduplicated) and evaluates the
+levels from the bottom up into tables (`rngTabs`), each level by `rngStep` (`rng`'s body) from
+the table below. A key missing from a table falls back to `rng`, so the tables only decide the
+cost; `rng_eq_rngFast` (`@[csimp]`) makes the compiled code use `rngFast`, proofs keep `rng`. -/
+
+/-- `rng`'s body: the range at width `w` of `x` from the ranges `R` one level down. -/
+def rngStep (R : Width → ID → Rng) (w : Width) (x : ID) : Rng :=
+  match projOf D tabs x with
+  | some y => R w y
+  | none =>
+  let n := w.bits
+  let base := match D x with
+    | some v =>
+      if termOp v.op && intAt tabs v w then
+        match rTab.lookup v.op with
+        | some c => rOpRng R w c v.auxInt v.args
+        | none => Rng.top n
+      else Rng.top n
+    | none => Rng.top n
+  let r := A.inv.foldl (fun r (y, w', ry) => if y == x && w' == w then r.meet ry else r) base
+  let r := A.facts.foldl (fun r fact => r.meet (factRng D tabs R w x fact)) r
+  let r := (r.norm n)
+  (A.facts.foldl (factExcl D tabs R w x) r).norm n
+
+theorem rng_succ (k : Nat) (w : Width) (x : ID) :
+    rng D tabs A (k + 1) w x = rngStep D tabs A (rng D tabs A k) w x := rfl
+
+/-- The keys `rngStep _ w x` reads one level down (`rOpRng`'s arguments, the other side of a
+fact on `x`). -/
+def rOpDeps (w : Width) (c : ROp) (args : Array ID) : List (Width × ID) :=
+  let a0 := args[0]?.getD 0
+  let a1 := args[1]?.getD 0
+  match c with
+  | .zext a b | .sext a b => if b == w && a.bits ≤ b.bits then [(a, a0)] else []
+  | .and w' | .modu w' | .add w' | .sub w' => if w' == w then [(w, a0), (w, a1)] else []
+  | _ => []
+
+def rngDeps (w : Width) (x : ID) : List (Width × ID) :=
+  match projOf D tabs x with
+  | some y => [(w, y)]
+  | none =>
+    let base := match D x with
+      | some v =>
+        if termOp v.op && intAt tabs v w then
+          match rTab.lookup v.op with
+          | some c => rOpDeps w c v.args
+          | none => []
+        else []
+      | none => []
+    base ++ A.facts.filterMap fun fact => match relOf D tabs fact with
+      | some (a, b, w', _) =>
+        if w' != w then none else if a == x then some (w, b) else if b == x then some (w, a)
+        else none
+      | none => none
+
+/-- The hash of a key. -/
+def keyHash (k : Width × ID) : UInt64 := mixHash (hash k.1.bits) (hash k.2)
+
+local instance : Hashable (Width × ID) := ⟨keyHash⟩
+
+/-- The keys each level of `rng … fuel w x` reads: index `j` (`1 ≤ j ≤ fuel`) holds the keys of
+level `j`, without duplicates. -/
+def rngDemand (fuel : Nat) (w : Width) (x : ID) : Array (List (Width × ID)) := Id.run do
+  let mut out : Array (List (Width × ID)) := Array.replicate (fuel + 1) []
+  let mut cur : List (Width × ID) := [(w, x)]
+  for i in [0:fuel] do
+    out := out.set! (fuel - i) cur
+    let mut seen : Std.HashSet (Width × ID) := {}
+    let mut nxt : List (Width × ID) := []
+    for (w', y) in cur do
+      for d in rngDeps D tabs A w' y do
+        if !seen.contains d then
+          seen := seen.insert d
+          nxt := d :: nxt
+    cur := nxt
+  return out
+
+/-- Level `j` from its table `T` (`rng` for a missing key). -/
+def rngLook (T : Std.HashMap (Width × ID) Rng) (j : Nat) (w : Width) (x : ID) : Rng :=
+  match T[(w, x)]? with
+  | some r => r
+  | none => rng D tabs A j w x
+
+/-- The table of level `j`: `rngStep` on the keys `dem[j]` from level `j - 1`. -/
+def rngTabs (dem : Array (List (Width × ID))) : Nat → Std.HashMap (Width × ID) Rng
+  | 0 => {}
+  | j + 1 =>
+    let T := rngTabs dem j
+    (dem[j + 1]?.getD []).foldl
+      (fun M (k : Width × ID) => M.insert k (rngStep D tabs A (rngLook D tabs A T j) k.1 k.2)) {}
+
+/-- `rng`, each level evaluated once per key. -/
+def rngFast : Nat → Width → ID → Rng
+  | 0, w, _ => Rng.top w.bits
+  | k + 1, w, x => rngStep D tabs A (rngLook D tabs A (rngTabs D tabs A (rngDemand D tabs A (k + 1) w x) k) k) w x
+
+private theorem look_insertFold {j : Nat} {R : Width → ID → Rng}
+    (hR : ∀ w x, R w x = rng D tabs A j w x) :
+    ∀ (ks : List (Width × ID)) (M : Std.HashMap (Width × ID) Rng),
+      (∀ (k : Width × ID) r, M[k]? = some r → r = rng D tabs A (j + 1) k.1 k.2) →
+      ∀ (k : Width × ID) r,
+        (ks.foldl (fun M (k : Width × ID) => M.insert k (rngStep D tabs A R k.1 k.2)) M)[k]? =
+          some r → r = rng D tabs A (j + 1) k.1 k.2
+  | [], _, hM => hM
+  | k0 :: ks, M, hM => by
+    refine look_insertFold hR ks _ fun k r h => ?_
+    rw [Std.HashMap.getElem?_insert] at h
+    split at h
+    · rename_i hk
+      have : k0 = k := by simpa using hk
+      subst this
+      cases h
+      rw [rng_succ]
+      exact congrArg (fun R => rngStep D tabs A R k0.1 k0.2) (funext fun w => funext (hR w))
+    · exact hM k r h
+
+theorem rngLook_rngTabs (dem : Array (List (Width × ID))) :
+    ∀ j w x, rngLook D tabs A (rngTabs D tabs A dem j) j w x = rng D tabs A j w x
+  | 0, w, x => by simp [rngLook, rngTabs]
+  | j + 1, w, x => by
+    unfold rngLook
+    split
+    · rename_i r h
+      exact look_insertFold D tabs A (rngLook_rngTabs dem j) _ {} (by simp) (w, x) r h
+    · rfl
+
+@[csimp] theorem rng_eq_rngFast : @rng = @rngFast := by
+  funext D tabs A k w x
+  cases k with
+  | zero => rfl
+  | succ k =>
+    rw [rng_succ, rngFast]
+    exact congrArg (fun R => rngStep D tabs A R w x)
+      (funext fun w => funext fun x => (rngLook_rngTabs D tabs A _ k w x).symm)
+
 end GoFV.Opt.ProveCheck
