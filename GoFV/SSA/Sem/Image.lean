@@ -9,7 +9,8 @@ The initial contents of the global allocations a function can reach, built from 
 export file (every section's definitions), so every section of one function runs against the
 same image:
 
-- `SRODATA` symbols: their exported bytes, read-only, `R_ADDR`/`R_WEAKADDR` relocations as
+- `SRODATA` symbols: their exported bytes (an empty `lsym.P` without type or itab information:
+  zero bytes, `rodataBytes?`), read-only, `R_ADDR`/`R_WEAKADDR` relocations as
   pointer fragments to the target symbol (other relocation kinds: poison bytes);
 - string data symbols (`go:string."…"`) that are only named (relocation targets, the data
   symbol of a `str` aux): the string's bytes, read-only;
@@ -91,6 +92,15 @@ def rodataAlloc (data : ByteArray) (size : Int) (relocs : Array Reloc) : Alloc :
     else putBytes bs off (Array.replicate r.siz.toNat .poison)) bytes
   { data := bytes, writable := false }
 
+/-- The exported bytes of an `SRODATA` symbol: `lsym.P`; an empty `P` (exported as `-`) of a
+symbol without type or itab information is no bytes, i.e. `size` zero bytes (the `..stmp_N`
+of zero composite literals; type descriptors and itabs are filled after the export). -/
+def rodataBytes? (data : Option ByteArray) (ti itab : Option TypeRef) : Option ByteArray :=
+  match data, ti, itab with
+  | some d, _, _ => some d
+  | none, none, none => some .empty
+  | none, _, _ => none
+
 /-- The header of the type descriptor of `t` (56 bytes, `internal/abi.Type`). -/
 def typeDescAlloc (tabs : Tables) (t : TypeRef) (rt : Option RType) : Alloc :=
   let size := (rt.bind (·.size)).orElse fun _ => (tabs.type? t).bind (·.size)
@@ -113,8 +123,8 @@ def globalImage (e : ExportFile) : List (String × Alloc) := Id.run do
     tabs := tabs.addAll s.defs
     for d in s.defs do
       match d with
-      | .aux _ { kind := .sym name _ kind size _ ti _ data relocs rt, .. } =>
-        match kind, data, ti with
+      | .aux _ { kind := .sym name _ kind size _ ti itab data relocs rt, .. } =>
+        match kind, rodataBytes? data ti itab, ti with
         | "SRODATA", some data, _ =>
           img := img.insert name.toStringLossy (rodataAlloc data size relocs)
           for r in relocs do named := named.push r.target.toStringLossy
