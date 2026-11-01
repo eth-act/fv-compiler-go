@@ -48,6 +48,21 @@ theorem val_asInt_eq_some {v : Val} {w : Width} {x : BitVec w.bits} :
 theorem val_asBool_eq_some {v : Val} {b : Bool} : v.asBool = some b ↔ v = .bool b := by
   cases v <;> simp [Val.asBool] <;> intro h <;> cases h
 
+/-- A rotation amount is an integer of some width or no amount. -/
+theorem val_asNat_cases (v : Val) : v.asNat = none ∨ ∃ w x, v = .int w x := by
+  cases v with
+  | int w x => exact Or.inr ⟨w, x, rfl⟩
+  | _ => exact Or.inl rfl
+
+/-- A value of shape `Ty.int w` that is not a `w`-bit integer is `poison`. -/
+theorem val_poison_of_asInt_none {v : Val} {w : Width} (h : v.asInt w = none)
+    (ht : v.hasTy (.int w) = true) : v = .poison := by
+  cases v with
+  | poison => rfl
+  | int w' x =>
+    simp only [Val.hasTy, beq_iff_eq] at ht
+    subst ht; simp at h
+  | _ => simp [Val.hasTy] at ht
 
 /-- An integer of width `w` read back at `w` through a retype to `t` fails: `t` is an integer
 shape of another width (narrower: the low bits; wider: `poison`) or, for `w = 64`, a pointer
@@ -342,6 +357,275 @@ theorem rot_xor_sub' {w v : Nat} (x : BitVec w) (y : BitVec v) (hw : w < 2 ^ v) 
     x >>> y.toNat ^^^ x <<< (BitVec.ofNat v w - y).toNat =
       x.rotateLeft (BitVec.ofNat v w - y).toNat := by
   rw [toNat_ofNat_sub y hw h]; exact rot_xor' x _ _ (by omega) (by omega)
+
+/-! ## Rotation amounts (`rule_rotamt`)
+
+`RotateLeft` reads its amount as a natural number of any integer width (`Val.asNat`), so the
+amount of a pattern is a retyped node value; a rotation depends only on its amount modulo the
+width, and every integer width is a multiple of every rotation width. The rotate-amount rules
+(`x (And y c)`, `x (Add y c)`, `(Sub c y)`, nested rotations, …) then hold modulo the width:
+`rule_rotamt` turns the amounts and the condition into `Nat`/`Int` arithmetic with remainders by
+constants and adds the facts `omega` needs about the remaining atoms (`&&&`, `Int.tmod`). -/
+
+/-- Whether a `w`-bit integer retyped to `t` is no longer an integer amount: a wider integer
+shape (`poison`) or a pointer shape (`Val.retype`). -/
+def retypeNone (t : Ty) (w : Width) : Bool :=
+  match t with
+  | .int w' => decide (w.bits < w'.bits)
+  | .ptr _ => w == .w64
+  | _ => false
+
+@[rule_sem] theorem retypeNone_int (w w' : Width) :
+    retypeNone (.int w') w = decide (w.bits < w'.bits) := rfl
+@[rule_sem] theorem retypeNone_bool (w : Width) : retypeNone .bool w = false := rfl
+@[rule_sem] theorem retypeNone_ptr (e : Option Nat) (w : Width) :
+    retypeNone (.ptr e) w = (w == .w64) := rfl
+
+/-- A retype that keeps a `w`-bit integer an integer of width `w` keeps it an amount. -/
+@[rule_sem] theorem retypeNone_of_tyOtherInt {t : Ty} {w : Width} (h : tyOtherInt t w = false) :
+    retypeNone t w = false := by
+  cases t with
+  | int w' =>
+    simp only [tyOtherInt, bne_eq_false_iff_eq] at h
+    subst h; simp [retypeNone]
+  | ptr e => simp only [tyOtherInt] at h; simp [retypeNone, h]
+  | _ => rfl
+
+theorem rotateLeft_mod_pow {W : Width} (y : BitVec W.bits) (n b : Nat) (hb : 8 ≤ b) :
+    y.rotateLeft (n % 2 ^ b) = y.rotateLeft n := by
+  apply rotateLeft_congr
+  have h8 : W.bits ∣ 2 ^ 8 := by cases W <;> decide
+  exact Nat.mod_mod_of_dvd n (Nat.dvd_trans h8 (Nat.pow_dvd_pow 2 hb))
+
+/-- A rotation by a retyped integer amount: `poison` where the retype is not an integer,
+else the rotation by the integer (a narrower retype keeps the low bits, which a rotation of
+at most 64 bits does not read beyond). -/
+@[rule_sem] theorem rotate_retype_amt (t : Ty) (w W : Width) (x : BitVec w.bits)
+    (y : BitVec W.bits) :
+    ((Val.int w x).retype t).asNat.elim Val.poison (fun n => Val.int W (y.rotateLeft n)) =
+      if retypeNone t w then Val.poison else Val.int W (y.rotateLeft x.toNat) := by
+  cases t with
+  | int w' =>
+    simp only [Val.retype, retypeNone]
+    by_cases h : w'.bits ≤ w.bits
+    · have h' : ¬ w.bits < w'.bits := by omega
+      simp only [h, h', ite_true, decide_false, Bool.false_eq_true, ite_false, Val.asNat,
+        Option.elim_some, BitVec.toNat_setWidth]
+      rw [rotateLeft_mod_pow y x.toNat w'.bits (by cases w' <;> decide)]
+    · have h' : w.bits < w'.bits := by omega
+      simp [h, h', Val.asNat]
+  | ptr e =>
+    cases w <;> simp [Val.retype, retypeNone, Val.asNat]
+  | _ => simp [Val.retype, retypeNone, Val.asNat]
+
+theorem rotateLeft_rotateLeft {w : Nat} (x : BitVec w) (a b : Nat) :
+    (x.rotateLeft a).rotateLeft b = x.rotateLeft (a + b) := by
+  rcases Nat.eq_zero_or_pos w with rfl | hw
+  · exact Subsingleton.elim _ _
+  have ha := Nat.mod_lt a hw
+  have hb := Nat.mod_lt b hw
+  have hab : (a % w + b % w < w ∧ (a + b) % w = a % w + b % w) ∨
+      (w ≤ a % w + b % w ∧ (a + b) % w = a % w + b % w - w) := by
+    rw [Nat.add_mod]
+    rcases Nat.lt_or_ge (a % w + b % w) w with h | h
+    · left; exact ⟨h, Nat.mod_eq_of_lt h⟩
+    · right; exact ⟨h, by rw [Nat.mod_eq_sub_mod h, Nat.mod_eq_of_lt (by omega)]⟩
+  have hc := Nat.mod_lt (a + b) hw
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_rotateLeft]
+  generalize a % w = a' at *
+  generalize b % w = b' at *
+  generalize (a + b) % w = c at *
+  by_cases h1 : i < b' <;> by_cases h2 : i < c <;> by_cases h3 : w - b' + i < a' <;>
+    by_cases h4 : i - b' < a' <;>
+    simp (disch := omega) only [h1, h2, h3, h4, ite_true, ite_false, decide_eq_true,
+      Bool.true_and] <;>
+    congr 1 <;> omega
+
+@[rule_amt] theorem wrapInt8_omega (x : Int) : wrapInt 8 true x = (x + 128) % 256 - 128 := by
+  rw [wrapInt_true, Int.bmod_def]; split <;> omega
+@[rule_amt] theorem wrapInt16_omega (x : Int) :
+    wrapInt 16 true x = (x + 32768) % 65536 - 32768 := by
+  rw [wrapInt_true, Int.bmod_def]; split <;> omega
+@[rule_amt] theorem wrapInt32_omega (x : Int) :
+    wrapInt 32 true x = (x + 2147483648) % 4294967296 - 2147483648 := by
+  rw [wrapInt_true, Int.bmod_def]; split <;> omega
+@[rule_amt] theorem wrapInt64_omega (x : Int) :
+    wrapInt 64 true x = (x + 9223372036854775808) % 18446744073709551616 - 9223372036854775808 := by
+  rw [wrapInt_true, Int.bmod_def]; split <;> omega
+
+@[rule_amt] theorem wrapInt_false_omega (w : Nat) (x : Int) : wrapInt w false x = x % 2 ^ w := rfl
+
+@[rule_amt] theorem pat64_omega (a : Int) : pat64 a = (a % 2 ^ 64).toNat := rfl
+
+/-! What `omega` needs about `a &&& b` (`rule_omega_facts`): its bounds, and its remainder by
+`m = 2 ^ k` when one side's low `k` bits are all ones or all zeros. -/
+
+theorem nat_and_le (a b : Nat) : a &&& b ≤ a ∧ a &&& b ≤ b := ⟨Nat.and_le_left, Nat.and_le_right⟩
+
+theorem nat_and_ones_r (a b m k : Nat) (hm : m = 2 ^ k) (h : b % m = m - 1) :
+    (a &&& b) % m = a % m := by
+  subst hm; rw [Nat.and_mod_two_pow, h, Nat.and_two_pow_sub_one_eq_mod, Nat.mod_mod]
+
+theorem nat_and_ones_l (a b m k : Nat) (hm : m = 2 ^ k) (h : a % m = m - 1) :
+    (a &&& b) % m = b % m := by
+  rw [Nat.and_comm]; exact nat_and_ones_r b a m k hm h
+
+theorem nat_and_zero_r (a b m k : Nat) (hm : m = 2 ^ k) (h : b % m = 0) :
+    (a &&& b) % m = 0 := by
+  subst hm; rw [Nat.and_mod_two_pow, h, Nat.and_zero]
+
+theorem nat_and_zero_l (a b m k : Nat) (hm : m = 2 ^ k) (h : a % m = 0) :
+    (a &&& b) % m = 0 := by
+  rw [Nat.and_comm]; exact nat_and_zero_r b a m k hm h
+
+/-- `Int.tmod` (Go's `%`) by its sign cases, for `omega`. -/
+theorem tmod_facts (a b : Int) :
+    (0 ≤ a → a.tmod b = a % b) ∧ (a < 0 → a.tmod b = -((-a) % b)) := by
+  refine ⟨Int.tmod_eq_emod_of_nonneg, fun h => ?_⟩
+  rw [← Int.tmod_eq_emod_of_nonneg (by omega), Int.neg_tmod, Int.neg_neg]
+
+attribute [rule_amt] BitVec.toNat_and BitVec.toNat_or BitVec.toNat_add BitVec.toNat_sub
+  BitVec.toNat_neg BitVec.toNat_ofInt BitVec.toNat_ofNat BitVec.toNat_setWidth Width.bits
+  GoFV.Rules.bitwise GoFV.Rules.goRem GoFV.Rules.goQuo Option.getD_some Nat.reducePow
+  Int.reducePow Int.reduceMod Int.reduceToNat Int.reduceNeg Nat.reduceMod Nat.reduceAnd
+  Int.natCast_emod Int.natCast_pow
+
+theorem rotateLeft_eq_self {w : Nat} (x : BitVec w) {a : Nat} (h : a % w = 0) :
+    x.rotateLeft a = x := by
+  rw [rotateLeft_congr x (b := 0) (by simpa using h)]
+  simp [BitVec.rotateLeft_def, BitVec.shiftLeft_zero, BitVec.ushiftRight_eq_zero]
+
+theorem rotateLeft_rotateLeft_congr {w : Nat} (x : BitVec w) {a b c : Nat}
+    (h : (a + b) % w = c % w) : (x.rotateLeft a).rotateLeft b = x.rotateLeft c := by
+  rw [rotateLeft_rotateLeft]; exact rotateLeft_congr x h
+
+/-! ## Constant shifts (`rule_shamt`)
+
+Go's `<<`/`>>` on auxints (`goShl`, `goShr`) as `BitVec` shifts: a constant-folded shift is the
+shift of the constant. -/
+
+@[rule_arith] theorem ofInt_goShl {w k : Nat} (h : w ≤ k) (x : Int) (s : Nat) :
+    BitVec.ofInt w (goShl x s k) = BitVec.ofInt w x <<< s := by
+  unfold goShl
+  split
+  · rw [BitVec.shiftLeft_eq_zero (by omega)]; rfl
+  · rw [bv_shl_nat, BitVec.ofInt_mul]
+    rw [show ((2 : Int) ^ s) = ((2 ^ s : Nat) : Int) by simp, BitVec.ofInt_natCast]; rfl
+
+@[rule_arith] theorem ofInt_goShr_unsigned (w : Nat) (x : Int) (s : Nat) :
+    BitVec.ofInt w (goShr (wrapInt w false x) s) = BitVec.ofInt w x >>> s := by
+  unfold goShr
+  rw [wrapInt_false, Int.shiftRight_eq_div_pow]
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofInt, BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
+  have hpw : (2 : Int) ^ w ≠ 0 := Int.ne_of_gt (Int.pow_pos (by decide))
+  obtain ⟨n, hn⟩ : ∃ n : Nat, x.emod (2 ^ w) = n :=
+    ⟨_, (Int.toNat_of_nonneg (Int.emod_nonneg x hpw)).symm⟩
+  have hlt : n < 2 ^ w := by
+    have := Int.emod_lt_of_pos x (show (0 : Int) < 2 ^ w from Int.pow_pos (by decide))
+    rw [show x % 2 ^ w = x.emod (2 ^ w) from rfl, hn] at this; exact_mod_cast this
+  have hx : x % ((2 ^ w : Nat) : Int) = n := by rw [← hn]; simp; rfl
+  rw [hn, hx, ← Int.natCast_ediv,
+    ← Int.natCast_emod, Int.toNat_natCast, Int.toNat_natCast,
+    Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.div_le_self _ _) hlt)]
+
+theorem ofInt_goShr_nonneg {w : Nat} (x : Int) (s : Nat) (h0 : 0 ≤ x) (h1 : x < 2 ^ w) :
+    BitVec.ofInt w (goShr x s) = BitVec.ofInt w x >>> s := by
+  have : wrapInt w false x = x := by rw [wrapInt_false]; exact Int.emod_eq_of_lt h0 h1
+  rw [← ofInt_goShr_unsigned, this]
+
+theorem ofInt_goShr_signed {w : Nat} (x : Int) (s : Nat) (h1 : -(((2 ^ w : Nat) : Int) / 2) ≤ x)
+    (h2 : x < (((2 ^ w : Nat) : Int) + 1) / 2) :
+    BitVec.ofInt w (goShr x s) = (BitVec.ofInt w x).sshiftRight s := by
+  unfold goShr
+  apply BitVec.eq_of_toInt_eq
+  rw [BitVec.toInt_sshiftRight, BitVec.toInt_ofInt, BitVec.toInt_ofInt,
+    Int.bmod_eq_of_le h1 h2]
+  apply Int.bmod_eq_of_le
+  · rcases Int.le_total x 0 with hx | hx
+    · have := Int.le_shiftRight_of_nonpos (s := s) hx; omega
+    · have := Int.le_shiftRight_of_nonneg (s := s) hx; omega
+  · rcases Int.le_total x 0 with hx | hx
+    · have := Int.shiftRight_le_of_nonpos (s := s) hx; omega
+    · have := Int.shiftRight_le_of_nonneg (s := s) hx; omega
+
+theorem shl_shl {w : Nat} (x : BitVec w) (a b c : Nat) (h : a + b = c) :
+    x <<< a <<< b = x <<< c := by rw [← h, BitVec.shiftLeft_add]
+
+theorem ushr_ushr {w : Nat} (x : BitVec w) (a b c : Nat) (h : a + b = c) :
+    x >>> a >>> b = x >>> c := by rw [← h, BitVec.shiftRight_add]
+
+theorem sshr_sshr {w : Nat} (x : BitVec w) (a b c : Nat) (h : a + b = c) :
+    (x.sshiftRight a).sshiftRight b = x.sshiftRight c := by rw [← h, BitVec.sshiftRight_add]
+
+theorem ushr_shl {w : Nat} (x : BitVec w) (n : Nat) : x >>> n <<< n = x &&& BitVec.allOnes w <<< n := by
+  ext i hi
+  by_cases h : i < n
+  · simp [h]
+  · simp [h, Nat.add_sub_of_le (Nat.le_of_not_lt h), hi]
+theorem sshr_shl {w : Nat} (x : BitVec w) (n : Nat) : (x.sshiftRight n) <<< n = x &&& BitVec.allOnes w <<< n := by
+  ext i hi
+  by_cases h : i < n
+  · simp [h]
+  · simp only [BitVec.getElem_shiftLeft, BitVec.getElem_and, h, BitVec.getElem_allOnes,
+      decide_false, Bool.not_false, Bool.true_and, Bool.and_true]
+    rw [BitVec.getElem_sshiftRight]
+    simp [show n + (i - n) = i by omega, hi]
+theorem shl_ushr {w : Nat} (x : BitVec w) (n : Nat) : x <<< n >>> n = x &&& BitVec.allOnes w >>> n := by
+  ext i hi
+  by_cases h : n + i < w
+  · simp [h]
+  · simp [h]
+
+theorem shl_ushr_shl {w : Nat} (x : BitVec w) (a b c d : Nat) (h1 : b ≤ a) (h2 : b ≤ c)
+    (h : a - b + c = d) : x <<< a >>> b <<< c = x <<< d := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight]
+  by_cases hc : i < c <;> by_cases hd : i < d <;> by_cases ha : b + (i - c) < a <;>
+    by_cases hw : b + (i - c) < w <;> simp [hc, hd, ha, hi, hw] <;>
+    first | omega | (congr 1; omega) | skip
+theorem ushr_shl_ushr {w : Nat} (x : BitVec w) (a b c d : Nat) (h1 : b ≤ a) (h2 : b ≤ c)
+    (h : a - b + c = d) : x >>> a <<< b >>> c = x >>> d := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight]
+  by_cases hw : c + i < w <;> by_cases hb : c + i < b <;> simp [hw, hb] <;>
+    first | omega | (congr 1; omega) |
+      exact BitVec.getLsbD_of_ge x _ (by omega)
+
+@[rule_amt] theorem int_emod_eq (a b : Int) : a.emod b = a % b := rfl
+
+attribute [rule_amt] Bool.not_eq_eq_eq_not Bool.not_true decide_eq_false_iff_not decide_eq_true_eq
+  Bool.not_false Bool.and_eq_true Bool.or_eq_true
+
+/-! ## Comparisons (`rule_cmp`)
+
+A comparison or equation of `BitVec`s as one of their `toNat`s; a signed value's `toInt` as
+its `toNat` minus `2 ^ w` above the sign bit (the `if` is split before `omega`). -/
+
+theorem toInt_omega {w : Nat} (x : BitVec w) :
+    x.toInt = if 2 * x.toNat < 2 ^ w then (x.toNat : Int) else (x.toNat : Int) - 2 ^ w :=
+  BitVec.toInt_eq_toNat_cond x
+
+/-- What `omega` needs about a right shift (`rule_omega_facts`). -/
+theorem ushr_toNat_facts {w : Nat} (x : BitVec w) (n : Nat) :
+    (x >>> n).toNat ≤ x.toNat ∧ (0 < n → 2 * (x >>> n).toNat ≤ x.toNat) := by
+  rw [BitVec.toNat_ushiftRight, Nat.shiftRight_eq_div_pow]
+  refine ⟨Nat.div_le_self _ _, fun h => ?_⟩
+  have h2 : 2 ≤ 2 ^ n := by
+    calc 2 = 2 ^ 1 := rfl
+      _ ≤ 2 ^ n := Nat.pow_le_pow_right (by decide) h
+  calc 2 * (x.toNat / 2 ^ n) ≤ 2 ^ n * (x.toNat / 2 ^ n) := Nat.mul_le_mul_right _ h2
+    _ ≤ x.toNat := Nat.mul_div_le x.toNat (2 ^ n)
+
+attribute [rule_cmp] toInt_omega BitVec.ult_iff_toNat_lt BitVec.ule_iff_toNat_le
+  BitVec.slt_iff_toInt_lt BitVec.sle_iff_toInt_le beq_iff_eq bne_iff_ne ne_eq BitVec.toNat_eq
+  decide_eq_true_eq Bool.not_eq_true' Bool.true_eq_false Bool.false_eq_true iff_true iff_false
+  true_iff false_iff
+  Nat.reduceMul Nat.reduceSub Nat.reduceLT ite_true ite_false
 
 /-! ## `BitVec` shifts by `BitVec` amounts (`rule_bv`: the `bv_decide` fallback of `rule_close`) -/
 

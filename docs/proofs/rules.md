@@ -25,6 +25,10 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   (`auxInt != 0`) agree only under this fact.
 - **Top type**: the top value before `retype` has the shape of `v`'s type (`Val.hasTy`), i.e.
   `v`'s type is not narrower than its op. See "Narrow result types".
+- **Leaf types** (`Pat.typed`): a leaf `x` is bound with its position, so `x.Type` is the
+  instance's type at the leaf, and every leaf value has its type's shape. Without it a rule
+  whose result uses a leaf's type (`(Neg64 <y.Type> y)`, `(Add64 <c.Type> c d)` under
+  `c.Type.Size() == 8`) is unprovable: the leaf could be an 8-bit integer typed `int64`.
 - **Expressions** (conditions, `[auxint]`, `<type>`) are evaluated by `evalE`, a total pure
   evaluator mirroring `GoFV.Rules.Eval.eval` on integers, booleans, op constants, type shapes
   (`typ.<T>`, `types.Types[k]`, `t.Size()` of an integer/boolean shape) and the pure
@@ -48,6 +52,21 @@ the checker facts, that `typ.<T>`/`types.Types[k]` of the export's `Config.Types
 shapes of `typShape`/`typesShape`, and `CommSound` for swapped matches. `Rule.Sound` ignores
 `@b` placement and positions; a copy result's new type is the interpreter's concern
 (`Val.retype` is idempotent, so a copied value is unchanged).
+
+### Assumptions to discharge (#108)
+
+`Rule.Sound` assumes two typing facts the interpreter's proof must establish from a semantic
+invariant of `GoFV.SSA.Sem`, not from the rule:
+
+- **Register typing** (for `Pat.typed`): in every reachable state, every register `v` the
+  match reads as a leaf holds a value of its type's shape,
+  `(regVal v).hasTy (tabs.ty v.Type) = true` (`Val.hasTy`; `poison` has every shape). The
+  instance then sets `e.leaf p := regVal v` and `e.ty p := tabs.ty v.Type`. This is the same
+  register-typing invariant the phi passes need (ProofPhiopt, owned by agent Semantics); it does
+  not hold today for some bool-typed `Phi`/`Load`/`SelectN`/`StructSelect` registers, which
+  Semantics is closing.
+- **Top type** (`hty`): the matched value's op computes a value of its type's shape before
+  `retype`, i.e. no narrow result types (see "Narrow result types").
 
 ## Classification
 
@@ -119,7 +138,7 @@ needs a later phase of the semantics.
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
 | `generic` | Div | 0 | 22 | 0 | 4 | 26 |
-| `generic` | Eq | 40 | 16 | 0 | 2 | 58 |
+| `generic` | Eq | 44 | 12 | 0 | 2 | 58 |
 | `generic` | EqB | 0 | 5 | 0 | 0 | 5 |
 | `generic` | EqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | EqPtr | 0 | 0 | 0 | 20 | 20 |
@@ -130,10 +149,10 @@ needs a later phase of the semantics.
 | `generic` | IsInBounds | 0 | 29 | 0 | 0 | 29 |
 | `generic` | IsNonNil | 0 | 0 | 0 | 6 | 6 |
 | `generic` | IsSliceInBounds | 0 | 7 | 0 | 1 | 8 |
-| `generic` | Leq | 12 | 48 | 0 | 2 | 62 |
-| `generic` | Less | 12 | 48 | 0 | 2 | 62 |
+| `generic` | Leq | 60 | 0 | 0 | 2 | 62 |
+| `generic` | Less | 52 | 8 | 0 | 2 | 62 |
 | `generic` | Load | 0 | 0 | 0 | 35 | 35 |
-| `generic` | Lsh | 20 | 68 | 0 | 0 | 88 |
+| `generic` | Lsh | 65 | 23 | 0 | 0 | 88 |
 | `generic` | MemEq | 0 | 0 | 0 | 11 | 11 |
 | `generic` | Mod | 0 | 29 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
@@ -152,10 +171,10 @@ needs a later phase of the semantics.
 | `generic` | Phi | 0 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
 | `generic` | PtrIndex | 0 | 0 | 0 | 2 | 2 |
-| `generic` | RotateLeft | 0 | 88 | 0 | 0 | 88 |
+| `generic` | RotateLeft | 88 | 0 | 0 | 0 | 88 |
 | `generic` | Round | 0 | 0 | 0 | 2 | 2 |
 | `generic` | RoundToEven | 0 | 0 | 0 | 1 | 1 |
-| `generic` | Rsh | 46 | 94 | 0 | 0 | 140 |
+| `generic` | Rsh | 116 | 24 | 0 | 0 | 140 |
 | `generic` | Select | 0 | 3 | 0 | 0 | 3 |
 | `generic` | SelectN | 0 | 0 | 0 | 15 | 15 |
 | `generic` | SignExt | 0 | 15 | 0 | 0 | 15 |
@@ -176,7 +195,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 0 | 12 | 0 | 0 | 12 |
-| all | | 566 | 817 | 12 | 367 | 1762 |
+| all | | 861 | 522 | 12 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -227,6 +246,21 @@ identity per bit (`ext`, `simp`) after all-ones constants become `BitVec.allOnes
 folds (`GoFV.Rules.bitwise` on 64-bit patterns) are pushed into `BitVec` by `rule_arith`
 (`ofNat_pat64`, `BitVec.ofNat_and`, …).
 
+Amounts and comparisons without `bv_decide` (#69, RuleProofs4): `rule_rotamt` (a rotation by
+two amounts, nested rotations, `x.rotateLeft a = x`: `rotateLeft_congr`,
+`rotateLeft_rotateLeft`, `rotateLeft_eq_self`; a rotation reads its amount at any width modulo
+the width, `rotate_retype_amt`), `rule_shamt` (constant shifts: `ofInt_goShl`/`ofInt_goShr_*`
+folds, `shl_shl`/`ushr_ushr`/`sshr_sshr`, `shl_ushr_shl`/`ushr_shl_ushr`, masks
+`ushr_shl`/`sshr_shl`/`shl_ushr`, shifts by at least the width) and `rule_cmpc` (comparisons
+against constants as `toNat`/`toInt` arithmetic, `toInt_omega`) turn amounts and conditions
+into `Nat`/`Int` arithmetic (`rule_amt`, `rule_cmp`: `wrapInt` as `%`, `pat64`, `toNat_*`) and
+close with `omega`; `rule_omega_facts` adds what `omega` cannot see (`a &&& b` bounds and
+remainders by the goal's power-of-two modulus, `Int.tmod` sign cases, `(x >>> n).toNat`
+bounds). The structural lemmas are applied `with_reducible`: at default transparency a failed
+`apply rotateLeft_eq_self` unfolds `sshiftRight` of a 64-bit vector (heartbeat timeouts).
+`rule_subst` replaces `subst_vars`, whose `whnf` of both sides evaluated conditions such as
+`bitwise int16 (· &&& ·) c 15 = 15` down to `2 ^ 64` (maximum recursion depth).
+
 Match congruence equations (`binDV.match_4.congr_eq_*`, …) are generated once in
 `Tactic.lean`: generated by `simp` in two rule modules they are two public declarations of the
 same name and the modules cannot be imported together (`scripts/rule-proofs.py axioms` imports
@@ -257,14 +291,16 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   constant changed (`(Add16 (Const16 [1]) x) => x`).
 - Per op family, instances of representative proven rules (`inst_r_generic_675`: no
   condition; `inst_r_generic_2185`: a rotate rule whose condition needs a bounded shift and an
-  oracle atom, `canRotate`).
+  oracle atom, `canRotate`; `inst_r_generic_479` RotateLeft, `inst_r_generic_453` Lsh,
+  `inst_r_generic_232` Rsh, `inst_r_generic_716` Less, `inst_r_generic_714` Leq).
 - `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
   an instance of every exported rule at run time (random leaves, auxints from boundary values,
   `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
   mirrors of the hypotheses. `sat` fails if a proven rule has no instance or a
   counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
-  how the findings below were found. Last run: P1 rules SAT 1331, CEX 9 (all `generic.rules:504–516`,
-  "Narrow result types"), NONE 55; all 566 proven rules SAT.
+  how the findings below were found. Last run (with `Pat.typed`: leaves typed by their
+  values' shapes): P1 rules SAT 1332, CEX 9 (all `generic.rules:504–516`, "Narrow result
+  types"), NONE 54; all 861 proven rules SAT.
 
 `Comm.lean` has `sub16_not_comm` (the commutativity obligation is not trivial).
 

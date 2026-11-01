@@ -1,5 +1,9 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values00
+import GoFV.Rules.Generated.Generic.Values04
+import GoFV.Rules.Generated.Generic.Values05
+import GoFV.Rules.Generated.Generic.Values10
+import GoFV.Rules.Generated.Generic.Values11
 
 /-!
 # Non-vacuity of `Rule.Sound` (`docs/proofs/rules.md`, "Non-vacuity")
@@ -29,6 +33,7 @@ def Rule.Inst (r : Rule) (e : PEnv) (or : Oracle) : Prop :=
     e [] r.pat ∧
   condHolds (evalE (r.vars.map (·.ty)) (sigma e r.pat) or e (Pat.den e [] r.pat)) r.cond ∧
   (Pat.raw e r.pat).hasTy (e.ty []) = true ∧
+  Pat.typed e [] r.pat ∧
   Pat.raw e r.pat ≠ .poison
 
 /-- The result value of `r` at an instance. -/
@@ -40,7 +45,7 @@ noncomputable def Rule.res (r : Rule) (e : PEnv) (or : Oracle) : Val :=
 value. -/
 theorem Rule.Sound.refines {r : Rule} (h : Rule.Sound r) {e : PEnv} {or : Oracle}
     (hi : Rule.Inst r e or) : Refines (Pat.raw e r.pat) (Rule.res r e or) :=
-  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1
+  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1
 
 /-- An instance on which the result does not refine the matched value refutes `Rule.Sound`. -/
 theorem Rule.not_sound {r : Rule} {e : PEnv} {or : Oracle} (hi : Rule.Inst r e or)
@@ -71,7 +76,7 @@ noncomputable def Oracle.const (b : Bool) : Oracle where
 
 -- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
 attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Pat.den Pat.dens Pat.raw sigma
-  Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs auxIntOk Field.bindDV condHolds resDen
+  Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Field.bindDV condHolds resDen
   nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map reduceEvalPure
   reduceAuxType evalE evalEs auxIntDV List.lookup toAuxIntD Option.getD List.cons_append
   List.nil_append intBin binDV binE GoFV.Rules.wrapTo reduceIntInfo litDV fieldE indexE convE
@@ -121,9 +126,47 @@ theorem inst_r_generic_675 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_67
 canRotate(config, 32) => (RotateLeft32 x y)` at `x = 5`, `y = 3`, `left` bounded. -/
 theorem inst_r_generic_2185 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_2185
     (PEnv.ofLists [([0, 0], .i32 5), ([1, 0], .i64 3), ([0, 1], .i32 5), ([1, 1, 1], .i64 3)]
-      [([1, 1], .int .w64), ([0, 1, 1], .int .w64)] (.int .w32) [([0], 1), ([0, 1, 1], 32)])
+      [([1, 1], .int .w64), ([0, 1, 1], .int .w64), ([1, 0], .int .w64), ([1, 1, 1], .int .w64)]
+      (.int .w32) [([0], 1), ([0, 1, 1], 32)])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_2185]
+  rule_eval
+
+/-! ## Instances of representative rules of the `RotateLeft`, `Lsh`, `Rsh`, `Less`, `Leq` families -/
+
+/-- `generic.rules:479`: `(RotateLeft16 x (Const16 [c])) && c%16 == 0 => x` at `x = 5`,
+`c = 32`. -/
+theorem inst_r_generic_479 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_479
+    (PEnv.ofLists [([0], .i16 5)] [] (.int .w16) [([1], 32)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_479]
+  rule_eval
+  simp [GoFV.Rules.goRem]
+
+/-- `generic.rules:453`: `(Lsh16x8 x (Const8 [c])) => (Lsh16x64 x (Const64 <…> [int64(uint8(c))]))`
+at `x = 3`, `c = 2`. -/
+theorem inst_r_generic_453 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_453
+    (PEnv.ofLists [([0], .i16 3)] [([1], .int .w8)] (.int .w16) [([1], 2)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_453]
+  rule_eval
+
+/-- `generic.rules:232`: `(Rsh16x64 (Const16 [c]) (Const64 [d])) => (Const16 [c >> uint64(d)])`
+at `c = -8`, `d = 1`. -/
+theorem inst_r_generic_232 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_232
+    (PEnv.ofLists [] [([1], .int .w64)] (.int .w16) [([0], -8), ([1], 1)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_232]
+  rule_eval
+
+/-- `generic.rules:716`: `(Less16U x (Const16 <t> [1])) => (Eq16 x (Const16 <t> [0]))` at
+`x = 0`. -/
+theorem inst_r_generic_716 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_716
+    (PEnv.ofLists [([0], .i16 0)] [([], .bool)] (.int .w16) [([1], 1)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_716]
+  rule_eval
+
+/-- `generic.rules:714`: `(Leq16U x c:(Const16 [0])) => (Eq16 x c)` at `x = 7`. -/
+theorem inst_r_generic_714 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_714
+    (PEnv.ofLists [([0], .i16 7)] [([], .bool)] (.int .w16) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_714]
   rule_eval
 
 end GoFV.Proof.Rules

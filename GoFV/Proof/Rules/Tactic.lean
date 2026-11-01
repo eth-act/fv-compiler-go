@@ -75,7 +75,8 @@ attribute [rule_norm_s] or_true true_or or_false false_or and_true true_and and_
 attribute [rule_unfold_ds] GoFV.Proof.Rules.Pat.den GoFV.Proof.Rules.Pat.dens
   GoFV.Proof.Rules.Pat.raw GoFV.Proof.Rules.sigma GoFV.Proof.Rules.Pat.binds
   GoFV.Proof.Rules.Pat.bindss GoFV.Proof.Rules.Pat.cons GoFV.Proof.Rules.Pat.conss
-  GoFV.Proof.Rules.Pat.wf GoFV.Proof.Rules.Pat.wfs GoFV.Proof.Rules.auxIntOk
+  GoFV.Proof.Rules.Pat.wf GoFV.Proof.Rules.Pat.wfs GoFV.Proof.Rules.Pat.typed
+  GoFV.Proof.Rules.Pat.typeds GoFV.Proof.Rules.auxIntOk
   GoFV.Proof.Rules.Field.bindDV GoFV.Proof.Rules.condHolds GoFV.Proof.Rules.resDen
   GoFV.Proof.Rules.nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map
   GoFV.Proof.Rules.reduceEvalPure GoFV.Proof.Rules.reduceAuxType GoFV.Proof.Rules.evalE
@@ -114,7 +115,7 @@ macro "rule_norm" : tactic => `(tactic|
 
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hwf` (checker facts), `hc` (pattern checks), `hcond` (condition),
-`hty` (top type). -/
+`hty` (top type), `hlt` (leaf types). -/
 elab "rule_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
@@ -127,22 +128,28 @@ elab "rule_unfold" : tactic => do
   let hc := mkIdent `hc
   let hcond := mkIdent `hcond
   let hty := mkIdent `hty
+  let hlt := mkIdent `hlt
   evalTactic (← `(tactic| (
     refine ⟨rfl, ?_⟩
     intro $e:ident $or:ident
     dsimp only [$rid:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
-    intro $hwf:ident $hc:ident $hcond:ident $hty:ident)))
+    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident)))
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
-(`PEnv.leaf e p`), `tyOtherInt t w`, or the condition of an `if`. -/
+(`PEnv.leaf e p`), `tyOtherInt t w`, the condition of an `if`, or `Val.asInt w l` for a leaf
+typed `Ty.int w` (`Pat.typed`). -/
 def splitCandidate? (e : Lean.Expr) : Option Lean.Expr :=
-  e.find? fun t =>
+  (e.find? fun t =>
     (t.isAppOfArity ``GoFV.SSA.Sem.Val.asInt 2 && (t.getArg! 1).isAppOfArity ``PEnv.leaf 2) ||
     (t.isAppOfArity ``GoFV.SSA.Sem.Val.asBool 1 && (t.getArg! 0).isAppOfArity ``PEnv.leaf 2) ||
     (t.isAppOfArity ``GoFV.SSA.Sem.Val.asNat 1 && (t.getArg! 0).isAppOfArity ``PEnv.leaf 2) ||
     (t.isAppOfArity ``tyOtherInt 2 && !(t.getArg! 0).hasLooseBVars) ||
-    (t.isAppOfArity ``ite 5 && !(t.getArg! 1).hasLooseBVars)
+    (t.isAppOfArity ``ite 5 && !(t.getArg! 1).hasLooseBVars)) <|>
+  ((e.find? fun t => t.isAppOfArity ``GoFV.SSA.Sem.Val.hasTy 2 &&
+      (t.getArg! 0).isAppOfArity ``PEnv.leaf 2 &&
+      (t.getArg! 1).isAppOfArity ``GoFV.SSA.Sem.Ty.int 1 && !t.hasLooseBVars).map fun t =>
+    mkApp2 (mkConst ``GoFV.SSA.Sem.Val.asInt) ((t.getArg! 1).getArg! 0) (t.getArg! 0))
 
 /-- Case split on a disjunction among the hypotheses (the checker's `Bool` auxints, `||` in
 conditions), then `rule_norm`. -/
@@ -162,10 +169,12 @@ elab "rule_split1" : tactic => withMainContext do
   for h in ← getLCtx do
     if cand.isNone && !h.isImplementationDetail then
       let ty ← instantiateMVars h.type
-      -- skip the equations of earlier splits (`c = none`, `c = true`, …)
+      -- skip the equations of earlier splits (`c = none`, `c = true`, …), not a leaf's type
       let isSplitEq := match ty.eq? with
         | some (_, lhs, rhs) => (splitCandidate? lhs).isSome && !(rhs.find? (fun t =>
-            t.isAppOfArity ``PEnv.leaf 2)).isSome
+            t.isAppOfArity ``PEnv.leaf 2)).isSome &&
+            !(lhs.isAppOfArity ``GoFV.SSA.Sem.Val.hasTy 2 &&
+              (lhs.getArg! 0).isAppOfArity ``PEnv.leaf 2)
         | none => false
       unless isSplitEq do
         cand := splitCandidate? ty
@@ -185,11 +194,20 @@ elab "rule_split1" : tactic => withMainContext do
   if c.isAppOfArity ``GoFV.SSA.Sem.Val.asInt 2 then
     evalTactic (← `(tactic| (
       rcases hsplit : $stx with _ | xs <;>
-        (try have hv := val_asInt_eq_some.mp hsplit) <;> (try rule_norm))))
+        (try have hv := val_asInt_eq_some.mp hsplit) <;>
+        (try have hv := val_poison_of_asInt_none hsplit (by with_reducible assumption)) <;>
+        (try rule_norm))))
   else if c.isAppOfArity ``GoFV.SSA.Sem.Val.asBool 1 then
     evalTactic (← `(tactic| (
       rcases hsplit : $stx with _ | xs <;>
         (try have hv := val_asBool_eq_some.mp hsplit) <;> (try rule_norm))))
+  else if c.isAppOfArity ``GoFV.SSA.Sem.Val.asNat 1 then
+    -- a rotation amount: the leaf is an integer of one of the four widths (its type then
+    -- follows from `Pat.typed`) or not an amount
+    let l ← Term.exprToSyntax (c.getArg! 0)
+    evalTactic (← `(tactic| (
+      rcases GoFV.Proof.Rules.val_asNat_cases $l with hsplit | ⟨(_ | _ | _ | _), xs, hv⟩ <;>
+        (try rule_norm))))
   else
     evalTactic (← `(tactic| (rcases hsplit : $stx with _ | xs <;> (try rule_norm))))
 
@@ -218,7 +236,18 @@ elab "rule_gen1" : tactic => withMainContext do
       evalTactic (← `(tactic| have hrange := wrapInt_true_range $w $x))
     else
       evalTactic (← `(tactic| have hrange := wrapInt_false_range $w $x))
-    evalTactic (← `(tactic| generalize $stx = cg at *))
+    -- the same auxint read unwrapped elsewhere (`int32(c)` next to `c`): keep the equation
+    let inner := c.getArg! 2
+    let mut ts := #[← instantiateMVars (← g.getType)]
+    for h in ← getLCtx do
+      if !h.isImplementationDetail then ts := ts.push (← instantiateMVars h.type)
+    let bare := ts.any fun t =>
+      ((t.replace fun s => if s == c then some (mkConst ``True) else none).find?
+        (· == inner)).isSome
+    if bare then
+      evalTactic (← `(tactic| generalize hgen : $stx = cg at *))
+    else
+      evalTactic (← `(tactic| generalize $stx = cg at *))
   else if c.isAppOfArity ``Int64.toInt 1 then
     let a ← Term.exprToSyntax (c.getArg! 0)
     evalTactic (← `(tactic| have hrange := int64_toInt_range $a))
@@ -273,6 +302,141 @@ macro "rule_rot" : tactic => `(tactic| (
     | (apply GoFV.Proof.Rules.rotateLeft_congr; bv_omega)
     | bv_omega))
 
+/-- `subst_vars` restricted to equations with a local on one side, found syntactically:
+`subst_vars` puts both sides of every equation into `whnf`, which evaluates a condition such as
+`bitwise int16 (· &&& ·) c 15 = 15` down to `2 ^ 64` and exceeds the recursion depth. -/
+partial def substLocals (g : MVarId) : MetaM MVarId := g.withContext do
+  for h in ← getLCtx do
+    if h.isImplementationDetail then continue
+    let some (_, l, r) := (← instantiateMVars h.type).eq? | continue
+    for (side, other, symm) in [(r, l, true), (l, r, false)] do
+      if side.isFVar && !other.containsFVar side.fvarId! then
+        if let some (_, g') ← substCore? g h.fvarId (symm := symm) (tryToSkip := true) then
+          return ← substLocals g'
+  return g
+
+elab "rule_subst" : tactic => do
+  replaceMainGoal [← substLocals (← getMainGoal)]
+
+/-- The subterms of `e` satisfying `p`, each once. -/
+partial def subtermsWith (p : Lean.Expr → Bool) (e : Lean.Expr) : Array Lean.Expr :=
+  (go e).run #[] |>.2
+where
+  go (e : Lean.Expr) : StateM (Array Lean.Expr) Unit := do
+    if p e && !(← get).contains e then modify (·.push e)
+    match e with
+    | .app f a => go f; go a
+    | .lam _ d b _ | .forallE _ d b _ => go d; go b
+    | .letE _ t v b _ => go t; go v; go b
+    | .mdata _ b | .proj _ _ b => go b
+    | _ => pure ()
+
+/-- The atoms `omega` cannot see into, with their facts as hypotheses: for `a &&& b` on `Nat`
+its bounds and, where `omega` proves that one side's low `k` bits are all ones or all zeros,
+its remainder by `m = 2 ^ k` (`m` the first power-of-two modulus of the goal); `Int.tmod` by
+its sign cases (`tmod_facts`). -/
+elab "rule_omega_facts" : tactic => withMainContext do
+  let mut ts : Array Lean.Expr := #[← instantiateMVars (← getMainTarget)]
+  for h in ← getLCtx do
+    if !h.isImplementationDetail then ts := ts.push (← instantiateMVars h.type)
+  let isNatAnd (s : Lean.Expr) := s.isAppOfArity ``HAnd.hAnd 6 && (s.getArg! 0).isConstOf ``Nat
+  let isTmod (s : Lean.Expr) := s.isAppOfArity ``Int.tmod 2
+  let isUshrToNat (s : Lean.Expr) := s.isAppOfArity ``BitVec.toNat 2 &&
+    (s.getArg! 1).isAppOfArity ``HShiftRight.hShiftRight 6 &&
+    ((s.getArg! 1).getArg! 1).isConstOf ``Nat
+  let isMod (s : Lean.Expr) := s.isAppOfArity ``HMod.hMod 6 && (s.getArg! 0).isConstOf ``Nat &&
+    ((s.getArg! 5).rawNatLit? <|> (s.getArg! 5).nat?).any (fun m => m > 1 && m == 2 ^ m.log2)
+  let modulus : Option Nat := (subtermsWith isMod ts[0]!)[0]?.bind fun s =>
+    (s.getArg! 5).rawNatLit? <|> (s.getArg! 5).nat?
+  let mut ands : Array Lean.Expr := #[]
+  let mut tmods : Array Lean.Expr := #[]
+  for t in ts do
+    for s in subtermsWith isNatAnd t do
+      unless ands.contains s do ands := ands.push s
+    for s in subtermsWith isTmod t do
+      unless tmods.contains s do tmods := tmods.push s
+  for s in ands do
+    let a ← Term.exprToSyntax (s.getArg! 4)
+    let b ← Term.exprToSyntax (s.getArg! 5)
+    evalTactic (← `(tactic| have := GoFV.Proof.Rules.nat_and_le $a $b))
+  for s in tmods do
+    let a ← Term.exprToSyntax (s.getArg! 0)
+    let b ← Term.exprToSyntax (s.getArg! 1)
+    evalTactic (← `(tactic| have := GoFV.Proof.Rules.tmod_facts $a $b))
+  let mut ushrs : Array Lean.Expr := #[]
+  for t in ts do
+    for s in subtermsWith isUshrToNat t do
+      unless ushrs.contains s do ushrs := ushrs.push s
+  for s in ushrs do
+    let x ← Term.exprToSyntax ((s.getArg! 1).getArg! 4)
+    let n ← Term.exprToSyntax ((s.getArg! 1).getArg! 5)
+    evalTactic (← `(tactic| have := GoFV.Proof.Rules.ushr_toNat_facts $x $n))
+  -- Two rounds: a fact about one atom (a condition `c & 15 == 15`) may be needed to derive
+  -- the fact about another (the amount `y &&& c`).
+  if let some m := modulus then
+    let ml := Syntax.mkNumLit (toString m)
+    let kl := Syntax.mkNumLit (toString m.log2)
+    let mut done : Array (Lean.Expr × Name) := #[]
+    for _ in [0:2] do
+      for s in ands do
+        let a ← Term.exprToSyntax (s.getArg! 4)
+        let b ← Term.exprToSyntax (s.getArg! 5)
+        for lem in [``nat_and_ones_r, ``nat_and_ones_l, ``nat_and_zero_r, ``nat_and_zero_l] do
+          if done.contains (s, lem) then continue
+          let l := mkIdent lem
+          let saved ← saveState
+          let ok ← try
+              evalTactic (← `(tactic| have := $l $a $b $ml $kl (by decide) (by omega)))
+              pure true
+            catch _ => saved.restore; pure false
+          if ok then done := done.push (s, lem)
+
+/-- A rotation of the same value by two amounts, a nested rotation, or a rotation by an
+amount that is `0` modulo the width: the amounts modulo the width as `Nat`/`Int` arithmetic
+(`rule_amt`), closed by `omega` (`rule_omega_facts`). -/
+macro "rule_rotamt" : tactic => `(tactic| (
+  first
+  | with_reducible apply GoFV.Proof.Rules.rotateLeft_rotateLeft_congr
+  | with_reducible apply GoFV.Proof.Rules.rotateLeft_congr
+  | with_reducible apply GoFV.Proof.Rules.rotateLeft_eq_self
+  try simp only [rule_amt] at *
+  rule_omega_facts
+  omega))
+
+/-- Shifts by constant amounts: contradictory amount bounds (a bounded shift by less than the
+width, an unsigned amount below zero), equal amounts (`x <<< a = x <<< b` with `a`, `b` the same
+number), a shift by at least the width, and constant folds (`goShl`/`goShr` of an auxint,
+`ofInt_goShl` …); the amounts as `Nat`/`Int` arithmetic (`rule_amt`), closed by `omega`. -/
+macro "rule_shamt" : tactic => `(tactic| (
+  (try simp (disch := omega) only [GoFV.Proof.Rules.ofInt_goShr_signed,
+    GoFV.Proof.Rules.ofInt_goShr_nonneg] at *)
+  (try simp only [rule_amt] at *)
+  rule_omega_facts
+  first
+  | (with_reducible apply GoFV.Proof.Rules.shl_ushr_shl <;> omega)
+  | (with_reducible apply GoFV.Proof.Rules.ushr_shl_ushr <;> omega)
+  | (with_reducible apply GoFV.Proof.Rules.shl_shl; omega)
+  | (with_reducible apply GoFV.Proof.Rules.ushr_ushr; omega)
+  | (with_reducible apply GoFV.Proof.Rules.sshr_sshr; omega)
+  | ((first
+       | rw [GoFV.Proof.Rules.ushr_shl]
+       | rw [GoFV.Proof.Rules.sshr_shl]
+       | rw [GoFV.Proof.Rules.shl_ushr])
+     (try simp only [rule_bits] at *)
+     congr 2 <;> omega)
+  | (congr 1 <;> omega)
+  | (rw [BitVec.shiftLeft_eq_zero (by omega)])
+  | (rw [BitVec.ushiftRight_eq_zero (by omega)])
+  | (exfalso; omega)))
+
+/-- A comparison of integers against constants or of constants: both sides as `toNat`/`toInt`
+arithmetic (`rule_cmp`, `rule_amt`), sign cases split, closed by `omega`. -/
+macro "rule_cmpc" : tactic => `(tactic| (
+  rw [Bool.eq_iff_iff]
+  simp only [rule_cmp, rule_amt] at *
+  rule_omega_facts
+  (repeat' split) <;> omega))
+
 /-- Close the arithmetic left after the splits: auxint reads are generalized, constants
 pushed into `BitVec`, then `rfl`, a rotation (`rule_rot`, before `grind`: a failing `grind`
 spends seconds on rotation goals), a ring identity (`grind` after complements and constant
@@ -283,13 +447,16 @@ macro "rule_close" : tactic => `(tactic| (
   repeat rule_gen1
   try simp only [GoFV.Proof.Rules.DV.int.injEq, GoFV.Proof.Rules.DV.bool.injEq] at *
   try rule_ands
-  try subst_vars
+  try rule_subst
   try rule_norm
   try simp_all only [rule_arith, rule_close_s]
   first
   | done
   | with_reducible rfl
   | rule_rot
+  | rule_rotamt
+  | rule_shamt
+  | rule_cmpc
   | ((try simp only [GoFV.Proof.Rules.bv_not_eq, GoFV.Proof.Rules.bv_shl_nat, Nat.reducePow] at *)
      grind)
   | ((try simp only [rule_bits] at *)
