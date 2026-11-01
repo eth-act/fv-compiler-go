@@ -13,7 +13,7 @@ then holds for all ancestors), or panics alike. Proved in `CSEBlock` (`blockOK`)
 
 namespace GoFV.Proof.CSE
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof.CopyElim
+open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof.CopyElim Dom
 
 /-- Values placed in blocks `P` hold their representatives' registers. -/
 def RepInv (f : Func) (rw : Array (Option ID)) (fr : Frame) (P : ID → Prop) : Prop :=
