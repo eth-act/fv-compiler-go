@@ -186,16 +186,18 @@ def storeRecs (tabs : Tables) (D : Defs) (S : List ID) : Option (List StoreRec) 
       (storedBytes tabs D sv).map fun r => (sv.args[0]!, splitP tabs D 64 sv.args[0]! none 0, r)
     else none
 
+/-- The record `r` covers byte `k` of the bytes from offset `o0`. -/
+def covers (o0 : Int) (k : Nat) (r : StoreRec) : Bool :=
+  decide (r.2.1.2.2 ≤ o0 + k) && decide (o0 + k < r.2.1.2.2 + r.2.2.1.length)
+
 /-- The records `recs` tile `[0, W)` from offset `o0`, and the description `(bt, sg)` has their
 bytes at their places and reads only values (and loads) each of them reads. -/
 def tileOK (recs : List StoreRec) (o0 : Int) (W : Nat) (bt : List SB) (sg : List LoadRec) : Bool :=
-  recs.all (fun (_, (_, _, o), (bs, sf)) =>
-    decide (o0 ≤ o) && decide ((o - o0).toNat + bs.length ≤ W) &&
-    (List.range bs.length).all (fun k => bt[(o - o0).toNat + k]? == bs[k]?) &&
-    (vbIds bt).all (vbIds bs).contains && sg.all (coveredOK sf)) &&
-  (List.range W).all fun k =>
-    (recs.filter fun (_, (_, _, o), (bs, _)) =>
-      decide (o ≤ o0 + k) && decide (o0 + k < o + bs.length)).length == 1
+  recs.all (fun r =>
+    decide (o0 ≤ r.2.1.2.2) && decide ((r.2.1.2.2 - o0).toNat + r.2.2.1.length ≤ W) &&
+    (List.range r.2.2.1.length).all (fun k => bt[(r.2.1.2.2 - o0).toNat + k]? == r.2.2.1[k]?) &&
+    (vbIds bt).all (vbIds r.2.2.1).contains && sg.all (coveredOK r.2.2.2)) &&
+  (List.range W).all fun k => (recs.filter (covers o0 k)).length == 1
 
 /-- **A combined store** (see the module doc): the `Store` `u` of `f` with ID `x` became the
 `Store` `w` of `g`. -/
