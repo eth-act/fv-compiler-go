@@ -72,13 +72,8 @@ theorem fieldsEq_sound : ∀ {a b : List (Nat × Ty)}, GoFV.Opt.CSE.fieldsEq a b
   | [], _ :: _, h | _ :: _, [], h => by simp [GoFV.Opt.CSE.fieldsEq] at h
 end
 
-theorem retype_other (v : Val) : v.retype .other = v := by
-  cases v <;> rfl
-
 theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by
-  cases t with
-  | int w => cases w <;> rfl
-  | _ => rfl
+  cases t <;> rfl
 
 theorem retype_ptr_elem (e e' : Option Nat) (v : Val) : v.retype (.ptr e) = v.retype (.ptr e') := by
   cases v with
@@ -110,7 +105,7 @@ theorem retype_hasTy (hr : RetypeShapes) (v : Val) {s : Ty} (hs : sized s = true
     (v.retype s).hasTy s = true := by
   rcases s with w | _ | _ | _ | _ | _ | _ | _ | _ | _ <;> simp [sized] at hs
   · exact hr v w
-  · cases v <;> rfl
+  · exact Val.retype_hasTy _ _
 
 /-! ## `den` -/
 
@@ -127,17 +122,18 @@ theorem den_mono (D : ID → Option Value) (tabs : Tables) {ρ ρ' : ID → Val}
         (refinesList_map fun a _ => den_mono D tabs hρ n m a (by omega)))
     · rw [den_succ_atom ht, den_succ_atom ht]; exact hρ x
 
-/-- Under `Typed`, a denotation is fixed by `retype` at its value's shape. -/
+/-- Under `Typed`, the denotation of a defined value is fixed by `retype` at its shape. -/
 theorem den_retype {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} (hT : Term.Typed D tabs ρ) :
-    ∀ (k : Nat) (a : ID), (den D tabs ρ k a).retype (shape D tabs a) = den D tabs ρ k a
-  | 0, _ => retype_poison _
-  | k + 1, a => by
+    ∀ (k : Nat) (a : ID), (D a).isSome = true →
+      (den D tabs ρ k a).retype (shape D tabs a) = den D tabs ρ k a
+  | 0, _, _ => retype_poison _
+  | k + 1, a, hd => by
     by_cases ht : IsTerm D a
     · obtain ⟨v, hv, hop⟩ := ht
       rw [den_succ_term hv hop]
       simp only [shape, hv, Option.map_some, Option.getD_some]
-      exact GoFV.Proof.retype_idem _ _
-    · rw [den_succ_atom ht]; exact hT a ht
+      exact Val.retype_idem _ _
+    · rw [den_succ_atom ht]; exact hT a ht hd
 
 theorem shape_of {D : ID → Option Value} {tabs : Tables} {a : ID} {y : Value} (h : D a = some y) :
     shape D tabs a = tabs.ty y.type := by
@@ -146,7 +142,11 @@ theorem shape_of {D : ID → Option Value} {tabs : Tables} {a : ID} {y : Value} 
 theorem den_hasTy (hr : RetypeShapes) {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
     (hT : Term.Typed D tabs ρ) (k : Nat) (a : ID) {s : Ty} (hsa : shape D tabs a = s)
     (hs : sized s = true) : (den D tabs ρ k a).hasTy s = true := by
-  rw [← den_retype hT k a, hsa]
+  have hd : (D a).isSome = true := by
+    cases h : D a with
+    | none => simp [shape, h] at hsa; subst hsa; simp [sized] at hs
+    | some _ => rfl
+  rw [← den_retype hT k a hd, hsa]
   exact retype_hasTy hr _ hs
 
 theorem termOp_copy : termOp .Copy = true := by decide
@@ -166,7 +166,7 @@ theorem den_copy {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} (hT
   show (den D tabs ρ k x.args[0]!).retype (tabs.ty x.type) = _
   apply retype_copyCompat hc
   rw [← shape_of (tabs := tabs) hy]
-  exact den_retype hT k _
+  exact den_retype hT k _ (by rw [hy]; rfl)
 
 /-- A value reached through compatible copies has a larger denotation at the same fuel. -/
 theorem copyReach_den {M : Defs} {tabs : Tables} {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ) :
