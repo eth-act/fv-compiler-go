@@ -38,8 +38,26 @@ def lessU (w : Width) : List Val → Val := int2 w fun x y => .bool (x.ult y)
 def leq (w : Width) : List Val → Val := int2 w fun x y => .bool (x.sle y)
 def leqU (w : Width) : List Val → Val := int2 w fun x y => .bool (x.ule y)
 
-def andB : List Val → Val := bool2 (· && ·)
-def orB : List Val → Val := bool2 (· || ·)
+/-- `AndB`: `false` if either side is `false` (even if the other is `poison`), else as
+`bool2`. Parallel, as on hardware (`false && anything` is `false`): `phiopt` rewrites
+`c ? x : false` into `AndB c x` and `fuse comparisons` evaluates its second comparison
+speculatively (§3.5). -/
+def andB : List Val → Val
+  | [a, b] => match a.asBool, b.asBool with
+    | some false, _ | _, some false => .bool false
+    | some true, some true => .bool true
+    | _, _ => .poison
+  | _ => .poison
+
+/-- `OrB`: `true` if either side is `true` (even if the other is `poison`), else as `bool2`
+(parallel, dual to `andB`). -/
+def orB : List Val → Val
+  | [a, b] => match a.asBool, b.asBool with
+    | some true, _ | _, some true => .bool true
+    | some false, some false => .bool false
+    | _, _ => .poison
+  | _ => .poison
+
 def eqB : List Val → Val := bool2 (· == ·)
 def neqB : List Val → Val := bool2 (· != ·)
 def not : List Val → Val := bool1 (!·)
