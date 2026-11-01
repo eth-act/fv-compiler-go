@@ -9,7 +9,8 @@ import GoFV.SSA.Sem.Layout
 `some none`: a copy without exactly one argument). `Src V x r n`: following copy edges from
 `x` reaches the non-copy `r` in `n` steps. `CopyFrag tabs f` is what `copyelim_rel`
 (`GoFV.Proof.Pass.CopyElimLoop`) assumes beyond `check`: value IDs below `vid.last + 1`, copy and
-phi arguments of the value's type shape, no zero-size aggregate copies, and no copy cycle
+phi arguments whose type shape retypes like the value's (`RetypeEq`: equal up to pointer element
+sizes, which `Val.retype` ignores), no zero-size aggregate copies, and no copy cycle
 reachable from a listed value. `copyFrag` decides it (`copyFrag_sound`); `lake exe
 copyrel-probe` counts the corpus sections that satisfy it.
 -/
@@ -138,6 +139,68 @@ theorem fieldsEq_sound : ∀ {a b : List (Nat × Ty)}, fieldsEq a b = true → a
   | [], _ :: _, h | _ :: _, [], h => by simp [fieldsEq] at h
 end
 
+/-- `t1` and `t2` retype every value alike (`Val.retype` ignores pointer element sizes and is
+the identity on shapes other than integers and pointers). -/
+def RetypeEq (t1 t2 : Ty) : Prop := ∀ v : Val, v.retype t1 = v.retype t2
+
+theorem RetypeEq.refl (t : Ty) : RetypeEq t t := fun _ => rfl
+
+theorem RetypeEq.symm {t1 t2 : Ty} (h : RetypeEq t1 t2) : RetypeEq t2 t1 := fun v => (h v).symm
+
+theorem RetypeEq.trans {t1 t2 t3 : Ty} (h1 : RetypeEq t1 t2) (h2 : RetypeEq t2 t3) :
+    RetypeEq t1 t3 := fun v => (h1 v).trans (h2 v)
+
+theorem RetypeEq.of_eq {t1 t2 : Ty} (h : t1 = t2) : RetypeEq t1 t2 := h ▸ RetypeEq.refl t1
+
+/-- Decides a sufficient condition for `RetypeEq` (`retypeEqB_sound`). -/
+def retypeEqB : Ty → Ty → Bool
+  | .int w, .int w' => w == w'
+  | .int _, _ => false
+  | _, .int _ => false
+  | .ptr _, .ptr _ => true
+  | .ptr _, _ => false
+  | _, .ptr _ => false
+  | _, _ => true
+
+/-- Neither an integer nor a pointer shape. -/
+def plainB : Ty → Bool
+  | .int _ => false
+  | .ptr _ => false
+  | _ => true
+
+theorem retype_plain {t : Ty} (h : plainB t = true) (v : Val) : v.retype t = v := by
+  cases t with
+  | int _ => cases h
+  | ptr _ => cases h
+  | _ =>
+    cases v with
+    | int w _ => cases w <;> rfl
+    | _ => rfl
+
+theorem retype_ptr (e e' : Option Nat) (v : Val) : v.retype (.ptr e) = v.retype (.ptr e') := by
+  cases v with
+  | int w _ => cases w <;> rfl
+  | _ => rfl
+
+theorem retypeEqB_sound {t1 t2 : Ty} (h : retypeEqB t1 t2 = true) : RetypeEq t1 t2 := by
+  intro v
+  cases t1 with
+  | int w =>
+    cases t2 with
+    | int w' =>
+      have : w = w' := by simpa [retypeEqB] using h
+      rw [this]
+    | _ => simp [retypeEqB] at h
+  | ptr e =>
+    cases t2 with
+    | ptr e' => exact retype_ptr e e' v
+    | _ => simp [retypeEqB] at h
+  | _ =>
+    cases t2 with
+    | int _ => simp [retypeEqB] at h
+    | ptr _ => simp [retypeEqB] at h
+    | _ => exact (retype_plain (by rfl) v).trans (retype_plain (by rfl) v).symm
+
 /-- `t` is a zero-size struct or array type (as `phielim` decides it). -/
 def zeroSize (tabs : Tables) (t : TypeRef) : Prop := zeroSizeAggregate tabs t = .ok true
 
@@ -157,9 +220,9 @@ theorem zeroSizeB_eq_false {tabs : Tables} {t : TypeRef} (h : zeroSizeB tabs t =
 structure CopyFrag (tabs : Tables) (f : Func) : Prop where
   /-- Value IDs are below `vid.last + 1` (bounds the loops of `chase`, `copySource`, `phielim`). -/
   size : f.valueTab.size ≤ f.vidLast + 1
-  /-- Arguments of listed copies and phis have the value's type shape. -/
+  /-- Arguments of listed copies and phis retype like the value (`RetypeEq`). -/
   shape : ∀ x, Listed f x → ∀ v, f.value? x = some v → (v.op = .Copy ∨ v.op = .Phi) →
-    ∀ a ∈ v.args, ∃ w, f.value? a = some w ∧ tabs.ty w.type = tabs.ty v.type
+    ∀ a ∈ v.args, ∃ w, f.value? a = some w ∧ RetypeEq (tabs.ty w.type) (tabs.ty v.type)
   /-- No listed copy has a zero-size struct or array type. -/
   copyNZ : ∀ x, Listed f x → ∀ v, f.value? x = some v → v.op = .Copy → ¬ zeroSize tabs v.type
   /-- The copy chain of every listed value ends (no copy cycle). -/
@@ -171,7 +234,7 @@ def valueOK (tabs : Tables) (f : Func) (x : ID) : Bool :=
   | none => true
   | some v =>
     ((v.op != .Copy && v.op != .Phi) ||
-      v.args.all fun a => (f.value? a).any fun w => tyEq (tabs.ty w.type) (tabs.ty v.type)) &&
+      v.args.all fun a => (f.value? a).any fun w => retypeEqB (tabs.ty w.type) (tabs.ty v.type)) &&
     (v.op != .Copy || !zeroSizeB tabs v.type) &&
     chainEnds f.value? (f.valueTab.size + 1) x
 
@@ -191,7 +254,7 @@ theorem copyFrag_sound {tabs : Tables} {f : Func} (h : copyFrag tabs f = true) :
     exact this x hx
   have hv' : ∀ x, Listed f x → ∀ v, f.value? x = some v →
       (((v.op != .Copy && v.op != .Phi) = true) ∨
-        ∀ a ∈ v.args, (f.value? a).any (fun w => tyEq (tabs.ty w.type) (tabs.ty v.type)) = true) ∧
+        ∀ a ∈ v.args, (f.value? a).any (fun w => retypeEqB (tabs.ty w.type) (tabs.ty v.type)) = true) ∧
       ((v.op != .Copy) = true ∨ zeroSizeB tabs v.type = false) ∧
       chainEnds f.value? (f.valueTab.size + 1) x = true := by
     intro x hx v hxv
@@ -209,7 +272,7 @@ theorem copyFrag_sound {tabs : Tables} {f : Func} (h : copyFrag tabs f = true) :
       | none => rw [hw] at this; cases this
       | some w =>
         rw [hw] at this
-        exact ⟨w, rfl, tyEq_sound (by simpa using this)⟩
+        exact ⟨w, rfl, retypeEqB_sound (by simpa using this)⟩
   · intro x hx v hxv hop
     rcases (hv' x hx v hxv).2.1 with h1 | h1
     · simp [hop] at h1

@@ -1,6 +1,5 @@
 import GoFV.Proof.DomCert
-import GoFV.Opt.CopyElim
-import GoFV.SSA.Sem.Layout
+import GoFV.Proof.Pass.CopyFrag
 
 /-!
 # What copyelim changes: the static relation `CopyRel`
@@ -10,7 +9,8 @@ tree (the only blocks a run can reach): same control-flow graph and block conten
 argument or control `a` of `f` becomes `a` itself or, if `a` is a copy in `g`, the copy's
 argument (`ArgRel`); every value keeps its op, aux and type, except that a `Phi` may become a
 `Copy` of a value every one of its arguments is related to (phielim), and a value of a zero-size
-aggregate type may become `Empty`. Copies of `g` in tree blocks have their argument's type shape.
+aggregate type may become `Empty`. Copies of `g` in tree blocks retype like their argument
+(`RetypeEq`).
 
 Checked on the corpus: copyelim's output satisfies `CopyRel` on every section
 (`lake exe copyrel-probe`). `copyelim_refines_of_rel` (`GoFV.Proof.Pass.CopyElim`) derives the
@@ -53,6 +53,6 @@ structure CopyRel (tabs : Tables) (f g : Func) : Prop where
       ∃ gv, g.value? x = some gv ∧ gv.block = fv.block ∧ gv.type = fv.type ∧ ValRel tabs g fv gv
   copyShape : ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
     ∀ x ∈ fb.values, ∀ gv w, g.value? x = some gv → gv.op = .Copy → gv.args = #[w] →
-      ∃ wv, g.value? w = some wv ∧ tabs.ty wv.type = tabs.ty gv.type
+      ∃ wv, g.value? w = some wv ∧ RetypeEq (tabs.ty wv.type) (tabs.ty gv.type)
 
 end GoFV.Proof.CopyElim

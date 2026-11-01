@@ -5,9 +5,11 @@ import Std.Tactic.Do
 # copyelim's output satisfies `CopyRel`
 
 `copyelim_rel`: on an input that passes `check` and satisfies `CopyFrag`, copyelim's output is
-related to its input by `CopyRel` (`GoFV.Proof.Pass.CopyElimRel`). `phielim` ends with `Inv`
-and every argument of a listed value a non-copy (`phielim_spec`); the control step replaces
-each copy control by its argument (`Ctl`); `rel_of_ctl` reads `CopyRel` off both.
+related to its input by `CopyRel` (`GoFV.Proof.Pass.CopyElimRel`); `copyelim_rel_of_inv`: the
+same when copyelim runs on a function already in the invariant `Inv` relative to the input.
+`phielim` ends with `Inv` and every argument of a listed value a non-copy (`phielim_spec_of`);
+the control step replaces each copy control by its argument (`Ctl`, `copyelim_ctl`);
+`rel_of_ctl` reads `CopyRel` off both.
 -/
 
 open Std.Do
@@ -94,7 +96,7 @@ theorem rel_of_ctl (hwf : WF ce f) (hI : Inv tabs f G) (hset : Settled f (vw G))
     obtain ⟨v, hv, hmode⟩ := hI.mode x hxl fv hfv
     have hv' : vw { H with names } x = some v := by rw [hg]; exact hv
     obtain ⟨gv, hgv, hop, hargs, hty, hblk', haux, hauxi⟩ := value_of_vw hv'
-    obtain ⟨fv', hfv', hb', ht'⟩ := hI.keep_some hv
+    obtain ⟨fv', hfv', hb', ht', -⟩ := hI.keep_some hv
     rw [hfv] at hfv'; cases hfv'
     refine ⟨gv, hgv, hblk'.trans hb', hty.trans ht', ?_⟩
     have hsk : ∀ c ∈ v.args, cstep (vw G) c = none := hset x hxl v hv
@@ -125,11 +127,11 @@ theorem rel_of_ctl (hwf : WF ce f) (hI : Inv tabs f G) (hset : Settled f (vw G))
       simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hkw
       have hw' : vw { H with names } w = some u := by rw [hg]; exact hw
       obtain ⟨wv', hwv', -, -, hty', -⟩ := value_of_vw hw'
-      obtain ⟨xv', hxv', -, hxt⟩ := hI.keep_some hvx
+      obtain ⟨xv', hxv', -, hxt, -⟩ := hI.keep_some hvx
       rw [hxv] at hxv'; cases hxv'
       refine ⟨wv', hwv', ?_⟩
-      rw [hty', hkw.2]
-      exact hty.trans (congrArg _ hxt.symm)
+      rw [hty', hkw.2.1]
+      exact hty.trans (.of_eq (congrArg _ hxt.symm))
 
 end
 
@@ -238,15 +240,19 @@ theorem ctl_inner_done {G H : Func} {pre : List ID} {b : ID} {blk : Block}
       · rw [setCtl_pmap_zero]; rfl
       · rfl
 
-/-- **copyelim's output satisfies `CopyRel`.** -/
-theorem copyelim_rel {ce : CheckEnv} {tabs : Tables} {f g : Func}
-    (hf : check ce f = .ok ()) (hfrag : CopyFrag tabs f) (h : copyelim tabs f = .ok g) :
-    CopyRel tabs f g := by
-  have hwf := check_wf hf
+/-- copyelim from a start `F` in the invariant: `phielim`'s result `G` (in the invariant, with
+settled arguments) and the end state `H` of the control step. -/
+theorem copyelim_ctl {ce : CheckEnv} {tabs : Tables} {f F g : Func} (hwf : WF ce f)
+    (hfrag : CopyFrag tabs f) (hI : Inv tabs f F) (h : copyelim tabs F = .ok g) :
+    ∃ G H names, Inv tabs f G ∧ Settled f (vw G) ∧ Ctl G G.blocks.toList 0 0 H ∧
+      g = { H with names } := by
   unfold copyelim at h
   obtain ⟨G, hph, h⟩ := CheckFacts.bind_ok h
   dsimp only at h
-  obtain ⟨hI, hset⟩ := phielim_spec hwf hfrag hph
+  obtain ⟨hI, hset⟩ := phielim_spec_of hwf hfrag hI hph
+  suffices hx : ∃ H names, Ctl G G.blocks.toList 0 0 H ∧ g = { H with names } by
+    obtain ⟨H, names, hC, rfl⟩ := hx
+    exact ⟨G, H, names, hI, hset, hC, rfl⟩
   obtain ⟨he, hbl, hbs, hbt, -, -, -⟩ := skel_parts hI
   have hnd : G.blocks.toList.Nodup := hbs ▸ hwf.blocksNodup
   -- facts about the block `b` being processed
@@ -260,7 +266,9 @@ theorem copyelim_rel {ce : CheckEnv} {tabs : Tables} {f g : Func}
       rw [← hbs, ← Array.mem_toList_iff, hxs]; simp
     obtain ⟨blk, hblk, -⟩ := hwf.blockId b hm
     exact ⟨blk, by unfold Func.block?; rw [hbt]; exact hblk⟩
-  apply Except.of_wp_eq h (fun r => ∀ x, r = .ok x → CopyRel tabs f x) ?_ g rfl
+  apply Except.of_wp_eq h
+    (fun r => ∀ x, r = .ok x → ∃ H names, Ctl G G.blocks.toList 0 0 H ∧ x = { H with names })
+    ?_ g rfl
   mvcgen
   case inv1 => exact ⇓⟨cur, H⟩ => ⌜Ctl G cur.prefix 0 0 H⌝
   case inv2 =>
@@ -297,6 +305,19 @@ theorem copyelim_rel {ce : CheckEnv} {tabs : Tables} {f g : Func}
     rename_i r hC
     intro x hx
     cases hx
-    exact rel_of_ctl hwf hI hset hC _
+    exact ⟨_, _, hC, rfl⟩
+
+/-- **copyelim from a start in the invariant satisfies `CopyRel` with the input.** -/
+theorem copyelim_rel_of_inv {ce : CheckEnv} {tabs : Tables} {f F g : Func} (hwf : WF ce f)
+    (hfrag : CopyFrag tabs f) (hI : Inv tabs f F) (h : copyelim tabs F = .ok g) :
+    CopyRel tabs f g := by
+  obtain ⟨G, H, names, hIG, hset, hC, rfl⟩ := copyelim_ctl hwf hfrag hI h
+  exact rel_of_ctl hwf hIG hset hC names
+
+/-- **copyelim's output satisfies `CopyRel`.** -/
+theorem copyelim_rel {ce : CheckEnv} {tabs : Tables} {f g : Func}
+    (hf : check ce f = .ok ()) (hfrag : CopyFrag tabs f) (h : copyelim tabs f = .ok g) :
+    CopyRel tabs f g :=
+  copyelim_rel_of_inv (check_wf hf) hfrag (inv_init (check_wf hf) hfrag) h
 
 end GoFV.Proof.CopyElim

@@ -30,12 +30,14 @@ inductive Mode (tabs : Tables) (V : ID → Option Value) (fv v : Value) : Prop w
 /-- The invariant of the sweeps (current function `F`, input `f`). -/
 structure Inv (tabs : Tables) (f F : Func) : Prop where
   skel : skel F = skel f
-  keep : ∀ x, (vw F x).map (fun u => (u.block, u.type)) = (vw f x).map (fun u => (u.block, u.type))
+  keep : ∀ x, (vw F x).map (fun u => (u.block, u.type, u.id)) =
+    (vw f x).map (fun u => (u.block, u.type, u.id))
   mode : ∀ x, Listed f x → ∀ fv, f.value? x = some fv → ∃ v, vw F x = some v ∧ Mode tabs (vw F) fv v
   closed : ∀ x, Listed f x → ∀ v, vw F x = some v → ∀ c ∈ v.args, Listed f c
   acyc : ∀ x, Listed f x → ∃ r n, Src (vw F) x r n
   shape : ∀ x, Listed f x → ∀ w, cstep (vw F) x = some (some w) →
-    ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧ tabs.ty wv.type = tabs.ty xv.type
+    ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧
+      RetypeEq (tabs.ty wv.type) (tabs.ty xv.type)
 
 /-- The non-copies are kept, and each argument is old or a non-copy. -/
 structure Prsv (V V' : ID → Option Value) : Prop where
@@ -105,10 +107,11 @@ theorem Inv.src_listed (hI : Inv tabs f F) :
 /-- Chains keep the type shape. -/
 theorem Inv.src_shape (hwf : WF ce f) (hI : Inv tabs f F) :
     ∀ {x r n}, Listed f x → Src (vw F) x r n →
-      ∃ xv rv, f.value? x = some xv ∧ f.value? r = some rv ∧ tabs.ty rv.type = tabs.ty xv.type
+      ∃ xv rv, f.value? x = some xv ∧ f.value? r = some rv ∧
+        RetypeEq (tabs.ty rv.type) (tabs.ty xv.type)
   | _, _, _, hx, .sink _ => by
     obtain ⟨fv, hfv⟩ := listed_value hwf hx
-    exact ⟨fv, fv, hfv, hfv, rfl⟩
+    exact ⟨fv, fv, hfv, hfv, .refl _⟩
   | _, _, _, hx, .step (y := y) hxy hs => by
     obtain ⟨u, hu, -, ha⟩ := cstep_some_some hxy
     have hy := hI.closed _ hx u hu y (by rw [ha]; simp)
@@ -118,7 +121,7 @@ theorem Inv.src_shape (hwf : WF ce f) (hI : Inv tabs f F) :
     exact ⟨xv, rv, h1, h2', h3'.trans h3⟩
 
 theorem Inv.keep_some (hI : Inv tabs f F) {x : ID} {v : Value} (hv : vw F x = some v) :
-    ∃ fv, f.value? x = some fv ∧ v.block = fv.block ∧ v.type = fv.type := by
+    ∃ fv, f.value? x = some fv ∧ v.block = fv.block ∧ v.type = fv.type ∧ v.id = fv.id := by
   have := hI.keep x
   rw [hv] at this
   cases hf : f.value? x with
@@ -126,7 +129,7 @@ theorem Inv.keep_some (hI : Inv tabs f F) {x : ID} {v : Value} (hv : vw F x = so
   | some fv =>
     rw [vw, hf] at this
     simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at this
-    exact ⟨fv, rfl, this.1, this.2⟩
+    exact ⟨fv, rfl, this.1, this.2.1, this.2.2⟩
 
 /-- `Inv` holds initially. -/
 theorem inv_init (hwf : WF ce f) (hfrag : CopyFrag tabs f) : Inv tabs f f := by
