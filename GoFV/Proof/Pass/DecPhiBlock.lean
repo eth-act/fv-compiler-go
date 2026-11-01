@@ -281,18 +281,21 @@ theorem eval_same {env : Env} (hE : env.Mono) (hown : g.ownAux = f.ownAux) {x : 
     | stuck msg r => exact .stuck _ _
 
 /-- A `Make` whose arguments hold refinements of the components of `y` (a value of the
-`Make`'s aggregate shape) evaluates to a refinement of `y`. -/
+`Make`'s shape, whose aggregate layout has fields `fs`) evaluates to a refinement of `y`. -/
 theorem eval_make {env : Env} {T : Frame} {x : ID} {w : Value} (hwx : w.id = x)
     (hmk : isMake w.op = true) {fs : List (Nat × Ty)} {n : Nat}
-    (hsh : shapeOf (typeShapes tabs) g x = .agg fs n) (hsz : w.args.size = fs.length)
-    (hreg : ∀ a ∈ w.args, Reg T a) {y : Val} (hy : y.hasTy (.agg fs n) = true)
+    (hsh : (shapeOf (typeShapes tabs) g x).asAgg = .agg fs n) (hsz : w.args.size = fs.length)
+    (hreg : ∀ a ∈ w.args, Reg T a) {y : Val}
+    (hy : y.hasTy (shapeOf (typeShapes tabs) g x) = true)
     (harg : ∀ k (hk : k < fs.length) (hk' : k < w.args.size), ∃ y',
       T.regs[w.args[k]]? = some (some y') ∧
         Sem.Refines ((Comp.select k [y]).retype fs[k].2) y') :
     ∃ y', evalValue env (Ctx.make tabs g) T w = .ok y' ∧ Sem.Refines y y' := by
   refine ⟨_, EC.ecT_eval_make hmk hreg, ?_⟩
-  rw [hwx, tys_g, hsh]
-  refine refines_make hy (by simp [hsz]) fun k hk hk' => ?_
+  rw [hwx, tys_g, retype_asAgg, hsh]
+  have hy' : y.hasTy (.agg fs n) = true := by rw [← hsh]; exact Val.hasTy_asAgg hy
+  conv => lhs; rw [← Val.checkLen_of_hasTy hy]
+  refine Val.checkLen_mono _ (refines_make hy' (by simp [hsz]) fun k hk hk' => ?_)
   obtain ⟨y', hy', hyy⟩ := harg k hk (by rw [hsz]; exact hk)
   simp only [List.getElem_map, Array.getElem_toList]
   rw [rv_of hy']
@@ -417,7 +420,6 @@ theorem BH.tgt_new {env : Env} {b : ID} {fb gb : Block} {og : Array ID} {G T1 : 
           (hargIn _ ha sb _ (hma k (by rw [← hsz]; exact hk) hk) hs)
       have hev := EC.ecT_eval_make (env := env) (ctx := Ctx.make tabs g) hmk hreg
       refine ⟨_, hev, fun y hy hty => ?_⟩
-      rw [hsh] at hty
       obtain ⟨y', hev', hyy⟩ := eval_make (env := env) hwx hmk hsh hsz hreg hty
         fun k hk hk' => by
           obtain ⟨-, -, hrel⟩ := B.arg hog hI hw (Array.getElem_mem hk')

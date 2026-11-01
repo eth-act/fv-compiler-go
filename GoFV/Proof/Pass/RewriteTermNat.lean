@@ -344,7 +344,7 @@ theorem rawT_frameTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm :
     unfold GoFV.Proof.Rules.strVal
     split
     · rename_i s d _
-      cases s.size == 0 <;> rfl
+      exact Val.ofStr_hasTy_of (by split <;> rfl) _
     · rfl
 
 /-- **`topOK`**: the raw value of a pattern whose top op `topOK` accepts has the top type's
@@ -391,8 +391,9 @@ theorem select_hasTy {k : Nat} {ty argTy : Ty} (h : selShapeOK k ty argTy = true
   unfold Comp.select
   split
   · rename_i vs
-    have ha := h0 _ rfl
+    have ha := Val.hasTy_asAgg (h0 _ rfl)
     unfold selShapeOK at h
+    generalize argTy.asAgg = A at h ha
     split at h
     · rename_i fs n
       simp only [Val.hasTy] at ha
@@ -492,6 +493,10 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
   unfold loadOp
   split
   · rename_i p m
+    rw [load_asAgg]
+    apply Val.checkLen_hasTy
+    unfold loadShape at h
+    generalize t.asAgg = t at h ⊢
     unfold Mem.load
     split
     all_goals first
@@ -500,7 +505,7 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
          · rename_i bs _
            cases t with
            | agg fs n =>
-             simp only [loadShape] at h
+             simp only at h
              simp only [decodeLoad]
              split
              · rfl
@@ -508,8 +513,8 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
                exact decodeLoadFields_hasTy bs 0 fs h
            | _ => first
              | simpa only [decodeLoad] using
-                 decode_hasTy_scalar bs 0 (by simpa [loadShape] using h)
-             | simp [loadShape, scalarTy] at h
+                 decode_hasTy_scalar bs 0 (by simpa using h)
+             | simp [scalarTy] at h
          · rfl)
   · rfl
 

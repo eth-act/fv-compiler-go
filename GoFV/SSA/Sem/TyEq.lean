@@ -23,6 +23,8 @@ def Ty.beq : Ty → Ty → Bool
   | .blob n, .blob n' => n == n'
   | .empty, .empty => true
   | .opaque n, .opaque n' => n == n'
+  | .str, .str => true
+  | .slice e, .slice e' => e == e'
   | _, _ => false
 def Ty.beqList : List Ty → List Ty → Bool
   | [], [] => true
@@ -49,6 +51,20 @@ theorem Ty.eq_of_beq : {t t' : Ty} → Ty.beq t t' = true → t = t'
   | .blob n, .blob n', h => by simp only [Ty.beq, beq_iff_eq] at h; rw [h]
   | .empty, .empty, _ => rfl
   | .opaque n, .opaque n', h => by simp only [Ty.beq, beq_iff_eq] at h; rw [h]
+  | .str, .str, _ => rfl
+  | .slice e, .slice e', h => by simp only [Ty.beq, beq_iff_eq] at h; rw [h]
+  | .str, .int _, h | .str, .bool, h | .str, .mem, h | .str, .tuple _, h | .str, .other, h
+  | .str, .ptr _, h | .str, .agg _ _, h | .str, .blob _, h | .str, .empty, h
+  | .str, .opaque _, h | .str, .slice _, h => by simp [Ty.beq] at h
+  | .slice _, .int _, h | .slice _, .bool, h | .slice _, .mem, h | .slice _, .tuple _, h
+  | .slice _, .other, h | .slice _, .ptr _, h | .slice _, .agg _ _, h | .slice _, .blob _, h
+  | .slice _, .empty, h | .slice _, .opaque _, h | .slice _, .str, h => by simp [Ty.beq] at h
+  | .int _, .str, h | .bool, .str, h | .mem, .str, h | .tuple _, .str, h | .other, .str, h
+  | .ptr _, .str, h | .agg _ _, .str, h | .blob _, .str, h | .empty, .str, h
+  | .opaque _, .str, h => by simp [Ty.beq] at h
+  | .int _, .slice _, h | .bool, .slice _, h | .mem, .slice _, h | .tuple _, .slice _, h
+  | .other, .slice _, h | .ptr _, .slice _, h | .agg _ _, .slice _, h | .blob _, .slice _, h
+  | .empty, .slice _, h | .opaque _, .slice _, h => by simp [Ty.beq] at h
   | .int _, .bool, h | .int _, .mem, h | .int _, .tuple _, h | .int _, .other, h
   | .int _, .ptr _, h | .int _, .agg _ _, h | .int _, .blob _, h | .int _, .empty, h
   | .int _, .opaque _, h => by simp [Ty.beq] at h

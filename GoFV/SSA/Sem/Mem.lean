@@ -166,6 +166,8 @@ def Ty.size : Ty → Nat
   | .agg _ n => n
   | .blob n => n
   | .opaque n => n
+  | .str => 16
+  | .slice _ => 24
   | .empty | .mem | .tuple _ | .other => 0
 
 /-- Little-endian bytes of an integer. -/
@@ -222,6 +224,11 @@ def decode (bs : Array Byte) (off : Nat) : Ty → Val
   | .agg fs _ => .agg (decodeFields bs off fs)
   | .blob n => .blob (bs.extract off (off + n)).toList
   | .empty => .empty
+  | .str => Val.ofStr [decodePtr (bs.extract off (off + 8)),
+      decodeInt .w64 (bs.extract (off + 8) (off + 16))]
+  | .slice _ => Val.ofSlice [decodePtr (bs.extract off (off + 8)),
+      decodeInt .w64 (bs.extract (off + 8) (off + 16)),
+      decodeInt .w64 (bs.extract (off + 16) (off + 24))]
   | .opaque _ | .other | .mem | .tuple _ => .poison
 def decodeFields (bs : Array Byte) (off : Nat) : List (Nat × Ty) → List Val
   | [] => []
@@ -231,6 +238,20 @@ end
 /-- Write `src` into `dst` at `off` (bytes beyond `dst` are dropped). -/
 def putBytes (dst : Array Byte) (off : Nat) (src : Array Byte) : Array Byte :=
   (List.range src.size).foldl (fun d i => if off + i < d.size then d.set! (off + i) src[i]! else d) dst
+
+/-- The 8 bytes of a word-sized value: `encode` at `.ptr _` and at `.int .w64` (both store a
+pointer as its fragments and a 64-bit integer as its bytes). -/
+def encodeWord : Val → Array Byte
+  | .int .w64 x => intBytes 8 x.toNat
+  | .ptr p => ptrBytes p
+  | .blob bs => if bs.length == 8 then bs.toArray else Array.replicate 8 .poison
+  | _ => Array.replicate 8 .poison
+
+/-- The words `vs` written into `buf` at the offsets `os` (as `encodeFields` at word fields:
+the string and slice components). -/
+def encodeWords (buf : Array Byte) : List Nat → List Val → Array Byte
+  | o :: os, v :: vs => encodeWords (putBytes buf o (encodeWord v)) os vs
+  | _, _ => buf
 
 mutual
 /-- The bytes of value `v` stored as shape `t` (exactly `t.size` bytes): `poison` bytes for
@@ -242,6 +263,8 @@ def encode : Ty → Val → Array Byte
   | .ptr _, .ptr p => ptrBytes p
   | .ptr _, .int .w64 x => intBytes 8 x.toNat
   | .agg fs n, .agg vs => encodeFields (Array.replicate n .poison) fs vs
+  | .str, .agg vs => encodeWords (Array.replicate 16 .poison) [0, 8] vs
+  | .slice _, .agg vs => encodeWords (Array.replicate 24 .poison) [0, 8, 16] vs
   | t, .blob bs => if bs.length == t.size then bs.toArray else Array.replicate t.size .poison
   | t, _ => Array.replicate t.size .poison
 def encodeFields (buf : Array Byte) : List (Nat × Ty) → List Val → Array Byte
@@ -268,6 +291,8 @@ def decodeLoad (bs : Array Byte) (off : Nat) : Ty → Val
   | .other => .poison
   | .mem => .poison
   | .tuple _ => .poison
+  | .str => if allPoison bs off 16 then .poison else decode bs off .str
+  | .slice e => if allPoison bs off 24 then .poison else decode bs off (.slice e)
 def decodeLoadFields (bs : Array Byte) (off : Nat) : List (Nat × Ty) → List Val
   | [] => []
   | (o, t) :: fs => decodeLoad bs (off + o) t :: decodeLoadFields bs off fs

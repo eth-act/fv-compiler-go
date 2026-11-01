@@ -40,6 +40,12 @@ theorem decodePtr_hasTy (e : Option Nat) (bs : Array Byte) :
   · rfl
   · split <;> rfl
 
+theorem decodePtr_isPtrOrPoison (bs : Array Byte) : (decodePtr bs).isPtrOrPoison = true := by
+  unfold decodePtr
+  split
+  · rfl
+  · split <;> rfl
+
 mutual
 theorem decode_hasTy_aux : (t : Ty) → (bs : Array Byte) → (o : Nat) → wf t = true →
     (decode bs o t).hasTy t = true
@@ -51,6 +57,8 @@ theorem decode_hasTy_aux : (t : Ty) → (bs : Array Byte) → (o : Nat) → wf t
     · rfl
   | .ptr e, _, _, _ => decodePtr_hasTy e _
   | .agg fs n, bs, o, h => decodeFields_hasTy fs n 0 bs o h
+  | .str, bs, o, _ => Val.ofStr_hasTy_of (decodePtr_isPtrOrPoison _) _
+  | .slice e, bs, o, _ => Val.ofSlice_hasTy_of (decodePtr_isPtrOrPoison _) e _ _
   | .empty, _, _, _ | .opaque _, _, _, _ => rfl
   | .blob _, _, _, h | .mem, _, _, h | .tuple _, _, _, h | .other, _, _, h => nomatch h
 theorem decodeFields_hasTy : (fs : List (Nat × Ty)) → (n s : Nat) → (bs : Array Byte) →
@@ -69,6 +77,60 @@ theorem decode_hasTy {t : Ty} {bs : Array Byte} {o : Nat} (h : wf t = true) :
   decode_hasTy_aux t bs o h
 
 /-! ## `toPieces` is `leafVals` -/
+
+/-- The leaves of a well-formed shape read back from a `poison` encoding are `poison`. -/
+theorem leaves_decode_poison {t : Ty} (hw : wf t = true) {buf : Array Byte} {b : Nat}
+    (h : Agree buf b (encode t .poison) 0 t.size) :
+    (leaves t).map (fun x => decode buf (b + x.1) x.2) = (leaves t).map fun _ => .poison := by
+  rw [encode_poison] at h
+  apply List.map_congr_left
+  intro x hx
+  obtain ⟨hb, ha⟩ := mem_leaves hw hx
+  apply decode_atom ha (rfl : Val.hasTy .poison x.2 = true)
+  rw [encode_poison]
+  intro k hk
+  have hn : x.1 + k < t.size := by omega
+  have := h (x.1 + k) hn
+  rw [← Nat.add_assoc] at this
+  rw [this, Array.getElem?_replicate, Array.getElem?_replicate]
+  simp only [Nat.zero_add, hn, hk, ↓reduceIte]
+
+/-- `leaves_decode_encode` at an atom. -/
+theorem leaves_decode_encode_atom {t : Ty} (ht : atom t = true) {v : Val} {buf : Array Byte}
+    {b : Nat} (hv : v.hasTy t = true) (h : Agree buf b (encode t v) 0 t.size) :
+    (leaves t).map (fun x => decode buf (b + x.1) x.2) = leafVals t v := by
+  rw [leaves_atom ht, leafVals_atom ht, Val.retype_of_hasTy hv]
+  simp only [List.map_cons, List.map_nil, Nat.add_zero]
+  rw [decode_atom ht hv h]
+
+/-- `leavesFields_decode_encode` at fields that are atoms (the string and slice words). -/
+theorem leavesFields_decode_encode_atoms : (fs : List (Nat × Ty)) → (vs : List Val) →
+    (n s : Nat) → {buf buf0 : Array Byte} → {b : Nat} → (∀ x ∈ fs, atom x.2 = true) →
+    wfFields fs n s = true → Val.hasTyList vs (fs.map (·.2)) = true → buf0.size = n →
+    Agree buf b (encodeFields buf0 fs vs) 0 n →
+    (leaves.leavesFields fs).map (fun x => decode buf (b + x.1) x.2) = leafValsFields fs vs
+  | [], [], _, _, _, _, _, _, _, _, _, _ => rfl
+  | (o, t) :: fs, v :: vs, n, s, buf, buf0, b, ha, hw, hv, hb, h => by
+    have hreg : Agree (encodeFields buf0 ((o, t) :: fs) (v :: vs)) o (encode t v) 0 t.size :=
+      encodeFields_agree hw hb
+    simp only [wfFields, Bool.and_eq_true, decide_eq_true_eq] at hw
+    simp only [List.map_cons, Val.hasTyList, Bool.and_eq_true] at hv
+    have hle := wfFields_le hw.2
+    rw [leavesFields_cons, List.map_append, List.map_map, leafValsFields_cons,
+      Val.retype_of_hasTy hv.1]
+    have e : ((fun x : Nat × Ty => decode buf (b + x.1) x.2) ∘ fun x : Nat × Ty => (o + x.1, x.2)) =
+        fun x : Nat × Ty => decode buf (b + o + x.1) x.2 := by
+      funext x; simp [Nat.add_assoc]
+    have h1 : Agree buf (b + o) (encode t v) 0 t.size := by
+      have := h.sub (o := o) (m := t.size) hle
+      rw [Nat.zero_add] at this
+      exact this.trans hreg
+    rw [e, leaves_decode_encode_atom (ha (o, t) List.mem_cons_self) hv.1 h1,
+      leavesFields_decode_encode_atoms fs vs n _ (buf0 := putBytes buf0 o (encode t v))
+        (fun x hx => ha x (List.mem_cons_of_mem _ hx)) hw.2 hv.2
+        (by rw [putBytes_size, hb]) h]
+  | [], _ :: _, _, _, _, _, _, _, _, hv, _, _ | _ :: _, [], _, _, _, _, _, _, _, hv, _, _ => by
+    simp [Val.hasTyList] at hv
 
 mutual
 theorem leaves_decode_encode : (t : Ty) → (v : Val) → {buf : Array Byte} → {b : Nat} →
@@ -101,6 +163,37 @@ theorem leaves_decode_encode : (t : Ty) → (v : Val) → {buf : Array Byte} →
     | agg vs =>
       exact leavesFields_decode_encode fs vs n 0 (buf0 := Array.replicate n .poison) hw hv
         (by simp) h
+    | _ => simp [Val.hasTy] at hv
+  | .str, v, buf, b, hw, hv, h => by
+    cases v with
+    | poison => exact leaves_decode_poison hw h
+    | agg vs =>
+      obtain ⟨p, l, rfl, hp, hl⟩ := Val.hasTy_agg_str.1 hv
+      rw [encode_str_agg] at h
+      have := leavesFields_decode_encode_atoms [(0, .ptr (some 1)), (8, .int .w64)] [p, .int .w64 l]
+        16 0 (buf0 := Array.replicate 16 .poison) (by decide) (by decide)
+        (by cases p <;> simp_all [Val.hasTyList, Val.hasTy, Val.isPtrOrPoison])
+        (by simp) h
+      refine Eq.trans ?_ (this.trans ?_)
+      · rfl
+      · simp only [leafValsFields, leafVals, List.headD_cons, List.tail_cons, Val.retype_idem,
+          List.append_nil, List.cons_append, List.nil_append]
+    | _ => simp [Val.hasTy] at hv
+  | .slice e, v, buf, b, hw, hv, h => by
+    cases v with
+    | poison => exact leaves_decode_poison hw h
+    | agg vs =>
+      obtain ⟨p, l, c, rfl, hp, hl, hc, hlc⟩ := Val.hasTy_agg_slice.1 hv
+      rw [encode_slice_agg] at h
+      have := leavesFields_decode_encode_atoms [(0, .ptr e), (8, .int .w64), (16, .int .w64)]
+        [p, .int .w64 l, .int .w64 c] 24 0 (buf0 := Array.replicate 24 .poison)
+        (by simp [atom]) (by simp [wfFields, wf, Ty.size, Width.bytes, Width.bits])
+        (by cases p <;> simp_all [Val.hasTyList, Val.hasTy, Val.isPtrOrPoison])
+        (by simp) h
+      refine Eq.trans ?_ (this.trans ?_)
+      · rfl
+      · simp only [leafValsFields, leafVals, List.headD_cons, List.tail_cons, Val.retype_idem,
+          List.append_nil, List.cons_append, List.nil_append]
     | _ => simp [Val.hasTy] at hv
   | .blob _, _, _, _, h, _, _ | .mem, _, _, _, h, _, _ | .tuple _, _, _, _, h, _, _
   | .other, _, _, _, h, _, _ => nomatch h
@@ -208,7 +301,7 @@ theorem ofPieces_leafVals {t : Ty} {v : Val} (hw : wf t = true) (hv : v.hasTy t 
 /-! ## Non-vacuity: a slice -/
 
 /-- The shape of a slice of `int64` (`tyOf`, `.SLICE`). -/
-def sliceTy : Ty := .agg [(0, .ptr (some 8)), (8, .int .w64), (16, .int .w64)] 24
+def sliceTy : Ty := .slice (some 8)
 
 /-- A slice value: a heap pointer, length 2, capacity 3. -/
 def sliceVal : Val := .agg [.ptr ⟨.heap 0, 0⟩, .int .w64 2, .int .w64 3]

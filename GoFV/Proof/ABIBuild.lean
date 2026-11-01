@@ -29,7 +29,7 @@ mutual
 /-- Fields in order, disjoint, within the size; no blobs, tuples, memory or `other` inside. -/
 def wf : Ty → Bool
   | .agg fs n => wfFields fs n 0
-  | .int _ | .bool | .ptr _ | .opaque _ | .empty => true
+  | .int _ | .bool | .ptr _ | .opaque _ | .empty | .str | .slice _ => true
   | _ => false
 def wfFields : List (Nat × Ty) → Nat → Nat → Bool
   | [], n, start => start ≤ n
@@ -38,9 +38,12 @@ end
 
 mutual
 /-- A value of shape `t` built from its register pieces (in `leaves t` order), as the Make-trees
-of `expand calls` build it. -/
+of `expand calls` build it (a string or slice `Make` retyped at its shape: its length check). -/
 def build : Ty → List Val → Val
   | .agg fs _, ps => .agg (buildFields fs ps)
+  | .str, ps => (Val.agg [ps.headD .poison, (ps.drop 1).headD .poison]).retype .str
+  | .slice e, ps => (Val.agg [ps.headD .poison, (ps.drop 1).headD .poison,
+      (ps.drop 2).headD .poison]).retype (.slice e)
   | .empty, _ => .empty
   | _, ps => ps.headD .poison
 def buildFields : List (Nat × Ty) → List Val → List Val
@@ -55,6 +58,12 @@ each retyped at its field's shape) compute them. -/
 def leafVals : Ty → Val → List Val
   | .agg fs _, .agg vs => leafValsFields fs vs
   | .agg fs n, _ => (leaves (.agg fs n)).map fun _ => .poison
+  | .str, .agg vs => [(vs.headD .poison).retype (.ptr (some 1)),
+      (vs.tail.headD .poison).retype (.int .w64)]
+  | .str, _ => [.poison, .poison]
+  | .slice e, .agg vs => [(vs.headD .poison).retype (.ptr e),
+      (vs.tail.headD .poison).retype (.int .w64), (vs.tail.tail.headD .poison).retype (.int .w64)]
+  | .slice _, _ => [.poison, .poison, .poison]
   | .empty, _ => []
   | t, v => [v.retype t]
 def leafValsFields : List (Nat × Ty) → List Val → List Val
@@ -151,6 +160,9 @@ theorem mem_leaves_atom : (t : Ty) → wf t = true → ∀ x ∈ leaves t, atom 
     rw [leaves_atom rfl, List.mem_singleton] at hx; subst hx; rfl
   | .empty, _, _, hx => absurd hx List.not_mem_nil
   | .agg fs n, h, x, hx => mem_leavesFields_atom fs n 0 h x hx
+  | .str, _, x, hx | .slice _, _, x, hx => by
+    simp only [leaves, List.mem_cons, List.not_mem_nil, or_false] at hx
+    rcases hx with rfl | rfl | rfl <;> rfl
   | .blob _, h, _, _ | .mem, h, _, _ | .tuple _, h, _, _ | .other, h, _, _ => nomatch h
 theorem mem_leavesFields_atom : (fs : List (Nat × Ty)) → (n s : Nat) → wfFields fs n s = true →
     ∀ x ∈ leaves.leavesFields fs, atom x.2 = true
@@ -177,6 +189,17 @@ theorem leaves_ord : (t : Ty) → (o start n : Nat) → (rest : List (Nat × Ty)
     (wfFields_of_le hs (by simpa [Ty.size] using hr) : wfFields rest n start = true)
   | .agg fs m, o, start, n, rest, h, hs, hr =>
     leavesFields_ord fs m 0 o start n rest h (by omega) hr
+  | .str, o, start, n, rest, _, hs, hr | .slice _, o, start, n, rest, _, hs, hr => by
+    simp only [leaves, List.map_cons, List.map_nil, List.cons_append, List.nil_append, wfFields,
+      Bool.and_eq_true, decide_eq_true_eq]
+    simp only [Ty.size] at hr
+    and_intros
+    all_goals first
+      | rfl
+      | omega
+      | (simp only [Ty.size, Width.bytes, Width.bits]; omega)
+      | (simp only [Ty.size, Width.bytes, Width.bits]
+         rw [show ∀ k, o + k + 64 / 8 = o + (k + 8) from fun k => by omega]; exact hr)
   | .blob _, _, _, _, _, h, _, _ | .mem, _, _, _, _, h, _, _ | .tuple _, _, _, _, _, h, _, _
   | .other, _, _, _, _, h, _, _ => nomatch h
 theorem leavesFields_ord : (fs : List (Nat × Ty)) → (m s o start n : Nat) →
@@ -213,6 +236,7 @@ mutual
 theorem leafVals_length_aux : (t : Ty) → (v : Val) → wf t = true →
     (leafVals t v).length = (leaves t).length
   | .int _, _, _ | .bool, _, _ | .ptr _, _, _ | .opaque _, _, _ | .empty, _, _ => rfl
+  | .str, v, _ | .slice _, v, _ => by cases v <;> rfl
   | .agg fs n, v, h => by
     by_cases hv : ∃ vs, v = .agg vs
     · obtain ⟨vs, rfl⟩ := hv
@@ -245,6 +269,16 @@ theorem leafVals_hasTy_aux : (t : Ty) → (v : Val) → wf t = true →
     rw [leafVals_atom rfl, leaves_atom rfl]
     exact .cons (Val.retype_hasTy _ v) .nil
   | .empty, _, _ => .nil
+  | .str, v, _ => by
+    cases v
+    case agg vs => exact .cons (Val.retype_hasTy _ _) (.cons (Val.retype_hasTy _ _) .nil)
+    all_goals exact .cons rfl (.cons rfl .nil)
+  | .slice _, v, _ => by
+    cases v
+    case agg vs =>
+      exact .cons (Val.retype_hasTy _ _) (.cons (Val.retype_hasTy _ _)
+        (.cons (Val.retype_hasTy _ _) .nil))
+    all_goals exact .cons rfl (.cons rfl (.cons rfl .nil))
   | .agg fs n, v, h => by
     by_cases hv : ∃ vs, v = .agg vs
     · obtain ⟨vs, rfl⟩ := hv
@@ -283,6 +317,12 @@ theorem refinesList_append : {as bs cs ds : List Val} → RefinesList as bs → 
   | _, _, _, _, .nil, h => h
   | _, _, _, _, .cons r h, h' => .cons r (refinesList_append h h')
 
+theorem refinesList_tail {ps ps' : List Val} (h : RefinesList ps ps') :
+    RefinesList ps.tail ps'.tail := by
+  cases h with
+  | nil => exact .nil
+  | cons _ h => exact h
+
 theorem refinesList_headD {ps ps' : List Val} (h : RefinesList ps ps') :
     Refines (ps.headD .poison) (ps'.headD .poison) := by
   cases h with
@@ -296,6 +336,21 @@ theorem leafVals_mono_aux : (t : Ty) → wf t = true → {v v' : Val} → Refine
     rw [leafVals_atom rfl, leafVals_atom rfl]
     exact .cons (retype_mono _ h) .nil
   | .empty, _, _, _, _ => .nil
+  | .str, _, _, v', h => by
+    cases h
+    case poison => cases v' <;> exact .cons (.poison _) (.cons (.poison _) .nil)
+    case agg vs vs' h =>
+      exact .cons (retype_mono _ (refinesList_headD h))
+        (.cons (retype_mono _ (refinesList_headD (refinesList_tail h))) .nil)
+    all_goals exact RefinesList.refl _
+  | .slice _, _, _, v', h => by
+    cases h
+    case poison => cases v' <;> exact .cons (.poison _) (.cons (.poison _) (.cons (.poison _) .nil))
+    case agg vs vs' h =>
+      exact .cons (retype_mono _ (refinesList_headD h))
+        (.cons (retype_mono _ (refinesList_headD (refinesList_tail h)))
+          (.cons (retype_mono _ (refinesList_headD (refinesList_tail (refinesList_tail h)))) .nil))
+    all_goals exact RefinesList.refl _
   | .agg fs n, hw, v, v', h => by
     by_cases hv : ∃ vs, v = .agg vs
     · obtain ⟨vs, rfl⟩ := hv
@@ -326,6 +381,10 @@ mutual
 theorem build_mono_aux : (t : Ty) → {ps ps' : List Val} → RefinesList ps ps' →
     Refines (build t ps) (build t ps')
   | .agg fs _, _, _, h => .agg (buildFields_mono fs h)
+  | .str, _, _, h => retype_mono _ (.agg (.cons (refinesList_headD h)
+      (.cons (refinesList_headD (h.drop 1)) .nil)))
+  | .slice _, _, _, h => retype_mono _ (.agg (.cons (refinesList_headD h)
+      (.cons (refinesList_headD (h.drop 1)) (.cons (refinesList_headD (h.drop 2)) .nil))))
   | .empty, _, _, _ => .empty
   | .int _, _, _, h | .bool, _, _, h | .ptr _, _, _, h | .opaque _, _, _, h | .mem, _, _, h
   | .tuple _, _, _, h | .other, _, _, h | .blob _, _, _, h => refinesList_headD h
@@ -355,6 +414,31 @@ theorem build_leafVals_aux : (t : Ty) → (v : Val) → wf t = true → v.hasTy 
     | poison => exact .poison _
     | agg vs => exact .agg (buildFields_leafValsFields fs vs n 0 hw hv)
     | _ => cases hv
+  | .str, v, _, hv => by
+    cases v with
+    | poison => exact .poison _
+    | agg vs =>
+      obtain ⟨p, l, rfl, hp, hl⟩ := Val.hasTy_agg_str.1 hv
+      have hp' : p.retype (.ptr (some 1)) = p := by
+        rw [← Val.retypePtr_eq]; exact Val.retypePtr_of_isPtrOrPoison hp
+      simp only [leafVals, List.headD_cons, List.tail_cons, build, List.drop_succ_cons,
+        List.drop_zero, hp', Val.retype_of_hasTy (show (Val.int .w64 l).hasTy (.int .w64) = true from rfl),
+        Val.retype_of_hasTy hv]
+      exact Refines.refl _
+    | _ => simp [Val.hasTy] at hv
+  | .slice e, v, _, hv => by
+    cases v with
+    | poison => exact .poison _
+    | agg vs =>
+      obtain ⟨p, l, c, rfl, hp, hl, hc, hlc⟩ := Val.hasTy_agg_slice.1 hv
+      have hp' : p.retype (.ptr e) = p := by
+        rw [← Val.retypePtr_eq]; exact Val.retypePtr_of_isPtrOrPoison hp
+      simp only [leafVals, List.headD_cons, List.tail_cons, build, List.drop_succ_cons,
+        List.drop_zero, hp', Val.retype_of_hasTy (show (Val.int .w64 l).hasTy (.int .w64) = true from rfl),
+        Val.retype_of_hasTy (show (Val.int .w64 c).hasTy (.int .w64) = true from rfl),
+        Val.retype_of_hasTy hv]
+      exact Refines.refl _
+    | _ => simp [Val.hasTy] at hv
   | .blob _, _, h, _ | .mem, _, h, _ | .tuple _, _, h, _ | .other, _, h, _ => nomatch h
 theorem buildFields_leafValsFields : (fs : List (Nat × Ty)) → (vs : List Val) → (n s : Nat) →
     wfFields fs n s = true → Val.hasTyList vs (fs.map (·.2)) = true →
@@ -377,6 +461,23 @@ theorem build_leafVals {t : Ty} {v : Val} (hw : wf t = true) (hv : v.hasTy t = t
 
 /-! ## `build` undoes `decode` -/
 
+theorem retype_decodePtr (e : Option Nat) (bs : Array Byte) :
+    (decodePtr bs).retype (.ptr e) = decodePtr bs := by
+  unfold decodePtr
+  split
+  · rfl
+  · split <;> rfl
+
+theorem retypeI64_decodeInt (bs : Array Byte) : (decodeInt .w64 bs).retypeI64 = decodeInt .w64 bs := by
+  unfold decodeInt
+  split
+  · simp [Val.retypeI64, BitVec.setWidth_eq]
+  · split
+    · split
+      · simp [Val.retypeI64, BitVec.setWidth_eq]
+      · next h => simp [Val.retypeI64, h]
+    · rfl
+
 mutual
 theorem build_decode_aux : (t : Ty) → (buf : Array Byte) → (b : Nat) → wf t = true →
     build t ((leaves t).map fun x => decode buf (b + x.1) x.2) = decode buf b t
@@ -385,6 +486,18 @@ theorem build_decode_aux : (t : Ty) → (buf : Array Byte) → (b : Nat) → wf 
   | .empty, _, _, _ => rfl
   | .agg fs n, buf, b, h => by
     rw [leaves_agg, build, decode, buildFields_decode fs buf b n 0 h]
+  | .str, buf, b, _ => by
+    simp only [leaves, List.map_cons, List.map_nil, build, List.headD_cons, List.drop_succ_cons,
+      List.drop_zero, Nat.add_zero]
+    show Val.ofStr [_, _] = _
+    simp only [decode, Width.bytes, Width.bits, Nat.add_zero, Val.retypePtr_eq (some 1),
+      ← Val.retypeI64_eq, retype_decodePtr, retypeI64_decodeInt]
+  | .slice e, buf, b, _ => by
+    simp only [leaves, List.map_cons, List.map_nil, build, List.headD_cons, List.drop_succ_cons,
+      List.drop_zero, Nat.add_zero]
+    show Val.ofSlice [_, _, _] = _
+    simp only [decode, Width.bytes, Width.bits, Nat.add_zero, Val.retypePtr_eq e,
+      ← Val.retypeI64_eq, retype_decodePtr, retypeI64_decodeInt]
   | .blob _, _, _, h | .mem, _, _, h | .tuple _, _, _, h | .other, _, _, h => nomatch h
 theorem buildFields_decode : (fs : List (Nat × Ty)) → (buf : Array Byte) → (b n s : Nat) →
     wfFields fs n s = true →

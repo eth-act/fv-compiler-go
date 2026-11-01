@@ -172,7 +172,7 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
       obtain ⟨i1, hi1⟩ := List.getElem?_of_mem hq1
       obtain ⟨p1, s1⟩ := q1
       simp only at hqx1; subst hqx1
-      obtain ⟨P1, M1, MS1, hP1, hM1, -, -⟩ := K.split_src hS d1 hx1
+      obtain ⟨P1, M1, MS1, -, hP1, hM1, -, -, -⟩ := K.split_src hS d1 hx1
       obtain ⟨sv, M2, M2', hsv, he, -, -⟩ := K.storeAt hS hT hjT d1 hx1 hi1 hP1 hM1
       rw [L0.hs] at hsv; cases hsv
       refine ⟨_, he, K.tstep hjT hT (fun h => absurd h hnpre) ?_ ?_⟩

@@ -41,7 +41,7 @@ theorem selLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : GoFV.Opt.RewriteChec
     with h | ⟨f, v, hf, hv, he⟩
   · rw [h]; exact .poison _
   · rw [he]
-    simp only [fieldShape?, hk, Option.map_some, Option.some.injEq] at hf
+    simp only [fieldShape?, Ty.asAgg, hk, Option.map_some, Option.some.injEq] at hf
     subst hf
     simp only [List.getElem?_map, hk, Option.map_some, Option.some.injEq] at hv
     subst hv

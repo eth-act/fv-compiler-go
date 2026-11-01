@@ -31,7 +31,8 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
 theorem strVal_of_strAux {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
     (h : strAux? tabs a = some (s, d)) (hs : s.size ≠ 0) :
-    strVal tabs a = .agg [.ptr ⟨.global d.toStringLossy, 0⟩, .int .w64 (BitVec.ofNat 64 s.size)] := by
+    strVal tabs a =
+      Val.ofStr [.ptr ⟨.global d.toStringLossy, 0⟩, .int .w64 (BitVec.ofNat 64 s.size)] := by
   unfold strAux? at h
   unfold strVal
   split at h
@@ -79,8 +80,13 @@ theorem r_generic_1022_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   have hc : Conv.const .w64 (Int64.ofNat s.size) = .int .w64 (BitVec.ofNat 64 s.size) := by
     simp only [Conv.const, Width.bits, Int64.toInt, BitVec.ofInt_toInt]; rfl
   simp only [hc, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq]
-  rw [Val.retype_of_hasTy hty]
-  exact fun _ => Refines.refl _
+  unfold Val.ofStr at hty ⊢
+  split
+  · rename_i hok
+    rw [if_pos hok] at hty
+    rw [Val.retype_of_hasTy hty]
+    exact fun _ => Refines.refl _
+  · exact fun _ => .poison _
 
 theorem strVal_of_strAux_empty {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
     (h : strAux? tabs a = some (s, d)) (hs : s.size = 0) :
@@ -90,7 +96,7 @@ theorem strVal_of_strAux_empty {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
   split at h
   · rename_i heq
     cases h
-    simp [heq, hs]
+    simp [heq, hs, Val.ofStr, Val.strOK]
   · cases h
 
 /-- `generic.rules:1015`: `(ConstString {str}) && config.PtrSize == 8 && str == "" => (StringMake (ConstNil) (Const64 <typ.Int> [0]))` -/
@@ -152,7 +158,7 @@ def Rule.InstT (r : Rule) (tabs : Tables) (e : PEnv) (or : Oracle) : Prop :=
   Pat.rawT tabs e r.pat ≠ .poison
 
 /-- The string shape. -/
-def strTy : Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+def strTy : Ty := .str
 
 /-- Aux 1: the empty string constant. -/
 def emptyStrTabs : Tables where
@@ -168,7 +174,7 @@ theorem inst_r_generic_1015 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   simp [GoFV.Rules.Generated.Generic.r_generic_1015, FrameOK, Result.nodes, emptyStrVars,
     samePtrVars, numElem1Vars, shiftAmt?, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs,
     Tables.aux?, Pat.rawT, Pat.densT, opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT,
-    Pat.denT]
+    Pat.denT, Val.ofStr, Val.strOK]
   rule_eval
   refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩
   · subst h; simp [lenVar?]
@@ -193,7 +199,9 @@ theorem inst_r_generic_1011 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     Tables.aux?, Pat.rawT, Pat.densT, Pat.denT, opVal, addrVal, sigmaT, Pat.bindsT, Pat.bindssT,
     strTy]
   rule_eval
-  simp [Comp.select, Comp.make, Val.retype, Val.retypeFields]
+  have h2 : (2#64).msb = false := by decide
+  simp [Comp.select, Comp.make, Val.retype, Val.retypeFields, Val.ofStr, Val.strOK, Val.retypePtr,
+    Val.retypeI64, h2]
   exact ⟨fun xe x h => by subst h; simp [strDataVar?], fun xe x h => by subst h; simp [auxVar?]⟩
 
 end GoFV.Proof.Rules

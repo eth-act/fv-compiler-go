@@ -764,19 +764,27 @@ theorem safe_global_retype (s : String) (o : BitVec 64) (t : Ty) :
   | _ => simp [Val.retype, Safe]
 
 omit K in
-/-- The data pointer of a non-empty string constant, at any shape of the constant. -/
+/-- The data pointer of a non-empty string constant, at any shape of the constant (`poison` if
+its length is not a valid `int`). -/
 theorem safe_str_select (s : String) (x : Val) (t : Ty) :
-    Safe (Comp.select 0 [(Val.agg [.ptr ⟨.global s, 0⟩, x]).retype t]) := by
-  cases t with
-  | agg fs n =>
-    match fs with
-    | [] => simp [Val.retype, Val.retypeFields, Comp.select, Safe]
-    | (o, t0) :: fs =>
-      simp only [Val.retype, Val.retypeFields]
-      cases Val.retypeFields fs [x] with
-      | none => simp [Comp.select, Safe]
-      | some vs => simpa [Comp.select] using safe_global_retype s 0 t0
-  | _ => simp [Val.retype, Comp.select, Safe]
+    Safe (Comp.select 0 [(Val.ofStr [.ptr ⟨.global s, 0⟩, x]).retype t]) := by
+  unfold Val.ofStr
+  split
+  · cases t with
+    | agg fs n =>
+      match fs with
+      | [] => simp [Val.retype, Val.retypeFields, Comp.select, Safe]
+      | (o, t0) :: fs =>
+        simp only [Val.retype, Val.retypeFields]
+        cases Val.retypeFields fs [x] with
+        | none => simp [Comp.select, Safe]
+        | some vs => simpa [Comp.select] using safe_global_retype s 0 t0
+    | str =>
+      simp only [Val.retype, Val.retypePtr]
+      unfold Val.ofStr
+      split <;> simp [Comp.select, Safe]
+    | _ => simp [Val.retype, Comp.select, Safe]
+  · cases t <;> simp [Val.retype, Comp.select, Safe]
 
 omit K in
 theorem retypeFields_at : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},
@@ -812,7 +820,7 @@ theorem safe_struct_select {fs : List (Nat × Ty)} {N i o : Nat} {e' : Option Na
 omit K in
 theorem nonEmptyStr_spec {a : ID} (h : Opt.NilCheck.nonEmptyStr tabs f a = true) :
     ∃ av, f.value? a = some av ∧ av.op = .ConstString ∧
-      ∃ s x, frameVal (Ctx.make tabs f) av = some (.agg [.ptr ⟨.global s, 0⟩, x]) := by
+      ∃ s x, frameVal (Ctx.make tabs f) av = some (Val.ofStr [.ptr ⟨.global s, 0⟩, x]) := by
   unfold Opt.NilCheck.nonEmptyStr at h
   split at h
   · next av hav =>
@@ -825,6 +833,7 @@ theorem nonEmptyStr_spec {a : ID} (h : Opt.NilCheck.nonEmptyStr tabs f a = true)
     · next _ _ _ str ds hs =>
       simp only [show (Ctx.make tabs f).tabs = tabs from rfl, hs]
       have hne : str.size ≠ 0 := by simpa using h
+      refine ⟨ds.toStringLossy, Val.i64 (BitVec.ofNat 64 str.size), ?_⟩
       simp [hne]
     · cases h
   · cases h

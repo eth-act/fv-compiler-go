@@ -526,7 +526,7 @@ private theorem retype_mem_eq {t : Ty} {M M' : Mem} (h : (Val.mem M').retype t =
 theorem startSplit {y m0 : ID} {yv gy : Value} (hyv : f.value? y = some yv)
     (hgy : g.value? y = some gy) (hyop : yv.op = .Store) (hgop : gy.op = .Copy)
     (hgargs : gy.args = #[m0]) {q : Nat × Ty} {fs : List (Nat × Ty)} {n : Nat}
-    (hax : auxTy tabs yv.aux = .agg (q :: fs) n) :
+    (hax : (auxTy tabs yv.aux).asAgg = .agg (q :: fs) n) :
     ∃ ps, ∃ _ : SplitD tabs f g y ps, ∃ p, ps[fs.length]? = some (p, m0) ∧
       ps.length = fs.length + 1 := by
   obtain ⟨gv, hgv, h⟩ := K.gval hyv
@@ -607,7 +607,7 @@ theorem prevInv {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
           rcases hyA with hB | hy
           · exact absurd (K.split_node d' hb') (K.base_not_node hB)
           · exact hy
-        obtain ⟨P', M0, MS', hP', hM', hMS', hyS⟩ := K.split_src hS d' hyk
+        obtain ⟨P', M0, MS', MS0', hP', hM', hMS', hR', hyS⟩ := K.split_src hS d' hyk
         have hpid : prevId ps' d'.m0 (fs.length + 1) = d.m0 := by simp [prevId, hq']
         obtain ⟨Mk, M', hk1, hk2, hk3⟩ := K.prevInv_succ hS hT hjT hgv d' hyk (i := fs.length)
           (by omega) (by rw [hpid]; exact harg) hP' hM'
@@ -615,10 +615,10 @@ theorem prevInv {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
         cases hk1
         rw [hpid] at hk2
         rw [hry, hM] at hyS
-        have hMeq : (Val.mem MS').retype (tabs.ty d'.fv.type) = .mem M := by
+        have hMeq : (Val.mem MS0').retype (tabs.ty d'.fv.type) = .mem M := by
           simp only [Option.some.injEq] at hyS; exact hyS.symm
-        rw [retype_mem_eq hMeq] at hk3
-        exact ⟨M', hk2, hk3⟩
+        rw [retype_mem_eq hMeq] at hR'
+        exact ⟨M', hk2, hR'.trans hk3⟩
     obtain ⟨MB, hMB⟩ := write_size_congr hMS (bs' := Array.replicate d.n .poison)
       (by rw [Sem.encode_size]; simp [Ty.size])
     exact ⟨MB, _, by rw [bufK_zero]; exact hMB, h2, write_poison_left hMM hMB⟩
@@ -632,7 +632,7 @@ theorem offVal {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     (hfi : d.fs[i]? = some (o, t)) (L : POff tabs f g d.fv.block d.dst x o ov)
     {P : Ptr} (hP : S.regs[d.dst]? = some (some (.ptr P))) :
     evalValue env (Ctx.make tabs g) T ov = .ok (.ptr (P.add (BitVec.ofNat 64 o))) := by
-  obtain ⟨P', M, MS, hP', -, hMS, -⟩ := K.split_src hS d hx'
+  obtain ⟨P', M, MS, -, hP', -, hMS, -, -⟩ := K.split_src hS d hx'
   rw [hP] at hP'; cases hP'
   have H := K.avail hS
   have hTy := K.typedS hS (K.hLk k)
@@ -669,7 +669,7 @@ theorem storeAt {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     (hM : S.regs[d.mem]? = some (some (.mem M))) :
     ∃ sv M2 M2', g.value? x = some sv ∧ evalValue env (Ctx.make tabs g) T sv = .ok (.mem M2') ∧
       M.write P (bufK S d (i + 1)) = some M2 ∧ Mem.Refines M2 M2' := by
-  obtain ⟨P', M0, MS, hP', hM', hMS, -⟩ := K.split_src hS d hx'
+  obtain ⟨P', M0, MS, -, hP', hM', hMS, -, -⟩ := K.split_src hS d hx'
   rw [hP] at hP'; cases hP'
   rw [hM] at hM'; cases hM'
   obtain ⟨o, t, a, av, sv, ov, hfi, hai, L⟩ := link_at d hi
@@ -714,7 +714,7 @@ theorem splitOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     (d : SplitD tabs f g x ps) :
     ∃ y, evalValue env (Ctx.make tabs g) T d.gv = .ok y ∧
       ∃ yS, S.regs[x]? = some (some yS) ∧ Sem.Refines yS y := by
-  obtain ⟨P, M, MS, hP, hM, hMS, hx⟩ := K.split_src hS d hxS
+  obtain ⟨P, M, MS, MS0, hP, hM, hMS, hR0, hx⟩ := K.split_src hS d hxS
   rcases d.hmode with ⟨hgop, hga⟩ | ⟨hgst, hlx⟩
   · have hlast : d.gv.args = #[prevId ps d.m0 ps.length] := by rw [hga, getLast_prevId]
     obtain ⟨Mk, M', h1, h2, h3⟩ := K.prevInv hS hT hjT d.hgv d hxS (Nat.le_refl _)
@@ -723,7 +723,7 @@ theorem splitOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     cases h1
     refine ⟨_, evalValue_copy hgop hlast h2, _, hx, ?_⟩
     rw [d.hgid, tys_of_value d.hgv, d.hgty]
-    exact retype_mono _ (.mem h3)
+    exact retype_mono _ (.mem (hR0.trans h3))
   · -- in place: `x` is the chain's last store
     rw [List.getLast?_eq_getElem?, Option.map_eq_some_iff] at hlx
     obtain ⟨⟨p, x''⟩, hq, rfl⟩ := hlx
@@ -744,7 +744,7 @@ theorem splitOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
       exact this
     refine ⟨_, he, _, hx, ?_⟩
     rw [hmem]
-    exact .mem hr2
+    exact .mem (hR0.trans hr2)
 
 /-- A split the source did not evaluate: its `Copy` evaluates. -/
 theorem splitPure {S T : Frame} {k j : Nat} {pre : List ID}

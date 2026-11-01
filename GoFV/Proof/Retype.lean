@@ -11,6 +11,132 @@ import GoFV.SSA.Sem.Layout
 
 namespace GoFV.SSA.Sem
 
+theorem Val.retypePtr_eq (e : Option Nat) (v : Val) : v.retypePtr = v.retype (.ptr e) := by
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
+
+theorem Val.retypeI64_eq (v : Val) : v.retypeI64 = v.retype (.int .w64) := by
+  cases v <;> rfl
+
+/-- The components of a string value with a valid length. -/
+theorem Val.strOK_iff {vs : List Val} : Val.strOK vs = true ↔
+    ∃ p l, vs = [p, .int .w64 l] ∧ l.msb = false := by
+  constructor
+  · intro h
+    unfold Val.strOK at h
+    split at h
+    · simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at h
+      exact ⟨_, _, rfl, h⟩
+    · cases h
+  · rintro ⟨p, l, rfl, hl⟩
+    simp [Val.strOK, hl]
+
+/-- The components of a slice value with valid lengths. -/
+theorem Val.sliceOK_iff {vs : List Val} : Val.sliceOK vs = true ↔
+    ∃ p l c, vs = [p, .int .w64 l, .int .w64 c] ∧ l.msb = false ∧ c.msb = false ∧
+      l.toNat ≤ c.toNat := by
+  constructor
+  · intro h
+    unfold Val.sliceOK at h
+    split at h
+    · simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, BitVec.ule,
+        decide_eq_true_eq] at h
+      exact ⟨_, _, _, rfl, h.1.1, h.1.2, h.2⟩
+    · cases h
+  · rintro ⟨p, l, c, rfl, hl, hc, hlc⟩
+    simp [Val.sliceOK, hl, hc, BitVec.ule, hlc]
+
+/-- A value of the string shape that is an aggregate. -/
+theorem Val.hasTy_agg_str {vs : List Val} : Val.hasTy (.agg vs) .str = true ↔
+    ∃ p l, vs = [p, .int .w64 l] ∧ p.isPtrOrPoison = true ∧ l.msb = false := by
+  simp only [Val.hasTy, Bool.and_eq_true, Val.strOK_iff]
+  constructor
+  · rintro ⟨⟨p, l, rfl, hl⟩, hp⟩
+    exact ⟨p, l, rfl, by simpa using hp, hl⟩
+  · rintro ⟨p, l, rfl, hp, hl⟩
+    exact ⟨⟨p, l, rfl, hl⟩, by simpa using hp⟩
+
+/-- A value of a slice shape that is an aggregate. -/
+theorem Val.hasTy_agg_slice {vs : List Val} {e : Option Nat} :
+    Val.hasTy (.agg vs) (.slice e) = true ↔
+    ∃ p l c, vs = [p, .int .w64 l, .int .w64 c] ∧ p.isPtrOrPoison = true ∧ l.msb = false ∧
+      c.msb = false ∧ l.toNat ≤ c.toNat := by
+  simp only [Val.hasTy, Bool.and_eq_true, Val.sliceOK_iff]
+  constructor
+  · rintro ⟨⟨p, l, c, rfl, hl, hc, hlc⟩, hp⟩
+    exact ⟨p, l, c, rfl, by simpa using hp, hl, hc, hlc⟩
+  · rintro ⟨p, l, c, rfl, hp, hl, hc, hlc⟩
+    exact ⟨⟨p, l, c, rfl, hl, hc, hlc⟩, by simpa using hp⟩
+
+theorem Val.isPtrOrPoison_retypePtr (v : Val) : v.retypePtr.isPtrOrPoison = true := by
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
+
+theorem Val.ofStr_hasTy (p l : Val) : (Val.ofStr [p.retypePtr, l]).hasTy .str = true := by
+  unfold Val.ofStr; split
+  · next h =>
+    simp only [Val.hasTy, h, Bool.true_and]
+    simp [Val.isPtrOrPoison_retypePtr]
+  · rfl
+
+theorem Val.ofSlice_hasTy (e : Option Nat) (p l c : Val) :
+    (Val.ofSlice [p.retypePtr, l, c]).hasTy (.slice e) = true := by
+  unfold Val.ofSlice; split
+  · next h =>
+    simp only [Val.hasTy, h, Bool.true_and]
+    simp [Val.isPtrOrPoison_retypePtr]
+  · rfl
+
+theorem Val.ofStr_of_ok {vs : List Val} (h : Val.strOK vs = true) : Val.ofStr vs = .agg vs := by
+  simp [Val.ofStr, h]
+
+theorem Val.ofSlice_of_ok {vs : List Val} (h : Val.sliceOK vs = true) :
+    Val.ofSlice vs = .agg vs := by
+  simp [Val.ofSlice, h]
+
+theorem Val.retypePtr_of_isPtrOrPoison {p : Val} (h : p.isPtrOrPoison = true) :
+    p.retypePtr = p := by
+  cases p <;> simp_all [Val.isPtrOrPoison, Val.retypePtr]
+
+theorem Val.ofStr_hasTy_of {p : Val} (hp : p.isPtrOrPoison = true) (l : Val) :
+    (Val.ofStr [p, l]).hasTy .str = true := by
+  rw [← Val.retypePtr_of_isPtrOrPoison hp]; exact Val.ofStr_hasTy p l
+
+theorem Val.ofSlice_hasTy_of {p : Val} (hp : p.isPtrOrPoison = true) (e : Option Nat) (l c : Val) :
+    (Val.ofSlice [p, l, c]).hasTy (.slice e) = true := by
+  rw [← Val.retypePtr_of_isPtrOrPoison hp]; exact Val.ofSlice_hasTy e p l c
+
+theorem Val.retypeI64_int (l : BitVec 64) : (Val.int .w64 l).retypeI64 = .int .w64 l := by
+  simp [Val.retypeI64, BitVec.setWidth_eq]
+
+/-- **Lengths of strings are nonnegative**: a non-`poison` value of the string shape (every
+register of a string type holds one, `Val.retype_hasTy`) has a length that is a nonnegative
+signed `int`, the `StringLen` of it. -/
+theorem Val.hasTy_str {v : Val} (h : v.hasTy .str = true) :
+    v = .poison ∨ ∃ p l, v = .agg [p, .int .w64 l] ∧ l.msb = false ∧ 0 ≤ l.toInt := by
+  cases v with
+  | poison => exact .inl rfl
+  | agg vs =>
+    obtain ⟨p, l, rfl, -, hl⟩ := Val.hasTy_agg_str.1 h
+    exact .inr ⟨p, l, rfl, hl, by rw [BitVec.toInt_eq_toNat_of_msb hl]; omega⟩
+  | _ => simp [Val.hasTy] at h
+
+/-- **Lengths and capacities of slices are nonnegative**: a non-`poison` value of a slice
+shape has `0 ≤ len ≤ cap` as signed `int`s (`SliceLen` is component 1, `SliceCap` 2). -/
+theorem Val.hasTy_slice {v : Val} {e : Option Nat} (h : v.hasTy (.slice e) = true) :
+    v = .poison ∨ ∃ p l c, v = .agg [p, .int .w64 l, .int .w64 c] ∧ l.msb = false ∧
+      c.msb = false ∧ 0 ≤ l.toInt ∧ l.toInt ≤ c.toInt := by
+  cases v with
+  | poison => exact .inl rfl
+  | agg vs =>
+    obtain ⟨p, l, c, rfl, -, hl, hc, hlc⟩ := Val.hasTy_agg_slice.1 h
+    refine .inr ⟨p, l, c, rfl, hl, hc, ?_, ?_⟩
+    · rw [BitVec.toInt_eq_toNat_of_msb hl]; omega
+    · rw [BitVec.toInt_eq_toNat_of_msb hl, BitVec.toInt_eq_toNat_of_msb hc]; omega
+  | _ => simp [Val.hasTy] at h
+
 mutual
 /-- **Every retyped value has the shape.** -/
 theorem Val.retype_hasTy : ∀ (t : Ty) (v : Val), (v.retype t).hasTy t = true
@@ -48,6 +174,18 @@ theorem Val.retype_hasTy : ∀ (t : Ty) (v : Val), (v.retype t).hasTy t = true
     · rename_i hl; simpa [Val.hasTy] using hl
     · rfl
   | .empty, .empty => rfl
+  | .str, .agg vs => by
+    match vs with
+    | [p, l] => exact Val.ofStr_hasTy p _
+    | [] | [_] | _ :: _ :: _ :: _ => rfl
+  | .slice e, .agg vs => by
+    match vs with
+    | [p, l, c] => exact Val.ofSlice_hasTy e p _ _
+    | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => rfl
+  | .str, .int _ _ | .str, .bool _ | .str, .mem _ | .str, .tuple _ | .str, .ptr _
+  | .str, .blob _ | .str, .empty => rfl
+  | .slice _, .int _ _ | .slice _, .bool _ | .slice _, .mem _ | .slice _, .tuple _
+  | .slice _, .ptr _ | .slice _, .blob _ | .slice _, .empty => rfl
   | .int _, .bool _ | .int _, .mem _ | .int _, .tuple _ | .int _, .agg _ | .int _, .blob _
   | .int _, .empty => rfl
   | .bool, .int _ _ | .bool, .mem _ | .bool, .tuple _ | .bool, .ptr _ | .bool, .agg _
@@ -123,6 +261,18 @@ theorem Val.retype_of_hasTy : ∀ {t : Ty} {v : Val}, v.hasTy t = true → v.ret
     simp only [Val.hasTy] at h
     unfold Val.retype; simp [h]
   | .empty, .empty, _ => rfl
+  | .str, .agg vs, h => by
+    obtain ⟨p, l, rfl, hp, hl⟩ := Val.hasTy_agg_str.1 h
+    simp only [Val.retype, Val.retypePtr_of_isPtrOrPoison hp, Val.retypeI64_int]
+    exact Val.ofStr_of_ok (Val.strOK_iff.2 ⟨p, l, rfl, hl⟩)
+  | .slice _, .agg vs, h => by
+    obtain ⟨p, l, c, rfl, hp, hl, hc, hlc⟩ := Val.hasTy_agg_slice.1 h
+    simp only [Val.retype, Val.retypePtr_of_isPtrOrPoison hp, Val.retypeI64_int]
+    exact Val.ofSlice_of_ok (Val.sliceOK_iff.2 ⟨p, l, c, rfl, hl, hc, hlc⟩)
+  | .str, .int _ _, h | .str, .bool _, h | .str, .mem _, h | .str, .tuple _, h
+  | .str, .ptr _, h | .str, .blob _, h | .str, .empty, h => by simp [Val.hasTy] at h
+  | .slice _, .int _ _, h | .slice _, .bool _, h | .slice _, .mem _, h | .slice _, .tuple _, h
+  | .slice _, .ptr _, h | .slice _, .blob _, h | .slice _, .empty, h => by simp [Val.hasTy] at h
   | .int _, .bool _, h | .int _, .mem _, h | .int _, .tuple _, h | .int _, .agg _, h
   | .int _, .blob _, h | .int _, .empty, h => by simp [Val.hasTy] at h
   | .bool, .int _ _, h | .bool, .mem _, h | .bool, .tuple _, h | .bool, .ptr _, h
@@ -168,5 +318,25 @@ end
 
 theorem Val.retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t :=
   Val.retype_of_hasTy (Val.retype_hasTy t v)
+
+/-! ## Witnesses -/
+
+/-- `Val.hasTy_str` applies to a defined string of length 3 (and a negative length is not a
+string: it retypes to `poison`). -/
+example : ∃ p l, Val.agg [.ptr Ptr.null, .int .w64 3] = .agg [p, .int .w64 l] ∧ l.msb = false ∧
+    0 ≤ l.toInt :=
+  (Val.hasTy_str (v := .agg [.ptr Ptr.null, .int .w64 3]) (by decide)).resolve_left nofun
+
+example : (Val.agg [.ptr Ptr.null, .int .w64 (-1)]).retype .str = .poison := rfl
+
+/-- `Val.hasTy_slice` applies to a defined slice with `len 2 ≤ cap 5`. -/
+example : ∃ p l c, Val.agg [.ptr Ptr.null, .int .w64 2, .int .w64 5] =
+    .agg [p, .int .w64 l, .int .w64 c] ∧ l.msb = false ∧ c.msb = false ∧ 0 ≤ l.toInt ∧
+    l.toInt ≤ c.toInt :=
+  (Val.hasTy_slice (v := .agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]) (e := some 8)
+    (by decide)).resolve_left nofun
+
+example : (Val.agg [.ptr Ptr.null, .int .w64 5, .int .w64 2]).retype (.slice (some 8)) =
+    .poison := rfl
 
 end GoFV.SSA.Sem

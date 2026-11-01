@@ -112,6 +112,18 @@ theorem decodePtr_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h 
     · exact ofAddr_notU hU _
     · trivial
 
+theorem ofStr_avoids {U : Blk → Prop} {vs : List Val} (h : Val.AvoidsList U vs) :
+    Val.Avoids U (Val.ofStr vs) := by
+  unfold Val.ofStr; split
+  · exact h
+  · trivial
+
+theorem ofSlice_avoids {U : Blk → Prop} {vs : List Val} (h : Val.AvoidsList U vs) :
+    Val.Avoids U (Val.ofSlice vs) := by
+  unfold Val.ofSlice; split
+  · exact h
+  · trivial
+
 mutual
 theorem decode_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : BAv U bs)
     (off : Nat) : (t : Ty) → Val.Avoids U (decode bs off t)
@@ -131,6 +143,14 @@ theorem decode_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : B
   | .empty => by simp only [decode]; trivial
   | .opaque _ => by simp only [decode]; trivial
   | .other => by simp only [decode]; trivial
+  | .str => by
+    simp only [decode]
+    exact ofStr_avoids ⟨decodePtr_avoids hU (bav_extract h _ _),
+      decodeInt_avoids (bav_extract h _ _) _, trivial⟩
+  | .slice _ => by
+    simp only [decode]
+    exact ofSlice_avoids ⟨decodePtr_avoids hU (bav_extract h _ _),
+      decodeInt_avoids (bav_extract h _ _) _, decodeInt_avoids (bav_extract h _ _) _, trivial⟩
   | .mem => by simp only [decode]; trivial
   | .tuple _ => by simp only [decode]; trivial
 theorem decodeFields_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : BAv U bs)
@@ -158,6 +178,16 @@ theorem decodeLoad_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h
   | .other => by simp only [decodeLoad]; trivial
   | .mem => by simp only [decodeLoad]; trivial
   | .tuple _ => by simp only [decodeLoad]; trivial
+  | .str => by
+    simp only [decodeLoad]
+    split
+    · trivial
+    · exact decode_avoids hU h off _
+  | .slice _ => by
+    simp only [decodeLoad]
+    split
+    · trivial
+    · exact decode_avoids hU h off _
 theorem decodeLoadFields_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : BAv U bs)
     (off : Nat) : (fs : List (Nat × Ty)) → Val.AvoidsList U (decodeLoadFields bs off fs)
   | [] => by simp only [decodeLoadFields]; trivial
@@ -179,6 +209,25 @@ theorem bav_ptrBytes {U : Blk → Prop} {p : Ptr} (hp : ¬ U p.blk) : BAv U (ptr
   simp [ptrBytes] at hy
   obtain ⟨_, _, rfl⟩ := hy
   exact hp
+
+theorem encodeWord_avoids {U : Blk → Prop} {v : Val} (h : Val.Avoids U v) :
+    BAv U (encodeWord v) := by
+  unfold encodeWord
+  split
+  · exact bav_intBytes _ _ _
+  · exact bav_ptrBytes h
+  · split
+    · intro x hx; exact h x (by simpa using hx)
+    · exact bav_replicate_poison _ _
+  · exact bav_replicate_poison _ _
+
+theorem bav_encodeWords {U : Blk → Prop} : ∀ {buf : Array Byte} (os : List Nat) {vs : List Val},
+    BAv U buf → Val.AvoidsList U vs → BAv U (encodeWords buf os vs)
+  | _, o :: os, _ :: _, hb, ⟨h1, h2⟩ => by
+    simp only [encodeWords]
+    exact bav_encodeWords os (bav_putBytes hb (encodeWord_avoids h1) o) h2
+  | _, [], _, hb, _ => by simp only [encodeWords]; exact hb
+  | _, _ :: _, [], hb, _ => by simp only [encodeWords]; exact hb
 
 mutual
 theorem encode_avoids {U : Blk → Prop} : (t : Ty) → {v : Val} → Val.Avoids U v →
@@ -207,6 +256,12 @@ theorem encode_avoids {U : Blk → Prop} : (t : Ty) → {v : Val} → Val.Avoids
   | .agg fs n, .agg vs, h => by
     simp only [encode]
     exact encodeFields_avoids (bav_replicate_poison _ _) fs h
+  | .str, .agg _, h => by
+    simp only [encode]
+    exact bav_encodeWords _ (bav_replicate_poison _ _) h
+  | .slice _, .agg _, h => by
+    simp only [encode]
+    exact bav_encodeWords _ (bav_replicate_poison _ _) h
   | .int w, .bool _, _ | .int w, .agg _, _ | .int w, .empty, _ => by
     cases w <;> simp only [encode] <;> exact bav_replicate_poison _ _
   | .bool, .int _ _, _ | .bool, .ptr _, _ | .bool, .agg _, _ | .bool, .empty, _
@@ -222,7 +277,10 @@ theorem encode_avoids {U : Blk → Prop} : (t : Ty) → {v : Val} → Val.Avoids
   | .empty, .int _ _, _ | .empty, .bool _, _ | .empty, .ptr _, _ | .empty, .agg _, _
   | .empty, .empty, _
   | .opaque _, .int _ _, _ | .opaque _, .bool _, _ | .opaque _, .ptr _, _ | .opaque _, .agg _, _
-  | .opaque _, .empty, _ => by simp only [encode]; exact bav_replicate_poison _ _
+  | .opaque _, .empty, _
+  | .str, .int _ _, _ | .str, .bool _, _ | .str, .ptr _, _ | .str, .empty, _
+  | .slice _, .int _ _, _ | .slice _, .bool _, _ | .slice _, .ptr _, _
+  | .slice _, .empty, _ => by simp only [encode]; exact bav_replicate_poison _ _
 theorem encodeFields_avoids {U : Blk → Prop} {buf : Array Byte} (hb : BAv U buf) :
     (fs : List (Nat × Ty)) → {vs : List Val} → Val.AvoidsList U vs →
       BAv U (encodeFields buf fs vs)
@@ -337,6 +395,39 @@ theorem addr_none_notU {U : Blk → Prop} (hU : TempU U) {p : Ptr} (h : p.addr? 
   obtain ⟨n, hn⟩ := hU _ hu
   simp [Ptr.addr?, hn, Blk.base?] at h
 
+theorem retypePtr_avoids {U : Blk → Prop} (hU : TempU U) {v : Val} (h : Val.Avoids U v) :
+    Val.Avoids U v.retypePtr := by
+  unfold Val.retypePtr
+  split
+  · exact ofAddr_notU hU _
+  · exact h
+  · trivial
+
+theorem retypeI64_avoids {U : Blk → Prop} {v : Val} (h : Val.Avoids U v) :
+    Val.Avoids U v.retypeI64 := by
+  unfold Val.retypeI64
+  split
+  · split <;> trivial
+  · split
+    · trivial
+    · exact h
+  · trivial
+
+theorem retype_str_avoids {U : Blk → Prop} (hU : TempU U) :
+    ∀ {vs : List Val}, Val.AvoidsList U vs → Val.Avoids U (Val.retype .str (.agg vs))
+  | [_, _], ⟨hp, hl, _⟩ => by
+    simp only [Val.retype]
+    exact ofStr_avoids ⟨retypePtr_avoids hU hp, retypeI64_avoids hl, trivial⟩
+  | [], _ | [_], _ | _ :: _ :: _ :: _, _ => trivial
+
+theorem retype_slice_avoids {U : Blk → Prop} (hU : TempU U) (e : Option Nat) :
+    ∀ {vs : List Val}, Val.AvoidsList U vs → Val.Avoids U (Val.retype (.slice e) (.agg vs))
+  | [_, _, _], ⟨hp, hl, hc, _⟩ => by
+    simp only [Val.retype]
+    exact ofSlice_avoids ⟨retypePtr_avoids hU hp, retypeI64_avoids hl, retypeI64_avoids hc,
+      trivial⟩
+  | [], _ | [_], _ | [_, _], _ | _ :: _ :: _ :: _ :: _, _ => trivial
+
 mutual
 theorem retype_avoids {U : Blk → Prop} (hU : TempU U) :
     ∀ (t : Ty) {v : Val}, Val.Avoids U v → Val.Avoids U (v.retype t)
@@ -366,6 +457,12 @@ theorem retype_avoids {U : Blk → Prop} (hU : TempU U) :
     cases hr : Val.retypeFields fs vs with
     | none => trivial
     | some ws => exact retypeFields_avoids hU fs h hr
+  | .str, .agg _, h => retype_str_avoids hU h
+  | .slice e, .agg _, h => retype_slice_avoids hU e h
+  | .str, .int _ _, _ | .str, .bool _, _ | .str, .mem _, _ | .str, .tuple _, _
+  | .str, .ptr _, _ | .str, .blob _, _ | .str, .empty, _ => trivial
+  | .slice _, .int _ _, _ | .slice _, .bool _, _ | .slice _, .mem _, _ | .slice _, .tuple _, _
+  | .slice _, .ptr _, _ | .slice _, .blob _, _ | .slice _, .empty, _ => trivial
   | .blob n, .blob bs, h => by
     unfold Val.retype
     split
@@ -435,7 +532,8 @@ theorem noPtr_avoids {U : Blk → Prop} (hU : TempU U) :
     simp only [Val.hasTy] at h
     simp only [noPtrTy] at hn
     exact noPtrFields_avoids hU fs h hn
-  | .ptr _, _, _, hn | .mem, _, _, hn | .tuple _, _, _, hn | .blob _, _, _, hn => by
+  | .ptr _, _, _, hn | .mem, _, _, hn | .tuple _, _, _, hn | .blob _, _, _, hn
+  | .str, _, _, hn | .slice _, _, _, hn => by
     simp [noPtrTy] at hn
   | .int _, .bool _, h, _ | .int _, .mem _, h, _ | .int _, .tuple _, h, _
   | .int _, .agg _, h, _ | .int _, .blob _, h, _ | .int _, .empty, h, _

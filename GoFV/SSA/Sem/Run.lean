@@ -556,6 +556,8 @@ register assignment (fields in order; string: pointer, length; slice: pointer, l
 capacity; interface: type word, data word). -/
 def leaves : Ty → List (Nat × Ty)
   | .agg fs _ => leavesFields fs
+  | .str => [(0, .ptr (some 1)), (8, .int .w64)]
+  | .slice e => [(0, .ptr e), (8, .int .w64), (16, .int .w64)]
   | .empty => []
   | .blob _ => []
   | t => [(0, t)]
@@ -722,7 +724,7 @@ def frameVal (ctx : Ctx) (v : Value) : Option Val :=
   | .ConstString =>
     match v.aux.bind ctx.tabs.aux? with
     | some { kind := .str s dataSym, .. } =>
-      some (.agg [if s.size == 0 then .ptr Ptr.null else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
+      some (Val.ofStr [if s.size == 0 then .ptr Ptr.null else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
         .i64 (BitVec.ofNat 64 s.size)])
     | _ => some .poison
   | _ => none

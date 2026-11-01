@@ -89,6 +89,55 @@ theorem memsOK_of_tuple {vs : List Val} (h : MemsOK (.tuple vs)) : ∀ v ∈ vs,
 
 /-! ## Decoding and retyping -/
 
+theorem decodeInt_mems (w : Width) (bs : Array Byte) : (decodeInt w bs).mems = [] := by
+  unfold decodeInt; split
+  · rfl
+  · split <;> (try split) <;> rfl
+
+theorem decodePtr_mems (bs : Array Byte) : (decodePtr bs).mems = [] := by
+  unfold decodePtr; split <;> (try split) <;> rfl
+
+theorem ofStr_mems {vs : List Val} (h : Val.memsL vs = []) : (Val.ofStr vs).mems = [] := by
+  unfold Val.ofStr; split
+  · exact h
+  · rfl
+
+theorem ofSlice_mems {vs : List Val} (h : Val.memsL vs = []) : (Val.ofSlice vs).mems = [] := by
+  unfold Val.ofSlice; split
+  · exact h
+  · rfl
+
+theorem retypePtr_mems (v : Val) : v.retypePtr.mems = [] := by
+  unfold Val.retypePtr; split <;> rfl
+
+theorem retypeI64_mems (v : Val) : v.retypeI64.mems = [] := by
+  unfold Val.retypeI64; split
+  · split <;> rfl
+  · split <;> rfl
+  · rfl
+
+/-- A string holds no memory. -/
+theorem retype_str_mems (v : Val) : (v.retype .str).mems = [] := by
+  cases v with
+  | agg vs =>
+    match vs with
+    | [p, l] =>
+      simp only [Val.retype]
+      exact ofStr_mems (by simp [Val.memsL, retypePtr_mems, retypeI64_mems])
+    | [] | [_] | _ :: _ :: _ :: _ => simp [Val.retype, Val.mems]
+  | _ => simp [Val.retype, Val.mems]
+
+/-- A slice holds no memory. -/
+theorem retype_slice_mems (e : Option Nat) (v : Val) : (v.retype (.slice e)).mems = [] := by
+  cases v with
+  | agg vs =>
+    match vs with
+    | [p, l, c] =>
+      simp only [Val.retype]
+      exact ofSlice_mems (by simp [Val.memsL, retypePtr_mems, retypeI64_mems])
+    | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [Val.retype, Val.mems]
+  | _ => simp [Val.retype, Val.mems]
+
 mutual
 theorem decode_mems : (bs : Array Byte) → (off : Nat) → (t : Ty) → (decode bs off t).mems = []
   | bs, off, .int w => by
@@ -100,6 +149,12 @@ theorem decode_mems : (bs : Array Byte) → (off : Nat) → (t : Ty) → (decode
   | bs, off, .ptr _ => by simp only [decode, decodePtr]; split <;> (try split) <;> rfl
   | bs, off, .agg fs _ => by
     simp only [decode, Val.mems]; exact decodeFields_mems bs off fs
+  | bs, off, .str => by
+    simp only [decode]
+    exact ofStr_mems (by simp [Val.memsL, decodePtr_mems, decodeInt_mems])
+  | bs, off, .slice _ => by
+    simp only [decode]
+    exact ofSlice_mems (by simp [Val.memsL, decodePtr_mems, decodeInt_mems])
   | _, _, .blob _ => rfl
   | _, _, .empty => rfl
   | _, _, .opaque _ => rfl
@@ -138,6 +193,8 @@ theorem retype_mems : (t : Ty) → (v : Val) → ∀ m ∈ (v.retype t).mems, m 
       · rename_i vs' h
         exact retypeFields_mems fs vs h m hm
       · simp [Val.mems] at hm
+    | str => simp [retype_str_mems] at hm
+    | slice e => simp [retype_slice_mems] at hm
     | _ => simp [Val.retype, Val.mems] at hm
   | t, .int w x => by
     intro m hm
@@ -389,6 +446,8 @@ theorem decodeLoad_mems (bs : Array Byte) (off : Nat) : (t : Ty) → (decodeLoad
   | .ptr _ => by simp only [decodeLoad]; exact decode_mems _ _ _
   | .blob _ => by simp only [decodeLoad]; exact decode_mems _ _ _
   | .empty => rfl
+  | .str => by simp only [decodeLoad]; split; rfl; exact decode_mems _ _ _
+  | .slice _ => by simp only [decodeLoad]; split; rfl; exact decode_mems _ _ _
   | .opaque _ => by simp only [decodeLoad]; exact decode_mems _ _ _
   | .other => rfl
   | .mem => rfl
@@ -644,6 +703,8 @@ theorem retype_memFree : (t : Ty) → memFree t = true → (v : Val) → (v.rety
         simp only [Val.mems]
         exact retypeFields_memFree fs (by simpa only [memFree] using h) vs hr
       · rfl
+    | str => exact retype_str_mems _
+    | slice e => exact retype_slice_mems e _
     | _ => simp [memFree, Val.retype, Val.mems] at h ⊢
   | t, _, .poison => nil_of_retype t .poison rfl
   | t, _, .int w x => nil_of_retype t (.int w x) rfl

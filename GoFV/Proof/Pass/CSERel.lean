@@ -67,6 +67,20 @@ theorem tyEq_sound : ∀ {a b : Sem.Ty}, tyEq a b = true → a = b
     simp only [tyEq, Bool.and_eq_true, beq_iff_eq] at h; rw [fieldsEq_sound h.1, h.2]
   | .blob n, .blob n', h => by simp only [tyEq, beq_iff_eq] at h; rw [h]
   | .opaque n, .opaque n', h => by simp only [tyEq, beq_iff_eq] at h; rw [h]
+  | .str, .str, _ => rfl
+  | .slice e, .slice e', h => by simp only [tyEq, beq_iff_eq] at h; rw [h]
+  | .str, .int _, h | .str, .bool, h | .str, .mem, h | .str, .tuple _, h | .str, .other, h
+  | .str, .ptr _, h | .str, .agg _ _, h | .str, .blob _, h | .str, .empty, h
+  | .str, .opaque _, h | .str, .slice _, h
+  | .slice _, .int _, h | .slice _, .bool, h | .slice _, .mem, h | .slice _, .tuple _, h
+  | .slice _, .other, h | .slice _, .ptr _, h | .slice _, .agg _ _, h | .slice _, .blob _, h
+  | .slice _, .empty, h | .slice _, .opaque _, h | .slice _, .str, h
+  | .int _, .str, h | .bool, .str, h | .mem, .str, h | .tuple _, .str, h | .other, .str, h
+  | .ptr _, .str, h | .agg _ _, .str, h | .blob _, .str, h | .empty, .str, h
+  | .opaque _, .str, h
+  | .int _, .slice _, h | .bool, .slice _, h | .mem, .slice _, h | .tuple _, .slice _, h
+  | .other, .slice _, h | .ptr _, .slice _, h | .agg _ _, .slice _, h | .blob _, .slice _, h
+  | .empty, .slice _, h | .opaque _, .slice _, h => by simp [tyEq] at h
   | .int _, .bool, h | .int _, .mem, h | .int _, .tuple _, h | .int _, .other, h
   | .int _, .ptr _, h | .int _, .agg _ _, h | .int _, .blob _, h | .int _, .empty, h
   | .int _, .opaque _, h

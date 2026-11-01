@@ -48,7 +48,7 @@ theorem ecPathVal_append_one : (π : List (Nat × Ty)) → (k : Nat) → (s : Ty
 
 mutual
 theorem ec_leafPaths_length : (t : Ty) → wf t = true → (leafPaths t).length = (leaves t).length
-  | .int _, _ | .bool, _ | .ptr _, _ | .opaque _, _ | .empty, _ => rfl
+  | .int _, _ | .bool, _ | .ptr _, _ | .opaque _, _ | .empty, _ | .str, _ | .slice _, _ => rfl
   | .agg fs n, h => by
     unfold leafPaths
     rw [leaves_agg]
@@ -90,6 +90,11 @@ theorem ec_leafVals_paths : (t : Ty) → wf t = true → {v : Val} → v.hasTy t
       rw [leafVals_agg_of_ne (v := .poison) fun _ e => nomatch e]
       simp only [ecPathVal_poison]
       rw [List.map_const', List.map_const', ec_leafPaths_length _ hw]
+    | _ => simp [Val.hasTy] at hy
+  | .str, _, v, hy | .slice _, _, v, hy => by
+    cases v with
+    | agg vs => rcases vs with _ | ⟨a, _ | ⟨b, _ | ⟨c, rest⟩⟩⟩ <;> rfl
+    | poison => rfl
     | _ => simp [Val.hasTy] at hy
   | .blob _, h, _, _ | .mem, h, _, _ | .tuple _, h, _, _ | .other, h, _, _ => nomatch h
 theorem ec_leafValsFields_paths : (fs : List (Nat × Ty)) → (n s : Nat) → wfFields fs n s = true →
@@ -244,6 +249,29 @@ theorem ec_leafPaths_head_hasTy {t : Ty} {y : Val} (hy : y.hasTy t = true) {k : 
       exact ec_leafPathsFields_head_hasTy fs 0 vs (by simpa using hy) k s π hm
     | poison => rfl
     | _ => simp [Val.hasTy] at hy
+  | str =>
+    cases y with
+    | agg vs =>
+      obtain ⟨p, l, rfl, hp, hl⟩ := Val.hasTy_agg_str.1 hy
+      simp only [leafPaths, List.mem_cons, List.cons.injEq, Prod.mk.injEq, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩
+      · cases p <;> simp_all [Comp.select, Val.hasTy, Val.isPtrOrPoison]
+      · rfl
+    | poison => rfl
+    | _ => simp [Val.hasTy] at hy
+  | slice e =>
+    cases y with
+    | agg vs =>
+      obtain ⟨p, l, c, rfl, hp, -⟩ := Val.hasTy_agg_slice.1 hy
+      simp only [leafPaths, List.mem_cons, List.cons.injEq, Prod.mk.injEq, List.not_mem_nil,
+        or_false] at hm
+      rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩
+      · cases p <;> simp_all [Comp.select, Val.hasTy, Val.isPtrOrPoison]
+      · rfl
+      · rfl
+    | poison => rfl
+    | _ => simp [Val.hasTy] at hy
   | _ => simp [leafPaths] at hm
 
 theorem ec_args_two {arr : Array ID} (h : arr.size = 2) : arr.toList = [arr[0]!, arr[1]!] := by
@@ -260,6 +288,16 @@ theorem ec_agg_retype_ptr (vs : List Val) (t : Ty) (e : Option Nat) :
       | none => Val.poison).retype (.ptr e) = .poison
     split <;> rfl
   | int w => cases w <;> rfl
+  | str =>
+    rw [retype_str_agg]
+    split
+    · unfold Val.ofStr; split <;> rfl
+    · rfl
+  | slice el =>
+    rw [retype_slice_agg]
+    split
+    · unfold Val.ofSlice; split <;> rfl
+    · rfl
   | _ => rfl
 
 theorem ec_hasTy_ptr (v : Val) (e e' : Option Nat) : v.hasTy (.ptr e) = v.hasTy (.ptr e') := by

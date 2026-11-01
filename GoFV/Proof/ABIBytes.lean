@@ -52,6 +52,12 @@ theorem extract_agree {bs bs' : Array Byte} {o o' n : Nat} (h : Agree bs o bs' o
     · exact h i ‹_›
     · rfl
 
+/-- The `k` bytes at `o + a` agree when the `n ≥ a + k` bytes at `o` do. -/
+theorem extract_agree_at {bs bs' : Array Byte} {o o' n : Nat} (h : Agree bs o bs' o' n)
+    (a k : Nat) (hk : a + k ≤ n) :
+    bs.extract (o + a) (o + a + k) = bs'.extract (o' + a) (o' + a + k) :=
+  extract_agree (h.sub hk)
+
 /-! ## `decode` reads only its own bytes -/
 
 mutual
@@ -67,6 +73,21 @@ theorem decode_agree : (t : Ty) → {bs bs' : Array Byte} → {o o' : Nat} → w
   | .agg fs n, _, _, _, _, hw, h => by
     simp only [decode]; rw [decodeFields_agree fs n 0 hw h]
   | .empty, _, _, _, _, _, _ | .opaque _, _, _, _, _, _, _ => rfl
+  | .str, _, _, o, o', _, h => by
+    simp only [decode]
+    have h0 := extract_agree_at h 0 8 (by simp [Ty.size])
+    have h8 := extract_agree_at h 8 8 (by simp [Ty.size])
+    simp only [Nat.add_zero] at h0
+    rw [show o + 16 = o + 8 + 8 by omega, show o' + 16 = o' + 8 + 8 by omega, h0, h8]
+  | .slice _, _, _, o, o', _, h => by
+    simp only [decode]
+    have h0 := extract_agree_at h 0 8 (by simp [Ty.size])
+    have h8 := extract_agree_at h 8 8 (by simp [Ty.size])
+    have h16 := extract_agree_at h 16 8 (by simp [Ty.size])
+    simp only [Nat.add_zero] at h0
+    rw [show o + 16 = o + 8 + 8 by omega, show o' + 16 = o' + 8 + 8 by omega, h0, h8,
+      show o + 8 + 8 = o + 16 by omega, show o' + 8 + 8 = o' + 16 by omega,
+      show o + 24 = o + 16 + 8 by omega, show o' + 24 = o' + 16 + 8 by omega, h16]
   | .blob _, _, _, _, _, hw, _ | .mem, _, _, _, _, hw, _ | .tuple _, _, _, _, _, hw, _
   | .other, _, _, _, _, hw, _ => nomatch hw
 theorem decodeFields_agree : (fs : List (Nat × Ty)) → (n s : Nat) → {bs bs' : Array Byte} →

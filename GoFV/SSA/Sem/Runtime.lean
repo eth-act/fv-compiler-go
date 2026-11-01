@@ -362,9 +362,8 @@ def Env.runtime : Env where
     | "runtime.convT16" => some (convT (.int .w16))
     | "runtime.convT32" => some (convT (.int .w32))
     | "runtime.convT64" => some (convT (.int .w64))
-    | "runtime.convTstring" => some (convT (.agg [(0, .ptr (some 1)), (8, .int .w64)] 16))
-    | "runtime.convTslice" =>
-      some (convT (.agg [(0, .ptr none), (8, .int .w64), (16, .int .w64)] 24))
+    | "runtime.convTstring" => some (convT .str)
+    | "runtime.convTslice" => some (convT (.slice none))
     | "runtime.convT" | "runtime.convTnoptr" => some convTtyp
     | "runtime.concatstring2" | "runtime.concatstring3" | "runtime.concatstring4"
     | "runtime.concatstring5" => some concatstringN

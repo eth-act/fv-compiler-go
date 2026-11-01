@@ -44,6 +44,34 @@ theorem Val.any_hasPoison (l : List Val) : l.any Val.hasPoison = Val.anyPoison l
   | nil => rfl
   | cons v l ih => simp only [List.any_cons, Val.anyPoison, ih]
 
+private theorem np_cases {a b : Val} (h : Refines a b) (hp : a.hasPoison = false) :
+    a.isPtrOrPoison = b.isPtrOrPoison ∧ (∀ x : BitVec 64, a = .int .w64 x ↔ b = .int .w64 x) := by
+  cases h <;> simp_all [Val.hasPoison, Val.isPtrOrPoison]
+
+/-- Poison-free refined components have the same string and slice shapes. -/
+private theorem np_lens {as bs : List Val} (hl : RefinesList as bs) (h : Val.anyPoison as = false) :
+    (∀ t, t = .str ∨ (∃ e, t = .slice e) → Val.hasTy (.agg as) t = Val.hasTy (.agg bs) t) := by
+  rintro t (rfl | ⟨e, rfl⟩) <;> rw [Bool.eq_iff_iff]
+  all_goals first | rw [Val.hasTy_agg_str, Val.hasTy_agg_str] | rw [Val.hasTy_agg_slice, Val.hasTy_agg_slice]
+  all_goals
+    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, t⟩⟩⟩⟩ <;>
+      simp only [Val.anyPoison, Bool.or_eq_false_iff] at h <;> simp
+  case inl.cons.cons.nil =>
+    have c1 := np_cases h1 h.1
+    have c2 := np_cases h2 h.2.1
+    simp only [c2.2]
+    constructor <;> rintro ⟨p, l, ⟨rfl, hb⟩, hp, hl⟩
+    · exact ⟨_, l, ⟨rfl, hb⟩, by rw [← c1.1]; exact hp, hl⟩
+    · exact ⟨_, l, ⟨rfl, hb⟩, by rw [c1.1]; exact hp, hl⟩
+  case inr.cons.cons.cons.nil =>
+    have c1 := np_cases h1 h.1
+    have c2 := np_cases h2 h.2.1
+    have c3 := np_cases h3 h.2.2.1
+    simp only [c2.2, c3.2]
+    constructor <;> rintro ⟨p, l, c, ⟨rfl, hb⟩, hp, hl⟩
+    · exact ⟨_, l, c, ⟨rfl, hb⟩, by rw [← c1.1]; exact hp, hl⟩
+    · exact ⟨_, l, c, ⟨rfl, hb⟩, by rw [c1.1]; exact hp, hl⟩
+
 mutual
 /-- A poison-free value is refined only by poison-free values of the same shapes. -/
 theorem Refines.noPoison : {a b : Val} → Refines a b → a.hasPoison = false →
@@ -65,7 +93,11 @@ theorem Refines.noPoison : {a b : Val} → Refines a b → a.hasPoison = false �
   | _, _, .agg hl, h => by
     have := RefinesList.noPoison hl (by simpa [Val.hasPoison] using h)
     exact ⟨by simpa [Val.hasPoison] using this.1,
-      fun t => by cases t <;> simp [Val.hasTy, this.2.1]⟩
+      fun t => by
+        cases t
+        case str => exact np_lens hl (by simpa [Val.hasPoison] using h) _ (.inl rfl)
+        case slice e => exact np_lens hl (by simpa [Val.hasPoison] using h) _ (.inr ⟨e, rfl⟩)
+        all_goals simp [Val.hasTy, this.2.1]⟩
 theorem RefinesList.noPoison : {as bs : List Val} → RefinesList as bs → Val.anyPoison as = false →
     Val.anyPoison bs = false ∧ (∀ ts, Val.hasTyList as ts = Val.hasTyList bs ts) ∧
       ∀ ts, Val.hasTyPre as ts = Val.hasTyPre bs ts

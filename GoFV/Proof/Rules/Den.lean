@@ -196,12 +196,12 @@ def shapeSize : Ty → Option Int
 
 /-- The shape of a string (`Sem.tyOf` of `STRING`). -/
 def strShape : Ty → Bool
-  | .agg [(0, .ptr (some 1)), (8, .int .w64)] 16 => true
+  | .str => true
   | _ => false
 
 /-- The shape of a slice. -/
 def sliceShape : Ty → Bool
-  | .agg [(0, .ptr _), (8, .int .w64), (16, .int .w64)] 24 => true
+  | .slice _ => true
   | _ => false
 
 /-- The shape of an interface. -/
@@ -479,12 +479,12 @@ def callE (vtys : List GoTy) (e : PEnv) (fn : String) (args : List Expr) (dargs 
 /-- Method calls: `t.Size()` of an integer or boolean shape; `t.Elem()` of a pointer shape
 with a known element size `k` is the element type known by its size only, a record with the
 one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's); `t.Elem()`
-of a slice shape (an aggregate of at least two fields whose first is a pointer, the data
-pointer `.ptr el`) is the element type known by its pointer type only, the record with the one
-attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an aggregate of one field
-at offset 0 is that field's shape (`Sem.tyOf` of a one-element array `[1]T`: `T`'s shape); the
-kind predicates by `kindE`. The method name is matched first, so that a method of an unknown
-type shape is still `none`. -/
+of a slice shape `.slice el` (data pointer `.ptr el`), or of an aggregate of at least two fields
+whose first is a pointer `.ptr el`, is the element type known by its pointer type only, the
+record with the one attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an
+aggregate of one field at offset 0 is that field's shape (`Sem.tyOf` of a one-element array
+`[1]T`: `T`'s shape); the kind predicates by `kindE`. The method name is matched first, so that
+a method of an unknown type shape is still `none`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   match n, args with
   | "Size", [] => match dy with
@@ -493,6 +493,7 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
     | _ => none
   | "Elem", [] => match dy with
     | .ty (.ptr (some k)) => some (.strct [("Size", .int k)])
+    | .ty (.slice el) => some (.strct [("PtrTo", .ty (.ptr el))])
     | .ty (.agg ((_, .ptr el) :: _ :: _) _) => some (.strct [("PtrTo", .ty (.ptr el))])
     | .ty (.agg [(0, f)] _) => some (.ty f)
     | _ => none
@@ -623,10 +624,12 @@ same shape, or two pointer shapes (`Val.hasTy` and `Val.retype` at a pointer sha
 element size). -/
 def shapeSub (t f : Ty) : Bool := Ty.beq t f || (isPtrTy t && isPtrTy f)
 
-/-- The shape of component `i` of a composite shape. -/
-def fieldShape? : Ty → Nat → Option Ty
-  | .agg fs _, i => fs[i]?.map (·.2)
-  | _, _ => none
+/-- The shape of component `i` of a composite shape (of a string or slice: of its aggregate
+layout, `Ty.asAgg`). -/
+def fieldShape? (t : Ty) (i : Nat) : Option Ty :=
+  match t.asAgg with
+  | .agg fs _ => fs[i]?.map (·.2)
+  | _ => none
 
 /-- Argument `i` (of shape `t`) of a `Make` op of shape `ty` has the shape of component `i`
 (`shapeSub`); unconstrained if `ty` has no component `i` (the `Make` is then `poison`). -/

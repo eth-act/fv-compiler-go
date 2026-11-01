@@ -215,19 +215,18 @@ theorem allPoison_replicate {n : Nat} (hn : n ≠ 0) :
     Array.toList_replicate]
   simp [hn]
 
-/-- **Decoding a `Load` of an encoding** at a shape `fwdTy` gives a value of that shape back. -/
-theorem decodeLoad_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val}
-    (hx : x.retype t = x) : Sem.Refines (decodeLoad (encode t x) 0 t) x := by
-  rcases Bool.or_eq_true_iff.1 ht with hs | ha
-  · rw [decodeLoad_scalar hs]
-    exact decode_encode hs hx
+/-- `decodeLoad_encode` at a `fwdAgg` aggregate layout. -/
+private theorem decodeLoad_encode_agg {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdAgg t = true)
+    (hA : t.asAgg = t) {x : Val} (hx : x.retype t = x) :
+    Sem.Refines (decodeLoad (encode t x) 0 t) x := by
   cases t with
   | agg fs n =>
-    simp only [GoFV.Opt.RewriteCheck.fwdAgg, Bool.and_eq_true, bne_iff_ne, ne_eq] at ha
+    simp only [GoFV.Opt.RewriteCheck.fwdAgg, Ty.asAgg, Bool.and_eq_true, bne_iff_ne,
+      ne_eq] at ht
     cases x with
     | poison =>
       rw [encode_poison]
-      simp only [decodeLoad, Ty.size, allPoison_replicate ha.1, ite_true]
+      simp only [decodeLoad, Ty.size, allPoison_replicate ht.1, ite_true]
       exact .poison _
     | agg vs =>
       simp only [Val.retype] at hx
@@ -238,11 +237,29 @@ theorem decodeLoad_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {
         simp only [decodeLoad]
         split
         · exact .poison _
-        · exact .agg (fields_encode (buf := Array.replicate n .poison) ha.2 (Nat.zero_le _)
+        · exact .agg (fields_encode (buf := Array.replicate n .poison) ht.2 (Nat.zero_le _)
             (by simp) hr (by simp only [encode]))
       · cases hx
     | _ => simp [Val.retype] at hx
-  | _ => simp [GoFV.Opt.RewriteCheck.fwdAgg] at ha
+  | _ => simp [GoFV.Opt.RewriteCheck.fwdAgg, Ty.asAgg, Ty.strAgg, Ty.sliceAgg] at ht hA
+
+/-- **Decoding a `Load` of an encoding** at a shape `fwdTy` gives a value of that shape back. -/
+theorem decodeLoad_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val}
+    (hx : x.retype t = x) : Sem.Refines (decodeLoad (encode t x) 0 t) x := by
+  rcases Bool.or_eq_true_iff.1 ht with hs | ha
+  · rw [decodeLoad_scalar hs]
+    exact decode_encode hs hx
+  -- through the aggregate layout and the length check (`Val.checkLen`)
+  have hx' : x.retype t.asAgg = x := by
+    rw [retype_asAgg] at hx
+    rcases Val.checkLen_eq_or t (x.retype t.asAgg) with h | h
+    · rwa [h] at hx
+    · rw [h] at hx; subst hx; cases t.asAgg <;> rfl
+  have hc : Val.checkLen t x = x := by rwa [retype_asAgg, hx'] at hx
+  have ha' : GoFV.Opt.RewriteCheck.fwdAgg t.asAgg = true := by
+    rwa [GoFV.Opt.RewriteCheck.fwdAgg, Ty.asAgg_asAgg]
+  have := Val.checkLen_mono t (decodeLoad_encode_agg ha' (Ty.asAgg_asAgg t) hx')
+  rwa [hc, ← decodeLoad_asAgg, ← encode_asAgg] at this
 
 /-- **A `Load` after a `Store` at the same pointer** reads the stored value back (or `poison`). -/
 theorem load_write {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val}
@@ -253,7 +270,7 @@ theorem load_write {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val
   have hl : m'.load t p = decodeLoad (encode t x) 0 t := by
     unfold Mem.load
     cases t <;> simp_all [GoFV.Opt.RewriteCheck.fwdTy, GoFV.Opt.RewriteCheck.scalarTy,
-      GoFV.Opt.RewriteCheck.fwdAgg]
+      GoFV.Opt.RewriteCheck.fwdAgg, Ty.asAgg]
   rw [hl]
   exact decodeLoad_encode ht hx
 

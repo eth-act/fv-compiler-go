@@ -320,7 +320,7 @@ def constTop (op : Op) (ty : Sem.Ty) : Bool :=
     (Sem.evalPure op ty 0 none []).hasTy ty
 
 /-- The string shape (`Sem.tyOf` of a `STRING`). -/
-def strTy : Sem.Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+def strTy : Sem.Ty := .str
 
 /-- Table-evaluated ops (`GoFV.Proof.Rules.opVal`) at the shape of their value: `Addr` (a
 pointer or `poison`) at a pointer shape, `ConstString` (a string or `poison`) at the string
@@ -348,7 +348,7 @@ def selIndex? (op : Op) (ai : Int64) : Option Nat :=
 (`shapeSub`) or missing (the selection is `poison`), or the argument is a scalar (the
 selection is `poison`). -/
 def selShapeOK (k : Nat) (ty argTy : Sem.Ty) : Bool :=
-  match argTy with
+  match argTy.asAgg with
   | .agg fs _ => match fs[k]? with
     | some (_, f) => shapeSub f ty
     | none => true
@@ -369,7 +369,8 @@ def scalarTy : Sem.Ty → Bool
 
 /-- Shapes a `Load` decodes to a value of the shape: scalars and aggregates of scalars (strings,
 slices, interfaces, complex numbers; issue #17). -/
-def loadShape : Sem.Ty → Bool
+def loadShape (t : Sem.Ty) : Bool :=
+  match t.asAgg with
   | .agg fs _ => fs.all (scalarTy ·.2)
   | t => scalarTy t
 
@@ -1196,8 +1197,10 @@ def fwdFields (n lo : Nat) : List (Nat × Sem.Ty) → Bool
   | (o, t) :: fs => scalarTy t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
       fwdFields n (o + t.size) fs
 
-/-- A non-empty aggregate of `fwdFields` (strings, interfaces, flat structs). -/
-def fwdAgg : Sem.Ty → Bool
+/-- A non-empty aggregate of `fwdFields` (strings, slices, interfaces, flat structs; strings
+and slices by their aggregate layout `Ty.asAgg`). -/
+def fwdAgg (t : Sem.Ty) : Bool :=
+  match t.asAgg with
   | .agg fs n => n != 0 && fwdFields n 0 fs
   | _ => false
 
@@ -1222,6 +1225,7 @@ def fwdFieldsEq : List (Nat × Sem.Ty) → List (Nat × Sem.Ty) → Bool
 /-- `fwdAgg` aggregates of one size with `fwdFieldsEq` fields. -/
 def fwdAggEq : Sem.Ty → Sem.Ty → Bool
   | .agg fs n, .agg fs' n' => n == n' && fwdAgg (.agg fs n) && fwdFieldsEq fs fs'
+  | .str, .str | .slice _, .slice _ => true
   | _, _ => false
 
 /-- Shapes `fwdTy` that write, read and retype alike: `fwdScalarEq` or `fwdAggEq`. -/
@@ -1640,7 +1644,7 @@ def ssStart (tabs : Tables) (f g : Func) (b mem m0 : ID) : Bool :=
   match f.value? y, g.value? y with
   | some yv, some gy =>
     yv.op == .Store && yv.block == b && gy.op == .Copy && gy.args == #[m0] &&
-      (Sem.auxTy tabs yv.aux matches .agg (_ :: _) _)
+      ((Sem.auxTy tabs yv.aux).asAgg matches .agg (_ :: _) _)
   | _, _ => false
 
 /-- The `Make` ops: `StructMake`, `StringMake`, `SliceMake`, `IMake`, `ComplexMake`,
@@ -1650,14 +1654,15 @@ def ssMakeOp : Op → Bool
   | _ => false
 
 /-- Value `x` of `f` is a split `Store` in `g`: in `f` a `Store` listed in its block at an
-aggregate shape `agg fs n` (every field inside it, `layoutsOK`, at an offset below `n`) of a
+aggregate shape `agg fs n` (a string or slice by its layout `Ty.asAgg`; every field inside it,
+`layoutsOK`, at an offset below `n`) of a
 `Make` (`ssMakeOp`, up to copies, `copyEnd`) of that shape; in `g` `Copy` of the last store of
 the chain (`ssWalk`), or (in place) that last store itself, each field linked (`ssLink`), from
 the `Store`'s memory (`ssStart`). The chain's pairs. -/
 def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
-    match fv.args.toList, Sem.auxTy tabs fv.aux with
+    match fv.args.toList, (Sem.auxTy tabs fv.aux).asAgg with
     | [dst, sm, mem], .agg fs n =>
       match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
       | some smv =>
@@ -1665,7 +1670,7 @@ def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
         let last := if copy then gv.args[0]?.getD 0 else x
         let r := ssWalk g fs.length last
         if fv.op == .Store && ((f.block? fv.block).any fun b => b.values.contains x) &&
-            ssMakeOp smv.op && Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) &&
+            ssMakeOp smv.op && Sem.Ty.beq (tabs.ty smv.type).asAgg (.agg fs n) &&
             layoutsOK n fs && fs.all (·.1 < n) && smv.args.size == fs.length &&
             gv.id == x && gv.type == fv.type && gv.block == fv.block &&
             (if copy then gv.args.size == 1 && gv.aux == none && gv.auxInt == 0

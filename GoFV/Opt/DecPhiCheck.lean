@@ -82,7 +82,7 @@ def stepMean (sh : Array Ty) (g : Func) (m : Array (Option Mean)) : Array (Optio
       match meanAt m w.id with
       | some (s, π) =>
         if isMake w.op then
-          match shapeOf sh g w.id with
+          match (shapeOf sh g w.id).asAgg with
           | .agg fs _ => pushArgs s π 0 fs w.args.toList m
           | _ => m
         else m
@@ -123,7 +123,7 @@ def argsMeanOK (m : Array (Option Mean)) (s : ID) (π : Path) :
 def makeOK (sh : Array Ty) (g : Func) (m : Array (Option Mean)) (w : Value) (s : ID)
     (π : Path) : Bool :=
   isMake w.op &&
-    match shapeOf sh g w.id with
+    match (shapeOf sh g w.id).asAgg with
     | .agg fs _ => argsMeanOK m s π 0 fs w.args.toList
     | _ => false
 
