@@ -1,6 +1,6 @@
 # Runtime benchmarks run by scripts/perf-bench.py (docs/PERF.md), one per line:
 # name<TAB>lake target<TAB>shell command, run from the worktree root (call the binary, not `lake exe`)
-ssa-roundtrip-corpus	ssa-roundtrip	.lake/build/bin/ssa-roundtrip "$GOFV_BENCH_CORPUS/plain"
+ssa-roundtrip-corpus	ssa-roundtrip	.lake/build/bin/ssa-roundtrip "$GOFV_BENCH_CORPUS/plain" || [ $? -eq 1 ]
 pass-parity-corpus	pass-parity	.lake/build/bin/pass-parity --jobs 4 "$GOFV_BENCH_CORPUS/plain" || [ $? -eq 1 ]
 ssa-check-corpus	ssa-check	.lake/build/bin/ssa-check "$GOFV_BENCH_CORPUS/plain" || [ $? -eq 1 ]
 analysis-difftest-corpus	analysis-difftest	.lake/build/bin/analysis-difftest "$GOFV_BENCH_CORPUS/plain" || [ $? -eq 1 ]

@@ -29,6 +29,10 @@ submodules). Each module is built with `lake build +M` inside its own memcap sco
 killed at 8G is retried once at 16G under `flock ../gofv-heavy.lock`. Raw logs:
 `perf/raw/<commit>/` (not committed). A commit already in the history is skipped (`--force`).
 
+A module whose CPU time jumps past the regression thresholds (> 25% and > 5 s) versus its
+previous measurement is measured once more and the smaller numbers are kept: under memory
+pressure one run read 18.2 s CPU for `GoFVTest.SemDiff`, whose elaboration takes 3.4 s.
+
 Modules restored from the shared Lake cache cost nothing to build. Their numbers come from the
 history row with the same Lake input hash (`dep_hash`, from the module's `.trace`), status
 `cached`. A cached module never measured before is elaborated once into `tmp/` with
@@ -123,10 +127,11 @@ one (as `scripts/parity.sh` picks it) to `tmp/bench-corpus/<id>` of the profiler
 `$GOFV_BENCH_CORPUS`. Rows of different corpora are not compared. The runners exit 1 on
 mismatches; commands accept that (`|| [ $? -eq 1 ]`), so only crashes count as `fail` —
 correctness is the runners' own gates, not this one. The first registry entry
-(`ssa-roundtrip-corpus`, which exits non-zero on any parse failure) is a gate: if it fails, the
-other benchmarks are recorded as `skipped`, since a corpus the commit cannot parse makes the
-runners reject every file in seconds-to-minutes and their numbers meaningless (seen at af5cb6a:
-the regenerated corpus had `frontend` lines its parser did not accept yet).
+(`ssa-roundtrip-corpus`) is a gate: if more than 1% of the corpus files fail to round-trip
+(`--gate-max-fail`, read from its `N files, M failed` line), it is recorded as `unparsable` and the
+other benchmarks as `skipped`. A corpus the commit cannot parse makes the runners reject every
+file and their numbers meaningless (af5cb6a: the regenerated corpus had `frontend` lines its
+parser did not accept yet); a few new-format files are fine (845db3d: 37/9,297 with `zvar`).
 
 | Benchmark | Runs on `$GOFV_BENCH_CORPUS/plain` (9,297 files, 1.25 GB) |
 | --- | --- |
