@@ -388,8 +388,21 @@ theorem inv_of_j {ce : CheckEnv} {tabs : Tables} {f F' F : Func} {r : Array Bool
       obtain ⟨v'', hv'', rfl⟩ := vw_eq_some h'
       simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at this
       exact ⟨v'', hv'', this.2.1.symm⟩
+  -- chains of `F'` ending at a non-phi avoid the `Phi`s that became copies
+  have hends : ∀ {x r n}, Src (vw F') x r n → NotPhi F' r → Src (vw F) x r n := by
+    intro x r n hs hr
+    induction hs with
+    | sink h0 =>
+      rcases hJ.val _ with h | ⟨u, w, u0, hu', hop, -⟩
+      · exact .sink (by unfold cstep at h0 ⊢; rw [h]; exact h0)
+      · obtain ⟨u1, hu1, rfl⟩ := vw_eq_some hu'
+        exact absurd hop (hr u1 hu1)
+    | step h1 _ ih =>
+      rcases hJ.val _ with h | ⟨u, w, u0, hu', hop, -⟩
+      · exact .step (by unfold cstep at h1 ⊢; rw [h]; exact h1) (ih hr)
+      · rw [cstep_of_ne hu' (by rw [hop]; decide)] at h1; cases h1
   refine ⟨hJ.skel, fun x => jv_keep (hJ.val x), fun x hx fv hfv => ?_, fun x hx v hv c hc => ?_,
-    hsrc, fun x hx w hw => ?_⟩
+    hsrc, fun x hx w hw => ?_, fun x r n hs hr => ⟨n, hends hs hr⟩⟩
   · have hfv' := vw_of_value? hfv
     rcases hJ.val x with h | ⟨u, w, u0, hu', hop, hu, -, hall, -, -⟩
     · refine ⟨strip fv, h.trans hfv', .same rfl rfl rfl rfl fun k a c ha hc => ?_⟩

@@ -8,9 +8,10 @@ import GoFV.Proof.CheckFacts
 listed value of `f` is in one of three modes (`Mode`: same op with arguments that `Join` `f`'s,
 a phi turned into a copy of a value all of its arguments join, or a zero-size value turned
 `Empty`); arguments stay listed; every listed value's copy chain ends; copies keep their
-argument's type shape. Each of the three edits keeps it: `setArg` of an argument to the end of
-its chain (`inv_setArg`), the zero-size reset (`inv_empty`) and the phi-to-copy step
-(`inv_phielim`). `Prsv`: an edit keeps the non-copies, and every new argument is old or a
+argument's type shape; a copy chain of `f` that ends at a non-phi ends there in `F` too (so a
+`Stable` phi never becomes a copy). Each of the three edits keeps it: `setArg` of an argument
+to the end of its chain (`inv_setArg`), the zero-size reset (`inv_empty`) and the phi-to-copy
+step (`inv_phielim`). `Prsv`: an edit keeps the non-copies, and every new argument is old or a
 non-copy (so arguments that were non-copies stay so, `AllSink`).
 -/
 
@@ -38,6 +39,7 @@ structure Inv (tabs : Tables) (f F : Func) : Prop where
   shape : ∀ x, Listed f x → ∀ w, cstep (vw F) x = some (some w) →
     ∃ xv wv, f.value? x = some xv ∧ f.value? w = some wv ∧
       RetypeEq (tabs.ty wv.type) (tabs.ty xv.type)
+  ends : ∀ x r n, Src (vw f) x r n → NotPhi f r → ∃ m, Src (vw F) x r m
 
 /-- The non-copies are kept, and each argument is old or a non-copy. -/
 structure Prsv (V V' : ID → Option Value) : Prop where
@@ -137,7 +139,7 @@ theorem inv_init (hwf : WF ce f) (hfrag : CopyFrag tabs f) : Inv tabs f f := by
     intro x hx
     obtain ⟨r, n, h⟩ := hfrag.acyclic x hx
     exact ⟨r, n, src_congr (by intro y; rw [cstep_vw]) h⟩
-  refine ⟨rfl, fun _ => rfl, ?_, ?_, hsrc, ?_⟩
+  refine ⟨rfl, fun _ => rfl, ?_, ?_, hsrc, ?_, fun _ _ n h _ => ⟨n, h⟩⟩
   · intro x hx fv hfv
     refine ⟨strip fv, vw_of_value? hfv, .same rfl rfl rfl rfl fun k a c ha hc => ?_⟩
     have hc' : fv.args[k]? = some c := hc
