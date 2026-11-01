@@ -1,7 +1,7 @@
 import GoFVTest.Parity.Registry
 import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
-import GoFV.Opt.DecPhiCheck
+import GoFV.Opt.DecomposeCheck
 import GoFV.Opt.TabsAgree
 
 /-!
@@ -91,13 +91,34 @@ structure Counts where
   tabsFail : Nat := 0
   outOk : Nat := 0
   passErrors : Nat := 0
+  /-- In the proof's fragment (`decUserOK`/`decBuiltinOK` of the pass output). -/
+  frag : Nat := 0
   deriving Inhabited
+
+/-- The first failing conjunct of `decBuiltinOK`. -/
+def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
+  match Decompose.phiStage env true f with
+  | .error _ => "phi stage error"
+  | .ok (t1, g1) =>
+    match GoFV.Rules.rewriteRun Decompose.decProvenTable false true { env with tables := t1 } g1 with
+    | .error _ => "proven rewrite error"
+    | .ok (o2, _, log) =>
+      let T := out.tables
+      let ce := Decompose.decCheckEnv env T
+      if !tabsAgreeMod env.tables T f then "tabsAgreeMod"
+      else if !decPhiCheck T f g1 then "decPhiCheck in output tables"
+      else if !(check ce g1).isOk then "check phi stage"
+      else if !(check ce o2.func).isOk then "check proven rewrite"
+      else if !tabsAgree T T g1 then "tabsAgree T T"
+      else if !RewriteCheck.validate T Decompose.decProvenTable g1 o2.func log then "validate"
+      else if !Decompose.sameCode o2.func out.func then "proven rewrite ≠ pass output"
+      else "?"
 
 def Counts.add (a b : Counts) : Counts :=
   { sections := a.sections + b.sections, stageErrors := a.stageErrors + b.stageErrors
     unchanged := a.unchanged + b.unchanged, ok := a.ok + b.ok, rejected := a.rejected + b.rejected
     tabsFail := a.tabsFail + b.tabsFail, outOk := a.outOk + b.outOk
-    passErrors := a.passErrors + b.passErrors }
+    passErrors := a.passErrors + b.passErrors, frag := a.frag + b.frag }
 
 structure Stats where
   files : Nat := 0
@@ -173,13 +194,19 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         if builtin then
           match Decompose.postExpandCallsDecomposePass env f with
           | .error _ => c := { c with passErrors := 1 }
-          | .ok out => if out.func.valueTab != g.valueTab then c := { c with outOk := 1 }
+          | .ok out =>
+            if out.func.valueTab != g.valueTab then c := { c with outOk := 1 }
+            if Decompose.decBuiltinOK env f out then c := { c with frag := 1 }
+            else st := st.addWhy s!"{name} (fragment): {builtinWhy env f out}" s!"{path} section {k}"
         else
           match Decompose.decomposeUserPass env f with
           | .error _ => c := { c with passErrors := 1 }
           | .ok out =>
             if decPhiCheck out.tables f out.func then c := { c with outOk := 1 }
             else st := st.addWhy s!"{name} (pass output): {why out.tables f out.func}" s!"{path} section {k}"
+            if Decompose.decUserOK env f out then c := { c with frag := 1 }
+            else if !tabsAgreeMod env.tables out.tables f then
+              st := st.addWhy s!"{name} (fragment): tabsAgreeMod" s!"{path} section {k}"
       st := if builtin then { st with builtin := st.builtin.add c } else { st with user := st.user.add c }
     return st
 
@@ -197,7 +224,7 @@ partial def parseArgs : List String → Nat × Array String → Nat × Array Str
 def report (name extra : String) (c : Counts) : String :=
   s!"{name}: sections {c.sections}, stage errors {c.stageErrors}, no phi split {c.unchanged}, " ++
     s!"accepted {c.ok}, rejected {c.rejected}, tabsAgree fails {c.tabsFail}, {extra} {c.outOk}, " ++
-    s!"pass errors {c.passErrors}"
+    s!"pass errors {c.passErrors}, in the proof's fragment (pass output checked) {c.frag}"
 
 def main (args : List String) : IO UInt32 := do
   let (jobs, paths) := parseArgs args (1, #[])
