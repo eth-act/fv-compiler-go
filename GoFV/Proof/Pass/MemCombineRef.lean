@@ -205,8 +205,8 @@ theorem sameVal_spec {u w : Value} (h : sameVal u w = true) :
 theorem rootOK_spec {tabs : Tables} {f g : Func} {M : Array Bool} {x : ID} {u w : Value}
     (h : rootOK tabs f g M x u w = true) :
     (∃ wo, orW u.op = some wo) ∧ w.op = .Copy ∧ w.type = u.type ∧
-    ∃ bs sf sg, symOf tabs f.value? false srcFuel x = some (bs, sf) ∧
-      symOf tabs (listedD g) true tgtFuel x = some (bs, sg) ∧ (∀ s ∈ bs, s.vbId? ≠ some x) ∧
+    ∃ bs sf sg, symOf tabs f.value? false false srcFuel x = some (bs, sf) ∧
+      symOf tabs (listedD g) true true tgtFuel x = some (bs, sg) ∧ (∀ s ∈ bs, s.vbId? ≠ some x) ∧
       (∀ t ∈ sg, coveredOK sf t = true) ∧ (∀ s ∈ bs, ∀ y ∈ s.ids, M.getD y false = true) ∧
       ∀ t ∈ sg, ∀ y ∈ t.ids, M.getD y false = true := by
   unfold rootOK at h

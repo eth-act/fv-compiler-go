@@ -4,7 +4,7 @@ import GoFV.Proof.Pass.MemCombineDesc
 # memcombine: source descriptions are sound (issue #35)
 
 `symOf_sound`: if the value of `x` (as a term, `den` at fuel `n`) is an integer `X`, the bytes of
-its source description (`symOf … false`) are `X`'s bytes and its loads are valid, at the values of
+its source description (`symOf … false false`) are `X`'s bytes and its loads are valid, at the values of
 `den` at the same fuel (`Sound`). `symOf_step_sound`: for a description `symOp` produced (not an
 opaque `x`), at the values one fuel lower, which the main induction reads at its hypothesis.
 
@@ -200,10 +200,10 @@ theorem load_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} (
 
 /-! ## `symOf` by cases -/
 
-theorem symOf_succ_spec {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {N : Nat} {x : ID}
-    {r : Desc} (h : symOf tabs D tgt (N + 1) x = some r) :
+theorem symOf_succ_spec {tabs : Tables} {D : ID → Option Value} {tgt wide : Bool} {N : Nat} {x : ID}
+    {r : Desc} (h : symOf tabs D tgt wide (N + 1) x = some r) :
     ∃ v wt, D x = some v ∧ tabs.ty v.type = .int wt ∧
-      ((∃ r', symOp tabs D tgt (symOf tabs D tgt N) v wt = some r' ∧ wt.bytes ≤ r'.1.length ∧
+      ((∃ r', symOp tabs D tgt wide (symOf tabs D tgt wide N) v wt = some r' ∧ wt.bytes ≤ r'.1.length ∧
           keepB tgt (r'.1.take wt.bytes) (r'.1.drop wt.bytes) r'.2 = some r) ∨
         r = ((List.range wt.bytes).map (.vb x), [])) := by
   rw [symOf] at h
@@ -222,7 +222,7 @@ theorem symOf_succ_spec {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {
       · rename_i r' hr'
         cases h
         left
-        cases ho : symOp tabs D tgt (symOf tabs D tgt N) v wt with
+        cases ho : symOp tabs D tgt wide (symOf tabs D tgt wide N) v wt with
         | none => rw [ho] at hr'; cases hr'
         | some r'' =>
           rw [ho] at hr'
@@ -233,8 +233,8 @@ theorem symOf_succ_spec {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {
       · cases h; exact .inr rfl
 
 /-- A description has its value's type's bytes. -/
-theorem symOf_shape {tabs : Tables} {D : ID → Option Value} {tgt : Bool} :
-    ∀ {N : Nat} {x : ID} {r : Desc}, symOf tabs D tgt N x = some r →
+theorem symOf_shape {tabs : Tables} {D : ID → Option Value} {tgt wide : Bool} :
+    ∀ {N : Nat} {x : ID} {r : Desc}, symOf tabs D tgt wide N x = some r →
       ∃ v wt, D x = some v ∧ tabs.ty v.type = .int wt ∧ r.1.length = wt.bytes
   | 0, _, _, h => by cases h
   | N + 1, x, r, h => by
@@ -255,7 +255,7 @@ theorem symOp_sound (hT : Term.Typed D tabs ρ) {n : Nat} {rec : ID → Option D
     (hrec : ∀ a r (w : Width) (X : BitVec w.bits), rec a = some r → den D tabs ρ n a = .int w X →
       Sound (den D tabs ρ n) r w X)
     (hsh : ∀ a r, rec a = some r → ∃ va wa, D a = some va ∧ tabs.ty va.type = .int wa)
-    {v : Value} {wt : Width} {r : Desc} (h : symOp tabs D false rec v wt = some r)
+    {v : Value} {wt : Width} {r : Desc} (h : symOp tabs D false false rec v wt = some r)
     {w : Width} {X : BitVec w.bits}
     (hE : (evalPure v.op (.int wt) v.auxInt v.aux (v.args.toList.map (den D tabs ρ n))).retype
       (.int wt) = .int w X) :
@@ -383,7 +383,7 @@ theorem den_lift (n m : Nat) (h : n ≤ m) : ∀ y, Sem.Refines (den D tabs ρ n
 /-- **Soundness of the source's descriptions**: an integer value has the bytes of its
 description, whose loads are valid, at the values of the same fuel. -/
 theorem symOf_sound (hT : Term.Typed D tabs ρ) : ∀ (N n : Nat) (x : ID) (r : Desc) (w : Width)
-    (X : BitVec w.bits), symOf tabs D false N x = some r → den D tabs ρ n x = .int w X →
+    (X : BitVec w.bits), symOf tabs D false false N x = some r → den D tabs ρ n x = .int w X →
     Sound (den D tabs ρ n) r w X
   | 0, _, _, _, _, _, h, _ => by cases h
   | N + 1, n, x, r, w, X, h, hx => by
@@ -416,7 +416,7 @@ theorem symOf_sound (hT : Term.Typed D tabs ρ) : ∀ (N n : Nat) (x : ID) (r : 
 /-- **One step of soundness**: a description that `symOp` produced, without bytes of `x` itself,
 has, for an integer value of `x`, its bytes and valid loads at the values one fuel lower. -/
 theorem symOf_step_sound (hT : Term.Typed D tabs ρ) {N n : Nat} {x : ID} {r : Desc}
-    (h : symOf tabs D false (N + 1) x = some r) (hnx : ∀ s ∈ r.1, s.vbId? ≠ some x)
+    (h : symOf tabs D false false (N + 1) x = some r) (hnx : ∀ s ∈ r.1, s.vbId? ≠ some x)
     {w : Width} {X : BitVec w.bits} (hx : den D tabs ρ (n + 1) x = .int w X) :
     Sound (den D tabs ρ n) r w X := by
   obtain ⟨v, wt, hD, hty, hc | rfl⟩ := symOf_succ_spec h

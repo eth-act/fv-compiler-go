@@ -132,7 +132,7 @@ which do not read `x` itself and are marked in `M`; every load of `g` it goes th
 covered by loads of `f` (`coveredOK`). -/
 def rootOK (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value) : Bool :=
   (orW u.op).isSome && w.op == .Copy && w.args.size == 1 && w.type == u.type &&
-  match symOf tabs f.value? false srcFuel x, symOf tabs (listedD g) true tgtFuel x with
+  match symOf tabs f.value? false false srcFuel x, symOf tabs (listedD g) true true tgtFuel x with
   | some (bs, sf), some (bt, sg) =>
     bs == bt && bs.all (·.vbId? != some x) && sg.all (coveredOK sf) && leavesIn M bt sg
   | _, _ => false
@@ -158,7 +158,7 @@ def storedBytes (tabs : Tables) (D : Defs) (s : Value) : Option Desc :=
     match Sem.auxTy tabs s.aux, tabs.ty xv.type with
     | .int w, .int w' =>
       if w = w' ∧ w.bytes < 8 then
-        match symOf tabs D false srcFuel x with
+        match symOf tabs D false false srcFuel x with
         | some r => if r.1.length = w.bytes then some r else none
         | none => none
       else none
@@ -168,9 +168,6 @@ def storedBytes (tabs : Tables) (D : Defs) (s : Value) : Option Desc :=
       else none
     | _, _ => none
   | none => none
-
-/-- The opaque values of a description. -/
-def vbIds (bs : List SB) : List ID := bs.filterMap SB.vbId?
 
 /-- An opaque byte `vb y k` names a byte of `y`'s integer shape in `E`. -/
 def vbWidthOK (tabs : Tables) (E : Defs) : SB → Bool
@@ -222,7 +219,7 @@ def storeOK (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value)
         match Sem.auxTy tabs w.aux, listedD g w.args[1]! with
         | .int ww, some sv =>
           intW (tabs.ty sv.type) == some ww &&
-          match symOf tabs (listedD g) true tgtFuel w.args[1]! with
+          match symOf tabs (listedD g) true false tgtFuel w.args[1]! with
           | some (bt, sg) =>
             bt.length == ww.bytes && bt.all (vbWidthOK tabs (listedD g)) &&
               leavesIn M bt sg && tileOK recs o0 ww.bytes bt sg

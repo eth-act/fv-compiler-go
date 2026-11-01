@@ -44,7 +44,7 @@ def storeWhy (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value
   match Sem.auxTy tabs w.aux, listedD g w.args[1]! with
   | .int ww, some sv =>
     if intW (tabs.ty sv.type) != some ww then return "svType"
-    match symOf tabs (listedD g) true tgtFuel w.args[1]! with
+    match symOf tabs (listedD g) true false tgtFuel w.args[1]! with
     | some (bt, sg) =>
       if bt.length != ww.bytes then return "btLen"
       if !bt.all (vbWidthOK tabs (listedD g)) then return "btWidth"

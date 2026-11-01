@@ -3,7 +3,7 @@ import GoFV.Opt.RewriteCheck
 /-!
 # memcombine's checker: values as symbolic bytes (issue #35)
 
-`symOf tabs D n x` describes the integer value of `x` (definitions `D`, fuel `n`) as its
+`symOf tabs D tgt wide n x` describes the integer value of `x` (definitions `D`, fuel `n`) as its
 little-endian bytes (`SB`): constant bytes, byte `k` of an opaque integer value (`vb`), or the
 byte at `base + idx + off` of a memory value (`mb`, from a `Load` whose pointer `splitP` takes
 apart). It follows the ops `memcombine` builds and matches — constants, `Copy`, `Load`,
@@ -183,13 +183,13 @@ def SB.vbId? : SB → Option ID
   | .vb x _ => some x
   | _ => none
 
+/-- The opaque values of a description's `vb` bytes. -/
+def vbIds (bs : List SB) : List ID := bs.filterMap SB.vbId?
+
 /-- `s` reads memory (`mb`). -/
 def SB.isMb : SB → Bool
   | .mb .. => true
   | _ => false
-
-/-- No byte is an opaque value's (`vb`). -/
-def noVb (l : List SB) : Bool := l.all fun s => s.vbId?.isNone
 
 /-- A description: symbolic bytes and the loads they read through. -/
 abbrev Desc := List SB × List LoadRec
@@ -199,13 +199,14 @@ def symArg (rec : ID → Option Desc) (a : ID) (w : Sem.Width) : Option Desc :=
   (rec a).bind fun r => if r.1.length = w.bytes then some r else none
 
 /-- The bytes `kept` (with the loads `sd`) of a description that drops `dropped`; the target
-(`tgt`) never drops an opaque value's byte. -/
+(`tgt`) drops an opaque value's byte only if it keeps a byte of the same value. -/
 def keepB (tgt : Bool) (kept dropped : List SB) (sd : List LoadRec) : Option Desc :=
-  if !tgt || noVb dropped then some (kept, sd) else none
+  if !tgt || (vbIds dropped).all (vbIds kept).contains then some (kept, sd) else none
 
-/-- A `Load` of `wt`'s bytes through a pointer `splitP` takes apart. -/
-def symLoad (tabs : Tables) (D : Defs) (tgt : Bool) (v : Value) (wt : Sem.Width) : Option Desc :=
-  if v.args.size = 2 && (tgt || wt.bytes < 8) then
+/-- A `Load` of `wt`'s bytes through a pointer `splitP` takes apart (8-byte loads only if
+`wide`). -/
+def symLoad (tabs : Tables) (D : Defs) (wide : Bool) (v : Value) (wt : Sem.Width) : Option Desc :=
+  if v.args.size = 2 && (wide || wt.bytes < 8) then
     let s := splitP tabs D 64 v.args[0]! none 0
     if ptrTyped tabs D s.1 then
       some ((List.range wt.bytes).map fun (k : Nat) => .mb v.args[1]! s.1 s.2.1 (s.2.2 + (k : Int)),
@@ -240,17 +241,18 @@ def symOr (rec : ID → Option Desc) (w : Sem.Width) (v : Value) : Option Desc :
   else none
 
 /-- The bytes of `v`'s op result (`wt`: the width of `v`'s type; `rec`: the description of an
-argument). `tgt` (the target's descriptions): look into `Load`s of every size, and never drop an
-opaque value's byte (`Trunc`, shifts, a narrower type), so a description whose bytes are defined
-has every opaque value it reads defined. Otherwise (the source's) only into `Load`s narrower than
-8 bytes: an 8-byte load of a pointer's bytes is an integer without concrete bytes. -/
-def symOp (tabs : Tables) (D : Defs) (tgt : Bool) (rec : ID → Option Desc) (v : Value)
+argument). `tgt` (the target's descriptions): drop an opaque value's byte (`Trunc`, shifts, a
+narrower type) only while keeping another byte of it, so a description whose bytes are defined
+has every opaque value it reads defined at its full width. `wide`: look into `Load`s of every
+size; otherwise only into `Load`s narrower than 8 bytes (an 8-byte load of a pointer's bytes is
+an integer without concrete bytes, so the source's descriptions are not `wide`). -/
+def symOp (tabs : Tables) (D : Defs) (tgt wide : Bool) (rec : ID → Option Desc) (v : Value)
     (wt : Sem.Width) : Option Desc :=
   if let some w := constW v.op then
     if v.args.size = 0 then some (litBytes w.bytes v.auxInt.toInt, []) else none
   else if v.op = .Copy then
     if v.args.size = 1 then rec v.args[0]! else none
-  else if v.op = .Load then symLoad tabs D tgt v wt
+  else if v.op = .Load then symLoad tabs D wide v wt
   else if let some (w, w') := zextW v.op then
     if v.args.size = 1 then
       (symArg rec v.args[0]! w).map fun r => (r.1 ++ zeros (w'.bytes - w.bytes), r.2)
@@ -267,7 +269,7 @@ def symOp (tabs : Tables) (D : Defs) (tgt : Bool) (rec : ID → Option Desc) (v 
   else none
 
 /-- The bytes of `x`'s value at its type's integer width, and the pointers of the loads read. -/
-def symOf (tabs : Tables) (D : Defs) (tgt : Bool) : Nat → ID → Option Desc
+def symOf (tabs : Tables) (D : Defs) (tgt wide : Bool) : Nat → ID → Option Desc
   | 0, _ => none
   | n + 1, x =>
     match D x with
@@ -276,7 +278,7 @@ def symOf (tabs : Tables) (D : Defs) (tgt : Bool) : Nat → ID → Option Desc
       match intW (tabs.ty v.type) with
       | none => none
       | some wt =>
-        match (symOp tabs D tgt (symOf tabs D tgt n) v wt).bind fun r =>
+        match (symOp tabs D tgt wide (symOf tabs D tgt wide n) v wt).bind fun r =>
             if wt.bytes ≤ r.1.length then keepB tgt (r.1.take wt.bytes) (r.1.drop wt.bytes) r.2
             else none with
         | some r => some r
