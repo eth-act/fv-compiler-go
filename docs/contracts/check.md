@@ -110,10 +110,20 @@ memory chain):
   block has at most one live (not overwritten) memory value, and memory `Phi` arguments are the
   last memory of the corresponding predecessor (propagated through store-free blocks).
 
+**Pointer-op argument shapes** (beyond Go's `checkFunc`, #69; rule proofs' `Pat.argTyped`):
+`check` ends with `checkArgShapes`: by the shapes of the arguments' types (`Tables.ty`),
+`PtrIndex` takes a pointer and a 64-bit integer; `OffPtr`, `IsNonNil`, `EqPtr`, `NeqPtr` take
+pointer-sized words (a pointer or a 64-bit integer: `SP` after `expand calls` and itab words
+after `decompose builtin` are `uintptr`); `AddPtr` a word and a 64-bit integer; `Convert`
+converts a word to a pointer or 64-bit integer shape. `GoFV.Proof.check_argShapes`: every
+listed value passes `argShapeOK`. Corpus: quick-v1 306,801/306,801 sections and full-v2
+3,185,523/3,185,523 still pass (0 new rejections).
+
 **Loops** (only `loopnestfor`'s own consistency; no pass in scope needs it as a fact): without
 irreducible loops, an edge into a loop enters at its header. This is implied by dominance for
 natural loops; Go checks it to validate `loopnestfor`, and so does the port.
 
 **Not checked** (facts a proof must get elsewhere): acyclicity of non-`Phi` arguments within a
 block (Go's "TODO: check for cycles in values"; `run` is stuck on a cycle via `schedule`),
-argument types of ops outside the size table, reachability of blocks.
+argument types of ops outside the size table and the pointer ops above, reachability of
+blocks.
