@@ -210,8 +210,8 @@ theorem kb_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.va
           simp only [shape, hu, Option.map_some, Option.getD_some] at h1
           rw [← h1]; exact Val.retype_hasTy _ _
 
-theorem kb_termRefP {x : ID} (hx : LM f x) (b : ID) :
-    TermRefP ((kbInv hwf K).P b) (SAnc f b) f.value? tabs x (listedDefs g) tabs x :=
+theorem kb_termRefP {x : ID} (hx : LM f x) (b : ID) (S : ID → Prop) :
+    TermRefP ((kbInv hwf K).P b) S f.value? tabs x (listedDefs g) tabs x :=
   fun n => ⟨n + 1, fun _ _ hρ hT _ hP _ => kb_ref hwf K hρ hT hP n x hx⟩
 
 /-- **Atoms' arguments.** -/
@@ -231,8 +231,9 @@ theorem kb_atomArgs : AtomArgsRefP (kbInv hwf K) g := by
   have hbf : b ∈ f.blocks := blocks_eq hwf K ▸ hb
   have hi' : i < u'.args.size := hargs ▸ hi
   rw [hargs]
-  exact kb_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' _
-    (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')) b
+  have hx := (closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' u'.args[i]!
+    (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')
+  exact ⟨fun _ => kb_termRefP hwf K hx b _, fun _ p _ _ _ _ _ => kb_termRefP hwf K hx p _⟩
 
 /-- **Controls.** -/
 theorem kb_controls : ControlsRefP (kbInv hwf K) g := by
@@ -244,7 +245,7 @@ theorem kb_controls : ControlsRefP (kbInv hwf K) g := by
   rw [← hctl]
   have hk' : k < fb.controls.size := hctl ▸ hk
   exact kb_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).1 _
-    (by rw [getElem!_pos fb.controls k hk']; exact Array.getElem_mem hk')) b
+    (by rw [getElem!_pos fb.controls k hk']; exact Array.getElem_mem hk')) b _
 
 /-- **Terminators**: same kinds, successors and IDs, controls refining as terms. -/
 theorem kb_steps : StepRefsP (kbInv hwf K) g :=
