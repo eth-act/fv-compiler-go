@@ -1850,7 +1850,8 @@ def segShapeOK (r : Rule) : Bool :=
   | _, _, _ => false
 
 /-- The value `v` of `f` that event `ev` rewrites as a segment, its logged definition and the
-fresh values (logged parents first), if it is a `segs` rule event (`segShapeOK`). -/
+fresh values (logged parents first), if it is a `segs` rule event (`segShapeOK`) of a rule on
+`v`'s op in `f` (an event of a value the pass redefined earlier indexes another op's row). -/
 def segEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
@@ -1859,7 +1860,10 @@ def segEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value ×
       if n ≤ i then
         match t.segs[i - n]?, defs.toList with
         | some cr, w :: ds =>
-          if segShapeOK cr.rule && w.id == v then some (v, w, ds.filter (·.id != v)) else none
+          if segShapeOK cr.rule && w.id == v &&
+              (match cr.rule.pat with | .op o .. => o == u.op | _ => false) then
+            some (v, w, ds.filter (·.id != v))
+          else none
         | _, _ => none
       else none
     | none => none
