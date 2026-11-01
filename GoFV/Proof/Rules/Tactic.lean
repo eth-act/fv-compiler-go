@@ -214,6 +214,21 @@ clears their argument shapes (no proof it closes needs them); `rule_unfold_getd`
 def eqShapeOps : List Name :=
   [``Op.Eq8, ``Op.Eq16, ``Op.Eq32, ``Op.Eq64, ``Op.Neq8, ``Op.Neq16, ``Op.Neq32, ``Op.Neq64]
 
+/-- The hypothesis `hnn` (`Pat.nonNegOK`) of `rule_unfold`: reduced to `(e.leaf p).nonNeg =
+true` for each `isNonNegative(x)` conjunct if the rule's condition has one, else cleared. -/
+def ruleNonNeg (ci : ConstantInfo) : TacticM Unit := do
+  let hnn := mkIdent `hnn
+  let usesNonNeg := ci.value?.any fun v =>
+    (v.find? fun t => t matches .lit (.strVal "isNonNegative")).isSome
+  if usesNonNeg then
+    evalTactic (← `(tactic| simp only [GoFV.Proof.Rules.Pat.nonNegOK,
+      GoFV.Proof.Rules.nonNegVars, GoFV.Proof.Rules.Pat.leafPos, GoFV.Proof.Rules.Pat.leafPoss,
+      String.reduceBEq, beq_self_eq_true, Nat.reduceBEq, reduceIte, List.nil_append,
+      List.cons_append, List.all_cons, List.all_nil, Option.orElse_some, Option.orElse_none,
+      Bool.and_true] at $hnn:ident))
+  else
+    evalTactic (← `(tactic| clear $hnn:ident))
+
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hbt` (`Oracle.BoolTyped`), `hwf` (checker facts), `hc` (pattern
 checks), `hcond` (condition, its `bool` oracle atoms replaced by booleans,
@@ -246,7 +261,7 @@ elab "rule_unfold" : tactic => do
     intro $e:ident $or:ident $hbt:ident
     dsimp only [$rid:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
-    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident $hat:ident
+    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident $hat:ident $(mkIdent `hnn):ident
     (try dsimp only [GoFV.Proof.Rules.condHolds, rule_unfold_ds] at $hcond:ident)
     (try simp only [rule_helper, rule_unfold_s] at $hcond:ident)
     rule_oracle_bool
@@ -260,6 +275,7 @@ elab "rule_unfold" : tactic => do
       and_true, true_and, Nat.succ_ne_zero, not_false_eq_true] at $hat:ident))
   else
     evalTactic (← `(tactic| clear $hat:ident))
+  ruleNonNeg ci
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
 (`PEnv.leaf e p`), `tyOtherInt t w`, the condition of an `if`, or `Val.asInt w l` for a leaf

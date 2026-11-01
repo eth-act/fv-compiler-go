@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Rules.Generated.Generic.Values02
 
 /-!
@@ -18,8 +19,6 @@ namespace GoFV.Proof.Rules
 -- FALSE r_divmod_140 #69
 -- FALSE r_divmod_144 #69
 -- FALSE r_divmod_148 #69
--- `generic.rules:1090` (`isNonNegative(x)`, an oracle atom; RuleProofs10):
--- FALSE r_generic_1090 #69
 
 /-- `generic.rules:173`: `(Div16 (Const16 [c]) (Const16 [d])) && d != 0 => (Const16 [c/d])` -/
 theorem r_generic_173_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_173 := by rule_auto
@@ -44,5 +43,16 @@ theorem r_generic_1093_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 
 /-- `generic.rules:178`: `(Div32u (Const32 [c]) (Const32 [d])) && d != 0 => (Const32 [int32(uint32(c)/uint32(d))])` -/
 theorem r_generic_178_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_178 := by rule_auto
+
+/-- `generic.rules:1090`: `(Div64 x (Const64 [-1<<63])) && isNonNegative(x) => (Const64 [0])` -/
+theorem r_generic_1090_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1090 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals exact GoFV.Proof.Rules.DivmodS.sdiv_intMin64_of_msb _ ‹_›
 
 end GoFV.Proof.Rules

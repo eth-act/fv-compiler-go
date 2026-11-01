@@ -69,6 +69,6 @@ theorem r_generic_1022_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     simp only [Conv.const, Width.bits, Int64.toInt, BitVec.ofInt_toInt]; rfl
   simp only [hc, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq]
   rw [Val.retype_of_hasTy hty]
-  exact Refines.refl _
+  exact fun _ => Refines.refl _
 
 end GoFV.Proof.Rules

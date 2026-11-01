@@ -388,6 +388,95 @@ def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) :
       | none => false
     | none => true)
 
+/-- How `isNonNegative` (`rewrite.go`) decides an op whose value is an integer of width `w`. -/
+inductive NNKind where
+  /-- `Const<w>`: its constant, retyped to the node's type. -/
+  | const (w : Sem.Width)
+  /-- Nonnegative at every integer type (`Ctz*`, `BitLen*`: at most 64; `none`) or at `w`
+  (`ZeroExt*to<w>`). -/
+  | always (w : Option Sem.Width)
+  /-- `Rsh<w>Ux64` by a positive `Const64`. -/
+  | rshuC (w : Sem.Width)
+  /-- Nonnegative when the first argument is (`Rsh<w>x*`, `SignExt*to<w>`). -/
+  | arg0 (w : Sem.Width)
+  /-- When an argument is (`And<w>`). -/
+  | anyArg (w : Sem.Width)
+  /-- When every argument is (`Or<w>`, `Xor<w>`, `Div<w>`, `Mod<w>`). -/
+  | allArgs (w : Sem.Width)
+
+/-- The ops `isNonNegative` looks through, by kind. `StringLen`, `SliceLen`, `SliceCap` are
+left out: the semantics gives a composite any integer component, so their values may be
+negative (`docs/proofs/rules.md`, "Assumptions to discharge"). -/
+def nnTable : List (Op × NNKind) :=
+  [(.Const64, .const .w64), (.Const32, .const .w32), (.Const16, .const .w16),
+   (.Const8, .const .w8),
+   (.ZeroExt8to64, .always (some .w64)), (.ZeroExt16to64, .always (some .w64)),
+   (.ZeroExt32to64, .always (some .w64)), (.ZeroExt8to32, .always (some .w32)),
+   (.ZeroExt16to32, .always (some .w32)), (.ZeroExt8to16, .always (some .w16)),
+   (.Ctz64, .always none), (.Ctz32, .always none), (.Ctz16, .always none), (.Ctz8, .always none),
+   (.Ctz64NonZero, .always none), (.Ctz32NonZero, .always none), (.Ctz16NonZero, .always none),
+   (.Ctz8NonZero, .always none), (.BitLen64, .always none), (.BitLen32, .always none),
+   (.BitLen16, .always none), (.BitLen8, .always none),
+   (.Rsh64Ux64, .rshuC .w64), (.Rsh32Ux64, .rshuC .w32),
+   (.Rsh64x64, .arg0 .w64), (.Rsh32x64, .arg0 .w32), (.Rsh8x64, .arg0 .w8),
+   (.Rsh16x64, .arg0 .w16), (.Rsh32x32, .arg0 .w32), (.Rsh64x32, .arg0 .w64),
+   (.SignExt32to64, .arg0 .w64), (.SignExt16to64, .arg0 .w64), (.SignExt8to64, .arg0 .w64),
+   (.SignExt16to32, .arg0 .w32), (.SignExt8to32, .arg0 .w32),
+   (.And64, .anyArg .w64), (.And32, .anyArg .w32), (.And16, .anyArg .w16), (.And8, .anyArg .w8),
+   (.Mod64, .allArgs .w64), (.Mod32, .allArgs .w32), (.Mod16, .allArgs .w16),
+   (.Mod8, .allArgs .w8), (.Div64, .allArgs .w64), (.Div32, .allArgs .w32),
+   (.Div16, .allArgs .w16), (.Div8, .allArgs .w8), (.Or64, .allArgs .w64),
+   (.Or32, .allArgs .w32), (.Or16, .allArgs .w16), (.Or8, .allArgs .w8),
+   (.Xor64, .allArgs .w64), (.Xor32, .allArgs .w32), (.Xor16, .allArgs .w16),
+   (.Xor8, .allArgs .w8)]
+
+/-- The kind of `op` in `nnTable`. -/
+def nonNegKind (op : Op) : Option NNKind := (nnTable.find? (·.1 == op)).map (·.2)
+
+/-- `t` is the integer shape of width `w`. -/
+def isIntW (t : Sem.Ty) (w : Sem.Width) : Bool :=
+  match t with
+  | .int w' => w' == w
+  | _ => false
+
+/-- `isNonNegative(x)` (`rewrite.go`) on the definitions `D`, with `k` levels: every
+evaluation of `x` as a term (`GoFV.Proof.Term.den`) is then a nonnegative integer or `poison`
+(`GoFV.Proof.Pass.Rewrite.nonNegD_den`). Unlike Go it asks each node's type to have its op's
+width (a narrower type would truncate the value). -/
+def nonNegD (tabs : Tables) (D : ID → Option Value) : Nat → ID → Bool
+  | 0, _ => false
+  | k + 1, x =>
+    match D x with
+    | none => false
+    | some v =>
+      let ty := tabs.ty v.type
+      termOp v.op && match nonNegKind v.op with
+      | none => false
+      | some (.const w) => ((Sem.Conv.const w v.auxInt).retype ty).nonNeg
+      | some (.always w?) => match ty with
+        | .int rw => w?.all (· == rw)
+        | _ => false
+      | some (.rshuC w) => isIntW ty w && match v.args[1]?.bind D with
+        | some b => b.op == .Const64 && b.auxInt > 0 && isIntW (tabs.ty b.type) .w64
+        | none => false
+      | some (.arg0 w) => isIntW ty w && match v.args[0]? with
+        | some a => nonNegD tabs D k a
+        | none => false
+      | some (.anyArg w) => isIntW ty w && v.args.any (nonNegD tabs D k)
+      | some (.allArgs w) => isIntW ty w && v.args.all (nonNegD tabs D k)
+
+/-- Levels `nonNegD` looks through. -/
+def nnFuel : Nat := 16
+
+/-- `Pat.nonNegOK` decided on the definitions `D` (those after the event): the leaf of each
+`isNonNegative(x)` conjunct is `nonNegD`. -/
+def nonNegOKD (tabs : Tables) (D : ID → Option Value) (I : Inst) (pat : Pat) :
+    Option GoFV.Rules.Expr → Bool
+  | some c => (nonNegVars c).all fun x => match Pat.leafPos x [] pat with
+    | some p => nonNegD tabs D nnFuel (I.at p)
+    | none => true
+  | none => true
+
 /-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The definition at `v` is
 `v`'s (its ID, which the result's nodes are compared with), and the matched values below the
 top are not `v` (no cyclic match). -/
@@ -420,7 +509,8 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         Pat.argsOK e.ty [] r.pat &&
         leavesOK tabs M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
-        nodes.all fun (n, u) => frameNodeOK tabs e r.pat n u
+        nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) &&
+        nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
 
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
 pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/

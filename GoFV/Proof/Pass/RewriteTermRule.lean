@@ -164,6 +164,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
   hframe : ∀ nu ∈ stNodes r defs, frameNodeOK tabs (env tabs M I) r.pat nu.1 nu.2 = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
+  hnn : nonNegOKD tabs (putAll M defs).get? I r.pat r.cond = true
 
 theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
     (h : ruleOK tabs M r v defs = true) : Nonempty (RuleFacts tabs M r v defs) := by
@@ -179,7 +180,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
   · cases h
   rename_i I sw' hm
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩, hnn⟩ := h
   have hframe' : ∀ nu ∈ stNodes r defs, frameNodeOK tabs (env tabs M I) r.pat nu.1 nu.2 = true :=
     List.all_eq_true.1 hframe
   obtain ⟨hmo, -, hn, hh⟩ := matchPat_ok hm
@@ -215,7 +216,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hxv, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail', hcons := hcons,
     hwf := hwf, hcond := hcond', hnat := hnat', hargs := hargs, hleaves := hleaves, hres := hres,
-    hframe := hframe', hreach := fun C hC hv => matchPat_closed hC hm hv }⟩
+    hframe := hframe', hreach := fun C hC hv => matchPat_closed hC hm hv, hnn := hnn }⟩
 
 /-! ## Facts about the matched instance -/
 
