@@ -927,7 +927,7 @@ producing its type's shape (`topOK`: `natShape`, integer, float and boolean ops:
 integer of its width; `ptrTop`: `OffPtr`/`AddPtr`/`PtrIndex`/`Convert`
 at a pointer or `Convert` at the 64-bit integer shape, `evalPure_ptrTop`; `constTop`: `ConstNil`/
 `ConstSlice`/`ConstInterface` whose constant has the type's shape, `evalPure_constTop`; all in
-`raw_topOK`), argument shapes
+`raw_topOK`; or any type for the `anyTop` rules, see "Narrow result types"), argument shapes
 (`Pat.argsOK` on the matched types), integer-, boolean- or pointer-shaped leaves, built nodes = `resDen`, no cyclic
 match), a copy-argument replacement is replayed when its source is reached from the old argument
 through copies of compatible shape, a block rule as its control rule at the block's control (see
@@ -1478,6 +1478,19 @@ Under `Val.retype` that amount is truncated to 16 bits and then read at 64 bits,
 (`rule-sat` instance: `x = 31`, `c = 1`, `d = 65`). Go materializes the constant at 64 bits,
 so this is a limit of the model, not a Go bug; these rules stay pending until the semantics
 reads a narrow-typed value at its op's width.
+
+**`Rule.SoundW`, `anyTop` (`SoundW.lean`).** The bounded-shift rules `generic.rules:1188–1198`
+(`(Rsh64x16 [false] x con:(Const16 [c])) && 0 < c && c < 64 => (Rsh64x16 [true] x con)` and
+siblings, 44 lemmas in `ShiftBounded.lean`) only set the `bounded` flag of a shift whose amount
+is in range, and the divmod rules build such shifts at the dividend's type (`int32` for an
+`Rsh64x16`, `test/ken_divconst`). Their obligation is `Rule.SoundW`: `Rule.SoundT` without the
+shape premise of the raw value, for the values read at the matched type,
+`Refines ((Pat.rawT tabs e r.pat).retype (e.ty [])) (resDenT …)` (`Rule.SoundWP` over
+`evalPure`, `Rule.soundW_of_pure`; `Rule.soundT_of_soundW`). The checker accepts their matches at
+any top type (`ruleOK`: `topAll || makeTop || anyTop r`, `anyTop` by location like
+`sameLeaves`), and `Rule.Checked`/`BlockRule.Sound` ask `Rule.SoundTop r := Rule.SoundT r ∧
+(anyTop r = true → Rule.SoundW r)`; `RuleFacts.top` uses the retyped raw value in the `anyTop`
+case. Fully at stock (quick-v3, checked): 8648 → 8654.
 
 ## Build cost
 

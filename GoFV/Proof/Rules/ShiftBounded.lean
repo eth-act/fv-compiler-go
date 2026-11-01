@@ -1,4 +1,4 @@
-import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.SoundW
 import GoFV.Proof.ValRefine
 import GoFV.Rules.Generated.Generic.Values05
@@ -225,5 +225,31 @@ theorem r_generic_1198_3_sound : Rule.SoundW GoFV.Rules.Generated.Generic.r_gene
 /-- `generic.rules:1198`: `(Rsh8x8 [false] x con:(Const8 [c])) && 0 < c && c < 8 => (Rsh8x8 [true] x con)` -/
 theorem r_generic_1198_4_sound : Rule.SoundW GoFV.Rules.Generated.Generic.r_generic_1198_4 :=
   Rule.soundW_of_pure rfl (by rule_auto_w)
+
+/-! ## Non-vacuity: a match narrower than its op -/
+
+/-- The hypotheses of `Rule.SoundWP r` hold at the instance `e`, whose raw value does not have
+the matched type's shape (`Rule.Sound` says nothing about it) and reads at that type as a
+non-`poison` value. -/
+def Rule.InstW (r : GoFV.Rules.Rule) (e : PEnv) (or : Oracle) : Prop :=
+  Oracle.BoolTyped or ∧
+  Pat.wf e [] r.pat ∧
+  Pat.cons (evalE (r.vars.map (·.ty)) (sigma e r.pat) or e (Pat.den e [] r.pat)) (sigma e r.pat)
+    e [] r.pat ∧
+  condHolds (evalE (r.vars.map (·.ty)) (sigma e r.pat) or e (Pat.den e [] r.pat)) r.cond ∧
+  Pat.typed e [] r.pat ∧
+  Pat.argsOK e.ty [] r.pat = true ∧
+  Pat.nonNegOK e r.pat r.cond = true ∧
+  (Pat.raw e r.pat).hasTy (e.ty []) = false ∧
+  (Pat.raw e r.pat).retype (e.ty []) ≠ .poison
+
+/-- `generic.rules:1189` on an `Rsh64x16` typed `int32` (as divmod builds it): `x = -64`,
+`c = 3`; the raw value is the 64-bit `-8`, read as the 32-bit `-8`. -/
+theorem inst_r_generic_1189 : Rule.InstW GoFV.Rules.Generated.Generic.r_generic_1189
+    (PEnv.ofLists [([0], .i64 (-64))] [([0], .int .w64), ([1], .int .w16)] (.int .w32) [([1], 3)])
+    (Oracle.const true) := by
+  simp [Rule.InstW, GoFV.Rules.Generated.Generic.r_generic_1189]
+  rule_eval
+  simp [Val.retype, Width.bits]
 
 end GoFV.Proof.Rules
