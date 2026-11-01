@@ -340,15 +340,29 @@ def selTop (op : Op) (ty : Sem.Ty) (ai : Int64) (argTy : Sem.Ty) : Bool :=
   | some k => selShapeOK k ty argTy
   | none => false
 
-/-- The top op of a match at the instance `e` produces a value of its type's shape: `topOK`, or
-a selection from its first argument (`selTop`). -/
+/-- Integer, boolean and pointer shapes. -/
+def scalarTy : Sem.Ty → Bool
+  | .int _ | .bool | .ptr _ => true
+  | _ => false
+
+/-- Shapes a `Load` decodes to a value of the shape: scalars and aggregates of scalars (strings,
+slices, interfaces, complex numbers; issue #17). -/
+def loadShape : Sem.Ty → Bool
+  | .agg fs _ => fs.all (scalarTy ·.2)
+  | t => scalarTy t
+
+/-- A `Load` at a `loadShape`. -/
+def loadTop (op : Op) (ty : Sem.Ty) : Bool := op == .Load && loadShape ty
+
+/-- The top op of a match at the instance `e` produces a value of its type's shape: `topOK`, a
+selection from its first argument (`selTop`), or a `Load` (`loadTop`). -/
 def topAll (op : Op) (e : PEnv) : Bool :=
-  topOK op (e.ty []) || selTop op (e.ty []) (e.auxInt []) (e.ty [0])
+  topOK op (e.ty []) || selTop op (e.ty []) (e.auxInt []) (e.ty [0]) || loadTop op (e.ty [])
 
 mutual
-/-- Every leaf of the pattern has an integer, boolean, pointer or memory shape. `Pat.typed` asks of the
-leaves that their values have their type's shape: `Val.retype` at a shape always produces a
-value of that shape (`Val.retype_hasTy`, issue #108). -/
+/-- Every leaf of the pattern has an integer, boolean, pointer or memory shape. `Pat.typed`
+asks of the leaves that their values have their type's shape: `Val.retype` at a shape always
+produces a value of that shape (`Val.retype_hasTy`, issue #108). -/
 def leavesOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) : Pat → Bool
   | .op _ _ _ _ _ _ args _ => leavessOK tabs M I p 0 args
   | _ =>

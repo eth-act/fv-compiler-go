@@ -207,14 +207,6 @@ def interShape : Ty → Bool
 inductive KindPred where
   | ptrShaped | string | slice | inter
 
-/-- `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface`. -/
-def KindPred.ofName? : String → Option KindPred
-  | "IsPtrShaped" => some .ptrShaped
-  | "IsString" => some .string
-  | "IsSlice" => some .slice
-  | "IsInterface" => some .inter
-  | _ => none
-
 /-- `t.IsPtrShaped()`, `t.IsString()`, `t.IsSlice()`, `t.IsInterface()` of a type of shape `t`,
 as far as the shape decides it (`Sem.tyOf`): a pointer shape is exactly a pointer-shaped type
 (`PTR`, `UNSAFEPTR`, `MAP`, `CHAN`, `FUNC`); a string, slice or interface has the kind's
@@ -227,6 +219,11 @@ def kindE : KindPred → Ty → Option Bool
   | .string, t => if strShape t then none else some false
   | .slice, t => if sliceShape t then none else some false
   | .inter, t => if interShape t then none else some false
+
+/-- `kindE` of a type value. -/
+def kindDV (k : KindPred) : DV → Option DV
+  | .ty t => (kindE k t).map .bool
+  | _ => none
 
 /-- Field `n` of a struct value. -/
 def strctField (fs : List (String × DV)) (n : String) : Option DV :=
@@ -476,9 +473,10 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   | "PtrTo", [] => match dy with
     | .strct fs => strctField fs "PtrTo"
     | _ => none
-  | n, [] => match KindPred.ofName? n, dy with
-    | some k, .ty t => (kindE k t).map .bool
-    | _, _ => none
+  | "IsPtrShaped", [] => kindDV .ptrShaped dy
+  | "IsString", [] => kindDV .string dy
+  | "IsSlice", [] => kindDV .slice dy
+  | "IsInterface", [] => kindDV .inter dy
   | _, _ => none
 
 /-- Builtins: `min` of two integers. -/

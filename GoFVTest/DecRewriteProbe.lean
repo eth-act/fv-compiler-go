@@ -92,6 +92,10 @@ structure Stats where
   errors : Nat := 0
   /-- Per variant: fire, acc, par, chk. -/
   counts : Array (Nat × Nat × Nat × Nat) := variants.map fun _ => (0, 0, 0, 0)
+  /-- Per variant: the step's output is the full dec table's and the validator accepts it. -/
+  repro : Array Nat := variants.map fun _ => 0
+  /-- Sections whose full rewrite step extends the tables. -/
+  tabsChanged : Nat := 0
   /-- Per rule key: firings (full table) and `ruleOK` outcomes. -/
   fires : Std.HashMap String Nat := {}
   whys : Std.HashMap (String × String) Nat := {}
@@ -99,6 +103,8 @@ structure Stats where
 def Stats.merge (a b : Stats) : Stats := Id.run do
   let mut st := { a with files := a.files + b.files, sections := a.sections + b.sections
                          errors := a.errors + b.errors
+                         repro := (a.repro.zip b.repro).map fun (x, y) => x + y
+                         tabsChanged := a.tabsChanged + b.tabsChanged
                          counts := (a.counts.zip b.counts).map fun ((p, q, r, s), (p', q', r', s')) =>
                            (p + p', q + q', r + r', s + s') }
   for (k, n) in b.fires do st := { st with fires := st.fires.insert k (st.fires.getD k 0 + n) }
@@ -160,6 +166,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         Decompose.finish env s2) with
       | .ok o => GoFVTest.Parity.compare prev o tables s
       | .error err => some err
+    let mut full? : Option Func := none
     for h : i in [0:variants.size] do
       let (_, t) := variants[i]
       match rewriteRun t false true env' s1.f with
@@ -168,9 +175,15 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         let acc := accepts env' t s1.f out log
         let par := (finishWith out).isNone
         let chk := (finishWith (if acc then out else { func := s1.f, tables := s1.tabs })).isNone
+        if i == 0 then
+          full? := some out.func
+          if out.tables.types.size != s1.tabs.types.size || out.tables.auxes.size != s1.tabs.auxes.size then
+            st := { st with tabsChanged := st.tabsChanged + 1 }
+        let rep := acc && full? == some out.func
         let b (x : Bool) : Nat := if x then 1 else 0
         st := { st with counts := st.counts.modify i fun (p, q, r, s) =>
-          (p + b (n > 0), q + b acc, r + b par, s + b chk) }
+          (p + b (n > 0), q + b acc, r + b par, s + b chk)
+                        repro := st.repro.modify i (· + b rep) }
         for (kk, w) in ruleWhys s1.tabs t s1.f log do
           if i == 0 then st := { st with fires := st.fires.insert kk (st.fires.getD kk 0 + 1) }
           let kv := (s!"{variants[i].1} {kk}", w)
@@ -203,11 +216,12 @@ def main (args : List String) : IO UInt32 := do
     | .ok s => st := st.merge s
     | .error e => IO.eprintln s!"worker failed: {e}"; return 2
   IO.println s!"files {st.files}, decompose builtin sections {st.sections}, errors {st.errors}, proven dec rules {provenKeys.length}"
-  IO.println "| table | rules fired | step accepted | pass at stock | checked pass at stock |"
-  IO.println "| --- | --: | --: | --: | --: |"
+  IO.println s!"full rewrite step extends the tables in {st.tabsChanged} sections"
+  IO.println "| table | rules fired | step accepted | full step reproduced and accepted | pass at stock | checked pass at stock |"
+  IO.println "| --- | --: | --: | --: | --: | --: |"
   for h : i in [0:variants.size] do
     let (p, q, r, s) := st.counts[i]!
-    IO.println s!"| {variants[i].1} | {p} | {q} | {r} | {s} |"
+    IO.println s!"| {variants[i].1} | {p} | {q} | {st.repro[i]!} | {r} | {s} |"
   for (k, n) in st.fires.toList.mergeSort (fun a b => a.2 ≥ b.2) do
     IO.println s!"RULE\t{k}\t{provenKeys.contains k}\t{n}"
   for ((k, w), n) in st.whys.toList.mergeSort (fun a b => a.2 ≥ b.2) do

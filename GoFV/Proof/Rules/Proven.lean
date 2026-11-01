@@ -20,6 +20,7 @@ import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Convert
+import GoFV.Proof.Rules.Dec
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
 import GoFV.Proof.Rules.Div3
@@ -293,7 +294,20 @@ theorem generic_allSound : Proven.generic.AllSound :=
 
 /-- Every rule of `Proven.dec` is sound. -/
 theorem dec_allSound : Proven.dec.AllSound :=
-  RuleSet.allSound_of (by simp [Proven.dec, ForallL])
+  RuleSet.allSound_of (by
+    simp only [Proven.dec, ForallL]
+    exact ⟨⟨Rule.soundT_of_sound r_dec_116_sound rfl, Rule.soundT_of_sound r_dec_126_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_14_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_13_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_83_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_82_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_60_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_59_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_58_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_61_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_43_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_42_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_dec_115_sound rfl, trivial⟩, trivial⟩)
     (by simp [Proven.dec, ForallL])
 
 /-- Every rule of `Proven.divisible` is sound. -/

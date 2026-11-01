@@ -185,12 +185,23 @@ def generic : RuleSet where
   loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821]
   structLoads := [Generated.Generic.r_generic_974]
 
-/-- `dec.rules` restricted to its 0 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 13 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings and 0 struct-load
 expansions. -/
 def dec : RuleSet where
   name := "dec"
-  values := []
+  values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126]),
+    (.ComplexImag, [Generated.Dec.r_dec_14]),
+    (.ComplexReal, [Generated.Dec.r_dec_13]),
+    (.IData, [Generated.Dec.r_dec_83]),
+    (.ITab, [Generated.Dec.r_dec_82]),
+    (.SliceCap, [Generated.Dec.r_dec_60]),
+    (.SliceLen, [Generated.Dec.r_dec_59]),
+    (.SlicePtr, [Generated.Dec.r_dec_58]),
+    (.SlicePtrUnchecked, [Generated.Dec.r_dec_61]),
+    (.StringLen, [Generated.Dec.r_dec_43]),
+    (.StringPtr, [Generated.Dec.r_dec_42]),
+    (.StructSelect, [Generated.Dec.r_dec_115])]
   blocks := []
   nilChecks := []
   loads := []

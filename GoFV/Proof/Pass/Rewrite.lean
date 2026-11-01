@@ -35,6 +35,21 @@ namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules GoFV.Proof GoFV.Proof.Rules
 
+/-- **The validator alone** (issue #17): a rewrite of `f` into `g` that `RewriteCheck.validate`
+accepts in the tables `tabs'` with a sound rule table, both checked, refines in `tabs'`; with
+`tabsAgree tabs tabs' f` the source may run in its own tables `tabs`. For a rewrite step whose
+log has no nil-check eliminations or Load forwardings (the dec rules: decompose builtin, run with
+`removeDead := false`), `RewriteCheck.accepts` is `tabsAgree` and `validate`. -/
+theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {f g : Func}
+    {log : Array RwEvent} {ce ce' : CheckEnv}
+    (hv : RewriteCheck.validate tabs' (Interp.Table.ofRuleSet s) f g log = true)
+    (hta : tabsAgree tabs tabs' f = true)
+    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) :
+    RefinesUnder Env.Mono tabs' g tabs f := by
+  obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
+  obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
+  exact refinesUnder_of_tabsAgree hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
+
 theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)

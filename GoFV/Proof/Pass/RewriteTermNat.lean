@@ -1,6 +1,7 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Proof.Retype
 import GoFV.Proof.Pass.RewriteTermDen
+import GoFV.Proof.Rules.DecShape
 
 /-!
 # `natShape`: the op's raw result has the value's shape (issue #113)
@@ -334,16 +335,6 @@ theorem hasTyList_get : ∀ {vs : List Val} {ts : List Ty}, Val.hasTyList vs ts 
     | succ k => simpa using hasTyList_get h.2 k
   | [], _ :: _, h, _ | _ :: _, [], h, _ => by simp [Val.hasTyList] at h
 
-/-- `shapeSub f t`: a value of shape `f` has shape `t`. -/
-theorem shapeSub_hasTy {f t : Ty} (h : GoFV.Proof.Rules.shapeSub f t = true) {v : Val}
-    (hv : v.hasTy f = true) : v.hasTy t = true := by
-  simp only [GoFV.Proof.Rules.shapeSub, Bool.or_eq_true, Bool.and_eq_true] at h
-  rcases h with h | ⟨hf, ht⟩
-  · rw [← Ty.eq_of_beq h]; exact hv
-  · obtain ⟨_, rfl⟩ := eq_of_isPtrTy hf
-    obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht
-    cases v <;> simp_all [Val.hasTy]
-
 /-- `Comp.select k` of an argument of shape `argTy` has shape `ty` under `selShapeOK`. -/
 theorem select_hasTy {k : Nat} {ty argTy : Ty} (h : selShapeOK k ty argTy = true)
     (args : List Val) (h0 : ∀ a, args.head? = some a → a.hasTy argTy = true) :
@@ -365,7 +356,7 @@ theorem select_hasTy {k : Nat} {ty argTy : Ty} (h : selShapeOK k ty argTy = true
           simp only [Option.map_some, Option.some.injEq] at ht
           subst ht
           simp only [List.getD, hv, Option.getD_some]
-          exact shapeSub_hasTy h hvt
+          exact GoFV.Proof.Rules.shapeSub_hasTy h hvt
     all_goals first | (simp [Val.hasTy] at ha; done) | cases h
   · rfl
 
@@ -386,6 +377,83 @@ theorem evalPure_sel {op : Op} {ai : Int64} {k : Nat} (h : selIndex? op ai = som
          · rfl)
     | cases h
 
+/-- The raw value of a selection checked by `selTop` has the top type's shape. -/
+theorem raw_selTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
+    {pty pai pax : GoFV.Rules.Field} {par : GoFV.Rules.Arity} {args : List GoFV.Rules.Pat}
+    {cm : Bool} (hp : selTop o (e.ty []) (e.auxInt []) (e.ty [0]) = true)
+    (ht : GoFV.Proof.Rules.Pat.typed e [] (.op o nm pty pai pax par args cm)) :
+    (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
+  unfold selTop at hp
+  split at hp
+  · rename_i k hk
+    have hf : GoFV.Proof.Rules.frameOp o = false := frameOp_false
+      (by rintro rfl; simp [selIndex?] at hk) (by rintro rfl; simp [selIndex?] at hk)
+    simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure hf, evalPure_sel hk]
+    apply select_hasTy hp
+    intro a hh
+    cases args with
+    | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
+    | cons q qs =>
+      simp only [GoFV.Proof.Rules.Pat.densT, List.head?_cons, Option.some.injEq] at hh
+      subst hh
+      simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
+      exact den_hasTy_typed _ _ ht.1
+  · cases hp
+
+/-! ## Loads (`loadTop`, issue #17) -/
+
+/-- A scalar shape decodes to a value of the shape, whatever the bytes. -/
+theorem decode_hasTy_scalar (bs : Array Byte) (off : Nat) {t : Ty} (h : scalarTy t = true) :
+    (decode bs off t).hasTy t = true := by
+  cases t <;> simp only [scalarTy, Bool.false_eq_true] at h
+  · rename_i w
+    simp only [decode, decodeInt]
+    split
+    · simp [Val.hasTy]
+    · split
+      · split
+        · simp [Val.hasTy]
+        · rename_i hn; simp [Val.hasTy, hn]
+      · rfl
+  · simp only [decode]
+    split
+    · split <;> rfl
+    · rfl
+  · simp only [decode, decodePtr]
+    split
+    · rfl
+    · split <;> rfl
+
+theorem decodeFields_hasTy (bs : Array Byte) (off : Nat) :
+    ∀ fs : List (Nat × Ty), fs.all (scalarTy ·.2) = true →
+      Val.hasTyList (decodeFields bs off fs) (fs.map (·.2)) = true
+  | [], _ => rfl
+  | (o, t) :: fs, h => by
+    simp only [List.all_cons, Bool.and_eq_true] at h
+    simp only [decodeFields, List.map_cons, Val.hasTyList, Bool.and_eq_true]
+    exact ⟨decode_hasTy_scalar bs (off + o) h.1, decodeFields_hasTy bs off fs h.2⟩
+
+/-- A `Load` at a `loadShape` has the shape. -/
+theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
+    (loadOp t args).hasTy t = true := by
+  unfold loadOp
+  split
+  · rename_i p m
+    unfold Mem.load
+    split
+    all_goals first
+      | rfl
+      | (split
+         · rename_i bs _
+           cases t with
+           | agg fs n =>
+             simp only [loadShape] at h
+             simp only [decode, Val.hasTy]
+             exact decodeFields_hasTy bs 0 fs h
+           | _ => exact decode_hasTy_scalar bs 0 (by simpa [loadShape] using h)
+         · rfl)
+  · rfl
+
 /-- **`topAll`**: the raw value of a pattern whose top op `topAll` accepts has the top type's
 shape. -/
 theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
@@ -395,23 +463,14 @@ theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Op
     (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
     (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
   simp only [topAll, Bool.or_eq_true] at hp
-  rcases hp with hp | hp
+  rcases hp with (hp | hp) | hp
   · exact raw_topOK hp ht ha
-  · unfold selTop at hp
-    split at hp
-    · rename_i k hk
-      have hf : GoFV.Proof.Rules.frameOp o = false := frameOp_false
-        (by rintro rfl; simp [selIndex?] at hk) (by rintro rfl; simp [selIndex?] at hk)
-      simp only [GoFV.Proof.Rules.Pat.rawT, GoFV.Proof.Rules.opVal_pure hf, evalPure_sel hk]
-      apply select_hasTy hp
-      intro a hh
-      cases args with
-      | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
-      | cons q qs =>
-        simp only [GoFV.Proof.Rules.Pat.densT, List.head?_cons, Option.some.injEq] at hh
-        subst hh
-        simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
-        exact den_hasTy_typed _ _ ht.1
-    · cases hp
+  · exact raw_selTop hp ht
+  · simp only [loadTop, Bool.and_eq_true, beq_iff_eq] at hp
+    obtain ⟨rfl, hp⟩ := hp
+    simp only [GoFV.Proof.Rules.Pat.rawT,
+      GoFV.Proof.Rules.opVal_pure (op := .Load) (by decide)]
+    exact loadOp_hasTy hp _
+
 
 end GoFV.Proof.Pass.Rewrite

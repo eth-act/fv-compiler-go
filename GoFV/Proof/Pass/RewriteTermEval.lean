@@ -68,7 +68,7 @@ theorem methodE_rel {d d' : DV} (h : d.erase = d'.erase) (n : String) (args : Li
     methodE d n args = methodE d' n args := by
   rcases DV.erase_eq_cases h with rfl | ⟨v, v', p, rfl, rfl⟩
   · rfl
-  · unfold methodE; split <;> first | rfl | (cases GoFV.Proof.Rules.KindPred.ofName? n <;> rfl)
+  · unfold methodE; split <;> rfl
 
 theorem convE_rel {d d' : DV} (h : d.erase = d'.erase) (ty : GoFV.Rules.GoTy) :
     convE ty d = convE ty d' := by
@@ -370,10 +370,12 @@ theorem evalE_good {P : Val → Path → Prop} (vtys : List GoFV.Rules.GoTy) (or
         obtain ⟨x, hx, rfl⟩ := strctField_mem hd
         exact good_of_flat ((evalE_good vtys or e hσ htop hor y).2 fs heq x hx)
       · cases hd
-    · split at hd
-      · simp only [Option.map_eq_some_iff] at hd; obtain ⟨_, _, rfl⟩ := hd; exact good_of_flat rfl
-      · cases hd
-    · cases hd
+    all_goals first
+      | cases hd
+      | (unfold GoFV.Proof.Rules.kindDV at hd
+         split at hd
+         · simp only [Option.map_eq_some_iff] at hd; obtain ⟨_, _, rfl⟩ := hd; exact good_of_flat rfl
+         · cases hd)
   | .builtin fn args _ => by
     simp only [evalE]
     refine good_getD (flat_good_opt fun d hd => ?_) (hor _)

@@ -823,6 +823,13 @@ Results (`--n 100 --seed 3`): 225 functions, 22,500 calls; native agrees with ev
 - Result types narrower than the op — **found and answered by P1**: §3.2 (`Val.retype`).
 - Interface method calls need itab layouts and method tables; `rtype`/`reloc` export lines
   must be enough to resolve `InterLECall` targets — otherwise `stuck`.
+- **Pointer-shaped aggregates** (#17): a one-field struct or one-element array of a pointer has
+  the shape `.agg [(0, .ptr _)] 8`, but Go represents it as the bare pointer
+  (`dec.rules:119`/`:120`: `(StructMake x) && x.Type.IsPtrShaped() => x`, interface data words).
+  Those two rules are false under the semantics (`.agg [p]` vs `p`), and the interface itab word
+  is `.int .w64` while Go also types `ITab` as `*uint8`, so `ITab`/`IMake` with a pointer-typed
+  itab fail the validator's shape checks. Model gap, not a Go bug; a later change could make
+  `Val.retype` at a one-field pointer-shaped aggregate wrap/unwrap.
 
 ## 11. Per-op table
 

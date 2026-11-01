@@ -208,30 +208,4 @@ def configNames : List String := ["PtrSize", "RegSize", "ctxt"]
 
 #config_field_lemmas "PtrSize" "RegSize" "ctxt"
 
-/-- `#kind_name_lemmas "a" …`: `theorem kindName_<i> : KindPred.ofName? "<name>" = <value>`. -/
-elab "#kind_name_lemmas " names:str* : command => do
-  for (n, i) in names.toList.zipIdx do
-    let s := n.getString
-    let rhs := match KindPred.ofName? s with
-      | some .ptrShaped => "some KindPred.ptrShaped"
-      | some .string => "some KindPred.string"
-      | some .slice => "some KindPred.slice"
-      | some .inter => "some KindPred.inter"
-      | none => "none"
-    let some rhsStx := (Parser.runParserCategory (← getEnv) `term rhs).toOption
-      | throwError "cannot parse {rhs}"
-    let id := mkIdent (.mkSimple s!"kindName_{i}")
-    elabCommand (← `(@[rule_helper] theorem $id : KindPred.ofName? $n = $(⟨rhsStx⟩) := by rfl))
-
-/-- The method names the exported rules call. -/
-def methodNames : List String :=
-  ["Alignment", "Compare", "Elem", "FieldOff", "FieldType", "IsArray", "IsBoolean", "IsComplex",
-   "IsInteger", "IsInterface", "IsPtrShaped", "IsSigned", "IsSIMD", "IsSlice", "IsString",
-   "IsStruct", "NumElem", "PtrTo", "Size", "StringData"]
-
-#kind_name_lemmas
-  "Alignment" "Compare" "Elem" "FieldOff" "FieldType" "IsArray" "IsBoolean" "IsComplex"
-  "IsInteger" "IsInterface" "IsPtrShaped" "IsSigned" "IsSIMD" "IsSlice" "IsString" "IsStruct"
-  "NumElem" "PtrTo" "Size" "StringData"
-
 end GoFV.Proof.Rules

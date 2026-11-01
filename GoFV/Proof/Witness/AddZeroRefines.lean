@@ -34,4 +34,14 @@ theorem addZero_refines :
       cases h1
       exact ⟨_, rfl⟩
 
+/-- Witness of `GoFV.Proof.Pass.Rewrite.validate_refines` (the validator alone, issue #17): the
+accepted `addZero` rewrite refines `addZero` in the same tables. -/
+theorem addZero_validate_refines :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) azPassEnv addZero = .ok out ∧
+      (out.func.value? 5).map (·.args) = some #[2, 1] ∧
+      RefinesUnder Env.Mono azTabs out.func azTabs addZero := by
+  obtain ⟨out, hc, -, h5, ⟨log, hv⟩, hf, hg⟩ := addZero_checkedRewrite
+  exact ⟨out, hc, h5, GoFV.Proof.Pass.Rewrite.validate_refines azRules_allSound hv
+    (by decide +kernel) hf hg⟩
+
 end GoFV.Proof.Witness
