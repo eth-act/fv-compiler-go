@@ -14,6 +14,23 @@ namespace GoFV.Proof.ProveCheck
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof GoFV.Proof.AtomSim
 
+/-- `checkedResult` returns its input or an output `proveRel` accepts. -/
+theorem checkedResult_cases (tabs : Tables) (f g : Func) :
+    (ProveCheck.checkedResult tabs f g).1 = f ∨
+      ∃ F inv RB, ProveCheck.proveRel tabs f (ProveCheck.checkedResult tabs f g).1 F inv RB = true := by
+  unfold ProveCheck.checkedResult
+  split
+  · exact .inl rfl
+  · generalize ProveCheck.asmOf f tabs = A
+    rcases A with ⟨C, F, inv, RB⟩
+    dsimp only
+    generalize ProveCheck.revert tabs true F inv RB f g = R
+    rcases R with ⟨h, st⟩
+    dsimp only
+    split
+    · rename_i hrel; exact .inr ⟨F, inv, RB, hrel⟩
+    · exact .inl rfl
+
 /-- **The checked prove refines its input.** -/
 theorem proveChecked_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : proveChecked penv f = .ok out) (hf : check ce f = .ok ())
@@ -29,14 +46,12 @@ theorem proveChecked_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce'
       simp only [hp, hq, bind, Except.bind, pure, Except.pure, Except.ok.injEq] at h
       subst h
       simp only at hg ⊢
-      split
-      · rename_i hrel
-        simp only [hrel, ↓reduceIte] at hg
-        have hwf := check_wf hf
+      rcases checkedResult_cases penv.tables f g0 with he | ⟨F, inv, RB, hrel⟩
+      · rw [he]; exact RefinesUnder.refl _ _ _
+      · have hwf := check_wf hf
         have hc := Dom.certOK_of_check (check_domCert hf)
         have hR := proveRel_spec hrel
         exact atomSimInv_refines hf hg hR.atoms (proveInv hwf hc hR) (prove_atomArgs hwf hc hR)
           (prove_steps hwf hc hR)
-      · exact RefinesUnder.refl _ _ _
 
 end GoFV.Proof.ProveCheck

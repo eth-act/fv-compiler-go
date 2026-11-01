@@ -14,6 +14,9 @@ import GoFV.Proof.Pass.BranchElimPass
 import GoFV.Proof.Pass.DAE
 import GoFV.Proof.Pass.Sccp
 import GoFV.Proof.Pass.DSE
+import GoFV.Proof.Pass.FuseEarlyPass
+import GoFV.Proof.Pass.ECMain
+import GoFV.Proof.Pass.MemCombine
 import GoFV.Proof.TabsAgree
 
 /-!
@@ -134,8 +137,10 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
   · exact optStep_sound
   -- known bits
   · exact fun _ _ _ _ _ h hf hg _ => KnownBits.knownBits_refines h hf hg
-  · trivial
-  · trivial
+  -- early fuse
+  · exact fun _ _ _ _ _ h _ _ _ => FuseEarly.fuseEarly_refines h
+  -- expand calls
+  · exact fun _ _ _ _ _ h hf hg hd => EC.expandCalls_refines h hf hg hd
   · trivial
   -- softfloat
   · exact fun _ _ _ _ _ h _ _ _ => softfloat_refines h
@@ -152,7 +157,8 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
   · exact fun _ _ _ _ _ h _ _ _ => checkbce_refines h
   -- dse
   · exact fun _ _ _ _ _ h hf hg hd => DSE.dse_refines h hf hg hd
-  · trivial
+  -- memcombine
+  · exact fun _ _ _ _ _ h hf hg _ => MemCombine.memcombine_refines h hf hg
   · trivial
   · trivial
   · trivial

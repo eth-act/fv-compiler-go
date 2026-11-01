@@ -12,7 +12,7 @@ import GoFV.Opt.NilCheckRel
 import GoFV.Opt.ProveCheck.Check
 import GoFV.Opt.KnownBitsCheck
 import GoFV.Opt.Fuse
-import GoFV.Opt.ExpandCalls
+import GoFV.Opt.ExpandCallsCheck
 import GoFV.Opt.SoftFloat
 import GoFV.Opt.BranchElim
 import GoFV.Opt.ElimDeadAutos
@@ -21,7 +21,7 @@ import GoFV.Opt.SccpCheck
 import GoFV.Opt.CheckBCE
 import GoFV.Opt.DeadStore
 import GoFV.Opt.DeadStoreCheck
-import GoFV.Opt.MemCombine
+import GoFV.Opt.MemCombine.Check
 import GoFV.Opt.WriteBarrier
 import GoFV.Opt.ReschedChecks
 import GoFV.Opt.CpuFeatures
@@ -159,8 +159,9 @@ def stockPasses : Array StockPass := #[
   { name := "divmod", required := true, step := .proven divmodChecked .rw noGuard },
   { name := "middle opt", required := true, step := optStep },
   { name := "known bits", step := .proven knownBitsPass .mono noGuard },
-  { name := "early fuse", step := .stock fuseEarlyPass },
-  { name := "expand calls", required := true, step := .stock expandCallsPass },
+  { name := "early fuse", step := .proven fuseEarlyPass .refines noGuard },
+  { name := "expand calls", required := true,
+    step := .proven expandCallsPass .mono expandCallsFrag },
   { name := "decompose builtin", required := true,
     step := .stock Decompose.postExpandCallsDecomposePass },
   { name := "softfloat", required := true, step := .proven softfloatPass .refines noGuard },
@@ -172,7 +173,7 @@ def stockPasses : Array StockPass := #[
   { name := "late fuse", step := .stock fuseLatePass },
   { name := "check bce", step := .proven checkbcePass .refines noGuard },
   { name := "dse", step := .proven dsePass .refines dseFrag },
-  { name := "memcombine", step := .stock memcombinePass },
+  { name := "memcombine", step := .proven memcombineChecked .mono noGuard },
   { name := "writebarrier", required := true, step := .stock writebarrierPass },
   { name := "insert resched checks", disabled := reschedChecksDisabled,
     step := .stock reschedChecksPass },

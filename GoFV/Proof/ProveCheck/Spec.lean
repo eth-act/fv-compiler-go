@@ -4,7 +4,7 @@ import GoFV.Proof.AtomSimOK
 /-!
 # The checked relation `proveRel`, declaratively (issue #24)
 
-`proveRel_spec`: what `ProveCheck.proveRel tabs f g` guarantees (`RelSpec`): the atoms and
+`proveRel_spec`: what `ProveCheck.proveRel tabs f g F inv RB` guarantees (`RelSpec`): the atoms and
 terminators of the atom simulation, every block a dominator-tree block, the path facts
 (`FactsSpec`), the `Phi` invariants (`InvSpec`), the relations (`RelsSpec`), and per listed
 value of `f` its block, definition justified (`defOK`: kept, a value rewrite `valueOK`,
@@ -195,8 +195,9 @@ theorem valuesOK_spec {tabs : Tables} {f g : Func} {F : Array (List (ID × Bool)
           simp only [Bool.and_eq_true, beq_iff_eq] at hd
           exact ⟨hxg, fv, gv, hfv, hgv, hd.1, hd.2⟩
 
-theorem proveRel_spec {tabs : Tables} {f g : Func} (h : proveRel tabs f g = true) :
-    RelSpec tabs f g (asmOf f tabs).2.1 (asmOf f tabs).2.2.1 (asmOf f tabs).2.2.2 := by
+theorem proveRel_spec {tabs : Tables} {f g : Func} {F : Array (List (ID × Bool))}
+    {inv : List (ID × Width × Rng)} {RB : Array (List (ID × ID × Width × Int))}
+    (h : proveRel tabs f g F inv RB = true) : RelSpec tabs f g F inv RB := by
   unfold proveRel at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨ha, hcf⟩, hcg⟩, ht⟩, hfacts⟩, hinv⟩, hrels⟩, hvals⟩ := h

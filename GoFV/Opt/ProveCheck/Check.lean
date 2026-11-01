@@ -495,13 +495,14 @@ def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
         | _, _ => false
     | _, _ => false
 
-/-- **The relation** the theorem needs between `f` and the checked output `g`. -/
-def proveRel (tabs : Tables) (f g : Func) : Bool :=
-  let A := asmOf f tabs
+/-- **The relation** the theorem needs between `f` and the checked output `g`, under the
+assumptions `F`, `inv`, `RB` (`asmOf`'s, which it re-checks). -/
+def proveRel (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) : Bool :=
   atomsOK f g && closedOK f && closedOK g && f.blocks.all (DomCert.make f).inTree &&
-    factsOK f (DomCert.make f) A.2.1 && invOK f tabs (DomCert.make f) A.2.1 A.2.2.1 A.2.2.1 &&
-    relsOK f tabs (DomCert.make f) A.2.1 A.2.2.1 A.2.2.2 &&
-    valuesOK tabs f g A.2.1 A.2.2.1 A.2.2.2
+    factsOK f (DomCert.make f) F && invOK f tabs (DomCert.make f) F inv inv &&
+    relsOK f tabs (DomCert.make f) F inv RB &&
+    valuesOK tabs f g F inv RB
 
 /-! ## The checked pass -/
 
@@ -547,10 +548,11 @@ def classOf (fv gv : Value) : String :=
     s!"{fv.op.name.takeWhile Char.isAlpha}->{gv.op.name}"
   else s!"{fv.op.name}->{gv.op.name}"
 
-/-- Keep the rewrites of `g` (prove's output on `f`) the validator accepts, undo the others;
-branch removals are undone unless `branches`. -/
-def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.run do
-  let (_, F, inv, RB) := asmOf f tabs
+/-- Keep the rewrites of `g` (prove's output on `f`) the validator accepts under the assumptions
+`F`, `inv`, `RB`, undo the others; branch removals are undone unless `branches`. -/
+def revert (tabs : Tables) (branches : Bool) (F : Array (List (ID × Bool)))
+    (inv : List (ID × Width × Rng)) (RB : Array (List (ID × ID × Width × Int))) (f g : Func) :
+    Func × Stats := Id.run do
   let D := f.value?
   let mut st : Stats := {}
   let mut h := g
@@ -589,13 +591,31 @@ def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.
         if !ok then h := h.modV x fun hv => { fv with uses := hv.uses }
   return (fixup h, st)
 
-/-- `prove` with every unjustified rewrite undone, and its statistics; the input if the
-relation fails. -/
+/-- `g` changes a terminator or a definition of a value listed in `f`. -/
+def changed (f g : Func) : Bool :=
+  f.blocks.any fun b =>
+    match f.block? b, g.block? b with
+    | some fb, some gb =>
+      !(fb.kind == gb.kind && fb.controls == gb.controls && fb.succs == gb.succs) ||
+      fb.values.any fun x => match f.value? x, g.value? x with
+        | some fv, some gv => !sameDef fv gv
+        | _, _ => true
+    | _, _ => true
+
+/-- `prove`'s output `g` on `f` with every unjustified rewrite undone, and its statistics; `f`
+if `g` changes nothing or the relation fails. The assumptions are computed once, for `revert`
+and `proveRel`. -/
+def checkedResult (tabs : Tables) (f g : Func) : Func × Stats :=
+  if !changed f g then (f, {}) else
+  let (_, F, inv, RB) := asmOf f tabs
+  let (h, st) := revert tabs true F inv RB f g
+  (if proveRel tabs f h F inv RB then h else f, st)
+
+/-- `prove` with every unjustified rewrite undone, and its statistics (`checkedResult`). -/
 def proveCheckedStats (env : PassEnv) (f : Func) : Except String (Func × Stats) := do
   let p ← Prove.Prover.ofEnv env
   let g ← Prove.prove p f
-  let (h, st) := revert env.tables true f g
-  return (if proveRel env.tables f h then h else f, st)
+  return checkedResult env.tables f g
 
 end GoFV.Opt.ProveCheck
 
