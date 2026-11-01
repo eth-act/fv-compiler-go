@@ -34,7 +34,15 @@ def why (tabs : Tables) (strict : Bool) (f g : Func) (rw : Array (Option ID)) : 
     if !substOK tabs strict c rw f g x then
       return s!"subst v{x} {((f.value? x).map (·.op.name)).getD "?"}"
   for bid in f.blocks do
-    if !schedOK f g bid then return s!"sched b{bid}"
+    if !schedOK strict f g bid then
+      let pr (h : Func) (o : Option (Array ID)) : String :=
+        match o, f.block? bid with
+        | some o, _ => toString ((o.filter (rootNode f)).toList.map fun x =>
+            s!"v{x}:{(h.getV x).op.name}({(h.getV x).args.toList})")
+        | none, _ => "none"
+      let os := (f.block? bid).bind (Sem.schedule f ·)
+      let ot := (g.block? bid).bind (Sem.schedule g ·)
+      return s!"sched b{bid} src {pr f os} tgt {pr g ot}"
   return "?"
 
 /-- Why a `Load` merge `x ↦ r` with different memory arguments fails `loadOK`. -/

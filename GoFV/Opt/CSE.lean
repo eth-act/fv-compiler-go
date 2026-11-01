@@ -458,16 +458,43 @@ def substOK (tabs : Tables) (strict : Bool) (c : DomCert.Cert) (rw : Array (Opti
 /-- A root for the scheduler (priority 1 or 2: `NilCheck`s, calls, stores, …). -/
 def rootNode (f : Func) (x : ID) : Bool := ((f.value? x).map (Sem.prio ·.op)).getD 0 != 0
 
+/-- A root list split at the priority-2 roots: each such root with the run of `NilCheck`s
+that follows it (the first entry: the run before any, under `none`). -/
+def runs (f : Func) (o : List ID) : List (Option ID × List ID) :=
+  let step (acc : List (Option ID × List ID)) (x : ID) : List (Option ID × List ID) :=
+    if ((f.value? x).map (Sem.prio ·.op)).getD 0 == 1 then
+      match acc with
+      | (r, run) :: acc => (r, x :: run) :: acc
+      | [] => [(none, [x])]
+    else (some x, []) :: acc
+  ((o.foldl step [(none, [])]).map fun (r, run) => (r, run.reverse)).reverse
+
+/-- The memory argument of `NilCheck` `x` in `g`. -/
+def nilMem (g : Func) (x : ID) : Option ID := (g.value? x).bind (·.args[1]?)
+
+/-- Root orders that agree up to permutations of a run of `NilCheck`s on one memory (each
+panics, if at all, with that memory): accepted by the checker, outside `cse_refines`'
+fragment unless the orders agree exactly. -/
+def runsAgree (f g : Func) (oS oT : List ID) : Bool :=
+  let rS := runs f oS
+  let rT := runs f oT
+  rS.length == rT.length && (rS.zip rT).all fun ((r, a), (r', b)) =>
+    r == r' && (a == b || (a.mergeSort (· ≤ ·) == b.mergeSort (· ≤ ·) &&
+      b.all fun x => nilMem g x == (b.head?.bind (nilMem g))))
+
 /-- Block `bid`: if `f`'s block has a schedule, `g`'s has one listing the roots in the same
-order. -/
-def schedOK (f g : Func) (bid : ID) : Bool :=
+order (with `strict`; else up to `runsAgree`). -/
+def schedOK (strict : Bool) (f g : Func) (bid : ID) : Bool :=
   match f.block? bid, g.block? bid with
   | some fb, some gb =>
     match Sem.schedule f fb with
     | none => true
     | some oS =>
       match Sem.schedule g gb with
-      | some oT => oT.filter (rootNode f) == oS.filter (rootNode f)
+      | some oT =>
+        let rS := oS.toList.filter (rootNode f)
+        let rT := oT.toList.filter (rootNode f)
+        rT == rS || (!strict && runsAgree f g rS rT)
       | none => false
   | _, _ => false
 
@@ -481,19 +508,21 @@ def crel (tabs : Tables) (strict : Bool) (f g : Func) (rw : Array (Option ID)) :
   f.blocks.all (blockOK rw f g) &&
   (List.range f.valueTab.size).all (valueOK rw f g) &&
   (List.range rw.size).all (substOK tabs strict (DomCert.make f) rw f g) &&
-  f.blocks.all (schedOK f g)
+  f.blocks.all (schedOK strict f g)
 
 end CSE
 
 /-- `cse`, validated by `CSE.crel` (the input if the checker rejects the result). A `Load`
-merge through different memory arguments is accepted as Go found it; the proof covers it when
-the stricter check (`CSE.inFrag`) re-derives it. -/
+merge through different memory arguments, and a reordering of `NilCheck`s on one memory, are
+accepted as Go found them; the proof covers them when the strict check re-derives the merge
+through disjoint stores and finds the roots in the same order (`CSE.inFrag`). -/
 def cseChecked (c : CSE.Ctx) (f : Func) : Except String Func := do
   let (g, rw) ← cseRw c f
   return if CSE.crel c.tabs false f g rw then g else f
 
-/-- The fragment `cse_refines` covers: cse fails, or its `Load` merges through different
-memory arguments pass `CSE.loadOK` (the checker with `strict`). -/
+/-- The fragment `cse_refines` covers: cse fails, its result is rejected, or the strict
+checker accepts it too (`Load` merges through different memory arguments pass `CSE.loadOK`,
+roots keep their order). -/
 def CSE.inFrag (c : CSE.Ctx) (f : Func) : Bool :=
   match cseRw c f with
   | .ok (g, rw) => !CSE.crel c.tabs false f g rw || CSE.crel c.tabs true f g rw
