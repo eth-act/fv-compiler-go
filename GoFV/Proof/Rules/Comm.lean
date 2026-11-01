@@ -58,21 +58,26 @@ theorem bool2_comm (f : Bool → Bool → Bool) (hf : ∀ x y, f x y = f y x) (p
     rw [bool2_eq, bool2_eq]
     cases p.asBool <;> cases q.asBool <;> simp [hf]
 
+theorem asBool_cases (v : Val) : v.asBool = none ∨ v = .bool true ∨ v = .bool false := by
+  cases v <;> simp [Val.asBool]
+
+theorem asBool_bool (b : Bool) : (Val.bool b).asBool = some b := rfl
+
 theorem andB_comm (p q : Val) (rest : List Val) :
     Cmp.andB (p :: q :: rest) = Cmp.andB (q :: p :: rest) := by
   cases rest with
   | cons _ _ => rfl
   | nil =>
-    simp only [Cmp.andB]
-    rcases p.asBool with _ | ⟨_ | _⟩ <;> rcases q.asBool with _ | ⟨_ | _⟩ <;> rfl
+    rcases asBool_cases p with hp | rfl | rfl <;> rcases asBool_cases q with hq | rfl | rfl <;>
+      simp_all [Cmp.andB, asBool_bool]
 
 theorem orB_comm (p q : Val) (rest : List Val) :
     Cmp.orB (p :: q :: rest) = Cmp.orB (q :: p :: rest) := by
   cases rest with
   | cons _ _ => rfl
   | nil =>
-    simp only [Cmp.orB]
-    rcases p.asBool with _ | ⟨_ | _⟩ <;> rcases q.asBool with _ | ⟨_ | _⟩ <;> rfl
+    rcases asBool_cases p with hp | rfl | rfl <;> rcases asBool_cases q with hq | rfl | rfl <;>
+      simp_all [Cmp.orB, asBool_bool]
 
 theorem commOpsP1_sound : ∀ o ∈ commOpsP1, CommSound o := by
   intro o ho t a x p q rest

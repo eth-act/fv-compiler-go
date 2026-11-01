@@ -33,6 +33,7 @@ theorem retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t := b
     cases v with
     | int w x => cases w <;> rfl
     | _ => rfl
+  | bool => cases v <;> rfl
   | _ => cases v <;> try rfl
   all_goals (rename_i w _; cases w <;> rfl)
 

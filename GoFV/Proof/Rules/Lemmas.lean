@@ -65,16 +65,17 @@ theorem val_poison_of_asInt_none {v : Val} {w : Width} (h : v.asInt w = none)
   | _ => simp [Val.hasTy] at ht
 
 /-- An integer of width `w` read back at `w` through a retype to `t` fails: `t` is an integer
-shape of another width (narrower: the low bits; wider: `poison`) or, for `w = 64`, a pointer
-shape (`Val.retype`). -/
+shape of another width (narrower: the low bits; wider: `poison`), `bool` (`poison`) or, for
+`w = 64`, a pointer shape (`Val.retype`). -/
 def tyOtherInt (t : Ty) (w : Width) : Bool :=
   match t with
   | .int w' => w' != w
   | .ptr _ => w == .w64
+  | .bool => true
   | _ => false
 
 @[rule_sem] theorem tyOtherInt_int (w w' : Width) : tyOtherInt (Ty.int w') w = (w' != w) := rfl
-@[rule_sem] theorem tyOtherInt_bool (w : Width) : tyOtherInt Ty.bool w = false := rfl
+@[rule_sem] theorem tyOtherInt_bool (w : Width) : tyOtherInt Ty.bool w = true := rfl
 @[rule_sem] theorem tyOtherInt_ptr (w : Width) (e : Option Nat) :
     tyOtherInt (Ty.ptr e) w = (w == .w64) := rfl
 
@@ -88,10 +89,12 @@ def tyOtherInt (t : Ty) (w : Width) : Bool :=
 @[rule_sem] theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by
   cases t <;> rfl
 
-@[rule_sem] theorem retype_tuple (t : Ty) (vs : List Val) : (Val.tuple vs).retype t = .tuple vs := by
+@[rule_sem] theorem retype_tuple (t : Ty) (vs : List Val) :
+    (Val.tuple vs).retype t = match t with | .bool => .poison | _ => .tuple vs := by
   cases t <;> rfl
 
-@[rule_sem] theorem retype_bool_ty (v : Val) : v.retype .bool = v := by
+@[rule_sem] theorem retype_bool_ty (v : Val) :
+    v.retype .bool = match v with | .bool b => .bool b | _ => .poison := by
   cases v <;> rfl
 
 /-- An integer read at its own width through a retype: unchanged unless `tyOtherInt`. -/
@@ -108,6 +111,7 @@ def tyOtherInt (t : Ty) (w : Width) : Bool :=
       · exact val_asInt_int_ne _ h
       · rfl
   | ptr e => cases w <;> rfl
+  | bool => cases w <;> rfl
   | _ => simp [Val.retype, tyOtherInt]
 
 @[rule_sem] theorem asBool_retype (t : Ty) (v : Val) :
@@ -117,6 +121,8 @@ def tyOtherInt (t : Ty) (w : Width) : Bool :=
   · split <;> rfl
   · rfl
   · split <;> rfl
+  · rfl
+  · cases v <;> simp_all [Val.asBool]
   · rfl
 
 @[rule_sem] theorem hasTy_int (w : Width) (x : BitVec w.bits) (t : Ty) :
@@ -691,6 +697,7 @@ theorem rotateLeft_toNat_pow2 {v : Nat} (k : Nat) (x : BitVec (2 ^ k)) (s : BitV
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; simp [Val.retype, Val.asNat, BitVec.setWidth_eq]
   | ptr e => cases w <;> first | rfl | cases h
+  | bool => cases h
   | _ => rfl
 
 @[rule_sem] theorem int64_zero_beq_one : ((0 : Int64) == 1) = false := by decide

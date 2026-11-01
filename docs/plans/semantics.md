@@ -79,7 +79,11 @@ type integer results narrower than their op — `divmod.rules` builds `(Rsh64x64
 `divmod`; 990 such values in the corpus, all `Rsh64x64`/`Rsh32x64`, none wider than the op).
 So every produced integer is retyped to its value's width (`Val.retype`, `Sem/Layout.lean`):
 a narrower type keeps the low bits; a wider one would expose undefined high bits and is
-`poison`. Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+`poison`. A `bool`-typed value that is not a boolean is `poison` (every well-typed producer
+of a `bool` — comparisons, `Load` decoding a bool, `Phi`/`Copy`/`SelectN`/`StructSelect`
+passing one through — yields a boolean or `poison` anyway), so the register of a `bool`-typed
+value is always a boolean or `poison` (`Typed`; used by phiopt's `OrB`/`AndB` arms, §3.5).
+Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
 Integer ops have no sign: signedness is in the op
 (`Less64` vs `Less64U`, `Rsh64x64` vs `Rsh64Ux64`, `SignExt` vs `ZeroExt`), as in Go.
 `ConstN` auxints are sign-extended to 64 bits even for unsigned types (gO 339); `run` takes
