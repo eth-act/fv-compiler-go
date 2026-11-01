@@ -385,8 +385,11 @@ inductive Panic
   | runtime (name : String)           -- any other panicking contract
 ```
 
-`NilCheck p mem` (a root): `p` nil ⇒ `panicked nilDeref`; `p` poison ⇒ `stuck`; otherwise its
-value is `p`. `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
+`NilCheck p mem` (a root): `p` points into no allocation (`Blk.nil`, any offset; for a
+`uintptr` argument, `Ptr.ofAddr x` does) ⇒ `panicked nilDeref`; `p` poison ⇒ `stuck`; otherwise
+its value is `p`. (Since P3: a check of `nil + k` panics too, like the machine's load in page 0,
+so a pointer that passed a check is not nil-derived and `OffPtr`/`AddPtr` of it keep it so,
+which `nilcheckelim` relies on, `nilcheck.go:59`.) `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
 after it is an `Exit` block. Recovery (`recover` in a deferred call) is P5: until then a
 `panicked` outcome ends the run and is compared by its `Panic` only (the memory at the panic is
 not observable without recovery).
@@ -556,6 +559,45 @@ writes through arguments (the harness prints the arguments again after the call)
 built as bytes with fresh heap allocations. `sem-difftest trace <file> <section> <args>`
 prints every block entry and value of one run.
 
+### 9.3 P3 as implemented (#10)
+
+- **Environment** (`Sem/Env.lean`): `Env.extern : String → Option Contract` with
+  `Contract := List Val → Option Val → Mem → COutcome` (Go-typed arguments, closure context,
+  memory). The runtime contracts are `Env.runtime` (`Sem/Runtime.lean`): `newobject`,
+  `makeslice` (+ `panicmakeslicelen/cap`), `growslice*` (runtime capacity growth and size
+  classes), `moveSlice*`, the size-specialised `mallocgc*SC*`, `memmove`,
+  `memclrNoHeapPointers`, `typedmemmove`, `typedslicecopy`, `memequal`, `convT*`,
+  `concatstring*`, `slicebytetostring`, `stringtoslicebyte`, `print*` (no effect), and the
+  panicking entry points (`panicdivide`, `panicshift`, `panicoverflow`, `panicdottype*`,
+  `gopanic`, …). Type descriptors are read from memory (`Size_`, `PtrBytes`), laid out by the
+  global image (`typeDescAlloc`); itab method entries are weak `R_ADDR` relocations
+  (`RelocType(-32767)`); a code pointer is the start of a `global` function symbol.
+- **Program functions** (`Env.withFuncs base funcs fuel d`): a callee with SSA runs as a new
+  activation (`runActivation`: activation number `Mem.nextAct`, its frame and outgoing area
+  allocated in the caller's memory, the closure context for `GetClosurePtr`, `finish` with the
+  frame freed), at most `d` calls deep, `fuel` block entries each; deeper calls use `base`.
+- **Calls** (`callOp`): `StaticLECall`/`ClosureLECall`/`InterLECall` pass Go-typed arguments;
+  `StaticCall`/`ClosureCall`/`InterCall` decode them from register pieces and the outgoing area
+  by the `AuxCall` ABI (`decodeArgs`) and encode results back (`encodeResults`). The tuple is
+  `results ++ [mem, addrs]`, `addrs` the stack results' addresses (`SelectNAddr`, §4.8). A
+  poison argument is `stuck`; a contract's panic is the call's panic. `Panicking op :=
+  op.call ∨ op = NilCheck` (`GoFV.Proof.evalValue_panic_op`).
+- **Frame state**: `GetCallerSP` = `2^62 + (act + 1)·2^42` (just above the activation's frame
+  region); `GetClosurePtr` = the activation's closure context.
+- **Not in P3** (`stuck`): `TailLECall*`, `GetG`, write-barrier ops (`WB`, `gcWriteBarrier`),
+  channels, maps, `gorecover`/defer (P5), atomics other than loads (P5), `ArgFloatReg` (P4),
+  runtime entry points without a contract (`mcall`, `lock2`, `rand`, …).
+- **NilCheck** panics on any pointer into `Blk.nil` (§6).
+
+Difftest additions (`tools/semdiff/prog/calls.go`): 32 functions with static, closure,
+interface, method-value and recursive calls, runtime allocation and growth, string building,
+large (stack-assigned) results, and runtime panics. The native harness quotes strings byte by
+byte (`quoteBytes`, as `goQuote`). `sem-difftest` loads the program's functions as callees
+(`programEnv`). Results: native 119 functions, 11,900 calls, every section agrees with
+native. Corpus (quick-v1, 20 calls per function): 4,380 supported signatures, 39,131 calls
+defined at section 0 in 2,266 functions, 1,251,134 later-section runs agree, 0 differ, 1,058
+stuck in 7 functions (the `nilcheckelim` gaps of §10).
+
 ## 10. Open questions and risks
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
@@ -574,7 +616,13 @@ prints every block entry and value of one run.
   like section 0: the access faults in page 0 and the runtime panics. Consequence for the proofs: the
   `nilcheckelim` theorem must take "no pointer arithmetic on nil" as a hypothesis, or the
   semantics must make an access within the first page of `Blk.nil` panic like a `NilCheck`
-  (then `Load` is no longer pure); decide when proving `nilcheckelim`.
+  (then `Load` is no longer pure); decide when proving `nilcheckelim`. **P3**: a `NilCheck`
+  of any pointer into `Blk.nil` panics (§6), so `NilCheck (OffPtr (NilCheck p))` chains are
+  removable (ProofMem, #23); the eliminations of a check whose argument is arithmetic on an
+  unchecked pointer remain a hypothesis of the proof. With the P3 `NilCheck`, the corpus shows
+  such a gap in 7 runtime functions: `(*bitvector).ptrbit`, `bitCursor.write`, `dumpbv`
+  above, and `argv_index`, `getGodebugEarly`, `goenvs_unix`, `sysargs`, whose section 0 now
+  panics in the check of `nil + k`.
 - Tie-break of §3.6 step 3: `writebarrier`'s `storeOrder` and the post-lower scheduler order
   `NilCheck`s by position with an unstable sort (see `docs/PASSES.md`, writebarrier); the
   semantics' choice (NilChecks first) must match the order the final code panics in for the

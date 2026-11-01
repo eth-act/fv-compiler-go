@@ -482,8 +482,9 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
     | none => .stuck s!"{what}: no name"
   | .VarLive, [.mem m] | .WBend, [.mem m] => .ok (.mem m)
   | .KeepAlive, [_, .mem m] => .ok (.mem m)
-  | .NilCheck, [.ptr p, .mem m] => if p.isNil then .panic .nilDeref m else .ok (.ptr p)
-  | .NilCheck, [.int .w64 x, .mem m] => if x == 0 then .panic .nilDeref m else .ok (.int .w64 x)
+  | .NilCheck, [.ptr p, .mem m] => if p.blk == .nil then .panic .nilDeref m else .ok (.ptr p)
+  | .NilCheck, [.int .w64 x, .mem m] =>
+    if (Ptr.ofAddr x).blk == .nil then .panic .nilDeref m else .ok (.int .w64 x)
   | _, args =>
     if args.any (fun | .poison => true | _ => false) then .stuck s!"{what}: poison argument"
     else .stuck s!"{what}: ill-typed arguments"
