@@ -75,6 +75,11 @@ def bump (st : Stats) (i : Nat) (g : Count → Count) : Stats :=
 /-- The pseudo pass instance of `--check-renumber`. -/
 def renumberCheck : String := "renumber self-check"
 
+/-- A section's `zvar` as a lookup (`PassEnv.zvar`). -/
+def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
+  let m : Std.HashMap ID Nat := zv.foldl (fun m (v, c) => m.insert v c) {}
+  fun i => m.getD i 0
+
 def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (st : Stats) :
     IO Stats := do
   let data ← IO.FS.readBinFile path
@@ -117,7 +122,7 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
         let inst := insts[ii]
         if inst.name != name then continue
         let env := { base with passName := name, tables := prev
-                               zvar := e.sections[k-1]!.zvar.foldl (fun m (v, c) => m.insert v c) {} }
+                               zvar := zvarFn e.sections[k-1]!.zvar }
         let input := e.sections[k-1]!.func
         let t0 ← IO.monoNanosNow
         let r ← IO.lazyPure fun _ => inst.entry.run env input

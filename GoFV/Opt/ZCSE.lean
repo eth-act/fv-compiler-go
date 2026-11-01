@@ -191,7 +191,6 @@ def zcseChecked (tabs : Tables) (f : Func) (zvar : ID → Nat := fun _ => 0) : F
   if ZCSE.zrel tabs f g then g else f
 
 /-- The `zero arg cse` pass. -/
-def zcsePass : Pass := Pass.ofFunc fun env f =>
-  pure (zcseChecked env.tables f fun i => env.zvar.getD i 0)
+def zcsePass : Pass := Pass.ofFunc fun env f => pure (zcseChecked env.tables f env.zvar)
 
 end GoFV.Opt

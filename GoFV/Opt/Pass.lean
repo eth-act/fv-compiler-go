@@ -1,6 +1,5 @@
 import GoFV.SSA.Export
 import GoFV.SSA.TypeCmp
-import Std.Data.HashMap.Basic
 
 /-!
 # The pass interface
@@ -49,7 +48,7 @@ structure PassEnv where
   frontend : Tables := {}
   /-- The input section's `zvar`: type-object class of zero-argument values whose type number
   has several `*types.Type` objects (`zcse` keys on the pointer); absent: class 0. -/
-  zvar : Std.HashMap ID Nat := {}
+  zvar : ID → Nat := fun _ => 0
 
 /-- A pass's result. -/
 structure PassOut where
