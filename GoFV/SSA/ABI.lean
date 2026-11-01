@@ -24,10 +24,22 @@ structure ABIConfig where
 
 namespace ABIConfig
 
-/-- Parse a `config abi0`/`abi1` value. -/
+/-- Decimal digits (non-empty), on characters. -/
+def natOfChars? (ds : List Char) : Option Nat :=
+  if ds.isEmpty then none
+  else ds.foldl (fun acc c => acc.bind fun n =>
+    if c.isDigit then some (10 * n + (c.toNat - '0'.toNat)) else none) (some 0)
+
+/-- Parse a `config abi0`/`abi1` value. On characters: `String.splitOn`, `toNat?` and `toInt?`
+are well-founded recursions the kernel does not reduce (`expandCalls_witness` evaluates the
+pass with `decide +kernel`). -/
 def parse? (s : String) : Option ABIConfig :=
-  match s.splitOn ":" with
-  | [i, f, l] => do return ⟨← i.toNat?, ← f.toNat?, ← l.toInt?⟩
+  match s.toList.splitOn ':' with
+  | [i, f, l] => do
+    let off ← match l with
+      | '-' :: ds => (natOfChars? ds).map fun n => -(n : Int)
+      | ds => (natOfChars? ds).map Int.ofNat
+    return ⟨← natOfChars? i, ← natOfChars? f, off⟩
   | _ => none
 
 /-- `FloatIndexFor(r)`: negative for an integer register. -/
