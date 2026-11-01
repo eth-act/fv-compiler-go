@@ -153,14 +153,46 @@ theorem ControlsRefP.toStepRefsP {tabs : Tables} {f g : Func} {I : SrcInv tabs f
   obtain ⟨hsz, hc⟩ := h b hb fb gb hfb hgb
   exact ⟨fun e he => hs ▸ he, stepRefP_of_controls hk hs hid hsz hc⟩
 
+/-- **A changed store** (issue #35): the target's `Store` `w`, on its arguments' terms, writes a
+memory refining the write of the source's `Store` `u` on its arguments' terms, for source
+valuations whose memory roots hold the writes of their arguments (`MemAtoms`). -/
+def ChgRefP (D : ID → Option Value) (tabs : Tables) (u : Value) (E : ID → Option Value)
+    (w : Value) : Prop :=
+  ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs ρ' → MemAtoms D tabs ρ →
+    ∀ n y, memDef tabs u (u.args.toList.map (den D tabs ρ n)) = some y →
+      ∃ m y', memDef tabs w (w.args.toList.map (den E tabs ρ' m)) = some y' ∧ Sem.Refines y y'
+
+/-- `AtomArgsRefP`, or a changed store: every atom of `g` has the fields of the atom of `f`
+with its ID and arguments refining as terms, or both are `Store`s and `g`'s writes a memory
+refining `f`'s (`ChgRefP`). -/
+def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
+  ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
+    termOp u.op = false →
+    (∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ u'.type = u.type ∧ u'.auxInt = u.auxInt ∧
+      u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
+      ∀ i < u.args.size,
+        (u.op ≠ .Phi →
+          TermRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs
+            u.args[i]!) ∧
+        (u.op = .Phi → ∀ (p : ID) (pb : Block) (k : Nat), p ∈ f.blocks → f.block? p = some pb →
+          pb.succs[k]? = some (⟨b, i⟩ : Edge) →
+          TermRefP (I.P p) (I.Q p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
+            u.args[i]!)) ∨
+    (∃ u', f.value? a = some u' ∧ u'.op = .Store ∧ u.op = .Store ∧
+      ChgRefP f.value? tabs u' (listedDefs g) u)
+
+theorem AtomArgsRefP.toX {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
+    (h : AtomArgsRefP I g) : AtomArgsRefX I g :=
+  fun b hb gb hgb a ha u hu ht => .inl (h b hb gb hgb a ha u hu ht)
+
 /-- The hypotheses of the atom simulation. -/
 structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) (I : SrcInv tabs f) : Prop where
   wf : WF ce f
   wg : WF ce' g
   cf : CertOK f
   cg : CertOK g
-  ok : AtomsOK f g
-  args : AtomArgsRefP I g
+  ok : AtomsX f g
+  args : AtomArgsRefX I g
   ctrls : StepRefsP I g
 
 /-! ## Placed values -/
@@ -251,7 +283,7 @@ theorem closed_sanc_g {ce : CheckEnv} {g : Func} (hwf : WF ce g) (hc : CertOK g)
 /-- An atom placed in `g` is placed in the same block of `f` with the same fields. -/
 theorem gatom_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {a : ID} {w : Value} (hp : Placed g a w) (ht : termOp w.op = false) :
-    ∃ u, Placed f a u ∧ SameAtom u w := by
+    ∃ u, Placed f a u ∧ SameAtomX u w := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hp
   have hbm' : w.block ∈ f.blocks := by rw [H.ok.blocks]; exact hbm
   obtain ⟨fc, gc, hfc, hgc, hBA⟩ := H.ok.block w.block hbm'

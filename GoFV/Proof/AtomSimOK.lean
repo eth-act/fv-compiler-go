@@ -9,6 +9,12 @@ import GoFV.Proof.Avail
 successors and number of controls; every atom listed in `g` is listed in the same block of `f`
 with the same fields but its arguments (`BlockAtoms.sub`); both schedules exist and list their
 roots in the same sequence.
+
+`AtomsX` (issue #35), what the atom simulation assumes: `AtomsOK`, except that a `Store` of `g`
+may have another aux than the one of `f` (`SameAtomX`: a combined store, whose evaluation the
+simulation takes from `AtomArgsRefX`) and a root of `f` that is no root of `g` is a `Store`
+(which never panics); the schedules list the roots both functions have in the same sequence.
+`AtomsOK.toX`.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -81,6 +87,58 @@ theorem atomsOK_spec {f g : Func} (h : atomsOK f g = true) : AtomsOK f g := by
         exact ⟨of, og, hof, hog, beq_iff_eq.1 hsch⟩
       · cases hsch
   · cases h
+
+/-! ## The generalised atom relation (issue #35) -/
+
+/-- `SameAtom`, but a `Store` may change its aux. -/
+def SameAtomX (u w : Value) : Prop :=
+  u.op = w.op ∧ u.type = w.type ∧ u.auxInt = w.auxInt ∧ (u.aux = w.aux ∨ u.op = .Store) ∧
+    u.args.size = w.args.size ∧ u.block = w.block ∧ u.id = w.id
+
+theorem SameAtom.toX {u w : Value} (h : SameAtom u w) : SameAtomX u w :=
+  ⟨h.1, h.2.1, h.2.2.1, .inl h.2.2.2.1, h.2.2.2.2⟩
+
+/-- One block of `AtomsX`. -/
+structure BlockAtomsX (f g : Func) (fb gb : Block) : Prop where
+  id : fb.id = gb.id
+  sub : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termOp w.op = false →
+    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ SameAtomX u w
+  sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
+    of.toList.filter (fun x => rootP f x && rootP g x) = og.toList.filter (rootP g) ∧
+    ∀ x ∈ of.toList, rootP f x = true → rootP g x = false →
+      ∃ u, f.value? x = some u ∧ u.op = .Store
+
+/-- What the atom simulation assumes of the atoms. -/
+structure AtomsX (f g : Func) : Prop where
+  entry : f.entry = g.entry
+  blocks : f.blocks = g.blocks
+  ownAux : f.ownAux = g.ownAux
+  block : ∀ b ∈ f.blocks, ∃ fb gb, f.block? b = some fb ∧ g.block? b = some gb ∧
+    BlockAtomsX f g fb gb
+
+theorem BlockAtoms.toX {f g : Func} {fb gb : Block} (h : BlockAtoms f g fb gb) :
+    BlockAtomsX f g fb gb := by
+  obtain ⟨of, og, hof, hog, hfl⟩ := h.sched
+  have hg : ∀ x ∈ of.toList, rootP f x = true → rootP g x = true := fun x hx hr => by
+    have : x ∈ of.toList.filter (rootP f) := List.mem_filter.2 ⟨hx, hr⟩
+    rw [hfl] at this
+    exact (List.mem_filter.1 this).2
+  refine ⟨h.id, fun x hx w hw ht => ?_, of, og, hof, hog, ?_, fun x hx hr hn => ?_⟩
+  · obtain ⟨h1, u, hu, hs⟩ := h.sub x hx w hw ht
+    exact ⟨h1, u, hu, hs.toX⟩
+  · have h1 : of.toList.filter (fun x => rootP f x && rootP g x) =
+        (of.toList.filter (rootP f)).filter (rootP g) := by
+      rw [List.filter_filter]
+      refine List.filter_congr fun x _ => ?_
+      rw [Bool.and_comm]
+    rw [h1, hfl, List.filter_filter]
+    exact List.filter_congr fun x _ => by rw [Bool.and_self]
+  · rw [hg x hx hr] at hn; cases hn
+
+theorem AtomsOK.toX {f g : Func} (h : AtomsOK f g) : AtomsX f g := by
+  refine ⟨h.entry, h.blocks, h.ownAux, fun b hb => ?_⟩
+  obtain ⟨fb, gb, hfb, hgb, hB⟩ := h.block b hb
+  exact ⟨fb, gb, hfb, hgb, hB.toX⟩
 
 /-! ## Contexts and entry frames -/
 

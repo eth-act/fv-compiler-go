@@ -12,7 +12,9 @@ contracts: lock-step simulation (`runLoop_simE`) with the relation `BRel` at blo
 (`block_sim`: a block entry that does not panic, `enter_ok`, then the terminators,
 `termStepRef_regs`; a panicking one, `enter_panic`; the invariant carried along by
 `Inv.edge`), entry frames equal but their registers (`entry_rel`), and `finish_refines`.
-`atomSim_refines`: the trivial invariant, `Term.TermStepRef`.
+`atomSim_refines`: the trivial invariant, `Term.TermStepRef`. `atomSimX_refines` (issue #35):
+the generalised atom relation (`AtomsX`, `AtomArgsRefX`: a `Store` may change into another
+`Store` whose write refines the source's, and a root of `f` that is no root of `g` is a `Store`).
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -168,14 +170,14 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       qinv := hq,
       pre := .inl (hphi f ce H.wf _) }
 
-/-- **The atom simulation** under a source-side invariant. -/
-theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
+/-- **The atom simulation**, generalised (issue #35): changed and dropped stores. -/
+theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
-    (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) :
+    (hA : AtomsX f g) (I : SrcInv tabs f)
+    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) :
     RefinesUnder Env.Mono tabs g tabs f := by
   have H : Hyp tabs f g ce ce' I := ⟨check_wf hf, check_wf hg, certOK_of_check (check_domCert hf),
-    certOK_of_check (check_domCert hg), atomsOK_spec hA, h1, h2⟩
+    certOK_of_check (check_domCert hg), hA, h1, h2⟩
   intro env hE args mem fuel hd
   refine ⟨fuel, ?_⟩
   have hc := ctx_eq (tabs := tabs) H.ok.ownAux
@@ -195,6 +197,14 @@ theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
       _ _ _ _ _ _ ⟨H.ok.entry.symm, rfl, entry_rel H env args mem⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, R⟩ := hR
     exact block_sim H hE R
+
+/-- **The atom simulation** under a source-side invariant. -/
+theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
+    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
+    (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
+    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) :
+    RefinesUnder Env.Mono tabs g tabs f :=
+  atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2
 
 /-- **The atom simulation.** -/
 theorem atomSim_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}

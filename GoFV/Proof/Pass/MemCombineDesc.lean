@@ -6,7 +6,9 @@ import GoFV.Proof.Pass.MemCombineList
 * Memory bytes: a valid concrete read gives each of its bytes as a one-byte read
   (`byteAt_of_read`), so the bytes `mb` of a load in range are defined (`mb_sem`).
 * `Backed bs sd`: every memory byte of a description lies in one of its loads (`symOf_backed`), so
-  a description without opaque bytes whose loads are valid is defined (`semL_of_backed`).
+  a description whose opaque bytes are defined and whose loads are valid is defined
+  (`semL_of_backed`). `VbW tabs D bs`: every opaque byte of a description lies in its value's
+  integer shape (`symOf_vbw`).
 * `symOp_cases`: the op cases of `symOp`; the `…W_spec` lemmas give each op class's evaluation.
 -/
 
@@ -74,21 +76,25 @@ theorem Backed.sub {bs bs' : List SB} {sd sd' : List LoadRec} (h : Backed bs sd)
     obtain ⟨r, hr, h'⟩ := h m b i o (hb _ hm rfl)
     exact ⟨r, hs r hr, h'⟩
 
-/-- A description without opaque bytes, whose memory bytes lie in valid loads, is defined. -/
-theorem semL_of_backed {V : ID → Val} {l : List SB} {sd : List LoadRec} (hv : noVb l = true)
+/-- A description whose opaque bytes are defined, whose memory bytes lie in valid loads, is
+defined. -/
+theorem semL_of_backed {V : ID → Val} {l : List SB} {sd : List LoadRec}
+    (hv : ∀ y k, SB.vb y k ∈ l → ∃ c, byte? (V y) k = some c)
     (hb : Backed l sd) (hl : ∀ r ∈ sd, LoadOK V r) : ∃ C, semL V l = some C := by
   apply semL_of_forall
   intro s hs
   cases s with
   | lit c => exact ⟨c, rfl⟩
-  | vb y k =>
-    have := List.all_eq_true.1 hv _ hs
-    simp [SB.vbId?] at this
+  | vb y k => exact hv y k hs
   | mb m b i o =>
     obtain ⟨r, hr, rfl, rfl, rfl, h1, h2⟩ := hb m b i o hs
     obtain ⟨M, P, I, bs, hm, hp, hI, -, hrd, hc⟩ := hl r hr
     obtain ⟨c, hc'⟩ := concrete_getElem? hc (j := (o - r.off).toNat) (by rw [read_size hrd]; omega)
     exact ⟨c, mb_sem hm hp hI hrd h1 h2 hc'⟩
+
+/-- Every opaque byte `vb y k` of `bs` is a byte of `y`'s integer shape in `D`. -/
+def VbW (tabs : Tables) (D : ID → Option Value) (bs : List SB) : Prop :=
+  ∀ y k, SB.vb y k ∈ bs → ∃ v wy, D y = some v ∧ intW (tabs.ty v.type) = some wy ∧ k < wy.bytes
 
 /-! ## The op cases of `symOp` -/
 
@@ -105,22 +111,30 @@ theorem symArg_spec {rec : ID → Option Desc} {a : ID} {w : Width} {r : Desc}
     · cases h
 
 theorem keepB_spec {tgt : Bool} {kept dropped : List SB} {sd : List LoadRec} {r : Desc}
-    (h : keepB tgt kept dropped sd = some r) : r = (kept, sd) ∧ (tgt = true → noVb dropped = true) := by
+    (h : keepB tgt kept dropped sd = some r) :
+    r = (kept, sd) ∧ (tgt = true → ∀ y k, SB.vb y k ∈ dropped → ∃ k', SB.vb y k' ∈ kept) := by
   unfold keepB at h
   split at h
   · cases h
     rename_i hc
-    refine ⟨rfl, fun ht => ?_⟩
+    refine ⟨rfl, fun ht y k hy => ?_⟩
     subst ht
-    simpa using hc
+    simp only [Bool.not_true, Bool.false_or, List.all_eq_true] at hc
+    have hm := hc y (List.mem_filterMap.2 ⟨_, hy, rfl⟩)
+    simp only [List.contains_iff_mem, vbIds, List.mem_filterMap] at hm
+    obtain ⟨s, hs, hsy⟩ := hm
+    cases s with
+    | vb y' k' => cases hsy; exact ⟨k', hs⟩
+    | lit _ => cases hsy
+    | mb _ _ _ _ => cases hsy
   · cases h
 
 /-- The op cases of `symOp`. -/
-theorem symOp_cases {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {rec : ID → Option Desc} {v : Value}
-    {wt : Width} {r : Desc} (h : symOp tabs D tgt rec v wt = some r) :
+theorem symOp_cases {tabs : Tables} {D : ID → Option Value} {tgt wide : Bool} {rec : ID → Option Desc} {v : Value}
+    {wt : Width} {r : Desc} (h : symOp tabs D tgt wide rec v wt = some r) :
     (∃ w, constW v.op = some w ∧ v.args.size = 0 ∧ r = (litBytes w.bytes v.auxInt.toInt, [])) ∨
     (v.op = .Copy ∧ v.args.size = 1 ∧ rec v.args[0]! = some r) ∨
-    (v.op = .Load ∧ symLoad tabs D tgt v wt = some r) ∨
+    (v.op = .Load ∧ symLoad tabs D wide v wt = some r) ∨
     (∃ w w' a, zextW v.op = some (w, w') ∧ v.args.size = 1 ∧ symArg rec v.args[0]! w = some a ∧
       r = (a.1 ++ zeros (w'.bytes - w.bytes), a.2)) ∨
     (∃ w w' a, truncW v.op = some (w, w') ∧ v.args.size = 1 ∧ symArg rec v.args[0]! w = some a ∧
@@ -180,9 +194,9 @@ theorem symOp_cases {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {rec 
     exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr ⟨w, hw, h⟩)))))))
   · cases h
 
-theorem symLoad_spec {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {v : Value} {wt : Width} {r : Desc}
-    (h : symLoad tabs D tgt v wt = some r) :
-    v.args.size = 2 ∧ (tgt = false → wt.bytes < 8) ∧
+theorem symLoad_spec {tabs : Tables} {D : ID → Option Value} {wide : Bool} {v : Value} {wt : Width} {r : Desc}
+    (h : symLoad tabs D wide v wt = some r) :
+    v.args.size = 2 ∧ (wide = false → wt.bytes < 8) ∧
     ptrTyped tabs D (splitP tabs D 64 v.args[0]! none 0).1 = true ∧
     r = ((List.range wt.bytes).map fun (k : Nat) => .mb v.args[1]! (splitP tabs D 64 v.args[0]! none 0).1
         (splitP tabs D 64 v.args[0]! none 0).2.1 ((splitP tabs D 64 v.args[0]! none 0).2.2 + (k : _root_.Int)),
@@ -316,8 +330,8 @@ theorem copy_spec : termOp .Copy = true ∧ Rules.frameOp .Copy = false := ⟨rf
 theorem load_spec : termOp .Load = true ∧ Rules.frameOp .Load = false := ⟨rfl, rfl⟩
 
 /-- `symOp` describes term ops only, none of them a frame op. -/
-theorem symOp_term {tabs : Tables} {D : ID → Option Value} {tgt : Bool} {rec : ID → Option Desc} {v : Value}
-    {wt : Width} {r : Desc} (h : symOp tabs D tgt rec v wt = some r) :
+theorem symOp_term {tabs : Tables} {D : ID → Option Value} {tgt wide : Bool} {rec : ID → Option Desc} {v : Value}
+    {wt : Width} {r : Desc} (h : symOp tabs D tgt wide rec v wt = some r) :
     termOp v.op = true ∧ Rules.frameOp v.op = false := by
   rcases symOp_cases h with ⟨w, hw, -⟩ | ⟨ho, -⟩ | ⟨ho, -⟩ | ⟨w, w', a, hw, -⟩ | ⟨w, w', a, hw, -⟩ |
     ⟨w, hw, -⟩ | ⟨w, hw, -⟩ | ⟨w, a, hw, -⟩ | ⟨w, hw, -⟩

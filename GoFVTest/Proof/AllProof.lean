@@ -181,9 +181,11 @@ import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.Proof.Pass.MemCombineComplete
 import GoFV.Proof.Pass.MemCombineDesc
 import GoFV.Proof.Pass.MemCombineList
+import GoFV.Proof.Pass.MemCombineRef
 import GoFV.Proof.Pass.MemCombineSem
 import GoFV.Proof.Pass.MemCombineSound
 import GoFV.Proof.Pass.MemCombineSplit
+import GoFV.Proof.Pass.MemCombineStore
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.Pass.NilRel
@@ -502,6 +504,7 @@ import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
+import GoFV.Proof.Witness.MemCombineStore
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NilFwd
 import GoFV.Proof.Witness.NilGetG

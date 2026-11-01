@@ -5,8 +5,10 @@ import GoFV.Proof.AtomSimNoPanic
 
 `enter_panic`: if the source panics entering block `b` (at root `r` of its schedule, after the
 prefix `pre`), the target panics alike with a refined memory: it evaluates the prefix of its
-schedule before `r` (its roots are those of `pre`, its `Arg`s precede every root of the source
-schedule by `PureFirst`, other atoms never get stuck), then `r` on refined arguments.
+schedule before `r` (its roots are those of `pre` that are roots of `g`, its `Arg`s precede
+every root of the source schedule by `PureFirst`, other atoms never get stuck), then `r` on
+refined arguments. A root of `f` that is no root of `g` is a `Store`, which does not panic, so
+`r` is a root of both.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -79,8 +81,17 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
   have hrp : prio ur.op ≠ 0 := prio_panicking (evalValue_panic_op hevr)
   have hrof : r ∈ of.toList := by rw [hof]; simp
   have hrS : rootP f r = true := by simp [rootP, hur, isRoot_of_prio hrp]
+  have hrG : rootP g r = true := by
+    cases hg : rootP g r
+    · obtain ⟨u, hu, hst⟩ := B.drop r hrof hrS hg
+      rw [hur] at hu; cases hu
+      have := evalValue_panic_op hevr
+      rw [hst] at this
+      rcases this with h | h <;> cases h
+    · rfl
   have hrog : r ∈ og.toList ∧ rootP g r = true := by
-    have : r ∈ of.toList.filter (rootP f) := List.mem_filter.2 ⟨hrof, hrS⟩
+    have : r ∈ of.toList.filter (fun x => rootP f x && rootP g x) :=
+      List.mem_filter.2 ⟨hrof, by rw [hrS, hrG]; rfl⟩
     rw [B.fl] at this; exact List.mem_filter.1 this
   obtain ⟨preT, postT, hog⟩ := List.append_of_mem hrog.1
   have hrpre : r ∉ pre := fun hm => by
@@ -89,9 +100,9 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
   have hrpreT : r ∉ preT := fun hm => by
     have := B.ndT; rw [hog] at this
     exact (List.nodup_append.1 this).2.2 r hm r List.mem_cons_self rfl
-  have hfl : pre.filter (rootP f) = preT.filter (rootP g) := by
+  have hfl : pre.filter (fun x => rootP f x && rootP g x) = preT.filter (rootP g) := by
     have := B.fl; rw [hof, hog] at this
-    exact filter_prefix this hrS hrog.2 hrpre hrpreT
+    exact filter_prefix this (by rw [hrS, hrG]; rfl) hrog.2 hrpre hrpreT
   obtain ⟨wr, hwr⟩ : ∃ wr, g.value? r = some wr := by
     have := hrog.2; unfold rootP at this
     cases h : g.value? r with
