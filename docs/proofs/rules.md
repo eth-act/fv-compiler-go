@@ -1377,13 +1377,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   address).
 
 - **`generic.rules:1053`** (`(SliceMake (AddPtr <t> x (And64 y (Slicemask _))) w:(Const64
-  [c]) z) && c > 0 => (SliceMake (AddPtr <t> x y) w z)`): false under the semantics, not a Go
-  bug. Go's comment: "len > 0 implies cap > 0 implies Slicemask is all 1"; the pattern does
+  [c]) z) && c > 0 => (SliceMake (AddPtr <t> x y) w z)`): false under the bare semantics, not a
+  Go bug. Go's comment: "len > 0 implies cap > 0 implies Slicemask is all 1"; the pattern does
   not check that the `Slicemask` argument is the capacity, which `ssagen` guarantees. At
   `Slicemask (Const64 [0])`, `x = ⟨heap 0, 0⟩`, `y = 8`, `c = 1` the slice pointer is `x`, the
-  result's `x + 8`. Needs a provenance fact about the `Slicemask` argument. `:1039`
-  (`config.PtrSize == 4`) builds 32-bit lengths into a 64-bit slice shape (`rule-sat`
-  counterexample). Marked `-- FALSE … #69` in `ConstComp.lean`.
+  result's `x + 8`. Proven (RuleProofs21, `SliceMask.lean`, `Rule.SoundT`) with two premises
+  the validator checks on the instance: `sameLeaves` (`Den.lean`) names the `Slicemask`
+  argument and `z` as one value (`FrameOK`, `RewriteCheck.condFrameOK`), and `argShapeOk`
+  gives a `SliceMake` a slice shape (`retype` checks `0 ≤ len ≤ cap` there; at a struct shape
+  the rule is false), with the validator's top check `makeTop`. `:1039` (`config.PtrSize ==
+  4`) builds 32-bit lengths into a 64-bit slice shape (`rule-sat` counterexample). Marked
+  `-- FALSE … #69` in `ConstComp.lean`.
 
 - **`isNonNegative(x)` rules** (`generic.rules:610`, `:611`, `:1090`, `:1134–1138`; RuleProofs10,
   proven by RuleProofs12): false under the bare semantics, not Go bugs. `isNonNegative` is an

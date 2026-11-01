@@ -12,14 +12,11 @@ type to two pointer fields (interface) or a pointer and two 64-bit integers (sli
 shape's data pointer (`methodE`).
 
 False under the semantics (`docs/proofs/rules.md` "Findings"): `:1039` (`rule-sat`
-counterexample; `config.PtrSize == 4`: 32-bit lengths in a 64-bit slice shape) and `:1053`
-(`SliceMake (AddPtr x (And64 y (Slicemask _))) (Const64 [c]) _ && c > 0`: correct in Go only
-because the `Slicemask` argument is the slice's capacity, which the pattern does not check; at
-`Slicemask 0` the pointer is `x`, the result's `x + y`).
+counterexample; `config.PtrSize == 4`: 32-bit lengths in a 64-bit slice shape). `:1053` is
+proven in `SliceMask.lean` (the `Slicemask` argument is the capacity: `sameLeaves`).
 -/
 
 -- FALSE r_generic_1039 #69
--- FALSE r_generic_1053 #69
 
 namespace GoFV.Proof.Rules
 

@@ -56,13 +56,13 @@ theorem r_generic_1012_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 theorem r_generic_1031_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1031 := by
   dec_unfold GoFV.Rules.Generated.Generic.r_generic_1031
   rw [Int64.ofInt_toInt]
-  exact sel_make3 hlt.1 (Val.retype_hasTy _ _) hlt.2 hat.2.1 hat.2.2.1 hat.2.2.2 1
+  exact sel_make3 hlt.1 (Val.retype_hasTy _ _) hlt.2 hat.2.1.2 hat.2.2.1.2 hat.2.2.2.2 1
 
 /-- `generic.rules:1032`: `(SliceCap (SliceMake _ _ (Const64 <t> [c]))) => (Const64 <t> [c])` -/
 theorem r_generic_1032_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1032 := by
   dec_unfold GoFV.Rules.Generated.Generic.r_generic_1032
   rw [Int64.ofInt_toInt]
-  exact sel_make3 hlt.1 hlt.2 (Val.retype_hasTy _ _) hat.2.1 hat.2.2.1 hat.2.2.2 2
+  exact sel_make3 hlt.1 hlt.2 (Val.retype_hasTy _ _) hat.2.1.2 hat.2.2.1.2 hat.2.2.2.2 2
 
 /-- Argument 1 or 2 of a `SliceMake` of a slice shape is an `int64`. -/
 theorem int64_of_makeArgOk {el : Option Nat} {k : Nat} {t : Ty}
@@ -127,7 +127,7 @@ theorem refines_retype_ptr {L s : Val} {T : Ty} {e : Option Nat} (hs : s.isPtrOr
 /-- `generic.rules:1035`: `(SlicePtr (SliceMake (SlicePtr x) _ _)) => (SlicePtr x)` -/
 theorem r_generic_1035_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1035 := by
   dec_unfold GoFV.Rules.Generated.Generic.r_generic_1035
-  obtain ⟨hT, ⟨h0, hx⟩, h1, h2⟩ := hat
+  obtain ⟨hT, ⟨⟨-, h0⟩, hx⟩, ⟨-, h1⟩, -, h2⟩ := hat
   obtain ⟨el, hT⟩ := isSliceTy_iff.1 hT
   obtain ⟨el', hx⟩ := isSliceTy_iff.1 hx
   rw [hT] at h0 h1 h2 hty ⊢
@@ -141,7 +141,7 @@ theorem r_generic_1035_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 /-- `generic.rules:1036`: `(SliceLen (SliceMake _ (SliceLen x) _)) => (SliceLen x)` -/
 theorem r_generic_1036_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1036 := by
   dec_unfold GoFV.Rules.Generated.Generic.r_generic_1036
-  obtain ⟨hT, h0, ⟨h1, hx⟩, h2⟩ := hat
+  obtain ⟨hT, ⟨-, h0⟩, ⟨⟨-, h1⟩, hx⟩, -, h2⟩ := hat
   obtain ⟨el, hT⟩ := isSliceTy_iff.1 hT
   obtain ⟨el', hx⟩ := isSliceTy_iff.1 hx
   rw [hT] at h0 h1 h2 hty ⊢
@@ -154,7 +154,7 @@ theorem r_generic_1036_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 /-- `generic.rules:1037`: `(SliceCap (SliceMake _ _ (SliceCap x))) => (SliceCap x)` -/
 theorem r_generic_1037_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1037 := by
   dec_unfold GoFV.Rules.Generated.Generic.r_generic_1037
-  obtain ⟨hT, h0, h1, h2, hx⟩ := hat
+  obtain ⟨hT, ⟨-, h0⟩, ⟨-, h1⟩, ⟨-, h2⟩, hx⟩ := hat
   obtain ⟨el, hT⟩ := isSliceTy_iff.1 hT
   obtain ⟨el', hx⟩ := isSliceTy_iff.1 hx
   rw [hT] at h0 h1 h2 hty ⊢
@@ -167,7 +167,7 @@ theorem r_generic_1037_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 /-- `generic.rules:1038`: `(SliceCap (SliceMake _ _ (SliceLen x))) => (SliceLen x)` -/
 theorem r_generic_1038_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1038 := by
   dec_unfold GoFV.Rules.Generated.Generic.r_generic_1038
-  obtain ⟨hT, h0, h1, h2, hx⟩ := hat
+  obtain ⟨hT, ⟨-, h0⟩, ⟨-, h1⟩, ⟨-, h2⟩, hx⟩ := hat
   obtain ⟨el, hT⟩ := isSliceTy_iff.1 hT
   obtain ⟨el', hx⟩ := isSliceTy_iff.1 hx
   rw [hT] at h0 h1 h2 hty ⊢
