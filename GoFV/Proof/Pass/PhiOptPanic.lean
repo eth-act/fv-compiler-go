@@ -16,7 +16,7 @@ with the reference frame of the source's frame at the panic and panics alike.
 namespace GoFV.Proof.PhiOpt
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.PhiOpt Dom Order
-open GoFV.Proof.CopyElim (Tree stepV_of topoRem_at prio_ne_zero_of_panic)
+open GoFV.Proof.CopyElim (Tree stepV_of topoRem_at)
 open GoFV.Proof.ZCSE (evalValue_panic_args npIn_sched)
 
 variable {tabs : Tables} {f g : Func}
@@ -238,7 +238,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID}
   have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
   have hk' : oT.toList[pre'.length]? = some r := by rw [hsplitT]; simp
   have htr := schedTransfer S hbt.1 hfb hgbb hso hoT hk hk'
-    ((npIn_sched hownF hndF).2 ⟨hrb, fvr, hfvr, hrnph, prio_ne_zero_of_panic hrop⟩)
+    ((npIn_sched hownF hndF).2 ⟨hrb, fvr, hfvr, hrnph, prio_panicking hrop⟩)
   -- the target's prefix evaluates against the reference frame
   have hL := hloc pre' (fun x hx => by rw [hsplitT]; exact List.mem_append_left _ hx)
     fun x hx hN => by

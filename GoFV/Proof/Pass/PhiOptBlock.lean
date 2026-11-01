@@ -97,6 +97,7 @@ theorem targetRun (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID} {
     · rw [hTfr, hH, hGfr]
     · rw [hTfr, hH, hGfr]
     · rw [hTfr, hH, hGfr]
+    · rw [hTfr, hH, hGfr]
   · rw [hszT, hHsz]
   · -- arguments outside the target's schedule are listed in `f`
     intro x hx a ha haT
