@@ -18,7 +18,7 @@ line per rule:
 counterexample). The search is random (fixed seed): leaves get values of a width suggested by
 their consumer op, auxints come from a pool of boundary values, `[c]`/`<t>` checks and `same x`
 leaves are then solved for, node types are the shapes of the computed values, and unmodelled
-atoms (`Oracle`) are all `true` or all `false`. The checks below mirror `Pat.wf`, `Pat.cons`,
+atoms (`Oracle`) are all `true` or all `false`, helper calls independently of the rest. The checks below mirror `Pat.wf`, `Pat.cons`,
 `condHolds` and `Refines` as `Bool` functions.
 -/
 
@@ -128,8 +128,12 @@ def Inst.env (i : Inst) : PEnv where
 def set {α} (l : List (Path × α)) (p : Path) (a : α) : List (Path × α) :=
   (p, a) :: l.filter (·.1 != p)
 
-def oracle (b : Bool) : Oracle where
-  dv _ := .bool b
+/-- Every oracle atom is `b`, except helper calls (`hasSmallRotate(config)`, `canRotate()`, …),
+which are `calls`: a condition may need a call atom false next to a field atom true. -/
+def oracle (b calls : Bool) : Oracle where
+  dv x := match x with
+    | .call .. => .bool calls
+    | _ => .bool b
   ty _ := .other
   auxInt _ := 0
   aux _ := none
@@ -281,7 +285,7 @@ def search (r : Rule) (trials : Nat) : IO (Option (Inst × Bool)) := do
   let hints := leafHints pos
   let mut cex : Option (Inst × Bool) := none
   for t in [0:trials] do
-    let or := oracle (t % 2 == 0)
+    let or := oracle (t % 2 == 0) (if t % 4 == 2 then false else t % 2 == 0)
     let mut i : Inst := {}
     for (p, o, k) in hints do
       i := { i with leaf := set i.leaf p (← randLeaf o k) }
@@ -303,7 +307,7 @@ def files : List RuleSet :=
    Generated.Divmod.ruleSet]
 
 def main (args : List String) : IO UInt32 := do
-  let trials := (args.find? (·.startsWith "--trials=")).bind (·.drop 9 |>.toNat?) |>.getD 3000
+  let trials := (args.find? (·.startsWith "--trials=")).bind (·.drop 9 |>.toNat?) |>.getD 6000
   let only := args.filter (!·.startsWith "--")
   IO.setRandSeed 69
   let mut stats := (0, 0, 0)

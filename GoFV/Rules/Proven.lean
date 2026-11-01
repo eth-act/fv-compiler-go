@@ -15,7 +15,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 993 proven rules. -/
+/-- `generic.rules` restricted to its 1005 proven rules. -/
 def generic : RuleSet where
   name := "generic"
   values := [(.Add16, [Generated.Generic.r_generic_121, Generated.Generic.r_generic_420, Generated.Generic.r_generic_427, Generated.Generic.r_generic_646, Generated.Generic.r_generic_655, Generated.Generic.r_generic_661, Generated.Generic.r_generic_675, Generated.Generic.r_generic_678, Generated.Generic.r_generic_778, Generated.Generic.r_generic_779, Generated.Generic.r_generic_1218, Generated.Generic.r_generic_1224, Generated.Generic.r_generic_1278, Generated.Generic.r_generic_1284, Generated.Generic.r_generic_2195, Generated.Generic.r_generic_2196, Generated.Generic.r_generic_2197, Generated.Generic.r_generic_2198, Generated.Generic.r_generic_2200, Generated.Generic.r_generic_2201, Generated.Generic.r_generic_2202, Generated.Generic.r_generic_2203]),
@@ -38,10 +38,10 @@ def generic : RuleSet where
     (.Div64u, [Generated.Generic.r_generic_179]),
     (.Div8, [Generated.Generic.r_generic_172, Generated.Generic.r_generic_1082, Generated.Generic.r_generic_1091]),
     (.Div8u, [Generated.Generic.r_generic_176]),
-    (.Eq16, [Generated.Generic.r_generic_280, Generated.Generic.r_generic_297, Generated.Generic.r_generic_300, Generated.Generic.r_generic_303, Generated.Generic.r_generic_306, Generated.Generic.r_generic_309, Generated.Generic.r_generic_312, Generated.Generic.r_generic_584, Generated.Generic.r_generic_1178, Generated.Generic.r_generic_2403, Generated.Generic.r_generic_2404]),
-    (.Eq32, [Generated.Generic.r_generic_280_2, Generated.Generic.r_generic_297_2, Generated.Generic.r_generic_300_2, Generated.Generic.r_generic_303_2, Generated.Generic.r_generic_306_2, Generated.Generic.r_generic_309_2, Generated.Generic.r_generic_312_2, Generated.Generic.r_generic_584_2, Generated.Generic.r_generic_1178_2, Generated.Generic.r_generic_2403_2, Generated.Generic.r_generic_2404_2]),
-    (.Eq64, [Generated.Generic.r_generic_280_3, Generated.Generic.r_generic_297_3, Generated.Generic.r_generic_300_3, Generated.Generic.r_generic_303_3, Generated.Generic.r_generic_306_3, Generated.Generic.r_generic_309_3, Generated.Generic.r_generic_312_3, Generated.Generic.r_generic_584_3, Generated.Generic.r_generic_1178_3, Generated.Generic.r_generic_2403_3, Generated.Generic.r_generic_2404_3]),
-    (.Eq8, [Generated.Generic.r_generic_280_4, Generated.Generic.r_generic_297_4, Generated.Generic.r_generic_300_4, Generated.Generic.r_generic_303_4, Generated.Generic.r_generic_306_4, Generated.Generic.r_generic_309_4, Generated.Generic.r_generic_312_4, Generated.Generic.r_generic_584_4, Generated.Generic.r_generic_1178_4, Generated.Generic.r_generic_2399, Generated.Generic.r_generic_2400]),
+    (.Eq16, [Generated.Generic.r_generic_280, Generated.Generic.r_generic_297, Generated.Generic.r_generic_300, Generated.Generic.r_generic_303, Generated.Generic.r_generic_306, Generated.Generic.r_generic_309, Generated.Generic.r_generic_312, Generated.Generic.r_generic_317, Generated.Generic.r_generic_584, Generated.Generic.r_generic_1171, Generated.Generic.r_generic_1175, Generated.Generic.r_generic_1178, Generated.Generic.r_generic_2403, Generated.Generic.r_generic_2404]),
+    (.Eq32, [Generated.Generic.r_generic_280_2, Generated.Generic.r_generic_297_2, Generated.Generic.r_generic_300_2, Generated.Generic.r_generic_303_2, Generated.Generic.r_generic_306_2, Generated.Generic.r_generic_309_2, Generated.Generic.r_generic_312_2, Generated.Generic.r_generic_316, Generated.Generic.r_generic_584_2, Generated.Generic.r_generic_1178_2, Generated.Generic.r_generic_2403_2, Generated.Generic.r_generic_2404_2]),
+    (.Eq64, [Generated.Generic.r_generic_280_3, Generated.Generic.r_generic_297_3, Generated.Generic.r_generic_300_3, Generated.Generic.r_generic_303_3, Generated.Generic.r_generic_306_3, Generated.Generic.r_generic_309_3, Generated.Generic.r_generic_312_3, Generated.Generic.r_generic_315, Generated.Generic.r_generic_584_3, Generated.Generic.r_generic_1178_3, Generated.Generic.r_generic_2403_3, Generated.Generic.r_generic_2404_3]),
+    (.Eq8, [Generated.Generic.r_generic_280_4, Generated.Generic.r_generic_297_4, Generated.Generic.r_generic_300_4, Generated.Generic.r_generic_303_4, Generated.Generic.r_generic_306_4, Generated.Generic.r_generic_309_4, Generated.Generic.r_generic_312_4, Generated.Generic.r_generic_318, Generated.Generic.r_generic_584_4, Generated.Generic.r_generic_1169, Generated.Generic.r_generic_1173, Generated.Generic.r_generic_1178_4, Generated.Generic.r_generic_2399, Generated.Generic.r_generic_2400]),
     (.EqB, [Generated.Generic.r_generic_280_5, Generated.Generic.r_generic_281, Generated.Generic.r_generic_282, Generated.Generic.r_generic_283, Generated.Generic.r_generic_284]),
     (.Leq16, [Generated.Generic.r_generic_587, Generated.Generic.r_generic_600, Generated.Generic.r_generic_605, Generated.Generic.r_generic_617, Generated.Generic.r_generic_618, Generated.Generic.r_generic_702, Generated.Generic.r_generic_710, Generated.Generic.r_generic_720, Generated.Generic.r_generic_724]),
     (.Leq16U, [Generated.Generic.r_generic_596, Generated.Generic.r_generic_613, Generated.Generic.r_generic_693, Generated.Generic.r_generic_695, Generated.Generic.r_generic_714, Generated.Generic.r_generic_715]),
@@ -91,10 +91,10 @@ def generic : RuleSet where
     (.Neg32, [Generated.Generic.r_generic_115, Generated.Generic.r_generic_204_2, Generated.Generic.r_generic_205_2, Generated.Generic.r_generic_654_2, Generated.Generic.r_generic_682_2, Generated.Generic.r_generic_685_2]),
     (.Neg64, [Generated.Generic.r_generic_116, Generated.Generic.r_generic_204_3, Generated.Generic.r_generic_205_3, Generated.Generic.r_generic_654_3, Generated.Generic.r_generic_682_3, Generated.Generic.r_generic_685_3]),
     (.Neg8, [Generated.Generic.r_generic_113, Generated.Generic.r_generic_204_4, Generated.Generic.r_generic_205_4, Generated.Generic.r_generic_654_4, Generated.Generic.r_generic_682_4, Generated.Generic.r_generic_685_4]),
-    (.Neq16, [Generated.Generic.r_generic_286, Generated.Generic.r_generic_298, Generated.Generic.r_generic_301, Generated.Generic.r_generic_304, Generated.Generic.r_generic_307, Generated.Generic.r_generic_310, Generated.Generic.r_generic_313, Generated.Generic.r_generic_1179, Generated.Generic.r_generic_2401, Generated.Generic.r_generic_2402]),
-    (.Neq32, [Generated.Generic.r_generic_286_2, Generated.Generic.r_generic_298_2, Generated.Generic.r_generic_301_2, Generated.Generic.r_generic_304_2, Generated.Generic.r_generic_307_2, Generated.Generic.r_generic_310_2, Generated.Generic.r_generic_313_2, Generated.Generic.r_generic_1179_2, Generated.Generic.r_generic_2401_2, Generated.Generic.r_generic_2402_2]),
-    (.Neq64, [Generated.Generic.r_generic_286_3, Generated.Generic.r_generic_298_3, Generated.Generic.r_generic_301_3, Generated.Generic.r_generic_304_3, Generated.Generic.r_generic_307_3, Generated.Generic.r_generic_310_3, Generated.Generic.r_generic_313_3, Generated.Generic.r_generic_1179_3, Generated.Generic.r_generic_2401_3, Generated.Generic.r_generic_2402_3]),
-    (.Neq8, [Generated.Generic.r_generic_286_4, Generated.Generic.r_generic_298_4, Generated.Generic.r_generic_301_4, Generated.Generic.r_generic_304_4, Generated.Generic.r_generic_307_4, Generated.Generic.r_generic_310_4, Generated.Generic.r_generic_313_4, Generated.Generic.r_generic_1179_4, Generated.Generic.r_generic_2397, Generated.Generic.r_generic_2398]),
+    (.Neq16, [Generated.Generic.r_generic_286, Generated.Generic.r_generic_298, Generated.Generic.r_generic_301, Generated.Generic.r_generic_304, Generated.Generic.r_generic_307, Generated.Generic.r_generic_310, Generated.Generic.r_generic_313, Generated.Generic.r_generic_317_2, Generated.Generic.r_generic_1179, Generated.Generic.r_generic_2401, Generated.Generic.r_generic_2402]),
+    (.Neq32, [Generated.Generic.r_generic_286_2, Generated.Generic.r_generic_298_2, Generated.Generic.r_generic_301_2, Generated.Generic.r_generic_304_2, Generated.Generic.r_generic_307_2, Generated.Generic.r_generic_310_2, Generated.Generic.r_generic_313_2, Generated.Generic.r_generic_316_2, Generated.Generic.r_generic_1179_2, Generated.Generic.r_generic_2401_2, Generated.Generic.r_generic_2402_2]),
+    (.Neq64, [Generated.Generic.r_generic_286_3, Generated.Generic.r_generic_298_3, Generated.Generic.r_generic_301_3, Generated.Generic.r_generic_304_3, Generated.Generic.r_generic_307_3, Generated.Generic.r_generic_310_3, Generated.Generic.r_generic_313_3, Generated.Generic.r_generic_315_2, Generated.Generic.r_generic_1179_3, Generated.Generic.r_generic_2401_3, Generated.Generic.r_generic_2402_3]),
+    (.Neq8, [Generated.Generic.r_generic_286_4, Generated.Generic.r_generic_298_4, Generated.Generic.r_generic_301_4, Generated.Generic.r_generic_304_4, Generated.Generic.r_generic_307_4, Generated.Generic.r_generic_310_4, Generated.Generic.r_generic_313_4, Generated.Generic.r_generic_318_2, Generated.Generic.r_generic_1179_4, Generated.Generic.r_generic_2397, Generated.Generic.r_generic_2398]),
     (.NeqB, [Generated.Generic.r_generic_286_5, Generated.Generic.r_generic_287, Generated.Generic.r_generic_288, Generated.Generic.r_generic_289, Generated.Generic.r_generic_290]),
     (.Not, [Generated.Generic.r_generic_184, Generated.Generic.r_generic_397, Generated.Generic.r_generic_397_2, Generated.Generic.r_generic_397_3, Generated.Generic.r_generic_397_4, Generated.Generic.r_generic_397_5, Generated.Generic.r_generic_398, Generated.Generic.r_generic_398_2, Generated.Generic.r_generic_398_3, Generated.Generic.r_generic_398_4, Generated.Generic.r_generic_398_5, Generated.Generic.r_generic_400, Generated.Generic.r_generic_400_2, Generated.Generic.r_generic_400_3, Generated.Generic.r_generic_400_4, Generated.Generic.r_generic_401, Generated.Generic.r_generic_401_2, Generated.Generic.r_generic_401_3, Generated.Generic.r_generic_401_4, Generated.Generic.r_generic_402, Generated.Generic.r_generic_402_2, Generated.Generic.r_generic_402_3, Generated.Generic.r_generic_402_4, Generated.Generic.r_generic_403, Generated.Generic.r_generic_403_2, Generated.Generic.r_generic_403_3, Generated.Generic.r_generic_403_4]),
     (.Or16, [Generated.Generic.r_generic_153, Generated.Generic.r_generic_209, Generated.Generic.r_generic_213, Generated.Generic.r_generic_632, Generated.Generic.r_generic_633, Generated.Generic.r_generic_634, Generated.Generic.r_generic_635, Generated.Generic.r_generic_688, Generated.Generic.r_generic_1260, Generated.Generic.r_generic_1308, Generated.Generic.r_generic_2195_2, Generated.Generic.r_generic_2196_2, Generated.Generic.r_generic_2197_2, Generated.Generic.r_generic_2198_2, Generated.Generic.r_generic_2200_2, Generated.Generic.r_generic_2201_2, Generated.Generic.r_generic_2202_2, Generated.Generic.r_generic_2203_2]),
@@ -165,16 +165,27 @@ def generic : RuleSet where
     (.ZeroExt8to64, [Generated.Generic.r_generic_102, Generated.Generic.r_generic_754])]
   blocks := []
 
-/-- `divisible.rules` restricted to its 0 proven rules. -/
+/-- `divisible.rules` restricted to its 8 proven rules. -/
 def divisible : RuleSet where
   name := "divisible"
-  values := []
+  values := [(.Eq16, [Generated.Divisible.r_divisible_48]),
+    (.Eq32, [Generated.Divisible.r_divisible_64]),
+    (.Eq64, [Generated.Divisible.r_divisible_80]),
+    (.Eq8, [Generated.Divisible.r_divisible_32]),
+    (.Neq16, [Generated.Divisible.r_divisible_56]),
+    (.Neq32, [Generated.Divisible.r_divisible_72]),
+    (.Neq64, [Generated.Divisible.r_divisible_88]),
+    (.Neq8, [Generated.Divisible.r_divisible_40])]
   blocks := []
 
-/-- `divmod.rules` restricted to its 0 proven rules. -/
+/-- `divmod.rules` restricted to its 11 proven rules. -/
 def divmod : RuleSet where
   name := "divmod"
-  values := []
+  values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
+    (.Div32, [Generated.Divmod.r_divmod_29, Generated.Divmod.r_divmod_99, Generated.Divmod.r_divmod_121]),
+    (.Div64, [Generated.Divmod.r_divmod_33, Generated.Divmod.r_divmod_113, Generated.Divmod.r_divmod_127]),
+    (.Div8, [Generated.Divmod.r_divmod_21, Generated.Divmod.r_divmod_87]),
+    (.Div8u, [Generated.Divmod.r_divmod_154])]
   blocks := []
 
 end GoFV.Rules.Proven
