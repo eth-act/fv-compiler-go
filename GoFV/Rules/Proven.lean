@@ -220,15 +220,15 @@ def generic : RuleSet where
   segs := [Generated.Generic.r_generic_1743, Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
   phiSels := [Generated.Generic.r_generic_1050, Generated.Generic.r_generic_1049]
 
-/-- `dec.rules` restricted to its 28 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 32 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions, 7 struct-store splits, 0 segment rules and 0 `Phi`
 selections. -/
 def dec : RuleSet where
   name := "dec"
   values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126, Generated.Dec.r_dec_132]),
-    (.ComplexImag, [Generated.Dec.r_dec_14]),
-    (.ComplexReal, [Generated.Dec.r_dec_13]),
+    (.ComplexImag, [Generated.Dec.r_dec_14, Generated.Dec.r_dec_159, Generated.Dec.r_dec_164]),
+    (.ComplexReal, [Generated.Dec.r_dec_13, Generated.Dec.r_dec_158, Generated.Dec.r_dec_163]),
     (.IData, [Generated.Dec.r_dec_83, Generated.Dec.r_dec_146]),
     (.ITab, [Generated.Dec.r_dec_82, Generated.Dec.r_dec_144]),
     (.Load, [Generated.Dec.r_dec_16, Generated.Dec.r_dec_28, Generated.Dec.r_dec_45, Generated.Dec.r_dec_63, Generated.Dec.r_dec_87]),
