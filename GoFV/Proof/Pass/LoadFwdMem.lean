@@ -257,4 +257,81 @@ theorem load_write {t : Ty} (ht : GoFV.Opt.RewriteCheck.fwdTy t = true) {x : Val
   rw [hl]
   exact decodeLoad_encode ht hx
 
+/-! ## A read inside a read (`generic.rules:827`) -/
+
+/-- A valid non-empty read: inside its allocation, below `2^64`, inside its window, the bytes
+there. -/
+theorem read_some {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hn : n ≠ 0)
+    (h : m.read p n = some bs) : ∃ a, m.find? p.blk = some a ∧ p.off.toNat + n ≤ a.data.size ∧
+      p.off.toNat + n < 2 ^ 64 ∧ p.blk.endsInWindow (p.off.toNat + n) = true ∧
+      bs = a.data.extract p.off.toNat (p.off.toNat + n) := by
+  unfold Mem.read at h
+  simp only [beq_iff_eq, hn, ite_false] at h
+  cases ha : m.find? p.blk with
+  | none => rw [ha] at h; cases h
+  | some a =>
+    rw [ha] at h
+    simp only [Option.bind_eq_bind, Option.bind_some] at h
+    split at h
+    · rename_i hc
+      cases h
+      exact ⟨a, rfl, hc.1, hc.2.1, hc.2.2, rfl⟩
+    · cases h
+
+theorem read_size {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hn : n ≠ 0)
+    (h : m.read p n = some bs) : bs.size = n := by
+  obtain ⟨a, -, h1, -, -, rfl⟩ := read_some hn h
+  simp only [Array.size_extract]
+  omega
+
+theorem endsInWindow_mono {b : Blk} {e e' : Nat} (h : e ≤ e') (h' : b.endsInWindow e' = true) :
+    b.endsInWindow e = true := by
+  unfold Blk.endsInWindow at h' ⊢
+  cases hw : b.window? with
+  | none => rfl
+  | some w =>
+    rw [hw] at h'
+    simp only [decide_eq_true_eq] at h' ⊢
+    omega
+
+theorem ptr_add_ofNat_toNat {p : Ptr} {o : Nat} (h : p.off.toNat + o < 2 ^ 64) :
+    (p.add (BitVec.ofNat 64 o)).off.toNat = p.off.toNat + o := by
+  simp only [Ptr.add, BitVec.toNat_add, BitVec.toNat_ofNat]
+  rw [Nat.mod_eq_of_lt (show o < 2 ^ 64 by omega), Nat.mod_eq_of_lt h]
+
+/-- **A read inside a valid read** reads its sub-range. -/
+theorem read_sub {m : Mem} {s : Ptr} {n : Nat} {bs : Array Byte} (hr : m.read s n = some bs)
+    {o k : Nat} (hk : 0 < k) (hok : o + k ≤ n) :
+    m.read (s.add (BitVec.ofNat 64 o)) k = some (bs.extract o (o + k)) := by
+  obtain ⟨a, ha, h1, h2, h3, rfl⟩ := read_some (by omega) hr
+  have hoff := ptr_add_ofNat_toNat (p := s) (o := o) (by omega)
+  have hblk : (s.add (BitVec.ofNat 64 o)).blk = s.blk := rfl
+  unfold Mem.read
+  simp only [beq_iff_eq, show k ≠ 0 by omega, ite_false, hblk, ha, Option.bind_eq_bind,
+    Option.bind_some, hoff]
+  rw [if_pos ⟨by omega, by omega, endsInWindow_mono (by omega) h3⟩, Array.extract_extract]
+  congr 2 <;> omega
+
+/-- A pointer inside a valid read is inside its window. -/
+theorem read_inWindow {m : Mem} {s : Ptr} {n : Nat} {bs : Array Byte} (hr : m.read s n = some bs)
+    {o : Nat} (ho : o < n) : (s.add (BitVec.ofNat 64 o)).inWindow = true := by
+  obtain ⟨a, -, -, h2, h3, -⟩ := read_some (by omega) hr
+  have hoff := ptr_add_ofNat_toNat (p := s) (o := o) (by omega)
+  have hblk : (s.add (BitVec.ofNat 64 o)).blk = s.blk := rfl
+  unfold Ptr.inWindow
+  unfold Blk.endsInWindow at h3
+  rw [hblk, hoff]
+  cases hw : s.blk.window? with
+  | none => rfl
+  | some w =>
+    rw [hw] at h3
+    simp only [decide_eq_true_eq] at h3 ⊢
+    omega
+
+/-- `Load`s of equal bytes are equal. -/
+theorem load_congr_read {m m' : Mem} {p q : Ptr} {t : Ty}
+    (h : m.read p t.size = m'.read q t.size) : m.load t p = m'.load t q := by
+  unfold Mem.load
+  split <;> first | rfl | rw [h]
+
 end GoFV.Proof.Pass.LoadFwd

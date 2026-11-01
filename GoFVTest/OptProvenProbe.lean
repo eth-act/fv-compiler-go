@@ -263,6 +263,28 @@ def ssRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id
   return none
 
 open GoFV.Rules RewriteCheck in
+/-- Which part of `fwdMoveRep` fails for the `Load` `u` of `f` that became `w` in `g`
+(diagnostics). -/
+def fwdMoveWhy (tabs : Tables) (f g : Func) (u w : Value) : String := Id.run do
+  let y := w.args[0]!
+  if !listedB g y then return "move: top not listed"
+  let some top := g.value? y | return "move: top missing"
+  if top.args.size != 2 then return "move: top arity"
+  if !listedB g top.args[0]! then return "move: OffPtr not listed"
+  let some offp := g.value? top.args[0]! | return "move: OffPtr missing"
+  if !(top.op == .Load && top.type == u.type) then return s!"move: top {top.op.name}"
+  if !(offp.op == .OffPtr && offp.args.size == 1 && isPtrTy (tabs.ty offp.type)) then
+    return s!"move: offp {offp.op.name} {repr (tabs.ty offp.type)}"
+  if !(decide (0 ≤ offp.auxInt.toInt) && decide (0 < (tabs.ty u.type).size)) then
+    return s!"move: offset {offp.auxInt.toInt} size {(tabs.ty u.type).size}"
+  let some mv := f.value? u.args[1]! | return "move: mem missing"
+  if !(mv.op == .Move && mv.args.size == 3) then return s!"move: mem {mv.op.name}"
+  if !(top.args[1]! == mv.args[2]! && offp.args[0]! == mv.args[1]!) then return "move: args"
+  if !decide (offp.auxInt.toInt.toNat + (tabs.ty u.type).size ≤ mv.auxInt.toInt.toNat) then
+    return s!"move: range {offp.auxInt.toInt}+{(tabs.ty u.type).size} > {mv.auxInt.toInt}"
+  return s!"move: ptr {desc tabs f 3 u.args[0]!} vs {desc tabs f 3 mv.args[0]!} + {offp.auxInt.toInt}"
+
+open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdRel`/`check` fails for the forwarded function `f'` of `f`, if any. -/
 def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
   if !atomsOK f f' then return some "atoms"
@@ -273,6 +295,8 @@ def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
       match f.value? z, f'.value? z with
       | some u, some w =>
         if w.op == .Copy && w.args.size == 1 then
+          if (f.value? u.args[1]!).any (·.op == .Move) then
+            return some s!"v{z} {fwdMoveWhy tabs f f' u w}"
           return some s!"v{z} {fwdOKWhy tabs f u (w.args[0]?.getD 0)}"
         else return some s!"v{z} rep {u.op.name}->{w.op.name}"
       | _, _ => return some s!"v{z} rep"

@@ -291,4 +291,116 @@ theorem cf_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := cfRules) (penv := cfPassEnv)
         (f := cfFunc) (out := out) cfRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
+/-! ## A read from a `Move`'s destination: `moveLoad` (`generic.rules:827`)
+
+```go
+func moveLoad(p, q *[2]int) int {
+	*p = *q
+	return p[1]
+}
+```
+
+as one block: `v4 = Move {[2]int} [16] v2 v3 v1`, `v6 = Load <int> (OffPtr [8] v2) v4`. The rule
+builds `Load <int> (OffPtr [8] v3) v1` in the `Move`'s block and makes `v6` a `Copy` of it
+(`RewriteCheck.fwdMoveOK`). -/
+
+/-- `abiInfo` of `moveLoad`: two pointer register parameters, one result. -/
+def mlABI : CallABI :=
+  { abi := 1, nin := 2, nout := 1, spillOff := 8, spillSize := 16, inRegs := 2, outRegs := 1,
+    params := #[{ out := false, index := 0, type := 5, name := some 3, regs := #[0], offset := 0 },
+                { out := false, index := 1, type := 5, name := some 4, regs := #[1], offset := 8 },
+                { out := true, index := 0, type := 2, name := some 5, regs := #[0],
+                  offset := -1 }] }
+
+/-- The definition tables: `[2]int` is type 4 (`Move`'s aux 6), `*[2]int` type 5. -/
+def mlTabs : Tables where
+  types :=
+    let t := slTabs.types
+    let t := t.set! 1 (some (mkT .FUNC (some 8) "func(*[2]int, *[2]int) int" (.func 0 2 1 #[])))
+    let t := t.set! 4 (some (mkT .ARRAY (some 16) "[2]int" (.array 2 2)))
+    t.set! 5 (some (mkT .PTR (some 8) "*[2]int" (.elem 4)))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.moveLoad}", kind := .call (some 2) (some mlABI) },
+    some { fmt := GoStr.ofString "main.moveLoad",
+           kind := .sym (GoStr.ofString "main.moveLoad") 1 "" 0 default none none none #[] none },
+    some (paramNameT "p" .PPARAM 5 0), some (paramNameT "q" .PPARAM 5 8),
+    some (paramNameT "~r0" .PPARAMOUT 2 0),
+    some { fmt := GoStr.ofString "[2]int", kind := .type 4 }]
+
+/-- `moveLoad`, the input of `opt`. -/
+def mlFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 7
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[7] #[] #[] #[1, 2, 3, 4, 5, 6, 7])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 1 #[] 1),
+    some (mkV 2 .Arg 5 (some 3) p0 2 #[] 1),
+    some (mkV 3 .Arg 5 (some 4) p0 1 #[] 1),
+    some { mkV 4 .Move 29 (some 6) p0 2 #[2, 3, 1] 1 with auxInt := 16 },
+    some (mkVi 5 .OffPtr 3 8 p0 1 #[2] 1),
+    some (mkVi 6 .Load 2 0 p0 1 #[5, 4] 1),
+    some (mkVi 7 .MakeResult 35 0 p0 1 #[6, 4] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- The one-rule set `{generic.rules:827}`, as a forwarding. -/
+def mlRules : RuleSet where
+  name := "generic"
+  values := []
+  blocks := []
+  loads := [Generated.Generic.r_generic_827]
+
+theorem mlRules_allSound : mlRules.AllSound :=
+  GoFV.Proof.Rules.RuleSet.allSound_of trivial trivial
+
+def mlPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "moveLoad", typs := slTyps, tables := mlTabs }
+
+def mlCheckEnv : CheckEnv := { tabs := mlTabs, typs := slTyps }
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` keeps a result whose
+`MakeResult` reads the fresh `Load` `v8` of `OffPtr [8] q` (`v9`) in the input memory, which
+passes `check`. -/
+theorem ml_checks :
+    (check mlCheckEnv mlFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet mlRules) mlPassEnv mlFunc).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slTyps } o.func).toBool,
+        (o.func.value? 7).map (·.args),
+        (o.func.value? 8).map (·.args) == some #[9, 1] &&
+        (o.func.value? 9).any (fun v => v.op == .OffPtr && v.auxInt == 8 && v.args == #[3]))) =
+      some (true, some #[8, 4], true) := by
+  decide +kernel
+
+/-- **Pass execution witness** for `generic.rules:827`: on `moveLoad`, the checked rewrite pass
+reads `p[1]` from `q[1]` in the memory before the `Move` (`v7 = MakeResult v8 v4`,
+`v8 = Load (OffPtr [8] v3) v1`), and the result refines the input (`checkedRewrite_refines`,
+through `LoadFwd.fwd_refines`). -/
+theorem ml_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet mlRules) mlPassEnv mlFunc = .ok out ∧
+      (out.func.value? 7).map (·.args) = some #[8, 4] ∧
+      check mlCheckEnv mlFunc = .ok () ∧
+      check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mlPassEnv.tables mlFunc) out.tables out.func
+        mlPassEnv.tables mlFunc := by
+  obtain ⟨h1, h2⟩ := ml_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet mlRules) mlPassEnv mlFunc with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h7, -⟩ := h2
+    exact ⟨out, rfl, h7, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := mlRules) (penv := mlPassEnv)
+        (f := mlFunc) (out := out) mlRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
 end GoFV.Proof.Witness

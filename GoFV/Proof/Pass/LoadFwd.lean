@@ -28,16 +28,34 @@ structure FwdFacts (tabs : Tables) (f g : Func) : Prop where
   cf : closedOK f = true
   cg : closedOK g = true
   blocks : g.blocks = f.blocks
-  btab : g.blockTab = f.blockTab
+  bext : ∀ b ∈ f.blocks, ∀ fb, f.block? b = some fb → ∃ gb, g.block? b = some gb ∧
+    gb = { fb with values := gb.values } ∧ ∀ x ∈ fb.values, x ∈ gb.values
   rank : fwdRankOK f (fwdRank f) = true
   rep : ∀ x < f.valueTab.size, fwdRepOK tabs f g x = true
+
+theorem blocksExtOK_spec {f g : Func} (h : blocksExtOK f g = true) :
+    g.blocks = f.blocks ∧ ∀ b ∈ f.blocks, ∀ fb, f.block? b = some fb → ∃ gb,
+      g.block? b = some gb ∧ gb = { fb with values := gb.values } ∧ ∀ x ∈ fb.values, x ∈ gb.values := by
+  unfold blocksExtOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  refine ⟨h.1, fun b hb fb hfb => ?_⟩
+  have := (Array.all_eq_true_iff_forall_mem.1 h.2) b hb
+  rw [hfb] at this
+  cases hgb : g.block? b with
+  | none => rw [hgb] at this; cases this
+  | some gb =>
+    rw [hgb] at this
+    simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true_iff_forall_mem,
+      Array.contains_iff_mem] at this
+    exact ⟨gb, rfl, this.1, this.2⟩
 
 theorem fwdRel_spec {tabs : Tables} {f g : Func} (h : fwdRel tabs f g = true) :
     FwdFacts tabs f g := by
   unfold fwdRel at h
-  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range] at h
-  obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h
-  exact ⟨h1, h2, h3, h4, h5, h6, h7⟩
+  simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at h
+  obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h6⟩, h7⟩ := h
+  have h45 := blocksExtOK_spec h4
+  exact ⟨h1, h2, h3, h45.1, h45.2, h6, h7⟩
 
 /-- The rank of a listed non-`Phi` value is above its arguments'. -/
 theorem fwdRankOK_spec {f : Func} {rk : Array Nat} (h : fwdRankOK f rk = true) {z : ID}
@@ -181,6 +199,76 @@ theorem memDef_store {tabs : Tables} {s : Value} (hs : s.op = .Store ∨ s.op = 
     obtain ⟨M', hw, rfl⟩ := h
     exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
 
+/-- A `Move`'s copy: two pointers, a memory, the bytes read at the source and the written memory. -/
+theorem memDef_move {tabs : Tables} {s : Value} (hs : s.op = .Move)
+    {a b c y : Val} (h : memDef tabs s [a, b, c] = some y) :
+    ∃ d q m0 bs M', a = .ptr d ∧ b = .ptr q ∧ c = .mem m0 ∧
+      m0.read q s.auxInt.toInt.toNat = some bs ∧ m0.write d bs = some M' ∧ y = .mem M' := by
+  cases a <;> try (simp [memDef, hs] at h; done)
+  cases b <;> try (simp [memDef, hs] at h; done)
+  cases c <;> try (simp [memDef, hs] at h; done)
+  rename_i d q m0
+  simp only [memDef, hs, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+  obtain ⟨bs, hr, M', hw, rfl⟩ := h
+  exact ⟨d, q, m0, bs, M', rfl, rfl, rfl, hr, hw, rfl⟩
+
+theorem listedB_spec {g : Func} {y : ID} (h : listedB g y = true) : listedDefs g y = g.value? y := by
+  unfold listedB at h
+  unfold listedDefs
+  cases hv : g.value? y with
+  | none => rfl
+  | some v =>
+    rw [hv] at h
+    simp only [Option.any_some] at h
+    simp only [Option.filter, h, ite_true]
+
+theorem retype_ptr_of {t : Ty} (ht : isPtrTy t = true) (p : Ptr) : (Val.ptr p).retype t = .ptr p := by
+  cases t <;> simp [isPtrTy] at ht
+  rfl
+
+theorem fwdMoveOK_spec {tabs : Tables} {f : Func} {u top offp : Value}
+    (h : fwdMoveOK tabs f u top offp = true) :
+    u.op = .Load ∧ u.args.size = 2 ∧ top.op = .Load ∧ top.type = u.type ∧ top.args.size = 2 ∧
+    offp.op = .OffPtr ∧ offp.args.size = 1 ∧ isPtrTy (tabs.ty offp.type) = true ∧
+    0 ≤ offp.auxInt.toInt ∧ 0 < (tabs.ty u.type).size ∧ ∃ mv, f.value? u.args[1]! = some mv ∧
+    mv.op = .Move ∧ mv.args.size = 3 ∧ top.args[1]! = mv.args[2]! ∧ offp.args[0]! = mv.args[1]! ∧
+    offp.auxInt.toInt.toNat + (tabs.ty u.type).size ≤ mv.auxInt.toInt.toNat ∧
+    (ptrBase tabs f 8 u.args[0]!).2 =
+      (ptrBase tabs f 8 mv.args[0]!).2 + BitVec.ofInt 64 offp.auxInt.toInt ∧
+    baseSameB tabs f 8 (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 mv.args[0]!).1 = true := by
+  unfold fwdMoveOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h⟩ := h
+  refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, ?_⟩
+  split at h
+  · next mv hmv =>
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨⟨⟨g1, g2⟩, g3⟩, g4⟩, g5⟩, g6⟩, g7⟩ := h
+    exact ⟨mv, hmv, g1, g2, g3, g4, g5, g6, g7⟩
+  · cases h
+
+theorem fwdMoveRep_spec {tabs : Tables} {f g : Func} {u w : Value}
+    (h : fwdMoveRep tabs f g u w = true) :
+    w.op = .Copy ∧ w.args.size = 1 ∧ listedB g w.args[0]! = true ∧ ∃ top,
+      g.value? w.args[0]! = some top ∧ top.args.size = 2 ∧ listedB g top.args[0]! = true ∧
+      ∃ offp, g.value? top.args[0]! = some offp ∧ fwdMoveOK tabs f u top offp = true := by
+  unfold fwdMoveRep at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h⟩ := h
+  refine ⟨h1, h2, h3, ?_⟩
+  split at h
+  · next top htop =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨g1, g2⟩, h⟩ := h
+    split at h
+    · next offp hoffp => exact ⟨top, htop, g1, g2, offp, hoffp, h⟩
+    · cases h
+  · cases h
+
+theorem ofInt_nonneg {i : Int} (h : 0 ≤ i) : BitVec.ofInt 64 i = BitVec.ofNat 64 i.toNat := by
+  have := BitVec.ofInt_natCast 64 i.toNat
+  rwa [Int.toNat_of_nonneg h] at this
+
 /-- The arguments of a list of values are refined by some fuel. -/
 theorem fuel_list {α : Type} {F : α → Val} {G : Nat → α → Val}
     (hG : ∀ a m m', m ≤ m' → Sem.Refines (G m a) (G m' a)) :
@@ -306,15 +394,15 @@ theorem marked_g {x : ID} {u w : Value} (hx : LM f x) (hu : f.value? x = some u)
     (hw : g.value? x = some w) (hwb : w.block = u.block) : listedDefs g x = some w := by
   obtain ⟨b, hb, fb, hfb, hxv, u', hu', hub⟩ := listedMarks_sound f x hx
   rw [hu] at hu'; cases hu'
-  have hgb : g.block? b = some fb := by unfold Func.block?; rw [F.btab]; exact hfb
-  rw [listedDefs_of_marked ⟨b, F.blocks ▸ hb, fb, hgb, hxv, w, hw, hwb.trans hub⟩, hw]
+  obtain ⟨gb, hgb, -, hsub⟩ := F.bext b hb fb hfb
+  rw [listedDefs_of_marked ⟨b, F.blocks ▸ hb, gb, hgb, hsub x hxv, w, hw, hwb.trans hub⟩, hw]
 
 /-- The definition of a listed value of `g`: `fwdRepOK`. -/
 theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     ∃ w, g.value? x = some w ∧ w.id = u.id ∧ w.block = u.block ∧ w.type = u.type ∧
       ((w.op = u.op ∧ w.auxInt = u.auxInt ∧ w.aux = u.aux ∧ w.args = u.args) ∨
        (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true) ∨
-       fwdConstOK tabs f u w = true) := by
+       fwdConstOK tabs f u w = true ∨ fwdMoveRep tabs f g u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
@@ -325,10 +413,11 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
-    rcases h with ⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ⟨⟨hop, hsz⟩, hok⟩ | hc
+    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ⟨⟨hop, hsz⟩, hok⟩ | hc) | hm
     · exact .inl ⟨hop, hai, hax, hargs⟩
     · exact .inr (.inl ⟨hop, hsz, hok⟩)
-    · exact .inr (.inr hc)
+    · exact .inr (.inr (.inl hc))
+    · exact .inr (.inr (.inr hm))
 
 /-- The arguments of a value listed in `f` are listed. -/
 theorem lm_arg {x : ID} {u : Value} (hx : LM f x) (hu : f.value? x = some u) :
@@ -394,6 +483,97 @@ theorem chain_rank {p x : ID} {t : Ty} :
       obtain ⟨hlx, hrx⟩ := chain_rank d _ hch (lm_arg F hm hs _ hc)
       exact ⟨hlx, Nat.lt_trans hrx (fwdRankOK_spec F.rank hm hs hsph _ hc)⟩
 
+/-- **A `Load` from a `Move`'s destination** (`fwdMoveRep`): it reads, in the `Move`'s memory, the
+source at the same offset, as the fresh `Load` that its `Copy` in `g` reads does. -/
+theorem move_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
+    (hM : MemAtoms f.value? tabs ρ) {x : ID} {u w : Value} (hx : LM f x)
+    (hu : f.value? x = some u) (hL : listedDefs g x = some w) (hwty : w.type = u.type)
+    (h : fwdMoveRep tabs f g u w = true)
+    (hIH : ∀ a, (fwdRank f)[a]?.getD 0 < (fwdRank f)[x]?.getD 0 → LM f a → ∀ n, ∃ m,
+      Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a)) (n : Nat) :
+    ∃ m, Sem.Refines (den f.value? tabs ρ (n + 1) x) (den (listedDefs g) tabs ρ' m x) := by
+  obtain ⟨hwop, hwsz, hly, top, htop, htsz, hlo, offp, hoffp, h⟩ := fwdMoveRep_spec h
+  obtain ⟨hld, hsz2, htopop, htty, -, hoop, hosz, hoty, hopos, hsize, mv, hmv, hmop, hmsz, htm,
+    hos, hlen, hoff, hbase⟩ := fwdMoveOK_spec h
+  have hLt : termOp u.op = true := by rw [hld]; decide
+  have hu1 : u.args[1]! ∈ u.args := by
+    rw [getElem!_pos u.args 1 (by omega)]; exact Array.getElem_mem _
+  have hmem : ∀ i, i < 3 → mv.args[i]! ∈ mv.args := fun i hi => by
+    rw [getElem!_pos mv.args i (by omega)]; exact Array.getElem_mem _
+  have hmph : mv.op ≠ .Phi := by rw [hmop]; decide
+  have hph : u.op ≠ .Phi := by rw [hld]; decide
+  have hlm : LM f u.args[1]! := lm_arg F hx hu _ hu1
+  have hrm := fwdRankOK_spec F.rank hx hu hph _ hu1
+  -- the source: a Load from the Move
+  rw [den_succ_term hu hLt, toList_two hsz2, List.map_cons, List.map_cons, List.map_nil, hld,
+    GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load]
+  by_cases hcase : ∃ a M, den f.value? tabs ρ n u.args[0]! = .ptr a ∧
+    den f.value? tabs ρ n u.args[1]! = .mem M
+  rotate_left
+  · rw [loadOp_other hcase, AtomSim.retype_poison]; exact ⟨0, .poison _⟩
+  obtain ⟨P, M, hpa, hsM⟩ := hcase
+  rw [hpa, hsM, loadOp]
+  cases n with
+  | zero => simp [den] at hpa
+  | succ n =>
+  have hmat : ¬ IsTerm f.value? u.args[1]! := not_term_of hmv (by rw [hmop]; decide)
+  rw [den_succ_atom hmat] at hsM
+  obtain ⟨N0, hN0⟩ := hM _ mv hmv (by rw [hmop]; rfl) (by rw [hsM]; nofun)
+  obtain ⟨y, hy, hρy⟩ := hN0 (N0 + n) (Nat.le_add_right _ _)
+  rw [toList_three hmsz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
+  obtain ⟨d, q, m0, bs, M', hd, hq, hm0, hr, hw, rfl⟩ := memDef_move hmop hy
+  rw [hsM] at hρy
+  have hMM : M' = M := retype_mem hρy.symm
+  rw [hMM] at hw
+  -- the pointer: the Move's destination plus the offset
+  have hc := ofInt_nonneg hopos
+  obtain ⟨k1, q1, h1, e1⟩ := ptrBase_den hT 8 u.args[0]! _ P hpa
+  obtain ⟨k2, q2, h2, e2⟩ := ptrBase_den hT 8 mv.args[0]! _ d hd
+  have hq12 := baseSame_den hT hM 8 _ _ hbase h1 h2
+  have hP : P = d.add (BitVec.ofNat 64 offp.auxInt.toInt.toNat) := by
+    rw [e1, e2, hoff, hq12, ptr_add_add, hc]
+  -- the bytes: the Move's destination holds the source's
+  have hN : mv.auxInt.toInt.toNat ≠ 0 := by omega
+  have hbs := read_size hN hr
+  have hl : M.load (tabs.ty u.type) P =
+      m0.load (tabs.ty u.type) (q.add (BitVec.ofNat 64 offp.auxInt.toInt.toNat)) := by
+    rw [hP]
+    apply load_congr_read
+    rw [read_sub (read_write_self hw) hsize (by omega), read_sub hr hsize (by omega)]
+  rw [hl]
+  -- the target's arguments: the Move's source and memory
+  have hl1 : LM f mv.args[1]! := lm_arg F hlm hmv _ (hmem 1 (by omega))
+  have hl2 : LM f mv.args[2]! := lm_arg F hlm hmv _ (hmem 2 (by omega))
+  have hr1 := fwdRankOK_spec F.rank hlm hmv hmph _ (hmem 1 (by omega))
+  have hr2 := fwdRankOK_spec F.rank hlm hmv hmph _ (hmem 2 (by omega))
+  obtain ⟨m1, hm1⟩ := hIH _ (by omega) hl1 (N0 + n)
+  obtain ⟨m2, hm2⟩ := hIH _ (by omega) hl2 (N0 + n)
+  rw [hq] at hm1
+  rw [hm0] at hm2
+  have hsrc : den (listedDefs g) tabs ρ' (m1 + m2) mv.args[1]! = .ptr q :=
+    ptr_refines (hm1.trans (den_fuel_mono _ _ _ _ _ _ (Nat.le_add_right _ _)))
+  have hmemR : Sem.Refines (.mem m0) (den (listedDefs g) tabs ρ' (m1 + m2 + 1) mv.args[2]!) :=
+    hm2.trans (den_fuel_mono _ _ _ _ _ _ (by omega))
+  generalize hz : den (listedDefs g) tabs ρ' (m1 + m2 + 1) mv.args[2]! = z at hmemR
+  cases hmemR with
+  | mem hmr =>
+  rename_i m0'
+  -- the target: `Copy` of the fresh `Load (OffPtr [o] src) mem`
+  have hLy : listedDefs g w.args[0]! = some top := by rw [listedB_spec hly, htop]
+  have hLo : listedDefs g top.args[0]! = some offp := by rw [listedB_spec hlo, hoffp]
+  refine ⟨m1 + m2 + 1 + 1 + 1, ?_⟩
+  rw [den_succ_term hL (by rw [hwop]; decide), hwop, toList_one hwsz, List.map_cons,
+    List.map_nil, GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty,
+    den_succ_term hLy (by rw [htopop]; decide), htopop, toList_two htsz, List.map_cons,
+    List.map_cons, List.map_nil, GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load,
+    htty, htm, hz, den_succ_term hLo (by rw [hoop]; decide), hoop, toList_one hosz,
+    List.map_cons, List.map_nil, GoFV.Proof.Rules.opVal_pure (op := Op.OffPtr) rfl,
+    evalPure_offPtr, hos, hsrc]
+  simp only [PtrOps.offPtr, PtrOps.ptrRes, hc, read_inWindow hr (show
+    offp.auxInt.toInt.toNat < mv.auxInt.toInt.toNat by omega), ite_true,
+    retype_ptr_of hoty, loadOp, Val.retype_idem]
+  exact retype_mono _ (load_mono hmr _ _)
+
 /-- **Values as terms**: each value listed in `f` is refined by the same value listed in `g`,
 for valuations whose memory roots hold the writes of their arguments. -/
 theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.value? tabs ρ)
@@ -413,7 +593,9 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   have hIH : ∀ a, (fwdRank f)[a]?.getD 0 < r → LM f a → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla => ih _ ha a rfl hla
-  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok
+  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hmv
+  rotate_left 3
+  · exact move_den F hT hM hx hu hL hwty hmv (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · by_cases ht : termOp u.op = true
     · have hph : u.op ≠ .Phi := fun h => by rw [h] at ht; cases ht
       obtain ⟨m, hm⟩ := fuel_list (F := fun a => den f.value? tabs ρ n a)
@@ -503,10 +685,11 @@ theorem fwd_atomArgs : AtomArgsRefP (SrcInv.triv tabs f) g := by
   obtain ⟨w, hw, -, -, -, hrep⟩ := rep_of F hu'
   rw [hu] at hw; cases hw
   have hargs : u.args = u'.args := by
-    rcases hrep with ⟨-, -, -, h⟩ | ⟨h, -⟩ | h
+    rcases hrep with ⟨-, -, -, h⟩ | ⟨h, -⟩ | h | h
     · exact h
     · rw [h] at ht; cases ht
     · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
+    · rw [(fwdMoveRep_spec h).1] at ht; cases ht
   have hbf : b ∈ f.blocks := F.blocks ▸ hb
   have hi' : i < u'.args.size := hargs ▸ hi
   rw [hargs]
@@ -516,13 +699,16 @@ theorem fwd_atomArgs : AtomArgsRefP (SrcInv.triv tabs f) g := by
 
 theorem fwd_steps : StepRefsP (SrcInv.triv tabs f) g := by
   refine ControlsRefP.toStepRefsP (fun b hb fb gb hfb hgb => ?_) fun b hb fb gb hfb hgb => ?_
-  · have hgb' : g.block? b = some fb := by unfold Func.block?; rw [F.btab]; exact hfb
+  · have hbf : b ∈ f.blocks := F.blocks ▸ hb
+    obtain ⟨gb', hgb', hext, -⟩ := F.bext b hbf fb hfb
     rw [hgb] at hgb'; cases hgb'
-    have hbf : b ∈ f.blocks := F.blocks ▸ hb
+    rw [hext]
     refine ⟨rfl, fun k hk => fwd_termRefP F ((closedOK_facts F.cf b hbf fb hfb).1 _
       (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) _ _ _⟩
-  · have hgb' : g.block? b = some fb := by unfold Func.block?; rw [F.btab]; exact hfb
+  · have hbf : b ∈ f.blocks := F.blocks ▸ hb
+    obtain ⟨gb', hgb', hext, -⟩ := F.bext b hbf fb hfb
     rw [hgb] at hgb'; cases hgb'
+    rw [hext]
     exact ⟨rfl, rfl, rfl⟩
 
 end

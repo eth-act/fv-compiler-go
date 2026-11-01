@@ -272,6 +272,18 @@ first `Store` at the Load's pointer, `fwdStored`, writes a `const64Op` value of 
 shape `fwdTyEq` to the Load's, and `fwdOK` reads it back). `fwdEvent?` returns the new definition,
 which `fwdCopy` installs.
 
+**Moves** (`:827`): `(Load <t1> op:(OffPtr [o1] p1) move:(Move [n] p2 src mem)) && o1 >= 0 &&
+o1+t1.Size() <= n && isSamePtr(p1, p2) && … => @move.Block (Load <t1> (OffPtr <op.Type> [o1]
+src) mem)` reads the copied bytes at the source, in the memory before the `Move`
+(`fwdShapeOK`'s third case). `fwdEvent?` also returns the rule's two fresh values, which
+`fwdStep` puts in first (`ssPut`: at their IDs, listed last in the `Move`'s block), so `fwdRel`
+lets `g`'s blocks list more values than `f`'s (`blocksExtOK`: otherwise equal, every value of
+`f`'s list in `g`'s). `fwdMoveRep` accepts `Copy y` when `y` and its pointer are listed in `g`
+(`listedB`) and `fwdMoveOK` holds: `y` is `Load <u.Type> (OffPtr [o] src) mem` of the `Move [n]
+dst src mem` that is the Load's memory, the `OffPtr` of pointer shape, `0 ≤ o`, the Load's shape
+of positive size with `o + size ≤ n`, and the Load's pointer `dst + o` (`ptrBase` offsets,
+`baseSameB` bases).
+
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
 g = true → RefinesUnder Env.Mono tabs g tabs f`, by the atom simulation. It needs a fact about
 the source's memory roots that no valuation of the atoms has: `MemDefs` (on the source's `DenOK`
@@ -289,15 +301,21 @@ aggregate is all `poison` bytes, which a `Load` reads as `poison`, semantics.md 
 `decodeLoad`; then `copyReach_den` to `x`, whose rank `copyReach_rank` bounds). The fuel of
 `TermRefP`'s right side may depend on the valuations. A constant result reads the stored
 constant through its chain the same way (`chain_load`), which denotes the result's bits
-(`opVal_const64`, `fwdConstOK_spec`). `checkedRewrite_refines` composes the
+(`opVal_const64`, `fwdConstOK_spec`). A Move forwarding (`move_den`): the `Move`'s register is
+its write of the bytes read at the source (`memDef_move`), the Load's pointer is the
+destination plus `o` (`ptrBase_den`, `baseSame_den`), and the bytes there are those of the source
+at `o` (`read_write_self`, `read_sub`, `load_congr_read`, `LoadFwdMem.lean`); the fresh
+`OffPtr` is in its window (`read_inWindow`) and the fresh `Load` reads them in a memory refining
+the `Move`'s (`load_mono`). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
-`generic.rules:800`, `:806`, `:813`, `:821`, `:830`, `:832`; witnesses
+`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`; witnesses
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
-`pi_checkedRewrite` (`PtrIndex p [0]` read through a `Store` at `PtrIndex p [1]`) and
+`pi_checkedRewrite` (`PtrIndex p [0]` read through a `Store` at `PtrIndex p [1]`),
 `cf_checkedRewrite` (`*p = bits(1.5); return *(*float64)(p)` with `:830`: the `Load` becomes
-`Const64F` of the stored bits; `GoFV/Proof/Witness/FwdCopy.lean`), kernel evaluation.
+`Const64F` of the stored bits) and `ml_checkedRewrite` (`*p = *q; return p[1]` with `:827`: the
+`Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`), kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,

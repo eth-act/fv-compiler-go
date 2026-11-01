@@ -1299,6 +1299,41 @@ def fwdConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
 def fwdNewOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w
 
+/-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
+mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
+`baseSameB`), `0 ≤ o` and the read (of positive size) inside the `n` bytes; `top` is
+`Load <u.Type> offp mem` and `offp` the pointer-shaped `OffPtr [o] src`. -/
+def fwdMoveOK (tabs : Tables) (f : Func) (u top offp : Value) : Bool :=
+  u.op == .Load && u.args.size == 2 && top.op == .Load && top.type == u.type &&
+  top.args.size == 2 && offp.op == .OffPtr && offp.args.size == 1 &&
+  isPtrTy (tabs.ty offp.type) && decide (0 ≤ offp.auxInt.toInt) &&
+  decide (0 < (tabs.ty u.type).size) &&
+  match f.value? u.args[1]! with
+  | some mv =>
+    mv.op == .Move && mv.args.size == 3 && top.args[1]! == mv.args[2]! &&
+    offp.args[0]! == mv.args[1]! &&
+    decide (offp.auxInt.toInt.toNat + (tabs.ty u.type).size ≤ mv.auxInt.toInt.toNat) &&
+    (ptrBase tabs f 8 u.args[0]!).2 ==
+      (ptrBase tabs f 8 mv.args[0]!).2 + BitVec.ofInt 64 offp.auxInt.toInt &&
+    baseSameB tabs f 8 (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 mv.args[0]!).1
+  | none => false
+
+/-- `y` is listed in `g` (`Proof.listedDefs`): a value of a block of `g` that lists it. -/
+def listedB (g : Func) (y : ID) : Bool :=
+  (g.value? y).any fun v => g.blocks.contains v.block && (g.block? v.block).any (·.values.contains y)
+
+/-- The new definition `w` of the `Load` `u` of `f` in `g`: `Copy y` of the listed `Load` `y` of
+`g` through the listed `OffPtr` of the `Move`'s source that `fwdMoveOK` accepts. -/
+def fwdMoveRep (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
+  w.op == .Copy && w.args.size == 1 && listedB g w.args[0]! &&
+  match g.value? w.args[0]! with
+  | some top =>
+    top.args.size == 2 && listedB g top.args[0]! &&
+    match g.value? top.args[0]! with
+    | some offp => fwdMoveOK tabs f u top offp
+    | none => false
+  | none => false
+
 /-- One pass of `fwdRank`, in ID order: each listed non-`Phi` value one above its arguments. -/
 def rankPass (f : Func) (L : Array Bool) (rk : Array Nat) : Array Nat :=
   (List.range f.valueTab.size).foldl (init := rk) fun rk z =>
@@ -1331,7 +1366,7 @@ def fwdRankOK (f : Func) (rk : Array Nat) : Bool :=
     | none => true
 
 /-- Value `x` of `f` is unchanged in `g` (but for its use count), or a `Load` got a new definition
-`fwdNewOK` accepts. -/
+`fwdNewOK` or `fwdMoveRep` accepts. -/
 def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | none, _ => true
@@ -1339,12 +1374,20 @@ def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
   | some u, some w =>
     w.id == u.id && w.block == u.block && w.type == u.type &&
     ((w.op == u.op && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args) ||
-     fwdNewOK tabs f u w)
+     fwdNewOK tabs f u w || fwdMoveRep tabs f g u w)
 
-/-- `g` is `f` with Loads forwarded: the same blocks and atoms, every value as `fwdRepOK`
-says, ranks ordering `f`'s listed values after their arguments. -/
+/-- `g`'s blocks are `f`'s, but for values appended to their lists (the fresh values of a
+forwarding through a `Move`, `fwdMoveRep`). -/
+def blocksExtOK (f g : Func) : Bool :=
+  g.blocks == f.blocks && f.blocks.all fun b =>
+    match f.block? b, g.block? b with
+    | some fb, some gb => gb == { fb with values := gb.values } && fb.values.all (gb.values.contains ·)
+    | _, _ => false
+
+/-- `g` is `f` with Loads forwarded: the same blocks and atoms (`blocksExtOK`), every value as
+`fwdRepOK` says, ranks ordering `f`'s listed values after their arguments. -/
 def fwdRel (tabs : Tables) (f g : Func) : Bool :=
-  atomsOK f g && closedOK f && closedOK g && g.blocks == f.blocks && g.blockTab == f.blockTab &&
+  atomsOK f g && closedOK f && closedOK g && blocksExtOK f g &&
   fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs f g ·)
 
 /-- The variable a chain of at most `n` `Store`s binds as a stored value is `y`. -/
@@ -1354,19 +1397,24 @@ def storesBind (y : Nat) : Nat → Pat → Bool
   | _, _ => false
 
 /-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by one of the up to four
-`Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`), or
-`(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`); the
-validator checks each instance by `fwdNewOK`, the `isSamePtr`/`disjoint` conditions included. -/
+`Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`),
+`(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`), or
+`(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src) mem)` (`:827`); the
+validator checks each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint`
+conditions included. -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
   | .op .Load none _ _ _ .fixed [_, .op .Store none _ _ _ .fixed [_, .op o none _ _ _ .fixed [] _, _] _]
       _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
+  | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Move ..] _, .build [n0, n1], some _ =>
+    n0.op == .Load && n1.op == .OffPtr
   | _, _, _ => false
 
-/-- The `Load` `v` of `f` that event `ev` forwards and its new definition (a `Copy` or a
-constant), if it is a `loads` rule event (`fwdShapeOK`). -/
-def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value)
+/-- The `Load` `v` of `f` that event `ev` forwards, its new definition (a `Copy` or a constant)
+and the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads`
+rule event (`fwdShapeOK`). -/
+def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
@@ -1374,15 +1422,27 @@ def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value)
         let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
         if n ≤ i then
           match t.loads[i - n]?, defs.toList with
+          | some cr, [w, top, offp] =>
+            if fwdShapeOK cr.rule && w.op == .Copy && w.args.size == 1 && top.op == .Load then
+              some (v, w, [offp, top])
+            else none
           | some cr, w :: _ =>
             if fwdShapeOK cr.rule && ((w.op == .Copy && w.args.size == 1) || const64Op w.op) then
-              some (v, w)
+              some (v, w, [])
             else none
           | _, _ => none
         else none
       else none
     | none => none
   | _ => none
+
+/-- Put the logged fresh value `u` into `f`: at its ID (taken off the free list, as the pass
+allocated it), listed last in its block, its arguments gaining a use. -/
+def ssPut (f : Func) (u : Value) : Func :=
+  let f := { f with valueTab := Func.tabPut f.valueTab u.id { u with uses := 0 },
+                    freeValues := f.freeValues.erase u.id, vidLast := max f.vidLast u.id }
+  let f := f.modB u.block fun b => { b with values := b.values.push u.id }
+  u.args.foldl Func.incUses f
 
 /-- `v.reset(OpCopy); v.AddArg(x)` (or `v.reset(OpConst64F); v.AuxInt = …`): the `Load` `v` of `f`
 gets the definition `w`, its arguments lose a use, `w`'s gain one. -/
@@ -1396,19 +1456,28 @@ def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
     else f
   | none => f
 
-/-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdNewOK` holds of
-in `f`), any other event kept, but for the copy-argument replacements of the forwarded `Load`
-logged before it (copy elimination on the `Load`'s arguments, which the forwarding validated in
-`f` replaces). -/
+/-- The forwarding of the `Load` `u` of `f` to `w` with the fresh values `ds` (`fwdEvent?`) is
+one the validator accepts in `f`: `fwdNewOK`, or `fwdMoveOK` of the fresh `[offp, top]` with `w`
+a `Copy` of `top`. -/
+def fwdEvOK (tabs : Tables) (f : Func) (u w : Value) : List Value → Bool
+  | [] => fwdNewOK tabs f u w
+  | [offp, top] =>
+    w.args == #[top.id] && top.args[0]! == offp.id && fwdMoveOK tabs f u top offp
+  | _ => false
+
+/-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdEvOK` holds of
+in `f`; its fresh values put in first), any other event kept, but for the copy-argument
+replacements of the forwarded `Load` logged before it (copy elimination on the `Load`'s
+arguments, which the forwarding validated in `f` replaces). -/
 def fwdStep (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (p : Func × Array RwEvent)
     (ev : RwEvent) : Func × Array RwEvent :=
   match fwdEvent? t f ev with
-  | some (v, w) =>
-    if sel && !(f.value? v).any (fwdNewOK tabs f · w) then (p.1, p.2.push ev)
-    else (fwdCopy p.1 v w, p.2.filter fun | .copyArg z _ _ => z != v | _ => true)
+  | some (v, w, ds) =>
+    if sel && !(f.value? v).any (fwdEvOK tabs f · w ds) then (p.1, p.2.push ev)
+    else (fwdCopy (ds.foldl ssPut p.1) v w, p.2.filter fun | .copyArg z _ _ => z != v | _ => true)
   | none => (p.1, p.2.push ev)
 
-/-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdNewOK`
+/-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdEvOK`
 holds of), and the remaining events. -/
 def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (log : Array RwEvent) :
     Func × Array RwEvent :=
@@ -1450,14 +1519,6 @@ def ssEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID × Lis
       else none
     | none => none
   | _ => none
-
-/-- Put the logged fresh value `u` into `f`: at its ID (taken off the free list, as the pass
-allocated it), listed last in its block, its arguments gaining a use. -/
-def ssPut (f : Func) (u : Value) : Func :=
-  let f := { f with valueTab := Func.tabPut f.valueTab u.id { u with uses := 0 },
-                    freeValues := f.freeValues.erase u.id, vidLast := max f.vidLast u.id }
-  let f := f.modB u.block fun b => { b with values := b.values.push u.id }
-  u.args.foldl Func.incUses f
 
 /-- The split of the `Store` `v`: the fresh values `ds` put in, then `v.copyOf(x)`. -/
 def ssApply (f : Func) (v x : ID) (ds : List Value) : Func :=
