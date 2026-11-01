@@ -116,6 +116,8 @@ theorem callOp_static_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {
   · next m hm =>
     split at h
     · cases h
+    split at h
+    · cases h
     · cases hc : env.extern name with
       | none => rw [hc] at h; cases h
       | some c =>

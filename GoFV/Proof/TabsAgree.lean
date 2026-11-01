@@ -86,6 +86,15 @@ theorem retypeResults_tabs {tabs tabs' : Tables} :
     simp only [retypeResults, h p List.mem_cons_self,
       retypeResults_tabs ps (fun q hq => h q (List.mem_cons_of_mem _ hq))]
 
+theorem outargsOK_tabs {tabs tabs' : Tables} (act : Nat) (m : Mem) :
+    ∀ (ps : List ABIParam), (∀ p ∈ ps, tabs'.ty p.type = tabs.ty p.type) →
+      outargsOK tabs' act m ps = outargsOK tabs act m ps
+  | [], _ => rfl
+  | p :: ps, h => by
+    have ih := outargsOK_tabs act m ps (fun q hq => h q (List.mem_cons_of_mem _ hq))
+    simp only [outargsOK, List.all_cons] at ih ⊢
+    rw [h p List.mem_cons_self, ih]
+
 /-! ## One value -/
 
 section
@@ -114,7 +123,10 @@ theorem callOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (argv : List
     encodeResults_tabs act _ fun p hp => hP p (List.mem_filter.mp hp).1
   have hret := retypeResults_tabs (tabs := ctx.tabs) (tabs' := tabs') (P.filter (·.out))
     (fun p hp => hP p (List.mem_filter.mp hp).1)
-  simp only [hin, hout, hret]
+  have hoa : ∀ act m, outargsOK tabs' act m (P.filter (!·.out)) =
+      outargsOK ctx.tabs act m (P.filter (!·.out)) := fun act m =>
+    outargsOK_tabs act m _ fun p hp => hP p (List.mem_filter.mp hp).1
+  simp only [hin, hout, hret, hoa]
 
 theorem memRoot_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (argv : List Val) :
     memRoot { ctx with tabs := tabs' } v argv = memRoot ctx v argv := by

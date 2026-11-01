@@ -409,6 +409,8 @@ theorem callOp_mems {env : Env} (hE : ContractsOK env) {ctx : Sem.Ctx} {v : Valu
       | (cases hargs; exact hR)
     split at h
     · cases h
+    split at h
+    · cases h
     obtain ⟨c, hc, h⟩ := bind_ok_inv h
     have hcc := hE callee c (ofOption_ok hc) args clo (M'.poisonBlock (.outargs ctx.act)) hA hcl
       (hM'.poison (outargs_ne_flag _) (by simp))
