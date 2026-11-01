@@ -311,31 +311,6 @@ theorem ecc_callTarget {ctx ctx' : Ctx} (htabs : ctx'.tabs = ctx.tabs) {u w : Va
       | some s => exact .inr (codeTarget?_mono h1 hc)
   · cases hmap
 
-/-- `decodeArgs` of the pieces rebuilds refinements of the Go-typed arguments. -/
-theorem ecc_decodeArgs {tabs : Tables} (act : Nat) (m : Mem) :
-    {ps : List ABIParam} → {G : List Val} →
-      List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps G →
-      (∀ p ∈ ps, ecfReg tabs p) →
-      ∃ D, decodeArgs tabs act m ps (ecfPieces tabs ps G) = some D ∧ Sem.RefinesList G D
-  | _, _, .nil, _ => ⟨[], rfl, .nil⟩
-  | p :: ps, g :: G, .cons hg hf, hreg => by
-    obtain ⟨hne, hw, hlen⟩ := hreg p List.mem_cons_self
-    obtain ⟨D, hD, hGD⟩ := ecc_decodeArgs act m hf fun q hq => hreg q (List.mem_cons_of_mem _ hq)
-    have hlv : (leafVals (tabs.ty p.type) g).length = p.regs.size := by
-      rw [leafVals_length hw, hlen]
-    have hP : ecfPieces tabs (p :: ps) (g :: G) =
-        leafVals (tabs.ty p.type) g ++ ecfPieces tabs ps G := by
-      simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons]
-    refine ⟨ofPieces (tabs.ty p.type) (leafVals (tabs.ty p.type) g) :: D, ?_,
-      .cons (ofPieces_leafVals hw hg) hGD⟩
-    rw [hP]
-    unfold decodeArgs
-    have hnl : ¬ (leafVals (tabs.ty p.type) g ++ ecfPieces tabs ps G).length < p.regs.size := by
-      rw [List.length_append]; omega
-    simp only [hne, Bool.false_eq_true, ↓reduceIte, hnl, List.take_left' hlv, List.drop_left' hlv,
-      hD]
-    rfl
-
 theorem ecc_encodeResults_length {tabs : Tables} {act : Nat} :
     {ps : List ABIParam} → {rs : List Val} → {m : Mem} → {r : List Val × Mem} →
       encodeResults tabs act ps rs m = some r → rs.length = ps.length
@@ -972,5 +947,122 @@ theorem obl_call {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : ID
     (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) (hSP : ∀ a, ecStackSP f g u w a → HT a) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x :=
   obl_of_imk (obl_call_imk hu hw hcall hok huid L hLx hL) hu hH hSP
+
+theorem ecc_bind_def {R : Res Val} {F : Val → Val}
+    (h : (∃ y, R.bind (fun r => .ok (F r)) = .ok y) ∨ ∃ e m, R.bind (fun r => .ok (F r)) = .panic e m) :
+    (∃ y, R = .ok y) ∨ ∃ e m, R = .panic e m := by
+  cases R with
+  | ok y => exact .inl ⟨y, rfl⟩
+  | panic e m => exact .inr ⟨e, m, rfl⟩
+  | stuck msg => rcases h with ⟨_, h⟩ | ⟨_, _, h⟩ <;> cases h
+
+/-- **The obligation of a stack-argument store** `z` of call `x` (`NewObl`, anchored at `x`): once
+the source has reached the call, its memory's stack-argument slots are writable (`outargsOK`), so
+are the target's (a refinement of it, then the stores below `z`), and `z`'s write succeeds. -/
+theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT : ID → Prop}
+    (hu : f.value? x = some u) (hw : g.value? x = some w) (hcall : (callOpMap u.op).isSome = true)
+    (hok : callOK tabs (typeShapes tabs) f g u w = true)
+    {zs : List ID} (hzs : callStores f g u w = some zs) (hz : z ∈ zs) (L : ID → Prop)
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
+    (hLz : L z)
+    (hsp : ∀ wz qw, g.value? z = some wz → g.value? wz.args[0]! = some qw →
+      isNewB f qw.args[0]! = false → HT qw.args[0]!) :
+    NewObl tabs f g (ecCv tabs f g) (isNewB f) [u.args[u.args.size - 1]!] HT x z := by
+  intro wz hwz env G T _ E hNC hEw hRw hfront hheldT hreach
+  unfold callOK at hok
+  split at hok
+  · next op k abi hmap habi =>
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, Bool.not_eq_true', ge_iff_le,
+      List.all_eq_true] at hok
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, hkn⟩, -⟩, hinsOK⟩, -⟩, -⟩, -⟩, hstack⟩,
+      -⟩, hmns⟩, -⟩, -⟩, -⟩ := hok
+    obtain ⟨hopu, hpre, -, -⟩ := ecc_callOpMap hmap
+    have hopu' : u.op = .StaticLECall ∨ u.op = .ClosureLECall ∨ u.op = .InterLECall ∨
+        u.op = .StaticCall ∨ u.op = .ClosureCall ∨ u.op = .InterCall := by
+      rcases hopu with h | h | h <;> simp [h]
+    have hsu := ecc_args_split u.args k hkn
+    -- the source reached the call: its memory's stack-argument slots are writable
+    have hr := hreach u hu
+    have hne : ∀ msg, evalValue env (Ctx.make tabs f) G u ≠ .stuck msg := fun msg h => by
+      rw [h] at hr; rcases hr with ⟨_, h⟩ | ⟨_, _, h⟩ <;> cases h
+    have hregG : ∀ a ∈ u.args, Reg G a := evalValue_args_def hne
+    rw [evalValue_of_regs hregG, ecc_evalOp_call hopu', hsu, List.map_append, List.map_append,
+      List.append_assoc, List.map_cons, List.map_nil] at hr
+    have hlk : ((u.args.extract 0 k).toList.map (rv G)).length = k := by
+      simp only [List.length_map, Array.length_toList, Array.size_extract]; omega
+    obtain ⟨m, hm, hokm⟩ : ∃ m, rv G u.args[u.args.size - 1]! = .mem m ∧
+        outargsOK tabs 0 m (insOf abi) = true := by
+      exact ecc_callOp_outargs hpre habi (ecc_callTarget_rest hmap hlk) (ecc_bind_def hr)
+    have hm0 : u.args[u.args.size - 1]! ∈ u.args := by rw [← Array.mem_toList_iff, hsu]; simp
+    obtain ⟨y', hy', hry⟩ := hfront _ List.mem_cons_self (.mem m)
+      (by rw [← hm]; exact reg_rv (hregG _ hm0))
+    rw [ecCv_of_not_special hmns] at hry
+    obtain ⟨M, rfl, hMR⟩ : ∃ M, y' = .mem M ∧ Mem.Refines m M := by
+      cases hry with
+      | mem h => exact ⟨_, rfl, h⟩
+    have hokM : outargsOK tabs 0 M (insOf abi) = true := by rw [hMR.outargsOK]; exact hokm
+    -- the stores below `z`
+    unfold stackOK at hstack
+    simp only [Bool.and_eq_true] at hstack
+    obtain ⟨-, hst⟩ := hstack
+    rw [hzs] at hst
+    simp only [Bool.and_eq_true] at hst
+    obtain ⟨⟨hsOK, -⟩, -⟩ := hst
+    have hcs' := hzs
+    unfold callStores at hcs'
+    obtain ⟨wz', n', zs', hwz', hnz, hop, hsz, hc, rest, hsplit⟩ := ecs_chain_mem hcs' hz
+    rw [hwz] at hwz'; cases hwz'
+    have hss := hsOK
+    rw [hsplit] at hss
+    obtain ⟨s12, s3, hs123, h12, -⟩ := ecs_storesOK_append hss
+    obtain ⟨s1, s2, rfl, h1, h2⟩ := ecs_storesOK_append h12
+    obtain ⟨s, rfl⟩ : ∃ s, s2 = [s] := by
+      have := ecs_storesOK_length h2
+      match s2, this with
+      | [s], _ => exact ⟨s, rfl⟩
+    obtain ⟨wz', hwz', haux, hoff, hsh⟩ := ecs_storesOK_one h2
+    rw [hwz] at hwz'; cases hwz'
+    obtain ⟨hwid, hLcl⟩ := hL z hLz wz hwz
+    have hargs := ecs_args_three hsz
+    have hmem : ∀ i, i < 3 → wz.args[i]! ∈ wz.args := fun i hi => by
+      rw [← Array.mem_toList_iff, hargs]
+      match i, hi with
+      | 0, _ | 1, _ | 2, _ => simp
+    have hEL : zs' ≠ [] → E wz.args[2]! ∧ L wz.args[2]! := fun hne => by
+      have hn := ecs_storeChain_new hc hne
+      exact ⟨hEw _ (hmem 2 (by decide)) hn, hLcl _ (hmem 2 (by decide)) hn⟩
+    obtain ⟨Mb, hMb, hA⟩ := ecs_chain_attr hNC hL n' hc hEL h1 M (rv_of hy')
+    -- `z`'s slot is writable
+    have hsm : s ∈ leafSlots tabs ((argPairs false (insOf abi)
+        (u.args.extract k (u.args.size - 1)).toList).map Prod.fst) := by
+      rw [hs123]; simp
+    have hsb := ecs_storesOK_bounds hsOK s hsm
+    obtain ⟨p, hp, l, hl, rfl⟩ := ecs_mem_leafSlots hsm
+    obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
+    have hpe := List.mem_filter.1 he
+    have hpin : e.1 ∈ insOf abi := (List.of_mem_zip hpe.1).1
+    have hr : e.1.regs.isEmpty = true := by simpa using hpe.2
+    have hins := List.all_eq_true.1 hinsOK e.1 hpin
+    rw [Bool.and_eq_true, if_pos hr] at hins
+    have hoff0 : 0 ≤ e.1.offset := of_decide_eq_true hins.2
+    have hcw := List.all_eq_true.1 hokM e.1 hpin
+    rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff0] at hcw
+    have hl' := mem_leaves hins.1 hl
+    have hcw' := ecs_canWrite_sub (k := l.1) (l := l.2.size) hl'.1 hcw (by dsimp only at hsb; omega)
+    rw [show e.1.offset.toNat + l.1 = (e.1.offset + (l.1 : Int)).toNat by omega,
+      ← ecs_canWrite_congr hA] at hcw'
+    -- `z`'s address and write
+    have hq : E wz.args[0]! ∧ L wz.args[0]! := by
+      have hn : isNewB f wz.args[0]! = true := by
+        unfold spOffOK at hoff; simp only [Bool.and_eq_true] at hoff; exact hoff.1.1.1
+      exact ⟨hEw _ (hmem 0 (by decide)) hn, hLcl _ (hmem 0 (by decide)) hn⟩
+    have ha := ecs_addr hNC hL hoff hq.1 hq.2 fun qw hqw hn => hheldT _ (hsp wz qw hwz hqw hn)
+    have hsz' : (encode (auxTy tabs wz.aux) (rv T wz.args[1]!)).size = l.2.size := by
+      rw [ecs_encode_eqE hl'.2 haux, GoFV.SSA.Sem.encode_size]
+    obtain ⟨M1, hW⟩ := ecs_write_of_canWrite (by rw [hsz']; exact hcw')
+    have hty : (Ctx.make tabs g).tys[wz.id]?.getD .other = .mem := by
+      rw [hwid, ← shapeOf_eq]; exact hsh
+    exact ⟨_, ecs_store_eval hop hRw hargs hty (rv_of ha) hMb hW⟩
+  · cases hok
 
 end GoFV.Proof.EC
