@@ -424,7 +424,7 @@ macro "rule_shamt" : tactic => `(tactic| (
        | rw [GoFV.Proof.Rules.shl_ushr])
      (try simp only [rule_bits] at *)
      congr 2 <;> omega)
-  | (congr 1 <;> omega)
+  | ((with_reducible congr 1) <;> omega)
   | (rw [BitVec.shiftLeft_eq_zero (by omega)])
   | (rw [BitVec.ushiftRight_eq_zero (by omega)])
   | (exfalso; omega)))
@@ -436,6 +436,20 @@ macro "rule_cmpc" : tactic => `(tactic| (
   simp only [rule_cmp, rule_amt] at *
   rule_omega_facts
   (repeat' split) <;> omega))
+
+/-- A value truncated and extended again where a shift already cleared
+(`ushr_setWidth_setWidth`) or sign-filled (`sshr_setWidth_signExtend`) the high bits, else
+both sides as `toNat` arithmetic (low-bit masks as remainders, `rule_amt`) closed by `omega`. -/
+macro "rule_ext" : tactic => `(tactic| (
+  first
+  | (with_reducible apply GoFV.Proof.Rules.ushr_setWidth_setWidth <;>
+      (try simp only [rule_amt] at *) <;> omega)
+  | (with_reducible apply GoFV.Proof.Rules.sshr_setWidth_signExtend <;>
+      (try simp only [rule_amt] at *) <;> omega)
+  | (apply BitVec.eq_of_toNat_eq
+     simp only [rule_amt] at *
+     rule_omega_facts
+     omega)))
 
 /-- Close the arithmetic left after the splits: auxint reads are generalized, constants
 pushed into `BitVec`, then `rfl`, a rotation (`rule_rot`, before `grind`: a failing `grind`
@@ -463,6 +477,7 @@ macro "rule_close" : tactic => `(tactic| (
      ext i hi
      simp
      done)
+  | rule_ext
   | ((try simp only [rule_bv, Nat.reducePow, Nat.reduceLT] at *)
      bv_decide (config := { enums := false, structures := false }))))
 

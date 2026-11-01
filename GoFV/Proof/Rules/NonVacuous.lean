@@ -1,9 +1,15 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values00
+import GoFV.Rules.Generated.Generic.Values03
+import GoFV.Rules.Generated.Generic.Values07
+import GoFV.Rules.Generated.Generic.Values08
 import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values05
 import GoFV.Rules.Generated.Generic.Values10
 import GoFV.Rules.Generated.Generic.Values11
+import GoFV.Rules.Generated.Generic.Values12
+import GoFV.Rules.Generated.Generic.Values13
+import GoFV.Rules.Generated.Generic.Values14
 
 /-!
 # Non-vacuity of `Rule.Sound` (`docs/proofs/rules.md`, "Non-vacuity")
@@ -167,6 +173,48 @@ theorem inst_r_generic_716 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_71
 theorem inst_r_generic_714 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_714
     (PEnv.ofLists [([0], .i16 7)] [([], .bool)] (.int .w16) []) (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_714]
+  rule_eval
+
+/-- `generic.rules:103`: `(ZeroExt16to32 (Const16 [c])) => (Const32 [int32(uint16(c))])` at
+`c = -1`. -/
+theorem inst_r_generic_103 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_103
+    (PEnv.ofLists [] [([0], .int .w16)] (.int .w32) [([0], -1)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_103]
+  rule_eval
+
+/-- `generic.rules:108`: `(SignExt8to64 (Const8 [c])) => (Const64 [int64(c)])` at `c = -3`. -/
+theorem inst_r_generic_108 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_108
+    (PEnv.ofLists [] [([0], .int .w8)] (.int .w64) [([0], -3)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_108]
+  rule_eval
+
+/-- `generic.rules:752`: `(Trunc16to8 (And16 (Const16 [y]) x)) && y&0xFF == 0xFF =>
+(Trunc16to8 x)` at `y = 0x1FF`, `x = 0x1234`. -/
+theorem inst_r_generic_752 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_752
+    (PEnv.ofLists [([1, 0], .i16 0x1234)] [([], .int .w8)] (.int .w16) [([0, 0], 0x1FF)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_752]
+  rule_eval
+  simp only [GoFV.Rules.bitwise, DV.bool.injEq]
+  rfl
+
+/-- `generic.rules:400`: `(Not (Less64 x y)) => (Leq64 y x)` at `x = 1`, `y = 2`. -/
+theorem inst_r_generic_400 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_400
+    (PEnv.ofLists [([0, 0], .i64 1), ([1, 0], .i64 2)] [([0, 0], .int .w64), ([1, 0], .int .w64)]
+      .bool []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_400]
+  rule_eval
+
+/-- `generic.rules:284`: `(EqB (Not x) y) => (NeqB x y)` at `x = true`, `y = false`. -/
+theorem inst_r_generic_284 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_284
+    (PEnv.ofLists [([0, 0], .bool true), ([1], .bool false)] [] .bool []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_284]
+  rule_eval
+
+/-- `generic.rules:290`: `(NeqB (Not x) y) => (EqB x y)` at `x = y = true`. -/
+theorem inst_r_generic_290 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_290
+    (PEnv.ofLists [([0, 0], .bool true), ([1], .bool true)] [] .bool []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_290]
   rule_eval
 
 end GoFV.Proof.Rules

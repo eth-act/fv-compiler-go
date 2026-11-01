@@ -846,4 +846,104 @@ attribute [rule_bits] BitVec.neg_one_eq_allOnes
 attribute [rule_arith] GoFV.Rules.bitwise BitVec.ofInt_natCast BitVec.ofNat_and BitVec.ofNat_or
   BitVec.ofNat_xor
 
+/-! ## Extensions, truncations, negated comparisons (#69)
+
+Constant folds of `ZeroExt`/`SignExt`/`Trunc` (`rule_arith`), a retype that keeps an integer of
+its own width (`rule_sem`), truncating and re-extending a value whose high bits a shift
+cleared or filled with the sign (`rule_ext`), negated comparisons and boolean equations
+(`rule_close_s`), low-bit masks as remainders (`rule_amt`). -/
+
+@[rule_sem] theorem retype_int_of_not_other {t : Ty} {w : Width} (x : BitVec w.bits)
+    (h : tyOtherInt t w = false) : (Val.int w x).retype t = .int w x := by
+  cases t with
+  | int w' =>
+    simp only [tyOtherInt, bne_eq_false_iff_eq] at h
+    subst h; exact retype_int_same w' x
+  | ptr e =>
+    simp only [tyOtherInt, beq_eq_false_iff_ne, ne_eq] at h
+    cases w <;> simp_all [Val.retype]
+  | bool => simp [tyOtherInt] at h
+  | _ => rfl
+
+@[rule_arith] theorem setWidth_ofInt_of_le {w k : Nat} (h : w ≤ k) (c : Int) :
+    (BitVec.ofInt w c).setWidth k = BitVec.ofInt k (wrapInt w false c) := by
+  apply BitVec.eq_of_toNat_eq
+  have hp : 2 ^ w ≤ 2 ^ k := Nat.pow_le_pow_right (by decide) h
+  have hw : (0 : Int) < ((2 ^ w : Nat) : Int) := by have := Nat.two_pow_pos w; omega
+  have h0 := Int.emod_nonneg c (Int.ne_of_gt hw)
+  have h1 := Int.emod_lt_of_pos c hw
+  have e : ((2 ^ w : Nat) : Int) = (2 : Int) ^ w := by simp
+  simp only [BitVec.toNat_setWidth, BitVec.toNat_ofInt, wrapInt_false, int_emod_eq]
+  rw [← e, Int.emod_eq_of_lt h0 (by omega), Nat.mod_eq_of_lt (by omega)]
+
+@[rule_arith] theorem setWidth_ofInt_of_ge {w k : Nat} (h : k ≤ w) (c : Int) :
+    (BitVec.ofInt w c).setWidth k = BitVec.ofInt k c := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_setWidth, BitVec.toNat_ofInt]
+  have hd : ((2 ^ k : Nat) : Int) ∣ ((2 ^ w : Nat) : Int) :=
+    Int.natCast_dvd_natCast.mpr (Nat.pow_dvd_pow 2 h)
+  have hw : (0 : Int) < ((2 ^ w : Nat) : Int) := by have := Nat.two_pow_pos w; omega
+  have hk : (0 : Int) < ((2 ^ k : Nat) : Int) := by have := Nat.two_pow_pos k; omega
+  have h0 := Int.emod_nonneg c (Int.ne_of_gt hw)
+  have h0' := Int.emod_nonneg c (Int.ne_of_gt hk)
+  apply Int.ofNat_inj.mp
+  rw [Int.natCast_emod, Int.toNat_of_nonneg h0, Int.toNat_of_nonneg h0']
+  exact Int.emod_emod_of_dvd c hd
+
+@[rule_arith] theorem signExtend_ofInt {w k : Nat} (h : w ≤ k) (c : Int) :
+    (BitVec.ofInt w c).signExtend k = BitVec.ofInt k (wrapInt w true c) := by
+  apply BitVec.eq_of_toInt_eq
+  rw [BitVec.toInt_signExtend_of_le h, wrapInt_true, BitVec.toInt_ofInt, BitVec.toInt_ofInt]
+  have hp : 2 ^ w ≤ 2 ^ k := Nat.pow_le_pow_right (by decide) h
+  have l := Int.le_bmod (x := c) (Nat.two_pow_pos w)
+  have u := Int.bmod_lt (x := c) (Nat.two_pow_pos w)
+  rw [Int.bmod_eq_of_le (n := c.bmod (2 ^ w)) (m := 2 ^ k)] <;> omega
+
+theorem ushr_setWidth_setWidth {w k n : Nat} (x : BitVec w) (hk : k ≤ w) (hn : w - k ≤ n) :
+    ((x >>> n).setWidth k).setWidth w = x >>> n := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_setWidth, BitVec.getLsbD_ushiftRight]
+  by_cases hik : i < k
+  · simp [hik, hi]
+  · simp only [hik, decide_false, Bool.false_and]
+    rw [BitVec.getLsbD_of_ge x _ (by omega)]; simp
+
+theorem sshr_setWidth_signExtend {w k n : Nat} (x : BitVec w) (hk0 : 0 < k) (hk : k ≤ w)
+    (hn : w - k ≤ n) : ((x.sshiftRight n).setWidth k).signExtend w = x.sshiftRight n := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  rw [BitVec.getLsbD_signExtend, BitVec.msb_setWidth]
+  simp only [BitVec.getLsbD_setWidth, BitVec.getLsbD_sshiftRight, hi, decide_true,
+    Bool.true_and, hk0]
+  by_cases hik : i < k
+  · simp [hik, show ¬ w ≤ i by omega]
+  · simp only [hik, ite_false, Bool.true_and, show ¬ w ≤ k - 1 by omega,
+      show ¬ w ≤ i by omega, decide_false, Bool.not_false, show ¬ n + i < w by omega]
+    by_cases h2 : n + (k - 1) < w
+    · simp only [h2, ite_true]
+      have : n + (k - 1) = w - 1 := by omega
+      rw [this, BitVec.msb_eq_getLsbD_last]
+    · simp [h2]
+
+theorem not_slt_eq {w : Nat} (x y : BitVec w) : (!x.slt y) = y.sle x := by
+  simp only [BitVec.sle, BitVec.slt]; cases h : decide (y.toInt ≤ x.toInt) <;> simp_all <;> omega
+theorem not_sle_eq {w : Nat} (x y : BitVec w) : (!x.sle y) = y.slt x := by
+  simp only [BitVec.sle, BitVec.slt]; cases h : decide (y.toInt < x.toInt) <;> simp_all <;> omega
+theorem not_ult_eq {w : Nat} (x y : BitVec w) : (!x.ult y) = y.ule x := by
+  simp only [BitVec.ule, BitVec.ult]; cases h : decide (y.toNat ≤ x.toNat) <;> simp_all <;> omega
+theorem not_ule_eq {w : Nat} (x y : BitVec w) : (!x.ule y) = y.ult x := by
+  simp only [BitVec.ule, BitVec.ult]; cases h : decide (y.toNat < x.toNat) <;> simp_all <;> omega
+theorem not_beq_eq (a b : Bool) : ((!a) == b) = (a != b) := by cases a <;> cases b <;> rfl
+theorem not_bne_eq (a b : Bool) : ((!a) != b) = (a == b) := by cases a <;> cases b <;> rfl
+
+attribute [rule_close_s] not_slt_eq not_sle_eq not_ult_eq not_ule_eq not_beq_eq not_bne_eq
+
+@[rule_amt] theorem nat_and_255 (a : Nat) : a &&& 255 = a % 256 :=
+  Nat.and_two_pow_sub_one_eq_mod a 8
+@[rule_amt] theorem nat_and_65535 (a : Nat) : a &&& 65535 = a % 65536 :=
+  Nat.and_two_pow_sub_one_eq_mod a 16
+@[rule_amt] theorem nat_and_4294967295 (a : Nat) : a &&& 4294967295 = a % 4294967296 :=
+  Nat.and_two_pow_sub_one_eq_mod a 32
+
 end GoFV.Proof.Rules
