@@ -174,15 +174,13 @@ hypothesis `RuleSet.AllSound` now also asks `BlockRule.Sound` of the block rules
 nilcheckelim's checker rather than by a value refinement: `RuleSet.nilChecks` (tried on a
 `NilCheck` after its value row, `Interp.Table.nilChecks`) holds the rules with
 `EffectRule.NilElim r := RewriteCheck.nilElimOK r = true` (the result is the checked pointer, whose
-op is a `NilCheck.safePtr` seed: `Addr`, `LocalAddr`, `NilCheck` or `GetG`, whose value is the
-environment's `g` allocation `Blk.global "runtime.g"`). `RewriteCheck.accepts` takes
+op is a `NilCheck.safePtr` seed: `Addr`, `LocalAddr` or `NilCheck`). `RewriteCheck.accepts` takes
 the log's nil-check events out (`nilPre`: `NilCheck p mem` → `Copy p` on the input), requires
 `NilCheck.nrel` between the input and that function and `check` of it (`nilOK`), and validates
 the output against it with the remaining events. `checkedRewrite_refines` composes
-`Nil.refines_of_rel` with the atom simulation (statement unchanged). Proven: `generic.rules:1062`
-(witness `GoFV.Proof.Witness.gg_checkedRewrite`), `:1375`, `:1381`, `:1388`. Not provable this
-way (the pointer is no seed): `:1367` (`isMalloc` result), `:1384` (dictionary `Arg`), `:1376`
-(`Convert` of `Addr`).
+`Nil.refines_of_rel` with the atom simulation (statement unchanged). Proven: `generic.rules:1375`,
+`:1381`, `:1388`. Not provable this way (the pointer is no seed): `:1062` (`GetG`), `:1367`
+(`isMalloc` result), `:1384` (dictionary `Arg`), `:1376` (`Convert` of `Addr`).
 
 ### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 
@@ -263,42 +261,6 @@ keeps the replay invariant (`GoFV/Proof/Pass/StructLoad.lean`), so `replay_inv`,
 `GoFV.Proof.Witness.lf_checkedRewrite` (`s := *p; return s.a` on `struct{ a, b int }`, kernel
 evaluation).
 
-### Struct-store splits: `EffectRule.StructStore` (`GoFV/Proof/Rules/StructStore.lean`)
-
-`(Store _ (StructMake ___) _) => rewriteStructStore(v)` (`:975`) replaces the root
-`v = Store {T} dst (StructMake a₁ … aₙ) mem` by a chain of fresh field stores
-`sᵢ = Store {Tᵢ} (OffPtr [oᵢ] dst) aᵢ sᵢ₋₁` (`s₀ = mem`), and `v` becomes `Copy sₙ`. The roots
-change (one `Store` becomes `n`), so the validator takes these events out of the log, as the
-forwardings: `RuleSet.structStores` (tried on a `Store` after its row,
-`Interp.Table.structStores`; `EffectRule.StructStore r := RewriteCheck.structStoreShapeOK r =
-true`) logs the fresh `(OffPtr, Store)` pairs (`Interp.structStoreDefs`); `ssPre` applies the
-splits to the input (dropping earlier copy-argument events on the split `Store`), and
-`ssRel` relates the input to it: the same graph and own aux; every value kept but for its use
-count, or split (`ssSplit?`: a `Store` listed in its block at a shape `agg fs n`, every field
-inside it and at an offset below `n`, of a `StructMake` up to copies; in the target `Copy` of the
-chain's last store; each field linked, `ssLink`: a fresh memory-typed `Store` of the field's
-argument up to copies at the field's shape, at a fresh pointer-shaped `OffPtr [oᵢ]` of `dst` up to
-copies, on the previous store, `m0` reached from `mem` through copies for the first); the fresh
-values the only ones the input lacks, listed after the block's values; each block's schedule
-runs the input's roots with each split's chain in its place (`ssRoots`). `checkedRewrite` gets a
-third fallback: the run without `loads`, then also without `structStores`.
-
-**Theorem.** `GoFV.Proof.StructStore.ss_refines : check ce f = .ok () → check ce' g = .ok () →
-ssRel tabs f g = true → RefinesUnder Env.Mono tabs g tabs f`: lock-step simulation
-(`StructStoreSim.lean`) with the target's registers refining the source's on the source's values
-(`RR`). In a block (`StructStoreBlock.lean`, `StructStoreEval.lean`) the source evaluates first
-(`Src`, `split_src`: a split `Store` wrote `encode (agg fs n) (agg vs)` at `P`); the target
-follows its schedule (`TFacts`): a kept value on refined arguments (`AtomSim.atom_eval_mono`), a
-fresh `OffPtr` holds `P + oᵢ` (inside the window: the struct write was valid), a fresh field store
-holds a memory refining `M.write P (bufK (i+1))`, the struct's bytes `poison` but for the first
-`i+1` fields (`write_putBytes`, `write_poison_left`, `Mem.Refines.write`, `StructStoreMem.lean`),
-so the split's `Copy` refines the struct write. If the source panics, the target's roots before
-the panicking one are the source's with the chains of splits it evaluated (`rootsBefore`).
-`checkedRewrite_cases` gains the split layer (`ssAccepts_cases`, `validate_noSS`);
-`checkedRewrite_refines` keeps its statement. Proven: `:975`; witness
-`GoFV.Proof.Witness.ss_checkedRewrite` (`*p = P{x, y}` on `struct{ a, b int }`, kernel
-evaluation).
-
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
 `ConstString {str}` and `Addr {sym} SB` are term nodes evaluated from the tables
@@ -333,44 +295,34 @@ shape `int8`). `evalE` models `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface
 (`kindE`: false at every other shape, the oracle's at the kind's shape, which a struct can
 share), `config.PtrSize` (8, `configField`) and the pointer `typ.*Ptr` types.
 
-**Proven** (17): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
+**Proven** (14): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
 `:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`; the
 matched value is then always `poison`, so `rule-sat` finds no instance: the rewrite never changes a
 defined value); `:106` (and `generic.rules:973`), the variadic `(StructSelect [i]
-x:(StructMake ___)) => x.Args[i]`, as `Rule.MakeSel` (below); the Load splits `:45`, `:63`,
-`:87` (`DecLoad.lean`: the condition fixes the string, slice or interface shape, `.other` gives
-`poison`; there the split is a struct-load expansion whose first component is read at the
-pointer itself, `loadSplit_ref` from `StructLoad.structLoad_ref`, the read bounded by the
-block's address window; `rule-sat` has no memory instances, so the non-vacuity witness is the
-pass execution `GoFV.Proof.Witness.ls_checkedRewrite`: `strLen`, `{dec.rules:45}`).
+x:(StructMake ___)) => x.Args[i]`, as `Rule.MakeSel` (below).
 **False under the semantics**: `:119`, `:120` (a one-field pointer-shaped aggregate is `.agg [p]`,
 Go's is the pointer; `docs/plans/semantics.md` §10). **Not provable as `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
-`:102` (`imakeOfStructMake`). **Pending**: `:16`/`:28` (complex: `t.Size()` of an aggregate
-shape is not modelled); the
+`:102` (`imakeOfStructMake`). **Pending**: the Load splits `:45`, `:63`,
+`:87` (the validator accepts them; the lemma needs `Mem.read` bounded by the block's address
+window, so that `OffPtr [8]` of a pointer whose 16-byte load succeeds is not `poison` — RuleEffects6's
+Mem change), `:16`/`:28` (complex: `t.Size()` of an aggregate shape is not modelled); the
 extractors of a `Load` (`:132`–`:164`, `@x.Block` results, which `resultOK` rejects; `:132`/`:141`
 also need `t.Elem().Size()`/`t.FieldOff(i)` of aggregates); the `Store` splits (`:10`–`:93`,
 `:123`, `:129`: an effect obligation, as `rewriteStructStore`, issue #151).
 
-**Selections of a `Make`: `makeSelOK`, `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`,
-`DecMakeSel.lean`, `GoFV/Proof/Pass/RewriteMakeSel.lean`). An event of a rule with
-`makeSelShape` (a selection op over a `Make` op pattern, copy result, no `@b`) is first validated
-per instance (`RewriteCheck.makeSelOK`): `v` selects component `k` (`selIndex?`) of `s = Make …`
-whose argument `k` is a value `a`, `v` becomes `Copy a` at `a`'s type, and where the `Make`'s
-shape has a component `k`, `a`'s shape is that component's and `v`'s (`shapeSub`), or `a` is an
-`Addr` and both are word shapes (`.int .w64` or a pointer: a global has no concrete address,
-so `retype` at both keeps it). Else the event is checked as a rule instance (`ruleOK`).
-`MSFacts.step` proves the per-instance case refines the selection as a term at the same fuel:
-component `k` of the retyped `Make` is argument `k` retyped at the field's shape
-(`select_retype_make_get`), so only the selected argument matters (`addr_den`, `retype_word`
-for an `Addr`). This accepts `(IData (IMake itab data))` whose itab is typed `*uint8` (the
-interface's itab word is `.int .w64`; `Pat.argsOK` asks it of every `Make` argument) and
-`(ITab (IMake itab _))` with an `Addr {go:itab.…}` itab (agreed with Semantics5: no semantic
-change; an itab with a concrete address is not kept by `retype` at `.int .w64`). A `___` pattern
-has no `Rule.Sound` form (`Pat.arityOk`): `RuleSet.AllSound` asks of each value rule
-`Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (`makeSelShape` and no `Pat.arityOk`), whose
-events only `makeSelOK` accepts. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite`
-(`pick`, `{generic.rules:973}`). `generic.rules:973` is in `Proven.generic` too.
+**Variadic selections: `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`, `DecMakeSel.lean`).
+A `___` pattern has no `Rule.Sound` form (`Pat.arityOk`). `RuleSet.AllSound` asks of each value
+rule `Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (the rule has `makeSelShape`: `(StructSelect
+[i] x:(StructMake ___)) => x.Args[i]`); the replay validates such an event per instance
+(`RewriteCheck.makeSelOK`: `v = StructSelect [k] s`, `s = StructMake …` with argument `k` a value
+`a`, `v` becomes `Copy a` at `a`'s type, and where the `StructMake`'s shape has a component `k`,
+`a`'s shape is that component's and `v`'s, `shapeSub`). `MSFacts.step`
+(`GoFV/Proof/Pass/RewriteMakeSel.lean`) proves it refines the selection as a term at the same
+fuel: component `k` of the retyped `Make` is argument `k` retyped at the field's shape
+(`select_retype_make_get`), which keeps `a`'s denotation; only the selected argument's shape
+matters. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite` (`pick`,
+`{generic.rules:973}`). `generic.rules:973` is in `Proven.generic` too.
 
 `lake exe dec-rewrite-probe <corpus>` (`GoFVTest/DecRewriteProbe.lean`) runs the step alone (input:
 the function after `decomposeUser` and the builtin phi splits) with all dec rules, the ptr-class
@@ -381,9 +333,9 @@ condition.
 
 | Corpus (sections) | Table | Rules fired | Step accepted | Full step reproduced and accepted | Checked pass at stock |
 | --- | --- | --: | --: | --: | --: |
-| quick-v3 (9,297) | all 47 | 5,147 | 8,268 | 8,268 | 8,268 |
-| quick-v3 | ptr class (21) | 4,824 | 8,732 | 7,415 | 7,415 |
-| quick-v3 | proven (17) | 5,108 | 8,826 | 8,264 | 8,264 |
+| quick-v3 (9,297) | all 47 | 5,147 | 7,612 | 7,612 | 7,612 |
+| quick-v3 | ptr class (21) | 4,824 | 7,947 | 6,852 | 6,852 |
+| quick-v3 | proven (14) | 4,823 | 8,059 | 6,852 | 6,852 |
 | quick-v3 | none | 0 | 9,297 | 4,150 | 4,150 |
 | full-v2 (96,531), 13 proven, before `Rule.MakeSel` | all 47 | 67,840 | 58,923 | — | 58,923 |
 | full-v2 | ptr class | 62,023 | 63,176 | — | 48,877 |
@@ -393,11 +345,9 @@ condition.
 Before the validator changes every firing section was rejected (quick: 4,150 accepted = the
 no-op sections; full 28,691). The full step extends the tables in 406 quick sections (types
 such as `t.Elem().PtrTo()`), so the step's refinement is in the output's tables under `tabsAgree`.
-Main obstacles (quick, all-rules table): `ITab` of an `IMake` whose itab is not an `Addr`
-(1,257 firings: `ArgIntReg` 344, `Convert` 266, `Load` 238, `Phi` 163, `NilCheck` 109, `SelectN`
-99, `ConstNil` 38; 3,675 `Addr` itabs are accepted); `@x.Block` extractors ~700; `Store` splits
-~950 (not term ops). History (proven row, full step reproduced and accepted): 13 rules 6,131;
-`Rule.MakeSel` 6,852; `makeSelOK` for every selection of a `Make` and the Load splits 8,264.
+Main obstacles (quick firings, all-rules table, after `Rule.MakeSel`): `ITab`/`IData` of an
+`IMake` whose itab is typed `*uint8` while the interface shape's itab word is `.int .w64`
+(`argsOK`/`topAll`, ~4,500); `@x.Block` extractors ~700; `Store` splits ~950 (not term ops).
 
 ## Classification
 
@@ -441,7 +391,7 @@ needs a later phase of the semantics.
 | `dec` | IData | 1 | 1 | 0 | 0 | 2 |
 | `dec` | IMake | 0 | 1 | 0 | 1 | 2 |
 | `dec` | ITab | 1 | 1 | 0 | 0 | 2 |
-| `dec` | Load | 3 | 2 | 0 | 0 | 5 |
+| `dec` | Load | 0 | 5 | 0 | 0 | 5 |
 | `dec` | SliceCap | 1 | 1 | 0 | 0 | 2 |
 | `dec` | SliceLen | 1 | 1 | 0 | 0 | 2 |
 | `dec` | SlicePtr | 1 | 1 | 0 | 0 | 2 |
@@ -497,7 +447,7 @@ needs a later phase of the semantics.
 | `generic` | NeqInter | 0 | 1 | 0 | 0 | 1 |
 | `generic` | NeqPtr | 1 | 8 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 0 | 1 | 0 | 0 | 1 |
-| `generic` | NilCheck | 4 | 0 | 0 | 8 | 8 |
+| `generic` | NilCheck | 3 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
@@ -520,7 +470,7 @@ needs a later phase of the semantics.
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticLECall | 0 | 0 | 0 | 24 | 24 |
-| `generic` | Store | 1 | 0 | 0 | 21 | 21 |
+| `generic` | Store | 0 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 0 | 1 | 0 | 0 | 1 |
 | `generic` | StringPtr | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
@@ -529,7 +479,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1189 | 305 | 26 | 258 | 1762 |
+| all | | 1184 | 308 | 26 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -614,19 +564,6 @@ without `:974`; opt 69.43%, middle opt 97.76%, late opt 97.09%, divisible 99.98%
 checked parity; validator rejects 4 / 6 / 0 / 0 / 0 (unchanged by `:974`: the phi elimination,
 three nil-check eliminations `nrel` rejects in `runtime.*Hash`, the six narrow tops), forwarding
 fallbacks 50 / 3 / 9 / 0 / 0 (47 / 3 / 9 without `:974`).
-After struct-store splits (#151; 1,185 rules: `:975` as `RuleSet.structStores`), on quick-v3:
-6,746 of 9,297 (72.56%) at stock under the checked passes, 6,559 (70.55%) on main before
-(5db5640); opt 73.49% checked parity (71.43% before), middle and late opt, divisible and divmod
-unchanged; validator rejects 148 / 6 / 0 / 0 / 0 (unchanged: the opt rejects are `:610`
-instances, see #69); fallbacks (forwardings or splits) 117 / 3 / 9 / 0 / 0 (50 / 3 / 9 before).
-The new opt fallbacks are splits the validator does not relate: a `Store` of a `Load` that
-`:974` earlier in the log turned into a `StructMake` (26, "stored Load"), and chains whose memory
-or walk do not match (21, "chain start", "walk").
-After the `GetG` nil-check elimination (#151; 1,189 rules, `:1062` in `RuleSet.nilChecks` via
-the `GetG` seed of `NilCheck.safePtr`), on quick-v3: 6,989 of 9,297 (75.17%) at stock under the
-checked passes, 6,746 (72.56%) on main before (0dd6c08); opt 76.26% checked parity (73.49%
-before), middle and late opt, divisible and divmod unchanged; validator rejects 148 / 6 / 0 / 0 /
-0 and fallbacks 117 / 3 / 9 / 0 / 0 (both unchanged, none from `:1062`).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -683,24 +620,25 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 7075, under the checked passes 6989 (validator the only obstacle: 86). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 699, 2: 483, 3 or more: 1034.
+Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 6607, under the checked passes 6563 (validator the only obstacle: 44). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 919, 2: 639, 3 or more: 1126.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
+| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 201 | 201 |
 | `generic.rules:1367 NilCheck` | `r_generic_1367` | call | 1909 | 142 | 142 |
 | `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 84 | 84 |
 | `generic.rules:275 IsSliceInBounds` | `r_generic_275` | P1 | 1656 | 66 | 83 |
 | `generic.rules:1384 NilCheck` | `r_generic_1384` | mem | 488 | 73 | 73 |
 | `generic.rules:278 IsSliceInBounds` | `r_generic_278` | P2 | 289 | 45 | 45 |
+| `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 37 | 37 |
 | `generic.rules:791 NeqInter` | `r_generic_791` | P2 | 174 | 31 | 31 |
 | `generic.rules:790 EqInter` | `r_generic_790` | P2 | 116 | 29 | 29 |
 | `generic.rules:1015 ConstString` | `r_generic_1015` | ptr | 194 | 26 | 26 |
 | `generic.rules:255 IsInBounds` | `r_generic_255` | P1 | 889 | 18 | 18 |
-| `generic.rules:1638 SelectN` | `r_generic_1638/r_generic_1638_2` | call | 38 | 17 | 17 |
+| `generic.rules:830 Load` | `r_generic_830` | mem | 46 | 16 | 16 |
 | `generic.rules:1053 SliceMake` | `r_generic_1053` | P2 | 88 | 13 | 13 |
 | `generic.rules:827 Load` | `r_generic_827` | mem | 1151 | 12 | 12 |
 | `generic.rules:1011 StringPtr` | `r_generic_1011` | ptr | 610 | 12 | 12 |
-| `generic.rules:830 Load` | `r_generic_830` | mem | 46 | 9 | 9 |
 | `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 8 | 8 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 8 | 8 |
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 8 | 8 |
@@ -713,16 +651,13 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:992 ArraySelect` | `r_generic_992` | P2 | 361 | 3 | 3 |
 | `generic.rules:2155 Move` | `r_generic_2155` | mem | 145 | 3 | 3 |
 | `generic.rules:792 EqSlice` | `r_generic_792` | P2 | 138 | 3 | 3 |
+| `generic.rules:1638 SelectN` | `r_generic_1638/r_generic_1638_2` | call | 38 | 3 | 3 |
 | `generic.rules:943 Store` | `r_generic_943` | mem | 35 | 3 | 3 |
-| `generic.rules:382 OrB` | `r_generic_382/r_generic_382_2` | float | 8 | 3 | 3 |
 | `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 2 | 2 |
 | `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 2 | 2 |
 | `generic.rules:253 IsInBounds` | `r_generic_253` | P1 | 56 | 2 | 2 |
 | `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 56 | 2 | 2 |
-| `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 29 | 2 | 2 |
 | `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 2 | 2 |
-| `generic.rules:623 Eq64F` | `r_generic_623` | float | 17 | 2 | 2 |
-| `generic.rules:1328 Mul64F` | `r_generic_1328` | float | 7 | 2 | 2 |
 | `generic.rules:531 Rsh32Ux64` | `r_generic_531` | P1 | 3 | 2 | 2 |
 | `generic.rules:1031 SliceLen` | `r_generic_1031` | P2 | 1524 | 1 | 1 |
 | `generic.rules:1730 SelectN` | `r_generic_1730/r_generic_1730_2` | call | 139 | 1 | 1 |
@@ -740,7 +675,6 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1687 IsNonNil` | `r_generic_1687` | P2 | 12 | 1 | 1 |
 | `generic.rules:2146 Move` | `r_generic_2146` | mem | 12 | 1 | 1 |
 | `generic.rules:1651 NeqPtr` | `r_generic_1651` | ptr | 11 | 1 | 1 |
-| `generic.rules:375 OrB` | `r_generic_375/r_generic_375_2` | float | 6 | 1 | 1 |
 | `generic.rules:1183 Eq32` | `r_generic_1183_2` | P1 | 6 | 1 | 1 |
 | `generic.rules:2355 CondSelect` | `r_generic_2355/r_generic_2355_2/r_generic_2355_3/r_generic_2355_4` | P1 | 3 | 1 | 1 |
 | `generic.rules:744 Or32` | `r_generic_744` | P1 | 3 | 1 | 1 |
@@ -755,11 +689,8 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1331 Div64F` | `r_generic_1331` | float | 1 | 1 | 1 |
 | `generic.rules:1742 Move` | `r_generic_1742` | mem | 1 | 1 | 1 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 1 | 1 | 1 |
-| `generic.rules:2368 CondSelect` | `r_generic_2368` | P1 | 1 | 1 | 1 |
 | `generic.rules:800 Load` | `r_generic_800` | mem | 1446 | 0 | 0 |
 | `generic.rules:1012 StringLen` | `r_generic_1012` | P2 | 1091 | 0 | 0 |
-| `generic.rules:975 Store` | `r_generic_975` | mem | 810 | 0 | 0 |
-| `generic.rules:1062 NilCheck` | `r_generic_1062` | mem | 686 | 0 | 0 |
 | `generic.rules:1375 NilCheck` | `r_generic_1375` | mem | 679 | 0 | 0 |
 | `generic.rules:1032 SliceCap` | `r_generic_1032` | P2 | 580 | 0 | 0 |
 | `generic.rules:974 Load` | `r_generic_974` | mem | 580 | 0 | 0 |
@@ -771,6 +702,8 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1035 SlicePtr` | `r_generic_1035` | P2 | 179 | 0 | 0 |
 | `generic.rules:994 Load` | `r_generic_994` | P2 | 117 | 0 | 0 |
 | `generic.rules:1037 SliceCap` | `r_generic_1037` | P2 | 114 | 0 | 0 |
+| `generic.rules:1362 Store` | `r_generic_1362` | call | 107 | 0 | 0 |
+| `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 100 | 0 | 0 |
 
 <!-- END fire -->
 
@@ -885,6 +818,30 @@ GoFV.Proof.Rules.KernelSafe`, `rule_norm` (also inside `rule_split1`) lists `get
 (`lowBits_even_of_and_one`), and the closers `close_hmul_half` (180), `close_mul_half` (171),
 `close_mul_full` (159), `close_hmul_even` (206; `umagic(c).m + 1` does not wrap for an even
 divisor, `m_succ_lt`), `close_avg_hmul` (232; `Avg64u` sees `x ≥ Hmul x m`, `hmul_le`).
+
+**Float rules** (#69, RuleProofs12/13; `FloatCmp.lean`, `FloatRules.lean`, `FloatArith.lean`).
+Den: float auxints and literals are `DV.f64`/`DV.f32` (their IEEE encodings; a literal check
+`[c]` compares encodings, which for `±0` is stricter than Go's `==`), the condition language
+compares them by `IEEE.compare` (`floatCmp`), `auxIntOk` says a float auxint is not NaN (check.go),
+and `argShapeOk` gives the float ops' arguments the integer shape of their width.
+- `OrB (Neq64F x x) (cmp x c)` and its swapped, `Abs x` and `Neg64F x` forms (375/376/381/382/
+  385/386, 12 lemmas, `float_auto`): a NaN `x` makes every comparison `un` (`compare_nan_*`;
+  `Abs`/`Neg` keep NaN-ness, `isNaN_abs`, `isNaN_neg`), so `Neq x x` is true and the rule's
+  `Not (cmp' c x)` too; otherwise `compare x x = eq` (`compare_self`), `compare c x` is the
+  swapped `compare x c` (`compare_swap`), and the three ordered results are split
+  (`compare_cases`, the constant not NaN by `auxIntOk`). A mistyped operand of `OrB` (`none`)
+  leaves the other operand's Boolean to `bool_split1`. The 32-bit forms (377/378/387/388) need
+  `isNaN` of `Const32F`'s `IEEE.convert` and are not proved (no firings).
+- Constant folds `generic.rules:622–629` (8 lemmas, `float_const`): both sides compute the same
+  `IEEE.compare` of the same encodings; a split on its result closes them.
+- `generic.rules:1328` `(Mul64F x (Const64F [2])) => (Add64F x x)`: `IEEE.round` only sees
+  the value `mant * 2^exp`, so `round f rm s (m * 2^k) (e - k) = round f rm s m e`
+  (`round_scale`: same leading bit, same ulp position, `truncShift` of `m * 2^k` by `t + k` is
+  `truncShift m t`). `x * 2` rounds `m * 2^52` at `e - 51` (`2` unpacks as `2^52 * 2^-51`) and
+  `x + x` rounds `2m` at `e` (`mul_two_eq_add`, any format and either operand order; NaN,
+  infinity and zero cases agree as well), so `Mul64F v 2 = Add64F v v` for every value
+  (`fops_mul_two64`).
+- 1324–1326 (`x * 1 → x`, `x * -1 → -x`) are not proved: they change a NaN's encoding (#176).
 
 Match congruence equations (`binDV.match_4.congr_eq_*`, …) are generated once in
 `Tactic.lean`: generated by `simp` in two rule modules they are two public declarations of the

@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.FloatCmp
+import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values07
 
 /-!
@@ -153,5 +154,14 @@ theorem r_generic_1328_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
     rw [h1, FOps.const64, hc]; rfl
   rw [hk, FloatArith.fops_mul_two64] at hty ⊢
   exact refines_retype_of_hasTy hty
+
+/-- `generic.rules:1328` at `x = 1.0` (`rule-sat`'s random auxints miss the literal `2.0`). -/
+theorem inst_r_generic_1328 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1328
+    (PEnv.ofLists [([0], .i64 0x3FF0000000000000)] [] (.int .w64) [([1], 0x4000000000000000)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1328]
+  rule_eval
+  intro h
+  simp only [FOps.mul, FOps.bin, int2, Val.asInt, ↓reduceDIte, reduceCtorEq] at h
 
 end GoFV.Proof.Rules
