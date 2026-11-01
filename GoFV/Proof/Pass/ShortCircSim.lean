@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.ShortCircB
 import GoFV.Proof.SimIH
+import GoFV.Proof.Pass.ShortCircUseDom
 
 /-!
 # Checked `shortcircuitBlock` refines
@@ -9,7 +10,8 @@ the source's edge index and the edge's facts given by `edgeIn` (`FactsRel`), the
 on edges into blocks outside `K`, `b`'s other phis defined in the plan's blocks (`SrcB`), and the
 source invariants `Typed`, `ArglessInv`. A block outside `K` steps alike (`ostep`), a checked block
 by `kenter`; at `p`, when the source takes the edge to `b`, it continues through `b` to `t`
-(`bstep`) while the target takes the redirected edge to `t`.
+(`bstep`) while the target takes the redirected edge to `t`. The result keeps `WFDom`
+(`wfg`, `useDom_g`: `ShortCircPres`, `ShortCircUseDom`).
 -/
 
 namespace GoFV.Proof.ShortCirc
@@ -53,19 +55,6 @@ theorem stepTerm_ctl {G GT : Frame} {B BT : Block} (hk : BT.kind = B.kind)
         | panic e m => rw [hc0] at h; cases h
         | stuck msg => rw [hc0] at h; cases h)
 
-theorem look_map_eq (I : Info) {h : ID → Option ID} {v w : ID}
-    (hl : I.look (I.vs.map h) v = some w) : h v = some w := by
-  unfold Info.look at hl
-  cases hi : I.vs.findIdx? (· == v) with
-  | none => rw [hi] at hl; cases hl
-  | some i =>
-    rw [hi] at hl
-    obtain ⟨hlt, hx⟩ := Array.findIdx?_eq_some_iff_getElem.1 hi
-    have hv : I.vs[i] = v := by simpa using hx.1
-    simp only [Option.bind_some, Array.getElem?_map, Array.getElem?_eq_getElem hlt,
-      Option.map_some, Option.join_some, hv] at hl
-    exact hl
-
 namespace SCI
 
 variable (I : Info) {f g : Func} {T : FactTab}
@@ -82,15 +71,6 @@ theorem factsOf_out {B : ID} (hB : B ∉ I.K) : I.factsOf T B = (I.dflt, I.dflt)
   unfold Info.factsOf
   rw [show I.K.contains B = false by simpa [contains_iff] using hB]; rfl
 
-theorem redir_iff {B iT : Nat} : I.redir B iT = true ↔ B = I.t ∧ iT = I.tn := by
-  unfold Info.redir; simp
-
-theorem srcIdx_of {B iT : Nat} (h : ¬ (B = I.s.b ∧ iT = I.s.cidx)) : I.srcIdx B iT = iT := by
-  unfold Info.srcIdx
-  split
-  · rename_i h'; simp only [Bool.and_eq_true, beq_iff_eq] at h'; exact absurd ⟨h'.1.1, h'.1.2⟩ h
-  · rfl
-
 end SCI
 
 namespace Setup
@@ -102,24 +82,6 @@ set_option hygiene false in
 local notation "𝓘" => infoOf tabs f g s
 set_option hygiene false in
 local notation "𝓣" => Info.factTab (infoOf tabs f g s) f g
-
-theorem region_spec {r : ID} (hr : r ∈ (𝓘).region) :
-    r ≠ s.b ∧ r ≠ g.entry ∧ r ∈ (𝓘).K ∧ ∀ e ∈ (g.getB r).preds,
-      e.b ∈ (𝓘).region ∨ e.b = s.b ∨ (r = s.te.b ∧ e = ⟨s.p, s.pi⟩) := by
-  have h := S.regionOK
-  unfold Info.regionOK at h
-  have := Array.all_eq_true'.1 h r hr
-  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, contains_iff, Array.all_eq_true',
-    Bool.or_eq_true, beq_iff_eq] at this
-  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := this
-  exact ⟨h1, h2, h3, fun e he => by simpa [or_assoc] using h4 e he⟩
-
-theorem redir_spec : (g.getB s.te.b).preds.size = (𝓘).tn + 1 ∧
-    (g.getB s.te.b).preds[(𝓘).tn]? = some ⟨s.p, s.pi⟩ := by
-  have h := S.redirOK
-  unfold Info.redirOK at h
-  simp only [Bool.and_eq_true, beq_iff_eq] at h
-  exact ⟨h.1.2, h.2⟩
 
 /-- The simulation relation (see the module doc). -/
 def Rel (tabs : Tables) (f g : Func) (s : Site) (env : Env) (frS : Frame) (bS iS : Nat) (frT : Frame) (bT iT : Nat) : Prop :=
@@ -498,7 +460,7 @@ theorem shortcircuitBlockChecked_refines {tabs : Tables} {ce : CheckEnv} {f g : 
     · rename_i hok
       cases h
       have S : Setup ce tabs f (applySite f s) s := ⟨hf.wf, hf.dom, hok⟩
-      exact ⟨S.refines_of_step, S.wfdomg⟩
+      exact ⟨S.refines_of_step, S.wfg, S.useDom_g⟩
     · cases h; exact ⟨Refines.refl _ _, hf⟩
 
 end GoFV.Proof.ShortCirc

@@ -209,10 +209,16 @@ theorem tabEqBy_spec {α : Type} {eq : Option α → Option α → Bool} {heq : 
     ∀ i, skip i = false → eq (a[i]?).join (b[i]?).join = true := by
   intro i hi
   unfold tabEqBy at h
-  rcases Nat.lt_or_ge i (max a.size b.size) with hlt | hge
+  rw [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨hsz, h⟩ := h
+  rcases Nat.lt_or_ge i a.size with hlt | hge
   · have := nat_all_spec h i hlt
-    rw [hi, Bool.false_or] at this
-    simpa [withPtrEq] using this
+    simp only [withPtrEq, hi, Bool.false_or] at this
+    have hb : i < b.size := hsz ▸ hlt
+    rw [getElem!_pos a i hlt, getElem!_pos b i hb] at this
+    rw [Array.getElem?_eq_getElem hlt, Array.getElem?_eq_getElem hb, Option.join_some,
+      Option.join_some]
+    exact this
   · rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
     exact heq _
 
@@ -245,46 +251,48 @@ local notation "𝓘" => infoOf tabs f g s
 set_option hygiene false in
 local notation "𝓣" => Info.factTab (infoOf tabs f g s) f g
 
-theorem parts : (𝓘).preOK f = true ∧ wfDomOK g = true ∧ g.blocks = f.blocks ∧ g.entry = f.entry ∧
+theorem parts : (𝓘).preOK f = true ∧ g.blocks = f.blocks ∧ g.entry = f.entry ∧
     g.ownAux = f.ownAux ∧ g.valueTab.size = f.valueTab.size ∧
     g.blockTab.size = f.blockTab.size ∧
     (s.b ∈ (𝓘).K ∧ s.te.b ∈ (𝓘).K ∧ s.p ∈ (𝓘).K) ∧
     (𝓘).redirOK f g = true ∧ (𝓘).regionOK g = true ∧
     (𝓘).frameOK f g = true ∧ (∀ B ∈ (𝓘).K, (𝓘).blockOK f g 𝓣 B = true) ∧
-    (𝓘).exitOK g 𝓣 = true ∧ (𝓘).scanOK g = true := by
+    (𝓘).exitOK g 𝓣 = true ∧ (𝓘).scanOK g = true ∧ (∀ B ∈ (𝓘).K, (𝓘).wfKOK f g B = true) ∧
+    (𝓘).dsOK g = true ∧ (𝓘).closeOK g = true ∧ (∀ B ∈ (𝓘).K, (𝓘).domKOK f g B = true) := by
   have h := S.ok
   unfold scOK at h
-  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, hk1⟩, hk2⟩, hk3⟩, h8⟩, h9⟩, h10⟩,
-    h11⟩, h12⟩, h13⟩ := h
-  exact ⟨h1, h2, h3, h4, h5, h6, h7, ⟨contains_iff.1 hk1, contains_iff.1 hk2, contains_iff.1 hk3⟩,
-    h8, h9, h10, h11, h12, h13⟩
-
-/-- **The result keeps `WFDom`** (`wfDomCheck` of the result). -/
-theorem wfdomg : WFDom ce g := WFDom.of_wfDomCheck (wfDomOK_sound S.parts.2.1)
-
-theorem wfg : WF ce g := S.wfdomg.wf
+  simp only [withPtrEq, Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, hk1⟩, hk2⟩, hk3⟩, h8⟩, h9⟩, h10⟩,
+    h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩, h17⟩ := h
+  exact ⟨h1, h3, h4, h5, h6, h7, ⟨contains_iff.1 hk1, contains_iff.1 hk2, contains_iff.1 hk3⟩,
+    h8, h9, h10, h11, h12, h13, h14, h15, h16, h17⟩
 
 omit S in
 @[simp] theorem infoOf_s : (infoOf tabs f g s).s = s := rfl
 omit S in
 @[simp] theorem infoOf_t : (infoOf tabs f g s).t = s.te.b := rfl
 
-theorem gblocks : g.blocks = f.blocks := S.parts.2.2.1
-theorem gentry : g.entry = f.entry := S.parts.2.2.2.1
-theorem gownAux : g.ownAux = f.ownAux := S.parts.2.2.2.2.1
-theorem gvsize : g.valueTab.size = f.valueTab.size := S.parts.2.2.2.2.2.1
-theorem gbsize : g.blockTab.size = f.blockTab.size := S.parts.2.2.2.2.2.2.1
-theorem bK : s.b ∈ (𝓘).K := S.parts.2.2.2.2.2.2.2.1.1
-theorem tK : s.te.b ∈ (𝓘).K := S.parts.2.2.2.2.2.2.2.1.2.1
-theorem pK : s.p ∈ (𝓘).K := S.parts.2.2.2.2.2.2.2.1.2.2
-theorem redirOK : (𝓘).redirOK f g = true := S.parts.2.2.2.2.2.2.2.2.1
-theorem regionOK : (𝓘).regionOK g = true := S.parts.2.2.2.2.2.2.2.2.2.1
-theorem frameOK : (𝓘).frameOK f g = true := S.parts.2.2.2.2.2.2.2.2.2.2.1
+theorem gblocks : g.blocks = f.blocks := S.parts.2.1
+theorem gentry : g.entry = f.entry := S.parts.2.2.1
+theorem gownAux : g.ownAux = f.ownAux := S.parts.2.2.2.1
+theorem gvsize : g.valueTab.size = f.valueTab.size := S.parts.2.2.2.2.1
+theorem gbsize : g.blockTab.size = f.blockTab.size := S.parts.2.2.2.2.2.1
+theorem bK : s.b ∈ (𝓘).K := S.parts.2.2.2.2.2.2.1.1
+theorem tK : s.te.b ∈ (𝓘).K := S.parts.2.2.2.2.2.2.1.2.1
+theorem pK : s.p ∈ (𝓘).K := S.parts.2.2.2.2.2.2.1.2.2
+theorem redirOK : (𝓘).redirOK f g = true := S.parts.2.2.2.2.2.2.2.1
+theorem regionOK : (𝓘).regionOK g = true := S.parts.2.2.2.2.2.2.2.2.1
+theorem frameOK : (𝓘).frameOK f g = true := S.parts.2.2.2.2.2.2.2.2.2.1
 theorem blockOK {B : ID} (hB : B ∈ (𝓘).K) : (𝓘).blockOK f g 𝓣 B = true :=
-  S.parts.2.2.2.2.2.2.2.2.2.2.2.1 B hB
-theorem exitOK : (𝓘).exitOK g 𝓣 = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.2.1
-theorem scanOK : (𝓘).scanOK g = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.2.2
+  S.parts.2.2.2.2.2.2.2.2.2.2.1 B hB
+theorem exitOK : (𝓘).exitOK g 𝓣 = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.1
+theorem scanOK : (𝓘).scanOK g = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem wfKOK {B : ID} (hB : B ∈ (𝓘).K) : (𝓘).wfKOK f g B = true :=
+  S.parts.2.2.2.2.2.2.2.2.2.2.2.2.2.1 B hB
+theorem dsOK : (𝓘).dsOK g = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem closeOK : (𝓘).closeOK g = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+theorem domKOK {B : ID} (hB : B ∈ (𝓘).K) : (𝓘).domKOK f g B = true :=
+  S.parts.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2 B hB
 
 /-! ### The site in `f` -/
 

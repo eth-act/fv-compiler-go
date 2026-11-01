@@ -99,8 +99,7 @@ theorem kenter {env : Env} {G : Frame}
   obtain ⟨ps, hps⟩ := phisT_ok S hBm hfB hgB hph hrel hsrc' hPS hsS hsz
   have hPT := phiData_of (tabs := tabs) hndg hps
   -- the target's schedule
-  obtain ⟨oS', oT, hoS', hoT, -⟩ := SCI.schedOK_spec hsch
-  rw [ho] at hoS'; cases hoS'
+  obtain ⟨oT, hoT, -⟩ := SCI.schedOK_spec hsch ho ond
   obtain ⟨tnd, ttopo, tmem⟩ := schedule_topo (valuesOwn S.wfg hBg hgB) hndg hoT
   have hOT : ∀ x, x ∈ oT.toList ↔ x ∈ Info.nodesOf g gB := fun x =>
     (tmem x).trans (mem_nodesOf_iff S.wfg hBg hgB).symm
@@ -249,8 +248,7 @@ theorem kenter_panic {env : Env} {e : Panic} {m : Mem}
   -- the target's `Phi`s and schedule
   obtain ⟨ps, hps⟩ := phisT_ok S hBm hfB hgB hph hrel hsrc' hPS hsS hsz
   have hPT := phiData_of (tabs := tabs) hndg hps
-  obtain ⟨oS', oT, hoS', hoT, hord⟩ := SCI.schedOK_spec hsch
-  rw [ho] at hoS'; cases hoS'
+  obtain ⟨oT, hoT, hord⟩ := SCI.schedOK_spec hsch ho ond
   obtain ⟨tnd, ttopo, tmem⟩ := schedule_topo (valuesOwn S.wfg hBg hgB) hndg hoT
   have hOT : ∀ x, x ∈ oT.toList ↔ x ∈ Info.nodesOf g gB := fun x =>
     (tmem x).trans (mem_nodesOf_iff S.wfg hBg hgB).symm

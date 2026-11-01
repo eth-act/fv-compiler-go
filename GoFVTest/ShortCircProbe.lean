@@ -294,7 +294,10 @@ def diag (tabs : Tables) (f g : Func) (s : Site) : List String := Id.run do
     let phis := gB.values.toList.filter (isPhiIn g ·) |>.map fun z => (z, (g.getV z).args.toList)
     out := s!"R b{B}: gpreds {gB.preds.toList.map (·.b)} has54 {gB.values.contains 54} phis {phis} succs {gB.succs.toList.map (·.b)}" :: out
   if !I.preOK f then out := "preOK" :: out
-  if !wfDomOK g then out := "wfDomOK" :: out
+  if !I.K.all (I.wfKOK f g) then out := s!"wfKOK {I.K.filter (!I.wfKOK f g ·)}" :: out
+  if !I.dsOK g then out := s!"dsOK {I.dS}" :: out
+  if !I.closeOK g then out := "closeOK" :: out
+  if !I.K.all (I.domKOK f g) then out := s!"domKOK {I.K.filter (!I.domKOK f g ·)} dS {I.dS}" :: out
   if !(g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
       g.valueTab.size == f.valueTab.size && g.blockTab.size == f.blockTab.size) then out := "blocks/entry/sizes" :: out
   if !I.redirOK f g then out := "redirOK" :: out

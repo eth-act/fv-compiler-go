@@ -14,35 +14,6 @@ namespace GoFV.Proof.ShortCirc
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ShortCircuit GoFV.Proof Dom
 
-theorem look_map (I : Info) {h : ID → Option ID} (hh : ∀ v w, h v = some w → w = v) {v w : ID}
-    (hl : I.look (I.vs.map h) v = some w) : w = v := by
-  unfold Info.look at hl
-  cases hi : I.vs.findIdx? (· == v) with
-  | none => rw [hi] at hl; cases hl
-  | some i =>
-    rw [hi] at hl
-    obtain ⟨hlt, hx⟩ := Array.findIdx?_eq_some_iff_getElem.1 hi
-    have hv : I.vs[i] = v := by simpa using hx.1
-    simp only [Option.bind_some, Array.getElem?_map, Array.getElem?_eq_getElem hlt,
-      Option.map_some, Option.join_some, hv] at hl
-    exact hh v w hl
-
-theorem look_dflt {tabs : Tables} {f g : Func} {s : Site} {v w : ID}
-    (hl : (infoOf tabs f g s).look (infoOf tabs f g s).dflt v = some w) : w = v :=
-  look_map _ (fun v w h => by dsimp only at h; split at h <;> cases h; rfl) hl
-
-namespace Info
-
-theorem frameOK_tabs {I : Info} {f g : Func} (h : I.frameOK f g = true) :
-    tabEqBy (fun a b => decide (a = b)) (fun _ => by simp) f.blockTab g.blockTab
-      (I.K.contains ·) = true ∧
-    tabEqBy sameEntry sameEntry_refl f.valueTab g.valueTab
-      (fun x => I.K.contains (f.getV x).block || I.K.contains (g.getV x).block) = true := by
-  unfold Info.frameOK at h
-  exact Bool.and_eq_true_iff.1 h
-
-end Info
-
 namespace Setup
 
 variable {ce : CheckEnv} {tabs : Tables} {f g : Func} {s : Site} (S : Setup ce tabs f g s)
@@ -50,54 +21,6 @@ include S
 
 set_option hygiene false in
 local notation "𝓘" => infoOf tabs f g s
-
-theorem block_out {B : ID} (hBK : B ∉ (𝓘).K) : g.block? B = f.block? B := by
-  have h := tabEqBy_spec (Info.frameOK_tabs S.frameOK).1 B (by simpa [contains_iff] using hBK)
-  simp only [decide_eq_true_eq] at h
-  exact h.symm
-
-theorem value_out {x : ID} (hf : (f.getV x).block ∉ (𝓘).K) (hg : (g.getV x).block ∉ (𝓘).K) :
-    sameEntry (f.value? x) (g.value? x) = true := by
-  have h := tabEqBy_spec (Info.frameOK_tabs S.frameOK).2 x (by
-    simp only [Bool.or_eq_false_iff]; exact ⟨by simpa [contains_iff] using hf,
-      by simpa [contains_iff] using hg⟩)
-  simpa [Func.value?] using h
-
-theorem scan_spec {B : ID} (hBg : B ∈ g.blocks) (hBK : B ∉ (𝓘).K) :
-    (∀ c ∈ (g.getB B).controls, (𝓘).freeArg c = true) ∧
-      ∀ x ∈ (g.getB B).values, ∀ a ∈ (g.getV x).args, (𝓘).freeArg a = true := by
-  have h := S.scanOK
-  unfold Info.scanOK at h
-  simp only [Array.all_eq_true'] at h
-  have := h B hBg
-  simp only [Bool.or_eq_true, contains_iff, hBK, false_or, Bool.and_eq_true,
-    Array.all_eq_true'] at this
-  exact this
-
-theorem vals_out {B : ID} (hBm : B ∈ f.blocks) (hBK : B ∉ (𝓘).K) {fB : Block}
-    (hfB : f.block? B = some fB) {x : ID} (hx : x ∈ fB.values) :
-    ∃ fx gx, f.value? x = some fx ∧ g.value? x = some gx ∧ fx.id = x ∧ gx.id = fx.id ∧
-      gx.op = fx.op ∧ gx.type = fx.type ∧ gx.aux = fx.aux ∧ gx.auxInt = fx.auxInt ∧
-      gx.args = fx.args := by
-  have hgB : g.block? B = some fB := by rw [S.block_out hBK, hfB]
-  have hBg : B ∈ g.blocks := by rw [S.gblocks]; exact hBm
-  obtain ⟨fx, hfx, hfid, hfb⟩ := S.wf.valueId B fB ⟨hBm, hfB⟩ x hx
-  obtain ⟨gx, hgx, -, hgb⟩ := S.wfg.valueId B fB ⟨hBg, hgB⟩ x hx
-  have h := S.value_out (x := x) (by rw [getV_of hfx, hfb]; exact hBK)
-    (by rw [getV_of hgx, hgb]; exact hBK)
-  rw [hfx, hgx] at h
-  rcases sameEntry_spec h with ⟨h1, -⟩ | ⟨v, v', h1, h2, h3, h4, h5, h6, h7, h8, -⟩
-  · cases h1
-  · cases h1; cases h2
-    exact ⟨fx, gx, hfx, hgx, hfid, h3, h4, h5, h6, h7, h8⟩
-
-theorem notb_out {B : ID} (hBm : B ∈ f.blocks) (hBK : B ∉ (𝓘).K) {fB : Block}
-    (hfB : f.block? B = some fB) {x : ID} (hx : x ∈ fB.values) : x ∉ (𝓘).bvals := by
-  intro hb
-  obtain ⟨Bb, hBb, hbm, -, hvals, -⟩ := S.pre
-  rw [← hvals] at hb
-  have := S.wf.valueOnce B fB s.b Bb ⟨hBm, hfB⟩ ⟨hbm, hBb⟩ x hx hb
-  exact hBK (this ▸ S.bK)
 
 /-- **A block outside `K` runs alike** in frames agreeing outside `Delta` and on the default
 facts. -/

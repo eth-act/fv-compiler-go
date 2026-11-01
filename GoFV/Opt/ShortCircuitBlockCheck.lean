@@ -26,8 +26,8 @@ rewrite moved out of `b` into another block, none otherwise). The facts of an ed
 its source block, except on the redirected edge, where the source has evaluated `b` along `cidx`
 (`einX`: `v` holds its argument along `cidx`).
 
-**Checked blocks** (`K`): `b`, `t`, `p`, the plan's blocks (`region`) and every block whose table
-entry or one of whose values changed (but for use counts). For each, along each incoming edge of
+**Checked blocks** (`K`): the blocks `applySite` changes: `b`, `t`, `p`, the plan's blocks
+(`region`) and the block of `b`'s last predecessor. For each, along each incoming edge of
 `g` (the source's edge index `srcIdx`: `b`'s last predecessor took index `cidx`; the redirected
 edge comes from `b` along `te`), `blockOK` checks that
 
@@ -45,14 +45,23 @@ edge comes from `b` along `te`), `blockOK` checks that
 - the controls are related, the kind is equal, the successors are equal up to the
   redirection and `srcIdx`; the facts at the end hold.
 
-**Everywhere else** (`frameOK`, `scanOK`, `exitOK`, `regionOK`): the other blocks and their
-values are unchanged (but for use counts), and read none of `b`'s values but the moved phis
-with default facts; an edge from a checked block to another block carries the default facts; a
-plan block is entered only from `b`, the plan's blocks, or along the redirected edge; the tables
-keep their sizes (no rewrite on the corpus grows them). Finally `g` passes `wfDomCheck`
-(well formed, uses dominated: the invariant `WFDom` of the fuse loop).
+**Everywhere else** (`frameOK`, `scanOK`, `exitOK`, `regionOK`): the other blocks and the values
+`f` lists in them are unchanged (but for use counts), and read none of `b`'s values but the
+moved phis with default facts; an edge from a checked block to another block carries the default
+facts; a plan block is entered only from `b`, the plan's blocks, or along the redirected edge;
+the tables keep their sizes (no rewrite on the corpus grows them).
 
-The soundness proof is `GoFV.Proof.ShortCirc.shortcircuitBlockChecked_refines`.
+**Well-formedness and use dominance of `g`** (the invariant `WFDom` of the fuse loop), without a
+check of the whole of `g` (issue #147): each block of `K` passes the per-block loops of
+`wfCheck` and keeps the indices of its edges to blocks outside `K` (`wfKOK`); each use in a
+block of `K` (`domKOK`, `useOK`) is the source's use of the same register outside `b`'s values,
+or reads a register defined in the use's block, a moved phi where the source reads it, or a
+`Phi` argument of `b` (from `p`, or from `b`'s remaining predecessors at a block every path to
+which passes `b`: `dsOK`); a path that passed `b` leaves the plan's blocks only through the
+block a moved phi moved to (`closeOK`).
+
+The soundness proof is `GoFV.Proof.ShortCirc.shortcircuitBlockChecked_refines`; `WF` and
+`UseDom` of `g`: `GoFV/Proof/Pass/ShortCircPres.lean`, `ShortCircUseDom.lean`.
 -/
 
 namespace GoFV.Opt.ShortCircuit
@@ -77,13 +86,19 @@ def sameEntry : Option Value → Option Value → Bool
 theorem sameEntry_refl (o : Option Value) : sameEntry o o = true := by
   cases o <;> simp [sameEntry]
 
-/-- `a` and `b` agree at every index outside `skip`, by `eq` (`eq` holds on equal entries).
-Compiled, entries that are the same object are not compared. -/
+/-- `a` and `b` have the same size and agree at every index outside `skip`, by `eq` (`eq` holds
+on equal entries). Compiled, entries that are the same object are neither compared nor passed to
+`skip`, and nothing is allocated. -/
 def tabEqBy {α : Type} (eq : Option α → Option α → Bool)
     (heq : ∀ o, eq o o = true) (a b : Array (Option α)) (skip : Nat → Bool) : Bool :=
-  Nat.all (max a.size b.size) fun i _ =>
-    skip i || withPtrEq (a[i]?).join (b[i]?).join (fun _ => eq (a[i]?).join (b[i]?).join)
-      (fun h => by rw [h]; exact heq _)
+  a.size == b.size &&
+    Nat.all a.size fun i _ =>
+      withPtrEq a[i]! b[i]! (fun _ => skip i || eq a[i]! b[i]!)
+        (fun h => by rw [h, heq, Bool.or_true])
+
+/-- `p i a[i]` at every index `i` of `a`. -/
+def allIdx {α : Type} (a : Array α) (p : Nat → α → Bool) : Bool :=
+  (List.range a.size).all fun i => (a[i]?).all (p i)
 
 /-- The `Copy`/`Not` chain of `b` (`B`) from `x` down to `ctl`: its values, top first, and
 whether it negates. -/
@@ -130,9 +145,11 @@ structure Info where
   /-- The index of the redirected edge among `t`'s predecessors in `g`. -/
   tn : Nat
   region : Array ID
-  /-- The checked blocks: `b`, the region, `t`, `p`, then the changed ones. -/
+  /-- The checked blocks: `b`, the region, `t`, `p`, the block of `b`'s last predecessor. -/
   K : Array ID
   dflt : Facts
+  /-- Blocks of `K` every path to which in `g` passes `b` (`dsOK` checks it). -/
+  dS : Array ID
   deriving Inhabited
 
 namespace Info
@@ -306,10 +323,19 @@ def schedScan (pos : ID → Nat) (root : ID → Bool) : Option Nat → List ID �
   | m, r :: rest =>
     (!root r || m.all (· < pos r)) && schedScan pos root (some (max (m.getD 0) (pos r))) rest
 
+/-- Two lists of schedule nodes alike. -/
+def sameSNodes : List Sem.SNode → List Sem.SNode → Bool
+  | [], [] => true
+  | x :: xs, y :: ys => x.id == y.id && x.args == y.args && x.prio == y.prio && sameSNodes xs ys
+  | _, _ => false
+
 /-- Every source non-`Phi` the target's schedule lists before a source root (a non-pure
 non-`Phi`), the source's schedule lists before it too: if the source panics at a root, the
-target has evaluated only values the source evaluated. -/
+target has evaluated only values the source evaluated. Blocks whose schedule nodes are
+unchanged have the same schedule; the schedules (tables of the size of the largest value ID)
+are computed only for the others. -/
 def schedOK : Bool :=
+  sameSNodes (Sem.schedNodes g gB).toList (Sem.schedNodes f fB).toList ||
   match Sem.schedule f fB, Sem.schedule g gB with
   | some oS, some oT =>
     schedScan (oS.toList.idxOf ·) (fun r => Sem.prio (f.getV r).op != 0) none
@@ -468,24 +494,26 @@ def regionOK : Bool :=
       (g.getB r).preds.all fun e =>
         I.region.contains e.b || e.b == I.s.b || (r == I.t && e == ⟨I.s.p, I.s.pi⟩)
 
-/-- Blocks outside `K` and their values are unchanged (but for use counts). -/
+/-- Blocks outside `K` and the values listed outside `K` in `f` are unchanged (but for use
+counts). -/
 def frameOK : Bool :=
   tabEqBy (fun a b => decide (a = b)) (fun _ => by simp) f.blockTab g.blockTab
       (I.K.contains ·) &&
     tabEqBy sameEntry sameEntry_refl f.valueTab g.valueTab
-      (fun x => I.K.contains (f.getV x).block || I.K.contains (g.getV x).block)
+      (fun x => I.K.contains (f.getV x).block || (f.value? x).isNone)
 
 /-- A register blocks outside `K` may read: not one of `b`'s values, or a moved phi with its
 default fact. -/
 def freeArg (a : ID) : Bool :=
   !I.bvals.contains a || (I.vs.contains a && I.look I.dflt a == some a)
 
-/-- Blocks outside `K` read only `freeArg` registers. -/
+/-- Blocks outside `K` read only `freeArg` registers (the tables read without allocating). -/
 def scanOK : Bool :=
   g.blocks.all fun B =>
     I.K.contains B ||
-      let gB := g.getB B
-      gB.controls.all I.freeArg && gB.values.all fun x => (g.getV x).args.all I.freeArg
+      (g.blockTab.getD B none).all fun gB =>
+        gB.controls.all I.freeArg &&
+          gB.values.all fun x => (g.valueTab.getD x none).all fun v => v.args.all I.freeArg
 
 /-- An edge from a checked block to another block carries the default facts. -/
 def exitOK (T : FactTab) : Bool :=
@@ -495,7 +523,117 @@ def exitOK (T : FactTab) : Bool :=
       I.K.contains e.b || I.vs.all fun v =>
         I.look I.dflt v == none || I.look out v == I.look I.dflt v
 
+/-! ## Well-formedness and use dominance of `g`, checked locally
+
+`g` is well formed and its uses are dominated on paths (`WFDom`, the invariant of the fuse
+loop) without a check of the whole of `g`: the blocks outside `K` are those of `f` (`frameOK`),
+so only the blocks of `K` are checked. -/
+
+/-- Predecessor `i` of block `B` (edge `e`) is crosslinked in `g`. -/
+def predLinkOK (B : ID) (i : Nat) (e : Edge) : Bool :=
+  (g.block? e.b).any fun P => P.succs[e.i]? == some ⟨B, i⟩
+
+/-- Successor `j` of block `B` (edge `e`) is crosslinked in `g`. -/
+def succLinkOK (B : ID) (j : Nat) (e : Edge) : Bool :=
+  (g.block? e.b).any fun C => C.preds[e.i]? == some ⟨B, j⟩
+
+/-- Block `B` of `K` is well formed in `g`: the per-block loops of `wfCheck` (edges crosslinked
+and ending at blocks `B` has an edge with in `f`, or at `p`/`t` (the redirected edge); values in
+the table with their ID and per-op shape, listed once; the entry has no predecessors), and an
+edge of `f` from or to a block outside `K` keeps its index. -/
+def wfKOK (B : ID) : Bool :=
+  match f.block? B, g.block? B with
+  | some fB, some gB =>
+    (B != g.entry || gB.preds.isEmpty) &&
+    allIdx gB.preds (fun i e => predLinkOK g B i e &&
+      (fB.preds[i]? == some e || e.b == I.s.p || fB.preds.any (·.b == e.b))) &&
+    allIdx gB.succs (fun j e => succLinkOK g B j e &&
+      (fB.succs[j]? == some e || e.b == I.t || fB.succs.any (·.b == e.b))) &&
+    allIdx fB.preds (fun i e => I.K.contains e.b || gB.preds[i]? == some e) &&
+    allIdx fB.succs (fun j e => I.K.contains e.b || gB.succs[j]? == some e) &&
+    gB.values.all (fun x => (g.value? x).any fun v => v.id == x && WFCheck.valueOK gB v) &&
+    (gB.values == fB.values || decide gB.values.toList.Nodup)
+  | none, none => true
+  | _, _ => false
+
+/-- Register `w` is the argument along `f`'s edge from `P` of one of `b`'s `Phi`s in `f`: it is
+defined on every path to `P` (and outside `b`). -/
+def availAt (P w : ID) : Bool :=
+  !I.bvals.contains w &&
+    let fb := f.getB I.s.b
+    I.bvals.any fun z => isPhiIn f z &&
+      (List.range fb.preds.size).any fun j =>
+        (fb.preds[j]?.map (·.b)) == some P && (f.getV z).args[j]? == some w
+
+/-- Every block of `dS` is `b` or is entered only from blocks of `dS`: every path to it in `g`
+passes `b`. -/
+def dsOK : Bool :=
+  I.dS.all fun Y => Y == I.s.b || (Y != g.entry && (g.getB Y).preds.all (I.dS.contains ·.b))
+
+/-- A path of `g` leaves `b` and its redirected edge into the plan's blocks, and leaves those
+only through the block a moved phi (default fact) moved to. -/
+def closeOK : Bool :=
+  I.vs.all fun v => I.look I.dflt v != some v ||
+    let M := (g.getV v).block
+    I.region.contains M && I.region.contains I.t &&
+      (M == I.t || (g.getB M).preds.any fun e => e.b == I.s.b || e.b == I.t) &&
+      (g.getB I.s.b).succs.all (I.region.contains ·.b) &&
+      I.region.all fun r => r == M || (g.getB r).succs.all (I.region.contains ·.b)
+
+/-- A use in `g` of register `w` that must be defined on every path to block `P` (`a?`: the
+source's register at the same place, if the use is one of `f`'s; `rd`: along the redirected
+edge): the source's own register outside `b`'s values; or a listed register defined in `P`, a
+moved phi read where the source reads it (outside `b` and the plan's blocks), a `Phi` argument of
+`b` along an edge from `P`, or (`P` in `dS`) one along every edge into `b`. -/
+def useOK (P w : ID) (a? : Option ID) (rd : Bool) : Bool :=
+  (a? == some w && !I.bvals.contains w) ||
+  (listedIn g w &&
+    (DomCert.blockOf g w == P ||
+      (a? == some w && !rd && I.freeArg w && P != I.s.b && !I.region.contains P) ||
+      I.availAt f P w ||
+      (I.dS.contains P && !(g.getB I.s.b).preds.isEmpty &&
+        (g.getB I.s.b).preds.all fun e => I.availAt f e.b w)))
+
+/-- The source's argument at the place of argument `iT` of a target `Phi` of block `B` (`fx?`:
+the source value, if listed in the source block `fB`), along the target edge `e`: the
+source's edge from the same block (or, along the redirected edge, from `b`). -/
+def phiSrc (fB : Block) (fx? : Option Value) (B iT : Nat) (e : Edge) : Option ID :=
+  fx?.bind fun fv =>
+    if fv.op != .Phi then none
+    else if I.redir B iT then
+      if (fB.preds[I.s.te.i]?.map (·.b)) == some I.s.b then fv.args[I.s.te.i]? else none
+    else if fB.preds[I.srcIdx B iT]? == some e then fv.args[I.srcIdx B iT]? else none
+
+/-- The source's argument `k` of a non-`Phi` (`fx?` as for `phiSrc`). -/
+def nodeSrc (fx? : Option Value) (k : Nat) : Option ID :=
+  fx?.bind fun fv => if fv.op == .Phi then none else fv.args[k]?
+
+/-- The uses of block `B` of `K` in `g` (`useOK`): arguments of its values (of a `Phi` on the
+paths to the predecessor), controls. -/
+def domKOK (B : ID) : Bool :=
+  let fB := f.getB B
+  let gB := g.getB B
+  let same := gB.values == fB.values
+  (gB.values.all fun x =>
+    let gx := g.getV x
+    let fx? : Option Value := if same || fB.values.contains x then f.value? x else none
+    if gx.op == .Phi then
+      allIdx gB.preds fun iT e => (gx.args[iT]?).all fun w =>
+        I.useOK f g e.b w (I.phiSrc fB fx? B iT e) (I.redir B iT)
+    else
+      allIdx gx.args fun k w => I.useOK f g B w (nodeSrc fx? k) false) &&
+  allIdx gB.controls fun k c => I.useOK f g B c fB.controls[k]? false
+
 end Info
+
+/-- The largest set of blocks of `K` and `b` whose members other than `b` are entered (in `g`)
+only from members (loops of the plan's blocks included): from all of them, drop the others by
+rounds (untrusted: `dsOK` checks the result). -/
+def domSet (g : Func) (b : ID) (K : Array ID) : Array ID := Id.run do
+  let mut S := addU K b
+  for _ in [0:K.size + 1] do
+    S := S.filter fun Y => Y == b || (Y != g.entry && (g.getB Y).preds.all (S.contains ·.b))
+  return S
 
 /-- The checker's view of a rewrite at site `s`. -/
 def infoOf (tabs : Tables) (f g : Func) (s : Site) : Info :=
@@ -504,32 +642,28 @@ def infoOf (tabs : Tables) (f g : Func) (s : Site) : Info :=
   let vs := bvals.filter fun x => x != s.ctl && isPhiIn f x
   let region := (s.plan.map Plan.region).getD #[]
   let t := s.te.b
-  let base := addU (addU (region.foldl addU #[s.b]) t) s.p
-  let n := max f.blockTab.size g.blockTab.size
-  let K := (List.range n).foldl (fun K i =>
-    if withPtrEq (f.block? i) (g.block? i) (fun _ => decide (f.block? i = g.block? i))
-      (fun h => by simp [h]) then K else addU K i) base
-  let m := max f.valueTab.size g.valueTab.size
-  let K := (List.range m).foldl (fun K i =>
-    if withPtrEq (f.value? i) (g.value? i) (fun _ => sameEntry (f.value? i) (g.value? i))
-      (fun h => by rw [h]; exact sameEntry_refl _) then K
-    else
-      let K := match f.value? i with | some v => addU K v.block | none => K
-      match g.value? i with | some v => addU K v.block | none => K) K
+  -- the blocks `applySite` changes: `b`, `t`, `p`, the plan's blocks, and the block of `b`'s
+  -- last predecessor (`removePred` moves its edge); `frameOK` checks that nothing else changed
+  let K := addU (addU (addU (region.foldl addU #[s.b]) t) s.p)
+    ((B.preds[B.preds.size - 1]?.map (·.b)).getD s.b)
   let dflt : Facts := vs.map fun v =>
     let gv := g.getV v
     if gv.block != s.b && listedIn g v && gv.op != .Invalid then some v else none
-  { tabs, s, bvals, vs, last := B.preds.size - 1, tn := (f.getB t).preds.size, region, K, dflt }
+  { tabs, s, bvals, vs, last := B.preds.size - 1, tn := (f.getB t).preds.size, region, K, dflt,
+    dS := domSet g s.b K }
 
 /-- **One `shortcircuitBlock` rewrite at site `s`, checked** (see the module doc). -/
 def scOK (tabs : Tables) (f g : Func) (s : Site) : Bool :=
   let I := infoOf tabs f g s
   let T := I.factTab f g
-  I.preOK f && wfDomOK g && g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
+  I.preOK f && withPtrEq g.blocks f.blocks (fun _ => g.blocks == f.blocks)
+      (fun h => by rw [h]; exact beq_self_eq_true _) &&
+    g.entry == f.entry && g.ownAux == f.ownAux &&
     g.valueTab.size == f.valueTab.size && g.blockTab.size == f.blockTab.size &&
     I.K.contains s.b && I.K.contains I.t && I.K.contains s.p &&
     I.redirOK f g && I.regionOK g && I.frameOK f g && I.K.all (I.blockOK f g T) &&
-    I.exitOK g T && I.scanOK g
+    I.exitOK g T && I.scanOK g && I.K.all (I.wfKOK f g) && I.dsOK g && I.closeOK g &&
+    I.K.all (I.domKOK f g)
 
 /-- **`shortcircuitBlock`, checked**: the rewrite if `scOK` accepts it, else `f` unchanged. -/
 def shortcircuitBlockChecked (tabs : Tables) (f : Func) (b : ID) : Func × Bool :=

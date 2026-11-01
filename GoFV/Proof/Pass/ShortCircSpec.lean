@@ -294,25 +294,82 @@ theorem schedScan_spec {pos : ID → Nat} {root : ID → Bool} :
           subst hy; omega
         | succ j => exact ih2 j y (by omega) hy
 
+theorem sameSNodes_eq : ∀ {l1 l2 : List Sem.SNode}, Info.sameSNodes l1 l2 = true → l1 = l2
+  | [], [], _ => rfl
+  | x :: xs, y :: ys, h => by
+    unfold Info.sameSNodes at h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+    rw [sameSNodes_eq h4]
+    cases x; cases y
+    simp only at h1 h2 h3
+    subst h1 h2 h3; rfl
+  | [], _ :: _, h => by simp [Info.sameSNodes] at h
+  | _ :: _, [], h => by simp [Info.sameSNodes] at h
+
+theorem idxOf_cons_ne {x y : ID} {l : List ID} (h : x ≠ y) : (x :: l).idxOf y = l.idxOf y + 1 := by
+  rw [List.idxOf_cons]; simp [h]
+
+/-- In a list without duplicates, an element listed before another by a filter of the list is
+listed before it. -/
+theorem idxOf_lt_of_filter {p : ID → Bool} :
+    ∀ {l : List ID}, l.Nodup → ∀ {j k : Nat} {y r : ID}, j < k → (l.filter p)[j]? = some y →
+      (l.filter p)[k]? = some r → l.idxOf y < l.idxOf r
+  | [], _, _, _, _, _, _, hy, _ => by simp at hy
+  | x :: l, hnd, j, k, y, r, hjk, hy, hr => by
+    have hx := (List.nodup_cons.1 hnd).1
+    have hmem : ∀ {i z}, (l.filter p)[i]? = some z → z ≠ x := fun h hz => by
+      subst hz; exact hx (List.mem_filter.1 (List.mem_of_getElem? h)).1
+    by_cases hp : p x = true
+    · rw [List.filter_cons_of_pos hp] at hy hr
+      cases k with
+      | zero => omega
+      | succ k =>
+        simp only [List.getElem?_cons_succ] at hr
+        have hrx := hmem hr
+        rw [idxOf_cons_ne (Ne.symm hrx)]
+        cases j with
+        | zero =>
+          simp only [List.getElem?_cons_zero, Option.some.injEq] at hy
+          subst hy; rw [List.idxOf_cons_self]; omega
+        | succ j =>
+          simp only [List.getElem?_cons_succ] at hy
+          rw [idxOf_cons_ne (Ne.symm (hmem hy))]
+          have := idxOf_lt_of_filter (List.nodup_cons.1 hnd).2 (by omega) hy hr
+          omega
+    · rw [List.filter_cons_of_neg hp] at hy hr
+      rw [idxOf_cons_ne (Ne.symm (hmem hy)), idxOf_cons_ne (Ne.symm (hmem hr))]
+      have := idxOf_lt_of_filter (List.nodup_cons.1 hnd).2 hjk hy hr
+      omega
+
 namespace SCI
 
 variable (I : Info) {f g : Func} {fB gB : Block}
 
-/-- **The schedules of a checked block** (`schedOK`): if the source panics at a root, every source
-value the target lists before it, the source lists before it too. -/
-theorem schedOK_spec (h : Info.schedOK f g fB gB = true) :
-    ∃ oS oT, Sem.schedule f fB = some oS ∧ Sem.schedule g gB = some oT ∧
+/-- **The schedules of a checked block** (`schedOK`): the target's is defined, and if the source
+panics at a root, every source value the target lists before it, the source lists before it
+too. -/
+theorem schedOK_spec (h : Info.schedOK f g fB gB = true) {oS : Array ID}
+    (hS : Sem.schedule f fB = some oS) (hnd : oS.toList.Nodup) :
+    ∃ oT, Sem.schedule g gB = some oT ∧
       ∀ (k : Nat) (r : ID), (oT.toList.filter ((Info.nodesOf f fB).contains ·))[k]? = some r →
         Sem.prio (f.getV r).op ≠ 0 →
         ∀ (j : Nat) (y : ID), j < k →
           (oT.toList.filter ((Info.nodesOf f fB).contains ·))[j]? = some y →
           oS.toList.idxOf y < oS.toList.idxOf r := by
   unfold Info.schedOK at h
-  split at h
-  · rename_i oS oT hS hT
-    refine ⟨oS, oT, hS, hT, fun k r hr hroot j y hj hy => ?_⟩
-    exact (schedScan_spec h k r hr (by simpa using hroot)).2 j y hj hy
-  · cases h
+  rcases Bool.or_eq_true_iff.1 h with h | h
+  · have he : Sem.schedNodes g gB = Sem.schedNodes f fB :=
+      Array.toList_inj.1 (sameSNodes_eq h)
+    have hT : Sem.schedule g gB = some oS := by unfold Sem.schedule; rw [he]; exact hS
+    exact ⟨oS, hT, fun k r hr _ j y hj hy => idxOf_lt_of_filter hnd hj hy hr⟩
+  · rw [hS] at h
+    cases hT : Sem.schedule g gB with
+    | none => rw [hT] at h; cases h
+    | some oT =>
+      rw [hT] at h
+      refine ⟨oT, rfl, fun k r hr hroot j y hj hy => ?_⟩
+      exact (schedScan_spec h k r hr (by simpa using hroot)).2 j y hj hy
 
 end SCI
 
