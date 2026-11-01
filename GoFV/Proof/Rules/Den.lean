@@ -626,6 +626,11 @@ def isIntWTy : Width → Ty → Bool
   | .w8, .int .w8 | .w16, .int .w16 | .w32, .int .w32 | .w64, .int .w64 => true
   | _, _ => false
 
+/-- A slice shape. -/
+def isSliceTy : Ty → Bool
+  | .slice _ => true
+  | _ => false
+
 /-- The argument of a `Convert` of shape `ty`: a 64-bit integer to a pointer, a pointer to a
 64-bit integer; nothing else. -/
 def convArgOk (ty t : Ty) : Bool :=
@@ -675,7 +680,9 @@ width `N`, both of
 rules' `Const64` operands mean 64-bit values), the
 first word of an `EqInter`/`NeqInter` operand a 64-bit integer (the itab word of the interface
 shape, `ifaceArgOk`), the
-components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17), and the
+components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17), the
+argument of `SlicePtr`/`SliceLen`/`SliceCap` a slice (so it is `poison` or has
+`0 ≤ len ≤ cap`: `generic.rules:278`), and the
 arguments of the float arithmetic and comparisons floats of their width (shape `.int w`). Other
 arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
@@ -693,6 +700,7 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .EqInter | .NeqInter => ifaceArgOk t
   | .StringMake | .SliceMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 =>
     makeArgOk ty i t
+  | .SlicePtr | .SliceLen | .SliceCap => isSliceTy t
   | .Add64F | .Sub64F | .Mul64F | .Div64F | .Neg64F | .Min64F | .Max64F | .Eq64F | .Neq64F
   | .Less64F | .Leq64F | .Abs | .Copysign | .Sqrt | .Floor | .Ceil | .Trunc | .Round
   | .RoundToEven | .FMA | .Round64F => isIntWTy .w64 t

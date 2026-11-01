@@ -131,17 +131,17 @@ theorem r_dec_43_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_43 := by
 /-- `dec.rules:58`: `(SlicePtr (SliceMake ptr _ _ )) => ptr` -/
 theorem r_dec_58_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_58 := by
   dec_unfold GoFV.Rules.Generated.Dec.r_dec_58
-  exact sel_make3 hlt.1 hlt.2.1 hlt.2.2 hat.1 hat.2.1 hat.2.2 0
+  exact sel_make3 hlt.1 hlt.2.1 hlt.2.2 hat.2.1 hat.2.2.1 hat.2.2.2 0
 
 /-- `dec.rules:59`: `(SliceLen (SliceMake _ len _)) => len` -/
 theorem r_dec_59_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_59 := by
   dec_unfold GoFV.Rules.Generated.Dec.r_dec_59
-  exact sel_make3 hlt.1 hlt.2.1 hlt.2.2 hat.1 hat.2.1 hat.2.2 1
+  exact sel_make3 hlt.1 hlt.2.1 hlt.2.2 hat.2.1 hat.2.2.1 hat.2.2.2 1
 
 /-- `dec.rules:60`: `(SliceCap (SliceMake _ _ cap)) => cap` -/
 theorem r_dec_60_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_60 := by
   dec_unfold GoFV.Rules.Generated.Dec.r_dec_60
-  exact sel_make3 hlt.1 hlt.2.1 hlt.2.2 hat.1 hat.2.1 hat.2.2 2
+  exact sel_make3 hlt.1 hlt.2.1 hlt.2.2 hat.2.1 hat.2.2.1 hat.2.2.2 2
 
 /-- `dec.rules:61`: `(SlicePtrUnchecked (SliceMake ptr _ _ )) => ptr` -/
 theorem r_dec_61_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_61 := by
