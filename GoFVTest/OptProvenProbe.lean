@@ -196,12 +196,14 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
     | .error _ => c := { c with errors := c.errors + 1 }
     match GoFV.Rules.rewriteRun proven true true env input with
     | .ok (out, _, log) =>
-      let ok := RewriteCheck.validate prev proven input out.func log
+      let ok := RewriteCheck.accepts prev proven input out log
       if !ok && !(out.func == input) then
         c := { c with rejected := c.rejected + 1 }
-        IO.println s!"REJECT {name} {path}: {why prev proven input out.func log}"
-      let cf := if ok then out.func else input
-      if (compare prev { func := cf, tables := prev } tables s).isNone then
+        let reason := if tabsAgree prev out.tables input then why out.tables proven input out.func log
+          else "tables: the input tells the result's tables from its own (tabsAgree)"
+        IO.println s!"REJECT {name} {path}: {reason}"
+      let co : PassOut := if ok then out else { func := input, tables := prev }
+      if (compare prev co tables s).isNone then
         c := { c with checkedSame := c.checkedSame + 1 }
       else allChecked := false
     | .error _ =>

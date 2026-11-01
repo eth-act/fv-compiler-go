@@ -343,9 +343,9 @@ theorem inst_r_generic_126 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_12
   simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
 
 /-- `generic.rules:1057`: `(ConstInterface) => (IMake (ConstNil <typ.Uintptr>) (ConstNil
-<typ.BytePtr>))` at the interface shape. -/
+<typ.BytePtr>))` at the interface shape (`uintptr`, `*uint8`). -/
 theorem inst_r_generic_1057 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1057
-    (PEnv.ofLists [] [] (.agg [(0, .ptr none), (8, .ptr none)] 16) []) (Oracle.const true) := by
+    (PEnv.ofLists [] [] (.agg [(0, .int .w64), (8, .ptr (some 1))] 16) []) (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1057]
   rule_eval
 

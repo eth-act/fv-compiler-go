@@ -153,11 +153,8 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
       off := off.push sec
       for kk in fired do
         if !provenKeys.contains kk && !unproven.contains kk then unproven := unproven.push kk
-    match GoFV.Rules.rewriteRun proven true true env input with
-    | .ok (out, _, log) =>
-      let ok := RewriteCheck.validate prev proven input out.func log
-      let cf := if ok then out.func else input
-      if (compare prev { func := cf, tables := prev } tables s).isSome then checkedAll := false
+    match checkedRewrite proven env input with
+    | .ok co => if (compare prev co tables s).isSome then checkedAll := false
     | .error _ => checkedAll := false
   if !any then return st
   st := { st with fns := st.fns + 1 }
