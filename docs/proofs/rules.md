@@ -247,13 +247,16 @@ replacements of the forwarded `Load` logged before it are dropped; see "Layers" 
 `fwdRel` between the layer's input and that function and `check` of it. `fwdRel`: the same
 blocks and atoms, every value unchanged but for the forwarded `Load`s (`fwdRepOK`), each with
 `fwdOK` = `fwdChain` (through at most eight memory `Copy`s and `Store`s at pointers disjoint from
-the read, a `Store`/`StoreWB` of `x` at a pointer equal to the `Load`'s; the `Load` and `x` have
+the read, a `Store`/`StoreWB` at a pointer equal to the `Load`'s of a value that stands for `x`,
+`storedOK`: `x` reached from it through compatible `Copy`s, `copyReach`, since copy elimination
+ran before the rule matched, the stored value of a `fwdTyEq` shape; the `Load` and `x` have
 one shape, `fwdTyEq`: an integer, boolean or pointer shape (`scalarTy`, `fwdScalarEq`) or a
 non-empty aggregate of such fields at increasing, non-overlapping offsets (`fwdAgg`, `fwdFields`,
 `fwdAggEq`: strings, interfaces, flat structs); the `Store`'s type that shape or a pointer
 stored as `int64`, `fwdStoreTy`), and ranks ordering every listed non-`Phi` value after its
 arguments (`fwdRank`, `fwdRankOK`). Pointers: `ptrBase` (a base and a constant offset through
-`OffPtr`s and pointer `Copy`s), `baseSameB` (the same value, the start of one allocation:
+`OffPtr`s, pointer `Copy`s and `PtrIndex`es by a `Const64` index, `constIdx?`, the index times
+the element size of the `PtrIndex`'s pointer shape), `baseSameB` (the same value, the start of one allocation:
 `LocalAddr`s of one variable or `Addr`s of one symbol, `baseBlk?`, or `AddPtr`/`PtrIndex` of
 equal bases by structurally equal indices, `termEqB`), `samePtrB` (equal bases, equal offsets),
 `disjointB` (equal bases at offsets whose byte ranges do not overlap modulo 2^64, `offSep`, or
@@ -269,15 +272,18 @@ registers, which are in the set, and each `LocalAddr` register its frame variabl
 (on the valuation it builds, every non-`poison` memory root is the write of its arguments'
 terms, every `LocalAddr` its variable). With it, `fwd_den` (by induction on the rank) reads a
 forwarded `Load` through its chain (`chain_load`, `GoFV/Proof/Pass/LoadFwdPtr.lean`:
-`ptrBase_den`, `baseBlk_den`, `samePtr_den`, `disjoint_sep` + `load_write_sep` past the disjoint
-writes, `load_write` at the `Store` of `x`: `decodeLoad_encode`, at an aggregate field by field,
-`fields_encode`, and a stored `poison` aggregate is all `poison` bytes, which a `Load` reads as
-`poison`, semantics.md §3.4 `decodeLoad`). The fuel of `TermRefP`'s right side may depend on
-the valuations. `checkedRewrite_refines` composes the layers (`chain_refines`) and the atom
-simulation (statement unchanged). Proven: `generic.rules:800`, `:806`, `:813`, `:821`;
-witnesses `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
-(`p[0] = x; p[1] = y; return p[0]`, `:806`) and `sls_checkedRewrite` (`*p = s; return *p` at a
-string; `sls_decodeLoad`), kernel evaluation.
+`ptrBase_den` with `ptrIndex_den`, `baseBlk_den`, `samePtr_den`, `disjoint_sep` +
+`load_write_sep` past the disjoint writes, `load_write` at the `Store` of the stored value:
+`decodeLoad_encode`, at an aggregate field by field, `fields_encode`, and a stored `poison`
+aggregate is all `poison` bytes, which a `Load` reads as `poison`, semantics.md §3.4
+`decodeLoad`; then `copyReach_den` to `x`, whose rank `copyReach_rank` bounds). The fuel of
+`TermRefP`'s right side may depend on the valuations. `checkedRewrite_refines` composes the
+layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
+`generic.rules:800`, `:806`, `:813`, `:821`; witnesses `GoFV.Proof.Witness.sl_checkedRewrite`
+(`*p = x; return *p`), `sl2_checkedRewrite` (`p[0] = x; p[1] = y; return p[0]`, `:806`),
+`sls_checkedRewrite` (`*p = s; return *p` at a string; `sls_decodeLoad`), `fc_checkedRewrite`
+(the stored value a `Copy` of `x`) and `pi_checkedRewrite` (`PtrIndex p [0]` read through a
+`Store` at `PtrIndex p [1]`; `GoFV/Proof/Witness/FwdCopy.lean`), kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,
@@ -286,7 +292,7 @@ a forwarding, split or nil-check elimination the validator cannot relate costs o
 function's events of that kind (`checkedRewrite_cases`: the validator reads only the table's
 value and block rules, `validate_congr`, `checkedTiers_rules`). Forwardings the validator does
 not relate: chains with a `Store` the validator cannot prove disjoint (`Addr`s or `LocalAddr`s
-of one symbol at unknown or `PtrIndex` offsets, an `Arg` pointer against a `LocalAddr`), a
+of one symbol at unknown offsets, an `Arg` pointer against a `LocalAddr`), a
 `Store` of a `Load` of the same address left in the chain by an earlier rewrite, and (late opt) a
 one-pointer struct stored at the pointer type.
 
@@ -746,6 +752,8 @@ With the frame facts of aux-bound variables (`:1011`, `:1015`; 1,239 rules): 7,9
 8,066 at a853397 (7,772 before, with #237's validator layers).
 With the `StringPtr`/`StructSelect` cases of `safePtr` (nil checks of a string constant's data
 pointer and of a `StructMake`'s pointer field): 7,983 (85.87%) at 216e265 (7,979 before).
+With forwarding through copies of the stored value (`storedOK`) and constant `PtrIndex` offsets
+in `ptrBase`: 7,999 (86.04%) at 39885ba (7,995 before).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
