@@ -2,6 +2,7 @@ import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Sem.Env
 import GoFV.SSA.Sem.Layout
 import GoFV.SSA.Sem.Mem
+import GoFV.SSA.Sem.Atomic
 
 /-!
 # `GoFV.SSA.run`: executable, fuel-bounded semantics (`docs/plans/semantics.md` §3.6, §7, §8)
@@ -750,7 +751,7 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
     match frameVal ctx v with
     | some x => pure x
     | none =>
-      if isRoot op then .stuck s!"v{v.id}: {op.name} is not in phases P1–P3"
+      if isRoot op then atomicRoot v argv
       else pure (evalPure op ty v.auxInt v.aux argv)
 
 /-- Evaluate value `v` from the registers (its arguments are already evaluated); the result

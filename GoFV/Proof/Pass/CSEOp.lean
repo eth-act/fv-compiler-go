@@ -31,7 +31,7 @@ private theorem evalOp_tail_ite {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
       match frameVal ctx v with
       | some x => pure x
       | none =>
-        if isRoot v.op then .stuck s!"v{v.id}: {v.op.name} is not in phases P1–P3"
+        if isRoot v.op then atomicRoot v argv
         else pure (evalPure v.op ty v.auxInt v.aux argv) := by
   delta evalOp
   generalize v.op = op at hr hi ha hb hc hd ⊢

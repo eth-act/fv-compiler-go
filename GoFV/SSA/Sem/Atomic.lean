@@ -90,40 +90,75 @@ def result (r : Option Val) (m : Mem) : Val :=
   | some y => .tuple [y, .mem m]
   | none => .mem m
 
+/-- An unmodelled root, or a root with ill-shaped (e.g. `poison`) arguments. -/
+def unmodelled (v : Value) : Res Val := .stuck s!"v{v.id}: {v.op.name} is not in phases P1–P5"
+
+/-- The integer width `step` computes in for a location of shape `t`. -/
+def width : Ty → Width
+  | .int w => w
+  | _ => .w64
+
+/-- The read-modify-write `k` of root `v` on the `t`-shaped location at `p` with operand `x`. -/
+def rmw (v : Value) (k : Kind) (t : Ty) (p : Ptr) (x : Val) (m : Mem) : Res Val :=
+  if aligned p t.size then
+    match m.write p (encode t (step k (width t) (m.load t p) x).1) with
+    | some m' => .ok (result (step k (width t) (m.load t p) x).2 m')
+    | none => .stuck s!"v{v.id}: {v.op.name}: invalid or read-only access"
+  else .stuck s!"v{v.id}: {v.op.name}: misaligned"
+
+/-- The `w`-bit compare-and-swap of root `v` at `p`: `n` replaces `o`. -/
+def cas (v : Value) (w : Width) (p : Ptr) (o n : Val) (m : Mem) : Res Val :=
+  if aligned p w.bytes then
+    match (m.load (.int w) p).asInt w, o.asInt w with
+    | some cur, some old =>
+      if cur = old then
+        match m.write p (encode (.int w) n) with
+        | some m' => .ok (.tuple [.bool true, .mem m'])
+        | none => .stuck s!"v{v.id}: {v.op.name}: invalid or read-only access"
+      else .ok (.tuple [.bool false, .mem m])
+    | _, _ => .stuck s!"v{v.id}: {v.op.name}: poison or invalid comparison"
+  else .stuck s!"v{v.id}: {v.op.name}: misaligned"
+
+/-- `PubBarrier mem`. -/
+def barrier (v : Value) : Val → Res Val
+  | .mem m => if v.op = .PubBarrier then .ok (.mem m) else unmodelled v
+  | _ => unmodelled v
+
+/-- `PrefetchCache* addr mem` (the address is not accessed). -/
+def prefetch (v : Value) : Val → Res Val
+  | .mem m =>
+    if v.op = .PrefetchCache ∨ v.op = .PrefetchCacheStreamed then .ok (.mem m) else unmodelled v
+  | _ => unmodelled v
+
+/-- A read-modify-write root `p x mem`. -/
+def rmwRoot (v : Value) : Val → Val → Val → Res Val
+  | .ptr p, x, .mem m =>
+    match info? v.op with
+    | some (k, t) => rmw v k t p x m
+    | none => unmodelled v
+  | _, _, _ => unmodelled v
+
+/-- A compare-and-swap root `p old new mem`. -/
+def casRoot (v : Value) : Val → Val → Val → Val → Res Val
+  | .ptr p, o, n, .mem m =>
+    match casWidth? v.op with
+    | some w => cas v w p o n m
+    | none => unmodelled v
+  | _, _, _, _ => unmodelled v
+
 end Atomic
 
 open Atomic in
 /-- The P5 roots other than calls and memory roots (`memRoot`): atomic read-modify-writes
 (`Atomic.info?`), compare-and-swap (`Atomic.casWidth?`), `PubBarrier`, `PrefetchCache*`. Any
-other root is `stuck` (its semantics is not modelled: `GetG`, `TailLECall*`, …). -/
+other root is `stuck` (its semantics is not modelled: `GetG`, `TailLECall*`, …). Dispatched on
+the number of arguments only, so that refined arguments take the same arm. -/
 def atomicRoot (v : Value) (argv : List Val) : Res Val :=
-  match v.op, argv with
-  | .PubBarrier, [.mem m] => .ok (.mem m)
-  | .PrefetchCache, [_, .mem m] | .PrefetchCacheStreamed, [_, .mem m] => .ok (.mem m)
-  | op, [.ptr p, x, .mem m] =>
-    match info? op with
-    | some (k, t) =>
-      if aligned p t.size then
-        let (new, r) := step k (match t with | .int w => w | _ => .w64) (m.load t p) x
-        match m.write p (encode t new) with
-        | some m' => .ok (result r m')
-        | none => .stuck s!"v{v.id}: {op.name}: invalid or read-only access"
-      else .stuck s!"v{v.id}: {op.name}: misaligned"
-    | none => .stuck s!"v{v.id}: {op.name} is not in phases P1–P5"
-  | op, [.ptr p, o, n, .mem m] =>
-    match casWidth? op with
-    | some w =>
-      if aligned p w.bytes then
-        match (m.load (.int w) p).asInt w, o.asInt w with
-        | some cur, some old =>
-          if cur == old then
-            match m.write p (encode (.int w) n) with
-            | some m' => .ok (.tuple [.bool true, .mem m'])
-            | none => .stuck s!"v{v.id}: {op.name}: invalid or read-only access"
-          else .ok (.tuple [.bool false, .mem m])
-        | _, _ => .stuck s!"v{v.id}: {op.name}: poison or invalid comparison"
-      else .stuck s!"v{v.id}: {op.name}: misaligned"
-    | none => .stuck s!"v{v.id}: {op.name} is not in phases P1–P5"
-  | op, _ => .stuck s!"v{v.id}: {op.name} is not in phases P1–P5"
+  match argv with
+  | [a] => barrier v a
+  | [_, a] => prefetch v a
+  | [a, b, c] => rmwRoot v a b c
+  | [a, b, c, d] => casRoot v a b c d
+  | _ => unmodelled v
 
 end GoFV.SSA.Sem

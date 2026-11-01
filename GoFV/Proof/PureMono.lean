@@ -797,6 +797,8 @@ theorem evalPure_mono (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef)
   case ConstSlice => exact Refines.refl _
   case ConstInterface => exact Refines.refl _
   case Empty => exact Refines.refl _
+  case HasCPUFeature => exact Refines.refl _
+  case GetG => exact Refines.refl _
   case Load => exact loadOp_mono _ h
   case Dereference => exact loadOp_mono _ h
   case MemEq => exact memEq_mono h
