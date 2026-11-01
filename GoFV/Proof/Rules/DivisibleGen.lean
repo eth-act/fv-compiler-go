@@ -145,14 +145,30 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+open Lean Elab Tactic in
+/-- `rule_unfold` with the `convE` tests of the helper's argument (`uint64(d)`) decided before
+`callH` is unfolded: `rule_unfold` meets `callH` on an undecided `if`, unfolds it to its
+23-arm `match` and generates that `match`'s splitter in the module (4.5 MB of `.olean`). -/
+elab "divisible_unfold" : tactic => do
+  let ty ← instantiateMVars (← (← getMainGoal).getType)
+  let some r := ty.getAppArgs[0]? | throwError "divisible_unfold: goal is not `Rule.Sound r`"
+  let some rn := r.constName? | throwError "divisible_unfold: rule is not a constant"
+  let rid := mkIdent rn
+  evalTactic (← `(tactic| (
+    refine ⟨rfl, ?_⟩
+    intro $(mkIdent `e):ident $(mkIdent `or):ident $(mkIdent `hbt):ident
+    dsimp only [$rid:ident, rule_unfold_ds]
+    simp only [Option.isSome_some, ite_true]
+    simp only [rule_helper, rule_unfold_s]
+    intro $(mkIdent `hwf):ident $(mkIdent `hc):ident $(mkIdent `hcond):ident
+      $(mkIdent `hty):ident $(mkIdent `hlt):ident
+    rule_oracle_bool)))
+
 set_option hygiene false in
 /-- `generic.rules:315–318`: the condition's first conjunct (`d` odd) evaluated, the
 `modularMultiplicativeInverse` call split (failure contradicts `d` odd), `eq_mul_inv`. -/
 macro "divisible_inv" : tactic => `(tactic| (
-  rule_unfold
-  (try rule_ands)
-  (try rule_clear_oracle)
-  simp only [Option.isSome_some, ite_true, rule_unfold_s, rule_sem] at *
+  divisible_unfold
   (try rule_ands)
   (try rule_clear_oracle)
   divisible_gen
@@ -184,30 +200,6 @@ macro "divisible_widen" : tactic => `(tactic| (
     | exact GoFV.Proof.Rules.Divisible.umod_widen_zero (by assumption) (by assumption) (by decide)
     | exact GoFV.Proof.Rules.Divisible.srem_widen_zero (by assumption) (by assumption) (by decide)
         (by decide) (by omega) (by omega)))
-
-theorem r_generic_315_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_315 := by
-  divisible_inv
-
-theorem r_generic_316_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_316 := by
-  divisible_inv
-
-theorem r_generic_317_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_317 := by
-  divisible_inv
-
-theorem r_generic_318_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_318 := by
-  divisible_inv
-
-theorem r_generic_315_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_315_2 := by
-  divisible_inv
-
-theorem r_generic_316_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_316_2 := by
-  divisible_inv
-
-theorem r_generic_317_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_317_2 := by
-  divisible_inv
-
-theorem r_generic_318_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_318_2 := by
-  divisible_inv
 
 theorem r_generic_1169_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1169 := by
   divisible_widen
