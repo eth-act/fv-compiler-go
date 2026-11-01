@@ -225,7 +225,7 @@ theorem kb_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.va
 
 theorem kb_termRefP {x : ID} (hx : LM f x) (b : ID) (Q : (ID → Val) → Prop) (S : ID → Prop) :
     TermRefP ((kbInv hwf K).P b) Q S f.value? tabs x (listedDefs g) tabs x :=
-  fun n => ⟨n + 1, fun _ _ hρ hT _ hP _ _ => kb_ref hwf K hρ hT hP n x hx⟩
+  fun _ _ hρ hT _ hP _ _ _ n => ⟨n + 1, kb_ref hwf K hρ hT hP n x hx⟩
 
 /-- **Atoms' arguments.** -/
 theorem kb_atomArgs : AtomArgsRefP (kbInv hwf K) g := by

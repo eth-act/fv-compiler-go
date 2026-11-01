@@ -4,15 +4,17 @@ import GoFV.Proof.AtomSimDen
 # Applying `TermRef` to registers (issue #113)
 
 `TermRefP P Q S`: `TermRef` for valuations satisfying a source-side invariant `P` (at the atoms,
-and eventually at the denotations of the values of `S`) and the frame-level invariant `Q`, the
-premise of the atom simulation under an invariant (`AtomSim.Inv`); `TermRef` implies it
-(`TermRef.toP`).
+and eventually at the denotations of the values of `S`), the frame-level invariant `Q` and
+`MemAtoms` (memory roots hold the write of their arguments' terms, issue #151), the premise of
+the atom simulation under an invariant (`AtomSim.Inv`); `TermRef` implies it (`TermRef.toP`).
+The fuel on the right may depend on the valuations.
 
 `termRef_apply`: if `x`'s register in the source frame and `y`'s in the target frame are their
 terms' values over the atoms (`DenOK`), the atoms both frames hold are refined, the atoms'
-registers are fixed by `retype` at their shapes, and the source's registers satisfy `P`, then
-`TermRefP P S … x … y` gives `rv FS x ⊑ rv FT y`. The valuations are the frames' atom registers
-(`poison` elsewhere); the target's falls back to the source's on the atoms only the source holds.
+registers are fixed by `retype` at their shapes, the source's registers satisfy `P` and its
+memory roots hold their writes (`MemDefs`), then `TermRefP P S … x … y` gives
+`rv FS x ⊑ rv FT y`. The valuations are the frames' atom registers (`poison` elsewhere); the
+target's falls back to the source's on the atoms only the source holds.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -20,20 +22,20 @@ namespace GoFV.Proof.AtomSim
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term
 
 /-- `y` in `E` refines `x` in `D` as a term over the atoms, for source valuations whose atoms
-satisfy `P`, whose values of `S` eventually denote values satisfying `P`, and which satisfy
-`Q`. -/
+satisfy `P`, whose values of `S` eventually denote values satisfying `P`, which satisfy `Q`
+and whose memory roots hold the writes of their arguments (`MemAtoms`). -/
 def TermRefP (P : ID → Val → Prop) (Q : (ID → Val) → Prop) (S : ID → Prop)
     (D : ID → Option Value) (tabs : Tables) (x : ID) (E : ID → Option Value) (tabs' : Tables)
     (y : ID) : Prop :=
-  ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs' ρ' →
+  ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs' ρ' →
     (∀ a, ¬ IsTerm D a → P a (ρ a)) → (∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a)) →
-    Q ρ → Sem.Refines (den D tabs ρ n x) (den E tabs' ρ' m y)
+    Q ρ → MemAtoms D tabs ρ → ∀ n, ∃ m, Sem.Refines (den D tabs ρ n x) (den E tabs' ρ' m y)
 
 theorem TermRef.toP {D E : ID → Option Value} {tabs tabs' : Tables} {x y : ID}
     (h : TermRef D tabs x E tabs' y) (P : ID → Val → Prop) (Q : (ID → Val) → Prop)
-    (S : ID → Prop) : TermRefP P Q S D tabs x E tabs' y := fun n =>
+    (S : ID → Prop) : TermRefP P Q S D tabs x E tabs' y := fun ρ ρ' h1 h2 h3 _ _ _ _ n =>
   let ⟨m, hm⟩ := h n
-  ⟨m, fun ρ ρ' h1 h2 h3 _ _ _ => hm ρ ρ' h1 h2 h3⟩
+  ⟨m, hm ρ ρ' h1 h2 h3⟩
 
 theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by cases t <;> rfl
 
@@ -65,13 +67,13 @@ theorem termRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S :
     (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a)
     (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a)
-    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ) :
+    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ)
+    (hMS : MemDefs D tabs FS VS) :
     Sem.Refines (rv FS x) (rv FT y) := by
   classical
   let ρ : ID → Val := fun a => if VS a ∧ ¬ IsTerm D a then rv FS a else .poison
   let ρ' : ID → Val := fun a => if VT a ∧ ¬ IsTerm E a then rv FT a else ρ a
   obtain ⟨N, hN⟩ := (hS x hxS).2 ρ fun a ha hat => by simp [ρ, ha, hat]
-  obtain ⟨m, hm⟩ := hT N
   obtain ⟨M, hM⟩ := (hG y hyT).2 ρ' fun a ha hat => by simp [ρ', ha, hat]
   have hval : ValRef ρ ρ' := fun a => by
     by_cases h1 : VT a ∧ ¬ IsTerm E a
@@ -103,7 +105,12 @@ theorem termRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S :
     by_cases h2 : VS a ∧ ¬ IsTerm D a
     · exact .inl (ite_eq_left h2)
     · exact .inr (ite_eq_right h2)
-  have h := hm ρ ρ' hval htD htE hPρ hPS hQρ
+  have hMA : MemAtoms D tabs ρ := memAtoms_of hS hMS (fun a ha hat => by simp [ρ, ha, hat])
+    fun a hat hne => by
+      by_cases h2 : VS a ∧ ¬ IsTerm D a
+      · exact h2.1
+      · exact absurd (ite_eq_right h2) hne
+  obtain ⟨m, h⟩ := hT ρ ρ' hval htD htE hPρ hPS hQρ hMA N
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]
   exact Sem.Refines.trans h (den_fuel_mono E tabs ρ' m (max m M) y (Nat.le_max_left m M))

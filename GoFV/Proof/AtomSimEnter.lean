@@ -99,6 +99,30 @@ theorem denOK_phis {D : ID → Option Value} {tabs : Tables} {ctx : Ctx} (hctx :
   obtain ⟨a, y, -, -, hset⟩ := hphi x hx v hv hph (by rw [hsz]; exact lt_of_value? hv)
   exact ⟨_, hset⟩
 
+include hc in
+/-- **`MemDefs` after the `Phi`s**: the strict ancestors' memory roots keep their registers and
+arguments (`Phi`s are no memory roots). -/
+theorem memDefs_phis {tabs : Tables} {ctx : Ctx} (hctx : ctx.f = h)
+    {fr : Frame} {V : ID → Prop} {i : Nat} {ps : List (ID × Val)}
+    (hM : MemDefs h.value? tabs fr V) (hsub : ∀ x, SAnc h b x → V x)
+    (hps : hb.values.toList.filterMapM (phiStep ctx fr i) = .ok ps) :
+    MemDefs h.value? tabs { fr with regs := setPhis ps fr.regs } (V1 h b hb) := by
+  obtain ⟨-, -, hkeep, -⟩ := phis_spec (hwf.valuesNodup b hb ⟨hbm, hbb⟩) hps
+  rw [hctx] at hkeep
+  have hcl : ∀ x, SAnc h b x → ∀ v, h.value? x = some v → memOp v.op = true →
+      ∀ c ∈ v.args, SAnc h b c := by
+    intro x ⟨v, hp, hanc, hne⟩ w hw hm c hc'
+    rw [hp.1] at hw; cases hw
+    have hphi : v.op ≠ .Phi := fun he => by rw [he] at hm; cases hm
+    obtain ⟨va, hpa, hanc'⟩ := arg_anc hwf hc hp (Anc.left hc.parents hanc) hphi hc'
+    refine ⟨va, hpa, Anc.trans hc.parents hanc' hanc, fun he => ?_⟩
+    rw [he] at hanc'
+    exact hne (Anc.antisymm hc.parents hanc hanc')
+  refine (((hM.restrict hsub hcl).frame (fr' := { fr with regs := setPhis ps fr.regs })
+    (fun a ha => hkeep a (.inl (sanc_not_mem hwf hbm hbb ha)))).union (W := PhiOf h hb)
+    fun x ⟨_, v, hv, hph⟩ _ w hw hm => ?_).iff fun _ => Iff.rfl
+  rw [hv] at hw; cases hw; rw [hph] at hm; cases hm
+
 end
 
 theorem phi_not_term_f {f : Func} : ∀ x v, f.value? x = some v → v.op = .Phi → ¬ IsTerm f.value? x :=
@@ -179,6 +203,56 @@ theorem src_eval {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     change f.value? x = some v' at hv'
     rw [hv] at hv'; cases hv'
     rw [hy, evalValue_term hop hevy, (hown x hx v hv).1, tys_of_value hv]; rfl
+
+/-- The arguments of the values of a prefix `P` of the source's schedule are in `V1` or `P`. -/
+theorem src_args {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
+    (H : Hyp tabs f g ce ce' I) {b : ID} {fb gb : Block} {of og : Array ID}
+    (B : BlockData f g b fb gb of og) (htree : ((make f).depthOf b).isSome) {P Q : List ID}
+    (hPQ : of.toList = P ++ Q) :
+    ∀ x ∈ P, ∀ v, f.value? x = some v → ∀ a ∈ v.args, V1 f b fb a ∨ a ∈ P := by
+  intro x hx v hv a ha
+  have hnd : P.Nodup := (List.nodup_append.1 (hPQ ▸ B.ndS)).1
+  have hxof : x ∈ of.toList := by rw [hPQ]; exact List.mem_append_left _ hx
+  rcases sched_args H.wf H.cf B.bmS B.hfb htree B.mS x hxof v hv a ha with h | h
+  · exact .inl h
+  · rw [hPQ] at h
+    rcases List.mem_append.1 h with h | h
+    · exact .inr h
+    · exfalso
+      obtain ⟨d, s, hd⟩ := List.append_of_mem hx
+      have htop := hPQ ▸ B.tpS
+      rw [hd, List.append_assoc, List.cons_append] at htop
+      have := topoRem_mid htop a (by rw [argsF_of hv]; exact Array.mem_toList_iff.2 ha)
+      exact this (List.mem_cons_of_mem _ (by rw [hd] at hnd; exact List.mem_append_right _ h))
+
+/-- **`MemDefs` along the source's schedule prefix `P`**: each memory root evaluated holds the
+write of its arguments' registers (`evalValue_memOp`), which are evaluated before it. -/
+theorem src_eval_mem {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
+    (H : Hyp tabs f g ce ce' I)
+    {env : Env} {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
+    (htree : ((make f).depthOf b).isSome) {frP G : Frame} {P Q : List ID}
+    (hPQ : of.toList = P ++ Q) (hD : DenOK f.value? tabs frP (V1 f b fb))
+    (hM : MemDefs f.value? tabs frP (V1 f b fb))
+    (hsz : frP.regs.size = f.valueTab.size) (hty : Proof.Typed (Ctx.make tabs f) frP)
+    (hev : evalAll env (Ctx.make tabs f) frP P = .ok G) :
+    MemDefs f.value? tabs G (fun a => V1 f b fb a ∨ a ∈ P) := by
+  obtain ⟨-, -, -, -, e3, e4⟩ := src_eval H B htree hPQ hD hsz hty hev
+  have hPof : ∀ x ∈ P, x ∈ of.toList := fun x hx => by rw [hPQ]; exact List.mem_append_left _ hx
+  have hdisj : ∀ x, V1 f b fb x → x ∉ P := fun x hV hx => by
+    obtain ⟨hxb, v, hv, hph⟩ := (B.mS x).1 (hPof x hx)
+    rcases hV with h | ⟨-, v', hv', hph'⟩
+    · exact sanc_not_mem H.wf B.bmS B.hfb h hxb
+    · rw [hv] at hv'; cases hv'; exact hph hph'
+  refine (hM.frame fun a ha => e3 a (hdisj a ha)).union fun x hx _ v hv hm => ?_
+  obtain ⟨v', y, hv', hy, hevy⟩ := e4 x hx
+  change f.value? x = some v' at hv'
+  rw [hv] at hv'; cases hv'
+  obtain ⟨hxb, v', hv', -⟩ := (B.mS x).1 (hPof x hx)
+  rw [hv] at hv'; cases hv'
+  have hid : v.id = x := (placed_in H.wf B.bmS B.hfb hxb hv).2.2
+  obtain ⟨r, hr, rfl⟩ := evalValue_memOp hm hevy
+  refine ⟨src_args H B htree hPQ x hx v hv, r, hr, ?_⟩
+  rw [rv_of hy, hid, tys_shape]
 
 /-! ## The source-side invariant along a block entry -/
 

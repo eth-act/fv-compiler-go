@@ -38,7 +38,7 @@ theorem vt_placed : ∀ x, (V1 g b gb x ∨ x ∈ og.toList) → ∃ w, Placed g
 theorem term_sim {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {FS FT : Frame}
     (E : EndRel tabs f g I b fb gb of og FS FT) :
     Res.Rel Next.Refines (stepTerm FS fb) (stepTerm FT gb) :=
-  termStepRef_regs H E.dS E.dT (vt_placed H B) E.rel E.tyS E.tyT E.inv E.qinv
+  termStepRef_regs H E.dS E.mS E.dT (vt_placed H B) E.rel E.tyS E.tyT E.inv E.qinv
     (fun a h => .inl (.inl h)) (H.ctrls b B.bmT fb gb B.hfb B.hgb).2
     (fun _ hc => (ctrl_in H.wf H.cf B.bmS B.hfb R.treeS B.mS hc).1)
     (fun _ hc => (ctrl_in H.wg H.cg B.bmT B.hgb R.treeT B.mT hc).1)
@@ -66,9 +66,11 @@ theorem next_rel {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {
   obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 he
   exact { fr := E.fr, szS := E.szS, szT := E.szT, tyS := E.tyS, tyT := E.tyT, mem := n4,
           treeS := n3, treeT := m3, atoms := E.atoms,
-          den := ⟨_, _, E.dS, E.dT, vt_placed H B, n1, m1, n2, m2⟩, live := l, inv := p, phis := ph,
+          den := ⟨_, _, E.dS, E.dT, vt_placed H B, n1, m1, n2, m2, E.mS⟩, live := l, inv := p,
+          phis := ph,
           qinv := q,
-          pre := .inr ⟨b, fb, k, _, B.bmS, B.hfb, hk, E.inv, E.qinv, E.dS, ancV_sets H B, n2⟩ }
+          pre := .inr ⟨b, fb, k, _, B.bmS, B.hfb, hk, E.inv, E.qinv, E.dS, ancV_sets H B, n2,
+            E.mS⟩ }
 
 end
 
@@ -158,7 +160,8 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       atoms := fun a w _ _ y' h => absurd h (hnone a y'),
       den := ⟨fun _ => False, fun _ => False, denOK_empty _ _ _, denOK_empty _ _ _,
         fun _ h => h.elim, fun x h => hentry f ce H.wf H.cf x h,
-        fun x h => hentry g ce' H.wg H.cg x (hge ▸ h), hphi f ce H.wf _, hge ▸ hphi g ce' H.wg _⟩,
+        fun x h => hentry g ce' H.wg H.cg x (hge ▸ h), hphi f ce H.wf _, hge ▸ hphi g ce' H.wg _,
+        memDefs_empty _ _ _⟩,
       live := I.start.1, inv := fun a => by rw [hpois a]; exact I.start.2 a,
       phis := fun bb hbb z hz v hv hph a ha => (hphi f ce H.wf (fun _ => False) bb hbb z hz v hv hph
         a ha).elim,
