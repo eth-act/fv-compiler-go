@@ -16,15 +16,19 @@ the last block `c_K` has `b`'s kind, controls and successors.
 Every value listed in a block of the chain has a *role* (`roleOf`, first match): *held* (kept:
 a value of `f` listed in `g` with the fields the semantics reads unchanged, `sameV`; or the
 last store `last` of a run, which becomes `WBend` in its end block: either way it holds the
-source's register), the write-barrier flag's address `wbaddr` and the constant `const0` (new
-values of `g`'s entry block), a value of run `j` (`roleRun`: in `cⱼ` the flag `Load`/`Neq32`;
-in `cⱼ₊₁` the memory `Phi [memⱼ, memThen]`, the nil-check copy and the run's stores re-emitted
-in order, `Run.tgt`; in `tⱼ₊₁` by op: the nil-check copy, `WB [n] memⱼ` with its
-`Select0`/`Select1`, buffer pointers `OffPtr [8k]` (`k < n ≤ 8`), buffer `Store`s of `uintptr`
-on a memory chain from the `Select1` and old-value `Load`s), the lazily created `SB`/`SP`/
-`Const32`/`Addr` of `g`'s entry, or an argument-free `Invalid`. `roleOK` checks each role's
-fields, arguments and block; arguments of new values that are held are arguments of a source
-value of `b` (so they are available where the source evaluates that value).
+source's register), the write-barrier flag's address `wbaddr` (a new value, never held) and the
+constant `const0` (values of `g`'s entry block), a value of run `j` (`roleRun`: in `cⱼ` the flag
+`Load`/`Neq32`; in `cⱼ₊₁` the memory `Phi [memⱼ, memThen]`, the nil-check copy and the run's
+stores re-emitted in order, `Run.tgt`; in `tⱼ₊₁` by op (`thenRole`): the nil-check copy,
+`WB [n] memⱼ` with its `Select0`/`Select1`, buffer pointers `OffPtr [8k]` (`k < n ≤ 8`), buffer
+`Store`s of `uintptr` on a memory chain from the `Select1` and old-value `Load`s), the lazily
+created `SB`/`SP`/`Const32`/`Addr` of `g`'s entry, or an argument-free `Invalid` (`otherRole`).
+`roleOK` checks each role's fields, arguments and block; arguments of new values that are held
+are arguments of a source value of `b` (so they are available where the source evaluates that
+value). `runOK` also checks that each run's values are listed where their roles say (flag in
+`cⱼ`, copies and `WBend` in `cⱼ₊₁`), that the run's memory is held and the nil-check copies have
+their roles; `blockOK` that the chain's blocks are listed in `g` and every kept value of `b` is
+listed in a segment.
 
 Order: the non-pure nodes of `b`'s schedule are the kept ones of `c₀`, then per run the dropped
 nil check and the run's stores, then the kept ones of `cⱼ₊₁` (`npOK`); the nil-check copies

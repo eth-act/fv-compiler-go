@@ -71,8 +71,8 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
         let bad := bad.map fun x => (x, (g.value? x).map (·.op.name), repr (c.roleOf rs x))
         return s!"run b{b} j{j} then-bad={bad}"
     for x in B.values do
-      if !((c.K.getD x false && segs.any fun s => (vals g s).contains x) ||
-          rs.any (fun r => r.src.contains x) || rs.any (fun r => r.nc == some x)) then
+      if !(if c.K.getD x false then segs.any fun s => (vals g s).contains x
+          else rs.any (fun r => r.src.contains x) || rs.any (fun r => r.nc == some x)) then
         return s!"unclassified b{b} v{x} {(f.getV x).op.name} kept={c.K.getD x false}"
     for (s, j) in segs.zipIdx do
       for x in vals g s do
