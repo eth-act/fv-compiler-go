@@ -497,7 +497,7 @@ needs a later phase of the semantics.
 | `generic` | NeqInter | 0 | 1 | 0 | 0 | 1 |
 | `generic` | NeqPtr | 1 | 8 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 0 | 1 | 0 | 0 | 1 |
-| `generic` | NilCheck | 3 | 0 | 0 | 8 | 8 |
+| `generic` | NilCheck | 4 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 72 | 4 | 4 | 0 | 80 |
@@ -699,6 +699,7 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:585 Neq64` | `r_generic_585_3` | P1 | 204 | 8 | 8 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 8 | 8 |
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 8 | 8 |
+| `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 7 | 7 |
 | `generic.rules:793 NeqSlice` | `r_generic_793` | P2 | 50 | 6 | 6 |
 | `generic.rules:574 Lsh64x64` | `r_generic_574/r_generic_574_2` | P1 | 47 | 6 | 6 |
 | `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 6 | 6 |
