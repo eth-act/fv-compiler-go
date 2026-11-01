@@ -51,6 +51,17 @@ def valueClasses (f g : Func) (fv gv : Value) : List String := Id.run do
   let _ := f
   return cs
 
+/-- The term at `x` to depth `d`, as `Op(args…)` (statistics of rejections). -/
+def descr (f : Func) : Nat → ID → String
+  | 0, _ => "_"
+  | d + 1, x => match f.value? x with
+    | some v =>
+      let n := if v.op == .Const64 || v.op == .Const32 || v.op == .Const8 || v.op == .Const16 then
+        s!"{v.op.name}[{v.auxInt}]" else v.op.name
+      if v.args.isEmpty || v.op == .Phi then n else
+      s!"{n}({", ".intercalate (v.args.toList.map (descr f d))})"
+    | none => "?"
+
 def bump (m : Std.HashMap String Nat) (k : String) (n : Nat := 1) : Std.HashMap String Nat :=
   m.insert k (m.getD k 0 + n)
 
@@ -101,7 +112,7 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
       for (k, n) in cs.rej.toList do st := { st with rej := bump st.rej k n }
       for (k, b, x) in cs.why do
         if !(k.startsWith "args" || k.startsWith "Mul" || k.startsWith "Add" || k.startsWith "And" || k.startsWith "Or") then
-          IO.println s!"REJ {k} {path} b{b} v{x}"
+          IO.println s!"REJ {k} {path} b{b} v{x} {descr f 3 x}"
       if h == g then st := { st with same := st.same + 1 }
       if h == f && g != f then
         st := { st with relFail := st.relFail + 1 }
