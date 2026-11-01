@@ -57,4 +57,26 @@ def tabsAgree (tabs tabs' : Tables) (f : Func) : Bool :=
   outargsSize tabs' == outargsSize tabs &&
   f.valueTab.toList.all fun o => Ty.beq (valueTy sh' o) (valueTy sh o) && valueAuxAgree tabs tabs' o
 
+/-- `tabsAgree` up to extra frame temporaries: `tabs'` may add frame variables that `tabs`
+does not define (`tabs.aux? n = none`), each a non-forgeable `PAUTO` (a `Blk.temp` block), as
+`decompose user`/`decompose builtin` do when they split a variable into its pieces. The frame of
+`f` in `tabs'` is then its frame in `tabs` plus blocks the source never points into: running `f`
+in `tabs'` gives the same outcomes for inputs that hold no pointer into a `temp` block, in an
+environment whose contracts cannot see unreachable frame temporaries
+(`GoFV.Proof.run_tabsAgreeMod`). Every other conjunct is `tabsAgree`'s. -/
+def tabsAgreeMod (tabs tabs' : Tables) (f : Func) : Bool :=
+  let ps := abiParams tabs f
+  let params := (ps.filter (!·.out)).map (·.name)
+  let ls := frameLocals tabs params
+  let ls' := frameLocals tabs' params
+  let sh := typeShapes tabs
+  let sh' := typeShapes tabs'
+  decide ((abiParams tabs' f).toList = ps.toList) &&
+  ps.toList.all (fun p => Ty.beq (tabs'.ty p.type) (tabs.ty p.type)) &&
+  decide (ls'.toList.filter (fun l => (tabs.aux? l.1).isSome) = ls.toList) &&
+  ls'.toList.all (fun l => (tabs.aux? l.1).isSome || !tabs'.forgeable l.1) &&
+  ls.toList.all (fun l => tabs'.forgeable l.1 == tabs.forgeable l.1) &&
+  outargsSize tabs' == outargsSize tabs &&
+  f.valueTab.toList.all fun o => Ty.beq (valueTy sh' o) (valueTy sh o) && valueAuxAgree tabs tabs' o
+
 end GoFV.Opt
