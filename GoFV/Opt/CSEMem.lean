@@ -46,15 +46,16 @@ def allocOf (tabs : Tables) (f : Func) (b : ID) : Option Alloc :=
   | none => none
 
 /-- `[p, p+w)` and `[q, q+wq)` are disjoint: an empty access, different allocations, or the
-same base at non-overlapping offsets. -/
+same base (or bases naming the same allocation) at non-overlapping offsets. -/
 def disjointP (tabs : Tables) (f : Func) (p : ID) (w : Int) (q : ID) (wq : Int) : Bool :=
   w == 0 || wq == 0 ||
   let (bp, op) := baseOff f 64 p 0
   let (bq, oq) := baseOff f 64 q 0
-  if bp == bq then op + w ≤ oq || oq + wq ≤ op
+  let apart := op + w ≤ oq || oq + wq ≤ op
+  if bp == bq then apart
   else
     match allocOf tabs f bp, allocOf tabs f bq with
-    | some a, some b => a != b
+    | some a, some b => a != b || apart
     | _, _ => false
 
 /-- The def a load of `t` at `p` with memory argument `m` reads through: the first def along the

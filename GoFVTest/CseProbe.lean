@@ -41,7 +41,7 @@ def why (tabs : Tables) (strict : Bool) (f g : Func) (rw : Array (Option ID)) : 
 def whyLoad (tabs : Tables) (rw : Array (Option ID)) (f : Func) (fx fr : Value) : String :=
   match fx.args[0]?, fr.args[0]?, fx.args[1]?, fr.args[1]? with
   | some p, some p', some m, some m' =>
-    if p != p' then "ptr-differs"
+    if rep rw p != rep rw p' then "ptr-differs"
     else if memEnd tabs f p fx.type m != memEnd tabs f p fx.type m' then "memEnd-differs"
     else if !((rw.getD m none).isNone && (rw.getD m' none).isNone) then "mem-replaced"
     else "ok"

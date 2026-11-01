@@ -414,13 +414,13 @@ def fieldsEq : List (Nat × Sem.Ty) → List (Nat × Sem.Ty) → Bool
   | _, _ => false
 end
 
-/-- The memory chains of the loads `x` (of `f`) and its representative `r` reach the same def
-through disjoint stores (`memEnd`, both walked for `x`'s address and type), and no value on
-them is replaced. -/
+/-- The loads `x` (of `f`) and its representative `r` read the same address (up to `rep`) and
+their memory chains reach the same def through stores disjoint from `x`'s access (`memEnd`, both
+walked for `x`'s address and type); their memory arguments are not replaced. -/
 def loadOK (tabs : Tables) (rw : Array (Option ID)) (f : Func) (fx fr : Value) : Bool :=
   match fx.args[0]?, fr.args[0]?, fx.args[1]?, fr.args[1]? with
   | some p, some p', some m, some m' =>
-    p == p' && memEnd tabs f p fx.type m == memEnd tabs f p fx.type m' &&
+    rep rw p == rep rw p' && memEnd tabs f p fx.type m == memEnd tabs f p fx.type m' &&
       (rw.getD m none).isNone && (rw.getD m' none).isNone
   | _, _, _, _ => false
 
