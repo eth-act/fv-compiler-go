@@ -617,14 +617,13 @@ def domKOK (B : ID) : Bool :=
 
 end Info
 
-/-- `b` and the blocks of `K` entered (in `g`) only from those, by rounds (untrusted: `dsOK`
-checks the result). -/
+/-- The largest set of blocks of `K` and `b` whose members other than `b` are entered (in `g`)
+only from members (loops of the plan's blocks included): from all of them, drop the others by
+rounds (untrusted: `dsOK` checks the result). -/
 def domSet (g : Func) (b : ID) (K : Array ID) : Array ID := Id.run do
-  let mut S := #[b]
-  for _ in [0:K.size] do
-    for Y in K do
-      if !S.contains Y && Y != g.entry && (g.getB Y).preds.all (S.contains ·.b) then
-        S := S.push Y
+  let mut S := addU K b
+  for _ in [0:K.size + 1] do
+    S := S.filter fun Y => Y == b || (Y != g.entry && (g.getB Y).preds.all (S.contains ·.b))
   return S
 
 /-- The checker's view of a rewrite at site `s`. -/
