@@ -2,6 +2,7 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.CopyElim
 import GoFV.SSA.Sem.Run
+import GoFV.Proof.Pass.CopyFrag
 
 open GoFV.SSA GoFV.Opt GoFV.SSA.DomCert
 deriving instance BEq for GoFV.SSA.Sem.Ty
@@ -51,7 +52,7 @@ def copyRel (tabs : Tables) (f g : Func) : Option String × Nat × Nat := Id.run
   return (none, unk, emp)
 
 /-- In every tree block, consecutive roots of the schedule are dependency-chained. -/
-def rootsChained (f : Func) : Option String := Id.run do
+def rootsChained (f : Func) : Bool := Id.run do
   let c := make f
   for bid in f.blocks do
     if !c.inTree bid then continue
@@ -61,7 +62,7 @@ def rootsChained (f : Func) : Option String := Id.run do
     let mut prev : Option ID := none
     for r in o do
       let some rv := f.value? r | continue
-      if GoFV.SSA.Sem.prio rv.op != 2 then continue
+      if GoFV.SSA.Sem.prio rv.op == 0 then continue
       if let some p := prev then
         -- does r depend (transitively, within the block) on p?
         let mut seen : Std.HashSet ID := {}
@@ -85,9 +86,23 @@ def rootsChained (f : Func) : Option String := Id.run do
             if inb.contains a && !seen.contains a then
               seen := seen.insert a
               stack2 := stack2.push a
-        if !found then return some s!"{((f.value? p).map (·.op.name)).getD "?"} / {rv.op.name}"
+        if !found then return false
       prev := some r
-  return none
+  return true
+
+/-- The first condition of `copyFrag` that `f` fails (for the report). -/
+def fragWhy (tabs : Tables) (f : Func) : String := Id.run do
+  if f.valueTab.size > f.vidLast + 1 then return "size"
+  for bid in f.blocks do
+    let some b := f.block? bid | continue
+    for x in b.values do
+      let some v := f.value? x | continue
+      if (v.op == .Copy || v.op == .Phi) && !v.args.all (fun a => (f.value? a).any fun w =>
+          GoFV.Proof.CopyElim.tyEq (tabs.ty w.type) (tabs.ty v.type)) then
+        return s!"shape {v.op.name}"
+      if v.op == .Copy && GoFV.Proof.CopyElim.zeroSizeB tabs v.type then return "zero-size copy"
+      if !GoFV.Proof.CopyElim.chainEnds f.value? (f.valueTab.size + 1) x then return "copy cycle"
+  return "?"
 
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
@@ -105,7 +120,9 @@ def main (args : List String) : IO UInt32 := do
   let mut errs := 0
   let mut shown := 0
   let mut unchained := 0
-  let mut pairs : Std.HashMap String Nat := {}
+  let mut frag := 0
+  let mut shownFrag := 0
+  let mut fragWhys : Std.HashMap String Nat := {}
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok ex := parseExport data | continue
@@ -117,6 +134,14 @@ def main (args : List String) : IO UInt32 := do
       let env : CheckEnv := { tabs, typs }
       if (check env f).toBool == false then continue
       secs := secs + 1
+      if GoFV.Proof.CopyElim.copyFrag tabs f then frag := frag + 1
+      else
+        let why := fragWhy tabs f
+        let key := s!"{why} after {s.pass.toStringLossy}"
+        fragWhys := fragWhys.insert key (fragWhys.getD key 0 + 1)
+        if shownFrag < 10 then
+          IO.println s!"NOFRAG {path} {s.index} ({s.pass.toStringLossy}): {why}"
+          shownFrag := shownFrag + 1
       match copyelim tabs f with
       | .error _ => errs := errs + 1
       | .ok g =>
@@ -126,9 +151,7 @@ def main (args : List String) : IO UInt32 := do
             IO.println s!"GFAIL {path} {s.index}: {match check env g with | .error m => m | _ => ""}"
             shown := shown + 1
         let (r, u, e) := copyRel tabs f g
-        if let some k := rootsChained f then
-          unchained := unchained + 1
-          pairs := pairs.insert k (pairs.getD k 0 + 1)
+        if !rootsChained f then unchained := unchained + 1
         unk := unk + u
         emp := emp + e
         match r with
@@ -138,9 +161,8 @@ def main (args : List String) : IO UInt32 := do
           if shown < 30 then
             IO.println s!"BAD {path} {s.index} ({s.pass.toStringLossy}): {msg}"
             shown := shown + 1
-  IO.println s!"sections {secs}: rel ok {ok}, bad {bad}, check(g) fails {gfail}, errors {errs}; tree Unknown {unk}, Empty {emp}; roots not chained {unchained}"
-  for (k, n) in pairs.toArray.qsort (fun a b => a.2 > b.2) |>.toList.take 40 do
-    IO.println s!"  {n} {k}"
+  IO.println s!"sections {secs}: CopyFrag {frag}, rel ok {ok}, bad {bad}, check(g) fails {gfail}, errors {errs}; tree Unknown {unk}, Empty {emp}; roots not chained {unchained}"
+  IO.println s!"CopyFrag failures by first failing condition: {fragWhys.toList}"
   return 0
 
 end GoFVTest.CopyRelProbe
