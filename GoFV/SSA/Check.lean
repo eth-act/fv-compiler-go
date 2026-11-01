@@ -4,6 +4,7 @@ import GoFV.SSA.Analysis.Postorder
 import GoFV.SSA.Analysis.Dom
 import GoFV.SSA.Analysis.LoopNest
 import GoFV.SSA.DomCert
+import GoFV.SSA.Sem.Layout
 
 /-!
 # `GoFV.SSA.check`: well-formedness checker (port of `ssa/check.go`, issue #8)
@@ -462,10 +463,42 @@ def checkGo (e : CheckEnv) (f : Func) : Except String Unit := do
         throw s!"v{vid} has {uses[vid]!} uses, but has Uses={v.uses}"
   memCheck e f
 
+/-- The shapes the pointer ops' arguments have (beyond Go's `checkFunc`, issue #69): `PtrIndex`
+takes a pointer first; `OffPtr`, `AddPtr`, `IsNonNil`, `EqPtr`, `NeqPtr` pointer-sized words —
+pointers or 64-bit integers (`SP` after `expand calls`, itab words after `decompose builtin`
+are `uintptr`); `AddPtr`/`PtrIndex` a 64-bit integer second; `Convert` converts between
+pointer-sized words. -/
+def argShapeOK (e : CheckEnv) (f : Func) (v : Value) : Bool :=
+  let sh (i : Nat) : Option Sem.Ty := (v.args[i]?.bind (Check.typeOf? f)).map e.tabs.ty
+  let isP (i : Nat) := match sh i with | some (.ptr _) => true | _ => false
+  let isI (i : Nat) := match sh i with | some (.int .w64) => true | _ => false
+  let isW (i : Nat) := isP i || isI i
+  match v.op with
+  | .OffPtr | .IsNonNil => isW 0
+  | .AddPtr => isW 0 && isI 1
+  | .PtrIndex => isP 0 && isI 1
+  | .EqPtr | .NeqPtr => isW 0 && isW 1
+  | .Convert =>
+    match e.tabs.ty v.type with
+    | .ptr _ => isP 0 || isI 0
+    | .int .w64 => isP 0 || isI 0
+    | _ => false
+  | _ => true
+
+/-- `argShapeOK` of every listed value. -/
+def checkArgShapes (e : CheckEnv) (f : Func) : Except String Unit := do
+  for bid in f.blocks do
+    let some b := f.block? bid | continue
+    for vid in b.values do
+      let some v := f.value? vid | continue
+      if !argShapeOK e f v then throw s!"v{vid}: {v.op.name} argument shapes"
+
 /-- The well-formedness checker: Go's `checkFunc` (`checkGo`), then the validation of the
-dominator tree it relies on (`DomCert.check`), which the pass proofs use for dominance. -/
+dominator tree it relies on (`DomCert.check`), which the pass proofs use for dominance, then
+the argument shapes of the pointer ops (`checkArgShapes`). -/
 def check (e : CheckEnv) (f : Func) : Except String Unit := do
   checkGo e f
   DomCert.check f
+  checkArgShapes e f
 
 end GoFV.SSA

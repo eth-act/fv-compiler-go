@@ -461,6 +461,45 @@ theorem check_domCert {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) :
     DomCert.check f = .ok () := by
   unfold check at h
   obtain ⟨⟨⟩, -, h2⟩ := bind_ok h
-  exact h2
+  obtain ⟨⟨⟩, h3, -⟩ := bind_ok h2
+  exact h3
+
+open CheckFacts in
+theorem checkArgShapes_spec {ce : CheckEnv} {f : Func} (h : checkArgShapes ce f = .ok ()) :
+    ∀ bid b vid v, ValueIn f bid b vid v → argShapeOK ce f v = true := by
+  rintro bid b vid v ⟨⟨hbm, hb⟩, hvb, hv⟩
+  unfold checkArgShapes at h
+  obtain ⟨⟨⟩, h, -⟩ := bind_ok h
+  refine forIn_array_unit (fun bid => ∀ b, f.block? bid = some b → ∀ vid ∈ b.values, ∀ v,
+      f.value? vid = some v → argShapeOK ce f v = true) ?_ h bid hbm b hb vid hvb v hv
+  intro x s hs
+  split at hs
+  · rename_i b' hb'
+    obtain ⟨⟨⟩, hl, hs⟩ := bind_ok hs
+    cases hs
+    refine ⟨fun b hb vid hvb v hv => ?_, rfl⟩
+    rw [hb'] at hb; cases hb
+    refine forIn_array_unit (fun vid => ∀ v, f.value? vid = some v → argShapeOK ce f v = true)
+      ?_ hl vid hvb v hv
+    intro y s hs
+    split at hs
+    · rename_i w hw
+      split at hs
+      · exact absurd hs (throw_bind_ne)
+      · cases hs; rename_i hok
+        exact ⟨fun v hv => by rw [hw] at hv; cases hv; simpa using hok, rfl⟩
+    · rename_i hn
+      cases hs; exact ⟨fun v hv => absurd hv (hn v), rfl⟩
+  · rename_i hn
+    cases hs; exact ⟨fun b hb => absurd hb (hn b), rfl⟩
+
+open CheckFacts in
+/-- **Pointer ops of a checked function have pointer-sized arguments** (`argShapeOK`). -/
+theorem check_argShapes {ce : CheckEnv} {f : Func} (h : check ce f = .ok ()) :
+    ∀ bid b vid v, ValueIn f bid b vid v → argShapeOK ce f v = true := by
+  unfold check at h
+  obtain ⟨⟨⟩, -, h2⟩ := bind_ok h
+  obtain ⟨⟨⟩, -, h3⟩ := bind_ok h2
+  exact checkArgShapes_spec h3
 
 end GoFV.Proof
