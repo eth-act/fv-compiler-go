@@ -32,6 +32,7 @@ import GoFV.Proof.Rules.Div3
 import GoFV.Proof.Rules.DivisibleGen
 import GoFV.Proof.Rules.DivisibleGen2
 import GoFV.Proof.Rules.DivisibleGen3
+import GoFV.Proof.Rules.DivisibleS
 import GoFV.Proof.Rules.DivisibleU
 import GoFV.Proof.Rules.DivisibleU2
 import GoFV.Proof.Rules.DivmodS
@@ -360,14 +361,14 @@ set_option maxRecDepth 4096 in
 theorem divisible_allSound : Proven.divisible.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.divisible, ForallL]
-    exact ⟨⟨Rule.checked_of_sound r_divisible_17_sound rfl, Rule.checked_of_sound r_divisible_20_sound rfl, Rule.checked_of_sound r_divisible_48_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_17_2_sound rfl, Rule.checked_of_sound r_divisible_20_2_sound rfl, Rule.checked_of_sound r_divisible_64_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_17_3_sound rfl, Rule.checked_of_sound r_divisible_20_3_sound rfl, Rule.checked_of_sound r_divisible_80_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_17_4_sound rfl, Rule.checked_of_sound r_divisible_20_4_sound rfl, Rule.checked_of_sound r_divisible_32_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_23_sound rfl, Rule.checked_of_sound r_divisible_26_sound rfl, Rule.checked_of_sound r_divisible_56_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_23_2_sound rfl, Rule.checked_of_sound r_divisible_26_2_sound rfl, Rule.checked_of_sound r_divisible_72_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_23_3_sound rfl, Rule.checked_of_sound r_divisible_26_3_sound rfl, Rule.checked_of_sound r_divisible_88_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divisible_23_4_sound rfl, Rule.checked_of_sound r_divisible_26_4_sound rfl, Rule.checked_of_sound r_divisible_40_sound rfl, trivial⟩, trivial⟩)
+    exact ⟨⟨Rule.checked_of_sound r_divisible_17_sound rfl, Rule.checked_of_sound r_divisible_20_sound rfl, Rule.checked_of_sound r_divisible_48_sound rfl, Rule.checked_of_sound r_divisible_116_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_17_2_sound rfl, Rule.checked_of_sound r_divisible_20_2_sound rfl, Rule.checked_of_sound r_divisible_64_sound rfl, Rule.checked_of_sound r_divisible_134_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_17_3_sound rfl, Rule.checked_of_sound r_divisible_20_3_sound rfl, Rule.checked_of_sound r_divisible_80_sound rfl, Rule.checked_of_sound r_divisible_152_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_17_4_sound rfl, Rule.checked_of_sound r_divisible_20_4_sound rfl, Rule.checked_of_sound r_divisible_32_sound rfl, Rule.checked_of_sound r_divisible_98_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_23_sound rfl, Rule.checked_of_sound r_divisible_26_sound rfl, Rule.checked_of_sound r_divisible_56_sound rfl, Rule.checked_of_sound r_divisible_125_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_23_2_sound rfl, Rule.checked_of_sound r_divisible_26_2_sound rfl, Rule.checked_of_sound r_divisible_72_sound rfl, Rule.checked_of_sound r_divisible_143_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_23_3_sound rfl, Rule.checked_of_sound r_divisible_26_3_sound rfl, Rule.checked_of_sound r_divisible_88_sound rfl, Rule.checked_of_sound r_divisible_161_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_divisible_23_4_sound rfl, Rule.checked_of_sound r_divisible_26_4_sound rfl, Rule.checked_of_sound r_divisible_40_sound rfl, Rule.checked_of_sound r_divisible_107_sound rfl, trivial⟩, trivial⟩)
     (by simp [Proven.divisible, ForallL])
 
 set_option maxRecDepth 4096 in
