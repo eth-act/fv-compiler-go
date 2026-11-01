@@ -6,8 +6,9 @@ import GoFV.Proof.ProveCheck.DecideSound
 `fold_ref`: under assumptions `A` that hold, an argument `a` that `foldOK` lets become the
 constant `c` of the output is refined by it, at every fuel. A boolean `a` is `poison` or the
 value `decides` says (`decides_sound`); an integer `a` is `poison` or the single point of its
-range (`rng_sound`), never a pointer word (`intOnly_not_ptr`: a range-table node evaluates to
-an integer or `poison`, a side of a comparison fact eventually to an integer).
+range (`rng_sound`), never a pointer word (`intOnly_not_ptr`: its `canon`ical form is a
+range-table node, which evaluates to an integer or `poison`, or a side of a comparison fact,
+eventually an integer).
 -/
 
 namespace GoFV.Proof.ProveCheck
@@ -101,33 +102,43 @@ theorem den_hasTy (hty : Term.Typed D tabs ρ) {a : ID} {u : Value} (hu : D a = 
       rw [hs] at this
       rw [← this]; exact Val.retype_hasTy _ _
 
-/-- A value `intOnly` admits, of integer shape, is never a pointer word. -/
-theorem intOnly_not_ptr (hA : AsmHolds D tabs ρ A) {a : ID} {av : Value} (hav : D a = some av)
-    {w : Width} (hw : tabs.ty av.type = .int w) (h : intOnly D tabs A a = true) (n : Nat) :
-    NoPtr (den D tabs ρ n a) := by
-  unfold intOnly at h
-  rcases Bool.or_eq_true_iff.1 h with h | h
-  · rw [hav] at h
-    simp only [Option.any_some, Bool.and_eq_true] at h
-    obtain ⟨ht, hr⟩ := h
-    obtain ⟨c, hc⟩ := Option.isSome_iff_exists.1 hr
-    cases n with
-    | zero => exact noPtr_poison
-    | succ n =>
-      rw [den_succ_term hav ht, rTab_eval hc, hw]
-      exact noPtr_retype_int (rOpEval_noPtr _ _ _ _)
-  · obtain ⟨⟨c, v⟩, hf, hm⟩ := List.any_eq_true.1 h
-    split at hm
-    · rename_i x y w' r hr
-      intro p hp
-      obtain ⟨N, hN⟩ := relOf_sound hA hf hr
-      obtain ⟨xa, xb, h1, h2, -⟩ := hN (max N n) (Nat.le_max_left _ _)
-      have hk := refines_ptr (hp ▸ den_fuel_mono D tabs ρ n (max N n) a (Nat.le_max_right _ _))
-      simp only [Bool.or_eq_true, beq_iff_eq] at hm
-      rcases hm with rfl | rfl
-      · rw [h1] at hk; cases hk
-      · rw [h2] at hk; cases hk
-    · cases hm
+/-- A value `intOnly` admits is never a pointer word. -/
+theorem intOnly_not_ptr (hA : AsmHolds D tabs ρ A) {a : ID} (h : intOnly D tabs A a = true)
+    (n : Nat) : NoPtr (den D tabs ρ n a) := by
+  have key : ∀ m, NoPtr (den D tabs ρ m (canon D tabs a)) := by
+    intro m
+    unfold intOnly at h
+    dsimp only at h
+    generalize canon D tabs a = a' at h ⊢
+    rcases Bool.or_eq_true_iff.1 h with h | h
+    · cases hav : D a' with
+      | none => rw [hav] at h; cases h
+      | some av =>
+      rw [hav] at h
+      simp only [Option.any_some, Bool.and_eq_true] at h
+      obtain ⟨⟨ht, hr⟩, hw⟩ := h
+      obtain ⟨c, hc⟩ := Option.isSome_iff_exists.1 hr
+      obtain ⟨w, hw⟩ := Option.isSome_iff_exists.1 hw
+      cases m with
+      | zero => exact noPtr_poison
+      | succ m =>
+        rw [den_succ_term hav ht, rTab_eval hc, width_some hw]
+        exact noPtr_retype_int (rOpEval_noPtr _ _ _ _)
+    · obtain ⟨⟨c, v⟩, hf, hm⟩ := List.any_eq_true.1 h
+      split at hm
+      · rename_i x y w' r hr
+        intro p hp
+        obtain ⟨N, hN⟩ := relOf_sound hA hf hr
+        obtain ⟨xa, xb, h1, h2, -⟩ := hN (max N m) (Nat.le_max_left _ _)
+        have hk := refines_ptr (hp ▸ den_fuel_mono D tabs ρ m (max N m) a' (Nat.le_max_right _ _))
+        simp only [Bool.or_eq_true, beq_iff_eq] at hm
+        rcases hm with rfl | rfl
+        · rw [h1] at hk; cases hk
+        · rw [h2] at hk; cases hk
+      · cases hm
+  rcases canon_cases hA.typed a n with e | ⟨m, e⟩
+  · rw [e]; exact noPtr_poison
+  · rw [e]; exact key m
 
 theorem listedDefs_of {g : Func} {c : ID} {cv : Value} (hc : g.value? c = some cv)
     (hl : g.blocks.contains cv.block = true ∧ (g.block? cv.block).any (·.values.contains c) = true) :
@@ -179,7 +190,7 @@ theorem fold_ref {g : Func} {ρ' : ID → Val} (hA : AsmHolds D tabs ρ A) {a c 
       obtain ⟨⟨⟨rfl, hop⟩, hio⟩, hpt, hval⟩ := hk
       rw [hop, htc, constOp_eval]
       rw [hta] at hT
-      have hnp := intOnly_not_ptr hA hav hta hio (n + 1)
+      have hnp := intOnly_not_ptr hA hio (n + 1)
       generalize hd : den D tabs ρ (n + 1) a = z at hT hnp
       cases z with
       | poison => exact .poison _

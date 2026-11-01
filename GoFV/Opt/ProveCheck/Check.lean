@@ -284,10 +284,12 @@ def constOp : Width → Op
   | .w32 => .Const32
   | .w64 => .Const64
 
-/-- `a`'s value is never a pointer word: `a` is a range-table node or a side of a comparison
-fact. -/
+/-- `a`'s value is never a pointer word: its `canon`ical form is a range-table node of integer
+shape or a side of a comparison fact. -/
 def intOnly (D : ID → Option Value) (tabs : Tables) (A : Asm) (a : ID) : Bool :=
-  (D a).any (fun av => termOp av.op && (rTab.lookup av.op).isSome) ||
+  let a := canon D tabs a
+  (D a).any (fun av => termOp av.op && (rTab.lookup av.op).isSome &&
+    (tabs.ty av.type).width?.isSome) ||
   A.facts.any fun fact => match relOf D tabs fact with
     | some (x, y, _, _) => x == a || y == a
     | none => false

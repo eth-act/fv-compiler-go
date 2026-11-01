@@ -1,4 +1,5 @@
 import GoFV.Proof.ProveCheck.RngOp
+import GoFV.Proof.ProveCheck.Proj
 
 /-!
 # The range analysis is sound (issue #24)
@@ -54,15 +55,15 @@ theorem cmp_den {c a b : ID} {cv : Value} (hc : D c = some cv) (hargs : cv.args.
       (cmpEval k [den D tabs ρ K a, den D tabs ρ K b]).retype (tabs.ty cv.type) := by
   rw [den_succ_term hc (cTab_term hk), cTab_eval hk, hargs]; rfl
 
-/-- **A path fact as a relation.** -/
-theorem relOf_sound (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) ∈ A.facts)
-    {a b : ID} {w : Width} {r : Rel} (hr : relOf D tabs (c, v) = some (a, b, w, r)) :
+/-- A path fact as a relation between its comparison's arguments. -/
+theorem relRaw_sound (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) ∈ A.facts)
+    {a b : ID} {w : Width} {r : Rel} (hr : relRaw D tabs (c, v) = some (a, b, w, r)) :
     ∃ N, ∀ K, N ≤ K → ∃ xa xb, den D tabs ρ K a = .int w xa ∧ den D tabs ρ K b = .int w xb ∧
       RelHolds r xa xb := by
   obtain ⟨N, hN⟩ := h.facts c v hf
   refine ⟨N, fun K hK => ?_⟩
   have hcK := hN (K + 1) (by omega)
-  unfold relOf at hr
+  unfold relRaw at hr
   dsimp only at hr
   cases hc : D c with
   | none => rw [hc] at hr; cases hr
@@ -164,14 +165,32 @@ theorem relOf_sound (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) 
     · rw [retype_poison'] at hcK; cases hcK
   · cases hr
 
+/-- **A path fact as a relation** between its sides' `canon`ical forms. -/
+theorem relOf_sound (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) ∈ A.facts)
+    {a b : ID} {w : Width} {r : Rel} (hr : relOf D tabs (c, v) = some (a, b, w, r)) :
+    ∃ N, ∀ K, N ≤ K → ∃ xa xb, den D tabs ρ K a = .int w xa ∧ den D tabs ρ K b = .int w xb ∧
+      RelHolds r xa xb := by
+  unfold relOf at hr
+  cases hraw : relRaw D tabs (c, v) with
+  | none => rw [hraw] at hr; cases hr
+  | some q =>
+    obtain ⟨a', b', w', r'⟩ := q
+    rw [hraw] at hr
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hr
+    obtain ⟨rfl, rfl, rfl, rfl⟩ := hr
+    obtain ⟨N, hN⟩ := relRaw_sound h hf hraw
+    refine ⟨N, fun K hK => ?_⟩
+    obtain ⟨xa, xb, ha, hb, hab⟩ := hN K hK
+    exact ⟨xa, xb, canon_den h.typed ha, canon_den h.typed hb, hab⟩
+
 theorem val_int_eq {w : Width} {x y : BitVec w.bits} (h : Val.int w x = Val.int w y) : x = y := by
   cases h; rfl
 
 /-- A bounds check's length is nonnegative when the check holds or fails. -/
 theorem bounds_len (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) ∈ A.facts)
     {cv : Value} (hc : D c = some cv) {sl : Bool} (hk : cTab.lookup cv.op = some (.bounds sl))
-    {x : ID} (hx1 : cv.args[1]? = some x) {n : Nat} {w : Width} {y : BitVec w.bits}
-    (hx : den D tabs ρ n x = .int w y) : 0 ≤ y.toInt := by
+    {x0 : ID} (hx1 : cv.args[1]? = some x0) {n : Nat} {w : Width} {y : BitVec w.bits}
+    (hx : den D tabs ρ n (canon D tabs x0) = .int w y) : 0 ≤ y.toInt := by
   obtain ⟨N, hN⟩ := h.facts c v hf
   have hcK := hN (max N n + 1) (by omega)
   have hxK := den_stable_int hx (Nat.le_max_right N n)
@@ -182,9 +201,8 @@ theorem bounds_len (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) �
     have h1 : (cv.args.toList.map (den D tabs ρ (max N n)))[1]? = some nv := by rw [heq]; rfl
     rw [List.getElem?_map, Array.getElem?_toList, hx1] at h1
     simp only [Option.map_some, Option.some.injEq] at h1
-    rw [hxK] at h1
     subst h1
-    cases hn : (Val.int w y).asInt wi with
+    cases hn : (den D tabs ρ (max N n) x0).asInt wi with
     | none => rw [hn, retype_poison'] at hcK; cases hcK
     | some n' =>
       rw [hn] at hcK
@@ -192,7 +210,8 @@ theorem bounds_len (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) �
       split at hcK
       · rw [retype_poison'] at hcK; cases hcK
       · rename_i hmsb
-        have e := asInt_eq hn
+        have e := canon_den h.typed (asInt_eq hn)
+        rw [hxK] at e
         obtain ⟨rfl, e'⟩ := val_int_inj e
         cases e'
         have := BitVec.msb_eq_toInt (x := y)
@@ -260,7 +279,8 @@ theorem factRng_mem (h : AsmHolds D tabs ρ A) {R : Width → ID → Rng}
           · rename_i sl hk
             split
             · rename_i e; simp only [beq_iff_eq] at e
-              exact Rng.mem_nonneg hn (bounds_len h hf hc hk e hx)
+              obtain ⟨x0, hx0, rfl⟩ := Option.map_eq_some_iff.1 e
+              exact Rng.mem_nonneg hn (bounds_len h hf hc hk hx0 hx)
             · exact Rng.mem_top hn y
           · exact Rng.mem_top hn y
 
@@ -310,6 +330,14 @@ theorem rng_sound (h : AsmHolds D tabs ρ A) :
     have hn := Width.one_le w
     have IH := rng_sound h k
     simp only [rng]
+    cases hp : projOf D tabs x with
+    | some y' =>
+      dsimp only
+      have := canon_den h.typed hx
+      simp only [canon, hp, Option.getD_some] at this
+      exact IH w y' n y this
+    | none =>
+    dsimp only
     refine Rng.mem_norm hn (foldl_mem (fun r fact hf hr => factExcl_mem h IH hf hx hr)
       (Rng.mem_norm hn (foldl_mem (fun r fact hf hr => Rng.mem_meet hr (factRng_mem h IH hf hx))
         (foldl_mem (fun r e he hr => ?_) ?_))))

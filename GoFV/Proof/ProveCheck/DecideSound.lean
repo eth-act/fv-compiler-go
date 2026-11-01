@@ -174,14 +174,30 @@ theorem cmp_val {w : Width} {r : Rel} {argv : List Val} {t : Ty} {bb : Bool}
   | lt s st => cases s <;> cases st <;> exact key _ hk
   | eq b => cases b <;> exact key _ hk
 
+theorem relVal_refl {n : Nat} (t : Rel) (X : BitVec n) : relVal t X X = t.refl := by
+  cases t with
+  | lt s st =>
+    cases s <;> cases st <;> simp [relVal, Rel.refl, BitVec.ult, BitVec.ule, BitVec.slt, BitVec.sle]
+  | eq b => cases b <;> simp [relVal, Rel.refl]
+
 section
 variable {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {A : Asm} {k : Nat}
 
-theorem pairDecides_sound (h : AsmHolds D tabs ρ A) {x y : ID} {w : Width} {t : Rel} {v : Bool}
-    (hp : pairDecides D tabs A k x y w t v = true) {K : Nat} {X Y : BitVec w.bits}
-    (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) : relVal t X Y = v := by
+theorem pairDecides_sound (h : AsmHolds D tabs ρ A) {x0 y0 : ID} {w : Width} {t : Rel} {v : Bool}
+    (hp : pairDecides D tabs A k x0 y0 w t v = true) {K : Nat} {X Y : BitVec w.bits}
+    (hx0 : den D tabs ρ K x0 = .int w X) (hy0 : den D tabs ρ K y0 = .int w Y) : relVal t X Y = v := by
+  have hx := canon_den h.typed hx0
+  have hy := canon_den h.typed hy0
   unfold pairDecides at hp
   dsimp only at hp
+  generalize canon D tabs x0 = x at hp hx
+  generalize canon D tabs y0 = y at hp hy
+  rw [Bool.or_eq_true] at hp
+  rcases hp with hp | hp
+  · simp only [Bool.and_eq_true, beq_iff_eq] at hp
+    obtain ⟨rfl, hv⟩ := hp
+    rw [hx] at hy; cases val_int_eq hy
+    rw [← hv]; exact relVal_refl t X
   have hxNN : decide (0 ≤ (rng D tabs A k w x).slo) = true → 0 ≤ X.toInt := fun e => by
     obtain ⟨-, -, m3, -⟩ := rng_sound h k w x K X hx; simp at e; omega
   have hyNN : decide (0 ≤ (rng D tabs A k w y).slo) = true → 0 ≤ Y.toInt := fun e => by
@@ -326,12 +342,13 @@ theorem decides_sound (h : AsmHolds D tabs ρ A) :
                         simp only [Option.bind_some, hsh, Ty.width?, Option.some.injEq] at hwa
                         subst hwa
                         have hbN : den D tabs ρ m b = .int wi n' := hb ▸ asInt_eq hn
-                        have h' : AsmHolds D tabs ρ { A with inv := (b, wi, Rng.nonneg wi.bits) :: A.inv } :=
+                        have h' : AsmHolds D tabs ρ
+                            { A with inv := (canon D tabs b, wi, Rng.nonneg wi.bits) :: A.inv } :=
                           ⟨h.facts, fun z w r hz n'' y hy => by
                             rcases List.mem_cons.1 hz with e' | hz
                             · simp only [Prod.mk.injEq] at e'
                               obtain ⟨rfl, rfl, rfl⟩ := e'
-                              rw [← den_int_unique hbN hy]
+                              rw [← den_int_unique (canon_den h.typed hbN) hy]
                               have := BitVec.msb_eq_toInt (x := n')
                               simp only [Bool.not_eq_true] at hmsb
                               rw [this] at hmsb; simp at hmsb

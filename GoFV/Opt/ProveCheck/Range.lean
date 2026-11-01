@@ -146,6 +146,33 @@ def cTab : List (Op × CmpK) :=
 def widthOf (D : ID → Option Value) (tabs : Tables) (x : ID) : Option Width :=
   (D x).bind fun u => (tabs.ty u.type).width?
 
+/-- Components the analysis reads through: `SliceLen`/`StringLen` (1), `SliceCap` (2). -/
+def pTab : List (Op × Nat) := [(.SliceLen, 1), (.StringLen, 1), (.SliceCap, 2)]
+
+/-- Composites built from their components: `SliceMake`, `StringMake`. -/
+def mkTab : List (Op × Unit) := [(.SliceMake, ()), (.StringMake, ())]
+
+/-- `x` is a component (`pTab`) of a composite `mkTab` node whose component is `y`, of
+`x`'s integer shape (field and `y` alike): `x`'s value is `y`'s. -/
+def projOf (D : ID → Option Value) (tabs : Tables) (x : ID) : Option ID :=
+  match D x with
+  | none => none
+  | some v =>
+    match pTab.lookup v.op, v.args.toList with
+    | some i, [s] =>
+      match D s with
+      | none => none
+      | some sv =>
+        match mkTab.lookup sv.op, tabs.ty sv.type, sv.args[i]?, (tabs.ty v.type).width? with
+        | some (), .agg fs _, some y, some w =>
+          if (fs[i]?.bind (·.2.width?)) == some w && widthOf D tabs y == some w then some y
+          else none
+        | _, _, _, _ => none
+    | _, _ => none
+
+/-- The value whose integer value `x` has: `x`'s component (`projOf`), or `x`. -/
+def canon (D : ID → Option Value) (tabs : Tables) (x : ID) : ID := (projOf D tabs x).getD x
+
 /-- A known relation between two `w`-bit integers: `x < y` (`strict`) or `x ≤ y`, signed or
 unsigned (`lt`), `x = y` (`eq true`) or `x ≠ y`. -/
 inductive Rel where
@@ -153,8 +180,9 @@ inductive Rel where
   | eq (b : Bool)
   deriving DecidableEq, Repr, Inhabited
 
-/-- A path fact as a relation `x ⋈ y` at width `w` (bounds checks: unsigned order). -/
-def relOf (D : ID → Option Value) (tabs : Tables) (fact : ID × Bool) : Option (ID × ID × Width × Rel) :=
+/-- A path fact as a relation `x ⋈ y` at width `w` between its comparison's arguments (bounds
+checks: unsigned order). -/
+def relRaw (D : ID → Option Value) (tabs : Tables) (fact : ID × Bool) : Option (ID × ID × Width × Rel) :=
   let (c, v) := fact
   match D c with
   | none => none
@@ -168,6 +196,10 @@ def relOf (D : ID → Option Value) (tabs : Tables) (fact : ID × Bool) : Option
       | some w => if v then some (a, b, w, .lt false (!sl)) else some (b, a, w, .lt false sl)
       | none => none
     | _, _ => none
+
+/-- A path fact as a relation `x ⋈ y` at width `w` between the `canon`ical sides. -/
+def relOf (D : ID → Option Value) (tabs : Tables) (fact : ID × Bool) : Option (ID × ID × Width × Rel) :=
+  (relRaw D tabs fact).map fun (a, b, w, r) => (canon D tabs a, canon D tabs b, w, r)
 
 /-- Bounds on `x` from `x ⋈ y` (`lt`: `x` on the left) and `y`'s range. -/
 def boundBy (n : Nat) (signed strict lt : Bool) (ry : Rng) : Rng :=
@@ -186,7 +218,8 @@ def factRng (D : ID → Option Value) (tabs : Tables) (R : Width → ID → Rng)
   let lenNN := match D fact.1 with
     | some cv =>
       match cTab.lookup cv.op with
-      | some (.bounds _) => if cv.args[1]? == some x then Rng.nonneg n else top
+      | some (.bounds _) =>
+        if (cv.args[1]?.map (canon D tabs)) == some x then Rng.nonneg n else top
       | _ => top
     | none => top
   match relOf D tabs fact with
@@ -252,12 +285,16 @@ def intAt (tabs : Tables) (v : Value) (w : Width) : Bool :=
 
 variable (D : ID → Option Value) (tabs : Tables) (A : Asm)
 
-/-- The range of `x` at width `w` with depth `k`: its definition (an `ROp` node of shape
-`int w`), the invariants, the path facts (bounds, then exclusions). -/
+/-- The range of `x` at width `w` with depth `k`: a component of a composite has its
+component's (`projOf`); otherwise its definition (an `ROp` node of shape `int w`), the
+invariants, the path facts (bounds, then exclusions). -/
 def rng : Nat → Width → ID → Rng
   | 0, w, _ => Rng.top w.bits
   | k + 1, w, x =>
     let R := rng k
+    match projOf D tabs x with
+    | some y => R w y
+    | none =>
     let n := w.bits
     let base := match D x with
       | some v =>
