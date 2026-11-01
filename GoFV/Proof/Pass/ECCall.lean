@@ -14,9 +14,10 @@ contract sees refined arguments and memory (`Contract.Mono`), and the target's r
 Go-typed results. `obl_result`: a `MakeResult` of Go-typed results becomes one of their pieces.
 
 Both are proved first in the form `EcOblImk`, `Obl` with the frame facts of the `IMake` data
-shortcut (`EcImkFacts`); `obl_call`/`obl_result` are the `Obl`s when every `IMake` argument
-node and its data operand are `held` (their target registers hold their evaluations) and the
-argument is interface-shaped (`obl_of_imk`).
+shortcut (`EcImkFacts`); `obl_call`/`obl_result` are the `Obl`s when every `IMake` argument is
+held (`EcoImkHeld`) in target mode (it and its data operand among the target's held values,
+interface-shaped in `g`) or source mode (it among the source's held values, the same `IMake`
+in `f`; `obl_of_imk`).
 -/
 
 namespace GoFV.Proof.EC
@@ -77,7 +78,7 @@ def EcOblImk (tabs : Tables) (f g : Func) (x : ID) : Prop :=
     (∀ a ∈ w.args, isNewB f a = true → E a) → (∀ a ∈ w.args, Reg T a) → (∀ a ∈ u.args, Reg frS a) →
     (∀ a ∈ ecFront f g x, ∀ y, frS.regs[a]? = some (some y) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y') →
-    (∀ a ∈ u.args, EcImkFacts env tabs g T a) →
+    (∀ a ∈ u.args, EcImkFacts env tabs f g frS T a) →
     ResCv (ecCv tabs f g x) (evalValue env (Ctx.make tabs f) frS u)
       (evalValue env (Ctx.make tabs g) T w)
 
@@ -89,19 +90,41 @@ theorem eco_ifaceShape {t : Ty} (h : ifaceShape t = true) :
   · exact ⟨_, _, _, _, rfl⟩
   · cases h
 
-/-- `EcOblImk` is `Obl` when each `IMake` argument node and its data operand are `held` and the
-argument is interface-shaped. -/
-theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {H : ID → Prop}
+/-- What `obl_of_imk` needs of an argument `a` whose node in `g` is an `IMake`, in terms of the
+values whose source (`HS`) or target (`HT`) registers hold their evaluations: target mode
+(`a` and its data operand in `HT`, `a` interface-shaped in `g`) or source mode (`a` in `HS`, the
+same `IMake` in `f`, interface-shaped in `f`, its data operand unconverted and a pointer in
+both or an aggregate in both). -/
+def EcoImkHeld (tabs : Tables) (f g : Func) (HS HT : ID → Prop) (a : ID) : Prop :=
+  ∀ aw, g.value? a = some aw → aw.op = .IMake →
+    (HT a ∧ HT aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) ∨
+    (HS a ∧
+      (∃ au, f.value? a = some au ∧ au.op = .IMake ∧ au.args.size = 2 ∧ au.args[1]! = aw.args[1]!) ∧
+      ifaceShape (shapeOf (typeShapes tabs) f a) = true ∧ special f g aw.args[1]! = false ∧
+      ((∃ e e', shapeOf (typeShapes tabs) f aw.args[1]! = .ptr e ∧
+          shapeOf (typeShapes tabs) g aw.args[1]! = .ptr e') ∨
+        (∃ fs n fs' n', shapeOf (typeShapes tabs) f aw.args[1]! = .agg fs n ∧
+          shapeOf (typeShapes tabs) g aw.args[1]! = .agg fs' n')))
+
+/-- `EcOblImk` is `Obl` when each `IMake` argument is held in source or target mode. -/
+theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT : ID → Prop}
     (h : EcOblImk tabs f g x) (hu : f.value? x = some u)
-    (hH : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
-      H a ∧ H aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x := by
-  intro u' w hu' hw env hE frS T hT hRS E hNC hEw hRw hRu hfront hheld
+    (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x := by
+  intro u' w hu' hw env hE frS T hT hRS E hNC hEw hRw hRu hfront hheldS hheldT
   rw [hu] at hu'
   cases hu'
-  exact h u w hu hw env hE frS T hT hRS E hNC hEw hRw hRu hfront fun a ha aw haw hop =>
-    have ⟨h1, h2, h3⟩ := hH a ha aw haw hop
-    ⟨hheld a h1, hheld _ h2, eco_ifaceShape h3⟩
+  refine h u w hu hw env hE frS T hT hRS E hNC hEw hRw hRu hfront fun a ha aw haw hop => ?_
+  rcases hH a ha aw haw hop with ⟨h1, h2, h3⟩ | ⟨h1, hau, h3, hsp, hsh⟩
+  · exact .inl ⟨hheldT a h1, hheldT _ h2, eco_ifaceShape h3⟩
+  · exact .inr ⟨hheldS a h1, hau, eco_ifaceShape h3, hsp, hsh⟩
+
+/-- A target argument of `x` that the source defines is in `ecFront`. -/
+theorem eco_mem_front_tgt {f g : Func} {x q : ID} {w : Value} (hw : g.value? x = some w)
+    (hq : q ∈ w.args) (hn : isNewB f q = false) : q ∈ ecFront f g x := by
+  unfold ecFront
+  rw [hw]
+  exact List.mem_append_right _ (List.mem_filter.2 ⟨Array.mem_toList_iff.2 hq, by rw [hn]; rfl⟩)
 
 /-- `EcArgRel` of the source arguments of `x` in an obligation's frames. -/
 theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Frame}
@@ -182,11 +205,13 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   have hrel : ∀ a ∈ (u.args.extract 0 (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
     fun a ha => ecc_argRel hu hRS hRu hfront (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha))
   have hG := ecc_pieces_hasTy _ _ _ hpc hrel
-  have hP := ec_pieces hNC hL _ _ _ hpc (fun p hp => (hreg' p hp).2.1)
+  have hP := ec_pieces hNC hL hRS _ _ _ hpc (fun p hp => (hreg' p hp).2.1)
     (fun q hq => hRw q (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)))
     (fun q hq hn' => have hq' := Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)
       ⟨hEw q hq' hn', hLw q hq' hn'⟩) hrel
     (fun a ha => himk a (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha)))
+    (fun q hq yq hyq hn' => hfront q (eco_mem_front_tgt hw
+      (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)) hn') yq hyq)
   -- the memory argument
   have hm : u.args[u.args.size - 1]! ∈ u.args := by
     rw [← Array.mem_toList_iff, hsu]; simp
@@ -214,15 +239,14 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   exact retype_mono _ (.tuple (RefinesList.append hP (.cons (ecc_retype_mem hymm) .nil)))
 
 /-- **The `MakeResult` obligation.** -/
-theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
+theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
     (hok : resultOK tabs (typeShapes tabs) f g u w = true)
     (hreg : regParamsOK tabs (ownOuts tabs f) = true) (huid : u.id = x)
     (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
-    (hH : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
-      H a ∧ H aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x :=
+    (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x :=
   obl_of_imk (obl_result_imk hu hw hop hok hreg huid L hLx hL) hu hH
 
 /-! ## Calls: the semantic pieces -/
@@ -532,11 +556,13 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     have hrel : ∀ a ∈ (u.args.extract k (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
       fun a ha => ecc_argRel hu hRS hRu hfront (hmu a (List.mem_append_left _ (List.mem_append_right _ ha)))
     have hG := ecc_pieces_hasTy _ _ _ hpc hrel
-    have hP := ec_pieces hNC hL _ _ _ hpc
+    have hP := ec_pieces hNC hL hRS _ _ _ hpc
       (fun p hp => (hregs' p (List.mem_filter.1 hp).1).2.1)
       (fun q hq => hRw q (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))))
       (fun q hq hn' => have hq' := hmw q (List.mem_append_left _ (List.mem_append_right _ hq)); ⟨hEw q hq' hn', hLw q hq' hn'⟩) hrel
       (fun a ha => himk a (hmu a (List.mem_append_left _ (List.mem_append_right _ ha))))
+      (fun q hq yq hyq hn' => hfront q (eco_mem_front_tgt hw
+        (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))) hn') yq hyq)
     -- the leading arguments and the memory
     have hsame : ∀ a ∈ u.args, special f g a = false →
         Sem.Refines (rv frS a) (rv T a) := fun a ha hs => by
@@ -594,14 +620,13 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   · cases hok
 
 /-- **The call obligation.** -/
-theorem obl_call {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {H : ID → Prop}
+theorem obl_call {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hcall : (callOpMap u.op).isSome = true)
     (hok : callOK tabs (typeShapes tabs) f g u w = true)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
-    (hH : ∀ a ∈ u.args, ∀ aw, g.value? a = some aw → aw.op = .IMake →
-      H a ∧ H aw.args[1]! ∧ ifaceShape (shapeOf (typeShapes tabs) g a) = true) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) H x :=
+    (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x :=
   obl_of_imk (obl_call_imk hu hw hcall hok huid L hLx hL) hu hH
 
 end GoFV.Proof.EC

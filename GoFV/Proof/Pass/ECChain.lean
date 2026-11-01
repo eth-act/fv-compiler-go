@@ -15,9 +15,12 @@ target's registers of the pieces refine `leafVals t` of the source's arguments.
 `retype` at the field's shape); on a value of shape `t`, `leafVals t` is `ecPathVal` along each
 leaf path (`ec_leafVals_paths`).
 
-The `IMake` data shortcut needs facts of the target frame the obligation does not provide
-(`EcImkFacts`: the registers of the interface's `IMake` node and of its data operand hold their
-evaluations, which follows from dominance, and the `IMake` is interface-typed).
+The `IMake` data shortcut needs facts of the frames the obligation does not provide
+(`EcImkFacts`), in target mode (the target registers of the interface's `IMake` node and of its
+data operand hold their evaluations, and the `IMake` is interface-typed in `g`) or source mode
+(the source register of the same `IMake` in `f` holds its evaluation, interface-typed in `f`, its
+data operand unconverted, a pointer in both functions, then the piece itself, or an aggregate in
+both, then the source's data word is `poison`).
 -/
 
 namespace GoFV.Proof.EC
@@ -194,13 +197,23 @@ theorem ec_chain {tabs : Tables} {f g : Func} {env : Env} {T : Frame} {E L : ID 
 /-! ## The `IMake` data shortcut -/
 
 /-- What the `IMake` data shortcut needs of a source argument `a` whose node in `g` is an
-`IMake`: the target registers of `a` and of the `IMake`'s data operand hold their evaluations
-(they are not new values, so `NewCons` does not say so; `CvBlock.obl` gives it for the nodes of
-the block `x` depends on), and `a`'s type in `g` is an interface (its data word pointer-shaped). -/
-def EcImkFacts (env : Env) (tabs : Tables) (g : Func) (T : Frame) (a : ID) : Prop :=
+`IMake` (facts of the frames the obligation does not provide), in one of two modes. Target
+mode: the target registers of `a` and of the `IMake`'s data operand hold their evaluations and
+`a`'s type in `g` is an interface. Source mode: `a` is the same `IMake` in `f`, its source
+register holds its evaluation, its type in `f` is an interface, and the data operand is
+unconverted, a pointer in both or an aggregate in both. -/
+def EcImkFacts (env : Env) (tabs : Tables) (f g : Func) (frS T : Frame) (a : ID) : Prop :=
   ∀ aw, g.value? a = some aw → aw.op = .IMake →
-    EcTgtHolds env tabs g T a ∧ EcTgtHolds env tabs g T aw.args[1]! ∧
-    ∃ f0 o e n, shapeOf (typeShapes tabs) g a = .agg [f0, (o, .ptr e)] n
+    (EcTgtHolds env tabs g T a ∧ EcTgtHolds env tabs g T aw.args[1]! ∧
+      ∃ f0 o e n, shapeOf (typeShapes tabs) g a = .agg [f0, (o, .ptr e)] n) ∨
+    (EcSrcHolds env tabs f frS a ∧
+      (∃ au, f.value? a = some au ∧ au.op = .IMake ∧ au.args.size = 2 ∧ au.args[1]! = aw.args[1]!) ∧
+      (∃ f0 o e n, shapeOf (typeShapes tabs) f a = .agg [f0, (o, .ptr e)] n) ∧
+      special f g aw.args[1]! = false ∧
+      ((∃ e e', shapeOf (typeShapes tabs) f aw.args[1]! = .ptr e ∧
+          shapeOf (typeShapes tabs) g aw.args[1]! = .ptr e') ∨
+        (∃ fs n fs' n', shapeOf (typeShapes tabs) f aw.args[1]! = .agg fs n ∧
+          shapeOf (typeShapes tabs) g aw.args[1]! = .agg fs' n')))
 
 theorem ec_leafPathsFields_head_hasTy : (fs : List (Nat × Ty)) → (i : Nat) → (vs : List Val) →
     Val.hasTyList (vs.drop i) (fs.map (·.2)) = true → ∀ k s π, (k, s) :: π ∈ leafPathsFields i fs →
@@ -252,83 +265,147 @@ theorem ec_agg_retype_ptr (vs : List Val) (t : Ty) (e : Option Nat) :
 theorem ec_hasTy_ptr (v : Val) (e e' : Option Nat) : v.hasTy (.ptr e) = v.hasTy (.ptr e') := by
   cases v <;> rfl
 
+/-- A value of an aggregate shape retyped at a pointer is `poison`. -/
+theorem eco_retype_ptr_of_agg {v : Val} {fs : List (Nat × Ty)} {n : Nat} (e : Option Nat)
+    (h : v.hasTy (.agg fs n) = true) : v.retype (.ptr e) = .poison := by
+  cases v <;> first | rfl | exact absurd h (by simp [Val.hasTy])
+
+/-- An ID with a pointer shape in `f` is defined by `f`. -/
+theorem eco_not_new_of_ptr {sh : Array Ty} {f : Func} {d : ID} {e : Option Nat}
+    (h : shapeOf sh f d = .ptr e) : isNewB f d = false := by
+  unfold shapeOf at h
+  unfold isNewB
+  cases hd : f.value? d with
+  | none => rw [hd] at h; cases h
+  | some _ => rfl
+
 /-- **The `IMake` data shortcut**: the piece is the data operand (a pointer) or the source's
 data word is `poison` (the operand is an aggregate). -/
-theorem ec_imake {tabs : Tables} {g : Func} {env : Env} {T : Frame} {a q : ID}
+theorem ec_imake {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {a q : ID}
     {π : List (Nat × Ty)} {t : Ty} {y ya : Val}
     (himk : imakeData (typeShapes tabs) g π q a = true) (hπ : π ∈ leafPaths t)
-    (hyt : y.hasTy t = true) (hya : T.regs[a]? = some (some ya)) (hyy : Sem.Refines y ya)
-    (hF : EcImkFacts env tabs g T a) (hq : Reg T q) :
+    (hyt : y.hasTy t = true) (hyS : frS.regs[a]? = some (some y))
+    (hya : T.regs[a]? = some (some ya)) (hyy : Sem.Refines y ya)
+    (hRS : RegsOK (Ctx.make tabs f) frS) (hF : EcImkFacts env tabs f g frS T a) (hq : Reg T q)
+    (hfq : ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false →
+      ∃ yq', T.regs[q]? = some (some yq') ∧ Sem.Refines (ecCv tabs f g q yq) yq') :
     Sem.Refines (ecPathVal π y) (rv T q) := by
   unfold imakeData at himk
   split at himk
   · next s aw haw =>
     simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at himk
     obtain ⟨⟨⟨hop, h2⟩, -⟩, hd⟩ := himk
-    obtain ⟨hTa, hTd, f0, o, e, n, hsh⟩ := hF aw haw hop
-    obtain ⟨hid, ya2, hya2, hev⟩ := hTa aw haw
-    rw [hya] at hya2
-    cases hya2
-    have hargs := ec_args_two h2
-    have hm1 : aw.args[1]! ∈ aw.args := by
-      rw [← Array.mem_toList_iff, hargs]; simp
-    have hval := evalValue_term (by rw [hop]; decide) hev
-    rw [hop, hid, ← shapeOf_eq, hsh, hargs] at hval
-    rcases f0 with ⟨o0, t0⟩
-    change ya = (Val.agg [rv T aw.args[0]!, rv T aw.args[1]!]).retype _ at hval
-    have e1 : (Val.agg [rv T aw.args[0]!, rv T aw.args[1]!]).retype
-        (.agg [(o0, t0), (o, .ptr e)] n) =
-        .agg [(rv T aw.args[0]!).retype t0, (rv T aw.args[1]!).retype (.ptr e)] := rfl
-    rw [e1] at hval
-    subst hval
-    cases hyy with
-    | poison => rw [ecPathVal_poison]; exact .poison _
-    | agg hl =>
-      cases hl with
-      | cons h0 hl1 =>
-        cases hl1 with
-        | cons h1 hnil =>
-          cases hnil
-          rename_i w0 w1
-          show Sem.Refines ((Comp.select 1 [.agg [w0, w1]]).retype s) _
-          change Sem.Refines (w1.retype s) _
-          rcases hd with ⟨rfl, hptr⟩ | hsm
-          · -- the data operand is the piece, a pointer
-            split at hptr
-            · next e' hsq =>
-              unfold shapeOf at hsq
-              cases hdw : g.value? aw.args[1]! with
-              | none => rw [hdw] at hsq; cases hsq
-              | some dw =>
-                rw [hdw] at hsq
+    rcases hF aw haw hop with ⟨hTa, hTd, f0, o, e, n, hsh⟩ |
+      ⟨hSa, ⟨au, hau, hauop, hau2, haud⟩, ⟨f0, o, e, n, hsh⟩, hsp, hshape⟩
+    · -- target mode: the target's `IMake` evaluates
+      obtain ⟨hid, ya2, hya2, hev⟩ := hTa aw haw
+      rw [hya] at hya2
+      cases hya2
+      have hargs := ec_args_two h2
+      have hval := evalValue_term (by rw [hop]; decide) hev
+      rw [hop, hid, ← shapeOf_eq, hsh, hargs] at hval
+      rcases f0 with ⟨o0, t0⟩
+      change ya = (Val.agg [rv T aw.args[0]!, rv T aw.args[1]!]).retype _ at hval
+      have e1 : (Val.agg [rv T aw.args[0]!, rv T aw.args[1]!]).retype
+          (.agg [(o0, t0), (o, .ptr e)] n) =
+          .agg [(rv T aw.args[0]!).retype t0, (rv T aw.args[1]!).retype (.ptr e)] := rfl
+      rw [e1] at hval
+      subst hval
+      cases hyy with
+      | poison => rw [ecPathVal_poison]; exact .poison _
+      | agg hl =>
+        cases hl with
+        | cons h0 hl1 =>
+          cases hl1 with
+          | cons h1 hnil =>
+            cases hnil
+            rename_i w0 w1
+            show Sem.Refines ((Comp.select 1 [.agg [w0, w1]]).retype s) _
+            change Sem.Refines (w1.retype s) _
+            rcases hd with ⟨rfl, hptr⟩ | hsm
+            · -- the data operand is the piece, a pointer
+              split at hptr
+              · next e' hsq =>
+                unfold shapeOf at hsq
+                cases hdw : g.value? aw.args[1]! with
+                | none => rw [hdw] at hsq; cases hsq
+                | some dw =>
+                  rw [hdw] at hsq
+                  obtain ⟨hdid, yd, hyd, hevd⟩ := hTd dw hdw
+                  have hty := Proof.evalValue_hasTy hevd
+                  rw [hdid, tys_of_value hdw, Option.getD_some, ← typeShapes_getD, ← valueTy, hsq]
+                    at hty
+                  rw [rv_of hyd] at h1 ⊢
+                  rw [Val.retype_of_hasTy (by rw [ec_hasTy_ptr yd e e']; exact hty)] at h1
+                  have hw1 : w1.hasTy s = true :=
+                    ec_leafPaths_head_hasTy (y := .agg [w0, w1]) hyt hπ
+                  rw [Val.retype_of_hasTy hw1]
+                  exact h1
+              · cases hptr
+            · -- the data operand is an aggregate: the source's data word is `poison`
+              split at hsm
+              · next dw fs' n' hdw _ =>
+                simp only [Bool.or_eq_true, beq_iff_eq] at hsm
                 obtain ⟨hdid, yd, hyd, hevd⟩ := hTd dw hdw
-                have hty := Proof.evalValue_hasTy hevd
-                rw [hdid, tys_of_value hdw, Option.getD_some, ← typeShapes_getD, ← valueTy, hsq] at hty
-                rw [rv_of hyd] at h1 ⊢
-                rw [Val.retype_of_hasTy (by rw [ec_hasTy_ptr yd e e']; exact hty)] at h1
-                have hw1 : w1.hasTy s = true :=
-                  ec_leafPaths_head_hasTy (y := .agg [w0, w1]) hyt hπ
-                rw [Val.retype_of_hasTy hw1]
-                exact h1
-            · cases hptr
-          · -- the data operand is an aggregate: the source's data word is `poison`
-            split at hsm
-            · next dw hdw =>
-              simp only [Bool.or_eq_true, beq_iff_eq] at hsm
-              obtain ⟨hdid, yd, hyd, hevd⟩ := hTd dw hdw
-              have hvd := evalValue_term (by rcases hsm with h | h <;> rw [h] <;> decide) hevd
-              rw [GoFV.Proof.Rules.opVal_pure (by rcases hsm with h | h <;> rw [h] <;> decide)]
-                at hvd
-              have hmk : ∀ ty args, evalPure dw.op ty dw.auxInt dw.aux args = Comp.make args := by
-                rcases hsm with h | h <;> rw [h] <;> intro _ _ <;> rfl
-              rw [hmk] at hvd
-              rw [rv_of hyd, hvd] at h1
-              change Sem.Refines w1 ((Val.agg _).retype _ |>.retype _) at h1
-              rw [ec_agg_retype_ptr] at h1
-              cases h1
-              rw [show Val.retype s .poison = .poison by cases s <;> rfl]
-              exact .poison _
-            · cases hsm
+                have hvd := evalValue_term (by rcases hsm with h | h <;> rw [h] <;> decide) hevd
+                rw [GoFV.Proof.Rules.opVal_pure (by rcases hsm with h | h <;> rw [h] <;> decide)]
+                  at hvd
+                have hmk : ∀ ty args, evalPure dw.op ty dw.auxInt dw.aux args = Comp.make args := by
+                  rcases hsm with h | h <;> rw [h] <;> intro _ _ <;> rfl
+                rw [hmk] at hvd
+                rw [rv_of hyd, hvd] at h1
+                change Sem.Refines w1 ((Val.agg _).retype _ |>.retype _) at h1
+                rw [ec_agg_retype_ptr] at h1
+                cases h1
+                rw [show Val.retype s .poison = .poison by cases s <;> rfl]
+                exact .poison _
+              · cases hsm
+    · -- source mode: the source's `IMake` evaluates
+      obtain ⟨hid, ys, hys, hev⟩ := hSa au hau
+      rw [hyS] at hys
+      cases hys
+      have hargs := ec_args_two hau2
+      have hm1 : au.args[1]! ∈ au.args := by
+        rw [← Array.mem_toList_iff, hargs]; simp
+      obtain ⟨yd, hyd⟩ := regs_of_ok hev _ hm1
+      have hydt := (hRS _ _ hyd).1
+      rw [← shapeOf_eq] at hydt
+      have hval := evalValue_term (by rw [hauop]; decide) hev
+      rw [hauop, hid, ← shapeOf_eq, hsh, hargs] at hval
+      rcases f0 with ⟨o0, t0⟩
+      change y = (Val.agg [rv frS au.args[0]!, rv frS au.args[1]!]).retype _ at hval
+      have e1 : (Val.agg [rv frS au.args[0]!, rv frS au.args[1]!]).retype
+          (.agg [(o0, t0), (o, .ptr e)] n) =
+          .agg [(rv frS au.args[0]!).retype t0, (rv frS au.args[1]!).retype (.ptr e)] := rfl
+      rw [e1] at hval
+      subst hval
+      have hw1 : ((rv frS au.args[1]!).retype (.ptr e)).hasTy s = true :=
+        ec_leafPaths_head_hasTy hyt hπ
+      show Sem.Refines (((rv frS au.args[1]!).retype (.ptr e)).retype s) _
+      rw [Val.retype_of_hasTy hw1, rv_of hyd]
+      rw [haud] at hyd hydt
+      rcases hd with ⟨rfl, hptr⟩ | hsm
+      · -- the data operand is the piece, a pointer in both
+        split at hptr
+        · next e' hsq =>
+          rcases hshape with ⟨e1, _, hfp, -⟩ | ⟨_, _, _, _, -, hga⟩
+          · rw [hfp] at hydt
+            rw [Val.retype_of_hasTy (by rw [ec_hasTy_ptr yd e e1]; exact hydt)]
+            obtain ⟨yq', hyq', hr⟩ := hfq yd hyd (eco_not_new_of_ptr hfp)
+            rw [ecCv_of_not_special hsp] at hr
+            rw [rv_of hyq']
+            exact hr
+          · rw [hsq] at hga; cases hga
+        · cases hptr
+      · -- the data operand is an aggregate in both: the source's data word is `poison`
+        split at hsm
+        · next dw fs' n' hdw hsg =>
+          rcases hshape with ⟨_, _, -, hgp⟩ | ⟨_, _, _, _, hfa, -⟩
+          · rw [hsg] at hgp; cases hgp
+          · rw [hfa] at hydt
+            rw [eco_retype_ptr_of_agg e hydt]
+            exact .poison _
+        · cases hsm
   · cases himk
 
 /-! ## The pieces of the arguments -/
@@ -355,17 +432,20 @@ def EcArgRel (tabs : Tables) (f g : Func) (frS T : Frame) (a : ID) : Prop :=
 refine the leaf values of the source's registers of the arguments. -/
 theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L : ID → Prop}
     (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
-    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ b ∈ w.args, isNewB f b = true → L b) :
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ b ∈ w.args, isNewB f b = true → L b)
+    (hRS : RegsOK (Ctx.make tabs f) frS) :
     ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs (typeShapes tabs) f g ps as pcs = true →
       (∀ p ∈ ps, wf (tabs.ty p.type) = true) →
       (∀ q ∈ pcs, Reg T q) → (∀ q ∈ pcs, isNewB f q = true → E q ∧ L q) →
-      (∀ a ∈ as, EcArgRel tabs f g frS T a) → (∀ a ∈ as, EcImkFacts env tabs g T a) →
+      (∀ a ∈ as, EcArgRel tabs f g frS T a) → (∀ a ∈ as, EcImkFacts env tabs f g frS T a) →
+      (∀ q ∈ pcs, ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false →
+        ∃ yq', T.regs[q]? = some (some yq') ∧ Sem.Refines (ecCv tabs f g q yq) yq') →
       Sem.RefinesList ((ps.zip (as.map (rv frS))).flatMap fun (p, r) => leafVals (tabs.ty p.type) r)
         (pcs.map (rv T))
-  | [], [], [], _, _, _, _, _, _ => .nil
-  | [], [], _ :: _, h, _, _, _, _, _ | [], _ :: _, _, h, _, _, _, _, _
-  | _ :: _, [], _, h, _, _, _, _, _ => by simp [piecesOK] at h
-  | p :: ps, a :: as, pcs, h, hwf, hreg, hEL, hrel, himk => by
+  | [], [], [], _, _, _, _, _, _, _ => .nil
+  | [], [], _ :: _, h, _, _, _, _, _, _ | [], _ :: _, _, h, _, _, _, _, _, _
+  | _ :: _, [], _, h, _, _, _, _, _, _ => by simp [piecesOK] at h
+  | p :: ps, a :: as, pcs, h, hwf, hreg, hEL, hrel, himk, hfq => by
     unfold piecesOK at h
     simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true] at h
     obtain ⟨⟨⟨⟨heq, hlen⟩, hsp⟩, hall⟩, hrest⟩ := h
@@ -377,10 +457,10 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
       exact this
     simp only [List.map_cons, List.zip_cons_cons, List.flatMap_cons, rv_of hyS]
     rw [← List.take_append_drop (leafPaths (tabs.ty p.type)).length pcs, List.map_append]
-    refine RefinesList.append ?_ (ec_pieces hNC hL ps as _ hrest (fun q hq => hwf q
+    refine RefinesList.append ?_ (ec_pieces hNC hL hRS ps as _ hrest (fun q hq => hwf q
       (List.mem_cons_of_mem _ hq)) (fun q hq => hreg q (List.mem_of_mem_drop hq))
       (fun q hq => hEL q (List.mem_of_mem_drop hq)) (fun b hb => hrel b (List.mem_cons_of_mem _ hb))
-      (fun b hb => himk b (List.mem_cons_of_mem _ hb)))
+      (fun b hb => himk b (List.mem_cons_of_mem _ hb)) (fun q hq => hfq q (List.mem_of_mem_drop hq)))
     rw [ec_leafVals_paths _ hw hyt]
     refine ec_pairs _ _ (by rw [List.length_take]; omega) hall fun x hx hP => ?_
     have hπ : x.1 ∈ leafPaths (tabs.ty p.type) := (List.of_mem_zip hx).1
@@ -396,6 +476,6 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
       rw [List.reverse_reverse] at hr
       rw [rv_of hyq]
       exact hr
-    · exact ec_imake hi hπ hyt hyT hyy (himk a List.mem_cons_self) (hreg _ hq)
+    · exact ec_imake hi hπ hyt hyS hyT hyy hRS (himk a List.mem_cons_self) (hreg _ hq) (hfq _ hq)
 
 end GoFV.Proof.EC
