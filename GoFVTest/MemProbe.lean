@@ -2,7 +2,7 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.SSA.DomCert
 import GoFV.Opt.NilCheck
-import GoFV.Opt.DeadStore
+import GoFV.Opt.DeadStoreCheck
 import GoFV.Opt.ElimDeadAutos
 import GoFV.Opt.CSE
 
@@ -19,9 +19,8 @@ its changes by the argument a refinement proof needs:
   Go's assumptions (`seed-<op>`), a phi (`phi`), or an `If (IsNonNil p)` edge (`edge`). An
   `IsNonNil` becoming `ConstBool` likewise. `roots`: the target's schedule runs the source's
   roots minus the removed checks in the same order.
-* dse: each eliminated store, by `cover`: the bytes it writes are overwritten by later kept
-  stores to the same base before any read (forward walk over the unique memory users), and by
-  the base's op.
+* dse: changed functions, those the checker `DSE.drel` accepts (`dseFrag`), and for the others
+  the conditions it rejects (`dseWhy`).
 * dead auto elim: changed functions, those with calls or integer→pointer conversions.
 -/
 
@@ -118,83 +117,38 @@ def rootsOK (f g : Func) : Bool := Id.run do
 
 /-! ## dse -/
 
-/-- Strip `OffPtr`s: base and offset. -/
-def offBase (f : Func) : Nat → ID → Int → ID × Int
-  | 0, p, o => (p, o)
-  | n + 1, p, o =>
-    let x := f.getV p
-    if x.op == .OffPtr then offBase f n x.args[0]! (o + x.auxInt.toInt) else (p, o)
-
-/-- The key of a base: `LocalAddr`s by name, others by ID. -/
-def baseKey (f : Func) (p : ID) : String :=
-  let x := f.getV p
-  if x.op == .LocalAddr then s!"L{x.aux}" else if x.op == .Addr then s!"A{x.aux}" else s!"v{p}"
-
-/-- Byte range written by store `x` (`Store` by its aux type's shape size). -/
-def range? (tabs : Tables) (f : Func) (x : Value) : Option (String × String × Int × Int) :=
-  let ptr := x.args[0]!
-  let (b, o) := offBase f 64 ptr 0
-  let sz : Int := match x.op with
-    | .Store => (Sem.auxTy tabs x.aux).size
-    | _ => x.auxInt.toInt
-  some (baseKey f b, (f.getV b).op.name, o, o + sz)
-
-/-- Users of every value (args of listed values; controls as `none`). -/
-def users (f : Func) : Array (List (Option ID)) := Id.run do
-  let mut u := Array.replicate f.valueTab.size []
+/-- Why `DSE.drel` rejects `g` (the first failing condition per value/block; `[]` if it
+accepts). -/
+def dseWhy (tabs : Tables) (f g : Func) : List String := Id.run do
+  let A := DSE.pendArr tabs f g
+  let P := fun x => A.getD x []
+  let mut ws : List String := []
+  let add (ws : List String) (w : String) := if ws.contains w then ws else w :: ws
+  if DomCert.cfgView g != DomCert.cfgView f || g.ownAux != f.ownAux ||
+      g.valueTab.size != f.valueTab.size then
+    ws := add ws "shape"
   for b in f.blocks do
-    let blk := f.getB b
-    for v in blk.values do
-      for a in (f.getV v).args do
-        if a < u.size then u := u.modify a (some v :: ·)
-    for c in blk.controls do
-      if c < u.size then u := u.modify c (none :: ·)
-  return u
-
-/-- `[lo, hi)` is covered by the union of `rs`. -/
-def covered (rs : List (Int × Int)) (lo hi : Int) : Bool := Id.run do
-  let mut cur := lo
-  for _ in [0:rs.length + 1] do
-    if cur ≥ hi then return true
-    match rs.find? (fun (a, b) => a ≤ cur && cur < b) with
-    | some (_, b) => cur := b
-    | none => return false
-  return cur ≥ hi
-
-/-- Forward cover check of an eliminated store `v` of `f` (`g`: the output). -/
-def cover (tabs : Tables) (f g : Func) (us : Array (List (Option ID))) (v : ID) : String := Id.run do
-  let x := f.getV v
-  let some (key, bop, lo, hi) := range? tabs f x | return "norange"
-  if bop != "LocalAddr" && bop != "Addr" then return s!"base-{bop}"
-  let mut w := v
-  let mut rs : List (Int × Int) := []
-  for _ in [0:f.valueTab.size] do
-    let uw := us.getD w []
-    match uw with
-    | [some u] =>
-      let y := f.getV u
-      if y.block != x.block then return "user-other-block"
-      if y.args.back? != some w then return s!"user-arg-{y.op.name}"
-      if (y.args.pop).contains w then return "user-twice"
-      match y.op with
-      | .Store | .Zero | .Move | .VarDef =>
-        if y.op == .Move then
-          let s := f.getV y.args[1]!
-          let ro := if s.op == .Addr then (GoFV.Rules.Sym.symIsRO tabs s.aux).toOption.getD false
-            else false
-          if !ro then return "move-reads"
-          if bop == "Addr" && s.aux == x.aux then return "move-same-sym"
-        let kept := (g.getV u).op == y.op
-        if kept && y.op != .VarDef then
-          if let some (k2, _, lo2, hi2) := range? tabs f y then
-            if k2 == key then rs := (lo2, hi2) :: rs
-        if covered rs lo hi then return "ok"
-        w := u
-      | op => return s!"user-{op.name}"
-    | [] => return "no-users"
-    | [none] => return "control"
-    | _ => return s!"users-{uw.length}"
-  return "fuel"
+    if !DSE.blockOK f g P b then
+      ws := add ws (if (f.block? b).any (·.controls.any (fun c => !(P c).isEmpty)) then "control" else "block")
+    if !DSE.schedOK f g b then ws := add ws "roots"
+  for x in List.range f.valueTab.size do
+    if !DSE.valueOK f g x then ws := add ws "value"
+    let some fv := f.value? x | continue
+    if DSE.pendStep tabs f g P x != some (P x) then
+      match DSE.pendStep tabs f g P x with
+      | none =>
+        if (g.value? x).any (DSE.elimV fv ·) then
+          let b := (CSE.baseOff tabs f 64 (fv.args[0]?.getD 0) 0)
+          ws := add ws (match DSE.ptrAlloc tabs f (fv.args[0]?.getD 0) with
+            | none => s!"base-{(f.getV b.1).op.name}"
+            | some _ => "offset")
+        else ws := add ws s!"move-src-{(f.getV (fv.args[1]?.getD 0)).op.name}"
+      | some _ => ws := add ws "pend"
+    if !DSE.usesOK f P x then
+      let bad := fv.args.filter fun a => !(P a).isEmpty
+      let other := bad.any fun a => (f.value? a).map (·.block) != some fv.block
+      ws := add ws (if other then "user-other-block" else s!"user-{fv.op.name}")
+  return ws
 
 /-! ## driver -/
 
@@ -274,21 +228,18 @@ def main (args : List String) : IO UInt32 := do
         match dse prev mem f with
         | .error _ => nErr := nErr + 1
         | .ok g =>
-          let us := users f
-          let mut ws : List String := []
+          let mut n := 0
           for x in List.range f.valueTab.size do
             if let (some fx, some gx) := (f.value? x, g.value? x) then
-              if fx.op != gx.op && gx.op == .Copy then
-                let w := cover prev f g us x
-                dWhy := bump dWhy w
-                if !ws.contains w then ws := w :: ws
-          if !ws.isEmpty then
+              if fx.op != gx.op && gx.op == .Copy then n := n + 1
+          if n > 0 then
             dChanged := dChanged + 1
-            let bad := ws.filter (· != "ok")
-            let rok := rootsOK f g
-            let bad := if rok then bad else "roots" :: bad
-            if bad.isEmpty then dFrag := dFrag + 1
-            else dFn := bump dFn (toString (bad.mergeSort (· ≤ ·)))
+            dWhy := bump dWhy "eliminated" n
+            if DSE.drel prev f g then dFrag := dFrag + 1
+            else
+              let ws := dseWhy prev f g
+              for w in ws do dWhy := bump dWhy w
+              dFn := bump dFn (toString (ws.mergeSort (· ≤ ·)))
       else if pass == "dead auto elim" then
         aInst := aInst + 1
         let some mem := penv.typ? "Mem" | continue
@@ -313,8 +264,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"  IsNonNil→ConstBool by justification: {show' isnn}"
   IO.println s!"  changed functions outside the fragment, by the kinds they need: {show' fnWorst}"
   IO.println s!"dse: inputs {dInst}, changed {dChanged}, in fragment {dFrag}"
-  IO.println s!"  eliminated stores by cover check: {show' dWhy}"
-  IO.println s!"  changed functions outside the fragment: {show' dFn}"
+  IO.println s!"  eliminated stores, and rejected functions by reason: {show' dWhy}"
+  IO.println s!"  changed functions outside the fragment, by their reasons: {show' dFn}"
   IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, with calls {aCalls}, with Convert {aConv}"
   IO.println s!"  eliminated values by op: {show' aKinds}"
   return 0
