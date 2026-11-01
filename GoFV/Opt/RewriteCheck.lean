@@ -68,12 +68,13 @@ def swap01 {α : Type} : List α → List α
 
 /-- The nodes of terms: ops evaluated by `evalPure`, and `Addr`/`ConstString`, which the
 semantics evaluates from the tables alone (`GoFV.Proof.Rules.opVal`, issue #151); not roots,
-phis or activation-dependent ops. -/
+phis or activation-dependent ops. `Invalid` is one (`poison`): sccp leaves its failed fold
+temporaries as `Invalid` values. -/
 def termOp (op : Op) : Bool :=
   !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .ArgFloatReg | .PanicBounds |
     .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB |
     .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr |
-    .GetClosurePtr | .GetCallerSP | .Invalid)
+    .GetClosurePtr | .GetCallerSP)
 
 /-- The ops whose first two arguments commute (`GoFV.Proof.Rules.commOpsP1`): a `commute` node
 is matched swapped only at these. -/

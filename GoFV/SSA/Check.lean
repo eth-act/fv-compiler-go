@@ -31,7 +31,9 @@ def typsLookup (typs : Array (String × TypeRef)) (name : String) : Option TypeR
 
 /-- What the checker reads besides the `Func`: the tables and the `Config.Types` / SSA
 pseudo-types of the export (`typs` line of section 0); the types the checks compare against
-are looked up once. -/
+are looked up once. `firstAny` relaxes Go's checks for validators' intermediate functions: a
+`First` block may have any positive number of successors (sccp's intermediate turns a
+`JumpTable` on a constant into a `First` block; no proof uses the successor counts). -/
 structure CheckEnv where
   tabs : Tables
   typs : Array (String × TypeRef)
@@ -39,6 +41,7 @@ structure CheckEnv where
   uintptr : Option TypeRef := typsLookup typs "Uintptr"
   int : Option TypeRef := typsLookup typs "Int"
   void : Option TypeRef := typsLookup typs "Void"
+  firstAny : Bool := false
 
 namespace CheckEnv
 
@@ -295,7 +298,7 @@ def checkKind (e : CheckEnv) (f : Func) (b : Block) : Except String Unit := do
     if b.controls.size != 1 then throw s!"if block b{b.id} has no control value"
     if !ctlT.any e.isBoolean then throw s!"if block b{b.id} has non-bool control value"
   | .First =>
-    if b.succs.size != 2 then
+    if (if e.firstAny then b.succs.isEmpty else b.succs.size != 2) then
       throw s!"plain/dead block b{b.id} len(Succs)=={b.succs.size}, want 2"
     if b.controls.size != 0 then throw s!"plain/dead block b{b.id} has a control value"
   | .JumpTable =>

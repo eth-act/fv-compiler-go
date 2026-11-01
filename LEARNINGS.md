@@ -238,6 +238,14 @@ avoiding): the problem, the trick, the numbers, where it is used.
   `GoFV.Util.PdqSort.sortBy` (unique keys, same order) the whole checked pass on a 5-block
   function evaluates by `decide +kernel` in about 3 s (`GoFV/Proof/Witness/Prove.lean`); prove
   parity and `prove-difftest` unchanged.
+- **Also (#32):** a stuck `HashSet` need not fail fast. sccp's analysis kept its executable edges
+  (`visited`) in a `Std.HashSet Edge`; `decide +kernel` on the analysis of a 4-block function
+  ran out of memory instead of failing (7.5 GB at the cap after 85 s; the witness module with
+  three such certificates was killed at 8 GB, also with `Elab.async false`). With an `Array
+  (List Nat)` by target block ID (`GoFV/Opt/Sccp.lean`, lookups only, so parity is unaffected)
+  the same certificate takes 2.6 s / 0.25 GB and the whole witness module
+  (`GoFV/Proof/Witness/Sccp.lean`) 4.7 s / 0.43 GB. When a certificate blows up, first look
+  for hash maps on the evaluated path.
 
 #### Kernel `defeq` of `f a` against `f b` unfolds `f`: keep big definitions out of `rfl`
 - **Problem:** in `bind_schedule_erase` (`GoFV/Proof/Cong.lean`) the case

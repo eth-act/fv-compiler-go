@@ -110,3 +110,7 @@ root = "GoFVTest.TabsAgreeProbe"
 [[lean_exe]]
 name = "sched-fast-bench"
 root = "GoFVTest.SchedFastBench"
+
+[[lean_exe]]
+name = "sccp-probe"
+root = "GoFVTest.SccpProbe"
