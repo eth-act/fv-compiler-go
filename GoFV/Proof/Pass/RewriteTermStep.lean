@@ -210,4 +210,270 @@ theorem RuleFacts.frame (F : RuleFacts tabs M r v defs) :
 
 end Step
 
+/-! ## The denotations -/
+
+/-- The semantic instance: the leaves are `L` of the matched values. -/
+def semEnv (tabs : Tables) (M : Defs) (I : Inst) (L : ID → Val) : PEnv :=
+  { env tabs M I with leaf := fun p => L (I.at p) }
+
+/-- `C` is defined and contains the arguments of its values. -/
+def DefClosed (M : Defs) (C : ID → Prop) : Prop :=
+  ∀ y, C y → ∃ m, M.get? y = some m ∧ ∀ a ∈ m.args, C a
+
+theorem DefClosed.arg {M : Defs} {C : ID → Prop} (h : DefClosed M C) : ArgClosed M C := by
+  intro w x hw hx a ha
+  obtain ⟨m, hm, hargs⟩ := h w hw
+  rw [hx] at hm; cases hm; exact hargs a ha
+
+theorem refinesList_idx {α β : Type} {F : α → Val} {G : β → Val} :
+    ∀ {l : List α} {m : List β}, l.length = m.length →
+      (∀ j (h1 : j < l.length) (h2 : j < m.length), Sem.Refines (F l[j]) (G m[j])) →
+      RefinesList (l.map F) (m.map G)
+  | [], [], _, _ => .nil
+  | a :: l, b :: m, hl, h => .cons (h 0 (by simp) (by simp))
+      (refinesList_idx (by simpa using hl) fun j h1 h2 => h (j + 1) (by simpa using h1) (by simpa using h2))
+  | [], _ :: _, hl, _ | _ :: _, [], hl, _ => by simp at hl
+
+section Den
+
+variable {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
+
+theorem RuleFacts.not_def (F : RuleFacts tabs M r v defs) {w : ID} {x : Value}
+    (hw : M.get? w = some x) (hne : w ≠ v) : w ∉ defIds defs := fun h =>
+  match F.frame.2.2.1 w h with
+  | .inl h => hne h
+  | .inr h => by rw [hw] at h; cases h
+
+theorem RuleFacts.keep (F : RuleFacts tabs M r v defs) {w : ID} {x : Value}
+    (hw : M.get? w = some x) (hne : w ≠ v) : (putAll M defs).get? w = some x := by
+  rw [F.frame.1 w (F.not_def hw hne), hw]
+
+theorem RuleFacts.keepAtom (F : RuleFacts tabs M r v defs) {w : ID} {x : Value}
+    (hw : M.get? w = some x) (ha : termOp x.op = false) : (putAll M defs).get? w = some x := by
+  refine F.keep hw fun h => ?_
+  subst h; rw [F.hxv] at hw; cases hw; rw [F.hterm] at ha; cases ha
+
+theorem RuleFacts.fields (F : RuleFacts tabs M r v defs) (L : ID → Val) :
+    FieldsOK M F.I tabs (semEnv tabs M F.I L) := by
+  intro p w x hm hx
+  refine ⟨?_, ?_, ?_⟩ <;> simp [semEnv, env, F.at_eq hm, hx]
+
+theorem RuleFacts.typed (F : RuleFacts tabs M r v defs) {ρ : ID → Val}
+    (hT : Term.Typed M.get? tabs ρ) : Term.Typed (putAll M defs).get? tabs ρ := by
+  intro a ha
+  by_cases hd : a ∈ defIds defs
+  · obtain ⟨u, hu, ht, -⟩ := F.frame.2.2.2 a hd
+    exact absurd ⟨u, hu, ht⟩ ha
+  · have he := F.frame.1 a hd
+    have hshape : shape (putAll M defs).get? tabs a = shape M.get? tabs a := by simp [shape, he]
+    rw [hshape]
+    exact hT a fun ⟨u, hu, ht⟩ => ha ⟨u, by rw [he]; exact hu, ht⟩
+
+theorem RuleFacts.closed (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : DefClosed M C) :
+    DefClosed (putAll M defs) (fun y => C y ∨ (C v ∧ y ∈ defIds defs)) := by
+  have hfr := F.frame
+  have hnew : ∀ y, C v → y ∈ defIds defs → ∃ m, (putAll M defs).get? y = some m ∧
+      ∀ a ∈ m.args, C a ∨ (C v ∧ a ∈ defIds defs) := by
+    intro y hv hy
+    obtain ⟨u, hu, -, hargs⟩ := hfr.2.2.2 y hy
+    refine ⟨u, hu, fun a ha => ?_⟩
+    rcases hargs a ha with ⟨p, hp⟩ | ha'
+    · exact .inl (F.hreach C hC.arg hv (p, a) hp)
+    · exact .inr ⟨hv, ha'⟩
+  intro y hy
+  rcases hy with hy | ⟨hv, hy⟩
+  · by_cases hd : y ∈ defIds defs
+    · obtain ⟨m, hm, -⟩ := hC y hy
+      rcases hfr.2.2.1 y hd with rfl | h
+      · exact hnew _ hy hd
+      · rw [hm] at h; cases h
+    · obtain ⟨m, hm, hargs⟩ := hC y hy
+      exact ⟨m, by rw [hfr.1 y hd, hm], fun a ha => .inl (hargs a ha)⟩
+  · exact hnew y hv hy
+
+theorem RuleFacts.top_ty (F : RuleFacts tabs M r v defs) (L : ID → Val) :
+    (semEnv tabs M F.I L).ty [] = tabs.ty F.xv.type := by
+  simp only [semEnv, env, F.at_top, F.hxv, Option.map_some, Option.getD_some]
+
+/-- **The matched value**: its denotation before the event is refined by the one after. -/
+theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
+    (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : ArgClosed M C) (hv : C v)
+    {ρ : ID → Val} (hT : Term.Typed (putAll M defs).get? tabs ρ) {n B : Nat}
+    (hIH : ∀ y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ B y)) :
+    Sem.Refines (den M.get? tabs ρ (n + 1) v) (den (putAll M defs).get? tabs ρ (B + stepK r) v) := by
+  have hIC : ∀ p w, (p, w) ∈ F.I → C w := fun p w h => F.hreach C hC hv (p, w) h
+  have hσ : ∀ x, (stσ tabs M r F.I x).erase =
+      (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat x).erase :=
+    sigma_erase (e := env tabs M F.I)
+      (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) rfl rfl r.pat
+  have hev : ∀ x, (stEv tabs M r defs F.I x).erase =
+      (evalE (stVtys r) (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+        (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+        (Pat.den (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x).erase :=
+    evalE_erase (e := env tabs M F.I)
+      (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) _ _ rfl rfl hσ _ _
+  have hF := F.fields (den (putAll M defs).get? tabs ρ B)
+  have hTop := F.top_ty (den (putAll M defs).get? tabs ρ B)
+  have hdefw : ∀ p w x, (p, w) ∈ F.I → p ≠ [] → M.get? w = some x →
+      (putAll M defs).get? w = some x := fun p w x hm hp hx => F.keep hx (F.ne_v hm hp)
+  -- the hypotheses of `Rule.Sound`
+  have hbt : GoFV.Proof.Rules.Oracle.BoolTyped (stOr tabs r defs) := by
+    intro x hx; exact ⟨true, by simp [stOr, oracle, hx]⟩
+  have hwf := wf_of (e := env tabs M F.I) (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) rfl [] r.pat F.hwf
+  have hcons := cons_of (pat := r.pat) (I := F.I) (e := env tabs M F.I) (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+    rfl rfl hev hσ (fun x w p' h hn => sigma_leaf h hn)
+    (fun p p' h => by simp only [semEnv, h]) F.hS [] r.pat (fun _ h => h) F.hcons
+  have hcond := cond_of hev F.hcond
+  have hraw : (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
+      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
+    rw [F.hpat]; simp only [Pat.raw]; exact evalPure_natShape _ _ _ (by rw [hTop]; exact F.hnat)
+  have htyped : GoFV.Proof.Rules.Pat.typed (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+      [] r.pat :=
+    typed_of (fun p => rfl) (fun p w x hm hp hx hsz => by
+        show (den _ tabs ρ B (F.I.at p)).hasTy _ = true
+        rw [F.at_eq hm]
+        exact den_hasTy hr hT B w (shape_of (hdefw p w x hm hp hx)) hsz)
+      F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
+  have hsound := hs.2 _ _ hbt hwf hcons hcond hraw htyped
+  -- lower bound
+  have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
+      (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
+    have h1 := den_le_patDen (n := n) hF (fun p w hm k hk => by
+        show Sem.Refines _ (den _ tabs ρ B (F.I.at p))
+        rw [F.at_eq hm]
+        exact Sem.Refines.trans (den_fuel_mono _ _ _ k n w hk) (hIH w (hIC p w hm)))
+      r.pat [] v (n + 1) F.hmatch (Nat.le_refl _) (.inr (by rw [F.hpat]; rfl))
+    have h2 := hraw
+    rw [F.hpat] at h1 h2 ⊢
+    simp only [Pat.den, Pat.raw] at h1 h2 ⊢
+    rwa [GoFV.Proof.retype_of_hasTy h2] at h1
+  -- values bound on the semantic side
+  have hleafU : ∀ p w, (p, w) ∈ F.I → Sem.Refines
+      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).leaf p)
+      (den (putAll M defs).get? tabs ρ B w) := fun p w hm => by
+    show Sem.Refines (den _ tabs ρ B (F.I.at p)) _
+    rw [F.at_eq hm]; exact Sem.Refines.refl _
+  obtain ⟨S, hS⟩ : ∃ S, S = Pat.sz r.pat := ⟨_, rfl⟩
+  have hσ2 : ∀ x, Good (fun w p => p ≠ [] ∧
+      Sem.Refines w (den (putAll M defs).get? tabs ρ (B + S) (F.I.at p)))
+      (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat x) := by
+    intro x
+    have hm := F.hmatch
+    have hS' : Pat.sz r.pat ≤ S := by omega
+    rw [F.hpat] at hm hS' ⊢
+    exact sigma_good (P := fun w p => p ≠ [] ∧
+        Sem.Refines w (den (putAll M defs).get? tabs ρ (B + S) (F.I.at p))) (S := S)
+      (fun p w hm' hp => ⟨hp, by
+        show Sem.Refines (den _ tabs ρ B (F.I.at p)) _
+        exact den_fuel_mono _ _ _ _ _ _ (by omega)⟩)
+      (fun q p w hm' hp hsz => ⟨hp, by
+        rw [F.at_eq hm'.mem]
+        exact patDen_le_den hF hdefw hleafU q p w _ hm' hp (by omega)⟩) hm hS' x
+  have hev2 : ∀ x, Good (fun w p => p ≠ [] →
+      Sem.Refines w (den (putAll M defs).get? tabs ρ (B + S) (F.I.at p)))
+      (evalE (stVtys r) (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+        (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+        (Pat.den (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x) :=
+    evalE_good _ _ _ (fun x => good_mono (fun w p h _ => h.2) (hσ2 x)) (fun h => absurd rfl h)
+      (fun x => good_of_flat (oracle_flat _ _ _ x))
+  rcases F.result with hR | hR
+  · -- copy
+    obtain ⟨R⟩ := hR
+    have hpos := R.hpos
+    obtain ⟨w0, hst⟩ : ∃ w0, stEv tabs M r defs F.I R.ce = .val w0 (some R.p) := by
+      revert hpos; cases stEv tabs M r defs F.I R.ce <;> simp [DV.pos?]
+    have h' := hev R.ce
+    rw [hst] at h'
+    have hp : R.p ≠ [] := fun h => R.hne (by rw [h, F.at_top])
+    have hcases : ∀ d : DV, (DV.val w0 (some R.p)).erase = d.erase →
+        Good (fun w p => p ≠ [] →
+          Sem.Refines w (den (putAll M defs).get? tabs ρ (B + S) (F.I.at p))) d →
+        Sem.Refines (d.valOr ((stOr tabs r defs).val R.ce))
+          (den (putAll M defs).get? tabs ρ (B + S) (F.I.at R.p)) := by
+      intro d hd hg
+      rcases DV.erase_eq_cases hd with rfl | ⟨v1, v2, p1, h1, rfl⟩
+      · exact hg.1 w0 R.p rfl hp
+      · cases h1; exact hg.1 v2 R.p rfl hp
+    have hup := hcases _ h' (hev2 R.ce)
+    rw [R.hres] at hsound
+    obtain ⟨y, hy, hyt⟩ : ∃ y, M.get? (F.I.at R.p) = some y ∧ y.type = R.u.type := by
+      have := R.hty
+      cases h : M.get? (F.I.at R.p) with
+      | none => rw [h] at this; cases this
+      | some y => rw [h] at this; exact ⟨y, rfl, by simpa using this⟩
+    have hkeep := F.keep hy R.hne
+    have hdv : (putAll M defs).get? v = some R.u := by rw [R.put, get?_put]; simp
+    have hK : B + stepK r = (B + S) + 1 := by simp [stepK, resLen, R.hres, hS]; omega
+    rw [hK, den_succ_term hdv (by rw [R.hop]; exact termOp_copy), R.hargs, R.hop]
+    show Sem.Refines _ ((den _ tabs ρ (B + S) (F.I.at R.p)).retype (tabs.ty R.u.type))
+    rw [← hyt, ← shape_of (tabs := tabs) hkeep, den_retype hT]
+    exact hlow.trans (hsound.trans hup)
+  · -- build
+    obtain ⟨R⟩ := hR
+    rw [R.hres] at hsound
+    have hTy : (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] =
+        tabs.ty F.xv.type := hTop
+    have key : ∀ f k (hk : k < R.nodes.length),
+        Sem.Refines (nodeDen (evalE (stVtys r)
+            (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+            (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
+            (Pat.den (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat))
+          (stOr tabs r defs) (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+          ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) R.nodes f k)
+        (den (putAll M defs).get? tabs ρ (B + S + f) (R.us[k]'(R.hlen ▸ hk)).id) := by
+      intro f
+      induction f with
+      | zero => intro k hk; exact .poison _
+      | succ f ih =>
+        intro k hk
+        have hk' : k < R.us.length := R.hlen ▸ hk
+        obtain ⟨hop, ht, hty, hai, hax, hsz, hargs⟩ := nodeOK_facts (R.hnode k hk hk')
+        rw [nodeDen_succ _ _ _ _ _ f k R.nodes[k] (List.getElem?_eq_getElem hk)]
+        rw [show B + S + (f + 1) = (B + S + f) + 1 by omega,
+          den_succ_term (R.get k hk') (hop ▸ ht)]
+        rw [← hTy] at hty
+        rw [← tySel_eq hev, ← aiSel_eq hev, ← hty, ← hai, ← hax, hop]
+        apply retype_mono
+        apply evalPure_mono
+        refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
+        have harg := hargs j h1 (by simpa using h2)
+        simp only [Array.getElem_toList]
+        cases hn : R.nodes[k].args[j] with
+        | var x =>
+          rw [hn] at harg
+          simp only [argID, Option.map_eq_some_iff] at harg
+          obtain ⟨p, hp, hpa⟩ := harg
+          simp only [argVal]
+          obtain ⟨w0, hw0⟩ : ∃ w0, stσ tabs M r F.I x = .val w0 (some p) := by
+            revert hp; cases stσ tabs M r F.I x <;> simp [DV.pos?]
+          have hx := hσ x
+          rw [hw0] at hx
+          rcases DV.erase_eq_cases hx with h2 | ⟨v1, v2, p1, h1, h2⟩
+          · rw [← h2]
+            have := (hσ2 x).1 w0 p h2.symm
+            rw [← hpa]
+            exact this.2.trans (den_fuel_mono _ _ _ _ _ _ (by omega))
+          · cases h1
+            rw [h2]
+            have := (hσ2 x).1 v2 p h2
+            rw [← hpa]
+            exact this.2.trans (den_fuel_mono _ _ _ _ _ _ (by omega))
+        | node j' =>
+          rw [hn] at harg
+          simp only [argID] at harg
+          simp only [argVal]
+          obtain ⟨hj', hj'e⟩ := List.getElem?_eq_some_iff.1 harg
+          simp only [List.length_map] at hj'
+          rw [← hj'e]
+          simp only [List.getElem_map]
+          exact ih j' (R.hlen ▸ hj')
+    have h0 := key R.nodes.length 0 R.len
+    have hid := R.id0 (R.hlen ▸ R.len)
+    simp only [hid] at h0
+    refine hlow.trans (hsound.trans (h0.trans (den_fuel_mono _ _ _ _ _ _ ?_)))
+    simp [stepK, resLen, R.hres, hS]; omega
+
+end Den
+
+
 end GoFV.Proof.Pass.Rewrite
