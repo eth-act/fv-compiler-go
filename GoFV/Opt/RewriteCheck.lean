@@ -1285,53 +1285,63 @@ def copyEnd (tabs : Tables) (M : Defs) : Nat → ID → ID
       else a
     | none => a
 
-/-- The chain of field stores ending in `m` (in block `b`) for the fields `fl` (last first, each
-with its `StructMake` argument), down to `mem`: per field a fresh (not in `f`) `Store` of the
-argument (up to copies in `f`), of the field's shape, at a fresh `OffPtr` (pointer shape) by the
-field's offset of `dst` (up to copies); `mem` reaches the chain's start through copies. The pairs
-`(OffPtr, Store)`, first field first. -/
-def ssChain (tabs : Tables) (f g : Func) (b dst mem : ID) :
-    List ((Nat × Sem.Ty) × ID) → ID → Option (List (ID × ID))
-  | [], m => if copyReach tabs f.valueTab f.valueTab.size mem m then some [] else none
-  | ((o, t), a) :: rest, m =>
+/-- The last `n` memory roots of `g` ending in `m`, walked back through their memory argument:
+the pairs `(pointer argument, store)`, first first, and the memory before them. -/
+def ssWalk (g : Func) : Nat → ID → List (ID × ID) × ID
+  | 0, m => ([], m)
+  | k + 1, m =>
     match g.value? m with
     | some s =>
-      if (f.value? m).isNone && s.id == m && s.op == .Store && s.block == b && s.args.size == 3 &&
-          copyReach tabs f.valueTab f.valueTab.size a s.args[1]! &&
-          Sem.Ty.beq (Sem.auxTy tabs s.aux) t then
-        let p := s.args[0]!
-        match g.value? p with
-        | some op =>
-          if (f.value? p).isNone && op.id == p && op.op == .OffPtr && op.block == b &&
-              op.args.size == 1 && copyReach tabs f.valueTab f.valueTab.size dst op.args[0]! &&
-              op.auxInt == Int64.ofNat o && isPtrTy (tabs.ty op.type) then
-            (ssChain tabs f g b dst mem rest s.args[2]!).map (· ++ [(p, m)])
-          else none
-        | none => none
-      else none
-    | none => none
+      let r := ssWalk g k (s.args[2]?.getD 0)
+      (r.1 ++ [(s.args[0]?.getD 0, m)], r.2)
+    | none => ([], m)
+
+/-- Field `k` of a split (block `b`, pointer `dst`, fields `fs`, `StructMake` arguments `as`,
+chain `ps` from memory `m0`): the `StructMake` argument has the field's shape; the pair `(p, s)`
+is a fresh (not in `f`) `Store` of that argument (up to copies in `f`) at the field's shape on
+the previous store of the chain (`m0` for the first), at a fresh `OffPtr` (pointer shape) by the
+field's offset of `dst` (up to copies), both in `b`. -/
+def ssLink (tabs : Tables) (f g : Func) (b dst : ID) (fs : List (Nat × Sem.Ty)) (as : Array ID)
+    (ps : List (ID × ID)) (m0 : ID) (k : Nat) : Bool :=
+  match fs[k]?, as[k]?, ps[k]? with
+  | some (o, t), some a, some (p, s) =>
+    let prev := if k = 0 then m0 else (ps[k - 1]?.map (·.2)).getD 0
+    match f.value? a, g.value? s, g.value? p with
+    | some av, some sv, some ov =>
+      Sem.Ty.beq (tabs.ty av.type) t &&
+      (f.value? s).isNone && sv.id == s && sv.op == .Store && sv.block == b &&
+      sv.args.size == 3 && sv.args[0]! == p && sv.args[2]! == prev &&
+      copyReach tabs f.valueTab f.valueTab.size a sv.args[1]! &&
+      Sem.Ty.beq (Sem.auxTy tabs sv.aux) t &&
+      (f.value? p).isNone && ov.id == p && ov.op == .OffPtr && ov.block == b &&
+      ov.args.size == 1 && copyReach tabs f.valueTab f.valueTab.size dst ov.args[0]! &&
+      ov.auxInt == Int64.ofNat o && isPtrTy (tabs.ty ov.type)
+    | _, _, _ => false
+  | _, _, _ => false
 
 /-- Value `x` of `f` is a split `Store` in `g`: in `f` a `Store` at an aggregate shape `agg fs n`
-(every field inside it, `layoutsOK`) of a `StructMake` (up to copies, `copyEnd`) of that shape
-whose arguments have the fields' shapes; in `g` `Copy` of the last store of the chain
-(`ssChain`) down to the `Store`'s memory. The chain's pairs. -/
+(every field inside it, `layoutsOK`, at an offset below `n`) of a `StructMake` (up to copies,
+`copyEnd`) of that shape; in `g` `Copy` of the last store of the chain (`ssWalk`), each field
+linked (`ssLink`), from a memory the `Store`'s reaches through copies. The chain's pairs. -/
 def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
-    match fv.args.toList, Sem.auxTy tabs fv.aux with
-    | [dst, sm, mem], .agg fs n =>
+    match fv.args.toList, Sem.auxTy tabs fv.aux, gv.args.toList with
+    | [dst, sm, mem], .agg fs n, [last] =>
       match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
       | some smv =>
+        let r := ssWalk g fs.length last
         if fv.op == .Store && smv.op == .StructMake && Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) &&
-            layoutsOK n fs && smv.args.size == fs.length &&
-            (fs.zip smv.args.toList).all (fun ((_, t), a) =>
-              (f.value? a).any (fun av => Sem.Ty.beq (tabs.ty av.type) t)) &&
-            gv.op == .Copy && gv.args.size == 1 && gv.id == x && gv.type == fv.type &&
-            gv.block == fv.block && gv.aux == none && gv.auxInt == 0 then
-          ssChain tabs f g fv.block dst mem (fs.zip smv.args.toList).reverse gv.args[0]!
+            layoutsOK n fs && fs.all (·.1 < n) && smv.args.size == fs.length &&
+            gv.op == .Copy && gv.id == x && gv.type == fv.type &&
+            gv.block == fv.block && gv.aux == none && gv.auxInt == 0 &&
+            r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2 &&
+            copyReach tabs f.valueTab f.valueTab.size mem r.2 &&
+            (List.range fs.length).all (ssLink tabs f g fv.block dst fs smv.args r.1 r.2) then
+          some r.1
         else none
       | none => none
-    | _, _ => none
+    | _, _, _ => none
   | _, _ => none
 
 /-- The roots `l` of `f` with each split `Store` (`S`) replaced by its chain's stores. -/
@@ -1340,16 +1350,17 @@ def ssRoots (S : Array (Option (List (ID × ID)))) (l : List ID) : List ID :=
     | some ps => ps.map (·.2)
     | none => [x]
 
-/-- Block `bid` of `g` has `f`'s kind and controls, `f`'s values then fresh values (`N`) of
-`bid`, and its schedule runs `f`'s roots with the splits' chains in their place (`ssRoots`). -/
-def ssBlockOK (f g : Func) (N : Array Bool) (S : Array (Option (List (ID × ID)))) (bid : ID) :
+/-- Block `bid` of `g` has `f`'s kind and controls, `f`'s values then fresh values (not in `f`,
+in `news`) of `bid`, and its schedule runs `f`'s roots with the splits' chains in their place
+(`ssRoots`). -/
+def ssBlockOK (f g : Func) (news : List ID) (S : Array (Option (List (ID × ID)))) (bid : ID) :
     Bool :=
   match f.block? bid, g.block? bid with
   | some fb, some gb =>
     gb.kind == fb.kind && gb.controls == fb.controls && fb.values.size ≤ gb.values.size &&
     gb.values.extract 0 fb.values.size == fb.values &&
     (gb.values.extract fb.values.size gb.values.size).all
-      (fun x => N[x]? == some true && (g.value? x).any (·.block == bid)) &&
+      (fun x => (f.value? x).isNone && news.contains x && (g.value? x).any (·.block == bid)) &&
     match Sem.schedule f fb with
     | none => true
     | some oS =>
@@ -1360,24 +1371,23 @@ def ssBlockOK (f g : Func) (N : Array Bool) (S : Array (Option (List (ID × ID))
 
 /-- **The split relation**: `g` is `f` with `Store`s split (`ssSplit?`): the same control-flow
 graph, own aux and blocks (`ssBlockOK`); every value of `f` kept but for its use count, or split;
-the chains' fresh values distinct, listed in their split's block, and the only values `f` lacks. -/
+the chains' fresh values listed in their split's block, and the only values `f` lacks. -/
 def ssRel (tabs : Tables) (f g : Func) : Bool :=
   let S : Array (Option (List (ID × ID))) := (Array.range f.valueTab.size).map (ssSplit? tabs f g)
   let news := S.toList.flatMap fun s => (s.getD []).flatMap fun (p, m) => [p, m]
-  let N := news.foldl (fun N x => N.set! x true) (Array.replicate g.valueTab.size false)
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
-    f.valueTab.size ≤ g.valueTab.size && news.Nodup &&
+    f.valueTab.size ≤ g.valueTab.size &&
     (List.range f.valueTab.size).all (fun x => match f.value? x, g.value? x with
       | none, _ => true
       | some fv, some gv => ssSame fv gv || (S[x]?.join).isSome
       | some _, none => false) &&
     (List.range g.valueTab.size).all (fun x =>
-      (f.value? x).isSome || (g.value? x).isNone || N[x]? == some true) &&
+      (f.value? x).isSome || (g.value? x).isNone || news.contains x) &&
     (List.range f.valueTab.size).all (fun x => match S[x]?.join, f.value? x with
       | some ps, some fv => (g.block? fv.block).any fun gb =>
           ps.all fun (p, m) => gb.values.contains p && gb.values.contains m
       | _, _ => true) &&
-    f.blocks.all (ssBlockOK f g N S)
+    f.blocks.all (ssBlockOK f g news S)
 
 end GoFV.Opt.RewriteCheck
 
