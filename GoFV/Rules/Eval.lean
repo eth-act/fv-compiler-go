@@ -493,9 +493,21 @@ partial def call (sc : Scope) (fn : String) (args : List Expr) (_ty : GoTy) : Rw
       reset v op
       modF fun f => f.modV v fun y => { y with auxInt := Int64.ofInt c }
       return .val v
+    -- `reflectdata.MarkTypeSymUsedInInterface(sym, curfn)`: a type or itab loaded from a
+    -- dictionary, or the element type of a pointer type
+    let useIface (s : AuxRef) : RwM Unit :=
+      modify fun st => { st with effects := st.effects.push (.useIface s) }
     match r with
-    | some (.addr name abi) => addrOf (← symAux name (some abi) (plainSym name abi))
+    | some (.addr name abi) =>
+      let s ← symAux name (some abi) (plainSym name abi)
+      let n := name.toStringLossy
+      if n.startsWith "type:" || n.startsWith "go:itab" then useIface s
+      addrOf s
     | some (.addrName name) => addrOf (← symAux name none (plainSym name))
+    | some (.elem name) =>
+      let s ← symAux name none (plainSym name)
+      useIface s
+      addrOf s
     | some (.constPtr c) => const (if env.ptrSize == 4 then .Const32 else .Const64) c
     | some (.const32 c) => const .Const32 c
     | some (.const8 c) => const .Const8 c

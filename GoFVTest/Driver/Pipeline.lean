@@ -93,6 +93,8 @@ structure State where
   /-- Number of passes run so far (the section index of the state). -/
   ran : Nat := 0
   last : String := "start"
+  /-- The frontend side effects of the passes run so far, in order. -/
+  effects : Array Effect := #[]
 
 /-- Index of stock pass `name`. -/
 def passIndex? (name : String) : Option Nat := stockPasses.findIdx? (·.name == name)
@@ -114,7 +116,8 @@ def runFrom {m : Type → Type} [Monad m] (env : PassEnv) (st : State) (start : 
     match e.run penv st.func with
     | .error msg => return (.error p.name msg, st)
     | .ok out =>
-      st := { func := out.func, tables := out.tables, ran := st.ran + 1, last := p.name }
+      st := { func := out.func, tables := out.tables, ran := st.ran + 1, last := p.name
+              effects := st.effects ++ out.effects }
       if !(← step p.name st) then return (.halted p.name, st)
   return (.done, st)
 

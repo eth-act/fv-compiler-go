@@ -91,6 +91,17 @@ Any failure (exec, status, parse, an object that cannot be rebuilt, the check) r
 (fields saved before the import, aux mutations and `Dcl` additions undone) and is recorded as
 an event; the stock passes then run.
 
+**Effects.** Some stock passes change compiler state outside the function and the definition
+tables. A Lean pass returns these as `PassOut.effects`; `gofv-ssa-opt` prints the effects of the
+passes it ran, in order, as `effect` lines between the status line and the file, and the importer
+replays them after a successful check. Implemented: `effect useiface a<n>` —
+`reflectdata.MarkTypeSymUsedInInterface(sym, curfn)` from `rewriteFixedLoad` (a type or itab
+loaded from a dictionary, or a pointer type's `Elem`), i.e. the function's `R_USEIFACE`
+relocations (and the DWARF `R_USETYPE` ones derived from them). `f.Type` keeps the compiler's
+own object when its type number is unchanged (the debug info's `PopulateABIInRegArgOps` reads
+the parameter names from it; another object of the same number made location lists differ
+run to run).
+
 **Type rounds.** The Lean passes read `types.(*Type).Compare` from the export's `typeorder`,
 which only ranks the types of the export. When a run creates types (e.g. `opt` making `*byte`,
 which `Compare` puts next to `*uint8`), the driver builds them in Go and runs the segment again
@@ -140,10 +151,11 @@ a new symbol, so such divergences (19 at `writebarrier` on the corpus) do not re
 Issue #12 has the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`, `std` and the corpus
 programs built for linux/arm64 by `scripts/driver-e2e.sh`). Known gaps at the time of writing:
 
-- Object files are not yet byte-identical everywhere the Lean pipeline was used, although the
-  imported state before `lower` equals the stock state (checked by re-export). The remaining
-  difference is compiler state outside the exported SSA; candidates are the order in which
-  `fe.SplitSlot` appends new autos to `Curfn.Dcl` (the import creates them in Lean number order,
-  stock in decompose order) and other frontend side effects of the passes (`docs/contracts/export.md`,
-  "Not exported").
-- `decompose builtin` diverges in 9 chained functions (#79).
+- Remaining std archive differences (full mode, issue #12): `*types.Type` object identity in
+  `zero arg cse` (two zero-arg values of one type number with distinct objects; Lean merges
+  them, stock does not — 9 functions, Exporter's issue on type-object identity), and the
+  package-index/relocation-order effects of those. `expand calls` in
+  `database/sql.ConvertAssign` makes an extra `OffPtr` (the constant cache's type comparison
+  misses a `typecmp` exception, see #12).
+- `decompose` creates its slots at the numbers the export gives them (`renumberSlots`), so a
+  chained `decompose builtin` orders slots as stock (#79, fixed).

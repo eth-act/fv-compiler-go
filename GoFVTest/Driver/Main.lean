@@ -140,7 +140,10 @@ def optimise (e : ExportFile) (start : Nat) (partialOut : Bool) (stopAfter : Opt
   if !ok && !partialOut then return status
   let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
                          func := st.func, typs := none, warns := #[] }
-  return status ++ printExport { e with sections := #[sec], warns := #[], typeOrder := #[], typeCmp := #[], frontend := #[] }
+  let effects := st.effects.foldl (init := "") fun s e => match e with
+    | .useIface a => s ++ s!"effect useiface a{a}\n"
+  return status ++ effects ++
+    printExport { e with sections := #[sec], warns := #[], typeOrder := #[], typeCmp := #[], frontend := #[] }
 
 /-! ## `--check` -/
 

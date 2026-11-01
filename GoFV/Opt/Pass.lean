@@ -53,11 +53,22 @@ structure PassEnv where
   (else a fresh one; #101). -/
   ptrCache : TypeRef → Bool := fun _ => false
 
+/-- A frontend side effect of a pass: compiler state outside the function and the definition
+tables that the stock pass changes (`docs/DRIVER.md`, "Effects"). The driver replays the
+effects of the passes it imports, in order. -/
+inductive Effect where
+  /-- `reflectdata.MarkTypeSymUsedInInterface(sym, curfn)` (`rewriteFixedLoad`): an
+  `R_USEIFACE` relocation from the function's symbol to the symbol aux `sym`. -/
+  | useIface (sym : AuxRef)
+  deriving DecidableEq, Inhabited, Repr
+
 /-- A pass's result. -/
 structure PassOut where
   func : Func
   /-- The input tables plus the pass's new or redefined objects. -/
   tables : Tables
+  /-- The pass's frontend side effects, in the order the stock pass causes them. -/
+  effects : Array Effect := #[]
 
 /-- A pass port. -/
 abbrev Pass := PassEnv → Func → Except String PassOut

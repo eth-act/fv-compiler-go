@@ -63,7 +63,7 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,1887 @@
+@@ -0,0 +1,1917 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -440,6 +440,7 @@
 +	defs              []*gofvDefn
 +	body              []*gofvLine // f ... (up to, excluding, warn/end)
 +	bodyText          string
++	effects           []*gofvLine // effect lines (before the file): frontend side effects
 +}
 +
 +func gofvTokens(s string) ([]string, error) {
@@ -529,6 +530,10 @@
 +		l := &gofvLine{raw: s, toks: toks}
 +		r.file = append(r.file, l)
 +		switch tag := toks[0]; {
++		case tag == "effect" && len(r.file) == 1:
++			r.file = r.file[:0]
++			r.effects = append(r.effects, l)
++			continue
 +		case tag == "f":
 +			inBody = true
 +		case tag == "warn" || tag == "end" || tag == "typeorder" || tag == "eof":
@@ -1618,6 +1623,12 @@
 +	if err != nil {
 +		return err
 +	}
++	if saved.Type != ftyp && x.types[saved.Type] == x.types[ftyp] {
++		// f keeps its own object of that type number: several function types can render
++		// alike, and the parameters' names (ABI analysis of f.Type, e.g. the debug info's
++		// PopulateABIInRegArgOps) are those of f's own object.
++		ftyp = saved.Type
++	}
 +	f.Blocks, f.Entry, f.Type = order, entry, ftyp
 +	if own == nil {
 +		f.OwnAux = nil
@@ -1891,6 +1902,25 @@
 +	want := gofvMapOrder(res.bodyText + "end\n")
 +	if got = gofvMapOrder(got); got != want {
 +		return fmt.Errorf("re-export differs from the Lean output at %s", gofvFirstDiff(want, got))
++	}
++	// Frontend side effects of the Lean passes, in the order the stock passes cause them.
++	var useIface []*obj.LSym
++	for _, l := range res.effects {
++		if len(l.toks) != 3 || l.toks[1] != "useiface" {
++			return fmt.Errorf("unknown effect %q", l.raw)
++		}
++		a, err := im.aux(l.toks[2])
++		if err != nil {
++			return err
++		}
++		s, ok := a.(*obj.LSym)
++		if !ok {
++			return fmt.Errorf("effect %q: a%s is not a symbol", l.raw, l.toks[2])
++		}
++		useIface = append(useIface, s)
++	}
++	for _, s := range useIface {
++		reflectdata.MarkTypeSymUsedInInterface(s, f.fe.Func().Linksym())
 +	}
 +	// The imported values and blocks are not in f.Cache's storage, which newValue/NewBlock
 +	// fill by ID and Cache.Reset clears up to the first unused ID: mark the IDs the import

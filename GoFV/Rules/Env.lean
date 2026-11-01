@@ -2,6 +2,7 @@ import GoFV.SSA.Alloc
 import GoFV.SSA.TypeCmp
 import GoFV.SSA.XPosMap
 import GoFV.Rules.Helpers.Sym
+import GoFV.Opt.Pass
 import Std.Data.HashMap
 
 /-!
@@ -55,6 +56,8 @@ structure RwState where
   imported : Std.HashMap Nat Nat := {}
   /-- Number of value and block rules fired (statistics: `opt-proven-probe`). -/
   fired : Nat := 0
+  /-- Frontend side effects so far (`PassOut.effects`). -/
+  effects : Array GoFV.Opt.Effect := #[]
 
 /-- The rewrite monad. Errors are Go's `Fatalf`/panics or constructs the port does not cover. -/
 abbrev RwM := ReaderT RwEnv (EStateM String RwState)
