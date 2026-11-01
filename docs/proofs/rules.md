@@ -130,9 +130,9 @@ needs a later phase of the semantics.
 | `dec` | StringPtr | 0 | 0 | 0 | 2 | 2 |
 | `dec` | StructMake | 0 | 0 | 0 | 1 | 1 |
 | `dec` | StructSelect | 0 | 0 | 0 | 5 | 5 |
-| `divisible` | Eq | 0 | 16 | 0 | 0 | 16 |
-| `divisible` | Neq | 0 | 16 | 0 | 0 | 16 |
-| `divmod` | Div | 0 | 27 | 0 | 2 | 29 |
+| `divisible` | Eq | 4 | 12 | 0 | 0 | 16 |
+| `divisible` | Neq | 4 | 12 | 0 | 0 | 16 |
+| `divmod` | Div | 1 | 26 | 0 | 2 | 29 |
 | `generic` | Add | 88 | 1 | 4 | 2 | 95 |
 | `generic` | AddPtr | 0 | 0 | 0 | 2 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
@@ -151,7 +151,7 @@ needs a later phase of the semantics.
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
 | `generic` | Div | 16 | 6 | 0 | 4 | 26 |
-| `generic` | Eq | 44 | 12 | 0 | 2 | 58 |
+| `generic` | Eq | 52 | 4 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | EqPtr | 0 | 0 | 0 | 20 | 20 |
@@ -171,7 +171,7 @@ needs a later phase of the semantics.
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 36 | 16 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
-| `generic` | Neq | 40 | 12 | 0 | 2 | 54 |
+| `generic` | Neq | 44 | 8 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | NeqPtr | 0 | 0 | 0 | 20 | 20 |
@@ -208,7 +208,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 993 | 390 | 12 | 367 | 1762 |
+| all | | 1014 | 369 | 12 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -361,7 +361,7 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `Oracle.BoolTyped`; `Oracle.const b` satisfies it (`Oracle.const_boolTyped`).
 - `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
   an instance of every exported rule at run time (random leaves, auxints from boundary values,
-  `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
+  `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`, helper-call atoms independently) and checks `Bool`
   mirrors of the hypotheses. `sat` fails if a proven rule has no instance or a
   counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
   how the findings below were found. Last run (with `Pat.typed`: leaves typed by their
