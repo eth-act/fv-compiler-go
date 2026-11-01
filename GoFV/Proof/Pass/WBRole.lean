@@ -220,6 +220,290 @@ theorem roleOK_ncThen {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : 
     · cases h
   · cases h
 
+/-- `copyOK` as a proposition. -/
+def CopyP (c : WBCheck.Ctx) (B : Block) (segs : List ID) (j : Nat) (nc ncEnd : Option ID)
+    (s y m : ID) : Prop :=
+  ∃ u w, c.f.value? s = some u ∧ c.g.value? y = some w ∧ w.op = u.op ∧ w.type = u.type ∧
+    w.aux = u.aux ∧ w.auxInt = u.auxInt ∧ w.args.size = u.args.size ∧
+    w.args.back? = some m ∧ c.tabs.ty w.type = .mem ∧
+    ∀ i, i < u.args.size - 1 →
+      (nc = some u.args[i]! ∧ i = 0 → w.args[i]! = ncEnd.getD u.args[i]!) ∧
+      (¬ (nc = some u.args[i]! ∧ i = 0) → w.args[i]! = u.args[i]! ∧
+        c.availIn B segs j u.args[i]! = true)
+
+theorem copy_spec {B : Block} {segs : List ID} {j : Nat} {nc ncEnd : Option ID} {s y m : ID}
+    (h : c.copyOK B segs j nc ncEnd s y m = true) : CopyP c B segs j nc ncEnd s y m := by
+  unfold Ctx.copyOK at h
+  split at h
+  · rename_i u w hu hw
+    simp only [Bool.and_eq_true, beq_iff_eq, and_assoc, List.all_eq_true, List.mem_range] at h
+    obtain ⟨hop, hty, haux, hai, hsz, hback, hmt, hall⟩ := h
+    refine ⟨u, w, hu, hw, hop, hty, haux, hai, hsz, hback, ?_, fun i hi => ?_⟩
+    · unfold tyIs isMemTy at hmt; split at hmt <;> simp_all
+    · have := hall i hi
+      by_cases hc : nc = some u.args[i]! ∧ i = 0
+      · rw [if_pos (by simp [hc.1, hc.2])] at this
+        exact ⟨fun _ => by simpa using this, fun h' => absurd hc h'⟩
+      · rw [if_neg (by simpa [and_comm] using hc)] at this
+        simp only [Bool.and_eq_true, beq_iff_eq] at this
+        exact ⟨fun h' => absurd h' hc, fun _ => this⟩
+  · cases h
+
+theorem roleOK_tgt {i k : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
+    (hρ : c.roleOf rs x = .tgt i k) :
+    inT = false ∧ j = i + 1 ∧ ∃ r s, rs[i]? = some r ∧ r.src[k]? = some s ∧ r.tgt[k]? = some x ∧
+      CopyP c B segs j r.nc r.ncEnd s x (match k with | 0 => r.phi | k' + 1 => r.tgt[k']!) ∧
+      c.roleOf rs (match k with | 0 => r.phi | k' + 1 => r.tgt[k']!) =
+        (match k with | 0 => .phi i | k' + 1 => .tgt i k') := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
+  obtain ⟨⟨hT, hi⟩, h⟩ := h
+  refine ⟨hT, hi, ?_⟩
+  split at h
+  · rename_i r hr
+    split at h
+    · rename_i s y hs hy
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨rfl, hc⟩, hrole⟩ := h
+      refine ⟨r, s, hr, hs, hy, ?_, ?_⟩
+      · rcases k with _ | k <;> simpa using copy_spec hc
+      · rcases k with _ | k <;> simpa using hrole
+    · cases h
+  · cases h
+
+theorem roleOK_wb {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
+    (hρ : c.roleOf rs x = .wb i) :
+    inT = true ∧ i = j ∧ ∃ r, rs[i]? = some r ∧ w.args = #[r.sp.mem] ∧
+      w.auxInt.toInt.toNat = r.wbN ∧ 0 < r.wbN ∧ r.wbN ≤ 8 ∧
+      ∃ e, c.tabs.ty w.type = .tuple [.ptr e, .mem] := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨hT, hi⟩, h⟩ := h
+  refine ⟨hT, hi, ?_⟩
+  split at h
+  · rename_i r hr
+    simp only [Bool.and_eq_true, beq_iff_eq, and_assoc, decide_eq_true_eq] at h
+    obtain ⟨ha, hn, h0, h8, -, hty⟩ := h
+    refine ⟨r, hr, ha, hn, h0, h8, ?_⟩
+    split at hty
+    · exact ⟨_, ‹_›⟩
+    · cases hty
+  · cases h
+
+theorem roleOK_sel {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
+    (hρ : c.roleOf rs x = .sel0 i ∨ c.roleOf rs x = .sel1 i) :
+    inT = true ∧ i = j ∧ w.args = #[w.args[0]!] ∧ c.roleOf rs w.args[0]! = .wb i ∧
+      (c.roleOf rs x = .sel0 i → isPtrTy (c.tabs.ty w.type) = true) ∧
+      (c.roleOf rs x = .sel1 i → c.tabs.ty w.type = .mem) := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  rcases hρ with hρ | hρ
+  · simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
+    obtain ⟨hT, hi, hsz, hty, hr⟩ := h
+    refine ⟨hT, hi, ?_, hr, fun _ => hty, fun h' => (by rw [hρ] at h'; cases h')⟩
+    rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
+  · simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
+    obtain ⟨hT, hi, hsz, hty, hr⟩ := h
+    refine ⟨hT, hi, ?_, hr, fun h' => (by rw [hρ] at h'; cases h'), fun _ => ?_⟩
+    · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
+    · unfold tyIs isMemTy at hty; split at hty <;> simp_all
+
+theorem roleOK_off {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
+    (hρ : c.roleOf rs x = .off i) :
+    inT = true ∧ i = j ∧ w.args = #[w.args[0]!] ∧ isPtrTy (c.tabs.ty w.type) = true ∧
+      c.roleOf rs w.args[0]! = .sel0 i ∧ ∃ r, rs[i]? = some r ∧ 0 ≤ w.auxInt.toInt ∧
+        w.auxInt.toInt % 8 = 0 ∧ w.auxInt.toInt / 8 < r.wbN := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
+  obtain ⟨hT, hi, hsz, hty, hr, h⟩ := h
+  refine ⟨hT, hi, ?_, hty, hr, ?_⟩
+  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
+  · split at h
+    · rename_i r hr'
+      simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+      exact ⟨r, hr', h.1.1, h.1.2, h.2⟩
+    · cases h
+
+theorem roleOK_bstore {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
+    (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .bstore i) :
+    inT = true ∧ i = j ∧ w.args = #[w.args[0]!, w.args[1]!, w.args[2]!] ∧
+      c.tabs.ty w.type = .mem ∧ Sem.auxTy c.tabs w.aux = .int .w64 ∧
+      c.roleOf rs w.args[0]! = .off i ∧
+      (∃ r, rs[i]? = some r ∧ (c.runArg B segs j r w.args[1]! = true ∨
+        c.roleOf rs w.args[1]! = .tload i)) ∧
+      (c.roleOf rs w.args[2]! = .sel1 i ∨ c.roleOf rs w.args[2]! = .bstore i) := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
+  obtain ⟨hT, hi, hsz, hty, haux, ho, hv, hm⟩ := h
+  refine ⟨hT, hi, ?_, ?_, ?_, ho, ?_, ?_⟩
+  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩⟩ <;> simp_all
+  · unfold tyIs isMemTy at hty; split at hty <;> simp_all
+  · split at haux
+    · assumption
+    · cases haux
+  · split at hv
+    · rename_i r hr
+      simp only [Bool.or_eq_true, beq_iff_eq] at hv
+      exact ⟨r, hr, hv⟩
+    · cases hv
+  · split at hm
+    · rename_i k hk; simp at hm; subst hm; exact .inl hk
+    · rename_i k hk; simp at hm; subst hm; exact .inr hk
+    · cases hm
+
+theorem roleOK_tload {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
+    (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .tload i) :
+    inT = true ∧ i = j ∧ w.args = #[w.args[0]!, w.args[1]!] ∧
+      ∃ r, rs[i]? = some r ∧ (c.runArg B segs j r w.args[0]! = true ∨
+        c.roleOf rs w.args[0]! = .ncThen i) ∧
+      (w.args[1]! = r.sp.mem ∨ c.roleOf rs w.args[1]! = .sel1 i ∨
+        c.roleOf rs w.args[1]! = .bstore i) := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
+  obtain ⟨hT, hi, hsz, h⟩ := h
+  refine ⟨hT, hi, ?_, ?_⟩
+  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩ <;> simp_all
+  · split at h
+    · rename_i r hr
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+      refine ⟨r, hr, h.1, ?_⟩
+      rcases h.2 with h2 | h2
+      · exact .inl h2
+      · split at h2
+        · rename_i k hk; simp at h2; subst h2; exact .inr (.inl hk)
+        · rename_i k hk; simp at h2; subst h2; exact .inr (.inr hk)
+        · cases h2
+    · cases h
+
 end
+
+/-! ## Roles and ops -/
+
+/-- The run index and op of a buffer-block role. -/
+def thenOp : Role → Option (Nat × Op)
+  | .ncThen j => some (j, .NilCheck)
+  | .wb j => some (j, .WB)
+  | .sel0 j => some (j, .Select0)
+  | .sel1 j => some (j, .Select1)
+  | .off j => some (j, .OffPtr)
+  | .bstore j => some (j, .Store)
+  | .tload j => some (j, .Load)
+  | _ => none
+
+theorem roleRun_then {g : Func} {x : ID} :
+    ∀ {rs : List Run} {k j : Nat} {o : Op} {ρ : Role}, roleRun g x rs k = ρ →
+      thenOp ρ = some (j, o) → k ≤ j ∧ ∃ r, rs[j - k]? = some r ∧ x ∈ vals g r.sp.t ∧
+        ∃ w, g.value? x = some w ∧ w.op = o
+  | [], k, j, o, ρ, h, ht => by subst h; simp [roleRun, thenOp] at ht
+  | r :: rs, k, j, o, ρ, h, ht => by
+    unfold roleRun at h
+    split at h
+    · subst h; simp [thenOp] at ht
+    split at h
+    · subst h; simp [thenOp] at ht
+    split at h
+    · subst h; simp [thenOp] at ht
+    split at h
+    · subst h; simp [thenOp] at ht
+    split at h
+    · subst h; simp [thenOp] at ht
+    split at h
+    · rename_i hx
+      split at h
+      · rename_i v hv
+        have hx' : x ∈ vals g r.sp.t := by simpa using hx
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        split at h
+        · rename_i hop
+          subst h; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at ht
+          obtain ⟨rfl, rfl⟩ := ht
+          exact ⟨le_refl _, r, by simp, hx', v, hv, by simpa using hop⟩
+        · subst h; simp [thenOp] at ht
+      · subst h; simp [thenOp] at ht
+    · obtain ⟨hk, r', hr', hx, w, hw, ho⟩ := roleRun_then h ht
+      refine ⟨by omega, r', ?_, hx, w, hw, ho⟩
+      rw [show j - k = (j - (k + 1)) + 1 by omega]
+      simpa using hr'
+
+/-- A buffer-block role is found among the runs. -/
+theorem roleOf_then {c : WBCheck.Ctx} {rs : List Run} {x : ID} {j : Nat} {o : Op} {ρ : Role}
+    (h : c.roleOf rs x = ρ) (ht : thenOp ρ = some (j, o)) :
+    ∃ r, rs[j]? = some r ∧ x ∈ vals c.g r.sp.t ∧ ∃ w, c.g.value? x = some w ∧ w.op = o := by
+  unfold Ctx.roleOf at h
+  split at h
+  · subst h; simp [thenOp] at ht
+  split at h
+  · subst h; simp [thenOp] at ht
+  split at h
+  · subst h; simp [thenOp] at ht
+  generalize hR : roleRun c.g x rs 0 = R at h
+  cases R
+  case none =>
+    split at h
+    · split at h
+      · subst h; simp [thenOp] at ht
+      split at h
+      · subst h; simp [thenOp] at ht
+      · subst h; simp [thenOp] at ht
+    · subst h; simp [thenOp] at ht
+  all_goals
+    subst h
+    obtain ⟨-, r, hr, hx, w, hw, ho⟩ := roleRun_then hR ht
+    exact ⟨r, by simpa using hr, hx, w, hw, ho⟩
+
+/-- A held value's role is `held`, or the flag address or constant. -/
+theorem role_of_held {c : WBCheck.Ctx} {rs : List Run} {a : ID} (h : c.held a = true) :
+    c.roleOf rs a = .held ∨ c.roleOf rs a = .wbaddr ∨ c.roleOf rs a = .const0 := by
+  unfold Ctx.roleOf
+  split
+  · exact .inr (.inl rfl)
+  split
+  · exact .inr (.inr rfl)
+  split
+  · exact .inl rfl
+  · contradiction
+
+theorem roleOf_wbaddr {c : WBCheck.Ctx} {rs : List Run} {a : ID} (h : c.isWbaddr a = true) :
+    c.roleOf rs a = .wbaddr := by
+  unfold Ctx.roleOf; rw [if_pos h]
+
+theorem roleOf_const0 {c : WBCheck.Ctx} {rs : List Run} {a : ID} (h : c.isConst0 a = true)
+    (hne : c.isWbaddr a = false) : c.roleOf rs a = .const0 := by
+  unfold Ctx.roleOf
+  rw [if_neg (by simp [hne]), if_pos h]
 
 end GoFV.Proof.WB
