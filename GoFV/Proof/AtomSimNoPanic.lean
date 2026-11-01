@@ -90,7 +90,7 @@ theorem v1_disj {ce : CheckEnv} {h : Func} (hwf : WF ce h) {b : ID} {hb : Block}
 theorem atom_sched {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
     {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w) (ht : termOp w.op = false) :
-    ∃ u, f.value? x = some u ∧ SameAtom u w ∧ x ∈ of.toList ∧ Placed g x w := by
+    ∃ u, f.value? x = some u ∧ SameAtomX u w ∧ x ∈ of.toList ∧ Placed g x w := by
   obtain ⟨hxb, w', hw', hph⟩ := (B.mT x).1 hx
   rw [hw] at hw'; cases hw'
   have hpw := (placed_in H.wg B.bmT B.hgb hxb hw).1

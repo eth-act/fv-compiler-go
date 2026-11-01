@@ -5,7 +5,8 @@ import GoFV.Proof.AtomSimSet
 
 `tgt_atom_ref`: an atom of `g` evaluated in the target frame `T` refines the atom of `f` with
 the same ID evaluated in the source frame `G`, when both frames' registers are their terms'
-values over the atoms (`DenOK`) and the atoms both hold are refined.
+values over the atoms (`DenOK`) and the atoms both hold are refined; a changed `Store`
+(`AtomArgsRefX`, issue #35) by `chgRef_apply`.
 
 `tgt_loop`: the target evaluates a prefix `L` of its schedule from `T0`: term nodes always
 evaluate (`evalPure`), atoms the source evaluated (`P`) evaluate to refinements of the source's
@@ -45,6 +46,91 @@ theorem typed_set {ctx : Ctx} {T : Frame} {x : ID} {y : Val} (ht : Proof.Typed c
 theorem rv_set_ne {T : Frame} {x a : ID} {y : Val} (h : x ≠ a) : rv (T.set x y) a = rv T a := by
   unfold rv; rw [Frame.set_regs_ne h]
 
+/-- A `Store`'s write on refined arguments succeeds with a refined memory. -/
+theorem memDef_store_mono {tabs : Tables} {v : Value} (hop : v.op = .Store) {as bs : List Val}
+    (h : RefinesList as bs) {y : Val} (hy : memDef tabs v as = some y) :
+    ∃ y', memDef tabs v bs = some y' ∧ Sem.Refines y y' := by
+  obtain ⟨q, x, m0, M', rfl, hw, rfl⟩ : ∃ q x m0 M', as = [.ptr q, x, .mem m0] ∧
+      m0.write q (encode (auxTy tabs v.aux) x) = some M' ∧ y = .mem M' := by
+    match as with
+    | [a, b, c] =>
+      cases a <;> try (simp [memDef, hop] at hy; done)
+      cases c <;> try (simp [memDef, hop] at hy; done)
+      simp only [memDef, hop, Option.map_eq_some_iff] at hy
+      obtain ⟨M', hw, rfl⟩ := hy
+      exact ⟨_, _, _, M', rfl, hw, rfl⟩
+    | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at hy
+  obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+  obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+  obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+  cases h.nil_inv; cases h1; cases h3 with | mem hm =>
+  obtain ⟨M'', hw', hMM⟩ := hm.write (encode_mono _ h2) hw
+  exact ⟨.mem M'', by simp [memDef, hop, hw'], .mem hMM⟩
+
+/-- A `Store` whose write succeeds evaluates to it. -/
+theorem memRoot_of_memDef_store {ctx : Ctx} {v : Value} (hop : v.op = .Store) {argv : List Val}
+    {y : Val} (h : memDef ctx.tabs v argv = some y) : memRoot ctx v argv = .ok y := by
+  match argv with
+  | [a, b, c] =>
+    cases a <;> try (simp [memDef, hop] at h; done)
+    cases c <;> try (simp [memDef, hop] at h; done)
+    simp only [memDef, hop, Option.map_eq_some_iff] at h
+    obtain ⟨M', hw, rfl⟩ := h
+    simp [memRoot, hop, hw, writeRes]
+  | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at h
+
+/-- **`ChgRefP` on registers**: if the source's `Store` `u` writes on its arguments' registers
+(their terms' values over the atoms, `DenOK`), the target's `Store` `w` writes a refined memory
+on its arguments' registers. The valuations are those of `termRef_apply`. -/
+theorem chgRef_apply {D E : ID → Option Value} {tabs : Tables} {u w : Value}
+    (hC : ChgRefP D tabs u E w) (hws : w.op = .Store) {FS FT : Frame} {VS VT : ID → Prop}
+    (hS : DenOK D tabs FS VS) (hG : DenOK E tabs FT VT)
+    (hrel : ∀ a, VS a → ¬ IsTerm D a → VT a → ¬ IsTerm E a → Sem.Refines (rv FS a) (rv FT a))
+    (htyS : ∀ a, VS a → ¬ IsTerm D a → (rv FS a).retype (shape D tabs a) = rv FS a)
+    (htyT : ∀ a, VT a → ¬ IsTerm E a → (rv FT a).retype (shape E tabs a) = rv FT a)
+    (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
+      (rv FS a).retype (shape E tabs a) = rv FS a)
+    (hMS : MemDefs D tabs FS VS) (huS : ∀ a ∈ u.args, VS a) (hwT : ∀ a ∈ w.args, VT a) {y : Val}
+    (hy : memDef tabs u (u.args.toList.map (rv FS)) = some y) :
+    ∃ y', memDef tabs w (w.args.toList.map (rv FT)) = some y' ∧ Sem.Refines y y' := by
+  classical
+  let ρ : ID → Val := fun a => if VS a ∧ ¬ IsTerm D a then rv FS a else .poison
+  let ρ' : ID → Val := fun a => if VT a ∧ ¬ IsTerm E a then rv FT a else ρ a
+  have hval : ValRef ρ ρ' := fun a => by
+    by_cases h1 : VT a ∧ ¬ IsTerm E a
+    · by_cases h2 : VS a ∧ ¬ IsTerm D a
+      · simp only [ρ', ρ, h1, h2]
+        exact hrel a h2.1 h2.2 h1.1 h1.2
+      · simp only [ρ', ρ, h1, h2, ite_false]
+        exact .poison _
+    · simp only [ρ', h1, ite_false]; exact Sem.Refines.refl _
+  have htD : Term.Typed D tabs ρ := fun a hat _ => by
+    by_cases h2 : VS a
+    · simp only [ρ, h2, hat, not_false_eq_true, and_self, ite_true]; exact htyS a h2 hat
+    · simp only [ρ, h2, false_and, ite_false]; exact retype_poison _
+  have htE : Term.Typed E tabs ρ' := fun a hat hdef => by
+    by_cases h1 : VT a
+    · simp only [ρ', h1, hat, not_false_eq_true, and_self, ite_true]; exact htyT a h1 hat
+    · simp only [ρ', h1, false_and, ite_false]
+      by_cases h2 : VS a ∧ ¬ IsTerm D a
+      · simp only [ρ, h2]; exact hsh a h2.1 h2.2 hat hdef h1
+      · simp only [ρ, h2, ite_false]; exact retype_poison _
+  have hMA : MemAtoms D tabs ρ := memAtoms_of hS hMS (fun a ha hat => by simp [ρ, ha, hat])
+    fun a hat hne => by
+      by_cases h2 : VS a ∧ ¬ IsTerm D a
+      · exact h2.1
+      · exact absurd (ite_eq_right h2) hne
+  obtain ⟨N, hN⟩ := hS.list (ρ := ρ) (fun a ha hat => by simp [ρ, ha, hat]) (l := u.args.toList)
+    fun a ha => huS a (Array.mem_toList_iff.1 ha)
+  obtain ⟨m, y', hy', hyy⟩ := hC ρ ρ' hval htD htE hMA N y (by rw [hN N (Nat.le_refl N)]; exact hy)
+  obtain ⟨M, hM⟩ := hG.list (ρ := ρ') (fun a ha hat => by simp [ρ', ha, hat]) (l := w.args.toList)
+    fun a ha => hwT a (Array.mem_toList_iff.1 ha)
+  have hl : RefinesList (w.args.toList.map (den E tabs ρ' m)) (w.args.toList.map (rv FT)) := by
+    rw [← hM (max m M) (Nat.le_max_right m M)]
+    exact refinesList_map fun a _ => den_fuel_mono E tabs ρ' m (max m M) a (Nat.le_max_left m M)
+  obtain ⟨y'', h1, h2⟩ := memDef_store_mono hws hl hy'
+  exact ⟨y'', h1, hyy.trans h2⟩
+
 /-- **One atom against the reference frame.** -/
 theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {G T : Frame} {VS VT : ID → Prop}
@@ -55,15 +141,13 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
-    {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : SameAtom u w)
+    {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : SameAtomX u w)
     (ht : termOp w.op = false) (hnp : w.op ≠ .Phi) (hargsS : ∀ a ∈ u.args, VS a)
     (hargsT : ∀ a ∈ w.args, VT a)
     (hinv : ∀ a, I.P w.block a (rv G a)) (hq : I.Q w.block (rv G))
     (hSV : ∀ a, SAnc f w.block a → VS a) :
     Res.Refines (evalValue env (Ctx.make tabs f) G u) (evalValue env (Ctx.make tabs g) T w) := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
-  obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
-  rw [hu] at hu'; cases hu'
   obtain ⟨w', hw', hwid, -⟩ := H.wg.valueId w.block blk ⟨hbm, hblk⟩ x hx
   rw [hw] at hw'; cases hw'
   have huid : u.id = x := hs.2.2.2.2.2.2.trans hwid
@@ -73,16 +157,39 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
   have hshT : ∀ a, VT a → shape (listedDefs g) tabs a = shape g.value? tabs a := fun a ha => by
     obtain ⟨v, hp⟩ := hVT a ha
     simp [shape, placed_listed hp, hp.1]
-  refine atom_eval_mono hE (ctx_eq H.ok.ownAux) hfr hs ?_ (fun a ha => (hDS a (hargsS a ha)).1)
-    (fun a ha => (hDT a (hargsT a ha)).1) fun i hi => ?_
-  · rw [hwid, huid, tys_of_value hw, tys_of_value hu, hs.2.1]
-  · have hi' : i < w.args.size := hs.2.2.2.2.1 ▸ hi
+  have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = (Ctx.make tabs f).tys[u.id]?.getD .other := by
+    rw [hwid, huid, tys_of_value hw, tys_of_value hu, hs.2.1]
+  rcases H.args w.block hbm blk hblk x hx w hw ht with ⟨u', hu', -, -, -, hax, -, hTR⟩ |
+    ⟨u', hu', hus, hws, hC⟩
+  · rw [hu] at hu'; cases hu'
+    refine atom_eval_mono hE (ctx_eq H.ok.ownAux) hfr
+      ⟨hs.1, hs.2.1, hs.2.2.1, hax, hs.2.2.2.2⟩ hty (fun a ha => (hDS a (hargsS a ha)).1)
+      (fun a ha => (hDT a (hargsT a ha)).1) fun i hi => ?_
+    have hi' : i < w.args.size := hs.2.2.2.2.1 ▸ hi
     refine termRef_apply ((hTR i hi').1 hnp) hDS (hargsS _ (getElem!_mem' hi)) hDT
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
       (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
       (fun ρ hρ => I.qpois _ _ ρ hq hρ) hMS
     rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
+  · -- a changed store: the source's write, refined by the target's (`chgRef_apply`)
+    rw [hu] at hu'; cases hu'
+    cases hev : evalValue env (Ctx.make tabs f) G u with
+    | stuck msg => exact .stuck _ _
+    | panic e m =>
+      have := evalValue_panic_op hev
+      rw [hus] at this
+      rcases this with h | h <;> cases h
+    | ok y =>
+      obtain ⟨r, hr, rfl⟩ := evalValue_memOp rfl (by rw [hus]; rfl) hev
+      obtain ⟨r', hr', hrr⟩ := chgRef_apply hC hws hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
+        htyS' (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
+        (fun a ha hat hat' hdef _ => by rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat)
+        hMS hargsS hargsT hr
+      rw [evalValue_of_regs (fun a ha => (hDT a (hargsT a ha)).1),
+        evalOp_memOp (by rw [hws]; rfl) (by rw [hws]; decide),
+        memRoot_of_memDef_store (ctx := Ctx.make tabs g) hws hr', hty]
+      exact .ok (retype_mono _ hrr)
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/
 theorem evalAll_induct {env : Env} {ctx : Ctx} (L : List ID) (Inv : List ID → Frame → Prop)
@@ -121,7 +228,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     (hargsT : ∀ x ∈ og, ∀ w, g.value? x = some w → ∀ a ∈ w.args, VT1 a ∨ a ∈ og)
     (hVSog : ∀ a ∈ og, VS a → ¬ IsTerm (listedDefs g) a → a ∈ P)
     (hatom : ∀ x ∈ L, ∀ w, g.value? x = some w → termOp w.op = false →
-      ∃ u, f.value? x = some u ∧ SameAtom u w ∧
+      ∃ u, f.value? x = some u ∧ SameAtomX u w ∧
         (x ∈ P → (∀ a ∈ u.args, VS a) ∧
           ∃ y, G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) ∧
         (x ∉ P → isRoot w.op = false ∧ w.op ≠ .Arg ∧ w.op ≠ .ArgIntReg)) :

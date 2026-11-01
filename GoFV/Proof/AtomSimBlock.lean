@@ -50,7 +50,7 @@ structure BRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (frS frT : Frame
 structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : Prop where
   hfb : f.block? b = some fb
   hgb : g.block? b = some gb
-  ba : BlockAtoms f g fb gb
+  ba : BlockAtomsX f g fb gb
   bmS : b ∈ f.blocks
   bmT : b ∈ g.blocks
   idS : fb.id = b
@@ -59,7 +59,9 @@ structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : P
   vT : gb.values.toList.Nodup
   sS : schedule f fb = some of
   sT : schedule g gb = some og
-  fl : of.toList.filter (rootP f) = og.toList.filter (rootP g)
+  fl : of.toList.filter (fun x => rootP f x && rootP g x) = og.toList.filter (rootP g)
+  drop : ∀ x ∈ of.toList, rootP f x = true → rootP g x = false →
+    ∃ u, f.value? x = some u ∧ u.op = .Store
   ndS : of.toList.Nodup
   tpS : TopoRem (argsF f) of.toList
   mS : ∀ x, x ∈ of.toList ↔ x ∈ fb.values ∧ ∃ v, f.value? x = some v ∧ v.op ≠ .Phi
@@ -72,7 +74,7 @@ theorem blockData {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
     ∃ gb of og, BlockData f g b fb gb of og := by
   obtain ⟨fb', gb, hfb', hgb, ba⟩ := H.ok.block b hb
   rw [hfb] at hfb'; cases hfb'
-  obtain ⟨of, og, hof, hog, hfl⟩ := ba.sched
+  obtain ⟨of, og, hof, hog, hfl, hdrop⟩ := ba.sched
   have hbT : b ∈ g.blocks := H.ok.blocks ▸ hb
   obtain ⟨fb', hfb', hidS⟩ := H.wf.blockId b hb
   rw [hfb] at hfb'; cases hfb'
@@ -82,8 +84,8 @@ theorem blockData {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
   have hndT := H.wg.valuesNodup b gb ⟨hbT, hgb⟩
   obtain ⟨n1, t1, m1⟩ := schedule_topo (valuesOwn H.wf hb hfb) hndS hof
   obtain ⟨n2, t2, m2⟩ := schedule_topo (valuesOwn H.wg hbT hgb) hndT hog
-  exact ⟨gb, of, og, hfb, hgb, ba, hb, hbT, hidS, hidT, hndS, hndT, hof, hog, hfl, n1, t1, m1, n2,
-    t2, m2⟩
+  exact ⟨gb, of, og, hfb, hgb, ba, hb, hbT, hidS, hidT, hndS, hndT, hof, hog, hfl, hdrop, n1, t1,
+    m1, n2, t2, m2⟩
 
 theorem sched_eq {tabs : Tables} {h : Func} {b : ID} {hb : Block} (hbb : h.block? b = some hb)
     (hid : hb.id = b) : ((Ctx.make tabs h).sched[hb.id]?).join = schedule h hb := by
@@ -203,7 +205,8 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
       rw [tys_of_value hw, tys_of_value hpu.1, hty]]
     refine retype_mono _ ?_
     obtain ⟨-, hwb', blk, hblk', hzv⟩ := hpw
-    obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := H.args w.block hwb' blk hblk' z hzv w hw ht
+    obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := (H.args w.block hwb' blk hblk' z hzv w hw ht).resolve_right
+      fun ⟨_, _, _, hst, _⟩ => by rw [hph] at hst; cases hst
     rw [hpu.1] at hu'; cases hu'
     rcases R.pre with hno | ⟨p, pb, k, VP, hpm, hpb, hk, hinvP, hqP, hDP, hAncP, hPhiP, hMP⟩
     · exact (hno fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha).elim
