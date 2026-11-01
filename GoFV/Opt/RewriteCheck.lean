@@ -907,11 +907,12 @@ cannot panic, and the other roots keep their order), and `validate` relates `nil
 output with the remaining events. -/
 
 /-- A nil-check elimination `(NilCheck x:(Op …) _) => x` whose pointer op nilcheckelim's
-checker justifies by itself (`NilCheck.safePtr`: `Addr`, `LocalAddr`, `NilCheck`, `GetG`). -/
+checker can justify by itself (`NilCheck.safePtr true`: `Addr`, `LocalAddr`, `NilCheck`, `GetG`,
+`OffPtr` of such a pointer, the `SelectN [0]` of a malloc-family call, a dictionary `Arg`). -/
 def nilElimOK (r : Rule) : Bool :=
   match r.pat, r.result with
   | .op .NilCheck none _ _ _ .fixed [.op o (some x) _ _ _ _ _ _, _] _, .copy (.var y) =>
-    x == y && (o matches .Addr | .LocalAddr | .NilCheck | .GetG)
+    x == y && (o matches .Addr | .LocalAddr | .NilCheck | .GetG | .OffPtr | .SelectN | .Arg)
   | _, _ => false
 
 /-- The nil check `v` of `f` that event `ev` eliminates, if it is a `nilChecks` rule event
@@ -1434,10 +1435,13 @@ end GoFV.Opt.RewriteCheck
 namespace GoFV.Opt
 
 /-- The nil-check eliminations of the log, applied to `f` (`f'`, `RewriteCheck.nilPre`), are
-nilcheckelim's (`NilCheck.nrel` in the result's tables `tabs`: each pointer is a `safePtr` seed,
-the other roots keep their order), and `f'` passes `check`. -/
+nilcheckelim's (`NilCheck.nrel true` in the result's tables `tabs`: each pointer is a
+`safePtr true` seed, the other roots keep their order), `f'` passes `check`, and `f`'s
+dictionary parameters are the same in both tables (the precondition `Sem.DictArgs` is
+stated in the input's). -/
 def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f f' : GoFV.SSA.Func) : Bool :=
-  NilCheck.nrel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  NilCheck.nrel true tabs f f' && checkOK { tabs := tabs, typs := env.typs } f' &&
+    NilCheck.dictParams tabs f == NilCheck.dictParams env.tables f
 
 /-- `RewriteCheck.validate` accepts `out` against `f` and the log, or, when the log splits
 struct stores (`ssPre`, issue #151), `f` with these splits applied is related to `f` by

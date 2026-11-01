@@ -109,7 +109,7 @@ theorem mks_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[3, 1] ∧
       check mksCheckEnv mksFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func mksPassEnv.tables mksFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mksPassEnv.tables mksFunc) out.tables out.func mksPassEnv.tables mksFunc := by
   obtain ⟨h1, h2⟩ := mks_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet mksRules) mksPassEnv mksFunc with
   | error e => rw [hc] at h2; cases h2

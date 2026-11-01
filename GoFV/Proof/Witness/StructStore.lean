@@ -118,7 +118,7 @@ theorem ss_checkedRewrite :
         (out.func.value? m).map fun v => (v.op, v.args[1]?)) = some (.Store, some 4) ∧
       check ssCheckEnv ssFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func ssPassEnv.tables ssFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre ssPassEnv.tables ssFunc) out.tables out.func ssPassEnv.tables ssFunc := by
   obtain ⟨h1, h2⟩ := ss_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet ssRules) ssPassEnv ssFunc with
   | error e => rw [hc] at h2; cases h2

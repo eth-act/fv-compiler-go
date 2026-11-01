@@ -107,7 +107,7 @@ theorem gg_checkedRewrite :
       (out.func.value? 4).map (·.args) = some #[2, 1] ∧
       check ggCheckEnv ggFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func ggPassEnv.tables ggFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre ggPassEnv.tables ggFunc) out.tables out.func ggPassEnv.tables ggFunc := by
   obtain ⟨h1, h2⟩ := gg_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet ggRules) ggPassEnv ggFunc with
   | error e => rw [hc] at h2; cases h2

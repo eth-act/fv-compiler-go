@@ -176,13 +176,43 @@ hypothesis `RuleSet.AllSound` now also asks `BlockRule.Sound` of the block rules
 nilcheckelim's checker rather than by a value refinement: `RuleSet.nilChecks` (tried on a
 `NilCheck` after its value row, `Interp.Table.nilChecks`) holds the rules with
 `EffectRule.NilElim r := RewriteCheck.nilElimOK r = true` (the result is the checked pointer, whose
-op is a `NilCheck.safePtr` seed: `Addr`, `LocalAddr` or `NilCheck`). `RewriteCheck.accepts` takes
-the log's nil-check events out (`nilPre`: `NilCheck p mem` → `Copy p` on the input), requires
-`NilCheck.nrel` between the input and that function and `check` of it (`nilOK`), and validates
-the output against it with the remaining events. `checkedRewrite_refines` composes
-`Nil.refines_of_rel` with the atom simulation (statement unchanged). Proven: `generic.rules:1375`,
-`:1381`, `:1388`. Not provable this way (the pointer is no seed): `:1062` (`GetG`), `:1367`
-(`isMalloc` result), `:1384` (dictionary `Arg`), `:1376` (`Convert` of `Addr`).
+op can be a `NilCheck.safePtr true` seed: `Addr`, `LocalAddr`, `NilCheck`, `GetG`, `OffPtr`,
+`SelectN`, `Arg`). `RewriteCheck.accepts` takes the log's nil-check events out (`nilPre`:
+`NilCheck p mem` → `Copy p` on the input), requires `NilCheck.nrel true` between the input and
+that function, `check` of it, and the input's dictionary parameters to be the same in the
+result's and the pass's tables (`nilOK`), and validates the output against it with the remaining
+events.
+
+`safePtr true` (the rewrite passes' seeds) also takes as non-nil the first result of a
+malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobject` or a
+`runtime.mallocgc*SC*` allocator, `NilCheck.mallocName`, whose type and ABI give the result a
+pointer shape) and a dictionary parameter (`NilCheck.dictArg`: an `Arg` of the input parameter
+named `.dict`, of pointer shape). Neither is non-nil by the semantics alone: the contracts are
+the environment's, the arguments the caller's. So the checked rewrite passes are proven under the
+precondition `RwPre tabs f env args mem := env.Mono ∧ NilPre tabs f env args mem`
+(`GoFV/Proof/Pass/Rewrite.lean`), `NilPre` = `Env.AllocNonNil` (every malloc-family contract
+that returns gives a non-nil pointer first; the runtime's do, `Env.runtime_allocNonNil`) and
+`DictArgs (NilCheck.dictParams tabs f) args` (the dictionary arguments are non-nil pointers;
+`GoFV/Proof/NilPre.lean`). `NilCheck.dictParams` depends only on the ABI assignments of
+`f.OwnAux` and their names, which no pass changes. Proof (`GoFV/Proof/Pass/NilSeeds.lean`): under
+`AllocNonNil` the call's register holds a tuple whose first component is a non-nil pointer or
+`poison` (`callOp_static_ok`, `safe_selectN_malloc`); under `DictFrame` (the frame's images of
+the dictionary parameters encode non-nil pointers; `dictFrame_entry` from `DictArgs`, kept by
+every block step) the `Arg` reads a non-nil pointer or `poison` (`safe_argVal_dict`); both are
+new cases of `safe_chain` (`NilBlock.lean`). `Nil.refinesFrom_of_rel : NRel true tabs f g →
+RefinesFrom (NilPre tabs f) tabs g tabs f`; nilcheckelim itself keeps `nrel false` and
+`refines_of_rel : NRel false tabs f g → Refines tabs g tabs f`.
+
+**Theorems**: `checkedRewrite_refines` (and `opt_refines`, `divisible_refines`,
+`divmod_refines`) now conclude `RefinesFrom (RwPre penv.tables f) out.tables out.func
+penv.tables f`. The verified pipeline (`GoFV/Proof/Pass/Pipeline.lean`) names this relation
+`Rel.rw`; `VPre k` adds `Env.AllocNonNil` and `DictArgs k`, with `k` the pipeline input's
+dictionary parameters (`VState.dict`; a proven pass whose input has other dictionary parameters
+is skipped), and `verifiedPipeline_refines` concludes `VRefines (NilCheck.dictParams env.tables
+f)`. Witness: `GoFV.Proof.Witness.nm_checkedRewrite` (`newInt(.dict)`: both nil checks removed,
+kernel evaluation) and `nm_rwPre` (the precondition with a dictionary). Proven:
+`generic.rules:1062`, `:1367`, `:1372`, `:1375`, `:1381`, `:1384`, `:1388`. Not provable this way
+(the pointer is no seed): `:1376` (`Convert` of `Addr`).
 
 ### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 
@@ -610,9 +640,11 @@ all premises (the rewritten argument `v4 → v2` and the `MakeResult` control by
 `addZero(7) = 7` off the output.
 
 **Theorems** (`GoFV/Proof/Pass/Rewrite.lean`; the accepted case runs the input in the result's
-tables, `refinesUnder_of_tabsAgree`): `checkedRewrite_refines (hs : s.AllSound)
+tables, `refinesFrom_of_tabsAgree`): `checkedRewrite_refines (hs : s.AllSound)
 (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out) (hf : check ce f = .ok ())
-(hg : check ce' out.func = .ok ()) : RefinesUnder Env.Mono out.tables out.func penv.tables f`,
+(hg : check ce' out.func = .ok ()) : RefinesFrom (RwPre penv.tables f) out.tables out.func
+penv.tables f` (`RwPre`: `Env.Mono` and, for the nil-check eliminations, `NilPre`; "Nil-check
+eliminations" above),
 and its instances `opt_refines` (`optChecked`: `opt`, `middle opt`, `late opt`),
 `divisible_refines`, `divmod_refines`, whose proofs are `generic_allSound`, `divisible_allSound`,
 `divmod_allSound`: the theorems are about the passes restricted to the proven rules

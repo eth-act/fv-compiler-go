@@ -24,14 +24,17 @@ theorem repInv0 {f : Func} {fr : Frame} {P : ID → Prop} : RepInv f rw0 fr P :=
   fun x _ _ _ => by rw [rep_none (by simp [rw0])]
 
 /-- The source-side invariant at the entry of block `bid` along edge `i`. -/
-structure SimAt (env : Env) (tabs : Tables) (f : Func) (fr : Frame) (bid : ID) (i : Nat) :
-    Prop where
+structure SimAt (xt : Bool) (env : Env) (tabs : Tables) (f : Func) (fr : Frame) (bid : ID)
+    (i : Nat) : Prop where
   size : fr.regs.size = f.valueTab.size
   pre : CSE.Pre env tabs f rw0 fr bid i
+  /-- With the rewrite passes' seeds: the dictionary arguments' images are non-nil pointers. -/
+  dict : xt = true → DictFrame tabs f fr
 
 /-- The simulation relation: the same frame, `SimAt` for the source. -/
-def R (env : Env) (tabs : Tables) (f : Func) (frS frT : Frame) (bid : ID) (i : Nat) : Prop :=
-  frT = frS ∧ SimAt env tabs f frS bid i
+def R (xt : Bool) (env : Env) (tabs : Tables) (f : Func) (frS frT : Frame) (bid : ID) (i : Nat) :
+    Prop :=
+  frT = frS ∧ SimAt xt env tabs f frS bid i
 
 /-- `filterMapM` of the `Phi` step only sees a list's `Phi`s. -/
 theorem filterMapM_phis {ctx : Ctx} {fr : Frame} {i : Nat} :
@@ -59,10 +62,10 @@ theorem filterMapM_congr {F G : ID → Res (Option (ID × Val))} :
     rw [List.filterMapM_cons, List.filterMapM_cons, h z List.mem_cons_self,
       filterMapM_congr fun y hy => h y (List.mem_cons_of_mem _ hy)]
 
-variable {tabs : Tables} {f g : Func}
+variable {xt : Bool} {tabs : Tables} {f g : Func}
 
 /-- **The target collects the source's `Phi`s.** -/
-theorem phis_target {ce : CheckEnv} (hwf : WF ce f) (hrel : NRel tabs f g) {fr : Frame}
+theorem phis_target {ce : CheckEnv} (hwf : WF ce f) (hrel : NRel xt tabs f g) {fr : Frame}
     {bid : ID} {i : Nat} (hb : bid ∈ f.blocks) {fb gb : Block} (hfb : f.block? bid = some fb)
     (hgb : g.block? bid = some gb) :
     gb.values.toList.filterMapM (phiStep (Ctx.make tabs g) fr i) =
@@ -138,9 +141,10 @@ theorem phis_dinv {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) {env : Env} {f
 
 /-- **One block step of nilcheckelim's simulation.** -/
 theorem step {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f)
-    (hrel : NRel tabs f g) {env : Env} (hb : BlockOK env tabs f g) {fr : Frame} {bid : ID}
-    {i : Nat} (hA : SimAt env tabs f fr bid i) :
-    StepSim (R env tabs f) (blockStep env (Ctx.make tabs f) fr bid i)
+    (hrel : NRel xt tabs f g) {env : Env} (hx : xt = true → env.AllocNonNil)
+    (hb : BlockOK xt env tabs f g) {fr : Frame} {bid : ID}
+    {i : Nat} (hA : SimAt xt env tabs f fr bid i) :
+    StepSim (R xt env tabs f) (blockStep env (Ctx.make tabs f) fr bid i)
       (blockStep env (Ctx.make tabs g) fr bid i) := by
   have hbt := pre_tree hwf hc hA.pre
   unfold blockStep
@@ -184,6 +188,7 @@ theorem step {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f)
     obtain ⟨-, -, -, hphiS⟩ := phis_spec (hwf.valuesNodup _ _ ⟨hbt.1, hfb⟩) hps
     refine hb bid fb gb _ oS oT hbt hfb hgb (by simp [setPhis_size, hA.size])
       (phis_dinv hwf hc hA.pre hfb hps) (fun z hz v hv hph => ?_) hoS hoT hfilt
+      (fun h => ⟨hx h, (hA.dict h).images rfl⟩)
     obtain ⟨a, y, -, -, h⟩ := hphiS z hz v hv hph (by rw [hA.size]; exact lt_of_value? hv)
     exact ⟨_, h⟩
   cases hen : enterBlock env (Ctx.make tabs f) fr fb i with
@@ -197,7 +202,7 @@ theorem step {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f)
   have hTG := (blk ps oS oT hps hoS hoT hfilt).1 G hev
   rw [hT, hTG]
   simp only
-  obtain ⟨hD, -, hGsz⟩ := dinv_enter hwf hc hbt.1 hfb hA.size (pre_strict hc hA.pre).1 hen
+  obtain ⟨hD, hGfr, hGsz⟩ := dinv_enter hwf hc hbt.1 hfb hA.size (pre_strict hc hA.pre).1 hen
   have hcs : ∀ (k : Nat) (c : ID), fb.controls[k]? = some c →
       ∃ c', gb.controls[k]? = some c' ∧ G.regs[c']? = G.regs[c]? :=
     fun k c hk => ⟨c, by rw [hctl]; exact hk, rfl⟩
@@ -206,17 +211,20 @@ theorem step {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f)
     rw [stepTerm_rel hkind hsucc (hgid.trans rfl) hcs hst]
     cases n with
     | goto e =>
-      refine ⟨G, rfl, rfl, by rw [hGsz, hA.size], .inr ⟨bid, fb, hbt.1, hfb, hbt.2, ?_, hD, repInv0⟩⟩
+      refine ⟨G, rfl, rfl, by rw [hGsz, hA.size], .inr ⟨bid, fb, hbt.1, hfb, hbt.2, ?_, hD, repInv0⟩,
+        fun h => (hA.dict h).images (by rw [hGfr])⟩
       cases e; exact stepTerm_goto_mem hst
     | ret rs m => exact ⟨rs, rfl, RefinesList.refl rs⟩
   | panic e m => exact absurd hst stepTerm_not_panic
   | stuck msg => exact True.intro
 
-/-- **nilcheckelim's output relation gives refinement.** -/
-theorem refines_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel tabs f g) :
-    Refines tabs g tabs f := by
+/-- **nilcheckelim's output relation gives refinement**, with the rewrite passes' seeds (`xt`)
+on environments and arguments where malloc-family calls return non-nil pointers and the
+dictionary arguments are non-nil. -/
+theorem refines_of_rel_xt (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel xt tabs f g) :
+    RefinesFrom (fun env args mem => xt = true → NilPre tabs f env args mem) tabs g tabs f := by
   obtain ⟨ce, hwf⟩ := hwf
-  have hb : ∀ env, BlockOK env tabs f g := fun env => blockOK hrel ⟨ce, hwf⟩ hc env
+  have hb : ∀ env, BlockOK xt env tabs f g := fun env => blockOK hrel ⟨ce, hwf⟩ hc env
   have hpar : (Ctx.make tabs g).params = (Ctx.make tabs f).params := by
     simp only [Ctx.make, abiParams, hrel.ownAux]
   have hpty : (Ctx.make tabs g).paramTys = (Ctx.make tabs f).paramTys := by
@@ -225,7 +233,7 @@ theorem refines_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel tabs
     simp only [Ctx.make, abiParams, hrel.ownAux]
   have hloc : (Ctx.make tabs g).locals = (Ctx.make tabs f).locals := by
     simp only [Ctx.make, abiParams, hrel.ownAux]
-  intro env args mem fuel hd
+  intro env args mem hpre fuel hd
   refine ⟨fuel, ?_⟩
   unfold run runCtx at hd ⊢
   rw [hpar]
@@ -241,11 +249,23 @@ theorem refines_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel tabs
       rw [hpty, hloc, hsz]; rfl
     rw [hentry, houts, show (Ctx.make tabs g).act = (Ctx.make tabs f).act from rfl,
       show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from cfgView_entry hrel.cfg]
-    have hA0 : SimAt env tabs f (entryFrame env (Ctx.make tabs f) args mem) f.entry 0 :=
-      ⟨by simp [Ctx.make, entryFrame], .inl rfl⟩
-    exact finish_refines hd (runLoop_sim (R env tabs f)
-      (fun frS frT bid i ⟨h1, h2⟩ => by subst h1; exact step hwf hc hrel (hb env) h2) fuel _ _ _ _
+    have hA0 : SimAt xt env tabs f (entryFrame env (Ctx.make tabs f) args mem) f.entry 0 :=
+      ⟨by simp [Ctx.make, entryFrame], .inl rfl, fun h => dictFrame_entry (hpre h).2⟩
+    exact finish_refines hd (runLoop_sim (R xt env tabs f)
+      (fun frS frT bid i ⟨h1, h2⟩ => by
+        subst h1; exact step hwf hc hrel (fun h => (hpre h).1) (hb env) h2) fuel _ _ _ _
       ⟨rfl, hA0⟩ (finish_defined hd))
+
+/-- **nilcheckelim's output relation gives refinement** (nilcheckelim's own seeds). -/
+theorem refines_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel false tabs f g) :
+    Refines tabs g tabs f :=
+  fun env args mem fuel hd => refines_of_rel_xt hwf hc hrel env args mem nofun fuel hd
+
+/-- **nilcheckelim's output relation with the rewrite passes' seeds gives refinement** under
+`NilPre`. -/
+theorem refinesFrom_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : NRel true tabs f g) :
+    RefinesFrom (NilPre tabs f) tabs g tabs f :=
+  fun env args mem hp fuel hd => refines_of_rel_xt hwf hc hrel env args mem (fun _ => hp) fuel hd
 
 /-- **nilcheckelim refines its input** (on inputs in `nilFrag`: the checker accepts its
 output). -/

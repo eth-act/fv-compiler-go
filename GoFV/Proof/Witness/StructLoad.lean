@@ -112,7 +112,7 @@ theorem lf_checkedRewrite :
       (out.func.value? 3).map (fun v => (v.op, v.args.size)) = some (.StructMake, 2) ∧
       check lfCheckEnv lfFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func lfPassEnv.tables lfFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lfPassEnv.tables lfFunc) out.tables out.func lfPassEnv.tables lfFunc := by
   obtain ⟨h1, h2⟩ := lf_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet lfRules) lfPassEnv lfFunc with
   | error e => rw [hc] at h2; cases h2

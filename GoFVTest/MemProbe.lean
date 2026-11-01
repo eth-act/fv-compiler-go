@@ -314,7 +314,7 @@ def main (args : List String) : IO UInt32 := do
                 if !kinds.contains w then kinds := w :: kinds
           if !kinds.isEmpty then
             nChanged := nChanged + 1
-            if NilCheck.nrel prev f g then
+            if NilCheck.nrel false prev f g then
               nAcc := nAcc + 1
               pure ()
             let rok := rootsOK f g

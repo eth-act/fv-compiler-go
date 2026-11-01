@@ -7,17 +7,18 @@ import GoFV.Rules.Generated.Generic
 `(NilCheck x:(Op …) _) => x` replaces a root, the nil check, by its pointer. Its obligation is
 not a value refinement (`Rule.SoundT`: the nil check is not a term) but that the check cannot
 panic, which depends on the instance's pointer. The checked rewrite validates each instance by
-nilcheckelim's checker (`GoFV.Opt.RewriteCheck.nilPre`, `GoFV.Opt.NilCheck.nrel`): the pointer
-is a `safePtr` seed (an `Addr` or `LocalAddr` with a symbol, a nil check, or `GetG`, whose value
-is the environment's `g` allocation `Blk.global "runtime.g"`: it points into an allocation,
-`GoFV.Proof.Nil.nn_of_safe`) and the other roots keep their order
-(`GoFV.Proof.Nil.refines_of_rel`). The rule-level obligation `EffectRule.NilElim` is the shape
-that makes this per-instance check apply: the result is the checked pointer, and the pointer's
-op is a `safePtr` seed (`RewriteCheck.nilElimOK`, which the validator also checks).
+nilcheckelim's checker with the rewrite passes' seeds (`GoFV.Opt.RewriteCheck.nilPre`,
+`GoFV.Opt.NilCheck.nrel true`): the pointer is a `safePtr true` seed (an `Addr` or `LocalAddr`
+with a symbol, a nil check, `GetG`, whose value is the environment's `g` allocation
+`Blk.global "runtime.g"`, an `OffPtr` of such a pointer, the `SelectN [0]` of a malloc-family
+call or a dictionary `Arg`: it points into an allocation, `GoFV.Proof.Nil.nn_of_safe`, the last
+two under the rewrite passes' precondition `Sem.Env.AllocNonNil` and
+`Sem.DictArgs`) and the other roots keep their order (`GoFV.Proof.Nil.refinesFrom_of_rel`).
+The rule-level obligation `EffectRule.NilElim` is the shape that makes this per-instance check
+apply: the result is the checked pointer, and the pointer's op can be a `safePtr true` seed
+(`RewriteCheck.nilElimOK`, which the validator also checks).
 
-Not provable this way (the pointer is not a seed): `generic.rules:1367` (`isMalloc` call result:
-the contracts do not say that `mallocgc` returns non-nil), `:1384` (dictionary `Arg`: non-nil
-only by the compiler's calling convention), `:1376` (`Convert` of `Addr`).
+Not provable this way (the pointer is not a seed): `generic.rules:1376` (`Convert` of `Addr`).
 -/
 
 namespace GoFV.Proof.Rules
@@ -40,7 +41,16 @@ theorem r_generic_1381_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:1388`: `(NilCheck ptr:(NilCheck _ _) _ ) => ptr` -/
 theorem r_generic_1388_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r_generic_1388 := rfl
 
-/-- Non-vacuity: `:1367` (`isMalloc` call result) does not have the shape. -/
-example : GoFV.Opt.RewriteCheck.nilElimOK GoFV.Rules.Generated.Generic.r_generic_1367 = false := rfl
+/-- `generic.rules:1367`: `(NilCheck ptr:(SelectN [0] call:(StaticLECall ___)) _) && isMalloc(call.Aux) && warnRule(fe.Debug_checknil(), v, "removed nil check") => ptr` -/
+theorem r_generic_1367_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r_generic_1367 := rfl
+
+/-- `generic.rules:1372`: `(NilCheck ptr:(OffPtr (SelectN [0] call:(StaticLECall ___))) _) && isMalloc(call.Aux) && warnRule(fe.Debug_checknil(), v, "removed nil check") => ptr` -/
+theorem r_generic_1372_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r_generic_1372 := rfl
+
+/-- `generic.rules:1384`: `(NilCheck ptr:(Arg {sym}) _) && isDictArgSym(sym) => ptr` -/
+theorem r_generic_1384_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r_generic_1384 := rfl
+
+/-- Non-vacuity: `:1376` (`Convert` of `Addr`) does not have the shape. -/
+example : GoFV.Opt.RewriteCheck.nilElimOK GoFV.Rules.Generated.Generic.r_generic_1376 = false := rfl
 
 end GoFV.Proof.Rules
