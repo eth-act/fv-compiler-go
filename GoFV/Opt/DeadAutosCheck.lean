@@ -19,8 +19,8 @@ nothing reads (`#31`).
   `PtrIndex`, `Copy`), as the destination (argument 0) of an eliminated `Store`/`Zero`/`Move`, or
   as the source (argument 1) of an eliminated `Move`; no control is tainted (`usesOK`).
 * Every variable of `E` is a frame variable whose address the program cannot rebuild from an
-  integer (`unforgeable`: not a user variable whose address is taken) and is not an open-coded
-  defer slot.
+  integer (`unforgeable`: a `PAUTO` whose address is not taken, `Blk.temp`) and is not an
+  open-coded defer slot.
 * Every block's schedule in `g` lists the roots of `g` in `f`'s order (`DSE.schedOK`).
 -/
 
@@ -78,14 +78,13 @@ def names (f g : Func) (T : ID → Option AuxRef) : List AuxRef :=
       else E
     | _, _ => E) []
 
-/-- A frame variable whose address no integer conversion reaches (`Blk.temp`), and not an
-open-coded defer slot. -/
+/-- A frame variable whose address no integer conversion reaches (`Blk.temp`: not
+`Tables.forgeable`), and not an open-coded defer slot. -/
 def unforgeable (tabs : Tables) (n : AuxRef) : Bool :=
-  match tabs.aux? n with
-  | some { kind := .name _ cls _ _ _ fl _, .. } =>
-    (cls == .PAUTO || cls == .PPARAM || cls == .PPARAMOUT) && !(fl.addrtaken && !fl.autotmp) &&
-      !fl.opendeferslot
-  | _ => false
+  !tabs.forgeable n &&
+    match tabs.aux? n with
+    | some { kind := .name _ _ _ _ _ fl _, .. } => !fl.opendeferslot
+    | _ => false
 
 /-- Value `x`: kept or an eliminated write to a variable of `E`. -/
 def valueOK (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef) (x : ID) : Bool :=
