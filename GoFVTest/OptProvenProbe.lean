@@ -98,6 +98,15 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
         | some cr =>
           if ruleOK tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
           else return s!"rule v{v}: {ruleWhy tabs M cr.rule v defs.toList}"
+    | .copyArg v i src =>
+      match M.get? v with
+      | none => return s!"copyArg at missing v{v}"
+      | some x =>
+        if h : i < x.args.size then
+          if copyReach tabs M M.size x.args[i] src then
+            M := M.put v { x with args := x.args.set i src }
+          else return s!"copyArg v{v} {i}: v{x.args[i]} does not reach v{src}"
+        else return s!"copyArg v{v} {i}: no argument"
     | .phielim .. => return "phielim"
     | .blockRule .. => return "blockRule"
     | _ => pure ()
@@ -118,10 +127,13 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
     return "final"
   return "?"
 
-def checkFile (path : System.FilePath) (st : Std.HashMap String Count) :
-    IO (Std.HashMap String Count) := do
+/-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite
+section, and those whose every rewrite section the checked variant reproduces. -/
+def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × Nat) :
+    IO (Std.HashMap String Count × Nat × Nat) := do
+  let (st, fns, fnsChecked) := st
   let data ← IO.FS.readBinFile path
-  let .ok e := parseExport data | return st
+  let .ok e := parseExport data | return (st, fns, fnsChecked)
   let typs := ((e.sections[0]?).bind (·.typs)).getD #[]
   let base : PassEnv :=
     { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
@@ -129,6 +141,8 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count) :
       typeOrder := TypeOrder.ofGroups e.typeOrder e.typeCmp
       tables := {}, frontend := e.frontendTables, ptrCache := ptrCacheFn e.ptrCache }
   let mut st := st
+  let mut any := false
+  let mut allChecked := true
   let mut tables : Tables := {}
   for h : k in [0:e.sections.size] do
     let s := e.sections[k]
@@ -140,6 +154,7 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count) :
     let env := { base with passName := name, tables := prev, zvar := zvarFn e.sections[k-1]!.zvar }
     let input := e.sections[k-1]!.func
     let mut c := st.getD name {}
+    any := true
     c := { c with runs := c.runs + 1, vStock := c.vStock + numValues s.func }
     match GoFV.Rules.rewritePassFired full true env input with
     | .ok (out, n) =>
@@ -157,13 +172,16 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count) :
       let ok := RewriteCheck.validate prev proven input out.func log
       if !ok && !(out.func == input) then
         c := { c with rejected := c.rejected + 1 }
-        if c.rejected ≤ 3 then IO.println s!"REJECT {name} {path}: {why prev proven input out.func log}"
+        IO.println s!"REJECT {name} {path}: {why prev proven input out.func log}"
       let cf := if ok then out.func else input
       if (compare prev { func := cf, tables := prev } tables s).isNone then
         c := { c with checkedSame := c.checkedSame + 1 }
-    | .error _ => c := { c with errors := c.errors + 1 }
+      else allChecked := false
+    | .error _ =>
+      c := { c with errors := c.errors + 1 }
+      allChecked := false
     st := st.insert name c
-  return st
+  return (st, if any then fns + 1 else fns, if any && allChecked then fnsChecked + 1 else fnsChecked)
 
 def pct (a b : Nat) : String :=
   if b == 0 then "-" else
@@ -177,9 +195,11 @@ def main (args : List String) : IO UInt32 := do
     if ← p.isDir then
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
     else files := files.push p
-  let mut st : Std.HashMap String Count := {}
+  let mut acc : Std.HashMap String Count × Nat × Nat := ({}, 0, 0)
   for path in files.qsort (·.toString < ·.toString) do
-    st ← checkFile path st
+    acc ← checkFile path acc
+  let (st, fns, fnsChecked) := acc
+  IO.println s!"Functions with a rewrite section: {fns}; every rewrite section at the stock result under the checked proven-only passes: {fnsChecked} ({pct fnsChecked fns})"
   IO.println "| Pass | Runs | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Values stock | Values proven-only | Validator rejects | Checked parity | Errors |"
   IO.println "| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |"
   for (name, _, _) in variants do

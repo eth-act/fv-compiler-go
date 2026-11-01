@@ -89,11 +89,12 @@ theorem runLoop_blockStep (env : Env) (ctx : Ctx) (fuel : Nat) (fr : Frame) (bid
 
 /-- The target's step matches a source step, possibly along another edge (`R frS bS iS frT bT
 iT` relates the source entering block `bS` along edge `iS` and the target entering `bT` along
-`iT`; passes that delete edges shift predecessor indices). -/
+`iT`; passes that delete edges shift predecessor indices). Returns and panics may end in a
+refined memory (`Mem.Refines`: a rewrite may make a poison value defined, which may be stored). -/
 def StepSimE (R : Frame → ID → Nat → Frame → ID → Nat → Prop) : Step → Step → Prop
   | .goto frS e, sT => ∃ frT e', sT = .goto frT e' ∧ R frS e.b e.i frT e'.b e'.i
-  | .ret rs m, sT => ∃ rs', sT = .ret rs' m ∧ RefinesList rs rs'
-  | .panic e m, sT => sT = .panic e m
+  | .ret rs m, sT => ∃ rs' m', sT = .ret rs' m' ∧ RefinesList rs rs' ∧ Mem.Refines m m'
+  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ Mem.Refines m m'
   | .stuck, _ => True
 
 /-- **Lock-step simulation**, the target's block and edge index related to the source's. -/
@@ -120,13 +121,14 @@ theorem runLoop_simE {env : Env} {ctxS ctxT : Ctx} {act : Nat}
       exact ih _ _ _ _ _ _ hR' hd
     | ret rs m =>
       rw [hS] at hs
-      obtain ⟨rs', hT, hr⟩ := hs
+      obtain ⟨rs', m', hT, hr, hm⟩ := hs
       rw [r1 _ _ hS, r2 _ _ hT]
-      exact .returned hr (Mem.Refines.refl m)
+      exact .returned hr hm
     | panic e m =>
       rw [hS] at hs
-      rw [p1 _ _ hS, p2 _ _ hs]
-      exact .panicked_refl e m
+      obtain ⟨m', hT, hm⟩ := hs
+      rw [p1 _ _ hS, p2 _ _ hT]
+      exact .panicked e (hm.dropFrames act)
     | stuck => exact absurd hd (s1 hS)
 
 /-- The target's step matches a source step along the same edge (`R` relates the states at
@@ -153,8 +155,8 @@ theorem runLoop_sim {env : Env} {ctxS ctxT : Ctx} {act : Nat} (R : Frame → Fra
   generalize blockStep env ctxT frT bS iS = sT
   cases sS with
   | goto frS' e => rintro ⟨frT', hT, hR'⟩; exact ⟨frT', e, hT, rfl, rfl, hR'⟩
-  | ret rs m => exact id
-  | panic e m => exact id
+  | ret rs m => rintro ⟨rs', hT, hr⟩; exact ⟨rs', m, hT, hr, Mem.Refines.refl m⟩
+  | panic e m => intro hT; exact ⟨m, hT, Mem.Refines.refl m⟩
   | stuck => exact id
 
 /-! ## Evaluation against a reference frame -/
