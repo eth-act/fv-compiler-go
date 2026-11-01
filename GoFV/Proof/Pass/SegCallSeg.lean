@@ -4,8 +4,9 @@ import GoFV.Proof.Pass.SegSound
 # Segments: the call segments (issue #151)
 
 `generic.rules:1638` and `:1730` replace `x = SelectN [0] c` of a call
-`c = StaticLECall/StaticCall {runtime.memclrNoHeapPointers} p (Const64 [n]) m` (resp.
-`{runtime.memmove} d s (Const64 [n]) m`) that `GoFV.Opt.MemCall.simpleCall` accepts by
+`c = StaticLECall/StaticCall {runtime.memclrNoHeapPointers} p n m` (resp.
+`{runtime.memmove} d s n m`), the size `n` a constant term of value `[n]` (`constSize`: e.g.
+`Mul64 (StringLen (ConstString {s})) (Const64 [1])`), that `GoFV.Opt.MemCall.simpleCall` accepts by
 `x = Zero [n] p m` (resp. `Move [n] d s m`); `callSeg?` checks this, the call is dropped
 (`D = [c]`) and no value is fresh (`N = []`).
 
@@ -17,13 +18,16 @@ model's memory contracts, `Env.MemOps`):
 * in a source frame where the call is available (`CSE.Mem.Avail`, it is a root of `f`), its
   arguments have registers: the pointers are pointers (`Proof.Typed` at a pointer shape leaves a
   pointer or `poison`, and a `poison` pointer makes the contract stuck: `callOp_memclr_ptr`,
-  `callOp_memmove_ptr`), the size is its constant (`Const64`); so the call's memory `Mc`
+  `callOp_memmove_ptr`), the size is its constant term's value (`termConst_reg`: each node of an
+  available term evaluates from its arguments' registers); so the call's memory `Mc`
   refines the plain write `M'` (`callOp_memclr`, `callOp_memmove`), which the target's
   `Zero`/`Move` computes from the same registers; the source's `SelectN [0]` of the call's tuple
   (retyped at the call's and at `x`'s type) is `Mc` or `poison`, refined by the target's `M'`
   retyped at the same type (`selectN_refines`).
 
-Non-vacuity: `callSeg_witness` (`callSeg?` accepts a concrete `memclrNoHeapPointers` call).
+Non-vacuity: `callSeg_witness` (`callSeg?` accepts a concrete `memclrNoHeapPointers` call) and
+`callSeg_witness_str` (a `memclrNoHeapPointers` call whose size is the length of a string
+constant times 1).
 -/
 
 namespace GoFV.Proof.Seg
@@ -84,13 +88,51 @@ private theorem callSeg_spec {tabs : Tables} {f g : Func} {fv gv : Value} {D N :
 
 private theorem constSize_spec {tabs : Tables} {f : Func} {n : ID} {k : Int64}
     (h : constSize tabs f n k = true) :
-    ∃ nv, f.value? n = some nv ∧ nv.op = .Const64 ∧ nv.auxInt = k ∧
-      tabs.ty nv.type = .int .w64 := by
-  unfold constSize at h
-  rw [Option.any_eq_true] at h
-  obtain ⟨nv, hnv, hk⟩ := h
-  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hk
-  exact ⟨nv, hnv, hk.1.1.1.1, hk.1.1.2, Ty.eq_of_beq hk.2⟩
+    termConst tabs f 4 n = some (.int .w64 (BitVec.ofInt 64 k.toInt)) := by
+  simp only [constSize, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨-, h⟩ := h
+  split at h
+  next x hx => rw [hx, beq_iff_eq.1 h]
+  next => cases h
+
+/-- **A constant term's register** in a frame where it is available is its value
+(`termConst`): each node evaluated from its arguments' registers (`evalValue_term`). -/
+private theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
+    {A : ID → Prop} (hA : Avail env tabs f S A) (hid : ∀ z v, A z → f.value? z = some v → v.id = z) :
+    ∀ (k : Nat) (a : ID) (y : Val), A a → termConst tabs f k a = some y →
+      S.regs[a]? = some (some y)
+  | 0, _, _, _, h => by simp [termConst] at h
+  | k + 1, a, y, ha, h => by
+    obtain ⟨v, y', hv, hr, hev⟩ := hA.val a ha
+    simp only [termConst, hv] at h
+    split at h
+    next ht =>
+      obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
+      have hnphi : v.op ≠ .Phi := fun e => by rw [e] at ht; exact absurd ht (by decide)
+      have hl : ∀ (l : List ID) (cs : List Val), (∀ b ∈ l, A b) →
+          l.mapM (termConst tabs f k) = some cs → l.map (rv S) = cs := by
+        intro l
+        induction l with
+        | nil => intro cs _ h; simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; simp [h]
+        | cons b l ih =>
+          intro cs hb h
+          rw [List.mapM_cons] at h
+          cases hc : termConst tabs f k b with
+          | none => rw [hc] at h; cases h
+          | some c =>
+            cases hcs' : l.mapM (termConst tabs f k) with
+            | none => rw [hc, hcs'] at h; cases h
+            | some cs' =>
+              rw [hc, hcs'] at h
+              cases h
+              rw [List.map_cons, rv_of (termConst_reg hA hid k b c (hb b List.mem_cons_self) hc),
+                ih cs' (fun x hx => hb x (List.mem_cons_of_mem _ hx)) hcs']
+      have hargs := hl _ cs (fun b hb => hA.cl a v ha hv hnphi b (Array.mem_toList_iff.1 hb)) hcs
+      have hy' := GoFV.Proof.AtomSim.evalValue_term ht (hev hnphi)
+      rw [hid a v ha hv, tys_of_value hv, Option.getD_some, hargs] at hy'
+      rw [hr, hy']
+      rfl
+    next => cases h
 
 private theorem ptrArgB_spec {tabs : Tables} {f : Func} {p : ID} (h : ptrArgB tabs f p = true) :
     ∃ pv o, f.value? p = some pv ∧ tabs.ty pv.type = .ptr o := by
@@ -195,12 +237,6 @@ private theorem evalOp_call {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ar
     (hop : v.op = .StaticLECall ∨ v.op = .StaticCall) :
     evalOp env ctx fr v argv ty = callOp env ctx v argv := by
   rcases hop with hop | hop <;> simp only [evalOp, hop]
-
-private theorem evalOp_const64 {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
-    {ty : Ty}
-    (hop : v.op = .Const64) : evalOp env ctx fr v argv ty = .ok (Conv.const .w64 v.auxInt) := by
-  simp only [evalOp, frameVal, hop]
-  rfl
 
 private theorem evalOp_selectN {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty}
@@ -320,13 +356,10 @@ private theorem memclr_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g 
   obtain ⟨yp, hyp⟩ := hA.reg (hmem p (by simp))
   obtain ⟨yn, hyn⟩ := hA.reg (hmem n (by simp))
   obtain ⟨ym, hym⟩ := hA.reg (hmem m (by simp))
-  -- the size is its constant
-  obtain ⟨nv, hnv, hnop, hnai, hnty⟩ := constSize_spec hcs
-  have hevn := hA.eval (hmem n (by simp)) hnv (by rw [hnop]; intro h; cases h) hyn
-  rw [evalValue_of_regs (regs_of_ok hevn), evalOp_const64 hnop, hid n nv (hmem n (by simp)) hnv,
-    tys_of_value hnv, Option.getD_some, hnty, hnai] at hevn
-  have hyn' : yn = .int .w64 (BitVec.ofInt 64 gv.auxInt.toInt) := by
-    cases hevn; simp [Conv.const, Val.retype]
+  -- the size is its constant term's value
+  have hyn' : yn = .int .w64 (BitVec.ofInt 64 gv.auxInt.toInt) :=
+    Option.some.inj (Option.some.inj
+      (hyn.symm.trans (termConst_reg hA hid 4 n _ (hmem n (by simp)) (constSize_spec hcs))))
   subst hyn'
   -- the pointer is a pointer or `poison`
   obtain ⟨pv, o, hpv, hpt⟩ := ptrArgB_spec hp
@@ -379,13 +412,10 @@ private theorem memmove_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g
   obtain ⟨ys, hys⟩ := hA.reg (hmem s (by simp))
   obtain ⟨yn, hyn⟩ := hA.reg (hmem n (by simp))
   obtain ⟨ym, hym⟩ := hA.reg (hmem m (by simp))
-  -- the size is its constant
-  obtain ⟨nv, hnv, hnop, hnai, hnty⟩ := constSize_spec hcs
-  have hevn := hA.eval (hmem n (by simp)) hnv (by rw [hnop]; intro h; cases h) hyn
-  rw [evalValue_of_regs (regs_of_ok hevn), evalOp_const64 hnop, hid n nv (hmem n (by simp)) hnv,
-    tys_of_value hnv, Option.getD_some, hnty, hnai] at hevn
-  have hyn' : yn = .int .w64 (BitVec.ofInt 64 gv.auxInt.toInt) := by
-    cases hevn; simp [Conv.const, Val.retype]
+  -- the size is its constant term's value
+  have hyn' : yn = .int .w64 (BitVec.ofInt 64 gv.auxInt.toInt) :=
+    Option.some.inj (Option.some.inj
+      (hyn.symm.trans (termConst_reg hA hid 4 n _ (hmem n (by simp)) (constSize_spec hcs))))
   subst hyn'
   -- the pointers are pointers or `poison`
   obtain ⟨dv, o, hdv, hdt⟩ := ptrArgB_spec hd
@@ -470,5 +500,42 @@ theorem callSeg_witness :
 example : SegSound Env.runtime csTabs csF csG 5 [1] [] :=
   callSeg_sound (fv := csVal 5 .SelectN 2 0 none #[1]) (gv := csVal 5 .Zero 2 16 none #[2, 4])
     rfl rfl rfl rfl callSeg_witness Env.runtime_memOps
+
+/-- The string constant `"0123456789abcdef"`. -/
+private def csStr : AuxDef where
+  fmt := GoStr.ofString "0123456789abcdef"
+  kind := .str (GoStr.ofString "0123456789abcdef") (GoStr.ofString "go:string.0")
+
+/-- `csTabs` with the type `string` (3) and the string constant `csStr` (aux 2). -/
+private def csTabsS : Tables :=
+  { csTabs with
+    types := csTabs.types.push (some { (default : TypeDef) with kind := .STRING, size := some 16 })
+    auxes := csTabs.auxes.push (some csStr) }
+
+/-- `csF` with the size `v3 = Mul64 v6 v7` (`v6 = StringLen v8`, `v7 = Const64 [1]`,
+`v8 = ConstString {"0123456789abcdef"}`), as `copy`'s size before value rules fold it. -/
+private def csFS : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (csVal 1 .StaticLECall 2 0 (some 0) #[2, 3, 4]),
+      some (csVal 2 .SP 1 0 none #[]), some (csVal 3 .Mul64 0 0 none #[6, 7]),
+      some (csVal 4 .InitMem 2 0 none #[]), some (csVal 5 .SelectN 2 0 none #[1]),
+      some (csVal 6 .StringLen 0 0 none #[8]), some (csVal 7 .Const64 0 1 none #[]),
+      some (csVal 8 .ConstString 3 0 (some 2) #[])] }
+
+/-- `csFS` with `v5 = Zero [16] v2 v4`. -/
+private def csGS : Func :=
+  { csFS with
+    valueTab := #[none, none, some (csVal 2 .SP 1 0 none #[]),
+      some (csVal 3 .Mul64 0 0 none #[6, 7]),
+      some (csVal 4 .InitMem 2 0 none #[]), some (csVal 5 .Zero 2 16 none #[2, 4]),
+      some (csVal 6 .StringLen 0 0 none #[8]), some (csVal 7 .Const64 0 1 none #[]),
+      some (csVal 8 .ConstString 3 0 (some 2) #[])] }
+
+/-- Non-vacuity of the constant-term size (`termConst`): `callSeg?` accepts `SelectN [0]` of a
+`memclrNoHeapPointers(SP, len("0123456789abcdef") * 1)` call becoming `Zero [16] SP mem`. -/
+theorem callSeg_witness_str :
+    callSeg? csTabsS csFS csGS (csVal 5 .SelectN 2 0 none #[1]) (csVal 5 .Zero 2 16 none #[2, 4]) =
+      some ([1], []) := by
+  decide +kernel
 
 end GoFV.Proof.Seg
