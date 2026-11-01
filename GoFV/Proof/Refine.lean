@@ -139,6 +139,28 @@ theorem Refines.trans {t1 t2 t3 : Tables} {f1 f2 f3 : Func} (h12 : Refines t2 f2
   obtain ⟨fuel3, h3⟩ := h23 env args mem fuel2 h2.defined_right
   exact ⟨fuel3, h2.trans h3⟩
 
+/-- `Refines` restricted to the environments with `P` (e.g. monotone contracts). -/
+def RefinesUnder (P : Env → Prop) (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
+  ∀ (env : Env), P env → ∀ (args : List Val) (mem : Mem) (fuel : Nat),
+    (run env tabs f args mem fuel).Defined →
+      ∃ fuel', OutcomeRefines (run env tabs f args mem fuel) (run env tabs' f' args mem fuel')
+
+theorem Refines.under (P : Env → Prop) {tabs tabs' : Tables} {f f' : Func}
+    (h : Refines tabs' f' tabs f) : RefinesUnder P tabs' f' tabs f :=
+  fun env _ => h env
+
+theorem RefinesUnder.refl (P : Env → Prop) (tabs : Tables) (f : Func) :
+    RefinesUnder P tabs f tabs f :=
+  (Refines.refl tabs f).under P
+
+theorem RefinesUnder.trans {P : Env → Prop} {t1 t2 t3 : Tables} {f1 f2 f3 : Func}
+    (h12 : RefinesUnder P t2 f2 t1 f1) (h23 : RefinesUnder P t3 f3 t2 f2) :
+    RefinesUnder P t3 f3 t1 f1 := by
+  intro env hP args mem fuel h
+  obtain ⟨fuel2, h2⟩ := h12 env hP args mem fuel h
+  obtain ⟨fuel3, h3⟩ := h23 env hP args mem fuel2 h2.defined_right
+  exact ⟨fuel3, h2.trans h3⟩
+
 /-- Equal runs refine each other. -/
 theorem Refines.of_run_eq {tabs tabs' : Tables} {f f' : Func}
     (h : ∀ env args mem fuel, run env tabs' f' args mem fuel = run env tabs f args mem fuel) :
