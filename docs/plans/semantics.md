@@ -206,7 +206,14 @@ passed to an environment contract, and function results. `poison` may be stored 
 through memory (`Byte.poison`).
 
 Refinement `Val.Refines src tgt`: `src = poison` or `src = tgt` (lifted pointwise through
-`tuple`/`agg` and memories). Every rule lemma is `Refines ⟦lhs⟧ ⟦rhs⟧`.
+`tuple`/`agg` and memories). Every rule lemma is `Refines ⟦lhs⟧ ⟦rhs⟧`. Memories
+(`Mem.Refines`): the same allocations (blocks, order, sizes, writability), heap and activation
+counters, and
+byte-wise refinement — a `poison` source byte is refined by any byte, every other byte is
+equal. Outcomes (`OutcomeRefines act`, `act` the run's activation; 0 for `run`): a stuck,
+out-of-fuel or otherwise undefined source is refined by anything; `returned` needs equal
+results (`finish` rejects poison results) and `Mem.Refines` of the final memories; `panicked`
+needs the same `Panic` and `Mem.Refines` of the memories without the run's frames (§6).
 
 Why poison rather than `stuck` for partial ops: Go's passes delete and speculate pure values
 (`deadcode`, `branchelim`, `phiopt`, `cse` across branches, `tighten` later) without regard to
@@ -391,8 +398,15 @@ its value is `p`. (Since P3: a check of `nil + k` panics too, like the machine's
 so a pointer that passed a check is not nil-derived and `OffPtr`/`AddPtr` of it keep it so,
 which `nilcheckelim` relies on, `nilcheck.go:59`; `GoFV.Proof.evalOp_nilCheck_blk`.) `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
 after it is an `Exit` block. Recovery (`recover` in a deferred call) is P5: until then a
-`panicked` outcome ends the run and is compared by its `Panic` only (the memory at the panic is
-not observable without recovery).
+`panicked` outcome ends the run. Its memory is compared (`Mem.Refines`) after dropping the
+frames the run created (`Mem.dropFrames act`: the allocations `.local a _` and `.outargs a`
+with `a ≥ act` — the run's own activation and its callees', which get fresh numbers
+`Mem.nextAct`): a deferred function with `recover` could observe heap, globals and the
+caller's memory (also through pointer arguments), which must still refine, while the
+unwound frames are unobservable — this is what lets `dead auto elim` and `nilcheckelim` drop
+or move stores to frame slots before a panic. **P5** (recover) must narrow this to the
+frames actually unwound up to the recovering activation (a recovering function's own frame
+and open-coded defer slots stay observable).
 
 ## 7. Block kinds
 
