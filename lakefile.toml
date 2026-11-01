@@ -126,3 +126,7 @@ root = "GoFVTest.ShortCircProbe"
 [[lean_exe]]
 name = "check-bench"
 root = "GoFVTest.CheckBench"
+
+[[lean_exe]]
+name = "memcombine-probe"
+root = "GoFVTest.MemCombineProbe"

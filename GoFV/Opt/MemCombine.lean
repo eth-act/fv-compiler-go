@@ -20,8 +20,8 @@ def memcombine (c : Cfg) (unalignedOK : Bool) (tabs : Tables) (f : Func) :
   let ((), s) ← (do memcombineLoads; memcombineStores : M Unit).run c |>.run { f, tabs }
   return (s.f, s.tabs)
 
-/-- The `memcombine` pass. -/
-def memcombinePass : Pass := fun env f => do
+/-- memcombine's configuration from the pass environment, and `Config.unalignedOK`. -/
+def memcombineCfg (env : PassEnv) : Except String (Cfg × Bool) := do
   let int (k : String) : Except String Int := do
     match env.config? k with
     | some #[.word w] =>
@@ -44,7 +44,12 @@ def memcombinePass : Pass := fun env f => do
     bswap16 := ← env.flag "havebswap16",
     bool := ← typ "Bool", u16 := ← typ "UInt16", u32 := ← typ "UInt32", u64 := ← typ "UInt64",
     sameType := env.typeOrder.eq }
-  let (func, tables) ← memcombine c (← env.flag "unalignedok") env.tables f
+  return (c, ← env.flag "unalignedok")
+
+/-- The `memcombine` pass. -/
+def memcombinePass : Pass := fun env f => do
+  let (c, u) ← memcombineCfg env
+  let (func, tables) ← memcombine c u env.tables f
   return { func, tables }
 
 end GoFV.Opt
