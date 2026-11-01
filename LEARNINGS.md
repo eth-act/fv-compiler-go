@@ -64,6 +64,19 @@ avoiding): the problem, the trick, the numbers, where it is used.
   whose `.olean` becomes non-reproducible (`repro` column, `docs/PERF.md`). In clifv such a
   module caused a hidden 3 h CI rebuild (eth-act/clifv#726).
 
+#### `bv_decide` certificates dominate rule-proof `.olean`s; try `grind` first on ring identities
+- **Problem:** PR #91's Add-family rule lemmas (87 theorems, `rule_auto` closing with
+  `first | rfl | bv_decide | grind`) wrote 16 / 69 / 57 MB `.olean`s. `scripts/olean-top.lean`:
+  64.6 of Add2's 69.4 MB are `bv_decide` LRAT certificates (`r_*_sound._cert_def_N`, string
+  literals), 2–9 MB each, for add/sub associativity/commutativity at 64 bits.
+- **Trick:** put `grind` (commutative-ring solver; no certificate, no `_native.bv_decide.ax_*`)
+  before `bv_decide`. `bv_normalize` is no replacement (left `x + y + z == x + (y + z)` open).
+  Rotate rules (`>>>`/`<<<` with a variable amount, one certificate per `shiftIsBounded` case)
+  are not closed by `grind`; prove the identity once per width as a lemma and rewrite with it.
+- **Effect** (scratch copies, same load, CPU): Add 54.0 → 42.4 s, 16.1 → 7.9 MB; Add2
+  70.6 → 51.2 s, 69.4 → 22.9 MB; Add3 (mostly rotate rules) 84.8 → 67.5 s, 57.0 → 56.1 MB; the
+  seven slowest rules alone 20.6 → 8.0 s, 32.6 → 1.5 MB. All 87 theorems still close.
+
 #### Keep a fuel-recursive loop's body in small non-recursive `@[inline]` parts
 - **Problem:** `GoFV.Util.PdqSort.pdqsort` (fuel recursion, a ~30-line loop body with tuple
   `let`s and four recursive calls) took 11.6 s CPU to build, almost all of it `simp`/`split`/
