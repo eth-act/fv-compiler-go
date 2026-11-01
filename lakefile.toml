@@ -134,3 +134,7 @@ root = "GoFVTest.CheckBench"
 [[lean_exe]]
 name = "memcombine-probe"
 root = "GoFVTest.MemCombineProbe"
+
+[[lean_exe]]
+name = "decompose-probe"
+root = "GoFVTest.DecomposeProbe"
