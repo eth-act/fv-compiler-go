@@ -118,6 +118,7 @@ import GoFV.Proof.Pass.DeadcodePass
 import GoFV.Proof.Pass.DecPhiBlock
 import GoFV.Proof.Pass.DecPhiRel
 import GoFV.Proof.Pass.DecPhiSim
+import GoFV.Proof.Pass.Decompose
 import GoFV.Proof.Pass.ECArgSel
 import GoFV.Proof.Pass.ECCall
 import GoFV.Proof.Pass.ECChain
@@ -484,6 +485,7 @@ import GoFV.Proof.Witness.Deadcode
 import GoFV.Proof.Witness.DecPhis
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Witness.DecodedLenCse
+import GoFV.Proof.Witness.Decompose
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
 import GoFV.Proof.Witness.FormatBool

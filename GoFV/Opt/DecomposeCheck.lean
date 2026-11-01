@@ -47,21 +47,26 @@ def decUserFrag (env : PassEnv) (f : Func) : Bool :=
   | .error _ => true
   | .ok out => decUserOK env f out
 
-/-- decompose builtin's output `out` of `f` is checked: the phi stage `g1` (`phiStage`) is `f`
-with its phis split, the proven dec rules rewrite `g1` to a validated `g2` with `out`'s
-code, and the tables only add unforgeable frame names. -/
+/-- The checks of decompose builtin's stages, given the phi stage `g1` of `f`, the proven
+dec rules' rewrite `g2` of `g1` with its log, and the pass output `out`: `g1` is `f` with its
+phis split, `g2` is a validated rewrite of `g1` with `out`'s code, and the tables only add
+unforgeable frame names. -/
+def decBuiltinStagesOK (env : PassEnv) (f g1 g2 : Func) (log : Array Rules.RwEvent)
+    (out : PassOut) : Bool :=
+  let T := out.tables
+  tabsAgreeMod env.tables T f && DecPhiCheck.decPhiCheck T f g1 &&
+    (check (decCheckEnv env T) g1).isOk && (check (decCheckEnv env T) g2).isOk &&
+    tabsAgree T T g1 && RewriteCheck.validate T decProvenTable g1 g2 log && sameCode g2 out.func
+
+/-- decompose builtin's output `out` of `f` is checked (`decBuiltinStagesOK` of the phi stage
+`phiStage` and the proven dec rules' rewrite of it). -/
 def decBuiltinOK (env : PassEnv) (f : Func) (out : PassOut) : Bool :=
   match phiStage env true f with
   | .error _ => false
   | .ok (t1, g1) =>
     match Rules.rewriteRun decProvenTable false true { env with tables := t1 } g1 with
     | .error _ => false
-    | .ok (o2, _, log) =>
-      let T := out.tables
-      tabsAgreeMod env.tables T f && DecPhiCheck.decPhiCheck T f g1 &&
-      (check (decCheckEnv env T) g1).isOk && (check (decCheckEnv env T) o2.func).isOk &&
-      tabsAgree T T g1 && RewriteCheck.validate T decProvenTable g1 o2.func log &&
-      sameCode o2.func out.func
+    | .ok (o2, _, log) => decBuiltinStagesOK env f g1 o2.func log out
 
 def decBuiltinFrag (env : PassEnv) (f : Func) : Bool :=
   match postExpandCallsDecomposePass env f with

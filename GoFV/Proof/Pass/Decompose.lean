@@ -65,39 +65,56 @@ theorem decPre_mono {tabs tabs' : Tables} {f g : Func} (h : RefinesUnder Env.Mon
     RefinesFrom DecPre tabs' g tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.1) h.from
 
+/-- An output `decUserOK` accepts refines the input. -/
+theorem refinesFrom_of_decUserOK {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
+    (hok : decUserOK penv f out = true) (hf : check ce f = .ok ())
+    (hg : check ce' out.func = .ok ()) :
+    RefinesFrom DecPre out.tables out.func penv.tables f := by
+  simp only [decUserOK, Bool.and_eq_true] at hok
+  exact refinesFrom_of_tabsAgreeMod decPre_tabs hok.1 hf
+    (decPre_mono (DecPhi.decPhis_refines hok.2 hf hg))
+
+/-- Checked stages of decompose builtin refine the input. -/
+theorem refinesFrom_of_decBuiltinStagesOK {penv : PassEnv} {f g1 g2 : Func}
+    {log : Array Rules.RwEvent}
+    {out : PassOut} {ce : CheckEnv} (hok : decBuiltinStagesOK penv f g1 g2 log out = true)
+    (hf : check ce f = .ok ()) :
+    RefinesFrom DecPre out.tables out.func penv.tables f := by
+  simp only [decBuiltinStagesOK, Bool.and_eq_true] at hok
+  obtain ⟨⟨⟨⟨⟨⟨hta, hphi⟩, hc1⟩, hc2⟩, hagree⟩, hv⟩, hsame⟩ := hok
+  have hg1 := check_of_isOk hc1
+  have hg2 := check_of_isOk hc2
+  have r1 := DecPhi.decPhis_refines hphi hf hg1
+  have r2 := Pass.Rewrite.validate_refines Rules.dec_allSound hv hagree hg1 hg2
+  have r3 : Refines out.tables out.func out.tables g2 := refines_of_sameCode hsame
+  exact refinesFrom_of_tabsAgreeMod decPre_tabs hta hf
+    (decPre_mono ((r1.trans r2).trans (r3.under _)))
+
 /-- **decompose user refines its input** (on inputs in `decUserFrag`). -/
 theorem decomposeUser_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : decomposeUserPass penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) (hfrag : decUserFrag penv f = true) :
     RefinesFrom DecPre out.tables out.func penv.tables f := by
-  unfold decUserFrag at hfrag
-  rw [h] at hfrag
-  simp only [decUserOK, Bool.and_eq_true] at hfrag
-  exact refinesFrom_of_tabsAgreeMod decPre_tabs hfrag.1 hf
-    (decPre_mono (DecPhi.decPhis_refines hfrag.2 hf hg))
+  simp only [decUserFrag, h] at hfrag
+  exact refinesFrom_of_decUserOK hfrag hf hg
 
 /-- **decompose builtin refines its input** (on inputs in `decBuiltinFrag`). -/
 theorem decomposeBuiltin_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : postExpandCallsDecomposePass penv f = .ok out) (hf : check ce f = .ok ())
     (_hg : check ce' out.func = .ok ()) (hfrag : decBuiltinFrag penv f = true) :
     RefinesFrom DecPre out.tables out.func penv.tables f := by
-  unfold decBuiltinFrag at hfrag
-  rw [h] at hfrag
-  unfold decBuiltinOK at hfrag
-  split at hfrag
-  · cases hfrag
-  · rename_i t1 g1 _
-    split at hfrag
-    · cases hfrag
-    · rename_i o2 n log _
-      simp only [Bool.and_eq_true] at hfrag
-      obtain ⟨⟨⟨⟨⟨⟨hta, hphi⟩, hc1⟩, hc2⟩, hagree⟩, hv⟩, hsame⟩ := hfrag
-      have hg1 := check_of_isOk hc1
-      have hg2 := check_of_isOk hc2
-      have r1 := DecPhi.decPhis_refines hphi hf hg1
-      have r2 := Pass.Rewrite.validate_refines Rules.dec_allSound hv hagree hg1 hg2
-      have r3 : Refines out.tables out.func out.tables o2.func := refines_of_sameCode hsame
-      exact refinesFrom_of_tabsAgreeMod decPre_tabs hta hf
-        (decPre_mono ((r1.trans r2).trans (r3.under _)))
+  simp only [decBuiltinFrag, h, decBuiltinOK] at hfrag
+  cases hs : phiStage penv true f with
+  | error e => rw [hs] at hfrag; cases hfrag
+  | ok p =>
+    obtain ⟨t1, g1⟩ := p
+    rw [hs] at hfrag
+    simp only at hfrag
+    cases hr : Rules.rewriteRun decProvenTable false true { penv with tables := t1 } g1 with
+    | error e => rw [hr] at hfrag; cases hfrag
+    | ok q =>
+      obtain ⟨o2, n, log⟩ := q
+      rw [hr] at hfrag
+      exact refinesFrom_of_decBuiltinStagesOK hfrag hf
 
 end GoFV.Proof.Decompose
