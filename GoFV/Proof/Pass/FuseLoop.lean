@@ -9,10 +9,13 @@ import GoFV.Proof.Cong
 `Fuse.StepOK ce step`: every successful result of `step` (`fuseLoop`'s per-block step) on a
 function with `WFDom ce` refines it and keeps `WFDom ce` — the shape of the checked fuse steps'
 theorems (`fuseBlockPlainChecked_refines`, `fuseComparisonsChecked_refines`). `FinalOK ce
-final`: the same for the optional whole-function step. Then `fuseLoop_refines`: a successful
-`fuseLoop step final fuel f` from `WFDom ce f` refines `f` and keeps `WFDom ce` (`sweep_inv` over
-one sweep; `invalidateCFG` changes only analysis caches: `invalidateCFG_refines`,
-`WFDom.invalidateCFG`). Shared by early fuse, late fuse and short circuit.
+final`: the same for the optional whole-function step. `StepOKAt ce tabs`/`FinalOKAt ce tabs`:
+the same at the tables `tabs` only, for checkers that read the tables (late fuse's branch
+redirect decides comparisons with them). Then `fuseLoop_refinesAt` (and `fuseLoop_refines`): a
+successful `fuseLoop step final fuel f` from `WFDom ce f` refines `f` and keeps `WFDom ce`
+(`sweep_inv` over one sweep; `invalidateCFG` changes only analysis caches:
+`invalidateCFG_refines`, `WFDom.invalidateCFG`). Shared by early fuse, late fuse and short
+circuit.
 -/
 
 namespace GoFV.Proof.Fuse
@@ -24,10 +27,31 @@ def StepOK (ce : CheckEnv) (step : Func → ID → Except String (Func × Bool))
   ∀ (tabs : Tables) (f : Func) (b : ID) (g : Func) (ch : Bool), step f b = .ok (g, ch) →
     WFDom ce f → Refines tabs g tabs f ∧ WFDom ce g
 
+/-- `StepOK` at the tables `tabs` only. -/
+def StepOKAt (ce : CheckEnv) (tabs : Tables) (step : Func → ID → Except String (Func × Bool)) :
+    Prop :=
+  ∀ (f : Func) (b : ID) (g : Func) (ch : Bool), step f b = .ok (g, ch) →
+    WFDom ce f → Refines tabs g tabs f ∧ WFDom ce g
+
+theorem StepOK.at {ce : CheckEnv} {step : Func → ID → Except String (Func × Bool)}
+    (h : StepOK ce step) (tabs : Tables) : StepOKAt ce tabs step :=
+  fun f b g ch hs hw => h tabs f b g ch hs hw
+
 /-- See the module doc. -/
 def FinalOK (ce : CheckEnv) (final : Option (Func → Except String (Func × Bool))) : Prop :=
   ∀ fin, final = some fin → ∀ (tabs : Tables) (f g : Func) (ch : Bool), fin f = .ok (g, ch) →
     WFDom ce f → Refines tabs g tabs f ∧ WFDom ce g
+
+/-- `FinalOK` at the tables `tabs` only: a final step whose checker reads the tables (late
+fuse's branch redirect decides comparisons with them). -/
+def FinalOKAt (ce : CheckEnv) (tabs : Tables) (final : Option (Func → Except String (Func × Bool))) :
+    Prop :=
+  ∀ fin, final = some fin → ∀ (f g : Func) (ch : Bool), fin f = .ok (g, ch) →
+    WFDom ce f → Refines tabs g tabs f ∧ WFDom ce g
+
+theorem FinalOK.at {ce : CheckEnv} {final : Option (Func → Except String (Func × Bool))}
+    (h : FinalOK ce final) (tabs : Tables) : FinalOKAt ce tabs final :=
+  fun fin hfin f g ch hf hw => h fin hfin tabs f g ch hf hw
 
 theorem finalOK_none {ce : CheckEnv} : FinalOK ce none := fun _ h => nomatch h
 
@@ -41,7 +65,8 @@ theorem Inv.step {ce : CheckEnv} {tabs : Tables} {f0 f g : Func} (hI : Inv ce ta
   exact ⟨hI.1.trans hr, hw⟩
 
 theorem sweepAux_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
-    {step : Func → ID → Except String (Func × Bool)} (hs : StepOK ce step) (blocks : Array ID) :
+    {step : Func → ID → Except String (Func × Bool)} (hs : StepOKAt ce tabs step)
+    (blocks : Array ID) :
     ∀ (k : Nat) (f : Func) (ch : Bool) (g : Func) (ch' : Bool),
       sweepAux step blocks k f ch = .ok (g, ch') → Inv ce tabs f0 f → Inv ce tabs f0 g
   | 0, f, ch, g, ch', h, hI => by
@@ -54,10 +79,10 @@ theorem sweepAux_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
     | ok r =>
       rw [he] at h
       obtain ⟨f', c⟩ := r
-      exact sweepAux_inv hs blocks k f' _ g ch' h (hI.step (hs tabs f _ f' c he))
+      exact sweepAux_inv hs blocks k f' _ g ch' h (hI.step (hs f _ f' c he))
 
 theorem sweep_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
-    {step : Func → ID → Except String (Func × Bool)} (hs : StepOK ce step) {f g : Func}
+    {step : Func → ID → Except String (Func × Bool)} (hs : StepOKAt ce tabs step) {f g : Func}
     {ch : Bool} (h : sweep step f = .ok (g, ch)) (hI : Inv ce tabs f0 f) : Inv ce tabs f0 g :=
   sweepAux_inv hs f.blocks _ f false g ch h hI
 
@@ -92,8 +117,8 @@ theorem WFDom.invalidateCFG {ce : CheckEnv} {f : Func} (h : WFDom ce f) :
 
 theorem fuseLoop_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
     {step : Func → ID → Except String (Func × Bool)}
-    {final : Option (Func → Except String (Func × Bool))} (hs : StepOK ce step)
-    (hfin : FinalOK ce final) :
+    {final : Option (Func → Except String (Func × Bool))} (hs : StepOKAt ce tabs step)
+    (hfin : FinalOKAt ce tabs final) :
     ∀ (n : Nat) (f g : Func), fuseLoop step final n f = .ok g → Inv ce tabs f0 f →
       Inv ce tabs f0 g
   | 0, f, g, h, _ => by simp [fuseLoop, throw, throwThe, MonadExceptOf.throw] at h
@@ -128,7 +153,16 @@ theorem fuseLoop_inv {ce : CheckEnv} {tabs : Tables} {f0 : Func}
           obtain ⟨f2, c2⟩ := r
           simp only [pure, Except.pure] at h
           rw [← hfn] at h
-          exact hnext f2 (c2 || c1) (hI1.step (hfin fin hfn tabs f1 f2 c2 hf)) h
+          exact hnext f2 (c2 || c1) (hI1.step (hfin fin hfn f1 f2 c2 hf)) h
+
+/-- **The fuse driver refines its input** and keeps `WFDom`, for a step and a final step checked
+at the tables `tabs`. -/
+theorem fuseLoop_refinesAt {ce : CheckEnv} {tabs : Tables}
+    {step : Func → ID → Except String (Func × Bool)}
+    {final : Option (Func → Except String (Func × Bool))} (hs : StepOKAt ce tabs step)
+    (hfin : FinalOKAt ce tabs final) {n : Nat} {f g : Func} (h : fuseLoop step final n f = .ok g)
+    (hf : WFDom ce f) : Refines tabs g tabs f ∧ WFDom ce g :=
+  fuseLoop_inv (f0 := f) hs hfin n f g h ⟨Refines.refl _ _, hf⟩
 
 /-- **The fuse driver refines its input** and keeps `WFDom`, for any checked step. -/
 theorem fuseLoop_refines {ce : CheckEnv} {tabs : Tables}
@@ -136,6 +170,6 @@ theorem fuseLoop_refines {ce : CheckEnv} {tabs : Tables}
     {final : Option (Func → Except String (Func × Bool))} (hs : StepOK ce step)
     (hfin : FinalOK ce final) {n : Nat} {f g : Func} (h : fuseLoop step final n f = .ok g)
     (hf : WFDom ce f) : Refines tabs g tabs f ∧ WFDom ce g :=
-  fuseLoop_inv (f0 := f) hs hfin n f g h ⟨Refines.refl _ _, hf⟩
+  fuseLoop_refinesAt (hs.at tabs) (hfin.at tabs) h hf
 
 end GoFV.Proof.Fuse
