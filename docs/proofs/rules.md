@@ -296,7 +296,9 @@ shape `int8`). `evalE` models `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface
 share), `config.PtrSize` (8, `configField`) and the pointer `typ.*Ptr` types.
 
 **Proven** (13): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
-`:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`).
+`:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`; the
+matched value is then always `poison`, so `rule-sat` finds no instance: the rewrite never changes a
+defined value).
 **False under the semantics**: `:119`, `:120` (a one-field pointer-shaped aggregate is `.agg [p]`,
 Go's is the pointer; `docs/plans/semantics.md` §10). **Not provable as `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
@@ -315,6 +317,25 @@ rules, the proven rules and none, and counts sections where rules fire, the step
 accepted (`RewriteCheck.accepts`), the full step's output is reproduced by the table and accepted,
 and the whole pass (with the checked step) is at stock; per rule the first failing `ruleOK`
 condition.
+
+| Corpus (sections) | Table | Rules fired | Step accepted | Full step reproduced and accepted | Checked pass at stock |
+| --- | --- | --: | --: | --: | --: |
+| quick-v3 (9,297) | all 47 | 5,147 | 6,819 | 6,819 | 6,819 |
+| quick-v3 | ptr class (21) | 4,824 | 7,121 | 6,131 | 6,131 |
+| quick-v3 | proven (13) | 4,171 | 8,059 | 6,131 | 6,131 |
+| quick-v3 | none | 0 | 9,297 | 4,150 | 4,150 |
+| full-v2 (96,531) | all 47 | 67,840 | 58,923 | — | 58,923 |
+| full-v2 | ptr class | 62,023 | 63,176 | — | 48,877 |
+| full-v2 | proven (13) | 56,221 | 72,146 | — | 48,877 |
+| full-v2 | none | 0 | 96,531 | — | 28,691 |
+
+Before the validator changes every firing section was rejected (quick: 4,150 accepted = the
+no-op sections; full 28,691). The full step extends the tables in 406 quick sections (types
+such as `t.Elem().PtrTo()`), so the step's refinement is in the output's tables under `tabsAgree`.
+Main obstacles (quick firings, all-rules table): `:106` variadic select 4,645; `ITab`/`IData` of an
+`IMake` whose itab or data is typed differently from the interface shape's word (`argsOK`/`topAll`,
+~4,500: the itab word is `.int .w64`, Go also types it `*uint8`); `@x.Block` extractors ~700;
+`Store` splits ~950 (not term ops).
 
 ## Classification
 
@@ -388,7 +409,7 @@ needs a later phase of the semantics.
 | `generic` | Ctz | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
-| `generic` | Div | 20 | 1 | 1 | 4 | 26 |
+| `generic` | Div | 21 | 1 | 0 | 4 | 26 |
 | `generic` | Eq | 52 | 4 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 0 | 1 | 0 | 0 | 1 |
@@ -401,11 +422,11 @@ needs a later phase of the semantics.
 | `generic` | IsNonNil | 0 | 3 | 0 | 3 | 6 |
 | `generic` | IsSliceInBounds | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Leq | 60 | 0 | 0 | 2 | 62 |
-| `generic` | Less | 52 | 0 | 8 | 2 | 62 |
-| `generic` | Load | 4 | 2 | 0 | 33 | 35 |
+| `generic` | Less | 60 | 0 | 0 | 2 | 62 |
+| `generic` | Load | 5 | 2 | 0 | 33 | 35 |
 | `generic` | Lsh | 65 | 23 | 0 | 0 | 88 |
 | `generic` | MemEq | 0 | 11 | 0 | 0 | 11 |
-| `generic` | Mod | 24 | 0 | 5 | 0 | 29 |
+| `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 44 | 8 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
@@ -446,7 +467,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1167 | 308 | 40 | 258 | 1762 |
+| all | | 1182 | 308 | 26 | 258 | 1762 |
 
 <!-- END coverage -->
 

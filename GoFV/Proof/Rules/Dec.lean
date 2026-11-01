@@ -43,7 +43,8 @@ macro_rules
     intro e or hbt
     dsimp only [$r:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
-    intro hwf hc hcond hty hlt hat
+    intro hwf hc hcond hty hlt hat hnn
+    clear hnn
     try simp only [Pat.argsOK, Pat.argsOKs, argShapeOk, Bool.and_eq_true, Bool.true_and,
       Bool.and_true, Nat.zero_add, Nat.reduceAdd] at hat
     try dsimp only [condHolds, rule_unfold_ds] at hcond
