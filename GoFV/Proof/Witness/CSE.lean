@@ -149,9 +149,9 @@ theorem cse_witness :
       ∃ fuel m, run Env.p1 out.tables out.func dlArgs {} fuel = .returned [.i64 7] m := by
   obtain ⟨m, hm⟩ := returnsInt_iff.1 decodedLenCse_run
   refine ⟨_, decodedLenCse_csePass, decodedLenCse_merge.2.2, ?_⟩
-  obtain ⟨fuel, h⟩ := Refines.returned_int
+  obtain ⟨fuel, m', h⟩ := Refines.returned_int
     (GoFV.Proof.CSE.cse_refines decodedLenCse_csePass (ok_of_toBool decodedLenCse_check)
       (ok_of_toBool decodedLenCseOut_check) decodedLenCse_cseFrag) hm
-  exact ⟨fuel, m, h⟩
+  exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness

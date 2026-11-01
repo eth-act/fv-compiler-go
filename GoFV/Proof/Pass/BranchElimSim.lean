@@ -223,7 +223,7 @@ theorem post_step {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat
     (hdiP : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.post ∧ a ≠ s.post) G')
     (hsG : G'.regs.size = f.valueTab.size) (htp : ((make f).depthOf s.post).isSome)
     (hd : (runLoop env (Ctx.make tabs f) m G' s.post j).Defined) :
-    ∃ fuelT, OutcomeRefines (runLoop env (Ctx.make tabs f) m G' s.post j)
+    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) m G' s.post j)
       (runLoop env (Ctx.make tabs g) fuelT frT s.dom i) := by
   obtain ⟨ce, hwf⟩ := S.wf
   have hpd : s.post ≠ s.dom := by obtain ⟨-, -, -, -, -, -, -, h, -⟩ := S.diamond; exact h
@@ -252,7 +252,7 @@ theorem post_step {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat
     obtain ⟨D', hD', hT⟩ := S.post_panic hfr hsz hs hag htd hdi hD hP h1 htk hc hpath hpan
     refine ⟨1, ?_⟩
     rw [runLoop_panic hst, runLoop_panic (blockStep_of_panic (ctx := Ctx.make tabs g) hD' hT)]
-    exact .panicked e mm
+    exact .panicked_refl e mm
   | ret rs mm =>
     obtain ⟨P', G3, hP', hG3, hterm⟩ := blockStep_ret hst
     change f.block? s.post = some P' at hP'
@@ -264,7 +264,7 @@ theorem post_step {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat
     refine ⟨1, ?_⟩
     rw [runLoop_ret hst, runLoop_ret (ctx := Ctx.make tabs g) (by
       rw [blockStep_of (ctx := Ctx.make tabs g) hD' hT, hterm'])]
-    exact .returned (RefinesList.refl rs)
+    exact .returned (RefinesList.refl rs) (Mem.Refines.refl _)
   | goto G3 e3 =>
     obtain ⟨P', hP', hG3, hterm⟩ := blockStep_goto hst
     change f.block? s.post = some P' at hP'
@@ -295,7 +295,7 @@ theorem dom_goto {tabs : Tables} {env : Env} {frS frT G1 : Frame} {i k : Nat}
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
     (hc : G1.regs[s.c]? = some (some (.bool (k == 0))))
     (hd : (runLoop env (Ctx.make tabs f) n G1 e.b e.i).Defined) :
-    ∃ fuelT, OutcomeRefines (runLoop env (Ctx.make tabs f) n G1 e.b e.i)
+    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) n G1 e.b e.i)
       (runLoop env (Ctx.make tabs g) fuelT frT s.dom i) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨P, hP, -⟩ := S.rel.shape
@@ -341,7 +341,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f s) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : R env tabs f s frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hiT, hb, hbp, hba0, hba1, ht, hs, hfr, hsz, hag, hdi⟩ := hR
   rw [hbT, hiT]
@@ -357,7 +357,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
       obtain ⟨D', hD', hT⟩ := S.dom_panic hfr hsz hs hag ht hdi hD hpan
       refine ⟨1, ?_⟩
       rw [runLoop_panic hst, runLoop_panic (blockStep_of_panic (ctx := Ctx.make tabs g) hD' hT)]
-      exact .panicked e m
+      exact .panicked_refl e m
     | ret rs m =>
       obtain ⟨D2, G, hD2, -, hterm⟩ := blockStep_ret hst
       change f.block? s.dom = some D2 at hD2
@@ -391,11 +391,11 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     | panic e m =>
       refine ⟨1, ?_⟩
       rw [runLoop_panic hst, runLoop_panic (hpan e m hst)]
-      exact .panicked e m
+      exact .panicked_refl e m
     | ret rs m =>
       refine ⟨1, ?_⟩
       rw [runLoop_ret hst, runLoop_ret (hret rs m hst)]
-      exact .returned (RefinesList.refl rs)
+      exact .returned (RefinesList.refl rs) (Mem.Refines.refl _)
     | goto G e =>
       obtain ⟨GT, hT, hGT, hGTs, hagT⟩ := hgo G e hst
       obtain ⟨B, hB, hG, hterm⟩ := blockStep_goto hst

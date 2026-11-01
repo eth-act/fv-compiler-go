@@ -63,8 +63,8 @@ theorem deadcode_witness :
       simp only [deadcodePass, Pass.ofFunc, np2PassEnv]
       rw [hc]; rfl
     refine ⟨_, hp, hb, hv, ?_⟩
-    obtain ⟨fuel, h⟩ := Refines.returned_int
+    obtain ⟨fuel, m', h⟩ := Refines.returned_int
       (deadcode_refines hp hf (ce' := np2CheckEnv) hg (deadFrag_of h3)) hm
-    exact ⟨fuel, m, h⟩
+    exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness

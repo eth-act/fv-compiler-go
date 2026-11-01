@@ -158,18 +158,59 @@ partial def render : Val → String
 
 end Val
 
+/-- Byte refinement (§3.5): a `poison` byte is refined by any byte; other bytes (concrete
+bytes and pointer fragments) only by themselves. -/
+inductive Byte.Refines : Byte → Byte → Prop where
+  | poison (b : Byte) : Byte.Refines .poison b
+  | refl (b : Byte) : Byte.Refines b b
+
+/-- Pointwise refinement of byte lists of equal length. -/
+inductive BytesRefine : List Byte → List Byte → Prop where
+  | nil : BytesRefine [] []
+  | cons {a b : Byte} {as bs : List Byte} : Byte.Refines a b → BytesRefine as bs →
+      BytesRefine (a :: as) (b :: bs)
+
+theorem BytesRefine.refl : (bs : List Byte) → BytesRefine bs bs
+  | [] => .nil
+  | b :: bs => .cons (.refl b) (BytesRefine.refl bs)
+
+/-- Allocation refinement: the same writability, the bytes refined pointwise. -/
+structure Alloc.Refines (a a' : Alloc) : Prop where
+  writable : a.writable = a'.writable
+  data : BytesRefine a.data.toList a'.data.toList
+
+/-- Allocation lists with the same blocks in the same order, allocations refined. -/
+inductive AllocsRefine : List (Blk × Alloc) → List (Blk × Alloc) → Prop where
+  | nil : AllocsRefine [] []
+  | cons (b : Blk) {a a' : Alloc} {l l' : List (Blk × Alloc)} : Alloc.Refines a a' →
+      AllocsRefine l l' → AllocsRefine ((b, a) :: l) ((b, a') :: l')
+
+theorem AllocsRefine.refl : (l : List (Blk × Alloc)) → AllocsRefine l l
+  | [] => .nil
+  | (b, a) :: l => .cons b ⟨rfl, BytesRefine.refl _⟩ (AllocsRefine.refl l)
+
+/-- Memory refinement (§3.5): the same allocations (blocks, order, sizes, writability), heap
+counter and activation counter, every byte refined. -/
+structure Mem.Refines (m m' : Mem) : Prop where
+  nextHeap : m.nextHeap = m'.nextHeap
+  nextAct : m.nextAct = m'.nextAct
+  blocks : AllocsRefine m.blocks.toList m'.blocks.toList
+
+theorem Mem.Refines.refl (m : Mem) : Mem.Refines m m := ⟨rfl, rfl, AllocsRefine.refl _⟩
+
 mutual
 /-- Refinement (§3.5): `Refines src tgt` iff `src` is `poison` or `src = tgt`, pointwise through
-tuples and composites. A pass is correct when every value it computes refines the source's. -/
+tuples and composites, and bytewise through memories and blobs (`Mem.Refines`,
+`BytesRefine`). A pass is correct when every value it computes refines the source's. -/
 inductive Refines : Val → Val → Prop where
   | poison (v : Val) : Refines .poison v
   | int (w : Width) (x : BitVec w.bits) : Refines (.int w x) (.int w x)
   | bool (b : Bool) : Refines (.bool b) (.bool b)
-  | mem (m : Mem) : Refines (.mem m) (.mem m)
+  | mem {m m' : Mem} : Mem.Refines m m' → Refines (.mem m) (.mem m')
   | tuple {as bs : List Val} : RefinesList as bs → Refines (.tuple as) (.tuple bs)
   | ptr (p : Ptr) : Refines (.ptr p) (.ptr p)
   | agg {as bs : List Val} : RefinesList as bs → Refines (.agg as) (.agg bs)
-  | blob (bs : List Byte) : Refines (.blob bs) (.blob bs)
+  | blob {bs bs' : List Byte} : BytesRefine bs bs' → Refines (.blob bs) (.blob bs')
   | empty : Refines .empty .empty
 /-- Pointwise refinement of lists of equal length. -/
 inductive RefinesList : List Val → List Val → Prop where
@@ -182,11 +223,11 @@ mutual
 theorem Refines.refl : (v : Val) → Refines v v
   | .int w x => .int w x
   | .bool b => .bool b
-  | .mem m => .mem m
+  | .mem m => .mem (Mem.Refines.refl m)
   | .tuple vs => .tuple (RefinesList.refl vs)
   | .ptr p => .ptr p
   | .agg vs => .agg (RefinesList.refl vs)
-  | .blob bs => .blob bs
+  | .blob bs => .blob (BytesRefine.refl bs)
   | .empty => .empty
   | .poison => .poison _
 theorem RefinesList.refl : (vs : List Val) → RefinesList vs vs

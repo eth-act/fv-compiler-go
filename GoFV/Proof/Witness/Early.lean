@@ -33,24 +33,24 @@ theorem numberLines_witness : ∃ out, numberLinesPass (clampPassEnv "number lin
     ∃ fuel m, run Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
   obtain ⟨m, hm⟩ := clamp_run5
   refine ⟨_, rfl, ?_⟩
-  obtain ⟨fuel, h⟩ := Refines.returned_int
+  obtain ⟨fuel, m', h⟩ := Refines.returned_int
     (numberLines_refines (penv := clampPassEnv "number lines") (f := clamp) rfl) hm
-  exact ⟨fuel, m, h⟩
+  exact ⟨fuel, m', h⟩
 
 theorem checkbce_witness : ∃ out, checkbcePass (clampPassEnv "check bce") clamp = .ok out ∧
     ∃ fuel m, run Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
   obtain ⟨m, hm⟩ := clamp_run5
   refine ⟨_, rfl, ?_⟩
-  obtain ⟨fuel, h⟩ := Refines.returned_int
+  obtain ⟨fuel, m', h⟩ := Refines.returned_int
     (checkbce_refines (penv := clampPassEnv "check bce") (f := clamp) rfl) hm
-  exact ⟨fuel, m, h⟩
+  exact ⟨fuel, m', h⟩
 
 theorem softfloat_witness : ∃ out, softfloatPass (clampPassEnv "softfloat") clamp = .ok out ∧
     ∃ fuel m, run Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
   obtain ⟨m, hm⟩ := clamp_run5
   refine ⟨_, rfl, ?_⟩
-  obtain ⟨fuel, h⟩ := Refines.returned_int
+  obtain ⟨fuel, m', h⟩ := Refines.returned_int
     (softfloat_refines (penv := clampPassEnv "softfloat") (f := clamp) rfl) hm
-  exact ⟨fuel, m, h⟩
+  exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness
