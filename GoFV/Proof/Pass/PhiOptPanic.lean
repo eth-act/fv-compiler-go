@@ -33,7 +33,7 @@ theorem prio_rw {fv gv : Value} (h : rewriteOK tabs f g fv gv = true) : prio gv.
 /-- A new value is pure. -/
 theorem prio_new {b x : ID} {nv : Value} (h : newOK f g b x = true) (hv : g.value? x = some nv) :
     prio nv.op = 0 := by
-  obtain ⟨nv', -, hnv, -, -, hop⟩ := newOK_spec h
+  obtain ⟨nv', a, hnv, hid, hargs, hop⟩ := newOK_spec h
   rw [hv] at hnv; cases hnv
   rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ <;> rw [hop] <;> decide
 

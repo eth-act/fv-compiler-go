@@ -30,10 +30,10 @@ open GoFV.SSA
 
 namespace PhiOpt
 
-/-- `s` is a **guard** of `c` holding `d`: a block other than the entry whose only predecessor
+/-- `s` is a **guard** (`ifGuard`) of `c` holding `d`: a block other than the entry whose only predecessor
 is an `If` on `c` (`d`: `s` is its first successor), and `c` is placed in a strict ancestor of
 `s` in the certified dominator tree (so no block `s` dominates redefines `c`). -/
-def guard (f : Func) (t : DomCert.Cert) (c s : ID) : Option Bool :=
+def ifGuard (f : Func) (t : DomCert.Cert) (c s : ID) : Option Bool :=
   if s == f.entry then none else
   match f.block? s, f.value? c with
   | some sb, some cv =>
@@ -49,7 +49,7 @@ def guard (f : Func) (t : DomCert.Cert) (c s : ID) : Option Bool :=
 `c` holding `d` dominates `y` (is a tree ancestor of `y`). -/
 def domFact (f : Func) (c y : ID) : Option Bool :=
   let t := DomCert.make f
-  f.blocks.findSome? fun s => if t.anc s y then guard f t c s else none
+  f.blocks.findSome? fun s => if t.anc s y then ifGuard f t c s else none
 
 /-- **Edge fact**: entering `x` along its edge `j`, value `c` holds `d` (the result), since the
 edge comes from an `If` on `c` (`d`: through its first successor), or from a block with a single

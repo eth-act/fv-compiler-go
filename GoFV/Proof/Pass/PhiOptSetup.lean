@@ -128,13 +128,13 @@ theorem ctrl_reg {G : Frame} {fb : Block} {c : ID} {k : Nat} (hc0 : fb.controls[
     | some o => rw [hr] at hy; cases o <;> simp_all
   · cases hc
 
-/-- What `guard` says. -/
-theorem guard_spec {f : Func} {t : Cert} {c s : ID} {d : Bool} (h : guard f t c s = some d) :
+/-- What `ifGuard` says. -/
+theorem ifGuard_spec {f : Func} {t : Cert} {c s : ID} {d : Bool} (h : ifGuard f t c s = some d) :
     s ≠ f.entry ∧ ∃ sb cv b0, f.block? s = some sb ∧ f.value? c = some cv ∧
       sb.preds.size = 1 ∧ t.anc cv.block s = true ∧ cv.block ≠ s ∧
       f.block? sb.preds[0]!.b = some b0 ∧ b0.kind = .If ∧ b0.controls[0]? = some c ∧
       d = (sb.preds[0]!.i == 0) := by
-  unfold guard at h
+  unfold ifGuard at h
   by_cases hne : s = f.entry
   · simp [hne] at h
   simp only [hne, beq_self_eq_true, ↓reduceIte, beq_iff_eq] at h
@@ -148,16 +148,17 @@ theorem guard_spec {f : Func} {t : Cert} {c s : ID} {d : Bool} (h : guard f t c 
   simp only [hsb, hcv] at h
   by_cases hc : sb.preds.size = 1 ∧ t.anc cv.block s = true ∧ cv.block ≠ s
   · obtain ⟨h1, h2, h3⟩ := hc
-    simp only [h1, h2, h3, beq_self_eq_true, bne_iff_ne, ne_eq, not_false_eq_true,
-      decide_true, Bool.and_self, ↓reduceIte] at h
+    have h3' : (cv.block != s) = true := by simpa using h3
+    simp only [h1, h2, h3', beq_self_eq_true, Bool.and_self, ↓reduceIte] at h
     cases hb0 : f.block? sb.preds[0]!.b with
     | none => simp [hb0] at h
     | some b0 =>
-      simp only [hb0, Bool.and_eq_true, beq_iff_eq] at h
-      split at h
-      · rename_i hk; cases h
-        exact ⟨sb, cv, b0, rfl, rfl, h1, h2, h3, hb0, hk.1, hk.2, rfl⟩
-      · cases h
+      simp only [hb0] at h
+      cases hk : (b0.kind == .If && b0.controls[0]? == some c)
+      · simp [hk] at h
+      · simp only [hk, ↓reduceIte, Option.some.injEq] at h
+        simp only [Bool.and_eq_true, beq_iff_eq] at hk
+        exact ⟨sb, cv, b0, rfl, rfl, h1, h2, h3, hb0, hk.1, hk.2, h.symm⟩
   · have : (sb.preds.size == 1 && t.anc cv.block s && cv.block != s) = false := by
       simp only [Bool.and_eq_false_iff, beq_eq_false_iff_ne, bne_eq_false_iff_eq,
         Bool.not_eq_true] at *
@@ -166,7 +167,7 @@ theorem guard_spec {f : Func} {t : Cert} {c s : ID} {d : Bool} (h : guard f t c 
 
 /-- What `domFact` says: a guard of `c` holding `d` is a tree ancestor of `y`. -/
 theorem domFact_spec {f : Func} (hp : parentsOK (make f) f.entry = true) {c y : ID} {d : Bool}
-    (h : domFact f c y = some d) : ∃ s, guard f (make f) c s = some d ∧ Anc (make f) s y := by
+    (h : domFact f c y = some d) : ∃ s, ifGuard f (make f) c s = some d ∧ Anc (make f) s y := by
   unfold domFact at h
   obtain ⟨s, -, hs⟩ := Array.exists_of_findSome?_eq_some h
   split at hs
@@ -176,22 +177,22 @@ theorem domFact_spec {f : Func} (hp : parentsOK (make f) f.entry = true) {c y : 
 /-- A block a guard of `c` dominates does not define `c` (`c`'s block strictly dominates the
 guard). -/
 theorem guard_not_mem {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) {c s y : ID} {d : Bool}
-    {yb : Block} (hg : guard f (make f) c s = some d) (hs : Anc (make f) s y)
+    {yb : Block} (hg : ifGuard f (make f) c s = some d) (hs : Anc (make f) s y)
     (hy : BlockIn f y yb) : c ∉ yb.values := fun hm => by
   obtain ⟨v, hv, -, hvb⟩ := hwf.valueId y yb hy c hm
-  obtain ⟨-, sb, cv, b0, -, hcv, -, hanc, hne, -⟩ := guard_spec hg
+  obtain ⟨-, sb, cv, b0, -, hcv, -, hanc, hne, -⟩ := ifGuard_spec hg
   rw [hv] at hcv; cases hcv
   rw [hvb] at hanc hne
   exact hne (Anc.antisymm hc.parents ((anc_iff hc.parents).1 hanc) hs)
 
 /-- Every guard dominating block `bid` holds in `fr`. -/
 def DomOK (f : Func) (fr : Frame) (bid : ID) : Prop :=
-  ∀ c s d, guard f (make f) c s = some d → Anc (make f) s bid →
+  ∀ c s d, ifGuard f (make f) c s = some d → Anc (make f) s bid →
     fr.regs[c]? = some (some (.bool d))
 
 /-- No guard dominates the entry. -/
 theorem domOK_entry (hc : CertOK f) (fr : Frame) : DomOK f fr f.entry :=
-  fun _ _ _ hg hs => absurd (anc_of_entry hc.parents hs) (guard_spec hg).1
+  fun _ _ _ hg hs => absurd (anc_of_entry hc.parents hs) (ifGuard_spec hg).1
 
 /-- **Guards are preserved by a block step**: the successor is the guard, entered from its
 `If`, or the guard strictly dominates it, hence dominates the block just left (`Dom.edge`),
@@ -205,7 +206,7 @@ theorem dom_step {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) {bid : ID} {fb 
   intro c s d hg hs
   by_cases hse : s = e.b
   · subst hse
-    obtain ⟨-, sb, cv, b0, hsb, -, hsz, -, -, hb0, hkind, hc0, rfl⟩ := guard_spec hg
+    obtain ⟨-, sb, cv, b0, hsb, -, hsz, -, -, hb0, hkind, hc0, rfl⟩ := ifGuard_spec hg
     rw [hxb] at hsb; cases hsb
     have hi : e.i = 0 := by have := (Array.getElem?_eq_some_iff.1 hxp).1; omega
     rw [hi] at hxp
@@ -272,7 +273,7 @@ theorem path_step {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) {bid : ID} {fb
           subst hi0
           rw [hkeep c (fun hm => by
             have := Array.contains_iff_mem.2 hm; rw [hcond.2] at this; cases this)]
-          exact hpath c n d' hd'
+          exact hpath c n _ hd'
         · cases hd'
       · obtain ⟨s, hg, hs⟩ := domFact_spec hc.parents h
         rw [hkeep c (guard_not_mem hwf hc hg hs hb)]

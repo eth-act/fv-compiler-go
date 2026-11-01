@@ -8,7 +8,8 @@ import GoFV.Opt.PhiOptCheck
 Runs `phiopt` on every section of the given export files whose input passes `check` and
 counts the sections it changes and those where `PhiOpt.prel` rejects the result (first failing
 condition), separately for the inputs of the `phiopt` pass (a rejection there costs parity);
-also counts the rewritten `Phi`s by form.
+also counts the rewritten `Phi`s by form and lists the smallest accepted changed inputs
+(witness candidates).
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Opt.PhiOpt
@@ -58,6 +59,7 @@ def main (args : List String) : IO UInt32 := do
   let mut shown := 0
   let mut whys : Std.HashMap String Nat := {}
   let mut forms : Std.HashMap String Nat := {}
+  let mut cands : Array (Nat × Nat × String) := #[]
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok ex := parseExport data | continue
@@ -78,6 +80,7 @@ def main (args : List String) : IO UInt32 := do
         changed := changed + 1
         if isInst then
           instChanged := instChanged + 1
+          let mut fs : Array String := #[]
           for x in List.range f.valueTab.size do
             if let (some fv, some gv) := (f.value? x, g.value? x) then
               if fv.op == .Phi && gv.op != .Phi then
@@ -85,6 +88,10 @@ def main (args : List String) : IO UInt32 := do
                   (if gv.op == .OrB || gv.op == .AndB then
                     s!"/{((gv.args[1]?.bind f.value?).map (·.op.name)).getD "?"}" else "")
                 forms := forms.insert k (forms.getD k 0 + 1)
+                fs := fs.push s!"v{x}:{k}"
+          if prel tabs f g then
+            let nv := f.blocks.foldl (fun n b => n + ((f.block? b).map (·.values.size)).getD 0) 0
+            cands := cands.push (nv, f.blocks.size, s!"{path} {s.index} {fs.toList}")
       if !prel tabs f g then
         rejected := rejected + 1
         if isInst then instRejected := instRejected + 1
@@ -98,6 +105,9 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"phiopt inputs {inst}: phiopt changes {instChanged}, rejects {instRejected}"
   IO.println s!"rejections by first failing condition: {whys.toList}"
   IO.println s!"rewritten phis at phiopt inputs by form: {forms.toList}"
+  IO.println "witness candidates (accepted phiopt inputs; values, blocks), smallest first:"
+  for (nv, nb, s) in (cands.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)).toList.take 15 do
+    IO.println s!"  {nv} {nb} {s}"
   return 0
 
 end GoFVTest.PhiOptProbe
