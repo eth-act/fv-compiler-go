@@ -707,17 +707,19 @@ extremes, integer-conversion boundaries, ties). Results: #10.
   (`Mul{32,64}F x (Const [-1])` → `Neg{32,64}F x`) is not a refinement under the semantics:
   a NaN `x` keeps its sign (and is quietened) under `FMUL`, but has its sign flipped under
   `FNEG`. The native difftest shows it (`x * -1` on NaN inputs: section 0 differs from native
-  and from every section after `opt`); the rule proofs must list it as false (or take
-  "`x` is not NaN"). `cse`'s argument sorting of commutative float ops is the other such
+  and from every section after `opt`). The semantics stays faithful to arm64 and these rules
+  stay out of the proven set (upstream-candidate issue with a reproducer; the Go spec may leave
+  a NaN's sign unspecified). `cse`'s argument sorting of commutative float ops is the other such
   optimisation; the semantics absorbs it (§4.6).
-- **`VarDef` and `generic.rules:2159`** (found by P4: the floats made `test/gcgort.newStructT`
+- **`VarDef` and `generic.rules:2159`, a model gap** (found by P4: the floats made `test/gcgort.newStructT`
   defined): `(Zero [s] p (VarDef {x} (Zero [s] p _)))` → the `VarDef` drops the second `Zero`,
   i.e. assumes `VarDef` keeps the variable's contents, while the semantics makes `VarDef`
   re-poison the variable (§3.4: "about to be initialised"; stack slots are merged across
   disjoint live ranges, which start at `VarDef`). Under the semantics the rule is not a
-  refinement (the target returns poison: a gap in `sem-difftest corpus`); the rule proofs must
-  list it as false. Natively the two `Zero`s are adjacent on the memory chain, so nothing can
-  clobber the slot in between.
+  refinement (the target returns poison: a gap in `sem-difftest corpus`). This is a **model
+  gap**, not a Go bug: natively the two `Zero`s are adjacent on the memory chain and nothing can
+  clobber the slot in between; only the semantics' re-poisoning `VarDef` is stricter than what
+  Go relies on. The rule stays out of the proven set.
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
   `SlicePtr` as non-nil, but `EqSlice` (`generic.rules:792`) shows it is used on nil slices.
