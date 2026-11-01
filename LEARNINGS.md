@@ -41,6 +41,21 @@ avoiding): the problem, the trick, the numbers, where it is used.
   with `attribute [local simp]` in the defining module (30.5 s once; 33.2 s total). Same
   numbers as lean-skills measured on 4.34.0.
 
+#### A `dsimproc` at a constructor instead of `simp [f]` for a `match` with a catch-all arm
+- **Problem:** the rule denotation's `callH` (26-arm `match` on helper and argument list,
+  `| _, _ => none` last). `simp [callH]` in a rule module met it on an argument not yet in
+  constructor form (`isPowerOfTwo(uint8(c))`: the conversion's `if` still undecided), unfolded
+  it to its `match` and generated `callH.match_5.eq_1…26` and its splitter privately in that
+  module: one rule lemma's `.olean` 4.77 MB, of which `eq_24` and the splitter ~90k objects.
+  `attribute [local simp]` / `Match.getEquationsFor` in the defining module did not help (the
+  equations are regenerated, private, per importing module).
+- **Trick:** `dsimproc reduceCallH (callH _ _ _)`: at a helper constructor, `delta?` +
+  `whnfCore`, and give up (`.continue`) if the outer matcher is still stuck; `simp` retries
+  after the arguments are simplified. Same pattern as `reduceIntInfo`/`reduceEvalPure`.
+- **Effect** (#69, RuleProofs6): `r_generic_1097_sound` alone 4.77 MB → 0.32 MB `.olean`,
+  3.8 s → 2.0 s wall; the eight power-of-two `Div`/`Mod` rules fit in 0.86 + 0.40 MB modules;
+  `divisible_unfold`'s workaround deleted. All 146 rule modules rebuilt unchanged otherwise.
+
 #### fast-lean (`dev-fast-v4.34.1`) is safe with the shared Lake cache; profiles use official Lean
 - Checked here: a module built by `fast-lean build` (proofs skipped, `#print axioms` →
   `Lean.skippedProof`) gets a different Lake input hash than the official build (the trace

@@ -13,6 +13,7 @@ import GoFV.Proof.Rules.And2
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
+import GoFV.Proof.Rules.Div3
 import GoFV.Proof.Rules.DivisibleGen
 import GoFV.Proof.Rules.DivisibleGen2
 import GoFV.Proof.Rules.DivisibleGen3
@@ -26,6 +27,7 @@ import GoFV.Proof.Rules.Eq2
 import GoFV.Proof.Rules.Eq3
 import GoFV.Proof.Rules.Eq4
 import GoFV.Proof.Rules.Eq5
+import GoFV.Proof.Rules.Eq6
 import GoFV.Proof.Rules.EqB
 import GoFV.Proof.Rules.Leq
 import GoFV.Proof.Rules.Leq2
@@ -42,6 +44,7 @@ import GoFV.Proof.Rules.Lsh4
 import GoFV.Proof.Rules.Lsh5
 import GoFV.Proof.Rules.Mod
 import GoFV.Proof.Rules.Mod2
+import GoFV.Proof.Rules.Mod3
 import GoFV.Proof.Rules.Mul
 import GoFV.Proof.Rules.Mul2
 import GoFV.Proof.Rules.Neg
@@ -49,6 +52,7 @@ import GoFV.Proof.Rules.Neq
 import GoFV.Proof.Rules.Neq2
 import GoFV.Proof.Rules.Neq3
 import GoFV.Proof.Rules.Neq4
+import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
@@ -116,13 +120,13 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨r_generic_651_3_sound, r_generic_652_3_sound, r_generic_679_3_sound, trivial⟩,
     ⟨r_generic_651_4_sound, r_generic_652_4_sound, r_generic_679_4_sound, trivial⟩,
     ⟨r_generic_173_sound, r_generic_1083_sound, r_generic_1092_sound, trivial⟩,
-    ⟨r_generic_177_sound, trivial⟩,
+    ⟨r_generic_177_sound, r_generic_1098_sound, trivial⟩,
     ⟨r_generic_174_sound, r_generic_1084_sound, r_generic_1093_sound, trivial⟩,
-    ⟨r_generic_178_sound, trivial⟩,
+    ⟨r_generic_178_sound, r_generic_1099_sound, trivial⟩,
     ⟨r_generic_175_sound, r_generic_1085_sound, r_generic_1094_sound, trivial⟩,
-    ⟨r_generic_179_sound, trivial⟩,
+    ⟨r_generic_179_sound, r_generic_1100_sound, trivial⟩,
     ⟨r_generic_172_sound, r_generic_1082_sound, r_generic_1091_sound, trivial⟩,
-    ⟨r_generic_176_sound, trivial⟩,
+    ⟨r_generic_176_sound, r_generic_1097_sound, trivial⟩,
     ⟨r_generic_280_sound, r_generic_297_sound, r_generic_300_sound, r_generic_303_sound, r_generic_306_sound, r_generic_309_sound, r_generic_312_sound, r_generic_317_sound, r_generic_584_sound, r_generic_1171_sound, r_generic_1175_sound, r_generic_1178_sound, r_generic_2403_sound, r_generic_2404_sound, trivial⟩,
     ⟨r_generic_280_2_sound, r_generic_297_2_sound, r_generic_300_2_sound, r_generic_303_2_sound, r_generic_306_2_sound, r_generic_309_2_sound, r_generic_312_2_sound, r_generic_316_sound, r_generic_584_2_sound, r_generic_1178_2_sound, r_generic_2403_2_sound, r_generic_2404_2_sound, trivial⟩,
     ⟨r_generic_280_3_sound, r_generic_297_3_sound, r_generic_300_3_sound, r_generic_303_3_sound, r_generic_306_3_sound, r_generic_309_3_sound, r_generic_312_3_sound, r_generic_315_sound, r_generic_584_3_sound, r_generic_1178_3_sound, r_generic_2403_3_sound, r_generic_2404_3_sound, trivial⟩,
@@ -161,13 +165,13 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨r_generic_234_sound, r_generic_472_4_sound, r_generic_492_3_sound, r_generic_500_sound, r_generic_528_sound, r_generic_528_2_sound, r_generic_1197_3_sound, trivial⟩,
     ⟨r_generic_463_sound, r_generic_492_4_sound, r_generic_1197_4_sound, trivial⟩,
     ⟨r_generic_216_sound, r_generic_1142_sound, r_generic_1152_sound, trivial⟩,
-    ⟨r_generic_221_sound, r_generic_1160_sound, trivial⟩,
+    ⟨r_generic_221_sound, r_generic_1128_sound, r_generic_1160_sound, trivial⟩,
     ⟨r_generic_217_sound, r_generic_1143_sound, r_generic_1154_sound, trivial⟩,
-    ⟨r_generic_222_sound, r_generic_1162_sound, trivial⟩,
+    ⟨r_generic_222_sound, r_generic_1129_sound, r_generic_1162_sound, trivial⟩,
     ⟨r_generic_218_sound, r_generic_1144_sound, r_generic_1156_sound, trivial⟩,
-    ⟨r_generic_223_sound, r_generic_1164_sound, trivial⟩,
+    ⟨r_generic_223_sound, r_generic_1130_sound, r_generic_1164_sound, trivial⟩,
     ⟨r_generic_215_sound, r_generic_1141_sound, r_generic_1150_sound, trivial⟩,
-    ⟨r_generic_220_sound, r_generic_1158_sound, trivial⟩,
+    ⟨r_generic_220_sound, r_generic_1127_sound, r_generic_1158_sound, trivial⟩,
     ⟨r_generic_137_sound, r_generic_192_sound, r_generic_196_sound, r_generic_199_sound, r_generic_201_sound, r_generic_413_sound, r_generic_648_sound, r_generic_1272_sound, r_generic_1320_sound, trivial⟩,
     ⟨r_generic_138_sound, r_generic_192_2_sound, r_generic_196_2_sound, r_generic_199_2_sound, r_generic_201_2_sound, r_generic_411_sound, r_generic_648_2_sound, r_generic_1271_sound, r_generic_1319_sound, trivial⟩,
     ⟨r_generic_139_sound, r_generic_192_3_sound, r_generic_196_3_sound, r_generic_199_3_sound, r_generic_201_3_sound, r_generic_409_sound, r_generic_648_3_sound, r_generic_1270_sound, r_generic_1318_sound, trivial⟩,
@@ -253,14 +257,14 @@ theorem generic_allSound : Proven.generic.AllSound :=
 theorem divisible_allSound : Proven.divisible.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.divisible, ForallL]
-    exact ⟨⟨r_divisible_48_sound, trivial⟩,
-    ⟨r_divisible_64_sound, trivial⟩,
-    ⟨r_divisible_80_sound, trivial⟩,
-    ⟨r_divisible_32_sound, trivial⟩,
-    ⟨r_divisible_56_sound, trivial⟩,
-    ⟨r_divisible_72_sound, trivial⟩,
-    ⟨r_divisible_88_sound, trivial⟩,
-    ⟨r_divisible_40_sound, trivial⟩, trivial⟩)
+    exact ⟨⟨r_divisible_17_sound, r_divisible_20_sound, r_divisible_48_sound, trivial⟩,
+    ⟨r_divisible_17_2_sound, r_divisible_20_2_sound, r_divisible_64_sound, trivial⟩,
+    ⟨r_divisible_17_3_sound, r_divisible_20_3_sound, r_divisible_80_sound, trivial⟩,
+    ⟨r_divisible_17_4_sound, r_divisible_20_4_sound, r_divisible_32_sound, trivial⟩,
+    ⟨r_divisible_23_sound, r_divisible_26_sound, r_divisible_56_sound, trivial⟩,
+    ⟨r_divisible_23_2_sound, r_divisible_26_2_sound, r_divisible_72_sound, trivial⟩,
+    ⟨r_divisible_23_3_sound, r_divisible_26_3_sound, r_divisible_88_sound, trivial⟩,
+    ⟨r_divisible_23_4_sound, r_divisible_26_4_sound, r_divisible_40_sound, trivial⟩, trivial⟩)
 
 /-- Every rule of `Proven.divmod` is sound. -/
 theorem divmod_allSound : Proven.divmod.AllSound :=
