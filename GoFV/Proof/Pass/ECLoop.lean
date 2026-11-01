@@ -1,0 +1,255 @@
+import GoFV.Proof.Pass.ECRel
+import GoFV.Proof.AtomSimLoop
+
+/-!
+# The target's schedule against a source reference frame (issue #28)
+
+`tgt_loop`: the target evaluates a prefix `L` of its schedule `og` of block `gb` from the frame
+`T0` (after its `Phi`s). Against a source frame `G` (of the same activation) that holds the
+source's evaluation of every source value of `L`, each value of `L` evaluates: a new one by
+`NewEval`, a source value by its obligation `Obl`, to a refinement of its conversion. The
+invariant `LInv`: registers outside `L` unchanged, source values of `L` refining their
+conversions, new values of `L` (and the entry's, `E0`) holding their own evaluations.
+-/
+
+namespace GoFV.Proof.EC
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Proof.AtomSim GoFV.Proof.Order
+
+/-- The invariant along the target's schedule prefix `d`. -/
+def LInv (env : Env) (tabs : Tables) (g : Func) (cv : Cv) (isNew : ID → Bool) (G T0 : Frame)
+    (E0 : ID → Prop) (d : List ID) (T : Frame) : Prop :=
+  T = { T0 with regs := T.regs } ∧ T.regs.size = T0.regs.size ∧
+    (∀ a, a ∉ d → T.regs[a]? = T0.regs[a]?) ∧
+    (∀ x ∈ d, isNew x = false → ∀ y, G.regs[x]? = some (some y) →
+      ∃ y', T.regs[x]? = some (some y') ∧ Sem.Refines (cv x y) y') ∧
+    NewCons env (Ctx.make tabs g) isNew T (fun z => (z ∈ d ∧ isNew z = true) ∨ E0 z) ∧
+    (∀ x ∈ d, Reg T x)
+
+theorem reg_set {T : Frame} {x a : ID} {y : Val} (h : Reg T a) : Reg (T.set x y) a := by
+  by_cases hxa : x = a
+  · subst hxa
+    obtain ⟨y0, hy0⟩ := h
+    have hlt : x < T.regs.size := (Array.getElem?_eq_some_iff.1 hy0).1
+    exact ⟨y, Frame.set_regs_self hlt⟩
+  · rw [Reg, Frame.set_regs_ne hxa]; exact h
+
+/-- A new-value set keeps holding its evaluations when a value outside it and outside its
+members' arguments is set. -/
+theorem NewCons.set {env : Env} {ctx : Ctx} {isNew : ID → Bool} {T : Frame} {E : ID → Prop}
+    (h : NewCons env ctx isNew T E) {x : ID} {y : Val} (hx : ¬ E x)
+    (hargs : ∀ z, E z → ∀ w, ctx.f.value? z = some w → x ∉ w.args) :
+    NewCons env ctx isNew (T.set x y) E := by
+  intro z hz
+  obtain ⟨hn, w, yz, hw, hcl, hreg, hev⟩ := h z hz
+  have hzx : x ≠ z := fun he => hx (he ▸ hz)
+  refine ⟨hn, w, yz, hw, hcl, by rw [Frame.set_regs_ne hzx]; exact hreg, ?_⟩
+  rw [← hev]
+  refine evalValue_congr (fr := T.set x y) (g := T) rfl fun a ha => ?_
+  have hxa : x ≠ a := fun he => hargs z hz w hw (by rw [he]; exact ha)
+  exact Frame.set_regs_ne hxa
+
+theorem NewCons.mono {env : Env} {ctx : Ctx} {isNew : ID → Bool} {T : Frame} {E E' : ID → Prop}
+    (h : NewCons env ctx isNew T E) (hE : ∀ z, E' z → E z)
+    (hcl : ∀ z, E' z → ∀ w, ctx.f.value? z = some w → ∀ a ∈ w.args, isNew a = true → E' a) :
+    NewCons env ctx isNew T E' := by
+  intro z hz
+  obtain ⟨hn, w, yz, hw, -, hreg, hev⟩ := h z (hE z hz)
+  exact ⟨hn, w, yz, hw, hcl z hz w hw, hreg, hev⟩
+
+/-- The value at position `|d|` of `d ++ x :: s`. -/
+theorem getElem?_mid {d s : List ID} {x : ID} : (d ++ x :: s)[d.length]? = some x := by simp
+
+/-- A schedule element at a position before `|d|` is in `d`. -/
+theorem mem_of_idx_lt {d s : List ID} {x a : ID} {i : Nat} (h : (d ++ x :: s)[i]? = some a)
+    (hi : i < d.length) : a ∈ d := by
+  rw [List.getElem?_append_left hi] at h
+  exact List.mem_of_getElem? h
+
+section
+variable {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool} {front : ID → List ID}
+  {RR : List Val → Mem → List Val → Mem → Prop} {fb gb : Block}
+
+/-- **The target's schedule prefix `L`.** -/
+theorem tgt_loop (B : CvBlock tabs f g cv isNew front RR fb gb) {env : Env} (hE : env.Mono)
+    {og : Array ID} (hsg : schedule g gb = some og) (hnd : og.toList.Nodup)
+    (htopo : TopoRem (argsF g) og.toList)
+    (hmem : ∀ x, x ∈ og.toList ↔ x ∈ gb.values ∧ ∃ w, g.value? x = some w ∧ w.op ≠ .Phi)
+    (hid : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → w.id = x)
+    {L M : List ID} (hog : og.toList = L ++ M) {G T0 : Frame}
+    (hT0 : T0 = { G with regs := T0.regs }) (hsz : T0.regs.size = g.valueTab.size)
+    (himg : T0.images.size = (Ctx.make tabs g).params.size) {E0 : ID → Prop}
+    (hE0 : NewCons env (Ctx.make tabs g) isNew T0 E0) (hE0og : ∀ z, E0 z → z ∉ og.toList)
+    (hE0args : ∀ z, E0 z → ∀ w, g.value? z = some w → ∀ a ∈ w.args, a ∉ og.toList)
+    (hnewArgs : ∀ x ∈ og.toList, ∀ w, g.value? x = some w → ∀ a ∈ w.args, isNew a = true →
+      a ∉ og.toList → E0 a)
+    (hout : ∀ x ∈ og.toList, ∀ w, g.value? x = some w → ∀ a ∈ w.args, a ∉ og.toList → Reg T0 a)
+    (hrel0 : ∀ a, a ∉ og.toList → isNew a = false → ∀ y, G.regs[a]? = some (some y) →
+      ∃ y', T0.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y')
+    (hsrc : ∀ x ∈ L, isNew x = false → ∃ u y, f.value? x = some u ∧
+      G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
+    ∃ T, evalAll env (Ctx.make tabs g) T0 L = .ok T ∧ LInv env tabs g cv isNew G T0 E0 L T := by
+  have hspec := (schedule_spec hsg).topo
+  refine evalAll_induct L (LInv env tabs g cv isNew G T0 E0) ?_ L [] T0 rfl
+    ⟨by cases T0; rfl, rfl, fun _ _ => rfl, fun _ h => absurd h List.not_mem_nil,
+      hE0.mono (fun z hz => hz.resolve_left fun h => absurd h.1 List.not_mem_nil)
+        fun z hz w hw a ha han => by
+          obtain ⟨-, w', -, hw', hcl, -⟩ := hE0 z (hz.resolve_left fun h => absurd h.1 List.not_mem_nil)
+          rw [hw] at hw'; cases hw'; exact .inr (hcl a ha han),
+      fun _ h => absurd h List.not_mem_nil⟩
+  intro d x s T hL ⟨hTf, hTs, hTk, hTr, hTN, hTreg⟩
+  have hog' : og.toList = d ++ x :: (s ++ M) := by rw [hog, hL]; simp
+  have hxog : x ∈ og.toList := by rw [hog']; simp
+  have hxL : x ∈ L := by rw [hL]; simp
+  have hdog : ∀ a ∈ d, a ∈ og.toList := fun a ha => by rw [hog']; exact List.mem_append_left _ ha
+  have hxd : x ∉ d := fun hm => by
+    have := hnd; rw [hog'] at this
+    exact (List.nodup_append.1 this).2.2 x hm x List.mem_cons_self rfl
+  obtain ⟨hxgb, w, hw, hwphi⟩ := (hmem x).1 hxog
+  have hwid : w.id = x := hid x hxgb w hw
+  have hxlt : x < T.regs.size := by rw [hTs, hsz]; exact lt_of_value? hw
+  have htopo' := htopo; rw [hog'] at htopo'
+  -- the arguments of `x`
+  have hargIn : ∀ a ∈ w.args, a ∈ og.toList → a ∈ d := fun a ha hm => by
+    rw [hog'] at hm
+    exact topoRem_before htopo' (by rw [argsF_of hw]; exact Array.mem_toList_iff.2 ha) hm
+  have hreg : ∀ a ∈ w.args, Reg T a := fun a ha => by
+    by_cases hm : a ∈ og.toList
+    · exact hTreg a (hargIn a ha hm)
+    · rw [Reg, hTk a fun hd => hm (hdog a hd)]; exact hout x hxog w hw a ha hm
+  have hxw : x ∉ w.args := fun ha => hxd (hargIn x ha hxog)
+  have hstepV : stepV env (Ctx.make tabs g) T x = evalValue env (Ctx.make tabs g) T w := by
+    unfold stepV; rw [show (Ctx.make tabs g).f = g from rfl, hw]
+  have hEx : ∀ a ∈ w.args, isNew a = true → (a ∈ d ++ [x] ∧ isNew a = true) ∨ E0 a :=
+    fun a ha hn => by
+      by_cases hm : a ∈ og.toList
+      · exact .inl ⟨List.mem_append_left _ (hargIn a ha hm), hn⟩
+      · exact .inr (hnewArgs x hxog w hw a ha hn hm)
+  -- the members of the new-value set do not read `x`
+  have hnotarg : ∀ z, ((z ∈ d ∧ isNew z = true) ∨ E0 z) → ∀ wz,
+      (Ctx.make tabs g).f.value? z = some wz → x ∉ wz.args := by
+    intro z hz wz hwz hx
+    change g.value? z = some wz at hwz
+    rcases hz with ⟨hzd, -⟩ | hz0
+    · obtain ⟨d1, d2, rfl⟩ := List.append_of_mem hzd
+      have ht : TopoRem (argsF g) (d1 ++ z :: (d2 ++ x :: (s ++ M))) := by
+        rw [hog'] at htopo; simpa using htopo
+      exact topoRem_mid ht x (by rw [argsF_of hwz]; exact Array.mem_toList_iff.2 hx)
+        (List.mem_cons_of_mem _ (List.mem_append_right _ List.mem_cons_self))
+    · exact hE0args z hz0 wz hwz x hx hxog
+  have hnotE : ¬ ((x ∈ d ∧ isNew x = true) ∨ E0 x) := fun h =>
+    h.elim (fun h => hxd h.1) fun h => hE0og x h hxog
+  -- what holds after setting `x` to any value
+  have common : ∀ y, (T.set x y = { T0 with regs := (T.set x y).regs }) ∧
+      (T.set x y).regs.size = T0.regs.size ∧
+      (∀ a, a ∉ d ++ [x] → (T.set x y).regs[a]? = T0.regs[a]?) ∧
+      (∀ a ∈ d ++ [x], Reg (T.set x y) a) ∧
+      (∀ a ∈ d, isNew a = false → ∀ ya, G.regs[a]? = some (some ya) →
+        ∃ y', (T.set x y).regs[a]? = some (some y') ∧ Sem.Refines (cv a ya) y') := by
+    intro y
+    refine ⟨by rw [hTf]; rfl, by simp [Frame.set, hTs], fun a ha => ?_, fun a ha => ?_,
+      fun a ha hn ya hya => ?_⟩
+    · have hxa : x ≠ a := fun he => ha (by simp [he])
+      rw [Frame.set_regs_ne hxa]; exact hTk a fun hm => ha (List.mem_append_left _ hm)
+    · rcases List.mem_append.1 ha with ha | ha
+      · exact reg_set (hTreg a ha)
+      · rw [List.mem_singleton.1 ha]; exact ⟨y, Frame.set_regs_self hxlt⟩
+    · have hxa : x ≠ a := fun he => hxd (he ▸ ha)
+      rw [Frame.set_regs_ne hxa]; exact hTr a ha hn ya hya
+  have hT_G : T = { G with regs := T.regs } := by rw [hTf]; rw [hT0]
+  have himgT : T.images.size = (Ctx.make tabs g).params.size := by rw [hTf]; exact himg
+  cases hn : isNew x with
+  | true =>
+    obtain ⟨-, hne⟩ := B.newOK x hxgb hn w hw
+    obtain ⟨r, hr⟩ := hne env T (w.args.toList.map (rv T)) himgT
+    have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = tabs.ty w.type := by
+      rw [hwid, tys_of_value hw]; rfl
+    have hev : evalValue env (Ctx.make tabs g) T w = .ok (r.retype (tabs.ty w.type)) := by
+      rw [evalValue_of_regs hreg, hty, hr]; rfl
+    refine ⟨_, by rw [hstepV, hev], ?_⟩
+    obtain ⟨c1, c2, c3, c4, c5⟩ := common (r.retype (tabs.ty w.type))
+    refine ⟨c1, c2, c3, fun a ha hna ya hya => ?_, ?_, c4⟩
+    · rcases List.mem_append.1 ha with ha | ha
+      · exact c5 a ha hna ya hya
+      · rw [List.mem_singleton.1 ha, hn] at hna; cases hna
+    · intro z hz
+      by_cases hzx : z = x
+      · subst hzx
+        refine ⟨hn, w, _, hw, hEx, Frame.set_regs_self hxlt, ?_⟩
+        rw [← hev]
+        exact evalValue_congr (fr := T.set z _) (g := T) rfl fun a ha =>
+          Frame.set_regs_ne (fun he => hxw (by rw [he]; exact ha))
+      · have hz' : (z ∈ d ∧ isNew z = true) ∨ E0 z := by
+          rcases hz with ⟨hzd, hzn⟩ | hz0
+          · rcases List.mem_append.1 hzd with h | h
+            · exact .inl ⟨h, hzn⟩
+            · exact absurd (List.mem_singleton.1 h) hzx
+          · exact .inr hz0
+        obtain ⟨hzn, wz, yz, hwz, -, hrz, hevz⟩ := hTN.set (y := r.retype (tabs.ty w.type)) hnotE
+          hnotarg z hz'
+        refine ⟨hzn, wz, yz, hwz, fun a ha han => ?_, hrz, hevz⟩
+        obtain ⟨-, wz', -, hwz', hcl, -⟩ := hTN z hz'
+        rw [hwz] at hwz'; cases hwz'
+        rcases hcl a ha han with ⟨had, hn'⟩ | h0
+        · exact .inl ⟨List.mem_append_left _ had, hn'⟩
+        · exact .inr h0
+  | false =>
+    have hxfb : x ∈ fb.values := Classical.byContradiction fun h => by
+      rw [B.fresh x hxgb h] at hn; cases hn
+    obtain ⟨u, y, hu, hGy, hevS⟩ := hsrc x hxL hn
+    have huphi : u.op ≠ .Phi := fun hph => by
+      obtain ⟨hgu, -⟩ := B.phiS x hxfb u hu hph
+      rw [hw] at hgu; cases hgu; exact hwphi hph
+    have hfront : ∀ a ∈ front x, ∀ ya, G.regs[a]? = some (some ya) →
+        ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a ya) y' := by
+      intro a ha ya hya
+      obtain ⟨han, hdep⟩ := B.front x hxfb a ha
+      by_cases hm : a ∈ og.toList
+      · obtain ⟨hagb, -, -⟩ := (hmem a).1 hm
+        rcases hdep hagb with ⟨wa, hwa, hph⟩ | hd
+        · obtain ⟨-, wa', hwa', hph'⟩ := (hmem a).1 hm
+          rw [hwa] at hwa'; cases hwa'; exact absurd hph hph'
+        · obtain ⟨i, hi⟩ := List.getElem?_of_mem hm
+          have hj : og.toList[d.length]? = some x := by rw [hog']; exact getElem?_mid
+          have hlt := hspec.dep_lt hd hi hj
+          rw [hog'] at hi
+          exact hTr a (mem_of_idx_lt hi hlt) han ya hya
+      · rw [hTk a fun hd => hm (hdog a hd)]; exact hrel0 a hm han ya hya
+    have hob := B.obl x hxfb u hu huphi u w hu hw env hE G T hT_G _ hTN
+      (fun a ha han => (hEx a ha han).elim (fun h => .inl ⟨(List.mem_append.1 h.1).resolve_right
+        fun hs => absurd (List.mem_singleton.1 hs ▸ ha) hxw, h.2⟩) .inr)
+      hreg (fun a ha => regs_of_ok hevS a ha) hfront
+    rw [hevS] at hob
+    generalize hT' : evalValue env (Ctx.make tabs g) T w = rT at hob
+    cases hob with
+    | ok hyy =>
+      rename_i y'
+      refine ⟨y', by rw [hstepV, hT'], ?_⟩
+      obtain ⟨c1, c2, c3, c4, c5⟩ := common y'
+      refine ⟨c1, c2, c3, fun a ha hna ya hya => ?_, ?_, c4⟩
+      · rcases List.mem_append.1 ha with ha | ha
+        · exact c5 a ha hna ya hya
+        · rw [List.mem_singleton.1 ha] at hya ⊢
+          rw [hGy] at hya; cases hya
+          exact ⟨y', Frame.set_regs_self hxlt, hyy⟩
+      · refine (hTN.set (y := y') hnotE hnotarg).mono (fun z hz => ?_) fun z hz wz hwz a ha han => ?_
+        · rcases hz with ⟨hzd, hzn⟩ | hz0
+          · rcases List.mem_append.1 hzd with h | h
+            · exact .inl ⟨h, hzn⟩
+            · rw [List.mem_singleton.1 h, hn] at hzn; cases hzn
+          · exact .inr hz0
+        · have hz' : (z ∈ d ∧ isNew z = true) ∨ E0 z := by
+            rcases hz with ⟨hzd, hzn⟩ | hz0
+            · rcases List.mem_append.1 hzd with h | h
+              · exact .inl ⟨h, hzn⟩
+              · rw [List.mem_singleton.1 h, hn] at hzn; cases hzn
+            · exact .inr hz0
+          obtain ⟨-, wz', -, hwz', hcl, -⟩ := hTN z hz'
+          rw [hwz] at hwz'; cases hwz'
+          rcases hcl a ha han with ⟨had, hn'⟩ | h0
+          · exact .inl ⟨List.mem_append_left _ had, hn'⟩
+          · exact .inr h0
+
+end
+
+end GoFV.Proof.EC
