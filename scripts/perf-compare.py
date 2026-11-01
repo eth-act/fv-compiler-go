@@ -175,6 +175,11 @@ def main():
             info.append((f"bench {n}", "corpus changed", b.get("corpus") or "–",
                          h.get("corpus") or "–", "not compared"))
             continue
+        if not {b.get("status"), h.get("status")} <= {"ok", "cached"}:
+            # a gate-failed (`unparsable`) run stops early: its time is not comparable
+            if h.get("status") not in ("ok", "cached", "skipped") and b.get("status") in ("ok", "cached"):
+                reg.append((f"bench {n}", "run", "ok", h.get("status", "?"), "broken"))
+            continue
         rb, rh, wb, wh = num(b, "maxrss_mb"), num(h, "maxrss_mb"), num(b, "wall_s"), num(h, "wall_s")
         cb, ch = num(b, "cpu_s"), num(h, "cpu_s")
         cpu_ok = cb is None or ch is None

@@ -115,9 +115,14 @@ avoiding): the problem, the trick, the numbers, where it is used.
 
 - **How:** `weakLeanArgs = ["-j4", …]` in a `lean_lib` reaches every `lean` that Lake starts.
   It is not traced, so adding it rebuilds nothing (checked), and `-j2` gave byte-identical
-  `.olean`s (`SSA.Op`, `Proof.Frame`, `Rules.Neq`). It is not adopted yet: it trades wall time
-  for less CPU on the shared machine, which is a policy choice (#1). The clifv entry "Threads
-  per Lean process don't help us" below was probably measured with the same no-op variable.
+  `.olean`s (`SSA.Op`, `Proof.Frame`, `Rules.Neq`). The clifv entry "Threads per Lean process
+  don't help us" below was probably measured with the same no-op variable.
+- **Adopted:** `-j4` on main 03d6b3f. Verified: a cache-free `lake build +GoFV.Proof.Rules.Eq`
+  ran `lean … -j4` with at most 4 runnable threads (was 27), and its `.olean` was byte-identical
+  to the copy other worktrees had put into the shared cache. Recorded per module (ff4db5d →
+  54979b8, load 45–50 → 35): `Rules.Eq` 86.2 → 63.4 s CPU, `Rules.Neq` 88.4 → 61.1 s,
+  `Add2` 32.4 → 26.6 s, `Lsh` 14.2 → 11.2 s; highest CPU/wall 7.2 → 3.4; wall of those
+  modules +0–4 s, `Neq` 12.3 → 27.1 s.
 
 #### Generate `match` congruence equations upstream, or sibling modules cannot be imported together
 - **Problem:** `simp` in a rule-lemma module generated `binDV.match_4.congr_eq_*`,
