@@ -273,6 +273,35 @@ avoiding): the problem, the trick, the numbers, where it is used.
   runs on a loaded machine). Quick corpus (9,297 files, 2,961,638 blocks): identical, 13.7 s →
   7.5 s.
 
+#### Checked CFG steps: snapshot before, check in place after, frame lemma for the rest
+- **Problem:** a translation-validated rewrite step that keeps its input `f` to compare with
+  the result `g` (or to fall back to) makes the rewrite copy `f`'s value and block tables (Lean
+  arrays are copy-on-write: `f` is no longer unique), and any table-wide comparison (`check g`,
+  even a pointer-first `tabEq`) costs O(function) per rewrite. Short circuit on full-v2 with
+  `check` per fusion (#139): 667 s, vs 6.5 s unchecked (issue #147).
+- **Trick:** (1) no `check` of the result: derive well-formedness and use dominance of `g` from
+  the step relation (`FusePlainPres`), check the pass input once; (2) `@[noinline] snapOf f`
+  runs the pre-check on `f` and copies only the entries the rewrite will change (here: the run's
+  values, `b₀`'s predecessors, block `c`, the source non-pure sequence); then the rewrite runs on
+  the now-unique `f` in place, and `postOK snap g` checks only those entries; a proven frame
+  lemma (`fuseRun_frame`: entries outside the run's values and blocks and `b₀`'s predecessors
+  are unchanged) replaces the table-wide comparison; (3) a rejected rewrite is an `Except` error
+  and the pass returns its input (`Fuse.orInput`: one copy per pass, not per rewrite);
+  (4) `rankOK` compiled as a linear scan via `@[csimp]` (`rankOKFast`), and `schedValid`'s
+  pure-node table built once (#171).
+- **Effect** (pass time, `pass-parity`, load 30–60; checked / unchecked):
+
+  | | quick | full-v2 | 400 largest full files |
+  | --- | --: | --: | --: |
+  | short circuit, `check` per fusion (#139) | 7.1–8.0 s | 667 s | – |
+  | + no `check`, local `tabEq` checker, rankOKFast (#171) | 2.0 s | 27.5 s | 18.7 s |
+  | + snapshot / in place / frame lemma | 0.5 s | 15.2 s | 4.3 s |
+  | unchecked | 0.1 s | 6.5 s | 0.4 s |
+
+  What is left on large functions is `Sem.schedule` (3.2 of the 4.3 s on the 400 largest
+  files: it allocates arrays of size max-value-ID per call); without the two schedule calls the
+  checked step costs 1.1 s there.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
