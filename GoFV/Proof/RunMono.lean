@@ -140,18 +140,18 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                 | none => exact .stuck _ _
                 | some c =>
                   dsimp only
-                  have := hE _ _ hx hp.1 hp.2 ha hclo hm
+                  have := hE _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
                   revert this
-                  generalize c A clo m = o
-                  generalize c A' clo' m' = o'
+                  generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
+                  generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
                   intro ho
                   cases ho with
-                  | returned hr hm' =>
+                  | returned hr0 hm' =>
                     dsimp only
                     cases he : encodeResults ctx.tabs ctx.act _ _ _ with
                     | none => exact .stuck _ _
                     | some r =>
-                      obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ hr hm' he
+                      obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ (retypeResults_mono ctx.tabs _ hr0) hm' he
                       rw [he']
                       dsimp only
                       exact .ok (.tuple (hr1.append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
@@ -178,21 +178,21 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
               | none => exact .stuck _ _
               | some c =>
                 dsimp only
-                have := hE _ _ hx hp.1 hp.2 ha hclo hm
+                have := hE _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
                 revert this
-                generalize c A clo m = o
-                generalize c A' clo' m' = o'
+                generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
+                generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
                 intro ho
                 cases ho with
-                | returned hr hm' =>
+                | returned hr0 hm' =>
                   dsimp only
                   cases he : encodeResults ctx.tabs ctx.act _ _ _ with
                   | none => exact .stuck _ _
                   | some r =>
-                    obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ hr hm' he
+                    obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ (retypeResults_mono ctx.tabs _ hr0) hm' he
                     rw [he']
                     dsimp only
-                    exact .ok (.tuple (hr.append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
+                    exact .ok (.tuple ((retypeResults_mono ctx.tabs _ hr0).append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
                 | panicked e hm' => exact .panic e hm'
                 | stuck msg o => exact .stuck _ _
         | _ => exact .stuck _ _

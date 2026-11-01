@@ -102,3 +102,7 @@ root = "GoFVTest.KnownBitsProbe"
 [[lean_exe]]
 name = "prove-probe"
 root = "GoFVTest.ProveProbe"
+
+[[lean_exe]]
+name = "tabs-agree-probe"
+root = "GoFVTest.TabsAgreeProbe"
