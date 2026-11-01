@@ -16,7 +16,7 @@ namespace GoFV.Proof.Dead
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
 open GoFV.Proof.CopyElim (stepV_of topoRem_append_left topoRem_at topoRem_before
-  prio_ne_zero_of_panic nodeOf_schedNodes)
+  nodeOf_schedNodes)
 
 variable {f g : Func} {K : ID → Prop}
 
@@ -243,7 +243,7 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb :
   have hrnp : npIn (schedNodes g gb).toList r = true := by
     unfold npIn
     rw [nodeOf_schedNodes hownG hndG hrg hgvr hgrn, (hsamer hgrn).1]
-    simpa using prio_ne_zero_of_panic hrop
+    simpa using prio_panicking hrop
   have htr := sched_transfer_sub (schedule_spec hso) (schedule_spec hoT) (S.subNodes hb hgb hfb)
     hk hk' hrnp
   have hinPre : ∀ x, (∃ i < pre.length, oS.toList[i]? = some x) → x ∈ pre := by

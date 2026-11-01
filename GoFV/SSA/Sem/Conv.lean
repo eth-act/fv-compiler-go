@@ -35,6 +35,24 @@ def select (i : Nat) : List Val → Val
   | [.tuple vs] => vs.getD i .poison
   | _ => .poison
 
+/-- `SelectN [i]`: component `i` of a call's `RESULTS` tuple. -/
+def selectN (auxInt : Int64) : List Val → Val
+  | [.tuple vs] => if auxInt.toInt < 0 then .poison else vs.getD auxInt.toInt.toNat .poison
+  | _ => .poison
+
+/-- `SelectNAddr [i]`: the address of stack-assigned result `i` of a call, which the call's
+tuple carries after its memory (`callOp`); `poison` for a register result or a non-call. -/
+def selectNAddr (auxInt : Int64) : List Val → Val
+  | [.tuple vs] =>
+    match vs.getLast? with
+    | some (.agg addrs) =>
+      if auxInt.toInt < 0 then .poison
+      else match addrs[auxInt.toInt.toNat]? with
+        | some (.ptr p) => .ptr p
+        | _ => .poison
+    | _ => .poison
+  | _ => .poison
+
 /-- `MakeTuple x y`. -/
 def make : List Val → Val
   | [x, y] => .tuple [x, y]

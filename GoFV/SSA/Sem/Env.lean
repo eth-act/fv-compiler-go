@@ -3,9 +3,9 @@ import GoFV.SSA.Sem.Val
 /-!
 # Environment, outcomes, the evaluation monad (`docs/plans/semantics.md` §5, §8)
 
-P1 has no program-function calls (P3) and only the contracts of the runtime's panicking entry
-points that integer code reaches (`runtime.panicdivide`, `runtime.panicshift`,
-`runtime.panicoverflow`).
+Callees are contracts on Go-typed arguments (§5): runtime entry points (`Env.p1`, the
+panicking ones; `Sem/Runtime.lean`, the rest) and program functions (`Env.withFuncs`, which
+runs their SSA).
 -/
 
 namespace GoFV.SSA.Sem
@@ -17,12 +17,13 @@ inductive COutcome where
   | stuck (msg : String)
   deriving Inhabited
 
-/-- Trusted behaviour of a callee without SSA, on Go-typed arguments. -/
-abbrev Contract := List Val → Mem → COutcome
+/-- Behaviour of a callee on Go-typed arguments (receiver first), its closure context (the
+`GetClosurePtr` of a closure call) and the memory. -/
+abbrev Contract := List Val → Option Val → Mem → COutcome
 
 /-- What a function's run may call. -/
 structure Env where
-  /-- Callees without SSA (the runtime), by link symbol name. -/
+  /-- Callees by link symbol name. -/
   extern : String → Option Contract := fun _ => none
   /-- The global image (`Sem/Image.lean`, `globalImage`): initial allocations of the global
   symbols, by name; a run adds those its memory does not have yet. -/
@@ -33,9 +34,9 @@ namespace Env
 /-- The runtime entry points P1 models: those that only panic (`runtime/panic.go`). -/
 def p1 : Env where
   extern
-    | "runtime.panicdivide" => some fun _ m => .panicked .divide m
-    | "runtime.panicshift" => some fun _ m => .panicked .shift m
-    | "runtime.panicoverflow" => some fun _ m => .panicked .overflow m
+    | "runtime.panicdivide" => some fun _ _ m => .panicked .divide m
+    | "runtime.panicshift" => some fun _ _ m => .panicked .shift m
+    | "runtime.panicoverflow" => some fun _ _ m => .panicked .overflow m
     | _ => none
 
 instance : Inhabited Env := ⟨p1⟩

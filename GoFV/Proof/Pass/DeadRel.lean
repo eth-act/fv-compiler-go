@@ -24,10 +24,6 @@ namespace GoFV.Proof.Dead
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
 
-/-- Ops whose evaluation may panic (`evalValue_panic_op`). -/
-def Panicking (op : Op) : Prop :=
-  op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall ∨ op = .NilCheck
-
 /-- The `Phi`s `g` keeps in block `c` read, along predecessor index `iT`, the argument `f`'s
 read along `iS`. -/
 def PhiArgs (f g : Func) (c : ID) (iS iT : Nat) : Prop :=

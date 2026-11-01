@@ -160,6 +160,31 @@ func (p *parser) parse(t reflect.Type) (reflect.Value, error) {
 	return v, fmt.Errorf("unsupported type %s", t)
 }
 
+// quoteBytes is strconv.Quote byte by byte: printable ASCII as is, the usual escapes, every
+// other byte as \xHH (also inside valid UTF-8), as GoFVTest/SemDiff.lean's goQuote prints.
+func quoteBytes(s string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '"' || c == '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c >= 0x20 && c < 0x7f:
+			b.WriteByte(c)
+		default:
+			q := strconv.QuoteToASCII(string([]byte{c}))
+			if c >= 0x80 {
+				q = fmt.Sprintf("\"\\x%02x\"", c)
+			}
+			b.WriteString(q[1 : len(q)-1])
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
 func render(v reflect.Value) string {
 	switch v.Kind() {
 	case reflect.Bool:
@@ -169,7 +194,7 @@ func render(v reflect.Value) string {
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		return strconv.FormatUint(v.Uint(), 10)
 	case reflect.String:
-		return strconv.Quote(v.String())
+		return quoteBytes(v.String())
 	case reflect.Slice, reflect.Array:
 		if v.Kind() == reflect.Slice && v.IsNil() {
 			return "nil"

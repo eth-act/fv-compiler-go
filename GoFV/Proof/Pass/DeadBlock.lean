@@ -14,7 +14,7 @@ only values the source evaluated before it, `sched_transfer_sub` in `DeadRank`).
 namespace GoFV.Proof.Dead
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
-open GoFV.Proof.CopyElim (stepV_of topoRem_append_left topoRem_at topoRem_before prio_panicking)
+open GoFV.Proof.CopyElim (stepV_of topoRem_append_left topoRem_at topoRem_before)
 
 /-- Everything the simulation uses about the source `f`, the target `g` and the kept blocks
 `K`. -/

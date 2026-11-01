@@ -1,6 +1,7 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Sem.Run
 import GoFV.SSA.Sem.Image
+import GoFV.SSA.Sem.Runtime
 import Std.Data.HashMap
 
 /-!
@@ -184,7 +185,8 @@ def parseBytes (tabs : Tables) : Nat → TypeRef → PM (Array Byte)
 
 /-! ## Printing values from memory -/
 
-/-- Go's `strconv.Quote` for ASCII (the generator writes ASCII only; other bytes as `\xHH`). -/
+/-- Go's `strconv.Quote` byte by byte: non-ASCII bytes as `\xHH` even inside valid UTF-8
+(`quoteBytes` in `tools/semdiff/prog/main.go`). -/
 def goQuote (bs : Array UInt8) : String := Id.run do
   let hex := "0123456789abcdef".toList
   let mut out := "\""
@@ -241,6 +243,12 @@ def renderBytes (tabs : Tables) (m : Mem) : Nat → TypeRef → Array Byte → N
 
 /-! ## Loading exports and running calls -/
 
+def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
+  if ← p.isDir then
+    let fs ← p.walkDir
+    return (fs.filter (·.extension == some "ssa")).qsort (·.toString < ·.toString)
+  else return #[p]
+
 /-- A parsed export: each section's tables and function, the signature, the global image. -/
 structure Loaded where
   sections : Array (String × Tables × Func × Ctx)
@@ -265,7 +273,31 @@ def load (path : System.FilePath) : IO (Except String Loaded) := do
       | none => return .error s!"{path}: signature outside the difftest's types"
       | some (ps, rs) =>
         return .ok { sections := secs, params := ps, results := rs,
-                     env := { Env.p1 with globals := globalImage e } }
+                     env := { Env.runtime with globals := globalImage e } }
+
+/-- Program functions of an export directory, for calls (`Env.withFuncs`): each file's
+function by link symbol name (`<pkg>.<name>`), section 0, and the union of the files' global
+images. -/
+def loadProgram (dir : String) : IO (Std.HashMap String Ctx × List (String × Alloc)) := do
+  let mut funcs : Std.HashMap String Ctx := {}
+  let mut globals : Std.HashMap String Alloc := {}
+  for path in ← ssaFiles dir do
+    let .ok e := parseExport (← IO.FS.readBinFile path) | continue
+    let some s0 := e.sections[0]? | continue
+    let tabs := e.tablesAt 0
+    funcs := funcs.insert (e.pkg.toStringLossy ++ "." ++ e.name.toStringLossy) (Ctx.make tabs s0.func)
+    for (k, a) in globalImage e do
+      if !globals.contains k then globals := globals.insert k a
+  return (funcs, globals.toList)
+
+/-- Block entries per activation of a called program function. -/
+def calleeFuel : Nat := 100000
+
+/-- The environment of a program: the runtime contracts, the program's globals, and its
+functions as callees nested at most 1000 deep. -/
+def programEnv (dir : String) : IO Env := do
+  let (funcs, globals) ← loadProgram dir
+  return ({ Env.runtime with globals }).withFuncs (fun n => funcs[n]?) calleeFuel 1000
 
 /-- Block entries per run against native results (the test programs loop at most a few
 thousand times). -/
@@ -411,6 +443,7 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
   if calls.size != native.size then
     IO.eprintln s!"{calls.size} calls but {native.size} native results"
     return 1
+  let env ← programEnv dir
   let mut cache : Std.HashMap String Loaded := {}
   let mut nIn := 0
   let mut agree0 := 0
@@ -428,7 +461,7 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
       | none =>
         match ← load (funcPath dir name) with
         | .error e => IO.eprintln e; return 1
-        | .ok l => pure l
+        | .ok l => pure { l with env }
     cache := cache.insert name l
     let want := match native[i]!.splitOn " -> " with
       | [c, o] => if c == call then o else s!"<native line {i} is for {c}>"
@@ -437,6 +470,8 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
     let kind := ((want.splitOn "\t").headD "").splitOn " " |>.headD ""
     outcomes := outcomes.insert kind (outcomes.getD kind 0 + 1)
     let mut allOk := true
+    -- one mismatch line per call: the first differing section
+    let mut allOk' := true
     let last := l.sections.size - 1
     for k in [0:l.sections.size] do
       let got := runSection l k toks.tail
@@ -446,8 +481,9 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
         if k == last then agreeLast := agreeLast + 1
       else
         allOk := false
-        if bad < 40 then
+        if allOk' then
           IO.println s!"MISMATCH {call} section {k} ({l.sections[k]!.1}): lean {got}, native {want}"
+          allOk' := false
         bad := bad + 1
     if allOk then agreeAll := agreeAll + 1
   let kinds := outcomes.toList.map (fun (k, n) => s!"{k} {n}")
@@ -455,12 +491,6 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
     {sectionRuns} section runs; native agrees with section 0 on {agree0}, with the last section \
     on {agreeLast}, with every section on {agreeAll}; {bad} section mismatches"
   return if bad == 0 && nIn > 0 then 0 else 1
-
-def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
-  if ← p.isDir then
-    let fs ← p.walkDir
-    return (fs.filter (·.extension == some "ssa")).qsort (·.toString < ·.toString)
-  else return #[p]
 
 structure CStats where
   files : Nat := 0
@@ -551,6 +581,8 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
 and the values the block computed (for debugging a stuck or differing run). -/
 def trace (path : String) (k : Nat) (texts : List String) : IO UInt32 := do
   let .ok l ← load path | IO.eprintln "load failed"; return 1
+  let dir := ((System.FilePath.mk path).parent.map (·.toString)).getD "."
+  let l := { l with env := ← programEnv dir }
   let some (_, tabs, f, ctx) := l.sections[k]? | IO.eprintln "no section"; return 1
   let .ok (imgs, mem) := buildArgs tabs l.params texts | IO.eprintln "bad args"; return 1
   let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)

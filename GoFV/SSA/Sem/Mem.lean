@@ -139,7 +139,9 @@ def bytesPtr? (bs : Array Byte) : Option Ptr :=
   | _ => none
 
 /-- An integer of width `w` from its bytes: concrete bytes, or (64-bit) the concrete address
-of a stored pointer; otherwise `poison`. -/
+of a stored pointer; a stored pointer to a global, which has no concrete address, stays a
+pointer (a `uintptr` holding a code or data address, e.g. a closure's code word); otherwise
+`poison`. -/
 def decodeInt (w : Width) (bs : Array Byte) : Val :=
   match bytesNat? bs with
   | some n => .int w (BitVec.ofNat w.bits n)
@@ -147,7 +149,7 @@ def decodeInt (w : Width) (bs : Array Byte) : Val :=
     match w, bytesPtr? bs with
     | .w64, some p => match p.addr? with
       | some a => .int .w64 a
-      | none => .poison
+      | none => .ptr p
     | _, _ => .poison
 
 /-- A pointer from 8 bytes: its fragments, or a concrete address. -/

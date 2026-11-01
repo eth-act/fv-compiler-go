@@ -200,7 +200,7 @@ theorem post_panic {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Na
   rw [← npIn_schedNodes hownP hndP] at hseq
   have hrnpP : npIn (schedNodes f P).toList r = true := by
     rw [npIn_schedNodes hownP hndP]
-    simp [npOf, hrP, hrv, hrnp, CopyElim.prio_ne_zero_of_panic hrop]
+    simp [npOf, hrP, hrv, hrnp, prio_panicking hrop]
   have htr := Order.transfer_rank hspecS.topo hspecS.pureFirst hspecT.topo (fun _ => npIn_iff)
     hseq.symm hk hk' hrnpP (fun a y ha hy hay hy' =>
       .direct (hsubN a ha) (.arg (hsubN a ha) hy' (by rw [hargsN y hy]; exact hay)))
@@ -411,7 +411,7 @@ theorem dom_panic {tabs : Tables} {env : Env} {frS frT : Frame} {i : Nat}
   have hseq := (filter_split hseqA (S.np_disj hD hP)).1
   rw [← npIn_schedNodes hownD hndD] at hseq
   have hrnpD' : npOf f D r = true := by
-    simp [npOf, hrD, hrv, hrnp, CopyElim.prio_ne_zero_of_panic hrop]
+    simp [npOf, hrD, hrv, hrnp, prio_panicking hrop]
   have hrnpD : npIn (schedNodes f D).toList r = true := by
     rw [npIn_schedNodes hownD hndD]; exact hrnpD'
   have htr := Order.transfer_rank hspecS.topo hspecS.pureFirst hspecT.topo (fun _ => npIn_iff)

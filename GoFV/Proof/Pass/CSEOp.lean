@@ -3,7 +3,8 @@ import GoFV.SSA.Sem.Run
 /-!
 # cse: facts about `evalOp` at single ops
 
-`evalOp_tail`: a value whose op is not a root and not `InitMem`/`Arg`/`ArgIntReg` takes
+`evalOp_tail`: a value whose op is not a root and not `InitMem`/`Arg`/`ArgIntReg`/
+`GetClosurePtr` takes
 `evalOp`'s last arm (`frameVal`, else `evalPure`). From it: `evalOp_total` (such values and
 `InitMem` always evaluate), `evalOp_ok_id` (two non-root values with the same op, aux and
 auxint that both evaluate give the same result: IDs occur only in `stuck` messages),
@@ -24,36 +25,42 @@ theorem frameVal_op_aux {ctx : Ctx} {u v : Value} (hop : v.op = u.op) (hax : v.a
 /-- `evalOp`'s last arm, with its `isRoot` test. -/
 private theorem evalOp_tail_ite {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hr : isRoot v.op = false) (hi : v.op ≠ .InitMem)
-    (ha : v.op ≠ .Arg) (hb : v.op ≠ .ArgIntReg) :
+    (ha : v.op ≠ .Arg) (hb : v.op ≠ .ArgIntReg) (hc : v.op ≠ .GetClosurePtr) :
     evalOp env ctx fr v argv ty =
       match frameVal ctx v with
       | some x => pure x
       | none =>
-        if isRoot v.op then .stuck s!"v{v.id}: {v.op.name} is not in phases P1/P2"
+        if isRoot v.op then .stuck s!"v{v.id}: {v.op.name} is not in phases P1–P3"
         else pure (evalPure v.op ty v.auxInt v.aux argv) := by
   delta evalOp
-  generalize v.op = op at hr hi ha hb ⊢
+  generalize v.op = op at hr hi ha hb hc ⊢
   cases op
-  -- `rfl` closes the ops of the last arm; the 17 others contradict a hypothesis. (Trying the
+  -- `rfl` closes the ops of the last arm; the others contradict a hypothesis. (Trying the
   -- hypotheses first on all 446 goals is slower: `isRoot` compares `String`s.)
   all_goals (try rfl)
   all_goals first
-    | exact absurd rfl hi | exact absurd rfl ha | exact absurd rfl hb
+    | exact absurd rfl hi | exact absurd rfl ha | exact absurd rfl hb | exact absurd rfl hc
     | exact absurd hr.symm Bool.false_ne_true
 
-/-- A non-root value other than `InitMem`, `Arg`, `ArgIntReg` takes `evalOp`'s last arm. -/
+/-- A non-root value other than `InitMem`, `Arg`, `ArgIntReg`, `GetClosurePtr` takes
+`evalOp`'s last arm. -/
 theorem evalOp_tail {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hr : isRoot v.op = false) (hi : v.op ≠ .InitMem) (ha : v.op ≠ .Arg)
-    (hb : v.op ≠ .ArgIntReg) :
+    (hb : v.op ≠ .ArgIntReg) (hc : v.op ≠ .GetClosurePtr) :
     evalOp env ctx fr v argv ty =
       match frameVal ctx v with
       | some x => pure x
       | none => pure (evalPure v.op ty v.auxInt v.aux argv) := by
-  rw [evalOp_tail_ite hr hi ha hb, hr]
+  rw [evalOp_tail_ite hr hi ha hb hc, hr]
   rfl
 
 theorem evalOp_initMem {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} (hop : v.op = .InitMem) : evalOp env ctx fr v argv ty = .ok (.mem fr.mem0) := by
+  delta evalOp; rw [hop]; rfl
+
+theorem evalOp_closurePtr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (hop : v.op = .GetClosurePtr) :
+    evalOp env ctx fr v argv ty = .ok (fr.closure.getD .poison) := by
   delta evalOp; rw [hop]; rfl
 
 /-- **Non-root values evaluate**, unless they are `Arg`/`ArgIntReg` (parameter lookups). -/
@@ -62,7 +69,9 @@ theorem evalOp_total {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Li
     ∃ r, evalOp env ctx fr v argv ty = .ok r := by
   by_cases hi : v.op = .InitMem
   · exact ⟨_, evalOp_initMem hi⟩
-  rw [evalOp_tail hr hi ha hb]
+  by_cases hc : v.op = .GetClosurePtr
+  · exact ⟨_, evalOp_closurePtr hc⟩
+  rw [evalOp_tail hr hi ha hb hc]
   cases frameVal ctx v <;> exact ⟨_, rfl⟩
 
 /-- Two non-root values with the same op, aux and auxint that both evaluate (on the same
@@ -75,6 +84,10 @@ theorem evalOp_ok_id {env : Env} {ctx : Ctx} {fr : Frame} {u v : Value} {argv : 
   by_cases hi : u.op = .InitMem
   · rw [evalOp_initMem hi] at h1
     rw [evalOp_initMem (hop.trans hi)] at h2
+    exact (Res.ok.inj h1).symm.trans (Res.ok.inj h2)
+  by_cases hc : u.op = .GetClosurePtr
+  · rw [evalOp_closurePtr hc] at h1
+    rw [evalOp_closurePtr (hop.trans hc)] at h2
     exact (Res.ok.inj h1).symm.trans (Res.ok.inj h2)
   -- `Arg`/`ArgIntReg`: the same lookup on both sides, or `stuck`
   by_cases ha : u.op = .Arg
@@ -91,8 +104,8 @@ theorem evalOp_ok_id {env : Env} {ctx : Ctx} {fr : Frame} {u v : Value} {argv : 
     rcases o with _ | ⟨_, kind⟩
     · cases h1
     · cases kind <;> first | exact Res.ok.inj (h1.symm.trans h2) | cases h1
-  rw [evalOp_tail hr hi ha hb] at h1
-  rw [evalOp_tail (hop ▸ hr) (hop ▸ hi) (hop ▸ ha) (hop ▸ hb), frameVal_op_aux hop hax, hop,
+  rw [evalOp_tail hr hi ha hb hc] at h1
+  rw [evalOp_tail (hop ▸ hr) (hop ▸ hi) (hop ▸ ha) (hop ▸ hb) (hop ▸ hc), frameVal_op_aux hop hax, hop,
     hax, hai] at h2
   exact Res.ok.inj (h1.symm.trans h2)
 
@@ -138,7 +151,8 @@ theorem evalOp_load {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
     evalOp env ctx fr v argv ty = .ok (evalPure .Load ty v.auxInt v.aux argv) := by
   have hr : isRoot v.op = false := by rw [hop]; decide
   have hf : frameVal ctx v = none := by delta frameVal; rw [hop]
-  rw [evalOp_tail hr (by rw [hop]; decide) (by rw [hop]; decide) (by rw [hop]; decide), hf, hop]
+  rw [evalOp_tail hr (by rw [hop]; decide) (by rw [hop]; decide) (by rw [hop]; decide)
+    (by rw [hop]; decide), hf, hop]
   rfl
 
 theorem argLen_zero_of_arg {op : Op} (h : op = .Arg ∨ op = .ArgIntReg) : op.argLen = 0 := by

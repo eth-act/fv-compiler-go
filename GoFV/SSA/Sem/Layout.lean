@@ -105,7 +105,7 @@ def Val.hasTy : Val → Ty → Bool
   | .int w _, .int w' => w == w'
   | .bool _, .bool => true
   | .mem _, .mem => true
-  | .tuple vs, .tuple ts => Val.hasTyList vs ts
+  | .tuple vs, .tuple ts => Val.hasTyPre vs ts
   | .ptr _, .ptr _ => true
   | .agg vs, .agg fs _ => Val.hasTyList vs (fs.map (·.2))
   | .blob bs, .blob n => bs.length == n
@@ -115,6 +115,12 @@ def Val.hasTyList : List Val → List Ty → Bool
   | [], [] => true
   | v :: vs, t :: ts => Val.hasTy v t && Val.hasTyList vs ts
   | _, _ => false
+/-- The first components of `vs` have the shapes `ts` (a call's tuple carries its results'
+addresses after the components of its type, §5). -/
+def Val.hasTyPre : List Val → List Ty → Bool
+  | _, [] => true
+  | v :: vs, t :: ts => Val.hasTy v t && Val.hasTyPre vs ts
+  | [], _ :: _ => false
 end
 
 end GoFV.SSA.Sem
