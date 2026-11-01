@@ -115,7 +115,7 @@ theorem phi_not_term_g {g : Func} :
 theorem termsOK_of_topo {f : Func} {tabs : Tables} {G : Frame} :
     ∀ {L : List ID} {V : ID → Prop}, TopoRem (argsF f) L → (∀ x ∈ L, Reg G x) →
       (∀ x ∈ L, ∀ v, f.value? x = some v → termOp v.op = true →
-        (∀ a ∈ v.args, V a ∨ a ∈ L) ∧ G.regs[x]? = some (some ((evalPure v.op (tabs.ty v.type)
+        (∀ a ∈ v.args, V a ∨ a ∈ L) ∧ G.regs[x]? = some (some ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type)
           v.auxInt v.aux (v.args.toList.map (rv G))).retype (tabs.ty v.type)))) →
       TermsOK f.value? tabs G V L
   | [], _, _, _, _ => trivial

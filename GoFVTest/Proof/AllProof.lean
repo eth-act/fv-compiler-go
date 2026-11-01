@@ -202,6 +202,7 @@ import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
 import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.Den
+import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
 import GoFV.Proof.Rules.Div3
@@ -258,6 +259,7 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
 import GoFV.Proof.Rules.OffPtr
+import GoFV.Proof.Rules.OpVal
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
 import GoFV.Proof.Rules.Or3
@@ -309,6 +311,7 @@ import GoFV.Proof.Sched
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
+import GoFV.Proof.TablesExt
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Term
 import GoFV.Proof.TermStep

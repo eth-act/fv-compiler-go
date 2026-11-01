@@ -7,7 +7,7 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, `divisible` and `divmod` restricted to the rules with a merged
-`Rule.Sound` lemma (value rules) or `BlockRule.Sound` lemma (block rules, issue #151;
+`Rule.Sound` or `Rule.SoundT` lemma (value rules) or `BlockRule.Sound` lemma (block rules, issue #151;
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
 (`GoFV.Opt.optProven`, …; issue #113).
 -/

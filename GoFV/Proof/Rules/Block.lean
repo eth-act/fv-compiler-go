@@ -1,4 +1,4 @@
-import GoFV.Proof.Rules.Den
+import GoFV.Proof.Rules.DenT
 
 /-!
 # The obligation of a block rule (issue #151, `docs/proofs/rules.md`)
@@ -12,7 +12,7 @@ the *value* rule on the control
 * `ctrl && cond => (Not x)` for `(If x no yes)` (swapped), `ctrl && cond => x` for `(If x yes no)`,
 * `ctrl && cond => (ConstBool [!swapped])` for `(First …)`,
 
-is sound (`BlockRule.ctrlRule`, `Rule.Sound`): the terminator after the rewrite refines the one
+is sound (`BlockRule.ctrlRule`, `Rule.SoundT`): the terminator after the rewrite refines the one
 before (`GoFV.Proof.Pass.Rewrite.effStep`). `BlockRule.Sound` is that obligation; the generic block
 rules (`generic.rules:1064–1066`) are all of this form. Other shapes (more controls, other kinds,
 block aux fields) have no `ctrlRule` and cannot be proved.
@@ -47,8 +47,9 @@ def BlockRule.ctrlRule (br : BlockRule) : Option Rule :=
   | _, _, _, _, _, _ => none
 
 /-- **The obligation of a block rule**: it is an `If` rule whose control rule (`ctrlRule`) is
-sound. -/
+sound (`Rule.SoundT`; `Rule.soundT_of_sound` for a control rule without table-evaluated
+nodes). -/
 def BlockRule.Sound (br : BlockRule) : Prop :=
-  ∃ cr, BlockRule.ctrlRule br = some cr ∧ Rule.Sound cr
+  ∃ cr, BlockRule.ctrlRule br = some cr ∧ Rule.SoundT cr
 
 end GoFV.Proof.Rules

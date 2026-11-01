@@ -64,12 +64,14 @@ def swap01 {α : Type} : List α → List α
   | a :: b :: l => b :: a :: l
   | l => l
 
-/-- Ops evaluated by `evalPure` (not roots, phis or frame-dependent ops): the nodes of terms. -/
+/-- The nodes of terms: ops evaluated by `evalPure`, and `Addr`/`ConstString`, which the
+semantics evaluates from the tables alone (`GoFV.Proof.Rules.opVal`, issue #151); not roots,
+phis or activation-dependent ops. -/
 def termOp (op : Op) : Bool :=
   !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .ArgFloatReg | .PanicBounds |
     .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB |
-    .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr | .Addr |
-    .ConstString | .GetClosurePtr | .GetCallerSP | .Invalid)
+    .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr |
+    .GetClosurePtr | .GetCallerSP | .Invalid)
 
 /-- The ops whose first two arguments commute (`GoFV.Proof.Rules.commOpsP1`): a `commute` node
 is matched swapped only at these. -/
@@ -290,10 +292,19 @@ def constTop (op : Op) (ty : Sem.Ty) : Bool :=
   (op matches .ConstNil | .ConstSlice | .ConstInterface) &&
     (Sem.evalPure op ty 0 none []).hasTy ty
 
+/-- The string shape (`Sem.tyOf` of a `STRING`). -/
+def strTy : Sem.Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
+
+/-- Table-evaluated ops (`GoFV.Proof.Rules.opVal`) at the shape of their value: `Addr` (a
+pointer or `poison`) at a pointer shape, `ConstString` (a string or `poison`) at the string
+shape. -/
+def frameTop (op : Op) (ty : Sem.Ty) : Bool :=
+  (op == .Addr && isPtrTy ty) || (op == .ConstString && GoFV.Opt.CSE.tyEq ty strTy)
+
 /-- The top op of a match produces a value of its type's shape `ty` (`natShape`, `ptrTop` under
-`Pat.argsOK`, `constTop`). -/
+`Pat.argsOK`, `constTop`, `frameTop`). -/
 def topOK (op : Op) (ty : Sem.Ty) : Bool :=
-  natShape op ty || ptrTop op ty || constTop op ty
+  natShape op ty || ptrTop op ty || constTop op ty || frameTop op ty
 
 mutual
 /-- Every leaf of the pattern has an integer, boolean or pointer shape. `Pat.typed` asks of the
@@ -352,6 +363,26 @@ def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : N
     (nodes.zip us).all fun (n, u) => nodeOK tabs ev or σ I ids topTy n u
   | _, _, _ => false
 
+/-- The string aux bound to rule variable `x` (at the aux field of the pattern node
+`Pat.auxPos x`), on the instance `e`. -/
+def strOf (tabs : Tables) (e : PEnv) (pat : Pat) (x : Nat) : Option (GoStr × GoStr) :=
+  (Pat.auxPos x [] pat).bind fun p => strAux? tabs (e.aux p)
+
+/-- The frame helpers of a built node `u` of result node `n` (`GoFV.Proof.Rules.FrameOK`): an
+aux `fe.StringData(x)` names the data symbol of the non-empty string aux bound to `x`, an
+auxint `int64(len(x))` is the string's length. -/
+def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) : Bool :=
+  (match n.aux.bind strDataVar? with
+    | some x => match strOf tabs e pat x with
+      | some (s, d) => s.size != 0 && symName? tabs u.aux == some d
+      | none => false
+    | none => true) &&
+  (match n.auxInt.bind lenVar? with
+    | some x => match strOf tabs e pat x with
+      | some (s, _) => u.auxInt == Int64.ofNat s.size
+      | none => false
+    | none => true)
+
 /-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The definition at `v` is
 `v`'s (its ID, which the result's nodes are compared with), and the matched values below the
 top are not `v` (no cyclic match). -/
@@ -367,12 +398,12 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
       | some (I, _) =>
         let e := env tabs M I
         let vtys := r.vars.map (·.ty)
-        let σ := sigma e r.pat
+        let σ := sigmaT tabs e r.pat
         let nodes := match r.result, defs with
           | .build ns, _ :: us => ns.zip us
           | _, _ => []
         let or := oracle vtys tabs nodes
-        let ev := evalE vtys σ or e (Pat.den e [] r.pat)
+        let ev := evalE vtys σ or e (Pat.denT tabs e [] r.pat)
         I.tail.all (·.2 != v) &&
         consOK ev σ e I [] r.pat && wfOK e [] r.pat &&
         (match r.cond with
@@ -383,7 +414,8 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | _ => false) &&
         Pat.argsOK e.ty [] r.pat &&
         leavesOK tabs M I [] r.pat &&
-        resultOK tabs M ev or σ I r x defs
+        resultOK tabs M ev or σ I r x defs &&
+        nodes.all fun (n, u) => frameNodeOK tabs e r.pat n u
 
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
 pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/
@@ -525,8 +557,8 @@ def atomsOf (h : Func) (b : Block) : List ID :=
 /-- Atoms whose evaluation neither panics nor changes memory, which the rewrite pass may delete
 when they are dead. -/
 def dropAtom (op : Op) : Bool :=
-  op matches .Phi | .Arg | .ArgIntReg | .ArgFloatReg | .SP | .LocalAddr | .Addr | .ConstString |
-    .GetClosurePtr | .GetCallerSP
+  op matches .Phi | .Arg | .ArgIntReg | .ArgFloatReg | .SP | .LocalAddr | .GetClosurePtr |
+    .GetCallerSP
 
 /-- `f` and `g` have the same blocks, the atoms of `g` are atoms of `f` with the same fields and
 block, the atoms only `f` has are droppable (`dropAtom`), and each block evaluates its roots in
