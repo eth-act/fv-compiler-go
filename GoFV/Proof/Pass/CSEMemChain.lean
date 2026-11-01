@@ -332,6 +332,11 @@ theorem baseOff_rel (H : Avail env tabs f fr A) : ∀ (n : Nat) (p : ID) (off : 
 def blkOf : CSE.Alloc → Blk
   | .global s => .global s
   | .local n => .local 0 n
+  | .temp n => .temp 0 n
+
+theorem blkOf_frameAlloc (tabs : Tables) (n : AuxRef) :
+    blkOf (CSE.frameAlloc tabs n) = frameBlk tabs 0 n := by
+  unfold CSE.frameAlloc frameBlk; split <;> rfl
 
 theorem blkOf_inj {a b : CSE.Alloc} (h : blkOf a = blkOf b) : a = b := by
   cases a <;> cases b <;> simp_all [blkOf]
@@ -381,8 +386,9 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
           rw [hx] at ha; cases ha
           have he := H.eval hb hv (by rw [hop]; decide) hr
           obtain ⟨argv, r, -, ho, rfl⟩ := evalValue_ok he
-          have hf : frameVal (Ctx.make tabs f) x = some (.ptr ⟨.local 0 n, 0⟩) := by
-            simp only [frameVal, hop, hx]; rfl
+          have hf : frameVal (Ctx.make tabs f) x =
+              some (.ptr ⟨blkOf (CSE.frameAlloc tabs n), 0⟩) := by
+            rw [blkOf_frameAlloc]; simp only [frameVal, hop, hx]; rfl
           rw [evalOp_frameVal (.inr hop) hf] at ho
           cases ho
           rw [tys_getD]; exact retype_keep hk _

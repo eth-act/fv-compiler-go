@@ -44,6 +44,11 @@ inductive Blk where
   | local (act : Nat) (name : Nat)
   /-- The outgoing-arguments area of activation `act` (what `SP` points to). -/
   | outargs (act : Nat)
+  /-- A `PAUTO` of activation `act` whose address the program never takes as a user
+  variable (not `addrtaken && !autotmp`): it has the address of `local act name`, but no
+  integer converts back to it (`Ptr.ofAddr` never returns it, §3.3), so a conjured pointer
+  points into no allocation. -/
+  | temp (act : Nat) (name : Nat)
   | heap (n : Nat)
   deriving DecidableEq, Repr, Inhabited, Hashable
 
@@ -142,6 +147,7 @@ def renderBlk : Blk → String
   | .global s => s
   | .local a n => s!"local{a}.a{n}"
   | .outargs a => s!"outargs{a}"
+  | .temp a n => s!"temp{a}.a{n}"
   | .heap n => s!"heap{n}"
 
 /-- Short rendering for test output: integers signed (`toInt`), pointers as block+offset. -/

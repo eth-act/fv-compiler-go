@@ -668,7 +668,8 @@ theorem frameVal_local_safe {ctx : Ctx} {v : Value} (h : v.op = .LocalAddr)
     (ha : v.aux.isSome = true) : ∃ x, frameVal ctx v = some x ∧ Safe x := by
   unfold frameVal; rw [h]
   obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 ha
-  simp [hn, Safe]
+  simp only [hn, Option.map_some, Option.some.injEq, exists_eq_left', Safe]
+  unfold frameBlk; split <;> nofun
 
 /-- **`safePtr` values are `Safe`** in the source's frames. -/
 theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :

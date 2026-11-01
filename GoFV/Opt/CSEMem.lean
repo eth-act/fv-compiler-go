@@ -58,7 +58,13 @@ def baseOff (tabs : Tables) (f : Func) : Nat → ID → Int → ID × Int
 inductive Alloc where
   | global (name : String)
   | local (n : AuxRef)
+  /-- A frame variable whose block is `Blk.temp` (`Tables.forgeable`). -/
+  | temp (n : AuxRef)
   deriving DecidableEq
+
+/-- The allocation of frame variable `n` (`Sem.frameBlk`). -/
+def frameAlloc (tabs : Tables) (n : AuxRef) : Alloc :=
+  if tabs.forgeable n then .local n else .temp n
 
 /-- The allocation of base `b`, if it is an `Addr` of a symbol (not `bool`-shaped) or a
 pointer-typed `LocalAddr` with a name. -/
@@ -69,7 +75,7 @@ def allocOf (tabs : Tables) (f : Func) (b : ID) : Option Alloc :=
       match x.aux.bind tabs.aux? with
       | some { kind := .sym name .., .. } => some (.global name.toStringLossy)
       | _ => none
-    else if x.op == .LocalAddr && keepsPtr (valShape tabs f x) then x.aux.map .local
+    else if x.op == .LocalAddr && keepsPtr (valShape tabs f x) then x.aux.map (frameAlloc tabs)
     else none
   | none => none
 

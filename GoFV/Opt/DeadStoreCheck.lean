@@ -108,7 +108,7 @@ def pendStep (tabs : Tables) (f g : Func) (P : ID → List Iv) (x : ID) : Option
         | none => none
     else if fv.op == .VarDef then
       some (match fv.aux with
-        | some n => pm.filter (·.1 != .local n)
+        | some n => pm.filter (·.1 != CSE.frameAlloc tabs n)
         | none => pm)
     else some []
   | _, _ => some []

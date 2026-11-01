@@ -23,7 +23,7 @@ Globals have no concrete address in the semantics (`none`). -/
 def Blk.base? : Blk → Option Nat
   | .nil => some 0
   | .heap n => some ((n + 1) * 2 ^ 40)
-  | .local a k => some (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24)
+  | .local a k | .temp a k => some (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24)
   | .outargs a => some (2 ^ 62 + a * 2 ^ 42)
   | .global _ => none
 
@@ -109,7 +109,7 @@ def free (m : Mem) (b : Blk) : Mem := { m with blocks := m.blocks.filter (·.1 !
 which have smaller activation numbers, and the heap and globals are). -/
 def dropFrames (act : Nat) (m : Mem) : Mem :=
   { m with blocks := m.blocks.filter fun (b, _) => match b with
-    | .local a _ | .outargs a => decide (a < act)
+    | .local a _ | .temp a _ | .outargs a => decide (a < act)
     | _ => true }
 
 end Mem
