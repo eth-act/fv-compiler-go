@@ -39,7 +39,7 @@ theorem zext64 {n : Nat} (x : BitVec n) (h2 : n ≤ 64) :
   simp [this, BitVec.getLsbD_of_ge x i (by omega)]
 
 theorem and_not_of_shift_and (A K O : BitVec 64) (h1 : A &&& K = 0) (h2 : A &&& O = A) :
-    A &&& (K ||| ~~~O) = 0 := by bv_decide
+    A &&& (K ||| ~~~O) = 0 := by kb_bits
 
 theorem lsh_core (Y ak : BitVec 64) (m : Nat) (h : Y &&& ak = 0) :
     (Y <<< m) &&& ((ak <<< m) ||| lowMask m) = 0 := by
@@ -49,7 +49,7 @@ theorem lsh_core (Y ak : BitVec 64) (m : Nat) (h : Y &&& ak = 0) :
   · rw [← BitVec.shiftLeft_and_distrib, BitVec.and_allOnes]
 
 theorem rshu_pre (Y ak L : BitVec 64) (h : Y &&& ak = 0) : (Y &&& L) &&& (ak ||| ~~~L) = 0 := by
-  bv_decide
+  kb_bits
 
 theorem rshu_core (Y ak L : BitVec 64) (m : Nat) (h : Y &&& ak = 0) :
     ((Y &&& L) >>> m) &&& (((ak ||| ~~~L) >>> m) ||| ~~~(BitVec.allOnes 64 >>> m)) = 0 := by
@@ -58,7 +58,7 @@ theorem rshu_core (Y ak L : BitVec 64) (m : Nat) (h : Y &&& ak = 0) :
   · rw [← BitVec.ushiftRight_and_distrib, BitVec.and_allOnes]
 
 theorem xor_and_mask (X a L : BitVec 64) : (X &&& L) ^^^ (a &&& L) = (X ^^^ a) &&& L := by
-  bv_decide
+  kb_bits
 
 theorem agree_xor_and {a ak X : BitVec 64} (h : Agree (a, ak) X) : (X ^^^ a) &&& ak = 0 := h
 
@@ -114,10 +114,10 @@ theorem doShift_sound (s : ShK) (w : Width) (x : BitVec w.bits) {r : BB} (m : Na
 
 
 theorem feasible_lt_core (Z y yk L : BitVec 64) (h : (Z ^^^ y) &&& yk = 0) :
-    ((Z &&& L) ^^^ y) &&& yk &&& L = 0 := by bv_decide
+    ((Z &&& L) ^^^ y) &&& yk &&& L = 0 := by kb_bits
 
 theorem feasible_ge_core (Z y yk L : BitVec 64) (h : (Z ^^^ y) &&& yk = 0) :
-    (Z &&& L) &&& (((y &&& yk) ||| ~~~yk) &&& L) = Z &&& L := by bv_decide
+    (Z &&& L) &&& (((y &&& yk) ||| ~~~yk) &&& L) = Z &&& L := by kb_bits
 
 /-- The run's effective shift amount is one the checker considers. -/
 theorem feasible_of (w a : Width) (bounded : Bool) {y yk : BitVec 64} (S : BitVec a.bits)

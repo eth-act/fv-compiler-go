@@ -1,5 +1,5 @@
 import GoFV.Opt.KnownBitsCheck
-import Std.Tactic.BVDecide
+import Lean
 
 /-!
 # Known bits on 64-bit patterns (issue #26)
@@ -7,7 +7,9 @@ import Std.Tactic.BVDecide
 The 64-bit identities behind the soundness of known bits' transfer functions
 (`GoFV.Opt.KnownBits.tk`, `doShift`, `norm`, `incl`): `Agree r z` (`z` has the bits `r` claims),
 `AgreeLo n r z` (on the low `n` bits). Each is proved once for 64-bit patterns (integers
-sign-extended from their width, booleans 0/1), by `bv_decide` on bitwise formulas.
+sign-extended from their width, booleans 0/1), bit by bit (`kb_bits`: each equation of
+64-bit vectors at bit `i` and bit 0, then `grind` on the Boolean formulas; no `bv_decide`, so no
+evaluation axioms).
 -/
 
 namespace GoFV.Proof.KnownBits
@@ -23,6 +25,32 @@ def AgreeLo (n : Nat) (r : BB) (z : BitVec 64) : Prop := ((z ^^^ r.1) &&& r.2).s
 /-- An entry's value has no bit it does not claim known. -/
 def Masked (r : BB) : Prop := r.1 &&& ~~~r.2 = 0
 
+theorem bv_eq_iff_getLsbD {n : Nat} {x y : BitVec n} :
+    x = y ↔ ∀ i, i < n → x.getLsbD i = y.getLsbD i :=
+  ⟨fun h _ _ => h ▸ rfl, fun h => BitVec.eq_of_getLsbD_eq h⟩
+
+open Lean Elab Tactic in
+/-- Instantiate every hypothesis `∀ j, j < n → _` at `0` (a copy) and at `i` (in place), where
+the bound is `omega`'s. -/
+elab "kb_specialize_all " i:term:max : tactic => withMainContext do
+  for d in ← getLCtx do
+    if d.isImplementationDetail then continue
+    let n := mkIdent d.userName
+    let s ← saveState
+    try Term.withoutErrToSorry <| evalTactic (← `(tactic| have := $n 0 (by omega))) catch _ => s.restore
+    let s ← saveState
+    try Term.withoutErrToSorry <| evalTactic (← `(tactic| specialize $n $i (by omega))) catch _ => s.restore
+
+/-- A bitwise identity of bit vectors (`&&&`, `|||`, `^^^`, `~~~`, `0`, `1`, all ones,
+`setWidth`) from bitwise hypotheses, bit by bit. -/
+macro "kb_bits" : tactic => `(tactic| (
+  simp only [Agree, AgreeLo, Masked, bv_eq_iff_getLsbD] at *
+  intro i hi
+  kb_specialize_all i
+  simp only [BitVec.getLsbD_and, BitVec.getLsbD_or, BitVec.getLsbD_xor, BitVec.getLsbD_not,
+    BitVec.getLsbD_allOnes, BitVec.getLsbD_setWidth, BitVec.getLsbD_zero, BitVec.getLsbD_one] at *
+  grind))
+
 theorem Agree.lo {r : BB} {z : BitVec 64} (h : Agree r z) (n : Nat) : AgreeLo n r z := by
   unfold AgreeLo; rw [h]; simp
 
@@ -35,69 +63,69 @@ theorem Agree.incl {r e : BB} {z : BitVec 64} (h : incl r e = true) (hz : Agree 
   obtain ⟨h1, h2⟩ := incl_spec h
   obtain ⟨v, k⟩ := r; obtain ⟨v', k'⟩ := e
   simp only [Agree] at *
-  bv_decide
+  kb_bits
 
 theorem incl_known_zero {v e1 e2 : BitVec 64} (h : incl (v, 0) (e1, e2) = true) : e2 = 0 := by
-  have := (incl_spec h).1; simp only at this; bv_decide
+  have := (incl_spec h).1; simp only at this; kb_bits
 
 theorem ent_masked (E : Array (Int64 × Int64)) (a : GoFV.SSA.ID) : Masked (ent E a) := by
-  simp only [Masked, ent]; bv_decide
+  simp only [Masked, ent]; kb_bits
 
 /-! ## Bitwise families -/
 
 theorem agree_and {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree (b, bk) Y)
     (ma : Masked (a, ak)) (mb : Masked (b, bk)) :
     Agree (a &&& b, (a &&& b) ||| (~~~a &&& ak) ||| (~~~b &&& bk)) (X &&& Y) := by
-  simp only [Agree, Masked] at *; bv_decide
+  simp only [Agree, Masked] at *; kb_bits
 
 theorem agree_or {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree (b, bk) Y)
     (ma : Masked (a, ak)) (mb : Masked (b, bk)) :
     Agree (a ||| b, a ||| b ||| (~~~a &&& ~~~b &&& (ak &&& bk))) (X ||| Y) := by
-  simp only [Agree, Masked] at *; bv_decide
+  simp only [Agree, Masked] at *; kb_bits
 
 theorem agree_xor {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree (b, bk) Y) :
     Agree (a ^^^ b, ak &&& bk) (X ^^^ Y) := by
-  simp only [Agree] at *; bv_decide
+  simp only [Agree] at *; kb_bits
 
 theorem agree_not {a ak X : BitVec 64} (ha : Agree (a, ak) X) : Agree (~~~a, ak) (~~~X) := by
-  simp only [Agree] at *; bv_decide
+  simp only [Agree] at *; kb_bits
 
 /-- `AndB` with a `false` side: the other side's entry is only masked. -/
 theorem agreeLo_and_false_l {a ak b bk : BitVec 64} (ha : Agree (a, ak) 0) (mb : Masked (b, bk))
     (ma : Masked (a, ak)) :
     AgreeLo 1 (a &&& b, (a &&& b) ||| (~~~a &&& ak) ||| (~~~b &&& bk)) 0 := by
-  simp only [Agree, AgreeLo, Masked] at *; bv_decide
+  simp only [Agree, AgreeLo, Masked] at *; kb_bits
 
 theorem agreeLo_and_false_r {a ak b bk : BitVec 64} (hb : Agree (b, bk) 0) (mb : Masked (b, bk))
     (ma : Masked (a, ak)) :
     AgreeLo 1 (a &&& b, (a &&& b) ||| (~~~a &&& ak) ||| (~~~b &&& bk)) 0 := by
-  simp only [Agree, AgreeLo, Masked] at *; bv_decide
+  simp only [Agree, AgreeLo, Masked] at *; kb_bits
 
 theorem agreeLo_or_true_l {a ak b bk : BitVec 64} (ha : Agree (a, ak) 1) (mb : Masked (b, bk))
     (ma : Masked (a, ak)) :
     AgreeLo 1 (a ||| b, a ||| b ||| (~~~a &&& ~~~b &&& (ak &&& bk))) 1 := by
-  simp only [Agree, AgreeLo, Masked] at *; bv_decide
+  simp only [Agree, AgreeLo, Masked] at *; kb_bits
 
 theorem agreeLo_or_true_r {a ak b bk : BitVec 64} (hb : Agree (b, bk) 1) (mb : Masked (b, bk))
     (ma : Masked (a, ak)) :
     AgreeLo 1 (a ||| b, a ||| b ||| (~~~a &&& ~~~b &&& (ak &&& bk))) 1 := by
-  simp only [Agree, AgreeLo, Masked] at *; bv_decide
+  simp only [Agree, AgreeLo, Masked] at *; kb_bits
 
 /-- `Not` of a boolean pattern: bit 0 of the complement. -/
 theorem agreeLo_not_bool {a ak : BitVec 64} (b : Bool) (ha : Agree (a, ak) (if b then 1 else 0)) :
     AgreeLo 1 (~~~a, ak) (if !b then 1 else 0) := by
-  cases b <;> simp only [Agree, AgreeLo, Bool.not_true, Bool.not_false] at * <;> bv_decide
+  cases b <;> simp only [Agree, AgreeLo, Bool.not_true, Bool.not_false] at * <;> kb_bits
 
 /-! ## Comparisons -/
 
 /-- Two patterns with a known bit that differs are different. -/
 theorem ne_of_known {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree (b, bk) Y)
     (h : (a ^^^ b) &&& ak &&& bk ≠ 0) : X ≠ Y := by
-  intro hXY; subst hXY; simp only [Agree] at *; apply h; bv_decide
+  intro hXY; subst hXY; simp only [Agree] at *; apply h; kb_bits
 
 /-- Fully known patterns are their entries' values. -/
 theorem eq_of_full {a X : BitVec 64} (ha : Agree (a, BitVec.allOnes 64) X) : X = a := by
-  simp only [Agree] at *; bv_decide
+  simp only [Agree] at *; kb_bits
 
 theorem agree_eq {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree (b, bk) Y) :
     Agree (if (a ^^^ b) &&& ak &&& bk != 0 then (0, BitVec.allOnes 64)
@@ -114,7 +142,7 @@ theorem agree_eq {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree 
     · have h2' : (ak == BitVec.allOnes 64 && bk == BitVec.allOnes 64) = false := by
         simpa [Bool.and_eq_true, beq_iff_eq] using h2
       simp only [h1, bne_self_eq_false, Bool.false_eq_true, ite_false, h2']
-      simp only [Agree]; split <;> bv_decide
+      simp only [Agree]; split <;> kb_bits
   · have hne := ne_of_known ha hb h1
     have h1' : ((a ^^^ b) &&& ak &&& bk != 0) = true := by simpa using h1
     simp only [h1', ite_true, beq_iff_eq, hne]
@@ -135,7 +163,7 @@ theorem agree_neq {a ak b bk X Y : BitVec 64} (ha : Agree (a, ak) X) (hb : Agree
     · have h2' : (ak == BitVec.allOnes 64 && bk == BitVec.allOnes 64) = false := by
         simpa [Bool.and_eq_true, beq_iff_eq] using h2
       simp only [h1, bne_self_eq_false, Bool.false_eq_true, ite_false, h2']
-      simp only [Agree]; split <;> bv_decide
+      simp only [Agree]; split <;> kb_bits
   · have hne := ne_of_known ha hb h1
     have h1' : ((a ^^^ b) &&& ak &&& bk != 0) = true := by simpa using h1
     simp only [h1', ite_true, bne_iff_ne, ne_eq, hne, not_false_eq_true]

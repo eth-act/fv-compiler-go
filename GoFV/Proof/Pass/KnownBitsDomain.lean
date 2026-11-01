@@ -73,7 +73,7 @@ theorem setWidth_signExtend_of_le {n m : Nat} (z : BitVec n) (h1 : m ≤ n) (h2 
   simp [BitVec.getElem_signExtend, hi, h3, h4]
 
 theorem xor_and_and (Z v k : BitVec 64) : (Z ^^^ (v &&& k)) &&& k = (Z ^^^ v) &&& k := by
-  bv_decide
+  kb_bits
 
 theorem norm_int_agree' {n n' : Nat} (z : BitVec n) (v k : BitVec 64) (hle : n' ≤ n) (h64 : n ≤ 64)
     (h : ((z.signExtend 64 ^^^ v) &&& k).setWidth n = 0) :
@@ -96,7 +96,7 @@ theorem norm_int_agree (w w' : Width) (z : BitVec w.bits) (r : BB) (hle : w'.bit
 theorem norm_bool_agree (b : Bool) (r : BB) (h : AgreeLo 1 r (if b then 1 else 0)) :
     Agree (norm .bool r) (if b then 1 else 0) := by
   obtain ⟨v, k⟩ := r
-  cases b <;> simp only [AgreeLo, Agree, norm] at * <;> bv_decide
+  cases b <;> simp only [AgreeLo, Agree, norm] at * <;> kb_bits
 
 theorem retype_int_int (w w' : Width) (z : BitVec w.bits) :
     (Val.int w z).retype (.int w') =
@@ -119,7 +119,7 @@ theorem norm_retype {r : BB} {y : Val} (h : GamLo r y) (t : Ty) : Gam (norm t r)
       cases y' <;> simp [Val.hasTy] at hb
       · rename_i b
         refine .inr (.inr ⟨_, rfl, ?_⟩)
-        cases b <;> simp only [Agree, norm] <;> bv_decide
+        cases b <;> simp only [Agree, norm] <;> kb_bits
       · exact .inl rfl
     | int w => exact .inr (.inl (norm_int_known_zero w v))
     | _ => exact .inr (.inl rfl)
@@ -292,7 +292,7 @@ theorem ofInt_toInt64 (n : Nat) (h : n ≤ 64) (ai : Int64) :
 
 theorem agree_zext {a ak X L : BitVec 64} (ha : Agree (a, ak) X) :
     Agree (a &&& L, ak ||| ~~~L) (X &&& L) := by
-  simp only [Agree] at *; bv_decide
+  simp only [Agree] at *; kb_bits
 
 theorem agree_self (z k : BitVec 64) : Agree (z, k) z := by simp [Agree]
 
