@@ -416,12 +416,16 @@ end
 
 /-- The loads `x` (of `f`) and its representative `r` read the same address (up to `rep`) and
 their memory chains reach the same def through stores disjoint from `x`'s access (`memEnd`, both
-walked for `x`'s address and type); their memory arguments are not replaced. -/
+walked for `x`'s address and type); their memory arguments are not replaced, and `r`'s is in
+another block, a `Phi` or a root (so a run evaluates it before `r` whenever it evaluates `r`). -/
 def loadOK (tabs : Tables) (rw : Array (Option ID)) (f : Func) (fx fr : Value) : Bool :=
   match fx.args[0]?, fr.args[0]?, fx.args[1]?, fr.args[1]? with
   | some p, some p', some m, some m' =>
     rep rw p == rep rw p' && memEnd tabs f p fx.type m == memEnd tabs f p fx.type m' &&
-      (rw.getD m none).isNone && (rw.getD m' none).isNone
+      (rw.getD m none).isNone && (rw.getD m' none).isNone &&
+      match f.value? m' with
+      | some mv => mv.block != fr.block || mv.op == .Phi || Sem.prio mv.op != 0
+      | none => false
   | _, _, _, _ => false
 
 /-- The replaced value `x` and its representative `r` are congruent: same op, aux, auxint and
