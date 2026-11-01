@@ -22,7 +22,7 @@ parity also makes the driver use it.
 ```
 gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
 gofv-ssa-opt --list
-gofv-ssa-opt --check [--mixed] [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 ```
 
 - Driver mode reads a `gofv-ssa` file whose first section is the function (section `start`),
@@ -141,10 +141,13 @@ up to the first unported pass, first divergence at a pass, or a Lean pass error.
 `sccp` is documented as nondeterministic (permutations across runs); divergences at `sccp` are
 reported separately.
 
-`--check` gives the driver's view of new symbols: a pass that creates a symbol aux (e.g.
-`writebarrier`'s `type:T` for `typedmemmove`) defines it from what the driver's export has, which
-may lack the contents the stock section shows later; the importer only requires name and ABI of
-a new symbol, so such divergences (19 at `writebarrier` on the corpus) do not reach the compiler.
+`--check` compares as the importer does. A pass that creates a symbol aux (e.g.
+`writebarrier`'s `type:T` for `typedmemmove`, `opt`'s `*T` descriptors) defines it from what the
+driver's export has, which may lack the contents the stock section shows later; the importer
+only requires name and ABI of a new symbol (the symbol is the frontend's), so `--check` pairs new
+symbols by name and ABI and does not follow their `typeinfo`/`itabinfo` references. The entries
+of `namedx`, `splits` and `canon` are compared as sets. `--strict` compares every definition and
+the map lines' order, as `pass-parity`.
 
 ## Results
 

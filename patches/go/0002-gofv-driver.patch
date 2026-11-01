@@ -63,7 +63,7 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,1917 @@
+@@ -0,0 +1,1934 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1170,7 +1170,24 @@
 +	for j, s := range later {
 +		x.slots[s] = laterN[j]
 +	}
-+	if got != fmt.Sprintf("s%d", n) || x.defs.String() != d.text {
++	// The exporter numbers a slot before its parent, so a new parent can have a higher number
++	// (it was hidden above and is rendered again after p): each such line must be the Lean
++	// definition at its number, and p's line the last.
++	ok := got == fmt.Sprintf("s%d", n) && strings.HasSuffix(x.defs.String(), d.text)
++	if ok {
++		for _, l := range strings.SplitAfter(strings.TrimSuffix(x.defs.String(), d.text), "\n") {
++			if l == "" {
++				continue
++			}
++			var m int
++			if _, err := fmt.Sscanf(l, "slot s%d ", &m); err != nil || !slices.Contains(laterN, m) ||
++				im.defs[gofvKey('s', m)] == nil || im.defs[gofvKey('s', m)].text != l {
++				ok = false
++				break
++			}
++		}
++	}
++	if !ok {
 +		return nil, fmt.Errorf("slot s%d: rebuilt as %s\n%sLean:\n%s", n, got, x.defs.String(), d.text)
 +	}
 +	im.slotOb[n] = p
