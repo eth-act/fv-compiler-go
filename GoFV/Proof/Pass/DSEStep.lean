@@ -41,7 +41,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
     (H : Avail env tabs f S A) (hT : T = { S with regs := T.regs })
     {x : ID} {fv gv : Value} (hfv : f.value? x = some fv) (hgv : g.value? x = some gv)
     (hid : fv.id = x) (hA : ∀ a ∈ fv.args, A a)
-    (hargs : ∀ a ∈ fv.args, ∃ vS vT, S.regs[a]? = some (some vS) ∧
+    (hargs : ∀ a ∈ gv.args, ∃ vS vT, S.regs[a]? = some (some vS) ∧
       T.regs[a]? = some (some vT) ∧ VRel (IvQ (P a)) vS vT)
     {y : Val} (hy : evalValue env (Ctx.make tabs f) S fv = .ok y) :
     ∃ y', evalValue env (Ctx.make tabs g) T gv = .ok y' ∧ VRel (IvQ (P x)) y y' := by
@@ -63,6 +63,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
   rcases hsv with hs | he
   · -- a kept value
     obtain ⟨hgid, hgop, hgax, hgai, hgty, -, hgargs⟩ := sameV_spec hs
+    rw [hgargs] at hargs
     have htyG : (Ctx.make tabs g).tys[gv.id]? = (Ctx.make tabs f).tys[fv.id]? := by
       rw [hgid, hid, tys_of_value hgv, tys_of_value hfv, hgty]
     have hevT : ∀ vs', argVals T gv.args = some vs' →
@@ -184,9 +185,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
     obtain ⟨p, L, M, bs, M1, hvsE, hw, rfl, hbs, -, -⟩ := write_shape hop hr
     have hvs2 : argVals S fv.args = some ((.ptr p :: L) ++ [.mem M]) := by rw [hvs, hvsE]; rfl
     have hSM := argVals_back hvs2 hback
-    have hm : m ∈ fv.args := by
-      rw [Array.back?_eq_getElem?] at hback; exact Array.mem_of_getElem? hback
-    obtain ⟨vS, vT, hSa, hTa, hVa⟩ := hargs m hm
+    obtain ⟨vS, vT, hSa, hTa, hVa⟩ := hargs m (by rw [hgargs]; simp)
     rw [hSa] at hSM; cases hSM
     obtain ⟨MT, rfl, hMem⟩ := hVa.mem
     refine ⟨_, evalValue_copy hgc hgargs hTa, .inr ⟨_, _, retype_mem _ _, retype_mem _ _,
@@ -210,7 +209,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
 theorem step_panic (hrel : DRel tabs f g P) {S T : Frame} (hT : T = { S with regs := T.regs })
     {x : ID} {fv gv : Value} (hfv : f.value? x = some fv) (hgv : g.value? x = some gv)
     (hid : fv.id = x)
-    (hargs : ∀ a ∈ fv.args, ∃ vS vT, S.regs[a]? = some (some vS) ∧
+    (hargs : ∀ a ∈ gv.args, ∃ vS vT, S.regs[a]? = some (some vS) ∧
       T.regs[a]? = some (some vT) ∧ VRel (IvQ (P a)) vS vT)
     {e : Panic} {mm : Mem} (hy : evalValue env (Ctx.make tabs f) S fv = .panic e mm) :
     evalValue env (Ctx.make tabs g) T gv = .panic e mm := by
@@ -226,6 +225,7 @@ theorem step_panic (hrel : DRel tabs f g P) {S T : Frame} (hT : T = { S with reg
       rcases hop with h2 | h2 | h2 | h2 <;> rcases h1 with h1 | h1 | h1 <;> rw [h1] at h2 <;>
         cases h2
   obtain ⟨hgid, hgop, hgax, hgai, hgty, -, hgargs⟩ := sameV_spec hs
+  rw [hgargs] at hargs
   have hall : ∀ a ∈ fv.args, P a = [] := by
     intro a ha
     refine Classical.byContradiction fun hp => ?_
