@@ -123,7 +123,7 @@ theorem r_generic_1015_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
 theorem r_generic_1011_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1011 := by
   refine ⟨rfl, fun tabs e or _ => ?_⟩
   intro σ ev hfr _ _ _ _ hlt hat _
-  obtain ⟨p, hp, hax⟩ := (hfr.1 _ List.mem_cons_self).2.2 _ 1 rfl rfl
+  obtain ⟨p, hp, hax⟩ := (hfr.1 _ List.mem_cons_self).2.2.1 _ 1 rfl rfl
   simp [GoFV.Rules.Generated.Generic.r_generic_1011, Pat.auxPos, Pat.auxPoss,
     Field.bindsVar] at hp
   subst hp
@@ -166,11 +166,12 @@ theorem inst_r_generic_1015 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1015, FrameOK, Result.nodes, emptyStrVars,
-    samePtrVars, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?, Pat.rawT, Pat.densT,
-    opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT, Pat.denT]
+    samePtrVars, shiftAmt?, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?,
+    Pat.rawT, Pat.densT, opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT, Pat.denT]
   rule_eval
-  refine ⟨fun ae x h => ?_, ?_⟩
+  refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩
   · subst h; simp [lenVar?]
+  · subst h; simp
   · simp [sigmaT, Pat.bindsT, Pat.bindssT, strTy]
 
 /-- Aux 1: the symbol `go:string.hi`. -/
@@ -187,7 +188,7 @@ theorem inst_r_generic_1011 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     { Oracle.const true with aux := fun _ => some 1 } := by
   refine ⟨Oracle.boolTyped_const_dv true _ _ _ _, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1011, FrameOK, Result.nodes, strDataVar?, lenVar?,
-    auxVar?, Pat.auxPos, Pat.auxPoss, Field.bindsVar, hiSymTabs, Tables.aux?, Pat.rawT,
+    shiftAmt?, auxVar?, Pat.auxPos, Pat.auxPoss, Field.bindsVar, hiSymTabs, Tables.aux?, Pat.rawT,
     Pat.densT, Pat.denT, opVal, addrVal, sigmaT, Pat.bindsT, Pat.bindssT, strTy]
   rule_eval
   simp [Comp.select, Comp.make, Val.retype, Val.retypeFields]

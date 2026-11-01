@@ -125,6 +125,11 @@ def auxVar? : Expr → Option Nat
   | .var x => some x
   | _ => none
 
+/-- The amount `b` of an auxint shift `a << b` or `a >> b`. -/
+def shiftAmt? : Expr → Option Expr
+  | .binop .shl _ b _ | .binop .shr _ b _ => some b
+  | _ => none
+
 /-- The rule variables `x` of the condition's conjuncts `x == ""` (`&&` chains). -/
 def emptyStrVars : Expr → List Nat
   | .binop .land a b _ => emptyStrVars a ++ emptyStrVars b
@@ -160,9 +165,11 @@ def _root_.GoFV.Rules.Result.nodes : Result → List RNode
 
 /-- The frame helpers of the result hold of the instance: an aux `fe.StringData(x)` names the
 data symbol of the (non-empty) string aux bound to `x`, an auxint `int64(len(x))` is its length
-(as `nodeDenT` selects it), an aux `{x}` is the aux bound to `x`; a conjunct `x == ""` of the
-condition holds of the string aux bound to `x`; and a conjunct `isSamePtr(x, y)` of leaves
-`x`, `y` holds of their values (the validator: the same value). -/
+(as `nodeDenT` selects it), an aux `{x}` is the aux bound to `x`, an auxint shift `a << b` or
+`a >> b` shifts by a nonnegative amount (Go panics on a negative one, so the rewriter built no
+such node); a conjunct `x == ""` of the condition holds of the string aux bound to `x`; and a
+conjunct `isSamePtr(x, y)` of leaves `x`, `y` holds of their values (the validator: the same
+value). -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
   (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
@@ -172,7 +179,8 @@ def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rul
       ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧
         (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae) = Int64.ofNat s.size) ∧
     (∀ xe x, n.aux = some xe → auxVar? xe = some x →
-      ∃ p, Pat.auxPos x [] r.pat = some p ∧ or.aux xe = e.aux p)) ∧
+      ∃ p, Pat.auxPos x [] r.pat = some p ∧ or.aux xe = e.aux p) ∧
+    (∀ ae b, n.auxInt = some ae → shiftAmt? ae = some b → ∃ i, ev b = .int i ∧ 0 ≤ i)) ∧
   (∀ x ∈ (r.cond.map emptyStrVars).getD [],
     ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧ s.size = 0) ∧
   ∀ xy ∈ (r.cond.map samePtrVars).getD [],

@@ -67,10 +67,11 @@ theorem inst_r_generic_1592 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1592, FrameOK, Result.nodes, samePtrVars,
-    Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT, sigmaT, Pat.bindsT, Pat.bindssT,
-    emptyStrVars, opVal, memEq, Mem.read]
+    shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT, sigmaT, Pat.bindsT,
+    Pat.bindssT, emptyStrVars, opVal, memEq, Mem.read]
   rule_eval
-  intro ae x h
-  subst h; simp [lenVar?]
+  refine ⟨fun ae x h => ?_, fun ae b h => ?_⟩
+  · subst h; simp [lenVar?]
+  · subst h; simp
 
 end GoFV.Proof.Rules
