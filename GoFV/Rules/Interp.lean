@@ -353,7 +353,8 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
 set's `nilChecks`/`loads`, tried on a `NilCheck`/`Load` after its row (their index continues
 the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`;
 `structStores`: the rule set's `structStores`, tried on a `Store` after its row, then `loads`
-(dropped identity writes, also tried on a `Zero` after its row). -/
+(dropped identity writes, also tried on a `Zero` after its row); `segs`: the rule set's `segs`,
+tried on every value after the others (from `segBase`). -/
 structure Table where
   values : Array (Array CRule)
   blocks : Array (Array BlockRule)
@@ -361,6 +362,15 @@ structure Table where
   loads : Array CRule := #[]
   structLoads : Array CRule := #[]
   structStores : Array CRule := #[]
+  segs : Array CRule := #[]
+
+/-- The index of the first `segs` rule on a value of op `o`: after its row and the tables
+`rewriteValue` tries on `o` before `segs`. -/
+def Table.segBase (t : Table) (o : Op) : Nat :=
+  t.values[o.ctorIdx]!.size + (if o == .NilCheck then t.nilChecks.size else 0) +
+    (if o == .Load then t.loads.size + t.structLoads.size else 0) +
+    (if o == .Store then t.structStores.size + t.loads.size else 0) +
+    (if o == .Zero then t.loads.size else 0)
 
 def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   let mut values : Array (Array CRule) := Array.replicate (Op.all.size + 1) #[]
@@ -372,7 +382,8 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   return { values, blocks, nilChecks := (s.nilChecks.map CRule.ofRule).toArray,
            loads := (s.loads.map CRule.ofRule).toArray,
            structLoads := (s.structLoads.map CRule.ofRule).toArray,
-           structStores := (s.structStores.map CRule.ofRule).toArray }
+           structStores := (s.structStores.map CRule.ofRule).toArray,
+           segs := (s.segs.map CRule.ofRule).toArray }
 
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
@@ -402,6 +413,10 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     let ls := t.loads
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + i) then return true
+  let gs := t.segs
+  let n := t.segBase o
+  for h : i in [0:gs.size] do
+    if ← tryRule v gs[i] (n + i) then return true
   return false
 
 /-! ## Block rules -/
