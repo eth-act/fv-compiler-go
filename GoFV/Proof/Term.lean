@@ -1,4 +1,5 @@
 import GoFV.Proof.PureMono
+import GoFV.Proof.Retype
 import GoFV.Opt.RewriteCheck
 
 /-!
@@ -42,9 +43,9 @@ def den (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) : Nat → ID
 /-- Pointwise refinement of valuations. -/
 def ValRef (ρ ρ' : ID → Val) : Prop := ∀ a, Refines (ρ a) (ρ' a)
 
-/-- The atoms of `D` hold values fixed by `retype` at their shapes (as registers do). -/
+/-- The atoms `D` defines hold values fixed by `retype` at their shapes (as registers do). -/
 def Typed (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) : Prop :=
-  ∀ a, ¬ IsTerm D a → (ρ a).retype (shape D tabs a) = ρ a
+  ∀ a, ¬ IsTerm D a → (D a).isSome → (ρ a).retype (shape D tabs a) = ρ a
 
 /-- `y` in `E` refines `x` in `D` as a term over the atoms. -/
 def TermRef (D : ID → Option Value) (tabs : Tables) (x : ID) (E : ID → Option Value)
@@ -57,12 +58,13 @@ block of `h`. Junk entries of the value table (dropped values) are not definitio
 def listedDefs (h : Func) (x : ID) : Option Value :=
   (h.value? x).filter fun v => h.blocks.contains v.block && (h.block? v.block).any (·.values.contains x)
 
-/-- `Val.retype` at an integer shape produces an integer of that width or `poison` (register
-typing, issue #108; at `bool` it always does). The validator's leaves are integer- or
-boolean-shaped (`RewriteCheck.leavesOK`), so this gives `Pat.typed`. False on main today
-(`retype (.int w) (.bool b) = .bool b`, a global pointer stays a pointer at `.int .w64`): carried
-as a hypothesis until Semantics proves it. -/
+/-- `Val.retype` at an integer shape produces a value of that shape (register typing, issue
+#108; at `bool` too): an integer of that width, `poison`, or at 64 bits a pointer without a
+concrete address (`Val.hasTy`). The validator's leaves are integer- or boolean-shaped
+(`RewriteCheck.leavesOK`), so this gives `Pat.typed`. -/
 def RetypeShapes : Prop := ∀ (v : Val) (w : Width), (v.retype (.int w)).hasTy (.int w) = true
+
+theorem retypeShapes : RetypeShapes := Val.retype_int_hasTy
 
 /-- The arguments of every atom listed in `g` (phis, roots, frame values) refine, as terms, those
 of the atom with the same ID in `f`, which has the same fields. What the rewrite validator

@@ -117,7 +117,10 @@ the largest max RSS (`perf/bench-history.tsv`: `date commit bench status wall_s 
 runs load1 bin_hash corpus`; status `missing` when the target does not build at that commit).
 Call the binary (`.lake/build/bin/x`), not `lake exe x`. A binary already measured with the same
 command and corpus (`bin_hash`) is not rerun (status `cached`), so commits that don't touch an
-executable cost one `lake build`; `perf-compare.py` skips such pairs. The watch loop always uses
+executable cost one `lake build`; `perf-compare.py` skips such pairs. A single run whose CPU differs
+by more than 25% from the previous measurement on the same corpus gets two more runs and the
+median is kept (single runs varied by ~30% under load: pass-parity 71.5 vs 99.6 s CPU on the
+same binary). The watch loop always uses
 the profiler's current registry, so a new benchmark also runs on older commits it records.
 
 The corpus is a private snapshot: the exporter regenerates `../gofv-corpus/<pin12>` in place

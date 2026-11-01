@@ -45,6 +45,7 @@ import GoFV.Opt.ShortCircuit
 import GoFV.Opt.Fuse
 import GoFV.Opt.ElimDeadAutos
 import GoFV.Opt.DeadStore
+import GoFV.Opt.DeadStoreCheck
 import GoFV.Opt.MemCombine
 import GoFV.Opt.KnownBits
 import GoFV.Opt.PhiOpt

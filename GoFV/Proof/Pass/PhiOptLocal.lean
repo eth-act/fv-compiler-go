@@ -106,9 +106,9 @@ theorem rwLocal (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Na
     rw [hbool]
     refine boolArm_eval harm hcv (fun z hz => hA.avail S hz) hy (fun d' hcb => ?_)
       (fun z hz => by rw [hag z hz, havH z (hargsav z hz)]) (by rw [htyT, hbool])
-    obtain ⟨u, hu, hop, hval⟩ := constB_spec hcb
-    obtain ⟨huargs, -⟩ := arm_argless hwf hal hu (by rw [hop]; decide)
-    rw [constBool_reg hA.inv hu hop huargs hy, hval]
+    obtain ⟨u, hu, hop, hval, hty⟩ := constB_spec hcb
+    obtain ⟨huargs, huid⟩ := arm_argless hwf hal hu (by rw [hop]; decide)
+    rw [constBool_reg hA.inv hu hop hty huid huargs hy, hval]
   · obtain ⟨d, hd, hk⟩ := hall i a ha
     obtain ⟨u, hu, hop, hty, hai⟩ := constI_spec hk
     obtain ⟨huargs, huid⟩ := arm_argless hwf hal hu (by rw [hop]; cases w <;> decide)

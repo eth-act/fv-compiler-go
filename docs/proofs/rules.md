@@ -70,9 +70,10 @@ invariant of `GoFV.SSA.Sem` or of the rule evaluator, not from the rule:
   match reads as a leaf holds a value of its type's shape,
   `(regVal v).hasTy (tabs.ty v.Type) = true` (`Val.hasTy`; `poison` has every shape). The
   instance then sets `e.leaf p := regVal v` and `e.ty p := tabs.ty v.Type`. This is the same
-  register-typing invariant the phi passes need (ProofPhiopt, owned by agent Semantics); it does
-  not hold today for some bool-typed `Phi`/`Load`/`SelectN`/`StructSelect` registers, which
-  Semantics is closing.
+  register-typing invariant the phi passes need: `GoFV.Proof.Typed.hasTy` /
+  `evalValue_hasTy` (from `Val.retype_hasTy`, total-shaping `retype`, #108). A 64-bit integer
+  leaf may also be a pointer without a concrete address (`Val.hasTy`), so
+  `val_poison_of_asInt_none` gives `poison` or (at 64 bits) a pointer.
 - **Top type** (`hty`): the matched value's op computes a value of its type's shape before
   `retype`, i.e. no narrow result types (see "Narrow result types").
 - **Typed oracle** (`Oracle.BoolTyped or := ∀ x, exprTy [] x = .bool → ∃ b, or.dv x = .bool b`):
@@ -317,7 +318,9 @@ bounds). The structural lemmas are applied `with_reducible`: at default transpar
 
 Extensions and truncations (#69, RuleProofs5): constant folds of `ZeroExt`/`SignExt`/`Trunc`
 by `rule_arith` (`setWidth_ofInt_of_le`/`_of_ge`, `signExtend_ofInt`); a retype to a type that
-is not another integer width is the identity (`retype_int_of_not_other`, `rule_sem`); negated
+of the same width is the identity (`retype_int_of_not_other`, `rule_sem`; any other shape is
+`poison`, `tyOtherInt`); a boolean retyped is a boolean at `bool` and `poison` elsewhere
+(`retype_bool`, split on `tyIsBool`); negated
 comparisons and boolean equations (`not_slt_eq`, …, `not_beq_eq`, `rule_close_s`); `rule_ext`
 closes a value truncated and extended again after a shift cleared or sign-filled its high bits
 (`ushr_setWidth_setWidth`, `sshr_setWidth_signExtend`), else both sides as `toNat` arithmetic

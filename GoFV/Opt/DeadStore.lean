@@ -4,7 +4,7 @@ import GoFV.SSA.TypePred
 import GoFV.Util.SparseSet
 import GoFV.Util.SparseMap
 import GoFV.Rules.Helpers.Sym
-import Std.Data.HashMap.Basic
+import Std.Data.TreeMap
 
 /-!
 # dse (`deadstore.go:13-238`)
@@ -17,7 +17,10 @@ inside one recorded range becomes `Copy mem`. Nothing is allocated or freed.
 
 The `shadowed` sparse map holds each base's ranges directly (Go stores a 1-based index into a
 slice of `*shadowRanges` that it mutates through the pointer; the observable state is the
-same).
+same). `localAddrs` is a `TreeMap` (lookup only), which the kernel can evaluate.
+
+`GoFV.Proof.DSE.dse_refines` proves that `dse`'s result refines its input when the checker
+`DSE.drel` (`GoFV/Opt/DeadStoreCheck.lean`) accepts it (`dseFrag`).
 -/
 
 namespace GoFV.Opt
@@ -55,14 +58,18 @@ def ShadowRanges.add (sr : ShadowRanges) (lo hi : Int64) : ShadowRanges := Id.ru
 @[inline] def memArgsIn (f : Func) (isMem : TypeRef → Bool) (b : ID) (x : Value) : Array ID :=
   x.args.filter fun a => let y := f.getV a; y.block == b && isMem y.type
 
+/-- The first `LocalAddr` of each aux. A `TreeMap` (only searched, so any key order gives the
+same result), which the kernel can evaluate, unlike a `HashMap`. -/
+abbrev LocalAddrs := Std.TreeMap (Option AuxRef) ID
+
 /-- Scan of `b.Values`: the stores, `loadUse`, `storeUse` and the first `LocalAddr` per aux. -/
 def classify (f : Func) (tabs : Tables) (isMem : TypeRef → Bool) (b : ID)
     (loadUse storeUse : SparseSet) :
-    Except String (Array ID × SparseSet × SparseSet × Std.HashMap (Option AuxRef) ID) := do
+    Except String (Array ID × SparseSet × SparseSet × LocalAddrs) := do
   let mut stores := #[]
   let mut loadUse := loadUse
   let mut storeUse := storeUse
-  let mut localAddrs : Std.HashMap (Option AuxRef) ID := {}
+  let mut localAddrs : LocalAddrs := {}
   for v in (f.getB b).values do
     let x := f.getV v
     if x.op == .Phi then continue
