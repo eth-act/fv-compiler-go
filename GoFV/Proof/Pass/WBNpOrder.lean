@@ -228,7 +228,11 @@ theorem np_before (S : Setup c b B rs l) {o : Array ID} (ho : schedule c.f B = s
     {x y : ID} {qx qy : Nat} (hx : NpRank c b rs x qx) (hy : NpRank c b rs y qy)
     (hxn : npOf c.f B x = true) (hyn : npOf c.f B y = true) (hlt : qx < qy) :
     Order.Before (o.toList.filter (npOf c.f B)) x y := by
-  sorry
+  obtain ⟨L, hL, hL1, hL2⟩ := np_blocks S ho
+  obtain ⟨A, hA, hxA⟩ := rank_mem S hL1 hL2 hx hxn
+  obtain ⟨A', hA', hyA⟩ := rank_mem S hL1 hL2 hy hyn
+  rw [hL]
+  exact flat_split hA hA' hlt hxA hyA
 
 /-- Kept non-pure nodes of one segment come in the target's schedule order. -/
 theorem np_before_seg (S : Setup c b B rs l) {o : Array ID} (ho : schedule c.f B = some o)
@@ -238,21 +242,56 @@ theorem np_before_seg (S : Setup c b B rs l) {o : Array ID} (ho : schedule c.f B
     (hxn : npOf c.f B x = true) (hyn : npOf c.f B y = true)
     (hxy : Order.Before oC.toList x y) :
     Order.Before (o.toList.filter (npOf c.f B)) x y := by
-  sorry
+  obtain ⟨L, hL, hL1, -⟩ := np_blocks S ho
+  obtain ⟨-, -, -, hsb, -⟩ := S.seg_block hs
+  obtain ⟨ce, hwg⟩ := S.wg
+  have hmem := (schedule_topo (valuesOwn hwg hsb hC) (hwg.valuesNodup s C ⟨hsb, hC⟩) hoC).2.2
+  obtain ⟨i, j, -, hi, hj⟩ := id hxy
+  have hxC := ((hmem x).1 (List.mem_of_getElem? hi)).1
+  have hyC := ((hmem y).1 (List.mem_of_getElem? hj)).1
+  have hxg : npOf c.g C x = true := by rw [npOf_kept' S hxK hs hC hxC]; exact hxn
+  have hyg : npOf c.g C y = true := by rw [npOf_kept' S hyK hs hC hyC]; exact hyn
+  rw [hL]
+  refine flat_infix (hL1 k s hs C hC oC hoC) ?_
+  rw [Order.before_filter (fun z => c.K.getD z false) hxK hyK,
+    Order.before_filter (npOf c.g C) hxg hyg]
+  exact hxy
 
 /-- A held non-pure node listed in segment `s` has rank `2 s` (kept) or is a store of run
 `s - 1` (the run's last store). -/
 theorem held_rank (S : Setup c b B rs l) {s x : ID} {k : Nat} (hs : (segsOf b rs)[k]? = some s)
     (hx : x ∈ vals c.g s) (hh : c.held x = true) :
     NpRank c b rs x (2 * k) ∨ ∃ j, k = j + 1 ∧ NpRank c b rs x (2 * j + 1) := by
-  sorry
+  by_cases hK : c.K.getD x false = true
+  · exact .inl (.inl ⟨k, rfl, ⟨s, hs, hx⟩, hK⟩)
+  have hK' : c.K.getD x false = false := by simpa using hK
+  have hok : c.roleOK b B (segsOf b rs) rs false k x = true :=
+    (blockOK_spec S.ok S.hB S.ch).2.2.2.2.2.2.1 k s hs x hx
+  cases hw : c.g.value? x with
+  | none => unfold Ctx.roleOK at hok; rw [hw] at hok; cases hok
+  | some w =>
+    have hwa : c.isWbaddr x = false := by
+      cases h : c.isWbaddr x
+      · rfl
+      · exact (not_lazy S hK' hh (.inl h)).elim
+    have hc0 : c.isConst0 x = false := by
+      cases h : c.isConst0 x
+      · rfl
+      · exact (not_lazy S hK' hh (.inr h)).elim
+    have hρ : c.roleOf rs x = .held := by
+      simp only [Ctx.roleOf, hwa, hc0, hh, Bool.false_eq_true, ↓reduceIte]
+    obtain ⟨-, -, h | ⟨-, j', r, hk, hr, hlast, -⟩⟩ := roleOK_held hok hw hρ
+    · exact absurd h.1 hK
+    · refine .inr ⟨j', hk, .inr ⟨j', r, rfl, hr, .inr ?_⟩⟩
+      obtain ⟨-, -, hgl, -⟩ := runOf_spec ((chainRuns_spec S.ch).1 j' r hr).2.2.2
+      rw [← hlast]; exact List.mem_of_getLast? hgl
 
 /-- Kept values of `B` and run stores have the same op in `g`'s segment, so the same
 non-purity. -/
 theorem npOf_kept (S : Setup c b B rs l) {x : ID} (hK : c.K.getD x false = true)
     {k : Nat} {s : ID} (hs : (segsOf b rs)[k]? = some s) {C : Block} (hC : c.g.block? s = some C)
     (hx : x ∈ C.values) : npOf c.g C x = npOf c.f B x := by
-  sorry
+  exact npOf_kept' S hK hs hC hx
 
 end Setup
 
