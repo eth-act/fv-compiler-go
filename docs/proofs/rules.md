@@ -49,7 +49,13 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   `nonNegD_den` in `GoFV/Proof/Pass/RewriteTermNonNeg.lean`); `StringLen`/`SliceLen`/`SliceCap`
   are not taken as non-negative there, since the semantics' composites carry arbitrary
   integers. Without it `generic.rules:610`, `:611`, `:1090`, `:1134–1138` are false (see
-  "Findings").
+  "Findings"). On `quick-v3` all 164 firings of these rules test a `SliceLen`/`StringLen`
+  leaf, so the validator discharges none of them (the 12 functions they would bring to stock
+  are validator-only). Making `*Len` poison on a negative component breaks the passes that put
+  `SliceLen`/`StringLen` into the target (phi split of decompose builtin, expand calls); the
+  planned fix (Semantics4) poisons negative lengths at construction (`decode`, `Comp.make` at
+  slice/string shapes), which needs `Ty` to tell slices and strings from structs. Then
+  `nnTable` can take `SliceLen`/`StringLen`/`SliceCap` as non-negative.
 - **Expressions** (conditions, `[auxint]`, `<type>`) are evaluated by `evalE`, a total pure
   evaluator mirroring `GoFV.Rules.Eval.eval` on integers, booleans, op constants, type shapes
   (`typ.<T>` incl. `typ.BytePtr` = `.ptr (some 1)`, `types.Types[k]`, `t.Size()` of an
