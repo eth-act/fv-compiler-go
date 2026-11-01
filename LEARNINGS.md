@@ -324,6 +324,12 @@ avoiding): the problem, the trick, the numbers, where it is used.
   --pass branchelim`, load 26–30): full-v2 14.4/15.2 s → 12.3/13.7 s; quick 0.7–0.8 s →
   0.7 s (only 729 rewrites on quick). The remaining time is the rewrites themselves, the
   `loadAddr` set and the single input `check`.
+- **Follow-up (`npSeqOK` on `schedFast`):** within noise (quick 0.6–0.8 s either way). On the
+  400 largest full-v2 files (`--jobs 1`, 3 interleaved runs, load 24–65) branchelim took 2.4–4.0 s
+  before, 2.1–4.9 s after, 1.9–2.7 s with no step checker at all (unsound ablation), and 0.6–0.9 s
+  without the input `checkOK ce f` (unsound ablation). The step checker costs at most noise. An
+  in-place snapshot step (#181) cannot gain 10%, so it was not built; as for early fuse (#187),
+  the input `check` is the lever.
 
 #### early fuse: the single input `check` dominates (#187)
 - **Measurement:** with every rewrite checked locally (comparison fusion `tabEq`/pointer-first,
