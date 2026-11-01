@@ -1,6 +1,5 @@
 import GoFV.Opt.Opt
 import GoFV.SSA.Edges
-import Std.Data.HashSet.Basic
 
 /-!
 # sccp (`sccp.go`)
@@ -8,9 +7,11 @@ import Std.Data.HashSet.Basic
 Wegman–Zadeck sparse conditional constant propagation, ported verbatim (`docs/PASSES.md`,
 sccp). The analysis (`analyze`) is deterministic: the edge and use worklists are FIFO, built in
 `f.Blocks` × `b.Values` × `Args` and `b.Succs` order; `visited`, `defUse` and `defBlock` are
-only looked up. Each fold attempt (`computeLattice`) appends a temporary value to
-`f.Entry.Values` (a dead constant, or `OpInvalid` when no folding rule applies), folded by the
-generic rules (`Interp.rewriteValue genericTable`, Go's `rewriteValuegeneric`).
+only looked up (`visited` is an array by block ID rather than a `Std.HashSet`, which the kernel
+cannot evaluate, so witnesses can run the analysis by `decide +kernel`). Each fold attempt
+(`computeLattice`) appends a temporary value to `f.Entry.Values` (a dead constant, or
+`OpInvalid` when no folding rule applies), folded by the generic rules
+(`Interp.rewriteValue genericTable`, Go's `rewriteValuegeneric`).
 
 `replaceConst` ranges over the Go map `latticeCells`, so the order in which it rewires blocks
 is Go's random map order. `replace a order` takes that order as a parameter; `sccp` uses the
@@ -113,7 +114,8 @@ structure Work where
   uHead : Nat := 0
   /-- `inUses` (membership only). -/
   inUses : Array Bool
-  visited : Std.HashSet Edge := {}
+  /-- The executable edges (`visited`): by target block ID, their predecessor indices. -/
+  visited : Array (List Nat)
   /-- `latticeCells` by value ID (`none`: no entry). -/
   cells : Array (Option Lat)
   /-- The keys of `latticeCells`, in insertion order. -/
@@ -121,6 +123,13 @@ structure Work where
   defUse : Array (Array ID)
   defBlock : Array (Array ID)
   visitedBlock : Array Bool
+
+/-- `t.visited[e]`. -/
+def Work.seen (w : Work) (e : Edge) : Bool := (w.visited.getD e.b []).contains e.i
+
+/-- The edges of `visited`, by target block ID. -/
+def edgesOf (vis : Array (List Nat)) : Array Edge :=
+  (List.range vis.size).foldl (fun r b => (vis.getD b []).foldl (fun r i => r.push ⟨b, i⟩) r) #[]
 
 /-- The pass monad: the worklist over the rewrite monad (which holds the function). -/
 abbrev M := StateT Work RwM
@@ -188,7 +197,7 @@ def addUses (v : ID) : M Unit := do
 def meet (x : Value) : M Lat := do
   let mut opt : Lat := .top
   for h : i in [0:x.args.size] do
-    if (← get).visited.contains ⟨x.block, i⟩ then
+    if (← get).seen ⟨x.block, i⟩ then
       let lt ← cell x.args[i]
       match lt with
       | .const .. =>
@@ -242,12 +251,12 @@ def loop : Nat → M Unit
     let w ← get
     if h : w.eHead < w.edges.size then
       let e := w.edges[w.eHead]
-      let seen := w.visited.contains e
+      let seen := w.seen e
       let destVisited := w.visitedBlock[e.b]!
       set { w with eHead := w.eHead + 1 }
       if !seen then
         let dest := e.b
-        modify fun w => { w with visited := w.visited.insert e,
+        modify fun w => { w with visited := w.visited.modify e.b (e.i :: ·),
                                  visitedBlock := w.visitedBlock.set! dest true }
         for v in (← RwM.blk dest).values do
           if (← RwM.val v).op == .Phi || !destVisited then visitValue v
@@ -291,12 +300,13 @@ def analyze (rw : RwEnv) (tables : Tables) (f : Func) : Except String Analysis :
   let w : Work := { inUses := Array.replicate nv false, cells := Array.replicate nv none,
                     defUse := Array.replicate nv #[], defBlock := Array.replicate nv #[],
                     visitedBlock := Array.replicate (f.bidLast + 1) false,
+                    visited := Array.replicate (f.bidLast + 1) [],
                     edges := #[⟨f.entry, 0⟩] }
   let w := buildDefUses f w
   let st : RwState := { f, tables, pending := XPosMap.ofCache f.cache.lineStarts }
   match ((loop (sccpFuel f)).run w |>.run rw).run st with
   | .ok ((), w) s => .ok { f := s.f, tables := s.tables, cells := w.cells, keys := w.keys,
-                           defBlock := w.defBlock, visited := w.visited.toArray,
+                           defBlock := w.defBlock, visited := edgesOf w.visited,
                            visitedBlock := w.visitedBlock }
   | .error e _ => .error e
 

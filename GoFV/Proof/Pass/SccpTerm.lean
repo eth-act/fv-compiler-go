@@ -123,8 +123,8 @@ theorem sc_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
           exact sc_den hwf K hP (n + 1) x c hcx
         · cases hc
 
-theorem sc_termRefP {x : ID} (hx : LM f x) (b : ID) :
-    TermRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs x (listedDefs g) tabs x :=
+theorem sc_termRefP {x : ID} (hx : LM f x) (b : ID) (S : ID → Prop) :
+    TermRefP ((sccpInv hwf K).P b) S f.value? tabs x (listedDefs g) tabs x :=
   fun n => ⟨n + 1, fun _ _ hρ _ _ hP _ => sc_ref hwf K hρ hP n x hx⟩
 
 /-- **Atoms' arguments.** -/
@@ -144,8 +144,9 @@ theorem sc_atomArgs : AtomArgsRefP (sccpInv hwf K) g := by
   have hbf : b ∈ f.blocks := blocks_eq K.atoms ▸ hb
   have hi' : i < u'.args.size := hargs ▸ hi
   rw [hargs]
-  exact sc_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' _
-    (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')) b
+  have hx := (closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' u'.args[i]!
+    (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')
+  exact ⟨fun _ => sc_termRefP hwf K hx b _, fun _ p _ _ _ _ _ => sc_termRefP hwf K hx p _⟩
 
 /-- The controls of a block of `g` as terms. -/
 theorem sc_controlRef {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
@@ -153,7 +154,7 @@ theorem sc_controlRef {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block
     TermRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs
       fb.controls[k]! :=
   sc_termRefP hwf K ((closedOK_facts K.cf b hb fb hfb).1 _
-    (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) b
+    (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) b _
 
 /-- An `If` turned `First` towards the successor its constant control picks. -/
 theorem sc_first {b : ID} {fb gb : Block} (hF : firstOK tabs f C fb gb = true) :
