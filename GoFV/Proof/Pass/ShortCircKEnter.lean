@@ -67,7 +67,7 @@ theorem kparts : fB.id = B ∧ gB.id = B ∧ gB.kind = fB.kind ∧ gB.controls.s
 
 theorem hbv_of : B = s.b → ∀ v ∈ (𝓘).vs, v ∈ fB.values := by
   intro hb v hv
-  obtain ⟨Bb, hBb, -, hvals, -⟩ := S.pre
+  obtain ⟨Bb, hBb, -, -, hvals, -⟩ := S.pre
   subst hb
   rw [hfB] at hBb; cases hBb
   rw [hvals]; exact (S.vs_mem hv).1

@@ -289,7 +289,7 @@ theorem scanOK : (𝓘).scanOK g = true := S.parts.2.2.2.2.2.2.2.2.2.2.2.2.2
 /-! ### The site in `f` -/
 
 /-- **The site before the rewrite** (`preOK`). -/
-theorem pre : ∃ B, f.block? s.b = some B ∧ B.id = s.b ∧ B.values = (𝓘).bvals ∧ B.kind = .If ∧
+theorem pre : ∃ B, f.block? s.b = some B ∧ s.b ∈ f.blocks ∧ B.id = s.b ∧ B.values = (𝓘).bvals ∧ B.kind = .If ∧
     s.p ≠ s.b ∧ s.te.b ≠ s.b ∧ B.preds[s.cidx]? = some ⟨s.p, s.pi⟩ ∧
     (𝓘).last + 1 = B.preds.size ∧
     (𝓘).vs = (𝓘).bvals.filter (fun x => x != s.ctl && isPhiIn f x) ∧
@@ -307,8 +307,8 @@ theorem pre : ∃ B, f.block? s.b = some B ∧ B.id = s.b ∧ B.values = (𝓘).
   · rename_i B hB
     simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.or_eq_true,
       Array.isEmpty_iff] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h11⟩ := h
-    refine ⟨B, hB, h1, h2, h3, h4, h5, h6, h7, h8, h9, ?_⟩
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h11⟩ := h
+    refine ⟨B, hB, contains_iff.1 h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, ?_⟩
     split at h11
     · rename_i top cv hc hcv
       simp only [Bool.and_eq_true, beq_iff_eq] at h11
@@ -330,7 +330,7 @@ theorem pre : ∃ B, f.block? s.b = some B ∧ B.id = s.b ∧ B.values = (𝓘).
 
 theorem vs_mem {v : ID} (hv : v ∈ (𝓘).vs) :
     v ∈ (𝓘).bvals ∧ v ≠ s.ctl ∧ isPhiIn f v = true := by
-  obtain ⟨-, -, -, -, -, -, -, -, -, hvs, -⟩ := S.pre
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, hvs, -⟩ := S.pre
   rw [hvs, Array.mem_filter] at hv
   simp only [Bool.and_eq_true, bne_iff_ne, ne_eq] at hv
   exact ⟨hv.1, hv.2.1, hv.2.2⟩

@@ -438,6 +438,7 @@ def preOK : Bool :=
   match f.block? I.s.b with
   | none => false
   | some B =>
+    f.blocks.contains I.s.b &&
     B.id == I.s.b && B.values == I.bvals && B.kind == .If && I.s.p != I.s.b && I.t != I.s.b &&
     B.preds[I.s.cidx]? == some ⟨I.s.p, I.s.pi⟩ && I.last + 1 == B.preds.size &&
     I.vs == I.bvals.filter (fun x => x != I.s.ctl && isPhiIn f x) &&
