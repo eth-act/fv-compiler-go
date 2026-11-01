@@ -302,6 +302,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
   files: it allocates arrays of size max-value-ID per call); without the two schedule calls the
   checked step costs 1.1 s there.
 
+#### branchelim: no `check` per rewrite (#147)
+- **Problem:** `BranchElim.stepOK` ran `checkOK ce g` on every accepted rewrite, and `relB`
+  compared every value and block table entry (`List.range f.valueTab.size`, `f.blocks.all`).
+- **Trick:** as for plain fusion (PR #171): the proofs run on path dominance (`UseDom`,
+  `SDom`) instead of the certificate, `DRel.wf_pres`/`DRel.useDom_pres` derive `WF`/`UseDom` of
+  the result from the relation (`GoFV/Proof/Pass/BranchElimPres.lean`), and the checker compares
+  the unchanged table entries with `tabEq` (pointer first); the pass checks its input once.
+- **Effect:** branchelim pass time, interleaved A/B with the same build (`pass-parity
+  --pass branchelim`, load 26–30): full-v2 14.4/15.2 s → 12.3/13.7 s; quick 0.7–0.8 s →
+  0.7 s (only 729 rewrites on quick). The remaining time is the rewrites themselves, the
+  `loadAddr` set and the single input `check`.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
