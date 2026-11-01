@@ -323,12 +323,12 @@ theorem frameVal_avoids (hX : TempX X) {ctx : Ctx} {v : Value} {x : Val}
     · trivial
   · cases hf
 
-/-- **A value of `tamPtrOps` on arguments that avoid `X` has a result that avoids `X`** (its
+/-- **A value of `tamPtrOps` or an `atomicRootOp` on arguments that avoid `X` has a result that avoids `X`** (its
 frame inputs avoid `X`, and a `LocalAddr` names no block of `X`). -/
 theorem evalOp_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx} {fr : Frame}
     (hfr : DAE.FrameOK U fr) {v : Value}
     (hloc : ∀ n, v.aux = some n → X (frameBlk ctx.tabs ctx.act n) = false)
-    {argv : List Val} {ty : Ty} {r : Val} (hop : v.op ∈ tamPtrOps)
+    {argv : List Val} {ty : Ty} {r : Val} (hop : v.op ∈ tamPtrOps ∨ atomicRootOp v.op = true)
     (hargs : ∀ z ∈ argv, Val.Avoids U z) (h : evalOp env ctx fr v argv ty = .ok r) :
     Val.Avoids U r := by
   have hU := tempU_of hX
@@ -340,7 +340,12 @@ theorem evalOp_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx :
     · rw [evalOp_notArm harm, hr] at h
       exact DAE.atomicRoot_avoids hU hargs h
     · rw [evalOp_pure_of harm (by simpa using hr)] at h; cases h
-      exact evalPure_avoids hX hop harm _ _ _ hargs
+      rcases hop with hop | hop
+      · exact evalPure_avoids hX hop harm _ _ _ hargs
+      · simp only [atomicRootOp, Bool.and_eq_true] at hop; exact absurd hop.1 hr
+  have hop : v.op ∈ tamPtrOps := hop.resolve_right fun h => by
+    simp only [atomicRootOp, Bool.and_eq_true, Bool.not_eq_true'] at h
+    rw [List.contains_iff_mem.2 harm] at h; cases h.2
   have calls : v.op = .StaticLECall ∨ v.op = .StaticCall ∨ v.op = .ClosureLECall ∨
       v.op = .ClosureCall ∨ v.op = .InterLECall ∨ v.op = .InterCall → Val.Avoids U r := by
     intro ho
