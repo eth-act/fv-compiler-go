@@ -6,7 +6,8 @@ import GoFV.Opt.ShortCircuit
 # short circuit, step 1 (`constPhiArgs`), checked: refinement
 
 `cpaOK_refines`: a result `g` that `cpaOK` accepts for an `f` passing the slim input check
-(`wfDomCheck`: well formed, dominator certificate valid) refines `f` and is well formed with uses dominated on paths (`WFDom`, the invariant of the fuse loop that follows). The
+(`wfDomCheck`: well formed, dominator certificate valid) refines `f` and is well formed with
+uses dominated on paths (`WFDom`, the invariant of the fuse loop that follows). The
 refinement goes through `mid f g`, `f` with the new constants added to its entry: `mid f g`
 refines `f` by zcse's simulation (`ZCSE.refines_of_rel`, the relation `CRel.zrel_mid`), and `g`
 runs like `mid f g` (`CRel.refines_mid`: the replaced `Phi` arguments read the constants the
