@@ -107,7 +107,7 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
           let why := bad.map fun a => match g.value? a, f.value? a with
             | some aw, some au =>
               let dSh := s!"{repr (erase (shapeOf sh f aw.args[1]!))}/{repr (erase (shapeOf sh g aw.args[1]!))}"
-              s!"f-op {au.op.name} same-d {au.args[1]! == aw.args[1]!} iface {ifaceShape (shapeOf sh f a)} special-d {special f g aw.args[1]!} d {dSh} dep {!fb.values.contains a || depB g nodeG (fun _ => true) fuel a x} tgt-a {depB g nodeG (fun _ => true) fuel a x || placedSDom g anc bid a} tgt-d {depB g nodeG (fun _ => true) fuel aw.args[1]! x || placedSDom g anc bid aw.args[1]!}"
+              s!"f-op {au.op.name} same-d {au.args[1]! == aw.args[1]!} iface {ifaceShape (shapeOf sh f a)} special-d {special f g aw.args[1]!} d {dSh} dep {!fb.values.contains a || depB g nodeG (fun _ => true) fuel a x} tgt-a {placedSDom g anc bid a || depB g nodeG (fun _ => true) fuel a x} tgt-d {placedSDom g anc bid aw.args[1]! || depB g nodeG (fun _ => true) fuel aw.args[1]! x}"
             | _, _ => "?"
           return s!"IMake arg: {why.headD "?"}"
   if !((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) then

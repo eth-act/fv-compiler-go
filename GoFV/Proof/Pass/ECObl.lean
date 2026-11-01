@@ -51,6 +51,51 @@ theorem obl_invalid {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT :
   | panic e m => exact absurd hprio (prio_panicking (evalValue_panic_op hS))
   | stuck msg => exact .stuck msg _
 
+/-! ## Tail calls -/
+
+theorem tailOp_eq {op : Op} (h : tailOp op = true) : op = .TailLECall ∨ op = .TailLECallInter := by
+  unfold tailOp at h
+  split at h
+  · exact .inl rfl
+  · exact .inr rfl
+  · cases h
+
+/-- **The obligation of a tail call**: `TailLECall*` is outside the semantics' phases, so the
+source's evaluation is `stuck`. -/
+theorem obl_tail {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT : ID → Prop}
+    (hu : f.value? x = some u) (hop : tailOp u.op = true) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x := by
+  intro u' w' hu' hw' env _ frS T _ _ E _ _ _ hRu _ _ _
+  rw [hu] at hu'
+  cases hu'
+  rw [evalValue_of_regs hRu]
+  cases hS : evalOp env (Ctx.make tabs f) frS u (u.args.toList.map (rv frS))
+      ((Ctx.make tabs f).tys[u.id]?.getD .other) with
+  | stuck msg => exact .stuck msg _
+  | ok r =>
+    rcases tailOp_eq hop with h | h <;>
+      simp only [evalOp, frameVal, h, show isRoot .TailLECall = true from rfl,
+        show isRoot .TailLECallInter = true from rfl, ↓reduceIte] at hS <;> cases hS
+  | panic e m =>
+    rcases tailOp_eq hop with h | h <;>
+      simp only [evalOp, frameVal, h, show isRoot .TailLECall = true from rfl,
+        show isRoot .TailLECallInter = true from rfl, ↓reduceIte] at hS <;> cases hS
+
+/-- **The obligation of a value reading a tail call**: no source register holds a tail call
+(`RegOK`), so the source never evaluates it. -/
+theorem obl_tailUse {tabs : Tables} {f g : Func} {x c : ID} {u cu : Value} {HS HT : ID → Prop}
+    (hu : f.value? x = some u) (hc : c ∈ u.args) (hcu : f.value? c = some cu)
+    (hop : tailOp cu.op = true) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x := by
+  intro u' w' hu' hw' env _ frS T _ hRS E _ _ _ hRu _ _ _
+  rw [hu] at hu'
+  cases hu'
+  obtain ⟨y, hy⟩ := hRu c hc
+  obtain ⟨h1, h2⟩ := (hRS c y hy).2.2 cu hcu
+  rcases tailOp_eq hop with h | h
+  · exact absurd h h1
+  · exact absurd h h2
+
 /-! ## The checker's facts -/
 
 theorem eco_ecCheck {tabs : Tables} {f g : Func} (h : ecCheck tabs f g = true) :
@@ -229,6 +274,15 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
         unfold converted; rw [hu]; dsimp only; rw [hr, Bool.or_true]
       exact obl_result hu hw (beq_iff_eq.1 hr) hv hreg huid _ hLx hL (hH hconv)
     rw [ite_eq_right hr] at hv
+    by_cases ht : (tailOp u.op || u.args.any (isTail f)) = true
+    · rcases (Bool.or_eq_true _ _).1 ht with h | h
+      · exact obl_tail hu h
+      · obtain ⟨c, hc, hct⟩ := Array.any_eq_true'.1 h
+        unfold isTail at hct
+        cases hcu : f.value? c with
+        | none => rw [hcu] at hct; cases hct
+        | some cu => rw [hcu] at hct; exact obl_tailUse hu hc hcu hct
+    rw [ite_eq_right ht] at hv
     by_cases hs : (u.op == .SelectN && u.args.size == 1 && converted f u.args[0]!) = true
     · rw [ite_eq_left hs] at hv
       simp only [Bool.and_eq_true, beq_iff_eq] at hs

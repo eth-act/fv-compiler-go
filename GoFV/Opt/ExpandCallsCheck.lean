@@ -347,12 +347,26 @@ def identOK (f g : Func) (u w : Value) : Bool :=
     w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args &&
     u.args.all (fun a => !special f g a)
 
-/-- The class check of non-`Phi` source value `x`. -/
+/-- The pre-`expand calls` tail calls, outside the semantics' phases: their evaluation is
+`stuck`, so no source register ever holds one. -/
+def tailOp : Op → Bool
+  | .TailLECall | .TailLECallInter => true
+  | _ => false
+
+/-- `a` is a tail call of `f`. -/
+def isTail (f : Func) (a : ID) : Bool :=
+  match f.value? a with
+  | some u => tailOp u.op
+  | none => false
+
+/-- The class check of non-`Phi` source value `x`. A tail call (stuck in the source) and a value
+reading one (never evaluated by the source) are accepted with any target node. -/
 def valueOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | some u, some w =>
     if (callOpMap u.op).isSome then callOK tabs sh f g u w
     else if u.op == .MakeResult then resultOK tabs sh f g u w
+    else if tailOp u.op || u.args.any (isTail f) then true
     else if u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! then
       selectOK tabs sh f g x u w
     else if w.op == .Invalid then Sem.prio u.op == 0 && u.op != .Phi
@@ -554,14 +568,15 @@ def placedSDom (g : Func) (anc : ID → ID → Bool) (bid z : ID) : Bool :=
       anc w.block bid
   | none => false
 
-/-- Target mode of `imkArgOK`: `a` is interface-shaped in `g`, and `x` depends in `g` on `a`
-and on its data operand, or they are placed in strict dominators of `x`'s block `bid` (their
-target registers hold their evaluations). -/
+/-- Target mode of `imkArgOK`: `a` is interface-shaped in `g`, and `a` and its data operand are
+placed in strict dominators of `x`'s block `bid` or `x` depends on them in `g` (their target
+registers hold their evaluations). The placement test comes first: a failing `depB` search
+explores every path. -/
 def imkTgtOK (sh : Array Ty) (g : Func) (anc : ID → ID → Bool) (bid : ID) (node : ID → Bool)
     (fuel : Nat) (aw : Value) (a x : ID) : Bool :=
   ifaceShape (shapeOf sh g a) &&
-    (depB g node (fun _ => true) fuel a x || placedSDom g anc bid a) &&
-    (depB g node (fun _ => true) fuel aw.args[1]! x || placedSDom g anc bid aw.args[1]!)
+    (placedSDom g anc bid a || depB g node (fun _ => true) fuel a x) &&
+    (placedSDom g anc bid aw.args[1]! || depB g node (fun _ => true) fuel aw.args[1]! x)
 
 /-- An argument `a` of a converted value `x` of block `fb` whose node in `g` is an `IMake` (whose
 data word the `IMake` shortcut may pass directly; `EC.ec_imake`) in source or target mode. -/
@@ -583,7 +598,7 @@ def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
   | .Arg => match w.aux with
     | some n => (paramNames tabs g).contains (some n)
     | none => false
-  | .SP | .SB | .LocalAddr | .OffPtr | .SelectN | .Empty | .ArgFloatReg
+  | .SP | .GetCallerSP | .SB | .LocalAddr | .OffPtr | .SelectN | .Empty | .ArgFloatReg
   | .StructMake | .ArrayMake1 | .SliceMake | .StringMake | .IMake | .ComplexMake
   | .ComplexReal | .ComplexImag
   | .SlicePtr | .SliceLen | .SliceCap | .StringPtr | .StringLen | .ITab | .IData

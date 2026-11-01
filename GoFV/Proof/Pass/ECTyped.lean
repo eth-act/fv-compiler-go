@@ -50,10 +50,14 @@ theorem regOK_evalValue {env : Env} {ctx : Ctx} {fr : Frame} {x : ID} {v : Value
   | stuck msg => rw [he] at h; cases h
   | ok r =>
     rw [he] at h; cases h
-    refine ⟨Val.retype_hasTy _ _, fun u vs hu hop hy => ?_⟩
-    rw [hv] at hu; cases hu
-    rw [evalOp_makeResult hop] at he; cases he
-    rw [retype_tuple_length hy]; simp
+    refine ⟨Val.retype_hasTy _ _, fun u vs hu hop hy => ?_, fun u hu => ?_⟩
+    · rw [hv] at hu; cases hu
+      rw [evalOp_makeResult hop] at he; cases he
+      rw [retype_tuple_length hy]; simp
+    · rw [hv] at hu; cases hu
+      refine ⟨fun hop => ?_, fun hop => ?_⟩ <;>
+        simp only [evalOp, frameVal, hop, show isRoot .TailLECall = true from rfl,
+          show isRoot .TailLECallInter = true from rfl, ite_true] at he <;> cases he
 
 theorem RegsOK.set {ctx : Ctx} {fr : Frame} (h : RegsOK ctx fr) {x : ID} {y : Val}
     (hy : RegOK ctx x y) : RegsOK ctx (fr.set x y) := by
@@ -97,8 +101,10 @@ theorem regsOK_setPhis {ctx : Ctx} :
 theorem regOK_phi {ctx : Ctx} {fr : Frame} {i : Nat} {p : ID × Val}
     (h : phiStep ctx fr i p.1 = .ok (some p)) : RegOK ctx p.1 p.2 := by
   obtain ⟨-, v, a, y, hv, hph, -, -, hp2⟩ := phiStep_some h
-  refine ⟨by rw [hp2]; exact Val.retype_hasTy _ _, fun u vs hu hop _ => ?_⟩
-  rw [hv] at hu; cases hu; rw [hph] at hop; cases hop
+  refine ⟨by rw [hp2]; exact Val.retype_hasTy _ _, fun u vs hu hop _ => ?_, fun u hu => ?_⟩
+  · rw [hv] at hu; cases hu; rw [hph] at hop; cases hop
+  · rw [hv] at hu; cases hu
+    exact ⟨fun h => by rw [hph] at h; cases h, fun h => by rw [hph] at h; cases h⟩
 
 /-- Setting the collected `Phi`s keeps `RegsOK`. -/
 theorem regsOK_phis {ctx : Ctx} {fr : Frame} {i : Nat} {l : List ID} {ps : List (ID × Val)}

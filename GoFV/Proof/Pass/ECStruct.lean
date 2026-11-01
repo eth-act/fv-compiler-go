@@ -326,11 +326,12 @@ theorem ecs_imk {tabs : Tables} {ce' : CheckEnv} {f g : Func} {bid : ID} {fb gb 
   · unfold imkTgtOK at htgt
     simp only [Bool.and_eq_true, Bool.or_eq_true] at htgt
     obtain ⟨⟨hi, h1⟩, h2⟩ := htgt
-    have hT : ∀ z, (depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) z x = true ∨
-        placedSDom g (make g).anc fb.id z = true) → HeldT g gb x z := fun z hz => by
-      rcases hz with hd | hp
-      · exact .inl (ecs_depB_dep hown hnd hd)
+    have hT : ∀ z, (placedSDom g (make g).anc fb.id z = true ∨
+        depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) z x = true) →
+        HeldT g gb x z := fun z hz => by
+      rcases hz with hp | hd
       · rw [hid] at hp; exact .inr (ecs_placedSDom hcg hp)
+      · exact .inl (ecs_depB_dep hown hnd hd)
     exact .inr ⟨hi, hT _ h1, hT _ h2⟩
 
 /-- **The structural soundness of `blockOK`**: an accepted block satisfies `CvBlock` for the

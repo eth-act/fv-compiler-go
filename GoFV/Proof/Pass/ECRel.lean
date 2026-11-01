@@ -47,12 +47,14 @@ def NewCons (env : Env) (ctx : Ctx) (isNew : ID → Bool) (T : Frame) (E : ID �
     (∀ a ∈ w.args, isNew a = true → E a) ∧ T.regs[z]? = some (some y) ∧
     evalValue env ctx T w = .ok y
 
-/-- What a source register of value `x` holds: a value of the shape of `x`'s type, and a tuple
-of exactly one component per argument for a `MakeResult` (`evalValue` retypes the result of
-`evalOp` at the value's shape; a tuple keeps its length). -/
+/-- What a source register of value `x` holds: a value of the shape of `x`'s type, a tuple of
+exactly one component per argument for a `MakeResult` (`evalValue` retypes the result of
+`evalOp` at the value's shape; a tuple keeps its length), and never the result of a tail call
+(`TailLECall*` is outside the semantics' phases: its evaluation is `stuck`). -/
 def RegOK (ctx : Ctx) (x : ID) (y : Val) : Prop :=
   y.hasTy (ctx.tys[x]?.getD .other) = true ∧
-    ∀ u vs, ctx.f.value? x = some u → u.op = .MakeResult → y = .tuple vs → vs.length = u.args.size
+    (∀ u vs, ctx.f.value? x = some u → u.op = .MakeResult → y = .tuple vs → vs.length = u.args.size) ∧
+    ∀ u, ctx.f.value? x = some u → u.op ≠ .TailLECall ∧ u.op ≠ .TailLECallInter
 
 /-- Every register of frame `fr` satisfies `RegOK`. -/
 def RegsOK (ctx : Ctx) (fr : Frame) : Prop :=
