@@ -67,6 +67,21 @@ import GoFV.Proof.Pass.CopyElimSweep
 import GoFV.Proof.Pass.CopyElimView
 import GoFV.Proof.Pass.CopyElimWF
 import GoFV.Proof.Pass.CopyFrag
+import GoFV.Proof.Pass.DAE
+import GoFV.Proof.Pass.DAEAvoid
+import GoFV.Proof.Pass.DAEBlock
+import GoFV.Proof.Pass.DAEBlockBase
+import GoFV.Proof.Pass.DAECall
+import GoFV.Proof.Pass.DAEEnter
+import GoFV.Proof.Pass.DAEFinish
+import GoFV.Proof.Pass.DAEMem
+import GoFV.Proof.Pass.DAEOps
+import GoFV.Proof.Pass.DAERel
+import GoFV.Proof.Pass.DAERoot
+import GoFV.Proof.Pass.DAESim
+import GoFV.Proof.Pass.DAESrc
+import GoFV.Proof.Pass.DAEStep
+import GoFV.Proof.Pass.DAEVal
 import GoFV.Proof.Pass.DSE
 import GoFV.Proof.Pass.DSEBlock
 import GoFV.Proof.Pass.DSEBlockBase
@@ -293,6 +308,7 @@ import GoFV.Proof.Witness.CSE
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.CopyElim
 import GoFV.Proof.Witness.CopyElimRel
+import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.DSE
 import GoFV.Proof.Witness.DSECert
 import GoFV.Proof.Witness.Deadcode
@@ -307,6 +323,7 @@ import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.ZCSE

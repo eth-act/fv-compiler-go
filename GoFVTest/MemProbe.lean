@@ -3,7 +3,7 @@ import GoFV.SSA.Check
 import GoFV.SSA.DomCert
 import GoFV.Opt.NilCheckRel
 import GoFV.Opt.DeadStoreCheck
-import GoFV.Opt.ElimDeadAutos
+import GoFV.Opt.DeadAutosCheck
 import GoFV.Opt.CSE
 
 /-!
@@ -21,7 +21,9 @@ its changes by the argument a refinement proof needs:
   roots minus the removed checks in the same order.
 * dse: changed functions, those the checker `DSE.drel` accepts (`dseFrag`), and for the others
   the conditions it rejects (`dseWhy`).
-* dead auto elim: changed functions, those with calls or integer→pointer conversions.
+* dead auto elim: changed functions, those with calls or integer→pointer conversions. With
+  `--dae-candidates`, every accepted change of a function without calls (non-vacuity witness
+  candidates: file, section, values, blocks).
 -/
 
 open GoFV.SSA GoFV.Opt
@@ -174,6 +176,58 @@ def dseWhy (tabs : Tables) (f g : Func) : List String := Id.run do
 
 /-! ## dead auto elim -/
 
+mutual
+/-- A shape that may hold a memory. -/
+partial def tyMem : Sem.Ty → Bool
+  | .mem => true
+  | .tuple ts => tysMem ts
+  | .agg fs _ => tysMem (fs.map (·.2))
+  | _ => false
+partial def tysMem : List Sem.Ty → Bool
+  | [] => false
+  | t :: ts => tyMem t || tysMem ts
+end
+
+mutual
+/-- A shape that may hold a pointer into a frame block. -/
+partial def tyPtr : Sem.Ty → Bool
+  | .ptr _ | .blob _ => true
+  | .tuple ts => tysPtr ts
+  | .agg fs _ => tysPtr (fs.map (·.2))
+  | _ => false
+partial def tysPtr : List Sem.Ty → Bool
+  | [] => false
+  | t :: ts => tyPtr t || tysPtr ts
+end
+
+/-- Why `DAE.arel` rejects `g` (each failing condition; `[]` if it accepts). -/
+def daeWhy (tabs : Tables) (f g : Func) : List String := Id.run do
+  let A := DAE.tagArr tabs f
+  let T := fun x => A.getD x none
+  let E := DAE.names f g T
+  let mut ws : List String := []
+  let add (ws : List String) (w : String) := if ws.contains w then ws else w :: ws
+  if DomCert.cfgView g != DomCert.cfgView f || g.ownAux != f.ownAux ||
+      g.valueTab.size != f.valueTab.size then ws := add ws "shape"
+  for n in E do
+    if !DAE.unforgeable tabs n then
+      ws := add ws (match tabs.aux? n with
+        | some { kind := .name _ _ _ _ _ fl _, .. } =>
+          if fl.opendeferslot then "opendeferslot" else "forgeable"
+        | _ => "not-a-name")
+  for b in f.blocks do
+    if !DAE.blockOK f g T E b then ws := add ws "control"
+    if !DSE.schedOK f g b then ws := add ws "roots"
+  for x in List.range f.valueTab.size do
+    let some fv := f.value? x | continue
+    if !DAE.valueOK f g T E x then ws := add ws "value"
+    if DAE.tagStep tabs T fv != T x then ws := add ws "tag"
+    if !DAE.usesOK f g T E x then
+      let el := (g.value? x).any (DAE.elimV fv ·)
+      ws := add ws s!"use-{fv.op.name}{if el then "-elim" else ""}"
+    if !DAE.keptOK tabs f g x then ws := add ws s!"op-{fv.op.name}"
+  return ws
+
 /-- The name an eliminated value of dead auto elim writes: `VarDef`'s aux, or the `LocalAddr`
 under the destination's `OffPtr`s. -/
 def elimName (f : Func) (v : Value) : Option AuxRef := Id.run do
@@ -190,7 +244,8 @@ def elimName (f : Func) (v : Value) : Option AuxRef := Id.run do
 
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
-  for a in args do
+  let cands := args.contains "--dae-candidates"
+  for a in args.filter (· != "--dae-candidates") do
     let p : System.FilePath := a
     if ← p.isDir then
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
@@ -216,6 +271,11 @@ def main (args : List String) : IO UInt32 := do
   let mut aKinds : Std.HashMap String Nat := {}
   let mut aNames : Std.HashMap String Nat := {}
   let mut aFnNoAddr := 0
+  let mut aAcc := 0
+  let mut aMemOps : Std.HashMap String Nat := {}
+  let mut aPtrOps : Std.HashMap String Nat := {}
+  let mut aMemRes : Std.HashMap String Nat := {}
+  let mut aWhy : Std.HashMap String Nat := {}
   let mut aFnNoAddrNoCall := 0
   for path in files do
     let data ← IO.FS.readBinFile path
@@ -301,10 +361,24 @@ def main (args : List String) : IO UInt32 := do
                   if !names.contains n then names := n :: names
           if any then
             aChanged := aChanged + 1
+            if DAE.arel prev f g then
+              aAcc := aAcc + 1
+              let ty := fun (x : ID) => prev.ty ((f.value? x).map (·.type) |>.getD 0)
+              for x in List.range f.valueTab.size do
+                if let some fx := f.value? x then
+                  if fx.args.any (fun a => tyMem (ty a)) then aMemOps := bump aMemOps fx.op.name
+                  if tyPtr (ty x) then aPtrOps := bump aPtrOps fx.op.name
+                  if tyMem (ty x) then aMemRes := bump aMemRes fx.op.name
+            else
+              let ws := daeWhy prev f g
+              aWhy := bump aWhy (toString (ws.mergeSort (· ≤ ·)))
             let ops := (List.range f.valueTab.size).filterMap fun x => (f.value? x).map (·.op)
             let calls := ops.any (fun o => o == .StaticLECall || o == .StaticCall ||
               o == .ClosureLECall || o == .InterLECall || o == .TailLECall)
             if calls then aCalls := aCalls + 1
+            if cands && !calls && DAE.arel prev f g then
+              IO.println s!"dae candidate: {path} section {k} values {f.valueTab.size} blocks {f.blocks.size}"
+
             if ops.any (· == .Convert) then aConv := aConv + 1
             let mut addr := false
             for n in names do
@@ -325,7 +399,11 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"dse: inputs {dInst}, changed {dChanged}, in fragment {dFrag}"
   IO.println s!"  eliminated stores, and rejected functions by reason: {show' dWhy}"
   IO.println s!"  changed functions outside the fragment, by their reasons: {show' dFn}"
-  IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, with calls {aCalls}, with Convert {aConv}"
+  IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, checker accepts {aAcc}, with calls {aCalls}, with Convert {aConv}"
+  IO.println s!"  changed functions outside the fragment, by their reasons: {show' aWhy}"
+  IO.println s!"  accepted: ops with a memory-shaped argument: {show' aMemOps}"
+  IO.println s!"  accepted: ops with a pointer-capable result: {show' aPtrOps}"
+  IO.println s!"  accepted: ops with a memory-shaped result: {show' aMemRes}"
   IO.println s!"  eliminated values by op: {show' aKinds}"
   IO.println s!"  eliminated names by class/flags: {show' aNames}"
   IO.println s!"  changed functions eliminating no user addrtaken name (addrtaken, not autotmp): {aFnNoAddr}, of which without calls: {aFnNoAddrNoCall}"
