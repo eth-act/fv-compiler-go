@@ -295,6 +295,7 @@ import GoFV.Proof.Sched
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
+import GoFV.Proof.TabsAgree
 import GoFV.Proof.Term
 import GoFV.Proof.TermStep
 import GoFV.Proof.ValRefine
@@ -324,6 +325,7 @@ import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.StackF0
+import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.ZCSE
