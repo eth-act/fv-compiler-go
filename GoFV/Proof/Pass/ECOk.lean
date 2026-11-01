@@ -107,6 +107,31 @@ theorem regsOK_block (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {fr
       rw [hu] at hv'; cases hv'; exact hid)
     (regsOK_phis hps hok) hev
 
+/-- Lemma (D) for the strict dominators of block `b` survives any change of the registers of
+`b`'s values (their arguments are placed in dominators of their blocks). -/
+theorem ec_dinv_keep {ce : CheckEnv} {f : Func} {env : Env} (hwf : WF ce f) (hc : CertOK f)
+    {b : ID} {blk : Block} (hb : b ∈ f.blocks) (hbb : f.block? b = some blk) {fr fr' : Frame}
+    (hup : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b ∧ a ≠ b) fr)
+    (hfr' : fr' = { fr with regs := fr'.regs })
+    (hout : ∀ z, z ∉ blk.values → fr'.regs[z]? = fr.regs[z]?) :
+    DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b ∧ a ≠ b) fr' := by
+  intro x v hx ⟨hanc, hxb⟩
+  change Placed f x v at hx
+  obtain ⟨hv, hvb, blk', hblk', hxv⟩ := hx
+  obtain ⟨y, hy, hevy⟩ := hup x v ⟨hv, hvb, blk', hblk', hxv⟩ ⟨hanc, hxb⟩
+  have hxn : x ∉ blk.values := fun hm => by
+    obtain ⟨v', hv', -, hvb'⟩ := hwf.valueId b blk ⟨hb, hbb⟩ x hm
+    rw [hv] at hv'; cases hv'; exact hxb hvb'
+  refine ⟨y, by rw [hout x hxn, hy], fun hne => ?_⟩
+  have hna : ∀ a ∈ v.args, a ∉ blk.values := fun a ha hm => by
+    have hua := hc.domRel.uses hvb hblk' (hc.domRel.left hanc) hxv hv hne ha
+    obtain ⟨va, hva, -, hvab⟩ := hwf.valueId b blk ⟨hb, hbb⟩ a hm
+    have hba : blockOf f a = b := by unfold blockOf; rw [hva]; exact hvab
+    rw [hba] at hua
+    exact hxb (hc.domRel.antisymm hanc hua)
+  rw [← hevy hne]
+  exact (evalValue_congr hfr' fun a ha => (hout a (hna a ha)).symm).symm
+
 /-- **The target's block against a source reference frame `G`** (the source's frame after its
 `Phi`s, `PS`, with the source's schedule `oS` evaluated in part or in full): the hypotheses of
 `tgt_loop`/`tgt_next` for the target's frame after its `Phi`s, the new entry values (once the
@@ -145,9 +170,13 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
     fun a ha hm han => by
       obtain ⟨w, hw, hph⟩ := hphi_of a ha hm
       exact (B.newOK a ha han w hw).1 hph
+  have hbt := CSE.pre_tree H.wf H.cf hA.pre
+  obtain ⟨fb', hfb', hfid⟩ := H.wf.blockId b hbm
+  rw [hfb] at hfb'; cases hfb'
   refine ⟨B, hsg, ogn, ogt, ogm, fun x hx w hw => ?_, ?_, by simp [pT1, hA.szT], hA.img,
     ?_, fun z hz hm => hE0gb z hz (hogb z hm), fun z hz w hw a ha hm =>
-      H.entry_not_mem (H.entry_args hz.1 hw a ha) hbm' hgb hz.2.2 (hogb a hm), ?_, ?_, ?_, hGok⟩
+      H.entry_not_mem (H.entry_args hz.1 hw a ha) hbm' hgb hz.2.2 (hogb a hm), ?_, ?_, ?_, hGok,
+    by rw [hfid]; exact hbt.2, ?_, ?_, ?_⟩
   · obtain ⟨w', hw', hid, -⟩ := H.wg.valueId b gb ⟨hbm', hgb⟩ x hx
     rw [hw] at hw'; cases hw'; exact hid
   · rw [hG]; conv => lhs; rw [hA.frame]
@@ -190,6 +219,15 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
       rw [hGk a hao, pS3 a (.inl haf)] at hy
       obtain ⟨y', hy', hyy⟩ := hA.rel a y hy
       exact ⟨y', by show (setPhis psT frT.regs)[a]? = _; rw [pT3 a (.inl hag)]; exact hy', hyy⟩
+  · rw [hfid]
+    exact ec_dinv_keep H.wf H.cf hbm hfb (CSE.pre_strict H.cf hA.pre).1 hG fun z hz => by
+      rw [hGk z fun h => hz ((ofm z).1 h).1, pS3 z (.inl hz)]
+  · intro z u ⟨hu, hub, blk, hblk, hz⟩
+    obtain ⟨v, hv, hvid, -⟩ := H.wf.valueId u.block blk ⟨hub, hblk⟩ z hz
+    rw [hu] at hv; cases hv; exact hvid
+  · intro z hz u hu
+    obtain ⟨v, hP, -, -⟩ := placed_of_mem H.wf hbm hfb hz
+    rw [hP.1] at hu; cases hu; exact hP
 
 /-- The parts of a block entry the source does not get stuck in: its `Phi`s and schedule, the
 target's block, schedule and `Phi`s. -/

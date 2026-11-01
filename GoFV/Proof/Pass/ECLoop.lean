@@ -122,6 +122,10 @@ structure TgtHyp (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID 
   hrel0 : ∀ a, a ∉ og.toList → isNew a = false → ∀ y, G.regs[a]? = some (some y) →
     ∃ y', T0.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y'
   hGok : RegsOK (Ctx.make tabs f) G
+  htree : ((make f).depthOf fb.id).isSome
+  hdinv : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a fb.id ∧ a ≠ fb.id) G
+  hidF : ∀ z u, Placed f z u → u.id = z
+  hfbP : ∀ z ∈ fb.values, ∀ u, f.value? z = some u → Placed f z u
 
 /-- **A source value of the schedule** evaluated by the target after the prefix `d`: a
 refinement of its conversion (or the same panic), by its obligation. -/
@@ -129,7 +133,9 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
     (TH : TgtHyp env tabs f g cv isNew front RR fb gb og G T0 E0) {d s : List ID} {x : ID}
     (hog' : og.toList = d ++ x :: s) {T : Frame}
     (hI : LInv env tabs g cv isNew G T0 E0 d T) (hn : isNew x = false) {u : Value}
-    (hu : f.value? x = some u) (hGa : ∀ a ∈ u.args, Reg G a) :
+    (hu : f.value? x = some u) (hGa : ∀ a ∈ u.args, Reg G a)
+    (hsrcd : ∀ z ∈ d, isNew z = false → ∃ u y, f.value? z = some u ∧
+      G.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
     ResCv (cv x) (evalValue env (Ctx.make tabs f) G u) (stepV env (Ctx.make tabs g) T x) := by
   obtain ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩ := hI
   have hspec := (schedule_spec TH.hsg).topo
@@ -170,18 +176,31 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
         exact hTr a (mem_of_idx_lt hi hlt) han ya hya
     · rw [hTk a fun hd => hm (hdog a hd)]; exact TH.hrel0 a hm han ya hya
   have hT_G : T = { G with regs := T.regs } := by rw [hTf]; rw [TH.hT0]
+  have hdepd : ∀ z, Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x →
+      z ∈ d := fun z hd => by
+    obtain ⟨i, hi⟩ := List.getElem?_of_mem ((hspec.mem z).2 (ecl_dep_left hd))
+    have hj : og.toList[d.length]? = some x := by rw [hog']; exact getElem?_mid
+    have hlt := hspec.dep_lt hd hi hj
+    rw [hog'] at hi
+    exact mem_of_idx_lt hi hlt
+  have hheldS : ∀ z, Held f g fb gb x z → EcSrcHolds env tabs f G z := by
+    intro z hz u' hu'
+    unfold Held at hz
+    rcases hz with ⟨hzf, hd⟩ | ⟨v, hP, hph, hanc, hne⟩
+    · have hzid := TH.hidF z u' (TH.hfbP z hzf u' hu')
+      obtain ⟨u2, y, hu2, hy, hev⟩ := hsrcd z (hdepd z hd) (TH.B.common z hzf).2
+      rw [hu'] at hu2; cases hu2
+      exact ⟨hzid, y, hy, hev⟩
+    · rw [hP.1] at hu'; cases hu'
+      obtain ⟨y, hy, hev⟩ := TH.hdinv z u' hP ⟨hanc, hne⟩
+      exact ⟨TH.hidF z u' hP, y, hy, hev hph⟩
   rw [hstepV]
-  exact TH.B.obl x hxfb u hu huphi u w hu hw env hE G T hT_G TH.hGok _ hTN
+  exact TH.B.obl TH.htree x hxfb u hu huphi u w hu hw env hE G T hT_G TH.hGok _ hTN
     (fun a ha han => by
       by_cases hm : a ∈ og.toList
       · exact .inl ⟨hargIn a ha hm, han⟩
       · exact .inr (TH.hnewArgs x hxog w hw a ha han hm))
-    hreg hGa hfront fun z hd => by
-      obtain ⟨i, hi⟩ := List.getElem?_of_mem ((hspec.mem z).2 (ecl_dep_left hd))
-      have hj : og.toList[d.length]? = some x := by rw [hog']; exact getElem?_mid
-      have hlt := hspec.dep_lt hd hi hj
-      rw [hog'] at hi
-      exact hTH z (mem_of_idx_lt hi hlt)
+    hreg hGa hfront hheldS fun z hd => hTH z (hdepd z hd)
 
 /-- **The target's schedule prefix `L`.** -/
 theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 : ID → Prop}
@@ -191,7 +210,7 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
       G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
     ∃ T, evalAll env (Ctx.make tabs g) T0 L = .ok T ∧ LInv env tabs g cv isNew G T0 E0 L T := by
   obtain ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args, hnewArgs, hout,
-    hrel0, hGok⟩ := TH
+    hrel0, hGok, htree, hdinv, hidF, hfbP⟩ := TH
   refine evalAll_induct L (LInv env tabs g cv isNew G T0 E0) ?_ L [] T0 rfl
     ⟨by cases T0; rfl, rfl, fun _ _ => rfl, fun _ h => absurd h List.not_mem_nil,
       hE0.mono (fun z hz => hz.resolve_left fun h => absurd h.1 List.not_mem_nil)
@@ -325,7 +344,9 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
   | false =>
     obtain ⟨u, y, hu, hGy, hevS⟩ := hsrc x hxL hn
     have hob := tgt_next hE ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args,
-      hnewArgs, hout, hrel0, hGok⟩ hog' ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩ hn hu (regs_of_ok hevS)
+      hnewArgs, hout, hrel0, hGok, htree, hdinv, hidF, hfbP⟩ hog'
+      ⟨hTf, hTs, hTk, hTr, hTN, hTreg, hTH⟩ hn hu (regs_of_ok hevS)
+      (fun z hz hn' => hsrc z (by rw [hL]; exact List.mem_append_left _ hz) hn')
     rw [hevS] at hob
     generalize hT' : stepV env (Ctx.make tabs g) T x = rT at hob
     cases hob with

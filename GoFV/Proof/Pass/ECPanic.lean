@@ -74,7 +74,8 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
   have hGok : RegsOK (Ctx.make tabs f) G :=
     regsOK_block H hbm hfb hps hA.ok (fun x hx => ((ofm x).1 (hpreo x hx)).1) hpre
   have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := G) (by rw [g1]) hGk hGok
-  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT (fun x hx hn => by
+  have hsrc : ∀ x ∈ preT, isNew x = false → ∃ u y, f.value? x = some u ∧
+      G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y := fun x hx hn => by
     have hxog : x ∈ og.toList := by rw [hogT]; exact List.mem_append_left _ hx
     obtain ⟨hxg, w, hw, hph⟩ := (ogm x).1 hxog
     have hxf : x ∈ fb.values := Classical.byContradiction fun h => by
@@ -89,9 +90,10 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
     have hjl : j < preT.length := (List.getElem?_eq_some_iff.1 hj).1
     obtain ⟨i', hi', hix⟩ := htr j x hjl (by rw [hogT, List.getElem?_append_left hjl]; exact hj) hN
     rw [hof, List.getElem?_append_left hi'] at hix
-    exact g4 x (List.mem_of_getElem? hix))
+    exact g4 x (List.mem_of_getElem? hix)
+  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT hsrc
   have hrn : isNew r = false := (B.common r hrfb).2
-  have hob := tgt_next hE TH hogT hI hrn hur (regs_of_panic hevr)
+  have hob := tgt_next hE TH hogT hI hrn hur (regs_of_panic hevr) hsrc
   rw [hevr] at hob
   generalize hT' : stepV env (Ctx.make tabs g) T r = rT at hob
   cases hob with
