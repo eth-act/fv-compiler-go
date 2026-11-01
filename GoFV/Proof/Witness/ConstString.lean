@@ -101,7 +101,9 @@ theorem hi_checks :
 
 /-- The one-rule set is sound (`r_generic_1022_sound`, `Rule.SoundT`). -/
 theorem hiRules_allSound : hiRules.AllSound :=
-  GoFV.Proof.Rules.RuleSet.allSound_of ⟨⟨.inl GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩, trivial⟩
+  GoFV.Proof.Rules.RuleSet.allSound_of
+    ⟨⟨GoFV.Proof.Rules.Rule.checked_of_soundT GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩,
+      trivial⟩
     trivial
 
 /-- By kernel evaluation: the rewrite of `hi` logs no phi elimination. -/
