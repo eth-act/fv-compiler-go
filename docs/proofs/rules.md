@@ -582,7 +582,7 @@ needs a later phase of the semantics.
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Load | 5 | 2 | 0 | 33 | 35 |
-| `generic` | Lsh | 65 | 23 | 0 | 0 | 88 |
+| `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 1 | 10 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
@@ -625,7 +625,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1249 | 271 | 26 | 258 | 1762 |
+| all | | 1251 | 269 | 26 | 258 | 1762 |
 
 <!-- END coverage -->
 
