@@ -115,7 +115,7 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
   | some gb =>
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
     refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
     · have := Array.all_eq_true'.1 hval x hx
@@ -229,9 +229,10 @@ theorem eco_imkHeld {ce : CheckEnv} {tabs : Tables} {f g : Func} {bid x a : ID} 
 
 /-- **The local obligation of a non-`Phi` source value** of tree block `bid` for
 `expand calls`, the source's `Held` values and the target's `HeldT` values holding their
-evaluations (among them the `SP`s of a call's stack-argument stores, `hsp`, and the `SP`s and
-memories of a stack-assigned result's loads, `hld`; `hdep`: `x` depends in `g` on its arguments
-that are nodes of the block). -/
+evaluations (among them the `SP`s of a call's stack-argument stores, `hsp`, the `Dereference`
+its `Move` copies, `hma`, and the `SP`s and memories of a stack-assigned result's loads, `hld`;
+`hdep`: `x`, unless invalidated, depends in `g` on its arguments that are nodes of the block and
+not the `Dereference` of a `Move`). -/
 theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {fb gb : Block}
     {u : Value}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
@@ -242,7 +243,10 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     (himk : converted f x = true → ∀ a ∈ u.args, EcImkOK tabs f g fb gb x a)
     (hsp : (callOpMap u.op).isSome = true → ∀ w, g.value? x = some w → ∀ a, ecStackSP f g u w a →
       HeldT g gb x a)
-    (hdep : ∀ a ∈ u.args, a ∈ fb.values → (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) →
+    (hma : (callOpMap u.op).isSome = true → ∀ w, g.value? x = some w → ∀ a, ecMoveArg f g u w a →
+      SrcArg f fb x a)
+    (hdep : invalidated g x = false → ∀ a ∈ u.args, a ∈ fb.values →
+      (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) → moveArgB f g x a = false →
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
     (hld : ∀ l ∈ stackLoads tabs (typeShapes tabs) f g x,
       (isNewB f (loadSP g l) = false → HeldT g gb x (loadSP g l)) ∧
@@ -292,6 +296,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       have hconv : converted f x = true := by
         unfold converted; rw [hu]; dsimp only; rw [hc]; rfl
       exact obl_call hu hw hc hv huid _ hLx hL (hH hconv) (hsp hc w hw)
+        (fun a h => .inr (.inr (.inr (hma hc w hw a h))))
     rw [ite_eq_right hc] at hv
     by_cases hr : (u.op == .MakeResult) = true
     · rw [ite_eq_left hr] at hv
@@ -342,8 +347,10 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
             -- the call is held in the source
             have hHc : Held f g fb gb x u.args[0]! := by
               by_cases hcf : u.args[0]! ∈ fb.values
-              · exact .inl ⟨hcf, hdep _ hcmem hcf fun ua hua => by
-                  rw [hcu] at hua; cases hua; exact hcphi⟩
+              · have hmv : moveArgB f g x u.args[0]! = false := by
+                  unfold moveArgB stackMove; rw [hu, hw]; dsimp only; rw [if_neg hc]; rfl
+                exact .inl ⟨hcf, hdep hinv _ hcmem hcf (fun ua hua => by
+                  rw [hcu] at hua; cases hua; exact hcphi) hmv⟩
               · have hpl : Placed f x u :=
                   ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
                 obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=
