@@ -660,6 +660,8 @@ b5a909f): 7,317 (78.70%) at stock under the checked passes, 7,559 under the prov
 With aggregate leaves in the validator (#69 RuleProofs15: `leavesOK` asks only that a leaf be
 defined, since `Val.retype` gives a value of the shape at every shape, so the interface/slice
 operands of `:790–793` are accepted): 7,759 (83.46%) / 7,876 at 97ccd7b.
+With the frame facts of aux-bound variables (`:1011`, `:1015`; 1,239 rules): 7,950 (85.51%) /
+8,066 at a853397 (7,772 before, with #237's validator layers).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
