@@ -45,6 +45,10 @@ structure NameFlags where
   nonmergeable : Bool := false
   opendeferslot : Bool := false
   readonly : Bool := false
+  /-- Format 3: the address of this variable reaches a conversion to an integer in the
+  function's `start` section (`Convert` to `uintptr`, through pointer/integer arithmetic,
+  copies and phis), computed once by the exporter and kept in every section. -/
+  addrconv : Bool := false
   deriving DecidableEq, Inhabited, Repr, Hashable
 
 def NameFlags.table : List (String × (NameFlags → Bool) × (NameFlags → NameFlags)) :=
@@ -53,7 +57,8 @@ def NameFlags.table : List (String × (NameFlags → Bool) × (NameFlags → Nam
    ("autotmp", (·.autotmp), ({ · with autotmp := true })),
    ("nonmergeable", (·.nonmergeable), ({ · with nonmergeable := true })),
    ("opendeferslot", (·.opendeferslot), ({ · with opendeferslot := true })),
-   ("readonly", (·.readonly), ({ · with readonly := true }))]
+   ("readonly", (·.readonly), ({ · with readonly := true })),
+   ("addrconv", (·.addrconv), ({ · with addrconv := true }))]
 
 /-- Flags of an `*obj.LSym` (`sym` aux), in export order. -/
 structure SymFlags where

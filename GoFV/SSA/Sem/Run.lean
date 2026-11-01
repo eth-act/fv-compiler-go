@@ -411,13 +411,14 @@ structure Ctx where
   act : Nat := 0
   deriving Inhabited
 
-/-- A variable whose address the program takes (`addrtaken`; the frontend itself converts the
-addresses of some compiler temporaries to integers and back, e.g. the copy a `range` over an
-array iterates with `uintptr` arithmetic), or a parameter or result: its frame block is
-`Blk.local`, which an integer may convert back to; other `PAUTO`s are `Blk.temp` (§3.3). -/
+/-- A variable whose address the function converts to an integer (`addrconv`, export format
+3: the address reaches a `Convert` to `uintptr` in the `start` section, e.g. `uintptr(unsafe.
+Pointer(&x))` or the copy a `range` over an array iterates with `uintptr` arithmetic), or a
+parameter or result: its frame block is `Blk.local`, which an integer may convert back to; every
+other `PAUTO`, address-taken or not, is `Blk.temp` (§3.3). -/
 def _root_.GoFV.SSA.Tables.forgeable (tabs : Tables) (n : AuxRef) : Bool :=
   match tabs.aux? n with
-  | some { kind := .name _ cls _ _ _ fl _, .. } => cls != .PAUTO || fl.addrtaken
+  | some { kind := .name _ cls _ _ _ fl _, .. } => cls != .PAUTO || fl.addrconv
   | _ => true
 
 /-- The frame block of variable `n` of activation `act`. -/

@@ -44,8 +44,8 @@ inductive Blk where
   | local (act : Nat) (name : Nat)
   /-- The outgoing-arguments area of activation `act` (what `SP` points to). -/
   | outargs (act : Nat)
-  /-- A `PAUTO` of activation `act` whose address the program never takes as a user
-  variable (not `addrtaken && !autotmp`): it has the address of `local act name`, but no
+  /-- A `PAUTO` of activation `act` whose address the function does not convert to an integer
+  (no `addrconv` flag, `Tables.forgeable`): it has the address of `local act name`, but no
   integer converts back to it (`Ptr.ofAddr` never returns it, §3.3), so a conjured pointer
   points into no allocation. -/
   | temp (act : Nat) (name : Nat)
