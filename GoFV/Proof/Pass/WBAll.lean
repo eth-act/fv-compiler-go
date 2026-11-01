@@ -137,7 +137,7 @@ private theorem otherRole_spec {g : Func} {x : ID} {ρ : Role} (h : otherRole g 
       · exact .inr (.inl h.symm)
   · exact .inr (.inl h.symm)
 
-private theorem roleOf_wbaddr_inv {c : WBCheck.Ctx} {rs : List Run} {x : ID}
+theorem roleOf_wbaddr_inv {c : WBCheck.Ctx} {rs : List Run} {x : ID}
     (h : c.roleOf rs x = .wbaddr) : c.isWbaddr x = true := by
   rcases roleOf_cases c rs x with ⟨h1, -⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | h2 | h2
   · exact h1
@@ -147,7 +147,7 @@ private theorem roleOf_wbaddr_inv {c : WBCheck.Ctx} {rs : List Run} {x : ID}
   · simp [notRun] at h2
   · rcases otherRole_spec h2.symm with h3 | h3 | ⟨h3, -⟩ <;> cases h3
 
-private theorem roleOf_const0_inv {c : WBCheck.Ctx} {rs : List Run} {x : ID}
+theorem roleOf_const0_inv {c : WBCheck.Ctx} {rs : List Run} {x : ID}
     (h : c.roleOf rs x = .const0) : c.isConst0 x = true := by
   rcases roleOf_cases c rs x with ⟨-, h2⟩ | ⟨h1, -⟩ | ⟨-, h2⟩ | h2 | h2
   · rw [h] at h2; cases h2
@@ -188,7 +188,7 @@ private theorem then_op {c : WBCheck.Ctx} {rs : List Run} {x : ID} {ρ : Role} {
   obtain ⟨-, -, -, w', hw', hop⟩ := roleOf_then ht'
   rw [hw] at hw'; cases hw'; exact hop
 
-private theorem lazy_of_wbaddr {c : WBCheck.Ctx} {x : ID} (h : c.isWbaddr x = true) :
+theorem lazy_of_wbaddr {c : WBCheck.Ctx} {x : ID} (h : c.isWbaddr x = true) :
     ∃ c0, c.lazy = some (x, c0) := by
   unfold Ctx.isWbaddr at h
   cases hz : c.lazy with
@@ -200,7 +200,7 @@ private theorem lazy_of_wbaddr {c : WBCheck.Ctx} {x : ID} (h : c.isWbaddr x = tr
     subst h
     exact ⟨c0, rfl⟩
 
-private theorem lazy_of_const0 {c : WBCheck.Ctx} {x : ID} (h : c.isConst0 x = true) :
+theorem lazy_of_const0 {c : WBCheck.Ctx} {x : ID} (h : c.isConst0 x = true) :
     ∃ wa, c.lazy = some (wa, x) := by
   unfold Ctx.isConst0 at h
   cases hz : c.lazy with

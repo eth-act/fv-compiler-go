@@ -572,6 +572,8 @@ def lazyOK (tabs : Tables) (f g : Func) (K Lst : Array Bool) : Option (Option (I
     guard (c0.op == .Const32 && c0.auxInt == (0 : Int64) && c0.args.isEmpty &&
       (match tabs.ty c0.type with | .int .w32 => true | _ => false))
     guard (ge.contains s.wbaddr && ge.contains s.const0)
+    -- the flag address is new (`writebarrier` creates it), so it holds no source value
+    guard (!K.getD s.wbaddr false && !Lst.getD s.wbaddr false)
     return some (s.wbaddr, s.const0)
 
 /-- The context of the check. -/

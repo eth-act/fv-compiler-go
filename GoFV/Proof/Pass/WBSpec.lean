@@ -150,7 +150,7 @@ theorem lazyOK_some {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : I
   | nil => simp [pure] at h
   | cons s ss =>
     simp only [Option.bind_eq_some_iff, pure, Option.some.injEq] at h
-    obtain ⟨u1, hall, w, hw, cv, hcv, u2, hwa, u3, hc0, u4, hge, heq⟩ := h
+    obtain ⟨u1, hall, w, hw, cv, hcv, u2, hwa, u3, hc0, u4, hge, u5, -, heq⟩ := h
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     have hall := guard_some hall
@@ -183,6 +183,24 @@ theorem lazyOK_ne {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : ID}
   rw [hop] at hop'
   cases hop'
 
+/-- The flag address is not held. -/
+theorem lazyOK_not_held {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : ID}
+    (h : lazyOK tabs f g K Lst = some (some (wa, c0))) :
+    K.getD wa false = false ∧ Lst.getD wa false = false := by
+  simp only [lazyOK, Option.bind_eq_bind, Option.bind_eq_some_iff] at h
+  obtain ⟨runs, -, h⟩ := h
+  generalize runs.flatMap (fun x => x.fst.map fun x => x.sp) = sps at h
+  cases sps with
+  | nil => simp [pure] at h
+  | cons s ss =>
+    simp only [Option.bind_eq_some_iff, pure, Option.some.injEq] at h
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, u5, hnh, heq⟩ := h
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨rfl, rfl⟩ := heq
+    have hnh := guard_some hnh
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hnh
+    exact hnh
+
 theorem lazyOK_none {tabs : Tables} {f g : Func} {K Lst : Array Bool}
     (h : lazyOK tabs f g K Lst = some none) :
     ∀ b ∈ f.blocks, ∀ rs l, chainRuns? f g b = some (rs, l) → rs = [] := by
@@ -201,7 +219,7 @@ theorem lazyOK_none {tabs : Tables} {f g : Func} {K Lst : Array Bool}
     exact List.eq_nil_iff_forall_not_mem.2 fun r hr => List.not_mem_nil (hmem b hb rs l hc r hr)
   | cons s ss =>
     simp only [Option.bind_eq_some_iff, pure, Option.some.injEq] at h
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, heq⟩ := h
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, heq⟩ := h
     cases heq
 
 private theorem arr_one {α : Type} [Inhabited α] {a : Array α} (h : a.size = 1) : a = #[a[0]!] := by
