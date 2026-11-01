@@ -233,8 +233,8 @@ string; `sls_decodeLoad`), kernel evaluation.
 (`{t with loads := #[]}`) when the validator rejects the first result, so a forwarding the
 validator cannot relate costs only that function's forwardings (`checkedRewrite_cases`, statement
 unchanged: the validator does not read `loads`, `validate_noLoads`). Forwardings the validator
-does not relate (quick-v3, `opt-proven-probe` "Forwarding fallbacks", after aggregate forwarding:
-opt 12, middle opt 3, late opt 9; opt 50 before): chains with a `Store` the validator cannot
+does not relate (quick-v3 at ccc1a85, `opt-proven-probe` "Forwarding fallbacks", after aggregate
+forwarding: opt 12, middle opt 3, late opt 9; opt 50 before): chains with a `Store` the validator cannot
 prove disjoint (`Addr`s or `LocalAddr`s of one symbol at unknown or `PtrIndex` offsets), a `Store`
 of a `Load` of the same address left in the chain by an earlier rewrite, and (late opt) a
 one-pointer struct stored at the pointer type.
@@ -570,11 +570,13 @@ checked parity; validator rejects 4 / 6 / 0 / 0 / 0 (unchanged by `:974`: the ph
 three nil-check eliminations `nrel` rejects in `runtime.*Hash`, the six narrow tops), forwarding
 fallbacks 50 / 3 / 9 / 0 / 0 (47 / 3 / 9 without `:974`).
 After aggregate Load-of-Store forwarding (#151: `Mem.load` decodes with `decodeLoad`, so a stored
-`poison` aggregate loads as `poison`; `fwdTy` accepts `fwdAgg` shapes), on quick-v3 at ccc1a85:
-6,388 of 9,297 (68.71%) at stock under the checked passes, 6,381 (68.64%) before; opt 69.51%
-(69.43%) checked parity, the others unchanged; forwarding fallbacks 12 / 3 / 9 / 0 / 0 (50 / 3 /
-9 before; every aggregate-shape fallback of opt is gone); validator rejects 129 / 6 / 0 / 0 / 0
-on both (118 + 2 of them `generic.rules:610`/`:611`, 5 `:1137`, 3 `nrel`, 1 phi elimination).
+`poison` aggregate loads as `poison`; `fwdTy` accepts `fwdAgg` shapes), on quick-v3 at 683d0c6
+(with `:975` struct-store splits): 7,004 of 9,297 (75.34%) at stock under the checked passes,
+6,993 (75.22%) before; opt 76.38% (76.26%) checked parity, the others unchanged; forwarding and
+split fallbacks 78 / 3 / 9 / 0 / 0 (116 / 3 / 9 before: the 38 aggregate store shapes of opt are
+gone; the rest are struct-store splits, "stored Load"/"walk"/"chain start", and the forwarding
+chains below); validator rejects 158 / 6 / 1 / 0 / 0 on both. At ccc1a85 (before `:975`): 6,381
+→ 6,388, forwarding fallbacks 50 / 3 / 9 → 12 / 3 / 9.
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
