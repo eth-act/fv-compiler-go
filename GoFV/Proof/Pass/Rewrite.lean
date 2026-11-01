@@ -11,6 +11,7 @@ import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Pass.PhiSelSim
 import GoFV.Proof.Checked
 import GoFV.Proof.MemOpsPre
+import GoFV.Proof.RoImage
 import GoFV.Proof.Rules.Proven
 import GoFV.Opt.Opt
 
@@ -23,7 +24,8 @@ rewrite pass with its log, kept only if `RewriteCheck.validate` accepts it) refi
 `f` under `RwPre penv.tables f` (monotone contracts, `Env.Mono`; malloc-family contracts that
 return non-nil pointers and non-nil dictionary arguments, `NilPre`, for the nil-check
 eliminations of issue #151; the runtime's `memclrNoHeapPointers`/`memmove` contracts, if any,
-`Env.MemOps`), in the pass's extended tables. A rejected result is the input
+`Env.MemOps`; the read-only symbols `f`'s `Addr`s name in the initial memory, kept by the
+contracts, `RoImage`), in the pass's extended tables. A rejected result is the input
 (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as terms in
 the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
@@ -64,16 +66,21 @@ theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments
 (`NilPre`: the nil-check eliminations `generic.rules:1367`/`:1372`/`:1384`, issue #151), and
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
-(`Env.MemOps`: for the `Zero`/`Move` of such calls, `generic.rules:1638`/`:1730`). It depends
-on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`). -/
+(`Env.MemOps`: for the `Zero`/`Move` of such calls, `generic.rules:1638`/`:1730`), and the
+read-only symbols `f`'s `Addr`s name holding their exported bytes in the memory with the global
+image, kept by the contracts (`RoImage`: for `Move`s from them, `generic.rules:1743`). It depends
+on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`) and those symbols
+(`RewriteCheck.roSyms`). -/
 def RwPre (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
-  env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps
+  env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ RoImage (RewriteCheck.roSyms tabs f) env mem
 
 /-- `RwPre` holds on `Env.p1` (no malloc-family or memory runtime contract) for a function
-without dictionary parameters. -/
+without dictionary parameters and read-only symbols. -/
 theorem RwPre.p1 {tabs : Tables} {f : Func} (h : NilCheck.dictParams tabs f = [])
-    (args : List Val) (mem : Mem) : RwPre tabs f Env.p1 args mem :=
-  ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps⟩
+    (hro : RewriteCheck.roSyms tabs f = []) (args : List Val) (mem : Mem) :
+    RwPre tabs f Env.p1 args mem :=
+  ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps,
+    by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem⟩
 
 theorem RefinesUnder.toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
     (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
@@ -116,11 +123,11 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesUnder.toRw (StructStore.ss_refines hf hf' hr)).trans R'⟩
-  | @seg f f' g hr hck _ ih =>
+  | @seg f f' g hr hro hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2⟩)
-      (Seg.seg_refines hf hf' hr).from).trans R'⟩
+      (Seg.seg_refines hf hf' hr hro)).trans R'⟩
   | @ps f f' g hr hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'

@@ -1,6 +1,6 @@
 import GoFV.Proof.Pass.WBWalk
 import GoFV.Proof.DomCert
-import GoFV.Proof.Pass.WBInv
+import GoFV.Proof.MemInv
 
 /-!
 # writebarrier: the simulation relation and the start of a chain (issue #36)
@@ -18,6 +18,7 @@ registers after the chain).
 namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
+open GoFV.Proof.MemInv (SInv)
 
 /-- The target holds the flag address and constant. -/
 def LazyRegs (c : WBCheck.Ctx) (fr : Frame) : Prop :=
@@ -38,7 +39,7 @@ structure SimAt (env : Env) (c : WBCheck.Ctx) (frS frT : Frame) (b : ID) (i : Na
   sizeT : frT.regs.size = c.g.valueTab.size
   fr : frT = { frS with regs := frT.regs }
   held : ∀ a, c.held a = true → frT.regs[a]? = frS.regs[a]?
-  sinv : SInv frS
+  sinv : SInv MemOK frS
   lazy : b ≠ c.f.entry → LazyRegs c frT
   entry : b = c.f.entry → ∀ (a : ID) (y : Val), frS.regs[a]? ≠ some (some y)
 
@@ -283,7 +284,7 @@ private theorem gr_const0 (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, 
 /-- **The reference frame's facts.** -/
 theorem grOK (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true) {env : Env}
     {frS frT : Frame} {i : Nat} (hA : SimAt env c frS frT b i) {Gr : Frame}
-    (hfr : Gr = { frS with regs := Gr.regs }) (hsinv : SInv Gr)
+    (hfr : Gr = { frS with regs := Gr.regs }) (hsinv : SInv MemOK Gr)
     (hout : ∀ a, a ∉ B.values → Gr.regs[a]? = frS.regs[a]?)
     (hev : b = c.f.entry → ∀ a ∈ B.values, ∀ y, Gr.regs[a]? = some (some y) →
       (c.isWbaddr a = true ∨ c.isConst0 a = true) → Ev env c Gr a)

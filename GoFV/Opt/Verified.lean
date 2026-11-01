@@ -40,8 +40,9 @@ pipeline runs it (`Verified.Step`):
   `proveChecked`, …) whose refinement theorem concludes `rel` (`Refines`, `RefinesUnder
   Env.Mono`, `RefinesFrom (FrameSafe ∧ InitAvoids)` or, for the checked rewrite passes,
   `RefinesFrom (RwPre tabs f)`: also malloc-family contracts that return non-nil pointers,
-  non-nil dictionary arguments of the input and the runtime's `memclrNoHeapPointers`/`memmove`
-  contracts, if present, issue #151) when the input and the output pass
+  non-nil dictionary arguments of the input, the runtime's `memclrNoHeapPointers`/`memmove`
+  contracts, if present, and the input's read-only symbols holding their exported bytes, issue
+  #151) when the input and the output pass
   `check` and `guard` (the theorem's fragment hypothesis, decided) accepts the input;
 - `stock run`: the stock port; no theorem.
 
@@ -53,8 +54,9 @@ and once on each changed result, never inside a pass). Per pass run it records a
 - `identity`: the result's function equals the input's, and so do the tables or at least what
   the function can observe of them (`tabsAgree`; `Refines.refl`, any pass);
 - `skipped why`: an optional proven pass whose input is outside its theorem (`why`: the input
-  fails `check`, the guard rejects it, or its dictionary parameters, `NilCheck.dictParams`,
-  differ from the pipeline input's) or whose output fails `check`: its result is dropped and the
+  fails `check`, the guard rejects it, its dictionary parameters, `NilCheck.dictParams`,
+  differ from the pipeline input's, or it names read-only symbols, `RewriteCheck.roSyms`, the
+  pipeline input does not) or whose output fails `check`: its result is dropped and the
   input kept (the identity is a refinement);
 - `unverified why`: a stock port that changed the function, or a required proven pass in one of
   the situations of `skipped` (the result is kept: later stock passes need it).
@@ -82,8 +84,9 @@ inductive Rel where
   | frameSafe
   /-- `RefinesFrom (RwPre tabs f)` on the pass's input `f` in `tabs` (the checked rewrite passes):
   monotone contracts, malloc-family contracts that return non-nil pointers
-  (`Env.AllocNonNil`), non-nil dictionary arguments (`NilCheck.dictParams tabs f`) and the
-  runtime's `memclrNoHeapPointers`/`memmove` contracts, if present (`Env.MemOps`). -/
+  (`Env.AllocNonNil`), non-nil dictionary arguments (`NilCheck.dictParams tabs f`), the
+  runtime's `memclrNoHeapPointers`/`memmove` contracts, if present (`Env.MemOps`), and the
+  read-only symbols `RewriteCheck.roSyms tabs f` holding their exported bytes (`RoImage`). -/
   | rw
   /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
   read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/
@@ -287,6 +290,9 @@ structure VState where
   /-- The input's dictionary parameters (`NilCheck.dictParams`), which the precondition of the
   `rw` steps names: a proven pass runs only on states with the same ones. -/
   dict : List Nat := []
+  /-- The input's read-only symbols (`RewriteCheck.roSyms`), which the precondition of the `rw`
+  steps names: a proven pass runs only on states whose read-only symbols are among them. -/
+  ro : List (String × Sem.Alloc) := []
   /-- One verdict per pass run. -/
   log : Array (String × Verdict) := #[]
 
@@ -298,7 +304,8 @@ def VState.init (env : PassEnv) (f : Func) (zv : Array (ID × Nat) := #[]) : VSt
   { func := f, tables := env.tables, wf := (check (checkEnv env env.tables) f).toBool
     zvar := zv.foldl (fun m (v, c) => m.insert v c) {}
     nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1
-    dict := NilCheck.dictParams env.tables f }
+    dict := NilCheck.dictParams env.tables f
+    ro := RewriteCheck.roSyms env.tables f }
 
 /-- The environment of stock pass `name` on state `st`. -/
 def VState.passEnv (st : VState) (env : PassEnv) (name : String) : PassEnv :=
@@ -315,7 +322,7 @@ def VState.adopt (st : VState) (name : String) (out : PassOut) (wf : Bool) (v : 
   let z := nextZvar st.func out st.zvar st.nextClass
   { func := out.func, tables := out.tables, wf, verified := st.verified && v.ok
     ran := st.ran + 1, last := name, effects := st.effects ++ out.effects, zvar := z.1
-    nextClass := z.2, log := st.log.push (name, v), dict := st.dict }
+    nextClass := z.2, log := st.log.push (name, v), dict := st.dict, ro := st.ro }
 
 /-- Whether `out` leaves the function and the tables of `st` unchanged. -/
 def VState.same (st : VState) (out : PassOut) : Bool :=
@@ -361,6 +368,8 @@ def runPass (env : PassEnv) (st : VState) (p : StockPass) : Except VError VState
         else if !guard penv st.func then some "fragment"
         else if NilCheck.dictParams st.tables st.func != st.dict then
           some "dictionary parameters changed"
+        else if !(RewriteCheck.roSyms st.tables st.func).all st.ro.contains then
+          some "read-only symbols changed"
         else none
       match why, p.required with
       | some w, false => .ok (st.skip p.name w)

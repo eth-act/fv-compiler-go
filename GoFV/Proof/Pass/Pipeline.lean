@@ -35,10 +35,11 @@ the pass input `f`, the runtime's memory-call contracts; issue #151), `RefinesFr
 contracts; issue #36) and
 `RefinesFrom DecPre` (decompose user/builtin: monotone contracts that cannot tell whether
 unreachable frame temporaries exist, `InitAvoids`; issue #17). All six imply
-`VRefines k := RefinesFrom (VPre k)`, where
-`VPre k` is their conjunction with the input's dictionary parameters `k` (`relHolds_toV`; the
-pipeline runs a proven pass only on states whose dictionary parameters are the input's,
-`VState.dict`), and `VRefines k` composes (`RefinesFrom.trans`).
+`VRefines k ro := RefinesFrom (VPre k ro)`, where
+`VPre k ro` is their conjunction with the input's dictionary parameters `k` and read-only
+symbols `ro` (`relHolds_toV`; the pipeline runs a proven pass only on states whose dictionary
+parameters are the input's and whose read-only symbols are among the input's, `VState.dict`,
+`VState.ro`), and `VRefines k ro` composes (`RefinesFrom.trans`).
 
 `stockPasses_sound`: every `proven` step of `GoFV.Opt.stockPasses` satisfies its theorem
 (`Step.Sound`: the pass's result relates to its input whenever both pass `check` and the guard
@@ -58,38 +59,43 @@ temporary, non-nil dictionary arguments, a memory with a defined, read-only writ
 flag and no write-barrier buffer, kept by the contracts (`WB.WbPre`), contracts that cannot
 tell whether unreachable frame temporaries exist (`Env.TempOblivious`), and
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
-(`Env.MemOps`). -/
-def VPre (k : List Nat) (env : Env) (args : List Val) (mem : Mem) : Prop :=
+(`Env.MemOps`), and read-only symbols `ro` holding their exported bytes in the memory with the
+global image, kept by the contracts (`RoImage`). -/
+def VPre (k : List Nat) (ro : List (String × Alloc)) (env : Env) (args : List Val) (mem : Mem) :
+    Prop :=
   env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧
-    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps
+    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem
 
 /-- The refinement the verified pipeline establishes. -/
-abbrev VRefines (k : List Nat) (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
-  RefinesFrom (VPre k) tabs' f' tabs f
+abbrev VRefines (k : List Nat) (ro : List (String × Alloc)) (tabs' : Tables) (f' : Func)
+    (tabs : Tables) (f : Func) : Prop :=
+  RefinesFrom (VPre k ro) tabs' f' tabs f
 
-variable {k : List Nat} {tabs tabs' : Tables} {f f' : Func}
+variable {k : List Nat} {ro : List (String × Alloc)} {tabs tabs' : Tables} {f f' : Func}
 
-theorem Refines.toV (h : Refines tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
-  Refines.from (VPre k) h
+theorem Refines.toV (h : Refines tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
+  Refines.from (VPre k ro) h
 
-theorem RefinesUnder.toV (h : RefinesUnder Env.Mono tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
+theorem RefinesUnder.toV (h : RefinesUnder Env.Mono tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.1) h.from
 
 theorem RefinesFrom.frameSafe_toV
     (h : RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem) tabs' f' tabs f) :
-    VRefines k tabs' f' tabs f :=
+    VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => ⟨hp.2.1, hp.2.2.1⟩) h
 
 theorem RefinesFrom.rw_toV (hk : NilCheck.dictParams tabs f = k)
-    (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
+    (hro : ∀ e ∈ RewriteCheck.roSyms tabs f, e ∈ ro)
+    (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
-    ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2⟩) h
+    ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2.1,
+      hp.2.2.2.2.2.2.2.2.sub hro⟩) h
 
-theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
+theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2.1) h
 
 theorem RefinesFrom.dec_toV (h : RefinesFrom Decompose.DecPre tabs' f' tabs f) :
-    VRefines k tabs' f' tabs f :=
+    VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2.1, hp.2.2.1⟩) h
 
 /-- The relation a `Rel` names. -/
@@ -102,12 +108,13 @@ def relHolds : Rel → Tables → Func → Tables → Func → Prop
   | .dec => RefinesFrom Decompose.DecPre
 
 /-- Each pass relation implies the pipeline's, for an input with dictionary parameters `k`. -/
-theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k) :
-    {r : Rel} → relHolds r tabs' f' tabs f → VRefines k tabs' f' tabs f
+theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k)
+    (hro : ∀ e ∈ RewriteCheck.roSyms tabs f, e ∈ ro) :
+    {r : Rel} → relHolds r tabs' f' tabs f → VRefines k ro tabs' f' tabs f
   | .refines, h => Refines.toV h
   | .mono, h => RefinesUnder.toV h
   | .frameSafe, h => RefinesFrom.frameSafe_toV h
-  | .rw, h => RefinesFrom.rw_toV hk h
+  | .rw, h => RefinesFrom.rw_toV hk hro h
   | .wb, h => RefinesFrom.wb_toV h
   | .dec, h => RefinesFrom.dec_toV h
 
@@ -204,11 +211,12 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
 
 /-- The invariant of the pipeline's states from input `f0`: a verified state refines the
 input, `wf` means the state passes `check`, and the state records the input's dictionary
-parameters. -/
+parameters and read-only symbols. -/
 def Inv (env : PassEnv) (f0 : Func) (st : VState) : Prop :=
-  (st.verified = true → VRefines (NilCheck.dictParams env.tables f0) st.tables st.func env.tables f0) ∧
+  (st.verified = true → VRefines (NilCheck.dictParams env.tables f0)
+    (RewriteCheck.roSyms env.tables f0) st.tables st.func env.tables f0) ∧
   (st.wf = true → check (checkEnv env st.tables) st.func = .ok ()) ∧
-  st.dict = NilCheck.dictParams env.tables f0
+  st.dict = NilCheck.dictParams env.tables f0 ∧ st.ro = RewriteCheck.roSyms env.tables f0
 
 private theorem ok_of_toBool {ε : Type} {e : Except ε Unit} (h : e.toBool = true) : e = .ok () := by
   revert h; cases e <;> simp [Except.toBool]
@@ -227,14 +235,15 @@ theorem VState.same_eq {st : VState} {out : PassOut} (h : st.same out = true) :
 variable {env : PassEnv} {f0 : Func}
 
 theorem Inv.init (zv : Array (ID × Nat)) : Inv env f0 (VState.init env f0 zv) :=
-  ⟨fun _ => Refines.toV (Refines.refl _ _), ok_of_toBool, rfl⟩
+  ⟨fun _ => Refines.toV (Refines.refl _ _), ok_of_toBool, rfl, rfl⟩
 
 theorem Inv.skip {st : VState} (h : Inv env f0 st) (name why : String) :
     Inv env f0 (st.skip name why) := h
 
 theorem Inv.adopt {st : VState} (h : Inv env f0 st) {name : String} {out : PassOut} {wf : Bool}
     {v : Verdict}
-    (hv : v.ok = true → VRefines (NilCheck.dictParams env.tables f0) out.tables out.func st.tables st.func)
+    (hv : v.ok = true → VRefines (NilCheck.dictParams env.tables f0)
+      (RewriteCheck.roSyms env.tables f0) out.tables out.func st.tables st.func)
     (hwf : wf = true → check (checkEnv env out.tables) out.func = .ok ()) :
     Inv env f0 (st.adopt name out wf v) := by
   refine ⟨fun hver => ?_, hwf, h.2.2⟩
@@ -244,7 +253,8 @@ theorem Inv.adopt {st : VState} (h : Inv env f0 st) {name : String} {out : PassO
 theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : PassOut}
     {claim : Option String}
     (hc : claim = none → check (checkEnv env out.tables) out.func = .ok () →
-      VRefines (NilCheck.dictParams env.tables f0) out.tables out.func st.tables st.func) :
+      VRefines (NilCheck.dictParams env.tables f0) (RewriteCheck.roSyms env.tables f0) out.tables
+        out.func st.tables st.func) :
     Inv env f0 (st.continue env p out claim) := by
   unfold VState.continue
   by_cases hs : st.same out = true
@@ -272,6 +282,11 @@ theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : Pa
         by_cases hr : p.required = true
         · simp only [hr, ↓reduceIte]; exact h.adopt (fun hv => by cases hv) (fun hf => by cases hf)
         · simp only [hr, ↓reduceIte]; exact h.skip _ _
+
+theorem ro_sub {l ro : List (String × Alloc)} (h : l.all ro.contains = true) :
+    ∀ e ∈ l, e ∈ ro := fun e he => by
+  rw [List.all_eq_true] at h
+  exact List.contains_iff_mem.1 (h e he)
 
 theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h : Inv env f0 st)
     (hr : runPass env st p = .ok st') : Inv env f0 st' := by
@@ -309,7 +324,12 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
               by_cases hd : NilCheck.dictParams st.tables st.func = st.dict
               · exact hd
               · simp_all
-            exact relHolds_toV (hd.trans h.2.2) (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
+            have hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true := by
+              by_cases hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true
+              · exact hro
+              · simp_all
+            exact relHolds_toV (hd.trans h.2.2.1) (ro_sub (h.2.2.2 ▸ hro))
+              (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
           | some fp =>
             simp only at hr
             split at hr
@@ -327,7 +347,12 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
                   by_cases hd : NilCheck.dictParams st.tables st.func = st.dict
                   · exact hd
                   · simp_all
-                exact relHolds_toV (hd.trans h.2.2) (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
+                have hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true := by
+                  by_cases hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true
+                  · exact hro
+                  · simp_all
+                exact relHolds_toV (hd.trans h.2.2.1) (ro_sub (h.2.2.2 ▸ hro))
+                  (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
               · cases hr; exact h.continue (fun hn => by cases hn)
 
 theorem runPasses_inv : ∀ {ps : List StockPass} {st st' : VState},
@@ -344,10 +369,11 @@ theorem runPasses_inv : ∀ {ps : List StockPass} {st st' : VState},
 /-- **The verified pipeline refines its input**: when `verifiedPipeline` (from any start pass)
 returns a `verified` state, its function (with its tables) refines the input `f` (with the
 environment's tables) on every environment and input in `VPre` (with `f`'s dictionary
-parameters). -/
+parameters and read-only symbols). -/
 theorem verifiedPipeline_refines {env : PassEnv} {f : Func} {start : Nat} {zv : Array (ID × Nat)}
     {r : VState} (h : verifiedPipeline env f start zv = .ok r) (hv : r.verified = true) :
-    VRefines (NilCheck.dictParams env.tables f) r.tables r.func env.tables f :=
+    VRefines (NilCheck.dictParams env.tables f) (RewriteCheck.roSyms env.tables f) r.tables r.func
+      env.tables f :=
   (runPasses_inv (fun p hp => stockPasses_sound p (List.mem_of_mem_drop hp)) (Inv.init zv) h).1 hv
 
 end GoFV.Proof.Pipeline

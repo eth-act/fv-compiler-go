@@ -344,11 +344,11 @@ private theorem memclr_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g 
     (hca : cv.args.toList = [p, n, m]) (hs : simpleCall tabs cv 2 = true)
     (hn : calleeIs tabs cv "runtime.memclrNoHeapPointers" = true) (hgop : gv.op = .Zero)
     (hga : gv.args = #[p, m]) (hcs : constSize tabs f n gv.auxInt = true)
-    (hp : ptrArgB tabs f p = true) : SegSound env tabs f g x [c] [] := by
+    (hp : ptrArgB tabs f p = true) {Q : Mem → Prop} : SegSound Q env tabs f g x [c] [] := by
   have hcop := simpleCall_op hs
   refine ⟨call_no_panic hfv hop hcv hcop fun argv e mm =>
     callOp_memclr_not_panic (ctx := Ctx.make tabs f) hE hs hn argv e mm, ?_⟩
-  intro S A hA hT hid hsz hroots
+  intro S A hA hT _ hid hsz hroots
   have hAc : A c := hroots c (by simp) (call_root hcv hcop)
   have hnphi : cv.op ≠ .Phi := by rcases hcop with h | h <;> rw [h] <;> intro h' <;> cases h'
   have hmem : ∀ a ∈ [p, n, m], A a := fun a ha =>
@@ -399,11 +399,11 @@ private theorem memmove_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g
     (hs : simpleCall tabs cv 3 = true) (hn : calleeIs tabs cv "runtime.memmove" = true)
     (hgop : gv.op = .Move) (hga : gv.args = #[d, s, m])
     (hcs : constSize tabs f n gv.auxInt = true) (hd : ptrArgB tabs f d = true)
-    (hsp : ptrArgB tabs f s = true) : SegSound env tabs f g x [c] [] := by
+    (hsp : ptrArgB tabs f s = true) {Q : Mem → Prop} : SegSound Q env tabs f g x [c] [] := by
   have hcop := simpleCall_op hs
   refine ⟨call_no_panic hfv hop hcv hcop fun argv e mm =>
     callOp_memmove_not_panic (ctx := Ctx.make tabs f) hE hs hn argv e mm, ?_⟩
-  intro S A hA hT hid hsz hroots
+  intro S A hA hT _ hid hsz hroots
   have hAc : A c := hroots c (by simp) (call_root hcv hcop)
   have hnphi : cv.op ≠ .Phi := by rcases hcop with h | h <;> rw [h] <;> intro h' <;> cases h'
   have hmem : ∀ a ∈ [d, s, n, m], A a := fun a ha =>
@@ -456,7 +456,7 @@ place with its ID and type, as `segOK` checks) discharges `SegSound`. -/
 theorem callSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N : List ID}
     (hfv : f.value? x = some fv) (hgv : g.value? x = some gv) (hgid : gv.id = x)
     (hty : gv.type = fv.type) (h : callSeg? tabs f g fv gv = some (D, N)) {env : Env}
-    (hE : env.MemOps) : SegSound env tabs f g x D N := by
+    (hE : env.MemOps) {Q : Mem → Prop} : SegSound Q env tabs f g x D N := by
   obtain ⟨c, cv, rfl, rfl, hop, hfa, hai, hcv, ⟨p, n, m, hca, hs, hn, hgop, hga, hcs, hp⟩ |
     ⟨d, s, n, m, hca, hs, hn, hgop, hga, hcs, hd, hsp⟩⟩ := callSeg_spec h
   · exact memclr_sound hE hfv hgv hgid hty hop hfa hai hcv hca hs hn hgop hga hcs hp
@@ -497,7 +497,7 @@ theorem callSeg_witness :
       some ([1], []) := by
   decide +kernel
 
-example : SegSound Env.runtime csTabs csF csG 5 [1] [] :=
+example : SegSound (fun _ => True) Env.runtime csTabs csF csG 5 [1] [] :=
   callSeg_sound (fv := csVal 5 .SelectN 2 0 none #[1]) (gv := csVal 5 .Zero 2 16 none #[2, 4])
     rfl rfl rfl rfl callSeg_witness Env.runtime_memOps
 

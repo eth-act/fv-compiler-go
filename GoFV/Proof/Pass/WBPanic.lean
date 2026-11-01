@@ -15,6 +15,7 @@ before `r` (`ord_pre`, `np_before`).
 namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
+open GoFV.Proof.MemInv (ContractsOK)
 
 /-- The source's entry of block `b` (values `B`) panics at `r` after `pre` in frame `Gr`. -/
 structure SrcPanic (env : Env) (c : WBCheck.Ctx) (B : Block) (rs : List Run) (frS : Frame)
@@ -512,7 +513,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
 
 /-- **A panicking block entry.** -/
 theorem chain_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
-    {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f) {env : Env} (hE : ContractsOK env)
+    {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f) {env : Env} (hE : ContractsOK MemOK env)
     {frS frT : Frame} {i : Nat} (hA : SimAt env c frS frT b i) {e : Panic} {m : Mem}
     (hen : enterBlock env (Ctx.make c.tabs c.f) frS B i = .panic e m) :
     ∃ n, runLoop env (Ctx.make c.tabs c.g) n frT b i = .panicked e m := by

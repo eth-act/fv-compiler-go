@@ -14,6 +14,7 @@ has a memory. `grOK_panic`: the reference frame of a block entry that panics aft
 namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
+open GoFV.Proof.MemInv (SInv ContractsOK sinv_evalAll sinv_phis)
 
 private theorem thenRole_ne' {v : Value} {j a k : Nat} :
     thenRole v j ≠ .tgt a k ∧ thenRole v j ≠ .ncEnd a := by
@@ -259,7 +260,7 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
 
 /-- **The reference frame of a panicking block entry.** -/
 theorem grOK_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
-    {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f) {env : Env} (hE : ContractsOK env)
+    {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f) {env : Env} (hE : ContractsOK MemOK env)
     {frS frT : Frame} {i : Nat} (hA : SimAt env c frS frT b i) {ps : List (ID × Val)}
     (hps : B.values.toList.filterMapM (phiStep (Ctx.make c.tabs c.f) frS i) = .ok ps)
     {o : Array ID} (ho : schedule c.f B = some o) {pre post : List ID} {r : ID}
@@ -275,7 +276,7 @@ theorem grOK_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
   have hnd := hwf.valuesNodup b B ⟨S.hb, S.hB⟩
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
   have hpo : ∀ z ∈ pre, z ∈ o.toList := fun z hz => by rw [hsplit]; simp [hz]
-  have hsinv : SInv Gpre := sinv_evalAll hE hwf S.memTy
+  have hsinv : SInv MemOK Gpre := sinv_evalAll memOK_pred hE hwf S.memTy
     (fun x hx => ⟨b, S.hb, by rw [vals_of S.hB]; exact ((omem x).1 (hpo x hx)).1⟩)
     (sinv_phis hA.sinv hps) hpre
   refine S.grOK hall hA hGf hsinv hGo ?_ ?_

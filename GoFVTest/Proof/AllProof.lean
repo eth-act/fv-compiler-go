@@ -29,6 +29,7 @@ import GoFV.Proof.Enter
 import GoFV.Proof.Eval
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
+import GoFV.Proof.MemInv
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.MemRefine
 import GoFV.Proof.Merge
@@ -238,6 +239,7 @@ import GoFV.Proof.Pass.SegCallSeg
 import GoFV.Proof.Pass.SegChain
 import GoFV.Proof.Pass.SegEval
 import GoFV.Proof.Pass.SegRel
+import GoFV.Proof.Pass.SegRo
 import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Pass.SegSound
 import GoFV.Proof.Pass.SegZeroMem
@@ -271,7 +273,6 @@ import GoFV.Proof.Pass.WBBlock
 import GoFV.Proof.Pass.WBCov
 import GoFV.Proof.Pass.WBEnter
 import GoFV.Proof.Pass.WBEval
-import GoFV.Proof.Pass.WBInv
 import GoFV.Proof.Pass.WBLocal
 import GoFV.Proof.Pass.WBMem
 import GoFV.Proof.Pass.WBNpOrder
@@ -312,6 +313,7 @@ import GoFV.Proof.PtrAddr
 import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
 import GoFV.Proof.Retype
+import GoFV.Proof.RoImage
 import GoFV.Proof.Rules.Add
 import GoFV.Proof.Rules.Add2
 import GoFV.Proof.Rules.Add3
@@ -546,6 +548,7 @@ import GoFV.Proof.Witness.PhiElim
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.RoZero
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.Seg

@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.SegRel
 import GoFV.Proof.Pass.StructStoreBlock
+import GoFV.Proof.MemInv
 
 /-!
 # Segments: one block of the target (issue #151)
@@ -8,7 +9,8 @@ import GoFV.Proof.Pass.StructStoreBlock
 (`BlockSpec`: the source's values but the dropped ones, then the segments' fresh values; the
 source's roots with each segment's roots replaced, at the last of them, by its fresh roots and its
 anchor), the target entered with registers refining the source's on the values the target keeps
-(`RR`), every segment of `f` sound (`SegSound`). `TFacts`: the target's frame after a prefix of
+(`RR`), every segment of `f` sound (`SegSound` with the source's memory invariant `Q`, which the
+source's frames along the block have). `TFacts`: the target's frame after a prefix of
 its schedule; its registers refine the source's on what both evaluated, and a fresh value or
 anchor of a segment whose roots the source evaluated refines the target's definitions run on the
 source's frame (`segRun`). `segStep`: the target evaluates such a value.
@@ -45,6 +47,12 @@ theorem ext_size {n : Nat} {S : Frame} (h : S.regs.size ≤ n) : (ext n S).regs.
 
 theorem ext_frame (n : Nat) (S : Frame) : ext n S = { S with regs := (ext n S).regs } := rfl
 
+theorem ext_regs_some {n : Nat} {S : Frame} {z : ID} {y : Val}
+    (h : (ext n S).regs[z]? = some (some y)) : S.regs[z]? = some (some y) := by
+  by_cases hlt : z < S.regs.size
+  · rwa [ext_regs_lt hlt] at h
+  · rcases ext_regs_none (n := n) (Nat.le_of_not_lt hlt) with h' | h' <;> rw [h'] at h <;> cases h
+
 /-- A value of `f` reads its arguments' registers only. -/
 theorem ext_eval {env : Env} {ctx : Ctx} {f : Func} {n : Nat} {S : Frame}
     (hs : S.regs.size = f.valueTab.size) {v : Value} (hv : ∀ a ∈ v.args, a < f.valueTab.size) :
@@ -52,7 +60,7 @@ theorem ext_eval {env : Env} {ctx : Ctx} {f : Func} {n : Nat} {S : Frame}
   (evalValue_congr (ext_frame n S) fun a ha => (ext_regs_lt (hs ▸ hv a ha)).symm).symm
 
 /-- One tree block's evaluation, source and target, after the `Phi`s. -/
-structure Blk (env : Env) (tabs : Tables) (f g : Func) (bid : ID) (fb gb : Block)
+structure Blk (Q : Mem → Prop) (env : Env) (tabs : Tables) (f g : Func) (bid : ID) (fb gb : Block)
     (F0 F0T : Frame) (oS oT : Array ID) : Prop extends Src env tabs f bid fb F0 oS where
   rel : SRel tabs f g
   wg : ∃ ce, WF ce g
@@ -64,7 +72,10 @@ structure Blk (env : Env) (tabs : Tables) (f g : Func) (bid : ID) (fb gb : Block
   frT : F0T = { F0 with regs := F0T.regs }
   sizeT : F0T.regs.size = g.valueTab.size
   rr : RR f g F0.regs F0T.regs
-  sound : ∀ x D N, segOK tabs f g x = some (D, N) → SegSound env tabs f g x D N
+  sound : ∀ x D N, segOK tabs f g x = some (D, N) → SegSound Q env tabs f g x D N
+  /-- The source's frames along the block's schedule have the memory invariant. -/
+  inv : ∀ L S, L <+: oS.toList → evalAll env (Ctx.make tabs f) F0 L = .ok S →
+    ∀ (z : ID) (y : Val), S.regs[z]? = some (some y) → MemInv.MemsOK Q y
 
 /-- The roots in `f` of the segment of anchor `x` (dropping `D`) are in `pre`. -/
 def Covered (f : Func) (pre : List ID) (x : ID) (D : List ID) : Prop :=
@@ -90,12 +101,12 @@ theorem root_ne_phi {h : Func} {x : ID} {v : Value} (hr : CSE.rootNode h x = tru
   simp [CSE.rootNode, hv, hp] at hr
   revert hr; decide
 
-variable {env : Env} {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block} {F0 F0T : Frame}
-  {oS oT : Array ID}
+variable {Q : Mem → Prop} {env : Env} {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
+  {F0 F0T : Frame} {oS oT : Array ID}
 
 namespace Blk
 
-variable (K : Blk env tabs f g bid fb gb F0 F0T oS oT)
+variable (K : Blk Q env tabs f g bid fb gb F0 F0T oS oT)
 include K
 
 theorem bidG : bid ∈ g.blocks := by
@@ -406,7 +417,8 @@ theorem segStep (hE : env.Mono) {S T : Frame} {k j : Nat}
     (hS : SFacts env tabs f F0 S (oS.toList.take k))
     (hT : TFacts env tabs f g F0T S T (oS.toList.take k) (oT.toList.take j)) {n : ID}
     (hjT : oT.toList[j]? = some n) {x : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
-    (hc : Covered f (oS.toList.take k) x D) (hn : n ∈ segL x N) :
+    (hc : Covered f (oS.toList.take k) x D) (hn : n ∈ segL x N)
+    (hinv : ∀ (z : ID) (y : Val), S.regs[z]? = some (some y) → MemInv.MemsOK Q y) :
     ∃ y, stepV env (Ctx.make tabs g) T n = .ok y ∧
       TFacts env tabs f g F0T S (T.set n y) (oS.toList.take k) (oT.toList.take (j + 1)) := by
   obtain ⟨d⟩ := segOK_spec hs
@@ -415,7 +427,8 @@ theorem segStep (hE : env.Mono) {S T : Frame} {k j : Nat}
   have hszg : S.regs.size ≤ g.valueTab.size := hsz ▸ K.rel.size
   -- the target's definitions run on the source's frame
   obtain ⟨S', hev, hanc⟩ := (K.sound x D N hs).2 (ext g.valueTab.size S)
-    (fun a => Base f bid a ∨ a ∈ oS.toList.take k) (K.availExt hS) (K.typedExt hS) K.hidA
+    (fun a => Base f bid a ∨ a ∈ oS.toList.take k) (K.availExt hS) (K.typedExt hS)
+    (fun z y h => hinv z y (ext_regs_some h)) K.hidA
     (Nat.le_of_eq (ext_size hszg).symm) (fun s hs' hr => .inr (hc s hs' hr))
   have hnd := K.rel.lnd x D N hs
   have htopo : TopoRem (argsF (Ctx.make tabs g).f) (segL x N) := by

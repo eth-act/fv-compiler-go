@@ -56,6 +56,7 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Segment rewrites. -/
   | seg {f f' g : Func} : RewriteCheck.segRel tabs f f' = true →
+      RewriteCheck.roSegsOK tabs (RewriteCheck.roSyms penv.tables f0) f f' = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- `Phi` selections. -/
@@ -73,7 +74,7 @@ theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Int
   | fwd h hc _ ih => exact .fwd h hc ih
   | rw h hc _ ih => exact .rw (by rwa [validate_congr hv hb] at h) hc ih
   | ss h hc _ ih => exact .ss h hc ih
-  | seg h hc _ ih => exact .seg h hc ih
+  | seg h hr hc _ ih => exact .seg h hr hc ih
   | ps h hc _ ih => exact .ps h hc ih
 
 theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} :
@@ -108,7 +109,7 @@ theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pa
         exact .rw hL.1 hL.2 hc
       | seg =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
-        exact .seg hL.1 hL.2 hc
+        exact .seg hL.1.1 hL.1.2 hL.2 hc
       | ps =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .ps hL.1 hL.2 hc

@@ -211,7 +211,8 @@ malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobjec
 pointer shape) and a dictionary parameter (`NilCheck.dictArg`: an `Arg` of the input parameter
 named `.dict`, of pointer shape). Neither is non-nil by the semantics alone: the contracts are
 the environment's, the arguments the caller's. So the checked rewrite passes are proven under the
-precondition `RwPre tabs f env args mem := env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps`
+precondition `RwPre tabs f env args mem := env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧
+RoImage (RewriteCheck.roSyms tabs f) env mem` (`RoImage`: "Segments" below)
 (`GoFV/Proof/Pass/Rewrite.lean`; `Env.MemOps`, `GoFV/Proof/MemOpsPre.lean`: the
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts, if present, are the runtime's
 `Runtime.memclr`/`Runtime.memmove`, for the `Zero`/`Move` of such calls, `generic.rules:1638`/
@@ -232,10 +233,13 @@ RefinesFrom (NilPre tabs f) tabs g tabs f`; nilcheckelim itself keeps `nrel fals
 **Theorems**: `checkedRewrite_refines` (and `opt_refines`, `divisible_refines`,
 `divmod_refines`) now conclude `RefinesFrom (RwPre penv.tables f) out.tables out.func
 penv.tables f`. The verified pipeline (`GoFV/Proof/Pass/Pipeline.lean`) names this relation
-`Rel.rw`; `VPre k` adds `Env.AllocNonNil`, `DictArgs k` and `Env.MemOps`, with `k` the pipeline input's
-dictionary parameters (`VState.dict`; a proven pass whose input has other dictionary parameters
-is skipped), and `verifiedPipeline_refines` concludes `VRefines (NilCheck.dictParams env.tables
-f)`. Witness: `GoFV.Proof.Witness.nm_checkedRewrite` (`newInt(.dict)`: both nil checks removed,
+`Rel.rw`; `VPre k ro` adds `Env.AllocNonNil`, `DictArgs k`, `Env.MemOps` and `RoImage ro`, with `k`
+the pipeline input's dictionary parameters (`VState.dict`; a proven pass whose input has other
+dictionary parameters is skipped) and `ro` its read-only symbols (`VState.ro`; a proven pass whose
+input names a read-only symbol the pipeline input does not is skipped), and
+`verifiedPipeline_refines` concludes `VRefines (NilCheck.dictParams env.tables f)
+(RewriteCheck.roSyms env.tables f)`.
+Witness: `GoFV.Proof.Witness.nm_checkedRewrite` (`newInt(.dict)`: both nil checks removed,
 kernel evaluation) and `nm_rwPre` (the precondition with a dictionary). Proven:
 `generic.rules:1062`, `:1367`, `:1372`, `:1375`, `:1381`, `:1384`, `:1388`. Not provable this way
 (the pointer is no seed): `:1376` (`Convert` of `Addr`).
@@ -422,15 +426,18 @@ evaluation).
 ### Segments: `EffectRule.Seg` (`GoFV/Proof/Rules/Seg.lean`)
 
 `generic.rules:1833`/`:1844`/`:1857` replace two to four `Store`s over a `Zero` they tile by
-the same `Store`s over the `Zero`'s memory, and `:1638`/`:1721`/`:1730` replace `SelectN [0]` of a
-call to `runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`. Each
+the same `Store`s over the `Zero`'s memory, `:1638`/`:1721`/`:1730` replace `SelectN [0]` of a
+call to `runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`, and
+`:1743` replaces a `Move` from a read-only symbol whose bytes are zero (`symIsROZero`) by a
+`Zero`. Each
 rewrites a *segment* of a block: the rule's value `x` (the anchor) is redefined in place, the
 values it clobbers (`D`: the inner `Store`s and the `Zero`, or the call) are gone, and fresh
 values (`N`: the new inner `Store`s) are put in. Only the anchor's memory agrees with the
 source's, so neither the replay nor the atom simulation applies. `RuleSet.segs` (tried on every
 value after the op's other tables, from `Interp.Table.segBase`) holds the rules with
-`EffectRule.Seg r := RewriteCheck.segShapeOK r = true` (a `Store` or `SelectN` rule with a built
-result in `v`'s block). The segment layer (`Layer.seg`, after the split layers) applies the log's
+`EffectRule.Seg r := RewriteCheck.segShapeOK r = true` (a `Store`, `SelectN` or `Move` rule with
+a built result in `v`'s block). The segment layer (`Layer.seg`, after the split layers) applies
+the log's
 segment events (`segPre`: `segEvent?` takes only events of a rule on the value's op in the
 layer's input; `segApply` redefines the anchor, puts the fresh values in, frees `segDrops`) and
 relates its input to the result by `segRel`:
@@ -441,36 +448,60 @@ relates its input to the result by `segRel`:
   `MemCall.simpleCall`, the size a constant term `termConst` evaluates as the semantics does,
   e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value rules fold to a `Const64`
   only later in the log (`constSize`; `termConst_reg`: an available term's register is its
-  value), `g`'s `Zero`/`Move` on the call's arguments), the
+  value), `g`'s `Zero`/`Move` on the call's arguments) or `roSeg?` (in `f` `Move [n] dst src mem`
+  with `src` an `Addr` of a symbol, in `g` `Zero [n] dst mem`; nothing dropped or fresh), the
   dropped values listed roots of the block, the fresh ones listed in `g`'s block, `N ++ [x]`
   roots of `g` in dependency order whose other arguments are arguments of the segment's roots;
 - each dropped value in exactly one segment and used only inside it; the blocks' kinds and
   controls unchanged, their schedules `f`'s roots with each segment's roots replaced, at the
-  last of them, by its fresh roots and its anchor (`segRoots`, `segBlockOK`).
+  last of them, by its fresh roots and its anchor (`segRoots`, `segBlockOK`);
+- `roSegsOK tabs ro f g` (`Layer.seg` with `ro := roSyms penv.tables f0`, the pass input's
+  read-only symbols: `SRODATA` symbols its `Addr`s name, with the global image's allocation
+  `Sem.rodataAlloc`): the symbol of each read-only segment is one of `ro` whose bytes are all
+  zero, and `f` passes `WBCheck.memTyOK` (values of memory shape are memory ops; moved to
+  `GoFV/Opt/MemTy.lean`).
 
-**Theorems** (`GoFV/Proof/Pass/Seg*.lean`). Each segment kind discharges `Seg.SegSound`: the
+Nothing in the semantics ties a global's allocation to its `LSym` data (`addGlobals` adds only
+the allocations a memory lacks, and a contract may return any memory), so the read-only segments
+need the precondition `RoImage ro env mem := env.KeepsRo ∧ RoMem ro (addGlobals env mem)`
+(`GoFV/Proof/RoImage.lean`): the symbols `ro` are read-only allocations of the initial memory with
+the global image, and every contract keeps the read-only global allocations it is given and returns
+no memory (`Env.KeepsRo`; the runtime's contracts only write and allocate heap blocks,
+`Env.runtime_keepsRo`; `Env.p1_keepsRo`). Writes need a writable allocation and frame allocations
+are no globals, so `RoMem ro` is a memory invariant (`roMem_pred : MemInv.MemPred (RoMem ro)`).
+`GoFV/Proof/MemInv.lean` (writebarrier's source invariant, issue #36, generalised from
+`WB.MemOK` to any `MemPred`) carries it along the source run: `MemInv.SInv P fr` (every memory a
+register holds is `P`) holds at entry and is kept by every block of an `f` passing `memTyOK`.
+
+**Theorems** (`GoFV/Proof/Pass/Seg*.lean`). Each segment kind discharges `Seg.SegSound Q`: the
 segment's roots in `f` never panic, and in a source frame whose available values include them
-(`CSE.Mem.Avail`) the target's definitions of `N ++ [x]` evaluate in order and refine the
-source's anchor: `chainSeg_sound` (`SegChain.lean`, with `SegZeroMem.writes_over_zero`: writes
-tiling a zeroed region equal the writes over the original memory) and `callSeg_sound
-(hE : env.MemOps)` (`SegCallSeg.lean`, with `SegCall.callOp_memclr`/`callOp_memmove`: the call's
-memory is refined by the plain write). The simulation (`SegRel.lean` `segRel_spec`,
-`SegBlock.lean` `segStep`, `SegEval.lean`, `SegSim.lean`) runs the target against the source
-with registers refined except at the dropped values:
+(`CSE.Mem.Avail`) and whose memories are `Q` the target's definitions of `N ++ [x]` evaluate in
+order and refine the source's anchor: `chainSeg_sound` (`SegChain.lean`, with
+`SegZeroMem.writes_over_zero`: writes tiling a zeroed region equal the writes over the original
+memory), `callSeg_sound (hE : env.MemOps)` (`SegCallSeg.lean`, with
+`SegCall.callOp_memclr`/`callOp_memmove`: the call's memory is refined by the plain write) and
+`roSeg_sound` (`SegRo.lean`, with `Q := RoQ tabs ro f`, `RoMem ro` when `f` passes `memTyOK`: the
+`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes). The simulation
+(`SegRel.lean` `segRel_spec`, `SegBlock.lean` `segStep`, `SegEval.lean`, `SegSim.lean`) runs the
+target against the source with registers refined except at the dropped values and the source's
+frames in `MemInv.SInv (RoQ tabs ro f)` (`roQ_entry`, `roQ_evalAll`):
 
 ```lean
 theorem seg_refines (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
-    (hrel : segRel tabs f g = true) :
-    RefinesUnder (fun env => env.Mono ∧ env.MemOps) tabs g tabs f
+    (hrel : segRel tabs f g = true) (hro : roSegsOK tabs ro f g = true) :
+    RefinesFrom (fun env _ mem => env.Mono ∧ env.MemOps ∧ RoImage ro env mem) tabs g tabs f
 ```
 
 `LayerChain.seg` and `chain_refines` take it into `checkedRewrite_refines` (statement
-unchanged; `Env.MemOps` is a conjunct of `RwPre`). `checkedTiers` tries a table without `segs`
-first when the full table is rejected. Proven: `:1833`, `:1844`, `:1857`, `:1638`, `:1721`,
-`:1730`; witness `GoFV.Proof.Witness.zp_checkedRewrite` (`*p = [2]int{}; p[0] = x; p[1] = x`
-with `{:1833}`: the `Zero` and the first `Store` dropped, the anchor stores over a fresh `Store`
-on the input memory; kernel evaluation), `callSeg_witness` (`callSeg?` on a `memclr` call),
-`callSeg_witness_str` (its size `len("0123456789abcdef") * 1`).
+unchanged; `Env.MemOps` and `RoImage (roSyms tabs f)` are conjuncts of `RwPre`). `checkedTiers`
+tries a table without `segs` first when the full table is rejected. Proven: `:1833`, `:1844`,
+`:1857`, `:1638`, `:1721`, `:1730`, `:1743`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
+(`*p = [2]int{}; p[0] = x; p[1] = x` with `{:1833}`: the `Zero` and the first `Store` dropped, the
+anchor stores over a fresh `Store` on the input memory; kernel evaluation), `callSeg_witness`
+(`callSeg?` on a `memclr` call), `callSeg_witness_str` (its size `len("0123456789abcdef") * 1`),
+`zr_checkedRewrite` (`GoFV/Proof/Witness/RoZero.lean`: `*p = zero2` from a 16-byte zero `SRODATA`
+symbol with `{:1743}` becomes `Zero [16] p mem`; kernel evaluation) and `zr_rwPre` (`RwPre` with
+that symbol on `Env.p1` whose global image has it).
 
 ### Layers (issue #151)
 
@@ -998,6 +1029,12 @@ dropped zero values (`zeroConst`: `SliceLen (ConstSlice)`, …): 8,576 (92.24%) 
 drops of `SliceLen (SliceMake _ 0 _)` whose memory is no `zeroChain` (6 functions, "drop arg"),
 the `Store` segments of `hash/fnv.New128`/`New128a` (pointers still `PtrIndex` in the layer's
 input) and `traceLocker.GoSysCall`.
+With the read-only segments (`:1743` under `RoImage`; 1,315 rules): 8,623 at stock under the
+checked passes on the rebase onto 21fe025 (8,622 before; proven-only 8,673 → 8,679). The other
+`:1743` firings are rejected by `roSegsOK` (probe: "seg(1) → ?"; e.g. `runtime.addCovMeta`,
+`syscall_runtime_doAllThreadsSyscall`, `test12reflect2.deferwrap1`), presumably `memTyOK`: values
+of tuple shape from arithmetic ops (`Add64carry`, `Mul64uhilo`, …) are no memory ops; widening
+`memTyOK` to ops whose results hold no memory is the next step.
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -1029,8 +1066,9 @@ all premises (the rewritten argument `v4 → v2` and the `MakeResult` control by
 tables, `refinesFrom_of_tabsAgree`): `checkedRewrite_refines (hs : s.AllSound)
 (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out) (hf : check ce f = .ok ())
 (hg : check ce' out.func = .ok ()) : RefinesFrom (RwPre penv.tables f) out.tables out.func
-penv.tables f` (`RwPre`: `Env.Mono`, for the nil-check eliminations `NilPre`, and for the
-memory runtime calls `Env.MemOps`; "Nil-check eliminations" above),
+penv.tables f` (`RwPre`: `Env.Mono`, for the nil-check eliminations `NilPre`, for the
+memory runtime calls `Env.MemOps`, for the read-only segments `RoImage`; "Nil-check
+eliminations" and "Segments" above),
 and its instances `opt_refines` (`optChecked`: `opt`, `middle opt`, `late opt`),
 `divisible_refines`, `divmod_refines`, whose proofs are `generic_allSound`, `divisible_allSound`,
 `divmod_allSound`: the theorems are about the passes restricted to the proven rules
@@ -1058,7 +1096,7 @@ order of *Unblocks*. Rows: every rule with a non-zero count, then the 15 most fr
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 8673, under the checked passes 8622 (validator the only obstacle: 51). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 171, 2: 171, 3 or more: 276.
+Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 8679, under the checked passes 8623 (validator the only obstacle: 56). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 6, 1: 167, 2: 170, 3 or more: 275.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
@@ -1068,7 +1106,6 @@ Corpus `quick-v3/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 8 | 8 |
 | `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 6 | 6 |
 | `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 5 | 5 |
-| `generic.rules:1743 Move` | `r_generic_1743` | mem | 8 | 4 | 4 |
 | `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 3 | 3 |
 | `generic.rules:1381 NilCheck` | `r_generic_1381` | mem | 5901 | 2 | 2 |
 | `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 56 | 2 | 2 |

@@ -6,11 +6,13 @@ import GoFV.Rules.Generated.Generic
 
 `generic.rules:1833`/`:1844`/`:1857` drop a `Zero` under the `Store`s that tile it, and
 `:1638`/`:1721`/`:1730` turn `SelectN [0]` of a `memclrNoHeapPointers`/`memmove` call into
-`Zero`/`Move`. They rewrite a segment of a block's memory roots (the anchor redefined in place,
+`Zero`/`Move`, and `:1743` turns a `Move` from a read-only symbol whose bytes are zero into a
+`Zero`. They rewrite a segment of a block's memory roots (the anchor redefined in place,
 clobbered values dropped, fresh `Store`s put in), whose intermediate memories differ from the
 source's, so `Rule.SoundT` does not apply; the checked rewrite takes each instance out of the log
 and relates the input to the function with the segment rewritten (`GoFV.Opt.RewriteCheck.segRel`;
-refinement: `GoFV.Proof.Seg.seg_refines`, under `Env.MemOps` for the calls). The rule-level
+refinement: `GoFV.Proof.Seg.seg_refines`, under `Env.MemOps` for the calls and `RoImage` for the
+read-only symbols). The rule-level
 obligation `EffectRule.Seg` is the shape that makes this per-instance check apply
 (`RewriteCheck.segShapeOK`). The `Const32` alternatives (`r_generic_1638_2`, …) are left out: the
 validator asks a 64-bit size.
@@ -20,7 +22,7 @@ namespace GoFV.Proof.Rules
 
 open GoFV.Rules
 
-/-- **The obligation of a segment rule**: a `Store` or `SelectN` rule with a built result in
+/-- **The obligation of a segment rule**: a `Store`, `SelectN` or `Move` rule with a built result in
 `v`'s block (`RewriteCheck.segShapeOK`); each instance is validated by `RewriteCheck.segRel`. -/
 def EffectRule.Seg (r : Rule) : Prop := GoFV.Opt.RewriteCheck.segShapeOK r = true
 
@@ -41,6 +43,9 @@ theorem r_generic_1721_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_gen
 
 /-- `generic.rules:1730`: `memmove` (`StaticLECall`) becomes `Move` -/
 theorem r_generic_1730_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1730 := rfl
+
+/-- `generic.rules:1743`: `Move` from a read-only zero symbol becomes `Zero` -/
+theorem r_generic_1743_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1743 := rfl
 
 /-- Non-vacuity: a value rule on `Store` without a built result (`:1005`, `=> mem`) does not have
 the shape. -/
