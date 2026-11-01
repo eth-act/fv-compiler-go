@@ -74,14 +74,18 @@ def allocHeap (m : Mem) (data : Array Byte) : Ptr × Mem :=
   let b := Blk.heap m.nextHeap
   (⟨b, 0⟩, { m.set b { data } with nextHeap := m.nextHeap + 1 })
 
-/-- `n` bytes at `p`, if the access is valid. -/
+/-- `n` bytes at `p`, if the access is valid (an empty access always is: Go compares and
+copies zero bytes at nil pointers). -/
 def read (m : Mem) (p : Ptr) (n : Nat) : Option (Array Byte) := do
+  if n == 0 then return #[]
   let a ← m.find? p.blk
   let off := p.off.toNat
   if off + n ≤ a.data.size then some (a.data.extract off (off + n)) else none
 
-/-- Write `bs` at `p`, if the access is valid and the allocation writable. -/
+/-- Write `bs` at `p`, if the access is valid and the allocation writable (an empty write
+always is, and changes nothing). -/
 def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
+  if bs.isEmpty then return m
   let a ← m.find? p.blk
   let off := p.off.toNat
   if a.writable && off + bs.size ≤ a.data.size then
