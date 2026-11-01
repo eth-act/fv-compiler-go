@@ -95,11 +95,62 @@ namespace Setup
 
 variable {c : WBCheck.Ctx} {b : ID} {B : Block} {rs : List Run} {l : ID}
 
+/-- A run's stores and dropped nil check: non-`Phi` values of `B`, at least one store. -/
+theorem run_facts (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) :
+    0 < r.src.length ∧
+    (∀ s ∈ r.src, s ∈ B.values ∧ ∀ u, c.f.value? s = some u → u.op ≠ .Phi) ∧
+    (∀ n ∈ ncsOf c r, n ∈ B.values ∧ ∀ u, c.f.value? n = some u → u.op ≠ .Phi) := by
+  have hok := (blockOK_spec S.ok S.hB S.ch).2.2.2.2.1 j r hr
+  obtain ⟨-, -, -, -, -, -, hpos, -, -, -, -, -, -, -, -, hsrc, hnc⟩ := runOK_spec hok
+  obtain ⟨-, -, -, hsrcop, -⟩ := runOf_spec ((chainRuns_spec S.ch).1 j r hr).2.2.2
+  refine ⟨hpos, fun s hs => ⟨(hsrc s hs).1, fun u hu => ?_⟩, fun n hn => ?_⟩
+  · obtain ⟨k, hk⟩ := List.getElem?_of_mem hs
+    obtain ⟨u', hu', hop, -⟩ := hsrcop k s hk
+    rw [hu] at hu'; cases hu'
+    rcases hop with hop | hop | hop <;> rw [hop] <;> exact fun h => by cases h
+  · unfold ncsOf at hn
+    split at hn
+    · rename_i n' hn'
+      split at hn
+      · simp at hn
+      · simp only [List.mem_singleton] at hn
+        subst hn
+        obtain ⟨hB, u, hu, hop⟩ := hnc _ hn'
+        exact ⟨hB, fun u' hu' => by rw [hu] at hu'; cases hu'; rw [hop]; exact fun h => by cases h⟩
+    · simp at hn
+
 /-- A value of `B` that is the flag address or constant is not a `Phi`. -/
 theorem lazy_nonphi (S : Setup c b B rs l) {a : ID} (ha : a ∈ B.values)
     (hl : c.isWbaddr a = true ∨ c.isConst0 a = true) {u : Value} (hu : c.f.value? a = some u) :
     u.op ≠ .Phi := by
-  sorry
+  have hcov := ((blockOK_spec S.ok S.hB S.ch).2.2.2.2.2.1 a ha)
+  by_cases hK : c.K.getD a false = true
+  · obtain ⟨-, -, -, hKe, -, hl'⟩ := ctxOf_spec S.ctx
+    rw [hKe] at hK
+    obtain ⟨u', w, hu', hw, hsame, -⟩ := keptMarks_spec hK
+    rw [hu] at hu'; cases hu'
+    have hop : w.op = u.op := by
+      simp only [sameV, Bool.and_eq_true, beq_iff_eq] at hsame
+      exact hsame.1.1.1.1.2.symm
+    cases hz : c.lazy with
+    | none =>
+      simp only [Ctx.isWbaddr, Ctx.isConst0, hz, Option.any_none] at hl
+      rcases hl with h | h <;> cases h
+    | some p =>
+      obtain ⟨wa, c0⟩ := p
+      rw [hz] at hl'
+      obtain ⟨⟨w1, hw1, hop1, -⟩, ⟨w2, hw2, hop2, -⟩, -⟩ := lazyOK_some hl'
+      simp only [Ctx.isWbaddr, Ctx.isConst0, hz, Option.any_some, beq_iff_eq] at hl
+      rw [← hop]
+      rcases hl with rfl | rfl
+      · rw [hw] at hw1; cases hw1; rw [hop1]; exact fun h => by cases h
+      · rw [hw] at hw2; cases hw2; rw [hop2]; exact fun h => by cases h
+  · rcases hcov.2 (by simpa using hK) with ⟨r, hr, hx⟩ | ⟨r, hr, hn⟩
+    · obtain ⟨j, hj⟩ := List.getElem?_of_mem hr
+      exact ((S.run_facts hj).2.1 a hx).2 u hu
+    · obtain ⟨j, hj⟩ := List.getElem?_of_mem hr
+      have hK' : c.K.getD a false = false := by simpa using hK
+      exact ((S.run_facts hj).2.2 a (by simp [ncsOf, hn, hK'])).2 u hu
 
 /-- **Held registers after the chain.** -/
 theorem final_held (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
@@ -127,7 +178,35 @@ theorem final_held (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
 theorem lazy_after (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat}
     (hA : SimAt env c frS frT b i) {G T : Frame}
     (hR : Regs c b B rs G frS frT (rs.length + 1) T) : LazyRegs c T := by
-  sorry
+  intro wa c0 hz
+  have hwa : c.isWbaddr wa = true := by simp [Ctx.isWbaddr, hz]
+  have hc0 : c.isConst0 c0 = true := by simp [Ctx.isConst0, hz]
+  have hrw : c.roleOf rs wa = .wbaddr := roleOf_wbaddr hwa
+  have hrc : c.roleOf rs c0 = .const0 := roleOf_const0 hc0 (isWbaddr_of_const0 S.ctx hc0)
+  obtain ⟨hwaE, hc0E, hEg⟩ := S.lazy_entry hz
+  by_cases hb : b = c.f.entry
+  · have hs0 : (segsOf b rs)[0]? = some c.f.entry := by rw [← hb]; rfl
+    have h0 : 0 < rs.length + 1 := Nat.succ_pos _
+    obtain ⟨z1, hz1, hq1⟩ := hR.avail wa (.inr (.inl ⟨0, h0, _, hs0, hwaE⟩))
+    obtain ⟨z2, hz2, hq2⟩ := hR.avail c0 (.inr (.inl ⟨0, h0, _, hs0, hc0E⟩))
+    simp only [QR, hrw] at hq1
+    simp only [QR, hrc] at hq2
+    subst hq1; subst hq2
+    exact ⟨hz1, hz2⟩
+  · have hnot : ∀ a, a ∈ vals c.g c.f.entry → (∀ j, ¬ InSeg c b rs j a) ∧ (∀ j, ¬ InT c rs j a) := by
+      intro a ha
+      refine ⟨fun j ⟨s, hs, has⟩ => ?_, fun j ⟨r, hr, har⟩ => ?_⟩
+      · obtain ⟨-, -, -, hsg, -⟩ := S.seg_block hs
+        have := S.listed_once hsg hEg has ha
+        exact S.entry_not_chain hb s (List.mem_append_left _ (List.mem_of_getElem? hs)) this
+      · obtain ⟨-, -, -, htg, -⟩ := S.t_block hr
+        have := S.listed_once htg hEg har ha
+        exact S.entry_not_chain hb r.sp.t
+          (List.mem_append_right _ (List.mem_map.2 ⟨r, List.mem_of_getElem? hr, rfl⟩)) this
+    obtain ⟨h1, h2⟩ := hA.lazy hb wa c0 hz
+    refine ⟨?_, ?_⟩
+    · rw [hR.out wa (hnot wa hwaE).1 (hnot wa hwaE).2]; exact h1
+    · rw [hR.out c0 (hnot c0 hc0E).1 (hnot c0 hc0E).2]; exact h2
 
 /-- **A block entry that succeeds.** -/
 theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
@@ -164,12 +243,12 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
   -- the runs' first stores were evaluated
   have hrun : ∀ (j : Nat) (r : Run), rs[j]? = some r →
       (∀ s ∈ r.src, s ∈ B.values ∧ ∀ u, c.f.value? s = some u → u.op ≠ .Phi) ∧
-      (∀ n ∈ ncsOf c r, n ∈ B.values ∧ ∀ u, c.f.value? n = some u → u.op ≠ .Phi) := by
-    sorry
+      (∀ n ∈ ncsOf c r, n ∈ B.values ∧ ∀ u, c.f.value? n = some u → u.op ≠ .Phi) :=
+    fun j r hr => (S.run_facts hr).2
   have hM : ∀ j, j < rs.length → ∃ M, RunMem G rs j M := fun j hj => by
     obtain ⟨r, hr⟩ : ∃ r, rs[j]? = some r := ⟨rs[j], List.getElem?_eq_getElem hj⟩
-    obtain ⟨s0, hs0⟩ : ∃ s0, r.src[0]? = some s0 := by
-      sorry
+    obtain ⟨s0, hs0⟩ : ∃ s0, r.src[0]? = some s0 :=
+      ⟨_, List.getElem?_eq_getElem (S.run_facts hr).1⟩
     obtain ⟨hs0B, hs0p⟩ := (hrun j r hr).1 s0 (List.mem_of_getElem? hs0)
     obtain ⟨u, hu⟩ := hvx s0 hs0B
     exact S.runMem_of_ev hr hs0 (hP s0 hs0B u hu (hs0p u hu))

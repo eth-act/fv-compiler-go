@@ -94,7 +94,7 @@ private theorem roleRun_ncEnd' {g : Func} {x : ID} :
         | none => rw [hv] at h; cases h
         | some v =>
           rw [hv] at h
-          exact absurd h thenRole_ne'.2
+          exact absurd h (thenRole_ne' (k := 0)).2
       · rw [if_neg h5] at h
         obtain ⟨hk', r', hr', hx⟩ := roleRun_ncEnd' h
         refine ⟨by omega, r', ?_, hx⟩
