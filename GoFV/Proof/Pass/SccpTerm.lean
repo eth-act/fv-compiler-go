@@ -126,9 +126,9 @@ theorem sc_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
           exact sc_den hwf K hP (n + 1) x c hcx
         · cases hc
 
-theorem sc_termRefP {x : ID} (hx : LM f x) (b : ID) (S : ID → Prop) :
-    TermRefP ((sccpInv hwf K).P b) S f.value? tabs x (listedDefs g) tabs x :=
-  fun n => ⟨n + 1, fun _ _ hρ _ _ hP _ => sc_ref hwf K hρ hP n x hx⟩
+theorem sc_termRefP {x : ID} (hx : LM f x) (b : ID) (Q : (ID → Val) → Prop) (S : ID → Prop) :
+    TermRefP ((sccpInv hwf K).P b) Q S f.value? tabs x (listedDefs g) tabs x :=
+  fun n => ⟨n + 1, fun _ _ hρ _ _ hP _ _ => sc_ref hwf K hρ hP n x hx⟩
 
 /-- **Atoms' arguments.** -/
 theorem sc_atomArgs : AtomArgsRefP (sccpInv hwf K) g := by
@@ -149,22 +149,23 @@ theorem sc_atomArgs : AtomArgsRefP (sccpInv hwf K) g := by
   rw [hargs]
   have hx := (closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' u'.args[i]!
     (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')
-  exact ⟨fun _ => sc_termRefP hwf K hx b _, fun _ p _ _ _ _ _ => sc_termRefP hwf K hx p _⟩
+  exact ⟨fun _ => sc_termRefP hwf K hx b _ _, fun _ p _ _ _ _ _ => sc_termRefP hwf K hx p _ _⟩
 
 /-- The controls of a block of `g` as terms. -/
 theorem sc_controlRef {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
     {k : Nat} (hk : k < fb.controls.size) :
-    TermRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs
-      fb.controls[k]! :=
+    TermRefP ((sccpInv hwf K).P b) ((sccpInv hwf K).Q b) (SAnc f b) f.value? tabs fb.controls[k]!
+      (listedDefs g) tabs fb.controls[k]! :=
   sc_termRefP hwf K ((closedOK_facts K.cf b hb fb hfb).1 _
-    (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) b _
+    (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) b _ _
 
 /-- An `If` or `JumpTable` turned `First` towards the successor its constant control picks. -/
 theorem sc_first {b : ID} {fb gb : Block} (hF : firstOK tabs f C fb gb = true) :
-    StepRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs fb (listedDefs g) gb := by
+    StepRefP ((sccpInv hwf K).P b) ((sccpInv hwf K).Q b) (SAnc f b) f.value? tabs fb
+      (listedDefs g) gb := by
   obtain ⟨hkg, -, -, c, v, k, e, hc, hcv, hk, he, he0⟩ := firstOK_spec hF
   intro n
-  refine ⟨0, fun ρ ρ' _ _ _ hP _ => ?_⟩
+  refine ⟨0, fun ρ ρ' _ _ _ hP _ _ => ?_⟩
   have hcl := sc_den hwf K hP n c v hcv
   have hT : stepVals gb (gb.controls.toList.map (den (listedDefs g) tabs ρ' 0)) = .ok (.goto e) := by
     unfold stepVals; rw [hkg]; unfold succ; rw [he0]; rfl

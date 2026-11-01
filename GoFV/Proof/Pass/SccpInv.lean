@@ -256,10 +256,14 @@ def sccpInv {tabs : Tables} {f g : Func} {C : Array (Option Lat)} {vis : Array E
     simp only [Bool.and_eq_true] at h
     exact ⟨⟨hwf.entry, h.1.1, h.1.2⟩, fun a => Claim.poison _ _ _ a⟩
   poisonAtom _ a _ := Claim.poison _ _ _ a
-  edge p _ pb fr e _ hpb hL hinv _ _ _ hst := by
+  Q _ _ := True
+  qstart := trivial
+  qpois _ _ _ _ _ := trivial
+  edge p _ pb fr e _ hpb hL hinv _ _ _ _ _ _ hst := by
     obtain ⟨k, hk, hF⟩ := stepTerm_feasible hinv hst
     obtain ⟨hm, hR, hl⟩ := sc_live hwf K hL.1 hpb hL.2.1 hk hF
-    exact ⟨⟨hm, hR, hl⟩, hinv, sc_phis hwf K hm hl hinv⟩
+    exact ⟨⟨hm, hR, hl⟩, hinv, sc_phis hwf K hm hl hinv, fun _ _ _ _ => trivial⟩
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
   term _ _ _ x _ v hv ht ρ hρ := sc_term hwf K hv ht ρ hρ
   atom _ _ _ x _ v hv ht hph y := sc_atom hwf K hv ht hph _
 
