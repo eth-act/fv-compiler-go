@@ -39,60 +39,47 @@ def storesFlag (tabs : Tables) (f : Func) : Bool :=
 /-- The first condition of `wbOK` that fails. -/
 def why (tabs : Tables) (f g : Func) : String := Id.run do
   if !(g.entry == f.entry && g.ownAux == f.ownAux) then return "entry"
-  if !memTyOK tabs f then return "memTy"
-  let K := keptMarks f g
-  let mut Lst := Array.replicate g.valueTab.size false
-  let mut lazy : Option (ID × ID) := none
-  for b in f.blocks do
-    let some (splits, _) := chainOf f g (g.blocks.size + 1) b | return s!"chain b{b}"
-    for s in splits do
-      lazy := some (s.wbaddr, s.const0)
-      match runOf? f g s with
-      | some r => Lst := Lst.set! r.last true
-      | none => return s!"run b{b}"
-  let (wbaddr, const0) := lazy.getD (0, 0)
-  let c : Ctx := { tabs, f, g, K, Lst, wbaddr, const0 }
+  if !memTyOK tabs f then
+    let bad := f.blocks.toList.flatMap fun b => (vals f b).toList.filterMap fun x =>
+      match f.value? x with
+      | some v => if v.op != .WB && v.op != .WBend && v.op != .StoreWB && v.op != .MoveWB &&
+          v.op != .ZeroWB && (memFree (tabs.ty v.type) || memOpOK v.op) then none
+          else some v.op.name
+      | none => some "?"
+    return s!"memTy {bad.eraseDups}"
+  let some c := ctxOf tabs f g | Id.run do
+    for b in f.blocks do
+      if (chainRuns? f g b).isNone then
+        let ch := chainOf f g (g.blocks.size + 1) b
+        return s!"lazy chain b{b} {ch.isSome} {ch.map fun (ss, _) => ss.map (runOf? f g · |>.isSome)}"
+    let splits := f.blocks.toList.flatMap fun b =>
+      ((chainRuns? f g b).map fun (rs, _) => rs.map (·.sp)).getD []
+    let ws := splits.map fun s => (s.wbaddr, s.const0, (g.value? s.wbaddr).map (·.op.name),
+      (g.value? s.const0).map (·.op.name), (vals g g.entry).contains s.wbaddr,
+      (vals g g.entry).contains s.const0)
+    return s!"lazy fields {ws.eraseDups}"
   for b in f.blocks do
     if c.blockOK b then continue
-    let some (splits, _) := chainOf f g (g.blocks.size + 1) b | return "chain"
-    let some runs := splits.mapM (runOf? f g) | return "run"
-    let segs := b :: splits.map (·.e)
-    for (r, i) in runs.zipIdx do
-      if !c.flagOK r.sp then return s!"flag b{b}"
-      if !c.endOK r then return s!"end b{b}"
-      if !c.thenOK b segs i r then return s!"then b{b}"
-      if let some n := r.nc then
-        if !(K.getD n false) then
-          if !(vals f b).contains n then return s!"ncOut b{b}"
-      if !r.src.all (fun x => (vals f b).contains x && !K.getD x false) then return s!"src b{b}"
-    if !c.npOK b runs segs then
-      let src := npSeq f b
-      let ks := segs.map fun s => (npSeq g s, c.keptNP s)
-      let rs := runs.map fun r => (r.nc, r.src, r.tgt, r.last)
-      return s!"np b{b} src={src} segs={segs} ks={ks} runs={rs}"
-    let B := f.getB b
+    let some B := f.block? b | return s!"block b{b}"
+    let some (rs, _) := chainRuns? f g b | return s!"chain b{b}"
+    let segs := segsOf b rs
+    if !(segs ++ rs.map (·.sp.t)).Nodup then return s!"nodup b{b}"
+    for (r, j) in rs.zipIdx do
+      if !c.runOK b B segs rs j r then
+        let bad := ((g.block? r.sp.t).map (·.values.toList)).getD [] |>.filter
+          (!c.roleOK b B segs rs true j ·)
+        let bad := bad.map fun x => (x, (g.value? x).map (·.op.name), repr (c.roleOf rs x))
+        return s!"run b{b} j{j} then-bad={bad}"
     for x in B.values do
-      if !((K.getD x false && (segs.filter fun s => (vals g s).contains x).length == 1) ||
-          runs.any (fun r => r.src.contains x) || runs.any (fun r => r.nc == some x)) then
-        return s!"values b{b} unclassified v{x} {(f.getV x).op.name} kept={K.getD x false} \
-          in={segs.filter fun s => (vals g s).contains x} g={(g.value? x).map (·.op.name)}"
+      if !((c.K.getD x false && segs.any fun s => (vals g s).contains x) ||
+          rs.any (fun r => r.src.contains x) || rs.any (fun r => r.nc == some x)) then
+        return s!"unclassified b{b} v{x} {(f.getV x).op.name} kept={c.K.getD x false}"
     for (s, j) in segs.zipIdx do
       for x in vals g s do
-        if K.getD x false then
-          let u := f.getV x
-          let bad := u.args.filter fun a => !c.availIn b segs j a
-          if !(B.values.contains x) || (u.op == .Phi && j != 0) || (u.op != .Phi && !bad.isEmpty) then
-            return s!"values b{b} kept v{x} {u.op.name} seg {j} bad args {bad} \
-              held={bad.map c.held}"
-        else if !c.newOK b runs j x then
-          return s!"values b{b} new v{x} {(g.getV x).op.name} seg {j}"
-    let some (_, last) := chainOf f g (g.blocks.size + 1) b | return "chain"
-    let L := g.getB last
-    let C0 := g.getB b
-    return s!"values b{b} ? c0pre={C0.preds == B.preds} kind={L.kind == B.kind} \
-      ctl={L.controls == B.controls} succ={L.succs == B.succs} held={B.controls.all c.held} \
-      ids={C0.id == b && L.id == last}"
-  if lazy.isSome then return "lazy"
+        if !c.roleOK b B segs rs false j x then
+          return s!"role b{b} seg{j} v{x} {(g.getV x).op.name} {repr (c.roleOf rs x)}"
+    if !c.npOK B rs segs then return s!"np b{b}"
+    return s!"ends b{b}"
   return "?"
 
 def main (args : List String) : IO UInt32 := do
