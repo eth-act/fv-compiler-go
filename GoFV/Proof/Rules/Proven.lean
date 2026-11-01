@@ -11,6 +11,7 @@ import GoFV.Proof.Rules.Add7
 import GoFV.Proof.Rules.AddPtr
 import GoFV.Proof.Rules.And
 import GoFV.Proof.Rules.And2
+import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
@@ -259,6 +260,9 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨r_generic_100_sound, r_generic_759_sound, trivial⟩,
     ⟨r_generic_101_sound, r_generic_757_sound, trivial⟩,
     ⟨r_generic_102_sound, r_generic_754_sound, trivial⟩, trivial⟩)
+    (by
+    simp only [Proven.generic, ForallL]
+    exact ⟨⟨r_generic_1064_sound, r_generic_1065_sound, r_generic_1066_sound, trivial⟩, trivial⟩)
 
 /-- Every rule of `Proven.divisible` is sound. -/
 theorem divisible_allSound : Proven.divisible.AllSound :=
@@ -272,6 +276,7 @@ theorem divisible_allSound : Proven.divisible.AllSound :=
     ⟨r_divisible_23_2_sound, r_divisible_26_2_sound, r_divisible_72_sound, trivial⟩,
     ⟨r_divisible_23_3_sound, r_divisible_26_3_sound, r_divisible_88_sound, trivial⟩,
     ⟨r_divisible_23_4_sound, r_divisible_26_4_sound, r_divisible_40_sound, trivial⟩, trivial⟩)
+    (by simp [Proven.divisible, ForallL])
 
 /-- Every rule of `Proven.divmod` is sound. -/
 theorem divmod_allSound : Proven.divmod.AllSound :=
@@ -282,5 +287,6 @@ theorem divmod_allSound : Proven.divmod.AllSound :=
     ⟨r_divmod_33_sound, r_divmod_113_sound, r_divmod_127_sound, trivial⟩,
     ⟨r_divmod_21_sound, r_divmod_87_sound, trivial⟩,
     ⟨r_divmod_154_sound, trivial⟩, trivial⟩)
+    (by simp [Proven.divmod, ForallL])
 
 end GoFV.Proof.Rules

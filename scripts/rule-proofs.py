@@ -292,8 +292,9 @@ def proven_sets():
 # Proven-only rule sets
 
 The rule sets of `opt`, `divisible` and `divmod` restricted to the rules with a merged
-`Rule.Sound` lemma (`docs/proofs/rules.md`), in matching order: the rule sets of the
-proven-only rewrite passes (`GoFV.Opt.optProven`, …; issue #113). No block rule is proven.
+`Rule.Sound` lemma (value rules) or `BlockRule.Sound` lemma (block rules, issue #151;
+`docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
+(`GoFV.Opt.optProven`, …; issue #113).
 -/
 
 namespace GoFV.Rules.Proven
@@ -322,36 +323,46 @@ open GoFV.Rules
             s = open(os.path.join(GEN, f, mod)).read()
             for m in re.finditer(r"^def ops_(\w+) : List Rule := \[(.*)\]$", s, re.M):
                 ops[m.group(1)] = [n.strip() for n in m.group(2).split(",") if n.strip()]
-        vals = []
+        border = re.findall(r"\(\.(\w+), blocks_(\w+)\)", src)
+        blks = {}
+        for mod in sorted(os.listdir(os.path.join(GEN, f))):
+            s = open(os.path.join(GEN, f, mod)).read()
+            for m in re.finditer(r"^def blocks_(\w+) : List BlockRule := \[(.*)\]$", s, re.M):
+                blks[m.group(1)] = [n.strip() for n in m.group(2).split(",") if n.strip()]
+        vals, bvals = [], []
         for op, key in order:
             rs = [n for n in ops[key] if n in done]
             if rs:
                 vals.append((op, rs))
+        for k, key in border:
+            rs = [n for n in blks[key] if n in done]
+            if rs:
+                bvals.append((k, rs))
         n = sum(len(rs) for _, rs in vals)
-        total += n
+        nb = sum(len(rs) for _, rs in bvals)
+        total += n + nb
         q = f"Generated.{f}"
         body = ",\n    ".join(f"(.{op}, [{', '.join(q + '.' + r for r in rs)}])" for op, rs in vals)
+        bbody = ",\n    ".join(f"(.{k}, [{', '.join(q + '.' + r for r in rs)}])" for k, rs in bvals)
         data += f"""
-/-- `{low}.rules` restricted to its {n} proven rules. -/
+/-- `{low}.rules` restricted to its {n} proven value rules and {nb} proven block rules. -/
 def {low} : RuleSet where
   name := "{low}"
   values := [{body}]
-  blocks := []
+  blocks := [{bbody}]
 """
-        if not vals:
-            thm += f"""/-- `Proven.{low}` has no rules. -/
-theorem {low}_allSound : Proven.{low}.AllSound :=
-  RuleSet.allSound_of (by simp [Proven.{low}, ForallL])
-
-"""
-            continue
-        proofs = ",\n    ".join(
-            "⟨" + ", ".join(f"{r}_sound" for r in rs) + ", trivial⟩" for _, rs in vals)
+        def conj(groups):
+            if not groups:
+                return f"(by simp [Proven.{low}, ForallL])"
+            proofs = ",\n    ".join(
+                "⟨" + ", ".join(f"{r}_sound" for r in rs) + ", trivial⟩" for _, rs in groups)
+            return f"""(by
+    simp only [Proven.{low}, ForallL]
+    exact ⟨{proofs}, trivial⟩)"""
         thm += f"""/-- Every rule of `Proven.{low}` is sound. -/
 theorem {low}_allSound : Proven.{low}.AllSound :=
-  RuleSet.allSound_of (by
-    simp only [Proven.{low}, ForallL]
-    exact ⟨{proofs}, trivial⟩)
+  RuleSet.allSound_of {conj(vals)}
+    {conj(bvals)}
 
 """
     data += "\nend GoFV.Rules.Proven\n"
@@ -460,10 +471,11 @@ def fire(corpus):
         elif line.startswith("RULE\t"):
             _, k, pr, n, sole, unb = line.split("\t")
             loc, op = k.split(" ", 1)
-            if loc == "block":
-                rows.append((k, "block", "block", pr == "true", int(n), int(sole), int(unb)))
-                continue
             f, ln = loc.split(":")
+            if op.startswith("block "):
+                rows.append((f"{f}.rules:{ln} {op}", f"r_{f}_{ln}", "block", pr == "true", int(n),
+                             int(sole), int(unb)))
+                continue
             rs = idx.get((f, ln, op), [])
             name = "/".join(short(x["q"]) for x in rs) or "?"
             cls = rs[0]["cls"] if rs else "?"

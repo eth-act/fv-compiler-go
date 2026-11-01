@@ -42,12 +42,13 @@ or a pair `R x y` refined by other means. -/
 def argOK (R : ID → ID → Bool) (f g : Func) (x y : ID) : Bool :=
   (x == y && atomB f.value? x && atomB (listedDefs g) y) || R x y
 
-/-- Every listed atom of `g` is `f`'s with the same fields, the controls are `f`'s, and their
-arguments are pairwise `argOK R`. -/
+/-- Every listed atom of `g` is `f`'s with the same fields, the blocks keep their kind,
+successors and ID, the controls are `f`'s, and their arguments are pairwise `argOK R`. -/
 def sameAtomArgs (R : ID → ID → Bool) (f g : Func) : Bool :=
   g.blocks.all fun b =>
     match f.block? b, g.block? b with
     | some fb, some gb =>
+      gb.kind == fb.kind && gb.succs == fb.succs && gb.id == fb.id &&
       fb.controls.size == gb.controls.size &&
       (List.range gb.controls.size).all (fun k => argOK R f g fb.controls[k]! gb.controls[k]!) &&
       gb.values.all fun a =>
@@ -72,7 +73,7 @@ theorem termRef_of_argOK {R : ID → ID → Bool} {tabs : Tables} {f g : Func}
 
 theorem sameAtomArgs_sound {R : ID → ID → Bool} {tabs : Tables} {f g : Func}
     (hR : ∀ x y, R x y = true → TermRef f.value? tabs x (listedDefs g) tabs y)
-    (h : sameAtomArgs R f g = true) : AtomArgsRef tabs f g ∧ ControlsRef tabs f g := by
+    (h : sameAtomArgs R f g = true) : AtomArgsRef tabs f g ∧ TermStepRef tabs f g := by
   unfold sameAtomArgs at h
   have hb := Array.all_eq_true_iff_forall_mem.1 h
   constructor
@@ -91,11 +92,14 @@ theorem sameAtomArgs_sound {R : ID → ID → Bool} {tabs : Tables} {f g : Func}
         obtain ⟨⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, hsz⟩, hall⟩ := hv
         refine ⟨u', rfl, hop, hty, hai, hax, hsz, fun i hi => ?_⟩
         exact termRef_of_argOK hR (List.all_eq_true.1 hall i (List.mem_range.2 hi))
-  · intro b hbm fb gb hfb hgb
-    have hb := hb b hbm
-    simp only [hfb, hgb, Bool.and_eq_true, beq_iff_eq] at hb
-    obtain ⟨⟨hc, hcs⟩, -⟩ := hb
-    exact ⟨hc, fun k hk => termRef_of_argOK hR (List.all_eq_true.1 hcs k (List.mem_range.2 hk))⟩
+  · refine ControlsRef.toTermStepRef (fun b hbm fb gb hfb hgb => ?_) fun b hbm fb gb hfb hgb => ?_
+    · have hb := hb b hbm
+      simp only [hfb, hgb, Bool.and_eq_true, beq_iff_eq] at hb
+      obtain ⟨⟨⟨-, hc⟩, hcs⟩, -⟩ := hb
+      exact ⟨hc, fun k hk => termRef_of_argOK hR (List.all_eq_true.1 hcs k (List.mem_range.2 hk))⟩
+    · have hb := hb b hbm
+      simp only [hfb, hgb, Bool.and_eq_true, beq_iff_eq] at hb
+      exact ⟨hb.1.1.1.1.1, hb.1.1.1.1.2, hb.1.1.1.2⟩
 
 /-- The rewritten argument: `v4 = Add64 (Const64 [0]) v2` of `addZero` is refined by the atom
 `v2` at every fuel (`Add64` of `0` and an `int64` is that integer, anything else `poison`). -/

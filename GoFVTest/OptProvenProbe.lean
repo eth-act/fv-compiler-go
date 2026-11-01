@@ -87,6 +87,7 @@ open GoFV.Rules RewriteCheck in
 def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : String := Id.run do
   if !atomsOK f g then return "atoms"
   let mut M : Defs := f.valueTab
+  let mut B : BMap := []
   for ev in log do
     match ev with
     | .rule v i _ defs =>
@@ -107,13 +108,38 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
             M := M.put v { x with args := x.args.set i src }
           else return s!"copyArg v{v} {i}: v{x.args[i]} does not reach v{src}"
         else return s!"copyArg v{v} {i}: no argument"
+    | .control b i c =>
+      match bstate f B b with
+      | none => return s!"control at missing b{b}"
+      | some st =>
+        if h : i < st.ctrls.size then
+          if copyReach tabs M M.size st.ctrls[i] c then
+            B := (b, { st with ctrls := st.ctrls.set i c }) :: B
+          else return s!"control b{b} {i}: v{st.ctrls[i]} does not reach v{c}"
+        else return s!"control b{b} {i}: no control"
     | .phielim .. => return "phielim"
-    | .blockRule .. => return "blockRule"
-    | _ => pure ()
-  if !finalOK tabs f g M then
+    | .blockRule b i nc =>
+      match bstate f B b with
+      | none => return s!"blockRule at missing b{b}"
+      | some st =>
+        if ((f.block? b).map (·.succs.size)) != some 2 then return s!"blockRule b{b}: successors" else
+        match (t.blocks[st.kind.ctorIdx]?).bind (·[i]?) with
+        | none => return "no block rule"
+        | some br =>
+          match blockOK tabs M br st nc with
+          | some (defs, st') =>
+            M := defs.foldl (fun M u => M.put u.id u) M
+            B := (b, st') :: B
+          | none => return s!"blockRule b{b} {br.loc.file}:{br.loc.line}"
+  if !finalOK tabs f g M B then
     for b in g.blocks do
-      let (some fb, some gb) := (f.block? b, g.block? b) | return s!"final: block b{b}"
-      for (c, c') in fb.controls.toList.zip gb.controls.toList do
+      let (some st, some fb, some gb) := (bstate f B b, f.block? b, g.block? b)
+        | return s!"final: block b{b}"
+      if gb.kind != st.kind then return s!"final: b{b} kind"
+      if !(if st.swapped then fb.succs.size == 2 && gb.succs == swapS fb.succs
+           else gb.succs == fb.succs) then return s!"final: b{b} succs"
+      if gb.controls.size != st.ctrls.size then return s!"final: b{b} controls"
+      for (c, c') in st.ctrls.toList.zip gb.controls.toList do
         if !copyReach tabs M M.size c c' then return s!"final: control b{b} v{c}->v{c'}"
       for x in gb.values do
         match M.get? x, g.value? x with

@@ -116,7 +116,7 @@ theorem addZero_checks :
 /-- The one-rule set is sound (`generic.rules:646`'s `Add64` lemma). -/
 theorem azRules_allSound : azRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨GoFV.Proof.Rules.r_generic_646_3_sound, trivial⟩, trivial⟩
+    ⟨⟨GoFV.Proof.Rules.r_generic_646_3_sound, trivial⟩, trivial⟩ trivial
 
 /-- **Pass execution witness**: on `addZero`, the checked rewrite pass with the sound one-rule
 set changes the function (`v5 = MakeResult v2 v1`: `0 + n` became `n`), the validator accepted

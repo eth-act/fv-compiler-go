@@ -62,8 +62,9 @@ inductive RwEvent where
   | control (b : ID) (i : Nat) (c : ID)
   /-- The phi `v` became a copy (`phielimValue`); `def` is its new definition. -/
   | phielim (v : ID) («def» : Value)
-  /-- A block rule fired at `b`. -/
-  | blockRule (b : ID)
+  /-- Block rule `rule` (its index in `b`'s kind row of the table) fired at `b`; `ctrls`: the
+  block's controls after it. -/
+  | blockRule (b : ID) (rule : Nat) (ctrls : Array ID)
 
 /-- Mutable state of a rewrite pass. -/
 structure RwState where
