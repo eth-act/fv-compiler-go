@@ -466,7 +466,9 @@ theorem refines_of_step : Refines tabs g tabs f := by
     have hed : (𝓘).edgeIn f 𝓣 f.entry gE 0 = (0, (𝓘).dflt) := by
       have : gE.preds[0]? = none := Array.getElem?_eq_none (by omega)
       unfold Info.edgeIn
-      simp only [hnr, Bool.false_eq_true, ↓reduceIte, this, SCI.srcIdx_of _ (fun h => hnb h.1)]
+      have hsi : (𝓘).srcIdx f.entry 0 = 0 :=
+        SCI.srcIdx_of (𝓘) (fun (h : f.entry = (𝓘).s.b ∧ 0 = (𝓘).s.cidx) => hnb h.1)
+      simp only [hnr, Bool.false_eq_true, ↓reduceIte, this, hsi]
     let fr := entryFrame env (Ctx.make tabs f) args mem
     have hregs : fr.regs = Array.replicate f.valueTab.size none := rfl
     have hR0 : Rel tabs f g s env fr f.entry 0 fr f.entry 0 := by
@@ -492,7 +494,6 @@ theorem shortcircuitBlockChecked_refines {tabs : Tables} {ce : CheckEnv} {f g : 
   split at h
   · cases h; exact ⟨Refines.refl _ _, hf⟩
   · rename_i s _
-    dsimp only at h
     split at h
     · rename_i hok
       cases h
