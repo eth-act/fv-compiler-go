@@ -311,6 +311,7 @@ import GoFV.Proof.Rules.Xor4
 import GoFV.Proof.Rules.ZeroExt
 import GoFV.Proof.RunMono
 import GoFV.Proof.Sched
+import GoFV.Proof.SchedFast
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
@@ -344,6 +345,7 @@ import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TraceFP
