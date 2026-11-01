@@ -443,8 +443,15 @@ def axioms():
         if not fn.endswith(".lean"):
             continue
         mods.append(f"GoFV.Proof.Rules.{fn[:-5]}")
-        for m in re.finditer(r"^theorem (\S+)", open(os.path.join(PROOF, fn)).read(), re.M):
-            thms.append(f"GoFV.Proof.Rules.{m.group(1)}")
+        ns = []  # the namespaces open at each `theorem` (helper lemmas of a module may live
+        # in a sub-namespace, e.g. `GoFV.Proof.Rules.Divisible`)
+        for line in open(os.path.join(PROOF, fn)):
+            if m := re.match(r"namespace (\S+)", line):
+                ns.append(m.group(1))
+            elif re.match(r"end (\S+)", line) and ns and line.split()[1] == ns[-1]:
+                ns.pop()
+            elif m := re.match(r"theorem (\S+)", line):
+                thms.append(".".join(ns + [m.group(1)]))
     os.makedirs(TMP, exist_ok=True)
     path = os.path.join(TMP, "Axioms.lean")
     open(path, "w").write("".join(f"import {m}\n" for m in mods) +

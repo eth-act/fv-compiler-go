@@ -321,14 +321,15 @@ def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : N
     (nodes.zip us).all fun (n, u) => nodeOK tabs ev or σ I ids topTy n u
   | _, _, _ => false
 
-/-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The matched values below
-the top are not `v` (no cyclic match). -/
+/-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The definition at `v` is
+`v`'s (its ID, which the result's nodes are compared with), and the matched values below the
+top are not `v` (no cyclic match). -/
 def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Bool :=
   Pat.arityOk r.pat && patOK r.pat &&
   match M.get? v with
   | none => false
   | some x =>
-    termOp x.op &&
+    termOp x.op && x.id == v &&
     (choices (Pat.commutes r.pat)).any fun sw =>
       match matchPat M r.pat [] v sw with
       | none => false

@@ -1,0 +1,16 @@
+# Template installed by `scripts/nightly-gate.sh --install` (@GATE_WT@ = the gate worktree);
+# docs/GATE.md.
+[Unit]
+Description=gofv nightly gate (fv-compiler-go scripts/nightly-gate.sh)
+
+[Service]
+Type=oneshot
+# The gate's own processes (git, gh, qemu runs of the e2e programs) are capped here; every
+# build/check step runs in its own scripts/memcap.sh scope (8G), all in gofv.slice.
+Slice=gofv.slice
+MemoryMax=8G
+MemorySwapMax=0
+Nice=10
+TimeoutStartSec=10h
+Environment=PATH=%h/.elan/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=@GATE_WT@/scripts/nightly-gate.sh

@@ -130,9 +130,9 @@ needs a later phase of the semantics.
 | `dec` | StringPtr | 0 | 0 | 0 | 2 | 2 |
 | `dec` | StructMake | 0 | 0 | 0 | 1 | 1 |
 | `dec` | StructSelect | 0 | 0 | 0 | 5 | 5 |
-| `divisible` | Eq | 0 | 16 | 0 | 0 | 16 |
-| `divisible` | Neq | 0 | 16 | 0 | 0 | 16 |
-| `divmod` | Div | 0 | 27 | 0 | 2 | 29 |
+| `divisible` | Eq | 4 | 12 | 0 | 0 | 16 |
+| `divisible` | Neq | 4 | 12 | 0 | 0 | 16 |
+| `divmod` | Div | 11 | 12 | 4 | 2 | 29 |
 | `generic` | Add | 88 | 1 | 4 | 2 | 95 |
 | `generic` | AddPtr | 0 | 0 | 0 | 2 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
@@ -151,7 +151,7 @@ needs a later phase of the semantics.
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
 | `generic` | Div | 16 | 6 | 0 | 4 | 26 |
-| `generic` | Eq | 44 | 12 | 0 | 2 | 58 |
+| `generic` | Eq | 52 | 4 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | EqPtr | 0 | 0 | 0 | 20 | 20 |
@@ -171,7 +171,7 @@ needs a later phase of the semantics.
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 36 | 16 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
-| `generic` | Neq | 40 | 12 | 0 | 2 | 54 |
+| `generic` | Neq | 44 | 8 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 0 | 0 | 0 | 1 | 1 |
 | `generic` | NeqPtr | 0 | 0 | 0 | 20 | 20 |
@@ -208,7 +208,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 993 | 390 | 12 | 367 | 1762 |
+| all | | 1024 | 355 | 16 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -230,28 +230,42 @@ pass with its log on (`RwState.log`: every fired value rule with the definitions
 and control replacements, phi eliminations, block rules) and keep the result only if
 `GoFV.Opt.RewriteCheck.validate` accepts it (else the input): replaying the log on the input's
 definitions, each rule firing must be an instance of its rule as `Rule.Sound` states it (pattern
-match on the definitions, `Pat.cons`, `Pat.wf`, condition by `evalE` with an oracle read off the
-built nodes, top op producing its type's shape, sized leaves, built nodes = `resDen`), no phi
-elimination or block rule, and every definition and control of the result must be the replayed
-one up to copies of compatible shape; the atoms (phis, roots, frame values) must be unchanged,
-in the same order. These are the passes the theorems are about (issue #113).
+match on the definitions through term ops only, swapped only at `commOps`, `Pat.cons` with
+`same` only of leaf variables, `Pat.wf`, condition by `evalE` with an oracle read off the built
+nodes that answers every boolean-typed expression with a boolean (`Oracle.BoolTyped`), top op
+producing its type's shape, integer- or boolean-shaped leaves, built nodes = `resDen`, no cyclic
+match), a copy-argument replacement is replayed when its source is reached from the old argument
+through copies of compatible shape, no phi elimination or block rule, the arguments of listed
+values and the controls are listed (`closedOK`, input and output), and every definition and
+control of the result must be the replayed one up to copies of compatible shape; the atoms
+(phis, roots, frame values incl. `GetClosurePtr`/`GetCallerSP`) must be unchanged, in the same
+order, or droppable (`dropAtom`: no panic, no memory effect). These are the passes the theorems
+are about (issue #113).
 
 `lake exe opt-proven-probe <corpus>` runs the full, proven-only and checked variants on every
-stock instance's input. Quick corpus (`quick-v1`, 9,297 functions; 957 proven rules; "rules
+stock instance's input. Quick corpus (`quick-v1`, 9,297 functions; 993 proven rules; "rules
 fired": value and block rules, `RwState.fired`, each instance run on the stock input):
 
 | Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Validator rejects | Checked parity |
 | --- | --: | --: | --: | --: | --: | --: | --: | --: |
-| opt | 100.00% | 43.19% | 70.98% | 99,454 | 15,584 | 15.67% | 19 | 43.18% |
-| middle opt | 100.00% | 77.47% | 94.26% | 11,934 | 1,662 | 13.93% | 7 | 77.43% |
+| opt | 100.00% | 43.34% | 69.28% | 99,454 | 17,343 | 17.44% | 1 | 43.34% |
+| middle opt | 100.00% | 77.47% | 94.26% | 11,934 | 1,662 | 13.93% | 6 | 77.43% |
 | late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% | 0 | 84.60% |
 | divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% | 0 | 99.92% |
 | divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% | 0 | 97.88% |
 
+Functions all of whose rewrite sections the checked passes reproduce exactly: 3,536 of 9,297
+(38.03%; the same with 957 rules: the 36 new rules change opt sections of functions that differ
+elsewhere).
+
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
-dead-value removal. Validator rejections: a top op whose value is narrower than the op
-(`natShape`, "Narrow result types"), a phi elimination, a few result shapes.
+dead-value removal. Validator rejections (all REJECT lines of the probe): 6 top ops whose value
+is narrower than the op (`natShape`, `generic.rules:1189/1192` on divmod-built values in middle
+opt; "Narrow result types", correct rejections) and 1 phi elimination (opt). Before the
+copy-argument replay 25 more firings were rejected (the rule matched after copy elimination had
+rewritten an argument the replay had not seen), and dead `GetClosurePtr`/`GetCallerSP` removal
+168 late opt results.
 
 ## Proof method (`GoFV/Proof/Rules/Tactic.lean`)
 
@@ -347,7 +361,7 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `Oracle.BoolTyped`; `Oracle.const b` satisfies it (`Oracle.const_boolTyped`).
 - `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
   an instance of every exported rule at run time (random leaves, auxints from boundary values,
-  `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
+  `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`, helper-call atoms independently) and checks `Bool`
   mirrors of the hypotheses. `sat` fails if a proven rule has no instance or a
   counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
   how the findings below were found. Last run (with `Pat.typed`: leaves typed by their
@@ -364,6 +378,12 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   constant signed; for `c = -1`, `d = w+1` both shifts give 0 but `RotateLeft x (Const64 [-1])`
   rotates by `w-1`. Missing precondition `c >= 0`. Marked `-- FALSE … #90` in
   `GoFV/Proof/Rules/Add.lean`; `Rule.Sound` is false for them.
+
+- **`divmod.rules:136–148`** (`Div16u/32u/64u` of a signed type by `smagic`): false under the
+  semantics, not a Go bug. `t.IsSigned()` is an oracle atom and nothing makes the dividend
+  non-negative, which Go establishes before (prove pass). Counterexamples (agent DivmodU):
+  136 at `c = 3`, `x = 0xFFFF` (21845 vs 32767); 140 at `c = 3`, `x = 2^32-1`; 144 at `c = 7`,
+  `x = 4294967291`; 148 at `c = 7`, `x = 2^64-3`. Marked `-- FALSE … #69` in `Div.lean`.
 
 ## Narrow result types
 

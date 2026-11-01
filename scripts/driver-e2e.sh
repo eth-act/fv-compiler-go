@@ -14,8 +14,12 @@
 #   -p       go build -p (default 4)
 #   --report-only  keep the builds in --out, only run the programs and write the report
 #
+# Exit status 1 (report line "- result: FAIL") when a std archive or a program binary differs
+# from stock, a driver build failed, a program's output or exit status differs, a function fell
+# back to the stock passes, or nothing was compared; 0 otherwise ("- result: PASS").
+#
 # Toolchain: $GOFV_DRIVER_GO (default tmp/go-driver, built by
-# `GOFV_GO_BUILD=$PWD/tmp/go-driver scripts/build-go.sh`, patches 0001 and 0002). Lean
+# `GOFV_GO_DRIVER=1 GOFV_GO_BUILD=$PWD/tmp/go-driver scripts/build-go.sh`, patches 0001 and 0002). Lean
 # pipeline: .lake/build/bin/gofv-ssa-opt (`lake build gofv-ssa-opt`).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -34,6 +38,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 out=${out:-$root/tmp/driver-e2e-$mode}
+# absolute: the builds run in other directories and the compiler opens $out/lean/stats.txt
+case $out in /*) ;; *) out=$PWD/$out ;; esac
 [ -x "$gob/bin/go" ] || { echo "driver-e2e: no toolchain in $gob" >&2; exit 1; }
 [ -x "$opt" ] || { echo "driver-e2e: no $opt (lake build gofv-ssa-opt)" >&2; exit 1; }
 command -v qemu-aarch64-static >/dev/null || { echo "driver-e2e: qemu-aarch64-static missing" >&2; exit 1; }
@@ -156,4 +162,10 @@ report=$out/report.md
       }' "$out/lean/stats.txt"
   fi
 } >"$report"
+fail=0
+grep -qE '^  - (differs: |.*: (driver build failed|binary differs|output differs)$)' "$report" && fail=1
+grep -qE '^- all passes by the stock compiler \(fallback\): [1-9]' "$report" && fail=1
+grep -qE '^- (std package archives byte-identical: [0-9]+ / [1-9]|programs: [1-9])' "$report" || fail=1
+if [ "$fail" = 0 ]; then echo "- result: PASS" >>"$report"; else echo "- result: FAIL" >>"$report"; fi
 cat "$report"
+exit "$fail"
