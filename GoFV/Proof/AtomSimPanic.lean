@@ -1,4 +1,4 @@
-import GoFV.Proof.AtomSimOk
+import GoFV.Proof.AtomSimNoPanic
 
 /-!
 # A block entry that panics (issue #113)
