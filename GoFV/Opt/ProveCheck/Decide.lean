@@ -39,16 +39,25 @@ def Rel.neg : Rel → Rel
   | .lt s st => .lt s (!st)
   | .eq b => .eq (!b)
 
+/-- The value of `x ⋈ x`. -/
+def Rel.refl : Rel → Bool
+  | .lt _ st => !st
+  | .eq b => b
+
 variable (D : ID → Option Value) (tabs : Tables) (A : Asm) (k : Nat)
 
-/-- `x ⋈ y` at width `w` (`v = true`) or its negation follows from a path fact. -/
+/-- `x ⋈ y` at width `w` (`v = true`) or its negation follows from a path fact relating their
+`canon`ical forms, or they are the same. -/
 def pairDecides (x y : ID) (w : Width) (t : Rel) (v : Bool) : Bool :=
+  let x := canon D tabs x
+  let y := canon D tabs y
   let nn (z : ID) : Bool := 0 ≤ (rng D tabs A k w z).slo
   let xNN := nn x
   let yNN := nn y
   let rels := A.facts.filterMap fun fact => match relOf D tabs fact with
     | some (a, b, w', r) => if w' == w then some (a, b, r) else none
     | none => none
+  (x == y && t.refl == v) ||
   match v, t with
   | true, t => rels.any fun r => relImplies r x y t xNN yNN
   | false, .lt s st => rels.any fun r => relImplies r y x (.lt s (!st)) yNN xNN
@@ -83,7 +92,7 @@ def cmpDecides (ck : CmpK) (a b : ID) (v : Bool) : Bool :=
   | .bounds sl =>
     match widthOf D tabs a with
     | some w =>
-      let A' := { A with inv := (b, w, Rng.nonneg w.bits) :: A.inv }
+      let A' := { A with inv := (canon D tabs b, w, Rng.nonneg w.bits) :: A.inv }
       if v then relDecides D tabs A' k a b w (.lt false (!sl)) true
       else relDecides D tabs A' k b a w (.lt false sl) true
     | none => false

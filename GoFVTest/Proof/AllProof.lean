@@ -168,6 +168,7 @@ import GoFV.Proof.ProveCheck.Den
 import GoFV.Proof.ProveCheck.Facts
 import GoFV.Proof.ProveCheck.Fold
 import GoFV.Proof.ProveCheck.Inv
+import GoFV.Proof.ProveCheck.Proj
 import GoFV.Proof.ProveCheck.Rng
 import GoFV.Proof.ProveCheck.RngOp
 import GoFV.Proof.ProveCheck.RngSound

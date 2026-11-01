@@ -10,7 +10,8 @@ Runs `prove` on the input of every `prove` section of the given export files and
 rewrites by class (docs/PASSES.md, prove, T3–T16): branch removals (by the removed block's
 control op), bounded-shift marks, signed → unsigned `Rsh`/`Div`/`Mod`, `Ctz` → `CtzNonZero`,
 `Slicemask` → constant, `Mul` → `And`/`CondSelect`, `Eq` ↔ `Neq`, `And`/`Or` → `Copy`,
-constant-folded arguments, and the rest.
+constant-folded arguments, and the rest. `--dump` also prints each section's input with the
+validator's path facts and `Phi` invariants.
 -/
 
 open GoFV.SSA GoFV.Opt
@@ -62,6 +63,20 @@ def descr (f : Func) : Nat → ID → String
       s!"{n}({", ".intercalate (v.args.toList.map (descr f d))})"
     | none => "?"
 
+/-- `f` as text, one value per line, with each block's path facts and the `Phi` invariants
+(`--dump`). -/
+def dump (f : Func) (tabs : Tables) : String := Id.run do
+  let (_, F, inv) := ProveCheck.asmOf f tabs
+  let mut s := ""
+  for b in f.blocks do
+    let some bb := f.block? b | continue
+    s := s ++ s!"b{b} {repr bb.kind} preds {bb.preds.toList.map (·.b)} succs {bb.succs.toList.map (·.b)} ctl {bb.controls.toList} facts {ProveCheck.factsAt F b}\n"
+    for x in bb.values do
+      let some v := f.value? x | continue
+      s := s ++ s!"  v{x} = {v.op.name} {v.args.toList} [{v.auxInt}] : {repr (tabs.ty v.type)}\n"
+  s := s ++ s!"inv {inv.map fun (z, w, r) => (z, w.bits, repr r)}\n"
+  return s
+
 def bump (m : Std.HashMap String Nat) (k : String) (n : Nat := 1) : Std.HashMap String Nat :=
   m.insert k (m.getD k 0 + n)
 
@@ -83,7 +98,7 @@ structure St where
   cerrs : Nat := 0
   shown : Nat := 0
 
-def checkFile (path : System.FilePath) (st : St) : IO St := do
+def checkFile (path : System.FilePath) (st : St) (dumpIt : Bool := false) : IO St := do
   let data ← IO.FS.readBinFile path
   let .ok e := parseExport data | return st
   let typs := ((e.sections[0]?).bind (·.typs)).getD #[]
@@ -105,6 +120,16 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
     st := { st with secs := st.secs + 1 }
     let .ok out := provePass env f | st := { st with errs := st.errs + 1 }; continue
     let g := out.func
+    if dumpIt then
+      IO.println s!"DUMP {path}\n{dump f prev}"
+      for b in f.blocks do
+        let (some fb, some gb) := (f.block? b, g.block? b) | continue
+        if fb.kind != gb.kind || fb.succs != gb.succs then
+          IO.println s!"STOCK b{b} {repr gb.kind} succs {gb.succs.toList.map (·.b)}"
+        for x in fb.values do
+          let (some fv, some gv) := (f.value? x, g.value? x) | continue
+          if fv != gv then
+            IO.println s!"STOCK v{x} = {gv.op.name} {gv.args.toList} [{gv.auxInt}]"
     match ProveCheck.proveCheckedStats env f with
     | .error _ => st := { st with cerrs := st.cerrs + 1 }
     | .ok (h, cs) =>
@@ -150,14 +175,15 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
 
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
-  for a in args do
+  let dumpIt := args.contains "--dump"
+  for a in args.filter (· != "--dump") do
     let p : System.FilePath := a
     if ← p.isDir then
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
     else files := files.push p
   let mut st : St := {}
   for path in files.qsort (·.toString < ·.toString) do
-    st ← checkFile path st
+    st ← checkFile path st dumpIt
   IO.println s!"prove sections {st.secs}: changed {st.changed}, errors {st.errs}"
   IO.println "rewrites by class:"
   for (k, n) in st.classes.toList.toArray.qsort (fun a b => a.2 > b.2) do
