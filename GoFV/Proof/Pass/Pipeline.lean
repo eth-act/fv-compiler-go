@@ -18,6 +18,7 @@ import GoFV.Proof.Pass.FuseEarlyPass
 import GoFV.Proof.Pass.ECMain
 import GoFV.Proof.Pass.MemCombine
 import GoFV.Proof.Pass.ShortCircPass
+import GoFV.Proof.Pass.FuseLatePass
 import GoFV.Proof.Pass.WBSim
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Pass.Decompose
@@ -180,7 +181,8 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
   -- sccp
   · exact fun _ _ _ _ _ h hf hg _ => Sccp.sccp_refines h hf hg
   · exact deadcodeStep_sound
-  · trivial
+  -- late fuse
+  · exact fun _ _ _ _ _ h _ _ _ => FuseLate.fuseLate_refines h
   -- check bce
   · exact fun _ _ _ _ _ h _ _ _ => checkbce_refines h
   -- dse
