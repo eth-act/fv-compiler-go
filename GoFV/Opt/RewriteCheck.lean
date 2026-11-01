@@ -175,7 +175,7 @@ def termOp (op : Op) : Bool :=
   !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .PanicBounds |
     .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB |
     .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr | .Addr |
-    .ConstString | .Invalid)
+    .ConstString | .GetClosurePtr | .GetCallerSP | .Invalid)
 
 /-- Comparisons and boolean ops: their result is a boolean (or `poison`). -/
 def boolOp : Op → Bool
