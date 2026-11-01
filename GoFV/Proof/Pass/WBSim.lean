@@ -340,10 +340,67 @@ theorem step {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {env : 
           (hst _ hs))]
         exact OutcomeRefines.refl trivial
 
+/-- A held value is a value of both functions. -/
+private theorem held_lt {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {a : ID}
+    (hh : c.held a = true) : a < c.f.valueTab.size ∧ a < c.g.valueTab.size := by
+  unfold Ctx.held at hh
+  simp only [Bool.or_eq_true] at hh
+  rcases hh with hK | hL
+  · rw [(ctxOf_spec hGl.ctx).2.2.2.1] at hK
+    obtain ⟨u, w, hu, hw, -⟩ := keptMarks_spec hK
+    exact ⟨lt_of_value? hu, lt_of_value? hw⟩
+  · rw [(ctxOf_spec hGl.ctx).2.2.2.2.1] at hL
+    obtain ⟨b, hb, rs', l', hch', r, hr, hlast⟩ := lastMarks_spec hL
+    obtain ⟨B, rs, l, S⟩ := hGl.setup hb
+    rw [S.ch] at hch'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hch'
+    obtain ⟨rfl, rfl⟩ := hch'
+    have bo := blockOK_spec S.ok S.hB S.ch
+    obtain ⟨j, hj⟩ := List.getElem?_of_mem hr
+    obtain ⟨-, h2, -, -, -, -, -, hlv, -, -, -, -, -, -, -, hsrc, -⟩ :=
+      runOK_spec (bo.2.2.2.2.1 j r hj)
+    obtain ⟨-, -, hgl, -⟩ := runOf_spec ((chainRuns_spec S.ch).1 j r hj).2.2.2
+    have haB : a ∈ B.values := by
+      rw [← hlast]; exact (hsrc _ (List.mem_of_getLast? hgl)).1
+    obtain ⟨u, hu, -⟩ := hGl.wf.valueId b B ⟨hb, S.hB⟩ a haB
+    have hes : r.sp.e ∈ c.g.blocks :=
+      bo.2.2.2.1 _ (List.mem_append_left _ (List.mem_of_getElem? h2))
+    obtain ⟨E, hE, -⟩ := hGl.wg.blockId _ hes
+    have haE : a ∈ E.values := by rw [← vals_of hE, ← hlast]; exact hlv
+    obtain ⟨w, hw, -⟩ := hGl.wg.valueId _ E ⟨hes, hE⟩ a haE
+    exact ⟨lt_of_value? hu, lt_of_value? hw⟩
+
 /-- **The accepted results refine their inputs.** -/
 theorem refines_of_glob {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') :
     RefinesFrom WbPre c.tabs c.g c.tabs c.f := by
-  sorry
+  have hpar : (Ctx.make c.tabs c.g).params = (Ctx.make c.tabs c.f).params := by
+    simp only [Ctx.make, abiParams, hGl.own]
+  have houts : (Ctx.make c.tabs c.g).outs = (Ctx.make c.tabs c.f).outs := by
+    simp only [Ctx.make, abiParams, hGl.own]
+  intro env args mem hpre fuel hd
+  unfold run runCtx at hd ⊢
+  rw [hpar]
+  split
+  · rename_i hn; simp only [hn] at hd; exact hd.elim
+  · rename_i hn
+    simp only [hn] at hd
+    rw [AtomSim.entryFrame_eq hGl.own.symm, houts,
+      show (Ctx.make c.tabs c.g).act = (Ctx.make c.tabs c.f).act from rfl,
+      show (Ctx.make c.tabs c.g).f.entry = c.f.entry from hGl.entry]
+    have hA0 : SimAt env c (entryFrame env (Ctx.make c.tabs c.f) args mem)
+        { entryFrame env (Ctx.make c.tabs c.f) args mem with
+          regs := Array.replicate c.g.valueTab.size none } c.f.entry 0 := by
+      refine ⟨.inl rfl, by simp [entryFrame, Ctx.make], by simp, rfl, fun a hh => ?_,
+        sinv_entry hpre.1, fun h => absurd rfl h, fun _ a y h => ?_⟩
+      · obtain ⟨h1, h2⟩ := held_lt hGl hh
+        simp only [entryFrame, Ctx.make, Array.getElem?_replicate, h1, h2, ↓reduceIte]
+      · simp only [entryFrame, Array.getElem?_replicate] at h
+        split at h <;> simp at h
+    obtain ⟨fuelT, h⟩ := runLoop_simIH (ctxS := Ctx.make c.tabs c.f) (ctxT := Ctx.make c.tabs c.g)
+      (R env c) (fun n ih frS bS iS frT bT iT hR hd' =>
+        step hGl hpre.2 n ih frS bS iS frT bT iT hR hd') fuel _ c.f.entry 0 _ c.f.entry 0
+      ⟨rfl, rfl, hA0⟩ (finish_defined hd)
+    exact ⟨fuelT, finish_refines hd h⟩
 
 end GoFV.Proof.WB
 
@@ -357,6 +414,32 @@ theorem writebarrier_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce'
     (h : writebarrierChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
     RefinesFrom WB.WbPre out.tables out.func penv.tables f := by
-  sorry
+  unfold writebarrierChecked at h
+  cases hw : writebarrier penv f with
+  | error e => simp [hw, bind, Except.bind] at h
+  | ok out' =>
+    simp only [hw, bind, Except.bind] at h
+    split at h
+    · rename_i hok
+      simp only [pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      simp only [Bool.and_eq_true] at hok
+      obtain ⟨hta, hwb⟩ := hok
+      obtain ⟨hent, hown, hmem, c, hc, hall⟩ := WB.wbOK_spec hwb
+      obtain ⟨ht, hf', hg', -⟩ := WB.ctxOf_spec hc
+      have hGl : WB.Glob c ce ce' := by
+        refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+        · rw [ht, hf', hg']; exact hc
+        · rw [hf']; exact check_wf hf
+        · rw [hg']; exact check_wf hg
+        · rw [hf']; exact Dom.certOK_of_check (check_domCert hf)
+        · rw [hf', hg']; exact hent
+        · rw [hf', hg']; exact hown
+        · rw [ht, hf']; exact hmem
+        · rw [hf']; exact hall
+      have hr := WB.refines_of_glob hGl
+      rw [ht, hf', hg'] at hr
+      exact refinesFrom_of_tabsAgree hta hr
+    · cases h
 
 end GoFV.Proof

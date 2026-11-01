@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.WBCov
+import GoFV.Proof.Pass.WBPanicFacts
 
 /-!
 # writebarrier: a block entry that panics (issue #36)
