@@ -150,6 +150,20 @@ def dseWhy (tabs : Tables) (f g : Func) : List String := Id.run do
       ws := add ws (if other then "user-other-block" else s!"user-{fv.op.name}")
   return ws
 
+/-! ## dead auto elim -/
+
+/-- The name an eliminated value of dead auto elim writes: `VarDef`'s aux, or the `LocalAddr`
+under the destination's `OffPtr`s. -/
+def elimName (f : Func) (v : Value) : Option AuxRef := Id.run do
+  if v.op == .VarDef then return v.aux
+  let mut p := v.args[0]?.getD 0
+  for _ in [0:64] do
+    let x := f.getV p
+    if x.op == .OffPtr then p := x.args[0]?.getD 0
+    else if x.op == .LocalAddr then return x.aux
+    else return none
+  return none
+
 /-! ## driver -/
 
 def main (args : List String) : IO UInt32 := do
@@ -177,6 +191,9 @@ def main (args : List String) : IO UInt32 := do
   let mut aCalls := 0
   let mut aConv := 0
   let mut aKinds : Std.HashMap String Nat := {}
+  let mut aNames : Std.HashMap String Nat := {}
+  let mut aFnNoAddr := 0
+  let mut aFnNoAddrNoCall := 0
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok e := parseExport data | continue
@@ -248,17 +265,33 @@ def main (args : List String) : IO UInt32 := do
         | .error _ => nErr := nErr + 1
         | .ok g =>
           let mut any := false
+          let mut names : List AuxRef := []
           for x in List.range f.valueTab.size do
             if let (some fx, some gx) := (f.value? x, g.value? x) then
               if fx.op != gx.op then
                 any := true
                 aKinds := bump aKinds fx.op.name
+                if let some n := elimName f fx then
+                  if !names.contains n then names := n :: names
           if any then
             aChanged := aChanged + 1
             let ops := (List.range f.valueTab.size).filterMap fun x => (f.value? x).map (·.op)
-            if ops.any (fun o => o == .StaticLECall || o == .StaticCall || o == .ClosureLECall ||
-                o == .InterLECall || o == .TailLECall) then aCalls := aCalls + 1
+            let calls := ops.any (fun o => o == .StaticLECall || o == .StaticCall ||
+              o == .ClosureLECall || o == .InterLECall || o == .TailLECall)
+            if calls then aCalls := aCalls + 1
             if ops.any (· == .Convert) then aConv := aConv + 1
+            let mut addr := false
+            for n in names do
+              match prev.aux? n with
+              | some { kind := .name _ cls _ _ esc fl _, .. } =>
+                addr := addr || (fl.addrtaken && !fl.autotmp)
+                let atk := if fl.addrtaken then "-addrtaken" else ""
+                let tmp := if fl.autotmp then "-autotmp" else ""
+                aNames := bump aNames s!"{cls.name}{atk}{tmp}-esc{esc}"
+              | _ => aNames := bump aNames "unknown"
+            if !addr then
+              aFnNoAddr := aFnNoAddr + 1
+              if !calls then aFnNoAddrNoCall := aFnNoAddrNoCall + 1
   IO.println s!"nilcheckelim: inputs {nInst}, errors {nErr}, changed {nChanged}, in fragment {nFrag}, roots reordered {nRootsBad}"
   IO.println s!"  NilCheck→Copy by justification: {show' nck}"
   IO.println s!"  IsNonNil→ConstBool by justification: {show' isnn}"
@@ -268,6 +301,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"  changed functions outside the fragment, by their reasons: {show' dFn}"
   IO.println s!"dead auto elim: inputs {aInst}, changed {aChanged}, with calls {aCalls}, with Convert {aConv}"
   IO.println s!"  eliminated values by op: {show' aKinds}"
+  IO.println s!"  eliminated names by class/flags: {show' aNames}"
+  IO.println s!"  changed functions eliminating no user addrtaken name (addrtaken, not autotmp): {aFnNoAddr}, of which without calls: {aFnNoAddrNoCall}"
   return 0
 
 end GoFVTest.MemProbe
