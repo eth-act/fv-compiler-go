@@ -13,8 +13,8 @@
   scripts/rule-proofs.py sat                # run `lake exe rule-sat` (satisfying instance per
                                             # rule) -> tmp/rules/sat.tsv; fails if a proven
                                             # rule has no instance or a counterexample
-  scripts/rule-proofs.py axioms             # `#print axioms` of every theorem of the proof
-                                            # modules; fails on non-standard axioms
+  scripts/rule-proofs.py axioms             # scripts/axioms-audit.sh: the axioms of every
+                                            # theorem of GoFV/Proof; fails on non-standard axioms
   scripts/rule-proofs.py proven             # the proven-only rule sets GoFV/Rules/Proven.lean
                                             # and their soundness GoFV/Proof/Rules/Proven.lean
   scripts/rule-proofs.py fire [CORPUS]      # `lake exe rule-fire-probe` on the quick corpus ->
@@ -163,24 +163,26 @@ elab "#probe " ids:ident* : command => do
     let t0 ← IO.monoMsNow
     let msgs0 := (← get).messages
     modify fun s => {{ s with messages := {{}} }}
-    let ((size : Nat), (certs : Nat)) ← withoutModifyingEnv do
+    let ((size : Nat), (axs : Array Name)) ← withoutModifyingEnv do
       elabCommand (← `(theorem $(mkIdent `probe) : GoFV.Proof.Rules.Rule.Sound $id := by {tactic}))
       let env ← getEnv
-      let size : Nat := match env.find? `probe with
-        | some c => dagSize ((c.value? (allowOpaque := true)).getD (.sort .zero))
-        | none => 0
-      let certs : Nat := env.constants.map₂.foldl (fun n k _ =>
-        if (`probe).isPrefixOf k && (k.toString.splitOn "_cert").length > 1 then n + 1 else n) 0
-      return (size, certs)
+      match env.find? `probe with
+      | some c =>
+        let axs ← collectAxioms `probe
+        return (dagSize ((c.value? (allowOpaque := true)).getD (.sort .zero)),
+          axs.filter fun a => ![``propext, ``Classical.choice, ``Quot.sound].contains a)
+      | none => return (0, #[])
     let ms := (← get).messages
-    let ok := !ms.hasErrors
+    let ok := !ms.hasErrors && axs.isEmpty
     let t1 ← IO.monoMsNow
     let mut err := ""
     for m in ms.toList do
       if m.severity == .error && err == "" then
         err := (← m.data.toString).replace "\\n" " ⏎ "
+    if err == "" && !axs.isEmpty then
+      err := s!"non-standard axioms (scripts/axioms-audit.sh rejects them): {{axs}}"
     modify fun s => {{ s with messages := msgs0 }}
-    logInfo m!"PROBE {{id}} {{if ok then "OK" else "FAIL"}} {{t1 - t0}}ms {{size}} {{certs}} {{(err.take 600).toString}}"
+    logInfo m!"PROBE {{id}} {{if ok then "OK" else "FAIL"}} {{t1 - t0}}ms {{size}} {{(err.take 600).toString}}"
 
 -- Sequential: an asynchronously elaborated proof would report its errors after `#probe` has
 -- read the messages.
@@ -198,12 +200,9 @@ def probe_one(fam, rules, idx, tactic):
     r = lean(os.path.relpath(path, ROOT))
     res = []
     for line in (r.stdout + r.stderr).splitlines():
-        m = re.search(r"PROBE (\S+) (OK|FAIL) (\d+)ms (\d+) (\d+) ?(.*)", line)
+        m = re.search(r"PROBE (\S+) (OK|FAIL) (\d+)ms (\d+) ?(.*)", line)
         if m:
-            ok = m.group(2)
-            if ok == "OK" and m.group(5) != "0":
-                ok = "BV"  # closed by `bv_decide`: an LRAT certificate in the `.olean`
-            res.append((m.group(1), ok, m.group(3), m.group(4), m.group(6)))
+            res.append(m.groups())
     if not res:
         res = [(r_["q"], "FAIL", "0", "0",
                 "probe crashed: " + (r.stderr + r.stdout)[-300:].replace("\n", " "))
@@ -538,45 +537,13 @@ def fire(corpus):
     print(f"{len(shown)} rows; top: " + ", ".join(f"{x[0]} ({x[6]})" for x in shown[:8]))
 
 
-STD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
-
-
 def axioms():
-    """`#print axioms` of every theorem of the proof modules (built first); fails on any axiom
-    other than the standard three and `bv_decide`'s `_native` ones."""
-    mods, thms = [], []
-    for fn in sorted(os.listdir(PROOF)):
-        if not fn.endswith(".lean"):
-            continue
-        mods.append(f"GoFV.Proof.Rules.{fn[:-5]}")
-        ns = []  # the namespaces open at each `theorem` (helper lemmas of a module may live
-        # in a sub-namespace, e.g. `GoFV.Proof.Rules.Divisible`)
-        for line in open(os.path.join(PROOF, fn)):
-            if m := re.match(r"namespace (\S+)", line):
-                ns.append(m.group(1))
-            elif re.match(r"end (\S+)", line) and ns and line.split()[1] == ns[-1]:
-                ns.pop()
-            elif m := re.match(r"theorem (\S+)", line):
-                thms.append(".".join(ns + [m.group(1)]))
-    os.makedirs(TMP, exist_ok=True)
-    path = os.path.join(TMP, "Axioms.lean")
-    open(path, "w").write("".join(f"import {m}\n" for m in mods) +
-                          "".join(f"#print axioms {t}\n" for t in thms))
-    r = lean(os.path.relpath(path, ROOT))
-    out = r.stdout + r.stderr
-    bad, seen = [], 0
-    for m in re.finditer(r"'(\S+)' depends on axioms: \[(.*?)\]", out, re.S):
-        seen += 1
-        ax = {a.strip() for a in m.group(2).split(",") if a.strip()}
-        other = {a for a in ax - STD_AXIOMS if "_native.bv_decide.ax_" not in a}
-        if other:
-            bad.append((m.group(1), sorted(other)))
-    seen += len(re.findall(r"does not depend on any axioms", out))
-    for t, ax in bad:
-        print(f"{t}: {', '.join(ax)}")
-    print(f"{seen}/{len(thms)} theorems checked, {len(bad)} with other axioms")
-    if bad or seen != len(thms) or r.returncode != 0:
-        sys.exit(out[-2000:] if seen != len(thms) else 1)
+    """The gate's audit, scripts/axioms-audit.sh: the axioms of every theorem of GoFV/Proof
+    (built first); only propext, Classical.choice, Quot.sound and the `_native` axioms listed in
+    scripts/axioms-allowlist.txt are allowed. Exits non-zero on anything else."""
+    r = subprocess.run([os.path.join(ROOT, "scripts", "axioms-audit.sh")], cwd=ROOT)
+    if r.returncode != 0:
+        sys.exit(r.returncode)
 
 
 def main():

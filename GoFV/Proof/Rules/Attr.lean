@@ -8,8 +8,6 @@ import Lean
 - `rule_sem`: the op families as `Option.elim` chains over `Val.asInt`/`Val.asBool`, value and
   refinement facts, and the `BitVec` forms of shifts, rotations and constants.
 - `rule_arith`: pushing auxint arithmetic (`Int`) into `BitVec` for the closing step.
-- `rule_bv`: shifts and rotations by `BitVec` amounts and bounds as `BitVec` comparisons, the
-  `bv_decide` form of the last resort of `rule_close`.
 - `rule_bits`: all-ones constants as `BitVec.allOnes` (bitwise identities per bit).
 - `rule_amt`: amounts and conditions as `Nat`/`Int` arithmetic with remainders by constants
   (`omega` form; rotation amounts, constant shifts, comparisons with constants).
@@ -22,7 +20,6 @@ import Lean
 register_simp_attr rule_helper
 register_simp_attr rule_sem
 register_simp_attr rule_arith
-register_simp_attr rule_bv
 register_simp_attr rule_bits
 register_simp_attr rule_amt
 register_simp_attr rule_cmp

@@ -16,7 +16,8 @@ import GoFV.Proof.Rules.Names
    conditions, and when none is left the disjunctions (splitting these last keeps the shared
    part of the proof once: 31% smaller proofs of the rotate rules);
 4. `rule_close`: auxint reads generalized to bounded `Int`s and pushed into `BitVec`, then
-   `rfl`, a rotation (`rule_rot`), `grind`, and as the last resort `bv_decide`.
+   `rfl`, a rotation (`rule_rot`), `grind`, a per-bit identity, `bv_normalize`; never
+   `bv_decide` (its `_native` axioms fail `scripts/axioms-audit.sh`): such a goal fails.
 
 `evalPure` and `Op.auxType` are 446-arm `match`es: `simp` never unfolds them (LEARNINGS.md);
 the dsimprocs below evaluate them at a constructor (one `delta` + `whnfCore`, a definitional
@@ -646,9 +647,11 @@ elab "rule_pow2" : tactic => withMainContext do
 /-- Close the arithmetic left after the splits: auxint reads are generalized, constants
 pushed into `BitVec`, then `rfl`, a rotation (`rule_rot`, before `grind`: a failing `grind`
 spends seconds on rotation goals), a ring identity (`grind` after complements and constant
-shifts become ring terms), and as the last resort `bv_decide` on the `BitVec`-amount form
-(`rule_bv`), whose LRAT certificate is stored in the `.olean` (megabytes for a 64-bit goal;
-`scripts/rule-proofs.py probe` marks such rules `BV`). -/
+shifts become ring terms), a per-bit identity, `rule_ext`, and `bv_decide`'s rewriting front
+end `bv_normalize` (no SAT call, no axioms; without enum/structure preprocessing, which would
+declare `PUnit.enumToBitVec` in every module). Never `bv_decide` itself: its `_native` axioms
+fail `scripts/axioms-audit.sh` (#218 replaced 30 proofs that fell through to it); a goal none
+of these closes fails here and needs a closer of its own. -/
 macro "rule_close" : tactic => `(tactic| (
   repeat rule_gen1
   try simp only [GoFV.Proof.Rules.DV.int.injEq, GoFV.Proof.Rules.DV.bool.injEq] at *
@@ -672,8 +675,8 @@ macro "rule_close" : tactic => `(tactic| (
      simp
      done)
   | rule_ext
-  | ((try simp only [rule_bv, Nat.reducePow, Nat.reduceLT] at *)
-     bv_decide (config := { enums := false, structures := false }))))
+  | (bv_normalize (config := { enums := false, structures := false }); done)
+  | fail "rule_close: no closer applies (bv_decide is not used: scripts/axioms-audit.sh)"))
 
 /-- `rule_unfold`, the case splits, then `rule_close` on every remaining case. -/
 macro "rule_auto" : tactic => `(tactic| (
@@ -688,7 +691,7 @@ macro "rule_auto" : tactic => `(tactic| (
 
 -- The congruence equations of the `match`es `simp` meets in the rule lemmas, generated here
 -- once: generated in two rule modules they are two public declarations of the same name, and
--- the modules cannot be imported together (`scripts/rule-proofs.py axioms` imports all).
+-- the modules cannot be imported together (`scripts/axioms-audit.sh` imports all).
 run_meta do
   for n in [``Option.getD.match_1, ``GoFV.Proof.Rules.binDV.match_4,
       ``GoFV.Proof.Rules.fieldDV.match_1] do
