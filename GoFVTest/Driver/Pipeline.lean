@@ -1,4 +1,5 @@
 import GoFVTest.Parity.Registry
+import GoFV.Opt.Verified
 
 /-!
 # The Lean generic pipeline
@@ -14,65 +15,8 @@ namespace GoFVTest.Driver
 
 open GoFV.SSA GoFV.Opt GoFVTest.Parity
 
-/-- One entry of `compile.go`'s `passes` (before `lower`). -/
-structure StockPass where
-  name : String
-  required : Bool := false
-  /-- `required: buildcfg.Experiment.SIMD` (`cpufeatures`). -/
-  requiredSimd : Bool := false
-
-/-- `compile.go` `passes`, `number lines` … `rewrite tern`, in order. -/
-def stockPasses : Array StockPass := #[
-  { name := "number lines", required := true },
-  { name := "early phielim and copyelim" },
-  { name := "early deadcode" },
-  { name := "short circuit" },
-  { name := "decompose user", required := true },
-  { name := "pre-opt deadcode" },
-  { name := "opt", required := true },
-  { name := "zero arg cse", required := true },
-  { name := "opt deadcode", required := true },
-  { name := "generic cse" },
-  { name := "phiopt" },
-  { name := "gcse deadcode", required := true },
-  { name := "nilcheckelim" },
-  { name := "prove" },
-  { name := "divisible", required := true },
-  { name := "divmod", required := true },
-  { name := "middle opt", required := true },
-  { name := "known bits" },
-  { name := "early fuse" },
-  { name := "expand calls", required := true },
-  { name := "decompose builtin", required := true },
-  { name := "softfloat", required := true },
-  { name := "branchelim" },
-  { name := "late opt", required := true },
-  { name := "dead auto elim" },
-  { name := "sccp" },
-  { name := "generic deadcode", required := true },
-  { name := "late fuse" },
-  { name := "check bce" },
-  { name := "dse" },
-  { name := "memcombine" },
-  { name := "writebarrier", required := true },
-  { name := "insert resched checks" },
-  { name := "cpufeatures", requiredSimd := true },
-  { name := "rewrite tern" }
-]
-
 /-- The registered port of stock pass `name`. -/
 def port? (name : String) : Option PassEntry := registry.find? (·.names.contains name)
-
-/-- Whether `ssa.Compile` runs pass `p` for this function: `optimize || required`, and not
-`disabled`. Passes without a port and with a Go `disabled` condition do not exist (all three
-such passes are registered). -/
-def enabled (env : PassEnv) (p : StockPass) : Except String Bool := do
-  let optimize ← env.flag "optimize"
-  let required ← if p.requiredSimd then env.flag "exp.simd" else pure p.required
-  if !optimize && !required then return false
-  match port? p.name with
-  | some e => return !(← e.disabled { env with passName := p.name })
-  | none => return true
 
 /-- Why the pipeline stopped. -/
 inductive Stop where
@@ -106,30 +50,6 @@ def State.ofSection (func : Func) (tables : Tables) (zv : Array (ID × Nat)) : S
   { func, tables, zvar := zv.foldl (fun m (v, c) => m.insert v c) {}
     nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1 }
 
-/-- The classes after a pass that turned `input` into `out`: the reported objects in order
-(`.of w` takes `w`'s class at that point), then a value keeps its class if it is still in the
-function and either was reported or has its input type number. -/
-def nextZvar (input : Func) (out : PassOut) (zv : Std.HashMap ID Nat) (next : Nat) :
-    Std.HashMap ID Nat × Nat := Id.run do
-  let mut run := zv
-  let mut next := next
-  let mut reported : Std.HashSet ID := {}
-  for (id, o) in out.typeObjs do
-    reported := reported.insert id
-    match o with
-    | .canonical => run := run.erase id
-    | .fresh => run := run.insert id next; next := next + 1
-    | .of w => match run[w]? with
-      | some c => run := run.insert id c
-      | none => run := run.erase id
-  let keep (id : ID) : Bool := match out.func.value? id with
-    | none => false
-    | some v => reported.contains id || (input.value? id).any (·.type == v.type)
-  return (run.filter fun id _ => keep id, next)
-
-/-- Index of stock pass `name`. -/
-def passIndex? (name : String) : Option Nat := stockPasses.findIdx? (·.name == name)
-
 /-- Run the enabled passes from index `start` until `lower` or the first unported or failing
 pass. `step` sees each pass's result (name, state after it) and may stop the run (`false`).
 Returns why it stopped and the last state (the input of the pass it stopped at). -/
@@ -140,7 +60,7 @@ def runFrom {m : Type → Type} [Monad m] (env : PassEnv) (st : State) (start : 
     let p := stockPasses[i]
     let zv := st.zvar
     let penv := { env with passName := p.name, tables := st.tables, zvar := fun v => zv.getD v 0 }
-    match enabled penv p with
+    match p.enabled penv with
     | .error e => return (.error p.name e, st)
     | .ok false => continue
     | .ok true => pure ()
