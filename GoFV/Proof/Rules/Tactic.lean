@@ -559,7 +559,8 @@ macro "rule_div" : tactic => `(tactic| (
 
 /-- An unsigned division or remainder by a power of two (`isPowerOfTwo(uintN(c))`, a
 hypothesis `wrapInt w false (andPred T (wrapInt w false c)) = 0`): the divisor's value by
-`isPow2_toNat`, then the shift (`udiv_pow2`, amount by `omega`) or mask (`umod_pow2_and`).
+`isPow2_toNat`, then the shift (`udiv_pow2`, amount by `omega`) or mask (`umod_pow2_and`); a
+product with `c` or `-c` (`uintN(-c)`: `ofInt_wrap_neg`) is a shift (`mul_pow2`, `mul_negpow2`).
 Divisibility by a signed power of two (`isPowerOfTwo(c)`, `wrapInt w true (andPred T c) = 0`,
 `divisible.rules:17–26`): `isPow2_signed`, then `divisible_pow2_u`/`_s` (and `_ne`). -/
 elab "rule_pow2" : tactic => withMainContext do
@@ -595,7 +596,10 @@ elab "rule_pow2" : tactic => withMainContext do
         (by decide) (by first | assumption | omega) $hs
       first
       | (rw [GoFV.Proof.Rules.udiv_pow2 _ _ _ hp2]; congr 1; simp only [rule_amt] at *; omega)
-      | rw [GoFV.Proof.Rules.umod_pow2_and _ _ _ hp2])))
+      | rw [GoFV.Proof.Rules.umod_pow2_and _ _ _ hp2]
+      | (rw [GoFV.Proof.Rules.mul_pow2 _ _ _ hp2]; congr 1; simp only [rule_amt] at *; omega)
+      | (rw [GoFV.Proof.Rules.ofInt_wrap_neg] at hp2
+         rw [GoFV.Proof.Rules.mul_negpow2 _ _ _ hp2]; congr 2; simp only [rule_amt] at *; omega))))
     return
   throwError "rule_pow2: no isPowerOfTwo condition"
 
