@@ -18,6 +18,8 @@ Prints a Markdown report (for PR comments) and exits 1 when it flags a regressio
   * a module whose .olean is newly not reproducible (`repro` = differs, perf-record.py);
   * the CPU critical path (`crit_s` of `_total`) grew > --pct % and > --crit-abs s; the report
     then names the chain (scripts/perf-graph.py);
+  * a registered pass whose time in pass-parity (`pass time (s)`, perf/pass-history.tsv) grew
+    > --pct % and > --pass-abs s on the same corpus (#147);
   * a benchmark whose wall time grew > --pct % and > --bench-time-abs s (and CPU > --pct %),
     or whose max RSS grew > --pct % and > --bench-rss-abs MB.
 Shrinks past the same thresholds are listed as wins.
@@ -96,6 +98,8 @@ def main():
     ap.add_argument("head")
     ap.add_argument("--history", default=str(here / "perf/history.tsv"))
     ap.add_argument("--bench-history", default=str(here / "perf/bench-history.tsv"))
+    ap.add_argument("--pass-history", default=str(here / "perf/pass-history.tsv"))
+    ap.add_argument("--pass-abs", type=float, default=1, help="s, per-pass time (#147)")
     ap.add_argument("--repo", default=str(here))
     ap.add_argument("--pct", type=float, default=25)
     ap.add_argument("--rss-abs", type=float, default=512, help="MB")
@@ -115,8 +119,10 @@ def main():
     known = {r["commit"] for r in hist + bhist}
     base, head = resolve(a.repo, a.base, known), resolve(a.repo, a.head, known)
     B, H = latest(hist, base, "module"), latest(hist, head, "module")
-    if B is None or H is None:
-        sys.exit(f"perf-compare: no recording of {base if B is None else head} in {a.history}")
+    if B is None or H is None:  # benchmark-only recordings (e.g. a #147 baseline) still compare
+        print(f"(no module recording of {base if B is None else head}; benchmarks only)",
+              file=sys.stderr)
+        B, H = {}, {}
 
     reg, win, info = [], [], []
     for m in sorted(H.keys() - {"_total"}):
@@ -193,8 +199,23 @@ def main():
         if h.get("status") not in ("ok", "cached", "skipped") and b.get("status") in ("ok", "cached"):
             reg.append((f"bench {n}", "run", "ok", h.get("status", "?"), "broken"))
 
+    # per-pass runtime (pass-parity's `pass time (s)` column, perf-bench.py; issue #147)
+    phist = load(pathlib.Path(a.pass_history))
+    for r in phist:
+        r["key"] = r["bench"] + "\0" + r["pass"]
+    pB, pH = latest(phist, base, "key") or {}, latest(phist, head, "key") or {}
+    for k in sorted(pH.keys() & pB.keys()):
+        b, h = pB[k], pH[k]
+        if b["corpus"] != h["corpus"] or b["bin_hash"] == h["bin_hash"]:
+            continue
+        sb, sh = num(b, "time_s"), num(h, "time_s")
+        for (x, y, lst) in ((sb, sh, reg), (sh, sb, win)):
+            if grew(x, y, a.pct, a.pass_abs):
+                lst.append((f"pass {h['pass']}", "runtime (quick corpus)", fmt(sb, "s"),
+                            fmt(sh, "s"), change(sb, sh)))
+
     print(f"### perf-compare `{base}` → `{head}`\n")
-    print(f"{len(H) - 1} modules ({len(H.keys() - B.keys())} new, {len(removed)} removed); "
+    print(f"{len(H.keys() - {'_total'})} modules ({len(H.keys() - B.keys() - {'_total'})} new, {len(removed)} removed); "
           f"serial module time {fmt(num(tb, 'wall_s'), 's')} → {fmt(num(th, 'wall_s'), 's')} "
           f"(cpu {fmt(num(tb, 'cpu_s'), 's')} → {fmt(num(th, 'cpu_s'), 's')}), "
           f"critical path (CPU) {fmt(kb, 's')} → {fmt(kh, 's')}, "

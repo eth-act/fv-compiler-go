@@ -79,6 +79,7 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | broken | a module that built in BASE fails or is killed in HEAD |
 | benchmark regression | wall and CPU time both > 25% and > 1 s, or max RSS > 25% and > 256 MB |
 | non-reproducible `.olean` | a module's `repro` is `differs` in HEAD but not in BASE |
+| pass runtime (#147) | a registered pass's `pass time (s)` in `pass-parity-corpus` grew > 25% and > 1 s (same corpus, different binary) |
 | critical path | `_total` `crit_s` grew > 25% and > 30 s; the report names the chain |
 
 Shrinks past the same thresholds are listed as wins. Modules whose numbers are the same
@@ -143,3 +144,22 @@ parser did not accept yet); a few new-format files are fine (845db3d: 37/9,297 w
 | `ssa-check-corpus` | `ssa-check`: the well-formedness checker on every section |
 | `analysis-difftest-corpus` | `analysis-difftest`: CFG analyses vs the stock compiler's caches |
 | `sem-difftest-corpus` | `sem-difftest corpus 2 1`: `GoFV.SSA.run` on every section, 2 random calls each |
+
+### Per-pass runtime (`perf/pass-history.tsv`, issue #147)
+
+Every `pass-parity-corpus` run prints a table with the time each registered pass instance
+spends on the quick corpus (`pass time (s)`, parsing excluded). `perf-bench.py` records it
+per pass: `date commit bench pass time_s runs corpus bin_hash` (median over the runs). If a pass
+moves by more than 25% and 1 s compared with the previous measurement, the benchmark takes two
+more runs. `perf-compare.py` flags a pass whose time grew by more than 25% and 1 s; so does
+every PR report of the watch loop. Under machine load all passes shift together by about ±20%.
+
+Baseline for #147 (checked plain fusion step, #139). Quick corpus, 3 runs each, seconds:
+
+| pass | 827671c (before #139) | 230c6b3 (#139) | feb8bcb |
+| --- | --: | --: | --: |
+| short circuit | 0.2 | 9.6 | 8.0 |
+| early fuse | 0.0 | 2.0 | 1.6 |
+| late fuse | 3.5 | 4.0 | 3.7 |
+| branchelim | 1.1 | 0.8 | 0.7 |
+| opt (for scale) | 13.7 | 10.9 | 9.2 |
