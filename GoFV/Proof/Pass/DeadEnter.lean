@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.DeadBlock
+import GoFV.Proof.Pass.DeadRank
 
 /-!
 # Removing dead values: entering a kept block
@@ -7,13 +7,16 @@ import GoFV.Proof.Pass.DeadBlock
 along its own) and has a schedule; after the `Phi`s, a kept value outside the target's schedule
 holds the source's register and is outside the source's schedule. `enter_ok`: a block the
 source enters successfully is entered by the target to a frame agreeing on the kept values.
-`enter_panic`: a block the source panics in makes the target panic alike.
+`enter_panic`: a block the source panics in makes the target panic alike (the panicking root is
+kept, and the target reaches it after only values the source evaluated before it,
+`sched_transfer_sub`).
 -/
 
 namespace GoFV.Proof.Dead
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
-open GoFV.Proof.CopyElim (stepV_of topoRem_append_left topoRem_at topoRem_before prio_panicking)
+open GoFV.Proof.CopyElim (stepV_of topoRem_append_left topoRem_at topoRem_before
+  prio_ne_zero_of_panic nodeOf_schedNodes)
 
 variable {f g : Func} {K : ID → Prop}
 
@@ -227,35 +230,22 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb :
   obtain ⟨hrf, fvr, hfvr, hrnph⟩ := (omemS r).1 hrS
   rw [stepV_of hfvr] at hrp
   have hrop := evalValue_panic_op hrp
-  have hrop3 : fvr.op = .PanicBounds ∨ fvr.op = .StaticLECall ∨ fvr.op = .StaticCall := by
-    rcases hrop with h | h | h | h
-    · exact .inl h
-    · exact .inr (.inl h)
-    · exact .inr (.inr h)
-    · exact absurd h (S.noNil _ _ hfvr)
   have hrg : r ∈ gb.values := Classical.byContradiction fun hn =>
     S.rel.dropped bid hb gb fb hgb hfb r hrf hn fvr hfvr hrop
-  obtain ⟨gvr, fvr', hgvr, hfvr', hgrid, hfrid, -, -, hphr, hsamer⟩ := S.value hb hgb hfb hrg
+  obtain ⟨gvr, fvr', hgvr, hfvr', -, -, -, -, hphr, hsamer⟩ := S.value hb hgb hfb hrg
   rw [hfvr] at hfvr'; cases hfvr'
   have hgrn : gvr.op ≠ .Phi := fun h => hrnph (hphr.1 h)
   have hrT : r ∈ oT.toList := (omemT r).2 ⟨hrg, gvr, hgvr, hgrn⟩
   obtain ⟨pre', post', hsplitT⟩ := List.append_of_mem hrT
-  -- what the target evaluates before `r`, the source evaluated before `r`
-  have hspecS := schedule_spec hso
-  have hspecT := schedule_spec hoT
+  -- what the target evaluates before `r`, the source evaluated before `r` (#96)
   have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
   have hk' : oT.toList[pre'.length]? = some r := by rw [hsplitT]; simp
-  have hnodeR : NodeIn (schedNodes f fb).toList r :=
-    (nodeIn_schedNodes hownF).2 ⟨hrf, fvr, hfvr, hrnph⟩
-  have hnotNil : ¬ NilIn (schedNodes f fb).toList r := by
-    intro hn
-    have hm : (⟨fvr.id, fvr.args, prio fvr.op⟩ : SNode) ∈ (schedNodes f fb).toList :=
-      mem_schedNodes.2 ⟨r, hrf, fvr, hfvr, hrnph, rfl⟩
-    have := hn _ (by rw [← hfrid]; exact nodeOf_of_mem (schedNodes_ids hownF hndF) hm)
-    simp only [prio_panicking hrop3] at this; omega
-  have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk' hnotNil
-    (fun y hy hyn hyr => S.chain bid fb hb hfb y r hy hnodeR hyn hnotNil hyr)
-    (fun y _ hy' hd => S.depT hb hgb hfb hd hy')
+  have hrnp : npIn (schedNodes g gb).toList r = true := by
+    unfold npIn
+    rw [nodeOf_schedNodes hownG hndG hrg hgvr hgrn, (hsamer hgrn).1]
+    simpa using prio_ne_zero_of_panic hrop
+  have htr := sched_transfer_sub (schedule_spec hso) (schedule_spec hoT) (S.subNodes hb hgb hfb)
+    hk hk' hrnp
   have hinPre : ∀ x, (∃ i < pre.length, oS.toList[i]? = some x) → x ∈ pre := by
     rintro x ⟨i, hi, hix⟩
     rw [hsplit, List.getElem?_append_left hi] at hix
@@ -285,13 +275,12 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb :
     intro x hx
     have hxT : x ∈ oT.toList := by rw [hsplitT]; exact List.mem_append_left _ hx
     obtain ⟨hxg, gv, hgv, hgn⟩ := (omemT x).1 hxT
-    obtain ⟨gv', fv, hgv', hfv, -, -, hxf, -, hph, -⟩ := S.value hb hgb hfb hxg
+    obtain ⟨gv', fv, hgv', hfv, -, -, -, -, -, -⟩ := S.value hb hgb hfb hxg
     rw [hgv] at hgv'; cases hgv'
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hx
     have hjl := lt_length_of_getElem? hj
     have hjT : oT.toList[j]? = some x := by rw [hsplitT, List.getElem?_append_left hjl]; exact hj
     obtain ⟨i', hi', hix⟩ := htr j x hjl hjT
-      ((nodeIn_schedNodes hownF).2 ⟨hxf, fv, hfv, fun h => hgn (hph.2 h)⟩)
     obtain ⟨v, y, hv, hy, hevx⟩ := e4 x (hinPre x ⟨i', hi', hix⟩)
     change f.value? x = some v at hv
     rw [hfv] at hv; cases hv

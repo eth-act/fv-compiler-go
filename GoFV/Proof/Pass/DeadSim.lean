@@ -3,8 +3,8 @@ import GoFV.Proof.Pass.DeadEnter
 /-!
 # Removing unreachable blocks and dead values refines
 
-`refines_of_deadRel`: if `g` keeps blocks, values and edges of `f` (`DeadRel`), both are well
-formed and the roots of the kept blocks of `f` are chained, every run of `f` is a run of `g`:
+`refines_of_deadRel`: if `g` keeps blocks, values and edges of `f` (`DeadRel`) and both are well
+formed, every run of `f` is a run of `g`:
 lock-step simulation (`runLoop_simE`) where the target enters the same block along its own edge
 index, with frames agreeing on the kept values (`R`). A run of `f` only enters kept blocks: the
 target's well-formedness keeps its edges inside its blocks, and a kept block's successors are

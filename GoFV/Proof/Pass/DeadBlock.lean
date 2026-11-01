@@ -8,7 +8,7 @@ values `g` keeps (`Agree`): the target has a schedule (the source's restricted t
 values, `targetSched`); when the source enters the block, so does the target, to a frame that
 agrees with the source's on the kept values (`enter_ok`); when the source panics, the target
 panics alike (`enter_panic`: the panicking root is kept, and the target evaluates before it
-only values the source evaluated before it, `Order.transfer`).
+only values the source evaluated before it, `sched_transfer_sub` in `DeadRank`).
 -/
 
 namespace GoFV.Proof.Dead
@@ -22,8 +22,6 @@ structure Setup (f g : Func) (K : ID → Prop) : Prop where
   wf : ∃ ce, WF ce f
   wg : ∃ ce, WF ce g
   rel : DeadRel f g K
-  chain : Chained f K
-  noNil : NoNil f
 
 /-- The target frame agrees with the source frame on the values `g` keeps. -/
 def Agree (g : Func) (frS frT : Frame) : Prop :=
