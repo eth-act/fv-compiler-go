@@ -34,7 +34,10 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   `AddPtr`, `PtrIndex`, `IsNonNil` pointer-typed, both of `EqPtr`/`NeqPtr` pointer words (a
   pointer or a 64-bit integer: `uintptr` itabs), the offset of
   `AddPtr`/`PtrIndex` a 64-bit integer, `Convert` between a pointer and a 64-bit integer (by
-  its result shape). With `Pat.typed` the leaves then have these shapes. Without it
+  its result shape; a `Convert` of any other shape is excluded), both arguments of
+  `Eq<N>`/`Neq<N>` `N`-bit integers (#69 RuleProofs11; `generic.rules:369`/`:372` reuse a
+  `Const64` node of the pattern in the result, which could otherwise be typed `int32`). With
+  `Pat.typed` the leaves then have these shapes. Without it
   `generic.rules:964` (`(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])`) is false: a
   `uintptr` leaf `p = 2^40-8` under a pointer-typed inner `OffPtr` becomes the pointer
   `Ptr.ofAddr p` plus `y` (its allocation kept), while the result adds `x+y` as an integer;
@@ -93,7 +96,8 @@ invariant of `GoFV.SSA.Sem`, of the checker or of the rule evaluator, not from t
 - **Argument shapes** (`Pat.argsOK`): the checked rewrite passes' validator checks them on the
   matched values' types (`RewriteCheck.ruleOK`), so `checkedRewrite_refines` discharges them
   from the validator; Semantics' argument checks in `GoFV.SSA.check` make the validator never
-  reject for this reason.
+  reject for the pointer ops. The `Eq<N>`/`Neq<N>` widths are checked by the validator only:
+  0 rejections for this reason on `quick-v1` and `full-v2` (#69 RuleProofs11).
 - **Typed oracle** (`Oracle.BoolTyped or := ∀ x, exprTy [] x = .bool → ∃ b, or.dv x = .bool b`):
   the oracle built from `GoFV.Rules.Eval.eval` answers a `bool`-typed expression with a
   boolean, i.e. `eval` of a well-typed `bool` expression that does not fail is a boolean.

@@ -139,7 +139,7 @@ elab "rule_unfold_getd" : tactic => do
   let hat := mkIdent `hat
   let some ci := (← getEnv).find? rn | throwError "rule_unfold_getd: unknown rule"
   let usesArgShape := ci.value?.any fun v =>
-    (v.find? fun t => argShapeOps.any t.isConstOf).isSome
+    (v.find? fun t => (argShapeOps ++ eqShapeOps).any t.isConstOf).isSome
   evalTactic (← `(tactic| (
     refine ⟨rfl, ?_⟩
     intro $e:ident $or:ident $hbt:ident
@@ -153,6 +153,7 @@ elab "rule_unfold_getd" : tactic => do
   if usesArgShape then
     evalTactic (← `(tactic| try simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
       GoFV.Proof.Rules.argShapeOk, GoFV.Proof.Rules.isPtrTy_iff, GoFV.Proof.Rules.isInt64Ty_iff,
+      GoFV.Proof.Rules.isIntWTy_iff,
       GoFV.Proof.Rules.convArgOk, Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq,
       beq_iff_eq, Nat.reduceEqDiff, reduceIte, not_true_eq_false, false_or, true_or, or_true,
       and_true, true_and, Nat.succ_ne_zero, not_false_eq_true] at $hat:ident))

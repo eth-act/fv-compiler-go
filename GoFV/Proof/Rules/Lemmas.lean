@@ -1324,6 +1324,9 @@ theorem isPtrTy_iff {t : Ty} : isPtrTy t = true ↔ ∃ el, t = .ptr el := by
 theorem isInt64Ty_iff {t : Ty} : isInt64Ty t = true ↔ t = .int .w64 := by
   unfold isInt64Ty; split <;> simp_all
 
+theorem isIntWTy_iff {w : Width} {t : Ty} : isIntWTy w t = true ↔ t = .int w := by
+  cases w <;> cases t <;> simp [isIntWTy] <;> rename_i w' <;> cases w' <;> simp
+
 /-- A value of a pointer shape is `poison` or a pointer. -/
 theorem val_of_hasTy_ptr {a : Val} {el : Option Nat} (h : a.hasTy (.ptr el) = true) :
     a = .poison ∨ ∃ p, a = .ptr p := by
