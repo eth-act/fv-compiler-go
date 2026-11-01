@@ -72,10 +72,10 @@ def isBool3 (t : TypeRef) : Bool := t == 3
 theorem andLt_run : returnsInt (run Env.p1 max3Tabs andLt max3Args {} 5) 4 = true := by
   decide +kernel
 
-/-- `andLt` passes `check`; checked `constPhiArgs` replaces `v18`'s argument from `b1` by a new
+/-- `andLt` passes `wfDomCheck`; checked `constPhiArgs` replaces `v18`'s argument from `b1` by a new
 `ConstBool false` (`v15`, from the free list) of the entry. -/
 theorem andLt_cpa :
-    (checkOK sum3CE andLt &&
+    (wfDomOK andLt &&
       match constPhiArgsChecked max3Tabs isBool3 (· == ·) 3 andLt with
       | .ok g => decide ((g.value? 18).map (·.args) = some #[16, 15]) &&
           decide ((g.value? 15).map (·.op) = some .ConstBool) &&
@@ -97,7 +97,7 @@ theorem shortCircCpa_witness :
     obtain ⟨⟨hargs, -⟩, -⟩ := h
     obtain ⟨m, hm⟩ := returnsInt_iff.1 andLt_run
     obtain ⟨fuel, m', h⟩ := Refines.returned_int
-      (constPhiArgsChecked_refines hr (checkOK_sound hck)).1 hm
+      (constPhiArgsChecked_refines (ce := sum3CE) hr (wfDomOK_sound hck)).1 hm
     exact ⟨g, hr, hargs, fuel, m', h⟩
   · cases h
 

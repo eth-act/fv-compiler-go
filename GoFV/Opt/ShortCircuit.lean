@@ -263,11 +263,12 @@ def step (f : Func) (b : ID) : Except String (Func × Bool) := do
   let (f, c2) := shortcircuitBlock f b
   pure (f, c2 || c1)
 
-/-- `shortcircuit(f)`: its input if it fails `check` (the checkers' proofs assume a checked
-input; every corpus input passes) or if a checker rejects a rewrite (`Fuse.orInput`). -/
+/-- `shortcircuit(f)`: its input if it fails the slim input check `wfDomCheck` (the checkers'
+proofs assume a well-formed input with a valid dominator certificate; every corpus input
+passes) or if a checker rejects a rewrite (`Fuse.orInput`). -/
 def shortcircuit (ce : CheckEnv) (isBool : TypeRef → Bool) (sameType : TypeRef → TypeRef → Bool)
     (boolT : TypeRef) (f : Func) : Except String Func :=
-  if !checkOK ce f then .ok f else
+  if !wfDomOK f then .ok f else
   Fuse.orInput f do
     let f ← constPhiArgsChecked ce.tabs isBool sameType boolT f
     fuseLoop step none roundFuel f
