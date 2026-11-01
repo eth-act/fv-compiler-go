@@ -1,6 +1,6 @@
 # Plan: semantics of generic Go SSA (`GoFV.SSA.run`, issue #9)
 
-Status: plan (G5); phase P1 implemented (§9.1). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
+Status: plan (G5); phases P1 and P2 implemented (§9.1, §9.2). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
 Source of truth for the ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/genericOps.go`
 (go1.27.3; "gO line" below) and the rules `_gen/{generic,dec,divisible,divmod}.rules`.
 `decOps.go`, `divisibleOps.go` and `divmodOps.go` define **no** ops (they only name rule sets),
@@ -29,7 +29,9 @@ plus determinism of `run` (§3.6 makes `run` deterministic).
 | Module | Content | clifv analogue |
 | --- | --- | --- |
 | `GoFV/SSA/Sem/Val.lean` | `Width`, `Val`, `Ptr`, refinement `Val.Refines` | `Clif.Val` (`Syntax.lean`) |
-| `GoFV/SSA/Sem/Mem.lean` | allocations, bytes with pointer fragments, load/store/move/zero, `Res` monad | `Clif/Mem.lean` |
+| `GoFV/SSA/Sem/Mem.lean` | allocations, bytes with pointer fragments, concrete addresses, encode/decode by shape, load/read/write | `Clif/Mem.lean` |
+| `GoFV/SSA/Sem/Ptr.lean` | pointer arithmetic and comparison, composites, `Load`/`Dereference`, `MemEq`, atomic loads | `Clif/Sem.lean` |
+| `GoFV/SSA/Sem/Image.lean` | the global image of an export file (read-only data with relocations, string data, zeroed variables) | `Clif.Program.initMem` |
 | `GoFV/SSA/Sem/Int.lean`, `Shift.lean`, `Cmp.lean`, `Conv.lean` | per-op integer semantics on `BitVec w`, separately unfoldable | `Clif/Sem.lean` |
 | `GoFV/SSA/Sem/Float.lean` | IEEE ops on bit patterns (port of clifv `FV/Float` + `Clif/FSem.lean`) | `Clif/FSem.lean` |
 | `GoFV/SSA/Sem/Layout.lean` | Go type layout from the exported `type` table: size, field offsets, pointer words, ABI pieces | — |
@@ -450,19 +452,77 @@ for linux/arm64 by the patched toolchain while exporting their SSA; native resul
 `sem-difftest corpus` runs random calls on every corpus function with integer/bool signature
 and checks that every section agrees with section 0 whenever section 0 is defined.
 
+### 9.2 P2 as implemented (#10)
+
+- **Values**: `ptr ⟨blk, off⟩` with `Blk` = `nil | global sym | local act name | outargs act |
+  heap n` (provenance §3.3), `agg` (string, slice, interface, struct, `[1]T` fields), `blob`
+  (other arrays), `empty`; memory snapshots `Mem` = allocations (`Array Byte`, writable flag)
+  by block; `Byte` = concrete, pointer fragment `frag p i`, or poison.
+- **Shapes** (`Ty`, `Sem/Layout.lean`) from the exported types: integer widths, `bool`, `ptr`
+  (element size), `agg` (fields at exported offsets), `blob`, `empty`, `opaque` (floats and
+  complex until P4: loads give `poison`, stores write poison bytes).
+- **Concrete addresses**: heap block `n` at `(n+1)·2^40`, frame blocks at `2^62 + act·2^42 +
+  name·2^24`, `nil` at 0; globals have none (comparisons with them are by block). `Convert`
+  and `uintptr`-typed values use them; `Val.retype` turns a `uintptr`-typed pointer into its
+  address and a pointer-typed integer into the pointer at that address.
+- **Frame**: one allocation per `PAUTO`/`PPARAM`/`PPARAMOUT` name the section's tables define
+  (not per referenced name: deleting values never changes the frame); a `PPARAM` holds its
+  argument's bytes, the rest are poison; `VarDef` re-poisons. The frame is removed from the
+  returned memory. `LocalAddr {n}` = `⟨local act n, 0⟩`, `SP` = `⟨outargs act, 0⟩`.
+- **Arguments and results** are bytes: each Go-typed argument is encoded by its parameter's
+  shape (`Frame.images`); `Arg {n} [off]` and `ArgIntReg {n+off}` decode a piece at `off`.
+  `Ret`: before `expand calls` the `MakeResult` components are the Go-typed results; after it
+  the register pieces (`leaves` of the result shapes, in ABI order) plus the `PPARAMOUT`
+  variables of stack results. Both are reduced to bytes and decoded (`goResults`), so every
+  section returns the same Go-typed values.
+- **Roots**: `Store`/`StoreWB`, `Move`/`MoveWB` (memmove), `Zero`/`ZeroWB`, `VarDef`,
+  `VarLive`, `KeepAlive`, `WBend` (identity), `NilCheck` (nil ⇒ `panicked nilDeref`;
+  accepts a `uintptr`). An invalid or read-only write is `stuck`; an invalid read is `poison`;
+  an empty access is always valid (Go copies and compares zero bytes at nil).
+- **Globals** (`Env.globals`, `globalImage`): `SRODATA` symbols with their bytes and `R_ADDR`
+  relocations as pointer fragments, string data symbols from their names, and zeroed writable
+  allocations for the other symbols an `Addr` names (sized by the pointee type).
+  `ConstString` points to the string's data symbol.
+- **Pure P2 ops**: `OffPtr`, `AddPtr`, `PtrIndex`, `SubPtr`, `EqPtr`/`NeqPtr`, `IsNonNil`,
+  `Convert`, `Eq/NeqInter`, `Eq/NeqSlice`, composite make/select ops, `ConstNil`,
+  `ConstSlice`, `ConstInterface`, `Empty`, `Load`, `Dereference`, `MemEq`, and the atomic
+  loads (sequential semantics, P5 pulled forward because they only read).
+- `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
+  recursive definition on its path is structural.
+
+Difftest additions (`tools/semdiff/prog/mem.go`): 38 functions on slices, strings, structs,
+arrays (by value, local, result), pointers, linked lists, read-only tables (jump tables
+lowered to `SRODATA` lookups, string tables with relocations), pointer comparison, aliasing,
+writes through arguments (the harness prints the arguments again after the call), and
+`unsafe.SliceData`/`StringData` of nil and empty values. The value syntax (Go-quoted strings,
+`[…]`, `{…}`, `&…`, `nil`) is shared by `main.go` and `GoFVTest/SemDiff.lean`; arguments are
+built as bytes with fresh heap allocations. `sem-difftest trace <file> <section> <args>`
+prints every block entry and value of one run.
+
 ## 10. Open questions and risks
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
   `SlicePtr` as non-nil, but `EqSlice` (`generic.rules:792`) shows it is used on nil slices.
   A `NilCheck (SlicePtr s)` removed on that assumption is only sound if the frontend never
-  nil-checks the pointer of a possibly-nil slice. The proof needs an invariant or a
-  validator-checked fact; difftest it early.
-- `nilcheck.go:59` also treats `Add/Sub` of non-nil pointers (as integers) as non-nil; with
-  provenance this holds only for `AddPtr`/`OffPtr` within an allocation. Same treatment.
+  nil-checks the pointer of a possibly-nil slice. **P2 difftest**: `*unsafe.SliceData(s)` of a
+  nil slice panics natively and in every section (the frontend uses `SlicePtrUnchecked` there,
+  which is not assumed non-nil); no corpus run showed a `SlicePtr` case.
+- `nilcheck.go:59` also treats `AddPtr`/`OffPtr`/`Add64`/`Sub64` results as non-nil
+  ("unsafe pointer arithmetic generates non-nil pointers", golang/go#27180, a deliberate
+  choice). **Seen by P2**: in 3 runtime functions (`(*bitvector).ptrbit`, `bitCursor.write`,
+  `(*rwmutex).rlock`) a random call whose section 0 panics in a `NilCheck` of `nil + k` is
+  `stuck` from section 13 (`nilcheckelim`) on: the check is gone and the access through
+  `nil + k` is invalid (a load is `poison`, a store `stuck`). The criterion of §1 does
+  not catch it (only the target's defined runs carry obligations), but the machine behaves
+  like section 0: the access faults in page 0 and the runtime panics. Consequence for the proofs: the
+  `nilcheckelim` theorem must take "no pointer arithmetic on nil" as a hypothesis, or the
+  semantics must make an access within the first page of `Blk.nil` panic like a `NilCheck`
+  (then `Load` is no longer pure); decide when proving `nilcheckelim`.
 - Tie-break of §3.6 step 3: `writebarrier`'s `storeOrder` and the post-lower scheduler order
   `NilCheck`s by position with an unstable sort (see `docs/PASSES.md`, writebarrier); the
   semantics' choice (NilChecks first) must match the order the final code panics in for the
-  difftest.
+  difftest. **P2**: no disagreement in the difftest (nil arguments to functions that store
+  before and after dereferencing) nor between sections in the corpus.
 - `Move` with partial overlap outside the inline-memmove rules: memmove semantics may be more
   defined than lowering for large moves; check that no pass creates such a `Move`.
 - Store of `poison`: allowed (poison bytes). If a pass proof needs stores to observe defined

@@ -520,7 +520,7 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
           st := { st with sectionRuns := st.sectionRuns + 1 }
           if r == r0 then st := { st with agree := st.agree + 1 }
           else if r.startsWith "stuck" then
-            if st.gaps < 30 then
+            if !gapHere then
               IO.println s!"GAP {path} section {k} ({l.sections[k]!.1}) {c}: {r} (section 0: {r0})"
             st := { st with gaps := st.gaps + 1 }
             gapHere := true

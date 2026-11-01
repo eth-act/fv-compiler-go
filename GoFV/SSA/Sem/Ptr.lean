@@ -18,6 +18,14 @@ def asPtr : Val → Option Ptr
   | .ptr p => some p
   | _ => none
 
+/-- The pointer of a pointer-shaped word: a pointer, or a 64-bit integer read as the pointer
+at that concrete address (`uintptr`-typed words such as `ConstNil <uintptr>` or an itab word
+after `decompose builtin`). -/
+def asPtrWord : Val → Option Ptr
+  | .ptr p => some p
+  | .int .w64 x => some (Ptr.ofAddr x)
+  | _ => none
+
 end Val
 
 namespace Ptr
@@ -66,7 +74,9 @@ def subPtr : List Val → Val
 
 /-- `EqPtr`/`NeqPtr` (`neg`). -/
 def eqPtr (neg : Bool) : List Val → Val
-  | [.ptr p, .ptr q] => .bool (p.eq q != neg)
+  | [a, b] => match a.asPtrWord, b.asPtrWord with
+    | some p, some q => .bool (p.eq q != neg)
+    | _, _ => .poison
   | _ => .poison
 
 /-- `IsNonNil p`. -/
@@ -89,7 +99,9 @@ def convert (t : Ty) : List Val → Val
 /-- `EqInter`/`NeqInter`/`EqSlice`/`NeqSlice`: compare the first words (itab, slice pointer;
 `generic.rules:790-792`). -/
 def eqFirst (neg : Bool) : List Val → Val
-  | [.agg (.ptr p :: _), .agg (.ptr q :: _)] => .bool (p.eq q != neg)
+  | [.agg (a :: _), .agg (b :: _)] => match a.asPtrWord, b.asPtrWord with
+    | some p, some q => .bool (p.eq q != neg)
+    | _, _ => .poison
   | _ => .poison
 
 end PtrOps
