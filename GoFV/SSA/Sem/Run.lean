@@ -414,6 +414,13 @@ def encodeResults (tabs : Tables) (act : Nat) :
       return (toPieces t r ++ pieces, m)
   | _, _, _ => none
 
+/-- A callee's results `rs` at the shapes of the result types `ps` of the call's ABI (the
+results a contract returns are Go-typed by the call, as the arguments it receives are); extra
+or missing results are left for `encodeResults` to reject. -/
+def retypeResults (tabs : Tables) : List ABIParam → List Val → List Val
+  | p :: ps, r :: rs => r.retype (tabs.ty p.type) :: retypeResults tabs ps rs
+  | _, rs => rs
+
 /-- The callee, closure context and remaining arguments of call value `v` on arguments
 `argv`: a closure call's code pointer and context, an interface call's code pointer, or the
 static call's `AuxCall` function. -/
@@ -454,6 +461,7 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
     let c ← Res.ofOption s!"call {callee}: no contract" (env.extern callee)
     match c args clo (m.poisonBlock (.outargs ctx.act)) with
     | .returned rs m' =>
+      let rs := retypeResults ctx.tabs outs rs
       -- stack-assigned results are in the outgoing area in both forms; their addresses follow
       -- the memory (`SelectNAddr`)
       let (ps, m'') ← Res.ofOption s!"call {callee}: results do not match the ABI"

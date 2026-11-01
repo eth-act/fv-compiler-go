@@ -47,7 +47,9 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
           | .elem e => typeSize? tabs e
           | _ => none
         .agg [(0, .ptr e), (8, .int .w64), (16, .int .w64)] 24
-      | .INTER => .agg [(0, .ptr none), (8, .ptr none)] 16
+      -- the itab/type word is a `uintptr` and the data word a `*uint8`, as Go decomposes an
+      -- interface (`ITab`/`IData`, `expand_calls.go`, `dec.rules`)
+      | .INTER => .agg [(0, .int .w64), (8, .ptr (some 1))] 16
       | .STRUCT =>
         match size, d.tail with
         | some 0, _ => .empty

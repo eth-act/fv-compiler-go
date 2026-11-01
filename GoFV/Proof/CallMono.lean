@@ -150,6 +150,14 @@ theorem decodeArgs_mono (tabs : Tables) (act : Nat) {m m' : Mem} (hm : Mem.Refin
           refine ⟨_, by simp [hn', bind, Option.bind, pure],
             .cons (ofPieces_mono _ (hp.take _)) hrr⟩
 
+/-- `retypeResults` on refined results. -/
+theorem retypeResults_mono (tabs : Tables) :
+    ∀ (ps : List ABIParam) {rs rs' : List Val}, RefinesList rs rs' →
+      RefinesList (retypeResults tabs ps rs) (retypeResults tabs ps rs')
+  | [], _, _, h => h
+  | _ :: _, _, _, .nil => .nil
+  | p :: ps, _, _, .cons h t => .cons (retype_mono _ h) (retypeResults_mono tabs ps t)
+
 /-- `encodeResults` on refined results and memories. -/
 theorem encodeResults_mono (tabs : Tables) (act : Nat) :
     ∀ (ps : List ABIParam) {rs rs' : List Val} {m m' : Mem} {r : List Val × Mem},
