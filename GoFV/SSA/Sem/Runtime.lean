@@ -335,6 +335,13 @@ def wbHelper : Contract := noEffect
 /-- A panicking entry point. -/
 def panics (e : Panic) : Contract := fun _ _ m => .panicked e m
 
+/-- `runtime.gopanic(v any)` (P5): panics with the value `v` (`Panic.value`, which `recover`
+returns). -/
+def gopanic : Contract := fun args _ m =>
+  match args with
+  | [v] => .panicked (.value (encode .iface v).toList) m
+  | _ => .stuck "gopanic: bad arguments"
+
 end Runtime
 
 open Runtime in
@@ -378,7 +385,8 @@ def Env.runtime : Env where
     | name =>
       if name.startsWith "runtime.mallocgcTinySC" || name.startsWith "runtime.mallocgcSmallNoScanSC" ||
           name.startsWith "runtime.mallocgcSmallScanNoHeaderSC" then some mallocSized
-      else if name == "runtime.gopanic" || name == "runtime.throw" || name == "runtime.panicwrap" ||
+      else if name == "runtime.gopanic" then some gopanic
+      else if name == "runtime.throw" || name == "runtime.panicwrap" ||
           name == "runtime.panicnildottype" || name == "runtime.panicdottypeE" ||
           name == "runtime.panicdottypeI" || name == "runtime.fatal" then
         some (panics (.runtime name))

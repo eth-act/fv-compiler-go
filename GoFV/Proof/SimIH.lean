@@ -70,10 +70,11 @@ theorem runLoop_stuck {env : Env} {ctx : Ctx} {fuel : Nat} {fr : Frame} {b : ID}
 
 /-- The target continues along an edge: a refinement by the run from the next state is one by
 the run from this state. -/
-theorem refines_goto {env : Env} {ctx : Ctx} {act : Nat} {o : Outcome} {fr fr' : Frame} {b : ID} {i : Nat}
+theorem refines_goto {env : Env} {ctx : Ctx} {Rel : Outcome → Outcome → Prop} {o : Outcome}
+    {fr fr' : Frame} {b : ID} {i : Nat}
     {e : Edge} (h : blockStep env ctx fr b i = .goto fr' e)
-    (hr : ∃ fuel, OutcomeRefines act o (runLoop env ctx fuel fr' e.b e.i)) :
-    ∃ fuel, OutcomeRefines act o (runLoop env ctx fuel fr b i) := by
+    (hr : ∃ fuel, Rel o (runLoop env ctx fuel fr' e.b e.i)) :
+    ∃ fuel, Rel o (runLoop env ctx fuel fr b i) := by
   obtain ⟨fuel, h'⟩ := hr
   exact ⟨fuel + 1, by rw [runLoop_goto h]; exact h'⟩
 

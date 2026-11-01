@@ -49,6 +49,9 @@ structure NameFlags where
   function's `start` section (`Convert` to `uintptr`, through pointer/integer arithmetic,
   copies and phis), computed once by the exporter and kept in every section. -/
   addrconv : Bool := false
+  /-- Format 4: ssagen's `deferBits` variable of a function with open-coded defers (the
+  `uint8` autotmp whose bits say which `opendeferslot` closures are still to run). -/
+  deferbits : Bool := false
   deriving DecidableEq, Inhabited, Repr, Hashable
 
 def NameFlags.table : List (String × (NameFlags → Bool) × (NameFlags → NameFlags)) :=
@@ -58,7 +61,8 @@ def NameFlags.table : List (String × (NameFlags → Bool) × (NameFlags → Nam
    ("nonmergeable", (·.nonmergeable), ({ · with nonmergeable := true })),
    ("opendeferslot", (·.opendeferslot), ({ · with opendeferslot := true })),
    ("readonly", (·.readonly), ({ · with readonly := true })),
-   ("addrconv", (·.addrconv), ({ · with addrconv := true }))]
+   ("addrconv", (·.addrconv), ({ · with addrconv := true })),
+   ("deferbits", (·.deferbits), ({ · with deferbits := true }))]
 
 /-- Flags of an `*obj.LSym` (`sym` aux), in export order. -/
 structure SymFlags where
