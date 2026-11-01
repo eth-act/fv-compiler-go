@@ -26,7 +26,8 @@ open GoFV.Rules
 /-- **The obligation of a Load-of-Store forwarding rule**: `(Load _ (Store _ x _)) => x`, also
 through up to three more `Store`s, `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and
 its converse, or `(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src)
-mem)` (`RewriteCheck.fwdShapeOK`); each instance is validated by `RewriteCheck.fwdRel`. -/
+mem)`; or a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem`
+(`RewriteCheck.fwdShapeOK`); each instance is validated by `RewriteCheck.fwdRel`. -/
 def EffectRule.LoadFwd (r : Rule) : Prop := GoFV.Opt.RewriteCheck.fwdShapeOK r = true
 
 /-- `generic.rules:800`: `(Load <t1> p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && copyCompatibleType(t1, x.Type) && t1.Size() == t2.Size() => x` -/
@@ -50,8 +51,28 @@ theorem r_generic_830_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_
 /-- `generic.rules:832`: `(Load <t1> p1 (Store {t2} p2 (Const64F [x]) _)) && isSamePtr(p1,p2) && t2.Size() == 8 && is64BitInt(t1) => (Const64 [int64(math.Float64bits(x))])` -/
 theorem r_generic_832_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_832 := rfl
 
+/-- `generic.rules:943`: `(Store {t} (OffPtr [o] p1) x mem:(Zero [n] p2 _)) && isConstZero(x) && o >= 0 && t.Size() + o <= n && isSamePtr(p1, p2) => mem` -/
+theorem r_generic_943_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_943 := rfl
+
+/-- `generic.rules:948`: `(Store {t1} op:(OffPtr [o1] p1) x mem:(Store {t2} p2 _ (Zero [n] p3 _))) && isConstZero(x) && … && disjoint(op, t1.Size(), p2, t2.Size()) => mem` -/
+theorem r_generic_948_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_948 := rfl
+
+/-- `generic.rules:954`: `(Store {t1} op:(OffPtr [o1] p1) x mem:(Store {t2} p2 _ (Store {t3} p3 _ (Zero [n] p4 _)))) && isConstZero(x) && … => mem` -/
+theorem r_generic_954_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_954 := rfl
+
+/-- `generic.rules:961`: `(Store {t1} op:(OffPtr [o1] p1) x mem:(Store {t2} p2 _ (Store {t3} p3 _ (Store {t4} p4 _ (Zero [n] p5 _))))) && isConstZero(x) && … => mem` -/
+theorem r_generic_961_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_961 := rfl
+
+/-- `generic.rules:1005`: `(Store _ (Empty) mem) => mem` -/
+theorem r_generic_1005_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1005 := rfl
+
+/-- `generic.rules:2158`: `(Zero {t} [s] dst1 zero:(Zero {t} [s] dst2 _)) && isSamePtr(dst1, dst2) => zero` -/
+theorem r_generic_2158_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2158 := rfl
+
 /-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
-`Zero`) does not have the shape. -/
+`Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e
+mem)`, a changed write) do not have the shape. -/
 example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_842 = false := rfl
+example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_997 = false := rfl
 
 end GoFV.Proof.Rules

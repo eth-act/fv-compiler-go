@@ -8,7 +8,7 @@ import GoFV.Proof.TabsAgree
 `MemCombine.Check.mcOK` in the result's tables, which the input cannot tell from its own,
 `tabsAgree`) refines its input under monotone contracts. A rejected or unchanged result is the
 input; an accepted one is the generalised atom simulation (`AtomSim.atomSimX_refines`) with the
-trivial source invariant: its atoms are `f`'s but combined stores (`mcAtomsOK_spec`); an
+trivial source invariant: its atoms are `f`'s but combined stores (`atomsXOK_spec`); an
 unchanged atom's arguments and the controls are refined as terms (`mc_ref`), and a combined store
 writes a memory refining the source's chain of stores (`store_chgRef`).
 -/
@@ -28,7 +28,7 @@ refined memory. -/
 theorem mc_atomArgs : AtomArgsRefX (SrcInv.triv tabs f) g := by
   intro b hb gb hgb a ha u hu ht
   have hbf : b ∈ f.blocks := K.blocks_eq ▸ hb
-  obtain ⟨fb, gb', hfb, hgb', BA⟩ := (mcAtomsOK_spec K.atoms).block b hbf
+  obtain ⟨fb, gb', hfb, hgb', BA⟩ := (atomsXOK_spec K.atoms).block b hbf
   rw [hgb] at hgb'; cases hgb'
   obtain ⟨haf, u', hu', hop, hty, hai, -, hsz, -, -⟩ := BA.sub a ha u hu ht
   have hlg := listed_of_wf hwg hb hgb ha hu
@@ -53,7 +53,7 @@ theorem mc_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (hf : check 
   have K := mcOK_spec h
   have hwf := check_wf hf
   have hwg := check_wf hg
-  exact atomSimX_refines hf hg (mcAtomsOK_spec K.atoms) (SrcInv.triv tabs f)
+  exact atomSimX_refines hf hg (atomsXOK_spec K.atoms) (SrcInv.triv tabs f)
     (mc_atomArgs hwf hwg K)
     (TermStepRef.toStepRefsP (ControlsRef.toTermStepRef (mc_controls hwf hwg K)
       fun b hb fb gb hfb hgb => by
