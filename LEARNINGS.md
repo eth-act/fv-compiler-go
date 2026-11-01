@@ -219,6 +219,12 @@ avoiding): the problem, the trick, the numbers, where it is used.
   `decide +kernel` on such functions too (`decodedLen` witness, #84). For lookup-only maps keyed
   by a structure (zcse's `vkey`), `Std.TreeMap` with a hand-written `compare` is
   kernel-evaluable and needs no proof about the map: the pass is validated by a checker.
+- **Also (#24):** `String.toInt?` and `Array.qsort` get stuck in the kernel as well. prove's port
+  read its config with `toInt?` and kept `Std.HashMap`s, a `HashSet` and a `qsort`; with
+  `GoFV.Opt.decInt?` (over `String.toList`), `Std.TreeMap`/`TreeSet` and
+  `GoFV.Util.PdqSort.sortBy` (unique keys, same order) the whole checked pass on a 5-block
+  function evaluates by `decide +kernel` in about 3 s (`GoFV/Proof/Witness/Prove.lean`); prove
+  parity and `prove-difftest` unchanged.
 
 #### Kernel `defeq` of `f a` against `f b` unfolds `f`: keep big definitions out of `rfl`
 - **Problem:** in `bind_schedule_erase` (`GoFV/Proof/Cong.lean`) the case

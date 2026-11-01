@@ -1,5 +1,5 @@
-import Std.Data.HashMap.Basic
-import Std.Data.HashSet.Basic
+import Std.Data.TreeMap.Basic
+import Std.Data.TreeSet.Basic
 
 /-!
 # prove: partially ordered sets of SSA values (`poset.go`)
@@ -11,9 +11,10 @@ non-equality facts keyed by node index, and an undo stack. The answers of `Order
 (`docs/PASSES.md`, prove, "Poset is history-dependent"), so the structure is replicated
 exactly. Values are their IDs. Differences from Go that are not observable:
 
-- `values` is a hash map; `aliasnodes` pushes its `undoAliasNode` records in hash order instead
-  of Go's random map order (each record restores a distinct key, so the order is irrelevant);
-- `noneq` (Go: a bitset per larger index) is the set of pairs `(larger, smaller)`;
+- `values` is an ordered map (`Std.TreeMap`, which the kernel can evaluate in witnesses);
+  `aliasnodes` pushes its `undoAliasNode` records in key order instead of Go's random map order
+  (each record restores a distinct key, so the order is irrelevant);
+- `noneq` (Go: a bitset per larger index) is the ordered set of pairs `(larger, smaller)`;
 - Go's `panic`s on misuse are not replicated (prove never triggers them).
 -/
 
@@ -48,13 +49,16 @@ inductive PUndo where
   | mergeRoot (idx : Nat)
   deriving Inhabited, Repr
 
+/-- The lexicographic order of node-index pairs (`noneq`'s keys). -/
+def pairCmp (a b : Nat × Nat) : Ordering := (compare a.1 b.1).then (compare a.2 b.2)
+
 /-- `poset`. -/
 structure Poset where
   lastidx : Nat := 0
-  values : Std.HashMap Nat Nat := {}
+  values : Std.TreeMap Nat Nat := {}
   nodes : Array PNode := #[{}]
   roots : Array Nat := #[]
-  noneq : Std.HashSet (Nat × Nat) := {}
+  noneq : Std.TreeSet (Nat × Nat) pairCmp := {}
   undo : Array PUndo := #[]
   deriving Inhabited
 
@@ -116,7 +120,7 @@ def aliasnodes (po : Poset) (n1 : Nat) (i2s : Array Bool) : Poset := Id.run do
       if l != 0 && !test l.target then po := po.addchild i1 l.target l.strict
       if r != 0 && !test r.target then po := po.addchild i1 r.target r.strict
       po := ((po.setchl idx 0).setchr idx 0).upush (.setChl idx l) |>.upush (.setChr idx r)
-  let moved := po.values.fold (init := #[]) fun acc k v => if test v then acc.push (k, v) else acc
+  let moved := po.values.foldl (init := #[]) fun acc k v => if test v then acc.push (k, v) else acc
   for (k, v) in moved do
     po := { po with values := po.values.insert k i1 }.upush (.aliasNode k v)
   return po

@@ -55,7 +55,8 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
       Sem.Refines (rv G a) (rv T a))
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
     {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : SameAtom u w)
-    (ht : termOp w.op = false) (hargsS : ∀ a ∈ u.args, VS a) (hargsT : ∀ a ∈ w.args, VT a)
+    (ht : termOp w.op = false) (hnp : w.op ≠ .Phi) (hargsS : ∀ a ∈ u.args, VS a)
+    (hargsT : ∀ a ∈ w.args, VT a)
     (hinv : ∀ a, I.P w.block a (rv G a)) (hSV : ∀ a, SAnc f w.block a → VS a) :
     Res.Refines (evalValue env (Ctx.make tabs f) G u) (evalValue env (Ctx.make tabs g) T w) := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
@@ -74,7 +75,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     (fun a ha => (hDT a (hargsT a ha)).1) fun i hi => ?_
   · rw [hwid, huid, tys_of_value hw, tys_of_value hu, hs.2.1]
   · have hi' : i < w.args.size := hs.2.2.2.2.1 ▸ hi
-    refine termRef_apply (hTR i hi') hDS (hargsS _ (getElem!_mem' hi)) hDT
+    refine termRef_apply ((hTR i hi').1 hnp) hDS (hargsS _ (getElem!_mem' hi)) hDT
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
       (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
@@ -191,7 +192,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
           · obtain ⟨w, hp, -⟩ := hplaced a (by rw [hog']; exact List.mem_append_left _ ha)
             exact ⟨w, hp⟩
         have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hTD hVTd
-          (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt hpw hu hs hterm hargsS hargs
+          (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt hpw hu hs hterm hwphi hargsS hargs
           (hwb ▸ hinv) (hwb ▸ hSV)
         rw [hevS] at hr
         obtain ⟨y', hT, hyy⟩ := res_ok_of_refines hr

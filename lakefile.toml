@@ -98,3 +98,7 @@ root = "GoFVTest.RuleFireProbe"
 [[lean_exe]]
 name = "knownbits-probe"
 root = "GoFVTest.KnownBitsProbe"
+
+[[lean_exe]]
+name = "prove-probe"
+root = "GoFVTest.ProveProbe"

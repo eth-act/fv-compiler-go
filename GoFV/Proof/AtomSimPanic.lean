@@ -211,7 +211,9 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
     (fun a ha => ha.elim (v1_placed H.wg B.bmT B.hgb a) fun hm => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 (hogpre a hm)
       exact ⟨w, (placed_in H.wg B.bmT B.hgb hxb hw).1⟩)
-    l6 g3 l3 hpwr hur hs hwrt (hargsS r (.inr rfl) ur hur) (fun a ha => by
+    l6 g3 l3 hpwr hur hs hwrt (by
+      obtain ⟨-, w', hw', hph⟩ := (B.mT r).1 hrog.1
+      rw [hwr] at hw'; cases hw'; exact hph) (hargsS r (.inr rfl) ur hur) (fun a ha => by
       rcases sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT r hrog.1 wr hwr a ha with h | h
       · exact .inl h
       · right

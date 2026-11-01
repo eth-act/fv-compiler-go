@@ -35,10 +35,10 @@ def checkSizes (cx : Ctx) (f : Func) : Except String Unit := do
           throw s!"prove: v{v}: slice element size of t{(f.getV x.args[0]!).type} unknown"
 
 /-- `prove`'s first loop: induction variables. -/
-def proveIndVars (cx : Ctx) (f : Func) : Except String (Std.HashMap ID (Array IndVar) × Func) := do
+def proveIndVars (cx : Ctx) (f : Func) : Except String (Std.TreeMap ID (Array IndVar) × Func) := do
   let (ivs, f) := findIndVar cx f
   let mut f := f
-  let mut indVars : Std.HashMap ID (Array IndVar) := {}
+  let mut indVars : Std.TreeMap ID (Array IndVar) := {}
   for v in ivs do
     if (f.getV v.ind).args.size != 2 then throw "prove: unexpected induction with too many parents"
     if !((f.getV v.ind).uses == 2 && (f.getV v.nxt).uses == 1) then
@@ -82,7 +82,7 @@ def proveVisit (p : Prover) (isAnc : ID → ID → Bool) (st : St) (b : ID) : St
   simplifyBlock p isAnc st b
 
 /-- The dominator-tree walk. -/
-def proveWalk (p : Prover) (indVars : Std.HashMap ID (Array IndVar)) (idom : Array (Option ID))
+def proveWalk (p : Prover) (indVars : Std.TreeMap ID (Array IndVar)) (idom : Array (Option ID))
     (sdom : SparseTree) (st : St) : St := Id.run do
   let isAnc := sdom.isAncestorEq
   let (f, _) := st
