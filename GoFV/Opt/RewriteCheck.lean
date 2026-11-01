@@ -1059,19 +1059,43 @@ def disjointB (tabs : Tables) (f : Func) (a : ID) (n : Nat) (b : ID) (k : Nat) :
   | some x, some y => x != y
   | _, _ => false
 
-/-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`, `Sem.decode`): an
-integer, a boolean or a pointer. -/
-def fwdTy : Sem.Ty → Bool
-  | .int _ | .bool | .ptr _ => true
+/-- Fields of `scalarTy` shapes at increasing offsets from `lo` that do not overlap and end
+inside `n` bytes. -/
+def fwdFields (n lo : Nat) : List (Nat × Sem.Ty) → Bool
+  | [] => true
+  | (o, t) :: fs => scalarTy t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
+      fwdFields n (o + t.size) fs
+
+/-- A non-empty aggregate of `fwdFields` (strings, interfaces, flat structs). -/
+def fwdAgg : Sem.Ty → Bool
+  | .agg fs n => n != 0 && fwdFields n 0 fs
   | _ => false
 
-/-- Shapes `fwdTy` that write, read and retype alike: equal up to pointers' element sizes
+/-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`,
+`Sem.decodeLoad`): `scalarTy`, or `fwdAgg` (which decodes `poison` from a `poison` store). -/
+def fwdTy (t : Sem.Ty) : Bool := scalarTy t || fwdAgg t
+
+/-- `scalarTy` shapes that write, read and retype alike: equal up to pointers' element sizes
 (`copyCompatibleType`). -/
-def fwdTyEq : Sem.Ty → Sem.Ty → Bool
+def fwdScalarEq : Sem.Ty → Sem.Ty → Bool
   | .int w, .int w' => w == w'
   | .bool, .bool => true
   | .ptr _, .ptr _ => true
   | _, _ => false
+
+/-- Fields at equal offsets of `fwdScalarEq` shapes. -/
+def fwdFieldsEq : List (Nat × Sem.Ty) → List (Nat × Sem.Ty) → Bool
+  | [], [] => true
+  | (o, t) :: fs, (o', t') :: fs' => o == o' && fwdScalarEq t t' && fwdFieldsEq fs fs'
+  | _, _ => false
+
+/-- `fwdAgg` aggregates of one size with `fwdFieldsEq` fields. -/
+def fwdAggEq : Sem.Ty → Sem.Ty → Bool
+  | .agg fs n, .agg fs' n' => n == n' && fwdAgg (.agg fs n) && fwdFieldsEq fs fs'
+  | _, _ => false
+
+/-- Shapes `fwdTy` that write, read and retype alike: `fwdScalarEq` or `fwdAggEq`. -/
+def fwdTyEq (t s : Sem.Ty) : Bool := fwdScalarEq t s || fwdAggEq t s
 
 /-- A `Store` at type shape `s` writes a value of shape `t` (`fwdTy`) as a write at `t` does:
 `fwdTyEq`, or a pointer stored as a 64-bit integer (`Sem.encode` writes a pointer's bytes at

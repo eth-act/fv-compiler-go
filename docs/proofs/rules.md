@@ -198,7 +198,9 @@ RewriteCheck.fwdShapeOK r = true` (the result is the value one of the up to four
 blocks and atoms, every value unchanged but for the forwarded `Load`s (`fwdRepOK`), each with
 `fwdOK` = `fwdChain` (through at most eight memory `Copy`s and `Store`s at pointers disjoint from
 the read, a `Store`/`StoreWB` of `x` at a pointer equal to the `Load`'s; the `Load` and `x` have
-one integer, boolean or pointer shape, `fwdTyEq`, the `Store`'s type that shape or a pointer
+one shape, `fwdTyEq`: an integer, boolean or pointer shape (`scalarTy`, `fwdScalarEq`) or a
+non-empty aggregate of such fields at increasing, non-overlapping offsets (`fwdAgg`, `fwdFields`,
+`fwdAggEq`: strings, interfaces, flat structs); the `Store`'s type that shape or a pointer
 stored as `int64`, `fwdStoreTy`), and ranks ordering every listed non-`Phi` value after its
 arguments (`fwdRank`, `fwdRankOK`). Pointers: `ptrBase` (a base and a constant offset through
 `OffPtr`s and pointer `Copy`s), `baseSameB` (the same value, the start of one allocation:
@@ -218,21 +220,24 @@ registers, which are in the set, and each `LocalAddr` register its frame variabl
 terms, every `LocalAddr` its variable). With it, `fwd_den` (by induction on the rank) reads a
 forwarded `Load` through its chain (`chain_load`, `GoFV/Proof/Pass/LoadFwdPtr.lean`:
 `ptrBase_den`, `baseBlk_den`, `samePtr_den`, `disjoint_sep` + `load_write_sep` past the disjoint
-writes, `load_write` at the `Store` of `x`). The fuel of `TermRefP`'s right side may depend on
+writes, `load_write` at the `Store` of `x`: `decodeLoad_encode`, at an aggregate field by field,
+`fields_encode`, and a stored `poison` aggregate is all `poison` bytes, which a `Load` reads as
+`poison`, semantics.md §3.4 `decodeLoad`). The fuel of `TermRefP`'s right side may depend on
 the valuations. `checkedRewrite_refines` composes the nil-check eliminations, the forwardings and
 the atom simulation (statement unchanged). Proven: `generic.rules:800`, `:806`, `:813`, `:821`;
-witnesses `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`) and `sl2_checkedRewrite`
-(`p[0] = x; p[1] = y; return p[0]`, `:806`), kernel evaluation.
+witnesses `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
+(`p[0] = x; p[1] = y; return p[0]`, `:806`) and `sls_checkedRewrite` (`*p = s; return *p` at a
+string; `sls_decodeLoad`), kernel evaluation.
 
 **Fallback.** `checkedRewrite t` runs the pass again without the table's forwardings
 (`{t with loads := #[]}`) when the validator rejects the first result, so a forwarding the
 validator cannot relate costs only that function's forwardings (`checkedRewrite_cases`, statement
 unchanged: the validator does not read `loads`, `validate_noLoads`). Forwardings the validator
-does not relate (quick-v1, `opt-proven-probe` "Forwarding fallbacks": opt 46, middle opt 3, late
-opt 9): mostly aggregate shapes (interfaces, strings, structs: a `Load` decodes an `agg` of
-fields even from `poison` bytes, which a `poison` stored value does not refine, so these need a
-different argument), `Store`s of a `Load` of the same address left in the chain by an earlier
-rewrite, and `PtrIndex` offsets by constants.
+does not relate (quick-v3 at ccc1a85, `opt-proven-probe` "Forwarding fallbacks", after aggregate
+forwarding: opt 12, middle opt 3, late opt 9; opt 50 before): chains with a `Store` the validator cannot
+prove disjoint (`Addr`s or `LocalAddr`s of one symbol at unknown or `PtrIndex` offsets), a `Store`
+of a `Load` of the same address left in the chain by an earlier rewrite, and (late opt) a
+one-pointer struct stored at the pointer type.
 
 ### Struct-load expansions: `EffectRule.StructLoad` (`GoFV/Proof/Rules/StructLoad.lean`)
 
@@ -564,6 +569,14 @@ without `:974`; opt 69.43%, middle opt 97.76%, late opt 97.09%, divisible 99.98%
 checked parity; validator rejects 4 / 6 / 0 / 0 / 0 (unchanged by `:974`: the phi elimination,
 three nil-check eliminations `nrel` rejects in `runtime.*Hash`, the six narrow tops), forwarding
 fallbacks 50 / 3 / 9 / 0 / 0 (47 / 3 / 9 without `:974`).
+After aggregate Load-of-Store forwarding (#151: `Mem.load` decodes with `decodeLoad`, so a stored
+`poison` aggregate loads as `poison`; `fwdTy` accepts `fwdAgg` shapes), on quick-v3 at 683d0c6
+(with `:975` struct-store splits): 7,004 of 9,297 (75.34%) at stock under the checked passes,
+6,993 (75.22%) before; opt 76.38% (76.26%) checked parity, the others unchanged; forwarding and
+split fallbacks 78 / 3 / 9 / 0 / 0 (116 / 3 / 9 before: the 38 aggregate store shapes of opt are
+gone; the rest are struct-store splits, "stored Load"/"walk"/"chain start", and the forwarding
+chains below); validator rejects 158 / 6 / 1 / 0 / 0 on both. At ccc1a85 (before `:975`): 6,381
+→ 6,388, forwarding fallbacks 50 / 3 / 9 → 12 / 3 / 9.
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

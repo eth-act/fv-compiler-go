@@ -80,6 +80,47 @@ theorem decode_extract (bs : Array Byte) (o : Nat) {t : Ty} (hl : layoutOK t = t
     rw [Nat.zero_add, getElem?_extract_add]
     simp only [hi, ite_true]
 
+theorem allPoison_congr {bs bs' : Array Byte} {o o' n : Nat}
+    (h : ∀ i, i < n → bs[o + i]? = bs'[o' + i]?) : allPoison bs o n = allPoison bs' o' n := by
+  unfold allPoison; rw [extract_congr h]
+
+mutual
+/-- `decodeLoad` of a well-laid-out shape reads only its own bytes. -/
+theorem decodeLoad_congr {bs bs' : Array Byte} {o o' : Nat} : (t : Ty) → layoutOK t = true →
+    (∀ i, i < t.size → bs[o + i]? = bs'[o' + i]?) → decodeLoad bs o t = decodeLoad bs' o' t
+  | .agg fs n, hl, h => by
+    simp only [decodeLoad]
+    rw [allPoison_congr (n := n) h,
+      decodeLoadFields_congr n fs (by simpa only [layoutOK] using hl) h]
+  | .int w, hl, h => by simp only [decodeLoad]; exact decode_congr _ hl h
+  | .bool, hl, h => by simp only [decodeLoad]; exact decode_congr _ hl h
+  | .ptr _, hl, h => by simp only [decodeLoad]; exact decode_congr _ hl h
+  | .blob _, hl, h => by simp only [decodeLoad]; exact decode_congr _ hl h
+  | .opaque _, _, _ => rfl
+  | .empty, _, _ => rfl
+  | .other, _, _ => rfl
+  | .mem, _, _ => rfl
+  | .tuple _, _, _ => rfl
+theorem decodeLoadFields_congr {bs bs' : Array Byte} {o o' : Nat} (n : Nat) :
+    (fs : List (Nat × Ty)) → layoutsOK n fs = true →
+    (∀ i, i < n → bs[o + i]? = bs'[o' + i]?) →
+      decodeLoadFields bs o fs = decodeLoadFields bs' o' fs
+  | [], _, _ => rfl
+  | (p, t) :: fs, hl, h => by
+    simp only [layoutsOK, Bool.and_eq_true, decide_eq_true_eq] at hl
+    simp only [decodeLoadFields]
+    rw [decodeLoad_congr (bs := bs) (bs' := bs') (o := o + p) (o' := o' + p) t hl.1.2
+      (fun i hi => by
+        rw [Nat.add_assoc, Nat.add_assoc]
+        exact h (p + i) (by omega)), decodeLoadFields_congr n fs hl.2 h]
+end
+
+theorem decodeLoad_extract (bs : Array Byte) (o : Nat) {t : Ty} (hl : layoutOK t = true) :
+    decodeLoad (bs.extract o (o + t.size)) 0 t = decodeLoad bs o t :=
+  decodeLoad_congr t hl fun i hi => by
+    rw [Nat.zero_add, getElem?_extract_add]
+    simp only [hi, ite_true]
+
 /-- What a valid non-empty read says about its pointer. -/
 theorem read_facts {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hr : m.read p n = some bs)
     (hn : n ≠ 0) : ∃ a, m.find? p.blk = some a ∧ p.off.toNat + n ≤ a.data.size ∧
@@ -138,10 +179,10 @@ theorem read_sub {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hr : m.read p 
   congr 2
   omega
 
-/-- **A field `Load`** at its offset reads what decoding the struct's bytes gives. -/
+/-- **A field `Load`** at its offset reads what `decodeLoad` of the struct's bytes gives. -/
 theorem load_field {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hr : m.read p n = some bs)
     {o : Nat} {t : Ty} (hl : layoutOK t = true) (hk : o + t.size ≤ n) :
-    m.load t (p.add (BitVec.ofNat 64 o)) = decode bs o t := by
+    m.load t (p.add (BitVec.ofNat 64 o)) = decodeLoad bs o t := by
   have h := read_sub hr hk
   cases t with
   | empty => rfl
@@ -151,7 +192,7 @@ theorem load_field {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hr : m.read 
   | _ =>
     unfold Mem.load
     simp only [h]
-    exact decode_extract bs o hl
+    exact decodeLoad_extract bs o hl
 
 theorem ofInt_toInt_ofNat (o : Nat) : BitVec.ofInt 64 (Int64.ofNat o).toInt = BitVec.ofNat 64 o := by
   rw [show (Int64.ofNat o).toInt = (Int64.ofNat o).toBitVec.toInt from rfl, BitVec.ofInt_toInt]
@@ -168,11 +209,11 @@ def Fields (R : Val → Nat × Ty → Prop) : List Val → List (Nat × Ty) → 
   | _, _ => False
 
 theorem retypeFields_decode (bs : Array Byte) : ∀ (fs : List (Nat × Ty)) (vs : List Val),
-    Fields (fun v f => v = (decode bs f.1 f.2).retype f.2) vs fs →
-    Val.retypeFields fs (decodeFields bs 0 fs) = Val.retypeFields fs vs
+    Fields (fun v f => v = (decodeLoad bs f.1 f.2).retype f.2) vs fs →
+    Val.retypeFields fs (decodeLoadFields bs 0 fs) = Val.retypeFields fs vs
   | [], [], _ => rfl
   | (o, t) :: fs, v :: vs, ⟨h, hs⟩ => by
-    simp only [decodeFields, Val.retypeFields, h, Nat.zero_add, Val.retype_idem]
+    simp only [decodeLoadFields, Val.retypeFields, h, Nat.zero_add, Val.retype_idem]
     rw [retypeFields_decode bs fs vs hs]
   | [], _ :: _, h | _ :: _, [], h => h.elim
 
@@ -208,7 +249,7 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
     | none => exact .poison _
     | some bs =>
       simp only [Ty.size] at hr
-      have hfields : Fields (fun v f => v = (decode bs f.1 f.2).retype f.2) vs fs := by
+      have hfields : Fields (fun v f => v = (decodeLoad bs f.1 f.2).retype f.2) vs fs := by
         refine Fields.imp_mem (fun v f hf ⟨e, he⟩ => ?_) hvs
         obtain ⟨hlo, hle⟩ := layouts_mem hl f hf
         have hon := ho f hf
@@ -237,7 +278,14 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
         rw [he, hq, hrt]
         show (m.load f.2 (p.add (BitVec.ofNat 64 f.1))).retype f.2 = _
         rw [load_field hr hlo hle]
-      simp only [decode, Comp.make, Val.retype]
+      dsimp only
+      by_cases hap : allPoison bs 0 n = true
+      · have : decodeLoad bs 0 (.agg fs n) = .poison := by simp only [decodeLoad, hap, ite_true]
+        rw [this]; exact .poison _
+      have : decodeLoad bs 0 (.agg fs n) = .agg (decodeLoadFields bs 0 fs) := by
+        simp only [decodeLoad]; rw [ite_eq_right_iff.2 (fun h => absurd h hap)]
+      rw [this]
+      simp only [Comp.make, Val.retype]
       rw [retypeFields_decode bs fs vs hfields]
       exact Refines.refl _
   · have : loadOp (.agg fs n) [P, Mv] = .poison := by

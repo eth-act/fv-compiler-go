@@ -424,14 +424,18 @@ theorem decode_hasTy_scalar (bs : Array Byte) (off : Nat) {t : Ty} (h : scalarTy
     · rfl
     · split <;> rfl
 
-theorem decodeFields_hasTy (bs : Array Byte) (off : Nat) :
+theorem decodeLoadFields_hasTy (bs : Array Byte) (off : Nat) :
     ∀ fs : List (Nat × Ty), fs.all (scalarTy ·.2) = true →
-      Val.hasTyList (decodeFields bs off fs) (fs.map (·.2)) = true
+      Val.hasTyList (decodeLoadFields bs off fs) (fs.map (·.2)) = true
   | [], _ => rfl
   | (o, t) :: fs, h => by
     simp only [List.all_cons, Bool.and_eq_true] at h
-    simp only [decodeFields, List.map_cons, Val.hasTyList, Bool.and_eq_true]
-    exact ⟨decode_hasTy_scalar bs (off + o) h.1, decodeFields_hasTy bs off fs h.2⟩
+    simp only [decodeLoadFields, List.map_cons, Val.hasTyList, Bool.and_eq_true]
+    refine ⟨?_, decodeLoadFields_hasTy bs off fs h.2⟩
+    have := decode_hasTy_scalar bs (off + o) h.1
+    cases t <;> first
+      | simpa only [decodeLoad] using this
+      | simp [scalarTy] at h
 
 /-- A `Load` at a `loadShape` has the shape. -/
 theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
@@ -448,9 +452,15 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
            cases t with
            | agg fs n =>
              simp only [loadShape] at h
-             simp only [decode, Val.hasTy]
-             exact decodeFields_hasTy bs 0 fs h
-           | _ => exact decode_hasTy_scalar bs 0 (by simpa [loadShape] using h)
+             simp only [decodeLoad]
+             split
+             · rfl
+             · simp only [Val.hasTy]
+               exact decodeLoadFields_hasTy bs 0 fs h
+           | _ => first
+             | simpa only [decodeLoad] using
+                 decode_hasTy_scalar bs 0 (by simpa [loadShape] using h)
+             | simp [loadShape, scalarTy] at h
          · rfl)
   · rfl
 

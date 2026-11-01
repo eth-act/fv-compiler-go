@@ -141,6 +141,31 @@ theorem decodeFields_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} 
     exact ⟨decode_avoids hU h (off + o) t, decodeFields_avoids hU h off fs⟩
 end
 
+mutual
+theorem decodeLoad_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : BAv U bs)
+    (off : Nat) : (t : Ty) → Val.Avoids U (decodeLoad bs off t)
+  | .agg fs _ => by
+    simp only [decodeLoad]
+    split
+    · trivial
+    · simp only [Val.Avoids]; exact decodeLoadFields_avoids hU h off fs
+  | .int w => by simp only [decodeLoad]; exact decode_avoids hU h off _
+  | .bool => by simp only [decodeLoad]; exact decode_avoids hU h off _
+  | .ptr _ => by simp only [decodeLoad]; exact decode_avoids hU h off _
+  | .blob _ => by simp only [decodeLoad]; exact decode_avoids hU h off _
+  | .opaque _ => by simp only [decodeLoad]; exact decode_avoids hU h off _
+  | .empty => by simp only [decodeLoad]; trivial
+  | .other => by simp only [decodeLoad]; trivial
+  | .mem => by simp only [decodeLoad]; trivial
+  | .tuple _ => by simp only [decodeLoad]; trivial
+theorem decodeLoadFields_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : BAv U bs)
+    (off : Nat) : (fs : List (Nat × Ty)) → Val.AvoidsList U (decodeLoadFields bs off fs)
+  | [] => by simp only [decodeLoadFields]; trivial
+  | (o, t) :: fs => by
+    simp only [decodeLoadFields]
+    exact ⟨decodeLoad_avoids hU h (off + o) t, decodeLoadFields_avoids hU h off fs⟩
+end
+
 /-! ## Encoding -/
 
 theorem bav_intBytes (U : Blk → Prop) (n x : Nat) : BAv U (intBytes n x) := by
@@ -301,7 +326,7 @@ theorem load_avoids {U : Blk → Prop} (hU : TempU U) {m : Mem} (h : m.Avoids U)
   · trivial
   · trivial
   · split
-    · rename_i bs hr; exact decode_avoids hU (read_avoids h hr hu) 0 _
+    · rename_i bs hr; exact decodeLoad_avoids hU (read_avoids h hr hu) 0 _
     · trivial
 
 /-! ## Retyping and shapes -/

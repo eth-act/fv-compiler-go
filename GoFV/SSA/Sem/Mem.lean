@@ -245,16 +245,40 @@ def encodeFields (buf : Array Byte) : List (Nat × Ty) → List Val → Array By
   | _, _ => buf
 end
 
+/-- The `n > 0` bytes of `bs` at `off` are all `poison`. -/
+def allPoison (bs : Array Byte) (off n : Nat) : Bool :=
+  n != 0 && (bs.extract off (off + n)).all (· matches .poison)
+
+mutual
+/-- The value of shape `t` that a `Load` reads at `off` in `bs`: `decode`, except that an
+aggregate whose (non-empty) bytes are all `poison` is `poison`, at every aggregate level (§3.4).
+A stored `poison` aggregate so loads back as `poison`. -/
+def decodeLoad (bs : Array Byte) (off : Nat) : Ty → Val
+  | .agg fs n => if allPoison bs off n then .poison else .agg (decodeLoadFields bs off fs)
+  | .int w => decode bs off (.int w)
+  | .bool => decode bs off .bool
+  | .ptr e => decode bs off (.ptr e)
+  | .blob n => decode bs off (.blob n)
+  | .empty => .empty
+  | .opaque n => decode bs off (.opaque n)
+  | .other => .poison
+  | .mem => .poison
+  | .tuple _ => .poison
+def decodeLoadFields (bs : Array Byte) (off : Nat) : List (Nat × Ty) → List Val
+  | [] => []
+  | (o, t) :: fs => decodeLoad bs (off + o) t :: decodeLoadFields bs off fs
+end
+
 namespace Mem
 
-/-- `Load <T> p m`: the value of shape `t` at `p` in snapshot `m`; `poison` if the access is
-invalid (§3.4). -/
+/-- `Load <T> p m`: the value of shape `t` at `p` in snapshot `m` (`decodeLoad`); `poison` if
+the access is invalid (§3.4). -/
 def load (m : Mem) (t : Ty) (p : Ptr) : Val :=
   match t with
   | .empty => .empty
   | .other | .mem | .tuple _ => .poison
   | t => match m.read p t.size with
-    | some bs => decode bs 0 t
+    | some bs => decodeLoad bs 0 t
     | none => .poison
 
 end Mem

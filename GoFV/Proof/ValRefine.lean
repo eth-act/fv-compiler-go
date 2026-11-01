@@ -4,7 +4,8 @@ import GoFV.SSA.Sem.Layout
 /-!
 # Encoding, decoding and retyping are monotone in refinement
 
-`decode` of refined bytes refines (`decode_mono`), `encode` of a refined value gives refined
+`decode` of refined bytes refines (`decode_mono`), and so does a `Load`'s `decodeLoad`
+(`decodeLoad_mono`), `encode` of a refined value gives refined
 bytes (`encode_mono`), `Mem.load` of a refined memory refines (`load_mono`), `Val.retype`
 preserves refinement (`retype_mono`). A poison-free value is only refined by itself up to
 memories (`Refines.noPoison`).
@@ -132,6 +133,51 @@ theorem decodeFields_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off :
   | (o, t) :: fs => by
     simp only [decodeFields]
     exact .cons (decode_mono h (off + o) t) (decodeFields_mono h off fs)
+end
+
+theorem BytesRefine.allPoison : ∀ {a b : List Byte}, BytesRefine a b →
+    b.all (· matches .poison) = true → a.all (· matches .poison) = true
+  | _, _, .nil, _ => rfl
+  | _, _, .cons h t, hb => by
+    simp only [List.all_cons, Bool.and_eq_true] at hb ⊢
+    refine ⟨?_, BytesRefine.allPoison t hb.2⟩
+    cases h with
+    | poison => rfl
+    | refl => exact hb.1
+
+/-- Refined bytes are all `poison` where the refining ones are. -/
+theorem allPoison_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off n : Nat)
+    (hp : allPoison bs' off n = true) : allPoison bs off n = true := by
+  unfold allPoison at hp ⊢
+  simp only [Bool.and_eq_true] at hp ⊢
+  refine ⟨hp.1, ?_⟩
+  rw [← Array.all_toList] at hp ⊢
+  exact BytesRefine.allPoison (h.extract _ _) hp.2
+
+mutual
+theorem decodeLoad_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : Nat) :
+    (t : Ty) → Refines (decodeLoad bs off t) (decodeLoad bs' off t)
+  | .agg fs n => by
+    simp only [decodeLoad]
+    by_cases hp : allPoison bs off n = true
+    · rw [if_pos hp]; exact .poison _
+    · rw [if_neg hp, if_neg fun h' => hp (allPoison_mono h off n h')]
+      exact .agg (decodeLoadFields_mono h off fs)
+  | .int w => by simp only [decodeLoad]; exact decode_mono h off _
+  | .bool => by simp only [decodeLoad]; exact decode_mono h off _
+  | .ptr _ => by simp only [decodeLoad]; exact decode_mono h off _
+  | .blob _ => by simp only [decodeLoad]; exact decode_mono h off _
+  | .opaque _ => by simp only [decodeLoad]; exact decode_mono h off _
+  | .empty => by simp only [decodeLoad]; exact .empty
+  | .other => by simp only [decodeLoad]; exact .poison _
+  | .mem => by simp only [decodeLoad]; exact .poison _
+  | .tuple _ => by simp only [decodeLoad]; exact .poison _
+theorem decodeLoadFields_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (off : Nat) :
+    (fs : List (Nat × Ty)) → RefinesList (decodeLoadFields bs off fs) (decodeLoadFields bs' off fs)
+  | [] => by simp only [decodeLoadFields]; exact .nil
+  | (o, t) :: fs => by
+    simp only [decodeLoadFields]
+    exact .cons (decodeLoad_mono h (off + o) t) (decodeLoadFields_mono h off fs)
 end
 
 /-! ## Encoding -/
@@ -266,7 +312,7 @@ theorem load_mono {m m' : Mem} (h : Mem.Refines m m') (t : Ty) (p : Ptr) :
     | some bs =>
       obtain ⟨bs', hr', hb⟩ := h.read hr
       rw [hr']
-      exact decode_mono hb 0 t
+      exact decodeLoad_mono hb 0 t
 
 mutual
 theorem retype_mono : ∀ (t : Ty) {v v' : Val}, Refines v v' → Refines (v.retype t) (v'.retype t)
