@@ -1,48 +1,29 @@
 import GoFV.Proof.Pass.DeadSim
 import GoFV.Proof.Pass.DeadFrag
-import GoFV.Proof.Pass.DeadChain
-import GoFV.Opt.Deadcode
+import GoFV.Proof.Pass.DeadTail
+import GoFV.Proof.Pass.CopyElimWF
 
 /-!
 # deadcode refines its input (all five instances)
 
-`deadcode_refines`: for an input and output that pass `check`, with the input in the fragment
-`DeadFrag`, the output of `deadcodePass` refines its input (`refines_of_deadRel`).
+`deadcode = edges ; copyelim ; deadTail` (`deadcode_eq`, `edgesG_true`). With `f1' = edgesG false f`
+(deadcode's edge removal where `Phi`s only lose arguments), `f1 = edgesG true f` (the real one)
+and `f2 = copyelim f1`, the output `g` refines `f` by three refinements:
 
-`DeadFrag tabs f`: deadcode's output `g` keeps blocks, values and edges of `f` (`DeadRel`: the
-removed edges, unreachable blocks and dead values are dropped, a reachable `First` block becomes
-`Plain`, and the kept values are unchanged; checked on the output by `deadRelB`, a translation
-validation of the static part of the pass), the side-effecting roots of the kept blocks of `f`
-are chained, and `f` has no `NilCheck`. `deadFragB` is a sufficient condition for checked
-inputs (`deadFrag_of`; `chainedB` searches the dependencies `Chained` needs);
-`lake exe deadcode-probe` counts the corpus sections that satisfy it. Outside
-it: inputs where the copyelim step of deadcode changes a kept value (a copy argument, or a `Phi`
-of a reachable block that loses its arguments from unreachable predecessors and becomes a copy);
-#83 has the plan to cover them by carrying copyelim's relation (`CopyRel`).
+1. `f1'` refines `f` (`refines_of_deadRel`): `f1'` is well formed and keeps the reachable blocks
+   of `f`, their values and the edges a run takes (`ei_edgesG`, `wf_of_ei`, `deadRel_of_ei`);
+2. `f2` refines `f1'` (copyelim's `refines_of_rel`): `f1` is a state of copyelim's sweeps
+   started at `f1'` (`j_edgesG`, `inv_of_j`), so `copyelim_rel_of_inv` relates `f1'` and `f2`,
+   and `copyelim_wf_of_inv` makes `f2` well formed;
+3. `g` refines `f2` (`refines_of_deadRel` with `deadTail_rel`).
+
+`deadcode_refines` assumes `check` on input and output and the input fragment `DeadFrag`
+(conditions on the input only, decided by `deadFragB`).
 -/
 
 namespace GoFV.Proof.Dead
 
-open GoFV.SSA GoFV.Opt GoFV.Proof
-
-/-- deadcode's input fragment (see the module doc). -/
-def DeadFrag (tabs : Tables) (f : Func) : Prop :=
-  ∀ g, deadcode tabs f = .ok g → DeadRel f g ∧ Chained f (· ∈ g.blocks) ∧ NoNil f
-
-/-- A sufficient condition for `DeadFrag`, for checked inputs (`deadFrag_of`). -/
-def deadFragB (tabs : Tables) (f : Func) : Bool :=
-  match deadcode tabs f with
-  | .ok g => deadRelB f g && chainedB f g.blocks && noNilB f
-  | .error _ => true
-
-theorem deadFrag_of {ce : CheckEnv} {tabs : Tables} {f : Func} (hf : check ce f = .ok ())
-    (h : deadFragB tabs f = true) : DeadFrag tabs f := by
-  intro g hg
-  unfold deadFragB at h
-  rw [hg] at h
-  simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨h1, h2⟩, h3⟩ := h
-  exact ⟨deadRelB_sound h1, chained_of (check_wf hf) (deadRelB_blocks h1) h2, noNil_of h3⟩
+open GoFV.SSA GoFV.Opt GoFV.Proof GoFV.Proof.CopyElim
 
 /-- **deadcode refines its input** (`early`, `pre-opt`, `opt`, `gcse` and `generic deadcode`). -/
 theorem deadcode_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
@@ -54,7 +35,25 @@ theorem deadcode_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : C
   · cases h
   · rename_i g hd
     cases h
-    obtain ⟨hrel, hch, hnn⟩ := hfrag g hd
-    exact refines_of_deadRel ⟨⟨ce, check_wf hf⟩, ⟨ce', check_wf hg⟩, hrel, hch, hnn⟩
+    rw [deadcode_eq, ← edgesG_true] at hd
+    cases hc : copyelim penv.tables (edgesG true f) with
+    | error e => rw [hc] at hd; cases hd
+    | ok f2 =>
+    rw [hc] at hd
+    have hwf := check_wf hf
+    have hwg := check_wf hg
+    have hE := ei_edgesG hwf hfrag.firstTwo
+    have hwf1 := wf_of_ei hwf hE
+    have hI := inv_of_j hwf hE (j_edgesG hwf hfrag.firstTwo) hfrag.copy2
+    obtain ⟨hwf2, hsz, hvl⟩ := copyelim_wf_of_inv hwf1 hfrag.copy1 hI hc
+    have r1 : Refines penv.tables (edgesG false f) penv.tables f :=
+      refines_of_deadRel ⟨⟨ce, hwf⟩, ⟨ce, hwf1⟩, deadRel_of_ei hwf hfrag.bid hE⟩
+    have r2 : Refines penv.tables f2 penv.tables (edgesG false f) :=
+      refines_of_rel ⟨⟨ce, hwf1⟩, ⟨ce, hwf2⟩, hfrag.cert1, hfrag.cert2 f2 hc,
+        copyelim_rel_of_inv hwf1 hfrag.copy1 hI hc, hfrag.empty⟩
+    have hs2 : f2.valueTab.size ≤ f2.vidLast + 1 := by rw [hsz, hvl]; exact hfrag.copy1.size
+    have r3 : Refines penv.tables g penv.tables f2 :=
+      refines_of_deadRel ⟨⟨ce, hwf2⟩, ⟨ce', hwg⟩, deadTail_rel hwg hs2 hd⟩
+    exact r1.trans (r2.trans r3)
 
 end GoFV.Proof.Dead

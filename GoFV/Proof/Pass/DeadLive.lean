@@ -1,5 +1,5 @@
 import GoFV.Proof.Pass.DeadRel
-import GoFV.SSA.Live
+import GoFV.Proof.Pass.DeadReach
 import Std.Tactic.Do
 
 /-!

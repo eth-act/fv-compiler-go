@@ -414,8 +414,8 @@ theorem freeDead_spec {r live : Array Bool} {F g : Func}
 /-! ## The relation -/
 
 /-- **deadcode after copyelim keeps `DeadRel`.** -/
-theorem deadTail_rel {ce ce' : CheckEnv} {tabs : Tables} {r : Array Bool} {f g : Func}
-    (hwf : WF ce f) (hwg : WF ce' g) (hsize : f.valueTab.size ≤ f.vidLast + 1)
+theorem deadTail_rel {ce' : CheckEnv} {tabs : Tables} {r : Array Bool} {f g : Func}
+    (hwg : WF ce' g) (hsize : f.valueTab.size ≤ f.vidLast + 1)
     (h : deadTail tabs r f = .ok g) : DeadRel f g (· ∈ g.blocks) := by
   unfold deadTail at h
   generalize hlo : f.liveValuesOrder tabs r = lo at h
