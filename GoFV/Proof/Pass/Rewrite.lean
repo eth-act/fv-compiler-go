@@ -7,6 +7,7 @@ import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Pass.CopyRelCheck
 import GoFV.Proof.Pass.CopyElim
+import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Checked
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.Rules.Proven
@@ -113,6 +114,11 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesUnder.toRw (StructStore.ss_refines hf hf' hr)).trans R'⟩
+  | @seg f f' g hr hck _ ih =>
+    have hf' := checkOK_sound hck
+    obtain ⟨ce', hg, R'⟩ := ih hf'
+    exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2⟩)
+      (Seg.seg_refines hf hf' hr).from).trans R'⟩
 
 /-- **Layers without nil-check eliminations refine** under monotone contracts alone (issue #17,
 the decompose builtin rewrite step, `RewriteCheck.decLayers`): each layer `layersOK` takes is
@@ -122,22 +128,24 @@ the output to the last layer's function by `validate`. -/
 theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : Func}
     {out : PassOut} {ce' : CheckEnv} (hg : check ce' out.func = .ok ()) :
     ∀ (Ls : List RewriteCheck.Layer), (∀ sel, RewriteCheck.Layer.nil sel ∉ Ls) →
+      RewriteCheck.Layer.seg ∉ Ls →
       ∀ (f : Func) (log : Array RwEvent) {ce : CheckEnv}, check ce f = .ok () →
       RewriteCheck.layersOK penv (Interp.Table.ofRuleSet s) f0 out Ls f log = true →
       RefinesUnder Env.Mono out.tables out.func out.tables f
-  | [], _, f, log, ce, hf, h => by
+  | [], _, _, f, log, ce, hf, h => by
     rw [RewriteCheck.layersOK] at h
     obtain ⟨hA, hcf, hcg⟩ := validate_parts h
     obtain ⟨h1, h2⟩ := validate_termRef h hs
     exact AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2
-  | L :: Ls, hn, f, log, ce, hf, h => by
+  | L :: Ls, hn, hns, f, log, ce, hf, h => by
     have hn' : ∀ sel, RewriteCheck.Layer.nil sel ∉ Ls :=
       fun sel hm => hn sel (List.mem_cons_of_mem _ hm)
+    have hns' : RewriteCheck.Layer.seg ∉ Ls := fun hm => hns (List.mem_cons_of_mem _ hm)
     rw [RewriteCheck.layersOK] at h
     split at h
     next f' log' _ =>
     split at h
-    · exact layersOK_refines hs hg Ls hn' f log hf h
+    · exact layersOK_refines hs hg Ls hn' hns' f log hf h
     · rw [Bool.and_eq_true] at h
       obtain ⟨hL, hr⟩ := h
       cases L with
@@ -145,26 +153,28 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
       | fwd sel =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2
-        exact (LoadFwd.fwd_refines hf hf' hL.1).trans (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+        exact (LoadFwd.fwd_refines hf hf' hL.1).trans
+          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
       | sl =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2
         obtain ⟨hA, hcf, hcg⟩ := validate_parts hL.1
         obtain ⟨h1, h2⟩ := validate_termRef hL.1 hs
         exact (AtomSim.atomSim_refines hf hf' hA hcf hcg h1 h2).trans
-          (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
       | ld =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2
         obtain ⟨hA, hcf, hcg⟩ := validate_parts hL.1
         obtain ⟨h1, h2⟩ := validate_termRef hL.1 hs
         exact (AtomSim.atomSim_refines hf hf' hA hcf hcg h1 h2).trans
-          (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
       | ss =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2
         exact (StructStore.ss_refines hf hf' hL.1).trans
-          (layersOK_refines hs hg Ls hn' f' log' hf' hr)
+          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
+      | seg => exact absurd List.mem_cons_self hns
 
 /-- **One segment of the log**: what `layersOK` accepts (with a table of the rule set's value and
 block rules) from a checked function to a checked one refines it. -/

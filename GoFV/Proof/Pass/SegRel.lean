@@ -23,10 +23,13 @@ structure SegD (tabs : Tables) (f g : Func) (x : ID) (D N : List ID) where
   gv : Value
   hfv : f.value? x = some fv
   hgv : g.value? x = some gv
+  hns : ssSame fv gv = false
   hgid : gv.id = x
   hgbl : gv.block = fv.block
   hgty : gv.type = fv.type
   hfph : fv.op ≠ .Phi
+  hfop : fv.op = .Store ∨ fv.op = .SelectN
+  hbm : fv.block ∈ f.blocks
   hlisted : ∃ b, f.block? fv.block = some b ∧ x ∈ b.values
   hkind : chainSeg? tabs f g x fv gv = some (D, N) ∨ callSeg? tabs f g fv gv = some (D, N)
   hD : ∀ d ∈ D, (∃ b, f.block? fv.block = some b ∧ d ∈ b.values) ∧ CSE.rootNode f d = true
@@ -55,13 +58,17 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
   rw [hfv, hgv] at h
   dsimp only at h
   by_cases hc : (!ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
-      fv.op != .Phi && (f.block? fv.block).any (·.values.contains x)) = true
+      (fv.op == .Store || fv.op == .SelectN) && f.blocks.contains fv.block &&
+      (f.block? fv.block).any (·.values.contains x)) = true
   rotate_left
   · rw [if_neg hc] at h; cases h
   rw [if_pos hc] at h
   simp only [Bool.and_eq_true, beq_iff_eq] at hc
-  obtain ⟨⟨⟨⟨⟨-, hgid⟩, hgbl⟩, hgty⟩, hfph⟩, hli⟩ := hc
-  have hfph' : fv.op ≠ .Phi := by simpa using hfph
+  obtain ⟨⟨⟨⟨⟨⟨hns, hgid⟩, hgbl⟩, hgty⟩, hfph⟩, hbm⟩, hli⟩ := hc
+  have hbm' : fv.block ∈ f.blocks := by simpa using hbm
+  have hns' : ssSame fv gv = false := by simpa using hns
+  have hfop : fv.op = .Store ∨ fv.op = .SelectN := by simpa using hfph
+  have hfph' : fv.op ≠ .Phi := by rcases hfop with h | h <;> rw [h] <;> decide
   generalize hk : (chainSeg? tabs f g x fv gv).orElse (fun _ => callSeg? tabs f g fv gv) = k at h
   cases k with
   | none => cases h
@@ -99,7 +106,7 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
       · exact .inl h
       · refine .inr ⟨by simpa using h1, by simpa using h2, s, ?_, hr, sv, hsv, has⟩
         simpa [List.mem_append] using hs
-    exact ⟨⟨fv, gv, hfv, hgv, hgid, hgbl, hgty, hfph', any_contains_iff.1 hli, hkind,
+    exact ⟨⟨fv, gv, hfv, hgv, hns', hgid, hgbl, hgty, hfph', hfop, hbm', any_contains_iff.1 hli, hkind,
       fun d hd => ⟨any_contains_iff.1 (hDl d hd), hDr d hd⟩, hN', hrt, hA', h0⟩⟩
   next => cases h
 

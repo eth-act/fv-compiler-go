@@ -277,6 +277,20 @@ def ssRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id
   return none
 
 open GoFV.Rules RewriteCheck in
+/-- Which part of `segRel`/`check` fails for the segment-rewritten function `f'` of `f`, if any. -/
+def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
+  for z in List.range f.valueTab.size do
+    match f.value? z, f'.value? z with
+    | some u, some w =>
+      if !ssSame u w && (segOK tabs f f' z).isNone then
+        return some s!"v{z} {u.op.name}→{w.op.name}: no segment (chain \
+          {(chainSeg? tabs f f' z u w).isSome}, call {(callSeg? tabs f f' u w).isSome})"
+    | _, _ => pure ()
+  if !segRel tabs f f' then return some "rel"
+  if let .error e := check { tabs := tabs, typs := env.typs } f' then return some s!"check {e}"
+  return none
+
+open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdMoveRep` fails for the `Load` `u` of `f` that became `w` in `g`
 (diagnostics). -/
 def fwdMoveWhy (tabs : Tables) (f g : Func) (u w : Value) : String := Id.run do
@@ -357,6 +371,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
           some s!"sl({k}): check {e}"
         else some s!"sl({k}): {why tabs t f f' (slTaken t tabs f log)}"
       | .ss => (ssRelWhy env tabs f f').map (s!"ss({k}): " ++ ·)
+      | .seg => (segRelWhy env tabs f f').map (s!"seg({k}): " ++ ·)
       | .ld =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else some s!"ld({k}): {why tabs t f f' (ldTaken t tabs f log)}"
@@ -368,6 +383,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .fwd sel => s!"fwd{if sel then "₁" else "₂"}({k})"
         | .sl => s!"sl({k})"
         | .ss => s!"ss({k})"
+        | .seg => s!"seg({k})"
         | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
@@ -443,9 +459,10 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         | .ok co => co
         | .error _ => { func := input, tables := prev }
       if !ok && !(out.func == input) then
-        -- `checkedRewrite`'s fallbacks (without forwardings, then without struct-store
-        -- splits, then without nil-check eliminations): rejected, or accepted
-        let t' := { proven with loads := #[] }
+        -- `checkedRewrite`'s fallbacks (without segment rules, then without forwardings, then
+        -- without struct-store splits, then without nil-check eliminations): rejected, or accepted
+        let t0 := { proven with segs := #[] }
+        let t' := { t0 with loads := #[] }
         let t'' := { t' with structStores := #[] }
         let t''' := { t'' with nilChecks := #[] }
         let fbOf (t' : GoFV.Rules.Interp.Table) : Option String :=
@@ -455,7 +472,8 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
             some (if !tabsAgree prev o2.tables input then "tables"
               else segsWhy env o2.tables t' input o2.func 0 input #[] log2.toList)
           | .error e => some s!"error {e}"
-        let fb := if proven.loads.isEmpty then some "" else fbOf t'
+        let fb := if proven.segs.isEmpty then some "" else fbOf t0
+        let fb := if fb.isSome && !proven.loads.isEmpty then fbOf t' else fb
         let fb := if fb.isSome && !proven.structStores.isEmpty then fbOf t'' else fb
         let fb := if fb.isSome && !proven.nilChecks.isEmpty then fbOf t''' else fb
         if fb.isSome then c := { c with rejected := c.rejected + 1 }

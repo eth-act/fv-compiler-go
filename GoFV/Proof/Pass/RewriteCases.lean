@@ -54,6 +54,10 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
   | ss {f f' g : Func} : RewriteCheck.ssRel tabs f f' = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
+  /-- Segment rewrites. -/
+  | seg {f f' g : Func} : RewriteCheck.segRel tabs f f' = true →
+      checkOK { tabs := tabs, typs := penv.typs } f' = true →
+      LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
 
 /-- A chain validated with a table `T` is one with a table of the same value and block rules. -/
 theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Interp.Table}
@@ -65,6 +69,7 @@ theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Int
   | fwd h hc _ ih => exact .fwd h hc ih
   | rw h hc _ ih => exact .rw (by rwa [validate_congr hv hb] at h) hc ih
   | ss h hc _ ih => exact .ss h hc ih
+  | seg h hc _ ih => exact .seg h hc ih
 
 theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} :
     ∀ (Ls : List RewriteCheck.Layer) (f : Func) (log : Array RwEvent),
@@ -96,6 +101,9 @@ theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pa
       | ld =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .rw hL.1 hL.2 hc
+      | seg =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        exact .seg hL.1 hL.2 hc
 
 /-- What an accepted run (`checkedRun`) returns. -/
 theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
@@ -119,7 +127,7 @@ theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : P
 theorem checkedTiers_rules {t T : Interp.Table} (h : T ∈ checkedTiers t) :
     T.values = t.values ∧ T.blocks = t.blocks := by
   simp only [checkedTiers, List.mem_cons, List.mem_append] at h
-  rcases h with rfl | (h | h) | h
+  rcases h with rfl | ((h | h) | h) | h
   · exact ⟨rfl, rfl⟩
   all_goals
     split at h
@@ -271,6 +279,35 @@ theorem ssPre_none {t : Interp.Table} (h : t.structStores = #[]) (f : Func) (log
   rw [← Array.foldl_toList, key]
   simp
 
+/-- A table without segment rules (`Interp.Table.segs`) has no segment events. -/
+theorem segEvent?_none {t : Interp.Table} (h : t.segs = #[]) (f : Func) (ev : RwEvent) :
+    RewriteCheck.segEvent? t f ev = none := by
+  cases ev with
+  | rule v i b d =>
+    simp only [RewriteCheck.segEvent?, h]
+    split
+    · split
+      · split <;> simp_all
+      · rfl
+    · rfl
+  | _ => rfl
+
+theorem segPre_none {t : Interp.Table} (h : t.segs = #[]) (f : Func) (log : Array RwEvent) :
+    RewriteCheck.segPre t f log = (f, log) := by
+  have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
+      l.foldl (RewriteCheck.segStep t f) (f, acc) = (f, acc ++ l.toArray) := by
+    intro l
+    induction l with
+    | nil => intro acc; simp
+    | cons ev l ih =>
+      intro acc
+      rw [List.foldl_cons, RewriteCheck.segStep, segEvent?_none h]
+      dsimp only
+      rw [ih]; simp
+  unfold RewriteCheck.segPre
+  rw [← Array.foldl_toList, key]
+  simp
+
 /-- A table without struct-load expansions (`Interp.Table.structLoads`) has no expansion
 events. -/
 theorem slEvent?_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Tables) (f : Func)
@@ -312,16 +349,18 @@ theorem layersOK_none {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pas
     exact layersOK_none Ls (fun L' hL' => h L' (List.mem_cons_of_mem _ hL'))
 
 /-- `checkedRewrite_cases` for a table without nil-check eliminations, forwardings, struct-load
-expansions and struct-store splits, on a function whose rewrite logs no phi elimination. -/
+expansions, struct-store splits and segment rules, on a function whose rewrite logs no phi
+elimination. -/
 theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
-    (h1 : t.loads = #[]) (h2 : t.structStores = #[]) (h4 : t.structLoads = #[]) {penv : PassEnv}
+    (h1 : t.loads = #[]) (h2 : t.structStores = #[]) (h4 : t.structLoads = #[])
+    (h5 : t.segs = #[]) {penv : PassEnv}
     {f : Func} {out : PassOut}
     (hphi : ∀ r, rewriteRun t true true penv f = .ok r → RewriteCheck.noPhiElim r.2.2 = true)
     (h : checkedRewrite t penv f = .ok out) :
     (out.func = f ∧ out.tables = penv.tables) ∨
       (tabsAgree penv.tables out.tables f = true ∧
         ∃ log, RewriteCheck.validate out.tables t f out.func log = true) := by
-  have hT : checkedTiers t = [t] := by simp [checkedTiers, h0, h1, h2]
+  have hT : checkedTiers t = [t] := by simp [checkedTiers, h0, h1, h2, h5]
   unfold checkedRewrite at h
   rw [hT] at h
   simp only [checkedFirst, bind, Except.bind] at h
@@ -363,6 +402,7 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
             | sl => exact slPre_none h4 _ f log
             | ss => exact ssPre_none h2 f log
             | ld => simp [RewriteCheck.layers] at hL
+            | seg => exact segPre_none h5 f log
         · cases h3
 
 theorem validate_parts {tabs : Tables} {t : Interp.Table} {f g : Func} {log : Array RwEvent}

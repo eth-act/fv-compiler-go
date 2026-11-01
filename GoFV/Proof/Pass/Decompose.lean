@@ -90,7 +90,8 @@ theorem refines_of_decSegsOK {penv : PassEnv} {T : Tables} {f0 g2 : Func}
       RefinesUnder Env.Mono T g2 T f
   | [], f, seg, _, hf, h =>
     Pass.Rewrite.layersOK_refines (out := { func := g2, tables := T }) Rules.dec_allSound
-      hg2 RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) f seg hf h
+      hg2 RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) (by simp [RewriteCheck.decLayers])
+      f seg hf h
   | ev :: evs, f, seg, _, hf, h => by
     cases ev with
     | phielim v d pre =>
@@ -103,7 +104,8 @@ theorem refines_of_decSegsOK {penv : PassEnv} {T : Tables} {f0 g2 : Func}
         ⟨⟨_, check_wf hh⟩, ⟨_, check_wf hh'⟩, Dom.certOK_of_check (check_domCert hh),
           Dom.certOK_of_check (check_domCert hh'), hrel, hfr⟩
       exact ((Pass.Rewrite.layersOK_refines (out := { func := RewriteCheck.dropInvalid pre, tables := T })
-        Rules.dec_allSound hh RewriteCheck.decLayers (by simp [RewriteCheck.decLayers]) f seg hf
+        Rules.dec_allSound hh RewriteCheck.decLayers (by simp [RewriteCheck.decLayers])
+        (by simp [RewriteCheck.decLayers]) f seg hf
         h1).trans (R2.under _)).trans (refines_of_decSegsOK hg2 evs _ #[] hh' h5)
     | _ =>
       simp only [decSegsOK] at h

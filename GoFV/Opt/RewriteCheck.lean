@@ -2034,8 +2034,8 @@ def callSeg? (tabs : Tables) (f g : Func) (fv gv : Value) : Option (List ID × L
   | _, _ => none
 
 /-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?` or `callSeg?`): listed in its
-block, redefined in place (its ID, block and type kept); its dropped values are listed in that
-block, its fresh values in that block of `g`; the fresh values and the anchor are roots of `g`,
+block, a `Store` or `SelectN` redefined in place (its ID, block and type kept); its dropped values
+are listed in that block, its fresh values in that block of `g`; the fresh values and the anchor are roots of `g`,
 each of their arguments an earlier one of them, or an argument of a root of `f` of the segment (a
 dropped root, or the anchor) that is not dropped. The dropped and fresh values. -/
 def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
@@ -2043,7 +2043,7 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
   | some fv, some gv =>
     let listed (z : ID) : Bool := (f.block? fv.block).any (·.values.contains z)
     if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
-        fv.op != .Phi && listed x then
+        (fv.op == .Store || fv.op == .SelectN) && f.blocks.contains fv.block && listed x then
       match (chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv with
       | some (D, N) =>
         let L := N ++ [x]
