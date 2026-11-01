@@ -93,6 +93,46 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
   | _, none => "no ABI"
   | _, _ => "?"
 
+/-- The sub-shape of a rejected register-assigned call result whose target node is still a
+`SelectN` (a wide select stored to memory, `rewriteWideSelectToStores`). -/
+def wideWhy (sh : Array Ty) (f g : Func) (x : ID) (u : Value) : String := Id.run do
+  let users := f.valueTab.toList.filterMap fun v? => v?.bind fun v =>
+    if v.args.contains x then some v else none
+  let ctl := f.blocks.toList.any fun b => ((f.block? b).map (·.controls.contains x)).getD false
+  if ctl then return "wide: control use"
+  match users with
+  | [s] =>
+    if s.op != .Store || s.args.size != 3 || s.args[1]! != x then
+      return s!"wide: user {s.op.name}"
+    let some sw := g.value? s.id | return "wide: store absent"
+    if sw.op != .Copy || sw.args.size != 1 then return s!"wide: store → {sw.op.name}"
+    let some zs := storeChain g (isNewB f) (g.valueTab.size + 1) sw.args[0]! s.args[2]!
+      | return "wide: no chain"
+    let c := u.args[0]!
+    let cb := ((f.value? c).map (·.block)).getD 0
+    let blk := if s.block == cb then "same block" else "store in other block"
+    let t := shapeOf sh f x
+    let n := (leaves t).length
+    let p := s.args[0]!
+    let pop := ((f.value? p).map (·.op.name)).getD "?"
+    let addrs := zs.map fun z => match g.value? z with
+      | some zw =>
+        let a := zw.args[0]!
+        if a == p then "p" else match g.value? a with
+          | some aw => if aw.op == Op.OffPtr then
+              (if aw.args[0]! == p then "off(p)" else if isNewB f a then "off(new base)" else "off(old)")
+            else s!"addr {aw.op.name}"
+          | none => "?"
+      | none => "?"
+    let addrs := addrs.eraseDups
+    let tk := match t with
+      | .agg _ _ => "agg"
+      | _ => "other"
+    let cnt := if zs.length == n then "stores = leaves" else s!"{zs.length} stores for {n} leaves"
+    return s!"wide: {blk}, {cnt}, {tk}, p {pop}, addrs {addrs}"
+  | [] => return "wide: no users"
+  | _ => return s!"wide: {users.length} users"
+
 def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
   match f.value? x, g.value? x with
   | some u, some w =>
@@ -111,6 +151,7 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
       let i := u.auxInt.toInt.toNat
       match outs[i]? with
       | some p => if p.regs.isEmpty then s!"select: stack result (target {w.op.name})"
+          else if w.op == .SelectN then s!"select: register result: {wideWhy sh f g x u}"
           else s!"select: register result (target {w.op.name})"
       | none => "select: memory"
     else c

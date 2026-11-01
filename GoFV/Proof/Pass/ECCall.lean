@@ -62,11 +62,6 @@ theorem ecc_args_split1 (arr : Array ID) (h : 1 ≤ arr.size) :
   rw [this]
   simp
 
-theorem ecc_mem_front {f g : Func} {x a : ID} {u : Value} (hi : invalidated g x = false)
-    (hu : f.value? x = some u) (ha : a ∈ u.args) : a ∈ ecFront f g x := by
-  unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true, hu]
-  exact List.mem_append_left _ (Array.mem_toList_iff.2 ha)
 
 theorem ecc_mem_of_split {l A B : List ID} {a : ID} (h : l = A ++ B) (ha : a ∈ A) : a ∈ l := by
   rw [h]; exact List.mem_append_left _ ha
@@ -129,14 +124,6 @@ theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT HS0 
   · exact .inl ⟨hheldT a h1, hheldT _ h2, eco_ifaceShape h3⟩
   · exact .inr ⟨hheldS a h1, hau, eco_ifaceShape h3, hsp, hsh⟩
 
-/-- A target argument of `x` that the source defines is in `ecFront`. -/
-theorem eco_mem_front_tgt {f g : Func} {x q : ID} {w : Value} (hi : invalidated g x = false)
-    (hw : g.value? x = some w) (hq : q ∈ w.args) (hn : isNewB f q = false) : q ∈ ecFront f g x := by
-  unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true, hw]
-  exact List.mem_append_right _ (List.mem_filter.2
-    ⟨List.mem_append_left _ (Array.mem_toList_iff.2 hq), by rw [hn]; rfl⟩)
-
 /-- An argument of the `Move` of `x`'s wide stack argument that the source defines is in
 `ecFront`. -/
 theorem eco_mem_front_move {f g : Func} {x z q : ID} {mw : Value} (hi : invalidated g x = false)
@@ -146,8 +133,8 @@ theorem eco_mem_front_move {f g : Func} {x z q : ID} {mw : Value} (hi : invalida
   unfold ecFront
   rw [hi, if_neg Bool.false_ne_true, hz]
   simp only [Option.bind_some, hmw, Option.map_some, Option.getD_some]
-  exact List.mem_append_right _ (List.mem_filter.2
-    ⟨List.mem_append_right _ (Array.mem_toList_iff.2 hq), by rw [hn]; rfl⟩)
+  exact List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
+    ⟨List.mem_append_right _ (Array.mem_toList_iff.2 hq), by rw [hn]; rfl⟩))
 
 /-- `EcArgRel` of the source arguments of `x` in an obligation's frames. -/
 theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Frame}
@@ -157,7 +144,7 @@ theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Fr
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y')
     {a : ID} (ha : a ∈ u.args) : EcArgRel tabs f g frS T a := by
   have hr := reg_rv (hRu a ha)
-  exact ⟨_, hr, hRS a _ hr, hfront a (ecc_mem_front hi hu ha) _ hr⟩
+  exact ⟨_, hr, hRS a _ hr, hfront a (ecFront_src hi hu ha) _ hr⟩
 
 /-- The Go-typed arguments have their parameters' shapes. -/
 theorem ecc_pieces_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} :
@@ -236,12 +223,12 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     (fun q hq hn' => have hq' := Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)
       ⟨hEw q hq' hn', hLw q hq' hn'⟩) hrel
     (fun a ha => himk a (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha)))
-    (fun q hq yq hyq hn' => hfront q (eco_mem_front_tgt hi hw
+    (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
       (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)) hn') yq hyq)
   -- the memory argument
   have hm : u.args[u.args.size - 1]! ∈ u.args := by
     rw [← Array.mem_toList_iff, hsu]; simp
-  obtain ⟨ym, hym, hymm⟩ := hfront _ (ecc_mem_front hi hu hm) _ (reg_rv (hRu _ hm))
+  obtain ⟨ym, hym, hymm⟩ := hfront _ (ecFront_src hi hu hm) _ (reg_rv (hRu _ hm))
   rw [ecCv_of_not_special hmsp] at hymm
   -- the evaluations
   have hRw' : ∀ a ∈ w.args, Reg T a := hRw
@@ -833,7 +820,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun a ha => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
         exact himk _ (hmas _ (hmemPair he).2))
-      (fun q hq yq hyq hn' => hfront q (eco_mem_front_tgt hi hw
+      (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
         (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))) hn') yq hyq)
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => leafVals (tabs.ty p.type) r)] at hP
     -- the stack arguments: the one the `Move` copies (`sp0`) and the stored ones (`sp1`)
@@ -883,12 +870,12 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun q hq yq hyq hn' => by
         have := hsrc q hq
         rw [hn', Bool.false_or, Array.contains_iff_mem] at this
-        exact hfront q (ecc_mem_front hi hu this) yq hyq)
+        exact hfront q (ecFront_src hi hu this) yq hyq)
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => leafVals (tabs.ty p.type) r), List.map_map] at hS
     -- the leading arguments and the memory
     have hsame : ∀ a ∈ u.args, special f g a = false →
         Sem.Refines (rv frS a) (rv T a) := fun a ha hs => by
-      obtain ⟨y', hy', hr⟩ := hfront a (ecc_mem_front hi hu ha) _ (reg_rv (hRu a ha))
+      obtain ⟨y', hy', hr⟩ := hfront a (ecFront_src hi hu ha) _ (reg_rv (hRu a ha))
       rw [ecCv_of_not_special hs] at hr
       rw [rv_of hy']
       exact hr

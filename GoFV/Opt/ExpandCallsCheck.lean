@@ -209,8 +209,17 @@ def invalidated (g : Func) (x : ID) : Bool :=
   | some w => w.op == .Invalid
   | none => false
 
+/-- `x` is a call result the pass stored to memory leaf by leaf (`rewriteWideSelectToStores`: a
+`Store` of a result that is not SSA-able): the source's `SelectN` of a converted call whose node
+in `g` is a `SelectN` that no value uses any more (its conversion is `poison`, `wideStoreOK`). -/
+def wideSel (f g : Func) (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | some u, some w => u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! &&
+      w.op == .SelectN && w.uses == 0
+  | _, _ => false
+
 /-- `x`'s conversion is not the identity. -/
-def special (f g : Func) (x : ID) : Bool := converted f x || invalidated g x
+def special (f g : Func) (x : ID) : Bool := converted f x || invalidated g x || wideSel f g x
 
 /-- An interface shape: a type word and a pointer-shaped data word. -/
 def ifaceShape : Ty → Bool
@@ -434,6 +443,51 @@ def stkLeavesOK (sh : Array Ty) (g : Func) (nw : ID → Bool) (c : ID) (k : Nat)
      | none => false) && stkLeavesOK sh g nw c k off os ls
   | _, _ => false
 
+/-! ## Wide call results stored to memory -/
+
+/-- The address of the leaf at offset `o` of a wide store at `p`: `p` itself (offset 0) or a new
+pointer-shaped `OffPtr [o] p`. -/
+def wideAddrOK (sh : Array Ty) (g : Func) (nw : ID → Bool) (p : ID) (o : Nat) (a : ID) : Bool :=
+  (o == 0 && a == p) ||
+    (nw a && match g.value? a with
+      | some aw => aw.op == .OffPtr && aw.auxInt.toInt == (o : Int) && aw.args.toList == [p] &&
+          (match shapeOf sh g a with
+           | .ptr _ => true
+           | _ => false)
+      | none => false)
+
+/-- The value of a leaf store of a wide store: the new register piece `SelectN [k] c` of the
+leaf's shape. -/
+def wideValOK (sh : Array Ty) (g : Func) (nw : ID → Bool) (c : ID) (k : Nat) (lt : Ty) (q : ID) :
+    Bool :=
+  nw q && match g.value? q with
+    | some qw => qw.op == .SelectN && qw.args.toList == [c] && qw.auxInt.toInt == (k : Int) &&
+        eqE (shapeOf sh g q) lt
+    | none => false
+
+/-- The `Store`s `zs` (bottom of the chain first) of a wide store of call `c`'s result (first
+register piece `first`) at `p`: per leaf `(o, lt)` (the `j`-th), a `Store {lt}` of shape `mem` of
+`SelectN [first + j] c` at `p + o`. -/
+def wideLeavesOK (tabs : Tables) (sh : Array Ty) (g : Func) (nw : ID → Bool) (p c : ID)
+    (first : Nat) : Nat → List (Nat × Ty) → List ID → Bool
+  | _, [], [] => true
+  | j, (o, lt) :: ls, z :: zs =>
+    (match g.value? z with
+     | some zw => decide (0 < lt.size) && eqE (auxTy tabs zw.aux) lt &&
+         (match shapeOf sh g z with
+          | .mem => true
+          | _ => false) &&
+         wideAddrOK sh g nw p o zw.args[0]! && wideValOK sh g nw c (first + j) lt zw.args[1]!
+     | none => false) && wideLeavesOK tabs sh g nw p c first (j + 1) ls zs
+  | _, _, _ => false
+
+/-- The chain of `Store`s that replaced the source's `Store` `u` (its node `w` in `g` a `Copy` of
+the chain's top) down to `u`'s memory; none for other values. -/
+def wideChain (f g : Func) (u w : Value) : Option (List ID) :=
+  if u.op == .Store && w.op == .Copy && u.args.size == 3 && w.args.size == 1 then
+    storeChain g (isNewB f) (g.valueTab.size + 1) w.args[0]! u.args[2]!
+  else none
+
 /-! ## The classes of source values -/
 
 /-- **call**: `u` (in `f`) and `w` (in `g`) at the same ID. -/
@@ -538,6 +592,31 @@ def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :
     tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
     regTupleOf (leafTys tabs outs) (valueTy sh (some w))
 
+/-- **wide store**: a `Store {T} p x mem` of a wide call result `x = SelectN [i] c` (`wideSel`)
+became a `Copy` of a chain of new leaf `Store`s on `mem` (`wideLeavesOK`): `x`'s result is
+register-assigned with a well-formed shape `T`, `p` and `mem` keep their conversions. -/
+def wideStoreOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
+  w.type == u.type && (match valueTy sh (some u) with
+    | .mem => true
+    | _ => false) &&
+  wideSel f g u.args[1]! && !special f g u.args[0]! && !special f g u.args[2]! &&
+  match wideChain f g u w, f.value? u.args[1]! with
+  | some zs, some xu =>
+    match f.value? xu.args[0]! with
+    | some cu =>
+      let outs := callOuts tabs cu.aux
+      let i := xu.auxInt.toInt.toNat
+      (callOpMap cu.op).isSome && decide (0 ≤ xu.auxInt.toInt) &&
+      match outs[i]? with
+      | some pp =>
+        let t := tabs.ty pp.type
+        !pp.regs.isEmpty && wf t && eqE (auxTy tabs u.aux) t && eqE (shapeOf sh f u.args[1]!) t &&
+          wideLeavesOK tabs sh g (isNewB f) u.args[0]! xu.args[0]! (leafTys tabs (outs.take i)).length
+            0 (leaves t) zs
+      | none => false
+    | none => false
+  | _, _ => false
+
 /-- Two `Phi`s that evaluate alike (`EC.PhiSame`): the same op, arguments and type. -/
 def sameV (u w : Value) : Bool := w.op == u.op && w.args == u.args && w.type == u.type
 
@@ -567,8 +646,10 @@ def valueOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : Bool :=
     if (callOpMap u.op).isSome then callOK tabs sh f g u w
     else if u.op == .MakeResult then resultOK tabs sh f g u w
     else if tailOp u.op || u.args.any (isTail f) then true
+    else if wideSel f g x then true
     else if u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! then
       selectOK tabs sh f g x u w
+    else if u.op == .Store && w.op == .Copy then wideStoreOK tabs sh f g u w
     else if w.op == .Invalid then Sem.prio u.op == 0 && u.op != .Phi
     else if u.op == .Arg && !identOK f g u w then argOK tabs sh f g x u
     else identOK f g u w
@@ -840,6 +921,16 @@ def beforeB : List ID → ID → ID → Bool
   | [], _, _ => false
   | z :: l, a, y => if z == a then l.contains y else beforeB l a y
 
+/-- The leaf `Store`s that replaced the source's `Store` `x` (`wideChain`); none for other
+values and for a `Store` reading a tail call (`valueOK` accepts it without `wideStoreOK`). -/
+def wideStores (f g : Func) (x : ID) : List ID :=
+  match f.value? x, g.value? x with
+  | some u, some w => if u.args.any (isTail f) then [] else (wideChain f g u w).getD []
+  | _, _ => []
+
+/-- The address argument of value `x` of `f`. -/
+def addrArg (f : Func) (x : ID) : ID := ((f.value? x).map (·.args[0]!)).getD x
+
 /-- The leaves of the Make-tree of a stack-assigned call result `x` of `f` (`SelectN [i] c`; the
 `Load`s of `stkLeavesOK`); none for other values. -/
 def stackLoads (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : List ID :=
@@ -911,12 +1002,15 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
       | some of, some og => of.toList.filter (npOf f fb) == og.toList.filter (npOf f fb)
       | _, _ => false) &&
     -- every argument of a source node reaches it in `g` (but those of a value the pass
-    -- invalidated, and the `Dereference` a call's `Move` copies, whose own arguments reach it)
+    -- invalidated, and the `Dereference` a call's `Move` copies, whose own arguments reach it);
+    -- a wide call result (dead in `g`) is pure and its arguments reach it instead
+    -- (`Order.Feeds.through`)
     fb.values.all (fun y => !nodeF y || invalidated g y ||
       match f.value? y with
-      | some u => u.args.all fun a => !nodeF a || (nodeG a &&
+      | some u => u.args.all fun a => (!nodeF a || wideSel f g a || (nodeG a &&
           (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y)) ||
-          (moveArgB f g y a && throughB f g nodeF nodeG fuel a y)
+          (moveArgB f g y a && throughB f g nodeF nodeG fuel a y)) &&
+          (!wideSel f g a || throughB f g nodeF nodeG fuel a y)
       | none => false) &&
     -- no node of `gb` reads an invalidated value
     gb.values.all (fun z => match g.value? z with
@@ -956,6 +1050,20 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
              (fb.values.contains a && beforeB og.toList a x)
          | none => true
      | none => false) &&
+    -- wide stores: the leaf stores are values of the block, with no source non-pure node between
+    -- one and the source store in `g`'s schedule; the store's source address and memory reach
+    -- them; a wide result of the block is before the store in `g`'s schedule (its source
+    -- register holds its evaluation; its arguments reach the store by the reach condition)
+    (match schedule g gb with
+     | some og => fb.values.all fun x => (wideStores f g x).all (fun z =>
+         gb.values.contains z && gapOK (npOf f fb) og.toList z x &&
+         (!nodeG (addrArg f x) || depB g nodeG (fun _ => true) fuel (addrArg f x) z) &&
+         (!nodeG (callMem f x) || depB g nodeG (fun _ => true) fuel (callMem f x) z)) &&
+         match f.value? x with
+         | some u => u.args.all fun a => !wideSel f g a || !fb.values.contains a ||
+             beforeB og.toList a x
+         | none => true
+     | none => false) &&
     -- stack-result loads: the `SP` under the address and the call's memory are held (new,
     -- placed in a strict dominator, or the result depends on them)
     fb.values.all (fun x => (stackLoads tabs sh f g x).all fun l =>
@@ -966,7 +1074,8 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     -- new values; their new arguments are values of the block, of the entry block, or placed
     -- in a strict dominator
     let sts := fb.values.toList.flatMap (stackStores f g)
-    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
+    let wsts := fb.values.toList.flatMap (wideStores f g)
+    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z || wsts.contains z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
   | _, _ => false
 
 /-- **The checker**: `g` is `f` after `expand calls`, both read in `tabs`. -/

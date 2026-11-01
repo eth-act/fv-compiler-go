@@ -325,7 +325,8 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
     (hargs : u.args.toList = [c]) (hcu : f.value? c = some cu) (hcw : g.value? c = some cw)
     (hcall : (callOpMap cu.op).isSome = true)
     (hcok : callOK tabs (typeShapes tabs) f g cu cw = true)
-    (hinv : invalidated g x = false) (hok : selectOK tabs (typeShapes tabs) f g x u w = true)
+    (hinv : invalidated g x = false) (hwide : wideSel f g x = false)
+    (hok : selectOK tabs (typeShapes tabs) f g x u w = true)
     (hp : (callOuts tabs cu.aux)[u.auxInt.toInt.toNat]? = some p) (hpst : p.regs.isEmpty = true)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
@@ -337,7 +338,7 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
   intro u' w' hu' hw' env _ frS T _ hRegs E hN hEw hRT hRS hfr hSH hTH
   rw [hu] at hu'; cases hu'
   rw [hw] at hw'; cases hw'
-  rw [funext (ecCv_of_not_special (tabs := tabs) (ecA_sel_not_special hu hop hinv))]
+  rw [funext (ecCv_of_not_special (tabs := tabs) (ecA_sel_not_special hu hop hinv hwide))]
   have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
   obtain ⟨yc, hyc⟩ := hRS c hcmem
   obtain ⟨yc', hyc', hR⟩ := hfr c (by simp [ecFront, hinv, hu, hargs]) yc hyc

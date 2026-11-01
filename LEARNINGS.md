@@ -67,6 +67,10 @@ avoiding): the problem, the trick, the numbers, where it is used.
   is much faster than official `lake env lean M.lean`, the module hits a pathology the dev
   toolchain patches (stuck `match` in `simp`, leanprover/lean4#15755: 25.0 → 2.65 s CPU,
   64.9M → 781k heartbeats in the N = 400 case above); fix the proof, since gates use official Lean.
+- `LEAN_DEV_CHECK=GoFV.Proof.Pass.EC fast-lean build …` did not check `GoFV.Proof.Pass.ECWide`
+  or `…ECIdent` (EcSelects2, #28): both built without errors there, then failed in the official
+  `lake build`. The prefixes look like name-component prefixes (`EC` covers `EC.*`, not `ECWide`);
+  list the modules you changed by full name.
 
 #### All `.olean`s reproducible across worktrees, thanks to `weakLeanArgs`
 - **Check:** `scripts/perf-record.py --recheck` re-elaborates every module of main 47fa980 in

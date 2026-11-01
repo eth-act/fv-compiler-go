@@ -179,10 +179,21 @@ theorem ecA_arg_ys {env : Env} {tabs : Tables} {g : Func} {T : Frame} {n : AuxRe
     rw [hto, ecT_eqE_decode hsh', eqE_retype hsh',
       Val.retype_of_hasTy (decode_hasTy (wf_atom hm.2))]
 
+/-- A value whose source op is not `SelectN` is not a wide call result. -/
+theorem ecA_not_wideSel {f g : Func} {x : ID} {u : Value} (hu : f.value? x = some u)
+    (hop : u.op ≠ .SelectN) : wideSel f g x = false := by
+  unfold wideSel
+  rw [hu]
+  split
+  · next u' w hu' _ =>
+    cases hu'
+    simp [hop]
+  · rfl
+
 theorem ecA_arg_not_special {f g : Func} {x : ID} {u : Value} (hu : f.value? x = some u)
     (hop : u.op = .Arg) (hinv : invalidated g x = false) : special f g x = false := by
   unfold special converted
-  rw [hu, hinv]
+  rw [hu, hinv, ecA_not_wideSel hu (by rw [hop]; decide)]
   dsimp only
   rw [hop]
   rfl
@@ -522,9 +533,10 @@ theorem ecA_tuple_cases {y : Val} {us : List Ty} (h : y.hasTy (.tuple us) = true
   cases y <;> simp_all [Val.hasTy]
 
 theorem ecA_sel_not_special {f g : Func} {x : ID} {u : Value} (hu : f.value? x = some u)
-    (hop : u.op = .SelectN) (hinv : invalidated g x = false) : special f g x = false := by
+    (hop : u.op = .SelectN) (hinv : invalidated g x = false) (hwide : wideSel f g x = false) :
+    special f g x = false := by
   unfold special converted
-  rw [hu, hinv]
+  rw [hu, hinv, hwide]
   dsimp only
   rw [hop]
   rfl
@@ -535,7 +547,8 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
     (hargs : u.args.toList = [c]) (hcu : f.value? c = some cu) (hcw : g.value? c = some cw)
     (hcall : (callOpMap cu.op).isSome = true)
     (hcok : callOK tabs (typeShapes tabs) f g cu cw = true)
-    (hinv : invalidated g x = false) (hok : selectOK tabs (typeShapes tabs) f g x u w = true)
+    (hinv : invalidated g x = false) (hwide : wideSel f g x = false)
+    (hok : selectOK tabs (typeShapes tabs) f g x u w = true)
     (hreg : ∀ p, (callOuts tabs cu.aux)[u.auxInt.toInt.toNat]? = some p → p.regs.isEmpty = false)
     (hown : g.ownAux = f.ownAux)
     (huid : u.id = x) (L : ID → Prop) (hLx : L x)
@@ -546,7 +559,7 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
   cases hu'
   rw [hw] at hw'
   cases hw'
-  rw [funext (ecCv_of_not_special (tabs := tabs) (ecA_sel_not_special hu hop hinv))]
+  rw [funext (ecCv_of_not_special (tabs := tabs) (ecA_sel_not_special hu hop hinv hwide))]
   have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
   obtain ⟨yc, hyc⟩ := hRS c hcmem
   obtain ⟨yc', hyc', hR⟩ := hfr c (by simp [ecFront, hinv, hu, hargs]) yc hyc

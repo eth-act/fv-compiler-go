@@ -142,6 +142,7 @@ import GoFV.Proof.Pass.ECStackRes
 import GoFV.Proof.Pass.ECStruct
 import GoFV.Proof.Pass.ECTree
 import GoFV.Proof.Pass.ECTyped
+import GoFV.Proof.Pass.ECWide
 import GoFV.Proof.Pass.FuseCmp
 import GoFV.Proof.Pass.FuseCmpPres
 import GoFV.Proof.Pass.FuseCmpRel

@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.ECCall
+import GoFV.Proof.Pass.ECWide
 import GoFV.Proof.Merge
 import GoFV.Proof.Avail
 import GoFV.Proof.CheckFacts
@@ -15,8 +15,9 @@ schedule nodes, `newEval_of_newEvalB` gives `NewEval` of the new values' ops, `e
 anchors the stack-argument stores and `Move`s at their calls (`AnchoredAt`: `ecc_storeObl`,
 `ecc_moveObl`, `gapOK` read by `ecs_gap`), `ecs_spHeld` holds the `SP`s under them when the call
 is evaluated, `ecs_moveArgHeld` gives the `Dereference` a `Move` copies as a source argument of
-the call (`SrcArg`), `ecs_through` turns `throughB` into `Feeds.through`, and `ecs_imk` the facts
-of the `IMake` arguments of converted values.
+the call (`SrcArg`), `ecs_through` turns `throughB` into `Feeds.through`, `ecs_imk` the facts
+of the `IMake` arguments of converted values, and `ecs_wideAnchored` anchors the leaf stores of a
+wide store at the source store (`ecw_storeObl`).
 -/
 
 namespace GoFV.Proof.EC
@@ -58,11 +59,14 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (npOf f fb) = og.toList.filter (npOf f fb)
   reach : ∀ y ∈ fb.values, ecs_node f fb y = true → invalidated g y = false →
-    ∀ u, f.value? y = some u → ∀ a ∈ u.args, ecs_node f fb a = true →
-      (ecs_node g gb a = true ∧
-        (depB g (ecs_node g gb) (isNewB f) (gb.values.size + 1) a y = true ∨
-          depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) a y = true)) ∨
-      (moveArgB f g y a = true ∧
+    ∀ u, f.value? y = some u → ∀ a ∈ u.args,
+      (ecs_node f fb a = true → wideSel f g a = false →
+        (ecs_node g gb a = true ∧
+          (depB g (ecs_node g gb) (isNewB f) (gb.values.size + 1) a y = true ∨
+            depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) a y = true)) ∨
+        (moveArgB f g y a = true ∧
+          throughB f g (ecs_node f fb) (ecs_node g gb) (gb.values.size + 1) a y = true)) ∧
+      (wideSel f g a = true →
         throughB f g (ecs_node f fb) (ecs_node g gb) (gb.values.size + 1) a y = true)
   invArgs : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.op ≠ .Phi → ∀ a ∈ w.args,
     invalidated g a = false
@@ -79,6 +83,14 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
       depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (callMem f x) z = true)) ∧
     ∀ u, f.value? x = some u → ∀ a ∈ u.args, moveArgB f g x a = true →
       a ∈ fb.values ∧ beforeB og.toList a x = true
+  wide : ∃ og, schedule g gb = some og ∧ ∀ x ∈ fb.values,
+    (∀ z ∈ wideStores f g x, z ∈ gb.values ∧ gapOK (npOf f fb) og.toList z x = true ∧
+      (ecs_node g gb (addrArg f x) = true →
+        depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (addrArg f x) z = true) ∧
+      (ecs_node g gb (callMem f x) = true →
+        depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (callMem f x) z = true)) ∧
+    ∀ u, f.value? x = some u → ∀ a ∈ u.args, wideSel f g a = true → a ∈ fb.values →
+      beforeB og.toList a x = true
   loads : ∀ x ∈ fb.values, ∀ l ∈ stackLoads tabs sh f g x,
     (isNewB f (loadSP g l) = true ∨ placedSDom g anc fb.id (loadSP g l) = true ∨
       depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (loadSP g l) x = true) ∧
@@ -86,7 +98,8 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
       depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (loadMem g l) x = true)
   newv : ∀ z ∈ gb.values, ∀ w, g.value? z = some w →
     (isNewB f z = true → w.op ≠ .Phi ∧
-      (newEvalB tabs g w = true ∨ ∃ x ∈ fb.values, z ∈ stackStores f g x)) ∧
+      (newEvalB tabs g w = true ∨ (∃ x ∈ fb.values, z ∈ stackStores f g x) ∨
+        ∃ x ∈ fb.values, z ∈ wideStores f g x)) ∧
       ∀ a ∈ w.args, isNewB f a = true →
         a ∈ gb.values ∨ a ∈ valsOf g g.entry ∨ placedSDom g anc fb.id a = true
 
@@ -96,14 +109,15 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
   unfold blockOK at hb
   rw [hfb, hgb] at hb
   simp only [Bool.and_eq_true, and_assoc] at hb
-  obtain ⟨hk, hc, h1, h2, h3, h4, h5, h6, h6b, h7, h8, h9, h10, hst, hld, h11⟩ := hb
+  obtain ⟨hk, hc, h1, h2, h3, h4, h5, h6, h6b, h7, h8, h9, h10, hst, hwd, hld, h11⟩ := hb
   have h6' : ∀ y ∈ fb.values, (!ecs_node f fb y || invalidated g y ||
       match f.value? y with
-      | some u => u.args.all fun a => !ecs_node f fb a ||
+      | some u => u.args.all fun a => (!ecs_node f fb a || wideSel f g a ||
           (ecs_node g gb a && (depB g (ecs_node g gb) (isNewB f) (gb.values.size + 1) a y ||
             depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) a y)) ||
           (moveArgB f g y a &&
-            throughB f g (ecs_node f fb) (ecs_node g gb) (gb.values.size + 1) a y)
+            throughB f g (ecs_node f fb) (ecs_node g gb) (gb.values.size + 1) a y)) &&
+          (!wideSel f g a || throughB f g (ecs_node f fb) (ecs_node g gb) (gb.values.size + 1) a y)
       | none => false) = true := Array.all_eq_true'.1 h6
   have h8' : ∀ x ∈ fb.values, (!converted f x ||
       match f.value? x with
@@ -111,7 +125,7 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
       | none => true) = true := Array.all_eq_true'.1 h8
   refine ⟨beq_iff_eq.1 hk, beq_iff_eq.1 hc,
     fun x hx => Array.contains_iff_mem.1 (Array.all_eq_true'.1 h1 x hx), ?_, ?_, ?_, ?_, ?_, ?_, ?_,
-    ?_, ?_, ?_, ?_, ?_, ?_⟩
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro x hx
     have := Array.all_eq_true'.1 h2 x hx
     rw [Bool.or_eq_true, Array.contains_iff_mem] at this
@@ -139,14 +153,17 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
     · rename_i of og hof hog
       exact ⟨of, og, hof, hog, beq_iff_eq.1 h5⟩
     · cases h5
-  · intro y hy hny hiy u hu a ha hna
+  · intro y hy hny hiy u hu a ha
     have := h6' y hy
     rw [hny, hiy, Bool.not_true, Bool.false_or, Bool.false_or, hu] at this; dsimp only at this
     rw [Array.all_eq_true'] at this
-    have := this a ha
-    rw [hna, Bool.not_true, Bool.false_or] at this
-    simp only [Bool.or_eq_true, Bool.and_eq_true] at this
-    exact this
+    obtain ⟨hr, ht⟩ := Bool.and_eq_true _ _ ▸ this a ha
+    refine ⟨fun hna hws => ?_, fun hws => ?_⟩
+    · rw [hna, hws, Bool.not_true, Bool.false_or, Bool.false_or] at hr
+      simp only [Bool.or_eq_true, Bool.and_eq_true] at hr
+      exact hr
+    · rw [hws, Bool.not_true, Bool.false_or] at ht
+      exact ht
   · intro z hz w hw hph a ha
     have := Array.all_eq_true'.1 h6b z hz
     rw [hw] at this; dsimp only at this
@@ -204,6 +221,32 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
         rw [hma', Bool.not_true, Bool.false_or, Bool.and_eq_true, Array.contains_iff_mem] at this
         exact this
     · cases hst
+  · split at hwd
+    · rename_i og hog
+      have hwd' : ∀ x ∈ fb.values, (((wideStores f g x).all fun z =>
+          gb.values.contains z && gapOK (npOf f fb) og.toList z x &&
+          (!ecs_node g gb (addrArg f x) ||
+            depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (addrArg f x) z) &&
+          (!ecs_node g gb (callMem f x) ||
+            depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (callMem f x) z)) &&
+          match f.value? x with
+          | some u => u.args.all fun a => !wideSel f g a || !fb.values.contains a ||
+              beforeB og.toList a x
+          | none => true) = true := Array.all_eq_true'.1 hwd
+      refine ⟨og, hog, fun x hx => ?_⟩
+      obtain ⟨hz, hbf⟩ := Bool.and_eq_true _ _ ▸ hwd' x hx
+      refine ⟨fun z hz' => ?_, fun u hu a ha hws haf => ?_⟩
+      · have := List.all_eq_true.1 hz z hz'
+        simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true',
+          Array.contains_iff_mem] at this
+        obtain ⟨⟨⟨hzm, hgap⟩, ha1⟩, ha2⟩ := this
+        refine ⟨hzm, hgap, fun hn => ha1.resolve_left ?_, fun hn => ha2.resolve_left ?_⟩ <;>
+          rw [hn] <;> decide
+      · rw [hu] at hbf; dsimp only at hbf
+        have := Array.all_eq_true'.1 hbf a ha
+        rw [hws, Array.contains_iff_mem.2 haf, Bool.not_true, Bool.false_or, Bool.false_or] at this
+        exact this
+    · cases hwd
   · intro x hx l hl
     have := List.all_eq_true.1 (Array.all_eq_true'.1 hld x hx) l hl
     simp only [Bool.and_eq_true, Bool.or_eq_true] at this
@@ -217,9 +260,13 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
     rw [Bool.and_eq_true, Array.all_eq_true'] at this
     obtain ⟨hn, ha⟩ := this
     refine ⟨fun hzn => ?_, fun a ha' han => ?_⟩
-    · rw [hzn, Bool.not_true, Bool.false_or, Bool.and_eq_true, bne_iff_ne, Bool.or_eq_true,
+    · simp only [hzn, Bool.not_true, Bool.false_or, Bool.and_eq_true, bne_iff_ne, Bool.or_eq_true,
         List.contains_iff_mem, List.mem_flatMap] at hn
-      refine ⟨hn.1, hn.2.imp_right fun ⟨x, hx, hz'⟩ => ⟨x, Array.mem_toList_iff.1 hx, hz'⟩⟩
+      refine ⟨hn.1, ?_⟩
+      rcases hn.2 with (h | ⟨x, hx, hz'⟩) | ⟨x, hx, hz'⟩
+      · exact .inl h
+      · exact .inr (.inl ⟨x, Array.mem_toList_iff.1 hx, hz'⟩)
+      · exact .inr (.inr ⟨x, Array.mem_toList_iff.1 hx, hz'⟩)
     · have := ha a ha'
       simp only [han, Bool.not_true, Bool.false_or, Bool.or_eq_true, Array.contains_iff_mem] at this
       rcases this with (h | h) | h
@@ -765,24 +812,126 @@ theorem ecs_spHeld {tabs : Tables} {ce' : CheckEnv} {f g : Func} {bid : ID} {fb 
 
 /-- A source value of an accepted block depends in `g` on its arguments that are nodes of the
 block (`blockOK`'s reach condition), unless the value is invalidated or the argument is the
-`Dereference` a call's `Move` copies. -/
+`Dereference` a call's `Move` copies or a wide call result. -/
 theorem ecs_argDep {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {fb gb : Block}
     (hwf : WF ce f) (hwg : WF ce' g) (hbm : bid ∈ f.blocks) (hbg : bid ∈ g.blocks)
     (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
     (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true) :
     ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → invalidated g x = false →
       ∀ a ∈ u.args, a ∈ fb.values → (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) →
-      moveArgB f g x a = false →
+      moveArgB f g x a = false → wideSel f g a = false →
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x := by
-  intro x hx u hu hph hxi a ha haf hpa hmv
+  intro x hx u hu hph hxi a ha haf hpa hmv hws
   have P := ecs_parts hfb hgb hb
   have hownG := valuesOwn hwg hbg hgb
   have hndG := hwg.valuesNodup bid gb ⟨hbg, hgb⟩
   obtain ⟨ua, hua, -, -⟩ := hwf.valueId bid fb ⟨hbm, hfb⟩ a haf
-  rcases P.reach x hx (ecs_node_iff.2 ⟨hx, u, hu, hph⟩) hxi u hu a ha
-    (ecs_node_iff.2 ⟨haf, ua, hua, hpa ua hua⟩) with ⟨-, hd⟩ | ⟨hm, -⟩
+  rcases (P.reach x hx (ecs_node_iff.2 ⟨hx, u, hu, hph⟩) hxi u hu a ha).1
+    (ecs_node_iff.2 ⟨haf, ua, hua, hpa ua hua⟩) hws with ⟨-, hd⟩ | ⟨hm, -⟩
   · exact hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG)
   · rw [hmv] at hm; cases hm
+
+/-! ## Wide stores -/
+
+theorem ecs_schedBefore {g : Func} {gb : Block} {og : Array ID} {a y : ID}
+    (hog : schedule g gb = some og) (h : beforeB og.toList a y = true) : SchedBefore g gb a y := by
+  intro og' hog'
+  rw [hog] at hog'
+  cases hog'
+  exact ecs_beforeB h
+
+/-- **A wide call result of the block that a value stores precedes it** in `g`'s schedule. -/
+theorem ecs_wideBefore {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
+    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true) :
+    ∀ x ∈ fb.values, ∀ u, f.value? x = some u → ∀ a ∈ u.args, wideSel f g a = true →
+      a ∈ fb.values → SchedBefore g gb a x := by
+  intro x hx u hu a ha hws haf
+  obtain ⟨og, hog, H⟩ := (ecs_parts hfb hgb hb).wide
+  exact ecs_schedBefore hog ((H x hx).2 u hu a ha hws haf)
+
+/-- `valueOK` of a `Store` that became a `Copy` and reads no tail call is `wideStoreOK`. -/
+theorem ecs_wideStoreOK {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
+    (hv : valueOK tabs (typeShapes tabs) f g x = true) (hu : f.value? x = some u)
+    (hw : g.value? x = some w) (hop : u.op = .Store) (hwop : w.op = .Copy)
+    (ht : u.args.any (isTail f) = false) : wideStoreOK tabs (typeShapes tabs) f g u w = true := by
+  have hws : wideSel f g x = false := ecA_not_wideSel hu (by rw [hop]; decide)
+  unfold valueOK at hv
+  rw [hu, hw] at hv
+  dsimp only at hv
+  rw [if_neg (by rw [hop]; decide), if_neg (by rw [hop]; decide),
+    if_neg (by rw [hop, ht]; decide), if_neg (by rw [hws]; decide),
+    if_neg (by rw [hop]; simp), if_pos (by rw [hop, hwop]; decide)] at hv
+  exact hv
+
+/-- **A leaf store of a wide store is anchored at the source store** (`AnchoredAt`): its
+obligation (`ecw_storeObl`), the store's address and memory reaching it, and no source non-pure
+node between them. -/
+theorem ecs_wideAnchored {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID}
+    {fb gb : Block} (hwf : WF ce f) (hwg : WF ce' g) (hbm : bid ∈ f.blocks)
+    (hbg : bid ∈ g.blocks) (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true)
+    {z x : ID} (hx : x ∈ fb.values) (hz : z ∈ wideStores f g x) :
+    AnchoredAt tabs f g (ecCv tabs f g) (isNewB f) fb gb z := by
+  have P := ecs_parts hfb hgb hb
+  have hownF := valuesOwn hwf hbm hfb
+  have hndF := hwf.valuesNodup bid fb ⟨hbm, hfb⟩
+  have hownG := valuesOwn hwg hbg hgb
+  have hndG := hwg.valuesNodup bid gb ⟨hbg, hgb⟩
+  obtain ⟨og, hog, H⟩ := P.wide
+  obtain ⟨hzm, hgap, hpa, hcm⟩ := (H x hx).1 z hz
+  unfold wideStores at hz
+  cases hu : f.value? x with
+  | none => rw [hu] at hz; cases hz
+  | some u =>
+  cases hw : g.value? x with
+  | none => rw [hu, hw] at hz; cases hz
+  | some w =>
+  rw [hu, hw] at hz
+  dsimp only at hz
+  cases ht : u.args.any (isTail f) with
+  | true => rw [if_pos ht] at hz; cases hz
+  | false =>
+  rw [ht, if_neg Bool.false_ne_true] at hz
+  cases hzs : wideChain f g u w with
+  | none => rw [hzs] at hz; cases hz
+  | some zs =>
+  rw [hzs, Option.getD_some] at hz
+  obtain ⟨hop, hwop, hus, -, -⟩ := ecw_wideChain hzs
+  have hok := ecs_wideStoreOK (P.value x hx u hu (by rw [hop]; decide)) hu hw hop hwop ht
+  obtain ⟨v, hv', hvid, -⟩ := hwf.valueId bid fb ⟨hbm, hfb⟩ x hx
+  rw [hu] at hv'; cases hv'
+  have hci : ¬ TgtInvalid g x := fun ⟨w', hw', hop'⟩ => by
+    rw [hw] at hw'; cases hw'; rw [hwop] at hop'; cases hop'
+  have haddr : addrArg f x = u.args[0]! := by unfold addrArg; rw [hu]; rfl
+  have hcm' : callMem f x = u.args[2]! := by unfold callMem; rw [hu]; simp [hus]
+  rw [haddr] at hpa
+  rw [hcm'] at hcm
+  refine ⟨x, hx, hci, [u.args[0]!, u.args[2]!],
+    ecw_storeObl hu hvid hw hok hzs hz (Listed g) (ecs_listed hwg) ⟨bid, gb, ⟨hbg, hgb⟩, hzm⟩,
+    fun a ha => ?_, ?_⟩
+  · have ha' : a = u.args[0]! ∨ a = u.args[2]! := by simpa using ha
+    have ham : a ∈ u.args := by
+      rcases ha' with rfl | rfl
+      · exact ecw_mem_three hus 0 (by decide)
+      · exact ecw_mem_three hus 2 (by decide)
+    refine ⟨?_, fun hag => ?_⟩
+    · obtain ⟨bid', b', hB', hab'⟩ := hwf.argListed bid fb x u ⟨⟨hbm, hfb⟩, hx, hu⟩ _ ham
+      obtain ⟨ua, hua, -, -⟩ := hwf.valueId bid' b' hB' _ hab'
+      unfold isNewB; rw [hua]; rfl
+    · obtain ⟨va, hva, -, -⟩ := hwg.valueId bid gb ⟨hbg, hgb⟩ _ hag
+      by_cases hpv : va.op = .Phi
+      · exact .inl ⟨va, hva, hpv⟩
+      · have hn : ecs_node g gb a = true := ecs_node_iff.2 ⟨hag, va, hva, hpv⟩
+        rcases ha' with rfl | rfl
+        · exact .inr (ecs_depB_dep hownG hndG (hpa hn))
+        · exact .inr (ecs_depB_dep hownG hndG (hcm hn))
+  · intro og' hog' A B hAB
+    rw [hog] at hog'
+    cases hog'
+    rw [npIn_schedNodes hownF hndF]
+    rw [hAB] at hgap
+    exact ecs_gap hgap (hAB ▸ (schedule_topo hownG hndG hog).1)
 
 /-- **The `SP`s and memories of a stack-assigned result's loads** are held in the target when the
 result is evaluated (`HeldT`): new, placed in a strict dominator, or the result depends on them. -/
@@ -887,11 +1036,14 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
         rw [argsOf_schedNodes hownF hndF hyb hu hph] at hay
         have hiy : invalidated g y = false :=
           Bool.eq_false_iff.2 fun h => hyi (ecs_invalidated_iff.1 h)
-        rcases P.reach y hyb ((ecs_nodeIn hownF).2 hy) hiy u hu a
-          (Array.mem_toList_iff.1 hay) ((ecs_nodeIn hownF).2 ha) with ⟨hna, hd⟩ | ⟨-, hth⟩
-        · exact .direct ((ecs_nodeIn hownG).1 hna)
-            (hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG))
-        · exact ecs_through hownF hndF hownG hndG ha hth
+        obtain ⟨hR, hT⟩ := P.reach y hyb ((ecs_nodeIn hownF).2 hy) hiy u hu a
+          (Array.mem_toList_iff.1 hay)
+        cases hws : wideSel f g a
+        · rcases hR ((ecs_nodeIn hownF).2 ha) hws with ⟨hna, hd⟩ | ⟨-, hth⟩
+          · exact .direct ((ecs_nodeIn hownG).1 hna)
+              (hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG))
+          · exact ecs_through hownF hndF hownG hndG ha hth
+        · exact ecs_through hownF hndF hownG hndG ha (hT hws)
       invalid := fun x _ hxi => by
         obtain ⟨wi, hwi, hop⟩ := hxi
         refine ⟨fun y => by unfold ecCv; rw [if_pos (ecs_invalidated_iff.2 ⟨wi, hwi, hop⟩)],
@@ -910,9 +1062,10 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
       newOK := fun z hz hn w hw => by
         obtain ⟨hph, he⟩ := (P.newv z hz w hw).1 hn
         refine ⟨hph, ?_⟩
-        rcases he with he | ⟨x, hx, hzx⟩
+        rcases he with he | ⟨x, hx, hzx⟩ | ⟨x, hx, hzx⟩
         · exact .inl (newEval_of_newEvalB he)
         · exact .inr (ecs_anchored hwf hwg hcg hbm hbg hfb hgb hid hb hx hzx)
+        · exact .inr (ecs_wideAnchored hwf hwg hbm hbg hfb hgb hb hx hzx)
       newArgs := fun z hz w hw a ha hn => by
         rcases (P.newv z hz w hw).2 a ha hn with h | h | h
         · exact .inl h
@@ -933,7 +1086,31 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
   by_cases hinv : invalidated g x = true
   · rw [if_pos hinv] at ha; cases ha
   have hinv' : invalidated g x = false := Bool.eq_false_iff.2 hinv
-  rw [if_neg hinv, hu, hw] at ha
+  rw [if_neg hinv] at ha
+  rcases List.mem_append.1 ha with ha | hwide
+  rotate_left
+  · -- an argument of a wide call result: it reaches `x` (`throughB`)
+    obtain ⟨u', b, bu, hu', hb', hwb, hbu, ha⟩ := ecFront_wide_cases hwide
+    rw [hu] at hu'; cases hu'
+    obtain ⟨bid', b', hB', hbb'⟩ := hwf.argListed bid fb x u ⟨⟨hbm, hfb⟩, hx, hu⟩ b hb'
+    obtain ⟨bid'', b'', hB'', hab''⟩ := hwf.argListed bid' b' b bu ⟨hB', hbb', hbu⟩ a ha
+    obtain ⟨ua, hua, -, -⟩ := hwf.valueId bid'' b'' hB'' a hab''
+    have han : isNewB f a = false := by unfold isNewB; rw [hua]; rfl
+    refine ⟨han, fun hag => ?_⟩
+    have haf : a ∈ fb.values :=
+      (P.fresh a hag).resolve_right (by rw [han]; exact Bool.false_ne_true)
+    by_cases hpa : ua.op = .Phi
+    · obtain ⟨⟨wa, hwa, hs⟩, -⟩ := P.phiS a haf ua hua hpa
+      exact .inl ⟨wa, hwa, (ecs_phiSame hs).1.trans hpa⟩
+    · have hT := (P.reach x hx (ecs_node_iff.2 ⟨hx, u, hu, hph⟩) hinv' u hu b hb').2 hwb
+      unfold throughB at hT
+      rw [hbu] at hT; dsimp only at hT
+      rw [Bool.and_eq_true, Array.all_eq_true'] at hT
+      have := hT.2 a ha
+      rw [ecs_node_iff.2 ⟨haf, ua, hua, hpa⟩, Bool.not_true, Bool.false_or,
+        Bool.and_eq_true] at this
+      exact .inr (.inl (ecs_depB_dep hownG hndG this.2))
+  rw [hu, hw] at ha
   simp only [Option.map_some, Option.getD_some, List.mem_append, List.mem_filter,
     Bool.not_eq_true'] at ha
   rcases ha with ha | ⟨ha | ha, han⟩
@@ -947,14 +1124,16 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
     by_cases hpa : ua.op = .Phi
     · obtain ⟨⟨wa, hwa, hs⟩, -⟩ := P.phiS a haf ua hua hpa
       exact .inl ⟨wa, hwa, (ecs_phiSame hs).1.trans hpa⟩
-    · rcases P.reach x hx (ecs_node_iff.2 ⟨hx, u, hu, hph⟩) hinv' u hu a
-        (Array.mem_toList_iff.1 ha) (ecs_node_iff.2 ⟨haf, ua, hua, hpa⟩) with ⟨-, hd⟩ | ⟨hma, -⟩
-      · exact .inr (.inl (hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG)))
-      · obtain ⟨og, hog, H⟩ := P.stack
-        obtain ⟨-, hbf⟩ := (H x hx).2 u hu a (Array.mem_toList_iff.1 ha) hma
-        refine .inr (.inr fun og' hog' => ?_)
-        rw [hog] at hog'; cases hog'
-        exact ecs_beforeB hbf
+    · cases hws : wideSel f g a
+      · rcases (P.reach x hx (ecs_node_iff.2 ⟨hx, u, hu, hph⟩) hinv' u hu a
+          (Array.mem_toList_iff.1 ha)).1 (ecs_node_iff.2 ⟨haf, ua, hua, hpa⟩) hws with
+          ⟨-, hd⟩ | ⟨hma, -⟩
+        · exact .inr (.inl (hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG)))
+        · obtain ⟨og, hog, H⟩ := P.stack
+          obtain ⟨-, hbf⟩ := (H x hx).2 u hu a (Array.mem_toList_iff.1 ha) hma
+          exact .inr (.inr (ecs_schedBefore hog hbf))
+      · exact .inr (.inr (ecs_wideBefore hfb hgb hb x hx u hu a (Array.mem_toList_iff.1 ha) hws
+          haf))
   · refine ⟨han, fun hag => ?_⟩
     obtain ⟨wa, hwa⟩ := hdefG a hag
     by_cases hpa : wa.op = .Phi
