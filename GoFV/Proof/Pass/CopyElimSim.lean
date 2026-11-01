@@ -56,9 +56,6 @@ theorem cfgView_block {f g : Func} (h : cfgView g = cfgView f) {bid : ID} {fb : 
         simp only [Option.map_some, Option.some.injEq, Block.mk.injEq] at ht
         exact ⟨gb, rfl, ht.1, ht.2.2.2.2.2.2.2.1, ht.2.2.2.2.2.2.2.2.1⟩
 
--- TEMPORARY: provided by GoFV/Proof/Sched.lean once agent/schednil lands.
-def NilIn (vs : List SNode) (x : ID) : Prop := ∀ n, nodeOf vs x = some n → n.prio ≤ 1
-
 /-- The input fragment of the simulation: no value of a tree block has a zero-size aggregate
 type (phielim would turn it into `Empty`), and the side-effecting roots (priority 2) of every
 tree block are pairwise ordered by dependency (so a panicking root is reached by every
