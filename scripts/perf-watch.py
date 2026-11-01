@@ -99,6 +99,38 @@ def ab_cpu(wt, base, head, module, rounds=2):
     return min(times[base]), min(times[head])
 
 
+def ab_bench(wt, base, head, bench, rounds=2):
+    """Interleaved A/B runs of one benchmark (base, head, base, head); returns
+    ((min CPU base, min CPU head), {pass: (min base, min head)}) or None."""
+    import csv
+    tmp = wt / "tmp" / "perf-ab"
+    tmp.mkdir(parents=True, exist_ok=True)
+    hist, phist = tmp / "bench.tsv", tmp / "pass.tsv"
+    hist.unlink(missing_ok=True)
+    phist.unlink(missing_ok=True)
+    for _ in range(rounds):
+        for c in (base, head):
+            sh("git", "checkout", "--quiet", "--detach", "--force", c, cwd=wt)
+            subprocess.run([sys.executable, str(here / "scripts/perf-bench.py"), "--root", str(wt),
+                            "--force", "--runs", "1", "--history", str(hist),
+                            "--pass-history", str(phist), bench], cwd=wt, capture_output=True)
+    if not hist.exists():
+        return None
+    cpu = {short(base): [], short(head): []}
+    for r in csv.DictReader(open(hist), delimiter="\t"):
+        if r["status"] == "ok" and r["commit"] in cpu:
+            cpu[r["commit"]].append(float(r["cpu_s"]))
+    if not all(cpu.values()):
+        return None
+    per = {}
+    if phist.exists():
+        for r in csv.DictReader(open(phist), delimiter="\t"):
+            if r["commit"] in cpu:
+                per.setdefault(r["pass"], {short(base): [], short(head): []})[r["commit"]].append(float(r["time_s"]))
+    passes = {p: (min(v[short(base)]), min(v[short(head)])) for p, v in per.items() if all(v.values())}
+    return (min(cpu[short(base)]), min(cpu[short(head)])), passes
+
+
 def compare(base, head, label, header, wt=None):
     REPORTS.mkdir(parents=True, exist_ok=True)
     out = REPORTS / f"{label}-{short(head)}.md"
@@ -108,10 +140,10 @@ def compare(base, head, label, header, wt=None):
     r = subprocess.run(cmd, capture_output=True, text=True)
     notes = []
     if r.returncode == 1 and wt is not None:
-        # module time flags: confirm by interleaved A/B; drop the ones that do not reproduce
-        flagged = re.findall(r"^\| `([\w.]+)` \| time \|", r.stdout, re.M)
+        # time flags: confirm by interleaved A/B (same code measured 46-76 s CPU an hour apart);
+        # drop the ones that do not reproduce
         noise = []
-        for m in flagged:
+        for m in re.findall(r"^\| `([\w.]+)` \| time \|", r.stdout, re.M):
             ab = ab_cpu(wt, base, head, m)
             if ab is None:
                 continue
@@ -121,8 +153,32 @@ def compare(base, head, label, header, wt=None):
                          f"{cb:.1f} s → {ch:.1f} s CPU: {'confirmed' if real else 'noise, dropped'}")
             if not real:
                 noise.append(m)
+        benches = set(re.findall(r"^\| `bench ([\w-]+)` \| time \|", r.stdout, re.M))
+        passes = set(re.findall(r"^\| `pass ([^`]+)` \| runtime", r.stdout, re.M))
+        if passes:
+            benches.add("pass-parity-corpus")
+        for bn in sorted(benches):
+            ab = ab_bench(wt, base, head, bn)
+            if ab is None:
+                continue
+            (cb, ch), per = ab
+            if f"bench {bn}" in r.stdout:
+                real = ch > cb * 1.25 and ch - cb > 1
+                notes.append(f"- A/B runs of `{bn}` (interleaved, min of 2 each): {cb:.1f} s → "
+                             f"{ch:.1f} s CPU: {'confirmed' if real else 'noise, dropped'}")
+                if not real:
+                    noise.append(f"bench {bn}")
+            for p in sorted(passes):
+                if p in per:
+                    pb, ph = per[p]
+                    real = ph > pb * 1.25 and ph - pb > 1
+                    notes.append(f"- A/B of pass `{p}`: {pb:.1f} s → {ph:.1f} s: "
+                                 f"{'confirmed' if real else 'noise, dropped'}")
+                    if not real:
+                        noise.append(f"pass {p}")
         if noise:
             r = subprocess.run(cmd + [f"--ignore={m}" for m in noise], capture_output=True, text=True)
+        sh("git", "checkout", "--quiet", "--detach", "--force", head, cwd=wt)
     out.write_text(header + "\n\n" + r.stdout + r.stderr + ("\n" + "\n".join(notes) + "\n" if notes else ""))
     return out, r.returncode == 1
 
