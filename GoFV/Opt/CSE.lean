@@ -36,6 +36,12 @@ Both unstable sorts can see ties, so the comparators and the sort are exact port
 cached scores along a block's memory chain are always strictly increasing (a score is written
 from a store down to the first cached one, so the cached stores form a prefix of the chain), so
 every comparison has the result of the uncached score, which is used here.
+
+The registered pass (`csePass`) is a translation validator: `cseRw` also returns the
+substitution, and the result is kept only if the Bool checker `CSE.crel` accepts it, else the
+input is returned. `GoFV.Proof.CSE.cse_refines` proves that an accepted result refines the input
+on inputs in `cseFrag` (the strict checker accepts it too). `lake exe cse-probe`: rejections and
+inputs outside the fragment on the corpus.
 -/
 
 namespace GoFV.Opt
