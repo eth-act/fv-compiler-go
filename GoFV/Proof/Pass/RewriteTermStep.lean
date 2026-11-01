@@ -473,6 +473,38 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
     refine hlow.trans (hsound.trans (h0.trans (den_fuel_mono _ _ _ _ _ _ ?_)))
     simp [stepK, resLen, R.hres, hS]; omega
 
+/-- **One rule event**: on a set closed under arguments, the denotations after the event refine
+those before, with the fuel multiplied by `stepK r`. -/
+theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
+    (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : DefClosed M C) {ρ : ID → Val}
+    (hT : Term.Typed M.get? tabs ρ) :
+    ∀ n y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ (n * stepK r) y) := by
+  have hT' := F.typed hT
+  intro n
+  induction n with
+  | zero => intro y _; exact .poison _
+  | succ n ih =>
+    intro y hy
+    by_cases hyv : y = v
+    · subst hyv
+      rw [Nat.succ_mul]
+      exact F.top hs hr hC.arg hy hT' ih
+    · obtain ⟨m, hm, hargs⟩ := hC y hy
+      have hkeep := F.keep hm hyv
+      have hK : (n + 1) * stepK r = (n * stepK r + (stepK r - 1)) + 1 := by
+        rw [Nat.succ_mul]; simp only [stepK]; omega
+      rw [hK]
+      by_cases ht : termOp m.op = true
+      · rw [den_succ_term hm ht, den_succ_term hkeep ht]
+        exact retype_mono _ (evalPure_mono _ _ _ _ (refinesList_map fun a ha =>
+          (ih a (hargs a (Array.mem_toList_iff.1 ha))).trans
+            (den_fuel_mono _ _ _ _ _ _ (by omega))))
+      · have h1 : ¬ IsTerm M.get? y := fun ⟨u, hu, hu'⟩ => by
+          rw [hm] at hu; cases hu; exact ht hu'
+        have h2 : ¬ IsTerm (putAll M defs).get? y := fun ⟨u, hu, hu'⟩ => by
+          rw [hkeep] at hu; cases hu; exact ht hu'
+        rw [den_succ_atom h1, den_succ_atom h2]; exact Sem.Refines.refl _
+
 end Den
 
 
