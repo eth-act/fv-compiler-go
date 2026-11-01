@@ -104,7 +104,7 @@ def proven():
 
 def proven_kinds():
     """Short rule name -> (proof module, obligation), from `theorem <name>_sound : <obligation>`
-    (`Rule.Sound`, `Rule.SoundT`, `BlockRule.Sound`)."""
+    (`Rule.Sound`, `Rule.SoundT`, `BlockRule.Sound`, `EffectRule.NilElim`)."""
     out = {}
     for fn in os.listdir(PROOF):
         if not fn.endswith(".lean") or fn[:-5] in INFRA:
@@ -305,8 +305,8 @@ def proven_sets():
 # Proven-only rule sets
 
 The rule sets of `opt`, `divisible` and `divmod` restricted to the rules with a merged
-`Rule.Sound` or `Rule.SoundT` lemma (value rules) or `BlockRule.Sound` lemma (block rules, issue #151;
-`docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
+`Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma (block rules) or
+`EffectRule.NilElim` lemma (nil-check eliminations; issue #151, `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
 (`GoFV.Opt.optProven`, …; issue #113).
 -/
 
@@ -342,9 +342,10 @@ open GoFV.Rules
             s = open(os.path.join(GEN, f, mod)).read()
             for m in re.finditer(r"^def blocks_(\w+) : List BlockRule := \[(.*)\]$", s, re.M):
                 blks[m.group(1)] = [n.strip() for n in m.group(2).split(",") if n.strip()]
-        vals, bvals = [], []
+        vals, bvals, nils = [], [], []
         for op, key in order:
-            rs = [n for n in ops[key] if n in done]
+            rs = [n for n in ops[key] if n in done and kinds[n][1] != "EffectRule.NilElim"]
+            nils += [n for n in ops[key] if n in done and kinds[n][1] == "EffectRule.NilElim"]
             if rs:
                 vals.append((op, rs))
         for k, key in border:
@@ -353,16 +354,18 @@ open GoFV.Rules
                 bvals.append((k, rs))
         n = sum(len(rs) for _, rs in vals)
         nb = sum(len(rs) for _, rs in bvals)
-        total += n + nb
+        total += n + nb + len(nils)
         q = f"Generated.{f}"
         body = ",\n    ".join(f"(.{op}, [{', '.join(q + '.' + r for r in rs)}])" for op, rs in vals)
         bbody = ",\n    ".join(f"(.{k}, [{', '.join(q + '.' + r for r in rs)}])" for k, rs in bvals)
         data += f"""
-/-- `{low}.rules` restricted to its {n} proven value rules and {nb} proven block rules. -/
+/-- `{low}.rules` restricted to its {n} proven value rules, {nb} proven block rules and {len(nils)}
+nil-check eliminations. -/
 def {low} : RuleSet where
   name := "{low}"
   values := [{body}]
   blocks := [{bbody}]
+  nilChecks := [{', '.join(q + '.' + r for r in nils)}]
 """
         def conj(groups):
             if not groups:

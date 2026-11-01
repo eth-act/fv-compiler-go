@@ -7,8 +7,8 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, `divisible` and `divmod` restricted to the rules with a merged
-`Rule.Sound` or `Rule.SoundT` lemma (value rules) or `BlockRule.Sound` lemma (block rules, issue #151;
-`docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
+`Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma (block rules) or
+`EffectRule.NilElim` lemma (nil-check eliminations; issue #151, `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
 (`GoFV.Opt.optProven`, …; issue #113).
 -/
 
@@ -16,7 +16,8 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1030 proven value rules and 3 proven block rules. -/
+/-- `generic.rules` restricted to its 1030 proven value rules, 3 proven block rules and 3
+nil-check eliminations. -/
 def generic : RuleSet where
   name := "generic"
   values := [(.Add16, [Generated.Generic.r_generic_121, Generated.Generic.r_generic_420, Generated.Generic.r_generic_427, Generated.Generic.r_generic_646, Generated.Generic.r_generic_655, Generated.Generic.r_generic_661, Generated.Generic.r_generic_675, Generated.Generic.r_generic_678, Generated.Generic.r_generic_778, Generated.Generic.r_generic_779, Generated.Generic.r_generic_1218, Generated.Generic.r_generic_1224, Generated.Generic.r_generic_1278, Generated.Generic.r_generic_1284, Generated.Generic.r_generic_2195, Generated.Generic.r_generic_2196, Generated.Generic.r_generic_2197, Generated.Generic.r_generic_2198, Generated.Generic.r_generic_2200, Generated.Generic.r_generic_2201, Generated.Generic.r_generic_2202, Generated.Generic.r_generic_2203]),
@@ -173,8 +174,10 @@ def generic : RuleSet where
     (.ZeroExt8to32, [Generated.Generic.r_generic_101, Generated.Generic.r_generic_757]),
     (.ZeroExt8to64, [Generated.Generic.r_generic_102, Generated.Generic.r_generic_754])]
   blocks := [(.If, [Generated.Generic.r_generic_1064, Generated.Generic.r_generic_1065, Generated.Generic.r_generic_1066])]
+  nilChecks := [Generated.Generic.r_generic_1375, Generated.Generic.r_generic_1381, Generated.Generic.r_generic_1388]
 
-/-- `divisible.rules` restricted to its 24 proven value rules and 0 proven block rules. -/
+/-- `divisible.rules` restricted to its 24 proven value rules, 0 proven block rules and 0
+nil-check eliminations. -/
 def divisible : RuleSet where
   name := "divisible"
   values := [(.Eq16, [Generated.Divisible.r_divisible_17, Generated.Divisible.r_divisible_20, Generated.Divisible.r_divisible_48]),
@@ -186,8 +189,10 @@ def divisible : RuleSet where
     (.Neq64, [Generated.Divisible.r_divisible_23_3, Generated.Divisible.r_divisible_26_3, Generated.Divisible.r_divisible_88]),
     (.Neq8, [Generated.Divisible.r_divisible_23_4, Generated.Divisible.r_divisible_26_4, Generated.Divisible.r_divisible_40])]
   blocks := []
+  nilChecks := []
 
-/-- `divmod.rules` restricted to its 11 proven value rules and 0 proven block rules. -/
+/-- `divmod.rules` restricted to its 11 proven value rules, 0 proven block rules and 0
+nil-check eliminations. -/
 def divmod : RuleSet where
   name := "divmod"
   values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
@@ -196,5 +201,6 @@ def divmod : RuleSet where
     (.Div8, [Generated.Divmod.r_divmod_21, Generated.Divmod.r_divmod_87]),
     (.Div8u, [Generated.Divmod.r_divmod_154])]
   blocks := []
+  nilChecks := []
 
 end GoFV.Rules.Proven

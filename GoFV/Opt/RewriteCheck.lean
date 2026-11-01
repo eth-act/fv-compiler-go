@@ -632,6 +632,58 @@ def validate (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEven
   | some (M, B) => finalOK tabs f g M B
   | none => false
 
+/-! ## Nil-check eliminations (issue #151)
+
+A rule of the table's `nilChecks` row, `(NilCheck x:(Op …) _) => x`, turns a root (a nil check)
+into a term (`Copy x`). The validator takes these events out of the log: `nilPre` applies them to
+the input (`NilCheck p mem` → `Copy p`, as `v.reset(OpCopy)`), the checked pass relates input
+and `nilPre` by nilcheckelim's checker (`NilCheck.nrel`: `p` is a `safePtr` seed, so the check
+cannot panic, and the other roots keep their order), and `validate` relates `nilPre` and the
+output with the remaining events. -/
+
+/-- A nil-check elimination `(NilCheck x:(Op …) _) => x` whose pointer op nilcheckelim's
+checker justifies by itself (`NilCheck.safePtr`: `Addr`, `LocalAddr`, `NilCheck`). -/
+def nilElimOK (r : Rule) : Bool :=
+  match r.pat, r.result with
+  | .op .NilCheck none _ _ _ .fixed [.op o (some x) _ _ _ _ _ _, _] _, .copy (.var y) =>
+    x == y && (o matches .Addr | .LocalAddr | .NilCheck)
+  | _, _ => false
+
+/-- The nil check `v` of `f` that event `ev` eliminates, if it is a `nilChecks` rule event
+(`nilElimOK`). -/
+def nilEvent? (t : Interp.Table) (f : Func) : RwEvent → Option ID
+  | .rule v i _ _ =>
+    match f.value? v with
+    | some x =>
+      if x.op == .NilCheck then
+        let n := ((t.values[x.op.ctorIdx]?).map (·.size)).getD 0
+        if n ≤ i then
+          match t.nilChecks[i - n]? with
+          | some cr => if nilElimOK cr.rule then some v else none
+          | none => none
+        else none
+      else none
+    | none => none
+  | _ => none
+
+/-- `v.reset(OpCopy)` with its pointer argument: the nil check `v` of `f` becomes `Copy p`, its
+other arguments lose a use. -/
+def nilCopy (f : Func) (v : ID) : Func :=
+  match f.value? v with
+  | some x =>
+    if x.op == .NilCheck && 0 < x.args.size then
+      let f := (x.args.extract 1 x.args.size).foldl (fun f a => f.modV a fun u => { u with uses := u.uses - 1 }) f
+      f.modV v fun u => { u with op := .Copy, auxInt := 0, aux := none, args := #[x.args[0]!] }
+    else f
+  | none => f
+
+/-- The input with the log's nil-check eliminations applied, and the remaining events. -/
+def nilPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (init := (f, #[])) fun (h, rest) ev =>
+    match nilEvent? t f ev with
+    | some v => (nilCopy h v, rest)
+    | none => (h, rest.push ev)
+
 end GoFV.Opt.RewriteCheck
 
 namespace GoFV.Opt

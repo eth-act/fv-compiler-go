@@ -64,6 +64,7 @@ import GoFV.Proof.Rules.Neq3
 import GoFV.Proof.Rules.Neq4
 import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
+import GoFV.Proof.Rules.NilElim
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
 import GoFV.Proof.Rules.OffPtr
