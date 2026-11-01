@@ -1,3 +1,4 @@
+import GoFVTest.Driver.FragWhy
 import GoFVTest.Driver.Pipeline
 import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
@@ -489,6 +490,9 @@ structure VFile where
   diff : Option (String × String × String)
   /-- The final state equals the last stock section. -/
   same : Bool
+  /-- Deadcode and copyelim runs outside their fragment: log index, pass, failing conditions
+  (`FragWhy.fragWhy`). -/
+  frag : Array (Nat × String × Array String) := #[]
 
 /-- Run the verified pipeline from section 0 of `e` (environment `env`, input tables `t0`),
 comparing the state after each pass with the stock section of that pass until the first
@@ -499,9 +503,15 @@ def walkVerified (e : ExportFile) (env : PassEnv) (t0 : Tables) (s0 : Section) :
   let mut k := 1
   let mut want := t0
   let mut diff : Option (String × String × String) := none
+  let mut frag : Array (Nat × String × Array String) := #[]
   for p in stockPasses do
     let st' ← runPass env st p
     if st'.log.size > st.log.size then
+      match st'.log.back? with
+      | some (_, .unverified "fragment") | some (_, .skipped "fragment") =>
+        let w := FragWhy.fragWhy p.name (st.passEnv env p.name) st.func
+        if !w.isEmpty then frag := frag.push (st.log.size, p.name, w)
+      | _ => pure ()
       if diff.isNone then
         let v := match st'.log.back? with | some (_, v) => toString v | none => "-"
         match e.sections[k]? with
@@ -515,7 +525,7 @@ def walkVerified (e : ExportFile) (env : PassEnv) (t0 : Tables) (s0 : Section) :
               diff := some (p.name, v, d)
       k := k + 1
     st := st'
-  if diff.isNone && k == e.sections.size then return { st, diff, same := true }
+  if diff.isNone && k == e.sections.size then return { st, diff, same := true, frag }
   if diff.isNone then
     diff := some (st.last, "-", s!"{e.sections.size - k} stock sections after the last pass")
   let wantAll := (e.sections.extract 1 e.sections.size).foldl (fun t s => t.addAll s.defs) t0
@@ -523,7 +533,7 @@ def walkVerified (e : ExportFile) (env : PassEnv) (t0 : Tables) (s0 : Section) :
     | some s => k == e.sections.size &&
       (compare t0 { func := st.func, tables := st.tables } wantAll s (loose := true)).isNone
     | none => false
-  return { st, diff, same }
+  return { st, diff, same, frag }
 
 /-- The verified pipeline on one export file, with the driver's type rounds. -/
 def verifiedExport (wholeFile : Bool) (e : ExportFile) : Except String (Except VError VFile) := do
@@ -570,6 +580,14 @@ structure VStats where
   diverged : Std.HashMap String Nat := {}
   counts : Array VCount := Array.replicate stockPasses.size {}
   reports : Array (String × String × String) := #[]
+  /-- Deadcode/copyelim runs outside their fragment, by failing condition (`pass: condition`,
+  one count per failing condition of each run). -/
+  fragAll : Std.HashMap String Nat := {}
+  /-- First unverified runs outside their fragment, by their failing conditions. -/
+  fragFirst : Std.HashMap String Nat := {}
+  /-- Functions whose only unverified runs are deadcode runs outside their fragment, by the
+  failing conditions of those runs (what widening them would verify). -/
+  fragOnly : Std.HashMap String Nat := {}
 
 def VStats.merge (a b : VStats) : VStats :=
   let mm (x y : Std.HashMap String Nat) := y.fold (fun m k n => bumpMap m k n) x
@@ -578,7 +596,8 @@ def VStats.merge (a b : VStats) : VStats :=
     both := a.both + b.both, firstUnverified := mm a.firstUnverified b.firstUnverified
     reasons := mm a.reasons b.reasons, diverged := mm a.diverged b.diverged
     counts := (a.counts.zip b.counts).map fun (x, y) => x.add y
-    reports := a.reports ++ b.reports }
+    reports := a.reports ++ b.reports, fragAll := mm a.fragAll b.fragAll
+    fragFirst := mm a.fragFirst b.fragFirst, fragOnly := mm a.fragOnly b.fragOnly }
 
 def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (st : VStats) :
     IO VStats := do
@@ -612,6 +631,20 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
                     both := st.both + (if verified && r.same then 1 else 0) }
     if let some (p, v) := firstUnverified? r.st then
       st := { st with firstUnverified := bumpMap st.firstUnverified s!"{p}: {v}" }
+    for (_, p, ws) in r.frag do
+      for w in ws do
+        let k := s!"{p}: {FragWhy.whyKey w}"
+        st := report { st with fragAll := bumpMap st.fragAll k } s!"fragment {k}" w
+    let bad := (List.range r.st.log.size).filter fun i => !(r.st.log[i]!.2.ok)
+    if let some i := bad.head? then
+      if let some (_, p, ws) := r.frag.find? (·.1 == i) then
+        let ks := ws.toList.map FragWhy.whyKey
+        st := { st with fragFirst := bumpMap st.fragFirst s!"{p}: {" | ".intercalate ks}" }
+      if bad.all fun j => r.frag.any (·.1 == j) then
+        let ws := (r.frag.filter fun (j, _) => bad.contains j).toList.flatMap fun (_, _, ws) =>
+          ws.toList.map FragWhy.whyKey
+        let key := " | ".intercalate (ws.eraseDups.mergeSort (· ≤ ·))
+        st := { st with fragOnly := bumpMap st.fragOnly key }
     if let some (p, v, d) := r.diff then
       st := { st with diverged := bumpMap st.diverged s!"{p}: {v}" }
       if let some i := passIndex? p then
@@ -646,6 +679,14 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
     out := out ++ s!"| {p.name} | {kind} | {c.runs} | {c.proven} | {c.identity} | {c.skipped} | {c.unverified} | {c.diverged} |\n"
   out := out ++ "\nSkipped and unverified runs by reason:\n\n"
   for (k, c) in sortedPassMap st.reasons do out := out ++ s!"- `{k}`: {c}\n"
+  let byCount (m : Std.HashMap String Nat) := m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
+  if !st.fragAll.isEmpty then
+    out := out ++ "\nDeadcode/copyelim fragment conditions failing (`FragWhy`), per run:\n\n"
+    for (k, c) in sortedPassMap st.fragAll do out := out ++ s!"- `{k}`: {c}\n"
+    out := out ++ "\nFirst unverified runs outside the deadcode/copyelim fragment, by failing conditions:\n\n"
+    for (k, c) in byCount st.fragFirst do out := out ++ s!"- `{k}`: {c}\n"
+    out := out ++ "\nFunctions unverified only by deadcode fragment failures, by failing conditions:\n\n"
+    for (k, c) in byCount st.fragOnly do out := out ++ s!"- `{k}`: {c}\n"
   return out
 
 /-- `--check --verified`: the verified pipeline over stock export files, a report (exit 1 only

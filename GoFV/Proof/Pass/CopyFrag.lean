@@ -64,11 +64,12 @@ theorem RetypeEq.trans {t1 t2 t3 : Ty} (h1 : RetypeEq t1 t2) (h2 : RetypeEq t2 t
 theorem RetypeEq.of_eq {t1 t2 : Ty} (h : t1 = t2) : RetypeEq t1 t2 := h ▸ RetypeEq.refl t1
 
 mutual
-/-- Shapes that `Val.retype` does not tell apart: equal up to pointers' element sizes and
-composites' sizes. -/
+/-- Shapes that `Val.retype` does not tell apart: equal up to pointers' and slices' element
+sizes and composites' sizes. -/
 def retypeEqB : Ty → Ty → Bool
   | .int w, .int w' => w == w'
-  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty | .ptr _, .ptr _ => true
+  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty | .ptr _, .ptr _ | .str, .str
+  | .slice _, .slice _ => true
   | .tuple ts, .tuple ts' => retypeEqListB ts ts'
   | .agg fs _, .agg fs' _ => retypeEqFieldsB fs fs'
   | .blob n, .blob n' => n == n'
@@ -87,8 +88,12 @@ end
 mutual
 theorem retypeEqB_sound : ∀ {t1 t2 : Ty}, retypeEqB t1 t2 = true → RetypeEq t1 t2
   | .int w, .int w', h => by simp only [retypeEqB, beq_iff_eq] at h; subst h; exact RetypeEq.refl _
-  | .bool, .bool, _ | .mem, .mem, _ | .other, .other, _ | .empty, .empty, _ =>
+  | .bool, .bool, _ | .mem, .mem, _ | .other, .other, _ | .empty, .empty, _ | .str, .str, _ =>
     RetypeEq.refl _
+  | .slice _, .slice _, _ => fun v => by
+    cases v with
+    | agg vs => rcases vs with _ | ⟨_, _ | ⟨_, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩ <;> rfl
+    | _ => rfl
   | .ptr _, .ptr _, _ => fun v => by cases v with
     | int w _ => cases w <;> rfl
     | _ => rfl

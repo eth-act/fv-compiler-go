@@ -171,9 +171,12 @@ the state after each pass compared with the stock section until the first differ
 final state compared with the last stock section. It prints the functions fully verified, the
 functions whose final state equals stock, the unverified functions by first unverified run,
 the functions by first difference (pass and its verdict), a per-pass table of verdicts, and the
-skipped and unverified runs by reason. It exits 1 only for parse errors or no input. The
-nightly gate runs it on the full corpus, and `driver-e2e.sh --verified`, as reports
-(`docs/GATE.md`).
+skipped and unverified runs by reason. For deadcode and copyelim runs outside their fragment it
+adds which conditions of `deadFragB`/`copyGuard` fail (`GoFVTest/Driver/FragWhy.lean`, with
+the first offending value's op and type shapes): per run, for first unverified runs, and for
+functions whose only unverified runs are such deadcode runs. It exits 1 only for parse errors
+or no input. The nightly gate runs it on the full corpus, and `driver-e2e.sh --verified`, as
+reports (`docs/GATE.md`).
 
 ## Whole-pipeline parity (`gofv-ssa-opt --check`)
 
