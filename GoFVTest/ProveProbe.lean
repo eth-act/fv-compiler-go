@@ -109,6 +109,8 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
         let (C, F, inv) := ProveCheck.asmOf f prev
         if h' != f then
           IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} values {ProveCheck.valuesOK prev f h' F inv} tree {f.blocks.all C.inTree}"
+        else
+          IO.println s!"ALLUNDONE {path}: every rewrite rejected, the reverted output is the input"
       if (check { tabs := prev, typs } h).toBool == false then
         st := { st with checkFail := st.checkFail + 1 }
         if st.shown < 5 then
