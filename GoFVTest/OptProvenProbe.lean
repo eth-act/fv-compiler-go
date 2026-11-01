@@ -206,22 +206,24 @@ open GoFV.Rules RewriteCheck in
 def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
-    match fv.args.toList, Sem.auxTy tabs fv.aux with
-    | [dst, sm, mem], .agg fs n =>
+    match fv.args.toList, Sem.auxTy tabs fv.aux, gv.args.toList with
+    | [dst, sm, mem], .agg fs n, [last] =>
       match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
       | some smv =>
+        let r := ssWalk g fs.length last
         if smv.op != .StructMake then s!"stored {smv.op.name}"
         else if !Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) then "StructMake shape"
-        else if !layoutsOK n fs then "layout"
+        else if !(layoutsOK n fs && fs.all (·.1 < n)) then "layout"
         else if smv.args.size != fs.length then "arity"
-        else if !(fs.zip smv.args.toList).all (fun ((_, t), a) => (f.value? a).any (fun av => Sem.Ty.beq (tabs.ty av.type) t))
-          then "field shapes"
-        else if !(gv.op == .Copy && gv.args.size == 1 && gv.type == fv.type) then "copy"
-        else match ssChain tabs f g fv.block dst mem (fs.zip smv.args.toList).reverse gv.args[0]! with
-          | some _ => "ok"
-          | none => s!"chain ({fs.length} fields)"
+        else if !(gv.op == .Copy && gv.type == fv.type) then "copy"
+        else if !(r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2) then
+          s!"walk ({fs.length} fields)"
+        else if !copyReach tabs f.valueTab f.valueTab.size mem r.2 then "chain start"
+        else match (List.range fs.length).find? (fun k => !ssLink tabs f g fv.block dst fs smv.args r.1 r.2 k) with
+          | some k => s!"field {k} of {fs.length}"
+          | none => "ok"
       | none => "no StructMake"
-    | _, t => "store shape"
+    | _, _, _ => "store shape"
   | _, _ => "missing"
 
 open GoFV.Rules RewriteCheck in
@@ -240,11 +242,7 @@ def ssWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f g : Func) (log :
     | none, _ => pure ()
   if !ssRel tabs f f' then return s!"{pre}: rel"
   if let .error e := check { tabs := tabs, typs := env.typs } f' then return s!"{pre}: check {e}"
-  let evs := log.toList.filterMap fun
-    | .copyArg v i src => some s!"cp v{v}[{i}]<-v{src}"
-    | .rule v i _ ds => some s!"rule v{v}#{i} {ds.toList.map (·.id)}"
-    | _ => none
-  return s!"{pre}: {why tabs t f' g log'} DEBUG {evs}"
+  return s!"{pre}: {why tabs t f' g log'}"
 
 open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdAccepts` fails, with the forwardings of the log (`fwdPre`) (diagnostics). -/

@@ -25,6 +25,7 @@ structure Link (tabs : Tables) (f g : Func) (b dst : ID) (ps : List (ID × ID)) 
   hsid : sv.id = s
   hsop : sv.op = .Store
   hsbl : sv.block = b
+  hsmem : tabs.ty sv.type = .mem
   hsargs : sv.args = #[p, sv.args[1]!, if k = 0 then m0 else (ps[k - 1]?.map (·.2)).getD 0]
   hw : copyReach tabs f.valueTab f.valueTab.size a sv.args[1]! = true
   hsty : auxTy tabs sv.aux = t
@@ -64,10 +65,10 @@ theorem ssLink_spec {b dst : ID} {fs : List (Nat × Ty)} {as : Array ID} {ps : L
     split at h
     next av sv ov h1 h2 h3 =>
       simp only [Bool.and_eq_true, beq_iff_eq, Option.isNone_iff_eq_none, and_assoc] at h
-      obtain ⟨hat, hsf, hsid, hsop, hsbl, hs3, hs0, hs2, hw, hst, hpf, hpid, hpop, hpbl, hp1, hd,
+      obtain ⟨hat, hsf, hsid, hsop, hsbl, hsm, hs3, hs0, hs2, hw, hst, hpf, hpid, hpop, hpbl, hp1, hd,
         hai, hpt⟩ := h
       refine ⟨o, t, a, p, s, av, sv, ov, hf, ha, hp, ⟨h1, Ty.eq_of_beq hat, h2, hsf, hsid, hsop,
-        hsbl, ?_, hw, Ty.eq_of_beq hst, h3, hpf, hpid, hpop, hpbl, args1 hp1, hd, hai, hpt⟩⟩
+        hsbl, Ty.eq_of_beq hsm, ?_, hw, Ty.eq_of_beq hst, h3, hpf, hpid, hpop, hpbl, args1 hp1, hd, hai, hpt⟩⟩
       rw [args3 hs3, hs0, hs2]
       simp
     next => simp at h

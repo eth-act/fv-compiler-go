@@ -1298,7 +1298,7 @@ def ssWalk (g : Func) : Nat → ID → List (ID × ID) × ID
 
 /-- Field `k` of a split (block `b`, pointer `dst`, fields `fs`, `StructMake` arguments `as`,
 chain `ps` from memory `m0`): the `StructMake` argument has the field's shape; the pair `(p, s)`
-is a fresh (not in `f`) `Store` of that argument (up to copies in `f`) at the field's shape on
+is a fresh (not in `f`) memory-typed `Store` of that argument (up to copies in `f`) at the field's shape on
 the previous store of the chain (`m0` for the first), at a fresh `OffPtr` (pointer shape) by the
 field's offset of `dst` (up to copies), both in `b`. -/
 def ssLink (tabs : Tables) (f g : Func) (b dst : ID) (fs : List (Nat × Sem.Ty)) (as : Array ID)
@@ -1310,6 +1310,7 @@ def ssLink (tabs : Tables) (f g : Func) (b dst : ID) (fs : List (Nat × Sem.Ty))
     | some av, some sv, some ov =>
       Sem.Ty.beq (tabs.ty av.type) t &&
       (f.value? s).isNone && sv.id == s && sv.op == .Store && sv.block == b &&
+      Sem.Ty.beq (tabs.ty sv.type) .mem &&
       sv.args.size == 3 && sv.args[0]! == p && sv.args[2]! == prev &&
       copyReach tabs f.valueTab f.valueTab.size a sv.args[1]! &&
       Sem.Ty.beq (Sem.auxTy tabs sv.aux) t &&
