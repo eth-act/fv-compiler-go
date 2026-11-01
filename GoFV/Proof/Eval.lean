@@ -16,18 +16,31 @@ namespace GoFV.Proof
 open GoFV.SSA GoFV.SSA.Sem
 
 theorem retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t := by
-  cases t <;> cases v <;> try rfl
-  rename_i w' w x
-  by_cases h : w'.bits ≤ w.bits
-  · simp [Val.retype, h]
-  · simp [Val.retype, h]
+  cases t with
+  | int w' =>
+    cases v with
+    | int w x =>
+      by_cases h : w'.bits ≤ w.bits
+      · simp [Val.retype, h]
+      · simp [Val.retype, h]
+    | ptr p =>
+      cases w' <;> try rfl
+      rcases ha : p.addr? with _ | a
+      · simp only [Val.retype, ha]
+      · simp only [Val.retype, ha, Width.bits, Nat.le_refl, ite_true, BitVec.setWidth_eq]
+    | _ => cases w' <;> rfl
+  | ptr e =>
+    cases v with
+    | int w x => cases w <;> rfl
+    | _ => rfl
+  | _ => cases v <;> try rfl
+  all_goals (rename_i w _; cases w <;> rfl)
 
 theorem retype_of_hasTy {t : Ty} {v : Val} (h : v.hasTy t = true) : v.retype t = v := by
-  cases t <;> cases v <;> try rfl
-  rename_i w' w x
-  simp only [Val.hasTy, beq_iff_eq] at h
-  subst h
-  simp [Val.retype]
+  cases t <;> cases v <;> (try rfl) <;> (try (simp [Val.hasTy] at h; done))
+  all_goals first
+    | (rename_i w' w x; simp only [Val.hasTy, beq_iff_eq] at h; subst h; simp [Val.retype])
+    | (rename_i w; cases w <;> rfl)
 
 /-- Every register of a frame is fixed by `retype` at its value's shape. -/
 def Typed (ctx : Ctx) (fr : Frame) : Prop :=
@@ -37,36 +50,6 @@ theorem typed_replicate (ctx : Ctx) (n : Nat) (fr : Frame) (h : fr.regs = Array.
     Typed ctx fr := fun x y hx => by
   rw [h, Array.getElem?_replicate] at hx
   split at hx <;> cases hx
-
-theorem argVal_typed {ctx : Ctx} {fr : Frame} {n : AuxRef} {off : Int} {ty : Ty} {y : Val}
-    (h : argVal ctx fr n off ty = .ok y) : y.retype ty = y := by
-  unfold argVal at h
-  split at h
-  · cases h
-  · split at h
-    · cases h
-    · cases h
-      split
-      · rename_i hc
-        simp only [Bool.and_eq_true] at hc
-        exact retype_of_hasTy hc.2
-      · cases ty <;> rfl
-
-theorem callExtern_typed {env : Env} {callee : String} {args : List Val} {y : Val} (t : Ty)
-    (h : callExtern env callee args = .ok y) : y.retype t = y := by
-  unfold callExtern at h
-  simp only at h
-  split at h
-  · simp only [bind, Res.bind] at h
-    split at h
-    · cases h
-    · split at h
-      · cases h
-      · split at h
-        · cases h; cases t <;> rfl
-        · cases h
-        · cases h
-  · cases h
 
 theorem panicBounds_not_ok {k : Int64} {args : List Val} {y : Val} :
     panicBounds k args ≠ .ok y := by
@@ -84,31 +67,24 @@ theorem evalValue_typed {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Va
   | ok argv =>
     rw [hm] at h
     simp only [bind, Res.bind] at h
-    split at h
-    · cases h; cases (ctx.tys[v.id]?.getD .other) <;> rfl
-    · split at h
-      · exact argVal_typed h
-      · cases h
-    · split at h
-      · exact argVal_typed h
-      · cases h
-    · exact absurd h panicBounds_not_ok
-    · split at h
-      · exact callExtern_typed _ h
-      · cases h
-    · split at h
-      · exact callExtern_typed _ h
-      · cases h
-    · split at h
-      · cases h
-      · cases h; exact retype_idem _ _
+    cases ho : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
+    | ok r => rw [ho] at h; cases h; exact retype_idem _ _
+    | panic e m => rw [ho] at h; cases h
+    | stuck msg => rw [ho] at h; cases h
+
+theorem evalOp_copy {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (hop : v.op = .Copy) : evalOp env ctx fr v argv ty = .ok (evalPure .Copy ty v.auxInt v.aux argv) := by
+  simp only [evalOp, frameVal, hop]
+  rfl
 
 theorem evalValue_copy {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {w : ID} {y : Val}
     (hop : v.op = .Copy) (ha : v.args = #[w]) (hw : fr.regs[w]? = some (some y)) :
     evalValue env ctx fr v = .ok (y.retype (ctx.tys[v.id]?.getD .other)) := by
   unfold evalValue
   rw [ha]
-  simp only [List.mapM_cons, List.mapM_nil, hw, Option.join, bind, Res.bind, Res.ofOption, pure, hop]
+  simp only [List.mapM_cons, List.mapM_nil, hw, Option.join, bind, Res.bind, Res.ofOption, pure]
+  rw [show (some (some y)).bind id = some y from rfl]
+  simp only [evalOp_copy hop]
   rfl
 
 theorem evalValue_copy_inv {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {w : ID} {y : Val}
@@ -151,13 +127,32 @@ theorem argVal_params {ctx ctx' : Ctx} (h : ctx'.params = ctx.params) (fr : Fram
     (off : Int) (ty : Ty) : argVal ctx' fr n off ty = argVal ctx fr n off ty := by
   unfold argVal; rw [h]
 
+theorem evalOp_frame (env : Env) (ctx : Ctx) (fr : Frame) (r : Array (Option Val)) (v : Value)
+    (argv : List Val) (ty : Ty) :
+    evalOp env ctx { fr with regs := r } v argv ty = evalOp env ctx fr v argv ty := rfl
+
+/-- `evalOp` reads of the value only its op, aux, auxint and ID, and of the context only the
+tables, the parameters and the activation. -/
+theorem evalOp_congr {env : Env} {ctx ctx' : Ctx} {fr : Frame} {v v' : Value} {argv : List Val}
+    {ty : Ty} (hop : v'.op = v.op) (haux : v'.aux = v.aux) (hai : v'.auxInt = v.auxInt)
+    (hid : v'.id = v.id) (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params)
+    (hact : ctx'.act = ctx.act) :
+    evalOp env ctx' fr v' argv ty = evalOp env ctx fr v argv ty := by
+  obtain ⟨f, tabs, tys, sched, params, paramTys, outs, locals, act⟩ := ctx
+  obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
+  dsimp only at htabs hpar hact
+  subst htabs hpar hact
+  unfold evalOp frameVal memRoot
+  simp only [hop, haux, hai, hid]
+  rfl
+
 theorem evalValue_eq_of_args {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v' : Value}
     (hop : v'.op = v.op) (haux : v'.aux = v.aux) (hai : v'.auxInt = v.auxInt) (hid : v'.id = v.id)
     (hsz : v'.args.size = v.args.size)
     (hargs : ∀ (k : Nat) (a : ID), v.args[k]? = some a →
       ∃ a' y, v'.args[k]? = some a' ∧ fr.regs[a]? = some (some y) ∧ fr'.regs[a']? = some (some y))
     (hfr : fr' = { fr with regs := fr'.regs }) (hty : ctx'.tys[v.id]? = ctx.tys[v.id]?)
-    (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params) :
+    (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params) (hact : ctx'.act = ctx.act) :
     evalValue env ctx' fr' v' = evalValue env ctx fr v := by
   unfold evalValue
   rw [mapM_ofOption_eq (l := v'.args.toList) (l' := v.args.toList)
@@ -171,8 +166,8 @@ theorem evalValue_eq_of_args {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v'
       rw [Array.getElem?_toList] at ha'
       rw [ha'] at h1; cases h1
       exact ⟨v.args[k], y, by simp [hk], by simp [h3], by simp [h2]⟩)]
-  rw [hop, haux, hai, hid, hty, htabs, hfr]
-  simp only [argVal_regs, argVal_params hpar]
+  rw [hid, hty, hfr]
+  simp only [evalOp_frame, evalOp_congr hop haux hai hid htabs hpar hact]
 
 theorem mapM_ofOption_def {m : ID → String} {r : ID → Option Val} :
     ∀ {l : List ID} {L : List Val}, l.mapM (fun a => Res.ofOption (m a) (r a)) = .ok L →
@@ -227,10 +222,35 @@ theorem evalValue_args_def {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
   | panic e m => exact absurd hm mapM_ofOption_ne_panic
   | stuck msg => rw [hm] at h; exact absurd rfl (h msg)
 
-/-- Only `PanicBounds` and calls panic. -/
+theorem argVal_not_panic {ctx : Ctx} {fr : Frame} {n : AuxRef} {off : Int} {ty : Ty} {e : Panic}
+    {m : Mem} : argVal ctx fr n off ty ≠ .panic e m := by
+  unfold argVal
+  split
+  · nofun
+  · split
+    · nofun
+    · split <;> nofun
+
+theorem writeRes_not_panic {what : String} {o : Option Mem} {e : Panic} {m : Mem} :
+    writeRes what o ≠ .panic e m := by
+  unfold writeRes; split <;> nofun
+
+/-- Of the memory roots only `NilCheck` panics. -/
+theorem memRoot_panic {ctx : Ctx} {v : Value} {argv : List Val} {e : Panic} {m : Mem}
+    (h : memRoot ctx v argv = .panic e m) : v.op = .NilCheck := by
+  unfold memRoot at h
+  split at h <;> (try exact absurd h writeRes_not_panic) <;> (try (rename_i hop _; exact hop))
+  all_goals first
+    | (split at h <;> first | exact absurd h writeRes_not_panic | cases h)
+    | (split at h <;> cases h)
+    | cases h
+    | (rename_i hop; exact hop)
+  all_goals assumption
+
+/-- Only `PanicBounds`, calls and `NilCheck` panic. -/
 theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e : Panic} {m : Mem}
     (h : evalValue env ctx fr v = .panic e m) :
-    v.op = .PanicBounds ∨ v.op = .StaticLECall ∨ v.op = .StaticCall := by
+    v.op = .PanicBounds ∨ v.op = .StaticLECall ∨ v.op = .StaticCall ∨ v.op = .NilCheck := by
   unfold evalValue at h
   cases hm : v.args.toList.mapM (fun a =>
       Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
@@ -239,22 +259,42 @@ theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e :
   | ok argv =>
     rw [hm] at h
     simp only [bind, Res.bind] at h
-    split at h
-    · cases h
-    · split at h
-      · unfold argVal at h; split at h
-        · cases h
-        · split at h <;> cases h
-      · cases h
-    · split at h
-      · unfold argVal at h; split at h
-        · cases h
-        · split at h <;> cases h
-      · cases h
-    · exact .inl ‹_›
-    · exact .inr (.inl ‹_›)
-    · exact .inr (.inr ‹_›)
-    · split at h <;> cases h
+    cases ho : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
+    | ok r => rw [ho] at h; cases h
+    | stuck msg => rw [ho] at h; cases h
+    | panic e' m' =>
+      unfold evalOp at ho
+      split at ho
+      · cases ho
+      · split at ho
+        · exact absurd ho argVal_not_panic
+        · cases ho
+      · split at ho
+        · exact absurd ho argVal_not_panic
+        · cases ho
+      · exact .inl ‹_›
+      · exact .inr (.inl ‹_›)
+      · exact .inr (.inr (.inl ‹_›))
+      all_goals first
+        | exact .inr (.inr (.inr (memRoot_panic ho)))
+        | (split at ho
+           · cases ho
+           · split at ho <;> cases ho)
+
+theorem typeShapes_getD (tabs : Tables) (t : TypeRef) :
+    (typeShapes tabs)[t]?.getD .other = tabs.ty t := by
+  unfold typeShapes
+  rw [Array.getElem?_map]
+  by_cases ht : t < tabs.types.size
+  · simp [ht]
+  · have hr : ((List.range tabs.types.size).toArray)[t]? = none := by simp [ht]
+    have hn : tabs.type? t = none := by
+      unfold Tables.type?
+      rw [Array.getElem?_eq_none (Nat.le_of_not_lt ht)]; rfl
+    rw [hr]
+    show Ty.other = tyOf tabs 32 t
+    unfold tyOf
+    rw [hn]
 
 theorem tys_of_value {tabs : Tables} {f : Func} {x : ID} {v : Value} (h : f.value? x = some v) :
     (Ctx.make tabs f).tys[x]? = some (tabs.ty v.type) := by
@@ -262,6 +302,8 @@ theorem tys_of_value {tabs : Tables} {f : Func} {x : ID} {v : Value} (h : f.valu
   simp only [Ctx.make, Array.getElem?_map]
   cases hx : f.valueTab[x]? with
   | none => rw [hx] at h; cases h
-  | some o => rw [hx] at h; simp at h; subst h; rfl
+  | some o =>
+    rw [hx] at h; simp at h; subst h
+    simp only [Option.map_some, valueTy, typeShapes_getD]
 
 end GoFV.Proof

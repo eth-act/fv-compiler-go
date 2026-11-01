@@ -202,9 +202,14 @@ theorem refines_of_rel (S : Setup tabs f g) : Refines tabs g tabs f := by
     simp only [hn] at hd
     have hsz : (Ctx.make tabs g).f.valueTab.size = (Ctx.make tabs f).f.valueTab.size :=
       S.rel.vsize
-    rw [hsz, show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from S.entry]
-    exact runLoop_sim (R env tabs f g) (fun frS frT bid i ⟨h1, h2⟩ => by subst h1; exact step S h2) fuel _ _ _ _
-      ⟨rfl, by simp [Ctx.make], typed_replicate _ _ _ rfl, typed_replicate _ _ _ rfl,
-        .inl rfl⟩ hd
+    have hentry : entryFrame env (Ctx.make tabs g) args mem = entryFrame env (Ctx.make tabs f) args mem := by
+      unfold entryFrame frameMem
+      rw [S.paramTys, S.locals, hsz]; rfl
+    rw [hentry, S.outs, show (Ctx.make tabs g).act = (Ctx.make tabs f).act from rfl,
+      show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from S.entry]
+    exact finish_refines hd (runLoop_sim (R env tabs f g)
+      (fun frS frT bid i ⟨h1, h2⟩ => by subst h1; exact step S h2) fuel _ _ _ _
+      ⟨rfl, by simp [Ctx.make, entryFrame], typed_replicate _ _ _ rfl, typed_replicate _ _ _ rfl,
+        .inl rfl⟩ (finish_defined hd))
 
 end GoFV.Proof.CopyElim

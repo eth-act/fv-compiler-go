@@ -46,6 +46,10 @@ structure CtxEq (ctx ctx' : Ctx) : Prop where
   tys : ctx.tys = ctx'.tys
   sched : ctx.sched = ctx'.sched
   params : ctx.params = ctx'.params
+  paramTys : ctx.paramTys = ctx'.paramTys
+  outs : ctx.outs = ctx'.outs
+  locals : ctx.locals = ctx'.locals
+  act : ctx.act = ctx'.act
   value : ∀ id, (ctx.f.value? id).map eraseV = (ctx'.f.value? id).map eraseV
   block : ∀ id, (ctx.f.block? id).map eraseB = (ctx'.f.block? id).map eraseB
 
@@ -54,12 +58,23 @@ theorem evalValue_eraseV (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) :
 
 theorem evalValue_ctx {env : Env} {ctx ctx' : Ctx} (h : CtxEq ctx ctx') (fr : Frame) (v : Value) :
     evalValue env ctx fr v = evalValue env ctx' fr v := by
-  obtain ⟨f, tabs, tys, sched, params⟩ := ctx
-  obtain ⟨f', tabs', tys', sched', params'⟩ := ctx'
-  obtain ⟨h1, h2, -, h4, -, -⟩ := h
-  dsimp only at h1 h2 h4
-  subst h1 h2 h4
+  obtain ⟨f, tabs, tys, sched, params, paramTys, outs, locals, act⟩ := ctx
+  obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
+  obtain ⟨h1, h2, -, h4, -, -, -, h8, -, -⟩ := h
+  dsimp only at h1 h2 h4 h8
+  subst h1 h2 h4 h8
   rfl
+
+theorem entryFrame_ctx {env : Env} {ctx ctx' : Ctx} (h : CtxEq ctx ctx')
+    (hsize : ctx.f.valueTab.size = ctx'.f.valueTab.size) (args : List Val) (mem : Mem) :
+    entryFrame env ctx args mem = entryFrame env ctx' args mem := by
+  obtain ⟨f, tabs, tys, sched, params, paramTys, outs, locals, act⟩ := ctx
+  obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
+  obtain ⟨-, -, -, -, h5, -, h7, h8, -, -⟩ := h
+  dsimp only at h5 h7 h8 hsize
+  subst h5 h7 h8
+  unfold entryFrame frameMem
+  rw [hsize]
 
 theorem stepTerm_eraseB (fr : Frame) (b : Block) : stepTerm fr (eraseB b) = stepTerm fr b := (rfl)
 
@@ -158,7 +173,7 @@ theorem map_eq_of_factor {α β γ : Type} {t t' : Array α} {G : α → γ} {H 
 theorem tys_make (tabs : Tables) {f g : Func}
     (hvt : f.valueTab.map (Option.map eraseV) = g.valueTab.map (Option.map eraseV)) :
     (Ctx.make tabs f).tys = (Ctx.make tabs g).tys :=
-  map_eq_of_factor (H := fun o => o.elim Ty.other (fun v => tabs.ty v.type))
+  map_eq_of_factor (H := valueTy (typeShapes tabs))
     (fun o => by cases o <;> rfl) (fun o => by cases o <;> rfl) hvt
 
 theorem bind_schedule_erase {f g : Func}
@@ -180,7 +195,7 @@ theorem sched_make (tabs : Tables) {f g : Func}
 
 theorem params_make (tabs : Tables) {f g : Func} (hown : f.ownAux = g.ownAux) :
     (Ctx.make tabs f).params = (Ctx.make tabs g).params := by
-  unfold Ctx.make
+  unfold Ctx.make abiParams
   simp only [hown]
 
 theorem ctxEq_make (tabs : Tables) {f g : Func} (h : eraseF f = eraseF g) :
@@ -194,7 +209,12 @@ theorem ctxEq_make (tabs : Tables) {f g : Func} (h : eraseF f = eraseF g) :
   have hbt : f.blockTab.map (Option.map eraseB) = g.blockTab.map (Option.map eraseB) :=
     congrArg Func.blockTab h
   have hown : f.ownAux = g.ownAux := by have := congrArg Func.ownAux h; exact this
-  exact ⟨rfl, tys_make tabs hvt, sched_make tabs hv hbt, params_make tabs hown, hv, hb⟩
+  have hps : abiParams tabs f = abiParams tabs g := by unfold abiParams; rw [hown]
+  have hp : (Ctx.make tabs f).params = (Ctx.make tabs g).params := params_make tabs hown
+  refine ⟨rfl, tys_make tabs hvt, sched_make tabs hv hbt, hp, ?_, ?_, ?_, rfl, hv, hb⟩
+  · unfold Ctx.make; simp only [hps]
+  · unfold Ctx.make; simp only [hps]
+  · unfold Ctx.make; simp only [hps]
 
 /-- Functions with the same erasure have the same runs. -/
 theorem run_congr {f g : Func} (h : eraseF f = eraseF g) (env : Env) (tabs : Tables)
@@ -211,9 +231,9 @@ theorem run_congr {f g : Func} (h : eraseF f = eraseF g) (env : Env) (tabs : Tab
   rw [hc.params]
   split
   · rfl
-  · rw [runLoop_congr hc]
-    show runLoop env _ fuel { regs := Array.replicate f.valueTab.size none, args, mem0 := mem } f.entry 0 = runLoop env _ fuel { regs := Array.replicate g.valueTab.size none, args, mem0 := mem } g.entry 0
-    rw [hsize, hentry]
+  · rw [runLoop_congr hc, hc.outs, hc.act, entryFrame_ctx hc hsize]
+    show finish _ _ (runLoop env _ fuel _ f.entry 0) = finish _ _ (runLoop env _ fuel _ g.entry 0)
+    rw [hentry]
 
 theorem Refines.of_eraseF {tabs : Tables} {f g : Func} (h : eraseF g = eraseF f) :
     Refines tabs g tabs f :=

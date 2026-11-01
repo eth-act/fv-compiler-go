@@ -24,6 +24,9 @@ abbrev Contract := List Val → Mem → COutcome
 structure Env where
   /-- Callees without SSA (the runtime), by link symbol name. -/
   extern : String → Option Contract := fun _ => none
+  /-- The global image (`Sem/Image.lean`, `globalImage`): initial allocations of the global
+  symbols, by name; a run adds those its memory does not have yet. -/
+  globals : List (String × Alloc) := []
 
 namespace Env
 
@@ -48,6 +51,11 @@ inductive Outcome where
   deriving Inhabited
 
 namespace Outcome
+
+/-- The outcomes that carry an obligation: returned or panicked. -/
+def Defined : Outcome → Prop
+  | .returned .. | .panicked .. => True
+  | _ => False
 
 /-- Rendering for test output; `stuck` messages are kept apart (`isStuck`). -/
 def render : Outcome → String

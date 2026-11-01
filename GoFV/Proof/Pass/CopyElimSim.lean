@@ -59,8 +59,10 @@ theorem cfgView_block {f g : Func} (h : cfgView g = cfgView f) {bid : ID} {fb : 
 /-- The input fragment of the simulation: no value of a tree block has a zero-size aggregate
 type (phielim would turn it into `Empty`), and the side-effecting roots (priority 2) of every
 tree block are pairwise ordered by dependency (so a panicking root is reached by every
-schedule; `NilCheck`s may float). Both hold on the corpus except where noted in
-`docs/contracts/check.md`. -/
+schedule; `NilCheck`s may float), and `f` has no `NilCheck` (since the P2 semantics a nil
+`NilCheck` panics, and the scheduler's FIFO tie-break between ready `NilCheck`s is not preserved
+by a change of dependencies; lifted by the canonical tie-break of #96). The first two hold on
+the corpus except where noted in `docs/contracts/check.md`. -/
 structure SimFrag (tabs : Tables) (f : Func) : Prop where
   noEmpty : ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
     ∀ x ∈ fb.values, ∀ fv, f.value? x = some fv → zeroSizeAggregate tabs fv.type ≠ .ok true
@@ -69,6 +71,7 @@ structure SimFrag (tabs : Tables) (f : Func) : Prop where
       ¬ NilIn (schedNodes f fb).toList x → ¬ NilIn (schedNodes f fb).toList y → x ≠ y →
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ∨
       Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) y x
+  noNil : ∀ x fv, f.value? x = some fv → fv.op ≠ .NilCheck
 
 /-- `r` is `.ok true`. -/
 def isOkTrue : Except String Bool → Bool
@@ -76,9 +79,13 @@ def isOkTrue : Except String Bool → Bool
   | _ => false
 
 /-- Decidable sufficient condition for `SimFrag`: no tree value has a zero-size aggregate type,
-and every tree block has at most one priority-2 root (enough for small witnesses; the corpus
-check of the general condition is in `GoFVTest/CopyRelProbe.lean`). -/
+every tree block has at most one priority-2 root (enough for small witnesses; the corpus
+check of the general condition is in `GoFVTest/CopyRelProbe.lean`), and no value is a
+`NilCheck`. -/
 def simFragB (tabs : Tables) (f : Func) : Bool :=
+  f.valueTab.all (fun o => match o with
+    | some v => v.op != .NilCheck
+    | none => true) &&
   f.blocks.all fun bid =>
     !(make f).inTree bid ||
     match f.block? bid with
@@ -92,8 +99,11 @@ def simFragB (tabs : Tables) (f : Func) : Bool :=
 theorem simFrag_of {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f)
     (h : simFragB tabs f = true) : SimFrag tabs f := by
   unfold simFragB at h
-  rw [Array.all_eq_true'] at h
-  refine ⟨fun bid hb ht fb hfb x hx fv hfv hz => ?_, fun bid hb ht fb hfb x y hx hy hnx hny hxy => ?_⟩
+  rw [Bool.and_eq_true] at h
+  obtain ⟨hnn, h⟩ := h
+  rw [Array.all_eq_true'] at h hnn
+  refine ⟨fun bid hb ht fb hfb x hx fv hfv hz => ?_, fun bid hb ht fb hfb x y hx hy hnx hny hxy => ?_,
+    fun x fv hfv hop => ?_⟩
   · have h := h bid hb
     simp only [DomCert.Cert.inTree, ht, Bool.not_true, Bool.false_or, hfb, Bool.and_eq_true,
       Array.all_eq_true'] at h
@@ -128,6 +138,20 @@ theorem simFrag_of {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f)
     | [a], _ =>
       rw [List.mem_singleton] at hx2 hy2
       exact hxy (by rw [hx2, hy2])
+  · unfold Func.value? at hfv
+    cases hx : f.valueTab[x]? with
+    | none => rw [hx] at hfv; cases hfv
+    | some o =>
+      rw [hx] at hfv
+      have hmem : o ∈ f.valueTab := Array.mem_of_getElem? hx
+      have := hnn o hmem
+      cases o with
+      | none => cases hfv
+      | some v =>
+        simp only [Option.join] at hfv
+        cases hfv
+        simp only [hop, bne_self_eq_false] at this
+        cases this
 
 /-- Everything the simulation uses about copyelim's input `f` and output `g`. -/
 structure Setup (tabs : Tables) (f g : Func) : Prop where
@@ -217,7 +241,16 @@ theorem tys {b : ID} (hb : Tree f b) {fb : Block} (hfb : f.block? b = some fb) {
   rw [tys_of_value hfv, tys_of_value hgv, hty]
 
 theorem params : (Ctx.make tabs g).params = (Ctx.make tabs f).params := by
-  simp only [Ctx.make, S.rel.ownAux]
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
+
+theorem paramTys : (Ctx.make tabs g).paramTys = (Ctx.make tabs f).paramTys := by
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
+
+theorem outs : (Ctx.make tabs g).outs = (Ctx.make tabs f).outs := by
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
+
+theorem locals : (Ctx.make tabs g).locals = (Ctx.make tabs f).locals := by
+  simp only [Ctx.make, abiParams, S.rel.ownAux]
 
 /-- A value of `g` used in a tree block is listed in a tree block of `f`, the same one. -/
 theorem usedG {a q : ID} (hl : Listed g a) (ha : Anc (make f) (blockOf g a) q) :

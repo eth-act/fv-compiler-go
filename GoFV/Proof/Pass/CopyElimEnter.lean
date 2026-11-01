@@ -41,7 +41,7 @@ theorem evalSame (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
   | empty hzz => exact absurd hzz hz
   | same hop haux hai hsz hargs' =>
     refine evalValue_eq_of_args hop haux hai (hgid.trans hfid.symm) hsz (fun k fa hfa => ?_) hg'
-      (by rw [hfid]; exact S.tys hbt hfb hx) rfl S.params
+      (by rw [hfid]; exact S.tys hbt hfb hx) rfl S.params rfl
     obtain ⟨ga, hga, hr⟩ := hargs' k fa hfa
     have hfam : fa ∈ fv.args := Array.mem_of_getElem? hfa
     obtain ⟨y, hy⟩ := hargsdef fa hfam
@@ -447,7 +447,12 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
   obtain ⟨fvr', gvr, hfvr', hgvr, -, hfrid, -, -, hrelr, hzr⟩ := S.value hbt hfb hrb
   rw [hfvr] at hfvr'; cases hfvr'
   rw [stepV_of hfvr] at hrp
-  have hrop := evalValue_panic_op hrp
+  have hrop : fvr.op = .PanicBounds ∨ fvr.op = .StaticLECall ∨ fvr.op = .StaticCall := by
+    rcases evalValue_panic_op hrp with h | h | h | h
+    · exact .inl h
+    · exact .inr (.inl h)
+    · exact .inr (.inr h)
+    · exact absurd h (S.frag.noNil _ _ hfvr)
   have hgop : gvr.op = fvr.op := by
     cases hrelr with
     | same hop => exact hop

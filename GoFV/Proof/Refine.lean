@@ -28,6 +28,10 @@ theorem Sem.Refines.trans : {a b c : Val} → Sem.Refines a b → Sem.Refines b 
   | _, _, _, .bool _, h => h
   | _, _, _, .mem _, h => h
   | _, _, _, .tuple h1, .tuple h2 => .tuple (Sem.RefinesList.trans h1 h2)
+  | _, _, _, .ptr _, h => h
+  | _, _, _, .agg h1, .agg h2 => .agg (Sem.RefinesList.trans h1 h2)
+  | _, _, _, .blob _, h => h
+  | _, _, _, .empty, h => h
 theorem Sem.RefinesList.trans :
     {a b c : List Val} → Sem.RefinesList a b → Sem.RefinesList b c → Sem.RefinesList a c
   | _, _, _, .nil, .nil => .nil
@@ -42,11 +46,6 @@ inductive OutcomeRefines : Outcome → Outcome → Prop where
   | returned {rs rs' : List Val} {m : Mem} : RefinesList rs rs' →
       OutcomeRefines (.returned rs m) (.returned rs' m)
   | panicked (e : Panic) (m : Mem) : OutcomeRefines (.panicked e m) (.panicked e m)
-
-/-- The outcomes that carry an obligation: returned or panicked. -/
-def _root_.GoFV.SSA.Sem.Outcome.Defined : Outcome → Prop
-  | .returned .. | .panicked .. => True
-  | _ => False
 
 theorem OutcomeRefines.refl {o : Outcome} (h : o.Defined) : OutcomeRefines o o := by
   cases o with
@@ -65,6 +64,40 @@ theorem OutcomeRefines.defined_left {a b : Outcome} (h : OutcomeRefines a b) : a
 
 theorem OutcomeRefines.defined_right {a b : Outcome} (h : OutcomeRefines a b) : b.Defined := by
   cases h <;> trivial
+
+mutual
+/-- A refinement whose source contains no poison is an equality. -/
+theorem Sem.Refines.eq_of_noPoison : {a b : Val} → Sem.Refines a b → a.hasPoison = false → a = b
+  | _, _, .poison _, h => by simp [Val.hasPoison] at h
+  | _, _, .int _ _, _ => rfl
+  | _, _, .bool _, _ => rfl
+  | _, _, .mem _, _ => rfl
+  | _, _, .ptr _, _ => rfl
+  | _, _, .blob _, _ => rfl
+  | _, _, .empty, _ => rfl
+  | _, _, .tuple hl, h => by
+    rw [Sem.RefinesList.eq_of_noPoison hl (by simpa [Val.hasPoison] using h)]
+  | _, _, .agg hl, h => by
+    rw [Sem.RefinesList.eq_of_noPoison hl (by simpa [Val.hasPoison] using h)]
+theorem Sem.RefinesList.eq_of_noPoison :
+    {as bs : List Val} → Sem.RefinesList as bs → Val.anyPoison as = false → as = bs
+  | _, _, .nil, _ => rfl
+  | _, _, .cons h t, hp => by
+    simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
+    rw [Sem.Refines.eq_of_noPoison h hp.1, Sem.RefinesList.eq_of_noPoison t hp.2]
+end
+
+/-- `finish` (Go-typed results, frame removal) preserves outcome refinement. -/
+theorem finish_refines {outs : Array (Option AuxRef × Ty × Nat)} {act : Nat} {o o' : Outcome}
+    (hd : (finish outs act o).Defined) (h : OutcomeRefines o o') :
+    OutcomeRefines (finish outs act o) (finish outs act o') := by
+  cases h with
+  | panicked e m => exact .panicked e m
+  | @returned rs rs' m hr =>
+    by_cases hp : Val.anyPoison rs = true
+    · simp only [finish, hp, if_true] at hd; exact hd.elim
+    · rw [← Sem.RefinesList.eq_of_noPoison hr (by simpa using hp)]
+      exact OutcomeRefines.refl hd
 
 /-! ## Fuel monotonicity -/
 
@@ -97,7 +130,9 @@ theorem runCtx_mono (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) {fuel 
   unfold runCtx at h ⊢
   split
   · rfl
-  · next hn => simp only [hn] at h; exact runLoop_mono env ctx _ k _ _ _ h
+  · next hn =>
+    simp only [hn] at h
+    rw [runLoop_mono env ctx _ k _ _ _ (finish_defined h)]
 
 theorem run_mono {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : Mem}
     {fuel fuel' : Nat} (hle : fuel ≤ fuel') (h : (run env tabs f args mem fuel).Defined) :

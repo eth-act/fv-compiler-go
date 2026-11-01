@@ -39,7 +39,7 @@ rm -rf "$w/cache"
 
 (cd "$root" && "$root/scripts/memcap.sh" lake build sem-difftest >/dev/null)
 bin=$root/.lake/build/bin/sem-difftest
-mapfile -t funcs < <(grep -o '"[A-Za-z0-9_]*":' "$root/tools/semdiff/prog/funcs.go" | tr -d '":')
+mapfile -t funcs < <(grep -oh '"[A-Za-z0-9_]*":' "$root"/tools/semdiff/prog/*.go | tr -d '":')
 "$bin" gen "$w/export/main" "$n" "$seed" "${funcs[@]}" >"$w/calls.txt"
 qemu-aarch64-static "$w/prog.arm64" <"$w/calls.txt" >"$w/native.txt"
 "$root/scripts/memcap.sh" "$bin" run "$w/export/main" "$w/calls.txt" "$w/native.txt"
