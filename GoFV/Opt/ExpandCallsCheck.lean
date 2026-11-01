@@ -25,8 +25,9 @@ classes:
   `InterCall` with the same leading arguments and, per input parameter, its register pieces
   computed by selector chains (`SlicePtr`, `StructSelect [i]`, …) of the Go argument, or for a
   stack-assigned one a chain of new `Store`s of those pieces into its slots of the
-  outgoing-arguments area on the call's memory (`stackOK`); the call's type is the register types
-  of its register-assigned results (`regShapeOK`);
+  outgoing-arguments area on the call's memory (`stackOK`), the first one possibly a new `Move`
+  copying a wide argument `Dereference src mem` from `src` into its slot (`moveOK`); the call's
+  type is the register types of its register-assigned results (`regShapeOK`);
 * **select**: a register-assigned call result `SelectN [i] c` becomes a Make-tree over
   `SelectN [firstReg + j] c`, a stack-assigned one a Make-tree of `Load`s of its leaf slots
   `OffPtr [off + o] SP` from the call's memory (`stkLeavesOK`); the call's memory
@@ -319,28 +320,84 @@ def storesOK (tabs : Tables) (sh : Array Ty) (g : Func) (nw : ID → Bool) :
      | none => false) && storesOK tabs sh g nw ss zs
   | _, _ => false
 
-/-- The `SP` under the address of `Store` `z`. -/
+/-- The `SP` under the address of `Store` (or `Move`) `z`. -/
 def storeSP (g : Func) (z : ID) : ID :=
   ((g.value? z).bind fun w => (g.value? w.args[0]!).map (·.args[0]!)).getD z
 
-/-- The `Store`s of the stack arguments of call `u` (in `f`; `w` in `g`): the chain from the
-target's memory argument down to the source's (empty if they are the same). -/
-def callStores (f g : Func) (u w : Value) : Option (List ID) :=
-  storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! u.args[u.args.size - 1]!
+/-- The bottom of the chain of new (`nw`) `Store`s from `z`: the first value below that is not
+one. -/
+def storeBottom (g : Func) (nw : ID → Bool) : Nat → ID → ID
+  | 0, z => z
+  | n + 1, z =>
+    match g.value? z with
+    | some w => if nw z && w.op == .Store && w.args.size == 3 then storeBottom g nw n w.args[2]! else z
+    | none => z
 
-/-- The stack arguments of call `u`: per stack parameter the `Store`s of its leaves (in leaf
-order, parameter by parameter, bottom of the chain first) write selector chains of its Go
-argument (`piecesOK`; a piece the source defines is one of the call's arguments) at their slots,
-and the slots are disjoint. -/
+/-- The copy of a wide stack argument of call `u` (in `f`; `w` in `g`): a new `Move` on the
+source call's memory at the bottom of the target's chain of stores. -/
+def callMove (f g : Func) (u w : Value) : Option ID :=
+  let b := storeBottom g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]!
+  match g.value? b with
+  | some bw =>
+    if isNewB f b && bw.op == .Move && bw.args.size == 3 && bw.args[2]! == u.args[u.args.size - 1]!
+    then some b else none
+  | none => none
+
+/-- The memory the stores of call `u`'s stack arguments start from: its `Move`, or else the
+source call's memory. -/
+def callBase (f g : Func) (u w : Value) : ID := (callMove f g u w).getD u.args[u.args.size - 1]!
+
+/-- The `Store`s of the stack arguments of call `u` (in `f`; `w` in `g`): the chain from the
+target's memory argument down to `callBase` (empty if they are the same). -/
+def callStores (f g : Func) (u w : Value) : Option (List ID) :=
+  storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! (callBase f g u w)
+
+/-- The stack parameters `sp` (with their arguments) of call `u` are written by the `Store`s
+`zs` (in leaf order, parameter by parameter, bottom of the chain first): selector chains of the
+Go arguments (`piecesOK`; a piece the source defines is one of the call's arguments) at their
+slots. -/
+def storeArgsOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u : Value)
+    (sp : List (ABIParam × ID)) (zs : List ID) : Bool :=
+  storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs &&
+    piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
+    (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+
+/-- A shape a `Move` of a wide argument copies: not zero-sized `Empty`. -/
+def moveTy : Ty → Bool
+  | .empty => false
+  | _ => true
+
+/-- **The copy of a wide stack argument** `a` (parameter `p` of call `u`) by the `Move` `z`
+(`Move {T} [n] (OffPtr [off] SP) src mem`): `a` is `Dereference src mem` of the call's memory
+`mem`, of `p`'s shape, and `z` copies `p`'s size into `p`'s slot; `src` is a source value
+the pass keeps. -/
+def moveOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u : Value) (p : ABIParam) (a z : ID) :
+    Bool :=
+  let t := tabs.ty p.type
+  match g.value? z, f.value? a with
+  | some mw, some au =>
+    mw.args.size == 3 && spOffOK sh g (isNewB f) mw.args[0]! p.offset &&
+      mw.auxInt.toInt == (t.size : Int) &&
+      (match shapeOf sh g z with
+       | .mem => true
+       | _ => false) &&
+      au.op == .Dereference && au.args.size == 2 && au.args[0]! == mw.args[1]! &&
+      au.args[1]! == u.args[u.args.size - 1]! &&
+      eqE (shapeOf sh f a) t && moveTy t && !isNewB f mw.args[1]! && !special f g mw.args[1]!
+  | _, _ => false
+
+/-- The stack arguments of call `u`: the `Store`s of `storeArgsOK`, below them for the first stack
+parameter possibly its `Move` (`moveOK`); the slots are disjoint. -/
 def stackOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : List ABIParam)
     (as : List ID) : Bool :=
   let sp := argPairs false ins as
   slotsSorted tabs (sp.map (·.1)) &&
   match callStores f g u w with
   | some zs =>
-    storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs &&
-      piecesOK tabs sh f g (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
-      (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+    match callMove f g u w, sp with
+    | none, _ => storeArgsOK tabs sh f g u sp zs
+    | some z, (p, a) :: sp' => moveOK tabs sh f g u p a z && storeArgsOK tabs sh f g u sp' zs
+    | some _, [] => false
   | none => false
 
 /-! ## Stack-assigned results -/
@@ -751,11 +808,37 @@ def newEvalB (tabs : Tables) (g : Func) (w : Value) : Bool :=
 /-- The memory argument of value `x` of `f`. -/
 def callMem (f : Func) (x : ID) : ID := ((f.value? x).map fun u => u.args[u.args.size - 1]!).getD x
 
-/-- The stack-argument `Store`s of value `x` of `f` (`callStores`; none unless `x` is a call). -/
-def stackStores (f g : Func) (x : ID) : List ID :=
+/-- The `Move` of the wide stack argument of value `x` of `f` (`callMove`; none unless `x` is a
+call). -/
+def stackMove (f g : Func) (x : ID) : Option ID :=
   match f.value? x, g.value? x with
-  | some u, some w => if (callOpMap u.op).isSome then (callStores f g u w).getD [] else []
-  | _, _ => []
+  | some u, some w => if (callOpMap u.op).isSome then callMove f g u w else none
+  | _, _ => none
+
+/-- The stack-argument `Store`s of value `x` of `f` (`callStores`; none unless `x` is a call),
+and its `Move` (`stackMove`). -/
+def stackStores (f g : Func) (x : ID) : List ID :=
+  (match f.value? x, g.value? x with
+   | some u, some w => if (callOpMap u.op).isSome then (callStores f g u w).getD [] else []
+   | _, _ => []) ++ (stackMove f g x).toList
+
+/-- `a` may be the `Dereference` that the `Move` of call `y`'s wide stack argument copies
+(`moveOK`): `y` has a `Move` and `a` is a `Dereference`. The target does not read `a`. -/
+def moveArgB (f g : Func) (y a : ID) : Bool :=
+  (stackMove f g y).isSome && ((f.value? a).map (·.op == .Dereference)).getD false
+
+/-- `a` is pure in `f` and its arguments that are nodes of the block (`nodeF`) reach `y` in `g`
+(`Order.Feeds.through`). -/
+def throughB (f g : Func) (nodeF nodeG : ID → Bool) (fuel : Nat) (a y : ID) : Bool :=
+  match f.value? a with
+  | some au => Sem.prio au.op == 0 &&
+      au.args.all fun b => !nodeF b || (nodeG b && depB g nodeG (fun _ => true) fuel b y)
+  | none => false
+
+/-- `a` occurs in `l`, and `y` after its first occurrence. -/
+def beforeB : List ID → ID → ID → Bool
+  | [], _, _ => false
+  | z :: l, a, y => if z == a then l.contains y else beforeB l a y
 
 /-- The leaves of the Make-tree of a stack-assigned call result `x` of `f` (`SelectN [i] c`; the
 `Load`s of `stkLeavesOK`); none for other values. -/
@@ -831,7 +914,8 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     fb.values.all (fun y => !nodeF y ||
       match f.value? y with
       | some u => u.args.all fun a => !nodeF a || (nodeG a &&
-          (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y))
+          (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y)) ||
+          (moveArgB f g y a && throughB f g nodeF nodeG fuel a y)
       | none => false) &&
     -- per value
     fb.values.all (fun x => match f.value? x with
@@ -849,17 +933,23 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
         | some u => u.op == .MakeResult
         | none => false)
       | none => false) &&
-    -- stack-argument stores: values of the block, no source non-pure node between one and its
-    -- call in `g`'s schedule (a store runs only when the source reaches the call); a source
-    -- `SP` under its address and the call's source memory reach it (their target registers
-    -- hold their evaluations, refine the source's)
+    -- stack-argument stores and moves: values of the block, no source non-pure node between one
+    -- and its call in `g`'s schedule (a store runs only when the source reaches the call); a
+    -- source `SP` under its address and the call's source memory reach it (their target
+    -- registers hold their evaluations, refine the source's); the `Dereference` a move copies is
+    -- a value of the block before the call and the move in `g`'s schedule (its source register
+    -- holds its evaluation)
     (match schedule g gb with
-     | some og => fb.values.all fun x => (stackStores f g x).all fun z =>
+     | some og => fb.values.all fun x => (stackStores f g x).all (fun z =>
          gb.values.contains z && gapOK (npOf f fb) og.toList z x &&
          (isNewB f (storeSP g z) || placedSDom g anc fb.id (storeSP g z) ||
            depB g nodeG (fun _ => true) fuel (storeSP g z) z) &&
          (!gb.values.contains (callMem f x) || !nodeG (callMem f x) ||
-           depB g nodeG (fun _ => true) fuel (callMem f x) z)
+           depB g nodeG (fun _ => true) fuel (callMem f x) z)) &&
+         match f.value? x with
+         | some u => u.args.all fun a => !moveArgB f g x a || (fb.values.contains a &&
+             beforeB og.toList a x && (stackMove f g x).all (beforeB og.toList a ·))
+         | none => true
      | none => false) &&
     -- stack-result loads: the `SP` under the address and the call's memory are held (new,
     -- placed in a strict dominator, or the result depends on them)
