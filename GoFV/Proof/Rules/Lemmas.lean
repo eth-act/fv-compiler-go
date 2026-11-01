@@ -529,4 +529,28 @@ attribute [rule_sem] Sem.Int.add Sem.Int.sub Sem.Int.mul Sem.Int.and Sem.Int.or 
   Cmp.neqB Cmp.not Cmp.inBounds Cmp.spectreIndex Conv.signExt Conv.zeroExt Conv.trunc
   Conv.constBool Tuple.select Tuple.make Ty.width? Val.asInt_int Width.bits
 
+
+/-! ## Bitwise identities and constant folds (`rule_close`)
+
+`rule_bits` turns the all-ones constants into `BitVec.allOnes`, after which a bitwise identity
+(De Morgan, `~~~x ^^^ x = -1`, …) closes per bit (`ext`, `simp`) for every width. The
+`rule_arith` lemmas below push the rules' `c&d`, `c|d`, `c^d` (`GoFV.Rules.bitwise` on 64-bit
+patterns) into `BitVec`. -/
+
+@[rule_bits] theorem allOnes8 : (255#8 : BitVec 8) = BitVec.allOnes 8 := by decide
+@[rule_bits] theorem allOnes16 : (65535#16 : BitVec 16) = BitVec.allOnes 16 := by decide
+@[rule_bits] theorem allOnes32 : (4294967295#32 : BitVec 32) = BitVec.allOnes 32 := by decide
+@[rule_bits] theorem allOnes64 :
+    (18446744073709551615#64 : BitVec 64) = BitVec.allOnes 64 := by decide
+attribute [rule_bits] BitVec.neg_one_eq_allOnes
+
+@[rule_arith] theorem ofNat_pat64 {w : Nat} (h : w ≤ 64) (a : Int) :
+    BitVec.ofNat w (pat64 a) = BitVec.ofInt w a := by
+  rw [(BitVec.ofInt_natCast w (pat64 a)).symm, pat64,
+    Int.toNat_of_nonneg (show 0 ≤ a.emod (2 ^ 64) from Int.emod_nonneg _ (by simp))]
+  exact ofInt_emod_of_le h a
+
+attribute [rule_arith] GoFV.Rules.bitwise BitVec.ofInt_natCast BitVec.ofNat_and BitVec.ofNat_or
+  BitVec.ofNat_xor
+
 end GoFV.Proof.Rules
