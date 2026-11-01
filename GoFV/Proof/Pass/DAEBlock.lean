@@ -20,9 +20,9 @@ open GoFV.Proof.CSE (Base Node SFacts)
 variable {env : Env} {tabs : Tables} {f g : Func} {T : ID → Option AuxRef} {E : List AuxRef}
   {bid : ID} {fb gb : Block} {F0 F0T : Frame} {oS oT : Array ID}
 
-namespace Blk
+namespace BlkSim
 
-variable (K : Blk env tabs f g T E bid fb gb F0 F0T oS oT)
+variable (K : BlkSim env tabs f g T E bid fb gb F0 F0T oS oT)
 include K
 
 theorem tframe {S Tf : Frame} {pre done : List ID} (hS : SFacts env tabs f F0 S pre)
@@ -298,6 +298,6 @@ theorem panicCase {e : Panic} {m : Mem}
   show evalAll env (Ctx.make tabs g) T' (r :: oT.toList.drop (k' + 1)) = _
   rw [evalAll_cons, hm']
 
-end Blk
+end BlkSim
 
 end GoFV.Proof.DAE

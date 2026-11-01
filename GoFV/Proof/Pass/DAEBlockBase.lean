@@ -4,7 +4,7 @@ import GoFV.Proof.Pass.DSEBlockBase
 /-!
 # dead auto elim: one block's evaluation, the setting
 
-`Blk`: a tree block `bid` entered after its `Phi`s with source frame `F0` (lemma (D) for the
+`BlkSim`: a tree block `bid` entered after its `Phi`s with source frame `F0` (lemma (D) for the
 strict ancestors, the `Phi`s defined, the source invariant and typed registers, inputs avoiding
 `U`) and target frame `F0T`, whose registers are related (`VR`) to `F0`'s. `TFacts`: the target's
 frame after a prefix of its schedule, its registers related to the source's. `evalAll_regsP`: the
@@ -23,7 +23,7 @@ def SPr (tabs : Tables) (f : Func) (T : ID → Option AuxRef) (E : List AuxRef) 
   SInv T E x y ∧ y.retype ((Ctx.make tabs f).tys[x]?.getD .other) = y
 
 /-- One tree block's evaluation in source and target, after the `Phi`s. -/
-structure Blk (env : Env) (tabs : Tables) (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef)
+structure BlkSim (env : Env) (tabs : Tables) (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef)
     (bid : ID) (fb gb : Block) (F0 F0T : Frame) (oS oT : Array ID) : Prop where
   rel : ARelD tabs f g T E
   fs : env.FrameSafe
@@ -101,9 +101,9 @@ theorem evalAll_regsP {env : Env} {ctx : Ctx} {P : ID → Val → Prop} {Q : ID 
 variable {env : Env} {tabs : Tables} {f g : Func} {T : ID → Option AuxRef} {E : List AuxRef}
   {bid : ID} {fb gb : Block} {F0 F0T : Frame} {oS oT : Array ID}
 
-namespace Blk
+namespace BlkSim
 
-variable (K : Blk env tabs f g T E bid fb gb F0 F0T oS oT)
+variable (K : BlkSim env tabs f g T E bid fb gb F0 F0T oS oT)
 include K
 
 theorem hp : parentsOK (make f) f.entry = true := K.cf.parents
@@ -324,6 +324,6 @@ theorem tstep {S T : Frame} {pre : List ID} {j : Nat} {x : ID} (hj : oT.toList[j
       obtain ⟨yS, hyS, hv⟩ := hag hzp
       exact ⟨yS, y, hyS, Frame.set_regs_self hxlt, hv⟩
 
-end Blk
+end BlkSim
 
 end GoFV.Proof.DAE
