@@ -7,10 +7,15 @@ import GoFV.Opt.Checked
 `diamondB f g dom post` validates one `elimIf`/`elimIfElse` rewrite of `f` into `g`: the `If`
 block `dom` has two sides, each an edge to `post` or a speculation-safe `Plain` arm whose only
 predecessor is `dom` and whose successor is `post` (`sideOf`); in `g`, `dom` holds the values
-of `dom`, the arms and `post`, takes `post`'s kind, controls and successors, and `post`'s `Phi`s
-are `CondSelect`s of `dom`'s control over the arguments of the two sides; every other value
-and block is unchanged in what the semantics reads. Side conditions that make the merged
-block evaluate as the source's path does:
+of `dom`, the arms and `post` (in this order), takes `post`'s kind, controls and successors,
+keeps its predecessors (an edge from `post` now from `dom`), and `post`'s `Phi`s are
+`CondSelect`s of `dom`'s control over the arguments of the two sides (`mergedOK`); the arms
+and `post` are emptied (`deadOK`); a successor of `post` is unchanged but for its predecessor
+edges from `post`, now from `dom` (`targetOK`); the values of these blocks and `dom`'s control
+are unchanged in what the semantics reads and lie in `dom` (or their block) (`movedOK`); every
+other value and block table entry is unchanged (`tabEq`, pointer first, so the check costs
+about the size of the diamond plus a pointer comparison per table entry; issue #147). Side
+conditions that make the merged block evaluate as the source's path does:
 
 - arm values are speculation-safe (`specSafeOp`), are read only by their own arm and, along
   their side, by `post`'s `Phi`s, and read nothing of `post` or the other arm;
@@ -19,7 +24,9 @@ block evaluate as the source's path does:
 - the merged block has a schedule that lists the non-pure nodes (priority ≠ 0) of `dom` and
   `post` in the sequence `dom`'s and then `post`'s schedule lists them (`npSeqOK`).
 
-The soundness proof is `GoFV.Proof.BranchElim.refines_of_step`.
+No `check` of `g`: the soundness proof is `GoFV.Proof.BranchElim.refines_of_step`, with the
+well-formedness and use dominance of `g` from `GoFV.Proof.BranchElim.DRel.wf_pres` and
+`DRel.useDom_pres`.
 -/
 
 namespace GoFV.Opt.BranchElim
