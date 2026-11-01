@@ -57,10 +57,15 @@ def schedNodes (f : Func) (b : Block) : Array SNode :=
 /-- The largest node ID (0 if none). -/
 def maxNodeId (vs : Array SNode) : ID := vs.foldl (fun m v => max m v.id) 0
 
+/-- The rank order of non-pure nodes: priority first, then value ID. Every schedule lists the
+ready non-pure node of least rank next, so the sequence of non-pure nodes is determined by
+their dependencies alone, and passes that keep a value's ID and op keep its rank (#96). -/
+@[inline] def SNode.rankLt (m n : SNode) : Bool :=
+  m.prio < n.prio || (m.prio == n.prio && m.id < n.id)
+
 /-- Kahn's algorithm over `vs` (`none` if their arguments within the block form a cycle): a
-ready pure value first (any order would do: pure evaluation is total), else the earliest ready
-`NilCheck`, else the earliest ready other root, "earliest" in the order the value became ready
-(initially `vs` order). -/
+ready pure value first (any order would do: pure evaluation is total), else the ready
+non-pure node of least rank (`SNode.rankLt`: a `NilCheck` before other roots, then by ID). -/
 def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
   let n := vs.size
   -- position of each node by ID (arrays, not hash maps: the kernel can evaluate `run`)
@@ -76,18 +81,12 @@ def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
         indeg := indeg.modify i (· + 1)
         users := users.modify j (·.push i)
       | none => pure ()
-  -- ready queues: pure values (a stack), nil checks and roots (FIFO)
+  -- ready sets: pure values (a stack) and non-pure nodes (picked by least rank)
   let mut pureQ : Array Nat := #[]
-  let mut nilQ : Array Nat := #[]
-  let mut rootQ : Array Nat := #[]
+  let mut npQ : Array Nat := #[]
   for h : i in [0:n] do
     if indeg[i]! == 0 then
-      match vs[i].prio with
-      | 0 => pureQ := pureQ.push i
-      | 1 => nilQ := nilQ.push i
-      | _ => rootQ := rootQ.push i
-  let mut nilHead := 0
-  let mut rootHead := 0
+      if vs[i].prio == 0 then pureQ := pureQ.push i else npQ := npQ.push i
   let mut out : Array ID := Array.mkEmpty n
   for _ in [0:n] do
     let i ←
@@ -95,13 +94,13 @@ def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
         let i := pureQ[pureQ.size - 1]
         pureQ := pureQ.pop
         pure (some i)
-      else if h : nilHead < nilQ.size then
-        let i := nilQ[nilHead]
-        nilHead := nilHead + 1
-        pure (some i)
-      else if h : rootHead < rootQ.size then
-        let i := rootQ[rootHead]
-        rootHead := rootHead + 1
+      else if 0 < npQ.size then
+        -- the ready non-pure node of least rank; removed by swapping with the last
+        let mut best := 0
+        for k in [1:npQ.size] do
+          if vs[npQ[k]!]!.rankLt vs[npQ[best]!]! then best := k
+        let i := npQ[best]!
+        npQ := (npQ.set! best npQ[npQ.size - 1]!).pop
         pure (some i)
       else pure none
     match i with
@@ -112,10 +111,7 @@ def kahn (vs : Array SNode) : Option (Array ID) := Id.run do
         let d := indeg[u]! - 1
         indeg := indeg.set! u d
         if d == 0 then
-          match vs[u]!.prio with
-          | 0 => pureQ := pureQ.push u
-          | 1 => nilQ := nilQ.push u
-          | _ => rootQ := rootQ.push u
+          if vs[u]!.prio == 0 then pureQ := pureQ.push u else npQ := npQ.push u
   return if out.size == n then some out else none
 
 /-- Walk of `schedValid`. `nodes`: each node's arguments and whether it is early (a flag: pure,
@@ -141,10 +137,31 @@ def idsDistinct : Array Bool → List SNode → Bool
   | _, [] => true
   | seen, n :: ns => !seen.getD n.id false && idsDistinct (seen.set! n.id true) ns
 
+/-- The non-pure nodes of `vs` with their arguments, by ID (`none`: pure or not a node). -/
+def npTable (vs : Array SNode) : Array (Option SNode) :=
+  vs.foldl (fun t n => if n.prio == 0 then t else t.set! n.id (some n))
+    (Array.replicate (maxNodeId vs + 1) none)
+
+/-- `RankFirst` for `o`: a non-pure node `x` listed after a non-pure node `y` of greater rank
+has an argument that is a node (`isNode`) listed at or after `y`. -/
+def rankOK (vs : Array SNode) (isNode : ID → Bool) (o : Array ID) : Bool :=
+  let T := npTable vs
+  let npPos := (List.range o.size).filter fun j => (o[j]?.bind fun x => T[x]?.join).isSome
+  npPos.all fun j => npPos.all fun k =>
+    !(k < j) ||
+    match (o[k]?.bind fun y => T[y]?.join), (o[j]?.bind fun x => T[x]?.join) with
+    | some y, some x =>
+      !(x.rankLt y) || (List.range (j - k)).any fun d =>
+        match o[k + d]? with
+        | some a => x.args.contains a && isNode a
+        | none => false
+    | _, _ => true
+
 /-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
 arguments within the block (a dependency order), pure nodes as early as their arguments allow
 relative to the other nodes, and nodes of priority ≤ 1 (pure or `NilCheck`) as early as their
-arguments allow relative to the other roots (`schedValidAux`, once per flag). Validates
+arguments allow relative to the other roots (`schedValidAux`, once per flag), and the non-pure nodes in rank
+order as far as their arguments allow (`rankOK`). Validates
 `kahn`'s output, so proofs use this specification rather than the algorithm. -/
 def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
   let m := maxNodeId vs + 1
@@ -152,12 +169,22 @@ def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
     vs.foldl (fun t n => t.set! n.id (some (n.args, early n))) (Array.replicate m none)
   idsDistinct (Array.replicate m false) vs.toList && o.size == vs.size &&
     schedValidAux (nodes (·.prio == 0)) (Array.replicate m 0) 0 0 o.toList &&
-    schedValidAux (nodes (·.prio ≤ 1)) (Array.replicate m 0) 0 0 o.toList
+    schedValidAux (nodes (·.prio ≤ 1)) (Array.replicate m 0) 0 0 o.toList &&
+    rankOK vs (fun a => ((nodes (·.prio == 0))[a]?.join).isSome) o
+
+/-- The index in `l` of the node of least rank (`SNode.rankLt`) among those with `p`. -/
+def minIdx (p : SNode → Bool) : List SNode → Option Nat
+  | [] => none
+  | n :: ns =>
+    match minIdx p ns with
+    | none => if p n then some 0 else none
+    | some i =>
+      if p n && (ns[i]?.all fun m => n.rankLt m) then some 0 else some (i + 1)
 
 /-- A simple scheduler, used only if `kahn`'s output fails validation (never on the corpus):
-repeatedly the first ready pure node, else the first ready `NilCheck`, else the first ready
-node (`fuel`: one step per node). It makes `schedule` provably defined on every acyclic block
-without a proof of `kahn`. -/
+repeatedly the first ready pure node, else the ready node of least rank (`fuel`: one step per
+node). It makes `schedule` provably defined on every acyclic block without a proof of
+`kahn`. -/
 def greedy (vs : List SNode) : Nat → List SNode → List ID → Option (List ID)
   | _, [], acc => some acc.reverse
   | 0, _ :: _, _ => none
@@ -167,12 +194,9 @@ def greedy (vs : List SNode) : Nat → List SNode → List ID → Option (List I
     match rem.findIdx? (fun n => n.prio == 0 && ready n) with
     | some i => greedy vs fuel (rem.eraseIdx i) ((rem[i]?.map (·.id)).getD 0 :: acc)
     | none =>
-      match rem.findIdx? (fun n => n.prio == 1 && ready n) with
+      match minIdx ready rem with
       | some i => greedy vs fuel (rem.eraseIdx i) ((rem[i]?.map (·.id)).getD 0 :: acc)
-      | none =>
-        match rem.findIdx? ready with
-        | some i => greedy vs fuel (rem.eraseIdx i) ((rem[i]?.map (·.id)).getD 0 :: acc)
-        | none => none
+      | none => none
 
 /-- The evaluation order of the non-`Phi` values of `b` (`none` if their IDs are not distinct
 or their arguments within the block form a cycle): `kahn`, validated by `schedValid`, else
