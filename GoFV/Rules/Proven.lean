@@ -220,7 +220,7 @@ def generic : RuleSet where
   segs := [Generated.Generic.r_generic_1743, Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
   phiSels := [Generated.Generic.r_generic_1050, Generated.Generic.r_generic_1049]
 
-/-- `dec.rules` restricted to its 26 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 28 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions, 7 struct-store splits, 0 segment rules and 0 `Phi`
 selections. -/
@@ -231,7 +231,7 @@ def dec : RuleSet where
     (.ComplexReal, [Generated.Dec.r_dec_13]),
     (.IData, [Generated.Dec.r_dec_83, Generated.Dec.r_dec_146]),
     (.ITab, [Generated.Dec.r_dec_82, Generated.Dec.r_dec_144]),
-    (.Load, [Generated.Dec.r_dec_45, Generated.Dec.r_dec_63, Generated.Dec.r_dec_87]),
+    (.Load, [Generated.Dec.r_dec_16, Generated.Dec.r_dec_28, Generated.Dec.r_dec_45, Generated.Dec.r_dec_63, Generated.Dec.r_dec_87]),
     (.SliceCap, [Generated.Dec.r_dec_60, Generated.Dec.r_dec_154]),
     (.SliceLen, [Generated.Dec.r_dec_59, Generated.Dec.r_dec_151]),
     (.SlicePtr, [Generated.Dec.r_dec_58, Generated.Dec.r_dec_150]),

@@ -137,6 +137,42 @@ theorem r_dec_87_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_87 := by
     rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
     exact .poison _
 
+theorem complexShape_eq {t : Ty} (h : complexShape t = true) :
+    t = .agg [(0, .int .w32), (4, .int .w32)] 8 ∨ t = .agg [(0, .int .w64), (8, .int .w64)] 16 := by
+  unfold complexShape at h; split at h <;> first | exact .inl rfl | exact .inr rfl | cases h
+
+/-- `dec.rules:16`: `(Load <t> ptr mem) && t.IsComplex() && t.Size() == 8 => (ComplexMake (Load <typ.Float32> ptr mem) (Load <typ.Float32> (OffPtr <typ.Float32Ptr> [4] ptr) mem) )` -/
+theorem r_dec_16_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_16 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_16
+  have hk : kindE .complex (e.ty []) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rw [← Val.retype_of_hasTy hty]
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · rw [h8]
+      exact loadSplit_ref (by decide) (by decide) _ _ ⟨⟨some 4, rfl⟩, trivial⟩
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h16, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+  · rw [ho] at hty ⊢
+    rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
+    exact .poison _
+
+/-- `dec.rules:28`: `(Load <t> ptr mem) && t.IsComplex() && t.Size() == 16 => (ComplexMake (Load <typ.Float64> ptr mem) (Load <typ.Float64> (OffPtr <typ.Float64Ptr> [8] ptr) mem) )` -/
+theorem r_dec_28_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_28 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_28
+  have hk : kindE .complex (e.ty []) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rw [← Val.retype_of_hasTy hty]
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h8, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+    · rw [h16]
+      exact loadSplit_ref (by decide) (by decide) _ _ ⟨⟨some 8, rfl⟩, trivial⟩
+  · rw [ho] at hty ⊢
+    rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
+    exact .poison _
+
 /-! ## Extractors of a `Load` (`dec.rules:135`–`:154`)
 
 `(StringPtr x:(Load <t> ptr mem)) && t.IsString() => @x.Block (Load <typ.BytePtr> ptr mem)` and
