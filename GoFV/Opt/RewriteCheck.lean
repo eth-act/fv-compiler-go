@@ -589,7 +589,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) &&
-        condFrameOK tabs e r.pat r.cond &&
+        condFrameOK tabs e I r.pat r.cond &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
 
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two

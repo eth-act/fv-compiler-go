@@ -97,7 +97,7 @@ theorem strVal_of_strAux_empty {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
 theorem r_generic_1015_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1015 := by
   refine ⟨rfl, fun tabs e or _ => ?_⟩
   intro σ ev hfr _ _ _ hty _ _
-  obtain ⟨p, s, d, hp, hs, hsz⟩ := hfr.2 0
+  obtain ⟨p, s, d, hp, hs, hsz⟩ := hfr.2.1 0
     (by simp [GoFV.Rules.Generated.Generic.r_generic_1015, emptyStrVars])
   simp only [GoFV.Rules.Generated.Generic.r_generic_1015, Pat.auxPos, Field.bindsVar,
     beq_self_eq_true, ite_true, Option.some.injEq] at hp

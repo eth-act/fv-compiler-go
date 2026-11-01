@@ -301,9 +301,11 @@ instance (same aux fields as the static one). -/
 theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
     {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase) :
     GoFV.Proof.Rules.FrameOK tabs (semEnv tabs M F.I L) ev' (stOr tabs r defs) r := by
-  refine ⟨fun n hn => ?_, fun x hx => ?_⟩
+  have hcf := F.hcf
+  simp only [condFrameOK, Bool.and_eq_true] at hcf
+  refine ⟨fun n hn => ?_, fun x hx => ?_, fun xy hxy => ?_⟩
   rotate_left
-  · have h := List.all_eq_true.1 F.hcf x hx
+  · have h := List.all_eq_true.1 hcf.1 x hx
     simp only [strOf] at h
     cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
     | none => simp [hp] at h
@@ -315,6 +317,13 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
         obtain ⟨s, d⟩ := sd
         simp only [hs, beq_iff_eq] at h
         exact ⟨p, s, d, rfl, hs, h⟩
+  · have h := List.all_eq_true.1 hcf.2 xy hxy
+    revert h
+    split
+    · rename_i p q hp hq
+      intro h
+      exact ⟨p, q, hp, hq, by simp only [semEnv, beq_iff_eq.1 h]⟩
+    · intro h; cases h
   rcases F.result with hR | hR
   · obtain ⟨R⟩ := hR
     rw [R.hres] at hn; simp [GoFV.Rules.Result.nodes] at hn

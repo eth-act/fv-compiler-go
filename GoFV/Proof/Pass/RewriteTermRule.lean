@@ -163,7 +163,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hleaves : leavesOK M I [] r.pat = true
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
   hframe : ∀ nu ∈ stNodes r defs, frameNodeOK tabs (env tabs M I) r.pat nu.1 nu.2 = true
-  hcf : condFrameOK tabs (env tabs M I) r.pat r.cond = true
+  hcf : condFrameOK tabs (env tabs M I) I r.pat r.cond = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
   hnn : nonNegOKD tabs (putAll M defs).get? I r.pat r.cond = true
 
