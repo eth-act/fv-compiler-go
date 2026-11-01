@@ -138,13 +138,13 @@ gate_post_status() {
     gh_label nightly-gate 0e8a16 "Nightly gate status (scripts/nightly-gate.sh)"
     n=$(gh_issue nightly-gate "Nightly gate")
     if [ -z "$n" ]; then
-      gh issue create --title "Nightly gate" --label nightly-gate --body "$(cat <<'EOF'
+      n=$(gh issue create --title "Nightly gate" --label nightly-gate --body "$(cat <<'EOF'
 Status of the nightly gate (`scripts/nightly-gate.sh`, docs/GATE.md). One comment per night:
 build, no-sorry, axioms audit, ssa-check, full-corpus parity, whole-pipeline `--check`, driver
 e2e (full mode). A red night opens an issue labelled `gate-red` for its first failure.
 EOF
-)" >/dev/null
-      n=$(gh_issue nightly-gate "Nightly gate")
+)")
+      n=${n##*/}  # the new issue's URL; the issue list lags behind a create
     fi
     gh issue comment "$n" --body "$body"
   )
