@@ -3,27 +3,19 @@ import GoFV.Proof.AtomSimStep
 /-!
 # Value sets of the atom simulation (issue #113)
 
-The hypotheses (`Hyp`: both functions well formed with certified dominator trees, `atomsOK`,
-the two `TermRef` premises), the value sets the frame relation speaks about (`SAnc`: placed in
-a strict ancestor of the block; `PhiOf`: a `Phi` of the block), their closure under the
-arguments of term nodes (`closed_sanc`), atoms of `g` as atoms of `f` (`gatom_f`), `DenOK`
-along a list of term nodes in one frame (`denOK_terms`), and list facts about prefixes of
-schedules.
+The source-side invariant (`Inv`: a predicate `P b a y` on the registers while the source runs
+block `b`, and `L b i` on the edges it enters blocks along, preserved by the source's steps),
+the hypotheses (`Hyp`: both functions well formed with certified dominator trees, `atomsOK`,
+the two `TermRefP` premises under the invariant), the value sets the frame relation speaks
+about (`SAnc`: placed in a strict ancestor of the block; `PhiOf`: a `Phi` of the block), their
+closure under the arguments of term nodes (`closed_sanc`), atoms of `g` as atoms of `f`
+(`gatom_f`), `DenOK` along a list of term nodes in one frame (`denOK_terms`), and list facts
+about prefixes of schedules.
 -/
 
 namespace GoFV.Proof.AtomSim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof.Dom GoFV.Opt.RewriteCheck GoFV.Proof.Term
-
-/-- The hypotheses of the atom simulation. -/
-structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) : Prop where
-  wf : WF ce f
-  wg : WF ce' g
-  cf : CertOK f
-  cg : CertOK g
-  ok : AtomsOK f g
-  args : AtomArgsRef tabs f g
-  ctrls : ControlsRef tabs f g
 
 /-- `x` is placed in a strict ancestor of `b`. -/
 def SAnc (h : Func) (b x : ID) : Prop :=
@@ -35,6 +27,87 @@ def AncV (h : Func) (b x : ID) : Prop := ∃ v, Placed h x v ∧ Anc (make h) v.
 /-- `x` is a `Phi` of block `hb`. -/
 def PhiOf (h : Func) (hb : Block) (x : ID) : Prop :=
   x ∈ hb.values ∧ ∃ v, h.value? x = some v ∧ v.op = .Phi
+
+/-- The arguments of block `b`'s `Phi`s along edge `i` are in `V`. -/
+def PhiArgs (h : Func) (b : ID) (i : Nat) (V : ID → Prop) : Prop :=
+  ∀ hb, h.block? b = some hb → ∀ z ∈ hb.values, ∀ v, h.value? z = some v → v.op = .Phi →
+    ∀ a, v.args[i]? = some a → V a
+
+/-- The `Phi`s of block `b` read along edge `i` satisfy `P b`: each takes its argument's
+register in `fr`, at its shape. -/
+def PhisP (tabs : Tables) (f : Func) (P : ID → ID → Val → Prop) (fr : Frame) (b : ID)
+    (i : Nat) : Prop :=
+  ∀ bb, f.block? b = some bb → ∀ z ∈ bb.values, ∀ v, f.value? z = some v → v.op = .Phi →
+    ∀ a, v.args[i]? = some a → P b z ((rv fr a).retype (tabs.ty v.type))
+
+/-- **A source-side invariant** of the atom simulation: while the source runs block `b`
+(entered along an edge `i` with `L b i`), every register `a` holds a value `y` with `P b a y`.
+It holds at the entry, and each step of the source keeps it: a term or atom evaluated in `b`,
+and the edge from a predecessor `p` (the terminator's choice, from the frame at the end of `p`,
+whose values of `V` are their terms over the atoms) with the `Phi`s of the successor. -/
+structure SrcInv (tabs : Tables) (f : Func) where
+  P : ID → ID → Val → Prop
+  L : ID → Nat → Prop
+  start : L f.entry 0 ∧ ∀ a, P f.entry a .poison
+  poisonAtom : ∀ b a, ¬ IsTerm f.value? a → P b a .poison
+  edge : ∀ p ip pb fr e V, f.block? p = some pb → L p ip → (∀ a, P p a (rv fr a)) →
+    DenOK f.value? tabs fr V → (∀ x, AncV f p x → V x) → PhiArgs f e.b e.i V →
+    stepTerm fr pb = .ok (.goto e) →
+      L e.b e.i ∧ (∀ a, P e.b a (rv fr a)) ∧ PhisP tabs f P fr e.b e.i
+  term : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
+    termOp v.op = true → ∀ ρ : ID → Val, (∀ a ∈ v.args, P b a (ρ a)) →
+      P b x ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
+        (tabs.ty v.type))
+  atom : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
+    termOp v.op = false → v.op ≠ .Phi → ∀ y : Val, P b x (y.retype (tabs.ty v.type))
+
+/-- The trivial invariant. -/
+def SrcInv.triv (tabs : Tables) (f : Func) : SrcInv tabs f where
+  P _ _ _ := True
+  L _ _ := True
+  start := ⟨trivial, fun _ => trivial⟩
+  poisonAtom _ _ _ := trivial
+  edge _ _ _ _ _ _ _ _ _ _ _ _ _ := ⟨trivial, fun _ => trivial, fun _ _ _ _ _ _ _ _ _ => trivial⟩
+  term _ _ _ _ _ _ _ _ _ _ := trivial
+  atom _ _ _ _ _ _ _ _ _ _ := trivial
+
+/-- The arguments of every atom of `g` refine, as terms under the invariant at its block,
+those of the same atom of `f`. -/
+def AtomArgsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
+  ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
+    termOp u.op = false →
+    ∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ u'.type = u.type ∧ u'.auxInt = u.auxInt ∧
+      u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
+      ∀ i < u.args.size,
+        TermRefP (I.P b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!
+
+/-- The controls of every block of `g` refine, as terms under the invariant at the block,
+those of the same block of `f`. -/
+def ControlsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
+  ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
+    fb.controls.size = gb.controls.size ∧
+    ∀ k < gb.controls.size,
+      TermRefP (I.P b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs gb.controls[k]!
+
+theorem AtomArgsRef.toP {tabs : Tables} {f g : Func} (h : AtomArgsRef tabs f g) (I : SrcInv tabs f) :
+    AtomArgsRefP I g := fun b hb gb hgb a ha u hu ht => by
+  obtain ⟨u', h1, h2, h3, h4, h5, h6, h7⟩ := h b hb gb hgb a ha u hu ht
+  exact ⟨u', h1, h2, h3, h4, h5, h6, fun i hi => TermRef.toP (h7 i hi) _ _⟩
+
+theorem ControlsRef.toP {tabs : Tables} {f g : Func} (h : ControlsRef tabs f g) (I : SrcInv tabs f) :
+    ControlsRefP I g := fun b hb fb gb hfb hgb => by
+  obtain ⟨h1, h2⟩ := h b hb fb gb hfb hgb
+  exact ⟨h1, fun k hk => TermRef.toP (h2 k hk) _ _⟩
+
+/-- The hypotheses of the atom simulation. -/
+structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) (I : SrcInv tabs f) : Prop where
+  wf : WF ce f
+  wg : WF ce' g
+  cf : CertOK f
+  cg : CertOK g
+  ok : AtomsOK f g
+  args : AtomArgsRefP I g
+  ctrls : ControlsRefP I g
 
 /-! ## Placed values -/
 
@@ -122,7 +195,7 @@ theorem closed_sanc_g {ce : CheckEnv} {g : Func} (hwf : WF ce g) (hc : CertOK g)
 /-! ## Atoms of `g` -/
 
 /-- An atom placed in `g` is placed in the same block of `f` with the same fields. -/
-theorem gatom_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem gatom_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {a : ID} {w : Value} (hp : Placed g a w) (ht : termOp w.op = false) :
     ∃ u, Placed f a u ∧ SameAtom u w := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hp
@@ -135,7 +208,7 @@ theorem gatom_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f
   · rw [hs.2.2.2.2.2.1]; exact hfc
 
 /-- The shape of an atom of `g` is its shape in `f`. -/
-theorem shape_atom {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem shape_atom {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {a : ID} (hat : ¬ IsTerm (listedDefs g) a) :
     shape (listedDefs g) tabs a = .other ∨ shape (listedDefs g) tabs a = shape f.value? tabs a := by
   cases hl : listedDefs g a with
@@ -150,7 +223,7 @@ theorem shape_atom {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
     simp [shape, hl, hpu.1, hs.2.1]
 
 /-- An atom the target defines has the source's shape. -/
-theorem shape_atom_def {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem shape_atom_def {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {a : ID} (hat : ¬ IsTerm (listedDefs g) a) (hdef : (listedDefs g a).isSome) :
     shape (listedDefs g) tabs a = shape f.value? tabs a := by
   cases hl : listedDefs g a with

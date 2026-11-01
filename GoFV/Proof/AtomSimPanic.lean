@@ -22,7 +22,7 @@ theorem isRoot_of_prio {op : Op} (h : prio op ≠ 0) : isRoot op = true := by
   · unfold isRoot; simp [hn]
 
 /-- An `Arg`/`ArgIntReg` of the source schedule comes before its panicking root. -/
-theorem arg_before {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem arg_before {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
     {pre post : List ID} {r : ID} (hof : of.toList = pre ++ r :: post) {ur : Value}
     (hur : f.value? r = some ur) (hrp : prio ur.op ≠ 0) {x : ID} (hx : x ∈ of.toList) (hxr : x ≠ r)
@@ -60,9 +60,9 @@ theorem arg_before {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
     cases ha
 
 /-- **A panicking block entry.** -/
-theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
-    (R : BRel tabs f g frS frT b i) {fb gb : Block} {of og : Array ID}
+    (R : BRel tabs f g I frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData f g b fb gb of og) {e : Panic} {m : Mem}
     (he : enterBlock env (Ctx.make tabs f) frS fb i = .panic e m) :
     ∃ m', enterBlock env (Ctx.make tabs g) frT gb i = .panic e m' ∧ Mem.Refines m m' := by
@@ -117,6 +117,9 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
     typed_phis R.tyT pT1 pT3 pT4 pT2
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := src_eval H B R.treeS (P := pre) (Q := r :: post)
     hof hS1 (by rw [pS1, R.szS]) htyPS hpre
+  have hinvG : ∀ a, I.P b a (rv G a) :=
+    inv_evalAll B.hfb (fun x hx => sched_own H B x (by rw [hof]; exact List.mem_append_left _ hx))
+      hpre (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis)
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { G with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))
@@ -173,10 +176,10 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
   obtain ⟨T, hevT, l1, l2, l3, l4, l5, l6⟩ := tgt_loop H hE (og := og.toList) (L := preT)
     (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrelT0 B.ndT B.tpT
-    (fun x hx => by
+    (b := b) (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
-      obtain ⟨hp, -, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
-      exact ⟨w, hp, hid, hph⟩)
+      obtain ⟨hp, hwb, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
+      exact ⟨w, hp, hid, hph, hwb⟩) hinvG (fun a h => .inl (.inl h))
     (sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT)
     (fun a ha hVS hat => by
       rcases hVS with h | h
@@ -202,6 +205,8 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
           rw [← hfl] at this
           exact hxp (List.mem_filter.1 this).1)
   -- the root `r` in the target
+  have hrblk : wr.block = b :=
+    (placed_in H.wg B.bmT B.hgb ((B.mT r).1 hrog.1).1 hwr).2.1
   have hrT := tgt_atom_ref H hE (frame_trans l1 hfrT) g4 l4
     (fun a ha => ha.elim (v1_placed H.wg B.bmT B.hgb a) fun hm => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 (hogpre a hm)
@@ -212,6 +217,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
       · right
         have htop := B.tpT; rw [hog] at htop h
         exact topoRem_before htop (by rw [argsF_of hwr]; exact Array.mem_toList_iff.2 ha) h)
+    (hrblk ▸ hinvG) (hrblk ▸ fun a h => .inl (.inl h))
   rw [hevr] at hrT
   obtain ⟨m', hT', hm⟩ := res_panic_of_refines hrT
   refine ⟨m', enterBlock_of hpsT (by rw [sched_eq B.hgb B.idT, B.sT]) ?_, hm⟩

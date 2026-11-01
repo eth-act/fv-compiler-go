@@ -18,13 +18,9 @@ namespace GoFV.Proof.AtomSim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof.Dom GoFV.Opt.RewriteCheck GoFV.Proof.Term
 
-/-- The arguments of block `b`'s `Phi`s along edge `i` are in `V`. -/
-def PhiArgs (h : Func) (b : ID) (i : Nat) (V : ID → Prop) : Prop :=
-  ∀ hb, h.block? b = some hb → ∀ z ∈ hb.values, ∀ v, h.value? z = some v → v.op = .Phi →
-    ∀ a, v.args[i]? = some a → V a
-
 /-- The frame relation at a block entry. -/
-structure BRel (tabs : Tables) (f g : Func) (frS frT : Frame) (b : ID) (i : Nat) : Prop where
+structure BRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (frS frT : Frame) (b : ID) (i : Nat) :
+    Prop where
   fr : frT = { frS with regs := frT.regs }
   szS : frS.regs.size = f.valueTab.size
   szT : frT.regs.size = g.valueTab.size
@@ -38,6 +34,9 @@ structure BRel (tabs : Tables) (f g : Func) (frS frT : Frame) (b : ID) (i : Nat)
   den : ∃ VS VT, DenOK f.value? tabs frS VS ∧ DenOK (listedDefs g) tabs frT VT ∧
     (∀ x, VT x → ∃ w, Placed g x w) ∧ (∀ x, SAnc f b x → VS x) ∧ (∀ x, SAnc g b x → VT x) ∧
     PhiArgs f b i VS ∧ PhiArgs g b i VT
+  live : I.L b i
+  inv : ∀ a, I.P b a (rv frS a)
+  phis : PhisP tabs f I.P frS b i
 
 /-- The static facts of block `b`. -/
 structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : Prop where
@@ -60,7 +59,7 @@ structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : P
   tpT : TopoRem (argsF g) og.toList
   mT : ∀ x, x ∈ og.toList ↔ x ∈ gb.values ∧ ∃ v, g.value? x = some v ∧ v.op ≠ .Phi
 
-theorem blockData {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+theorem blockData {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {b : ID} {fb : Block} (hb : b ∈ f.blocks) (hfb : f.block? b = some fb) :
     ∃ gb of og, BlockData f g b fb gb of og := by
   obtain ⟨fb', gb, hfb', hgb, ba⟩ := H.ok.block b hb
@@ -84,21 +83,25 @@ theorem sched_eq {tabs : Tables} {h : Func} {b : ID} {hb : Block} (hbb : h.block
 
 /-! ## Registers refined through `TermRef` -/
 
-/-- `TermRef` between registers of two frames whose atoms are refined. -/
-theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+/-- `TermRefP` between registers of two frames whose atoms are refined, the source's registers
+satisfying the invariant at block `b`. -/
+theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
+    (H : Hyp tabs f g ce ce' I) {b : ID}
     {G T : Frame} {VS VT : ID → Prop}
     (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T VT)
     (hVT : ∀ a, VT a → ∃ w, Placed g a w)
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
-    {x y : ID} (hT : TermRef f.value? tabs x (listedDefs g) tabs y) (hx : VS x) (hy : VT y) :
+    (hinv : ∀ a, I.P b a (rv G a)) (hSV : ∀ a, SAnc f b a → VS a)
+    {x y : ID} (hT : TermRefP (I.P b) (SAnc f b) f.value? tabs x (listedDefs g) tabs y) (hx : VS x)
+    (hy : VT y) :
     Sem.Refines (rv G x) (rv T y) := by
   have htyS' : ∀ a, VS a → ¬ IsTerm f.value? a →
       (rv G a).retype (shape f.value? tabs a) = rv G a := fun a ha _ => by
     rw [← tys_shape]; exact htyS a _ (reg_rv (hDS a ha).1)
   refine termRef_apply hT hDS hx hDT hy (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
-    (fun a ha _ => ?_) fun a ha hat hat' hdef _ => ?_
+    (fun a ha _ => ?_) (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom b) hSV
   · obtain ⟨v, hp⟩ := hVT a ha
     have : shape (listedDefs g) tabs a = shape g.value? tabs a := by
       simp [shape, placed_listed hp, hp.1]
@@ -106,8 +109,8 @@ theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp t
   · rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
 /-- The atoms the entry frames both hold are refined. -/
-theorem BRel.rel {tabs : Tables} {f g : Func} {frS frT : Frame} {b : ID} {i : Nat}
-    (R : BRel tabs f g frS frT b i) {VT VS : ID → Prop}
+theorem BRel.rel {tabs : Tables} {f g : Func} {I : SrcInv tabs f} {frS frT : Frame} {b : ID} {i : Nat}
+    (R : BRel tabs f g I frS frT b i) {VT VS : ID → Prop}
     (hDT : DenOK (listedDefs g) tabs frT VT) (hVT : ∀ a, VT a → ∃ w, Placed g a w) :
     ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv frS a) (rv frT a) := fun a ha _ _ hat => by
@@ -132,15 +135,15 @@ theorem phiStep_phi {ctx : Ctx} {fr : Frame} {i : Nat} {z a : ID} {v : Value} {y
   unfold phiStep; rw [hv]; simp [hp, ha, hy]
 
 /-- **The target's `Phi`s**, each refining the source's. -/
-theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
-    {frS frT : Frame} {b : ID} {i : Nat} (R : BRel tabs f g frS frT b i) {fb gb : Block}
+theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
+    {frS frT : Frame} {b : ID} {i : Nat} (R : BRel tabs f g I frS frT b i) {fb gb : Block}
     {of og : Array ID} (B : BlockData f g b fb gb of og) {psS : List (ID × Val)}
     (hps : fb.values.toList.filterMapM (phiStep (Ctx.make tabs f) frS i) = .ok psS) :
     ∃ psT, gb.values.toList.filterMapM (phiStep (Ctx.make tabs g) frT i) = .ok psT ∧
       ∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.op = .Phi →
         ∃ y y', (setPhis psS frS.regs)[z]? = some (some y) ∧
           (setPhis psT frT.regs)[z]? = some (some y') ∧ Sem.Refines y y' := by
-  obtain ⟨VS, VT, hDS, hDT, hVT, -, -, hPS, hPT⟩ := R.den
+  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, -, hPS, hPT⟩ := R.den
   obtain ⟨-, -, -, hphS⟩ := phis_spec B.vS hps
   -- each `Phi` of `g`: its argument in the target and the refinement
   have key : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.op = .Phi →
@@ -171,8 +174,8 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     rw [← rv_of hy]
     have hai : u.args[i] = a := (Array.getElem?_eq_some_iff.1 ha).2
     have hai' : w.args[i]'(hsz ▸ hi) = a' := (Array.getElem?_eq_some_iff.1 ha').2
-    rw [hai, hai'] at hTR'
-    exact termRef_regs H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT hTR'
+    rw [hai, hai', hwb] at hTR'
+    exact termRef_regs H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.inv hsS hTR'
       (hPS fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha) hVTa
   obtain ⟨psT, hpsT⟩ := filterMapM_phi_ok (ctx := Ctx.make tabs g) (fr := frT) (i := i)
     (l := gb.values.toList) fun z hz => by
