@@ -95,6 +95,37 @@ structure State where
   last : String := "start"
   /-- The frontend side effects of the passes run so far, in order. -/
   effects : Array Effect := #[]
+  /-- `*types.Type` object classes of values with a non-canonical object (the input's `zvar`,
+  then what the passes report, `PassOut.typeObjs`); the next pass's `PassEnv.zvar` (#101). -/
+  zvar : Std.HashMap ID Nat := {}
+  /-- The next unused class. -/
+  nextClass : Nat := 1
+
+/-- The initial state of a segment whose input section is `func` with `zvar` classes `zv`. -/
+def State.ofSection (func : Func) (tables : Tables) (zv : Array (ID × Nat)) : State :=
+  { func, tables, zvar := zv.foldl (fun m (v, c) => m.insert v c) {}
+    nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1 }
+
+/-- The classes after a pass that turned `input` into `out`: the reported objects in order
+(`.of w` takes `w`'s class at that point), then a value keeps its class if it is still in the
+function and either was reported or has its input type number. -/
+def nextZvar (input : Func) (out : PassOut) (zv : Std.HashMap ID Nat) (next : Nat) :
+    Std.HashMap ID Nat × Nat := Id.run do
+  let mut run := zv
+  let mut next := next
+  let mut reported : Std.HashSet ID := {}
+  for (id, o) in out.typeObjs do
+    reported := reported.insert id
+    match o with
+    | .canonical => run := run.erase id
+    | .fresh => run := run.insert id next; next := next + 1
+    | .of w => match run[w]? with
+      | some c => run := run.insert id c
+      | none => run := run.erase id
+  let keep (id : ID) : Bool := match out.func.value? id with
+    | none => false
+    | some v => reported.contains id || (input.value? id).any (·.type == v.type)
+  return (run.filter fun id _ => keep id, next)
 
 /-- Index of stock pass `name`. -/
 def passIndex? (name : String) : Option Nat := stockPasses.findIdx? (·.name == name)
@@ -107,7 +138,8 @@ def runFrom {m : Type → Type} [Monad m] (env : PassEnv) (st : State) (start : 
   let mut st := st
   for h : i in [start:stockPasses.size] do
     let p := stockPasses[i]
-    let penv := { env with passName := p.name, tables := st.tables }
+    let zv := st.zvar
+    let penv := { env with passName := p.name, tables := st.tables, zvar := fun v => zv.getD v 0 }
     match enabled penv p with
     | .error e => return (.error p.name e, st)
     | .ok false => continue
@@ -116,8 +148,9 @@ def runFrom {m : Type → Type} [Monad m] (env : PassEnv) (st : State) (start : 
     match e.run penv st.func with
     | .error msg => return (.error p.name msg, st)
     | .ok out =>
+      let (zvar, nextClass) := nextZvar st.func out st.zvar st.nextClass
       st := { func := out.func, tables := out.tables, ran := st.ran + 1, last := p.name
-              effects := st.effects ++ out.effects }
+              effects := st.effects ++ out.effects, zvar, nextClass }
       if !(← step p.name st) then return (.halted p.name, st)
   return (.done, st)
 

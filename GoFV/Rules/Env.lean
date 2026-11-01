@@ -44,6 +44,8 @@ structure RwEnv where
   typeOrder : TypeOrder
   /-- The export file's final tables (`PassEnv.frontend`): symbols the frontend provides. -/
   frontend : Tables := {}
+  /-- `PassEnv.ptrCache`: whether `t.PtrTo()` returns a shared object. -/
+  ptrCache : TypeRef → Bool := fun _ => false
   deriving Inhabited
 
 /-- Mutable state of a rewrite pass. -/
@@ -58,6 +60,8 @@ structure RwState where
   fired : Nat := 0
   /-- Frontend side effects so far (`PassOut.effects`). -/
   effects : Array GoFV.Opt.Effect := #[]
+  /-- Type objects of the values made so far (`PassOut.typeObjs`). -/
+  typeObjs : Array (ID × GoFV.Opt.TypeObj) := #[]
 
 /-- The rewrite monad. Errors are Go's `Fatalf`/panics or constructs the port does not cover. -/
 abbrev RwM := ReaderT RwEnv (EStateM String RwState)

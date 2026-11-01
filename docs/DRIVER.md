@@ -152,13 +152,15 @@ the map lines' order, as `pass-parity`.
 ## Results
 
 Issue #12 has the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`, `std` and the corpus
-programs built for linux/arm64 by `scripts/driver-e2e.sh`). Known gaps at the time of writing:
+programs built for linux/arm64 by `scripts/driver-e2e.sh`). State of the known gaps:
 
-- Remaining std archive differences (full mode, issue #12): `*types.Type` object identity in
-  `zero arg cse` (two zero-arg values of one type number with distinct objects; Lean merges
-  them, stock does not — 9 functions, Exporter's issue on type-object identity), and the
-  package-index/relocation-order effects of those. `expand calls` in
-  `database/sql.ConvertAssign` makes an extra `OffPtr` (the constant cache's type comparison
-  misses a `typecmp` exception, see #12).
+- Type-object identity for `zero arg cse` (#101): the pipeline tracks `*types.Type` object
+  classes itself. It starts from the input section's `zvar`. Each pass reports the objects of
+  the values it creates or retypes (`PassOut.typeObjs`). The rule interpreter reports
+  `t.PtrTo()` as a fresh object unless `ptrcache` lists `t`, `x.Type` and a type variable bound
+  from a matched value as that value's object, and anything else as canonical. The classes
+  become the next pass's `PassEnv.zvar` (`Pipeline.nextZvar`).
+- `expand calls`' constant cache compares types with `Tables.typeEq`, which honours the
+  `typecmp` exceptions (#93, fixed).
 - `decompose` creates its slots at the numbers the export gives them (`renumberSlots`), so a
   chained `decompose builtin` orders slots as stock (#79, fixed).

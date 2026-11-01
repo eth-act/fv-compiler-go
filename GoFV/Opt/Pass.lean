@@ -62,6 +62,19 @@ inductive Effect where
   | useIface (sym : AuxRef)
   deriving DecidableEq, Inhabited, Repr
 
+/-- The `*types.Type` object a pass gave a value it created or retyped (#101): `zcse` keys
+zero-argument values on the type pointer, and the backend's `types.NewPtr` makes a fresh object
+when the element has no cached pointer type (`PassEnv.ptrCache`). The chained pipeline turns
+these into the next pass's `PassEnv.zvar`. -/
+inductive TypeObj where
+  /-- The type number's canonical object (`zvar` class 0). -/
+  | canonical
+  /-- A new object, distinct from every other. -/
+  | fresh
+  /-- The object value `v` had (its type, e.g. `v.Type` in a rule result). -/
+  | of (v : ID)
+  deriving DecidableEq, Inhabited, Repr
+
 /-- A pass's result. -/
 structure PassOut where
   func : Func
@@ -69,6 +82,10 @@ structure PassOut where
   tables : Tables
   /-- The pass's frontend side effects, in the order the stock pass causes them. -/
   effects : Array Effect := #[]
+  /-- Type objects of the values the pass created or retyped, in order (a later entry for a
+  value wins). Other values keep their object if their type number is unchanged, else get the
+  canonical one. -/
+  typeObjs : Array (ID × TypeObj) := #[]
 
 /-- A pass port. -/
 abbrev Pass := PassEnv → Func → Except String PassOut

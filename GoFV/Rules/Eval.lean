@@ -24,6 +24,9 @@ structure Scope where
   binds : Array GVal
   /-- The Go types of the rule variables. -/
   vtys : Array GoTy
+  /-- Type variables bound from a matched value's `<type>` field, with that value (the
+  variable stands for its `*types.Type` object, #101). -/
+  tySrc : List (Nat × ID) := []
 
 namespace GVal
 
