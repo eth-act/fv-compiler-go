@@ -9,10 +9,10 @@ For every section of every `.ssa` file under the arguments, the time of `check` 
 parts: `checkGo` (Go's `checkFunc`), `DomCert.check`, `checkArgShapes`, and inside `checkGo`
 the dominator tree (`postorder` + `dominators` + `newSparseTree`), the loop nest and `memCheck`;
 then the slim input check of the checked CFG passes (`wfDomCheck`), its structural part
-(`wfCheck`), the certificate construction (`DomCert.make`; Go's `Analysis.dominators` alone
-for comparison) and the four certificate tests. `wfDomCheck` must accept every section `check`
-accepts. `--pass NAME` times only the inputs of pass `NAME`'s sections (the functions that
-pass's input guard sees).
+(`wfCheck`), the certificate construction (`DomCert.make`; Go's `Analysis.dominators` alone for
+comparison) and the four certificate tests. `wfDomCheck` must accept every section `check`
+accepts, and the certificate's tree must be Go's. `--pass NAME` times only the inputs of pass
+`NAME`'s sections (the functions that pass's input guard sees).
 -/
 
 open GoFV.SSA
@@ -39,6 +39,7 @@ def main (args : List String) : IO UInt32 := do
   let mut n := 0
   let mut bad := 0
   let mut wfBad := 0
+  let mut idomDiff := 0
   for path in files do
     let data ← IO.FS.readBinFile path
     let .ok ex := parseExport data | continue
@@ -76,7 +77,7 @@ def main (args : List String) : IO UInt32 := do
       ts := ts.push (← IO.monoNanosNow)
       let c ← IO.lazyPure fun _ => DomCert.make f
       ts := ts.push (← IO.monoNanosNow)
-      let _ ← IO.lazyPure fun _ => (Analysis.dominators f).size
+      let goIdom ← IO.lazyPure fun _ => Analysis.dominators f
       ts := ts.push (← IO.monoNanosNow)
       let _ ← IO.lazyPure fun _ => DomCert.parentsOK c f.entry
       ts := ts.push (← IO.monoNanosNow)
@@ -88,8 +89,9 @@ def main (args : List String) : IO UInt32 := do
       ts := ts.push (← IO.monoNanosNow)
       if !r0 then bad := bad + 1
       if r0 && !r8 then wfBad := wfBad + 1
+      if c.idom != goIdom then idomDiff := idomDiff + 1
       t := (List.range names.size).toArray.map fun k => t[k]! + (ts[k + 1]! - ts[k]!)
-  IO.println s!"sections {n}, check fails {bad}, wfDomCheck fails where check passes {wfBad}"
+  IO.println s!"sections {n}, check fails {bad}, wfDomCheck fails where check passes {wfBad}, certificate tree differs from Analysis.dominators {idomDiff}"
   for h : k in [0:names.size] do
     IO.println s!"{names[k]}: {(t[k]! / 1000000 : Nat)} ms"
   return 0

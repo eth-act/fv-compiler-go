@@ -101,7 +101,10 @@ and the semantics' "a use reads its definition's latest activation", §3.6 of
   a tree predecessor it does not dominate, every use in a tree block is defined in an ancestor
   (`Phi` argument `i`: of predecessor `i`, if that is a tree block). It never rejects what Go
   accepts (corpus result above). It certifies soundness (ancestors lie on every path:
-  `GoFV.Proof.Dom.use_dominated`), not that the tree is the complete dominator tree.
+  `GoFV.Proof.Dom.use_dominated`), not that the tree is the complete dominator tree. The
+  certificate's tree comes from its own textbook Lengauer–Tarjan (`DomCert.ltIdom`, buckets
+  emptied; Go's verbatim `Analysis.dominators` rescans them and was 3× slower on big
+  functions, #147); nothing about it is proven, the checks validate it.
 - **Slim input check** (#147): a proof that needs only the IR-integrity facts above (without
   free lists and use counts), arity, `Phi` arity, `Bool` auxints and dominance (`WF`, the
   certificate `CertOK`, `UseDom`) can guard on `GoFV.SSA.wfDomCheck f` instead: `checkGo`'s
