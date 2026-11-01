@@ -122,6 +122,7 @@ import GoFV.Proof.Pass.PhiOptPanic
 import GoFV.Proof.Pass.PhiOptRel
 import GoFV.Proof.Pass.PhiOptSched
 import GoFV.Proof.Pass.PhiOptSetup
+import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Pass.RewriteCases
 import GoFV.Proof.Pass.RewriteTerm
@@ -145,6 +146,17 @@ import GoFV.Proof.Pass.ZCSERel
 import GoFV.Proof.Pass.ZCSESched
 import GoFV.Proof.Pass.ZCSESetup
 import GoFV.Proof.PhiMono
+import GoFV.Proof.ProveCheck.DecideSound
+import GoFV.Proof.ProveCheck.Den
+import GoFV.Proof.ProveCheck.Facts
+import GoFV.Proof.ProveCheck.Inv
+import GoFV.Proof.ProveCheck.Rng
+import GoFV.Proof.ProveCheck.RngOp
+import GoFV.Proof.ProveCheck.RngSound
+import GoFV.Proof.ProveCheck.Sim
+import GoFV.Proof.ProveCheck.Spec
+import GoFV.Proof.ProveCheck.Tabs
+import GoFV.Proof.ProveCheck.Value
 import GoFV.Proof.PtrAddr
 import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
@@ -293,6 +305,7 @@ import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
+import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.ZCSE
