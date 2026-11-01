@@ -87,7 +87,7 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
           | .op o _ _ _ _ _ _ _ => topAll o e
           | _ => false) then "topAll" ++ shapes else
         if !Pat.argsOK e.ty [] r.pat then "argsOK" ++ shapes else
-        if !leavesOK tabs M I [] r.pat then "leavesOK" else
+        if !leavesOK M I [] r.pat then "leavesOK" else
         if !resultOK tabs M ev or σ I r x defs then
           (if r.block.isSome then "resultOK (@b block)" else "resultOK") else
         if !nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) then "frameNodeOK" else "ok"

@@ -377,18 +377,15 @@ def topAll (op : Op) (e : PEnv) : Bool :=
   topOK op (e.ty []) || selTop op (e.ty []) (e.auxInt []) (e.ty [0]) || loadTop op (e.ty [])
 
 mutual
-/-- Every leaf of the pattern has an integer, boolean, pointer or memory shape. `Pat.typed`
-asks of the leaves that their values have their type's shape: `Val.retype` at a shape always
-produces a value of that shape (`Val.retype_hasTy`, issue #108). -/
-def leavesOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) : Pat → Bool
-  | .op _ _ _ _ _ _ args _ => leavessOK tabs M I p 0 args
-  | _ =>
-    match M.get? (I.at p) with
-    | some x => (match tabs.ty x.type with | .int _ | .bool | .ptr _ | .mem => true | _ => false)
-    | none => false
-def leavessOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) (i : Nat) : List Pat → Bool
+/-- Every leaf of the pattern is a defined value. `Pat.typed` asks of the leaves that their
+values have their type's shape: `Val.retype` produces a value of the shape at every shape
+(`Val.retype_hasTy`, issue #108), aggregates (strings, slices, interfaces) included. -/
+def leavesOK (M : Defs) (I : Inst) (p : Path) : Pat → Bool
+  | .op _ _ _ _ _ _ args _ => leavessOK M I p 0 args
+  | _ => (M.get? (I.at p)).isSome
+def leavessOK (M : Defs) (I : Inst) (p : Path) (i : Nat) : List Pat → Bool
   | [] => true
-  | q :: qs => leavesOK tabs M I (i :: p) q && leavessOK tabs M I p (i + 1) qs
+  | q :: qs => leavesOK M I (i :: p) q && leavessOK M I p (i + 1) qs
 end
 
 /-- The value a result argument refers to. -/
@@ -572,7 +569,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | .op o _ _ _ _ _ _ _ => topAll o e
           | _ => false) &&
         Pat.argsOK e.ty [] r.pat &&
-        leavesOK tabs M I [] r.pat &&
+        leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond

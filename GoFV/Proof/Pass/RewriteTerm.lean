@@ -214,7 +214,7 @@ table of a sound rule set has the arguments of its atoms refining, as terms over
 of the input, and its terminators refining the input's as functions of their controls' terms. -/
 theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array RwEvent}
     (hv : RewriteCheck.validate tabs (Interp.Table.ofRuleSet s) f g log = true)
-    (hs : s.AllSound) (hr : Term.RetypeShapes) :
+    (hs : s.AllSound) :
     Term.AtomArgsRef tabs f g ∧ Term.TermStepRef tabs f g := by
   unfold validate at hv
   simp only [Bool.and_eq_true] at hv
@@ -224,7 +224,7 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
     exact hA.1.1.2
   split at hv
   · rename_i M B hrep
-    obtain ⟨C, hI, hB⟩ := replay_inv (D₀ := f.value?) (C₀ := LM f) hs hr log.toList _ M _ B _
+    obtain ⟨C, hI, hB⟩ := replay_inv (D₀ := f.value?) (C₀ := LM f) hs log.toList _ M _ B _
       hrep (ReplayInv.init (marked_closed hcf)) (BInv.init tabs f (LM f))
     constructor
     · intro b hb gb hgb a ha u hu hat

@@ -364,7 +364,7 @@ theorem nonNegOK_of {tabs : Tables} {D : ID → Option Value} {M : Defs} {I : In
     | some p => exact nonNegD_den tabs D ρ _ B _
 
 /-- **The matched value**: its denotation before the event is refined by the one after. -/
-theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
+theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : ArgClosed M C) (hv : C v)
     {ρ : ID → Val} (hT : Term.Typed (putAll M defs).get? tabs ρ) {n B : Nat}
     (hIH : ∀ y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ B y)) :
@@ -394,10 +394,10 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
   have hcond := cond_of hev F.hcond
   have htyped : GoFV.Proof.Rules.Pat.typed (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
       [] r.pat :=
-    typed_of (fun p => rfl) (fun p w x hm hp hx hsz => by
+    typed_of (fun p => rfl) (fun p w x hm hp hx => by
         show (den _ tabs ρ B (F.I.at p)).hasTy _ = true
         rw [F.at_eq hm]
-        exact den_hasTy hr hT B w (shape_of (hdefw p w x hm hp hx)) hsz)
+        exact den_hasTy hT B (hdefw p w x hm hp hx))
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
   have hargs : GoFV.Proof.Rules.Pat.argsOK
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
@@ -550,7 +550,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
 
 /-- **One rule event**: on a set closed under arguments, the denotations after the event refine
 those before, with the fuel multiplied by `stepK r`. -/
-theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
+theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.SoundT r)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : DefClosed M C) {ρ : ID → Val}
     (hT : Term.Typed M.get? tabs ρ) :
     ∀ n y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ (n * stepK r) y) := by
@@ -563,7 +563,7 @@ theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
     by_cases hyv : y = v
     · subst hyv
       rw [Nat.succ_mul]
-      exact F.top hs hr hC.arg hy hT' ih
+      exact F.top hs hC.arg hy hT' ih
     · obtain ⟨m, hm, hargs⟩ := hC y hy
       have hkeep := F.keep hm hyv
       have hK : (n + 1) * stepK r = (n * stepK r + (stepK r - 1)) + 1 := by

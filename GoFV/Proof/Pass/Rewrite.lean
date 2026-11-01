@@ -30,8 +30,6 @@ The instances depend on the proven-rule sets explicitly: `opt_refines` (also `mi
 `Proven.generic` (`scripts/rule-proofs.py proven`: the generic rules with a merged lemma) and its
 proof is `generic_allSound`; likewise `divisible_refines`/`divmod_refines`. Adding lemmas grows
 these sets (and what the checked passes optimise); the theorems stay as stated.
-
-`Term.RetypeShapes` (register typing at integer shapes, issue #108) is `Term.retypeShapes`.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -50,7 +48,7 @@ theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) :
     RefinesUnder Env.Mono tabs' g tabs f := by
   obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
-  obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
+  obtain ⟨h1, h2⟩ := validate_termRef hv hs
   exact refinesUnder_of_tabsAgree hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
 
 /-- The precondition of the checked rewrite passes on `f` in the tables `tabs`: monotone
@@ -78,7 +76,7 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
   rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, f₁, hn, f₂, hfw, f₃, log₃, hss, hv⟩
   · rw [he, ht]; exact RefinesUnder.toRw (RefinesUnder.refl _ _ _)
   obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
-  obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
+  obtain ⟨h1, h2⟩ := validate_termRef hv hs
   -- nil-check eliminations first (nilcheckelim's relation with the rewrite passes' seeds)
   obtain ⟨ce₁, hf₁, hN⟩ : ∃ ce₁, check ce₁ f₁ = .ok () ∧
       RefinesFrom (RwPre penv.tables f) out.tables f₁ out.tables f := by

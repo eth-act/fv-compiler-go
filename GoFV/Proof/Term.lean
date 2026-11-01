@@ -72,14 +72,6 @@ block of `h`. Junk entries of the value table (dropped values) are not definitio
 def listedDefs (h : Func) (x : ID) : Option Value :=
   (h.value? x).filter fun v => h.blocks.contains v.block && (h.block? v.block).any (·.values.contains x)
 
-/-- `Val.retype` at an integer shape produces a value of that shape (register typing, issue
-#108; at `bool` too): an integer of that width, `poison`, or at 64 bits a pointer without a
-concrete address (`Val.hasTy`). The validator's leaves are integer- or boolean-shaped
-(`RewriteCheck.leavesOK`), so this gives `Pat.typed`. -/
-def RetypeShapes : Prop := ∀ (v : Val) (w : Width), (v.retype (.int w)).hasTy (.int w) = true
-
-theorem retypeShapes : RetypeShapes := Val.retype_int_hasTy
-
 /-- The arguments of every atom listed in `g` (phis, roots, frame values) refine, as terms, those
 of the atom with the same ID in `f`, which has the same fields. What the rewrite validator
 establishes (`GoFV.Proof.Pass.Rewrite.validate_termRef`) and the atom simulation consumes. -/
