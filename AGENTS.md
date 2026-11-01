@@ -5,7 +5,7 @@
   `lean-build-hygiene`, `lean-asm-proofs`, `fast-lean`. `fast-lean build <Module>` (dev
   toolchain `dev-fast-v4.34.1`) is fine while iterating; checks before a PR use plain
   `lake build` and `#print axioms` (no `skippedProof`).
-- Work is organised in GitHub issues on kevaundray/fv-compiler-go. Claim an issue before
+- Work is organised in GitHub issues on eth-act/fv-compiler-go (public). Claim an issue before
   starting (`gh issue edit N --add-assignee @me` + a comment naming your agent and branch);
   reference it in commits and PRs; post progress there. Split large issues into sub-issues.
 - Never file anything upstream with Go (issues, CLs, comments, mailing lists). Possible Go
