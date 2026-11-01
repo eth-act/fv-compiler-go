@@ -191,7 +191,7 @@ def expandCallsPass : Pass := fun env f => do
     | some #[.word w] => pure w
     | _ => throw s!"config {k}: missing"
   let int (k : String) : Except String Int := do
-    match (← word k).toInt? with
+    match decInt? (← word k) with
     | some n => pure n
     | none => throw s!"config {k}: not an integer"
   let typ (n : String) : Except String TypeRef := match env.typ? n with

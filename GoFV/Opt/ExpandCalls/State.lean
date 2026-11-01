@@ -4,7 +4,7 @@ import GoFV.SSA.ConstCache
 import GoFV.SSA.ABI
 import GoFV.SSA.TypeNew
 import GoFV.Rules.Helpers.Types
-import Std.Data.HashMap.Basic
+import Std.Data.TreeMap
 
 /-!
 # expand calls: state and helpers
@@ -12,7 +12,9 @@ import Std.Data.HashMap.Basic
 `expandState` (`expand_calls.go:898`), `registerCursor` (`:810`), `offsetFrom` (`:918`),
 `invalidateRecursively` (`:973`, `value.go:400`) and the type/aux/value accessors the
 rewriting functions share. linux/arm64 only: `RegSize` 8, little endian (the `Int64Hi/Lo`
-paths of 32-bit targets are reported as errors).
+paths of 32-bit targets are reported as errors). Go's maps are `Std.TreeMap`s (lookup only, so
+any key order gives the same result), which the kernel can evaluate, unlike a `HashMap`
+(`decide +kernel` in `expandCalls_witness`).
 -/
 
 namespace GoFV.Opt.ExpandCalls
@@ -47,15 +49,15 @@ structure SelKey where
   off : Int64
   size : Int
   typ : TypeRef
-  deriving BEq, Hashable
+  deriving BEq, Ord
 
 structure St where
   f : Func
   tabs : Tables
-  wideSelects : Std.HashMap ID ID := {}
-  commonSelectors : Std.HashMap SelKey ID := {}
-  commonArgs : Std.HashMap SelKey ID := {}
-  memForCall : Std.HashMap ID ID := {}
+  wideSelects : Std.TreeMap ID ID := {}
+  commonSelectors : Std.TreeMap SelKey ID := {}
+  commonArgs : Std.TreeMap SelKey ID := {}
+  memForCall : Std.TreeMap ID ID := {}
   /-- `*rc.regValues` of the call or exit being rewritten. -/
   regValues : Array ID := #[]
 

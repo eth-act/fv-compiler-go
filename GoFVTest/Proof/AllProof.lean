@@ -360,6 +360,7 @@ import GoFV.Proof.Witness.Deadcode
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Early
+import GoFV.Proof.Witness.ExpandCalls
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
@@ -370,6 +371,7 @@ import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.StackF0
+import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
