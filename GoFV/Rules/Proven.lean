@@ -22,7 +22,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1191 proven value rules, 3 proven block rules, 7
+/-- `generic.rules` restricted to its 1196 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 15 Load-of-Store forwardings, 1 struct-load
 expansions, 1 struct-store splits and 6 segment rules. -/
 def generic : RuleSet where
@@ -67,7 +67,7 @@ def generic : RuleSet where
     (.EqSlice, [Generated.Generic.r_generic_792]),
     (.IsInBounds, [Generated.Generic.r_generic_240, Generated.Generic.r_generic_242, Generated.Generic.r_generic_243, Generated.Generic.r_generic_247, Generated.Generic.r_generic_250, Generated.Generic.r_generic_252, Generated.Generic.r_generic_253, Generated.Generic.r_generic_255]),
     (.IsNonNil, [Generated.Generic.r_generic_1687]),
-    (.IsSliceInBounds, [Generated.Generic.r_generic_271, Generated.Generic.r_generic_273, Generated.Generic.r_generic_275, Generated.Generic.r_generic_277]),
+    (.IsSliceInBounds, [Generated.Generic.r_generic_271, Generated.Generic.r_generic_273, Generated.Generic.r_generic_275, Generated.Generic.r_generic_277, Generated.Generic.r_generic_278]),
     (.Leq16, [Generated.Generic.r_generic_587, Generated.Generic.r_generic_600, Generated.Generic.r_generic_605, Generated.Generic.r_generic_617, Generated.Generic.r_generic_618, Generated.Generic.r_generic_702, Generated.Generic.r_generic_710, Generated.Generic.r_generic_720, Generated.Generic.r_generic_724]),
     (.Leq16U, [Generated.Generic.r_generic_596, Generated.Generic.r_generic_613, Generated.Generic.r_generic_693, Generated.Generic.r_generic_695, Generated.Generic.r_generic_714, Generated.Generic.r_generic_715]),
     (.Leq32, [Generated.Generic.r_generic_587_2, Generated.Generic.r_generic_601, Generated.Generic.r_generic_606, Generated.Generic.r_generic_617_2, Generated.Generic.r_generic_618_2, Generated.Generic.r_generic_701, Generated.Generic.r_generic_709, Generated.Generic.r_generic_719, Generated.Generic.r_generic_723]),
@@ -183,8 +183,9 @@ def generic : RuleSet where
     (.SignExt8to16, [Generated.Generic.r_generic_106, Generated.Generic.r_generic_766, Generated.Generic.r_generic_2407]),
     (.SignExt8to32, [Generated.Generic.r_generic_107, Generated.Generic.r_generic_764, Generated.Generic.r_generic_2407_2]),
     (.SignExt8to64, [Generated.Generic.r_generic_108, Generated.Generic.r_generic_761, Generated.Generic.r_generic_2407_3]),
-    (.SliceCap, [Generated.Generic.r_generic_1032]),
-    (.SliceLen, [Generated.Generic.r_generic_1031]),
+    (.SliceCap, [Generated.Generic.r_generic_1032, Generated.Generic.r_generic_1037, Generated.Generic.r_generic_1038]),
+    (.SliceLen, [Generated.Generic.r_generic_1031, Generated.Generic.r_generic_1036]),
+    (.SlicePtr, [Generated.Generic.r_generic_1035]),
     (.Slicemask, [Generated.Generic.r_generic_770, Generated.Generic.r_generic_771]),
     (.StringLen, [Generated.Generic.r_generic_1012]),
     (.StringPtr, [Generated.Generic.r_generic_1011]),

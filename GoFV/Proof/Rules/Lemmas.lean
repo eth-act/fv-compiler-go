@@ -1271,6 +1271,9 @@ theorem isInt64Ty_iff {t : Ty} : isInt64Ty t = true ↔ t = .int .w64 := by
 theorem isIntWTy_iff {w : Width} {t : Ty} : isIntWTy w t = true ↔ t = .int w := by
   cases w <;> cases t <;> simp [isIntWTy] <;> rename_i w' <;> cases w' <;> simp
 
+theorem isSliceTy_iff {t : Ty} : isSliceTy t = true ↔ ∃ el, t = .slice el := by
+  unfold isSliceTy; split <;> simp_all
+
 /-! ## `isNonNegative` leaves (`Pat.nonNegOK`) -/
 
 @[rule_sem] theorem nonNeg_int (w : Width) (x : BitVec w.bits) : (Val.int w x).nonNeg = !x.msb :=
