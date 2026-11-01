@@ -350,6 +350,7 @@ import GoFV.Proof.Rules.Lsh2
 import GoFV.Proof.Rules.Lsh3
 import GoFV.Proof.Rules.Lsh4
 import GoFV.Proof.Rules.Lsh5
+import GoFV.Proof.Rules.MemEqSame
 import GoFV.Proof.Rules.Mod
 import GoFV.Proof.Rules.Mod2
 import GoFV.Proof.Rules.Mod3

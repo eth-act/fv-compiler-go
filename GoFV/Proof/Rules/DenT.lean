@@ -131,6 +131,12 @@ def emptyStrVars : Expr → List Nat
   | .binop .eq (.var x) (.lit _ (.str "")) _ => [x]
   | _ => []
 
+/-- The rule variables `(x, y)` of the condition's conjuncts `isSamePtr(x, y)` (`&&` chains). -/
+def samePtrVars : Expr → List (Nat × Nat)
+  | .binop .land a b _ => samePtrVars a ++ samePtrVars b
+  | .call "isSamePtr" [.var x, .var y] _ => [(x, y)]
+  | _ => []
+
 /-- The field binds variable `x`. -/
 def _root_.GoFV.Rules.Field.bindsVar (f : GoFV.Rules.Field) (x : Nat) : Bool :=
   match f with
@@ -154,8 +160,9 @@ def _root_.GoFV.Rules.Result.nodes : Result → List RNode
 
 /-- The frame helpers of the result hold of the instance: an aux `fe.StringData(x)` names the
 data symbol of the (non-empty) string aux bound to `x`, an auxint `int64(len(x))` is its length
-(as `nodeDenT` selects it), an aux `{x}` is the aux bound to `x`; and a conjunct `x == ""` of the
-condition holds of the string aux bound to `x`. -/
+(as `nodeDenT` selects it), an aux `{x}` is the aux bound to `x`; a conjunct `x == ""` of the
+condition holds of the string aux bound to `x`; and a conjunct `isSamePtr(x, y)` of leaves
+`x`, `y` holds of their values (the validator: the same value). -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
   (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
@@ -166,8 +173,11 @@ def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rul
         (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae) = Int64.ofNat s.size) ∧
     (∀ xe x, n.aux = some xe → auxVar? xe = some x →
       ∃ p, Pat.auxPos x [] r.pat = some p ∧ or.aux xe = e.aux p)) ∧
-  ∀ x ∈ (r.cond.map emptyStrVars).getD [],
-    ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧ s.size = 0
+  (∀ x ∈ (r.cond.map emptyStrVars).getD [],
+    ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧ s.size = 0) ∧
+  ∀ xy ∈ (r.cond.map samePtrVars).getD [],
+    ∃ p q, Pat.leafPos xy.1 [] r.pat = some p ∧ Pat.leafPos xy.2 [] r.pat = some q ∧
+      e.leaf p = e.leaf q
 
 /-- **The obligation of a value rule over table-evaluated nodes**: `Rule.Sound` with the
 denotation `opVal tabs`, for all tables, under the frame helpers' facts (`FrameOK`). -/

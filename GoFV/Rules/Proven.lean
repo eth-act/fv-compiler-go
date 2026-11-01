@@ -21,7 +21,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1166 proven value rules, 3 proven block rules, 7
+/-- `generic.rules` restricted to its 1167 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 4 Load-of-Store forwardings, 1 struct-load
 expansions and 1 struct-store splits. -/
 def generic : RuleSet where
@@ -101,6 +101,7 @@ def generic : RuleSet where
     (.Lsh8x32, [Generated.Generic.r_generic_461, Generated.Generic.r_generic_492_2, Generated.Generic.r_generic_1197_2]),
     (.Lsh8x64, [Generated.Generic.r_generic_234, Generated.Generic.r_generic_472_4, Generated.Generic.r_generic_492_3, Generated.Generic.r_generic_500, Generated.Generic.r_generic_528, Generated.Generic.r_generic_528_2, Generated.Generic.r_generic_1197_3]),
     (.Lsh8x8, [Generated.Generic.r_generic_463, Generated.Generic.r_generic_492_4, Generated.Generic.r_generic_1197_4]),
+    (.MemEq, [Generated.Generic.r_generic_1592]),
     (.Mod16, [Generated.Generic.r_generic_216, Generated.Generic.r_generic_1135, Generated.Generic.r_generic_1142, Generated.Generic.r_generic_1152]),
     (.Mod16u, [Generated.Generic.r_generic_221, Generated.Generic.r_generic_1128, Generated.Generic.r_generic_1160]),
     (.Mod32, [Generated.Generic.r_generic_217, Generated.Generic.r_generic_1136, Generated.Generic.r_generic_1143, Generated.Generic.r_generic_1154]),

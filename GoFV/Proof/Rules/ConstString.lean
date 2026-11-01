@@ -97,7 +97,7 @@ theorem strVal_of_strAux_empty {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
 theorem r_generic_1015_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1015 := by
   refine ⟨rfl, fun tabs e or _ => ?_⟩
   intro σ ev hfr _ _ _ hty _ _
-  obtain ⟨p, s, d, hp, hs, hsz⟩ := hfr.2 0
+  obtain ⟨p, s, d, hp, hs, hsz⟩ := hfr.2.1 0
     (by simp [GoFV.Rules.Generated.Generic.r_generic_1015, emptyStrVars])
   simp only [GoFV.Rules.Generated.Generic.r_generic_1015, Pat.auxPos, Field.bindsVar,
     beq_self_eq_true, ite_true, Option.some.injEq] at hp
@@ -166,7 +166,7 @@ theorem inst_r_generic_1015 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1015, FrameOK, Result.nodes, emptyStrVars,
-    Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?, Pat.rawT, Pat.densT,
+    samePtrVars, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?, Pat.rawT, Pat.densT,
     opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT, Pat.denT]
   rule_eval
   refine ⟨fun ae x h => ?_, ?_⟩

@@ -79,7 +79,7 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
         else if !leavesOK M I [] r.pat then "leaves"
         else if !resultOK tabs M ev or σ I r x defs then "result"
         else if !nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) then "frame"
-        else if !condFrameOK tabs e r.pat r.cond then "condFrame"
+        else if !condFrameOK tabs e I r.pat r.cond then "condFrame"
         else "ok"
     s!"{r.loc.file}:{r.loc.line} {rs}"
 
