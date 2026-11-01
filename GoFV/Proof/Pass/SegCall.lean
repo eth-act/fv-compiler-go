@@ -26,6 +26,11 @@ relates the size argument `.int .w64 (BitVec.ofInt 64 c.toInt)` of a `Const64 [c
 `auxInt.toInt.toNat` that `Zero`/`Move` use. Non-vacuity: `memclr_witness`, `memmove_witness`.
 -/
 
+-- Parallel elaboration (-j4) wrote this module's constants in a different order on every build
+-- (5 builds, 4 hashes), so importers missed the shared cache (#1; LEARNINGS.md). Sequential
+-- elaboration costs no CPU here (7.5 s either way).
+set_option Elab.async false
+
 namespace GoFV.Proof.Seg
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.MemCall
 
