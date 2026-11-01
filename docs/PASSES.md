@@ -78,9 +78,10 @@ Each pass run gets a verdict:
 | `skipped` | an optional pass with a theorem whose input fails `check` or the fragment test, or whose output fails `check` | no (the input is kept) |
 | `unverified` | a stock port that changed the function, or a required pass in one of the `skipped` situations | yes |
 
-The pass theorems conclude `Refines`, `RefinesUnder Env.Mono` or `RefinesFrom (FrameSafe ∧
-InitAvoids)`. All three imply `RefinesFrom VPre` with `VPre env args mem := env.Mono ∧
-env.FrameSafe ∧ InitAvoids env args mem` (`GoFV/Proof/Pass/Pipeline.lean`), which composes.
+The pass theorems conclude `Refines`, `RefinesUnder Env.Mono`, `RefinesFrom (FrameSafe ∧
+InitAvoids)`, `RefinesFrom (RwPre tabs f)` or `RefinesFrom WbPre`. All of them imply `RefinesFrom (VPre k)` with `VPre k env args mem := env.Mono ∧
+env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧ WbPre env args mem`
+(`k` the input's dictionary parameters; `GoFV/Proof/Pass/Pipeline.lean`), which composes.
 `stockPasses_sound` checks each theorem against its table entry.
 `verifiedPipeline_refines`: a result without an `unverified` run refines the input under
 `VPre`. `verifiedPipeline_witness` (`GoFV/Proof/Witness/Pipeline.lean`) runs the whole table on

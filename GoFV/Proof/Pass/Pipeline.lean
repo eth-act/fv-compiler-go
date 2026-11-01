@@ -17,16 +17,19 @@ import GoFV.Proof.Pass.DSE
 import GoFV.Proof.Pass.FuseEarlyPass
 import GoFV.Proof.Pass.ECMain
 import GoFV.Proof.Pass.MemCombine
+import GoFV.Proof.Pass.ShortCircPass
+import GoFV.Proof.Pass.WBSim
 import GoFV.Proof.TabsAgree
 
 /-!
 # The verified generic pipeline refines its input (issue #189)
 
-The pass theorems conclude four relations: `Refines`, `RefinesUnder Env.Mono` (passes that
+The pass theorems conclude five relations: `Refines`, `RefinesUnder Env.Mono` (passes that
 rewrite call arguments rely on monotone contracts), `RefinesFrom (FrameSafe ∧ InitAvoids)`
-(dead auto elim) and `RefinesFrom (RwPre tabs f)` (the checked rewrite passes: monotone
+(dead auto elim), `RefinesFrom (RwPre tabs f)` (the checked rewrite passes: monotone
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments of
-the pass input `f`; issue #151). All four imply `VRefines k := RefinesFrom (VPre k)`, where
+the pass input `f`; issue #151) and `RefinesFrom WbPre` (writebarrier: a defined, read-only
+write-barrier flag and no write-barrier buffer, kept by the contracts; issue #36). All five imply `VRefines k := RefinesFrom (VPre k)`, where
 `VPre k` is their conjunction with the input's dictionary parameters `k` (`relHolds_toV`; the
 pipeline runs a proven pass only on states whose dictionary parameters are the input's,
 `VState.dict`), and `VRefines k` composes (`RefinesFrom.trans`).
@@ -45,9 +48,11 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.Verified GoFV.Proof
 /-- The environments and inputs on which every pass theorem holds, for an input whose
 dictionary parameters are `k` (`NilCheck.dictParams`): monotone, frame-safe contracts,
 malloc-family contracts that return non-nil pointers, inputs that hold no pointer into a frame
-temporary and non-nil dictionary arguments. -/
+temporary, non-nil dictionary arguments, and a memory with a defined, read-only write-barrier
+flag and no write-barrier buffer, kept by the contracts (`WB.WbPre`). -/
 def VPre (k : List Nat) (env : Env) (args : List Val) (mem : Mem) : Prop :=
-  env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args
+  env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧
+    WB.WbPre env args mem
 
 /-- The refinement the verified pipeline establishes. -/
 abbrev VRefines (k : List Nat) (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
@@ -68,7 +73,10 @@ theorem RefinesFrom.frameSafe_toV
 
 theorem RefinesFrom.rw_toV (hk : NilCheck.dictParams tabs f = k)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
-  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2⟩) h
+  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩) h
+
+theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
+  RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2) h
 
 /-- The relation a `Rel` names. -/
 def relHolds : Rel → Tables → Func → Tables → Func → Prop
@@ -76,6 +84,7 @@ def relHolds : Rel → Tables → Func → Tables → Func → Prop
   | .mono => RefinesUnder Env.Mono
   | .frameSafe => RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem)
   | .rw => fun tabs' f' tabs f => RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f
+  | .wb => RefinesFrom WB.WbPre
 
 /-- Each pass relation implies the pipeline's, for an input with dictionary parameters `k`. -/
 theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k) :
@@ -84,6 +93,7 @@ theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k) :
   | .mono, h => RefinesUnder.toV h
   | .frameSafe, h => RefinesFrom.frameSafe_toV h
   | .rw, h => RefinesFrom.rw_toV hk h
+  | .wb, h => RefinesFrom.wb_toV h
 
 /-- A `proven` step's theorem: the result relates to the input when both pass `check` and the
 guard accepts the input. -/
@@ -115,7 +125,8 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
     exact CopyElim.copyelim_refines h hf hg (CopyElim.copyFrag_sound hd.1)
       (CopyElim.emptyFrag_of hd.2)
   · exact deadcodeStep_sound
-  · trivial
+  -- short circuit
+  · exact fun _ _ _ _ _ h _ _ _ => ShortCirc.shortcircuit_refines h
   · trivial
   · exact deadcodeStep_sound
   · exact optStep_sound
@@ -159,7 +170,8 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
   · exact fun _ _ _ _ _ h hf hg hd => DSE.dse_refines h hf hg hd
   -- memcombine
   · exact fun _ _ _ _ _ h hf hg _ => MemCombine.memcombine_refines h hf hg
-  · trivial
+  -- writebarrier
+  · exact fun _ _ _ _ _ h hf hg _ => writebarrier_refines h hf hg
   · trivial
   · trivial
   · trivial

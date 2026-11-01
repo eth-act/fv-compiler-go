@@ -149,9 +149,9 @@ entry against its theorem):
 
 | status | passes |
 | --- | --- |
-| proven (theorem, no fragment test) | number lines; opt, middle opt, late opt (`optChecked`); zero arg cse; phiopt; prove (`proveChecked`; size guard `proveGuard`: skipped, reported as `fragment`, above `proveMaxValues` = 20,000 value IDs); divisible, divmod (`…Checked`); known bits; early fuse; softfloat; branchelim; sccp (`sccpChecked`); check bce; memcombine (`memcombineChecked`: loads only, so a verified run combines no stores) |
+| proven (theorem, no fragment test) | number lines; short circuit; opt, middle opt, late opt (`optChecked`); zero arg cse; phiopt; prove (`proveChecked`; size guard `proveGuard`: skipped, reported as `fragment`, above `proveMaxValues` = 20,000 value IDs); divisible, divmod (`…Checked`); known bits; early fuse; softfloat; branchelim; sccp (`sccpChecked`); check bce; memcombine (`memcombineChecked`: loads only, so a verified run combines no stores); writebarrier (`writebarrierChecked`, `RefinesFrom WbPre`: stock output where its checker accepts, else unverified) |
 | guarded (theorem on a fragment, decided at run time: an optional pass outside it is skipped, a required one unverified) | early phielim and copyelim (`copyFrag`, `emptyFragB`); the five deadcodes (`deadFragB`); generic cse (`cseFrag`); nilcheckelim (`nilFrag`); expand calls (`expandCallsFrag`, required); dead auto elim (`daeFrag`, `RefinesFrom (FrameSafe ∧ InitAvoids)`); dse (`dseFrag`) |
-| unverified (stock port, no theorem yet) | short circuit; decompose user; decompose builtin; late fuse; writebarrier; insert resched checks; cpufeatures; rewrite tern |
+| unverified (stock port, no theorem yet) | decompose user; decompose builtin; late fuse; insert resched checks; cpufeatures; rewrite tern |
 
 `scripts/driver-e2e.sh --verified` builds std and the programs with
 `GOFV_SSA_DRIVER=<wrapper running gofv-ssa-opt --verified --vstats …>` in full mode, counts the

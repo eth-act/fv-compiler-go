@@ -22,7 +22,7 @@ import GoFV.Opt.CheckBCE
 import GoFV.Opt.DeadStore
 import GoFV.Opt.DeadStoreCheck
 import GoFV.Opt.MemCombine.Check
-import GoFV.Opt.WriteBarrier
+import GoFV.Opt.WriteBarrierCheck
 import GoFV.Opt.ReschedChecks
 import GoFV.Opt.CpuFeatures
 import GoFV.Opt.TabsAgree
@@ -83,6 +83,9 @@ inductive Rel where
   monotone contracts, malloc-family contracts that return non-nil pointers
   (`Env.AllocNonNil`) and non-nil dictionary arguments (`NilCheck.dictParams tabs f`). -/
   | rw
+  /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
+  read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/
+  | wb
   deriving DecidableEq, Repr, Inhabited
 
 /-- How the verified pipeline runs a stock pass. -/
@@ -152,7 +155,7 @@ def stockPasses : Array StockPass := #[
   { name := "number lines", required := true, step := .proven numberLinesPass .refines noGuard },
   { name := "early phielim and copyelim", step := .proven copyelimPass .refines copyGuard },
   { name := "early deadcode", step := deadcodeStep },
-  { name := "short circuit", step := .stock shortcircuitPass },
+  { name := "short circuit", step := .proven shortcircuitPass .refines noGuard },
   { name := "decompose user", required := true, step := .stock Decompose.decomposeUserPass },
   { name := "pre-opt deadcode", step := deadcodeStep },
   { name := "opt", required := true, step := optStep },
@@ -182,7 +185,8 @@ def stockPasses : Array StockPass := #[
   { name := "check bce", step := .proven checkbcePass .refines noGuard },
   { name := "dse", step := .proven dsePass .refines dseFrag },
   { name := "memcombine", step := .proven memcombineChecked .mono noGuard },
-  { name := "writebarrier", required := true, step := .stock writebarrierPass },
+  { name := "writebarrier", required := true,
+    step := .proven writebarrierChecked .wb noGuard },
   { name := "insert resched checks", disabled := reschedChecksDisabled,
     step := .stock reschedChecksPass },
   { name := "cpufeatures", requiredSimd := true, disabled := simdDisabled,
