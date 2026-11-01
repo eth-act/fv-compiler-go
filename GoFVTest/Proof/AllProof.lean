@@ -118,6 +118,7 @@ import GoFV.Proof.Pass.DeadSim
 import GoFV.Proof.Pass.DeadTail
 import GoFV.Proof.Pass.DeadcodePass
 import GoFV.Proof.Pass.DecPhiBlock
+import GoFV.Proof.Pass.DecPhiElim
 import GoFV.Proof.Pass.DecPhiRel
 import GoFV.Proof.Pass.DecPhiSim
 import GoFV.Proof.Pass.Decompose
@@ -491,6 +492,7 @@ import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.DSE
 import GoFV.Proof.Witness.DSECert
 import GoFV.Proof.Witness.Deadcode
+import GoFV.Proof.Witness.DecPhiElim
 import GoFV.Proof.Witness.DecPhis
 import GoFV.Proof.Witness.DecStore
 import GoFV.Proof.Witness.DecodedLen

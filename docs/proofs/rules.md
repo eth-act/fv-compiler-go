@@ -527,6 +527,25 @@ replay validates alone, related by `validate` with them (`LayerChain.rw`). Witne
 `GoFV.Proof.Witness.decStore_witness` (`*p = unsafe.String(q, n); *p = *r` with the proven dec
 rules, kernel evaluation).
 
+**Phi eliminations of the dec rewrite** (`GoFV/Opt/DecPhiElim.lean`,
+`GoFV/Proof/Pass/DecPhiElim.lean`, `Decompose.refines_of_decRewriteOK`). The rewrite loop turns a
+split phi whose arguments the dec rules made copies of one value into `Copy w`
+(`phielimValue`, `RwEvent.phielim`; e.g. `Phi (SliceLen a) (SliceLen b)` of two slices of one
+length). The validator relates terms only and still rejects these events; decompose builtin's
+check (`DecomposeCheck.decRewriteOK`) takes them out of the step instead: `phStrip` replays the
+log without them, keeping each eliminated phi a `Phi` with its arguments at the elimination and
+stopping every copy-argument replacement whose chain passes through such a phi at the phi
+(`phFirst`), and builds `h` (the output with those phis and arguments, a dropped eliminated phi
+listed again first in its block, uses recounted) and `k` (the output with the dropped
+eliminated phis listed as their copies). Then `layersOK` relates the input and `h` with the
+stripped log, `phRelOK` (copyelim's `CopyRel` plus `EmptyFrag`, `phRelOK_spec`; arguments may
+go through one copy of `k`) gives `k` refines `h` (`CopyElim.refines_of_rel`), and `Sccp.deadOK
+k g` that the output refines `k` (`Dead.refines_of_deadRel`); `h` and `k` pass `check`. A log
+without phi eliminations is checked as before. Witness: `GoFV.Proof.Witness.decPhiElim_witness`
+(`pickLen`: a string phi's length component over two `StringMake q n`, kernel evaluation).
+quick-v3: decompose builtin in the fragment 8645 → 8731 (87 sections had a phi elimination; the
+3 still rejected fail on other classes).
+
 **`@b` results** (`… => @x.Block (…)`). The block a result is built in is not read by the term
 denotations, so `resultOK` accepts a `build` whose node 0 is a fresh `t` (not `v`) with `v`
 redefined as `Copy t` at its own type, compatible with `t`'s (`RewriteCheck.blockTopOK`);
