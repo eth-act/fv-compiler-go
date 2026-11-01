@@ -5,7 +5,8 @@ import GoFV.Proof.Rules.DivmodSBV
 
 `sdiv_pow2`: `x.sdiv (2^k)` is `(x + (x >>s (n-1)) >>> (n-k)) >>s k`; `pow2_of_andPred`:
 `isPowerOfTwo(c)` on an `n`-bit constant gives `c = 2^k` with `log(c) = k`; `divs_pow2` closes a
-rule goal with both.
+rule goal with both. For a non-negative `x` (`isNonNegative`, `generic.rules:1090`, `:1134–1137`):
+`srem_pow2_of_msb` (a remainder by `2^k` is a mask; tactic `mods_pow2`) and `sdiv_intMin64_of_msb`.
 -/
 
 namespace GoFV.Proof.Rules.DivmodS
@@ -170,5 +171,106 @@ elab "divs_pow2" : tactic => withMainContext do
       (by decide) (by decide) (by omega) (by omega) $hp
     rw [hlog]
     exact GoFV.Proof.Rules.DivmodS.sdiv_pow2 hkw $x hk (by bv_omega) (by bv_omega) (by bv_omega))))
+
+/-- Signed remainder of a non-negative `x` (`isNonNegative`) by `2^k` (`generic.rules:1134–1137`):
+the low `k` bits, `x &&& (2^k - 1)`. -/
+theorem srem_pow2_of_msb {n k : Nat} (hk : k + 2 ≤ n) (x : BitVec n) (hx : (!x.msb) = true)
+    {c d : Int} (hc : c = ((2 ^ k : Nat) : Int)) (hd : BitVec.ofInt n d = BitVec.ofInt n (c - 1)) :
+    x.srem (BitVec.ofInt n c) = x &&& BitVec.ofInt n d := by
+  subst hc
+  have hkn : 2 ^ k < 2 ^ (n - 1) := Nat.pow_lt_pow_right (by decide) (by omega)
+  have hn : 2 ^ n = 2 * 2 ^ (n - 1) := by
+    rw [← Nat.pow_succ']; congr 1; omega
+  have hy : (BitVec.ofInt n ((2 ^ k : Nat) : Int)).toNat = 2 ^ k := by
+    rw [BitVec.ofInt_natCast, BitVec.toNat_ofNat]; exact Nat.mod_eq_of_lt (by omega)
+  have hym : (BitVec.ofInt n ((2 ^ k : Nat) : Int)).msb = false := by
+    rw [BitVec.msb_eq_decide, hy]; simp; omega
+  simp only [Bool.not_eq_true'] at hx
+  rw [BitVec.srem, hx, hym]
+  simp only
+  rw [BitVec.umod_eq, umod_pow2_and _ _ k hy, hd]
+  congr 1
+  apply BitVec.eq_of_toNat_eq
+  have hp := Nat.two_pow_pos k
+  rw [BitVec.toNat_sub, hy, show (((2 ^ k : Nat) : Int) - 1) = ((2 ^ k - 1 : Nat) : Int) by omega,
+    BitVec.ofInt_natCast, BitVec.toNat_ofNat, BitVec.toNat_ofNat,
+    Nat.mod_eq_of_lt (a := 1) (Nat.one_lt_two_pow (by omega)),
+    show 2 ^ n - 1 + 2 ^ k = (2 ^ k - 1) + 2 ^ n by omega, Nat.add_mod_right]
+
+/-- `c-1` of an `n`-bit auxint, wrapped to the width, through `int64` and wrapped again. -/
+theorem ofInt_wrap_pred {w : Nat} (hw : w ≤ 64) (y : Int) :
+    BitVec.ofInt w (wrapInt w true (Int64.ofInt (wrapInt w true y)).toInt) = BitVec.ofInt w y := by
+  rw [ofInt_wrapInt_true (Nat.le_refl w), Int64.toInt_ofInt,
+    show Int64.size = 2 ^ 64 from rfl, ofInt_bmod_of_le hw, ofInt_wrapInt_true (Nat.le_refl w)]
+
+/-- The bound `pow2_of_andPred` asks of a wrapped `w`-bit auxint. -/
+theorem wrapInt_true_lt {w : Nat} (hw : 1 ≤ w) (x : Int) : wrapInt w true x < 2 ^ (w - 1) := by
+  have h := (GoFV.Proof.Rules.wrapInt_true_range w x).2
+  have hp : ((2 ^ w : Nat) : Int) = 2 * 2 ^ (w - 1) := by
+    rw [Int.natCast_pow, Int.cast_ofNat_Int, ← Int.pow_succ']; congr 1; omega
+  rw [hp] at h; omega
+
+theorem int64_toInt_lt (x : Int64) : x.toInt < 2 ^ (64 - 1) := Int64.toInt_lt x
+
+open Lean Meta Elab Tactic in
+/-- Close `x.srem (BitVec.ofInt w c) = x &&& BitVec.ofInt w d` (`d` is `c - 1` up to wrapping)
+from `isPowerOfTwo(c)` (`c > 0`, `wrapInt w true (andPred _ c) = 0`) and `isNonNegative(x)`
+(`!x.msb`). -/
+elab "mods_pow2" : tactic => withMainContext do
+  let some t := (← instantiateMVars (← getMainTarget)).find? fun t =>
+      t.isAppOfArity ``BitVec.srem 3 && (t.getArg! 2).isAppOfArity ``BitVec.ofInt 2
+    | throwError "mods_pow2: no srem by a constant"
+  let w ← Term.exprToSyntax ((t.getArg! 2).getArg! 0)
+  let c ← Term.exprToSyntax ((t.getArg! 2).getArg! 1)
+  let x ← Term.exprToSyntax (t.getArg! 1)
+  let mut hand : Option Lean.Expr := none
+  for h in ← getLCtx do
+    if h.isImplementationDetail then continue
+    let ty ← instantiateMVars h.type
+    if let some (_, l, _) := ty.eq? then
+      if l.isAppOfArity ``GoFV.Rules.wrapInt 3 && (l.getArg! 2).isAppOfArity ``GoFV.Rules.andPred 2 then
+        hand := some h.toExpr
+  let some handE := hand | throwError "mods_pow2: no `isPowerOfTwo` fact"
+  let xe := t.getArg! 1
+  let mut hnn : Option Lean.Expr := none
+  for h in ← getLCtx do
+    if h.isImplementationDetail then continue
+    let ty ← instantiateMVars h.type
+    if let some (_, l, _) := ty.eq? then
+      if l.isAppOfArity ``not 1 && (l.getArg! 0).isAppOfArity ``BitVec.msb 2 &&
+          (l.getArg! 0).getArg! 1 == xe then
+        hnn := some h.toExpr
+  let some hnnE := hnn | throwError "mods_pow2: no `isNonNegative` fact"
+  let hs ← Term.exprToSyntax handE
+  let hns ← Term.exprToSyntax hnnE
+  let hp := mkIdent `hpow
+  evalTactic (← `(tactic| (
+    have $hp:ident := $hs
+    simp only [GoFV.Rules.andPred, GoFV.Rules.bitwise, GoFV.Rules.GoTy.intInfo?,
+      Option.getD_some] at $hp:ident
+    have hcr : $c < 2 ^ ($w - 1) := by
+      first
+        | exact GoFV.Proof.Rules.DivmodS.int64_toInt_lt _
+        | exact GoFV.Proof.Rules.DivmodS.wrapInt_true_lt (by decide) _
+    obtain ⟨k, hk, hkw, -⟩ := GoFV.Proof.Rules.DivmodS.pow2_of_andPred (w := $w) (c := $c)
+      (by decide) (by decide) (by omega) hcr $hp
+    refine GoFV.Proof.Rules.DivmodS.srem_pow2_of_msb hkw $x $hns hk ?_
+    first
+      | rw [GoFV.Proof.Rules.DivmodS.ofInt_wrap_pred (by decide)]
+      | rw [GoFV.Proof.Rules.ofInt_wrapInt_true (Nat.le_refl _)])))
+
+/-- A non-negative `x` divided by `-2^63` is `0` (`generic.rules:1090`). -/
+theorem sdiv_intMin64_of_msb (x : BitVec 64) (hx : (!x.msb) = true) :
+    x.sdiv (BitVec.ofInt 64 (-9223372036854775808)) = 0#64 := by
+  simp only [Bool.not_eq_true'] at hx
+  have hl : x.toNat < 2 ^ 63 := by
+    rw [BitVec.msb_eq_decide] at hx; simpa using hx
+  rw [BitVec.sdiv, hx, show (BitVec.ofInt 64 (-9223372036854775808)).msb = true by decide]
+  simp only [BitVec.neg_eq, BitVec.udiv_eq]
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_neg, BitVec.toNat_udiv,
+    show (-(BitVec.ofInt 64 (-9223372036854775808))).toNat = 2 ^ 63 by decide,
+    Nat.div_eq_of_lt hl]
+  rfl
 
 end GoFV.Proof.Rules.DivmodS

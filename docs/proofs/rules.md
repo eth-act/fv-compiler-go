@@ -42,6 +42,14 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   `uintptr` leaf `p = 2^40-8` under a pointer-typed inner `OffPtr` becomes the pointer
   `Ptr.ofAddr p` plus `y` (its allocation kept), while the result adds `x+y` as an integer;
   likewise `:970` with an `int32` index (`Mul64` of a narrower integer is `poison`).
+- **Non-negative arguments** (`Pat.nonNegOK e r.pat r.cond = true`, #69 RuleProofs11/12): every
+  leaf the condition passes to `isNonNegative` holds `poison` or an integer with a clear sign
+  bit (`Val.nonNeg`). The checked rewrite discharges it with `nonNegD` (`RewriteCheck`, a
+  structural port of `rewrite.go`'s `isNonNegative` on the post-event definitions, proven by
+  `nonNegD_den` in `GoFV/Proof/Pass/RewriteTermNonNeg.lean`); `StringLen`/`SliceLen`/`SliceCap`
+  are not taken as non-negative there, since the semantics' composites carry arbitrary
+  integers. Without it `generic.rules:610`, `:611`, `:1090`, `:1134–1138` are false (see
+  "Findings").
 - **Expressions** (conditions, `[auxint]`, `<type>`) are evaluated by `evalE`, a total pure
   evaluator mirroring `GoFV.Rules.Eval.eval` on integers, booleans, op constants, type shapes
   (`typ.<T>` incl. `typ.BytePtr` = `.ptr (some 1)`, `types.Types[k]`, `t.Size()` of an
@@ -822,12 +830,13 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   (`config.PtrSize == 4`) builds 32-bit lengths into a 64-bit slice shape (`rule-sat`
   counterexample). Marked `-- FALSE … #69` in `ConstComp.lean`.
 
-- **`isNonNegative(x)` rules** (`generic.rules:610`, `:611`, `:1090`, `:1134–1138`; RuleProofs10):
-  false under the semantics, not Go bugs. `isNonNegative` is an oracle atom (it reads the value
-  graph), so nothing makes `x` non-negative; e.g. `:610` (`(Less64 (Const64 [0]) x) =>
-  (Neq64 (Const64 [0]) x)`) at `x = -1`: `false` vs `true`. Provable once the obligation
-  carries a fact for the oracle's `isNonNegative` answers (the interpreter would discharge it
-  from `Ptr.isNonNegative`). Marked `-- FALSE … #69` in `Less.lean`, `Div.lean`, `Mod.lean`.
+- **`isNonNegative(x)` rules** (`generic.rules:610`, `:611`, `:1090`, `:1134–1138`; RuleProofs10,
+  proven by RuleProofs12): false under the bare semantics, not Go bugs. `isNonNegative` is an
+  oracle atom (it reads the value graph), so without a premise nothing makes `x` non-negative;
+  e.g. `:610` (`(Less64 (Const64 [0]) x) => (Neq64 (Const64 [0]) x)`) at `x = -1`: `false` vs
+  `true`. The obligation now carries `Pat.nonNegOK` (see "The obligation"); with it all
+  are proven (`Less.lean`, `Div.lean` with `sdiv_intMin64_of_msb`, `Mod.lean` with
+  `mods_pow2`/`srem_pow2_of_msb` in `DivmodSPow2.lean`).
 
 - **`CondSelect` into arithmetic** (`generic.rules:2342`, `:2371`; RuleProofs10): false under
   the semantics, not Go bugs. At `bool = false` the matched value is the leaf `x` itself, the

@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Rules.Generated.Generic.Values06
 
 /-!
@@ -6,15 +7,6 @@ import GoFV.Rules.Generated.Generic.Values06
 
 `Rule.Sound` (`GoFV/Proof/Rules/Den.lean`) of the phase-P1 rules whose top op is in the
 `Mod` family (`docs/proofs/rules.md`).
--/
-
-/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
-`isNonNegative(n)` is an oracle atom: nothing makes `n` non-negative (#69, RuleProofs10).
--- FALSE r_generic_1134 #69
--- FALSE r_generic_1135 #69
--- FALSE r_generic_1136 #69
--- FALSE r_generic_1137 #69
--- FALSE r_generic_1138 #69
 -/
 
 namespace GoFV.Proof.Rules
@@ -48,5 +40,52 @@ theorem r_generic_222_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
 
 /-- `generic.rules:1162`: `(Mod32u <t> x (Const32 [c])) && x.Op != OpConst32 && c != 0 => (Sub32 x (Mul32 <t> (Div32u <t> x (Const32 <t> [c])) (Const32 <t> [c])))` -/
 theorem r_generic_1162_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1162 := by rule_auto
+
+/-- `generic.rules:1134`: `(Mod8 <t> n (Const8 [c])) && isNonNegative(n) && isPowerOfTwo(c) => (And8 n (Const8 <t> [c-1]))` -/
+theorem r_generic_1134_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1134 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals mods_pow2
+
+/-- `generic.rules:1135`: `(Mod16 <t> n (Const16 [c])) && isNonNegative(n) && isPowerOfTwo(c) => (And16 n (Const16 <t> [c-1]))` -/
+theorem r_generic_1135_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1135 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals mods_pow2
+
+/-- `generic.rules:1136`: `(Mod32 <t> n (Const32 [c])) && isNonNegative(n) && isPowerOfTwo(c) => (And32 n (Const32 <t> [c-1]))` -/
+theorem r_generic_1136_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1136 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals mods_pow2
+
+/-- `generic.rules:1137`: `(Mod64 <t> n (Const64 [c])) && isNonNegative(n) && isPowerOfTwo(c) => (And64 n (Const64 <t> [c-1]))` -/
+theorem r_generic_1137_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1137 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals mods_pow2
+
+/-- `generic.rules:1138`: `(Mod64 n (Const64 [-1<<63])) && isNonNegative(n) => n` -/
+theorem r_generic_1138_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1138 := by rule_auto
 
 end GoFV.Proof.Rules

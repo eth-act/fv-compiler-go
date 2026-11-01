@@ -9,18 +9,6 @@ import GoFV.Rules.Generated.Generic.Values05
 `Less` family (`docs/proofs/rules.md`).
 -/
 
-/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
-`isNonNegative(x)` is an oracle atom: nothing makes `x` non-negative (#69, RuleProofs10).
--- FALSE r_generic_610 #69
--- FALSE r_generic_610_2 #69
--- FALSE r_generic_610_3 #69
--- FALSE r_generic_610_4 #69
--- FALSE r_generic_611 #69
--- FALSE r_generic_611_2 #69
--- FALSE r_generic_611_3 #69
--- FALSE r_generic_611_4 #69
--/
-
 namespace GoFV.Proof.Rules
 
 /-- `generic.rules:619`: `(Less16 (Const16 <t> [-1]) x) => (Leq16 (Const16 <t> [0]) x)` -/
@@ -58,5 +46,29 @@ theorem r_generic_692_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generi
 
 /-- `generic.rules:694`: `(Less8U (Const8 [-1]) _) => (ConstBool [false])` -/
 theorem r_generic_694_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_694_4 := by rule_auto
+
+/-- `generic.rules:610`: `(Less16 (Const16 <t> [0]) x) && isNonNegative(x) => (Neq16 (Const16 <t> [0]) x)` -/
+theorem r_generic_610_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610 := by rule_auto
+
+/-- `generic.rules:611`: `(Less16 x (Const16 <t> [1])) && isNonNegative(x) => (Eq16 (Const16 <t> [0]) x)` -/
+theorem r_generic_611_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611 := by rule_auto
+
+/-- `generic.rules:610`: `(Less32 (Const32 <t> [0]) x) && isNonNegative(x) => (Neq32 (Const32 <t> [0]) x)` -/
+theorem r_generic_610_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_2 := by rule_auto
+
+/-- `generic.rules:611`: `(Less32 x (Const32 <t> [1])) && isNonNegative(x) => (Eq32 (Const32 <t> [0]) x)` -/
+theorem r_generic_611_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_2 := by rule_auto
+
+/-- `generic.rules:610`: `(Less64 (Const64 <t> [0]) x) && isNonNegative(x) => (Neq64 (Const64 <t> [0]) x)` -/
+theorem r_generic_610_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_3 := by rule_auto
+
+/-- `generic.rules:611`: `(Less64 x (Const64 <t> [1])) && isNonNegative(x) => (Eq64 (Const64 <t> [0]) x)` -/
+theorem r_generic_611_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_3 := by rule_auto
+
+/-- `generic.rules:610`: `(Less8 (Const8 <t> [0]) x) && isNonNegative(x) => (Neq8 (Const8 <t> [0]) x)` -/
+theorem r_generic_610_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_610_4 := by rule_auto
+
+/-- `generic.rules:611`: `(Less8 x (Const8 <t> [1])) && isNonNegative(x) => (Eq8 (Const8 <t> [0]) x)` -/
+theorem r_generic_611_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_611_4 := by rule_auto
 
 end GoFV.Proof.Rules
