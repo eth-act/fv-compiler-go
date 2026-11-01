@@ -22,7 +22,11 @@
 - Never `git stash` (shared across worktrees). Commit on your own branch instead.
 - Merge: the author merges. Once the per-PR checks pass (build of affected modules,
   parity on the corpus for touched passes, `#print axioms` of new theorems), rebase on
-  origin/main, open the PR with the check results in its body and `gh pr merge --squash`.
+  origin/main, run `scripts/check-reverts.sh` (it fails if the branch silently undoes work
+  already on main, as #191 undid #190; fix the rebase, or pass `--allow <path>` and say why in
+  the PR body for an intended revert), open the PR with the check results in its body and
+  `gh pr merge --squash`. Read `git diff --stat origin/main...HEAD` before merging: every
+  deleted or shrunk file must be one you meant to change.
 - All `GoFV/Proof` modules import together (no name declared twice; docs/GATE.md `allproof`).
   A PR that adds or removes one reruns `scripts/gen-allproof.sh` and builds
   `GoFVTest.Proof.AllProof`; shared helpers go into a common module, local ones are `private`.
