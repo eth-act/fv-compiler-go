@@ -691,6 +691,154 @@ def nilStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEv
 def nilPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
   log.foldl (nilStep t f) (f, #[])
 
+/-! ## Load-of-Store forwarding (issue #151)
+
+A rule of the table's `loads` row, `(Load p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && … => x`
+(`fwdShapeOK`), replaces a `Load` (a term) by `Copy x` of the value a `Store` (a root) wrote at
+the same address. The validator takes these events out of the log like nil-check eliminations:
+`fwdPre` applies them to the input, `fwdRel` relates the input and that function (each replaced
+`Load` reads through a `Store` of `x` at a pointer that evaluates like the `Load`'s, at a shape a
+write and a read give back unchanged: `fwdOK`; every other value unchanged; ranks that order each
+listed non-`Phi` value after its arguments: `fwdRank`, `fwdRankOK`), and `validate` relates that
+function and the output with the remaining events. -/
+
+/-- Pointer terms that evaluate equally: the same value, or term nodes with the same op, shape
+and aux fields whose arguments evaluate equally (`isSamePtr`'s `OffPtr`/`AddPtr` chains and
+`Addr`s of one symbol). -/
+def samePtrB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
+  | 0, a, b => a == b
+  | n + 1, a, b =>
+    a == b ||
+    match f.value? a, f.value? b with
+    | some u, some w =>
+      termOp u.op && u.op == w.op && GoFV.Opt.CSE.tyEq (tabs.ty u.type) (tabs.ty w.type) &&
+        u.auxInt == w.auxInt && u.aux == w.aux && u.args.size == w.args.size &&
+        (u.args.toList.zip w.args.toList).all fun (c, d) => samePtrB tabs f n c d
+    | _, _ => false
+
+/-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`, `Sem.decode`): an
+integer, a boolean or a pointer. -/
+def fwdTy : Sem.Ty → Bool
+  | .int _ | .bool | .ptr _ => true
+  | _ => false
+
+/-- The `Load` `u` of `f` reads back the value `x`: its memory is a `Store` of `x` at a pointer
+that evaluates like the `Load`'s (`samePtrB`), and the `Load`, the `Store`'s type and `x` have one
+shape `fwdTy`. -/
+def fwdOK (tabs : Tables) (f : Func) (u : Value) (x : ID) : Bool :=
+  u.op == .Load && u.args.size == 2 &&
+  match f.value? u.args[1]!, f.value? x with
+  | some s, some xv =>
+    (s.op == .Store || s.op == .StoreWB) && s.args.size == 3 && s.args[1]! == x &&
+      samePtrB tabs f 8 u.args[0]! s.args[0]! && fwdTy (tabs.ty u.type) &&
+      GoFV.Opt.CSE.tyEq (tabs.ty u.type) (Sem.auxTy tabs s.aux) &&
+      GoFV.Opt.CSE.tyEq (tabs.ty u.type) (tabs.ty xv.type)
+  | _, _ => false
+
+/-- One pass of `fwdRank`, in ID order: each listed non-`Phi` value one above its arguments. -/
+def rankPass (f : Func) (L : Array Bool) (rk : Array Nat) : Array Nat :=
+  (List.range f.valueTab.size).foldl (init := rk) fun rk z =>
+    if L[z]? == some true then
+      match f.value? z with
+      | some u =>
+        if u.op == .Phi then rk
+        else rk.set! z (u.args.foldl (fun m a => max m (rk[a]?.getD 0 + 1)) 0)
+      | none => rk
+    else rk
+
+/-- `rankPass` until nothing changes (at most `n` passes). -/
+def rankIter (f : Func) (L : Array Bool) : Nat → Array Nat → Array Nat
+  | 0, rk => rk
+  | n + 1, rk =>
+    let rk' := rankPass f L rk
+    if rk' == rk then rk else rankIter f L n rk'
+
+/-- Ranks of the listed values (`fwdRankOK` checks them): the depth of their non-`Phi` arguments. -/
+def fwdRank (f : Func) : Array Nat :=
+  rankIter f (listedMarks f) (f.valueTab.size + 1) (Array.replicate f.valueTab.size 0)
+
+/-- Every listed non-`Phi` value of `f` ranks above its arguments. -/
+def fwdRankOK (f : Func) (rk : Array Nat) : Bool :=
+  let L := listedMarks f
+  (List.range f.valueTab.size).all fun z =>
+    L[z]? != some true ||
+    match f.value? z with
+    | some u => u.op == .Phi || u.args.all fun a => rk[a]?.getD 0 < rk[z]?.getD 0
+    | none => true
+
+/-- Value `x` of `f` is unchanged in `g` (but for its use count), or a `Load` became `Copy` of
+the value it reads back (`fwdOK`). -/
+def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | none, _ => true
+  | some _, none => false
+  | some u, some w =>
+    w.id == u.id && w.block == u.block && w.type == u.type &&
+    ((w.op == u.op && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args) ||
+     (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)))
+
+/-- `g` is `f` with Loads forwarded: the same blocks and atoms, every value as `fwdRepOK`
+says, ranks ordering `f`'s listed values after their arguments. -/
+def fwdRel (tabs : Tables) (f g : Func) : Bool :=
+  atomsOK f g && closedOK f && closedOK g && g.blocks == f.blocks && g.blockTab == f.blockTab &&
+  fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs f g ·)
+
+/-- The variable a chain of at most `n` `Store`s binds as a stored value is `y`. -/
+def storesBind (y : Nat) : Nat → Pat → Bool
+  | n + 1, .op .Store none _ _ _ .fixed [_, v, m] _ =>
+    (match v with | .bind z => z == y | _ => false) || storesBind y n m
+  | _, _ => false
+
+/-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by the `Store` `m`
+(`generic.rules:800`; the validator checks each instance by `fwdOK`, which reads through one
+`Store`). -/
+def fwdShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 1 m
+  | _, _, _ => false
+
+/-- The `Load` `v` of `f` that event `ev` forwards and the value it becomes a copy of, if it is a
+`loads` rule event (`fwdShapeOK`) with a `Copy` result. -/
+def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID)
+  | .rule v i _ defs =>
+    match f.value? v with
+    | some u =>
+      if u.op == .Load then
+        let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
+        if n ≤ i then
+          match t.loads[i - n]?, defs.toList with
+          | some cr, [w] =>
+            if fwdShapeOK cr.rule && w.op == .Copy && w.args.size == 1 then some (v, w.args[0]!)
+            else none
+          | _, _ => none
+        else none
+      else none
+    | none => none
+  | _ => none
+
+/-- `v.reset(OpCopy); v.AddArg(x)`: the `Load` `v` of `f` becomes `Copy x`, its arguments lose
+a use, `x` gains one. -/
+def fwdCopy (f : Func) (v x : ID) : Func :=
+  match f.value? v with
+  | some u =>
+    if u.op == .Load then
+      let f := u.args.foldl (fun f a => f.modV a fun w => { w with uses := w.uses - 1 }) f
+      let f := f.modV x fun w => { w with uses := w.uses + 1 }
+      f.modV v fun w => { w with op := .Copy, auxInt := 0, aux := none, args := #[x] }
+    else f
+  | none => f
+
+/-- One event of `fwdPre`: a forwarding of `f` is applied, any other event kept. -/
+def fwdStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match fwdEvent? t f ev with
+  | some (v, x) => (fwdCopy p.1 v x, p.2)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's Load-of-Store forwardings applied, and the remaining events. -/
+def fwdPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (fwdStep t f) (f, #[])
+
 end GoFV.Opt.RewriteCheck
 
 namespace GoFV.Opt
@@ -701,19 +849,30 @@ the other roots keep their order), and `f'` passes `check`. -/
 def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f f' : GoFV.SSA.Func) : Bool :=
   NilCheck.nrel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
 
+/-- `RewriteCheck.validate` accepts `out` against `f` and the log, or, when the log forwards
+Loads of Stores (`fwdPre`, issue #151), `f` with these forwardings applied is related to `f` by
+`fwdRel`, passes `check`, and `validate` accepts `out` against it and the remaining events. -/
+def RewriteCheck.fwdAccepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
+    (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
+  match RewriteCheck.fwdPre t f log with
+  | (f', log') =>
+    if log'.size == log.size then RewriteCheck.validate out.tables t f out.func log
+    else RewriteCheck.fwdRel out.tables f f' && checkOK { tabs := out.tables, typs := env.typs } f' &&
+      RewriteCheck.validate out.tables t f' out.func log'
+
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
 log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create
 types such as `ConstNil <v.Type.Elem().PtrTo()>` and symbols such as `fe.StringData(s)`, but no
-definitions the input looks up), and `RewriteCheck.validate` accepts it in the result's tables,
-against `f` and the log, or, when the log eliminates nil checks (`nilPre`, issue #151), against
-`f` with these eliminations applied (`nilOK`) and the remaining events. -/
+definitions the input looks up), and `RewriteCheck.fwdAccepts` accepts it in the result's
+tables, against `f` and the log, or, when the log eliminates nil checks (`nilPre`, issue #151),
+against `f` with these eliminations applied (`nilOK`) and the remaining events. -/
 def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
   tabsAgree env.tables out.tables f &&
   match RewriteCheck.nilPre t f log with
   | (f', log') =>
-    if log'.size == log.size then RewriteCheck.validate out.tables t f out.func log
-    else RewriteCheck.nilOK env out.tables f f' && RewriteCheck.validate out.tables t f' out.func log'
+    if log'.size == log.size then RewriteCheck.fwdAccepts env t f out log
+    else RewriteCheck.nilOK env out.tables f f' && RewriteCheck.fwdAccepts env t f' out log'
 
 /-- The validated rewrite pass: `applyRewrite` with the table `t` and its log; the result with
 the pass's extended tables if `RewriteCheck.accepts` it, else the input. -/

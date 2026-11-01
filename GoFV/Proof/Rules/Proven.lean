@@ -48,6 +48,7 @@ import GoFV.Proof.Rules.Less
 import GoFV.Proof.Rules.Less2
 import GoFV.Proof.Rules.Less3
 import GoFV.Proof.Rules.Less4
+import GoFV.Proof.Rules.LoadFwd
 import GoFV.Proof.Rules.Lsh
 import GoFV.Proof.Rules.Lsh2
 import GoFV.Proof.Rules.Lsh3

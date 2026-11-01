@@ -305,12 +305,14 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) : RwM Bool := do
       logEv fun _ => .rule v idx st.binds defs
     return true
 
-/-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`; `nilChecks`: the rule set's
-`nilChecks`, tried on a `NilCheck` after its row (their index continues the row's). -/
+/-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`; `nilChecks`/`loads`: the rule
+set's `nilChecks`/`loads`, tried on a `NilCheck`/`Load` after its row (their index continues
+the row's). -/
 structure Table where
   values : Array (Array CRule)
   blocks : Array (Array BlockRule)
   nilChecks : Array CRule := #[]
+  loads : Array CRule := #[]
 
 def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   let mut values : Array (Array CRule) := Array.replicate (Op.all.size + 1) #[]
@@ -319,7 +321,8 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   let mut blocks : Array (Array BlockRule) := Array.replicate (BlockKind.all.size + 1) #[]
   for (k, rs) in s.blocks do
     blocks := blocks.set! k.ctorIdx rs.toArray
-  return { values, blocks, nilChecks := (s.nilChecks.map CRule.ofRule).toArray }
+  return { values, blocks, nilChecks := (s.nilChecks.map CRule.ofRule).toArray,
+           loads := (s.loads.map CRule.ofRule).toArray }
 
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
@@ -331,6 +334,10 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     let ns := t.nilChecks
     for h : i in [0:ns.size] do
       if ← tryRule v ns[i] (rs.size + i) then return true
+  if o == .Load then
+    let ls := t.loads
+    for h : i in [0:ls.size] do
+      if ← tryRule v ls[i] (rs.size + i) then return true
   return false
 
 /-! ## Block rules -/

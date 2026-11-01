@@ -251,13 +251,15 @@ structure BlockRule where
 /-- One rule file: value rules per op (ops sorted by Go name, as rulegen's `switch v.Op`) and
 block rules per block kind, each list in matching order. `nilChecks`: rules on `NilCheck`
 values tried after `values`' `NilCheck` row, which the checked rewrite validates per instance
-as nil-check eliminations (issue #151; the proven-only sets only). -/
+as nil-check eliminations; `loads`: Load-of-Store forwarding rules on `Load` values tried after
+`values`' `Load` row, validated per instance as forwardings (issue #151; the proven-only sets
+only). -/
 structure RuleSet where
   name : String
   values : List (Op × List Rule)
   blocks : List (BlockKind × List BlockRule)
   nilChecks : List Rule := []
-  deriving Repr, Inhabited
+  loads : List Rule := []
 
 namespace RuleSet
 

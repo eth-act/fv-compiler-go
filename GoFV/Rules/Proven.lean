@@ -7,17 +7,18 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, `divisible` and `divmod` restricted to the rules with a merged
-`Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma (block rules) or
-`EffectRule.NilElim` lemma (nil-check eliminations; issue #151, `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
-(`GoFV.Opt.optProven`, …; issue #113).
+`Rule.Sound` or `Rule.SoundT` lemma (value rules), `BlockRule.Sound` lemma (block rules),
+`EffectRule.NilElim` lemma (nil-check eliminations) or `EffectRule.LoadFwd` lemma (Load-of-Store
+forwardings; issue #151, `docs/proofs/rules.md`), in matching order: the rule sets of the
+proven-only rewrite passes (`GoFV.Opt.optProven`, …; issue #113).
 -/
 
 namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1095 proven value rules, 3 proven block rules and 3
-nil-check eliminations. -/
+/-- `generic.rules` restricted to its 1094 proven value rules, 3 proven block rules, 3
+nil-check eliminations and 1 Load-of-Store forwardings. -/
 def generic : RuleSet where
   name := "generic"
   values := [(.Add16, [Generated.Generic.r_generic_121, Generated.Generic.r_generic_420, Generated.Generic.r_generic_427, Generated.Generic.r_generic_646, Generated.Generic.r_generic_655, Generated.Generic.r_generic_661, Generated.Generic.r_generic_675, Generated.Generic.r_generic_678, Generated.Generic.r_generic_778, Generated.Generic.r_generic_779, Generated.Generic.r_generic_1218, Generated.Generic.r_generic_1224, Generated.Generic.r_generic_1278, Generated.Generic.r_generic_1284, Generated.Generic.r_generic_2195, Generated.Generic.r_generic_2196, Generated.Generic.r_generic_2197, Generated.Generic.r_generic_2198, Generated.Generic.r_generic_2200, Generated.Generic.r_generic_2201, Generated.Generic.r_generic_2202, Generated.Generic.r_generic_2203]),
@@ -50,7 +51,7 @@ def generic : RuleSet where
     (.Eq64, [Generated.Generic.r_generic_280_3, Generated.Generic.r_generic_297_3, Generated.Generic.r_generic_300_3, Generated.Generic.r_generic_303_3, Generated.Generic.r_generic_306_3, Generated.Generic.r_generic_309_3, Generated.Generic.r_generic_312_3, Generated.Generic.r_generic_315, Generated.Generic.r_generic_584_3, Generated.Generic.r_generic_1178_3, Generated.Generic.r_generic_2403_3, Generated.Generic.r_generic_2404_3]),
     (.Eq8, [Generated.Generic.r_generic_280_4, Generated.Generic.r_generic_297_4, Generated.Generic.r_generic_300_4, Generated.Generic.r_generic_303_4, Generated.Generic.r_generic_306_4, Generated.Generic.r_generic_309_4, Generated.Generic.r_generic_312_4, Generated.Generic.r_generic_318, Generated.Generic.r_generic_584_4, Generated.Generic.r_generic_1169, Generated.Generic.r_generic_1173, Generated.Generic.r_generic_1178_4, Generated.Generic.r_generic_2399, Generated.Generic.r_generic_2400]),
     (.EqB, [Generated.Generic.r_generic_280_5, Generated.Generic.r_generic_281, Generated.Generic.r_generic_282, Generated.Generic.r_generic_283, Generated.Generic.r_generic_284]),
-    (.EqPtr, [Generated.Generic.r_generic_1646, Generated.Generic.r_generic_1683]),
+    (.EqPtr, [Generated.Generic.r_generic_1683]),
     (.Leq16, [Generated.Generic.r_generic_587, Generated.Generic.r_generic_600, Generated.Generic.r_generic_605, Generated.Generic.r_generic_617, Generated.Generic.r_generic_618, Generated.Generic.r_generic_702, Generated.Generic.r_generic_710, Generated.Generic.r_generic_720, Generated.Generic.r_generic_724]),
     (.Leq16U, [Generated.Generic.r_generic_596, Generated.Generic.r_generic_613, Generated.Generic.r_generic_693, Generated.Generic.r_generic_695, Generated.Generic.r_generic_714, Generated.Generic.r_generic_715]),
     (.Leq32, [Generated.Generic.r_generic_587_2, Generated.Generic.r_generic_601, Generated.Generic.r_generic_606, Generated.Generic.r_generic_617_2, Generated.Generic.r_generic_618_2, Generated.Generic.r_generic_701, Generated.Generic.r_generic_709, Generated.Generic.r_generic_719, Generated.Generic.r_generic_723]),
@@ -177,9 +178,10 @@ def generic : RuleSet where
     (.ZeroExt8to64, [Generated.Generic.r_generic_102, Generated.Generic.r_generic_754])]
   blocks := [(.If, [Generated.Generic.r_generic_1064, Generated.Generic.r_generic_1065, Generated.Generic.r_generic_1066])]
   nilChecks := [Generated.Generic.r_generic_1375, Generated.Generic.r_generic_1381, Generated.Generic.r_generic_1388]
+  loads := [Generated.Generic.r_generic_800]
 
-/-- `divisible.rules` restricted to its 24 proven value rules, 0 proven block rules and 0
-nil-check eliminations. -/
+/-- `divisible.rules` restricted to its 24 proven value rules, 0 proven block rules, 0
+nil-check eliminations and 0 Load-of-Store forwardings. -/
 def divisible : RuleSet where
   name := "divisible"
   values := [(.Eq16, [Generated.Divisible.r_divisible_17, Generated.Divisible.r_divisible_20, Generated.Divisible.r_divisible_48]),
@@ -192,20 +194,19 @@ def divisible : RuleSet where
     (.Neq8, [Generated.Divisible.r_divisible_23_4, Generated.Divisible.r_divisible_26_4, Generated.Divisible.r_divisible_40])]
   blocks := []
   nilChecks := []
+  loads := []
 
-/-- `divmod.rules` restricted to its 16 proven value rules, 0 proven block rules and 0
-nil-check eliminations. -/
+/-- `divmod.rules` restricted to its 11 proven value rules, 0 proven block rules, 0
+nil-check eliminations and 0 Load-of-Store forwardings. -/
 def divmod : RuleSet where
   name := "divmod"
   values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
-    (.Div16u, [Generated.Divmod.r_divmod_159]),
     (.Div32, [Generated.Divmod.r_divmod_29, Generated.Divmod.r_divmod_99, Generated.Divmod.r_divmod_121]),
-    (.Div32u, [Generated.Divmod.r_divmod_171]),
     (.Div64, [Generated.Divmod.r_divmod_33, Generated.Divmod.r_divmod_113, Generated.Divmod.r_divmod_127]),
-    (.Div64u, [Generated.Divmod.r_divmod_180, Generated.Divmod.r_divmod_206, Generated.Divmod.r_divmod_232]),
     (.Div8, [Generated.Divmod.r_divmod_21, Generated.Divmod.r_divmod_87]),
     (.Div8u, [Generated.Divmod.r_divmod_154])]
   blocks := []
   nilChecks := []
+  loads := []
 
 end GoFV.Rules.Proven
