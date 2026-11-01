@@ -1,12 +1,18 @@
 import GoFV.Proof.Pass.SccpTerm
+import GoFV.Proof.Pass.SccpDead
+import GoFV.Proof.Witness.Util
 
 /-!
 # sccp refines its input (issue #32)
 
 `sccp_refines`: the validated pass (`GoFV.Opt.sccpChecked`) refines its input under monotone
-contracts. A rejected or unchanged result is the input; an accepted one (`sccpOK`) is the atom
-simulation under sccp's source invariant (`sccpInv`: registers with a constant cell hold `poison`
-or the constant, on executable blocks), whose premises are `sc_atomArgs` and `sc_steps`.
+contracts. A rejected or unchanged result is the input. An accepted one `g` goes through the
+intermediate function `h` (`replaceConst` with `rewireFirst`, which `check` accepts): `h` refines
+the input by the atom simulation under sccp's source invariant (`sccpInv`: registers with a
+constant cell hold `poison` or the constant, on executable blocks; premises `sc_atomArgs` and
+`sc_steps`, where an `If` on a constant became a `First` towards the successor it picks), and
+`g` refines `h` by deadcode's simulation (`deadOK_spec`, `Dead.refines_of_deadRel`: `g` is `h`
+with the second edge of those `First` blocks removed).
 -/
 
 namespace GoFV.Proof.Sccp
@@ -32,9 +38,16 @@ theorem sccp_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : Check
       · rename_i hok
         simp only [hok, ↓reduceIte] at hg
         simp only [Bool.and_eq_true] at hok
-        have K := sccpOK_spec hok.2
+        obtain ⟨⟨⟨-, hs⟩, hd⟩, hc⟩ := hok
+        have K := sccpOK_spec hs
         have hwf := check_wf hf
-        exact atomSimInv_refines hf hg K.atoms (sccpInv hwf K) (sc_atomArgs hwf K) (sc_steps hwf K)
+        have hch : check { tabs := penv.tables, typs := penv.typs } (Sccp.replace a a.keys
+            Sccp.rewireFirst) = .ok () := Witness.ok_of_toBool hc
+        have h1 := atomSimInv_refines hf hch K.atoms (sccpInv hwf K) (sc_atomArgs hwf K)
+          (sc_steps hwf K)
+        have h2 := Dead.refines_of_deadRel (tabs := penv.tables)
+          ⟨⟨_, check_wf hch⟩, ⟨_, check_wf hg⟩, deadOK_spec hd⟩
+        exact h1.trans (h2.under Env.Mono)
       · exact RefinesUnder.refl _ _ _
 
 end GoFV.Proof.Sccp

@@ -315,15 +315,18 @@ def rewireSuccessor (f : Func) (b : ID) (ai : Int64) : Func × Bool :=
     (plain f, true)
   | _ => (f, false)
 
-/-- `replaceConst()`, ranging over `latticeCells` in `order` (a permutation of `a.keys`). -/
-def replace (a : Analysis) (order : Array ID) : Func := Id.run do
+/-- `replaceConst()`, ranging over `latticeCells` in `order` (a permutation of `a.keys`), with
+`rewire` for `rewireSuccessor` (the checker's intermediate function uses another,
+`GoFV.Opt.Sccp.rewireFirst`). -/
+def replace (a : Analysis) (order : Array ID)
+    (rewire : Func → ID → Int64 → Func × Bool := rewireSuccessor) : Func := Id.run do
   let mut f := a.f
   for v in order do
     if let some (.const _ op ai) := a.cell? v then
       if !isConst (f.getV v).op then
         f := (f.resetValue v op).modV v fun x => { x with auxInt := ai }
       for b in a.defBlock[v]! do
-        f := (rewireSuccessor f b ai).1
+        f := (rewire f b ai).1
   return f
 
 end Sccp

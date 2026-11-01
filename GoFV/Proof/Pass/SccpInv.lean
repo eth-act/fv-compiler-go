@@ -25,7 +25,7 @@ structure Facts (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (vis : Arr
   atoms : atomsOK f g = true
   cf : closedOK f = true
   cg : closedOK g = true
-  blocks : KnownBits.blocksOK f g = true
+  blocks : blocksOK tabs f g C = true
   reach : reachOK tabs f C vis R = true
   fix : ∀ x < f.valueTab.size, fixOK tabs f C vis x = true
   rep : ∀ x < f.valueTab.size, repOK tabs f g C x = true

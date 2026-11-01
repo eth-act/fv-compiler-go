@@ -15,9 +15,12 @@ open GoFV.SSA GoFV.Rules GoFV.Opt GoFV.Opt.Sccp
 
 namespace GoFVTest.SccpProbe
 
-def why (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (vis : Array Edge) (R : Array Bool) :
-    String := Id.run do
-  if !KnownBits.blocksOK f g then return "blocks"
+def why (ce : CheckEnv) (tabs : Tables) (f h g : Func) (C : Array (Option Lat)) (vis : Array Edge)
+    (R : Array Bool) : String := Id.run do
+  if !blocksOK tabs f h C then return "blocks"
+  if !deadOK h g then return "dead"
+  if !(check ce h).toBool then return s!"checkH {(check ce h)}"
+  let g := h
   if !RewriteCheck.atomsOK f g then return "atoms"
   if !RewriteCheck.closedOK f then return "closedF"
   if !RewriteCheck.closedOK g then return "closedG"
@@ -68,23 +71,44 @@ def main (args : List String) : IO UInt32 := do
       let .ok rw := RwEnv.ofPassEnv env | errs := errs + 1; continue
       let .ok a := analyze rw prev f | errs := errs + 1; continue
       let g := replace a a.keys
+      let h := replace a a.keys rewireFirst
       if g == f then continue
       changed := changed + 1
-      if sccpOK prev f g a.cells a.visited a.visitedBlock then
+      let ce : CheckEnv := { tabs := prev, typs }
+      if sccpOK prev f h a.cells a.visited a.visitedBlock && deadOK h g && (check ce h).toBool then
         let nv := f.blocks.foldl (fun n b => n + ((f.block? b).map (·.values.size)).getD 0) 0
-        cands := cands.push (nv, f.blocks.size, s!"{path} {s.index}")
+        let temps := (List.range g.valueTab.size).filter fun x =>
+          (f.value? x).isNone && (g.value? x).isSome
+        let rewired := h != g
+        if temps.isEmpty || rewired then
+          cands := cands.push (nv, f.blocks.size,
+            s!"{path} {s.index} temps {temps.length} rewired {rewired}")
       else
         rejected := rejected + 1
-        let w := why prev f g a.cells a.visited a.visitedBlock
+        let w := why ce prev f h g a.cells a.visited a.visitedBlock
         let key := (w.splitOn " ").head!
         whys := whys.insert key (whys.getD key 0 + 1)
+        let mut pc := 0
+        let mut pcLive := 0
+        let mut selfArg := 0
+        let mut kinds : Array String := #[]
+        for x in List.range f.valueTab.size do
+          if let (some u, some v) := (f.value? x, g.value? x) then
+            if u.op == .Phi && v.op == .Copy then
+              pc := pc + 1
+              if a.visitedBlock.getD u.block false then
+                pcLive := pcLive + 1
+                if u.args.contains x then selfArg := selfArg + 1
+        for b in f.blocks do
+          if let (some fb, some gb) := (f.block? b, g.block? b) then
+            if fb.kind != gb.kind then kinds := kinds.push s!"{repr fb.kind}->{repr gb.kind}"
         if shown < 40 then
-          IO.println s!"REJECT {path} {s.index}: {w}"
+          IO.println s!"REJECT {path} {s.index}: {w}; phi->copy {pc} (executable {pcLive}, self-arg {selfArg}); {kinds}"
           shown := shown + 1
   IO.println s!"sccp inputs {inputs}, passing check {checked}: changes {changed}, rejects {rejected}, errors {errs}"
   IO.println s!"rejections by first failing condition: {whys.toList}"
-  IO.println "witness candidates (accepted changed inputs; values, blocks), smallest first:"
-  for (nv, nb, s) in (cands.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)).toList.take 15 do
+  IO.println "witness candidates (accepted changed inputs without fold temporaries or with a removed edge; values, blocks), smallest first:"
+  for (nv, nb, s) in (cands.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)).toList.take 40 do
     IO.println s!"  {nv} {nb} {s}"
   return 0
 

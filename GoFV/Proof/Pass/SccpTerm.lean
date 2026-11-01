@@ -17,6 +17,61 @@ namespace GoFV.Proof.Sccp
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.Sccp GoFV.Opt.RewriteCheck GoFV.Proof.Term
 open GoFV.Proof.AtomSim GoFV.Proof.Pass.Rewrite GoFV.Proof.KnownBits
 
+/-! ## Blocks -/
+
+theorem blocksOK_facts {tabs : Tables} {f g : Func} {C : Array (Option Lat)}
+    (h : blocksOK tabs f g C = true) {b : ID} (hb : b ∈ f.blocks) {fb : Block}
+    (hfb : f.block? b = some fb) :
+    ∃ gb, g.block? b = some gb ∧ fb.id = gb.id ∧ (∀ x ∈ fb.values, x ∈ gb.values) ∧
+      ((fb.kind = gb.kind ∧ fb.succs = gb.succs ∧ fb.controls = gb.controls) ∨
+        firstOK tabs f C fb gb = true) := by
+  unfold blocksOK at h
+  have := (Array.all_eq_true_iff_forall_mem.1 h) b hb
+  rw [hfb] at this
+  cases hgb : g.block? b with
+  | none => rw [hgb] at this; cases this
+  | some gb =>
+    rw [hgb] at this
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at this
+    obtain ⟨⟨hid, hv⟩, hk⟩ := this
+    refine ⟨gb, rfl, hid, fun x hx => ?_, ?_⟩
+    · rw [hv] at hx
+      obtain ⟨k, hk, rfl⟩ := Array.mem_extract_iff_getElem.1 hx
+      exact Array.getElem_mem _
+    · rcases hk with ⟨⟨h1, h2⟩, h3⟩ | h
+      · exact .inl ⟨h1, h2, h3⟩
+      · exact .inr h
+
+theorem firstOK_spec {tabs : Tables} {f : Func} {C : Array (Option Lat)} {fb gb : Block}
+    (h : firstOK tabs f C fb gb = true) :
+    fb.kind = .If ∧ gb.kind = .First ∧ gb.controls = #[] ∧ (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
+      ∃ c t e, fb.controls[0]? = some c ∧ cval tabs f C c = some (.bool t) ∧
+        fb.succs[if t then 0 else 1]? = some e ∧ gb.succs[0]? = some e := by
+  unfold firstOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', Array.contains_iff_mem] at h
+  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  refine ⟨h1, h2, Array.isEmpty_iff.1 h3, h4, ?_⟩
+  cases hc : fb.controls[0]? with
+  | none => simp [hc] at h5
+  | some c =>
+    simp only [hc, Option.bind_some] at h5
+    split at h5
+    · rename_i t ht
+      simp only [Bool.and_eq_true, beq_iff_eq] at h5
+      obtain ⟨hs, he⟩ := h5
+      obtain ⟨e, he'⟩ := Option.isSome_iff_exists.1 hs
+      exact ⟨c, t, e, rfl, ht, he', he.trans he'⟩
+    · cases h5
+
+theorem marked_g {tabs : Tables} {f g : Func} {C : Array (Option Lat)}
+    (hA : atomsOK f g = true) (hB : blocksOK tabs f g C = true) {x : ID}
+    {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
+    (hx : x ∈ fb.values) {w : Value} (hw : g.value? x = some w) (hwb : w.block = b) :
+    ∃ gb, g.block? b = some gb ∧ x ∈ gb.values ∧ Marked g x := by
+  obtain ⟨gb, hgb, -, hsub, -⟩ := blocksOK_facts hB hb hfb
+  have hxg := hsub x hx
+  exact ⟨gb, hgb, hxg, b, blocks_eq hA ▸ hb, gb, hgb, hxg, w, hw, hwb⟩
+
 section
 variable {tabs : Tables} {f g : Func} {C : Array (Option Lat)} {vis : Array Edge} {R : Array Bool}
   {ce : CheckEnv} (hwf : WF ce f) (K : Facts tabs f g C vis R)
@@ -50,7 +105,7 @@ theorem sc_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
       rw [hw] at hrep
       simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hrep
       obtain ⟨⟨-, hblk⟩, hrep⟩ := hrep
-      obtain ⟨gb, hgb, hxg, hmg⟩ := marked_g K.atoms K.blocks hb hfb hxv hw (hblk.trans hub)
+      obtain ⟨gb, hgb, hxg, hmg⟩ := Sccp.marked_g K.atoms K.blocks hb hfb hxv hw (hblk.trans hub)
       have hL : listedDefs g x = some w := by rw [listedDefs_of_marked hmg, hw]
       rcases hrep with ⟨⟨⟨⟨hop, hty⟩, hai⟩, hax⟩, hargs⟩ | ⟨⟨⟨ht, hnil⟩, hty⟩, hc⟩
       · by_cases ht : termOp u.op = true
@@ -92,21 +147,49 @@ theorem sc_atomArgs : AtomArgsRefP (sccpInv hwf K) g := by
   exact sc_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).2 a haf u' hu' _
     (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')) b
 
-/-- **Controls.** -/
-theorem sc_controls : ControlsRefP (sccpInv hwf K) g := by
+/-- The controls of a block of `g` as terms. -/
+theorem sc_controlRef {b : ID} (hb : b ∈ f.blocks) {fb : Block} (hfb : f.block? b = some fb)
+    {k : Nat} (hk : k < fb.controls.size) :
+    TermRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs
+      fb.controls[k]! :=
+  sc_termRefP hwf K ((closedOK_facts K.cf b hb fb hfb).1 _
+    (by rw [getElem!_pos fb.controls k hk]; exact Array.getElem_mem hk)) b
+
+/-- An `If` turned `First` towards the successor its constant control picks. -/
+theorem sc_first {b : ID} {fb gb : Block} (hF : firstOK tabs f C fb gb = true) :
+    StepRefP ((sccpInv hwf K).P b) (SAnc f b) f.value? tabs fb (listedDefs g) gb := by
+  obtain ⟨hkf, hkg, hcg, -, c, t, e, hc, hcv, he, he0⟩ := firstOK_spec hF
+  intro n
+  refine ⟨0, fun ρ ρ' _ _ _ hP _ => ?_⟩
+  have hcl := sc_den hwf K hP n c (.bool t) hcv
+  have hT : stepVals gb (gb.controls.toList.map (den (listedDefs g) tabs ρ' 0)) = .ok (.goto e) := by
+    unfold stepVals; rw [hkg]; unfold succ; rw [he0]; rfl
+  rw [hT]
+  have hcs : (fb.controls.toList.map (den f.value? tabs ρ n))[0]? = some (den f.value? tabs ρ n c) := by
+    simp [hc]
+  unfold stepVals
+  rw [hkf]
+  simp only [ctlV, hcs, bind, Res.bind]
+  rcases refines_scalar (.inr ⟨t, rfl⟩) hcl with h0 | h0 <;> rw [h0]
+  · exact .stuck _ _
+  · cases t
+    · have : (Sem.succ fb 1) = .ok (.goto e) := by unfold succ; rw [show (1 : Nat) = if false = true then 0 else 1 from rfl, he]; rfl
+      simp only [this]; exact .ok (.goto e)
+    · have : (Sem.succ fb 0) = .ok (.goto e) := by unfold succ; rw [show (0 : Nat) = if true = true then 0 else 1 from rfl, he]; rfl
+      simp only [this]; exact .ok (.goto e)
+
+/-- **Terminators.** -/
+theorem sc_steps : StepRefsP (sccpInv hwf K) g := by
   intro b hb fb gb hfb hgb
   have hbf : b ∈ f.blocks := blocks_eq K.atoms ▸ hb
-  obtain ⟨gb', hgb', -, -, -, hctl, -⟩ := blocksOK_facts K.blocks hbf hfb
+  obtain ⟨gb', hgb', hid, -, hk⟩ := blocksOK_facts K.blocks hbf hfb
   rw [hgb] at hgb'; cases hgb'
-  refine ⟨by rw [hctl], fun k hk => ?_⟩
-  rw [← hctl]
-  have hk' : k < fb.controls.size := hctl ▸ hk
-  exact sc_termRefP hwf K ((closedOK_facts K.cf b hbf fb hfb).1 _
-    (by rw [getElem!_pos fb.controls k hk']; exact Array.getElem_mem hk')) b
-
-/-- **Terminators**. -/
-theorem sc_steps : StepRefsP (sccpInv hwf K) g :=
-  steps_of_controls K.atoms K.blocks (sc_controls hwf K)
+  rcases hk with ⟨hk, hs, hctl⟩ | hF
+  · refine ⟨fun e he => hs ▸ he, stepRefP_of_controls hk.symm hs.symm hid.symm (by rw [hctl])
+      fun k hk' => ?_⟩
+    rw [← hctl]
+    exact sc_controlRef hwf K hbf hfb (hctl ▸ hk')
+  · exact ⟨(firstOK_spec hF).2.2.2.1, sc_first hwf K hF⟩
 
 end
 
