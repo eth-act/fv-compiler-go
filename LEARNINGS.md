@@ -98,6 +98,17 @@ avoiding): the problem, the trick, the numbers, where it is used.
   reproducible), so apply it per module when the watch loop reports `repro` = differs
   (#215, #1).
 
+#### `exact lemma args` can spend seconds in a failed unification; `have h := lemma args; exact h`
+- **Problem:** `ecc_storeObl` (`GoFV.Proof.Pass.ECCall`) closed a goal stated over
+  `outargsOK tabs 0 m` with `exact ecc_callOp_outargs …`, whose conclusion is stated over
+  `ctx.tabs ctx.act`. `exact` first unifies the expected type into the lemma
+  (`Elab.app.propagateExpectedType`). That unfolded `outargsOK` and `List.all` for ~5 s, failed
+  (all ❌ in `trace.profiler`), and only then elaborated the arguments, which closed the goal.
+- **Trick:** `have h := lemma args; exact h` elaborates the lemma from its arguments first.
+  `trace.profiler` (`set_option trace.profiler true in` on the theorem) shows the symptom: a slow
+  `[Elab.app.propagateExpectedType] ❌️` under the `exact`.
+- **Effect:** ECCall 12.8 → 6.0 s CPU (at 6289b62), 27.0 → 21.0 s on a later main (#297).
+
 #### `bv_decide` certificates dominate rule-proof `.olean`s; try `grind` first on ring identities
 - **Problem:** PR #91's Add-family rule lemmas (87 theorems, `rule_auto` closing with
   `first | rfl | bv_decide | grind`) wrote 16 / 69 / 57 MB `.olean`s. `scripts/olean-top.lean`:
