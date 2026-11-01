@@ -1,7 +1,7 @@
 import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.ECIdent
 import GoFV.Proof.Pass.ECArgSel
-import GoFV.Proof.Pass.ECStackRes
+import GoFV.Proof.Pass.ECWide
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
@@ -115,7 +115,7 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
   | some gb =>
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
     refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
     · have := Array.all_eq_true'.1 hval x hx
@@ -227,12 +227,33 @@ theorem eco_imkHeld {ce : CheckEnv} {tabs : Tables} {f g : Func} {bid x a : ID} 
       exact hab
   · exact .inl ⟨hda, hdd, hi⟩
 
+/-- A converted call listed in `f` passes `callOK` with its node in `g`. -/
+theorem eco_callOK {tabs : Tables} {f g : Func} {ce : CheckEnv} (hf : check ce f = .ok ())
+    (hec : ecCheck tabs f g = true) {c : ID} {cu : Value}
+    (hl : ∃ bid fb, (bid ∈ f.blocks ∧ f.block? bid = some fb) ∧ c ∈ fb.values)
+    (hcu : f.value? c = some cu) (hcall : (callOpMap cu.op).isSome = true) :
+    ∃ cw, g.value? c = some cw ∧ callOK tabs (typeShapes tabs) f g cu cw = true := by
+  obtain ⟨-, -, -, hblk⟩ := eco_ecCheck hec
+  obtain ⟨bid, fb, ⟨hbid, hfb⟩, hc⟩ := hl
+  obtain ⟨-, -, -, hvals⟩ := eco_blockOK (hblk bid hbid) hfb
+  have hcphi : cu.op ≠ .Phi := fun h => absurd hcall (by rw [h]; decide)
+  have hvc := hvals _ hc cu hcu hcphi
+  unfold valueOK at hvc
+  rw [hcu] at hvc
+  cases hcw : g.value? c with
+  | none => rw [hcw] at hvc; cases hvc
+  | some cw =>
+    rw [hcw] at hvc
+    dsimp only at hvc
+    rw [ite_eq_left hcall] at hvc
+    exact ⟨cw, rfl, hvc⟩
+
 /-- **The local obligation of a non-`Phi` source value** of tree block `bid` for
 `expand calls`, the source's `Held` values and the target's `HeldT` values holding their
 evaluations (among them the `SP`s of a call's stack-argument stores, `hsp`, the `Dereference`
 its `Move` copies, `hma`, and the `SP`s and memories of a stack-assigned result's loads, `hld`;
-`hdep`: `x`, unless invalidated, depends in `g` on its arguments that are nodes of the block and
-not the `Dereference` of a `Move`). -/
+`hdep`: `x`, unless invalidated, depends in `g` on its arguments that are nodes of the block,
+neither the `Dereference` of a `Move` nor wide call results). -/
 theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {fb gb : Block}
     {u : Value}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
@@ -247,6 +268,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       SrcArg f fb x a)
     (hdep : invalidated g x = false → ∀ a ∈ u.args, a ∈ fb.values →
       (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) → moveArgB f g x a = false →
+      wideSel f g a = false →
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
     (hld : ∀ l ∈ stackLoads tabs (typeShapes tabs) f g x,
       (isNewB f (loadSP g l) = false → HeldT g gb x (loadSP g l)) ∧
@@ -313,6 +335,10 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
         | none => rw [hcu] at hct; cases hct
         | some cu => rw [hcu] at hct; exact obl_tailUse hu hc hcu hct
     rw [ite_eq_right ht] at hv
+    by_cases hws : wideSel f g x = true
+    · exact obl_wideSel hws
+    rw [ite_eq_right hws] at hv
+    have hws' : wideSel f g x = false := Bool.eq_false_iff.2 hws
     by_cases hs : (u.op == .SelectN && u.args.size == 1 && converted f u.args[0]!) = true
     · rw [ite_eq_left hs] at hv
       simp only [Bool.and_eq_true, beq_iff_eq] at hs
@@ -350,7 +376,8 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
               · have hmv : moveArgB f g x u.args[0]! = false := by
                   unfold moveArgB stackMove; rw [hu, hw]; dsimp only; rw [if_neg hc]; rfl
                 exact .inl ⟨hcf, hdep hinv _ hcmem hcf (fun ua hua => by
-                  rw [hcu] at hua; cases hua; exact hcphi) hmv⟩
+                  rw [hcu] at hua; cases hua; exact hcphi) hmv
+                  (ecA_not_wideSel hcu fun h => absurd hcall (by rw [h]; decide))⟩
               · have hpl : Placed f x u :=
                   ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
                 obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=
@@ -362,14 +389,45 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
                 rw [he, hfid, hfb] at hblk'
                 cases hblk'
                 exact hab
-            exact obl_selectStack hu hw hsel hargs hcu hcw hcall hvc hinv hv hp hpst huid _ hLx hL
-              hHc hld
-          · refine obl_select hu hw hsel hargs hcu hcw hcall hvc hinv hv (fun p hp => ?_) hown huid
-              _ hLx hL
+            exact obl_selectStack hu hw hsel hargs hcu hcw hcall hvc hinv hws' hv hp hpst huid _
+              hLx hL hHc hld
+          · refine obl_select hu hw hsel hargs hcu hcw hcall hvc hinv hws' hv (fun p hp => ?_)
+              hown huid _ hLx hL
             cases h : p.regs.isEmpty
             · rfl
             · exact absurd ⟨p, hp, h⟩ hstp
     rw [ite_eq_right hs] at hv
+    by_cases hst : (u.op == .Store && w.op == .Copy) = true
+    · rw [ite_eq_left hst] at hv
+      obtain ⟨_, _, hwa, _, _, _, _, _, _, hzs, _⟩ := ecw_wideStoreOK hv
+      obtain ⟨_, _, hus, _, _⟩ := ecw_wideChain hzs
+      have ham : u.args[1]! ∈ u.args := ecw_mem_three hus 1 (by decide)
+      obtain ⟨bid', fb', ⟨hbid', hfb'⟩, ha'⟩ := Wf.argListed bid fb x u ⟨⟨hbid, hfb⟩, hx, hu⟩ _ ham
+      refine obl_wideStore hu hw huid hv (fun xu cu hxu hcu hcall => ?_) _ hLx hL ?_
+      · obtain ⟨xu', _, hxu', _, _, hxsz, _, _⟩ := ecw_wideSel hwa
+        rw [hxu] at hxu'
+        cases hxu'
+        have hc : xu.args[0]! ∈ xu.args := by
+          rw [← Array.mem_toList_iff, ec_args_one hxsz]; simp
+        exact eco_callOK hf hec (Wf.argListed bid' fb' _ xu ⟨⟨hbid', hfb'⟩, ha', hxu⟩ _ hc) hcu hcall
+      · -- the wide result is held in the source
+        obtain ⟨xu, -, hxu, -, hxop, -, -, -⟩ := ecw_wideSel hwa
+        have hxphi : xu.op ≠ .Phi := by rw [hxop]; decide
+        by_cases haf : u.args[1]! ∈ fb.values
+        · exact .inr (.inr (.inr ⟨haf, ⟨u, hu, ham⟩, fun uz huz => by
+            rw [hxu] at huz; cases huz; exact hxphi⟩))
+        · have hpl : Placed f x u :=
+            ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
+          obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=
+            AtomSim.arg_anc Wf hcert hpl (by rw [hublk, ← hfid]; exact htree) hphi ham
+          rw [hxu] at hva
+          cases hva
+          rw [hublk, ← hfid] at hanc
+          refine .inr (.inl ⟨xu, ⟨hxu, hvb, blk, hblk', hab⟩, hxphi, hanc, fun he => haf ?_⟩)
+          rw [he, hfid, hfb] at hblk'
+          cases hblk'
+          exact hab
+    rw [ite_eq_right hst] at hv
     by_cases hi : (w.op == .Invalid) = true
     · rw [ite_eq_left hi] at hv
       simp only [Bool.and_eq_true, beq_iff_eq] at hv
@@ -385,7 +443,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     rw [ite_eq_right ha] at hv
     have hsp : special f g x = false := by
       unfold special converted
-      rw [hu, hinv]
+      rw [hu, hinv, hws']
       dsimp only
       rw [Bool.eq_false_iff.2 hc, Bool.eq_false_iff.2 hr]
       rfl

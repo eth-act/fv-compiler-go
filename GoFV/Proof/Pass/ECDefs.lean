@@ -68,17 +68,66 @@ def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
       (convTuple tabs (callOuts tabs u.aux) y).retype (shapeOf (typeShapes tabs) g x)
     else if u.op == .MakeResult then
       (convTuple tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g x)
+    else if wideSel f g x then .poison
     else y
   | none => y
 
-/-- The source values the obligation of `x` reads: its arguments in the source and its
-arguments (and, for a call, its wide stack argument's `Move`'s arguments) in the target that the
-source defines; none for a value the pass invalidated (its target node reads nothing). -/
+/-- The source values the obligation of `x` reads: its arguments in the source, its arguments
+(and, for a call, its wide stack argument's `Move`'s arguments) in the target that the source
+defines, and the arguments of its wide call-result arguments (`wideSel`: the call whose register
+pieces a wide store writes); none for a value the pass invalidated (its target node reads
+nothing). -/
 def ecFront (f g : Func) (x : ID) : List ID :=
   if invalidated g x then [] else
   ((f.value? x).map (·.args.toList)).getD [] ++
     ((((g.value? x).map (·.args.toList)).getD []) ++
-      (((stackMove f g x).bind g.value?).map (·.args.toList)).getD []).filter (fun a => !isNewB f a)
+      (((stackMove f g x).bind g.value?).map (·.args.toList)).getD []).filter (fun a => !isNewB f a) ++
+    ((((f.value? x).map (·.args.toList)).getD []).filter (wideSel f g)).flatMap
+      (fun a => ((f.value? a).map (·.args.toList)).getD [])
+
+theorem ecFront_src {f g : Func} {x a : ID} {u : Value} (hi : invalidated g x = false)
+    (hu : f.value? x = some u) (ha : a ∈ u.args) : a ∈ ecFront f g x := by
+  unfold ecFront
+  rw [hi, if_neg Bool.false_ne_true, hu]
+  exact List.mem_append_left _ (List.mem_append_left _ (Array.mem_toList_iff.2 ha))
+
+theorem ecFront_tgt {f g : Func} {x a : ID} {w : Value} (hi : invalidated g x = false)
+    (hw : g.value? x = some w) (ha : a ∈ w.args) (hn : isNewB f a = false) :
+    a ∈ ecFront f g x := by
+  unfold ecFront
+  rw [hi, if_neg Bool.false_ne_true, hw]
+  refine List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2 ⟨?_, ?_⟩))
+  · exact List.mem_append_left _ (Array.mem_toList_iff.2 ha)
+  · simp [hn]
+
+/-- An argument of a wide call-result argument (`wideSel`) is in the front. -/
+theorem ecFront_wide {f g : Func} {x a c : ID} {u au : Value} (hi : invalidated g x = false)
+    (hu : f.value? x = some u) (ha : a ∈ u.args) (hwa : wideSel f g a = true)
+    (hau : f.value? a = some au) (hc : c ∈ au.args) : c ∈ ecFront f g x := by
+  unfold ecFront
+  rw [hi, if_neg Bool.false_ne_true, hu]
+  refine List.mem_append_right _ (List.mem_flatMap.2 ⟨a, List.mem_filter.2
+    ⟨Array.mem_toList_iff.2 ha, hwa⟩, ?_⟩)
+  rw [hau]
+  exact Array.mem_toList_iff.2 hc
+
+/-- The wide members of the front: the arguments of a wide call-result argument. -/
+theorem ecFront_wide_cases {f g : Func} {x a : ID}
+    (h : a ∈ ((((f.value? x).map (·.args.toList)).getD []).filter (wideSel f g)).flatMap
+      (fun a => ((f.value? a).map (·.args.toList)).getD [])) :
+    ∃ u b bu, f.value? x = some u ∧ b ∈ u.args ∧ wideSel f g b = true ∧ f.value? b = some bu ∧
+      a ∈ bu.args := by
+  cases hu : f.value? x with
+  | none => rw [hu] at h; simp at h
+  | some u =>
+    rw [hu] at h
+    obtain ⟨b, hb, hab⟩ := List.mem_flatMap.1 h
+    obtain ⟨hb1, hb2⟩ : b ∈ u.args ∧ wideSel f g b = true := by simpa using hb
+    cases hbu : f.value? b with
+    | none => rw [hbu] at hab; simp at hab
+    | some bu =>
+      rw [hbu] at hab
+      exact ⟨u, b, bu, rfl, hb1, hb2, hbu, Array.mem_toList_iff.1 hab⟩
 
 /-- **The relation of `Ret` outcomes**: the source's results, one per result of the function,
 each of its result's shape; the target's refine the register pieces of the source's, each
@@ -115,15 +164,31 @@ theorem ecCv_of_not_special {tabs : Tables} {f g : Func} {x : ID} (h : special f
     (y : Val) : ecCv tabs f g x y = y := by
   unfold special at h
   simp only [Bool.or_eq_false_iff] at h
+  obtain ⟨⟨hc, hi⟩, hw⟩ := h
   unfold ecCv
-  rw [h.2]
-  unfold converted at h
+  rw [hi]
+  unfold converted at hc
   cases hx : f.value? x with
   | none => rfl
   | some u =>
-    have h1 := h.1
-    rw [hx] at h1
-    simp only [Bool.or_eq_false_iff] at h1
-    simp only [Bool.false_eq_true, ite_false, h1.1, h1.2]
+    rw [hx] at hc
+    simp only [Bool.or_eq_false_iff] at hc
+    simp only [Bool.false_eq_true, ite_false, hc.1, hc.2, hw]
+
+/-- A wide call result (`wideSel`) converts to `poison`. -/
+theorem ecCv_wideSel {tabs : Tables} {f g : Func} {x : ID} (h : wideSel f g x = true) (y : Val) :
+    ecCv tabs f g x y = .poison := by
+  have hu : ∃ u, f.value? x = some u ∧ u.op = .SelectN := by
+    unfold wideSel at h
+    split at h
+    · next u w hu _ => simp only [Bool.and_eq_true, beq_iff_eq] at h; exact ⟨u, hu, h.1.1.1.1⟩
+    · cases h
+  obtain ⟨u, hu, hop⟩ := hu
+  unfold ecCv
+  split
+  · rfl
+  · rw [hu]
+    simp only [hop, h, ite_true]
+    rfl
 
 end GoFV.Proof.EC
