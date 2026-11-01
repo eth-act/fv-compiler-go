@@ -38,13 +38,16 @@ theorem earlyStep_ok {ce : CheckEnv} (isMem : TypeRef → Bool) :
   generalize Cmp.fuseComparisonsChecked isMem canOptNanCheck f2 b = r3 at h k3
   obtain ⟨f3, c3⟩ := r3
   dsimp only at h k3
-  have k4 := FusePlain.fuseBlockPlainChecked_refines (tabs := tabs) (b := b) k3.2
-  generalize Plain.fuseBlockPlainChecked f3 b = r4 at h k4
-  obtain ⟨f4, c4⟩ := r4
-  dsimp only at h k4
-  simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
-  rw [← h.1]
-  exact ⟨k1.1.trans (k2.1.trans (k3.1.trans k4.1)), k4.2⟩
+  simp only [bind, Except.bind] at h
+  cases h4 : Plain.fuseBlockPlainChecked f3 b with
+  | error e => rw [h4] at h; cases h
+  | ok r4 =>
+    rw [h4] at h
+    obtain ⟨f4, c4⟩ := r4
+    have k4 := FusePlain.fuseBlockPlainChecked_refines (tabs := tabs) h4 k3.2
+    simp only [pure, Except.pure, Except.ok.injEq, Prod.mk.injEq] at h
+    rw [← h.1]
+    exact ⟨k1.1.trans (k2.1.trans (k3.1.trans k4.1)), k4.2⟩
 
 /-- **early fuse refines its input.** -/
 theorem fuseEarly_refines {penv : PassEnv} {f : Func} {out : PassOut}
@@ -67,7 +70,12 @@ theorem fuseEarly_refines {penv : PassEnv} {f : Func} {out : PassOut}
       · rename_i hck
         have hck' : checkOK { tabs := penv.tables, typs := penv.typs } f = true := by
           simpa using hck
-        exact (Fuse.fuseLoop_refines (earlyStep_ok tv.isMem) Fuse.finalOK_none hg
-          (WFDom.of_check (checkOK_sound hck'))).1
+        unfold orInput at hg
+        split at hg
+        · rename_i g' hl
+          cases hg
+          exact (Fuse.fuseLoop_refines (earlyStep_ok tv.isMem) Fuse.finalOK_none hl
+            (WFDom.of_check (checkOK_sound hck'))).1
+        · cases hg; exact Refines.refl _ _
 
 end GoFV.Proof.FuseEarly
