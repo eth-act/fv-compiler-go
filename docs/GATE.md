@@ -23,6 +23,8 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
 | `parity` | `scripts/parity.sh <full corpus>` | a registered pass mismatches the stock pass, or reports an error |
 | `check` | `gofv-ssa-opt --check --jobs 4 <full corpus>` | the whole pipeline diverges from stock, or a Lean pass fails (docs/DRIVER.md) |
 | `e2e` | driver toolchain, then `scripts/driver-e2e.sh --mode full` | a std archive or a binary differs from stock, a program's output differs, or a function falls back to the stock passes |
+| `verified` (report) | `gofv-ssa-opt --check --verified --jobs 4 <full corpus>` under `timeout $GATE_VERIFIED_TIMEOUT` (default 4h) | never: the verified pipeline's numbers (docs/DRIVER.md, "Verified mode") |
+| `e2e-verified` (report) | `scripts/driver-e2e.sh --verified` with the toolchain of `e2e` | never: programs built with the verified pipeline, run against stock |
 
 - `allproof`: every `GoFV/Proof` module must import together with every other (issue #133), so
   that any proof, and the axioms audit, can use all of them. `GoFVTest/Proof/AllProof.lean`
@@ -45,6 +47,8 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
   stored in `tmp/go-driver/.gofv-patches`.
 - If `build` fails, the steps that depend on it are skipped. Otherwise every step runs, even
   after a failure.
+- The two report steps show `report` (or `report (exit N)`) in the table and their numbers in
+  the details; they never make the night red and never open a `gate-red` issue.
 
 ## Results
 

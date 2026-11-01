@@ -13,16 +13,19 @@ stock passes before `lower`, per function, and continue with the stock `lower` o
 
 ### `gofv-ssa-opt`
 
-`stockPasses` is `compile.go`'s `passes` table from `number lines` to `rewrite tern` with each
-pass's `required` flag; a pass runs iff `optimize || required` and its port's `disabled`
-condition (`PassEntry.disabled`, from the export's `config` lines) does not hold — exactly
-`ssa.Compile`'s test. Ports come from `GoFVTest/Parity/Registry.lean`: registering a port for
-parity also makes the driver use it.
+`GoFV.Opt.stockPasses` (`GoFV/Opt/Verified.lean`) is `compile.go`'s `passes` table from
+`number lines` to `rewrite tern` with each pass's `required` flag and Go `disabled` condition
+(from the export's `config` lines); a pass runs iff `optimize || required` and `disabled` does
+not hold (`StockPass.enabled`) — exactly `ssa.Compile`'s test. Ports come from
+`GoFVTest/Parity/Registry.lean`: registering a port for parity also makes the driver use it.
+`--verified` runs the verified pipeline instead (below).
 
 ```
 gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
+gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] <in.ssa>
 gofv-ssa-opt --list
 gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 ```
 
 - Driver mode reads a `gofv-ssa` file whose first section is the function (section `start`),
@@ -128,6 +131,34 @@ a higher number by key in the cut tables (#119).
 | `GOFV_SSA_DRIVER_DUMP=<dir>` | write each run's input and output (debugging) |
 
 Do not combine with `GOFV_SSA_EXPORT` (its sections are written only after stock passes).
+
+## Verified mode (`--verified`, issue #189)
+
+`gofv-ssa-opt --verified <in.ssa>` runs `GoFV.Opt.verifiedPipeline` (`docs/PASSES.md` §0, "The
+verified pipeline") instead of the registered ports: the checked variant of every pass with a
+refinement theorem, the stock port of the others, `check` between passes. Its output has the
+format of driver mode and is always `status ok` unless a pass fails; `--vstats FILE` appends one
+line per function: `"<pkg>" "<func>" <abi>`, then `verified` or `unverified "<pass>: <verdict>"`
+(the first run that is not proven, identity or skipped) and the number of runs per verdict,
+tab-separated. A function whose line says `verified` is, by `verifiedPipeline_refines`, refined
+by the output. The output differs from stock wherever a checked variant undoes a rewrite, so
+the importer's check against the Lean text still applies but stock identity does not.
+
+`scripts/driver-e2e.sh --verified` builds std and the programs with
+`GOFV_SSA_DRIVER=<wrapper running gofv-ssa-opt --verified --vstats …>` in full mode, counts the
+byte-identical archives and binaries without failing on the others, and fails only when a build
+fails or a program's output or exit status differs from stock under qemu. The report adds the
+per-function verdicts.
+
+`gofv-ssa-opt --check --verified <dir|file>...` is the corpus report: per function, the
+verified pipeline from section 0 (driver export environment and type rounds, as `--check`),
+the state after each pass compared with the stock section until the first difference, and the
+final state compared with the last stock section. It prints the functions fully verified, the
+functions whose final state equals stock, the unverified functions by first unverified run,
+the functions by first difference (pass and its verdict), a per-pass table of verdicts, and the
+skipped and unverified runs by reason. It exits 1 only for parse errors or no input. The
+nightly gate runs it on the full corpus, and `driver-e2e.sh --verified`, as reports
+(`docs/GATE.md`).
 
 ## Whole-pipeline parity (`gofv-ssa-opt --check`)
 
