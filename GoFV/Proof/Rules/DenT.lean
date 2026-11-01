@@ -8,10 +8,13 @@ import GoFV.Proof.Rules.OpVal
 `ConstString {str}` are evaluated from the definition tables (`opVal`, `Sem.frameVal`), so a rule
 over them (`generic.rules:1022` `(ConstString {str}) => (StringMake (Addr {fe.StringData(str)}
 (SB)) (Const64 [len(str)]))`, nil checks of `Addr`) needs the denotation with `opVal`, for all
-tables: `Pat.denT`, `nodeDenT`, `resDenT`, and `Rule.SoundT`. The two frame helpers a result may
-use are facts about the tables, which the rewrite validator checks on the built nodes
-(`FrameOK`): `fe.StringData(str)` names a symbol whose name is the data symbol of the string
-aux `str`, and `len(str)` is its length.
+tables: `Pat.denT`, `nodeDenT`, `resDenT`, and `Rule.SoundT`. The frame facts a rule may use
+are facts about the tables and the aux fields, which the rewrite validator checks on the
+instance (`FrameOK`): `fe.StringData(str)` names a symbol whose name is the data symbol of the
+string aux `str`, `len(str)` is its length, an aux `{s}` of a built node is the aux bound to `s`
+(`(StringPtr (StringMake (Addr {s} base) _)) => (Addr {s} base)`), and a condition's conjunct
+`str == ""` holds of the string aux bound to `str` (the aux is not a rule value, so `evalE`
+leaves the comparison to the oracle).
 
 `Rule.soundT_of_sound`: a `Rule.Sound` rule without table-evaluated nodes (`Rule.pure`) satisfies
 `Rule.SoundT` (the two denotations agree). The rewrite validator's soundness uses `Rule.SoundT`
@@ -117,6 +120,17 @@ def lenVar? : Expr → Option Nat
   | .conv .int64 (.builtin "len" [.var x] _) => some x
   | _ => none
 
+/-- An aux `{x}` of a rule variable. -/
+def auxVar? : Expr → Option Nat
+  | .var x => some x
+  | _ => none
+
+/-- The rule variables `x` of the condition's conjuncts `x == ""` (`&&` chains). -/
+def emptyStrVars : Expr → List Nat
+  | .binop .land a b _ => emptyStrVars a ++ emptyStrVars b
+  | .binop .eq (.var x) (.lit _ (.str "")) _ => [x]
+  | _ => []
+
 /-- The field binds variable `x`. -/
 def _root_.GoFV.Rules.Field.bindsVar (f : GoFV.Rules.Field) (x : Nat) : Bool :=
   match f with
@@ -140,15 +154,20 @@ def _root_.GoFV.Rules.Result.nodes : Result → List RNode
 
 /-- The frame helpers of the result hold of the instance: an aux `fe.StringData(x)` names the
 data symbol of the (non-empty) string aux bound to `x`, an auxint `int64(len(x))` is its length
-(as `nodeDenT` selects it). -/
+(as `nodeDenT` selects it), an aux `{x}` is the aux bound to `x`; and a conjunct `x == ""` of the
+condition holds of the string aux bound to `x`. -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
-  ∀ n ∈ r.result.nodes,
+  (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
       ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧
         s.size ≠ 0 ∧ symName? tabs (or.aux xe) = some d) ∧
     (∀ ae x, n.auxInt = some ae → lenVar? ae = some x →
       ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧
-        (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae) = Int64.ofNat s.size)
+        (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae) = Int64.ofNat s.size) ∧
+    (∀ xe x, n.aux = some xe → auxVar? xe = some x →
+      ∃ p, Pat.auxPos x [] r.pat = some p ∧ or.aux xe = e.aux p)) ∧
+  ∀ x ∈ (r.cond.map emptyStrVars).getD [],
+    ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧ s.size = 0
 
 /-- **The obligation of a value rule over table-evaluated nodes**: `Rule.Sound` with the
 denotation `opVal tabs`, for all tables, under the frame helpers' facts (`FrameOK`). -/

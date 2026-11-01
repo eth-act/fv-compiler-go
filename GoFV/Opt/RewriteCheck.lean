@@ -437,7 +437,7 @@ def strOf (tabs : Tables) (e : PEnv) (pat : Pat) (x : Nat) : Option (GoStr × Go
 
 /-- The frame helpers of a built node `u` of result node `n` (`GoFV.Proof.Rules.FrameOK`): an
 aux `fe.StringData(x)` names the data symbol of the non-empty string aux bound to `x`, an
-auxint `int64(len(x))` is the string's length. -/
+auxint `int64(len(x))` is the string's length, an aux `{x}` is the aux bound to `x`. -/
 def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) : Bool :=
   (match n.aux.bind strDataVar? with
     | some x => match strOf tabs e pat x with
@@ -448,7 +448,19 @@ def frameNodeOK (tabs : Tables) (e : PEnv) (pat : Pat) (n : RNode) (u : Value) :
     | some x => match strOf tabs e pat x with
       | some (s, _) => u.auxInt == Int64.ofNat s.size
       | none => false
+    | none => true) &&
+  (match n.aux.bind auxVar? with
+    | some x => match Pat.auxPos x [] pat with
+      | some p => u.aux == e.aux p
+      | none => false
     | none => true)
+
+/-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`
+(`GoFV.Proof.Rules.FrameOK`). -/
+def condFrameOK (tabs : Tables) (e : PEnv) (pat : Pat) (cond : Option GoFV.Rules.Expr) : Bool :=
+  ((cond.map emptyStrVars).getD []).all fun x => match strOf tabs e pat x with
+    | some (s, _) => s.size == 0
+    | none => false
 
 /-- How `isNonNegative` (`rewrite.go`) decides an op whose value is an integer of width `w`. -/
 inductive NNKind where
@@ -572,6 +584,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) &&
+        condFrameOK tabs e r.pat r.cond &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
 
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two

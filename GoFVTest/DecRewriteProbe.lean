@@ -90,7 +90,8 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
         if !leavesOK M I [] r.pat then "leavesOK" else
         if !resultOK tabs M ev or σ I r x defs then
           (if r.block.isSome then "resultOK (@b block)" else "resultOK") else
-        if !nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) then "frameNodeOK" else "ok"
+        if !nodes.all (fun (n, u) => frameNodeOK tabs e r.pat n u) then "frameNodeOK" else
+        if !condFrameOK tabs e r.pat r.cond then "condFrameOK" else "ok"
     if res.contains "ok" then "ok" else res.headD "no choice"
 
 structure Stats where
