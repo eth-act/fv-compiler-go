@@ -6,6 +6,7 @@ import GoFV.Proof.Sched
 import GoFV.Proof.Frame
 import GoFV.Proof.Avail
 import GoFV.Proof.Pass.FusePlainFrame
+import GoFV.Proof.SchedFast
 
 /-!
 # fuseBlockPlain: what the step checker establishes
@@ -173,6 +174,41 @@ private theorem flatMap_congr' {α β : Type} {f g : α → List β} :
     rw [List.flatMap_cons, List.flatMap_cons, h a List.mem_cons_self,
       flatMap_congr' fun x hx => h x (List.mem_cons_of_mem _ hx)]
 
+/-- A non-pure value listed in a block is a non-pure node of its schedule nodes. -/
+theorem npIn_of_npV {f : Func} {B : Block} (hown : ValuesOwn f B) {y : ID}
+    (hp : npV f y = true) (hn : NodeIn (schedNodes f B).toList y) :
+    npIn (schedNodes f B).toList y = true := by
+  obtain ⟨n0, hn0, hid0⟩ := hn
+  unfold npIn nodeOf
+  cases hfd : (schedNodes f B).toList.find? (·.id == y) with
+  | none =>
+    exact absurd hfd (List.find?_isSome.2 ⟨n0, hn0, by simp [hid0]⟩ |> Option.isSome_iff_ne_none.1)
+  | some n =>
+    have hnm := List.mem_of_find?_eq_some hfd
+    have hny : n.id = y := by simpa using List.find?_some hfd
+    obtain ⟨id, hid, v, hv, -, rfl⟩ := mem_schedNodes.1 hnm
+    obtain ⟨v', hv', hvid⟩ := hown id hid
+    rw [hv] at hv'; cases hv'
+    simp only at hny
+    rw [hvid] at hny; subst hny
+    unfold npV at hp; rw [hv] at hp
+    simp only [Bool.and_eq_true] at hp
+    exact hp.2
+
+/-- The checker's schedule of a run block has the non-pure sequence of `Sem.schedule`. -/
+theorem fastOf_np {ce : CheckEnv} (hwf : WF ce f) {x : ID} (hx : x ∈ f.blocks) {o : Array ID}
+    (h : fastOf f x = some o) : ∃ o', schedOf f x = some o' ∧
+      o.toList.filter (npV f) = o'.toList.filter (npAt f x) := by
+  unfold fastOf at h
+  cases hX : f.block? x with
+  | none => rw [hX] at h; cases h
+  | some X =>
+    rw [hX] at h
+    obtain ⟨o', ho', hfl⟩ := SchedFast.schedFast_filter
+      (fun y hp hn => npIn_of_npV (valuesOwn hwf hx hX) hp hn) (p := npV f) h
+    have hs : schedOf f x = some o' := by unfold schedOf; rw [hX]; exact ho'
+    exact ⟨o', hs, hfl.symm.trans (filter_npV hwf hx hs)⟩
+
 /-- **The checker's verdict in declarative form** (for well-formed `f`). -/
 theorem checked_sound {ce : CheckEnv} (hwf : WF ce f) {b : ID} {s : Snap}
     (hs : snapOf f b = some s) (hpost : postOK s (fuseBlockPlain f b).1 = true) :
@@ -230,10 +266,10 @@ theorem checked_sound {ce : CheckEnv} (hwf : WF ce f) {b : ID} {s : Snap}
   rw [hC'] at hm
   simp only [Bool.and_eq_true, beq_iff_eq] at hm
   obtain ⟨⟨⟨⟨⟨⟨hid, hvals⟩, hk⟩, hctl⟩, hsucc⟩, hpreds⟩, ho⟩ := hm
-  cases hoT : schedule g C' with
-  | none => rw [hoT] at ho; cases ho
-  | some oT =>
-  rw [hoT, beq_iff_eq] at ho
+  cases hoF : SchedFast.schedFast g C' with
+  | none => rw [hoF] at ho; cases ho
+  | some oF =>
+  rw [hoF, beq_iff_eq] at ho
   have hvals' : C'.values.toList = run.flatMap fun x => (valsOf f x).toList := by
     rw [hvals, List.map_flatMap]
     simp [Function.comp_def]
@@ -249,6 +285,8 @@ theorem checked_sound {ce : CheckEnv} (hwf : WF ce f) {b : ID} {s : Snap}
     unfold sameV at hsv
     simp only [Bool.and_eq_true, beq_iff_eq] at hsv
     exact ⟨gv, hg', hsv.1.1.1.1.1.trans hid'⟩
+  obtain ⟨oT, hoT, hfl⟩ := SchedFast.schedFast_filter
+    (fun y hp hn => npIn_of_npV hownC hp hn) (p := npV g) hoF
   have h1 : oT.toList.filter (fun y => run.any fun x => npAt f x y) = oT.toList.filter (npV g) := by
     apply List.filter_congr
     intro y hy
@@ -282,15 +320,19 @@ theorem checked_sound {ce : CheckEnv} (hwf : WF ce f) {b : ID} {s : Snap}
   have hmerged : mergedOK f g run b0 c = true := by
     unfold mergedOK
     simp only [hC, hC', hoT, Bool.and_eq_true, beq_iff_eq, List.all_eq_true]
-    refine ⟨⟨⟨⟨⟨⟨⟨hid, hvals'⟩, hk⟩, hctl⟩, hsucc⟩, hpreds⟩, fun x hx => hsch x hx⟩, ?_⟩
-    rw [h1, ho]
+    refine ⟨⟨⟨⟨⟨⟨⟨hid, hvals'⟩, hk⟩, hctl⟩, hsucc⟩, hpreds⟩, fun x hx => ?_⟩, ?_⟩
+    · obtain ⟨o, ho'⟩ := Option.isSome_iff_exists.1 (hsch x hx)
+      obtain ⟨o', hs', -⟩ := fastOf_np hwf (hin x hx) ho'
+      rw [hs']; rfl
+    rw [h1, hfl, ho]
     unfold npSeq
     rw [List.flatMap_map]
     apply flatMap_congr'
     intro x hx
     obtain ⟨o, ho'⟩ := Option.isSome_iff_exists.1 (hsch x hx)
-    rw [ho']
-    exact filter_npV hwf (hin x hx) ho'
+    obtain ⟨o', hs', hnp⟩ := fastOf_np hwf (hin x hx) ho'
+    rw [ho', hs']
+    exact hnp
   refine ⟨hb0, hc, ⟨hne, hnd, hin, hch, hlat, hrd, hF.blocks, ?_, hF.ownAux, hF.vsize, hmerged⟩,
     fun x hx => hF.value x (fun ⟨y, hy, hxy⟩ => hx y hy hxy), hmoved,
     fun bid hn hp => hF.block bid (fun h => h.elim hn (fun h' => by rw [hp] at h'; cases h')),
