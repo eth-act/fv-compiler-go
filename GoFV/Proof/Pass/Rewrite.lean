@@ -20,15 +20,14 @@ The instances depend on the proven-rule sets explicitly: `opt_refines` (also `mi
 proof is `generic_allSound`; likewise `divisible_refines`/`divmod_refines`. Adding lemmas grows
 these sets (and what the checked passes optimise); the theorems stay as stated.
 
-`Term.RetypeShapes` (register typing at integer shapes, issue #108) is a hypothesis until the
-semantics proves it.
+`Term.RetypeShapes` (register typing at integer shapes, issue #108) is `Term.retypeShapes`.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules GoFV.Proof GoFV.Proof.Rules
 
-theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound) (hr : Term.RetypeShapes)
+theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
@@ -38,28 +37,28 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound) (hr : Term.Retype
   rcases hc with he | ⟨log, hv⟩
   · rw [he]; exact RefinesUnder.refl _ _ _
   · obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
-    obtain ⟨h1, h2⟩ := validate_termRef hv hs hr
+    obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
     exact AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2
 
 /-- `opt`, `middle opt` and `late opt` with the proven generic rules, validated. -/
-theorem opt_refines (hr : Term.RetypeShapes) {penv : PassEnv} {f : Func} {out : PassOut}
+theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : optChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
     RefinesUnder Env.Mono out.tables out.func penv.tables f :=
-  checkedRewrite_refines generic_allSound hr h hf hg
+  checkedRewrite_refines generic_allSound h hf hg
 
 /-- `divisible` with its proven rules, validated. -/
-theorem divisible_refines (hr : Term.RetypeShapes) {penv : PassEnv} {f : Func} {out : PassOut}
+theorem divisible_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : divisibleChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
     RefinesUnder Env.Mono out.tables out.func penv.tables f :=
-  checkedRewrite_refines divisible_allSound hr h hf hg
+  checkedRewrite_refines divisible_allSound h hf hg
 
 /-- `divmod` with its proven rules, validated. -/
-theorem divmod_refines (hr : Term.RetypeShapes) {penv : PassEnv} {f : Func} {out : PassOut}
+theorem divmod_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : divmodChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
     RefinesUnder Env.Mono out.tables out.func penv.tables f :=
-  checkedRewrite_refines divmod_allSound hr h hf hg
+  checkedRewrite_refines divmod_allSound h hf hg
 
 end GoFV.Proof.Pass.Rewrite

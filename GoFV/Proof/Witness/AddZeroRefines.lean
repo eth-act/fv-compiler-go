@@ -13,13 +13,13 @@ namespace GoFV.Proof.Witness
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules GoFV.Proof
 
-theorem addZero_refines (hr : Term.RetypeShapes) :
+theorem addZero_refines :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) azPassEnv addZero = .ok out ∧
       (out.func.value? 5).map (·.args) = some #[2, 1] ∧
       RefinesUnder Env.Mono out.tables out.func azTabs addZero ∧
       ∃ fuel m, run Env.p1 out.tables out.func [.i64 7] {} fuel = .returned [.i64 7] m := by
   obtain ⟨out, hc, -, h5, -, hf, hg⟩ := addZero_checkedRewrite
-  have hR := GoFV.Proof.Pass.Rewrite.checkedRewrite_refines azRules_allSound hr hc hf hg
+  have hR := GoFV.Proof.Pass.Rewrite.checkedRewrite_refines azRules_allSound hc hf hg
   refine ⟨out, hc, h5, hR, ?_⟩
   obtain ⟨m, hm⟩ := returnsInt_iff.1 addZero_checks.2.2
   obtain ⟨fuel', ho⟩ := hR Env.p1 Env.p1_mono [.i64 7] {} 1 (by rw [show azPassEnv.tables = azTabs from rfl, hm]; trivial)
