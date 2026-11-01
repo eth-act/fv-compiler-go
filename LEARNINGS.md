@@ -63,6 +63,13 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Rule:** keep diagnostics-only options in `weakLeanArgs`; the watch loop flags any module
   whose `.olean` becomes non-reproducible (`repro` column, `docs/PERF.md`). In clifv such a
   module caused a hidden 3 h CI rebuild (eth-act/clifv#726).
+- **First catch (a26f6a1):** `GoFV.SSA.Sem.Runtime`'s `.olean` held
+  `/home/…/fv-compiler-go-wt/proofinterpmono/GoFV/SSA/Sem/Runtime.lean` from an
+  `ambiguousOpen` warning (`open Runtime` inside `namespace GoFV.SSA.Sem`). That linter was not
+  in `weakLeanArgs`, so the module's every importer rebuilt in each worktree that rebuilt it.
+  With `-Dlinter.ambiguousOpen=false` it is path-free and byte-identical from two directories.
+  Every linter that warns in a build log is a candidate: the build logs of the recorded commits
+  name only `unusedVariables` and `ambiguousOpen`.
 
 #### `bv_decide` certificates dominate rule-proof `.olean`s; try `grind` first on ring identities
 - **Problem:** PR #91's Add-family rule lemmas (87 theorems, `rule_auto` closing with
