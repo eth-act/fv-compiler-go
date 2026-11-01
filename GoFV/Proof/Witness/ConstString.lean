@@ -104,6 +104,15 @@ theorem hiRules_allSound : hiRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of ⟨⟨.inl GoFV.Proof.Rules.r_generic_1022_sound, trivial⟩, trivial⟩
     trivial
 
+/-- By kernel evaluation: the rewrite of `hi` logs no phi elimination. -/
+private theorem hi_noPhi : ∀ r, rewriteRun (Interp.Table.ofRuleSet hiRules) true true
+    hiPassEnv hiFunc = .ok r → RewriteCheck.noPhiElim r.2.2 = true := by
+  intro r hr
+  have h : (rewriteRun (Interp.Table.ofRuleSet hiRules) true true hiPassEnv hiFunc).toOption.map
+      (fun r => RewriteCheck.noPhiElim r.2.2) = some true := by decide +kernel
+  rw [hr] at h
+  simpa [Except.toOption] using h
+
 /-- **Pass execution witness**: on `hi`, the checked rewrite pass with `{generic.rules:1022}`
 rewrites the constant string (`v2 = StringMake …`) in tables extended by its data symbol, the
 validator accepted the result against the input and the log, and the result refines the input
@@ -123,7 +132,8 @@ theorem hi_checkedRewrite :
     rw [hc] at h2
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
     obtain ⟨hg, h5, hn⟩ := h2
-    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl rfl rfl rfl hc with ⟨he, -⟩ | ⟨ht, hv⟩
+    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl rfl rfl rfl hi_noPhi hc
+      with ⟨he, -⟩ | ⟨ht, hv⟩
     · rw [he] at h5; exact absurd h5 (by decide +kernel)
     · exact ⟨out, rfl, h5, hn, ht, hv, ok_of_toBool h1, ok_of_toBool hg,
         GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := hiRules) (penv := hiPassEnv)

@@ -4,6 +4,7 @@ import GoFV.Opt.CSE
 import GoFV.Opt.TabsAgree
 import GoFV.Opt.NilCheckRel
 import GoFV.Opt.Checked
+import GoFV.Opt.CopyRelCheck
 
 /-!
 # Validating a rewrite pass (`applyRewrite`) against its log (issue #113)
@@ -1855,6 +1856,36 @@ def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .fwd false, .ni
 expansions, then its splits (twice, for nested structs). -/
 def decLayers : List Layer := [.ld, .ss, .ss]
 
+/-! ## Phi eliminations (issue #69)
+
+`applyRewrite` runs `phielimValue` on every value: a `Phi` whose arguments are all one value `w`
+or the `Phi` itself becomes `Copy w`. Its arguments usually became equal through the rewrites
+before (`StructSelect` of `StructMake` became copies of the selected argument, then the copies
+were eliminated), so the elimination is not a fact about the input. The event
+(`RwEvent.phielim v def pre`) logs the function `pre` just before the elimination. `accepts`
+splits the log at these events (`segsOK`): each segment is validated (layers and `validate`)
+against `pre` without the values reset to `Invalid` (`dropInvalid`; `applyRewrite`'s cleanup
+frees them at the end), `pre` and the function with the `Phi` turned copy (`phiElim`) are
+related by copyelim's relation (`CopyCheck.copyOK`), and the next segment starts from the
+latter. -/
+
+/-- `h` without the `Invalid` values listed in its blocks. -/
+def dropInvalid (h : Func) : Func :=
+  h.blocks.foldl (init := h) fun h b =>
+    h.modB b fun x => { x with values := x.values.filter fun y => (h.value? y).all (·.op != .Invalid) }
+
+/-- `phielimValue`'s edit: the `Phi` `v` of `h` becomes `Copy w`. -/
+def phiElim (h : Func) (v w : ID) : Func :=
+  (h.modV v fun y => { y with op := .Copy }).setArgs1 v w
+
+/-- The event is no phi elimination. -/
+def notPhiElim : RwEvent → Bool
+  | .phielim .. => false
+  | _ => true
+
+/-- No phi elimination in the log. -/
+def noPhiElim (log : Array RwEvent) : Bool := log.all notPhiElim
+
 end GoFV.Opt.RewriteCheck
 
 namespace GoFV.Opt
@@ -1897,14 +1928,31 @@ def RewriteCheck.layersOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Go
       else RewriteCheck.layerOK env t out.tables f0 L f log f' &&
         RewriteCheck.layersOK env t f0 out Ls f' log'
 
+/-- The segments of the log between its phi eliminations (`seg`: the events of the current one,
+from `f`): `layersOK` accepts each against the function logged at the phi elimination ending it
+(without `Invalid` values, `h`), which passes `check` and is related by copyelim's relation to
+`h` with the `Phi` turned copy (`h'`, which passes `check`), where the next segment starts; the
+last segment ends at `out`. -/
+def RewriteCheck.segsOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : GoFV.SSA.Func)
+    (out : PassOut) : GoFV.SSA.Func → Array GoFV.Rules.RwEvent → List GoFV.Rules.RwEvent → Bool
+  | f, seg, [] => RewriteCheck.layersOK env t f0 out RewriteCheck.layers f seg
+  | f, seg, .phielim v d pre :: evs =>
+    let ce : GoFV.SSA.CheckEnv := { tabs := out.tables, typs := env.typs }
+    let h := RewriteCheck.dropInvalid pre
+    let h' := RewriteCheck.phiElim h v d.args[0]!
+    RewriteCheck.layersOK env t f0 { out with func := h } RewriteCheck.layers f seg &&
+      checkOK ce h && CopyCheck.copyOK out.tables h h' && checkOK ce h' &&
+      RewriteCheck.segsOK env t f0 out h' #[] evs
+  | f, seg, ev :: evs => RewriteCheck.segsOK env t f0 out f (seg.push ev) evs
+
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
 log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create
 types such as `ConstNil <v.Type.Elem().PtrTo()>` and symbols such as `fe.StringData(s)`, but no
-definitions the input looks up), and `RewriteCheck.layersOK` accepts it in the result's tables
-through the `RewriteCheck.layers`. -/
+definitions the input looks up), and `RewriteCheck.segsOK` accepts it in the result's tables:
+between phi eliminations, `RewriteCheck.layersOK` through the `RewriteCheck.layers`. -/
 def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
-  tabsAgree env.tables out.tables f && RewriteCheck.layersOK env t f out RewriteCheck.layers f log
+  tabsAgree env.tables out.tables f && RewriteCheck.segsOK env t f out f #[] log.toList
 
 /-- `applyRewrite` with the table `t` and its log; the result if `RewriteCheck.accepts` it. -/
 def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func) :

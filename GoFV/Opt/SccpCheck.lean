@@ -1,7 +1,7 @@
 import GoFV.Opt.Sccp
 import GoFV.Opt.KnownBitsCheck
 import GoFV.SSA.Check
-import GoFV.Proof.Pass.CopyFrag
+import GoFV.Opt.CopyRelCheck
 import GoFV.Proof.Pass.DeadEdgeVal
 
 /-!
@@ -44,10 +44,8 @@ The certificate is the final lattice `C` (`latticeCells`), the executable edges 
 `First` block), possibly at other predecessor indices with the `Phi` arguments following them
 (`DeadRel`).
 
-`copyOK tabs k g`: `g` has `k`'s control-flow graph, blocks and values, except that a `Phi` of
-`k` may be `Copy w` in `g` where each of its arguments is `w` or a copy of `w` in `g`; copies of
-`g` retype like their argument, and no value of `k` has a zero-size aggregate type
-(`CopyElim.CopyRel` and `CopyElim.EmptyFrag`). Only checked, with `check k`, when `k ≠ g`.
+`CopyCheck.copyOK tabs k g` (`GoFV/Opt/CopyRelCheck.lean`): `g` is `k` with some `Phi`s turned
+copies (copyelim's `CopyRel`). Only checked, with `check k`, when `k ≠ g`.
 -/
 
 namespace GoFV.Opt
@@ -239,39 +237,6 @@ def deadOK (h g : Func) : Bool :=
     | none, _ => true
     | some _, none => false
 
-/-- The argument `a` of a `Phi` that became `Copy w` in `g`: `w`, or a copy of `w` in `g`. -/
-def copyArg (g : Func) (w a : ID) : Bool :=
-  a == w || (g.value? a).any fun u => u.op == .Copy && u.args == #[w]
-
-/-- `g`'s value `x` (listed in block `kb` of `k`) is `k`'s or a `Phi` of `k` turned copy,
-copies of `g` retype like their argument, and `k`'s value has no zero-size aggregate type. -/
-def copyValueOK (tabs : Tables) (k g : Func) (x : ID) : Bool :=
-  (match k.value? x, g.value? x with
-    | some kv, some gv =>
-      gv.block == kv.block && gv.type == kv.type &&
-      (match zeroSizeAggregate tabs kv.type with | .ok true => false | _ => true) &&
-      ((gv.op == kv.op && gv.aux == kv.aux && gv.auxInt == kv.auxInt && gv.args == kv.args) ||
-        (kv.op == .Phi && gv.op == .Copy && gv.args == #[gv.args[0]!] &&
-          kv.args.all (copyArg g gv.args[0]!)))
-    | some _, none => false
-    | none, _ => true) &&
-  (g.value? x).all fun gv => gv.op != .Copy || gv.args.size != 1 ||
-    (g.value? gv.args[0]!).any fun wv =>
-      GoFV.Proof.CopyElim.retypeEqB (tabs.ty wv.type) (tabs.ty gv.type)
-
-/-- **`g` is `k` with some `Phi`s turned copies** (`CopyElim.CopyRel tabs k g` and
-`CopyElim.EmptyFrag tabs k`). -/
-def copyOK (tabs : Tables) (k g : Func) : Bool :=
-  DomCert.cfgView g == DomCert.cfgView k && g.ownAux == k.ownAux &&
-  g.valueTab.size == k.valueTab.size &&
-  k.blocks.all fun b =>
-    match k.block? b, g.block? b with
-    | some kb, some gb =>
-      gb.kind == kb.kind && gb.values == kb.values && gb.controls == kb.controls &&
-      kb.values.all (copyValueOK tabs k g)
-    | some _, none => false
-    | none, _ => true
-
 end Sccp
 
 /-- sccp, validated: `replaceConst` in insertion order, the result `g` if it changed and the
@@ -288,7 +253,7 @@ def sccpChecked : Pass := fun env f => do
   let ce : CheckEnv := { tabs := env.tables, typs := env.typs }
   let ok := g != f && Sccp.sccpOK env.tables f h a.cells a.visited a.visitedBlock &&
     Sccp.deadOK h k && (check { ce with firstAny := true } h).toBool &&
-    (k == g || ((check ce k).toBool && Sccp.copyOK env.tables k g))
+    (k == g || ((check ce k).toBool && CopyCheck.copyOK env.tables k g))
   return { func := if ok then g else f, tables := env.tables }
 
 end GoFV.Opt

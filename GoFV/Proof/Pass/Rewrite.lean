@@ -5,6 +5,8 @@ import GoFV.Proof.TabsAgree
 import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.StructStoreSim
+import GoFV.Proof.Pass.CopyRelCheck
+import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Checked
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.Rules.Proven
@@ -25,7 +27,10 @@ the extended tables (`validate_termRef`), which the atom simulation lifts to the
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
 `refinesFrom_of_tabsAgree`). The log's nil-check eliminations, Load-of-Store forwardings and
 struct-store splits (issue #151) are applied to the input first, each by its own refinement
-(`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines`).
+(`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines`). The log is
+validated in segments between its phi eliminations (issue #69, `segs_refines`): each segment
+ends at the function logged at the elimination, which the function with the `Phi` turned copy
+refines by copyelim's simulation (`CopyRelCheck.copyOK_spec`, `CopyElim.refines_of_rel`).
 
 The instances depend on the proven-rule sets explicitly: `opt_refines` (also `middle opt` and
 `late opt`, the same pass under another name) is about `optChecked`, the pass with the rules of
@@ -161,20 +166,61 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
         exact (StructStore.ss_refines hf hf' hL.1).trans
           (layersOK_refines hs hg Ls hn' f' log' hf' hr)
 
+/-- **One segment of the log**: what `layersOK` accepts (with a table of the rule set's value and
+block rules) from a checked function to a checked one refines it. -/
+theorem layers_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
+    (hvs : T.values = (Interp.Table.ofRuleSet s).values)
+    (hbs : T.blocks = (Interp.Table.ofRuleSet s).blocks) {penv : PassEnv} {f0 f : Func}
+    {out : PassOut} {log : Array RwEvent} {ce ce' : CheckEnv}
+    (h : RewriteCheck.layersOK penv T f0 out RewriteCheck.layers f log = true)
+    (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
+    RefinesFrom (RwPre penv.tables f0) out.tables out.func out.tables f := by
+  obtain ⟨g, log', hc, hv⟩ := layersOK_cases _ _ _ h
+  rw [validate_congr hvs hbs] at hv
+  obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
+  obtain ⟨h1, h2⟩ := validate_termRef hv hs
+  -- the layers (nil-check eliminations, forwardings, struct-load expansions, struct-store splits)
+  obtain ⟨ce₃, hf₃, hL⟩ := chain_refines hs (hc.congr hvs hbs) hf
+  -- then the validated rewrite
+  exact hL.trans (RefinesUnder.toRw (AtomSim.atomSim_refines hf₃ hg hA hcf hcg h1 h2))
+
+/-- **The segments of the log** between its phi eliminations (issue #69): each segment refines
+(`layers_refines`), and at each phi elimination the function with the `Phi` turned copy refines
+the logged function by copyelim's simulation. -/
+theorem segs_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
+    (hvs : T.values = (Interp.Table.ofRuleSet s).values)
+    (hbs : T.blocks = (Interp.Table.ofRuleSet s).blocks) {penv : PassEnv} {f0 : Func}
+    {out : PassOut} {ce' : CheckEnv} (hg : check ce' out.func = .ok ()) :
+    ∀ (evs : List RwEvent) (f : Func) (seg : Array RwEvent) {ce : CheckEnv},
+      check ce f = .ok () → RewriteCheck.segsOK penv T f0 out f seg evs = true →
+      RefinesFrom (RwPre penv.tables f0) out.tables out.func out.tables f
+  | [], _, _, _, hf, h => layers_refines hs hvs hbs h hf hg
+  | ev :: evs, f, seg, _, hf, h => by
+    cases ev with
+    | phielim v d pre =>
+      simp only [RewriteCheck.segsOK, Bool.and_eq_true] at h
+      obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+      have hh := checkOK_sound h2
+      have hh' := checkOK_sound h4
+      obtain ⟨hrel, hfr⟩ := CopyRelCheck.copyOK_spec h3
+      have R2 := CopyElim.refines_of_rel (tabs := out.tables)
+        ⟨⟨_, check_wf hh⟩, ⟨_, check_wf hh'⟩, Dom.certOK_of_check (check_domCert hh),
+          Dom.certOK_of_check (check_domCert hh'), hrel, hfr⟩
+      exact ((layers_refines (out := { out with func := RewriteCheck.dropInvalid pre }) hs hvs hbs
+        h1 hf hh).trans (RefinesUnder.toRw (R2.under Env.Mono))).trans
+        (segs_refines hs hvs hbs hg evs _ #[] hh' h5)
+    | _ =>
+      simp only [RewriteCheck.segsOK] at h
+      exact segs_refines hs hvs hbs hg evs f _ hf h
+
 theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
     RefinesFrom (RwPre penv.tables f) out.tables out.func penv.tables f := by
-  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, f₃, log₃, hc, hv⟩
+  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, T, hvs, hbs, log, hseg⟩
   · rw [he, ht]; exact RefinesUnder.toRw (RefinesUnder.refl _ _ _)
-  obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
-  obtain ⟨h1, h2⟩ := validate_termRef hv hs
-  -- the layers (nil-check eliminations, forwardings, struct-load expansions, struct-store splits)
-  obtain ⟨ce₃, hf₃, hL⟩ := chain_refines hs hc hf
-  -- then the validated rewrite
-  exact refinesFrom_of_tabsAgree hta
-    (hL.trans (RefinesUnder.toRw (AtomSim.atomSim_refines hf₃ hg hA hcf hcg h1 h2)))
+  exact refinesFrom_of_tabsAgree hta (segs_refines hs hvs hbs hg _ f #[] hf hseg)
 
 /-- `opt`, `middle opt` and `late opt` with the proven generic rules, validated. -/
 theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}

@@ -147,7 +147,7 @@ def ruleWhys (tabs : Tables) (t : Interp.Table) (f : Func) (log : Array RwEvent)
     | .copyArg v i src =>
       if let some x := M.get? v then
         if h : i < x.args.size then M := M.put v { x with args := x.args.set i src }
-    | .phielim v d => M := M.put v d
+    | .phielim v d _ => M := M.put v d
     | _ => pure ()
   return out
 

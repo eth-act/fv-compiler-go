@@ -1,6 +1,6 @@
 import GoFV.Proof.Pass.SccpTerm
 import GoFV.Proof.Pass.SccpDead
-import GoFV.Proof.Pass.SccpCopy
+import GoFV.Proof.Pass.CopyRelCheck
 import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Witness.Util
 
@@ -57,7 +57,7 @@ theorem sccp_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : Check
         · have hck' := Witness.ok_of_toBool hck
           have h2 := Dead.refines_of_deadRel (tabs := penv.tables)
             ⟨⟨_, check_wf hch⟩, ⟨_, check_wf hck'⟩, deadOK_spec hd⟩
-          obtain ⟨hrel, hfr⟩ := copyOK_spec hco
+          obtain ⟨hrel, hfr⟩ := CopyRelCheck.copyOK_spec hco
           have h3 := CopyElim.refines_of_rel (tabs := penv.tables)
             ⟨⟨_, check_wf hck'⟩, ⟨_, check_wf hg⟩, Dom.certOK_of_check (check_domCert hck'),
               Dom.certOK_of_check (check_domCert hg), hrel, hfr⟩

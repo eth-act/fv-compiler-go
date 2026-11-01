@@ -192,6 +192,20 @@ def nilWhy (tabs : Tables) (f g : Func) : String := Id.run do
       | none => return s!"nrel: v{x} missing"
   return "nrel: sched"
 
+/-- The first value copyelim's relation checker (`CopyCheck.copyOK`) rejects (diagnostics). -/
+def phiWhy (tabs : Tables) (f g : Func) : String := Id.run do
+  if !(DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+      g.valueTab.size == f.valueTab.size) then return "copy: cfg/ownAux/size"
+  for b in f.blocks do
+    let some fb := f.block? b | continue
+    for x in fb.values do
+      if !CopyCheck.copyValueOK tabs f g x then
+        let zs := match f.value? x with
+          | some fv => match zeroSizeAggregate tabs fv.type with | .ok true => " zero-size" | _ => ""
+          | none => ""
+        return s!"copy: v{x}{zs} {desc tabs f 3 x} → {desc tabs g 2 x}"
+  return "copy: blocks"
+
 open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdOK` fails for the `Load` `u` forwarded to `x`, at the first `Store` of its
 chain that stores `x` (diagnostics). -/
@@ -342,6 +356,24 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
+open GoFV.Rules RewriteCheck in
+/-- Which segment of `RewriteCheck.segsOK` fails (diagnostics; `k`: phi eliminations so far). -/
+def segsWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) (k : Nat) :
+    Func → Array RwEvent → List RwEvent → String
+  | f, seg, [] => layersWhy env tabs t f0 g layers f seg
+  | f, seg, .phielim v d pre :: evs =>
+    let ce : CheckEnv := { tabs := tabs, typs := env.typs }
+    let h := dropInvalid pre
+    let h' := phiElim h v d.args[0]!
+    let pk := s!"phielim#{k} v{v}"
+    if !layersOK env t f0 { func := h, tables := tabs } layers f seg then
+      s!"{pk}: {layersWhy env tabs t f0 h layers f seg}"
+    else if let .error e := check ce h then s!"{pk}: check pre {e}"
+    else if !CopyCheck.copyOK tabs h h' then s!"{pk}: {phiWhy tabs h h'}"
+    else if let .error e := check ce h' then s!"{pk}: check post {e}"
+    else s!"{pk} → {segsWhy env tabs t f0 g (k + 1) h' #[] evs}"
+  | f, seg, ev :: evs => segsWhy env tabs t f0 g k f (seg.push ev) evs
+
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite
 section, and those whose every rewrite section the checked variant reproduces. -/
 def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × Nat) :
@@ -406,7 +438,7 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
           | .ok (o2, _, log2) =>
             if RewriteCheck.accepts env t' input o2 log2 || o2.func == input then none else
             some (if !tabsAgree prev o2.tables input then "tables"
-              else layersWhy env o2.tables t' input o2.func RewriteCheck.layers input log2)
+              else segsWhy env o2.tables t' input o2.func 0 input #[] log2.toList)
           | .error e => some s!"error {e}"
         let fb := if proven.loads.isEmpty then some "" else fbOf t'
         let fb := if fb.isSome && !proven.structStores.isEmpty then fbOf t'' else fb
@@ -415,7 +447,7 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         else c := { c with fallback := c.fallback + 1 }
         let reason := if !tabsAgree prev out.tables input then
             "tables: the input tells the result's tables from its own (tabsAgree)"
-          else layersWhy env out.tables proven input out.func RewriteCheck.layers input log
+          else segsWhy env out.tables proven input out.func 0 input #[] log.toList
         IO.println s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"
         if provenSec then blockers := blockers.push s!"{name}: {reason.take 160}"
         if let some r2 := fb then
