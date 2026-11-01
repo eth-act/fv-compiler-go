@@ -409,6 +409,10 @@ theorem evalE_good {P : Val → Path → Prop} (vtys : List GoFV.Rules.GoTy) (or
         | (unfold GoFV.Proof.Rules.floatCmp at h
            split at h <;> first | (cases h; done) | (cases h; rfl))
         | (split at h <;> first | (cases h; done) | (cases h; rfl))
+        | (split at h
+           · cases h; rfl
+           · unfold GoFV.Proof.Rules.floatCmp at h
+             split at h <;> first | (cases h; done) | (cases h; rfl))
     unfold binE at hd
     split at hd
     · split at hd

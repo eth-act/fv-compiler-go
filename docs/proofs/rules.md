@@ -72,8 +72,10 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   least two fields whose first is the data pointer `.ptr el`: `t.Elem()` is the record
   `{PtrTo = .ptr el}`) and the pure
   `rewrite.go` helpers (`isPowerOfTwo`, `log*`, `ntz*`, `nlz*`, `bits.*`, `uaddOvf`,
-  `shiftIsBounded`, the `magic`/`divisible` helpers, …). Everything else — `x.Uses`,
-  `clobber`, `config` fields, `canRotate`, symbol helpers, floats, `x.Op` — comes from an
+  `shiftIsBounded`, the `magic`/`divisible` helpers, `reciprocalExact32/64`, …), and of the
+  float arithmetic on constants the division (`1/c`: IEEE 754, round to nearest even).
+  Everything else — `x.Uses`, `clobber`, `config` fields, `canRotate`, symbol helpers, other
+  float arithmetic, `x.Op` — comes from an
   `Oracle`, over which the obligation is universally quantified. So a rule whose correctness
   needs such an atom cannot be proved from this denotation (none of the P1 rules needs one);
   side conditions such as `x.Uses == 1 && clobber(x)` are simply ignored. The same holds on the
@@ -120,8 +122,9 @@ invariant of `GoFV.SSA.Sem`, of the checker or of the rule evaluator, not from t
 - **Argument shapes** (`Pat.argsOK`): the checked rewrite passes' validator checks them on the
   matched values' types (`RewriteCheck.ruleOK`), so `checkedRewrite_refines` discharges them
   from the validator; Semantics' argument checks in `GoFV.SSA.check` make the validator never
-  reject for the pointer ops. The `Eq<N>`/`Neq<N>` widths are checked by the validator only:
-  0 rejections for this reason on `quick-v1` and `full-v2` (#69 RuleProofs11).
+  reject for the pointer ops. The `Eq<N>`/`Neq<N>` widths and an `AddPtr`'s own pointer shape
+  (`generic.rules:1680`; the checker allows a `uintptr` `AddPtr`) are checked by the validator
+  only: 0 rejections for the widths on `quick-v1` and `full-v2` (#69 RuleProofs11).
 - **Typed oracle** (`Oracle.BoolTyped or := ∀ x, exprTy [] x = .bool → ∃ b, or.dv x = .bool b`):
   the oracle built from `GoFV.Rules.Eval.eval` answers a `bool`-typed expression with a
   boolean, i.e. `eval` of a well-typed `bool` expression that does not fail is a boolean.
@@ -1157,6 +1160,15 @@ and `argShapeOk` gives the float ops' arguments the integer shape of their width
   infinity and zero cases agree as well), so `Mul64F v 2 = Add64F v v` for every value
   (`fops_mul_two64`).
 - 1324–1326 (`x * 1 → x`, `x * -1 → -x`) are not proved: they change a NaN's encoding (#176).
+- `generic.rules:1331` `(Div64F x (Const64F [c])) && reciprocalExact64(c) => (Mul64F x
+  (Const64F [1/c]))` (#69, RuleProofs19): `evalE` models `reciprocalExact32/64` and the
+  division of float constants (`IEEE.div`, round to nearest even, as Go's `1/c`), and the
+  validator compares the rewritten `Const64F`'s auxint with it. `reciprocalExact64` makes `c`
+  `±2^(b-1023)` with `1 ≤ b ≤ 2045` (`recip_pack`); `1/c` is then exactly the power of two with
+  biased exponent `2046 - b` (`div_pow2_recip`, `round_pow2`), and `x / c` rounds `m * 2^56`
+  four binary places below where `x * (1/c)` rounds `m * 2^52` (`div_eq_mul_pow2` by
+  `round_scale`, both operand orders; NaN, infinity and zero cases agree). The 32-bit form
+  (`:1330`) is not proved (no firings).
 
 **Bounds checks, comparisons, selections** (#69, RuleProofs14).
 - `IsInBounds.lean`, `IsSliceInBounds.lean`: `rule_auto` closes `:240`, `:242`, `:247`, `:250`,
@@ -1167,6 +1179,13 @@ and `argShapeOk` gives the float ops' arguments the integer shape of their width
   for; `:278` waits on nonnegative slice lengths (#10).
 - `NeqConst.lean` (`:585`, four widths): `neqc_auto` closes `ofInt c ≠ ofInt d` for distinct
   auxints in range (`ofInt_ne_of_range`).
+- `EqPtr.lean`, `MemEqSame.lean` (#69, RuleProofs19): `:1687` (`IsNonNil (ConstNil)`;
+  `IsNonNil` is a `boolOp` of the validator's `natShape` tops now) and `:1680`
+  (`(NeqPtr (AddPtr p1 o1) p2) && isSamePtr(p1, p2) => (IsNonNil o1)`, `Rule.SoundT`: the
+  frame check makes `p1` and `p2` one leaf; `p + k` equals `p` iff `k = 0`,
+  `ptr_add_eq_self`). `:1680` needs the `AddPtr` at a pointer shape (`argShapeOk`): at `uintptr`
+  it compares by the concrete address, and a pointer that does not convert back to itself (a
+  frame temporary) differs from `Ptr.ofAddr` of its own address, so `p + 0 != p` would be true.
 - `IfaceCmp.lean` (`:790–793`): `eqFirst_refines`. The first words of the operands are
   compared before and after `ITab`'s `uintptr` / `SlicePtr`'s `*byte` retype; a retype to a
   pointer shape keeps a word's pointer, a retype to `uintptr` keeps a word of the 64-bit integer
