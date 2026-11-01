@@ -98,6 +98,15 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
         | some cr =>
           if ruleOK tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
           else return s!"rule v{v}: {ruleWhy tabs M cr.rule v defs.toList}"
+    | .copyArg v i src =>
+      match M.get? v with
+      | none => return s!"copyArg at missing v{v}"
+      | some x =>
+        if h : i < x.args.size then
+          if copyReach tabs M M.size x.args[i] src then
+            M := M.put v { x with args := x.args.set i src }
+          else return s!"copyArg v{v} {i}: v{x.args[i]} does not reach v{src}"
+        else return s!"copyArg v{v} {i}: no argument"
     | .phielim .. => return "phielim"
     | .blockRule .. => return "blockRule"
     | _ => pure ()

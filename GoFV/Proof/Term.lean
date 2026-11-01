@@ -61,4 +61,20 @@ def listedDefs (h : Func) (x : ID) : Option Value :=
 hypothesis. -/
 def RetypeShapes : Prop := ∀ (v : Val) (t : Ty), t ≠ .other → (v.retype t).hasTy t = true
 
+/-- The arguments of every atom listed in `g` (phis, roots, frame values) refine, as terms, those
+of the atom with the same ID in `f`, which has the same fields. What the rewrite validator
+establishes (`GoFV.Proof.Pass.Rewrite.validate_termRef`) and the atom simulation consumes. -/
+def AtomArgsRef (tabs : Tables) (f g : Func) : Prop :=
+  ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
+    termOp u.op = false →
+    ∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ u'.type = u.type ∧ u'.auxInt = u.auxInt ∧
+      u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
+      ∀ i < u.args.size, TermRef f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!
+
+/-- The controls of every block of `g` refine, as terms, those of the same block of `f`. -/
+def ControlsRef (tabs : Tables) (f g : Func) : Prop :=
+  ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
+    fb.controls.size = gb.controls.size ∧
+    ∀ k < gb.controls.size, TermRef f.value? tabs fb.controls[k]! (listedDefs g) tabs gb.controls[k]!
+
 end GoFV.Proof.Term

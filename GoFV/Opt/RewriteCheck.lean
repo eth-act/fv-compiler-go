@@ -16,6 +16,9 @@ replays the log on a map of definitions, starting from the input `f`:
   if boolean, the fields of the built nodes otherwise), the top op produces its value's shape
   (`natShape`), every leaf that is a pure value too, and the built definitions are those of
   `Rule.Sound`'s result denotation (`resDen`); only in-place `build` and `copy` results;
+* a copy-argument replacement (`copyArg v i src`, copy elimination before a rule matches) is
+  replayed on the definitions when `src` is reached from the old argument through `Copy`s of
+  compatible shape (`copyReach`);
 * a phi elimination or block rule rejects;
 * finally every value listed in the output `g` has the replayed definition up to copies:
   each argument (and each control of `g`) is the replayed one or reached from it through
@@ -346,24 +349,6 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         leavesOK tabs M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs
 
-/-- Replay the log on the definitions of `f`; `none` if an event is not validated. -/
-def replay (tabs : Tables) (t : Interp.Table) : Defs → List RwEvent → Option Defs
-  | M, [] => some M
-  | M, .rule v i _ defs :: evs =>
-    match M.get? v with
-    | none => none
-    | some x =>
-      match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
-      | none => none
-      | some cr =>
-        if ruleOK tabs M cr.rule v defs.toList then
-          replay tabs t (defs.foldl (fun M u => M.put u.id u) M) evs
-        else none
-  | M, .copyArg .. :: evs => replay tabs t M evs
-  | M, .control .. :: evs => replay tabs t M evs
-  | _, .phielim .. :: _ => none
-  | _, .blockRule .. :: _ => none
-
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
 pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/
 def copyCompat (s t : Sem.Ty) : Bool :=
@@ -384,6 +369,32 @@ def copyReach (tabs : Tables) (M : Defs) : Nat → ID → ID → Bool
       copyReach tabs M n x.args[0]! w
     | none => false
 
+/-- Replay the log on the definitions of `f`; `none` if an event is not validated. -/
+def replay (tabs : Tables) (t : Interp.Table) : Defs → List RwEvent → Option Defs
+  | M, [] => some M
+  | M, .rule v i _ defs :: evs =>
+    match M.get? v with
+    | none => none
+    | some x =>
+      match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
+      | none => none
+      | some cr =>
+        if ruleOK tabs M cr.rule v defs.toList then
+          replay tabs t (defs.foldl (fun M u => M.put u.id u) M) evs
+        else none
+  | M, .copyArg v i src :: evs =>
+    match M.get? v with
+    | none => none
+    | some x =>
+      if h : i < x.args.size then
+        if copyReach tabs M M.size x.args[i] src then
+          replay tabs t (M.put v { x with args := x.args.set i src }) evs
+        else none
+      else none
+  | M, .control .. :: evs => replay tabs t M evs
+  | _, .phielim .. :: _ => none
+  | _, .blockRule .. :: _ => none
+
 /-- A value that is not a term node: phis, roots and frame-dependent values (`termOp`). -/
 @[inline] def isAtom (x : Value) : Bool := !termOp x.op
 
@@ -396,7 +407,8 @@ def atomsOf (h : Func) (b : Block) : List ID :=
 /-- Atoms whose evaluation neither panics nor changes memory, which the rewrite pass may delete
 when they are dead. -/
 def dropAtom (op : Op) : Bool :=
-  op matches .Phi | .Arg | .ArgIntReg | .SP | .LocalAddr | .Addr | .ConstString
+  op matches .Phi | .Arg | .ArgIntReg | .SP | .LocalAddr | .Addr | .ConstString |
+    .GetClosurePtr | .GetCallerSP
 
 /-- `f` and `g` have the same blocks and terminators, the atoms of `g` are atoms of `f` with the
 same fields and block, the atoms only `f` has are droppable (`dropAtom`), and each block
