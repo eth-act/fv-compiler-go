@@ -29,7 +29,7 @@ structure Counts where
   shown : Array String := #[]
   deriving Inhabited
 
-def analyze (ce : CheckEnv) (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run do
+def analyze (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run do
   let some run := plainRun f b | return k
   let (g, ch) := fuseBlockPlain f b
   if !ch then return k
@@ -37,7 +37,7 @@ def analyze (ce : CheckEnv) (name : String) (f : Func) (b : ID) (k : Counts) : C
   if run.length == 2 then k := { k with len2 := k.len2 + 1 }
   else if run.length == 3 then k := { k with len3 := k.len3 + 1 }
   else k := { k with len4 := k.len4 + 1 }
-  if Plain.stepOK ce f g b then k := { k with accepted := k.accepted + 1 }
+  if Plain.stepOK f g b then k := { k with accepted := k.accepted + 1 }
   else
     k := { k with rejected := k.rejected + 1 }
     if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} run {run}" }
@@ -115,7 +115,6 @@ def main (args : List String) : IO UInt32 := do
           nosplit := e.nosplit, pgohot := e.pgohot, config := e.config, typs,
           typeOrder := default, tables := prev }
       let k := ks[idx]!.2
-      let ce : CheckEnv := { tabs := prev, typs }
       let name := s!"{path}"
       let r : Except String (Func × Counts) := do
         let tv ← typeView env
@@ -128,14 +127,14 @@ def main (args : List String) : IO UInt32 := do
             let (f, c1, k) := cmp canOptIntInRange f k
             let (f, c2, k) := cmp canOptSingleBitDifference f k
             let (f, c3, k) := cmp canOptNanCheck f k
-            let k := analyze ce name f b k
+            let k := analyze name f b k
             let (f, c4) := fuseBlockPlain f b
             pure (f, c1 || c2 || c3 || c4, k)) none roundFuel f0 k
         | "late fuse" =>
           let pv ← Prove.Prover.ofEnv env
           loop (fun f b k => do
             let (f, c1) ← fuseBlockIf tv f b
-            let k := analyze ce name f b k
+            let k := analyze name f b k
             let (f, c2) := fuseBlockPlain f b
             pure (f, c1 || c2, k)) (some (fuseBranchRedirect pv)) roundFuel f0 k
         | _ =>
@@ -143,7 +142,7 @@ def main (args : List String) : IO UInt32 := do
           let isBool (t : TypeRef) : Bool := (env.type? t).map (·.kind) == some .BOOL
           let f1 := ShortCircuit.constPhiArgs isBool env.typeOrder.eq boolT f0
           loop (fun f b k => do
-            let k := analyze ce name f b k
+            let k := analyze name f b k
             let (f, c1) := fuseBlockPlain f b
             let (f, c2) := ShortCircuit.shortcircuitBlock f b
             pure (f, c2 || c1, k)) none roundFuel f1 k
