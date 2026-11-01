@@ -171,7 +171,12 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
   -- memcombine
   · exact fun _ _ _ _ _ h hf hg _ => MemCombine.memcombine_refines h hf hg
   -- writebarrier
-  · exact fun _ _ _ _ _ h hf hg _ => writebarrier_refines h hf hg
+  · intro _ _ _ _ _ h hf hg hd
+    refine writebarrier_refines ?_ hf hg
+    simp only [wbGuard] at hd
+    simp only [writebarrierPass] at h
+    rw [h] at hd
+    simp only [writebarrierChecked, h, hd, bind, Except.bind, ↓reduceIte, pure, Except.pure]
   · trivial
   · trivial
   · trivial

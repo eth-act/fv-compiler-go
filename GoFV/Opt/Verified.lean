@@ -144,6 +144,14 @@ def proveMaxValues : Nat := 20000
 the input, which is sound; it keeps `proveChecked`'s cost bounded on generated giants. -/
 def proveGuard (_ : PassEnv) (f : Func) : Bool := f.valueTab.size ≤ proveMaxValues
 
+/-- `writebarrier_refines`' acceptance test (`writebarrierChecked` without the error): the stock
+result is accepted by `WBCheck.wbOK` and the input runs alike in its tables. A rejected result is
+kept (the pass is required) and marked unverified. -/
+def wbGuard (env : PassEnv) (f : Func) : Bool :=
+  match writebarrier env f with
+  | .ok out => tabsAgree env.tables out.tables f && WBCheck.wbOK out.tables f out.func
+  | .error _ => true
+
 def deadcodeStep : Step := .proven deadcodePass .refines deadGuard
 def optStep : Step := .proven optChecked .rw noGuard
 
@@ -186,7 +194,7 @@ def stockPasses : Array StockPass := #[
   { name := "dse", step := .proven dsePass .refines dseFrag },
   { name := "memcombine", step := .proven memcombineChecked .mono noGuard },
   { name := "writebarrier", required := true,
-    step := .proven writebarrierChecked .wb noGuard },
+    step := .proven writebarrierPass .wb wbGuard },
   { name := "insert resched checks", disabled := reschedChecksDisabled,
     step := .stock reschedChecksPass },
   { name := "cpufeatures", requiredSimd := true, disabled := simdDisabled,
