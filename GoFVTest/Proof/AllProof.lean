@@ -137,6 +137,7 @@ import GoFV.Proof.Pass.ZCSERel
 import GoFV.Proof.Pass.ZCSESched
 import GoFV.Proof.Pass.ZCSESetup
 import GoFV.Proof.PhiMono
+import GoFV.Proof.PtrAddr
 import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
 import GoFV.Proof.Retype

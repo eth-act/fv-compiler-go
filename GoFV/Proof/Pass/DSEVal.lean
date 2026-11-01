@@ -62,7 +62,7 @@ theorem ptrAlloc_val {fr : Frame} {A : ID → Prop} (H : Avail env tabs f fr A) 
   obtain ⟨bv, hbv⟩ := H.reg hAb
   have hb := allocOf_val H hAb h hbv
   subst hb
-  have := (hrel _ _ hv hbv).2 _ _ rfl
+  have := ((hrel _ _ hv hbv).2 _ _ rfl).resolve_left nofun
   cases this
   simp
 
