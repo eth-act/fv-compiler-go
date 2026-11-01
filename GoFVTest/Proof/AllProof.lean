@@ -490,6 +490,7 @@ import GoFV.Proof.Witness.DecPhis
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Decompose
+import GoFV.Proof.Witness.DomCertFast
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
 import GoFV.Proof.Witness.FormatBool

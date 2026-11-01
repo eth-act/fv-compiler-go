@@ -364,9 +364,37 @@ avoiding): the problem, the trick, the numbers, where it is used.
   unchecked port before #121/#139): short circuit 50.4/31.4 → 20.4/13.3 s (unchecked
   4.8/2.8 s), early fuse 27.7/17.3 → 10.0/6.4 s (1.9/1.2 s), branchelim 21.9/15.4 → 8.2/5.2 s
   (3.0/1.7 s). What remains of short circuit's gap is its rewrite checkers, not the input check.
-- **What is left:** `DomCert.make` (Lengauer–Tarjan + postorder on a `cfgView` copy) is half of
-  the slim check; its proofs rely on `make f = ofView (cfgView f)` (`make_eq` across functions
-  with the same CFG), so speeding it up needs a `@[csimp]` lemma, not a new definition.
+- **What was left:** `DomCert.make` was half of the slim check; done in the next entry.
+
+#### Dominator certificate: textbook Lengauer–Tarjan, one ancestor path per block (#147)
+- **Ablation** (main 6b3d35f, `pass-parity`, same session, min of 3; 400 largest full-v4
+  files, `-j1`): short circuit 2.7 s as is, 1.4 s without the `wfDomOK` input guard, 1.3 s
+  without step checkers, 0.4 s without both; early fuse 1.9/0.9/0.8/0.2; branchelim
+  1.4/0.6/0.7/0.2; late fuse (per-If `checkOK`) 3.2 → 0.7 s without step checkers. Input guard
+  and step checkers cost about the same on big files; on quick-v3 the step checkers dominate
+  short circuit (0.7 → 0.4 s without them vs 0.5 s without the guard). The earlier "input check
+  dominates" was measured with the full `check` guard (before `wfDomCheck`), "per-rewrite
+  checkers" on quick: both were right for their setting.
+- **Where `wfDomCheck` went** (big400 short-circuit inputs): `wfCheck` 0.3 s, `DomCert.make`
+  0.4–0.9 s (Go's verbatim `dominatorsLTOrig`: never-emptied buckets are rescanned once per DFS
+  child), `usesOK` 0.6–1.1 s (103 M tree-walk steps, one walk per use).
+- **Trick:** `DomCert.make` uses its own `ltIdom` (Go's algorithm with buckets emptied; any
+  correct tree passes the certificate checks, so nothing about it is proven; depths along its
+  DFS preorder, no postorder) — a definition change, allowed because proofs use only `make_eq`
+  (`make` depends on `cfgView f` only). `@[csimp] make_eq_ofView` drops the `cfgView` copy;
+  `@[csimp] usesOK_eq_usesOKFast` keeps one ancestor path array along the block list
+  (`fixPath` rewrites only the part that differs from the previous block) for functions with
+  ≥ 32 blocks. Read the path with `getD`, not `p[i]? == some a`: the `Option` allocations made
+  the first version 50% slower than the walks on quick. Cooper–Harvey–Kennedy measured equal to
+  textbook LT (0.16 vs 0.13 s on big400), not adopted.
+- **Effect** (`check-bench`): big400 short-circuit inputs `wfDomCheck` 1.33 → 0.61 s (make
+  0.43 → 0.14, usesOK 0.55 → 0.17); quick-v3 all sections 3.40 → 3.03 s (`DomCert.check` 2.21 →
+  1.77); full-v4 3,185,589 sections 78.9 → 67.8 s (`DomCert.check` 56.0 → 39.8, make 28.0 →
+  15.7; the second run was ~13% more loaded, `checkGo` 205 → 232 s). Same trees as
+  `Analysis.dominators` on every section; `check` and `wfDomCheck` reject nothing. Pass time,
+  big400, 8 alternated runs each: short circuit min 2.4 → 1.9 s, early fuse 1.5 → 1.2 s,
+  branchelim 1.0 → 0.8 s (−20%); quick/full within load noise. Kernel-evaluated witnesses
+  that run `check`/`wfDomOK` got faster too (9 modules, median CPU 36.0 → 29.3 s).
 
 #### Rule lemmas: kernel "deep recursion" from `rfl` simp lemmas (#69, RuleProofs10)
 - **Problem:** `divmod.rules:171/180/206/232` and `generic.rules:369/372` elaborated, but the
