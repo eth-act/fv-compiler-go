@@ -99,8 +99,8 @@ def mkTree (sh : Array Ty) (g : Func) (nw : ID → Bool) : Nat → ID → Ty →
       match t with
       | .agg fs _ =>
         if isMake w.op && w.args.size == fs.length then
-          ((fs.zip w.args.toList).mapM fun (ft, a) =>
-            if nw a then mkTree sh g nw n a ft.2 else none).map List.flatten
+          ((fs.zip w.args.toList).mapM fun (e : (Nat × Ty) × ID) =>
+            if nw e.2 then mkTree sh g nw n e.2 e.1.2 else none).map List.flatten
         else none
       | .empty => if w.op == .Empty then some [] else none
       | t => if atom t then some [x] else none

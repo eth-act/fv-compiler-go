@@ -38,7 +38,7 @@ def callWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : String 
     if !(w.op == op) then "op"
     else if !regParamsOK tabs abi.params.toList then
       if abi.params.toList.any (·.regs.isEmpty) then "stack param"
-      else if abi.params.toList.any (fun p => !Proof.ABI.wf (tabs.ty p.type)) then "param shape not wf"
+      else if abi.params.toList.any (fun p => !GoFV.Proof.ABI.wf (tabs.ty p.type)) then "param shape not wf"
       else "regs ≠ leaves"
     else if !piecesOK tabs sh f g ins (u.args.extract k (n - 1)).toList
         (w.args.extract k (w.args.size - 1)).toList then "pieces"
@@ -90,7 +90,7 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
   if g.ownAux != f.ownAux then return "ownAux"
   if !regParamsOK tabs outs then
     return if outs.any (·.regs.isEmpty) then "own: stack result" else "own: result shape"
-  if !((leafTys tabs outs).length != outs.length || outs.all (fun p => Proof.ABI.atom (tabs.ty p.type))) then
+  if !((leafTys tabs outs).length != outs.length || outs.all (fun p => GoFV.Proof.ABI.atom (tabs.ty p.type))) then
     return "own: #pieces = #results"
   for b in f.blocks do
     if !blockOK tabs sh f g b then return blockWhy tabs sh f g b
