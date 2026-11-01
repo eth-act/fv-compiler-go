@@ -189,6 +189,11 @@ import GoFV.Proof.Pass.SccpCopy
 import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
+import GoFV.Proof.Pass.ShortCircCpa
+import GoFV.Proof.Pass.ShortCircCpaMid
+import GoFV.Proof.Pass.ShortCircCpaRel
+import GoFV.Proof.Pass.ShortCircCpaSim
+import GoFV.Proof.Pass.ShortCircCpaWF
 import GoFV.Proof.Pass.ZCSE
 import GoFV.Proof.Pass.ZCSEBlock
 import GoFV.Proof.Pass.ZCSEEnter
@@ -391,6 +396,7 @@ import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
+import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
