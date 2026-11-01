@@ -96,6 +96,33 @@ theorem boolToUint8_hasTy (args : List Val) : (Conv.boolToUint8 args).hasTy (.in
   · split <;> rfl
   · rfl
 
+theorem fbin_hasTy (g : (f : IEEE.Fmt) → IEEE.Bits f → IEEE.Bits f → IEEE.Bits f) (w : Width)
+    (args : List Val) : (FOps.bin g w args).hasTy (.int w) = true := by
+  cases w <;> first | rfl | exact int2_hasTy (fun _ _ => rfl) _
+
+theorem fun_hasTy (g : (f : IEEE.Fmt) → IEEE.Bits f → IEEE.Bits f) (w : Width)
+    (args : List Val) : (FOps.un g w args).hasTy (.int w) = true := by
+  cases w <;> first | rfl | exact int1_hasTy (fun _ => rfl) _
+
+theorem fcmp_hasTy (c : IEEE.Cmp → Bool) (w : Width) (args : List Val) :
+    (FOps.cmp c w args).hasTy .bool = true := by
+  cases w <;> first | rfl | exact int2_hasTy (fun _ _ => rfl) _
+
+theorem fcmpC_hasTy (c : IEEE.Cmp → Bool) (w : Width) (args : List Val) :
+    (FOps.cmpC c w args).hasTy .bool = true := by
+  cases w <;> first | rfl | exact int2_hasTy (fun _ _ => rfl) _
+
+theorem ffma_hasTy (w : Width) (args : List Val) : (FOps.fma w args).hasTy (.int w) = true := by
+  cases w <;> first | rfl | exact int3_hasTy (fun _ _ _ => rfl) _
+
+theorem fofInt_hasTy (u : Bool) (w w' : Width) (args : List Val) :
+    (FOps.ofInt u w w' args).hasTy (.int w') = true := by
+  cases w' <;> first | rfl | exact int1_hasTy (fun _ => rfl) _
+
+theorem ftoInt_hasTy (u : Bool) (w' w : Width) (args : List Val) :
+    (FOps.toInt u w' w args).hasTy (.int w') = true := by
+  cases w <;> first | rfl | exact int1_hasTy (fun _ => by simp [Val.hasTy]) _
+
 /-- Closes `(evalPure op ty …).hasTy ty = true` for a concrete op and shape. -/
 macro "natshape_close" : tactic => `(tactic| first
   | exact int2_hasTy (fun _ _ => by (repeat' split) <;> rfl) _
@@ -110,6 +137,13 @@ macro "natshape_close" : tactic => `(tactic| first
   | exact rotateLeft_hasTy _ _
   | exact boolToUint8_hasTy _
   | exact eqPtr_hasTy _ _
+  | exact fbin_hasTy _ _ _
+  | exact fun_hasTy _ _ _
+  | exact fcmp_hasTy _ _ _
+  | exact fcmpC_hasTy _ _ _
+  | exact ffma_hasTy _ _
+  | exact fofInt_hasTy _ _ _ _
+  | exact ftoInt_hasTy _ _ _ _
   | rfl)
 
 /-- **`natShape`**: the raw value of an op checked by `natShape` has the shape `ty`. -/

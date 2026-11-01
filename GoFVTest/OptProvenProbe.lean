@@ -101,7 +101,9 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
           if structLoadOK tabs M v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
           else return s!"v{v}: no rule of the row, not a struct-load expansion: {x.op.name}<{repr (tabs.ty x.type)}> ({defs.size} defs)"
         | some cr =>
-          if ruleOK tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
+          if (GoFV.Proof.Rules.makeSelShape cr.rule && makeSelOK tabs M v defs.toList) ||
+              ruleOK tabs M cr.rule v defs.toList then
+            M := defs.foldl (fun M u => M.put u.id u) M
           else return s!"rule v{v}: {ruleWhy tabs M cr.rule v defs.toList}"
     | .copyArg v i src =>
       match M.get? v with

@@ -6,24 +6,27 @@ import GoFV.Proof.Rules.Tactic
 `Rule.Sound` considers only the written argument order of a pattern. The interpreter also
 matches a `commute` node (rulegen's commutative expansion) with its first two arguments
 swapped; this module proves that the value of every phase-P1 op that a pattern of the four
-rule files marks `commute`, and of the pointer comparisons `EqPtr`/`NeqPtr` (#156: same block
-and offset), does not depend on that order (`commOpsP1_sound`), so a swapped match is an
-unswapped match of the same value.
+rule files marks `commute`, of the pointer comparisons `EqPtr`/`NeqPtr` (#156: same block
+and offset) and of the commutative float ops `Add`/`Mul`/`Eq`/`Neq{32,64}F` (their operands
+in encoding order, `FOps.ordered_comm`) does not depend on that order (`commOpsP1_sound`), so
+a swapped match is an unswapped match of the same value.
 
-The other ops marked `commute` (`Add32F`, `Add64F`, `Mul32F`, `Mul64F`, `Eq32F`, `Eq64F`,
-`Neq32F`, `Neq64F`, `MemEq`) belong to later phases; their lemmas come with their semantics.
+The other op marked `commute` (`MemEq`) belongs to a later phase; its lemma comes with its
+semantics.
 -/
 
 namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem
 
-/-- The phase-P1 ops some pattern of the four rule files marks `commute`, and `EqPtr`/`NeqPtr`. -/
+/-- The phase-P1 ops some pattern of the four rule files marks `commute`, `EqPtr`/`NeqPtr` and
+the commutative float ops. -/
 def commOpsP1 : List Op :=
   [.Add8, .Add16, .Add32, .Add64, .Add64carry, .And8, .And16, .And32, .And64, .AndB, .Eq8,
    .Eq16, .Eq32, .Eq64, .EqB, .Mul8, .Mul16, .Mul32, .Mul64, .Mul32uhilo, .Mul32uover,
    .Mul64uhilo, .Mul64uover, .Neq8, .Neq16, .Neq32, .Neq64, .NeqB, .Or8, .Or16, .Or32, .Or64,
-   .OrB, .Xor8, .Xor16, .Xor32, .Xor64, .EqPtr, .NeqPtr]
+   .OrB, .Xor8, .Xor16, .Xor32, .Xor64, .EqPtr, .NeqPtr, .Add32F, .Add64F, .Mul32F, .Mul64F,
+   .Eq32F, .Eq64F, .Neq32F, .Neq64F]
 
 /-- The value of `o` does not depend on the order of its first two arguments. -/
 def CommSound (o : Op) : Prop :=
@@ -94,14 +97,17 @@ theorem commOpsP1_sound : ∀ o ∈ commOpsP1, CommSound o := by
   simp only [commOpsP1, List.mem_cons, List.not_mem_nil, or_false] at ho
   rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
     rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+    rfl | rfl | rfl | rfl <;>
   simp only [reduceEvalPure, Sem.Int.add, Sem.Int.mul, Sem.Int.and, Sem.Int.or, Sem.Int.xor,
     Sem.Int.mulhilo, Sem.Int.mulover, Sem.Int.addcarry, Cmp.eq, Cmp.neq, Cmp.eqB,
-    Cmp.neqB] <;>
+    Cmp.neqB, FOps.add, FOps.mul, FOps.eq, FOps.neq, FOps.bin, FOps.cmpC] <;>
   first
   | exact int2_comm _ _ (fun x y => by
-      simp only [BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, BitVec.or_comm,
-        BitVec.xor_comm, Bool.beq_comm, bne_comm, Nat.mul_comm, eq_comm]) _ _ _
+      first
+      | rw [FOps.ordered_comm]
+      | simp only [BitVec.add_comm, BitVec.mul_comm, BitVec.and_comm, BitVec.or_comm,
+          BitVec.xor_comm, Bool.beq_comm, bne_comm, Nat.mul_comm, eq_comm]) _ _ _
   | exact int3_comm _ _ (fun x y z => by simp only [Nat.add_comm x.toNat y.toNat]) _ _ _
   | exact bool2_comm _ (fun x y => by cases x <;> cases y <;> rfl) _ _ _
   | exact andB_comm _ _ _
