@@ -190,37 +190,48 @@ def StRel (tabs : Tables) (D : ID → Option Value) (s : ID) (r : StoreRec) : Pr
   ∃ v, D s = some v ∧ v.args.size = 3 ∧ r.1 = v.args[0]! ∧
     r.2.1 = splitP tabs D 64 v.args[0]! none 0 ∧ storedBytes tabs D v = some r.2.2
 
+/-- Two lists related elementwise. -/
+inductive Pairs {α β : Type} (Rel : α → β → Prop) : List α → List β → Prop where
+  | nil : Pairs Rel [] []
+  | cons {a : α} {b : β} {l : List α} {l' : List β} : Rel a b → Pairs Rel l l' →
+      Pairs Rel (a :: l) (b :: l')
+
+theorem mapM_some_cons {α β : Type} {F : α → Option β} {a : α} {l : List α} {out : List β}
+    (h : (a :: l).mapM F = some out) : ∃ b bs, F a = some b ∧ l.mapM F = some bs ∧ out = b :: bs := by
+  rw [List.mapM_cons] at h
+  cases ha : F a with
+  | none => simp [ha] at h
+  | some b =>
+    cases hl : l.mapM F with
+    | none => simp [ha, hl] at h
+    | some bs => simp [ha, hl] at h; exact ⟨b, bs, rfl, rfl, h.symm⟩
+
 theorem storeRecs_rel {tabs : Tables} {D : ID → Option Value} :
     ∀ {S : List ID} {recs : List StoreRec}, storeRecs tabs D S = some recs →
-      List.Forall₂ (StRel tabs D) S recs
+      Pairs (StRel tabs D) S recs
   | [], recs, h => by simp [storeRecs] at h; subst h; exact .nil
   | s :: S, recs, h => by
-    unfold storeRecs at h
-    rw [List.mapM_cons] at h
+    obtain ⟨r, rs, hr, hrs, rfl⟩ := mapM_some_cons h
+    refine .cons ?_ (storeRecs_rel hrs)
     cases hs : D s with
-    | none => simp [hs] at h
+    | none => rw [hs] at hr; cases hr
     | some v =>
-      by_cases h3 : v.args.size = 3
-      · cases hb : storedBytes tabs D v with
-        | none => simp [hs, h3, hb] at h
-        | some r =>
-          cases hr : List.mapM (fun s => (D s).bind fun sv =>
-              if sv.args.size == 3 then (storedBytes tabs D sv).map fun r =>
-                (sv.args[0]!, splitP tabs D 64 sv.args[0]! none 0, r) else none) S with
-          | none => simp [hs, h3, hb, hr] at h
-          | some rs =>
-            simp [hs, h3, hb, hr] at h
-            subst h
-            exact .cons ⟨v, hs, h3, rfl, rfl, hb⟩ (storeRecs_rel hr)
-      · simp [hs, h3] at h
+      rw [hs] at hr
+      simp only [Option.bind_some] at hr
+      split at hr
+      · rename_i h3
+        simp only [beq_iff_eq] at h3
+        obtain ⟨r', hb, rfl⟩ := Option.map_eq_some_iff.1 hr
+        exact ⟨v, hs, h3, rfl, rfl, hb⟩
+      · cases hr
 
-theorem forall₂_mem {α β : Type} {Rel : α → β → Prop} :
-    ∀ {l : List α} {l' : List β}, List.Forall₂ Rel l l' → ∀ a ∈ l, ∃ b ∈ l', Rel a b
+theorem pairs_mem {α β : Type} {Rel : α → β → Prop} :
+    ∀ {l : List α} {l' : List β}, Pairs Rel l l' → ∀ a ∈ l, ∃ b ∈ l', Rel a b
   | _, _, .nil, _, h => absurd h List.not_mem_nil
   | _, _, .cons hr t, a, h => by
     rcases List.mem_cons.1 h with rfl | h
     · exact ⟨_, List.mem_cons_self, hr⟩
-    · obtain ⟨b, hb, hr'⟩ := forall₂_mem t a h
+    · obtain ⟨b, hb, hr'⟩ := pairs_mem t a h
       exact ⟨b, List.mem_cons_of_mem _ hb, hr'⟩
 
 /-! ## A stored value's bytes -/
@@ -238,6 +249,7 @@ theorem recBytes {tabs : Tables} {D : ID → Option Value} {ρ : ID → Val} (hT
         ∀ t < r.1.length, ∃ c, C[t]? = some c ∧
           (encode (auxTy tabs v.aux) (den D tabs ρ K v.args[1]!))[t]? = some (.b c)) := by
   unfold storedBytes at hsb
+  dsimp only at hsb
   cases hx : D v.args[1]! with
   | none => rw [hx] at hsb; cases hsb
   | some xv =>
@@ -249,7 +261,7 @@ theorem recBytes {tabs : Tables} {D : ID → Option Value} {ρ : ID → Val} (hT
       split at hsb
       · rename_i hww
         obtain ⟨rfl, h8⟩ := hww
-        cases hs : symOf tabs D false srcFuel v.args[1]! with
+        cases hs : symOf tabs D false false srcFuel v.args[1]! with
         | none => rw [hs] at hsb; cases hsb
         | some r' =>
           rw [hs] at hsb
@@ -263,7 +275,7 @@ theorem recBytes {tabs : Tables} {D : ID → Option Value} {ρ : ID → Val} (hT
             cases d with
             | poison =>
               rw [encode_int_poison]
-              exact ⟨by simp [hlen], .inl fun t htl => by simp [hlen] at htl ⊢; omega⟩
+              exact ⟨by simp [hlen], .inl fun t htl => by rw [hlen] at htl; simp [htl]⟩
             | int w0 X =>
               simp only [Val.hasTy, beq_iff_eq] at hty
               subst hty
@@ -275,7 +287,8 @@ theorem recBytes {tabs : Tables} {D : ID → Option Value} {ρ : ID → Val} (hT
               · simp [bytesOf, htl]
               · simp [htl]
             | ptr p =>
-              cases w0 : w <;> simp [w0, Width.bytes] at h8 <;> simp [Val.hasTy, w0] at hty
+              exfalso
+              cases w <;> simp [Val.hasTy] at hty <;> revert h8 <;> decide
             | _ => simp [Val.hasTy] at hty
           · cases hsb
       · cases hsb
@@ -290,10 +303,17 @@ theorem recBytes {tabs : Tables} {D : ID → Option Value} {ρ : ID → Val} (hT
           refine ⟨rfl, .inl fun t htl => ?_⟩
           simp at htl; subst htl; simp [den, encode, Ty.size]
         | succ k =>
-          rw [den_term hx (by rw [hc.1]; rfl) (by rw [hc.1]; rfl), hc.1, ht]
-          refine ⟨rfl, .inr ⟨_, rfl, fun l hl => by cases hl, fun t htl => ?_⟩⟩
-          simp at htl; subst htl
-          simp [semL, SB.sem, evalPure, Conv.constBool, Val.retype, encode]
+          have hcb : evalPure .ConstBool Ty.bool xv.auxInt xv.aux
+              (xv.args.toList.map (den D tabs ρ k)) = .bool (xv.auxInt != 0) := rfl
+          have hv : den D tabs ρ (k + 1) v.args[1]! = .bool (xv.auxInt != 0) := by
+            rw [den_term hx (by rw [hc.1]; rfl) (by rw [hc.1]; rfl), hc.1, ht, hcb]
+            rfl
+          rw [hv]
+          refine ⟨rfl, .inr ⟨[if (xv.auxInt != 0) = true then 1 else 0], rfl,
+            fun l hl => (List.not_mem_nil hl).elim, fun t htl => ?_⟩⟩
+          simp only [List.length_cons, List.length_nil] at htl
+          obtain rfl : t = 0 := by omega
+          cases (xv.auxInt != 0) <;> exact ⟨_, rfl, rfl⟩
       · cases hsb
     · cases hsb
 
