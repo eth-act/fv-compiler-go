@@ -154,6 +154,11 @@ import GoFV.Proof.Pass.RewriteTermPat
 import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Pass.RewriteTermRule
 import GoFV.Proof.Pass.RewriteTermStep
+import GoFV.Proof.Pass.Sccp
+import GoFV.Proof.Pass.SccpCopy
+import GoFV.Proof.Pass.SccpDead
+import GoFV.Proof.Pass.SccpInv
+import GoFV.Proof.Pass.SccpTerm
 import GoFV.Proof.Pass.ZCSE
 import GoFV.Proof.Pass.ZCSEBlock
 import GoFV.Proof.Pass.ZCSEEnter
@@ -347,6 +352,7 @@ import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.TabsAgree
