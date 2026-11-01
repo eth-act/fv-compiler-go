@@ -31,21 +31,24 @@ def npOf (f : Func) (B : Block) (x : ID) : Bool :=
     | some v => v.op != .Phi && Sem.prio v.op != 0
     | none => false
 
-/-- The compiled `tabEq`: entries that are the same object are equal, so only the others are
-compared (whole tables first, then entry by entry). -/
-unsafe def tabEqImpl {α : Type} [DecidableEq α] (a b : Array α) (skip : Nat → Bool) : Bool :=
-  Id.run do
-    if ptrAddrUnsafe a == ptrAddrUnsafe b then return true
-    if a.size != b.size then return false
-    for h : i in [0:a.size] do
-      if h2 : i < b.size then
-        if ptrAddrUnsafe a[i] != ptrAddrUnsafe b[i] && !skip i && !decide (a[i] = b[i]) then
-          return false
-    return true
+theorem nat_all_true {n : Nat} {f : (i : Nat) → i < n → Bool} (h : ∀ i (hi : i < n), f i hi = true) :
+    Nat.all n f = true := by
+  induction n with
+  | zero => rfl
+  | succ n ih =>
+    rw [Nat.all_succ, Bool.and_eq_true]
+    exact ⟨ih fun i hi => h i (by omega), h n (by omega)⟩
 
-/-- `a` and `b` have the same size and agree at every index outside `skip`. -/
-@[implemented_by tabEqImpl]
-def tabEq {α : Type} [DecidableEq α] (a b : Array α) (skip : Nat → Bool) : Bool :=
-  a.size == b.size && (List.range a.size).all fun i => skip i || decide (a[i]? = b[i]?)
+/-- `a` and `b` have the same size and agree at every index outside `skip`. Compiled, entries
+(and whole tables) that are the same object are not compared (`withPtrEq`), so a step checker
+pays only for the entries a rewrite replaced. -/
+def tabEq {α : Type} [DecidableEq α] [Inhabited α] (a b : Array α) (skip : Nat → Bool) : Bool :=
+  withPtrEq a b
+    (fun _ => a.size == b.size && Nat.all a.size fun i _ =>
+      skip i || withPtrEq a[i]! b[i]! (fun _ => decide (a[i]! = b[i]!)) decide_eq_true)
+    (fun h => by
+      subst h
+      simp only [beq_self_eq_true, Bool.true_and]
+      exact nat_all_true fun i _ => by simp [withPtrEq])
 
 end GoFV.Opt
