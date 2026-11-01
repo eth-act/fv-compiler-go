@@ -702,7 +702,7 @@ operands of `:790–793` are accepted): 7,759 (83.46%) / 7,876 at 97ccd7b.
 With the frame facts of aux-bound variables (`:1011`, `:1015`; 1,239 rules): 7,950 (85.51%) /
 8,066 at a853397 (7,772 before, with #237's validator layers).
 With the `StringPtr`/`StructSelect` cases of `safePtr` (nil checks of a string constant's data
-pointer and of a `StructMake`'s pointer field): 7,983 (85.87%) at 43468df (7,979 before).
+pointer and of a `StructMake`'s pointer field): 7,983 (85.87%) at 216e265 (7,979 before).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
