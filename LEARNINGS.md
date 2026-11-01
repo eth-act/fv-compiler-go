@@ -546,3 +546,9 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   after `copyelimPass` (the same comparison on one literal `Func` reduces). Single passes,
   `check` and `run` on the same function reduce fine; the pipeline fact is one
   `native_decide`, listed in `scripts/axioms-allowlist.txt`, built in seconds.
+- **memcombine witnesses with stores** (#35): `memcombineChecked` now runs the store half and
+  `tabsAgree`, so the kernel-evaluated witnesses got slower: `GoFV.Proof.Witness.MemCombine`
+  (Uint16, loads) builds in 32 s wall (was ~19 s CPU), the new `Witness.MemCombineStore`
+  (PutUint16) in 31 s. `ChgRefP` passes `Ctx.make tabs g` explicitly to
+  `memRoot_of_memDef_store`: leaving the context a metavariable made unification unfold
+  `Ctx.make` (whnf heartbeat timeout).
