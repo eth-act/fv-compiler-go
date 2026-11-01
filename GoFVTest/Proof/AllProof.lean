@@ -201,6 +201,7 @@ import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
 import GoFV.Proof.Rules.ConstComp
+import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Rules.Div

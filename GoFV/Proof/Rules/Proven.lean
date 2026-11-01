@@ -18,6 +18,7 @@ import GoFV.Proof.Rules.AndB4
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.ConstComp
+import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
 import GoFV.Proof.Rules.Div3
@@ -138,6 +139,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.soundT_of_sound r_generic_651_4_sound rfl, Rule.soundT_of_sound r_generic_652_4_sound rfl, Rule.soundT_of_sound r_generic_679_4_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_1057_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_1044_sound rfl, trivial⟩,
+    ⟨r_generic_1022_sound, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_173_sound rfl, Rule.soundT_of_sound r_generic_1083_sound rfl, Rule.soundT_of_sound r_generic_1092_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_177_sound rfl, Rule.soundT_of_sound r_generic_1098_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_174_sound rfl, Rule.soundT_of_sound r_generic_1084_sound rfl, Rule.soundT_of_sound r_generic_1093_sound rfl, trivial⟩,
