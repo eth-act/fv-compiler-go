@@ -37,26 +37,34 @@ def addAux (d : AuxDef) : RwM AuxRef := do
   set { s with tables := s.tables.add (.aux n d) }
   return n
 
+/-- `importType` with fuel: the recursion depth is at most the number of frontend types (each
+type is imported once, `imported`). -/
+def importTypeF : Nat → TypeRef → RwM TypeRef
+  | 0, t => throw s!"importType: t{t} nested too deep"
+  | fuel + 1, t => do
+    if ((← get).tables.type? t).isSome then return t
+    if let some n := (← get).imported[t]? then return n
+    let some d := (← read).frontend.type? t | throw s!"frontend type t{t} not defined"
+    let n ← addType d
+    modify fun s => { s with imported := s.imported.insert t n }
+    let fld (x : GoFV.SSA.Field) : RwM GoFV.SSA.Field := do
+      return { x with type := ← importTypeF fuel x.type }
+    let tail ← match d.tail with
+      | .elem e => pure (.elem (← importTypeF fuel e))
+      | .array e k => pure (.array (← importTypeF fuel e) k)
+      | .struct fs => pure (.struct (← fs.mapM fld))
+      | .func r p q fs => pure (.func r p q (← fs.mapM fld))
+      | .tuple a b => pure (.tuple (← importTypeF fuel a) (← importTypeF fuel b))
+      | .results ts => pure (.results (← ts.mapM (importTypeF fuel)))
+      | .none => pure .none
+    modify fun s => { s with tables := s.tables.add (.type n { d with tail }) }
+    return n
+
 /-- The frontend type `t` (a file number) in the tables: the input tables are a prefix of the
 file's, so a defined number is the same type; otherwise it is copied (with its components) to a
 fresh number. -/
-partial def importType (t : TypeRef) : RwM TypeRef := do
-  if ((← get).tables.type? t).isSome then return t
-  if let some n := (← get).imported[t]? then return n
-  let some d := (← read).frontend.type? t | throw s!"frontend type t{t} not defined"
-  let n ← addType d
-  modify fun s => { s with imported := s.imported.insert t n }
-  let fld (x : GoFV.SSA.Field) : RwM GoFV.SSA.Field := do return { x with type := ← importType x.type }
-  let tail ← match d.tail with
-    | .elem e => pure (.elem (← importType e))
-    | .array e k => pure (.array (← importType e) k)
-    | .struct fs => pure (.struct (← fs.mapM fld))
-    | .func r p q fs => pure (.func r p q (← fs.mapM fld))
-    | .tuple a b => pure (.tuple (← importType a) (← importType b))
-    | .results ts => pure (.results (← ts.mapM importType))
-    | .none => pure .none
-  modify fun s => { s with tables := s.tables.add (.type n { d with tail }) }
-  return n
+def importType (t : TypeRef) : RwM TypeRef := do
+  importTypeF ((← read).frontend.types.size + 1) t
 
 /-- Redefine aux `a` (an object the pass mutates in place). -/
 def setAux (a : AuxRef) (d : AuxDef) : RwM Unit :=

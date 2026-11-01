@@ -67,17 +67,23 @@ def toAux (x : GVal) : RwM (Option AuxRef) := do
   | .typ t => return some (← typeAux t)
   | _ => throw "unsupported aux value"
 
+mutual
 /-- Whether every rule variable `e` reads is bound. -/
-partial def bound (binds : Array GVal) : Expr → Bool
+def bound (binds : Array GVal) : Expr → Bool
   | .var i => match binds[i]? with
     | some .nil => false
     | some _ => true
     | none => false
   | .field x _ _ | .conv _ x | .assert _ x | .unop _ x _ | .deref x _ => bound binds x
-  | .call _ as _ | .builtin _ as _ => as.all (bound binds)
-  | .method x _ as _ => bound binds x && as.all (bound binds)
+  | .call _ as _ | .builtin _ as _ => boundAll binds as
+  | .method x _ as _ => bound binds x && boundAll binds as
   | .binop _ x y _ | .index x y _ => bound binds x && bound binds y
   | _ => true
+/-- `bound` of each expression. -/
+def boundAll (binds : Array GVal) : List Expr → Bool
+  | [] => true
+  | e :: es => bound binds e && boundAll binds es
+end
 
 /-- A check postponed until the pattern has matched. -/
 inductive Pending where
@@ -110,11 +116,17 @@ def field (sc : Scope) (st : MState) (fld : Field) (actual : Unit → RwM GVal) 
       return if actual.beq want then some st else none
     else return some { st with pending := .eq e actual :: st.pending }
 
+/-- Bound on the work items `matchWork` takes on one search path (each pattern node is taken
+once). -/
+def matchFuel : Nat := 4096
+
 /-- Match the work list of `(pattern, value)` pairs in preorder, trying the commutative choices
 depth-first (0 before 1); `k` is called on each complete match and decides (by evaluating the
-condition) whether the search stops. -/
-partial def matchWork (sc : Scope) (work : List (Pat × ID)) (st : MState)
-    (k : MState → RwM Bool) : RwM Bool := do
+condition) whether the search stops. `fuel` bounds the items taken on one path. -/
+def matchWorkF : Nat → Scope → List (Pat × ID) → MState → (MState → RwM Bool) → RwM Bool
+  | 0, _, _, _, _ => throw "pattern too large"
+  | fuel + 1, sc, work, st, k => do
+  let matchWork := matchWorkF fuel
   match work with
   | [] => k st
   | (p, w) :: rest =>
@@ -152,6 +164,11 @@ partial def matchWork (sc : Scope) (work : List (Pat × ID)) (st : MState)
         | _ => throw "commutative pattern with fewer than two arguments"
       else matchWork sc (pairs ++ rest) st k
 
+/-- `matchWorkF` with `matchFuel`. -/
+def matchWork (sc : Scope) (work : List (Pat × ID)) (st : MState) (k : MState → RwM Bool) :
+    RwM Bool :=
+  matchWorkF matchFuel sc work st k
+
 /-- The postponed checks hold. -/
 def pendingOk (sc : Scope) (st : MState) : RwM Bool := do
   for p in st.pending.reverse do
@@ -184,9 +201,13 @@ def recordTypeObj (id : ID) (o : GoFV.Opt.TypeObj) : RwM Unit :=
   modify fun s => { s with typeObjs := s.typeObjs.push (id, o) }
 
 /-- Build the nodes of a value rule's result (`Result.build`), starting from node `j`, which is
-the value `id`; `built` maps node indices to the values made so far. Returns `built`. -/
-partial def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) (j : Nat)
-    (id : ID) (built : Array (Option ID)) : RwM (Array (Option ID)) := do
+the value `id`; `built` maps node indices to the values made so far. Returns `built`. `fuel`
+bounds the depth (`nodes.size` suffices: a result is a tree with shared subtrees). -/
+def buildNodeF : Nat → Scope → Array RNode → ID → Pos → Nat → ID → Array (Option ID) →
+    RwM (Array (Option ID))
+  | 0, _, _, _, _, _, _, _ => throw "result too deep"
+  | fuel + 1, sc, nodes, blk, pos, j, id, built => do
+  let buildNode := buildNodeF fuel
   let n := nodes[j]!
   if let some e := n.auxInt then
     let ai ← liftE (toAuxInt n.op.auxType (← eval sc e))
@@ -216,13 +237,22 @@ partial def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) 
   modF fun f => f.addArgs id args
   return built
 
-/-- Apply the result of a fired value rule to `v`. -/
-def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
+/-- `buildNodeF` with enough fuel. -/
+def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) (j : Nat) (id : ID)
+    (built : Array (Option ID)) : RwM (Array (Option ID)) :=
+  buildNodeF (nodes.size + 1) sc nodes blk pos j id built
+
+/-- Apply the result of a fired value rule to `v`; returns the values of the result's nodes in
+node order (`Result.build`; empty otherwise). -/
+def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM (Array (Option ID)) := do
   match r.result with
   | .copy e =>
     let w ← liftE (← eval sc e).asVal
     copyOf v w
-  | .setOp o => modF fun f => f.modV v fun x => { x with op := o }
+    return #[]
+  | .setOp o =>
+    modF fun f => f.modV v fun x => { x with op := o }
+    return #[]
   | .build nodes =>
     let nodes := nodes.toArray
     let x ← val v
@@ -236,7 +266,7 @@ def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
         let t ← liftE (← eval sc e).asTyp
         modF fun f => f.modV v fun y => { y with type := t }
         recordTypeObj v (← typeObjOf sc e)
-      let _ ← buildNode sc nodes x.block pos 0 v (built0.set! 0 (some v))
+      buildNode sc nodes x.block pos 0 v (built0.set! 0 (some v))
     | some be =>
       let .blk blk ← eval sc be | throw "@ placement is not a block"
       let (t, o) ← match n0.ty with
@@ -245,7 +275,7 @@ def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM Unit := do
       let top ← newValue blk pos n0.op t
       recordTypeObj top o
       copyOf v top
-      let _ ← buildNode sc nodes blk pos 0 top (built0.set! 0 (some top))
+      buildNode sc nodes blk pos 0 top (built0.set! 0 (some top))
 
 /-- A value rule with its variable types and an all-unbound binding array, computed once. -/
 structure CRule where
@@ -256,8 +286,8 @@ structure CRule where
 def CRule.ofRule (r : Rule) : CRule :=
   { rule := r, vtys := (r.vars.map (·.ty)).toArray, unbound := Array.replicate r.vars.length .nil }
 
-/-- Try rule `cr` on `v`; true if it fired. -/
-def tryRule (v : ID) (cr : CRule) : RwM Bool := do
+/-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. -/
+def tryRule (v : ID) (cr : CRule) (idx : Nat) : RwM Bool := do
   let r := cr.rule
   let x ← val v
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
@@ -267,8 +297,12 @@ def tryRule (v : ID) (cr : CRule) : RwM Bool := do
     if !(← pendingOk sc st) then return false
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
-    applyResult sc r v
+    let built ← applyResult sc r v
     modify fun s => { s with fired := s.fired + 1 }
+    if (← get).log.isSome then
+      let f ← getF
+      let defs := (#[some v] ++ built).filterMap fun id => id.bind f.value?
+      logEv fun _ => .rule v idx st.binds defs
     return true
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`. -/
@@ -288,8 +322,9 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let o := (← val v).op
-  for r in t.values[o.ctorIdx]! do
-    if ← tryRule v r then return true
+  let rs := t.values[o.ctorIdx]!
+  for h : i in [0:rs.size] do
+    if ← tryRule v rs[i] i then return true
   return false
 
 /-! ## Block rules -/
@@ -303,9 +338,11 @@ def valueAt (root : ID) : List Nat → RwM ID
     | none => throw "bad control position path"
 
 /-- Build a new block control (`NewControl.build`): nodes created in `b`, node 0 is the
-control, no sharing. -/
-partial def buildCtrlNode (sc : Scope) (nodes : Array RNode) (b : ID) (pos : Pos) (j : Nat) :
-    RwM ID := do
+control, no sharing; `fuel` bounds the depth. -/
+def buildCtrlNodeF : Nat → Scope → Array RNode → ID → Pos → Nat → RwM ID
+  | 0, _, _, _, _, _ => throw "control result too deep"
+  | fuel + 1, sc, nodes, b, pos, j => do
+  let buildCtrlNode := buildCtrlNodeF fuel
   let n := nodes[j]!
   let e ← match n.ty with
     | some e => pure e
@@ -326,6 +363,10 @@ partial def buildCtrlNode (sc : Scope) (nodes : Array RNode) (b : ID) (pos : Pos
     | .node k => args := args.push (← buildCtrlNode sc nodes b pos k)
   modF fun f => f.addArgs id args
   return id
+
+/-- `buildCtrlNodeF` with enough fuel. -/
+def buildCtrlNode (sc : Scope) (nodes : Array RNode) (b : ID) (pos : Pos) (j : Nat) : RwM ID :=
+  buildCtrlNodeF (nodes.size + 1) sc nodes b pos j
 
 /-- Apply a fired block rule to `b`. -/
 def applyBlockResult (sc : Scope) (r : BlockRule) (b : ID) : RwM Unit := do
@@ -371,6 +412,7 @@ def tryBlockRule (b : ID) (r : BlockRule) : RwM Bool := do
       if !(← liftE (← eval sc c).asBool) then return false
     applyBlockResult sc r b
     modify fun s => { s with fired := s.fired + 1 }
+    logEv fun _ => .blockRule b
     return true
 
 /-- `rewriteBlock<file>(b)`. -/
