@@ -24,19 +24,34 @@ theorem ForallL.mem {α : Type} {P : α → Prop} : ∀ {l : List α}, ForallL P
   | _ :: _, ⟨h, _⟩, _, .head _ => h
   | _ :: _, ⟨_, t⟩, a, .tail _ hm => ForallL.mem t a hm
 
-/-- A selection of a variadic `Make`: `(StructSelect [i] x:(StructMake ___)) => x.Args[i]`
-(`dec.rules:106`, `generic.rules:973`, issue #17). The `___` pattern has no `Rule.Sound` form
-(`Pat.arityOk`); the checked rewrite validates each instance
-(`GoFV.Opt.RewriteCheck.makeSelOK`). -/
+/-- The selection ops (`Comp.select`, `Comp.selectAux`): `StringPtr`, `StringLen`, `SlicePtr`,
+`SlicePtrUnchecked`, `SliceLen`, `SliceCap`, `ITab`, `IData`, `ComplexReal`, `ComplexImag`,
+`StructSelect`, `ArraySelect`. -/
+def selOp : SSA.Op → Bool
+  | .StringPtr | .StringLen | .SlicePtr | .SlicePtrUnchecked | .SliceLen | .SliceCap | .ITab
+  | .IData | .ComplexReal | .ComplexImag | .StructSelect | .ArraySelect => true
+  | _ => false
+
+/-- The `Make` ops (`Comp.make`): `StringMake`, `SliceMake`, `IMake`, `ComplexMake`,
+`StructMake`, `ArrayMake1`. -/
+def makeOp : SSA.Op → Bool
+  | .StringMake | .SliceMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 => true
+  | _ => false
+
+/-- A selection of a `Make` with a copy result: `(Sel (Make …)) => …`, e.g. `(ITab (IMake itab
+_)) => itab` or the variadic `(StructSelect [i] x:(StructMake ___)) => x.Args[i]`
+(`dec.rules:106`, `generic.rules:973`, issue #17). The checked rewrite first tries to validate
+such an event per instance (`GoFV.Opt.RewriteCheck.makeSelOK`: `v` becomes a copy of the
+selected argument). -/
 def makeSelShape (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
-  | .op .StructSelect none _ (.bind i) _ .fixed [.op .StructMake (some x) _ _ _ (.atLeast 0) [] _] _,
-    .copy (.index (.field (.var x') "Args" _) (.var i') _), none => i == i' && x == x'
+  | .op o none _ _ _ _ [.op mo _ _ _ _ _ _ _] _, .copy _, none => selOp o && makeOp mo
   | _, _, _ => false
 
-/-- **The obligation of a selection of a variadic `Make`**: the rule has `makeSelShape`, so each
-instance is validated by `GoFV.Opt.RewriteCheck.makeSelOK`. -/
-def Rule.MakeSel (r : Rule) : Prop := makeSelShape r = true
+/-- **The obligation of a selection of a variadic `Make`**: the rule has `makeSelShape` and a
+`___` pattern (no `Rule.Sound` form, `Pat.arityOk`), so each of its events is validated by
+`GoFV.Opt.RewriteCheck.makeSelOK`. -/
+def Rule.MakeSel (r : Rule) : Prop := makeSelShape r = true ∧ Pat.arityOk r.pat = false
 
 /-- What a value rule of a sound rule set satisfies: `Rule.SoundT`, or `Rule.MakeSel`. -/
 def Rule.Checked (r : Rule) : Prop := Rule.SoundT r ∨ Rule.MakeSel r

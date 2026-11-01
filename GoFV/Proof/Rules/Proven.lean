@@ -21,6 +21,7 @@ import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Convert
 import GoFV.Proof.Rules.Dec
+import GoFV.Proof.Rules.DecLoad
 import GoFV.Proof.Rules.DecMakeSel
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
@@ -303,6 +304,7 @@ theorem dec_allSound : Proven.dec.AllSound :=
     ⟨Rule.checked_of_sound r_dec_13_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_83_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_82_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_dec_45_sound rfl, Rule.checked_of_sound r_dec_63_sound rfl, Rule.checked_of_sound r_dec_87_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_60_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_59_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_58_sound rfl, trivial⟩,

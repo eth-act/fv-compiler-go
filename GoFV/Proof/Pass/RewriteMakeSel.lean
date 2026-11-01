@@ -2,20 +2,73 @@ import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Rules.DecShape
 
 /-!
-# Replaying a selection of a variadic `Make` (issue #17)
+# Replaying a selection of a `Make` (issue #17)
 
-A rule event accepted by `RewriteCheck.makeSelOK` (`(StructSelect [i] x:(StructMake ___)) =>
-x.Args[i]`, `dec.rules:106`, `generic.rules:973`) redefines the selection `v = StructSelect [k] s`
-of `s = StructMake …` as `Copy a` of the `StructMake`'s argument `k`. `MSFacts.step`: on a set
-closed under arguments, every denotation after the event refines the one before at the same fuel
-(`select_retype_make_get` at `v`: component `k` of the retyped `Make` is `a` retyped at the
-field's shape, which keeps `a`'s denotation since `a`'s shape is the field's and `v`'s;
-monotonicity elsewhere). `ReplayInv.makeSel`: the event keeps the replay invariant.
+A rule event accepted by `RewriteCheck.makeSelOK` (a selection rule over a `Make` with a copy
+result, `makeSelShape`: `(ITab (IMake itab _)) => itab`, the variadic `(StructSelect [i]
+x:(StructMake ___)) => x.Args[i]` of `dec.rules:106`/`generic.rules:973`, …) redefines the
+selection `v` of component `k` of `s = Make …` as `Copy a` of the `Make`'s argument `k`.
+`MSFacts.step`: on a set closed under arguments, every denotation after the event refines the
+one before at the same fuel (`select_retype_make_get` at `v`: component `k` of the retyped
+`Make` is `a` retyped at the field's shape, which keeps `a`'s denotation since `a`'s shape is
+the field's and `v`'s, or `a` is an `Addr`, a global pointer without a concrete address, under
+word shapes: `addr_den`, `retype_word`; monotonicity elsewhere). `ReplayInv.makeSel`: the event
+keeps the replay invariant.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
+
+/-- A selection op (`selIndex?`) is a pure term op selecting its component `k`. -/
+theorem sel_facts {op : Op} {ai : Int64} {k : Nat} (h : selIndex? op ai = some k) :
+    termOp op = true ∧ GoFV.Proof.Rules.frameOp op = false ∧
+      ∀ ty aux args, evalPure op ty ai aux args = Comp.select k args := by
+  cases op <;> simp only [selIndex?, reduceCtorEq, Option.some.injEq] at h
+  all_goals first
+    | (subst h; exact ⟨by decide, by decide, fun _ _ _ => rfl⟩)
+    | (refine ⟨by decide, by decide, fun _ _ args => ?_⟩
+       show Comp.selectAux ai args = _
+       unfold Comp.selectAux
+       split at h
+       · cases h
+       · rename_i hn
+         simp only [Option.some.injEq] at h
+         subst h
+         simp [hn])
+
+/-- A `Make` op is a pure term op building its arguments' aggregate. -/
+theorem make_facts {op : Op} (h : GoFV.Proof.Rules.makeOp op = true) :
+    termOp op = true ∧ GoFV.Proof.Rules.frameOp op = false ∧
+      ∀ ty ai aux args, evalPure op ty ai aux args = Comp.make args := by
+  cases op <;> simp only [GoFV.Proof.Rules.makeOp, reduceCtorEq] at h
+  all_goals exact ⟨by decide, by decide, fun _ _ _ _ => rfl⟩
+
+/-- A word shape keeps `poison` and a pointer without a concrete address. -/
+theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
+    (hz : z = .poison ∨ ∃ p, z = .ptr p ∧ p.addr? = none) : z.retype t = z := by
+  rcases hz with rfl | ⟨p, rfl, hp⟩
+  · exact retype_poison _
+  · cases t with
+    | int w => cases w <;> simp [wordTy] at ht; simp [Val.retype, hp]
+    | ptr e => rfl
+    | _ => simp [wordTy] at ht
+
+/-- An `Addr` denotes `poison` or a global pointer, which has no concrete address. -/
+theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a : ID} {w : Value}
+    (hw : D a = some w) (hop : w.op = .Addr) :
+    ∀ m, den D tabs ρ m a = .poison ∨ ∃ p, den D tabs ρ m a = .ptr p ∧ p.addr? = none
+  | 0 => .inl rfl
+  | m + 1 => by
+    rw [den_succ_term hw (by rw [hop]; rfl), hop, GoFV.Proof.Rules.opVal_addr]
+    unfold GoFV.Proof.Rules.addrVal
+    split
+    · generalize tabs.ty w.type = t
+      cases t with
+      | int w => cases w <;> first | exact .inl rfl | exact .inr ⟨_, rfl, rfl⟩
+      | ptr e => exact .inr ⟨_, rfl, rfl⟩
+      | _ => exact .inl rfl
+    · exact .inl (retype_poison _)
 
 /-- What `makeSelOK` establishes about an event `(v, [u])`. -/
 structure MSFacts (tabs : Tables) (M : Defs) (v : ID) (u : Value) where
@@ -27,19 +80,19 @@ structure MSFacts (tabs : Tables) (M : Defs) (v : ID) (u : Value) where
   w : Value
   hx : M.get? v = some x
   hxargs : x.args.toList = [s]
-  hk : selIndex? .StructSelect x.auxInt = some k
+  hk : selIndex? x.op x.auxInt = some k
   hy : M.get? s = some y
   ha : y.args[k]? = some a
   hw : M.get? a = some w
-  hxop : x.op = .StructSelect
-  hyop : y.op = .StructMake
+  hyop : GoFV.Proof.Rules.makeOp y.op = true
   hid : u.id = v
   huop : u.op = .Copy
   huargs : u.args = #[a]
   huty : u.type = w.type
   hsh : ∀ fk, GoFV.Proof.Rules.fieldShape? (tabs.ty y.type) k = some fk →
-    GoFV.Proof.Rules.shapeSub (tabs.ty w.type) fk = true ∧
-      GoFV.Proof.Rules.shapeSub (tabs.ty w.type) (tabs.ty x.type) = true
+    (GoFV.Proof.Rules.shapeSub (tabs.ty w.type) fk = true ∧
+      GoFV.Proof.Rules.shapeSub (tabs.ty w.type) (tabs.ty x.type) = true) ∨
+    (w.op = .Addr ∧ wordTy fk = true ∧ wordTy (tabs.ty x.type) = true)
 
 theorem msFacts {tabs : Tables} {M : Defs} {v : ID} {defs : List Value}
     (h : makeSelOK tabs M v defs = true) : ∃ u, defs = [u] ∧ Nonempty (MSFacts tabs M v u) := by
@@ -55,11 +108,11 @@ theorem msFacts {tabs : Tables} {M : Defs} {v : ID} {defs : List Value}
           split at h
           · rename_i w hw
             simp only [Bool.and_eq_true, beq_iff_eq] at h
-            obtain ⟨⟨⟨⟨⟨⟨hxop, hyop⟩, hid⟩, huop⟩, huargs⟩, huty⟩, hsh⟩ := h
-            refine ⟨u, rfl, ⟨⟨x, s, y, k, a, w, hx, hxargs, hk, hy, ha, hw, hxop, hyop, hid, huop,
+            obtain ⟨⟨⟨⟨⟨hyop, hid⟩, huop⟩, huargs⟩, huty⟩, hsh⟩ := h
+            refine ⟨u, rfl, ⟨⟨x, s, y, k, a, w, hx, hxargs, hk, hy, ha, hw, hyop, hid, huop,
               huargs, huty, fun fk hf => ?_⟩⟩⟩
             rw [hf] at hsh
-            simpa only [Bool.and_eq_true] using hsh
+            simpa only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, and_assoc] using hsh
           · cases h
         · cases h
       · cases h
@@ -77,14 +130,12 @@ theorem MSFacts.get_other (F : MSFacts tabs M v u) {y : ID} (hy : y ≠ v) :
     (putAll M [u]).get? y = M.get? y := by
   simp [putAll, get?_put, F.hid, hy]
 
-theorem MSFacts.x_term (F : MSFacts tabs M v u) : termOp F.x.op = true := by
-  rw [F.hxop]; rfl
+theorem MSFacts.x_term (F : MSFacts tabs M v u) : termOp F.x.op = true := (sel_facts F.hk).1
 
 theorem MSFacts.u_term (F : MSFacts tabs M v u) : termOp u.op = true := by
   rw [F.huop]; rfl
 
-theorem MSFacts.y_term (F : MSFacts tabs M v u) : termOp F.y.op = true := by
-  rw [F.hyop]; rfl
+theorem MSFacts.y_term (F : MSFacts tabs M v u) : termOp F.y.op = true := (make_facts F.hyop).1
 
 theorem MSFacts.isTerm_iff (F : MSFacts tabs M v u) (y : ID) :
     IsTerm (putAll M [u]).get? y ↔ IsTerm M.get? y := by
@@ -125,22 +176,13 @@ theorem MSFacts.closed (F : MSFacts tabs M v u) {C : ID → Prop} (hC : DefClose
   · obtain ⟨m, hm, hargs⟩ := hC y hy
     exact ⟨m, by rw [F.get_other hyv, hm], hargs⟩
 
-/-- At `v`: the selection of the `StructMake`'s argument `k` is refined by `a`'s denotation. -/
+/-- At `v`: the selection of the `Make`'s argument `k` is refined by `a`'s denotation. -/
 theorem MSFacts.sel_ref (F : MSFacts tabs M v u) {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ)
     (m : Nat) {z : Val} (hz : Sem.Refines (den M.get? tabs ρ m F.a) z) :
-    Sem.Refines ((Comp.selectAux F.x.auxInt [den M.get? tabs ρ (m + 1) F.s]).retype
+    Sem.Refines ((Comp.select F.k [den M.get? tabs ρ (m + 1) F.s]).retype
       (tabs.ty F.x.type)) (z.retype (tabs.ty F.w.type)) := by
-  have hsel : Comp.selectAux F.x.auxInt = Comp.select F.k := by
-    have hk := F.hk
-    simp only [selIndex?] at hk
-    unfold Comp.selectAux
-    split at hk
-    · cases hk
-    · rename_i hneg
-      simp only [hneg, ↓reduceIte]; rw [Option.some.inj hk]
-  rw [hsel, den_succ_term F.hy F.y_term, F.hyop,
-    GoFV.Proof.Rules.opVal_pure (op := .StructMake) rfl]
-  show Sem.Refines ((Comp.select F.k [(Comp.make _).retype _]).retype _) _
+  rw [den_succ_term F.hy F.y_term, GoFV.Proof.Rules.opVal_pure (make_facts F.hyop).2.1,
+    (make_facts F.hyop).2.2]
   rcases GoFV.Proof.Rules.select_retype_make_get (tabs.ty F.y.type) F.k
       (F.y.args.toList.map (den M.get? tabs ρ m)) with h | ⟨f, z', hf, hz', he⟩
   · rw [h, retype_poison]; exact .poison _
@@ -150,14 +192,18 @@ theorem MSFacts.sel_ref (F : MSFacts tabs M v u) {ρ : ID → Val} (hT : Term.Ty
       simp only [Option.map_some, Option.some.injEq] at hz'
       exact hz'.symm
     subst hz''
-    obtain ⟨h1, h2⟩ := F.hsh f hf
     have hfix : (den M.get? tabs ρ m F.a).retype (tabs.ty F.w.type) = den M.get? tabs ρ m F.a := by
       rw [← shape_of (tabs := tabs) F.hw]
       exact den_retype hT m F.a (by rw [F.hw]; rfl)
-    have hty : (den M.get? tabs ρ m F.a).hasTy (tabs.ty F.w.type) = true := by
-      rw [← hfix]; exact Val.retype_hasTy _ _
-    rw [GoFV.Proof.Rules.retype_of_shapeSub hty h1, GoFV.Proof.Rules.retype_of_shapeSub hty h2,
-      ← hfix]
+    have hkeep : ((den M.get? tabs ρ m F.a).retype f).retype (tabs.ty F.x.type) =
+        den M.get? tabs ρ m F.a := by
+      rcases F.hsh f hf with ⟨h1, h2⟩ | ⟨hop, h1, h2⟩
+      · have hty : (den M.get? tabs ρ m F.a).hasTy (tabs.ty F.w.type) = true := by
+          rw [← hfix]; exact Val.retype_hasTy _ _
+        rw [GoFV.Proof.Rules.retype_of_shapeSub hty h1, GoFV.Proof.Rules.retype_of_shapeSub hty h2]
+      · have hg := addr_den (tabs := tabs) (ρ := ρ) F.hw hop m
+        rw [retype_word h1 hg, retype_word h2 hg]
+    rw [hkeep, ← hfix]
     exact retype_mono _ hz
 
 /-- **A selection event refines the denotations of a closed set**, at the same fuel. -/
@@ -173,16 +219,14 @@ theorem MSFacts.step (F : MSFacts tabs M v u) {C : ID → Prop} (hC : DefClosed 
     · subst hyv
       rw [F.hx] at hm; cases hm
       have iha := ih F.a (F.a_mem hC hy)
-      rw [den_succ_term F.hx F.x_term, den_succ_term F.get_v F.u_term, F.hxop, F.huop, F.huargs,
-        F.huty, GoFV.Proof.Rules.opVal_pure (op := .StructSelect) rfl,
+      rw [den_succ_term F.hx F.x_term, den_succ_term F.get_v F.u_term, F.huop, F.huargs,
+        F.huty, GoFV.Proof.Rules.opVal_pure (sel_facts F.hk).2.1, (sel_facts F.hk).2.2,
         GoFV.Proof.Rules.opVal_pure (op := .Copy) rfl, F.hxargs]
-      show Sem.Refines ((Comp.selectAux F.x.auxInt [den M.get? tabs ρ n F.s]).retype _)
+      show Sem.Refines ((Comp.select F.k [den M.get? tabs ρ n F.s]).retype _)
         ((den (putAll M [u]).get? tabs ρ n F.a).retype _)
       cases n with
-      | zero =>
-        have : Comp.selectAux F.x.auxInt [den M.get? tabs ρ 0 F.s] = .poison := by
-          unfold Comp.selectAux; split <;> rfl
-        rw [this, retype_poison]; exact .poison _
+      | zero => rw [show Comp.select F.k [den M.get? tabs ρ 0 F.s] = .poison from rfl,
+          retype_poison]; exact .poison _
       | succ m =>
         exact F.sel_ref hT m ((den_fuel_mono _ _ _ m (m + 1) _ (by omega)).trans iha)
     · have hget := F.get_other hyv

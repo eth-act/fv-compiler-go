@@ -270,6 +270,7 @@ import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Convert
 import GoFV.Proof.Rules.Dec
+import GoFV.Proof.Rules.DecLoad
 import GoFV.Proof.Rules.DecMakeSel
 import GoFV.Proof.Rules.DecShape
 import GoFV.Proof.Rules.Den
@@ -430,6 +431,7 @@ import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd
+import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
