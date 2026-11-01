@@ -88,7 +88,10 @@ the module; minimum CPU of each side) and drops the flag unless the head is stil
 > 5 s slower. Benchmark and per-pass time flags get the same treatment (two interleaved runs
 of the benchmark per side; > 25% and > 1 s). Back-to-back confirmation runs share one load
 period, alternating commits does not: the same ssa-check code measured 46 s and 76 s CPU an
-hour apart. On main 28334f3, `GoFV.Proof.Pass.RewriteTermNat` was flagged at 14.9 → 23.6 s CPU
+hour apart. When the A/B finds lower numbers for the head than were recorded, they replace the
+recorded benchmark/pass numbers (`perf-watch.py lower`): a load spike at recording time would
+otherwise become the next comparison's baseline (64f0257 was recorded at 2× and made every pass
+of the next commit look 50% faster). On main 28334f3, `GoFV.Proof.Pass.RewriteTermNat` was flagged at 14.9 → 23.6 s CPU
 (confirmed by a back-to-back rerun); the A/B gave 16.3 → 19.7 s and the flag was dropped. Modules whose numbers are the same
 measurement in both commits (`measured_at` equal) are skipped. For a PR, BASE is its merge base
 with main; for main, the previous recorded main commit.
