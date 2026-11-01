@@ -185,7 +185,8 @@ elab "rule_cond_bool" : tactic => withMainContext do
     -- (the value of a `DV.val` is not read by a field other than `Type`/`AuxInt`)
     let opd := (c.getArg! 4).replace fun t =>
       if t.isAppOfArity ``DV.val 2 then some (mkConst ``True) else none
-    if (opd.find? fun t => t.isAppOf ``PEnv.ty || t.isAppOf ``PEnv.auxInt).isSome then continue
+    if (opd.find? fun t => (t.isAppOfArity ``PEnv.ty 2 || t.isAppOfArity ``PEnv.auxInt 2) &&
+        !t.hasLooseBVars).isSome then continue
     let a ← Term.exprToSyntax (c.getArg! 4)
     let o ← Term.exprToSyntax (y.getArg! 0)
     let saved ← saveState
