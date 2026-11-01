@@ -67,7 +67,7 @@ theorem CRel.gblock (h : CRel f g st) {x : ID} (hx : x ∈ [st.p, st.b, st.s, st
 theorem CRel.shape (h : CRel f g st) :
     ∃ B P S B', f.block? st.b = some B ∧ f.block? st.p = some P ∧ f.block? st.s = some S ∧
       g.block? st.b = some B' ∧
-      st.kp < 2 ∧ st.i = 1 - st.kp ∧ st.p ≠ st.b ∧ st.s ≠ st.b ∧ st.s ≠ st.p ∧
+      st.b ∈ f.blocks ∧ st.kp < 2 ∧ st.i = 1 - st.kp ∧ st.p ≠ st.b ∧ st.s ≠ st.b ∧ st.s ≠ st.p ∧
       B.kind = .If ∧ P.kind = .If ∧ B.preds = #[⟨st.p, st.kp⟩] ∧
       B.controls = #[st.bc] ∧ P.controls = #[st.pc] ∧ B.succs.size = 2 ∧ P.succs.size = 2 ∧
       P.succs[st.i]? = some ⟨st.s, st.jp⟩ ∧ B.succs[st.i]? = some ⟨st.s, st.jb⟩ ∧
@@ -93,9 +93,9 @@ theorem CRel.shape (h : CRel f g st) :
     | some B' => exact ⟨B', rfl⟩
   rw [hB, hP, hS, hB'] at hs
   simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, decide_eq_true_eq,
-    and_assoc] at hs
-  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17⟩ := hs
-  exact ⟨B, P, S, B', hB, hP, hS, hB', h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13,
+    Array.contains_iff_mem, and_assoc] at hs
+  obtain ⟨h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17⟩ := hs
+  exact ⟨B, P, S, B', hB, hP, hS, hB', h0, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13,
     h14, h15, h16, h17⟩
 
 theorem ctrlOK_spec {c : ID} {t : TypeRef} (h : Site.ctrlOK f c t = true) :

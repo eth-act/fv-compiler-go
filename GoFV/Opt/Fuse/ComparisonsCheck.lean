@@ -111,7 +111,8 @@ def blockOK (f g : Func) (x : ID) : Bool :=
 def shapeOK (f g : Func) : Bool :=
   match f.block? st.b, f.block? st.p, f.block? st.s, g.block? st.b with
   | some B, some P, some S, some B' =>
-    st.kp < 2 && st.i == 1 - st.kp && st.p != st.b && st.s != st.b && st.s != st.p &&
+    f.blocks.contains st.b && st.kp < 2 && st.i == 1 - st.kp && st.p != st.b && st.s != st.b &&
+      st.s != st.p &&
       B.kind == .If && P.kind == .If && B.preds == #[⟨st.p, st.kp⟩] &&
       B.controls == #[st.bc] && P.controls == #[st.pc] && B.succs.size == 2 &&
       P.succs.size == 2 && P.succs[st.i]? == some ⟨st.s, st.jp⟩ &&
