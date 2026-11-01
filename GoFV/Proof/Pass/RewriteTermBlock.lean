@@ -409,8 +409,8 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound) (hr : RetypeS
     split at h
     · split at h
       · rename_i hok
-        obtain ⟨F⟩ := slFacts hok
-        rw [hput] at h
+        obtain ⟨x', ds, hd, ⟨F⟩⟩ := slFacts hok
+        rw [hput, hd] at h
         exact replay_inv hs hr evs _ M' B B' _ h (hI.structLoad F)
           (hB.mono (fun y hy => .inl hy) hI.typed fun _ _ n y hy => F.step hI.closed n y hy)
       · cases h

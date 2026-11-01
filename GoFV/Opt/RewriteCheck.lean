@@ -552,6 +552,13 @@ def structLoadOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool 
     | _, _ => false
   | _, _ => false
 
+/-- A struct-load expansion rule: `(Load …) && … => rewriteStructLoad(v)`; each instance is
+validated by `structLoadOK`. -/
+def structLoadShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .Load .., .copy (.call "rewriteStructLoad" [.rsv .v] _), none => true
+  | _, _, _ => false
+
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
 if an event is not validated. -/
 def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
