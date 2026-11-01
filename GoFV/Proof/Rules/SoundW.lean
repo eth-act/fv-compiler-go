@@ -66,7 +66,7 @@ theorem Rule.soundW_of_pure {r : Rule} (hp : Rule.pure r = true) (hs : Rule.Soun
 /-- A raw value of the type's shape is its own retype: `Rule.SoundW` gives `Rule.SoundT`. -/
 theorem Rule.soundT_of_soundW {r : Rule} (hs : Rule.SoundW r) : Rule.SoundT r := by
   refine ⟨hs.1, fun tabs e or hbt => ?_⟩
-  intro hfr hwf hcons hcond hraw htyped hargs hnn
+  intro _ _ hfr hwf hcons hcond hraw htyped hargs hnn
   have h := hs.2 tabs e or hbt hfr hwf hcons hcond htyped hargs hnn
   rwa [Val.retype_of_hasTy hraw] at h
 
