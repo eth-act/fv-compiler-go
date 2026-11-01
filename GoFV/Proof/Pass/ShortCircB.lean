@@ -264,7 +264,9 @@ theorem bstep_not {env : Env} {G : Frame} (hs : G.regs.size = f.valueTab.size) :
   · obtain ⟨B', G', hB', -, hterm⟩ := blockStep_ret h
     change f.block? s.b = some B' at hB'
     rw [hBb] at hB'; cases hB'
-    obtain ⟨-, -, -, -, hn⟩ := stepTerm_if hkind hcs hterm
+    have hx := stepTerm_if hkind hcs hterm
+    obtain ⟨b0, e0, h1, h2, h3⟩ := hx
+    exact Next.noConfusion h3
 
 end Setup
 
