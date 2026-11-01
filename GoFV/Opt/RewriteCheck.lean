@@ -2217,6 +2217,110 @@ def segRel (tabs : Tables) (f g : Func) : Bool :=
       | none => false) &&
     f.blocks.all (segBlockOK f g segs news)
 
+/-! ## Selections of `Phi`s of `SliceMake`s as a layer (issue #69)
+
+`generic.rules:1049`/`:1050` (`(SliceLen (Phi (SliceMake _ x _) (SliceMake _ x _))) => x`, the
+capacity likewise) match through a `Phi`, which `validate` treats as an atom: the `Phi`'s
+value is the `SliceMake` of the edge it was entered along, whose length is `x`'s value then.
+Their events are taken out of the log (`psPre`: the selection becomes `Copy x`), and the layer
+is related to its input by `psRel`, whose simulation (`GoFV.Proof.PhiSel.ps_refines`) keeps the
+fact that the selection of the `Phi` refines `x` while the `Phi`'s block dominates: `x` is
+defined in a strict dominator of the `Phi`'s block, so it is not redefined in between. -/
+
+/-- A `phiSels` rule: a `SliceLen`/`SliceCap` of a `Phi` with a copy result. -/
+def psShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op o none _ _ _ _ [.op .Phi _ _ _ _ _ _ _] _, .copy _, none => o == .SliceLen || o == .SliceCap
+  | _, _, _ => false
+
+/-- The component a selection of `psOK` reads: `SliceLen` 1, `SliceCap` 2. -/
+def psSel : Op → Option Nat
+  | .SliceLen => some 1
+  | .SliceCap => some 2
+  | _ => none
+
+/-- The value `x` a `psOK` selection `v` of `f` becomes a copy of: component `k` of the first
+`SliceMake` of its `Phi`. -/
+def psSrc (f : Func) (v : ID) : Option ID := do
+  let u ← f.value? v
+  let k ← psSel u.op
+  let p ← u.args[0]?
+  let pv ← f.value? p
+  let m ← pv.args[0]?
+  let mv ← f.value? m
+  mv.args[k]?
+
+/-- The value `v` of `f` that event `ev` turns into a copy, and the copied value (`psSrc`), if
+it is a `phiSels` rule event (`psShapeOK`) of a rule on `v`'s op in `f`. -/
+def psEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × ID)
+  | .rule v i _ _ =>
+    match f.value? v with
+    | some u =>
+      let n := t.psBase u.op
+      if n ≤ i then
+        match t.phiSels[i - n]?, psSrc f v with
+        | some cr, some x =>
+          if psShapeOK cr.rule && (match cr.rule.pat with | .op o .. => o == u.op | _ => false) then
+            some (v, x)
+          else none
+        | _, _ => none
+      else none
+    | none => none
+  | _ => none
+
+/-- One event of `psPre`: a selection of `f` becomes a copy (`Func.copyOf`), any other event
+kept, but for the copy-argument replacements of the selection logged before it. -/
+def psStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match psEvent? t f ev with
+  | some (v, x) => (p.1.copyOf v x, p.2.filter fun | .copyArg y _ _ => y != v | _ => true)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's `phiSels` events applied, and the remaining events. -/
+def psPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (psStep t f) (f, #[])
+
+/-- The value `v` of `f`, `SliceLen`/`SliceCap` (component `k`, `psSel`) of a `Phi` `p`, is
+`Copy x` in `g`: every argument of `p` is a `SliceMake` whose argument `k` is `x`, `p` and those
+`SliceMake`s have slice shapes, `v` (in `f` and `g`) and `x` the `int64` shape, `p` is listed
+in its block, which is not the entry block, and `x` is defined in a strict dominator of `p`'s
+block. -/
+def psOK (tabs : Tables) (f g : Func) (v : ID) : Bool :=
+  match f.value? v, g.value? v with
+  | some u, some w =>
+    match psSel u.op, u.args[0]?, w.args[0]? with
+    | some k, some p, some x =>
+      u.args.size == 1 && w.args.size == 1 && w.op == .Copy && w.id == u.id &&
+        w.block == u.block && isInt64Ty (tabs.ty u.type) && isInt64Ty (tabs.ty w.type) &&
+        match f.value? p, f.value? x with
+        | some pv, some xv =>
+          pv.op == .Phi && pv.id == p && pv.block != f.entry && f.blocks.contains pv.block &&
+            (f.block? pv.block).any (·.values.contains p) && isSliceTy (tabs.ty pv.type) &&
+            isInt64Ty (tabs.ty xv.type) && xv.block != pv.block &&
+            (DomCert.make f).anc xv.block pv.block &&
+            pv.args.all fun m => (f.value? m).any fun mv =>
+              mv.op == .SliceMake && mv.args.size == 3 && mv.args[k]? == some x &&
+                isSliceTy (tabs.ty mv.type)
+        | _, _ => false
+    | _, _, _ => false
+  | _, _ => false
+
+/-- **The `Phi`-selection relation**: `g` is `f` with selections turned copies (`psOK`): the same
+control-flow graph, own aux, value IDs and blocks (kinds, controls, value lists and schedules);
+every other value kept but for its use count. -/
+def psRel (tabs : Tables) (f g : Func) : Bool :=
+  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+    g.valueTab.size == f.valueTab.size &&
+    (List.range f.valueTab.size).all (fun z => match f.value? z, g.value? z with
+      | none, none => true
+      | some fv, some gv => ssSame fv gv || psOK tabs f g z
+      | _, _ => false) &&
+    f.blocks.all fun b => match f.block? b, g.block? b with
+      | some fb, some gb =>
+        gb.kind == fb.kind && gb.controls == fb.controls && gb.values == fb.values &&
+          Sem.schedule g gb == Sem.schedule f fb
+      | _, _ => false
+
 /-! ## Struct-load expansions as a layer (issue #151)
 
 A struct-store split of a `Store` of a `Load` that `generic.rules:974` expanded stores the
@@ -2361,7 +2465,7 @@ check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a spl
 
 /-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-load
 expansions (`slPre`), struct-store splits (`ssPre`), value-rule `Load` expansions (`ldPre`),
-segment rewrites (`segPre`). -/
+segment rewrites (`segPre`), selections of `Phi`s of `SliceMake`s (`psPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
@@ -2369,6 +2473,7 @@ inductive Layer where
   | ss
   | ld
   | seg
+  | ps
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
@@ -2379,9 +2484,11 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .ss => ssPre t
   | .ld => ldPre t tabs
   | .seg => segPre t
+  | .ps => psPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs). -/
-def layers : List Layer := [.nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd false, .nil false]
+def layers : List Layer :=
+  [.ps, .nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/
@@ -2444,6 +2551,8 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
   | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .seg, f, _, f' =>
     RewriteCheck.segRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .ps, f, _, f' =>
+    RewriteCheck.psRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .ld, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.ldTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
@@ -2493,18 +2602,21 @@ def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func)
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   return if RewriteCheck.accepts env t f out log then some out else none
 
-/-- The tables `checkedRewrite` tries in order: `t`, then (a segment rewrite, Load-of-Store
-forwarding, struct-store split or nil-check elimination the validator cannot relate, issue #151)
-`t` without its segment rules (`segs`), then also without its forwardings (`loads`), then also
-without its struct-store splits (`structStores`), then also without its nil-check eliminations
+/-- The tables `checkedRewrite` tries in order: `t`, then (a `Phi` selection, segment rewrite,
+Load-of-Store forwarding, struct-store split or nil-check elimination the validator cannot
+relate, issues #69, #151) `t` without its `Phi` selections (`phiSels`), then also without its
+segment rules (`segs`), then also without its forwardings (`loads`), then also without its
+struct-store splits (`structStores`), then also without its nil-check eliminations
 (`nilChecks`), each only if it removes rules. -/
 def checkedTiers (t : GoFV.Rules.Interp.Table) : List GoFV.Rules.Interp.Table :=
-  let t₀ := { t with segs := #[] }
+  let tp := { t with phiSels := #[] }
+  let t₀ := { tp with segs := #[] }
   let t₁ := { t₀ with loads := #[] }
   let t₂ := { t₁ with structStores := #[] }
   let t₃ := { t₂ with nilChecks := #[] }
-  t :: ((if t.segs.isEmpty then [] else [t₀]) ++ (if t.loads.isEmpty then [] else [t₁]) ++
-    (if t.structStores.isEmpty then [] else [t₂]) ++ (if t.nilChecks.isEmpty then [] else [t₃]))
+  t :: ((if t.phiSels.isEmpty then [] else [tp]) ++ (if t.segs.isEmpty then [] else [t₀]) ++
+    (if t.loads.isEmpty then [] else [t₁]) ++ (if t.structStores.isEmpty then [] else [t₂]) ++
+    (if t.nilChecks.isEmpty then [] else [t₃]))
 
 /-- The first of the tables whose run `checkedRun` accepts, and its result. -/
 def checkedFirst (env : PassEnv) (f : GoFV.SSA.Func) :

@@ -209,6 +209,8 @@ import GoFV.Proof.Pass.PhiOptPanic
 import GoFV.Proof.Pass.PhiOptRel
 import GoFV.Proof.Pass.PhiOptSched
 import GoFV.Proof.Pass.PhiOptSetup
+import GoFV.Proof.Pass.PhiSelRel
+import GoFV.Proof.Pass.PhiSelSim
 import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
@@ -427,6 +429,7 @@ import GoFV.Proof.Rules.OrB
 import GoFV.Proof.Rules.OrB2
 import GoFV.Proof.Rules.OrB3
 import GoFV.Proof.Rules.OrB4
+import GoFV.Proof.Rules.PhiSel
 import GoFV.Proof.Rules.Proven
 import GoFV.Proof.Rules.PtrIndex
 import GoFV.Proof.Rules.RangeLemmas
