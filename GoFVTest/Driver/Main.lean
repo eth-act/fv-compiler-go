@@ -82,14 +82,15 @@ def driverFrontend (e : ExportFile) (tables : Tables) : Tables := Id.run do
 export of a function with these tables: the type order and `typecmp` exceptions restricted to
 their types, and `driverFrontend`. With `wholeFile`, the per-pass parity environment instead
 (type order and frontend of the whole stock file), to tell divergences caused by the driver's
-narrower view from others. -/
-def baseEnv (e : ExportFile) (tables : Tables) (wholeFile : Bool := false) : PassEnv :=
+narrower view from others. `zvar`: the segment input section's type-object classes. -/
+def baseEnv (e : ExportFile) (tables : Tables) (wholeFile : Bool := false)
+    (zvar : Array (ID × Nat) := #[]) : PassEnv :=
   let typs := ((e.sections[0]?).bind (·.typs)).getD #[]
   let env : PassEnv :=
     { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
       pgohot := e.pgohot, config := e.config, typs
       typeOrder := TypeOrder.ofGroups e.typeOrder e.typeCmp
-      tables, frontend := e.frontendTables }
+      tables, frontend := e.frontendTables, zvar := zvarFn zvar }
   if wholeFile then env else
   let fe := driverFrontend e tables
   { env with
@@ -133,14 +134,14 @@ def optimise (e : ExportFile) (start : Nat) (partialOut : Bool) (stopAfter : Opt
   let some s0 := e.sections[0]? | return "status error \"input\" \"no section\"\n"
   let tables := padTables (({} : Tables).addAll s0.defs) e.frontendTables
   -- the input is the driver's own export: its type order and frontend block are the function's
-  let env := baseEnv e tables (wholeFile := true)
+  let env := baseEnv e tables (wholeFile := true) s0.zvar
   let (stop, st) := (runFrom (m := Id) env { func := s0.func, tables } start
     (fun name _ => pure (stopAfter != some name)))
   let status := statusLine stop ++ "\n"
   let ok := match stop with | .done | .halted _ => true | _ => false
   if !ok && !partialOut then return status
   let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
-                         func := st.func, typs := none, warns := #[] }
+                         func := st.func, typs := none, zvar := #[], warns := #[] }
   let effects := st.effects.foldl (init := "") fun s e => match e with
     | .useIface a => s ++ s!"effect useiface a{a}\n"
   return status ++ effects ++
@@ -249,6 +250,7 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
   let mut k := 1
   let mut start := 0
   let mut stockRun := #[]
+  let mut zvar := s0.zvar
   for _ in [0:stockPasses.size + 1] do
     -- Type rounds (as the driver): rerun the segment with the types the Lean passes created
     -- added to its input, so that they are ranked in the type order.
@@ -256,7 +258,7 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
     let mut out : (Stop × State) × Walk := ((.done, { func, tables := base }), { k, tables := base, counts })
     for round in [0:typeRounds] do
       let t0 := tables0
-      let env := baseEnv e t0 wholeFile
+      let env := baseEnv e t0 wholeFile zvar
       let step (name : String) (st : State) : StateM Walk Bool := do
         let w ← get
         let pi := (passIndex? name).getD 0
@@ -292,6 +294,7 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
       stockRun := stockRun.push p
       base := w.tables.addAll s.defs
       func := s.func
+      zvar := s.zvar
       k := w.k + 1
       start := (passIndex? p).getD 0 + 1
     | .done =>

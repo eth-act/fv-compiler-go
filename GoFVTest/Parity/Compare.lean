@@ -14,6 +14,16 @@ open GoFV.SSA GoFV.Opt
 
 namespace GoFVTest.Parity
 
+/-- A section's `zvar` as a lookup (`PassEnv.zvar`). -/
+def zvarFn (zv : Array (ID × Nat)) : ID → Nat :=
+  let m : Std.HashMap ID Nat := zv.foldl (fun m (v, c) => m.insert v c) {}
+  fun i => m.getD i 0
+
+/-- The file's `ptrcache` as a predicate (`PassEnv.ptrCache`). -/
+def ptrCacheFn (ts : Array TypeRef) : TypeRef → Bool :=
+  let m : Std.HashMap TypeRef Unit := ts.foldl (fun m t => m.insert t ()) {}
+  fun t => m.contains t
+
 /-- First differing line of two texts. -/
 def firstDiff (want got : String) : String := Id.run do
   let la := want.splitOn "\n"

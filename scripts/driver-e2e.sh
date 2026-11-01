@@ -110,6 +110,7 @@ report=$out/report.md
   fi
   if [ -f "$out/stock/progs" ]; then
     nb=0 nsame=0 nrun=0 npass=0
+    nots() { sed -E 's#^[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} ##' "$1"; }
     while read -r b src; do
       nb=$((nb + 1))
       [ -f "$out/lean/bin/$b" ] || { echo "  - $src: driver build failed"; continue; }
@@ -121,7 +122,8 @@ report=$out/report.md
         (cd "$d" && timeout 120 qemu-aarch64-static "$out/$v/bin/$b" >"$out/$v/bin/$b.out" 2>&1; echo "exit $?" >>"$out/$v/bin/$b.out") || true
       done
       nrun=$((nrun + 1))
-      if cmp -s "$out/stock/bin/$b.out" "$out/lean/bin/$b.out"; then npass=$((npass + 1)); else echo "  - $src: output differs"; fi
+      # log.Fatal and friends prefix the wall-clock time (test/winbatch.go): compare without it
+      if cmp -s <(nots "$out/stock/bin/$b.out") <(nots "$out/lean/bin/$b.out"); then npass=$((npass + 1)); else echo "  - $src: output differs"; fi
     done <"$out/stock/progs"
     echo "- programs: $nb built; binaries byte-identical: $nsame; run under qemu: $nrun; same output and exit status as stock: $npass"
   fi
