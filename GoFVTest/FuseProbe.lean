@@ -62,12 +62,12 @@ def analyze (name : String) (f : Func) (b : ID) (k : Counts) : Counts := Id.run 
   return k
 
 /-- A comparison fusion at `b` (it fired, `g` the result): the shapes the proof relies on. -/
-def analyzeCmp (ce : CheckEnv) (name : String) (f g : Func) (b : ID) (k : Counts) : Counts := Id.run do
+def analyzeCmp (name : String) (f g : Func) (b : ID) (k : Counts) : Counts := Id.run do
   let bb := f.getB b
   let p := bb.preds[0]!.b
   let pb := f.getB p
   let mut k := { k with cmps := k.cmps + 1 }
-  if !Cmp.stepOK ce f g b then
+  if !Cmp.stepOK f g b then
     k := { k with cmpRejected := k.cmpRejected + 1 }
     if k.shown.size < 10 then k := { k with shown := k.shown.push s!"{name} cmp rejected b{b}" }
   if bb.values.any (fun v => !specSafeOp (f.getV v).op) then k := { k with cmpUnsafe := k.cmpUnsafe + 1 }
@@ -150,7 +150,7 @@ def main (args : List String) : IO UInt32 := do
           loop (fun f b k => do
             let cmp (canOpt : Func → Value → Value → Op → Bool) (f : Func) (k : Counts) :=
               let (f', c) := fuseComparisons tv.isMem canOpt f b
-              (f', c, if c then analyzeCmp ce name f f' b k else k)
+              (f', c, if c then analyzeCmp name f f' b k else k)
             let (f, c1, k) := cmp canOptIntInRange f k
             let (f, c2, k) := cmp canOptSingleBitDifference f k
             let (f, c3, k) := cmp canOptNanCheck f k
