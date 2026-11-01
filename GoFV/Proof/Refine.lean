@@ -1,4 +1,5 @@
 import GoFV.SSA.Sem.Run
+import GoFV.Proof.ValRefine
 
 /-!
 # Refinement of functions (`docs/PLAN.md` §1)
@@ -21,22 +22,6 @@ open GoFV.SSA GoFV.SSA.Sem
 
 /-! ## Values -/
 
-mutual
-theorem Sem.Refines.trans : {a b c : Val} → Sem.Refines a b → Sem.Refines b c → Sem.Refines a c
-  | _, _, _, .poison _, _ => .poison _
-  | _, _, _, .int _ _, h => h
-  | _, _, _, .bool _, h => h
-  | _, _, _, .mem _, h => h
-  | _, _, _, .tuple h1, .tuple h2 => .tuple (Sem.RefinesList.trans h1 h2)
-  | _, _, _, .ptr _, h => h
-  | _, _, _, .agg h1, .agg h2 => .agg (Sem.RefinesList.trans h1 h2)
-  | _, _, _, .blob _, h => h
-  | _, _, _, .empty, h => h
-theorem Sem.RefinesList.trans :
-    {a b c : List Val} → Sem.RefinesList a b → Sem.RefinesList b c → Sem.RefinesList a c
-  | _, _, _, .nil, .nil => .nil
-  | _, _, _, .cons h1 t1, .cons h2 t2 => .cons (Sem.Refines.trans h1 h2) (Sem.RefinesList.trans t1 t2)
-end
 
 /-! ## Outcomes -/
 
