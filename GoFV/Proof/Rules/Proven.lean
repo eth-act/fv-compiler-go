@@ -25,6 +25,7 @@ import GoFV.Proof.Rules.Dec
 import GoFV.Proof.Rules.DecLoad
 import GoFV.Proof.Rules.DecLoadSel
 import GoFV.Proof.Rules.DecMakeSel
+import GoFV.Proof.Rules.DecStore
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
 import GoFV.Proof.Rules.Div3

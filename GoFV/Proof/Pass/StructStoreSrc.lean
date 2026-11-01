@@ -204,9 +204,6 @@ end Src
 theorem evalPure_copy (ty : Ty) (ai : Int64) (ax : Option AuxRef) (x : Val) :
     evalPure .Copy ty ai ax [x] = x := rfl
 
-theorem evalPure_structMake (ty : Ty) (ai : Int64) (ax : Option AuxRef) (xs : List Val) :
-    evalPure .StructMake ty ai ax xs = .agg xs := rfl
-
 theorem evalPure_offPtr (ty : Ty) (ai : Int64) (ax : Option AuxRef) (xs : List Val) :
     evalPure .OffPtr ty ai ax xs = PtrOps.offPtr ai xs := rfl
 
@@ -215,6 +212,39 @@ theorem retype_ptr_indep {v : Val} {e e' : Option Nat} (h : v.retype (.ptr e) = 
   cases v with
   | int w x => cases w <;> simp [Val.retype] at h
   | _ => simp_all [Val.retype]
+
+theorem ssMakeOp_cases {op : Op} (h : ssMakeOp op = true) :
+    op = .StructMake ∨ op = .StringMake ∨ op = .SliceMake ∨ op = .IMake ∨ op = .ComplexMake ∨
+      op = .ArrayMake1 := by
+  unfold ssMakeOp at h
+  split at h <;> simp_all
+
+/-- A `Make` (`ssMakeOp`) evaluates to the aggregate of its arguments. -/
+theorem evalPure_make {op : Op} (h : ssMakeOp op = true) (ty : Ty) (ai : Int64)
+    (ax : Option AuxRef) (xs : List Val) : evalPure op ty ai ax xs = .agg xs := by
+  rcases ssMakeOp_cases h with rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+theorem frameOp_make {op : Op} (h : ssMakeOp op = true) : GoFV.Proof.Rules.frameOp op = false := by
+  rcases ssMakeOp_cases h with rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+theorem termOp_make {op : Op} (h : ssMakeOp op = true) : termOp op = true := by
+  rcases ssMakeOp_cases h with rfl | rfl | rfl | rfl | rfl | rfl <;> rfl
+
+theorem make_ne_phi {op : Op} (h : ssMakeOp op = true) : op ≠ .Phi := by
+  rcases ssMakeOp_cases h with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+/-- A symbol's address (`Addr`), at any shape, keeps its value at the 64-bit integer shape: a
+global has no concrete address. -/
+theorem retype_w64_addrVal (T : Ty) (tabs : Tables) (ax : Option AuxRef) :
+    Val.retype (.int .w64) (Val.retype T (GoFV.Proof.Rules.addrVal tabs ax)) =
+      Val.retype T (GoFV.Proof.Rules.addrVal tabs ax) := by
+  unfold GoFV.Proof.Rules.addrVal
+  split
+  · cases T with
+    | int w => cases w <;> simp [Val.retype, Ptr.addr?, Blk.base?]
+    | ptr e => simp [Val.retype, Ptr.addr?, Blk.base?]
+    | _ => simp [Val.retype]
+  · cases T <;> simp [Val.retype]
 
 theorem copyReach_copyEnd (M : Defs) : ∀ (n : Nat) (a : ID),
     copyReach tabs M n a (copyEnd tabs M n a) = true
@@ -374,11 +404,11 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
   have hsmv := d.hsmv; rw [hce] at hsmv
   obtain ⟨smv', ysm, hsmv', hysm, hevs⟩ := H.val smid hA1
   rw [hsmv] at hsmv'; cases hsmv'
-  have hevs := hevs (by rw [d.hsmop]; decide)
+  have hevs := hevs (make_ne_phi d.hsmop)
   have hsmargs : ∀ a ∈ d.smv.args, Base f bid a ∨ a ∈ oS.toList.take k :=
-    fun a ha => H.cl smid d.smv hA1 hsmv (by rw [d.hsmop]; decide) a ha
-  rw [evalValue_of_regs (regs_of_ok hevs), evalOp_term (by rw [d.hsmop]; decide),
-    GoFV.Proof.Rules.opVal_pure (by rw [d.hsmop]; decide), d.hsmop, evalPure_structMake,
+    fun a ha => H.cl smid d.smv hA1 hsmv (make_ne_phi d.hsmop) a ha
+  rw [evalValue_of_regs (regs_of_ok hevs), evalOp_term (termOp_make d.hsmop),
+    GoFV.Proof.Rules.opVal_pure (frameOp_make d.hsmop), evalPure_make d.hsmop,
     hid smid d.smv hA1 hsmv, tys_of_value hsmv, Option.getD_some, d.hsmty] at hevs
   simp only [pure, Res.bind, bind] at hevs
   cases hevs
@@ -395,10 +425,34 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
     have hA : Base f bid a ∨ a ∈ oS.toList.take k :=
       hsmargs a (by rw [← ha]; exact Array.mem_toList_iff.1 (List.getElem_mem _))
     obtain ⟨-, ya, -, hya, -⟩ := H.val a hA
-    have := hT a ya hya
-    rw [tys_of_value L.ha, Option.getD_some, L.haty] at this
+    have hty := hT a ya hya
+    rw [tys_of_value L.ha, Option.getD_some] at hty
     simp only [rv, hya, Option.join_some, Option.getD_some]
-    exact this
+    -- the argument fits its field (`ssFieldOK`)
+    have hfield := L.hfield
+    unfold ssFieldOK at hfield
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at hfield
+    rcases hfield with (h | h) | ⟨⟨ht, hs⟩, hw⟩
+    · rw [← Ty.eq_of_beq h]; exact hty
+    · revert h hty
+      cases tabs.ty av.type <;> cases t <;> simp
+      exact retype_ptr_indep
+    · rw [Ty.eq_of_beq ht]
+      rw [Option.any_eq_true] at hw
+      obtain ⟨wv, hwv, hwop⟩ := hw
+      simp only [beq_iff_eq] at hwop
+      obtain ⟨hAw, hrw⟩ := copy_reg H hT hid _ hA (copyReach_copyEnd f.valueTab _ a)
+      generalize copyEnd tabs f.valueTab f.valueTab.size a = w at hwv hAw hrw
+      obtain ⟨wv', yw, hwv', hyw, hevw⟩ := H.val w hAw
+      rw [hwv] at hwv'; cases hwv'
+      have hevw := hevw (by rw [hwop]; decide)
+      rw [evalValue_of_regs (regs_of_ok hevw), evalOp_term (by rw [hwop]; decide), hwop,
+        GoFV.Proof.Rules.opVal_addr, hid w wv hAw hwv, tys_of_value hwv, Option.getD_some] at hevw
+      simp only [pure, Res.bind, bind] at hevw
+      cases hevw
+      rw [hrw, hya] at hyw
+      cases hyw
+      exact retype_w64_addrVal _ _ _
   have hagg : Val.retype (.agg d.fs d.n) (.agg (d.smv.args.toList.map (rv S))) =
       .agg (d.smv.args.toList.map (rv S)) := by
     simp only [Val.retype, hvs]

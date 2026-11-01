@@ -13,9 +13,11 @@ The two passes are checked in stages, every stage under the pass's output tables
   of the input tables and `T`);
 - the phi splits (`phiStage`) are related to the input by `DecPhiCheck.decPhiCheck`;
 - decompose builtin's dec-rule rewrite is re-run with the proven dec rules
-  (`Rules.Proven.dec`) and validated (`RewriteCheck.validate`), and must give the pass's
-  output up to positions, use counts, caches and the name bookkeeping (`stripNames`), which
-  the semantics never reads.
+  (`Rules.Proven.dec`) and validated in layers (`RewriteCheck.layersOK` with
+  `RewriteCheck.decLayers`: its value-rule `Load` expansions, then its `Store` splits, then
+  `RewriteCheck.validate` with the other events), and must give the pass's output up to
+  positions, use counts, caches and the name bookkeeping (`stripNames`), which the semantics
+  never reads.
 
 `decUserFrag`/`decBuiltinFrag` look only at the pass input (a pass error is in the fragment,
 the pass then has no output), like `daeFrag`.
@@ -49,14 +51,15 @@ def decUserFrag (env : PassEnv) (f : Func) : Bool :=
 
 /-- The checks of decompose builtin's stages, given the phi stage `g1` of `f`, the proven
 dec rules' rewrite `g2` of `g1` with its log, and the pass output `out`: `g1` is `f` with its
-phis split, `g2` is a validated rewrite of `g1` with `out`'s code, and the tables only add
-unforgeable frame names. -/
+phis split, `g2` is a rewrite of `g1` validated in layers with `out`'s code, and the tables only
+add unforgeable frame names. -/
 def decBuiltinStagesOK (env : PassEnv) (f g1 g2 : Func) (log : Array Rules.RwEvent)
     (out : PassOut) : Bool :=
   let T := out.tables
   tabsAgreeMod env.tables T f && DecPhiCheck.decPhiCheck T f g1 &&
     (check (decCheckEnv env T) g1).isOk && (check (decCheckEnv env T) g2).isOk &&
-    tabsAgree T T g1 && RewriteCheck.validate T decProvenTable g1 g2 log && sameCode g2 out.func
+    RewriteCheck.layersOK env decProvenTable g1 { func := g2, tables := T }
+      RewriteCheck.decLayers g1 log && sameCode g2 out.func
 
 /-- decompose builtin's output `out` of `f` is checked (`decBuiltinStagesOK` of the phi stage
 `phiStage` and the proven dec rules' rewrite of it). -/

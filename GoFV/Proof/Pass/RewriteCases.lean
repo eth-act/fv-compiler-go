@@ -91,6 +91,9 @@ theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pa
       | ss =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .ss hL.1 hL.2 hc
+      | ld =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        exact .rw hL.1 hL.2 hc
 
 /-- What an accepted run (`checkedRun`) returns. -/
 theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
@@ -329,12 +332,13 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
           refine .inr ⟨hv.1, log, ?_⟩
           rw [← layersOK_none (penv := penv) (f0 := f) RewriteCheck.layers]
           · exact hv.2
-          · intro L _
+          · intro L hL
             cases L with
             | nil sel => exact nilPre_none h0 _ sel f log
             | fwd sel => exact fwdPre_none h1 _ sel f log
             | sl => exact slPre_none h4 _ f log
             | ss => exact ssPre_none h2 f log
+            | ld => simp [RewriteCheck.layers] at hL
         · cases h3
 
 theorem validate_parts {tabs : Tables} {t : Interp.Table} {f g : Func} {log : Array RwEvent}

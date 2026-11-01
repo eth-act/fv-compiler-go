@@ -95,6 +95,109 @@ structure Counts where
   frag : Nat := 0
   deriving Inhabited
 
+/-- Why value `x` of `f` is not a split in `g` (`RewriteCheck.ssSplit?`), by class. -/
+def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
+  let some fv := f.value? x | return "no fv"
+  let some gv := g.value? x | return "no gv"
+  match fv.args.toList, Sem.auxTy tabs fv.aux with
+  | [dst, sm, mem], .agg fs n =>
+    let some smv := f.value? (RewriteCheck.copyEnd tabs f.valueTab f.valueTab.size sm) |
+      return "no Make"
+    let copy := gv.op == .Copy
+    let last := if copy then gv.args[0]?.getD 0 else x
+    let r := RewriteCheck.ssWalk g fs.length last
+    if !(RewriteCheck.ssMakeOp smv.op) then return s!"stored {smv.op.name}"
+    if !Ty.beq (tabs.ty smv.type) (.agg fs n) then return "Make shape"
+    if !(RewriteCheck.layoutsOK n fs && fs.all (·.1 < n) && smv.args.size == fs.length) then
+      return "layout"
+    if !(gv.id == x && gv.type == fv.type && gv.block == fv.block) then return "target header"
+    if !(r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2) then return "walk"
+    if !RewriteCheck.ssStart tabs f g fv.block mem r.2 then return "start"
+    for k in List.range fs.length do
+      if !RewriteCheck.ssLink tabs f g fv.block dst x fs smv.args r.1 r.2 k then
+        let (o, t) := fs[k]!
+        let a := smv.args[k]!
+        let (p, s) := r.1[k]!
+        let some av := f.value? a | return "link: arg"
+        let some sv := g.value? s | return "link: store"
+        if !RewriteCheck.ssFieldOK tabs f a (tabs.ty av.type) t then
+          return s!"link: field {repr t} arg {repr (tabs.ty av.type)}"
+        if !Ty.beq (Sem.auxTy tabs sv.aux) t then return "link: store shape"
+        if !RewriteCheck.ssPtrOK tabs f g fv.block dst p o then return "link: pointer"
+        return "link: other"
+    return "?"
+  | _, t => return s!"shape {(repr t).pretty.take 20}"
+
+/-- Why `ssRel f g` fails: the first changed, unsplit value of `f`. -/
+def ssWhy (tabs : Tables) (f g : Func) : String := Id.run do
+  for x in [0:f.valueTab.size] do
+    match f.value? x, g.value? x with
+    | some u, some w =>
+      if !RewriteCheck.ssSame u w && (RewriteCheck.ssSplit? tabs f g x).isNone then
+        return splitWhy tabs f g x
+    | _, _ => pure ()
+  return "global"
+
+/-- The first event of `log` the replay rejects, by class. -/
+def replayWhy (tabs : Tables) (t : GoFV.Rules.Interp.Table) (f : Func)
+    (log : Array GoFV.Rules.RwEvent) : String := Id.run do
+  for i in [0:log.size] do
+    if (RewriteCheck.replay tabs t f f.valueTab [] (log.toList.take (i + 1))).isNone then
+      let M := match RewriteCheck.replay tabs t f f.valueTab [] (log.toList.take i) with
+        | some (M, _) => M
+        | none => f.valueTab
+      let some ev := log[i]? | return "?"
+      return match ev with
+        | GoFV.Rules.RwEvent.rule v j _ _ =>
+          match M.get? v with
+          | some x =>
+            let r := (t.values[x.op.ctorIdx]?).bind (·[j]?)
+            let loc := match r with
+              | some cr => s!"{cr.rule.loc.1}:{cr.rule.loc.2}"
+              | none => if x.op == Op.Store then "store split" else s!"#{j}"
+            s!"rule {x.op.name} {loc}"
+          | none => "rule on missing value"
+        | .copyArg .. => "copyArg"
+        | .control .. => "control"
+        | .phielim .. => "phielim"
+        | .blockRule .. => "blockRule"
+  return "?"
+
+/-- The first failing conjunct of `RewriteCheck.validate`. -/
+def validateWhy (tabs : Tables) (t : GoFV.Rules.Interp.Table) (f g : Func)
+    (log : Array GoFV.Rules.RwEvent) : String :=
+  if !RewriteCheck.atomsOK f g then "atomsOK"
+  else if !RewriteCheck.closedOK f then "closedOK f"
+  else if !RewriteCheck.closedOK g then "closedOK g"
+  else match RewriteCheck.replay tabs t f f.valueTab [] log.toList with
+    | some (M, B) => if RewriteCheck.finalOK tabs f g M B then "?" else "finalOK"
+    | none => s!"replay: {replayWhy tabs t f log}"
+
+/-- The first layer of `RewriteCheck.layersOK` that fails (`ld`, `ss`, or the final
+`validate`), as `RewriteCheck.layersOK` walks `Ls`. -/
+def layersWhy (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Func) (out : PassOut) :
+    List RewriteCheck.Layer → Func → Array GoFV.Rules.RwEvent → String
+  | [], f, log =>
+    if RewriteCheck.validate out.tables t f out.func log then "?"
+    else s!"validate: {validateWhy out.tables t f out.func log}"
+  | L :: Ls, f, log =>
+    let name := match L with
+      | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld"
+    match L.pre t out.tables f log with
+    | (f', log') =>
+      if log'.size == log.size then layersWhy env t f0 out Ls f log
+      else if !RewriteCheck.layerOK env t out.tables f0 L f log f' then
+        match L with
+        | .ld =>
+          let ev := RewriteCheck.ldTaken t out.tables f log
+          if RewriteCheck.validate out.tables t f f' ev then "layer ld: check"
+          else s!"layer ld: {validateWhy out.tables t f f' ev}"
+        | .ss =>
+          if RewriteCheck.ssRel out.tables f f' then "layer ss: check"
+          else s!"layer ss: {ssWhy out.tables f f'}"
+        | _ => s!"layer {name}"
+      else layersWhy env t f0 out Ls f' log'
+
 /-- The first failing conjunct of `decBuiltinOK`. -/
 def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
   match Decompose.phiStage env true f with
@@ -109,8 +212,10 @@ def builtinWhy (env : PassEnv) (f : Func) (out : PassOut) : String :=
       else if !decPhiCheck T f g1 then "decPhiCheck in output tables"
       else if !(check ce g1).isOk then "check phi stage"
       else if !(check ce o2.func).isOk then "check proven rewrite"
-      else if !tabsAgree T T g1 then "tabsAgree T T"
-      else if !RewriteCheck.validate T Decompose.decProvenTable g1 o2.func log then "validate"
+      else if !RewriteCheck.layersOK env Decompose.decProvenTable g1 { func := o2.func, tables := T }
+          RewriteCheck.decLayers g1 log then
+        layersWhy env Decompose.decProvenTable g1 { func := o2.func, tables := T }
+          RewriteCheck.decLayers g1 log
       else if !Decompose.sameCode o2.func out.func then "proven rewrite ≠ pass output"
       else "?"
 
