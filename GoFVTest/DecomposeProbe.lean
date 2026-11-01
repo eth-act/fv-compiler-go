@@ -124,6 +124,14 @@ def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
           return s!"link: field {repr t} arg {repr (tabs.ty av.type)}"
         if !Ty.beq (Sem.auxTy tabs sv.aux) t then return "link: store shape"
         if !RewriteCheck.ssPtrOK tabs f g fv.block dst p o then return "link: pointer"
+        let prev := if k = 0 then r.2 else (r.1[k - 1]?.map (·.2)).getD 0
+        if !((f.value? s).isNone || (s == x && k + 1 == r.1.length)) then return "link: not fresh"
+        if sv.op != .Store then return s!"link: op {sv.op.name}"
+        if sv.block != fv.block then return "link: block"
+        if !(sv.args.size == 3 && sv.args[0]! == p && sv.args[2]! == prev) then return "link: args"
+        if !RewriteCheck.copyReach tabs f.valueTab f.valueTab.size a sv.args[1]! then
+          let sa := (g.value? sv.args[1]!).map (·.op.name)
+          return s!"link: stored value {(av.op.name)} vs {sa}"
         return "link: other"
     return "?"
   | _, t => return s!"shape {(repr t).pretty.take 20}"

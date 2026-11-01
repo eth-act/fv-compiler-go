@@ -375,7 +375,7 @@ theorem RuleFacts.result {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : 
           simp only [blockTopOK, Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq,
             Option.isNone_iff_eq_none, Bool.not_eq_true', List.contains_eq_mem,
             decide_eq_false_iff_not, Option.any_eq_true] at htop
-          obtain ⟨⟨⟨⟨⟨⟨⟨⟨hne, hM⟩, hd⟩, hop⟩, hargs⟩, -⟩, -⟩, -⟩, u, hu, hc⟩ := htop
+          obtain ⟨⟨⟨⟨⟨⟨⟨hne, hM⟩, hd⟩, hop⟩, hargs⟩, -⟩, -⟩, u, hu, hc⟩ := htop
           rw [F.hid] at hne
           exact .inr ⟨hne, hM, hd, hop, hargs, u, hu, hc⟩
     refine .inr ⟨{

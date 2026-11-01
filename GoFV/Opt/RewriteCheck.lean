@@ -424,11 +424,13 @@ def copyCompat (s t : Sem.Ty) : Bool :=
   GoFV.Opt.CSE.tyEq s t || (s matches .ptr _ && t matches .ptr _)
 
 /-- An `@b` result (`… => @x.Block (…)`, issue #17): node 0 is built fresh as `t` (in block
-`b`, which the term denotations do not read) and `v` becomes `Copy t` at its own type, the
-identity on `t`'s value (`copyCompat`). -/
+`b`, which the term denotations do not read) and `v` becomes `Copy t`, the identity on `t`'s
+value (`copyCompat`). The copy has `t`'s type, as Go's `copyOf` gives it, which need not be `v`'s
+type id (`(SlicePtr x:(Load <t> …)) => @x.Block (Load <t.Elem().PtrTo()> …)` at a selection typed
+`*go.shape.uint16` builds a `*uint16`). -/
 def blockTopOK (tabs : Tables) (M : Defs) (v u0 : Value) (us : List Value) (t : ID) : Bool :=
   t != v.id && (M.get? t).isNone && !((us.map (·.id)).drop 1).contains t &&
-  u0.op == .Copy && u0.args == #[t] && u0.auxInt == 0 && u0.aux == none && u0.type == v.type &&
+  u0.op == .Copy && u0.args == #[t] && u0.auxInt == 0 && u0.aux == none &&
   us.head?.any fun u => copyCompat (tabs.ty u0.type) (tabs.ty u.type)
 
 /-- The built definitions are the result's (`resDen`): `copy` of a bound value, or a `build`
@@ -2230,7 +2232,8 @@ def slEvent? (t : Interp.Table) (tabs : Tables) (f : Func) : RwEvent → Option 
   | _ => none
 
 /-- The expansion of the `Load` `v`: its arguments lose a use, the fresh values put in, and `v`
-redefined as the logged `StructMake`, whose arguments gain a use. -/
+redefined as the logged `StructMake` (or, for an `@b` result, the logged `Copy` with its type),
+whose arguments gain a use. -/
 def slApply (f : Func) (v : ID) : List Value → Func
   | [] => f
   | x' :: ds =>
@@ -2238,7 +2241,8 @@ def slApply (f : Func) (v : ID) : List Value → Func
     | some u =>
       let f := u.args.foldl (fun f a => f.modV a fun w => { w with uses := w.uses - 1 }) f
       let f := x'.args.foldl Func.incUses (ds.foldl ssPut f)
-      f.modV v fun w => { w with op := x'.op, auxInt := x'.auxInt, aux := x'.aux, args := x'.args }
+      f.modV v fun w =>
+        { w with op := x'.op, type := x'.type, auxInt := x'.auxInt, aux := x'.aux, args := x'.args }
     | none => f
 
 /-- One event of `slPre`: an expansion of `f` is applied, any other event kept, but for the
@@ -2263,49 +2267,77 @@ def slTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) 
 The decompose rules expand a `Load` of a builtin composite by a value rule
 (`(Load <t> ptr mem) && t.IsString() => (StringMake (Load …) (Load … (OffPtr …)))`), and a
 `Store` of that value is then split in place: as for the struct-load expansions, the split layer
-needs the expansion applied first. `ldPre` applies the log's value-rule events on `Load`s of the
-layer's input, and on one-argument values of a `Load` (the extractors `dec.rules:132`–`:162`,
-`(StringPtr x:(Load <t> ptr mem)) => @x.Block (Load …)`: the rewrite logs them before the `Load`'s
-own expansion, which would turn their argument into a `Make` they no longer match), that the
-replay validates alone on its definitions (`v` redefined as logged, the fresh values put in:
-`slApply`), and the layer is related to its input by `validate` with those events alone. -/
+needs the expansion applied first. `ldPre` takes, in log order, the value-rule events on `Load`s
+and on one-argument values of a `Load` or a `Make` (the extractors `dec.rules:132`–`:162`,
+`(StringPtr x:(Load <t> ptr mem)) => @x.Block (Load …)`, which the rewrite logs before the
+`Load`'s own expansion, which would turn their argument into a `Make` they no longer match; the
+selections `(SlicePtr (SliceMake ptr _ _)) => ptr`, whose results a split stores), and the
+copy-argument replacements of a `Load`'s argument or by a `Load` (copy elimination before such a
+rule: `(SliceLen (StructSelect [i] (Load …)))` reads the field `Load` the selection became), each
+if the replay validates it on the definitions of the events taken before (`v` redefined as logged,
+the fresh values put in: `slApply`; an argument replaced: `Func.setArg`). The layer is related to
+its input by `validate` with the taken events; the events it supersedes (replacements of the
+same argument, or of an argument of a redefined value, logged before) are dropped. -/
 
-/-- `u` is a `Load` of `f` or has one argument, a `Load` of `f`. -/
-def ldTarget (f : Func) (u : Value) : Bool :=
-  u.op == .Load || (u.args.size == 1 && (u.args[0]?.bind f.value?).any (·.op == .Load))
+/-- `u` is a `Load` or has one argument, a `Load` or a `Make` (`ssMakeOp`) of `M`. -/
+def ldTarget (M : Defs) (u : Value) : Bool :=
+  u.op == .Load ||
+    (u.args.size == 1 && (u.args[0]?.bind M.get?).any fun w => w.op == .Load || ssMakeOp w.op)
 
-/-- The value `v` of `f` (`ldTarget`) that the value-rule event `ev` rewrites and the logged
-definitions, if the replay validates `ev` alone on `f`'s definitions. -/
-def ldEvent? (t : Interp.Table) (tabs : Tables) (f : Func) (ev : RwEvent) :
-    Option (ID × List Value) :=
+/-- The state of `ldPre`: the layer's function, the definitions the taken events replay to from
+the input's, the taken events and the remaining ones. -/
+structure LdSt where
+  g : Func
+  M : Defs
+  taken : Array RwEvent
+  rest : Array RwEvent
+
+/-- One event of `ldPre` (input `f`): a value-rule event on an `ldTarget` of the definitions so
+far, or a copy-argument replacement of a `Load`'s argument or by a `Load`, that the replay
+validates on them is applied and taken; any other event kept, but for the copy-argument
+replacements a taken event supersedes. -/
+def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEvent) : LdSt :=
+  let keep := { s with rest := s.rest.push ev }
   match ev with
   | .rule v i _ defs =>
-    match f.value? v with
+    match s.M.get? v with
     | some u =>
-      if ldTarget f u && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 &&
-          (replay tabs t f f.valueTab [] [ev]).isSome then
-        some (v, match defs.toList with | w :: ds => w :: (ds.filter (·.id != v)).reverse | [] => [])
-      else none
-    | none => none
-  | _ => none
+      if ldTarget s.M u && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 then
+        match replay tabs t f s.M [] [ev] with
+        | some (M', _) =>
+          let ds := match defs.toList with | w :: ds => w :: (ds.filter (·.id != v)).reverse | [] => []
+          { g := slApply s.g v ds, M := M', taken := s.taken.push ev
+            rest := s.rest.filter fun | .copyArg y _ _ => y != v | _ => true }
+        | none => keep
+      else keep
+    | none => keep
+  | .copyArg v i src =>
+    match s.M.get? v, s.M.get? src with
+    | some u, some w =>
+      if u.op == .Load || w.op == .Load then
+        match replay tabs t f s.M [] [ev] with
+        | some (M', _) =>
+          { g := s.g.setArg v i src, M := M', taken := s.taken.push ev
+            rest := s.rest.filter fun | .copyArg y j _ => !(y == v && j == i) | _ => true }
+        | none => keep
+      else keep
+    | _, _ => keep
+  | _ => keep
 
-/-- One event of `ldPre`: an expansion of `f` is applied, any other event kept, but for the
-copy-argument replacements of the expanded `Load` logged before it. -/
-def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (p : Func × Array RwEvent)
-    (ev : RwEvent) : Func × Array RwEvent :=
-  match ldEvent? t tabs f ev with
-  | some (v, ds) => (slApply p.1 v ds, p.2.filter fun | .copyArg y _ _ => y != v | _ => true)
-  | none => (p.1, p.2.push ev)
+/-- `ldStep` over the log of the layer's input `f`. -/
+def ldRun (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) : LdSt :=
+  log.foldl (ldStep t tabs f) { g := f, M := f.valueTab, taken := #[], rest := #[] }
 
-/-- The input with the log's validated value-rule `Load` expansions applied, and the remaining
-events. -/
+/-- The input with the log's validated value-rule `Load` expansions (and the copy-argument
+replacements they need) applied, and the remaining events. -/
 def ldPre (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) :
     Func × Array RwEvent :=
-  log.foldl (ldStep t tabs f) (f, #[])
+  let s := ldRun t tabs f log
+  (s.g, s.rest)
 
-/-- The expansions `ldPre` applies. -/
+/-- The events `ldPre` applies. -/
 def ldTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) : Array RwEvent :=
-  log.filter fun ev => (ldEvent? t tabs f ev).isSome
+  (ldRun t tabs f log).taken
 
 /-! ## Layers (issue #151)
 
