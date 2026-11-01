@@ -894,11 +894,11 @@ cannot panic, and the other roots keep their order), and `validate` relates `nil
 output with the remaining events. -/
 
 /-- A nil-check elimination `(NilCheck x:(Op …) _) => x` whose pointer op nilcheckelim's
-checker justifies by itself (`NilCheck.safePtr`: `Addr`, `LocalAddr`, `NilCheck`). -/
+checker justifies by itself (`NilCheck.safePtr`: `Addr`, `LocalAddr`, `NilCheck`, `GetG`). -/
 def nilElimOK (r : Rule) : Bool :=
   match r.pat, r.result with
   | .op .NilCheck none _ _ _ .fixed [.op o (some x) _ _ _ _ _ _, _] _, .copy (.var y) =>
-    x == y && (o matches .Addr | .LocalAddr | .NilCheck)
+    x == y && (o matches .Addr | .LocalAddr | .NilCheck | .GetG)
   | _, _ => false
 
 /-- The nil check `v` of `f` that event `ev` eliminates, if it is a `nilChecks` rule event

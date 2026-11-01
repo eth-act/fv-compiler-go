@@ -634,7 +634,7 @@ omit K in
 theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr tabs f (n + 1) z = true) :
     ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧
       (((v.op = .Addr ∨ v.op = .LocalAddr) ∧ v.aux.isSome = true) ∨ v.op = .NilCheck ∨
-        ((v.op = .OffPtr ∨ v.op = .AddPtr) ∧
+        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr) ∧
           ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr tabs f n a = true)) := by
   unfold Opt.NilCheck.safePtr at h
   cases hv : f.value? z with
@@ -653,13 +653,14 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr tabs f (n + 1)
   · next h => exact .inl ⟨.inl h, hop⟩
   · next h => exact .inl ⟨.inr h, hop⟩
   · next h => exact .inr (.inl h)
+  · next h => exact .inr (.inr (.inl h))
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr ⟨.inl h, a, ha, hop⟩)
+    · next a ha => exact .inr (.inr (.inr ⟨.inl h, a, ha, hop⟩))
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr ⟨.inr h, a, ha, hop⟩)
+    · next a ha => exact .inr (.inr (.inr ⟨.inr h, a, ha, hop⟩))
     · cases hop
   · cases hop
 
@@ -689,7 +690,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
     have hph : v.op ≠ .Phi := by
       intro hp
-      rcases hop with ⟨h1 | h1, -⟩ | h1 | ⟨h1 | h1, -⟩ <;> rw [hp] at h1 <;> cases h1
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1, -⟩ <;> rw [hp] at h1 <;> cases h1
     obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
     have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = .ptr e := by
@@ -707,7 +708,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
       intro h; rcases h with h | h | h | h <;> rw [h] <;> decide
-    rcases hop with ⟨h1, hax⟩ | h1 | ⟨h1, a, ha, hsa⟩
+    rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       obtain ⟨x, hx, hsx⟩ : ∃ x, frameVal (Ctx.make tabs f) v = some x ∧ Safe x := by
@@ -717,6 +718,15 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       rw [hx] at hr; cases hr; exact hsx
     · rw [evalOp_nilCheck h1] at hr
       exact nilCheck_ok_safe h1 hr
+    · -- `GetG`: the goroutine's `g`, a global allocation of the environment
+      have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+          v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide
+      obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hg
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
+      have hfv : frameVal (Ctx.make tabs f) v = none := frameVal_none (by rw [h1]; decide)
+      rw [hfv, h1] at hr; cases hr
+      show Blk.global "runtime.g" ≠ Blk.nil
+      nofun
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       have hfv : frameVal (Ctx.make tabs f) v = none :=
