@@ -1,5 +1,6 @@
 import GoFV.Proof.Rules.TacticRange
 import GoFV.Proof.Rules.TacticCond
+import GoFV.Rules.Generated.Generic.Values01
 
 /-!
 # Single-bit equality tests (`generic.rules:369`, `:372`)
@@ -142,6 +143,16 @@ theorem onebit_int {T : GoTy} {w : Nat} (hT : T.intInfo? = some (w, true)) (hw :
     simp only [↓reduceIte, Int.bmod_bmod] at this ⊢
     simpa using this
 
+/-- `onebit_int` for `Neq` (`generic.rules:369`): `x | (c^d) != c` iff `x != c && x != d`. -/
+theorem onebit_int_ne {T : GoTy} {w : Nat} (hT : T.intInfo? = some (w, true)) (hw : w ≤ 64)
+    (c d : Int) (y : BitVec w)
+    (h1 : bitwise T (fun x1 x2 => x1 ||| x2) c d = c)
+    (h2 : wrapInt w true (andPred T (bitwise T (fun x1 x2 => x1 ^^^ x2) c d)) = 0)
+    (h3 : ¬bitwise T (fun x1 x2 => x1 ^^^ x2) c d = 0) :
+    ((y ||| BitVec.ofInt w (bitwise T (fun x1 x2 => x1 ^^^ x2) c d)) != BitVec.ofInt w c) =
+      (y != BitVec.ofInt w c && y != BitVec.ofInt w d) := by
+  simp only [bne, onebit_int hT hw c d y h1 h2 h3, Bool.not_or]
+
 end GoFV.Proof.Rules
 
 namespace GoFV.Proof.Rules
@@ -168,7 +179,26 @@ macro "rule_onebit" : tactic => `(tactic| (
     first
     | done
     | with_reducible rfl
-    | (simp (disch := first | rfl | decide | assumption) only [GoFV.Proof.Rules.onebit_int]
+    | (simp (disch := first | rfl | decide | assumption) only [GoFV.Proof.Rules.ofInt_wrapInt_true,
+         GoFV.Proof.Rules.ofInt_int64_ofInt, GoFV.Proof.Rules.onebit_int,
+         GoFV.Proof.Rules.onebit_int_ne]
        simp_all))))
+
+
+/-- `generic.rules:369`: `(AndB (Neq64 x cv:(Const64 [c])) (Neq64 x (Const64 [d]))) && c|d == c && oneBit(c^d) => (Neq64 (Or64 <x.Type> x (Const64 <x.Type> [c^d])) cv)` -/
+theorem r_generic_369_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_369 := by
+  rule_onebit
+
+/-- `generic.rules:369`: `(AndB (Neq32 x cv:(Const32 [c])) (Neq32 x (Const32 [d]))) && c|d == c && oneBit(c^d) => (Neq32 (Or32 <x.Type> x (Const32 <x.Type> [c^d])) cv)` -/
+theorem r_generic_369_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_369_2 := by
+  rule_onebit
+
+/-- `generic.rules:369`: `(AndB (Neq16 x cv:(Const16 [c])) (Neq16 x (Const16 [d]))) && c|d == c && oneBit(c^d) => (Neq16 (Or16 <x.Type> x (Const16 <x.Type> [c^d])) cv)` -/
+theorem r_generic_369_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_369_3 := by
+  rule_onebit
+
+/-- `generic.rules:369`: `(AndB (Neq8 x cv:(Const8 [c])) (Neq8 x (Const8 [d]))) && c|d == c && oneBit(c^d) => (Neq8 (Or8 <x.Type> x (Const8 <x.Type> [c^d])) cv)` -/
+theorem r_generic_369_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_369_4 := by
+  rule_onebit
 
 end GoFV.Proof.Rules

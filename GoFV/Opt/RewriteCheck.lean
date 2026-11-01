@@ -310,14 +310,14 @@ def topOK (op : Op) (ty : Sem.Ty) : Bool :=
   natShape op ty || ptrTop op ty || constTop op ty || frameTop op ty
 
 mutual
-/-- Every leaf of the pattern has an integer, boolean or pointer shape. `Pat.typed` asks of the
+/-- Every leaf of the pattern has an integer, boolean, pointer or memory shape. `Pat.typed` asks of the
 leaves that their values have their type's shape: `Val.retype` at a shape always produces a
 value of that shape (`Val.retype_hasTy`, issue #108). -/
 def leavesOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) : Pat → Bool
   | .op _ _ _ _ _ _ args _ => leavessOK tabs M I p 0 args
   | _ =>
     match M.get? (I.at p) with
-    | some x => (match tabs.ty x.type with | .int _ | .bool | .ptr _ => true | _ => false)
+    | some x => (match tabs.ty x.type with | .int _ | .bool | .ptr _ | .mem => true | _ => false)
     | none => false
 def leavessOK (tabs : Tables) (M : Defs) (I : Inst) (p : Path) (i : Nat) : List Pat → Bool
   | [] => true
