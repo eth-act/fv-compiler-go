@@ -63,6 +63,16 @@ structure Counts where
   scanCost : Nat := 0
   maxPerFn : Nat := 0
   mismatch : Nat := 0
+  /-- checker accepts / rejects by plan shape: none, merge, uIntoT, tIntoU, tExits, uExits -/
+  acc : Array Nat := #[0, 0, 0, 0, 0, 0]
+  rej : Array Nat := #[0, 0, 0, 0, 0, 0]
+  /-- rejections whose only failing block check is the schedule order (weak order holds) -/
+  schedWeak : Nat := 0
+  /-- checked blocks summed over rewrites -/
+  kBlocks : Nat := 0
+  grows : Nat := 0
+  growsB : Nat := 0
+  rejShown : Array String := #[]
   shown : Array String := #[]
   deriving Inhabited
 
@@ -253,10 +263,98 @@ def constPhiArgsI (tabs : Tables) (isBool : TypeRef → Bool) (sameType : TypeRe
 
 def nvals (f : Func) : Nat := f.blocks.foldl (fun n b => n + (f.getB b).values.size) 0
 
-def step (name : String) (f : Func) (b : ID) (k : Counts) : Except String (Func × Bool × Counts) := do
+def planIdx : Option Plan → Nat
+  | none => 0
+  | some (.merge ..) => 1
+  | some (.uIntoT ..) => 2
+  | some (.tIntoU ..) => 3
+  | some (.tExits ..) => 4
+  | some (.uExits ..) => 5
+
+/-- The weak schedule order: every source non-phi the target lists before a source root, the
+source lists before it. -/
+def schedWeakOK (f g : Func) (fB gB : Block) : Bool :=
+  match Sem.schedule f fB, Sem.schedule g gB with
+  | some oS, some oT =>
+    let nS := Info.nodesOf f fB
+    let pos (x : ID) : Nat := (oS.toList.idxOf? x).getD 0
+    let src := oT.toList.filter (nS.contains ·)
+    (List.range src.length).all fun j =>
+      let r := src[j]!
+      Sem.prio (f.getV r).op == 0 || (src.take j).all fun y => pos y < pos r
+  | _, _ => false
+
+/-- Which parts of `scOK` fail. -/
+def diag (tabs : Tables) (f g : Func) (s : Site) : List String := Id.run do
+  let I := infoOf tabs f g s
+  let T := I.factTab f g
+  let mut out : List String := [s!"b{s.b} p{s.p} t{I.t} region {I.region} K {I.K} T {T.toList.map fun (B, pin, o) => (B, pin, o)} dflt {I.dflt}"]
+  for B in I.region do
+    let gB := g.getB B
+    let phis := gB.values.toList.filter (isPhiIn g ·) |>.map fun z => (z, (g.getV z).args.toList)
+    out := s!"R b{B}: gpreds {gB.preds.toList.map (·.b)} has54 {gB.values.contains 54} phis {phis} succs {gB.succs.toList.map (·.b)}" :: out
+  if !I.preOK f then out := "preOK" :: out
+  if !wfOK g then out := "wfOK" :: out
+  if !(g.blocks == f.blocks && g.entry == f.entry && g.ownAux == f.ownAux &&
+      g.valueTab.size == f.valueTab.size && g.blockTab.size == f.blockTab.size) then out := "blocks/entry/sizes" :: out
+  if !I.redirOK f g then out := "redirOK" :: out
+  if !I.regionOK g then out := "regionOK" :: out
+  if !I.frameOK f g then out := "frameOK" :: out
+  if !I.exitOK g T then out := "exitOK" :: out
+  if !I.scanOK g then out := "scanOK" :: out
+  for B in I.K do
+    if I.blockOK f g T B then continue
+    match f.block? B, g.block? B with
+    | some fB, some gB =>
+      let (pin, out') := I.factsOf T B
+      let inR := I.region.contains B
+      let mut parts : List String := []
+      if !(gB.kind == fB.kind && gB.controls.size == fB.controls.size) then parts := "kind/ctrl" :: parts
+      if !(inR || B == I.s.b || (pin == I.dflt && out' == I.dflt)) then parts := "dflt" :: parts
+      if !I.newOK f fB gB then parts := "new" :: parts
+      if !I.nodesOK f g fB gB pin out' (inR || B == I.s.b) then
+        let nT := Info.nodesOf g gB
+        let nS := Info.nodesOf f fB
+        let home := I.home f g fB out'
+        let bad1 := nS.toList.filter fun y => !(nT.contains y && home y == some y)
+        let bad2 := nT.toList.filter fun x => !I.nodeOK f g fB gB pin out' (inR || B == I.s.b) x
+        let showV (h : Func) (x : ID) : String :=
+          let v := h.getV x
+          s!"v{x}={v.op.name}{v.args.toList}@b{v.block}"
+        parts := s!"nodes(srcMissing {bad1.map (showV f)}, bad {bad2.map fun x => (showV g x, showV f x, home x)}, pin {pin}, out {out'}, vs {I.vs}, bvals {I.bvals})" :: parts
+      if !Info.schedOK f g fB gB then
+        parts := (if schedWeakOK f g fB gB then "sched(weak ok)" else "sched") :: parts
+      if !I.outOK f g fB gB pin out' then parts := "out" :: parts
+      if !I.succOK fB gB B then parts := "succ" :: parts
+      if !(gB.controls.zip fB.controls).all (fun (c', c) => I.argRel f g fB gB pin out' c' c) then parts := "ctrlRel" :: parts
+      for iT in List.range gB.preds.size do
+        let (iS, E) := I.edgeIn f T B gB iT
+        if !(I.redir B iT || fB.preds[iS]? == gB.preds[iT]?) then parts := s!"pred{iT}" :: parts
+        if !I.phisOK f g fB gB pin iT iS E inR then parts := s!"phis{iT}(pin {pin} E {E})" :: parts
+      let role := if B == I.s.b then "b" else if B == I.t then "t" else if B == I.s.p then "p"
+        else if inR then "R" else "K"
+      out := s!"block b{B}({role}) gpreds {gB.preds.toList.map (·.b)} fpreds {fB.preds.toList.map (·.b)}: {parts}" :: out
+    | _, _ => out := s!"block b{B}: missing" :: out
+  return out
+
+def step (tabs : Tables) (name : String) (f : Func) (b : ID) (k : Counts) : Except String (Func × Bool × Counts) := do
   let (f, c1) ← Fuse.Plain.fuseBlockPlainChecked f b
   let (g, c2) := shortcircuitBlock f b
   let mut k := k
+  if let some s := siteOf f b then
+    let i := planIdx s.plan
+    let g1 := applySite f s
+    k := { k with kBlocks := k.kBlocks + (infoOf tabs f g1 s).K.size }
+    if g1.valueTab.size != f.valueTab.size then k := { k with grows := k.grows + 1 }
+    if g1.blockTab.size != f.blockTab.size then k := { k with growsB := k.growsB + 1 }
+    if scOK tabs f g1 s then k := { k with acc := k.acc.modify i (· + 1) }
+    else
+      let d := diag tabs f g1 s
+      k := { k with rej := k.rej.modify i (· + 1) }
+      if d.all (fun x => (x.splitOn "sched(weak ok)").length > 1 || (x.splitOn ":").length == 1 && false) then
+        k := { k with schedWeak := k.schedWeak + 1 }
+      if k.rejShown.size < 30 then
+        k := { k with rejShown := k.rejShown.push s!"{name} b{b} plan {i}: {d}" }
   match scBlockI f b k with
   | none => if c2 then k := show1 { k with mismatch := k.mismatch + 1 } s!"{name} b{b}: fired, copy did not"
   | some (g', k', _) =>
@@ -266,21 +364,21 @@ def step (name : String) (f : Func) (b : ID) (k : Counts) : Except String (Func 
     if bvalOutside g b then k := show1 { k with bvalOut := k.bvalOut + 1 } s!"{name} b{b}: b value read outside"
   pure (g, c2 || c1, k)
 
-def sweep (name : String) (f : Func) (k : Counts) : Except String (Func × Bool × Counts) := do
+def sweep (tabs : Tables) (name : String) (f : Func) (k : Counts) : Except String (Func × Bool × Counts) := do
   let blocks := f.blocks
   let mut f := f
   let mut ch := false
   let mut k := k
   for i in [0:blocks.size] do
-    let (f', c, k') ← step name f blocks[blocks.size - 1 - i]! k
+    let (f', c, k') ← step tabs name f blocks[blocks.size - 1 - i]! k
     f := f'; k := k'; ch := c || ch
   return (f, ch, k)
 
-def loop (name : String) : Nat → Func → Counts → Except String (Func × Counts)
+def loop (tabs : Tables) (name : String) : Nat → Func → Counts → Except String (Func × Counts)
   | 0, _, _ => throw "round bound"
   | n + 1, f, k => do
-    let (f, ch, k) ← sweep name f k
-    if ch then loop name n f.invalidateCFG k else return (f, k)
+    let (f, ch, k) ← sweep tabs name f k
+    if ch then loop tabs name n f.invalidateCFG k else return (f, k)
 
 def main (args : List String) : IO UInt32 := do
   let mut files := #[]
@@ -322,7 +420,7 @@ def main (args : List String) : IO UInt32 := do
       if f1 != f0 && !GoFV.Opt.ZCSE.zrel prev f0 mid then
         k1 := show1 { k1 with cpaZrelRej := k1.cpaZrelRej + 1 } s!"{path}: zrel rejects constPhiArgs' constants"
       let sc0 := k1.sc
-      match loop s!"{path}" roundFuel f1 k1 with
+      match loop prev s!"{path}" roundFuel f1 k1 with
       | .ok (_, k') => k := { k' with maxPerFn := max k'.maxPerFn (k'.sc - sc0) }
       | .error _ => errs := errs + 1; k := k1
   IO.println s!"functions {k.fns}, errors {errs}"
@@ -332,7 +430,9 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"  fixPhi {k.fixPhis} (unused other phis skipped {k.fixPhiUnused}); moved {k.moved} (afterMove setArg {k.afterMoveSetArg}, phielimValue {k.movedElim}, reset Invalid {k.movedInvalid}); final resets {k.finalReset}; b Invalid {k.bInvalid}; ctl → Copy {k.ctlCopy}"
   IO.println s!"  b values read outside b's non-phis/controls {k.bvalOut}; scan cost (values) {k.scanCost}; copy mismatches {k.mismatch}"
   IO.println s!"  plan phis: self-referencing {k.selfRef}, an argument defined in b or the plan's blocks {k.argInRegion}"
+  IO.println s!"  checker (scOK) accepts by plan [none, merge, uIntoT, tIntoU, tExits, uExits]: {k.acc}; rejects: {k.rej}; checked blocks {k.kBlocks}; value table grows {k.grows}, block table {k.growsB}"
   for s in k.shown do IO.println s!"  {s}"
+  for s in k.rejShown do IO.println s!"  reject: {s}"
   return 0
 
 end GoFVTest.ShortCircProbe
