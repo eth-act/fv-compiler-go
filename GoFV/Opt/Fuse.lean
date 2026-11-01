@@ -2,7 +2,7 @@ import GoFV.Opt.Pass
 import GoFV.Opt.Fuse.Basic
 import GoFV.Opt.Fuse.PlainCheck
 import GoFV.Opt.Fuse.ComparisonsCheck
-import GoFV.Opt.Fuse.If
+import GoFV.Opt.Fuse.IfCheck
 import GoFV.Opt.Fuse.BranchRedirect
 
 /-!
@@ -22,7 +22,10 @@ fuse's comparison fusions run checked too (`Cmp.fuseComparisonsChecked`, proof
 `GoFV.Proof.FuseCmp.fuseComparisonsChecked_refines`; a rejected rewrite is skipped). The step
 checkers need no `check` of their results (issue #147): early fuse runs `check` once, on its
 input, and returns a function that fails it unchanged (every corpus input passes); its
-refinement theorem is `GoFV.Proof.FuseEarly.fuseEarly_refines`.
+refinement theorem is `GoFV.Proof.FuseEarly.fuseEarly_refines`. Late fuse's `fuseBlockIf` runs
+checked (`fuseBlockIfChecked`, proof `GoFV.Proof.FuseIf.fuseBlockIfChecked_refines`): its rare
+rewrites (1,586 on the full corpus) are checked with `check`, a rejected one is skipped (never
+on the corpus).
 -/
 
 namespace GoFV.Opt
@@ -42,8 +45,9 @@ def earlyStep (isMem : TypeRef → Bool) (f : Func) (b : ID) :
   pure (f, c1 || c2 || c3 || c4)
 
 /-- The late fuse per-block step: `fuseBlockIf`, then `fuseBlockPlain`. -/
-def lateStep (tv : TypeView) (f : Func) (b : ID) : Except String (Func × Bool) := do
-  let (f, c1) ← fuseBlockIf tv f b
+def lateStep (ce : CheckEnv) (tv : TypeView) (f : Func) (b : ID) :
+    Except String (Func × Bool) := do
+  let (f, c1) ← fuseBlockIfChecked ce tv f b
   let (f, c2) ← Plain.fuseBlockPlainChecked f b
   pure (f, c1 || c2)
 
@@ -68,7 +72,7 @@ def fuseEarlyPass : Pass := Pass.ofFunc fun env f => do
 /-- `fuseLate(f)`. -/
 def fuseLate (ce : CheckEnv) (tv : TypeView) (pv : Prove.Prover) (f : Func) :
     Except String Func :=
-  orInput f (fuseLoop (Fuse.lateStep tv) (some (fuseBranchRedirect pv)) roundFuel f)
+  orInput f (fuseLoop (Fuse.lateStep ce tv) (some (fuseBranchRedirect pv)) roundFuel f)
 
 /-- The `late fuse` pass. -/
 def fuseLatePass : Pass := Pass.ofFunc fun env f => do
