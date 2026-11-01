@@ -346,10 +346,11 @@ def schedValid (vs : Array SNode) (o : Array ID) : Bool :=
   let m := maxNodeId vs + 1
   let nodes (early : SNode → Bool) : Array (Option (Array ID × Bool)) :=
     vs.foldl (fun t n => t.set! n.id (some (n.args, early n))) (Array.replicate m none)
+  let pureNodes := nodes (·.prio == 0)
   idsDistinct (Array.replicate m false) vs.toList && o.size == vs.size &&
-    schedValidAux (nodes (·.prio == 0)) (Array.replicate m 0) 0 0 o.toList &&
+    schedValidAux pureNodes (Array.replicate m 0) 0 0 o.toList &&
     schedValidAux (nodes (·.prio ≤ 1)) (Array.replicate m 0) 0 0 o.toList &&
-    rankOK vs (fun a => ((nodes (·.prio == 0))[a]?.join).isSome) o
+    rankOK vs (fun a => (pureNodes[a]?.join).isSome) o
 
 /-- The index in `l` of the node of least rank (`SNode.rankLt`) among those with `p`. -/
 def minIdx (p : SNode → Bool) : List SNode → Option Nat
