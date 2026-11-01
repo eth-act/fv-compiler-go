@@ -423,7 +423,7 @@ segment starts from the latter, the last ends at the output. `segs_refines` comp
 `CopyRelCheck.copyOK_spec` and `CopyElim.refines_of_rel` at each elimination; the statement of
 `checkedRewrite_refines` is unchanged. Logging `pre` costs a copy of the function per elimination
 (only with the log on). quick-v3: all 20 sections the validator rejected for `phielim` accepted
-(opt rejections 146 → 126); fully at stock 8,145 → 8,152 at 2e7c2c5.
+(opt rejections 146 → 126); fully at stock 8,146 → 8,153 on 567b299.
 
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
@@ -847,8 +847,8 @@ With `Slicemask`'s argument a 64-bit integer (`argShapeOk`) and `:770`/`:771` (1
 With the signed `divisible.rules` lemmas `:98–161` (`sdiv_rot`: `c * r` maps to `A + r`): 8,145
 (87.61%) / 8,231 on f838a9c (1,282 rules; 8,144 before; the proven-only `divisible` pass at 100%
 parity); 8,146 (87.62%) / 8,231 on f77289d (1,289 rules).
-With the phi eliminations validated by segments of the log (see "Phi eliminations"): 8,152
-(87.68%) at 2e7c2c5 (8,145 before).
+With the phi eliminations validated by segments of the log (see "Phi eliminations"): 8,153
+(87.69%) on 567b299 (8,146 before).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
