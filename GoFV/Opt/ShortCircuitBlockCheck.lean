@@ -26,8 +26,8 @@ rewrite moved out of `b` into another block, none otherwise). The facts of an ed
 its source block, except on the redirected edge, where the source has evaluated `b` along `cidx`
 (`einX`: `v` holds its argument along `cidx`).
 
-**Checked blocks** (`K`): `b`, `t`, `p`, the plan's blocks (`region`) and every block whose table
-entry or one of whose values changed (but for use counts). For each, along each incoming edge of
+**Checked blocks** (`K`): the blocks `applySite` changes: `b`, `t`, `p`, the plan's blocks
+(`region`) and the block of `b`'s last predecessor. For each, along each incoming edge of
 `g` (the source's edge index `srcIdx`: `b`'s last predecessor took index `cidx`; the redirected
 edge comes from `b` along `te`), `blockOK` checks that
 
@@ -45,14 +45,23 @@ edge comes from `b` along `te`), `blockOK` checks that
 - the controls are related, the kind is equal, the successors are equal up to the
   redirection and `srcIdx`; the facts at the end hold.
 
-**Everywhere else** (`frameOK`, `scanOK`, `exitOK`, `regionOK`): the other blocks and their
-values are unchanged (but for use counts), and read none of `b`'s values but the moved phis
-with default facts; an edge from a checked block to another block carries the default facts; a
-plan block is entered only from `b`, the plan's blocks, or along the redirected edge; the tables
-keep their sizes (no rewrite on the corpus grows them). Finally `g` passes `wfDomCheck`
-(well formed, uses dominated: the invariant `WFDom` of the fuse loop).
+**Everywhere else** (`frameOK`, `scanOK`, `exitOK`, `regionOK`): the other blocks and the values
+`f` lists in them are unchanged (but for use counts), and read none of `b`'s values but the
+moved phis with default facts; an edge from a checked block to another block carries the default
+facts; a plan block is entered only from `b`, the plan's blocks, or along the redirected edge;
+the tables keep their sizes (no rewrite on the corpus grows them).
 
-The soundness proof is `GoFV.Proof.ShortCirc.shortcircuitBlockChecked_refines`.
+**Well-formedness and use dominance of `g`** (the invariant `WFDom` of the fuse loop), without a
+check of the whole of `g` (issue #147): each block of `K` passes the per-block loops of
+`wfCheck` and keeps the indices of its edges to blocks outside `K` (`wfKOK`); each use in a
+block of `K` (`domKOK`, `useOK`) is the source's use of the same register outside `b`'s values,
+or reads a register defined in the use's block, a moved phi where the source reads it, or a
+`Phi` argument of `b` (from `p`, or from `b`'s remaining predecessors at a block every path to
+which passes `b`: `dsOK`); a path that passed `b` leaves the plan's blocks only through the
+block a moved phi moved to (`closeOK`).
+
+The soundness proof is `GoFV.Proof.ShortCirc.shortcircuitBlockChecked_refines`; `WF` and
+`UseDom` of `g`: `GoFV/Proof/Pass/ShortCircPres.lean`, `ShortCircUseDom.lean`.
 -/
 
 namespace GoFV.Opt.ShortCircuit
@@ -136,7 +145,7 @@ structure Info where
   /-- The index of the redirected edge among `t`'s predecessors in `g`. -/
   tn : Nat
   region : Array ID
-  /-- The checked blocks: `b`, the region, `t`, `p`, then the changed ones. -/
+  /-- The checked blocks: `b`, the region, `t`, `p`, the block of `b`'s last predecessor. -/
   K : Array ID
   dflt : Facts
   /-- Blocks of `K` every path to which in `g` passes `b` (`dsOK` checks it). -/
