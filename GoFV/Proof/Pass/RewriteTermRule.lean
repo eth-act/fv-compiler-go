@@ -308,16 +308,24 @@ structure CopyRes (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Va
   hty : (M.get? (F.I.at p)).any (·.type == u.type) = true
   hne : F.I.at p ≠ v
 
-/-- The shape of a `build` result. -/
+/-- Node 0 of an `@b` build (`blockTopOK`): fresh `t`, and `v` a compatible `Copy` of it. -/
+def BlockTop (tabs : Tables) (M : Defs) (v : ID) (u0 : Value) (us : List Value) (t : ID) : Prop :=
+  t ≠ v ∧ M.get? t = none ∧ t ∉ (us.map (·.id)).drop 1 ∧ u0.op = .Copy ∧ u0.args = #[t] ∧
+  ∃ u, us.head? = some u ∧ copyCompat (tabs.ty u0.type) (tabs.ty u.type) = true
+
+/-- The shape of a `build` result: node 0 is `v` (in place) or a fresh `top` of which `v` is a
+copy (`@b`). -/
 structure BuildRes (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value)
     (F : RuleFacts tabs M r v defs) where
   nodes : List RNode
   u0 : Value
   us : List Value
+  top : ID
   hres : r.result = .build nodes
   hdefs : defs = u0 :: us
   hid0 : u0.id = v
-  hhead : (us.map (·.id)).head? = some v
+  hhead : (us.map (·.id)).head? = some top
+  htop : top = v ∨ BlockTop tabs M v u0 us top
   hlen : us.length = nodes.length
   hfresh : ∀ x ∈ (us.map (·.id)).drop 1, M.get? x = none
   hnodup : ((us.map (·.id)).drop 1).Nodup
@@ -343,22 +351,41 @@ theorem RuleFacts.result {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : 
         ce := ce, u := u, p := p, hres := hr, hdefs := rfl, hpos := hp, hid := hid,
         hop := hop, hargs := hargs, hty := hty, hne := hne }⟩
     · cases h
-  · rename_i nodes u0 us hr hb
-    simp only at h
-    simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', List.all_eq_true,
-      List.contains_eq_mem, decide_eq_false_iff_not, decide_eq_true_eq] at h
-    obtain ⟨⟨⟨⟨⟨⟨hid0, hhead⟩, hlen⟩, hfresh⟩, hnd⟩, hnv⟩, hnode⟩ := h
-    rw [F.hid] at hid0 hhead hnv
+  · rename_i nodes u0 us hr
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨⟨⟨⟨⟨⟨hid0, htop⟩, hlen⟩, hfresh⟩, hnd⟩, hnv⟩, hnode⟩ := h
+    simp only [beq_iff_eq] at hid0 hlen
+    simp only [List.all_eq_true, Option.isNone_iff_eq_none] at hfresh
+    simp only [decide_eq_true_eq] at hnd
+    simp only [Bool.not_eq_true', List.contains_eq_mem, decide_eq_false_iff_not] at hnv
+    rw [F.hid] at hid0 hnv
+    obtain ⟨t, hh, ht⟩ : ∃ t, (us.map (·.id)).head? = some t ∧
+        (t = v ∨ BlockTop tabs M v u0 us t) := by
+      revert htop
+      cases hh : (us.map (·.id)).head? with
+      | none => intro h; cases h
+      | some t =>
+        intro htop
+        refine ⟨t, rfl, ?_⟩
+        cases hb : r.block with
+        | none =>
+          simp only [hb, beq_iff_eq] at htop; rw [F.hid] at htop; exact .inl htop
+        | some _ =>
+          simp only [hb] at htop
+          simp only [blockTopOK, Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq,
+            Option.isNone_iff_eq_none, Bool.not_eq_true', List.contains_eq_mem,
+            decide_eq_false_iff_not, Option.any_eq_true] at htop
+          obtain ⟨⟨⟨⟨⟨⟨⟨⟨hne, hM⟩, hd⟩, hop⟩, hargs⟩, -⟩, -⟩, -⟩, u, hu, hc⟩ := htop
+          rw [F.hid] at hne
+          exact .inr ⟨hne, hM, hd, hop, hargs, u, hu, hc⟩
     refine .inr ⟨{
-      nodes := nodes, u0 := u0, us := us, hres := hr, hdefs := rfl, hid0 := hid0,
-      hhead := hhead, hlen := hlen,
-      hfresh := fun x hx => by simpa using hfresh x hx,
-      hnodup := hnd, hnv := hnv,
+      nodes := nodes, u0 := u0, us := us, top := t, hres := hr, hdefs := rfl, hid0 := hid0,
+      hhead := hh, htop := ht, hlen := hlen, hfresh := hfresh, hnodup := hnd, hnv := hnv,
       hnode := fun k h1 h2 => ?_ }⟩
     have := zip_all_get (f := fun x => match x with
       | (n, u) => nodeOK tabs (stEv tabs M r (u0 :: us) F.I) (stOr tabs r (u0 :: us))
           (stσ tabs M r F.I) F.I (us.map (·.id)) (tabs.ty F.xv.type) n u)
-      (List.all_eq_true.2 hnode) (by rw [hlen]) k h1 h2
+      hnode (by rw [hlen]) k h1 h2
     exact this
   · simp at h
 

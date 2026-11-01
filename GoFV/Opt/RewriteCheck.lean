@@ -411,8 +411,22 @@ def nodeOK (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (I
   u.args.size == n.args.length &&
   (n.args.zip u.args.toList).all fun (a, w) => argID σ I ids a == some w
 
-/-- The built definitions are the result's (`resDen`): `copy` of a bound value, or an in-place
-`build` whose node 0 is `v` and whose other nodes are fresh. -/
+/-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
+pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/
+def copyCompat (s t : Sem.Ty) : Bool :=
+  GoFV.Opt.CSE.tyEq s t || (s matches .ptr _ && t matches .ptr _)
+
+/-- An `@b` result (`… => @x.Block (…)`, issue #17): node 0 is built fresh as `t` (in block
+`b`, which the term denotations do not read) and `v` becomes `Copy t` at its own type, the
+identity on `t`'s value (`copyCompat`). -/
+def blockTopOK (tabs : Tables) (M : Defs) (v u0 : Value) (us : List Value) (t : ID) : Bool :=
+  t != v.id && (M.get? t).isNone && !((us.map (·.id)).drop 1).contains t &&
+  u0.op == .Copy && u0.args == #[t] && u0.auxInt == 0 && u0.aux == none && u0.type == v.type &&
+  us.head?.any fun u => copyCompat (tabs.ty u0.type) (tabs.ty u.type)
+
+/-- The built definitions are the result's (`resDen`): `copy` of a bound value, or a `build`
+whose other nodes are fresh and whose node 0 is `v` (in place) or, for an `@b` result, fresh
+with `v` a copy of it (`blockTopOK`). -/
 def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV)
     (I : Inst) (r : Rule) (v : Value) (defs : List Value) : Bool :=
   let topTy := tabs.ty v.type
@@ -422,9 +436,15 @@ def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : N
     | some p => u.id == v.id && u.op == .Copy && u.args == #[I.at p] &&
         (M.get? (I.at p)).any (·.type == u.type) && I.at p != v.id && u.auxInt == 0 && u.aux == none
     | none => false
-  | .build nodes, none, u0 :: us =>
+  | .build nodes, b, u0 :: us =>
     let ids := us.map (·.id)
-    u0.id == v.id && ids.head? == some v.id && us.length == nodes.length &&
+    u0.id == v.id &&
+    (match ids.head? with
+      | some t => match b with
+        | none => t == v.id
+        | some _ => blockTopOK tabs M v u0 us t
+      | none => false) &&
+    us.length == nodes.length &&
     (ids.drop 1).all (fun x => (M.get? x).isNone) && (ids.drop 1).Nodup &&
     !(ids.drop 1).contains v.id &&
     (nodes.zip us).all fun (n, u) => nodeOK tabs ev or σ I ids topTy n u
@@ -598,11 +618,6 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
         condFrameOK tabs e I r.pat r.cond &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
-
-/-- A `Copy` of shape `s` of a value of shape `t` is the identity on it: the same shape, or two
-pointer shapes (`Val.retype` at a pointer shape ignores the element size). -/
-def copyCompat (s t : Sem.Ty) : Bool :=
-  GoFV.Opt.CSE.tyEq s t || (s matches .ptr _ && t matches .ptr _)
 
 /-- `w` is `a`, or reached from `a` through at most `n` `Copy`s each compatible with its
 argument (`copyCompat`: the identity on its argument's value). -/

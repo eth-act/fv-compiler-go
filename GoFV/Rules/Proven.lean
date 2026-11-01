@@ -210,7 +210,7 @@ def generic : RuleSet where
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975]
 
-/-- `dec.rules` restricted to its 17 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 24 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions and 0 struct-store splits. -/
 def dec : RuleSet where
@@ -218,15 +218,15 @@ def dec : RuleSet where
   values := [(.ArraySelect, [Generated.Dec.r_dec_116, Generated.Dec.r_dec_126]),
     (.ComplexImag, [Generated.Dec.r_dec_14]),
     (.ComplexReal, [Generated.Dec.r_dec_13]),
-    (.IData, [Generated.Dec.r_dec_83]),
-    (.ITab, [Generated.Dec.r_dec_82]),
+    (.IData, [Generated.Dec.r_dec_83, Generated.Dec.r_dec_146]),
+    (.ITab, [Generated.Dec.r_dec_82, Generated.Dec.r_dec_144]),
     (.Load, [Generated.Dec.r_dec_45, Generated.Dec.r_dec_63, Generated.Dec.r_dec_87]),
-    (.SliceCap, [Generated.Dec.r_dec_60]),
-    (.SliceLen, [Generated.Dec.r_dec_59]),
-    (.SlicePtr, [Generated.Dec.r_dec_58]),
+    (.SliceCap, [Generated.Dec.r_dec_60, Generated.Dec.r_dec_154]),
+    (.SliceLen, [Generated.Dec.r_dec_59, Generated.Dec.r_dec_151]),
+    (.SlicePtr, [Generated.Dec.r_dec_58, Generated.Dec.r_dec_150]),
     (.SlicePtrUnchecked, [Generated.Dec.r_dec_61]),
-    (.StringLen, [Generated.Dec.r_dec_43]),
-    (.StringPtr, [Generated.Dec.r_dec_42]),
+    (.StringLen, [Generated.Dec.r_dec_43, Generated.Dec.r_dec_136]),
+    (.StringPtr, [Generated.Dec.r_dec_42, Generated.Dec.r_dec_135]),
     (.StructSelect, [Generated.Dec.r_dec_106, Generated.Dec.r_dec_115])]
   blocks := []
   nilChecks := []
