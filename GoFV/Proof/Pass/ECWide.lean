@@ -748,7 +748,7 @@ theorem obl_wideStore {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT
   obtain ⟨hty, hvm, hws, hs0, hs2, zs, xu, cu, pp, hzs, hxu, hcu, hcallc, hi0, hpp, hpr, hwf, he1,
     he2, hl⟩ := ecw_wideStoreOK hok
   obtain ⟨hop, hwop, hus, hws1, hch⟩ := ecw_wideChain hzs
-  have hinv : invalidated g x = false := by unfold invalidated; rw [hw, hwop]; rfl
+  have hinv : invalidated g x = false := by unfold invalidated; rw [hw]; dsimp only; rw [hwop]; rfl
   obtain ⟨cw, hcw, hcok⟩ := hcall xu cu hxu hcu hcallc
   rw [funext (ecCv_of_not_special (tabs := tabs) (ecw_store_not_special hu hw hop hwop))]
   cases hS : evalValue env (Ctx.make tabs f) frS u with

@@ -106,8 +106,8 @@ theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : I
     intro a ha y hy
     have hfa : a ∈ ecFront f g x := by
       have hi : invalidated g x = false := by
-        unfold special at hsp; simp only [Bool.or_eq_false_iff] at hsp; exact hsp.2
-      unfold ecFront; rw [hi, if_neg Bool.false_ne_true, hu]; exact List.mem_append_left _ ha
+        unfold special at hsp; simp only [Bool.or_eq_false_iff] at hsp; exact hsp.1.2
+      exact ecFront_src hi hu (Array.mem_toList_iff.1 ha)
     obtain ⟨y', hy', hyy⟩ := hfront a hfa y hy
     have hsa' := Array.all_eq_true'.1 hsa a (Array.mem_toList_iff.1 ha)
     simp only [Bool.not_eq_true'] at hsa'
