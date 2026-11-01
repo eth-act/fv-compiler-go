@@ -267,7 +267,7 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
       by_cases hxf : x ∈ fb.values
       · exact ⟨b, fb, ⟨hbm, hfb⟩, hxf⟩
       · rw [pS3 x (.inl hxf)] at hy; exact hA.listed x y hy
-  obtain ⟨T, hT, hTf, hTs, hTk, hTr, hTN, hTreg⟩ := tgt_loop hE TH (L := og.toList) (M := [])
+  obtain ⟨T, hT, hTf, hTs, hTk, hTr, hTN, hTreg, -⟩ := tgt_loop hE TH (L := og.toList) (M := [])
     (by simp) (fun x hx hn => by
       obtain ⟨hxg, w, hw, hph⟩ := (ogm x).1 hx
       have hxf : x ∈ fb.values := Classical.byContradiction fun h => by

@@ -93,6 +93,15 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
   for x in fb.values do
     if let some u := f.value? x then
       if u.op != .Phi && !valueOK tabs sh f g x then return valueWhy tabs sh f g x
+  let nodeG : ID → Bool := fun x => gb.values.contains x &&
+    match g.value? x with
+    | some w => w.op != .Phi
+    | none => false
+  for x in fb.values do
+    if converted f x then
+      if let some u := f.value? x then
+        if !u.args.all (fun a => imkArgOK sh g nodeG (gb.values.size + 1) a x) then
+          return "IMake arg not held"
   if !((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) then
     return "converted control"
   match schedule f fb, schedule g gb with
@@ -100,11 +109,10 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
     if of.toList.filter (npOf f fb) != og.toList.filter (npOf f fb) then return "schedule"
   | _, _ => return "no schedule"
   for z in gb.values do
-    if isNewB f z then
-      if let some w := g.value? z then
-        if !newEvalB tabs g w then return s!"new op {w.op.name}"
-        if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a) then
-          return "new arg in other block"
+    if let some w := g.value? z then
+      if isNewB f z && !newEvalB tabs g w then return s!"new op {w.op.name}"
+      if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a) then
+        return if isNewB f z then "new arg in other block" else "new arg of source value in other block"
   for x in gb.values do
     if let some w := g.value? x then
       if w.op == .Phi then

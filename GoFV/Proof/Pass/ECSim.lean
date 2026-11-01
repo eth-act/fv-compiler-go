@@ -14,19 +14,22 @@ namespace GoFV.Proof.EC
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Proof.AtomSim GoFV.Proof.Order
 
-/-- One block step of the target matches the source's, returns related by `RR`. -/
+/-- One block step of the target matches the source's, returns of poison-free results related by
+`RR`. -/
 def StepSimR (R : Frame → ID → Nat → Frame → ID → Nat → Prop)
     (RR : List Val → Mem → List Val → Mem → Prop) : Step → Step → Prop
   | .goto frS e, sT => ∃ frT e', sT = .goto frT e' ∧ R frS e.b e.i frT e'.b e'.i
-  | .ret rs m, sT => ∃ rs' m', sT = .ret rs' m' ∧ RR rs m rs' m'
+  | .ret rs m, sT => Val.anyPoison rs = false → ∃ rs' m', sT = .ret rs' m' ∧ RR rs m rs' m'
   | .panic e m, sT => ∃ m', sT = .panic e m' ∧ Mem.Refines m m'
   | .stuck, _ => True
 
-/-- Outcomes of `runLoop` related: returns by `RR`, panics alike with refined memories once the
-frames of activation `act` and later are dropped. -/
+/-- Outcomes of `runLoop` related: returns of poison-free results by `RR` (`finish` gets stuck
+on the others), panics alike with refined memories once the frames of activation `act` and later
+are dropped. -/
 inductive RunRel (RR : List Val → Mem → List Val → Mem → Prop) (act : Nat) : Outcome → Outcome → Prop
-  | returned {rs rs' : List Val} {m m' : Mem} : RR rs m rs' m' →
-      RunRel RR act (.returned rs m) (.returned rs' m')
+  | returned {rs : List Val} {m : Mem} {oT : Outcome} :
+      (Val.anyPoison rs = false → ∃ rs' m', oT = .returned rs' m' ∧ RR rs m rs' m') →
+      RunRel RR act (.returned rs m) oT
   | panicked (e : Panic) {m m' : Mem} : Mem.Refines (m.dropFrames act) (m'.dropFrames act) →
       RunRel RR act (.panicked e m) (.panicked e m')
 
@@ -54,9 +57,10 @@ theorem runLoop_simR {env : Env} {ctxS ctxT : Ctx} {act : Nat}
       exact ih _ _ _ _ _ _ hR' hd
     | ret rs m =>
       rw [hS] at hs
-      obtain ⟨rs', m', hT, hr⟩ := hs
-      rw [r1 _ _ hS, r2 _ _ hT]
-      exact .returned hr
+      rw [r1 _ _ hS]
+      refine .returned fun hp => ?_
+      obtain ⟨rs', m', hT, hr⟩ := hs hp
+      exact ⟨rs', m', r2 _ _ hT, hr⟩
     | panic e m =>
       rw [hS] at hs
       obtain ⟨m', hT, hm⟩ := hs
@@ -275,7 +279,8 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     cases hn
     obtain ⟨c, hc0, hy⟩ := control_ok hc
     obtain ⟨y', hy', hyy⟩ := hrel c y hy
-    obtain ⟨rs', m', hro', hRR⟩ := B.ret hk c hc0 y y' (hGSok c y hy) hyy rs m hro
+    intro hp
+    obtain ⟨rs', m', hro', hRR⟩ := B.ret hk c hc0 y y' (hGSok c y hy) hyy rs m hro hp
     have hkT : gb.kind = .Ret := by rw [B.kind, hk]
     rw [stepTerm_ret_eq hkT, control_of (by rw [B.controls]; exact hc0) hy']
     exact ⟨rs', m', by simp only [Res.bind, retNext_of hro'], hRR⟩
@@ -344,7 +349,13 @@ theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Boo
       g.entry 0 = oT
     intro hrun hd
     cases hrun with
-    | returned hRR => exact hrel.finish _ _ _ _ hRR hd
+    | @returned rs m oT hRR =>
+      have hp : Val.anyPoison rs = false := by
+        cases h : Val.anyPoison _ with
+        | false => rfl
+        | true => simp only [finish, h, ite_true] at hd; exact hd.elim
+      obtain ⟨rs', m', rfl, hr⟩ := hRR hp
+      exact hrel.finish _ _ _ _ hr hd
     | panicked e hm => exact .panicked e hm
 
 end GoFV.Proof.EC
