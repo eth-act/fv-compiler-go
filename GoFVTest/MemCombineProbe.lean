@@ -57,7 +57,7 @@ def storeWhy (tabs : Tables) (f g : Func) (M : Array Bool) (x : ID) (u w : Value
 
 /-- The first condition of `mcOK` that fails. -/
 def why (tabs : Tables) (f g : Func) : String := Id.run do
-  if !mcAtomsOK f g then return "atoms"
+  if !RewriteCheck.atomsXOK f g then return "atoms"
   if !RewriteCheck.closedOK f then return "closedF"
   if !RewriteCheck.closedOK g then return "closedG"
   if !KnownBits.blocksOK f g then return "blocks"

@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.LoadFwdPtr
+import GoFV.Proof.Pass.LoadFwdDrop
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.AtomSim
 
@@ -7,14 +7,16 @@ import GoFV.Proof.AtomSim
 
 `fwd_refines`: if `RewriteCheck.fwdRel tabs f g` (`g` is `f` with Loads replaced by `Copy x` of
 the value a `Store` wrote, through `Store`s at disjoint addresses, at a pointer equal to the
-Load's, every other value unchanged), `g` refines `f`, by the atom simulation
-(`AtomSim.atomSimInv_refines`, trivial invariant). Its premises hold because every value listed
-in `f` is refined by the same value in `g` as a term (`fwd_den`), for valuations whose memory
-roots hold the writes of their arguments and whose `LocalAddr`s their frame variables
-(`MemAtoms`): by induction on `fwdRank` (a replaced Load's stored value ranks below it), a
-replaced Load reads, through the writes of the disjoint `Store`s (`disjoint_sep`,
-`load_write_sep`), the write of the stored value's term at the Load's pointer (`samePtr_den`),
-and reads that value back (`load_write`): `chain_load`.
+Load's, and memory roots whose write changes no byte replaced by `Copy` of their memory, every
+other value unchanged), `g` refines `f`, by the generalised atom simulation
+(`AtomSim.atomSimX_refines`, trivial invariant: a dropped root is a `Store` or a `Zero`). Its
+premises hold because every value listed in `f` is refined by the same value in `g` as a term
+(`fwd_den`), for valuations whose memory roots hold the writes of their arguments and whose
+`LocalAddr`s their frame variables (`MemAtoms`): by induction on `fwdRank` (a replaced Load's
+stored value ranks below it), a replaced Load reads, through the writes of the disjoint
+`Store`s (`disjoint_sep`, `load_write_sep`), the write of the stored value's term at the Load's
+pointer (`samePtr_den`), and reads that value back (`load_write`): `chain_load`; a dropped root's
+write is refined by its memory (`drop_mem`).
 -/
 
 namespace GoFV.Proof.Pass.LoadFwd
@@ -24,7 +26,7 @@ open GoFV.Proof.Pass.Rewrite GoFV.Proof.CSE.Mem
 
 /-- What `fwdRel` establishes. -/
 structure FwdFacts (tabs : Tables) (f g : Func) : Prop where
-  atoms : atomsOK f g = true
+  atoms : atomsXOK f g = true
   cf : closedOK f = true
   cg : closedOK g = true
   blocks : g.blocks = f.blocks
@@ -188,29 +190,6 @@ theorem fwdStoreTy_encode {t s : Ty} (h : fwdStoreTy t s = true) {v : Val} (hv :
       cases w <;> first | (intro; rfl) | (intro hs; cases hs)
     rcases ptr_fixed (t := .ptr e) rfl hv with rfl | ⟨q, rfl⟩ <;> rfl
 
-/-- `Val.retype` fixes `mem` only at the memory shape. -/
-theorem retype_mem {t : Ty} {M M' : Mem} (h : (Val.mem M').retype t = .mem M) : M' = M := by
-  cases t <;> simp [Val.retype] at h
-  exact h
-
-/-- Only a memory retypes to a memory. -/
-theorem retype_eq_mem {t : Ty} {v : Val} {M : Mem} (h : v.retype t = .mem M) : v = .mem M := by
-  unfold Val.retype at h
-  split at h <;> (repeat' split at h) <;>
-    (try simp only [Val.ofStr, Val.ofSlice] at h) <;> (try split at h) <;> simp_all
-
-/-- A `Store`'s write: a pointer, a memory and the written memory. -/
-theorem memDef_store {tabs : Tables} {s : Value} (hs : s.op = .Store ∨ s.op = .StoreWB)
-    {a b c y : Val} (h : memDef tabs s [a, b, c] = some y) :
-    ∃ q m0 M', a = .ptr q ∧ c = .mem m0 ∧ m0.write q (encode (auxTy tabs s.aux) b) = some M' ∧
-      y = .mem M' := by
-  rcases hs with hs | hs <;>
-  · cases a <;> try (simp [memDef, hs] at h; done)
-    cases c <;> try (simp [memDef, hs] at h; done)
-    rename_i q m0
-    simp only [memDef, hs, Option.map_eq_some_iff] at h
-    obtain ⟨M', hw, rfl⟩ := h
-    exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
 
 /-- A `Move`'s copy: two pointers, a memory, the bytes read at the source and the written memory. -/
 theorem memDef_move {tabs : Tables} {s : Value} (hs : s.op = .Move)
@@ -415,7 +394,8 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     ∃ w, g.value? x = some w ∧ w.id = u.id ∧ w.block = u.block ∧ w.type = u.type ∧
       ((w.op = u.op ∧ w.auxInt = u.auxInt ∧ w.aux = u.aux ∧ w.args = u.args) ∨
        (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true) ∨
-       fwdConstOK tabs f u w = true ∨ fwdMoveRep tabs f g u w = true) := by
+       fwdConstOK tabs f u w = true ∨ dropOK tabs f u w = true ∨
+       fwdMoveRep tabs f g u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
@@ -426,11 +406,12 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
-    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ⟨⟨hop, hsz⟩, hok⟩ | hc) | hm
+    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | (⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hm
     · exact .inl ⟨hop, hai, hax, hargs⟩
     · exact .inr (.inl ⟨hop, hsz, hok⟩)
     · exact .inr (.inr (.inl hc))
-    · exact .inr (.inr (.inr hm))
+    · exact .inr (.inr (.inr (.inl hd)))
+    · exact .inr (.inr (.inr (.inr hm)))
 
 /-- The arguments of a value listed in `f` are listed. -/
 theorem lm_arg {x : ID} {u : Value} (hx : LM f x) (hu : f.value? x = some u) :
@@ -587,6 +568,36 @@ theorem move_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
     retype_ptr_of hoty, loadOp, Val.retype_idem]
   exact retype_mono _ (load_mono hmr _ _)
 
+/-- **A dropped memory root** (`dropOK`): its write is refined by its memory, which the `Copy`
+replacing it in `g` reads. -/
+theorem drop_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
+    (hM : MemAtoms f.value? tabs ρ) {x : ID} {u w : Value} (hx : LM f x)
+    (hu : f.value? x = some u) (hL : listedDefs g x = some w) (hwty : w.type = u.type)
+    (h : dropOK tabs f u w = true)
+    (hIH : ∀ a, (fwdRank f)[a]?.getD 0 < (fwdRank f)[x]?.getD 0 → LM f a → ∀ n, ∃ m,
+      Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a)) (n : Nat) :
+    ∃ m, Sem.Refines (den f.value? tabs ρ (n + 1) x) (den (listedDefs g) tabs ρ' m x) := by
+  obtain ⟨hwop, hwsz, hop, i, hi, hcr⟩ := dropOK_spec h
+  have hmem : memOp u.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
+  have hph : u.op ≠ .Phi := by rcases hop with h | h <;> rw [h] <;> decide
+  rw [den_succ_atom (not_term_of hu (by rw [memOp_not_term hmem]; decide))]
+  by_cases hp : ρ x = .poison
+  · rw [hp]; exact ⟨0, .poison _⟩
+  obtain ⟨N, hN⟩ := hM x u hu hmem hp
+  obtain ⟨y, hy, hρx⟩ := hN N (Nat.le_refl _)
+  obtain ⟨M1, M0, rfl, hc, hR⟩ := drop_mem hT hM h hy
+  -- the memory `w` copies: listed, below `x`
+  have hui : u.args[i]! ∈ u.args := by rw [getElem!_pos u.args i hi]; exact Array.getElem_mem _
+  obtain ⟨hlc, hrc⟩ := copyReach_rank F _ hcr (lm_arg F hx hu _ hui)
+  have hrx := fwdRankOK_spec F.rank hx hu hph _ hui
+  obtain ⟨m, hm⟩ := hIH _ (by omega) hlc N
+  rw [hc] at hm
+  obtain ⟨M0', hz, hR'⟩ := refines_mem' hm
+  refine ⟨m + 1, ?_⟩
+  rw [den_succ_term hL (by rw [hwop]; rfl), hwop, toList_one hwsz, List.map_cons, List.map_nil,
+    GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty, hz, hρx, shape_of hu]
+  exact retype_mono _ (.mem (hR.trans hR'))
+
 /-- **Values as terms**: each value listed in `f` is refined by the same value listed in `g`,
 for valuations whose memory roots hold the writes of their arguments. -/
 theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.value? tabs ρ)
@@ -606,8 +617,9 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   have hIH : ∀ a, (fwdRank f)[a]?.getD 0 < r → LM f a → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla => ih _ ha a rfl hla
-  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hmv
+  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv
   rotate_left 3
+  · exact drop_den F hT hM hx hu hL hwty hdrop (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · exact move_den F hT hM hx hu hL hwty hmv (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · by_cases ht : termOp u.op = true
     · have hph : u.op ≠ .Phi := fun h => by rw [h] at ht; cases ht
@@ -692,20 +704,22 @@ theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop) (Q : (ID �
 
 theorem fwd_atomArgs : AtomArgsRefP (SrcInv.triv tabs f) g := by
   intro b hb gb hgb a ha u hu ht
-  obtain ⟨fb, hfb, -, hatoms⟩ := atomsOK_facts F.atoms b hb gb hgb
-  obtain ⟨haf, u', hu', hop, hty, hai, hax, hsz⟩ := hatoms a ha u hu ht
-  refine ⟨u', hu', hop, hty, hai, hax, hsz, fun i hi => ?_⟩
+  have hbf : b ∈ f.blocks := F.blocks ▸ hb
+  obtain ⟨fb, gb', hfb, hgb', BA⟩ := (atomsXOK_spec F.atoms).block b hbf
+  rw [hgb] at hgb'; cases hgb'
+  obtain ⟨haf, u', hu', hop, hty, hai, -, hsz, -, -⟩ := BA.sub a ha u hu ht
   obtain ⟨w, hw, -, -, -, hrep⟩ := rep_of F hu'
   rw [hu] at hw; cases hw
-  have hargs : u.args = u'.args := by
-    rcases hrep with ⟨-, -, -, h⟩ | ⟨h, -⟩ | h | h
-    · exact h
+  have hsame : u.aux = u'.aux ∧ u.args = u'.args := by
+    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h
+    · exact ⟨hax, h⟩
     · rw [h] at ht; cases ht
     · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
+    · rw [(dropOK_spec h).1] at ht; cases ht
     · rw [(fwdMoveRep_spec h).1] at ht; cases ht
-  have hbf : b ∈ f.blocks := F.blocks ▸ hb
-  have hi' : i < u'.args.size := hargs ▸ hi
-  rw [hargs]
+  refine ⟨u', hu', hop, hty, hai, hsame.1.symm, hsz, fun i hi => ?_⟩
+  have hi' : i < u'.args.size := hsame.2 ▸ hi
+  rw [hsame.2]
   have hx := (closedOK_facts F.cf b hbf fb hfb).2 a haf u' hu' u'.args[i]!
     (by rw [getElem!_pos u'.args i hi']; exact Array.getElem_mem hi')
   exact ⟨fun _ => fwd_termRefP F hx _ _ _, fun _ _ _ _ _ _ _ => fwd_termRefP F hx _ _ _⟩
@@ -726,11 +740,12 @@ theorem fwd_steps : StepRefsP (SrcInv.triv tabs f) g := by
 
 end
 
-/-- **Load-of-Store forwarding refines its input.** -/
+/-- **Load-of-Store forwarding (and dropping identity writes) refines its input.** -/
 theorem fwd_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs f g = true) :
     RefinesUnder Env.Mono tabs g tabs f :=
   have F := fwdRel_spec h
-  atomSimInv_refines hf hg F.atoms (SrcInv.triv tabs f) (fwd_atomArgs F) (fwd_steps F)
+  atomSimX_refines hf hg (atomsXOK_spec F.atoms) (SrcInv.triv tabs f) (fwd_atomArgs F).toX
+    (fwd_steps F)
 
 end GoFV.Proof.Pass.LoadFwd

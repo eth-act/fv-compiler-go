@@ -12,9 +12,10 @@ roots in the same sequence.
 
 `AtomsX` (issue #35), what the atom simulation assumes: `AtomsOK`, except that a `Store` of `g`
 may have another aux than the one of `f` (`SameAtomX`: a combined store, whose evaluation the
-simulation takes from `AtomArgsRefX`) and a root of `f` that is no root of `g` is a `Store`
-(which never panics); the schedules list the roots both functions have in the same sequence.
-`AtomsOK.toX`.
+simulation takes from `AtomArgsRefX`) and a root of `f` that is no root of `g` is a `Store` or a
+`Zero` (which never panic; issue #151: the forwarding layer's dropped identity writes); the
+schedules list the roots both functions have in the same sequence. `AtomsOK.toX`;
+`atomsXOK_spec`: `RewriteCheck.atomsXOK` decides it.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -106,7 +107,7 @@ structure BlockAtomsX (f g : Func) (fb gb : Block) : Prop where
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (fun x => rootP f x && rootP g x) = og.toList.filter (rootP g) ∧
     ∀ x ∈ of.toList, rootP f x = true → rootP g x = false →
-      ∃ u, f.value? x = some u ∧ u.op = .Store
+      ∃ u, f.value? x = some u ∧ (u.op = .Store ∨ u.op = .Zero)
 
 /-- What the atom simulation assumes of the atoms. -/
 structure AtomsX (f g : Func) : Prop where
@@ -139,6 +140,48 @@ theorem AtomsOK.toX {f g : Func} (h : AtomsOK f g) : AtomsX f g := by
   refine ⟨h.entry, h.blocks, h.ownAux, fun b hb => ?_⟩
   obtain ⟨fb, gb, hfb, hgb, hB⟩ := h.block b hb
   exact ⟨fb, gb, hfb, hgb, hB.toX⟩
+
+theorem atomsXOK_spec {f g : Func} (h : atomsXOK f g = true) : AtomsX f g := by
+  unfold atomsXOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
+  obtain ⟨⟨⟨he, hb⟩, ho⟩, hall⟩ := h
+  refine ⟨he, hb, ho, fun b hbm => ?_⟩
+  have h := hall b hbm
+  split at h
+  · rename_i fb gb hfb hgb
+    simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
+    obtain ⟨⟨hid, hsub⟩, hsch⟩ := h
+    refine ⟨fb, gb, hfb, hgb, hid, fun x hx w hw ht => ?_, ?_⟩
+    · have hm : x ∈ atomsOf g gb := mem_atomsOf.2 ⟨hx, w, hw, ht⟩
+      have h2 := hsub x hm
+      simp only [List.contains_iff_mem] at h2
+      obtain ⟨hxf, h2⟩ := h2
+      refine ⟨(mem_atomsOf.1 hxf).1, ?_⟩
+      split at h2
+      · rename_i u w' hu hw'
+        rw [hw] at hw'; cases hw'
+        unfold atomFieldsOK at h2
+        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h2
+        obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h2
+        exact ⟨u, hu, h1, h2, h3, h4, h5, h6, h7⟩
+      · cases h2
+    · split at hsch
+      · rename_i of og hof hog
+        simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, Bool.or_eq_true,
+          Bool.not_eq_true'] at hsch
+        obtain ⟨hfl, hdr⟩ := hsch
+        refine ⟨of, og, hof, hog, hfl, fun x hx hr hn => ?_⟩
+        rcases hdr x hx with (h | h) | h
+        · unfold rootB at h; unfold rootP at hr; rw [hr] at h; cases h
+        · unfold rootB at h; unfold rootP at hn; rw [hn] at h; cases h
+        · cases hu : f.value? x with
+          | none => rw [hu] at h; cases h
+          | some u =>
+            rw [hu] at h
+            simp only [Option.any_some, Bool.or_eq_true, beq_iff_eq] at h
+            exact ⟨u, rfl, h⟩
+      · cases hsch
+  · cases h
 
 /-! ## Contexts and entry frames -/
 

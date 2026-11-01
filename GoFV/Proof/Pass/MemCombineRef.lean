@@ -12,8 +12,8 @@ valuations; a combined load (`rootOK`) because an integer source value has its d
 bytes and valid loads (`symOf_step_sound`), the description's values are in `M` (so the target
 has the same bytes and the source's loads), the target's loads are valid as the source's cover
 them (`covered_loadOK`), and a target description with defined bytes and valid loads is that
-integer (`symOf_complete`). `McFacts`: what `mcOK` establishes; `mcAtomsOK_spec`: its atoms as
-`AtomSim.AtomsX`.
+integer (`symOf_complete`). `McFacts`: what `mcOK` establishes (its atoms `AtomSim.AtomsX` by
+`atomsXOK_spec`).
 -/
 
 namespace GoFV.Proof.MemCombine
@@ -103,51 +103,9 @@ theorem covered_loadOK {V V' : ID → Val} {sf : List LoadRec} (hs : ∀ s ∈ s
 
 /-! ## The checker's facts -/
 
-theorem mcAtomsOK_spec {f g : Func} (h : mcAtomsOK f g = true) : AtomsX f g := by
-  unfold mcAtomsOK at h
-  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
-  obtain ⟨⟨⟨he, hb⟩, ho⟩, hall⟩ := h
-  refine ⟨he, hb, ho, fun b hbm => ?_⟩
-  have h := hall b hbm
-  split at h
-  · rename_i fb gb hfb hgb
-    simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
-    obtain ⟨⟨hid, hsub⟩, hsch⟩ := h
-    refine ⟨fb, gb, hfb, hgb, hid, fun x hx w hw ht => ?_, ?_⟩
-    · have hm : x ∈ atomsOf g gb := mem_atomsOf.2 ⟨hx, w, hw, ht⟩
-      have h2 := hsub x hm
-      simp only [List.contains_iff_mem] at h2
-      obtain ⟨hxf, h2⟩ := h2
-      refine ⟨(mem_atomsOf.1 hxf).1, ?_⟩
-      split at h2
-      · rename_i u w' hu hw'
-        rw [hw] at hw'; cases hw'
-        unfold atomFieldsOK at h2
-        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h2
-        obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h2
-        exact ⟨u, hu, h1, h2, h3, h4, h5, h6, h7⟩
-      · cases h2
-    · split at hsch
-      · rename_i of og hof hog
-        simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, Bool.or_eq_true,
-          Bool.not_eq_true'] at hsch
-        obtain ⟨hfl, hdr⟩ := hsch
-        refine ⟨of, og, hof, hog, hfl, fun x hx hr hn => ?_⟩
-        rcases hdr x hx with (h | h) | h
-        · unfold rootB at h; unfold rootP at hr; rw [hr] at h; cases h
-        · unfold rootB at h; unfold rootP at hn; rw [hn] at h; cases h
-        · cases hu : f.value? x with
-          | none => rw [hu] at h; cases h
-          | some u =>
-            rw [hu] at h
-            simp only [Option.any_some, beq_iff_eq] at h
-            exact ⟨u, rfl, h⟩
-      · cases hsch
-  · cases h
-
 /-- What `mcOK` establishes. -/
 structure McFacts (tabs : Tables) (f g : Func) (R : Array Bool) : Prop where
-  atoms : mcAtomsOK f g = true
+  atoms : atomsXOK f g = true
   cf : closedOK f = true
   cg : closedOK g = true
   blocks : KnownBits.blocksOK f g = true
@@ -162,7 +120,7 @@ theorem mcOK_spec {tabs : Tables} {f g : Func} (h : mcOK tabs f g = true) :
   exact ⟨ha, hcf, hcg, hb, hr, hv⟩
 
 theorem McFacts.blocks_eq {tabs : Tables} {f g : Func} {R : Array Bool} (K : McFacts tabs f g R) :
-    f.blocks = g.blocks := (mcAtomsOK_spec K.atoms).blocks
+    f.blocks = g.blocks := (atomsXOK_spec K.atoms).blocks
 
 theorem listedD_eq : listedD = listedDefs := rfl
 

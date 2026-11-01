@@ -8,11 +8,11 @@ import GoFV.Opt.TabsAgree
 
 `mcOK tabs f g` accepts `g` as a result of `memcombine` on `f` (in the result's tables `tabs`):
 
-- atoms (`mcAtomsOK`): every atom of `g` is an atom of `f` with the same fields but the
-  arguments and, for a `Store`, the aux (a combined store); each block evaluates the roots both
-  functions have in the same order (`Sem.schedule`), and a root of `f` that is no root of `g`
-  is a `Store` (memcombine clobbers the narrow stores it combines); the blocks, their kinds,
-  successors, controls and IDs are `f`'s, each listing `f`'s values first
+- atoms (`RewriteCheck.atomsXOK`): every atom of `g` is an atom of `f` with the same fields but
+  the arguments and, for a `Store`, the aux (a combined store); each block evaluates the roots
+  both functions have in the same order (`Sem.schedule`), and a root of `f` that is no root of
+  `g` is a `Store` (memcombine clobbers the narrow stores it combines) or a `Zero`; the blocks,
+  their kinds, successors, controls and IDs are `f`'s, each listing `f`'s values first
   (`KnownBits.blocksOK`); both functions are closed (`RewriteCheck.closedOK`);
 - the values `R` that atom arguments and controls reach through terms in `g` (`reachMarks`;
   `reachOK` checks the marks are closed) are, when listed in `f`, unchanged (`sameVal`) or a
@@ -38,32 +38,6 @@ open GoFV.SSA GoFV.Opt.RewriteCheck
 def sameVal (u w : Value) : Bool :=
   u.id == w.id && u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && u.aux == w.aux &&
     u.args == w.args && u.block == w.block
-
-/-- `x` is a root of `h` (`GoFV.Proof.AtomSim.rootP`). -/
-def rootB (h : Func) (x : ID) : Bool := (h.value? x).any (Sem.isRoot ·.op)
-
-/-- The atom `w` of `g` has the fields of the atom `u` of `f` but the arguments and, for a
-`Store`, the aux. -/
-def atomFieldsOK (u w : Value) : Bool :=
-  u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && (u.aux == w.aux || u.op == .Store) &&
-    u.args.size == w.args.size && u.block == w.block && u.id == w.id
-
-/-- **The atoms** (see the module doc). -/
-def mcAtomsOK (f g : Func) : Bool :=
-  f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
-  f.blocks.all fun b =>
-    match f.block? b, g.block? b with
-    | some fb, some gb =>
-      fb.id == gb.id &&
-      (atomsOf g gb).all (fun x => (atomsOf f fb).contains x && match f.value? x, g.value? x with
-        | some u, some w => atomFieldsOK u w
-        | _, _ => false) &&
-      match Sem.schedule f fb, Sem.schedule g gb with
-      | some of, some og =>
-        of.toList.filter (fun x => rootB f x && rootB g x) == og.toList.filter (rootB g) &&
-          of.toList.all fun x => !rootB f x || rootB g x || (f.value? x).any (·.op == .Store)
-      | _, _ => false
-    | _, _ => false
 
 /-- The marks `R` of `g`: every control and every argument of a listed atom is marked, and so
 is every argument of a marked listed term. -/
@@ -248,7 +222,7 @@ def relMarks (f g : Func) (R : Array Bool) : Array Bool :=
 
 /-- **The checker.** -/
 def mcOK (tabs : Tables) (f g : Func) : Bool :=
-  mcAtomsOK f g && closedOK f && closedOK g && KnownBits.blocksOK f g &&
+  atomsXOK f g && closedOK f && closedOK g && KnownBits.blocksOK f g &&
   let R := reachMarks g
   reachOK g R && (List.range g.valueTab.size).all (valOK tabs f g R (relMarks f g R))
 

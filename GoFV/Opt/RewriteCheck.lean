@@ -939,6 +939,38 @@ def atomsOK (f g : Func) : Bool :=
       | _, _ => false
     | _, _ => false
 
+/-- `x` is a root of `h` (`GoFV.Proof.AtomSim.rootP`). -/
+def rootB (h : Func) (x : ID) : Bool := (h.value? x).any (Sem.isRoot ·.op)
+
+/-- The atom `w` of `g` has the fields of the atom `u` of `f` but the arguments and, for a
+`Store`, the aux. -/
+def atomFieldsOK (u w : Value) : Bool :=
+  u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && (u.aux == w.aux || u.op == .Store) &&
+    u.args.size == w.args.size && u.block == w.block && u.id == w.id
+
+/-- `atomsOK` with changed and dropped memory roots (`GoFV.Proof.AtomSim.AtomsX`; memcombine's
+combined stores, issue #35, and the forwarding layer's dropped identity writes, issue #151): the
+same entry, blocks and own aux; every atom of `g` is an atom of `f` with the same fields but the
+arguments and, for a `Store`, the aux; each block evaluates the roots both functions have in
+the same order (`Sem.schedule`), and a root of `f` that is no root of `g` is a `Store` or a
+`Zero` (which never panic). -/
+def atomsXOK (f g : Func) : Bool :=
+  f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
+  f.blocks.all fun b =>
+    match f.block? b, g.block? b with
+    | some fb, some gb =>
+      fb.id == gb.id &&
+      (atomsOf g gb).all (fun x => (atomsOf f fb).contains x && match f.value? x, g.value? x with
+        | some u, some w => atomFieldsOK u w
+        | _, _ => false) &&
+      match Sem.schedule f fb, Sem.schedule g gb with
+      | some of, some og =>
+        of.toList.filter (fun x => rootB f x && rootB g x) == og.toList.filter (rootB g) &&
+          of.toList.all fun x =>
+            !rootB f x || rootB g x || (f.value? x).any fun u => u.op == .Store || u.op == .Zero
+      | _, _ => false
+    | _, _ => false
+
 /-- Marks of the values listed in `h`: `x` is in the values of its own block, a block of `h`. -/
 def listedMarks (h : Func) : Array Bool :=
   h.blocks.foldl (init := Array.replicate h.valueTab.size false) fun L b =>
@@ -1299,10 +1331,64 @@ def fwdConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
     fwdOK tabs f u x
   | none => false
 
+/-- An integer or boolean constant `0` (`isConstZero` but for pointers, floats and composites):
+`Const8`/`Const16`/`Const32`/`Const64`/`ConstBool` with auxint 0 at an integer or boolean shape,
+whose bytes are `0` or `poison` at every shape (a `ConstNil` is a pointer, whose bytes are
+fragments). -/
+def zeroConst (tabs : Tables) (f : Func) (x : ID) : Bool :=
+  match f.value? x with
+  | some xv =>
+    (xv.op == .Const8 || xv.op == .Const16 || xv.op == .Const32 || xv.op == .Const64 ||
+      xv.op == .ConstBool) && xv.auxInt == 0 &&
+    match tabs.ty xv.type with
+    | .int _ | .bool => true
+    | _ => false
+  | none => false
+
+/-- Memory `m` of `f` holds zero bytes at the `n` bytes at pointer `p`: through at most `d`
+`Copy`s and `Store`s at pointers disjoint from them (`disjointB`), a `Zero [k] q _` with `p` at
+offset `o` of `q` (`ptrBase`, `baseSameB`) and `o + n ≤ k`. -/
+def zeroChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) : Nat → ID → Bool
+  | 0, _ => false
+  | d + 1, m =>
+    match f.value? m with
+    | some s =>
+      (s.op == .Copy && s.args.size == 1 && zeroChain tabs f p n d s.args[0]!) ||
+      ((s.op == .Store || s.op == .StoreWB) && s.args.size == 3 &&
+        disjointB tabs f p n s.args[0]! (Sem.auxTy tabs s.aux).size &&
+        zeroChain tabs f p n d s.args[2]!) ||
+      (s.op == .Zero && s.args.size == 2 &&
+        decide (((ptrBase tabs f 8 p).2 - (ptrBase tabs f 8 s.args[0]!).2).toNat + n ≤
+          s.auxInt.toInt.toNat) &&
+        baseSameB tabs f 8 (ptrBase tabs f 8 p).1 (ptrBase tabs f 8 s.args[0]!).1)
+    | none => false
+
+/-- The memory root `u` of `f` becomes `w`, a `Copy` of its memory (reached from `u`'s memory
+argument through compatible copies, `copyReach`: copy elimination ran before the rule matched),
+as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`): a
+`Store` of zero bytes (of a zero-sized type), a `Store` of a `zeroConst` into bytes a `Zero`
+cleared (`zeroChain` through at most eight `Copy`s and `Store`s), or a `Zero` of a `Zero` of the
+same size at an equal pointer (`samePtrB`). -/
+def dropOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  w.op == .Copy && w.args.size == 1 &&
+  ((u.op == .Store && u.args.size == 3 &&
+    copyReach tabs f.valueTab f.valueTab.size u.args[2]! w.args[0]! &&
+    ((Sem.auxTy tabs u.aux).size == 0 ||
+      (zeroConst tabs f u.args[1]! &&
+        zeroChain tabs f u.args[0]! (Sem.auxTy tabs u.aux).size 8 u.args[2]!))) ||
+   (u.op == .Zero && u.args.size == 2 &&
+    copyReach tabs f.valueTab f.valueTab.size u.args[1]! w.args[0]! &&
+    match f.value? w.args[0]! with
+    | some z => z.op == .Zero && z.args.size == 2 && z.auxInt == u.auxInt &&
+        samePtrB tabs f u.args[0]! z.args[0]!
+    | none => false))
+
 /-- The new definition `w` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads back
-(`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`). -/
+(`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`); or of the memory root `u`, a
+`Copy` of its memory (`dropOK`). -/
 def fwdNewOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
-  (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w
+  (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
+    dropOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -1389,10 +1475,11 @@ def blocksExtOK (f g : Func) : Bool :=
     | some fb, some gb => gb == { fb with values := gb.values } && fb.values.all (gb.values.contains ·)
     | _, _ => false
 
-/-- `g` is `f` with Loads forwarded: the same blocks and atoms (`blocksExtOK`), every value as
-`fwdRepOK` says, ranks ordering `f`'s listed values after their arguments. -/
+/-- `g` is `f` with Loads forwarded and identity writes dropped: the same blocks (`blocksExtOK`)
+and atoms but the dropped roots (`atomsXOK`), every value as `fwdRepOK` says, ranks ordering
+`f`'s listed values after their arguments. -/
 def fwdRel (tabs : Tables) (f g : Func) : Bool :=
-  atomsOK f g && closedOK f && closedOK g && blocksExtOK f g &&
+  atomsXOK f g && closedOK f && closedOK g && blocksExtOK f g &&
   fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs f g ·)
 
 /-- The variable a chain of at most `n` `Store`s binds as a stored value is `y`. -/
@@ -1401,12 +1488,19 @@ def storesBind (y : Nat) : Nat → Pat → Bool
     (match v with | .bind z => z == y | _ => false) || storesBind y n m
   | _, _ => false
 
+/-- The pattern binds the rule variable `y` at its top: `y` or `y:(Op …)`. -/
+def patBinds (y : Nat) : Pat → Bool
+  | .bind z => z == y
+  | .op _ (some z) .. => z == y
+  | _ => false
+
 /-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by one of the up to four
 `Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`),
 `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`), or
-`(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src) mem)` (`:827`); the
-validator checks each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint`
-conditions included. -/
+`(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src) mem)` (`:827`); or
+a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005`, `:943`,
+`:948`, `:954`, `:961`, `:2158`); the validator checks each instance by `fwdNewOK` or
+`fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included. -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -1414,17 +1508,21 @@ def fwdShapeOK (r : Rule) : Bool :=
       _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Move ..] _, .build [n0, n1], some _ =>
     n0.op == .Load && n1.op == .OffPtr
+  | .op .Store none _ _ _ .fixed [_, _, m] _, .copy (.var y), none => patBinds y m
+  | .op .Zero none _ _ _ .fixed [_, m] _, .copy (.var y), none => patBinds y m
   | _, _, _ => false
 
-/-- The `Load` `v` of `f` that event `ev` forwards, its new definition (a `Copy` or a constant)
-and the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads`
-rule event (`fwdShapeOK`). -/
+/-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops), its new
+definition (a `Copy` or a constant) and the fresh values to put in first (`:827`: the `OffPtr`,
+then the `Load`), if it is a `loads` rule event (`fwdShapeOK`; tried on a `Store` after its
+`structStores`, `Interp.rewriteValue`). -/
 def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
-      if u.op == .Load then
-        let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
+      if u.op == .Load || u.op == .Store || u.op == .Zero then
+        let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 +
+          if u.op == .Store then t.structStores.size else 0
         if n ≤ i then
           match t.loads[i - n]?, defs.toList with
           | some cr, [w, top, offp] =>
@@ -1449,16 +1547,15 @@ def ssPut (f : Func) (u : Value) : Func :=
   let f := f.modB u.block fun b => { b with values := b.values.push u.id }
   u.args.foldl Func.incUses f
 
-/-- `v.reset(OpCopy); v.AddArg(x)` (or `v.reset(OpConst64F); v.AuxInt = …`): the `Load` `v` of `f`
-gets the definition `w`, its arguments lose a use, `w`'s gain one. -/
+/-- `v.reset(OpCopy); v.AddArg(x)` (or `v.reset(OpConst64F); v.AuxInt = …`): the `Load` (or
+dropped `Store`/`Zero`) `v` of `f` gets the definition `w`, its arguments lose a use, `w`'s gain
+one. -/
 def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
   match f.value? v with
   | some u =>
-    if u.op == .Load then
-      let f := u.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses - 1 }) f
-      let f := w.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses + 1 }) f
-      f.modV v fun z => { z with op := w.op, auxInt := w.auxInt, aux := w.aux, args := w.args }
-    else f
+    let f := u.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses - 1 }) f
+    let f := w.args.foldl (fun f a => f.modV a fun z => { z with uses := z.uses + 1 }) f
+    f.modV v fun z => { z with op := w.op, auxInt := w.auxInt, aux := w.aux, args := w.args }
   | none => f
 
 /-- The forwarding of the `Load` `u` of `f` to `w` with the fresh values `ds` (`fwdEvent?`) is

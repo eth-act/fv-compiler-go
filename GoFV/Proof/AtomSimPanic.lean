@@ -7,8 +7,8 @@ import GoFV.Proof.AtomSimNoPanic
 prefix `pre`), the target panics alike with a refined memory: it evaluates the prefix of its
 schedule before `r` (its roots are those of `pre` that are roots of `g`, its `Arg`s precede
 every root of the source schedule by `PureFirst`, other atoms never get stuck), then `r` on
-refined arguments. A root of `f` that is no root of `g` is a `Store`, which does not panic, so
-`r` is a root of both.
+refined arguments. A root of `f` that is no root of `g` is a `Store` or a `Zero`, which do not
+panic, so `r` is a root of both.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -86,8 +86,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
     · obtain ⟨u, hu, hst⟩ := B.drop r hrof hrS hg
       rw [hur] at hu; cases hu
       have := evalValue_panic_op hevr
-      rw [hst] at this
-      rcases this with h | h <;> cases h
+      rcases hst with hst | hst <;> rw [hst] at this <;> rcases this with h | h <;> cases h
     · rfl
   have hrog : r ∈ og.toList ∧ rootP g r = true := by
     have : r ∈ of.toList.filter (fun x => rootP f x && rootP g x) :=
