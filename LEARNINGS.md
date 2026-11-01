@@ -337,6 +337,26 @@ avoiding): the problem, the trick, the numbers, where it is used.
   r; dsimp only at h k` per step keeps it to a second; without the `dsimp` the pair `match`
   stays and the next `generalize` silently misses its target.
 
+#### Rule lemmas: kernel "deep recursion" from `rfl` simp lemmas (#69, RuleProofs10)
+- **Problem:** `divmod.rules:171/180/206/232` and `generic.rules:369/372` elaborated, but the
+  kernel rejected the theorem with "(kernel) deep recursion detected" as soon as the proof used
+  the condition; `set_option maxRecDepth 20000` did not help. A scan of the proof term
+  (`Kernel.isDefEq` on every argument whose inferred type differs syntactically from the
+  expected one; 1 min instead of 21 min for a top-down `Kernel.check` bisection) found the
+  failing check: `simp` applies `@[defeq]` (`:= rfl`) lemmas such as `Option.getD_some`,
+  `Option.elim_some` without a proof step, so a `congrArg` of the next rewrite expects
+  `bif umagicOK 64 c then X else …` but gets `(some (bif …)).getD d` (or `if x < y then …`
+  against `(some y).elim …`). The kernel's lazy delta unfolds the `bif`/`if` side and
+  evaluates `umagicOK 64 c` / `Nat.decLt` on symbolic 64-bit terms.
+- **Trick:** the same rewrites with a proof term (`getD_some_p`, `elim_some_p` proved
+  `by simp only [Option.getD_some]`, so not `@[defeq]`); `rule_unfold_getd` keeps
+  `Option.getD` out of the condition's `dsimp`, and `open GoFV.Proof.Rules.KernelSafe` makes
+  `rule_norm` (also inside `rule_split1`) use them: listed explicitly they are tried before the
+  `rfl` lemmas of the simp sets (`simp only [set, -lemma]` does not erase from an attribute
+  set, it only warns), `GoFV/Proof/Rules/TacticCond.lean`.
+- **Effect:** the five `divmod` lemmas check (`DivmodU2.lean` 8.8 s / 1.6 MB, `DivmodU3.lean`
+  4.0 s / 1.1 MB); no other module changes.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
