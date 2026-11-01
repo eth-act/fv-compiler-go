@@ -357,8 +357,9 @@ def redirectProbe (tabs : Tables) (name : String) (pv : Prove.Prover) (f : Func)
               if !st.shapeOK f then "shape"
               else if !st.unreadOK f then "unread"
               else if !Redir.decideOK tabs f st.cp (st.pi == 0) st.ctl (st.out == 0) then
-                if !ProveCheck.decides f.value? tabs (Redir.asm f st.cp st.ctl (st.pi == 0))
-                    Redir.fuel Redir.fuel st.ctl (st.out == 0) then "decision"
+                let A := Redir.asmX tabs f st.cp st.ctl (st.pi == 0)
+                if !(ProveCheck.decides f.value? tabs A Redir.fuel Redir.fuel st.ctl (st.out == 0) ||
+                    Redir.eqDisjoint tabs f A st.ctl (st.out == 0)) then "decision"
                 else "topo"
               else if !st.valTabOK f g then "values"
               else if ![st.b, st.p, st.child, st.q].all (st.blockOK f g) then "blocks"

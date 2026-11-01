@@ -198,6 +198,42 @@ same term. -/
 def asm (f : Func) (cp ctl : ID) (pv : Bool) : ProveCheck.Asm :=
   { facts := (cp, pv) :: (if sameTerm f cp ctl then [(ctl, pv)] else []) }
 
+/-- `s` is a zero extension `zext a b` of `z` whose type has the shape `int b`. -/
+def zextOf (tabs : Tables) (f : Func) (s : ID) : Option (ID × Sem.Width × Sem.Width) :=
+  match f.value? s with
+  | some e =>
+    if RewriteCheck.termOp e.op then
+      match ProveCheck.rTab.lookup e.op, e.args.toList with
+      | some (.zext a b), [z] =>
+        if decide (a.bits ≤ b.bits) && ProveCheck.intAt tabs e b then some (z, a, b) else none
+      | _, _ => none
+    else none
+  | none => none
+
+/-- Ranges of narrow values a path fact bounds through their zero extension (a `switch` on a
+byte compares its extension): if a side `s = zext a b z` of a fact at width `b` lies in `R`, the
+`a`-bit `z` lies in `R` (cut to `a` bits). -/
+def extInv (tabs : Tables) (f : Func) (A : ProveCheck.Asm) :
+    List (ID × Sem.Width × ProveCheck.Rng) :=
+  A.facts.flatMap fun fact =>
+    match ProveCheck.relOf f.value? tabs fact with
+    | some (s1, s2, w', _) =>
+      [s1, s2].filterMap fun s =>
+        match zextOf tabs f s with
+        | some (z, a, b) =>
+          if b == w' then
+            let R := ProveCheck.rng f.value? tabs A fuel w' s
+            some (z, a, ProveCheck.Rng.ofU a.bits R.ulo (min R.uhi (2 ^ a.bits - 1)))
+          else none
+        | none => none
+    | none => []
+
+/-- The assumptions of the decision: the path facts and the ranges they give through zero
+extensions. -/
+def asmX (tabs : Tables) (f : Func) (cp ctl : ID) (pv : Bool) : ProveCheck.Asm :=
+  let A := asm f cp ctl pv
+  { A with inv := extInv tabs f A }
+
 /-- `ctl` is an (in)equality `a ⋈ b` at width `w` whose sides' signed ranges are disjoint, so
 it is `.bool v` (the signed reading complements `ProveCheck.rangeDecides`, which separates
 equalities by unsigned ranges). -/
@@ -218,7 +254,7 @@ def eqDisjoint (tabs : Tables) (f : Func) (A : ProveCheck.Asm) (ctl : ID) (v : B
 the term nodes the decision reads are listed in a dependency order. -/
 def decideOK (tabs : Tables) (f : Func) (cp : ID) (pv : Bool) (ctl : ID) (v : Bool) : Bool :=
   let T := termClosure f [cp, ctl]
-  let A := asm f cp ctl pv
+  let A := asmX tabs f cp ctl pv
   (ProveCheck.decides f.value? tabs A fuel fuel ctl v || eqDisjoint tabs f A ctl v) &&
     topoOK f T && (!isTerm f cp || T.contains cp) && (!isTerm f ctl || T.contains ctl)
 

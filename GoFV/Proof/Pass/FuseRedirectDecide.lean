@@ -188,6 +188,73 @@ theorem asmHolds {ce : CheckEnv} {env : Env} {fr : Frame} {p : ID} (hwf : WF ce 
       rw [den_sameTerm hcg, hN (m + 1) (by omega), hcpv]
     · simp at h
 
+/-- What `zextOf` says. -/
+theorem zextOf_spec {s z : ID} {a b : Width} (h : zextOf tabs f s = some (z, a, b)) :
+    ∃ e, f.value? s = some e ∧ termOp e.op = true ∧ rTab.lookup e.op = some (.zext a b) ∧
+      e.args.toList = [z] ∧ a.bits ≤ b.bits ∧ tabs.ty e.type = .int b := by
+  unfold zextOf at h
+  split at h
+  · rename_i e he
+    split at h
+    · rename_i ht
+      split at h
+      · rename_i a' b' z' hk hl
+        split at h
+        · rename_i hc
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl, rfl⟩ := h
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+          refine ⟨e, he, ht, hk, hl, hc.1, width_some ?_⟩
+          simpa [intAt] using hc.2
+        · cases h
+      · cases h
+    · cases h
+  · cases h
+
+/-- **The ranges through zero extensions hold** where the path facts do. -/
+theorem extInv_holds {ρ : ID → Val} {A : Asm} (hA : AsmHolds f.value? tabs ρ A) :
+    ∀ z w r, (z, w, r) ∈ extInv tabs f A → ∀ n (y : BitVec w.bits),
+      den f.value? tabs ρ n z = .int w y → r.Mem y := by
+  intro z w r hm n y hy
+  unfold extInv at hm
+  obtain ⟨fact, -, hm⟩ := List.mem_flatMap.1 hm
+  split at hm
+  · rename_i s1 s2 w' rel _
+    obtain ⟨s, -, hs⟩ := List.mem_filterMap.1 hm
+    split at hs
+    · rename_i z' a b hz
+      split at hs
+      · rename_i hbw
+        simp only [Option.some.injEq, Prod.mk.injEq] at hs
+        obtain ⟨rfl, rfl, rfl⟩ := hs
+        have hbw' : b = w' := by simpa using hbw
+        subst hbw'
+        obtain ⟨e, he, ht, hk, hl, hab, hty⟩ := zextOf_spec hz
+        have hden : den f.value? tabs ρ (n + 1) s = .int b (y.setWidth b.bits) := by
+          rw [den_succ_term he ht, hl, List.map_cons, List.map_nil, hy, rTab_opVal hk, hty]
+          simp [rOpEval, Conv.zeroExt, Sem.int1, retype_int_self]
+        obtain ⟨m1, m2, -, -⟩ := rng_sound hA fuel b s (n + 1) _ hden
+        have hlt : y.toNat < 2 ^ b.bits := Nat.lt_of_lt_of_le y.isLt (pow_le_pow_bits hab)
+        have he' : (y.setWidth b.bits).toNat = y.toNat := by
+          rw [BitVec.toNat_setWidth, Nat.mod_eq_of_lt hlt]
+        rw [he'] at m1 m2
+        have := y.isLt
+        exact Rng.mem_ofU (Width.one_le _) m1 (by omega)
+      · cases hs
+    · cases hs
+  · simp at hm
+
+/-- **The decision's assumptions hold** of the registers at the end of `p`. -/
+theorem asmXHolds {ce : CheckEnv} {env : Env} {fr : Frame} {p : ID} (hwf : WF ce f)
+    (hu : UseDom f) (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a p) fr)
+    (htyp : Proof.Typed (Ctx.make tabs f) fr) {cp ctl : ID} {pv : Bool}
+    (hL : topoOK f (termClosure f [cp, ctl]) = true)
+    (hcpL : (!isTerm f cp || (termClosure f [cp, ctl]).contains cp) = true)
+    (hcpD : DomP f p cp) (hcpv : rv fr cp = .bool pv) :
+    AsmHolds f.value? tabs (rv fr) (asmX tabs f cp ctl pv) := by
+  have h0 := asmHolds hwf hu hdi htyp hL hcpL hcpD hcpv
+  exact ⟨h0.facts, extInv_holds h0, fun _ _ _ _ hz => by simp [asmX, asm] at hz, h0.typed⟩
+
 /-- The signed range test is sound. -/
 theorem eqDisjoint_sound {ρ : ID → Val} {A : Asm} (hA : AsmHolds f.value? tabs ρ A) {ctl : ID}
     {v : Bool} (h : eqDisjoint tabs f A ctl v = true) {n : Nat} {bb : Bool}

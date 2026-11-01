@@ -396,7 +396,7 @@ theorem via_b {env : Env} {n : Nat}
   unfold decideOK at hdec
   simp only [Bool.and_eq_true] at hdec
   obtain ⟨⟨⟨hdc, hL⟩, hcpL⟩, hctlL⟩ := hdec
-  have hA := asmHolds hwf S.dom hdiP htyG hL hcpL hcpD hcpv
+  have hA := asmXHolds hwf S.dom hdiP htyG hL hcpL hcpD hcpv
   -- `b` is reachable, the edge `p → b`
   have hpb : (⟨st.b, st.k⟩ : Edge) ∈ P.succs := Array.mem_of_getElem? hpsucc
   have hbr : Reachable f st.b := (S.domR.edge hpm H.hP hp hpb).1
