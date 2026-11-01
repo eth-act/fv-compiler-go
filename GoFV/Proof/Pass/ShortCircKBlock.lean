@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.ShortCircSpec
+import GoFV.Proof.Pass.ShortCircPres
 import GoFV.Proof.Pass.ShortCircEval
 
 /-!
@@ -19,54 +19,6 @@ carrying the fact of one of `b`'s other phis.
 namespace GoFV.Proof.ShortCirc
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ShortCircuit GoFV.Proof Dom
-
-theorem blockOK_spec {I : Info} {f g : Func} {T : FactTab} {B : ID} {fB gB : Block}
-    (hBg : B ∈ g.blocks) (hfB : f.block? B = some fB) (hgB : g.block? B = some gB)
-    (h : I.blockOK f g T B = true) :
-    fB.id = B ∧ gB.id = B ∧ ((gB.preds = #[] ∧ B = I.s.b) ∨
-      (gB.kind = fB.kind ∧ gB.controls.size = fB.controls.size ∧
-        (B ∈ I.region ∨ B = I.s.b ∨ ((I.factsOf T B).1 = I.dflt ∧ (I.factsOf T B).2 = I.dflt)) ∧
-        I.newOK f fB gB = true ∧
-        I.nodesOK f g fB gB (I.factsOf T B).1 (I.factsOf T B).2
-          (I.region.contains B || B == I.s.b) = true ∧
-        Info.schedOK f g fB gB = true ∧
-        I.outOK f g fB gB (I.factsOf T B).1 (I.factsOf T B).2 = true ∧
-        I.succOK fB gB B = true ∧
-        (∀ (k : Nat) (c' c : ID), gB.controls[k]? = some c' → fB.controls[k]? = some c →
-          I.argRel f g fB gB (I.factsOf T B).1 (I.factsOf T B).2 c' c = true) ∧
-        ∀ iT, iT < max 1 gB.preds.size →
-          (I.redir B iT = true ∨ fB.preds[(I.edgeIn f T B gB iT).1]? = gB.preds[iT]?) ∧
-          I.phisOK f g fB gB (I.factsOf T B).1 iT (I.edgeIn f T B gB iT).1
-            (I.edgeIn f T B gB iT).2 (I.region.contains B) = true)) := by
-  unfold Info.blockOK at h
-  rw [contains_iff.2 hBg, hfB, hgB] at h
-  simp only [Bool.not_true, Bool.false_or, Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨h1, h2⟩, h3⟩ := h
-  refine ⟨h1, h2, ?_⟩
-  rcases Bool.or_eq_true_iff.1 h3 with h3 | h3
-  · simp only [Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at h3
-    exact .inl h3
-  · refine .inr ?_
-    simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, contains_iff,
-      List.all_eq_true, List.mem_range, Array.all_eq_true'] at h3
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hk, hc⟩, hd⟩, hn⟩, hno⟩, hs⟩, ho⟩, hsu⟩, hcr⟩, hph⟩ := h3
-    refine ⟨hk, hc, ?_, hn, ?_, hs, ho, hsu, fun k c' c hc' hc0 => ?_, fun iT hiT => ?_⟩
-    · rcases hd with (hd | hd) | ⟨hd1, hd2⟩
-      · exact .inl hd
-      · exact .inr (.inl hd)
-      · exact .inr (.inr ⟨hd1, hd2⟩)
-    · simpa [contains_iff, Bool.or_eq_true, beq_iff_eq] using hno
-    · have hk1 : k < gB.controls.size := (Array.getElem?_eq_some_iff.1 hc').1
-      have hk2 : k < fB.controls.size := (Array.getElem?_eq_some_iff.1 hc0).1
-      have := hcr (gB.controls[k], fB.controls[k])
-        (Array.mem_iff_getElem.2 ⟨k, by simp only [Array.size_zip]; omega, by simp⟩)
-      rw [Array.getElem?_eq_some_iff.1 hc' |>.2, Array.getElem?_eq_some_iff.1 hc0 |>.2] at this
-      exact this
-    · obtain ⟨h1, h2⟩ := hph iT hiT
-      refine ⟨?_, by simpa [contains_iff] using h2⟩
-      rcases h1 with h1 | h1
-      · exact .inl h1
-      · exact .inr h1
 
 /-- What setting a block's `Phi`s along edge `i` does (`phis_spec`). -/
 structure PhiData (tabs : Tables) (h : Func) (Bk : Block) (i : Nat) (fr P : Frame) : Prop where
@@ -102,48 +54,6 @@ theorem trans_rel {f : Func} {E : Facts} {frS frT : Frame} (hrel : FactsRel I f 
   · exact hrel.1 _ (fun h => h.elim hb (· hl))
 
 end SCI
-
-/-! ## Well-formedness helpers -/
-
-theorem listedIn_of {ce : CheckEnv} {f : Func} (hwf : WF ce f) {a : ID} (hl : Listed f a) :
-    listedIn f a = true := by
-  obtain ⟨v, Bk, ⟨hv, -⟩, hvb, hBk, ha, -⟩ := blockOf_listed hwf hl
-  unfold listedIn; rw [hv]; simp only
-  rw [hvb, valsOf_eq hBk]; exact contains_iff.2 ha
-
-theorem listed_of_mem {ce : CheckEnv} {f : Func} (hwf : WF ce f) {B : ID} {fB : Block}
-    (hBm : B ∈ f.blocks) (hfB : f.block? B = some fB) {x : ID} (hx : x ∈ fB.values) :
-    Listed f x := ⟨B, fB, ⟨hBm, hfB⟩, hx⟩
-
-theorem value_of_mem {ce : CheckEnv} {f : Func} (hwf : WF ce f) {B : ID} {fB : Block}
-    (hBm : B ∈ f.blocks) (hfB : f.block? B = some fB) {x : ID} (hx : x ∈ fB.values) :
-    ∃ v, f.value? x = some v ∧ v.id = x ∧ v.block = B :=
-  hwf.valueId B fB ⟨hBm, hfB⟩ x hx
-
-theorem argListed_of {ce : CheckEnv} {f : Func} (hwf : WF ce f) {B : ID} {fB : Block}
-    (hBm : B ∈ f.blocks) (hfB : f.block? B = some fB) {x : ID} (hx : x ∈ fB.values) {v : Value}
-    (hv : f.value? x = some v) {a : ID} (ha : a ∈ v.args) : Listed f a :=
-  hwf.argListed B fB x v ⟨⟨hBm, hfB⟩, hx, hv⟩ a ha
-
-theorem value_of_listed {ce : CheckEnv} {f : Func} (hwf : WF ce f) {a : ID} (hl : Listed f a) :
-    ∃ v, f.value? a = some v := by
-  obtain ⟨B, Bk, ⟨hBm, hBk⟩, ha⟩ := hl
-  obtain ⟨v, hv, -⟩ := hwf.valueId B Bk ⟨hBm, hBk⟩ a ha
-  exact ⟨v, hv⟩
-
-theorem mem_nodesOf_iff {ce : CheckEnv} {h : Func} (hwf : WF ce h) {B : ID} {Bk : Block}
-    (hBm : B ∈ h.blocks) (hBk : h.block? B = some Bk) {x : ID} :
-    x ∈ Info.nodesOf h Bk ↔ x ∈ Bk.values ∧ ∃ v, h.value? x = some v ∧ v.op ≠ .Phi := by
-  rw [mem_nodesOf]
-  constructor
-  · rintro ⟨hx, hp⟩
-    obtain ⟨v, hv, -⟩ := value_of_mem hwf hBm hBk hx
-    exact ⟨hx, v, hv, (isPhiIn_false hv).1 hp⟩
-  · rintro ⟨hx, v, hv, hp⟩
-    exact ⟨hx, (isPhiIn_false hv).2 hp⟩
-
-theorem args_get_mem {v : Value} {k : Nat} {a : ID} (h : v.args[k]? = some a) : a ∈ v.args :=
-  Array.mem_of_getElem? h
 
 /-! ## The `Phi`s of a checked block -/
 

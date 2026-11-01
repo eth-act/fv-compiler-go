@@ -248,9 +248,11 @@ import GoFV.Proof.Pass.ShortCircKBlock
 import GoFV.Proof.Pass.ShortCircKEnter
 import GoFV.Proof.Pass.ShortCircOut
 import GoFV.Proof.Pass.ShortCircPass
+import GoFV.Proof.Pass.ShortCircPres
 import GoFV.Proof.Pass.ShortCircSetup
 import GoFV.Proof.Pass.ShortCircSim
 import GoFV.Proof.Pass.ShortCircSpec
+import GoFV.Proof.Pass.ShortCircUseDom
 import GoFV.Proof.Pass.StructLoad
 import GoFV.Proof.Pass.StructLoadMem
 import GoFV.Proof.Pass.StructStoreBlock
