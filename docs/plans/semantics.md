@@ -132,21 +132,26 @@ provenance: `dse`, `dead auto elim`, `memcombine` and `writebarrier` (`IsStackAd
 alias"; with flat addresses an out-of-bounds offset could land in another object and those
 passes would be unsound. With provenance, an access must lie inside its own allocation.
 
-**Frame temporaries** (#31): a `PAUTO` whose address the program never takes
-(`Tables.forgeable`: `addrtaken`; parameters and results always forgeable) lives in
-`Blk.temp act name` instead of `Blk.local act name`. (Not `addrtaken && !autotmp`: the
-frontend converts the addresses of some compiler temporaries to integers and back itself — a
-`range` over an array iterates its copy with `uintptr` arithmetic, `runtime.dumpScanStats`
-in the corpus; a section-0 flag "the address is converted" from the exporter would be the
-tighter, still pass-invariant, criterion.) It has the same concrete
-address, but `Ptr.ofAddr` never returns it (`Ptr.ofAddr_ne_temp`): an integer converted to a
-pointer that lands there points into no allocation (a load is `poison`, a store `stuck`). Go
-forbids forging such pointers (unsafe rules 3–6; stacks move), and the flags live in the
-function's shared aux table, so every section agrees. This makes `dead auto elim` provable:
-an eliminated store to an auto can only be observed through a pointer derived from its
+**Frame temporaries** (#31): a `PAUTO` whose address the function does not convert to an
+integer (`Tables.forgeable`: the exporter's `addrconv` flag, export format 3; parameters and
+results always forgeable) lives in `Blk.temp act name` instead of `Blk.local act name`. The flag
+is computed once from the `start` section: the variable's `LocalAddr` reaches a `Convert` to an
+integer backwards through the non-memory arguments of any value except `Load`/`Dereference`,
+calls included (so `uintptr(unsafe.Pointer(&x))`, and the frontend's own conversions: a `range`
+over an array iterates its copy with `uintptr` arithmetic, `runtime.dumpScanStats`; `append`
+into a stack buffer passes the buffer to `runtime.growsliceBuf` and converts the slice pointer
+it gets back to compare it with the stack bounds).
+Before format 3 the criterion was `addrtaken`, which made every address-taken variable
+forgeable. A conversion the function cannot see (the address stored to memory, or passed to a
+callee that converts it) is not flagged: converting such an integer back gives a pointer into
+no allocation, so the run is less defined than the machine (never wrong). A `Blk.temp` has
+the same concrete address, but `Ptr.ofAddr` never returns it (`Ptr.ofAddr_ne_temp`): an integer
+converted to a pointer that lands there points into no allocation (a load is `poison`, a store
+`stuck`). Go forbids forging such pointers (unsafe rules 3–6; stacks move), and the flags live
+in the function's shared aux table, so every section agrees. This makes `dead auto elim`
+provable: an eliminated store to an auto can only be observed through a pointer derived from its
 `LocalAddr`, and contracts that only follow the pointers they are given (`Env.FrameSafe`,
-`Sem/FrameSafe.lean`) cannot see it. Difftest outcomes are unchanged (no run forges such a
-pointer; with `!autotmp` in the criterion, 20 corpus calls of `dumpScanStats` became stuck).
+`Sem/FrameSafe.lean`) cannot see it.
 
 ### 3.4 Memory
 

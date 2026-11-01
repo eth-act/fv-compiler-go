@@ -19,7 +19,7 @@ nothing reads (`#31`).
   `PtrIndex`, `Copy`), as the destination (argument 0) of an eliminated `Store`/`Zero`/`Move`, or
   as the source (argument 1) of an eliminated `Move`; no control is tainted (`usesOK`).
 * Every variable of `E` is a frame variable whose address the program cannot rebuild from an
-  integer (`unforgeable`: a `PAUTO` whose address is not taken, `Blk.temp`) and is not an
+  integer (`unforgeable`: a `PAUTO` without the `addrconv` flag, `Blk.temp`) and is not an
   open-coded defer slot.
 * Every block's schedule in `g` lists the roots of `g` in `f`'s order (`DSE.schedOK`).
 * Every kept value with a memory- or tuple-shaped argument (shape `mem`/`tuple`) has it last

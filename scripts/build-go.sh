@@ -9,7 +9,9 @@
 #        scripts/build-go.sh --repatch  re-copy and re-patch only the files the patches touch,
 #                                       then rebuild cmd/compile (discards edits in go-build)
 #        scripts/build-go.sh --diff     print the current go-build changes against the pinned
-#                                       tree for the patched paths (to refresh a patch file)
+#                                       tree for the patched paths (to refresh a patch file:
+#                                       write to tmp/ first, then copy; the paths are read from
+#                                       the patches, so `--diff > patches/go/0001-…` empties it)
 #
 # Build directory: $GOFV_GO_BUILD, default third_party/go-build (the parity oracle).
 # Patches: patches/go/*.patch in name order, except the driver patch (*-gofv-driver.patch,

@@ -1,7 +1,8 @@
-# Contract: per-pass SSA export (`gofv-ssa` v2)
+# Contract: per-pass SSA export (`gofv-ssa` v3)
 
 Owner: Exporter (issue #4). Consumers: LeanIR (parser/printer, #21), RulesExport (#22), every
 pass port (G4). Changing the format bumps the version in the first line and is announced on #4.
+v3 (#31) adds the `addrconv` name flag; the parser reads v2 files too (no name has the flag).
 
 The patched `go1.27.3` compiler (`patches/go/*.patch`, built by `scripts/build-go.sh` into
 `third_party/go-build`) writes, for each selected function, the complete SSA state the
@@ -77,7 +78,7 @@ is deliberately not exported; no pass reads it.
 ## File layout
 
 ```
-gofv-ssa 2
+gofv-ssa 3
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi> <nosplit 0|1> <pgohot 0|1>
 config <key> <value>                  (one line per key; table below)
@@ -234,7 +235,7 @@ else the rank comparison (`GoFV.SSA.TypeOrder`). (CSE's `cmpVal`, the constant c
 
 | Go type | tag | tail |
 | --- | --- | --- |
-| `*ir.Name` | `name` | `"<n.Sym().Name>" <class> t<type> <frameoffset> <esc> <flags> <pos>` — `class` is `ir.Class.String()` (`PAUTO`, `PPARAM`, `PPARAMOUT`, `PEXTERN`, `PFUNC`, …); `esc` is `n.Esc()` (0 `EscUnknown`, 1 `EscNone`, 2 `EscHeap`, 3 `EscNever`); flags `addrtaken`, `used`, `autotmp`, `nonmergeable`, `opendeferslot`, `readonly`; `pos` is `n.Pos()` |
+| `*ir.Name` | `name` | `"<n.Sym().Name>" <class> t<type> <frameoffset> <esc> <flags> <pos>` — `class` is `ir.Class.String()` (`PAUTO`, `PPARAM`, `PPARAMOUT`, `PEXTERN`, `PFUNC`, …); `esc` is `n.Esc()` (0 `EscUnknown`, 1 `EscNone`, 2 `EscHeap`, 3 `EscNever`); flags `addrtaken`, `used`, `autotmp`, `nonmergeable`, `opendeferslot`, `readonly`, `addrconv` (v3: the name's `LocalAddr` reaches a `Convert` to an integer, backwards through the non-memory arguments of every value except `Load`/`Dereference`, calls included; computed once from the function the exporter starts with, i.e. section 0, and the same in every section; `gofvAddrConv`); `pos` is `n.Pos()` |
 | `*obj.LSym` | `sym` | `"<name>" <abi> <SymKind\|-> <size> <flags> <typeinfo t\|-> <itabinfo t\|-> <data> <nrelocs>`, followed by `nrelocs` `reloc` lines and, when `typeinfo` is set, one `rtype` line |
 | `stringAux` | `str` | `"<s>" "<StringData symbol name>"` |
 | `*AuxCall` | `call` | `<fn a\|-> <abi\|-> <nin> <nout> <spilloff> <spillsize> <inregs> <outregs>`, followed by `nin + nout` `abiparam` lines (`abi` is `abiInfo.Config().Which()`; with `abiInfo == nil` the tail is `<fn> - 0 0 0 0 0 0`) |

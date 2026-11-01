@@ -77,12 +77,12 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1296 @@
+@@ -0,0 +1,1348 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 1).
++// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 3).
 +// Enabled by GOFV_SSA_EXPORT=<dir>. Read-only: it never calls caching accessors, never
 +// computes type sizes and never creates symbols, so compilation is unchanged.
 +
@@ -180,6 +180,7 @@
 +// (no section yet). set may carry no directory when the caller does not write files.
 +func gofvNewExporter(f *Func, set *gofvSettings) *gofvExporter {
 +	pkg := base.Ctxt.Pkgpath
++	gofvMarkAddrConv(f)
 +	x := &gofvExporter{
 +		f:        f,
 +		set:      set,
@@ -191,10 +192,61 @@
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-ssa 2\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
++	fmt.Fprintf(&x.out, "gofv-ssa 3\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
 +	return x
++}
++
++// gofvAddrConvNames holds the names marked by gofvMarkAddrConv in this compilation.
++var gofvAddrConvNames sync.Map // *ir.Name -> struct{}
++
++// gofvMarkAddrConv marks the names whose address reaches a Convert to an integer in f (the
++// "addrconv" name flag, format 3): backwards from every such Convert's argument through the
++// non-memory arguments of every value except Load/Dereference (whose result is memory
++// contents, not an address computed from the argument) to LocalAddr. Calls are included: the
++// runtime returns pointers derived from its arguments (growsliceBuf returns the stack buffer
++// the frontend passes, whose address append then converts to compare with the stack bounds).
++// Every exporter marks its function when it is made (the start section for GOFV_SSA_EXPORT);
++// marks are never removed, so a later export of the same function (the driver's re-exports,
++// after passes deleted conversions) shows the flags of the first.
++func gofvMarkAddrConv(f *Func) {
++	seen := map[*Value]bool{}
++	var work []*Value
++	push := func(v *Value) {
++		if !seen[v] && v.Type != types.TypeMem { // calls' result tuples (IsMemory) are followed
++			seen[v] = true
++			work = append(work, v)
++		}
++	}
++	for _, b := range f.Blocks {
++		for _, v := range b.Values {
++			if v.Op == OpConvert && v.Type.IsInteger() {
++				push(v.Args[0])
++			}
++		}
++	}
++	for len(work) > 0 {
++		v := work[len(work)-1]
++		work = work[:len(work)-1]
++		switch v.Op {
++		case OpLocalAddr:
++			if n, ok := v.Aux.(*ir.Name); ok {
++				gofvAddrConvNames.Store(n, struct{}{})
++			}
++		case OpLoad, OpDereference:
++		default:
++			for _, a := range v.Args {
++				push(a)
++			}
++		}
++	}
++}
++
++// gofvAddrConv reports whether n is marked (gofvMarkAddrConv).
++func gofvAddrConv(n *ir.Name) bool {
++	_, ok := gofvAddrConvNames.Load(n)
++	return ok
 +}
 +
 +func gofvBool(b bool) int {
@@ -603,8 +655,8 @@
 +			sym = a.Sym().Name
 +		}
 +		flags := gofvFlags(
-+			[]string{"addrtaken", "used", "autotmp", "nonmergeable", "opendeferslot", "readonly"},
-+			[]bool{a.Addrtaken(), a.Used(), a.AutoTemp(), a.NonMergeable(), a.OpenDeferSlot(), a.Readonly()})
++			[]string{"addrtaken", "used", "autotmp", "nonmergeable", "opendeferslot", "readonly", "addrconv"},
++			[]bool{a.Addrtaken(), a.Used(), a.AutoTemp(), a.NonMergeable(), a.OpenDeferSlot(), a.Readonly(), gofvAddrConv(a)})
 +		fmt.Fprintf(&b, "name %s %s %s %s %d %d %s %s\n", gofvQuote(render), gofvQuote(sym), a.Class.String(),
 +			x.typ(a.Type()), a.FrameOffset(), a.Esc(), flags, x.pos(a.Pos()))
 +	case *obj.LSym:
