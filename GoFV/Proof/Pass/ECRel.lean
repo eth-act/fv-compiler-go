@@ -137,7 +137,9 @@ structure CvBlock (fb gb : Block) : Prop where
   obl : ((make f).depthOf fb.id).isSome → ∀ x ∈ fb.values, ∀ u, f.value? x = some u →
     u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x)
       (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) x
-  front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
+  front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧
+    (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
+      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
   ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, ∀ y, cv c y = y
   ret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', RegOK (Ctx.make tabs f) c y →
     Sem.Refines (cv c y) y' →
