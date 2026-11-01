@@ -47,7 +47,8 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
 What the interpreter's proof must supply when it applies `Rule.Sound`: the instance read off
 the matched values (leaf values from the registers, node fields from the values), the
 condition's evaluation (`GoFV.Rules.Eval.eval` agrees with `evalE` where `evalE` does not
-defer to the oracle; `eval` is `partial` today and needs a structural rewrite for that proof),
+defer to the oracle; `eval` is total, with fuel for the nesting depth, as are the matcher and
+result construction),
 the checker facts, that `typ.<T>`/`types.Types[k]` of the export's `Config.Types` have the
 shapes of `typShape`/`typesShape`, and `CommSound` for swapped matches. `Rule.Sound` ignores
 `@b` placement and positions; a copy result's new type is the interpreter's concern
@@ -212,21 +213,33 @@ Rerun it whenever lemmas are added. `GoFV.Opt.optProven`/`divisibleProven`/`divm
 `applyRewrite` with these sets (clifv's `--opt-proven-only`); the rewrite passes' theorems take
 `RuleSet.AllSound` of their rule set as hypothesis.
 
-`lake exe opt-proven-probe <corpus>` runs both variants on every stock instance's input. Quick
-corpus (`quick-v1`, 9,297 functions; 566 proven rules; "rules fired": value and block rules,
-`RwState.fired`, each instance run on the stock input):
+**Checked passes.** `GoFV.Opt.optChecked`/`divisibleChecked`/`divmodChecked` run the proven-only
+pass with its log on (`RwState.log`: every fired value rule with the definitions it built, copy
+and control replacements, phi eliminations, block rules) and keep the result only if
+`GoFV.Opt.RewriteCheck.validate` accepts it (else the input): replaying the log on the input's
+definitions, each rule firing must be an instance of its rule as `Rule.Sound` states it (pattern
+match on the definitions, `Pat.cons`, `Pat.wf`, condition by `evalE` with an oracle read off the
+built nodes, top op producing its type's shape, sized leaves, built nodes = `resDen`), no phi
+elimination or block rule, and every definition and control of the result must be the replayed
+one up to copies of compatible shape; the atoms (phis, roots, frame values) must be unchanged,
+in the same order. These are the passes the theorems are about (issue #113).
 
-| Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept |
-| --- | --: | --: | --: | --: | --: | --: |
-| opt | 100.00% | 41.82% | 75.51% | 99,454 | 11,589 | 11.65% |
-| middle opt | 100.00% | 76.37% | 96.44% | 11,934 | 669 | 5.61% |
-| late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% |
-| divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% |
-| divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% |
+`lake exe opt-proven-probe <corpus>` runs the full, proven-only and checked variants on every
+stock instance's input. Quick corpus (`quick-v1`, 9,297 functions; 957 proven rules; "rules
+fired": value and block rules, `RwState.fired`, each instance run on the stock input):
+
+| Pass | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Validator rejects | Checked parity |
+| --- | --: | --: | --: | --: | --: | --: | --: | --: |
+| opt | 100.00% | 43.19% | 70.98% | 99,454 | 15,584 | 15.67% | 19 | 43.18% |
+| middle opt | 100.00% | 77.47% | 94.26% | 11,934 | 1,662 | 13.93% | 7 | 77.43% |
+| late opt | 100.00% | 84.60% | 1.37% | 8,314 | 47 | 0.57% | 0 | 84.60% |
+| divisible | 100.00% | 99.92% | 62.34% | 9 | 0 | 0.00% | 0 | 99.92% |
+| divmod | 100.00% | 97.88% | 98.11% | 441 | 0 | 0.00% | 0 | 97.88% |
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
-dead-value removal.
+dead-value removal. Validator rejections: a top op whose value is narrower than the op
+(`natShape`, "Narrow result types"), a phi elimination, a few result shapes.
 
 ## Proof method (`GoFV/Proof/Rules/Tactic.lean`)
 
