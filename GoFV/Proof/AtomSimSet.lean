@@ -4,8 +4,9 @@ import GoFV.Proof.TermStep
 /-!
 # Value sets of the atom simulation (issue #113)
 
-The source-side invariant (`Inv`: a predicate `P b a y` on the registers while the source runs
-block `b`, and `L b i` on the edges it enters blocks along, preserved by the source's steps),
+The source-side invariant (`Inv`: a predicate `P b a y` on the registers and a frame-level
+predicate `Q b ρ` on all registers while the source runs block `b`, and `L b i` on the edges it
+enters blocks along, preserved by the source's steps),
 the hypotheses (`Hyp`: both functions well formed with certified dominator trees, `atomsOK`,
 the two `TermRefP` premises under the invariant), the value sets the frame relation speaks
 about (`SAnc`: placed in a strict ancestor of the block; `PhiOf`: a `Phi` of the block), their
@@ -41,36 +42,57 @@ def PhisP (tabs : Tables) (f : Func) (P : ID → ID → Val → Prop) (fr : Fram
   ∀ bb, f.block? b = some bb → ∀ z ∈ bb.values, ∀ v, f.value? z = some v → v.op = .Phi →
     ∀ a, v.args[i]? = some a → P b z ((rv fr a).retype (tabs.ty v.type))
 
+/-- The registers after block `b`'s `Phi`s, read along edge `i` from `fr`, satisfy `Q b`. -/
+def PhisQ (tabs : Tables) (f : Func) (Q : ID → (ID → Val) → Prop) (fr : Frame) (b : ID)
+    (i : Nat) : Prop :=
+  ∀ bb ps, f.block? b = some bb →
+    bb.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) = .ok ps →
+      Q b (rv { fr with regs := setPhis ps fr.regs })
+
 /-- **A source-side invariant** of the atom simulation: while the source runs block `b`
-(entered along an edge `i` with `L b i`), every register `a` holds a value `y` with `P b a y`.
-It holds at the entry, and each step of the source keeps it: a term or atom evaluated in `b`,
-and the edge from a predecessor `p` (the terminator's choice, from the frame at the end of `p`,
-whose values of `V` are their terms over the atoms) with the `Phi`s of the successor. -/
+(entered along an edge `i` with `L b i`), every register `a` holds a value `y` with `P b a y`,
+and the registers as a whole satisfy the frame-level invariant `Q b` (e.g. relations between
+registers), which is closed under poisoning registers. Both hold at the entry, and each step
+of the source keeps them: a term or atom evaluated in `b`, and the edge from a predecessor `p`
+(the terminator's choice, from the frame at the end of `p`, whose values of `V` are their terms
+over the atoms) with the `Phi`s of the successor. -/
 structure SrcInv (tabs : Tables) (f : Func) where
   P : ID → ID → Val → Prop
   L : ID → Nat → Prop
+  Q : ID → (ID → Val) → Prop
   start : L f.entry 0 ∧ ∀ a, P f.entry a .poison
+  qstart : Q f.entry fun _ => .poison
   poisonAtom : ∀ b a, ¬ IsTerm f.value? a → P b a .poison
+  qpois : ∀ b (ρ ρ' : ID → Val), Q b ρ → (∀ a, ρ' a = ρ a ∨ ρ' a = .poison) → Q b ρ'
   edge : ∀ p ip pb fr e V, f.block? p = some pb → L p ip → (∀ a, P p a (rv fr a)) →
+    Q p (rv fr) → Proof.Typed (Ctx.make tabs f) fr → fr.regs.size = f.valueTab.size →
     DenOK f.value? tabs fr V → (∀ x, AncV f p x → V x) → PhiArgs f e.b e.i V →
     stepTerm fr pb = .ok (.goto e) →
-      L e.b e.i ∧ (∀ a, P e.b a (rv fr a)) ∧ PhisP tabs f P fr e.b e.i
+      L e.b e.i ∧ (∀ a, P e.b a (rv fr a)) ∧ PhisP tabs f P fr e.b e.i ∧ PhisQ tabs f Q fr e.b e.i
   term : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
     termOp v.op = true → ∀ ρ : ID → Val, (∀ a ∈ v.args, P b a (ρ a)) →
-      P b x ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
+      P b x ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
         (tabs.ty v.type))
   atom : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
     termOp v.op = false → v.op ≠ .Phi → ∀ y : Val, P b x (y.retype (tabs.ty v.type))
+  qstep : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
+    v.id = x → v.op ≠ .Phi → ∀ env (fr : Frame) y, evalValue env (Ctx.make tabs f) fr v = .ok y →
+      (∀ a, P b a (rv fr a)) → Q b (rv fr) → Q b (rv (fr.set x y))
 
 /-- The trivial invariant. -/
 def SrcInv.triv (tabs : Tables) (f : Func) : SrcInv tabs f where
   P _ _ _ := True
   L _ _ := True
+  Q _ _ := True
   start := ⟨trivial, fun _ => trivial⟩
+  qstart := trivial
   poisonAtom _ _ _ := trivial
-  edge _ _ _ _ _ _ _ _ _ _ _ _ _ := ⟨trivial, fun _ => trivial, fun _ _ _ _ _ _ _ _ _ => trivial⟩
+  qpois _ _ _ _ _ := trivial
+  edge _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ :=
+    ⟨trivial, fun _ => trivial, fun _ _ _ _ _ _ _ _ _ => trivial, fun _ _ _ _ => trivial⟩
   term _ _ _ _ _ _ _ _ _ _ := trivial
   atom _ _ _ _ _ _ _ _ _ _ := trivial
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
 
 /-- The arguments of every atom of `g` refine, as terms under the invariant, those of the same
 atom of `f`: for a non-`Phi` atom the invariant at its block, for argument `i` of a `Phi` the
@@ -83,9 +105,11 @@ def AtomArgsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
       u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
       ∀ i < u.args.size,
         (u.op ≠ .Phi →
-          TermRefP (I.P b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!) ∧
+          TermRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs
+            u.args[i]!) ∧
         (u.op = .Phi → ∀ (p : ID) (pb : Block) (k : Nat), p ∈ f.blocks → f.block? p = some pb → pb.succs[k]? = some (⟨b, i⟩ : Edge) →
-          TermRefP (I.P p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!)
+          TermRefP (I.P p) (I.Q p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
+            u.args[i]!)
 
 /-- The controls of every block of `g` refine, as terms under the invariant at the block,
 those of the same block of `f`. -/
@@ -93,18 +117,19 @@ def ControlsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
   ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
     fb.controls.size = gb.controls.size ∧
     ∀ k < gb.controls.size,
-      TermRefP (I.P b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs gb.controls[k]!
+      TermRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs
+        gb.controls[k]!
 
 theorem AtomArgsRef.toP {tabs : Tables} {f g : Func} (h : AtomArgsRef tabs f g) (I : SrcInv tabs f) :
     AtomArgsRefP I g := fun b hb gb hgb a ha u hu ht => by
   obtain ⟨u', h1, h2, h3, h4, h5, h6, h7⟩ := h b hb gb hgb a ha u hu ht
   exact ⟨u', h1, h2, h3, h4, h5, h6, fun i hi =>
-    ⟨fun _ => TermRef.toP (h7 i hi) _ _, fun _ _ _ _ _ _ _ => TermRef.toP (h7 i hi) _ _⟩⟩
+    ⟨fun _ => TermRef.toP (h7 i hi) _ _ _, fun _ _ _ _ _ _ _ => TermRef.toP (h7 i hi) _ _ _⟩⟩
 
 theorem ControlsRef.toP {tabs : Tables} {f g : Func} (h : ControlsRef tabs f g) (I : SrcInv tabs f) :
     ControlsRefP I g := fun b hb fb gb hfb hgb => by
   obtain ⟨h1, h2⟩ := h b hb fb gb hfb hgb
-  exact ⟨h1, fun k hk => TermRef.toP (h2 k hk) _ _⟩
+  exact ⟨h1, fun k hk => TermRef.toP (h2 k hk) _ _ _⟩
 
 /-- The terminator of every block of `g` refines, as a function of its controls' terms under
 the invariant at the block (`StepRefP`), that of the same block of `f`, and the successors of
@@ -112,11 +137,12 @@ the invariant at the block (`StepRefP`), that of the same block of `f`, and the 
 controls and successor order). -/
 def StepRefsP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
-    (∀ e ∈ fb.succs, e ∈ gb.succs) ∧ StepRefP (I.P b) (SAnc f b) f.value? tabs fb (listedDefs g) gb
+    (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
+      StepRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs fb (listedDefs g) gb
 
 theorem TermStepRef.toStepRefsP {tabs : Tables} {f g : Func} (h : TermStepRef tabs f g)
     (I : SrcInv tabs f) : StepRefsP I g := fun b hb fb gb hfb hgb =>
-  ⟨(h b hb fb gb hfb hgb).1, TermStepRef.toP h hb hfb hgb _ _⟩
+  ⟨(h b hb fb gb hfb hgb).1, TermStepRef.toP h hb hfb hgb _ _ _⟩
 
 /-- Controls refining as terms in blocks of the same kind, successors and ID. -/
 theorem ControlsRefP.toStepRefsP {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
@@ -276,7 +302,7 @@ def TermsOK (D : ID → Option Value) (tabs : Tables) (fr : Frame) : (ID → Pro
   | _, [] => True
   | V, x :: s => Reg fr x ∧
       (∀ v, D x = some v → termOp v.op = true → (∀ a ∈ v.args, V a) ∧
-        fr.regs[x]? = some (some ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux
+        fr.regs[x]? = some (some ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
           (v.args.toList.map (rv fr))).retype (tabs.ty v.type)))) ∧
       TermsOK D tabs fr (fun a => V a ∨ a = x) s
 

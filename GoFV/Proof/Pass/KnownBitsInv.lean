@@ -95,7 +95,8 @@ theorem argE_eq {v : Value} {i : Nat} (hi : i < v.args.size) : argE E v i = ent 
 /-- A term node keeps the invariant. -/
 theorem kb_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.op = true)
     (ρ : ID → Val) (hρ : ∀ a ∈ v.args, Gam (ent E a) (ρ a)) :
-    Gam (ent E x) ((evalPure v.op (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)).retype
+    Gam (ent E x) ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
+      (v.args.toList.map ρ)).retype
       (tabs.ty v.type)) := by
   have hfix := K.fix x (lt_of_value? hv)
   have hph : v.op ≠ .Phi := fun h => by rw [h, termOp_phi] at ht; cases ht
@@ -118,6 +119,10 @@ theorem kb_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.o
     exact gam_any _ hfix _
   | some k =>
     rw [hk] at hfix
+    have hfo : GoFV.Proof.Rules.frameOp v.op = false := by
+      simp only [GoFV.Proof.Rules.frameOp, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+      exact ⟨fun h => (by rw [h] at hk; cases hk), fun h => (by rw [h] at hk; cases hk)⟩
+    rw [GoFV.Proof.Rules.opVal_pure hfo]
     obtain ⟨hsem, hvalid⟩ := kind_spec hk (tabs.ty v.type) v.auxInt v.aux (v.args.toList.map ρ)
     rw [hsem]
     cases k with
@@ -173,18 +178,22 @@ def kbInv {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array B
     {ce : CheckEnv} (hwf : WF ce f) (K : KbFacts tabs f g E R) : SrcInv tabs f where
   P _ a y := Gam (ent E a) y
   L b _ := b ∈ f.blocks ∧ R.getD b false = true
+  Q _ _ := True
   start := by
     have h := K.reach
     unfold reachOK at h
     simp only [Bool.and_eq_true] at h
     exact ⟨⟨hwf.entry, h.1⟩, fun _ => Gam.poison _⟩
+  qstart := trivial
   poisonAtom _ _ _ := Gam.poison _
-  edge p _ pb fr e _ hpb hL hinv _ _ _ hst := by
+  qpois _ _ _ _ _ := trivial
+  edge p _ pb fr e _ hpb hL hinv _ _ _ _ _ _ hst := by
     obtain ⟨k, hk, hF⟩ := stepTerm_goto_idx hst
     obtain ⟨hm, hR, hl⟩ := kb_live hwf K hL.1 hpb hL.2 hk hF
-    exact ⟨⟨hm, hR⟩, hinv, kb_phis hwf K hm hl hinv⟩
+    exact ⟨⟨hm, hR⟩, hinv, kb_phis hwf K hm hl hinv, fun _ _ _ _ => trivial⟩
   term _ _ _ x _ v hv ht ρ hρ := kb_term hwf K hv ht ρ hρ
   atom _ _ _ x _ v hv ht hph y := kb_atom hwf K hv ht hph y
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
 
 @[simp] theorem kbInv_P {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array Bool}
     {ce : CheckEnv} (hwf : WF ce f) (K : KbFacts tabs f g E R) (b a : ID) (y : Val) :

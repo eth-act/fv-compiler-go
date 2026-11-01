@@ -53,7 +53,7 @@ theorem cmp_den {c a b : ID} {cv : Value} (hc : D c = some cv) (hargs : cv.args.
     {k : CmpK} (hk : cTab.lookup cv.op = some k) (K : Nat) :
     den D tabs ρ (K + 1) c =
       (cmpEval k [den D tabs ρ K a, den D tabs ρ K b]).retype (tabs.ty cv.type) := by
-  rw [den_succ_term hc (cTab_term hk), cTab_eval hk, hargs]; rfl
+  rw [den_succ_term hc (cTab_term hk), cTab_opVal hk, hargs]; rfl
 
 /-- A path fact as a relation between its comparison's arguments. -/
 theorem relRaw_sound (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) ∈ A.facts)
@@ -194,7 +194,7 @@ theorem bounds_len (h : AsmHolds D tabs ρ A) {c : ID} {v : Bool} (hf : (c, v) �
   obtain ⟨N, hN⟩ := h.facts c v hf
   have hcK := hN (max N n + 1) (by omega)
   have hxK := den_stable_int hx (Nat.le_max_right N n)
-  rw [den_succ_term hc (cTab_term hk), cTab_eval hk] at hcK
+  rw [den_succ_term hc (cTab_term hk), cTab_opVal hk] at hcK
   simp only [cmpEval, Cmp.inBounds] at hcK
   split at hcK
   · rename_i wi i nv heq
@@ -362,7 +362,7 @@ theorem rng_sound (h : AsmHolds D tabs ρ A) :
           obtain ⟨ht, hi⟩ := hc
           split
           · rename_i c hl
-            rw [den_succ_term hd ht, rTab_eval hl] at hx
+            rw [den_succ_term hd ht, rTab_opVal hl] at hx
             have hty := width_some (by simpa [intAt] using hi)
             rw [hty] at hx
             simp only [Ty.width?] at hx

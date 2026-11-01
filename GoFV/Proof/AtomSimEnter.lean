@@ -115,7 +115,7 @@ theorem phi_not_term_g {g : Func} :
 theorem termsOK_of_topo {f : Func} {tabs : Tables} {G : Frame} :
     ∀ {L : List ID} {V : ID → Prop}, TopoRem (argsF f) L → (∀ x ∈ L, Reg G x) →
       (∀ x ∈ L, ∀ v, f.value? x = some v → termOp v.op = true →
-        (∀ a ∈ v.args, V a ∨ a ∈ L) ∧ G.regs[x]? = some (some ((evalPure v.op (tabs.ty v.type)
+        (∀ a ∈ v.args, V a ∨ a ∈ L) ∧ G.regs[x]? = some (some ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type)
           v.auxInt v.aux (v.args.toList.map (rv G))).retype (tabs.ty v.type)))) →
       TermsOK f.value? tabs G V L
   | [], _, _, _, _ => trivial
@@ -216,15 +216,15 @@ theorem inv_phis {tabs : Tables} {f : Func} {I : SrcInv tabs f} {fr : Frame} {b 
     · rw [hkeep z (.inr ⟨v, hv, hop⟩)]; exact hinv z
   · rw [hkeep z (.inl hz)]; exact hinv z
 
-/-- Evaluating values of block `b` keeps the invariant. -/
+/-- Evaluating values of block `b` keeps the invariants. -/
 theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {b : ID} {fb : Block}
     (hfb : f.block? b = some fb) :
     ∀ {L : List ID} {fr G : Frame},
       (∀ x ∈ L, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values) →
       evalAll env (Ctx.make tabs f) fr L = .ok G →
-      (∀ a, I.P b a (rv fr a)) → ∀ a, I.P b a (rv G a)
-  | [], _, _, _, h, hinv => by cases h; exact hinv
-  | x :: L, fr, G, hL, h, hinv => by
+      (∀ a, I.P b a (rv fr a)) → I.Q b (rv fr) → (∀ a, I.P b a (rv G a)) ∧ I.Q b (rv G)
+  | [], _, _, _, h, hinv, hq => by cases h; exact ⟨hinv, hq⟩
+  | x :: L, fr, G, hL, h, hinv, hq => by
     rw [evalAll_cons] at h
     unfold stepV at h
     change (match (match f.value? x with
@@ -254,7 +254,8 @@ theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {
             have := evalValue_typed he
             rw [hty] at this
             rw [← this]; exact I.atom b fb hfb x hxb v hv ht hph y
-        refine inv_evalAll hfb (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h fun a => ?_
+        refine inv_evalAll hfb (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h (fun a => ?_)
+          (I.qstep b fb hfb x hxb v hv hid hph env fr y he hinv hq)
         rw [rv_set]
         split
         · next hh => obtain ⟨rfl, -⟩ := hh; exact hy

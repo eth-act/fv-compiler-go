@@ -1,4 +1,4 @@
-import GoFV.Proof.ProveCheck.Value
+import GoFV.Proof.ProveCheck.Lin
 
 /-!
 # Deciding comparisons is sound (issue #24)
@@ -248,13 +248,92 @@ theorem pairDecides_sound (h : AsmHolds D tabs ρ A) {x0 y0 : ID} {w : Width} {t
       · simp only [relVal, Bool.not_false] at this ⊢; simp [bne, this]
       · simp only [relVal, Bool.not_true] at this ⊢; simpa [bne] using this
 
+theorem ordHolds_readV {n : Nat} {s st : Bool} {X Y : BitVec n} :
+    OrdHolds s st X Y ↔ (if st then readV s X < readV s Y else readV s X ≤ readV s Y) := by
+  cases s <;> cases st <;> simp only [OrdHolds, readV, ite_true, Bool.false_eq_true, ite_false] <;> omega
+
+theorem readV_inj {n : Nat} {s : Bool} {X Y : BitVec n} (h : readV s X = readV s Y) : X = Y := by
+  cases s
+  · exact BitVec.eq_of_toNat_eq (by simp only [readV, Bool.false_eq_true, ite_false] at h; omega)
+  · exact BitVec.toInt_inj.1 (by simpa [readV] using h)
+
+/-- Differences in the reading `s` decide the comparison. -/
+theorem linIn_sound (h : AsmHolds D tabs ρ A) {s : Bool} {x y : ID} {w : Width} {t : Rel}
+    {v : Bool} (ht : ∀ s' st, t = .lt s' st → s' = s) (hp : linIn D tabs A k s x y w t v = true)
+    {K : Nat} {X Y : BitVec w.bits} (hx : den D tabs ρ K x = .int w X)
+    (hy : den D tabs ρ K y = .int w Y) : relVal t X Y = v := by
+  obtain ⟨N, hN⟩ := allEdges_sound (k := k) h s w
+  have hx' := den_stable_int hx (Nat.le_max_right N K)
+  have hy' := den_stable_int hy (Nat.le_max_right N K)
+  have hes := hN (max N K) (Nat.le_max_left N K)
+  obtain ⟨BX, hBX, ex⟩ := offOf_sound (k := k) (s := s) h hx'
+  obtain ⟨BY, hBY, ey⟩ := offOf_sound (k := k) (s := s) h hy'
+  unfold linIn at hp
+  generalize A.facts.flatMap (factEdges D tabs A k s w) = es at hp hes
+  generalize offOf D tabs A k s w x = ox at hp hBX ex
+  generalize offOf D tabs A k s w y = oy at hp hBY ey
+  obtain ⟨bx, cx⟩ := ox
+  obtain ⟨by', cy⟩ := oy
+  dsimp only at hp hBX ex hBY ey
+  have d1 := fun c (hd : diffLe es bx by' c = true) => diffLe_sound hes hd hBX hBY
+  have d2 := fun c (hd : diffLe es by' bx c = true) => diffLe_sound hes hd hBY hBX
+  cases t with
+  | lt s' st =>
+    cases ht s' st rfl
+    dsimp only at hp
+    cases v with
+    | true =>
+      have := d1 _ hp
+      refine relVal_lt.2 (ordHolds_readV.2 ?_)
+      cases st <;> simp only [ite_true, Bool.false_eq_true, ite_false] at this ⊢ <;> omega
+    | false =>
+      simp only [Bool.false_eq_true, ite_false] at hp
+      have := d2 _ hp
+      cases e : relVal (.lt s st) X Y
+      · rfl
+      · have := ordHolds_readV.1 (relVal_lt.1 e)
+        cases st <;> simp only [ite_true, Bool.false_eq_true, ite_false] at * <;> omega
+  | eq b =>
+    dsimp only at hp
+    split at hp
+    · rename_i hbv
+      simp only [beq_iff_eq] at hbv
+      subst hbv
+      simp only [Bool.and_eq_true] at hp
+      have h1 := d1 _ hp.1
+      have h2 := d2 _ hp.2
+      have : X = Y := readV_inj (s := s) (by omega)
+      subst this
+      cases b <;> simp [relVal]
+    · rename_i hbv
+      simp only [beq_iff_eq] at hbv
+      have hne : X ≠ Y := by
+        rintro rfl
+        rcases Bool.or_eq_true_iff.1 hp with hd | hd
+        · have := d1 _ hd; omega
+        · have := d2 _ hd; omega
+      cases b <;> cases v <;> simp_all [relVal]
+
+theorem linDecides_sound (h : AsmHolds D tabs ρ A) {x y : ID} {w : Width} {t : Rel} {v : Bool}
+    (hp : linDecides D tabs A k x y w t v = true) {K : Nat} {X Y : BitVec w.bits}
+    (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) : relVal t X Y = v := by
+  unfold linDecides at hp
+  cases t with
+  | lt s st => exact linIn_sound h (fun _ _ e => by cases e; rfl) hp hx hy
+  | eq b =>
+    rcases Bool.or_eq_true_iff.1 hp with hp | hp
+    · exact linIn_sound h (fun _ _ e => by cases e) hp hx hy
+    · exact linIn_sound h (fun _ _ e => by cases e) hp hx hy
+
 theorem relDecides_sound (h : AsmHolds D tabs ρ A) {x y : ID} {w : Width} {t : Rel} {v : Bool}
     (hp : relDecides D tabs A k x y w t v = true) {K : Nat} {X Y : BitVec w.bits}
     (hx : den D tabs ρ K x = .int w X) (hy : den D tabs ρ K y = .int w Y) : relVal t X Y = v := by
   unfold relDecides at hp
   rcases Bool.or_eq_true_iff.1 hp with hr | hr
-  · exact rangeDecides_sound (rng_sound h k w x K X hx) (rng_sound h k w y K Y hy) hr
-  · exact pairDecides_sound h hr hx hy
+  · rcases Bool.or_eq_true_iff.1 hr with hr | hr
+    · exact rangeDecides_sound (rng_sound h k w x K X hx) (rng_sound h k w y K Y hy) hr
+    · exact pairDecides_sound h hr hx hy
+  · exact linDecides_sound h hr hx hy
 
 /-- **Deciding a term is sound.** -/
 theorem decides_sound (h : AsmHolds D tabs ρ A) :
@@ -302,7 +381,7 @@ theorem decides_sound (h : AsmHolds D tabs ρ A) :
           split at hd
           · rename_i ck hk
             rw [show cv.args.toList.map (den D tabs ρ m) = [den D tabs ρ m a, den D tabs ρ m b] by
-              rw [hl]; rfl, cTab_eval hk] at hc
+              rw [hl]; rfl, cTab_opVal hk] at hc
             unfold cmpDecides at hd
             cases ck with
             | lt w s st =>

@@ -36,6 +36,7 @@ import GoFV.Proof.Pass.BranchElimNormal
 import GoFV.Proof.Pass.BranchElimOk
 import GoFV.Proof.Pass.BranchElimPanic
 import GoFV.Proof.Pass.BranchElimPass
+import GoFV.Proof.Pass.BranchElimPres
 import GoFV.Proof.Pass.BranchElimRel
 import GoFV.Proof.Pass.BranchElimSetup
 import GoFV.Proof.Pass.BranchElimSim
@@ -124,6 +125,7 @@ import GoFV.Proof.Pass.ECShape
 import GoFV.Proof.Pass.ECSim
 import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.FusePlain
+import GoFV.Proof.Pass.FusePlainFrame
 import GoFV.Proof.Pass.FusePlainMerged
 import GoFV.Proof.Pass.FusePlainPanic
 import GoFV.Proof.Pass.FusePlainPres
@@ -183,6 +185,7 @@ import GoFV.Proof.ProveCheck.Den
 import GoFV.Proof.ProveCheck.Facts
 import GoFV.Proof.ProveCheck.Fold
 import GoFV.Proof.ProveCheck.Inv
+import GoFV.Proof.ProveCheck.Lin
 import GoFV.Proof.ProveCheck.Proj
 import GoFV.Proof.ProveCheck.Rng
 import GoFV.Proof.ProveCheck.RngOp
@@ -216,7 +219,9 @@ import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
 import GoFV.Proof.Rules.ConstComp
+import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Den
+import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Rules.Div
 import GoFV.Proof.Rules.Div2
 import GoFV.Proof.Rules.Div3
@@ -269,10 +274,12 @@ import GoFV.Proof.Rules.Neq3
 import GoFV.Proof.Rules.Neq4
 import GoFV.Proof.Rules.Neq5
 import GoFV.Proof.Rules.NeqB
+import GoFV.Proof.Rules.NilElim
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.Rules.Not
 import GoFV.Proof.Rules.Not2
 import GoFV.Proof.Rules.OffPtr
+import GoFV.Proof.Rules.OpVal
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
 import GoFV.Proof.Rules.Or3
@@ -321,6 +328,7 @@ import GoFV.Proof.Rules.Xor4
 import GoFV.Proof.Rules.ZeroExt
 import GoFV.Proof.RunMono
 import GoFV.Proof.Sched
+import GoFV.Proof.SchedFast
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
@@ -336,6 +344,7 @@ import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE
 import GoFV.Proof.Witness.Clamp
+import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim
 import GoFV.Proof.Witness.CopyElimRel
 import GoFV.Proof.Witness.DAE
@@ -353,6 +362,7 @@ import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TraceFP

@@ -7,7 +7,7 @@ import GoFV.Rules.Generated.Generic.Blocks
 
 `BlockRule.Sound` (`GoFV/Proof/Rules/Block.lean`) of the block rules of `generic.rules`: each is
 an `If` rule whose control rule (`BlockRule.ctrlRule`, written out here as a constant so that
-`rule_auto` can unfold it; `rfl` checks it) satisfies `Rule.Sound`.
+`rule_auto` can unfold it; `rfl` checks it) satisfies `Rule.Sound`, hence `Rule.SoundT`.
 -/
 
 namespace GoFV.Proof.Rules
@@ -59,14 +59,14 @@ theorem r_generic_1066_ctrl_sound : Rule.Sound r_generic_1066_ctrl := by rule_au
 
 /-- `generic.rules:1064`: `(If (Not cond) yes no) => (If cond no yes)` -/
 theorem r_generic_1064_sound : BlockRule.Sound r_generic_1064 :=
-  ⟨_, r_generic_1064_ctrlRule, r_generic_1064_ctrl_sound⟩
+  ⟨_, r_generic_1064_ctrlRule, Rule.soundT_of_sound r_generic_1064_ctrl_sound rfl⟩
 
 /-- `generic.rules:1065`: `(If (ConstBool [c]) yes no) && c => (First yes no)` -/
 theorem r_generic_1065_sound : BlockRule.Sound r_generic_1065 :=
-  ⟨_, r_generic_1065_ctrlRule, r_generic_1065_ctrl_sound⟩
+  ⟨_, r_generic_1065_ctrlRule, Rule.soundT_of_sound r_generic_1065_ctrl_sound rfl⟩
 
 /-- `generic.rules:1066`: `(If (ConstBool [c]) yes no) && !c => (First no yes)` -/
 theorem r_generic_1066_sound : BlockRule.Sound r_generic_1066 :=
-  ⟨_, r_generic_1066_ctrlRule, r_generic_1066_ctrl_sound⟩
+  ⟨_, r_generic_1066_ctrlRule, Rule.soundT_of_sound r_generic_1066_ctrl_sound rfl⟩
 
 end GoFV.Proof.Rules

@@ -57,7 +57,8 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : SameAtom u w)
     (ht : termOp w.op = false) (hnp : w.op ≠ .Phi) (hargsS : ∀ a ∈ u.args, VS a)
     (hargsT : ∀ a ∈ w.args, VT a)
-    (hinv : ∀ a, I.P w.block a (rv G a)) (hSV : ∀ a, SAnc f w.block a → VS a) :
+    (hinv : ∀ a, I.P w.block a (rv G a)) (hq : I.Q w.block (rv G))
+    (hSV : ∀ a, SAnc f w.block a → VS a) :
     Res.Refines (evalValue env (Ctx.make tabs f) G u) (evalValue env (Ctx.make tabs g) T w) := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
   obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
@@ -79,6 +80,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
       (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
+      (fun ρ hρ => I.qpois _ _ ρ hq hρ)
     rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/
@@ -113,7 +115,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
       Sem.Refines (rv G a) (rv T0 a))
     (hnd : og.Nodup) (htopo : TopoRem (argsF g) og)
     {b : ID} (hplaced : ∀ x ∈ og, ∃ w, Placed g x w ∧ w.id = x ∧ w.op ≠ .Phi ∧ w.block = b)
-    (hinv : ∀ a, I.P b a (rv G a)) (hSV : ∀ a, SAnc f b a → VS a)
+    (hinv : ∀ a, I.P b a (rv G a)) (hq : I.Q b (rv G)) (hSV : ∀ a, SAnc f b a → VS a)
     (hargsT : ∀ x ∈ og, ∀ w, g.value? x = some w → ∀ a ∈ w.args, VT1 a ∨ a ∈ og)
     (hVSog : ∀ a ∈ og, VS a → ¬ IsTerm (listedDefs g) a → a ∈ P)
     (hatom : ∀ x ∈ L, ∀ w, g.value? x = some w → termOp w.op = false →
@@ -163,7 +165,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   cases hterm : termOp w.op with
   | true =>
     have hev : evalValue env (Ctx.make tabs g) T w =
-        .ok ((evalPure w.op (tabs.ty w.type) w.auxInt w.aux (w.args.toList.map (rv T))).retype
+        .ok ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty w.type) w.auxInt w.aux (w.args.toList.map (rv T))).retype
           (tabs.ty w.type)) := by
       rw [evalValue_of_regs hreg, evalOp_term hterm, hty]; rfl
     refine ⟨_, by rw [hstepV, hev], ?_⟩
@@ -193,7 +195,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
             exact ⟨w, hp⟩
         have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hTD hVTd
           (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt hpw hu hs hterm hwphi hargsS hargs
-          (hwb ▸ hinv) (hwb ▸ hSV)
+          (hwb ▸ hinv) (hwb ▸ hq) (hwb ▸ hSV)
         rw [hevS] at hr
         obtain ⟨y', hT, hyy⟩ := res_ok_of_refines hr
         exact ⟨y', hT, fun _ => ⟨y, hGy, hyy⟩⟩

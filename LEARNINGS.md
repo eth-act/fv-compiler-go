@@ -251,6 +251,72 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (`schedule_congr (f := f) (g := g) …`) so elaboration does not unify through it either.
 - **Effect:** the module checks in 0.7 s CPU.
 
+#### Literal fuel in a search makes the kernel expand it on symbolic arguments
+- **Problem:** `GoFV.Opt.SchedFast.rename ids a := bsearch ids a 64 0 ids.size` (binary search,
+  fuel 64). Each proof of `GoFV/Proof/SchedFast.lean` mentioning `rename` hit `(kernel)
+  deterministic timeout` after 3–7 minutes wall (66–111 min CPU per `lean` run): with a literal
+  fuel the kernel's defeq checks unfold `bsearch` 64 levels deep on a symbolic `ids`, a binary
+  tree of `if`s.
+- **Trick:** fuel `ids.size` (enough: `log₂ size + 1` steps): no literal to unfold, so the
+  symbolic `bsearch` stays stuck. Same compiled behaviour.
+- **Effect:** the module checks in 0.9 s wall.
+
+#### Checker scheduling over block-local IDs (`schedFast`, #147)
+- **Problem:** `Sem.schedule f b` allocates about seven arrays of size `maxNodeId` per call;
+  checked CFG passes reschedule blocks per rewrite, so on big functions this dominates.
+- **Trick:** `GoFV.Opt.SchedFast.schedFast` sorts the block's node IDs (`PdqSort.sortBy`,
+  kernel-evaluable), renames them to their index (binary search), runs `kahn` + `schedValid`
+  on the renamed block and maps back; `schedFast_spec`/`schedFast_filter` transport
+  `SchedSpec` through the monotone renaming.
+- **Effect:** `sched-fast-bench` on the 400 largest full-corpus files (8,832,498 blocks): output
+  identical on every block; `schedule` 142.7–214.3 s, `schedFast` 24.3–24.6 s (5.8–8.8×, two
+  runs on a loaded machine). Quick corpus (9,297 files, 2,961,638 blocks): identical, 13.7 s →
+  7.5 s.
+
+#### Checked CFG steps: snapshot before, check in place after, frame lemma for the rest
+- **Problem:** a translation-validated rewrite step that keeps its input `f` to compare with
+  the result `g` (or to fall back to) makes the rewrite copy `f`'s value and block tables (Lean
+  arrays are copy-on-write: `f` is no longer unique), and any table-wide comparison (`check g`,
+  even a pointer-first `tabEq`) costs O(function) per rewrite. Short circuit on full-v2 with
+  `check` per fusion (#139): 667 s, vs 6.5 s unchecked (issue #147).
+- **Trick:** (1) no `check` of the result: derive well-formedness and use dominance of `g` from
+  the step relation (`FusePlainPres`), check the pass input once; (2) `@[noinline] snapOf f`
+  runs the pre-check on `f` and copies only the entries the rewrite will change (here: the run's
+  values, `b₀`'s predecessors, block `c`, the source non-pure sequence); then the rewrite runs on
+  the now-unique `f` in place, and `postOK snap g` checks only those entries; a proven frame
+  lemma (`fuseRun_frame`: entries outside the run's values and blocks and `b₀`'s predecessors
+  are unchanged) replaces the table-wide comparison; (3) a rejected rewrite is an `Except` error
+  and the pass returns its input (`Fuse.orInput`: one copy per pass, not per rewrite);
+  (4) `rankOK` compiled as a linear scan via `@[csimp]` (`rankOKFast`), and `schedValid`'s
+  pure-node table built once (#171).
+- **Effect** (pass time, `pass-parity`, load 30–60; checked / unchecked):
+
+  | | quick | full-v2 | 400 largest full files |
+  | --- | --: | --: | --: |
+  | short circuit, `check` per fusion (#139) | 7.1–8.0 s | 667 s | – |
+  | + no `check`, local `tabEq` checker, rankOKFast (#171) | 2.0 s | 27.5 s | 18.7 s |
+  | + snapshot / in place / frame lemma (#181) | 0.5 s | 13.3–15.2 s | 4.3 s |
+  | + `schedFast` in the checker (#180) | 0.6 s | 8.4 s | 1.8 s |
+  | unchecked | 0.1 s | 3.0–6.5 s | 0.4 s |
+
+  Before `schedFast`, `Sem.schedule` took 3.2 of the 4.3 s on the 400 largest files (arrays of
+  size max-value-ID per call). With both checker schedule calls removed (an unsound ablation)
+  the step costs 1.1 s there, so the rest of the gap is the checker's own O(run) work
+  (snapshot lists, `postOK`), which unchecked fusion does not do. Early fuse on full-v2: 13.2
+  → 4.7 → 3.3 s (unchecked 1.3 s).
+
+#### branchelim: no `check` per rewrite (#147)
+- **Problem:** `BranchElim.stepOK` ran `checkOK ce g` on every accepted rewrite, and `relB`
+  compared every value and block table entry (`List.range f.valueTab.size`, `f.blocks.all`).
+- **Trick:** as for plain fusion (PR #171): the proofs run on path dominance (`UseDom`,
+  `SDom`) instead of the certificate, `DRel.wf_pres`/`DRel.useDom_pres` derive `WF`/`UseDom` of
+  the result from the relation (`GoFV/Proof/Pass/BranchElimPres.lean`), and the checker compares
+  the unchanged table entries with `tabEq` (pointer first); the pass checks its input once.
+- **Effect:** branchelim pass time, interleaved A/B with the same build (`pass-parity
+  --pass branchelim`, load 26–30): full-v2 14.4/15.2 s → 12.3/13.7 s; quick 0.7–0.8 s →
+  0.7 s (only 729 rewrites on quick). The remaining time is the rewrites themselves, the
+  `loadAddr` set and the single input `check`.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,

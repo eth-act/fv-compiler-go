@@ -110,3 +110,7 @@ root = "GoFVTest.TabsAgreeProbe"
 [[lean_exe]]
 name = "expand-calls-probe"
 root = "GoFVTest.ExpandCallsProbe"
+
+[[lean_exe]]
+name = "sched-fast-bench"
+root = "GoFVTest.SchedFastBench"

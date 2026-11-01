@@ -117,7 +117,7 @@ theorem den_mono (D : ID → Option Value) (tabs : Tables) {ρ ρ' : ID → Val}
     by_cases ht : IsTerm D x
     · obtain ⟨v, hx, hv⟩ := ht
       rw [den_succ_term hx hv, den_succ_term hx hv]
-      exact retype_mono _ (evalPure_mono _ _ _ _
+      exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _
         (refinesList_map fun a _ => den_mono D tabs hρ n m a (by omega)))
     · rw [den_succ_atom ht, den_succ_atom ht]; exact hρ x
 

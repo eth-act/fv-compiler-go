@@ -8,7 +8,7 @@ a run of `g`. Macro-step simulation (`runLoop_simIH`): outside the diamond both 
 alike (`normal_step`); at `dom` the source runs `dom`, the side's arm (if any) and `post` while
 the target runs the merged block once (`merged_ok`, `post_panic`, `dom_panic`). The relation
 `R`: the same block (never an arm or `post`), frames agreeing outside the arm values, and
-lemma (D) for the source's frame at the entry of a tree block.
+lemma (D) for the source's frame at the entry of a reachable block (path dominance, `Setup.dom`).
 -/
 
 namespace GoFV.Proof.BranchElim
@@ -21,36 +21,36 @@ variable {f g : Func} {s : Site}
 def R (env : Env) (tabs : Tables) (f : Func) (s : Site) (frS : Frame) (bS iS : Nat) (frT : Frame)
     (bT iT : Nat) : Prop :=
   bT = bS ∧ iT = iS ∧ bS ∈ f.blocks ∧ bS ≠ s.post ∧ s.arm0 ≠ some bS ∧ s.arm1 ≠ some bS ∧
-    ((make f).depthOf bS).isSome ∧ frS.regs.size = f.valueTab.size ∧
+    Reachable f bS ∧ frS.regs.size = f.valueTab.size ∧
     frT = { frS with regs := frT.regs } ∧ frT.regs.size = frS.regs.size ∧
     (∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?) ∧
-    DInv env (Ctx.make tabs f) (fun a => Anc (make f) a bS ∧ a ≠ bS) frS
+    DInv env (Ctx.make tabs f) (fun a => SDom f a bS ∧ a ≠ bS) frS
 
 namespace Setup
 
 variable (S : Setup f g s)
 include S
 
-/-- Lemma (D) and the tree along a source block step. -/
+/-- Lemma (D) and reachability along a source block step. -/
 theorem dinv_step {env : Env} {tabs : Tables} {b : ID} (hb : b ∈ f.blocks) {B : Block}
-    (hB : f.block? b = some B) (ht : ((make f).depthOf b).isSome) {fr G : Frame} {i : Nat}
+    (hB : f.block? b = some B) (ht : Reachable f b) {fr G : Frame} {i : Nat}
     (hs : fr.regs.size = f.valueTab.size)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b ∧ a ≠ b) fr)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a b ∧ a ≠ b) fr)
     (h : enterBlock env (Ctx.make tabs f) fr B i = .ok G) {e : Edge} (he : e ∈ B.succs) :
-    DInv env (Ctx.make tabs f) (fun a => Anc (make f) a e.b ∧ a ≠ e.b) G ∧
-      ((make f).depthOf e.b).isSome ∧ G.regs.size = f.valueTab.size ∧ e.b ∈ f.blocks ∧
+    DInv env (Ctx.make tabs f) (fun a => SDom f a e.b ∧ a ≠ e.b) G ∧
+      Reachable f e.b ∧ G.regs.size = f.valueTab.size ∧ e.b ∈ f.blocks ∧
       G = { fr with regs := G.regs } := by
   obtain ⟨ce, hwf⟩ := S.wf
-  obtain ⟨h1, h2, h3⟩ := dinv_enter hwf S.cf hb hB hs hdi h
+  obtain ⟨h1, h2, h3⟩ := dinv_enter_rel hwf S.dom hb hB hs hdi h
   obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 he
-  exact ⟨dinv_edge S.cf hb hB ht he h1, (edge S.cf hb hB ht he).2.1, by rw [h3, hs],
+  exact ⟨dinv_edge_rel S.dom hb hB ht he h1, (S.dom.edge hb hB ht he).1, by rw [h3, hs],
     (hwf.succLink b B ⟨hb, hB⟩ k e hk).1, h2⟩
 
 /-- The relation after a source block step to a block outside the diamond. -/
 theorem R_after {env : Env} {tabs : Tables} {b : ID} (hb : b ∈ f.blocks) {B : Block}
-    (hB : f.block? b = some B) (ht : ((make f).depthOf b).isSome) {fr G GT : Frame} {i : Nat}
+    (hB : f.block? b = some B) (ht : Reachable f b) {fr G GT : Frame} {i : Nat}
     (hs : fr.regs.size = f.valueTab.size)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a b ∧ a ≠ b) fr)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a b ∧ a ≠ b) fr)
     (h : enterBlock env (Ctx.make tabs f) fr B i = .ok G) {e : Edge} (he : e ∈ B.succs)
     (hn : e.b ≠ s.post ∧ s.arm0 ≠ some e.b ∧ s.arm1 ≠ some e.b)
     (hGT : GT = { G with regs := GT.regs }) (hGTs : GT.regs.size = G.regs.size)
@@ -90,16 +90,16 @@ theorem post_step {tabs : Tables} {env : Env} {frS frT G1 G' : Frame} {i k : Nat
     (hfr : frT = { frS with regs := frT.regs }) (hsz : frT.regs.size = frS.regs.size)
     (hs : frS.regs.size = f.valueTab.size)
     (hag : ∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?)
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {D P : Block} (hD : f.block? s.dom = some D) (hP : f.block? s.post = some P)
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
     (htk : Taken s k arm j arm' j')
     (hc : G1.regs[s.c]? = some (some (.bool (k == 0))))
     (hpath : (arm = none ∧ G' = G1) ∨
       (∃ a A, arm = some a ∧ f.block? a = some A ∧ enterBlock env (Ctx.make tabs f) G1 A 0 = .ok G'))
-    (hdiP : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.post ∧ a ≠ s.post) G')
-    (hsG : G'.regs.size = f.valueTab.size) (htp : ((make f).depthOf s.post).isSome)
+    (hdiP : DInv env (Ctx.make tabs f) (fun a => SDom f a s.post ∧ a ≠ s.post) G')
+    (hsG : G'.regs.size = f.valueTab.size) (htp : Reachable f s.post)
     (hd : (runLoop env (Ctx.make tabs f) m G' s.post j).Defined) :
     ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) m G' s.post j)
       (runLoop env (Ctx.make tabs g) fuelT frT s.dom i) := by
@@ -166,8 +166,8 @@ theorem dom_goto {tabs : Tables} {env : Env} {frS frT G1 : Frame} {i k : Nat}
     (hfr : frT = { frS with regs := frT.regs }) (hsz : frT.regs.size = frS.regs.size)
     (hs : frS.regs.size = f.valueTab.size)
     (hag : ∀ a, s.armVal f a = false → frT.regs[a]? = frS.regs[a]?)
-    (htd : ((make f).depthOf s.dom).isSome)
-    (hdi : DInv env (Ctx.make tabs f) (fun a => Anc (make f) a s.dom ∧ a ≠ s.dom) frS)
+    (htd : Reachable f s.dom)
+    (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.dom ∧ a ≠ s.dom) frS)
     {D : Block} (hD : f.block? s.dom = some D) {e : Edge} (he : D.succs[k]? = some e)
     (hside : sideOf f s.dom s.post k e = some (arm, j)) (htk : Taken s k arm j arm' j')
     (h1 : enterBlock env (Ctx.make tabs f) frS D i = .ok G1)
@@ -324,8 +324,8 @@ theorem refines_of_step {tabs : Tables} : Refines tabs g tabs f := by
           · rw [hb] at ha; cases ha; rw [hBb] at hA; cases hA
             rw [hpr] at h0; simp at h0
       exact ⟨rfl, rfl, hE, fun h => hep _ (.inl h.symm) rfl, fun h => hep _ (.inr (.inl h)) rfl,
-        fun h => hep _ (.inr (.inr h)) rfl, by simp [entry_depth S.cf.parents],
-        by simp [Ctx.make, entryFrame], rfl, rfl, fun _ _ => rfl, dinv_entry S.cf _⟩
+        fun h => hep _ (.inr (.inr h)) rfl, S.dom.entry,
+        by simp [Ctx.make, entryFrame], rfl, rfl, fun _ _ => rfl, dinv_entry_rel S.dom _⟩
     obtain ⟨fuelT, h⟩ := runLoop_simIH (R env tabs f s) (fun n ih _ _ _ _ _ _ hR hd' =>
       S.sim_step n ih hR hd') fuel _ _ _ _ _ _ hR0 (finish_defined hd)
     exact ⟨fuelT, finish_refines hd h⟩

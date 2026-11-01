@@ -7,10 +7,15 @@ import GoFV.Opt.Checked
 `diamondB f g dom post` validates one `elimIf`/`elimIfElse` rewrite of `f` into `g`: the `If`
 block `dom` has two sides, each an edge to `post` or a speculation-safe `Plain` arm whose only
 predecessor is `dom` and whose successor is `post` (`sideOf`); in `g`, `dom` holds the values
-of `dom`, the arms and `post`, takes `post`'s kind, controls and successors, and `post`'s `Phi`s
-are `CondSelect`s of `dom`'s control over the arguments of the two sides; every other value
-and block is unchanged in what the semantics reads. Side conditions that make the merged
-block evaluate as the source's path does:
+of `dom`, the arms and `post` (in this order), takes `post`'s kind, controls and successors,
+keeps its predecessors (an edge from `post` now from `dom`), and `post`'s `Phi`s are
+`CondSelect`s of `dom`'s control over the arguments of the two sides (`mergedOK`); the arms
+and `post` are emptied (`deadOK`); a successor of `post` is unchanged but for its predecessor
+edges from `post`, now from `dom` (`targetOK`); the values of these blocks and `dom`'s control
+are unchanged in what the semantics reads and lie in `dom` (or their block) (`movedOK`); every
+other value and block table entry is unchanged (`tabEq`, pointer first, so the check costs
+about the size of the diamond plus a pointer comparison per table entry; issue #147). Side
+conditions that make the merged block evaluate as the source's path does:
 
 - arm values are speculation-safe (`specSafeOp`), are read only by their own arm and, along
   their side, by `post`'s `Phi`s, and read nothing of `post` or the other arm;
@@ -19,7 +24,9 @@ block evaluate as the source's path does:
 - the merged block has a schedule that lists the non-pure nodes (priority ≠ 0) of `dom` and
   `post` in the sequence `dom`'s and then `post`'s schedule lists them (`npSeqOK`).
 
-The soundness proof is `GoFV.Proof.BranchElim.refines_of_step`.
+No `check` of `g`: the soundness proof is `GoFV.Proof.BranchElim.refines_of_step`, with the
+well-formedness and use dominance of `g` from `GoFV.Proof.BranchElim.DRel.wf_pres` and
+`DRel.useDom_pres`.
 -/
 
 namespace GoFV.Opt.BranchElim
@@ -156,31 +163,78 @@ def valueOK (g : Func) (x : ID) : Bool :=
   | none, none => true
   | _, _ => false
 
-/-- Block `bid` (outside the diamond) is unchanged in what entering it and its terminator read. -/
-def blockOK (g : Func) (bid : ID) : Bool :=
-  s.regionBlock bid ||
-  match f.block? bid, g.block? bid with
-  | some fb, some gb => gb.id == fb.id && gb.values == fb.values && gb.kind == fb.kind &&
-      gb.controls == fb.controls && gb.succs == fb.succs
-  | _, _ => false
+/-- The values of arm `a?` (none without an arm). -/
+def armVals (a? : Option ID) : Array ID := match a? with
+  | some a => valsOf f a
+  | none => #[]
 
-/-- The merged block of `g`. -/
+/-- Edge `e` of `f`, redirected to `dom` if it leaves `post` (the merged block takes over
+`post`'s successor edges). -/
+def redir (e : Edge) : Edge := if e.b == s.post then { e with b := s.dom } else e
+
+/-- The successors of `post` in `f`: their predecessor edges from `post` now leave `dom`. -/
+def tgts : Array ID := ((f.block? s.post).map fun P => P.succs.map (·.b)).getD #[]
+
+/-- Block `b` is changed by the rewrite: a block of the diamond or a successor of `post`. -/
+def changed (b : ID) : Bool := s.regionBlock b || (s.tgts f).contains b
+
+/-- Value `x` is compared one by one (`movedOK`), not by `tabEq`: `dom`'s control (its use count
+changes), or a value listed in a changed block, by its block field. -/
+def skipV (x : ID) : Bool :=
+  x == s.c || match f.value? x with
+    | some v => s.changed f v.block && (valsOf f v.block).contains x
+    | none => false
+
+/-- Value `x` is `valueOK` and lies in block `blk` of `g` (positions and use counts may
+differ). -/
+def movedOK (g : Func) (blk x : ID) : Bool :=
+  s.valueOK f g x && (g.value? x).any (·.block == blk)
+
+/-- Block `b` (an arm or `post`) is emptied in `g`. -/
+def deadOK (g : Func) (b : ID) : Bool :=
+  match g.block? b with
+  | some B' => B'.id == b && B'.values.isEmpty && B'.preds.isEmpty && B'.succs.isEmpty &&
+      B'.controls.isEmpty
+  | none => false
+
+/-- Arm `a?`, if any, is emptied in `g`. -/
+def armDeadOK (g : Func) (a? : Option ID) : Bool := a?.all (deadOK g)
+
+/-- A successor `t` of `post` other than `dom` lies outside the diamond and is unchanged in `g`
+but for its predecessor edges from `post`, which leave `dom` (and its position). -/
+def targetOK (g : Func) (t : ID) : Bool :=
+  t == s.dom ||
+  (!s.regionBlock t && match f.block? t, g.block? t with
+    | some T, some T' => T' == { T with preds := T.preds.map s.redir, pos := T'.pos }
+    | _, _ => false)
+
+/-- The merged block of `g`: `dom` with the values of the arms (side 0, then side 1) and of
+`post` appended, `post`'s kind, controls and successors, `dom`'s predecessors (an edge from
+`post` now from `dom`), and a schedule (`npSeqOK`). -/
 def mergedOK (g : Func) : Bool :=
   match f.block? s.dom, f.block? s.post, g.block? s.dom with
   | some D, some P, some D' =>
     D'.id == s.dom && D'.kind == P.kind && D'.controls == P.controls && D'.succs == P.succs &&
-    D'.values.all (s.regionVal f) &&
-    D.values.all D'.values.contains && P.values.all D'.values.contains &&
-    (match s.arm0 with | some a => (valsOf f a).all D'.values.contains | none => true) &&
-    (match s.arm1 with | some a => (valsOf f a).all D'.values.contains | none => true) &&
+    D'.preds == D.preds.map s.redir &&
+    D'.values == D.values ++ armVals f s.arm0 ++ armVals f s.arm1 ++ P.values &&
     (Sem.schedule g D').isSome && npSeqOK f g D P D'
   | _, _, _ => false
 
-/-- **One branchelim rewrite**, checked (see the module doc). -/
+/-- **One branchelim rewrite**, checked (see the module doc). The unchanged table entries are
+compared with `tabEq` (pointer first), so the check costs about the size of the diamond and
+the successors of `post`, plus a pointer comparison per table entry (issue #147). -/
 def relB (g : Func) : Bool :=
   s.shapeOK f && f.blocks.contains s.dom && g.entry == f.entry && g.ownAux == f.ownAux &&
-  g.valueTab.size == f.valueTab.size && g.blocks == f.blocks &&
-  s.mergedOK f g && (List.range f.valueTab.size).all (s.valueOK f g) && f.blocks.all (s.blockOK f g)
+  tabEq g.blocks f.blocks (fun _ => false) &&
+  s.mergedOK f g && deadOK g s.post && armDeadOK g s.arm0 && armDeadOK g s.arm1 &&
+  (s.tgts f).all (s.targetOK f g) &&
+  (valsOf f s.post).all (fun x => (f.value? x).any (·.block == s.post)) &&
+  (valsOf f s.dom).all (s.movedOK f g s.dom) && (armVals f s.arm0).all (s.movedOK f g s.dom) &&
+  (armVals f s.arm1).all (s.movedOK f g s.dom) && (valsOf f s.post).all (s.movedOK f g s.dom) &&
+  (s.tgts f).all (fun t => t == s.dom || (valsOf f t).all (s.movedOK f g t)) &&
+  s.movedOK f g (((f.value? s.c).map (·.block)).getD 0) s.c &&
+  tabEq f.valueTab g.valueTab (s.skipV f) &&
+  tabEq f.blockTab g.blockTab (s.changed f)
 
 end Site
 
@@ -197,9 +251,10 @@ def postCandidates (f : Func) (dom : ID) : List ID :=
       D.succs.toList.filterMap fun e => (f.block? e.b).bind fun B => B.succs[0]?.map (·.b)
   | none => []
 
-/-- **A checked branchelim step**: `g` (the rewrite at `dom`) passes `check` and is a diamond
-merge of `f`. -/
-def stepOK (ce : CheckEnv) (f g : Func) (dom : ID) : Bool :=
-  checkOK ce g && (postCandidates f dom).any (diamondB f g dom)
+/-- **A checked branchelim step**: `g` (the rewrite at `dom`) is a diamond merge of `f`. No
+`check` of `g`: the soundness proof derives its well-formedness and use dominance from the
+relation (`GoFV.Proof.BranchElim.wf_pres`, `useDom_pres`). -/
+def stepOK (f g : Func) (dom : ID) : Bool :=
+  (postCandidates f dom).any (diamondB f g dom)
 
 end GoFV.Opt.BranchElim

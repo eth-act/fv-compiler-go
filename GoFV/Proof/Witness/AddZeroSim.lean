@@ -141,7 +141,7 @@ theorem addZero_termRef5 {E : ID → Option Value} (hE : atomB E 2 = true) (h1 :
   | k + 1 =>
     rw [AtomSim.den_succ_term h5 rfl,
       AtomSim.den_succ_term (show addZero.value? 5 = some ((addZero.value? 5).get!) from rfl) rfl]
-    refine retype_mono _ (evalPure_mono _ _ _ _ ?_)
+    refine retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ ?_)
     show RefinesList [den _ _ ρ k 4, den _ _ ρ k 1] [den _ _ ρ' k 2, den _ _ ρ' k 1]
     refine .cons (addZero_den4 hE hρ k) (.cons ?_ .nil)
     match k with

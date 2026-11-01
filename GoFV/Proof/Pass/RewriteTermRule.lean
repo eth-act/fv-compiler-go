@@ -127,11 +127,13 @@ def stNodes (r : Rule) (defs : List Value) : List (RNode × Value) :=
 def stOr (tabs : Tables) (r : Rule) (defs : List Value) : Oracle :=
   oracle (stVtys r) tabs (stNodes r defs)
 
-def stσ (tabs : Tables) (M : Defs) (r : Rule) (I : Inst) : Nat → DV := sigma (env tabs M I) r.pat
+def stσ (tabs : Tables) (M : Defs) (r : Rule) (I : Inst) : Nat → DV :=
+  GoFV.Proof.Rules.sigmaT tabs (env tabs M I) r.pat
 
 def stEv (tabs : Tables) (M : Defs) (r : Rule) (defs : List Value) (I : Inst) :
     GoFV.Rules.Expr → DV :=
-  evalE (stVtys r) (stσ tabs M r I) (stOr tabs r defs) (env tabs M I) (Pat.den (env tabs M I) [] r.pat)
+  evalE (stVtys r) (stσ tabs M r I) (stOr tabs r defs) (env tabs M I)
+    (GoFV.Proof.Rules.Pat.denT tabs (env tabs M I) [] r.pat)
 
 /-- What `ruleOK` establishes. -/
 structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) where
@@ -160,6 +162,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hargs : GoFV.Proof.Rules.Pat.argsOK (env tabs M I).ty [] r.pat = true
   hleaves : leavesOK tabs M I [] r.pat = true
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
+  hframe : ∀ nu ∈ stNodes r defs, frameNodeOK tabs (env tabs M I) r.pat nu.1 nu.2 = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
 
 theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
@@ -176,7 +179,9 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
   · cases h
   rename_i I sw' hm
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩ := h
+  have hframe' : ∀ nu ∈ stNodes r defs, frameNodeOK tabs (env tabs M I) r.pat nu.1 nu.2 = true :=
+    List.all_eq_true.1 hframe
   obtain ⟨hmo, -, hn, hh⟩ := matchPat_ok hm
   have hmem : ([], v) ∈ I := by
     cases I with
@@ -210,7 +215,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hxv, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail', hcons := hcons,
     hwf := hwf, hcond := hcond', hnat := hnat', hargs := hargs, hleaves := hleaves, hres := hres,
-    hreach := fun C hC hv => matchPat_closed hC hm hv }⟩
+    hframe := hframe', hreach := fun C hC hv => matchPat_closed hC hm hv }⟩
 
 /-! ## Facts about the matched instance -/
 

@@ -14,7 +14,8 @@ namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term
 open GoFV.Rules (Pat)
-open GoFV.Proof.Rules (DV PEnv Oracle Path Pat.den Pat.dens Pat.binds Pat.bindss sigma auxIntDV
+open GoFV.Proof.Rules (DV PEnv Oracle Path Pat.denT Pat.densT Pat.binds Pat.bindss Pat.bindsT
+  Pat.bindssT sigma sigmaT auxIntDV
   Pat.wf Pat.wfs Pat.cons Pat.conss Pat.typed Pat.typeds auxIntOk condHolds)
 
 theorem auxIntDV_flat (aty : AuxType) (i : Int64) : (auxIntDV aty i).flat = true := by
@@ -40,36 +41,36 @@ theorem lookup_mem {β : Type} {x : Nat} {d : β} :
 
 section Binds
 
-variable {e e' : PEnv}
+variable {e e' : PEnv} {tabs tabs' : Tables}
 
 mutual
 theorem binds_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
-    ∀ (p : Path) (q : Pat), (Pat.binds e p q).map (fun a => (a.1, a.2.erase)) =
-      (Pat.binds e' p q).map (fun a => (a.1, a.2.erase))
+    ∀ (p : Path) (q : Pat), (Pat.bindsT tabs e p q).map (fun a => (a.1, a.2.erase)) =
+      (Pat.bindsT tabs' e' p q).map (fun a => (a.1, a.2.erase))
   | _, .wild | _, .same _ => rfl
   | _, .bind _ => rfl
   | p, .op o nm ty ai _ _ args _ => by
-    simp only [Pat.binds, List.map_append]
+    simp only [Pat.bindsT, List.map_append]
     rw [bindss_erase hty hai p 0 args]
     congr 1; congr 1; congr 1
     · cases nm <;> rfl
     · cases ty <;> simp [hty]
     · cases ai <;> simp [hai]
 theorem bindss_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
-    ∀ (p : Path) (i : Nat) (qs : List Pat), (Pat.bindss e p i qs).map (fun a => (a.1, a.2.erase)) =
-      (Pat.bindss e' p i qs).map (fun a => (a.1, a.2.erase))
+    ∀ (p : Path) (i : Nat) (qs : List Pat), (Pat.bindssT tabs e p i qs).map (fun a => (a.1, a.2.erase)) =
+      (Pat.bindssT tabs' e' p i qs).map (fun a => (a.1, a.2.erase))
   | _, _, [] => rfl
   | p, i, q :: qs => by
-    simp only [Pat.bindss, List.map_append]
+    simp only [Pat.bindssT, List.map_append]
     rw [binds_erase hty hai (i :: p) q, bindss_erase hty hai p (i + 1) qs]
 end
 
 theorem sigma_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) (pat : Pat) (x : Nat) :
-    (sigma e pat x).erase = (sigma e' pat x).erase := by
-  have h := congrArg (List.lookup x) (binds_erase hty hai [] pat)
+    (sigmaT tabs e pat x).erase = (sigmaT tabs' e' pat x).erase := by
+  have h := congrArg (List.lookup x) (binds_erase (tabs := tabs) (tabs' := tabs') hty hai [] pat)
   rw [lookup_map, lookup_map] at h
-  simp only [sigma]
-  cases h1 : (Pat.binds e [] pat).lookup x <;> cases h2 : (Pat.binds e' [] pat).lookup x <;>
+  simp only [sigmaT]
+  cases h1 : (Pat.bindsT tabs e [] pat).lookup x <;> cases h2 : (Pat.bindsT tabs' e' [] pat).lookup x <;>
     simp_all [DV.erase]
 
 end Binds
@@ -78,24 +79,24 @@ end Binds
 
 section Good
 
-variable {M : Defs} {I : Inst} {e : PEnv} {P : Val → Path → Prop} {S : Nat}
+variable {M : Defs} {I : Inst} {e : PEnv} {P : Val → Path → Prop} {S : Nat} {tabs : Tables}
 
 mutual
 theorem binds_good
     (hleafP : ∀ p w, (p, w) ∈ I → p ≠ [] → P (e.leaf p) p)
-    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.den e p q) p) :
+    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.denT tabs e p q) p) :
     ∀ (q : Pat) (p : Path) (w : ID), MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S →
-      ∀ y ∈ Pat.binds e p q, Good P y.2
-  | .wild, _, _, _, _, _, y, hy | .same _, _, _, _, _, _, y, hy => by simp [Pat.binds] at hy
+      ∀ y ∈ Pat.bindsT tabs e p q, Good P y.2
+  | .wild, _, _, _, _, _, y, hy | .same _, _, _, _, _, _, y, hy => by simp [Pat.bindsT] at hy
   | .bind x, p, w, hm, hp, _, y, hy => by
-    simp only [Pat.binds, List.mem_singleton] at hy
+    simp only [Pat.bindsT, List.mem_singleton] at hy
     subst hy
     exact ⟨fun w' p' h => by
       simp only [DV.val.injEq, Option.some.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
       exact hleafP _ _ hm hp, fun _ h => by cases h⟩
   | .op o nm ty ai ax ar args cm, p, w, hm, hp, hsz, y, hy => by
-    simp only [Pat.binds, List.mem_append] at hy
+    simp only [Pat.bindsT, List.mem_append] at hy
     rcases hy with ((hy | hy) | hy) | hy
     · cases nm with
       | none => simp at hy
@@ -113,12 +114,12 @@ theorem binds_good
       exact bindss_good hleafP hopP args p 0 ids hs (by simp only [Pat.sz] at hsz; omega) y hy
 theorem bindss_good
     (hleafP : ∀ p w, (p, w) ∈ I → p ≠ [] → P (e.leaf p) p)
-    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.den e p q) p) :
+    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.denT tabs e p q) p) :
     ∀ (qs : List Pat) (p : Path) (i : Nat) (ids : List ID), MatchOKs M I qs p i ids →
-      Pat.szs qs ≤ S → ∀ y ∈ Pat.bindss e p i qs, Good P y.2
-  | [], _, _, _, _, _, y, hy => by simp [Pat.bindss] at hy
+      Pat.szs qs ≤ S → ∀ y ∈ Pat.bindssT tabs e p i qs, Good P y.2
+  | [], _, _, _, _, _, y, hy => by simp [Pat.bindssT] at hy
   | q :: qs, p, i, a :: as, ⟨h1, h2⟩, hsz, y, hy => by
-    simp only [Pat.bindss, List.mem_append] at hy
+    simp only [Pat.bindssT, List.mem_append] at hy
     simp only [Pat.szs] at hsz
     rcases hy with hy | hy
     · exact binds_good hleafP hopP q (i :: p) a h1 (List.cons_ne_nil _ _) (by omega) y hy
@@ -129,17 +130,17 @@ end
 /-- The variables of a pattern at the top whose node is unnamed are good. -/
 theorem sigma_good
     (hleafP : ∀ p w, (p, w) ∈ I → p ≠ [] → P (e.leaf p) p)
-    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.den e p q) p)
+    (hopP : ∀ q p w, MatchOK M I q p w → p ≠ [] → Pat.sz q ≤ S → P (Pat.denT tabs e p q) p)
     {o : Op} {ty ai ax : GoFV.Rules.Field} {ar : GoFV.Rules.Arity} {args : List Pat} {cm : Bool}
     {v : ID} (hm : MatchOK M I (.op o none ty ai ax ar args cm) [] v)
     (hS : Pat.sz (.op o none ty ai ax ar args cm) ≤ S) (x : Nat) :
-    Good P (sigma e (.op o none ty ai ax ar args cm) x) := by
-  simp only [sigma]
-  cases hl : (Pat.binds e [] (.op o none ty ai ax ar args cm)).lookup x with
+    Good P (sigmaT tabs e (.op o none ty ai ax ar args cm) x) := by
+  simp only [sigmaT]
+  cases hl : (Pat.bindsT tabs e [] (.op o none ty ai ax ar args cm)).lookup x with
   | none => exact good_of_flat rfl
   | some d =>
     have hy := lookup_mem hl
-    simp only [Pat.binds, List.mem_append] at hy
+    simp only [Pat.bindsT, List.mem_append] at hy
     simp only [Option.getD_some]
     rcases hy with ((hy | hy) | hy) | hy
     · simp at hy
@@ -156,19 +157,19 @@ end Good
 
 section Leaf
 
-variable {e : PEnv}
+variable {e : PEnv} {tabs : Tables}
 
 mutual
-theorem binds_leaf : ∀ (q : Pat) (p : Path), ∀ y ∈ Pat.binds e p q, ∀ w p',
+theorem binds_leaf : ∀ (q : Pat) (p : Path), ∀ y ∈ Pat.bindsT tabs e p q, ∀ w p',
     y.2 = .val w (some p') → y.1 ∉ GoFV.Opt.RewriteCheck.Pat.opNames q → w = e.leaf p'
-  | .wild, _, y, hy, _, _, _, _ | .same _, _, y, hy, _, _, _, _ => by simp [Pat.binds] at hy
+  | .wild, _, y, hy, _, _, _, _ | .same _, _, y, hy, _, _, _, _ => by simp [Pat.bindsT] at hy
   | .bind x, p, y, hy, w, p', h, _ => by
-    simp only [Pat.binds, List.mem_singleton] at hy
+    simp only [Pat.bindsT, List.mem_singleton] at hy
     subst hy
     simp only [DV.val.injEq, Option.some.injEq] at h
     obtain ⟨rfl, rfl⟩ := h; rfl
   | .op o nm ty ai _ _ args _, p, y, hy, w, p', h, hn => by
-    simp only [Pat.binds, List.mem_append] at hy
+    simp only [Pat.bindsT, List.mem_append] at hy
     rcases hy with ((hy | hy) | hy) | hy
     · cases nm with
       | none => simp at hy
@@ -182,11 +183,11 @@ theorem binds_leaf : ∀ (q : Pat) (p : Path), ∀ y ∈ Pat.binds e p q, ∀ w 
     · refine bindss_leaf args p 0 y hy w p' h ?_
       intro hc; apply hn
       simp only [GoFV.Opt.RewriteCheck.Pat.opNames, List.mem_append]; exact .inr hc
-theorem bindss_leaf : ∀ (qs : List Pat) (p : Path) (i : Nat), ∀ y ∈ Pat.bindss e p i qs, ∀ w p',
+theorem bindss_leaf : ∀ (qs : List Pat) (p : Path) (i : Nat), ∀ y ∈ Pat.bindssT tabs e p i qs, ∀ w p',
     y.2 = .val w (some p') → y.1 ∉ GoFV.Opt.RewriteCheck.Pat.opNamess qs → w = e.leaf p'
-  | [], _, _, y, hy, _, _, _, _ => by simp [Pat.bindss] at hy
+  | [], _, _, y, hy, _, _, _, _ => by simp [Pat.bindssT] at hy
   | q :: qs, p, i, y, hy, w, p', h, hn => by
-    simp only [Pat.bindss, List.mem_append] at hy
+    simp only [Pat.bindssT, List.mem_append] at hy
     simp only [GoFV.Opt.RewriteCheck.Pat.opNamess, List.mem_append, not_or] at hn
     rcases hy with hy | hy
     · exact binds_leaf q (i :: p) y hy w p' h hn.1
@@ -194,10 +195,10 @@ theorem bindss_leaf : ∀ (qs : List Pat) (p : Path) (i : Nat), ∀ y ∈ Pat.bi
 end
 
 theorem sigma_leaf {pat : Pat} {x : Nat} {w : Val} {p' : Path}
-    (h : sigma e pat x = .val w (some p')) (hn : x ∉ GoFV.Opt.RewriteCheck.Pat.opNames pat) :
+    (h : sigmaT tabs e pat x = .val w (some p')) (hn : x ∉ GoFV.Opt.RewriteCheck.Pat.opNames pat) :
     w = e.leaf p' := by
-  simp only [sigma] at h
-  cases hl : (Pat.binds e [] pat).lookup x with
+  simp only [sigmaT] at h
+  cases hl : (Pat.bindsT tabs e [] pat).lookup x with
   | none => rw [hl] at h; cases h
   | some d =>
     rw [hl] at h

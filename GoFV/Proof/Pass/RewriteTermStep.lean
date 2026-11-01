@@ -7,7 +7,7 @@ import GoFV.Proof.Pass.RewriteTermNat
 `rule_frame`: the puts of a validated rule event change only the IDs of its definitions (`v`
 and fresh IDs, undefined before), each to a term node over matched values and the event's IDs.
 `rule_step`: on a set `C` closed under arguments, every value's denotation after the event
-refines the one before, with the fuel multiplied by `stepK r` (`Rule.Sound` at the matched
+refines the one before, with the fuel multiplied by `stepK r` (`Rule.SoundT` at the matched
 instance, `evalPure_natShape`, `Comm` swaps, leaf independence of the checks).
 -/
 
@@ -15,8 +15,8 @@ namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
 open GoFV.Rules (Pat Rule RNode RArg Result)
-open GoFV.Proof.Rules (DV PEnv Oracle Path Pat.den Pat.dens Pat.raw sigma evalE resDen nodeDen
-  toAuxIntD)
+open GoFV.Proof.Rules (DV PEnv Oracle Path Pat.denT Pat.densT Pat.rawT sigmaT evalE resDenT
+  nodeDenT toAuxIntD)
 
 /-! ## Result nodes -/
 
@@ -41,17 +41,17 @@ def axSel (or : Oracle) (n : RNode) : Option AuxRef :=
   | none => none
 
 /-- The value of a result argument. -/
-def argVal (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat → DV) (topTy : Ty)
+def argVal (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat → DV) (topTy : Ty)
     (nodes : List RNode) (f : Nat) : RArg → Val
   | .var x => (σ x).valOr (or.val (.var x))
-  | .node j => nodeDen ev or σ topTy nodes f j
+  | .node j => nodeDenT tabs ev or σ topTy nodes f j
 
-theorem nodeDen_succ (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat → DV) (topTy : Ty)
-    (nodes : List RNode) (f k : Nat) (n : RNode) (hk : nodes[k]? = some n) :
-    nodeDen ev or σ topTy nodes (f + 1) k =
-      (evalPure n.op (tySel ev or topTy n) (aiSel ev or n) (axSel or n)
-        (n.args.map (argVal ev or σ topTy nodes f))).retype (tySel ev or topTy n) := by
-  simp only [nodeDen, hk]
+theorem nodeDen_succ (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat → DV)
+    (topTy : Ty) (nodes : List RNode) (f k : Nat) (n : RNode) (hk : nodes[k]? = some n) :
+    nodeDenT tabs ev or σ topTy nodes (f + 1) k =
+      (GoFV.Proof.Rules.opVal tabs n.op (tySel ev or topTy n) (aiSel ev or n) (axSel or n)
+        (n.args.map (argVal tabs ev or σ topTy nodes f))).retype (tySel ev or topTy n) := by
+  simp only [nodeDenT, hk]
   rfl
 
 theorem nodeOK_facts {tabs : Tables} {ev : GoFV.Rules.Expr → DV} {or : Oracle} {σ : Nat → DV}
@@ -295,28 +295,78 @@ theorem RuleFacts.top_ty (F : RuleFacts tabs M r v defs) (L : ID → Val) :
     (semEnv tabs M F.I L).ty [] = tabs.ty F.xv.type := by
   simp only [semEnv, env, F.at_top, F.hxv, Option.map_some, Option.getD_some]
 
+/-- The validator's `frameNodeOK` gives `Rule.SoundT`'s frame premise (`FrameOK`) on the semantic
+instance (same aux fields as the static one). -/
+theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
+    {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase) :
+    GoFV.Proof.Rules.FrameOK tabs (semEnv tabs M F.I L) ev' (stOr tabs r defs) r := by
+  intro n hn
+  rcases F.result with hR | hR
+  · obtain ⟨R⟩ := hR
+    rw [R.hres] at hn; simp [GoFV.Rules.Result.nodes] at hn
+  · obtain ⟨R⟩ := hR
+    rw [R.hres] at hn
+    simp only [GoFV.Rules.Result.nodes] at hn
+    obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hn
+    have hk' : k < R.us.length := R.hlen ▸ hk
+    have hmem : (R.nodes[k], R.us[k]) ∈ stNodes r defs := by
+      simp only [stNodes, R.hres, R.hdefs]
+      rw [List.mem_iff_getElem]
+      exact ⟨k, by simp only [List.length_zip]; omega, by simp⟩
+    have hf := F.hframe _ hmem
+    obtain ⟨-, -, -, hai, hax, -, -⟩ := nodeOK_facts (R.hnode k hk hk')
+    simp only [frameNodeOK, Bool.and_eq_true] at hf
+    obtain ⟨hf1, hf2⟩ := hf
+    refine ⟨fun xe x hxe hx => ?_, fun ae x hae hx => ?_⟩
+    · rw [hxe] at hf1
+      simp only [Option.bind_some, hx, strOf] at hf1
+      cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
+      | none => simp [hp] at hf1
+      | some p =>
+        simp only [hp, Option.bind_some] at hf1
+        cases hs : GoFV.Proof.Rules.strAux? tabs ((env tabs M F.I).aux p) with
+        | none => simp [hs] at hf1
+        | some sd =>
+          obtain ⟨s, d⟩ := sd
+          simp only [hs, Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hf1
+          refine ⟨p, s, d, rfl, hs, hf1.1, ?_⟩
+          rw [← hf1.2, hax, axSel, hxe]
+    · rw [hae] at hf2
+      simp only [Option.bind_some, hx, strOf] at hf2
+      cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
+      | none => simp [hp] at hf2
+      | some p =>
+        simp only [hp, Option.bind_some] at hf2
+        cases hs : GoFV.Proof.Rules.strAux? tabs ((env tabs M F.I).aux p) with
+        | none => simp [hs] at hf2
+        | some sd =>
+          obtain ⟨s, d⟩ := sd
+          simp only [hs, beq_iff_eq] at hf2
+          refine ⟨p, s, d, rfl, hs, ?_⟩
+          rw [← hf2, hai, aiSel_eq hev, aiSel, hae]
+
 /-- **The matched value**: its denotation before the event is refined by the one after. -/
-theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
+theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : ArgClosed M C) (hv : C v)
     {ρ : ID → Val} (hT : Term.Typed (putAll M defs).get? tabs ρ) {n B : Nat}
     (hIH : ∀ y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ B y)) :
     Sem.Refines (den M.get? tabs ρ (n + 1) v) (den (putAll M defs).get? tabs ρ (B + stepK r) v) := by
   have hIC : ∀ p w, (p, w) ∈ F.I → C w := fun p w h => F.hreach C hC hv (p, w) h
   have hσ : ∀ x, (stσ tabs M r F.I x).erase =
-      (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat x).erase :=
+      (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat x).erase :=
     sigma_erase (e := env tabs M F.I)
       (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) rfl rfl r.pat
   have hev : ∀ x, (stEv tabs M r defs F.I x).erase =
-      (evalE (stVtys r) (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+      (evalE (stVtys r) (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
         (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
-        (Pat.den (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x).erase :=
+        (Pat.denT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x).erase :=
     evalE_erase (e := env tabs M F.I)
       (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) _ _ rfl rfl hσ _ _
   have hF := F.fields (den (putAll M defs).get? tabs ρ B)
   have hTop := F.top_ty (den (putAll M defs).get? tabs ρ B)
   have hdefw : ∀ p w x, (p, w) ∈ F.I → p ≠ [] → M.get? w = some x →
       (putAll M defs).get? w = some x := fun p w x hm hp hx => F.keep hx (F.ne_v hm hp)
-  -- the hypotheses of `Rule.Sound`
+  -- the hypotheses of `Rule.SoundT`
   have hbt : GoFV.Proof.Rules.Oracle.BoolTyped (stOr tabs r defs) := by
     intro x hx; exact ⟨true, by simp [stOr, oracle, hx]⟩
   have hwf := wf_of (e := env tabs M F.I) (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) rfl [] r.pat F.hwf
@@ -333,7 +383,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
   have hargs : GoFV.Proof.Rules.Pat.argsOK
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
-  have hraw : (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
+  have hraw : (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
       ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
     have hn := F.hnat
     rw [← hTop] at hn
@@ -341,10 +391,11 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
     have ha := hargs
     rw [F.hpat] at ht ha ⊢
     exact raw_topOK hn ht ha
-  have hsound := hs.2 _ _ hbt hwf hcons hcond hraw htyped hargs
+  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
+  have hsound := hs.2 tabs _ _ hbt hframe hwf hcons hcond hraw htyped hargs
   -- lower bound
   have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
-      (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
+      (Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
     have h1 := den_le_patDen (n := n) hF (fun p w hm k hk => by
         show Sem.Refines _ (den _ tabs ρ B (F.I.at p))
         rw [F.at_eq hm]
@@ -352,7 +403,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
       r.pat [] v (n + 1) F.hmatch (Nat.le_refl _) (.inr (by rw [F.hpat]; rfl))
     have h2 := hraw
     rw [F.hpat] at h1 h2 ⊢
-    simp only [Pat.den, Pat.raw] at h1 h2 ⊢
+    simp only [Pat.denT, Pat.rawT] at h1 h2 ⊢
     rwa [GoFV.Proof.retype_of_hasTy h2] at h1
   -- values bound on the semantic side
   have hleafU : ∀ p w, (p, w) ∈ F.I → Sem.Refines
@@ -363,7 +414,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
   obtain ⟨S, hS⟩ : ∃ S, S = Pat.sz r.pat := ⟨_, rfl⟩
   have hσ2 : ∀ x, Good (fun w p => p ≠ [] ∧
       Sem.Refines w (den (putAll M defs).get? tabs ρ (B + S) (F.I.at p)))
-      (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat x) := by
+      (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat x) := by
     intro x
     have hm := F.hmatch
     have hS' : Pat.sz r.pat ≤ S := by omega
@@ -378,9 +429,9 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
         exact patDen_le_den hF hdefw hleafU q p w _ hm' hp (by omega)⟩) hm hS' x
   have hev2 : ∀ x, Good (fun w p => p ≠ [] →
       Sem.Refines w (den (putAll M defs).get? tabs ρ (B + S) (F.I.at p)))
-      (evalE (stVtys r) (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+      (evalE (stVtys r) (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
         (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
-        (Pat.den (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x) :=
+        (Pat.denT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x) :=
     evalE_good _ _ _ (fun x => good_mono (fun w p h _ => h.2) (hσ2 x)) (fun h => absurd rfl h)
       (fun x => good_of_flat (oracle_flat _ _ _ x))
   rcases F.result with hR | hR
@@ -421,11 +472,11 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
     have hTy : (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] =
         tabs.ty F.xv.type := hTop
     have key : ∀ f k (hk : k < R.nodes.length),
-        Sem.Refines (nodeDen (evalE (stVtys r)
-            (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+        Sem.Refines (nodeDenT tabs (evalE (stVtys r)
+            (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
             (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
-            (Pat.den (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat))
-          (stOr tabs r defs) (sigma (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
+            (Pat.denT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat))
+          (stOr tabs r defs) (sigmaT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat)
           ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) R.nodes f k)
         (den (putAll M defs).get? tabs ρ (B + S + f) (R.us[k]'(R.hlen ▸ hk)).id) := by
       intro f
@@ -435,13 +486,13 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
         intro k hk
         have hk' : k < R.us.length := R.hlen ▸ hk
         obtain ⟨hop, ht, hty, hai, hax, hsz, hargs⟩ := nodeOK_facts (R.hnode k hk hk')
-        rw [nodeDen_succ _ _ _ _ _ f k R.nodes[k] (List.getElem?_eq_getElem hk)]
+        rw [nodeDen_succ _ _ _ _ _ _ f k R.nodes[k] (List.getElem?_eq_getElem hk)]
         rw [show B + S + (f + 1) = (B + S + f) + 1 by omega,
           den_succ_term (R.get k hk') (hop ▸ ht)]
         rw [← hTy] at hty
         rw [← tySel_eq hev, ← aiSel_eq hev, ← hty, ← hai, ← hax, hop]
         apply retype_mono
-        apply evalPure_mono
+        apply GoFV.Proof.Rules.opVal_mono
         refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
         have harg := hargs j h1 (by simpa using h2)
         simp only [Array.getElem_toList]
@@ -482,7 +533,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
 
 /-- **One rule event**: on a set closed under arguments, the denotations after the event refine
 those before, with the fuel multiplied by `stepK r`. -/
-theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
+theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.SoundT r) (hr : RetypeShapes)
     (F : RuleFacts tabs M r v defs) {C : ID → Prop} (hC : DefClosed M C) {ρ : ID → Val}
     (hT : Term.Typed M.get? tabs ρ) :
     ∀ n y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (putAll M defs).get? tabs ρ (n * stepK r) y) := by
@@ -503,7 +554,7 @@ theorem RuleFacts.step (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
       rw [hK]
       by_cases ht : termOp m.op = true
       · rw [den_succ_term hm ht, den_succ_term hkeep ht]
-        exact retype_mono _ (evalPure_mono _ _ _ _ (refinesList_map fun a ha =>
+        exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (refinesList_map fun a ha =>
           (ih a (hargs a (Array.mem_toList_iff.1 ha))).trans
             (den_fuel_mono _ _ _ _ _ _ (by omega))))
       · have h1 : ¬ IsTerm M.get? y := fun ⟨u, hu, hu'⟩ => by

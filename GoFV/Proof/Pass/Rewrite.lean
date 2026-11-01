@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.RewriteCases
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.AtomSim
 import GoFV.Proof.TabsAgree
+import GoFV.Proof.Pass.NilSim
+import GoFV.Proof.Checked
 import GoFV.Proof.Rules.Proven
 import GoFV.Opt.Opt
 
@@ -35,11 +37,21 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
     RefinesUnder Env.Mono out.tables out.func penv.tables f := by
-  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, log, hv⟩
+  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, ⟨log, hv⟩ | ⟨f', log, hn, hv⟩⟩
   · rw [he, ht]; exact RefinesUnder.refl _ _ _
   · obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
     obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
     exact refinesUnder_of_tabsAgree hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
+  · -- nil-check eliminations first (nilcheckelim's relation), then the validated rewrite
+    obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
+    obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
+    rw [RewriteCheck.nilOK, Bool.and_eq_true] at hn
+    have hf' := checkOK_sound hn.2
+    have hN : Refines out.tables f' out.tables f :=
+      Nil.refines_of_rel ⟨ce, check_wf hf⟩ (Dom.certOK_of_check (check_domCert hf))
+        (Nil.nrel_sound hn.1)
+    exact refinesUnder_of_tabsAgree hta
+      ((hN.under _).trans (AtomSim.atomSim_refines hf' hg hA hcf hcg h1 h2))
 
 /-- `opt`, `middle opt` and `late opt` with the proven generic rules, validated. -/
 theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}

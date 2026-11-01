@@ -16,16 +16,18 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Opt.ProveCheck GoFV.Proof.
   GoFV.Proof.AtomSim
 
 theorem pTab_cases {op : Op} {i : Nat} (h : pTab.lookup op = some i) :
-    termOp op = true ∧ ∀ ty ai aux args, evalPure op ty ai aux args = Comp.select i args := by
+    termOp op = true ∧ ∀ tabs ty ai aux args,
+      GoFV.Proof.Rules.opVal tabs op ty ai aux args = Comp.select i args := by
   have hm := mem_of_lookup h
   simp only [pTab, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
-  rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact ⟨rfl, fun _ _ _ _ => rfl⟩
+  rcases hm with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact ⟨rfl, fun _ _ _ _ _ => rfl⟩
 
 theorem mkTab_cases {op : Op} {u : Unit} (h : mkTab.lookup op = some u) :
-    termOp op = true ∧ ∀ ty ai aux args, evalPure op ty ai aux args = Comp.make args := by
+    termOp op = true ∧ ∀ tabs ty ai aux args,
+      GoFV.Proof.Rules.opVal tabs op ty ai aux args = Comp.make args := by
   have hm := mem_of_lookup h
   simp only [mkTab, List.mem_cons, List.not_mem_nil, or_false, Prod.mk.injEq] at hm
-  rcases hm with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> exact ⟨rfl, fun _ _ _ _ => rfl⟩
+  rcases hm with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> exact ⟨rfl, fun _ _ _ _ _ => rfl⟩
 
 /-- A component of a composite retyped field by field. -/
 theorem retypeFields_get : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},

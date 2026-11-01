@@ -94,6 +94,37 @@ inductive Expr where
   | deref (x : Expr) (ty : GoTy)
   deriving Repr, Inhabited
 
+mutual
+/-- Structural equality of expressions (structural recursion, so the kernel evaluates it; the
+derived `BEq` of a nested inductive does not reduce there). -/
+def Expr.beq : Expr → Expr → Bool
+  | .lit t c, .lit t' c' => t == t' && c == c'
+  | .cnst n t c, .cnst n' t' c' => n == n' && t == t' && c == c'
+  | .op o, .op o' => o == o'
+  | .var i, .var i' => i == i'
+  | .rsv r, .rsv r' => r == r'
+  | .glob n t, .glob n' t' => n == n' && t == t'
+  | .field x n t, .field x' n' t' => Expr.beq x x' && n == n' && t == t'
+  | .call f as t, .call f' as' t' => f == f' && Expr.beqs as as' && t == t'
+  | .method x n as t, .method x' n' as' t' =>
+    Expr.beq x x' && n == n' && Expr.beqs as as' && t == t'
+  | .builtin f as t, .builtin f' as' t' => f == f' && Expr.beqs as as' && t == t'
+  | .conv t x, .conv t' x' => t == t' && Expr.beq x x'
+  | .assert t x, .assert t' x' => t == t' && Expr.beq x x'
+  | .unop o x t, .unop o' x' t' => o == o' && Expr.beq x x' && t == t'
+  | .binop o x y t, .binop o' x' y' t' => o == o' && Expr.beq x x' && Expr.beq y y' && t == t'
+  | .index x i t, .index x' i' t' => Expr.beq x x' && Expr.beq i i' && t == t'
+  | .deref x t, .deref x' t' => Expr.beq x x' && t == t'
+  | _, _ => false
+/-- `Expr.beq` of two lists. -/
+def Expr.beqs : List Expr → List Expr → Bool
+  | [], [] => true
+  | a :: as, b :: bs => Expr.beq a b && Expr.beqs as bs
+  | _, _ => false
+end
+
+instance : BEq Expr := ⟨Expr.beq⟩
+
 /-- What a rule variable is bound to: a `*Value`, a value's `Type`, or an op's AuxInt/Aux
 converted by `auxIntTo<T>`/`auxTo<T>` (the variable's `GoTy` is the conversion's result). -/
 inductive VarKind where
@@ -218,11 +249,14 @@ structure BlockRule where
   deriving Repr, Inhabited
 
 /-- One rule file: value rules per op (ops sorted by Go name, as rulegen's `switch v.Op`) and
-block rules per block kind, each list in matching order. -/
+block rules per block kind, each list in matching order. `nilChecks`: rules on `NilCheck`
+values tried after `values`' `NilCheck` row, which the checked rewrite validates per instance
+as nil-check eliminations (issue #151; the proven-only sets only). -/
 structure RuleSet where
   name : String
   values : List (Op × List Rule)
   blocks : List (BlockKind × List BlockRule)
+  nilChecks : List Rule := []
   deriving Repr, Inhabited
 
 namespace RuleSet
