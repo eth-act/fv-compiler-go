@@ -40,6 +40,13 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   side conditions such as `x.Uses == 1 && clobber(x)` are simply ignored. The same holds on the
   result side: an aux, type or auxint the evaluator does not model is the oracle's, i.e. the
   rule must be correct for every choice.
+- **Typed oracle** (`Oracle.BoolTyped`): the oracle answers every expression of Go type `bool`
+  with a boolean. Without it the oracle could answer `div.Uses` with a non-integer, so
+  `div.Uses == 1` is not a boolean, `&&` does not evaluate, and the whole condition of
+  `div.Uses == 1 && x.Op != OpConst16 && sdivisibleOK16(c)` becomes the oracle's: then
+  `r_divisible_116` would have to hold for `c = -3`, where `sdivisibleOK16` is false and the
+  result is wrong (found by agent Divisible). `rule_unfold` replaces each such atom in the
+  condition by a fresh `Bool` (`rule_oracle_bool`).
 - **Commutative patterns**: only the written argument order is considered. The interpreter's
   swapped matches are covered by `GoFV/Proof/Rules/Comm.lean` (`commOpsP1_sound`: every
   phase-P1 op that a pattern marks `commute` is symmetric in its first two arguments).
@@ -56,8 +63,8 @@ shapes of `typShape`/`typesShape`, and `CommSound` for swapped matches. `Rule.So
 
 ### Assumptions to discharge (#108)
 
-`Rule.Sound` assumes two typing facts the interpreter's proof must establish from a semantic
-invariant of `GoFV.SSA.Sem`, not from the rule:
+`Rule.Sound` assumes three typing facts the interpreter's proof must establish from a semantic
+invariant of `GoFV.SSA.Sem` or of the rule evaluator, not from the rule:
 
 - **Register typing** (for `Pat.typed`): in every reachable state, every register `v` the
   match reads as a leaf holds a value of its type's shape,
@@ -68,6 +75,11 @@ invariant of `GoFV.SSA.Sem`, not from the rule:
   Semantics is closing.
 - **Top type** (`hty`): the matched value's op computes a value of its type's shape before
   `retype`, i.e. no narrow result types (see "Narrow result types").
+- **Typed oracle** (`Oracle.BoolTyped or := ∀ x, exprTy [] x = .bool → ∃ b, or.dv x = .bool b`):
+  the oracle built from `GoFV.Rules.Eval.eval` answers a `bool`-typed expression with a
+  boolean, i.e. `eval` of a well-typed `bool` expression that does not fail is a boolean.
+  `GoFV.Opt.RewriteCheck.oracle` (`true` for every `bool` expression) and the oracles of
+  `rule-sat` and `NonVacuous.lean` (`Oracle.const_boolTyped`) satisfy it.
 
 ## Classification
 
@@ -138,7 +150,7 @@ needs a later phase of the semantics.
 | `generic` | Ctz | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
 | `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
-| `generic` | Div | 0 | 22 | 0 | 4 | 26 |
+| `generic` | Div | 16 | 6 | 0 | 4 | 26 |
 | `generic` | Eq | 44 | 12 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 0 | 0 | 0 | 1 | 1 |
@@ -155,7 +167,7 @@ needs a later phase of the semantics.
 | `generic` | Load | 0 | 0 | 0 | 35 | 35 |
 | `generic` | Lsh | 65 | 23 | 0 | 0 | 88 |
 | `generic` | MemEq | 0 | 0 | 0 | 11 | 11 |
-| `generic` | Mod | 0 | 29 | 0 | 0 | 29 |
+| `generic` | Mod | 20 | 9 | 0 | 0 | 29 |
 | `generic` | Move | 0 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 36 | 16 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
@@ -196,7 +208,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 957 | 426 | 12 | 367 | 1762 |
+| all | | 993 | 390 | 12 | 367 | 1762 |
 
 <!-- END coverage -->
 
@@ -284,6 +296,19 @@ closes a value truncated and extended again after a shift cleared or sign-filled
 transparency: at default transparency it unfolded `BitVec.ofInt 16 c &&& x` into a
 maximum-recursion error, which `first` does not catch (runtime exceptions pass through it).
 
+Division and remainder (#69, RuleProofs5): `rule_div` folds constants (`sdiv_ofInt`,
+`srem_ofInt`: Go's truncated `/`, `%` on auxints in range, ranges by `omega`; `udiv_ofInt`,
+`umod_ofInt` on the low bits), rewrites a negated divisor (`sdiv_neg_ofInt`, `srem_neg_right`)
+and the minimal one (`sdiv_intMin_and_neg`: `x / MIN = (x & -x) >>> (w-1)`), and a remainder as
+`x - (x / y) * y` (`sub_udiv_mul`, `sub_sdiv_mul`, unconditional). `rule_pow2` turns the
+`isPowerOfTwo(uintN(c))` condition into `c = 2 ^ (bitsLen c - 1)` (`isPow2_toNat`) and the
+division into a shift (`udiv_pow2`) or the remainder into a mask (`umod_pow2_and`).
+The eight rules closed this way (`generic.rules:1097–1100`, `1127–1130`) are not merged yet:
+evaluating `isPowerOfTwo` makes `simp` generate `callH.match_5`'s equation `eq_24` and splitter
+in each module (private to it, 2.9 MB of `.olean`); they need that match's equations generated
+once in `Den.lean` (an attempt with `Match.getEquationsFor` there did not stop the
+regeneration) or a dsimproc for `callH` like `reduceIntInfo`.
+
 Match congruence equations (`binDV.match_4.congr_eq_*`, …) are generated once in
 `Tactic.lean`: generated by `simp` in two rule modules they are two public declarations of the
 same name and the modules cannot be imported together (`scripts/rule-proofs.py axioms` imports
@@ -317,7 +342,9 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   oracle atom, `canRotate`; `inst_r_generic_479` RotateLeft, `inst_r_generic_453` Lsh,
   `inst_r_generic_232` Rsh, `inst_r_generic_716` Less, `inst_r_generic_714` Leq,
   `inst_r_generic_103` ZeroExt, `inst_r_generic_108` SignExt, `inst_r_generic_752` Trunc,
-  `inst_r_generic_400` Not, `inst_r_generic_284` EqB, `inst_r_generic_290` NeqB).
+  `inst_r_generic_400` Not, `inst_r_generic_284` EqB, `inst_r_generic_290` NeqB,
+  `inst_r_generic_173` Div, `inst_r_generic_1142` Mod). `Rule.Inst` includes
+  `Oracle.BoolTyped`; `Oracle.const b` satisfies it (`Oracle.const_boolTyped`).
 - `lake exe rule-sat` (`GoFVTest/Proof/RuleSat.lean`; `scripts/rule-proofs.py sat`) searches
   an instance of every exported rule at run time (random leaves, auxints from boundary values,
   `[c]`/`<t>`/`same x` solved, oracle atoms all `true` or all `false`) and checks `Bool`
@@ -325,7 +352,8 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   counterexample. It also reports counterexamples among the pending rules (`CEX`), which are
   how the findings below were found. Last run (with `Pat.typed`: leaves typed by their
   values' shapes): P1 rules SAT 1332, CEX 9 (all `generic.rules:504–516`, "Narrow result
-  types"), NONE 54; all 957 proven rules SAT.
+  types"), NONE 54; all 1001 proven rules SAT (its oracles answer every atom with a
+  boolean, so they are `BoolTyped`).
 
 `Comm.lean` has `sub16_not_comm` (the commutativity obligation is not trivial).
 

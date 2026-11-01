@@ -63,7 +63,7 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,1988 @@
+@@ -0,0 +1,2006 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -244,8 +244,13 @@
 +		if res.file == nil || round+1 == gofvTypeRounds {
 +			break
 +		}
-+		news := gofvNewTypes(ex, f, res)
++		news, touched := gofvNewTypes(ex, f, res)
 +		if len(news) == 0 {
++			if touched {
++				// gofvNewTypes claimed numbers in ex.x's tables: import with a fresh export
++				// (the same file, deterministically).
++				ex = gofvExportWith(f, extras)
++			}
 +			break
 +		}
 +		extras = append(extras, news...)
@@ -360,8 +365,9 @@
 +}
 +
 +// gofvNewTypes builds the compiler's objects for the types res defines past x's tables
-+// (nil if there are none or one cannot be built). x is not used afterwards.
-+func gofvNewTypes(ex gofvExport, f *Func, res *gofvResult) (ts []*types.Type) {
++// (nil if there are none or one cannot be built). Building them claims numbers in x's tables
++// (touched): x must not be used for an import afterwards.
++func gofvNewTypes(ex gofvExport, f *Func, res *gofvResult) (ts []*types.Type, touched bool) {
 +	x := ex.x
 +	defer func() {
 +		if recover() != nil {
@@ -373,13 +379,14 @@
 +		if d.kind != 't' || d.n <= len(x.typeList) {
 +			continue
 +		}
++		touched = true
 +		t, err := im.typeN(d.n)
 +		if err != nil {
-+			return nil
++			return nil, true
 +		}
 +		ts = append(ts, t)
 +	}
-+	return ts
++	return ts, touched
 +}
 +
 +func firstLine(s string) string {
@@ -823,9 +830,17 @@
 +	if m, ok := x.typeKeys[key]; ok && m != n && m < im.ex.typeFront {
 +		return "", fmt.Errorf("type t%d: the compiler's object is t%d", n, m)
 +	}
++	// The other objects of number n (identical objects that moved with a claimed frontend
++	// type) keep it: a type rendered later at a lower number may refer to them, and then
++	// x.typ must not look n up by key in its truncated tables (Lean numbers a struct before
++	// its fields; #119).
++	var same []*types.Type
 +	for p, m := range x.types {
 +		if m == n || p == t {
 +			delete(x.types, p)
++			if p != t {
++				same = append(same, p)
++			}
 +		}
 +	}
 +	delete(x.typeKeys, key)
@@ -843,6 +858,9 @@
 +		return "", fmt.Errorf("type t%d: the compiler's object is %s", n, got)
 +	}
 +	im.types[n] = t
++	for _, p := range same {
++		x.types[p] = n
++	}
 +	return gofvResolveDefs(x, x.defs.String()), nil
 +}
 +

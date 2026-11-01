@@ -106,7 +106,15 @@ run to run).
 which only ranks the types of the export. When a run creates types (e.g. `opt` making `*byte`,
 which `Compare` puts next to `*uint8`), the driver builds them in Go and runs the segment again
 with them added to the export (`gofvExportWith`), up to 3 runs (`gofvTypeRounds`). Without
-this, `generic cse` partitions differently in 26 corpus functions.
+this, `generic cse` partitions differently in 26 corpus functions. Building the types claims
+numbers in the exporter's tables, so when no further round runs because a type could not be
+built, the import uses a fresh export of the same function.
+
+**Frontend copies numbered parent first.** A pass that copies a frontend type (`importType`,
+e.g. `opt` copying `testing.T` with its field types) numbers a struct before its fields. When
+the importer renders such a struct, its tables are cut at the struct's number. Every object of
+a claimed number therefore keeps that number in `x.types`, so the exporter never has to look up
+a higher number by key in the cut tables (#119).
 
 ### Modes and settings
 
