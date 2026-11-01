@@ -7,16 +7,17 @@ import GoFV.Opt.Decompose.State
 writes them back. Go maps have no order, so the `Func` keeps the two that a pass changes as the
 export orders them (`patches/go/0001-gofv-ssa-export.patch`, `section`):
 
-- `namedx` (keys not in `f.Names`) sorted by `slotValueOrder`: the aux number of the slot's
-  `*ir.Name` (`2^31-1` if not yet numbered), the slot's content key, `slotOrder(SplitOf)`;
-- `splits` sorted by `slotOrder(parent)`, `uint64(Off)^(1<<63)`, `Type.LinkString()`,
-  `slotOrder(slot)`;
-
-where `slotOrder` is the slot's export number if it has one, else its content key
-(`gofvSlotKey`). Both compare formatted strings. The export numbers objects the section
-creates while writing it, `names` first (a slot, then its `*ir.Name`, its type and its
-`SplitOf` slot), so new slots and names get numbers in that walk order, past every number of
-the input tables; `exportNums` replays that walk.
+- the export numbers the objects the section creates while writing it: `names` first (a slot,
+  then its `*ir.Name`, its type and its `SplitOf` slot); then the `namedx` keys in
+  `slotValueOrder` (the aux number of the slot's `*ir.Name`, `2^31-1` if not yet numbered, the
+  slot's content key, `slotOrder(SplitOf)`); then the `splits` entries in content order
+  (`slotOrder(parent)`, `uint64(Off)^(1<<63)`, `Type.LinkString()`, `slotOrder(slot)`), where
+  `slotOrder` is the slot's export number if it has one, else its content key (`gofvSlotKey`).
+  New slots and names get numbers in that walk order, past every number of the input tables;
+  `exportNums`/`Nums.visitKey` replay it.
+- it then writes `namedx` sorted by the numbers of (name, type, `Off`, `SplitOf`,
+  `SplitOffset`), and `splits` sorted by the numbers of (parent, `Off`, type, slot), so the
+  order does not change between sections when the maps do not.
 
 `Type.LinkString()` is `TypeSymName` without the `noalg.` prefix of no-alg types (`""` when the
 export has no size for the type). On the corpus no two `splits` entries share parent and offset
@@ -59,6 +60,35 @@ def Nums.visit (tabs : Tables) (slotFloor auxFloor : Nat) : Nat → Nums → Slo
       match d.splitOf with
       | some p => Nums.visit tabs slotFloor auxFloor fuel n p
       | none => n
+
+/-- `x.slotInline(k)`: number the key's name, then its `SplitOf` slot. -/
+def Nums.visitKey (tabs : Tables) (slotFloor auxFloor : Nat) (n : Nums) (k : SlotDef) : Nums :=
+  let n := if k.name < auxFloor || n.auxes.contains k.name then n
+    else { n with auxes := n.auxes.insert k.name n.nextAux, nextAux := n.nextAux + 1 }
+  match k.splitOf with
+  | some p => Nums.visit tabs slotFloor auxFloor typeFuel n p
+  | none => n
+
+/-- The export number of a slot (input numbers below the floor are kept). -/
+def Nums.slotNum (slotFloor : Nat) (n : Nums) : Option SlotRef → Nat
+  | none => 0
+  | some s => if s < slotFloor then s else (n.slots[s]?).getD (2 ^ 31 - 1)
+
+/-- The export number of an aux object. -/
+def Nums.auxNum (auxFloor : Nat) (n : Nums) (a : AuxRef) : Nat :=
+  if a < auxFloor then a else (n.auxes[a]?).getD (2 ^ 31 - 1)
+
+/-- `x.slotValueLess(a, b)` on numbered keys. Types compare by the pass's numbers: the type
+tie break needs equal name numbers, which never happens on the corpus. -/
+def slotValueLess (slotFloor auxFloor : Nat) (n : Nums) (a b : SlotDef) : Bool :=
+  let na := n.auxNum auxFloor a.name
+  let nb := n.auxNum auxFloor b.name
+  if na != nb then na < nb else
+  if a.type != b.type then a.type < b.type else
+  if a.off != b.off then a.off < b.off else
+  let pa := n.slotNum slotFloor a.splitOf
+  let pb := n.slotNum slotFloor b.splitOf
+  if pa != pb then pa < pb else a.splitOffset < b.splitOffset
 
 def exportNums (tabs : Tables) (slotFloor auxFloor : Nat) (names : Array SlotRef) : Nums :=
   names.foldl (Nums.visit tabs slotFloor auxFloor typeFuel)
@@ -135,13 +165,25 @@ def toFunc (s : St) (slotFloor auxFloor : Nat) : Except String Func := do
   let extra := s.nv.fold (init := #[]) fun acc k vs =>
     if inNames.contains k then acc
     else acc.push (slotValueOrder tabs slotFloor auxFloor nums k, (k, vs))
-  let namedx := (extra.qsort (fun a b => bytesLt a.1 b.1)).map (·.2)
+  let extra := (extra.qsort (fun a b => bytesLt a.1 b.1)).map (·.2)
+  let nums := extra.foldl (fun n (k, _) => n.visitKey tabs slotFloor auxFloor k) nums
+  let namedx := extra.qsort (fun a b => slotValueLess slotFloor auxFloor nums a.1 b.1)
   let splits := s.splits.map fun (k, v) =>
     let key := slotOrder tabs slotFloor nums (some k.parent) ++ lit "|" ++
       decPad 20 ((k.off + 2 ^ 63) % 2 ^ 64).toNat ++ lit "|" ++ linkString tabs k.type ++
       lit "|" ++ slotOrder tabs slotFloor nums (some v)
     (key, (k, v))
   let splits := (splits.qsort (fun a b => bytesLt a.1 b.1)).map (·.2)
+  let nums := splits.foldl (fun n (k, v) =>
+    let n := Nums.visit tabs slotFloor auxFloor typeFuel n k.parent
+    Nums.visit tabs slotFloor auxFloor typeFuel n v) nums
+  let splits := splits.qsort fun (ka, va) (kb, vb) =>
+    let pa := nums.slotNum slotFloor (some ka.parent)
+    let pb := nums.slotNum slotFloor (some kb.parent)
+    if pa != pb then pa < pb else
+    if ka.off != kb.off then ka.off < kb.off else
+    if ka.type != kb.type then ka.type < kb.type else
+    nums.slotNum slotFloor (some va) < nums.slotNum slotFloor (some vb)
   return { s.f with names, namedx, splits }
 
 end GoFV.Opt.Decompose
