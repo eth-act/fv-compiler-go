@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.NilEval
+import GoFV.Proof.Pass.NilSeeds
 
 /-!
 # nilcheckelim: one block's evaluation
@@ -19,8 +19,9 @@ namespace GoFV.Proof.Nil
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Proof.CopyElim GoFV.Proof.CSE
 open GoFV.Opt.NilCheck (root)
 
-/-- One tree block's evaluation (after its `Phi`s) in source and target. -/
-def BlockOK (env : Env) (tabs : Tables) (f g : Func) : Prop :=
+/-- One tree block's evaluation (after its `Phi`s) in source and target; with `xt` (the rewrite
+passes' seeds) under `Env.AllocNonNil` and `DictFrame`. -/
+def BlockOK (xt : Bool) (env : Env) (tabs : Tables) (f g : Func) : Prop :=
   ∀ (bid : ID) (fb gb : Block) (F0 : Frame) (oS oT : Array ID),
     Tree f bid → f.block? bid = some fb → g.block? bid = some gb →
     F0.regs.size = f.valueTab.size →
@@ -29,15 +30,16 @@ def BlockOK (env : Env) (tabs : Tables) (f g : Func) : Prop :=
       ∃ y, F0.regs[z]? = some (some y)) →
     schedule f fb = some oS → schedule g gb = some oT →
     oT.toList.filter (root g) = oS.toList.filter (root g) →
+    (xt = true → env.AllocNonNil ∧ DictFrame tabs f F0) →
     (∀ G, evalAll env (Ctx.make tabs f) F0 oS.toList = .ok G →
       evalAll env (Ctx.make tabs g) F0 oT.toList = .ok G) ∧
     (∀ e m, evalAll env (Ctx.make tabs f) F0 oS.toList = .panic e m →
       evalAll env (Ctx.make tabs g) F0 oT.toList = .panic e m)
 
 /-- The hypotheses of `BlockOK`, with the relation and well-formedness. -/
-structure Blk (env : Env) (tabs : Tables) (f g : Func) (bid : ID)
+structure Blk (xt : Bool) (env : Env) (tabs : Tables) (f g : Func) (bid : ID)
     (fb gb : Block) (F0 : Frame) (oS oT : Array ID) : Prop where
-  rel : NRel tabs f g
+  rel : NRel xt tabs f g
   wf : ∃ ce, WF ce f
   cf : CertOK f
   tree : Tree f bid
@@ -50,12 +52,13 @@ structure Blk (env : Env) (tabs : Tables) (f g : Func) (bid : ID)
   hoS : schedule f fb = some oS
   hoT : schedule g gb = some oT
   roots : oT.toList.filter (root g) = oS.toList.filter (root g)
+  ext : xt = true → env.AllocNonNil ∧ DictFrame tabs f F0
 
-variable {env : Env} {tabs : Tables} {f g : Func} {bid : ID}
+variable {xt : Bool} {env : Env} {tabs : Tables} {f g : Func} {bid : ID}
   {fb gb : Block} {F0 : Frame} {oS oT : Array ID}
 
 /-- Phi-ness is kept. -/
-theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel tabs f g x fv gv) : gv.op = .Phi ↔ fv.op = .Phi := by
+theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel xt tabs f g x fv gv) : gv.op = .Phi ↔ fv.op = .Phi := by
   cases h with
   | same hop => rw [hop]
   | nc h1 h2 => rw [h1, h2]; decide
@@ -64,7 +67,7 @@ theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel tabs f g x fv gv) : gv.op = 
 
 namespace Blk
 
-variable (K : Blk env tabs f g bid fb gb F0 oS oT)
+variable (K : Blk xt env tabs f g bid fb gb F0 oS oT)
 include K
 
 theorem hp : parentsOK (make f) f.entry = true := K.cf.parents
@@ -380,7 +383,7 @@ theorem nc_eval {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.ta
 /-- **A justifying nil check passed** on the pointer of the value at position `i ≤ k`. -/
 theorem just_nn {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     (hik : i ≤ k) {x : ID} (hi : oS.toList[i]? = some x) {p nc : ID} {ty : TypeRef} {s : Bool}
-    (hj : Just tabs f bid x p nc ty s) (hne : nc ≠ p) :
+    (hj : Just xt tabs f bid x p nc ty s) (hne : nc ≠ p) :
     ∃ yp w, S.regs[p]? = some (some yp) ∧ NN yp ∧ S.regs[nc]? = some (some w) ∧
       w = yp.retype (tabs.ty ty) ∧ (Base f bid nc ∨ nc ∈ oS.toList.take k) := by
   obtain ⟨n, hn, hop, ha0, hty, havail⟩ : ∃ n, f.value? nc = some n ∧ n.op = .NilCheck ∧
@@ -631,11 +634,15 @@ theorem not_int_of_ptr {y : Val} {e : Option Nat} (h : y.retype (.ptr e) = y) :
 
 omit K in
 /-- What `safePtr` says of a value. -/
-theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr tabs f (n + 1) z = true) :
+theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n + 1) z = true) :
     ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧
       (((v.op = .Addr ∨ v.op = .LocalAddr) ∧ v.aux.isSome = true) ∨ v.op = .NilCheck ∨
         v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr) ∧
-          ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr tabs f n a = true)) := by
+          ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr xt tabs f n a = true) ∨
+        (v.op = .SelectN ∧ xt = true ∧ v.auxInt = 0 ∧
+          ∃ c, v.args[0]? = some c ∧ Opt.NilCheck.mallocCall tabs f c = true) ∨
+        (v.op = .Arg ∧ xt = true ∧ v.auxInt = 0 ∧
+          ∃ m, v.aux = some m ∧ Opt.NilCheck.dictArg tabs f m = true)) := by
   unfold Opt.NilCheck.safePtr at h
   cases hv : f.value? z with
   | none => rw [hv] at h; cases h
@@ -656,12 +663,24 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr tabs f (n + 1)
   · next h => exact .inr (.inr (.inl h))
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr ⟨.inl h, a, ha, hop⟩))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inl h, a, ha, hop⟩)))
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr ⟨.inr h, a, ha, hop⟩))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr h, a, ha, hop⟩)))
     · cases hop
+  · next h =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at hop
+    obtain ⟨⟨hxt, hai⟩, hc⟩ := hop
+    split at hc
+    · next c hc' => exact .inr (.inr (.inr (.inr (.inl ⟨h, hxt, hai, c, hc', hc⟩))))
+    · cases hc
+  · next h =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at hop
+    obtain ⟨⟨hxt, hai⟩, hc⟩ := hop
+    split at hc
+    · next m hm => exact .inr (.inr (.inr (.inr (.inr ⟨h, hxt, hai, m, hm, hc⟩))))
+    · cases hc
   · cases hop
 
 omit K in
@@ -681,7 +700,7 @@ theorem frameVal_local_safe {ctx : Ctx} {v : Value} (h : v.op = .LocalAddr)
 
 /-- **`safePtr` values are `Safe`** in the source's frames. -/
 theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :
-    ∀ (n : Nat) (z : ID), Opt.NilCheck.safePtr tabs f n z = true →
+    ∀ (n : Nat) (z : ID), Opt.NilCheck.safePtr xt tabs f n z = true →
       (Base f bid z ∨ z ∈ oS.toList.take k) →
         ∃ y, S.regs[z]? = some (some y) ∧ Safe y ∧ ∀ x, y ≠ .int .w64 x
   | 0, _, h, _ => by simp [Opt.NilCheck.safePtr] at h
@@ -690,7 +709,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
     have hph : v.op ≠ .Phi := by
       intro hp
-      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1, -⟩ <;> rw [hp] at h1 <;> cases h1
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ <;> rw [hp] at h1 <;>
+        cases h1
     obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
     have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = .ptr e := by
@@ -708,7 +728,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
       intro h; rcases h with h | h | h | h <;> rw [h] <;> decide
-    rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩
+    rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩ | ⟨h1, hxt, hai, c, hc, hmc⟩ |
+      ⟨h1, hxt, hai, m, hm, hda⟩
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       obtain ⟨x, hx, hsx⟩ : ∃ x, frameVal (Ctx.make tabs f) v = some x ∧ Safe x := by
@@ -758,15 +779,53 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         rw [hya] at hya''; cases hya''
         rw [h1]
         exact addPtr_safe hsa' hni
+    · -- the first result of a malloc-family call (`Env.AllocNonNil`)
+      have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+          v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide
+      obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hg
+      rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
+      have hfv : frameVal (Ctx.make tabs f) v = none := frameVal_none (by rw [h1]; decide)
+      rw [hfv, h1] at hr; cases hr
+      have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
+      rw [h1, show Op.SelectN.argLen = 1 by decide] at har
+      have hsz : v.args.size = 1 := by exact_mod_cast har
+      have hva : v.args = #[c] := by
+        apply Array.ext (by simp [hsz]); intro k h1' h2'
+        have : k = 0 := by simp at h2'; omega
+        subst this; simpa [Array.getElem?_eq_getElem h1'] using hc
+      obtain ⟨cv, hcv⟩ : ∃ cv, f.value? c = some cv := by
+        unfold Opt.NilCheck.mallocCall at hmc
+        split at hmc
+        · exact ⟨_, by assumption⟩
+        · cases hmc
+      have hcop : cv.op ≠ .Phi := by
+        intro hp
+        unfold Opt.NilCheck.mallocCall at hmc
+        rw [hcv] at hmc
+        simp [hp] at hmc
+      have hca := K.avail_args hz hv hph (Array.mem_of_getElem? hc)
+      obtain ⟨-, -, -, -, hcid⟩ := K.listed_avail hca hcv
+      obtain ⟨yc, hyc, hevc⟩ := K.availS hS hca hcv hcop
+      have hvs' : vs = [yc] := by
+        rw [hva] at hvs; unfold argVals at hvs
+        simp [hyc] at hvs; exact hvs.symm
+      subst hvs'
+      show Safe (Tuple.selectN v.auxInt [yc])
+      rw [hai]
+      exact safe_selectN_malloc (K.ext hxt).1 hmc hcv hcid hevc
+    · -- a dictionary parameter (`DictFrame`)
+      have hD : DictFrame tabs f S := (K.ext hxt).2.images (by rw [hS.frame])
+      simp only [evalOp, h1, hm, hai] at hr
+      exact safe_argVal_dict hD hda hr
 
 /-- A nil check of a pointer that `safePtr` holds of never panics. -/
 theorem seedNoPanic {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     {x : ID} (hi : oS.toList[i]? = some x) (hik : i ≤ k) {fv : Value} (hfv : f.value? x = some fv)
     (hop : fv.op = .NilCheck) {p' m' : ID} (hargs : fv.args = #[p', m'])
-    (hj : Just tabs f bid x p' p' fv.type true) {yp : Val} (hyp : S.regs[p']? = some (some yp))
+    (hj : Just xt tabs f bid x p' p' fv.type true) {yp : Val} (hyp : S.regs[p']? = some (some yp))
     {ym : Val} {e : Panic} {m : Mem}
     (h : memRoot (Ctx.make tabs f) fv [yp, ym] = .panic e m) : False := by
-  have hsp : Opt.NilCheck.safePtr tabs f f.valueTab.size p' = true := by
+  have hsp : Opt.NilCheck.safePtr xt tabs f f.valueTab.size p' = true := by
     cases hj with
     | seed _ h => exact h
     | dom hne => exact absurd rfl hne
@@ -1248,11 +1307,11 @@ theorem panicCase {e : Panic} {m : Mem}
 end Blk
 
 /-- **One block's evaluation in source and target** (`BlockOK`). -/
-theorem blockOK {tabs : Tables} {f g : Func} (hrel : NRel tabs f g) (hwf : ∃ ce, WF ce f)
-    (hc : CertOK f) (env : Env) : BlockOK env tabs f g := by
-  intro bid fb gb F0 oS oT ht hfb hgb hsz hd hphiD hoS hoT hroots
-  have K : Blk env tabs f g bid fb gb F0 oS oT :=
-    ⟨hrel, hwf, hc, ht, hfb, hgb, hsz, hd, hphiD, hoS, hoT, hroots⟩
+theorem blockOK {tabs : Tables} {f g : Func} (hrel : NRel xt tabs f g) (hwf : ∃ ce, WF ce f)
+    (hc : CertOK f) (env : Env) : BlockOK xt env tabs f g := by
+  intro bid fb gb F0 oS oT ht hfb hgb hsz hd hphiD hoS hoT hroots hext
+  have K : Blk xt env tabs f g bid fb gb F0 oS oT :=
+    ⟨hrel, hwf, hc, ht, hfb, hgb, hsz, hd, hphiD, hoS, hoT, hroots, hext⟩
   exact ⟨fun G h => K.okCase h, fun e m h => K.panicCase h⟩
 
 end GoFV.Proof.Nil

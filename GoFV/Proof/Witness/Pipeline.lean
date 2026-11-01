@@ -127,8 +127,11 @@ theorem plRunEnv_initAvoids : InitAvoids plRunEnv [] {} := by
     rw [hx.2]
     trivial
 
-theorem plRunEnv_vpre : VPre plRunEnv [] {} :=
-  ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids⟩
+theorem plF_dict : GoFV.Opt.NilCheck.dictParams plEnv.tables plF = [] := by decide +kernel
+
+theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF) plRunEnv [] {} :=
+  ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
+    by rw [plF_dict]; exact DictArgs.nil []⟩
 
 /-! ## The witness -/
 

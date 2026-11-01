@@ -115,7 +115,7 @@ theorem ls_checkedRewrite :
       (out.func.value? 3).map (fun v => (v.op, v.args.size)) = some (.StringMake, 2) ∧
       check lsCheckEnv lsFunc = .ok () ∧
       check { tabs := out.tables, typs := lsTyps } out.func = .ok () ∧
-      RefinesUnder Env.Mono out.tables out.func lsPassEnv.tables lsFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lsPassEnv.tables lsFunc) out.tables out.func lsPassEnv.tables lsFunc := by
   obtain ⟨h1, h2⟩ := ls_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet lsRules) lsPassEnv lsFunc with
   | error e => rw [hc] at h2; cases h2

@@ -34,10 +34,60 @@ def ptrShaped (tabs : Tables) (t : TypeRef) : Bool :=
   | .ptr _ => true
   | _ => false
 
+/-- The malloc-family runtime entry points (`isMalloc`, `rewrite.go`): `runtime.newobject` and the
+size-specialised allocators. Their contracts return a non-nil pointer under the checked rewrite
+passes' precondition `Sem.Env.AllocNonNil`. -/
+def mallocName (name : String) : Bool :=
+  name == "runtime.newobject" || name.startsWith "runtime.mallocgcTinySC" ||
+    name.startsWith "runtime.mallocgcSmallNoScanSC" ||
+    name.startsWith "runtime.mallocgcSmallScanNoHeaderSC"
+
+/-- `c` is a `StaticLECall` of a malloc-family entry point whose first result is pointer-shaped,
+in the call's type and in its ABI's first result. -/
+def mallocCall (tabs : Tables) (f : Func) (c : ID) : Bool :=
+  match f.value? c with
+  | some cv =>
+    cv.op == .StaticLECall && ((cv.aux.bind tabs.callee?).map mallocName).getD false &&
+      (match tabs.ty cv.type with
+       | .tuple (.ptr _ :: _) => true
+       | _ => false) &&
+      match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) with
+      | [] => true
+      | p :: _ => ptrShaped tabs p.type
+  | none => false
+
+/-- `n` names the generic dictionary parameter `.dict` (`isDictArgSym`). -/
+def dictName (tabs : Tables) (n : AuxRef) : Bool :=
+  match tabs.aux? n with
+  | some { kind := .name sym .., .. } => sym.bytes == ".dict".toUTF8
+  | _ => false
+
+/-- `f`'s input parameters (`Sem.Ctx.make`'s `params` are their names). -/
+def inParams (tabs : Tables) (f : Func) : Array ABIParam := (Sem.abiParams tabs f).filter (!·.out)
+
+/-- The indices of `f`'s dictionary parameters among its inputs: the checked rewrite passes
+assume that these arguments are non-nil pointers (`Sem.DictArgs`). -/
+def dictParams (tabs : Tables) (f : Func) : List Nat :=
+  let ps := inParams tabs f
+  (List.range ps.size).filter fun i => ((ps[i]?.bind (·.name)).map (dictName tabs)).getD false
+
+/-- `Arg {n}` reads input parameter `n` (`Sem.argVal`), a dictionary parameter of pointer
+shape. -/
+def dictArg (tabs : Tables) (f : Func) (n : AuxRef) : Bool :=
+  let ps := inParams tabs f
+  match (ps.map (·.name)).findIdx? (· == some n) with
+  | some i => dictName tabs n && match ps[i]? with
+    | some p => ptrShaped tabs p.type
+    | none => false
+  | none => false
+
 /-- `x` is pointer-typed and points into an allocation whenever it is defined: an `Addr` or
 `LocalAddr` with a name, a nil check, `GetG` (the goroutine's `g`, an allocation of the
-environment, `docs/plans/semantics.md` §5), or an `OffPtr`/`AddPtr` of such a value. -/
-def safePtr (tabs : Tables) (f : Func) : Nat → ID → Bool
+environment, `docs/plans/semantics.md` §5), or an `OffPtr`/`AddPtr` of such a value. With `xt`
+(the checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also
+the first result of a malloc-family call (`mallocCall`) and a dictionary parameter
+(`dictArg`). -/
+def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
   | 0, _ => false
   | n + 1, x =>
     match f.value? x with
@@ -49,8 +99,18 @@ def safePtr (tabs : Tables) (f : Func) : Nat → ID → Bool
       | .NilCheck | .GetG => true
       | .OffPtr | .AddPtr =>
         match v.args[0]? with
-        | some a => safePtr tabs f n a
+        | some a => safePtr xt tabs f n a
         | none => false
+      | .SelectN =>
+        xt && v.auxInt == 0 &&
+          match v.args[0]? with
+          | some c => mallocCall tabs f c
+          | none => false
+      | .Arg =>
+        xt && v.auxInt == 0 &&
+          match v.aux with
+          | some n => dictArg tabs f n
+          | none => false
       | _ => false
 
 /-- `o` lists `a` before `b`. -/
@@ -61,10 +121,10 @@ def listedBefore (o : Array ID) (a b : ID) : Bool :=
 
 /-- `ptr` is non-nil at value `x` of block `bx`: `nc` is a nil check of `ptr` (of type `ty`)
 listed in a strict dominator of `bx` or before `x` in `bx`'s schedule; or (`seed`) `nc = ptr`
-and `safePtr`. -/
-def justified (tabs : Tables) (c : DomCert.Cert) (f : Func) (bx x ptr nc : ID) (ty : TypeRef)
-    (seed : Bool) : Bool :=
-  if nc == ptr then seed && safePtr tabs f f.valueTab.size ptr
+and `safePtr xt`. -/
+def justified (xt : Bool) (tabs : Tables) (c : DomCert.Cert) (f : Func) (bx x ptr nc : ID)
+    (ty : TypeRef) (seed : Bool) : Bool :=
+  if nc == ptr then seed && safePtr xt tabs f f.valueTab.size ptr
   else
     match f.value? nc, f.block? bx with
     | some n, some fb =>
@@ -100,7 +160,7 @@ def after (f g : Func) (fv : Value) (x nc : ID) : Bool :=
   | _, _, _ => false
 
 /-- `x` is unchanged, a justified removed nil check, or a justified constant `IsNonNil`. -/
-def valueOK (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID) : Bool :=
+def valueOK (xt : Bool) (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | none, none => true
   | some fv, some gv =>
@@ -108,13 +168,13 @@ def valueOK (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID) : Bool :=
     ((gv.op == fv.op && gv.args == fv.args && gv.aux == fv.aux && gv.auxInt == fv.auxInt) ||
      (fv.op == .NilCheck && gv.op == .Copy && gv.args.size == 1 &&
        match fv.args[0]?, gv.args[0]? with
-       | some p, some nc => justified tabs c f fv.block x p nc fv.type true || after f g fv x nc
+       | some p, some nc => justified xt tabs c f fv.block x p nc fv.type true || after f g fv x nc
        | _, _ => false) ||
      (fv.op == .IsNonNil && gv.op == .ConstBool && gv.auxInt == 1 && gv.args.size == 0 &&
        fv.args.size == 1 &&
        match fv.args[0]? with
        | some p => (List.range f.valueTab.size).any fun nc =>
-           nc != p && justified tabs c f fv.block x p nc ((f.getV nc).type) false
+           nc != p && justified xt tabs c f fv.block x p nc ((f.getV nc).type) false
        | none => false))
   | _, _ => false
 
@@ -140,13 +200,13 @@ def schedOK (f g : Func) (bid : ID) : Bool :=
       | none => false
   | _, _ => false
 
-/-- **The checker.** -/
-def nrel (tabs : Tables) (f g : Func) : Bool :=
+/-- **The checker** (`xt`: with the seeds of `safePtr xt`). -/
+def nrel (xt : Bool) (tabs : Tables) (f g : Func) : Bool :=
   let c := DomCert.make f
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
     g.valueTab.size == f.valueTab.size &&
     f.blocks.all (blockOK f g) &&
-    (List.range f.valueTab.size).all (valueOK tabs c f g) &&
+    (List.range f.valueTab.size).all (valueOK xt tabs c f g) &&
     f.blocks.all (schedOK f g)
 
 end NilCheck
@@ -154,7 +214,7 @@ end NilCheck
 /-- `nilcheckelim`'s output on `f` passes the checker. -/
 def nilFrag (penv : PassEnv) (f : SSA.Func) : Bool :=
   match nilcheckelim penv f with
-  | .ok g => NilCheck.nrel penv.tables f g
+  | .ok g => NilCheck.nrel false penv.tables f g
   | .error _ => false
 
 end GoFV.Opt

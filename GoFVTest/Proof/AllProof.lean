@@ -32,6 +32,7 @@ import GoFV.Proof.Frame
 import GoFV.Proof.MemRefine
 import GoFV.Proof.Merge
 import GoFV.Proof.Mixed
+import GoFV.Proof.NilPre
 import GoFV.Proof.Order
 import GoFV.Proof.OrderRank
 import GoFV.Proof.Pass.BranchElimNormal
@@ -185,6 +186,7 @@ import GoFV.Proof.Pass.MemCombineSplit
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.Pass.NilRel
+import GoFV.Proof.Pass.NilSeeds
 import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Pass.NumberLines
 import GoFV.Proof.Pass.PhiOpt
@@ -460,6 +462,7 @@ import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NilGetG
+import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Pipeline

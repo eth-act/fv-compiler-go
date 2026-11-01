@@ -38,7 +38,9 @@ pipeline runs it (`Verified.Step`):
 
 - `proven run rel guard`: `run` is the pass (or its checked, proven-only variant: `optChecked`,
   `proveChecked`, …) whose refinement theorem concludes `rel` (`Refines`, `RefinesUnder
-  Env.Mono` or `RefinesFrom (FrameSafe ∧ InitAvoids)`) when the input and the output pass
+  Env.Mono`, `RefinesFrom (FrameSafe ∧ InitAvoids)` or, for the checked rewrite passes,
+  `RefinesFrom (RwPre tabs f)`: also malloc-family contracts that return non-nil pointers and
+  non-nil dictionary arguments of the input, issue #151) when the input and the output pass
   `check` and `guard` (the theorem's fragment hypothesis, decided) accepts the input;
 - `stock run`: the stock port; no theorem.
 
@@ -50,8 +52,9 @@ and once on each changed result, never inside a pass). Per pass run it records a
 - `identity`: the result's function equals the input's, and so do the tables or at least what
   the function can observe of them (`tabsAgree`; `Refines.refl`, any pass);
 - `skipped why`: an optional proven pass whose input is outside its theorem (`why`: the input
-  fails `check`, or the guard rejects it) or whose output fails `check`: its result is dropped
-  and the input kept (the identity is a refinement);
+  fails `check`, the guard rejects it, or its dictionary parameters, `NilCheck.dictParams`,
+  differ from the pipeline input's) or whose output fails `check`: its result is dropped and the
+  input kept (the identity is a refinement);
 - `unverified why`: a stock port that changed the function, or a required proven pass in one of
   the situations of `skipped` (the result is kept: later stock passes need it).
 
@@ -76,6 +79,10 @@ inductive Rel where
   | mono
   /-- `RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem)`. -/
   | frameSafe
+  /-- `RefinesFrom (RwPre tabs f)` on the pass's input `f` in `tabs` (the checked rewrite passes):
+  monotone contracts, malloc-family contracts that return non-nil pointers
+  (`Env.AllocNonNil`) and non-nil dictionary arguments (`NilCheck.dictParams tabs f`). -/
+  | rw
   deriving DecidableEq, Repr, Inhabited
 
 /-- How the verified pipeline runs a stock pass. -/
@@ -127,7 +134,7 @@ def deadGuard (env : PassEnv) (f : Func) : Bool := deadFragB env.tables f
 def noGuard (_ : PassEnv) (_ : Func) : Bool := true
 
 def deadcodeStep : Step := .proven deadcodePass .refines deadGuard
-def optStep : Step := .proven optChecked .mono noGuard
+def optStep : Step := .proven optChecked .rw noGuard
 
 end Verified
 
@@ -148,8 +155,8 @@ def stockPasses : Array StockPass := #[
   { name := "gcse deadcode", required := true, step := deadcodeStep },
   { name := "nilcheckelim", step := .proven nilcheckelimPass .refines nilFrag },
   { name := "prove", step := .proven proveChecked .mono noGuard },
-  { name := "divisible", required := true, step := .proven divisibleChecked .mono noGuard },
-  { name := "divmod", required := true, step := .proven divmodChecked .mono noGuard },
+  { name := "divisible", required := true, step := .proven divisibleChecked .rw noGuard },
+  { name := "divmod", required := true, step := .proven divmodChecked .rw noGuard },
   { name := "middle opt", required := true, step := optStep },
   { name := "known bits", step := .proven knownBitsPass .mono noGuard },
   { name := "early fuse", step := .stock fuseEarlyPass },
@@ -243,6 +250,9 @@ structure VState where
   /-- `*types.Type` object classes (`nextZvar`; the next pass's `PassEnv.zvar`). -/
   zvar : Std.HashMap ID Nat := {}
   nextClass : Nat := 1
+  /-- The input's dictionary parameters (`NilCheck.dictParams`), which the precondition of the
+  `rw` steps names: a proven pass runs only on states with the same ones. -/
+  dict : List Nat := []
   /-- One verdict per pass run. -/
   log : Array (String × Verdict) := #[]
 
@@ -253,7 +263,8 @@ def checkEnv (env : PassEnv) (tabs : Tables) : CheckEnv := { tabs, typs := env.t
 def VState.init (env : PassEnv) (f : Func) (zv : Array (ID × Nat) := #[]) : VState :=
   { func := f, tables := env.tables, wf := (check (checkEnv env env.tables) f).toBool
     zvar := zv.foldl (fun m (v, c) => m.insert v c) {}
-    nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1 }
+    nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1
+    dict := NilCheck.dictParams env.tables f }
 
 /-- The environment of stock pass `name` on state `st`. -/
 def VState.passEnv (st : VState) (env : PassEnv) (name : String) : PassEnv :=
@@ -270,7 +281,7 @@ def VState.adopt (st : VState) (name : String) (out : PassOut) (wf : Bool) (v : 
   let z := nextZvar st.func out st.zvar st.nextClass
   { func := out.func, tables := out.tables, wf, verified := st.verified && v.ok
     ran := st.ran + 1, last := name, effects := st.effects ++ out.effects, zvar := z.1
-    nextClass := z.2, log := st.log.push (name, v) }
+    nextClass := z.2, log := st.log.push (name, v), dict := st.dict }
 
 /-- Whether `out` leaves the function and the tables of `st` unchanged. -/
 def VState.same (st : VState) (out : PassOut) : Bool :=
@@ -314,6 +325,8 @@ def runPass (env : PassEnv) (st : VState) (p : StockPass) : Except VError VState
       let why : Option String :=
         if !st.wf then some "input fails check"
         else if !guard penv st.func then some "fragment"
+        else if NilCheck.dictParams st.tables st.func != st.dict then
+          some "dictionary parameters changed"
         else none
       match why, p.required with
       | some w, false => .ok (st.skip p.name w)

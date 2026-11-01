@@ -122,7 +122,7 @@ theorem notIf_refines :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet niRules) niPassEnv notIf = .ok out ∧
       (out.func.block? 1).map (fun b => (b.controls, b.succs.map (·.b))) =
         some (#[2], #[3, 2]) ∧
-      RefinesUnder Env.Mono out.tables out.func niTabs notIf ∧
+      RefinesFrom (Pass.Rewrite.RwPre niTabs notIf) out.tables out.func niTabs notIf ∧
       ∃ fuel m, run Env.p1 out.tables out.func [.bool false] {} fuel = .returned [.i64 1] m := by
   obtain ⟨h1, h2, -, h3⟩ := notIf_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet niRules) niPassEnv notIf with
@@ -138,7 +138,8 @@ theorem notIf_refines :
     · revert hb
       cases out.func.block? 1 <;> simp_all
     · obtain ⟨m, hm⟩ := returnsInt_iff.1 h3
-      obtain ⟨fuel', ho⟩ := hR Env.p1 Env.p1_mono [.bool false] {} 2 (by rw [hm]; trivial)
+      obtain ⟨fuel', ho⟩ := hR Env.p1 [.bool false] {}
+        (Pass.Rewrite.RwPre.p1 (by decide +kernel) _ _) 2 (by rw [hm]; trivial)
       rw [hm] at ho
       refine ⟨fuel', ?_⟩
       generalize run Env.p1 out.tables out.func [.bool false] {} fuel' = o at ho ⊢

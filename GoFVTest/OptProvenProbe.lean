@@ -173,6 +173,27 @@ def desc (tabs : Tables) (f : Func) : Nat → ID → String
       s!"v{a}:{u.op.name}<{repr (tabs.ty u.type)}>[{u.auxInt}]\{{(u.aux.map (fun x => s!"{x}")).getD ""}}({", ".intercalate args})"
     | none => s!"v{a}?"
 
+/-- The first value nilcheckelim's checker (`NilCheck.nrel true`) rejects (diagnostics). -/
+def nilWhy (tabs : Tables) (f g : Func) : String := Id.run do
+  let c := DomCert.make f
+  if !(DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+      g.valueTab.size == f.valueTab.size) then return "nrel: cfg/ownAux/size"
+  if !f.blocks.all (NilCheck.blockOK f g) then return "nrel: blockOK"
+  for x in List.range f.valueTab.size do
+    if !NilCheck.valueOK true tabs c f g x then
+      match f.value? x with
+      | some fv =>
+        let p := fv.args[0]?.getD 0
+        let seed := NilCheck.safePtr true tabs f f.valueTab.size p
+        let mc := match f.value? p with
+          | some pv => match pv.args[0]? with
+            | some cc => s!" mallocCall={NilCheck.mallocCall tabs f cc} callee={(((f.value? cc).bind (·.aux)).bind tabs.callee?)}"
+            | none => ""
+          | none => ""
+        return s!"nrel: v{x} {fv.op.name} seed={seed}{mc}: {desc tabs f 3 p}"
+      | none => return s!"nrel: v{x} missing"
+  return "nrel: sched"
+
 open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdOK` fails for the `Load` `u` forwarded to `x`, at the first `Store` of its
 chain that stores `x` (diagnostics). -/
@@ -337,7 +358,9 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         let reason := if !tabsAgree prev out.tables input then
             "tables: the input tells the result's tables from its own (tabsAgree)"
           else if log'.size == log.size then fwdWhy env out.tables proven input out.func log
-          else if !NilCheck.nrel out.tables input f' then "nil: nilcheckelim's checker (nrel)"
+          else if !NilCheck.nrel true out.tables input f' then "nil: " ++ nilWhy out.tables input f'
+          else if NilCheck.dictParams out.tables input != NilCheck.dictParams prev input then
+            "nil: dictionary parameters differ between the tables"
           else if !RewriteCheck.nilOK env out.tables input f' then "nil: check"
           else fwdWhy env out.tables proven f' out.func log'
         IO.println s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"

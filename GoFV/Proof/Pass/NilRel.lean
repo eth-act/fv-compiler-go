@@ -5,7 +5,7 @@ import GoFV.Proof.DomCert
 /-!
 # nilcheckelim's output relation
 
-`NRel tabs f g`, the declarative form of the checker `GoFV.Opt.NilCheck.nrel` (`nrel_sound`):
+`NRel xt tabs f g`, the declarative form of the checker `GoFV.Opt.NilCheck.nrel` (`nrel_sound`):
 `g` has `f`'s control-flow graph, block kinds, controls and values (each block's values
 reordered, its `Phi`s in order); every value keeps its ID, block and type and is unchanged
 (`VRel.same`), a `NilCheck p` turned `Copy nc` (`VRel.nc`) or an `IsNonNil p` turned
@@ -18,19 +18,19 @@ namespace GoFV.Proof.Nil
 open GoFV.SSA GoFV.Opt GoFV.Opt.NilCheck
 
 /-- Why `ptr` is non-nil at value `x` of block `bx`. -/
-inductive Just (tabs : Tables) (f : Func) (bx x ptr nc : ID) (ty : TypeRef) : Bool → Prop where
+inductive Just (xt : Bool) (tabs : Tables) (f : Func) (bx x ptr nc : ID) (ty : TypeRef) : Bool → Prop where
   /-- `nc = ptr` and its op makes it point into an allocation. -/
-  | seed : nc = ptr → safePtr tabs f f.valueTab.size ptr = true → Just tabs f bx x ptr nc ty true
+  | seed : nc = ptr → safePtr xt tabs f f.valueTab.size ptr = true → Just xt tabs f bx x ptr nc ty true
   /-- `nc` is a nil check of `ptr` listed in a strict dominator of `bx`. -/
   | dom {s : Bool} {n : Value} {nb : Block} : nc ≠ ptr → f.value? nc = some n → n.op = .NilCheck →
       n.args[0]? = some ptr → n.type = ty → n.block ≠ bx →
       (DomCert.make f).anc n.block bx = true → n.block ∈ f.blocks → f.block? n.block = some nb →
-      nc ∈ nb.values → Just tabs f bx x ptr nc ty s
+      nc ∈ nb.values → Just xt tabs f bx x ptr nc ty s
   /-- `nc` is a nil check of `ptr` listed before `x` in `bx`'s schedule. -/
   | same {s : Bool} {n : Value} {fb : Block} {o : Array ID} : nc ≠ ptr → f.value? nc = some n →
       n.op = .NilCheck → n.args[0]? = some ptr → n.type = ty → n.block = bx →
       f.block? bx = some fb → nc ∈ fb.values → Sem.schedule f fb = some o →
-      listedBefore o nc x = true → Just tabs f bx x ptr nc ty s
+      listedBefore o nc x = true → Just xt tabs f bx x ptr nc ty s
 
 /-- The nil check `nc` (unchanged in `g`) checks `x`'s pointer with `x`'s memory and follows `x`
 directly among the roots of its block's schedule. -/
@@ -43,19 +43,19 @@ inductive After (f g : Func) (fv : Value) (x nc : ID) : Prop where
       (∀ k y, i < k → k < j → o[k]? = some y → root f y = false) → After f g fv x nc
 
 /-- How value `x` of `f` (`fv`) became `gv`. -/
-inductive VRel (tabs : Tables) (f g : Func) (x : ID) : Value → Value → Prop where
+inductive VRel (xt : Bool) (tabs : Tables) (f g : Func) (x : ID) : Value → Value → Prop where
   | same {fv gv : Value} : gv.op = fv.op → gv.args = fv.args → gv.aux = fv.aux →
-      gv.auxInt = fv.auxInt → VRel tabs f g x fv gv
+      gv.auxInt = fv.auxInt → VRel xt tabs f g x fv gv
   | nc {fv gv : Value} {p nc : ID} : fv.op = .NilCheck → gv.op = .Copy → fv.args[0]? = some p →
-      gv.args.size = 1 → gv.args[0]? = some nc → Just tabs f fv.block x p nc fv.type true → VRel tabs f g x fv gv
+      gv.args.size = 1 → gv.args[0]? = some nc → Just xt tabs f fv.block x p nc fv.type true → VRel xt tabs f g x fv gv
   | nn {fv gv : Value} {p nc : ID} : fv.op = .IsNonNil → gv.op = .ConstBool → gv.auxInt = 1 →
       gv.args.size = 0 → fv.args.size = 1 → fv.args[0]? = some p → nc ≠ p →
-      Just tabs f fv.block x p nc (f.getV nc).type false → VRel tabs f g x fv gv
+      Just xt tabs f fv.block x p nc (f.getV nc).type false → VRel xt tabs f g x fv gv
   | after {fv gv : Value} {nc : ID} : fv.op = .NilCheck → gv.op = .Copy → gv.args.size = 1 →
-      gv.args[0]? = some nc → After f g fv x nc → VRel tabs f g x fv gv
+      gv.args[0]? = some nc → After f g fv x nc → VRel xt tabs f g x fv gv
 
 /-- The declarative output relation. -/
-structure NRel (tabs : Tables) (f g : Func) : Prop where
+structure NRel (xt : Bool) (tabs : Tables) (f g : Func) : Prop where
   cfg : DomCert.cfgView g = DomCert.cfgView f
   ownAux : g.ownAux = f.ownAux
   vsize : g.valueTab.size = f.valueTab.size
@@ -64,7 +64,7 @@ structure NRel (tabs : Tables) (f g : Func) : Prop where
     gb.values.filter (fun z => (g.getV z).op == .Phi) =
       fb.values.filter (fun z => (f.getV z).op == .Phi)
   value : ∀ x fv, f.value? x = some fv → ∃ gv, g.value? x = some gv ∧ gv.id = fv.id ∧
-    gv.block = fv.block ∧ gv.type = fv.type ∧ VRel tabs f g x fv gv
+    gv.block = fv.block ∧ gv.type = fv.type ∧ VRel xt tabs f g x fv gv
   sched : ∀ bid ∈ f.blocks, ∀ fb gb, f.block? bid = some fb → g.block? bid = some gb →
     ∀ oS, Sem.schedule f fb = some oS → ∃ oT, Sem.schedule g gb = some oT ∧
       oT.toList.filter (root g) = oS.toList.filter (root g)
@@ -78,9 +78,9 @@ theorem lt_of_value? {f : Func} {x : ID} {v : Value} (h : f.value? x = some v) :
   · exact hx
   · rw [Array.getElem?_eq_none hx] at h; cases h
 
-theorem justified_sound {tabs : Tables} {f : Func} {bx x ptr nc : ID} {ty : TypeRef} {s : Bool}
-    (h : justified tabs (DomCert.make f) f bx x ptr nc ty s = true) :
-    Just tabs f bx x ptr nc ty s := by
+theorem justified_sound {xt : Bool} {tabs : Tables} {f : Func} {bx x ptr nc : ID} {ty : TypeRef} {s : Bool}
+    (h : justified xt tabs (DomCert.make f) f bx x ptr nc ty s = true) :
+    Just xt tabs f bx x ptr nc ty s := by
   unfold justified at h
   by_cases hnp : nc = ptr
   · subst hnp
@@ -159,7 +159,7 @@ theorem after_sound {f g : Func} {fv : Value} {x nc : ID} (h : after f g fv x nc
   · rw [hyk] at h1; exact h1
 
 /-- **The checker is sound.** -/
-theorem nrel_sound {tabs : Tables} {f g : Func} (h : nrel tabs f g = true) : NRel tabs f g := by
+theorem nrel_sound {xt : Bool} {tabs : Tables} {f g : Func} (h : nrel xt tabs f g = true) : NRel xt tabs f g := by
   unfold nrel at h
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', List.all_eq_true,
     List.mem_range] at h
