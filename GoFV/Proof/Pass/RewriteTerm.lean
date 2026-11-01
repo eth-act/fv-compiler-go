@@ -18,7 +18,7 @@ of `g`, closed by `closedOK g`) refines theirs (`final_den`); atoms keep their f
 namespace GoFV.Proof.Pass.Rewrite
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
-open GoFV.Rules (RuleSet RwEvent)
+open GoFV.Opt GoFV.Rules
 
 /-! ## Listed values -/
 
@@ -164,5 +164,101 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} (h : finalOK tabs 
         simpa using this
       · cases this
   · cases this
+
+/-! ## The final definitions -/
+
+/-- The replayed definitions refine those listed in `g` (up to the copies `finalOK` allows). -/
+theorem final_den {tabs : Tables} {f g : Func} {M : Defs} (hfin : finalOK tabs f g M = true)
+    (hcg : closedOK g = true) {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
+    (hT : Term.Typed M.get? tabs ρ) :
+    ∀ n x, LM g x → Sem.Refines (den M.get? tabs ρ n x) (den (listedDefs g) tabs ρ' n x)
+  | 0, _, _ => .poison _
+  | n + 1, x, hx => by
+    have hmk := listedMarks_sound g x hx
+    obtain ⟨b, hb, gb, hgb, hxv, -, -, -⟩ := id hmk
+    obtain ⟨fb, -, -, hvals⟩ := finalOK_facts hfin b hb gb hgb
+    obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv
+    have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
+    have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
+    by_cases ht : termOp m.op = true
+    · rw [den_succ_term hm ht, den_succ_term hL (hop ▸ ht), hop, hty, hai, hax]
+      apply retype_mono; apply evalPure_mono
+      refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
+      simp only [Array.getElem_toList]
+      exact (copyReach_den hT _ _ _ (hargs j (by simpa using h1) (by simpa using h2)) n).trans
+        (final_den hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem _)))
+    · have h1 : ¬ IsTerm M.get? x := fun ⟨w, hw, hw'⟩ => by
+        rw [hm] at hw; cases hw; exact ht hw'
+      have h2 : ¬ IsTerm (listedDefs g) x := fun ⟨w, hw, hw'⟩ => by
+        rw [hL] at hw; cases hw; rw [hop] at hw'; exact ht hw'
+      rw [den_succ_atom h1, den_succ_atom h2]
+      exact hρ x
+
+/-! ## The theorem -/
+
+/-- **Validator soundness (term level)**: an output accepted by `RewriteCheck.validate` with the
+table of a sound rule set has the arguments of its atoms and its controls refining, as terms over
+the atoms, those of the input. -/
+theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array RwEvent}
+    (hv : RewriteCheck.validate tabs (Interp.Table.ofRuleSet s) f g log = true)
+    (hs : s.AllSound) (hr : Term.RetypeShapes) :
+    Term.AtomArgsRef tabs f g ∧ Term.ControlsRef tabs f g := by
+  unfold validate at hv
+  simp only [Bool.and_eq_true] at hv
+  obtain ⟨⟨⟨hA, hcf⟩, hcg⟩, hv⟩ := hv
+  split at hv
+  · rename_i M hrep
+    have hI0 : ReplayInv tabs f.value? (LM f) f.valueTab (LM f) :=
+      ReplayInv.init (marked_closed hcf)
+    obtain ⟨C, hI⟩ := replay_inv hs hr log.toList _ M _ hrep hI0
+    constructor
+    · intro b hb gb hgb a ha u hu hat
+      obtain ⟨fb, hfb, -, hatoms⟩ := atomsOK_facts hA b hb gb hgb
+      obtain ⟨haf, u', hu', hop, hty, hai, hax, hsz⟩ := hatoms a ha u hu hat
+      refine ⟨u', hu', hop, hty, hai, hax, hsz, fun i hi => ?_⟩
+      have hbf : b ∈ f.blocks := by
+        unfold atomsOK at hA; simp only [Bool.and_eq_true, beq_iff_eq] at hA
+        rw [hA.1.1.2]; exact hb
+      have hargsf := (closedOK_facts hcf b hbf fb hfb).2 a haf u' hu'
+      obtain ⟨a'', ha'', -, hsz'', hrest⟩ := hI.atoms a u' hu' (hop ▸ hat) hargsf
+      obtain ⟨fb', -, -, hvals⟩ := finalOK_facts hv b hb gb hgb
+      obtain ⟨m, w, hm, hw, -, -, -, -, hszw, hargs⟩ := hvals a ha
+      have hma : m = a'' := Option.some.inj (hm.symm.trans ha'')
+      subst hma
+      have huw : u = w := Option.some.inj (hu.symm.trans hw)
+      subst huw
+      have hi' : i < u'.args.size := hsz ▸ hi
+      have hcopy := hargs i (by omega) hi
+      have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
+      intro n
+      obtain ⟨k, hk⟩ := (hrest i hi').2 n
+      refine ⟨k, fun ρ ρ' hρ hT _ => ?_⟩
+      have hTM := hI.typed ρ hT
+      rw [getElem!_pos u.args i hi]
+      have h1 := hk ρ hT
+      rw [getElem!_pos m.args i (by omega)] at h1
+      exact h1.trans ((copyReach_den hTM _ _ _ hcopy k).trans
+        (final_den hv hcg hρ hTM k _ hmark))
+    · intro b hb fb gb hfb hgb
+      obtain ⟨fb', hfb', hcs, -⟩ := atomsOK_facts hA b hb gb hgb
+      rw [hfb] at hfb'; obtain rfl := Option.some.inj hfb'
+      refine ⟨hcs, fun k hk => ?_⟩
+      have hk' : k < fb.controls.size := hcs ▸ hk
+      have hbf : b ∈ f.blocks := by
+        unfold atomsOK at hA; simp only [Bool.and_eq_true, beq_iff_eq] at hA
+        rw [hA.1.1.2]; exact hb
+      have hcf' := (closedOK_facts hcf b hbf fb hfb).1 _ (Array.getElem_mem hk')
+      have hcg' := (closedOK_facts hcg b hb gb hgb).1 _ (Array.getElem_mem hk)
+      obtain ⟨fb'', hfb'', hctl, -⟩ := finalOK_facts hv b hb gb hgb
+      rw [hfb] at hfb''; obtain rfl := Option.some.inj hfb''
+      have hcopy := hctl k hk' hk
+      intro n
+      obtain ⟨m, hm⟩ := hI.denRef _ hcf' n
+      refine ⟨m, fun ρ ρ' hρ hT _ => ?_⟩
+      have hTM := hI.typed ρ hT
+      rw [getElem!_pos fb.controls k hk', getElem!_pos gb.controls k hk]
+      exact (hm ρ hT).trans ((copyReach_den hTM _ _ _ hcopy m).trans
+        (final_den hv hcg hρ hTM m _ hcg'))
+  · cases hv
 
 end GoFV.Proof.Pass.Rewrite
