@@ -205,10 +205,16 @@ elab "rule_cond_bool" : tactic => withMainContext do
         catch _ => saved.restore; pure false
       if ok then break
 
+/-- The ops whose arguments `argShapeOk` constrains. -/
+def argShapeOps : List Name :=
+  [``Op.OffPtr, ``Op.AddPtr, ``Op.PtrIndex, ``Op.EqPtr, ``Op.NeqPtr, ``Op.IsNonNil, ``Op.Convert]
+
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hbt` (`Oracle.BoolTyped`), `hwf` (checker facts), `hc` (pattern
 checks), `hcond` (condition, its `bool` oracle atoms replaced by booleans,
-`rule_oracle_bool`, `rule_cond_bool`), `hty` (top type), `hlt` (leaf types). The condition is
+`rule_oracle_bool`, `rule_cond_bool`), `hty` (top type), `hlt` (leaf types), `hat` (argument
+shapes, `Pat.argsOK`: reduced to type equations if the pattern has an op `argShapeOk`
+constrains, else cleared). The condition is
 evaluated after the intros: evaluated in the same `dsimp` as the rest, the kernel's check of
 the resulting cast hits "deep recursion" on conditions with several helper calls
 (`divmod.rules:159`, `:180`). -/
@@ -226,16 +232,28 @@ elab "rule_unfold" : tactic => do
   let hcond := mkIdent `hcond
   let hty := mkIdent `hty
   let hlt := mkIdent `hlt
+  let hat := mkIdent `hat
+  let some ci := (← getEnv).find? rn | throwError "rule_unfold: unknown rule"
+  let usesArgShape := ci.value?.any fun v =>
+    (v.find? fun t => argShapeOps.any t.isConstOf).isSome
   evalTactic (← `(tactic| (
     refine ⟨rfl, ?_⟩
     intro $e:ident $or:ident $hbt:ident
     dsimp only [$rid:ident, rule_unfold_ds]
     simp only [rule_helper, rule_unfold_s]
-    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident
+    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident $hat:ident
     (try dsimp only [GoFV.Proof.Rules.condHolds, rule_unfold_ds] at $hcond:ident)
     (try simp only [rule_helper, rule_unfold_s] at $hcond:ident)
     rule_oracle_bool
     rule_cond_bool)))
+  if usesArgShape then
+    evalTactic (← `(tactic| try simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
+      GoFV.Proof.Rules.argShapeOk, GoFV.Proof.Rules.isPtrTy_iff, GoFV.Proof.Rules.isInt64Ty_iff,
+      GoFV.Proof.Rules.convArgOk, Bool.and_eq_true, Bool.or_eq_true, bne_iff_ne, ne_eq,
+      beq_iff_eq, Nat.reduceEqDiff, reduceIte, not_true_eq_false, false_or, true_or, or_true,
+      and_true, true_and, Nat.succ_ne_zero, not_false_eq_true] at $hat:ident))
+  else
+    evalTactic (← `(tactic| clear $hat:ident))
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
 (`PEnv.leaf e p`), `tyOtherInt t w`, the condition of an `if`, or `Val.asInt w l` for a leaf

@@ -44,6 +44,7 @@ def Rule.Inst (r : Rule) (e : PEnv) (or : Oracle) : Prop :=
   condHolds (evalE (r.vars.map (·.ty)) (sigma e r.pat) or e (Pat.den e [] r.pat)) r.cond ∧
   (Pat.raw e r.pat).hasTy (e.ty []) = true ∧
   Pat.typed e [] r.pat ∧
+  Pat.argsOK e.ty [] r.pat = true ∧
   Pat.raw e r.pat ≠ .poison
 
 /-- The result value of `r` at an instance. -/
@@ -55,7 +56,7 @@ noncomputable def Rule.res (r : Rule) (e : PEnv) (or : Oracle) : Val :=
 value. -/
 theorem Rule.Sound.refines {r : Rule} (h : Rule.Sound r) {e : PEnv} {or : Oracle}
     (hi : Rule.Inst r e or) : Refines (Pat.raw e r.pat) (Rule.res r e or) :=
-  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1 hi.2.2.2.2.2.1
+  h.2 e or hi.1 hi.2.1 hi.2.2.1 hi.2.2.2.1 hi.2.2.2.2.1 hi.2.2.2.2.2.1 hi.2.2.2.2.2.2.1
 
 /-- An instance on which the result does not refine the matched value refutes `Rule.Sound`. -/
 theorem Rule.not_sound {r : Rule} {e : PEnv} {or : Oracle} (hi : Rule.Inst r e or)
@@ -116,7 +117,8 @@ noncomputable def Oracle.litFalse : Oracle where
   fun y _ => ⟨f y, rfl⟩
 
 -- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
-attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFalse litAtom Pat.den
+attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFalse litAtom
+  Pat.argsOK Pat.argsOKs argShapeOk isPtrTy isInt64Ty convArgOk Pat.den
   Pat.dens Pat.raw sigma
   Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Field.bindDV condHolds resDen
   nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map reduceEvalPure

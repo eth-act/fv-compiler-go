@@ -156,7 +156,8 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hcons : consOK (stEv tabs M r defs I) (stσ tabs M r I) (env tabs M I) I [] r.pat = true
   hwf : wfOK (env tabs M I) [] r.pat = true
   hcond : ∀ c, r.cond = some c → stEv tabs M r defs I c = .bool true
-  hnat : natShape o (tabs.ty xv.type) = true
+  hnat : (natShape o (tabs.ty xv.type) || ptrTop o (tabs.ty xv.type)) = true
+  hargs : GoFV.Proof.Rules.Pat.argsOK (env tabs M I).ty [] r.pat = true
   hleaves : leavesOK tabs M I [] r.pat = true
   hres : resultOK tabs M (stEv tabs M r defs I) (stOr tabs r defs) (stσ tabs M r I) I r xv defs = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
@@ -175,7 +176,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
   · cases h
   rename_i I sw' hm
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hleaves⟩, hres⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩ := h
   obtain ⟨hmo, -, hn, hh⟩ := matchPat_ok hm
   have hmem : ([], v) ∈ I := by
     cases I with
@@ -200,7 +201,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     split at hcond
     · rename_i heq; exact heq
     · cases hcond
-  have hnat' : natShape o (tabs.ty xv.type) = true := by
+  have hnat' : (natShape o (tabs.ty xv.type) || ptrTop o (tabs.ty xv.type)) = true := by
     simp only [env, hat, hxv, Option.map_some, Option.getD_some] at hnat; exact hnat
   have htail' : ∀ y ∈ I.tail, y.2 ≠ v := by
     simp only [List.all_eq_true, bne_iff_ne, ne_eq] at htail; exact htail
@@ -208,7 +209,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     xv := xv, I := I, o := o, pty := pty, pai := pai, pax := pax, par := par,
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hxv, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail', hcons := hcons,
-    hwf := hwf, hcond := hcond', hnat := hnat', hleaves := hleaves, hres := hres,
+    hwf := hwf, hcond := hcond', hnat := hnat', hargs := hargs, hleaves := hleaves, hres := hres,
     hreach := fun C hC hv => matchPat_closed hC hm hv }⟩
 
 /-! ## Facts about the matched instance -/

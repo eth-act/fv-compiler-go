@@ -324,9 +324,6 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
     rfl rfl hev hσ (fun x w p' h hn => sigma_leaf h hn)
     (fun p p' h => by simp only [semEnv, h]) F.hS [] r.pat (fun _ h => h) F.hcons
   have hcond := cond_of hev F.hcond
-  have hraw : (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
-      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
-    rw [F.hpat]; simp only [Pat.raw]; exact evalPure_natShape _ _ _ (by rw [hTop]; exact F.hnat)
   have htyped : GoFV.Proof.Rules.Pat.typed (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
       [] r.pat :=
     typed_of (fun p => rfl) (fun p w x hm hp hx hsz => by
@@ -334,7 +331,20 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.Sound r) (hr : RetypeShapes)
         rw [F.at_eq hm]
         exact den_hasTy hr hT B w (shape_of (hdefw p w x hm hp hx)) hsz)
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
-  have hsound := hs.2 _ _ hbt hwf hcons hcond hraw htyped
+  have hargs : GoFV.Proof.Rules.Pat.argsOK
+      (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
+  have hraw : (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).hasTy
+      ((semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty []) = true := by
+    have hn := F.hnat
+    rw [← hTop] at hn
+    simp only [Bool.or_eq_true] at hn
+    rcases hn with hn | hn
+    · rw [F.hpat]; simp only [Pat.raw]; exact evalPure_natShape _ _ _ hn
+    · have ht := htyped
+      have ha := hargs
+      rw [F.hpat] at ht ha ⊢
+      exact raw_ptrTop hn ht ha
+  have hsound := hs.2 _ _ hbt hwf hcons hcond hraw htyped hargs
   -- lower bound
   have hlow : Sem.Refines (den M.get? tabs ρ (n + 1) v)
       (Pat.raw (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat) := by
