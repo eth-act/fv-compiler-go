@@ -188,6 +188,7 @@ import GoFV.Proof.Pass.PhiOptPanic
 import GoFV.Proof.Pass.PhiOptRel
 import GoFV.Proof.Pass.PhiOptSched
 import GoFV.Proof.Pass.PhiOptSetup
+import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Pass.RewriteCases
@@ -431,6 +432,7 @@ import GoFV.Proof.Witness.MemCombine
 import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
+import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast

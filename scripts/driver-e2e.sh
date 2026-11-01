@@ -6,17 +6,23 @@
 # qemu-aarch64-static and compare their output and exit status, and summarise the driver's
 # per-function statistics (GOFV_SSA_DRIVER_STATS).
 #
-# usage: scripts/driver-e2e.sh [--mode full|mixed] [--sets std,test,examples] [--out DIR] [-p N]
-#                              [--report-only]
+# usage: scripts/driver-e2e.sh [--mode full|mixed] [--verified] [--sets std,test,examples]
+#                              [--out DIR] [-p N] [--report-only]
 #
 #   --mode   GOFV_SSA_DRIVER_MODE (default full)
-#   --out    results directory (default tmp/driver-e2e-<mode>)
+#   --verified  the driver runs the verified pipeline (`gofv-ssa-opt --verified`, full mode only,
+#            issue #189): archives and binaries are expected to differ from stock and are only
+#            counted; the programs must behave as stock. The report adds the per-function
+#            verdicts (`--vstats`).
+#   --out    results directory (default tmp/driver-e2e-<mode>, tmp/driver-e2e-verified)
 #   -p       go build -p (default 4)
 #   --report-only  keep the builds in --out, only run the programs and write the report
 #
 # Exit status 1 (report line "- result: FAIL") when a std archive or a program binary differs
 # from stock, a driver build failed, a program's output or exit status differs, a function fell
-# back to the stock passes, or nothing was compared; 0 otherwise ("- result: PASS").
+# back to the stock passes, or nothing was compared; 0 otherwise ("- result: PASS"). With
+# --verified, only a failed driver build, a differing program output or exit status, or nothing
+# compared fail.
 #
 # Toolchain: $GOFV_DRIVER_GO (default tmp/go-driver, built by
 # `GOFV_GO_DRIVER=1 GOFV_GO_BUILD=$PWD/tmp/go-driver scripts/build-go.sh`, patches 0001 and 0002). Lean
@@ -26,18 +32,24 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 gob=${GOFV_DRIVER_GO:-$root/tmp/go-driver}
 opt=$root/.lake/build/bin/gofv-ssa-opt
 gosrc=$root/third_party/go
-mode=full sets=std,test,examples par=4 out= reportOnly=0
+mode=full sets=std,test,examples par=4 out= reportOnly=0 verified=0
 while [ $# -gt 0 ]; do
   case $1 in
     --mode) mode=$2; shift 2 ;;
+    --verified) verified=1; shift ;;
     --sets) sets=$2; shift 2 ;;
     --out) out=$2; shift 2 ;;
     -p) par=$2; shift 2 ;;
     --report-only) reportOnly=1; shift ;;
-    *) echo "usage: $0 [--mode full|mixed] [--sets std,test,examples] [--out DIR] [-p N] [--report-only]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--mode full|mixed] [--verified] [--sets std,test,examples] [--out DIR] [-p N] [--report-only]" >&2; exit 2 ;;
   esac
 done
-out=${out:-$root/tmp/driver-e2e-$mode}
+if [ "$verified" = 1 ] && [ "$mode" != full ]; then
+  echo "driver-e2e: --verified needs --mode full" >&2; exit 2
+fi
+label=$mode
+[ "$verified" = 0 ] || label=verified
+out=${out:-$root/tmp/driver-e2e-$label}
 # absolute: the builds run in other directories and the compiler opens $out/lean/stats.txt
 case $out in /*) ;; *) out=$PWD/$out ;; esac
 [ -x "$gob/bin/go" ] || { echo "driver-e2e: no toolchain in $gob" >&2; exit 1; }
@@ -50,6 +62,14 @@ export GOOS=linux GOARCH=arm64 GOFLAGS=-trimpath GOTOOLCHAIN=local GO111MODULE=o
 unset GOFV_SSA_EXPORT GOFV_SSA_DRIVER GOFV_SSA_DRIVER_PKG GOFV_SSA_DRIVER_FUNC
 [ "$reportOnly" = 1 ] || { rm -rf "$out"; mkdir -p "$out"; }
 gocmd=("$root/scripts/memcap.sh" "$gob/bin/go")
+# The driver runs $drv with the compiler's arguments (`--list`, `--from <pass> <file>`).
+drv=$opt
+if [ "$verified" = 1 ]; then
+  drv=$out/gofv-ssa-opt-verified
+  mkdir -p "$out/lean"
+  printf '#!/bin/sh\nexec %q --verified --vstats %q "$@"\n' "$opt" "$out/lean/vstats.txt" >"$drv"
+  chmod +x "$drv"
+fi
 
 # Same selection as scripts/export-corpus.sh.
 test_progs() {
@@ -67,7 +87,7 @@ build() {
   mkdir -p "$dir/bin"
   local env=(GOCACHE="$cache")
   if [ "$v" = lean ]; then
-    env+=(GOFV_SSA_DRIVER="$opt" GOFV_SSA_DRIVER_MODE="$mode" GOFV_SSA_DRIVER_STATS="$dir/stats.txt")
+    env+=(GOFV_SSA_DRIVER="$drv" GOFV_SSA_DRIVER_MODE="$mode" GOFV_SSA_DRIVER_STATS="$dir/stats.txt")
   fi
   if [[ ,$sets, == *,std,* ]]; then
     env "${env[@]}" "${gocmd[@]}" build -p "$par" std >>"$dir/log" 2>&1
@@ -100,19 +120,19 @@ build() {
 if [ "$reportOnly" = 0 ]; then
   echo "driver-e2e: stock build" >&2
   build stock
-  echo "driver-e2e: driver build (mode $mode)" >&2
+  echo "driver-e2e: driver build (mode $label)" >&2
   build lean
 fi
 
 report=$out/report.md
 {
-  echo "# driver e2e ($mode mode, sets $sets)"
+  echo "# driver e2e ($label mode, sets $sets)"
   echo
   if [ -f "$out/stock/std.sums" ]; then
     total=$(wc -l <"$out/stock/std.sums")
     same=$(join <(sort "$out/stock/std.sums") <(sort "$out/lean/std.sums") | awk '$2 == $3' | wc -l)
     echo "- std package archives byte-identical: $same / $total"
-    join <(sort "$out/stock/std.sums") <(sort "$out/lean/std.sums") | awk '$2 != $3 {print "  - differs: " $1}'
+    [ "$verified" = 1 ] || join <(sort "$out/stock/std.sums") <(sort "$out/lean/std.sums") | awk '$2 != $3 {print "  - differs: " $1}'
   fi
   if [ -f "$out/stock/progs" ]; then
     nb=0 nsame=0 nrun=0 npass=0
@@ -120,7 +140,7 @@ report=$out/report.md
     while read -r b src; do
       nb=$((nb + 1))
       [ -f "$out/lean/bin/$b" ] || { echo "  - $src: driver build failed"; continue; }
-      if cmp -s "$out/stock/bin/$b" "$out/lean/bin/$b"; then nsame=$((nsame + 1)); else echo "  - $src: binary differs"; fi
+      if cmp -s "$out/stock/bin/$b" "$out/lean/bin/$b"; then nsame=$((nsame + 1)); elif [ "$verified" = 0 ]; then echo "  - $src: binary differs"; fi
       # run both under qemu from the program's directory (some tests read files next to them)
       d=$gosrc/test
       case $src in examples/*) d=$root/$src ;; esac
@@ -161,10 +181,32 @@ report=$out/report.md
         for (k in r) printf "  - %s: %d\n", k, r[k]
       }' "$out/lean/stats.txt"
   fi
+  if [ -f "$out/lean/vstats.txt" ]; then
+    echo
+    echo "## verified pipeline (gofv-ssa-opt --vstats; the last run of each function)"
+    echo
+    awk -F '\t' '
+      { last[$1 "\t" $2 "\t" $3] = $4 }
+      END {
+        for (k in last) {
+          n++; v = last[k]
+          if (v == "verified") ver++
+          else if (v ~ /^error/) err++
+          else { sub(/^unverified /, "", v); r[v]++ }
+        }
+        printf "- functions: %d; fully verified: %d; pass errors: %d\n", n, ver, err
+        print "- unverified, by first unverified run:"
+        for (k in r) printf "  - %s: %d\n", k, r[k]
+      }' "$out/lean/vstats.txt"
+  fi
 } >"$report"
 fail=0
-grep -qE '^  - (differs: |.*: (driver build failed|binary differs|output differs)$)' "$report" && fail=1
-grep -qE '^- all passes by the stock compiler \(fallback\): [1-9]' "$report" && fail=1
+if [ "$verified" = 1 ]; then
+  grep -qE '^  - .*: (driver build failed|output differs)$' "$report" && fail=1
+else
+  grep -qE '^  - (differs: |.*: (driver build failed|binary differs|output differs)$)' "$report" && fail=1
+  grep -qE '^- all passes by the stock compiler \(fallback\): [1-9]' "$report" && fail=1
+fi
 grep -qE '^- (std package archives byte-identical: [0-9]+ / [1-9]|programs: [1-9])' "$report" || fail=1
 if [ "$fail" = 0 ]; then echo "- result: PASS" >>"$report"; else echo "- result: FAIL" >>"$report"; fi
 cat "$report"

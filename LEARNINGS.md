@@ -505,3 +505,8 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   `(nomatch h)` in anonymous-constructor lists.
 - **`variable (S : Setup …)` in a namespace needs `include S`** for theorems that use `S` only
   in their proofs (Lean 4 includes section variables by the statement).
+- **Whole-pipeline witnesses need `native_decide`** (#189): `decide +kernel` on
+  `verifiedPipeline` gets stuck already at pass 2, on `decide (out.func.cache = st.func.cache)`
+  after `copyelimPass` (the same comparison on one literal `Func` reduces). Single passes,
+  `check` and `run` on the same function reduce fine; the pipeline fact is one
+  `native_decide`, listed in `scripts/axioms-allowlist.txt`, built in seconds.

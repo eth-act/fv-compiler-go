@@ -3,3 +3,6 @@
 # per line, each for a deliberate use (docs/PLAN.md §0). propext, Classical.choice and
 # Quot.sound are always allowed; every other axiom is a violation. Add an entry in the PR that
 # introduces the use, with a comment naming the theorem.
+# verifiedPipeline_witness (GoFV/Proof/Witness/Pipeline.lean, #189): the whole verified pipeline on
+# plF; `decide +kernel` gets stuck comparing the pass results' CFG caches (`Func` equality).
+GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1

@@ -384,6 +384,10 @@ structure Opts where
   jobs : Nat := 1
   maxReport : Nat := 10
   table : Option String := none
+  /-- `--verified`: the verified pipeline (`GoFV.Opt.verifiedPipeline`). -/
+  verified : Bool := false
+  /-- `--vstats FILE` (driver mode with `--verified`): append the function's verdicts. -/
+  vstats : Option String := none
   paths : Array String := #[]
 
 partial def parseArgs : List String → Opts → Except String Opts
@@ -403,13 +407,17 @@ partial def parseArgs : List String → Opts → Except String Opts
     let some n := n.toNat? | throw s!"--max-report {n}: not a number"
     parseArgs rest { o with maxReport := n }
   | "--table" :: p :: rest, o => parseArgs rest { o with table := some p }
+  | "--verified" :: rest, o => parseArgs rest { o with verified := true }
+  | "--vstats" :: p :: rest, o => parseArgs rest { o with vstats := some p }
   | a :: rest, o =>
     if a.startsWith "--" then throw s!"unknown option {a}"
     else parseArgs rest { o with paths := o.paths.push a }
 
 def usage : String :=
-  "usage: gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>\n       gofv-ssa-opt --list\n       \
-   gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
+  "usage: gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>\n       \
+   gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] <in.ssa>\n       gofv-ssa-opt --list\n       \
+   gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
+   gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
 
 def runCheck (o : Opts) : IO UInt32 := do
   let t0 ← IO.monoMsNow
@@ -438,6 +446,244 @@ def runCheck (o : Opts) : IO UInt32 := do
   let bad := st.parseErrors > 0 || st.files == 0 || !st.diverged.isEmpty || !st.errors.isEmpty
   return if bad then 1 else 0
 
+/-! ## `--verified` -/
+
+open GoFV.Opt.Verified
+
+/-- The first run whose verdict is not `Verdict.ok`. -/
+def firstUnverified? (st : VState) : Option (String × Verdict) := st.log.find? (!·.2.ok)
+
+/-- The `--vstats` fields of a verified-pipeline result (tab-separated): `verified` or
+`unverified "<pass>: <verdict>"` (the first unverified run), then the number of runs per
+verdict kind. -/
+def vstatsFields (st : VState) : String :=
+  let n (p : Verdict → Bool) := (st.log.filter (p ·.2)).size
+  let head := match firstUnverified? st with
+    | none => "verified"
+    | some (p, v) => s!"unverified {GoStr.quote s!"{p}: {v}"}"
+  s!"{head}\tproven={n (· == .proven)}\tidentity={n (· == .identity)}\t\
+    skipped={n fun | .skipped _ => true | _ => false}\tunverified={n (!·.ok)}"
+
+/-- Driver mode with the verified pipeline (`GoFV.Opt.verifiedPipeline`): optimise the first
+section of `e` from stock pass index `start`. Returns the output and the `--vstats` fields. -/
+def optimiseVerified (e : ExportFile) (start : Nat) : String × String := Id.run do
+  let some s0 := e.sections[0]? | return ("status error \"input\" \"no section\"\n", "error \"input\"")
+  let tables := padTables (({} : Tables).addAll s0.defs) e.frontendTables
+  let env := baseEnv e tables (wholeFile := true)
+  match verifiedPipeline env s0.func start s0.zvar with
+  | .error err =>
+    (s!"status error {GoStr.quote err.pass} {GoStr.quote err.msg}\n", s!"error {GoStr.quote err.pass}")
+  | .ok st =>
+    let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
+                           func := st.func, typs := none, zvar := #[], warns := #[] }
+    let effects := st.effects.foldl (init := "") fun s e => match e with
+      | .useIface a => s ++ s!"effect useiface a{a}\n"
+    ("status ok\n" ++ effects ++
+      printExport { e with sections := #[sec], warns := #[], typeOrder := #[], typeCmp := #[], frontend := #[] },
+     vstatsFields st)
+
+/-- One function through the verified pipeline, against the stock file. -/
+structure VFile where
+  st : VState
+  /-- The first pass whose state differs from the stock section: pass, verdict, detail. -/
+  diff : Option (String × String × String)
+  /-- The final state equals the last stock section. -/
+  same : Bool
+
+/-- Run the verified pipeline from section 0 of `e` (environment `env`, input tables `t0`),
+comparing the state after each pass with the stock section of that pass until the first
+difference, then the final state with the last stock section. -/
+def walkVerified (e : ExportFile) (env : PassEnv) (t0 : Tables) (s0 : Section) :
+    Except VError VFile := do
+  let mut st := VState.init env s0.func s0.zvar
+  let mut k := 1
+  let mut want := t0
+  let mut diff : Option (String × String × String) := none
+  for p in stockPasses do
+    let st' ← runPass env st p
+    if st'.log.size > st.log.size then
+      if diff.isNone then
+        let v := match st'.log.back? with | some (_, v) => toString v | none => "-"
+        match e.sections[k]? with
+        | none => diff := some (p.name, v, "stock has no section for this pass")
+        | some s =>
+          if s.pass.toStringLossy != p.name then
+            diff := some (p.name, v, s!"stock section {k} is \"{s.pass.toStringLossy}\"")
+          else
+            want := want.addAll s.defs
+            if let some d := compare t0 { func := st'.func, tables := st'.tables } want s (loose := true) then
+              diff := some (p.name, v, d)
+      k := k + 1
+    st := st'
+  if diff.isNone && k == e.sections.size then return { st, diff, same := true }
+  if diff.isNone then
+    diff := some (st.last, "-", s!"{e.sections.size - k} stock sections after the last pass")
+  let wantAll := (e.sections.extract 1 e.sections.size).foldl (fun t s => t.addAll s.defs) t0
+  let same := match e.sections.back? with
+    | some s => k == e.sections.size &&
+      (compare t0 { func := st.func, tables := st.tables } wantAll s (loose := true)).isNone
+    | none => false
+  return { st, diff, same }
+
+/-- The verified pipeline on one export file, with the driver's type rounds. -/
+def verifiedExport (wholeFile : Bool) (e : ExportFile) : Except String (Except VError VFile) := do
+  let some s0 := e.sections[0]? | throw "no section"
+  let mut t0 := ({} : Tables).addAll s0.defs
+  let mut res : Except VError VFile := .error ⟨"start", "no round"⟩
+  for round in [0:typeRounds] do
+    res := walkVerified e (baseEnv e t0 wholeFile) t0 s0
+    let .ok r := res | break
+    let added := stockTypesFor e.frontendTables t0 r.st.tables
+    if added.isEmpty || round + 1 == typeRounds then break
+    t0 := t0.addAll added
+  return res
+
+/-- Per stock pass: runs by verdict kind, and functions whose first difference from stock is at
+this pass. -/
+structure VCount where
+  runs : Nat := 0
+  proven : Nat := 0
+  identity : Nat := 0
+  skipped : Nat := 0
+  unverified : Nat := 0
+  diverged : Nat := 0
+  deriving Inhabited
+
+def VCount.add (a b : VCount) : VCount :=
+  { runs := a.runs + b.runs, proven := a.proven + b.proven, identity := a.identity + b.identity
+    skipped := a.skipped + b.skipped, unverified := a.unverified + b.unverified
+    diverged := a.diverged + b.diverged }
+
+structure VStats where
+  files : Nat := 0
+  parseErrors : Nat := 0
+  /-- Pass errors, by pass. -/
+  errors : Std.HashMap String Nat := {}
+  verified : Nat := 0
+  same : Nat := 0
+  both : Nat := 0
+  /-- Unverified functions by their first unverified run (`pass: verdict`). -/
+  firstUnverified : Std.HashMap String Nat := {}
+  /-- Skipped and unverified runs (`pass: verdict`). -/
+  reasons : Std.HashMap String Nat := {}
+  /-- Functions whose state first differs from stock after a pass (`pass: verdict`). -/
+  diverged : Std.HashMap String Nat := {}
+  counts : Array VCount := Array.replicate stockPasses.size {}
+  reports : Array (String × String × String) := #[]
+
+def VStats.merge (a b : VStats) : VStats :=
+  let mm (x y : Std.HashMap String Nat) := y.fold (fun m k n => bumpMap m k n) x
+  { files := a.files + b.files, parseErrors := a.parseErrors + b.parseErrors
+    errors := mm a.errors b.errors, verified := a.verified + b.verified, same := a.same + b.same
+    both := a.both + b.both, firstUnverified := mm a.firstUnverified b.firstUnverified
+    reasons := mm a.reasons b.reasons, diverged := mm a.diverged b.diverged
+    counts := (a.counts.zip b.counts).map fun (x, y) => x.add y
+    reports := a.reports ++ b.reports }
+
+def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (st : VStats) :
+    IO VStats := do
+  let data ← IO.FS.readBinFile path
+  let st := { st with files := st.files + 1 }
+  let report (st : VStats) (kind detail : String) : VStats :=
+    if (st.reports.filter (·.2.1 == kind)).size < maxReport then
+      { st with reports := st.reports.push (path.toString, kind, detail) }
+    else st
+  match parseExport data >>= verifiedExport wholeFile with
+  | .error m =>
+    IO.eprintln s!"PARSE ERROR {path}: {m}"
+    return { st with parseErrors := st.parseErrors + 1 }
+  | .ok (.error err) =>
+    return report { st with errors := bumpMap st.errors err.pass } s!"error {err.pass}" err.msg
+  | .ok (.ok r) =>
+    let mut st := st
+    for (name, v) in r.st.log do
+      let some i := passIndex? name | continue
+      st := { st with counts := st.counts.modify i fun c => match v with
+        | .proven => { c with runs := c.runs + 1, proven := c.proven + 1 }
+        | .identity => { c with runs := c.runs + 1, identity := c.identity + 1 }
+        | .skipped _ => { c with runs := c.runs + 1, skipped := c.skipped + 1 }
+        | .unverified _ => { c with runs := c.runs + 1, unverified := c.unverified + 1 } }
+      match v with
+      | .skipped _ | .unverified _ => st := { st with reasons := bumpMap st.reasons s!"{name}: {v}" }
+      | _ => pure ()
+    let verified := r.st.verified
+    st := { st with verified := st.verified + (if verified then 1 else 0)
+                    same := st.same + (if r.same then 1 else 0)
+                    both := st.both + (if verified && r.same then 1 else 0) }
+    if let some (p, v) := firstUnverified? r.st then
+      st := { st with firstUnverified := bumpMap st.firstUnverified s!"{p}: {v}" }
+    if let some (p, v, d) := r.diff then
+      st := { st with diverged := bumpMap st.diverged s!"{p}: {v}" }
+      if let some i := passIndex? p then
+        st := { st with counts := st.counts.modify i fun c => { c with diverged := c.diverged + 1 } }
+      st := report st s!"differs {p}" d
+    return st
+
+/-- Keys `<pass>: …` in stock pass order. -/
+def sortedPassMap (m : Std.HashMap String Nat) : Array (String × Nat) :=
+  let key (s : String) := (passIndex? ((s.splitOn ": ").headD s)).getD 999
+  m.toArray.qsort fun a b => key a.1 < key b.1 || (key a.1 == key b.1 && a.1 < b.1)
+
+def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
+  let n (m : Std.HashMap String Nat) := m.fold (fun a _ x => a + x) 0
+  let fns := st.files - st.parseErrors - n st.errors
+  let mut out := s!"files: {st.files}, parse errors: {st.parseErrors}, wall: {ms / 1000} s\n\n"
+  out := out ++ s!"- functions through the verified pipeline: {fns} (pass errors: {n st.errors})\n"
+  for (p, c) in sortedPassMap st.errors do out := out ++ s!"  - error at `{p}`: {c}\n"
+  out := out ++ s!"- fully verified (every run proven, identity or skipped): {st.verified}\n"
+  out := out ++ s!"- verified-pipeline output identical to stock (final state, compared as the importer): {st.same}\n"
+  out := out ++ s!"- fully verified and identical to stock: {st.both}\n"
+  out := out ++ s!"- unverified functions by first unverified run: {n st.firstUnverified}\n"
+  for (k, c) in sortedPassMap st.firstUnverified do out := out ++ s!"  - `{k}`: {c}\n"
+  out := out ++ s!"- functions by first difference from stock (pass: its verdict): {n st.diverged}\n"
+  for (k, c) in sortedPassMap st.diverged do out := out ++ s!"  - `{k}`: {c}\n"
+  out := out ++ "\n| pass | step | runs | proven | identity | skipped | unverified | first difference |\n"
+  out := out ++ "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+  for h : i in [0:stockPasses.size] do
+    let p := stockPasses[i]
+    let c := st.counts[i]!
+    let kind := match p.step with | .proven .. => "proven" | .stock _ => "stock"
+    out := out ++ s!"| {p.name} | {kind} | {c.runs} | {c.proven} | {c.identity} | {c.skipped} | {c.unverified} | {c.diverged} |\n"
+  out := out ++ "\nSkipped and unverified runs by reason:\n\n"
+  for (k, c) in sortedPassMap st.reasons do out := out ++ s!"- `{k}`: {c}\n"
+  return out
+
+/-- `--check --verified`: the verified pipeline over stock export files, a report (exit 1 only
+for parse errors or no files). -/
+def runVerifiedCheck (o : Opts) : IO UInt32 := do
+  let t0 ← IO.monoMsNow
+  let mut files := #[]
+  for p in o.paths do files := files ++ (← ssaFiles p)
+  -- a shared queue: a few functions take minutes (`prove`'s validator), so a static split
+  -- would leave workers idle
+  let next ← IO.mkRef 0
+  let tasks ← (List.range o.jobs).toArray.mapM fun _ => IO.asTask (prio := .dedicated) do
+    let mut st : VStats := {}
+    for _ in [0:files.size] do
+      let i ← next.modifyGet fun i => (i, i + 1)
+      let some file := files[i]? | break
+      let t0 ← IO.monoMsNow
+      st ← verifiedFile o.wholeFile o.maxReport file st
+      let ms := (← IO.monoMsNow) - t0
+      if ms ≥ 60000 then IO.eprintln s!"SLOW {ms / 1000} s: {file}"
+    return st
+  let mut st : VStats := {}
+  for t in tasks do
+    match ← IO.wait t with
+    | .ok s => st := st.merge s
+    | .error e => IO.eprintln s!"worker failed: {e}"; return 2
+  let ms := (← IO.monoMsNow) - t0
+  let reports := st.reports.qsort fun a b => a.2.1 < b.2.1 || (a.2.1 == b.2.1 && a.1 < b.1)
+  let mut shown : Std.HashMap String Nat := {}
+  for (file, kind, detail) in reports do
+    if shown.getD kind 0 < o.maxReport then
+      shown := bumpMap shown kind
+      IO.println s!"{kind.toUpper}: {file}: {detail}"
+  let text := verifiedText st ms
+  IO.print text
+  if let some p := o.table then IO.FS.writeFile p text
+  return if st.parseErrors > 0 || st.files == 0 then 1 else 0
+
 def main (args : List String) : IO UInt32 := do
   let o ← match parseArgs args {} with
     | .ok o => pure o
@@ -448,6 +694,7 @@ def main (args : List String) : IO UInt32 := do
     return 0
   if o.check then
     if o.paths.isEmpty then IO.eprintln usage; return 2
+    if o.verified then return ← runVerifiedCheck o
     return ← runCheck o
   let #[path] := o.paths | IO.eprintln usage; return 2
   let start ← match o.start with
@@ -461,6 +708,13 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"status error \"parse\" {GoStr.quote e}"
     return 0
   | .ok e =>
+    if o.verified then
+      let (out, fields) ← IO.lazyPure fun _ => optimiseVerified e start
+      (← IO.getStdout).putStr out
+      if let some p := o.vstats then
+        let h ← IO.FS.Handle.mk p .append
+        h.putStr s!"{GoStr.quote e.pkg}\t{GoStr.quote e.name}\t{e.abi}\t{fields}\n"
+      return 0
     let out ← IO.lazyPure fun _ => optimise e start o.partialOut o.stopAfter
     (← IO.getStdout).putStr out
     return 0
