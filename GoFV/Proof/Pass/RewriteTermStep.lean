@@ -301,7 +301,20 @@ instance (same aux fields as the static one). -/
 theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
     {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase) :
     GoFV.Proof.Rules.FrameOK tabs (semEnv tabs M F.I L) ev' (stOr tabs r defs) r := by
-  intro n hn
+  refine ⟨fun n hn => ?_, fun x hx => ?_⟩
+  rotate_left
+  · have h := List.all_eq_true.1 F.hcf x hx
+    simp only [strOf] at h
+    cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
+    | none => simp [hp] at h
+    | some p =>
+      simp only [hp, Option.bind_some] at h
+      cases hs : GoFV.Proof.Rules.strAux? tabs ((env tabs M F.I).aux p) with
+      | none => simp [hs] at h
+      | some sd =>
+        obtain ⟨s, d⟩ := sd
+        simp only [hs, beq_iff_eq] at h
+        exact ⟨p, s, d, rfl, hs, h⟩
   rcases F.result with hR | hR
   · obtain ⟨R⟩ := hR
     rw [R.hres] at hn; simp [GoFV.Rules.Result.nodes] at hn
@@ -317,8 +330,8 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
     have hf := F.hframe _ hmem
     obtain ⟨-, -, -, hai, hax, -, -⟩ := nodeOK_facts (R.hnode k hk hk')
     simp only [frameNodeOK, Bool.and_eq_true] at hf
-    obtain ⟨hf1, hf2⟩ := hf
-    refine ⟨fun xe x hxe hx => ?_, fun ae x hae hx => ?_⟩
+    obtain ⟨⟨hf1, hf2⟩, hf3⟩ := hf
+    refine ⟨fun xe x hxe hx => ?_, fun ae x hae hx => ?_, fun xe x hxe hx => ?_⟩
     · rw [hxe] at hf1
       simp only [Option.bind_some, hx, strOf] at hf1
       cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
@@ -345,6 +358,15 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
           simp only [hs, beq_iff_eq] at hf2
           refine ⟨p, s, d, rfl, hs, ?_⟩
           rw [← hf2, hai, aiSel_eq hev, aiSel, hae]
+    · rw [hxe] at hf3
+      simp only [Option.bind_some, hx] at hf3
+      cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
+      | none => simp [hp] at hf3
+      | some p =>
+        simp only [hp, beq_iff_eq] at hf3
+        refine ⟨p, rfl, ?_⟩
+        show _ = (env tabs M F.I).aux p
+        rw [← hf3, hax, axSel, hxe]
 
 /-- The validator's `nonNegOKD` gives `Rule.SoundT`'s premise `Pat.nonNegOK` on the semantic
 instance (`nonNegD_den`). -/

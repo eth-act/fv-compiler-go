@@ -21,7 +21,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1164 proven value rules, 3 proven block rules, 7
+/-- `generic.rules` restricted to its 1166 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 4 Load-of-Store forwardings, 1 struct-load
 expansions and 1 struct-store splits. -/
 def generic : RuleSet where
@@ -43,7 +43,7 @@ def generic : RuleSet where
     (.Com8, [Generated.Generic.r_generic_651_4, Generated.Generic.r_generic_652_4, Generated.Generic.r_generic_679_4]),
     (.ConstInterface, [Generated.Generic.r_generic_1057]),
     (.ConstSlice, [Generated.Generic.r_generic_1044]),
-    (.ConstString, [Generated.Generic.r_generic_1022]),
+    (.ConstString, [Generated.Generic.r_generic_1015, Generated.Generic.r_generic_1022]),
     (.Convert, [Generated.Generic.r_generic_1072]),
     (.Div16, [Generated.Generic.r_generic_173, Generated.Generic.r_generic_1083, Generated.Generic.r_generic_1092]),
     (.Div16u, [Generated.Generic.r_generic_177, Generated.Generic.r_generic_1098]),
@@ -181,6 +181,7 @@ def generic : RuleSet where
     (.SliceCap, [Generated.Generic.r_generic_1032]),
     (.SliceLen, [Generated.Generic.r_generic_1031]),
     (.StringLen, [Generated.Generic.r_generic_1012]),
+    (.StringPtr, [Generated.Generic.r_generic_1011]),
     (.StructSelect, [Generated.Generic.r_generic_973]),
     (.Sub16, [Generated.Generic.r_generic_130, Generated.Generic.r_generic_393, Generated.Generic.r_generic_422, Generated.Generic.r_generic_647, Generated.Generic.r_generic_659, Generated.Generic.r_generic_660, Generated.Generic.r_generic_674, Generated.Generic.r_generic_774, Generated.Generic.r_generic_775, Generated.Generic.r_generic_776, Generated.Generic.r_generic_777, Generated.Generic.r_generic_1230, Generated.Generic.r_generic_1236, Generated.Generic.r_generic_1242, Generated.Generic.r_generic_1248, Generated.Generic.r_generic_1290, Generated.Generic.r_generic_1296]),
     (.Sub32, [Generated.Generic.r_generic_131, Generated.Generic.r_generic_392, Generated.Generic.r_generic_422_2, Generated.Generic.r_generic_647_2, Generated.Generic.r_generic_659_2, Generated.Generic.r_generic_660_2, Generated.Generic.r_generic_674_2, Generated.Generic.r_generic_774_2, Generated.Generic.r_generic_775_2, Generated.Generic.r_generic_776_2, Generated.Generic.r_generic_777_2, Generated.Generic.r_generic_1229, Generated.Generic.r_generic_1235, Generated.Generic.r_generic_1241, Generated.Generic.r_generic_1247, Generated.Generic.r_generic_1289, Generated.Generic.r_generic_1295]),
