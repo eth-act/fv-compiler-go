@@ -107,6 +107,9 @@ structure Stats where
   /-- Per rule key: firings (full table) and `ruleOK` outcomes. -/
   fires : Std.HashMap String Nat := {}
   whys : Std.HashMap (String × String) Nat := {}
+  /-- Sections whose proven-table step is not the full step accepted, by class: `REJ <first
+  failing validator check>` or `DIFF <unproven rules of the full step's log>`. -/
+  classes : Std.HashMap String Nat := {}
 
 def Stats.merge (a b : Stats) : Stats := Id.run do
   let mut st := { a with files := a.files + b.files, sections := a.sections + b.sections
@@ -117,6 +120,7 @@ def Stats.merge (a b : Stats) : Stats := Id.run do
                            (p + p', q + q', r + r', s + s') }
   for (k, n) in b.fires do st := { st with fires := st.fires.insert k (st.fires.getD k 0 + n) }
   for (k, n) in b.whys do st := { st with whys := st.whys.insert k (st.whys.getD k 0 + n) }
+  for (k, n) in b.classes do st := { st with classes := st.classes.insert k (st.classes.getD k 0 + n) }
   return st
 
 /-- Rule events of the log with their keys and `why`, replayed on the input's definitions. -/
@@ -137,6 +141,89 @@ def ruleWhys (tabs : Tables) (t : Interp.Table) (f : Func) (log : Array RwEvent)
     | .phielim v d => M := M.put v d
     | _ => pure ()
   return out
+
+/-- The first event `replay` rejects (mirrors `RewriteCheck.replay`), else the replayed state. -/
+def replayWhy (tabs : Tables) (t : Interp.Table) (f : Func) :
+    Defs → BMap → List RwEvent → Except String (Defs × BMap)
+  | M, B, [] => .ok (M, B)
+  | M, B, .rule v i _ defs :: evs =>
+    match M.get? v with
+    | none => .error "rule: no def"
+    | some x =>
+      match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
+      | none =>
+        if structLoadOK tabs M v defs.toList then
+          replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else .error s!"structLoadOK {x.op.name}"
+      | some cr =>
+        if makeSelShape cr.rule && makeSelOK tabs M v defs.toList then
+          replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else if ruleOK tabs M cr.rule v defs.toList then
+          replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else .error s!"rule {key cr.rule}: {why tabs M cr.rule v defs.toList}"
+  | M, B, .copyArg v i src :: evs =>
+    match M.get? v with
+    | none => .error "copyArg: no def"
+    | some x =>
+      if h : i < x.args.size then
+        if copyReach tabs M M.size x.args[i] src then
+          replayWhy tabs t f (M.put v { x with args := x.args.set i src }) B evs
+        else
+          let src' := ((M.get? src).map (·.op.name)).getD "?"
+          let old := ((M.get? x.args[i]).map (·.op.name)).getD "?"
+          .error s!"copyArg {x.op.name}[{i}]: {old} -> {src'}"
+      else .error "copyArg: index"
+  | M, B, .control b i c :: evs =>
+    match bstate f B b with
+    | none => .error "control: no block"
+    | some st =>
+      if h : i < st.ctrls.size then
+        if copyReach tabs M M.size st.ctrls[i] c then
+          replayWhy tabs t f M ((b, { st with ctrls := st.ctrls.set i c }) :: B) evs
+        else .error "control: copyReach"
+      else .error "control: index"
+  | _, _, .phielim .. :: _ => .error "phielim"
+  | _, _, .blockRule .. :: _ => .error "blockRule"
+
+/-- The first value of `g` that `finalOK` rejects. -/
+def finalWhy (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : String := Id.run do
+  let n := M.size
+  for b in g.blocks do
+    match bstate f B b, f.block? b, g.block? b with
+    | some st, some fb, some gb =>
+      if !(gb.kind == st.kind) then return "finalOK: block kind"
+      if !(if st.swapped then fb.succs.size == 2 && gb.succs == swapS fb.succs
+          else gb.succs == fb.succs) then return "finalOK: succs"
+      if !(gb.controls.size == st.ctrls.size &&
+          (st.ctrls.toList.zip gb.controls.toList).all (fun (c, c') => copyReach tabs M n c c')) then
+        return "finalOK: controls"
+      for x in gb.values do
+        match M.get? x, g.value? x with
+        | some m, some u =>
+          if !(u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
+              u.aux == m.aux && u.args.size == m.args.size) then
+            return s!"finalOK: fields {m.op.name} -> {u.op.name}"
+          if !(m.args.toList.zip u.args.toList).all (fun (a, a') => copyReach tabs M n a a') then
+            let ops := u.args.toList.map fun a => ((g.value? a).map (·.op.name)).getD "?"
+            return s!"finalOK: args of {u.op.name} {ops}"
+        | none, some u => return s!"finalOK: new value {u.op.name}"
+        | _, _ => return "finalOK: missing value"
+    | _, _, _ => return "finalOK: block"
+  return "finalOK: ?"
+
+/-- The first check of `RewriteCheck.accepts` (without nil-check eliminations, forwardings and
+struct-store splits, which the dec table does not have) that fails. -/
+def rejectWhy (env : PassEnv) (t : Interp.Table) (f : Func) (out : PassOut) (log : Array RwEvent) :
+    String :=
+  if !tabsAgree env.tables out.tables f then "tabsAgree" else
+  let tabs := out.tables
+  let g := out.func
+  if !atomsOK f g then "atomsOK" else
+  if !closedOK f then "closedOK input" else
+  if !closedOK g then "closedOK output" else
+  match replayWhy tabs t f f.valueTab [] log.toList with
+  | .error e => e
+  | .ok (M, B) => if finalOK tabs f g M B then "ok" else finalWhy tabs f g M B
 
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let data ← IO.FS.readBinFile path
@@ -175,6 +262,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
       | .ok o => GoFVTest.Parity.compare prev o tables s
       | .error err => some err
     let mut full? : Option Func := none
+    let mut fullKeys : List String := []
     for h : i in [0:variants.size] do
       let (_, t) := variants[i]
       match rewriteRun t false true env' s1.f with
@@ -192,7 +280,16 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         st := { st with counts := st.counts.modify i fun (p, q, r, s) =>
           (p + b (n > 0), q + b acc, r + b par, s + b chk)
                         repro := st.repro.modify i (· + b rep) }
-        for (kk, w) in ruleWhys s1.tabs t s1.f log do
+        let whys := ruleWhys s1.tabs t s1.f log
+        if i == 0 then fullKeys := (whys.toList.map (·.1)).eraseDups
+        if i == 2 && !rep then
+          let un := (fullKeys.filter (!provenKeys.contains ·)).mergeSort (· ≤ ·)
+          let cls := if !acc then s!"REJ {rejectWhy env' t s1.f out log}" else s!"DIFF {un}"
+          if acc then
+            for k in un do
+              st := { st with classes := st.classes.insert s!"DIFFRULE {k}" (st.classes.getD s!"DIFFRULE {k}" 0 + 1) }
+          st := { st with classes := st.classes.insert cls (st.classes.getD cls 0 + 1) }
+        for (kk, w) in whys do
           if i == 0 then st := { st with fires := st.fires.insert kk (st.fires.getD kk 0 + 1) }
           let kv := (s!"{variants[i].1} {kk}", w)
           st := { st with whys := st.whys.insert kv (st.whys.getD kv 0 + 1) }
@@ -234,6 +331,8 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"RULE\t{k}\t{provenKeys.contains k}\t{n}"
   for ((k, w), n) in st.whys.toList.mergeSort (fun a b => a.2 ≥ b.2) do
     IO.println s!"WHY\t{k}\t{w}\t{n}"
+  for (k, n) in st.classes.toList.mergeSort (fun a b => a.2 ≥ b.2) do
+    IO.println s!"CLASS\t{k}\t{n}"
   return 0
 
 end GoFVTest.DecRewriteProbe
