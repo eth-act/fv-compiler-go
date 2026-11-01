@@ -1370,7 +1370,10 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
       simp only [List.length_map, Array.length_toList, Array.size_extract]; omega
     obtain ⟨m, hm, hokm⟩ : ∃ m, rv G u.args[u.args.size - 1]! = .mem m ∧
         outargsOK tabs 0 m (insOf abi) = true := by
-      exact ecc_callOp_outargs hpre habi (ecc_callTarget_rest hmap hlk) (ecc_bind_def hr)
+      -- `have` first: elaborating against the expected type unfolded `outargsOK` in a failed
+      -- unification (`ctx.act` vs `0`) for ~5 s before succeeding (#1)
+      have h := ecc_callOp_outargs hpre habi (ecc_callTarget_rest hmap hlk) (ecc_bind_def hr)
+      exact h
     have hm0 : u.args[u.args.size - 1]! ∈ u.args := by rw [← Array.mem_toList_iff, hsu]; simp
     obtain ⟨y', hy', hry⟩ := hfront _ List.mem_cons_self (.mem m)
       (by rw [← hm]; exact reg_rv (hregG _ hm0))
