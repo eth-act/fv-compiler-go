@@ -358,6 +358,12 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (`pass-parity`, old/new binaries alternated, two rounds, load 29–61): early fuse full-v2
   14.9/23.6 s → 8.4/12.1 s, quick 0.8/0.6 → 0.3/0.3 s; branchelim full-v2 11.0/15.3 s →
   6.8/8.9 s, quick 0.6/0.5 → 0.2/0.2 s. Parity 100% on both corpora.
+- **Short circuit too** (`constPhiArgsChecked_refines` needs `CertOK f` for zcse's
+  simulation, which `WFDom` lacks but `wfDomCheck` gives: `wfDomCheck_domCert`). Full-v2, three
+  binaries alternated, two rounds, load 27–53 (`checkOK` input guard → `wfDomOK` →
+  unchecked port before #121/#139): short circuit 50.4/31.4 → 20.4/13.3 s (unchecked
+  4.8/2.8 s), early fuse 27.7/17.3 → 10.0/6.4 s (1.9/1.2 s), branchelim 21.9/15.4 → 8.2/5.2 s
+  (3.0/1.7 s). What remains of short circuit's gap is its rewrite checkers, not the input check.
 - **What is left:** `DomCert.make` (Lengauer–Tarjan + postorder on a `cfgView` copy) is half of
   the slim check; its proofs rely on `make f = ofView (cfgView f)` (`make_eq` across functions
   with the same CFG), so speeding it up needs a `@[csimp]` lemma, not a new definition.
