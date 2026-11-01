@@ -732,18 +732,29 @@ extremes, integer-conversion boundaries, ties). Results: #10.
   `PubBarrier` and `PrefetchCache*` leave memory unchanged. The dispatch is on the number of
   arguments only, so refined arguments take the same arm (`GoFV.Proof.atomicRoot_mono`); no
   atomic root panics (`GoFV.Proof.atomicRoot_ne_panic`, used by `evalValue_panic_op`, so
-  `Panicking` is unchanged). Any other root (`TailLECall*`, `WB`, …) is `stuck` as before.
+  `Panicking` is unchanged). Any other root (`TailLECall*`, …) is `stuck` as before
+  (`Atomic.modelled` names the ops `atomicRoot` evaluates).
 - **`HasCPUFeature`** = `false`: on arm64 it only guards the LSE `*Variant` atomics, which mean
   the same as their base forms, so either branch computes the same (`evalPure`).
 - **`GetG`** = a pointer to the environment's opaque `g` allocation (`.global "runtime.g"`,
   never nil, §5; nothing reads through it in P1–P5).
+- Proofs: `GoFV.Proof.atomicRoot_sim` (`Proof/AtomicSim.lean`): an atomic root on memories
+  related by any `AtomicSimRel` (loads and writes alike on the blocks its pointer arguments
+  point into) returns alike; dead auto elim (`Mem.EqOff`, `DAE.atomicRoot_rel`,
+  `DAE.atomicRoot_avoids`) and the extra-temporaries tables check (`EqX`; `stuckRoot` now
+  excludes `Atomic.modelled` ops) instantiate it.
 - Adapted: `evalOp_mono_same` (`atomicRoot_mono`), `evalValue_panic_op`, `CSE.evalOp_tail_ite`
-  (its `isRoot` branch now names `atomicRoot`), `evalPure_mono` (`HasCPUFeature`, `GetG`).
+  (its `isRoot` branch now names `atomicRoot`), `evalPure_mono` (`HasCPUFeature`, `GetG`),
+  `DAE.evalOp_atomic` (now `= atomicRoot v argv`), `TabsMod.evalOp_notArm`.
 
 Difftest additions (`tools/semdiff/prog/atomics.go`): 26 functions on `sync/atomic`'s
 functions and typed wrappers (`Add`/`Swap`/`CompareAndSwap`/`Load`/`Store`/`And`/`Or` on 32-
 and 64-bit, signed and unsigned, `Bool`, `Uintptr`), on locals, through pointers, slice
-elements and struct fields, and CAS loops. Results: #10.
+elements and struct fields, and CAS loops.
+
+Results (`--n 100 --seed 3`): 225 functions, 22,500 calls; native agrees with every section on
+22,498, every atomic function included. The 2 others are `makeBad(16, 2^32)`: a 4 GiB
+`makeslice` above the executable model's allocation limit (`maxModelAlloc` = 2^24, `stuck`).
 
 ## 10. Open questions and risks
 
