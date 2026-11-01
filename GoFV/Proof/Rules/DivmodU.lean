@@ -9,59 +9,11 @@ import GoFV.Proof.Rules.DivmodUMagic
 `umagic_elim` replaces the helper call `umagic w c` of a rule by `.ok (S, m)` (`umagic_ok`,
 under `umagicOK w c`; otherwise the condition is false), then the `rule_auto` steps leave a
 `BitVec` equation closed by the lemmas of `DivmodUMagic.lean`.
-
-`divu_unfold` is `rule_unfold` with the condition evaluated in a separate step after the
-intros: in one `dsimp` cast together with the rest, the kernel's check of the cast hits
-"deep recursion" on rules whose condition has more than the `umagicOK` call (`divmod.rules:159`,
-`:166`, `:180`, …; `maxRecDepth 100000` does not help for `:180`).
 -/
-
-attribute [divu_unfold_ds] GoFV.Proof.Rules.Pat.den GoFV.Proof.Rules.Pat.dens
-  GoFV.Proof.Rules.Pat.raw GoFV.Proof.Rules.sigma GoFV.Proof.Rules.Pat.binds
-  GoFV.Proof.Rules.Pat.bindss GoFV.Proof.Rules.Pat.cons GoFV.Proof.Rules.Pat.conss
-  GoFV.Proof.Rules.Pat.wf GoFV.Proof.Rules.Pat.wfs GoFV.Proof.Rules.Pat.typed
-  GoFV.Proof.Rules.Pat.typeds GoFV.Proof.Rules.auxIntOk
-  GoFV.Proof.Rules.Field.bindDV GoFV.Proof.Rules.resDen
-  GoFV.Proof.Rules.nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map
-  GoFV.Proof.Rules.reduceEvalPure GoFV.Proof.Rules.reduceAuxType GoFV.Proof.Rules.evalE
-  GoFV.Proof.Rules.evalEs GoFV.Proof.Rules.auxIntDV List.lookup GoFV.Proof.Rules.toAuxIntD
-  Option.getD List.cons_append List.nil_append GoFV.Proof.Rules.intBin GoFV.Proof.Rules.binDV
-  GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo GoFV.Proof.Rules.litDV GoFV.Proof.Rules.fieldE
-  GoFV.Proof.Rules.indexE GoFV.Proof.Rules.convE GoFV.Proof.Rules.callE GoFV.Proof.Rules.methodE
-  GoFV.Proof.Rules.builtinE GoFV.Proof.Rules.unDV GoFV.Proof.Rules.fieldDV
-  GoFV.Proof.Rules.DV.valOr GoFV.Proof.Rules.typesShape GoFV.Proof.Rules.shapeSize Option.map
-  GoFV.Proof.Rules.exprTy List.getD List.getD_cons_zero List.getD_cons_succ List.zip_cons_cons
-  List.zip_nil_left List.zip_nil_right and_true true_and Nat.reduceAdd Nat.reduceBEq Nat.reduceBNe
-  reduceIte
 
 namespace GoFV.Proof.Rules.DivmodU
 
 open Lean Elab Tactic Meta
-
-/-- `rule_unfold`, the condition evaluated after the intros (module doc). -/
-elab "divu_unfold" : tactic => do
-  let goal ← getMainGoal
-  let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "divu_unfold: goal is not `Rule.Sound r`"
-  let some rn := r.constName? | throwError "divu_unfold: rule is not a constant"
-  let rid := mkIdent rn
-  let e := mkIdent `e
-  let or := mkIdent `or
-  let hbt := mkIdent `hbt
-  let hwf := mkIdent `hwf
-  let hc := mkIdent `hc
-  let hcond := mkIdent `hcond
-  let hty := mkIdent `hty
-  let hlt := mkIdent `hlt
-  evalTactic (← `(tactic| (
-    refine ⟨rfl, ?_⟩
-    intro $e:ident $or:ident $hbt:ident
-    dsimp only [$rid:ident, divu_unfold_ds]
-    simp only [rule_helper, rule_unfold_s]
-    intro $hwf:ident $hc:ident $hcond:ident $hty:ident $hlt:ident
-    dsimp only [GoFV.Proof.Rules.condHolds, rule_unfold_ds] at $hcond:ident
-    (try simp only [rule_helper, rule_unfold_s] at $hcond:ident)
-    rule_oracle_bool)))
 
 /-- Replace the call `umagic w c` of the goal by `.ok (S, m)` with `hspec : USpec w c S m`
 when `umagicOK w c`; otherwise rewrite `umagicOK w c` to `false` everywhere (the condition is
