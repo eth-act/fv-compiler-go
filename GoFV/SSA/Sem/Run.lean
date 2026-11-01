@@ -292,6 +292,8 @@ structure Frame where
   /-- The in-memory image of each argument (its encoding by the parameter's shape), which
   `Arg`/`ArgIntReg` pieces are read from. -/
   images : Array (Array Byte) := #[]
+  /-- The closure context of the activation (`GetClosurePtr`; `none` outside closure calls). -/
+  closure : Option Val := none
 
 /-- The value of input parameter `name` at byte offset `off`, as a value of shape `ty` (`Arg`,
 `ArgIntReg`): decoded from the argument's image, so whole parameters (before `expand calls`)
@@ -315,23 +317,128 @@ def panicBounds (kind : Int64) : List Val → Res Val
     .panic (.bounds k xi y.toInt) m
   | _ => .stuck "PanicBounds: undefined or ill-typed arguments"
 
-/-- A call of a callee without SSA (`StaticLECall`/`StaticCall {AuxCall} args… mem`): the
-contract's results, followed by the memory (the `RESULTS` tuple read by `SelectN`). -/
-def callExtern (env : Env) (callee : String) (args : List Val) : Res Val := do
-  let mem ← match args.getLast? with
+/-! ## Calls (§5, phase P3) -/
+
+/-- The `*AuxCall` ABI assignments of a call value's aux. -/
+def callABI? (tabs : Tables) (aux : Option AuxRef) : Option CallABI :=
+  match aux.bind tabs.aux? with
+  | some { kind := .call _ abi, .. } => abi
+  | _ => none
+
+/-- The function a code pointer points to: the start of a code symbol (a closure's first word,
+an itab's method entry, `Addr {fn}`). -/
+def codeTarget? : Val → Option String
+  | .ptr ⟨.global s, off⟩ => if off == 0 then some s else none
+  | _ => none
+
+mutual
+/-- `v` contains `poison` (anywhere inside a composite or blob). -/
+def Val.hasPoison : Val → Bool
+  | .poison => true
+  | .agg vs => Val.anyPoison vs
+  | .tuple vs => Val.anyPoison vs
+  | .blob bs => bs.contains .poison
+  | _ => false
+/-- Some value of `vs` contains `poison`. -/
+def Val.anyPoison : List Val → Bool
+  | [] => false
+  | v :: vs => v.hasPoison || Val.anyPoison vs
+end
+
+/-- The register-assigned leaves of a shape, at their offsets, in the order of the ABI's
+register assignment (fields in order; string: pointer, length; slice: pointer, length,
+capacity; interface: type word, data word). -/
+def leaves : Ty → List (Nat × Ty)
+  | .agg fs _ => leavesFields fs
+  | .empty => []
+  | .blob _ => []
+  | t => [(0, t)]
+where
+  leavesFields : List (Nat × Ty) → List (Nat × Ty)
+    | [] => []
+    | (o, t) :: fs => (leaves t).map (fun (o', t') => (o + o', t')) ++ leavesFields fs
+
+/-- A value of shape `t` from its register pieces (in `leaves t` order). -/
+def ofPieces (t : Ty) (pieces : List Val) : Val :=
+  let buf := ((leaves t).zip pieces).foldl (fun buf ((o, lt), v) => putBytes buf o (encode lt v))
+    (Array.replicate t.size Byte.poison)
+  decode buf 0 t
+
+/-- The register pieces of a value of shape `t`. -/
+def toPieces (t : Ty) (v : Val) : List Val :=
+  let buf := encode t v
+  (leaves t).map fun (o, lt) => decode buf o lt
+
+/-- The Go-typed arguments of a post-`expand calls` call (§5): each input parameter of the
+call's ABI assignments from its register pieces, or from the outgoing-arguments area of
+activation `act` at its stack offset. -/
+def decodeArgs (tabs : Tables) (act : Nat) (m : Mem) :
+    List ABIParam → List Val → Option (List Val)
+  | [], [] => some []
+  | [], _ :: _ => none
+  | p :: ps, pieces =>
+    let t := tabs.ty p.type
+    if p.regs.isEmpty then do
+      let bs ← m.read ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ t.size
+      return decode bs 0 t :: (← decodeArgs tabs act m ps pieces)
+    else
+      let k := p.regs.size
+      if pieces.length < k then none
+      else do return ofPieces t (pieces.take k) :: (← decodeArgs tabs act m ps (pieces.drop k))
+
+/-- The register pieces of the Go-typed results `rs` of a post-`expand calls` call; results
+assigned to the stack are written to the outgoing-arguments area of activation `act`. -/
+def encodeResults (tabs : Tables) (act : Nat) :
+    List ABIParam → List Val → Mem → Option (List Val × Mem)
+  | [], [], m => some ([], m)
+  | p :: ps, r :: rs, m =>
+    let t := tabs.ty p.type
+    if p.regs.isEmpty then do
+      let m ← m.write ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ (encode t r)
+      encodeResults tabs act ps rs m
+    else do
+      let (pieces, m) ← encodeResults tabs act ps rs m
+      return (toPieces t r ++ pieces, m)
+  | _, _, _ => none
+
+/-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
+`InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
+post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register pieces and
+stack arguments in the outgoing-arguments area, and yield the results' register pieces (stack
+results are stored back into the outgoing area). The callee is the `AuxCall`'s function or the
+code symbol the code pointer points to; its contract sees the Go-typed arguments. Arguments
+and memory are observation points (`poison` ⇒ `stuck`). -/
+def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
+  let (callee?, clo, rest) := match v.op, argv with
+    | .ClosureLECall, code :: c :: rest | .ClosureCall, code :: c :: rest =>
+      (codeTarget? code, some c, rest)
+    | .InterLECall, code :: rest | .InterCall, code :: rest => (codeTarget? code, none, rest)
+    | _, _ => (v.aux.bind ctx.tabs.callee?, none, argv)
+  let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
+  let m ← match rest.getLast? with
     | some (.mem m) => .ok m
     | _ => .stuck s!"call {callee}: no memory argument"
-  let goArgs := args.dropLast
-  if goArgs.any (fun | .poison => true | _ => false) then
+  let pieces := rest.dropLast
+  let post := v.op == .StaticCall || v.op == .ClosureCall || v.op == .InterCall
+  let params := ((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []
+  let ins := params.filter (!·.out)
+  let outs := params.filter (·.out)
+  let args ← if post then
+      Res.ofOption s!"call {callee}: arguments do not match the ABI" (decodeArgs ctx.tabs ctx.act m ins pieces)
+    else pure pieces
+  if args.any Val.hasPoison || (clo.map Val.hasPoison).getD false then
     .stuck s!"call {callee}: poison argument"
   else
-    match env.extern callee with
-    | none => .stuck s!"call {callee}: no contract (phase P3)"
-    | some c =>
-      match c goArgs mem with
-      | .returned rs m => .ok (.tuple (rs ++ [.mem m]))
-      | .panicked e m => .panic e m
-      | .stuck msg => .stuck msg
+    let c ← Res.ofOption s!"call {callee}: no contract" (env.extern callee)
+    match c args clo m with
+    | .returned rs m' =>
+      -- stack-assigned results are in the outgoing area in both forms (`SelectNAddr`)
+      let (ps, m'') ← Res.ofOption s!"call {callee}: results do not match the ABI"
+        (encodeResults ctx.tabs ctx.act outs rs m')
+      if post then pure (.tuple (ps ++ [.mem m'']))
+      else pure (.tuple (rs ++ [.mem m'']))
+    | .panicked e m' => .panic e m'
+    | .stuck msg => .stuck msg
 
 /-- The shape of the type an aux names (`Store {T}`, `Move {T}`, `Zero {T}`). -/
 def auxTy (tabs : Tables) (aux : Option AuxRef) : Ty :=
@@ -376,6 +483,9 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
 def frameVal (ctx : Ctx) (v : Value) : Option Val :=
   match v.op with
   | .SP => some (.ptr ⟨.outargs ctx.act, 0⟩)
+  -- the caller's SP lies just above this activation's frame region (`Blk.base?`), so
+  -- "is this pointer in my frame" checks (`append` of a stack slice) see the frame
+  | .GetCallerSP => some (.int .w64 (BitVec.ofNat 64 (2 ^ 62 + (ctx.act + 1) * 2 ^ 42)))
   | .LocalAddr => v.aux.map fun n => .ptr ⟨.local ctx.act n, 0⟩
   | .Addr =>
     match v.aux.bind ctx.tabs.aux? with
@@ -404,17 +514,26 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
     | some { kind := .nameOff n off, .. } => argVal ctx fr n off ty
     | _ => .stuck s!"v{v.id}: ArgIntReg without name"
   | .PanicBounds => panicBounds v.auxInt argv
-  | .StaticLECall | .StaticCall =>
-    match v.aux.bind ctx.tabs.callee? with
-    | some callee => callExtern env callee argv
-    | none => .stuck s!"v{v.id}: call without callee"
+  | .StaticLECall | .StaticCall | .ClosureLECall | .ClosureCall | .InterLECall | .InterCall =>
+    callOp env ctx v argv
+  | .GetClosurePtr => pure (fr.closure.getD .poison)
+  | .SelectNAddr =>
+    -- the address of stack-assigned result `i` of the call in the outgoing area
+    let off := do
+      let call ← v.args[0]? >>= ctx.f.value?
+      let abi ← callABI? ctx.tabs call.aux
+      let p ← (abi.params.filter (·.out))[v.auxInt.toInt.toNat]?
+      if p.regs.isEmpty then some p.offset else none
+    match off with
+    | some o => pure (.ptr ⟨.outargs ctx.act, BitVec.ofInt 64 o⟩)
+    | none => .stuck s!"v{v.id}: SelectNAddr of a result not on the stack"
   | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
   | .WBend | .NilCheck => memRoot ctx v argv
   | op =>
     match frameVal ctx v with
     | some x => pure x
     | none =>
-      if isRoot op then .stuck s!"v{v.id}: {op.name} is not in phases P1/P2"
+      if isRoot op then .stuck s!"v{v.id}: {op.name} is not in phases P1–P3"
       else pure (evalPure op ty v.auxInt v.aux argv)
 
 /-- Evaluate value `v` from the registers (its arguments are already evaluated); the result
@@ -536,33 +655,6 @@ theorem runLoop_succ (env : Env) (ctx : Ctx) (fuel : Nat) (fr : Frame) (bid : ID
           | .panic e m => .panicked e m
           | .stuck msg => .stuck msg := (rfl)
 
-/-- The register-assigned leaves of a shape, at their offsets, in the order of the ABI's
-register assignment (fields in order; string: pointer, length; slice: pointer, length,
-capacity; interface: type word, data word). -/
-def leaves : Ty → List (Nat × Ty)
-  | .agg fs _ => leavesFields fs
-  | .empty => []
-  | .blob _ => []
-  | t => [(0, t)]
-where
-  leavesFields : List (Nat × Ty) → List (Nat × Ty)
-    | [] => []
-    | (o, t) :: fs => (leaves t).map (fun (o', t') => (o + o', t')) ++ leavesFields fs
-
-mutual
-/-- `v` contains `poison` (anywhere inside a composite). -/
-def Val.hasPoison : Val → Bool
-  | .poison => true
-  | .agg vs => Val.anyPoison vs
-  | .tuple vs => Val.anyPoison vs
-  | .blob bs => bs.contains .poison
-  | _ => false
-/-- Some value of `vs` contains `poison`. -/
-def Val.anyPoison : List Val → Bool
-  | [] => false
-  | v :: vs => v.hasPoison || Val.anyPoison vs
-end
-
 /-- The Go-typed results of a `Ret` (§7), from the `MakeResult` components `rs` (memory
 removed) and the memory `m` at the return. Before `expand calls` the components are the
 Go-typed results; after it they are the register pieces of the register-assigned results
@@ -602,17 +694,35 @@ def _root_.GoFV.SSA.Sem.Mem.freeFrame (m : Mem) (act : Nat) : Mem :=
     | .local a _ | .outargs a => a != act
     | _ => true }
 
-/-- The memory an activation starts with: `mem`, the global image of `env` (allocations not
-already in `mem`), and the frame: one allocation per frame variable, a `PPARAM` holding its
-argument's image, every other variable poison (§3.4). -/
-def frameMem (env : Env) (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) : Mem :=
-  let mem := env.globals.foldl (fun m (name, a) =>
+/-- The size of the outgoing-arguments area: the end of the furthest stack-assigned argument or
+result of any call the tables describe. -/
+def outargsSize (tabs : Tables) : Nat :=
+  tabs.auxes.foldl (fun n o => match o with
+    | some { kind := .call _ (some abi), .. } =>
+      abi.params.foldl (fun n p =>
+        if p.regs.isEmpty then max n ((p.offset.toNat) + (typeSize? tabs p.type).getD 0) else n) n
+    | _ => n) 0
+
+/-- `mem` with the global image of `env` (allocations not already in `mem`). -/
+def addGlobals (env : Env) (mem : Mem) : Mem :=
+  env.globals.foldl (fun m (name, a) =>
     if (m.find? (.global name)).isSome then m else m.set (.global name) a) mem
+
+/-- `mem` with the outgoing-arguments area and the frame allocations of an activation. -/
+def frameAllocs (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) : Mem :=
+  let mem := mem.set (.outargs ctx.act)
+    { data := Array.replicate (outargsSize ctx.tabs) .poison }
   ctx.locals.foldl (fun m (n, sz, pi) =>
     let data := match pi.bind (images[·]?) with
       | some img => if img.size == sz then img else Array.replicate sz .poison
       | none => Array.replicate sz .poison
     m.set (.local ctx.act n) { data }) mem
+
+/-- The memory an activation starts with: `mem`, the global image of `env` (allocations not
+already in `mem`), the outgoing-arguments area (poison) and the frame: one allocation per frame
+variable, a `PPARAM` holding its argument's image, every other variable poison (§3.4). -/
+def frameMem (env : Env) (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) : Mem :=
+  frameAllocs ctx images (addGlobals env mem)
 
 /-- The frame of a new activation on `args` from memory `mem`: no registers, the arguments'
 images, the frame allocations (`frameMem`). -/
@@ -651,6 +761,46 @@ def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : 
     .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
   else
     finish ctx.outs ctx.act (runLoop env ctx fuel (entryFrame env ctx args mem) ctx.f.entry 0)
+
+/-! ## Program functions as callees -/
+
+/-- A run's outcome as a callee's (`outOfFuel` is `stuck`: a callee always gets bounded fuel). -/
+def Outcome.toC : Outcome → COutcome
+  | .returned rs m => .returned rs m
+  | .panicked e m => .panicked e m
+  | .stuck msg => .stuck msg
+  | .outOfFuel => .stuck "callee out of fuel"
+
+/-- A called activation of the function of `ctx`: a fresh activation number from the memory,
+its frame (the caller's memory already holds the globals), the closure context, the run,
+Go-typed results and the frame removed. -/
+def runActivation (env : Env) (ctx : Ctx) (clo : Option Val) (args : List Val) (mem : Mem)
+    (fuel : Nat) : Outcome :=
+  let act := mem.nextAct
+  let ctx := { ctx with act }
+  let mem := { mem with nextAct := act + 1 }
+  if args.length != ctx.params.size then
+    .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
+  else
+    let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
+    finish ctx.outs act
+      (runLoop env ctx fuel
+        { regs := Array.replicate ctx.f.valueTab.size none, args, images, closure := clo,
+          mem0 := frameAllocs ctx images mem } ctx.f.entry 0)
+
+/-- The environment `base` extended with program functions (`funcs`: a function's context by
+link symbol name), each run with `fuel` block entries per activation in the environment of
+depth `d - 1`: calls between program functions nest at most `d` deep (deeper calls use
+`base`, where a program function has no contract unless `base` gives one). -/
+def Env.withFuncs (base : Env) (funcs : String → Option Ctx) (fuel : Nat) : Nat → Env
+  | 0 => base
+  | d + 1 =>
+    { base with
+      extern := fun name =>
+        match funcs name with
+        | some ctx => some fun args clo m =>
+            (runActivation (base.withFuncs funcs fuel d) ctx clo args m fuel).toC
+        | none => base.extern name }
 
 end GoFV.SSA.Sem
 

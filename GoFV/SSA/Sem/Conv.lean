@@ -35,6 +35,11 @@ def select (i : Nat) : List Val → Val
   | [.tuple vs] => vs.getD i .poison
   | _ => .poison
 
+/-- `SelectN [i]`: component `i` of a call's `RESULTS` tuple. -/
+def selectN (auxInt : Int64) : List Val → Val
+  | [.tuple vs] => if auxInt.toInt < 0 then .poison else vs.getD auxInt.toInt.toNat .poison
+  | _ => .poison
+
 /-- `MakeTuple x y`. -/
 def make : List Val → Val
   | [x, y] => .tuple [x, y]
