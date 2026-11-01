@@ -169,6 +169,8 @@ def dvTyEq (t : Sem.Ty) : DV → Bool
 def dvAuxIntEq : DV → DV → Bool
   | .int a, .int b => a == b
   | .bool a, .bool b => a == b
+  | .f64 a, .f64 b => a == b
+  | .f32 a, .f32 b => a == b
   | .other, .other => true
   | _, _ => false
 
@@ -199,6 +201,7 @@ end
 def auxIntOkB (aty : AuxType) (a : Int64) : Bool :=
   match aty with
   | .Bool => a == 0 || a == 1
+  | .Float32 | .Float64 => !IEEE.isNaN .b64 (BitVec.ofInt 64 a.toInt)
   | _ => true
 
 mutual

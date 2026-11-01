@@ -76,6 +76,10 @@ inductive DV where
   | op (o : Op)
   | val (v : Val) (p : Option Path)
   | strct (fs : List (String × DV))
+  /-- A `float64`/`float32` value (Go's `auxIntToFloat64`/`auxIntToFloat32` of an auxint, a
+  float literal), by its IEEE 754 encoding. -/
+  | f64 (b : BitVec 64)
+  | f32 (b : BitVec 32)
   | other
 
 /-- An instance of a pattern: leaf values and op-node fields by position. -/
@@ -121,6 +125,8 @@ def auxIntDV (aty : AuxType) (i : Int64) : DV :=
   | .Int32 | .SymOff | .CallOff => .int (wrapInt 32 true i.toInt)
   | .Int64 | .TypSize => .int i.toInt
   | .UInt8 => .int (wrapInt 8 false i.toInt)
+  | .Float64 => .f64 (BitVec.ofInt 64 i.toInt)
+  | .Float32 => .f32 (IEEE.convert .b64 .b32 .rne (BitVec.ofInt 64 i.toInt))
   | _ => .other
 
 /-- What a `bind` field binds. -/
@@ -253,8 +259,20 @@ def intBin (o : BinOp) (ty : GoTy) (a b : Int) : Option DV :=
   | .ge => some (.bool (a ≥ b))
   | _ => none
 
+/-- Go's float comparisons from `FPCompare`'s result: unordered (a NaN) makes every comparison
+false except `!=`; `+0 == -0`. -/
+def floatCmp (o : BinOp) (c : IEEE.Cmp) : Option DV :=
+  match o with
+  | .eq => some (.bool (c == .eq))
+  | .ne => some (.bool (c != .eq))
+  | .lt => some (.bool (c == .lt))
+  | .le => some (.bool (c == .lt || c == .eq))
+  | .gt => some (.bool (c == .gt))
+  | .ge => some (.bool (c == .gt || c == .eq))
+  | _ => none
+
 /-- Non-short-circuit binary operators on evaluated operands (`GoFV.Rules.Eval.binop` on the
-modelled kinds). -/
+modelled kinds; float arithmetic is not modelled). -/
 def binDV (o : BinOp) (ty : GoTy) : DV → DV → Option DV
   | .int a, .int b => intBin o ty a b
   | .bool a, .bool b =>
@@ -267,6 +285,8 @@ def binDV (o : BinOp) (ty : GoTy) : DV → DV → Option DV
     | .eq => some (.bool (a == b))
     | .ne => some (.bool (a != b))
     | _ => none
+  | .f64 a, .f64 b => floatCmp o (IEEE.compare .b64 a b)
+  | .f32 a, .f32 b => floatCmp o (IEEE.compare .b32 a b)
   | _, _ => none
 
 /-- Unary operators (`GoFV.Rules.Eval.unop`). -/
@@ -399,10 +419,13 @@ def DV.asInt? : DV → Option Int
   | .int i => some i
   | _ => none
 
-/-- A constant. -/
+/-- A constant (a float literal by its encoding: a pattern check `[c]` then asks the auxint's
+encoding to be `c`'s, which for `±0` is stricter than Go's float `==`). -/
 def litDV : Lit → Option DV
   | .int i => some (.int i)
   | .bool b => some (.bool b)
+  | .float64 b => some (.f64 (BitVec.ofNat 64 b))
+  | .float32 b => some (.f32 (BitVec.ofNat 32 b))
   | _ => none
 
 /-- `config.<name>` (a 64-bit target: `PtrSize` is 8, the size of the semantics' pointers,
@@ -550,11 +573,13 @@ def Pat.typeds (e : PEnv) (p : Path) (i : Nat) : List Pat → Prop
   | q :: qs => Pat.typed e (i :: p) q ∧ Pat.typeds e p (i + 1) qs
 end
 
-/-- The checker's fact about an auxint of aux type `aty` that the rules rely on
-(`docs/contracts/check.md`, "Aux"): `Bool` auxints are 0 or 1. -/
+/-- The checker's facts about an auxint of aux type `aty` that the rules rely on
+(`docs/contracts/check.md`, "Aux"): `Bool` auxints are 0 or 1, float auxints (the `float64`
+encoding, also of `Float32`) are not NaN. -/
 def auxIntOk (aty : AuxType) (a : Int64) : Prop :=
   match aty with
   | .Bool => a = 0 ∨ a = 1
+  | .Float32 | .Float64 => IEEE.isNaN .b64 (BitVec.ofInt 64 a.toInt) = false
   | _ => True
 
 mutual
@@ -612,7 +637,8 @@ the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`
 pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
 64-bit integer offset of `AddPtr`/`PtrIndex`, `Convert` between a pointer and a 64-bit
 integer (`convArgOk`), both arguments of `Eq<N>`/`Neq<N>` integers of width `N`, and the
-components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17). Other
+components of a `Make` op the shapes of its type's components (`makeArgOk`, issue #17), and the
+arguments of the float arithmetic and comparisons floats of their width (shape `.int w`). Other
 arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
@@ -626,6 +652,11 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .Eq8 | .Neq8 => isIntWTy .w8 t
   | .StringMake | .SliceMake | .IMake | .ComplexMake | .StructMake | .ArrayMake1 =>
     makeArgOk ty i t
+  | .Add64F | .Sub64F | .Mul64F | .Div64F | .Neg64F | .Min64F | .Max64F | .Eq64F | .Neq64F
+  | .Less64F | .Leq64F | .Abs | .Copysign | .Sqrt | .Floor | .Ceil | .Trunc | .Round
+  | .RoundToEven | .FMA | .Round64F => isIntWTy .w64 t
+  | .Add32F | .Sub32F | .Mul32F | .Div32F | .Neg32F | .Min32F | .Max32F | .Eq32F | .Neq32F
+  | .Less32F | .Leq32F | .Sqrt32 | .Round32F => isIntWTy .w32 t
   | _ => true
 
 mutual
@@ -694,6 +725,12 @@ def toAuxIntD (aty : AuxType) : DV → Option Int64
   | .int i => match aty with
     | .UInt8 => some (Int64.ofInt (wrapInt 8 true i))
     | _ => some (Int64.ofInt i)
+  | .f64 b => match aty with
+    | .Float64 => some (Int64.ofInt b.toInt)
+    | _ => none
+  | .f32 b => match aty with
+    | .Float32 => some (Int64.ofInt (IEEE.convert .b32 .b64 .rne b).toInt)
+    | _ => none
   | _ => none
 
 /-- The value a variable argument of a result refers to. -/
@@ -775,6 +812,6 @@ def Rule.Sound (r : Rule) : Prop :=
 attribute [local simp] Pat.den Pat.dens Pat.raw Pat.binds Pat.bindss Pat.cons Pat.conss
   Pat.wf Pat.wfs Pat.typed Pat.typeds auxIntOk Pat.argsOK Pat.argsOKs
   Pat.arityOk Pat.arityOks evalE evalEs nodeDen resDen condHolds sigma auxIntDV toAuxIntD
-  litDV fieldE indexE convE binE callE callH methodE builtinE binDV unDV intBin fieldDV DV.valOr
+  litDV fieldE indexE convE binE callE callH methodE builtinE binDV floatCmp unDV intBin fieldDV DV.valOr
   Field.bindDV
 end GoFV.Proof.Rules
