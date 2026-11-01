@@ -210,9 +210,4 @@ def phiopt (tabs : Tables) (uint8 : TypeRef) (f : Func) : Except String Func := 
   let (idom, f) := f.idom
   f.blocks.foldlM (sweep2Block sdom idom) f
 
-/-- The `phiopt` pass. -/
-def phioptPass : Pass := Pass.ofFunc fun env f => do
-  let some u8 := env.typ? "UInt8" | throw "phiopt: no typ.UInt8"
-  phiopt env.tables u8 f
-
 end GoFV.Opt
