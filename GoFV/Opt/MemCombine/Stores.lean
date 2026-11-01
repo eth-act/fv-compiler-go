@@ -191,6 +191,7 @@ def combineStores (root : ID) : M Unit := do
   -- consecutive loads as the source of the stores
   let loadMem ← loadSource a
   if loadMem.isSome then
+    if !c.loadSource then return
     -- widen the first load
     let load ← arg a[0]!.store 1
     let t := if aTotalSize == 2 then c.u16 else if aTotalSize == 4 then c.u32 else c.u64
