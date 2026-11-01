@@ -1,0 +1,105 @@
+import GoFV.Proof.Pass.ECOk
+import GoFV.Proof.Pass.ZCSERank
+
+/-!
+# A block entry that panics (issue #28)
+
+`enter_panic`: if the source panics entering block `b` (at the non-pure node `r` of its
+schedule, after the prefix `pre`), the target panics alike with a refined memory: both
+schedules list the non-pure nodes in the same sequence, so every source value the target
+evaluates before `r` the source evaluated before `r` (`Order.transfer_rank` with the `Feeds`
+condition of `CvBlock`); the target evaluates that prefix (`tgt_loop` against the source's
+frame at the panic) and then `r` by its obligation (`tgt_next`).
+-/
+
+namespace GoFV.Proof.EC
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Proof.AtomSim GoFV.Proof.Order
+
+section
+variable {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool} {front : ID → List ID}
+  {RR : List Val → Mem → List Val → Mem → Prop} {ce ce' : CheckEnv}
+
+/-- **A panicking block entry.** -/
+theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.Mono)
+    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv isNew frS frT b i)
+    {fb : Block} (hfb : f.block? b = some fb) {e : Panic} {m : Mem}
+    (hen : enterBlock env (Ctx.make tabs f) frS fb i = .panic e m) :
+    ∃ gb m', g.block? b = some gb ∧ enterBlock env (Ctx.make tabs g) frT gb i = .panic e m' ∧
+      Mem.Refines m m' := by
+  obtain ⟨gb, ps, oS, og, psT, hgb, B, hbm, -, hps, hsf, hsg, hev, hpsT, hphiT, hentT⟩ :=
+    block_parts H hA hfb hen nofun
+  have hbm' : b ∈ g.blocks := H.blocks_eq ▸ hbm
+  have hndF := H.wf.valuesNodup b fb ⟨hbm, hfb⟩
+  have hndG := H.wg.valuesNodup b gb ⟨hbm', hgb⟩
+  have hownF := valuesOwn H.wf hbm hfb
+  obtain ⟨ofn, oft, ofm⟩ := schedule_topo hownF hndF hsf
+  obtain ⟨ogn, -, ogm⟩ := schedule_topo (valuesOwn H.wg hbm' hgb) hndG hsg
+  obtain ⟨pS1, -, -, -⟩ := phis_spec hndF hps
+  obtain ⟨pre, r, post, G, hof, hpre, hstep⟩ := evalAll_panic_split hev
+  have hpren : pre.Nodup := (List.nodup_append.1 (hof ▸ ofn)).1
+  have hpret : TopoRem (argsF f) pre := topoRem_prefix (hof ▸ oft)
+  obtain ⟨g1, -, g3, g4⟩ := evalAll_spec hpren hpret (by rw [pS1, hA.szS]; rfl) hpre
+  have hpreo : ∀ x ∈ pre, x ∈ oS.toList := fun x hx => by
+    rw [hof]; exact List.mem_append_left _ hx
+  -- the panicking node
+  obtain ⟨ur, hur, hevr⟩ : ∃ ur, f.value? r = some ur ∧
+      evalValue env (Ctx.make tabs f) G ur = .panic e m := by
+    unfold stepV at hstep
+    cases h : (Ctx.make tabs f).f.value? r with
+    | none => rw [h] at hstep; cases hstep
+    | some ur => rw [h] at hstep; exact ⟨ur, h, hstep⟩
+  have hrp : prio ur.op ≠ 0 := prio_panicking (evalValue_panic_op hevr)
+  have hrof : r ∈ oS.toList := by rw [hof]; simp
+  obtain ⟨hrfb, ur', hur', hrph⟩ := (ofm r).1 hrof
+  rw [hur] at hur'; cases hur'
+  have hnp : npIn (schedNodes f fb).toList r = true :=
+    (ZCSE.npIn_sched hownF hndF).2 ⟨hrfb, ur, hur, hrph, hrp⟩
+  have hseq : oS.toList.filter (npIn (schedNodes f fb).toList) =
+      og.toList.filter (npIn (schedNodes f fb).toList) := by
+    obtain ⟨oF, oG, h1, h2, h3⟩ := B.sched
+    rw [hsf] at h1; cases h1; rw [hsg] at h2; cases h2; exact h3
+  have hrog : r ∈ og.toList := by
+    have : r ∈ oS.toList.filter (npIn (schedNodes f fb).toList) := List.mem_filter.2 ⟨hrof, hnp⟩
+    rw [hseq] at this; exact (List.mem_filter.1 this).1
+  obtain ⟨preT, postT, hogT⟩ := List.append_of_mem hrog
+  -- the transfer: what the target evaluates before `r`, the source did
+  have hspS := schedule_spec hsf
+  have hspT := schedule_spec hsg
+  have htr := transfer_rank hspS.topo hspS.pureFirst hspT.topo (fun x => npIn_iff) hseq
+    (k := pre.length) (k' := preT.length) (by rw [hof]; simp) (by rw [hogT]; simp) hnp
+    (fun a y ha hy hay hy' => B.feeds a y ha hy hay hy')
+  have hGk : ∀ a, a ∉ oS.toList → G.regs[a]? = (setPhis ps frS.regs)[a]? :=
+    fun a ha => g3 a fun hm => ha (hpreo a hm)
+  have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := G) (by rw [g1]) hGk
+  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT (fun x hx hn => by
+    have hxog : x ∈ og.toList := by rw [hogT]; exact List.mem_append_left _ hx
+    obtain ⟨hxg, w, hw, hph⟩ := (ogm x).1 hxog
+    have hxf : x ∈ fb.values := Classical.byContradiction fun h => by
+      rw [B.fresh x hxg h] at hn; cases hn
+    obtain ⟨u, hu, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ x hxf
+    have huphi : u.op ≠ .Phi := fun hp => by
+      obtain ⟨hgu, -⟩ := B.phiS x hxf u hu hp
+      rw [hw] at hgu; cases hgu; exact hph hp
+    have hN : NodeIn (schedNodes f fb).toList x :=
+      (nodeIn_schedNodes hownF).2 ⟨hxf, u, hu, huphi⟩
+    obtain ⟨j, hj⟩ := List.getElem?_of_mem hx
+    have hjl : j < preT.length := (List.getElem?_eq_some_iff.1 hj).1
+    obtain ⟨i', hi', hix⟩ := htr j x hjl (by rw [hogT, List.getElem?_append_left hjl]; exact hj) hN
+    rw [hof, List.getElem?_append_left hi'] at hix
+    exact g4 x (List.mem_of_getElem? hix))
+  have hrn : isNew r = false := (B.common r hrfb).2
+  have hob := tgt_next hE TH hogT hI hrn hur (regs_of_panic hevr)
+  rw [hevr] at hob
+  generalize hT' : stepV env (Ctx.make tabs g) T r = rT at hob
+  cases hob with
+  | panic e hm =>
+    rename_i m'
+    refine ⟨gb, m', hgb, ?_, hm⟩
+    rw [hentT, hogT, evalAll_append, hT]
+    simp only
+    rw [evalAll_cons, hT']
+
+end
+
+end GoFV.Proof.EC
