@@ -51,8 +51,15 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     have hbl : (cfgView g).blocks = (cfgView f).blocks := congrArg Func.blocks hcfg
     have h : bid ∈ (cfgView f).blocks := hbm
     rw [← hbl] at h; exact h
-  have himk := ecs_imk hwg hbg hfb hgb hb
-  refine ⟨gb, hgb, ecs_block hwf hwg hcfg hbm hfb hgb hb
+  have hid : fb.id = gb.id := by
+    obtain ⟨fb', hfb', hfid⟩ := hwf.blockId bid hbm
+    obtain ⟨gb', hgb', hgid⟩ := hwg.blockId bid hbg
+    rw [hfb] at hfb'; cases hfb'
+    rw [hgb] at hgb'; cases hgb'
+    rw [hfid, hgid]
+  have hcg : CertOK g := certOK_of_check (check_domCert hg)
+  have himk := ecs_imk hwg hcg hbg hfb hgb hid hb
+  refine ⟨gb, hgb, ecs_block hwf hwg hcg hcfg hbm hfb hgb hid hb
     (fun htree x hx u hu hphi => eco_obl hf hg hec hbm hfb hgb htree hx hu hphi
       (fun hcv => himk x hx hcv u hu)) ?_⟩
   intro hk c hc0
@@ -61,7 +68,7 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   obtain ⟨cbid, cb, ⟨hcbm, hcb⟩, hccb⟩ :=
     hwf.ctrlListed bid fb ⟨hbm, hfb⟩ c (Array.mem_of_getElem? hc0)
   have hphi : u.op ≠ .Phi := by rw [hop]; decide
-  obtain ⟨-, -, -, hval, -⟩ := eco_blockOK (hblk cbid hcbm) hcb
+  obtain ⟨-, -, -, hval⟩ := eco_blockOK (hblk cbid hcbm) hcb
   obtain ⟨w, hw, hok⟩ := ecm_valueOK_result (hval c hccb u hu hphi) hu hop
   exact ret_result hu hw hop hok hreg
 

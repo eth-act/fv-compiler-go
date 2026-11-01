@@ -196,14 +196,14 @@ variable {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool} {front : I
   {RR : List Val → Mem → List Val → Mem → Prop} {ce ce' : CheckEnv}
 
 /-- The simulation relation: the same block and edge, `SimAt`. -/
-def SimR (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (frS : Frame)
+def SimR (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (frS : Frame)
     (bS : ID) (iS : Nat) (frT : Frame) (bT : ID) (iT : Nat) : Prop :=
-  bT = bS ∧ iT = iS ∧ SimAt env tabs f g cv isNew frS frT bS iS
+  bT = bS ∧ iT = iS ∧ SimAt env tabs f g cv frS frT bS iS
 
 /-- **One block step of the conversion simulation.** -/
 theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.Mono)
-    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv isNew frS frT b i) :
-    StepSimR (SimR env tabs f g cv isNew) RR (blockStep env (Ctx.make tabs f) frS b i)
+    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv frS frT b i) :
+    StepSimR (SimR env tabs f g cv) RR (blockStep env (Ctx.make tabs f) frS b i)
       (blockStep env (Ctx.make tabs g) frT b i) := by
   have hbt := CSE.pre_tree H.wf H.cf hA.pre
   unfold blockStep
@@ -219,7 +219,7 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     rw [hgb]; simp only; rw [hT]
     exact ⟨m', rfl, hm⟩
   | ok GS =>
-  obtain ⟨gb, GT, hgb, B, hT, hGT, hszT, hszS, hrel, hlisted, hentry, hGSok⟩ :=
+  obtain ⟨gb, GT, hgb, B, hT, hGT, hszT, hszS, hrel, hlisted, hGSok⟩ :=
     enter_ok H hE hA hfb hen
   obtain ⟨hD, hGSf, -⟩ := dinv_enter H.wf H.cf hbt.1 hfb hA.szS (CSE.pre_strict H.cf hA.pre).1 hen
   rw [hgb]; simp only; rw [hT]; simp only
@@ -263,10 +263,14 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     | ok hn =>
       cases hn
       have hem : e ∈ fb.succs := CopyElim.stepTerm_goto_mem hst
-      refine ⟨GT, e, rfl, rfl, rfl, hGT, hszS, hszT, ?_, hrel, hlisted, ?_, .inr hentry, hGSok⟩
+      refine ⟨GT, e, rfl, rfl, rfl, hGT, hszS, hszT, ?_, hrel, hlisted, ?_, ?_, hGSok⟩
       · rw [hGT, hGSf]; have := hA.img; rw [hA.frame] at this; exact this
       · cases e
         exact .inr ⟨b, fb, hbt.1, hfb, hbt.2, hem, hD, fun _ _ _ _ => rfl⟩
+      · have hbmg : b ∈ g.blocks := H.blocks_eq ▸ hbt.1
+        have htg : ((make g).depthOf b).isSome := by rw [H.make_eq]; exact hbt.2
+        obtain ⟨hDT, -, -⟩ := dinv_enter H.wg H.cg hbmg hgb hA.szT hA.dinvT hT
+        exact dinv_edge H.cg hbmg hgb htg (by rw [hsucc]; exact hem) hDT
   | ret rs m =>
     have hk := stepTerm_ret_kind hst
     rw [stepTerm_ret_eq hk] at hst
@@ -325,15 +329,16 @@ theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Boo
         { entryFrame env (Ctx.make tabs f) args mem with
           regs := Array.replicate g.valueTab.size none } := by
       rw [hc]; rfl
-    have hA : SimAt env tabs f g cv isNew (entryFrame env (Ctx.make tabs f) args mem)
+    have hA : SimAt env tabs f g cv (entryFrame env (Ctx.make tabs f) args mem)
         (entryFrame env (Ctx.make tabs g) args mem) f.entry 0 := by
       refine ⟨by rw [hent], by simp [entryFrame, Ctx.make], by rw [hent]; simp, ?_,
-        fun x y h => ?_, fun x y h => ?_, .inl rfl, .inl rfl, fun x y h => ?_⟩
+        fun x y h => ?_, fun x y h => ?_, .inl rfl, ?_, fun x y h => ?_⟩
       · rw [entry_images_size (by rw [hpar]; exact hlen) (paramTys_size tabs g)]
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
+      · rw [← H.entry_eq]; exact dinv_entry H.cg _
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
-    have hrun := runLoop_simR (act := 0) (SimR env tabs f g cv isNew) RR
+    have hrun := runLoop_simR (act := 0) (SimR env tabs f g cv) RR
       (fun frS bS iS frT bT iT ⟨hb, hi, hR⟩ => by subst hb; subst hi; exact step H hE hR) fuel _ _ _
       _ _ _ ⟨H.entry_eq, rfl, hA⟩ (finish_defined hd)
     rw [show (Ctx.make tabs f).act = 0 from rfl]

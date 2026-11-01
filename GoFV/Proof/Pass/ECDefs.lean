@@ -58,8 +58,8 @@ def ecRR (tabs : Tables) (f : Func) (rs : List Val) (m : Mem) (rs' : List Val) (
 whose node in `g` is an `IMake` (the `IMake` data shortcut, `ECCheck.imakeData`): the source
 mode (`a` is the same interface-shaped `IMake` in `f` with an unconverted data operand of the
 same constructor shape in both, and `x` depends on `a` in `gb` when `a` is a value of `fb`) or
-the target mode (`a` is interface-shaped in `g`, and `x` depends in `gb` on `a` and on its data
-operand). -/
+the target mode (`a` is interface-shaped in `g`, and `a` and its data operand are each a node of
+`gb` that `x` depends on or placed in a strict dominator of `gb` in `g`: `HeldT`). -/
 def EcImkOK (tabs : Tables) (f g : Func) (fb gb : Block) (x a : ID) : Prop :=
   ∀ aw, g.value? a = some aw → aw.op = .IMake → aw.args.size = 2 ∧
     ((∃ au, f.value? a = some au ∧ au.op = .IMake ∧ au.args.size = 2 ∧
@@ -71,9 +71,7 @@ def EcImkOK (tabs : Tables) (f g : Func) (fb gb : Block) (x a : ID) : Prop :=
             shapeOf (typeShapes tabs) g aw.args[1]! = .agg fs' n')) ∧
         (a ∈ fb.values →
           Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)) ∨
-      (ifaceShape (shapeOf (typeShapes tabs) g a) = true ∧
-        Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x ∧
-        Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) aw.args[1]! x))
+      (ifaceShape (shapeOf (typeShapes tabs) g a) = true ∧ HeldT g gb x a ∧ HeldT g gb x aw.args[1]!))
 
 theorem ecCv_of_not_special {tabs : Tables} {f g : Func} {x : ID} (h : special f g x = false)
     (y : Val) : ecCv tabs f g x y = y := by

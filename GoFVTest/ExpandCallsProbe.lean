@@ -85,7 +85,8 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
     else c
   | _, _ => "absent"
 
-def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String := Id.run do
+def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Func) (bid : ID) :
+    String := Id.run do
   let some fb := f.block? bid | return "no source block"
   let some gb := g.block? bid | return "no target block"
   if gb.kind != fb.kind || gb.controls != fb.controls then return "kind/controls"
@@ -100,13 +101,13 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
   for x in fb.values do
     if converted f x then
       if let some u := f.value? x then
-        if !u.args.all (fun a => imkArgOK sh f g fb nodeG (gb.values.size + 1) a x) then
+        if !u.args.all (fun a => imkArgOK sh f g anc fb nodeG (gb.values.size + 1) a x) then
           let fuel := gb.values.size + 1
-          let bad := u.args.toList.filter (fun a => !imkArgOK sh f g fb nodeG fuel a x)
+          let bad := u.args.toList.filter (fun a => !imkArgOK sh f g anc fb nodeG fuel a x)
           let why := bad.map fun a => match g.value? a, f.value? a with
             | some aw, some au =>
               let dSh := s!"{repr (erase (shapeOf sh f aw.args[1]!))}/{repr (erase (shapeOf sh g aw.args[1]!))}"
-              s!"f-op {au.op.name} same-d {au.args[1]! == aw.args[1]!} iface {ifaceShape (shapeOf sh f a)} special-d {special f g aw.args[1]!} d {dSh} dep {!fb.values.contains a || depB g nodeG (fun _ => true) fuel a x}"
+              s!"f-op {au.op.name} same-d {au.args[1]! == aw.args[1]!} iface {ifaceShape (shapeOf sh f a)} special-d {special f g aw.args[1]!} d {dSh} dep {!fb.values.contains a || depB g nodeG (fun _ => true) fuel a x} tgt-a {depB g nodeG (fun _ => true) fuel a x || placedSDom g anc bid a} tgt-d {depB g nodeG (fun _ => true) fuel aw.args[1]! x || placedSDom g anc bid aw.args[1]!}"
             | _, _ => "?"
           return s!"IMake arg: {why.headD "?"}"
   if !((fb.kind != .If && fb.kind != .JumpTable) || fb.controls.all (fun c => !special f g c)) then
@@ -118,7 +119,8 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
   for z in gb.values do
     if let some w := g.value? z then
       if isNewB f z && !newEvalB tabs g w then return s!"new op {w.op.name}"
-      if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a) then
+      if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a ||
+          placedSDom g anc fb.id a) then
         return if isNewB f z then "new arg in other block" else "new arg of source value in other block"
   for x in gb.values do
     if let some w := g.value? x then
@@ -133,13 +135,14 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : String :=
 
 def why (tabs : Tables) (f g : Func) : String := Id.run do
   let sh := typeShapes tabs
+  let anc := (DomCert.make g).anc
   let outs := ownOuts tabs f
   if DomCert.cfgView g != DomCert.cfgView f then return "cfg"
   if g.ownAux != f.ownAux then return "ownAux"
   if !regParamsOK tabs outs then
     return if outs.any (·.regs.isEmpty) then "own: stack result" else "own: result shape"
   for b in f.blocks do
-    if !blockOK tabs sh f g b then return blockWhy tabs sh f g b
+    if !blockOK tabs sh anc f g b then return blockWhy tabs sh anc f g b
   return "?"
 
 structure Stats where

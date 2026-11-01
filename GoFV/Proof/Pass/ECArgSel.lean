@@ -14,8 +14,7 @@ register pieces `SelectN [first + j] c` of the converted call, which build the r
 
 Both need, beyond `Obl`, the IDs of the values they evaluate: the source value's (`u.id = x`)
 and those of the target's tree nodes, given by a predicate `L` that holds at `x` and is closed
-under new arguments (`L z := z ∈ gb.values ∨ EntryVal g z` with `WF` of `g` and
-`CvBlock.newArgs`).
+under new arguments (`L := Listed g`, with `WF` of `g`).
 -/
 
 namespace GoFV.Proof.EC

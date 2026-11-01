@@ -75,6 +75,16 @@ def Held (f g : Func) (fb gb : Block) (x z : ID) : Prop :=
   (z ∈ fb.values ∧ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) ∨
     ∃ v, Placed f z v ∧ v.op ≠ .Phi ∧ Anc (make f) v.block fb.id ∧ v.block ≠ fb.id
 
+/-- `z` is a non-`Phi` value of `g` placed in a strict dominator of block `gb` (its target
+register holds its evaluation in `gb`, `Avail.DInv` on the target). -/
+def SDomPlaced (g : Func) (gb : Block) (z : ID) : Prop :=
+  ∃ v, Placed g z v ∧ v.op ≠ .Phi ∧ Anc (make g) v.block gb.id ∧ v.block ≠ gb.id
+
+/-- The values whose target registers hold their evaluations when `x` of block `gb` is
+evaluated: nodes of `gb` that `x` depends on, and the values `SDomPlaced` in `g`. -/
+def HeldT (g : Func) (gb : Block) (x z : ID) : Prop :=
+  Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x ∨ SDomPlaced g gb z
+
 /-- **The local obligation of value `x`.** In frames of one activation, where the source's
 arguments of `x` have registers (each `RegOK`) and the target's arguments of `x` too (its new
 ones holding their evaluations), the target's registers of the source values `front` refine
@@ -135,8 +145,7 @@ structure CvBlock (fb gb : Block) : Prop where
       (argsOf (schedNodes f fb).toList) (argsOf (schedNodes g gb).toList)
       (PureIn (schedNodes f fb).toList) y a
   obl : ((make f).depthOf fb.id).isSome → ∀ x ∈ fb.values, ∀ u, f.value? x = some u →
-    u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x)
-      (fun z => Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) x
+    u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x) (HeldT g gb x) x
   front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧
     (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
@@ -147,7 +156,7 @@ structure CvBlock (fb gb : Block) : Prop where
       ∃ rs' m', retOf y' = some (rs', m') ∧ RR rs m rs' m'
   newOK : ∀ z ∈ gb.values, isNew z = true → ∀ w, g.value? z = some w → w.op ≠ .Phi ∧ NewEval tabs g w
   newArgs : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → ∀ a ∈ w.args,
-    isNew a = true → a ∈ gb.values ∨ EntryVal g a
+    isNew a = true → a ∈ gb.values ∨ EntryVal g a ∨ SDomPlaced g gb a
 
 /-- **The conversion simulation's relation** between a function `f` and its rewrite `g`. -/
 structure CvRel : Prop where
