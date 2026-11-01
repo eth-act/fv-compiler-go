@@ -11,6 +11,9 @@
 #   parity    scripts/parity.sh on the full corpus
 #   check     whole-pipeline gofv-ssa-opt --check on the full corpus
 #   e2e       driver toolchain (rebuilt when patches/go changed) + scripts/driver-e2e.sh --mode full
+# and two reports that never turn the gate red (issue #189):
+#   verified      gofv-ssa-opt --check --verified on the full corpus (verified pipeline vs stock)
+#   e2e-verified  scripts/driver-e2e.sh --verified (programs built with the verified pipeline)
 # then append the result to the "Nightly gate" status issue (label nightly-gate; created if
 # missing) and, when red, open an issue (label gate-red) for the first failing step, or comment on
 # the open one for that step.
@@ -44,7 +47,7 @@ main() {
       --force) force=1; shift ;;
       --install) install=1; shift ;;
       --steps) steps=1; rev=$2; run=$3; shift 3 ;;  # internal: run the steps in this worktree
-      *) sed -n '2,27s/^# \{0,1\}//p' "$self" >&2; exit 2 ;;
+      *) sed -n '2,30s/^# \{0,1\}//p' "$self" >&2; exit 2 ;;
     esac
   done
   export PATH=$HOME/.elan/bin:$HOME/.local/bin:$PATH
@@ -185,6 +188,19 @@ gate_steps() {
   skip() {
     names+=("$1"); results+=("skipped ($2)"); times+=(-)
   }
+  # report <name> <command...>: like step, but the result is "report" (exit status in the
+  # table), never a failure.
+  report() {
+    local name=$1; shift
+    echo "nightly-gate: $name (report)" >&2
+    t0=$(date +%s)
+    rc=0
+    "$@" >"$run/$name.log" 2>&1 || rc=$?
+    names+=("$name")
+    times+=("$(( ($(date +%s) - t0) / 60 ))m")
+    if [ "$rc" = 0 ]; then results+=(report); else results+=("report (exit $rc)"); fi
+    return 0
+  }
 
   step build scripts/memcap.sh lake build GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check
   [ "${results[-1]}" = pass ] || built=0
@@ -204,13 +220,23 @@ gate_steps() {
     step parity scripts/parity.sh -o "$run/parity.md" "$corpus"
     step check scripts/memcap.sh .lake/build/bin/gofv-ssa-opt --check --jobs 4 --max-report 20 \
       --table "$run/check.md" "$corpus"
+    report verified timeout "${GATE_VERIFIED_TIMEOUT:-4h}" scripts/memcap.sh \
+      .lake/build/bin/gofv-ssa-opt --check --verified --jobs 4 --max-report 5 \
+      --table "$run/verified.md" "$corpus"
   else
-    for s in ssa-check parity check; do skip "$s" "build failed"; done
+    for s in ssa-check parity check verified; do skip "$s" "build failed"; done
   fi
   if [ "$built" = 1 ]; then
     step e2e gate_e2e "$run"
+    if [ -x tmp/go-driver/bin/go ]; then
+      report e2e-verified env GOFV_DRIVER_GO="$PWD/tmp/go-driver" scripts/driver-e2e.sh --verified \
+        --out "$run/e2e-verified"
+    else
+      skip e2e-verified "no driver toolchain"
+    fi
   else
     skip e2e "build failed"
+    skip e2e-verified "build failed"
   fi
 
   local verdict=GREEN
@@ -284,6 +310,14 @@ gate_details() {
   fi
   if [ -f "$run/check.log" ]; then
     echo "**check**"; echo; grep -v '^|' "$run/check.log" | grep -v '^$' | tail -n 20 | sed 's/^/    /'; echo
+  fi
+  if [ -f "$run/verified.md" ]; then
+    echo "**verified** (report: verified pipeline vs stock)"; echo; grep -v '^|' "$run/verified.md" | grep -v '^$' | sed 's/^/    /'; echo
+  elif [ -f "$run/verified.log" ]; then
+    echo "**verified**"; echo; tail -n 5 "$run/verified.log" | sed 's/^/    /'; echo
+  fi
+  if [ -f "$run/e2e-verified/report.md" ]; then
+    echo "**e2e (verified, report)**"; echo; grep -v '^#' "$run/e2e-verified/report.md" | grep -v '^$' | sed 's/^/    /'; echo
   fi
   if [ -f "$run/e2e-full/report.md" ]; then
     echo "**e2e (full)**"; echo; grep -v '^#' "$run/e2e-full/report.md" | grep -v '^$' | sed 's/^/    /'; echo

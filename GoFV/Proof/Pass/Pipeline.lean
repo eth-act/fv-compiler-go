@@ -14,6 +14,7 @@ import GoFV.Proof.Pass.BranchElimPass
 import GoFV.Proof.Pass.DAE
 import GoFV.Proof.Pass.Sccp
 import GoFV.Proof.Pass.DSE
+import GoFV.Proof.TabsAgree
 
 /-!
 # The verified generic pipeline refines its input (issue #189)
@@ -194,8 +195,15 @@ theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : Pa
     refine h.adopt (fun _ => ?_) (fun hw => ?_)
     · rw [hf, ht]; exact Refines.toV (Refines.refl _ _)
     · rw [hf, ht]; exact h.2 hw
-  · simp only [hs, ↓reduceIte]
+  · simp only [hs, ↓reduceIte, Bool.false_eq_true]
     have hwf := @ok_of_toBool _ (check (checkEnv env out.tables) out.func)
+    by_cases ht : (decide (out.func = st.func) && tabsAgree st.tables out.tables st.func) = true
+    · simp only [ht, ↓reduceIte]
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at ht
+      refine h.adopt (fun _ => ?_) hwf
+      rw [ht.1]
+      exact Refines.toV (refines_of_tabsAgree ht.2 (Refines.refl _ _))
+    simp only [ht, Bool.false_eq_true, ↓reduceIte]
     cases claim with
     | some why => exact h.adopt (fun hv => by cases hv) hwf
     | none =>

@@ -25,6 +25,7 @@ import GoFV.Opt.MemCombine
 import GoFV.Opt.WriteBarrier
 import GoFV.Opt.ReschedChecks
 import GoFV.Opt.CpuFeatures
+import GoFV.Opt.TabsAgree
 import GoFV.Proof.Pass.CopyFrag
 import GoFV.Proof.Pass.DeadFrag
 
@@ -46,7 +47,8 @@ required`, not `disabled`) and checks the function between passes (`check` once 
 and once on each changed result, never inside a pass). Per pass run it records a `Verdict`:
 
 - `proven`: the theorem's hypotheses hold;
-- `identity`: the result's function and tables equal the input's (`Refines.refl`, any pass);
+- `identity`: the result's function equals the input's, and so do the tables or at least what
+  the function can observe of them (`tabsAgree`; `Refines.refl`, any pass);
 - `skipped why`: an optional proven pass whose input is outside its theorem (`why`: the input
   fails `check`, or the guard rejects it) or whose output fails `check`: its result is dropped
   and the input kept (the identity is a refinement);
@@ -257,9 +259,9 @@ def VState.init (env : PassEnv) (f : Func) (zv : Array (ID × Nat) := #[]) : VSt
 def VState.passEnv (st : VState) (env : PassEnv) (name : String) : PassEnv :=
   { env with passName := name, tables := st.tables, zvar := fun v => st.zvar.getD v 0 }
 
-/-- `st` with pass `name`'s result dropped. -/
+/-- `st` after pass `name` with its result dropped. -/
 def VState.skip (st : VState) (name : String) (why : String) : VState :=
-  { st with log := st.log.push (name, .skipped why) }
+  { st with ran := st.ran + 1, last := name, log := st.log.push (name, .skipped why) }
 
 /-- `st` continued with pass `name`'s result `out` (verdict `v`, `wf` whether `out.func` passes
 `check`). -/
@@ -277,14 +279,18 @@ def VState.same (st : VState) (out : PassOut) : Bool :=
     decide (out.tables.slots = st.tables.slots)
 
 /-- Continue `st` with the result `out` of pass `p`. `claim`: `none` if `p` is proven and its
-input is in its theorem's hypotheses (guard, `check`), else why not. Unless `out` is the
-input, its function is checked: a proven pass whose output fails `check` is unverified when
-required, else dropped. -/
+input is in its theorem's hypotheses (guard, `check`), else why not. A result with the input's
+function and tables the function cannot tell from the input's (`tabsAgree`: e.g. a padded slot
+table) is the identity. Otherwise its function is checked: a proven pass whose output fails
+`check` is unverified when required, else dropped. -/
 def VState.continue (st : VState) (env : PassEnv) (p : StockPass) (out : PassOut)
     (claim : Option String) : VState :=
   if st.same out then st.adopt p.name out st.wf .identity
   else
     let wf := (check (checkEnv env out.tables) out.func).toBool
+    if decide (out.func = st.func) && tabsAgree st.tables out.tables st.func then
+      st.adopt p.name out wf .identity
+    else
     match claim with
     | some why => st.adopt p.name out wf (.unverified why)
     | none =>
