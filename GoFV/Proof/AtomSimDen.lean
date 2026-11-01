@@ -249,7 +249,141 @@ theorem evalValue_term {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val
   rw [evalValue_of_regs (regs_of_ok h), evalOp_term ht] at h
   cases h; rfl
 
-/-! ## Evaluating a list of values -/
+/-! ## Memory roots as writes of their arguments (issue #151)
+
+A memory root (`memOp`: `Store`, `Move`, `Zero` and their write-barrier forms) evaluates to the
+write of its arguments' values (`memDef`, as `Sem.memRoot`). `MemDefs`: the roots of a set of
+values hold this write of their arguments' registers, which are in the set (the source's frame
+keeps this along a block entry: a root's arguments are evaluated before it and no later
+evaluation of the entry changes them). `MemAtoms`: a valuation whose memory roots, where not
+`poison`, are this write of their arguments' terms; `memAtoms_of` derives it for the valuations
+`termRef_apply` builds, so `TermRefP` may assume it (Load-of-Store forwarding reads a `Store`'s
+value back through its stored value's term). -/
+
+/-- The memory roots whose value is a function of their arguments and the tables. -/
+def memOp (op : Op) : Bool :=
+  op matches .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB
+
+/-- The value of memory root `v` on argument values `argv`, if it does not get stuck
+(`Sem.memRoot`). -/
+def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
+  match v.op, argv with
+  | .Store, [.ptr p, x, .mem m] | .StoreWB, [.ptr p, x, .mem m] =>
+    (m.write p (encode (auxTy tabs v.aux) x)).map .mem
+  | .Move, [.ptr d, .ptr s, .mem m] | .MoveWB, [.ptr d, .ptr s, .mem m] =>
+    (m.read s v.auxInt.toInt.toNat).bind fun bs => (m.write d bs).map .mem
+  | .Zero, [.ptr p, .mem m] | .ZeroWB, [.ptr p, .mem m] =>
+    (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0))).map .mem
+  | _, _ => none
+
+theorem memOp_not_term {op : Op} (h : memOp op = true) : termOp op = false := by
+  unfold memOp at h
+  split at h <;> first | rfl | cases h
+
+theorem memRoot_memDef {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
+    (hm : memOp v.op = true) (h : memRoot ctx v argv = .ok y) : memDef ctx.tabs v argv = some y := by
+  unfold memRoot at h
+  split at h
+  rotate_left 12
+  · split at h <;> cases h
+  all_goals (rename_i hop)
+  all_goals first
+    | (simp [memOp, hop] at hm; done)
+    | skip
+  all_goals (simp only [memDef, hop])
+  all_goals (repeat' split at h)
+  all_goals (try unfold writeRes at h)
+  all_goals (try split at h)
+  all_goals (try cases h)
+  all_goals simp_all
+
+theorem evalOp_memOp {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (hm : memOp v.op = true) : evalOp env ctx fr v argv ty = memRoot ctx v argv := by
+  unfold memOp at hm
+  unfold evalOp
+  split <;> simp_all
+
+/-- A memory root evaluates to the write of its arguments' registers. -/
+theorem evalValue_memOp {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hm : memOp v.op = true) (h : evalValue env ctx fr v = .ok y) :
+    ∃ r, memDef ctx.tabs v (v.args.toList.map (rv fr)) = some r ∧
+      y = r.retype (ctx.tys[v.id]?.getD .other) := by
+  rw [evalValue_of_regs (regs_of_ok h), evalOp_memOp hm] at h
+  cases hr : memRoot ctx v (v.args.toList.map (rv fr)) with
+  | ok r =>
+    rw [hr] at h
+    cases h
+    exact ⟨r, memRoot_memDef hm hr, rfl⟩
+  | panic e m => rw [hr] at h; cases h
+  | stuck msg => rw [hr] at h; cases h
+
+/-- The memory roots of `V` hold the write of their arguments' registers, which are in `V`. -/
+def MemDefs (D : ID → Option Value) (tabs : Tables) (fr : Frame) (V : ID → Prop) : Prop :=
+  ∀ a, V a → ∀ v, D a = some v → memOp v.op = true →
+    (∀ c ∈ v.args, V c) ∧ ∃ y, memDef tabs v (v.args.toList.map (rv fr)) = some y ∧
+      rv fr a = y.retype (shape D tabs a)
+
+/-- The memory roots `ρ` does not make `poison` hold the write of their arguments' terms, for
+all large fuels. -/
+def MemAtoms (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) : Prop :=
+  ∀ a v, D a = some v → memOp v.op = true → ρ a ≠ .poison →
+    ∃ N, ∀ k, N ≤ k → ∃ y, memDef tabs v (v.args.toList.map (den D tabs ρ k)) = some y ∧
+      ρ a = y.retype (shape D tabs a)
+
+theorem memDefs_empty (D : ID → Option Value) (tabs : Tables) (fr : Frame) :
+    MemDefs D tabs fr (fun _ => False) := fun _ h => h.elim
+
+theorem MemDefs.iff {D : ID → Option Value} {tabs : Tables} {fr : Frame} {V W : ID → Prop}
+    (h : MemDefs D tabs fr V) (hVW : ∀ x, V x ↔ W x) : MemDefs D tabs fr W := by
+  intro a ha v hv hm
+  obtain ⟨h1, h2⟩ := h a ((hVW a).2 ha) v hv hm
+  exact ⟨fun c hc => (hVW c).1 (h1 c hc), h2⟩
+
+/-- Registers of `V` unchanged. -/
+theorem MemDefs.frame {D : ID → Option Value} {tabs : Tables} {fr fr' : Frame} {V : ID → Prop}
+    (h : MemDefs D tabs fr V) (hk : ∀ a, V a → fr'.regs[a]? = fr.regs[a]?) : MemDefs D tabs fr' V := by
+  intro a ha v hv hm
+  obtain ⟨h1, y, h2, h3⟩ := h a ha v hv hm
+  have hrv : ∀ c, V c → rv fr' c = rv fr c := fun c hc => by unfold rv; rw [hk c hc]
+  refine ⟨h1, y, ?_, by rw [hrv a ha]; exact h3⟩
+  rw [List.map_congr_left (fun c hc => hrv c (h1 c (Array.mem_toList_iff.1 hc)))]
+  exact h2
+
+/-- A subset closed under the arguments of memory roots. -/
+theorem MemDefs.restrict {D : ID → Option Value} {tabs : Tables} {fr : Frame} {V W : ID → Prop}
+    (h : MemDefs D tabs fr V) (hWV : ∀ x, W x → V x)
+    (hW : ∀ x, W x → ∀ v, D x = some v → memOp v.op = true → ∀ c ∈ v.args, W c) :
+    MemDefs D tabs fr W := fun a ha v hv hm =>
+  ⟨hW a ha v hv hm, (h a (hWV a ha) v hv hm).2⟩
+
+/-- Adding values, each memory root of them with its arguments in the union and the write of
+their registers. -/
+theorem MemDefs.union {D : ID → Option Value} {tabs : Tables} {fr : Frame} {V W : ID → Prop}
+    (h : MemDefs D tabs fr V)
+    (hW : ∀ x, W x → ¬ V x → ∀ v, D x = some v → memOp v.op = true →
+      (∀ c ∈ v.args, V c ∨ W c) ∧ ∃ y, memDef tabs v (v.args.toList.map (rv fr)) = some y ∧
+        rv fr x = y.retype (shape D tabs x)) :
+    MemDefs D tabs fr (fun a => V a ∨ W a) := by
+  intro a ha v hv hm
+  by_cases hV : V a
+  · obtain ⟨h1, h2⟩ := h a hV v hv hm
+    exact ⟨fun c hc => .inl (h1 c hc), h2⟩
+  · exact hW a (ha.resolve_left hV) hV v hv hm
+
+/-- **`MemAtoms` of a valuation** that agrees with the registers on the atoms of `V` and is
+`poison` on the other atoms. -/
+theorem memAtoms_of {D : ID → Option Value} {tabs : Tables} {fr : Frame} {V : ID → Prop}
+    (hD : DenOK D tabs fr V) (hM : MemDefs D tabs fr V) {ρ : ID → Val}
+    (hV : ∀ a, V a → ¬ IsTerm D a → ρ a = rv fr a)
+    (hpois : ∀ a, ¬ IsTerm D a → ρ a ≠ .poison → V a) : MemAtoms D tabs ρ := by
+  intro a v hv hm hne
+  have hat : ¬ IsTerm D a := fun ⟨v', hv', ht⟩ => by
+    rw [hv] at hv'; cases hv'; rw [memOp_not_term hm] at ht; cases ht
+  have ha := hpois a hat hne
+  obtain ⟨h1, y, h2, h3⟩ := hM a ha v hv hm
+  obtain ⟨N, hN⟩ := hD.list hV (l := v.args.toList) fun c hc => h1 c (Array.mem_toList_iff.1 hc)
+  exact ⟨N, fun k hk => ⟨y, by rw [hN k hk]; exact h2, by rw [hV a ha hat]; exact h3⟩⟩
+
 
 theorem refOK_of_topo {D : ID → List ID} :
     ∀ {L : List ID} {V : ID → Prop}, TopoRem D L → (∀ x ∈ L, ∀ a ∈ D x, V a ∨ a ∈ L) →
