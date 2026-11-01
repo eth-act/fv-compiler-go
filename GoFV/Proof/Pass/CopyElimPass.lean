@@ -6,7 +6,7 @@ import GoFV.Proof.Pass.CopyElimLoop
 
 `copyelim_refines`: `copyelim_rel` (the pass establishes `CopyRel`) and `refines_of_rel` (the
 relation gives refinement), for an input and output that pass `check`, with the input in the
-fragments `CopyFrag` and `SimFrag`.
+fragments `CopyFrag` (copy chains) and `EmptyFrag` (no zero-size aggregate values).
 -/
 
 namespace GoFV.Proof.CopyElim
@@ -17,7 +17,7 @@ open GoFV.SSA GoFV.Opt Dom
 theorem copyelim_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : copyelimPass penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) (hcf : CopyFrag penv.tables f)
-    (hsf : SimFrag penv.tables f) : Refines out.tables out.func penv.tables f := by
+    (hsf : EmptyFrag penv.tables f) : Refines out.tables out.func penv.tables f := by
   simp only [copyelimPass, Pass.ofFunc, bind, Except.bind, pure, Except.pure] at h
   split at h
   · cases h

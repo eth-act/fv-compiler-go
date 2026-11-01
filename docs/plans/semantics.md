@@ -505,6 +505,11 @@ and checks that every section agrees with section 0 whenever section 0 is define
   (`NoNil`). #96 replaced it by the rank tie-break; `sched_np_eq` (the roots run in the same
   sequence) and `sched_transfer` (what the target evaluates before the panicking root, the
   source evaluated before it) let those proofs drop `NoNil` and the `chained` fragment.
+  `sched_transfer'` generalises the argument hypothesis to `Feeds` (an argument reaches its
+  user directly, or through pure source nodes the target bypasses), as copyelim needs:
+  `copyelim_refines` now takes only `EmptyFrag` (`GoFV/Proof/Pass/CopyElimRank.lean`:
+  `sameNP_copy`, `depBack`, `feedsOf`); zcse and deadcode still take `NoNil` until their
+  proofs switch.
 - `run` stays free of `Std.HashMap` (the kernel evaluates the witnesses' runs), and every
   recursive definition on its path is structural.
 

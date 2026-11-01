@@ -4,7 +4,7 @@ import GoFV.Proof.Pass.CopyElimEnter
 # copyelim refines its input
 
 `refines_of_rel`: two checked functions related by `CopyRel`, with the input in the fragment
-`SimFrag`, run alike: lock-step simulation (`runLoop_sim`) with equal frames, the invariant
+`EmptyFrag`, run alike: lock-step simulation (`runLoop_sim`) with equal frames, the invariant
 `At` at every block entry (`enter_ok`, `enter_panic`, `stepTerm_rel`).
 -/
 

@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.CopyElimSched
+import GoFV.Proof.Pass.CopyElimRank
 
 /-!
 # copyelim: the target's evaluation of a block
@@ -419,6 +419,12 @@ theorem prio_panicking {op : Op}
     (h : op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall) : prio op = 2 := by
   rcases h with rfl | rfl | rfl <;> rfl
 
+/-- A value that can panic is not pure. -/
+theorem prio_ne_zero_of_panic {op : Op}
+    (h : op = .PanicBounds ∨ op = .StaticLECall ∨ op = .StaticCall ∨ op = .NilCheck) :
+    prio op ≠ 0 := by
+  rcases h with rfl | rfl | rfl | rfl <;> decide
+
 /-- **A block the source panics in makes the target panic alike.** -/
 theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat}
     (hA : At env tabs f g fr bid i) {fb : Block} (hfb : f.block? bid = some fb) {e : Panic}
@@ -447,12 +453,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
   obtain ⟨fvr', gvr, hfvr', hgvr, -, hfrid, -, -, hrelr, hzr⟩ := S.value hbt hfb hrb
   rw [hfvr] at hfvr'; cases hfvr'
   rw [stepV_of hfvr] at hrp
-  have hrop : fvr.op = .PanicBounds ∨ fvr.op = .StaticLECall ∨ fvr.op = .StaticCall := by
-    rcases evalValue_panic_op hrp with h | h | h | h
-    · exact .inl h
-    · exact .inr (.inl h)
-    · exact .inr (.inr h)
-    · exact absurd h (S.frag.noNil _ _ hfvr)
+  have hrop := evalValue_panic_op hrp
   have hgop : gvr.op = fvr.op := by
     cases hrelr with
     | same hop => exact hop
@@ -468,17 +469,53 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i 
   have hk' : oT.toList[pre'.length]? = some r := by rw [hsplitT]; simp
   have hnodeR : NodeIn (schedNodes f fb).toList r :=
     (nodeIn_schedNodes hownF).2 ⟨hrb, fvr, hfvr, hrnph⟩
-  have hnotNil : ¬ NilIn (schedNodes f fb).toList r := by
-    intro hn
-    have hm : (⟨fvr.id, fvr.args, prio fvr.op⟩ : SNode) ∈ (schedNodes f fb).toList :=
-      mem_schedNodes.2 ⟨r, hrb, fvr, hfvr, hrnph, rfl⟩
-    have := hn _ (by rw [← hfrid]; exact nodeOf_of_mem (schedNodes_ids hownF hndF) hm)
-    simp only [prio_panicking hrop] at this; omega
-  have htr := Order.transfer hspecS.topo hspecS.nilFirst hspecT.topo hk hk' hnotNil
-    (fun y hy hyn hyr => S.frag.chained bid hbt.1 hbt.2 fb hfb y r hy hnodeR hyn hnotNil hyr)
-    (fun y _ _ hd => depPres S hbt hfb hgbb hvals hnodeR
-      (fun gr hgr => by rw [hgvr] at hgr; cases hgr; rw [hgop]; rcases hrop with h | h | h <;>
-        rw [h] <;> decide) y hd)
+  -- the roots run in the same order (#96): the target reaches nothing the source did not
+  have hpe := phi_not_entry S hA hfb hpsS
+  have hsame := sameNP_copy S hbt hfb hgbb hvals
+  have hrnp : npIn (schedNodes f fb).toList r = true := by
+    unfold npIn
+    rw [← hfrid, nodeOf_schedNodes hownF hndF (hfrid ▸ hrb) (hfrid ▸ hfvr) hrnph]
+    simpa using prio_ne_zero_of_panic hrop
+  have hdep : ∀ x y, npIn (schedNodes f fb).toList x = true →
+      npIn (schedNodes f fb).toList y = true →
+      (Order.Dep (NodeIn (schedNodes f fb).toList) (argsOf (schedNodes f fb).toList) x y ↔
+        Order.Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) x y) := by
+    intro x y hx _
+    have hxN := (npIn_iff.1 hx).1
+    constructor
+    · intro hd
+      refine depPres S hbt hfb hgbb hvals hxN (fun gx hgx hcx => ?_) y hd
+      obtain ⟨hxb, fx, hfx, hfxn⟩ := (nodeIn_schedNodes hownF).1 hxN
+      obtain ⟨fx', gx', hfx', hgx', -, -, -, -, hrelx, hzx⟩ := S.value hbt hfb hxb
+      rw [hfx] at hfx'; cases hfx'
+      rw [hgx] at hgx'; cases hgx'
+      have hpx : prio fx.op ≠ 0 := by
+        unfold npIn at hx
+        rw [nodeOf_schedNodes hownF hndF hxb hfx hfxn] at hx
+        simpa using hx
+      cases hrelx with
+      | same hop => rw [← hop, hcx] at hpx; exact hpx rfl
+      | phi _ hph => exact hfxn hph
+      | empty hzz => exact hzx hzz
+    · intro hd; exact (depBack S hbt hfb hpe hso hgbb hvals hd hxN).1
+  have htr := sched_transfer' hspecS hspecT hsame hdep hk hk' hrnp (fun a y haN hyN hay hyT => by
+    obtain ⟨hyb, fy, hfy, hfyn⟩ := (nodeIn_schedNodes hownF).1 hyN
+    obtain ⟨fy', gy, hfy', hgy, -, -, -, -, hrely, hzy⟩ := S.value hbt hfb hyb
+    rw [hfy] at hfy'; cases hfy'
+    rw [argsOf_schedNodes hownF hndF hyb hfy hfyn] at hay
+    obtain ⟨k, hk2⟩ := List.getElem?_of_mem hay
+    have hk2' : fy.args[k]? = some a := by simpa using hk2
+    cases hrely with
+    | phi _ hph => exact absurd hph hfyn
+    | empty hzz => exact absurd hzz hzy
+    | same hop _ _ hsz hargs' =>
+      obtain ⟨w, hw, hra⟩ := hargs' k a hk2'
+      have hgyn : gy.op ≠ .Phi := by rw [hop]; exact hfyn
+      have hwT : w ∈ argsOf (schedNodes g gb).toList y := by
+        rw [argsOf_schedNodes hownG hndG (by rw [hvals]; exact hyb) hgy hgyn]
+        exact List.mem_of_getElem? (by simpa using hw)
+      obtain ⟨ka, hka⟩ := List.getElem?_of_mem ((omem a).2 ((nodeIn_schedNodes hownF).1 haN))
+      exact feedsOf S hbt hfb hso hgbb hvals hyT hwT ka a hka hra)
   -- the target's prefix agrees with the source's frame at the panic
   have hargsT : ∀ x gv, g.value? x = some gv → argsF (Ctx.make tabs g).f x = gv.args.toList :=
     fun x gv hgv => argsF_of (f := g) hgv
