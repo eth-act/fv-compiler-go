@@ -92,6 +92,7 @@ structure TgtHyp (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID 
   hout : ∀ x ∈ og.toList, ∀ w, g.value? x = some w → ∀ a ∈ w.args, a ∉ og.toList → Reg T0 a
   hrel0 : ∀ a, a ∉ og.toList → isNew a = false → ∀ y, G.regs[a]? = some (some y) →
     ∃ y', T0.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y'
+  hGok : RegsOK (Ctx.make tabs f) G
 
 /-- **A source value of the schedule** evaluated by the target after the prefix `d`: a
 refinement of its conversion (or the same panic), by its obligation. -/
@@ -122,8 +123,8 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
   have hxfb : x ∈ fb.values := Classical.byContradiction fun h => by
     rw [TH.B.fresh x hxgb h] at hn; cases hn
   have huphi : u.op ≠ .Phi := fun hph => by
-    obtain ⟨hgu, -⟩ := TH.B.phiS x hxfb u hu hph
-    rw [hw] at hgu; cases hgu; exact hwphi hph
+    obtain ⟨⟨w', hgu, hsame⟩, -⟩ := TH.B.phiS x hxfb u hu hph
+    rw [hw] at hgu; cases hgu; exact hwphi (hsame.1.trans hph)
   have hfront : ∀ a ∈ front x, ∀ ya, G.regs[a]? = some (some ya) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a ya) y' := by
     intro a ha ya hya
@@ -141,7 +142,7 @@ theorem tgt_next {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
     · rw [hTk a fun hd => hm (hdog a hd)]; exact TH.hrel0 a hm han ya hya
   have hT_G : T = { G with regs := T.regs } := by rw [hTf]; rw [TH.hT0]
   rw [hstepV]
-  exact TH.B.obl x hxfb u hu huphi u w hu hw env hE G T hT_G _ hTN
+  exact TH.B.obl x hxfb u hu huphi u w hu hw env hE G T hT_G TH.hGok _ hTN
     (fun a ha han => by
       by_cases hm : a ∈ og.toList
       · exact .inl ⟨hargIn a ha hm, han⟩
@@ -156,7 +157,7 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
       G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) :
     ∃ T, evalAll env (Ctx.make tabs g) T0 L = .ok T ∧ LInv env tabs g cv isNew G T0 E0 L T := by
   obtain ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args, hnewArgs, hout,
-    hrel0⟩ := TH
+    hrel0, hGok⟩ := TH
   refine evalAll_induct L (LInv env tabs g cv isNew G T0 E0) ?_ L [] T0 rfl
     ⟨by cases T0; rfl, rfl, fun _ _ => rfl, fun _ h => absurd h List.not_mem_nil,
       hE0.mono (fun z hz => hz.resolve_left fun h => absurd h.1 List.not_mem_nil)
@@ -281,7 +282,7 @@ theorem tgt_loop {env : Env} (hE : env.Mono) {og : Array ID} {G T0 : Frame} {E0 
   | false =>
     obtain ⟨u, y, hu, hGy, hevS⟩ := hsrc x hxL hn
     have hob := tgt_next hE ⟨B, hsg, hnd, htopo, hmem, hid, hT0, hsz, himg, hE0, hE0og, hE0args,
-      hnewArgs, hout, hrel0⟩ hog' ⟨hTf, hTs, hTk, hTr, hTN, hTreg⟩ hn hu (regs_of_ok hevS)
+      hnewArgs, hout, hrel0, hGok⟩ hog' ⟨hTf, hTs, hTk, hTr, hTN, hTreg⟩ hn hu (regs_of_ok hevS)
     rw [hevS] at hob
     generalize hT' : stepV env (Ctx.make tabs g) T x = rT at hob
     cases hob with

@@ -71,7 +71,9 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
     (fun a y ha hy hay hy' => B.feeds a y ha hy hay hy')
   have hGk : ∀ a, a ∉ oS.toList → G.regs[a]? = (setPhis ps frS.regs)[a]? :=
     fun a ha => g3 a fun hm => ha (hpreo a hm)
-  have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := G) (by rw [g1]) hGk
+  have hGok : RegsOK (Ctx.make tabs f) G :=
+    regsOK_block H hbm hfb hps hA.ok (fun x hx => ((ofm x).1 (hpreo x hx)).1) hpre
+  have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := G) (by rw [g1]) hGk hGok
   obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT (fun x hx hn => by
     have hxog : x ∈ og.toList := by rw [hogT]; exact List.mem_append_left _ hx
     obtain ⟨hxg, w, hw, hph⟩ := (ogm x).1 hxog
@@ -79,8 +81,8 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
       rw [B.fresh x hxg h] at hn; cases hn
     obtain ⟨u, hu, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ x hxf
     have huphi : u.op ≠ .Phi := fun hp => by
-      obtain ⟨hgu, -⟩ := B.phiS x hxf u hu hp
-      rw [hw] at hgu; cases hgu; exact hph hp
+      obtain ⟨⟨w', hgu, hsw⟩, -⟩ := B.phiS x hxf u hu hp
+      rw [hw] at hgu; cases hgu; exact hph (hsw.1.trans hp)
     have hN : NodeIn (schedNodes f fb).toList x :=
       (nodeIn_schedNodes hownF).2 ⟨hxf, u, hu, huphi⟩
     obtain ⟨j, hj⟩ := List.getElem?_of_mem hx

@@ -7,7 +7,7 @@ import GoFV.Proof.AtomSimBlock
 `tgt_phis`: the target's `Phi`s (those of the source) read refined arguments. `enter_ok`: the
 target's block entry completes too (`tgt_loop` against the source's final frame), and its
 registers refine the conversions of the source's; afterwards the entry block has run
-(`EntryOK`).
+(`EntryOK`) and the source's registers are `RegsOK` (`regsOK_block`).
 -/
 
 namespace GoFV.Proof.EC
@@ -35,13 +35,14 @@ theorem tgt_phis (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS fr
       ∃ a y y', w.args[i]? = some a ∧ frT.regs[a]? = some (some y') ∧
         (setPhis ps frS.regs)[z]? = some (some (y.retype (tabs.ty w.type))) ∧ Sem.Refines y y' := by
     intro z hz w hw hph
-    obtain ⟨hzf, hfw⟩ := B.phiT z hz w hw hph
-    obtain ⟨-, -, hcva⟩ := B.phiS z hzf w hfw hph
-    obtain ⟨a, y, ha, hy, hset⟩ := hphS z hzf w hfw hph (by rw [hA.szS]; exact lt_of_value? hfw)
+    obtain ⟨hzf, u, hfu, hsw⟩ := B.phiT z hz w hw hph
+    have huph : u.op = .Phi := hsw.1.symm.trans hph
+    obtain ⟨-, -, hcva⟩ := B.phiS z hzf u hfu huph
+    obtain ⟨a, y, ha, hy, hset⟩ := hphS z hzf u hfu huph (by rw [hA.szS]; exact lt_of_value? hfu)
     obtain ⟨y', hy', hyy⟩ := hA.rel a y hy
     rw [hcva a (Array.mem_of_getElem? ha) y] at hyy
-    refine ⟨a, y, y', ha, hy', ?_, hyy⟩
-    rw [hset, tys_of_value hfw]; rfl
+    refine ⟨a, y, y', by rw [hsw.2.1]; exact ha, hy', ?_, hyy⟩
+    rw [hset, tys_of_value hfu, hsw.2.2]; rfl
   obtain ⟨psT, hpsT⟩ := filterMapM_phi_ok (ctx := Ctx.make tabs g) (fr := frT) (i := i)
     (l := gb.values.toList) fun z hz => by
       have hz' := Array.mem_toList_iff.1 hz
@@ -92,6 +93,20 @@ theorem Hyp.entry_not_mem (H : Hyp tabs f g cv isNew front RR ce ce') {z b : ID}
   have := H.wg.valueOnce _ _ _ _ ⟨H.wg.entry, heb⟩ ⟨hbm, hgb⟩ z hze hm
   exact hb (by rw [← this, H.entry_eq])
 
+/-- The source's frame after its `Phi`s and a part `L` of its schedule is `RegsOK`. -/
+theorem regsOK_block (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS : Frame}
+    {b : ID} {i : Nat} {fb : Block} (hbm : b ∈ f.blocks) (hfb : f.block? b = some fb)
+    {ps : List (ID × Val)}
+    (hps : fb.values.toList.filterMapM (phiStep (Ctx.make tabs f) frS i) = .ok ps)
+    (hok : RegsOK (Ctx.make tabs f) frS) {L : List ID} (hL : ∀ x ∈ L, x ∈ fb.values) {G : Frame}
+    (hev : evalAll env (Ctx.make tabs f) { frS with regs := setPhis ps frS.regs } L = .ok G) :
+    RegsOK (Ctx.make tabs f) G :=
+  regsOK_evalAll (fun x hx v hv => by
+      obtain ⟨u, hu, hid, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ x (hL x hx)
+      have hv' : f.value? x = some v := hv
+      rw [hu] at hv'; cases hv'; exact hid)
+    (regsOK_phis hps hok) hev
+
 /-- **The target's block against a source reference frame `G`** (the source's frame after its
 `Phi`s, `PS`, with the source's schedule `oS` evaluated in part or in full): the hypotheses of
 `tgt_loop`/`tgt_next` for the target's frame after its `Phi`s, the new entry values (once the
@@ -108,7 +123,8 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
       ∃ y y', (setPhis ps frS.regs)[z]? = some (some y) ∧
         (setPhis psT frT.regs)[z]? = some (some y') ∧ Sem.Refines y y')
     {G : Frame} (hG : G = { frS with regs := G.regs })
-    (hGk : ∀ a, a ∉ oS.toList → G.regs[a]? = (setPhis ps frS.regs)[a]?) :
+    (hGk : ∀ a, a ∉ oS.toList → G.regs[a]? = (setPhis ps frS.regs)[a]?)
+    (hGok : RegsOK (Ctx.make tabs f) G) :
     TgtHyp env tabs f g cv isNew front RR fb gb og G { frT with regs := setPhis psT frT.regs }
       (fun z => EntryVal g z ∧ isNew z = true ∧ b ≠ f.entry) := by
   have hbm' : b ∈ g.blocks := H.blocks_eq ▸ hbm
@@ -131,7 +147,7 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
       exact (B.newOK a ha han w hw).1 hph
   refine ⟨B, hsg, ogn, ogt, ogm, fun x hx w hw => ?_, ?_, by simp [pT1, hA.szT], hA.img,
     ?_, fun z hz hm => hE0gb z hz (hogb z hm), fun z hz w hw a ha hm =>
-      H.entry_not_mem (H.entry_args hz.1 hw a ha) hbm' hgb hz.2.2 (hogb a hm), ?_, ?_, ?_⟩
+      H.entry_not_mem (H.entry_args hz.1 hw a ha) hbm' hgb hz.2.2 (hogb a hm), ?_, ?_, ?_, hGok⟩
   · obtain ⟨w', hw', hid, -⟩ := H.wg.valueId b gb ⟨hbm', hgb⟩ x hx
     rw [hw] at hw'; cases hw'; exact hid
   · rw [hG]; conv => lhs; rw [hA.frame]
@@ -160,11 +176,12 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
   · intro a hm han y hy
     by_cases hag : a ∈ gb.values
     · obtain ⟨w, hw, hph⟩ := hphi_of a hag hm
-      obtain ⟨haf, hfw⟩ := B.phiT a hag w hw hph
-      obtain ⟨-, hcv, -⟩ := B.phiS a haf w hfw hph
+      obtain ⟨haf, u, hfu, hsw⟩ := B.phiT a hag w hw hph
+      have huph : u.op = .Phi := hsw.1.symm.trans hph
+      obtain ⟨-, hcv, -⟩ := B.phiS a haf u hfu huph
       have hao : a ∉ oS.toList := fun h => by
-        obtain ⟨-, u, hu, hne⟩ := (ofm a).1 h
-        rw [hfw] at hu; cases hu; exact hne hph
+        obtain ⟨-, u', hu', hne⟩ := (ofm a).1 h
+        rw [hfu] at hu'; cases hu'; exact hne huph
       obtain ⟨y0, y0', hy0, hy0', hyy⟩ := hphiT a hag w hw hph
       rw [hGk a hao, hy0] at hy; cases hy
       exact ⟨y0', hy0', by rw [hcv]; exact hyy⟩
@@ -218,7 +235,7 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
       (∀ x y, GS.regs[x]? = some (some y) →
         ∃ y', GT.regs[x]? = some (some y') ∧ Sem.Refines (cv x y) y') ∧
       (∀ x y, GS.regs[x]? = some (some y) → Listed f x) ∧
-      EntryOK env tabs g isNew GT := by
+      EntryOK env tabs g isNew GT ∧ RegsOK (Ctx.make tabs f) GS := by
   obtain ⟨gb, ps, oS, og, psT, hgb, B, hbm, -, hps, hsf, hsg, hev, hpsT, hphiT, hentT⟩ :=
     block_parts H hA hfb hen (fun _ h => nomatch h)
   have hbm' : b ∈ g.blocks := H.blocks_eq ▸ hbm
@@ -229,8 +246,10 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
   obtain ⟨pS1, -, pS3, -⟩ := phis_spec hndF hps
   obtain ⟨pT1, -, pT3, pT4⟩ := phis_spec hndG hpsT
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ofn oft (by rw [pS1, hA.szS]; rfl) hev
+  have hGSok : RegsOK (Ctx.make tabs f) GS :=
+    regsOK_block H hbm hfb hps hA.ok (fun x hx => ((ofm x).1 hx).1) hev
   have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := GS)
-    (by rw [e1]) e3
+    (by rw [e1]) e3 hGSok
   have hogb : ∀ x ∈ og.toList, x ∈ gb.values := fun x hx => ((ogm x).1 hx).1
   have hphi_of : ∀ a ∈ gb.values, a ∉ og.toList → ∃ w, g.value? a = some w ∧ w.op = .Phi :=
     fun a ha hm => by
@@ -255,13 +274,13 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
         rw [B.fresh x hxg h] at hn; cases hn
       obtain ⟨u, hu, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ x hxf
       have huphi : u.op ≠ .Phi := fun hp => by
-        obtain ⟨hgu, -⟩ := B.phiS x hxf u hu hp
-        rw [hw] at hgu; cases hgu; exact hph hp
+        obtain ⟨⟨w', hgu, hsw⟩, -⟩ := B.phiS x hxf u hu hp
+        rw [hw] at hgu; cases hgu; exact hph (hsw.1.trans hp)
       exact e4 x ((ofm x).2 ⟨hxf, u, hu, huphi⟩))
   have hGT : T = { GS with regs := T.regs } := by rw [TH.hT0] at hTf; exact hTf
   refine ⟨gb, T, hgb, B, by rw [hentT, hT], hGT, by rw [hTs]; simp [pT1, hA.szT],
     by rw [e2, pS1, hA.szS],
-    fun x y hy => ?_, hlisted, ?_⟩
+    fun x y hy => ?_, hlisted, ?_, hGSok⟩
   · have hn := H.notNew (hlisted x y hy)
     by_cases hxo : x ∈ og.toList
     · exact hTr x hxo hn y hy

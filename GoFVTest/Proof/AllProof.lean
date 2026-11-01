@@ -118,6 +118,7 @@ import GoFV.Proof.Pass.ECOk
 import GoFV.Proof.Pass.ECPanic
 import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.Pass.ECSim
+import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FusePlainMerged
 import GoFV.Proof.Pass.FusePlainPanic

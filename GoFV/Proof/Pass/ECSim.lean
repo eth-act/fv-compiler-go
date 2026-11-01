@@ -177,6 +177,14 @@ theorem stepTerm_ret_kind {fr : Frame} {b : Block} {rs : List Val} {m : Mem}
        | panic e m => rw [hc0] at h; cases h
        | stuck msg => rw [hc0] at h; cases h)
 
+/-- A terminator that reads no control (`Plain`, `First`, and the kinds that get stuck) does
+not depend on the frame. -/
+theorem stepTerm_noCtrl {fr fr' : Frame} {b : Block} (h1 : ¬ (b.kind = .If ∨ b.kind = .JumpTable))
+    (h2 : b.kind ≠ .Ret) : stepTerm fr b = stepTerm fr' b := by
+  unfold stepTerm
+  cases hk : b.kind <;>
+    first | rfl | exact absurd (Or.inl hk) h1 | exact absurd (Or.inr hk) h1 | exact absurd hk h2
+
 /-! ## One block step -/
 
 section
@@ -207,7 +215,8 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     rw [hgb]; simp only; rw [hT]
     exact ⟨m', rfl, hm⟩
   | ok GS =>
-  obtain ⟨gb, GT, hgb, B, hT, hGT, hszT, hszS, hrel, hlisted, hentry⟩ := enter_ok H hE hA hfb hen
+  obtain ⟨gb, GT, hgb, B, hT, hGT, hszT, hszS, hrel, hlisted, hentry, hGSok⟩ :=
+    enter_ok H hE hA hfb hen
   obtain ⟨hD, hGSf, -⟩ := dinv_enter H.wf H.cf hbt.1 hfb hA.szS (CSE.pre_strict H.cf hA.pre).1 hen
   rw [hgb]; simp only; rw [hT]; simp only
   obtain ⟨gb', hgb', hgid, hsucc, -⟩ := CopyElim.cfgView_block H.rel.cfg hfb
@@ -220,30 +229,37 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
   | goto e =>
     have hnr := stepTerm_goto_notRet hst
     have hmono : Res.Rel Next.Refines (stepTerm GS fb) (stepTerm GT gb) := by
-      refine stepTerm_mono2 B.kind hsucc hgid fun k => ?_
-      unfold Sem.control
-      rw [B.controls]
-      cases hk : fb.controls[k]? with
-      | none => exact .stuck _ _
-      | some c =>
-        simp only [Res.ofOption]
-        cases hy : GS.regs[c]? with
+      by_cases hkc : fb.kind = .If ∨ fb.kind = .JumpTable
+      · refine stepTerm_mono2 B.kind hsucc hgid fun k => ?_
+        unfold Sem.control
+        rw [B.controls]
+        cases hk : fb.controls[k]? with
         | none => exact .stuck _ _
-        | some o =>
-          cases o with
+        | some c =>
+          simp only [Res.ofOption]
+          cases hy : GS.regs[c]? with
           | none => exact .stuck _ _
-          | some y =>
-            obtain ⟨y', hy', hyy⟩ := hrel c y hy
-            rw [B.ctrl hnr c (Array.mem_of_getElem? hk) y] at hyy
-            rw [hy']
-            exact .ok hyy
+          | some o =>
+            cases o with
+            | none => exact .stuck _ _
+            | some y =>
+              obtain ⟨y', hy', hyy⟩ := hrel c y hy
+              rw [B.ctrl hkc c (Array.mem_of_getElem? hk) y] at hyy
+              rw [hy']
+              exact .ok hyy
+      · rw [stepTerm_noCtrl (fr := GT) (fr' := GS) (by rw [B.kind]; exact hkc)
+          (by rw [B.kind]; exact hnr)]
+        refine stepTerm_mono2 B.kind hsucc hgid fun k => ?_
+        unfold Sem.control
+        rw [B.controls, hgid]
+        exact Res.Refines.refl _
     rw [hst] at hmono
     generalize stepTerm GT gb = rT at hmono
     cases hmono with
     | ok hn =>
       cases hn
       have hem : e ∈ fb.succs := CopyElim.stepTerm_goto_mem hst
-      refine ⟨GT, e, rfl, rfl, rfl, hGT, hszS, hszT, ?_, hrel, hlisted, ?_, .inr hentry⟩
+      refine ⟨GT, e, rfl, rfl, rfl, hGT, hszS, hszT, ?_, hrel, hlisted, ?_, .inr hentry, hGSok⟩
       · rw [hGT, hGSf]; have := hA.img; rw [hA.frame] at this; exact this
       · cases e
         exact .inr ⟨b, fb, hbt.1, hfb, hbt.2, hem, hD, fun _ _ _ _ => rfl⟩
@@ -259,7 +275,7 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     cases hn
     obtain ⟨c, hc0, hy⟩ := control_ok hc
     obtain ⟨y', hy', hyy⟩ := hrel c y hy
-    obtain ⟨rs', m', hro', hRR⟩ := B.ret hk c hc0 y y' hyy rs m hro
+    obtain ⟨rs', m', hro', hRR⟩ := B.ret hk c hc0 y y' (hGSok c y hy) hyy rs m hro
     have hkT : gb.kind = .Ret := by rw [B.kind, hk]
     rw [stepTerm_ret_eq hkT, control_of (by rw [B.controls]; exact hc0) hy']
     exact ⟨rs', m', by simp only [Res.bind, retNext_of hro'], hRR⟩
@@ -307,8 +323,9 @@ theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Boo
     have hA : SimAt env tabs f g cv isNew (entryFrame env (Ctx.make tabs f) args mem)
         (entryFrame env (Ctx.make tabs g) args mem) f.entry 0 := by
       refine ⟨by rw [hent], by simp [entryFrame, Ctx.make], by rw [hent]; simp, ?_,
-        fun x y h => ?_, fun x y h => ?_, .inl rfl, .inl rfl⟩
+        fun x y h => ?_, fun x y h => ?_, .inl rfl, .inl rfl, fun x y h => ?_⟩
       · rw [entry_images_size (by rw [hpar]; exact hlen) (paramTys_size tabs g)]
+      · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
     have hrun := runLoop_simR (act := 0) (SimR env tabs f g cv isNew) RR

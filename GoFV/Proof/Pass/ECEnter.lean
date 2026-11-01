@@ -1,13 +1,14 @@
 import GoFV.Proof.Pass.ECLoop
+import GoFV.Proof.Pass.ECTyped
 
 /-!
 # Block entries of the conversion simulation (issue #28)
 
 `SimAt frS frT b i`: the source and target frames at the entry of block `b` along edge `i`:
 the same activation inputs, every source register refined (through its conversion) by the
-target's, the source's lemma (D) for the strict ancestors (`CSE.Pre`), and, after the entry
+target's, the source's lemma (D) for the strict ancestors (`CSE.Pre`), after the entry
 block has run, the target's entry values with registers and its new entry values holding
-their evaluations (`EntryOK`).
+their evaluations (`EntryOK`), and the shapes of the source's registers (`RegsOK`).
 
 `enter_ok`: a block the source enters to `GS` the target enters to some `GT` whose registers
 refine the conversions of `GS`'s. `enter_panic` (`ECPanic`): a panic alike.
@@ -34,6 +35,7 @@ structure SimAt (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID �
   listed : ∀ x y, frS.regs[x]? = some (some y) → Listed f x
   pre : CSE.Pre env tabs f #[] frS bid i
   entry : bid = f.entry ∨ EntryOK env tabs g isNew frT
+  ok : RegsOK (Ctx.make tabs f) frS
 
 section
 variable {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool} {front : ID → List ID}
