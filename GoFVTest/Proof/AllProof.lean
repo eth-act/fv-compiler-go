@@ -219,6 +219,12 @@ import GoFV.Proof.Pass.ShortCircCpaSim
 import GoFV.Proof.Pass.ShortCircCpaWF
 import GoFV.Proof.Pass.StructLoad
 import GoFV.Proof.Pass.StructLoadMem
+import GoFV.Proof.Pass.StructStoreBlock
+import GoFV.Proof.Pass.StructStoreEval
+import GoFV.Proof.Pass.StructStoreMem
+import GoFV.Proof.Pass.StructStoreRel
+import GoFV.Proof.Pass.StructStoreSim
+import GoFV.Proof.Pass.StructStoreSrc
 import GoFV.Proof.Pass.ZCSE
 import GoFV.Proof.Pass.ZCSEBlock
 import GoFV.Proof.Pass.ZCSEEnter
@@ -378,6 +384,7 @@ import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
 import GoFV.Proof.Rules.SignExt
 import GoFV.Proof.Rules.StructLoad
+import GoFV.Proof.Rules.StructStore
 import GoFV.Proof.Rules.Sub
 import GoFV.Proof.Rules.Sub2
 import GoFV.Proof.Rules.Sub3
@@ -450,6 +457,7 @@ import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.StructLoad
+import GoFV.Proof.Witness.StructStore
 import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TabsAgreeMod

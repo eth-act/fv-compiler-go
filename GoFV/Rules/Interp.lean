@@ -299,9 +299,32 @@ def structLoadDefs (f : Func) (v : ID) : Array Value :=
       | none => acc
   | none => #[]
 
+/-- The values `rewriteStructStore` built for the `Store` `v` (now `Copy` of the last field
+`Store`; `f0`: the function before the rule), in the order `RewriteCheck.ssEvent?` reads them:
+per field, first to last, its `OffPtr` and its `Store`. The chain is walked back from `v`'s
+argument through the `Store`s `f0` does not have (at most `f.valueTab.size` steps). -/
+def structStoreDefs (f0 f : Func) (v : ID) : Array Value :=
+  match (f.value? v).bind (·.args[0]?) with
+  | some m0 => Id.run do
+    let mut m := m0
+    let mut acc : List Value := []
+    for _ in [0:f.valueTab.size] do
+      match f.value? m with
+      | some s =>
+        if s.op == .Store && (f0.value? m).isNone then
+          match s.args[0]?.bind f.value? with
+          | some o => acc := o :: s :: acc; m := s.args[2]!
+          | none => break
+        else break
+      | none => break
+    return acc.toArray
+  | none => #[]
+
 /-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. `slDefs`: log the
-values a struct-load expansion built (`structLoadDefs`) after `v`. -/
-def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) : RwM Bool := do
+values a struct-load expansion built (`structLoadDefs`) after `v`; `ssDefs`: those of a
+struct-store split (`structStoreDefs`). -/
+def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs : Bool := false) :
+    RwM Bool := do
   let r := cr.rule
   let x ← val v
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
@@ -311,24 +334,32 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) : RwM Boo
     if !(← pendingOk sc st) then return false
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
+    -- the function before a struct-store split (its fresh values are those it lacks); kept
+    -- only then, as holding it makes the rule's edits copy the tables
+    let f0? ← if ssDefs && (← get).log.isSome then some <$> getF else pure none
     let built ← applyResult sc r v
     modify fun s => { s with fired := s.fired + 1 }
     if (← get).log.isSome then
       let f ← getF
       let defs := (#[some v] ++ built).filterMap fun id => id.bind f.value?
       let defs := if slDefs then defs ++ structLoadDefs f v else defs
+      let defs := match f0? with
+        | some f0 => defs ++ structStoreDefs f0 f v
+        | none => defs
       logEv fun _ => .rule v idx st.binds defs
     return true
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`; `nilChecks`/`loads`: the rule
 set's `nilChecks`/`loads`, tried on a `NilCheck`/`Load` after its row (their index continues
-the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`. -/
+the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`;
+`structStores`: the rule set's `structStores`, tried on a `Store` after its row. -/
 structure Table where
   values : Array (Array CRule)
   blocks : Array (Array BlockRule)
   nilChecks : Array CRule := #[]
   loads : Array CRule := #[]
   structLoads : Array CRule := #[]
+  structStores : Array CRule := #[]
 
 def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
   let mut values : Array (Array CRule) := Array.replicate (Op.all.size + 1) #[]
@@ -339,7 +370,8 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
     blocks := blocks.set! k.ctorIdx rs.toArray
   return { values, blocks, nilChecks := (s.nilChecks.map CRule.ofRule).toArray,
            loads := (s.loads.map CRule.ofRule).toArray,
-           structLoads := (s.structLoads.map CRule.ofRule).toArray }
+           structLoads := (s.structLoads.map CRule.ofRule).toArray,
+           structStores := (s.structStores.map CRule.ofRule).toArray }
 
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
@@ -358,6 +390,10 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     let ss := t.structLoads
     for h : i in [0:ss.size] do
       if ← tryRule v ss[i] (rs.size + ls.size + i) (slDefs := true) then return true
+  if o == .Store then
+    let ss := t.structStores
+    for h : i in [0:ss.size] do
+      if ← tryRule v ss[i] (rs.size + i) (ssDefs := true) then return true
   return false
 
 /-! ## Block rules -/

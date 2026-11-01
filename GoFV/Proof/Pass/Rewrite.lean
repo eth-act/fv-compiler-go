@@ -4,6 +4,7 @@ import GoFV.Proof.AtomSim
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Pass.LoadFwd
+import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Checked
 import GoFV.Proof.Rules.Proven
 import GoFV.Opt.Opt
@@ -18,9 +19,9 @@ under monotone contracts (`Env.Mono`), in the pass's extended tables. A rejected
 input (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as
 terms in the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
-`refinesUnder_of_tabsAgree`). The log's nil-check eliminations and Load-of-Store forwardings
-(issue #151) are applied to the input first, each by its own refinement (`Nil.refines_of_rel`,
-`LoadFwd.fwd_refines`).
+`refinesUnder_of_tabsAgree`). The log's nil-check eliminations, Load-of-Store forwardings and
+struct-store splits (issue #151) are applied to the input first, each by its own refinement
+(`Nil.refines_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines`).
 
 The instances depend on the proven-rule sets explicitly: `opt_refines` (also `middle opt` and
 `late opt`, the same pass under another name) is about `optChecked`, the pass with the rules of
@@ -55,7 +56,7 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
     RefinesUnder Env.Mono out.tables out.func penv.tables f := by
-  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, f₁, hn, f₂, log, hfw, hv⟩
+  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, f₁, hn, f₂, hfw, f₃, log₃, hss, hv⟩
   · rw [he, ht]; exact RefinesUnder.refl _ _ _
   obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
   obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
@@ -74,9 +75,16 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     · exact ⟨ce₁, hf₁, RefinesUnder.refl _ _ _⟩
     have hf₂ := checkOK_sound hck
     exact ⟨_, hf₂, LoadFwd.fwd_refines hf₁ hf₂ hrel⟩
+  -- then the struct-store splits
+  obtain ⟨ce₃, hf₃, hS⟩ : ∃ ce₃, check ce₃ f₃ = .ok () ∧
+      RefinesUnder Env.Mono out.tables f₃ out.tables f₂ := by
+    rcases hss with rfl | ⟨hrel, hck⟩
+    · exact ⟨ce₂, hf₂, RefinesUnder.refl _ _ _⟩
+    have hf₃ := checkOK_sound hck
+    exact ⟨_, hf₃, StructStore.ss_refines hf₂ hf₃ hrel⟩
   -- then the validated rewrite
   exact refinesUnder_of_tabsAgree hta
-    (hN.trans (hF.trans (AtomSim.atomSim_refines hf₂ hg hA hcf hcg h1 h2)))
+    (hN.trans (hF.trans (hS.trans (AtomSim.atomSim_refines hf₃ hg hA hcf hcg h1 h2))))
 
 /-- `opt`, `middle opt` and `late opt` with the proven generic rules, validated. -/
 theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}
