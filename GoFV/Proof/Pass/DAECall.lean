@@ -193,6 +193,18 @@ theorem callOp_rest_nil {env : Env} {ctx : Ctx} {v : Value} {argv : List Val}
   | none => exact ⟨_, rfl⟩
   | some callee => exact ⟨_, rfl⟩
 
+theorem retypeResults_avoids (hU : TempU U) (tabs : Tables) :
+    ∀ (ps : List ABIParam) {rs : List Val}, (∀ x ∈ rs, Val.Avoids U x) →
+      ∀ x ∈ retypeResults tabs ps rs, Val.Avoids U x
+  | [], rs, h => by intro x hx; cases rs <;> exact h x hx
+  | _ :: _, [], h => by intro x hx; exact h x hx
+  | p :: ps, r :: rs, h => by
+    intro x hx
+    simp only [retypeResults, List.mem_cons] at hx
+    rcases hx with rfl | hx
+    · exact retype_avoids hU _ (h r List.mem_cons_self)
+    · exact retypeResults_avoids hU tabs ps (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
+
 /-- **A call on related arguments.** -/
 theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {v : Value}
     {L : List Val} {w w' : Val} (hw : VR U w w') (hav : ∀ a ∈ L ++ [w], Val.Avoids U a) :
@@ -230,21 +242,25 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
         else
           Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
             (env.extern callee)) fun c =>
-          match c args clo M with
+          match c args clo (M.poisonBlock (.outargs ctx.act)) with
           | .returned rs m' =>
             Res.bind (Res.ofOption (toString "call " ++ toString callee ++
                 toString ": results do not match the ABI")
               (encodeResults ctx.tabs ctx.act
                 (List.filter (fun x => x.out)
                   ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))
-                rs m')) fun x =>
+                (retypeResults ctx.tabs (List.filter (fun x => x.out)
+                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs)
+                m')) fun x =>
             if post = true then
               .ok (Val.tuple (x.fst ++ [Val.mem x.snd, Val.agg (List.map (fun p =>
                 if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
                 else Val.poison) (List.filter (fun x => x.out)
                   ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
             else
-              .ok (Val.tuple (rs ++ [Val.mem x.snd, Val.agg (List.map (fun p =>
+              .ok (Val.tuple (retypeResults ctx.tabs (List.filter (fun x => x.out)
+                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs ++
+                [Val.mem x.snd, Val.agg (List.map (fun p =>
                 if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
                 else Val.poison) (List.filter (fun x => x.out)
                   ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
@@ -255,21 +271,25 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
         else
           Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
             (env.extern callee)) fun c =>
-          match c args clo M' with
+          match c args clo (M'.poisonBlock (.outargs ctx.act)) with
           | .returned rs m' =>
             Res.bind (Res.ofOption (toString "call " ++ toString callee ++
                 toString ": results do not match the ABI")
               (encodeResults ctx.tabs ctx.act
                 (List.filter (fun x => x.out)
                   ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))
-                rs m')) fun x =>
+                (retypeResults ctx.tabs (List.filter (fun x => x.out)
+                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs)
+                m')) fun x =>
             if post = true then
               .ok (Val.tuple (x.fst ++ [Val.mem x.snd, Val.agg (List.map (fun p =>
                 if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
                 else Val.poison) (List.filter (fun x => x.out)
                   ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
             else
-              .ok (Val.tuple (rs ++ [Val.mem x.snd, Val.agg (List.map (fun p =>
+              .ok (Val.tuple (retypeResults ctx.tabs (List.filter (fun x => x.out)
+                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs ++
+                [Val.mem x.snd, Val.agg (List.map (fun p =>
                 if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
                 else Val.poison) (List.filter (fun x => x.out)
                   ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
@@ -282,10 +302,11 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     | none => exact callRel_stuck _ _
     | some c =>
     dsimp only [Res.ofOption, Res.bind]
-    have hc := hfs callee c hx U hTemp args clo M M' hargs hcloA hMA hm
+    have hc := hfs callee c hx U hTemp args clo (M.poisonBlock (.outargs ctx.act))
+      (M'.poisonBlock (.outargs ctx.act)) hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
     revert hc
-    generalize c args clo M = o
-    generalize c args clo M' = o'
+    generalize c args clo (M.poisonBlock (.outargs ctx.act)) = o
+    generalize c args clo (M'.poisonBlock (.outargs ctx.act)) = o'
     intro hc
     have haddr : ∀ (ps : List ABIParam), Val.Avoids U (Val.agg (ps.map fun p =>
         if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
@@ -311,14 +332,18 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     | returned rs r =>
       cases o' with
       | returned rs' r' =>
-        obtain ⟨rfl, hrsA, hrA, hrr⟩ := hc
+        obtain ⟨rfl, hrsA0, hrA, hrr⟩ := hc
         dsimp only
+        have hrsA := retypeResults_avoids hU ctx.tabs (List.filter (fun x => x.out)
+          ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) hrsA0
         cases he : encodeResults ctx.tabs ctx.act
             (List.filter (fun x => x.out) ((Option.map (fun x => x.params.toList)
-              (callABI? ctx.tabs v.aux)).getD [])) rs' r with
+              (callABI? ctx.tabs v.aux)).getD [])) (retypeResults ctx.tabs (List.filter
+                (fun x => x.out) ((Option.map (fun x => x.params.toList)
+                (callABI? ctx.tabs v.aux)).getD [])) rs') r with
         | none => exact callRel_stuck _ _
         | some x =>
-          obtain ⟨m1', he', hm1, hA⟩ := encodeResults_eqOff hU ctx.tabs ctx.act _ rs' hrr he
+          obtain ⟨m1', he', hm1, hA⟩ := encodeResults_eqOff hU ctx.tabs ctx.act _ _ hrr he
           obtain ⟨hA1, hA2⟩ := hA hrsA hrA
           rw [he']
           dsimp only
