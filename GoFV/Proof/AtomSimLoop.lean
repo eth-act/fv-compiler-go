@@ -76,10 +76,8 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp t
     refine termRef_apply (hTR i hi') hDS (hargsS _ (getElem!_mem' hi)) hDT
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
-      fun a ha hat hat' _ => ?_
-    rcases shape_atom H hat' with h | h
-    · rw [h, retype_other]
-    · rw [h]; exact htyS' a ha hat
+      fun a ha hat hat' hdef _ => ?_
+    rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/
 theorem evalAll_induct {env : Env} {ctx : Ctx} (L : List ID) (Inv : List ID → Frame → Prop)

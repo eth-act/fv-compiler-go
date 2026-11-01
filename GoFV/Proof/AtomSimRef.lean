@@ -14,8 +14,6 @@ namespace GoFV.Proof.AtomSim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RewriteCheck GoFV.Proof.Term
 
-theorem retype_other (v : Val) : v.retype .other = v := by cases v <;> rfl
-
 theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by cases t <;> rfl
 
 /-- A context's shape of a value is `shape` of its function's value table. -/
@@ -42,7 +40,7 @@ theorem termRef_apply {D E : ID → Option Value} {tabs : Tables} {x y : ID}
     (hrel : ∀ a, VS a → ¬ IsTerm D a → VT a → ¬ IsTerm E a → Sem.Refines (rv FS a) (rv FT a))
     (htyS : ∀ a, VS a → ¬ IsTerm D a → (rv FS a).retype (shape D tabs a) = rv FS a)
     (htyT : ∀ a, VT a → ¬ IsTerm E a → (rv FT a).retype (shape E tabs a) = rv FT a)
-    (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → ¬ VT a →
+    (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a) :
     Sem.Refines (rv FS x) (rv FT y) := by
   classical
@@ -59,16 +57,16 @@ theorem termRef_apply {D E : ID → Option Value} {tabs : Tables} {x y : ID}
       · simp only [ρ', ρ, h1, h2, ite_false]
         exact .poison _
     · simp only [ρ', h1, ite_false]; exact Sem.Refines.refl _
-  have htD : Term.Typed D tabs ρ := fun a hat => by
+  have htD : Term.Typed D tabs ρ := fun a hat _ => by
     by_cases h2 : VS a
     · simp only [ρ, h2, hat, not_false_eq_true, and_self, ite_true]; exact htyS a h2 hat
     · simp only [ρ, h2, false_and, ite_false]; exact retype_poison _
-  have htE : Term.Typed E tabs ρ' := fun a hat => by
+  have htE : Term.Typed E tabs ρ' := fun a hat hdef => by
     by_cases h1 : VT a
     · simp only [ρ', h1, hat, not_false_eq_true, and_self, ite_true]; exact htyT a h1 hat
     · simp only [ρ', h1, false_and, ite_false]
       by_cases h2 : VS a ∧ ¬ IsTerm D a
-      · simp only [ρ, h2]; exact hsh a h2.1 h2.2 hat h1
+      · simp only [ρ, h2]; exact hsh a h2.1 h2.2 hat hdef h1
       · simp only [ρ, h2, ite_false]; exact retype_poison _
   have h := hm ρ ρ' hval htD htE
   rw [hN N (Nat.le_refl N)] at h

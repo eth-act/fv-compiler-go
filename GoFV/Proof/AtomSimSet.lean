@@ -149,6 +149,20 @@ theorem shape_atom {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
     obtain ⟨u, hpu, hs⟩ := gatom_f H (listed_placed hl) ht
     simp [shape, hl, hpu.1, hs.2.1]
 
+/-- An atom the target defines has the source's shape. -/
+theorem shape_atom_def {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
+    {a : ID} (hat : ¬ IsTerm (listedDefs g) a) (hdef : (listedDefs g a).isSome) :
+    shape (listedDefs g) tabs a = shape f.value? tabs a := by
+  cases hl : listedDefs g a with
+  | none => rw [hl] at hdef; cases hdef
+  | some w =>
+    have ht : termOp w.op = false := by
+      cases h : termOp w.op
+      · rfl
+      · exact absurd ⟨w, hl, h⟩ hat
+    obtain ⟨u, hpu, hs⟩ := gatom_f H (listed_placed hl) ht
+    simp [shape, hl, hpu.1, hs.2.1]
+
 /-! ## `DenOK` in one frame -/
 
 theorem DenOK.frame {D : ID → Option Value} {tabs : Tables} {fr fr' : Frame} {V : ID → Prop}
