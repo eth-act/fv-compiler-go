@@ -592,7 +592,7 @@ def revert (tabs : Tables) (branches : Bool) (F : Array (List (ID × Bool)))
   return (fixup h, st)
 
 /-- `g` changes a terminator or a definition of a value listed in `f`. -/
-def changed (f g : Func) : Bool :=
+def defsChanged (f g : Func) : Bool :=
   f.blocks.any fun b =>
     match f.block? b, g.block? b with
     | some fb, some gb =>
@@ -607,7 +607,7 @@ terminator or a definition; else none (every definition and terminator is kept, 
 assumption, and the output still gets `g`'s other fields). -/
 def asmFor (tabs : Tables) (f g : Func) :
     Array (List (ID × Bool)) × List (ID × Width × Rng) × Array (List (ID × ID × Width × Int)) :=
-  if changed f g then (asmOf f tabs).2
+  if defsChanged f g then (asmOf f tabs).2
   else (Array.replicate f.blockTab.size [], [], Array.replicate f.blockTab.size [])
 
 /-- `prove`'s output `g` on `f` with every unjustified rewrite undone, and its statistics; `f`

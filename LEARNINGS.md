@@ -400,6 +400,22 @@ avoiding): the problem, the trick, the numbers, where it is used.
   is an `∃` needs `⟨…, ⟨p1, p2, …⟩, -⟩`; a flat pattern sends `Q` into `cases`, which fails with
   "dependent elimination failed" on an equation of a big term.
 
+#### prove validator: `rng` evaluated once per level and value via `@[csimp]` (#189, #24)
+- **Problem:** `gofv-ssa-opt --check --verified` on quick-v3 did not finish in 90 min:
+  `proveChecked` took 13 s on `test/append verifyStruct` (stock `prove`: 0.1 s). gdb sampling
+  (perf is not allowed here; `gdb -batch -ex run` with `SIGINT`s, `thread apply all bt`):
+  about 65% in `branchOK > decides > rng`. `rng` recurses 4 levels into the other side of every
+  path fact on its value, so a value with many bounds checks costs (facts on it)^4 fact scans;
+  `asmOf` ran twice (`revert`, `proveRel`) and on functions `prove` left unchanged.
+- **Trick:** `rngFast` (`GoFV/Opt/ProveCheck/Range.lean`): top-down demand sets per level, then
+  bottom-up `HashMap` tables per level, each entry `rngStep` (= `rng`'s body, `rng_succ` by
+  `rfl`) from the table below, a missing key falling back to `rng`; `@[csimp] rng_eq_rngFast`
+  (the fallback makes the proof independent of the demand computation). `asmOf` once per run,
+  and none when `prove` changed no definition or terminator (`asmFor`).
+- **Effect:** `verifyStruct` 13.7 → 2.3 s (`--verified --from prove`); `prove-probe` on
+  quick-v3 `test` 3 min 10 s → 20 s with identical output; quick-v3 `--check --verified --jobs 6`
+  in 88 s (no SLOW lines).
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
