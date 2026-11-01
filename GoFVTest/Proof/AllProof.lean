@@ -136,6 +136,7 @@ import GoFV.Proof.Pass.ECPanic
 import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.Pass.ECShape
 import GoFV.Proof.Pass.ECSim
+import GoFV.Proof.Pass.ECStack
 import GoFV.Proof.Pass.ECStruct
 import GoFV.Proof.Pass.ECTree
 import GoFV.Proof.Pass.ECTyped

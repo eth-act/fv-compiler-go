@@ -11,10 +11,13 @@ into the outgoing-arguments area of the activation, on the source call's memory;
 memory argument is the last store. The source call (`callOp`) is `stuck` unless those slots are
 writable (`outargsOK`), so:
 
-* the stores never get stuck once the source has reached the call (`NewObl`, `ecs_storeObl`);
-* the post-`expand calls` call decodes the arguments from the stored bytes
-  (`ecs_writes_read`, `decode_atom`, `build_decode`), and its callee sees the area poisoned, so
-  the stores are invisible to it (`ecs_writeAll_poison`).
+* the stores never get stuck once the source has reached the call (`ECCall.ecc_storeObl`, with
+  `ecs_chain_attr`: the stores below keep the writable ranges, `ecs_addr`: a store's address is
+  its slot, `OffPtr [off]` of `SP` as a pointer or a `uintptr`);
+* the chain writes the slots in order (`ecs_chain`), they read back (`ecs_reads`, disjoint by
+  `ecs_leafSlots_pairwise`), and the post-`expand calls` call decodes from them refinements of
+  the Go-typed arguments (`ecs_stack_params`: `decode_atom`-style leaf reads, `build_decode`);
+  its callee sees the area poisoned, so the stores are invisible to it (`writeAll_poison`).
 -/
 
 namespace GoFV.Proof.EC

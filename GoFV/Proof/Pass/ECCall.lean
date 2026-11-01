@@ -7,15 +7,20 @@ import GoFV.Proof.MemRefine
 # `expand calls`: the obligations of calls and `MakeResult`s (issue #28)
 
 `obl_call`: a call on Go-typed arguments (`StaticLECall`, `ClosureLECall`, `InterLECall`)
-becomes the post-`expand calls` call on their register pieces (`ec_pieces`); the target's
-`decodeArgs` rebuilds arguments refining the source's (`ofPieces_leafVals`), the same callee's
-contract sees refined arguments and memory (`Contract.Mono`), and the target's result pieces
-(`encodeResults`, `toPieces = leafVals`) refine the conversion `convTuple` of the source's
-Go-typed results. `obl_result`: a `MakeResult` of Go-typed results becomes one of their pieces.
+becomes the post-`expand calls` call on the register pieces of its register-assigned arguments
+(`ec_pieces`) and on a memory where a chain of new `Store`s wrote its stack-assigned ones
+(`ECStack`); the target's `decodeArgs` rebuilds arguments refining the source's
+(`ecc_decodeArgs_mixed`: `ofPieces_leafVals`, `ecs_stack_params`), the same callee's contract
+sees refined arguments and memory (the stores vanish under the area's poisoning;
+`Contract.Mono`), and the target's result pieces (`encodeResults`, `toPieces = leafVals`) refine
+the conversion `convTuple` of the source's Go-typed results. `ecc_storeObl`: a stack-argument
+store evaluates once the source reached its call (`NewObl`). `obl_result`: a `MakeResult` of
+Go-typed results becomes one of their pieces.
 
 Both are proved first in the form `EcOblImk`, `Obl` with the frame facts of the `IMake` data
-shortcut (`EcImkFacts`); `obl_call`/`obl_result` are the `Obl`s when every `IMake` argument is
-held (`EcoImkHeld`) in target mode (it and its data operand among the target's held values,
+shortcut (`EcImkFacts`) and the target's held values `H` (the `SP`s under the stack stores,
+`ecStackSP`); `obl_call`/`obl_result` are the `Obl`s when every `IMake` argument is held
+(`EcoImkHeld`) in target mode (it and its data operand among the target's held values,
 interface-shaped in `g`) or source mode (it among the source's held values, the same `IMake`
 in `f`; `obl_of_imk`).
 -/

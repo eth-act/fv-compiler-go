@@ -10,7 +10,9 @@ A block accepted by `GoFV.Opt.ECCheck.blockOK` satisfies every field of `CvBlock
 conversion of `expand calls` (`ecCv`, `isNewB`, `ecFront`) except the local obligations `obl` and
 the `Ret` field `ret` (`ecs_block` takes them as hypotheses): `ecs_parts` reads the checker's
 conjuncts, `ecs_depB_dep` turns its dependency search `depB` into `Order.Dep` over the target's
-schedule nodes, `newEval_of_newEvalB` gives `NewEval` of the new values' ops, and `ecs_imk` the
+schedule nodes, `newEval_of_newEvalB` gives `NewEval` of the new values' ops, `ecs_anchored`
+anchors the stack-argument stores at their calls (`AnchoredAt`: `ecc_storeObl`, `gapOK` read by
+`ecs_gap`), `ecs_spHeld` holds the `SP`s under them when the call is evaluated, and `ecs_imk` the
 facts of the `IMake` arguments of converted values.
 -/
 
