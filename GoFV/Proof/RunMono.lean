@@ -292,4 +292,84 @@ theorem evalOp_mono : EvalOpMono Env.Mono := by
   rw [evalOp_congr env hctx hargs hmem himg]
   exact evalOp_mono_same hE ctx fr v ty h
 
+
+/-! ## Terminators -/
+
+/-- What a terminator does, refined: the same edge, or results and memory refined. -/
+inductive Next.Refines : Next → Next → Prop where
+  | goto (e : Edge) : Next.Refines (.goto e) (.goto e)
+  | ret {rs rs' : List Val} {m m' : Mem} : RefinesList rs rs' → Mem.Refines m m' →
+      Next.Refines (.ret rs m) (.ret rs' m')
+
+/-- Registers refined: every defined register of `r` is defined in `r'`, refined. -/
+def RegsRefine (r r' : Array (Option Val)) : Prop :=
+  ∀ (a : ID) x, (r[a]?).join = some x → ∃ y, (r'[a]?).join = some y ∧ Sem.Refines x y
+
+/-- The controls of `b` refined from `fr` to `fr'`. -/
+def ControlsRefine (fr fr' : Frame) (b : Block) : Prop :=
+  ∀ c ∈ b.controls, ∀ x, (fr.regs[c]?).join = some x →
+    ∃ y, (fr'.regs[c]?).join = some y ∧ Sem.Refines x y
+
+theorem RegsRefine.controls {fr fr' : Frame} (h : RegsRefine fr.regs fr'.regs) (b : Block) :
+    ControlsRefine fr fr' b :=
+  fun c _ => h c
+
+theorem control_mono {fr fr' : Frame} {b : Block} (h : ControlsRefine fr fr' b) (k : Nat) :
+    Res.Refines (Sem.control fr b k) (Sem.control fr' b k) := by
+  unfold Sem.control
+  cases hc : b.controls[k]? with
+  | none => exact .stuck _ _
+  | some c =>
+    dsimp only
+    cases hx : (fr.regs[c]?).join with
+    | none => exact .stuck _ _
+    | some x =>
+      obtain ⟨y, hy, hxy⟩ := h c (Array.mem_of_getElem? hc) x hx
+      rw [hy]
+      exact .ok hxy
+
+theorem succ_refl (b : Block) (k : Nat) : Res.Rel Next.Refines (Sem.succ b k) (Sem.succ b k) := by
+  unfold Sem.succ
+  cases b.succs[k]? with
+  | none => exact .stuck _ _
+  | some e => exact .ok (.goto e)
+
+/-- **The terminator is monotone**: on refined controls, the same edge, or refined results and
+memory (a stuck source carries no obligation). -/
+theorem stepTerm_mono {fr fr' : Frame} {b : Block} (h : ControlsRefine fr fr' b) :
+    Res.Rel Next.Refines (stepTerm fr b) (stepTerm fr' b) := by
+  unfold stepTerm
+  split
+  · exact succ_refl b 0
+  · exact succ_refl b 0
+  · refine Res.Rel.bind (control_mono h 0) fun x y hxy => ?_
+    cases hxy with
+    | bool c => cases c <;> exact succ_refl b _
+    | _ => exact .stuck _ _
+  · refine Res.Rel.bind (control_mono h 0) fun x y hxy => ?_
+    cases hxy with
+    | int w x => exact succ_refl b _
+    | _ => exact .stuck _ _
+  · refine Res.Rel.bind (control_mono h 0) fun x y hxy => ?_
+    cases hxy with
+    | tuple hl =>
+      dsimp only
+      rcases hl.getLast? with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
+      · rw [h1]; exact .stuck _ _
+      · rw [h1, h2]
+        cases ha with
+        | mem hm =>
+          dsimp only
+          split
+          · exact .stuck _ _
+          · next hp =>
+            have hq := RefinesList.any_false ?pf hl.dropLast (Bool.eq_false_iff.2 hp)
+            case pf => intro a b hab ha; cases hab <;> simp_all
+            simp only [hq, Bool.false_eq_true, ↓reduceIte]
+            exact .ok (.ret hl.dropLast hm)
+        | _ => exact .stuck _ _
+    | _ => exact .stuck _ _
+  · exact .stuck _ _
+  · exact .stuck _ _
+
 end GoFV.Proof
