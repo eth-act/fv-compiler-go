@@ -52,4 +52,13 @@ def TermRef (D : ID → Option Value) (tabs : Tables) (x : ID) (E : ID → Optio
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → Typed D tabs ρ → Typed E tabs' ρ' →
     Refines (den D tabs ρ n x) (den E tabs' ρ' m y)
 
+/-- The definitions of the values listed in `h`: `x` is in the values of its block, which is a
+block of `h`. Junk entries of the value table (dropped values) are not definitions. -/
+def listedDefs (h : Func) (x : ID) : Option Value :=
+  (h.value? x).filter fun v => h.blocks.contains v.block && (h.block? v.block).any (·.values.contains x)
+
+/-- Total-shaping retype (issue #108): until `Val.retype` satisfies it, carried as a
+hypothesis. -/
+def RetypeShapes : Prop := ∀ (v : Val) (t : Ty), t ≠ .other → (v.retype t).hasTy t = true
+
 end GoFV.Proof.Term

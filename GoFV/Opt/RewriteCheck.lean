@@ -50,21 +50,37 @@ def swap01 {α : Type} : List α → List α
   | a :: b :: l => b :: a :: l
   | l => l
 
+/-- Ops evaluated by `evalPure` (not roots, phis or frame-dependent ops): the nodes of terms. -/
+def termOp (op : Op) : Bool :=
+  !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .PanicBounds |
+    .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB |
+    .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr | .Addr |
+    .ConstString | .GetClosurePtr | .GetCallerSP | .Invalid)
+
+/-- The ops whose first two arguments commute (`GoFV.Proof.Rules.commOpsP1`): a `commute` node
+is matched swapped only at these. -/
+def commOps : List Op :=
+  [.Add8, .Add16, .Add32, .Add64, .Add64carry, .And8, .And16, .And32, .And64, .AndB, .Eq8,
+   .Eq16, .Eq32, .Eq64, .EqB, .Mul8, .Mul16, .Mul32, .Mul64, .Mul32uhilo, .Mul32uover,
+   .Mul64uhilo, .Mul64uover, .Neq8, .Neq16, .Neq32, .Neq64, .NeqB, .Or8, .Or16, .Or32, .Or64,
+   .OrB, .Xor8, .Xor16, .Xor32, .Xor64]
+
 mutual
 /-- Match pattern `q` at value `w` (position `p`) in `M`. `sw`: the choices at commutative
-nodes in preorder (`true`: first two arguments swapped), consumed. -/
+nodes in preorder (`true`: first two arguments swapped, only at `commOps`), consumed. Every op
+node is a term node (`termOp`): its value is its op's `evalPure`. -/
 def matchPat (M : Defs) : Pat → Path → ID → List Bool → Option (Inst × List Bool)
   | .op o _ _ _ _ ar args comm, p, w, sw =>
     match M.get? w with
     | none => none
     | some x =>
-      if x.op != o || x.args.size != args.length ||
+      if x.op != o || !termOp o || x.args.size != args.length ||
           !(match ar with | .fixed | .exact _ => true | _ => false) then none
       else
         let (ids, sw) :=
           if comm then
             match sw with
-            | c :: sw => (if c then swap01 x.args.toList else x.args.toList, sw)
+            | c :: sw => (if c && commOps.contains o then swap01 x.args.toList else x.args.toList, sw)
             | [] => (x.args.toList, [])
           else (x.args.toList, sw)
         match matchPats M args p 0 ids sw with
@@ -170,12 +186,32 @@ def wfsOK (e : PEnv) (p : Path) (i : Nat) : List Pat → Bool
   | q :: qs => wfOK e (i :: p) q && wfsOK e p (i + 1) qs
 end
 
-/-- Ops evaluated by `evalPure` (not roots, phis or frame-dependent ops): the nodes of terms. -/
-def termOp (op : Op) : Bool :=
-  !Sem.isRoot op && !(op matches .Phi | .InitMem | .Arg | .ArgIntReg | .PanicBounds |
-    .StaticLECall | .StaticCall | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB |
-    .VarDef | .VarLive | .KeepAlive | .WBend | .NilCheck | .SP | .LocalAddr | .Addr |
-    .ConstString | .GetClosurePtr | .GetCallerSP | .Invalid)
+mutual
+/-- The rule variables naming op nodes of the pattern (`x:(Op …)`). -/
+def Pat.opNames : Pat → List Nat
+  | .op _ name _ _ _ _ args _ => name.toList ++ Pat.opNamess args
+  | _ => []
+def Pat.opNamess : List Pat → List Nat
+  | [] => []
+  | q :: qs => Pat.opNames q ++ Pat.opNamess qs
+end
+
+mutual
+/-- The variables of the `same x` leaves of the pattern. -/
+def Pat.sames : Pat → List Nat
+  | .same x => [x]
+  | .op _ _ _ _ _ _ args _ => Pat.samess args
+  | _ => []
+def Pat.samess : List Pat → List Nat
+  | [] => []
+  | q :: qs => Pat.sames q ++ Pat.samess qs
+end
+
+/-- The top node is unnamed and `same x` only repeats a leaf variable (the term proof gives a
+leaf and a named op node the values of different fuels, `GoFV.Proof.Term`). -/
+def patOK (pat : Pat) : Bool :=
+  (match pat with | .op _ none _ _ _ _ _ _ => true | _ => false) &&
+  (Pat.sames pat).all fun x => !(Pat.opNames pat).contains x
 
 /-- Comparisons and boolean ops: their result is a boolean (or `poison`). -/
 def boolOp : Op → Bool
@@ -279,9 +315,10 @@ def resultOK (tabs : Tables) (M : Defs) (ev : Expr → DV) (or : Oracle) (σ : N
     (nodes.zip us).all fun (n, u) => nodeOK tabs ev or σ I ids topTy n u
   | _, _, _ => false
 
-/-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. -/
+/-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The matched values below
+the top are not `v` (no cyclic match). -/
 def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Bool :=
-  Pat.arityOk r.pat &&
+  Pat.arityOk r.pat && patOK r.pat &&
   match M.get? v with
   | none => false
   | some x =>
@@ -298,6 +335,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
           | _, _ => []
         let or := oracle vtys tabs nodes
         let ev := evalE vtys σ or e (Pat.den e [] r.pat)
+        I.tail.all (·.2 != v) &&
         consOK ev σ e I [] r.pat && wfOK e [] r.pat &&
         (match r.cond with
           | some c => match ev c with | .bool true => true | _ => false
@@ -384,6 +422,25 @@ def atomsOK (f g : Func) : Bool :=
       | _, _ => false
     | _, _ => false
 
+/-- Marks of the values listed in `h`: `x` is in the values of its own block, a block of `h`. -/
+def listedMarks (h : Func) : Array Bool :=
+  h.blocks.foldl (init := Array.replicate h.valueTab.size false) fun L b =>
+    match h.block? b with
+    | some hb => hb.values.foldl (init := L) fun L x =>
+        if (h.value? x).any (·.block == b) then L.set! x true else L
+    | none => L
+
+/-- The arguments of the values in the blocks of `h` and the controls of its blocks are listed
+(`listedMarks`): the terms over listed values only reach listed values. -/
+def closedOK (h : Func) : Bool :=
+  let L := listedMarks h
+  h.blocks.all fun b =>
+    match h.block? b with
+    | some hb =>
+      hb.controls.all (fun c => L[c]? == some true) &&
+      hb.values.all fun x => (h.value? x).all fun u => u.args.all fun a => L[a]? == some true
+    | none => true
+
 /-- Every value listed in `g` has its replayed definition, up to copies in its arguments, and
 every control of `g` is reached from `f`'s through copies. -/
 def finalOK (tabs : Tables) (f g : Func) (M : Defs) : Bool :=
@@ -404,7 +461,7 @@ def finalOK (tabs : Tables) (f g : Func) (M : Defs) : Bool :=
 /-- **The validator**: `g` (the result of the rewrite pass with table `t` on `f`, which logged
 `log`) is related to `f` as the theorems need. -/
 def validate (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : Bool :=
-  atomsOK f g &&
+  atomsOK f g && closedOK f && closedOK g &&
   match replay tabs t f.valueTab log.toList with
   | some M => finalOK tabs f g M
   | none => false
