@@ -374,7 +374,7 @@ string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`
 `Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`) and
 `zd_checkedRewrite` (`*(*struct{})(p) = struct{}{}; *p = [2]int{}; *p = [2]int{}; p[1] = 0` with
 `:1005`, `:2158`, `:943`: the three writes dropped, the result returns the first `Zero`'s memory;
-`GoFV/Proof/Witness/FwdDrop.lean`) and `mv_checkedRewrite` (`t = s; d = t` on `[2]int` frame
+`GoFV/Proof/Witness/FwdDrop.lean`) and `mv_checkedRewrite` (`t = s; d = t` on `[4]int` frame
 variables with `:2155`: the second `Move` copies from `s`; `GoFV/Proof/Witness/MoveSrc.lean`),
 kernel evaluation.
 
