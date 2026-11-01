@@ -164,20 +164,39 @@ the output against it with the remaining events. `checkedRewrite_refines` compos
 `:1381`, `:1388`. Not provable this way (the pointer is no seed): `:1062` (`GetG`), `:1367`
 (`isMalloc` result), `:1384` (dictionary `Arg`), `:1376` (`Convert` of `Addr`).
 
-### Memory rules (Load of Store, designed, not yet implemented)
+### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 
-`(Load p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2)` (`800`, `806`): the `Store` node's value is
-the memory `memRoot` wrote; `Mem.read` of `Mem.write` at the same address and size gives `x`
-back. Plan: (1) `isSamePtr` as a pointer identity: the validator decides `isSamePtr` on the
-instance (`Rules.Helpers.isSamePtr`) and the obligation gets, for each `isSamePtr(a, b)` atom of
-the condition, `Pat.den … a = Pat.den … b` as a hypothesis (sound because `isSamePtr` only
-equates IDs, `OffPtr`/`AddPtr` chains with equal offsets, and `Addr`/`LocalAddr` of the same
-symbol, all term nodes evaluating equally); (2) `Term.den` reads a root atom from `ρ`, so the
-matched `Store` and `Load` are atoms: the validator must match through root atoms, and the
-atom simulation needs an atom-definition invariant on `ρ` (each root atom's value is its
-`evalOp` on its arguments' terms when that is defined), discharged from `evalValue` in
-`AtomSimEnter`; (3) the `Load` root is removed (`Copy x`): `atomsOK` must allow it like
-nilcheckelim's relation (the remaining roots keep their order, `sched_transfer_sub`).
+`(Load <t1> p1 (Store {t2} p2 x _)) && isSamePtr(p1, p2) && … => x` replaces a `Load` (a term:
+`Sem.loadOp`, `poison` on an invalid access) by `Copy x`. The `Store` is a root, an atom of
+`Term.den`, so `Rule.SoundT` cannot see what it wrote; the rule is validated per instance, like
+the nil-check eliminations: `RuleSet.loads` (tried on a `Load` after its value row,
+`Interp.Table.loads`) holds the rules with `EffectRule.LoadFwd r := RewriteCheck.fwdShapeOK r =
+true` (the result is the value the `Load`'s memory `Store` stores). `RewriteCheck.fwdAccepts`
+takes the log's forwarding events out (`fwdPre`: `Load p m` → `Copy x` on the input), requires
+`fwdRel` between the input and that function and `check` of it, and validates the output against
+it with the remaining events. `fwdRel`: the same blocks and atoms, every value unchanged but for
+the forwarded `Load`s (`fwdRepOK`), each with `fwdOK` (its memory is a `Store`/`StoreWB` of `x`
+at a pointer that evaluates like the `Load`'s, `samePtrB`: the same value or congruent term
+nodes, which covers `isSamePtr`'s `OffPtr`/`AddPtr` chains and `Addr`s of one symbol; the `Load`,
+the `Store`'s type and `x` have one integer, boolean or pointer shape), and ranks ordering every
+listed non-`Phi` value after its arguments (`fwdRank`, `fwdRankOK`).
+
+**Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
+g = true → RefinesUnder Env.Mono tabs g tabs f`, by the atom simulation. It needs a fact about
+the source's memory roots that no valuation of the atoms has: `MemDefs` (on the source's `DenOK`
+set of a block entry, each `Store`/`Move`/`Zero` register is `memDef`, the write of its arguments'
+registers, which are in the set; established by `src_eval_mem` from `evalValue`, kept by
+`memDefs_phis` along edges) gives `termRef_apply` the premise `MemAtoms` of `TermRefP`/`StepRefP`
+(on the valuation it builds, every non-`poison` memory root is the write of its arguments'
+terms). With it, `fwd_den` (by induction on the rank) reads a forwarded `Load` through its
+`Store`'s register: the write of `x`'s term at the `Load`'s pointer (`samePtrB_den`), which a
+read gives back (`load_write`: `read_write_self`, `decode_encode`). The fuel of `TermRefP`'s
+right side may depend on the valuations (the stored value's term must be evaluated as deeply as
+the `Store`'s register). `checkedRewrite_refines` composes the nil-check eliminations, the
+forwardings and the atom simulation (statement unchanged). Proven: `generic.rules:800`; witness
+`GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`, kernel evaluation). Not yet: `:806`,
+`:813`, `:821` read through further `Store`s, which needs their disjointness (`disjoint`) decided
+on the instance and `read_write_sep`.
 
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
