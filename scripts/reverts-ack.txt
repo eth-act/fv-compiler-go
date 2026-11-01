@@ -1,1 +1,2 @@
 9324b73 #210 #191 reverted #190 (checked fuseBlockIf); restoring
+706324c #258 intended: removes Cfg.stores, added by #206 for the loads-only checked memcombine (PR body: check-reverts.sh --allow); nothing to restore

@@ -17,7 +17,7 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
 | `build` | `lake build GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check` | any module or executable fails |
 | `allproof` | `scripts/gen-allproof.sh` if `--check` says the file is stale, then `lake build GoFVTest.Proof.AllProof` | two proof modules declare the same name |
 | `no-sorry` | `scripts/no-sorry.py` | `sorry` or `admit` appears in a tracked `.lean` file, outside comments and strings |
-| `reverts` | `scripts/scan-history-reverts.sh 80` | a recent squash merge deleted a file added by one of the 8 commits before it, or set a file back to its state before the previous commit that touched it (#191 undid #190); acknowledge a known incident in `scripts/reverts-ack.txt` with its restore issue |
+| `reverts` | `scripts/scan-history-reverts.sh 80` | a recent squash merge deleted a file added by one of the 8 commits before it, or set a file back to its state before the previous commit that touched it (#191 undid #190); acknowledge a known incident in `scripts/reverts-ack.txt` with its restore issue, or an intended revert (`check-reverts.sh --allow`) with its PR |
 | `axioms` | `scripts/axioms-audit.sh` | a theorem under `GoFV.Proof` depends on any axiom other than `propext`, `Classical.choice`, `Quot.sound` and the `_native` axioms listed in `scripts/axioms-allowlist.txt` |
 | `ssa-check` | `ssa-check <full corpus>` | a section is not well formed (`GoFV.SSA.check`) |
 | `parity` | `scripts/parity.sh <full corpus>` | a registered pass mismatches the stock pass, or reports an error |
