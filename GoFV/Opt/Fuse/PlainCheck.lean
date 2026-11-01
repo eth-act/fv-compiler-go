@@ -131,6 +131,11 @@ def stepOK (ce : CheckEnv) (f g : Func) (b : ID) : Bool :=
     | some run => relB f g run
     | none => false
 
+/-- **`fuseBlockPlain`, checked**: the rewrite is kept only if `stepOK` accepts it. -/
+def fuseBlockPlainChecked (ce : CheckEnv) (f : Func) (b : ID) : Func × Bool :=
+  let (g, ch) := fuseBlockPlain f b
+  if ch && stepOK ce f g b then (g, true) else (f, false)
+
 end Plain
 
 end GoFV.Opt.Fuse
