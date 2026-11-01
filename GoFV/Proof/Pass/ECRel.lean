@@ -70,12 +70,18 @@ def EcTgtHolds (env : Env) (tabs : Tables) (g : Func) (T : Frame) (z : ID) : Pro
   ∀ w, g.value? z = some w → w.id = z ∧
     ∃ y, T.regs[z]? = some (some y) ∧ evalValue env (Ctx.make tabs g) T w = .ok y
 
+/-- `a` precedes `x` in the target's schedule of block `gb`. -/
+def SchedBefore (g : Func) (gb : Block) (a x : ID) : Prop :=
+  ∀ og, schedule g gb = some og → ∃ A B, og.toList = A ++ a :: B ∧ x ∈ B
+
 /-- The values whose source registers hold their evaluations when `x` of block `fb` is
-evaluated: values of `fb` that `x` depends on in the target's block `gb`, and the non-`Phi`
-values placed in strict dominators of `fb` (`Avail.DInv`). -/
+evaluated: values of `fb` that `x` depends on in the target's block `gb`, the non-`Phi` values
+placed in strict dominators of `fb` (`Avail.DInv`), and values of `fb` that precede `x` in the
+target's schedule. -/
 def Held (f g : Func) (fb gb : Block) (x z : ID) : Prop :=
   (z ∈ fb.values ∧ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) ∨
-    ∃ v, Placed f z v ∧ v.op ≠ .Phi ∧ Anc (make f) v.block fb.id ∧ v.block ≠ fb.id
+    (∃ v, Placed f z v ∧ v.op ≠ .Phi ∧ Anc (make f) v.block fb.id ∧ v.block ≠ fb.id) ∨
+    (z ∈ fb.values ∧ SchedBefore g gb z x)
 
 /-- `z` is a non-`Phi` value of `g` placed in a strict dominator of block `gb` (its target
 register holds its evaluation in `gb`, `Avail.DInv` on the target). -/
@@ -119,26 +125,28 @@ def Reached (env : Env) (tabs : Tables) (f : Func) (G : Frame) (c : ID) : Prop :
 /-- **The obligation of a new value `z` anchored at source value `c`** (a store of a stack
 argument of call `c`): in frames of one activation where the source has reached `c`, `z`'s
 arguments have registers (its new ones holding their evaluations), the target's registers of
-the source values `front` refine their conversions and the target's of `heldT` hold their
-evaluations, the target evaluates `z`. -/
+the source values `front` refine their conversions, the target's of `heldT` and the source's of
+`heldS` hold their evaluations, the target evaluates `z`. -/
 def NewObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : List ID)
-    (heldT : ID → Prop) (c z : ID) : Prop :=
+    (heldS heldT : ID → Prop) (c z : ID) : Prop :=
   ∀ w, g.value? z = some w →
   ∀ env : Env, ∀ G T : Frame, T = { G with regs := T.regs } →
   ∀ E : ID → Prop, NewCons env (Ctx.make tabs g) isNew T E →
     (∀ a ∈ w.args, isNew a = true → E a) → (∀ a ∈ w.args, Reg T a) →
     (∀ a ∈ front, ∀ y, G.regs[a]? = some (some y) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y') →
-    (∀ a, heldT a → EcTgtHolds env tabs g T a) → Reached env tabs f G c →
+    (∀ a, heldT a → EcTgtHolds env tabs g T a) → (∀ a, heldS a → EcSrcHolds env tabs f G a) →
+    Reached env tabs f G c →
     ∃ y, evalValue env (Ctx.make tabs g) T w = .ok y
 
 /-- New value `z` of block `gb` is anchored at a source value `c` of `fb`: its obligation
-`NewObl` (with a `front` of source values that reach it in `gb`, and the values `HeldT` in `g`),
-and in `g`'s schedule no source non-pure node lies between `z` and `c` (`z` runs only when the
-source reaches `c`). -/
+`NewObl` (with a `front` of source values that reach it in `gb`, the values of `fb` before it in
+the target's schedule, and the values `HeldT` in `g`), and in `g`'s schedule no source non-pure
+node lies between `z` and `c` (`z` runs only when the source reaches `c`). -/
 def AnchoredAt (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (fb gb : Block)
     (z : ID) : Prop :=
-  ∃ c ∈ fb.values, ∃ fr : List ID, NewObl tabs f g cv isNew fr (HeldT g gb z) c z ∧
+  ∃ c ∈ fb.values, ∃ fr : List ID,
+    NewObl tabs f g cv isNew fr (fun a => a ∈ fb.values ∧ SchedBefore g gb a z) (HeldT g gb z) c z ∧
     (∀ a ∈ fr, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a z)) ∧
     ∀ og, schedule g gb = some og → ∀ A B, og.toList = A ++ z :: B →
@@ -184,7 +192,8 @@ structure CvBlock (fb gb : Block) : Prop where
     u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x) (HeldT g gb x) x
   front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧
     (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
-      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
+      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x ∨
+      SchedBefore g gb a x)
   ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, ∀ y, cv c y = y
   ret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', RegOK (Ctx.make tabs f) c y →
     Sem.Refines (cv c y) y' →

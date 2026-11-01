@@ -985,7 +985,7 @@ theorem ecc_bind_def {R : Res Val} {F : Val → Val}
 /-- **The obligation of a stack-argument store** `z` of call `x` (`NewObl`, anchored at `x`): once
 the source has reached the call, its memory's stack-argument slots are writable (`outargsOK`), so
 are the target's (a refinement of it, then the stores below `z`), and `z`'s write succeeds. -/
-theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT : ID → Prop}
+theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hcall : (callOpMap u.op).isSome = true)
     (hok : callOK tabs (typeShapes tabs) f g u w = true)
     {zs : List ID} (hzs : callStores f g u w = some zs) (hz : z ∈ zs) (L : ID → Prop)
@@ -993,8 +993,8 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
     (hLz : L z)
     (hsp : ∀ wz qw, g.value? z = some wz → g.value? wz.args[0]! = some qw →
       isNewB f qw.args[0]! = false → HT qw.args[0]!) :
-    NewObl tabs f g (ecCv tabs f g) (isNewB f) [u.args[u.args.size - 1]!] HT x z := by
-  intro wz hwz env G T _ E hNC hEw hRw hfront hheldT hreach
+    NewObl tabs f g (ecCv tabs f g) (isNewB f) [u.args[u.args.size - 1]!] HS HT x z := by
+  intro wz hwz env G T _ E hNC hEw hRw hfront hheldT _ hreach
   unfold callOK at hok
   split at hok
   · next op k abi hmap habi =>

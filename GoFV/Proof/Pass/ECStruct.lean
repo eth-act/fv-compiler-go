@@ -718,7 +718,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
       exact .inl ⟨wa, hwa, (ecs_phiSame hs).1.trans hpa⟩
     · obtain ⟨-, hd⟩ := P.reach x hx (ecs_node_iff.2 ⟨hx, u, hu, hph⟩) u hu a
         (Array.mem_toList_iff.1 ha) (ecs_node_iff.2 ⟨haf, ua, hua, hpa⟩)
-      exact .inr (hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG))
+      exact .inr (.inl (hd.elim (ecs_depB_dep hownG hndG) (ecs_depB_dep hownG hndG)))
   · refine ⟨han, fun hag => ?_⟩
     obtain ⟨wa, hwa⟩ := hdefG a hag
     by_cases hpa : wa.op = .Phi
@@ -729,7 +729,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
         exact hph ((ecs_phiSame hs).1.symm.trans hp)
       have hxN := (nodeIn_schedNodes hownG).2 ⟨hxg, w, hw, hwph⟩
       have haN := (nodeIn_schedNodes hownG).2 ⟨hag, wa, hwa, hpa⟩
-      refine .inr (.arg haN hxN ?_)
+      refine .inr (.inl (.arg haN hxN ?_))
       rw [argsOf_schedNodes hownG hndG hxg hw hwph]
       exact ha
 

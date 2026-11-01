@@ -221,7 +221,7 @@ theorem eco_imkHeld {ce : CheckEnv} {tabs : Tables} {f g : Func} {bid x a : ID} 
       rw [hau] at hva
       cases hva
       rw [hublk, ← hfid] at hanc
-      refine .inr ⟨au, ⟨hau, hvb, blk, hblk, hab⟩, by rw [hauop]; decide, hanc, fun he => hafb ?_⟩
+      refine .inr (.inl ⟨au, ⟨hau, hvb, blk, hblk, hab⟩, by rw [hauop]; decide, hanc, fun he => hafb ?_⟩)
       rw [he, hfid, hfb] at hblk
       cases hblk
       exact hab
@@ -351,7 +351,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
                 rw [hcu] at hva
                 cases hva
                 rw [hublk, ← hfid] at hanc
-                refine .inr ⟨cu, ⟨hcu, hvb, blk, hblk', hab⟩, hcphi, hanc, fun he => hcf ?_⟩
+                refine .inr (.inl ⟨cu, ⟨hcu, hvb, blk, hblk', hab⟩, hcphi, hanc, fun he => hcf ?_⟩)
                 rw [he, hfid, hfb] at hblk'
                 cases hblk'
                 exact hab
