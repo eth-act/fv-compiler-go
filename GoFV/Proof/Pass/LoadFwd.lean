@@ -744,7 +744,7 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
   -- the inner `Move` at large fuel, given its register `.mem Mi`
   have inner : ∀ {im : Value} {B : Option Blk} {z : ID}, f.value? z = some im →
       moveInnerOK tabs f u w im B = true → ∀ {Mi : Mem}, ρ z = .mem Mi →
-      ∃ K, ∃ T2 S M0 bs0, den f.value? tabs ρ K im.args[0]! = .ptr T2 ∧
+      ∃ K, ∃ T2 S, ∃ M0 : Mem, ∃ bs0, den f.value? tabs ρ K im.args[0]! = .ptr T2 ∧
         den f.value? tabs ρ K im.args[1]! = .ptr S ∧
         M0.read S u.auxInt.toInt.toNat = some bs0 ∧ M0.write T2 bs0 = some Mi := by
     intro im B z him hi Mi hz
@@ -759,11 +759,11 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
     exact ⟨N', T2, S, M0, bs0, h0, h1, by rw [← hiai]; exact hr, hw⟩
   -- the inner `Move`: its pointers, the bytes it copied, and `M2` against its memory
   obtain ⟨im, K, hlim, hi3, hsp, hcr1, hdj, T2, S, M0, M1, bs0, hT2, hS, hr0, hw0, h21, hr21⟩ :
-      ∃ im K, (∀ a ∈ im.args, LM f a) ∧ im.args.size = 3 ∧
+      ∃ im : Value, ∃ K, (∀ a ∈ im.args, LM f a) ∧ im.args.size = 3 ∧
         samePtrB tabs f u.args[1]! im.args[0]! = true ∧
         copyReach tabs f.valueTab f.valueTab.size im.args[1]! w.args[1]! = true ∧
         disjointB tabs f im.args[1]! u.auxInt.toInt.toNat im.args[0]! u.auxInt.toInt.toNat = true ∧
-        ∃ T2 S M0 M1 bs0, den f.value? tabs ρ K im.args[0]! = .ptr T2 ∧
+        ∃ T2 S, ∃ M0 M1 : Mem, ∃ bs0, den f.value? tabs ρ K im.args[0]! = .ptr T2 ∧
           den f.value? tabs ρ K im.args[1]! = .ptr S ∧
           M0.read S u.auxInt.toInt.toNat = some bs0 ∧ M0.write T2 bs0 = some M1 ∧
           Mem.Refines M2 M1 ∧ M2.read S u.auxInt.toInt.toNat = M1.read S u.auxInt.toInt.toNat := by
@@ -828,7 +828,7 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
     moveSrc_mem hMM2 h21 hr21 hr0 hw0 hsep hrT hwD (hM2t.trans hMtt)
   refine ⟨max m0 (max m1 m2), .mem W, ?_, .mem hMW⟩
   rw [toList_three hw3, List.map_cons, List.map_cons, List.map_cons, List.map_nil, hd0, hd1, hMt']
-  simp [memDef, hwop, hai, hr', hw']
+  simp [memDef, hwop, hai, hr', hw', -Int64.toNat_toInt]
 
 /-- Each value listed in `f` refines as a term in `g`, under any invariant. -/
 theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop) (Q : (ID → Val) → Prop)

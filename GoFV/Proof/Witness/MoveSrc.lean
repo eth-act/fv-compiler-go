@@ -5,11 +5,11 @@ import GoFV.Proof.Witness.FwdDrop
 
 ```go
 func moveVia() {
-	var s, t, d [2]int // frame variables (PAUTO)
-	s = [2]int{}       // v4 = Zero {[2]int} [16] &s mem
-	t = s              // v6 = Move {[2]int} [16] &t &s v4
+	var s, t, d [4]int // frame variables (PAUTO, merge candidates: over 24 bytes)
+	s = [4]int{}       // v4 = Zero {[4]int} [32] &s mem
+	t = s              // v6 = Move {[4]int} [32] &t &s v4
 	                   // v7 = VarDef {d} v6
-	d = t              // v9 = Move {[2]int} [16] &d &t v7   (generic.rules:2155)
+	d = t              // v9 = Move {[4]int} [32] &d &t v7   (generic.rules:2155)
 }
 ```
 
@@ -29,19 +29,21 @@ def mvABI : CallABI :=
   { abi := 1, nin := 0, nout := 0, spillOff := 8, spillSize := 0, inRegs := 0, outRegs := 0,
     params := #[] }
 
-/-- The definition tables: `[2]int` is type 4 (aux 3), `*[2]int` type 5, `uintptr` type 15, the
+/-- The definition tables: `[4]int` is type 4 (aux 3), `*[4]int` type 5, `uintptr` type 15, the
 frame variables `s`, `t`, `d` auxes 4, 5, 6; the results type 32 (`mem`). -/
 def mvTabs : Tables where
   types :=
     let t := mlTabs.types
     let t := t.set! 1 (some (mkT .FUNC (some 8) "func()" (.func 0 0 0 #[])))
+    let t := t.set! 4 (some { mkT .ARRAY (some 32) "[4]int" (.array 2 4) with align := some 8 })
+    let t := t.set! 5 (some (mkT .PTR (some 8) "*[4]int" (.elem 4)))
     let t := t.set! 15 (some (mkT .UINTPTR (some 8) "uintptr"))
     t.set! 32 (some (mkT .RESULTS none "mem" (.results #[29])))
   auxes := #[none,
     some { fmt := GoStr.ofString "AuxCall{main.moveVia}", kind := .call (some 2) (some mvABI) },
     some { fmt := GoStr.ofString "main.moveVia",
            kind := .sym (GoStr.ofString "main.moveVia") 1 "" 0 default none none none #[] none },
-    some { fmt := GoStr.ofString "[2]int", kind := .type 4 },
+    some { fmt := GoStr.ofString "[4]int", kind := .type 4 },
     some (paramNameT "s" .PAUTO 4 0), some (paramNameT "t" .PAUTO 4 0),
     some (paramNameT "d" .PAUTO 4 0)]
 
@@ -58,12 +60,12 @@ def mvFunc : Func where
     some (mkVi 1 .InitMem 29 0 p0 2 #[] 1),
     some (mkVi 2 .SP 15 0 p0 3 #[] 1),
     some (mkV 3 .LocalAddr 5 (some 4) p0 2 #[2, 1] 1),
-    some { mkV 4 .Zero 29 (some 3) p0 2 #[3, 1] 1 with auxInt := 16 },
+    some { mkV 4 .Zero 29 (some 3) p0 2 #[3, 1] 1 with auxInt := 32 },
     some (mkV 5 .LocalAddr 5 (some 5) p0 2 #[2, 4] 1),
-    some { mkV 6 .Move 29 (some 3) p0 1 #[5, 3, 4] 1 with auxInt := 16 },
+    some { mkV 6 .Move 29 (some 3) p0 1 #[5, 3, 4] 1 with auxInt := 32 },
     some (mkV 7 .VarDef 29 (some 6) p0 2 #[6] 1),
     some (mkV 8 .LocalAddr 5 (some 6) p0 1 #[2, 7] 1),
-    some { mkV 9 .Move 29 (some 3) p0 1 #[8, 5, 7] 1 with auxInt := 16 },
+    some { mkV 9 .Move 29 (some 3) p0 1 #[8, 5, 7] 1 with auxInt := 32 },
     some (mkVi 10 .MakeResult 32 0 p0 1 #[9] 1)]
   names := #[]
   namedx := #[]
@@ -103,7 +105,7 @@ theorem mv_checks :
   decide +kernel
 
 /-- **Pass execution witness** for a changed `Move` source (`generic.rules:2155`): on `moveVia`,
-the checked rewrite pass makes `d = t` copy from `s` (`v9 = Move {[2]int} [16] v8 v3 v7`), and the
+the checked rewrite pass makes `d = t` copy from `s` (`v9 = Move {[4]int} [32] v8 v3 v7`), and the
 result refines the input (`checkedRewrite_refines`, through `LoadFwd.fwd_refines`). -/
 theorem mv_checkedRewrite :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet mvRules) mvPassEnv mvFunc = .ok out ∧

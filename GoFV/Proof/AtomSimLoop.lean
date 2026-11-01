@@ -100,7 +100,7 @@ theorem memDef_move_mono {tabs : Tables} {v : Value} (hop : v.op = .Move) {as bs
   cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
   obtain ⟨cs', hr', hcs⟩ := hm.read hr
   obtain ⟨M'', hw', hMM⟩ := hm.write hcs hw
-  exact ⟨.mem M'', by simp [memDef, hop, hr', hw'], .mem hMM⟩
+  exact ⟨.mem M'', by simp [memDef, hop, hr', hw', -Int64.toNat_toInt], .mem hMM⟩
 
 /-- A `Move` whose copy succeeds evaluates to it. -/
 theorem memRoot_of_memDef_move {ctx : Ctx} {v : Value} (hop : v.op = .Move) {argv : List Val}
@@ -112,7 +112,7 @@ theorem memRoot_of_memDef_move {ctx : Ctx} {v : Value} (hop : v.op = .Move) {arg
     cases c <;> try (simp [memDef, hop] at h; done)
     simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
     obtain ⟨cs, hr, M', hw, rfl⟩ := h
-    simp [memRoot, hop, hr, hw, writeRes]
+    simp [memRoot, hop, hr, hw, writeRes, -Int64.toNat_toInt]
   | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at h
 
 theorem memDef_chg_mono {tabs : Tables} {v : Value} (hop : v.op = .Store ∨ v.op = .Move)
