@@ -309,6 +309,123 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
     · exact .ok (Sem.Refines.refl _)
   · split <;> exact .stuck _ _
 
+/-! ## Atomics (`Sem/Atomic.lean`) -/
+
+private theorem atomicStep_mono (k : Atomic.Kind) (w : Width) {o o' x x' : Val}
+    (ho : Sem.Refines o o') (hx : Sem.Refines x x') {m m' : Mem} (hm : Mem.Refines m m') :
+    Sem.Refines (Atomic.step k w o x).1 (Atomic.step k w o' x').1 ∧
+      Sem.Refines (Atomic.result (Atomic.step k w o x).2 m)
+        (Atomic.result (Atomic.step k w o' x').2 m') := by
+  have h2 : RefinesList [o, x] [o', x'] := .cons ho (.cons hx .nil)
+  cases k <;> refine ⟨?_, ?_⟩ <;> simp only [Atomic.step, Atomic.result]
+  all_goals first
+    | exact hx
+    | exact .mem hm
+    | exact int2_mono _ _ h2
+    | exact .tuple (.cons ho (.cons (.mem hm) .nil))
+    | exact .tuple (.cons (int2_mono _ _ h2) (.cons (.mem hm) .nil))
+
+private theorem atomicRmw_mono (v : Value) (k : Atomic.Kind) (t : Ty) (p : Ptr) {x x' : Val}
+    {m m' : Mem} (hx : Sem.Refines x x') (hm : Mem.Refines m m') :
+    Res.Refines (Atomic.rmw v k t p x m) (Atomic.rmw v k t p x' m') := by
+  unfold Atomic.rmw
+  by_cases ha : Atomic.aligned p t.size = true
+  · simp only [ha, ↓reduceIte]
+    have hs := atomicStep_mono k (Atomic.width t) (load_mono hm t p) hx hm
+    cases hw : m.write p (encode t (Atomic.step k (Atomic.width t) (m.load t p) x).1) with
+    | none => exact .stuck _ _
+    | some m1 =>
+      obtain ⟨m1', hw', hm1⟩ := hm.write (encode_mono t hs.1) hw
+      rw [hw']
+      exact .ok (atomicStep_mono k (Atomic.width t) (load_mono hm t p) hx hm1).2
+  · simp only [ha, Bool.false_eq_true, ↓reduceIte]; exact .stuck _ _
+
+private theorem atomicCas_mono (v : Value) (w : Width) (p : Ptr) {o o' n n' : Val}
+    {m m' : Mem} (ho : Sem.Refines o o') (hn : Sem.Refines n n') (hm : Mem.Refines m m') :
+    Res.Refines (Atomic.cas v w p o n m) (Atomic.cas v w p o' n' m') := by
+  unfold Atomic.cas
+  by_cases ha : Atomic.aligned p w.bytes = true
+  · simp only [ha, ↓reduceIte]
+    cases hc : (m.load (.int w) p).asInt w with
+    | none => exact .stuck _ _
+    | some cur =>
+      cases hoo : o.asInt w with
+      | none => exact .stuck _ _
+      | some old =>
+        rw [(load_mono hm (.int w) p).asInt hc, ho.asInt hoo]
+        by_cases he : cur = old
+        · simp only [he, ↓reduceIte]
+          cases hw : m.write p (encode (.int w) n) with
+          | none => exact .stuck _ _
+          | some m1 =>
+            obtain ⟨m1', hw', hm1⟩ := hm.write (encode_mono _ hn) hw
+            rw [hw']
+            exact .ok (.tuple (.cons (.bool true) (.cons (.mem hm1) .nil)))
+        · simp only [he, ↓reduceIte]
+          exact .ok (.tuple (.cons (.bool false) (.cons (.mem hm) .nil)))
+  · simp only [ha, Bool.false_eq_true, ↓reduceIte]; exact .stuck _ _
+
+/-- **The atomic roots are monotone.** -/
+theorem atomicRoot_mono (v : Value) {as bs : List Val} (h : RefinesList as bs) :
+    Res.Refines (atomicRoot v as) (atomicRoot v bs) := by
+  unfold atomicRoot
+  split
+  · obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    cases h.nil_inv
+    dsimp only
+    unfold Atomic.barrier
+    cases h1 with
+    | mem hm =>
+      by_cases hp : v.op = .PubBarrier
+      · simp only [hp, ↓reduceIte]; exact .ok (.mem hm)
+      · simp only [hp, ↓reduceIte]; exact .stuck _ _
+    | _ => exact .stuck _ _
+  · obtain ⟨_, _, rfl, -, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    cases h.nil_inv
+    dsimp only
+    unfold Atomic.prefetch
+    cases h1 with
+    | mem hm =>
+      by_cases hp : v.op = .PrefetchCache ∨ v.op = .PrefetchCacheStreamed
+      · simp only [hp, ↓reduceIte]; exact .ok (.mem hm)
+      · simp only [hp, ↓reduceIte]; exact .stuck _ _
+    | _ => exact .stuck _ _
+  · obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    cases h.nil_inv
+    dsimp only
+    unfold Atomic.rmwRoot
+    cases h1 with
+    | ptr p =>
+      cases h3 with
+      | mem hm =>
+        dsimp only
+        cases Atomic.info? v.op with
+        | none => exact .stuck _ _
+        | some kt => obtain ⟨k, t⟩ := kt; exact atomicRmw_mono v k t p h2 hm
+      | _ => exact .stuck _ _
+    | _ => exact .stuck _ _
+  · obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
+    obtain ⟨_, _, rfl, h4, h⟩ := h.cons_inv
+    cases h.nil_inv
+    dsimp only
+    unfold Atomic.casRoot
+    cases h1 with
+    | ptr p =>
+      cases h4 with
+      | mem hm =>
+        dsimp only
+        cases Atomic.casWidth? v.op with
+        | none => exact .stuck _ _
+        | some w => exact atomicCas_mono v w p h2 h3 hm
+      | _ => exact .stuck _ _
+    | _ => exact .stuck _ _
+  · exact .stuck _ _
+
 
 /-! ## `evalOp` -/
 
@@ -338,7 +455,7 @@ theorem evalOp_mono_same {env : Env} (hE : env.Mono) (ctx : Ctx) (fr : Frame) (v
     | (split
        · exact Res.Refines.refl _
        · split
-         · exact .stuck _ _
+         · exact atomicRoot_mono v h
          · exact .ok (evalPure_mono _ _ _ _ h))
 
 /-- **`evalOp` is monotone** in every environment whose contracts are. -/

@@ -16,6 +16,7 @@ import GoFV.Proof.AtomSimPanic
 import GoFV.Proof.AtomSimRef
 import GoFV.Proof.AtomSimSet
 import GoFV.Proof.AtomSimStep
+import GoFV.Proof.AtomicSim
 import GoFV.Proof.Avail
 import GoFV.Proof.Block
 import GoFV.Proof.CallMono
@@ -400,6 +401,7 @@ import GoFV.Proof.WFCheck
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.AddZeroRefines
 import GoFV.Proof.Witness.AddZeroSim
+import GoFV.Proof.Witness.Atomic
 import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE

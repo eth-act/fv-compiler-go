@@ -33,8 +33,10 @@ def evalOpArms : List Op :=
     .Move, .MoveWB, .Zero, .ZeroWB, .VarDef, .VarLive, .KeepAlive, .WBend, .NilCheck, .SP,
     .GetCallerSP, .LocalAddr, .Addr, .ConstString]
 
-/-- A root `Sem.evalOp` does not evaluate: always `stuck` (tail calls, most atomics). -/
-def stuckRoot (op : Op) : Bool := isRoot op && !evalOpArms.contains op
+/-- A root `Sem.evalOp` does not evaluate: always `stuck` (tail calls, the ops `atomicRoot`
+does not model). -/
+def stuckRoot (op : Op) : Bool :=
+  isRoot op && !evalOpArms.contains op && !Sem.Atomic.modelled op
 
 /-- Ops whose last argument may be memory- or tuple-shaped (`DAE.memOps`, the pre-`expand calls`
 calls, the other loads, tuple ops). -/

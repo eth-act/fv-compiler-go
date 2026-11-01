@@ -275,6 +275,11 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .ConstSlice => .agg [.ptr Ptr.null, .i64 0, .i64 0]
   | .ConstInterface => .agg [.i64 0, .ptr Ptr.null]
   | .Empty => .empty
+  -- a feature the guarded code does not need: arm64's only use guards the LSE `*Variant`
+  -- atomics, which mean the same as their base forms (`Sem/Atomic.lean`)
+  | .HasCPUFeature => .bool false
+  -- the current goroutine: an opaque allocation of the environment (§5), never nil
+  | .GetG => .ptr ⟨.global "runtime.g", 0⟩
   | .Load => loadOp ty args
   | .Dereference => loadOp ty args
   | .MemEq => memEq args

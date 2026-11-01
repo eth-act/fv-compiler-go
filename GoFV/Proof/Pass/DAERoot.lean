@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.DAEOps
+import GoFV.Proof.AtomicSim
 
 /-!
 # dead auto elim: the memory roots on related memories
@@ -252,14 +253,94 @@ theorem evalOp_panicBounds {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {arg
     {ty : Ty} (hop : v.op = .PanicBounds) : evalOp env ctx fr v argv ty = panicBounds v.auxInt argv := by
   simp only [evalOp, hop]
 
-/-- The P3 atomics of `memOps` are stuck. -/
+/-! ## Atomics (`Sem/Atomic.lean`) -/
+
+/-- The atomic roots of `memOps` are `atomicRoot`. -/
 theorem evalOp_atomic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op = .AtomicStore32 ∨ v.op = .AtomicStore64 ∨ v.op = .AtomicAdd32 ∨
       v.op = .AtomicAdd32Variant ∨ v.op = .AtomicAdd64 ∨ v.op = .AtomicCompareAndSwap32 ∨
       v.op = .AtomicCompareAndSwap32Variant ∨ v.op = .AtomicCompareAndSwap64 ∨
       v.op = .AtomicCompareAndSwap64Variant) :
-    ∃ msg, evalOp env ctx fr v argv ty = .stuck msg := by
+    evalOp env ctx fr v argv ty = atomicRoot v argv := by
   rcases hop with h | h | h | h | h | h | h | h | h <;>
-    exact ⟨_, by simp only [evalOp, frameVal, h]; rfl⟩
+    simp only [evalOp, frameVal, h] <;> rfl
+
+theorem int2_avoids (w : Width) (f : BitVec w.bits → BitVec w.bits → BitVec w.bits)
+    (l : List Val) : Val.Avoids U (int2 w (fun x y => .int w (f x y)) l) := by
+  unfold int2
+  split
+  · split <;> trivial
+  · trivial
+
+theorem atomicStep_avoids (k : Atomic.Kind) (w : Width) {o x : Val} (ho : Val.Avoids U o)
+    (hx : Val.Avoids U x) :
+    Val.Avoids U (Atomic.step k w o x).1 ∧ ∀ r, (Atomic.step k w o x).2 = some r → Val.Avoids U r := by
+  cases k <;> simp only [Atomic.step, Int.add, Int.and, Int.or] <;>
+    refine ⟨?_, fun r hr => ?_⟩ <;> (try cases hr) <;>
+    first | exact hx | exact ho | exact int2_avoids _ _ _
+
+theorem atomicResult_avoids {r : Option Val} {m : Mem} (hr : ∀ y, r = some y → Val.Avoids U y)
+    (hm : m.Avoids U) : Val.Avoids U (Atomic.result r m) := by
+  cases r with
+  | none => exact hm
+  | some y => exact ⟨hr y rfl, hm, trivial⟩
+
+theorem atomicRmw_avoids (hU : TempU U) {v : Value} {k : Atomic.Kind} {t : Ty} {p : Ptr}
+    {x : Val} {m : Mem} {y : Val} (hp : ¬ U p.blk) (hx : Val.Avoids U x) (hm : m.Avoids U)
+    (h : Atomic.rmw v k t p x m = .ok y) : Val.Avoids U y := by
+  unfold Atomic.rmw at h
+  have hs := atomicStep_avoids k (Atomic.width t) (load_avoids hU hm t hp) hx
+  split at h
+  · split at h
+    · rename_i m1 hw
+      cases h
+      exact atomicResult_avoids hs.2 (memAvoids_write hm hw fun _ => encode_avoids t hs.1)
+    · cases h
+  · cases h
+
+theorem atomicCas_avoids {v : Value} {w : Width} {p : Ptr} {o n : Val} {m : Mem} {y : Val}
+    (hn : Val.Avoids U n) (hm : m.Avoids U) (h : Atomic.cas v w p o n m = .ok y) :
+    Val.Avoids U y := by
+  unfold Atomic.cas at h
+  split at h
+  · split at h
+    · split at h
+      · split at h
+        · rename_i m1 hw
+          cases h
+          exact ⟨trivial, memAvoids_write hm hw (fun _ => encode_avoids _ hn), trivial⟩
+        · cases h
+      · cases h
+        exact ⟨trivial, hm, trivial⟩
+    · cases h
+  · cases h
+
+/-- **An atomic root returns a value avoiding `U`** when its arguments do. -/
+theorem atomicRoot_avoids (hU : TempU U) {v : Value} {argv : List Val} {y : Val}
+    (hargs : ∀ z ∈ argv, Val.Avoids U z) (h : atomicRoot v argv = .ok y) : Val.Avoids U y := by
+  unfold atomicRoot at h
+  split at h
+  · unfold Atomic.barrier at h; split at h
+    · split at h
+      · cases h; exact hargs _ List.mem_cons_self
+      · cases h
+    · cases h
+  · unfold Atomic.prefetch at h; split at h
+    · split at h
+      · cases h; exact hargs _ (by simp)
+      · cases h
+    · cases h
+  · unfold Atomic.rmwRoot at h; split at h
+    · split at h
+      · exact atomicRmw_avoids hU (hargs (.ptr _) (by simp)) (hargs _ (by simp))
+          (hargs (.mem _) (by simp)) h
+      · cases h
+    · cases h
+  · unfold Atomic.casRoot at h; split at h
+    · split at h
+      · exact atomicCas_avoids (hargs _ (by simp)) (hargs (.mem _) (by simp)) h
+      · cases h
+    · cases h
+  · cases h
 
 end GoFV.Proof.DAE

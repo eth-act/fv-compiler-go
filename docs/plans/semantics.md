@@ -717,6 +717,45 @@ would quieten a float32 signalling NaN), complex numbers as `{re,im}`; random fl
 edge-biased (signed zeros, infinities, quiet and signalling NaNs with payloads, subnormals,
 extremes, integer-conversion boundaries, ties). Results: #10.
 
+### 9.5 P5 atomics as implemented (#10)
+
+- **Atomic roots** (`Sem/Atomic.lean`, `atomicRoot`: `evalOp`'s last arm for every root that is
+  not a call or a memory root of P2). `run` executes one goroutine, so an atomic op is its
+  sequentially consistent single-threaded meaning: one read-modify-write of a naturally aligned
+  location, ordered by the memory chain. `Atomic.info?` gives the read-modify-write and the
+  location's shape of every `AtomicStore*`/`Exchange*`/`Add*`/`And*`/`Or*` (with the `*value`,
+  `*Variant` and `Rel` forms: arm64's LSE instructions and acquire/release mean the same here);
+  `Atomic.casWidth?` the width of `AtomicCompareAndSwap*`. Misaligned, invalid or read-only
+  accesses are `stuck` (arm64 faults; the semantics has no fault outcome other than nil
+  checks), a `poison` operand is stored as poison bytes like a plain `Store`, and a
+  compare-and-swap on a `poison` comparison is `stuck` (it decides whether memory changes).
+  `PubBarrier` and `PrefetchCache*` leave memory unchanged. The dispatch is on the number of
+  arguments only, so refined arguments take the same arm (`GoFV.Proof.atomicRoot_mono`); no
+  atomic root panics (`GoFV.Proof.atomicRoot_ne_panic`, used by `evalValue_panic_op`, so
+  `Panicking` is unchanged). Any other root (`TailLECall*`, …) is `stuck` as before
+  (`Atomic.modelled` names the ops `atomicRoot` evaluates).
+- **`HasCPUFeature`** = `false`: on arm64 it only guards the LSE `*Variant` atomics, which mean
+  the same as their base forms, so either branch computes the same (`evalPure`).
+- **`GetG`** = a pointer to the environment's opaque `g` allocation (`.global "runtime.g"`,
+  never nil, §5; nothing reads through it in P1–P5).
+- Proofs: `GoFV.Proof.atomicRoot_sim` (`Proof/AtomicSim.lean`): an atomic root on memories
+  related by any `AtomicSimRel` (loads and writes alike on the blocks its pointer arguments
+  point into) returns alike; dead auto elim (`Mem.EqOff`, `DAE.atomicRoot_rel`,
+  `DAE.atomicRoot_avoids`) and the extra-temporaries tables check (`EqX`; `stuckRoot` now
+  excludes `Atomic.modelled` ops) instantiate it.
+- Adapted: `evalOp_mono_same` (`atomicRoot_mono`), `evalValue_panic_op`, `CSE.evalOp_tail_ite`
+  (its `isRoot` branch now names `atomicRoot`), `evalPure_mono` (`HasCPUFeature`, `GetG`),
+  `DAE.evalOp_atomic` (now `= atomicRoot v argv`), `TabsMod.evalOp_notArm`.
+
+Difftest additions (`tools/semdiff/prog/atomics.go`): 26 functions on `sync/atomic`'s
+functions and typed wrappers (`Add`/`Swap`/`CompareAndSwap`/`Load`/`Store`/`And`/`Or` on 32-
+and 64-bit, signed and unsigned, `Bool`, `Uintptr`), on locals, through pointers, slice
+elements and struct fields, and CAS loops.
+
+Results (`--n 100 --seed 3`): 225 functions, 22,500 calls; native agrees with every section on
+22,498, every atomic function included. The 2 others are `makeBad(16, 2^32)`: a 4 GiB
+`makeslice` above the executable model's allocation limit (`maxModelAlloc` = 2^24, `stuck`).
+
 ## 10. Open questions and risks
 
 - **NaN encodings and the rules** (P4): IEEE 754 and the Go spec leave the encoding of a NaN

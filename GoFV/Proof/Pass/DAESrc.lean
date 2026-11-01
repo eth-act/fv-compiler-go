@@ -235,7 +235,8 @@ theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ct
     · show ¬ U Blk.nil
       intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
     · exact condSelect_avoids hargs
-    · trivial
+    · show ¬ U (Blk.global "runtime.g")
+      intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
   have pure1 : ∀ op, v.op = op → (op = .Copy ∨ op = .Select0 ∨ op = .Select1 ∨
       op = .SelectN ∨ op = .MakeResult ∨ op = .Convert ∨ op = .Load ∨ op = .AtomicLoad32 ∨
       op = .AtomicLoad64 ∨ op = .AtomicLoadPtr) → Val.Avoids U r := by
@@ -345,9 +346,8 @@ theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ct
   · exact calls (.inr (.inl h1))
   · exact calls (.inr (.inr h1))
   all_goals
-    obtain ⟨msg, hm⟩ := evalOp_atomic (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty)
-      (v := v) (by simp [h1])
-    rw [hm] at h; cases h
+    rw [evalOp_atomic (by simp [h1])] at h
+    exact atomicRoot_avoids hU hargs h
 
 /-! ## The source step -/
 

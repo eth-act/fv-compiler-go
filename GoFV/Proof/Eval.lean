@@ -133,7 +133,8 @@ theorem evalOp_congr {env : Env} {ctx ctx' : Ctx} {fr : Frame} {v v' : Value} {a
   obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
   dsimp only at htabs hpar hact
   subst htabs hpar hact
-  unfold evalOp frameVal memRoot callOp callTarget argFloat
+  unfold evalOp frameVal memRoot callOp callTarget argFloat atomicRoot Atomic.barrier
+    Atomic.prefetch Atomic.rmwRoot Atomic.casRoot Atomic.rmw Atomic.cas Atomic.unmodelled
   simp only [hop, haux, hai, hid]
   rfl
 
@@ -299,6 +300,14 @@ theorem callOp_nil {env : Env} {ctx : Ctx} {v : Value} {e : Panic} {m : Mem} :
   obtain ⟨_, h⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
   rw [h]; nofun
 
+/-- The atomic roots never panic (arm64 faults on their invalid accesses: `stuck`). -/
+theorem atomicRoot_ne_panic {v : Value} {argv : List Val} {e : Panic} {m : Mem} :
+    atomicRoot v argv ≠ .panic e m := by
+  unfold atomicRoot Atomic.barrier Atomic.prefetch Atomic.rmwRoot Atomic.casRoot Atomic.rmw
+    Atomic.cas Atomic.unmodelled
+  repeat' split
+  all_goals nofun
+
 /-- A panicking value other than a nil check is a side-effecting root. -/
 theorem prio_panicking_two {op : Op} (h : Panicking op) (hn : op ≠ .NilCheck) : prio op = 2 := by
   rcases h with h | h
@@ -335,7 +344,9 @@ theorem evalValue_panic_op {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {e :
         | (split at ho <;> first
             | cases ho
             | exact absurd ho argVal_not_panic
-            | (split at ho <;> cases ho))
+            | (split at ho
+               · exact absurd ho atomicRoot_ne_panic
+               · cases ho))
 
 theorem typeShapes_getD (tabs : Tables) (t : TypeRef) :
     (typeShapes tabs)[t]?.getD .other = tabs.ty t := by

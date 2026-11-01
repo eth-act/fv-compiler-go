@@ -46,6 +46,21 @@ theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv a
     ResRel U (memRoot ctx v argv) (memRoot ctx v argv') :=
   ⟨hok, fun _ _ h => absurd (memRoot_panic h) hn⟩
 
+/-- **A kept atomic root** on related memories. -/
+theorem atomicRoot_rel {v : Value} {L : List Val} {w w' : Val} (hw : VR U w w')
+    (hav : ∀ a ∈ L, Val.Avoids U a) :
+    ResRel U (atomicRoot v (L ++ [w])) (atomicRoot v (L ++ [w'])) := by
+  refine ⟨fun y h => ?_, fun e m h => absurd h atomicRoot_ne_panic⟩
+  obtain ⟨M, rfl⟩ := atomicRoot_ok_mem h
+  obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
+  have hR : AtomicSimRel (Mem.EqOff U) (fun b => ¬ U b) :=
+    ⟨fun t p h hp => EqOff.load h t p hp, fun _ _ h _ hw => EqOff.write h hw⟩
+  obtain ⟨y', hy', m1, m1', hm1, hs⟩ := atomicRoot_sim hR (fun p hp => hav _ hp) hm h
+  refine ⟨y', hy', ?_⟩
+  rcases hs with ⟨rfl, rfl⟩ | ⟨z, rfl, rfl⟩
+  · exact .mem hm1
+  · exact .tuple (.cons (.refl z) (.cons (.mem hm1) .nil))
+
 /-! ## The ops of `memOps` -/
 
 /-- **A kept op of `memOps`** on equal registers and a related last one. -/
@@ -144,9 +159,10 @@ theorem memOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {
   · exact calls (.inr (.inl h1))
   · exact calls (.inr (.inr h1))
   all_goals
-    obtain ⟨msg, hm⟩ := evalOp_atomic (env := env) (ctx := ctx) (fr := fr) (argv := L ++ [w])
-      (ty := ty) (v := v) (by simp [h1])
-    rw [hm]; exact resRel_stuck _ _
+    have he : ∀ argv, evalOp env ctx fr v argv ty = atomicRoot v argv :=
+      fun argv => evalOp_atomic (by simp [h1])
+    rw [he, he]
+    exact atomicRoot_rel hw fun a ha => hav (by rw [h1]; nofun) a (by simp [ha])
 
 /-! ## Registers -/
 
