@@ -29,8 +29,9 @@ The pass theorems conclude six relations: `Refines`, `RefinesUnder Env.Mono` (pa
 rewrite call arguments rely on monotone contracts), `RefinesFrom (FrameSafe ∧ InitAvoids)`
 (dead auto elim), `RefinesFrom (RwPre tabs f)` (the checked rewrite passes: monotone
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments of
-the pass input `f`; issue #151), `RefinesFrom WbPre` (writebarrier: a defined, read-only
-write-barrier flag and no write-barrier buffer, kept by the contracts; issue #36) and
+the pass input `f`, the runtime's memory-call contracts; issue #151), `RefinesFrom WbPre`
+(writebarrier: a defined, read-only write-barrier flag and no write-barrier buffer, kept by the
+contracts; issue #36) and
 `RefinesFrom DecPre` (decompose user/builtin: monotone contracts that cannot tell whether
 unreachable frame temporaries exist, `InitAvoids`; issue #17). All six imply
 `VRefines k := RefinesFrom (VPre k)`, where
@@ -53,11 +54,13 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.Verified GoFV.Proof
 dictionary parameters are `k` (`NilCheck.dictParams`): monotone, frame-safe contracts,
 malloc-family contracts that return non-nil pointers, inputs that hold no pointer into a frame
 temporary, non-nil dictionary arguments, a memory with a defined, read-only write-barrier
-flag and no write-barrier buffer, kept by the contracts (`WB.WbPre`), and contracts that cannot
-tell whether unreachable frame temporaries exist (`Env.TempOblivious`). -/
+flag and no write-barrier buffer, kept by the contracts (`WB.WbPre`), contracts that cannot
+tell whether unreachable frame temporaries exist (`Env.TempOblivious`), and
+`runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
+(`Env.MemOps`). -/
 def VPre (k : List Nat) (env : Env) (args : List Val) (mem : Mem) : Prop :=
   env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧
-    WB.WbPre env args mem ∧ env.TempOblivious
+    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps
 
 /-- The refinement the verified pipeline establishes. -/
 abbrev VRefines (k : List Nat) (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
@@ -78,14 +81,15 @@ theorem RefinesFrom.frameSafe_toV
 
 theorem RefinesFrom.rw_toV (hk : NilCheck.dictParams tabs f = k)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
-  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩) h
+  RefinesFrom.mono (fun _ _ _ hp =>
+    ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2⟩) h
 
 theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2.1) h
 
 theorem RefinesFrom.dec_toV (h : RefinesFrom Decompose.DecPre tabs' f' tabs f) :
     VRefines k tabs' f' tabs f :=
-  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2, hp.2.2.1⟩) h
+  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2.1, hp.2.2.1⟩) h
 
 /-- The relation a `Rel` names. -/
 def relHolds : Rel → Tables → Func → Tables → Func → Prop

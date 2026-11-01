@@ -39,8 +39,9 @@ pipeline runs it (`Verified.Step`):
 - `proven run rel guard`: `run` is the pass (or its checked, proven-only variant: `optChecked`,
   `proveChecked`, …) whose refinement theorem concludes `rel` (`Refines`, `RefinesUnder
   Env.Mono`, `RefinesFrom (FrameSafe ∧ InitAvoids)` or, for the checked rewrite passes,
-  `RefinesFrom (RwPre tabs f)`: also malloc-family contracts that return non-nil pointers and
-  non-nil dictionary arguments of the input, issue #151) when the input and the output pass
+  `RefinesFrom (RwPre tabs f)`: also malloc-family contracts that return non-nil pointers,
+  non-nil dictionary arguments of the input and the runtime's `memclrNoHeapPointers`/`memmove`
+  contracts, if present, issue #151) when the input and the output pass
   `check` and `guard` (the theorem's fragment hypothesis, decided) accepts the input;
 - `stock run`: the stock port; no theorem.
 
@@ -81,7 +82,8 @@ inductive Rel where
   | frameSafe
   /-- `RefinesFrom (RwPre tabs f)` on the pass's input `f` in `tabs` (the checked rewrite passes):
   monotone contracts, malloc-family contracts that return non-nil pointers
-  (`Env.AllocNonNil`) and non-nil dictionary arguments (`NilCheck.dictParams tabs f`). -/
+  (`Env.AllocNonNil`), non-nil dictionary arguments (`NilCheck.dictParams tabs f`) and the
+  runtime's `memclrNoHeapPointers`/`memmove` contracts, if present (`Env.MemOps`). -/
   | rw
   /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
   read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/

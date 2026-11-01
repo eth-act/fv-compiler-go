@@ -145,10 +145,10 @@ theorem nm_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := nmRules) (penv := nmPassEnv)
         (f := nmFunc) (out := out) nmRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
-/-- **Non-vacuity of `RwPre` with a dictionary**: monotone contracts without allocators
-(`Env.p1`) and a non-nil `.dict` argument. -/
+/-- **Non-vacuity of `RwPre` with a dictionary**: monotone contracts without allocators or memory
+runtime calls (`Env.p1`) and a non-nil `.dict` argument. -/
 theorem nm_rwPre : GoFV.Proof.Pass.Rewrite.RwPre nmTabs nmFunc Env.p1 [.ptr ⟨.heap 0, 0⟩] {} := by
-  refine ⟨Env.p1_mono, Env.p1_allocNonNil, ?_⟩
+  refine ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, ?_⟩, Env.p1_memOps⟩
   rw [nm_dictParams]
   intro i hi
   simp only [List.mem_singleton] at hi

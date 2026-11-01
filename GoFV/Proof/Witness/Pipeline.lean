@@ -153,7 +153,7 @@ theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
 
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF) plRunEnv [] {} :=
   ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
-    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, p1_tempOblivious⟩
+    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, p1_tempOblivious, Env.p1_memOps⟩
 
 /-! ## The witness -/
 
