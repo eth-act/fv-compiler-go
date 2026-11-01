@@ -79,9 +79,117 @@ def rangeDecides (rx ry : Rng) (t : Rel) (v : Bool) : Bool :=
     if b == v then rx.ulo == rx.uhi && ry.ulo == ry.uhi && rx.ulo == ry.ulo
     else rx.uhi < ry.ulo || ry.uhi < rx.ulo
 
+/-! ## Differences `V(u) - V(v) ≤ c` from chains of path facts -/
+
+/-- The bounds of `r` in the reading `s` (signed: `toInt`, unsigned: `toNat`). -/
+def Rng.lo (s : Bool) (r : Rng) : Int := if s then r.slo else r.ulo
+def Rng.hi (s : Bool) (r : Rng) : Int := if s then r.shi else r.uhi
+
+/-- The least and the greatest `n`-bit integer in the reading `s`. -/
+def readMin (n : Nat) (s : Bool) : Int := if s then -2 ^ (n - 1) else 0
+def readMax (n : Nat) (s : Bool) : Int := if s then 2 ^ (n - 1) - 1 else 2 ^ n - 1
+
+/-- Add `(v, d)` unless `v` already has a bound at most `d`. -/
+def addDist (dist : List (ID × Int)) (v : ID) (d : Int) : List (ID × Int) :=
+  if dist.any (fun (z, e) => z == v && e ≤ d) then dist else (v, d) :: dist
+
+/-- One round of relaxing the edges `(u, v, c)` (`V(u) - V(v) ≤ c`). -/
+def relax (es : List (ID × ID × Int)) (dist : List (ID × Int)) : List (ID × Int) :=
+  es.foldl (fun dist (u, v, c) =>
+    dist.foldl (fun acc (z, d) => if z == u then addDist acc v (d + c) else acc) dist) dist
+
+/-- Bounds `V(x) - V(z) ≤ d` along paths of edges from `x`. -/
+def distFrom (es : List (ID × ID × Int)) (x : ID) : List (ID × Int) :=
+  (List.range es.length).foldl (fun dist _ => relax es dist) [(x, 0)]
+
+/-- `V(x) - V(y) ≤ c` follows from the edges. -/
+def diffLe (es : List (ID × ID × Int)) (x y : ID) (c : Int) : Bool :=
+  (distFrom es x).any fun (z, e) => z == y && e ≤ c
+
+/-- The signed value of `z` if it is a `w`-bit constant. -/
+def constVal (w : Width) (z : ID) : Option Int :=
+  match D z with
+  | some zv =>
+    if termOp zv.op && rTab.lookup zv.op == some (.const w) then
+      some (BitVec.ofInt w.bits zv.auxInt.toInt).toInt
+    else none
+  | none => none
+
+/-- `x` is `a + c` at width `w` (as terms): an `Add` with a constant argument of signed value
+`c`, or a `Sub` of a constant of signed value `-c`. -/
+def addConst (w : Width) (x : ID) : Option (ID × Int) :=
+  match D x with
+  | some v =>
+    if termOp v.op then
+      match rTab.lookup v.op, v.args.toList with
+      | some (.add w'), [a, b] =>
+        if w' == w then
+          match constVal D w b, constVal D w a with
+          | some c, _ => some (a, c)
+          | none, some c => some (b, c)
+          | none, none => none
+        else none
+      | some (.sub w'), [a, b] =>
+        if w' == w then (constVal D w b).map fun c => (a, -c) else none
+      | _, _ => none
+    else none
+  | none => none
+
+/-- `x` as `base + c` in the reading `s` at width `w`, without wraparound (by `base`'s range,
+`addConst`); otherwise `x + 0`. -/
+def offOf (s : Bool) (w : Width) (x0 : ID) : ID × Int :=
+  let x := canon D tabs x0
+  match addConst D w x with
+  | some (b, c) =>
+    let r := rng D tabs A k w b
+    if readMin w.bits s ≤ r.lo s + c && r.hi s + c ≤ readMax w.bits s then (canon D tabs b, c)
+    else (x, 0)
+  | none => (x, 0)
+
+/-- The edges `V(u) - V(v) ≤ c` (reading `s`, width `w`) a path fact gives: an order in the
+same reading or between nonnegative sides; an equality both ways. -/
+def factEdges (s : Bool) (w : Width) (fact : ID × Bool) : List (ID × ID × Int) :=
+  match relOf D tabs fact with
+  | some (a, b, w', r) =>
+    if w' != w then [] else
+    let (ba, ca) := offOf D tabs A k s w a
+    let (bb, cb) := offOf D tabs A k s w b
+    match r with
+    | .lt s' st =>
+      if s' == s || (0 ≤ (rng D tabs A k w a).slo && 0 ≤ (rng D tabs A k w b).slo) then
+        [(ba, bb, cb - ca - (if st then 1 else 0))]
+      else []
+    | .eq true => [(ba, bb, cb - ca), (bb, ba, ca - cb)]
+    | .eq false => []
+  | none => []
+
+/-- `x ⋈ y` at width `w` is decided to be `v` in the reading `s` by differences. -/
+def linIn (s : Bool) (x y : ID) (w : Width) (t : Rel) (v : Bool) : Bool :=
+  let es := A.facts.flatMap (factEdges D tabs A k s w)
+  let (bx, cx) := offOf D tabs A k s w x
+  let (by', cy) := offOf D tabs A k s w y
+  match t with
+  | .lt _ st =>
+    if v then diffLe es bx by' (cy - cx - (if st then 1 else 0))
+    else diffLe es by' bx (cx - cy - (if st then 0 else 1))
+  | .eq b =>
+    if b == v then diffLe es bx by' (cy - cx) && diffLe es by' bx (cx - cy)
+    else diffLe es bx by' (cy - cx - 1) || diffLe es by' bx (cx - cy - 1)
+
+/-- `x ⋈ y` at width `w` is decided to be `v` by differences: orders in their own reading,
+equalities in either. -/
+def linDecides (x y : ID) (w : Width) (t : Rel) (v : Bool) : Bool :=
+  match t with
+  | .lt s _ => linIn D tabs A k s x y w t v
+  | .eq _ => linIn D tabs A k true x y w t v || linIn D tabs A k false x y w t v
+
+/-- Depth of the range analysis inside `linDecides` (offsets, signs of fact sides). -/
+def linFuel : Nat := 2
+
 /-- `x ⋈ y` at width `w` is decided to be `v`. -/
 def relDecides (x y : ID) (w : Width) (t : Rel) (v : Bool) : Bool :=
-  rangeDecides (rng D tabs A k w x) (rng D tabs A k w y) t v || pairDecides D tabs A k x y w t v
+  rangeDecides (rng D tabs A k w x) (rng D tabs A k w y) t v || pairDecides D tabs A k x y w t v ||
+    linDecides D tabs A linFuel x y w t v
 
 /-- A comparison `a ⋈ b` of kind `ck` is decided to be `v` (a bounds check with its length
 assumed nonnegative). -/
