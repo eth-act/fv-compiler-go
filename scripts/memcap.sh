@@ -32,9 +32,8 @@ FV_LAKE_CACHE=${FV_LAKE_CACHE:-$(dirname "${main_root:-$root}")/gofv-lake-cache}
 if [ "$FV_LAKE_CACHE" != off ]; then
   export LAKE_ARTIFACT_CACHE=true LAKE_RESTORE_ARTIFACTS=true LAKE_CACHE_DIR="$FV_LAKE_CACHE"
 fi
-# Measured on Lean 4.34.1: LEAN_NUM_THREADS does not limit `lean` (it still elaborates theorems
-# in parallel on up to all cores); `lean -jN` does, e.g. via lakefile weakLeanArgs (LEARNINGS.md).
-export LEAN_NUM_THREADS=${LEAN_NUM_THREADS:-2}
+# Threads: LEAN_NUM_THREADS does not limit `lean` 4.34.1 (it elaborates theorems in parallel on
+# up to all cores); the lakefile's weakLeanArgs pass `-j4` instead (LEARNINGS.md, issue #1).
 if [ -n "${FV_MEMCAP_OFF:-}" ]; then
   exec "$@"
 fi

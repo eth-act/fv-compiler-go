@@ -15,7 +15,7 @@
   branch `agent/<name>`. Never edit the main checkout. Use absolute paths under your worktree
   for file tools; in bash, `cd` into the worktree in the same command.
 - Every lake/lean/go/test command goes through `scripts/memcap.sh` (default cap 8G, shared
-  Lake cache `../gofv-lake-cache`, `LEAN_NUM_THREADS=2`). One heavy process at a time per
+  Lake cache `../gofv-lake-cache`; `lean -j4` via the lakefile's `weakLeanArgs`). One heavy process at a time per
   agent; anything above 8G only under `flock ../gofv-heavy.lock`. The machine is shared with
   other heavy projects: never pattern-kill (kill only PIDs you started), temporary files under
   `<worktree>/tmp/`, never `/tmp`. Check `free -g` before large builds.
