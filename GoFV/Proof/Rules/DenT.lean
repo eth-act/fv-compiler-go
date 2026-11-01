@@ -142,6 +142,12 @@ def samePtrVars : Expr → List (Nat × Nat)
   | .call "isSamePtr" [.var x, .var y] _ => [(x, y)]
   | _ => []
 
+/-- The rule variables `x` of the condition's conjuncts `x.NumElem() == 1` (`&&` chains). -/
+def numElem1Vars : Expr → List Nat
+  | .binop .land a b _ => numElem1Vars a ++ numElem1Vars b
+  | .binop .eq (.method (.var x) "NumElem" [] _) (.lit _ (.int 1)) _ => [x]
+  | _ => []
+
 /-- The field binds variable `x`. -/
 def _root_.GoFV.Rules.Field.bindsVar (f : GoFV.Rules.Field) (x : Nat) : Bool :=
   match f with
@@ -167,9 +173,10 @@ def _root_.GoFV.Rules.Result.nodes : Result → List RNode
 data symbol of the (non-empty) string aux bound to `x`, an auxint `int64(len(x))` is its length
 (as `nodeDenT` selects it), an aux `{x}` is the aux bound to `x`, an auxint shift `a << b` or
 `a >> b` shifts by a nonnegative amount (Go panics on a negative one, so the rewriter built no
-such node); a conjunct `x == ""` of the condition holds of the string aux bound to `x`; and a
+such node); a conjunct `x == ""` of the condition holds of the string aux bound to `x`; a
 conjunct `isSamePtr(x, y)` of leaves `x`, `y` holds of their values (the validator: the same
-value). -/
+value); and a conjunct `x.NumElem() == 1` makes the type `x` a one-element array, whose shape
+(`Sem.tyOf`) is an aggregate of one field at offset 0 that fills it. -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
   (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
@@ -183,9 +190,10 @@ def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rul
     (∀ ae b, n.auxInt = some ae → shiftAmt? ae = some b → ∃ i, ev b = .int i ∧ 0 ≤ i)) ∧
   (∀ x ∈ (r.cond.map emptyStrVars).getD [],
     ∃ p s d, Pat.auxPos x [] r.pat = some p ∧ strAux? tabs (e.aux p) = some (s, d) ∧ s.size = 0) ∧
-  ∀ xy ∈ (r.cond.map samePtrVars).getD [],
+  (∀ xy ∈ (r.cond.map samePtrVars).getD [],
     ∃ p q, Pat.leafPos xy.1 [] r.pat = some p ∧ Pat.leafPos xy.2 [] r.pat = some q ∧
-      e.leaf p = e.leaf q
+      e.leaf p = e.leaf q) ∧
+  ∀ x ∈ (r.cond.map numElem1Vars).getD [], ∃ f, ev (.var x) = .ty (.agg [(0, f)] f.size)
 
 /-- **The obligation of a value rule over table-evaluated nodes**: `Rule.Sound` with the
 denotation `opVal tabs`, for all tables, under the frame helpers' facts (`FrameOK`). -/

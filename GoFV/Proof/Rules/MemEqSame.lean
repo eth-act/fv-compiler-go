@@ -35,7 +35,7 @@ theorem memEq_self (x n m : Val) :
 theorem r_generic_1592_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1592 := by
   refine ⟨rfl, fun tabs e or _ => ?_⟩
   intro σ ev hfr _ _ _ hty _ _ _
-  obtain ⟨p, q, hp, hq, hpq⟩ := hfr.2.2 (0, 1)
+  obtain ⟨p, q, hp, hq, hpq⟩ := hfr.2.2.1 (0, 1)
     (by simp [GoFV.Rules.Generated.Generic.r_generic_1592, samePtrVars])
   simp [GoFV.Rules.Generated.Generic.r_generic_1592, Pat.leafPos, Pat.leafPoss] at hp hq
   subst hp hq
@@ -67,8 +67,8 @@ theorem inst_r_generic_1592 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1592, FrameOK, Result.nodes, samePtrVars,
-    shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT, sigmaT, Pat.bindsT,
-    Pat.bindssT, emptyStrVars, opVal, memEq, Mem.read]
+    numElem1Vars, shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT, sigmaT,
+    Pat.bindsT, Pat.bindssT, emptyStrVars, opVal, memEq, Mem.read]
   rule_eval
   refine ⟨fun ae x h => ?_, fun ae b h => ?_⟩
   · subst h; simp [lenVar?]

@@ -481,8 +481,10 @@ with a known element size `k` is the element type known by its size only, a reco
 one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's); `t.Elem()`
 of a slice shape (an aggregate of at least two fields whose first is a pointer, the data
 pointer `.ptr el`) is the element type known by its pointer type only, the record with the one
-attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); the kind predicates by `kindE`. The method
-name is matched first, so that a method of an unknown type shape is still `none`. -/
+attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an aggregate of one field
+at offset 0 is that field's shape (`Sem.tyOf` of a one-element array `[1]T`: `T`'s shape); the
+kind predicates by `kindE`. The method name is matched first, so that a method of an unknown
+type shape is still `none`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   match n, args with
   | "Size", [] => match dy with
@@ -492,6 +494,7 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   | "Elem", [] => match dy with
     | .ty (.ptr (some k)) => some (.strct [("Size", .int k)])
     | .ty (.agg ((_, .ptr el) :: _ :: _) _) => some (.strct [("PtrTo", .ty (.ptr el))])
+    | .ty (.agg [(0, f)] _) => some (.ty f)
     | _ => none
   | "PtrTo", [] => match dy with
     | .strct fs => strctField fs "PtrTo"

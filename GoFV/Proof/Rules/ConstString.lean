@@ -166,8 +166,9 @@ theorem inst_r_generic_1015 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1015, FrameOK, Result.nodes, emptyStrVars,
-    samePtrVars, shiftAmt?, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs, Tables.aux?,
-    Pat.rawT, Pat.densT, opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT, Pat.denT]
+    samePtrVars, numElem1Vars, shiftAmt?, Pat.auxPos, Field.bindsVar, strAux?, emptyStrTabs,
+    Tables.aux?, Pat.rawT, Pat.densT, opVal_constString, strVal, sigmaT, Pat.bindsT, Pat.bindssT,
+    Pat.denT]
   rule_eval
   refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩
   · subst h; simp [lenVar?]
@@ -188,8 +189,9 @@ theorem inst_r_generic_1011 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     { Oracle.const true with aux := fun _ => some 1 } := by
   refine ⟨Oracle.boolTyped_const_dv true _ _ _ _, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1011, FrameOK, Result.nodes, strDataVar?, lenVar?,
-    shiftAmt?, auxVar?, Pat.auxPos, Pat.auxPoss, Field.bindsVar, hiSymTabs, Tables.aux?, Pat.rawT,
-    Pat.densT, Pat.denT, opVal, addrVal, sigmaT, Pat.bindsT, Pat.bindssT, strTy]
+    shiftAmt?, auxVar?, numElem1Vars, Pat.auxPos, Pat.auxPoss, Field.bindsVar, hiSymTabs,
+    Tables.aux?, Pat.rawT, Pat.densT, Pat.denT, opVal, addrVal, sigmaT, Pat.bindsT, Pat.bindssT,
+    strTy]
   rule_eval
   simp [Comp.select, Comp.make, Val.retype, Val.retypeFields]
   exact ⟨fun xe x h => by subst h; simp [strDataVar?], fun xe x h => by subst h; simp [auxVar?]⟩
