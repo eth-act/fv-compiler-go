@@ -466,6 +466,48 @@ theorem arg_val {gr : Frame} {x : ID} (hgr : gr = { PT with regs := gr.regs })
   · rw [hout w hw hwn, post_rel S hBm hfB hgB hph hrel hsrc hPS hsS hsz hPT htyS hp hl han hnew,
       ← hGk a (fun hd => han (hDone a hd)), hya]
 
+/-- **A source non-`Phi` of the block evaluates in the target as in the source** (its arguments
+renamed, `argRel`). -/
+theorem src_node_step {x : ID} (hsn : x ∈ fB.values ∧ isPhiIn f x = false) {fx : Value}
+    (hfx : f.value? x = some fx)
+    (hnst : ∀ msg, evalValue env (Ctx.make tabs f) G fx ≠ .stuck msg)
+    {gr : Frame} (hgr : gr = { PT with regs := gr.regs })
+    (hout : ∀ a ∈ argsF g x, a ∉ Info.nodesOf g gB → gr.regs[a]? = PT.regs[a]?)
+    (hin : ∀ a ∈ argsF g x, a ∈ Info.nodesOf g gB → ∃ z, gr.regs[a]? = some (some z) ∧
+      ∀ y, expOf (infoOf tabs f g s) f g fB out G a = some y → z = y) :
+    stepV env (Ctx.make tabs g) gr x = evalValue env (Ctx.make tabs f) G fx := by
+  have hBg := gBm S hBm hfB hgB hph hrel hsrc hPS hsS hsz
+  have hx : x ∈ Info.nodesOf g gB := ((SCI.nodesOK_spec _ hnodes).1 x (mem_nodesOf.2 hsn)).1
+  obtain ⟨gx, hgx, hgxid, -⟩ := value_of_mem S.wfg hBg hgB (mem_nodesOf.1 hx).1
+  have hspec := SCI.nodeOK_spec _ ((SCI.nodesOK_spec _ hnodes).2 x hx)
+  have hfr : gr = { G with regs := gr.regs } :=
+    ((SameAct.of hgr).trans ((SameAct.of hPT.frame).trans ((SameAct.of hfrS).trans
+      ((SameAct.of hG).trans (SameAct.of hPS.frame)).symm))).eq
+  have hstep : stepV env (Ctx.make tabs g) gr x = evalValue env (Ctx.make tabs g) gr gx := by
+    unfold stepV; rw [show (Ctx.make tabs g).f = g from rfl, hgx]
+  rw [hstep]
+  have hfxid' : fx.id = x := by
+    obtain ⟨fx', hfx', h⟩ := value_of_mem S.wf hBm hfB hsn.1; rw [hfx] at hfx'; cases hfx'; exact h.1
+  obtain ⟨h1, h2, h3, h4, h5, h6⟩ := SCI.sameNode_spec _ (hspec.1 hsn)
+  rw [getV_of hgx, getV_of hfx] at h1 h2 h3 h4 h5 h6
+  have hargs : ∀ (k : Nat) (a : ID), fx.args[k]? = some a → ∃ a' ya, gx.args[k]? = some a' ∧
+      G.regs[a]? = some (some ya) ∧ gr.regs[a']? = some (some ya) := by
+    intro k a ha
+    obtain ⟨ya, hya⟩ := evalValue_args_def hnst a (args_get_mem ha)
+    have hk : k < gx.args.size := by rw [h5]; exact (Array.getElem?_eq_some_iff.1 ha).1
+    refine ⟨gx.args[k], ya, by simp [hk], hya, ?_⟩
+    exact arg_val S hBm hfB hgB hph hrel hsrc hPS hsS hsz hPT htyS hnodes hnew hinRb hbv hfrS hG
+      hGs hDone hGd hGk hgr (fun a ha h => hout a ha h) (fun a ha h => hin a ha h)
+      (by rw [show argsF g x = gx.args.toList from argsF_of hgx]
+          exact Array.mem_toList_iff.2 (Array.getElem_mem hk))
+      (argListed_of S.wf hBm hfB hsn.1 hfx (args_get_mem ha)) hya
+      (h6 k _ a (by simp [hk]) ha)
+  have hty' : (Ctx.make tabs g).tys[fx.id]? = (Ctx.make tabs f).tys[fx.id]? := by
+    rw [hfxid', tys_of_tyOf hgx, tys_of_tyOf hfx, tyOf_eq hgx, tyOf_eq hfx, h2]
+  exact evalValue_eq_of_args (ctx := Ctx.make tabs f) (ctx' := Ctx.make tabs g) (fr := G)
+    (fr' := gr) (v := fx) (v' := gx) h1 h3 h4 (by rw [hgxid, hfxid']) h5 hargs hfr hty' rfl
+    (params_eq' (tabs := tabs) S.gownAux) rfl
+
 /-- **Each target non-`Phi` evaluates to its expected result** (`nodeOK`). -/
 theorem node_loc {x : ID} (hx : x ∈ Info.nodesOf g gB)
     (hxd : x ∈ fB.values → isPhiIn f x = false → Done x) :
@@ -485,29 +527,9 @@ theorem node_loc {x : ID} (hx : x ∈ Info.nodesOf g gB)
   by_cases hsn : x ∈ fB.values ∧ isPhiIn f x = false
   · -- a source non-`Phi`: the same evaluation
     obtain ⟨fx, y, hfx, hGx, hev⟩ := hGd x (hxd hsn.1 hsn.2)
-    obtain ⟨-, hfxid, -⟩ := value_of_mem S.wf hBm hfB hsn.1
-    have hfxid' : fx.id = x := by
-      obtain ⟨fx', hfx', h⟩ := value_of_mem S.wf hBm hfB hsn.1; rw [hfx] at hfx'; cases hfx'; exact h.1
-    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := SCI.sameNode_spec _ (hspec.1 hsn)
-    rw [getV_of hgx, getV_of hfx] at h1 h2 h3 h4 h5 h6
-    have hargs : ∀ (k : Nat) (a : ID), fx.args[k]? = some a → ∃ a' ya, gx.args[k]? = some a' ∧
-        G.regs[a]? = some (some ya) ∧ gr.regs[a']? = some (some ya) := by
-      intro k a ha
-      obtain ⟨ya, hya⟩ := evalValue_args_def (by rw [hev]; nofun) a (args_get_mem ha)
-      have hk : k < gx.args.size := by rw [h5]; exact (Array.getElem?_eq_some_iff.1 ha).1
-      refine ⟨gx.args[k], ya, by simp [hk], hya, ?_⟩
-      exact arg_val S hBm hfB hgB hph hrel hsrc hPS hsS hsz hPT htyS hnodes hnew hinRb hbv hfrS hG
-        hGs hDone hGd hGk hgr (fun a ha h => hout a ha h) (fun a ha h => hin a ha h)
-        (by rw [show argsF g x = gx.args.toList from argsF_of hgx]
-            exact Array.mem_toList_iff.2 (Array.getElem_mem hk))
-        (argListed_of S.wf hBm hfB hsn.1 hfx (args_get_mem ha)) hya
-        (h6 k _ a (by simp [hk]) ha)
-    have hty' : (Ctx.make tabs g).tys[fx.id]? = (Ctx.make tabs f).tys[fx.id]? := by
-      rw [hfxid', tys_of_tyOf hgx, tys_of_tyOf hfx, tyOf_eq hgx, tyOf_eq hfx, h2]
     refine ⟨y, ?_, fun y' hy' => ?_⟩
-    · rw [evalValue_eq_of_args (ctx := Ctx.make tabs f) (ctx' := Ctx.make tabs g) (fr := G)
-        (fr' := gr) (v := fx) (v' := gx) h1 h3 h4 (by rw [hgxid, hfxid']) h5 hargs hfr hty' rfl
-        (params_eq' (tabs := tabs) S.gownAux) rfl, hev]
+    · rw [← hstep, src_node_step S hBm hfB hgB hph hrel hsrc hPS hsS hsz hPT htyS hnodes hnew hinRb
+        hbv hfrS hG hGs hDone hGd hGk hsn hfx (by rw [hev]; nofun) hgr hout hin, hev]
     · have hh := ((SCI.nodesOK_spec _ hnodes).1 x ((mem_nodesOf).2 hsn)).2
       simp only [expOf, hh, Option.bind_some, hGx, Option.join_some, Option.some.injEq] at hy'
       exact hy'
