@@ -236,19 +236,19 @@ def dec : RuleSet where
   structLoads := []
   structStores := [Generated.Dec.r_dec_23, Generated.Dec.r_dec_35, Generated.Dec.r_dec_51, Generated.Dec.r_dec_72, Generated.Dec.r_dec_93, Generated.Dec.r_dec_123, Generated.Dec.r_dec_129]
 
-/-- `divisible.rules` restricted to its 24 proven value rules, 0 proven block rules, 0
+/-- `divisible.rules` restricted to its 32 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions and 0 struct-store splits. -/
 def divisible : RuleSet where
   name := "divisible"
-  values := [(.Eq16, [Generated.Divisible.r_divisible_17, Generated.Divisible.r_divisible_20, Generated.Divisible.r_divisible_48]),
-    (.Eq32, [Generated.Divisible.r_divisible_17_2, Generated.Divisible.r_divisible_20_2, Generated.Divisible.r_divisible_64]),
-    (.Eq64, [Generated.Divisible.r_divisible_17_3, Generated.Divisible.r_divisible_20_3, Generated.Divisible.r_divisible_80]),
-    (.Eq8, [Generated.Divisible.r_divisible_17_4, Generated.Divisible.r_divisible_20_4, Generated.Divisible.r_divisible_32]),
-    (.Neq16, [Generated.Divisible.r_divisible_23, Generated.Divisible.r_divisible_26, Generated.Divisible.r_divisible_56]),
-    (.Neq32, [Generated.Divisible.r_divisible_23_2, Generated.Divisible.r_divisible_26_2, Generated.Divisible.r_divisible_72]),
-    (.Neq64, [Generated.Divisible.r_divisible_23_3, Generated.Divisible.r_divisible_26_3, Generated.Divisible.r_divisible_88]),
-    (.Neq8, [Generated.Divisible.r_divisible_23_4, Generated.Divisible.r_divisible_26_4, Generated.Divisible.r_divisible_40])]
+  values := [(.Eq16, [Generated.Divisible.r_divisible_17, Generated.Divisible.r_divisible_20, Generated.Divisible.r_divisible_48, Generated.Divisible.r_divisible_116]),
+    (.Eq32, [Generated.Divisible.r_divisible_17_2, Generated.Divisible.r_divisible_20_2, Generated.Divisible.r_divisible_64, Generated.Divisible.r_divisible_134]),
+    (.Eq64, [Generated.Divisible.r_divisible_17_3, Generated.Divisible.r_divisible_20_3, Generated.Divisible.r_divisible_80, Generated.Divisible.r_divisible_152]),
+    (.Eq8, [Generated.Divisible.r_divisible_17_4, Generated.Divisible.r_divisible_20_4, Generated.Divisible.r_divisible_32, Generated.Divisible.r_divisible_98]),
+    (.Neq16, [Generated.Divisible.r_divisible_23, Generated.Divisible.r_divisible_26, Generated.Divisible.r_divisible_56, Generated.Divisible.r_divisible_125]),
+    (.Neq32, [Generated.Divisible.r_divisible_23_2, Generated.Divisible.r_divisible_26_2, Generated.Divisible.r_divisible_72, Generated.Divisible.r_divisible_143]),
+    (.Neq64, [Generated.Divisible.r_divisible_23_3, Generated.Divisible.r_divisible_26_3, Generated.Divisible.r_divisible_88, Generated.Divisible.r_divisible_161]),
+    (.Neq8, [Generated.Divisible.r_divisible_23_4, Generated.Divisible.r_divisible_26_4, Generated.Divisible.r_divisible_40, Generated.Divisible.r_divisible_107])]
   blocks := []
   nilChecks := []
   loads := []

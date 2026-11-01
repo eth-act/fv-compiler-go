@@ -336,6 +336,7 @@ import GoFV.Proof.Rules.DivisibleGen
 import GoFV.Proof.Rules.DivisibleGen2
 import GoFV.Proof.Rules.DivisibleGen3
 import GoFV.Proof.Rules.DivisibleInv
+import GoFV.Proof.Rules.DivisibleS
 import GoFV.Proof.Rules.DivisibleU
 import GoFV.Proof.Rules.DivisibleU2
 import GoFV.Proof.Rules.DivmodS

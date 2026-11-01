@@ -630,8 +630,8 @@ needs a later phase of the semantics.
 | `dec` | StringPtr | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StructMake | 0 | 0 | 1 | 0 | 1 |
 | `dec` | StructSelect | 3 | 2 | 0 | 1 | 5 |
-| `divisible` | Eq | 12 | 4 | 0 | 0 | 16 |
-| `divisible` | Neq | 12 | 4 | 0 | 0 | 16 |
+| `divisible` | Eq | 16 | 0 | 0 | 0 | 16 |
+| `divisible` | Neq | 16 | 0 | 0 | 0 | 16 |
 | `divmod` | Div | 17 | 6 | 4 | 2 | 29 |
 | `generic` | Add | 88 | 1 | 4 | 2 | 95 |
 | `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
@@ -708,7 +708,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
 | `generic` | Zero | 0 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1281 | 241 | 34 | 258 | 1762 |
+| all | | 1289 | 233 | 34 | 258 | 1762 |
 
 <!-- END coverage -->
 
