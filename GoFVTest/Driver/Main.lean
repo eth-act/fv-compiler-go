@@ -17,11 +17,12 @@ The Lean generic pipeline as a program (`docs/DRIVER.md`).
   `unported`/`error` the result (the input of the pass that stopped the run) is only printed with
   `--partial`. `--to <pass>` stops after that pass (debugging).
 - `gofv-ssa-opt --list`: one line per stock pass before `lower`: `ported|unported "<name>"`.
-- `gofv-ssa-opt --check [--mixed] [--whole-file-env] [--jobs N] [--max-report N] [--table FILE]
-  <dir|file>...`:
+- `gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N]
+  [--table FILE] <dir|file>...`:
   whole-pipeline parity over stock export files. The pipeline starts from what the driver would export (section
   0, its definitions, the type order of those types), chains the Lean results, and compares the
-  state after every pass with the stock section of that pass.
+  state after every pass with the stock section of that pass, as the importer compares (a new
+  symbol by name and ABI, map lines as sets); `--strict` compares as `pass-parity`.
 -/
 
 open GoFV.SSA GoFV.Opt GoFVTest.Parity
@@ -237,8 +238,10 @@ structure Walk where
 definitions and type order (what the driver exports) and compares the state after each Lean
 pass with the stock section of that pass. With `mixed`, an unported pass is taken from the stock
 file (its output section, with the tables and type order in force there) and the chain goes on
-from there, as `GOFV_SSA_DRIVER_MODE=mixed` does; the unported passes met are returned. -/
-def checkExport (mixed wholeFile : Bool) (e : ExportFile) : Outcome × Array PassCount × Array String := Id.run do
+from there, as `GOFV_SSA_DRIVER_MODE=mixed` does; the unported passes met are returned. Unless
+`strict`, states are compared as the importer compares them (`compare`'s `loose`). -/
+def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
+    Outcome × Array PassCount × Array String := Id.run do
   let mut counts := Array.replicate stockPasses.size ({} : PassCount)
   let some s0 := e.sections[0]? | return (.parseError "no section", counts, #[])
   let mut base := ({} : Tables).addAll s0.defs
@@ -267,7 +270,7 @@ def checkExport (mixed wholeFile : Bool) (e : ExportFile) : Outcome × Array Pas
           set { bump false w with failure := some (name, s!"stock section {w.k} is \"{s.pass.toStringLossy}\"") }
           return false
         let want := w.tables.addAll s.defs
-        match compare t0 { func := st.func, tables := st.tables } want s with
+        match compare t0 { func := st.func, tables := st.tables } want s (loose := !strict) with
         | none => set { bump true w with k := w.k + 1, tables := want }; return true
         | some d => set { bump false w with failure := some (name, d) }; return false
       out := (runFrom env { func, tables := t0 } start step).run { k, tables := t0, counts }
@@ -297,13 +300,14 @@ def checkExport (mixed wholeFile : Bool) (e : ExportFile) : Outcome × Array Pas
       | none => return (.full, counts, stockRun)
   return (.diverged "?" "segment loop did not terminate", counts, stockRun)
 
-def checkFile (mixed wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats := do
+def checkFile (mixed wholeFile strict : Bool) (maxReport : Nat) (path : System.FilePath) (st : Stats) :
+    IO Stats := do
   let data ← IO.FS.readBinFile path
   let st := { st with files := st.files + 1 }
   let (o, counts, stockRun) : Outcome × Array PassCount × Array String :=
     match parseExport data with
     | .error e => (Outcome.parseError e, #[], #[])
-    | .ok e => checkExport mixed wholeFile e
+    | .ok e => checkExport mixed wholeFile strict e
   let st := { st with stockRun := stockRun.foldl (fun m p => bumpMap m p) st.stockRun }
   let st := { st with counts := st.counts.mapIdx fun i (x : PassCount) =>
                 let y := counts.getD i {}
@@ -357,6 +361,8 @@ structure Opts where
   check : Bool := false
   mixed : Bool := false
   wholeFile : Bool := false
+  /-- `--strict`: compare every definition and the map lines' order (as `pass-parity`). -/
+  strict : Bool := false
   list : Bool := false
   partialOut : Bool := false
   start : Option String := none
@@ -372,6 +378,7 @@ partial def parseArgs : List String → Opts → Except String Opts
   | "--check" :: rest, o => parseArgs rest { o with check := true }
   | "--mixed" :: rest, o => parseArgs rest { o with mixed := true }
   | "--whole-file-env" :: rest, o => parseArgs rest { o with wholeFile := true }
+  | "--strict" :: rest, o => parseArgs rest { o with strict := true }
   | "--list" :: rest, o => parseArgs rest { o with list := true }
   | "--partial" :: rest, o => parseArgs rest { o with partialOut := true }
   | "--from" :: p :: rest, o => parseArgs rest { o with start := some p }
@@ -389,7 +396,7 @@ partial def parseArgs : List String → Opts → Except String Opts
 
 def usage : String :=
   "usage: gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>\n       gofv-ssa-opt --list\n       \
-   gofv-ssa-opt --check [--mixed] [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
+   gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
 
 def runCheck (o : Opts) : IO UInt32 := do
   let t0 ← IO.monoMsNow
@@ -398,7 +405,7 @@ def runCheck (o : Opts) : IO UInt32 := do
   let tasks ← (List.range o.jobs).toArray.mapM fun j => IO.asTask (prio := .dedicated) do
     let mut st : Stats := {}
     for h : i in [0:files.size] do
-      if i % o.jobs == j then st ← checkFile o.mixed o.wholeFile o.maxReport files[i] st
+      if i % o.jobs == j then st ← checkFile o.mixed o.wholeFile o.strict o.maxReport files[i] st
     return st
   let mut st : Stats := {}
   for t in tasks do

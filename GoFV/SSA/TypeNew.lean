@@ -87,13 +87,14 @@ def newTuple (tabs : Tables) (floor : Nat) (t1 t2 : TypeRef) : Except String (Ty
   return tabs.mintType floor d
 
 /-- `t.Compare(u) == CMPeq` for types of the tables, including types created after `typeorder`
-was taken: ranked types compare by rank; otherwise two unnamed pointers compare by element. -/
+was taken: ranked types compare by rank, except for the export's `typecmp` pairs; otherwise two
+unnamed pointers compare by element. -/
 def typeEq (o : TypeOrder) (tabs : Tables) : Nat → TypeRef → TypeRef → Bool
   | 0, a, b => a == b
   | fuel + 1, a, b =>
     if a == b then true else
     match o.rank? a, o.rank? b with
-    | some x, some y => x == y
+    | some x, some y => (o.exception? a b).getD (Ord.compare x y) == .eq
     | _, _ =>
       match tabs.type? a, tabs.type? b with
       | some da, some db =>
