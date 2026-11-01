@@ -4,22 +4,23 @@ import GoFV.Proof.Pass.ZCSESetup
 /-!
 # phiopt: what the simulation uses
 
-`Setup tabs f g`: both functions are well-formed, `f`'s dominator certificate holds, `g` is
-related to `f` by `PRel`, and `f` is in zcse's fragment (`Chained`, `NoNil`). Consequences:
-the target block and value of each block and value of `f`, and what is new.
+`Setup tabs f g`: both functions are well-formed, `f`'s dominator certificate holds, and `g` is
+related to `f` by `PRel`. Consequences: the target block and value of each block and value of
+`f`, and what is new.
 
 `path_step`: **edge facts hold**. If on entry to block `bid` along edge `i` every edge fact of
 `(bid, i)` holds in the frame, then after the block, on entry to its successor, every edge fact
 of the successor's edge holds: an `If` on `c` was just left through the successor its control
 named, or the block (with a single predecessor, so entered along the fact's edge) does not
-define `c`.
+define `c`, or a guard of `c` dominates the block (`DomOK`, preserved by `dom_step`: a guard is
+entered only from its `If`, and a block it strictly dominates is entered from a block it
+dominates, which does not define `c`).
 -/
 
 namespace GoFV.Proof.PhiOpt
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.PhiOpt Dom
 open GoFV.Proof.CopyElim (Tree cfgView_blocks cfgView_entry cfgView_block make_eq)
-open GoFV.Proof.ZCSE (Chained NoNil)
 
 /-- Everything the simulation uses about phiopt's input `f` and output `g`. -/
 structure Setup (tabs : Tables) (f g : Func) : Prop where
@@ -27,8 +28,6 @@ structure Setup (tabs : Tables) (f g : Func) : Prop where
   wg : ∃ ce, WF ce g
   cf : CertOK f
   rel : PRel tabs f g
-  chained : Chained f
-  noNil : NoNil f
 
 variable {tabs : Tables} {f g : Func}
 

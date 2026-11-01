@@ -5,19 +5,17 @@ import GoFV.Proof.Pass.ZCSE
 # phiopt refines its input
 
 `refines_of_rel`: two well-formed functions related by `PRel` (`f` passing the dominator
-certificate, in zcse's fragment) run alike: lock-step simulation (`runLoop_sim`) with the
-source-side invariant `At` (lemma (D), `ArglessInv`, the edge facts) and the target's frame
-related on the values of `f` (`TR`). `phiopt_refines`: the validated pass (`phioptPass`)
-refines its input, since it returns either the input or a result its checker accepted
-(`prel_sound`).
+certificate) run alike: lock-step simulation (`runLoop_sim`) with the source-side invariant `At`
+(lemma (D), `ArglessInv`, the edge facts and guards) and the target's frame related on the
+values of `f` (`TR`). `phiopt_refines`: the validated pass (`phioptPass`) refines its input,
+since it returns either the input or a result its checker accepted (`prel_sound`).
 -/
 
 namespace GoFV.Proof.PhiOpt
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.PhiOpt Dom
 open GoFV.Proof.CopyElim (stepTerm_goto_mem stepTerm_not_panic)
-open GoFV.Proof.ZCSE (Chained NoNil stepTerm_frames enter_shape arglessInv_enter
-  arglessInv_init)
+open GoFV.Proof.ZCSE (stepTerm_frames enter_shape arglessInv_enter arglessInv_init)
 
 variable {tabs : Tables} {f g : Func}
 
@@ -127,10 +125,10 @@ theorem refines_of_rel (S : Setup tabs f g) : Refines tabs g tabs f := by
       (finish_defined hd))
 
 /-- **phiopt refines its input.** The validated pass returns the input or a result its
-checker accepted; on a checked input in the fragment, either refines the input. -/
+checker accepted; on a checked input, either refines the input. -/
 theorem phiopt_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : phioptPass penv f = .ok out) (hf : check ce f = .ok ())
-    (hg : check ce' out.func = .ok ()) (hch : Chained f) (hnn : NoNil f) :
+    (hg : check ce' out.func = .ok ()) :
     Refines out.tables out.func penv.tables f := by
   unfold phioptPass Pass.ofFunc phioptChecked at h
   cases hu : penv.typ? "UInt8" with
@@ -147,8 +145,7 @@ theorem phiopt_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : Che
         simp only [hrel, ↓reduceIte] at hg
         exact refines_of_rel
           { wf := ⟨ce, check_wf hf⟩, wg := ⟨ce', check_wf hg⟩,
-            cf := certOK_of_check (check_domCert hf), rel := prel_sound hrel, chained := hch,
-            noNil := hnn }
+            cf := certOK_of_check (check_domCert hf), rel := prel_sound hrel }
       · exact Refines.refl _ _
 
 end GoFV.Proof.PhiOpt
