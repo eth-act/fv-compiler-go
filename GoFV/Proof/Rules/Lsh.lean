@@ -9,6 +9,16 @@ import GoFV.Rules.Generated.Generic.Values06
 `Lsh` family (`docs/proofs/rules.md`).
 -/
 
+/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
+`CondSelect` into a shift (`generic.rules:2355`): at `bool = false` the matched value is `x`, the
+result `x << 0`, `poison` when `x` is an address-less pointer in a 64-bit integer register or an
+integer of another width (#69, RuleProofs17).
+-- FALSE r_generic_2355 #69
+-- FALSE r_generic_2355_2 #69
+-- FALSE r_generic_2355_3 #69
+-- FALSE r_generic_2355_4 #69
+-/
+
 namespace GoFV.Proof.Rules
 
 /-- `generic.rules:489`: `(Lsh16x16 (Const16 [0]) _) => (Const16 [0])` -/

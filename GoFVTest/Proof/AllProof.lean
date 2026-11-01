@@ -398,6 +398,7 @@ import GoFV.Proof.Rules.Not2
 import GoFV.Proof.Rules.OffPtr
 import GoFV.Proof.Rules.OneBit
 import GoFV.Proof.Rules.OneBit2
+import GoFV.Proof.Rules.OneBitAnd
 import GoFV.Proof.Rules.OpVal
 import GoFV.Proof.Rules.Or
 import GoFV.Proof.Rules.Or2
@@ -432,6 +433,7 @@ import GoFV.Proof.Rules.Rsh5
 import GoFV.Proof.Rules.Rsh6
 import GoFV.Proof.Rules.Rsh7
 import GoFV.Proof.Rules.Rsh8
+import GoFV.Proof.Rules.Rsh9
 import GoFV.Proof.Rules.SelLoad
 import GoFV.Proof.Rules.SelMake
 import GoFV.Proof.Rules.ShiftMask

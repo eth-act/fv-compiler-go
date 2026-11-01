@@ -15,6 +15,9 @@ result `x | 0`, `poison` when `x` is an address-less pointer in a 64-bit integer
 -- FALSE r_generic_2371 #69
 -- FALSE r_generic_2371_2 #69
 -- FALSE r_generic_2371_3 #69
+`generic.rules:2368` (`CondSelect` into `Or` and `Mul` by the condition): the same at
+`bool = false` (`x | c*0`; RuleProofs17).
+-- FALSE r_generic_2368 #69
 -/
 
 namespace GoFV.Proof.Rules

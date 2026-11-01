@@ -247,14 +247,14 @@ def patOK (pat : Pat) : Bool :=
   (match pat with | .op _ none _ _ _ _ _ _ => true | _ => false) &&
   (Pat.sames pat).all fun x => !(Pat.opNames pat).contains x
 
-/-- Comparisons (incl. pointer, interface, slice and float comparisons) and boolean ops: their
-result is a boolean (or `poison`). -/
+/-- Comparisons (incl. pointer, interface, slice, float and memory comparisons) and boolean ops:
+their result is a boolean (or `poison`). -/
 def boolOp : Op → Bool
   | .Eq8 | .Neq8 | .Less8 | .Less8U | .Leq8 | .Leq8U | .Eq16 | .Neq16 | .Less16 | .Less16U
   | .Leq16 | .Leq16U | .Eq32 | .Neq32 | .Less32 | .Less32U | .Leq32 | .Leq32U | .Eq64 | .Neq64
   | .Less64 | .Less64U | .Leq64 | .Leq64U | .AndB | .OrB | .EqB | .NeqB | .Not | .ConstBool
   | .IsInBounds | .IsSliceInBounds | .EqPtr | .NeqPtr | .EqInter | .NeqInter | .EqSlice
-  | .NeqSlice
+  | .NeqSlice | .MemEq
   | .Eq32F | .Neq32F | .Less32F | .Leq32F | .Eq64F | .Neq64F | .Less64F | .Leq64F => true
   | _ => false
 

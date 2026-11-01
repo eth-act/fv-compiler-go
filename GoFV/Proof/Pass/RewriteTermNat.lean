@@ -79,6 +79,13 @@ theorem eqFirst_hasTy (neg : Bool) (args : List Val) :
   · split <;> rfl
   · rfl
 
+theorem memEq_hasTy (args : List Val) : (memEq args).hasTy .bool = true := by
+  unfold memEq; split
+  · split
+    · split <;> rfl
+    · rfl
+  · rfl
+
 theorem shift_hasTy {w a : Width} {b : Bool} {f : BitVec w.bits → Nat → BitVec w.bits}
     (args : List Val) : (Shift.shift w a b f args).hasTy (.int w) = true := by
   unfold Shift.shift; split
@@ -144,6 +151,7 @@ macro "natshape_close" : tactic => `(tactic| first
   | exact boolToUint8_hasTy _
   | exact eqPtr_hasTy _ _
   | exact eqFirst_hasTy _ _
+  | exact memEq_hasTy _
   | exact fbin_hasTy _ _ _
   | exact fun_hasTy _ _ _
   | exact fcmp_hasTy _ _ _
