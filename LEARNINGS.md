@@ -180,7 +180,7 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Trick:** generate them once in the shared upstream module (`Tactic.lean`):
   `run_meta for n in [``binDV.match_4, …] do discard <| Lean.Meta.Match.genMatchCongrEqns n`.
   Check: read every `.olean`'s `constNames` and report public names defined twice
-  (`scripts/rule-proofs.py axioms` imports all rule modules, which fails on such a clash).
+  (`scripts/axioms-audit.sh` imports all proof modules, which fails on such a clash).
 - **Effect:** 35 rule modules import together; no rebuild cost.
 
 #### Audit axioms in one process over all proof modules, not one process per module

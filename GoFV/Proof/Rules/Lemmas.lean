@@ -647,63 +647,6 @@ attribute [rule_cmp] toInt_omega BitVec.ult_iff_toNat_lt BitVec.ule_iff_toNat_le
   true_iff false_iff
   Nat.reduceMul Nat.reduceSub Nat.reduceLT ite_true ite_false
 
-/-! ## `BitVec` shifts by `BitVec` amounts (`rule_bv`: the `bv_decide` fallback of `rule_close`) -/
-
-@[rule_bv] theorem shiftLeft_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) :
-    x <<< s.toNat = x <<< s := (BitVec.shiftLeft_eq' (x := x) (y := s)).symm
-
-@[rule_bv] theorem ushiftRight_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) :
-    x >>> s.toNat = x >>> s := (BitVec.ushiftRight_eq' (x := x) (y := s)).symm
-
-@[rule_bv] theorem sshiftRight_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) :
-    x.sshiftRight s.toNat = x.sshiftRight' s := (BitVec.sshiftRight_eq' (x := x) (y := s)).symm
-
-theorem rotateLeft_toNat {w v : Nat} (x : BitVec w) (s : BitVec v) (hw : 0 < w) (h : w < 2 ^ v) :
-    x.rotateLeft s.toNat =
-      x <<< (s % BitVec.ofNat v w) ||| x >>> (BitVec.ofNat v w - s % BitVec.ofNat v w) := by
-  rw [BitVec.rotateLeft_def, BitVec.shiftLeft_eq', BitVec.ushiftRight_eq']
-  have hm : (s % BitVec.ofNat v w).toNat = s.toNat % w := by
-    rw [BitVec.toNat_umod, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
-  have hs : (BitVec.ofNat v w - s % BitVec.ofNat v w).toNat = w - s.toNat % w := by
-    rw [BitVec.toNat_sub_of_le]
-    · rw [hm, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
-    · rw [BitVec.le_def, hm, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
-      exact Nat.le_of_lt (Nat.mod_lt _ hw)
-  rw [hm, hs]
-
-theorem umod_pow2 {v : Nat} (s : BitVec v) (k : Nat) (h : 2 ^ k < 2 ^ v) :
-    s % BitVec.ofNat v (2 ^ k) = s &&& BitVec.ofNat v (2 ^ k - 1) := by
-  apply BitVec.eq_of_toNat_eq
-  have h1 : 2 ^ k - 1 < 2 ^ v := Nat.lt_of_le_of_lt (Nat.sub_le _ _) h
-  simp only [BitVec.toNat_umod, BitVec.toNat_and, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h,
-    Nat.mod_eq_of_lt h1, Nat.and_two_pow_sub_one_eq_mod]
-
-/-- Rotation of a power-of-two width by a `BitVec` amount, as masked shifts. -/
-theorem rotateLeft_toNat_pow2 {v : Nat} (k : Nat) (x : BitVec (2 ^ k)) (s : BitVec v)
-    (h : 2 ^ k < 2 ^ v) :
-    x.rotateLeft s.toNat =
-      x <<< (s &&& BitVec.ofNat v (2 ^ k - 1)) |||
-        x >>> (BitVec.ofNat v (2 ^ k) - (s &&& BitVec.ofNat v (2 ^ k - 1))) := by
-  rw [rotateLeft_toNat x s (Nat.two_pow_pos k) h, umod_pow2 s k h]
-
-@[rule_bv] theorem rotateLeft_toNat8 {v : Nat} (x : BitVec 8) (s : BitVec v) (h : 8 < 2 ^ v) :
-    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 7) ||| x >>> (BitVec.ofNat v 8 - (s &&& BitVec.ofNat v 7)) :=
-  rotateLeft_toNat_pow2 3 x s h
-@[rule_bv] theorem rotateLeft_toNat16 {v : Nat} (x : BitVec 16) (s : BitVec v) (h : 16 < 2 ^ v) :
-    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 15) ||| x >>> (BitVec.ofNat v 16 - (s &&& BitVec.ofNat v 15)) :=
-  rotateLeft_toNat_pow2 4 x s h
-@[rule_bv] theorem rotateLeft_toNat32 {v : Nat} (x : BitVec 32) (s : BitVec v) (h : 32 < 2 ^ v) :
-    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 31) ||| x >>> (BitVec.ofNat v 32 - (s &&& BitVec.ofNat v 31)) :=
-  rotateLeft_toNat_pow2 5 x s h
-@[rule_bv] theorem rotateLeft_toNat64 {v : Nat} (x : BitVec 64) (s : BitVec v) (h : 64 < 2 ^ v) :
-    x.rotateLeft s.toNat = x <<< (s &&& BitVec.ofNat v 63) ||| x >>> (BitVec.ofNat v 64 - (s &&& BitVec.ofNat v 63)) :=
-  rotateLeft_toNat_pow2 6 x s h
-
-/-- A bound on a `BitVec`'s value as a `BitVec` comparison (`bv_decide` form). -/
-@[rule_bv] theorem le_toNat_iff {w : Nat} (n : Nat) (x : BitVec w) (h : n < 2 ^ w) :
-    n ≤ x.toNat ↔ BitVec.ofNat w n ≤ x := by
-  rw [BitVec.le_def, BitVec.toNat_ofNat, Nat.mod_eq_of_lt h]
-
 @[rule_sem] theorem asNat_retype_of_not_other {t : Ty} {w : Width} (x : BitVec w.bits)
     (h : tyOtherInt t w = false) : ((Val.int w x).retype t).asNat = some x.toNat := by
   cases t with
