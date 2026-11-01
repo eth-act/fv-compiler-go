@@ -178,18 +178,22 @@ def kbInv {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array B
     {ce : CheckEnv} (hwf : WF ce f) (K : KbFacts tabs f g E R) : SrcInv tabs f where
   P _ a y := Gam (ent E a) y
   L b _ := b ∈ f.blocks ∧ R.getD b false = true
+  Q _ _ := True
   start := by
     have h := K.reach
     unfold reachOK at h
     simp only [Bool.and_eq_true] at h
     exact ⟨⟨hwf.entry, h.1⟩, fun _ => Gam.poison _⟩
+  qstart := trivial
   poisonAtom _ _ _ := Gam.poison _
-  edge p _ pb fr e _ hpb hL hinv _ _ _ hst := by
+  qpois _ _ _ _ _ := trivial
+  edge p _ pb fr e _ hpb hL hinv _ _ _ _ _ _ hst := by
     obtain ⟨k, hk, hF⟩ := stepTerm_goto_idx hst
     obtain ⟨hm, hR, hl⟩ := kb_live hwf K hL.1 hpb hL.2 hk hF
-    exact ⟨⟨hm, hR⟩, hinv, kb_phis hwf K hm hl hinv⟩
+    exact ⟨⟨hm, hR⟩, hinv, kb_phis hwf K hm hl hinv, fun _ _ _ _ => trivial⟩
   term _ _ _ x _ v hv ht ρ hρ := kb_term hwf K hv ht ρ hρ
   atom _ _ _ x _ v hv ht hph y := kb_atom hwf K hv ht hph y
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
 
 @[simp] theorem kbInv_P {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array Bool}
     {ce : CheckEnv} (hwf : WF ce f) (K : KbFacts tabs f g E R) (b a : ID) (y : Val) :

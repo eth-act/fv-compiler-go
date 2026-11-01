@@ -171,18 +171,19 @@ theorem asm_of_premises (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blo
 
 /-- A value listed in `f` in an ancestor of `b` refines as a term under `PInv` at `b`. -/
 theorem prove_termRefP (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID}
-    (hb : b ∈ f.blocks) {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {x : ID}
+    (hb : b ∈ f.blocks) {Q : (ID → Val) → Prop} {S : ID → Prop}
+    (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {x : ID}
     (hx : LM f x) (hanc : Anc (make f) (blockOf f x) b) :
-    TermRefP (PInv tabs f F inv b) S f.value? tabs x (listedDefs g) tabs x :=
-  fun n => ⟨n, fun _ _ hρ hT _ hP hSP =>
+    TermRefP (PInv tabs f F inv b) Q S f.value? tabs x (listedDefs g) tabs x :=
+  fun n => ⟨n, fun _ _ hρ hT _ hP hSP _ =>
     den_ref hc hR hb hρ (asm_of_premises hR hb hS hT hP hSP) n x hx hanc⟩
 
 /-- A constant fold justified under `b`'s assumptions refines as a term under `PInv` at `b`. -/
 theorem fold_termRefP (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
-    {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {a c : ID}
+    {Q : (ID → Val) → Prop} {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {a c : ID}
     (h : foldOK f.value? tabs { facts := factsAt F b, inv } g a c = true) :
-    TermRefP (PInv tabs f F inv b) S f.value? tabs a (listedDefs g) tabs c :=
-  fun n => ⟨n, fun _ _ _ hT _ hP hSP => fold_ref (asm_of_premises hR hb hS hT hP hSP) h n⟩
+    TermRefP (PInv tabs f F inv b) Q S f.value? tabs a (listedDefs g) tabs c :=
+  fun n => ⟨n, fun _ _ _ hT _ hP hSP _ => fold_ref (asm_of_premises hR hb hS hT hP hSP) h n⟩
 
 theorem facts_sanc (hc : CertOK f) (hR : RelSpec tabs f g F inv) {b : ID} {bb : Block}
     (hb : b ∈ f.blocks) (hbb : f.block? b = some bb) :
@@ -249,10 +250,10 @@ theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F 
 
 /-- A removed branch: the `If`'s control, when not `poison`, takes the kept successor. -/
 theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
-    {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {fb gb : Block}
+    {Q : (ID → Val) → Prop} {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {fb gb : Block}
     (hbr : branchOK f.value? tabs { facts := factsAt F b, inv } fb gb = true) :
     (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
-      StepRefP (PInv tabs f F inv b) S f.value? tabs fb (listedDefs g) gb := by
+      StepRefP (PInv tabs f F inv b) Q S f.value? tabs fb (listedDefs g) gb := by
   unfold branchOK at hbr
   simp only [Bool.and_eq_true, beq_iff_eq] at hbr
   obtain ⟨⟨⟨hkf, hkg⟩, hgc⟩, hm⟩ := hbr
@@ -262,7 +263,7 @@ theorem branch_step (hR : RelSpec tabs f g F inv) {b : ID} (hb : b ∈ f.blocks)
     have hfs : fb.succs = #[e0, e1] := by apply Array.ext'; rw [hsl]
     have hgc' : gb.controls = #[] := Array.isEmpty_iff.1 hgc
     simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hm
-    refine ⟨?_, fun n => ⟨0, fun ρ ρ' _ hT _ hP hSP => ?_⟩⟩
+    refine ⟨?_, fun n => ⟨0, fun ρ ρ' _ hT _ hP hSP _ => ?_⟩⟩
     · intro e he
       rw [hfs] at he
       rcases hm with ⟨hgs, -⟩ | ⟨hgs, -⟩ <;> rw [hgs] <;> simp only [List.mem_toArray,

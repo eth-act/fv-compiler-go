@@ -135,6 +135,7 @@ structure EndRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (b : ID) (fb g
   atoms : ∀ a w, Placed g a w → termOp w.op = false → ∀ y', FT.regs[a]? = some (some y') →
     ∃ y, FS.regs[a]? = some (some y) ∧ Sem.Refines y y'
   inv : ∀ a, I.P b a (rv FS a)
+  qinv : I.Q b (rv FS)
 
 /-- **A block entry without panic.** -/
 theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
@@ -160,8 +161,8 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     typed_phis R.tyT pT1 pT3 pT4 pT2
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := src_eval H B R.treeS (P := of.toList) (Q := [])
     (by simp) hS1 (by rw [pS1, R.szS]) htyPS hevS
-  have hinvFS : ∀ a, I.P b a (rv FS a) :=
-    inv_evalAll B.hfb (sched_own H B) hevS (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis)
+  obtain ⟨hinvFS, hqFS⟩ := inv_evalAll B.hfb (sched_own H B) hevS
+    (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis) (R.qinv fb psS B.hfb hpsS)
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { FS with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))
@@ -196,7 +197,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     (b := b) (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
       obtain ⟨hp, hwb, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
-      exact ⟨w, hp, hid, hph, hwb⟩) hinvFS (fun a h => .inl (.inl h))
+      exact ⟨w, hp, hid, hph, hwb⟩) hinvFS hqFS (fun a h => .inl (.inl h))
     (sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT)
     (fun a ha _ hat => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 ha
@@ -213,7 +214,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   refine ⟨FT, enterBlock_of hpsT (by rw [sched_eq B.hgb B.idT, B.sT]) hevT, ?_⟩
   have hfr : FT = { FS with regs := FT.regs } := frame_trans l1 hfrT
   refine ⟨hfr, by rw [g2, pS1, R.szS], by rw [l2, pT1, R.szT], g3, l3, g4, l4,
-    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_, hinvFS⟩
+    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_, hinvFS, hqFS⟩
   by_cases hwb : w.block = b
   · have haz : a ∈ gb.values := by
       obtain ⟨-, -, blk, hblk, hx⟩ := hpw
