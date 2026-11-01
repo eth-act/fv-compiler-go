@@ -147,11 +147,11 @@ built value). -/
 def oracle (vtys : List GoTy) (tabs : Tables) (nodes : List (RNode × Value)) : Oracle where
   dv e := if exprTy [] e == .bool || exprTy vtys e == .bool then .bool true else .other
   ty e := ((nodes.find? fun (n, _) => match n.ty with
-      | some te => reprStr te == reprStr e | none => false).map fun (_, u) => tabs.ty u.type).getD .other
+      | some te => te == e | none => false).map fun (_, u) => tabs.ty u.type).getD .other
   auxInt e := ((nodes.find? fun (n, _) => match n.auxInt with
-      | some ae => reprStr ae == reprStr e | none => false).map (·.2.auxInt)).getD 0
+      | some ae => ae == e | none => false).map (·.2.auxInt)).getD 0
   aux e := ((nodes.find? fun (n, _) => match n.aux with
-      | some xe => reprStr xe == reprStr e | none => false).map (·.2.aux)).getD none
+      | some xe => xe == e | none => false).map (·.2.aux)).getD none
   val _ := .poison
 
 /-- `DV.ty t = d`. -/
