@@ -452,11 +452,7 @@ def blockOK (tabs : Tables) (sh : Array Ty) (f g : Func) (bid : ID) : Bool :=
         | none => false)
       | none => false) &&
     -- new values
-    gb.values.all (fun z => !isNewB f z ||
-      match g.value? z with
-      | some w => w.op != .Phi && newEvalB tabs g w &&
-          w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a)
-      | none => false)
+    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && newEvalB tabs g w)) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a) | none => !isNewB f z)
   | _, _ => false
 
 /-- **The checker**: `g` is `f` after `expand calls`, both read in `tabs`. -/
