@@ -256,7 +256,7 @@ theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : Pa
 
 theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h : Inv env f0 st)
     (hr : runPass env st p = .ok st') : Inv env f0 st' := by
-  rcases p with ⟨name, required, simd, disabled, step⟩
+  rcases p with ⟨name, required, simd, disabled, step, full⟩
   unfold runPass at hr
   simp only at hr
   split at hr
@@ -276,19 +276,40 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
         split at hr
         · cases hr
         · next out hrun =>
-          cases hr
-          refine h.continue (fun hn hg => ?_)
-          rw [hn] at hwhy
-          simp only [Bool.not_eq_true'] at hn
-          have hwf : st.wf = true := by
-            cases hw : st.wf <;> simp_all
-          have hgd : guard (st.passEnv env name) st.func = true := by
-            cases hgd : guard (st.passEnv env name) st.func <;> simp_all
-          have hd : NilCheck.dictParams st.tables st.func = st.dict := by
-            by_cases hd : NilCheck.dictParams st.tables st.func = st.dict
-            · exact hd
-            · simp_all
-          exact relHolds_toV (hd.trans h.2.2) (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
+          cases full with
+          | none =>
+            cases hr
+            refine h.continue (fun hn hg => ?_)
+            rw [hn] at hwhy
+            simp only [Bool.not_eq_true'] at hn
+            have hwf : st.wf = true := by
+              cases hw : st.wf <;> simp_all
+            have hgd : guard (st.passEnv env name) st.func = true := by
+              cases hgd : guard (st.passEnv env name) st.func <;> simp_all
+            have hd : NilCheck.dictParams st.tables st.func = st.dict := by
+              by_cases hd : NilCheck.dictParams st.tables st.func = st.dict
+              · exact hd
+              · simp_all
+            exact relHolds_toV (hd.trans h.2.2) (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
+          | some fp =>
+            simp only at hr
+            split at hr
+            · cases hr
+            · split at hr
+              · cases hr
+                refine h.continue (fun hn hg => ?_)
+                rw [hn] at hwhy
+                simp only [Bool.not_eq_true'] at hn
+                have hwf : st.wf = true := by
+                  cases hw : st.wf <;> simp_all
+                have hgd : guard (st.passEnv env name) st.func = true := by
+                  cases hgd : guard (st.passEnv env name) st.func <;> simp_all
+                have hd : NilCheck.dictParams st.tables st.func = st.dict := by
+                  by_cases hd : NilCheck.dictParams st.tables st.func = st.dict
+                  · exact hd
+                  · simp_all
+                exact relHolds_toV (hd.trans h.2.2) (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
+              · cases hr; exact h.continue (fun hn => by cases hn)
 
 theorem runPasses_inv : ∀ {ps : List StockPass} {st st' : VState},
     (∀ p ∈ ps, stepSound p.step) → Inv env f0 st → runPasses env ps st = .ok st' → Inv env f0 st'

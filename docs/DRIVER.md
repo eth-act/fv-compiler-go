@@ -153,6 +153,12 @@ entry against its theorem):
 | guarded (theorem on a fragment, decided at run time: an optional pass outside it is skipped, a required one unverified) | early phielim and copyelim (`copyFrag`, `emptyFragB`); the five deadcodes (`deadFragB`); generic cse (`cseFrag`); nilcheckelim (`nilFrag`); expand calls (`expandCallsFrag`, required); dead auto elim (`daeFrag`, `RefinesFrom (FrameSafe ∧ InitAvoids)`); dse (`dseFrag`); writebarrier (`wbGuard`: `writebarrierChecked`'s acceptance, `RefinesFrom WbPre`, required) |
 | unverified (stock port, no theorem yet) | decompose user; decompose builtin; late fuse; insert resched checks; cpufeatures; rewrite tern |
 
+The required passes run in a checked variant (opt, middle opt, late opt: `optChecked`;
+divisible, divmod: `…Checked`) also run their stock port (`StockPass.full`): if the checked
+result differs, the stock result is kept and the run is `unverified (checked variant
+incomplete)`, because later passes and `lower` need every rewrite (an undone `PtrIndex` or
+`IMake` rewrite is not lowered: without this, `driver-e2e.sh --verified` failed to build std).
+
 `scripts/driver-e2e.sh --verified` builds std and the programs with
 `GOFV_SSA_DRIVER=<wrapper running gofv-ssa-opt --verified --vstats …>` in full mode, counts the
 byte-identical archives and binaries without failing on the others, and fails only when a build
