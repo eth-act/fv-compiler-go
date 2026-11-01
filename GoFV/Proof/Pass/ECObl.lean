@@ -114,7 +114,7 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
   | some gb =>
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
     refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
     · have := Array.all_eq_true'.1 hval x hx
@@ -207,7 +207,7 @@ theorem eco_imkHeld {ce : CheckEnv} {tabs : Tables} {f g : Func} {bid x a : ID} 
 
 /-- **The local obligation of a non-`Phi` source value** of tree block `bid` for
 `expand calls`, the source's `Held` values and the target's `HeldT` values holding their
-evaluations. -/
+evaluations (among them the `SP`s of a call's stack-argument stores, `hsp`). -/
 theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {fb gb : Block}
     {u : Value}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
@@ -215,7 +215,9 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
     (htree : ((make f).depthOf fb.id).isSome)
     (hx : x ∈ fb.values) (hu : f.value? x = some u) (hphi : u.op ≠ .Phi)
-    (himk : converted f x = true → ∀ a ∈ u.args, EcImkOK tabs f g fb gb x a) :
+    (himk : converted f x = true → ∀ a ∈ u.args, EcImkOK tabs f g fb gb x a)
+    (hsp : (callOpMap u.op).isSome = true → ∀ w, g.value? x = some w → ∀ a, ecStackSP f g u w a →
+      HeldT g gb x a) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) (Held f g fb gb x) (HeldT g gb x) x := by
   have Wf := check_wf hf
   have Wg := check_wf hg
@@ -260,7 +262,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     · rw [ite_eq_left hc] at hv
       have hconv : converted f x = true := by
         unfold converted; rw [hu]; dsimp only; rw [hc]; rfl
-      exact obl_call hu hw hc hv huid _ hLx hL (hH hconv)
+      exact obl_call hu hw hc hv huid _ hLx hL (hH hconv) (hsp hc w hw)
     rw [ite_eq_right hc] at hv
     by_cases hr : (u.op == .MakeResult) = true
     · rw [ite_eq_left hr] at hv

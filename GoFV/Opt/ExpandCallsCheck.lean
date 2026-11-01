@@ -714,14 +714,15 @@ def stackStores (f g : Func) (x : ID) : List ID :=
   | some u, some w => if (callOpMap u.op).isSome then (callStores f g u w).getD [] else []
   | _, _ => []
 
-/-- No node with `np` before the first `c` of `l` (true without one). -/
+/-- `c` occurs in `l`, and no node with `np` comes before its first occurrence. -/
 def noNpUntil (np : ID → Bool) : List ID → ID → Bool
-  | [], _ => true
+  | [], _ => false
   | y :: l, c => y == c || (!np y && noNpUntil np l c)
 
-/-- No node with `np` strictly between the first `z` of `l` and the first `c` after it. -/
+/-- `z` occurs in `l`, then `c` after it, and no node with `np` lies strictly between the first `z`
+and the first `c` after it. -/
 def gapOK (np : ID → Bool) : List ID → ID → ID → Bool
-  | [], _, _ => true
+  | [], _, _ => false
   | y :: l, z, c => if y == z then noNpUntil np l c else gapOK np l z c
 
 /-- The checks of block `bid` (`anc`: the ancestor test of `g`'s dominator certificate). -/
