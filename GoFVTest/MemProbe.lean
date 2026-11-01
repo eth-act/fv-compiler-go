@@ -1,7 +1,7 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.SSA.DomCert
-import GoFV.Opt.NilCheck
+import GoFV.Opt.NilCheckRel
 import GoFV.Opt.DeadStoreCheck
 import GoFV.Opt.ElimDeadAutos
 import GoFV.Opt.CSE
@@ -50,6 +50,19 @@ def allocPtr (f : Func) : Nat → ID → Bool
       | _ => false
     | none => false
 
+/-- The op at the root of an `OffPtr`/`AddPtr` chain. -/
+def chainRoot (f : Func) : Nat → ID → String
+  | 0, _ => "deep"
+  | n + 1, x =>
+    match f.value? x with
+    | some v =>
+      match v.op with
+      | .OffPtr | .AddPtr => match v.args[0]? with
+        | some a => chainRoot f n a
+        | none => "?"
+      | op => op.name
+    | none => "?"
+
 def pos (o : Array ID) (x : ID) : Option Nat := o.findIdx? (· == x)
 
 /-- Source schedule of every block. -/
@@ -67,7 +80,7 @@ def why (c : DomCert.Cert) (f : Func) (os : Std.HashMap ID (Array ID)) (x ptr nc
   if nc == ptr then
     let p := f.getV ptr
     if allocPtr f 8 ptr then "seed-alloc"
-    else if NilCheck.nonNilOp p.op then s!"seed-{p.op.name}"
+    else if NilCheck.nonNilOp p.op then s!"seed-{p.op.name}-{chainRoot f 8 ptr}"
     else if p.op == .Phi then "phi"
     else "edge"
   else
@@ -176,6 +189,7 @@ def main (args : List String) : IO UInt32 := do
   let mut nInst := 0
   let mut nChanged := 0
   let mut nFrag := 0
+  let mut nAcc := 0
   let mut nRootsBad := 0
   let mut nErr := 0
   let mut nck : Std.HashMap String Nat := {}
@@ -231,6 +245,7 @@ def main (args : List String) : IO UInt32 := do
                 if !kinds.contains w then kinds := w :: kinds
           if !kinds.isEmpty then
             nChanged := nChanged + 1
+            if NilCheck.nrel prev f g then nAcc := nAcc + 1
             let rok := rootsOK f g
             if !rok then nRootsBad := nRootsBad + 1
             let bad := kinds.filter fun w =>
@@ -292,7 +307,7 @@ def main (args : List String) : IO UInt32 := do
             if !addr then
               aFnNoAddr := aFnNoAddr + 1
               if !calls then aFnNoAddrNoCall := aFnNoAddrNoCall + 1
-  IO.println s!"nilcheckelim: inputs {nInst}, errors {nErr}, changed {nChanged}, in fragment {nFrag}, roots reordered {nRootsBad}"
+  IO.println s!"nilcheckelim: inputs {nInst}, errors {nErr}, changed {nChanged}, prototype fragment {nFrag}, checker accepts {nAcc}, roots reordered {nRootsBad}"
   IO.println s!"  NilCheck→Copy by justification: {show' nck}"
   IO.println s!"  IsNonNil→ConstBool by justification: {show' isnn}"
   IO.println s!"  changed functions outside the fragment, by the kinds they need: {show' fnWorst}"

@@ -1,6 +1,5 @@
 import GoFV.SSA.TypePred
 import GoFV.Util.PdqSort
-import Std.Data.HashSet.Basic
 
 /-!
 # `storeOrder`
@@ -15,7 +14,8 @@ exact port in `GoFV.Util.PdqSort`). In `nilcheckelim` a block without nil checks
 
 `storeNumber` is the caller's scratch slice (indexed by value ID); Go never clears it, so values
 numbered by an earlier call keep their numbers, and the port threads it through. The `sset`
-scratch set is cleared by `storeOrder` itself and is local here. `Except.error` is Go's
+scratch set is cleared by `storeOrder` itself and is local here (a `Bool` array by value ID, so
+that the kernel can evaluate the pass: `Std.HashSet` is opaque to it). `Except.error` is Go's
 `Fatalf` or a nil dereference on malformed input.
 -/
 
@@ -46,33 +46,34 @@ def storeOrder (f : Func) (isMem : TypeRef → Bool) (passName : String) (values
   -- find all stores
   let mut stores : Array ID := #[]
   let mut hasNilCheck := false
-  let mut sset : Std.HashSet ID := {}
+  let n0 := max f.valueTab.size (f.vidLast + 1)
+  let mut sset : Array Bool := Array.replicate n0 false
   for v in values do
     let x := getV v
     if isMem x.type then
       stores := stores.push v
       if x.op == .InitMem || x.op == .Phi then continue
       let some m := memArg x | throw s!"storeOrder: v{v} has no memory argument"
-      sset := sset.insert m
+      sset := sset.set! m true
     if x.op == .NilCheck then hasNilCheck := true
   if stores.isEmpty || (!hasNilCheck && passName == "nilcheckelim") then
     return (values, storeNumber)
   -- find the last store, the one not used by other stores
   let mut last : Option ID := none
   for v in stores do
-    if !sset.contains v then
+    if !sset.getD v false then
       if let some l := last then throw s!"two stores live simultaneously: v{v} and v{l}"
       last := some v
   let mut storeNumber := storeNumber
   let mut count : Array Int := Array.replicate (3 * (stores.size + 1)) 0
-  sset := {}
+  sset := Array.replicate n0 false
   let mut w := last
   for k in [0:stores.size] do
     let n := stores.size - k
     let some wv := w | throw "storeOrder: nil store in the memory chain"
     storeNumber := storeNumber.set! wv (3 * n)
     count := count.modify (3 * n) (· + 1)
-    sset := sset.insert wv
+    sset := sset.set! wv true
     let x := getV wv
     if x.op == .InitMem || x.op == .Phi then
       if n != 1 then throw s!"store order is wrong: there are stores before v{wv}"
@@ -80,9 +81,9 @@ def storeOrder (f : Func) (isMem : TypeRef → Bool) (passName : String) (values
     w := memArg x
   -- assign the other values their numbers in DFS order
   for v in values do
-    if sset.contains v then continue
+    if sset.getD v false then continue
     let mut stack : Array ID := #[v]
-    sset := sset.insert v
+    sset := sset.set! v true
     -- every value is pushed once (sset) and every iteration pushes or pops
     for _ in [0:2 * values.size + 1] do
       let some wv := stack.back? | break
@@ -99,9 +100,9 @@ def storeOrder (f : Func) (isMem : TypeRef → Bool) (passName : String) (values
       let mut argsdone := true
       for a in x.args do
         if (getV a).block != x.block then continue
-        if !sset.contains a then
+        if !sset.getD a false then
           stack := stack.push a
-          sset := sset.insert a
+          sset := sset.set! a true
           argsdone := false
           break
         let sa := storeNumber.getD a 0 / 3
