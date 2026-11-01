@@ -37,6 +37,12 @@ structure BRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (frS frT : Frame
   live : I.L b i
   inv : ∀ a, I.P b a (rv frS a)
   phis : PhisP tabs f I.P frS b i
+  /-- The `Phi` arguments along edge `i` are read in the frame at the end of the predecessor
+  `p` (none at the entry): `p`'s invariant holds of it and its values in ancestors of `p` are
+  their terms. -/
+  pre : PhiArgs f b i (fun _ => False) ∨ ∃ (p : ID) (pb : Block) (k : Nat) (VP : ID → Prop), p ∈ f.blocks ∧ f.block? p = some pb ∧
+    pb.succs[k]? = some (⟨b, i⟩ : Edge) ∧ (∀ a, I.P p a (rv frS a)) ∧ DenOK f.value? tabs frS VP ∧
+    (∀ x, AncV f p x → VP x) ∧ PhiArgs f b i VP
 
 /-- The static facts of block `b`. -/
 structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : Prop where
@@ -93,8 +99,8 @@ theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
-    (hinv : ∀ a, I.P b a (rv G a)) (hSV : ∀ a, SAnc f b a → VS a)
-    {x y : ID} (hT : TermRefP (I.P b) (SAnc f b) f.value? tabs x (listedDefs g) tabs y) (hx : VS x)
+    {S : ID → Prop} (hinv : ∀ a, I.P b a (rv G a)) (hSV : ∀ a, S a → VS a)
+    {x y : ID} (hT : TermRefP (I.P b) S f.value? tabs x (listedDefs g) tabs y) (hx : VS x)
     (hy : VT y) :
     Sem.Refines (rv G x) (rv T y) := by
   have htyS' : ∀ a, VS a → ¬ IsTerm f.value? a →
@@ -193,14 +199,16 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     obtain ⟨-, hwb', blk, hblk', hzv⟩ := hpw
     obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := H.args w.block hwb' blk hblk' z hzv w hw ht
     rw [hpu.1] at hu'; cases hu'
-    have hTR' := hTR i (hsz ▸ hi)
+    rcases R.pre with hno | ⟨p, pb, k, VP, hpm, hpb, hk, hinvP, hDP, hAncP, hPhiP⟩
+    · exact (hno fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha).elim
+    have hTR' := (hTR i (hsz ▸ hi)).2 hph p pb k hpm hpb (by rw [hwb]; exact hk)
     rw [getElem!_pos u.args i hi, getElem!_pos w.args i (hsz ▸ hi)] at hTR'
     rw [← rv_of hy]
     have hai : u.args[i] = a := (Array.getElem?_eq_some_iff.1 ha).2
     have hai' : w.args[i]'(hsz ▸ hi) = a' := (Array.getElem?_eq_some_iff.1 ha').2
-    rw [hai, hai', hwb] at hTR'
-    exact termRef_regs H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.inv hsS hTR'
-      (hPS fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha) hVTa
+    rw [hai, hai'] at hTR'
+    exact termRef_regs H hDP hDT hVT (R.rel hDT hVT) R.tyS R.tyT hinvP hAncP hTR'
+      (hPhiP fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha) hVTa
   obtain ⟨psT, hpsT⟩ := filterMapM_phi_ok (ctx := Ctx.make tabs g) (fr := frT) (i := i)
     (l := gb.values.toList) fun z hz => by
       have hz' := Array.mem_toList_iff.1 hz

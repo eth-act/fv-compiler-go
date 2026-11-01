@@ -72,15 +72,20 @@ def SrcInv.triv (tabs : Tables) (f : Func) : SrcInv tabs f where
   term _ _ _ _ _ _ _ _ _ _ := trivial
   atom _ _ _ _ _ _ _ _ _ _ := trivial
 
-/-- The arguments of every atom of `g` refine, as terms under the invariant at its block,
-those of the same atom of `f`. -/
+/-- The arguments of every atom of `g` refine, as terms under the invariant, those of the same
+atom of `f`: for a non-`Phi` atom the invariant at its block, for argument `i` of a `Phi` the
+invariant at the end of predecessor `i` (the block `p` with successor `⟨b, i⟩`), where the
+argument is read. -/
 def AtomArgsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termOp u.op = false →
     ∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ u'.type = u.type ∧ u'.auxInt = u.auxInt ∧
       u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
       ∀ i < u.args.size,
-        TermRefP (I.P b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!
+        (u.op ≠ .Phi →
+          TermRefP (I.P b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!) ∧
+        (u.op = .Phi → ∀ (p : ID) (pb : Block) (k : Nat), p ∈ f.blocks → f.block? p = some pb → pb.succs[k]? = some (⟨b, i⟩ : Edge) →
+          TermRefP (I.P p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs u.args[i]!)
 
 /-- The controls of every block of `g` refine, as terms under the invariant at the block,
 those of the same block of `f`. -/
@@ -93,7 +98,8 @@ def ControlsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
 theorem AtomArgsRef.toP {tabs : Tables} {f g : Func} (h : AtomArgsRef tabs f g) (I : SrcInv tabs f) :
     AtomArgsRefP I g := fun b hb gb hgb a ha u hu ht => by
   obtain ⟨u', h1, h2, h3, h4, h5, h6, h7⟩ := h b hb gb hgb a ha u hu ht
-  exact ⟨u', h1, h2, h3, h4, h5, h6, fun i hi => TermRef.toP (h7 i hi) _ _⟩
+  exact ⟨u', h1, h2, h3, h4, h5, h6, fun i hi =>
+    ⟨fun _ => TermRef.toP (h7 i hi) _ _, fun _ _ _ _ _ _ _ => TermRef.toP (h7 i hi) _ _⟩⟩
 
 theorem ControlsRef.toP {tabs : Tables} {f g : Func} (h : ControlsRef tabs f g) (I : SrcInv tabs f) :
     ControlsRefP I g := fun b hb fb gb hfb hgb => by

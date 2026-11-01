@@ -72,14 +72,16 @@ def factOK (f : Func) (C : DomCert.Cert) (p : ID) (pb : Block) (c : ID) : Bool :
 fact, if usable. -/
 def factsOf (f : Func) (C : DomCert.Cert) : Array (List (ID × Bool)) := Id.run do
   let tree := f.blocks.filterMap fun b => (C.depthOf b).map (·, b)
-  let sorted := tree.qsort (fun a b => a.1 < b.1)
+  let maxD := tree.foldl (fun m (d, _) => max m d) 0
   let mut F : Array (List (ID × Bool)) := Array.replicate f.blockTab.size []
-  for (_, b) in sorted do
-    let up := if b == f.entry then [] else factsAt F (C.up b)
-    let own := match edgeFact f b, f.block? b with
-      | some (c, v), some bb => if factOK f C b bb c then [(c, v)] else []
-      | _, _ => []
-    F := F.set! b (own ++ up)
+  for d in [0:maxD + 1] do
+    for (d', b) in tree do
+      if d' != d then continue
+      let up := if b == f.entry then [] else factsAt F (C.up b)
+      let own := match edgeFact f b, f.block? b with
+        | some (c, v), some bb => if factOK f C b bb c then [(c, v)] else []
+        | _, _ => []
+      F := F.set! b (own ++ up)
   return F
 
 /-- The own fact of edge `k` of block `pb` (its control's value along that edge). -/
@@ -101,7 +103,8 @@ def factsOK (f : Func) (C : DomCert.Cert) (F : Array (List (ID × Bool))) : Bool
     | none => false
     | some pb =>
       (factsAt F p).all (fun (c, _) => factOK f C p pb c) &&
-      (p == f.entry || (factsAt F (C.up p)).all (fun fact => (factsAt F p).contains fact)) &&
+      (p == f.entry || f.blocks.contains (C.up p) &&
+        (factsAt F (C.up p)).all (fun fact => (factsAt F p).contains fact)) &&
       (List.range pb.succs.size).all fun k =>
         match pb.succs[k]? with
         | none => false
@@ -292,39 +295,11 @@ def valuesOK (tabs : Tables) (f g : Func) (F : Array (List (ID × Bool)))
         | _, _ => false
     | _, _ => false
 
-/-- The rewritten values of `g` (listed in `f`, a different definition in `g`) and their blocks. -/
-def rewritten (f g : Func) : List (ID × ID) :=
-  f.blocks.toList.flatMap fun b =>
-    match f.block? b with
-    | some fb => fb.values.toList.filterMap fun x =>
-        match f.value? x, g.value? x with
-        | some fv, some gv => if sameDef fv gv then none else some (x, b)
-        | _, _ => none
-    | none => []
-
-/-- The argument of a `Phi` of block `b` is computed in the dominator subtree of its block `ba`;
-the rewritten values there that it may read are in ancestors of `b` (their facts hold at
-`b`). -/
-def phiArgsOK (f : Func) (C : DomCert.Cert) (rw : List (ID × ID)) : Bool :=
-  rw.isEmpty ||
-  f.blocks.all fun b =>
-    match f.block? b with
-    | some bb =>
-      bb.values.all fun z =>
-        match f.value? z with
-        | some zv =>
-          zv.op != .Phi || zv.args.all fun a =>
-            match placed? f a with
-            | some ba => C.anc ba b || rw.all fun (_, br) => !C.anc br ba || C.anc br b
-            | none => false
-        | none => false
-    | none => false
-
 /-- **The relation** the theorem needs between `f` and the checked output `g`. -/
 def proveRel (tabs : Tables) (f g : Func) : Bool :=
   let (C, F, inv) := asmOf f tabs
   atomsOK f g && closedOK f && closedOK g && f.blocks.all C.inTree && factsOK f C F &&
-  invOK f tabs C F inv inv && valuesOK tabs f g F inv && phiArgsOK f C (rewritten f g)
+  invOK f tabs C F inv inv && valuesOK tabs f g F inv
 
 /-! ## The checked pass -/
 
@@ -394,24 +369,6 @@ def revert (tabs : Tables) (branches : Bool) (f g : Func) : Func × Stats := Id.
       let ok := valueOK D tabs A fv gv
       st := st.add (classOf fv gv) ok b x
       if !ok then h := h.modV x fun hv => { fv with uses := hv.uses }
-  -- rewrites a `Phi` of a block they do not dominate may read (`phiArgsOK`)
-  let C := DomCert.make f
-  let anchors : List (ID × ID) := f.blocks.toList.flatMap fun b =>
-    match f.block? b with
-    | some bb => bb.values.toList.flatMap fun z =>
-        match f.value? z with
-        | some zv => if zv.op != .Phi then [] else zv.args.toList.filterMap fun a =>
-            match placed? f a with
-            | some ba => if C.anc ba b then none else some (ba, b)
-            | none => none
-        | none => []
-    | none => []
-  for (x, br) in rewritten f h do
-    if anchors.any (fun (ba, b) => C.anc br ba && !C.anc br b) then
-      let (some fv, some gv) := (f.value? x, h.value? x) | continue
-      st := { st with rej := st.rej.insert "phi-read" (st.rej.getD "phi-read" 0 + 1),
-                      why := st.why.push (s!"phi-read {classOf fv gv}", br, x) }
-      h := h.modV x fun hv => { fv with uses := hv.uses }
   return (fixup h, st)
 
 /-- `prove` with every unjustified rewrite undone, and its statistics; the input if the

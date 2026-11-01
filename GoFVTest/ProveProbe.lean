@@ -108,7 +108,7 @@ def checkFile (path : System.FilePath) (st : St) : IO St := do
         let (h', _) := ProveCheck.revert prev true f g
         let (C, F, inv) := ProveCheck.asmOf f prev
         if h' != f then
-          IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} values {ProveCheck.valuesOK prev f h' F inv} tree {f.blocks.all C.inTree} phiArgs {ProveCheck.phiArgsOK f C (ProveCheck.rewritten f h')}"
+          IO.println s!"RELFAIL {path}: atoms {RewriteCheck.atomsOK f h'} closedF {RewriteCheck.closedOK f} closedG {RewriteCheck.closedOK h'} facts {ProveCheck.factsOK f C F} inv {ProveCheck.invOK f prev C F inv inv} values {ProveCheck.valuesOK prev f h' F inv} tree {f.blocks.all C.inTree}"
       if (check { tabs := prev, typs } h).toBool == false then
         st := { st with checkFail := st.checkFail + 1 }
         if st.shown < 5 then

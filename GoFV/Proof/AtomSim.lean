@@ -62,9 +62,11 @@ theorem next_rel {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {
   obtain ⟨m1, m2, m3, -⟩ := next_sets H.wg H.cg B.bmT B.hgb R.treeT B.mT
     ((H.ctrls b B.bmT fb gb B.hfb B.hgb).1 e he)
   obtain ⟨l, p, ph⟩ := I.edge b i fb FS e _ B.hfb R.live E.inv E.dS (ancV_sets H B) n2 hS
+  obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 he
   exact { fr := E.fr, szS := E.szS, szT := E.szT, tyS := E.tyS, tyT := E.tyT, mem := n4,
           treeS := n3, treeT := m3, atoms := E.atoms,
-          den := ⟨_, _, E.dS, E.dT, vt_placed H B, n1, m1, n2, m2⟩, live := l, inv := p, phis := ph }
+          den := ⟨_, _, E.dS, E.dT, vt_placed H B, n1, m1, n2, m2⟩, live := l, inv := p, phis := ph,
+          pre := .inr ⟨b, fb, k, _, B.bmS, B.hfb, hk, E.inv, E.dS, ancV_sets H B, n2⟩ }
 
 end
 
@@ -138,7 +140,8 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
         fun x h => hentry g ce' H.wg H.cg x (hge ▸ h), hphi f ce H.wf _, hge ▸ hphi g ce' H.wg _⟩,
       live := I.start.1, inv := fun a => by rw [hpois a]; exact I.start.2 a,
       phis := fun bb hbb z hz v hv hph a ha => (hphi f ce H.wf (fun _ => False) bb hbb z hz v hv hph
-        a ha).elim }
+        a ha).elim,
+      pre := .inl (hphi f ce H.wf _) }
 
 /-- **The atom simulation** under a source-side invariant. -/
 theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
