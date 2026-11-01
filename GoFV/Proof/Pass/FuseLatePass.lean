@@ -13,7 +13,7 @@ then the fuse driver with the late per-block step, whose two rewrites are each c
 `fuseBlockIf` (`fuseBlockIfChecked_refines`) and plain fusion (`fuseBlockPlainChecked_refines`),
 each keeping `WFDom` (`lateStep_ok`); after each sweep the checked branch redirect
 (`FuseRedirect.fuseBranchRedirectChecked_ok`, at the pass's tables, which its decisions read).
-The driver keeps refinement and `WFDom` (`Fuse.fuseLoop_refines_at`).
+The driver keeps refinement and `WFDom` (`Fuse.fuseLoop_refinesAt`).
 -/
 
 namespace GoFV.Proof.FuseLate
@@ -70,7 +70,7 @@ theorem fuseLate_refines {penv : PassEnv} {f : Func} {out : PassOut}
           split at hg
           · rename_i g' hl
             cases hg
-            exact (Fuse.fuseLoop_refines_at (lateStep_ok tv)
+            exact (Fuse.fuseLoop_refinesAt ((lateStep_ok tv).at _)
               (FuseRedirect.fuseBranchRedirectChecked_ok pv penv.tables) hl
               (WFDom.of_wfDomCheck (ce := { tabs := penv.tables, typs := penv.typs })
                 (wfDomOK_sound hck'))).1
