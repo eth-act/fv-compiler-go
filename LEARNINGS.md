@@ -415,6 +415,14 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect:** `verifyStruct` 13.7 → 2.3 s (`--verified --from prove`); `prove-probe` on
   quick-v3 `test` 3 min 10 s → 20 s with identical output; quick-v3 `--check --verified --jobs 6`
   in 88 s (no SLOW lines).
+- **Then on full-v4** (104 min, four functions 27–92 min each): `ECCheck.depB` (expand calls'
+  checker) searched every path back through a block's shared arguments — exponential;
+  `depBFast` (`@[csimp] depB_eq_depBFast`, a table of fuel levels at which a value already
+  failed; correct by `depB_mono`) took `walk.maplit` from 92 min to 0.6 s. `emptyFragB` built the
+  dominator certificate `make f` inside `f.blocks.all fun bid => …` once per block (the compiler
+  does not hoist it out of the lambda); a `let` outside fixed `rewriteValueAMD64`. full-v4
+  `--check --verified --jobs 6`: 104 → 20 min (slowest function 3 min: prove's linear-fact
+  search, `linFacts`, on functions with long fact lists).
 
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
