@@ -214,9 +214,9 @@ input, `wf` means the state passes `check`, and the state records the input's di
 parameters and read-only symbols. -/
 def Inv (env : PassEnv) (f0 : Func) (st : VState) : Prop :=
   (st.verified = true → VRefines (NilCheck.dictParams env.tables f0)
-    (RewriteCheck.roSyms env.tables f0) st.tables st.func env.tables f0) ∧
+    (pipelineRo env f0) st.tables st.func env.tables f0) ∧
   (st.wf = true → check (checkEnv env st.tables) st.func = .ok ()) ∧
-  st.dict = NilCheck.dictParams env.tables f0 ∧ st.ro = RewriteCheck.roSyms env.tables f0
+  st.dict = NilCheck.dictParams env.tables f0 ∧ st.ro = pipelineRo env f0
 
 private theorem ok_of_toBool {ε : Type} {e : Except ε Unit} (h : e.toBool = true) : e = .ok () := by
   revert h; cases e <;> simp [Except.toBool]
@@ -243,7 +243,7 @@ theorem Inv.skip {st : VState} (h : Inv env f0 st) (name why : String) :
 theorem Inv.adopt {st : VState} (h : Inv env f0 st) {name : String} {out : PassOut} {wf : Bool}
     {v : Verdict}
     (hv : v.ok = true → VRefines (NilCheck.dictParams env.tables f0)
-      (RewriteCheck.roSyms env.tables f0) out.tables out.func st.tables st.func)
+      (pipelineRo env f0) out.tables out.func st.tables st.func)
     (hwf : wf = true → check (checkEnv env out.tables) out.func = .ok ()) :
     Inv env f0 (st.adopt name out wf v) := by
   refine ⟨fun hver => ?_, hwf, h.2.2⟩
@@ -253,7 +253,7 @@ theorem Inv.adopt {st : VState} (h : Inv env f0 st) {name : String} {out : PassO
 theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : PassOut}
     {claim : Option String}
     (hc : claim = none → check (checkEnv env out.tables) out.func = .ok () →
-      VRefines (NilCheck.dictParams env.tables f0) (RewriteCheck.roSyms env.tables f0) out.tables
+      VRefines (NilCheck.dictParams env.tables f0) (pipelineRo env f0) out.tables
         out.func st.tables st.func) :
     Inv env f0 (st.continue env p out claim) := by
   unfold VState.continue
@@ -372,7 +372,7 @@ environment's tables) on every environment and input in `VPre` (with `f`'s dicti
 parameters and read-only symbols). -/
 theorem verifiedPipeline_refines {env : PassEnv} {f : Func} {start : Nat} {zv : Array (ID × Nat)}
     {r : VState} (h : verifiedPipeline env f start zv = .ok r) (hv : r.verified = true) :
-    VRefines (NilCheck.dictParams env.tables f) (RewriteCheck.roSyms env.tables f) r.tables r.func
+    VRefines (NilCheck.dictParams env.tables f) (pipelineRo env f) r.tables r.func
       env.tables f :=
   (runPasses_inv (fun p hp => stockPasses_sound p (List.mem_of_mem_drop hp)) (Inv.init zv) h).1 hv
 

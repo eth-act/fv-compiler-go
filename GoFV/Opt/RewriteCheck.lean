@@ -2250,6 +2250,23 @@ def roSyms (tabs : Tables) (f : Func) : List (String × Sem.Alloc) :=
   f.valueTab.toList.filterMap fun o => o.bind fun v =>
     if v.op == .Addr then roSym? tabs v.aux else none
 
+/-- Every read-only data symbol defined in `tabs`, with its allocation. With `tabs` the export
+file's frontend tables this covers every symbol a pass can introduce (passes take new symbols
+from the frontend), so the verified pipeline pins these, not only its input's (`pipelineRo`). -/
+def roAll (tabs : Tables) : List (String × Sem.Alloc) :=
+  (List.range tabs.auxes.size).filterMap fun n => roSym? tabs (some n)
+
+/-- The read-only `go:string.…` data symbols of the string auxes in `tabs`, with the allocation
+`Rules.stringData` gives them when a pass materialises one (`fe.StringData`, e.g. for a
+`ConstString`, `generic.rules:1022`): `SRODATA`, the string's bytes, no relocations. Empty strings
+have no data symbol. -/
+def roStrs (tabs : Tables) : List (String × Sem.Alloc) :=
+  tabs.auxes.toList.filterMap fun d? => d?.bind fun d =>
+    match d.kind with
+    | .str t dn => if t.bytes.size == 0 then none
+                   else some (dn.toStringLossy, Sem.rodataAlloc t.bytes t.bytes.size #[])
+    | _ => none
+
 /-- The source of the `Move` `fv` of `f` is an `Addr` of a symbol of `ro` whose bytes are zero. -/
 def roSrcOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (fv : Value) : Bool :=
   match fv.args.toList with

@@ -290,8 +290,9 @@ structure VState where
   /-- The input's dictionary parameters (`NilCheck.dictParams`), which the precondition of the
   `rw` steps names: a proven pass runs only on states with the same ones. -/
   dict : List Nat := []
-  /-- The input's read-only symbols (`RewriteCheck.roSyms`), which the precondition of the `rw`
-  steps names: a proven pass runs only on states whose read-only symbols are among them. -/
+  /-- The read-only symbols the pipeline's precondition pins (`pipelineRo`): the input's and every
+  one defined in the frontend tables. A proven `rw` step runs only on states whose read-only
+  symbols are among them. -/
   ro : List (String × Sem.Alloc) := []
   /-- One verdict per pass run. -/
   log : Array (String × Verdict) := #[]
@@ -299,13 +300,21 @@ structure VState where
 /-- The checker environment of the pipeline's states. -/
 def checkEnv (env : PassEnv) (tabs : Tables) : CheckEnv := { tabs, typs := env.typs }
 
+/-- The read-only symbols the pipeline's precondition `RoImage` pins for input `f`: those `f`
+names and every one the export file's frontend defines. Passes take new symbols (e.g. the data
+of a `ConstString` opt materialises, `generic.rules:1022`) from the frontend, so pinning only
+`f`'s made every proven pass after such a rewrite unverified (#293). -/
+def pipelineRo (env : PassEnv) (f : Func) : List (String × Sem.Alloc) :=
+  RewriteCheck.roSyms env.tables f ++ RewriteCheck.roAll env.frontend ++
+    RewriteCheck.roStrs env.tables ++ RewriteCheck.roStrs env.frontend
+
 /-- The initial state: `f` with the environment's tables and the input section's `zvar`. -/
 def VState.init (env : PassEnv) (f : Func) (zv : Array (ID × Nat) := #[]) : VState :=
   { func := f, tables := env.tables, wf := (check (checkEnv env env.tables) f).toBool
     zvar := zv.foldl (fun m (v, c) => m.insert v c) {}
     nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1
     dict := NilCheck.dictParams env.tables f
-    ro := RewriteCheck.roSyms env.tables f }
+    ro := pipelineRo env f }
 
 /-- The environment of stock pass `name` on state `st`. -/
 def VState.passEnv (st : VState) (env : PassEnv) (name : String) : PassEnv :=
