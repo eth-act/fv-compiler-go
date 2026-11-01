@@ -114,3 +114,11 @@ root = "GoFVTest.ExpandCallsProbe"
 [[lean_exe]]
 name = "sched-fast-bench"
 root = "GoFVTest.SchedFastBench"
+
+[[lean_exe]]
+name = "sccp-probe"
+root = "GoFVTest.SccpProbe"
+
+[[lean_exe]]
+name = "shortcirc-probe"
+root = "GoFVTest.ShortCircProbe"

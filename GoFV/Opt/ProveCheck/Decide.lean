@@ -106,6 +106,11 @@ def distFrom (es : List (ID × ID × Int)) (x : ID) : List (ID × Int) :=
 def diffLe (es : List (ID × ID × Int)) (x y : ID) (c : Int) : Bool :=
   (distFrom es x).any fun (z, e) => z == y && e ≤ c
 
+/-- `V(x) - V(y) ≤ c` follows from the edges `es`, or from them up to some `z` and a last edge
+`(z, y, c')` of `rs` (which, unlike `es`, need not hold when their ends are undefined). -/
+def diffLeR (es rs : List (ID × ID × Int)) (x y : ID) (c : Int) : Bool :=
+  diffLe es x y c || rs.any fun (z, y', c') => y' == y && diffLe es x z (c - c')
+
 /-- The signed value of `z` if it is a `w`-bit constant. -/
 def constVal (w : Width) (z : ID) : Option Int :=
   match D z with
@@ -163,25 +168,51 @@ def factEdges (s : Bool) (w : Width) (fact : ID × Bool) : List (ID × ID × Int
     | .eq false => []
   | none => []
 
+/-- The edges `V(z) - V(y) ≤ c` (signed, width `w`) of the relations into `y`, if `y` is
+nonnegative. -/
+def relEdges (w : Width) (y : ID) : List (ID × ID × Int) :=
+  let rs := A.rels.filterMap fun (z, y', w', c) =>
+    if w' == w && y' == y then some (z, y, c) else none
+  if !rs.isEmpty && 0 ≤ (rng D tabs A k w y).slo then rs else []
+
+/-- The path facts' edges in the reading `s` at width `w`. -/
+def linFacts (s : Bool) (w : Width) : List (ID × ID × Int) :=
+  A.facts.flatMap (factEdges D tabs A k s w)
+
+/-- The last edges (`diffLeR`) into `y` in the reading `s` at width `w`: in the signed reading
+the relations'. -/
+def linRels (s : Bool) (w : Width) (y : ID) : List (ID × ID × Int) :=
+  if s then relEdges D tabs A k w y else []
+
 /-- `x ⋈ y` at width `w` is decided to be `v` in the reading `s` by differences. -/
 def linIn (s : Bool) (x y : ID) (w : Width) (t : Rel) (v : Bool) : Bool :=
-  let es := A.facts.flatMap (factEdges D tabs A k s w)
+  let es := linFacts D tabs A k s w
   let (bx, cx) := offOf D tabs A k s w x
   let (by', cy) := offOf D tabs A k s w y
+  let le (a b : ID) (c : Int) := diffLeR es (linRels D tabs A k s w b) a b c
   match t with
   | .lt _ st =>
-    if v then diffLe es bx by' (cy - cx - (if st then 1 else 0))
-    else diffLe es by' bx (cx - cy - (if st then 0 else 1))
+    if v then le bx by' (cy - cx - (if st then 1 else 0))
+    else le by' bx (cx - cy - (if st then 0 else 1))
   | .eq b =>
-    if b == v then diffLe es bx by' (cy - cx) && diffLe es by' bx (cx - cy)
-    else diffLe es bx by' (cy - cx - 1) || diffLe es by' bx (cx - cy - 1)
+    if b == v then le bx by' (cy - cx) && le by' bx (cx - cy)
+    else le bx by' (cy - cx - 1) || le by' bx (cx - cy - 1)
 
-/-- `x ⋈ y` at width `w` is decided to be `v` by differences: orders in their own reading,
-equalities in either. -/
+/-- `x ⋈ y` at width `w` is decided to be `v` by differences: orders in their own reading (an
+unsigned order also in the signed reading when both sides are nonnegative), equalities in
+either. -/
 def linDecides (x y : ID) (w : Width) (t : Rel) (v : Bool) : Bool :=
   match t with
-  | .lt s _ => linIn D tabs A k s x y w t v
+  | .lt s st => linIn D tabs A k s x y w t v ||
+    (!s && 0 ≤ (rng D tabs A k w x).slo && 0 ≤ (rng D tabs A k w y).slo &&
+      linIn D tabs A k true x y w (.lt true st) v)
   | .eq _ => linIn D tabs A k true x y w t v || linIn D tabs A k false x y w t v
+
+/-- `V(x) - V(y) ≤ c` (signed, width `w`) follows from the differences. -/
+def diffDecides (x y : ID) (w : Width) (c : Int) : Bool :=
+  let (bx, cx) := offOf D tabs A k true w x
+  let (by', cy) := offOf D tabs A k true w y
+  diffLeR (linFacts D tabs A k true w) (linRels D tabs A k true w by') bx by' (c - cx + cy)
 
 /-- Depth of the range analysis inside `linDecides` (offsets, signs of fact sides). -/
 def linFuel : Nat := 2

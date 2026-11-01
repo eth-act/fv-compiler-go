@@ -85,10 +85,12 @@ def empty (r : Rng) : Bool := r.uhi < r.ulo || r.shi < r.slo
 
 end Rng
 
-/-- The assumptions at a block: path facts and range invariants. -/
+/-- The assumptions at a block: path facts, range invariants, and relations `(z, y, w, c)`:
+`z.toInt - y.toInt ≤ c` for the `w`-bit values of `z` and `y` whenever `y`'s is nonnegative. -/
 structure Asm where
   facts : List (ID × Bool) := []
   inv : List (ID × Width × Rng) := []
+  rels : List (ID × ID × Width × Int) := []
   deriving Inhabited
 
 /-- Term ops the range analysis evaluates. -/

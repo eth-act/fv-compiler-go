@@ -4,6 +4,7 @@ import GoFV.Proof.ABI
 import GoFV.Proof.ABIBuild
 import GoFV.Proof.ABIBytes
 import GoFV.Proof.Agree
+import GoFV.Proof.AgreeIdx
 import GoFV.Proof.AtomSim
 import GoFV.Proof.AtomSimBlock
 import GoFV.Proof.AtomSimDen
@@ -130,6 +131,14 @@ import GoFV.Proof.Pass.ECSim
 import GoFV.Proof.Pass.ECStruct
 import GoFV.Proof.Pass.ECTree
 import GoFV.Proof.Pass.ECTyped
+import GoFV.Proof.Pass.FuseCmp
+import GoFV.Proof.Pass.FuseCmpPres
+import GoFV.Proof.Pass.FuseCmpRel
+import GoFV.Proof.Pass.FuseCmpSetup
+import GoFV.Proof.Pass.FuseCmpSim
+import GoFV.Proof.Pass.FuseCmpTarget
+import GoFV.Proof.Pass.FuseEarlyPass
+import GoFV.Proof.Pass.FuseLoop
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FusePlainFrame
 import GoFV.Proof.Pass.FusePlainMerged
@@ -175,6 +184,11 @@ import GoFV.Proof.Pass.RewriteTermPat
 import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Pass.RewriteTermRule
 import GoFV.Proof.Pass.RewriteTermStep
+import GoFV.Proof.Pass.Sccp
+import GoFV.Proof.Pass.SccpCopy
+import GoFV.Proof.Pass.SccpDead
+import GoFV.Proof.Pass.SccpInv
+import GoFV.Proof.Pass.SccpTerm
 import GoFV.Proof.Pass.ZCSE
 import GoFV.Proof.Pass.ZCSEBlock
 import GoFV.Proof.Pass.ZCSEEnter
@@ -220,6 +234,7 @@ import GoFV.Proof.Rules.AndB2
 import GoFV.Proof.Rules.AndB3
 import GoFV.Proof.Rules.AndB4
 import GoFV.Proof.Rules.Attr
+import GoFV.Proof.Rules.AttrCond
 import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
@@ -243,7 +258,10 @@ import GoFV.Proof.Rules.DivmodSBV
 import GoFV.Proof.Rules.DivmodSMagic
 import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Proof.Rules.DivmodU
+import GoFV.Proof.Rules.DivmodU2
+import GoFV.Proof.Rules.DivmodU3
 import GoFV.Proof.Rules.DivmodUMagic
+import GoFV.Proof.Rules.DivmodUMagic2
 import GoFV.Proof.Rules.Eq
 import GoFV.Proof.Rules.Eq2
 import GoFV.Proof.Rules.Eq3
@@ -324,6 +342,7 @@ import GoFV.Proof.Rules.Sub
 import GoFV.Proof.Rules.Sub2
 import GoFV.Proof.Rules.Sub3
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.TacticCond
 import GoFV.Proof.Rules.TacticRange
 import GoFV.Proof.Rules.Trunc
 import GoFV.Proof.Rules.Trunc2
@@ -361,6 +380,7 @@ import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
+import GoFV.Proof.Witness.FuseEarly
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
@@ -369,6 +389,7 @@ import GoFV.Proof.Witness.NextPow2
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.SumOfInt

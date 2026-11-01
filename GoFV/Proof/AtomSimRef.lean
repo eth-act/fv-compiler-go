@@ -101,8 +101,8 @@ theorem termRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S :
     exact ⟨N', fun k hk => by rw [hN' k hk]; exact hP a⟩
   have hQρ : Q ρ := hQ ρ fun a => by
     by_cases h2 : VS a ∧ ¬ IsTerm D a
-    · exact .inl (if_pos h2)
-    · exact .inr (if_neg h2)
+    · exact .inl (ite_eq_left h2)
+    · exact .inr (ite_eq_right h2)
   have h := hm ρ ρ' hval htD htE hPρ hPS hQρ
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]

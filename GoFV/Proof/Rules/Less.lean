@@ -9,6 +9,18 @@ import GoFV.Rules.Generated.Generic.Values05
 `Less` family (`docs/proofs/rules.md`).
 -/
 
+/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
+`isNonNegative(x)` is an oracle atom: nothing makes `x` non-negative (#69, RuleProofs10).
+-- FALSE r_generic_610 #69
+-- FALSE r_generic_610_2 #69
+-- FALSE r_generic_610_3 #69
+-- FALSE r_generic_610_4 #69
+-- FALSE r_generic_611 #69
+-- FALSE r_generic_611_2 #69
+-- FALSE r_generic_611_3 #69
+-- FALSE r_generic_611_4 #69
+-/
+
 namespace GoFV.Proof.Rules
 
 /-- `generic.rules:619`: `(Less16 (Const16 <t> [-1]) x) => (Leq16 (Const16 <t> [0]) x)` -/

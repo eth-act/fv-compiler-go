@@ -238,6 +238,14 @@ avoiding): the problem, the trick, the numbers, where it is used.
   `GoFV.Util.PdqSort.sortBy` (unique keys, same order) the whole checked pass on a 5-block
   function evaluates by `decide +kernel` in about 3 s (`GoFV/Proof/Witness/Prove.lean`); prove
   parity and `prove-difftest` unchanged.
+- **Also (#32):** a stuck `HashSet` need not fail fast. sccp's analysis kept its executable edges
+  (`visited`) in a `Std.HashSet Edge`; `decide +kernel` on the analysis of a 4-block function
+  ran out of memory instead of failing (7.5 GB at the cap after 85 s; the witness module with
+  three such certificates was killed at 8 GB, also with `Elab.async false`). With an `Array
+  (List Nat)` by target block ID (`GoFV/Opt/Sccp.lean`, lookups only, so parity is unaffected)
+  the same certificate takes 2.6 s / 0.25 GB and the whole witness module
+  (`GoFV/Proof/Witness/Sccp.lean`) 4.7 s / 0.43 GB. When a certificate blows up, first look
+  for hash maps on the evaluated path.
 
 #### Kernel `defeq` of `f a` against `f b` unfolds `f`: keep big definitions out of `rfl`
 - **Problem:** in `bind_schedule_erase` (`GoFV/Proof/Cong.lean`) the case
@@ -316,6 +324,38 @@ avoiding): the problem, the trick, the numbers, where it is used.
   --pass branchelim`, load 26–30): full-v2 14.4/15.2 s → 12.3/13.7 s; quick 0.7–0.8 s →
   0.7 s (only 729 rewrites on quick). The remaining time is the rewrites themselves, the
   `loadAddr` set and the single input `check`.
+
+#### early fuse: the single input `check` dominates (#187)
+- **Measurement:** with every rewrite checked locally (comparison fusion `tabEq`/pointer-first,
+  plain fusion in place) early fuse takes 14.0 s on full-v2 (`pass-parity`); without the one
+  `checkOK ce f` on the pass input (unsound ablation) 6.3 s, unchecked port 2.3 s. The
+  comparison checker itself is within noise (5,847 fusions on full-v2). Next lever for the
+  checked CFG passes: the input `check`, not the step checkers.
+- **Proof elaboration:** composing pure checked steps inside a `do`/`let (f, c) := …` step
+  (`earlyStep_ok`) by `simp [earlyStep]` or `rfl` against a projection form times out at 200k
+  heartbeats (`whnf` unfolds the checkers). `generalize step f b = r at h k; obtain ⟨f1, c1⟩ :=
+  r; dsimp only at h k` per step keeps it to a second; without the `dsimp` the pair `match`
+  stays and the next `generalize` silently misses its target.
+
+#### Rule lemmas: kernel "deep recursion" from `rfl` simp lemmas (#69, RuleProofs10)
+- **Problem:** `divmod.rules:171/180/206/232` and `generic.rules:369/372` elaborated, but the
+  kernel rejected the theorem with "(kernel) deep recursion detected" as soon as the proof used
+  the condition; `set_option maxRecDepth 20000` did not help. A scan of the proof term
+  (`Kernel.isDefEq` on every argument whose inferred type differs syntactically from the
+  expected one; 1 min instead of 21 min for a top-down `Kernel.check` bisection) found the
+  failing check: `simp` applies `@[defeq]` (`:= rfl`) lemmas such as `Option.getD_some`,
+  `Option.elim_some` without a proof step, so a `congrArg` of the next rewrite expects
+  `bif umagicOK 64 c then X else …` but gets `(some (bif …)).getD d` (or `if x < y then …`
+  against `(some y).elim …`). The kernel's lazy delta unfolds the `bif`/`if` side and
+  evaluates `umagicOK 64 c` / `Nat.decLt` on symbolic 64-bit terms.
+- **Trick:** the same rewrites with a proof term (`getD_some_p`, `elim_some_p` proved
+  `by simp only [Option.getD_some]`, so not `@[defeq]`); `rule_unfold_getd` keeps
+  `Option.getD` out of the condition's `dsimp`, and `open GoFV.Proof.Rules.KernelSafe` makes
+  `rule_norm` (also inside `rule_split1`) use them: listed explicitly they are tried before the
+  `rfl` lemmas of the simp sets (`simp only [set, -lemma]` does not erase from an attribute
+  set, it only warns), `GoFV/Proof/Rules/TacticCond.lean`.
+- **Effect:** the five `divmod` lemmas check (`DivmodU2.lean` 8.8 s / 1.6 MB, `DivmodU3.lean`
+  4.0 s / 1.1 MB); no other module changes.
 
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 

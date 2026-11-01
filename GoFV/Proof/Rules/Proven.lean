@@ -30,6 +30,8 @@ import GoFV.Proof.Rules.DivisibleU2
 import GoFV.Proof.Rules.DivmodS
 import GoFV.Proof.Rules.DivmodS2
 import GoFV.Proof.Rules.DivmodU
+import GoFV.Proof.Rules.DivmodU2
+import GoFV.Proof.Rules.DivmodU3
 import GoFV.Proof.Rules.Eq
 import GoFV.Proof.Rules.Eq2
 import GoFV.Proof.Rules.Eq3
@@ -154,7 +156,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.soundT_of_sound r_generic_280_3_sound rfl, Rule.soundT_of_sound r_generic_297_3_sound rfl, Rule.soundT_of_sound r_generic_300_3_sound rfl, Rule.soundT_of_sound r_generic_303_3_sound rfl, Rule.soundT_of_sound r_generic_306_3_sound rfl, Rule.soundT_of_sound r_generic_309_3_sound rfl, Rule.soundT_of_sound r_generic_312_3_sound rfl, Rule.soundT_of_sound r_generic_315_sound rfl, Rule.soundT_of_sound r_generic_584_3_sound rfl, Rule.soundT_of_sound r_generic_1178_3_sound rfl, Rule.soundT_of_sound r_generic_2403_3_sound rfl, Rule.soundT_of_sound r_generic_2404_3_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_280_4_sound rfl, Rule.soundT_of_sound r_generic_297_4_sound rfl, Rule.soundT_of_sound r_generic_300_4_sound rfl, Rule.soundT_of_sound r_generic_303_4_sound rfl, Rule.soundT_of_sound r_generic_306_4_sound rfl, Rule.soundT_of_sound r_generic_309_4_sound rfl, Rule.soundT_of_sound r_generic_312_4_sound rfl, Rule.soundT_of_sound r_generic_318_sound rfl, Rule.soundT_of_sound r_generic_584_4_sound rfl, Rule.soundT_of_sound r_generic_1169_sound rfl, Rule.soundT_of_sound r_generic_1173_sound rfl, Rule.soundT_of_sound r_generic_1178_4_sound rfl, Rule.soundT_of_sound r_generic_2399_sound rfl, Rule.soundT_of_sound r_generic_2400_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_280_5_sound rfl, Rule.soundT_of_sound r_generic_281_sound rfl, Rule.soundT_of_sound r_generic_282_sound rfl, Rule.soundT_of_sound r_generic_283_sound rfl, Rule.soundT_of_sound r_generic_284_sound rfl, trivial⟩,
-    ⟨Rule.soundT_of_sound r_generic_1683_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_generic_1646_sound rfl, Rule.soundT_of_sound r_generic_1683_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_587_sound rfl, Rule.soundT_of_sound r_generic_600_sound rfl, Rule.soundT_of_sound r_generic_605_sound rfl, Rule.soundT_of_sound r_generic_617_sound rfl, Rule.soundT_of_sound r_generic_618_sound rfl, Rule.soundT_of_sound r_generic_702_sound rfl, Rule.soundT_of_sound r_generic_710_sound rfl, Rule.soundT_of_sound r_generic_720_sound rfl, Rule.soundT_of_sound r_generic_724_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_596_sound rfl, Rule.soundT_of_sound r_generic_613_sound rfl, Rule.soundT_of_sound r_generic_693_sound rfl, Rule.soundT_of_sound r_generic_695_sound rfl, Rule.soundT_of_sound r_generic_714_sound rfl, Rule.soundT_of_sound r_generic_715_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_generic_587_2_sound rfl, Rule.soundT_of_sound r_generic_601_sound rfl, Rule.soundT_of_sound r_generic_606_sound rfl, Rule.soundT_of_sound r_generic_617_2_sound rfl, Rule.soundT_of_sound r_generic_618_2_sound rfl, Rule.soundT_of_sound r_generic_701_sound rfl, Rule.soundT_of_sound r_generic_709_sound rfl, Rule.soundT_of_sound r_generic_719_sound rfl, Rule.soundT_of_sound r_generic_723_sound rfl, trivial⟩,
@@ -302,8 +304,11 @@ theorem divmod_allSound : Proven.divmod.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.divmod, ForallL]
     exact ⟨⟨Rule.soundT_of_sound r_divmod_25_sound rfl, Rule.soundT_of_sound r_divmod_93_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_divmod_159_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_divmod_29_sound rfl, Rule.soundT_of_sound r_divmod_99_sound rfl, Rule.soundT_of_sound r_divmod_121_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_divmod_171_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_divmod_33_sound rfl, Rule.soundT_of_sound r_divmod_113_sound rfl, Rule.soundT_of_sound r_divmod_127_sound rfl, trivial⟩,
+    ⟨Rule.soundT_of_sound r_divmod_180_sound rfl, Rule.soundT_of_sound r_divmod_206_sound rfl, Rule.soundT_of_sound r_divmod_232_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_divmod_21_sound rfl, Rule.soundT_of_sound r_divmod_87_sound rfl, trivial⟩,
     ⟨Rule.soundT_of_sound r_divmod_154_sound rfl, trivial⟩, trivial⟩)
     (by simp [Proven.divmod, ForallL])

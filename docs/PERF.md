@@ -74,7 +74,7 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 | --- | --- |
 | peak RSS regression | `maxrss_mb` grew > 25% and > 512 MB |
 | time regression | `wall_s` and `cpu_s` both grew > 25% and > 5 s (load 120 inflated small modules' wall time 2–10× and CPU ~1.5×) |
-| new heavy module | a new module above 2 GB, 60 s CPU, or 10 MB `.olean` |
+| new heavy module | a new module above 60 s CPU or 10 MB `.olean`, or above 2 GB peak RSS *and* > 512 MB above its heaviest direct import (a `lean` process maps its imports: proof witnesses peak at ~2 GB from imports alone) |
 | `.olean` growth | a module's `.olean` grew > 25% and > 5 MB (exact bytes, no load noise; a proof-only module should stay well under 1 MB) |
 | broken | a module that built in BASE fails or is killed in HEAD |
 | benchmark regression | wall and CPU time both > 25% and > 1 s, or max RSS > 25% and > 256 MB |
@@ -85,8 +85,10 @@ Useful reads: `column -t -s$'\t' perf/history.tsv | grep _total` (cost per commi
 Shrinks past the same thresholds are listed as wins. The watch loop re-checks every module time flag
 with an interleaved A/B re-timing in its build worktree (base, head, base, head; `lake lean` of
 the module; minimum CPU of each side) and drops the flag unless the head is still > 25% and
-> 5 s slower. Back-to-back confirmation runs share one load period, alternating commits does
-not. On main 28334f3, `GoFV.Proof.Pass.RewriteTermNat` was flagged at 14.9 → 23.6 s CPU
+> 5 s slower. Benchmark and per-pass time flags get the same treatment (two interleaved runs
+of the benchmark per side; > 25% and > 1 s). Back-to-back confirmation runs share one load
+period, alternating commits does not: the same ssa-check code measured 46 s and 76 s CPU an
+hour apart. On main 28334f3, `GoFV.Proof.Pass.RewriteTermNat` was flagged at 14.9 → 23.6 s CPU
 (confirmed by a back-to-back rerun); the A/B gave 16.3 → 19.7 s and the flag was dropped. Modules whose numbers are the same
 measurement in both commits (`measured_at` equal) are skipped. For a PR, BASE is its merge base
 with main; for main, the previous recorded main commit.

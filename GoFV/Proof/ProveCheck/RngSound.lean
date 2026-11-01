@@ -6,8 +6,9 @@ import GoFV.Proof.ProveCheck.Proj
 
 `rng_sound`: under assumptions that hold for the valuation `ρ` (`AsmHolds`: every path fact's
 term eventually — at enough fuel — denotes its boolean, every invariant's integer values lie in
-its range, the atoms are typed), every `w`-bit integer value of a term lies in its range.
-`relOf_sound` reads a path fact as a relation between its comparison's sides.
+its range, every relation holds (`RelDen`), the atoms are typed), every `w`-bit integer value of
+a term lies in its range. `relOf_sound` reads a path fact as a relation between its comparison's
+sides.
 -/
 
 namespace GoFV.Proof.ProveCheck
@@ -21,10 +22,18 @@ def RelHolds {n : Nat} : Rel → BitVec n → BitVec n → Prop
   | .eq true, x, y => x = y
   | .eq false, x, y => x ≠ y
 
+/-- Relation `(z, y, w, c)` holds for `ρ`: at every fuel, if `z` and `y` denote `w`-bit
+integers and `y`'s is nonnegative, `z.toInt - y.toInt ≤ c`. -/
+def RelDen (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) (z y : ID) (w : Width)
+    (c : Int) : Prop :=
+  ∀ n (Z Y : BitVec w.bits), den D tabs ρ n z = .int w Z → den D tabs ρ n y = .int w Y →
+    0 ≤ Y.toInt → Z.toInt - Y.toInt ≤ c
+
 /-- The assumptions hold for the valuation `ρ`. -/
 structure AsmHolds (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) (A : Asm) : Prop where
   facts : ∀ c v, (c, v) ∈ A.facts → ∃ N, ∀ n, N ≤ n → den D tabs ρ n c = .bool v
   inv : ∀ z w r, (z, w, r) ∈ A.inv → ∀ n (y : BitVec w.bits), den D tabs ρ n z = .int w y → r.Mem y
+  rels : ∀ z y w c, (z, y, w, c) ∈ A.rels → RelDen D tabs ρ z y w c
   typed : Term.Typed D tabs ρ
 
 section

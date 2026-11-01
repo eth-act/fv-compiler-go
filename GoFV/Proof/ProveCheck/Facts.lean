@@ -6,7 +6,8 @@ import GoFV.Proof.Avail
 # The path facts, declaratively (issue #24)
 
 `factsOK_spec`: what `ProveCheck.factsOK` guarantees about the facts table `F` (`FactsSpec`);
-`facts_anc`: the facts of a block include those of its dominator-tree ancestors.
+`facts_of_anc`: the facts of a block include those of its dominator-tree ancestors (any table
+that includes its tree parent's entries does, `table_of_anc`).
 -/
 
 namespace GoFV.Proof.ProveCheck
@@ -97,26 +98,36 @@ theorem factOK_spec {f : Func} {p : ID} {pb : Block} {c : ID}
       subst hb
       exact ⟨cv, ⟨hc, hin, blk, hblk, hcb⟩, hne, (anc_iff hp).1 hanc, ht⟩
 
-/-- **The facts of a block include those of its ancestors.** -/
-theorem facts_anc {f : Func} {F : Array (List (ID × Bool))} (hF : FactsSpec f (make f) F)
+/-- **A per-block table that includes its tree parent's entries includes its ancestors'.** -/
+theorem table_anc {α : Type} {f : Func} {T : ID → List α}
+    (hup : ∀ p ∈ f.blocks, (make f).inTree p = true → p ≠ f.entry →
+      (make f).up p ∈ f.blocks ∧ ∀ q ∈ T ((make f).up p), q ∈ T p)
     (hp : parentsOK (make f) f.entry = true) :
     ∀ k b n, b ∈ f.blocks → (make f).depthOf b = some n → k ≤ n →
-      ∀ q ∈ factsAt F ((make f).walk k b), q ∈ factsAt F b
+      ∀ q ∈ T ((make f).walk k b), q ∈ T b
   | 0, _, _, _, _, _, q, hq => hq
   | k + 1, b, n, hb, hd, hk, q, hq => by
     obtain ⟨m, rfl⟩ : ∃ m, n = m + 1 := ⟨n - 1, by omega⟩
     have hne : b ≠ f.entry := fun e => by
       subst e; rw [entry_depth hp] at hd; cases hd
     have ht : (make f).inTree b = true := by simp [Cert.inTree, hd]
-    obtain ⟨hup, hsub⟩ := hF.up b hb ht hne
+    obtain ⟨hup', hsub⟩ := hup b hb ht hne
     have hdu := ((parent_spec hp hd).2 m rfl).2
     rw [walk_succ] at hq
-    exact hsub q (facts_anc hF hp k _ m hup hdu (by omega) q hq)
+    exact hsub q (table_anc hup hp k _ m hup' hdu (by omega) q hq)
 
+theorem table_of_anc {α : Type} {f : Func} {T : ID → List α}
+    (hup : ∀ p ∈ f.blocks, (make f).inTree p = true → p ≠ f.entry →
+      (make f).up p ∈ f.blocks ∧ ∀ q ∈ T ((make f).up p), q ∈ T p)
+    (hp : parentsOK (make f) f.entry = true) {a b : ID} (h : Anc (make f) a b) (hb : b ∈ f.blocks) :
+    ∀ q ∈ T a, q ∈ T b := by
+  obtain ⟨n, k, hd, hk, rfl⟩ := h
+  exact table_anc hup hp k b n hb hd hk
+
+/-- **The facts of a block include those of its ancestors.** -/
 theorem facts_of_anc {f : Func} {F : Array (List (ID × Bool))} (hF : FactsSpec f (make f) F)
     (hp : parentsOK (make f) f.entry = true) {a b : ID} (h : Anc (make f) a b) (hb : b ∈ f.blocks) :
-    ∀ q ∈ factsAt F a, q ∈ factsAt F b := by
-  obtain ⟨n, k, hd, hk, rfl⟩ := h
-  exact facts_anc hF hp k b n hb hd hk
+    ∀ q ∈ factsAt F a, q ∈ factsAt F b :=
+  table_of_anc (T := factsAt F) hF.up hp h hb
 
 end GoFV.Proof.ProveCheck
