@@ -272,7 +272,8 @@ def floatCmp (o : BinOp) (c : IEEE.Cmp) : Option DV :=
   | _ => none
 
 /-- Non-short-circuit binary operators on evaluated operands (`GoFV.Rules.Eval.binop` on the
-modelled kinds; float arithmetic is not modelled). -/
+modelled kinds; of the float arithmetic only division, IEEE 754 round to nearest even as Go's
+constant `1/c` of `generic.rules:1330`/`:1331`). -/
 def binDV (o : BinOp) (ty : GoTy) : DV → DV → Option DV
   | .int a, .int b => intBin o ty a b
   | .bool a, .bool b =>
@@ -285,8 +286,10 @@ def binDV (o : BinOp) (ty : GoTy) : DV → DV → Option DV
     | .eq => some (.bool (a == b))
     | .ne => some (.bool (a != b))
     | _ => none
-  | .f64 a, .f64 b => floatCmp o (IEEE.compare .b64 a b)
-  | .f32 a, .f32 b => floatCmp o (IEEE.compare .b32 a b)
+  | .f64 a, .f64 b =>
+    if o = .quo then some (.f64 (IEEE.div .b64 .rne a b)) else floatCmp o (IEEE.compare .b64 a b)
+  | .f32 a, .f32 b =>
+    if o = .quo then some (.f32 (IEEE.div .b32 .rne a b)) else floatCmp o (IEEE.compare .b32 a b)
   | _, _ => none
 
 /-- Unary operators (`GoFV.Rules.Eval.unop`). -/
@@ -326,7 +329,15 @@ inductive Helper where
   | bitsMulU64 | bitsMulU32 | bitsAdd64 | modInverse
   | umagicOK (w : Nat) | smagicOK | udivisibleOK (w : Nat)
   | umagic (w : Nat) | smagic (w : Nat) | udivisible (w : Nat) | sdivisible (w : Nat)
+  | reciprocalExact64 | reciprocalExact32
   deriving DecidableEq, Repr
+
+/-- `reciprocalExact64`/`reciprocalExact32` on the encoding `b` of a float with `E` exponent and
+`F` fraction bits: a power of two whose reciprocal is a normal number (fraction 0, biased
+exponent neither 0 nor the two largest). -/
+def reciprocalExactB (E F b : Nat) : Bool :=
+  let ex := (b / 2 ^ F) % 2 ^ E
+  b % 2 ^ F == 0 && ex != 0 && ex != 2 ^ E - 1 && ex != 2 ^ E - 2
 
 /-- The helper a call names (`none`: not modelled, the call is the oracle's). The rule lemmas
 rewrite it on a literal name with the lemmas of `GoFV/Proof/Rules/Names.lean`. -/
@@ -365,6 +376,8 @@ def Helper.ofName : String → Option Helper
   | "udivisible32" => some (.udivisible 32) | "udivisible64" => some (.udivisible 64)
   | "sdivisible8" => some (.sdivisible 8) | "sdivisible16" => some (.sdivisible 16)
   | "sdivisible32" => some (.sdivisible 32) | "sdivisible64" => some (.sdivisible 64)
+  | "reciprocalExact32" => some .reciprocalExact32
+  | "reciprocalExact64" => some .reciprocalExact64
   | _ => none
 
 /-- A helper applied to evaluated arguments with their Go types (`GoFV.Rules.Eval.call`);
@@ -405,6 +418,8 @@ def callH (e : PEnv) : Helper → List (DV × GoTy) → Option DV
   | .smagic w, [(.int c, _)] => magicDV (Magic.smagic w c)
   | .udivisible w, [(.int c, _)] => udivDV (Magic.udivisible w c)
   | .sdivisible w, [(.int c, _)] => sdivDV (Magic.sdivisible w c)
+  | .reciprocalExact64, [(.f64 x, _)] => some (.bool (reciprocalExactB 11 52 x.toNat))
+  | .reciprocalExact32, [(.f32 x, _)] => some (.bool (reciprocalExactB 8 23 x.toNat))
   | _, _ => none
 
 /-- Field selection on modelled values. -/
@@ -650,8 +665,11 @@ def ifaceArgOk (t : Ty) : Bool :=
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
 the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr` a
 pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
-64-bit integer offset of `AddPtr`/`PtrIndex`, `Convert` between a pointer and a 64-bit
-integer (`convArgOk`), both arguments of `Eq<N>`/`Neq<N>` integers of width `N`, both of
+64-bit integer offset of `AddPtr`/`PtrIndex`, an `AddPtr` itself of a pointer shape (a
+`uintptr`-typed one would be compared by the concrete address, which a pointer that does not
+convert back to itself does not round-trip: `generic.rules:1680`), `Convert` between a
+pointer and a 64-bit integer (`convArgOk`), both arguments of `Eq<N>`/`Neq<N>` integers of
+width `N`, both of
 `IsInBounds`/`IsSliceInBounds` and the argument of `Slicemask` 64-bit integers (`int` on the
 64-bit target: the semantics compares (masks) at the first argument's (the result's) width, the
 rules' `Const64` operands mean 64-bit values), the
@@ -664,7 +682,8 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
   | .OffPtr | .IsNonNil => i != 0 || isPtrTy t
   | .EqPtr | .NeqPtr => isPtrTy t || isInt64Ty t
-  | .AddPtr | .PtrIndex => if i == 0 then isPtrTy t else i != 1 || isInt64Ty t
+  | .AddPtr => if i == 0 then isPtrTy t && isPtrTy ty else i != 1 || isInt64Ty t
+  | .PtrIndex => if i == 0 then isPtrTy t else i != 1 || isInt64Ty t
   | .Convert => i != 0 || convArgOk ty t
   | .Eq64 | .Neq64 => isIntWTy .w64 t
   | .Eq32 | .Neq32 => isIntWTy .w32 t

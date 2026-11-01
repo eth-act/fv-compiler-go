@@ -73,6 +73,9 @@ theorem eqPtr_hasTy (neg : Bool) (args : List Val) :
   · split <;> rfl
   · rfl
 
+theorem isNonNil_hasTy (args : List Val) : (PtrOps.isNonNil args).hasTy .bool = true := by
+  unfold PtrOps.isNonNil; split <;> rfl
+
 theorem eqFirst_hasTy (neg : Bool) (args : List Val) :
     (PtrOps.eqFirst neg args).hasTy .bool = true := by
   unfold PtrOps.eqFirst; split
@@ -150,6 +153,7 @@ macro "natshape_close" : tactic => `(tactic| first
   | exact rotateLeft_hasTy _ _
   | exact boolToUint8_hasTy _
   | exact eqPtr_hasTy _ _
+  | exact isNonNil_hasTy _
   | exact eqFirst_hasTy _ _
   | exact memEq_hasTy _
   | exact fbin_hasTy _ _ _
@@ -241,8 +245,9 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
         · rfl
       · rfl
     · obtain ⟨t, ht, hx⟩ := h0 _ rfl
-      simp only [GoFV.Proof.Rules.argShapeOk, beq_self_eq_true, ite_true] at ht
-      rw [int_not_hasTy_ptr ht] at hx; cases hx
+      simp only [GoFV.Proof.Rules.argShapeOk, beq_self_eq_true, ite_true,
+        Bool.and_eq_true] at ht
+      rw [int_not_hasTy_ptr ht.1] at hx; cases hx
     · rfl
   case PtrIndex =>
     simp only [ptrTop] at h

@@ -17,7 +17,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 /-- `generic.rules:126`: `(AddPtr <t> x (Const64 [c])) => (OffPtr <t> x [c])` -/
 theorem r_generic_126_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_126 := by
   rule_unfold
-  obtain ⟨⟨el0, h0⟩, h1⟩ := hat
+  obtain ⟨⟨⟨el0, h0⟩, -⟩, h1⟩ := hat
   simp only [Nat.reduceAdd] at h1
   rw [h0] at hlt
   rw [h1] at hty ⊢

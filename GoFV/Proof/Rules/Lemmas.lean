@@ -1258,6 +1258,7 @@ theorem binDV_cmp_bool {o : BinOp}
     | exact hi _ _
     | exact ⟨_, rfl⟩
     | (cases o <;> exact ⟨_, rfl⟩)
+    | (rcases ho with rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨_, rfl⟩)
 
 /-! ## Pointers (`Pat.argsOK`; `generic.rules:964`, `:965`, `:970`) -/
 

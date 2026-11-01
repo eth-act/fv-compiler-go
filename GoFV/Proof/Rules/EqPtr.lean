@@ -1,6 +1,7 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values03
+import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values08
 
 /-!
@@ -70,5 +71,20 @@ theorem inst_r_generic_1646 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
   simp [GoFV.Rules.Generated.Generic.r_generic_1646]
   rule_eval
   simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
+
+/-- `generic.rules:1687`: `(IsNonNil (ConstNil)) => (ConstBool [false])` -/
+theorem r_generic_1687_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1687 := by
+  rule_unfold
+  obtain ⟨el, hel⟩ := hat
+  rw [hel] at hty ⊢
+  simp only [Val.retype, PtrOps.isNonNil, Ptr.isNil, Ptr.null] at hty ⊢
+  exact refines_retype_of_hasTy hty
+
+/-- `generic.rules:1687` at a pointer-typed `ConstNil`. -/
+theorem inst_r_generic_1687 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
+    (PEnv.ofLists [] [([], .bool)] (.ptr none) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1687]
+  rule_eval
+  simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
 
 end GoFV.Proof.Rules
