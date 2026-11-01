@@ -291,6 +291,11 @@ theorem generic_allSound : Proven.generic.AllSound :=
     simp only [Proven.generic, ForallL]
     exact ⟨⟨r_generic_1064_sound, r_generic_1065_sound, r_generic_1066_sound, trivial⟩, trivial⟩)
 
+/-- Every rule of `Proven.dec` is sound. -/
+theorem dec_allSound : Proven.dec.AllSound :=
+  RuleSet.allSound_of (by simp [Proven.dec, ForallL])
+    (by simp [Proven.dec, ForallL])
+
 /-- Every rule of `Proven.divisible` is sound. -/
 theorem divisible_allSound : Proven.divisible.AllSound :=
   RuleSet.allSound_of (by
