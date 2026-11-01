@@ -52,6 +52,11 @@ inductive Outcome where
 
 namespace Outcome
 
+/-- The outcomes that carry an obligation: returned or panicked. -/
+def Defined : Outcome → Prop
+  | .returned .. | .panicked .. => True
+  | _ => False
+
 /-- Rendering for test output; `stuck` messages are kept apart (`isStuck`). -/
 def render : Outcome → String
   | .returned rs _ => "returned " ++ " ".intercalate (rs.map Val.render)

@@ -238,18 +238,21 @@ def frameLocals (tabs : Tables) (params : Array (Option AuxRef)) :
       else none
     | _ => none
 
+/-- The shape of every type of the tables, by type number (computed once per function). -/
+def typeShapes (tabs : Tables) : Array Ty := (List.range tabs.types.size).toArray.map tabs.ty
+
+/-- The shape of a value's type (`other` for an absent value). -/
+def valueTy (shapes : Array Ty) : Option Value → Ty
+  | some v => shapes[v.type]?.getD .other
+  | none => .other
+
 def Ctx.make (tabs : Tables) (f : Func) : Ctx :=
   let ps := abiParams tabs f
   let ins := ps.filter (!·.out)
   let params := ins.map (·.name)
   { f := f
     tabs := tabs
-    tys :=
-      -- one shape per type number, shared by the values of that type
-      let byType := (List.range tabs.types.size).toArray.map tabs.ty
-      f.valueTab.map fun o => match o with
-        | some v => byType[v.type]?.getD .other
-        | none => .other
+    tys := f.valueTab.map (valueTy (typeShapes tabs))
     sched := f.blockTab.map fun o => o.bind (schedule f)
     params := params
     paramTys := ins.map (tabs.ty ·.type)
@@ -514,12 +517,18 @@ where
     | [] => []
     | (o, t) :: fs => (leaves t).map (fun (o', t') => (o + o', t')) ++ leavesFields fs
 
+mutual
 /-- `v` contains `poison` (anywhere inside a composite). -/
 def Val.hasPoison : Val → Bool
   | .poison => true
-  | .agg vs => vs.attach.any fun ⟨v, _⟩ => v.hasPoison
-  | .tuple vs => vs.attach.any fun ⟨v, _⟩ => v.hasPoison
+  | .agg vs => Val.anyPoison vs
+  | .tuple vs => Val.anyPoison vs
   | _ => false
+/-- Some value of `vs` contains `poison`. -/
+def Val.anyPoison : List Val → Bool
+  | [] => false
+  | v :: vs => v.hasPoison || Val.anyPoison vs
+end
 
 /-- The Go-typed results of a `Ret` (§7), from the `MakeResult` components `rs` (memory
 removed) and the memory `m` at the return. Before `expand calls` the components are the
@@ -527,8 +536,9 @@ Go-typed results; after it they are the register pieces of the register-assigned
 (in ABI order), and stack-assigned results are in their `PPARAMOUT` variables. Both forms are
 reduced to the results' bytes and decoded by the result types, so every section yields the
 same values. A result containing `poison` is observed: `stuck`. -/
-def goResults (ctx : Ctx) (rs : List Val) (m : Mem) : Res (List Val) := do
-  let outs := ctx.outs.toList
+def goResults (outs : Array (Option AuxRef × Ty × Nat)) (act : Nat) (rs : List Val) (m : Mem) :
+    Res (List Val) := do
+  let outs := outs.toList
   let pre := rs.length == outs.length &&
     (rs.zip outs).all fun (v, (_, t, _)) => v.hasTy t
   let bytes ← if pre then
@@ -539,7 +549,7 @@ def goResults (ctx : Ctx) (rs : List Val) (m : Mem) : Res (List Val) := do
         | (name, t, k) :: os =>
           if k == 0 then do
             let n ← Res.ofOption "Ret: stack result without name" name
-            let bs := (m.read ⟨.local ctx.act n, 0⟩ t.size).getD (Array.replicate t.size .poison)
+            let bs := (m.read ⟨.local act n, 0⟩ t.size).getD (Array.replicate t.size .poison)
             return bs :: (← post pieces os)
           else
             let ls := leaves t
@@ -571,6 +581,32 @@ def frameMem (env : Env) (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) :
       | none => Array.replicate sz .poison
     m.set (.local ctx.act n) { data }) mem
 
+/-- The frame of a new activation on `args` from memory `mem`: no registers, the arguments'
+images, the frame allocations (`frameMem`). -/
+def entryFrame (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) : Frame :=
+  let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
+  { regs := Array.replicate ctx.f.valueTab.size none, args,
+    mem0 := frameMem env ctx images mem, images }
+
+/-- The outcome of an activation from its loop's outcome: Go-typed results (`goResults`) and
+the memory without the frame; other outcomes unchanged. -/
+def finish (outs : Array (Option AuxRef × Ty × Nat)) (act : Nat) : Outcome → Outcome
+  | .returned rs m =>
+    match goResults outs act rs m with
+    | .ok vals => .returned vals (m.freeFrame act)
+    | .panic e m => .panicked e m
+    | .stuck msg => .stuck msg
+  | o => o
+
+/-- `finish` only defines defined outcomes. -/
+theorem finish_defined {outs : Array (Option AuxRef × Ty × Nat)} {act : Nat} {o : Outcome}
+    (h : (finish outs act o).Defined) : o.Defined := by
+  cases o with
+  | returned => trivial
+  | panicked => trivial
+  | stuck => exact h
+  | outOfFuel => exact h
+
 /-- Run `f` (with the definition tables `tabs` of its export section) on the Go-typed
 arguments `args` (receiver first) and memory `mem`, for at most `fuel` block entries: set up
 the frame, run, decode the Go-typed results and remove the frame from the memory. -/
@@ -578,18 +614,7 @@ def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : 
   if args.length != ctx.params.size then
     .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
   else
-    let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
-    let mem0 := frameMem env ctx images mem
-    match runLoop env ctx fuel
-        { regs := Array.replicate ctx.f.valueTab.size none, args, mem0, images }
-        ctx.f.entry 0 with
-    | .returned rs m =>
-      match goResults ctx rs m with
-      | .ok vals =>
-        .returned vals (m.freeFrame ctx.act)
-      | .panic e m => .panicked e m
-      | .stuck msg => .stuck msg
-    | o => o
+    finish ctx.outs ctx.act (runLoop env ctx fuel (entryFrame env ctx args mem) ctx.f.entry 0)
 
 end GoFV.SSA.Sem
 

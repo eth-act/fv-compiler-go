@@ -28,6 +28,10 @@ theorem Sem.Refines.trans : {a b c : Val} → Sem.Refines a b → Sem.Refines b 
   | _, _, _, .bool _, h => h
   | _, _, _, .mem _, h => h
   | _, _, _, .tuple h1, .tuple h2 => .tuple (Sem.RefinesList.trans h1 h2)
+  | _, _, _, .ptr _, h => h
+  | _, _, _, .agg h1, .agg h2 => .agg (Sem.RefinesList.trans h1 h2)
+  | _, _, _, .blob _, h => h
+  | _, _, _, .empty, h => h
 theorem Sem.RefinesList.trans :
     {a b c : List Val} → Sem.RefinesList a b → Sem.RefinesList b c → Sem.RefinesList a c
   | _, _, _, .nil, .nil => .nil
@@ -42,11 +46,6 @@ inductive OutcomeRefines : Outcome → Outcome → Prop where
   | returned {rs rs' : List Val} {m : Mem} : RefinesList rs rs' →
       OutcomeRefines (.returned rs m) (.returned rs' m)
   | panicked (e : Panic) (m : Mem) : OutcomeRefines (.panicked e m) (.panicked e m)
-
-/-- The outcomes that carry an obligation: returned or panicked. -/
-def _root_.GoFV.SSA.Sem.Outcome.Defined : Outcome → Prop
-  | .returned .. | .panicked .. => True
-  | _ => False
 
 theorem OutcomeRefines.refl {o : Outcome} (h : o.Defined) : OutcomeRefines o o := by
   cases o with
@@ -97,7 +96,9 @@ theorem runCtx_mono (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) {fuel 
   unfold runCtx at h ⊢
   split
   · rfl
-  · next hn => simp only [hn] at h; exact runLoop_mono env ctx _ k _ _ _ h
+  · next hn =>
+    simp only [hn] at h
+    rw [runLoop_mono env ctx _ k _ _ _ (finish_defined h)]
 
 theorem run_mono {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : Mem}
     {fuel fuel' : Nat} (hle : fuel ≤ fuel') (h : (run env tabs f args mem fuel).Defined) :
