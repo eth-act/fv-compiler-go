@@ -593,7 +593,7 @@ theorem phi_seg (S : Setup c b B rs l) {k : Nat} {s x : ID} {v : Value}
     rw [hwop] at hp; cases hp
   · obtain ⟨-, -, r, s', hr, hs', -, ⟨u, w', hu, hw', hop, -⟩, -⟩ := roleOK_tgt hok hv hρ
     rw [hv] at hw'; cases hw'
-    exact src_op S hr hs' hu (hop ▸ hp)
+    exact (src_op S hr hs' hu (hop ▸ hp)).elim
 
 /-- Run `k`'s memory is held. -/
 theorem mem_held (S : Setup c b B rs l) {k : Nat} {r : Run} (hr : rs[k]? = some r) :
@@ -731,15 +731,17 @@ theorem args_seg (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : N
     obtain ⟨idx, hidx, rfl⟩ := Array.getElem_of_mem ha
     by_cases hl : idx = w.args.size - 1
     · subst hl
-      rw [Array.back?_eq_getElem?, Array.getElem?_eq_getElem hidx] at hback
-      cases hback
-      apply hna
+      rw [Array.back?_eq_getElem?, Array.getElem?_eq_getElem hidx, Option.some.injEq] at hback
+      exfalso; apply hna
+      rw [hback]
       cases k' with
       | zero => exact phi_mem S hr
       | succ k'' =>
         have hlt : k'' < r.tgt.length := by
           have := (List.getElem?_eq_some_iff.1 ht').1; omega
-        exact htgt _ (by rw [getElem!_pos r.tgt k'' hlt]; exact List.getElem_mem hlt)
+        exact htgt _ (by
+          show r.tgt[k'']! ∈ r.tgt
+          rw [getElem!_pos r.tgt k'' hlt]; exact List.getElem_mem hlt)
     · have hlt : idx < u.args.size - 1 := by omega
       obtain ⟨hc1, hc2⟩ := hall idx hlt
       have hbang : w.args[idx]! = w.args[idx] := getElem!_pos w.args idx hidx
@@ -756,7 +758,7 @@ theorem args_seg (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : N
       · obtain ⟨he, hav⟩ := hc2 hc
         rw [hbang] at he
         rw [he] at hna ⊢
-        exact avail_of hO hs hav hna
+        exact avail_of hO (run_seg S hr).2 hav hna
 
 /-- **Arguments in a buffer block.** An argument of a value of run `k`'s buffer block that is not
 listed there is available after segment `k`. -/

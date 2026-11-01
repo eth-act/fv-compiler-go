@@ -54,7 +54,7 @@ def Cov (env : Env) (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) : Pr
 
 /-! ## Roles: the inverse direction -/
 
-private theorem vals_of {h : Func} {s : ID} {T : Block} (hT : h.block? s = some T) :
+private theorem blk_vals {h : Func} {s : ID} {T : Block} (hT : h.block? s = some T) :
     vals h s = T.values := by
   unfold vals; rw [hT]; rfl
 
@@ -172,7 +172,7 @@ private theorem lazy_safe {c : WBCheck.Ctx} {rs : List Run} {x : ID} {w : Value}
     · rw [hw] at hv; cases hv
       rcases hop with hop | hop | hop | hop <;> rw [hop] <;> decide
 
-private theorem roleOK_none {c : WBCheck.Ctx} {b : ID} {B : Block} {segs : List ID}
+private theorem roleOK_none' {c : WBCheck.Ctx} {b : ID} {B : Block} {segs : List ID}
     {rs : List Run} {inT : Bool} {j : Nat} {x : ID} (h : c.roleOK b B segs rs inT j x = true)
     (hρ : c.roleOf rs x = .none) : False := by
   unfold Ctx.roleOK at h
@@ -235,7 +235,7 @@ private theorem vid (S : Setup c b B rs l) {s x : ID} {w : Value}
   cases hC : c.g.block? s with
   | none => rw [vals, hC] at hx; simp at hx
   | some C =>
-    rw [vals_of hC] at hx
+    rw [blk_vals hC] at hx
     obtain ⟨v, hv, hid, -⟩ := hwg.valueId s C ⟨hbl, hC⟩ x hx
     rw [hw] at hv; cases hv; exact hid
 
@@ -249,7 +249,7 @@ private theorem fid (S : Setup c b B rs l) {x : ID} {u : Value} (hx : x ∈ B.va
 private theorem t_ok (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) {x : ID}
     (hx : x ∈ vals c.g r.sp.t) : c.roleOK b B (segsOf b rs) rs true j x = true := by
   obtain ⟨-, -, ⟨T, hT, -, -, -, -, -, hall⟩, -⟩ := runOK_spec (S.run hr)
-  rw [vals_of hT] at hx
+  rw [blk_vals hT] at hx
   exact hall x hx
 
 /-- The run's `WB` has at most 8 slots. -/
@@ -435,7 +435,7 @@ private theorem seg_tgt (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH 
       exact hH a z y' (availIn_spec hav).1 hq hy'
 
 /-- The run's memory is held. -/
-private theorem mem_held (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) :
+private theorem memHeld (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) :
     c.held r.sp.mem = true := by
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, h, -⟩ := runOK_spec (S.run hr)
   exact h
@@ -479,7 +479,7 @@ theorem local_seg (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
   | off i => exact absurd (roleOK_off hok hw hρ).1 Bool.false_ne_true
   | bstore i => exact absurd (roleOK_bstore hok hw hρ).1 Bool.false_ne_true
   | tload i => exact absurd (roleOK_tload hok hw hρ).1 Bool.false_ne_true
-  | none => exact (roleOK_none hok hρ).elim
+  | none => exact (roleOK_none' hok hρ).elim
 
 /-- **A value of a buffer block.** -/
 theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
@@ -508,7 +508,7 @@ theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
   | wb i =>
     obtain ⟨-, rfl, r', hr', hargs, hn, -, -, e, hty⟩ := roleOK_wb hok hw hρ
     obtain ⟨M, hRM⟩ := hcov
-    exact local_wb hH hw hid hρ hr' hRM (then_op hρ rfl hw) hargs (S.mem_held hr') hn hty
+    exact local_wb hH hw hid hρ hr' hRM (then_op hρ rfl hw) hargs (S.memHeld hr') hn hty
   | sel0 i =>
     obtain ⟨-, rfl, hargs, ha, h0, -⟩ := roleOK_sel hok hw (.inl hρ)
     exact local_sel hM (S.wbN8 ha) hw hid hargs ha (.inl ⟨then_op hρ rfl hw, hρ, h0 hρ⟩)
@@ -523,7 +523,7 @@ theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
     exact local_bstore hw hid hρ (then_op hρ rfl hw) hargs ho hmm haux hty
   | tload i =>
     exact local_true hw (by rw [then_op hρ rfl hw]; decide) (fun y => by simp only [QR, hρ])
-  | none => exact (roleOK_none hok hρ).elim
+  | none => exact (roleOK_none' hok hρ).elim
 
 end Setup
 
