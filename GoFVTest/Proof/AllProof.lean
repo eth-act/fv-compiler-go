@@ -257,6 +257,7 @@ import GoFV.Proof.Rules.AndB2
 import GoFV.Proof.Rules.AndB3
 import GoFV.Proof.Rules.AndB4
 import GoFV.Proof.Rules.Attr
+import GoFV.Proof.Rules.AttrCond
 import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
@@ -281,7 +282,10 @@ import GoFV.Proof.Rules.DivmodSBV
 import GoFV.Proof.Rules.DivmodSMagic
 import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Proof.Rules.DivmodU
+import GoFV.Proof.Rules.DivmodU2
+import GoFV.Proof.Rules.DivmodU3
 import GoFV.Proof.Rules.DivmodUMagic
+import GoFV.Proof.Rules.DivmodUMagic2
 import GoFV.Proof.Rules.Eq
 import GoFV.Proof.Rules.Eq2
 import GoFV.Proof.Rules.Eq3
@@ -366,6 +370,7 @@ import GoFV.Proof.Rules.Sub
 import GoFV.Proof.Rules.Sub2
 import GoFV.Proof.Rules.Sub3
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.TacticCond
 import GoFV.Proof.Rules.TacticRange
 import GoFV.Proof.Rules.Trunc
 import GoFV.Proof.Rules.Trunc2
