@@ -216,8 +216,7 @@ theorem merged_panic {tabs : Tables} {env : Env} {fr G : Frame} {i idx : Nat}
   have hsY : schedOf f y = some oY := by unfold schedOf; rw [hY]; exact hoY
   -- the panicking node in the target's schedule
   obtain ⟨grv, hgrv, -, hgrop, hgrargs⟩ := (S.rel.value_same r).2 rv hrv
-  obtain ⟨-, -, hrid, -⟩ := hwf.valueId y Y ⟨hyIn, hY⟩ r hrY
-  obtain ⟨rv', hrv', hrid⟩ := hwf.valueId y Y ⟨hyIn, hY⟩ r hrY |>.imp fun _ h => ⟨h.1, h.2.1⟩
+  obtain ⟨rv', hrv', hrid, -⟩ := hwf.valueId y Y ⟨hyIn, hY⟩ r hrY
   rw [hrv] at hrv'; cases hrv'
   have hrT : r ∈ oT.toList := (omemT r).2 ⟨(S.merged_mem hC' r).2 ⟨y, hyr, (hvY r).2 hrY⟩, grv,
     hgrv, by rw [hgrop]; exact hrnp⟩
@@ -255,7 +254,7 @@ theorem merged_panic {tabs : Tables} {env : Env} {fr G : Frame} {i idx : Nat}
   rw [npAt_eq hY, ← npIn_schedNodes hownY hndY] at hseq
   have hrnpY : npIn (schedNodes f Y).toList r = true := by
     rw [npIn_schedNodes hownY hndY]
-    simp [npOf, hrY, hrv, hrnp, CopyElim.prio_ne_zero_of_panic hrop]
+    simp [npOf, hrY, hrv, hrnp, prio_panicking hrop]
   have htr := Order.transfer_rank hspecS.topo hspecS.pureFirst hspecT.topo (fun _ => npIn_iff)
     hseq.symm hk hk' hrnpY (fun a z ha hz haz hz' =>
       .direct (hsubN a ha) (.arg (hsubN a ha) hz' (by rw [hargsN z hz]; exact haz)))
@@ -298,7 +297,7 @@ theorem merged_panic {tabs : Tables} {env : Env} {fr G : Frame} {i idx : Nat}
         rw [npAt_eq hY']
         simp [npOf, hxY', hfv, (S.later_noPhi hy'r hy'b hxy' hfv).1, prio_root hiso]
       have hrnp' : npAt f y r = true := by
-        rw [npAt_eq hY]; simp [npOf, hrY, hrv, hrnp, CopyElim.prio_ne_zero_of_panic hrop]
+        rw [npAt_eq hY]; simp [npOf, hrY, hrv, hrnp, prio_panicking hrop]
       obtain ⟨jx, hjx⟩ := List.getElem?_of_mem hx
       have hjl : jx < pre'.length := (List.getElem?_eq_some_iff.1 hjx).1
       have hb : Order.Before oT.toList x r :=
@@ -316,7 +315,11 @@ theorem merged_panic {tabs : Tables} {env : Env} {fr G : Frame} {i idx : Nat}
           rw [hsY]; exact List.mem_filter.2 ⟨List.mem_of_getElem? hk, hrnp'⟩⟩)
         (fun hm => ?_) hb
       obtain ⟨x', hx', hxm⟩ := List.mem_flatMap.1 hm
-      have hx'r : x' ∈ run := by rw [hr]; rcases List.mem_append.1 hx' with h' | h' <;> simp_all
+      have hx'r : x' ∈ run := by
+        rw [hr]
+        rcases List.mem_append.1 hx' with h' | h'
+        · exact List.mem_append_left _ h'
+        · rw [List.mem_singleton] at h'; rw [h']; simp
       have hne : x' ≠ y' := fun h' => by
         subst h'
         rcases List.mem_append.1 hx' with h' | h'
@@ -412,9 +415,44 @@ theorem merged_panic {tabs : Tables} {env : Env} {fr G : Frame} {i idx : Nat}
       obtain ⟨hxC, gv, hgv, hgnp⟩ := (omemT x).1 hx
       obtain ⟨y', hy', hxy'⟩ := (S.merged_mem hC' x).1 hxC
       obtain ⟨Y', hY', hxY'⟩ := valsOf_mem.1 hxy'
-      obtain ⟨fv, hfv, -, hop, hargs⟩ := (S.rel.value_same x).2 gv hgv |>.imp fun _ h => h
-      sorry
-  sorry
+      obtain ⟨fv, hfv, -, -⟩ := hwf.valueId y' Y' ⟨S.runIn hy', hY'⟩ x hxY'
+      obtain ⟨gv', hgv', -, hop, hargs⟩ := (S.rel.value_same x).2 fv hfv
+      rw [hgv] at hgv'; cases hgv'
+      exact S.arg_def htd hdi hy' hY' hxY' hfv (fun h' => hgnp (hop ▸ h'))
+        (by rw [hargsT x gv hgv] at hax; rw [← hargs]; exact Array.mem_toList_iff.1 hax) hout
+  have hGps' : Gp.regs.size = (Ctx.make tabs g).f.valueTab.size := by
+    show Gp.regs.size = g.valueTab.size
+    rw [hGps, hGs, hfs, S.gsize]
+  have hpanT := evalAll_mix_panic (F := F) (post := post')
+    (S := fun a => a ∉ oT.toList ∧ ∃ x ∈ oT.toList, a ∈ argsF (Ctx.make tabs g).f x)
+    (g := { fr with regs := setPhis psT fr.regs }) hGps' hmix
+    (Dead.refOK_of_topo (topoRem_prefix htopo') fun x hx a ha hna => ⟨fun haT =>
+        hna (topoRem_arg_prefix htopo' x hx a ha (hsplitT ▸ haT)), x, hpreT x hx, ha⟩)
+    (fun a ha _ => hT0 a ha.1) (fun a ha => hSd a ha.1 ha.2)
+    (by rw [hGpfr])
+    (by show (setPhis psT fr.regs).size = Gp.regs.size; rw [hszT, hGps, hGs])
+    (fun a ha => by
+      by_cases haT : a ∈ oT.toList
+      · rw [hsplitT] at haT
+        rcases List.mem_append.1 haT with h' | h'
+        · exact .inr h'
+        · exact absurd h' (CopyElim.topoRem_at htopo' a ha)
+      · exact .inl ⟨haT, r, hrT, ha⟩)
+    (fun g' hg' hag' _ => by
+      have hsrc : stepV env (Ctx.make tabs f) Gp r = .panic e m := hrp
+      rw [stepV_eq hrv] at hsrc
+      rw [stepV_eq hgrv, S.eval_same hrv hgrv hrid hg' fun a ha => hag' a (by
+        rw [hargsT r grv hgrv, hgrargs]; exact Array.mem_toList_iff.2 ha)
+        (hreadsPre y (by simp) r ((hvY r).2 hrY) rv hrv hrnp a ha).1]
+      exact hsrc)
+  refine ⟨C', hC', ?_⟩
+  rw [enterBlock_eq, hpsT]
+  change (Res.ofOption _ ((Ctx.make tabs g).sched[C'.id]?).join).bind _ = _
+  rw [hid', sched_of_block hC', hoT]
+  change evalAll env (Ctx.make tabs g) _ oT.toList = _
+  rw [hsplitT]
+  exact hpanT
+
 end Setup
 
 end GoFV.Proof.FusePlain
