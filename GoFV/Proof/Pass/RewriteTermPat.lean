@@ -315,21 +315,14 @@ end
 end Cons
 
 theorem cond_of {ev ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (ev x).erase = (ev' x).erase)
-    {c : Option GoFV.Rules.Expr}
-    (h : (match c with
-      | some c => match ev c with | .bool true => true | _ => false
-      | none => true) = true) : condHolds ev' c := by
+    {c : Option GoFV.Rules.Expr} (h : ∀ x, c = some x → ev x = .bool true) : condHolds ev' c := by
   cases c with
   | none => trivial
   | some c =>
     simp only [condHolds]
-    simp only at h
-    split at h
-    · rename_i hc
-      have h' := hev c
-      rw [hc] at h'
-      exact (dv_eq_of_erase h' rfl).symm
-    · cases h
+    have h' := hev c
+    rw [h c rfl] at h'
+    exact (dv_eq_of_erase h' rfl).symm
 
 theorem sized_of {t : Ty} (h : (match t with | .int _ | .bool => true | _ => false) = true) :
     sized t = true := by
