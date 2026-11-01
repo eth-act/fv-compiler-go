@@ -25,18 +25,30 @@ private def str (e : PassEnv) (key : String) : Except String GoStr :=
   | some #[.str s] => .ok s
   | _ => .error s!"config {key}: missing or not a string"
 
+/-- A decimal integer with an optional leading `-`, on characters (`String.toInt?` and
+`String.splitOn` are well-founded recursions the kernel does not reduce; the witnesses evaluate
+`ofPassEnv` with `decide +kernel`). -/
+private def intOfChars? (cs : List Char) : Option Int :=
+  let nat? : List Char → Option Nat := fun ds =>
+    if ds.isEmpty then none
+    else ds.foldl (fun acc c => acc.bind fun n =>
+      if c.isDigit then some (10 * n + (c.toNat - '0'.toNat)) else none) (some 0)
+  match cs with
+  | '-' :: ds => (nat? ds).map fun n => -(n : Int)
+  | ds => (nat? ds).map fun n => (n : Int)
+
 private def int (e : PassEnv) (key : String) : Except String Int := do
   let w ← word e key
-  match w.toInt? with
+  match intOfChars? w.toList with
   | some i => return i
   | none => throw s!"config {key}: not an integer"
 
 /-- `rttype.<name> <offset>:<kind>:<size>`. -/
 private def rtField (e : PassEnv) (name : String) : Except String (String × Sym.RtField) := do
   let w ← word e s!"rttype.{name}"
-  match w.splitOn ":" with
+  match w.toList.splitOn ':' with
   | [o, k, s] =>
-    match o.toInt?, TypeKind.ofName? k, s.toInt? with
+    match intOfChars? o, TypeKind.ofName? (String.ofList k), intOfChars? s with
     | some o, some k, some s => return (name, { name, offset := o, kind := k, size := s })
     | _, _, _ => throw s!"config rttype.{name}: bad value {w}"
   | _ => throw s!"config rttype.{name}: bad value {w}"
