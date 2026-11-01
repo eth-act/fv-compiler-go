@@ -69,9 +69,9 @@ theorem newOp_pass {i : Nat} (hi : i < 2) {c : Bool} (hk : (if c then 0 else 1) 
 
 variable {f g : Func} {st : Site}
 
-namespace Setup
+namespace Base
 
-variable (S : Setup f g st)
+variable (S : Base f g st)
 include S
 
 /-- Block `b` in `f` and `g`. -/
@@ -118,6 +118,13 @@ theorem gB_vals {B B' : Block} (hB : f.block? st.b = some B)
   · obtain ⟨-, -, -, w, hw, -, hop, -⟩ := S.rel.newv
     refine ⟨w, hw, ?_, hop ▸ specSafe_newOp st.i⟩
     rw [hop]; unfold newOp; split <;> decide
+
+end Base
+
+namespace Setup
+
+variable (S : Setup f g st)
+include S
 
 /-- **Entering `b` in the target** against a reference frame (see the module doc). -/
 theorem enter_b {env : Env} {tabs : Tables} {B B' : Block} (hB : f.block? st.b = some B)

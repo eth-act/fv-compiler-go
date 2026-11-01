@@ -28,12 +28,15 @@ namespace GoFV.Proof.FuseCmp
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt GoFV.Opt.Fuse GoFV.Opt.Fuse.Cmp GoFV.Proof Dom
 
-/-- See the module doc. -/
-structure Setup (f g : Func) (st : Site) : Prop where
+/-- `f` is well formed and `g` is `f` with one comparison fusion at `st`. -/
+structure Base (f g : Func) (st : Site) : Prop where
   wf : ∃ ce, WF ce f
+  rel : CRel f g st
+
+/-- See the module doc. -/
+structure Setup (f g : Func) (st : Site) : Prop extends Base f g st where
   wg : ∃ ce, WF ce g
   cf : UseDom f
-  rel : CRel f g st
 
 /-- `a` is a value of `b`. -/
 def BVal (f : Func) (st : Site) (a : ID) : Prop := a ∈ (valsOf f st.b).toList
@@ -82,12 +85,10 @@ theorem predOf_eq {f : Func} {y : ID} {Y : Block} (hY : f.block? y = some Y) {i 
 
 variable {f g : Func} {st : Site}
 
-namespace Setup
+namespace Base
 
-variable (S : Setup f g st)
+variable (S : Base f g st)
 include S
-
-theorem dom : DomRel f (Reachable f) (SDom f) := S.cf.domRel
 
 theorem inB : st.b ∈ f.blocks := by
   obtain ⟨-, -, -, -, -, -, -, -, h, -⟩ := S.rel.shape; exact h
@@ -184,34 +185,6 @@ theorem reach_b {y : ID} {l : List ID} (h : Reach f y l) (hy : y = st.b) :
     rw [← hci.1] at hr
     exact ⟨l', by rw [hy], hr⟩
 
-/-- `b` does not dominate `p` (`p` dominates `b`, its only predecessor). -/
-theorem not_sdom_bp : ¬ SDom f st.b st.p := fun h => by
-  obtain ⟨-, P, -, hP, hpm, -, hps⟩ := S.bblock
-  obtain ⟨l, hl⟩ := h.1
-  have hpb : SDom f st.p st.b := ⟨⟨_, .step hl hP (Array.mem_of_getElem? hps)⟩, fun l' hl' => by
-    obtain ⟨l'', rfl, hr⟩ := S.reach_b hl' rfl
-    exact List.mem_cons_of_mem _ hr.mem_self⟩
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hpb', -⟩ := S.rel.shape
-  exact hpb' (S.dom.antisymm hpb h)
-
-/-- If `b` dominates a block other than itself, it dominates its predecessor. -/
-theorem sdom_pred {y : ID} (hy : y ∈ f.blocks) {i : Nat} (hp : PredT f y i) (hyb : y ≠ st.b)
-    (ha : SDom f st.b y) : ∃ q, predOf f y i = some q ∧ SDom f st.b q := by
-  obtain ⟨ce, hwf⟩ := S.wf
-  rcases hp with ⟨q, hq, hqm, hqt⟩ | ⟨-, hye⟩
-  · refine ⟨q, hq, ?_⟩
-    unfold predOf at hq
-    cases hY : f.block? y with
-    | none => rw [hY] at hq; cases hq
-    | some Y =>
-      rw [hY] at hq
-      simp only [Option.bind_some, Option.map_eq_some_iff] at hq
-      obtain ⟨e, he, rfl⟩ := hq
-      obtain ⟨-, Q, hQ, hQs⟩ := hwf.predLink y Y ⟨hy, hY⟩ i e he
-      exact (S.dom.edge hqm hQ hqt (Array.mem_of_getElem? hQs)).2 st.b ha (Ne.symm hyb)
-  · subst hye
-    exact absurd (S.dom.entry_anc ha) S.b_ne_entry
-
 /-- The predecessors of `s` along `p`'s and `b`'s edges. -/
 theorem s_preds : ∃ Sb, f.block? st.s = some Sb ∧ st.s ∈ f.blocks ∧
     Sb.preds[st.jp]? = some ⟨st.p, st.i⟩ ∧ Sb.preds[st.jb]? = some ⟨st.b, st.i⟩ ∧
@@ -300,6 +273,43 @@ theorem phi_idx {y : ID} (hy : y ∈ f.blocks) {Y : Block} (hY : f.block? y = so
     rcases hidx with ⟨h, -, -⟩ | ⟨-, hiT⟩
     · exact absurd h hys
     · rw [hiT, remapE_i]; simp [hys]
+
+end Base
+
+namespace Setup
+
+variable (S : Setup f g st)
+include S
+
+theorem dom : DomRel f (Reachable f) (SDom f) := S.cf.domRel
+
+/-- `b` does not dominate `p` (`p` dominates `b`, its only predecessor). -/
+theorem not_sdom_bp : ¬ SDom f st.b st.p := fun h => by
+  obtain ⟨-, P, -, hP, hpm, -, hps⟩ := S.bblock
+  obtain ⟨l, hl⟩ := h.1
+  have hpb : SDom f st.p st.b := ⟨⟨_, .step hl hP (Array.mem_of_getElem? hps)⟩, fun l' hl' => by
+    obtain ⟨l'', rfl, hr⟩ := S.reach_b hl' rfl
+    exact List.mem_cons_of_mem _ hr.mem_self⟩
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hpb', -⟩ := S.rel.shape
+  exact hpb' (S.dom.antisymm hpb h)
+
+/-- If `b` dominates a block other than itself, it dominates its predecessor. -/
+theorem sdom_pred {y : ID} (hy : y ∈ f.blocks) {i : Nat} (hp : PredT f y i) (hyb : y ≠ st.b)
+    (ha : SDom f st.b y) : ∃ q, predOf f y i = some q ∧ SDom f st.b q := by
+  obtain ⟨ce, hwf⟩ := S.wf
+  rcases hp with ⟨q, hq, hqm, hqt⟩ | ⟨-, hye⟩
+  · refine ⟨q, hq, ?_⟩
+    unfold predOf at hq
+    cases hY : f.block? y with
+    | none => rw [hY] at hq; cases hq
+    | some Y =>
+      rw [hY] at hq
+      simp only [Option.bind_some, Option.map_eq_some_iff] at hq
+      obtain ⟨e, he, rfl⟩ := hq
+      obtain ⟨-, Q, hQ, hQs⟩ := hwf.predLink y Y ⟨hy, hY⟩ i e he
+      exact (S.dom.edge hqm hQ hqt (Array.mem_of_getElem? hQs)).2 st.b ha (Ne.symm hyb)
+  · subst hye
+    exact absurd (S.dom.entry_anc ha) S.b_ne_entry
 
 /-- **Entering a block other than `b`** (see the module doc). -/
 theorem enter_rel {env : Env} {tabs : Tables} {y : ID} (hy : y ∈ f.blocks) (hyb : y ≠ st.b)
