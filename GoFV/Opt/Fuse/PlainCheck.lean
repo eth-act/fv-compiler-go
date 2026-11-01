@@ -1,5 +1,6 @@
 import GoFV.Opt.Fuse.Plain
 import GoFV.Opt.Checked
+import GoFV.Opt.SchedFast
 
 /-!
 # fuseBlockPlain, checked in place
@@ -22,7 +23,8 @@ import GoFV.Opt.Checked
   other blocks of the run are emptied (`deadOK`); a predecessor of `b₀` outside the run is
   unchanged but for the same redirection; the entry moves from `b₀` to `c`.
 
-Every other table entry is unchanged by a proven frame lemma of `fuseRun`
+Schedules are computed by `SchedFast.schedFast` (block-local IDs; same non-pure sequence as
+`Sem.schedule`). Every other table entry is unchanged by a proven frame lemma of `fuseRun`
 (`GoFV.Proof.FusePlain.fuseRun_frame`), so the check costs about the size of the run. A rejected
 rewrite is an error: `f` is gone, and the passes fall back to their input. No `check` of `g` is
 needed: the soundness proof derives its well-formedness and use dominance from the relation
@@ -139,6 +141,10 @@ structure Snap where
   /-- The run's non-pure nodes, block by block in their schedules' sequence. -/
   npS : List ID
 
+/-- The schedule of block `x` of `f` as the checker computes it (`SchedFast.schedFast`: over
+block-local IDs; the same non-pure sequence as `Sem.schedule`, `schedFast_filter`). -/
+def fastOf (f : Func) (x : ID) : Option (Array ID) := (f.block? x).bind (SchedFast.schedFast f)
+
 /-- The pre-check of `f` and its snapshot (`none`: the rewrite does not fire or is skipped). -/
 @[noinline] def snapOf (f : Func) (b : ID) : Option Snap :=
   match plainRunOf f b with
@@ -149,7 +155,7 @@ structure Snap where
     | some b0, some c =>
       if !(b0 == b0' && c == c' && b0 != c && decide run.Nodup && f.blocks.contains b0 &&
           chainOK f run && run.tail.all (laterOK f) && readsAllOK f run) then none else
-      let scheds := run.map (schedOf f)
+      let scheds := run.map (fastOf f)
       match f.block? c with
       | some C =>
         if !scheds.all (·.isSome) then none else
@@ -177,7 +183,7 @@ def postOK (s : Snap) (g : Func) : Bool :=
     | some C' => C'.id == s.c && C'.values.toList == s.vEnt.map (·.1) && C'.kind == s.C.kind &&
         C'.controls == s.C.controls && C'.succs == s.C.succs.map (redirect s.b0 s.c) &&
         C'.preds == s.preds &&
-        match Sem.schedule g C' with
+        match SchedFast.schedFast g C' with
         | some oT => oT.toList.filter (npV g) == s.npS
         | none => false
     | none => false

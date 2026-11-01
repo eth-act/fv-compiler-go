@@ -295,12 +295,15 @@ avoiding): the problem, the trick, the numbers, where it is used.
   | --- | --: | --: | --: |
   | short circuit, `check` per fusion (#139) | 7.1–8.0 s | 667 s | – |
   | + no `check`, local `tabEq` checker, rankOKFast (#171) | 2.0 s | 27.5 s | 18.7 s |
-  | + snapshot / in place / frame lemma | 0.5 s | 15.2 s | 4.3 s |
-  | unchecked | 0.1 s | 6.5 s | 0.4 s |
+  | + snapshot / in place / frame lemma (#181) | 0.5 s | 13.3–15.2 s | 4.3 s |
+  | + `schedFast` in the checker (#180) | 0.6 s | 8.4 s | 1.8 s |
+  | unchecked | 0.1 s | 3.0–6.5 s | 0.4 s |
 
-  What is left on large functions is `Sem.schedule` (3.2 of the 4.3 s on the 400 largest
-  files: it allocates arrays of size max-value-ID per call); without the two schedule calls the
-  checked step costs 1.1 s there.
+  Before `schedFast`, `Sem.schedule` took 3.2 of the 4.3 s on the 400 largest files (arrays of
+  size max-value-ID per call). With both checker schedule calls removed (an unsound ablation)
+  the step costs 1.1 s there, so the rest of the gap is the checker's own O(run) work
+  (snapshot lists, `postOK`), which unchecked fusion does not do. Early fuse on full-v2: 13.2
+  → 4.7 → 3.3 s (unchecked 1.3 s).
 
 #### branchelim: no `check` per rewrite (#147)
 - **Problem:** `BranchElim.stepOK` ran `checkOK ce g` on every accepted rewrite, and `relB`
