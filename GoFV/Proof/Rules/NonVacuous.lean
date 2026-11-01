@@ -69,25 +69,25 @@ noncomputable def Oracle.const (b : Bool) : Oracle where
   aux _ := none
   val _ := .poison
 
+-- The evaluation of `Rule.Inst`/`Rule.res` on a concrete rule and instance (`rule_eval`).
+attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Pat.den Pat.dens Pat.raw sigma
+  Pat.binds Pat.bindss Pat.cons Pat.conss Pat.wf Pat.wfs auxIntOk Field.bindDV condHolds resDen
+  nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map reduceEvalPure
+  reduceAuxType evalE evalEs auxIntDV List.lookup toAuxIntD Option.getD List.cons_append
+  List.nil_append intBin binDV binE GoFV.Rules.wrapTo reduceIntInfo litDV fieldE indexE convE
+  callE callH methodE builtinE unDV fieldDV DV.valOr typesShape shapeSize Option.map exprTy
+  List.getD Option.getD_some Option.getD_none reduceCtorEq ne_eq not_false_eq_true and_true
+  true_and and_self beq_self_eq_true Bool.and_true Bool.true_and Bool.or_true Bool.true_or
+  Bool.cond_true Bool.cond_false Option.elim_none Option.elim_some Val.hasTy refines_int_int
+  decide_eq_true_eq BitVec.reduceAdd BitVec.reduceShiftLeft BitVec.reduceUShiftRight
+  BitVec.ofInt_ofNat GoFV.Rules.wrapInt Int64.reduceToInt Int.reduceBmod Int.reduceMod
+  Nat.reducePow Nat.reduceAdd tbl reduceIte ite_true ite_false List.cons.injEq Nat.reduceBEq
+  Nat.reduceBNe List.zip_cons_cons List.zip_nil_left List.zip_nil_right BitVec.reduceToNat
+  BitVec.reduceShiftLeftShiftLeft bne_self_eq_false Bool.or_false Bool.false_or
+
 /-- Evaluate `Rule.Inst`/`Rule.res` on a concrete rule and instance. -/
-macro "rule_eval" : tactic => `(tactic| (
-  simp (config := { decide := true }) only [Rule.Inst, Rule.res, PEnv.ofLists, Oracle.const,
-    Pat.den, Pat.dens, Pat.raw, sigma, Pat.binds, Pat.bindss, Pat.cons, Pat.conss, Pat.wf,
-    Pat.wfs, auxIntOk, Field.bindDV, condHolds, resDen, nodeDen, List.length,
-    List.getElem?_cons_zero, List.getElem?_cons_succ, List.map, reduceEvalPure, reduceAuxType,
-    evalE, evalEs, auxIntDV, List.lookup, toAuxIntD, Option.getD, List.cons_append,
-    List.nil_append, intBin, binDV, binE, GoFV.Rules.wrapTo, reduceIntInfo, litDV,
-    fieldE, indexE, convE, callE, callH, methodE, builtinE, unDV, fieldDV, DV.valOr, typesShape,
-    shapeSize, Option.map, exprTy, List.getD, rule_helper, rule_sem, Option.getD_some,
-    Option.getD_none, reduceCtorEq, ne_eq, not_false_eq_true, and_true, true_and, and_self,
-    beq_self_eq_true, Bool.and_true, Bool.true_and, Bool.or_true, Bool.true_or,
-    Bool.cond_true, Bool.cond_false, Option.elim_none, Option.elim_some, Val.hasTy,
-    refines_int_int, decide_eq_true_eq, BitVec.reduceAdd, BitVec.reduceShiftLeft,
-    BitVec.reduceUShiftRight, BitVec.ofInt_ofNat, GoFV.Rules.wrapInt, Int64.reduceToInt,
-    Int.reduceBmod, Int.reduceMod, Nat.reducePow, Nat.reduceAdd, tbl, reduceIte, ite_true,
-    ite_false, List.cons.injEq, Nat.reduceBEq, Nat.reduceBNe, List.zip_cons_cons, List.zip_nil_left,
-    List.zip_nil_right, BitVec.reduceToNat, BitVec.reduceShiftLeftShiftLeft,
-    bne_self_eq_false, Bool.or_false, Bool.false_or]))
+macro "rule_eval" : tactic => `(tactic|
+  simp (config := { decide := true }) only [rule_eval, rule_helper, rule_sem])
 
 /-! ## A mutated rule is not sound -/
 

@@ -7,10 +7,13 @@
                                             # op families -> tmp/rules/probe-<FAM>.tsv
   scripts/rule-proofs.py emit FAM [--chunk N]
                                             # append theorems for the probed-OK rules to
+                                            # GoFV/Proof/Rules/<FAM>[N].lean
   scripts/rule-proofs.py table              # rewrite the tables of docs/proofs/rules.md
   scripts/rule-proofs.py sat                # run `lake exe rule-sat` (satisfying instance per
                                             # rule) -> tmp/rules/sat.tsv; fails if a proven
                                             # rule has no instance or a counterexample
+  scripts/rule-proofs.py axioms             # `#print axioms` of every theorem of the proof
+                                            # modules; fails on non-standard axioms
 
 Every Lean command runs under scripts/memcap.sh. Temporary files live in tmp/rules/.
 """
@@ -342,9 +345,43 @@ def sat():
         sys.exit(1)
 
 
+STD_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
+
+
+def axioms():
+    """`#print axioms` of every theorem of the proof modules (built first); fails on any axiom
+    other than the standard three and `bv_decide`'s `_native` ones."""
+    mods, thms = [], []
+    for fn in sorted(os.listdir(PROOF)):
+        if not fn.endswith(".lean"):
+            continue
+        mods.append(f"GoFV.Proof.Rules.{fn[:-5]}")
+        for m in re.finditer(r"^theorem (\S+)", open(os.path.join(PROOF, fn)).read(), re.M):
+            thms.append(f"GoFV.Proof.Rules.{m.group(1)}")
+    os.makedirs(TMP, exist_ok=True)
+    path = os.path.join(TMP, "Axioms.lean")
+    open(path, "w").write("".join(f"import {m}\n" for m in mods) +
+                          "".join(f"#print axioms {t}\n" for t in thms))
+    r = lean(os.path.relpath(path, ROOT))
+    out = r.stdout + r.stderr
+    bad, seen = [], 0
+    for m in re.finditer(r"'(\S+)' depends on axioms: \[(.*?)\]", out, re.S):
+        seen += 1
+        ax = {a.strip() for a in m.group(2).split(",") if a.strip()}
+        other = {a for a in ax - STD_AXIOMS if "_native.bv_decide.ax_" not in a}
+        if other:
+            bad.append((m.group(1), sorted(other)))
+    seen += len(re.findall(r"does not depend on any axioms", out))
+    for t, ax in bad:
+        print(f"{t}: {', '.join(ax)}")
+    print(f"{seen}/{len(thms)} theorems checked, {len(bad)} with other axioms")
+    if bad or seen != len(thms) or r.returncode != 0:
+        sys.exit(out[-2000:] if seen != len(thms) else 1)
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["classify", "probe", "emit", "table", "sat"])
+    ap.add_argument("cmd", choices=["classify", "probe", "emit", "table", "sat", "axioms"])
     ap.add_argument("fams", nargs="*")
     ap.add_argument("-j", "--jobs", type=int, default=2)
     ap.add_argument("--all", action="store_true")
@@ -360,6 +397,8 @@ def main():
             emit(fam, a.chunk)
     elif a.cmd == "sat":
         sat()
+    elif a.cmd == "axioms":
+        axioms()
     else:
         table()
 

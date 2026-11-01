@@ -76,6 +76,28 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect** (scratch copies, same load, CPU): Add 54.0 → 42.4 s, 16.1 → 7.9 MB; Add2
   70.6 → 51.2 s, 69.4 → 22.9 MB; Add3 (mostly rotate rules) 84.8 → 67.5 s, 57.0 → 56.1 MB; the
   seven slowest rules alone 20.6 → 8.0 s, 32.6 → 1.5 MB. All 87 theorems still close.
+- **Follow-up (#69, agent/ruleproofs):** no rule needs `bv_decide` any more. The rotate rules'
+  goals are `x <<< y.toNat + x >>> (w#v - y).toNat = x.rotateLeft y.toNat`; one rewrite with a
+  lemma proved once for all widths (`rot_add_sub`, `rot_or_sub`, `rot_xor_sub` and their
+  swapped forms, `Lemmas.lean`) leaves `y.toNat ≤ w`, which `bv_omega` gets from the bounded
+  shift. `rule_close` tries it before `grind` (a failing `grind cutsat` spent 15 s on one
+  rotation goal). Further: splitting the `Bool`-auxint/`||` disjunctions last instead of
+  first (31% smaller rotate proofs: the shared part is built once), a dsimproc for
+  `GoTy.intInfo?` (its `match` equations and splitter were regenerated in every module,
+  0.2 MB each), the tactics' lemma lists as simp sets instead of inside `macro` quotations
+  (the quotations compile to syntax-building code: `Tactic.olean` 3.9 → 3.1 MB,
+  `NonVacuous.olean` 2.1 → 0.6 MB). `Elab.async false` is no longer needed.
+- **Effect** (official toolchain, one module at a time, machine load ~100; CPU = user+sys):
+
+  | Module | before: CPU s / `.olean` MB | after: CPU s / `.olean` MB |
+  | --- | --: | --: |
+  | `Add` (30 lemmas) | 54.0 / 16.1 | 34 / 2.9 |
+  | `Add2` (30) | 70.6 / 69.4 | 43 / 3.2 |
+  | `Add3` (27) | 84.8 / 57.0 | 41 / 3.3 |
+
+  Peak RSS 1.5–1.7 GB. The rest of each `.olean` is the proof terms themselves (`simp_all`
+  congruence chains over the unfolded denotation: 1–3 k distinct subterms per plain rule,
+  7–11 k per rotate rule, ~25 bytes each; `probe` prints the count per rule).
 
 #### Keep a fuel-recursive loop's body in small non-recursive `@[inline]` parts
 - **Problem:** `GoFV.Util.PdqSort.pdqsort` (fuel recursion, a ~30-line loop body with tuple

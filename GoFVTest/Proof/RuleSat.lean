@@ -30,8 +30,13 @@ namespace GoFVTest.RuleSat
 
 partial def tyBeq : Ty → Ty → Bool
   | .int a, .int b => a == b
-  | .bool, .bool | .mem, .mem | .other, .other => true
+  | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty => true
   | .tuple as, .tuple bs => as.length == bs.length && (as.zip bs).all fun (a, b) => tyBeq a b
+  | .ptr a, .ptr b => a == b
+  | .agg fs n, .agg gs m =>
+    n == m && fs.length == gs.length &&
+      (fs.zip gs).all fun ((i, a), (j, b)) => i == j && tyBeq a b
+  | .blob a, .blob b | .opaque a, .opaque b => a == b
   | _, _ => false
 
 partial def dvBeq : DV → DV → Bool
@@ -83,11 +88,9 @@ def condB (ev : GoFV.Rules.Expr → DV) : Option GoFV.Rules.Expr → Bool
 
 partial def refinesB : Val → Val → Bool
   | .poison, _ => true
-  | .int w x, .int w' y => Val.int w x == Val.int w' y
-  | .bool a, .bool b => a == b
-  | .mem _, .mem _ => true
-  | .tuple as, .tuple bs => as.length == bs.length && (as.zip bs).all fun (a, b) => refinesB a b
-  | _, _ => false
+  | .tuple as, .tuple bs | .agg as, .agg bs =>
+    as.length == bs.length && (as.zip bs).all fun (a, b) => refinesB a b
+  | a, b => a == b
 
 /-! ## Instances -/
 
@@ -129,7 +132,9 @@ partial def shapeOf : Val → Ty
   | .bool _ => .bool
   | .mem _ => .mem
   | .tuple vs => .tuple (vs.map shapeOf)
-  | .poison => .other
+  | .ptr _ => .ptr none
+  | .agg _ | .blob _ | .poison => .other
+  | .empty => .empty
 
 /-- The shape of an op's Go result type (`Op.typ`). -/
 def tyOfTyp : String → Ty

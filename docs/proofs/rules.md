@@ -252,26 +252,36 @@ refinement (e.g. `(Rsh64x64 x (Const64 [0])) => x` on a value typed `uint32` tur
 value into a 64-bit one). The interpreter proof needs either a typing invariant excluding
 such matches or a semantics in which a narrow-typed value is read at its op's width.
 
+The same applies to results that build a constant with the matched value's type:
+`generic.rules:504–516` fold nested constant shifts into `(Lsh16x64 x (Const64 <t> [c+d]))`
+with `t` the type of the 16-bit shift, so the new shift amount is a `Const64` typed `int16`.
+Under `Val.retype` that amount is truncated to 16 bits and then read at 64 bits, i.e. `poison`
+(`rule-sat` instance: `x = 31`, `c = 1`, `d = 65`). Go materializes the constant at 64 bits,
+so this is a limit of the model, not a Go bug; these rules stay pending until the semantics
+reads a narrow-typed value at its op's width.
+
 ## Build cost
 
-Official toolchain, each module alone under memcap, machine load ~100 (wall time inflated):
+Official toolchain, each module alone under memcap, machine load ~100; CPU = user+sys:
 
-| Module | Wall s | Max RSS MB | `.olean` MB |
+| Module | CPU s | Max RSS MB | `.olean` MB |
 | --- | --: | --: | --: |
-| `Den` | 12 | — | 9.0 |
-| `Lemmas` + `Names` + `Tactic` | ~140 (together) | — | 1.5 / 0.8 / 3.7 |
-| `Comm` | 8 | — | 0.4 |
-| `Add` (30 lemmas) | 105 | 1488 | 16 |
-| `Add2` (30) | 147 | 1467 | 69 |
-| `Add3` (27) | 153 | 1494 | 57 |
+| `Den` | — | — | 9.0 |
+| `Lemmas` / `Names` / `Tactic` | 7 / — / 43 | — | 1.6 / 0.8 / 3.1 |
+| `Comm` | — | — | 0.4 |
+| `NonVacuous` | 4 | 1300 | 0.6 |
+| `Add` (30 lemmas) | 34 | 1709 | 2.9 |
+| `Add2` (30) | 43 | 1634 | 3.2 |
+| `Add3` (27) | 41 | 1577 | 3.3 |
 
-**Known cost problem:** the rule modules' `.olean`s are large (16–69 MB for 30 lemmas); the
-proof terms of `rule_auto` (`simp_all` over the unfolded denotation, many case splits) and the
-`bv_decide` certificates are stored per lemma. Before scaling to the remaining families this
-must be cut (candidates: `Elab.async false` costs parallelism; prove family lemmas once
-generically over the width and instantiate; replace `bv_decide` by kernel `decide` on small
-widths as clifv's `kbv`). Nothing outside `GoFV/Proof/Rules` imports these modules.
+Before (PR #91 as first pushed): `Add`/`Add2`/`Add3` 16 / 69 / 57 MB, 54–85 s CPU, under
+`Elab.async false`; 90% of it `bv_decide` LRAT certificates (LEARNINGS.md). What remains is
+the proof terms themselves, ~25 bytes per distinct subterm: 1–3 k subterms for a plain rule,
+7–11 k for a rotate rule (`probe` prints the count per rule). Smaller proofs need a different
+proof shape (e.g. a verified symbolic evaluator of patterns, so a rule lemma is a `decide` on
+rule data plus one `BitVec` identity); nothing outside `GoFV/Proof/Rules` imports these
+modules.
 
-**Axioms:** `propext`, `Classical.choice`, `Quot.sound`, plus `…._native.bv_decide.ax_*` for
-lemmas closed by `bv_decide` (allowed, `docs/PLAN.md` §0); e.g. `r_generic_121_sound`: the
-three standard axioms only, `r_generic_2195_sound`: plus three `bv_decide` axioms.
+**Axioms:** `propext`, `Classical.choice`, `Quot.sound` for every proven rule and the
+non-vacuity theorems; `probe` marks a rule closed by `bv_decide` (which would add
+`…._native.bv_decide.ax_*`, allowed by `docs/PLAN.md` §0) as `BV`; none is.

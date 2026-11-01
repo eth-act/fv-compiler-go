@@ -60,20 +60,57 @@ dsimproc reduceIntInfo (GoTy.intInfo? _) := fun e => do
   | some e' => return .done e'
   | none => return .continue
 
+/-! The lemma lists of the tactics, as simp sets (`Attr.lean`). -/
+
+attribute [rule_norm_s] or_true true_or or_false false_or and_true true_and and_false false_and
+  beq_self_eq_true Bool.true_or Bool.or_true Bool.false_or Bool.or_false Bool.false_and
+  Bool.and_false Bool.true_and Bool.and_true Bool.and_eq_true Bool.or_eq_true ne_eq reduceCtorEq
+  bne_self_eq_false Bool.false_eq_true ite_false ite_true not_false_eq_true not_true_eq_false
+  Bool.not_eq_true Option.some.injEq Option.getD_some Option.getD_none List.getD_cons_zero
+  List.getD_cons_succ decide_eq_true_eq decide_eq_false_iff_not beq_iff_eq bne_iff_ne Nat.le_refl
+  Nat.lt_irrefl BitVec.ofInt_ofNat Nat.reducePow Nat.reduceLT Nat.reduceLeDiff Nat.reduceAdd
+  Nat.reduceSub Nat.reduceMod GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo DV.int.injEq
+  DV.bool.injEq callE callH Bool.cond_true Bool.cond_false
+
+attribute [rule_unfold_ds] GoFV.Proof.Rules.Pat.den GoFV.Proof.Rules.Pat.dens
+  GoFV.Proof.Rules.Pat.raw GoFV.Proof.Rules.sigma GoFV.Proof.Rules.Pat.binds
+  GoFV.Proof.Rules.Pat.bindss GoFV.Proof.Rules.Pat.cons GoFV.Proof.Rules.Pat.conss
+  GoFV.Proof.Rules.Pat.wf GoFV.Proof.Rules.Pat.wfs GoFV.Proof.Rules.auxIntOk
+  GoFV.Proof.Rules.Field.bindDV GoFV.Proof.Rules.condHolds GoFV.Proof.Rules.resDen
+  GoFV.Proof.Rules.nodeDen List.length List.getElem?_cons_zero List.getElem?_cons_succ List.map
+  GoFV.Proof.Rules.reduceEvalPure GoFV.Proof.Rules.reduceAuxType GoFV.Proof.Rules.evalE
+  GoFV.Proof.Rules.evalEs GoFV.Proof.Rules.auxIntDV List.lookup GoFV.Proof.Rules.toAuxIntD
+  Option.getD List.cons_append List.nil_append GoFV.Proof.Rules.intBin GoFV.Proof.Rules.binDV
+  GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo GoFV.Proof.Rules.litDV GoFV.Proof.Rules.fieldE
+  GoFV.Proof.Rules.indexE GoFV.Proof.Rules.convE GoFV.Proof.Rules.callE GoFV.Proof.Rules.methodE
+  GoFV.Proof.Rules.builtinE GoFV.Proof.Rules.unDV GoFV.Proof.Rules.fieldDV
+  GoFV.Proof.Rules.DV.valOr GoFV.Proof.Rules.typesShape GoFV.Proof.Rules.shapeSize Option.map
+  GoFV.Proof.Rules.exprTy List.getD List.getD_cons_zero List.getD_cons_succ List.zip_cons_cons
+  List.zip_nil_left List.zip_nil_right and_true true_and Nat.reduceAdd Nat.reduceBEq Nat.reduceBNe
+  reduceIte
+
+attribute [rule_unfold_s] GoFV.Proof.Rules.callH GoFV.Proof.Rules.binE_land_bool
+  GoFV.Proof.Rules.binE_lor_bool GoFV.Proof.Rules.binE_eq GoFV.Proof.Rules.binE_ne
+  GoFV.Proof.Rules.binE_lt GoFV.Proof.Rules.binE_le GoFV.Proof.Rules.binE_gt
+  GoFV.Proof.Rules.binE_ge GoFV.Proof.Rules.binE_add GoFV.Proof.Rules.binE_sub
+  GoFV.Proof.Rules.binE_mul GoFV.Proof.Rules.binE_quo GoFV.Proof.Rules.binE_rem
+  GoFV.Proof.Rules.binE_and GoFV.Proof.Rules.binE_or GoFV.Proof.Rules.binE_xor
+  GoFV.Proof.Rules.binE_shl GoFV.Proof.Rules.binE_shr GoFV.Proof.Rules.binE_andNot
+  GoFV.Proof.Rules.dv_ite_land GoFV.Proof.Rules.dv_ite_lor GoFV.Proof.Rules.dv_land_true
+  GoFV.Proof.Rules.dv_lor_true GoFV.Proof.Rules.DV.bool.injEq Bool.and_eq_true Bool.or_eq_true
+  bne_iff_ne ne_eq beq_iff_eq GoFV.Proof.Rules.binDV GoFV.Proof.Rules.intBin
+  GoFV.Proof.Rules.fieldDV Option.map_some Option.map_none Option.getD_some Option.getD_none
+  reduceCtorEq true_or or_true and_true true_and beq_self_eq_true Bool.cond_false Bool.cond_true
+  GoFV.Rules.wrapTo GoFV.Proof.Rules.reduceIntInfo
+
+attribute [rule_close_s] Nat.reduceLeDiff Nat.reducePow Nat.reduceLT ite_true ite_false
+  BitVec.ofInt_add BitVec.ofInt_mul BitVec.ofInt_neg BitVec.ofInt_ofNat Nat.le_refl
+  GoFV.SSA.Sem.Width.bits GoFV.Proof.Rules.DV.int.injEq GoFV.Proof.Rules.DV.bool.injEq
+
 /-- `simp_all` with the semantics simp set: the families become `BitVec`/`Bool` terms, case
 facts propagate, `hasTy` facts become type equations. -/
 macro "rule_norm" : tactic => `(tactic|
-  simp_all (config := { decide := true }) only [rule_sem, rule_helper, or_true, true_or,
-    or_false, false_or, and_true, true_and, and_false, false_and, beq_self_eq_true,
-    Bool.true_or, Bool.or_true, Bool.false_or, Bool.or_false, Bool.false_and, Bool.and_false,
-    Bool.true_and, Bool.and_true, Bool.and_eq_true, Bool.or_eq_true, ne_eq, reduceCtorEq,
-    bne_self_eq_false, Bool.false_eq_true, ite_false, ite_true, not_false_eq_true,
-    not_true_eq_false, Bool.not_eq_true, Option.some.injEq, Option.getD_some,
-    Option.getD_none, List.getD_cons_zero, List.getD_cons_succ, decide_eq_true_eq,
-    decide_eq_false_iff_not, beq_iff_eq, bne_iff_ne, Nat.le_refl, Nat.lt_irrefl,
-    BitVec.ofInt_ofNat, Nat.reducePow, Nat.reduceLT, Nat.reduceLeDiff, Nat.reduceAdd,
-    Nat.reduceSub, Nat.reduceMod, GoFV.Rules.wrapTo, GoFV.Proof.Rules.reduceIntInfo, DV.int.injEq,
-    DV.bool.injEq, callE, callH, Bool.cond_true, Bool.cond_false])
+  simp_all (config := { decide := true }) only [rule_sem, rule_helper, rule_norm_s])
 
 /-- Reduce `Rule.Sound r` (`r` a constant) to the semantic statement of its pattern and
 result; the hypotheses are `hwf` (checker facts), `hc` (pattern checks), `hcond` (condition),
@@ -93,38 +130,8 @@ elab "rule_unfold" : tactic => do
   evalTactic (← `(tactic| (
     refine ⟨rfl, ?_⟩
     intro $e:ident $or:ident
-    dsimp only [$rid:ident, GoFV.Proof.Rules.Pat.den, GoFV.Proof.Rules.Pat.dens,
-      GoFV.Proof.Rules.Pat.raw, GoFV.Proof.Rules.sigma, GoFV.Proof.Rules.Pat.binds,
-      GoFV.Proof.Rules.Pat.bindss, GoFV.Proof.Rules.Pat.cons, GoFV.Proof.Rules.Pat.conss,
-      GoFV.Proof.Rules.Pat.wf, GoFV.Proof.Rules.Pat.wfs, GoFV.Proof.Rules.auxIntOk,
-      GoFV.Proof.Rules.Field.bindDV, GoFV.Proof.Rules.condHolds, GoFV.Proof.Rules.resDen,
-      GoFV.Proof.Rules.nodeDen, List.length, List.getElem?_cons_zero, List.getElem?_cons_succ,
-      List.map, GoFV.Proof.Rules.reduceEvalPure, GoFV.Proof.Rules.reduceAuxType,
-      GoFV.Proof.Rules.evalE, GoFV.Proof.Rules.evalEs, GoFV.Proof.Rules.auxIntDV, List.lookup,
-      GoFV.Proof.Rules.toAuxIntD, Option.getD, List.cons_append, List.nil_append,
-      GoFV.Proof.Rules.intBin, GoFV.Proof.Rules.binDV, GoFV.Rules.wrapTo,
-      GoFV.Proof.Rules.reduceIntInfo, GoFV.Proof.Rules.litDV, GoFV.Proof.Rules.fieldE,
-      GoFV.Proof.Rules.indexE, GoFV.Proof.Rules.convE, GoFV.Proof.Rules.callE,
-      GoFV.Proof.Rules.methodE, GoFV.Proof.Rules.builtinE, GoFV.Proof.Rules.unDV,
-      GoFV.Proof.Rules.fieldDV, GoFV.Proof.Rules.DV.valOr, GoFV.Proof.Rules.typesShape,
-      GoFV.Proof.Rules.shapeSize, Option.map, GoFV.Proof.Rules.exprTy, List.getD,
-      List.getD_cons_zero, List.getD_cons_succ, List.zip_cons_cons, List.zip_nil_left,
-      List.zip_nil_right, and_true, true_and, Nat.reduceAdd, Nat.reduceBEq, Nat.reduceBNe,
-      reduceIte]
-    simp only [rule_helper, GoFV.Proof.Rules.callH, GoFV.Proof.Rules.binE_land_bool,
-      GoFV.Proof.Rules.binE_lor_bool, GoFV.Proof.Rules.binE_eq, GoFV.Proof.Rules.binE_ne,
-      GoFV.Proof.Rules.binE_lt, GoFV.Proof.Rules.binE_le, GoFV.Proof.Rules.binE_gt,
-      GoFV.Proof.Rules.binE_ge, GoFV.Proof.Rules.binE_add, GoFV.Proof.Rules.binE_sub,
-      GoFV.Proof.Rules.binE_mul, GoFV.Proof.Rules.binE_quo, GoFV.Proof.Rules.binE_rem,
-      GoFV.Proof.Rules.binE_and, GoFV.Proof.Rules.binE_or, GoFV.Proof.Rules.binE_xor,
-      GoFV.Proof.Rules.binE_shl, GoFV.Proof.Rules.binE_shr, GoFV.Proof.Rules.binE_andNot,
-      GoFV.Proof.Rules.dv_ite_land, GoFV.Proof.Rules.dv_ite_lor, GoFV.Proof.Rules.dv_land_true,
-      GoFV.Proof.Rules.dv_lor_true, GoFV.Proof.Rules.DV.bool.injEq, Bool.and_eq_true,
-      Bool.or_eq_true, bne_iff_ne, ne_eq, beq_iff_eq, GoFV.Proof.Rules.binDV,
-      GoFV.Proof.Rules.intBin, GoFV.Proof.Rules.fieldDV, Option.map_some, Option.map_none,
-      Option.getD_some, Option.getD_none, reduceCtorEq, true_or, or_true, and_true, true_and,
-      beq_self_eq_true, Bool.cond_false, Bool.cond_true, GoFV.Rules.wrapTo,
-      GoFV.Proof.Rules.reduceIntInfo]
+    dsimp only [$rid:ident, rule_unfold_ds]
+    simp only [rule_helper, rule_unfold_s]
     intro $hwf:ident $hc:ident $hcond:ident $hty:ident)))
 
 /-- A term to case on: `Val.asInt w l`, `Val.asBool l`, `Val.asNat l` of a pattern leaf `l`
@@ -278,10 +285,7 @@ macro "rule_close" : tactic => `(tactic| (
   try rule_ands
   try subst_vars
   try rule_norm
-  try simp_all only [rule_arith, Nat.reduceLeDiff, Nat.reducePow, Nat.reduceLT,
-    ite_true, ite_false, BitVec.ofInt_add, BitVec.ofInt_mul, BitVec.ofInt_neg,
-    BitVec.ofInt_ofNat, Nat.le_refl, GoFV.SSA.Sem.Width.bits, GoFV.Proof.Rules.DV.int.injEq,
-    GoFV.Proof.Rules.DV.bool.injEq]
+  try simp_all only [rule_arith, rule_close_s]
   first
   | done
   | with_reducible rfl
