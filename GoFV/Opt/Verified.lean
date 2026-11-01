@@ -108,6 +108,10 @@ structure StockPass where
   disabled : PassEnv → Except String Bool := fun _ => pure false
   /-- How `verifiedPipeline` runs it. -/
   step : Verified.Step
+  /-- For a required pass run in a checked variant: the stock port. When the variant's result
+  differs from it, the stock result is kept and the run is unverified, since later passes and
+  `lower` need every rewrite (an undone `PtrIndex` or `IMake` rewrite is not lowered). -/
+  full : Option Pass := none
 
 /-- Whether `ssa.Compile` runs pass `p` for this function: `optimize || required`, and not
 `disabled`. -/
@@ -166,7 +170,7 @@ def stockPasses : Array StockPass := #[
   { name := "short circuit", step := .proven shortcircuitPass .refines noGuard },
   { name := "decompose user", required := true, step := .stock Decompose.decomposeUserPass },
   { name := "pre-opt deadcode", step := deadcodeStep },
-  { name := "opt", required := true, step := optStep },
+  { name := "opt", required := true, step := optStep, full := some opt },
   { name := "zero arg cse", required := true, step := .proven zcsePass .refines noGuard },
   { name := "opt deadcode", required := true, step := deadcodeStep },
   { name := "generic cse", step := .proven csePass .refines cseFrag },
@@ -174,9 +178,11 @@ def stockPasses : Array StockPass := #[
   { name := "gcse deadcode", required := true, step := deadcodeStep },
   { name := "nilcheckelim", step := .proven nilcheckelimPass .refines nilFrag },
   { name := "prove", step := .proven proveChecked .mono proveGuard },
-  { name := "divisible", required := true, step := .proven divisibleChecked .rw noGuard },
-  { name := "divmod", required := true, step := .proven divmodChecked .rw noGuard },
-  { name := "middle opt", required := true, step := optStep },
+  { name := "divisible", required := true, step := .proven divisibleChecked .rw noGuard,
+    full := some divisible },
+  { name := "divmod", required := true, step := .proven divmodChecked .rw noGuard,
+    full := some divmod },
+  { name := "middle opt", required := true, step := optStep, full := some opt },
   { name := "known bits", step := .proven knownBitsPass .mono noGuard },
   { name := "early fuse", step := .proven fuseEarlyPass .refines noGuard },
   { name := "expand calls", required := true,
@@ -185,7 +191,7 @@ def stockPasses : Array StockPass := #[
     step := .stock Decompose.postExpandCallsDecomposePass },
   { name := "softfloat", required := true, step := .proven softfloatPass .refines noGuard },
   { name := "branchelim", step := .proven branchelimPass .refines noGuard },
-  { name := "late opt", required := true, step := optStep },
+  { name := "late opt", required := true, step := optStep, full := some opt },
   { name := "dead auto elim", step := .proven elimDeadAutosPass .frameSafe daeFrag },
   { name := "sccp", step := .proven sccpChecked .mono noGuard },
   { name := "generic deadcode", required := true, step := deadcodeStep },
@@ -354,7 +360,15 @@ def runPass (env : PassEnv) (st : VState) (p : StockPass) : Except VError VState
       | _, _ =>
         match run penv st.func with
         | .error e => .error ⟨p.name, e⟩
-        | .ok out => .ok (st.continue env p out why)
+        | .ok out =>
+          match p.full with
+          | none => .ok (st.continue env p out why)
+          | some full =>
+            match full penv st.func with
+            | .error e => .error ⟨p.name, e⟩
+            | .ok so =>
+              if decide (so.func = out.func) then .ok (st.continue env p out why)
+              else .ok (st.continue env p so (some "checked variant incomplete"))
 
 /-- Run the passes `ps` in order. -/
 def runPasses (env : PassEnv) : List StockPass → VState → Except VError VState
