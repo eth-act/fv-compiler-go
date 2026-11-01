@@ -183,7 +183,7 @@ theorem prove_termRefP (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {b : ID}
     (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {x : ID}
     (hx : LM f x) (hanc : Anc (make f) (blockOf f x) b) :
     TermRefP (PInv tabs f F inv b) (QRel tabs f RB b) S f.value? tabs x (listedDefs g) tabs x :=
-  fun n => ⟨n, fun _ _ hρ hT _ hP hSP hQ =>
+  fun _ _ hρ hT _ hP hSP hQ _ n => ⟨n,
     den_ref hc hR hb hρ (asm_of_premises hR hb hS hT hP hSP hQ) n x hx hanc⟩
 
 /-- A constant fold justified under `b`'s assumptions refines as a term under `PInv` and `QRel`
@@ -192,8 +192,7 @@ theorem fold_termRefP (hR : RelSpec tabs f g F inv RB) {b : ID} (hb : b ∈ f.bl
     {S : ID → Prop} (hS : ∀ c v, (c, v) ∈ factsAt F b → S c) {a c : ID}
     (h : foldOK f.value? tabs (asmAt F inv RB b) g a c = true) :
     TermRefP (PInv tabs f F inv b) (QRel tabs f RB b) S f.value? tabs a (listedDefs g) tabs c :=
-  fun n => ⟨n, fun _ _ _ hT _ hP hSP hQ =>
-    fold_ref (asm_of_premises hR hb hS hT hP hSP hQ) h n⟩
+  fun _ _ _ hT _ hP hSP hQ _ n => ⟨n, fold_ref (asm_of_premises hR hb hS hT hP hSP hQ) h n⟩
 
 theorem facts_sanc (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) {b : ID} {bb : Block}
     (hb : b ∈ f.blocks) (hbb : f.block? b = some bb) :
@@ -273,7 +272,7 @@ theorem branch_step (hR : RelSpec tabs f g F inv RB) {b : ID} (hb : b ∈ f.bloc
     have hfs : fb.succs = #[e0, e1] := by apply Array.ext'; rw [hsl]
     have hgc' : gb.controls = #[] := Array.isEmpty_iff.1 hgc
     simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hm
-    refine ⟨?_, fun n => ⟨0, fun ρ ρ' _ hT _ hP hSP hQ => ?_⟩⟩
+    refine ⟨?_, fun ρ ρ' _ hT _ hP hSP hQ _ n => ⟨0, ?_⟩⟩
     · intro e he
       rw [hfs] at he
       rcases hm with ⟨hgs, -⟩ | ⟨hgs, -⟩ <;> rw [hgs] <;> simp only [List.mem_toArray,

@@ -145,7 +145,7 @@ theorem addZero_checkedRewrite :
     obtain ⟨hg, h5, -, ht⟩ := h2
     have ht := tables_eq (of_decide_eq_true ht)
     refine ⟨out, rfl, ht, h5, ?_, ok_of_toBool h1, ok_of_toBool hg⟩
-    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl hc with ⟨he, -⟩ | ⟨-, hv⟩
+    rcases GoFV.Proof.Pass.Rewrite.checkedRewrite_cases_noNil rfl rfl hc with ⟨he, -⟩ | ⟨-, hv⟩
     · rw [he] at h5; exact absurd h5 (by decide +kernel)
     · rw [← ht]; exact hv
 

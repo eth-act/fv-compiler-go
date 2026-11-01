@@ -49,7 +49,8 @@ theorem rv_set_ne {T : Frame} {x a : ID} {y : Val} (h : x ≠ a) : rv (T.set x y
 theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {G T : Frame} {VS VT : ID → Prop}
     (hfr : T = { G with regs := T.regs })
-    (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T VT)
+    (hDS : DenOK f.value? tabs G VS) (hMS : MemDefs f.value? tabs G VS)
+    (hDT : DenOK (listedDefs g) tabs T VT)
     (hVT : ∀ a, VT a → ∃ w, Placed g a w)
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
@@ -80,7 +81,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
       (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
-      (fun ρ hρ => I.qpois _ _ ρ hq hρ)
+      (fun ρ hρ => I.qpois _ _ ρ hq hρ) hMS
     rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/
@@ -109,7 +110,8 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     (hog : og = L ++ M) (hfr : T0 = { G with regs := T0.regs })
     (hsz : T0.regs.size = g.valueTab.size)
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T0)
-    (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T0 VT1)
+    (hDS : DenOK f.value? tabs G VS) (hMS : MemDefs f.value? tabs G VS)
+    (hDT : DenOK (listedDefs g) tabs T0 VT1)
     (hVT1 : ∀ a, VT1 a → ∃ w, Placed g a w) (hdisj : ∀ x ∈ og, ¬ VT1 x)
     (hrel0 : ∀ a, VT1 a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T0 a))
@@ -193,7 +195,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
           · exact hVT1 a ha
           · obtain ⟨w, hp, -⟩ := hplaced a (by rw [hog']; exact List.mem_append_left _ ha)
             exact ⟨w, hp⟩
-        have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hTD hVTd
+        have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hMS hTD hVTd
           (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt hpw hu hs hterm hwphi hargsS hargs
           (hwb ▸ hinv) (hwb ▸ hq) (hwb ▸ hSV)
         rw [hevS] at hr

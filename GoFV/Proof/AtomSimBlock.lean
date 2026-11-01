@@ -33,7 +33,7 @@ structure BRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (frS frT : Frame
     ∃ y, frS.regs[a]? = some (some y) ∧ Sem.Refines y y'
   den : ∃ VS VT, DenOK f.value? tabs frS VS ∧ DenOK (listedDefs g) tabs frT VT ∧
     (∀ x, VT x → ∃ w, Placed g x w) ∧ (∀ x, SAnc f b x → VS x) ∧ (∀ x, SAnc g b x → VT x) ∧
-    PhiArgs f b i VS ∧ PhiArgs g b i VT
+    PhiArgs f b i VS ∧ PhiArgs g b i VT ∧ MemDefs f.value? tabs frS VS
   live : I.L b i
   inv : ∀ a, I.P b a (rv frS a)
   phis : PhisP tabs f I.P frS b i
@@ -43,7 +43,8 @@ structure BRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (frS frT : Frame
   their terms. -/
   pre : PhiArgs f b i (fun _ => False) ∨ ∃ (p : ID) (pb : Block) (k : Nat) (VP : ID → Prop), p ∈ f.blocks ∧ f.block? p = some pb ∧
     pb.succs[k]? = some (⟨b, i⟩ : Edge) ∧ (∀ a, I.P p a (rv frS a)) ∧ I.Q p (rv frS) ∧
-    DenOK f.value? tabs frS VP ∧ (∀ x, AncV f p x → VP x) ∧ PhiArgs f b i VP
+    DenOK f.value? tabs frS VP ∧ (∀ x, AncV f p x → VP x) ∧ PhiArgs f b i VP ∧
+    MemDefs f.value? tabs frS VP
 
 /-- The static facts of block `b`. -/
 structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : Prop where
@@ -95,7 +96,8 @@ satisfying the invariant at block `b`. -/
 theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
     (H : Hyp tabs f g ce ce' I) {b : ID}
     {G T : Frame} {VS VT : ID → Prop}
-    (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T VT)
+    (hDS : DenOK f.value? tabs G VS) (hMS : MemDefs f.value? tabs G VS)
+    (hDT : DenOK (listedDefs g) tabs T VT)
     (hVT : ∀ a, VT a → ∃ w, Placed g a w)
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
@@ -109,7 +111,7 @@ theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     rw [← tys_shape]; exact htyS a _ (reg_rv (hDS a ha).1)
   refine termRef_apply hT hDS hx hDT hy (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
     (fun a ha _ => ?_) (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom b) hSV
-    (fun ρ hρ => I.qpois b _ ρ hq hρ)
+    (fun ρ hρ => I.qpois b _ ρ hq hρ) hMS
   · obtain ⟨v, hp⟩ := hVT a ha
     have : shape (listedDefs g) tabs a = shape g.value? tabs a := by
       simp [shape, placed_listed hp, hp.1]
@@ -120,7 +122,8 @@ theorem termRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
 theorem termStepRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f}
     (H : Hyp tabs f g ce ce' I) {b : ID}
     {G T : Frame} {VS VT : ID → Prop}
-    (hDS : DenOK f.value? tabs G VS) (hDT : DenOK (listedDefs g) tabs T VT)
+    (hDS : DenOK f.value? tabs G VS) (hMS : MemDefs f.value? tabs G VS)
+    (hDT : DenOK (listedDefs g) tabs T VT)
     (hVT : ∀ a, VT a → ∃ w, Placed g a w)
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
@@ -134,7 +137,7 @@ theorem termStepRef_regs {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : S
     rw [← tys_shape]; exact htyS a _ (reg_rv (hDS a ha).1)
   refine termStepRef_apply hT hDS hx hDT hy (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
     (fun a ha _ => ?_) (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom b) hSV
-    (fun ρ hρ => I.qpois b _ ρ hq hρ)
+    (fun ρ hρ => I.qpois b _ ρ hq hρ) hMS
   · obtain ⟨v, hp⟩ := hVT a ha
     have : shape (listedDefs g) tabs a = shape g.value? tabs a := by
       simp [shape, placed_listed hp, hp.1]
@@ -176,7 +179,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
       ∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.op = .Phi →
         ∃ y y', (setPhis psS frS.regs)[z]? = some (some y) ∧
           (setPhis psT frT.regs)[z]? = some (some y') ∧ Sem.Refines y y' := by
-  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, -, hPS, hPT⟩ := R.den
+  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, -, hPS, hPT, -⟩ := R.den
   obtain ⟨-, -, -, hphS⟩ := phis_spec B.vS hps
   -- each `Phi` of `g`: its argument in the target and the refinement
   have key : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.op = .Phi →
@@ -202,7 +205,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     obtain ⟨-, hwb', blk, hblk', hzv⟩ := hpw
     obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := H.args w.block hwb' blk hblk' z hzv w hw ht
     rw [hpu.1] at hu'; cases hu'
-    rcases R.pre with hno | ⟨p, pb, k, VP, hpm, hpb, hk, hinvP, hqP, hDP, hAncP, hPhiP⟩
+    rcases R.pre with hno | ⟨p, pb, k, VP, hpm, hpb, hk, hinvP, hqP, hDP, hAncP, hPhiP, hMP⟩
     · exact (hno fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha).elim
     have hTR' := (hTR i (hsz ▸ hi)).2 hph p pb k hpm hpb (by rw [hwb]; exact hk)
     rw [getElem!_pos u.args i hi, getElem!_pos w.args i (hsz ▸ hi)] at hTR'
@@ -210,7 +213,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     have hai : u.args[i] = a := (Array.getElem?_eq_some_iff.1 ha).2
     have hai' : w.args[i]'(hsz ▸ hi) = a' := (Array.getElem?_eq_some_iff.1 ha').2
     rw [hai, hai'] at hTR'
-    exact termRef_regs H hDP hDT hVT (R.rel hDT hVT) R.tyS R.tyT hinvP hqP hAncP hTR'
+    exact termRef_regs H hDP hMP hDT hVT (R.rel hDT hVT) R.tyS R.tyT hinvP hqP hAncP hTR'
       (hPhiP fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha) hVTa
   obtain ⟨psT, hpsT⟩ := filterMapM_phi_ok (ctx := Ctx.make tabs g) (fr := frT) (i := i)
     (l := gb.values.toList) fun z hz => by

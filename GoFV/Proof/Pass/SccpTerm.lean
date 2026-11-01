@@ -128,7 +128,7 @@ theorem sc_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
 
 theorem sc_termRefP {x : ID} (hx : LM f x) (b : ID) (Q : (ID → Val) → Prop) (S : ID → Prop) :
     TermRefP ((sccpInv hwf K).P b) Q S f.value? tabs x (listedDefs g) tabs x :=
-  fun n => ⟨n + 1, fun _ _ hρ _ _ hP _ _ => sc_ref hwf K hρ hP n x hx⟩
+  fun _ _ hρ _ _ hP _ _ _ n => ⟨n + 1, sc_ref hwf K hρ hP n x hx⟩
 
 /-- **Atoms' arguments.** -/
 theorem sc_atomArgs : AtomArgsRefP (sccpInv hwf K) g := by
@@ -164,8 +164,8 @@ theorem sc_first {b : ID} {fb gb : Block} (hF : firstOK tabs f C fb gb = true) :
     StepRefP ((sccpInv hwf K).P b) ((sccpInv hwf K).Q b) (SAnc f b) f.value? tabs fb
       (listedDefs g) gb := by
   obtain ⟨hkg, -, -, c, v, k, e, hc, hcv, hk, he, he0⟩ := firstOK_spec hF
-  intro n
-  refine ⟨0, fun ρ ρ' _ _ _ hP _ _ => ?_⟩
+  intro ρ ρ' _ _ _ hP _ _ _ n
+  refine ⟨0, ?_⟩
   have hcl := sc_den hwf K hP n c v hcv
   have hT : stepVals gb (gb.controls.toList.map (den (listedDefs g) tabs ρ' 0)) = .ok (.goto e) := by
     unfold stepVals; rw [hkg]; unfold succ; rw [he0]; rfl

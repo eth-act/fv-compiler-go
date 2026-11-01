@@ -3,6 +3,7 @@ import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.AtomSim
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Pass.NilSim
+import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Checked
 import GoFV.Proof.Rules.Proven
 import GoFV.Opt.Opt
@@ -17,7 +18,9 @@ under monotone contracts (`Env.Mono`), in the pass's extended tables. A rejected
 input (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as
 terms in the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
-`refinesUnder_of_tabsAgree`).
+`refinesUnder_of_tabsAgree`). The log's nil-check eliminations and Load-of-Store forwardings
+(issue #151) are applied to the input first, each by its own refinement (`Nil.refines_of_rel`,
+`LoadFwd.fwd_refines`).
 
 The instances depend on the proven-rule sets explicitly: `opt_refines` (also `middle opt` and
 `late opt`, the same pass under another name) is about `optChecked`, the pass with the rules of
@@ -37,21 +40,28 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
     RefinesUnder Env.Mono out.tables out.func penv.tables f := by
-  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, ⟨log, hv⟩ | ⟨f', log, hn, hv⟩⟩
+  rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, f₁, hn, f₂, log, hfw, hv⟩
   · rw [he, ht]; exact RefinesUnder.refl _ _ _
-  · obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
-    obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
-    exact refinesUnder_of_tabsAgree hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
-  · -- nil-check eliminations first (nilcheckelim's relation), then the validated rewrite
-    obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
-    obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
+  obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
+  obtain ⟨h1, h2⟩ := validate_termRef hv hs Term.retypeShapes
+  -- nil-check eliminations first (nilcheckelim's relation)
+  obtain ⟨ce₁, hf₁, hN⟩ : ∃ ce₁, check ce₁ f₁ = .ok () ∧
+      RefinesUnder Env.Mono out.tables f₁ out.tables f := by
+    rcases hn with rfl | hn
+    · exact ⟨ce, hf, RefinesUnder.refl _ _ _⟩
     rw [RewriteCheck.nilOK, Bool.and_eq_true] at hn
-    have hf' := checkOK_sound hn.2
-    have hN : Refines out.tables f' out.tables f :=
-      Nil.refines_of_rel ⟨ce, check_wf hf⟩ (Dom.certOK_of_check (check_domCert hf))
-        (Nil.nrel_sound hn.1)
-    exact refinesUnder_of_tabsAgree hta
-      ((hN.under _).trans (AtomSim.atomSim_refines hf' hg hA hcf hcg h1 h2))
+    exact ⟨_, checkOK_sound hn.2, (Nil.refines_of_rel ⟨ce, check_wf hf⟩
+      (Dom.certOK_of_check (check_domCert hf)) (Nil.nrel_sound hn.1)).under _⟩
+  -- then the Load-of-Store forwardings
+  obtain ⟨ce₂, hf₂, hF⟩ : ∃ ce₂, check ce₂ f₂ = .ok () ∧
+      RefinesUnder Env.Mono out.tables f₂ out.tables f₁ := by
+    rcases hfw with rfl | ⟨hrel, hck⟩
+    · exact ⟨ce₁, hf₁, RefinesUnder.refl _ _ _⟩
+    have hf₂ := checkOK_sound hck
+    exact ⟨_, hf₂, LoadFwd.fwd_refines hf₁ hf₂ hrel⟩
+  -- then the validated rewrite
+  exact refinesUnder_of_tabsAgree hta
+    (hN.trans (hF.trans (AtomSim.atomSim_refines hf₂ hg hA hcf hcg h1 h2)))
 
 /-- `opt`, `middle opt` and `late opt` with the proven generic rules, validated. -/
 theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}
