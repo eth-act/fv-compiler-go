@@ -16,20 +16,18 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof GoFV.Proof.AtomSim
 
 /-- `checkedResult` returns its input or an output `proveRel` accepts. -/
 theorem checkedResult_cases (tabs : Tables) (f g : Func) :
-    (ProveCheck.checkedResult tabs f g).1 = f ∨
-      ∃ F inv RB, ProveCheck.proveRel tabs f (ProveCheck.checkedResult tabs f g).1 F inv RB = true := by
+    (ProveCheck.checkedResult tabs f g).1 = f ∨ ∃ F inv RB,
+      ProveCheck.proveRel tabs f (ProveCheck.checkedResult tabs f g).1 F inv RB = true := by
   unfold ProveCheck.checkedResult
+  generalize ProveCheck.asmFor tabs f g = A
+  rcases A with ⟨F, inv, RB⟩
+  dsimp only
+  generalize ProveCheck.revert tabs true F inv RB f g = R
+  rcases R with ⟨h, st⟩
+  dsimp only
   split
+  · rename_i hrel; exact .inr ⟨F, inv, RB, hrel⟩
   · exact .inl rfl
-  · generalize ProveCheck.asmOf f tabs = A
-    rcases A with ⟨C, F, inv, RB⟩
-    dsimp only
-    generalize ProveCheck.revert tabs true F inv RB f g = R
-    rcases R with ⟨h, st⟩
-    dsimp only
-    split
-    · rename_i hrel; exact .inr ⟨F, inv, RB, hrel⟩
-    · exact .inl rfl
 
 /-- **The checked prove refines its input.** -/
 theorem proveChecked_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}

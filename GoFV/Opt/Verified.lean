@@ -133,6 +133,14 @@ def deadGuard (env : PassEnv) (f : Func) : Bool := deadFragB env.tables f
 /-- No fragment hypothesis. -/
 def noGuard (_ : PassEnv) (_ : Func) : Bool := true
 
+/-- Largest value table `proveChecked` validates (the largest corpus functions have about 5,000
+values and take a few seconds). -/
+def proveMaxValues : Nat := 20000
+
+/-- `prove`'s guard: a size limit, not a fragment of its theorem. Skipping the optional pass keeps
+the input, which is sound; it keeps `proveChecked`'s cost bounded on generated giants. -/
+def proveGuard (_ : PassEnv) (f : Func) : Bool := f.valueTab.size ≤ proveMaxValues
+
 def deadcodeStep : Step := .proven deadcodePass .refines deadGuard
 def optStep : Step := .proven optChecked .rw noGuard
 
@@ -154,7 +162,7 @@ def stockPasses : Array StockPass := #[
   { name := "phiopt", step := .proven phioptPass .refines noGuard },
   { name := "gcse deadcode", required := true, step := deadcodeStep },
   { name := "nilcheckelim", step := .proven nilcheckelimPass .refines nilFrag },
-  { name := "prove", step := .proven proveChecked .mono noGuard },
+  { name := "prove", step := .proven proveChecked .mono proveGuard },
   { name := "divisible", required := true, step := .proven divisibleChecked .rw noGuard },
   { name := "divmod", required := true, step := .proven divmodChecked .rw noGuard },
   { name := "middle opt", required := true, step := optStep },

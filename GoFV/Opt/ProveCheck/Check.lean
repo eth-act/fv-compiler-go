@@ -602,12 +602,18 @@ def changed (f g : Func) : Bool :=
         | _, _ => true
     | _, _ => true
 
+/-- The assumptions `revert` and `proveRel` use: `asmOf`'s, computed once, when `g` changes a
+terminator or a definition; else none (every definition and terminator is kept, which needs no
+assumption, and the output still gets `g`'s other fields). -/
+def asmFor (tabs : Tables) (f g : Func) :
+    Array (List (ID × Bool)) × List (ID × Width × Rng) × Array (List (ID × ID × Width × Int)) :=
+  if changed f g then (asmOf f tabs).2
+  else (Array.replicate f.blockTab.size [], [], Array.replicate f.blockTab.size [])
+
 /-- `prove`'s output `g` on `f` with every unjustified rewrite undone, and its statistics; `f`
-if `g` changes nothing or the relation fails. The assumptions are computed once, for `revert`
-and `proveRel`. -/
+if the relation fails. -/
 def checkedResult (tabs : Tables) (f g : Func) : Func × Stats :=
-  if !changed f g then (f, {}) else
-  let (_, F, inv, RB) := asmOf f tabs
+  let (F, inv, RB) := asmFor tabs f g
   let (h, st) := revert tabs true F inv RB f g
   (if proveRel tabs f h F inv RB then h else f, st)
 
