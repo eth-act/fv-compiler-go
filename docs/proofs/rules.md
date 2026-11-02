@@ -636,8 +636,11 @@ layer events (witness `GoFV.Proof.Witness.addZero_validate_refines`).
 
 **Validator and obligation changes.** Selections (`StringPtr`, `SliceLen`, `ITab`,
 `StructSelect [i]`, …) are accepted as tops when the selected component of their argument's shape
-is the top's shape, or the argument is a scalar (the selection is then `poison`): `selTop`, proved
-by `raw_selTop`. A `Load` at a scalar shape or an aggregate of scalars is a top (`loadTop`,
+is the top's shape (`compSub`: `shapeSub`, or a `.int .w64` component at a pointer top, since a
+64-bit integer and an address-less pointer have every pointer shape, `Val.hasTy`; the interface's
+`uintptr` itab word read by an `ITab <*uint8>`), or the argument is a scalar (the selection is
+then `poison`): `selTop`, proved by `raw_selTop` (`compSub_hasTy`). A `Load` at a scalar shape or
+an aggregate of scalars is a top (`loadTop`,
 `loadOp_hasTy`), and leaves may have any shape (`leavesOK`: defined). `argShapeOk` asks of the
 arguments of a `Make` (`StringMake`, `SliceMake`, `IMake`, `ComplexMake`, `StructMake`,
 `ArrayMake1`) the shapes of their type's components (`makeArgOk`, `shapeSub`): without it
@@ -661,8 +664,10 @@ memory instances, so the non-vacuity witnesses are the pass executions
 `realOf`, `{dec.rules:16}`); the extractors of a `Load` `:135`, `:136`, `:144`, `:146`, `:150`,
 `:151`, `:154`, `:158`, `:159`, `:163`, `:164` (`DecLoad.lean`: component `k` of a `Load` of the
 kind's shape is refined by the `Load` of field `k` at its offset, `selLoad_ref`/`selLoad0_ref`,
-`SelLoad.lean`; witness `GoFV.Proof.Witness.xs_checkedRewrite`, `{dec.rules:136}`) and `:132`,
-`:141` as `Rule.LoadSel` (below).
+`SelLoad.lean`; witness `GoFV.Proof.Witness.xs_checkedRewrite`, `{dec.rules:136}`; `:144` at an
+`ITab <*uint8>`, whose top is accepted by `compSub` only: `ita_checkedRewrite`, `itabOf`,
+`{dec.rules:144}`; decompose builtin in the fragment: quick-v4 9180 → 9180, full-v5 91516 →
+91625) and `:132`, `:141` as `Rule.LoadSel` (below).
 **Dropped** (`Rule.Drop`, `DecMakeSel.lean`): `:119`, `:120` (`(ArrayMake1 x)`/`(StructMake x)
 && x.Type.IsPtrShaped() => x`) are false under the semantics (a one-field pointer-shaped aggregate
 is `.agg [p]`, Go's is the pointer; `docs/plans/semantics.md` §10). The checked rewrite never
