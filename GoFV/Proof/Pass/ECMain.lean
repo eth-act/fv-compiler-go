@@ -52,7 +52,7 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
       (fun hcv => himk x hx hcv u hu) (ecs_spHeld hwg hcg hbg hfb hgb hid hb x hx u hu)
       (ecs_moveArgHeld hfb hgb hb x hx u hu)
       (ecs_argDep hwf hwg hbm hbg hfb hgb hb x hx u hu hphi)
-      (ecs_loadsHeld hwg hcg hbg hfb hgb hid hb x hx)) ?_⟩
+      (ecs_loadsHeld hwg hcg hbg hfb hgb hid hb x hx) (ecs_selfAddrBefore hfb hgb hb x hx)) ?_⟩
   intro hk c hc0
   obtain ⟨c', u, hc0', hu, hop⟩ := (ecs_parts hfb hgb hb).ret hk
   rw [hc0] at hc0'; cases hc0'

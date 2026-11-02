@@ -563,6 +563,7 @@ import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.Seg
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
+import GoFV.Proof.Witness.StackF2
 import GoFV.Proof.Witness.StructCopy
 import GoFV.Proof.Witness.StructLoad
 import GoFV.Proof.Witness.StructStore

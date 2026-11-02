@@ -32,13 +32,14 @@ structure EcOwn (tabs : Tables) (f : Func) : Prop where
   ok : ∀ p ∈ ownOuts tabs f, ecfOK tabs p
   distinct : namesDistinct (((ownOuts tabs f).filter (·.regs.isEmpty)).map (·.name)) = true
   pieces : (∃ p ∈ ownOuts tabs f, p.regs.isEmpty = true) →
-    (leafTys tabs (ownOuts tabs f)).length ≠ (ownOuts tabs f).length
+    (leafTys tabs (ownOuts tabs f)).length ≠ (ownOuts tabs f).length ∨
+      preMismatch (leafTys tabs (ownOuts tabs f)) ((ownOuts tabs f).map (tabs.ty ·.type)) = true
   memTy : (∃ p ∈ ownOuts tabs f, p.regs.isEmpty = true) → WBCheck.memTyOK tabs f = true
   slot : ∀ p ∈ ownOuts tabs f, p.regs.isEmpty = true → resSlotOK tabs (localsOf tabs f) p = true
 
 theorem ecr_resSlotOK {tabs : Tables} {L : Array (AuxRef × Nat × Option Nat)} {p : ABIParam}
     (h : resSlotOK tabs L p = true) :
-    wf (tabs.ty p.type) = true ∧ (tabs.ty p.type).size < 2 ^ 24 ∧ ∃ n, p.name = some n ∧
+    movTy (tabs.ty p.type) = true ∧ (tabs.ty p.type).size < 2 ^ 24 ∧ ∃ n, p.name = some n ∧
       tabs.forgeable n = true ∧ (∃ e ∈ L, e.1 = n) ∧ ∀ e ∈ L, e.1 = n → (tabs.ty p.type).size ≤ e.2.1 := by
   unfold resSlotOK at h
   simp only [Bool.and_eq_true, decide_eq_true_eq] at h
@@ -77,21 +78,21 @@ theorem ecr_ownOuts {tabs : Tables} {f : Func} (h : ownOutsOK tabs f = true) : E
       obtain ⟨hw, -, n, hn, -⟩ := ecr_resSlotOK h1
       exact ⟨hw, fun h => absurd he (by rw [h]; decide), fun _ => ⟨n, hn⟩⟩
     · simp only [he, Bool.false_eq_true, ↓reduceIte, Bool.and_eq_true, beq_iff_eq] at h1
-      exact ⟨h1.1, fun _ => h1.2, fun h => absurd h he⟩
+      exact ⟨ecf_movTy_of_wf _ h1.1, fun _ => h1, fun h => absurd h he⟩
 
 /-! ## The slot writes -/
 
 /-- `resMem` with register-assigned results only writes nothing. -/
 theorem ecr_resMem_reg {tabs : Tables} :
-    ∀ {ps : List ABIParam}, (∀ p ∈ ps, p.regs.isEmpty = false) → ∀ (rs : List Val) (m : Mem),
-      resMem tabs ps rs m = some m
+    ∀ {qs : List (ABIParam × Bool)}, (∀ q ∈ qs, q.1.regs.isEmpty = false) → ∀ (rs : List Val)
+      (m : Mem), resMem tabs qs rs m = some m
   | [], _, rs, m => by cases rs <;> rfl
-  | p :: ps, h, rs, m => by
+  | q :: qs, h, rs, m => by
     cases rs with
     | nil => rfl
     | cons r rs =>
-      simp only [resMem, h p List.mem_cons_self, Bool.false_eq_true, ↓reduceIte]
-      exact ecr_resMem_reg (fun q hq => h q (List.mem_cons_of_mem _ hq)) rs m
+      simp only [resMem, h q List.mem_cons_self, Bool.false_and, Bool.false_eq_true, ↓reduceIte]
+      exact ecr_resMem_reg (fun q' hq => h q' (List.mem_cons_of_mem _ hq)) rs m
 
 /-- Setting an element that the filter drops, over one it drops, keeps the filter. -/
 theorem ecr_filter_set {α : Type} (P : α → Bool) {x : α} (hx : P x = false) :
@@ -140,15 +141,15 @@ theorem ecr_freeFrame_write {m m' : Mem} {n : AuxRef} {o : BitVec 64} {bs : Arra
 
 /-- The slot writes change nothing the freed frame keeps. -/
 theorem ecr_resMem_freeFrame {tabs : Tables} :
-    ∀ {ps : List ABIParam} {rs : List Val} {m M : Mem}, resMem tabs ps rs m = some M →
+    ∀ {qs : List (ABIParam × Bool)} {rs : List Val} {m M : Mem}, resMem tabs qs rs m = some M →
       M.freeFrame 0 = m.freeFrame 0
   | [], _, _, _, h | _ :: _, [], _, _, h => by simp only [resMem, Option.some.injEq] at h; rw [h]
-  | p :: ps, r :: rs, m, M, h => by
+  | q :: qs, r :: rs, m, M, h => by
     simp only [resMem] at h
     split at h
     · split at h
       · rename_i n _
-        cases hw : m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty p.type) r) with
+        cases hw : m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty q.1.type) r) with
         | none => rw [hw] at h; cases h
         | some m1 =>
           rw [hw, Option.bind_some] at h
@@ -156,29 +157,30 @@ theorem ecr_resMem_freeFrame {tabs : Tables} :
       · cases h
     · exact ecr_resMem_freeFrame h
 
-/-- The slot writes keep the reads of a frame variable that is no stack-assigned result's. -/
+/-- The slot writes keep the reads of a frame variable that no written result has. -/
 theorem ecr_resMem_read_other {tabs : Tables} {n : AuxRef} {k : Nat} :
-    ∀ {ps : List ABIParam} {rs : List Val} {m M : Mem}, resMem tabs ps rs m = some M →
-      (∀ p ∈ ps, p.regs.isEmpty = true → p.name ≠ some n) →
+    ∀ {qs : List (ABIParam × Bool)} {rs : List Val} {m M : Mem}, resMem tabs qs rs m = some M →
+      (∀ q ∈ qs, q.1.regs.isEmpty = true → q.2 = false → q.1.name ≠ some n) →
       M.read ⟨.local 0 n, 0⟩ k = m.read ⟨.local 0 n, 0⟩ k
   | [], _, _, _, h, _ | _ :: _, [], _, _, h, _ => by
     simp only [resMem, Option.some.injEq] at h; rw [h]
-  | p :: ps, r :: rs, m, M, h, hn => by
-    have hn' : ∀ q ∈ ps, q.regs.isEmpty = true → q.name ≠ some n :=
-      fun q hq => hn q (List.mem_cons_of_mem _ hq)
+  | q :: qs, r :: rs, m, M, h, hn => by
+    have hn' : ∀ q' ∈ qs, q'.1.regs.isEmpty = true → q'.2 = false → q'.1.name ≠ some n :=
+      fun q' hq => hn q' (List.mem_cons_of_mem _ hq)
     simp only [resMem] at h
     split at h
     · rename_i hs
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs
       split at h
       · rename_i n0 hn0
-        cases hw : m.write ⟨.local 0 n0, 0⟩ (encode (tabs.ty p.type) r) with
+        cases hw : m.write ⟨.local 0 n0, 0⟩ (encode (tabs.ty q.1.type) r) with
         | none => rw [hw] at h; cases h
         | some m1 =>
           rw [hw, Option.bind_some] at h
           rw [ecr_resMem_read_other h hn']
           refine CSE.Mem.read_write_sep hw (.inr (.inr (.inl fun he => ?_)))
           cases he
-          exact hn p List.mem_cons_self hs hn0
+          exact hn q List.mem_cons_self hs.1 hs.2 hn0
       · cases h
     · exact ecr_resMem_read_other h hn'
 
@@ -189,61 +191,74 @@ theorem ecr_namesDistinct_cons {n : Option AuxRef} {ns : List (Option AuxRef)}
   have := List.contains_iff_mem.2 hm
   rw [h.1] at this; cases this
 
-/-- **The slot writes read back**: a stack-assigned result's slot holds its encoding (the
-stack-assigned results have distinct names). -/
+/-- **The slots after the writes** (the stack-assigned results have distinct names): a written
+result's slot holds its encoding, a skipped one's what it held before. -/
 theorem ecr_resMem_read {tabs : Tables} :
-    ∀ {ps : List ABIParam} {rs : List Val} {m M : Mem}, resMem tabs ps rs m = some M →
-      namesDistinct ((ps.filter (·.regs.isEmpty)).map (·.name)) = true →
-      ∀ p r n, (p, r) ∈ ps.zip rs → p.regs.isEmpty = true → p.name = some n →
-        M.read ⟨.local 0 n, 0⟩ (tabs.ty p.type).size = some (encode (tabs.ty p.type) r)
+    ∀ {qs : List (ABIParam × Bool)} {rs : List Val} {m M : Mem}, resMem tabs qs rs m = some M →
+      namesDistinct (((qs.map (·.1)).filter (·.regs.isEmpty)).map (·.name)) = true →
+      ∀ q r n, (q, r) ∈ qs.zip rs → q.1.regs.isEmpty = true → q.1.name = some n →
+        M.read ⟨.local 0 n, 0⟩ (tabs.ty q.1.type).size =
+          if q.2 then m.read ⟨.local 0 n, 0⟩ (tabs.ty q.1.type).size
+          else some (encode (tabs.ty q.1.type) r)
   | [], _, _, _, _, _, _, _, _, hm, _, _ => by simp at hm
   | _ :: _, [], _, _, _, _, _, _, _, hm, _, _ => by simp at hm
-  | p0 :: ps, r0 :: rs, m, M, h, hd, p, r, n, hm, hs, hn => by
+  | q0 :: qs, r0 :: rs, m, M, h, hd, q, r, n, hm, hs, hn => by
     simp only [resMem] at h
-    by_cases hs0 : p0.regs.isEmpty = true
-    · simp only [hs0, ↓reduceIte] at h
-      simp only [List.filter_cons, hs0, ↓reduceIte, List.map_cons] at hd
+    by_cases hs0 : q0.1.regs.isEmpty = true
+    · simp only [List.map_cons, List.filter_cons, hs0, ↓reduceIte] at hd
       obtain ⟨hnot, hd'⟩ := ecr_namesDistinct_cons hd
-      split at h
-      · rename_i n0 hn0
-        cases hw : m.write ⟨.local 0 n0, 0⟩ (encode (tabs.ty p0.type) r0) with
-        | none => rw [hw] at h; cases h
-        | some m1 =>
-          rw [hw, Option.bind_some] at h
-          rcases List.mem_cons.1 hm with he | hm'
-          · simp only [Prod.mk.injEq] at he
-            obtain ⟨rfl, rfl⟩ := he
-            rw [hn0] at hn; cases hn
-            rw [ecr_resMem_read_other h fun q hq hqs hqn => hnot (by
-              rw [hn0, ← hqn]
-              exact List.mem_map.2 ⟨q, List.mem_filter.2 ⟨hq, hqs⟩, rfl⟩)]
-            have := GoFV.Proof.Pass.LoadFwd.read_write_self hw
-            rwa [encode_size] at this
-          · exact ecr_resMem_read h hd' p r n hm' hs hn
-      · cases h
-    · simp only [hs0, Bool.false_eq_true, ↓reduceIte] at h
-      simp only [List.filter_cons, hs0, Bool.false_eq_true, ↓reduceIte] at hd
+      have htail : ∀ q' ∈ qs, q'.1.regs.isEmpty = true → q'.1.name ≠ q0.1.name := fun q' hq' hqs hqn =>
+        hnot (by rw [← hqn]; exact List.mem_map.2 ⟨q'.1, List.mem_filter.2
+          ⟨List.mem_map_of_mem hq', hqs⟩, rfl⟩)
+      cases hk0 : q0.2
+      · simp only [hs0, hk0, Bool.not_false, Bool.and_self, ↓reduceIte] at h
+        split at h
+        · rename_i n0 hn0
+          cases hw : m.write ⟨.local 0 n0, 0⟩ (encode (tabs.ty q0.1.type) r0) with
+          | none => rw [hw] at h; cases h
+          | some m1 =>
+            rw [hw, Option.bind_some] at h
+            rcases List.mem_cons.1 hm with he | hm'
+            · simp only [Prod.mk.injEq] at he
+              obtain ⟨rfl, rfl⟩ := he
+              rw [hn0] at hn; cases hn
+              simp only [hk0, Bool.false_eq_true, ↓reduceIte]
+              rw [ecr_resMem_read_other h fun q' hq' hqs _ => by rw [← hn0]; exact htail q' hq' hqs]
+              have := GoFV.Proof.Pass.LoadFwd.read_write_self hw
+              rwa [encode_size] at this
+            · rw [ecr_resMem_read h hd' q r n hm' hs hn]
+              split
+              · refine CSE.Mem.read_write_sep hw (.inr (.inr (.inl fun he => ?_)))
+                cases he
+                exact htail q (List.of_mem_zip hm').1 hs (by rw [hn, hn0])
+              · rfl
+        · cases h
+      · simp only [hs0, hk0, Bool.not_true, Bool.and_false, Bool.false_eq_true, ↓reduceIte] at h
+        rcases List.mem_cons.1 hm with he | hm'
+        · simp only [Prod.mk.injEq] at he
+          obtain ⟨rfl, rfl⟩ := he
+          simp only [hk0, ↓reduceIte]
+          exact ecr_resMem_read_other h fun q' hq' hqs _ => by rw [← hn]; exact htail q' hq' hqs
+        · exact ecr_resMem_read h hd' q r n hm' hs hn
+    · simp only [hs0, Bool.false_and, Bool.false_eq_true, ↓reduceIte] at h
+      simp only [List.map_cons, List.filter_cons, hs0, Bool.false_eq_true, ↓reduceIte] at hd
       rcases List.mem_cons.1 hm with he | hm'
       · simp only [Prod.mk.injEq] at he
         obtain ⟨rfl, rfl⟩ := he
         exact absurd hs hs0
-      · exact ecr_resMem_read h hd p r n hm' hs hn
+      · exact ecr_resMem_read h hd q r n hm' hs hn
 
 /-! ## `finish` reads the slots back -/
 
-/-- A value of a well-formed shape decodes back from its encoding. -/
-theorem ecr_decode_encode {t : Ty} (hw : wf t = true) {r : Val} (hr : r.hasTy t = true)
-    (hp : r.hasPoison = false) : decode (encode t r) 0 t = r :=
-  (ecf_refines_eq _ hw (roundtrip hw hr) hp hr).symm
-
 /-- **The post path of `goResults`** on the retyped register pieces, from a memory whose slots
-hold the stack-assigned results' encodings: each result back. -/
+hold bytes decoding to the stack-assigned results: each result back. -/
 theorem ecr_post_own {tabs : Tables} (act : Nat) (m : Mem) :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
       (∀ p ∈ ps, ecfOK tabs p) → Val.anyPoison rs = false →
       (∀ p r n, (p, r) ∈ ps.zip rs → p.regs.isEmpty = true → p.name = some n →
-        m.read ⟨.local act n, 0⟩ (tabs.ty p.type).size = some (encode (tabs.ty p.type) r)) →
+        ∃ bs, m.read ⟨.local act n, 0⟩ (tabs.ty p.type).size = some bs ∧
+          decode bs 0 (tabs.ty p.type) = r) →
       {rts : List Ty} → List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs ps) rts →
       ∃ bufs, goResults.post act m (ecfRegs tabs ps rs rts) (ps.map (ecfOut tabs)) = .ok bufs ∧
         (bufs.zip (ps.map (ecfOut tabs))).map (fun (bs, (_, t, _)) => decode bs 0 t) = rs
@@ -254,12 +269,13 @@ theorem ecr_post_own {tabs : Tables} (act : Nat) (m : Mem) :
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
     have hok' : ∀ q ∈ ps, ecfOK tabs q := fun q hq => hok q (List.mem_cons_of_mem _ hq)
     have hrd' : ∀ q s n, (q, s) ∈ ps.zip rs → q.regs.isEmpty = true → q.name = some n →
-        m.read ⟨.local act n, 0⟩ (tabs.ty q.type).size = some (encode (tabs.ty q.type) s) :=
+        ∃ bs, m.read ⟨.local act n, 0⟩ (tabs.ty q.type).size = some bs ∧
+          decode bs 0 (tabs.ty q.type) = s :=
       fun q s n hm => hrd q s n (by simp only [List.zip_cons_cons]; exact List.mem_cons_of_mem _ hm)
-    obtain ⟨hw, -, hname⟩ := hok p List.mem_cons_self
+    obtain ⟨-, -, hname⟩ := hok p List.mem_cons_self
     cases he : p.regs.isEmpty
     · have hreg := ecfReg_of_ok (hok p List.mem_cons_self) he
-      have ⟨hne, _, hlen⟩ := hreg
+      have ⟨hne, hw, hlen⟩ := hreg
       obtain ⟨r1, r2, h1, h2, hQ⟩ := ecf_regs_cons (rs := rs) (r := r) hreg hrts
       obtain ⟨bufs, hb, hd⟩ := ecr_post_own act m hf hok' hp.2 hrd' h2
       have hk : p.regs.size ≠ 0 := by
@@ -289,8 +305,8 @@ theorem ecr_post_own {tabs : Tables} (act : Nat) (m : Mem) :
       have hk : p.regs.size = 0 := Array.isEmpty_iff_size_eq_zero.1 he
       have hQ : ecfRegs tabs (p :: ps) (r :: rs) rts = ecfRegs tabs ps rs rts := by
         simp only [ecfRegs]; rw [ecf_pieces_cons_stack he]
-      have hrd0 := hrd p r n (by simp) he hn
-      refine ⟨encode (tabs.ty p.type) r :: bufs, ?_, ?_⟩
+      obtain ⟨bs, hrd0, hdec⟩ := hrd p r n (by simp) he hn
+      refine ⟨bs :: bufs, ?_, ?_⟩
       · rw [hQ, List.map_cons]
         unfold goResults.post
         simp only [ecfOut, hk, beq_self_eq_true, ↓reduceIte, hn, hb]
@@ -298,31 +314,88 @@ theorem ecr_post_own {tabs : Tables} (act : Nat) (m : Mem) :
           (Array.replicate (tabs.ty p.type).size Byte.poison) :: bufs) = _
         rw [hrd0]; rfl
       · simp only [List.map_cons, List.zip_cons_cons, List.cons.injEq]
-        exact ⟨ecr_decode_encode hw hr hp.1, hd⟩
+        exact ⟨hdec, hd⟩
+
+/-- A register piece retyped at a scalar register shape, without `poison`, has no shape that is
+no scalar. -/
+theorem ecr_scalar_hasTy {rt lt t : Ty} (hr : regShapeOK rt lt = true) (hl : scalarTy lt = true)
+    (ht : scalarTy t = false) {v : Val} (hv : v.hasTy rt = true) (hp : v.hasPoison = false) :
+    v.hasTy t = false := by
+  have hrt : scalarTy rt = true := by
+    unfold regShapeOK at hr
+    rcases Bool.or_eq_true_iff.1 hr with h | h
+    · rw [Ty.eq_of_beq h]; exact hl
+    · split at h <;> first | rfl | cases h
+  cases v with
+  | poison => simp [Val.hasPoison] at hp
+  | int w x => cases t <;> simp_all [Val.hasTy, scalarTy]
+  | bool b => cases t <;> simp_all [Val.hasTy, scalarTy]
+  | ptr q => cases t <;> simp_all [Val.hasTy, scalarTy]
+  | mem _ | tuple _ | agg _ | blob _ | empty => cases rt <;> simp_all [Val.hasTy, scalarTy]
+
+/-- **`preMismatch` fails the Go-typed path**: some retyped register piece is a scalar where the
+result is not. -/
+theorem ecr_preMismatch {lts rts : List Ty}
+    (hf : List.Forall₂ (fun lt rt => regShapeOK rt lt = true) lts rts) :
+    ∀ {ts : List Ty} {P : List Val} {os : List (Option AuxRef × Ty × Nat)},
+      preMismatch lts ts = true → rts.length = P.length →
+      Val.anyPoison (List.zipWith Val.retype rts P) = false → os.map (·.2.1) = ts →
+      (((List.zipWith Val.retype rts P).zip os).all fun (v, (_, t, _)) => v.hasTy t) = false := by
+  induction hf with
+  | nil => intro ts P os h; simp [preMismatch] at h
+  | @cons lt rt lts rts hr hf ih =>
+    intro ts P os h hl hp ho
+    cases ts with
+    | nil => simp [preMismatch] at h
+    | cons t ts =>
+    cases P with
+    | nil => simp at hl
+    | cons v P =>
+    cases os with
+    | nil => simp at ho
+    | cons o os =>
+    obtain ⟨on, ot, ok⟩ := o
+    simp only [List.map_cons, List.cons.injEq] at ho
+    simp only [List.zipWith_cons_cons, Val.anyPoison, Bool.or_eq_false_iff] at hp
+    simp only [preMismatch, Bool.or_eq_true, Bool.and_eq_true, Bool.not_eq_true'] at h
+    simp only [List.zipWith_cons_cons, List.zip_cons_cons, List.all_cons, Bool.and_eq_false_iff]
+    rcases h with ⟨hs, ht⟩ | h
+    · left
+      rw [ho.1]
+      exact ecr_scalar_hasTy hr hs ht (Val.retype_hasTy _ _) hp.1
+    · right; exact ih h (by simpa using hl) hp.2 ho.2
 
 /-- **The target's `goResults` with stack-assigned results**: fewer or more register pieces than
-results, so the post path, which reads the slots back. -/
+results, or a scalar piece where a result is no scalar (`preMismatch`), so the post path, which
+reads the slots back. -/
 theorem ecr_goResults_own {tabs : Tables} {ps : List ABIParam} {rs : List Val}
     {outs : Array (Option AuxRef × Ty × Nat)} (houts : outs.toList = ps.map (ecfOut tabs))
     (hf : List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs)
-    (hok : ∀ p ∈ ps, ecfOK tabs p) (hpc : (leafTys tabs ps).length ≠ ps.length)
+    (hok : ∀ p ∈ ps, ecfOK tabs p)
+    (hpc : (leafTys tabs ps).length ≠ ps.length ∨
+      preMismatch (leafTys tabs ps) (ps.map (tabs.ty ·.type)) = true)
     (hp : Val.anyPoison rs = false) (act : Nat) (m : Mem)
     (hrd : ∀ p r n, (p, r) ∈ ps.zip rs → p.regs.isEmpty = true → p.name = some n →
-      m.read ⟨.local act n, 0⟩ (tabs.ty p.type).size = some (encode (tabs.ty p.type) r))
+      ∃ bs, m.read ⟨.local act n, 0⟩ (tabs.ty p.type).size = some bs ∧
+        decode bs 0 (tabs.ty p.type) = r)
     {rts : List Ty} (hrts : List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs ps) rts) :
     goResults outs act (ecfRegs tabs ps rs rts) m = .ok rs := by
   unfold goResults
   dsimp only
   rw [houts]
-  have hlen : (ecfRegs tabs ps rs rts).length ≠ (ps.map (ecfOut tabs)).length := by
-    rw [ecf_regs_length (ecf_forall₂_length hf) hok hrts,
-      ← ecf_forall₂_length (ecf_pieces_hasTy (ecf_forall₂_length hf) hok), List.length_map]
-    exact hpc
   have hpre : ((ecfRegs tabs ps rs rts).length == (ps.map (ecfOut tabs)).length &&
       ((ecfRegs tabs ps rs rts).zip (ps.map (ecfOut tabs))).all fun (v, (_, t, _)) => v.hasTy t) =
       false := by
-    rw [show ((ecfRegs tabs ps rs rts).length == (ps.map (ecfOut tabs)).length) = false from
-      beq_eq_false_iff_ne.2 hlen, Bool.false_and]
+    rcases hpc with hpc | hpc
+    · have hlen : (ecfRegs tabs ps rs rts).length ≠ (ps.map (ecfOut tabs)).length := by
+        rw [ecf_regs_length (ecf_forall₂_length hf) hok hrts,
+          ← ecf_forall₂_length (ecf_pieces_hasTy (ecf_forall₂_length hf) hok), List.length_map]
+        exact hpc
+      rw [show ((ecfRegs tabs ps rs rts).length == (ps.map (ecfOut tabs)).length) = false from
+        beq_eq_false_iff_ne.2 hlen, Bool.false_and]
+    · rw [ecr_preMismatch hrts hpc ((ecf_forall₂_length hrts).trans
+          (ecf_forall₂_length (ecf_pieces_hasTy (ecf_forall₂_length hf) hok)))
+        (ecf_regs_np hf hok hp hrts) (by simp [List.map_map]), Bool.and_false]
   simp only [hpre, Bool.false_eq_true, ↓reduceIte]
   obtain ⟨bufs, hb, hd⟩ := ecr_post_own act m hf hok hp hrd hrts
   rw [hb]
@@ -330,20 +403,82 @@ theorem ecr_goResults_own {tabs : Tables} {ps : List ABIParam} {rs : List Val}
   rw [hd, Val.any_hasPoison, hp]
   rfl
 
+theorem ecr_mem_zip_fst {α β γ : Type} :
+    ∀ {l : List (α × β)} {rs : List γ} {a : α} {r : γ}, (a, r) ∈ (l.map (·.1)).zip rs →
+      ∃ b, ((a, b), r) ∈ l.zip rs
+  | [], _, _, _, h => by simp at h
+  | _ :: _, [], _, _, h => by simp at h
+  | (a0, b0) :: l, r0 :: rs, a, r, h => by
+    simp only [List.map_cons, List.zip_cons_cons, List.mem_cons, Prod.mk.injEq] at h
+    rcases h with ⟨rfl, rfl⟩ | h
+    · exact ⟨b0, List.mem_cons_self⟩
+    · obtain ⟨b, hb⟩ := ecr_mem_zip_fst h
+      exact ⟨b, List.mem_cons_of_mem _ hb⟩
+
+theorem ecr_forall₂_mem {α β : Type} {R : α → β → Prop} :
+    ∀ {l : List α} {l' : List β}, List.Forall₂ R l l' → ∀ {a b}, (a, b) ∈ l.zip l' → R a b
+  | _, _, .nil, _, _, h => by simp at h
+  | _, _, .cons hr hf, _, _, h => by
+    rcases List.mem_cons.1 h with he | h
+    · simp only [Prod.mk.injEq] at he; obtain ⟨rfl, rfl⟩ := he; exact hr
+    · exact ecr_forall₂_mem hf h
+
+theorem ecr_skipOK_mem {tabs : Tables} {m : Mem} :
+    ∀ {qs : List (ABIParam × Bool)} {rs : List Val}, SkipOK tabs m qs rs →
+      ∀ {q r}, (q, r) ∈ qs.zip rs → q.2 = true →
+        ∃ n, q.1.name = some n ∧ SelfHeld (tabs.ty q.1.type) n r m
+  | [], _, _, _, _, h, _ | _ :: _, [], _, _, _, h, _ => by simp at h
+  | q0 :: qs, r0 :: rs, ⟨h0, h⟩, q, r, hm, hq => by
+    rcases List.mem_cons.1 hm with he | hm'
+    · simp only [Prod.mk.injEq] at he; obtain ⟨rfl, rfl⟩ := he; exact (h0 hq).2
+    · exact ecr_skipOK_mem h hm' hq
+
+/-- **The slots at the target's `Ret`** hold bytes decoding to the stack-assigned results: the
+encoding a slot write put there, or for a self-move the bytes the source's result was read from
+(`SelfHeld`, poison-free). -/
+theorem ecr_slot_read {tabs : Tables} {qs : List (ABIParam × Bool)} {rs : List Val} {m M : Mem}
+    (hM : resMem tabs qs rs m = some M) (hsk : SkipOK tabs m qs rs)
+    (hd : namesDistinct (((qs.map (·.1)).filter (·.regs.isEmpty)).map (·.name)) = true)
+    (hmov : ∀ q ∈ qs, movTy (tabs.ty q.1.type) = true)
+    (hf : List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true)
+      (qs.map (·.1)) rs)
+    (hp : Val.anyPoison rs = false) :
+    ∀ p r n, (p, r) ∈ (qs.map (·.1)).zip rs → p.regs.isEmpty = true → p.name = some n →
+      ∃ bs, M.read ⟨.local 0 n, 0⟩ (tabs.ty p.type).size = some bs ∧
+        decode bs 0 (tabs.ty p.type) = r := by
+  intro p r n hm hs hn
+  have hty := ecr_forall₂_mem hf hm
+  have hrp : r.hasPoison = false := by
+    rw [← Val.any_hasPoison] at hp
+    exact Bool.eq_false_iff.2 fun h => by
+      rw [List.any_eq_false] at hp; exact hp r (List.of_mem_zip hm).2 h
+  obtain ⟨b, hqm⟩ := ecr_mem_zip_fst hm
+  have hmv := hmov (p, b) (List.of_mem_zip hqm).1
+  have hrd := ecr_resMem_read hM hd (p, b) r n hqm hs hn
+  cases hb : b
+  · rw [hb] at hrd
+    exact ⟨_, hrd, ecf_decode_encode_mov _ hmv r hty hrp⟩
+  · rw [hb] at hrd hqm
+    obtain ⟨n', hn', hsh⟩ := ecr_skipOK_mem hsk hqm rfl
+    rw [hn] at hn'; cases hn'
+    rcases hsh with h | ⟨bs, hbs, hR⟩
+    · rw [hrp] at h; cases h
+    · exact ⟨bs, by rw [hrd]; exact hbs, (ecf_refines_eq_mov _ hmv hR hrp hty).symm⟩
+
 /-- **`finish` relates `ecRR` outcomes**: the source's results are decoded from themselves, the
-target's from its register pieces and its slots (`ecr_resMem_read`); the frame is freed alike
+target's from its register pieces and its slots (`ecr_slot_read`); the frame is freed alike
 (`ecr_resMem_freeFrame`). -/
 theorem finish_ecRR {tabs : Tables} {f : Func} (hown : EcOwn tabs f) :
     ∀ env rs m rs' m', ecRR tabs f rs m rs' m' →
       (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m)).Defined →
       OutcomeRefines 0 (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m))
         (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs' m')) := by
-  intro env rs m rs' m' ⟨hf, rts, hrts, hP, M, hM, hm⟩ hd
+  intro env rs m rs' m' ⟨hf, rts, hrts, hP, qs, hqs, hsk, M, hM, hm⟩ hd
   have hp : Val.anyPoison rs = false := by
     cases h : Val.anyPoison rs
     · rfl
     · simp only [finish, h, ↓reduceIte] at hd; exact hd.elim
-  have hwf : ∀ p ∈ ownOuts tabs f, wf (tabs.ty p.type) = true := fun p hp => (hown.ok p hp).1
+  have hwf : ∀ p ∈ ownOuts tabs f, movTy (tabs.ty p.type) = true := fun p hp => (hown.ok p hp).1
   have hPp := ecf_regs_np hf hown.ok hp hrts
   have hsrc : finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m) =
       .returned rs (m.freeFrame 0) := by
@@ -351,8 +486,10 @@ theorem finish_ecRR {tabs : Tables} {f : Func} (hown : EcOwn tabs f) :
       ecf_goResults_src (ecf_outs tabs f) hf hwf hp 0 m]
   have hgo : goResults (Ctx.make tabs f).outs 0 (ecfRegs tabs (ownOuts tabs f) rs rts) M = .ok rs := by
     by_cases hs : ∃ p ∈ ownOuts tabs f, p.regs.isEmpty = true
-    · exact ecr_goResults_own (ecf_outs tabs f) hf hown.ok (hown.pieces hs) hp 0 M
-        (ecr_resMem_read hM hown.distinct) hrts
+    · have hrd := ecr_slot_read hM hsk (by rw [hqs]; exact hown.distinct)
+        (fun q hq => hwf q.1 (by rw [← hqs]; exact List.mem_map_of_mem hq)) (by rw [hqs]; exact hf) hp
+      rw [hqs] at hrd
+      exact ecr_goResults_own (ecf_outs tabs f) hf hown.ok (hown.pieces hs) hp 0 M hrd hrts
     · have hreg : ∀ p ∈ ownOuts tabs f, ecfReg tabs p := fun p hp' =>
         ecfReg_of_ok (hown.ok p hp') (by
           cases h : p.regs.isEmpty
@@ -374,45 +511,52 @@ theorem finish_ecRR {tabs : Tables} {f : Func} (hown : EcOwn tabs f) :
 
 /-- Writable slots take the slot writes. -/
 theorem ecr_resMem_some_of {tabs : Tables} {ctx : Ctx} (hact : ctx.act = 0) :
-    ∀ {ps : List ABIParam}, (∀ p ∈ ps, p.regs.isEmpty = true →
-      (∃ n, p.name = some n) ∧ ecfOut tabs p ∈ ctx.outs.toList) →
-      ∀ (rs : List Val) {m : Mem}, SlotsOK ctx m → ∃ M, resMem tabs ps rs m = some M
+    ∀ {qs : List (ABIParam × Bool)}, (∀ q ∈ qs, q.1.regs.isEmpty = true →
+      (∃ n, q.1.name = some n) ∧ ecfOut tabs q.1 ∈ ctx.outs.toList) →
+      ∀ (rs : List Val) {m : Mem}, SlotsOK ctx m → ∃ M, resMem tabs qs rs m = some M
   | [], _, rs, m, _ => ⟨m, by cases rs <;> rfl⟩
   | _ :: _, _, [], m, _ => ⟨m, rfl⟩
-  | p :: ps, h, r :: rs, m, hS => by
-    have h' := fun q hq => h q (List.mem_cons_of_mem _ hq)
-    by_cases hs : p.regs.isEmpty = true
-    · obtain ⟨⟨n, hn⟩, ho⟩ := h p List.mem_cons_self hs
-      have hcw : m.canWrite ⟨.local 0 n, 0⟩ (encode (tabs.ty p.type) r).size = true := by
+  | q :: qs, h, r :: rs, m, hS => by
+    have h' := fun q' hq => h q' (List.mem_cons_of_mem _ hq)
+    cases hs : (q.1.regs.isEmpty && !q.2)
+    · obtain ⟨M, hM⟩ := ecr_resMem_some_of hact h' rs hS
+      exact ⟨M, by simp only [resMem, hs, Bool.false_eq_true, ↓reduceIte, hM]⟩
+    · have hs1 : q.1.regs.isEmpty = true := by
+        simp only [Bool.and_eq_true] at hs; exact hs.1
+      obtain ⟨⟨n, hn⟩, ho⟩ := h q List.mem_cons_self hs1
+      have hcw : m.canWrite ⟨.local 0 n, 0⟩ (encode (tabs.ty q.1.type) r).size = true := by
         rw [encode_size]
-        by_cases h0 : (tabs.ty p.type).size = 0
+        by_cases h0 : (tabs.ty q.1.type).size = 0
         · rw [h0]; unfold Mem.canWrite; simp
-        · have ho' : (some n, tabs.ty p.type, 0) ∈ ctx.outs.toList := by
-            have hk : p.regs.size = 0 := Array.isEmpty_iff_size_eq_zero.1 hs
+        · have ho' : (some n, tabs.ty q.1.type, 0) ∈ ctx.outs.toList := by
+            have hk : q.1.regs.size = 0 := Array.isEmpty_iff_size_eq_zero.1 hs1
             simpa [ecfOut, hn, hk] using ho
-          have := hS n (tabs.ty p.type) ho' (by omega)
+          have := hS n (tabs.ty q.1.type) ho' (by omega)
           rwa [hact] at this
       obtain ⟨m1, hw⟩ := ecs_write_of_canWrite hcw
       obtain ⟨M, hM⟩ := ecr_resMem_some_of hact h' rs ((slotsOK_pred ctx).write hS hw)
       exact ⟨M, by simp only [resMem, hs, ↓reduceIte, hn, hw, Option.bind_some, hM]⟩
-    · obtain ⟨M, hM⟩ := ecr_resMem_some_of hact h' rs hS
-      exact ⟨M, by simp only [resMem, hs, Bool.false_eq_true, ↓reduceIte, hM]⟩
 
 /-- **The slot writes succeed** on a memory with the result slots (`EcQ`). -/
 theorem ecr_resMem_some {tabs : Tables} {f : Func} (hown : EcOwn tabs f) {m : Mem}
-    (hq : EcQ tabs f m) (rs : List Val) : ∃ M, resMem tabs (ownOuts tabs f) rs m = some M := by
+    (hq : EcQ tabs f m) {qs : List (ABIParam × Bool)} (hqs : qs.map (·.1) = ownOuts tabs f)
+    (rs : List Val) : ∃ M, resMem tabs qs rs m = some M := by
+  have hmem : ∀ q ∈ qs, q.1 ∈ ownOuts tabs f := fun q hq => by
+    rw [← hqs]; exact List.mem_map_of_mem hq
   by_cases hs : ∃ p ∈ ownOuts tabs f, p.regs.isEmpty = true
-  · refine ecr_resMem_some_of rfl (fun p hp he => ⟨(hown.ok p hp).2.2 he, ?_⟩) rs (hq (hown.memTy hs))
-    rw [ecf_outs]; exact List.mem_map_of_mem hp
-  · exact ⟨m, ecr_resMem_reg (fun p hp => by
-      cases h : p.regs.isEmpty
+  · refine ecr_resMem_some_of rfl (fun q hq he => ⟨(hown.ok q.1 (hmem q hq)).2.2 he, ?_⟩) rs
+      (hq (hown.memTy hs))
+    rw [ecf_outs]; exact List.mem_map_of_mem (hmem q hq)
+  · exact ⟨m, ecr_resMem_reg (fun q hq => by
+      cases h : q.1.regs.isEmpty
       · rfl
-      · exact absurd ⟨p, hp, h⟩ hs) rs m⟩
+      · exact absurd ⟨q.1, hmem q hq, h⟩ hs) rs m⟩
 
 /-- **The `Ret` control of `expand calls`** (a converted `MakeResult`): the target returns the
 register pieces of the source's results, retyped at the target `MakeResult`'s register shapes
 (`regTupleOf`), and a memory refining the source's with the stack-assigned results in their
-slots (`convRes`; the slot writes succeed by `EcQ`). -/
+slots but the self-moves already there (`convRes`, `resSkip`; the slot writes succeed by
+`EcQ`). -/
 theorem ret_result {tabs : Tables} {f g : Func} {c : ID} {u w : Value}
     (hu : f.value? c = some u) (hw : g.value? c = some w) (hop : u.op = .MakeResult)
     (hok : resultOK tabs (typeShapes tabs) f g u w = true) (hown : EcOwn tabs f) :
@@ -422,7 +566,7 @@ theorem ret_result {tabs : Tables} {f g : Func} {c : ID} {u w : Value}
   intro y y' hry hyy rs m hro hp hq
   unfold resultOK at hok
   simp only [Bool.and_eq_true, beq_iff_eq] at hok
-  obtain ⟨⟨⟨⟨⟨⟨⟨hwop, hn⟩, -⟩, -⟩, -⟩, -⟩, htup⟩, hrt⟩ := hok
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hwop, hn⟩, -⟩, -⟩, -⟩, -⟩, -⟩, htup⟩, hrt⟩ := hok
   obtain ⟨us, hus, husl, hue, -⟩ := ecf_tupleOf htup
   obtain ⟨rts, hus', hrts⟩ := ecf_regTupleOf hrt
   obtain ⟨hty, hlen, -⟩ := hry
@@ -438,7 +582,9 @@ theorem ret_result {tabs : Tables} {f g : Func} {c : ID} {u w : Value}
     have hPt := ecf_pieces_hasTy (tabs := tabs) hrl hown.ok
     have hlen' : rts.length = (ecfPieces tabs (ownOuts tabs f) rs).length :=
       (ecf_forall₂_length hrts).trans (ecf_forall₂_length hPt)
-    obtain ⟨M, hM⟩ := ecr_resMem_some hown hq rs
+    obtain ⟨M, hM⟩ := ecr_resMem_some hown hq (ecf_resSkip_fst (tabs := tabs) (m := m) _
+      (selfMoves tabs (typeShapes tabs) f g u (ownOuts tabs f)
+        (u.args.extract 0 (u.args.size - 1)).toList) rs) rs
     rw [ecc_cv_result hu hop (ecf_not_invalidated hw (by rw [hwop]; decide)), ecf_convRes hrl, hM,
       shapeOf, hw, hus'] at hyy
     dsimp only at hyy
@@ -452,7 +598,8 @@ theorem ret_result {tabs : Tables} {f g : Func} {c : ID} {u w : Value}
         cases hm with
         | mem hm =>
           have hQp := ecf_regs_np hF hown.ok hp hrts
-          exact ⟨c1, _, ecf_retOf ((h1.noPoison hQp).1) _, hF, rts, hrts, h1, M, hM, hm⟩
+          exact ⟨c1, _, ecf_retOf ((h1.noPoison hQp).1) _, hF, rts, hrts, h1, _,
+            ecf_resSkip_fst _ _ _, ecf_resSkip_ok hrl, M, hM, hm⟩
   | _ => simp [retOf] at hro
 
 /-! ## The `MakeResult`: register pieces and slot stores -/
@@ -530,14 +677,44 @@ theorem ecr_forall₂_of_zip {P : ABIParam → Val → Prop} (F : ID → Val) :
     .cons (h (p, a) (by simp)) (ecr_forall₂_of_zip F (by simpa using hl)
       fun e he => h e (by simp only [List.zip_cons_cons]; exact List.mem_cons_of_mem _ he))
 
+/-- The facts `selfMoveOK` checks. -/
+theorem ecr_selfMoveOK {tabs : Tables} {f g : Func} {u : Value} {e : ABIParam × ID}
+    (h : selfMoveOK tabs (typeShapes tabs) f g u e = true) :
+    invalidated g e.2 = true ∧ moveTy (tabs.ty e.1.type) = true ∧
+      moveTy (shapeOf (typeShapes tabs) f e.2) = true ∧
+      ∃ n au pu, e.1.name = some n ∧ f.value? e.2 = some au ∧ au.op = .Dereference ∧
+        au.args.size = 2 ∧ au.args[1]! = u.args[u.args.size - 1]! ∧
+        eqE (shapeOf (typeShapes tabs) f e.2) (tabs.ty e.1.type) = true ∧
+        (∃ el, shapeOf (typeShapes tabs) f au.args[0]! = .ptr el) ∧
+        f.value? au.args[0]! = some pu ∧ pu.op = .LocalAddr ∧ pu.aux = some n := by
+  unfold selfMoveOK at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨⟨⟨hi, hm1⟩, hm2⟩, h⟩ := h
+  refine ⟨hi, hm1, hm2, ?_⟩
+  split at h
+  · rename_i n au hn hau
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨⟨hop, hsz⟩, hmem⟩, heq⟩, hsh⟩, h⟩ := h
+    split at h
+    · rename_i pu hpu
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      refine ⟨n, au, pu, hn, hau, hop, hsz, hmem, heq, ?_, hpu, h.1, h.2⟩
+      split at hsh
+      · exact ⟨_, ‹_›⟩
+      · cases hsh
+    · cases h
+  · cases h
+
 /-- **The results have their shapes**, from the shapes `piecesOK` checks for the register- and
-the stack-assigned ones. -/
-theorem ecr_forall₂_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} {outs : List ABIParam}
-    {as : List ID} {pcs qs : List ID} (hl : as.length = outs.length)
+the stored stack-assigned ones and `selfMoveOK` for the self-moves. -/
+theorem ecr_forall₂_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} {u : Value}
+    {outs : List ABIParam} {as : List ID} {pcs qs : List ID} (hl : as.length = outs.length)
     (hrp : piecesOK tabs (typeShapes tabs) f g false ((argPairs true outs as).map (·.1))
       ((argPairs true outs as).map (·.2)) pcs = true)
-    (hsp : piecesOK tabs (typeShapes tabs) f g false ((argPairs false outs as).map (·.1))
-      ((argPairs false outs as).map (·.2)) qs = true)
+    (hsp : piecesOK tabs (typeShapes tabs) f g false
+      (((argPairs false outs as).filter fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.1))
+      (((argPairs false outs as).filter fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.2))
+      qs = true)
     (hrel : ∀ a ∈ as, EcArgRel tabs f g frS T a) :
     List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) outs
       (as.map (rv frS)) := by
@@ -545,7 +722,11 @@ theorem ecr_forall₂_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} {outs :
   have heq : eqE (shapeOf (typeShapes tabs) f e.2) (tabs.ty e.1.type) = true := by
     cases hr : (!e.1.regs.isEmpty == true)
     · have hm : e ∈ argPairs false outs as := List.mem_filter.2 ⟨he, by simpa using hr⟩
-      exact ecr_piecesOK_eqE _ _ _ hsp e (by rw [ecr_zip_fst_snd]; exact hm)
+      cases hsm : selfMoveOK tabs (typeShapes tabs) f g u e
+      · exact ecr_piecesOK_eqE _ _ _ hsp e (by
+          rw [ecr_zip_fst_snd]; exact List.mem_filter.2 ⟨hm, by simp [hsm]⟩)
+      · obtain ⟨-, -, -, _, _, _, -, -, -, -, -, heq, -⟩ := ecr_selfMoveOK hsm
+        exact heq
     · have hm : e ∈ argPairs true outs as := List.mem_filter.2 ⟨he, hr⟩
       exact ecr_piecesOK_eqE _ _ _ hrp e (by rw [ecr_zip_fst_snd]; exact hm)
   obtain ⟨y, hyS, hry, -⟩ := hrel e.2 (List.of_mem_zip he).2
@@ -596,51 +777,151 @@ theorem ecr_resSlots_mem {tabs : Tables} :
     · obtain ⟨q, hq, h1, h2⟩ := ecr_resSlots_mem h
       exact ⟨q, List.mem_cons_of_mem _ hq, h1, h2⟩
 
-/-- **The slot stores refine the slot writes**: the leaf writes of pieces refining the
-stack-assigned results' leaves, on a memory refining the source's, refine `resMem`
-(`ECWide.ecw_split` per result). -/
+/-- **The slot stores refine the slot writes**: the leaf writes of pieces refining the written
+stack-assigned results' leaves (not the skipped self-moves), on a memory refining the
+source's, refine `resMem` (`ECWide.ecw_split` per result). -/
 theorem ecr_split {tabs : Tables} :
-    ∀ {ps : List ABIParam} {rs : List Val} {m M m' : Mem} {xs : List Val},
-      resMem tabs ps rs m = some M → Mem.Refines m m' →
-      List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, wf (tabs.ty p.type) = true) →
-      RefinesList (((ps.zip rs).filter fun e => !e.1.regs.isEmpty == false).flatMap
-        fun (p, r) => leafVals (tabs.ty p.type) r) xs →
-      ∃ MT, writeAll m' (ecrSlotWrites (resSlots tabs (ps.filter fun p => !p.regs.isEmpty == false)) xs) =
-        some MT ∧ Mem.Refines M MT
-  | [], _, m, M, m', xs, h, hm, .nil, _, hx => by
+    ∀ {qs : List (ABIParam × Bool)} {rs : List Val} {m M m' : Mem} {xs : List Val},
+      resMem tabs qs rs m = some M → Mem.Refines m m' →
+      (∀ e ∈ qs.zip rs, e.2.hasTy (tabs.ty e.1.1.type) = true) →
+      (∀ q ∈ qs, q.1.regs.isEmpty = true → q.2 = false → wf (tabs.ty q.1.type) = true) →
+      RefinesList (((qs.zip rs).filter fun e => e.1.1.regs.isEmpty && !e.1.2).flatMap
+        fun e => leafVals (tabs.ty e.1.1.type) e.2) xs →
+      ∃ MT, writeAll m' (ecrSlotWrites (resSlots tabs
+        ((qs.filter fun q => q.1.regs.isEmpty && !q.2).map (·.1))) xs) = some MT ∧ Mem.Refines M MT
+  | [], _, m, M, m', xs, h, hm, _, _, hx => by
     simp only [resMem, Option.some.injEq] at h; subst h
     cases hx; exact ⟨m', rfl, hm⟩
-  | p :: ps, r :: rs, m, M, m', xs, h, hm, .cons hr hf, hwf, hx => by
-    have hwf' := fun q hq => hwf q (List.mem_cons_of_mem _ hq)
-    by_cases hs : p.regs.isEmpty = true
+  | _ :: _, [], m, M, m', xs, h, hm, _, _, hx => by
+    simp only [resMem, Option.some.injEq] at h; subst h
+    cases hx; exact ⟨m', by simp [ecrSlotWrites, writeAll], hm⟩
+  | q :: qs, r :: rs, m, M, m', xs, h, hm, hty, hwf, hx => by
+    have hwf' := fun q' hq => hwf q' (List.mem_cons_of_mem _ hq)
+    have hty' : ∀ e ∈ qs.zip rs, e.2.hasTy (tabs.ty e.1.1.type) = true :=
+      fun e he => hty e (List.mem_cons_of_mem _ he)
+    have hr : r.hasTy (tabs.ty q.1.type) = true := hty (q, r) List.mem_cons_self
+    cases hs : (q.1.regs.isEmpty && !q.2)
+    · simp only [resMem, hs, Bool.false_eq_true, ↓reduceIte] at h
+      simp only [List.zip_cons_cons, List.filter_cons, hs, Bool.false_eq_true, ↓reduceIte] at hx
+      obtain ⟨MT, hW, hR⟩ := ecr_split h hm hty' hwf' hx
+      refine ⟨MT, ?_, hR⟩
+      simp only [List.filter_cons, hs, Bool.false_eq_true, ↓reduceIte]
+      exact hW
     · simp only [resMem, hs, ↓reduceIte] at h
+      have hs' : q.1.regs.isEmpty = true ∧ q.2 = false := by simpa using hs
       split at h
       · rename_i n hn
-        cases hw : m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty p.type) r) with
+        cases hw : m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty q.1.type) r) with
         | none => rw [hw] at h; cases h
         | some m1 =>
           rw [hw, Option.bind_some] at h
-          rw [List.zip_cons_cons, List.filter_cons_of_pos (by simp [hs]), List.flatMap_cons] at hx
+          simp only [List.zip_cons_cons, List.filter_cons, hs, ↓reduceIte, List.flatMap_cons] at hx
           obtain ⟨x1, x2, rfl, h1, h2⟩ := ecf_refinesList_append_inv hx
-          have hw0 := hwf p List.mem_cons_self
+          have hw0 := hwf q List.mem_cons_self hs'.1 hs'.2
           obtain ⟨MT1, hW1, hR1⟩ := ecw_split _ hw0 r hr ⟨.local 0 n, 0⟩ m m' m1 x1 hm hw h1
-          obtain ⟨MT, hW, hR⟩ := ecr_split h hR1 hf hwf' h2
+          obtain ⟨MT, hW, hR⟩ := ecr_split h hR1 hty' hwf' h2
           refine ⟨MT, ?_, hR⟩
-          have hlen : ((leaves (tabs.ty p.type)).map fun (o, lt) => (n, o, lt)).length = x1.length := by
+          have hlen : ((leaves (tabs.ty q.1.type)).map fun (o, lt) => (n, o, lt)).length = x1.length := by
             rw [List.length_map, ← h1.length_eq, leafVals_length hw0]
-          rw [List.filter_cons_of_pos (by simp [hs]), ecr_resSlots_cons, hn]
+          simp only [List.filter_cons, hs, ↓reduceIte, List.map_cons]
+          rw [ecr_resSlots_cons, hn]
           dsimp only
           rw [ecr_slotWrites_append hlen, ecr_slotWrites_leaves, writeAll_append hW1, hW]
       · cases h
-    · simp only [resMem, hs, Bool.false_eq_true, ↓reduceIte] at h
-      have hs' : p.regs.isEmpty = false := by simpa using hs
-      simp only [List.zip_cons_cons, List.filter_cons, hs', Bool.not_false, beq_iff_eq,
-        Bool.true_eq_false, ↓reduceIte] at hx
-      obtain ⟨MT, hW, hR⟩ := ecr_split h hm hf hwf' hx
-      refine ⟨MT, ?_, hR⟩
-      simp only [List.filter_cons, hs', Bool.not_false, beq_iff_eq, Bool.true_eq_false, ↓reduceIte]
-      exact hW
+
+/-- The written stack-assigned results of `MakeResult` `u` (skipping its self-moves), paired with
+their values, are the stored ones `resultOK` checks. -/
+theorem ecr_sp_zip {tabs : Tables} {f g : Func} {u : Value} (F : ID → Val) :
+    ∀ {ps : List ABIParam} {as : List ID}, as.length = ps.length →
+      (((ps.zip (selfMoves tabs (typeShapes tabs) f g u ps as)).zip (as.map F)).filter
+          fun e => e.1.1.regs.isEmpty && !e.1.2).map (fun e => (e.1.1, e.2)) =
+        (((argPairs false ps as).filter fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map
+          (·.1)).zip ((((argPairs false ps as).filter
+            fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.2)).map F)
+  | [], [], _ => rfl
+  | [], _ :: _, h | _ :: _, [], h => by simp at h
+  | p :: ps, a :: as, h => by
+    have ih := ecr_sp_zip (tabs := tabs) (f := f) (g := g) (u := u) F (ps := ps) (as := as)
+      (by simpa using h)
+    unfold argPairs selfMoves at ih ⊢
+    simp only [List.zip_cons_cons, List.map_cons, List.filter_cons]
+    cases hs : p.regs.isEmpty <;> cases hm : selfMoveOK tabs (typeShapes tabs) f g u (p, a) <;>
+      simp_all
+
+theorem ecr_sp_fst {tabs : Tables} {f g : Func} {u : Value} :
+    ∀ {ps : List ABIParam} {as : List ID}, as.length = ps.length →
+      ((ps.zip (selfMoves tabs (typeShapes tabs) f g u ps as)).filter
+          fun q => q.1.regs.isEmpty && !q.2).map (·.1) =
+        ((argPairs false ps as).filter fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.1)
+  | [], [], _ => rfl
+  | [], _ :: _, h | _ :: _, [], h => by simp at h
+  | p :: ps, a :: as, h => by
+    have ih := ecr_sp_fst (tabs := tabs) (f := f) (g := g) (u := u) (ps := ps) (as := as)
+      (by simpa using h)
+    unfold argPairs selfMoves at ih ⊢
+    simp only [List.zip_cons_cons, List.map_cons, List.filter_cons]
+    cases hs : p.regs.isEmpty <;> cases hm : selfMoveOK tabs (typeShapes tabs) f g u (p, a) <;>
+      simp_all
+
+theorem ecr_qs_mem {tabs : Tables} {f g : Func} {u : Value} :
+    ∀ {ps : List ABIParam} {as : List ID}, as.length = ps.length →
+      ∀ q ∈ ps.zip (selfMoves tabs (typeShapes tabs) f g u ps as), ∃ a, (q.1, a) ∈ ps.zip as ∧
+        q.2 = (q.1.regs.isEmpty && selfMoveOK tabs (typeShapes tabs) f g u (q.1, a))
+  | [], [], _, q, hq => by simp at hq
+  | [], _ :: _, h, _, _ | _ :: _, [], h, _, _ => by simp at h
+  | p :: ps, a :: as, h, q, hq => by
+    unfold selfMoves at hq
+    simp only [List.zip_cons_cons, List.map_cons, List.mem_cons] at hq
+    rcases hq with rfl | hq
+    · exact ⟨a, List.mem_cons_self, rfl⟩
+    · obtain ⟨a', ha', h2⟩ := ecr_qs_mem (tabs := tabs) (f := f) (g := g) (u := u)
+        (by simpa using h) q (by unfold selfMoves; exact hq)
+      exact ⟨a', List.mem_cons_of_mem _ ha', h2⟩
+
+theorem ecr_qsr_mem {tabs : Tables} {f g : Func} {u : Value} (F : ID → Val) :
+    ∀ {ps : List ABIParam} {as : List ID}, as.length = ps.length →
+      ∀ e ∈ (ps.zip (selfMoves tabs (typeShapes tabs) f g u ps as)).zip (as.map F),
+        ∃ a, (e.1.1, a) ∈ ps.zip as ∧
+          e.1.2 = (e.1.1.regs.isEmpty && selfMoveOK tabs (typeShapes tabs) f g u (e.1.1, a)) ∧
+          e.2 = F a
+  | [], [], _, e, he => by simp at he
+  | [], _ :: _, h, _, _ | _ :: _, [], h, _, _ => by simp at h
+  | p :: ps, a :: as, h, e, he => by
+    unfold selfMoves at he
+    simp only [List.zip_cons_cons, List.map_cons, List.mem_cons] at he
+    rcases he with rfl | he
+    · exact ⟨a, List.mem_cons_self, rfl, rfl⟩
+    · obtain ⟨a', ha', h2, h3⟩ := ecr_qsr_mem (tabs := tabs) (f := f) (g := g) (u := u) F
+        (by simpa using h) e (by unfold selfMoves; exact he)
+      exact ⟨a', List.mem_cons_of_mem _ ha', h2, h3⟩
+
+/-- When every self-move candidate is held in its slot, `resSkip` skips exactly the candidates. -/
+theorem ecr_resSkip_eq {tabs : Tables} {m : Mem} :
+    ∀ {ps : List ABIParam} {cs : List Bool} {rs : List Val}, rs.length = ps.length →
+      cs.length = ps.length →
+      (∀ e ∈ (ps.zip cs).zip rs, e.1.2 = true → e.1.1.regs.isEmpty = true ∧
+        ∃ n, e.1.1.name = some n ∧ SelfHeld (tabs.ty e.1.1.type) n e.2 m) →
+      resSkip tabs m ps cs rs = ps.zip cs
+  | [], _, _, _, _, _ => rfl
+  | _ :: _, [], _, _, hc, _ => by simp at hc
+  | _ :: _, _ :: _, [], hl, _, _ => by simp at hl
+  | p :: ps, c :: cs, r :: rs, hl, hc, h => by
+    have ih := ecr_resSkip_eq (tabs := tabs) (m := m) (ps := ps) (cs := cs) (rs := rs)
+      (by simpa using hl) (by simpa using hc) (fun e he => h e (List.mem_cons_of_mem _ he))
+    have h0 : c = true → p.regs.isEmpty = true ∧ ∃ n, p.name = some n ∧
+        SelfHeld (tabs.ty p.type) n ((r :: rs).headD .poison) m :=
+      fun hc' => h ((p, c), r) List.mem_cons_self hc'
+    show (p, (c :: cs).headD false && p.regs.isEmpty &&
+        @decide (∃ n, p.name = some n ∧ SelfHeld (tabs.ty p.type) n ((r :: rs).headD .poison) m)
+          (Classical.propDecidable _)) :: resSkip tabs m ps (c :: cs).tail (r :: rs).tail =
+      (p, c) :: ps.zip cs
+    rw [show (c :: cs).tail = cs from rfl, show (r :: rs).tail = rs from rfl, ih]
+    cases c with
+    | false => rfl
+    | true =>
+      obtain ⟨hs, hex⟩ := h0 rfl
+      rw [hs, @decide_eq_true _ (Classical.propDecidable _) hex]
+      rfl
 
 /-- The facts of the result stores (`resStoresOK`), per store. -/
 theorem ecr_resStores_get {tabs : Tables} {sh : Array Ty} {g : Func} {nw : ID → Bool} :
@@ -726,9 +1007,62 @@ theorem ecr_retype_poison (t : Ty) (y : Val) : Sem.Refines (Val.retype t .poison
   have : Val.retype t .poison = .poison := by cases t <;> rfl
   rw [this]; exact .poison _
 
+/-- **A self-move is already in its slot**: the source's `Dereference (LocalAddr {n}) mem` of a
+self-move (its register and its `LocalAddr`'s holding their evaluations, `mem` the snapshot
+`m`) contains `poison` or refines the decoding of the slot's bytes in `m` (`SelfHeld`). -/
+theorem ecr_selfHeld {env : Env} {tabs : Tables} {f g : Func} {frS : Frame} {u : Value}
+    {e : ABIParam × ID} {m : Mem} (hown : EcOwn tabs f) (hpo : e.1 ∈ ownOuts tabs f)
+    (hst : e.1.regs.isEmpty = true) (hok : selfMoveOK tabs (typeShapes tabs) f g u e = true)
+    (ha : EcSrcHolds env tabs f frS e.2) (hpa : EcSrcHolds env tabs f frS (addrArg f e.2))
+    (hm : rv frS u.args[u.args.size - 1]! = .mem m) :
+    ∃ n, e.1.name = some n ∧ SelfHeld (tabs.ty e.1.type) n (rv frS e.2) m := by
+  obtain ⟨-, hmt, hmta, n, au, pu, hn, hau, hop, hsz, hmem, heq, ⟨el, hel⟩, hpu, hpop, hpax⟩ :=
+    ecr_selfMoveOK hok
+  refine ⟨n, hn, ?_⟩
+  obtain ⟨hmov, -, -⟩ := hown.ok e.1 hpo
+  obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot e.1 hpo hst)
+  rw [hn] at hn'; cases hn'
+  -- the `LocalAddr`
+  have hpa' : addrArg f e.2 = au.args[0]! := by unfold addrArg; rw [hau]; rfl
+  rw [hpa'] at hpa
+  obtain ⟨hpid, yp, hyp, hevp⟩ := hpa pu hpu
+  have hP : rv frS au.args[0]! = .ptr ⟨.local 0 n, 0⟩ := by
+    rw [evalValue_of_regs (regs_of_ok hevp)] at hevp
+    have he : evalOp env (Ctx.make tabs f) frS pu (pu.args.toList.map (rv frS))
+        ((Ctx.make tabs f).tys[pu.id]?.getD .other) = .ok (.ptr ⟨.local 0 n, 0⟩) := by
+      have hb : frameBlk (Ctx.make tabs f).tabs (Ctx.make tabs f).act n = .local 0 n := by
+        unfold frameBlk; rw [show (Ctx.make tabs f).tabs = tabs from rfl, hfg]; rfl
+      delta evalOp frameVal; rw [hpop, hpax]; simp only [Option.map_some, hb]; rfl
+    rw [he] at hevp
+    cases hevp
+    rw [rv_of hyp, hpid, ← shapeOf_eq, hel]; rfl
+  -- the `Dereference`
+  obtain ⟨haid, ya, hya, heva⟩ := ha au hau
+  have hargsA := ec_args_two hsz
+  have hva := evalValue_term (by rw [hop]; decide) heva
+  have hep : ∀ ty ai ax (args : List Val), evalPure .Dereference ty ai ax args = loadOp ty args :=
+    fun _ _ _ _ => rfl
+  rw [hop, GoFV.Proof.Rules.opVal_pure (by decide), hep, hargsA, haid, ← shapeOf_eq] at hva
+  simp only [List.map_cons, List.map_nil, hP, hmem, hm] at hva
+  rw [rv_of hya, hva]
+  cases hpo' : ((loadOp (shapeOf (typeShapes tabs) f e.2) [.ptr ⟨.local 0 n, 0⟩, .mem m]).retype
+      (shapeOf (typeShapes tabs) f e.2)).hasPoison
+  · right
+    obtain ⟨p, bs, hpw, hrd⟩ := ecs_deref_read hmta hpo'
+    cases hpw
+    rw [ecT_eqE_size heq] at hrd
+    exact ⟨bs, hrd, ecs_move_arg (Mem.Refines.refl m) hmov heq hmt (Sem.Refines.refl _) rfl hrd⟩
+  · exact .inl hpo'
+
+/-- The values whose source registers the `MakeResult` obligation needs to hold their
+evaluations: the self-moves' `Dereference`s and their `LocalAddr`s. -/
+def ecrSelfSrc (tabs : Tables) (f g : Func) (u : Value) (a : ID) : Prop :=
+  ∃ e ∈ (ownOuts tabs f).zip (u.args.extract 0 (u.args.size - 1)).toList, e.1.regs.isEmpty = true ∧
+    selfMoveOK tabs (typeShapes tabs) f g u e = true ∧ (a = e.2 ∨ a = addrArg f e.2)
+
 /-- A `MakeResult` tuple whose last component is no memory converts to `poison`. -/
-theorem ecr_convRes_nonmem {tabs : Tables} {ps : List ABIParam} {rs : List Val} {v : Val}
-    (hv : ∀ m, v ≠ .mem m) : convRes tabs ps (.tuple (rs ++ [v])) = .poison := by
+theorem ecr_convRes_nonmem {tabs : Tables} {ps : List ABIParam} {cs : List Bool} {rs : List Val}
+    {v : Val} (hv : ∀ m, v ≠ .mem m) : convRes tabs ps cs (.tuple (rs ++ [v])) = .poison := by
   unfold convRes
   dsimp only
   rw [List.getLast?_concat]
@@ -741,21 +1075,23 @@ theorem ecr_convRes_nonmem {tabs : Tables} {ps : List ABIParam} {rs : List Val} 
 
 /-- **The `MakeResult` obligation** with the `IMake` facts: the target's register pieces refine
 the source's results' (`ec_pieces` on the register-assigned ones), and its result stores, from a
-memory refining the source's, write leaves refining the stack-assigned results' (`ec_pieces` on
-the stored values) at their slots (`ecr_localAddr`, `ECWide.ecw_addr`), so its memory refines the
-slot writes (`ecr_split`, `convRes`). -/
+memory refining the source's, write leaves refining the stored stack-assigned results' leaves
+(`ec_pieces` on the stored values) at their slots (`ecr_localAddr`, `ECWide.ecw_addr`); the
+self-moves are already in their slots (`ecr_selfHeld`: `resSkip` skips them), so its memory
+refines the slot writes (`ecr_split`, `convRes`). -/
 theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
     (hok : resultOK tabs (typeShapes tabs) f g u w = true) (hown : EcOwn tabs f) (huid : u.id = x)
     (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
-    EcOblImk tabs f g (fun _ => False) (fun _ => False) x := by
-  intro u' w' hu' hw' env _ frS T _ hRS E hNC hEw hRw hRu hfront himk _ _
+    EcOblImk tabs f g (ecrSelfSrc tabs f g u) (fun _ => False) x := by
+  intro u' w' hu' hw' env _ frS T _ hRS E hNC hEw hRw hRu hfront himk _ hHS0
   rw [hu] at hu'; cases hu'
   rw [hw] at hw'; cases hw'
   unfold resultOK at hok
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, Bool.not_eq_true'] at hok
-  obtain ⟨⟨⟨⟨⟨⟨⟨hwop, hn⟩, hws⟩, hmsp⟩, hrp⟩, hst⟩, htup⟩, hrt⟩ := hok
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hwop, hn⟩, hws⟩, hmsp⟩, hrp⟩, hwfs⟩, hst⟩, htup⟩, hrt⟩ := hok
+  rw [List.all_eq_true] at hwfs
   cases hzs : resStores f g u w with
   | none => rw [hzs] at hst; cases hst
   | some zs =>
@@ -774,13 +1110,16 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     fun a ha => Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha)
   have hrel : ∀ a ∈ (u.args.extract 0 (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
     fun a ha => ecc_argRel hi hu hRS hRu hfront (hmemu a ha)
-  have hG := ecr_forall₂_hasTy hasl hrp hsp hrel
-  have hwf : ∀ p ∈ ownOuts tabs f, wf (tabs.ty p.type) = true := fun p hp => (hown.ok p hp).1
+  have hG := ecr_forall₂_hasTy (u := u) hasl hrp hsp hrel
+  have hwfR : ∀ e ∈ argPairs true (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList,
+      wf (tabs.ty e.1.type) = true := fun e he => by
+    obtain ⟨hpo, -, hpr⟩ := ecr_argPairs_mem he
+    exact (ecfReg_of_ok (hown.ok _ hpo) (by simpa using hpr)).2.1
   -- the register pieces
   have hP := ec_pieces hNC hL hRS false _ _ _ hrp
     (fun p hp => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-      exact hwf _ (ecr_argPairs_mem he).1)
+      exact hwfR _ he)
     (fun q hq => hRw q (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)))
     (fun q hq hn' => have hq' := Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)
       ⟨hEw q hq' hn', (hL x hLx w hw).2 q hq' hn'⟩)
@@ -802,14 +1141,12 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     have hn' := ecs_storeChain_new hch hne
     exact ⟨hEw _ hwl hn', (hL x hLx w hw).2 _ hwl hn'⟩
   have hELz := ecs_chain_E hNC hL _ hch hELt
-  have hsp1 := ecr_argPairs_fst (reg := false) hasl
-  rw [hsp1] at hrs
   obtain ⟨-, hget⟩ := ecr_resStores_get hrs
   have hshs : ∀ z ∈ zs, shapeOf (typeShapes tabs) g z = .mem := fun z hz => by
     obtain ⟨k, hk⟩ := List.getElem?_of_mem hz
     obtain ⟨_, _, _, _, _, _, _, _, _, _, h⟩ := hget k z hk
     exact h
-  -- the stored values refine the stack-assigned results' leaves
+  -- the stored values refine the stored stack-assigned results' leaves
   have hzsv : ∀ q ∈ zs.map (storeVal g), ∃ wz : Value, q ∈ wz.args ∧
       (∀ a ∈ wz.args, Reg T a) ∧ (∀ a ∈ wz.args, isNewB f a = true → E a ∧ L a) := by
     intro q hq
@@ -822,10 +1159,14 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     refine ⟨wz, ?_, regs_of_ok hev, fun a ha hn' => ⟨hcl a ha hn', (hL z hLz wz hwz).2 a ha hn'⟩⟩
     have hsv' : storeVal g z = wz.args[1]! := by unfold storeVal; rw [hwz]; rfl
     rw [hsv']; exact ecw_mem_three hsz' 1 (by decide)
+  have hspm : ∀ e ∈ (argPairs false (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList).filter
+      (fun e => !selfMoveOK tabs (typeShapes tabs) f g u e),
+      e ∈ argPairs false (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList :=
+    fun e he => (List.mem_filter.1 he).1
   have hS := ec_pieces hNC hL hRS false _ _ _ hsp
     (fun p hp => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-      exact hwf _ (ecr_argPairs_mem he).1)
+      exact hwfs e he)
     (fun q hq => by
       obtain ⟨wz, hq', hreg, -⟩ := hzsv q hq
       exact hreg q hq')
@@ -834,10 +1175,10 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       exact hEL q hq' hn')
     (fun a ha => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
-      exact hrel _ (ecr_argPairs_mem he).2.1)
+      exact hrel _ (ecr_argPairs_mem (hspm e he)).2.1)
     (fun a ha => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
-      exact himk _ (hmemu _ (ecr_argPairs_mem he).2.1))
+      exact himk _ (hmemu _ (ecr_argPairs_mem (hspm e he)).2.1))
     (fun q hq yq hyq hn' => by
       have hqu : q ∈ u.args := by
         rcases hsv q hq with h | h
@@ -845,7 +1186,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         · exact h
       exact hfront q (ecFront_src hi hu hqu) yq hyq)
   simp only [ecPieceVals_false] at hS
-  rw [ecr_argPairs_zip _ hasl] at hS
+  rw [← ecr_sp_zip _ hasl, List.flatMap_map] at hS
   -- the evaluations
   have hm : u.args[u.args.size - 1]! ∈ u.args := by rw [← Array.mem_toList_iff, hsu]; simp
   have hRw' : ∀ a ∈ w.args, Reg T a := hRw
@@ -873,15 +1214,42 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     obtain ⟨MT, hMT, hWT, hpt⟩ := ecw_chain hNC hL _ hch hELt hshs M0' hM0T
     rw [hMT, show Val.retype .mem (.mem m0) = .mem m0 from rfl,
       ecf_convRes (by rw [List.length_map, hasl])]
-    cases hM : resMem tabs (ownOuts tabs f)
+    -- the self-moves are in their slots: `resSkip` skips exactly them
+    rw [ecr_resSkip_eq (by rw [List.length_map, hasl])
+      (by unfold selfMoves; rw [List.length_map, List.length_zip, hasl, Nat.min_self])
+      (fun e he hc => by
+        obtain ⟨a, ha, hc', hr⟩ := ecr_qsr_mem (rv frS) hasl e he
+        rw [hc, eq_comm, Bool.and_eq_true] at hc'
+        have hpo := (List.of_mem_zip ha).1
+        refine ⟨hc'.1, ?_⟩
+        rw [hr]
+        exact ecr_selfHeld hown hpo hc'.1 hc'.2 (hHS0 _ ⟨_, ha, hc'.1, hc'.2, .inl rfl⟩)
+          (hHS0 _ ⟨_, ha, hc'.1, hc'.2, .inr rfl⟩) hmv)]
+    cases hM : resMem tabs ((ownOuts tabs f).zip (selfMoves tabs (typeShapes tabs) f g u
+        (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList))
         ((u.args.extract 0 (u.args.size - 1)).toList.map (rv frS)) m0 with
     | none => exact ecr_retype_poison _ _
     | some M =>
       dsimp only
-      obtain ⟨MT', hWT', hR⟩ := ecr_split hM hM0R hG hwf hS
+      obtain ⟨MT', hWT', hR⟩ := ecr_split hM hM0R
+        (fun e he => by
+          obtain ⟨a, ha, -, hr⟩ := ecr_qsr_mem (rv frS) hasl e he
+          rw [hr]
+          refine ecr_forall₂_mem hG (a := e.1.1) ?_
+          rw [List.zip_map_right]
+          exact List.mem_map.2 ⟨_, ha, rfl⟩)
+        (fun q hq hst hq2 => by
+          obtain ⟨a, ha, hq2'⟩ := ecr_qs_mem hasl q hq
+          rw [hq2, hst, Bool.true_and, eq_comm, Bool.eq_false_iff] at hq2'
+          exact hwfs (q.1, a) (List.mem_filter.2 ⟨List.mem_filter.2 ⟨ha, by simp [hst]⟩,
+            by simpa using hq2'⟩))
+        hS
+      rw [ecr_sp_fst hasl] at hWT'
       -- the target's writes are the slot writes
       have hlist : zs.map (ecwW tabs g T) =
-          ecrSlotWrites (resSlots tabs ((ownOuts tabs f).filter fun p => !p.regs.isEmpty == false))
+          ecrSlotWrites (resSlots tabs (((argPairs false (ownOuts tabs f)
+            (u.args.extract 0 (u.args.size - 1)).toList).filter
+              fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.1)))
             ((zs.map (storeVal g)).map (rv T)) := by
         apply List.ext_getElem?
         intro k
@@ -889,7 +1257,9 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         rw [List.getElem?_map, List.getElem?_map]
         cases hk : zs[k]? with
         | none =>
-          have hn' : ((resSlots tabs ((ownOuts tabs f).filter fun p => !p.regs.isEmpty == false)).zip
+          have hn' : ((resSlots tabs (((argPairs false (ownOuts tabs f)
+              (u.args.extract 0 (u.args.size - 1)).toList).filter
+                fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.1))).zip
               ((zs.map (storeVal g)).map (rv T)))[k]? = none := by
             rw [List.getElem?_eq_none_iff] at hk ⊢
             simp only [List.length_zip, List.length_map]
@@ -897,7 +1267,9 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           rw [hn']; rfl
         | some z =>
           obtain ⟨n, o, lt, zw, hle, hzw, -, haux, hla, haddr, -⟩ := hget k z hk
-          have hz : ((resSlots tabs ((ownOuts tabs f).filter fun p => !p.regs.isEmpty == false)).zip
+          have hz : ((resSlots tabs (((argPairs false (ownOuts tabs f)
+              (u.args.extract 0 (u.args.size - 1)).toList).filter
+                fun e => !selfMoveOK tabs (typeShapes tabs) f g u e).map (·.1))).zip
               ((zs.map (storeVal g)).map (rv T)))[k]? = some ((n, o, lt), rv T (storeVal g z)) :=
             List.getElem?_zip_eq_some.2 ⟨hle, by rw [List.getElem?_map, List.getElem?_map, hk]; rfl⟩
           rw [hz]
@@ -914,8 +1286,9 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
             ⟨hcl _ hq0 hn', (hL z hLzz zw hzw).2 _ hq0 hn'⟩
           -- the slot's variable is a `Blk.local`
           obtain ⟨p, hp, hpn, -⟩ := ecr_resSlots_mem (List.mem_of_getElem? hle)
-          obtain ⟨hpo, hps⟩ := List.mem_filter.1 hp
-          obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot p hpo (by simpa using hps))
+          obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
+          obtain ⟨hpo, -, hps⟩ := ecr_argPairs_mem (hspm e he)
+          obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot e.1 hpo (by simpa using hps))
           rw [hpn] at hn'; cases hn'
           have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
           have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr (by rw [hbase]; rfl) hEa)
@@ -930,16 +1303,16 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       rw [ecr_convRes_nonmem (by intro m h; cases h)]
       exact ecr_retype_poison _ _
 
-/-- **The `MakeResult` obligation.** -/
+/-- **The `MakeResult` obligation**, its self-moves' `Dereference`s and `LocalAddr`s held in
+the source (`ecrSelfSrc`). -/
 theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
     (hok : resultOK tabs (typeShapes tabs) f g u w = true) (hown : EcOwn tabs f) (huid : u.id = x)
     (L : ID → Prop) (hLx : L x)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
-    (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) :
+    (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) (hS : ∀ a, ecrSelfSrc tabs f g u a → HS a) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x :=
-  obl_of_imk (obl_result_imk hu hw hop hok hown huid L hLx hL) hu hH (fun _ h => h.elim)
-    fun _ h => h.elim
+  obl_of_imk (obl_result_imk hu hw hop hok hown huid L hLx hL) hu hH (fun _ h => h.elim) hS
 
 /-! ## The result stores evaluate -/
 
@@ -980,7 +1353,8 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
   intro wz hwz env G T _ E hNC hEw hRw hfront _ hsrc hret hQ
   unfold resultOK at hok
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, Bool.not_eq_true'] at hok
-  obtain ⟨⟨⟨⟨⟨⟨⟨-, hn⟩, -⟩, hmsp⟩, -⟩, hst⟩, htup⟩, -⟩ := hok
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨-, hn⟩, -⟩, hmsp⟩, -⟩, hwfs⟩, hst⟩, htup⟩, -⟩ := hok
+  rw [List.all_eq_true] at hwfs
   rw [hzs] at hst
   simp only [Bool.and_eq_true] at hst
   obtain ⟨⟨hrs, -⟩, -⟩ := hst
@@ -989,7 +1363,6 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
     simp only [Array.toList_extract, List.extract_eq_take_drop, List.drop_zero, Nat.sub_zero,
       List.length_take, Array.length_toList]
     omega
-  rw [ecr_argPairs_fst (reg := false) hasl] at hrs
   obtain ⟨-, hget⟩ := ecr_resStores_get hrs
   have hm : u.args[u.args.size - 1]! ∈ u.args := by rw [← Array.mem_toList_iff, hsu]; simp
   -- the source's memory at the `Ret`
@@ -1035,10 +1408,13 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
     exact h
   obtain ⟨Mb, hMb, hWb, -⟩ := ecw_chain hNC hL n' hc hEL hshs' M0' hM0T
   -- the slot is writable
-  obtain ⟨p, hp, hpn, hpl⟩ := ecr_resSlots_mem (List.mem_of_getElem? hle)
-  obtain ⟨hpo, hps⟩ := List.mem_filter.1 hp
+  obtain ⟨p0, hp, hpn, hpl⟩ := ecr_resSlots_mem (List.mem_of_getElem? hle)
+  obtain ⟨⟨p, a⟩, he, rfl⟩ := List.mem_map.1 hp
+  dsimp only at hpn hpl
+  obtain ⟨hpo, -, hps⟩ := ecr_argPairs_mem (List.mem_filter.1 he).1
   have hps' : p.regs.isEmpty = true := by simpa using hps
-  obtain ⟨hwfp, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot p hpo hps')
+  have hwfp : wf (tabs.ty p.type) = true := hwfs (p, a) he
+  obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot p hpo hps')
   rw [hpn] at hn'; cases hn'
   have hol : o + lt.size ≤ (tabs.ty p.type).size := (mem_leaves hwfp hpl).1
   have hout : (some n, tabs.ty p.type, 0) ∈ (Ctx.make tabs f).outs.toList := by

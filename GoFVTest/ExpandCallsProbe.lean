@@ -153,10 +153,12 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
       let n := u.args.size
       let as := (u.args.extract 0 (n - 1)).toList
       let rp := argPairs true outs as
-      let sp := argPairs false outs as
+      let sp := (argPairs false outs as).filter fun e => !selfMoveOK tabs sh f g u e
       let pcs := (w.args.extract 0 (w.args.size - 1)).toList
       if !piecesOK tabs sh f g false (rp.map (·.1)) (rp.map (·.2)) pcs then
         s!"result: pieces: {piecesWhy tabs sh f g false (rp.map (·.1)) (rp.map (·.2)) pcs}"
+      else if !sp.all (fun e => GoFV.Proof.ABI.wf (tabs.ty e.1.type)) then
+        "result: stored stack result not wf"
       else match resStores f g u w with
         | none => s!"result: no store chain (memory {((g.value? w.args[w.args.size - 1]!).map (·.op.name)).getD "?"})"
         | some zs =>
@@ -254,6 +256,9 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !invalidated g x && !(u.args.all fun a => !invalidated g a || !fb.values.contains a ||
             beforeB og.toList a x) then
           return "invalidated argument placement"
+      if !(selfAddrs tabs sh f g x).all (fun p => !fb.values.contains p ||
+          (!invalidated g p && beforeB og.toList p x)) then
+        return "self-move LocalAddr placement"
   | _, _ => return "no schedule"
   for x in fb.values do
     for l in stackLoads tabs sh f g x do
@@ -293,7 +298,8 @@ def ownWhy (tabs : Tables) (f : Func) : String :=
       (GoFV.Proof.ABI.wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size)) then
     "own: result shape"
   else if !namesDistinct ((outs.filter (·.regs.isEmpty)).map (·.name)) then "own: result names"
-  else if (leafTys tabs outs).length == outs.length then "own: pieces = results"
+  else if (leafTys tabs outs).length == outs.length &&
+      !preMismatch (leafTys tabs outs) (outs.map (tabs.ty ·.type)) then "own: pieces = results"
   else "own: memTyOK"
 
 def why (tabs : Tables) (f g : Func) : String := Id.run do

@@ -74,6 +74,166 @@ theorem ecf_refinesList_eq : (fs : List (Nat × Ty)) → (n s : Nat) → wfField
     rw [ecf_refines_eq t hw.1.2 h hp.1 hy.1, ecf_refinesList_eq fs n _ hw.2 hl hp.2 hy.2]
 end
 
+/-! ## Shapes with byte blobs (`movTy`) -/
+
+private theorem movFields_le : {fs : List (Nat × Ty)} → {n s : Nat} → movFields fs n s = true →
+    s ≤ n
+  | [], _, _, h => by simpa [movFields] using h
+  | (o, t) :: fs, n, s, h => by
+    simp only [movFields, Bool.and_eq_true, decide_eq_true_eq] at h
+    have := movFields_le h.2
+    omega
+
+private theorem eq_base_mov {t : Ty} (ht : movTy t = true) {a b : Val} (h : Sem.Refines a b)
+    (hp : a.hasPoison = false) (hy : a.hasTy t = true)
+    (hagg : ∀ as bs, a = .agg as → b = .agg bs → Sem.RefinesList as bs → as = bs) : a = b := by
+  cases h with
+  | poison => simp [Val.hasPoison] at hp
+  | int | bool | ptr | empty => rfl
+  | mem => cases t <;> simp_all [Val.hasTy, movTy]
+  | tuple => cases t <;> simp_all [Val.hasTy, movTy]
+  | blob hb =>
+    rw [BytesRefine.eq hb fun x hx hx' => by
+      subst hx'; simp only [Val.hasPoison, List.contains_iff_mem] at hp; exact absurd hx (by simpa using hp)]
+  | agg hl => rw [hagg _ _ rfl rfl hl]
+
+mutual
+/-- A poison-free value of a `movTy` shape is refined only by itself. -/
+theorem ecf_refines_eq_mov : (t : Ty) → movTy t = true → {a b : Val} → Sem.Refines a b →
+    a.hasPoison = false → a.hasTy t = true → a = b
+  | .agg fs n, ht, _, _, h, hp, hy => eq_base_mov ht h hp hy fun as bs ha hb hl => by
+      subst ha hb
+      simp only [Val.hasPoison] at hp
+      simp only [Val.hasTy] at hy
+      exact ecf_refinesList_eq_mov fs n 0 ht hl hp hy
+  | .blob _, ht, _, _, h, hp, hy => eq_base_mov ht h hp hy fun _ _ ha _ _ => by
+      subst ha; simp [Val.hasTy] at hy
+  | .int _, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .bool, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .ptr _, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .opaque _, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .empty, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .str, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .slice _, _, _, _, h, hp, hy => ecf_refines_eq _ rfl h hp hy
+  | .mem, ht, _, _, _, _, _ | .tuple _, ht, _, _, _, _, _ | .other, ht, _, _, _, _, _ => nomatch ht
+theorem ecf_refinesList_eq_mov : (fs : List (Nat × Ty)) → (n s : Nat) → movFields fs n s = true →
+    {as bs : List Val} → Sem.RefinesList as bs → Val.anyPoison as = false →
+    Val.hasTyList as (fs.map (·.2)) = true → as = bs
+  | [], _, _, _, _, _, .nil, _, _ => rfl
+  | [], _, _, _, _, _, .cons _ _, _, hy => by simp [Val.hasTyList] at hy
+  | _ :: _, _, _, _, _, _, .nil, _, hy => by simp [Val.hasTyList] at hy
+  | (_, t) :: fs, n, _, hw, _, _, .cons h hl, hp, hy => by
+    simp only [movFields, Bool.and_eq_true] at hw
+    simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
+    simp only [List.map_cons, Val.hasTyList, Bool.and_eq_true] at hy
+    rw [ecf_refines_eq_mov t hw.1.2 h hp.1 hy.1, ecf_refinesList_eq_mov fs n _ hw.2 hl hp.2 hy.2]
+end
+
+mutual
+/-- `decode` at a `movTy` shape reads only its own bytes. -/
+theorem ecf_decode_agree_mov : (t : Ty) → {bs bs' : Array Byte} → {o o' : Nat} → movTy t = true →
+    Agree bs o bs' o' t.size → decode bs o t = decode bs' o' t
+  | .agg fs n, _, _, _, _, hw, h => by
+    simp only [decode]; rw [ecf_decodeFields_agree_mov fs n 0 hw h]
+  | .blob n, _, _, _, _, _, h => by
+    simp only [decode]; rw [extract_agree (n := n) h]
+  | .int _, _, _, _, _, _, h => decode_agree _ rfl h
+  | .bool, _, _, _, _, _, h => decode_agree _ rfl h
+  | .ptr _, _, _, _, _, _, h => decode_agree _ rfl h
+  | .opaque _, _, _, _, _, _, h => decode_agree _ rfl h
+  | .empty, _, _, _, _, _, h => decode_agree _ rfl h
+  | .str, _, _, _, _, _, h => decode_agree _ rfl h
+  | .slice _, _, _, _, _, _, h => decode_agree _ rfl h
+  | .mem, _, _, _, _, hw, _ | .tuple _, _, _, _, _, hw, _ | .other, _, _, _, _, hw, _ => nomatch hw
+theorem ecf_decodeFields_agree_mov : (fs : List (Nat × Ty)) → (n s : Nat) →
+    {bs bs' : Array Byte} → {o o' : Nat} → movFields fs n s = true → Agree bs o bs' o' n →
+    decodeFields bs o fs = decodeFields bs' o' fs
+  | [], _, _, _, _, _, _, _, _ => rfl
+  | (fo, ft) :: fs, n, s, _, _, _, _, hw, h => by
+    simp only [movFields, Bool.and_eq_true] at hw
+    have hle := movFields_le hw.2
+    simp only [decodeFields]
+    rw [ecf_decode_agree_mov ft hw.1.2 (h.sub hle), ecf_decodeFields_agree_mov fs n _ hw.2 h]
+end
+
+private theorem encodeFields_getElem?_lt_mov : (fs : List (Nat × Ty)) → (vs : List Val) →
+    (buf : Array Byte) → (n s j : Nat) → movFields fs n s = true → buf.size = n → j < s →
+    (encodeFields buf fs vs)[j]? = buf[j]?
+  | [], _, _, _, _, _, _, _, _ => rfl
+  | _ :: _, [], _, _, _, _, _, _, _ => rfl
+  | (o, t) :: fs, v :: vs, buf, n, s, j, hw, hb, hj => by
+    simp only [movFields, Bool.and_eq_true, decide_eq_true_eq] at hw
+    simp only [encodeFields]
+    rw [encodeFields_getElem?_lt_mov fs vs _ n (o + t.size) j hw.2 (by rw [putBytes_size, hb])
+      (by omega), putBytes_getElem?_out (.inl (by omega))]
+
+private theorem encodeFields_agree_mov {o : Nat} {t : Ty} {fs : List (Nat × Ty)} {v : Val}
+    {vs : List Val} {buf : Array Byte} {n s : Nat} (hw : movFields ((o, t) :: fs) n s = true)
+    (hb : buf.size = n) :
+    Agree (encodeFields buf ((o, t) :: fs) (v :: vs)) o (encode t v) 0 t.size := fun k hk => by
+  simp only [movFields, Bool.and_eq_true, decide_eq_true_eq] at hw
+  have hle := movFields_le hw.2
+  simp only [encodeFields]
+  rw [encodeFields_getElem?_lt_mov fs vs _ n (o + t.size) (o + k) hw.2 (by rw [putBytes_size, hb])
+    (by omega)]
+  exact putBytes_agree (by rw [encode_size, hb]; omega) k (by rw [encode_size]; exact hk)
+
+mutual
+/-- **A poison-free value of a `movTy` shape decodes back from its encoding.** -/
+theorem ecf_decode_encode_mov : (t : Ty) → movTy t = true → (v : Val) → v.hasTy t = true →
+    v.hasPoison = false → decode (encode t v) 0 t = v
+  | .agg fs n, ht, .agg vs, hv, hp => by
+    simp only [Val.hasTy] at hv
+    simp only [Val.hasPoison] at hp
+    simp only [encode, decode]
+    rw [ecf_decodeFields_encode_mov fs vs n 0 (buf0 := Array.replicate n .poison) ht hv hp
+      (by simp) (Agree.refl _ 0 _)]
+  | .agg _ _, _, .poison, _, hp => by simp [Val.hasPoison] at hp
+  | .agg _ _, _, .int _ _, hv, _ | .agg _ _, _, .bool _, hv, _ | .agg _ _, _, .mem _, hv, _
+  | .agg _ _, _, .tuple _, hv, _ | .agg _ _, _, .ptr _, hv, _ | .agg _ _, _, .blob _, hv, _
+  | .agg _ _, _, .empty, hv, _ => by simp [Val.hasTy] at hv
+  | .blob n, _, .blob bs, hv, _ => by
+    simp only [Val.hasTy, beq_iff_eq] at hv
+    simp only [encode, Ty.size, hv, beq_self_eq_true, ↓reduceIte, decode]
+    simp
+    exact List.take_of_length_le (by omega)
+  | .blob _, _, .poison, _, hp => by simp [Val.hasPoison] at hp
+  | .blob _, _, .int _ _, hv, _ | .blob _, _, .bool _, hv, _ | .blob _, _, .mem _, hv, _
+  | .blob _, _, .tuple _, hv, _ | .blob _, _, .ptr _, hv, _ | .blob _, _, .agg _, hv, _
+  | .blob _, _, .empty, hv, _ => by simp [Val.hasTy] at hv
+  | .int _, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .bool, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .ptr _, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .opaque _, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .empty, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .str, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .slice _, _, v, hv, hp => (ecf_refines_eq _ rfl (roundtrip rfl hv) hp hv).symm
+  | .mem, ht, _, _, _ | .tuple _, ht, _, _, _ | .other, ht, _, _, _ => nomatch ht
+theorem ecf_decodeFields_encode_mov : (fs : List (Nat × Ty)) → (vs : List Val) → (n s : Nat) →
+    {buf buf0 : Array Byte} → {b : Nat} → movFields fs n s = true →
+    Val.hasTyList vs (fs.map (·.2)) = true → Val.anyPoison vs = false → buf0.size = n →
+    Agree buf b (encodeFields buf0 fs vs) 0 n → decodeFields buf b fs = vs
+  | [], [], _, _, _, _, _, _, _, _, _, _ => rfl
+  | (o, t) :: fs, v :: vs, n, s, buf, buf0, b, hw, hv, hp, hb, h => by
+    have hreg : Agree (encodeFields buf0 ((o, t) :: fs) (v :: vs)) o (encode t v) 0 t.size :=
+      encodeFields_agree_mov hw hb
+    simp only [movFields, Bool.and_eq_true, decide_eq_true_eq] at hw
+    simp only [List.map_cons, Val.hasTyList, Bool.and_eq_true] at hv
+    simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
+    have hle := movFields_le hw.2
+    have h1 : Agree buf (b + o) (encode t v) 0 t.size := by
+      have := h.sub (o := o) (m := t.size) hle
+      rw [Nat.zero_add] at this
+      exact this.trans hreg
+    simp only [decodeFields]
+    rw [ecf_decode_agree_mov t hw.1.2 (h1.trans (Agree.refl _ _ _)),
+      ecf_decode_encode_mov t hw.1.2 v hv.1 hp.1,
+      ecf_decodeFields_encode_mov fs vs n _ (buf0 := putBytes buf0 o (encode t v)) hw.2 hv.2 hp.2
+        (by rw [putBytes_size, hb]) h]
+  | [], _ :: _, _, _, _, _, _, _, hv, _, _, _ | _ :: _, [], _, _, _, _, _, _, hv, _, _, _ => by
+    simp [Val.hasTyList] at hv
+end
+
 mutual
 /-- The register pieces of a poison-free value are poison-free. -/
 theorem ecf_leafVals_np : (t : Ty) → wf t = true → {v : Val} → v.hasPoison = false →
@@ -135,17 +295,33 @@ abbrev ecfOut (tabs : Tables) (p : ABIParam) : Option AuxRef × Ty × Nat :=
 def ecfReg (tabs : Tables) (p : ABIParam) : Prop :=
   p.regs.isEmpty = false ∧ wf (tabs.ty p.type) = true ∧ (leaves (tabs.ty p.type)).length = p.regs.size
 
-/-- What `ownOutsOK` gives about one result: a well-formed shape, register-assigned with as many
-registers as leaves or stack-assigned with a name. -/
+/-- What `ownOutsOK` gives about one result: a `movTy` shape, register-assigned with a
+well-formed shape and as many registers as leaves or stack-assigned with a name. -/
 def ecfOK (tabs : Tables) (p : ABIParam) : Prop :=
-  wf (tabs.ty p.type) = true ∧ (p.regs.isEmpty = false → (leaves (tabs.ty p.type)).length = p.regs.size) ∧
+  movTy (tabs.ty p.type) = true ∧ (p.regs.isEmpty = false →
+    wf (tabs.ty p.type) = true ∧ (leaves (tabs.ty p.type)).length = p.regs.size) ∧
     (p.regs.isEmpty = true → ∃ n, p.name = some n)
 
+mutual
+/-- A well-formed shape is a `movTy` one. -/
+theorem ecf_movTy_of_wf : (t : Ty) → wf t = true → movTy t = true
+  | .agg fs n, h => ecf_movFields_of_wf fs n 0 h
+  | .int _, _ | .bool, _ | .ptr _, _ | .opaque _, _ | .empty, _ | .str, _ | .slice _, _ => rfl
+  | .blob _, h | .mem, h | .tuple _, h | .other, h => nomatch h
+theorem ecf_movFields_of_wf : (fs : List (Nat × Ty)) → (n s : Nat) → wfFields fs n s = true →
+    movFields fs n s = true
+  | [], _, _, h => by simpa [wfFields, movFields] using h
+  | (o, t) :: fs, n, s, h => by
+    simp only [wfFields, Bool.and_eq_true, decide_eq_true_eq] at h
+    simp only [movFields, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨⟨h.1.1, ecf_movTy_of_wf t h.1.2⟩, ecf_movFields_of_wf fs n _ h.2⟩
+end
+
 theorem ecfOK_of_reg {tabs : Tables} {p : ABIParam} (h : ecfReg tabs p) : ecfOK tabs p :=
-  ⟨h.2.1, fun _ => h.2.2, fun he => by rw [h.1] at he; cases he⟩
+  ⟨ecf_movTy_of_wf _ h.2.1, fun _ => h.2, fun he => by rw [h.1] at he; cases he⟩
 
 theorem ecfReg_of_ok {tabs : Tables} {p : ABIParam} (h : ecfOK tabs p) (he : p.regs.isEmpty = false) :
-    ecfReg tabs p := ⟨he, h.1, h.2.1 he⟩
+    ecfReg tabs p := ⟨he, (h.2.1 he).1, (h.2.1 he).2⟩
 
 theorem ecf_reg_of {tabs : Tables} {ps : List ABIParam} (h : regParamsOK tabs ps = true) :
     ∀ p ∈ ps, ecfReg tabs p := by
@@ -158,15 +334,14 @@ theorem ecf_reg_of {tabs : Tables} {ps : List ABIParam} (h : regParamsOK tabs ps
 theorem ecf_decode_encode {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, wf (tabs.ty p.type) = true) → Val.anyPoison rs = false →
+      (∀ p ∈ ps, movTy (tabs.ty p.type) = true) → Val.anyPoison rs = false →
       (((rs.zip (ps.map (ecfOut tabs))).map fun (v, (_, t, _)) => encode t v).zip
         (ps.map (ecfOut tabs))).map (fun (bs, (_, t, _)) => decode bs 0 t) = rs
   | _, _, .nil, _, _ => rfl
   | p :: ps, r :: rs, .cons hr hf, hwf, hp => by
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
     simp only [List.map_cons, List.zip_cons_cons, List.cons.injEq]
-    have hw := hwf p List.mem_cons_self
-    exact ⟨(ecf_refines_eq _ hw (roundtrip hw hr) hp.1 hr).symm,
+    exact ⟨ecf_decode_encode_mov _ (hwf p List.mem_cons_self) r hr hp.1,
       ecf_decode_encode hf (fun q hq => hwf q (List.mem_cons_of_mem _ hq)) hp.2⟩
 
 theorem ecf_forall₂_length {α β : Type} {R : α → β → Prop} :
@@ -187,7 +362,7 @@ theorem ecf_all_hasTy {tabs : Tables} :
 theorem ecf_goResults_src {tabs : Tables} {ps : List ABIParam} {rs : List Val}
     {outs : Array (Option AuxRef × Ty × Nat)} (houts : outs.toList = ps.map (ecfOut tabs))
     (hf : List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs)
-    (hwf : ∀ p ∈ ps, wf (tabs.ty p.type) = true) (hp : Val.anyPoison rs = false) (act : Nat) (m : Mem) :
+    (hwf : ∀ p ∈ ps, movTy (tabs.ty p.type) = true) (hp : Val.anyPoison rs = false) (act : Nat) (m : Mem) :
     goResults outs act rs m = .ok rs := by
   unfold goResults
   dsimp only
@@ -234,7 +409,8 @@ theorem ecf_pieces_np {tabs : Tables} :
     have ih := ecf_pieces_np hf (fun q hq => hok q (List.mem_cons_of_mem _ hq)) hp.2
     cases he : p.regs.isEmpty
     · rw [ecf_pieces_cons (ecfReg_of_ok (hok p List.mem_cons_self) he)]
-      rw [ecf_anyPoison_append, ecf_leafVals_np _ (hok p List.mem_cons_self).1 hp.1 hr, ih]
+      rw [ecf_anyPoison_append,
+        ecf_leafVals_np _ (ecfReg_of_ok (hok p List.mem_cons_self) he).2.1 hp.1 hr, ih]
       rfl
     · rw [ecf_pieces_cons_stack he]; exact ih
 
@@ -333,7 +509,8 @@ theorem ecf_pieces_hasTy {tabs : Tables} :
       (fun q hq => hok q (List.mem_cons_of_mem _ hq))
     cases he : p.regs.isEmpty
     · rw [ecf_pieces_cons (ecfReg_of_ok (hok p List.mem_cons_self) he), leafTys_cons_reg tabs he]
-      exact List.Forall₂.append (ecf_forall₂_snd (leafVals_hasTy (hok p List.mem_cons_self).1)) ih
+      exact List.Forall₂.append (ecf_forall₂_snd
+        (leafVals_hasTy (ecfReg_of_ok (hok p List.mem_cons_self) he).2.1)) ih
     · rw [ecf_pieces_cons_stack he, leafTys_cons_stack tabs he]; exact ih
 
 /-- The register pieces of the results, retyped at the register shapes `rts`. -/
@@ -682,7 +859,9 @@ theorem ecf_not_invalidated {g : Func} {c : ID} {w : Value} (hw : g.value? c = s
 
 theorem ecc_cv_result {tabs : Tables} {f g : Func} {c : ID} {u : Value} (hu : f.value? c = some u)
     (hop : u.op = .MakeResult) (hinv : invalidated g c = false) (y : Val) :
-    ecCv tabs f g c y = (convRes tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g c) := by
+    ecCv tabs f g c y = (convRes tabs (ownOuts tabs f) (selfMoves tabs (typeShapes tabs) f g u
+      (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList) y).retype
+        (shapeOf (typeShapes tabs) g c) := by
   unfold ecCv
   simp only [hinv, hu, hop, Bool.false_eq_true, ↓reduceIte]
   rfl
@@ -698,12 +877,12 @@ theorem ecf_convTuple {tabs : Tables} {ps : List ABIParam} {rs : List Val} (hl :
 
 /-- `resMem` reads the results only. -/
 theorem ecf_resMem_append {tabs : Tables} {x : Val} :
-    {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length → (m : Mem) →
-      resMem tabs ps (rs ++ [x]) m = resMem tabs ps rs m
+    {qs : List (ABIParam × Bool)} → {rs : List Val} → rs.length = qs.length → (m : Mem) →
+      resMem tabs qs (rs ++ [x]) m = resMem tabs qs rs m
   | [], [], _, _ => by simp [resMem]
   | _ :: _, [], hl, _ | [], _ :: _, hl, _ => by simp at hl
-  | p :: ps, r :: rs, hl, m => by
-    have ih := @ecf_resMem_append tabs x ps rs (by simpa using hl)
+  | q :: qs, r :: rs, hl, m => by
+    have ih := @ecf_resMem_append tabs x qs rs (by simpa using hl)
     simp only [List.cons_append, resMem]
     split
     · split
@@ -713,10 +892,41 @@ theorem ecf_resMem_append {tabs : Tables} {x : Val} :
       · rfl
     · exact ih m
 
+/-- `resSkip` reads the results only. -/
+theorem ecf_resSkip_append {tabs : Tables} {m : Mem} {x : Val} :
+    {ps : List ABIParam} → {cs : List Bool} → {rs : List Val} → rs.length = ps.length →
+      resSkip tabs m ps cs (rs ++ [x]) = resSkip tabs m ps cs rs
+  | [], _, [], _ => rfl
+  | _ :: _, _, [], hl | [], _, _ :: _, hl => by simp at hl
+  | p :: ps, cs, r :: rs, hl => by
+    have ih := ecf_resSkip_append (tabs := tabs) (m := m) (x := x) (ps := ps) (cs := cs.tail)
+      (rs := rs) (by simpa using hl)
+    simp only [resSkip, List.cons_append, List.tail_cons, ih]
+    rfl
+
+theorem ecf_resSkip_fst {tabs : Tables} {m : Mem} :
+    (ps : List ABIParam) → (cs : List Bool) → (rs : List Val) →
+      (resSkip tabs m ps cs rs).map (·.1) = ps
+  | [], _, _ => rfl
+  | p :: ps, cs, rs => by
+    simp only [resSkip, List.map_cons, ecf_resSkip_fst ps cs.tail rs.tail]
+
+/-- The skipped results of `resSkip` are `SkipOK`. -/
+theorem ecf_resSkip_ok {tabs : Tables} {m : Mem} :
+    {ps : List ABIParam} → {cs : List Bool} → {rs : List Val} → rs.length = ps.length →
+      SkipOK tabs m (resSkip tabs m ps cs rs) rs
+  | [], _, [], _ => trivial
+  | _ :: _, _, [], hl | [], _, _ :: _, hl => by simp at hl
+  | p :: ps, cs, r :: rs, hl => by
+    simp only [resSkip, SkipOK, List.headD_cons, List.tail_cons, Bool.and_eq_true,
+      decide_eq_true_eq]
+    exact ⟨fun h => ⟨h.1.2, @of_decide_eq_true _ (Classical.propDecidable _) h.2⟩,
+      ecf_resSkip_ok (by simpa using hl)⟩
+
 /-- The conversion of a `MakeResult` tuple of results and a memory. -/
-theorem ecf_convRes {tabs : Tables} {ps : List ABIParam} {rs : List Val} (hl : rs.length = ps.length)
-    (m : Mem) : convRes tabs ps (.tuple (rs ++ [.mem m])) =
-      match resMem tabs ps rs m with
+theorem ecf_convRes {tabs : Tables} {ps : List ABIParam} {cs : List Bool} {rs : List Val}
+    (hl : rs.length = ps.length) (m : Mem) : convRes tabs ps cs (.tuple (rs ++ [.mem m])) =
+      match resMem tabs (resSkip tabs m ps cs rs) rs m with
       | some M => .tuple (ecfPieces tabs ps rs ++ [.mem M])
       | none => .poison := by
   unfold convRes
@@ -726,7 +936,9 @@ theorem ecf_convRes {tabs : Tables} {ps : List ABIParam} {rs : List Val} (hl : r
   have hz : ps.zip (rs ++ [Val.mem m]) = ps.zip rs := by
     conv => lhs; rw [← List.append_nil ps]
     rw [List.zip_append hl.symm, List.zip_nil_left, List.append_nil]
-  rw [ecf_resMem_append hl, hz]
+  have hq : rs.length = (resSkip tabs m ps cs rs).length := by
+    rw [← List.length_map (f := fun q : ABIParam × Bool => q.1), ecf_resSkip_fst]; exact hl
+  rw [ecf_resSkip_append hl, ecf_resMem_append hq, hz]
   rfl
 
 end GoFV.Proof.EC

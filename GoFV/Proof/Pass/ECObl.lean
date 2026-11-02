@@ -266,7 +266,9 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
     (hld : ∀ l ∈ stackLoads tabs (typeShapes tabs) f g x,
       (isNewB f (loadSP g l) = false → HeldT g gb x (loadSP g l)) ∧
-      (isNewB f (loadMem g l) = false → HeldT g gb x (loadMem g l))) :
+      (isNewB f (loadMem g l) = false → HeldT g gb x (loadMem g l)))
+    (hsa : ∀ p ∈ selfAddrs tabs (typeShapes tabs) f g x, p ∈ fb.values →
+      ¬ TgtInvalid g p ∧ SchedBefore g gb p x) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) (Held f g fb gb x) (HeldT g gb x) x := by
   have Wf := check_wf hf
   have Wg := check_wf hg
@@ -318,7 +320,57 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     · rw [ite_eq_left hr] at hv
       have hconv : converted f x = true := by
         unfold converted; rw [hu]; dsimp only; rw [hr, Bool.or_true]
-      exact obl_result hu hw (beq_iff_eq.1 hr) hv (ecr_ownOuts hoo) huid _ hLx hL (hH hconv)
+      have hpl : Placed f x u :=
+        ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
+      -- the self-moves' `Dereference`s and `LocalAddr`s are held in the source
+      have hS : ∀ a, ecrSelfSrc tabs f g u a → Held f g fb gb x a := by
+        rintro a ⟨e, he, hst, hsm, ha⟩
+        obtain ⟨-, -, -, n, au, pu, -, hau, hop', hsz, -, -, -, hpu, hpop, -⟩ := ecr_selfMoveOK hsm
+        have hea : e.2 ∈ u.args := by
+          have h := (List.of_mem_zip he).2
+          simp only [Array.toList_extract, List.extract_eq_take_drop, List.drop_zero] at h
+          exact Array.mem_toList_iff.1 (List.mem_of_mem_take h)
+        obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=
+          AtomSim.arg_anc Wf hcert hpl (by rw [hublk, ← hfid]; exact htree) hphi hea
+        rw [hau] at hva
+        cases hva
+        rw [hublk, ← hfid] at hanc
+        have hauph : au.op ≠ .Phi := by rw [hop']; decide
+        rcases ha with rfl | rfl
+        · by_cases haf : e.2 ∈ fb.values
+          · exact .inr (.inr (.inr ⟨haf, ⟨u, hu, hea⟩, fun uz huz => by
+              rw [hau] at huz; cases huz; exact hauph⟩))
+          · refine .inr (.inl ⟨au, ⟨hau, hvb, blk, hblk', hab⟩, hauph, hanc, fun he' => haf ?_⟩)
+            rw [he', hfid, hfb] at hblk'
+            cases hblk'
+            exact hab
+        · have hpa : addrArg f e.2 = au.args[0]! := by unfold addrArg; rw [hau]; rfl
+          rw [hpa]
+          by_cases hpf : au.args[0]! ∈ fb.values
+          · have hmem : au.args[0]! ∈ selfAddrs tabs (typeShapes tabs) f g x := by
+              rw [← hpa]
+              unfold selfAddrs
+              rw [hu]
+              simp only [beq_iff_eq.1 hr, beq_self_eq_true, ↓reduceIte]
+              refine List.mem_map.2 ⟨e, List.mem_filter.2 ⟨?_, hsm⟩, rfl⟩
+              unfold argPairs
+              exact List.mem_filter.2 ⟨he, by simp [hst]⟩
+            obtain ⟨hni, hsb⟩ := hsa _ hmem hpf
+            exact .inr (.inr (.inl ⟨hpf, hni, hsb⟩))
+          · have hpl' : Placed f e.2 au := ⟨hau, hvb, blk, hblk', hab⟩
+            have hp0 : au.args[0]! ∈ au.args := by
+              rw [← Array.mem_toList_iff, ec_args_two hsz]
+              simp
+            obtain ⟨vp, ⟨hvp, hvpb, blkp, hblkp, habp⟩, hancp⟩ :=
+              AtomSim.arg_anc Wf hcert hpl' (Anc.left hcert.parents hanc) hauph hp0
+            rw [hpu] at hvp
+            cases hvp
+            refine .inr (.inl ⟨pu, ⟨hpu, hvpb, blkp, hblkp, habp⟩, by rw [hpop]; decide,
+              Anc.trans hcert.parents hancp hanc, fun he' => hpf ?_⟩)
+            rw [he', hfid, hfb] at hblkp
+            cases hblkp
+            exact habp
+      exact obl_result hu hw (beq_iff_eq.1 hr) hv (ecr_ownOuts hoo) huid _ hLx hL (hH hconv) hS
     rw [ite_eq_right hr] at hv
     by_cases ht : (tailOp u.op || u.args.any (isTail f)) = true
     · rcases Bool.or_eq_true_iff.1 ht with h | h
