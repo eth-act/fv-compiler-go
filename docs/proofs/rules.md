@@ -1230,7 +1230,9 @@ rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036). With store pointe
 the move segments were the only obstacle of, 110 remain, 71 of them `SelectN→Move` call segments
 whose size is `Mul64 (SliceLen (SliceMake p (Sub64 c d) …)) (Const64 [1])`). With those sizes
 (`termConst` through `SliceLen`/`SliceCap` of `SliceMake`): 110 → 32 of the 198; full-v5 fully
-verified 91,652 → 91,718 (on f100340).
+verified 91,652 → 91,718 (on f100340). With the nil seeds `:1376` (`Convert`) and `:1691`
+(`IsNonNil` of an `nnSeed`), snapshots before those eliminations and the fixed loads
+(`Interp.snapRule`) and word-typed `Addr` bases (1,368 rules): 91,718 → 91,839 (on 5059a31).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
