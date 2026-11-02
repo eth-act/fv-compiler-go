@@ -753,7 +753,7 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
 /-- **result**: a `MakeResult` of the function's results becomes the register pieces of its
 register-assigned results (selector chains) on a chain of new `Store`s of the leaves of its
 stored stack-assigned results into their frame slots (`resStoresOK`; well-formed shapes, the
-stored values selector chains, a stored value the source defines one of the results) on the
+stored values selector chains of the results, or an `IMake` result's data operand) on the
 source's memory; a self-moved stack-assigned result (`selfMoveOK`) is stored by nothing. -/
 def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
   let outs := ownOuts tabs f
@@ -769,8 +769,7 @@ def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :
     (match resStores f g u w with
      | some zs =>
        resStoresOK tabs sh g (isNewB f) (resSlots tabs (sp.map (·.1))) zs &&
-         piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
-         (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+         piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))
      | none => false) &&
     tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
     regTupleOf (leafTys tabs outs) (valueTy sh (some w))

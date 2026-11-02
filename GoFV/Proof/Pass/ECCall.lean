@@ -133,7 +133,8 @@ theorem eco_mem_front_move {f g : Func} {x z q : ID} {mw : Value} (hi : invalida
   unfold ecFront
   rw [hi, if_neg Bool.false_ne_true]
   refine List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
-    ⟨List.mem_append_right _ (List.mem_flatMap.2 ⟨z, hz, ?_⟩), by rw [hn]; rfl⟩))
+    ⟨List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.2 ⟨z, hz, ?_⟩)),
+      by rw [hn]; rfl⟩))
   rw [hmw]
   exact Array.mem_toList_iff.2 hq
 

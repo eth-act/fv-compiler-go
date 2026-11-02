@@ -389,4 +389,34 @@ theorem int3_mems_witness :
 theorem ec_not_invalidated_witness : ECCheck.invalidated ivG 5 = false :=
   EC.ec_not_invalidated (f := ivF) (by decide +kernel)
 
+theorem hwr_ownStores :
+    ((expandCallsPass hwrPassEnv hwr).toOption.map fun o =>
+      ECCheck.ownStores hwr o.func 11 == [2] && (o.func.value? 2).map (·.args[1]!) == some 10 &&
+        !ECCheck.invalidated o.func 11 && !ECCheck.isNewB hwr 10) = some true := by
+  decide +kernel
+
+/-- `EC.ecFront_own` on `syscall_hasWaitingReaders`: its result store `v2` stores the source
+value `v10`, which is in the front of the `MakeResult` `v11` (its obligation reads it). -/
+theorem expandCalls_ownFront_witness :
+    ∃ out, expandCallsPass hwrPassEnv hwr = .ok out ∧ ECCheck.ownStores hwr out.func 11 = [2] ∧
+      10 ∈ EC.ecFront hwr out.func 11 := by
+  have hp := hwr_ownStores
+  cases hpe : expandCallsPass hwrPassEnv hwr with
+  | error e => rw [hpe] at hp; cases hp
+  | ok out =>
+    rw [hpe] at hp
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true,
+      beq_iff_eq, Bool.not_eq_true'] at hp
+    obtain ⟨⟨⟨hos, hv2⟩, hi⟩, hn⟩ := hp
+    refine ⟨out, rfl, hos, EC.ecFront_own hi ?_ hn⟩
+    have hsv : ECCheck.storeVal out.func 2 = 10 := by
+      unfold ECCheck.storeVal
+      cases h2 : out.func.value? 2 with
+      | none => rw [h2] at hv2; cases hv2
+      | some w2 =>
+        rw [h2] at hv2
+        exact Option.some.inj hv2
+    rw [hos, List.map_cons, List.map_nil, hsv]
+    exact List.mem_singleton_self _
+
 end GoFV.Proof.Witness

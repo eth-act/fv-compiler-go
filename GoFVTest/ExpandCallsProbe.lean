@@ -169,8 +169,6 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
             s!"result: stores ({zs.length} for {(resSlots tabs (sp.map (·.1))).length} slots)"
           else if !piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
             s!"result: stored pieces: {piecesWhy tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
-          else if !(zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q) then
-            "result: stored source value not a result"
           else "result: types"
     else if c == "select" then
       let outs := ((f.value? u.args[0]!).map (callOuts tabs ·.aux)).getD []

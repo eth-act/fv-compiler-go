@@ -1096,8 +1096,10 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   | none => rw [hzs] at hst; cases hst
   | some zs =>
   rw [hzs] at hst
-  simp only [Bool.and_eq_true, List.all_eq_true, Bool.or_eq_true, Array.contains_iff_mem] at hst
-  obtain ⟨⟨hrs, hsp⟩, hsv⟩ := hst
+  simp only [Bool.and_eq_true] at hst
+  obtain ⟨hrs, hsp⟩ := hst
+  have hosz : ownStores f g x = zs := by
+    unfold ownStores; rw [hu, hw]; dsimp only; rw [if_pos (beq_iff_eq.2 hop), hzs]; rfl
   have hsu := ecc_args_split1 u.args (by omega)
   have hsw := ecc_args_split1 w.args hws
   have hi : invalidated g x = false := by
@@ -1179,12 +1181,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     (fun a ha => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
       exact himk _ (hmemu _ (ecr_argPairs_mem (hspm e he)).2.1))
-    (fun q hq yq hyq hn' hiq => by
-      have hqu : q ∈ u.args := by
-        rcases hsv q hq with h | h
-        · rw [hn'] at h; cases h
-        · exact h
-      exact hfront q (ecFront_src hi hu hqu hiq) yq hyq)
+    (fun q hq yq hyq hn' _ => hfront q (ecFront_own hi (by rw [hosz]; exact hq) hn') yq hyq)
   simp only [ecPieceVals_false] at hS
   rw [← ecr_sp_zip _ hasl, List.flatMap_map] at hS
   -- the evaluations
@@ -1357,7 +1354,7 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
   rw [List.all_eq_true] at hwfs
   rw [hzs] at hst
   simp only [Bool.and_eq_true] at hst
-  obtain ⟨⟨hrs, -⟩, -⟩ := hst
+  obtain ⟨hrs, -⟩ := hst
   have hsu := ecc_args_split1 u.args (by omega)
   have hasl : (u.args.extract 0 (u.args.size - 1)).toList.length = (ownOuts tabs f).length := by
     simp only [Array.toList_extract, List.extract_eq_take_drop, List.drop_zero, Nat.sub_zero,
