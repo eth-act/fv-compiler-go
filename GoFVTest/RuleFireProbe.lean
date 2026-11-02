@@ -31,9 +31,12 @@ def keysOf (s : RuleSet) : List String :=
   s.values.foldl (fun acc (_, rs) => acc ++ rs.map key) [] ++
     s.blocks.foldl (fun acc (_, rs) => acc ++ rs.map blockKey) []
 
+/-- The rules proven as generated: a rule proven only in its guarded form (`GoFV.Rules.Guarded`,
+#290) counts as unproven, its firings outside the guard keep functions off stock. -/
 def provenKeys : Std.HashSet String :=
-  (keysOf Proven.generic ++ keysOf Proven.divisible ++ keysOf Proven.divmod).foldl
-    (fun s k => s.insert k) {}
+  let guarded := Guarded.all.map key
+  ((keysOf Proven.generic ++ keysOf Proven.divisible ++ keysOf Proven.divmod).filter
+    (!guarded.contains ·)).foldl (fun s k => s.insert k) {}
 
 /-- Pass name, full rule set, full table, proven table. -/
 def variants : List (String × RuleSet × Interp.Table × Interp.Table) :=
@@ -43,12 +46,15 @@ def variants : List (String × RuleSet × Interp.Table × Interp.Table) :=
    ("divisible", Generated.Divisible.ruleSet, divisibleTable, divisibleProvenTable),
    ("divmod", Generated.Divmod.ruleSet, divmodTable, divmodProvenTable)]
 
-/-- The proven rules of `s` and the rule `extra`, in matching order. -/
+/-- The proven rules of `s` (a guarded one in its guarded form) and the rule `extra`, in matching
+order. -/
 def withExtra (s : RuleSet) (extra : String) : Interp.Table :=
   Interp.Table.ofRuleSet
     { s with
       values := s.values.map fun (o, rs) =>
-        (o, rs.filter fun r => provenKeys.contains (key r) || key r == extra)
+        (o, rs.filterMap fun r =>
+          if provenKeys.contains (key r) || key r == extra then some r
+          else Guarded.all.find? (key · == key r))
       blocks := s.blocks.map fun (k, rs) =>
         (k, rs.filter fun r => provenKeys.contains (blockKey r) || blockKey r == extra) }
 
