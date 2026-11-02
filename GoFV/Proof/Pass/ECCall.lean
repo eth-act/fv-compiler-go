@@ -393,42 +393,47 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
   intro hct hct' hcallee hclo
   dsimp only at hct hct' hcallee hclo ⊢
   subst hct hct'
-  cases callee? with
-  | none => exact .stuck _ _
-  | some callee =>
-    rcases hcallee with hc | hc
-    · cases hc
-    · subst hc
-      dsimp only [bind, Res.bind, Res.ofOption]
-      rw [List.getLast?_concat, List.getLast?_concat, List.dropLast_concat, List.dropLast_concat]
-      cases mv with
-      | mem m =>
-        dsimp only
-        simp only [hpre, hpost, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some]
-        simp only [insOf, outsOf] at hmem houts ⊢
-        dsimp only [pure, Res.bind]
-        generalize retypeResults ctx.tabs (abi.params.toList.filter (!·.out)) G = G' at hmem ⊢
-        by_cases hp : (G'.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true
-        · rw [if_pos hp]; exact .stuck _ _
-        rw [if_neg hp]
-        simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
-        by_cases hok : outargsOK ctx.tabs ctx.act m (abi.params.toList.filter (!·.out)) = true
-        · rw [if_neg (by simp [hok])]
-          obtain ⟨mN, D, rfl, hpm, hokN, hD, hargs⟩ := hmem m rfl hp.1 hok
+  dsimp only [bind, Res.bind, Res.ofOption]
+  rw [List.getLast?_concat, List.getLast?_concat, List.dropLast_concat, List.dropLast_concat]
+  cases mv with
+  | mem m =>
+    dsimp only
+    simp only [hpre, hpost, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some]
+    simp only [insOf, outsOf] at hmem houts ⊢
+    dsimp only [pure, Res.bind]
+    generalize retypeResults ctx.tabs (abi.params.toList.filter (!·.out)) G = G' at hmem ⊢
+    by_cases hp : (G'.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true
+    · rw [if_pos hp]; exact .stuck _ _
+    rw [if_neg hp]
+    simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
+    by_cases hok : outargsOK ctx.tabs ctx.act m (abi.params.toList.filter (!·.out)) = true
+    · rw [if_neg (by simp [hok])]
+      obtain ⟨mN, D, rfl, hpm, hokN, hD, hargs⟩ := hmem m rfl hp.1 hok
+      dsimp only
+      rw [hD]
+      dsimp only [pure, Res.bind]
+      have hp1 := hargs.any_hasPoison hp.1
+      have hp2 : (clo'.map Val.hasPoison).getD false = false := by
+        cases hclo with
+        | none => rfl
+        | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
+      simp only [hp1, hp2, hokN, Bool.or_false, Bool.false_eq_true, ↓reduceIte, Bool.not_true,
+        nilClosure_eq hclo hp.2]
+      by_cases hnc : nilClosure clo = true
+      · rw [if_pos hnc, if_pos hnc]; exact .panic _ hpm
+      rw [if_neg hnc, if_neg hnc]
+      cases callee? with
+      | none => exact .stuck _ _
+      | some callee =>
+        rcases hcallee with hc | hc
+        · cases hc
+        · subst hc
           dsimp only
-          rw [hD]
-          dsimp only [pure, Res.bind]
-          have hp1 := hargs.any_hasPoison hp.1
-          have hp2 : (clo'.map Val.hasPoison).getD false = false := by
-            cases hclo with
-            | none => rfl
-            | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
-          simp only [hp1, hp2, hokN, Bool.or_false, Bool.false_eq_true, ↓reduceIte, Bool.not_true]
-          cases hx : env.extern callee with
+          cases hx : (env.atAct ctx.act).extern callee with
           | none => exact .stuck _ _
           | some c =>
             dsimp only
-            have := hE _ _ hx hp.1 hp.2 hargs hclo hpm
+            have := hE.atAct ctx.act _ _ hx hp.1 hp.2 hargs hclo hpm
             revert this
             generalize c G' clo (m.poisonBlock (.outargs ctx.act)) = o
             generalize c D clo' (mN.poisonBlock (.outargs ctx.act)) = o'
@@ -454,8 +459,8 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
                   .tuple (hr1.append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil)))⟩
             | panicked e hm' => exact .panic e hm'
             | stuck msg o => exact .stuck _ _
-        · rw [if_pos (by simp [hok])]; exact .stuck _ _
-      | _ => exact .stuck _ _
+    · rw [if_pos (by simp [hok])]; exact .stuck _ _
+  | _ => exact .stuck _ _
 
 theorem ecc_callOpMap {o op : Op} {k : Nat} (h : callOpMap o = some (op, k)) :
     (o = .StaticLECall ∨ o = .ClosureLECall ∨ o = .InterLECall) ∧
@@ -648,27 +653,24 @@ theorem ecc_callOp_outargs {env : Env} {ctx : Ctx} {u : Value} {abi : CallABI}
   intro hct h
   dsimp only at hct h
   subst hct
-  cases callee? with
-  | none => exact absurd h (hns _ ⟨_, rfl⟩)
-  | some callee =>
-    dsimp only [bind, Res.bind, Res.ofOption] at h
-    rw [List.getLast?_concat] at h
-    cases mv with
-    | mem m =>
-      refine ⟨m, rfl, ?_⟩
-      dsimp only at h
-      simp only [hpre, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some] at h
-      dsimp only [pure, Res.bind] at h
-      cases hn : outargsOK ctx.tabs ctx.act m (insOf abi) with
-      | true => rfl
-      | false =>
-        exfalso
-        unfold insOf at hn
-        split at h
-        · exact hns _ ⟨_, rfl⟩ h
-        · rw [if_pos (by simp [hn])] at h
-          exact hns _ ⟨_, rfl⟩ h
-    | _ => exact absurd h (hns _ ⟨_, rfl⟩)
+  dsimp only [bind, Res.bind, Res.ofOption] at h
+  rw [List.getLast?_concat] at h
+  cases mv with
+  | mem m =>
+    refine ⟨m, rfl, ?_⟩
+    dsimp only at h
+    simp only [hpre, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some] at h
+    dsimp only [pure, Res.bind] at h
+    cases hn : outargsOK ctx.tabs ctx.act m (insOf abi) with
+    | true => rfl
+    | false =>
+      exfalso
+      unfold insOf at hn
+      split at h
+      · exact hns _ ⟨_, rfl⟩ h
+      · rw [if_pos (by simp [hn])] at h
+        exact hns _ ⟨_, rfl⟩ h
+  | _ => exact absurd h (hns _ ⟨_, rfl⟩)
 
 /-- The `SP`s under the addresses of the stack-argument stores and the `Move` of call `u` (`w`
 in `g`) that the source defines: what the call's obligation needs the target to hold. -/
@@ -1292,24 +1294,21 @@ theorem ecc_callOp_noPoison {env : Env} {ctx : Ctx} {u : Value} {abi : CallABI}
   intro hct h
   dsimp only at hct h
   subst hct
-  cases callee? with
-  | none => exact absurd h (hns _ ⟨_, rfl⟩)
-  | some callee =>
-    dsimp only [bind, Res.bind, Res.ofOption] at h
-    rw [List.getLast?_concat] at h
-    cases mv with
-    | mem m =>
-      dsimp only at h
-      simp only [hpre, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some] at h
-      dsimp only [pure, Res.bind] at h
-      rw [List.dropLast_concat] at h
-      cases hp : G.any Val.hasPoison with
-      | false => rfl
-      | true =>
-        exfalso
-        rw [if_pos (by simp [ecc_anyPoison_retypeResults _ _ hp])] at h
-        exact hns _ ⟨_, rfl⟩ h
-    | _ => exact absurd h (hns _ ⟨_, rfl⟩)
+  dsimp only [bind, Res.bind, Res.ofOption] at h
+  rw [List.getLast?_concat] at h
+  cases mv with
+  | mem m =>
+    dsimp only at h
+    simp only [hpre, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some] at h
+    dsimp only [pure, Res.bind] at h
+    rw [List.dropLast_concat] at h
+    cases hp : G.any Val.hasPoison with
+    | false => rfl
+    | true =>
+      exfalso
+      rw [if_pos (by simp [ecc_anyPoison_retypeResults _ _ hp])] at h
+      exact hns _ ⟨_, rfl⟩ h
+  | _ => exact absurd h (hns _ ⟨_, rfl⟩)
 
 /-- The source operand of `Move` `z`. -/
 def ecMoveSrc (g : Func) (z : ID) : ID := ((g.value? z).map (·.args[1]!)).getD z

@@ -122,45 +122,48 @@ theorem ecr_callOp_src {env : Env} {ctx : Ctx} {u : Value} {argv : List Val} {y 
   rcases T1 with ⟨callee?, clo, rest⟩
   intro h
   dsimp only at h
-  cases callee? with
-  | none => cases h
-  | some callee =>
-    dsimp only [bind, Res.bind, Res.ofOption] at h
-    cases hl : rest.getLast? with
-    | none => rw [hl] at h; cases h
-    | some mv =>
-      rw [hl] at h
-      cases mv with
-      | mem m =>
+  dsimp only [bind, Res.bind, Res.ofOption] at h
+  cases hl : rest.getLast? with
+  | none => rw [hl] at h; cases h
+  | some mv =>
+    rw [hl] at h
+    cases mv with
+    | mem m =>
+      dsimp only at h
+      simp only [hpre, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some] at h
+      dsimp only [pure, Res.bind] at h
+      split at h
+      · cases h
+      split at h
+      · cases h
+      split at h
+      · cases h
+      cases callee? with
+      | none => cases h
+      | some callee =>
+      dsimp only at h
+      cases hx : (env.atAct ctx.act).extern callee with
+      | none => rw [hx] at h; cases h
+      | some c =>
+        rw [hx] at h
         dsimp only at h
-        simp only [hpre, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some] at h
-        dsimp only [pure, Res.bind] at h
-        split at h
-        · cases h
-        split at h
-        · cases h
-        cases hx : env.extern callee with
-        | none => rw [hx] at h; cases h
-        | some c =>
-          rw [hx] at h
+        cases ho : c (retypeResults ctx.tabs (List.filter (fun x => !x.out) abi.params.toList)
+            rest.dropLast) clo (m.poisonBlock (Blk.outargs ctx.act)) with
+        | returned rs0 m' =>
+          rw [ho] at h
           dsimp only at h
-          cases ho : c (retypeResults ctx.tabs (List.filter (fun x => !x.out) abi.params.toList)
-              rest.dropLast) clo (m.poisonBlock (Blk.outargs ctx.act)) with
-          | returned rs0 m' =>
-            rw [ho] at h
-            dsimp only at h
-            cases he : encodeResults ctx.tabs ctx.act (List.filter (fun x => x.out) abi.params.toList)
-                (retypeResults ctx.tabs (List.filter (fun x => x.out) abi.params.toList) rs0) m' with
-            | none => rw [he] at h; cases h
-            | some r =>
-              rw [he] at h
-              cases h
-              have hlen := ecc_encodeResults_length he
-              rw [ecc_retypeResults_length] at hlen
-              exact ⟨_, _, _, m', r.1, rfl, ecc_retypeResults hlen, he⟩
-          | panicked e m' => rw [ho] at h; cases h
-          | stuck msg => rw [ho] at h; cases h
-      | _ => cases h
+          cases he : encodeResults ctx.tabs ctx.act (List.filter (fun x => x.out) abi.params.toList)
+              (retypeResults ctx.tabs (List.filter (fun x => x.out) abi.params.toList) rs0) m' with
+          | none => rw [he] at h; cases h
+          | some r =>
+            rw [he] at h
+            cases h
+            have hlen := ecc_encodeResults_length he
+            rw [ecc_retypeResults_length] at hlen
+            exact ⟨_, _, _, m', r.1, rfl, ecc_retypeResults hlen, he⟩
+        | panicked e m' => rw [ho] at h; cases h
+        | stuck msg => rw [ho] at h; cases h
+    | _ => cases h
 /-- `outsOK`'s stack slots: inside the area's window, disjoint and in order. -/
 theorem ecr_outsOK {tabs : Tables} {ps : List ABIParam} (h : outsOK tabs ps = true) :
     (∀ p ∈ ps, p.regs.isEmpty = true → 0 ≤ p.offset ∧ p.offset + (tabs.ty p.type).size < 2 ^ 24) ∧
