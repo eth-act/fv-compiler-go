@@ -130,6 +130,23 @@ theorem copyReach_closed {tabs : Tables} {M : Defs} {C : ID → Prop} (hC : DefC
         exact copyReach_closed hC N _ w hr (hargs _ (Array.mem_toList_iff.1 (by
           rw [toList_of_size_one hsz]; exact List.mem_singleton_self _)))
 
+theorem copyReachW_closed {tabs : Tables} {M : Defs} {C : ID → Prop} (hC : DefClosed M C)
+    {N : Nat} {a w : ID} (h : copyReachW tabs M N a w = true) (ha : C a) : C w := by
+  unfold copyReachW at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact copyReach_closed hC N a w h ha
+  · cases hx : M.get? a with
+    | none => rw [hx] at h; cases h
+    | some x =>
+      rw [hx] at h
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨⟨⟨-, hsz⟩, -⟩, -⟩, hr⟩ := h
+      obtain ⟨m, hm, hargs⟩ := hC a ha
+      rw [hx] at hm; cases hm
+      exact copyReach_closed hC N _ w hr (hargs _ (Array.mem_toList_iff.1 (by
+        rw [toList_of_size_one hsz]; exact List.mem_singleton_self _)))
+
 section CopyArg
 
 variable {tabs : Tables} {M : Defs} {v : ID} {x : Value} {i : Nat} {src : ID}
@@ -166,7 +183,7 @@ theorem copyPut_typed (hx : M.get? v = some x) (hi : i < x.args.size) {ρ : ID �
   exact hT a (fun h => ha ((copyPut_isTerm hx hi a).2 h)) hsome'
 
 theorem copyPut_closed (hx : M.get? v = some x) (hi : i < x.args.size)
-    (hr : copyReach tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C) :
+    (hr : copyReachW tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C) :
     DefClosed (copyPut M v x i src hi) C := by
   intro y hy
   obtain ⟨m, hm, hargs⟩ := hC y hy
@@ -176,12 +193,12 @@ theorem copyPut_closed (hx : M.get? v = some x) (hi : i < x.args.size)
     refine ⟨_, rfl, fun a ha => ?_⟩
     rcases Array.mem_or_eq_of_mem_set (w := hi) ha with ha | rfl
     · exact hargs a ha
-    · exact copyReach_closed hC _ _ _ hr (hargs _ (Array.getElem_mem hi))
+    · exact copyReachW_closed hC hr (hargs _ (Array.getElem_mem hi))
   · exact ⟨m, hm, hargs⟩
 
 /-- A `copyArg` event refines the denotations of a closed set. -/
 theorem copyPut_den (hx : M.get? v = some x) (hi : i < x.args.size)
-    (hr : copyReach tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C)
+    (hr : copyReachW tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C)
     {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ) :
     ∀ n y, C y → Sem.Refines (den M.get? tabs ρ n y) (den (copyPut M v x i src hi).get? tabs ρ n y)
   | 0, _, _ => .poison _
@@ -202,8 +219,8 @@ theorem copyPut_den (hx : M.get? v = some x) (hi : i < x.args.size)
         simp only [Array.getElem_toList, Array.getElem_set]
         split
         · rename_i hij; subst hij
-          exact (copyReach_den hT _ _ _ hr n).trans
-            (copyPut_den hx hi hr hC hT n src (copyReach_closed hC _ _ _ hr
+          exact (copyReachW_den hT hr n).trans
+            (copyPut_den hx hi hr hC hT n src (copyReachW_closed hC hr
               (hargs _ (Array.getElem_mem hi))))
         · exact copyPut_den hx hi hr hC hT n _ (hargs _ (Array.getElem_mem _))
       · have hkeep : (copyPut M v x i src hi).get? y = some m := by
@@ -281,7 +298,7 @@ theorem ReplayInv.rule {r : Rule} {v : ID} {defs : List Value} (hI : ReplayInv t
 
 theorem ReplayInv.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayInv tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (hi : i < x.args.size)
-    (hr : copyReach tabs M M.size x.args[i] src = true) :
+    (hr : copyReachW tabs M M.size x.args[i] src = true) :
     ReplayInv tabs D₀ C₀ (copyPut M v x i src hi) C where
   closed := copyPut_closed hx hi hr hI.closed
   sub := hI.sub
@@ -303,13 +320,13 @@ theorem ReplayInv.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayInv
       · rename_i hij; subst hij
         have hold := (hrest i hj).1
         rw [getElem!_pos x.args i hi] at hold
-        have hsrc := copyReach_closed hI.closed _ _ _ hr hold
+        have hsrc := copyReachW_closed hI.closed hr hold
         refine ⟨hsrc, ?_⟩
         have h1 := (hrest i hj).2
         rw [getElem!_pos x.args i hi] at h1
         intro n
         obtain ⟨m, hm⟩ := h1 n
-        exact ⟨m, fun ρ hρ => (hm ρ hρ).trans ((copyReach_den (hI.typed ρ hρ) _ _ _ hr m).trans
+        exact ⟨m, fun ρ hρ => (hm ρ hρ).trans ((copyReachW_den (hI.typed ρ hρ) hr m).trans
           (hstep src hsrc ρ (hI.typed ρ hρ) m))⟩
       · exact ⟨(hrest j hj).1, den_compose (hrest j hj).2 hI.typed
           fun ρ hρ n => hstep _ (hrest j hj).1 ρ hρ n⟩

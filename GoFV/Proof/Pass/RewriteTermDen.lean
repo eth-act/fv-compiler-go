@@ -229,4 +229,90 @@ theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : L
     · exact hz
   · rfl
 
+/-- An `Addr` denotes `poison` or a global pointer, which has no concrete address. -/
+theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a : ID} {w : Value}
+    (hw : D a = some w) (hop : w.op = .Addr) :
+    ∀ m, den D tabs ρ m a = .poison ∨ ∃ p, den D tabs ρ m a = .ptr p ∧ p.addr? = none
+  | 0 => .inl rfl
+  | m + 1 => by
+    rw [den_succ_term hw (by rw [hop]; rfl), hop, GoFV.Proof.Rules.opVal_addr]
+    unfold GoFV.Proof.Rules.addrVal
+    split
+    · generalize tabs.ty w.type = t
+      cases t with
+      | int w => cases w <;> first | exact .inl rfl | exact .inr ⟨_, rfl, rfl⟩
+      | ptr e => exact .inr ⟨_, rfl, rfl⟩
+      | _ => exact .inl rfl
+    · exact .inl (retype_poison _)
+
+/-- A value accepted by `intWord` denotes a 64-bit integer word at every fuel. -/
+theorem intWord_den {tabs : Tables} {M : Defs} {ρ : ID → Val}
+    (hT : Term.Typed M.get? tabs ρ) :
+    ∀ n a m, intWord tabs M n a = true → (den M.get? tabs ρ m a).hasTy (.int .w64) = true
+  | 0, _, _, h => by simp [intWord] at h
+  | _ + 1, _, 0, _ => rfl
+  | n + 1, a, m + 1, h => by
+    unfold intWord at h
+    split at h
+    · rename_i w hw
+      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+      rcases h with (hi | hop) | ⟨⟨hop, ht⟩, hx⟩
+      · have hty := den_hasTy hT (m + 1) hw
+        revert hi hty
+        cases tabs.ty w.type with
+        | int w' => cases w' <;> simp
+        | _ => simp
+      · rcases addr_den hw hop (m + 1) with h | ⟨p, h, hp⟩ <;> rw [h]
+        · rfl
+        · simp [Val.hasTy, hp]
+      · split at hx
+        · rename_i x hx0
+          have ih := intWord_den hT n x m hx
+          have hargs : ∃ l, w.args.toList = x :: l := by
+            rw [← Array.getElem?_toList] at hx0
+            cases hl : w.args.toList with
+            | nil => rw [hl] at hx0; cases hx0
+            | cons y l => rw [hl] at hx0; cases hx0; exact ⟨l, rfl⟩
+          obtain ⟨l, hl⟩ := hargs
+          have hterm : termOp w.op = true := by rcases hop with h | h <;> rw [h] <;> decide
+          rw [den_succ_term hw hterm, GoFV.Proof.Rules.opVal_pure (by rcases hop with h | h <;>
+            rw [h] <;> decide), hl, List.map_cons]
+          have hv : (evalPure w.op (tabs.ty w.type) w.auxInt w.aux
+              (den M.get? tabs ρ m x :: l.map (den M.get? tabs ρ m))).hasTy (.int .w64) = true := by
+            rcases hop with h | h <;> rw [h]
+            · exact convert_word ih _
+            · show (match den M.get? tabs ρ m x :: l.map (den M.get? tabs ρ m) with
+                | [x] => x | _ => .poison).hasTy _ = true
+              cases l with
+              | nil => exact ih
+              | cons _ _ => rfl
+          rw [retype_word ht hv]
+          exact hv
+        · cases hx
+    · cases h
+
+/-- A value reached through `copyReachW` (a word `Copy` of a 64-bit integer word first) has a
+larger denotation at the same fuel. -/
+theorem copyReachW_den {M : Defs} {tabs : Tables} {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ)
+    {N : Nat} {a w : ID} (h : copyReachW tabs M N a w = true) (k : Nat) :
+    Sem.Refines (den M.get? tabs ρ k a) (den M.get? tabs ρ k w) := by
+  unfold copyReachW at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · exact copyReach_den hT N a w h k
+  · cases hx : M.get? a with
+    | none => rw [hx] at h; cases h
+    | some x =>
+      rw [hx] at h
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨⟨⟨hop, hsz⟩, ht⟩, hi⟩, hr⟩ := h
+      cases k with
+      | zero => exact .poison _
+      | succ k =>
+        rw [den_succ_term hx (by rw [hop]; exact termOp_copy), toList_of_size_one hsz, hop]
+        show Sem.Refines ((den M.get? tabs ρ k x.args[0]!).retype (tabs.ty x.type)) _
+        rw [retype_word ht (intWord_den hT 4 _ k hi)]
+        exact Sem.Refines.trans (den_fuel_mono _ _ _ k (k + 1) _ (by omega))
+          (copyReach_den hT N _ w hr (k + 1))
+
 end GoFV.Proof.Pass.Rewrite
