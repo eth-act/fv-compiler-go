@@ -63,7 +63,7 @@ theorem arg_before {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv 
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
-    {env : Env} (hE : env.Mono) (hEI : I.E env) {frS frT : Frame} {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0) {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData f g b fb gb of og) {e : Panic} {m : Mem}
     (he : enterBlock env (Ctx.make tabs f) frS fb i = .panic e m) :
@@ -130,7 +130,8 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
     hof hS1 (by rw [pS1, R.szS]) htyPS hpre
   have hMG := src_eval_mem H B R.treeS (P := pre) (Q := r :: post) hof hS1 hM1
     (by rw [pS1, R.szS]) htyPS hpre
-  obtain ⟨hinvG, hqG⟩ := inv_evalAll (I := I) B.hfb hEI
+  obtain ⟨hinvG, hqG⟩ := inv_evalAll (I := I) B.bmS B.hfb
+    (fr := { frS with regs := setPhis psS frS.regs }) hEI
     (fun x hx => sched_own H B x (by rw [hof]; exact List.mem_append_left _ hx))
       hpre (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis) (R.qinv fb psS B.hfb hpsS)
   have hfrT : { frT with regs := setPhis psT frT.regs } =

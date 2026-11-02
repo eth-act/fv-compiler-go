@@ -15,8 +15,9 @@ contracts: lock-step simulation (`runLoop_simE`) with the relation `BRel` at blo
 `atomSim_refines`: the trivial invariant, `Term.TermStepRef`. `atomSimX_refines` (issue #35):
 the generalised atom relation (`AtomsX`, `AtomArgsRefX`: a `Store` may change into another
 `Store` whose write refines the source's, and a root of `f` that is no root of `g` is a `Store`).
-`atomSimXE_refines` (issue #69): under contracts the invariant's environment predicate `I.E`
-holds of (e.g. malloc contracts returning zeroed blocks, `Env.AllocZero`).
+`atomSimXE_refines` (issue #69): under contracts and from entry memories the invariant's
+predicate `I.E` holds of (e.g. malloc contracts returning zeroed blocks, `Env.AllocZero`, and
+read-only symbols holding their bytes); a block step keeps the initial memory (`blockStep_mem0`).
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -78,9 +79,38 @@ theorem next_rel {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {
 
 end
 
+/-- Evaluating values keeps the initial memory. -/
+theorem evalAll_mem0 {env : Env} {ctx : Ctx} :
+    ∀ {L : List ID} {fr G : Frame}, evalAll env ctx fr L = .ok G → G.mem0 = fr.mem0
+  | [], _, _, h => by cases h; rfl
+  | x :: L, fr, G, h => by
+    unfold evalAll at h
+    split at h
+    · cases h
+    · split at h
+      · exact (evalAll_mem0 h).trans rfl
+      · cases h
+      · cases h
+
+/-- A block step along an edge keeps the initial memory. -/
+theorem blockStep_mem0 {env : Env} {ctx : Ctx} {fr G : Frame} {b : ID} {i : Nat} {e : Edge}
+    (h : blockStep env ctx fr b i = .goto G e) : G.mem0 = fr.mem0 := by
+  unfold blockStep at h
+  split at h
+  · cases h
+  · split at h
+    · cases h
+    · cases h
+    · rename_i G' hG
+      split at h
+      · cases h
+        obtain ⟨ps, o, -, -, hev⟩ := enterBlock_ok_split hG
+        exact (evalAll_mem0 hev).trans rfl
+      all_goals cases h
+
 /-- **One block entry.** -/
 theorem block_sim {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
-    {env : Env} (hE : env.Mono) (hEI : I.E env) {frS frT : Frame} {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0) {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) :
     StepSimE Mem.Refines (SimR tabs f g I) (blockStep env (Ctx.make tabs f) frS b i)
       (blockStep env (Ctx.make tabs g) frT b i) := by
@@ -173,15 +203,16 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       pre := .inl (hphi f ce H.wf _) }
 
 /-- **The atom simulation**, generalised (issue #35): changed and dropped stores, under
-contracts the invariant's environment predicate holds of (issue #69). -/
+contracts and from entry memories the invariant's predicate holds of (issue #69). -/
 theorem atomSimXE_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : AtomsX f g) (I : SrcInv tabs f)
     (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) :
-    RefinesUnder (fun env => env.Mono ∧ I.E env) tabs g tabs f := by
+    RefinesFrom (fun env args mem =>
+      env.Mono ∧ I.E env (entryFrame env (Ctx.make tabs f) args mem).mem0) tabs g tabs f := by
   have H : Hyp tabs f g ce ce' I := ⟨check_wf hf, check_wf hg, certOK_of_check (check_domCert hf),
     certOK_of_check (check_domCert hg), hA, h1, h2⟩
-  intro env ⟨hE, hEI⟩ args mem fuel hd
+  intro env args mem ⟨hE, hEI⟩ fuel hd
   refine ⟨fuel, ?_⟩
   have hc := ctx_eq (tabs := tabs) H.ok.ownAux
   have hpar : (Ctx.make tabs g).params = (Ctx.make tabs f).params := by rw [hc]
@@ -196,25 +227,36 @@ theorem atomSimXE_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   · next hn => simp only [hn] at hd; exact hd.elim
   · next hn =>
     simp only [hn] at hd
-    refine finish_refines_mono hE hd (runLoop_simE (SimR tabs f g I) (fun frS bS iS frT bT iT hR => ?_) fuel
-      _ _ _ _ _ _ ⟨H.ok.entry.symm, rfl, entry_rel H env args mem⟩ (finish_defined hd))
-    obtain ⟨rfl, rfl, R⟩ := hR
-    exact block_sim H hE hEI R
+    refine finish_refines_mono hE hd (runLoop_simE (fun frS bS iS frT bT iT =>
+      SimR tabs f g I frS bS iS frT bT iT ∧
+        frS.mem0 = (entryFrame env (Ctx.make tabs f) args mem).mem0)
+      (fun frS bS iS frT bT iT hR => ?_) fuel
+      _ _ _ _ _ _ ⟨⟨H.ok.entry.symm, rfl, entry_rel H env args mem⟩, rfl⟩ (finish_defined hd))
+    obtain ⟨⟨rfl, rfl, R⟩, hm⟩ := hR
+    have hs := block_sim H hE (by rw [hm]; exact hEI) R
+    generalize hS : blockStep env (Ctx.make tabs f) frS bT iT = sS at hs ⊢
+    cases sS with
+    | goto G e =>
+      obtain ⟨frT', e', h1, h2⟩ := hs
+      exact ⟨frT', e', h1, h2, (blockStep_mem0 hS).trans hm⟩
+    | ret rs m => exact hs
+    | panic e m => exact hs
+    | stuck => exact hs
 
 /-- **The atom simulation**, generalised (issue #35): changed and dropped stores, for an
-invariant whose environment predicate always holds. -/
+invariant whose predicate always holds. -/
 theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : AtomsX f g) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hI : ∀ env, I.E env := by intro; trivial) :
+    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hI : ∀ env m, I.E env m := by intros; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
-  fun env hE => atomSimXE_refines hf hg hA I h1 h2 env ⟨hE, hI env⟩
+  fun env hE args mem => atomSimXE_refines hf hg hA I h1 h2 env args mem ⟨hE, hI _ _⟩
 
 /-- **The atom simulation** under a source-side invariant. -/
 theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) (hI : ∀ env, I.E env := by intro; trivial) :
+    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) (hI : ∀ env m, I.E env m := by intros; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
   atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2 hI
 

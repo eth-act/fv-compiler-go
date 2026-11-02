@@ -292,13 +292,13 @@ theorem inv_phis {tabs : Tables} {f : Func} {I : SrcInv tabs f} {fr : Frame} {b 
 
 /-- Evaluating values of block `b` keeps the invariants. -/
 theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {b : ID} {fb : Block}
-    (hfb : f.block? b = some fb) (hEI : I.E env) :
-    ∀ {L : List ID} {fr G : Frame},
+    (hb : b ∈ f.blocks) (hfb : f.block? b = some fb) :
+    ∀ {L : List ID} {fr G : Frame}, I.E env fr.mem0 →
       (∀ x ∈ L, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values) →
       evalAll env (Ctx.make tabs f) fr L = .ok G →
       (∀ a, I.P b a (rv fr a)) → I.Q b (rv fr) → (∀ a, I.P b a (rv G a)) ∧ I.Q b (rv G)
-  | [], _, _, _, h, hinv, hq => by cases h; exact ⟨hinv, hq⟩
-  | x :: L, fr, G, hL, h, hinv, hq => by
+  | [], _, _, _, _, h, hinv, hq => by cases h; exact ⟨hinv, hq⟩
+  | x :: L, fr, G, hEI, hL, h, hinv, hq => by
     rw [evalAll_cons] at h
     unfold stepV at h
     change (match (match f.value? x with
@@ -328,8 +328,9 @@ theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {
             have := evalValue_typed he
             rw [hty] at this
             rw [← this]; exact I.atom b fb hfb x hxb v hv ht hph y
-        refine inv_evalAll hfb hEI (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h (fun a => ?_)
-          (I.qstep b fb hfb x hxb v hv hid hph env hEI fr y he hinv hq)
+        refine inv_evalAll hb hfb (fr := fr.set x y) hEI (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h
+          (fun a => ?_)
+          (I.qstep b fb hb hfb x hxb v hv hid hph env fr hEI y he hinv hq)
         rw [rv_set]
         split
         · next hh => obtain ⟨rfl, -⟩ := hh; exact hy

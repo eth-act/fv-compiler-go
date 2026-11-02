@@ -1520,32 +1520,78 @@ def zeroConst (tabs : Tables) (f : Func) (x : ID) : Bool :=
   | _ => false
 
 /-- A size-specialised malloc call that asks for zeroed memory (issue #69; `ssagen.newObject`:
-`mallocgc*SC*(size, typ, true)`, `Sem.AllocReq`): a malloc-family `StaticLECall`
-(`NilCheck.mallocCall`) other than `newobject`, of four arguments and of a type whose first two
-components are a pointer and a memory, with one ABI result and parameters of the shapes
-`uintptr`, any, `bool`, whose size argument is a positive `Const64` and whose `needzero`
-argument is `ConstBool [1]`. Under `Sem.Env.AllocZero` its first result points to a heap block
-that is all zero in its memory. -/
+`mallocgc*SC*(size, typ, true)`, `Sem.AllocReq`): a call other than `newobject`, of four
+arguments and of a type whose first two components are a pointer and a memory, with one ABI
+result and parameters of the shapes `uintptr`, any, `bool`, whose size argument is a positive
+`Const64` and whose `needzero` argument is `ConstBool [1]`. -/
+def freshSC (tabs : Tables) (f : Func) (cv : Value) : Bool :=
+  cv.aux.bind tabs.callee? != some "runtime.newobject" && cv.args.size == 4 &&
+  (match tabs.ty cv.type with
+   | .tuple (.ptr _ :: .mem :: _) => true
+   | _ => false) &&
+  ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)).length == 1 &&
+  (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter
+      (!·.out)).map (tabs.ty ·.type) with
+   | [.int .w64, _, .bool] => true
+   | _ => false) &&
+  match f.value? cv.args[0]!, f.value? cv.args[2]! with
+  | some s, some z =>
+    s.op == .Const64 && s.args.size == 0 && decide (0 < s.auxInt.toInt) &&
+      (tabs.ty s.type matches .int .w64) &&
+      z.op == .ConstBool && z.args.size == 0 && z.auxInt == 1 && (tabs.ty z.type matches .bool)
+  | _, _ => false
+
+/-- A `runtime.newobject(typ)` call (issue #69): of two arguments (the type descriptor and the
+memory) and of a type whose first two components are a pointer and a memory, with one ABI result
+and one pointer-shaped parameter, whose type argument is an `Addr` of a symbol
+(`WBCheck.symName?`). That the symbol is a read-only one whose type descriptor has a positive
+size is `fwdRoOK`'s. -/
+def freshNew (tabs : Tables) (f : Func) (cv : Value) : Bool :=
+  cv.aux.bind tabs.callee? == some "runtime.newobject" && cv.args.size == 2 &&
+  (match tabs.ty cv.type with
+   | .tuple (.ptr _ :: .mem :: _) => true
+   | _ => false) &&
+  ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)).length == 1 &&
+  (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter
+      (!·.out)).map (tabs.ty ·.type) with
+   | [.ptr _] => true
+   | _ => false) &&
+  (f.value? cv.args[0]!).any fun a => a.op == .Addr && (WBCheck.symName? tabs a.aux).isSome
+
+/-- A malloc call that returns a fresh zeroed block: a malloc-family `StaticLECall`
+(`NilCheck.mallocCall`) that is `freshSC` or `freshNew`. Under `Sem.Env.AllocZero` (and, for
+`newobject`, `fwdRoOK`) its first result points to a heap block that is all zero in its
+memory. -/
 def freshCall (tabs : Tables) (f : Func) (c : ID) : Bool :=
   NilCheck.mallocCall tabs f c &&
   match f.value? c with
-  | some cv =>
-    cv.aux.bind tabs.callee? != some "runtime.newobject" && cv.args.size == 4 &&
-    (match tabs.ty cv.type with
-     | .tuple (.ptr _ :: .mem :: _) => true
-     | _ => false) &&
-    ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)).length == 1 &&
-    (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter
-        (!·.out)).map (tabs.ty ·.type) with
-     | [.int .w64, _, .bool] => true
-     | _ => false) &&
-    match f.value? cv.args[0]!, f.value? cv.args[2]! with
-    | some s, some z =>
-      s.op == .Const64 && s.args.size == 0 && decide (0 < s.auxInt.toInt) &&
-        (tabs.ty s.type matches .int .w64) &&
-        z.op == .ConstBool && z.args.size == 0 && z.auxInt == 1 && (tabs.ty z.type matches .bool)
-    | _, _ => false
+  | some cv => freshSC tabs f cv || freshNew tabs f cv
   | none => false
+
+/-- The size and pointer-bytes words of a type descriptor whose bytes are `a`'s
+(`Sem.Runtime.typeInfo` of a pointer to its start). -/
+def roTypeInfo? (a : Sem.Alloc) : Option (Nat × Nat) :=
+  if 16 ≤ a.data.size then
+    match Sem.bytesNat? (a.data.extract 0 8), Sem.bytesNat? (a.data.extract 8 16) with
+    | some s, some pb => some (s, pb)
+    | _, _ => none
+  else none
+
+/-- The type argument of the `freshNew` call `c` of `f` is an `Addr` of a read-only symbol of
+`ro` whose type descriptor has a positive size (`roTypeInfo?`). -/
+def newSymOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (c : ID) : Bool :=
+  (f.value? c).any fun cv => (f.value? cv.args[0]!).any fun a =>
+    (WBCheck.symName? tabs a.aux).any fun n =>
+      ro.any fun e => e.1 == n && (roTypeInfo? e.2).any (0 < ·.1)
+
+/-- The forwarding layer's read-only condition on `f` (issue #69): if `f` has `freshNew` calls,
+their type arguments pass `newSymOK` against the read-only symbols `ro` of the precondition
+(`Sem.RoImage`), and `f` passes `WBCheck.memTyOK` (so every memory a run of `f` holds keeps
+them). -/
+def fwdRoOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) : Bool :=
+  let ns := (List.range f.valueTab.size).filter fun c =>
+    NilCheck.mallocCall tabs f c && (f.value? c).any (freshNew tabs f)
+  ns.isEmpty || (WBCheck.memTyOK tabs f && ns.all (newSymOK tabs ro f))
 
 /-- Memory `m` of `f` holds zero bytes at the `n` bytes at pointer `p` where they can be read:
 through at most `d` `Copy`s and `Store`s at pointers disjoint from them (`disjointB`), a
@@ -2819,7 +2865,9 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
   | .nil _, f, _, f' => RewriteCheck.nilOK env tabs f0 f f'
   | .fwd _, f, _, f' =>
-    RewriteCheck.fwdRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+    RewriteCheck.fwdRel tabs f f' &&
+      RewriteCheck.fwdRoOK tabs (RewriteCheck.roSyms env.tables f0) f &&
+      checkOK { tabs := tabs, typs := env.typs } f'
   | .sl, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.slTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
