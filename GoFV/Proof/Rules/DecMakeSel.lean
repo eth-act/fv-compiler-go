@@ -32,4 +32,22 @@ example : makeSelShape GoFV.Rules.Generated.Dec.r_dec_115 = false := rfl
 example : ¬ Rule.MakeSel GoFV.Rules.Generated.Dec.r_dec_82 := fun h => by
   have := h.2; revert this; decide
 
+/-! ## Dropped rules (`Rule.Drop`)
+
+`(ArrayMake1 x) && x.Type.IsPtrShaped() => x` (`dec.rules:119`) and `(StructMake x) &&
+x.Type.IsPtrShaped() => x` (`:120`) are false under the semantics (a one-field pointer-shaped
+aggregate is `.agg [p]`, Go's is the pointer; `docs/plans/semantics.md` §10). The checked rewrite
+keeps the `Make` at their events (`GoFV.Opt.RewriteCheck.replay`), validates the selections of it
+that Go rewrites to `x` as selections of a `Make` (`makeSelOK`), and accepts the output only where
+nothing reads the value any more (`finalOK`). -/
+
+/-- `dec.rules:119`: `(ArrayMake1 x) && x.Type.IsPtrShaped() => x` -/
+theorem r_dec_119_sound : Rule.Drop GoFV.Rules.Generated.Dec.r_dec_119 := rfl
+
+/-- `dec.rules:120`: `(StructMake x) && x.Type.IsPtrShaped() => x` -/
+theorem r_dec_120_sound : Rule.Drop GoFV.Rules.Generated.Dec.r_dec_120 := rfl
+
+/-- Non-vacuity: a selection of a `Make` (`dec.rules:82`) is not dropped. -/
+example : dropShape GoFV.Rules.Generated.Dec.r_dec_82 = false := rfl
+
 end GoFV.Proof.Rules

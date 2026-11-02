@@ -18,16 +18,14 @@ Not provable under `Rule.Sound` (`docs/proofs/rules.md`, "Dec rules"):
 - `dec.rules:119`/`:120` (`(ArrayMake1 x)`/`(StructMake x) && x.Type.IsPtrShaped() => x`):
   false under the semantics. A one-field aggregate of a pointer is `.agg [p]` at the shape
   `.agg [(0, .ptr _)] 8`; Go represents it as the bare pointer. Model gap, not a Go bug
-  (agreed with agent Semantics4; `docs/plans/semantics.md` §10).
+  (agreed with agent Semantics4; `docs/plans/semantics.md` §10). Their obligation is
+  `Rule.Drop` (`DecMakeSel.lean`): the checked rewrite keeps the `Make`.
 - `dec.rules:103`/`:104`/`:127` (`StructSelect`/`ArraySelect` of `IData x`), `:125`
   (`(IMake _typ (ArrayMake1 val)) => (IMake _typ val)`): correct only at the interface shape,
   which the obligation does not fix (an `IData` or `IMake` typed with an aggregate data word).
 - `dec.rules:102` (`imakeOfStructMake(v)`), `:106` (`StructSelect [i] (StructMake ___)`,
   variadic, `x.Args[i]`): no `Rule.Sound` form (`Pat.arityOk`, custom result).
 -/
-
--- FALSE r_dec_119 #17
--- FALSE r_dec_120 #17
 
 namespace GoFV.Proof.Rules
 

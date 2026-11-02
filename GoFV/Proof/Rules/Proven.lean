@@ -349,7 +349,8 @@ set_option maxRecDepth 4096 in
 theorem dec_allSound : Proven.dec.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.dec, ForallL]
-    exact ⟨⟨Rule.checked_of_sound r_dec_116_sound rfl, Rule.checked_of_sound r_dec_126_sound rfl, .inr (.inr r_dec_132_sound), trivial⟩,
+    exact ⟨⟨.inr (.inr (.inr r_dec_119_sound)), trivial⟩,
+    ⟨Rule.checked_of_sound r_dec_116_sound rfl, Rule.checked_of_sound r_dec_126_sound rfl, .inr (.inr (.inl r_dec_132_sound)), trivial⟩,
     ⟨Rule.checked_of_sound r_dec_14_sound rfl, Rule.checked_of_sound r_dec_159_sound rfl, Rule.checked_of_sound r_dec_164_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_13_sound rfl, Rule.checked_of_sound r_dec_158_sound rfl, Rule.checked_of_sound r_dec_163_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_83_sound rfl, Rule.checked_of_sound r_dec_146_sound rfl, trivial⟩,
@@ -361,7 +362,8 @@ theorem dec_allSound : Proven.dec.AllSound :=
     ⟨Rule.checked_of_sound r_dec_61_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_43_sound rfl, Rule.checked_of_sound r_dec_136_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_42_sound rfl, Rule.checked_of_sound r_dec_135_sound rfl, trivial⟩,
-    ⟨.inr (.inl r_dec_106_sound), Rule.checked_of_sound r_dec_115_sound rfl, .inr (.inr r_dec_141_sound), trivial⟩, trivial⟩)
+    ⟨.inr (.inr (.inr r_dec_120_sound)), trivial⟩,
+    ⟨.inr (.inl r_dec_106_sound), Rule.checked_of_sound r_dec_115_sound rfl, .inr (.inr (.inl r_dec_141_sound)), trivial⟩, trivial⟩)
     (by simp [Proven.dec, ForallL])
 
 set_option maxRecDepth 4096 in
