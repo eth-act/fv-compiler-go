@@ -189,7 +189,8 @@ theorem fixed_den {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {g : 
       apply load_congr_read
       apply read_congr_find
       show M.find? (.global e.1) = (({} : Mem).set (.global e.1) e.2).find? (.global e.1)
-      rw [(hR e.1 e.2 he).2, find?_set, ite_cond_eq_true _ _ rfl]
+      rw [(hR e.1 e.2 he).2, find?_set]
+      simp
     rw [hld']
     rcases fixedEq_spec hfx with h0 | h0
     · unfold fixedSrc at h0; rw [h0]; exact .poison _
