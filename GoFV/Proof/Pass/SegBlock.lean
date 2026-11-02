@@ -101,6 +101,32 @@ theorem root_ne_phi {h : Func} {x : ID} {v : Value} (hr : CSE.rootNode h x = tru
   simp [CSE.rootNode, hv, hp] at hr
   revert hr; decide
 
+/-- A value of a segment in `g` (a fresh value or the anchor) is no `Phi`. -/
+theorem SegD.ne_phi {tabs : Tables} {f g : Func} {x : ID} {D N : List ID} (d : SegD tabs f g x D N)
+    {n : ID} (hn : n ∈ segL x N) {v : Value} (hv : g.value? n = some v) : v.op ≠ .Phi := by
+  simp only [segL, List.mem_append, List.mem_singleton] at hn
+  rcases hn with hn | rfl
+  · rcases d.hfresh n hn with hr | ⟨v', hv', hop, -⟩
+    · exact root_ne_phi hr hv
+    · rw [hv] at hv'; cases hv'; rw [hop]; decide
+  · exact root_ne_phi d.hroot hv
+
+/-- What `argReach` reaches from an available value is available. -/
+theorem avail_reach {env : Env} {tabs : Tables} {f : Func} {fr : Frame} {A : ID → Prop}
+    (H : Avail env tabs f fr A) : ∀ (k : Nat) {s a : ID}, A s → argReach f k s a = true → A a
+  | 0, _, _, _, h => by simp [argReach] at h
+  | k + 1, s, a, hs, h => by
+    unfold argReach at h
+    cases hv : f.value? s with
+    | none => rw [hv] at h; simp at h
+    | some sv =>
+      rw [hv] at h
+      simp only [Option.any_some, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.or_eq_true,
+        Array.contains_iff_mem, Array.any_eq_true] at h
+      obtain ⟨hph, h | ⟨i, hi, hb⟩⟩ := h
+      · exact H.cl s sv hs hv hph a h
+      · exact avail_reach H k (H.cl s sv hs hv hph _ (Array.getElem_mem hi)) hb
+
 variable {Q : Mem → Prop} {env : Env} {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
   {F0 F0T : Frame} {oS oT : Array ID}
 
@@ -163,7 +189,7 @@ theorem gval_nonPhi {x : ID} {fv gv : Value} (hfv : f.value? x = some fv)
     rcases h with h | ⟨D, N, hs⟩
     · rw [(ssSame_spec h).2.1]; exact hph
     · obtain ⟨d⟩ := segOK_spec hs
-      exact root_ne_phi (d.hroot x (by simp [segL])) hgv
+      exact root_ne_phi d.hroot hgv
   · rw [hgv] at hn; cases hn
 
 /-- A source node the target keeps is a target node. -/
@@ -405,7 +431,7 @@ theorem segNode {x a : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
   rcases ha with ha | rfl
   · obtain ⟨-, ⟨b, hgb, hab⟩, v, hv, -⟩ := d.hN a ha
     rw [hb, K.hgb] at hgb; cases hgb
-    exact ⟨hab, v, hv, root_ne_phi (d.hroot a (by simp [segL, ha])) hv⟩
+    exact ⟨hab, v, hv, d.ne_phi (by simp [segL, ha]) hv⟩
   · obtain ⟨b, hfb, hxb⟩ := d.hlisted
     rw [hb, K.hfb] at hfb; cases hfb
     exact K.nodeG ⟨hxb, d.fv, d.hfv, d.hfph⟩ (K.rel.anchorNot a D N hs)
@@ -465,7 +491,7 @@ theorem segStep (hE : env.Mono) {S T : Frame} {k j : Nat}
   have hargR : ∀ a ∈ gv.args, ∃ yS yT, S'.regs[a]? = some (some yS) ∧
       T.regs[a]? = some (some yT) ∧ Sem.Refines yS yT := by
     intro a ha
-    rcases d.hargs i0 hi0l gv (by rw [hgi0]; exact hgv) a ha with h | ⟨-, haL, s, hsm, hsr, sv, hsv, has⟩
+    rcases d.hargs i0 hi0l gv (by rw [hgi0]; exact hgv) a ha with h | ⟨-, haL, s, hsm, hsr, hreach⟩
     · -- an earlier fresh value of the segment, which the target evaluated
       have haL : a ∈ segL x N := List.mem_of_mem_take h
       have haN : Node g gb a := K.segNode hs (d := d) (K.segBlock hs d hn hnT.1 hgv) haL
@@ -473,7 +499,7 @@ theorem segStep (hE : env.Mono) {S T : Frame} {k j : Nat}
       exact ⟨y1, y2, h1, h2, h3⟩
     · -- an argument of a root of the segment, which the source evaluated
       have hsA : Base f bid s ∨ s ∈ oS.toList.take k := .inr (hc s hsm hsr)
-      have haA := H.cl s sv hsA hsv (root_ne_phi hsr hsv) a has
+      have haA := avail_reach H 8 hsA hreach
       obtain ⟨yS, yT, h1, h2, h3⟩ := K.argRel hS hT hjT hgv ha haA
       refine ⟨yS, yT, ?_, h2, h3⟩
       rw [hout' a haL, ext_regs_lt]

@@ -23,18 +23,18 @@ open GoFV.Proof.AtomSim (Reg rv rv_of evalValue_of_regs)
 /-! ## The chains of the validator -/
 
 /-- `ss` are `Store`s of `f` from `m` down their memory arguments (first first), over `z`. -/
-private def SChain (f : Func) : ID → List ID → ID → Prop
+def SChain (f : Func) : ID → List ID → ID → Prop
   | m, [], z => m = z
   | m, s :: ss, z => s = m ∧ ∃ sv, f.value? m = some sv ∧ sv.op = .Store ∧ sv.args.size = 3 ∧
       SChain f sv.args[2]! ss z
 
 /-- `ts` are values of `g` but not of `f` from `m` down their last arguments, over `m0`. -/
-private def FChain (f g : Func) : ID → List ID → ID → Prop
+def FChain (f g : Func) : ID → List ID → ID → Prop
   | m, [], m0 => m = m0
   | m, t :: ts, m0 => t = m ∧ f.value? m = none ∧ ∃ tv, g.value? m = some tv ∧
       FChain f g (lastArg tv) ts m0
 
-private theorem storesF_chain {f : Func} : ∀ {k : Nat} {m : ID} {ss : List ID} {z : ID},
+theorem storesF_chain {f : Func} : ∀ {k : Nat} {m : ID} {ss : List ID} {z : ID},
     storesF f k m = some (ss, z) → SChain f m ss z ∧ ss.length = k
   | 0, m, ss, z, h => by
     simp only [storesF, Option.some.injEq, Prod.mk.injEq] at h
@@ -61,7 +61,7 @@ private theorem storesF_chain {f : Func} : ∀ {k : Nat} {m : ID} {ss : List ID}
           exact ⟨⟨rfl, s, hm, hc.1, hc.2, h1⟩, by simp [h2]⟩
       · cases h
 
-private theorem freshChain_chain {f g : Func} : ∀ {k : Nat} {m : ID} {ns : List ID} {m0 : ID},
+theorem freshChain_chain {f g : Func} : ∀ {k : Nat} {m : ID} {ns : List ID} {m0 : ID},
     freshChain f g k m = (ns, m0) → FChain f g m ns m0
   | 0, m, ns, m0, h => by
     simp only [freshChain, Prod.mk.injEq] at h
@@ -78,7 +78,7 @@ private theorem freshChain_chain {f g : Func} : ∀ {k : Nat} {m : ID} {ns : Lis
       obtain ⟨rfl, rfl⟩ := h
       rfl
 
-private theorem SChain.store {f : Func} : ∀ {m z : ID} {ss : List ID}, SChain f m ss z →
+theorem SChain.store {f : Func} : ∀ {m z : ID} {ss : List ID}, SChain f m ss z →
     ∀ s ∈ ss, ∃ sv, f.value? s = some sv ∧ sv.op = .Store
   | _, _, [], _, s, hs => absurd hs List.not_mem_nil
   | _, _, _ :: _, ⟨rfl, sv, hv, hop, _, hc⟩, s, hs => by
@@ -128,7 +128,7 @@ private theorem Tiles.append : ∀ {lo mid n : Nat} {w1 w2 : List (Nat × Array 
     exact h2
   | _, _, _, (_, _) :: _, _, ⟨ho, hb, ht⟩, h2 => ⟨ho, hb, Tiles.append ht h2⟩
 
-private theorem writes_append (P : Ptr) : ∀ (m : Mem) (w1 w2 : List (Nat × Array Byte)),
+theorem writes_append (P : Ptr) : ∀ (m : Mem) (w1 w2 : List (Nat × Array Byte)),
     writes P m (w1 ++ w2) = (writes P m w1).bind (writes P · w2)
   | m, [], w2 => rfl
   | m, (o, bs) :: w1, w2 => by
@@ -137,12 +137,12 @@ private theorem writes_append (P : Ptr) : ∀ (m : Mem) (w1 w2 : List (Nat × Ar
     | none => rfl
     | some m1 => exact writes_append P m1 w1 w2
 
-private theorem writes_one (P : Ptr) (m : Mem) (o : Nat) (bs : Array Byte) :
+theorem writes_one (P : Ptr) (m : Mem) (o : Nat) (bs : Array Byte) :
     writes P m [(o, bs)] = m.write (P.add (BitVec.ofNat 64 o)) bs := by
   rw [writes]
   cases m.write (P.add (BitVec.ofNat 64 o)) bs <;> rfl
 
-private theorem writes_snoc {P : Ptr} {m W : Mem} {ws : List (Nat × Array Byte)} {o : Nat}
+theorem writes_snoc {P : Ptr} {m W : Mem} {ws : List (Nat × Array Byte)} {o : Nat}
     {bs : Array Byte} (h : writes P m (ws ++ [(o, bs)]) = some W) :
     ∃ W1, writes P m ws = some W1 ∧ W1.write (P.add (BitVec.ofNat 64 o)) bs = some W := by
   rw [writes_append] at h
@@ -152,17 +152,17 @@ private theorem writes_snoc {P : Ptr} {m W : Mem} {ws : List (Nat × Array Byte)
 
 /-! ## Evaluations -/
 
-private theorem retype_mem_eq {t : Ty} {M M' : Mem} (h : (Val.mem M).retype t = .mem M') :
+theorem retype_mem_eq {t : Ty} {M M' : Mem} (h : (Val.mem M).retype t = .mem M') :
     t = .mem ∧ M = M' := by
   cases t <;> simp [Val.retype] at h ⊢
   exact h
 
-private theorem lastArg_three {w : Value} (h : w.args.size = 3) : lastArg w = w.args[2]! := by
+theorem lastArg_three {w : Value} (h : w.args.size = 3) : lastArg w = w.args[2]! := by
   rw [lastArg, CSE.Mem.args_three h]
   simp
 
 /-- A `Store`'s evaluation from its argument registers: a write at its address word. -/
-private theorem store_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q d m : ID} {qv xv mv y : Val}
+theorem store_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q d m : ID} {qv xv mv y : Val}
     (hop : v.op = .Store) (ha : v.args = #[q, d, m]) (hq : fr.regs[q]? = some (some qv))
     (hd : fr.regs[d]? = some (some xv)) (hm : fr.regs[m]? = some (some mv))
     (h : evalValue env ctx fr v = .ok y) :
@@ -177,7 +177,7 @@ private theorem store_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q d m
   exact ⟨Q, M, M', hQ, rfl, hw, rfl⟩
 
 /-- A `Store` evaluates to its write at its address word. -/
-private theorem store_eval {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q d m : ID} {Q : Ptr}
+theorem store_eval {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q d m : ID} {Q : Ptr}
     {qv xv : Val} {M M' : Mem}
     (hop : v.op = .Store) (ha : v.args = #[q, d, m]) (hq : fr.regs[q]? = some (some qv))
     (hQ : qv.asPtrWord = some Q)
@@ -198,7 +198,7 @@ private theorem store_eval {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q d
   rfl
 
 /-- A `Zero`'s evaluation from its argument registers: a write at its address word. -/
-private theorem zero_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q m : ID} {qv mv y : Val}
+theorem zero_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q m : ID} {qv mv y : Val}
     (hop : v.op = .Zero) (ha : v.args = #[q, m]) (hq : fr.regs[q]? = some (some qv))
     (hm : fr.regs[m]? = some (some mv)) (h : evalValue env ctx fr v = .ok y) :
     ∃ Q M M', qv.asPtrWord = some Q ∧ mv = .mem M ∧
@@ -222,27 +222,20 @@ private theorem zero_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q m : 
 section
 variable {env : Env} {tabs : Tables} {f g : Func} {S : Frame} {A : ID → Prop}
 
-/-- An `OffPtr` by `o` of pointer shape of a value reaching `p` through copies, `p` holding a
-word of the pointer `P`, holds a word of `P + o` if it holds a pointer word. -/
-private theorem offPtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f) S)
+/-- An `OffPtr` by `o` of pointer shape whose argument holds `p`'s register, `p` holding a word
+of the pointer `P`, holds a word of `P + o` if it holds a pointer word. -/
+theorem offPtr_reg_of (H : Avail env tabs f S A)
     (hid : ∀ z v, A z → f.value? z = some v → v.id = z) {q pz : ID} {opv : Value} {P Q : Ptr}
-    {pv qv : Val} {o : Nat} (hA : A q) (hpA : A pz) (hq : f.value? q = some opv)
+    {pv qv : Val} {o : Nat} (hA : A q) (hq : f.value? q = some opv)
     (hop : opv.op = .OffPtr) (hsz : opv.args.size = 1) (hai : opv.auxInt.toInt = (o : Int))
     (hty : isPtrTy (tabs.ty opv.type) = true)
-    (hce : copyEnd tabs f.valueTab f.valueTab.size opv.args[0]! =
-      copyEnd tabs f.valueTab f.valueTab.size pz)
+    (hcP : S.regs[opv.args[0]!]? = S.regs[pz]?)
     (hP : S.regs[pz]? = some (some pv)) (hpv : pv.asPtrWord = some P)
     (hQ : S.regs[q]? = some (some qv)) (hqv : qv.asPtrWord = some Q) :
     Q = P.add (BitVec.ofNat 64 o) := by
   have hargs : opv.args = #[opv.args[0]!] := StructStore.args1 hsz
-  generalize hc : opv.args[0]! = c at hce hargs
-  have hcA : A c := H.cl q opv hA hq (by rw [hop]; decide) c (by rw [hargs]; simp)
-  have h1 := (StructStore.copy_reg H hT hid f.valueTab.size hcA
-    (StructStore.copyReach_copyEnd _ f.valueTab.size c)).2
-  have h2 := (StructStore.copy_reg H hT hid f.valueTab.size hpA
-    (StructStore.copyReach_copyEnd _ f.valueTab.size pz)).2
-  rw [hce] at h1
-  have hcP : S.regs[c]? = some (some pv) := by rw [← h1, h2, hP]
+  generalize hc : opv.args[0]! = c at hcP hargs
+  rw [hP] at hcP
   obtain ⟨v', y, hv', hy, hev⟩ := H.val q hA
   rw [hq] at hv'
   cases hv'
@@ -267,6 +260,27 @@ private theorem offPtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.mak
   split at hqv
   · exact (Option.some.inj hqv).symm
   · cases hqv
+
+/-- An `OffPtr` by `o` of pointer shape of a value reaching `p` through copies, `p` holding a
+word of the pointer `P`, holds a word of `P + o` if it holds a pointer word. -/
+theorem offPtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f) S)
+    (hid : ∀ z v, A z → f.value? z = some v → v.id = z) {q pz : ID} {opv : Value} {P Q : Ptr}
+    {pv qv : Val} {o : Nat} (hA : A q) (hpA : A pz) (hq : f.value? q = some opv)
+    (hop : opv.op = .OffPtr) (hsz : opv.args.size = 1) (hai : opv.auxInt.toInt = (o : Int))
+    (hty : isPtrTy (tabs.ty opv.type) = true)
+    (hce : copyEnd tabs f.valueTab f.valueTab.size opv.args[0]! =
+      copyEnd tabs f.valueTab f.valueTab.size pz)
+    (hP : S.regs[pz]? = some (some pv)) (hpv : pv.asPtrWord = some P)
+    (hQ : S.regs[q]? = some (some qv)) (hqv : qv.asPtrWord = some Q) :
+    Q = P.add (BitVec.ofNat 64 o) := by
+  have hargs : opv.args = #[opv.args[0]!] := StructStore.args1 hsz
+  have hcA : A opv.args[0]! := H.cl q opv hA hq (by rw [hop]; decide) _ (by rw [hargs]; simp)
+  have h1 := (StructStore.copy_reg H hT hid f.valueTab.size hcA
+    (StructStore.copyReach_copyEnd _ f.valueTab.size _)).2
+  have h2 := (StructStore.copy_reg H hT hid f.valueTab.size hpA
+    (StructStore.copyReach_copyEnd _ f.valueTab.size pz)).2
+  rw [hce, h2] at h1
+  exact offPtr_reg_of H hid hA hq hop hsz hai hty h1.symm hP hpv hQ hqv
 
 /-- One store of the source chain at offset `mid`: its pointer holds a word of `P + mid`, its
 memory argument a memory, and it holds the write of its value there. -/

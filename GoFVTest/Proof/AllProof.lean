@@ -247,6 +247,7 @@ import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.SegCallSeg
 import GoFV.Proof.Pass.SegChain
 import GoFV.Proof.Pass.SegEval
+import GoFV.Proof.Pass.SegMove
 import GoFV.Proof.Pass.SegRel
 import GoFV.Proof.Pass.SegRo
 import GoFV.Proof.Pass.SegSim

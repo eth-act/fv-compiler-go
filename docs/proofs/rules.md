@@ -529,9 +529,15 @@ relates its input to the result by `segRel`:
   e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value rules fold to a `Const64`
   only later in the log (`constSize`; `termConst_reg`: an available term's register is its
   value), `g`'s `Zero`/`Move` on the call's arguments) or `roSeg?` (in `f` `Move [n] dst src mem`
-  with `src` an `Addr` of a symbol, in `g` `Zero [n] dst mem`; nothing dropped or fresh), the
-  dropped values listed roots of the block, the fresh ones listed in `g`'s block, `N ++ [x]`
-  roots of `g` in dependency order whose other arguments are arguments of the segment's roots;
+  with `src` an `Addr` of a symbol, in `g` `Zero [n] dst mem`; nothing dropped or fresh) or
+  `moveSeg?` (`:1978`/`:1992`/`:2011`/`:2035` and the `VarDef` forms `:2049`/`:2064`/`:2084`/`:2109`,
+  issue #69: in `f` `Move [n] dst p m` whose memory is (a `VarDef` of) `k` `Store`s at `OffPtr`s of
+  `p` inside `[0, n)` over a `Zero [n] p _`, `p` up to copies; in `g` the same `Store`s at fresh
+  `OffPtr`s of `dst` over a fresh `Zero [n] dst m`, `moveStoreOK`; nothing dropped), the
+  dropped values listed roots of the block, the fresh ones listed in `g`'s block, the anchor and
+  the fresh values roots of `g` but `OffPtr`s of arguments of the segment's roots, `N ++ [x]` in
+  dependency order, their other arguments reached from the segment's roots (`argReach`, 8 levels:
+  the stored values of a `Move`'s stores);
 - each dropped value in exactly one segment and used only inside it; the blocks' kinds and
   controls unchanged, their schedules `f`'s roots with each segment's roots replaced, at the
   last of them, by its fresh roots and its anchor (`segRoots`, `segBlockOK`);
@@ -564,7 +570,14 @@ order and refine the source's anchor: `chainSeg_sound` (`SegChain.lean`, with
 memory), `callSeg_sound (hE : env.MemOps)` (`SegCallSeg.lean`, with
 `SegCall.callOp_memclr`/`callOp_memmove`: the call's memory is refined by the plain write) and
 `roSeg_sound` (`SegRo.lean`, with `Q := RoQ tabs ro f`, `RoMem ro` when `f` passes `memTyOK`: the
-`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes). The simulation
+`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes) and `moveSeg_sound`
+(`SegMove.lean`: the stores' memory has at `P` the zeros with the stores' bytes put in,
+`read_write_putBytes`; the `Move`'s memory, that one or with a frame block poisoned, reads bytes
+they refine; the target's `Zero` and stores write those bytes at `Dst`, `writes_putBytes`, inside
+the bytes the `Move` wrote, so the fresh `OffPtr`s stay in the window; witness
+`moveSeg_witness`). A fresh `OffPtr` is pure and may be scheduled before the segment's roots:
+`Blk.step` evaluates it by `segStep` when the source evaluated the segment's roots, else purely
+(`pureEval`; its argument is an argument of a segment root, evaluated before it). The simulation
 (`SegRel.lean` `segRel_spec`, `SegBlock.lean` `segStep`, `SegEval.lean`, `SegSim.lean`) runs the
 target against the source with registers refined except at the dropped values and the source's
 frames in `MemInv.SInv (RoQ tabs ro f)` (`roQ_entry`, `roQ_evalAll`):
@@ -1190,6 +1203,9 @@ byte, half-word or word: `ult_shr`, `pow_cond`, `IsInBounds.lean`; 1,358 rules):
 verified 91,370 → 91,409 (on a5d70b2). `:579` (`Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`,
 `c < e`) is false for `c < 0`: the shift by a negative amount fills with the sign, which the
 rewrite's `x << (e-c)` shifts out (`x = -1`, `d = 1`, `c = -1`, `e = 1`: `2` against `0`).
+With the move segments (`:1978`/`:1992`/`:2011`/`:2035`, `VarDef` forms `:2049`/`:2064`/`:2084`/
+`:2109`; `moveSeg?`, pointers equal up to copies or `LocalAddr`s of one variable, `samePtr`; 1,366
+rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

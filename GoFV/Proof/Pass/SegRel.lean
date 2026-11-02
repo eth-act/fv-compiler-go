@@ -32,14 +32,17 @@ structure SegD (tabs : Tables) (f g : Func) (x : ID) (D N : List ID) where
   hbm : fv.block ∈ f.blocks
   hlisted : ∃ b, f.block? fv.block = some b ∧ x ∈ b.values
   hkind : chainSeg? tabs f g x fv gv = some (D, N) ∨ callSeg? tabs f g fv gv = some (D, N) ∨
-    roSeg? tabs f fv gv = some (D, N)
+    roSeg? tabs f fv gv = some (D, N) ∨ moveSeg? tabs f g x fv gv = some (D, N)
   hD : ∀ d ∈ D, (∃ b, f.block? fv.block = some b ∧ d ∈ b.values) ∧ CSE.rootNode f d = true
   hN : ∀ n ∈ N, f.value? n = none ∧ (∃ b, g.block? fv.block = some b ∧ n ∈ b.values) ∧
     ∃ v, g.value? n = some v ∧ v.block = fv.block
-  hroot : ∀ n ∈ segL x N, CSE.rootNode g n = true
+  hroot : CSE.rootNode g x = true
+  /-- A fresh value is a root of `g`, or an `OffPtr` of arguments of roots of the segment. -/
+  hfresh : ∀ n ∈ N, CSE.rootNode g n = true ∨ ∃ v, g.value? n = some v ∧ v.op = .OffPtr ∧
+    ∀ a ∈ v.args, ∃ s ∈ D ++ [x], CSE.rootNode f s = true ∧ ∃ sv, f.value? s = some sv ∧ a ∈ sv.args
   hargs : ∀ i < (segL x N).length, ∀ v, g.value? ((segL x N).getD i 0) = some v →
     ∀ a ∈ v.args, a ∈ (segL x N).take i ∨ (a ∉ D ∧ a ∉ segL x N ∧
-      ∃ s ∈ D ++ [x], CSE.rootNode f s = true ∧ ∃ sv, f.value? s = some sv ∧ a ∈ sv.args)
+      ∃ s ∈ D ++ [x], CSE.rootNode f s = true ∧ argReach f 8 s a = true)
   hseg : segOK tabs f g x = some (D, N)
 
 theorem any_contains_iff {o : Option Block} {z : ID} :
@@ -70,8 +73,8 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
   have hns' : ssSame fv gv = false := by simpa using hns
   have hfop : fv.op = .Store ∨ fv.op = .SelectN ∨ fv.op = .Move := by simpa [or_assoc] using hfph
   have hfph' : fv.op ≠ .Phi := by rcases hfop with h | h | h <;> rw [h] <;> decide
-  generalize hk : ((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
-    (fun _ => roSeg? tabs f fv gv) = k at h
+  generalize hk : (((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
+    (fun _ => roSeg? tabs f fv gv)).orElse (fun _ => moveSeg? tabs f g x fv gv) = k at h
   cases k with
   | none => cases h
   | some p =>
@@ -81,17 +84,21 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
   next hcond =>
     cases h
     have hkind : chainSeg? tabs f g x fv gv = some (D, N) ∨
-        callSeg? tabs f g fv gv = some (D, N) ∨ roSeg? tabs f fv gv = some (D, N) := by
+        callSeg? tabs f g fv gv = some (D, N) ∨ roSeg? tabs f fv gv = some (D, N) ∨
+        moveSeg? tabs f g x fv gv = some (D, N) := by
       cases hch : chainSeg? tabs f g x fv gv with
       | some q => rw [hch] at hk; exact .inl hk
       | none =>
         cases hca : callSeg? tabs f g fv gv with
         | some q => rw [hch, hca] at hk; exact .inr (.inl hk)
-        | none => rw [hch, hca] at hk; exact .inr (.inr hk)
+        | none =>
+          cases hro : roSeg? tabs f fv gv with
+          | some q => rw [hch, hca, hro] at hk; exact .inr (.inr (.inl hk))
+          | none => rw [hch, hca, hro] at hk; exact .inr (.inr (.inr hk))
     simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range, Bool.or_eq_true,
       Option.isNone_iff_eq_none, Option.all_eq_true, List.contains_iff_mem,
       Bool.not_eq_true', decide_eq_true_eq] at hcond
-    obtain ⟨⟨⟨⟨hDl, hDr⟩, hNs⟩, hrt⟩, hord⟩ := hcond
+    obtain ⟨⟨⟨⟨⟨hDl, hDr⟩, hNs⟩, hrx⟩, hrt⟩, hord⟩ := hcond
     have hN' : ∀ n ∈ N, f.value? n = none ∧ (∃ b, g.block? fv.block = some b ∧ n ∈ b.values) ∧
         ∃ v, g.value? n = some v ∧ v.block = fv.block := fun n hn => by
       obtain ⟨⟨h1, h2⟩, h3⟩ := hNs n hn
@@ -99,20 +106,38 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
       exact ⟨h1, any_contains_iff.1 h2, h3⟩
     have hA' : ∀ i < (segL x N).length, ∀ v, g.value? ((segL x N).getD i 0) = some v →
         ∀ a ∈ v.args, a ∈ (segL x N).take i ∨ (a ∉ D ∧ a ∉ segL x N ∧
-          ∃ s ∈ D ++ [x], CSE.rootNode f s = true ∧ ∃ sv, f.value? s = some sv ∧ a ∈ sv.args) := by
+          ∃ s ∈ D ++ [x], CSE.rootNode f s = true ∧ argReach f 8 s a = true) := by
       intro i hi v hv a ha
       have := hord i hi v hv
       simp only [Array.all_eq_true'] at this
       have := this a ha
-      simp only [List.any_eq_true, Bool.and_eq_true, Option.any_eq_true, List.mem_append,
-        List.mem_singleton, Array.contains_iff_mem, Bool.not_eq_true, Bool.or_eq_true,
+      simp only [List.any_eq_true, Bool.and_eq_true, List.mem_append,
+        List.mem_singleton, Bool.not_eq_true, Bool.or_eq_true,
         List.contains_iff_mem] at this
-      rcases this with h | ⟨⟨h1, h2⟩, s, hs, hr, sv, hsv, has⟩
+      rcases this with h | ⟨⟨h1, h2⟩, s, hs, hr, har⟩
       · exact .inl h
-      · refine .inr ⟨by simpa using h1, by simpa using h2, s, ?_, hr, sv, hsv, has⟩
+      · refine .inr ⟨by simpa using h1, by simpa using h2, s, ?_, hr, har⟩
         simpa [List.mem_append] using hs
+    have hF' : ∀ n ∈ N, CSE.rootNode g n = true ∨ ∃ v, g.value? n = some v ∧ v.op = .OffPtr ∧
+        ∀ a ∈ v.args, ∃ s ∈ D ++ [x], CSE.rootNode f s = true ∧ ∃ sv, f.value? s = some sv ∧
+          a ∈ sv.args := by
+      intro n hn
+      rcases hrt n hn with h | h
+      · exact .inl h
+      · right
+        cases hgn : g.value? n with
+        | none => simp [hgn] at h
+        | some v =>
+          simp only [hgn, Option.any_some, Bool.and_eq_true, beq_iff_eq,
+            Array.all_eq_true'] at h
+          refine ⟨v, rfl, h.1, fun a ha => ?_⟩
+          have := h.2 a ha
+          simp only [List.any_eq_true, Bool.and_eq_true, Option.any_eq_true, List.mem_append,
+            List.mem_singleton, Array.contains_iff_mem] at this
+          obtain ⟨s, hs, hr, sv, hsv, has⟩ := this
+          exact ⟨s, by simpa [List.mem_append] using hs, hr, sv, hsv, has⟩
     exact ⟨⟨fv, gv, hfv, hgv, hns', hgid, hgbl, hgty, hfph', hfop, hbm', any_contains_iff.1 hli, hkind,
-      fun d hd => ⟨any_contains_iff.1 (hDl d hd), hDr d hd⟩, hN', hrt, hA', h0⟩⟩
+      fun d hd => ⟨any_contains_iff.1 (hDl d hd), hDr d hd⟩, hN', hrx, hF', hA', h0⟩⟩
   next => cases h
 
 /-- The segments by anchor (`segRel`'s array). -/

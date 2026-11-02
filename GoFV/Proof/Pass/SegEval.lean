@@ -120,6 +120,20 @@ namespace Blk
 variable (K : Blk Q env tabs f g bid fb gb F0 F0T oS oT)
 include K
 
+/-- The roots of a segment of the block are source nodes. -/
+theorem segRoots_node {x : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
+    {d : SegD tabs f g x D N} (hb : d.fv.block = bid) {s : ID} (hsm : s ∈ D ++ [x])
+    (hr : CSE.rootNode f s = true) : Node f fb s := by
+  have hl : s ∈ fb.values := by
+    simp only [List.mem_append, List.mem_singleton] at hsm
+    rcases hsm with hsm | rfl
+    · obtain ⟨b, hfb, hsb⟩ := (d.hD s hsm).1
+      rw [hb, K.hfb] at hfb; cases hfb; exact hsb
+    · obtain ⟨b, hfb, hsb⟩ := d.hlisted
+      rw [hb, K.hfb] at hfb; cases hfb; exact hsb
+  obtain ⟨v, hv, -, -⟩ := K.valueIn hl
+  exact ⟨hl, v, hv, root_ne_phi hr hv⟩
+
 /-- **One target step.** -/
 theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {n : ID}
     (hS : SFacts env tabs f F0 S (oS.toList.take k))
@@ -160,16 +174,43 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {n : ID}
   · have hroot' : CSE.rootNode g n = false := by simpa using hroot
     cases hfv : f.value? n with
     | none =>
+      -- a fresh `OffPtr`: by its segment if the source evaluated the segment's roots, else purely
       obtain ⟨x, D, N, hs, hnN⟩ := K.rel.fresh n gv hfv hgv
+      have hn : n ∈ segL x N := by simp [segL, hnN]
+      by_cases hc : Covered f (oS.toList.take k) x D
+      · exact K.segStep hE hS hT hjT hs hc hn hinv
       obtain ⟨d⟩ := segOK_spec hs
-      rw [d.hroot n (by simp [segL, hnN])] at hroot'; cases hroot'
+      rcases d.hfresh n hnN with hr | ⟨v, hv, hop, hva⟩
+      · rw [hr] at hroot'; cases hroot'
+      rw [hgv] at hv; cases hv
+      have hp0 : Sem.prio gv.op = 0 := by simpa [CSE.rootNode, hgv] using hroot'
+      have hb := K.segBlock hs d hn hnb hgv
+      obtain ⟨y, hy⟩ := pureEval (env := env) (tabs := tabs) (fun a ha => by
+          obtain ⟨s, hsm, hsr, sv, hsv, has⟩ := hva a ha
+          obtain ⟨hsb, sv', hsv', hsph⟩ := K.segRoots_node hs (d := d) hb hsm hsr
+          rw [hsv] at hsv'; cases hsv'
+          rcases K.arg_base_or_node hsb hsv hsph has with hB | hn'
+          · exact K.argDefd hS hT hjT hgv ha (.inl hB)
+          · have hag := K.argG hnb hgv ha
+            obtain ⟨av, hav⟩ := Option.isSome_iff_exists.1 hag
+            exact K.argDefd hS hT hjT hgv ha (.inr (K.nodeG hn' fun x' hd => by
+              rw [K.rel.dropNone x' _ hd] at hav; cases hav)))
+        (CSE.Blk.isRoot_of_prio hp0) (by rw [hop]; decide) (by rw [hop]; decide)
+      refine ⟨y, by rw [stepV_of (ctx := Ctx.make tabs g) hgv, hy], K.tstep hjT hT (fun hp => ?_)
+        fun x' D' N' hs' hc' S' hev' hn' => ?_⟩
+      · obtain ⟨-, fv', hfv', -⟩ := K.hLk k n hp
+        rw [hfv] at hfv'; cases hfv'
+      · have hxx := K.seg_uniq hs hs' hn hn'
+        subst hxx
+        rw [hs] at hs'; cases hs'
+        exact absurd hc' hc
     | some fv =>
       obtain ⟨hnF, hnd⟩ := K.nodeF ⟨hnb, gv, hgv, hgph⟩ hfv
       obtain ⟨gv', hgv', hsv⟩ := K.gval hfv hnd
       rw [hgv] at hgv'; cases hgv'
       have hss : ssSame fv gv = true := hsv.resolve_right fun ⟨D, N, h⟩ => by
         obtain ⟨d⟩ := segOK_spec h
-        rw [d.hroot n (by simp [segL])] at hroot'; cases hroot'
+        rw [d.hroot] at hroot'; cases hroot'
       by_cases hnp : n ∈ oS.toList.take k
       · obtain ⟨y, hy, yS, hyS, hr⟩ := K.keptOk hE hS hT hjT hnp hgv hfv hss
         exact keptStep fv hfv hss y hy fun _ => ⟨yS, hyS, hr⟩
@@ -218,20 +259,6 @@ theorem loop {S : Frame} {pre : List ID} {K' : Nat}
     intro _ _ _ _ _ _ _ _ _ hn; simp at hn
   obtain ⟨T', h1, -, h2⟩ := CSE.evalAll_loop hstep (oT.toList.take K') [] F0T rfl ⟨rfl, h0⟩
   exact ⟨T', h1, h2⟩
-
-/-- The roots of a segment of the block are source nodes. -/
-theorem segRoots_node {x : ID} {D N : List ID} (hs : segOK tabs f g x = some (D, N))
-    {d : SegD tabs f g x D N} (hb : d.fv.block = bid) {s : ID} (hsm : s ∈ D ++ [x])
-    (hr : CSE.rootNode f s = true) : Node f fb s := by
-  have hl : s ∈ fb.values := by
-    simp only [List.mem_append, List.mem_singleton] at hsm
-    rcases hsm with hsm | rfl
-    · obtain ⟨b, hfb, hsb⟩ := (d.hD s hsm).1
-      rw [hb, K.hfb] at hfb; cases hfb; exact hsb
-    · obtain ⟨b, hfb, hsb⟩ := d.hlisted
-      rw [hb, K.hfb] at hfb; cases hfb; exact hsb
-  obtain ⟨v, hv, -, -⟩ := K.valueIn hl
-  exact ⟨hl, v, hv, root_ne_phi hr hv⟩
 
 /-- **The ok case.** -/
 theorem okCase (hE : env.Mono) {G : Frame}
