@@ -765,10 +765,21 @@ def callDeferred (env : Env) (act : Nat) (clo : Val) : Option String → Mem →
     | some c => c [] (some clo) (m.poisonBlock (.outargs act))
     | none => .stuck s!"deferred call {name}: no contract"
 
+/-- The runtime's block `b` (`deferBlk`, `panicBlk`) may be replaced: it is absent or writable.
+The runtime entry points never overwrite a read-only allocation there (only an initial memory
+or a global image could hold one): they are `stuck` instead, so contracts keep the read-only
+allocations (`Mem.KeepsRo`). -/
+def rtWritable (m : Mem) (b : Blk) : Bool :=
+  match m.find? b with
+  | some a => a.writable
+  | none => true
+
 /-- `runtime.deferproc(fn)` from activation `act`. -/
 def deferproc (act : Nat) : Contract := fun args _ m =>
   match args with
-  | [fn] => .returned [] (pushDefer act fn m)
+  | [fn] =>
+    if rtWritable m deferBlk then .returned [] (pushDefer act fn m)
+    else .stuck "deferproc: read-only defer list"
   | _ => .stuck "deferproc: bad arguments"
 
 /-- `runtime.deferprocStack(d *_defer)` from activation `act`: `d.fn` is at offset 24 (`d` is
@@ -777,7 +788,9 @@ def deferprocStack (act : Nat) : Contract := fun args _ m =>
   let reg (d : Ptr) : COutcome :=
     match m.load (.ptr none) ⟨d.blk, d.off + 24⟩ with
     | .poison => .stuck "deferprocStack: undefined fn"
-    | fn => .returned [] (pushDefer act fn m)
+    | fn =>
+      if rtWritable m deferBlk then .returned [] (pushDefer act fn m)
+      else .stuck "deferprocStack: read-only defer list"
   match args with
   | [.ptr d] => reg d
   | [.int .w64 x] => reg (Ptr.ofAddr x)
@@ -791,6 +804,7 @@ where
   go : Nat → Mem → COutcome
     | 0, m => .returned [] m
     | n + 1, m =>
+      if !rtWritable m deferBlk then .stuck "deferreturn: read-only defer list" else
       match popDefer act m with
       | .error msg => .stuck msg
       | .ok none => .returned [] m
@@ -809,7 +823,9 @@ def gorecover (act : Nat) : Contract := fun _ _ m =>
   match panicRec? m with
   | .error msg => .stuck msg
   | .ok (some (false, w, k, v)) =>
-    if k != 0 && (act == k || (w && act == k + 1)) then .returned [v] (setPanicRec m true w k v)
+    if k != 0 && (act == k || (w && act == k + 1)) then
+      if rtWritable m panicBlk then .returned [v] (setPanicRec m true w k v)
+      else .stuck "gorecover: read-only panic record"
     else .returned [nilIface] m
   | .ok _ => .returned [nilIface] m
 
