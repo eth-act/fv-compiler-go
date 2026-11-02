@@ -581,7 +581,7 @@ theorem sb_entry (S : Setup c b B rs l) {a : ID} (hl : c.isSb a = true) :
     rw [← S.entry]; exact ⟨hmem, hsb⟩
 
 /-- The flag address, constant or `SB`: listed in the entry. -/
-private theorem entry_mem (S : Setup c b B rs l) {a : ID}
+theorem entry_mem (S : Setup c b B rs l) {a : ID}
     (hl : c.isWbaddr a = true ∨ c.isConst0 a = true ∨ c.isSb a = true) :
     a ∈ vals c.g c.f.entry ∧ c.f.entry ∈ c.g.blocks := by
   rcases hl with hl | hl | hl
