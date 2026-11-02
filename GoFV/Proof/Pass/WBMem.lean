@@ -234,6 +234,7 @@ absent; the runtime's blocks are other globals. -/
 theorem memOK_pred : MemInv.MemPred MemOK where
   write h hw := h.write hw
   poison h hg hw := MemInv.poison_of_set memOK_set h hg hw
+  poisonBelow n h hg hw := MemInv.poisonBelow_of_set memOK_set n h hg hw
   free_wbuf h := h.free_wbuf
   rt a hb _ _ h := by
     rcases hb with rfl | rfl <;> exact h.set (by decide) (by decide) a

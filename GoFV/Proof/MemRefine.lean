@@ -97,6 +97,28 @@ theorem BytesRefineA.set! {a b : Array Byte} (h : BytesRefineA a b) (i : Nat) {x
   simp only [BytesRefineA, Array.set!_eq_setIfInBounds, Array.toList_setIfInBounds]
   exact BytesRefine.set i h hx
 
+theorem BytesRefine.of_getElem : ∀ {a b : List Byte}, a.length = b.length →
+    (∀ i (ha : i < a.length) (hb : i < b.length), Byte.Refines a[i] b[i]) → BytesRefine a b
+  | [], [], _, _ => .nil
+  | _ :: _, _ :: _, hl, h =>
+    .cons (h 0 (by simp) (by simp)) (BytesRefine.of_getElem (by simpa using hl) fun i ha hb =>
+      h (i + 1) (by simp; omega) (by simp; omega))
+  | [], _ :: _, hl, _ => by simp at hl
+  | _ :: _, [], hl, _ => by simp at hl
+
+/-- `Mem.poisonBelow`'s bytes on both sides. -/
+theorem BytesRefineA.poisonBelow {a b : Array Byte} (h : BytesRefineA a b) (n : Nat) :
+    BytesRefineA (a.mapIdx fun i x => if i < n then .poison else x)
+      (b.mapIdx fun i x => if i < n then .poison else x) := by
+  have hs := h.size_eq
+  refine BytesRefine.of_getElem (by simp [hs]) fun i ha hb => ?_
+  simp only [Array.length_toList, Array.size_mapIdx] at ha hb
+  simp only [Array.getElem_toList, Array.getElem_mapIdx]
+  split
+  · exact .refl _
+  · have := h.getElem! i
+    rwa [getElem!_pos a i ha, getElem!_pos b i hb] at this
+
 theorem BytesRefineA.eq {a b : Array Byte} (h : BytesRefineA a b) (hp : ∀ x ∈ a.toList, x ≠ .poison) :
     a = b := Array.toList_inj.1 (BytesRefine.eq h hp)
 
@@ -216,6 +238,14 @@ theorem poisonBlock (h : Mem.Refines m m') (b : Blk) :
   · rw [h1, h2]
     exact h.set b ⟨ha.writable, by
       simp only [Array.toList_replicate, ha.size_eq]; exact BytesRefine.refl _⟩
+
+theorem poisonBelow (h : Mem.Refines m m') (b : Blk) (n : Nat) :
+    Mem.Refines (m.poisonBelow b n) (m'.poisonBelow b n) := by
+  unfold Mem.poisonBelow
+  rcases h.find? b with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
+  · rw [h1, h2]; exact h
+  · rw [h1, h2]
+    exact h.set b ⟨ha.writable, BytesRefineA.poisonBelow ha.data n⟩
 
 theorem free (h : Mem.Refines m m') (b : Blk) : Mem.Refines (m.free b) (m'.free b) := by
   rcases m with ⟨⟨l⟩, n, k⟩; rcases m' with ⟨⟨l'⟩, n', k'⟩

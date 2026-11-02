@@ -165,6 +165,13 @@ def poisonBlock (m : Mem) (b : Blk) : Mem :=
   | some a => m.set b { a with data := Array.replicate a.data.size .poison }
   | none => m
 
+/-- Make the bytes of block `b` below offset `n` poison (a callee's frame in its caller's
+outgoing-arguments area, `callOp`); no effect on a missing block. -/
+def poisonBelow (m : Mem) (b : Blk) (n : Nat) : Mem :=
+  match m.find? b with
+  | some a => m.set b { a with data := a.data.mapIdx fun i x => if i < n then .poison else x }
+  | none => m
+
 /-- Remove block `b` (the frame at return: pointers into it then point into no allocation,
 and which frame variables existed is not observable). -/
 def free (m : Mem) (b : Blk) : Mem := { m with blocks := m.blocks.filter (·.1 != b) }

@@ -55,10 +55,24 @@ theorem find_poisonBlock_attr (m : Mem) (b b' : Blk) :
     · next he => subst he; rw [ha]; simp [Alloc.attr]
     · rfl
 
+/-- `poisonBelow` keeps every allocation's writability and size. -/
+theorem find_poisonBelow_attr (m : Mem) (b : Blk) (n : Nat) (b' : Blk) :
+    ((m.poisonBelow b n).find? b').map Alloc.attr = (m.find? b').map Alloc.attr := by
+  unfold Mem.poisonBelow
+  cases ha : m.find? b with
+  | none => rfl
+  | some a =>
+    simp only
+    rw [CSE.Mem.find?_set]
+    split
+    · next he => subst he; rw [ha]; simp [Alloc.attr]
+    · rfl
+
 /-- **The result slots are a memory invariant.** -/
 theorem slotsOK_pred (ctx : Ctx) : MemInv.MemPred (SlotsOK ctx) where
   write h hw := slotsOK_congr (fun b _ => Mem.find_write_attr hw b) h
   poison h _ _ := slotsOK_congr (fun b _ => find_poisonBlock_attr _ _ b) h
+  poisonBelow n h _ _ := slotsOK_congr (fun b _ => find_poisonBelow_attr _ _ n b) h
   free_wbuf h := slotsOK_congr (fun b hb => by
     rw [WB.free_eq_erase, TabsMod.erase_find (by cases b <;> first | rfl | cases hb)]) h
   rt a hb _ _ h := slotsOK_congr (fun b' hb' => by

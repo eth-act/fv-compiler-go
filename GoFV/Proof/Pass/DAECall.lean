@@ -277,7 +277,7 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     split
     · refine ⟨fun _ h => (nomatch h), fun e m h => ?_⟩
       cases h
-      exact ⟨trivial, memAvoids_poison hMA _, _, rfl, EqOff.poison hm _⟩
+      exact ⟨trivial, memAvoids_poisonBelow hMA _ _, _, rfl, EqOff.poisonBelow hm _ _⟩
     cases callee? with
     | none => (try dsimp only); exact callRel_stuck _ _
     | some callee =>
@@ -287,12 +287,13 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     | none => (try dsimp only); exact callRel_stuck _ _
     | some c =>
     try dsimp only
+    generalize callFrame ctx.tabs v.aux _ = F
     have hc := DeferRel.atAct_respects memRel_eqOff hU (respects_of_frameSafe hfs hU) ctx.act
-      callee c hx args clo (M.poisonBlock (.outargs ctx.act)) (M'.poisonBlock (.outargs ctx.act))
-      hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
+      callee c hx args clo (M.poisonBelow (.outargs ctx.act) F) (M'.poisonBelow (.outargs ctx.act) F)
+      hargs hcloA (memAvoids_poisonBelow hMA _ _) (EqOff.poisonBelow hm _ _)
     revert hc
-    generalize c args clo (M.poisonBlock (.outargs ctx.act)) = o
-    generalize c args clo (M'.poisonBlock (.outargs ctx.act)) = o'
+    generalize c args clo (M.poisonBelow (.outargs ctx.act) F) = o
+    generalize c args clo (M'.poisonBelow (.outargs ctx.act) F) = o'
     intro hc
     cases o with
     | stuck msg => (try dsimp only); exact callRel_stuck _ _
@@ -361,7 +362,7 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     split
     · refine ⟨fun _ h => (nomatch h), fun e m h => ?_⟩
       cases h
-      exact ⟨trivial, memAvoids_poison hMA _, _, rfl, EqOff.poison hm _⟩
+      exact ⟨trivial, memAvoids_poisonBelow hMA _ _, _, rfl, EqOff.poisonBelow hm _ _⟩
     cases callee? with
     | none => (try dsimp only); exact callRel_stuck _ _
     | some callee =>
@@ -371,12 +372,13 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     | none => (try dsimp only); exact callRel_stuck _ _
     | some c =>
     try dsimp only
+    generalize callFrame ctx.tabs v.aux _ = F
     have hc := DeferRel.atAct_respects memRel_eqOff hU (respects_of_frameSafe hfs hU) ctx.act
-      callee c hx args clo (M.poisonBlock (.outargs ctx.act)) (M'.poisonBlock (.outargs ctx.act))
-      hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
+      callee c hx args clo (M.poisonBelow (.outargs ctx.act) F) (M'.poisonBelow (.outargs ctx.act) F)
+      hargs hcloA (memAvoids_poisonBelow hMA _ _) (EqOff.poisonBelow hm _ _)
     revert hc
-    generalize c args clo (M.poisonBlock (.outargs ctx.act)) = o
-    generalize c args clo (M'.poisonBlock (.outargs ctx.act)) = o'
+    generalize c args clo (M.poisonBelow (.outargs ctx.act) F) = o
+    generalize c args clo (M'.poisonBelow (.outargs ctx.act) F) = o'
     intro hc
     cases o with
     | stuck msg => (try dsimp only); exact callRel_stuck _ _

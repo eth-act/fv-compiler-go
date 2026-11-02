@@ -154,7 +154,8 @@ theorem ecr_callOp_src' {env : Env} {ctx : Ctx} {u : Value} {argv : List Val} {y
         rw [hx] at h
         dsimp only at h
         cases ho : c (retypeResults ctx.tabs (List.filter (fun x => !x.out) abi.params.toList)
-            rest.dropLast) clo (m.poisonBlock (Blk.outargs ctx.act)) with
+            rest.dropLast) clo (m.poisonBelow (Blk.outargs ctx.act)
+              (callFrame ctx.tabs u.aux (List.filter (fun x => !x.out) abi.params.toList))) with
         | returned rs0 m' =>
           rw [ho] at h
           dsimp only at h

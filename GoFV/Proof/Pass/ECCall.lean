@@ -382,14 +382,15 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
     (hmem : ∀ m, mv = .mem m → (retypeResults ctx.tabs (insOf abi) G).any Val.hasPoison = false →
       outargsOK ctx.tabs ctx.act m (insOf abi) = true →
       ∃ mN D, mv' = .mem mN ∧
-        Mem.Refines (m.poisonBlock (.outargs ctx.act)) (mN.poisonBlock (.outargs ctx.act)) ∧
+        Mem.Refines (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs u.aux (insOf abi)))
+          (mN.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs u.aux (insOf abi))) ∧
         outargsOK ctx.tabs ctx.act mN (insOf abi) = true ∧
         decodeArgs ctx.tabs ctx.act mN (insOf abi) P' = some D ∧
         Sem.RefinesList (retypeResults ctx.tabs (insOf abi) G) D) :
     Res.Rel (EcCallRes ctx.tabs (outsOf abi)) (callOp env ctx u argv) (callOp env ctx' w argv') := by
   have habi' : callABI? ctx'.tabs w.aux = some abi := by rw [htabs, haux]; exact habi
   unfold callOp
-  rw [habi, habi', htabs, hact]
+  rw [habi, habi', htabs, hact, haux]
   revert hct hct' hcallee hclo
   generalize callTarget ctx u argv = T1
   generalize callTarget ctx' w argv' = T2
@@ -440,8 +441,8 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
             dsimp only
             have := hE.atAct ctx.act _ _ hx hp.1 hp.2 hargs hclo hpm
             revert this
-            generalize c G' clo (m.poisonBlock (.outargs ctx.act)) = o
-            generalize c D clo' (mN.poisonBlock (.outargs ctx.act)) = o'
+            generalize c G' clo (m.poisonBelow (.outargs ctx.act) _) = o
+            generalize c D clo' (mN.poisonBelow (.outargs ctx.act) _) = o'
             intro ho
             cases ho with
             | returned hr0 hm' =>
@@ -946,7 +947,8 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           ((u.args.extract k (u.args.size - 1)).toList.map (rv frS))).any Val.hasPoison = false →
         outargsOK tabs 0 m (insOf abi) = true →
         ∃ mN D, rv T w.args[w.args.size - 1]! = .mem mN ∧
-          Mem.Refines (m.poisonBlock (.outargs 0)) (mN.poisonBlock (.outargs 0)) ∧
+          Mem.Refines (m.poisonBelow (.outargs 0) (callFrame tabs u.aux (insOf abi)))
+            (mN.poisonBelow (.outargs 0) (callFrame tabs u.aux (insOf abi))) ∧
           outargsOK tabs 0 mN (insOf abi) = true ∧
           decodeArgs tabs 0 mN (insOf abi) ((w.args.extract k (w.args.size - 1)).toList.map (rv T)) =
             some D ∧
@@ -973,14 +975,15 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         exact ecc_spOffOK_bounds hoff
       obtain ⟨M1, hM1, hA1, hP1, -, hmov⟩ : ∃ M1, rv T (callBase f g u w) = .mem M1 ∧
           (∀ blk, (M1.find? blk).map ecsAttr = (M.find? blk).map ecsAttr) ∧
-          M1.poisonBlock (.outargs 0) = M.poisonBlock (.outargs 0) ∧
+          (∀ F, (∀ e ∈ sp0, e.1.offset.toNat + (tabs.ty e.1.type).size ≤ F) →
+            M1.poisonBelow (.outargs 0) F = M.poisonBelow (.outargs 0) F) ∧
           (∀ q k, q.blk ≠ .outargs 0 → M1.read q k = M.read q k) ∧
           ∀ e ∈ sp0, ∃ bs, M1.read (ecsSlot e.1.offset.toNat) (tabs.ty e.1.type).size = some bs ∧
             Sem.Refines (rv frS e.2) (decode bs 0 (tabs.ty e.1.type)) := by
         by_cases hne : callMoves f g u w = []
         · have h0 : sp0 = [] := List.eq_nil_of_length_eq_zero (by rw [hlen0, hne]; rfl)
           subst h0
-          exact ⟨M, by rw [ecc_callBase_nil hne]; exact hMT, fun _ => rfl, rfl, fun _ _ _ => rfl,
+          exact ⟨M, by rw [ecc_callBase_nil hne]; exact hMT, fun _ => rfl, fun _ _ => rfl, fun _ _ _ => rfl,
             fun e he => absurd he List.not_mem_nil⟩
         have hmc := ecc_callMoves_chain hne
         -- the top `Move` is a new value of `E`, and so are the ones below it
@@ -1080,8 +1083,31 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         rw [writeAll_outargsOK hW, show outargsOK tabs 0 M1 (insOf abi) = outargsOK tabs 0 M (insOf abi) by
           unfold outargsOK; simp only [ecs_canWrite_congr hA1], hMR.outargsOK]
         exact hokm
-      have hpoi : Mem.Refines (m.poisonBlock (.outargs 0)) (Mt.poisonBlock (.outargs 0)) := by
-        rw [writeAll_poison hblk hW, hP1]; exact hMR.poisonBlock _
+      -- the stack arguments' slots lie in the callee's frame
+      have hFr : ∀ e ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList,
+          e.1.offset < 2 ^ 24 →
+            e.1.offset.toNat + (tabs.ty e.1.type).size ≤ callFrame tabs u.aux (insOf abi) :=
+        fun e he hlt => by
+          have hr : e.1.regs.isEmpty = true := hregOf he
+          have h0 := (hinsS _ (hmemPair he).1 hr).2
+          have := slot_le_callFrame (tabs := tabs) (aux := u.aux) (hmemPair he).1 hr
+          rwa [ecs_ofInt h0, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)] at this
+      have hpoi : Mem.Refines (m.poisonBelow (.outargs 0) (callFrame tabs u.aux (insOf abi)))
+          (Mt.poisonBelow (.outargs 0) (callFrame tabs u.aux (insOf abi))) := by
+        rw [writeAll_poisonBelow (fun e he => ⟨hblk e he, ?_⟩) hW,
+          hP1 _ fun e he => hFr e (hmS0 he) (hbd0 e he).2]
+        · exact hMR.poisonBelow _ _
+        · obtain ⟨s, hs, y, rfl⟩ := ecs_mem_zipWith he
+          obtain ⟨q, hq, l, hl, rfl⟩ := ecs_mem_leafSlots hs
+          obtain ⟨e1, he1, rfl⟩ := List.mem_map.1 hq
+          have hb := ecs_storesOK_bounds hsOK _ hs
+          have hle := (mem_leaves (hwfS _ he1) hl).1
+          have h0 := (hinsS _ (hmemPair (hm1 he1)).1 (hregOf (hm1 he1))).2
+          dsimp only at hb
+          have := hFr e1 (hm1 he1) (by omega)
+          simp only [ecsW, ecsSlot, BitVec.toNat_ofNat, GoFV.Proof.CSE.Mem.encode_size]
+          rw [Nat.mod_eq_of_lt (by omega)]
+          omega
       -- the slots in order
       have hpw := ecs_slotsSorted_pairwise hsorted
       rw [hsp01, List.map_append, List.pairwise_append] at hpw

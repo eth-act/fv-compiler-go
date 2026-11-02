@@ -367,6 +367,19 @@ theorem memAvoids_poison {U : Blk → Prop} {m : Mem} (h : m.Avoids U) (b : Blk)
   · exact memAvoids_set h fun _ => bav_replicate_poison _ _
   · exact h
 
+theorem memAvoids_poisonBelow {U : Blk → Prop} {m : Mem} (h : m.Avoids U) (b : Blk) (n : Nat) :
+    (m.poisonBelow b n).Avoids U := by
+  unfold Mem.poisonBelow
+  split
+  · rename_i a ha
+    refine memAvoids_set h fun hu x hx => ?_
+    simp only [Array.toList_mapIdx, List.mem_mapIdx] at hx
+    obtain ⟨i, hi, rfl⟩ := hx
+    split
+    · trivial
+    · exact memAvoids_find h ha hu _ (by simp)
+  · exact h
+
 theorem read_avoids {U : Blk → Prop} {m : Mem} (h : m.Avoids U) {p : Ptr} {n : Nat}
     {bs : Array Byte} (hr : m.read p n = some bs) (hu : ¬ U p.blk) : BAv U bs := by
   unfold Mem.read at hr

@@ -201,6 +201,24 @@ theorem EqX.poison {m m' : Mem} (h : EqX X m m') (b : Blk) :
     unfold EqX
     rw [key, key, h]
 
+/-- `poisonBelow` on both sides (any block). -/
+theorem EqX.poisonBelow {m m' : Mem} (h : EqX X m m') (b : Blk) (n : Nat) :
+    EqX X (m.poisonBelow b n) (m'.poisonBelow b n) := by
+  cases hb : X b
+  · unfold Mem.poisonBelow
+    rw [EqX.find h hb]
+    cases m.find? b with
+    | none => exact h
+    | some a => exact EqX.set h b _
+  · have key : ∀ m : Mem, (m.poisonBelow b n).erase X = m.erase X := by
+      intro m
+      unfold Mem.poisonBelow
+      split
+      · exact erase_set_X hb
+      · rfl
+    unfold EqX
+    rw [key, key, h]
+
 /-- Filtering by a block predicate that drops every block of `X` sees through `erase`. -/
 theorem filter_erase (F : Blk × Alloc → Bool) (hF : ∀ e, X e.1 = true → F e = false) (m : Mem) :
     ({ m with blocks := (m.erase X).blocks.filter F } : Mem) = { m with blocks := m.blocks.filter F } := by

@@ -20,8 +20,8 @@ functions are the runtime model's (`Env.MemOps`), a call that the checks of
 * `callOp_memmove`: likewise with `M.read Q n = some bs` and `M.write P bs` (what `Move` does);
 * `callOp_memclr_not_panic`, `callOp_memmove_not_panic`: never panics.
 
-The contract runs on the memory with the caller's outgoing-arguments area poisoned; the proofs
-only use that this memory refines `M` (`poisonBlock_refines`), so they do not depend on which
+The contract runs on the memory with the callee's frame in the caller's outgoing-arguments area
+poisoned; the proofs only use that this memory refines `M` (`poisonBelow_refines`), so they do not depend on which
 bytes are poisoned: a read there gives bytes that refine the plain read (`Mem.Refines.read`),
 and a write of refined bytes refines the plain write (`Mem.Refines.write`). `const64_toInt`
 relates the size argument `.int .w64 (BitVec.ofInt 64 c.toInt)` of a `Const64 [c]` to the
@@ -49,7 +49,7 @@ abbrev callParams (tabs : Tables) (v : Value) : List ABIParam :=
 
 /-- A static call that returns: its callee's contract returned on the arguments (before `expand
 calls` retyped at the parameters' shapes, decoded from the register pieces after) and the memory
-with the outgoing-arguments area poisoned, and the results were encoded. -/
+with the callee's frame in the outgoing-arguments area poisoned, and the results were encoded. -/
 theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
     (hop : v.op = .StaticLECall ∨ v.op = .StaticCall) (hc : callOp env ctx v argv = .ok y) :
     ∃ name M args c rs m' r, v.aux.bind ctx.tabs.callee? = some name ∧
@@ -57,7 +57,9 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
       (if v.op = .StaticCall then
         decodeArgs ctx.tabs ctx.act M ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast = some args
       else args = retypeResults ctx.tabs ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast) ∧
-      (env.atAct ctx.act).extern name = some c ∧ c args none (M.poisonBlock (.outargs ctx.act)) = .returned rs m' ∧
+      (env.atAct ctx.act).extern name = some c ∧
+      c args none (M.poisonBelow (.outargs ctx.act)
+        (callFrame ctx.tabs v.aux ((callParams ctx.tabs v).filter (!·.out)))) = .returned rs m' ∧
       encodeResults ctx.tabs ctx.act ((callParams ctx.tabs v).filter (·.out))
         (retypeResults ctx.tabs ((callParams ctx.tabs v).filter (·.out)) rs) m' = some r ∧
       y = .tuple ((if v.op = .StaticCall then r.1
@@ -346,6 +348,21 @@ theorem poisonBlock_refines (m : Mem) (b : Blk) : Mem.Refines (m.poisonBlock b) 
       (a' := a) ⟨rfl, BytesRefineA.replicate_poison _ rfl⟩
     rwa [DSE.set_self h] at this
 
+/-- Poisoning the bytes of a block below an offset refines the memory. -/
+theorem poisonBelow_refines (m : Mem) (b : Blk) (n : Nat) : Mem.Refines (m.poisonBelow b n) m := by
+  unfold Mem.poisonBelow
+  cases h : m.find? b with
+  | none => exact Mem.Refines.refl m
+  | some a =>
+    have := (Mem.Refines.refl m).set b
+      (a := { a with data := a.data.mapIdx fun i x => if i < n then .poison else x }) (a' := a)
+      ⟨rfl, BytesRefine.of_getElem (by simp) fun i _ _ => by
+        simp only [Array.getElem_toList, Array.getElem_mapIdx]
+        split
+        · exact .poison _
+        · exact .refl _⟩
+    rwa [DSE.set_self h] at this
+
 /-- The value of `Const64 [c]` (`Conv.const .w64 c`) as a signed integer is `c`. -/
 theorem const64_toInt (c : Int64) : (BitVec.ofInt 64 c.toInt).toInt = c.toInt := by
   simp
@@ -390,7 +407,8 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
   subst ha
   obtain rfl := (hE.atAct ctx.act).1 c hx
   simp only [Runtime.memclr, Runtime.ok?, runtime_asPtr_eq, hpa, Runtime.asInt] at hr
-  cases hw : (M.poisonBlock (.outargs ctx.act)).write P (Array.replicate x.toInt.toNat (.b 0)) with
+  generalize callFrame ctx.tabs v.aux _ = F at hr
+  cases hw : (M.poisonBelow (.outargs ctx.act) F).write P (Array.replicate x.toInt.toNat (.b 0)) with
   | none =>
     simp only [hw, Option.pure_def, Option.bind_eq_bind, Option.bind_some, Option.bind_none] at hr
     cases hr
@@ -399,7 +417,7 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
       COutcome.returned.injEq] at hr
     obtain ⟨rfl, rfl⟩ := hr
     obtain ⟨hout, rfl⟩ := encodeResults_nil he
-    obtain ⟨M', hw', hR⟩ := (poisonBlock_refines M _).write (BytesRefineA.refl _) hw
+    obtain ⟨M', hw', hR⟩ := (poisonBelow_refines M _ F).write (BytesRefineA.refl _) hw
     refine ⟨M, M', Mc, rfl, hw', ?_, hR⟩
     rw [hy, hout]
     split <;> rfl
@@ -423,14 +441,15 @@ theorem callOp_memmove {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P 
   subst ha
   obtain rfl := (hE.atAct ctx.act).2 c hx
   simp only [Runtime.memmove, Runtime.ok?, runtime_asPtr_eq, hpa, hqb, Runtime.asInt] at hr
-  have hP := poisonBlock_refines M (.outargs ctx.act)
-  cases hrd : (M.poisonBlock (.outargs ctx.act)).read Q x.toInt.toNat with
+  generalize callFrame ctx.tabs v.aux _ = F at hr
+  have hP := poisonBelow_refines M (.outargs ctx.act) F
+  cases hrd : (M.poisonBelow (.outargs ctx.act) F).read Q x.toInt.toNat with
   | none =>
     simp only [hrd, Option.pure_def, Option.bind_eq_bind, Option.bind_some, Option.bind_none] at hr
     cases hr
   | some bs0 =>
     obtain ⟨bs, hrd', hb⟩ := hP.read hrd
-    cases hw : (M.poisonBlock (.outargs ctx.act)).write P bs0 with
+    cases hw : (M.poisonBelow (.outargs ctx.act) F).write P bs0 with
     | none =>
       simp only [hrd, hw, Option.pure_def, Option.bind_eq_bind, Option.bind_some,
         Option.bind_none] at hr
