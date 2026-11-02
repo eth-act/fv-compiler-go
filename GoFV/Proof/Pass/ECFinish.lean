@@ -3,19 +3,16 @@ import GoFV.Proof.Pass.ECShape
 import GoFV.Proof.ABI
 
 /-!
-# `expand calls`: the `Ret` outcomes (issue #28)
+# `expand calls`: the `Ret` outcomes, register pieces (issue #28)
 
-`finish_ecRR`: the source's results `rs` (one per result of the function, each of its shape)
-and the target's register pieces `rs'` refining theirs, retyped at the register shapes (`ecRR`),
-finish alike. The source takes `goResults`' Go-typed path and decodes `encode t r` (= `r` for a
-poison-free result); the target takes the register path, where each result is `ofPieces t` of
-its retyped pieces (= `r`: the leaf shape decodes a retyped piece's encoding as the piece, also
-for a 64-bit integer in a pointer register, `ecf_decode_reg`), or the Go-typed path, which it
-can only take when every result has a single leaf of an atom shape.
-
-`ret_result`: a `Ret` of a converted `MakeResult` relates the outcomes by `ecRR`, for
-poison-free source results (otherwise `finish` is stuck); the register shapes are the target
-`MakeResult`'s (`regTupleOf`).
+The source's results `rs` (one per result of the function, each of its shape) and the target's
+register pieces `rs'` refining theirs, retyped at the register shapes (`ecRR`), finish alike
+(`ECOwn.finish_ecRR`). The source takes `goResults`' Go-typed path and decodes `encode t r`
+(= `r` for a poison-free result, `ecf_decode_encode`); the target takes the register path, where
+each register-assigned result is `ofPieces t` of its retyped pieces (= `r`: the leaf shape
+decodes a retyped piece's encoding as the piece, also for a 64-bit integer in a pointer
+register, `ecf_decode_reg`), or the Go-typed path, which it can only take when every result is
+register-assigned with a single leaf of an atom shape (`ecf_goResults_reg`).
 -/
 
 namespace GoFV.Proof.EC
@@ -132,6 +129,18 @@ abbrev ecfOut (tabs : Tables) (p : ABIParam) : Option AuxRef × Ty × Nat :=
 def ecfReg (tabs : Tables) (p : ABIParam) : Prop :=
   p.regs.isEmpty = false ∧ wf (tabs.ty p.type) = true ∧ (leaves (tabs.ty p.type)).length = p.regs.size
 
+/-- What `ownOutsOK` gives about one result: a well-formed shape, register-assigned with as many
+registers as leaves or stack-assigned with a name. -/
+def ecfOK (tabs : Tables) (p : ABIParam) : Prop :=
+  wf (tabs.ty p.type) = true ∧ (p.regs.isEmpty = false → (leaves (tabs.ty p.type)).length = p.regs.size) ∧
+    (p.regs.isEmpty = true → ∃ n, p.name = some n)
+
+theorem ecfOK_of_reg {tabs : Tables} {p : ABIParam} (h : ecfReg tabs p) : ecfOK tabs p :=
+  ⟨h.2.1, fun _ => h.2.2, fun he => by rw [h.1] at he; cases he⟩
+
+theorem ecfReg_of_ok {tabs : Tables} {p : ABIParam} (h : ecfOK tabs p) (he : p.regs.isEmpty = false) :
+    ecfReg tabs p := ⟨he, h.1, h.2.1 he⟩
+
 theorem ecf_reg_of {tabs : Tables} {ps : List ABIParam} (h : regParamsOK tabs ps = true) :
     ∀ p ∈ ps, ecfReg tabs p := by
   intro p hp
@@ -143,16 +152,16 @@ theorem ecf_reg_of {tabs : Tables} {ps : List ABIParam} (h : regParamsOK tabs ps
 theorem ecf_decode_encode {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, ecfReg tabs p) → Val.anyPoison rs = false →
+      (∀ p ∈ ps, wf (tabs.ty p.type) = true) → Val.anyPoison rs = false →
       (((rs.zip (ps.map (ecfOut tabs))).map fun (v, (_, t, _)) => encode t v).zip
         (ps.map (ecfOut tabs))).map (fun (bs, (_, t, _)) => decode bs 0 t) = rs
   | _, _, .nil, _, _ => rfl
-  | p :: ps, r :: rs, .cons hr hf, hreg, hp => by
+  | p :: ps, r :: rs, .cons hr hf, hwf, hp => by
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
     simp only [List.map_cons, List.zip_cons_cons, List.cons.injEq]
-    have hw := (hreg p List.mem_cons_self).2.1
+    have hw := hwf p List.mem_cons_self
     exact ⟨(ecf_refines_eq _ hw (roundtrip hw hr) hp.1 hr).symm,
-      ecf_decode_encode hf (fun q hq => hreg q (List.mem_cons_of_mem _ hq)) hp.2⟩
+      ecf_decode_encode hf (fun q hq => hwf q (List.mem_cons_of_mem _ hq)) hp.2⟩
 
 theorem ecf_forall₂_length {α β : Type} {R : α → β → Prop} :
     {l : List α} → {l' : List β} → List.Forall₂ R l l' → l'.length = l.length
@@ -172,7 +181,7 @@ theorem ecf_all_hasTy {tabs : Tables} :
 theorem ecf_goResults_src {tabs : Tables} {ps : List ABIParam} {rs : List Val}
     {outs : Array (Option AuxRef × Ty × Nat)} (houts : outs.toList = ps.map (ecfOut tabs))
     (hf : List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs)
-    (hreg : ∀ p ∈ ps, ecfReg tabs p) (hp : Val.anyPoison rs = false) (act : Nat) (m : Mem) :
+    (hwf : ∀ p ∈ ps, wf (tabs.ty p.type) = true) (hp : Val.anyPoison rs = false) (act : Nat) (m : Mem) :
     goResults outs act rs m = .ok rs := by
   unfold goResults
   dsimp only
@@ -180,7 +189,7 @@ theorem ecf_goResults_src {tabs : Tables} {ps : List ABIParam} {rs : List Val}
     Bool.true_and]
   simp only [↓reduceIte]
   show (if _ then _ else _) = _
-  rw [ecf_decode_encode hf hreg hp, Val.any_hasPoison, hp]
+  rw [ecf_decode_encode hf hwf hp, Val.any_hasPoison, hp]
   rfl
 
 
@@ -192,6 +201,11 @@ theorem ecf_pieces_cons {tabs : Tables} {p : ABIParam} (h : ecfReg tabs p) (ps :
     (r : Val) (rs : List Val) :
     ecfPieces tabs (p :: ps) (r :: rs) = leafVals (tabs.ty p.type) r ++ ecfPieces tabs ps rs := by
   simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons, regLeafVals_reg h.1]
+
+theorem ecf_pieces_cons_stack {tabs : Tables} {p : ABIParam} (h : p.regs.isEmpty = true)
+    (ps : List ABIParam) (r : Val) (rs : List Val) :
+    ecfPieces tabs (p :: ps) (r :: rs) = ecfPieces tabs ps rs := by
+  simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons, regLeafVals_stack h, List.nil_append]
 
 /-- Register-assigned results only: every result's leaf values. -/
 theorem ecf_pieces_all_reg {tabs : Tables} :
@@ -207,14 +221,16 @@ theorem ecf_pieces_all_reg {tabs : Tables} :
 theorem ecf_pieces_np {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, ecfReg tabs p) → Val.anyPoison rs = false → Val.anyPoison (ecfPieces tabs ps rs) = false
+      (∀ p ∈ ps, ecfOK tabs p) → Val.anyPoison rs = false → Val.anyPoison (ecfPieces tabs ps rs) = false
   | _, _, .nil, _, _ => rfl
-  | p :: ps, r :: rs, .cons hr hf, hreg, hp => by
+  | p :: ps, r :: rs, .cons hr hf, hok, hp => by
     simp only [Val.anyPoison, Bool.or_eq_false_iff] at hp
-    rw [ecf_pieces_cons (hreg p List.mem_cons_self)]
-    rw [ecf_anyPoison_append, ecf_leafVals_np _ (hreg p List.mem_cons_self).2.1 hp.1 hr,
-      ecf_pieces_np hf (fun q hq => hreg q (List.mem_cons_of_mem _ hq)) hp.2]
-    rfl
+    have ih := ecf_pieces_np hf (fun q hq => hok q (List.mem_cons_of_mem _ hq)) hp.2
+    cases he : p.regs.isEmpty
+    · rw [ecf_pieces_cons (ecfReg_of_ok (hok p List.mem_cons_self) he)]
+      rw [ecf_anyPoison_append, ecf_leafVals_np _ (hok p List.mem_cons_self).1 hp.1 hr, ih]
+      rfl
+    · rw [ecf_pieces_cons_stack he]; exact ih
 
 /-! ## The target's pieces: retyped at their registers' shapes -/
 
@@ -332,14 +348,17 @@ theorem ecf_forall₂_snd {xs : List Val} :
 
 /-- The pieces have the leaf shapes. -/
 theorem ecf_pieces_hasTy {tabs : Tables} :
-    {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length → (∀ p ∈ ps, ecfReg tabs p) →
+    {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length → (∀ p ∈ ps, ecfOK tabs p) →
       List.Forall₂ (fun p (t : Ty) => p.hasTy t = true) (ecfPieces tabs ps rs) (leafTys tabs ps)
   | [], [], _, _ => .nil
   | _ :: _, [], hl, _ | [], _ :: _, hl, _ => by simp at hl
-  | p :: ps, r :: rs, hl, hreg => by
-    rw [ecf_pieces_cons (hreg p List.mem_cons_self), leafTys_cons_reg tabs (hreg p List.mem_cons_self).1]
-    exact List.Forall₂.append (ecf_forall₂_snd (leafVals_hasTy (hreg p List.mem_cons_self).2.1))
-      (ecf_pieces_hasTy (by simpa using hl) (fun q hq => hreg q (List.mem_cons_of_mem _ hq)))
+  | p :: ps, r :: rs, hl, hok => by
+    have ih := ecf_pieces_hasTy (rs := rs) (by simpa using hl)
+      (fun q hq => hok q (List.mem_cons_of_mem _ hq))
+    cases he : p.regs.isEmpty
+    · rw [ecf_pieces_cons (ecfReg_of_ok (hok p List.mem_cons_self) he), leafTys_cons_reg tabs he]
+      exact List.Forall₂.append (ecf_forall₂_snd (leafVals_hasTy (hok p List.mem_cons_self).1)) ih
+    · rw [ecf_pieces_cons_stack he, leafTys_cons_stack tabs he]; exact ih
 
 /-- The register pieces of the results, retyped at the register shapes `rts`. -/
 abbrev ecfRegs (tabs : Tables) (ps : List ABIParam) (rs : List Val) (rts : List Ty) : List Val :=
@@ -369,7 +388,7 @@ theorem ecf_regs_cons {tabs : Tables} {p : ABIParam} {ps : List ABIParam} {r : V
   rw [List.zipWith_append (by rw [ecf_forall₂_length h1, List.length_map, leafVals_length hp.2.1])]
 
 theorem ecf_regs_length {tabs : Tables} {ps : List ABIParam} {rs : List Val} {rts : List Ty}
-    (hl : rs.length = ps.length) (hreg : ∀ p ∈ ps, ecfReg tabs p)
+    (hl : rs.length = ps.length) (hreg : ∀ p ∈ ps, ecfOK tabs p)
     (h : List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs ps) rts) :
     (ecfRegs tabs ps rs rts).length = (ecfPieces tabs ps rs).length := by
   rw [List.length_zipWith, ecf_forall₂_length h, ecf_forall₂_length (ecf_pieces_hasTy hl hreg),
@@ -388,7 +407,7 @@ theorem ecf_zipWith_np : {P : List Val} → {L : List Ty} →
 /-- The retyped pieces of poison-free results are poison-free. -/
 theorem ecf_regs_np {tabs : Tables} {ps : List ABIParam} {rs : List Val}
     (hf : List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs)
-    (hreg : ∀ p ∈ ps, ecfReg tabs p) (hp : Val.anyPoison rs = false) {rts : List Ty}
+    (hreg : ∀ p ∈ ps, ecfOK tabs p) (hp : Val.anyPoison rs = false) {rts : List Ty}
     (h : List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs ps) rts) :
     Val.anyPoison (ecfRegs tabs ps rs rts) = false :=
   ecf_zipWith_np (ecf_pieces_hasTy (ecf_forall₂_length hf) hreg) (ecf_pieces_np hf hreg hp) h
@@ -514,7 +533,7 @@ theorem ecf_pre_reg {tabs : Tables} :
     have hreg' : ∀ q ∈ ps, ecfReg tabs q := fun q hq => hreg q (List.mem_cons_of_mem _ hq)
     obtain ⟨r1, r2, h1, h2, hQ⟩ := ecf_regs_cons (rs := rs) (r := r) (hreg p List.mem_cons_self) hrts
     have hge := ecf_pieces_length_ge hf hreg'
-    have hl2 := ecf_regs_length (ecf_forall₂_length hf) hreg' h2
+    have hl2 := ecf_regs_length (ecf_forall₂_length hf) (fun q hq => ecfOK_of_reg (hreg' q hq)) h2
     have hz1 : (List.zipWith Val.retype r1 (leafVals (tabs.ty p.type) r)).length = p.regs.size := by
       rw [List.length_zipWith, leafVals_length hw, ecf_forall₂_length h1, List.length_map,
         Nat.min_self, hlen]
@@ -563,33 +582,6 @@ theorem ecf_goResults_reg {tabs : Tables} {ps : List ABIParam} {rs : List Val}
 theorem ecf_outs (tabs : Tables) (f : Func) :
     (Ctx.make tabs f).outs.toList = (ownOuts tabs f).map (ecfOut tabs) := by
   simp [Ctx.make, ownOuts]
-
-/-- **`finish` relates `ecRR` outcomes.** -/
-theorem finish_ecRR {tabs : Tables} {f : Func} (hreg : regParamsOK tabs (ownOuts tabs f) = true) :
-    ∀ rs m rs' m', ecRR tabs f rs m rs' m' →
-      (finish (Ctx.make tabs f).outs 0 (.returned rs m)).Defined →
-      OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (.returned rs m))
-        (finish (Ctx.make tabs f).outs 0 (.returned rs' m')) := by
-  intro rs m rs' m' ⟨hf, rts, hrts, hP, hm⟩ hd
-  have hreg' := ecf_reg_of hreg
-  have hp : Val.anyPoison rs = false := by
-    cases h : Val.anyPoison rs
-    · rfl
-    · simp only [finish, h, ↓reduceIte] at hd; exact hd.elim
-  have hPp := ecf_regs_np hf hreg' hp hrts
-  have hsrc : finish (Ctx.make tabs f).outs 0 (.returned rs m) = .returned rs (m.freeFrame 0) := by
-    simp only [finish, hp, Bool.false_eq_true, ↓reduceIte,
-      ecf_goResults_src (ecf_outs tabs f) hf hreg' hp 0 m]
-  have hmid : finish (Ctx.make tabs f).outs 0 (.returned (ecfRegs tabs (ownOuts tabs f) rs rts) m) =
-      .returned rs (m.freeFrame 0) := by
-    simp only [finish, hPp, Bool.false_eq_true, ↓reduceIte,
-      ecf_goResults_reg (ecf_outs tabs f) hf hreg' hp hrts 0 m]
-  have h1 : OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (.returned rs m))
-      (finish (Ctx.make tabs f).outs 0 (.returned (ecfRegs tabs (ownOuts tabs f) rs rts) m)) := by
-    rw [hsrc, hmid]; exact OutcomeRefines.refl trivial
-  have h2 := finish_refines (outs := (Ctx.make tabs f).outs) (act := 0) (k := 0)
-    (by rw [hmid]; trivial) (OutcomeRefines.returned hP hm)
-  exact h1.trans h2
 
 /-! ## The `Ret` control: a `MakeResult` -/
 
@@ -716,7 +708,7 @@ theorem ecf_not_invalidated {g : Func} {c : ID} {w : Value} (hw : g.value? c = s
 
 theorem ecc_cv_result {tabs : Tables} {f g : Func} {c : ID} {u : Value} (hu : f.value? c = some u)
     (hop : u.op = .MakeResult) (hinv : invalidated g c = false) (y : Val) :
-    ecCv tabs f g c y = (convTuple tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g c) := by
+    ecCv tabs f g c y = (convRes tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g c) := by
   unfold ecCv
   simp only [hinv, hu, hop, Bool.false_eq_true, ↓reduceIte]
   rfl
@@ -730,52 +722,37 @@ theorem ecf_convTuple {tabs : Tables} {ps : List ABIParam} {rs : List Val} (hl :
     rw [List.zip_append hl.symm, List.zip_nil_left, List.append_nil]
   rw [hz, List.drop_left' hl]
 
-/-- **The `Ret` control of `expand calls`** (a converted `MakeResult`): the target returns the
-register pieces of the source's results, retyped at the target `MakeResult`'s register shapes
-(`regTupleOf`). Extra premise: the source's results are poison-free (else `finish` is stuck;
-`CvBlock.ret` provides it). -/
-theorem ret_result {tabs : Tables} {f g : Func} {c : ID} {u w : Value}
-    (hu : f.value? c = some u) (hw : g.value? c = some w) (hop : u.op = .MakeResult)
-    (hok : resultOK tabs (typeShapes tabs) f g u w = true)
-    (hreg : regParamsOK tabs (ownOuts tabs f) = true) :
-    ∀ y y', RegOK (Ctx.make tabs f) c y → Sem.Refines (ecCv tabs f g c y) y' →
-      ∀ rs m, retOf y = some (rs, m) → Val.anyPoison rs = false →
-        ∃ rs' m', retOf y' = some (rs', m') ∧ ecRR tabs f rs m rs' m' := by
-  intro y y' hry hyy rs m hro hp
-  have hreg' := ecf_reg_of hreg
-  unfold resultOK at hok
-  simp only [Bool.and_eq_true, beq_iff_eq] at hok
-  obtain ⟨⟨⟨⟨⟨⟨⟨hwop, hn⟩, -⟩, -⟩, -⟩, -⟩, htup⟩, hrt⟩ := hok
-  obtain ⟨us, hus, husl, hue, -⟩ := ecf_tupleOf htup
-  obtain ⟨rts, hus', hrts⟩ := ecf_regTupleOf hrt
-  -- the source's register
-  obtain ⟨hty, hlen, -⟩ := hry
-  rw [tys_of_value hu, Option.getD_some, ← ecf_valueTy, hus] at hty
-  cases y with
-  | tuple vs =>
-    have hvs := hlen u vs hu hop rfl
-    -- `vs = rs ++ [.mem m]`
-    have hvs' : vs = rs ++ [.mem m] := ecf_retOf_inv hro
-    subst hvs'
-    have hrl : rs.length = (ownOuts tabs f).length := by
-      simp only [List.length_append, List.length_cons, List.length_nil] at hvs; omega
-    have hF := ecf_hasTyPre_results (tabs := tabs) hrl hty (by rw [husl, List.length_map]) hue
-    -- the conversion
-    have hPt := ecf_pieces_hasTy (tabs := tabs) hrl hreg'
-    have hlen' : rts.length = (ecfPieces tabs (ownOuts tabs f) rs).length :=
-      (ecf_forall₂_length hrts).trans (ecf_forall₂_length hPt)
-    rw [ecc_cv_result hu hop (ecf_not_invalidated hw (by rw [hwop]; decide)), ecf_convTuple hrl,
-      shapeOf, hw, hus', ecf_retype_tuple hlen'] at hyy
-    cases hyy with
-    | tuple hl =>
-      obtain ⟨c1, c2, rfl, h1, h2⟩ := ecf_refinesList_append_inv hl
-      cases h2 with
-      | cons hm hnil =>
-        cases hnil
-        cases hm with
-        | mem hm =>
-          have hQp := ecf_regs_np hF hreg' hp hrts
-          exact ⟨c1, _, ecf_retOf ((h1.noPoison hQp).1) _, hF, rts, hrts, h1, hm⟩
-  | _ => simp [retOf] at hro
+/-- `resMem` reads the results only. -/
+theorem ecf_resMem_append {tabs : Tables} {x : Val} :
+    {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length → (m : Mem) →
+      resMem tabs ps (rs ++ [x]) m = resMem tabs ps rs m
+  | [], [], _, _ => by simp [resMem]
+  | _ :: _, [], hl, _ | [], _ :: _, hl, _ => by simp at hl
+  | p :: ps, r :: rs, hl, m => by
+    have ih := @ecf_resMem_append tabs x ps rs (by simpa using hl)
+    simp only [List.cons_append, resMem]
+    split
+    · split
+      · cases m.write _ _ with
+        | none => rfl
+        | some m1 => exact ih m1
+      · rfl
+    · exact ih m
+
+/-- The conversion of a `MakeResult` tuple of results and a memory. -/
+theorem ecf_convRes {tabs : Tables} {ps : List ABIParam} {rs : List Val} (hl : rs.length = ps.length)
+    (m : Mem) : convRes tabs ps (.tuple (rs ++ [.mem m])) =
+      match resMem tabs ps rs m with
+      | some M => .tuple (ecfPieces tabs ps rs ++ [.mem M])
+      | none => .poison := by
+  unfold convRes
+  dsimp only
+  rw [List.getLast?_concat]
+  dsimp only
+  have hz : ps.zip (rs ++ [Val.mem m]) = ps.zip rs := by
+    conv => lhs; rw [← List.append_nil ps]
+    rw [List.zip_append hl.symm, List.zip_nil_left, List.append_nil]
+  rw [ecf_resMem_append hl, hz]
+  rfl
 
 end GoFV.Proof.EC

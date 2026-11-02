@@ -22,7 +22,8 @@ variable {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool} {front : I
 
 /-- **A panicking block entry.** -/
 theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.Mono)
-    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv frS frT b i)
+    (hK : env.FrameKeep) {frS frT : Frame} {b : ID} {i : Nat}
+    (hA : SimAt env tabs f g cv frS frT b i)
     {fb : Block} (hfb : f.block? b = some fb) {e : Panic} {m : Mem}
     (hen : enterBlock env (Ctx.make tabs f) frS fb i = .panic e m) :
     ∃ gb m', g.block? b = some gb ∧ enterBlock env (Ctx.make tabs g) frT gb i = .panic e m' ∧
@@ -74,7 +75,9 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
     fun a ha => g3 a fun hm => ha (hpreo a hm)
   have hGok : RegsOK (Ctx.make tabs f) G :=
     regsOK_block H hbm hfb hps hA.ok (fun x hx => ((ofm x).1 (hpreo x hx)).1) hpre
+  have hGq := ecQ_prefix hK H.wf hbm hfb hA.slots hps (fun x hx => ((ofm x).1 (hpreo x hx)).1) hpre
   have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := G) (by rw [g1]) hGk hGok
+    (ecQ_memQ hGq)
   -- the target's source nodes before `r` are before `r` in the source
   have hidx : ∀ x ∈ preT, isNew x = false → ¬ TgtInvalid g x →
       ∃ i < pre.length, oS.toList[i]? = some x := fun x hx hn hxi => by
@@ -139,7 +142,15 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
       refine ⟨fun uc huc => ?_, hargs c pre.length hrS (Nat.le_refl _)⟩
       rw [hur] at huc; cases huc
       exact .inr ⟨e, m, hevr⟩
-  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT hsrc hsrcA hreach
+  -- no new value of the return runs before `r` (no source non-pure node comes after one)
+  have hretP : ∀ z ∈ preT, RetAnchored tabs f g cv isNew fb gb z → ∀ c, fb.controls[0]? = some c →
+      EcSrcHolds env tabs f G c ∧ ∀ y, G.regs[c]? = some (some y) → ∃ rs m, retOf y = some (rs, m) := by
+    intro z hz hra
+    obtain ⟨-, -, -, -, -, -, -, -, hsch⟩ := hra
+    obtain ⟨A', B', hpre'⟩ := List.append_of_mem hz
+    have h := hsch og hsg A' (B' ++ r :: postT) (by rw [hogT, hpre']; simp) r (by simp)
+    rw [hnp] at h; cases h
+  obtain ⟨T, hT, hI⟩ := tgt_loop hE TH (L := preT) (M := r :: postT) hogT hsrc hsrcA hreach hretP
   have hrn : isNew r = false := (B.common r hrfb).2
   have hob := tgt_next hE TH hogT hI hrn hur (regs_of_panic hevr) hsrc
     (hargs r pre.length hrS (Nat.le_refl _))

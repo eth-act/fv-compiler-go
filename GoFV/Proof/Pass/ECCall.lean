@@ -193,77 +193,6 @@ theorem ecc_retypePre {tabs : Tables} {mv : Val} :
 theorem ecc_evalPure_result (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val) :
     evalPure .MakeResult ty ai ax args = .tuple args := rfl
 
-/-! ## `MakeResult` -/
-
-theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
-    (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
-    (hok : resultOK tabs (typeShapes tabs) f g u w = true)
-    (hreg : regParamsOK tabs (ownOuts tabs f) = true) (huid : u.id = x)
-    (L : ID → Prop) (hLx : L x)
-    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a) :
-    EcOblImk tabs f g (fun _ => False) (fun _ => False) x := by
-  intro u' w' hu' hw' env _ frS T _ hRS E hNC hEw hRw hRu hfront himk _ _
-  rw [hu] at hu'; cases hu'
-  rw [hw] at hw'; cases hw'
-  unfold resultOK at hok
-  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, Bool.not_eq_true'] at hok
-  obtain ⟨⟨⟨⟨⟨⟨⟨hwop, hn⟩, hws⟩, hlast⟩, hmsp⟩, hpc⟩, htup⟩, hrt⟩ := hok
-  obtain ⟨hwid, hLw⟩ := hL x hLx w hw
-  have hreg' := ecf_reg_of hreg
-  have hsu := ecc_args_split1 u.args (by omega)
-  have hsw := ecc_args_split1 w.args hws
-  rw [hlast] at hsw
-  have hi : invalidated g x = false := by
-    unfold invalidated; rw [hw]; dsimp only; rw [hwop]; decide
-  have hrel : ∀ a ∈ (u.args.extract 0 (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
-    fun a ha => ecc_argRel hi hu hRS hRu hfront (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha))
-  have hG := ecc_pieces_hasTy _ _ _ hpc hrel
-  have hP := ec_pieces hNC hL hRS false _ _ _ hpc (fun p hp => (hreg' p hp).2.1)
-    (fun q hq => hRw q (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)))
-    (fun q hq hn' => have hq' := Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)
-      ⟨hEw q hq' hn', hLw q hq' hn'⟩) hrel
-    (fun a ha => himk a (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha)))
-    (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
-      (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)) hn') yq hyq)
-  simp only [ecPieceVals_false] at hP
-  -- the memory argument
-  have hm : u.args[u.args.size - 1]! ∈ u.args := by
-    rw [← Array.mem_toList_iff, hsu]; simp
-  obtain ⟨ym, hym, hymm⟩ := hfront _ (ecFront_src hi hu hm) _ (reg_rv (hRu _ hm))
-  rw [ecCv_of_not_special hmsp] at hymm
-  -- the evaluations
-  have hRw' : ∀ a ∈ w.args, Reg T a := hRw
-  rw [evalValue_of_regs hRu, evalValue_of_regs hRw', evalOp_term (by rw [hop]; decide),
-    evalOp_term (by rw [hwop]; decide), hop, hwop, GoFV.Proof.Rules.opVal_pure (by decide),
-    GoFV.Proof.Rules.opVal_pure (by decide), ecc_evalPure_result, ecc_evalPure_result,
-    huid, hwid, tys_of_value hu, tys_of_value hw, Option.getD_some, Option.getD_some, hsu, hsw,
-    List.map_append, List.map_append, List.map_cons, List.map_cons, List.map_nil, List.map_nil,
-    rv_of hym]
-  refine .ok ?_
-  obtain ⟨us, hus, husl, hue, hul⟩ := ecf_tupleOf htup
-  rw [ecf_valueTy] at hus
-  rw [hus]
-  show Sem.Refines (ecCv tabs f g x (match Val.retypePre us _ with
-    | some vs' => Val.tuple vs'
-    | none => Val.poison)) _
-  rw [ecc_retypePre hG hue (by rw [husl, List.length_map]) hul]
-  dsimp only
-  rw [ecc_cv_result hu hop (ecf_not_invalidated hw (by rw [hwop]; decide)),
-    ecf_convTuple (by rw [ecf_forall₂_length hG]), shapeOf, hw, ecf_valueTy]
-  rw [ecf_pieces_all_reg hreg']
-  exact retype_mono _ (.tuple (RefinesList.append hP (.cons (ecc_retype_mem hymm) .nil)))
-
-/-- **The `MakeResult` obligation.** -/
-theorem obl_result {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : ID → Prop}
-    (hu : f.value? x = some u) (hw : g.value? x = some w) (hop : u.op = .MakeResult)
-    (hok : resultOK tabs (typeShapes tabs) f g u w = true)
-    (hreg : regParamsOK tabs (ownOuts tabs f) = true) (huid : u.id = x)
-    (L : ID → Prop) (hLx : L x)
-    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
-    (hH : ∀ a ∈ u.args, EcoImkHeld tabs f g HS HT a) :
-    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x :=
-  obl_of_imk (obl_result_imk hu hw hop hok hreg huid L hLx hL) hu hH (fun _ h => h.elim)
-    fun _ h => h.elim
 
 /-! ## Calls: the semantic pieces -/
 
@@ -1401,7 +1330,7 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
       isNewB f qw.args[0]! = false → HT qw.args[0]!)
     (hMA : ∀ a, ecMoveArg f g u w a → HS a) :
     NewObl tabs f g (ecCv tabs f g) (isNewB f) [u.args[u.args.size - 1]!, ecMoveSrc g z] HS HT x z := by
-  intro mw hmw env G T _ E hNC hEw hRw hfront hheldT hheldS hreach
+  intro mw hmw env G T _ E hNC hEw hRw hfront hheldT hheldS hreach _
   unfold callOK at hok
   split at hok
   · next op k abi hmap habi =>
@@ -1527,7 +1456,7 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     (hsp : ∀ wz qw, g.value? z = some wz → g.value? wz.args[0]! = some qw →
       isNewB f qw.args[0]! = false → HT qw.args[0]!) :
     NewObl tabs f g (ecCv tabs f g) (isNewB f) [u.args[u.args.size - 1]!] HS HT x z := by
-  intro wz hwz env G T _ E hNC hEw hRw hfront hheldT _ hreach
+  intro wz hwz env G T _ E hNC hEw hRw hfront hheldT _ hreach _
   unfold callOK at hok
   split at hok
   · next op k abi hmap habi =>

@@ -392,7 +392,7 @@ theorem refines_of_glob {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce c
         { entryFrame env (Ctx.make c.tabs c.f) args mem with
           regs := Array.replicate c.g.valueTab.size none } c.f.entry 0 := by
       refine ⟨.inl rfl, by simp [entryFrame, Ctx.make], by simp, rfl, fun a hh => ?_,
-        sinv_entry memOK_pred hpre.1, fun h => absurd rfl h, fun _ a y h => ?_⟩
+        sinv_entry memOK_set hpre.1, fun h => absurd rfl h, fun _ a y h => ?_⟩
       · obtain ⟨h1, h2⟩ := held_lt hGl hh
         simp only [entryFrame, Ctx.make, Array.getElem?_replicate, h1, h2, ↓reduceIte]
       · simp only [entryFrame, Array.getElem?_replicate] at h

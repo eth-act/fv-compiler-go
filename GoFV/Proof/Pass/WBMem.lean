@@ -225,11 +225,15 @@ theorem MemOK.free_wbuf {m : Mem} (h : MemOK m) : MemOK (m.free .wbuf) := by
   · rw [free_eq_erase, TabsMod.erase_find (by rfl)]; exact ha
   · rw [free_eq_erase]; exact erase_find_wbuf m
 
+/-- `MemOK` is kept by every `set` of a block that is neither a global nor the buffer. -/
+theorem memOK_set {m : Mem} {b : Blk} (a : Alloc) (h : MemOK m) (hg : ∀ n, b ≠ .global n)
+    (hw : b ≠ .wbuf) : MemOK (m.set b a) := h.set (hg "runtime.writeBarrier") hw a
+
 /-- **`MemOK` is a memory invariant** (`MemInv.MemPred`): the flag is a global, the buffer
 absent. -/
 theorem memOK_pred : MemInv.MemPred MemOK where
   write h hw := h.write hw
-  set a h hg hw := h.set (hg "runtime.writeBarrier") hw a
+  poison h hg hw := MemInv.poison_of_set memOK_set h hg hw
   free_wbuf h := h.free_wbuf
 
 end GoFV.Proof.WB

@@ -46,20 +46,23 @@ namespace GoFV.Proof.MemInv
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck
 
-/-- A memory predicate kept by writes, by `set`s of blocks that are neither globals nor the
-write-barrier buffer (frame allocations, `poisonBlock`s of frame blocks) and by freeing the
-buffer. -/
+/-- A memory predicate kept by writes, by `poisonBlock`s of blocks that are neither globals nor
+the write-barrier buffer (frame blocks: `VarDef`, a callee's outgoing-arguments area) and by
+freeing the buffer. (The frame allocations of a run's entry are `set`s: `sinv_entry`.) -/
 structure MemPred (P : Mem → Prop) : Prop where
   write : ∀ {m m' : Mem} {p : Ptr} {bs : Array Byte}, P m → m.write p bs = some m' → P m'
-  set : ∀ {m : Mem} {b : Blk} (a : Alloc), P m → (∀ n, b ≠ .global n) → b ≠ .wbuf →
-    P (m.set b a)
+  poison : ∀ {m : Mem} {b : Blk}, P m → (∀ n, b ≠ .global n) → b ≠ .wbuf → P (m.poisonBlock b)
   free_wbuf : ∀ {m : Mem}, P m → P (m.free .wbuf)
 
-theorem MemPred.poison {P : Mem → Prop} (hP : MemPred P) {m : Mem} (h : P m) {b : Blk}
-    (hg : ∀ n, b ≠ .global n) (hw : b ≠ .wbuf) : P (m.poisonBlock b) := by
+/-- A predicate kept by every `set` of a block that is neither a global nor the write-barrier
+buffer is kept by its `poisonBlock`s. -/
+theorem poison_of_set {P : Mem → Prop}
+    (hset : ∀ {m : Mem} {b : Blk} (a : Alloc), P m → (∀ n, b ≠ .global n) → b ≠ .wbuf →
+      P (m.set b a)) {m : Mem} {b : Blk} (h : P m) (hg : ∀ n, b ≠ .global n) (hw : b ≠ .wbuf) :
+    P (m.poisonBlock b) := by
   unfold Mem.poisonBlock
   split
-  · exact hP.set _ h hg hw
+  · exact hset _ h hg hw
   · exact h
 
 variable {P : Mem → Prop}
@@ -830,15 +833,20 @@ theorem wb_foldl_inv {α β : Type} (P : β → Prop) (f : β → α → β)
   | [], _, h => h
   | a :: L, b, h => wb_foldl_inv P f hf L (f b a) (hf b a h)
 
-theorem sinv_entry (hP : MemPred P) {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : Mem}
+/-- The entry frame of a run whose memory with the global image is `P`, for a `P` that every `set`
+of a block that is neither a global nor the write-barrier buffer keeps (the frame allocations). -/
+theorem sinv_entry
+    (hset : ∀ {m : Mem} {b : Blk} (a : Alloc), P m → (∀ n, b ≠ .global n) → b ≠ .wbuf →
+      P (m.set b a))
+    {env : Env} {tabs : Tables} {f : Func} {args : List Val} {mem : Mem}
     (h : P (addGlobals env mem)) : SInv P (entryFrame env (Ctx.make tabs f) args mem) := by
   refine ⟨?_, fun x y hx => ?_⟩
   · simp only [entryFrame, frameMem, frameAllocs]
     rw [← Array.foldl_toList]
     refine wb_foldl_inv P _ (fun m a hm => ?_) _ _
-      (hP.set _ h (fun _ h => by cases h) (by simp))
+      (hset _ h (fun _ h => by cases h) (by simp))
     obtain ⟨n, sz, pi⟩ := a
-    exact hP.set _ hm (frameBlk_ne _ _ _).1 (frameBlk_ne _ _ _).2
+    exact hset _ hm (frameBlk_ne _ _ _).1 (frameBlk_ne _ _ _).2
   · change (Array.replicate _ none)[x]? = some (some y) at hx
     rw [Array.getElem?_replicate] at hx
     split at hx <;> cases hx
@@ -948,7 +956,7 @@ theorem sinv_enter (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : C
 /-- `P` under a hypothesis `c` (a check of the function) is a memory invariant. -/
 theorem MemPred.imp {c : Prop} (hP : MemPred P) : MemPred (fun m => c → P m) where
   write h hw := fun hc => hP.write (h hc) hw
-  set a h hg hw := fun hc => hP.set a (h hc) hg hw
+  poison h hg hw := fun hc => hP.poison (h hc) hg hw
   free_wbuf h := fun hc => hP.free_wbuf (h hc)
 
 theorem ContractsOK.imp {c : Prop} {env : Env} (h : c → ContractsOK P env) :

@@ -4,6 +4,7 @@ import GoFV.SSA.Sem.TyEq
 import GoFV.SSA.DomCert
 import GoFV.Proof.ABIBuild
 import GoFV.Opt.TabsAgree
+import GoFV.Opt.MemTy
 import Std.Data.HashMap.Lemmas
 
 /-!
@@ -513,6 +514,83 @@ def wideChain (f g : Func) (u w : Value) : Option (List ID) :=
     storeChain g (isNewB f) (g.valueTab.size + 1) w.args[0]! u.args[2]!
   else none
 
+/-! ## Stack-assigned own results -/
+
+/-- `p` is a new pointer-shaped `LocalAddr {n}` (`expand calls` addresses result `n`'s frame
+slot by one per result). -/
+def localAddrOK (sh : Array Ty) (g : Func) (nw : ID → Bool) (n : AuxRef) (p : ID) : Bool :=
+  nw p && match g.value? p with
+    | some pw => pw.op == .LocalAddr && pw.aux == some n &&
+        (match shapeOf sh g p with
+         | .ptr _ => true
+         | _ => false)
+    | none => false
+
+/-- The base of the address `a` of the leaf at offset `o` of a result's slot: `a` itself at
+offset 0, else the pointer `a` offsets (`wideAddrOK`). -/
+def resBase (g : Func) (o : Nat) (a : ID) : ID :=
+  if o == 0 then a else ((g.value? a).map (·.args[0]!)).getD a
+
+/-- The leaf slots of the stack-assigned results `ps`: per result (its name) and leaf. -/
+def resSlots (tabs : Tables) (ps : List ABIParam) : List (AuxRef × Nat × Ty) :=
+  ps.flatMap fun p => match p.name with
+    | some n => (leaves (tabs.ty p.type)).map fun (o, lt) => (n, o, lt)
+    | none => []
+
+/-- The `Store`s `zs` (bottom of the chain first) write the leaf slots `ss`: per slot `(n, o, lt)`
+(`lt` not empty) a `Store {lt}` of shape `mem` at `LocalAddr {n}` plus `o` (`wideAddrOK`). -/
+def resStoresOK (tabs : Tables) (sh : Array Ty) (g : Func) (nw : ID → Bool) :
+    List (AuxRef × Nat × Ty) → List ID → Bool
+  | [], [] => true
+  | (n, o, lt) :: ss, z :: zs =>
+    (match g.value? z with
+     | some w => decide (0 < lt.size) && eqE (auxTy tabs w.aux) lt &&
+         localAddrOK sh g nw n (resBase g o w.args[0]!) &&
+         wideAddrOK sh g nw (resBase g o w.args[0]!) o w.args[0]! &&
+         (match shapeOf sh g z with
+          | .mem => true
+          | _ => false)
+     | none => false) && resStoresOK tabs sh g nw ss zs
+  | _, _ => false
+
+/-- The `Store`s of the stack-assigned results of `MakeResult` `u` (in `f`; `w` in `g`): the
+chain from the target's memory argument down to the source's (empty if they are the same). -/
+def resStores (f g : Func) (u w : Value) : Option (List ID) :=
+  storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! u.args[u.args.size - 1]!
+
+/-- The frame variables of `f` in `tabs` (`Ctx.locals`). -/
+def localsOf (tabs : Tables) (f : Func) : Array (AuxRef × Nat × Option Nat) :=
+  frameLocals tabs (((abiParams tabs f).filter (!·.out)).map (·.name))
+
+/-- The frame slot of the stack-assigned own result `p`: a well-formed shape inside the frame
+blocks' window, a name that is a `Blk.local` (`forgeable`), allocated by the frame (`locals`)
+with at least `p`'s size wherever it is listed. -/
+def resSlotOK (tabs : Tables) (locals : Array (AuxRef × Nat × Option Nat)) (p : ABIParam) : Bool :=
+  let t := tabs.ty p.type
+  wf t && decide (t.size < 2 ^ 24) &&
+    match p.name with
+    | some n => tabs.forgeable n && locals.any (·.1 == n) &&
+        locals.all (fun e => e.1 != n || decide (t.size ≤ e.2.1))
+    | none => false
+
+/-- No name occurs twice. -/
+def namesDistinct : List (Option AuxRef) → Bool
+  | [] => true
+  | n :: ns => !ns.contains n && namesDistinct ns
+
+/-- **The function's own results**: register-assigned with as many registers as their shapes
+have leaves (`regParamsOK`), or, with stack-assigned ones, each register-assigned one so and
+each stack-assigned one in its frame slot (`resSlotOK`, distinct names), fewer or more register
+pieces than results (`goResults` then reads the slots), and memories only in memory ops
+(`WBCheck.memTyOK`: the source run's memories keep the slots, `EC.EcQ`). -/
+def ownOutsOK (tabs : Tables) (f : Func) : Bool :=
+  let outs := ownOuts tabs f
+  regParamsOK tabs outs ||
+    (outs.all (fun p => if p.regs.isEmpty then resSlotOK tabs (localsOf tabs f) p
+        else wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size) &&
+      namesDistinct ((outs.filter (·.regs.isEmpty)).map (·.name)) &&
+      (leafTys tabs outs).length != outs.length && WBCheck.memTyOK tabs f)
+
 /-! ## The classes of source values -/
 
 /-- **call**: `u` (in `f`) and `w` (in `g`) at the same ID. -/
@@ -605,15 +683,26 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
     | none => false
   | _ => false
 
-/-- **result**: a `MakeResult` of the function's results. -/
+/-- **result**: a `MakeResult` of the function's results becomes the register pieces of its
+register-assigned results (selector chains) on a chain of new `Store`s of the leaves of its
+stack-assigned results into their frame slots (`resStoresOK`; the stored values selector chains,
+a stored value the source defines one of the results) on the source's memory. -/
 def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
   let outs := ownOuts tabs f
   let n := u.args.size
+  let as := (u.args.extract 0 (n - 1)).toList
+  let rp := argPairs true outs as
+  let sp := argPairs false outs as
   w.op == .MakeResult && n == outs.length + 1 && w.args.size ≥ 1 &&
-    w.args[w.args.size - 1]! == u.args[n - 1]! &&
     !special f g u.args[n - 1]! &&
-    piecesOK tabs sh f g false outs (u.args.extract 0 (n - 1)).toList
+    piecesOK tabs sh f g false (rp.map (·.1)) (rp.map (·.2))
       (w.args.extract 0 (w.args.size - 1)).toList &&
+    (match resStores f g u w with
+     | some zs =>
+       resStoresOK tabs sh g (isNewB f) (resSlots tabs (sp.map (·.1))) zs &&
+         piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
+         (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+     | none => false) &&
     tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
     regTupleOf (leafTys tabs outs) (valueTy sh (some w))
 
@@ -953,6 +1042,12 @@ def wideStores (f g : Func) (x : ID) : List ID :=
   | some u, some w => if u.args.any (isTail f) then [] else (wideChain f g u w).getD []
   | _, _ => []
 
+/-- The result `Store`s of value `x` of `f` (`resStores`); none unless `x` is a `MakeResult`. -/
+def ownStores (f g : Func) (x : ID) : List ID :=
+  match f.value? x, g.value? x with
+  | some u, some w => if u.op == .MakeResult then (resStores f g u w).getD [] else []
+  | _, _ => []
+
 /-- The address argument of value `x` of `f`. -/
 def addrArg (f : Func) (x : ID) : ID := ((f.value? x).map (·.args[0]!)).getD x
 
@@ -992,6 +1087,11 @@ and the first `c` after it. -/
 def gapOK (np : ID → Bool) : List ID → ID → ID → Bool
   | [], _, _ => false
   | y :: l, z, c => if y == z then noNpUntil np l c else gapOK np l z c
+
+/-- `z` occurs in `l`, and no node with `np` comes after its first occurrence. -/
+def noNpAfter (np : ID → Bool) : List ID → ID → Bool
+  | [], _ => false
+  | y :: l, z => if y == z then l.all (fun x => !np x) else noNpAfter np l z
 
 /-- The checks of block `bid` (`anc`: the ancestor test of `g`'s dominator certificate). -/
 def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Func) (bid : ID) : Bool :=
@@ -1034,7 +1134,8 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
       match f.value? y with
       | some u => u.args.all fun a => (!nodeF a || wideSel f g a || (nodeG a &&
           (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y)) ||
-          (moveArgB f g y a && throughB f g nodeF nodeG fuel a y)) &&
+          (moveArgB f g y a && throughB f g nodeF nodeG fuel a y) ||
+          (invalidated g a && throughB f g nodeF nodeG fuel a y)) &&
           (!wideSel f g a || throughB f g nodeF nodeG fuel a y)
       | none => false) &&
     -- no node of `gb` reads an invalidated value
@@ -1096,20 +1197,34 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
         depB g nodeG (fun _ => true) fuel (loadSP g l) x) &&
       (isNewB f (loadMem g l) || placedSDom g anc fb.id (loadMem g l) ||
         depB g nodeG (fun _ => true) fuel (loadMem g l) x)) &&
+    -- result stores (of the `Ret` control): values of the block, with no source non-pure node
+    -- after one in `g`'s schedule (a store runs only when the source completes the block); the
+    -- source memory reaches them; an invalidated argument of the block is before its reader in
+    -- `g`'s schedule
+    (match schedule g gb with
+     | some og => fb.values.all fun x => (ownStores f g x).all (fun z =>
+         gb.values.contains z && noNpAfter (npOf f fb) og.toList z &&
+         fb.kind == .Ret && fb.controls[0]? == some x &&
+         (!nodeG (callMem f x) || depB g nodeG (fun _ => true) fuel (callMem f x) z)) &&
+         (invalidated g x || match f.value? x with
+          | some u => u.args.all fun a => !invalidated g a || !fb.values.contains a ||
+              beforeB og.toList a x
+          | none => true)
+     | none => false) &&
     -- new values; their new arguments are values of the block, of the entry block, or placed
     -- in a strict dominator
     let sts := fb.values.toList.flatMap (stackStores f g)
     let wsts := fb.values.toList.flatMap (wideStores f g)
-    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z || wsts.contains z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
+    let rsts := fb.values.toList.flatMap (ownStores f g)
+    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z || wsts.contains z || rsts.contains z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
   | _, _ => false
 
 /-- **The checker**: `g` is `f` after `expand calls`, both read in `tabs`. -/
 def ecCheck (tabs : Tables) (f g : Func) : Bool :=
   let sh := typeShapes tabs
-  let outs := ownOuts tabs f
   let dc := DomCert.make g
   DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
-    regParamsOK tabs outs &&
+    ownOutsOK tabs f &&
     f.blocks.all (blockOK tabs sh dc.anc f g)
 
 end GoFV.Opt.ECCheck

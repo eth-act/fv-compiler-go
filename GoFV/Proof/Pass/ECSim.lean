@@ -202,7 +202,8 @@ def SimR (env : Env) (tabs : Tables) (f g : Func) (cv : Cv) (frS : Frame)
 
 /-- **One block step of the conversion simulation.** -/
 theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.Mono)
-    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv frS frT b i) :
+    (hK : env.FrameKeep) {frS frT : Frame} {b : ID} {i : Nat}
+    (hA : SimAt env tabs f g cv frS frT b i) :
     StepSimR (SimR env tabs f g cv) RR (blockStep env (Ctx.make tabs f) frS b i)
       (blockStep env (Ctx.make tabs g) frT b i) := by
   have hbt := CSE.pre_tree H.wf H.cf hA.pre
@@ -215,12 +216,25 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
   cases hen : enterBlock env (Ctx.make tabs f) frS fb i with
   | stuck msg => exact True.intro
   | panic e m =>
-    obtain ⟨gb, m', hgb, hT, hm⟩ := enter_panic H hE hA hfb hen
+    obtain ⟨gb, m', hgb, hT, hm⟩ := enter_panic H hE hK hA hfb hen
     rw [hgb]; simp only; rw [hT]
     exact ⟨m', rfl, hm⟩
   | ok GS =>
-  obtain ⟨gb, GT, hgb, B, hT, hGT, hszT, hszS, hrel, hlisted, hGSok⟩ :=
-    enter_ok H hE hA hfb hen
+  -- a terminator the source gets stuck at needs nothing of the target
+  by_cases hstk : ∃ msg, stepTerm GS fb = .stuck msg
+  · obtain ⟨msg, hst⟩ := hstk
+    simp only; rw [hst]; exact True.intro
+  have hret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y, GS.regs[c]? = some (some y) →
+      ∃ rs m, retOf y = some (rs, m) := by
+    intro hk c hc0 y hy
+    have h' : stepTerm GS fb = retNext fb y := by
+      rw [stepTerm_ret_eq hk, control_of hc0 hy]; rfl
+    cases hr : retNext fb y with
+    | ok n => obtain ⟨rs, m, -, hro⟩ := retNext_ok hr; exact ⟨rs, m, hro⟩
+    | stuck msg => exact absurd ⟨msg, h'.trans hr⟩ hstk
+    | panic e m => exact absurd (h'.trans hr) CopyElim.stepTerm_not_panic
+  obtain ⟨gb, GT, hgb, B, hT, hGT, hszT, hszS, hrel, hlisted, hGSok, hGSq⟩ :=
+    enter_ok H hE hK hA hfb hen hret
   obtain ⟨hD, hGSf, -⟩ := dinv_enter H.wf H.cf hbt.1 hfb hA.szS (CSE.pre_strict H.cf hA.pre).1 hen
   rw [hgb]; simp only; rw [hT]; simp only
   obtain ⟨gb', hgb', hgid, hsucc, -⟩ := CopyElim.cfgView_block H.rel.cfg hfb
@@ -263,7 +277,7 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     | ok hn =>
       cases hn
       have hem : e ∈ fb.succs := CopyElim.stepTerm_goto_mem hst
-      refine ⟨GT, e, rfl, rfl, rfl, hGT, hszS, hszT, ?_, hrel, hlisted, ?_, ?_, hGSok⟩
+      refine ⟨GT, e, rfl, rfl, rfl, hGT, hszS, hszT, ?_, hrel, hlisted, ?_, ?_, hGSok, hGSq⟩
       · rw [hGT, hGSf]; have := hA.img; rw [hA.frame] at this; exact this
       · cases e
         exact .inr ⟨b, fb, hbt.1, hfb, hbt.2, hem, hD, fun _ _ _ _ => rfl⟩
@@ -285,6 +299,7 @@ theorem step (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.M
     obtain ⟨y', hy', hyy⟩ := hrel c y hy
     intro hp
     obtain ⟨rs', m', hro', hRR⟩ := B.ret hk c hc0 y y' (hGSok c y hy) hyy rs m hro hp
+      (ecQ_retQ hGSq hy hro)
     have hkT : gb.kind = .Ret := by rw [B.kind, hk]
     rw [stepTerm_ret_eq hkT, control_of (by rw [B.controls]; exact hc0) hy']
     exact ⟨rs', m', by simp only [Res.bind, retNext_of hro'], hRR⟩
@@ -303,11 +318,12 @@ theorem paramTys_size (tabs : Tables) (f : Func) :
   simp [Ctx.make]
 
 /-- **The conversion simulation**: a function `g` related to `f` by `CvRel` refines it under
-monotone contracts. -/
+monotone contracts that keep the caller's frame. -/
 theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Bool}
     {front : ID → List ID} {RR : List Val → Mem → List Val → Mem → Prop} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
-    (hrel : CvRel tabs f g cv isNew front RR) : RefinesUnder Env.Mono tabs g tabs f := by
+    (hrel : CvRel tabs f g cv isNew front RR) :
+    RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) tabs g tabs f := by
   have H : Hyp tabs f g cv isNew front RR ce ce' := ⟨hrel, check_wf hf, check_wf hg,
     certOK_of_check (check_domCert hf), certOK_of_check (check_domCert hg)⟩
   have hc := AtomSim.ctx_eq (tabs := tabs) hrel.ownAux.symm
@@ -332,14 +348,16 @@ theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Boo
     have hA : SimAt env tabs f g cv (entryFrame env (Ctx.make tabs f) args mem)
         (entryFrame env (Ctx.make tabs g) args mem) f.entry 0 := by
       refine ⟨by rw [hent], by simp [entryFrame, Ctx.make], by rw [hent]; simp, ?_,
-        fun x y h => ?_, fun x y h => ?_, .inl rfl, ?_, fun x y h => ?_⟩
+        fun x y h => ?_, fun x y h => ?_, .inl rfl, ?_, fun x y h => ?_,
+        ecQ_entry (hrel.entry env args mem)⟩
       · rw [entry_images_size (by rw [hpar]; exact hlen) (paramTys_size tabs g)]
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
       · rw [← H.entry_eq]; exact dinv_entry H.cg _
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
     have hrun := runLoop_simR (act := 0) (SimR env tabs f g cv) RR
-      (fun frS bS iS frT bT iT ⟨hb, hi, hR⟩ => by subst hb; subst hi; exact step H hE hR) fuel _ _ _
+      (fun frS bS iS frT bT iT ⟨hb, hi, hR⟩ => by
+        subst hb; subst hi; exact step H hE.1 hE.2 hR) fuel _ _ _
       _ _ _ ⟨H.entry_eq, rfl, hA⟩ (finish_defined hd)
     rw [show (Ctx.make tabs f).act = 0 from rfl]
     change (finish (Ctx.make tabs f).outs 0 (runLoop env (Ctx.make tabs f) fuel

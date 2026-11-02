@@ -157,7 +157,8 @@ theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF)
     (GoFV.Opt.Verified.pipelineRo plEnv plF) plRunEnv [] {} :=
   ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
     by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, p1_tempOblivious, Env.p1_memOps,
-    by rw [plF_ro]; exact RoImage.nil (env := plRunEnv) (fun name c hc => Env.p1_keepsRo name c hc) {}⟩
+    by rw [plF_ro]; exact RoImage.nil (env := plRunEnv) (fun name c hc => Env.p1_keepsRo name c hc) {},
+    fun name c hc => Env.p1_frameKeep name c hc⟩
 
 /-! ## The witness -/
 

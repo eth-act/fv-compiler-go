@@ -3,6 +3,7 @@ import GoFV.Proof.Pass.CopyElimSim
 import GoFV.Proof.AtomSimDen
 import GoFV.Proof.OrderRank
 import GoFV.Proof.RunMono
+import GoFV.Opt.MemTy
 
 /-!
 # The conversion simulation: relation and obligations (issue #28)
@@ -100,6 +101,17 @@ evaluated: nodes of `gb` that `x` depends on, and the values `SDomPlaced` in `g`
 def HeldT (g : Func) (gb : Block) (x z : ID) : Prop :=
   Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x ∨ SDomPlaced g gb z
 
+/-- The function's stack-assigned results have writable frame slots of their sizes in `m`
+(`Blk.local` of their names, `Mem.canWrite`); zero-sized ones need none. -/
+def SlotsOK (ctx : Ctx) (m : Mem) : Prop :=
+  ∀ n t, (some n, t, 0) ∈ ctx.outs.toList → 0 < t.size →
+    m.canWrite ⟨.local ctx.act n, 0⟩ t.size = true
+
+/-- The memory invariant of the source's run: the result slots (`SlotsOK`), for a function whose
+values hold memories only as memory ops (`WBCheck.memTyOK`, `MemInv.SInv`). -/
+def EcQ (tabs : Tables) (f : Func) (m : Mem) : Prop :=
+  GoFV.Opt.WBCheck.memTyOK tabs f = true → SlotsOK (Ctx.make tabs f) m
+
 /-- **The local obligation of value `x`.** In frames of one activation, where the source's
 arguments of `x` have registers (each `RegOK`) and the target's arguments of `x` too (its new
 ones holding their evaluations), the target's registers of the source values `front` refine
@@ -130,10 +142,11 @@ def Reached (env : Env) (tabs : Tables) (f : Func) (G : Frame) (c : ID) : Prop :
       ∃ e m, evalValue env (Ctx.make tabs f) G u = .panic e m
 
 /-- **The obligation of a new value `z` anchored at source value `c`** (a store of a stack
-argument of call `c`): in frames of one activation where the source has reached `c`, `z`'s
-arguments have registers (its new ones holding their evaluations), the target's registers of
-the source values `front` refine their conversions, the target's of `heldT` and the source's of
-`heldS` hold their evaluations, the target evaluates `z`. -/
+argument of call `c`, of a result of `MakeResult` `c`): in frames of one activation where the
+source has reached `c`, `z`'s arguments have registers (its new ones holding their evaluations),
+the target's registers of the source values `front` refine their conversions, the target's of
+`heldT` and the source's of `heldS` hold their evaluations, and the source's memories are `EcQ`,
+the target evaluates `z`. -/
 def NewObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : List ID)
     (heldS heldT : ID → Prop) (c z : ID) : Prop :=
   ∀ w, g.value? z = some w →
@@ -144,6 +157,7 @@ def NewObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front :
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y') →
     (∀ a, heldT a → EcTgtHolds env tabs g T a) → (∀ a, heldS a → EcSrcHolds env tabs f G a) →
     Reached env tabs f G c →
+    (∀ (a : ID) (m : Mem), G.regs[a]? = some (some (Val.mem m)) → EcQ tabs f m) →
     ∃ y, evalValue env (Ctx.make tabs g) T w = .ok y
 
 /-- New value `z` of block `gb` is anchored at a source value `c` of `fb` (whose target node is
@@ -169,6 +183,40 @@ def retOf : Val → Option (List Val × Mem)
     | some (.mem m), rs => if rs.any (fun | .poison => true | _ => false) then none else some (rs, m)
     | _, _ => none
   | _ => none
+
+/-- **The obligation of a new value `z` of a `Ret` block** (a store of a stack-assigned result of
+the block's `MakeResult` control `c` into its frame slot): in frames of one activation where the
+source has completed the block and its `Ret` reads results and a memory of `c` (the source's
+register of `c` holds `c`'s evaluation), `z`'s arguments have registers (its new ones holding
+their evaluations), the target's registers of the source values `front` refine their
+conversions, the target's of `heldT` hold their evaluations and the source's memories are `EcQ`,
+the target evaluates `z`. -/
+def RetObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front : List ID)
+    (heldT : ID → Prop) (c z : ID) : Prop :=
+  ∀ w, g.value? z = some w →
+  ∀ env : Env, ∀ G T : Frame, T = { G with regs := T.regs } →
+  ∀ E : ID → Prop, NewCons env (Ctx.make tabs g) isNew T E →
+    (∀ a ∈ w.args, isNew a = true → E a) → (∀ a ∈ w.args, Reg T a) →
+    (∀ a ∈ front, ∀ y, G.regs[a]? = some (some y) →
+      ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (cv a y) y') →
+    (∀ a, heldT a → EcTgtHolds env tabs g T a) →
+    EcSrcHolds env tabs f G c → (∀ y, G.regs[c]? = some (some y) → ∃ rs m, retOf y = some (rs, m)) →
+    (∀ (a : ID) (m : Mem), G.regs[a]? = some (some (Val.mem m)) → EcQ tabs f m) →
+    ∃ y, evalValue env (Ctx.make tabs g) T w = .ok y
+
+/-- New value `z` of `Ret` block `gb` belongs to the return: its obligation `RetObl` against the
+block's control `c` (a non-`Phi` value of `fb`), with a `front` of source values that reach it in
+`gb`, and in `g`'s schedule no source non-pure node comes after `z` (`z` runs only when the
+source completes the block). -/
+def RetAnchored (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (fb gb : Block)
+    (z : ID) : Prop :=
+  fb.kind = .Ret ∧ ∃ c, fb.controls[0]? = some c ∧ c ∈ fb.values ∧
+    (∀ u, f.value? c = some u → u.op ≠ .Phi) ∧ ∃ fr : List ID,
+    RetObl tabs f g cv isNew fr (HeldT g gb z) c z ∧
+    (∀ a ∈ fr, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
+      Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a z)) ∧
+    ∀ og, schedule g gb = some og → ∀ A B, og.toList = A ++ z :: B →
+      ∀ y ∈ B, npIn (schedNodes f fb).toList y = false
 
 /-- The values listed in the entry block of `g`. -/
 def EntryVal (g : Func) (x : ID) : Prop := ∃ eb, g.block? g.entry = some eb ∧ x ∈ eb.values
@@ -211,10 +259,10 @@ structure CvBlock (fb gb : Block) : Prop where
   ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, ∀ y, cv c y = y
   ret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', RegOK (Ctx.make tabs f) c y →
     Sem.Refines (cv c y) y' →
-    ∀ rs m, retOf y = some (rs, m) → Val.anyPoison rs = false →
+    ∀ rs m, retOf y = some (rs, m) → Val.anyPoison rs = false → EcQ tabs f m →
       ∃ rs' m', retOf y' = some (rs', m') ∧ RR rs m rs' m'
   newOK : ∀ z ∈ gb.values, isNew z = true → ∀ w, g.value? z = some w → w.op ≠ .Phi ∧
-    (NewEval tabs g w ∨ AnchoredAt tabs f g cv isNew fb gb z)
+    (NewEval tabs g w ∨ AnchoredAt tabs f g cv isNew fb gb z ∨ RetAnchored tabs f g cv isNew fb gb z)
   newArgs : ∀ z ∈ gb.values, ∀ w, g.value? z = some w → ∀ a ∈ w.args,
     isNew a = true → a ∈ gb.values ∨ EntryVal g a ∨ SDomPlaced g gb a
 
@@ -228,6 +276,7 @@ structure CvRel : Prop where
     (finish (Ctx.make tabs f).outs 0 (.returned rs m)).Defined →
     OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (.returned rs m))
       (finish (Ctx.make tabs f).outs 0 (.returned rs' m'))
+  entry : ∀ env args mem, EcQ tabs f (entryFrame env (Ctx.make tabs f) args mem).mem0
 
 end
 

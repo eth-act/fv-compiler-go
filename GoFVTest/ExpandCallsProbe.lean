@@ -151,11 +151,22 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
     else if c == "result" then
       let outs := ownOuts tabs f
       let n := u.args.size
-      if !piecesOK tabs sh f g false outs (u.args.extract 0 (n - 1)).toList
-          (w.args.extract 0 (w.args.size - 1)).toList then
-        s!"result: pieces: {piecesWhy tabs sh f g false outs (u.args.extract 0 (n - 1)).toList
-          (w.args.extract 0 (w.args.size - 1)).toList}"
-      else "result: types"
+      let as := (u.args.extract 0 (n - 1)).toList
+      let rp := argPairs true outs as
+      let sp := argPairs false outs as
+      let pcs := (w.args.extract 0 (w.args.size - 1)).toList
+      if !piecesOK tabs sh f g false (rp.map (·.1)) (rp.map (·.2)) pcs then
+        s!"result: pieces: {piecesWhy tabs sh f g false (rp.map (·.1)) (rp.map (·.2)) pcs}"
+      else match resStores f g u w with
+        | none => s!"result: no store chain (memory {((g.value? w.args[w.args.size - 1]!).map (·.op.name)).getD "?"})"
+        | some zs =>
+          if !resStoresOK tabs sh g (isNewB f) (resSlots tabs (sp.map (·.1))) zs then
+            s!"result: stores ({zs.length} for {(resSlots tabs (sp.map (·.1))).length} slots)"
+          else if !piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
+            s!"result: stored pieces: {piecesWhy tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
+          else if !(zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q) then
+            "result: stored source value not a result"
+          else "result: types"
     else if c == "select" then
       let outs := ((f.value? u.args[0]!).map (callOuts tabs ·.aux)).getD []
       let i := u.auxInt.toInt.toNat
@@ -208,7 +219,8 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
           for a in u.args do
             if nodeF a && !(nodeG a && (depB g nodeG (isNewB f) fuel a y ||
                 depB g nodeG (fun _ => true) fuel a y)) &&
-                !(moveArgB f g y a && throughB f g nodeF nodeG fuel a y) then
+                !(moveArgB f g y a && throughB f g nodeF nodeG fuel a y) &&
+                !(invalidated g a && throughB f g nodeF nodeG fuel a y) then
               let aop := ((f.value? a).map (·.op.name)).getD "?"
               let gop := ((g.value? a).map (·.op.name)).getD "?"
               let yop := u.op.name
@@ -232,6 +244,16 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !(u.args.all fun a => !moveArgB f g x a ||
             (fb.values.contains a && beforeB og.toList a x)) then
           return "move: Dereference placement"
+    for x in fb.values do
+      for z in ownStores f g x do
+        if !gb.values.contains z then return "result store in other block"
+        if !gapOK (npOf f fb) og.toList z x then return "result store before a non-pure node"
+        if !(!nodeG (callMem f x) || depB g nodeG (fun _ => true) (gb.values.size + 1) (callMem f x) z) then
+          return "result store memory"
+      if let some u := f.value? x then
+        if !invalidated g x && !(u.args.all fun a => !invalidated g a || !fb.values.contains a ||
+            beforeB og.toList a x) then
+          return "invalidated argument placement"
   | _, _ => return "no schedule"
   for x in fb.values do
     for l in stackLoads tabs sh f g x do
@@ -241,9 +263,12 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
       if !(isNewB f (loadMem g l) || placedSDom g anc fb.id (loadMem g l) ||
           depB g nodeG (fun _ => true) fuel (loadMem g l) x) then return "stack result memory not held"
   let sts := fb.values.toList.flatMap (stackStores f g)
+  let wsts := fb.values.toList.flatMap (wideStores f g)
+  let rsts := fb.values.toList.flatMap (ownStores f g)
   for z in gb.values do
     if let some w := g.value? z then
-      if isNewB f z && !newEvalB tabs g w && !sts.contains z then return s!"new op {w.op.name}"
+      if isNewB f z && !newEvalB tabs g w && !sts.contains z && !wsts.contains z && !rsts.contains z then
+        return s!"new op {w.op.name}"
       if !w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a ||
           placedSDom g anc fb.id a) then
         return if isNewB f z then "new arg in other block" else "new arg of source value in other block"
@@ -258,14 +283,25 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
       if u.op == .Phi && u.args.any (special f g) then return "phi of converted"
   return "feeds"
 
+/-- Why `ownOutsOK` rejects. -/
+def ownWhy (tabs : Tables) (f : Func) : String :=
+  let outs := ownOuts tabs f
+  if !outs.any (·.regs.isEmpty) then "own: result shape"
+  else if !outs.all (fun p => !p.regs.isEmpty || resSlotOK tabs (localsOf tabs f) p) then
+    "own: stack result slot"
+  else if !outs.all (fun p => p.regs.isEmpty ||
+      (GoFV.Proof.ABI.wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size)) then
+    "own: result shape"
+  else if !namesDistinct ((outs.filter (·.regs.isEmpty)).map (·.name)) then "own: result names"
+  else if (leafTys tabs outs).length == outs.length then "own: pieces = results"
+  else "own: memTyOK"
+
 def why (tabs : Tables) (f g : Func) : String := Id.run do
   let sh := typeShapes tabs
   let anc := (DomCert.make g).anc
-  let outs := ownOuts tabs f
   if DomCert.cfgView g != DomCert.cfgView f then return "cfg"
   if g.ownAux != f.ownAux then return "ownAux"
-  if !regParamsOK tabs outs then
-    return if outs.any (·.regs.isEmpty) then "own: stack result" else "own: result shape"
+  if !ownOutsOK tabs f then return ownWhy tabs f
   for b in f.blocks do
     if !blockOK tabs sh anc f g b then return blockWhy tabs sh anc f g b
   return "?"
@@ -275,12 +311,10 @@ sorted): the classes whose fix alone would accept it. -/
 def whyAll (tabs : Tables) (f g : Func) : String := Id.run do
   let sh := typeShapes tabs
   let anc := (DomCert.make g).anc
-  let outs := ownOuts tabs f
   if DomCert.cfgView g != DomCert.cfgView f then return "cfg"
   if g.ownAux != f.ownAux then return "ownAux"
   let mut rs : Array String := #[]
-  if !regParamsOK tabs outs then
-    rs := rs.push (if outs.any (·.regs.isEmpty) then "own: stack result" else "own: result shape")
+  if !ownOutsOK tabs f then rs := rs.push (ownWhy tabs f)
   for b in f.blocks do
     if !blockOK tabs sh anc f g b then
       let mut vs : Array String := #[]

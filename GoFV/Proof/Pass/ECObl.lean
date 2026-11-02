@@ -1,7 +1,7 @@
 import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.ECIdent
 import GoFV.Proof.Pass.ECArgSel
-import GoFV.Proof.Pass.ECWide
+import GoFV.Proof.Pass.ECOwn
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
@@ -94,7 +94,7 @@ theorem obl_tailUse {tabs : Tables} {f g : Func} {x c : ID} {u cu : Value} {HS H
 /-! ## The checker's facts -/
 
 theorem eco_ecCheck {tabs : Tables} {f g : Func} (h : ecCheck tabs f g = true) :
-    cfgView g = cfgView f ∧ g.ownAux = f.ownAux ∧ regParamsOK tabs (ownOuts tabs f) = true ∧
+    cfgView g = cfgView f ∧ g.ownAux = f.ownAux ∧ ownOutsOK tabs f = true ∧
       ∀ bid ∈ f.blocks, blockOK tabs (typeShapes tabs) (make g).anc f g bid = true := by
   unfold ecCheck at h
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
@@ -115,7 +115,8 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
   | some gb =>
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := h
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ :=
+      h
     refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
     · have := Array.all_eq_true'.1 hval x hx
@@ -268,7 +269,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       SrcArg f fb x a)
     (hdep : invalidated g x = false → ∀ a ∈ u.args, a ∈ fb.values →
       (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) → moveArgB f g x a = false →
-      wideSel f g a = false →
+      wideSel f g a = false → invalidated g a = false →
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
     (hld : ∀ l ∈ stackLoads tabs (typeShapes tabs) f g x,
       (isNewB f (loadSP g l) = false → HeldT g gb x (loadSP g l)) ∧
@@ -277,7 +278,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
   have Wf := check_wf hf
   have Wg := check_wf hg
   have hcert : CertOK f := certOK_of_check (check_domCert hf)
-  obtain ⟨hcfg, hown, hreg, hblk⟩ := eco_ecCheck hec
+  obtain ⟨hcfg, hown, hoo, hblk⟩ := eco_ecCheck hec
   have hbidg : bid ∈ g.blocks := by rw [CopyElim.cfgView_blocks hcfg]; exact hbid
   obtain ⟨gb0, hgb0, hsub, hvals⟩ := eco_blockOK (hblk bid hbid) hfb
   rw [hgb] at hgb0
@@ -324,7 +325,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     · rw [ite_eq_left hr] at hv
       have hconv : converted f x = true := by
         unfold converted; rw [hu]; dsimp only; rw [hr, Bool.or_true]
-      exact obl_result hu hw (beq_iff_eq.1 hr) hv hreg huid _ hLx hL (hH hconv)
+      exact obl_result hu hw (beq_iff_eq.1 hr) hv (ecr_ownOuts hoo) huid _ hLx hL (hH hconv)
     rw [ite_eq_right hr] at hv
     by_cases ht : (tailOp u.op || u.args.any (isTail f)) = true
     · rcases Bool.or_eq_true_iff.1 ht with h | h
@@ -377,7 +378,8 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
                   unfold moveArgB stackMove; rw [hu, hw]; dsimp only; rw [if_neg hc]; rfl
                 exact .inl ⟨hcf, hdep hinv _ hcmem hcf (fun ua hua => by
                   rw [hcu] at hua; cases hua; exact hcphi) hmv
-                  (ecA_not_wideSel hcu fun h => absurd hcall (by rw [h]; decide))⟩
+                  (ecA_not_wideSel hcu fun h => absurd hcall (by rw [h]; decide))
+                  (ecA_callOK_facts hcw hvc).1⟩
               · have hpl : Placed f x u :=
                   ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
                 obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=

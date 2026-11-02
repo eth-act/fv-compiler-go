@@ -95,6 +95,9 @@ inductive Rel where
   unreachable frame temporaries exist (`Env.TempOblivious`) and inputs holding no pointer into a
   frame temporary (`InitAvoids`). -/
   | dec
+  /-- `RefinesUnder (fun env => env.Mono ∧ env.FrameKeep)` (expand calls): monotone contracts
+  that keep the caller's frame blocks and return no memory (`Env.FrameKeep`). -/
+  | frameKeep
   deriving DecidableEq, Repr, Inhabited
 
 /-- How the verified pipeline runs a stock pass. -/
@@ -196,7 +199,7 @@ def stockPasses : Array StockPass := #[
   { name := "known bits", step := .proven knownBitsPass .mono noGuard },
   { name := "early fuse", step := .proven fuseEarlyPass .refines noGuard },
   { name := "expand calls", required := true,
-    step := .proven expandCallsPass .mono expandCallsFrag },
+    step := .proven expandCallsPass .frameKeep expandCallsFrag },
   { name := "decompose builtin", required := true,
     step := .proven Decompose.postExpandCallsDecomposePass .dec Decompose.decBuiltinFrag },
   { name := "softfloat", required := true, step := .proven softfloatPass .refines noGuard },
