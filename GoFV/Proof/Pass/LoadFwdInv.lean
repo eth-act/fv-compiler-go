@@ -63,7 +63,9 @@ private theorem callOp_static {env : Env} {ctx : Ctx} {v : Value} {argv : List V
       (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
         (!·.out)) argv.dropLast).any Val.hasPoison = false ∧
       c (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
-        (!·.out)) argv.dropLast) none (m.poisonBlock (.outargs ctx.act)) = .returned rs m' ∧
+        (!·.out)) argv.dropLast) none (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)))) =
+          .returned rs m' ∧
       encodeResults ctx.tabs ctx.act ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
         (·.out)) (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
         (·.out)) rs) m' = some (ps, m'') ∧
@@ -271,14 +273,14 @@ theorem fresh_eval {env : Env} (hA : env.AllocZero) {fr : Frame} {c : ID} {cv : 
   · rw [hr2, AtomSim.retype_poison] at hnp; simp [Val.hasPoison] at hnp
   rw [hr0, hr2, retype_i64, retype_bool] at hret
   have hreq : AllocReq name [.int .w64 (BitVec.ofInt 64 s.auxInt.toInt),
-      (rv fr a1).retype (tabs.ty i1.type), .bool true] (m.poisonBlock (.outargs (Ctx.make tabs f).act)) := by
+      (rv fr a1).retype (tabs.ty i1.type), .bool true] (m.poisonBelow (.outargs (Ctx.make tabs f).act) (callFrame tabs cv.aux [i0, i1, i2])) := by
     simp only [AllocReq, hnew', ite_false]
     refine ⟨_, _, _, rfl, ?_⟩
     show 0 < (BitVec.ofInt 64 s.auxInt.toBitVec.toInt).toInt
     rw [BitVec.ofInt_toInt]
     exact hspos
   have hret' : c' [.int .w64 (BitVec.ofInt 64 s.auxInt.toInt), (rv fr a1).retype (tabs.ty i1.type),
-      .bool true] none (m.poisonBlock (.outargs (Ctx.make tabs f).act)) = .returned rs m' := hret
+      .bool true] none (m.poisonBelow (.outargs (Ctx.make tabs f).act) (callFrame tabs cv.aux [i0, i1, i2])) = .returned rs m' := hret
   obtain ⟨p, k, hhead, hk, hzero⟩ := (hA.atAct _) name c' hname hc _ _ _ _ _ hret' hreq
   -- the result: one register-shaped pointer
   obtain ⟨o, hos⟩ : ∃ o, ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)) = [o] := by
