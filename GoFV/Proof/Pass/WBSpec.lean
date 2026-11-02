@@ -131,7 +131,7 @@ theorem lastMarks_spec {f g : Func} {x : ID} (h : (lastMarks f g).getD x false =
 theorem lazyOK_some {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : ID}
     (h : lazyOK tabs f g K Lst = some (some (wa, c0))) :
     (∃ w, g.value? wa = some w ∧ w.op = .Addr ∧ symName? tabs w.aux = some "runtime.writeBarrier" ∧
-      isPtrTy (tabs.ty w.type) = true ∧ w.args.size = 1) ∧
+      isPtrTy (tabs.ty w.type) = true ∧ w.args.size = 1 ∧ w.args[0]! ∈ vals g g.entry) ∧
     (∃ w, g.value? c0 = some w ∧ w.op = .Const32 ∧ w.auxInt = (0 : Int64) ∧ w.args = #[] ∧
       tabs.ty w.type = .int .w32) ∧
     wa ∈ vals g g.entry ∧ c0 ∈ vals g g.entry ∧
@@ -162,7 +162,7 @@ theorem lazyOK_some {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : I
     simp only [Bool.and_eq_true, Array.contains_iff_mem] at hge
     obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hwa
     obtain ⟨⟨⟨h5, h6⟩, h7⟩, h8⟩ := hc0
-    refine ⟨⟨w, hw, h1, h2, h3, h4⟩, ⟨cv, hcv, h5, h6, h7, ?_⟩, hge.1, hge.2, ?_⟩
+    refine ⟨⟨w, hw, h1, h2, h3, h4, hge.2⟩, ⟨cv, hcv, h5, h6, h7, ?_⟩, hge.1.1, hge.1.2, ?_⟩
     · split at h8
       · assumption
       · cases h8
@@ -350,7 +350,7 @@ private theorem srcChain_spec {f : Func} {mem : ID} : ∀ {n : Nat} {x : ID} {l 
     srcChain f mem n x = some l →
     l.length = n ∧ (n = 0 → x = mem) ∧ (0 < n → l.getLast? = some x) ∧
     ∀ (k : Nat) (y : ID), l[k]? = some y → ∃ u, f.value? y = some u ∧
-      (u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive) ∧
+      (u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive ∨ u.op = .Move ∨ u.op = .Zero) ∧
       u.args.toList.getLast? = some (match k with
         | 0 => mem
         | k + 1 => l[k]!)
@@ -392,7 +392,7 @@ private theorem srcChain_spec {f : Func} {mem : ID} : ∀ {n : Nat} {x : ID} {l 
       rw [ih1, Nat.sub_self] at hy
       simp only [List.getElem?_cons_zero, Option.some.injEq] at hy
       subst hy
-      refine ⟨v, hv, by rcases hg with (h | h) | h <;> simp [h], ?_⟩
+      refine ⟨v, hv, by rcases hg with (((h | h) | h) | h) | h <;> simp [h], ?_⟩
       rw [Array.getLast?_toList, hm]
       cases k with
       | zero => rw [ih2 rfl]
@@ -409,12 +409,13 @@ dropped nil check is the first store's address. -/
 theorem runOf_spec {f g : Func} {s : Split} {r : Run} (h : runOf? f g s = some r) :
     r.sp = s ∧ r.src.length = r.tgt.length ∧ r.src.getLast? = some r.last ∧
     (∀ (k : Nat) (x : ID), r.src[k]? = some x → ∃ u, f.value? x = some u ∧
-      (u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive) ∧
+      (u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive ∨ u.op = .Move ∨ u.op = .Zero) ∧
       u.args.toList.getLast? = some (match k with
         | 0 => s.mem
         | k + 1 => r.src[k]!)) ∧
     (∀ n, r.nc = some n → ∃ x0 v0 a nv, r.src[0]? = some x0 ∧ f.value? x0 = some v0 ∧
-      v0.op = .Store ∧ v0.args[0]? = some a ∧ f.value? a = some nv ∧ nv.op = .NilCheck ∧
+      (v0.op = .Store ∨ v0.op = .Move ∨ v0.op = .Zero) ∧ v0.args[0]? = some a ∧
+      f.value? a = some nv ∧ nv.op = .NilCheck ∧
       nv.args[1]? = some s.mem ∧ nv.id = n) ∧
     (∃ pv, g.value? r.phi = some pv ∧ pv.op = .Phi ∧ pv.args = #[s.mem, r.memThen]) ∧
     (vals g s.e)[0]? = some r.phi ∧
@@ -435,7 +436,7 @@ theorem runOf_spec {f g : Func} {s : Split} {r : Run} (h : runOf? f g s = some r
     dsimp only at hn
     split at hn
     · rename_i hst
-      simp only [beq_iff_eq] at hst
+      simp only [Bool.or_eq_true, beq_iff_eq] at hst
       cases ha : v0.args[0]? with
       | none => rw [ha] at hn; cases hn
       | some a =>
@@ -448,8 +449,8 @@ theorem runOf_spec {f g : Func} {s : Split} {r : Run} (h : runOf? f g s = some r
           · rename_i hc
             simp only [Bool.and_eq_true, beq_iff_eq] at hc
             simp only [Option.some.injEq] at hn
-            exact ⟨s0, v0, a, nv, by rw [← List.head?_eq_getElem?]; exact hs0, hv0, hst, ha, hnv,
-              hc.1, hc.2, hn⟩
+            exact ⟨s0, v0, a, nv, by rw [← List.head?_eq_getElem?]; exact hs0, hv0,
+              by rcases hst with (h | h) | h <;> simp [h], ha, hnv, hc.1, hc.2, hn⟩
           · cases hn
     · cases hn
   · have := arr_two hsz

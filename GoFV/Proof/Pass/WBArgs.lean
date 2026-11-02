@@ -26,12 +26,12 @@ def OutDef (c : WBCheck.Ctx) (B : Block) (Gr : Frame) : Prop :=
 
 /-- The registers available at the entry of segment `k` of the chain of `b`: held values outside
 `B` that `Gr` holds, the values of the earlier segments, and (when `b` is not the entry) the flag
-address and constant. -/
+address, the constant and the `SB` the flag address reads. -/
 def Avail (c : WBCheck.Ctx) (b : ID) (B : Block) (rs : List Run) (Gr : Frame) (k : Nat)
     (a : ID) : Prop :=
   (c.held a = true ∧ a ∉ B.values ∧ ∃ y, Gr.regs[a]? = some (some y)) ∨
   (∃ j, j < k ∧ InSeg c b rs j a) ∨
-  (b ≠ c.f.entry ∧ (c.isWbaddr a = true ∨ c.isConst0 a = true))
+  (b ≠ c.f.entry ∧ (c.isWbaddr a = true ∨ c.isConst0 a = true ∨ c.isSb a = true))
 
 theorem vals_of {h : Func} {s : ID} {C : Block} (hC : h.block? s = some C) :
     vals h s = C.values := by
@@ -85,7 +85,9 @@ private theorem roleRun_isRun {g : Func} {x : ID} :
       · cases g.value? x with
         | none => rfl
         | some v => exact thenRole_isRun
-      · exact roleRun_isRun
+      · split
+        · rfl
+        · exact roleRun_isRun
 
 private theorem otherRole_cases {g : Func} {x : ID} :
     otherRole g x = .invalid ∨ otherRole g x = .lazy ∨ otherRole g x = .none := by
@@ -195,6 +197,9 @@ private theorem roleRun_phi {g : Func} {x : ID} :
           rw [hv] at h
           exact absurd h thenRole_ne_phi
       · rw [if_neg h5] at h
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at h; cases h
+        rw [if_neg h6] at h
         obtain ⟨hk', r', hr', hx⟩ := roleRun_phi h
         refine ⟨by omega, r', ?_, hx⟩
         rw [show i - k = (i - (k + 1)) + 1 by omega]
@@ -223,6 +228,77 @@ private theorem roleOf_phi {c : WBCheck.Ctx} {rs : List Run} {x : ID} {i : Nat}
   obtain ⟨-, r, hr, hx⟩ := roleRun_phi hR
   exact ⟨r, by simpa using hr, hx⟩
 
+private theorem thenRole_ne_taddr {v : Value} {j i : Nat} : thenRole v j ≠ .taddr i := by
+  intro h
+  unfold thenRole at h
+  repeat' split at h
+  all_goals cases h
+
+private theorem roleRun_taddr {g : Func} {x : ID} :
+    ∀ {rs : List Run} {k i : Nat}, roleRun g x rs k = .taddr i →
+      k ≤ i ∧ ∃ r, rs[i - k]? = some r ∧ x ∈ vals g r.sp.c
+  | [], _, _, h => by rw [roleRun] at h; cases h
+  | r :: rs, k, i, h => by
+    rw [roleRun] at h
+    by_cases h1 : (x == r.sp.load) = true
+    · rw [if_pos h1] at h; cases h
+    rw [if_neg h1] at h
+    by_cases h2 : (x == r.sp.flag) = true
+    · rw [if_pos h2] at h; cases h
+    rw [if_neg h2] at h
+    by_cases h3 : (x == r.phi) = true
+    · rw [if_pos h3] at h; cases h
+    rw [if_neg h3] at h
+    by_cases h4 : (r.ncEnd == some x) = true
+    · rw [if_pos h4] at h; cases h
+    rw [if_neg h4] at h
+    cases hk : r.tgt.idxOf? x with
+    | some k' => rw [hk] at h; cases h
+    | none =>
+      rw [hk] at h
+      dsimp only at h
+      by_cases h5 : (vals g r.sp.t).contains x = true
+      · rw [if_pos h5] at h
+        cases hv : g.value? x with
+        | none => rw [hv] at h; cases h
+        | some v =>
+          rw [hv] at h
+          exact absurd h thenRole_ne_taddr
+      · rw [if_neg h5] at h
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at h; cases h
+          simp only [Bool.and_eq_true, Array.contains_iff_mem] at h6
+          exact ⟨Nat.le_refl _, r, by simp, h6.1⟩
+        rw [if_neg h6] at h
+        obtain ⟨hk', r', hr', hx⟩ := roleRun_taddr h
+        refine ⟨by omega, r', ?_, hx⟩
+        rw [show i - k = (i - (k + 1)) + 1 by omega]
+        simpa using hr'
+
+/-- A type address is listed in its run's split block. -/
+theorem roleOf_taddr {c : WBCheck.Ctx} {rs : List Run} {x : ID} {i : Nat}
+    (h : c.roleOf rs x = .taddr i) : ∃ r, rs[i]? = some r ∧ x ∈ vals c.g r.sp.c := by
+  unfold Ctx.roleOf at h
+  by_cases h1 : c.isWbaddr x = true
+  · rw [if_pos h1] at h; cases h
+  rw [if_neg h1] at h
+  by_cases h2 : c.isConst0 x = true
+  · rw [if_pos h2] at h; cases h
+  rw [if_neg h2] at h
+  by_cases h3 : c.held x = true
+  · rw [if_pos h3] at h; cases h
+  rw [if_neg h3] at h
+  have hR : roleRun c.g x rs 0 = .taddr i := by
+    generalize roleRun c.g x rs 0 = R at h
+    cases R
+    case none =>
+      rcases otherRole_cases (g := c.g) (x := x) with h5 | h5 | h5 <;>
+        (dsimp only at h; rw [h5] at h; cases h)
+    case taddr i' => exact h
+    all_goals cases h
+  obtain ⟨-, r, hr, hx⟩ := roleRun_taddr hR
+  exact ⟨r, by simpa using hr, hx⟩
+
 section
 variable {c : WBCheck.Ctx} {b : ID} {B : Block} {segs : List ID} {rs : List Run} {inT : Bool}
   {j : Nat} {x : ID} {w : Value}
@@ -248,7 +324,8 @@ private theorem seg_roles (h : c.roleOK b B segs rs false j x = true)
       (c.roleOf rs x = .wbaddr ∨ c.roleOf rs x = .const0 ∨ c.roleOf rs x = .lazy) ∨
       c.roleOf rs x = .invalid ∨ (∃ i, c.roleOf rs x = .load i) ∨
       (∃ i, c.roleOf rs x = .flag i) ∨ (∃ i, c.roleOf rs x = .phi i) ∨
-      (∃ i, c.roleOf rs x = .ncEnd i) ∨ ∃ i k, c.roleOf rs x = .tgt i k := by
+      (∃ i, c.roleOf rs x = .ncEnd i) ∨ (∃ i k, c.roleOf rs x = .tgt i k) ∨
+      ∃ i, c.roleOf rs x = .taddr i := by
   cases hρ : c.roleOf rs x with
   | ncThen i => cases (roleOK_ncThen h hw hρ).1
   | wb i => cases (roleOK_wb h hw hρ).1
@@ -257,6 +334,8 @@ private theorem seg_roles (h : c.roleOK b B segs rs false j x = true)
   | off i => cases (roleOK_off h hw hρ).1
   | bstore i => cases (roleOK_bstore h hw hρ).1
   | tload i => cases (roleOK_tload h hw hρ).1
+  | call i => cases (roleOK_call h hw hρ).1
+  | seln i => cases (roleOK_seln h hw hρ).1
   | none => exact (roleOK_none h hρ).elim
   | _ => simp
 
@@ -266,7 +345,8 @@ private theorem t_roles (h : c.roleOK b B segs rs true j x = true)
     (∃ i, c.roleOf rs x = .ncThen i) ∨ (∃ i, c.roleOf rs x = .wb i) ∨
       (∃ i, c.roleOf rs x = .sel0 i) ∨ (∃ i, c.roleOf rs x = .sel1 i) ∨
       (∃ i, c.roleOf rs x = .off i) ∨ (∃ i, c.roleOf rs x = .bstore i) ∨
-      ∃ i, c.roleOf rs x = .tload i := by
+      (∃ i, c.roleOf rs x = .tload i) ∨ (∃ i, c.roleOf rs x = .call i) ∨
+      ∃ i, c.roleOf rs x = .seln i := by
   cases hρ : c.roleOf rs x with
   | held => cases (roleOK_held h hw hρ).1
   | wbaddr => cases (roleOK_lazy h hw (.inl hρ)).1
@@ -278,6 +358,7 @@ private theorem t_roles (h : c.roleOK b B segs rs true j x = true)
   | phi i => cases (roleOK_phi h hw hρ).1
   | ncEnd i => cases (roleOK_ncEnd h hw hρ).1
   | tgt i k => cases (roleOK_tgt h hw hρ).1
+  | taddr i => cases (roleOK_taddr h hw hρ).1
   | none => exact (roleOK_none h hρ).elim
   | _ => simp
 

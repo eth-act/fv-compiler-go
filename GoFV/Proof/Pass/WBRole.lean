@@ -150,7 +150,7 @@ theorem roleOK_phi {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g
     inT = false ∧ j = i + 1 ∧ ∃ r, rs[i]? = some r ∧ w.op = .Phi ∧
       w.args = #[r.sp.mem, r.memThen] ∧ c.tabs.ty w.type = .mem ∧
       (r.memThen = r.sp.mem ∨ c.roleOf rs r.memThen = .sel1 i ∨
-        c.roleOf rs r.memThen = .bstore i) := by
+        c.roleOf rs r.memThen = .bstore i ∨ c.roleOf rs r.memThen = .seln i) := by
   unfold Ctx.roleOK at h
   rw [hw] at h
   simp only [hρ, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h
@@ -166,7 +166,8 @@ theorem roleOK_phi {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g
       · exact .inl hm
       · split at hm
         · rename_i k hk; right; left; rw [hk]; simp at hm; rw [hm]
-        · rename_i k hk; right; right; rw [hk]; simp at hm; rw [hm]
+        · rename_i k hk; right; right; left; rw [hk]; simp at hm; rw [hm]
+        · rename_i k hk; right; right; right; rw [hk]; simp at hm; rw [hm]
         · cases hm
   · cases h
 
@@ -365,6 +366,114 @@ theorem roleOK_tload {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
         · cases h2
     · cases h
 
+theorem roleOK_taddr {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
+    (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .taddr i) :
+    inT = false ∧ i = j ∧ w.op = .Addr ∧ w.args = #[w.args[0]!] ∧ c.isSb w.args[0]! = true ∧
+      (symName? c.tabs w.aux).isSome = true ∧ c.tabs.ty w.type = .int .w64 := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, and_assoc] at h
+  obtain ⟨hT, hi, hop, hsz, hsb, hsym, hty⟩ := h
+  refine ⟨hT, hi, hop, ?_, hsb, hsym, ?_⟩
+  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
+  · split at hty
+    · assumption
+    · cases hty
+
+/-- `wbCallOK` as a proposition. -/
+structure CallP (c : WBCheck.Ctx) (B : Block) (segs : List ID) (j : Nat) (rs : List Run) (r : Run)
+    (i : Nat) (w : Value) : Prop where
+  name : ∃ name, w.aux.bind c.tabs.callee? = some name ∧
+    (name = "runtime.wbZero" ∨ name = "runtime.wbMove")
+  abi : ∃ abi, Sem.callABI? c.tabs w.aux = some abi ∧
+    (∀ p ∈ abi.params.toList, wbParam c.tabs p = true) ∧ abi.params.size = w.args.size - 1
+  typ : c.roleOf rs w.args[0]! = .taddr i
+  mem : ∃ m, w.args.back? = some m ∧ (m = r.sp.mem ∨ c.roleOf rs m = .sel1 i ∨
+    c.roleOf rs m = .bstore i ∨ c.roleOf rs m = .seln i)
+  src : ∃ s u, s ∈ r.src ∧ c.f.value? s = some u ∧ u.args.size = w.args.size - 1 ∧
+    ((u.op = .Zero ∧ w.args.size = 3) ∨ (u.op = .Move ∧ w.args.size = 4 ∧
+      w.args[2]! = u.args[1]! ∧ c.availIn B segs j u.args[1]! = true)) ∧
+    ((w.args[1]! = u.args[0]! ∧ c.availIn B segs j u.args[0]! = true) ∨
+      (r.nc = some u.args[0]! ∧ c.roleOf rs w.args[1]! = .ncThen i))
+
+theorem tMem_spec {i : Nat} {r : Run} {m : ID} (h : c.tMem rs r i m = true) :
+    m = r.sp.mem ∨ c.roleOf rs m = .sel1 i ∨ c.roleOf rs m = .bstore i ∨
+      c.roleOf rs m = .seln i := by
+  unfold Ctx.tMem at h
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · exact .inl h
+  · split at h
+    · rename_i k hk; simp at h; subst h; exact .inr (.inl hk)
+    · rename_i k hk; simp at h; subst h; exact .inr (.inr (.inl hk))
+    · rename_i k hk; simp at h; subst h; exact .inr (.inr (.inr hk))
+    · cases h
+
+theorem wbCall_spec {i : Nat} {r : Run} (h : c.wbCallOK B segs j rs r i w = true) :
+    CallP c B segs j rs r i w := by
+  unfold Ctx.wbCallOK at h
+  split at h
+  · rename_i name abi hname habi
+    simp only [Bool.and_eq_true, beq_iff_eq, List.any_eq_true] at h
+    obtain ⟨⟨⟨⟨⟨hn, hsz⟩, hall⟩, htaddr⟩, hmem⟩, s, hs, hsu⟩ := h
+    have hn' : (name = "runtime.wbZero" ∧ w.args.size - 1 = 2) ∨
+        (name = "runtime.wbMove" ∧ w.args.size - 1 = 3) := by
+      split at hn
+      · rename_i h1; exact .inl ⟨by simpa using h1, by simpa using hn⟩
+      · simp only [Bool.and_eq_true, beq_iff_eq] at hn; exact .inr hn
+    refine ⟨⟨name, hname, hn'.imp (·.1) (·.1)⟩,
+      ⟨abi, habi, fun p hp => Array.all_eq_true_iff_forall_mem.1 hall p (by simpa using hp), hsz⟩,
+      htaddr, ?_, ?_⟩
+    · split at hmem
+      · rename_i m hm; exact ⟨m, hm, tMem_spec hmem⟩
+      · cases hmem
+    · split at hsu
+      · rename_i u hu
+        simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at hsu
+        obtain ⟨⟨hus, hop⟩, hdst⟩ := hsu
+        refine ⟨s, u, hs, hu, hus, ?_, hdst⟩
+        split at hop
+        · rename_i h2; left; exact ⟨by simpa using hop, by omega⟩
+        · rename_i h2
+          simp only [Bool.and_eq_true, beq_iff_eq] at hop
+          obtain ⟨⟨hop, h3⟩, h4⟩ := hop
+          right
+          rcases hn' with ⟨-, h5⟩ | ⟨-, h5⟩
+          · exact absurd h5 (by simpa using h2)
+          · exact ⟨hop, by omega, h3, h4⟩
+      · cases hsu
+  · cases h
+
+theorem roleOK_call {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
+    (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .call i) :
+    inT = true ∧ i = j ∧ w.op = .StaticCall ∧ c.tabs.ty w.type = .tuple [.mem] ∧
+      ∃ r, rs[i]? = some r ∧ CallP c B segs j rs r i w := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hT, hi⟩, hop⟩, hty⟩, h⟩ := h
+  refine ⟨hT, hi, hop, ?_, ?_⟩
+  · split at hty
+    · assumption
+    · cases hty
+  · split at h
+    · rename_i r hr
+      subst hi
+      exact ⟨r, hr, wbCall_spec h⟩
+    · cases h
+
+theorem roleOK_seln {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
+    (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .seln i) :
+    inT = true ∧ i = j ∧ w.op = .SelectN ∧ w.args = #[w.args[0]!] ∧ w.auxInt = 0 ∧
+      c.tabs.ty w.type = .mem ∧ c.roleOf rs w.args[0]! = .call i := by
+  unfold Ctx.roleOK at h
+  rw [hw] at h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
+  obtain ⟨hT, hi, hop, hsz, hai, hty, hr⟩ := h
+  refine ⟨hT, hi, hop, ?_, hai, ?_, hr⟩
+  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
+  · unfold tyIs isMemTy at hty; split at hty <;> simp_all
+
 end
 
 /-! ## Roles and ops -/
@@ -378,11 +487,19 @@ def thenOp : Role → Option (Nat × Op)
   | .off j => some (j, .OffPtr)
   | .bstore j => some (j, .Store)
   | .tload j => some (j, .Load)
+  | .call j => some (j, .StaticCall)
+  | .seln j => some (j, .SelectN)
   | _ => none
 
 theorem thenRole_then {v : Value} {j j' : Nat} {o : Op} (h : thenOp (thenRole v j) = some (j', o)) :
     j' = j ∧ v.op = o := by
   unfold thenRole at h
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
+  split at h
+  · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
+    exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
   split at h
   · rename_i h1; simp only [thenOp, Option.some.injEq, Prod.mk.injEq] at h
     exact ⟨h.1.symm, by rw [← h.2]; simpa using h1⟩
@@ -448,6 +565,9 @@ theorem roleRun_then {g : Func} {x : ID} :
           obtain ⟨rfl, hop⟩ := thenRole_then ht
           exact ⟨Nat.le_refl _, r, by simp, by simpa using h5, v, rfl, hop⟩
       · rw [if_neg h5] at ht
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at ht; simp [thenOp] at ht
+        rw [if_neg h6] at ht
         obtain ⟨hk, r', hr', hx, w, hw, ho⟩ := roleRun_then ht
         refine ⟨by omega, r', ?_, hx, w, hw, ho⟩
         rw [show j - k = (j - (k + 1)) + 1 by omega]

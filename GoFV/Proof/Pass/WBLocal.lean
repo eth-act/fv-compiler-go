@@ -8,6 +8,7 @@ import GoFV.Proof.Pass.DAEOps
 import GoFV.Proof.Pass.DAERoot
 import GoFV.Proof.Pass.DAESrc
 import GoFV.Proof.AtomSimOK
+import GoFV.SSA.Sem.Runtime
 
 /-!
 # writebarrier: one value of a chain (issue #36)
@@ -39,6 +40,9 @@ def RunMem (Gr : Frame) (rs : List Run) (j : Nat) (M : Mem) : Prop :=
 /-- The flag's address. -/
 def flagPtr : Ptr := ⟨flagBlk, 0⟩
 
+/-- A memory of the buffer block after a helper call: `M` with a buffer, or `M` itself. -/
+def BufW (M : Mem) (n : Nat) (m : Mem) : Prop := Buf M n m ∨ m = M
+
 /-- What the register of a value of the chain holds, by its role (see the module doc). -/
 def QR (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) (y : Val) : Prop :=
   match c.roleOf rs x with
@@ -59,7 +63,23 @@ def QR (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) (y : Val) : Prop 
   | .sel1 j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ Buf M r.wbN m
   | .bstore j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ Buf M r.wbN m
   | .off j => ∃ r i, rs[j]? = some r ∧ i < r.wbN ∧ y = .ptr ⟨.wbuf, BitVec.ofNat 64 (8 * i)⟩
+  | .taddr _ => ∃ s, y = .ptr ⟨.global s, 0⟩
+  | .call j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .tuple [.mem m, .agg []] ∧
+      BufW M r.wbN m
+  | .seln j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ BufW M r.wbN m
   | .none => False
+
+/-- The write-barrier helpers are the runtime's (`Runtime.wbHelper`), and a call of either clobbers
+none of its caller's outgoing-arguments area (`Env.noSpill`). The `noSpill` half is a **trusted
+assumption** about the runtime binary (docs/plans/semantics.md §9.6, evidence on #36): in the
+pinned go1.27.3 linux/arm64 runtime, `runtime.wbZero`/`runtime.wbMove` store only the link
+register and frame pointer inside their own frame, never at or above their entry `SP`, and the
+runtime is always compiled with optimizations (`cmd/compile/internal/base/flag.go:366-369`), so
+they never use the spill slots of their register arguments in the caller's frame. -/
+def WbHelpers (env : Env) : Prop :=
+  env.extern "runtime.wbZero" = some Runtime.wbHelper ∧
+    env.extern "runtime.wbMove" = some Runtime.wbHelper ∧
+    env.noSpill "runtime.wbZero" = true ∧ env.noSpill "runtime.wbMove" = true
 
 /-! ## Evaluating with known argument registers -/
 
@@ -269,6 +289,40 @@ theorem varLive_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu 
     | (cases h; exact ⟨_, rfl, rfl⟩)
     | (simp only at h; split at h <;> cases h)
 
+theorem move_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Move)
+    (h : memRoot ctx u argv = .ok y) : ∃ a b d s bs M M', argv = [a, b, .mem M] ∧
+      a.asPtrWord = some d ∧ b.asPtrWord = some s ∧ M.read s u.auxInt.toInt.toNat = some bs ∧
+      M.write d bs = some M' ∧ y = .mem M' := by
+  unfold memRoot at h
+  rw [hu] at h
+  split at h
+  all_goals first
+    | contradiction
+    | (split at h
+       · split at h
+         · simp only [writeRes] at h; split at h
+           · cases h; exact ⟨_, _, _, _, _, _, _, rfl, ‹_›, ‹_›, ‹_›, ‹_›, rfl⟩
+           · cases h
+         · cases h
+       · cases h)
+    | (simp only at h; split at h <;> cases h)
+
+theorem zero_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Zero)
+    (h : memRoot ctx u argv = .ok y) : ∃ a p M M', argv = [a, .mem M] ∧
+      a.asPtrWord = some p ∧ M.write p (Array.replicate u.auxInt.toInt.toNat (.b 0)) = some M' ∧
+      y = .mem M' := by
+  unfold memRoot at h
+  rw [hu] at h
+  split at h
+  all_goals first
+    | contradiction
+    | (split at h
+       · simp only [writeRes] at h; split at h
+         · cases h; exact ⟨_, _, _, _, rfl, ‹_›, ‹_›, rfl⟩
+         · cases h
+       · cases h)
+    | (simp only at h; split at h <;> cases h)
+
 theorem nilCheck_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .NilCheck)
     (h : memRoot ctx u argv = .ok y) : ∃ p M, argv = [p, .mem M] := by
   obtain ⟨_, _, _, he, -, -⟩ := memRoot_nilCheck_res hu h (fun _ h => nomatch h)
@@ -285,14 +339,15 @@ theorem append_single_inj {L L' : List Val} {a b : Val} (h : L ++ [a] = L' ++ [b
   have := List.append_inj' h rfl
   exact ⟨this.1, by simpa using this.2⟩
 
-/-- **A re-emitted store** (`Store`, `VarDef`, `VarLive`) on a memory `W`-related to the source's
-does what the source's did, `W`-related. -/
+/-- **A re-emitted store** (`Store`, `VarDef`, `VarLive`, `Move`, `Zero`) on a memory
+`W`-related to the source's does what the source's did, `W`-related. -/
 theorem memRoot_copy {ctxS ctxT : Sem.Ctx} (htabs : ctxT.tabs = ctxS.tabs) (hact : ctxT.act = ctxS.act)
-    {u w : Value} (hop : w.op = u.op) (hu : u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive)
-    (haux : w.aux = u.aux) {L : List Val} {M m : Mem} {y : Val} (hW : W M m)
-    (h : memRoot ctxS u (L ++ [.mem M]) = .ok y) :
+    {u w : Value} (hop : w.op = u.op)
+    (hu : u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive ∨ u.op = .Move ∨ u.op = .Zero)
+    (haux : w.aux = u.aux) (hai : w.auxInt = u.auxInt) {L : List Val} {M m : Mem} {y : Val}
+    (hW : W M m) (h : memRoot ctxS u (L ++ [.mem M]) = .ok y) :
     ∃ M' m', y = .mem M' ∧ memRoot ctxT w (L ++ [.mem m]) = .ok (.mem m') ∧ W M' m' := by
-  rcases hu with hu | hu | hu
+  rcases hu with hu | hu | hu | hu | hu
   · obtain ⟨a, q, x, M0, M', he, hq, hwr, rfl⟩ := store_inv hu h
     obtain ⟨hL, hM⟩ := append_single_inj (L' := [a, x]) (b := .mem M0) he
     cases hM; subst hL
@@ -309,6 +364,19 @@ theorem memRoot_copy {ctxS ctxT : Sem.Ctx} (htabs : ctxT.tabs = ctxS.tabs) (hact
     cases hM; subst hL
     refine ⟨_, _, rfl, ?_, hW⟩
     simp only [memRoot, hop, hu, List.nil_append]
+  · obtain ⟨a, b, d, s, bs, M0, M', he, hd, hs, hrd, hwr, rfl⟩ := move_inv hu h
+    obtain ⟨hL, hM⟩ := append_single_inj (L' := [a, b]) (b := .mem M0) he
+    cases hM; subst hL
+    obtain ⟨m', hm', hW'⟩ := hW.write hwr
+    refine ⟨M', m', rfl, ?_, hW'⟩
+    simp only [memRoot, hop, hu, List.cons_append, List.nil_append, hd, hs, hai, hW.read hrd,
+      writeRes, hm']
+  · obtain ⟨a, p, M0, M', he, hp, hwr, rfl⟩ := zero_inv hu h
+    obtain ⟨hL, hM⟩ := append_single_inj (L' := [a]) (b := .mem M0) he
+    cases hM; subst hL
+    obtain ⟨m', hm', hW'⟩ := hW.write hwr
+    refine ⟨M', m', rfl, ?_, hW'⟩
+    simp only [memRoot, hop, hu, List.cons_append, List.nil_append, hp, hai, writeRes, hm']
 
 /-! ## Argument lists -/
 
@@ -505,8 +573,9 @@ theorem local_tgt {env : Env} {tabs : Tables} {f g : Func} {c : WBCheck.Ctx} {rs
     (hr : rs[j]? = some r) (hs : r.src[k]? = some s)
     (hu : f.value? s = some u) (huid : u.id = s)
     (hsrc : ∃ y, Gr.regs[s]? = some (some y) ∧ evalValue env (Ctx.make tabs f) Gr u = .ok y)
-    (hopu : u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive) (hop : w.op = u.op)
-    (haux : w.aux = u.aux) (hty : w.type = u.type) (hmemty : tabs.ty w.type = .mem)
+    (hopu : u.op = .Store ∨ u.op = .VarDef ∨ u.op = .VarLive ∨ u.op = .Move ∨ u.op = .Zero)
+    (hop : w.op = u.op) (haux : w.aux = u.aux) (hai : w.auxInt = u.auxInt) (hty : w.type = u.type)
+    (hmemty : tabs.ty w.type = .mem)
     (hsz : w.args.size = u.args.size) {memS memT : ID}
     (hlastu : u.args.toList.getLast? = some memS) (hlastw : w.args.toList.getLast? = some memT)
     (hmem : ∀ z, QR c rs Gr memT z → ∃ M m, MemAt Gr memS M ∧ z = .mem m ∧ W M m)
@@ -570,12 +639,13 @@ theorem local_tgt {env : Env} {tabs : Tables} {f g : Func} {c : WBCheck.Ctx} {rs
         rw [hzT, List.getElem?_append_right (by simp; omega), List.length_take,
           Nat.min_eq_left (by omega), Nat.sub_self]; rfl
       · rw [List.getElem?_eq_none (by omega), List.getElem?_eq_none (by simp; omega)]
-  have hmr : ∀ op : Op, op = .Store ∨ op = .VarDef ∨ op = .VarLive → op = .Store ∨ op = .Zero ∨
-      op = .Move ∨ op = .VarDef ∨ op = .VarLive ∨ op = .KeepAlive ∨ op = .NilCheck := by
-    rintro op (h | h | h) <;> simp [h]
+  have hmr : ∀ op : Op, (op = .Store ∨ op = .VarDef ∨ op = .VarLive ∨ op = .Move ∨ op = .Zero) →
+      op = .Store ∨ op = .Zero ∨ op = .Move ∨ op = .VarDef ∨ op = .VarLive ∨ op = .KeepAlive ∨
+        op = .NilCheck := by
+    rintro op (h | h | h | h | h) <;> simp [h]
   rw [DAE.evalOp_memRoot (hmr _ hopu), hLs] at hop0
   obtain ⟨M', m', rfl, hT, hW'⟩ := memRoot_copy (ctxS := Ctx.make tabs f) (ctxT := Ctx.make tabs g)
-    rfl rfl hop hopu haux hW hop0
+    rfl rfl hop hopu haux hai hW hop0
   refine ⟨.mem m', ?_, ?_⟩
   · rw [stepV_eq hw, evalValue_of (L := L') hL', tys_get hw hid, hmemty,
       DAE.evalOp_memRoot (hmr _ (hop ▸ hopu)), hLs', hT]

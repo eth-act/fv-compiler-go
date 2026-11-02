@@ -182,6 +182,22 @@ theorem W.poison {mS mT : Mem} (h : W mS mT) {b : Blk} (hb : b ≠ .wbuf) :
     · rw [CSE.Mem.find?_set, if_neg hb]; exact h.2
     · exact h.2
 
+theorem W.find {mS mT : Mem} (h : W mS mT) {b : Blk} (hb : b ≠ .wbuf) : mT.find? b = mS.find? b := by
+  rw [← h.1, TabsMod.erase_find (by simp [isW, hb])]
+
+/-- **The same read** (the source's succeeds). -/
+theorem W.read {mS mT : Mem} (h : W mS mT) {p : Ptr} {n : Nat} {bs : Array Byte}
+    (hr : mS.read p n = some bs) : mT.read p n = some bs := by
+  by_cases hb : p.blk = .wbuf
+  · by_cases hn : n = 0
+    · subst hn; unfold Mem.read at hr ⊢; simpa using hr
+    · exfalso
+      unfold Mem.read at hr
+      rw [hb, h.2] at hr
+      simp [hn] at hr
+  · have he : mT.read p n = mS.read p n := by unfold Mem.read; rw [W.find h hb]
+    rw [he]; exact hr
+
 /-- A memory of the buffer block of a write-barrier sequence: `M` with a writable buffer of
 `8 n` bytes, `n ≤ 8`. -/
 def Buf (M : Mem) (n : Nat) (m : Mem) : Prop :=

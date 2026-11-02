@@ -7,7 +7,7 @@ import GoFV.Opt.WriteBarrierCheck
 
 Runs `writebarrier` (stock) and `writebarrierChecked` on the inputs of the `writebarrier`
 sections of the given export files that pass `check`. Counts the inputs the pass changes, those
-with `wbZero`/`wbMove` calls (outside the checker's scope), those that store to
+with `wbZero`/`wbMove` calls, those that store to
 `runtime.writeBarrier` directly, the accepted ones and whether they equal the stock output,
 names the first failing condition of each rejection and lists the smallest accepted inputs
 (witness candidates).
@@ -126,9 +126,7 @@ def main (args : List String) : IO UInt32 := do
       let .ok out := writebarrier env f | errs := errs + 1; continue
       if out.func == f then continue
       changed := changed + 1
-      if hasWbCall out.tables out.func then
-        wbCalls := wbCalls + 1
-        continue
+      if hasWbCall out.tables out.func then wbCalls := wbCalls + 1
       match writebarrierChecked env f with
       | .ok o =>
         accepted := accepted + 1
@@ -143,8 +141,8 @@ def main (args : List String) : IO UInt32 := do
         if dump || shown < 20 then
           IO.println s!"REJECT {path} {s.index} {e.pkg}.{e.name}: {w}"
           shown := shown + 1
-  IO.println s!"writebarrier inputs {inputs}, passing check {checked}: changed {changed}, \
-    with wbZero/wbMove calls {wbCalls}, others accepted {accepted} (at stock {atStock}), \
+  IO.println s!"writebarrier inputs {inputs}, passing check {checked}: changed {changed} \
+    (with wbZero/wbMove calls {wbCalls}), accepted {accepted} (at stock {atStock}), \
     rejected {rejected}, errors {errs}; storing to runtime.writeBarrier {flagStores}"
   IO.println s!"rejections by first failing condition: {whys.toList}"
   IO.println "witness candidates (accepted inputs; values, blocks), smallest first:"
