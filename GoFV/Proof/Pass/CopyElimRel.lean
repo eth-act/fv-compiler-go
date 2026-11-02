@@ -10,7 +10,8 @@ argument or control `a` of `f` becomes `a` itself or, if `a` is a copy in `g`, t
 argument (`ArgRel`); every value keeps its op, aux and type, except that a `Phi` may become a
 `Copy` of a value every one of its arguments is related to (phielim), and a value of a zero-size
 aggregate type may become `Empty`. The argument of a copy of `g` in a tree block keeps its
-value at the copy's shape (`RetypeInto`).
+value at the copy's shape (`RetypeInto`), or is an `Addr` (a global pointer or `poison`) under a
+word-shaped copy (`CopyArgOK`; a `Phi <uintptr>` of `Addr`s turned copy, issue #17).
 
 Checked on the corpus: copyelim's output satisfies `CopyRel` on every section
 (`lake exe copyrel-probe`). `copyelim_refines_of_rel` (`GoFV.Proof.Pass.CopyElim`) derives the
@@ -39,6 +40,21 @@ inductive ValRel (tabs : Tables) (g : Func) (fv gv : Value) : Prop where
   | empty : zeroSizeAggregate tabs fv.type = .ok true → gv.op = .Empty → gv.args = #[] →
       ValRel tabs g fv gv
 
+/-- What a copy `x` of shape `t` needs of its argument `wv`: values of `wv`'s shape keep their
+value at `t` (`RetypeInto`), or `x` was a `Phi` (`fx`: its input value), `wv` is an `Addr` (it
+evaluates to a global pointer or `poison`, `GlobalOrPoison`) and `t` a word shape. -/
+def CopyArgOK (tabs : Tables) (fx : Option Value) (wv : Value) (t : Ty) : Prop :=
+  RetypeInto (tabs.ty wv.type) t ∨
+    (wv.op = .Addr ∧ wordShape t = true ∧ ∀ fv, fx = some fv → fv.op = .Phi)
+
+/-- The argument's register `y` (fixed at its shape, and a global pointer or `poison` when it is
+an `Addr`'s) keeps its value at the copy's shape. -/
+theorem CopyArgOK.apply {tabs : Tables} {fx : Option Value} {wv : Value} {t : Ty}
+    (h : CopyArgOK tabs fx wv t) {y : Val}
+    (hy : y.retype (tabs.ty wv.type) = y) (ha : wv.op = .Addr → GlobalOrPoison y) :
+    y.retype t = y :=
+  h.elim (fun h => h.apply hy) (fun ⟨hop, ht, _⟩ => (ha hop).retype_word ht)
+
 /-- The static relation between copyelim's input `f` and output `g`. -/
 structure CopyRel (tabs : Tables) (f g : Func) : Prop where
   cfg : cfgView g = cfgView f
@@ -54,6 +70,6 @@ structure CopyRel (tabs : Tables) (f g : Func) : Prop where
       ∃ gv, g.value? x = some gv ∧ gv.block = fv.block ∧ gv.type = fv.type ∧ ValRel tabs g fv gv
   copyShape : ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
     ∀ x ∈ fb.values, ∀ gv w, g.value? x = some gv → gv.op = .Copy → gv.args = #[w] →
-      ∃ wv, g.value? w = some wv ∧ RetypeInto (tabs.ty wv.type) (tabs.ty gv.type)
+      ∃ wv, g.value? w = some wv ∧ CopyArgOK tabs (f.value? x) wv (tabs.ty gv.type)
 
 end GoFV.Proof.CopyElim
