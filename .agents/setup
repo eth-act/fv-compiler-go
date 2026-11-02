@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Amp orb setup (https://ampcode.com/docs/orbs): Lean (elan + lean-toolchain), Go, qemu, the
+# pinned Go source and the patched oracle toolchain (docs/PINS.md). Idempotent; a warm run
+# only checks versions. Not done here: corpus export (scripts/export-corpus.sh, ~GBs) and the
+# driver toolchain (GOFV_GO_DRIVER=1 scripts/build-go.sh, docs/DRIVER.md).
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+
+go_version=go1.27.3   # docs/PINS.md; also the bootstrap for the patched build
+go_root=/usr/local/go
+
+step() { printf '\n== %s\n' "$*"; SECONDS=0; }
+done_step() { echo "   (${SECONDS}s)"; }
+
+step "apt packages"
+if ! command -v qemu-aarch64-static >/dev/null; then
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-user-static >/dev/null
+fi
+done_step
+
+step "Go $go_version in $go_root"
+if [ "$("$go_root/bin/go" env GOVERSION 2>/dev/null || true)" != "$go_version" ]; then
+  curl -sSfL "https://go.dev/dl/$go_version.linux-amd64.tar.gz" -o "/tmp/$go_version.tgz"
+  sudo rm -rf "$go_root"
+  sudo tar -C /usr/local -xzf "/tmp/$go_version.tgz"
+  rm -f "/tmp/$go_version.tgz"
+fi
+done_step
+
+step "elan and $(cat lean-toolchain)"
+if [ ! -x "$HOME/.elan/bin/elan" ]; then
+  curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh |
+    sh -s -- -y --default-toolchain none --no-modify-path
+fi
+export PATH="$HOME/.elan/bin:$go_root/bin:$PATH"
+toolchain=$(cat lean-toolchain)
+elan toolchain list | grep -q "^${toolchain}\b" || elan toolchain install "$toolchain"
+lean --version
+done_step
+
+step "login shell environment (~/.bash_profile)"
+marker="# gofv toolchains (fv-compiler-go .agents/setup)"
+if ! grep -Fqx "$marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >>"$HOME/.bash_profile" <<'EOF'
+
+# gofv toolchains (fv-compiler-go .agents/setup)
+export PATH="$HOME/.elan/bin:/usr/local/go/bin:$HOME/go/bin:$PATH"
+export GOROOT_BOOTSTRAP=/usr/local/go   # scripts/build-go.sh
+# scripts/memcap.sh caps at 8G by default; keep the cap below a small orb's RAM.
+_gofv_mem_g=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1048576 ))
+[ "$_gofv_mem_g" -ge 9 ] || export FV_MEMCAP=${FV_MEMCAP:-$(( _gofv_mem_g - 1 ))G}
+unset _gofv_mem_g
+EOF
+fi
+done_step
+
+step "orb notes for agents (~/.config/amp/AGENTS.md)"
+notes_marker="# fv-compiler-go in this orb (.agents/setup)"
+mkdir -p "$HOME/.config/amp"
+if ! grep -Fqx "$notes_marker" "$HOME/.config/amp/AGENTS.md" 2>/dev/null; then
+  cat >>"$HOME/.config/amp/AGENTS.md" <<'EOF'
+
+# fv-compiler-go in this orb (.agents/setup)
+
+- Lean (elan, `lean-toolchain`), Go 1.27.3 (`/usr/local/go`), `qemu-aarch64-static`, `third_party/go` and the
+  patched oracle `third_party/go-build` are installed. The corpus (`../gofv-corpus`) and the driver toolchain
+  are not: export with `scripts/export-corpus.sh` and `GOFV_GO_DRIVER=1 GOFV_GO_BUILD=$PWD/tmp/go-driver
+  scripts/build-go.sh` when a task needs them.
+- No systemd user bus here: `scripts/memcap.sh` uses its RSS watchdog fallback. `FV_MEMCAP` defaults to RAM - 1G
+  on orbs under 9G (login shell); lake builds up to 4 modules at once, the largest peak near 3.3G.
+- There is no `dev-fast-v4.34.1` toolchain to download, so `fast-lean` is not installed; use plain `lake build`.
+EOF
+fi
+done_step
+
+step "lean-skills (~/.agents/skills, AGENTS.md)"
+skills=$HOME/.local/share/lean-skills
+if [ ! -d "$skills/.git" ]; then
+  git clone -q --depth 1 https://github.com/kevaundray/lean-skills.git "$skills"
+fi
+mkdir -p "$HOME/.agents/skills"
+for s in "$skills"/skills/*/; do
+  ln -sfn "$s" "$HOME/.agents/skills/$(basename "$s")"
+done
+done_step
+
+step "pinned Go source (third_party/go)"
+scripts/fetch-third-party.sh
+done_step
+
+step "patched oracle toolchain (third_party/go-build)"
+# Rebuild only when the exporter patches change (the driver patch is not part of the oracle).
+patch_hash=$(cat $(ls patches/go/*.patch | grep -v -- '-gofv-driver.patch$') | sha256sum | cut -c1-16)
+stamp=third_party/go-build/.gofv-patches
+if [ ! -x third_party/go-build/bin/go ] || [ "$(cat "$stamp" 2>/dev/null)" != "$patch_hash" ]; then
+  FV_MEMCAP=6G GOROOT_BOOTSTRAP=$go_root scripts/build-go.sh
+  echo "$patch_hash" >"$stamp"
+fi
+third_party/go-build/bin/go version
+done_step
+
+step "warm Lake build of GoFV (best effort, at most 10 min)"
+# A cold build takes ~15 min on a 4-core orb (peak RSS 3.5G), more than setup should spend;
+# what finishes lands in .lake and the shared cache (scripts/memcap.sh, ../gofv-lake-cache)
+# and the snapshot, and the next setup continues from there. A warm no-op build takes 1 s.
+mkdir -p tmp
+if FV_MEMCAP=${FV_MEMCAP:-6G} timeout 10m scripts/memcap.sh lake build >tmp/setup-lake-build.log 2>&1; then
+  tail -1 tmp/setup-lake-build.log
+else
+  echo "lake build incomplete (exit $?); see tmp/setup-lake-build.log; rerun scripts/memcap.sh lake build"
+fi
+done_step
