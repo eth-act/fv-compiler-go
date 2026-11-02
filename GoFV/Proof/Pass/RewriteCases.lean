@@ -43,7 +43,7 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
   | nil {f f' g : Func} : RewriteCheck.nilOK penv tabs f0 f f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Load-of-Store forwardings. -/
-  | fwd {f f' g : Func} : RewriteCheck.fwdRel tabs f f' = true →
+  | fwd {f f' g : Func} : RewriteCheck.fwdRel tabs (RewriteCheck.roSyms penv.tables f0) f f' = true →
       RewriteCheck.fwdRoOK tabs (RewriteCheck.roSyms penv.tables f0) f = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
@@ -247,9 +247,9 @@ theorem fwdEvent?_none {t : Interp.Table} (h : t.loads = #[]) (f : Func) (ev : R
 
 theorem fwdPre_none {t : Interp.Table} (h : t.loads = #[]) (tabs : Tables) (sel : Bool)
     (f : Func) (log : Array RwEvent) : RewriteCheck.fwdPre t tabs sel f log = (f, log) := by
-  have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.fwdStep t tabs sel f) (f, acc) = (f, acc ++ l.toArray) := by
-    intro l
+  have key : ∀ (ro : List (String × GoFV.SSA.Sem.Alloc)) (l : List RwEvent) (acc : Array RwEvent),
+      l.foldl (RewriteCheck.fwdStep t tabs ro sel f) (f, acc) = (f, acc ++ l.toArray) := by
+    intro ro l
     induction l with
     | nil => intro acc; simp
     | cons ev l ih =>

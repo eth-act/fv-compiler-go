@@ -381,13 +381,32 @@ def psWhy (tabs : Tables) (f g : Func) : String := Id.run do
   return "?"
 
 open GoFV.Rules RewriteCheck in
-/-- Which part of `fwdRel`/`check` fails for the forwarded function `f'` of `f`, if any. -/
-def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
+/-- Why `fixedOK` rejects the fixed load `u` → `w` (issue #69). -/
+def fixedWhy (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : Value) : String :=
+  let b := (ptrBase tabs f 8 u.args[0]!).1
+  match baseBlk? tabs f b with
+  | some (.global n) =>
+    match ro.find? (·.1 == n) with
+    | none => s!"fixed: symbol not read-only"
+    | some e =>
+      let ty := tabs.ty u.type
+      let src := fixedSrc n e.2 ty (ptrBase tabs f 8 u.args[0]!).2
+      let tgt := (GoFV.Proof.Rules.opVal tabs w.op ty w.auxInt w.aux []).retype ty
+      if !fixedEq src tgt then s!"fixed: value {w.op.name} <{src.render} vs {tgt.render}>"
+      else if !WBCheck.memTyOK tabs f then "fixed: memTy"
+      else "fixed: ?"
+  | _ => s!"fixed: base {((f.value? b).map (·.op.name)).getD "?"}"
+
+open GoFV.Rules RewriteCheck in
+/-- Which part of `fwdRel`/`check` fails for the forwarded function `f'` of `f` (read-only symbols
+`ro`), if any. -/
+def fwdRelWhy (env : PassEnv) (tabs : Tables) (ro : List (String × Sem.Alloc)) (f f' : Func) :
+    Option String := Id.run do
   if !atomsXOK f f' then return some "atoms"
   if !closedOK f' then return some "closed"
   if !fwdRankOK f (fwdRank f) then return some "rank"
   for z in List.range f.valueTab.size do
-    if !fwdRepOK tabs f f' z then
+    if !fwdRepOK tabs ro f f' z then
       match f.value? z, f'.value? z with
       | some u, some w =>
         if u.op == .Store || u.op == .Zero then return some s!"v{z} drop {dropWhy tabs f f' u w}"
@@ -395,9 +414,13 @@ def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
           if (f.value? u.args[1]!).any (·.op == .Move) then
             return some s!"v{z} {fwdMoveWhy tabs f f' u w}"
           return some s!"v{z} {fwdOKWhy tabs f u (w.args[0]?.getD 0)}"
+        else if u.op == .Load && (w.op == .Addr || w.op == .Const32 || w.op == .Const8 ||
+            w.op == .Const64) then
+          return some s!"v{z} {fixedWhy tabs ro f u w}"
         else return some s!"v{z} rep {u.op.name}->{w.op.name}"
       | _, _ => return some s!"v{z} rep"
-  if !fwdRel tabs f f' then return some "rel"
+  if !fwdRel tabs ro f f' then return some "rel"
+  if !fwdRoOK tabs ro f then return some "ro"
   if !checkOK { tabs := tabs, typs := env.typs } f' then return some "check"
   return none
 
@@ -418,7 +441,8 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
           some s!"{pre}: dictionary parameters differ between the tables"
         else if !RewriteCheck.layerOK env t tabs f0 L f log f' then some s!"{pre}: check"
         else none
-      | .fwd sel => (fwdRelWhy env tabs f f').map (s!"fwd{if sel then "₁" else "₂"}({k}): " ++ ·)
+      | .fwd sel => (fwdRelWhy env tabs (roSyms env.tables f0) f f').map
+        (s!"fwd{if sel then "₁" else "₂"}({k}): " ++ ·)
       | .sl =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else if let .error e := check { tabs := tabs, typs := env.typs } f' then
