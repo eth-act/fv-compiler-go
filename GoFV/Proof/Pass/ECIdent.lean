@@ -104,13 +104,13 @@ theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : I
   have hfr : ∀ a ∈ u.args.toList, ∀ y, frS.regs[a]? = some (some y) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines y y' := by
     intro a ha y hy
+    have hsa' := Array.all_eq_true'.1 hsa a (Array.mem_toList_iff.1 ha)
+    simp only [Bool.not_eq_true'] at hsa'
     have hfa : a ∈ ecFront f g x := by
       have hi : invalidated g x = false := by
         unfold special at hsp; simp only [Bool.or_eq_false_iff] at hsp; exact hsp.1.2
-      exact ecFront_src hi hu (Array.mem_toList_iff.1 ha)
+      exact ecFront_src hi hu (Array.mem_toList_iff.1 ha) (ec_not_invalidated hsa')
     obtain ⟨y', hy', hyy⟩ := hfront a hfa y hy
-    have hsa' := Array.all_eq_true'.1 hsa a (Array.mem_toList_iff.1 ha)
-    simp only [Bool.not_eq_true'] at hsa'
     rw [ecCv_of_not_special hsa'] at hyy
     exact ⟨y', hy', hyy⟩
   unfold evalValue

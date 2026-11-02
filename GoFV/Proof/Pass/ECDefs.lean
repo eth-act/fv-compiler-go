@@ -130,25 +130,45 @@ noncomputable def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
     else y
   | none => y
 
-/-- The source values the obligation of `x` reads: its arguments in the source, its arguments
-(and, for a call, its wide stack arguments' `Move`s' arguments) in the target that the source
-defines, and the arguments of its wide call-result arguments (`wideSel`: the call whose register
-pieces a wide store writes); none for a value the pass invalidated (its target node reads
-nothing). -/
+/-- The source values the obligation of `x` reads: its arguments in the source but the ones the
+pass invalidated (their conversion is `poison`, and no target node reads their registers), its
+arguments (and, for a call, its wide stack arguments' `Move`s' arguments; for a `MakeResult`, the
+values its result stores store) in the target that the source defines, and the arguments of its
+wide call-result arguments (`wideSel`: the call whose register pieces a wide store writes); none
+for a value the pass invalidated (its target node reads nothing). -/
 def ecFront (f g : Func) (x : ID) : List ID :=
   if invalidated g x then [] else
-  ((f.value? x).map (·.args.toList)).getD [] ++
+  (((f.value? x).map (·.args.toList)).getD []).filter (fun a => !invalidated g a) ++
     ((((g.value? x).map (·.args.toList)).getD []) ++
-      (stackMoves f g x).flatMap (fun z => ((g.value? z).map (·.args.toList)).getD [])).filter
+      (stackMoves f g x).flatMap (fun z => ((g.value? z).map (·.args.toList)).getD []) ++
+      (ownStores f g x).map (storeVal g)).filter
         (fun a => !isNewB f a) ++
     ((((f.value? x).map (·.args.toList)).getD []).filter (wideSel f g)).flatMap
       (fun a => ((f.value? a).map (·.args.toList)).getD [])
 
+/-- A value a result store of `x` stores, which the source defines, is in the front. -/
+theorem ecFront_own {f g : Func} {x q : ID} (hi : invalidated g x = false)
+    (hq : q ∈ (ownStores f g x).map (storeVal g)) (hn : isNewB f q = false) :
+    q ∈ ecFront f g x := by
+  unfold ecFront
+  rw [hi, if_neg Bool.false_ne_true]
+  exact List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
+    ⟨List.mem_append_right _ hq, by rw [hn]; rfl⟩))
+
 theorem ecFront_src {f g : Func} {x a : ID} {u : Value} (hi : invalidated g x = false)
-    (hu : f.value? x = some u) (ha : a ∈ u.args) : a ∈ ecFront f g x := by
+    (hu : f.value? x = some u) (ha : a ∈ u.args) (hia : invalidated g a = false) :
+    a ∈ ecFront f g x := by
   unfold ecFront
   rw [hi, if_neg Bool.false_ne_true, hu]
-  exact List.mem_append_left _ (List.mem_append_left _ (Array.mem_toList_iff.2 ha))
+  exact List.mem_append_left _ (List.mem_append_left _
+    (List.mem_filter.2 ⟨Array.mem_toList_iff.2 ha, by rw [hia]; rfl⟩))
+
+/-- An argument whose conversion is the identity is not invalidated. -/
+theorem ec_not_invalidated {f g : Func} {a : ID} (h : special f g a = false) :
+    invalidated g a = false := by
+  unfold special at h
+  simp only [Bool.or_eq_false_iff] at h
+  exact h.1.2
 
 theorem ecFront_tgt {f g : Func} {x a : ID} {w : Value} (hi : invalidated g x = false)
     (hw : g.value? x = some w) (ha : a ∈ w.args) (hn : isNewB f a = false) :
@@ -156,7 +176,7 @@ theorem ecFront_tgt {f g : Func} {x a : ID} {w : Value} (hi : invalidated g x = 
   unfold ecFront
   rw [hi, if_neg Bool.false_ne_true, hw]
   refine List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2 ⟨?_, ?_⟩))
-  · exact List.mem_append_left _ (Array.mem_toList_iff.2 ha)
+  · exact List.mem_append_left _ (List.mem_append_left _ (Array.mem_toList_iff.2 ha))
   · simp [hn]
 
 /-- An argument of a wide call-result argument (`wideSel`) is in the front. -/

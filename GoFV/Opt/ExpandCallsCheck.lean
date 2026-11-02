@@ -753,7 +753,7 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
 /-- **result**: a `MakeResult` of the function's results becomes the register pieces of its
 register-assigned results (selector chains) on a chain of new `Store`s of the leaves of its
 stored stack-assigned results into their frame slots (`resStoresOK`; well-formed shapes, the
-stored values selector chains, a stored value the source defines one of the results) on the
+stored values selector chains of the results, or an `IMake` result's data operand) on the
 source's memory; a self-moved stack-assigned result (`selfMoveOK`) is stored by nothing. -/
 def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
   let outs := ownOuts tabs f
@@ -769,8 +769,7 @@ def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :
     (match resStores f g u w with
      | some zs =>
        resStoresOK tabs sh g (isNewB f) (resSlots tabs (sp.map (·.1))) zs &&
-         piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) &&
-         (zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q)
+         piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))
      | none => false) &&
     tupleOf (outs.map (tabs.ty ·.type)) (valueTy sh (some u)) &&
     regTupleOf (leafTys tabs outs) (valueTy sh (some w))
@@ -1291,18 +1290,15 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
         depB g nodeG (fun _ => true) fuel (loadMem g l) x)) &&
     -- result stores (of the `Ret` control): values of the block, with no source non-pure node
     -- after one in `g`'s schedule (a store runs only when the source completes the block); the
-    -- source memory reaches them; an invalidated argument of the block is before its reader in
-    -- `g`'s schedule; the `LocalAddr` of a self-move, if a value of the block, too (its source
-    -- register holds its evaluation)
+    -- source memory reaches them; the `LocalAddr` of a self-move, if a value of the block, is
+    -- before the `MakeResult` in `g`'s schedule (its source register holds its evaluation). An
+    -- invalidated argument may follow its reader: its conversion is `poison` and no target node
+    -- reads it (`ecFront` leaves it out)
     (match schedule g gb with
      | some og => fb.values.all fun x => (ownStores f g x).all (fun z =>
          gb.values.contains z && noNpAfter (npOf f fb) og.toList z &&
          fb.kind == .Ret && fb.controls[0]? == some x &&
          (!nodeG (callMem f x) || depB g nodeG (fun _ => true) fuel (callMem f x) z)) &&
-         (invalidated g x || match f.value? x with
-          | some u => u.args.all fun a => !invalidated g a || !fb.values.contains a ||
-              beforeB og.toList a x
-          | none => true) &&
          (selfAddrs tabs sh f g x).all fun p => !fb.values.contains p ||
            (!invalidated g p && beforeB og.toList p x)
      | none => false) &&

@@ -108,8 +108,6 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
       fb.kind = .Ret ∧ fb.controls[0]? = some x ∧
       (ecs_node g gb (callMem f x) = true →
         depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (callMem f x) z = true)) ∧
-    (invalidated g x = false → ∀ u, f.value? x = some u → ∀ a ∈ u.args, invalidated g a = true →
-      a ∈ fb.values → beforeB og.toList a x = true) ∧
     (∀ p ∈ selfAddrs tabs sh f g x, p ∈ fb.values →
       invalidated g p = false ∧ beforeB og.toList p x = true)
   newv : ∀ z ∈ gb.values, ∀ w, g.value? z = some w →
@@ -284,18 +282,14 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
       refine ⟨og, hog, fun x hx => ?_⟩
       have hx' := Array.all_eq_true'.1 hres x hx
       simp only [Bool.and_eq_true] at hx'
-      obtain ⟨⟨hz, hbf⟩, hsa⟩ := hx'
-      refine ⟨fun z hz' => ?_, fun hxi u hu a ha hai haf => ?_, fun p hp hpf => ?_⟩
+      obtain ⟨hz, hsa⟩ := hx'
+      refine ⟨fun z hz' => ?_, fun p hp hpf => ?_⟩
       · have := List.all_eq_true.1 hz z hz'
         simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq,
           Array.contains_iff_mem] at this
         obtain ⟨⟨⟨⟨hzm, hna⟩, hk'⟩, hc0⟩, hcm⟩ := this
         exact ⟨hzm, hna, hk', hc0, fun hn => hcm.resolve_left fun h =>
           Bool.false_ne_true (h.symm.trans hn)⟩
-      · rw [hxi, Bool.false_or, hu] at hbf; dsimp only at hbf
-        have := Array.all_eq_true'.1 hbf a ha
-        rw [hai, Array.contains_iff_mem.2 haf, Bool.not_true, Bool.false_or, Bool.false_or] at this
-        exact this
       · have := List.all_eq_true.1 hsa p hp
         rw [Array.contains_iff_mem.2 hpf, Bool.not_true, Bool.false_or, Bool.and_eq_true,
           Bool.not_eq_true'] at this
@@ -1028,6 +1022,85 @@ theorem ecs_retAnchored {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : 
     rw [hAB] at hna
     exact ecs_noNpAfter hna (hAB ▸ (schedule_topo hownG hndG hog).1) y hy
 
+/-- A result store is a `Store` that reads the value it stores. -/
+theorem ecs_ownStores_mem {f g : Func} {x z : ID} (hz : z ∈ ownStores f g x) :
+    ∃ wz, g.value? z = some wz ∧ wz.op = .Store ∧ storeVal g z ∈ wz.args := by
+  unfold ownStores at hz
+  cases hu : f.value? x with
+  | none => rw [hu] at hz; cases hz
+  | some u =>
+  cases hw : g.value? x with
+  | none => rw [hu, hw] at hz; cases hz
+  | some w =>
+  rw [hu, hw] at hz
+  dsimp only at hz
+  split at hz
+  · cases hzs : resStores f g u w with
+    | none => rw [hzs] at hz; cases hz
+    | some zs =>
+      rw [hzs, Option.getD_some] at hz
+      obtain ⟨wz, -, -, hwz, -, hop, hsz, -, -⟩ := ecs_chain_mem (show storeChain g (isNewB f)
+        (g.valueTab.size + 1) w.args[w.args.size - 1]! u.args[u.args.size - 1]! = some zs
+        from hzs) hz
+      refine ⟨wz, hwz, hop, ?_⟩
+      have hsv : storeVal g z = wz.args[1]! := by unfold storeVal; rw [hwz]; rfl
+      rw [hsv]
+      exact ecw_mem_three hsz 1 (by decide)
+  · cases hz
+
+/-- **A result store leads to its `MakeResult`** in the block's dependencies (the chain's top is
+the `MakeResult`'s memory argument in `g`). -/
+theorem ecs_ownStore_dep {tabs : Tables} {ce' : CheckEnv} {f g : Func} {bid : ID} {fb gb : Block}
+    (hwg : WF ce' g) (hbg : bid ∈ g.blocks) (hfb : f.block? bid = some fb)
+    (hgb : g.block? bid = some gb) (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true)
+    {x z : ID} (hx : x ∈ fb.values) (hz : z ∈ ownStores f g x) :
+    Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x := by
+  have P := ecs_parts hfb hgb hb
+  have hownG := valuesOwn hwg hbg hgb
+  have hndG := hwg.valuesNodup bid gb ⟨hbg, hgb⟩
+  obtain ⟨og, -, H⟩ := P.own
+  have hin : ∀ z' ∈ ownStores f g x, z' ∈ gb.values := fun z' hz' => ((H x hx).1 z' hz').1
+  unfold ownStores at hz
+  cases hu : f.value? x with
+  | none => rw [hu] at hz; cases hz
+  | some u =>
+  cases hw : g.value? x with
+  | none => rw [hu, hw] at hz; cases hz
+  | some w =>
+  rw [hu, hw] at hz
+  dsimp only at hz
+  have hop : (u.op == .MakeResult) = true := by
+    by_cases h : (u.op == .MakeResult) = true
+    · exact h
+    · rw [if_neg h] at hz; cases hz
+  rw [if_pos hop] at hz
+  have hop' : u.op = .MakeResult := beq_iff_eq.1 hop
+  cases hzs : resStores f g u w with
+  | none => rw [hzs] at hz; cases hz
+  | some zs =>
+  rw [hzs, Option.getD_some] at hz
+  obtain ⟨w', hw', hok⟩ := ecs_resultOK (P.value x hx u hu (by rw [hop']; decide)) hu hop'
+  rw [hw] at hw'; cases hw'
+  unfold resultOK at hok
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hok
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hwop, -⟩, hws⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hok
+  have hwph : w.op ≠ .Phi := by rw [hwop]; decide
+  have hzsin : ∀ z' ∈ zs, z' ∈ gb.values := fun z' hz' => hin z' (by
+    unfold ownStores; rw [hu, hw]; dsimp only; rw [if_pos hop, hzs]; exact hz')
+  have hxg := P.common x hx
+  have hcs : storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]!
+      u.args[u.args.size - 1]! = some zs := hzs
+  obtain ⟨htm, wt, hwt, hwtop⟩ := ecs_storeChain_top hcs (List.ne_nil_of_mem hz)
+  have hdx : Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList)
+      w.args[w.args.size - 1]! x := by
+    refine .arg ((nodeIn_schedNodes hownG).2 ⟨hzsin _ htm, wt, hwt, by rw [hwtop]; decide⟩)
+      ((nodeIn_schedNodes hownG).2 ⟨hxg, w, hw, hwph⟩) ?_
+    rw [argsOf_schedNodes hownG hndG hxg hw hwph, getElem!_pos w.args _ (by omega)]
+    exact Array.mem_toList_iff.2 (Array.getElem_mem _)
+  rcases ecs_chain_dep hownG hndG hcs hzsin z hz with he | hd
+  · rw [he]; exact hdx
+  · exact hd.trans hdx
+
 /-! ## Wide stores -/
 
 theorem ecs_schedBefore {g : Func} {gb : Block} {og : Array ID} {a y : ID}
@@ -1056,7 +1129,7 @@ theorem ecs_selfAddrBefore {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Bloc
       ¬ TgtInvalid g p ∧ SchedBefore g gb p x := by
   intro x hx p hp hpf
   obtain ⟨og, hog, H⟩ := (ecs_parts hfb hgb hb).own
-  obtain ⟨hi, hbf⟩ := (H x hx).2.2 p hp hpf
+  obtain ⟨hi, hbf⟩ := (H x hx).2 p hp hpf
   refine ⟨fun ⟨w, hw, hwop⟩ => ?_, ecs_schedBefore hog hbf⟩
   unfold invalidated at hi
   rw [hw] at hi
@@ -1369,7 +1442,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
   rw [hu, hw] at ha
   simp only [Option.map_some, Option.getD_some, List.mem_append, List.mem_filter,
     Bool.not_eq_true'] at ha
-  rcases ha with ha | ⟨ha | ha, han⟩
+  rcases ha with ⟨ha, hia0⟩ | ⟨(ha | ha) | ha, han⟩
   · obtain ⟨bid', b', hB', hab'⟩ := hwf.argListed bid fb x u ⟨⟨hbm, hfb⟩, hx, hu⟩ a
       (Array.mem_toList_iff.1 ha)
     obtain ⟨ua, hua, -, -⟩ := hwf.valueId bid' b' hB' a hab'
@@ -1388,9 +1461,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
         · obtain ⟨og, hog, H⟩ := P.stack
           obtain ⟨-, hbf⟩ := (H x hx).2.1 u hu a (Array.mem_toList_iff.1 ha) hma
           exact .inr (.inr (ecs_schedBefore hog hbf))
-        · obtain ⟨og, hog, H⟩ := P.own
-          exact .inr (.inr (ecs_schedBefore hog
-            ((H x hx).2.1 hinv' u hu a (Array.mem_toList_iff.1 ha) hia haf)))
+        · rw [hia0] at hia; cases hia
       · exact .inr (.inr (ecs_wideBefore hfb hgb hb x hx u hu a (Array.mem_toList_iff.1 ha) hws
           haf))
   · refine ⟨han, fun hag => ?_⟩
@@ -1431,5 +1502,20 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
         rw [argsOf_schedNodes hownG hndG hzg hmw (by rw [hmop]; decide)]
         exact ha
     · rw [if_neg hc] at hsm'; exact absurd hsm' List.not_mem_nil
+  · -- a value one of the `MakeResult`'s result stores stores: the store leads to it
+    refine ⟨han, fun hag => ?_⟩
+    obtain ⟨z, hz, rfl⟩ := List.mem_map.1 ha
+    have hzx := ecs_ownStore_dep hwg hbg hfb hgb hb hx hz
+    obtain ⟨og, -, H⟩ := P.own
+    have hzg := ((H x hx).1 z hz).1
+    obtain ⟨wz, hwz, hzop, hqz⟩ := ecs_ownStores_mem hz
+    obtain ⟨wa, hwa⟩ := hdefG _ hag
+    by_cases hpa : wa.op = .Phi
+    · exact .inl ⟨wa, hwa, hpa⟩
+    · have hzN := (nodeIn_schedNodes hownG).2 ⟨hzg, wz, hwz, by rw [hzop]; decide⟩
+      have haN := (nodeIn_schedNodes hownG).2 ⟨hag, wa, hwa, hpa⟩
+      refine .inr (.inl (.trans (.arg haN hzN ?_) hzx))
+      rw [argsOf_schedNodes hownG hndG hzg hwz (by rw [hzop]; decide)]
+      exact Array.mem_toList_iff.2 hqz
 
 end GoFV.Proof.EC

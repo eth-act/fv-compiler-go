@@ -758,9 +758,9 @@ theorem obl_wideStore {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT
   | ok y =>
   obtain ⟨q, M, M1, hq, hM, hW, rfl⟩ := ecw_store_src hu huid hop hus hvm hS
   have hpT := ecw_front_ptr hs0 hq (hRS _ (ecw_mem_three hus 0 (by decide)))
-    (hfr _ (ecFront_src hinv hu (ecw_mem_three hus 0 (by decide))))
+    (hfr _ (ecFront_src hinv hu (ecw_mem_three hus 0 (by decide)) (ec_not_invalidated hs0)))
   obtain ⟨M', hMT, hMR⟩ := ecw_front_mem hs2 hM (hRS _ (ecw_mem_three hus 2 (by decide)))
-    (hfr _ (ecFront_src hinv hu (ecw_mem_three hus 2 (by decide))))
+    (hfr _ (ecFront_src hinv hu (ecw_mem_three hus 2 (by decide)) (ec_not_invalidated hs2)))
   -- the target's chain of leaf stores
   have hw0 : w.args[0]! ∈ w.args := by rw [← Array.mem_toList_iff, ec_args_one hws1]; simp
   have hwid := (hL x hLx w hw).1

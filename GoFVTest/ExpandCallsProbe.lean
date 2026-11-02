@@ -169,8 +169,6 @@ def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
             s!"result: stores ({zs.length} for {(resSlots tabs (sp.map (·.1))).length} slots)"
           else if !piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
             s!"result: stored pieces: {piecesWhy tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
-          else if !(zs.map (storeVal g)).all (fun q => isNewB f q || u.args.contains q) then
-            "result: stored source value not a result"
           else "result: types"
     else if c == "select" then
       let outs := ((f.value? u.args[0]!).map (callOuts tabs ·.aux)).getD []
@@ -259,10 +257,6 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !gapOK (npOf f fb) og.toList z x then return "result store before a non-pure node"
         if !(!nodeG (callMem f x) || depB g nodeG (fun _ => true) (gb.values.size + 1) (callMem f x) z) then
           return "result store memory"
-      if let some u := f.value? x then
-        if !invalidated g x && !(u.args.all fun a => !invalidated g a || !fb.values.contains a ||
-            beforeB og.toList a x) then
-          return "invalidated argument placement"
       if !(selfAddrs tabs sh f g x).all (fun p => !fb.values.contains p ||
           (!invalidated g p && beforeB og.toList p x)) then
         return "self-move LocalAddr placement"

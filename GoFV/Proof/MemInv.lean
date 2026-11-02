@@ -885,6 +885,46 @@ theorem evalOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx :
     rw [TabsMod.evalOp_notArm hn, if_pos hr] at h
     exact atomicRoot_mems hP ha h
 
+theorem int3_mems (w : Width) (g : BitVec w.bits → BitVec w.bits → BitVec w.bits → Val)
+    (hg : ∀ x y z, (g x y z).mems = []) (l : List Val) : (GoFV.SSA.Sem.int3 w g l).mems = [] := by
+  unfold GoFV.SSA.Sem.int3
+  split
+  · split
+    · exact hg _ _ _
+    · rfl
+  · rfl
+
+theorem memFreeOps_notArm : ∀ o ∈ memFreeOps, o ∉ evalOpArms := by decide
+
+/-- **The result of an op of `memFreeOps`** holds no memory: a tuple of integers and booleans
+(`evalPure`), or none (a tail call is `stuck`). -/
+theorem evalOp_memFreeOps_mems {env : Env} {ctx : Sem.Ctx} {fr : Frame} {v : Value}
+    (hop : memFreeOps.contains v.op = true) {argv : List Val} {ty : Ty} {r : Val}
+    (h : evalOp env ctx fr v argv ty = .ok r) : r.mems = [] := by
+  have hm : v.op ∈ memFreeOps := List.contains_iff_mem.1 hop
+  rw [TabsMod.evalOp_notArm (memFreeOps_notArm _ hm)] at h
+  have hunm : v.op = .TailLECall ∨ v.op = .TailLECallInter → False := fun ho => by
+    have hmo : Atomic.modelled v.op = false := by rcases ho with h | h <;> rw [h] <;> rfl
+    have hr : isRoot v.op = true := by rcases ho with h | h <;> rw [h] <;> rfl
+    obtain ⟨msg, hs⟩ := atomicRoot_unmodelled hmo argv
+    rw [if_pos hr, hs] at h
+    cases h
+  have hpure : isRoot v.op = false → r = evalPure v.op ty v.auxInt v.aux argv := fun hr => by
+    rw [if_neg (by rw [hr]; exact Bool.false_ne_true)] at h
+    cases h
+    rfl
+  simp only [memFreeOps, List.mem_cons, List.not_mem_nil, or_false] at hm
+  rcases hm with ho | ho | ho | ho | ho | ho | ho | ho | ho
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int2_mems .w32 _ (fun _ _ => rfl) argv
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int2_mems .w64 _ (fun _ _ => rfl) argv
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int2_mems .w32 _ (fun _ _ => rfl) argv
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int2_mems .w64 _ (fun _ _ => rfl) argv
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int3_mems .w64 _ (fun _ _ _ => by split <;> rfl) argv
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int3_mems .w64 _ (fun _ _ _ => by split <;> rfl) argv
+  · rw [hpure (by rw [ho] <;> rfl), ho]; exact int3_mems .w64 _ (fun _ _ _ => by split <;> rfl) argv
+  · exact (hunm (.inl ho)).elim
+  · exact (hunm (.inr ho)).elim
+
 /-! ## Retyping to a shape without memories -/
 
 theorem nil_of_retype (t : Ty) (v : Val) (h : v.mems = []) : (v.retype t).mems = [] :=
@@ -1049,7 +1089,7 @@ theorem sinv_phis {ctx : Sem.Ctx} {fr : Frame} {B : Block} {i : Nat} {ps : List 
 /-- What `memTyOK` says about a listed value. -/
 theorem memTyOK_val {tabs : Tables} {f : Func} (hm : memTyOK tabs f = true) {b : ID}
     (hb : b ∈ f.blocks) {x : ID} (hx : x ∈ vals f b) {v : Value} (hv : f.value? x = some v) :
-    memFree (tabs.ty v.type) = true ∨ memOpOK v.op = true := by
+    memFree (tabs.ty v.type) = true ∨ memOpOK v.op = true ∨ memFreeOps.contains v.op = true := by
   unfold memTyOK at hm
   rw [Array.all_eq_true'] at hm
   have h1 := hm b hb
@@ -1057,7 +1097,7 @@ theorem memTyOK_val {tabs : Tables} {f : Func} (hm : memTyOK tabs f = true) {b :
   have h2 := h1 x hx
   rw [hv] at h2
   simp only [Bool.and_eq_true, Bool.or_eq_true] at h2
-  exact h2.2
+  exact or_assoc.1 h2.2
 
 /-- The shape `evalValue` gives a value of `f` whose type's shape holds no memory holds none. -/
 theorem tys_memFree {tabs : Tables} {f : Func} {x : ID} {v : Value} (hv : f.value? x = some v)
@@ -1085,9 +1125,10 @@ theorem sinv_step (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : Ch
   rw [stepV_eq (ctx := Ctx.make tabs f) hv] at h
   have hok := memTyOK_val hm hb hxb hv
   refine evalValue_mems hs.2 (fun argv ha r hr => ?_) h
-  rcases hok with hfree | hop
+  rcases hok with hfree | hop | hit
   · rw [hvid]; exact memsOK_of_mems_nil (retype_memFree _ (tys_memFree hv hfree) r)
   · exact (evalOp_mems hP hE hs.1 hop ha hr).retype _
+  · exact (memsOK_of_mems_nil (evalOp_memFreeOps_mems hit hr)).retype _
 
 theorem sinv_evalAll_aux (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : CheckEnv} {tabs : Tables}
     {f : Func} (hwf : WF ce f) (hm : WBCheck.memTyOK tabs f = true) :
