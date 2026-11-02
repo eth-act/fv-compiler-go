@@ -735,29 +735,35 @@ def _root_.GoFV.SSA.Sem.Panic.toAny : Panic → Val
 def isWrapperName (name : String) : Bool :=
   (name.splitOn ".deferwrap").length > 1 || name.endsWith "-fm"
 
-/-- The deferred function of closure `clo` (a pointer word, `Val.asPtrWord`) is a wrapper. -/
-def deferredWrapper (m : Mem) (clo : Val) : Bool :=
-  match clo.asPtrWord with
-  | some p => match codeTarget? (m.load (.ptr none) p) with
-    | some n => isWrapperName n
-    | none => false
-  | none => false
-
-/-- Run the deferred closure `clo` of activation `act`: a closure call without arguments (its
-code is the closure's first word; the closure is a pointer word, `Val.asPtrWord`, and a nil one
-faults). The caller's outgoing area is the callee's (`callOp`). -/
-def callDeferred (env : Env) (act : Nat) (clo : Val) (m : Mem) : COutcome :=
+/-- The code symbol of the deferred closure `clo` (a pointer word, `Val.asPtrWord`; its code is
+its first word): `none` for a nil closure (calling it faults); an undefined closure or code word
+is an error. `runDefers` reads it before it sets the panic record, so the record's wrapper flag
+(`deferredWrapper`) and the call (`callDeferred`) name the same callee. -/
+def deferredCode? (m : Mem) (clo : Val) : Except String (Option String) :=
   match clo.asPtrWord with
   | some p =>
-    if p.isNil then .panicked .nilDeref m
+    if p.isNil then .ok none
     else
       match codeTarget? (m.load (.ptr none) p) with
-      | some name =>
-        match env.extern name with
-        | some c => c [] (some clo) (m.poisonBlock (.outargs act))
-        | none => .stuck s!"deferred call {name}: no contract"
-      | none => .stuck "deferred call without a known callee"
-  | none => .stuck "deferred call of an undefined closure"
+      | some name => .ok (some name)
+      | none => .error "deferred call without a known callee"
+  | none => .error "deferred call of an undefined closure"
+
+/-- The deferred function with code symbol `code` (`deferredCode?`, read before the panic record
+is set) is a wrapper. -/
+def deferredWrapper : Option String → Bool
+  | some n => isWrapperName n
+  | none => false
+
+/-- Run the deferred closure `clo` of activation `act` with code symbol `code` (`deferredCode?`,
+read before the panic record is set; `none`: a nil closure, which faults): a closure call without
+arguments. The caller's outgoing area is the callee's (`callOp`). -/
+def callDeferred (env : Env) (act : Nat) (clo : Val) : Option String → Mem → COutcome
+  | none, m => .panicked .nilDeref m
+  | some name, m =>
+    match env.extern name with
+    | some c => c [] (some clo) (m.poisonBlock (.outargs act))
+    | none => .stuck s!"deferred call {name}: no contract"
 
 /-- `runtime.deferproc(fn)` from activation `act`. -/
 def deferproc (act : Nat) : Contract := fun args _ m =>
@@ -789,9 +795,12 @@ where
       | .error msg => .stuck msg
       | .ok none => .returned [] m
       | .ok (some (clo, m)) =>
-        match callDeferred env act clo m with
-        | .returned _ m => go n m
-        | o => o
+        match deferredCode? m clo with
+        | .error msg => .stuck msg
+        | .ok code =>
+          match callDeferred env act clo code m with
+          | .returned _ m => go n m
+          | o => o
 
 /-- `runtime.gorecover()` from activation `act` (`runtime/panic.go`): the panic's value if a
 panic is being handled, not yet recovered, and the caller is the deferred function the panic
@@ -1216,7 +1225,8 @@ afterwards (an outer panic's record, `none`: removed); a recovery ends the panic
 deferred calls run as at a normal exit, and the activation returns the values of its result
 variables with its frame freed. A deferred call that panics replaces the panic; the frames of
 its activations are gone (`dropFrames`). When no deferred call is left, a panic propagates with
-the memory as it is. -/
+the memory as it is. The deferred closure's code is read (`deferredCode?`) before the panic
+record is set. -/
 def runDefers (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : DeferInfo)
     (act : Nat) : Nat → Option Panic → Mem → Outcome
   | 0, _, _ => .stuck "too many deferred calls"
@@ -1232,6 +1242,9 @@ def runDefers (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : Defe
         | .panic e m => .panicked e m
         | .stuck msg => .stuck msg
     | .ok (some (clo, m1)) =>
+      match deferredCode? m1 clo with
+      | .error msg => .stuck msg
+      | .ok code =>
       let saved := m1.find? panicBlk
       let restore (r : Mem) : Mem :=
         match pe, saved with
@@ -1239,9 +1252,9 @@ def runDefers (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : Defe
         | some _, none => r.free panicBlk
         | none, _ => r
       let m2 := match pe with
-        | some e => setPanicRec m1 false (deferredWrapper m1 clo) m1.nextAct e.toAny
+        | some e => setPanicRec m1 false (deferredWrapper code) m1.nextAct e.toAny
         | none => m1
-      match callDeferred env act clo m2 with
+      match callDeferred env act clo code m2 with
       | .returned _ m3 =>
         match pe with
         | some e =>
