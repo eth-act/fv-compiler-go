@@ -637,7 +637,7 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
             · exact .stuck _ _
             rw [nilClosure_eq hclo hp.2]
             split
-            · exact .panic _ (hm.poisonBlock _)
+            · exact .panic _ (hm.poisonBelow _ _)
             cases callee? with
             | none => exact .stuck _ _
             | some callee =>
@@ -649,10 +649,11 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
               | none => exact .stuck _ _
               | some c =>
                 dsimp only
-                have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
+                generalize callFrame ctx.tabs v.aux _ = F
+                have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBelow (.outargs ctx.act) F)
                 revert this
-                generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
-                generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
+                generalize c A clo (m.poisonBelow (.outargs ctx.act) F) = o
+                generalize c A' clo' (m'.poisonBelow (.outargs ctx.act) F) = o'
                 intro ho
                 cases ho with
                 | returned hr0 hm' =>
@@ -689,7 +690,7 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
           · exact .stuck _ _
           rw [nilClosure_eq hclo hp.2]
           split
-          · exact .panic _ (hm.poisonBlock _)
+          · exact .panic _ (hm.poisonBelow _ _)
           cases callee? with
           | none => exact .stuck _ _
           | some callee =>
@@ -701,10 +702,11 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
             | none => exact .stuck _ _
             | some c =>
               dsimp only
-              have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
+              generalize callFrame ctx.tabs v.aux _ = F
+              have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBelow (.outargs ctx.act) F)
               revert this
-              generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
-              generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
+              generalize c A clo (m.poisonBelow (.outargs ctx.act) F) = o
+              generalize c A' clo' (m'.poisonBelow (.outargs ctx.act) F) = o'
               intro ho
               cases ho with
               | returned hr0 hm' =>

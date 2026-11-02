@@ -206,6 +206,43 @@ theorem ecs_poisonBlock_write {m m' : Mem} {p : Ptr} {bs : Array Byte}
       rw [GoFV.Proof.MemCombine.set_set, foldl_set_size]
     · cases hw
 
+/-- A write below offset `n` into block `b` vanishes when `b`'s bytes below `n` are poisoned. -/
+theorem ecs_poisonBelow_write {m m' : Mem} {p : Ptr} {bs : Array Byte} {n : Nat}
+    (hw : m.write p bs = some m') (hn : p.off.toNat + bs.size ≤ n) :
+    m'.poisonBelow p.blk n = m.poisonBelow p.blk n := by
+  unfold Mem.write at hw
+  by_cases he : bs.isEmpty = true
+  · simp only [he, ite_true] at hw; cases hw; rfl
+  simp only [he, Bool.false_eq_true, ite_false] at hw
+  cases ha : m.find? p.blk with
+  | none => rw [ha] at hw; cases hw
+  | some a =>
+    rw [ha] at hw
+    simp only [Option.bind_eq_bind, Option.bind_some] at hw
+    split at hw
+    · cases hw
+      unfold Mem.poisonBelow
+      rw [find?_set, if_pos rfl, ha]
+      dsimp only
+      rw [GoFV.Proof.MemCombine.set_set]
+      have hd : ((List.range bs.size).foldl (fun d i => d.set! (p.off.toNat + i) bs[i]!) a.data).mapIdx
+          (fun i x => if i < n then Byte.poison else x) =
+          a.data.mapIdx (fun i x => if i < n then Byte.poison else x) := by
+        apply Array.ext
+        · rw [Array.size_mapIdx, Array.size_mapIdx, foldl_set_size]
+        · intro i h1 h2
+          simp only [Array.getElem_mapIdx]
+          split
+          · rfl
+          · have := foldl_set_get p.off.toNat bs i (List.range bs.size) a.data
+              (fun k hk => by simp only [List.mem_range] at hk; omega)
+            simp only [Array.size_mapIdx] at h1 h2
+            rw [Array.getElem?_eq_getElem h2] at this
+            rw [Array.getElem?_eq_getElem (by rwa [foldl_set_size])] at this
+            exact Option.some.inj this
+      rw [hd]
+    · cases hw
+
 /-! ## Sequences of writes -/
 
 /-- The writes `ws` in order. -/
@@ -260,6 +297,50 @@ theorem writeAll_poison {m m' : Mem} {b : Blk} :
       rw [hw] at h
       rw [writeAll_poison (fun e he => hb e (List.mem_cons_of_mem _ he)) h,
         ← hb (p, bs) List.mem_cons_self, ecs_poisonBlock_write hw]
+
+/-- The frame end of a call bounds the `max` fold `callFrame` starts from. -/
+private theorem callFrame_fold_ge (tabs : Tables) :
+    ∀ (ins : List ABIParam) (n : Nat), n ≤ ins.foldl (fun n p =>
+      if p.regs.isEmpty then max n ((BitVec.ofInt 64 p.offset).toNat + (tabs.ty p.type).size)
+      else n) n
+  | [], _ => Nat.le_refl _
+  | p :: ps, n => by
+    rw [List.foldl_cons]
+    refine Nat.le_trans ?_ (callFrame_fold_ge tabs ps _)
+    split
+    · exact Nat.le_max_left _ _
+    · exact Nat.le_refl _
+
+/-- **A stack-assigned input parameter's slot lies below its call's frame end.** -/
+theorem slot_le_callFrame {tabs : Tables} {aux : Option AuxRef} {ins : List ABIParam}
+    {p : ABIParam} (hp : p ∈ ins) (hr : p.regs.isEmpty = true) :
+    (BitVec.ofInt 64 p.offset).toNat + (tabs.ty p.type).size ≤ callFrame tabs aux ins := by
+  unfold callFrame
+  generalize ((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0 = n
+  induction ins generalizing n with
+  | nil => cases hp
+  | cons q qs ih =>
+    rw [List.foldl_cons]
+    rcases List.mem_cons.1 hp with rfl | hq
+    · refine Nat.le_trans ?_ (callFrame_fold_ge tabs qs _)
+      rw [if_pos hr]
+      exact Nat.le_max_right _ _
+    · exact ih hq _
+
+/-- Writes into block `b` below offset `n` vanish when `b`'s bytes below `n` are poisoned. -/
+theorem writeAll_poisonBelow {m m' : Mem} {b : Blk} {n : Nat} :
+    ∀ {ws : List (Ptr × Array Byte)}, (∀ e ∈ ws, e.1.blk = b ∧ e.1.off.toNat + e.2.size ≤ n) →
+      writeAll m ws = some m' → m'.poisonBelow b n = m.poisonBelow b n
+  | [], _, h => by cases h; rfl
+  | (p, bs) :: ws, hb, h => by
+    simp only [writeAll] at h
+    cases hw : m.write p bs with
+    | none => rw [hw] at h; cases h
+    | some m1 =>
+      rw [hw] at h
+      have hp := hb (p, bs) List.mem_cons_self
+      rw [writeAll_poisonBelow (fun e he => hb e (List.mem_cons_of_mem _ he)) h, ← hp.1,
+        ecs_poisonBelow_write hw hp.2]
 
 /-- A write that no later write overlaps reads back. -/
 theorem writeAll_read {p : Ptr} {bs : Array Byte} :

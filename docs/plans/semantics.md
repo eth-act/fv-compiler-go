@@ -720,8 +720,12 @@ prints every block entry and value of one run.
   the outgoing area by the `AuxCall` ABI (`decodeArgs`) and encode results back
   (`encodeResults`). The tuple is `results ++ [mem, addrs]`, `addrs` the stack results' addresses
   (`SelectNAddr`, §4.8). A
-  poison argument is `stuck`; a contract's panic is the call's panic. The contract sees the
-  caller's outgoing-arguments area poisoned (`Mem.poisonBlock (.outargs act)`), and in both
+  poison argument is `stuck`; a contract's panic is the call's panic. The callee owns its frame
+  in the caller's outgoing-arguments area (abi-internal.md: its stack arguments and results,
+  then the spill slots of its register arguments, which it may use as their homes): the contract
+  sees the area below `callFrame` (`spillOff + spillSize` of the `AuxCall` ABI, or the end of a
+  stack argument's slot beyond it, none in Go) poisoned (`Mem.poisonBelow (.outargs act)
+  (callFrame …)`, #36), and the caller's bytes above it survive the call; in both
   forms the call is `stuck` unless the slots of its stack-assigned input parameters are
   writable in its memory (`outargsOK`, built on `Mem.canWrite`; #28): a run's frame always
   allocates the area, so post-`expand calls` stores of stack arguments into it cannot fail
@@ -891,8 +895,8 @@ may `recover`.
   closures); only the panic path reads them.
 - **Nil closures** (`nilClosure`): a closure call through the nil pointer word faults loading the
   closure's code word, after its arguments are passed: `callOp` panics `nilDeref` after the
-  `poison` and `outargsOK` checks, with the memory the callee would see (outgoing area
-  poisoned), so the call is monotone and `expand calls` (whose argument stores precede the call)
+  `poison` and `outargsOK` checks, with the memory the callee would see (its frame in the
+  outgoing area poisoned), so the call is monotone and `expand calls` (whose argument stores precede the call)
   refines it. `deferNilFunc`: an open-coded `defer f()` of a nil `f`.
 - **`Defer` block**: successor 0 (the `deferproc` call returned). Successor 1 (the recovery
   edge) is never taken: a recovery returns through `finish`.

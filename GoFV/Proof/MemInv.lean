@@ -46,14 +46,16 @@ namespace GoFV.Proof.MemInv
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck
 
-/-- A memory predicate kept by writes, by `poisonBlock`s of blocks that are neither globals nor
-the write-barrier buffer (frame blocks: `VarDef`, a callee's outgoing-arguments area), by
-freeing the buffer, and by the defer contracts' replacements of the runtime's blocks where they
-are absent or writable (`rtWritable`). (The frame allocations of a run's entry are `set`s:
-`sinv_entry`.) -/
+/-- A memory predicate kept by writes, by `poisonBlock`s and `poisonBelow`s of blocks that are
+neither globals nor the write-barrier buffer (frame blocks: `VarDef`, a callee's frame in the
+outgoing-arguments area), by freeing the buffer, and by the defer contracts' replacements of the
+runtime's blocks where they are absent or writable (`rtWritable`). (The frame allocations of a
+run's entry are `set`s: `sinv_entry`.) -/
 structure MemPred (P : Mem → Prop) : Prop where
   write : ∀ {m m' : Mem} {p : Ptr} {bs : Array Byte}, P m → m.write p bs = some m' → P m'
   poison : ∀ {m : Mem} {b : Blk}, P m → (∀ n, b ≠ .global n) → b ≠ .wbuf → P (m.poisonBlock b)
+  poisonBelow : ∀ {m : Mem} {b : Blk} (n : Nat), P m → (∀ n, b ≠ .global n) → b ≠ .wbuf →
+    P (m.poisonBelow b n)
   free_wbuf : ∀ {m : Mem}, P m → P (m.free .wbuf)
   rt : ∀ {m : Mem} {b : Blk} (a : Alloc), (b = deferBlk ∨ b = panicBlk) → a.writable = true →
     rtWritable m b = true → P m → P (m.set b a)
@@ -65,6 +67,17 @@ theorem poison_of_set {P : Mem → Prop}
       P (m.set b a)) {m : Mem} {b : Blk} (h : P m) (hg : ∀ n, b ≠ .global n) (hw : b ≠ .wbuf) :
     P (m.poisonBlock b) := by
   unfold Mem.poisonBlock
+  split
+  · exact hset _ h hg hw
+  · exact h
+
+/-- A predicate kept by every `set` of a block that is neither a global nor the write-barrier
+buffer is kept by its `poisonBelow`s. -/
+theorem poisonBelow_of_set {P : Mem → Prop}
+    (hset : ∀ {m : Mem} {b : Blk} (a : Alloc), P m → (∀ n, b ≠ .global n) → b ≠ .wbuf →
+      P (m.set b a)) {m : Mem} {b : Blk} (n : Nat) (h : P m) (hg : ∀ n, b ≠ .global n)
+    (hw : b ≠ .wbuf) : P (m.poisonBelow b n) := by
+  unfold Mem.poisonBelow
   split
   · exact hset _ h hg hw
   · exact h
@@ -615,8 +628,11 @@ theorem callOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx :
     obtain ⟨callee, -, h⟩ := bind_ok_inv h
     obtain ⟨c, hc, h⟩ := bind_ok_inv h
     have hcc := ContractsOK.atAct hP hE ctx.act callee c (ofOption_ok hc) args clo
-      (M'.poisonBlock (.outargs ctx.act)) hA hcl (hP.poison hM' (fun _ h => by cases h) (by simp))
-    cases hco : c args clo (M'.poisonBlock (.outargs ctx.act)) with
+      (M'.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)))) hA hcl
+      (hP.poisonBelow _ hM' (fun _ h => by cases h) (by simp))
+    cases hco : c args clo (M'.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)))) with
     | stuck msg => rw [hco] at h; cases h
     | panicked e m' => rw [hco] at h; cases h
     | returned rs m' =>
@@ -1184,6 +1200,7 @@ theorem sinv_enter (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ce : C
 theorem MemPred.imp {c : Prop} (hP : MemPred P) : MemPred (fun m => c → P m) where
   write h hw := fun hc => hP.write (h hc) hw
   poison h hg hw := fun hc => hP.poison (h hc) hg hw
+  poisonBelow n h hg hw := fun hc => hP.poisonBelow n (h hc) hg hw
   free_wbuf h := fun hc => hP.free_wbuf (h hc)
   rt a hb ha hw h := fun hc => hP.rt a hb ha hw (h hc)
 

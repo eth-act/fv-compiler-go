@@ -662,6 +662,19 @@ def outargsOK (tabs : Tables) (act : Nat) (m : Mem) (ins : List ABIParam) : Bool
   ins.all fun p => !p.regs.isEmpty ||
     m.canWrite ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ (tabs.ty p.type).size
 
+/-- The end of a call's frame in its caller's outgoing-arguments area (§5): the callee owns the
+area below it while it runs. abi-internal.md: the caller reserves the callee's stack-assigned
+arguments and results, then "spill space for each register-assigned argument", which the callee
+may use as their home; the frame ends at `spillOff + spillSize` of the call's ABI assignments
+(the area below it also holds the fixed-frame word below the arguments, `ArgWidth` above it),
+or at the end of a slot of a stack-assigned input parameter `ins` beyond it (Go's assignments
+have none); 0 without assignments. -/
+def callFrame (tabs : Tables) (aux : Option AuxRef) (ins : List ABIParam) : Nat :=
+  ins.foldl (fun n p =>
+      if p.regs.isEmpty then max n ((BitVec.ofInt 64 p.offset).toNat + (tabs.ty p.type).size)
+      else n)
+    (((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0)
+
 /-! ## Deferred calls and recover (§9.7, phase P5) -/
 
 /-- The `deferproc` entries of every activation, oldest first: 16 bytes each (`entryTy`: the
@@ -869,10 +882,12 @@ results are stored back into the outgoing area). The callee is the `AuxCall`'s f
 code symbol the code pointer points to; its contract sees the Go-typed arguments (the pre form's
 retyped at the parameters' shapes, `retypeResults`: an `unsafe.Pointer` passed to a `uintptr`
 parameter is its address, as the post form decodes it). Arguments
-and memory are observation points (`poison` ⇒ `stuck`). The callee owns the caller's
-outgoing-arguments area while it runs (it may spill its register arguments there): its contract
-sees that area poisoned, in both forms, so post-`expand calls` argument stores into it are
-invisible to the callee except through the decoded arguments. In both forms the call is
+and memory are observation points (`poison` ⇒ `stuck`). The callee owns its frame in the
+caller's outgoing-arguments area while it runs (`callFrame`: its stack arguments and results
+and the spill area of its register arguments, which it may use): its contract sees the area
+below the frame's end poisoned, in both forms, so post-`expand calls` argument stores into it
+are invisible to the callee except through the decoded arguments; the caller's bytes above it
+are the caller's across the call. In both forms the call is
 `stuck` unless the slots of its stack-assigned arguments are writable in its memory
 (`outargsOK`; always so in a run, whose frame allocates the area): the post form's argument
 stores into them then cannot fail where the pre form's call succeeds. A closure call through a
@@ -896,11 +911,12 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
     .stuck s!"v{v.id}: call with a poison argument"
   else if !outargsOK ctx.tabs ctx.act m ins then
     .stuck s!"v{v.id}: call with an outgoing-arguments area not writable"
-  else if nilClosure clo then .panic .nilDeref (m.poisonBlock (.outargs ctx.act))
+  else if nilClosure clo then
+    .panic .nilDeref (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux ins))
   else
     let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
     let c ← Res.ofOption s!"call {callee}: no contract" ((env.atAct ctx.act).extern callee)
-    match c args clo (m.poisonBlock (.outargs ctx.act)) with
+    match c args clo (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux ins)) with
     | .returned rs m' =>
       let rs := retypeResults ctx.tabs outs rs
       -- stack-assigned results are in the outgoing area in both forms; their addresses follow

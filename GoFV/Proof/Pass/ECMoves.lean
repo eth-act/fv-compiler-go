@@ -200,7 +200,7 @@ theorem ecm_read_writeAll {o0 n : Nat} {bs : Array Byte} (ho : o0 < 2 ^ 24) :
 
 /-- **The chain of `Move`s writes its slots in order** (`sp`: the parameters they copy, bottom
 first, of sizes `sz` at disjoint increasing offsets): from the memory `M` of its bottom, its top
-holds a memory with `M`'s allocations and poisoned area, `M`'s bytes outside the area, and per
+holds a memory with `M`'s allocations and, poisoned below the slots' end, `M`'s area, `M`'s bytes outside the area, and per
 parameter the bytes its `Move` read from `M` (`R`), given that each `Move` reads its source in the
 memory below it, which is `M` or outside the area, and writes its slot. -/
 theorem ecm_moves {T : Frame} {g : Func} {nw : ID → Bool} {b : ID} {M : Mem}
@@ -214,7 +214,8 @@ theorem ecm_moves {T : Frame} {g : Func} {nw : ID → Bool} {b : ID} {M : Mem}
           rv T z = .mem Mz ∧ (mw.args[2]! = b ∨ s.blk ≠ .outargs 0) ∧
           (M.read s (sz e.1) = some bs → R e bs)) →
       ∃ Mt, rv T top = .mem Mt ∧ (∀ blk, (Mt.find? blk).map ecsAttr = (M.find? blk).map ecsAttr) ∧
-        Mt.poisonBlock (.outargs 0) = M.poisonBlock (.outargs 0) ∧
+        (∀ F, (∀ e ∈ sp, e.1.offset.toNat + sz e.1 ≤ F) →
+          Mt.poisonBelow (.outargs 0) F = M.poisonBelow (.outargs 0) F) ∧
         (∀ q k, q.blk ≠ .outargs 0 → Mt.read q k = M.read q k) ∧
         ∀ e ∈ sp, ∃ bs, Mt.read (ecsSlot e.1.offset.toNat) (sz e.1) = some bs ∧ R e bs
   | 0, _, _, _, h, _, _, _, _ => by simp [moveChain] at h
@@ -222,7 +223,7 @@ theorem ecm_moves {T : Frame} {g : Func} {nw : ID → Bool} {b : ID} {M : Mem}
     rcases ecm_step h with ⟨rfl, rfl⟩ | ⟨w, ms', -, hw, -, -, -, hc, rfl⟩
     · have : sp = [] := List.eq_nil_of_length_eq_zero hlen
       subst this
-      exact ⟨M, hb, fun _ => rfl, rfl, fun _ _ _ => rfl, fun e he => absurd he List.not_mem_nil⟩
+      exact ⟨M, hb, fun _ => rfl, fun _ _ => rfl, fun _ _ _ => rfl, fun e he => absurd he List.not_mem_nil⟩
     have hspne : sp ≠ [] := fun he => by subst he; simp at hlen
     obtain ⟨sp', e, rfl⟩ : ∃ sp' e, sp = sp' ++ [e] :=
       ⟨sp.dropLast, sp.getLast hspne, (List.dropLast_concat_getLast hspne).symm⟩
@@ -243,7 +244,13 @@ theorem ecm_moves {T : Frame} {g : Func} {nw : ID → Bool} {b : ID} {M : Mem}
     have hbe := hbd e (List.mem_append_right _ List.mem_cons_self)
     have hsz := ecs_read_size hrd
     refine ⟨Mz, hz, fun blk => (ecs_find_write hW blk).trans (hA blk), ?_, ?_, ?_⟩
-    · rw [← hP]; exact ecs_poisonBlock_write hW
+    · intro F hF'
+      rw [← hP F fun e' he' => hF' e' (List.mem_append_left _ he')]
+      have h1 := hF' e (List.mem_append_right _ List.mem_cons_self)
+      refine ecs_poisonBelow_write hW ?_
+      simp only [ecsSlot, BitVec.toNat_ofNat]
+      rw [Nat.mod_eq_of_lt (by omega), hsz]
+      exact h1
     · intro q k hq
       rw [read_write_sep hW (.inr (.inr (.inl hq)))]
       exact hO q k hq

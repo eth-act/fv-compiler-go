@@ -229,6 +229,16 @@ theorem EqOff.poison {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (b :
     obtain ⟨-, hs, hwr, -⟩ := hA
     exact EqOff.set h ⟨rfl, by simp [hs], hwr, fun _ => by simp [hs]⟩
 
+/-- `poisonBelow` on both sides. -/
+theorem EqOff.poisonBelow {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (b : Blk)
+    (n : Nat) : Mem.EqOff U (m.poisonBelow b n) (m'.poisonBelow b n) := by
+  unfold Mem.poisonBelow
+  rcases EqOff.find h b with ⟨h1, h2⟩ | ⟨a, a', ha, ha', hA⟩
+  · rw [h1, h2]; exact h
+  · rw [ha, ha']
+    obtain ⟨-, hs, hwr, hd⟩ := hA
+    exact EqOff.set h ⟨rfl, by simp [hs], hwr, fun hu => by rw [hd hu]⟩
+
 /-- `poisonBlock` of a block of `U` on the source side only. -/
 theorem EqOff.poison_left {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') {b : Blk}
     (hu : U b) : Mem.EqOff U (m.poisonBlock b) m' := by

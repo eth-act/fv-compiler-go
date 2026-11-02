@@ -95,6 +95,20 @@ theorem outargsOK_tabs {tabs tabs' : Tables} (act : Nat) (m : Mem) :
     simp only [outargsOK, List.all_cons] at ih ⊢
     rw [h p List.mem_cons_self, ih]
 
+theorem callFrame_tabs {tabs tabs' : Tables} {aux : Option AuxRef}
+    (hc : callABI? tabs' aux = callABI? tabs aux) :
+    ∀ (ps : List ABIParam), (∀ p ∈ ps, tabs'.ty p.type = tabs.ty p.type) →
+      callFrame tabs' aux ps = callFrame tabs aux ps := by
+  intro ps h
+  unfold callFrame
+  rw [hc]
+  generalize ((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0 = n
+  induction ps generalizing n with
+  | nil => rfl
+  | cons p ps ih =>
+    simp only [List.foldl_cons, h p List.mem_cons_self]
+    exact ih (fun q hq => h q (List.mem_cons_of_mem _ hq)) _
+
 /-! ## One value -/
 
 section
@@ -128,7 +142,9 @@ theorem callOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (argv : List
   have hoa : ∀ act m, outargsOK tabs' act m (P.filter (!·.out)) =
       outargsOK ctx.tabs act m (P.filter (!·.out)) := fun act m =>
     outargsOK_tabs act m _ fun p hp => hP p (List.mem_filter.mp hp).1
-  simp only [hin, hout, hret, hreta, hoa]
+  have hfr : callFrame tabs' v.aux (P.filter (!·.out)) = callFrame ctx.tabs v.aux (P.filter (!·.out)) :=
+    callFrame_tabs h.callABI _ fun p hp => hP p (List.mem_filter.mp hp).1
+  simp only [hin, hout, hret, hreta, hoa, hfr]
 
 theorem memRoot_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (argv : List Val) :
     memRoot { ctx with tabs := tabs' } v argv = memRoot ctx v argv := by

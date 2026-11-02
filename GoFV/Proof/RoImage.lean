@@ -117,6 +117,7 @@ theorem roMem_set {ro : List (String × Alloc)} {m : Mem} {b : Blk} (a : Alloc) 
 theorem roMem_pred (ro : List (String × Alloc)) : MemInv.MemPred (RoMem ro) where
   write h hw := h.keep (Mem.keepsRo_write hw)
   poison h hg hw := MemInv.poison_of_set roMem_set h hg hw
+  poisonBelow n h hg hw := MemInv.poisonBelow_of_set roMem_set n h hg hw
   free_wbuf h := fun n a hm => by
     obtain ⟨hw, hf⟩ := h n a hm
     refine ⟨hw, ?_⟩
