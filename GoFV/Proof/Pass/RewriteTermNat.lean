@@ -383,6 +383,23 @@ theorem hasTyList_get : ∀ {vs : List Val} {ts : List Ty}, Val.hasTyList vs ts 
     | succ k => simpa using hasTyList_get h.2 k
   | [], _ :: _, h, _ | _ :: _, [], h, _ => by simp [Val.hasTyList] at h
 
+/-- `compSub f t`: a value of shape `f` has shape `t`. -/
+theorem compSub_hasTy {f t : Ty} (h : compSub f t = true) {v : Val} (hv : v.hasTy f = true) :
+    v.hasTy t = true := by
+  unfold compSub at h
+  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
+  rcases h with h | ⟨hf, ht⟩
+  · exact GoFV.Proof.Rules.shapeSub_hasTy h hv
+  · cases f <;> try cases hf
+    rename_i w
+    cases w <;> try cases hf
+    cases t <;> try cases ht
+    cases v with
+    | int w x =>
+      simp only [Val.hasTy, beq_iff_eq] at hv
+      subst hv; rfl
+    | _ => first | rfl | (simp [Val.hasTy] at hv)
+
 /-- `Comp.select k` of an argument of shape `argTy` has shape `ty` under `selShapeOK`. -/
 theorem select_hasTy {k : Nat} {ty argTy : Ty} (h : selShapeOK k ty argTy = true)
     (args : List Val) (h0 : ∀ a, args.head? = some a → a.hasTy argTy = true) :
@@ -405,7 +422,7 @@ theorem select_hasTy {k : Nat} {ty argTy : Ty} (h : selShapeOK k ty argTy = true
           simp only [Option.map_some, Option.some.injEq] at ht
           subst ht
           simp only [List.getD, hv, Option.getD_some]
-          exact GoFV.Proof.Rules.shapeSub_hasTy h hvt
+          exact compSub_hasTy h hvt
     all_goals first | (simp [Val.hasTy] at ha; done) | cases h
   · rfl
 

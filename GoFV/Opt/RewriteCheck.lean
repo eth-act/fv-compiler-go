@@ -347,13 +347,19 @@ def selIndex? (op : Op) (ai : Int64) : Option Nat :=
   | .StructSelect | .ArraySelect => if ai.toInt < 0 then none else some ai.toInt.toNat
   | _ => none
 
+/-- A value of shape `f` has shape `ty`: `shapeSub`, or a 64-bit integer at a pointer shape (an
+`.int .w64` value, or a pointer without a concrete address, has every pointer shape,
+`Val.hasTy`; the interface's `uintptr` itab word read by an `ITab` typed `*uint8`, issue #17). -/
+def compSub (f ty : Sem.Ty) : Bool :=
+  shapeSub f ty || ((f matches .int .w64) && (ty matches .ptr _))
+
 /-- Component `k` of a value of shape `argTy` has shape `ty`: the component's shape is `ty`'s
-(`shapeSub`) or missing (the selection is `poison`), or the argument is a scalar (the
+(`compSub`) or missing (the selection is `poison`), or the argument is a scalar (the
 selection is `poison`). -/
 def selShapeOK (k : Nat) (ty argTy : Sem.Ty) : Bool :=
   match argTy.asAgg with
   | .agg fs _ => match fs[k]? with
-    | some (_, f) => shapeSub f ty
+    | some (_, f) => compSub f ty
     | none => true
   | .int _ | .bool | .ptr _ => true
   | _ => false
