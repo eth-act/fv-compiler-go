@@ -342,9 +342,11 @@ import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
+import GoFV.Proof.Rules.CondSelect
 import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.Convert
+import GoFV.Proof.Rules.CvtBoolToUint
 import GoFV.Proof.Rules.Dec
 import GoFV.Proof.Rules.DecLoad
 import GoFV.Proof.Rules.DecLoadSel
@@ -486,6 +488,7 @@ import GoFV.Proof.Rules.Xor
 import GoFV.Proof.Rules.Xor2
 import GoFV.Proof.Rules.Xor3
 import GoFV.Proof.Rules.Xor4
+import GoFV.Proof.Rules.XorCom
 import GoFV.Proof.Rules.ZeroExt
 import GoFV.Proof.RunMono
 import GoFV.Proof.Sched
