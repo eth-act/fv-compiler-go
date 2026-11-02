@@ -2497,22 +2497,36 @@ def samePtr (tabs : Tables) (f : Func) (a b : ID) : Bool :=
         va.aux == vb.aux && va.type == vb.type
     | _, _ => false
 
-/-- One store of a move segment: the `Store` `sa` of `f` (block `b`) at an `OffPtr [o]` of `p` (up
-to copies or the same variable, `samePtr`; pointer shape) with `0 ≤ o` and `o + size ≤ n` (positive size) became the `Store` `sb`
-of `g` with the same aux, type and value, at a fresh `OffPtr [o]` of `dst` (pointer shape). -/
+/-- The offset of the pointer `a` of `f` from `p`: `0` if `a` equals `p` (`samePtr`), else
+through at most `k` `OffPtr`s of pointer shape the sum of their offsets down to a value equal
+to `p`. -/
+def offFrom (tabs : Tables) (f : Func) (p : ID) : Nat → ID → Option Int
+  | 0, a => if samePtr tabs f a p then some 0 else none
+  | k + 1, a =>
+    if samePtr tabs f a p then some 0 else
+    match f.value? a with
+    | some v =>
+      if v.op == .OffPtr && v.args.size == 1 && isPtrTy (tabs.ty v.type) then
+        (offFrom tabs f p k v.args[0]!).map (v.auxInt.toInt + ·)
+      else none
+    | none => none
+
+/-- One store of a move segment: the `Store` `sa` of `f` at a pointer `o` bytes past `p`
+(`offFrom`: through `OffPtr`s to a value equal to `p` up to copies or the same variable) with
+`0 ≤ o` and `o + size ≤ n` (positive size) became the `Store` `sb` of `g` (block `b`) with the
+same aux, type and value, at a fresh `OffPtr [o]` of `dst` (pointer shape). The pass folds nested
+`OffPtr`s (`generic.rules:964`) before it matches the `Move`; `sa` may be in another block (the
+`Move` reads its memory through its register). -/
 def moveStoreOK (tabs : Tables) (f g : Func) (p dst : ID) (n : Int64) (b : ID) (sa sb : Value) :
     Bool :=
   let sz := (Sem.auxTy tabs sa.aux).size
   sa.op == .Store && sb.op == .Store && sa.args.size == 3 && sb.args.size == 3 &&
-    sb.aux == sa.aux && sb.type == sa.type && sb.args[1]! == sa.args[1]! && sa.block == b &&
+    sb.aux == sa.aux && sb.type == sa.type && sb.args[1]! == sa.args[1]! &&
     sb.block == b && decide (0 < sz) && (f.value? sb.args[0]!).isNone &&
-    match f.value? sa.args[0]!, g.value? sb.args[0]! with
-    | some q, some q' =>
-      q.op == .OffPtr && q.args.size == 1 && isPtrTy (tabs.ty q.type) &&
-        samePtr tabs f q.args[0]! p &&
-        q'.op == .OffPtr && q'.args == #[dst] && q'.auxInt == q.auxInt &&
-        isPtrTy (tabs.ty q'.type) && decide (0 ≤ q.auxInt.toInt) &&
-        decide (q.auxInt.toInt + sz ≤ n.toInt)
+    match g.value? sb.args[0]!, offFrom tabs f p 4 sa.args[0]! with
+    | some q', some o =>
+      q'.op == .OffPtr && q'.args == #[dst] && q'.auxInt.toInt == o &&
+        isPtrTy (tabs.ty q'.type) && decide (0 ≤ o) && decide (o + sz ≤ n.toInt)
     | _, _ => false
 
 /-- The memory `m` of `f`, or the memory under it if it is a `VarDef`. -/
@@ -2522,25 +2536,27 @@ def underVarDef (f : Func) (m : ID) : ID :=
   | none => m
 
 /-- A move segment at the `Move` `x` (`generic.rules:1978` family; `f`'s `fv`, `g`'s `gv`): in `f`
-`Move [n] dst p mem` whose memory is (a `VarDef` of) `k ≥ 1` `Store`s of `x`'s block over a
-`Zero [n] p' _` (`p'` and the stores' `OffPtr`s of `p` up to copies), in `g` the same `Store`s
-(`moveStoreOK`) at fresh `OffPtr`s of `dst`, the anchor the first, over a fresh `Zero [n] dst mem`
-(of the `Zero`'s type).
+`Move [n] dst p mem` whose memory is, up to copies (`mc`), (a `VarDef` of) `k ≥ 1` `Store`s of
+`x`'s block over, up to copies, a `Zero [n] p' _` (`p'` equal to `p`, the stores' pointers
+offsets of `p`), in `g` the same `Store`s (`moveStoreOK`) at fresh `OffPtr`s of `dst`, the anchor
+the first, over a fresh `Zero [n] dst mc` (of the `Zero`'s type).
 Nothing is dropped; the fresh values in dependency order: the `OffPtr`s, the `Zero`, the stores
 below the anchor bottom first. -/
 def moveSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (List ID × List ID) :=
   match fv.op, fv.args.toList with
   | .Move, [d, p, m] =>
+    let mc := copyEnd tabs f.valueTab f.valueTab.size m
     let (ns, m0) := freshChain f g 5 (lastArg gv)
-    match ns.getLast?, storesF f ns.length (underVarDef f m) with
-    | some z', some (fs, z) =>
+    match ns.getLast?, storesF f ns.length (underVarDef f mc) with
+    | some z', some (fs, z1) =>
+      let z := copyEnd tabs f.valueTab f.valueTab.size z1
       match f.value? z, g.value? z' with
       | some zv, some zv' =>
         let n := fv.auxInt
         let gs := x :: ns.dropLast
-        if gv.op == .Store && m0 == m && decide (0 ≤ n.toInt) && zv.op == .Zero &&
+        if gv.op == .Store && m0 == mc && decide (0 ≤ n.toInt) && zv.op == .Zero &&
             zv.args.size == 2 && zv.auxInt == n && samePtr tabs f zv.args[0]! p &&
-            zv'.op == .Zero && zv'.args == #[d, m] && zv'.auxInt == n && zv'.type == zv.type &&
+            zv'.op == .Zero && zv'.args == #[d, mc] && zv'.auxInt == n && zv'.type == zv.type &&
             (fs.zip gs).all (fun (a, b) => match f.value? a, g.value? b with
               | some sa, some sb => moveStoreOK tabs f g p d n fv.block sa sb
               | _, _ => false) then

@@ -278,6 +278,57 @@ def ssRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id
   return none
 
 open GoFV.Rules RewriteCheck in
+/-- Which part of `moveSeg?` fails for the `Move` `x` (diagnostics). -/
+def moveSegWhy (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : String :=
+  match fv.op, fv.args.toList with
+  | .Move, [d, p, m] =>
+    let mc := copyEnd tabs f.valueTab f.valueTab.size m
+    let (ns, m0) := freshChain f g 5 (lastArg gv)
+    match ns.getLast?, storesF f ns.length (underVarDef f mc) with
+    | some z', some (fs, z1) =>
+      let z := copyEnd tabs f.valueTab f.valueTab.size z1
+      match f.value? z, g.value? z' with
+      | some zv, some zv' =>
+        let n := fv.auxInt
+        let gs := x :: ns.dropLast
+        if gv.op != .Store then "anchor op"
+        else if m0 != mc then s!"mem {desc tabs f 2 mc} vs {desc tabs g 2 m0}"
+        else if !(zv.op == .Zero && zv.args.size == 2 && zv.auxInt == n) then
+          s!"zero {desc tabs f 1 z}"
+        else if !samePtr tabs f zv.args[0]! p then
+          s!"zero ptr {desc tabs f 3 zv.args[0]!} vs {desc tabs f 3 p}"
+        else if !(zv'.op == .Zero && zv'.args == #[d, mc] && zv'.auxInt == n && zv'.type == zv.type)
+          then s!"fresh zero {desc tabs g 2 z'}"
+        else match (fs.zip gs).find? (fun (a, b) => match f.value? a, g.value? b with
+            | some sa, some sb => !moveStoreOK tabs f g p d n fv.block sa sb
+            | _, _ => true) with
+          | some (a, b) => s!"store {desc tabs f 3 a} vs {desc tabs g 3 b} \
+              (offFrom {(f.value? a).bind fun sa => offFrom tabs f p 4 sa.args[0]!}, \
+              block {(f.value? a).map (·.block)}/{(g.value? b).map (·.block)}/{fv.block}, \
+              fresh {(g.value? b).map fun sb => (f.value? sb.args[0]!).isNone}, n {n})"
+          | none => "?"
+      | _, _ => "missing zero"
+    | none, _ => s!"no fresh chain from {desc tabs g 2 (lastArg gv)}"
+    | _, none => s!"no stores of {ns.length} under {desc tabs f 3 (underVarDef f mc)}"
+  | _, _ => "not a Move"
+
+open GoFV.Rules RewriteCheck in
+/-- Which part of `callSeg?` fails for the `SelectN` `fv` (diagnostics). -/
+def callSegWhy (tabs : Tables) (f g : Func) (fv gv : Value) : String :=
+  match fv.args.toList with
+  | [c] =>
+    match f.value? c with
+    | some cv =>
+      let args := cv.args.toList
+      let n := if args.length ≥ 3 then args[args.length - 2]! else 0
+      s!"aux {fv.auxInt} block {cv.block == fv.block} args {args.length} \
+        simple {MemCall.simpleCall tabs cv (args.length - 1)} \
+        g {gv.op.name}{gv.args.toList} f {args} size {constSize tabs f n gv.auxInt} \
+        {desc tabs f 4 n}"
+    | none => "no call"
+  | _ => "arity"
+
+open GoFV.Rules RewriteCheck in
 /-- Which part of `segRel`/`check` fails for the segment-rewritten function `f'` of `f`, if any. -/
 def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id.run do
   for z in List.range f.valueTab.size do
@@ -286,7 +337,9 @@ def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
       if !ssSame u w && (segOK tabs f f' z).isNone then
         return some s!"v{z} {u.op.name}→{w.op.name}: no segment (chain \
           {(chainSeg? tabs f f' z u w).isSome}, call {(callSeg? tabs f f' u w).isSome}, \
-          move {(moveSeg? tabs f f' z u w).isSome})"
+          move {(moveSeg? tabs f f' z u w).isSome}){if u.op == .Move then
+            " ⟨" ++ moveSegWhy tabs f f' z u w ++ "⟩" else if u.op == .SelectN then
+            " ⟨" ++ callSegWhy tabs f f' u w ++ "⟩" else ""}"
     | _, _ => pure ()
   if !segRel tabs f f' then return some "rel"
   if let .error e := check { tabs := tabs, typs := env.typs } f' then return some s!"check {e}"
