@@ -579,7 +579,8 @@ memory), `callSeg_sound (hE : env.MemOps)` (`SegCallSeg.lean`, with
 `read_write_putBytes`; the `Move`'s memory, that one or with a frame block poisoned, reads bytes
 they refine; the target's `Zero` and stores write those bytes at `Dst`, `writes_putBytes`, inside
 the bytes the `Move` wrote, so the fresh `OffPtr`s stay in the window; witness
-`moveSeg_witness`). A fresh `OffPtr` is pure and may be scheduled before the segment's roots:
+`moveSeg_witness`; `moveSeg_witness_nested`: nested `OffPtr`s and copies). A fresh `OffPtr` is
+pure and may be scheduled before the segment's roots:
 `Blk.step` evaluates it by `segStep` when the source evaluated the segment's roots, else purely
 (`pureEval`; its argument is an argument of a segment root, evaluated before it). The simulation
 (`SegRel.lean` `segRel_spec`, `SegBlock.lean` `segStep`, `SegEval.lean`, `SegSim.lean`) runs the
@@ -1209,7 +1210,11 @@ verified 91,370 → 91,409 (on a5d70b2). `:579` (`Lsh32x64` of `And32 (Rsh32x64 
 rewrite's `x << (e-c)` shifts out (`x = -1`, `d = 1`, `c = -1`, `e = 1`: `2` against `0`).
 With the move segments (`:1978`/`:1992`/`:2011`/`:2035`, `VarDef` forms `:2049`/`:2064`/`:2084`/
 `:2109`; `moveSeg?`, pointers equal up to copies or `LocalAddr`s of one variable, `samePtr`; 1,366
-rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036).
+rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036). With store pointers through nested
+`OffPtr`s (`offFrom`; the pass folds them, `:964`, before it matches the `Move`), memories and
+`Zero`s up to copies and stores in any block: 91,551 → 91,652 (on 5a1b620; of the 198 functions
+the move segments were the only obstacle of, 110 remain, 71 of them `SelectN→Move` call segments
+whose size is `Mul64 (SliceLen (SliceMake p (Sub64 c d) …)) (Const64 [1])`).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
