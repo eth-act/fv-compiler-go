@@ -106,7 +106,9 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
       (ecs_node g gb (callMem f x) = true →
         depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (callMem f x) z = true)) ∧
     (invalidated g x = false → ∀ u, f.value? x = some u → ∀ a ∈ u.args, invalidated g a = true →
-      a ∈ fb.values → beforeB og.toList a x = true)
+      a ∈ fb.values → beforeB og.toList a x = true) ∧
+    (∀ p ∈ selfAddrs tabs sh f g x, p ∈ fb.values →
+      invalidated g p = false ∧ beforeB og.toList p x = true)
   newv : ∀ z ∈ gb.values, ∀ w, g.value? z = some w →
     (isNewB f z = true → w.op ≠ .Phi ∧
       (newEvalB tabs g w = true ∨ (∃ x ∈ fb.values, z ∈ stackStores f g x) ∨
@@ -271,8 +273,10 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
   · split at hres
     · rename_i og hog
       refine ⟨og, hog, fun x hx => ?_⟩
-      obtain ⟨hz, hbf⟩ := Bool.and_eq_true _ _ ▸ Array.all_eq_true'.1 hres x hx
-      refine ⟨fun z hz' => ?_, fun hxi u hu a ha hai haf => ?_⟩
+      have hx' := Array.all_eq_true'.1 hres x hx
+      simp only [Bool.and_eq_true] at hx'
+      obtain ⟨⟨hz, hbf⟩, hsa⟩ := hx'
+      refine ⟨fun z hz' => ?_, fun hxi u hu a ha hai haf => ?_, fun p hp hpf => ?_⟩
       · have := List.all_eq_true.1 hz z hz'
         simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq,
           Array.contains_iff_mem] at this
@@ -282,6 +286,10 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
       · rw [hxi, Bool.false_or, hu] at hbf; dsimp only at hbf
         have := Array.all_eq_true'.1 hbf a ha
         rw [hai, Array.contains_iff_mem.2 haf, Bool.not_true, Bool.false_or, Bool.false_or] at this
+        exact this
+      · have := List.all_eq_true.1 hsa p hp
+        rw [Array.contains_iff_mem.2 hpf, Bool.not_true, Bool.false_or, Bool.and_eq_true,
+          Bool.not_eq_true'] at this
         exact this
     · cases hres
   · intro z hz w hw
@@ -980,6 +988,21 @@ theorem ecs_wideBefore {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
   obtain ⟨og, hog, H⟩ := (ecs_parts hfb hgb hb).wide
   exact ecs_schedBefore hog ((H x hx).2 u hu a ha hws haf)
 
+/-- **The `LocalAddr` of a self-move of a `MakeResult` of the block**, if a value of the block,
+is kept by the pass and precedes the `MakeResult` in `g`'s schedule. -/
+theorem ecs_selfAddrBefore {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Block}
+    (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    (hb : blockOK tabs (typeShapes tabs) (make g).anc f g bid = true) :
+    ∀ x ∈ fb.values, ∀ p ∈ selfAddrs tabs (typeShapes tabs) f g x, p ∈ fb.values →
+      ¬ TgtInvalid g p ∧ SchedBefore g gb p x := by
+  intro x hx p hp hpf
+  obtain ⟨og, hog, H⟩ := (ecs_parts hfb hgb hb).own
+  obtain ⟨hi, hbf⟩ := (H x hx).2.2 p hp hpf
+  refine ⟨fun ⟨w, hw, hwop⟩ => ?_, ecs_schedBefore hog hbf⟩
+  unfold invalidated at hi
+  rw [hw] at hi
+  simp [hwop] at hi
+
 /-- `valueOK` of a `Store` that became a `Copy` and reads no tail call is `wideStoreOK`. -/
 theorem ecs_wideStoreOK {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     (hv : valueOK tabs (typeShapes tabs) f g x = true) (hu : f.value? x = some u)
@@ -1308,7 +1331,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
           exact .inr (.inr (ecs_schedBefore hog hbf))
         · obtain ⟨og, hog, H⟩ := P.own
           exact .inr (.inr (ecs_schedBefore hog
-            ((H x hx).2 hinv' u hu a (Array.mem_toList_iff.1 ha) hia haf)))
+            ((H x hx).2.1 hinv' u hu a (Array.mem_toList_iff.1 ha) hia haf)))
       · exact .inr (.inr (ecs_wideBefore hfb hgb hb x hx u hu a (Array.mem_toList_iff.1 ha) hws
           haf))
   · refine ⟨han, fun hag => ?_⟩

@@ -1057,7 +1057,7 @@ theorem ecr_selfHeld {env : Env} {tabs : Tables} {f g : Func} {frS : Frame} {u :
 /-- The values whose source registers the `MakeResult` obligation needs to hold their
 evaluations: the self-moves' `Dereference`s and their `LocalAddr`s. -/
 def ecrSelfSrc (tabs : Tables) (f g : Func) (u : Value) (a : ID) : Prop :=
-  ∃ e ∈ (ownOuts tabs f).zip (u.args.extract 0 (u.args.size - 1)).toList,
+  ∃ e ∈ (ownOuts tabs f).zip (u.args.extract 0 (u.args.size - 1)).toList, e.1.regs.isEmpty = true ∧
     selfMoveOK tabs (typeShapes tabs) f g u e = true ∧ (a = e.2 ∨ a = addrArg f e.2)
 
 /-- A `MakeResult` tuple whose last component is no memory converts to `poison`. -/
@@ -1223,8 +1223,8 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         have hpo := (List.of_mem_zip ha).1
         refine ⟨hc'.1, ?_⟩
         rw [hr]
-        exact ecr_selfHeld hown hpo hc'.1 hc'.2 (hHS0 _ ⟨_, ha, hc'.2, .inl rfl⟩)
-          (hHS0 _ ⟨_, ha, hc'.2, .inr rfl⟩) hmv)]
+        exact ecr_selfHeld hown hpo hc'.1 hc'.2 (hHS0 _ ⟨_, ha, hc'.1, hc'.2, .inl rfl⟩)
+          (hHS0 _ ⟨_, ha, hc'.1, hc'.2, .inr rfl⟩) hmv)]
     cases hM : resMem tabs ((ownOuts tabs f).zip (selfMoves tabs (typeShapes tabs) f g u
         (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList))
         ((u.args.extract 0 (u.args.size - 1)).toList.map (rv frS)) m0 with
