@@ -225,3 +225,13 @@ date	commit	bench	status	wall_s	cpu_s	maxrss_mb	runs	load1	bin_hash	corpus
 2026-11-02T13:00:00Z	e86c77bbdc36	ssa-check-corpus	cached	49.86	48.89	86	1	24.8	a38145c888d3666b	539fc0649fdf
 2026-11-02T13:00:00Z	e86c77bbdc36	analysis-difftest-corpus	cached	37.23	37.19	89	1	22.1	a0a9f3b2c0da0df6	539fc0649fdf
 2026-11-02T13:00:00Z	e86c77bbdc36	sem-difftest-corpus	cached	64.11	63.19	91	1	21.5	d1eebe298e75a371	539fc0649fdf
+2026-11-02T13:58:19Z	3be2f85a12d7	ssa-roundtrip-corpus	cached	48.97	48.89	125	1	23.5	3c82fd6c2741bd4b	539fc0649fdf
+2026-11-02T13:58:19Z	3be2f85a12d7	pass-parity-corpus	ok	17.25	62.83	157	3	12.0	7d6a3bc2b6b3640b	539fc0649fdf
+2026-11-02T13:58:19Z	3be2f85a12d7	ssa-check-corpus	cached	47.56	47.47	88	1	23.5	756039163e038939	539fc0649fdf
+2026-11-02T13:58:19Z	3be2f85a12d7	analysis-difftest-corpus	cached	37.23	37.19	89	1	22.1	a0a9f3b2c0da0df6	539fc0649fdf
+2026-11-02T13:58:19Z	3be2f85a12d7	sem-difftest-corpus	ok	53.33	52.06	95	1	12.5	c8d6fee6eb7cda0b	539fc0649fdf
+2026-11-02T14:51:22Z	67c2ca1c7903	ssa-roundtrip-corpus	cached	48.97	48.89	125	1	23.5	3c82fd6c2741bd4b	539fc0649fdf
+2026-11-02T14:51:22Z	67c2ca1c7903	pass-parity-corpus	ok	34.29	95.91	165	3	40.9	9a9070fb5a6a692e	539fc0649fdf
+2026-11-02T14:51:22Z	67c2ca1c7903	ssa-check-corpus	cached	47.56	47.47	88	1	23.5	756039163e038939	539fc0649fdf
+2026-11-02T14:51:22Z	67c2ca1c7903	analysis-difftest-corpus	cached	37.23	37.19	89	1	22.1	a0a9f3b2c0da0df6	539fc0649fdf
+2026-11-02T14:51:22Z	67c2ca1c7903	sem-difftest-corpus	ok	89.36	75.45	94	3	42.0	6224699d82f1eea3	539fc0649fdf
