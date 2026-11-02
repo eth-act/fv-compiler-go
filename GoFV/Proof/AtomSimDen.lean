@@ -249,6 +249,66 @@ theorem evalValue_term {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val
   rw [evalValue_of_regs (regs_of_ok h), evalOp_term ht] at h
   cases h; rfl
 
+/-! ## Slice components of constant terms (`RewriteCheck.sliceMakeLC?`, `sliceComp`) -/
+
+/-- `Val.sliceOK` does not read the pointer. -/
+theorem sliceOK_head (a b l c : Val) :
+    Val.sliceOK [a, l, c] = Val.sliceOK [b, l, c] := by
+  unfold Val.sliceOK
+  split <;> split <;> simp_all
+
+private theorem arr1 {xs : Array ID} (h : xs.size = 1) : xs = #[xs[0]!] := by
+  rcases xs with ⟨_ | ⟨a, _ | ⟨b, l⟩⟩⟩ <;> simp_all
+
+private theorem arr3 {xs : Array ID} (h : xs.size = 3) : xs = #[xs[0]!, xs[1]!, xs[2]!] := by
+  rcases xs with ⟨_ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, l⟩⟩⟩⟩⟩ <;> simp_all
+
+/-- What `sliceMakeLC?` says. -/
+theorem sliceMakeLC_spec {tabs : Tables} {f : Func} {v : Value} {l c : ID}
+    (h : sliceMakeLC? tabs f v = some (l, c)) :
+    (v.op = .SliceLen ∨ v.op = .SliceCap) ∧ ∃ m mv e, v.args = #[m] ∧
+      f.value? m = some mv ∧ mv.op = .SliceMake ∧ mv.args = #[mv.args[0]!, l, c] ∧
+      tabs.ty mv.type = .slice e := by
+  unfold sliceMakeLC? at h
+  by_cases hc : ((v.op == .SliceLen || v.op == .SliceCap) && v.args.size == 1) = true
+  · rw [if_pos hc] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+    cases hmv : f.value? v.args[0]! with
+    | none => rw [hmv] at h; cases h
+    | some mv =>
+      rw [hmv] at h
+      simp only at h
+      by_cases hc2 : (mv.op == .SliceMake && mv.args.size == 3) = true
+      · simp only [Bool.and_eq_true, beq_iff_eq] at hc2
+        cases hty : tabs.ty mv.type with
+        | slice e =>
+          simp only [hty, hc2, beq_self_eq_true, Bool.and_self, ite_true, Option.some.injEq,
+            Prod.mk.injEq] at h
+          refine ⟨hc.1, v.args[0]!, mv, e, arr1 hc.2, hmv, hc2.1, ?_, hty⟩
+          rw [← h.1, ← h.2]; exact arr3 hc2.2
+        | _ => simp [hty] at h
+      · simp only [Bool.and_eq_true] at hc2
+        simp only [Bool.and_eq_true, hc2, false_and, ite_false, reduceCtorEq] at h
+  · rw [if_neg hc] at h; cases h
+
+/-- The length or capacity of a `SliceMake` of slice shape is `sliceComp`, whatever its
+pointer. -/
+theorem opVal_sliceComp (tabs : Tables) (op : Op) (ty : Ty) (ai ai' : Int64)
+    (ax ax' : Option AuxRef) (e : Option Nat) (P L C : Val)
+    (hop : op = .SliceLen ∨ op = .SliceCap) :
+    GoFV.Proof.Rules.opVal tabs op ty ai ax
+        [(GoFV.Proof.Rules.opVal tabs .SliceMake (.slice e) ai' ax' [P, L, C]).retype (.slice e)] =
+      sliceComp L C (op == .SliceLen) := by
+  rcases hop with rfl | rfl
+  · rw [GoFV.Proof.Rules.opVal_pure (by decide), GoFV.Proof.Rules.opVal_pure (by decide)]
+    show Comp.select 1 [Val.retype (.slice e) (Comp.make [P, L, C])] = _
+    simp only [Comp.make, Val.retype, Val.ofSlice, sliceOK_head P.retypePtr .poison, sliceComp]
+    split <;> simp [Comp.select]
+  · rw [GoFV.Proof.Rules.opVal_pure (by decide), GoFV.Proof.Rules.opVal_pure (by decide)]
+    show Comp.select 2 [Val.retype (.slice e) (Comp.make [P, L, C])] = _
+    simp only [Comp.make, Val.retype, Val.ofSlice, sliceOK_head P.retypePtr .poison, sliceComp]
+    split <;> simp [Comp.select]
+
 /-! ## Memory roots as writes of their arguments (issue #151)
 
 A memory root (`memOp`: `Store`, `Move`, `Zero` and their write-barrier forms, `VarDef`)

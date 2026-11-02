@@ -1267,16 +1267,51 @@ def isPtrTy : Sem.Ty → Bool
 def ptrVal (tabs : Tables) (f : Func) (x : ID) : Bool :=
   (f.value? x).any fun u => isPtrTy (tabs.ty u.type)
 
+/-- The length and capacity arguments of `v` if it is a `SliceLen`/`SliceCap` of a `SliceMake`
+of slice shape. -/
+def sliceMakeLC? (tabs : Tables) (f : Func) (v : Value) : Option (ID × ID) :=
+  if (v.op == .SliceLen || v.op == .SliceCap) && v.args.size == 1 then
+    match f.value? v.args[0]! with
+    | some m =>
+      if m.op == .SliceMake && m.args.size == 3 &&
+          (match tabs.ty m.type with | .slice _ => true | _ => false) then
+        some (m.args[1]!, m.args[2]!)
+      else none
+    | none => none
+  else none
+
+/-- The length (`len`) or capacity of a `SliceMake` of slice shape with length `l` and capacity
+`c`, whatever its pointer: `Val.retype` at a slice shape checks only `Val.sliceOK`, which does
+not read the pointer. -/
+def sliceComp (l c : Sem.Val) (len : Bool) : Sem.Val :=
+  if Sem.Val.sliceOK [.poison, l.retypeI64, c.retypeI64] then
+    if len then l.retypeI64 else c.retypeI64
+  else .poison
+
 /-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
 whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
 value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
-rules fold to a `Const64` only later in the log. -/
+rules fold to a `Const64` only later in the log; or a `SliceLen`/`SliceCap` of a `SliceMake` of
+slice shape whose length and capacity are constant terms (`sliceMakeLC?`, `sliceComp`; its
+pointer need not be constant), e.g. the size `Mul64 (SliceLen (SliceMake p (Sub64 (Const64 [8])
+(Const64 [0])) …)) (Const64 [1])` of a `memmove` call of `copy(a[i:j], …)`. -/
 def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
   | 0, _ => none
   | k + 1, a =>
     match f.value? a with
     | some v =>
-      if termOp v.op then
+      if (sliceMakeLC? tabs f v).isSome then
+        match k with
+        | 0 => none
+        | j + 1 =>
+          match sliceMakeLC? tabs f v with
+          | some (l, c) =>
+            match termConst tabs f j l, termConst tabs f j c with
+            | some lv, some cv =>
+              some ((sliceComp lv cv (v.op == .SliceLen)).retype (tabs.ty v.type))
+            | _, _ => none
+          | none => none
+      else if termOp v.op then
         (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
           (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
             (tabs.ty v.type)
@@ -2434,11 +2469,11 @@ def chainSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (Li
     | none => none
   | none => none
 
-/-- `a` is a constant term of `f` (`termConst`, at most 4 deep) whose value is the 64-bit
-integer `n ≥ 0`. -/
+/-- `a` is a constant term of `f` (`termConst`, at most 6 deep: `Mul64 (SliceLen (SliceMake _
+(Sub64 (Const64 _) _) _)) _`) whose value is the 64-bit integer `n ≥ 0`. -/
 def constSize (tabs : Tables) (f : Func) (a : ID) (n : Int64) : Bool :=
   decide (0 ≤ n.toInt) &&
-    match termConst tabs f 4 a with
+    match termConst tabs f 6 a with
     | some (.int .w64 x) => x == BitVec.ofInt 64 n.toInt
     | _ => false
 
