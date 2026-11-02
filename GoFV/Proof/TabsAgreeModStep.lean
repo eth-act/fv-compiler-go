@@ -36,7 +36,7 @@ theorem resRel_stuck (msg : String) (r' : Res Val) : ResRel X (.stuck msg) r' :=
   ⟨fun _ h => (nomatch h), fun _ _ h => (nomatch h)⟩
 
 theorem resRel_of_call {r r' : Res Val} (h : CallRel X r r') : ResRel X r r' :=
-  ⟨fun y hy => (h.1 y hy).2, h.2⟩
+  ⟨fun y hy => (h.1 y hy).2, fun e m hp => (h.2 e m hp).2.2⟩
 
 theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv argv' : List Val}
     (hok : ∀ y, memRoot ctx v argv = .ok y → ∃ y', memRoot ctx v argv' = .ok y' ∧ VR X y y') :
