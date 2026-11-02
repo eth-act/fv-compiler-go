@@ -922,7 +922,9 @@ section 0 than on main: 6 more section-0 runs are stuck on a write to the now re
   Those two rules are false under the semantics (`.agg [p]` vs `p`), and the interface itab word
   is `.int .w64` while Go also types `ITab` as `*uint8`, so `ITab`/`IMake` with a pointer-typed
   itab fail the validator's shape checks. Model gap, not a Go bug; a later change could make
-  `Val.retype` at a one-field pointer-shaped aggregate wrap/unwrap.
+  `Val.retype` at a one-field pointer-shaped aggregate wrap/unwrap. Meanwhile the two rules are
+  `Rule.Drop` (`docs/proofs/rules.md`, "Dropped"): the checked rewrite keeps the `Make` and
+  accepts the output only where nothing reads the rewritten value.
 
 ## 11. Per-op table
 

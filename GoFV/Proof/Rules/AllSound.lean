@@ -69,10 +69,26 @@ so each of its events is validated by `GoFV.Opt.RewriteCheck.loadSelOK` (nothing
 ties the selection's type to the field's). -/
 def Rule.LoadSel (r : Rule) : Prop := loadSelShape r = true
 
+/-- A one-argument `Make` turned into its argument: `(StructMake x) && x.Type.IsPtrShaped() =>
+x`, `(ArrayMake1 x) && x.Type.IsPtrShaped() => x` (`dec.rules:119`/`:120`, issue #17). False
+under the semantics (a one-field pointer-shaped aggregate is `.agg [p]`, Go's is the pointer), so
+the checked rewrite never applies such an event: it keeps the `Make`
+(`GoFV.Opt.RewriteCheck.replay`) and accepts the output only where the value is no longer read
+(`GoFV.Opt.RewriteCheck.finalOK`). -/
+def dropShape (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op mo none _ _ _ _ [.bind _] _, .copy _, none => makeOp mo
+  | _, _, _ => false
+
+/-- **The obligation of a dropped rule**: the rule has `dropShape`, so the checked rewrite keeps
+the input's definition at each of its events. -/
+def Rule.Drop (r : Rule) : Prop := dropShape r = true
+
 /-- What a value rule of a sound rule set satisfies: `Rule.SoundTop` (`Rule.SoundT`, and
-`Rule.SoundW` for the rules the checker accepts at any top type, `anyTop`), `Rule.MakeSel` or
-`Rule.LoadSel`. -/
-def Rule.Checked (r : Rule) : Prop := Rule.SoundTop r ∨ Rule.MakeSel r ∨ Rule.LoadSel r
+`Rule.SoundW` for the rules the checker accepts at any top type, `anyTop`), `Rule.MakeSel`,
+`Rule.LoadSel` or `Rule.Drop`. -/
+def Rule.Checked (r : Rule) : Prop :=
+  Rule.SoundTop r ∨ Rule.MakeSel r ∨ Rule.LoadSel r ∨ Rule.Drop r
 
 theorem Rule.checked_of_soundT {r : Rule} (h : Rule.SoundT r) (ha : anyTop r = false := by rfl) :
     Rule.Checked r :=

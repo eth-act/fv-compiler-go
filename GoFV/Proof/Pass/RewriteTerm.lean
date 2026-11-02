@@ -143,7 +143,8 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
       (st.swapped = true → fb.succs.size = 2) ∧ gb.controls.size = st.ctrls.size ∧
       (∀ k (h1 : k < st.ctrls.size) (h2 : k < gb.controls.size),
         copyReach tabs M M.size st.ctrls[k] gb.controls[k] = true) ∧
-      ∀ x ∈ gb.values, ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.op = m.op ∧
+      ∀ x ∈ gb.values, (readIn g x = true ∨ ∀ u, g.value? x = some u → termOp u.op = false) →
+        ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.op = m.op ∧
         u.type = m.type ∧ u.auxInt = m.auxInt ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
         ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
           copyReach tabs M M.size m.args[j] u.args[j] = true := by
@@ -161,36 +162,58 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
       · exact ⟨beq_iff_eq.1 hsu, fun h => h.elim⟩
       · simp only [Bool.and_eq_true, beq_iff_eq] at hsu
         exact ⟨hsu.2, fun _ => hsu.1⟩
-    refine ⟨st, fb, hst, hfb, hk, hsu'.1, hsu'.2, hsz, fun k h1 h2 => ?_, fun x hx => ?_⟩
+    refine ⟨st, fb, hst, hfb, hk, hsu'.1, hsu'.2, hsz, fun k h1 h2 => ?_, fun x hx hrd => ?_⟩
     · have := zip_all_get' (f := fun x : ID × ID => copyReach tabs M M.size x.1 x.2) hc k
         (by simpa using h1) (by simpa using h2)
       simpa using this
     · have := (Array.all_eq_true_iff_forall_mem.1 hv) x hx
       split at this
       · rename_i m u hm hu
-        simp only [Bool.and_eq_true, beq_iff_eq] at this
-        obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
-        refine ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, fun j h1 h2 => ?_⟩
-        have := zip_all_get (f := fun x : ID × ID => copyReach tabs M M.size x.1 x.2) hargs
-          (by simp [hsz]) j (by simpa using h1) (by simpa using h2)
-        simpa using this
+        simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_eq_eq_not,
+          Bool.not_true] at this
+        rcases this with this | ⟨ht, hr⟩
+        · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
+          refine ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, fun j h1 h2 => ?_⟩
+          have := zip_all_get (f := fun x : ID × ID => copyReach tabs M M.size x.1 x.2) hargs
+            (by simp [hsz]) j (by simpa using h1) (by simpa using h2)
+          simpa using this
+        · rcases hrd with hrd | hrd
+          · rw [hr] at hrd; cases hrd
+          · rw [hrd u hu] at ht; cases ht
       · cases this
   · cases this
 
+/-- An argument of a value listed in a block of `h` is read in `h`. -/
+theorem readIn_arg {h : Func} {b : ID} (hb : b ∈ h.blocks) {hb' : Block}
+    (hbb : h.block? b = some hb') {y : ID} (hy : y ∈ hb'.values) {u : Value}
+    (hu : h.value? y = some u) {a : ID} (ha : a ∈ u.args) : readIn h a = true := by
+  unfold readIn
+  simp only [Array.any_eq_true', Option.any_eq_true, Bool.or_eq_true]
+  exact ⟨b, hb, hb', hbb, .inr ⟨y, hy, u, hu, by simpa using ha⟩⟩
+
+/-- A control of a block of `h` is read in `h`. -/
+theorem readIn_ctrl {h : Func} {b : ID} (hb : b ∈ h.blocks) {hb' : Block}
+    (hbb : h.block? b = some hb') {c : ID} (hc : c ∈ hb'.controls) : readIn h c = true := by
+  unfold readIn
+  simp only [Array.any_eq_true', Option.any_eq_true, Bool.or_eq_true]
+  exact ⟨b, hb, hb', hbb, .inl (by simpa using hc)⟩
+
 /-! ## The final definitions -/
 
-/-- The replayed definitions refine those listed in `g` (up to the copies `finalOK` allows). -/
+/-- The replayed definitions refine those listed in `g` and read in `g` (up to the copies
+`finalOK` allows). -/
 theorem final_den {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
     (hfin : finalOK tabs f g M B = true)
     (hcg : closedOK g = true) {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
     (hT : Term.Typed M.get? tabs ρ) :
-    ∀ n x, LM g x → Sem.Refines (den M.get? tabs ρ n x) (den (listedDefs g) tabs ρ' n x)
-  | 0, _, _ => .poison _
-  | n + 1, x, hx => by
+    ∀ n x, LM g x → readIn g x = true →
+      Sem.Refines (den M.get? tabs ρ n x) (den (listedDefs g) tabs ρ' n x)
+  | 0, _, _, _ => .poison _
+  | n + 1, x, hx, hr => by
     have hmk := listedMarks_sound g x hx
     obtain ⟨b, hb, gb, hgb, hxv, -, -, -⟩ := id hmk
     obtain ⟨-, -, -, -, -, -, -, -, -, hvals⟩ := finalOK_facts hfin b hb gb hgb
-    obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv
+    obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv (.inl hr)
     have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
     have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
     by_cases ht : termOp m.op = true
@@ -199,7 +222,8 @@ theorem final_den {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
       refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
       simp only [Array.getElem_toList]
       exact (copyReach_den hT _ _ _ (hargs j (by simpa using h1) (by simpa using h2)) n).trans
-        (final_den hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem _)))
+        (final_den hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem _))
+          (readIn_arg hb hgb hxv hu (Array.getElem_mem _)))
     · have h1 : ¬ IsTerm M.get? x := fun ⟨w, hw, hw'⟩ => by
         rw [hm] at hw; cases hw; exact ht hw'
       have h2 : ¬ IsTerm (listedDefs g) x := fun ⟨w, hw, hw'⟩ => by
@@ -236,6 +260,7 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
       obtain ⟨a'', ha'', -, hsz'', hrest⟩ := hI.atoms a u' hu' (hop ▸ hat) hargsf
       obtain ⟨-, -, -, -, -, -, -, -, -, hvals⟩ := finalOK_facts hv b hb gb hgb
       obtain ⟨m, w, hm, hw, -, -, -, -, hszw, hargs⟩ := hvals a ha
+        (.inr fun w hw => by rw [hu] at hw; cases hw; exact hat)
       have hma : m = a'' := Option.some.inj (hm.symm.trans ha'')
       subst hma
       have huw : u = w := Option.some.inj (hu.symm.trans hw)
@@ -251,7 +276,7 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
       have h1 := hk ρ hT
       rw [getElem!_pos m.args i (by omega)] at h1
       exact h1.trans ((copyReach_den hTM _ _ _ hcopy k).trans
-        (final_den hv hcg hρ hTM k _ hmark))
+        (final_den hv hcg hρ hTM k _ hmark (readIn_arg hb hgb ha hu (Array.getElem_mem hi))))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := atomsOK_facts hA b hb gb hgb
       rw [hfb] at hfb'; obtain rfl := Option.some.inj hfb'
@@ -281,7 +306,8 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
           have h1' : k < st.ctrls.size := by simpa using h1
           have h2' : k < gb.controls.size := by simpa using h2
           exact (copyReach_den hTM _ _ _ (hctl k h1' h2') m).trans (final_den hv hcg hρ hTM m _
-            ((closedOK_facts hcg b hb gb hgb).1 _ (Array.getElem_mem h2')))
+            ((closedOK_facts hcg b hb gb hgb).1 _ (Array.getElem_mem h2'))
+            (readIn_ctrl hb hgb (Array.getElem_mem h2')))
   · cases hv
 
 end GoFV.Proof.Pass.Rewrite

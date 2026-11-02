@@ -78,7 +78,7 @@ theorem lsel_checks :
 
 theorem lselRules_allSound : lselRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨.inr (.inr GoFV.Proof.Rules.r_dec_141_sound), trivial⟩, trivial⟩ trivial
+    ⟨⟨.inr (.inr (.inl GoFV.Proof.Rules.r_dec_141_sound)), trivial⟩, trivial⟩ trivial
 
 /-- **Pass execution witness** for `dec.rules:141`: on `loadField`, the checked rewrite pass
 makes `(*p).a` a copy of a fresh `Load <int>` at the field's offset, and the result refines the

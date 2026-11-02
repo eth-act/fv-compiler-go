@@ -889,7 +889,10 @@ def loadSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
   | _, _ => false
 
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
-if an event is not validated. -/
+if an event is not validated. An event of a dropped rule (`dropShape`) and a copy-argument
+replacement the copies of `M` do not justify are skipped: `M` keeps its definition, and
+`finalOK` accepts the output only where that value is no longer read (issue #17). A selection of
+a `Make` (`makeSelOK`) is accepted from any rule. -/
 def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
     Defs → BMap → List RwEvent → Option (Defs × BMap)
   | M, B, [] => some (M, B)
@@ -903,8 +906,9 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none
       | some cr =>
-        if makeSelShape cr.rule && makeSelOK tabs M v defs.toList then
+        if makeSelOK tabs M v defs.toList then
           replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else if dropShape cr.rule then replay tabs t f M B evs
         else if loadSelShape cr.rule then
           if loadSelOK tabs M v defs.toList then
             replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
@@ -919,7 +923,7 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
       if h : i < x.args.size then
         if copyReach tabs M M.size x.args[i] src then
           replay tabs t f (M.put v { x with args := x.args.set i src }) B evs
-        else none
+        else replay tabs t f M B evs
       else none
   | M, B, .control b i c :: evs =>
     match bstate f B b with
@@ -1033,9 +1037,15 @@ def closedOK (h : Func) : Bool :=
       hb.values.all fun x => (h.value? x).all fun u => u.args.all fun a => L[a]? == some true
     | none => true
 
-/-- Every value listed in `g` has its replayed definition, up to copies in its arguments, and
-every block of `g` its replayed terminator (`bstate`): the kind, the successors (swapped if the
-replay swapped them, then from two), the controls up to copies. -/
+/-- `x` is read in `h`: a control of a block of `h`, or an argument of a value listed in one. -/
+def readIn (h : Func) (x : ID) : Bool :=
+  h.blocks.any fun b => (h.block? b).any fun hb =>
+    hb.controls.contains x || hb.values.any fun y => (h.value? y).any fun u => u.args.contains x
+
+/-- Every value listed in `g` has its replayed definition, up to copies in its arguments, or is a
+term that nothing in `g` reads (`readIn`; the replay kept the input's definition of a dropped
+rule's value, issue #17), and every block of `g` its replayed terminator (`bstate`): the kind,
+the successors (swapped if the replay swapped them, then from two), the controls up to copies. -/
 def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
   let n := M.size
   g.blocks.all fun b =>
@@ -1049,9 +1059,10 @@ def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
       gb.values.all fun x =>
         match M.get? x, g.value? x with
         | some m, some u =>
-          u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
-          u.aux == m.aux && u.args.size == m.args.size &&
-          (m.args.toList.zip u.args.toList).all fun (a, a') => copyReach tabs M n a a'
+          (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
+            u.aux == m.aux && u.args.size == m.args.size &&
+            (m.args.toList.zip u.args.toList).all fun (a, a') => copyReach tabs M n a a') ||
+          (termOp u.op && !readIn g x)
         | _, _ => false
     | _, _, _ => false
 
@@ -2517,15 +2528,17 @@ structure LdSt where
 
 /-- One event of `ldPre` (input `f`): a value-rule event on an `ldTarget` of the definitions so
 far, or a copy-argument replacement of a `Load`'s argument or by a `Load`, that the replay
-validates on them is applied and taken; any other event kept, but for the copy-argument
-replacements a taken event supersedes. -/
+validates on them is applied and taken (not an event the replay skips: of a dropped rule,
+`dropShape`, or a replacement the copies do not justify); any other event kept, but for the
+copy-argument replacements a taken event supersedes. -/
 def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEvent) : LdSt :=
   let keep := { s with rest := s.rest.push ev }
   match ev with
   | .rule v i _ defs =>
     match s.M.get? v with
     | some u =>
-      if ldTarget s.M u && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 then
+      if ldTarget s.M u && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 &&
+          !(((t.values[u.op.ctorIdx]?).bind (·[i]?)).any (dropShape ·.rule)) then
         match replay tabs t f s.M [] [ev] with
         | some (M', _) =>
           let ds := match defs.toList with | w :: ds => w :: (ds.filter (·.id != v)).reverse | [] => []
@@ -2537,7 +2550,8 @@ def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEven
   | .copyArg v i src =>
     match s.M.get? v, s.M.get? src with
     | some u, some w =>
-      if u.op == .Load || w.op == .Load then
+      if (u.op == .Load || w.op == .Load) &&
+          (u.args[i]?).any (copyReach tabs s.M s.M.size · src) then
         match replay tabs t f s.M [] [ev] with
         | some (M', _) =>
           { g := s.g.setArg v i src, M := M', taken := s.taken.push ev
