@@ -248,10 +248,10 @@ func storeLoadStr(p *string, s string) string {
 }
 ```
 
-as one block: `v4 = Store {string} v2 v3 v1`, `v5 = Load <string> v2 v4`. The string shape
-`agg [(0, ptr), (8, int64)] 16` is `RewriteCheck.fwdAgg` (non-overlapping scalar fields), so the
-forwarding is validated: a `Load`'s `decodeLoad` reads back a stored string, and a stored
-`poison` string (all `poison` bytes) as `poison`. -/
+as one block: `v4 = Store {string} v2 v3 v1`, `v5 = Load <string> v2 v4`. The string shape is
+`RewriteCheck.fwdTy` (its layout `agg [(0, ptr), (8, int64)] 16` has non-overlapping scalar
+fields), so the forwarding is validated: a `Load`'s `decodeLoad` reads back a stored string, and
+a stored `poison` string (all `poison` bytes) as `poison`. -/
 
 /-- `abiInfo` of `storeLoadStr`: the pointer in one register, the string in two, the string
 result in two. -/
@@ -350,8 +350,8 @@ theorem sls_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := slRules) (penv := slsPassEnv)
         (f := slsFunc) (out := out) slRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
-/-- The forwarded shape is an aggregate: the string shape is `fwdAgg`, not a scalar. -/
-theorem sls_agg : RewriteCheck.fwdAgg (slsTabs.ty 5) = true ∧
+/-- The forwarded shape is a string: `fwdTy`, not a scalar. -/
+theorem sls_agg : RewriteCheck.fwdTy (slsTabs.ty 5) = true ∧
     RewriteCheck.scalarTy (slsTabs.ty 5) = false := by
   decide +kernel
 
@@ -372,5 +372,117 @@ theorem sls_decodeLoad :
     simp only [slsStrTy, decodeLoad, Sem.Ty.size,
       GoFV.Proof.Pass.LoadFwd.allPoison_replicate (by decide : (16 : Nat) ≠ 0), ite_true]
   · simp only [slsStrTy, decode, ne_eq, reduceCtorEq, not_false_eq_true]
+
+/-! ## A struct of two strings (`storeLoadPair`)
+
+```go
+type Pair struct{ a, b string }
+
+func storeLoadPair(p *Pair, s Pair) Pair {
+	*p = s
+	return *p
+}
+```
+
+as one block: `v4 = Store {Pair} v2 v3 v1`, `v5 = Load <Pair> v2 v4`. The shape
+`agg [(0, str), (16, str)] 32` (`cmd/go`'s `Cache[struct{Path, Version string}]`) has strings as
+fields: it is `RewriteCheck.fwdTy` through the nested fields (`fwdFields`), and a `Load` reads a
+stored pair back field by field (`LoadFwd.fields_encode`). -/
+
+/-- `abiInfo` of `storeLoadPair`: the pointer in one register, the pair in four, the pair
+result in four. -/
+def slpABI : CallABI :=
+  { abi := 1, nin := 2, nout := 1, spillOff := 8, spillSize := 40, inRegs := 5, outRegs := 4,
+    params := #[{ out := false, index := 0, type := 7, name := some 3, regs := #[0], offset := 0 },
+                { out := false, index := 1, type := 8, name := some 4, regs := #[1, 2, 3, 4],
+                  offset := 8 },
+                { out := true, index := 0, type := 8, name := some 5, regs := #[0, 1, 2, 3],
+                  offset := -1 }] }
+
+/-- The definition tables: `Pair` (type 8) is `struct { a, b string }`; `Store {Pair}` names it
+by aux 6. -/
+def slpTabs : Tables where
+  types :=
+    let t := Array.replicate 36 (none : Option TypeDef)
+    let t := t.set! 1 (some (mkT .FUNC (some 8) "func(*Pair, Pair) Pair" (.func 0 2 1 #[])))
+    let t := t.set! 2 (some (mkT .UINT8 (some 1) "uint8"))
+    let t := t.set! 3 (some (mkT .PTR (some 8) "*uint8" (.elem 2)))
+    let t := t.set! 5 (some { mkT .STRING (some 16) "string" with align := some 8 })
+    let t := t.set! 6 (some (mkT .INT (some 8) "int"))
+    let t := t.set! 7 (some (mkT .PTR (some 8) "*Pair" (.elem 8)))
+    let t := t.set! 8 (some { mkT .STRUCT (some 32) "Pair"
+      (.struct #[{ name := GoStr.ofString "a", type := 5, offset := some 0, embedded := false },
+                 { name := GoStr.ofString "b", type := 5, offset := some 16, embedded := false }])
+      with align := some 8 })
+    let t := t.set! 29 (some (mkT .SSA none "mem"))
+    let t := t.set! 31 (some (mkT .SSA none "void"))
+    t.set! 35 (some (mkT .RESULTS none "Pair,mem" (.results #[8, 29])))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.storeLoadPair}",
+           kind := .call (some 2) (some slpABI) },
+    some { fmt := GoStr.ofString "main.storeLoadPair",
+           kind := .sym (GoStr.ofString "main.storeLoadPair") 1 "" 0 default none none none #[]
+             none },
+    some (paramNameT "p" .PPARAM 7 0), some (paramNameT "s" .PPARAM 8 8),
+    some (paramNameT "~r0" .PPARAMOUT 8 0),
+    some { fmt := GoStr.ofString "Pair", kind := .type 8 }]
+
+/-- `storeLoadPair`, the input of `opt`. -/
+def slpFunc : Func :=
+  { slsFunc with
+    valueTab := #[none,
+      some (mkVi 1 .InitMem 29 0 p0 1 #[] 1),
+      some (mkV 2 .Arg 7 (some 3) p0 2 #[] 1),
+      some (mkV 3 .Arg 8 (some 4) p0 1 #[] 1),
+      some (mkV 4 .Store 29 (some 6) p0 2 #[2, 3, 1] 1),
+      some (mkVi 5 .Load 8 0 p0 1 #[2, 4] 1),
+      some (mkVi 6 .MakeResult 35 0 p0 1 #[5, 4] 1)] }
+
+def slpPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "storeLoadPair", typs := slsTyps, tables := slpTabs }
+
+def slpCheckEnv : CheckEnv := { tabs := slpTabs, typs := slsTyps }
+
+/-- By kernel evaluation: the pair's shape has string fields, the input passes `check`, and
+`checkedRewrite` with `{generic.rules:800}` keeps a result whose `MakeResult` reads the pair `s`
+(`v3`) instead of the Load, which passes `check`. -/
+theorem slp_checks :
+    Ty.beq (slpTabs.ty 8) (.agg [(0, .str), (16, .str)] 32) = true ∧
+    (check slpCheckEnv slpFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet slRules) slpPassEnv slpFunc).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slsTyps } o.func).toBool,
+        (o.func.value? 6).map (·.args))) =
+      some (true, some #[3, 4]) := by
+  decide +kernel
+
+/-- **Pass execution witness** for nested-struct forwarding: on `storeLoadPair`, the checked
+rewrite pass with `{generic.rules:800}` forwards the stored pair `s` to the `return`
+(`v6 = MakeResult v3 v4`), and the result refines the input (`checkedRewrite_refines`, through
+`LoadFwd.fwd_refines` at a struct of strings). -/
+theorem slp_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet slRules) slpPassEnv slpFunc = .ok out ∧
+      (out.func.value? 6).map (·.args) = some #[3, 4] ∧
+      check slpCheckEnv slpFunc = .ok () ∧
+      check { tabs := out.tables, typs := slsTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slpPassEnv.tables slpFunc) out.tables out.func slpPassEnv.tables slpFunc := by
+  obtain ⟨-, h1, h2⟩ := slp_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet slRules) slpPassEnv slpFunc with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h6⟩ := h2
+    exact ⟨out, rfl, h6, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := slRules) (penv := slpPassEnv)
+        (f := slpFunc) (out := out) slRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
+/-- Non-vacuity of `LoadFwd.decodeLoad_encode` at a struct of two strings: a stored pair loads
+back. -/
+theorem slp_decodeLoad :
+    Sem.Refines (decodeLoad (encode (.agg [(0, .str), (16, .str)] 32)
+        (.agg [.agg [.int .w64 4096, .int .w64 5], .agg [.int .w64 8192, .int .w64 3]])) 0
+      (.agg [(0, .str), (16, .str)] 32))
+      (.agg [.agg [.int .w64 4096, .int .w64 5], .agg [.int .w64 8192, .int .w64 3]]) :=
+  GoFV.Proof.Pass.LoadFwd.decodeLoad_encode (by decide +kernel) (by rfl)
 
 end GoFV.Proof.Witness

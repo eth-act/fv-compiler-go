@@ -80,94 +80,64 @@ theorem fwdRankOK_spec {f : Func} {rk : Array Nat} (h : fwdRankOK f rk = true) {
     · intro a ha
       simpa using (Array.all_eq_true_iff_forall_mem.1 h1) a ha
 
-/-- `fwdScalarEq` shapes retype alike. -/
-theorem fwdScalarEq_retype {t s : Ty} (h : fwdScalarEq t s = true) :
-    Val.retype t = Val.retype s := by
-  funext v
-  cases t <;> cases s <;> simp only [fwdScalarEq, beq_iff_eq, reduceCtorEq] at h
-  · rw [h]
-  · rfl
-  · exact retype_ptr_elem _ _ v
-
-theorem fwdFieldsEq_retype : ∀ {fs fs' : List (Nat × Ty)}, fwdFieldsEq fs fs' = true →
-    Val.retypeFields fs = Val.retypeFields fs'
-  | [], [], _ => rfl
-  | (o, t) :: fs, (o', t') :: fs', h => by
-    simp only [fwdFieldsEq, Bool.and_eq_true, beq_iff_eq] at h
+mutual
+/-- `fwdErase` keeps how a shape retypes. -/
+theorem fwdErase_retype : (t : Ty) → Val.retype (fwdErase t) = Val.retype t
+  | .ptr e => funext fun v => retype_ptr_elem none e v
+  | .slice e => by
+    funext v
+    cases v <;> try rfl
+    rename_i vs
+    rcases vs with _ | ⟨p, _ | ⟨l, _ | ⟨c, _ | ⟨d, vs⟩⟩⟩⟩ <;> rfl
+  | .agg fs n => by
+    funext v
+    cases v <;> first | rfl | simp only [fwdErase, Val.retype, fwdEraseFields_retype fs]
+  | .int _ | .bool | .blob _ | .empty | .opaque _ | .other | .mem | .tuple _ | .str => rfl
+theorem fwdEraseFields_retype : (fs : List (Nat × Ty)) →
+    Val.retypeFields (fwdEraseFields fs) = Val.retypeFields fs
+  | [] => rfl
+  | (o, t) :: fs => by
     funext vs
     cases vs with
     | nil => rfl
     | cons v vs =>
-      simp only [Val.retypeFields, fwdScalarEq_retype h.1.2, fwdFieldsEq_retype h.2]
-  | [], _ :: _, h | _ :: _, [], h => by simp [fwdFieldsEq] at h
-
-/-- The shapes of `fwdAggEq`: aggregates, strings, slices. -/
-theorem fwdAggEq_spec {t s : Ty} (h : fwdAggEq t s = true) :
-    (∃ fs fs' n, t = .agg fs n ∧ s = .agg fs' n ∧ fwdAgg t = true ∧ fwdFieldsEq fs fs' = true) ∨
-      (t = .str ∧ s = .str) ∨ ∃ e e', t = .slice e ∧ s = .slice e' := by
-  cases t <;> cases s <;> simp only [fwdAggEq, reduceCtorEq] at h
-  · simp only [Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨rfl, ha⟩, hf⟩ := h
-    exact .inl ⟨_, _, _, rfl, rfl, ha, hf⟩
-  · exact .inr (.inl ⟨rfl, rfl⟩)
-  · exact .inr (.inr ⟨_, _, rfl, rfl⟩)
+      simp only [fwdEraseFields, Val.retypeFields, fwdErase_retype t, fwdEraseFields_retype fs]
+end
 
 /-- `fwdTyEq` shapes retype alike. -/
 theorem fwdTyEq_retype {t s : Ty} (h : fwdTyEq t s = true) : Val.retype t = Val.retype s := by
-  rcases Bool.or_eq_true_iff.1 h with h | h
-  · exact fwdScalarEq_retype h
-  · rcases fwdAggEq_spec h with ⟨fs, fs', n, rfl, rfl, -, hf⟩ | ⟨rfl, rfl⟩ | ⟨e, e', rfl, rfl⟩
-    · funext v
-      cases v <;> first | rfl | simp only [Val.retype, fwdFieldsEq_retype hf]
-    · rfl
-    · funext v
-      cases v <;> try rfl
-      rename_i vs
-      rcases vs with _ | ⟨p, _ | ⟨l, _ | ⟨c, _ | ⟨d, vs⟩⟩⟩⟩ <;> rfl
-
-theorem fwdScalarEq_scalarTy {t s : Ty} (h : fwdScalarEq t s = true) : scalarTy t = true := by
-  cases t <;> cases s <;> simp_all [fwdScalarEq, scalarTy]
+  simp only [fwdTyEq, Bool.and_eq_true] at h
+  rw [← fwdErase_retype t, ← fwdErase_retype s, Ty.eq_of_beq h.2]
 
 theorem fwdTyEq_fwdTy {t s : Ty} (h : fwdTyEq t s = true) : fwdTy t = true := by
-  unfold fwdTy
-  rcases Bool.or_eq_true_iff.1 h with h | h
-  · rw [fwdScalarEq_scalarTy h]; rfl
-  · rcases fwdAggEq_spec h with ⟨-, -, -, -, -, ha, -⟩ | ⟨rfl, -⟩ | ⟨e, -, rfl, -⟩
-    · rw [ha, Bool.or_true]
-    · rfl
-    · rfl
+  simp only [fwdTyEq, Bool.and_eq_true] at h
+  exact h.1
 
-/-- `fwdScalarEq` shapes encode alike. -/
-theorem fwdScalarEq_encode {t s : Ty} (h : fwdScalarEq t s = true) (v : Val) :
-    encode s v = encode t v := by
-  cases t <;> cases s <;> simp only [fwdScalarEq, beq_iff_eq, reduceCtorEq] at h
-  · rw [h]
-  · rfl
-  · cases v with
+mutual
+/-- `fwdErase` keeps how a shape encodes. -/
+theorem fwdErase_encode : (t : Ty) → (v : Val) → encode (fwdErase t) v = encode t v
+  | .ptr _, v => by
+    cases v with
     | int w x => cases w <;> rfl
     | _ => rfl
-
-theorem fwdFieldsEq_encode : ∀ {fs fs' : List (Nat × Ty)}, fwdFieldsEq fs fs' = true →
-    ∀ (buf : Array Byte) (vs : List Val), encodeFields buf fs' vs = encodeFields buf fs vs
-  | [], [], _, _, _ => rfl
-  | (o, t) :: fs, (o', t') :: fs', h, buf, vs => by
-    simp only [fwdFieldsEq, Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨rfl, ht⟩, hf⟩ := h
-    cases vs with
-    | nil => rfl
-    | cons v vs =>
-      simp only [encodeFields, fwdScalarEq_encode ht, fwdFieldsEq_encode hf]
-  | [], _ :: _, h, _, _ | _ :: _, [], h, _, _ => by simp [fwdFieldsEq] at h
+  | .slice _, v => by cases v <;> rfl
+  | .agg fs n, v => by
+    cases v <;> first | rfl | simp only [fwdErase, encode, fwdEraseFields_encode fs]
+  | .int _, _ | .bool, _ | .blob _, _ | .empty, _ | .opaque _, _ | .other, _ | .mem, _
+  | .tuple _, _ | .str, _ => rfl
+theorem fwdEraseFields_encode : (fs : List (Nat × Ty)) → (buf : Array Byte) → (vs : List Val) →
+    encodeFields buf (fwdEraseFields fs) vs = encodeFields buf fs vs
+  | [], _, _ => rfl
+  | _ :: _, _, [] => rfl
+  | (o, t) :: fs, buf, v :: vs => by
+    simp only [fwdEraseFields, encodeFields, fwdErase_encode t v, fwdEraseFields_encode fs]
+end
 
 /-- `fwdTyEq` shapes encode alike. -/
 theorem fwdTyEq_encode {t s : Ty} (h : fwdTyEq t s = true) (v : Val) :
     encode s v = encode t v := by
-  rcases Bool.or_eq_true_iff.1 h with h | h
-  · exact fwdScalarEq_encode h v
-  · rcases fwdAggEq_spec h with ⟨fs, fs', n, rfl, rfl, -, hf⟩ | ⟨rfl, rfl⟩ | ⟨e, e', rfl, rfl⟩
-    · cases v <;> first | rfl | simp only [encode, fwdFieldsEq_encode hf]
-    · rfl
-    · cases v <;> rfl
+  simp only [fwdTyEq, Bool.and_eq_true] at h
+  rw [← fwdErase_encode t, ← fwdErase_encode s, Ty.eq_of_beq h.2]
 
 /-- A `Store` at shape `s` (`fwdStoreTy t s`) writes a value of shape `t` as a write at `t`. -/
 theorem fwdStoreTy_encode {t s : Ty} (h : fwdStoreTy t s = true) {v : Val} (hv : v.retype t = v) :

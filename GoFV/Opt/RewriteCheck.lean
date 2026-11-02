@@ -1451,46 +1451,38 @@ def disjointB (tabs : Tables) (f : Func) (a : ID) (n : Nat) (b : ID) (k : Nat) :
   | some x, some y => x != y
   | _, _ => false
 
-/-- Fields of `scalarTy` shapes at increasing offsets from `lo` that do not overlap and end
-inside `n` bytes. -/
-def fwdFields (n lo : Nat) : List (Nat × Sem.Ty) → Bool
-  | [] => true
-  | (o, t) :: fs => scalarTy t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
-      fwdFields n (o + t.size) fs
-
-/-- A non-empty aggregate of `fwdFields` (strings, slices, interfaces, flat structs; strings
-and slices by their aggregate layout `Ty.asAgg`). -/
-def fwdAgg (t : Sem.Ty) : Bool :=
-  match t.asAgg with
+mutual
+/-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`,
+`Sem.decodeLoad`): `scalarTy`, a string or slice, or a non-empty aggregate of `fwdFields`
+(nested structs, strings and slices as fields; a `poison` store decodes as `poison`). -/
+def fwdTy : Sem.Ty → Bool
+  | .int _ | .bool | .ptr _ | .str | .slice _ => true
   | .agg fs n => n != 0 && fwdFields n 0 fs
   | _ => false
+/-- Fields of `fwdTy` shapes at increasing offsets from `lo` that do not overlap and end inside
+`n` bytes. -/
+def fwdFields (n lo : Nat) : List (Nat × Sem.Ty) → Bool
+  | [] => true
+  | (o, t) :: fs => fwdTy t && decide (lo ≤ o) && decide (o + t.size ≤ n) &&
+      fwdFields n (o + t.size) fs
+end
 
-/-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`,
-`Sem.decodeLoad`): `scalarTy`, or `fwdAgg` (which decodes `poison` from a `poison` store). -/
-def fwdTy (t : Sem.Ty) : Bool := scalarTy t || fwdAgg t
+mutual
+/-- A shape with its pointers' and slices' element sizes dropped, through aggregates' fields:
+shapes with equal `fwdErase` write, read and retype alike (`copyCompatibleType`). -/
+def fwdErase : Sem.Ty → Sem.Ty
+  | .ptr _ => .ptr none
+  | .slice _ => .slice none
+  | .agg fs n => .agg (fwdEraseFields fs) n
+  | t => t
+/-- `fwdErase` of every field. -/
+def fwdEraseFields : List (Nat × Sem.Ty) → List (Nat × Sem.Ty)
+  | [] => []
+  | (o, t) :: fs => (o, fwdErase t) :: fwdEraseFields fs
+end
 
-/-- `scalarTy` shapes that write, read and retype alike: equal up to pointers' element sizes
-(`copyCompatibleType`). -/
-def fwdScalarEq : Sem.Ty → Sem.Ty → Bool
-  | .int w, .int w' => w == w'
-  | .bool, .bool => true
-  | .ptr _, .ptr _ => true
-  | _, _ => false
-
-/-- Fields at equal offsets of `fwdScalarEq` shapes. -/
-def fwdFieldsEq : List (Nat × Sem.Ty) → List (Nat × Sem.Ty) → Bool
-  | [], [] => true
-  | (o, t) :: fs, (o', t') :: fs' => o == o' && fwdScalarEq t t' && fwdFieldsEq fs fs'
-  | _, _ => false
-
-/-- `fwdAgg` aggregates of one size with `fwdFieldsEq` fields. -/
-def fwdAggEq : Sem.Ty → Sem.Ty → Bool
-  | .agg fs n, .agg fs' n' => n == n' && fwdAgg (.agg fs n) && fwdFieldsEq fs fs'
-  | .str, .str | .slice _, .slice _ => true
-  | _, _ => false
-
-/-- Shapes `fwdTy` that write, read and retype alike: `fwdScalarEq` or `fwdAggEq`. -/
-def fwdTyEq (t s : Sem.Ty) : Bool := fwdScalarEq t s || fwdAggEq t s
+/-- Shapes `fwdTy` that write, read and retype alike: equal up to element sizes (`fwdErase`). -/
+def fwdTyEq (t s : Sem.Ty) : Bool := fwdTy t && Sem.Ty.beq (fwdErase t) (fwdErase s)
 
 /-- A `Store` at type shape `s` writes a value of shape `t` (`fwdTy`) as a write at `t` does:
 `fwdTyEq`, or a pointer stored as a 64-bit integer (`Sem.encode` writes a pointer's bytes at

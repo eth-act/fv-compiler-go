@@ -275,11 +275,16 @@ blocks and atoms, every value unchanged but for the forwarded `Load`s (`fwdRepOK
 the read, a `Store`/`StoreWB` at a pointer equal to the `Load`'s of a value that stands for `x`,
 `storedOK`: `x` reached from it through compatible `Copy`s, `copyReach`, since copy elimination
 ran before the rule matched, the stored value of a `fwdTyEq` shape; the `Load` and `x` have
-one shape, `fwdTyEq`: an integer, boolean or pointer shape (`scalarTy`, `fwdScalarEq`) or a
-non-empty aggregate of such fields at increasing, non-overlapping offsets (`fwdAgg`, `fwdFields`,
-`fwdAggEq`: strings, interfaces, flat structs); the `Store`'s type that shape or a pointer
+one shape, `fwdTyEq`: a shape `fwdTy` (an integer, boolean or pointer shape, `scalarTy`, a
+string or slice, or a non-empty aggregate of `fwdTy` fields at increasing, non-overlapping
+offsets, `fwdFields`: interfaces, structs, nested structs with string or slice fields) equal to
+the other up to pointers' and slices' element sizes (`fwdErase`; `fwdErase_retype`,
+`fwdErase_encode`); the `Store`'s type that shape or a pointer
 stored as `int64`, `fwdStoreTy`), and ranks ordering every listed non-`Phi` value after its
-arguments (`fwdRank`, `fwdRankOK`). Pointers: `ptrBase` (a base and a constant offset through
+arguments (`fwdRank`, `fwdRankOK`). A `Load` reads a stored nested struct back field by field
+(`decodeLoad_encode_ty`, `fields_encode`: a field's bytes are its encoding, `encodeFields_agree`,
+and its `decodeLoad` reads only them, `StructLoad.decodeLoad_congr`). Pointers: `ptrBase` (a
+base and a constant offset through
 `OffPtr`s, pointer `Copy`s, pointer-shaped `Convert`s and `ITab`s of `IMake`s (`wordStep?`) and
 `PtrIndex`es by a constant index, `constIdx?`: a constant term
 of the 64-bit integer shape, `termConst`, e.g. `Div64 (Sub64 (Const64 [32]) (Const64 [1]))
@@ -1142,7 +1147,7 @@ checked parity; validator rejects 4 / 6 / 0 / 0 / 0 (unchanged by `:974`: the ph
 three nil-check eliminations `nrel` rejects in `runtime.*Hash`, the six narrow tops), forwarding
 fallbacks 50 / 3 / 9 / 0 / 0 (47 / 3 / 9 without `:974`).
 After aggregate Load-of-Store forwarding (#151: `Mem.load` decodes with `decodeLoad`, so a stored
-`poison` aggregate loads as `poison`; `fwdTy` accepts `fwdAgg` shapes), on quick-v3 at 683d0c6
+`poison` aggregate loads as `poison`; `fwdTy` accepts flat aggregate shapes), on quick-v3 at 683d0c6
 (with `:975` struct-store splits): 7,004 of 9,297 (75.34%) at stock under the checked passes,
 6,993 (75.22%) before; opt 76.38% (76.26%) checked parity, the others unchanged; forwarding and
 split fallbacks 78 / 3 / 9 / 0 / 0 (116 / 3 / 9 before: the 38 aggregate store shapes of opt are
@@ -1233,6 +1238,9 @@ whose size is `Mul64 (SliceLen (SliceMake p (Sub64 c d) …)) (Const64 [1])`). W
 verified 91,652 → 91,718 (on f100340). With the nil seeds `:1376` (`Convert`) and `:1691`
 (`IsNonNil` of an `nnSeed`), snapshots before those eliminations and the fixed loads
 (`Interp.snapRule`) and word-typed `Addr` bases (1,368 rules): 91,718 → 91,839 (on 5059a31).
+With forwardings of nested structs (`fwdTy` through `fwdFields` of strings, slices and structs,
+`fwdErase`; mostly `cmd/go`'s `Cache[struct{Path, Version string}]`): 91,839 → 91,965 (on
+bddd8ee).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
