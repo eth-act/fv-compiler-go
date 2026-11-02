@@ -378,6 +378,32 @@ theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed
       rw [load_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact hsep)]
       exact chain_load hT hM hp d _ hch hm0
 
+/-- **A memory reached through listed copies of `g`** (`memCopyReach`) holds what its start
+holds (only a memory retypes to a memory, `retype_eq_mem`). -/
+theorem memCopyReach_den {g : Func} {tabs : Tables} {ρ : ID → Val} :
+    ∀ (N : Nat) {a w : ID}, memCopyReach g N a w = true → ∀ {k : Nat} {M : Mem},
+      den (listedDefs g) tabs ρ k a = .mem M → ∃ k', den (listedDefs g) tabs ρ k' w = .mem M
+  | 0, a, w, h, k, M, hk => by
+    simp only [memCopyReach, beq_iff_eq] at h; subst h; exact ⟨k, hk⟩
+  | N + 1, a, w, h, k, M, hk => by
+    unfold memCopyReach at h
+    simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+    rcases h with rfl | ⟨hl, h⟩
+    · exact ⟨k, hk⟩
+    cases hx : g.value? a with
+    | none => rw [hx] at h; cases h
+    | some x =>
+      rw [hx] at h
+      simp only [Bool.and_eq_true, beq_iff_eq] at h
+      obtain ⟨⟨hop, hsz⟩, hr⟩ := h
+      have hL : listedDefs g a = some x := by rw [listedB_spec hl, hx]
+      cases k with
+      | zero => simp [den] at hk
+      | succ k =>
+        rw [den_succ_term hL (by rw [hop]; rfl), hop, toList_one hsz, List.map_cons, List.map_nil,
+          GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy] at hk
+        exact memCopyReach_den N hr (retype_eq_mem hk)
+
 section
 variable {tabs : Tables} {f g : Func} (F : FwdFacts tabs f g)
 include F
@@ -395,7 +421,7 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     ∃ w, g.value? x = some w ∧ w.id = u.id ∧ w.block = u.block ∧ w.type = u.type ∧
       ((w.op = u.op ∧ w.auxInt = u.auxInt ∧ w.aux = u.aux ∧ w.args = u.args) ∨
        (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true) ∨
-       fwdConstOK tabs f u w = true ∨ dropOK tabs f u w = true ∨
+       fwdConstOK tabs f u w = true ∨ dropOK tabs f g u w = true ∨
        fwdMoveRep tabs f g u w = true ∨ moveSrcOK tabs f u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
@@ -576,15 +602,16 @@ theorem move_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
   exact retype_mono _ (load_mono hmr _ _)
 
 /-- **A dropped memory root** (`dropOK`): its write is refined by its memory, which the `Copy`
-replacing it in `g` reads. -/
+replacing it in `g` reads: `w`'s argument through copies of `f` (listed, below `x`), or the
+root's memory argument (below `x`) through copies of `g` (`memCopyReach_den`). -/
 theorem drop_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
     (hM : MemAtoms f.value? tabs ρ) (hQ : FreshQ tabs f ρ) {x : ID} {u w : Value} (hx : LM f x)
     (hu : f.value? x = some u) (hL : listedDefs g x = some w) (hwty : w.type = u.type)
-    (h : dropOK tabs f u w = true)
+    (h : dropOK tabs f g u w = true)
     (hIH : ∀ a, (fwdRank f)[a]?.getD 0 < (fwdRank f)[x]?.getD 0 → LM f a → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a)) (n : Nat) :
     ∃ m, Sem.Refines (den f.value? tabs ρ (n + 1) x) (den (listedDefs g) tabs ρ' m x) := by
-  obtain ⟨hwop, hwsz, hop, i, hi, hcr⟩ := dropOK_spec h
+  obtain ⟨hwop, hwsz, hop, -⟩ := dropOK_spec h
   have hmem : memOp u.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
   have hph : u.op ≠ .Phi := by rcases hop with h | h <;> rw [h] <;> decide
   rw [den_succ_atom (not_term_of hu (by rw [memOp_not_term hmem]; decide))]
@@ -592,18 +619,32 @@ theorem drop_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
   · rw [hp]; exact ⟨0, .poison _⟩
   obtain ⟨N, hN⟩ := hM x u hu hmem hp
   obtain ⟨y, hy, hρx⟩ := hN N (Nat.le_refl _)
-  obtain ⟨M1, M0, rfl, hc, hR⟩ := drop_mem hT hM hQ h hy
-  -- the memory `w` copies: listed, below `x`
-  have hui : u.args[i]! ∈ u.args := by rw [getElem!_pos u.args i hi]; exact Array.getElem_mem _
-  obtain ⟨hlc, hrc⟩ := copyReach_rank F _ hcr (lm_arg F hx hu _ hui)
-  have hrx := fwdRankOK_spec F.rank hx hu hph _ hui
-  obtain ⟨m, hm⟩ := hIH _ (by omega) hlc N
-  rw [hc] at hm
-  obtain ⟨M0', hz, hR'⟩ := refines_mem' hm
+  obtain ⟨M1, rfl, hcase⟩ := drop_mem hT hM hQ h hy
+  -- the memory `w`'s argument holds in `g`
+  obtain ⟨m, M0', hz, hR⟩ : ∃ m M0', den (listedDefs g) tabs ρ' m w.args[0]! = .mem M0' ∧
+      Mem.Refines M1 M0' := by
+    rcases hcase with ⟨i, hi, hcr, M0, hc, hR⟩ | ⟨i, hi, hcr, M0, hc, hR⟩
+    · -- `w`'s argument in `f`: listed, below `x`
+      have hui : u.args[i]! ∈ u.args := by
+        rw [getElem!_pos u.args i hi]; exact Array.getElem_mem _
+      obtain ⟨hlc, hrc⟩ := copyReach_rank F _ hcr (lm_arg F hx hu _ hui)
+      have hrx := fwdRankOK_spec F.rank hx hu hph _ hui
+      obtain ⟨m, hm⟩ := hIH _ (by omega) hlc N
+      rw [hc] at hm
+      obtain ⟨M0', hz, hR'⟩ := refines_mem' hm
+      exact ⟨m, M0', hz, hR.trans hR'⟩
+    · -- the root's memory argument, below `x`, then the copies of `g`
+      have hui : u.args[i]! ∈ u.args := by
+        rw [getElem!_pos u.args i hi]; exact Array.getElem_mem _
+      obtain ⟨m, hm⟩ := hIH _ (fwdRankOK_spec F.rank hx hu hph _ hui) (lm_arg F hx hu _ hui) N
+      rw [hc] at hm
+      obtain ⟨M0', hz, hR'⟩ := refines_mem' hm
+      obtain ⟨m', hz'⟩ := memCopyReach_den _ hcr hz
+      exact ⟨m', M0', hz', hR.trans hR'⟩
   refine ⟨m + 1, ?_⟩
   rw [den_succ_term hL (by rw [hwop]; rfl), hwop, toList_one hwsz, List.map_cons, List.map_nil,
     GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty, hz, hρx, shape_of hu]
-  exact retype_mono _ (.mem (hR.trans hR'))
+  exact retype_mono _ (.mem hR)
 
 /-- **Values as terms**: each value listed in `f` is refined by the same value listed in `g`,
 for valuations whose memory roots hold the writes of their arguments. -/

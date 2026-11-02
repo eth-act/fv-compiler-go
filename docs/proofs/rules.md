@@ -310,12 +310,16 @@ its memory (`fwdShapeOK`'s `Store`/`Zero` cases: the result is the pattern's mem
 `patBinds`). `Interp.rewriteValue` tries `loads` on a `Store` after its `structStores` (index
 row + `structStores` + i) and on a `Zero` after its row; `fwdEvent?` takes the offset per op and
 `fwdCopy` installs the `Copy` on any op. `fwdNewOK` accepts `dropOK`: `w = Copy c` with `c`
-reached from the root's memory argument through compatible copies (`copyReach`), and the write
+reached from the root's memory argument (`memReach`) through compatible copies of `f`
+(`copyReach`), or through listed copies of `g` (`memCopyReach`: the writes between were dropped
+in the same layer and copy elimination ran on the rule's argument, issue #69; witness
+`fz_checkedRewrite`, `Witness/FwdChain.lean`), and the write
 changes no byte: a `Store` at a type of size 0; a `Store` of a `zeroConst` (`Const8`…`Const64`,
 `ConstBool` with auxint 0 at an integer or boolean shape; not `ConstNil`, whose bytes are pointer
 fragments, not `0`) at a pointer `p` whose bytes a `Zero [k] q _` cleared (`zeroChain`: through at
 most eight `Copy`s and `Store`s `disjointB` from the write, then `p = q + o` by `ptrBase`/`baseSameB`
-with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a `samePtrB` pointer. The
+with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a `samePtrB` pointer (reached
+through copies of `f`). The
 dropped root is no root of `g`, so `fwdRel` compares atoms by `atomsXOK` (`atomsOK` but changed
 `Store`s and dropped `Store`/`Zero` roots; memcombine's check, now shared) instead of `atomsOK`.
 
@@ -352,8 +356,7 @@ area). `LoadFwd.fwd_refines … (hro : fwdRoOK tabs ro f = true) : RefinesFrom (
 env.Mono ∧ env.AllocZero ∧ RoImage ro env mem)`. `zeroChain_read` reads zeros from such a block
 (`fresh_blockZero`, `blockZero_read`) through the disjoint writes. Witnesses:
 `fm_checkedRewrite` (`mallocgcSmallNoScanSC2`), `fn_checkedRewrite`/`fn_rwPre` (`newobject`,
-`Witness/FwdNew.lean`). Not done: chains of dropped writes in one layer (the root's memory is a
-write dropped in the same layer, `copyReach` fails in `f`).
+`Witness/FwdNew.lean`).
 
 Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
 block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second
@@ -406,7 +409,9 @@ at `o` (`read_write_self`, `read_sub`, `load_congr_read`, `LoadFwdMem.lean`); th
 `OffPtr` is in its window (`read_inWindow`) and the fresh `Load` reads them in a memory refining
 the `Move`'s (`load_mono`). A dropped root (`drop_den`, `GoFV/Proof/Pass/LoadFwdDrop.lean`): its
 register is its write (`MemAtoms`), and `drop_mem` shows that memory is refined by its memory
-argument's, hence by the `Copy` in `g` (`copyReach_den`, `copyReach_rank`): `write_refines_self`
+argument's, hence by the `Copy` in `g`: through `f`'s copies (`copyReach_den`, `copyReach_rank`),
+or by the memory argument's term in `g` (`fwd_den`'s induction: it ranks below the root) and
+`g`'s copies (`memCopyReach_den`; only a memory retypes to a memory): `write_refines_self`
 (`m.read p n = some bs0 → m.write p bs = some m1 → BytesRefineA bs bs0 → Mem.Refines m1 m`, by
 `write_read_id`: writing back the bytes a read gave changes nothing), with `encode_zero` (the bytes
 of a `0`, `false` or `poison` at any shape are `0` or `poison`; `zeroConst_den`, `retype_zero`)

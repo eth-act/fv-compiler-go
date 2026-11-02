@@ -334,16 +334,16 @@ def fwdMoveWhy (tabs : Tables) (f g : Func) (u w : Value) : String := Id.run do
   return s!"move: ptr {desc tabs f 3 u.args[0]!} vs {desc tabs f 3 mv.args[0]!} + {offp.auxInt.toInt}"
 
 open GoFV.Rules RewriteCheck in
-/-- Why `dropOK` fails for the memory root `u` of `f` dropped to `w` (diagnostics). -/
-def dropWhy (tabs : Tables) (f : Func) (u w : Value) : String :=
+/-- Why `dropOK` fails for the memory root `u` of `f` dropped to `w` of `g` (diagnostics). -/
+def dropWhy (tabs : Tables) (f g : Func) (u w : Value) : String :=
   if w.op != .Copy || w.args.size != 1 then s!"{w.op.name}"
   else if u.op == .Store then
-    if !copyReach tabs f.valueTab f.valueTab.size u.args[2]! w.args[0]! then
+    if !memReach tabs f g u.args[2]! w.args[0]! then
       s!"arg v{w.args[0]!} vs mem v{u.args[2]!}"
     else if (Sem.auxTy tabs u.aux).size == 0 then "ok?"
     else if !zeroConst tabs f u.args[1]! then s!"value {desc tabs f 2 u.args[1]!}"
     else s!"chain {desc tabs f 3 u.args[2]!} at {desc tabs f 3 u.args[0]!}"
-  else if !copyReach tabs f.valueTab f.valueTab.size u.args[1]! w.args[0]! then
+  else if !memReach tabs f g u.args[1]! w.args[0]! then
     s!"arg v{w.args[0]!} vs mem v{u.args[1]!}"
   else s!"zero {desc tabs f 3 w.args[0]!} at {desc tabs f 3 u.args[0]!}"
 
@@ -390,7 +390,7 @@ def fwdRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
     if !fwdRepOK tabs f f' z then
       match f.value? z, f'.value? z with
       | some u, some w =>
-        if u.op == .Store || u.op == .Zero then return some s!"v{z} drop {dropWhy tabs f u w}"
+        if u.op == .Store || u.op == .Zero then return some s!"v{z} drop {dropWhy tabs f f' u w}"
         if w.op == .Copy && w.args.size == 1 then
           if (f.value? u.args[1]!).any (·.op == .Move) then
             return some s!"v{z} {fwdMoveWhy tabs f f' u w}"
