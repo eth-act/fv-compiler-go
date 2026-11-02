@@ -512,8 +512,10 @@ that symbol on `Env.p1` whose global image has it).
 
 ### Layers (issue #151)
 
-The nil-check eliminations, forwardings, struct-store splits (`generic.rules:975`,
-`ssPre`/`ssRel`, `StructStore.ss_refines`) and segment rewrites (`segPre`/`segRel`,
+The nil-check eliminations, forwardings, struct-store splits (`generic.rules:975`, and `:997`
+`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e mem)` as an in-place split like
+`dec.rules:129`; `ssPre`/`ssRel`, `StructStore.ss_refines`; witness
+`GoFV.Proof.Witness.sa_checkedRewrite`, `*p = [1]int{x}`) and segment rewrites (`segPre`/`segRel`,
 `Seg.seg_refines`) change roots, so `RewriteCheck.accepts` takes their
 events out of the log and applies them to the input in layers (`RewriteCheck.layersOK` over
 `RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
@@ -1104,6 +1106,10 @@ were no read-only symbols; `memTyOK` holds for all of them. With `Sem.rodataByte
 `roSyms`): 8,639 → 8,644 at stock (on 8f6d12f; validator-only 43 → 38). With `PtrIndex`
 indices that are constant terms (`constIdx?` by `termConst`; `:827` in `runtime.init`,
 `runtime.init.func2`): 8,648 → 8,650 (on d79e08b; validator-only 39 → 37).
+With `:997` as a struct-store split (1,326 rules): 8,583 → 8,629 at stock under the checked
+passes on quick-v4, validator-only 21 → 27; full-v5 fully verified (`gofv-ssa-opt --check
+--verified`) 79,484 → 81,245 on 6ed197f (first unverified run `opt` 13,762 → 9,951; `decompose
+builtin` 1,423 → 3,305, functions that now reach it).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

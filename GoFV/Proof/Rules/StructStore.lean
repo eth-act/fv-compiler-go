@@ -29,6 +29,11 @@ def EffectRule.StructStore (r : Rule) : Prop := GoFV.Opt.RewriteCheck.structStor
 theorem r_generic_975_sound : EffectRule.StructStore GoFV.Rules.Generated.Generic.r_generic_975 :=
   rfl
 
+/-- `generic.rules:997`: `(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e mem)` (an
+in-place split into its one element's `Store`, as `dec.rules:129`) -/
+theorem r_generic_997_sound : EffectRule.StructStore GoFV.Rules.Generated.Generic.r_generic_997 :=
+  rfl
+
 /-- Non-vacuity: the size-0 store elimination `dec.rules:10` (`=> mem`) does not have the shape. -/
 example : GoFV.Opt.RewriteCheck.structStoreShapeOK GoFV.Rules.Generated.Dec.r_dec_10 = false :=
   rfl
