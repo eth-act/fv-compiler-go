@@ -213,11 +213,11 @@ theorem recoverOpen_run : returnsInt (run dwEnv roTabs recoverOpen [] {} 4) 7 = 
 /-! ## `deferLoop`: `deferproc` and `deferreturn` -/
 
 /-- `runtime.deferproc`'s ABI: the closure in a register. -/
-def dlDeferprocABI : CallABI :=
+def dfLoopDeferprocABI : CallABI :=
   { abi := 1, nin := 1, nout := 0, spillOff := 0, spillSize := 8, inRegs := 1, outRegs := 0,
     params := #[{ out := false, index := 0, type := 1, name := none, regs := #[0], offset := 0 }] }
 
-def dlTabs : Tables where
+def dfLoopTabs : Tables where
   types :=
     let t := Array.replicate 34 (none : Option TypeDef)
     let t := t.set! 1 (some (mkT .FUNC (some 8) "func()" (.func 0 0 0 #[])))
@@ -226,7 +226,7 @@ def dlTabs : Tables where
     t.set! 32 (some (mkT .RESULTS none "mem" (.results #[28])))
   auxes := #[none, dwCall "main.deferLoop" 2 (some dwABI0), dwSym "main.deferLoop",
     dwSym "main.setX·f",
-    dwCall "runtime.deferproc" 5 (some dlDeferprocABI), dwSym "runtime.deferproc",
+    dwCall "runtime.deferproc" 5 (some dfLoopDeferprocABI), dwSym "runtime.deferproc",
     dwCall "runtime.deferreturn" 7 (some dwABI0), dwSym "runtime.deferreturn"]
 
 def deferLoop : Func :=
@@ -260,7 +260,7 @@ def returnsX42 : Outcome → Bool
 
 /-- **`deferproc`/`deferreturn`**: `deferLoop` registers `setX`, and `deferreturn` runs it at
 the normal exit: the run returns with `x = 42`. -/
-theorem deferLoop_run : returnsX42 (run dwEnv dlTabs deferLoop [] {} 4) = true := by
+theorem deferLoop_run : returnsX42 (run dwEnv dfLoopTabs deferLoop [] {} 4) = true := by
   decide +kernel
 
 end GoFV.Proof.Witness
