@@ -133,6 +133,7 @@ import GoFV.Proof.Pass.ECFinish
 import GoFV.Proof.Pass.ECIdent
 import GoFV.Proof.Pass.ECLoop
 import GoFV.Proof.Pass.ECMain
+import GoFV.Proof.Pass.ECMoves
 import GoFV.Proof.Pass.ECObl
 import GoFV.Proof.Pass.ECOk
 import GoFV.Proof.Pass.ECOwn

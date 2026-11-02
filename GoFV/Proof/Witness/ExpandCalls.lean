@@ -15,12 +15,15 @@ frame slot (`v2 = Store {bool} (LocalAddr {~r0}) v10 v9`) and returns only the m
 (`v11 = MakeResult v2`). By kernel evaluation: the pass succeeds, the input and the output (in
 the output's tables) pass `check`, and the input is in `expandCallsFrag` (the output's tables
 agree with the input's and `ECCheck.ecCheck` accepts the output), so `expandCalls_refines`
-applies; its contracts' condition holds for `Env.p1` (`Env.p1_mono`, `Env.p1_frameKeep`).
+applies; its contracts' condition holds for `Env.p1` (`Env.p1_mono`, `Env.p1_frameKeep`). A
+synthetic call with two wide stack arguments, each copied by its own `Move` (the upper one reading
+a frame variable), is accepted by `ECCheck.ecCheck`, and `EC.ecm_moves` reads both slots back on
+concrete memories.
 -/
 
 namespace GoFV.Proof.Witness
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof GoFV.Proof.AtomSim
 
 /-- `check`'s environment for the pass output (in the output's tables). -/
 def sumOfOutCheckEnv (o : PassOut) : CheckEnv := { tabs := o.tables, typs := sumOfTyps }
@@ -186,5 +189,113 @@ theorem expandCalls_selfMove_witness :
     obtain ⟨⟨hcg, hinv⟩, hmr⟩ := hp
     exact ⟨out, rfl, hres, hinv, hmr,
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag⟩
+
+/-! ## Several wide stack arguments, each copied by its own `Move` -/
+
+/-- A call's ABI: two stack-assigned `sync.RWMutex` arguments (24 bytes, `t3`) at offsets 0 and
+24. -/
+def mmABI : CallABI :=
+  { abi := 0, nin := 2, nout := 0, spillOff := 48, spillSize := 0, inRegs := 0, outRegs := 0,
+    params := #[{ out := false, index := 0, type := 3, name := none, regs := #[], offset := 0 },
+                { out := false, index := 1, type := 3, name := none, regs := #[], offset := 24 }] }
+
+/-- Its `AuxCall` (aux `a7`). -/
+def mmCallAux : AuxDef :=
+  { fmt := GoStr.ofString "AuxCall{f}", kind := .call (some 2) (some mmABI) }
+
+/-- `syscall_hasWaitingReaders`'s tables with the call's aux. -/
+def mmTabs : Tables := { hwrTabs with auxes := hwrTabs.auxes.push (some mmCallAux) }
+
+/-- A value of `b1`. -/
+def mmV (id : ID) (op : Op) (t : TypeRef) (auxInt : Int64) (aux : Option AuxRef) (args : Array ID) :
+    Value :=
+  { id, op, type := t, auxInt, aux, pos := p0, uses := 1, args, block := 1 }
+
+/-- The source block: `v7 = StaticLECall {a7} v5 v6 v1` of two `Dereference`s of frame variables
+(`LocalAddr {rw}`, `LocalAddr {~r0}`). -/
+def mmFB : Block := mkB 1 .Exit p0 #[7] #[] #[] #[1, 2, 3, 4, 5, 6, 7]
+
+def mmF : Func :=
+  { hwr with
+    valueTab := #[none, some (mmV 1 .InitMem 35 0 none #[]),
+      some (mmV 2 .SP 22 0 none #[]),
+      some (mmV 3 .LocalAddr 2 0 (some 3) #[2, 1]),
+      some (mmV 4 .LocalAddr 2 0 (some 4) #[2, 1]),
+      some (mmV 5 .Dereference 3 0 none #[3, 1]),
+      some (mmV 6 .Dereference 3 0 none #[4, 1]),
+      some (mmV 7 .StaticLECall 39 0 (some 7) #[5, 6, 1])]
+    blockTab := #[none, some mmFB], blocks := #[1], vidLast := 7 }
+
+/-- Its rewrite: the arguments copied into their slots by `v9 = Move [24] (OffPtr [0] SP) v3 v1`
+and, above it, `v11 = Move [24] (OffPtr [24] SP) v4 v9`; the call `v7 = StaticCall {a7} v11`. -/
+def mmGB : Block := mkB 1 .Exit p0 #[7] #[] #[] #[1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 7]
+
+def mmG : Func :=
+  { hwr with
+    valueTab := #[none, some (mmV 1 .InitMem 35 0 none #[]),
+      some (mmV 2 .SP 22 0 none #[]),
+      some (mmV 3 .LocalAddr 2 0 (some 3) #[2, 1]),
+      some (mmV 4 .LocalAddr 2 0 (some 4) #[2, 1]),
+      some (mmV 5 .Dereference 3 0 none #[3, 1]),
+      some (mmV 6 .Dereference 3 0 none #[4, 1]),
+      some (mmV 7 .StaticCall 39 0 (some 7) #[11]),
+      some (mmV 8 .OffPtr 2 0 none #[2]),
+      some (mmV 9 .Move 35 24 (some 3) #[8, 3, 1]),
+      some (mmV 10 .OffPtr 2 24 none #[2]),
+      some (mmV 11 .Move 35 24 (some 3) #[10, 4, 9])]
+    blockTab := #[none, some mmGB], blocks := #[1], vidLast := 11 }
+
+/-- **`ecCheck` accepts a call with two wide stack arguments, each copied by its own `Move`**
+(`callMoves`: `v9`, then `v11` above it, whose source is a frame variable, `localSrcOK`). -/
+theorem expandCalls_multiMove_witness :
+    ((mmF.value? 7).bind fun u => (mmG.value? 7).map fun w => ECCheck.callMoves mmF mmG u w) =
+      some [9, 11] ∧ ECCheck.ecCheck mmTabs mmF mmG = true := by
+  decide +kernel
+
+/-- The memory of the witness: the outgoing-arguments area (48 bytes) and the two frame
+variables (24 bytes each). -/
+def mmMem : Mem :=
+  { blocks := #[(.outargs 0, { data := Array.replicate 48 (.b 0) }),
+      (.local 0 3, { data := Array.replicate 24 (.b 1) }),
+      (.local 0 4, { data := Array.replicate 24 (.b 2) })] }
+
+/-- The memory after `v9`'s copy of `v3`'s bytes into slot 0, then after `v11`'s of `v4`'s
+into slot 24. -/
+def mmMem9 : Mem := ((mmMem.write ⟨.outargs 0, 0⟩ (Array.replicate 24 (.b 1))).getD {})
+def mmMem11 : Mem := ((mmMem9.write ⟨.outargs 0, 24⟩ (Array.replicate 24 (.b 2))).getD {})
+
+/-- The target's registers: the memories of `v1`, `v9` and `v11`. -/
+def mmT : Frame :=
+  { regs := #[none, some (.mem mmMem), none, none, none, none, none, none, none,
+      some (.mem mmMem9), none, some (.mem mmMem11)], args := [], mem0 := {} }
+
+/-- `EC.ecm_moves` on the chain `v9`, `v11` of the witness (`v11` reads its frame variable's
+block, outside the area `v9` wrote): both slots read back the bytes of their frame variables. -/
+theorem expandCalls_moves_witness :
+    ∃ Mt, rv mmT 11 = .mem Mt ∧
+      Mt.read ⟨.outargs 0, 0⟩ 24 = some (Array.replicate 24 (.b 1)) ∧
+      Mt.read ⟨.outargs 0, 24⟩ 24 = some (Array.replicate 24 (.b 2)) := by
+  have hc : ECCheck.moveChain mmG (ECCheck.isNewB mmF) 12 11 1 = some [9, 11] := by decide +kernel
+  have hv9 : mmG.value? 9 = some (mmV 9 .Move 35 24 (some 3) #[8, 3, 1]) := by decide +kernel
+  have hv11 : mmG.value? 11 = some (mmV 11 .Move 35 24 (some 3) #[10, 4, 9]) := by decide +kernel
+  obtain ⟨Mt, hMt, -, -, -, hR⟩ := EC.ecm_moves (T := mmT) (M := mmMem) rfl
+    (fun _ => 24) (fun e bs => bs = Array.replicate 24 (.b (if e.2 = 5 then 1 else 2)))
+    12 (sp := [(mmABI.params[0]!, 5), (mmABI.params[1]!, 6)]) hc rfl (by decide) (by decide)
+    (by
+      intro e z hez mw M0 hmw hM0
+      simp only [List.zip_cons_cons, List.zip_nil_right, List.mem_cons, Prod.mk.injEq,
+        List.not_mem_nil, or_false] at hez
+      rcases hez with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · rw [hv9] at hmw; cases hmw
+        cases hM0
+        exact ⟨⟨.local 0 3, 0⟩, Array.replicate 24 (.b 1), mmMem9, by decide +kernel,
+          by decide +kernel, rfl, .inl rfl, fun _ => by decide⟩
+      · rw [hv11] at hmw; cases hmw
+        cases hM0
+        exact ⟨⟨.local 0 4, 0⟩, Array.replicate 24 (.b 2), mmMem11, by decide +kernel,
+          by decide +kernel, rfl, .inr nofun, fun _ => by decide⟩)
+  obtain ⟨b0, h0, rfl⟩ := hR _ List.mem_cons_self
+  obtain ⟨b1, h1, rfl⟩ := hR _ (List.mem_cons_of_mem _ List.mem_cons_self)
+  exact ⟨Mt, hMt, h0, h1⟩
 
 end GoFV.Proof.Witness
