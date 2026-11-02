@@ -53,6 +53,7 @@ out=${out:-$root/tmp/driver-e2e-$label}
 # absolute: the builds run in other directories and the compiler opens $out/lean/stats.txt
 case $out in /*) ;; *) out=$PWD/$out ;; esac
 [ -x "$gob/bin/go" ] || { echo "driver-e2e: no toolchain in $gob" >&2; exit 1; }
+[ "$reportOnly" = 1 ] || GOFV_GO_DRIVER=1 "$root/scripts/check-toolchain.sh" "$gob" >&2 || exit 1
 [ -x "$opt" ] || { echo "driver-e2e: no $opt (lake build gofv-ssa-opt)" >&2; exit 1; }
 command -v qemu-aarch64-static >/dev/null || { echo "driver-e2e: qemu-aarch64-static missing" >&2; exit 1; }
 
