@@ -296,12 +296,24 @@ theorem EqOff.dropFrames {U : Blk → Prop} (hU : TempU U) {m m' : Mem} (h : Mem
   simp
 
 /-- Filtering the allocations by a block predicate on both sides. -/
-theorem EqOff.filter {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (F : Blk → Bool) :
-    Mem.EqOff U { m with blocks := m.blocks.filter fun e => F e.1 }
-      { m' with blocks := m'.blocks.filter fun e => F e.1 } := by
+theorem EqOff.filter {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (F : Blk × Alloc → Bool)
+    (hF : ∀ b a a', F (b, a) = F (b, a')) :
+    Mem.EqOff U { m with blocks := m.blocks.filter F } { m' with blocks := m'.blocks.filter F } := by
   obtain ⟨h1, h2, h3⟩ := eqOff_iff.1 h
   refine eqOff_iff.2 ⟨h1, h2, ?_⟩
   simp only [Array.toList_filter]
-  exact h3.filter _ fun _ _ _ => rfl
+  exact h3.filter F hF
+
+/-- Blocks outside `U` have the same allocation. -/
+theorem EqOff.find_eq {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (b : Blk) (hu : ¬ U b) :
+    m'.find? b = m.find? b := by
+  rcases EqOff.find h b with ⟨h1, h2⟩ | ⟨a, a', ha, ha', hA⟩
+  · rw [h1, h2]
+  · rw [ha, ha']
+    obtain ⟨-, -, hw, hd⟩ := hA
+    obtain ⟨d, w⟩ := a
+    obtain ⟨d', w'⟩ := a'
+    simp only at hw hd
+    rw [hw, hd hu]
 
 end GoFV.Proof.DAE
