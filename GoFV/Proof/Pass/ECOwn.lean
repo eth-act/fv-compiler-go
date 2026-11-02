@@ -508,12 +508,12 @@ theorem ecr_pieces_filter (tabs : Tables) :
 
 /-- The shapes `piecesOK` checks: each argument's is its parameter's. -/
 theorem ecr_piecesOK_eqE {tabs : Tables} {sh : Array Ty} {f g : Func} :
-    ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs sh f g ps as pcs = true →
+    ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs sh f g false ps as pcs = true →
       ∀ e ∈ ps.zip as, eqE (shapeOf sh f e.2) (tabs.ty e.1.type) = true
   | [], _, _, _, e, he | _ :: _, [], _, _, e, he => by simp at he
   | p :: ps, a :: as, pcs, h, e, he => by
     unfold piecesOK at h
-    simp only [Bool.and_eq_true] at h
+    simp only [Bool.and_eq_true, Bool.false_and, Bool.or_false] at h
     simp only [List.zip_cons_cons, List.mem_cons] at he
     rcases he with rfl | he
     · exact h.1.1.1.1
@@ -532,9 +532,9 @@ theorem ecr_forall₂_of_zip {P : ABIParam → Val → Prop} (F : ID → Val) :
 the stack-assigned ones. -/
 theorem ecr_forall₂_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} {outs : List ABIParam}
     {as : List ID} {pcs qs : List ID} (hl : as.length = outs.length)
-    (hrp : piecesOK tabs (typeShapes tabs) f g ((argPairs true outs as).map (·.1))
+    (hrp : piecesOK tabs (typeShapes tabs) f g false ((argPairs true outs as).map (·.1))
       ((argPairs true outs as).map (·.2)) pcs = true)
-    (hsp : piecesOK tabs (typeShapes tabs) f g ((argPairs false outs as).map (·.1))
+    (hsp : piecesOK tabs (typeShapes tabs) f g false ((argPairs false outs as).map (·.1))
       ((argPairs false outs as).map (·.2)) qs = true)
     (hrel : ∀ a ∈ as, EcArgRel tabs f g frS T a) :
     List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) outs
@@ -775,7 +775,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   have hG := ecr_forall₂_hasTy hasl hrp hsp hrel
   have hwf : ∀ p ∈ ownOuts tabs f, wf (tabs.ty p.type) = true := fun p hp => (hown.ok p hp).1
   -- the register pieces
-  have hP := ec_pieces hNC hL hRS _ _ _ hrp
+  have hP := ec_pieces hNC hL hRS false _ _ _ hrp
     (fun p hp => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
       exact hwf _ (ecr_argPairs_mem he).1)
@@ -790,6 +790,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       exact himk _ (hmemu _ (ecr_argPairs_mem he).2.1))
     (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
       (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)) hn') yq hyq)
+  simp only [ecPieceVals_false] at hP
   rw [ecr_argPairs_zip _ hasl, ← ecr_pieces_filter] at hP
   -- the chain of result stores
   have hch : storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]!
@@ -819,7 +820,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     refine ⟨wz, ?_, regs_of_ok hev, fun a ha hn' => ⟨hcl a ha hn', (hL z hLz wz hwz).2 a ha hn'⟩⟩
     have hsv' : storeVal g z = wz.args[1]! := by unfold storeVal; rw [hwz]; rfl
     rw [hsv']; exact ecw_mem_three hsz' 1 (by decide)
-  have hS := ec_pieces hNC hL hRS _ _ _ hsp
+  have hS := ec_pieces hNC hL hRS false _ _ _ hsp
     (fun p hp => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
       exact hwf _ (ecr_argPairs_mem he).1)
@@ -841,6 +842,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         · rw [hn'] at h; cases h
         · exact h
       exact hfront q (ecFront_src hi hu hqu) yq hyq)
+  simp only [ecPieceVals_false] at hS
   rw [ecr_argPairs_zip _ hasl] at hS
   -- the evaluations
   have hm : u.args[u.args.size - 1]! ∈ u.args := by rw [← Array.mem_toList_iff, hsu]; simp
