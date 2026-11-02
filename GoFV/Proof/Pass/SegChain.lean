@@ -222,27 +222,20 @@ theorem zero_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q m : ID} {qv 
 section
 variable {env : Env} {tabs : Tables} {f g : Func} {S : Frame} {A : ID → Prop}
 
-/-- An `OffPtr` by `o` of pointer shape of a value reaching `p` through copies, `p` holding a
-word of the pointer `P`, holds a word of `P + o` if it holds a pointer word. -/
-theorem offPtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f) S)
+/-- An `OffPtr` by `o` of pointer shape whose argument holds `p`'s register, `p` holding a word
+of the pointer `P`, holds a word of `P + o` if it holds a pointer word. -/
+theorem offPtr_reg_of (H : Avail env tabs f S A)
     (hid : ∀ z v, A z → f.value? z = some v → v.id = z) {q pz : ID} {opv : Value} {P Q : Ptr}
-    {pv qv : Val} {o : Nat} (hA : A q) (hpA : A pz) (hq : f.value? q = some opv)
+    {pv qv : Val} {o : Nat} (hA : A q) (hq : f.value? q = some opv)
     (hop : opv.op = .OffPtr) (hsz : opv.args.size = 1) (hai : opv.auxInt.toInt = (o : Int))
     (hty : isPtrTy (tabs.ty opv.type) = true)
-    (hce : copyEnd tabs f.valueTab f.valueTab.size opv.args[0]! =
-      copyEnd tabs f.valueTab f.valueTab.size pz)
+    (hcP : S.regs[opv.args[0]!]? = S.regs[pz]?)
     (hP : S.regs[pz]? = some (some pv)) (hpv : pv.asPtrWord = some P)
     (hQ : S.regs[q]? = some (some qv)) (hqv : qv.asPtrWord = some Q) :
     Q = P.add (BitVec.ofNat 64 o) := by
   have hargs : opv.args = #[opv.args[0]!] := StructStore.args1 hsz
-  generalize hc : opv.args[0]! = c at hce hargs
-  have hcA : A c := H.cl q opv hA hq (by rw [hop]; decide) c (by rw [hargs]; simp)
-  have h1 := (StructStore.copy_reg H hT hid f.valueTab.size hcA
-    (StructStore.copyReach_copyEnd _ f.valueTab.size c)).2
-  have h2 := (StructStore.copy_reg H hT hid f.valueTab.size hpA
-    (StructStore.copyReach_copyEnd _ f.valueTab.size pz)).2
-  rw [hce] at h1
-  have hcP : S.regs[c]? = some (some pv) := by rw [← h1, h2, hP]
+  generalize hc : opv.args[0]! = c at hcP hargs
+  rw [hP] at hcP
   obtain ⟨v', y, hv', hy, hev⟩ := H.val q hA
   rw [hq] at hv'
   cases hv'
@@ -267,6 +260,27 @@ theorem offPtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
   split at hqv
   · exact (Option.some.inj hqv).symm
   · cases hqv
+
+/-- An `OffPtr` by `o` of pointer shape of a value reaching `p` through copies, `p` holding a
+word of the pointer `P`, holds a word of `P + o` if it holds a pointer word. -/
+theorem offPtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f) S)
+    (hid : ∀ z v, A z → f.value? z = some v → v.id = z) {q pz : ID} {opv : Value} {P Q : Ptr}
+    {pv qv : Val} {o : Nat} (hA : A q) (hpA : A pz) (hq : f.value? q = some opv)
+    (hop : opv.op = .OffPtr) (hsz : opv.args.size = 1) (hai : opv.auxInt.toInt = (o : Int))
+    (hty : isPtrTy (tabs.ty opv.type) = true)
+    (hce : copyEnd tabs f.valueTab f.valueTab.size opv.args[0]! =
+      copyEnd tabs f.valueTab f.valueTab.size pz)
+    (hP : S.regs[pz]? = some (some pv)) (hpv : pv.asPtrWord = some P)
+    (hQ : S.regs[q]? = some (some qv)) (hqv : qv.asPtrWord = some Q) :
+    Q = P.add (BitVec.ofNat 64 o) := by
+  have hargs : opv.args = #[opv.args[0]!] := StructStore.args1 hsz
+  have hcA : A opv.args[0]! := H.cl q opv hA hq (by rw [hop]; decide) _ (by rw [hargs]; simp)
+  have h1 := (StructStore.copy_reg H hT hid f.valueTab.size hcA
+    (StructStore.copyReach_copyEnd _ f.valueTab.size _)).2
+  have h2 := (StructStore.copy_reg H hT hid f.valueTab.size hpA
+    (StructStore.copyReach_copyEnd _ f.valueTab.size pz)).2
+  rw [hce, h2] at h1
+  exact offPtr_reg_of H hid hA hq hop hsz hai hty h1.symm hP hpv hQ hqv
 
 /-- One store of the source chain at offset `mid`: its pointer holds a word of `P + mid`, its
 memory argument a memory, and it holds the write of its value there. -/

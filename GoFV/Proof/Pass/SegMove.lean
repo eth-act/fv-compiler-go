@@ -196,8 +196,7 @@ theorem moveStoreOK_spec {tabs : Tables} {f g : Func} {p dst : ID} {n : Int64} {
       0 < (auxTy tabs sa.aux).size ∧ f.value? sb.args[0]! = none ∧
       ∃ q q', f.value? sa.args[0]! = some q ∧ g.value? sb.args[0]! = some q' ∧
         q.op = .OffPtr ∧ q.args.size = 1 ∧ isPtrTy (tabs.ty q.type) = true ∧
-        copyEnd tabs f.valueTab f.valueTab.size q.args[0]! =
-          copyEnd tabs f.valueTab f.valueTab.size p ∧
+        samePtr tabs f q.args[0]! p = true ∧
         q'.op = .OffPtr ∧ q'.args = #[dst] ∧ q'.auxInt = q.auxInt ∧
         isPtrTy (tabs.ty q'.type) = true ∧ 0 ≤ q.auxInt.toInt ∧
         q.auxInt.toInt + (auxTy tabs sa.aux).size ≤ n.toInt := by
@@ -338,6 +337,43 @@ theorem eval_offs (H : Avail env tabs f S A) {d : ID} {dv : Val} {Dst : Ptr} (hd
           exact h5 _ this _ List.mem_cons_self _ _ hb hqv hqop'
         · exact h4 b' hb'
 
+/-- Values that `samePtr` relates hold the same register. -/
+theorem samePtr_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f) S)
+    (hid : ∀ z v, A z → f.value? z = some v → v.id = z) {a b : ID} (ha : A a) (hb : A b)
+    (h : samePtr tabs f a b = true) : S.regs[a]? = S.regs[b]? := by
+  obtain ⟨hcaA, h1⟩ := StructStore.copy_reg H hT hid f.valueTab.size ha
+    (StructStore.copyReach_copyEnd _ f.valueTab.size a)
+  obtain ⟨hcbA, h2⟩ := StructStore.copy_reg H hT hid f.valueTab.size hb
+    (StructStore.copyReach_copyEnd _ f.valueTab.size b)
+  rw [← h1, ← h2]
+  unfold samePtr at h
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · rw [h]
+  generalize copyEnd tabs f.valueTab f.valueTab.size a = ca at hcaA h
+  generalize copyEnd tabs f.valueTab f.valueTab.size b = cb at hcbA h
+  cases hva : f.value? ca with
+  | none => rw [hva] at h; simp at h
+  | some va =>
+  cases hvb : f.value? cb with
+  | none => rw [hva, hvb] at h; simp at h
+  | some vb =>
+  rw [hva, hvb] at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Option.isSome_iff_exists] at h
+  obtain ⟨⟨⟨⟨hopa, hopb⟩, n, hn⟩, hax⟩, htyv⟩ := h
+  have hval : ∀ {c v}, A c → f.value? c = some v → v.op = .LocalAddr → v.aux = some n →
+      S.regs[c]? = some (some ((Val.ptr ⟨frameBlk (Ctx.make tabs f).tabs (Ctx.make tabs f).act n, 0⟩).retype
+        (tabs.ty v.type))) := by
+    intro c v hc hv hop hx
+    obtain ⟨y, hy⟩ := Avail.reg H hc
+    have hev := Avail.eval H hc hv (by rw [hop]; decide) hy
+    rw [evalValue_of_regs (regs_of_ok hev), CSE.Mem.evalOp_frameVal (.inr hop)
+      (by simp only [frameVal, hop, hx]; rfl)] at hev
+    simp only [Res.bind_ok, Res.ok.injEq] at hev
+    rw [hid c v hc hv, Proof.tys_of_value hv, Option.getD_some] at hev
+    rw [hy, ← hev]
+  rw [hval hcaA hva hopa hn, hval hcbA hvb hopb (by rw [← hax]; exact hn), htyv]
+
 /-- **The stores below the anchor**: if the source's stores from `s` (over `z`) evaluated to `M`,
 its `n` bytes at `P` are the zeros with the stores' bytes `ws` put in (bottom first), and the
 target's stores from `t` (over `z'`) evaluate to the writes `ws` at `Dst` over `z'`'s memory. -/
@@ -400,7 +436,10 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
     obtain ⟨Q, M1, M2, hQ, rfl, hw, rfl⟩ := store_ok hop ha hqv hxv hmv (hev (by rw [hop]; decide))
     change M1.write _ (encode (auxTy tabs sv.aux) xv) = some M2 at hw
     have ho : q.auxInt.toInt = ((q.auxInt.toInt.toNat : Nat) : Int) := (Int.toNat_of_nonneg h0).symm
-    have hQe := offPtr_reg H hT hid hA0 hpA hq hqop (by rw [hqa]) ho hqty hce hP hpv hqv hQ
+    have hqcA : A q.args[0]! := H.cl _ q hA0 hq (by rw [hqop]; decide) _
+      (by rw [StructStore.args1 hqa]; simp)
+    have hQe := offPtr_reg_of H hid hA0 hq hqop hqa ho hqty
+      (samePtr_reg H hT hid hqcA hpA hce) hP hpv hqv hQ
     subst hQe
     rw [hid s sv hA hs, Proof.tys_of_value hs, Option.getD_some, hM] at hy
     obtain ⟨hty, rfl⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy)).symm
@@ -459,8 +498,7 @@ theorem moveSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N 
       FChain f g (lastArg gv) (ns ++ [z']) m ∧ storesF f (ns.length + 1) m1 = some (fs, z) ∧
       f.value? z = some zv ∧ g.value? z' = some zv' ∧ gv.op = .Store ∧ 0 ≤ fv.auxInt.toInt ∧
       zv.op = .Zero ∧ zv.args.size = 2 ∧ zv.auxInt = fv.auxInt ∧
-      copyEnd tabs f.valueTab f.valueTab.size zv.args[0]! =
-        copyEnd tabs f.valueTab f.valueTab.size p ∧
+      samePtr tabs f zv.args[0]! p = true ∧
       zv'.op = .Zero ∧ zv'.args = #[d, m] ∧ zv'.auxInt = fv.auxInt ∧ zv'.type = zv.type ∧
       (fs.zip (x :: ns)).all (fun (a, b) => match f.value? a, g.value? b with
         | some sa, some sb => moveStoreOK tabs f g p d fv.auxInt fv.block sa sb
@@ -600,12 +638,9 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
     rw [hM] at hyz
     have hMZ := (retype_mem_eq (Option.some.inj (Option.some.inj hyz)).symm).2
     subst hMZ
-    have h1 := (StructStore.copy_reg H hT hid f.valueTab.size hqA
-      (StructStore.copyReach_copyEnd _ f.valueTab.size _)).2
-    have h2 := (StructStore.copy_reg H hT hid f.valueTab.size hpA
-      (StructStore.copyReach_copyEnd _ f.valueTab.size p)).2
-    rw [hce, h2, hpv] at h1
-    rw [← h1] at hqv
+    have h1 := samePtr_reg H hT hid hqA hpA hce
+    rw [hpv] at h1
+    rw [h1] at hqv
     cases (Option.some.inj (Option.some.inj hqv))
     rw [hP] at hQw; cases hQw
     have := Pass.LoadFwd.read_write_self hZ
@@ -626,7 +661,10 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
   obtain ⟨hsop, htop, hsa, hta, haux, htype, hval, -, -, hszp, hqf, q, q', hq, hq', hqop, hqa,
     hqty, hce1, hq'op, hq'a, hq'ai, hq'ty, h0q, hle⟩ := moveStoreOK_spec hpair
   have ho : q.auxInt.toInt = ((q.auxInt.toInt.toNat : Nat) : Int) := (Int.toNat_of_nonneg h0q).symm
-  have hQe := offPtr_reg H hT hid hA0 hpA hq hqop (by rw [hqa]) ho hqty hce1 hpv hP hqv1 hQ1
+  have hqcA : A q.args[0]! := H.cl _ q hA0 hq (by rw [hqop]; decide) _
+    (by rw [StructStore.args1 hqa]; simp)
+  have hQe := offPtr_reg_of H hid hA0 hq hqop hqa ho hqty
+    (samePtr_reg H hT hid hqcA hpA hce1) hpv hP hqv1 hQ1
   subst hQe
   rw [hid m1 sv1 hm1A hsv1, Proof.tys_of_value hsv1, Option.getD_some, hM1] at hy1
   obtain ⟨hty1, hM1'⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy1)).symm

@@ -2486,8 +2486,19 @@ def roSeg? (tabs : Tables) (f : Func) (fv gv : Value) : Option (List ID × List 
     else none
   | _, _ => none
 
+/-- Values `a` and `b` of `f` hold the same pointer: they reach the same value through copies, or
+`LocalAddr`s of the same variable at the same type (`isSamePtr`; their memory arguments differ). -/
+def samePtr (tabs : Tables) (f : Func) (a b : ID) : Bool :=
+  let ca := copyEnd tabs f.valueTab f.valueTab.size a
+  let cb := copyEnd tabs f.valueTab f.valueTab.size b
+  ca == cb ||
+    match f.value? ca, f.value? cb with
+    | some va, some vb => va.op == .LocalAddr && vb.op == .LocalAddr && va.aux.isSome &&
+        va.aux == vb.aux && va.type == vb.type
+    | _, _ => false
+
 /-- One store of a move segment: the `Store` `sa` of `f` (block `b`) at an `OffPtr [o]` of `p` (up
-to copies, pointer shape) with `0 ≤ o` and `o + size ≤ n` (positive size) became the `Store` `sb`
+to copies or the same variable, `samePtr`; pointer shape) with `0 ≤ o` and `o + size ≤ n` (positive size) became the `Store` `sb`
 of `g` with the same aux, type and value, at a fresh `OffPtr [o]` of `dst` (pointer shape). -/
 def moveStoreOK (tabs : Tables) (f g : Func) (p dst : ID) (n : Int64) (b : ID) (sa sb : Value) :
     Bool :=
@@ -2498,8 +2509,7 @@ def moveStoreOK (tabs : Tables) (f g : Func) (p dst : ID) (n : Int64) (b : ID) (
     match f.value? sa.args[0]!, g.value? sb.args[0]! with
     | some q, some q' =>
       q.op == .OffPtr && q.args.size == 1 && isPtrTy (tabs.ty q.type) &&
-        copyEnd tabs f.valueTab f.valueTab.size q.args[0]! ==
-          copyEnd tabs f.valueTab f.valueTab.size p &&
+        samePtr tabs f q.args[0]! p &&
         q'.op == .OffPtr && q'.args == #[dst] && q'.auxInt == q.auxInt &&
         isPtrTy (tabs.ty q'.type) && decide (0 ≤ q.auxInt.toInt) &&
         decide (q.auxInt.toInt + sz ≤ n.toInt)
@@ -2529,9 +2539,7 @@ def moveSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (Lis
         let n := fv.auxInt
         let gs := x :: ns.dropLast
         if gv.op == .Store && m0 == m && decide (0 ≤ n.toInt) && zv.op == .Zero &&
-            zv.args.size == 2 && zv.auxInt == n &&
-            copyEnd tabs f.valueTab f.valueTab.size zv.args[0]! ==
-              copyEnd tabs f.valueTab f.valueTab.size p &&
+            zv.args.size == 2 && zv.auxInt == n && samePtr tabs f zv.args[0]! p &&
             zv'.op == .Zero && zv'.args == #[d, m] && zv'.auxInt == n && zv'.type == zv.type &&
             (fs.zip gs).all (fun (a, b) => match f.value? a, g.value? b with
               | some sa, some sb => moveStoreOK tabs f g p d n fv.block sa sb
