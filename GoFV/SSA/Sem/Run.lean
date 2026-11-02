@@ -668,12 +668,14 @@ arguments and results, then "spill space for each register-assigned argument", w
 may use as their home; the frame ends at `spillOff + spillSize` of the call's ABI assignments
 (the area below it also holds the fixed-frame word below the arguments, `ArgWidth` above it),
 or at the end of a slot of a stack-assigned input parameter `ins` beyond it (Go's assignments
-have none); 0 without assignments. -/
-def callFrame (tabs : Tables) (aux : Option AuxRef) (ins : List ABIParam) : Nat :=
+have none); 0 without assignments. A callee that never uses the spill slots (`spills = false`,
+`Env.noSpill`) owns only its stack arguments' slots. -/
+def callFrame (tabs : Tables) (aux : Option AuxRef) (ins : List ABIParam) (spills : Bool) : Nat :=
   ins.foldl (fun n p =>
       if p.regs.isEmpty then max n ((BitVec.ofInt 64 p.offset).toNat + (tabs.ty p.type).size)
       else n)
-    (((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0)
+    (if spills then ((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0
+     else 0)
 
 /-! ## Deferred calls and recover (§9.7, phase P5) -/
 
@@ -912,11 +914,12 @@ def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   else if !outargsOK ctx.tabs ctx.act m ins then
     .stuck s!"v{v.id}: call with an outgoing-arguments area not writable"
   else if nilClosure clo then
-    .panic .nilDeref (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux ins))
+    .panic .nilDeref (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux ins true))
   else
     let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
     let c ← Res.ofOption s!"call {callee}: no contract" ((env.atAct ctx.act).extern callee)
-    match c args clo (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux ins)) with
+    match c args clo (m.poisonBelow (.outargs ctx.act)
+        (callFrame ctx.tabs v.aux ins (!env.noSpill callee))) with
     | .returned rs m' =>
       let rs := retypeResults ctx.tabs outs rs
       -- stack-assigned results are in the outgoing area in both forms; their addresses follow

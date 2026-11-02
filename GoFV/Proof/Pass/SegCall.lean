@@ -59,7 +59,8 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
       else args = retypeResults ctx.tabs ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast) ∧
       (env.atAct ctx.act).extern name = some c ∧
       c args none (M.poisonBelow (.outargs ctx.act)
-        (callFrame ctx.tabs v.aux ((callParams ctx.tabs v).filter (!·.out)))) = .returned rs m' ∧
+        (callFrame ctx.tabs v.aux ((callParams ctx.tabs v).filter (!·.out)) (!env.noSpill name))) =
+        .returned rs m' ∧
       encodeResults ctx.tabs ctx.act ((callParams ctx.tabs v).filter (·.out))
         (retypeResults ctx.tabs ((callParams ctx.tabs v).filter (·.out)) rs) m' = some r ∧
       y = .tuple ((if v.op = .StaticCall then r.1
@@ -407,7 +408,7 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
   subst ha
   obtain rfl := (hE.atAct ctx.act).1 c hx
   simp only [Runtime.memclr, Runtime.ok?, runtime_asPtr_eq, hpa, Runtime.asInt] at hr
-  generalize callFrame ctx.tabs v.aux _ = F at hr
+  generalize callFrame ctx.tabs v.aux _ _ = F at hr
   cases hw : (M.poisonBelow (.outargs ctx.act) F).write P (Array.replicate x.toInt.toNat (.b 0)) with
   | none =>
     simp only [hw, Option.pure_def, Option.bind_eq_bind, Option.bind_some, Option.bind_none] at hr
@@ -441,7 +442,7 @@ theorem callOp_memmove {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P 
   subst ha
   obtain rfl := (hE.atAct ctx.act).2 c hx
   simp only [Runtime.memmove, Runtime.ok?, runtime_asPtr_eq, hpa, hqb, Runtime.asInt] at hr
-  generalize callFrame ctx.tabs v.aux _ = F at hr
+  generalize callFrame ctx.tabs v.aux _ _ = F at hr
   have hP := poisonBelow_refines M (.outargs ctx.act) F
   cases hrd : (M.poisonBelow (.outargs ctx.act) F).read Q x.toInt.toNat with
   | none =>

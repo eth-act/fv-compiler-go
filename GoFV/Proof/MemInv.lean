@@ -629,10 +629,12 @@ theorem callOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx :
     obtain ⟨c, hc, h⟩ := bind_ok_inv h
     have hcc := ContractsOK.atAct hP hE ctx.act callee c (ofOption_ok hc) args clo
       (M'.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
-        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)))) hA hcl
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out))
+        (!env.noSpill callee))) hA hcl
       (hP.poisonBelow _ hM' (fun _ h => by cases h) (by simp))
     cases hco : c args clo (M'.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
-        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)))) with
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out))
+        (!env.noSpill callee))) with
     | stuck msg => rw [hco] at h; cases h
     | panicked e m' => rw [hco] at h; cases h
     | returned rs m' =>
