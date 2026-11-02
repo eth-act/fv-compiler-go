@@ -70,10 +70,11 @@ theorem expandCalls_witness :
 /-! ## Non-vacuity of the call-argument lemmas (#28) -/
 
 /-- `ecc_ofPieces_arg` at a pointer argument of a `uintptr` parameter (`castOK`): the decoded
-argument refines the pointer retyped at the parameter's shape. -/
+argument refines the pointer retyped at the parameter's shape (a global pointer, which has no
+address and so stays a pointer in an integer register). -/
 theorem expandCalls_castArg_witness :
-    Sem.Refines ((Val.ptr ⟨.outargs 0, 8⟩).retype (.int .w64))
-      (ofPieces (.int .w64) [.ptr ⟨.outargs 0, 8⟩]) :=
+    Sem.Refines ((Val.ptr ⟨.global "g", 8⟩).retype (.int .w64))
+      (ofPieces (.int .w64) [.ptr ⟨.global "g", 8⟩]) :=
   GoFV.Proof.EC.ecc_ofPieces_arg rfl (.inr ⟨rfl, none, rfl⟩) (.cons (Sem.Refines.refl _) .nil)
 
 /-- `ecs_decode_hasTy_mov` at a blob (a `Move`-copied `[2]byte` stack argument). -/

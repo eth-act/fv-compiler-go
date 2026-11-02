@@ -137,10 +137,8 @@ theorem pz_checkedRewrite :
 `pa` returns the itab-like word `uintptr(unsafe.Pointer(&g))` through a branch: `v6 = Phi
 <uintptr> v4 v4` of `v4 = Addr <*uint8> {main.g} SB` in `b4` (as decompose builtin leaves the
 itab component of an interface `Phi` whose `IMake`s share one itab symbol). `phielimValue` turns
-it into `Copy <uintptr> v4`; the copy changes no value (an `Addr` is a global pointer, which has
-no concrete address, or `poison`), but the shapes differ (`retypeEqB` of `*uint8` and `uintptr`
-is false), so `CopyCheck.copyOK` accepts it only through its `Addr` case
-(`CopyElim.CopyArgOK`). -/
+it into `Copy <uintptr> v4`; the copy changes no value: the two word shapes retype alike
+(`retypeEqB` of `*uint8` and `uintptr` is true, #290), so `CopyCheck.copyOK` accepts it. -/
 
 /-- `abiInfo` of `pa`: no parameters, one `uintptr` result. -/
 def peaABI : CallABI :=
@@ -197,7 +195,7 @@ def peaPassEnv : PassEnv :=
 
 /-- By kernel evaluation: the input passes `check`; the rewrite logs a phi elimination;
 `checkedRewrite` keeps a result that returns `v4` directly and passes `check`; the `Addr`'s and
-the `Phi`'s shapes do not retype alike. -/
+the `Phi`'s shapes retype alike. -/
 theorem pa_checks :
     (check peaCheckEnv pa).toBool = true ∧
     (rewriteRun (Interp.Table.ofRuleSet azRules) true true peaPassEnv pa).toOption.map
@@ -205,12 +203,13 @@ theorem pa_checks :
     (checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa).toOption.map
       (fun o => ((check peaCheckEnv o.func).toBool, (o.func.value? 7).map (·.args))) =
       some (true, some #[4, 1]) ∧
-    CopyElim.retypeEqB (peaTabs.ty 12) (peaTabs.ty 10) = false := by
+    CopyElim.retypeEqB (peaTabs.ty 12) (peaTabs.ty 10) = true := by
   decide +kernel
 
-/-- **Witness of `CopyElim.CopyArgOK`'s `Addr` case** (through `checkedRewrite_refines`): on
-`pa`, the rewrite turns the `Phi <uintptr>` of a `*uint8` `Addr` into a copy of it, the checked
-pass keeps its result (`MakeResult v4 v1`), and the result refines the input. -/
+/-- **Witness of a phi elimination across the word shapes** (`CopyElim.CopyRel`'s `copyShape`
+through `checkedRewrite_refines`): on `pa`, the rewrite turns the `Phi <uintptr>` of a `*uint8`
+`Addr` into a copy of it, the checked pass keeps its result (`MakeResult v4 v1`), and the
+result refines the input. -/
 theorem pa_checkedRewrite :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa = .ok out ∧
       (out.func.value? 7).map (·.args) = some #[4, 1] ∧

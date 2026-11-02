@@ -807,13 +807,11 @@ a string phi's length component over two `StringMake q n`, kernel evaluation). D
 builtin in the fragment: quick-v3 8645 → 8731 (87 sections had a phi elimination; the 3 still
 rejected fail on other classes), full-v4 81847 → 82590. A `Phi <uintptr>` whose arguments are
 one `Addr <*uint8>` (the itab word of an interface phi over `IMake`s of one itab symbol) becomes
-`Copy <uintptr>` of the `Addr`, whose shapes `retypeEqB` does not relate: `CopyCheck.copyOK`
-accepts it (`CopyRelCheck.copyValueOK`: the value was a `Phi`, the copy has a word shape, the
-argument is an `Addr`), since an `Addr` evaluates to a global pointer or `poison`
-(`CopyElim.evalValue_addr`, `GlobalOrPoison`), which `retype` keeps at a word shape
-(`CopyElim.CopyArgOK`); in the next segment the copy-argument replacements of the copy by the
+`Copy <uintptr>` of the `Addr`: `CopyCheck.copyOK` accepts it since the two word shapes retype
+alike (`retypeEqB` relates `.int .w64` and a pointer, #290: a register holds a convertible
+pointer as its address); in the next segment the copy-argument replacements of the copy by the
 `Addr` and `finalOK`'s arguments go through `RewriteCheck.copyReachW` (`copyReach`, or first a
-word `Copy` of an `intWord`; `copyReachW_den` by `intWord_den` and `retype_word`). Witness:
+word `Copy` of a `wordVal`; `copyReachW_den` by `wordVal_den` and `retype_word`). Witness:
 `GoFV.Proof.Witness.pa_checkedRewrite` (`pa`, kernel evaluation). Decompose builtin in the
 fragment: quick-v4 9180 → 9199, full-v5 91625 → 91647.
 
@@ -843,23 +841,15 @@ invariant. Pass execution witness: `GoFV.Proof.Witness.lsel_checkedRewrite` (`lo
 `makeSelShape` (a selection op over a `Make` op pattern, copy result, no `@b`) is first validated
 per instance (`RewriteCheck.makeSelOK`): `v` selects component `k` (`selIndex?`) of `s = Make …`
 whose argument `k` is a value `a`, `v` becomes `Copy a` at `a`'s type, and where the `Make`'s
-shape has a component `k`, `a`'s shape is that component's and `v`'s (`shapeSub`), or `a` is a
-64-bit integer word and both are word shapes (`.int .w64` or a pointer). `RewriteCheck.intWord`
-decides "a 64-bit integer word" (an integer, a pointer without a concrete address, or
-`poison`): `a` has the `.int .w64` shape, is an `Addr` (a global), or is a `Convert`/`Copy` at a
-word shape of one (`Convert` integer → pointer is the identity), up to 4 steps; `retype` at
-either word shape keeps such a value (#312: a 64-bit integer keeps its word at a pointer shape).
+shape has a component `k`, `a`'s shape is that component's and `v`'s (`shapeSub`), or all three
+are word shapes (`.int .w64` or a pointer; `RewriteCheck.wordVal`, `wordTy`): the two word shapes
+have the same values and retype alike (#290, `Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`).
 Else the event is checked as a rule instance (`ruleOK`).
 `MSFacts.step` proves the per-instance case refines the selection as a term at the same fuel:
 component `k` of the retyped `Make` is argument `k` retyped at the field's shape
-(`select_retype_make_get`), so only the selected argument matters (`intWord_den`,
-`retype_word`). This accepts `(IData (IMake itab data))` whose itab is typed `*uint8` (the
-interface's itab word is `.int .w64`; `Pat.argsOK` asks it of every `Make` argument) and
-`(ITab (IMake itab _))` (`dec.rules:82`, typed `*uint8` or `uintptr`) whose itab is a `uintptr`
-(`ArgIntReg`, `SelectN`, `Load`, `Phi`, `ConstNil`), an `Addr {go:itab.…}` or a `Convert` of a
-`uintptr`. Not accepted: a pointer-typed itab that is an atom of the term denotation (`NilCheck`
-of an `Addr`, a pointer-typed `Phi`): its value may be a pointer with a concrete address, which
-the interface's `.int .w64` itab word turns into its address. A `___` pattern
+(`select_retype_make_get`), so only the selected argument matters (`wordVal_den`,
+`retype_word`). This accepts `(IData (IMake itab data))` and `(ITab (IMake itab _))`
+(`dec.rules:82`, typed `*uint8` or `uintptr`) whatever the itab's word shape. A `___` pattern
 has no `Rule.Sound` form (`Pat.arityOk`): `RuleSet.AllSound` asks of each value rule
 `Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (`makeSelShape` and no `Pat.arityOk`), whose
 events only `makeSelOK` accepts. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite`

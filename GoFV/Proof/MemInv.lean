@@ -250,7 +250,7 @@ theorem retype_mems : (t : Ty) → (v : Val) → ∀ m ∈ (v.retype t).mems, m 
   | t, .ptr p => by
     intro m hm
     cases t with
-    | int w' => cases w' <;> simp [Val.retype, Val.mems] at hm; split at hm <;> simp [Val.mems] at hm
+    | int w' => cases w' <;> simp [Val.retype, Val.mems] at hm
     | _ => simp [Val.retype, Val.mems] at hm
   | t, .bool b => by intro m hm; cases t <;> simp [Val.retype, Val.mems] at hm
   | t, .blob bs => by

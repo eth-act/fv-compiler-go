@@ -25,35 +25,6 @@ namespace GoFV.Proof.CopyElim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt Dom
 
-/-! ## `Addr`s evaluate to global pointers -/
-
-theorem frameVal_addr {ctx : Ctx} {v : Value} (hop : v.op = .Addr) :
-    ∃ x, frameVal ctx v = some x ∧ GlobalOrPoison x := by
-  simp only [frameVal, hop]
-  split
-  · exact ⟨_, rfl, .inr ⟨_, rfl, rfl⟩⟩
-  · exact ⟨_, rfl, .inl rfl⟩
-
-/-- An evaluated `Addr` holds a global pointer or `poison`. -/
-theorem evalValue_addr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
-    (hop : v.op = .Addr) (h : evalValue env ctx fr v = .ok y) : GlobalOrPoison y := by
-  obtain ⟨x, hx, hgx⟩ := frameVal_addr (ctx := ctx) hop
-  have he : ∀ argv ty, evalOp env ctx fr v argv ty = .ok x := fun argv ty => by
-    unfold evalOp
-    rw [hx]
-    simp only [hop]
-    rfl
-  unfold evalValue at h
-  cases hm : v.args.toList.mapM (fun a =>
-      Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join) with
-  | ok argv =>
-    rw [hm] at h
-    simp only [bind, Res.bind, he] at h
-    cases h
-    exact hgx.retype _
-  | panic e m => rw [hm] at h; cases h
-  | stuck msg => rw [hm] at h; cases h
-
 /-! ## Setup -/
 
 theorem cfgView_blocks {f g : Func} (h : cfgView g = cfgView f) : g.blocks = f.blocks := by
@@ -305,7 +276,7 @@ theorem usedG {a q : ID} (hl : Listed g a) (ha : Anc (make f) (blockOf g a) q) :
 /-- In a frame satisfying lemma (D) of `g` at `p` (on a set of blocks closed under dominators), a
 value used at `p` and its `ArgRel`-related target value hold the same register. -/
 theorem argEq {env : Env} {fr : Frame} {A : ID → Prop} {q a w : ID}
-    (hD : DInv env (Ctx.make tabs g) A fr) (hAdn : ∀ z z', A z → Anc (make f) z' z → A z')
+    (hD : DInv env (Ctx.make tabs g) A fr)
     (hAa : A (blockOf f a))
     (hT : Typed (Ctx.make tabs g) fr) (hl : Listed f a) (ha : Anc (make f) (blockOf f a) q)
     (hr : ArgRel g a w) : ∃ y, fr.regs[a]? = some (some y) ∧ fr.regs[w]? = some (some y) := by
@@ -330,22 +301,7 @@ theorem argEq {env : Env} {fr : Frame} {A : ID → Prop} {q a w : ID}
     rw [tys_of_value hgv] at hy
     refine ⟨y0, ?_, hy0⟩
     simp only [Option.getD_some] at this
-    have haddr : wv.op = .Addr → GlobalOrPoison y0 := fun hwop => by
-      obtain ⟨gb, hgbb, -, -, -, -, hvals, -⟩ := S.block hb hfb
-      have hbt' := S.treeG hb
-      have hwU : Anc (make f) (blockOf g w) b := by
-        have := uses S.cg hbt'.1 hgbb hbt'.2 (by rw [hvals]; exact hx) hgv
-          (by rw [hop]; decide) (a := w) (by rw [hargs]; simp)
-        rwa [S.mk_eq] at this
-      have hwl : Listed g w := hwg.argListed b gb a gv ⟨⟨by rw [S.blocks]; exact hb.1, hgbb⟩,
-        by rw [hvals]; exact hx, hgv⟩ w (by rw [hargs]; simp)
-      obtain ⟨bw, fbw, hbw, hfbw, hxw, hbwg, -⟩ := S.usedG hwl hwU
-      obtain ⟨hplw, hwb⟩ := S.placedG hbw hfbw hxw hwv
-      obtain ⟨y', hy', hev'⟩ := hD w wv hplw (by
-        rw [hwb, ← hbwg]; exact hAdn _ _ hAa (by rw [hbo]; exact hwU))
-      rw [hy0] at hy'; cases hy'
-      exact evalValue_addr hwop (hev' (by rw [hwop]; decide))
-    rw [hy]; simp only [Option.getD_some]; rw [hsh.apply this haddr]
+    rw [hy]; simp only [Option.getD_some]; rw [hsh.apply this]
 
 /-- A `Phi` of a non-entry tree block that became `Copy w` copies a value of a strict
 dominator. -/
