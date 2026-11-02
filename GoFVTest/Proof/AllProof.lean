@@ -23,6 +23,7 @@ import GoFV.Proof.CallMono
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
 import GoFV.Proof.Cong
+import GoFV.Proof.DeferRel
 import GoFV.Proof.DomCert
 import GoFV.Proof.DomRel
 import GoFV.Proof.Enter
@@ -524,6 +525,7 @@ import GoFV.Proof.Witness.DecStore
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Decompose
+import GoFV.Proof.Witness.Defer
 import GoFV.Proof.Witness.DomCertFast
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
