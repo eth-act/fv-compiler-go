@@ -94,14 +94,28 @@ theorem r_generic_2251_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2255`: `(Load (OffPtr [off] (Addr {s} sb) ) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
 theorem r_generic_2255_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2255 := rfl
 
+/-- `generic.rules:2252`: `(Load (Convert (Addr {s} sb) _) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` (`fixedOK` follows the `Convert` by `RewriteCheck.wordStep?`) -/
+theorem r_generic_2252_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2252 := rfl
+
+/-- `generic.rules:2253`: `(Load (ITab (IMake (Addr {s} sb) _)) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` (through `ITab (IMake …)`, `wordStep?`) -/
+theorem r_generic_2253_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2253 := rfl
+
+/-- `generic.rules:2254`: `(Load (ITab (IMake (Convert (Addr {s} sb) _) _)) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` -/
+theorem r_generic_2254_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2254 := rfl
+
+/-- `generic.rules:2256`: `(Load (OffPtr [off] (Convert (Addr {s} sb) _)) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
+theorem r_generic_2256_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2256 := rfl
+
+/-- `generic.rules:2257`: `(Load (OffPtr [off] (ITab (IMake (Addr {s} sb) _))) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
+theorem r_generic_2257_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2257 := rfl
+
+/-- `generic.rules:2258`: `(Load (OffPtr [off] (ITab (IMake (Convert (Addr {s} sb) _) _))) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
+theorem r_generic_2258_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2258 := rfl
+
 /-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
 `Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e
 mem)`, a changed write) do not have the shape. -/
 example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_842 = false := rfl
 example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_997 = false := rfl
-/-- The fixed loads through `Convert` or `ITab` (`:2256`, `:2257`), whose pointers `fixedOK`
-does not follow, do not have the shape. -/
-example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_2256 = false := rfl
-example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_2257 = false := rfl
 
 end GoFV.Proof.Rules

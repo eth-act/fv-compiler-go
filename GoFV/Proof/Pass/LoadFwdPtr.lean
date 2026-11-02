@@ -97,6 +97,109 @@ theorem den_ptr_fuel {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
   · have := Refines.asPtrWord (den_fuel_mono D tabs ρ k' k x hk) h'
     rw [h] at this; cases this; rfl
 
+/-- A retyped composite is `poison` or the composite of its retyped components. -/
+theorem retypeFields_getD : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},
+    Val.retypeFields fs vs = some vs' →
+      ∀ i, ∃ t', vs'.getD i .poison = (vs.getD i .poison).retype t'
+  | [], [], _, h, i => by
+    simp only [Val.retypeFields, Option.some.injEq] at h
+    subst h
+    exact ⟨.bool, by simp [retype_poison]⟩
+  | (_, t) :: fs, v :: vs, vs', h, i => by
+    simp only [Val.retypeFields, Option.map_eq_some_iff] at h
+    obtain ⟨ws, hws, rfl⟩ := h
+    cases i with
+    | zero => exact ⟨t, rfl⟩
+    | succ i => exact retypeFields_getD hws i
+  | [], _ :: _, _, h, _ => by simp [Val.retypeFields] at h
+  | _ :: _, [], _, h, _ => by simp [Val.retypeFields] at h
+
+theorem word_ne_agg (p : Ptr) (vs : List Val) : p.word ≠ .agg vs := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> simp
+
+/-- Only a composite retypes to a composite, componentwise. -/
+theorem retype_eq_agg {v : Val} {t : Ty} {vs' : List Val} (h : v.retype t = .agg vs') :
+    ∃ vs, v = .agg vs ∧ ∀ i, ∃ t', vs'.getD i .poison = (vs.getD i .poison).retype t' := by
+  cases v with
+  | agg vs =>
+    refine ⟨vs, rfl, ?_⟩
+    cases t with
+    | agg fs n =>
+      simp only [Val.retype] at h
+      split at h
+      · next ws hws => cases h; exact retypeFields_getD hws
+      · cases h
+    | str =>
+      match vs, h with
+      | [p, l], h =>
+        simp only [Val.retype, Val.ofStr] at h
+        split at h
+        · cases h
+          intro i
+          match i with
+          | 0 => exact ⟨.ptr none, Val.retypePtr_eq none p⟩
+          | 1 => exact ⟨.int .w64, Val.retypeI64_eq l⟩
+          | _ + 2 => exact ⟨.bool, by simp [retype_poison]⟩
+        · cases h
+    | slice e =>
+      match vs, h with
+      | [p, l, c], h =>
+        simp only [Val.retype, Val.ofSlice] at h
+        split at h
+        · cases h
+          intro i
+          match i with
+          | 0 => exact ⟨.ptr e, Val.retypePtr_eq e p⟩
+          | 1 => exact ⟨.int .w64, Val.retypeI64_eq l⟩
+          | 2 => exact ⟨.int .w64, Val.retypeI64_eq c⟩
+          | _ + 3 => exact ⟨.bool, by simp [retype_poison]⟩
+        · cases h
+    | _ => simp [Val.retype] at h
+  | poison => rw [retype_poison] at h; cases h
+  | int w x =>
+    cases t with
+    | int w' => simp only [Val.retype] at h; split at h <;> cases h
+    | ptr e => cases w <;> simp [Val.retype] at h
+    | _ => simp [Val.retype] at h
+  | ptr p =>
+    cases t with
+    | int w => cases w <;> simp [Val.retype, word_ne_agg] at h
+    | ptr e => simp [Val.retype, word_ne_agg] at h
+    | _ => simp [Val.retype] at h
+  | tuple vs =>
+    cases t with
+    | tuple ts => simp only [Val.retype] at h; split at h <;> cases h
+    | _ => simp [Val.retype] at h
+  | blob bs =>
+    cases t with
+    | blob n => simp only [Val.retype] at h; split at h <;> cases h
+    | _ => simp [Val.retype] at h
+  | bool b => cases t <;> simp [Val.retype] at h
+  | mem m => cases t <;> simp [Val.retype] at h
+  | empty => cases t <;> simp [Val.retype] at h
+
+/-- A value whose retype at any shape reads as a pointer reads as that pointer: the two word
+shapes keep the word (`Val.retype_ptr_eq_i64`), and no other shape has a pointer word
+(`Val.retype_hasTy`). -/
+theorem asPtrWord_of_retype {v : Val} {t : Ty} {p : Ptr} (h : (v.retype t).asPtrWord = some p) :
+    v.asPtrWord = some p := by
+  have hty := Val.retype_hasTy t v
+  cases t with
+  | ptr e => rwa [Val.asPtrWord_retype_ptr] at h
+  | int w =>
+    cases w with
+    | w64 => rwa [← Val.retype_ptr_eq_i64 v none, Val.asPtrWord_retype_ptr] at h
+    | _ =>
+      generalize v.retype _ = r at h hty
+      cases r with
+      | int w' y => cases w' <;> simp_all [Val.asPtrWord, Val.hasTy]
+      | _ => simp_all [Val.asPtrWord, Val.hasTy]
+  | _ =>
+    generalize v.retype _ = r at h hty
+    cases r with
+    | int w' y => cases w' <;> simp_all [Val.asPtrWord, Val.hasTy]
+    | _ => simp_all [Val.asPtrWord, Val.hasTy]
+
 section
 variable {tabs : Tables} {f : Func} {ρ : ID → Val}
 
@@ -181,6 +284,71 @@ theorem ptrIndex_den {a : ID} {u : Value} (hu : f.value? a = some u) (hop : u.op
     split at hK <;> cases hK
     rw [BitVec.signExtend_eq]
 
+/-- A `wordStep?` (`Convert`, `ITab` of `IMake`): the argument's pointer word. -/
+theorem wordStep_den {a c : ID} {u : Value} (hu : f.value? a = some u)
+    (hs : wordStep? tabs f u = some c) {k : Nat} {p : Ptr}
+    (h : (den f.value? tabs ρ k a).asPtrWord = some p) :
+    ∃ k', (den f.value? tabs ρ k' c).asPtrWord = some p := by
+  unfold wordStep? at hs
+  split at hs
+  · cases hs
+  rename_i hpt
+  obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
+    revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
+  cases k with
+  | zero => simp [den, Val.asPtrWord] at h
+  | succ k =>
+  split at hs
+  · -- `Convert` to a pointer type: the identity on the word
+    rename_i hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at hc
+    obtain ⟨hop, hsz⟩ := hc
+    cases hs
+    have ht : termOp u.op = true := by rw [hop]; rfl
+    have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
+    rw [den_succ_term hu ht, toList_two hsz, List.map_cons, List.map_cons, List.map_nil,
+      GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr, hop] at h
+    exact ⟨k, h⟩
+  · split at hs
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨hop, hsz⟩ := hc
+      split at hs
+      · next m hm =>
+        split at hs
+        · -- `ITab (IMake x _)`: `x` retyped as the interface's first field, then as a pointer
+          rename_i hc'
+          simp only [Bool.and_eq_true, beq_iff_eq] at hc'
+          obtain ⟨hmop, hmsz⟩ := hc'
+          cases hs
+          have ht : termOp u.op = true := by rw [hop]; rfl
+          have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
+          rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
+            GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr, hop] at h
+          change (Comp.select 0 [den f.value? tabs ρ k u.args[0]!]).asPtrWord = some p at h
+          cases k with
+          | zero => simp [den, Comp.select, Val.asPtrWord] at h
+          | succ k =>
+          have hmt : termOp m.op = true := by rw [hmop]; rfl
+          have hmfo : GoFV.Proof.Rules.frameOp m.op = false := by rw [hmop]; rfl
+          rw [den_succ_term hm hmt, toList_two hmsz, List.map_cons, List.map_cons, List.map_nil,
+            GoFV.Proof.Rules.opVal_pure hmfo, hmop] at h
+          change (Comp.select 0 [(Val.agg [den f.value? tabs ρ k m.args[0]!,
+            den f.value? tabs ρ k m.args[1]!]).retype (tabs.ty m.type)]).asPtrWord = some p at h
+          generalize hr : (Val.agg _).retype _ = r at h
+          cases r with
+          | agg vs' =>
+            obtain ⟨vs, hvs, hc⟩ := retype_eq_agg hr
+            cases hvs
+            obtain ⟨t', ht'⟩ := hc 0
+            simp only [Comp.select] at h
+            rw [ht'] at h
+            exact ⟨k, asPtrWord_of_retype h⟩
+          | _ => simp [Comp.select, Val.asPtrWord] at h
+        · cases hs
+      · cases hs
+    · cases hs
+
 /-- One `ptrStep?`: the argument's pointer plus the offset. -/
 theorem ptrStep_den {a c : ID} {o : BitVec 64} (hs : ptrStep? tabs f a = some (c, o)) {k : Nat}
     {p : Ptr} (h : (den f.value? tabs ρ k a).asPtrWord = some p) :
@@ -232,7 +400,14 @@ theorem ptrStep_den {a c : ID} {o : BitVec 64} (hs : ptrStep? tabs f a = some (c
         obtain ⟨rfl, rfl⟩ := hs
         exact ptrIndex_den hu hop hsz hty hci h
       · cases hs
-    · cases hs
+    · cases hw : wordStep? tabs f u with
+      | none => rw [hw] at hs; cases hs
+      | some c' =>
+        rw [hw] at hs
+        simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hs
+        obtain ⟨rfl, rfl⟩ := hs
+        obtain ⟨k', hk'⟩ := wordStep_den hu hw h
+        exact ⟨k', p, hk', (ptr_add_zero p).symm⟩
 
 /-- **Base and offset**: a pointer word reads as its `ptrBase`'s pointer plus the offset. -/
 theorem ptrBase_den :

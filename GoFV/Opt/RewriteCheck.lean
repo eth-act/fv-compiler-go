@@ -1291,9 +1291,22 @@ def constIdx? (tabs : Tables) (f : Func) (i : ID) : Option (BitVec 64) :=
   | some (.int .w64 k) => some k
   | _ => none
 
+/-- A pointer-shaped value that reads as its argument's pointer word: a `Convert` (to a pointer
+type, the identity on the word, `Sem.PtrOps.convert`) or an `ITab` of an `IMake` (the `IMake`'s
+first argument, retyped as the interface's first field and then as a pointer; the fixed loads
+`generic.rules:2252`–`:2258`). -/
+def wordStep? (tabs : Tables) (f : Func) (u : Value) : Option ID :=
+  if !isPtrTy (tabs.ty u.type) then none
+  else if u.op == .Convert && u.args.size == 2 then some u.args[0]!
+  else if u.op == .ITab && u.args.size == 1 then
+    match f.value? u.args[0]! with
+    | some m => if m.op == .IMake && m.args.size == 2 then some m.args[0]! else none
+    | none => none
+  else none
+
 /-- One step of `ptrBase`: an `OffPtr` or `Copy` of pointer shape on a pointer-shaped argument,
 or a `PtrIndex` of element size `e` (its pointer shape) by a constant index `k` (`constIdx?`),
-its argument and its offset (`k * e`). -/
+its argument and its offset (`k * e`); or a `wordStep?`, at offset `0`. -/
 def ptrStep? (tabs : Tables) (f : Func) (a : ID) : Option (ID × BitVec 64) :=
   match f.value? a with
   | some u =>
@@ -1304,7 +1317,7 @@ def ptrStep? (tabs : Tables) (f : Func) (a : ID) : Option (ID × BitVec 64) :=
       match tabs.ty u.type, constIdx? tabs f u.args[1]! with
       | .ptr (some e), some k => some (u.args[0]!, k * BitVec.ofNat 64 e)
       | _, _ => none
-    else none
+    else (wordStep? tabs f u).map (·, 0)
   | none => none
 
 /-- Pointer `a` as a base and a constant offset: through at most `n` `OffPtr`s and `Copy`s
@@ -1878,6 +1891,22 @@ def patBinds (y : Nat) : Pat → Bool
   | .op _ (some z) .. => z == y
   | _ => false
 
+/-- `(Addr {s} _)` or `(Convert (Addr {s} _) _)`. -/
+def addrConvPat : Pat → Bool
+  | .op .Addr none _ _ _ .fixed [_] _ => true
+  | .op .Convert none _ _ _ .fixed [.op .Addr none _ _ _ .fixed [_] _, .wild] _ => true
+  | _ => false
+
+/-- The pointer patterns of the fixed loads (`generic.rules:2251`–`:2258`): an `addrConvPat`,
+possibly in `(ITab (IMake _ _))`, possibly in an `OffPtr`. -/
+def fixedPtrPat (p : Pat) : Bool :=
+  let inner : Pat → Bool := fun
+    | .op .ITab none _ _ _ .fixed [.op .IMake none _ _ _ .fixed [a, .wild] _] _ => addrConvPat a
+    | q => addrConvPat q
+  match p with
+  | .op .OffPtr none _ _ _ .fixed [q] _ => inner q
+  | q => inner q
+
 /-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by one of the up to four
 `Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`),
 `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`), or
@@ -1886,16 +1915,14 @@ a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005
 `:948`, `:954`, `:961`, `:2158`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
 => (Move dst src m)` and its form through a `VarDef` (`:2146`, `:2155`); the validator checks
 each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included; or a
-fixed load `(Load (Addr {s} _) _)`, `(Load (OffPtr [off] (Addr {s} _)) _) && isFixedLoad(v, s,
-off) => rewriteFixedLoad(v, s, sb, off)` (`:2251`, `:2255`; `fixedOK`). -/
+fixed load `(Load p _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` whose
+pointer `p` is `(Addr {s} _)`, through `Convert`, `ITab (IMake …)` and an `OffPtr [off]`
+(`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
-  | .op .Load none _ _ _ .fixed [.op .Addr none _ _ _ .fixed [_] _, .wild] _,
-      .copy (.call "rewriteFixedLoad" _ _), none => true
-  | .op .Load none _ _ _ .fixed
-      [.op .OffPtr none _ _ _ .fixed [.op .Addr none _ _ _ .fixed [_] _] _, .wild] _,
-      .copy (.call "rewriteFixedLoad" _ _), none => true
+  | .op .Load none _ _ _ .fixed [p, .wild] _, .copy (.call "rewriteFixedLoad" _ _), none =>
+    fixedPtrPat p
   | .op .Load none _ _ _ .fixed [_, .op .Store none _ _ _ .fixed [_, .op o none _ _ _ .fixed [] _, _] _]
       _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Move ..] _, .build [n0, n1], some _ =>
