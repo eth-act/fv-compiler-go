@@ -67,6 +67,344 @@ theorem Mem.Refines.outargsOK {m m' : Mem} (h : Mem.Refines m m') (tabs : Tables
   unfold Sem.outargsOK
   simp only [h.canWrite]
 
+
+/-! ## Deferred calls and recover (§9.6) -/
+
+theorem Refines.ne_poison {a b : Val} (h : Refines a b) (ha : a ≠ .poison) : b ≠ .poison := by
+  cases h <;> first | exact absurd rfl ha | (intro h; cases h)
+
+/-- A non-poison source has the target's pointer word. -/
+theorem Refines.asPtrWord_eq {a b : Val} (h : Refines a b) (ha : a ≠ .poison) :
+    b.asPtrWord = a.asPtrWord := by
+  cases h <;> first | exact absurd rfl ha | rfl
+
+theorem Val.hasPoison_of_asPtrWord {v : Val} {p : Ptr} (h : v.asPtrWord = some p) :
+    v.hasPoison = false := by
+  cases v with
+  | int w x => cases w <;> simp_all [Val.asPtrWord, Val.hasPoison]
+  | _ => simp_all [Val.asPtrWord, Val.hasPoison]
+
+/-- `deferproc` entries refined pointwise. -/
+inductive DeferEntriesRefine : List (Val × Val) → List (Val × Val) → Prop where
+  | nil : DeferEntriesRefine [] []
+  | cons {a a' c c' : Val} {l l' : List (Val × Val)} : Refines a a' → Refines c c' →
+      DeferEntriesRefine l l' → DeferEntriesRefine ((a, c) :: l) ((a', c') :: l')
+
+theorem DeferEntriesRefine.length_eq : {l l' : List (Val × Val)} → DeferEntriesRefine l l' →
+    l.length = l'.length
+  | _, _, .nil => rfl
+  | _, _, .cons _ _ t => by simp [t.length_eq]
+
+theorem DeferEntriesRefine.append : {l l' r r' : List (Val × Val)} → DeferEntriesRefine l l' →
+    DeferEntriesRefine r r' → DeferEntriesRefine (l ++ r) (l' ++ r')
+  | _, _, _, _, .nil, h => h
+  | _, _, _, _, .cons ha hc t, h => .cons ha hc (t.append h)
+
+theorem DeferEntriesRefine.dropLast : {l l' : List (Val × Val)} → DeferEntriesRefine l l' →
+    DeferEntriesRefine l.dropLast l'.dropLast
+  | _, _, .nil => .nil
+  | _, _, .cons _ _ .nil => .nil
+  | _, _, .cons ha hc (.cons hb hd t) => .cons ha hc (DeferEntriesRefine.dropLast (.cons hb hd t))
+
+theorem DeferEntriesRefine.getLast? : {l l' : List (Val × Val)} → DeferEntriesRefine l l' →
+    (l.getLast? = none ∧ l'.getLast? = none) ∨
+      ∃ a c a' c', l.getLast? = some (a, c) ∧ l'.getLast? = some (a', c') ∧ Refines a a' ∧
+        Refines c c'
+  | _, _, .nil => .inl ⟨rfl, rfl⟩
+  | _, _, .cons ha hc .nil => .inr ⟨_, _, _, _, rfl, rfl, ha, hc⟩
+  | _, _, .cons _ _ (.cons hb hd t) => by
+    simpa [List.getLast?_cons_cons] using DeferEntriesRefine.getLast? (.cons hb hd t)
+
+theorem deferEntries_mono {m m' : Mem} (h : Mem.Refines m m') :
+    DeferEntriesRefine (deferEntries m) (deferEntries m') := by
+  unfold deferEntries
+  rcases h.find? deferBlk with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
+  · rw [h1, h2]; exact .nil
+  · rw [h1, h2]
+    dsimp only
+    rw [← ha.size_eq]
+    generalize List.range (a.data.size / 16) = l
+    induction l with
+    | nil => exact .nil
+    | cons i l ih => exact .cons (decode_mono ha.data _ _) (decode_mono ha.data _ _) ih
+
+theorem encodeEntries_mono : ∀ {l l' : List (Val × Val)} {acc acc' : Array Byte},
+    DeferEntriesRefine l l' → BytesRefineA acc acc' →
+    BytesRefineA ((l.map fun (a, c) => encode entryTy (.agg [a, c])).foldl (· ++ ·) acc)
+      ((l'.map fun (a, c) => encode entryTy (.agg [a, c])).foldl (· ++ ·) acc')
+  | _, _, _, _, .nil, h => h
+  | _, _, _, _, .cons ha hc t, h => by
+    simp only [List.map_cons, List.foldl_cons]
+    refine encodeEntries_mono t ?_
+    have := BytesRefine.append h (encode_mono entryTy (.agg (.cons ha (.cons hc .nil))))
+    simpa only [BytesRefineA, Array.toList_append] using this
+
+theorem setDeferEntries_mono {m m' : Mem} (h : Mem.Refines m m') {es es' : List (Val × Val)}
+    (he : DeferEntriesRefine es es') :
+    Mem.Refines (setDeferEntries m es) (setDeferEntries m' es') :=
+  h.set deferBlk ⟨rfl, encodeEntries_mono he (BytesRefineA.refl _)⟩
+
+theorem pushDefer_mono (act : Nat) {c c' : Val} (hc : Refines c c') {m m' : Mem}
+    (h : Mem.Refines m m') : Mem.Refines (pushDefer act c m) (pushDefer act c' m') :=
+  setDeferEntries_mono h ((deferEntries_mono h).append (.cons (Refines.refl _) hc .nil))
+
+/-- Results of `popDefer`/`nextDefer`: a failing source, both empty, or refined closures and
+memories. -/
+inductive DeferNextRefines : Except String (Option (Val × Mem)) →
+    Except String (Option (Val × Mem)) → Prop where
+  | error (msg : String) (r : Except String (Option (Val × Mem))) : DeferNextRefines (.error msg) r
+  | none : DeferNextRefines (.ok none) (.ok none)
+  | some {c c' : Val} {m m' : Mem} : Refines c c' → Mem.Refines m m' →
+      DeferNextRefines (.ok (some (c, m))) (.ok (some (c', m')))
+
+theorem popDefer_mono (act : Nat) {m m' : Mem} (h : Mem.Refines m m') :
+    DeferNextRefines (popDefer act m) (popDefer act m') := by
+  unfold popDefer
+  have he := deferEntries_mono h
+  rcases he.getLast? with ⟨h1, h2⟩ | ⟨a, c, a', c', h1, h2, ha, hc⟩
+  · simp only [h1, h2]; exact .none
+  · simp only [h1, h2]
+    cases hk : a.asInt .w64 with
+    | none => exact .error _ _
+    | some k =>
+      rw [ha.asInt hk]
+      by_cases hb : (k.toNat == act) = true
+      · rw [if_pos hb, if_pos hb]; exact .some hc (setDeferEntries_mono h he.dropLast)
+      · rw [if_neg hb, if_neg hb]; exact .none
+
+theorem nextDefer_mono (di : DeferInfo) (act : Nat) {m m' : Mem} (h : Mem.Refines m m') :
+    DeferNextRefines (nextDefer di act m) (nextDefer di act m') := by
+  unfold nextDefer
+  cases di.bits with
+  | none => exact popDefer_mono act h
+  | some nb =>
+    dsimp only
+    cases hx : (m.load (.int .w8) _).asInt .w8 with
+    | none => exact .error _ _
+    | some bits =>
+      rw [(load_mono h _ _).asInt hx]
+      dsimp only
+      cases (List.range 8).reverse.find? (fun i => bits.getLsbD i) with
+      | none => exact popDefer_mono act h
+      | some i =>
+        dsimp only
+        cases di.slots[i]? with
+        | none => exact .error _ _
+        | some o =>
+          cases o with
+          | none => exact .error _ _
+          | some sn =>
+            dsimp only
+            cases hw : m.write _ _ with
+            | none => exact .error _ _
+            | some m1 =>
+              obtain ⟨m1', hw', hm1⟩ := h.write (BytesRefineA.refl _) hw
+              rw [hw']
+              exact .some (load_mono h _ _) hm1
+
+/-- Results of `panicRec?`: a failing source, both without a record, or the same flags and
+activation with refined values. -/
+inductive PanicRecRefines : Except String (Option (Bool × Bool × Nat × Val)) →
+    Except String (Option (Bool × Bool × Nat × Val)) → Prop where
+  | error (msg : String) (r : Except String (Option (Bool × Bool × Nat × Val))) :
+      PanicRecRefines (.error msg) r
+  | none : PanicRecRefines (.ok none) (.ok none)
+  | some (r w : Bool) (k : Nat) {v v' : Val} : Refines v v' →
+      PanicRecRefines (.ok (some (r, w, k, v))) (.ok (some (r, w, k, v')))
+
+theorem panicRec?_mono {m m' : Mem} (h : Mem.Refines m m') :
+    PanicRecRefines (panicRec? m) (panicRec? m') := by
+  unfold panicRec?
+  rcases h.find? panicBlk with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
+  · rw [h1, h2]; exact .none
+  · rw [h1, h2]
+    dsimp only
+    have hd := decode_mono ha.data 0 recTy
+    revert hd
+    generalize decode a.data 0 recTy = d
+    generalize decode a'.data 0 recTy = d'
+    intro hd
+    split
+    · next r w k v =>
+      cases hd with
+      | agg hl =>
+        obtain ⟨r', _, rfl, hr, hl⟩ := hl.cons_inv
+        obtain ⟨w', _, rfl, hw, hl⟩ := hl.cons_inv
+        obtain ⟨k', _, rfl, hk, hl⟩ := hl.cons_inv
+        obtain ⟨v', _, rfl, hv, hl⟩ := hl.cons_inv
+        cases hl.nil_inv
+        dsimp only
+        cases hr' : r.asInt .w8 with
+        | none => exact .error _ _
+        | some r0 =>
+          cases hw' : w.asInt .w8 with
+          | none => exact .error _ _
+          | some w0 =>
+            cases hk' : k.asInt .w64 with
+            | none => exact .error _ _
+            | some k0 =>
+              rw [hr.asInt hr', hw.asInt hw', hk.asInt hk']
+              exact .some _ _ _ hv
+    · exact .error _ _
+
+theorem setPanicRec_mono {m m' : Mem} (h : Mem.Refines m m') (r w : Bool) (k : Nat) {v v' : Val}
+    (hv : Refines v v') : Mem.Refines (setPanicRec m r w k v) (setPanicRec m' r w k v') :=
+  h.set panicBlk ⟨rfl, encode_mono recTy (.agg (.cons (Refines.refl _) (.cons (Refines.refl _)
+    (.cons (Refines.refl _) (.cons hv .nil)))))⟩
+
+/-- Results of `deferredCode?`: a failing source, or the same code symbol. -/
+theorem deferredCode?_mono {m m' : Mem} (h : Mem.Refines m m') {c c' : Val} (hc : Refines c c')
+    {code : Option String} (hd : deferredCode? m c = .ok code) :
+    deferredCode? m' c' = .ok code ∧ c.hasPoison = false := by
+  unfold deferredCode? at hd ⊢
+  cases hp : c.asPtrWord with
+  | none => rw [hp] at hd; cases hd
+  | some p =>
+    rw [hp] at hd
+    rw [hc.asPtrWord hp]
+    refine ⟨?_, Val.hasPoison_of_asPtrWord hp⟩
+    dsimp only at hd ⊢
+    by_cases hn : p.isNil = true
+    · rw [if_pos hn] at hd ⊢; exact hd
+    · rw [if_neg hn] at hd ⊢
+      cases ht : codeTarget? (m.load (.ptr none) p) with
+      | none => rw [ht] at hd; cases hd
+      | some name =>
+        rw [ht] at hd
+        rw [codeTarget?_mono (load_mono h _ _) ht]
+        exact hd
+
+theorem callDeferred_mono {env : Env} (hE : env.Mono) (act : Nat) {c c' : Val}
+    (hc : Refines c c') (hp : c.hasPoison = false) (code : Option String) {m m' : Mem}
+    (h : Mem.Refines m m') :
+    COutcome.Refines (callDeferred env act c code m) (callDeferred env act c' code m') := by
+  cases code with
+  | none => exact .panicked _ h
+  | some name =>
+    simp only [callDeferred]
+    cases hx : env.extern name with
+    | none => exact .stuck _ _
+    | some f => exact hE name f hx rfl (by simpa using hp) .nil (.some hc) (h.poisonBlock _)
+
+theorem deferproc_mono (act : Nat) : (deferproc act).Mono := by
+  intro args args' _ _ _ _ _ _ ha _ hm
+  unfold deferproc
+  match args, args', ha with
+  | [_], _, .cons hf .nil => exact .returned .nil (pushDefer_mono act hf hm)
+  | [], _, .nil => exact .stuck _ _
+  | _ :: _ :: _, _, .cons _ (.cons _ _) => exact .stuck _ _
+
+theorem deferprocStack_mono (act : Nat) : (deferprocStack act).Mono := by
+  intro args args' clo clo' m m' _ _ ha _ hm
+  have hreg : ∀ d : Ptr, COutcome.Refines (deferprocStack act [.ptr d] clo m)
+      (deferprocStack act [.ptr d] clo' m') := by
+    intro d
+    have hl := load_mono hm (.ptr none) ⟨d.blk, d.off + 24⟩
+    simp only [deferprocStack]
+    revert hl
+    generalize m.load (.ptr none) ⟨d.blk, d.off + 24⟩ = x
+    generalize m'.load (.ptr none) ⟨d.blk, d.off + 24⟩ = x'
+    intro hl
+    by_cases hx : x = .poison
+    · subst hx; exact .stuck _ _
+    · have hx' := hl.ne_poison hx
+      have e1 : (match x with
+          | .poison => COutcome.stuck "deferprocStack: undefined fn"
+          | fn => .returned [] (pushDefer act fn m)) = .returned [] (pushDefer act x m) := by
+        cases x <;> first | exact absurd rfl hx | rfl
+      have e2 : (match x' with
+          | .poison => COutcome.stuck "deferprocStack: undefined fn"
+          | fn => .returned [] (pushDefer act fn m')) = .returned [] (pushDefer act x' m') := by
+        cases x' <;> first | exact absurd rfl hx' | rfl
+      rw [e1, e2]
+      exact .returned .nil (pushDefer_mono act hl hm)
+  match args, args', ha with
+  | [], _, .nil => exact .stuck _ _
+  | _ :: _ :: _, _, .cons _ (.cons _ _) => exact .stuck _ _
+  | [a], _, .cons hf .nil =>
+    cases hf with
+    | poison => exact .stuck _ _
+    | ptr d => exact hreg d
+    | int w x =>
+      cases w with
+      | w64 => exact hreg (Ptr.ofAddr x)
+      | _ => exact .stuck _ _
+    | _ => exact .stuck _ _
+
+theorem deferreturn_go_mono {env : Env} (hE : env.Mono) (act : Nat) :
+    ∀ (n : Nat) {m m' : Mem}, Mem.Refines m m' →
+      COutcome.Refines (deferreturn.go env act n m) (deferreturn.go env act n m')
+  | 0, _, _, h => .returned .nil h
+  | n + 1, m, m', h => by
+    simp only [deferreturn.go]
+    have hp := popDefer_mono act h
+    revert hp
+    generalize popDefer act m = r
+    generalize popDefer act m' = r'
+    intro hp
+    cases hp with
+    | error => exact .stuck _ _
+    | none => exact .returned .nil h
+    | @some c c' m1 m1' hc hm1 =>
+      dsimp only
+      cases hd : deferredCode? m1 c with
+      | error => exact .stuck _ _
+      | ok code =>
+        obtain ⟨hd', hcp⟩ := deferredCode?_mono hm1 hc hd
+        rw [hd']
+        dsimp only
+        have ho := callDeferred_mono hE act hc hcp code hm1
+        revert ho
+        generalize callDeferred env act c code m1 = o
+        generalize callDeferred env act c' code m1' = o'
+        intro ho
+        cases ho with
+        | returned _ hm2 => exact deferreturn_go_mono hE act n hm2
+        | panicked e hm2 => exact .panicked e hm2
+        | stuck => exact .stuck _ _
+
+theorem deferreturn_mono {env : Env} (hE : env.Mono) (act : Nat) : (deferreturn env act).Mono := by
+  intro _ _ _ _ m m' _ _ _ _ hm
+  simp only [deferreturn]
+  rw [← (deferEntries_mono hm).length_eq]
+  exact deferreturn_go_mono hE act _ hm
+
+theorem gorecover_mono (act : Nat) : (gorecover act).Mono := by
+  intro _ _ _ _ m m' _ _ _ _ hm
+  simp only [gorecover]
+  have hp := panicRec?_mono hm
+  revert hp
+  generalize panicRec? m = r
+  generalize panicRec? m' = r'
+  intro hp
+  cases hp with
+  | error => exact .stuck _ _
+  | none => exact .returned (.cons (Refines.refl _) .nil) hm
+  | some r w k hv =>
+    cases r with
+    | true => exact .returned (.cons (Refines.refl _) .nil) hm
+    | false =>
+      dsimp only
+      by_cases hc : (k != 0 && (act == k || (w && act == k + 1))) = true
+      · rw [if_pos hc, if_pos hc]
+        exact .returned (.cons hv .nil) (setPanicRec_mono hm true w k hv)
+      · rw [if_neg hc, if_neg hc]
+        exact .returned (.cons (Refines.refl _) .nil) hm
+
+/-- `Env.atAct` keeps monotonicity: its runtime entry points are monotone. -/
+theorem Env.Mono.atAct {env : Env} (hE : env.Mono) (act : Nat) : (env.atAct act).Mono := by
+  intro name c h
+  simp only [Env.atAct] at h
+  split at h
+  · cases h; exact deferproc_mono act
+  · split at h
+    · cases h; exact deferprocStack_mono act
+    · split at h
+      · cases h; exact deferreturn_mono hE act
+      · split at h
+        · cases h; exact gorecover_mono act
+        · exact hE name c h
+
 end GoFV.SSA.Sem
 
 namespace GoFV.Proof
@@ -93,9 +431,6 @@ theorem panicBounds_mono (k : Int64) {as bs : List Val} (h : RefinesList as bs) 
     obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
     cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm => exact .panic _ hm
   · exact .stuck _ _
-
-/-- PLACEHOLDER (Semantics7, not for merge): `Env.atAct` keeps monotonicity. -/
-theorem Env.Mono.atAct {env : Env} (hE : env.Mono) (act : Nat) : (env.atAct act).Mono := sorry
 
 theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs : List Val}
     (h : RefinesList as bs) : Res.Refines (callOp env ctx v as) (callOp env ctx v bs) := by

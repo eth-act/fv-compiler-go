@@ -1219,6 +1219,14 @@ function with defers) at their result types. -/
 def stackOuts (outs : Array (Option AuxRef × Ty × Nat)) : Array (Option AuxRef × Ty × Nat) :=
   outs.map fun (n, t, _) => (n, t, 0)
 
+/-- The memory `r` after a deferred call of `runDefers` with the panic record `saved` from
+before the call restored while panicking (`pe = some _`; `saved = none`: removed). -/
+def restorePanicRec (pe : Option Panic) (saved : Option Alloc) (r : Mem) : Mem :=
+  match pe, saved with
+  | some _, some a => r.set panicBlk a
+  | some _, none => r.free panicBlk
+  | none, _ => r
+
 /-- Run the deferred calls of activation `act` (at most `n`; §9.6). While panicking
 (`pe = some e`) each runs with a panic record that lets it `recover` (`gorecover`), restored
 afterwards (an outer panic's record, `none`: removed); a recovery ends the panic, the remaining
@@ -1245,12 +1253,7 @@ def runDefers (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : Defe
       match deferredCode? m1 clo with
       | .error msg => .stuck msg
       | .ok code =>
-      let saved := m1.find? panicBlk
-      let restore (r : Mem) : Mem :=
-        match pe, saved with
-        | some _, some a => r.set panicBlk a
-        | some _, none => r.free panicBlk
-        | none, _ => r
+      let restore := restorePanicRec pe (m1.find? panicBlk)
       let m2 := match pe with
         | some e => setPanicRec m1 false (deferredWrapper code) m1.nextAct e.toAny
         | none => m1
