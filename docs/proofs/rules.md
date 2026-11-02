@@ -1203,6 +1203,9 @@ byte, half-word or word: `ult_shr`, `pow_cond`, `IsInBounds.lean`; 1,358 rules):
 verified 91,370 → 91,409 (on a5d70b2). `:579` (`Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`,
 `c < e`) is false for `c < 0`: the shift by a negative amount fills with the sign, which the
 rewrite's `x << (e-c)` shifts out (`x = -1`, `d = 1`, `c = -1`, `e = 1`: `2` against `0`).
+With the move segments (`:1978`/`:1992`/`:2011`/`:2035`, `VarDef` forms `:2049`/`:2064`/`:2084`/
+`:2109`; `moveSeg?`, pointers equal up to copies or `LocalAddr`s of one variable, `samePtr`; 1,366
+rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
