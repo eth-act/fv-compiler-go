@@ -260,23 +260,30 @@ theorem roleOK_tgt {i k : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c
 
 theorem roleOK_wb {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
     (hρ : c.roleOf rs x = .wb i) :
-    inT = true ∧ i = j ∧ ∃ r, rs[i]? = some r ∧ w.args = #[r.sp.mem] ∧
-      w.auxInt.toInt.toNat = r.wbN ∧ 0 < r.wbN ∧ r.wbN ≤ 8 ∧
-      ∃ e, c.tabs.ty w.type = .tuple [.ptr e, .mem] := by
+    inT = true ∧ i = j ∧ w.args = #[w.args[0]!] ∧ 0 < w.auxInt.toInt ∧ w.auxInt.toInt ≤ 8 ∧
+      (∃ e, c.tabs.ty w.type = .tuple [.ptr e, .mem]) ∧
+      ∃ r, rs[i]? = some r ∧ (w.args[0]! = r.sp.mem ∨ c.roleOf rs w.args[0]! = .sel1 i ∨
+        c.roleOf rs w.args[0]! = .bstore i) := by
   unfold Ctx.roleOK at h
   rw [hw] at h
-  simp only [hρ, Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨hT, hi⟩, h⟩ := h
-  refine ⟨hT, hi, ?_⟩
-  split at h
-  · rename_i r hr
-    simp only [Bool.and_eq_true, beq_iff_eq, and_assoc, decide_eq_true_eq] at h
-    obtain ⟨ha, hn, h0, h8, -, hty⟩ := h
-    refine ⟨r, hr, ha, hn, h0, h8, ?_⟩
-    split at hty
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, and_assoc] at h
+  obtain ⟨hT, hi, hsz, h0, h8, hty, h⟩ := h
+  refine ⟨hT, hi, ?_, h0, h8, ?_, ?_⟩
+  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
+  · split at hty
     · exact ⟨_, ‹_›⟩
     · cases hty
-  · cases h
+  · split at h
+    · rename_i r hr
+      simp only [Bool.or_eq_true, beq_iff_eq] at h
+      refine ⟨r, hr, ?_⟩
+      rcases h with h | h
+      · exact .inl h
+      · split at h
+        · rename_i k hk; simp at h; subst h; exact .inr (.inl hk)
+        · rename_i k hk; simp at h; subst h; exact .inr (.inr hk)
+        · cases h
+    · cases h
 
 theorem roleOK_sel {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
     (hρ : c.roleOf rs x = .sel0 i ∨ c.roleOf rs x = .sel1 i) :
@@ -299,19 +306,14 @@ theorem roleOK_sel {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g
 theorem roleOK_off {i : Nat} (h : c.roleOK b B segs rs inT j x = true) (hw : c.g.value? x = some w)
     (hρ : c.roleOf rs x = .off i) :
     inT = true ∧ i = j ∧ w.args = #[w.args[0]!] ∧ isPtrTy (c.tabs.ty w.type) = true ∧
-      c.roleOf rs w.args[0]! = .sel0 i ∧ ∃ r, rs[i]? = some r ∧ 0 ≤ w.auxInt.toInt ∧
-        w.auxInt.toInt % 8 = 0 ∧ w.auxInt.toInt / 8 < r.wbN := by
+      c.roleOf rs w.args[0]! = .sel0 i ∧ 0 ≤ w.auxInt.toInt ∧ w.auxInt.toInt % 8 = 0 ∧
+      w.auxInt.toInt / 8 < c.offSize x := by
   unfold Ctx.roleOK at h
   rw [hw] at h
-  simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
-  obtain ⟨hT, hi, hsz, hty, hr, h⟩ := h
-  refine ⟨hT, hi, ?_, hty, hr, ?_⟩
-  · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
-  · split at h
-    · rename_i r hr'
-      simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-      exact ⟨r, hr', h.1.1, h.1.2, h.2⟩
-    · cases h
+  simp only [hρ, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, and_assoc] at h
+  obtain ⟨hT, hi, hsz, hty, hr, h0, h8, hlt⟩ := h
+  refine ⟨hT, hi, ?_, hty, hr, h0, h8, hlt⟩
+  rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _⟩⟩⟩ <;> simp_all
 
 theorem roleOK_bstore {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
     (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .bstore i) :
@@ -320,12 +322,13 @@ theorem roleOK_bstore {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
       c.roleOf rs w.args[0]! = .off i ∧
       (∃ r, rs[i]? = some r ∧ (c.runArg B segs j r w.args[1]! = true ∨
         c.roleOf rs w.args[1]! = .tload i)) ∧
-      (c.roleOf rs w.args[2]! = .sel1 i ∨ c.roleOf rs w.args[2]! = .bstore i) := by
+      (c.roleOf rs w.args[2]! = .sel1 i ∨ c.roleOf rs w.args[2]! = .bstore i) ∧
+      c.memWb rs w.args[2]! = c.offWb w.args[0]! := by
   unfold Ctx.roleOK at h
   rw [hw] at h
   simp only [hρ, Bool.and_eq_true, beq_iff_eq, and_assoc] at h
-  obtain ⟨hT, hi, hsz, hty, haux, ho, hv, hm⟩ := h
-  refine ⟨hT, hi, ?_, ?_, ?_, ho, ?_, ?_⟩
+  obtain ⟨hT, hi, hsz, hty, haux, ho, hv, hm, hgen⟩ := h
+  refine ⟨hT, hi, ?_, ?_, ?_, ho, ?_, ?_, hgen⟩
   · rcases hw' : w.args with ⟨_ | ⟨a, _ | ⟨_, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩⟩ <;> simp_all
   · unfold tyIs isMemTy at hty; split at hty <;> simp_all
   · split at haux
@@ -340,6 +343,23 @@ theorem roleOK_bstore {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
     · rename_i k hk; simp at hm; subst hm; exact .inl hk
     · rename_i k hk; simp at hm; subst hm; exact .inr hk
     · cases hm
+
+theorem wbSize_of (hw : c.g.value? x = some w) : c.wbSize x = w.auxInt.toInt.toNat := by
+  simp [Ctx.wbSize, hw]
+
+/-- The buffer of a `Select1` is its `WB`'s. -/
+theorem memSize_sel1 {i : Nat} {a : ID} (hρ : c.roleOf rs x = .sel1 i)
+    (hw : c.g.value? x = some w) (hargs : w.args = #[a]) : c.memSize rs x = c.wbSize a := by
+  simp [Ctx.memSize, Ctx.memWb, hρ, Ctx.arg0, hw, hargs]
+
+/-- The buffer of a buffer store is its pointer's. -/
+theorem memSize_bstore {i : Nat} {o v m : ID} (hρ : c.roleOf rs x = .bstore i)
+    (hw : c.g.value? x = some w) (hargs : w.args = #[o, v, m]) :
+    c.memSize rs x = c.offSize o := by
+  simp [Ctx.memSize, Ctx.memWb, Ctx.offSize, hρ, Ctx.arg0, hw, hargs]
+
+theorem memSize_eq {m o : ID} (h : c.memWb rs m = c.offWb o) : c.memSize rs m = c.offSize o := by
+  simp [Ctx.memSize, Ctx.offSize, h]
 
 theorem roleOK_tload {i : Nat} (h : c.roleOK b B segs rs inT j x = true)
     (hw : c.g.value? x = some w) (hρ : c.roleOf rs x = .tload i) :

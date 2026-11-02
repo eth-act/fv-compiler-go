@@ -192,7 +192,7 @@ theorem local_call {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs 
     {as : List ID} {mm : ID} (hargs : w.args.toList = as ++ [mm]) (hlen : abi.params.size = as.length)
     (hword : ∀ a ∈ as, ∀ z, QR c rs Gr a z → WordV z)
     (hmem : ∀ z, QR c rs Gr mm z →
-      ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ z = .mem m ∧ BufW M r.wbN m) :
+      ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ z = .mem m ∧ BufW M m) :
     LocalQ env (Ctx.make tabs g) fr0 (QR c rs Gr) x := by
   intro g' _ hA
   have hA' : ∀ a ∈ w.args.toList, ∃ z, g'.regs[a]? = some (some z) ∧ QR c rs Gr a z :=

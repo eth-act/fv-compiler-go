@@ -219,20 +219,21 @@ theorem seg_step (S : Setup c b B rs l) {env : Env} {Gr fr0 frT : Frame}
             rw [hr] at hr'; cases hr'; exact hx
         obtain ⟨z, hz, hq⟩ := hQ2 _ (.inr ((hv _).1 hin))
         refine ⟨z, hz, ?_⟩
-        have key : ∀ z : Val, (∃ r' M' m, rs[k]? = some r' ∧ MemAt Gr r'.sp.mem M' ∧ z = Val.mem m ∧
-            Buf M' r'.wbN m) → ∃ M m, RunMem Gr rs k M ∧ z = Val.mem m ∧ W M m := by
-          rintro z ⟨r', M', m, hr', hM', rfl, hB⟩
+        have key : ∀ (z : Val) (n : Nat), (∃ r' M' m, rs[k]? = some r' ∧
+            MemAt Gr r'.sp.mem M' ∧ z = Val.mem m ∧ Buf M' n m) →
+            ∃ M m, RunMem Gr rs k M ∧ z = Val.mem m ∧ W M m := by
+          rintro z n ⟨r', M', m, hr', hM', rfl, hB⟩
           rw [hr] at hr'; cases hr'
           rw [MemAt, hMr] at hM'; cases hM'
           exact ⟨M, m, hM, rfl, hB.w hnob⟩
         rcases hmt with h | h | h
-        · simp only [QR, h] at hq; exact key z hq
-        · simp only [QR, h] at hq; exact key z hq
+        · simp only [QR, h] at hq; exact key z _ hq
+        · simp only [QR, h] at hq; exact key z _ hq
         · simp only [QR, h] at hq
           obtain ⟨r', M', m, hr', hM', rfl, hB⟩ := hq
           rw [hr] at hr'; cases hr'
           rw [MemAt, hMr] at hM'; cases hM'
-          rcases hB with hB | hB
+          rcases hB with ⟨n, hB⟩ | hB
           · exact ⟨M, m, hM, rfl, hB.w hnob⟩
           · rw [hB]; exact ⟨M, M, hM, rfl, W.refl hnob⟩
 

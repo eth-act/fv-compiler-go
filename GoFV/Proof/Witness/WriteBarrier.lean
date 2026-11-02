@@ -25,7 +25,8 @@ the new and the old pointer (`WB [2]`, two buffer `Store`s), the end block merge
 `writebarrier_refines` applies; its precondition `WbPre` holds, e.g., on `Env.p1` with the
 write-barrier helpers (`withWbHelpers`) and a read-only `runtime.writeBarrier` flag
 (`wbPre_witness`). `writebarrier_call_witness`: a run with a `runtime.wbMove` call (a `Move` of a
-pointer-holding struct, `copyPair`).
+pointer-holding struct, `copyPair`). `writebarrier_multi_witness`: a buffer block with two `WB`s
+(nine barrier stores, `fill9`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -368,5 +369,152 @@ theorem writebarrier_call_witness :
     have hg : check { tabs := out.tables, typs := spTyps } out.func = .ok () := ok_of_toBool hc
     have hf : check wcCheckEnv wcFunc = .ok () := ok_of_toBool wc_check
     exact ⟨out, rfl, ⟨v, hv, hcv⟩, hf, hg, GoFV.Proof.writebarrier_refines h hf hg⟩
+
+/-! ## Several `WB`s in one buffer block
+
+A synthetic input that fills more than one write-barrier buffer:
+
+```go
+func fill9(p *[9]unsafe.Pointer, q unsafe.Pointer) {
+	p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7], p[8] = q, q, q, q, q, q, q, q, q
+}
+```
+
+Nine barrier stores (`v12` to `p`, `v13`–`v20` to `OffPtr [8(k+1)] p`) in one run record the new
+pointer `q` once and the nine old pointers, ten buffer entries: writebarrier allocates `WB [8]`
+(`v35`, on the run's input memory) and, after its eight buffer `Store`s, `WB [2]` (`v56`, on the
+buffer `Store` `v53`). -/
+
+/-- `abiInfo` of `fill9`: two pointer parameters in registers, no result. -/
+def mwABI : CallABI :=
+  { abi := 1, nin := 2, nout := 0, spillOff := 8, spillSize := 16, inRegs := 2, outRegs := 0,
+    params := #[{ out := false, index := 0, type := 36, name := some 3, regs := #[0], offset := 0 },
+                { out := false, index := 1, type := 2, name := some 4, regs := #[1],
+                  offset := 8 }] }
+
+/-- The definition tables: `[9]unsafe.Pointer` is type 35, `*[9]unsafe.Pointer` type 36, the
+parameters `p`, `q` auxes 3, 4; the base types at `spTabs`' numbers. -/
+def mwTabs : Tables where
+  posBases := #[]
+  types :=
+    let t := Array.replicate 37 (none : Option TypeDef)
+    let t := t.set! 1 (some (mkTy .FUNC (some 8) (some 8) (some 8) true true false false
+      "func(*[9]unsafe.Pointer, unsafe.Pointer)" "func(*[9]unsafe.Pointer, unsafe.Pointer)"
+      (.func 0 2 0 #[f10Field "p" 36 none, f10Field "q" 2 none])))
+    let t := t.set! 2 (some (mkTy .UNSAFEPTR (some 8) (some 8) (some 8) true true true true
+      "unsafe.Pointer" "unsafe.Pointer"))
+    let t := t.set! 3 (some (spScalar .BOOL 1 "bool"))
+    let t := t.set! 10 (some (spScalar .UINT32 4 "uint32"))
+    let t := t.set! 16 (some (spScalar .UINTPTR 8 "uintptr"))
+    let t := t.set! 20 (some (spPtr "*uint32" "*uint32" 10))
+    let t := t.set! 22 (some (spPtr "*uintptr" "*uintptr" 16))
+    let t := t.set! 28 (some (spPseudo .SSA "mem"))
+    let t := t.set! 32 (some (spPseudo .RESULTS "mem" (.results #[28])))
+    let t := t.set! 33 (some (spPtr "*unsafe.Pointer" "*unsafe.Pointer" 2))
+    let t := t.set! 35 (some (mkTy .ARRAY (some 72) (some 8) (some 72) true false true false
+      "[9]unsafe.Pointer" "[9]unsafe.Pointer" (.array 2 9)))
+    t.set! 36 (some (spPtr "*[9]unsafe.Pointer" "*[9]unsafe.Pointer" 35))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.fill9}", kind := .call (some 2) (some mwABI) },
+    some { fmt := GoStr.ofString "main.fill9",
+           kind := .sym (GoStr.ofString "main.fill9") 1 "-" 0 {} none none none #[] none },
+    some { fmt := GoStr.ofString "p",
+           kind := .name (GoStr.ofString "p") .PPARAM 36 0 1 { used := true } p0 },
+    some { fmt := GoStr.ofString "q",
+           kind := .name (GoStr.ofString "q") .PPARAM 2 8 1 { used := true } p0 },
+    some { fmt := GoStr.ofString "unsafe.Pointer", kind := .type 2 },
+    some { fmt := GoStr.ofString "p+0", kind := .nameOff 3 0 },
+    some { fmt := GoStr.ofString "q+0", kind := .nameOff 4 0 }]
+  slots := #[none, some { name := 3, type := 36, off := 0, splitOf := none, splitOffset := 0 },
+    some { name := 4, type := 2, off := 0, splitOf := none, splitOffset := 0 }]
+
+/-- `fill9`, the input of `writebarrier`: `v12` stores `q` to `p`, `v(13+k)` to
+`v(4+k) = OffPtr [8(k+1)] p`, each on the previous store's memory. -/
+def mwFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 21
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[21] #[] #[] (Array.range' 1 21))]
+  valueTab := #[none,
+    some (spV 1 .InitMem 28 0 none p0 1 #[]),
+    some (spV 2 .ArgIntReg 36 0 (some 6) p0 9 #[]),
+    some (spV 3 .ArgIntReg 2 1 (some 7) p0 9 #[])] ++
+    ((List.range 8).map fun k =>
+      some (spV (4 + k) .OffPtr 33 (Int64.ofNat (8 * (k + 1))) none p0 1 #[2])).toArray ++
+    #[some (spV 12 .Store 28 0 (some 5) p0 1 #[2, 3, 1])] ++
+    ((List.range 8).map fun k =>
+      some (spV (13 + k) .Store 28 0 (some 5) p0 1 #[4 + k, 3, 12 + k])).toArray ++
+    #[some (spV 21 .MakeResult 32 0 none p0 1 #[20])]
+  names := #[(1, #[2]), (2, #[3])]
+  namedx := #[]
+  splits := #[]
+  canon := #[({ name := 3, type := 36, off := 0, splitOf := none, splitOffset := 0 }, 1),
+    ({ name := 4, type := 2, off := 0, splitOf := none, splitOffset := 0 }, 2)]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := {}
+
+def mwCheckEnv : CheckEnv := { tabs := mwTabs, typs := spTyps }
+
+/-- What `writebarrier` reads of the environment: `spPassEnv`'s configuration. -/
+def mwPassEnv : PassEnv where
+  passName := "writebarrier"
+  pkg := GoStr.ofString "main"
+  funcName := GoStr.ofString "fill9"
+  abi := 1
+  nosplit := false
+  pgohot := false
+  config := spPassEnv.config
+  typs := spTyps
+  typeOrder := default
+  tables := mwTabs
+
+theorem mw_check : (check mwCheckEnv mwFunc).toBool = true := by decide +kernel
+
+/-- The pass succeeds, the checker accepts its result, whose values 35 and 56 are `WB [8]` and
+`WB [2]`, the second on the memory of a buffer `Store` (value 53) of the first, and which passes
+`check`. -/
+theorem mw_pass :
+    (match writebarrierChecked mwPassEnv mwFunc with
+      | .ok out =>
+          (out.func.value? 35).any (fun v => v.op == Op.WB && v.auxInt == 8) &&
+          (out.func.value? 56).any (fun v => v.op == Op.WB && v.auxInt == 2 &&
+            v.args == #[53]) &&
+          (out.func.value? 53).any (fun v => v.op == Op.Store) &&
+          (check { tabs := out.tables, typs := spTyps } out.func).toBool
+      | .error _ => false) = true := by
+  decide +kernel
+
+/-- **Non-vacuity of `writebarrier_refines` for several `WB`s in one buffer block**: writebarrier
+expands the nine barrier stores of `fill9` into a run whose buffer block allocates `WB [8]` and,
+on a buffer `Store`'s memory, `WB [2]`; the checker accepts it, both functions pass `check`, and
+the result refines the input on `WbPre` inputs (`wbPre_witness`). -/
+theorem writebarrier_multi_witness :
+    ∃ out, writebarrierChecked mwPassEnv mwFunc = .ok out ∧
+      (∃ v, out.func.value? 35 = some v ∧ v.op = .WB ∧ v.auxInt = 8) ∧
+      (∃ v, out.func.value? 56 = some v ∧ v.op = .WB ∧ v.auxInt = 2 ∧ v.args = #[53]) ∧
+      (∃ v, out.func.value? 53 = some v ∧ v.op = .Store) ∧
+      check mwCheckEnv mwFunc = .ok () ∧
+      check { tabs := out.tables, typs := spTyps } out.func = .ok () ∧
+      RefinesFrom WB.WbPre out.tables out.func mwPassEnv.tables mwFunc := by
+  have hpc := mw_pass
+  cases h : writebarrierChecked mwPassEnv mwFunc with
+  | error e => rw [h] at hpc; cases hpc
+  | ok out =>
+    rw [h] at hpc
+    simp only [Bool.and_eq_true] at hpc
+    obtain ⟨⟨⟨h35, h56⟩, h53⟩, hc⟩ := hpc
+    obtain ⟨v, hv, hv'⟩ := (Option.any_eq_true _ _).1 h35
+    obtain ⟨w, hw, hw'⟩ := (Option.any_eq_true _ _).1 h56
+    obtain ⟨s, hs, hs'⟩ := (Option.any_eq_true _ _).1 h53
+    simp only [Bool.and_eq_true, beq_iff_eq] at hv' hw' hs'
+    have hg : check { tabs := out.tables, typs := spTyps } out.func = .ok () := ok_of_toBool hc
+    have hf : check mwCheckEnv mwFunc = .ok () := ok_of_toBool mw_check
+    exact ⟨out, rfl, ⟨v, hv, hv'⟩, ⟨w, hw, hw'.1.1, hw'.1.2, hw'.2⟩, ⟨s, hs, hs'⟩, hf, hg,
+      GoFV.Proof.writebarrier_refines h hf hg⟩
 
 end GoFV.Proof.Witness

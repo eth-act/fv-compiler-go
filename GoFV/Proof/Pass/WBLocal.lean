@@ -41,7 +41,7 @@ def RunMem (Gr : Frame) (rs : List Run) (j : Nat) (M : Mem) : Prop :=
 def flagPtr : Ptr := ⟨flagBlk, 0⟩
 
 /-- A memory of the buffer block after a helper call: `M` with a buffer, or `M` itself. -/
-def BufW (M : Mem) (n : Nat) (m : Mem) : Prop := Buf M n m ∨ m = M
+def BufW (M : Mem) (m : Mem) : Prop := (∃ n, Buf M n m) ∨ m = M
 
 /-- What the register of a value of the chain holds, by its role (see the module doc). -/
 def QR (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) (y : Val) : Prop :=
@@ -57,16 +57,19 @@ def QR (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) (y : Val) : Prop 
   | .ncThen j => ∃ r n, rs[j]? = some r ∧ r.nc = some n ∧ Gr.regs[n]? = some (some y)
   | .tgt j k => ∃ r s M m, rs[j]? = some r ∧ r.src[k]? = some s ∧ MemAt Gr s M ∧ y = .mem m ∧
       W M m
-  | .wb j => ∃ r M, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧
-      y = .tuple [.ptr ⟨.wbuf, 0⟩, .mem (M.wbAlloc r.wbN)]
+  | .wb j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧
+      y = .tuple [.ptr ⟨.wbuf, 0⟩, .mem m] ∧ Buf M (c.wbSize x) m
   | .sel0 _ => y = .ptr ⟨.wbuf, 0⟩
-  | .sel1 j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ Buf M r.wbN m
-  | .bstore j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ Buf M r.wbN m
-  | .off j => ∃ r i, rs[j]? = some r ∧ i < r.wbN ∧ y = .ptr ⟨.wbuf, BitVec.ofNat 64 (8 * i)⟩
+  | .sel1 j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧
+      Buf M (c.memSize rs x) m
+  | .bstore j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧
+      Buf M (c.memSize rs x) m
+  | .off j => ∃ r i, rs[j]? = some r ∧ i < c.offSize x ∧
+      y = .ptr ⟨.wbuf, BitVec.ofNat 64 (8 * i)⟩
   | .taddr _ => ∃ s, y = .ptr ⟨.global s, 0⟩
   | .call j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .tuple [.mem m, .agg []] ∧
-      BufW M r.wbN m
-  | .seln j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ BufW M r.wbN m
+      BufW M m
+  | .seln j => ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧ y = .mem m ∧ BufW M m
   | .none => False
 
 /-- The write-barrier helpers are the runtime's (`Runtime.wbHelper`), and a call of either clobbers
@@ -709,46 +712,66 @@ theorem runMem_mem {c : WBCheck.Ctx} {rs : List Run} {Gr : Frame} (hH : HeldGr c
   rw [hr] at hr'; cases hr'
   exact hH _ _ _ hmh hq hM'
 
-/-- **`WB [n] memⱼ`**: the run's memory with a fresh buffer. -/
+/-- **`WB [n] m`**: the memory `m` (the run's memory, or the memory of an earlier buffer of the
+run) with a fresh buffer of `n` entries. -/
 theorem local_wb {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs : List Run}
-    {Gr fr0 : Frame} (hH : HeldGr c rs Gr) {x : ID} {w : Value} {j : Nat} {r : Run} {M : Mem}
-    (hw : g.value? x = some w) (hid : w.id = x) (hrole : c.roleOf rs x = .wb j)
-    (hr : rs[j]? = some r) (hM : RunMem Gr rs j M) (hop : w.op = .WB)
-    (hargs : w.args = #[r.sp.mem]) (hmh : c.held r.sp.mem = true)
-    (hn : w.auxInt.toInt.toNat = r.wbN) {e : Option Nat} (hty : tabs.ty w.type = .tuple [.ptr e, .mem]) :
+    {Gr fr0 : Frame} (hH : HeldGr c rs Gr) (hS : MemsGr Gr) {x : ID} {w : Value} {j : Nat}
+    {r : Run} {a : ID} (hw : g.value? x = some w) (hid : w.id = x) (hrole : c.roleOf rs x = .wb j)
+    (hr : rs[j]? = some r) (hM : ∃ M, RunMem Gr rs j M) (hop : w.op = .WB)
+    (hargs : w.args = #[a]) (hmh : c.held r.sp.mem = true)
+    (ha : a = r.sp.mem ∨ c.roleOf rs a = .sel1 j ∨ c.roleOf rs a = .bstore j)
+    (hn : w.auxInt.toInt.toNat = c.wbSize x) (h8 : w.auxInt.toInt.toNat ≤ 8) {e : Option Nat}
+    (hty : tabs.ty w.type = .tuple [.ptr e, .mem]) :
     LocalQ env (Ctx.make tabs g) fr0 (QR c rs Gr) x := by
   intro g' _ hA
-  obtain ⟨z, hz, hq⟩ := argQ hw hA (a := r.sp.mem) (by rw [hargs]; simp)
-  obtain rfl := runMem_mem hH hr hM hmh hq
-  refine ⟨.tuple [.ptr ⟨.wbuf, 0⟩, .mem (M.wbAlloc r.wbN)], ?_, ?_⟩
-  · rw [stepV_eq hw, evalValue_of (L := [.mem M]) (by rw [hargs]; exact ⟨hz, trivial⟩),
+  obtain ⟨z, hz, hq⟩ := argQ hw hA (a := a) (by rw [hargs]; simp)
+  obtain ⟨M, m0, hM0, rfl, hB0⟩ : ∃ M m0, MemAt Gr r.sp.mem M ∧ z = .mem m0 ∧
+      (m0 = M ∨ ∃ n', Buf M n' m0) := by
+    rcases ha with rfl | h | h
+    · obtain ⟨M, hM⟩ := hM
+      obtain rfl := runMem_mem hH hr hM hmh hq
+      obtain ⟨r', hr', hM'⟩ := hM
+      rw [hr] at hr'; cases hr'
+      exact ⟨M, M, hM', rfl, .inl rfl⟩
+    · simp only [QR, h] at hq
+      obtain ⟨r', M, m, hr', hM', rfl, hB⟩ := hq
+      rw [hr] at hr'; cases hr'
+      exact ⟨M, m, hM', rfl, .inr ⟨_, hB⟩⟩
+    · simp only [QR, h] at hq
+      obtain ⟨r', M, m, hr', hM', rfl, hB⟩ := hq
+      rw [hr] at hr'; cases hr'
+      exact ⟨M, m, hM', rfl, .inr ⟨_, hB⟩⟩
+  have hB : Buf M w.auxInt.toInt.toNat (m0.wbAlloc w.auxInt.toInt.toNat) := by
+    rcases hB0 with rfl | ⟨n', hB'⟩
+    · exact buf_wbAlloc (W.refl (hS _ _ hM0).nobuf) h8
+    · exact buf_wbAlloc' hB' h8
+  refine ⟨.tuple [.ptr ⟨.wbuf, 0⟩, .mem (m0.wbAlloc w.auxInt.toInt.toNat)], ?_, ?_⟩
+  · rw [stepV_eq hw, evalValue_of (L := [.mem m0]) (by rw [hargs]; exact ⟨hz, trivial⟩),
       tys_get hw hid, hty]
-    have : evalOp env (Ctx.make tabs g) g' w [.mem M] (.tuple [.ptr e, .mem]) =
-        .ok (evalPure .WB (.tuple [.ptr e, .mem]) w.auxInt w.aux [.mem M]) := by
+    have : evalOp env (Ctx.make tabs g) g' w [.mem m0] (.tuple [.ptr e, .mem]) =
+        .ok (evalPure .WB (.tuple [.ptr e, .mem]) w.auxInt w.aux [.mem m0]) := by
       simp only [evalOp, frameVal, hop]; rfl
     rw [this]
-    show Res.ok ((wbOp w.auxInt [.mem M]).retype (.tuple [.ptr e, .mem])) = _
-    simp only [wbOp, hn]
+    show Res.ok ((wbOp w.auxInt [.mem m0]).retype (.tuple [.ptr e, .mem])) = _
+    simp only [wbOp]
     rfl
   · simp only [QR, hrole]
-    obtain ⟨r', hr', hM'⟩ := hM
-    rw [hr] at hr'; cases hr'
-    exact ⟨r, M, hr, hM', rfl⟩
+    exact ⟨r, M, _, hr, hM0, rfl, by rw [← hn]; exact hB⟩
 
 /-- **`Select0`/`Select1` of the `WB`**: the buffer and the memory with the buffer. -/
 theorem local_sel {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs : List Run}
-    {Gr fr0 : Frame} (hS : MemsGr Gr) {x : ID} {w : Value} {j : Nat} {a : ID}
-    (hn8 : ∀ r, rs[j]? = some r → r.wbN ≤ 8)
+    {Gr fr0 : Frame} {x : ID} {w : Value} {j : Nat} {a : ID}
     (hw : g.value? x = some w) (hid : w.id = x) (hargs : w.args = #[a])
     (ha : c.roleOf rs a = .wb j)
     (hcase : (w.op = .Select0 ∧ c.roleOf rs x = .sel0 j ∧ isPtrTy (tabs.ty w.type) = true) ∨
-      (w.op = .Select1 ∧ c.roleOf rs x = .sel1 j ∧ tabs.ty w.type = .mem)) :
+      (w.op = .Select1 ∧ c.roleOf rs x = .sel1 j ∧ tabs.ty w.type = .mem ∧
+        c.memSize rs x = c.wbSize a)) :
     LocalQ env (Ctx.make tabs g) fr0 (QR c rs Gr) x := by
   intro g' _ hA
   obtain ⟨z, hz, hq⟩ := argQ hw hA (a := a) (by rw [hargs]; simp)
   simp only [QR, ha] at hq
-  obtain ⟨r, M, hr, hM, rfl⟩ := hq
-  rcases hcase with ⟨hop, hrole, hty⟩ | ⟨hop, hrole, hty⟩
+  obtain ⟨r, M, m, hr, hM, rfl, hB⟩ := hq
+  rcases hcase with ⟨hop, hrole, hty⟩ | ⟨hop, hrole, hty, hsz⟩
   · obtain ⟨e, he⟩ : ∃ e, tabs.ty w.type = .ptr e := by
       unfold isPtrTy at hty; split at hty
       · exact ⟨_, ‹_›⟩
@@ -757,12 +780,12 @@ theorem local_sel {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs :
     rw [stepV_eq hw, evalValue_of (L := [_]) (by rw [hargs]; exact ⟨hz, trivial⟩),
       tys_get hw hid, he, DAE.evalOp_pureOp (.inr (.inl hop)), hop]
     rfl
-  · refine ⟨.mem (M.wbAlloc r.wbN), ?_, ?_⟩
+  · refine ⟨.mem m, ?_, ?_⟩
     · rw [stepV_eq hw, evalValue_of (L := [_]) (by rw [hargs]; exact ⟨hz, trivial⟩),
         tys_get hw hid, hty, DAE.evalOp_pureOp (.inr (.inr (.inl hop))), hop]
       rfl
     · simp only [QR, hrole]
-      exact ⟨r, M, _, hr, hM, rfl, buf_wbAlloc (W.refl (hS _ _ hM).nobuf) (hn8 r hr)⟩
+      exact ⟨r, M, _, hr, hM, rfl, by rw [hsz]; exact hB⟩
 
 /-- **A buffer pointer** `OffPtr [8k] buf`, `k < n`. -/
 theorem local_off {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs : List Run}
@@ -770,7 +793,8 @@ theorem local_off {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs :
     (hw : g.value? x = some w) (hid : w.id = x) (hrole : c.roleOf rs x = .off j)
     (hr : rs[j]? = some r) (hop : w.op = .OffPtr) (hargs : w.args = #[a])
     (ha : c.roleOf rs a = .sel0 j) (hty : isPtrTy (tabs.ty w.type) = true)
-    (h0 : 0 ≤ w.auxInt.toInt) (h8 : w.auxInt.toInt % 8 = 0) (hlt : w.auxInt.toInt / 8 < r.wbN) :
+    (h0 : 0 ≤ w.auxInt.toInt) (h8 : w.auxInt.toInt % 8 = 0)
+    (hlt : w.auxInt.toInt / 8 < c.offSize x) :
     LocalQ env (Ctx.make tabs g) fr0 (QR c rs Gr) x := by
   intro g' _ hA
   obtain ⟨z, hz, hq⟩ := argQ hw hA (a := a) (by rw [hargs]; simp)
@@ -780,7 +804,7 @@ theorem local_off {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs :
     unfold isPtrTy at hty; split at hty
     · exact ⟨_, ‹_›⟩
     · cases hty
-  obtain ⟨k, hk, hkn⟩ : ∃ k : Nat, w.auxInt.toInt = 8 * (k : Int) ∧ k < r.wbN :=
+  obtain ⟨k, hk, hkn⟩ : ∃ k : Nat, w.auxInt.toInt = 8 * (k : Int) ∧ k < c.offSize x :=
     ⟨(w.auxInt.toInt / 8).toNat, by omega, by omega⟩
   have hb : BitVec.ofInt 64 w.auxInt.toInt = BitVec.ofNat 64 (8 * k) := by
     rw [hk, show (8 * (k : Int)) = ((8 * k : Nat) : Int) by push_cast; rfl, BitVec.ofInt_natCast]
@@ -803,6 +827,7 @@ theorem local_bstore {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {r
     (hw : g.value? x = some w) (hid : w.id = x) (hrole : c.roleOf rs x = .bstore j)
     (hop : w.op = .Store) (hargs : w.args = #[o, v, mm])
     (ho : c.roleOf rs o = .off j) (hmm : c.roleOf rs mm = .sel1 j ∨ c.roleOf rs mm = .bstore j)
+    (hsame : c.memSize rs mm = c.offSize o) (hsz : c.memSize rs x = c.memSize rs mm)
     (haux : auxTy tabs w.aux = .int .w64) (hty : tabs.ty w.type = .mem) :
     LocalQ env (Ctx.make tabs g) fr0 (QR c rs Gr) x := by
   intro g' _ hA
@@ -812,10 +837,10 @@ theorem local_bstore {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {r
   simp only [QR, ho] at hqo
   obtain ⟨r, i, hr, hi, rfl⟩ := hqo
   obtain ⟨r', M, m, hr', hM, rfl, hB⟩ : ∃ r M m, rs[j]? = some r ∧ MemAt Gr r.sp.mem M ∧
-      zm = .mem m ∧ Buf M r.wbN m := by
+      zm = .mem m ∧ Buf M (c.memSize rs mm) m := by
     rcases hmm with h | h <;> (simp only [QR, h] at hqm; exact hqm)
   rw [hr] at hr'; cases hr'
-  obtain ⟨m', hm', hB'⟩ := hB.write hi (bs := encode (.int .w64) zv) (by
+  obtain ⟨m', hm', hB'⟩ := hB.write (hsame ▸ hi) (bs := encode (.int .w64) zv) (by
     rw [encode_size]; rfl)
   refine ⟨.mem m', ?_, ?_⟩
   · rw [stepV_eq hw, evalValue_of (L := [_, _, _]) (by rw [hargs]; exact ⟨hzo, hzv, hzm, trivial⟩),
@@ -824,6 +849,6 @@ theorem local_bstore {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {r
     rw [show (Ctx.make tabs g).tabs = tabs from rfl, haux, hm']
     rfl
   · simp only [QR, hrole]
-    exact ⟨r, M, m', hr, hM, rfl, hB'⟩
+    exact ⟨r, M, m', hr, hM, rfl, by rw [hsz]; exact hB'⟩
 
 end GoFV.Proof.WB
