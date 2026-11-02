@@ -735,18 +735,20 @@ def _root_.GoFV.SSA.Sem.Panic.toAny : Panic → Val
 def isWrapperName (name : String) : Bool :=
   (name.splitOn ".deferwrap").length > 1 || name.endsWith "-fm"
 
-/-- The deferred function of closure `clo` is a wrapper. -/
-def deferredWrapper (m : Mem) : Val → Bool
-  | .ptr p => match codeTarget? (m.load (.ptr none) p) with
+/-- The deferred function of closure `clo` (a pointer word, `Val.asPtrWord`) is a wrapper. -/
+def deferredWrapper (m : Mem) (clo : Val) : Bool :=
+  match clo.asPtrWord with
+  | some p => match codeTarget? (m.load (.ptr none) p) with
     | some n => isWrapperName n
     | none => false
-  | _ => false
+  | none => false
 
 /-- Run the deferred closure `clo` of activation `act`: a closure call without arguments (its
-code is the closure's first word). The caller's outgoing area is the callee's (`callOp`). -/
+code is the closure's first word; the closure is a pointer word, `Val.asPtrWord`, and a nil one
+faults). The caller's outgoing area is the callee's (`callOp`). -/
 def callDeferred (env : Env) (act : Nat) (clo : Val) (m : Mem) : COutcome :=
-  match clo with
-  | .ptr p =>
+  match clo.asPtrWord with
+  | some p =>
     if p.isNil then .panicked .nilDeref m
     else
       match codeTarget? (m.load (.ptr none) p) with
@@ -755,7 +757,7 @@ def callDeferred (env : Env) (act : Nat) (clo : Val) (m : Mem) : COutcome :=
         | some c => c [] (some clo) (m.poisonBlock (.outargs act))
         | none => .stuck s!"deferred call {name}: no contract"
       | none => .stuck "deferred call without a known callee"
-  | _ => .stuck "deferred call of an undefined closure"
+  | none => .stuck "deferred call of an undefined closure"
 
 /-- `runtime.deferproc(fn)` from activation `act`. -/
 def deferproc (act : Nat) : Contract := fun args _ m =>
@@ -824,6 +826,14 @@ theorem _root_.GoFV.SSA.Sem.Env.atAct_extern_of {env : Env} {act : Nat} {name : 
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
   simp [Env.atAct, h1, h2, h3, h4]
 
+/-- The memory of a closure call whose closure is the nil pointer word (`Val.asPtrWord`). Go
+loads the code word from the closure without a nil check (arm64 faults), so the call panics with
+`nilDeref` (`deferNilFunc`: an open-coded `defer f()` of a nil `f` at a normal exit). -/
+def nilClosureMem? (clo : Option Val) (rest : List Val) : Option Mem :=
+  match clo.bind Val.asPtrWord, rest.getLast? with
+  | some p, some (.mem m) => if p.isNil then some m else none
+  | _, _ => none
+
 /-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
 `InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
 post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register pieces and
@@ -838,9 +848,14 @@ sees that area poisoned, in both forms, so post-`expand calls` argument stores i
 invisible to the callee except through the decoded arguments. In both forms the call is
 `stuck` unless the slots of its stack-assigned arguments are writable in its memory
 (`outargsOK`; always so in a run, whose frame allocates the area): the post form's argument
-stores into them then cannot fail where the pre form's call succeeds. -/
+stores into them then cannot fail where the pre form's call succeeds. A closure call through a
+nil closure faults loading the closure's code word (`nilClosureMem?`): a `nilDeref` panic, decided
+by the closure (the code word loaded from it is `poison`). -/
 def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   let (callee?, clo, rest) := callTarget ctx v argv
+  match nilClosureMem? clo rest with
+  | some m => .panic .nilDeref m
+  | none =>
   let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
   let m ← match rest.getLast? with
     | some (.mem m) => .ok m
