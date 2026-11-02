@@ -1110,6 +1110,9 @@ With `:997` as a struct-store split (1,326 rules): 8,583 → 8,629 at stock unde
 passes on quick-v4, validator-only 21 → 27; full-v5 fully verified (`gofv-ssa-opt --check
 --verified`) 79,484 → 81,245 on 6ed197f (first unverified run `opt` 13,762 → 9,951; `decompose
 builtin` 1,423 → 3,305, functions that now reach it).
+With `:59`/`:60` (`CvtBoolToUint8` of a constant), `:292–:294` (`CondSelect` of equal or constant
+arms: `Refines.refl`, `CondSelect.lean`) and `:657` (`Xor` by all ones: `BitVec.allOnes_xor`,
+`XorCom.lean`; 1,335 rules): 8,629 → 8,631 on quick-v4; full-v5 fully verified 81,245 → 81,252.
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
