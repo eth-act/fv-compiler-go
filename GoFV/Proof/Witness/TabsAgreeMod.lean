@@ -37,7 +37,7 @@ theorem p1_tempOblivious : Env.p1.TempOblivious := by
   simp only at hc
   split at hc
   all_goals first
-    | (cases hc; exact ⟨rfl, hm, hmm⟩)
+    | (cases hc; exact ⟨rfl, trivial, hm, hmm⟩)
     | cases hc
 
 theorem clampArgs_initAvoids (x : BitVec 64) : InitAvoids Env.p1 (clampArgs x) {} := by

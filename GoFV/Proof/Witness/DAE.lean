@@ -47,7 +47,7 @@ theorem p1_frameSafe : Env.p1.FrameSafe := by
   simp only at hc
   split at hc
   all_goals first
-    | (cases hc; exact ⟨rfl, hm, hmm⟩)
+    | (cases hc; exact ⟨rfl, trivial, hm, hmm⟩)
     | cases hc
 
 theorem stackF0_initAvoids : InitAvoids Env.p1 [] {} := by

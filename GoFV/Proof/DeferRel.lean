@@ -374,6 +374,10 @@ theorem restorePanicRec_rel (hR : MemRel U R) (hU : TempU U) {m m' : Mem} (h : R
   · exact hR.free h _
   · exact h
 
+theorem rtWritable_eq (hR : MemRel U R) (hU : TempU U) {m m' : Mem} (h : R m m') (s : String) :
+    rtWritable m' (.global s) = rtWritable m (.global s) := by
+  unfold rtWritable; rw [hR.find h _ (global_notU hU s)]
+
 /-! ## Deferred calls -/
 
 theorem deferredCode_eq (hR : MemRel U R) (hU : TempU U) {m m' : Mem} (h : R m m') {clo : Val}
@@ -405,8 +409,12 @@ theorem deferproc_respects (hR : MemRel U R) (hU : TempU U) (act : Nat) :
   unfold deferproc
   match args, hargs with
   | [fn], hargs =>
-    exact ⟨rfl, by simp, pushDefer_avoids hU hm act (hargs fn (by simp)),
-      pushDefer_rel hR hU h act fn⟩
+    dsimp only
+    rw [show deferBlk = .global "gofv:defers" from rfl, rtWritable_eq hR hU h]
+    split
+    · exact ⟨rfl, by simp, pushDefer_avoids hU hm act (hargs fn (by simp)),
+        pushDefer_rel hR hU h act fn⟩
+    · trivial
   | [], _ => trivial
   | _ :: _ :: _, _ => trivial
 
@@ -417,26 +425,37 @@ theorem deferprocStack_respects (hR : MemRel U R) (hU : TempU U) (act : Nat) :
       CRel U R
         (match m.load (.ptr none) ⟨d.blk, d.off + 24⟩ with
           | .poison => .stuck "deferprocStack: undefined fn"
-          | fn => .returned [] (pushDefer act fn m))
+          | fn =>
+            if rtWritable m deferBlk then .returned [] (pushDefer act fn m)
+            else .stuck "deferprocStack: read-only defer list")
         (match m'.load (.ptr none) ⟨d.blk, d.off + 24⟩ with
           | .poison => .stuck "deferprocStack: undefined fn"
-          | fn => .returned [] (pushDefer act fn m')) := by
+          | fn =>
+            if rtWritable m' deferBlk then .returned [] (pushDefer act fn m')
+            else .stuck "deferprocStack: read-only defer list") := by
     intro d hd
-    rw [hR.load h _ ⟨d.blk, d.off + 24⟩ hd]
+    rw [hR.load h _ ⟨d.blk, d.off + 24⟩ hd,
+      show deferBlk = .global "gofv:defers" from rfl, rtWritable_eq hR hU h]
     have hfn := load_avoids hU hm (.ptr none) (p := ⟨d.blk, d.off + 24⟩) hd
     revert hfn
     generalize m.load (.ptr none) ⟨d.blk, d.off + 24⟩ = fn
     intro hfn
     cases fn
     case poison => trivial
-    all_goals exact ⟨rfl, by simp, pushDefer_avoids hU hm act hfn, pushDefer_rel hR hU h act _⟩
-  unfold deferprocStack
-  split
-  · rename_i d
-    exact reg d (hargs (.ptr d) (by simp))
-  · rename_i x
-    exact reg _ (ofAddr_notU hU x)
+    all_goals
+      dsimp only
+      split
+      · exact ⟨rfl, by simp, pushDefer_avoids hU hm act hfn, pushDefer_rel hR hU h act _⟩
+      · trivial
+  rcases args with _ | ⟨a, _ | ⟨b, l⟩⟩
   · trivial
+  · cases a with
+    | ptr d => exact reg d (hargs (.ptr d) (by simp))
+    | int w x =>
+      cases w
+      all_goals first | exact reg _ (ofAddr_notU hU x) | trivial
+    | _ => trivial
+  · cases a <;> (try cases ‹Width›) <;> trivial
 
 theorem gorecover_respects (hR : MemRel U R) (hU : TempU U) (act : Nat) :
     Respects U R (gorecover act) := by
@@ -456,8 +475,11 @@ theorem gorecover_respects (hR : MemRel U R) (hU : TempU U) (act : Nat) :
       | false =>
         dsimp only
         split
-        · exact ⟨rfl, by simpa using hv, setPanicRec_avoids hm _ _ _ hv,
-            setPanicRec_rel hR hU h _ _ _ _⟩
+        · rw [show panicBlk = .global "gofv:panic" from rfl, rtWritable_eq hR hU h]
+          split
+          · exact ⟨rfl, by simpa using hv, setPanicRec_avoids hm _ _ _ hv,
+              setPanicRec_rel hR hU h _ _ _ _⟩
+          · trivial
         · exact ⟨rfl, by simpa using nilIface_avoids hU, hm, h⟩
 
 theorem deferreturn_respects (hR : MemRel U R) (hU : TempU U) {env : Env}
@@ -471,6 +493,9 @@ theorem deferreturn_respects (hR : MemRel U R) (hU : TempU U) {env : Env}
   | zero => exact ⟨rfl, by simp, hm, h⟩
   | succ n ih =>
     unfold deferreturn.go
+    rw [show deferBlk = .global "gofv:defers" from rfl, rtWritable_eq hR hU h]
+    split
+    · trivial
     have hp := popDefer_rel hR hU h act
     cases hpm : popDefer act m with
     | error msg => trivial
