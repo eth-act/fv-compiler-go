@@ -24,7 +24,8 @@ the new and the old pointer (`WB [2]`, two buffer `Store`s), the end block merge
 `WBCheck.wbOK` accepts the result, input and output pass `check` (kernel evaluation), so
 `writebarrier_refines` applies; its precondition `WbPre` holds, e.g., on `Env.p1` with the
 write-barrier helpers (`withWbHelpers`) and a read-only `runtime.writeBarrier` flag
-(`wbPre_witness`).
+(`wbPre_witness`). `writebarrier_call_witness`: a run with a `runtime.wbMove` call (a `Move` of a
+pointer-holding struct, `copyPair`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -233,5 +234,139 @@ theorem wbPre_witness : WB.WbPre spEnv [.ptr ⟨.heap 0, 0⟩] {} := by
     intro name c hc args clo m _ _ _
     simp only [Env.p1] at hc
     split at hc <;> cases hc <;> trivial
+
+/-! ## A run with a helper call
+
+A synthetic input in the shape of the corpus' `regexp.(*Regexp).Copy` (whose `Move` of a
+160-byte `Regexp` is the smallest accepted run with a helper call of `quick-v4`), with a smaller
+type:
+
+```go
+type pair struct{ a, b unsafe.Pointer }
+
+func copyPair(p, q *pair) { *p = *q } // v4 = Move {pair} [16] p q mem
+```
+
+writebarrier expands the `Move` (a pointer-holding type, to a pointer argument) into the split on
+the flag, the buffer block's `runtime.wbMove(type:main.pair, p, q)` call (`v13`, with the type
+address `v12` in the split block and its memory `SelectN` as the `Phi`'s second argument) and the
+re-emitted `Move` in the end block. -/
+
+/-- `abiInfo` of `copyPair`: two pointer parameters in registers, no result. -/
+def wcABI : CallABI :=
+  { abi := 1, nin := 2, nout := 0, spillOff := 8, spillSize := 16, inRegs := 2, outRegs := 0,
+    params := #[{ out := false, index := 0, type := 36, name := some 3, regs := #[0], offset := 0 },
+                { out := false, index := 1, type := 36, name := some 4, regs := #[1],
+                  offset := 8 }] }
+
+/-- The definition tables: `pair` is type 35 (aux 5), `*pair` type 36, the parameters `p`, `q`
+auxes 3, 4; the base types at `spTabs`' numbers. -/
+def wcTabs : Tables where
+  posBases := #[]
+  types :=
+    let t := Array.replicate 37 (none : Option TypeDef)
+    let t := t.set! 1 (some (mkTy .FUNC (some 8) (some 8) (some 8) true true false false
+      "func(*pair, *pair)" "func(*main.pair, *main.pair)"
+      (.func 0 2 0 #[f10Field "p" 36 none, f10Field "q" 36 none])))
+    let t := t.set! 2 (some (mkTy .UNSAFEPTR (some 8) (some 8) (some 8) true true true true
+      "unsafe.Pointer" "unsafe.Pointer"))
+    let t := t.set! 3 (some (spScalar .BOOL 1 "bool"))
+    let t := t.set! 10 (some (spScalar .UINT32 4 "uint32"))
+    let t := t.set! 16 (some (spScalar .UINTPTR 8 "uintptr"))
+    let t := t.set! 20 (some (spPtr "*uint32" "*uint32" 10))
+    let t := t.set! 22 (some (spPtr "*uintptr" "*uintptr" 16))
+    let t := t.set! 28 (some (spPseudo .SSA "mem"))
+    let t := t.set! 32 (some (spPseudo .RESULTS "mem" (.results #[28])))
+    let t := t.set! 35 (some (mkTy .STRUCT (some 16) (some 8) (some 16) true false true true
+      "pair" "main.pair" (.struct #[f10Field "a" 2 (some 0), f10Field "b" 2 (some 8)])))
+    t.set! 36 (some (spPtr "*pair" "*main.pair" 35))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.copyPair}", kind := .call (some 2) (some wcABI) },
+    some { fmt := GoStr.ofString "main.copyPair",
+           kind := .sym (GoStr.ofString "main.copyPair") 1 "-" 0 {} none none none #[] none },
+    some { fmt := GoStr.ofString "p",
+           kind := .name (GoStr.ofString "p") .PPARAM 36 0 1 { used := true } p0 },
+    some { fmt := GoStr.ofString "q",
+           kind := .name (GoStr.ofString "q") .PPARAM 36 8 1 { used := true } p0 },
+    some { fmt := GoStr.ofString "pair", kind := .type 35 },
+    some { fmt := GoStr.ofString "p+0", kind := .nameOff 3 0 },
+    some { fmt := GoStr.ofString "q+0", kind := .nameOff 4 0 }]
+  slots := #[none, some { name := 3, type := 36, off := 0, splitOf := none, splitOffset := 0 },
+    some { name := 4, type := 36, off := 0, splitOf := none, splitOffset := 0 }]
+
+/-- `copyPair`, the input of `writebarrier`. -/
+def wcFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 5
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[5] #[] #[] #[1, 2, 3, 4, 5])]
+  valueTab := #[none,
+    some (spV 1 .InitMem 28 0 none p0 1 #[]),
+    some (spV 2 .ArgIntReg 36 0 (some 6) p0 1 #[]),
+    some (spV 3 .ArgIntReg 36 1 (some 7) p0 1 #[]),
+    some (spV 4 .Move 28 16 (some 5) p0 1 #[2, 3, 1]),
+    some (spV 5 .MakeResult 32 0 none p0 1 #[4])]
+  names := #[(1, #[2]), (2, #[3])]
+  namedx := #[]
+  splits := #[]
+  canon := #[({ name := 3, type := 36, off := 0, splitOf := none, splitOffset := 0 }, 1),
+    ({ name := 4, type := 36, off := 0, splitOf := none, splitOffset := 0 }, 2)]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := {}
+
+def wcCheckEnv : CheckEnv := { tabs := wcTabs, typs := spTyps }
+
+/-- What `writebarrier` reads of the environment: `spPassEnv`'s configuration. -/
+def wcPassEnv : PassEnv where
+  passName := "writebarrier"
+  pkg := GoStr.ofString "main"
+  funcName := GoStr.ofString "copyPair"
+  abi := 1
+  nosplit := false
+  pgohot := false
+  config := spPassEnv.config
+  typs := spTyps
+  typeOrder := default
+  tables := wcTabs
+
+theorem wc_check : (check wcCheckEnv wcFunc).toBool = true := by decide +kernel
+
+/-- The pass succeeds, the checker accepts its result, whose value 13 calls `runtime.wbMove`, and
+which passes `check`. -/
+theorem wc_pass :
+    (match writebarrierChecked wcPassEnv wcFunc with
+      | .ok out => (out.func.value? 13).any (fun v => v.op == .StaticCall &&
+            v.aux.bind out.tables.callee? == some "runtime.wbMove") &&
+          (check { tabs := out.tables, typs := spTyps } out.func).toBool
+      | .error _ => false) = true := by
+  decide +kernel
+
+/-- **Non-vacuity of `writebarrier_refines` for a run with a helper call**: writebarrier expands
+the `Move` of `copyPair` into a run that calls `runtime.wbMove`, the checker accepts it, both
+functions pass `check`, and the result refines the input on `WbPre` inputs (`wbPre_witness`). -/
+theorem writebarrier_call_witness :
+    ∃ out, writebarrierChecked wcPassEnv wcFunc = .ok out ∧
+      (∃ v, out.func.value? 13 = some v ∧ v.op = .StaticCall ∧
+        v.aux.bind out.tables.callee? = some "runtime.wbMove") ∧
+      check wcCheckEnv wcFunc = .ok () ∧
+      check { tabs := out.tables, typs := spTyps } out.func = .ok () ∧
+      RefinesFrom WB.WbPre out.tables out.func wcPassEnv.tables wcFunc := by
+  have hpc := wc_pass
+  cases h : writebarrierChecked wcPassEnv wcFunc with
+  | error e => rw [h] at hpc; cases hpc
+  | ok out =>
+    rw [h] at hpc
+    simp only [Bool.and_eq_true] at hpc
+    obtain ⟨hcall, hc⟩ := hpc
+    obtain ⟨v, hv, hcv⟩ := (Option.any_eq_true _ _).1 hcall
+    simp only [Bool.and_eq_true, beq_iff_eq] at hcv
+    have hg : check { tabs := out.tables, typs := spTyps } out.func = .ok () := ok_of_toBool hc
+    have hf : check wcCheckEnv wcFunc = .ok () := ok_of_toBool wc_check
+    exact ⟨out, rfl, ⟨v, hv, hcv⟩, hf, hg, GoFV.Proof.writebarrier_refines h hf hg⟩
 
 end GoFV.Proof.Witness

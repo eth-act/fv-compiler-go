@@ -103,6 +103,7 @@ def main (args : List String) : IO UInt32 := do
   let mut shown := 0
   let mut whys : Std.HashMap String Nat := {}
   let mut cands : Array (Nat × Nat × String) := #[]
+  let mut callCands : Array (Nat × Nat × String) := #[]
   for path in files do
     let .ok data ← (IO.FS.readBinFile path).toBaseIO | continue
     let .ok e := parseExport data | continue
@@ -126,13 +127,15 @@ def main (args : List String) : IO UInt32 := do
       let .ok out := writebarrier env f | errs := errs + 1; continue
       if out.func == f then continue
       changed := changed + 1
-      if hasWbCall out.tables out.func then wbCalls := wbCalls + 1
+      let calls := hasWbCall out.tables out.func
+      if calls then wbCalls := wbCalls + 1
       match writebarrierChecked env f with
       | .ok o =>
         accepted := accepted + 1
         if o.func == out.func then atStock := atStock + 1
         let nv := f.blocks.foldl (fun n b => n + (vals f b).size) 0
         cands := cands.push (nv, f.blocks.size, s!"{path} {s.index}")
+        if calls then callCands := callCands.push (nv, f.blocks.size, s!"{path} {s.index}")
       | .error _ =>
         rejected := rejected + 1
         let w := if tabsAgree prev out.tables f then why out.tables f out.func else "tabsAgree"
@@ -145,8 +148,13 @@ def main (args : List String) : IO UInt32 := do
     (with wbZero/wbMove calls {wbCalls}), accepted {accepted} (at stock {atStock}), \
     rejected {rejected}, errors {errs}; storing to runtime.writeBarrier {flagStores}"
   IO.println s!"rejections by first failing condition: {whys.toList}"
+  let smallest (a : Array (Nat × Nat × String)) :=
+    (a.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)).toList.take 20
   IO.println "witness candidates (accepted inputs; values, blocks), smallest first:"
-  for (nv, nb, s) in (cands.qsort fun a b => a.1 < b.1 || (a.1 == b.1 && a.2.1 < b.2.1)).toList.take 20 do
+  for (nv, nb, s) in smallest cands do
+    IO.println s!"  {nv} {nb} {s}"
+  IO.println "with wbZero/wbMove calls:"
+  for (nv, nb, s) in smallest callCands do
     IO.println s!"  {nv} {nb} {s}"
   return 0
 
