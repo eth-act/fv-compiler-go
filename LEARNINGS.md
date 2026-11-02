@@ -97,6 +97,13 @@ avoiding): the problem, the trick, the numbers, where it is used.
   over 3 builds, at no measurable CPU cost (DSEVal 11.2 s, SegCall 7.5 s, AtomSimLoop 8 s,
   either way). Most modules are unaffected, so apply it per module when the watch loop
   reports `repro` = differs (#215, #296, #1).
+- **`weakLeanArgs` on a `lean_lib` do not reach `lean_exe` root modules.** Lake builds an exe's
+  root module (`GoFVTest.OptProvenProbe`, root of `lean_exe opt-proven-probe`) with the exe's own
+  arguments, so the lib's `-Dlinter.…=false` (and `-j4`) were missing. The `.olean` stored an
+  unused-variable warning with the absolute path, and two worktrees that built it via the lib and
+  via the exe got different files for the same input hash. Setting `weakLeanArgs` at package
+  level covers libs and exes. Lib modules stay byte-identical and nothing rebuilds, since the
+  arguments are untraced (#1).
 
 #### `exact lemma args` can spend seconds in a failed unification; `have h := lemma args; exact h`
 - **Problem:** `ecc_storeObl` (`GoFV.Proof.Pass.ECCall`) closed a goal stated over
