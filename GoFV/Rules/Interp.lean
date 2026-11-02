@@ -394,6 +394,18 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
            segs := (s.segs.map CRule.ofRule).toArray,
            phiSels := (s.phiSels.map CRule.ofRule).toArray }
 
+/-- A per-instance validated rule whose matched value earlier rewrites usually built: the
+nil-check eliminations of an `IsNonNil` (from `NeqPtr p (ConstNil)`) and of a `Convert` (of an
+`Addr` a fixed load produced), and the fixed loads (`isFixedLoad`; their `Load` or pointer often
+comes from an expansion or a selection). It is logged after a snapshot (`tryRule`'s `snap`), so
+the validator's layer starts from a function that has the matched values. -/
+def snapRule (r : Rule) : Bool :=
+  match r.pat with
+  | .op .IsNonNil .. => true
+  | .op .NilCheck _ _ _ _ _ (.op .Convert .. :: _) _ => true
+  | .op .Load .. => (r.cond matches some (.call "isFixedLoad" ..))
+  | _ => false
+
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let o := (← val v).op
@@ -403,11 +415,11 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   if o == .NilCheck || o == .IsNonNil then
     let ns := t.nilChecks
     for h : i in [0:ns.size] do
-      if ← tryRule v ns[i] (rs.size + i) then return true
+      if ← tryRule v ns[i] (rs.size + i) (snap := snapRule ns[i].rule) then return true
   if o == .Load then
     let ls := t.loads
     for h : i in [0:ls.size] do
-      if ← tryRule v ls[i] (rs.size + i) then return true
+      if ← tryRule v ls[i] (rs.size + i) (snap := snapRule ls[i].rule) then return true
     let ss := t.structLoads
     for h : i in [0:ss.size] do
       if ← tryRule v ss[i] (rs.size + ls.size + i) (slDefs := true) then return true

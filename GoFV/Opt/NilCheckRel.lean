@@ -16,7 +16,7 @@ the same values possibly reordered, the `Phi`s in the same order) and values, ex
   `StructSelect` of a `StructMake`'s pointer field that is one, all pointer-typed);
 * an `IsNonNil p` may become `ConstBool [1]` when a nil check of `p` justifies it or `p` holds a
   non-nil pointer whenever it is evaluated (`nnSeed`: an `Addr` of a symbol or a `LocalAddr` with
-  a name, pointer-typed; Go's `nonNilValues`);
+  a name, word-typed; Go's `nonNilValues`);
 
 and every block's schedule in `g` runs the roots of `f`'s, minus the removed checks, in the same
 order. `nilFrag penv f`: the checker accepts `nilcheckelim`'s output. Go's remaining assumptions
@@ -104,11 +104,34 @@ def ptrField (tabs : Tables) (t : TypeRef) (i : Nat) : Bool :=
     | _ => false
   | _ => false
 
+/-- The type of `t` has word shape: a pointer or a 64-bit integer (`uintptr`). -/
+def wordShaped (tabs : Tables) (t : TypeRef) : Bool :=
+  match tabs.ty t with
+  | .ptr _ | .int .w64 => true
+  | _ => false
+
+/-- `x` is word-typed and holds a non-nil pointer whenever it is evaluated (`Sem.frameVal`,
+never `poison`; at an integer shape the pointer's word): an `Addr` of a symbol or a `LocalAddr`
+with a name. -/
+def nnSeed (tabs : Tables) (f : Func) (x : ID) : Bool :=
+  match f.value? x with
+  | some v =>
+    wordShaped tabs v.type &&
+      match v.op with
+      | .LocalAddr => v.aux.isSome
+      | .Addr =>
+        match v.aux.bind tabs.aux? with
+        | some { kind := .sym .., .. } => true
+        | _ => false
+      | _ => false
+  | none => false
+
 /-- `x` is pointer-typed and points into an allocation whenever it is defined: an `Addr` or
 `LocalAddr` with a name, a nil check, `GetG` (the goroutine's `g`, an allocation of the
 environment, `docs/plans/semantics.md` §5), the `StringPtr` of a non-empty string constant
-(`nonEmptyStr`), an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a value or a `Convert` of one
-(at a pointer shape the identity on the word, `generic.rules:1376`), or a `StructSelect [i]`
+(`nonEmptyStr`), an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a value, a `Convert` of one or
+of an `nnSeed` (at a pointer shape the identity on the word, `generic.rules:1376`; a fixed load
+can give the `Addr` an integer type), or a `StructSelect [i]`
 of a `StructMake` whose field `i` is pointer-shaped (`ptrField`) and such a value. With `xt` (the
 checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also the first result of
 a malloc-family call (`mallocCall`) and a dictionary parameter (`dictArg`). -/
@@ -122,9 +145,13 @@ def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
       match v.op with
       | .Addr | .LocalAddr => v.aux.isSome
       | .NilCheck | .GetG => true
-      | .OffPtr | .AddPtr | .PtrIndex | .Copy | .Convert =>
+      | .OffPtr | .AddPtr | .PtrIndex | .Copy =>
         match v.args[0]? with
         | some a => safePtr xt tabs f n a
+        | none => false
+      | .Convert =>
+        match v.args[0]? with
+        | some a => safePtr xt tabs f n a || nnSeed tabs f a
         | none => false
       | .StringPtr =>
         match v.args[0]? with
@@ -153,21 +180,6 @@ def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
           | some n => dictArg tabs f n
           | none => false
       | _ => false
-
-/-- `x` is pointer-typed and holds a non-nil pointer whenever it is evaluated (`Sem.frameVal`,
-never `poison`): an `Addr` of a symbol or a `LocalAddr` with a name. -/
-def nnSeed (tabs : Tables) (f : Func) (x : ID) : Bool :=
-  match f.value? x with
-  | some v =>
-    ptrShaped tabs v.type &&
-      match v.op with
-      | .LocalAddr => v.aux.isSome
-      | .Addr =>
-        match v.aux.bind tabs.aux? with
-        | some { kind := .sym .., .. } => true
-        | _ => false
-      | _ => false
-  | none => false
 
 /-- `o` lists `a` before `b`. -/
 def listedBefore (o : Array ID) (a b : ID) : Bool :=

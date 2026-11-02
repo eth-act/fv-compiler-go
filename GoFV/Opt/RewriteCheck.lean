@@ -1395,12 +1395,13 @@ def idxSame (tabs : Tables) (f : Func) (i j : ID) : Bool := termEqB tabs f 4 i j
 
 /-- The allocation base pointer `a` points to at offset 0, where it is known statically: a
 pointer-shaped `LocalAddr`'s frame variable (in activation 0, where the atom simulation runs:
-`Sem.frameVal`, `AtomSim.MemAtoms`) or a pointer-shaped `Addr`'s global (`Sem.addrVal`). -/
+`Sem.frameVal`, `AtomSim.MemAtoms`) or a word-shaped `Addr`'s global (`Sem.addrVal`; at
+`uintptr` its word, which reads back as the pointer, `Ptr.word_asPtrWord`). -/
 def baseBlk? (tabs : Tables) (f : Func) (a : ID) : Option Sem.Blk :=
   match f.value? a with
   | some u =>
     if u.op == .LocalAddr && isPtrTy (tabs.ty u.type) then u.aux.map (Sem.frameBlk tabs 0)
-    else if u.op == .Addr && isPtrTy (tabs.ty u.type) then
+    else if u.op == .Addr && wordTy (tabs.ty u.type) then
       match u.aux.bind tabs.aux? with
       | some { kind := .sym name .., .. } => some (.global name.toStringLossy)
       | _ => none
@@ -3083,7 +3084,9 @@ frees them at the end), `pre` and the function with the `Phi` turned copy (`phiE
 related by copyelim's relation (`CopyCheck.copyOK`), and the next segment starts from the
 latter. The log is split likewise before every `Phi` selection (`RwEvent.snap pre`): the
 selection becomes a copy in the `ps` layer of the next segment, which starts from `pre`, so a
-rule logged before it matches the selection, not the copy. -/
+rule logged before it matches the selection, not the copy; and before the nil-check eliminations
+of `IsNonNil`s and `Convert`s and the fixed loads (`Interp.snapRule`), whose matched values
+earlier rewrites usually built (the layers of the next segment find them in `pre`). -/
 
 /-- `h` without the `Invalid` values listed in its blocks. -/
 def dropInvalid (h : Func) : Func :=

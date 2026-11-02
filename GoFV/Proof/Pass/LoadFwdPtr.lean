@@ -452,7 +452,8 @@ theorem ptrBase_den :
       obtain ⟨k', q, hq, rfl⟩ := ptrBase_den n c k0 q0 h0
       exact ⟨k', q, hq, ptr_add_add q _ o⟩
 
-/-- A pointer-shaped `LocalAddr`/`Addr` with a known allocation (`baseBlk?`) reads as its start. -/
+/-- A pointer-shaped `LocalAddr` or word-shaped `Addr` with a known allocation (`baseBlk?`) reads
+as its start. -/
 theorem baseBlk_den (hM : MemAtoms f.value? tabs ρ) {a : ID} {B : Blk}
     (hB : baseBlk? tabs f a = some B) {k : Nat} {P : Ptr}
     (h : (den f.value? tabs ρ k a).asPtrWord = some P) : P = ⟨B, 0⟩ := by
@@ -491,11 +492,17 @@ theorem baseBlk_den (hM : MemAtoms f.value? tabs ρ) {a : ID} {B : Blk}
       · rename_i _ hd
         simp only [Bool.and_eq_true, beq_iff_eq] at hd
         obtain ⟨hd, hpt⟩ := hd
-        obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
-          revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
+        have hr : ∀ x : Val, (x.retype (tabs.ty u.type)).asPtrWord = x.asPtrWord := by
+          intro x
+          unfold wordTy at hpt
+          split at hpt
+          · rename_i heq
+            rw [heq, ← Val.retype_ptr_eq_i64 x none, Val.asPtrWord_retype_ptr]
+          · rename_i e heq
+            rw [heq, Val.asPtrWord_retype_ptr]
+          · cases hpt
         have ht : termOp u.op = true := by rw [hd]; rfl
-        rw [den_succ_term hu ht, hd, GoFV.Proof.Rules.opVal_addr, he,
-          Val.asPtrWord_retype_ptr] at h
+        rw [den_succ_term hu ht, hd, GoFV.Proof.Rules.opVal_addr, hr] at h
         unfold GoFV.Proof.Rules.addrVal at h
         split at hB
         · rename_i name _ _ _ hax
