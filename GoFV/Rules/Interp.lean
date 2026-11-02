@@ -352,8 +352,8 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
     return true
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`; `nilChecks`/`loads`: the rule
-set's `nilChecks`/`loads`, tried on a `NilCheck`/`Load` after its row (their index continues
-the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`;
+set's `nilChecks`/`loads`, tried on a `NilCheck` or `IsNonNil`/`Load` after its row (their index
+continues the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`;
 `structStores`: the rule set's `structStores`, tried on a `Store` after its row, then `loads`
 (dropped identity writes, also tried on a `Zero` after its row; changed `Move` sources on a
 `Move` after its row); `segs`: the rule set's `segs`,
@@ -372,7 +372,7 @@ structure Table where
 /-- The index of the first `segs` rule on a value of op `o`: after its row and the tables
 `rewriteValue` tries on `o` before `segs`. -/
 def Table.segBase (t : Table) (o : Op) : Nat :=
-  t.values[o.ctorIdx]!.size + (if o == .NilCheck then t.nilChecks.size else 0) +
+  t.values[o.ctorIdx]!.size + (if o == .NilCheck || o == .IsNonNil then t.nilChecks.size else 0) +
     (if o == .Load then t.loads.size + t.structLoads.size else 0) +
     (if o == .Store then t.structStores.size + t.loads.size else 0) +
     (if o == .Zero || o == .Move then t.loads.size else 0)
@@ -394,20 +394,32 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
            segs := (s.segs.map CRule.ofRule).toArray,
            phiSels := (s.phiSels.map CRule.ofRule).toArray }
 
+/-- A per-instance validated rule whose matched value earlier rewrites usually built: the
+nil-check eliminations of an `IsNonNil` (from `NeqPtr p (ConstNil)`) and of a `Convert` (of an
+`Addr` a fixed load produced), and the fixed loads (`isFixedLoad`; their `Load` or pointer often
+comes from an expansion or a selection). It is logged after a snapshot (`tryRule`'s `snap`), so
+the validator's layer starts from a function that has the matched values. -/
+def snapRule (r : Rule) : Bool :=
+  match r.pat with
+  | .op .IsNonNil .. => true
+  | .op .NilCheck _ _ _ _ _ (.op .Convert .. :: _) _ => true
+  | .op .Load .. => (r.cond matches some (.call "isFixedLoad" ..))
+  | _ => false
+
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let o := (← val v).op
   let rs := t.values[o.ctorIdx]!
   for h : i in [0:rs.size] do
     if ← tryRule v rs[i] i then return true
-  if o == .NilCheck then
+  if o == .NilCheck || o == .IsNonNil then
     let ns := t.nilChecks
     for h : i in [0:ns.size] do
-      if ← tryRule v ns[i] (rs.size + i) then return true
+      if ← tryRule v ns[i] (rs.size + i) (snap := snapRule ns[i].rule) then return true
   if o == .Load then
     let ls := t.loads
     for h : i in [0:ls.size] do
-      if ← tryRule v ls[i] (rs.size + i) then return true
+      if ← tryRule v ls[i] (rs.size + i) (snap := snapRule ls[i].rule) then return true
     let ss := t.structLoads
     for h : i in [0:ss.size] do
       if ← tryRule v ss[i] (rs.size + ls.size + i) (slDefs := true) then return true

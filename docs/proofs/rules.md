@@ -190,23 +190,33 @@ nilcheckelim's checker rather than by a value refinement: `RuleSet.nilChecks` (t
 `NilCheck` after its value row, `Interp.Table.nilChecks`) holds the rules with
 `EffectRule.NilElim r := RewriteCheck.nilElimOK r = true` (the result is the checked pointer, whose
 op can be a `NilCheck.safePtr true` seed: `Addr`, `LocalAddr`, `NilCheck`, `GetG`, `OffPtr`,
-`SelectN`, `Arg`). `RewriteCheck.accepts` takes the log's nil-check events out in its nil-check
+`Convert`, `SelectN`, `Arg`). `RewriteCheck.accepts` takes the log's nil-check events out in its nil-check
 layers (`nilPre`: `NilCheck p mem` → `Copy p` on the layer's input; see "Layers" below),
 requires `NilCheck.nrel true` between the layer's input and that function, `check` of it, and
 the layer input's dictionary parameters in the result's tables to be the pass input's in the
 pass's tables (`nilOK`), and validates the output against the last layer's function with the
-remaining events. `safePtr` follows `OffPtr`, `AddPtr`, `PtrIndex` and `Copy` to its seeds (each
-keeps a non-nil pointer's allocation, `offPtr_safe`, `addPtr_safe`, `ptrIndex_safe`; a `Copy`
-is its argument), so a nil check whose pointer the log forwarded from a `Store` (a `Copy` after
-the forwarding layer) is justified by the stored pointer. Two more cases cover pointers that the
+remaining events. `safePtr` follows `OffPtr`, `AddPtr`, `PtrIndex`, `Copy` and `Convert` to its
+seeds (each keeps a non-nil pointer's allocation, `offPtr_safe`, `addPtr_safe`, `ptrIndex_safe`; a
+`Copy` is its argument, and so is a `Convert` at a pointer shape, `PtrOps.convert`), so a nil check
+whose pointer the log forwarded from a `Store` (a `Copy` after the forwarding layer) is justified
+by the stored pointer. Two more cases cover pointers that the
 log's value rules turn into seeds after the nil-check layers ran: the `StringPtr` of a non-empty
 string constant (`NilCheck.nonEmptyStr`; the data pointer `Sem.frameVal` gives the constant is the
 start of a global, at every shape of the constant, `safe_str_select`; `:1022` + `:1011` make it an
 `Addr`, whose nil check `:1375` drops) and a `StructSelect [i]` of a `StructMake` whose field `i`
 has pointer shape (`NilCheck.ptrField`) and whose argument `i` is a `safePtr` pointer
 (`safe_struct_select`; `:973` makes it that argument). Witnesses:
-`GoFV.Proof.Witness.ns_checkedRewrite` and `sm_checkedRewrite` (`GoFV/Proof/Witness/NilSel.lean`,
-kernel evaluation).
+`GoFV.Proof.Witness.ns_checkedRewrite`, `sm_checkedRewrite` and `cv_checkedRewrite` (`:1376`)
+(`GoFV/Proof/Witness/NilSel.lean`, kernel evaluation).
+
+`(IsNonNil (LocalAddr _ _)) => (ConstBool [true])` (`:1691`; `LocalAddr` is no term node) is
+validated the same way: `nilChecks` are also tried on an `IsNonNil` after its row, `nilElimOK`
+takes `(IsNonNil (Addr|LocalAddr …)) => (ConstBool [true])`, `nilPre` turns the `IsNonNil` into
+`ConstBool [1]`, and `nrel` accepts that when its pointer is an `NilCheck.nnSeed` (pointer-typed
+`LocalAddr` with a name or `Addr` of a symbol: its frame value is a non-nil pointer, never
+`poison`, so the source's `IsNonNil` is `true`, `VRel.nns`, `Nil.nnSeed_reg`; Go's nilcheckelim
+uses the same `nonNilValues`). Witness: `GoFV.Proof.Witness.ln_checkedRewrite`
+(`GoFV/Proof/Witness/NilSel.lean`, kernel evaluation).
 
 `safePtr true` (the rewrite passes' seeds) also takes as non-nil the first result of a
 malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobject` or a
@@ -244,8 +254,8 @@ input names a read-only symbol the pipeline input does not is skipped), and
 (RewriteCheck.roSyms env.tables f)`.
 Witness: `GoFV.Proof.Witness.nm_checkedRewrite` (`newInt(.dict)`: both nil checks removed,
 kernel evaluation) and `nm_rwPre` (the precondition with a dictionary). Proven:
-`generic.rules:1062`, `:1367`, `:1372`, `:1375`, `:1381`, `:1384`, `:1388`. Not provable this way
-(the pointer is no seed): `:1376` (`Convert` of `Addr`).
+`generic.rules:1062`, `:1367`, `:1372`, `:1375`, `:1376`, `:1381`, `:1384`, `:1388` (all of the
+nil-check eliminations) and `:1691`.
 
 ### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 
@@ -1220,7 +1230,9 @@ rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036). With store pointe
 the move segments were the only obstacle of, 110 remain, 71 of them `SelectN→Move` call segments
 whose size is `Mul64 (SliceLen (SliceMake p (Sub64 c d) …)) (Const64 [1])`). With those sizes
 (`termConst` through `SliceLen`/`SliceCap` of `SliceMake`): 110 → 32 of the 198; full-v5 fully
-verified 91,652 → 91,718 (on f100340).
+verified 91,652 → 91,718 (on f100340). With the nil seeds `:1376` (`Convert`) and `:1691`
+(`IsNonNil` of an `nnSeed`), snapshots before those eliminations and the fixed loads
+(`Interp.snapRule`) and word-typed `Addr` bases (1,368 rules): 91,718 → 91,839 (on 5059a31).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

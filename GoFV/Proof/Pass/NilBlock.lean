@@ -64,6 +64,7 @@ theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel xt tabs f g x fv gv) : gv.op
   | same hop => rw [hop]
   | nc h1 h2 => rw [h1, h2]; decide
   | nn h1 h2 => rw [h1, h2]; decide
+  | nns h1 h2 => rw [h1, h2]; decide
   | after h1 h2 => rw [h1, h2]; decide
 
 namespace Blk
@@ -228,6 +229,8 @@ theorem tgtArg {x : ID} (hx : Node f fb x) {gv : Value} (hgv : g.value? x = some
       rw [K.hfb] at hfb'; cases hfb'
       exact .inr ⟨hm, _, hn', by rw [hop']; decide⟩
   | nn hop hcb hai hs0 =>
+    rw [Array.eq_empty_of_size_eq_zero hs0] at ha; simp at ha
+  | nns hop hcb hai hs0 =>
     rw [Array.eq_empty_of_size_eq_zero hs0] at ha; simp at ha
   | @after nc hop hcp hs1 hn hA =>
     have hanc : a = nc := by
@@ -444,6 +447,83 @@ theorem evalOp_pure {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
   rfl
 
 omit K in
+/-- A pointer into an allocation is non-nil as its word. -/
+theorem nn_word {q : Ptr} (h : q.blk ≠ .nil) : NN q.word := by
+  rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨hc, a, ha, hw⟩ <;> rw [hw]
+  · exact h
+  · show (Ptr.ofAddr a).blk ≠ .nil
+    rw [Ptr.ofAddr_addr hc ha]; exact h
+
+omit K in
+/-- A non-nil value is `Safe`. -/
+theorem safe_of_nn {q : Val} (h : NN q) : Safe q := by
+  unfold NN at h
+  split at h
+  · exact h
+  · exact h
+  · exact h.elim
+
+omit K in
+/-- What `nnSeed` says of a value: a word-typed `Addr` or `LocalAddr` whose frame value is a
+non-nil pointer. -/
+theorem nnSeed_spec {z : ID} (h : Opt.NilCheck.nnSeed tabs f z = true) :
+    ∃ v, f.value? z = some v ∧ ((∃ e, tabs.ty v.type = .ptr e) ∨ tabs.ty v.type = .int .w64) ∧
+      (v.op = .Addr ∨ v.op = .LocalAddr) ∧
+      ∃ q, frameVal (Ctx.make tabs f) v = some (.ptr q) ∧ q.blk ≠ .nil := by
+  unfold Opt.NilCheck.nnSeed at h
+  cases hv : f.value? z with
+  | none => rw [hv] at h; cases h
+  | some v =>
+    rw [hv] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hp, hop⟩ := h
+    have hw : (∃ e, tabs.ty v.type = .ptr e) ∨ tabs.ty v.type = .int .w64 := by
+      unfold Opt.NilCheck.wordShaped at hp
+      split at hp
+      · next e he => exact .inl ⟨e, he⟩
+      · next he => exact .inr he
+      · cases hp
+    refine ⟨v, rfl, hw, ?_⟩
+    split at hop
+    · next h1 =>
+      obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 hop
+      refine ⟨.inr h1, _, by unfold frameVal; rw [h1]; simp [hn]; rfl, ?_⟩
+      unfold frameBlk; split <;> nofun
+    · next h1 =>
+      split at hop
+      · next name _ _ _ _ _ _ _ _ _ _ _ hk =>
+        refine ⟨.inl h1, ?_⟩
+        unfold frameVal; rw [h1]
+        simp only [Ctx.make] at hk ⊢
+        rw [hk]; exact ⟨_, rfl, nofun⟩
+      · cases hop
+    · cases hop
+
+/-- **`nnSeed` values hold non-nil pointers** in the source's frames. -/
+theorem nnSeed_reg {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
+    {z : ID} (h : Opt.NilCheck.nnSeed tabs f z = true) (hz : Base f bid z ∨ z ∈ oS.toList.take k) :
+    ∃ y, S.regs[z]? = some (some y) ∧ NN y := by
+  obtain ⟨v, hv, hw, hop, q, hq, hqn⟩ := nnSeed_spec h
+  have hph : v.op ≠ .Phi := by rcases hop with h1 | h1 <;> rw [h1] <;> decide
+  obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
+  obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
+  have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = tabs.ty v.type := by
+    rw [hid, tys_of_value hv]; rfl
+  refine ⟨y, hy, ?_⟩
+  obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := v)
+    (by rw [hev]; nofun)
+  rw [evalValue_of_argVals hvs, hty] at hev
+  obtain ⟨r, hr, hyr⟩ := bind_ok hev
+  subst hyr
+  have hnr : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+      v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
+    rcases hop with h1 | h1 <;> rw [h1] <;> decide
+  obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr
+  rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6, hq] at hr
+  cases hr
+  rcases hw with ⟨e, he⟩ | he <;> rw [he] <;> exact nn_word hqn
+
+omit K in
 theorem isNonNil_nn {q : Val} (h : NN q) : PtrOps.isNonNil [q] = .bool true := by
   match q, h with
   | .ptr p, h => simp only [NN] at h; simp [PtrOps.isNonNil, Ptr.isNil, h]
@@ -578,6 +658,26 @@ theorem sameOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     rw [evalValue_of_argVals hT0, evalOp_pure (.inr hcb), hcb, hai, hyr, hid, hxid, htys]
     change Res.ok (Val.retype _ (Conv.constBool 1)) = Res.ok (Val.retype _ (PtrOps.isNonNil [yp]))
     rw [isNonNil_nn hnn]; rfl
+  | @nns p hop hcb hai hs0 hs1 hp hns =>
+    obtain ⟨yp, hyp, hnn⟩ := K.nnSeed_reg hS hns (hsrc p (Array.mem_of_getElem? hp))
+    obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := fv)
+      (by rw [hev]; nofun)
+    have hfa : fv.args = #[p] := by
+      apply Array.ext (by simp [hs1]); intro k h1 h2
+      have : k = 0 := by simp at h2; omega
+      subst this; simpa [Array.getElem?_eq_getElem h1] using hp
+    have hvs' : vs = [yp] := by
+      rw [hfa] at hvs; unfold argVals at hvs
+      simp [hyp] at hvs; exact hvs.symm
+    subst hvs'
+    rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop), hop] at hev
+    obtain ⟨r, hr, hyr⟩ := bind_ok hev
+    cases hr
+    have hT0 : argVals T gv.args = some [] := by
+      rw [Array.eq_empty_of_size_eq_zero hs0]; rfl
+    rw [evalValue_of_argVals hT0, evalOp_pure (.inr hcb), hcb, hai, hyr, hid, hxid, htys]
+    change Res.ok (Val.retype _ (Conv.constBool 1)) = Res.ok (Val.retype _ (PtrOps.isNonNil [yp]))
+    rw [isNonNil_nn hnn]; rfl
 
 theorem nodeOf_x {x : ID} {v : Value} (hx : x ∈ fb.values) (hv : f.value? x = some v)
     (hph : v.op ≠ .Phi) : nodeOf (schedNodes f fb).toList x = some ⟨x, v.args, prio v.op⟩ := by
@@ -670,8 +770,10 @@ omit K in
 theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n + 1) z = true) :
     ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧
       (((v.op = .Addr ∨ v.op = .LocalAddr) ∧ v.aux.isSome = true) ∨ v.op = .NilCheck ∨
-        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr ∨ v.op = .PtrIndex ∨ v.op = .Copy) ∧
-          ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr xt tabs f n a = true) ∨
+        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr ∨ v.op = .PtrIndex ∨ v.op = .Copy ∨
+          v.op = .Convert) ∧
+          ∃ a, v.args[0]? = some a ∧ (Opt.NilCheck.safePtr xt tabs f n a = true ∨
+            (v.op = .Convert ∧ Opt.NilCheck.nnSeed tabs f a = true))) ∨
         (v.op = .SelectN ∧ xt = true ∧ v.auxInt = 0 ∧
           ∃ c, v.args[0]? = some c ∧ Opt.NilCheck.mallocCall tabs f c = true) ∨
         (v.op = .Arg ∧ xt = true ∧ v.auxInt = 0 ∧
@@ -701,19 +803,27 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n +
   · next h => exact .inr (.inr (.inl h))
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inl h, a, ha, hop⟩)))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inl h, a, ha, .inl hop⟩)))
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inl h), a, ha, hop⟩)))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inl h), a, ha, .inl hop⟩)))
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inl h)), a, ha, hop⟩)))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inl h)), a, ha, .inl hop⟩)))
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr h)), a, ha, hop⟩)))
+    · next a ha =>
+      exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr (.inl h))), a, ha, .inl hop⟩)))
+    · cases hop
+  · next h =>
+    split at hop
+    · next a ha =>
+      simp only [Bool.or_eq_true] at hop
+      exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr (.inr h))), a, ha,
+        hop.imp id fun h' => ⟨h, h'⟩⟩)))
     · cases hop
   · next h =>
     split at hop
@@ -879,7 +989,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
     have hph : v.op ≠ .Phi := by
       intro hp
-      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
+        ⟨h1, -⟩ |
         ⟨h1, -⟩ <;> rw [hp] at h1 <;> cases h1
     obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
@@ -893,10 +1004,10 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     subst hyr
     apply safe_retype_ptr
     have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr ∨
-        v.op = .PtrIndex ∨ v.op = .Copy) →
+        v.op = .PtrIndex ∨ v.op = .Copy ∨ v.op = .Convert) →
         isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
-      intro h; rcases h with h | h | h | h | h | h <;> rw [h] <;> decide
+      intro h; rcases h with h | h | h | h | h | h | h <;> rw [h] <;> decide
     rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩ | ⟨h1, hxt, hai, c, hc, hmc⟩ |
       ⟨h1, hxt, hai, m, hm, hda⟩ | ⟨h1, a, ha, hsa⟩ | ⟨h1, a, sm, bb, ha, hsm, hsop, h0, hpf, hbb, hsb⟩
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
@@ -918,13 +1029,17 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       show Blk.global "runtime.g" ≠ Blk.nil
       nofun
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ :=
-        hnr (by rcases h1 with h1 | h1 | h1 | h1 <;> simp [h1])
+        hnr (by rcases h1 with h1 | h1 | h1 | h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       have hfv : frameVal (Ctx.make tabs f) v = none :=
-        frameVal_none (by rcases h1 with h1 | h1 | h1 | h1 <;> rw [h1] <;> decide)
+        frameVal_none (by rcases h1 with h1 | h1 | h1 | h1 | h1 <;> rw [h1] <;> decide)
       rw [hfv] at hr; cases hr
       have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
-      obtain ⟨ya, hya, hsa'⟩ := safe_chain hS n a hsa haa
+      obtain ⟨ya, hya, hsa'⟩ : ∃ ya, S.regs[a]? = some (some ya) ∧ Safe ya := by
+        rcases hsa with hsa | ⟨-, hns⟩
+        · exact safe_chain hS n a hsa haa
+        · obtain ⟨y, hy, hnn⟩ := K.nnSeed_reg hS hns haa
+          exact ⟨y, hy, safe_of_nn hnn⟩
       -- a one-argument op: its argument list is `[ya]`
       have one : ∀ {o : Op}, v.op = o → o.argLen = 1 → vs = [ya] := by
         intro o ho hl
@@ -949,7 +1064,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         subst ha
         rw [hya] at hya''; cases hya''
         exact ⟨yi, rfl⟩
-      rcases h1 with h1 | h1 | h1 | h1
+      rcases h1 with h1 | h1 | h1 | h1 | h1
       · rw [one h1 (by decide), h1]
         exact offPtr_safe hsa'
       · obtain ⟨yi, rfl⟩ := two h1 (by decide)
@@ -960,6 +1075,11 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         exact ptrIndex_safe hsa'
       · rw [one h1 (by decide), h1]
         exact hsa'
+      · -- `Convert` at a pointer shape: the identity on the word
+        obtain ⟨yi, rfl⟩ := two h1 (by decide)
+        rw [h1]
+        change Safe (PtrOps.convert (.ptr e) [ya, yi])
+        cases ya <;> exact hsa'
     · -- the first result of a malloc-family call (`Env.AllocNonNil`)
       have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide
@@ -1138,6 +1258,10 @@ theorem panic_same {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       rw [hyp] at hyp'; cases hyp'
       exact (nilCheck_nn (a := ym) hop hnn).1 e' m' hmr
   | @nn p nc hop hcb hai hs0 hs1 hp hne hj =>
+    exfalso
+    rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop)] at hrp
+    cases hrp
+  | @nns p hop hcb hai hs0 hs1 hp hns =>
     exfalso
     rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop)] at hrp
     cases hrp
@@ -1395,6 +1519,7 @@ theorem prefixLoop {pre : List ID} {Gp : Frame}
       cases hrel with
       | nc _ hcp => rw [hcp]; decide
       | nn _ hcb => rw [hcb]; decide
+      | nns _ hcb => rw [hcb]; decide
       | after _ hcp => rw [hcp]; decide
       | same hop =>
         rw [hop]
@@ -1430,6 +1555,9 @@ theorem root_f_of_g {y : ID} {fy : Value} (hfy : f.value? y = some fy) (hy : roo
     simp only [Opt.NilCheck.root, hgy, hcp, Option.map_some, Option.getD_some] at hy
     exact absurd hy (by decide)
   | nn _ hcb =>
+    simp only [Opt.NilCheck.root, hgy, hcb, Option.map_some, Option.getD_some] at hy
+    exact absurd hy (by decide)
+  | nns _ hcb =>
     simp only [Opt.NilCheck.root, hgy, hcb, Option.map_some, Option.getD_some] at hy
     exact absurd hy (by decide)
   | after _ hcp =>

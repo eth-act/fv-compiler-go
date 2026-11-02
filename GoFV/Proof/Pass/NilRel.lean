@@ -9,7 +9,8 @@ import GoFV.Proof.DomCert
 `g` has `f`'s control-flow graph, block kinds, controls and values (each block's values
 reordered, its `Phi`s in order); every value keeps its ID, block and type and is unchanged
 (`VRel.same`), a `NilCheck p` turned `Copy nc` (`VRel.nc`) or an `IsNonNil p` turned
-`ConstBool [1]` (`VRel.nn`), each justified (`Just`); and every block's schedule in `g` runs the
+`ConstBool [1]` (`VRel.nn`), each justified (`Just`), or an `IsNonNil` of an `nnSeed` turned
+`ConstBool [1]` (`VRel.nns`); and every block's schedule in `g` runs the
 roots of `f`'s (by `g`'s ops) in `f`'s order.
 -/
 
@@ -51,6 +52,9 @@ inductive VRel (xt : Bool) (tabs : Tables) (f g : Func) (x : ID) : Value → Val
   | nn {fv gv : Value} {p nc : ID} : fv.op = .IsNonNil → gv.op = .ConstBool → gv.auxInt = 1 →
       gv.args.size = 0 → fv.args.size = 1 → fv.args[0]? = some p → nc ≠ p →
       Just xt tabs f fv.block x p nc (f.getV nc).type false → VRel xt tabs f g x fv gv
+  | nns {fv gv : Value} {p : ID} : fv.op = .IsNonNil → gv.op = .ConstBool → gv.auxInt = 1 →
+      gv.args.size = 0 → fv.args.size = 1 → fv.args[0]? = some p → nnSeed tabs f p = true →
+      VRel xt tabs f g x fv gv
   | after {fv gv : Value} {nc : ID} : fv.op = .NilCheck → gv.op = .Copy → gv.args.size = 1 →
       gv.args[0]? = some nc → After f g fv x nc → VRel xt tabs f g x fv gv
 
@@ -204,9 +208,11 @@ theorem nrel_sound {xt : Bool} {tabs : Tables} {f g : Func} (h : nrel xt tabs f 
         | none => rw [hp] at hj; cases hj
         | some p =>
           rw [hp] at hj
-          simp only [List.any_eq_true, List.mem_range, Bool.and_eq_true, bne_iff_ne] at hj
-          obtain ⟨nc, -, hne, hjs⟩ := hj
-          exact .nn hop hcb hai he hs1 hp hne (justified_sound hjs)
+          simp only [Bool.or_eq_true, List.any_eq_true, List.mem_range, Bool.and_eq_true,
+            bne_iff_ne] at hj
+          rcases hj with hns | ⟨nc, -, hne, hjs⟩
+          · exact .nns hop hcb hai he hs1 hp hns
+          · exact .nn hop hcb hai he hs1 hp hne (justified_sound hjs)
   · have := hsch bid hb
     unfold schedOK at this
     rw [hfb, hgb] at this
