@@ -4,8 +4,9 @@ import GoFV.SSA.Sem.Run
 # Values whose shape may hold a memory (issues #36, #151)
 
 `memTyOK tabs f`: every listed value of `f` whose shape may hold a memory (`memFree`) is a memory
-op (`memOpOK`: memory roots, calls, atomics, tuple ops), and `f` has none of the write-barrier
-ops. Then every memory a run of `f` holds is built by those ops (`GoFV.Proof.MemInv`): the
+op (`memOpOK`: memory roots, calls, atomics, tuple ops) or an op whose results hold none
+(`memFreeOps`: integer ops with tuple results, tail calls), and `f` has none of the write-barrier
+ops. Then every memory a run of `f` holds is built by the memory ops (`GoFV.Proof.MemInv`): the
 writebarrier checker (`WBCheck.wbOK`) and the segment layer's read-only `Move`s
 (`RewriteCheck.roSegsOK`) ask it.
 -/
@@ -57,14 +58,20 @@ def atomicRootOps : List Op :=
 
 @[inline] def memOpOK (op : Op) : Bool := memOps.contains op || atomicRootOps.contains op
 
-/-- Every listed value of `f` whose shape may hold a memory is a memory op, and `f` has none of
-the write-barrier ops. -/
+/-- Ops of tuple type whose results hold no memory: integer ops with results of integers and
+booleans, and tail calls (`TailLECall*`, which the semantics never completes: `stuck`). -/
+def memFreeOps : List Op :=
+  [.Mul32uhilo, .Mul64uhilo, .Mul32uover, .Mul64uover, .Add64carry, .Sub64borrow, .Div128u,
+   .TailLECall, .TailLECallInter]
+
+/-- Every listed value of `f` whose shape may hold a memory is a memory op or of `memFreeOps`,
+and `f` has none of the write-barrier ops. -/
 def memTyOK (tabs : Tables) (f : Func) : Bool :=
   f.blocks.all fun b => (vals f b).all fun x =>
     match f.value? x with
     | some v =>
       v.op != .WB && v.op != .WBend && v.op != .StoreWB && v.op != .MoveWB &&
-        v.op != .ZeroWB && (memFree (tabs.ty v.type) || memOpOK v.op)
+        v.op != .ZeroWB && (memFree (tabs.ty v.type) || memOpOK v.op || memFreeOps.contains v.op)
     | none => false
 
 end GoFV.Opt.WBCheck
