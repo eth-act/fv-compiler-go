@@ -108,6 +108,10 @@ avoiding): the problem, the trick, the numbers, where it is used.
   `trace.profiler` (`set_option trace.profiler true in` on the theorem) shows the symptom: a slow
   `[Elab.app.propagateExpectedType] ❌️` under the `exact`.
 - **Effect:** ECCall 12.8 → 6.0 s CPU (at 6289b62), 27.0 → 21.0 s on a later main (#297).
+- **Related:** a goal that still contains `(a, b).snd` after `rw` makes `exact` unfold the
+  definitions inside `a`/`b` (`ShortCircSim.R_next`: `outOf`/`factsOf`, ~3.5 s per `exact`).
+  `rw [h]; dsimp only; exact hrel` reduces the projection first: ShortCircSim 8.5 → 2.3 s CPU
+  (`-j1`, #1).
 
 #### `bv_decide` certificates dominate rule-proof `.olean`s; try `grind` first on ring identities
 - **Problem:** PR #91's Add-family rule lemmas (87 theorems, `rule_auto` closing with

@@ -121,8 +121,10 @@ theorem R_next {env : Env} {B : ID} {gB : Block} (hBm : B ∈ f.blocks) (hgB : g
   refine ⟨hb, by rw [← S.gblocks]; exact hm, gC, hgC, by omega, fun h => by
     rw [h.1] at hlt; simp at hlt, ?_, ?_, ?_, hsrc, hs, hsz, hty, hA, hfr⟩
   · rw [hed]; simpa [hb] using hi
-  · rw [hed]; exact hrel
-  · rw [hed]; exact hdf
+  -- `dsimp only` reduces the `(…, …).snd` that `rw` leaves; without it `exact` unfolded
+  -- `outOf`/`factsOf` in the unifier for ~3.5 s each (#1)
+  · rw [hed]; dsimp only; exact hrel
+  · rw [hed]; dsimp only; exact hdf
 
 omit S in
 theorem ctl_rel {fB gB : Block} {G GT : Frame} (hcsz : gB.controls.size = fB.controls.size)
