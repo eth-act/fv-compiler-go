@@ -526,6 +526,26 @@ theorem finish_refines_mono {env : Env} (hE : env.Mono) {outs : Array (Option Au
     rw [← (deferEntries_mono hm').length_eq]
     exact runDefers_mono hE outs di act k _ (some e) hm' hd
 
+/-- Non-vacuity of `Env.Mono.atAct`: `Env.p1` with the defer entry points is monotone. -/
+theorem Env.p1_atAct_mono (act : Nat) : (Env.p1.atAct act).Mono := Env.p1_mono.atAct act
+
+/-- A memory with one poison byte (`fmPoison`) and its refinement with a concrete byte
+(`fmByte`). -/
+def fmPoison : Mem := { blocks := #[(.global "x", { data := #[.poison] })] }
+def fmByte : Mem := { blocks := #[(.global "x", { data := #[.b 7] })] }
+
+/-- Non-vacuity of `finish_refines_mono`: a panic in `fmPoison` is refined by the same panic in
+`fmByte` after `finish` (no deferred calls). -/
+theorem finish_refines_mono_witness :
+    OutcomeRefines 0 (finish Env.p1 #[] {} 0 (.panicked .nilDeref fmPoison))
+      (finish Env.p1 #[] {} 0 (.panicked .nilDeref fmByte)) :=
+  finish_refines_mono Env.p1_mono
+    (by
+      have h : finish Env.p1 #[] {} 0 (.panicked .nilDeref fmPoison) =
+          .panicked .nilDeref (fmPoison.dropFrames 1) := by rfl
+      rw [h]; trivial)
+    (.panicked _ ⟨rfl, rfl, .cons _ ⟨rfl, .cons (.poison _) .nil⟩ .nil⟩)
+
 /-- `evalOp` is monotone in every environment with `P`. -/
 def EvalOpMono (P : Env → Prop) : Prop :=
   ∀ (env : Env), P env → ∀ (ctx ctx' : Ctx),
