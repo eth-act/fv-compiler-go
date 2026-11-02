@@ -105,7 +105,8 @@ def ptrField (tabs : Tables) (t : TypeRef) (i : Nat) : Bool :=
 /-- `x` is pointer-typed and points into an allocation whenever it is defined: an `Addr` or
 `LocalAddr` with a name, a nil check, `GetG` (the goroutine's `g`, an allocation of the
 environment, `docs/plans/semantics.md` §5), the `StringPtr` of a non-empty string constant
-(`nonEmptyStr`), an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a value, or a `StructSelect [i]`
+(`nonEmptyStr`), an `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a value or a `Convert` of one
+(at a pointer shape the identity on the word, `generic.rules:1376`), or a `StructSelect [i]`
 of a `StructMake` whose field `i` is pointer-shaped (`ptrField`) and such a value. With `xt` (the
 checked rewrite passes, under `Sem.Env.AllocNonNil` and `Sem.DictArgs`) also the first result of
 a malloc-family call (`mallocCall`) and a dictionary parameter (`dictArg`). -/
@@ -119,7 +120,7 @@ def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
       match v.op with
       | .Addr | .LocalAddr => v.aux.isSome
       | .NilCheck | .GetG => true
-      | .OffPtr | .AddPtr | .PtrIndex | .Copy =>
+      | .OffPtr | .AddPtr | .PtrIndex | .Copy | .Convert =>
         match v.args[0]? with
         | some a => safePtr xt tabs f n a
         | none => false

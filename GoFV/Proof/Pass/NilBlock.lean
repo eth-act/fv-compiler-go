@@ -670,7 +670,8 @@ omit K in
 theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n + 1) z = true) :
     ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧
       (((v.op = .Addr ∨ v.op = .LocalAddr) ∧ v.aux.isSome = true) ∨ v.op = .NilCheck ∨
-        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr ∨ v.op = .PtrIndex ∨ v.op = .Copy) ∧
+        v.op = .GetG ∨ ((v.op = .OffPtr ∨ v.op = .AddPtr ∨ v.op = .PtrIndex ∨ v.op = .Copy ∨
+          v.op = .Convert) ∧
           ∃ a, v.args[0]? = some a ∧ Opt.NilCheck.safePtr xt tabs f n a = true) ∨
         (v.op = .SelectN ∧ xt = true ∧ v.auxInt = 0 ∧
           ∃ c, v.args[0]? = some c ∧ Opt.NilCheck.mallocCall tabs f c = true) ∨
@@ -713,7 +714,11 @@ theorem safePtr_spec {n : Nat} {z : ID} (h : Opt.NilCheck.safePtr xt tabs f (n +
     · cases hop
   · next h =>
     split at hop
-    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr h)), a, ha, hop⟩)))
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr (.inl h))), a, ha, hop⟩)))
+    · cases hop
+  · next h =>
+    split at hop
+    · next a ha => exact .inr (.inr (.inr (.inl ⟨.inr (.inr (.inr (.inr h))), a, ha, hop⟩)))
     · cases hop
   · next h =>
     split at hop
@@ -879,7 +884,8 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨v, e, hv, he, hop⟩ := safePtr_spec h
     have hph : v.op ≠ .Phi := by
       intro hp
-      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
+      rcases hop with ⟨h1 | h1, -⟩ | h1 | h1 | ⟨h1 | h1 | h1 | h1 | h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
+        ⟨h1, -⟩ |
         ⟨h1, -⟩ <;> rw [hp] at h1 <;> cases h1
     obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
@@ -893,10 +899,10 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     subst hyr
     apply safe_retype_ptr
     have hnr : (v.op = .Addr ∨ v.op = .LocalAddr ∨ v.op = .OffPtr ∨ v.op = .AddPtr ∨
-        v.op = .PtrIndex ∨ v.op = .Copy) →
+        v.op = .PtrIndex ∨ v.op = .Copy ∨ v.op = .Convert) →
         isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
-      intro h; rcases h with h | h | h | h | h | h <;> rw [h] <;> decide
+      intro h; rcases h with h | h | h | h | h | h | h <;> rw [h] <;> decide
     rcases hop with ⟨h1, hax⟩ | h1 | h1 | ⟨h1, a, ha, hsa⟩ | ⟨h1, hxt, hai, c, hc, hmc⟩ |
       ⟨h1, hxt, hai, m, hm, hda⟩ | ⟨h1, a, ha, hsa⟩ | ⟨h1, a, sm, bb, ha, hsm, hsop, h0, hpf, hbb, hsb⟩
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr (by rcases h1 with h1 | h1 <;> simp [h1])
@@ -918,10 +924,10 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       show Blk.global "runtime.g" ≠ Blk.nil
       nofun
     · obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ :=
-        hnr (by rcases h1 with h1 | h1 | h1 | h1 <;> simp [h1])
+        hnr (by rcases h1 with h1 | h1 | h1 | h1 | h1 <;> simp [h1])
       rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6] at hr
       have hfv : frameVal (Ctx.make tabs f) v = none :=
-        frameVal_none (by rcases h1 with h1 | h1 | h1 | h1 <;> rw [h1] <;> decide)
+        frameVal_none (by rcases h1 with h1 | h1 | h1 | h1 | h1 <;> rw [h1] <;> decide)
       rw [hfv] at hr; cases hr
       have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
       obtain ⟨ya, hya, hsa'⟩ := safe_chain hS n a hsa haa
@@ -949,7 +955,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         subst ha
         rw [hya] at hya''; cases hya''
         exact ⟨yi, rfl⟩
-      rcases h1 with h1 | h1 | h1 | h1
+      rcases h1 with h1 | h1 | h1 | h1 | h1
       · rw [one h1 (by decide), h1]
         exact offPtr_safe hsa'
       · obtain ⟨yi, rfl⟩ := two h1 (by decide)
@@ -960,6 +966,11 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         exact ptrIndex_safe hsa'
       · rw [one h1 (by decide), h1]
         exact hsa'
+      · -- `Convert` at a pointer shape: the identity on the word
+        obtain ⟨yi, rfl⟩ := two h1 (by decide)
+        rw [h1]
+        change Safe (PtrOps.convert (.ptr e) [ya, yi])
+        cases ya <;> exact hsa'
     · -- the first result of a malloc-family call (`Env.AllocNonNil`)
       have hg : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
           v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by rw [h1]; decide
