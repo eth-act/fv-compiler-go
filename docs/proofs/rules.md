@@ -646,7 +646,7 @@ shape `int8`). `evalE` models `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface
 (`kindE`: false at every other shape, the oracle's at the kind's shape, which a struct can
 share), `config.PtrSize` (8, `configField`) and the pointer `typ.*Ptr` types.
 
-**Proven** (32 value rules, and the 7 `Store` splits below): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
+**Proven** (32 value rules, `:119`/`:120` as `Rule.Drop` (below), and the 7 `Store` splits below): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
 `:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`; the
 matched value is then always `poison`, so `rule-sat` finds no instance: the rewrite never changes a
 defined value); `:106` (and `generic.rules:973`), the variadic `(StructSelect [i]
@@ -663,8 +663,17 @@ memory instances, so the non-vacuity witnesses are the pass executions
 kind's shape is refined by the `Load` of field `k` at its offset, `selLoad_ref`/`selLoad0_ref`,
 `SelLoad.lean`; witness `GoFV.Proof.Witness.xs_checkedRewrite`, `{dec.rules:136}`) and `:132`,
 `:141` as `Rule.LoadSel` (below).
-**False under the semantics**: `:119`, `:120` (a one-field pointer-shaped aggregate is `.agg [p]`,
-Go's is the pointer; `docs/plans/semantics.md` §10). **Not provable as `Rule.Sound`**: `:103`,
+**Dropped** (`Rule.Drop`, `DecMakeSel.lean`): `:119`, `:120` (`(ArrayMake1 x)`/`(StructMake x)
+&& x.Type.IsPtrShaped() => x`) are false under the semantics (a one-field pointer-shaped aggregate
+is `.agg [p]`, Go's is the pointer; `docs/plans/semantics.md` §10). The checked rewrite never
+applies their events: `RewriteCheck.replay` keeps the `Make` (and skips the copy-argument
+replacements the kept definitions do not justify), validates the selections of it Go makes copies
+of `x` as selections of a `Make` (`makeSelOK`, tried for every rule), and `finalOK` accepts a
+listed value whose definition differs from the replayed one only if it is a term nothing in the
+output reads (`readIn`; `final_den` is stated for read values). The `ld` layer takes neither kind
+of skipped event. Witness: `GoFV.Proof.Witness.drp_checkedRewrite` (`pick1`, `{dec.rules:120,
+dec.rules:115}`). Decompose builtin in the fragment: quick-v3 9060 → 9180. **Not provable as
+`Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
 `:102` (`imakeOfStructMake`). **Pending**: the size-0 `Store` elimination `:10` (`=> mem`).
 
