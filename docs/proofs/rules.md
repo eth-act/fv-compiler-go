@@ -312,7 +312,8 @@ row + `structStores` + i) and on a `Zero` after its row; `fwdEvent?` takes the o
 `fwdCopy` installs the `Copy` on any op. `fwdNewOK` accepts `dropOK`: `w = Copy c` with `c`
 reached from the root's memory argument (`memReach`) through compatible copies of `f`
 (`copyReach`), or through listed copies of `g` (`memCopyReach`: the writes between were dropped
-in the same layer and copy elimination ran on the rule's argument, issue #69), and the write
+in the same layer and copy elimination ran on the rule's argument, issue #69; witness
+`fz_checkedRewrite`, `Witness/FwdChain.lean`), and the write
 changes no byte: a `Store` at a type of size 0; a `Store` of a `zeroConst` (`Const8`…`Const64`,
 `ConstBool` with auxint 0 at an integer or boolean shape; not `ConstNil`, whose bytes are pointer
 fragments, not `0`) at a pointer `p` whose bytes a `Zero [k] q _` cleared (`zeroChain`: through at
