@@ -230,10 +230,12 @@ theorem memOK_set {m : Mem} {b : Blk} (a : Alloc) (h : MemOK m) (hg : ∀ n, b �
     (hw : b ≠ .wbuf) : MemOK (m.set b a) := h.set (hg "runtime.writeBarrier") hw a
 
 /-- **`MemOK` is a memory invariant** (`MemInv.MemPred`): the flag is a global, the buffer
-absent. -/
+absent; the runtime's blocks are other globals. -/
 theorem memOK_pred : MemInv.MemPred MemOK where
   write h hw := h.write hw
   poison h hg hw := MemInv.poison_of_set memOK_set h hg hw
   free_wbuf h := h.free_wbuf
+  rt a hb _ _ h := by
+    rcases hb with rfl | rfl <;> exact h.set (by decide) (by decide) a
 
 end GoFV.Proof.WB

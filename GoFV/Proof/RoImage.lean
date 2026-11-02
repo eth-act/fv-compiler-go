@@ -122,6 +122,15 @@ theorem roMem_pred (ro : List (String × Alloc)) : MemInv.MemPred (RoMem ro) whe
     refine ⟨hw, ?_⟩
     rw [WB.free_eq_erase, TabsMod.erase_find (by simp [WB.isW])]
     exact hf
+  rt a _ _ hw h := fun n a' hm => by
+    obtain ⟨hro, hf⟩ := h n a' hm
+    refine ⟨hro, ?_⟩
+    rw [CSE.Mem.find?_set]
+    split
+    · next he =>
+      subst he
+      simp [rtWritable, hf, hro] at hw
+    · exact hf
 
 /-- **Contracts that keep the read-only allocations keep `RoMem ro`.** -/
 theorem Env.KeepsRo.contractsOK {env : Env} (h : env.KeepsRo) (ro : List (String × Alloc)) :
@@ -474,8 +483,10 @@ theorem Env.runtime_keeps {R : Mem → Mem → Prop} (hR : MemSteps R) :
     | (split at hc
        · cases hc; exact mallocSized_keeps hR
        · split at hc
-         · cases hc; exact panics_keeps _
-         · cases hc)
+         · cases hc; intro _ _ _ _ _ h; simp only [gopanic] at h; split at h <;> cases h
+         · split at hc
+           · cases hc; exact panics_keeps _
+           · cases hc)
 
 /-- **The runtime's contracts keep the read-only allocations**: they only write (which needs a
 writable allocation) and allocate heap blocks. -/
