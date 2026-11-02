@@ -99,7 +99,8 @@ theorem run_pre (S : Setup c b B rs l) {env : Env} {frS : Frame} {i : Nat} {o : 
    fun n hn => S.pre_of_rank SP hr (.inr ⟨j, rj, rfl, hrj, .inl hn⟩) (S.ncs_np hrj hn) hlt⟩
 
 /-- **The panic at a kept node of segment `k`.** -/
-theorem panic_kept (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat}
+theorem panic_kept (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
+    {env : Env} {frS frT : Frame} {i : Nat}
     (hA : SimAt env c frS frT b i) {o : Array ID} {pre post : List ID} {r : ID} {Gr : Frame}
     {e : Panic} {m : Mem} (SP : SrcPanic env c B rs frS i o pre post r Gr e m) {k : Nat} {s : ID}
     (hs : (segsOf b rs)[k]? = some s) (hrs : r ∈ vals c.g s) (hK : c.K.getD r false = true)
@@ -153,7 +154,7 @@ theorem panic_kept (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat
   have hcovP : ∀ x, ((∃ j, j ≤ k ∧ InSeg c b rs j x) ∨ (∃ j, j < k ∧ InT c rs j x)) →
       (c.roleOf rs x = .held → c.K.getD x false = true →
         (∀ u, c.f.value? x = some u → u.op ≠ .Phi) → x ∈ pre) → Cov env c rs Gr x :=
-    fun x hpos hheld => S.cov_of_runs SP.ev hPcl hruns hpos hheld
+    fun x hpos hheld => S.cov_of_runs SP.ev hA.wbh hPcl hruns hpos hheld
   have hcovW : ∀ j x, j < k → (InSeg c b rs j x ∨ InT c rs j x) → Cov env c rs Gr x := by
     intro j x hj hx
     refine hcovP x (hx.elim (fun h => .inl ⟨j, by omega, h⟩) (fun h => .inr ⟨j, hj, h⟩)) ?_
@@ -172,7 +173,7 @@ theorem panic_kept (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat
         exact hpos)⟩
     exact S.runMem_of_ev hrj hs0 (SP.ev s0 ((hruns j rj hj hrj).1 s0 (List.mem_of_getElem? hs0)))
   obtain ⟨n, F, eF, s', hs', hwalk, hR, hPh⟩ := S.walk_to SP.grOK
-    (S.regs0 hA SP.grOK SP.out) (S.phis0 hA SP.phis) k hkl hcovW hM
+    (S.regs0 hall hA SP.grOK SP.out) (S.phis0 hA SP.phis) k hkl hcovW hM
   obtain rfl : s = s' := Option.some.inj (hs.symm.trans hs')
   -- `r` in the target's schedule of segment `k`
   obtain ⟨ce', hwg⟩ := S.wg
@@ -343,7 +344,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
   have hcovP : ∀ x, ((∃ j, j ≤ j0 ∧ InSeg c b rs j x) ∨ (∃ j, j < j0 ∧ InT c rs j x)) →
       (c.roleOf rs x = .held → c.K.getD x false = true →
         (∀ u, c.f.value? x = some u → u.op ≠ .Phi) → x ∈ pre) → Cov env c rs Gr x :=
-    fun x hpos hheld => S.cov_of_runs SP.ev hPcl hruns hpos hheld
+    fun x hpos hheld => S.cov_of_runs SP.ev hA.wbh hPcl hruns hpos hheld
   have hcovS : ∀ j x, j ≤ j0 → InSeg c b rs j x → Cov env c rs Gr x := by
     intro j x hj hx
     refine hcovP x (.inl ⟨j, hj, hx⟩) fun _ hK' hp => ?_
@@ -365,7 +366,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
         exact hpos)⟩
     exact S.runMem_of_ev hrj hs0 (SP.ev s0 ((hruns j rj hj hrj).1 s0 (List.mem_of_getElem? hs0)))
   obtain ⟨n, F, eF, s', hs', hwalk, hR, hPh⟩ := S.walk_to SP.grOK
-    (S.regs0 hA SP.grOK SP.out) (S.phis0 hA SP.phis) j0 (by omega) hcovW hM
+    (S.regs0 hall hA SP.grOK SP.out) (S.phis0 hA SP.phis) j0 (by omega) hcovW hM
   obtain rfl : r0.sp.c = s' := Option.some.inj (hsc.symm.trans hs')
   obtain ⟨C, F', hC, hen0, -, hR'⟩ := S.seg_enter SP.grOK hsc hR hPh
     (fun x hx => hcovS j0 x (Nat.le_refl _) hx)
@@ -410,17 +411,20 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
         have hok := S.tOK hr0 hxt
         have hpx := hpureT x hx
         refine S.local_t SP.grOK.held SP.grOK.mems ⟨r0, hr0, hxt⟩ hw
-          (S.cov_intro SP.ev hPcl (fun _ hK' _ =>
+          (S.cov_intro SP.ev hPcl hA.wbh (fun _ hK' _ =>
             (S.held_t ⟨r0, hr0, hxt⟩ (by simp [Ctx.held, hK'])).elim) ?_ ?_)
         · rintro j' hρ r'' -
           exfalso
-          rcases hρ with ⟨k', hρ⟩ | hρ | hρ
+          rcases hρ with ⟨k', hρ⟩ | hρ | hρ | hρ
           · obtain ⟨h, -⟩ := roleOK_tgt hok hw hρ; cases h
           · obtain ⟨h, -⟩ := roleOK_ncEnd hok hw hρ; cases h
           · obtain ⟨-, -, r3, n3, -, -, u3, w3, p3, mS3, -, hw3, -, hw3op, -⟩ :=
               roleOK_ncThen hok hw hρ
             rw [hw] at hw3; cases hw3
             rw [npOf_true hxT hw (by rw [hw3op]; decide) (by rw [hw3op]; decide)] at hpx
+            cases hpx
+          · obtain ⟨-, -, hop, -⟩ := roleOK_call hok hw hρ
+            rw [npOf_true hxT hw (by rw [hop]; decide) (by rw [hop]; decide)] at hpx
             cases hpx
         · intro j' hρ
           obtain ⟨-, rfl, -⟩ := roleOK_wb hok hw hρ
@@ -472,12 +476,12 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
         have hpx := hpureE x hx
         refine localQ_mono (S.local_seg SP.grOK.fr SP.grOK.held SP.grOK.mems ⟨_, hse, hxs⟩ hw hwp
           ?_) (fun a z h => h.1) (fun z hq => ⟨hq, fun he => ?_⟩)
-        · refine S.cov_intro SP.ev hPcl (fun _ hK' hp => ?_) ?_ ?_
+        · refine S.cov_intro SP.ev hPcl hA.wbh (fun _ hK' hp => ?_) ?_ ?_
           · have hh : c.held x = true := by simp [Ctx.held, hK']
             exact hApre x ⟨S.held_seg ⟨_, hse, hxs⟩ hh, hp, hh, .inr ⟨hxs, hx⟩⟩
           · rintro j' hρ r'' -
             exfalso
-            rcases hρ with ⟨k', hρ⟩ | hρ | hρ
+            rcases hρ with ⟨k', hρ⟩ | hρ | hρ | hρ
             · obtain ⟨-, -, r3, s3, hr3, hs3, -, ⟨u3, w3, hu3, hw3, hop3, -⟩, -⟩ :=
                 roleOK_tgt hok hw hρ
               rw [hw] at hw3; cases hw3
@@ -485,7 +489,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
               obtain ⟨u4, hu4, hop4, -⟩ := hsrcop _ s3 hs3
               rw [hu3] at hu4; cases hu4
               have hnp : npOf c.g E x = true := by
-                rcases hop4 with h | h | h <;>
+                rcases hop4 with h | h | h | h | h <;>
                   exact npOf_true hxE hw (by rw [hop3, h]; decide) (by rw [hop3, h]; decide)
               rw [hnp] at hpx; cases hpx
             · obtain ⟨-, -, r3, n3, -, -, ⟨u3, w3, p3, mS3, -, hw3, -, hw3op, -⟩, -⟩ :=
@@ -494,6 +498,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
               rw [npOf_true hxE hw (by rw [hw3op]; decide) (by rw [hw3op]; decide)] at hpx
               cases hpx
             · obtain ⟨h, -⟩ := roleOK_ncThen hok hw hρ; cases h
+            · obtain ⟨h, -⟩ := roleOK_call hok hw hρ; cases h
           · intro j' hρ
             obtain ⟨h, -⟩ := roleOK_wb hok hw hρ; cases h
         · exfalso
@@ -530,7 +535,7 @@ theorem chain_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.bloc
   by_cases hK : c.K.getD r false = true
   · obtain ⟨s, hs, hrs⟩ := hcovB.1 hK
     obtain ⟨k, hk⟩ := List.getElem?_of_mem hs
-    exact S.panic_kept hA SP hk hrs hK hrv hrop
+    exact S.panic_kept hall hA SP hk hrs hK hrv hrop
   · have hK' : c.K.getD r false = false := by simpa using hK
     rcases hcovB.2 hK' with ⟨r0, hr0, hsrc⟩ | ⟨r0, hr0, hnc⟩
     · exfalso
@@ -539,7 +544,7 @@ theorem chain_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.bloc
       obtain ⟨-, -, -, h, -⟩ := runOf_spec ((chainRuns_spec S.ch).1 j r0 hj).2.2.2
       obtain ⟨u, hu, hop, -⟩ := h k r hk
       rw [hrv] at hu; cases hu
-      rcases hrop with h | h <;> rcases hop with h' | h' | h' <;> rw [h'] at h <;> cases h
+      rcases hrop with h | h <;> rcases hop with h' | h' | h' | h' | h' <;> rw [h'] at h <;> cases h
     · obtain ⟨j, hj⟩ := List.getElem?_of_mem hr0
       exact S.panic_nc hall hA SP hj hnc hK'
 

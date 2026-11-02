@@ -7,10 +7,10 @@ import GoFV.Proof.Pass.WBEnter
 The blocks of the chain of block `b` (segments `segsOf b rs`, buffer blocks `r.sp.t`): listed,
 distinct, with schedules, the split blocks' `If` on the run's flag, the last block with `b`'s
 terminator (`seg_block`, `t_block`, `split_block`, `last_block`). Which values are listed where
-(`held_seg`, `held_t`, `lazy_entry`, `avail_not_seg`, `avail_not_t`), the `Phi`s of the
-segments (`phi_seg0`, `phi_seg`, `t_nophi`), and the arguments of a segment's or buffer
-block's values that are not listed there: available at its entry (`Avail`, `args_seg`,
-`args_t`).
+(`held_seg`, `held_t`, `lazy_entry`, `sb_entry`, `avail_not_seg`, `avail_not_t`), the role of the
+flag address's `SB` outside the entry's chain (`sb_role`), the `Phi`s of the segments
+(`phi_seg0`, `phi_seg`, `t_nophi`), and the arguments of a segment's or buffer block's values
+that are not listed there: available at its entry (`Avail`, `args_seg`, `args_t`).
 -/
 
 namespace GoFV.Proof.WB
@@ -26,12 +26,12 @@ def OutDef (c : WBCheck.Ctx) (B : Block) (Gr : Frame) : Prop :=
 
 /-- The registers available at the entry of segment `k` of the chain of `b`: held values outside
 `B` that `Gr` holds, the values of the earlier segments, and (when `b` is not the entry) the flag
-address and constant. -/
+address, the constant and the `SB` the flag address reads. -/
 def Avail (c : WBCheck.Ctx) (b : ID) (B : Block) (rs : List Run) (Gr : Frame) (k : Nat)
     (a : ID) : Prop :=
   (c.held a = true ∧ a ∉ B.values ∧ ∃ y, Gr.regs[a]? = some (some y)) ∨
   (∃ j, j < k ∧ InSeg c b rs j a) ∨
-  (b ≠ c.f.entry ∧ (c.isWbaddr a = true ∨ c.isConst0 a = true))
+  (b ≠ c.f.entry ∧ (c.isWbaddr a = true ∨ c.isConst0 a = true ∨ c.isSb a = true))
 
 theorem vals_of {h : Func} {s : ID} {C : Block} (hC : h.block? s = some C) :
     vals h s = C.values := by
@@ -85,7 +85,9 @@ private theorem roleRun_isRun {g : Func} {x : ID} :
       · cases g.value? x with
         | none => rfl
         | some v => exact thenRole_isRun
-      · exact roleRun_isRun
+      · split
+        · rfl
+        · exact roleRun_isRun
 
 private theorem otherRole_cases {g : Func} {x : ID} :
     otherRole g x = .invalid ∨ otherRole g x = .lazy ∨ otherRole g x = .none := by
@@ -195,6 +197,9 @@ private theorem roleRun_phi {g : Func} {x : ID} :
           rw [hv] at h
           exact absurd h thenRole_ne_phi
       · rw [if_neg h5] at h
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at h; cases h
+        rw [if_neg h6] at h
         obtain ⟨hk', r', hr', hx⟩ := roleRun_phi h
         refine ⟨by omega, r', ?_, hx⟩
         rw [show i - k = (i - (k + 1)) + 1 by omega]
@@ -223,6 +228,77 @@ private theorem roleOf_phi {c : WBCheck.Ctx} {rs : List Run} {x : ID} {i : Nat}
   obtain ⟨-, r, hr, hx⟩ := roleRun_phi hR
   exact ⟨r, by simpa using hr, hx⟩
 
+private theorem thenRole_ne_taddr {v : Value} {j i : Nat} : thenRole v j ≠ .taddr i := by
+  intro h
+  unfold thenRole at h
+  repeat' split at h
+  all_goals cases h
+
+private theorem roleRun_taddr {g : Func} {x : ID} :
+    ∀ {rs : List Run} {k i : Nat}, roleRun g x rs k = .taddr i →
+      k ≤ i ∧ ∃ r, rs[i - k]? = some r ∧ x ∈ vals g r.sp.c
+  | [], _, _, h => by rw [roleRun] at h; cases h
+  | r :: rs, k, i, h => by
+    rw [roleRun] at h
+    by_cases h1 : (x == r.sp.load) = true
+    · rw [if_pos h1] at h; cases h
+    rw [if_neg h1] at h
+    by_cases h2 : (x == r.sp.flag) = true
+    · rw [if_pos h2] at h; cases h
+    rw [if_neg h2] at h
+    by_cases h3 : (x == r.phi) = true
+    · rw [if_pos h3] at h; cases h
+    rw [if_neg h3] at h
+    by_cases h4 : (r.ncEnd == some x) = true
+    · rw [if_pos h4] at h; cases h
+    rw [if_neg h4] at h
+    cases hk : r.tgt.idxOf? x with
+    | some k' => rw [hk] at h; cases h
+    | none =>
+      rw [hk] at h
+      dsimp only at h
+      by_cases h5 : (vals g r.sp.t).contains x = true
+      · rw [if_pos h5] at h
+        cases hv : g.value? x with
+        | none => rw [hv] at h; cases h
+        | some v =>
+          rw [hv] at h
+          exact absurd h thenRole_ne_taddr
+      · rw [if_neg h5] at h
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at h; cases h
+          simp only [Bool.and_eq_true, Array.contains_iff_mem] at h6
+          exact ⟨Nat.le_refl _, r, by simp, h6.1⟩
+        rw [if_neg h6] at h
+        obtain ⟨hk', r', hr', hx⟩ := roleRun_taddr h
+        refine ⟨by omega, r', ?_, hx⟩
+        rw [show i - k = (i - (k + 1)) + 1 by omega]
+        simpa using hr'
+
+/-- A type address is listed in its run's split block. -/
+theorem roleOf_taddr {c : WBCheck.Ctx} {rs : List Run} {x : ID} {i : Nat}
+    (h : c.roleOf rs x = .taddr i) : ∃ r, rs[i]? = some r ∧ x ∈ vals c.g r.sp.c := by
+  unfold Ctx.roleOf at h
+  by_cases h1 : c.isWbaddr x = true
+  · rw [if_pos h1] at h; cases h
+  rw [if_neg h1] at h
+  by_cases h2 : c.isConst0 x = true
+  · rw [if_pos h2] at h; cases h
+  rw [if_neg h2] at h
+  by_cases h3 : c.held x = true
+  · rw [if_pos h3] at h; cases h
+  rw [if_neg h3] at h
+  have hR : roleRun c.g x rs 0 = .taddr i := by
+    generalize roleRun c.g x rs 0 = R at h
+    cases R
+    case none =>
+      rcases otherRole_cases (g := c.g) (x := x) with h5 | h5 | h5 <;>
+        (dsimp only at h; rw [h5] at h; cases h)
+    case taddr i' => exact h
+    all_goals cases h
+  obtain ⟨-, r, hr, hx⟩ := roleRun_taddr hR
+  exact ⟨r, by simpa using hr, hx⟩
+
 section
 variable {c : WBCheck.Ctx} {b : ID} {B : Block} {segs : List ID} {rs : List Run} {inT : Bool}
   {j : Nat} {x : ID} {w : Value}
@@ -248,7 +324,8 @@ private theorem seg_roles (h : c.roleOK b B segs rs false j x = true)
       (c.roleOf rs x = .wbaddr ∨ c.roleOf rs x = .const0 ∨ c.roleOf rs x = .lazy) ∨
       c.roleOf rs x = .invalid ∨ (∃ i, c.roleOf rs x = .load i) ∨
       (∃ i, c.roleOf rs x = .flag i) ∨ (∃ i, c.roleOf rs x = .phi i) ∨
-      (∃ i, c.roleOf rs x = .ncEnd i) ∨ ∃ i k, c.roleOf rs x = .tgt i k := by
+      (∃ i, c.roleOf rs x = .ncEnd i) ∨ (∃ i k, c.roleOf rs x = .tgt i k) ∨
+      ∃ i, c.roleOf rs x = .taddr i := by
   cases hρ : c.roleOf rs x with
   | ncThen i => cases (roleOK_ncThen h hw hρ).1
   | wb i => cases (roleOK_wb h hw hρ).1
@@ -257,6 +334,8 @@ private theorem seg_roles (h : c.roleOK b B segs rs false j x = true)
   | off i => cases (roleOK_off h hw hρ).1
   | bstore i => cases (roleOK_bstore h hw hρ).1
   | tload i => cases (roleOK_tload h hw hρ).1
+  | call i => cases (roleOK_call h hw hρ).1
+  | seln i => cases (roleOK_seln h hw hρ).1
   | none => exact (roleOK_none h hρ).elim
   | _ => simp
 
@@ -266,7 +345,8 @@ private theorem t_roles (h : c.roleOK b B segs rs true j x = true)
     (∃ i, c.roleOf rs x = .ncThen i) ∨ (∃ i, c.roleOf rs x = .wb i) ∨
       (∃ i, c.roleOf rs x = .sel0 i) ∨ (∃ i, c.roleOf rs x = .sel1 i) ∨
       (∃ i, c.roleOf rs x = .off i) ∨ (∃ i, c.roleOf rs x = .bstore i) ∨
-      ∃ i, c.roleOf rs x = .tload i := by
+      (∃ i, c.roleOf rs x = .tload i) ∨ (∃ i, c.roleOf rs x = .call i) ∨
+      ∃ i, c.roleOf rs x = .seln i := by
   cases hρ : c.roleOf rs x with
   | held => cases (roleOK_held h hw hρ).1
   | wbaddr => cases (roleOK_lazy h hw (.inl hρ)).1
@@ -278,6 +358,7 @@ private theorem t_roles (h : c.roleOK b B segs rs true j x = true)
   | phi i => cases (roleOK_phi h hw hρ).1
   | ncEnd i => cases (roleOK_ncEnd h hw hρ).1
   | tgt i k => cases (roleOK_tgt h hw hρ).1
+  | taddr i => cases (roleOK_taddr h hw hρ).1
   | none => exact (roleOK_none h hρ).elim
   | _ => simp
 
@@ -345,7 +426,7 @@ private theorem src_op (S : Setup c b B rs l) {j k : Nat} {r : Run} {s : ID} {u 
   obtain ⟨-, -, -, h, -⟩ := runOf_spec (run_of S hr)
   obtain ⟨u', hu', hop, -⟩ := h k s hs
   rw [hu] at hu'; cases hu'
-  rcases hop with hop | hop | hop <;> rw [hop] <;> exact fun h => by cases h
+  rcases hop with hop | hop | hop | hop | hop <;> rw [hop] <;> exact fun h => by cases h
 
 private theorem split_new (S : Setup c b B rs l) {r : Run} (hr : r ∈ rs) :
     r.sp.t ∉ c.f.blocks ∧ r.sp.e ∉ c.f.blocks := by
@@ -483,6 +564,32 @@ private theorem lazy_info (S : Setup c b B rs l) {a : ID}
     · exact ⟨h1, h3, w1, hw1, .inl hop1⟩
     · exact ⟨h2, h3, w2, hw2, .inr hop2⟩
 
+/-- The `SB` the flag address reads: an argument-free `SB` listed in the entry. -/
+theorem sb_entry (S : Setup c b B rs l) {a : ID} (hl : c.isSb a = true) :
+    a ∈ vals c.g c.f.entry ∧ ∃ v, c.g.value? a = some v ∧ v.op = .SB ∧ v.args = #[] := by
+  unfold Ctx.isSb Ctx.sbOf at hl
+  cases hz : c.lazy with
+  | none => rw [hz] at hl; simp at hl
+  | some p =>
+    obtain ⟨wa, c0⟩ := p
+    rw [hz] at hl
+    obtain ⟨-, -, -, -, -, hlz⟩ := ctxOf_spec S.ctx
+    rw [hz] at hlz
+    obtain ⟨⟨w1, hw1, -, -, -, -, hmem, hsb⟩, -⟩ := lazyOK_some hlz
+    simp only [Option.bind_some, hw1, beq_iff_eq] at hl
+    rw [getElem!_def, hl] at hmem hsb
+    rw [← S.entry]; exact ⟨hmem, hsb⟩
+
+/-- The flag address, constant or `SB`: listed in the entry. -/
+theorem entry_mem (S : Setup c b B rs l) {a : ID}
+    (hl : c.isWbaddr a = true ∨ c.isConst0 a = true ∨ c.isSb a = true) :
+    a ∈ vals c.g c.f.entry ∧ c.f.entry ∈ c.g.blocks := by
+  rcases hl with hl | hl | hl
+  · obtain ⟨hm, he, -⟩ := lazy_info S (.inl hl); exact ⟨hm, he⟩
+  · obtain ⟨hm, he, -⟩ := lazy_info S (.inr hl); exact ⟨hm, he⟩
+  · obtain ⟨ce, hg⟩ := S.wg
+    exact ⟨(sb_entry S hl).1, by rw [← S.entry]; exact hg.entry⟩
+
 /-- When `b` is not the entry, no block of its chain is `g`'s entry. -/
 theorem entry_not_chain (S : Setup c b B rs l) (hb : b ≠ c.f.entry) :
     ∀ s ∈ segsOf b rs ++ rs.map (·.sp.t), s ≠ c.f.entry := by
@@ -510,7 +617,7 @@ theorem avail_not_seg (S : Setup c b B rs l) {Gr : Frame} {k : Nat} {s a : ID}
     subst he
     have := seg_inj S hs hs'
     omega
-  · obtain ⟨hm, he, -⟩ := lazy_info S hl
+  · obtain ⟨hm, he⟩ := entry_mem S hl
     exact entry_not_chain S hb s (List.mem_append_left _ (List.mem_of_getElem? hs))
       (listed_once S hsb he hx hm)
 
@@ -523,10 +630,63 @@ theorem avail_not_t (S : Setup c b B rs l) {Gr : Frame} {k : Nat} {r : Run} {a :
   · exact held_t S ⟨r, hr, hx⟩ hh
   · obtain ⟨-, -, -, hsb', -⟩ := seg_block S hs'
     exact seg_ne_t S hs' hr (listed_once S hsb' htb hx' hx)
-  · obtain ⟨hm, he, -⟩ := lazy_info S hl
+  · obtain ⟨hm, he⟩ := entry_mem S hl
     exact entry_not_chain S hb r.sp.t
       (List.mem_append_right _ (List.mem_map.2 ⟨r, List.mem_of_getElem? hr, rfl⟩))
       (listed_once S htb he hx hm)
+
+/-- A value listed in no block of the chain has no role of a run. -/
+private theorem roleRun_unlisted (S : Setup c b B rs l) {x : ID}
+    (hx : ∀ s ∈ segsOf b rs ++ rs.map (·.sp.t), x ∉ vals c.g s) :
+    ∀ (rs' : List Run) (k : Nat), (∀ r ∈ rs', r ∈ rs) → roleRun c.g x rs' k = .none
+  | [], _, _ => rfl
+  | r :: rs', k, hsub => by
+    have hr : r ∈ rs := hsub r List.mem_cons_self
+    obtain ⟨j, hj⟩ := List.getElem?_of_mem hr
+    obtain ⟨h1, h2, -, -, -, -, -, -, htgt, hncE, hload, hflag, -⟩ := runOK_spec (run_ok S hj)
+    have hc : x ∉ vals c.g r.sp.c := hx _ (List.mem_append_left _ (List.mem_of_getElem? h1))
+    have he : x ∉ vals c.g r.sp.e := hx _ (List.mem_append_left _ (List.mem_of_getElem? h2))
+    have ht : x ∉ vals c.g r.sp.t :=
+      hx _ (List.mem_append_right _ (List.mem_map.2 ⟨r, hr, rfl⟩))
+    rw [roleRun, if_neg (by simp only [beq_iff_eq]; rintro rfl; exact hc hload),
+      if_neg (by simp only [beq_iff_eq]; rintro rfl; exact hc hflag),
+      if_neg (by simp only [beq_iff_eq]; rintro rfl; exact he (phi_mem S hj)),
+      if_neg (by simp only [beq_iff_eq]; intro h; exact he (hncE x h))]
+    cases hk : r.tgt.idxOf? x with
+    | some k' =>
+      obtain ⟨hlt, heq, -⟩ := List.idxOf?_eq_some_iff.1 hk
+      exact absurd (htgt x (heq ▸ List.getElem_mem hlt)) he
+    | none =>
+      dsimp only
+      rw [if_neg (by rw [Array.contains_iff_mem]; exact ht),
+        if_neg (by simp only [Bool.and_eq_true, Array.contains_iff_mem]; exact fun h => hc h.1)]
+      exact roleRun_unlisted S hx rs' (k + 1) fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr')
+
+/-- The `SB` the flag address reads, outside the entry's chain: the flag address, the constant,
+held, or lazy. -/
+theorem sb_role (S : Setup c b B rs l) (hb : b ≠ c.f.entry) {a : ID} (hl : c.isSb a = true) :
+    c.isWbaddr a = true ∨ c.isConst0 a = true ∨ (c.held a = true ∧ c.roleOf rs a = .held) ∨
+      c.roleOf rs a = .lazy := by
+  obtain ⟨haE, v, hv, hop, hargs⟩ := sb_entry S hl
+  by_cases h1 : c.isWbaddr a = true
+  · exact .inl h1
+  by_cases h2 : c.isConst0 a = true
+  · exact .inr (.inl h2)
+  right; right
+  unfold Ctx.roleOf
+  rw [if_neg h1, if_neg h2]
+  by_cases h3 : c.held a = true
+  · left; exact ⟨h3, by rw [if_pos h3]⟩
+  right
+  have hEg : c.f.entry ∈ c.g.blocks := (entry_mem S (.inr (.inr hl))).2
+  have hun : ∀ s ∈ segsOf b rs ++ rs.map (·.sp.t), a ∉ vals c.g s := fun s hs has =>
+    entry_not_chain S hb s hs (listed_once S
+      ((blockOK_spec S.ok S.hB S.ch).2.2.2.1 s hs) hEg has haE)
+  rw [if_neg h3, roleRun_unlisted S hun rs 0 fun _ h => h]
+  dsimp only
+  unfold otherRole
+  rw [hv]
+  simp [hop, hargs]
 
 /-- The `Phi`s of the first segment are kept `Phi`s of `B` with held arguments. -/
 theorem phi_seg0 (S : Setup c b B rs l) {s x : ID} {v : Value} (hs : (segsOf b rs)[0]? = some s)
@@ -534,7 +694,8 @@ theorem phi_seg0 (S : Setup c b B rs l) {s x : ID} {v : Value} (hs : (segsOf b r
     c.roleOf rs x = .held ∧ c.K.getD x false = true ∧ x ∈ B.values ∧
       ∃ u, c.f.value? x = some u ∧ sameV u v = true ∧ ∀ a ∈ u.args, c.held a = true := by
   have hok := seg_roleOK S hs hx
-  rcases seg_roles hok hv with hρ | hρ | hρ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, k, hρ⟩
+  rcases seg_roles hok hv with hρ | hρ | hρ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, k, hρ⟩ |
+    ⟨i, hρ⟩
   · obtain ⟨-, hxB, hK | hK⟩ := roleOK_held hok hv hρ
     · obtain ⟨hK, u, hu, hphi, -⟩ := hK
       obtain ⟨hsame, hop, -⟩ := kept_u S hK hu hv
@@ -559,6 +720,8 @@ theorem phi_seg0 (S : Setup c b B rs l) {s x : ID} {v : Value} (hs : (segsOf b r
   · exact absurd (roleOK_phi hok hv hρ).2.1 (by omega)
   · exact absurd (roleOK_ncEnd hok hv hρ).2.1 (by omega)
   · exact absurd (roleOK_tgt hok hv hρ).2.1 (by omega)
+  · obtain ⟨-, -, hop, -⟩ := roleOK_taddr hok hv hρ
+    rw [hop] at hp; cases hp
 
 /-- The only `Phi` of segment `k + 1` is run `k`'s memory `Phi`. -/
 theorem phi_seg (S : Setup c b B rs l) {k : Nat} {s x : ID} {v : Value}
@@ -567,9 +730,10 @@ theorem phi_seg (S : Setup c b B rs l) {k : Nat} {s x : ID} {v : Value}
     ∃ r, rs[k]? = some r ∧ x = r.phi ∧ c.roleOf rs x = .phi k ∧
       v.args = #[r.sp.mem, r.memThen] ∧ c.tabs.ty v.type = .mem ∧
       (r.memThen = r.sp.mem ∨ c.roleOf rs r.memThen = .sel1 k ∨
-        c.roleOf rs r.memThen = .bstore k) := by
+        c.roleOf rs r.memThen = .bstore k ∨ c.roleOf rs r.memThen = .seln k) := by
   have hok := seg_roleOK S hs hx
-  rcases seg_roles hok hv with hρ | hρ | hρ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, k', hρ⟩
+  rcases seg_roles hok hv with hρ | hρ | hρ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, k', hρ⟩ |
+    ⟨i, hρ⟩
   · obtain ⟨-, -, hK | hK⟩ := roleOK_held hok hv hρ
     · obtain ⟨hK, u, hu, hphi, -⟩ := hK
       obtain ⟨-, hop, -⟩ := kept_u S hK hu hv
@@ -594,6 +758,8 @@ theorem phi_seg (S : Setup c b B rs l) {k : Nat} {s x : ID} {v : Value}
   · obtain ⟨-, -, r, s', hr, hs', -, ⟨u, w', hu, hw', hop, -⟩, -⟩ := roleOK_tgt hok hv hρ
     rw [hv] at hw'; cases hw'
     exact (src_op S hr hs' hu (hop ▸ hp)).elim
+  · obtain ⟨-, -, hop, -⟩ := roleOK_taddr hok hv hρ
+    rw [hop] at hp; cases hp
 
 /-- Run `k`'s memory is held. -/
 theorem mem_held (S : Setup c b B rs l) {k : Nat} {r : Run} (hr : rs[k]? = some r) :
@@ -614,7 +780,8 @@ theorem t_nophi (S : Setup c b B rs l) {k : Nat} {r : Run} {x : ID} {v : Value}
     (hr : rs[k]? = some r) (hx : x ∈ vals c.g r.sp.t) (hv : c.g.value? x = some v) :
     v.op ≠ .Phi := by
   have hok := t_roleOK S hr hx
-  rcases t_roles hok hv with ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ <;>
+  rcases t_roles hok hv with ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ |
+    ⟨i, hρ⟩ | ⟨i, hρ⟩ <;>
     exact then_nophi (by rw [hρ]; rfl) (fun h => by cases h) hv
 
 /-- An available argument is available at the segment's entry or listed in the segment. -/
@@ -651,12 +818,13 @@ private theorem avail_succ (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B 
     · exact .inr (.inr h3)
   · exact .inr (.inl ⟨k, Nat.lt_succ_self _, r.sp.c, hs, hin⟩)
 
-/-- The flag address or constant, not listed in segment `k`, is available there. -/
+/-- The flag address, constant or `SB`, not listed in segment `k`, is available there. -/
 private theorem lazy_avail (S : Setup c b B rs l) {Gr : Frame} {k : Nat} {s a : ID}
     (hs : (segsOf b rs)[k]? = some s) (hna : a ∉ vals c.g s)
-    (hl : c.isWbaddr a = true ∨ c.isConst0 a = true) : Avail c b B rs Gr k a := by
+    (hl : c.isWbaddr a = true ∨ c.isConst0 a = true ∨ c.isSb a = true) :
+    Avail c b B rs Gr k a := by
   by_cases hb : b = c.f.entry
-  · obtain ⟨hm, -, -⟩ := lazy_info S hl
+  · obtain ⟨hm, -⟩ := entry_mem S hl
     rw [← hb] at hm
     cases k with
     | zero => rw [seg0 hs] at hna; exact absurd hm hna
@@ -677,7 +845,8 @@ theorem args_seg (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : N
     (hw : c.g.value? x = some w) (hnp : w.op ≠ .Phi) (ha : a ∈ w.args)
     (hna : a ∉ vals c.g s) : Avail c b B rs Gr k a := by
   have hok := seg_roleOK S hs hx
-  rcases seg_roles hok hw with hρ | hρ | hρ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, k', hρ⟩
+  rcases seg_roles hok hw with hρ | hρ | hρ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, k', hρ⟩ |
+    ⟨i, hρ⟩
   · obtain ⟨-, -, hK | hK⟩ := roleOK_held hok hw hρ
     · obtain ⟨hK, u, hu, -, hnp'⟩ := hK
       obtain ⟨-, hop, hargs⟩ := kept_u S hK hu hw
@@ -709,7 +878,7 @@ theorem args_seg (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : N
     · obtain ⟨h1, -, -, -, -, -, -, -, -, -, hload, -⟩ := runOK_spec (run_ok S hr)
       rw [hs] at h1; cases h1
       exact absurd hload hna
-    · exact lazy_avail S hs hna (.inr hc0)
+    · exact lazy_avail S hs hna (.inr (.inl hc0))
   · obtain ⟨-, -, r, -, hop, -⟩ := roleOK_phi hok hw hρ
     exact absurd hop hnp
   · obtain ⟨-, hk, r, n, hr, -, ⟨u, w', p, mS, -, hw', -, -, -, -, hwargs, hav⟩, -⟩ :=
@@ -759,6 +928,11 @@ theorem args_seg (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : N
         rw [hbang] at he
         rw [he] at hna ⊢
         exact avail_of hO (run_seg S hr).2 hav hna
+  · obtain ⟨-, -, -, hargs, hsb, -⟩ := roleOK_taddr hok hw hρ
+    rw [hargs] at ha
+    simp only [List.mem_toArray, List.mem_singleton] at ha
+    subst ha
+    exact lazy_avail S hs hna (.inr (.inr hsb))
 
 /-- **Arguments in a buffer block.** An argument of a value of run `k`'s buffer block that is not
 listed there is available after segment `k`. -/
@@ -768,7 +942,8 @@ theorem args_t (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : Nat
     Avail c b B rs Gr (k + 1) a := by
   have hok := t_roleOK S hr hx
   have hmem := (mem_held S hr).2
-  rcases t_roles hok hw with ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩
+  rcases t_roles hok hw with ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ | ⟨i, hρ⟩ |
+    ⟨i, hρ⟩ | ⟨i, hρ⟩
   · obtain ⟨-, hik, r', n, hr', -, ⟨u, w', p, mS, -, hw', -, -, -, -, hwargs, hav⟩⟩ :=
       roleOK_ncThen hok hw hρ
     subst hik
@@ -830,6 +1005,41 @@ theorem args_t (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : Nat
       · rw [h1]; exact avail_succ S hO hr hmem
       · exact absurd (in_t hr (by rw [h1]; rfl)) hna
       · exact absurd (in_t hr (by rw [h1]; rfl)) hna
+  · obtain ⟨-, hik, -, -, r', hr', P⟩ := roleOK_call hok hw hρ
+    subst hik
+    rw [hr] at hr'; cases hr'
+    obtain ⟨idx, hidx, rfl⟩ := Array.getElem_of_mem ha
+    have hbang : w.args[idx]! = w.args[idx] := getElem!_pos w.args idx hidx
+    obtain ⟨s, u, -, -, husz, hopu, hdst⟩ := P.src
+    by_cases hl : idx = w.args.size - 1
+    · subst hl
+      obtain ⟨m, hm, hmr⟩ := P.mem
+      rw [Array.back?_eq_getElem?, Array.getElem?_eq_getElem hidx, Option.some.injEq] at hm
+      rw [hm] at hna ⊢
+      rcases hmr with h | h | h | h
+      · rw [h]; exact avail_succ S hO hr hmem
+      · exact absurd (in_t hr (by rw [h]; rfl)) hna
+      · exact absurd (in_t hr (by rw [h]; rfl)) hna
+      · exact absurd (in_t hr (by rw [h]; rfl)) hna
+    · rcases idx with _ | _ | _ | idx
+      · have ht := P.typ
+        rw [hbang] at ht
+        obtain ⟨r', hr', hx'⟩ := roleOf_taddr ht
+        rw [hr] at hr'; cases hr'
+        exact .inr (.inl ⟨_, Nat.lt_succ_self _, r.sp.c, (run_seg S hr).1, hx'⟩)
+      · rcases hdst with ⟨he, hav⟩ | ⟨-, hn⟩
+        · rw [hbang] at he; rw [he]; exact avail_succ S hO hr hav
+        · rw [hbang] at hn; exact absurd (in_t hr (by rw [hn]; rfl)) hna
+      · rcases hopu with ⟨-, h3⟩ | ⟨-, -, h2, hav⟩
+        · omega
+        · rw [hbang] at h2; rw [h2]; exact avail_succ S hO hr hav
+      · rcases hopu with ⟨-, h3⟩ | ⟨-, h4, -⟩ <;> omega
+  · obtain ⟨-, hik, -, hargs, -, -, hrole⟩ := roleOK_seln hok hw hρ
+    subst hik
+    rw [hargs] at ha
+    simp only [List.mem_toArray, List.mem_singleton] at ha
+    subst ha
+    exact absurd (in_t hr (by rw [hrole]; rfl)) hna
 
 end Setup
 

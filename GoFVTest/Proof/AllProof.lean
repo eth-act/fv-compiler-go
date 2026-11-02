@@ -277,6 +277,7 @@ import GoFV.Proof.Pass.StructStoreSrc
 import GoFV.Proof.Pass.WBAll
 import GoFV.Proof.Pass.WBArgs
 import GoFV.Proof.Pass.WBBlock
+import GoFV.Proof.Pass.WBCall
 import GoFV.Proof.Pass.WBCov
 import GoFV.Proof.Pass.WBEnter
 import GoFV.Proof.Pass.WBEval

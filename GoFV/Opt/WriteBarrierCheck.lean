@@ -7,9 +7,8 @@ import GoFV.Opt.RewriteCheck
 # writebarrier, validated (issue #36)
 
 `wbOK tabs f g` accepts `g` as a result of `writebarrier` on `f` whose write-barrier runs hold
-only `Store`s, `VarDef`s and `VarLive`s (no `ZeroWB`/`MoveWB`, so no `wbZero`/`wbMove` calls:
-those clobber the caller's outgoing-arguments area in the semantics, #36). Every block `b` of
-`f` becomes a chain of blocks of `g` (`chainOf`): `c₀ = b`, and per expanded run `j` a split
+`Store`s, `Move`s, `Zero`s, `VarDef`s and `VarLive`s. Every block `b` of `f` becomes a chain of
+blocks of `g` (`chainOf`): `c₀ = b`, and per expanded run `j` a split
 `cⱼ → tⱼ₊₁, cⱼ₊₁` (`Split`) on `Neq32 (Load <uint32> wbaddr memⱼ) const0`, with `tⱼ₊₁ → cⱼ₊₁`;
 the last block `c_K` has `b`'s kind, controls and successors.
 
@@ -18,11 +17,15 @@ a value of `f` listed in `g` with the fields the semantics reads unchanged, `sam
 last store `last` of a run, which becomes `WBend` in its end block: either way it holds the
 source's register), the write-barrier flag's address `wbaddr` (a new value, never held) and the
 constant `const0` (values of `g`'s entry block), a value of run `j` (`roleRun`: in `cⱼ` the flag
-`Load`/`Neq32`; in `cⱼ₊₁` the memory `Phi [memⱼ, memThen]`, the nil-check copy and the run's
+`Load`/`Neq32` and the type addresses `Addr {type:T} SB` of the helper calls, `SB` the flag
+address's; in `cⱼ₊₁` the memory `Phi [memⱼ, memThen]`, the nil-check copy and the run's
 stores re-emitted in order, `Run.tgt`; in `tⱼ₊₁` by op (`thenRole`): the nil-check copy,
 `WB [n] memⱼ` with its `Select0`/`Select1`, buffer pointers `OffPtr [8k]` (`k < n ≤ 8`), buffer
-`Store`s of `uintptr` on a memory chain from the `Select1` and old-value `Load`s), the lazily
-created `SB`/`SP`/`Const32`/`Addr` of `g`'s entry, or an argument-free `Invalid` (`otherRole`).
+`Store`s of `uintptr` on a memory chain from the `Select1` and old-value `Load`s, and the
+`runtime.wbZero(typ, dst)`/`runtime.wbMove(typ, dst, src)` calls (`StaticCall`, register
+arguments only, the arguments of one of the run's `Zero`s/`Move`s) with their memory
+`SelectN [0]`), the lazily created `SB`/`SP`/`Const32`/`Addr` of `g`'s entry, or an argument-free
+`Invalid` (`otherRole`).
 `roleOK` checks each role's fields, arguments and block; arguments of new values that are held
 are arguments of a source value of `b` (so they are available where the source evaluates that
 value). `runOK` also checks that each run's values are listed where their roles say (flag in
@@ -118,7 +121,8 @@ def srcChain (f : Func) (mem : ID) : Nat → ID → Option (List ID)
   | 0, x => if x == mem then some [] else none
   | k + 1, x => do
     let v ← f.value? x
-    guard (v.op == .Store || v.op == .VarDef || v.op == .VarLive)
+    guard (v.op == .Store || v.op == .VarDef || v.op == .VarLive || v.op == .Move ||
+      v.op == .Zero)
     let m ← v.args.back?
     let l ← srcChain f mem k m
     return l ++ [x]
@@ -141,7 +145,7 @@ def runOf? (f g : Func) (s : Split) : Option Run := do
   let s0 ← src.head?
   let v0 ← f.value? s0
   let nc : Option ID :=
-    if v0.op == Op.Store then
+    if v0.op == Op.Store || v0.op == Op.Move || v0.op == Op.Zero then
       match v0.args[0]?.bind f.value? with
       | some n => if n.op == Op.NilCheck && n.args[1]? == some s.mem then some n.id else none
       | none => none
@@ -200,6 +204,9 @@ inductive Role where
   | off (j : Nat)
   | bstore (j : Nat)
   | tload (j : Nat)
+  | taddr (j : Nat)
+  | call (j : Nat)
+  | seln (j : Nat)
   | none
   deriving DecidableEq, Repr, Inhabited
 
@@ -212,6 +219,8 @@ def thenRole (v : Value) (j : Nat) : Role :=
   else if v.op == .OffPtr then .off j
   else if v.op == .Store then .bstore j
   else if v.op == .Load then .tload j
+  else if v.op == .StaticCall then .call j
+  else if v.op == .SelectN then .seln j
   else .none
 
 /-- The role of `x` among the values of run `j` and the later runs. -/
@@ -226,6 +235,7 @@ def roleRun (g : Func) (x : ID) : List Run → Nat → Role
       | some k => .tgt j k
       | none =>
         if (vals g r.sp.t).contains x then ((g.value? x).map (thenRole · j)).getD .none
+        else if (vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr) then .taddr j
         else roleRun g x rs (j + 1)
 
 /-- The role of a value of no run: an argument-free `Invalid`, or a lazily created value of
@@ -251,6 +261,10 @@ structure Ctx where
   there are runs. -/
   lazy : Option (ID × ID)
 
+/-- A parameter of a write-barrier helper: an input in one register, of shape `uintptr`. -/
+def wbParam (tabs : Tables) (p : ABIParam) : Bool :=
+  !p.out && p.regs.size == 1 && (match tabs.ty p.type with | .int .w64 => true | _ => false)
+
 namespace Ctx
 
 variable (c : Ctx)
@@ -260,6 +274,11 @@ variable (c : Ctx)
 
 @[inline] def isWbaddr (x : ID) : Bool := c.lazy.any (·.1 == x)
 @[inline] def isConst0 (x : ID) : Bool := c.lazy.any (·.2 == x)
+
+/-- The `SB` the flag address reads. -/
+def sbOf : Option ID := c.lazy.bind fun (wa, _) => (c.g.value? wa).bind (·.args[0]?)
+
+@[inline] def isSb (x : ID) : Bool := c.sbOf == some x
 
 /-- The role of a value of a block of the chain of runs `rs`. -/
 def roleOf (rs : List Run) (x : ID) : Role :=
@@ -319,6 +338,38 @@ run's source stores, available there. -/
 def runArg (B : Block) (segs : List ID) (j : Nat) (r : Run) (a : ID) : Bool :=
   r.src.any (fun s => (c.f.value? s).any (·.args.contains a)) && c.availIn B segs j a
 
+/-- The memory of run `i`'s buffer block at `m`: the run's memory, or the memory after a buffer
+store or a helper call of the run. -/
+def tMem (rs : List Run) (r : Run) (i : Nat) (m : ID) : Bool :=
+  m == r.sp.mem || (match c.roleOf rs m with
+    | .sel1 k | .bstore k | .seln k => k == i
+    | _ => false)
+
+/-- The helper call `w` of run `r` (number `i`, its buffer block checked as segment `j`'s):
+`wbZero(typ, dst)` or `wbMove(typ, dst, src)` with register arguments of shape `uintptr`, `typ` a
+type address of the run, `dst`/`src` the arguments of one of the run's `Zero`s/`Move`s (`dst`
+possibly its nil-check copy), on a memory of the buffer block. -/
+def wbCallOK (B : Block) (segs : List ID) (j : Nat) (rs : List Run) (r : Run) (i : Nat)
+    (w : Value) : Bool :=
+  match w.aux.bind c.tabs.callee?, Sem.callABI? c.tabs w.aux with
+  | some name, some abi =>
+    let n := w.args.size - 1
+    (if name == "runtime.wbZero" then n == 2 else name == "runtime.wbMove" && n == 3) &&
+    abi.params.size == n && abi.params.all (wbParam c.tabs) &&
+    c.roleOf rs w.args[0]! == .taddr i &&
+    (match w.args.back? with
+      | some m => c.tMem rs r i m
+      | none => false) &&
+    r.src.any fun s => match c.f.value? s with
+      | some u =>
+        u.args.size == n &&
+        (if n == 2 then u.op == .Zero
+         else u.op == .Move && w.args[2]! == u.args[1]! && c.availIn B segs j u.args[1]!) &&
+        ((w.args[1]! == u.args[0]! && c.availIn B segs j u.args[0]!) ||
+          (r.nc == some u.args[0]! && c.roleOf rs w.args[1]! == .ncThen i))
+      | none => false
+  | _, _ => false
+
 /-- The role-specific conditions of value `x` listed in segment `j` (`inT = false`) or in the
 buffer block of run `j` (`inT = true`) of the chain of block `b`. -/
 def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j : Nat)
@@ -365,7 +416,7 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
         | some r => w.op == .Phi && w.args == #[r.sp.mem, r.memThen] && tyIs c.tabs w isMemTy &&
             (r.memThen == r.sp.mem ||
               (match c.roleOf rs r.memThen with
-                | .sel1 k | .bstore k => k == i
+                | .sel1 k | .bstore k | .seln k => k == i
                 | _ => false))
         | none => false)
     | .ncEnd i =>
@@ -423,6 +474,19 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
         (match c.roleOf rs w.args[2]! with
           | .sel1 k | .bstore k => k == i
           | _ => false)
+    | .taddr i =>
+      !inT && i == j && w.op == .Addr && w.args.size == 1 && c.isSb w.args[0]! &&
+        (symName? c.tabs w.aux).isSome &&
+        (match c.tabs.ty w.type with | .int .w64 => true | _ => false)
+    | .call i =>
+      inT && i == j && w.op == .StaticCall &&
+        (match c.tabs.ty w.type with | .tuple [.mem] => true | _ => false) &&
+        (match rs[i]? with
+          | some r => c.wbCallOK B segs j rs r i w
+          | none => false)
+    | .seln i =>
+      inT && i == j && w.op == .SelectN && w.args.size == 1 && w.auxInt == 0 &&
+        tyIs c.tabs w isMemTy && c.roleOf rs w.args[0]! == .call i
     | .tload i =>
       inT && i == j && w.args.size == 2 &&
         (match rs[i]? with
@@ -507,7 +571,8 @@ def blockOK (b : ID) : Bool :=
 end Ctx
 
 /-- The flag address and `Const32 [0]` the runs use, checked once: new values of `g`'s entry
-with the expected fields, the same for every split. -/
+with the expected fields (the flag address reads an `SB` of the entry), the same for every
+split. -/
 def lazyOK (tabs : Tables) (f g : Func) (K Lst : Array Bool) : Option (Option (ID × ID)) := do
   let runs ← f.blocks.toList.mapM (chainRuns? f g ·)
   let splits := runs.flatMap fun (rs, _) => rs.map (·.sp)
@@ -522,7 +587,8 @@ def lazyOK (tabs : Tables) (f g : Func) (K Lst : Array Bool) : Option (Option (I
       isPtrTy (tabs.ty wa.type) && wa.args.size == 1)
     guard (c0.op == .Const32 && c0.auxInt == (0 : Int64) && c0.args.isEmpty &&
       (match tabs.ty c0.type with | .int .w32 => true | _ => false))
-    guard (ge.contains s.wbaddr && ge.contains s.const0)
+    guard (ge.contains s.wbaddr && ge.contains s.const0 && ge.contains wa.args[0]!)
+    guard ((g.value? wa.args[0]!).any fun v => v.op == .SB && v.args.isEmpty)
     -- the flag address is new (`writebarrier` creates it), so it holds no source value
     guard (!K.getD s.wbaddr false && !Lst.getD s.wbaddr false)
     return some (s.wbaddr, s.const0)

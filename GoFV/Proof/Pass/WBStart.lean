@@ -7,8 +7,9 @@ import GoFV.Proof.MemInv
 
 `SimAt env c frS frT b i`: the source enters block `b` along edge `i` with frame `frS` (lemma (D)
 for the strict dominators, `SInv`), the target enters `b` (the first segment of its chain) with
-`frT`: the source's frame but for the registers, equal on held values, with the flag address and
-constant once the entry block has run.
+`frT`: the source's frame but for the registers, equal on held values, with the flag address,
+constant and the flag address's `SB` once the entry block has run; the environment's
+write-barrier helpers are the runtime's (`WbHelpers`, from `WbPre`).
 
 From a reference frame `Gr` of the source after (a prefix of) block `b`: `grOK` (the facts the
 chain's values read), `regs0`/`phis0` (the target at the chain's entry), `final_held` (held
@@ -20,10 +21,12 @@ namespace GoFV.Proof.WB
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
 open GoFV.Proof.MemInv (SInv)
 
-/-- The target holds the flag address and constant. -/
+/-- The target holds the flag address and constant, and a register for the `SB` the flag address
+reads. -/
 def LazyRegs (c : WBCheck.Ctx) (fr : Frame) : Prop :=
-  ∀ wa c0, c.lazy = some (wa, c0) →
-    fr.regs[wa]? = some (some (.ptr flagPtr)) ∧ fr.regs[c0]? = some (some (.int .w32 0))
+  (∀ wa c0, c.lazy = some (wa, c0) →
+    fr.regs[wa]? = some (some (.ptr flagPtr)) ∧ fr.regs[c0]? = some (some (.int .w32 0))) ∧
+  ∀ s, c.sbOf = some s → ∃ z, fr.regs[s]? = some (some z)
 
 /-- How the source enters block `b` along edge `i`: the entry, or a successor of a tree block `p`
 after which lemma (D) holds for `p`'s ancestors. -/
@@ -42,6 +45,7 @@ structure SimAt (env : Env) (c : WBCheck.Ctx) (frS frT : Frame) (b : ID) (i : Na
   sinv : SInv MemOK frS
   lazy : b ≠ c.f.entry → LazyRegs c frT
   entry : b = c.f.entry → ∀ (a : ID) (y : Val), frS.regs[a]? ≠ some (some y)
+  wbh : WbHelpers env
 
 theorem pre_tree {ce : CheckEnv} {c : WBCheck.Ctx} (hwf : WF ce c.f) (hc : CertOK c.f)
     {env : Env} {fr : Frame} {b : ID} {i : Nat} (h : Pre env c fr b i) :
@@ -213,6 +217,21 @@ theorem lazy_held (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockO
   have hl' := roleOK_lazy hok hw (hρ.elim .inl (fun h => .inr (.inl h)))
   exact ⟨E, hE, hl'.2.2.2.1 hh⟩
 
+/-- A held value listed in `g`'s entry is a value of `f`'s entry. -/
+theorem held_entry (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
+    {a : ID} (hh : c.held a = true) (haE : a ∈ vals c.g c.f.entry) :
+    ∃ E, c.f.block? c.f.entry = some E ∧ a ∈ E.values := by
+  obtain ⟨ce, hwf⟩ := S.wf
+  have hokE := hall _ hwf.entry
+  obtain ⟨E, rsE, lE, hE, hchE⟩ := blockOK_some hokE
+  have hok := (blockOK_spec hokE hE hchE).2.2.2.2.2.2.1 0 c.f.entry rfl a haE
+  obtain ⟨w, hw⟩ := roleOK_val hok
+  refine ⟨E, hE, ?_⟩
+  rcases role_of_held (rs := rsE) hh with hρ | hρ | hρ
+  · exact (roleOK_held hok hw hρ).2.1
+  · exact (roleOK_lazy hok hw (.inl hρ)).2.2.2.1 hh
+  · exact (roleOK_lazy hok hw (.inr (.inl hρ))).2.2.2.1 hh
+
 /-- A held flag address in `Gr`. -/
 private theorem gr_wbaddr (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
     {env : Env} {frS frT : Frame} {i : Nat} (hA : SimAt env c frS frT b i) {Gr : Frame}
@@ -243,7 +262,7 @@ private theorem gr_wbaddr (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, 
       (by rw [hvid]; exact hu)
   · have hnB : a ∉ B.values := fun haB =>
       hb (hwf.valueOnce b B c.f.entry E ⟨S.hb, S.hB⟩ ⟨hwf.entry, hE⟩ a haB haE)
-    rw [hout a hnB, ← hA.held a hh, (hA.lazy hb _ _ hz).1] at hy
+    rw [hout a hnB, ← hA.held a hh, ((hA.lazy hb).1 _ _ hz).1] at hy
     cases hy
     rfl
 
@@ -277,7 +296,7 @@ private theorem gr_const0 (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, 
       (by rw [hvid]; exact hu)
   · have hnB : a ∉ B.values := fun haB =>
       hb (hwf.valueOnce b B c.f.entry E ⟨S.hb, S.hB⟩ ⟨hwf.entry, hE⟩ a haB haE)
-    rw [hout a hnB, ← hA.held a hh, (hA.lazy hb _ _ hz).2] at hy
+    rw [hout a hnB, ← hA.held a hh, ((hA.lazy hb).1 _ _ hz).2] at hy
     cases hy
     rfl
 
@@ -300,7 +319,8 @@ theorem grOK (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' 
     rw [hq, S.gr_const0 hall hA hout hev hh (roleOf_const0_inv hρ) hy]
 
 /-- **The target at the chain's entry.** -/
-theorem regs0 (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat}
+theorem regs0 (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true) {env : Env}
+    {frS frT : Frame} {i : Nat}
     (hA : SimAt env c frS frT b i) {Gr : Frame} (hG : GrOK c B rs Gr frS)
     (hout : ∀ a, a ∉ B.values → Gr.regs[a]? = frS.regs[a]?) :
     Regs c b B rs Gr frS frT 0 frT := by
@@ -317,13 +337,30 @@ theorem regs0 (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat}
       have := hG.held a _ y hh hq hy
       simp only [QR, hρ]; exact this.symm
   · exact absurd hj (Nat.not_lt_zero _)
-  · have hL := hA.lazy hb
-    rcases hl with h | h
+  · obtain ⟨hL, hLs⟩ := hA.lazy hb
+    rcases hl with h | h | h
     · obtain ⟨c0, hz⟩ := lazy_of_wbaddr h
       exact ⟨_, (hL _ _ hz).1, by simp only [QR, roleOf_wbaddr (rs := rs) h]⟩
     · obtain ⟨wa, hz⟩ := lazy_of_const0 h
       exact ⟨_, (hL _ _ hz).2,
         by simp only [QR, roleOf_const0 (rs := rs) h (isWbaddr_of_const0 S.ctx h)]⟩
+    · obtain ⟨z, hz⟩ := hLs a (by simpa [Ctx.isSb] using h)
+      refine ⟨z, hz, ?_⟩
+      rcases S.sb_role hb h with h' | h' | h' | h'
+      · obtain ⟨c0, hz'⟩ := lazy_of_wbaddr h'
+        rw [(hL _ _ hz').1] at hz; cases hz
+        simp only [QR, roleOf_wbaddr (rs := rs) h']
+      · obtain ⟨wa, hz'⟩ := lazy_of_const0 h'
+        rw [(hL _ _ hz').2] at hz; cases hz
+        simp only [QR, roleOf_const0 (rs := rs) h' (isWbaddr_of_const0 S.ctx h')]
+      · obtain ⟨hh, hρ⟩ := h'
+        simp only [QR, hρ]
+        obtain ⟨ce, hwf⟩ := S.wf
+        obtain ⟨E, hE, haE⟩ := S.held_entry hall hh (S.sb_entry h).1
+        have hnB : a ∉ B.values := fun haB =>
+          hb (hwf.valueOnce b B c.f.entry E ⟨S.hb, S.hB⟩ ⟨hwf.entry, hE⟩ a haB haE)
+        rw [hout a hnB, ← hA.held a hh, hz]
+      · simp only [QR, h']
 
 /-- **The `Phi`s of the chain's entry** take the source's arguments. -/
 theorem phis0 (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat}

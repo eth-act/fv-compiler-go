@@ -1,7 +1,6 @@
 import GoFV.Proof.Pass.WBPanic
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.TabsAgree
-import GoFV.SSA.Sem.Runtime
 
 /-!
 # writebarrier refines its input (issue #36)
@@ -22,18 +21,6 @@ namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
 open GoFV.Proof.MemInv (SInv ContractsOK sinv_enter sinv_entry)
-
-/-- The write-barrier helpers are the runtime's (`Runtime.wbHelper`), and a call of either clobbers
-none of its caller's outgoing-arguments area (`Env.noSpill`). The `noSpill` half is a **trusted
-assumption** about the runtime binary (docs/plans/semantics.md §9.6, evidence on #36): in the
-pinned go1.27.3 linux/arm64 runtime, `runtime.wbZero`/`runtime.wbMove` store only the link
-register and frame pointer inside their own frame, never at or above their entry `SP`, and the
-runtime is always compiled with optimizations (`cmd/compile/internal/base/flag.go:366-369`), so
-they never use the spill slots of their register arguments in the caller's frame. -/
-def WbHelpers (env : Env) : Prop :=
-  env.extern "runtime.wbZero" = some Runtime.wbHelper ∧
-    env.extern "runtime.wbMove" = some Runtime.wbHelper ∧
-    env.noSpill "runtime.wbZero" = true ∧ env.noSpill "runtime.wbMove" = true
 
 /-- The inputs of `writebarrier_refines`: the memory with the global image has a defined,
 read-only write-barrier flag and no write-barrier buffer, the environment's contracts keep
@@ -122,7 +109,7 @@ theorem run_facts (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some
   · obtain ⟨k, hk⟩ := List.getElem?_of_mem hs
     obtain ⟨u', hu', hop, -⟩ := hsrcop k s hk
     rw [hu] at hu'; cases hu'
-    rcases hop with hop | hop | hop <;> rw [hop] <;> exact fun h => by cases h
+    rcases hop with hop | hop | hop | hop | hop <;> rw [hop] <;> exact fun h => by cases h
   · unfold ncsOf at hn
     split at hn
     · rename_i n' hn'
@@ -189,39 +176,50 @@ theorem final_held (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
     have haB : a ∉ B.values := fun h => hin (S.held_listed hall hh h)
     rw [hR.out a hnS hnT, hA.held a hh, hGo a haB]
 
-/-- The flag address and constant after the chain. -/
+/-- The flag address, constant and `SB` after the chain. -/
 theorem lazy_after (S : Setup c b B rs l) {env : Env} {frS frT : Frame} {i : Nat}
     (hA : SimAt env c frS frT b i) {G T : Frame}
     (hR : Regs c b B rs G frS frT (rs.length + 1) T) : LazyRegs c T := by
-  intro wa c0 hz
-  have hwa : c.isWbaddr wa = true := by simp [Ctx.isWbaddr, hz]
-  have hc0 : c.isConst0 c0 = true := by simp [Ctx.isConst0, hz]
-  have hrw : c.roleOf rs wa = .wbaddr := roleOf_wbaddr hwa
-  have hrc : c.roleOf rs c0 = .const0 := roleOf_const0 hc0 (isWbaddr_of_const0 S.ctx hc0)
-  obtain ⟨hwaE, hc0E, hEg⟩ := S.lazy_entry hz
-  by_cases hb : b = c.f.entry
-  · have hs0 : (segsOf b rs)[0]? = some c.f.entry := by rw [← hb]; rfl
-    have h0 : 0 < rs.length + 1 := Nat.succ_pos _
-    obtain ⟨z1, hz1, hq1⟩ := hR.avail wa (.inr (.inl ⟨0, h0, _, hs0, hwaE⟩))
-    obtain ⟨z2, hz2, hq2⟩ := hR.avail c0 (.inr (.inl ⟨0, h0, _, hs0, hc0E⟩))
-    simp only [QR, hrw] at hq1
-    simp only [QR, hrc] at hq2
-    subst hq1; subst hq2
-    exact ⟨hz1, hz2⟩
-  · have hnot : ∀ a, a ∈ vals c.g c.f.entry → (∀ j, ¬ InSeg c b rs j a) ∧ (∀ j, ¬ InT c rs j a) := by
-      intro a ha
-      refine ⟨fun j ⟨s, hs, has⟩ => ?_, fun j ⟨r, hr, har⟩ => ?_⟩
-      · obtain ⟨-, -, -, hsg, -⟩ := S.seg_block hs
-        have := S.listed_once hsg hEg has ha
-        exact S.entry_not_chain hb s (List.mem_append_left _ (List.mem_of_getElem? hs)) this
-      · obtain ⟨-, -, -, htg, -⟩ := S.t_block hr
-        have := S.listed_once htg hEg har ha
-        exact S.entry_not_chain hb r.sp.t
-          (List.mem_append_right _ (List.mem_map.2 ⟨r, List.mem_of_getElem? hr, rfl⟩)) this
-    obtain ⟨h1, h2⟩ := hA.lazy hb wa c0 hz
-    refine ⟨?_, ?_⟩
-    · rw [hR.out wa (hnot wa hwaE).1 (hnot wa hwaE).2]; exact h1
-    · rw [hR.out c0 (hnot c0 hc0E).1 (hnot c0 hc0E).2]; exact h2
+  have hEg : ∀ a, (c.isWbaddr a = true ∨ c.isConst0 a = true ∨ c.isSb a = true) →
+      c.f.entry ∈ c.g.blocks := fun a h => (S.entry_mem h).2
+  have hs0 : b = c.f.entry → (segsOf b rs)[0]? = some c.f.entry := fun hb => by rw [← hb]; rfl
+  have h0 : 0 < rs.length + 1 := Nat.succ_pos _
+  have hnot : b ≠ c.f.entry → ∀ a, a ∈ vals c.g c.f.entry → c.f.entry ∈ c.g.blocks →
+      (∀ j, ¬ InSeg c b rs j a) ∧ (∀ j, ¬ InT c rs j a) := by
+    intro hb a ha hEg
+    refine ⟨fun j ⟨s, hs, has⟩ => ?_, fun j ⟨r, hr, har⟩ => ?_⟩
+    · obtain ⟨-, -, -, hsg, -⟩ := S.seg_block hs
+      have := S.listed_once hsg hEg has ha
+      exact S.entry_not_chain hb s (List.mem_append_left _ (List.mem_of_getElem? hs)) this
+    · obtain ⟨-, -, -, htg, -⟩ := S.t_block hr
+      have := S.listed_once htg hEg har ha
+      exact S.entry_not_chain hb r.sp.t
+        (List.mem_append_right _ (List.mem_map.2 ⟨r, List.mem_of_getElem? hr, rfl⟩)) this
+  refine ⟨fun wa c0 hz => ?_, fun s hs => ?_⟩
+  · have hwa : c.isWbaddr wa = true := by simp [Ctx.isWbaddr, hz]
+    have hc0 : c.isConst0 c0 = true := by simp [Ctx.isConst0, hz]
+    have hrw : c.roleOf rs wa = .wbaddr := roleOf_wbaddr hwa
+    have hrc : c.roleOf rs c0 = .const0 := roleOf_const0 hc0 (isWbaddr_of_const0 S.ctx hc0)
+    obtain ⟨hwaE, hc0E, hEg⟩ := S.lazy_entry hz
+    by_cases hb : b = c.f.entry
+    · obtain ⟨z1, hz1, hq1⟩ := hR.avail wa (.inr (.inl ⟨0, h0, _, hs0 hb, hwaE⟩))
+      obtain ⟨z2, hz2, hq2⟩ := hR.avail c0 (.inr (.inl ⟨0, h0, _, hs0 hb, hc0E⟩))
+      simp only [QR, hrw] at hq1
+      simp only [QR, hrc] at hq2
+      subst hq1; subst hq2
+      exact ⟨hz1, hz2⟩
+    · obtain ⟨h1, h2⟩ := (hA.lazy hb).1 wa c0 hz
+      refine ⟨?_, ?_⟩
+      · rw [hR.out wa (hnot hb wa hwaE hEg).1 (hnot hb wa hwaE hEg).2]; exact h1
+      · rw [hR.out c0 (hnot hb c0 hc0E hEg).1 (hnot hb c0 hc0E hEg).2]; exact h2
+  · have hl : c.isSb s = true := by simp [Ctx.isSb, hs]
+    have hsE := (S.sb_entry hl).1
+    have hEg' := hEg s (.inr (.inr hl))
+    by_cases hb : b = c.f.entry
+    · obtain ⟨z, hz, -⟩ := hR.avail s (.inr (.inl ⟨0, h0, _, hs0 hb, hsE⟩))
+      exact ⟨z, hz⟩
+    · rw [hR.out s (hnot hb s hsE hEg').1 (hnot hb s hsE hEg').2]
+      exact (hA.lazy hb).2 s hs
 
 /-- **A block entry that succeeds.** -/
 theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
@@ -271,7 +269,7 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
     intro j x hx
     refine S.cov_intro (P := fun x => x ∈ B.values ∧ ∀ u, c.f.value? x = some u → u.op ≠ .Phi)
       (fun x ⟨hx, hp⟩ => by obtain ⟨u, hu⟩ := hvx x hx; exact hP x hx u hu (hp u hu))
-      (fun _ a _ _ _ _ ha hap => ⟨ha, hap⟩) ?_ ?_ ?_
+      (fun _ a _ _ _ _ ha hap => ⟨ha, hap⟩) hA.wbh ?_ ?_ ?_
     · intro hrole hK hp
       have hh : c.held x = true := by simp [Ctx.held, hK]
       rcases hx with hx | hx
@@ -281,7 +279,7 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
     · intro j' hw
       obtain ⟨r, hr, -⟩ := roleOf_then (o := .WB) (j := j') (by rw [hw]; rfl)
       exact hM j' (List.getElem?_eq_some_iff.1 hr).1
-  obtain ⟨n, F, eL, s, hs, hwalk, hR, hPh⟩ := S.walk_to hG (S.regs0 hA hG hGo)
+  obtain ⟨n, F, eL, s, hs, hwalk, hR, hPh⟩ := S.walk_to hG (S.regs0 hall hA hG hGo)
     (S.phis0 hA hGp) rs.length (Nat.le_refl _) (fun j x _ hx => hcov j x hx) hM
   obtain ⟨L, hL, hls, hk, hctl, hsu, hheld⟩ := S.last_block
   obtain rfl : s = l := Option.some.inj (hs.symm.trans hls)
@@ -295,7 +293,7 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
     obtain ⟨hD, -, -⟩ := dinv_enter hwf hcf S.hb S.hB hA.sizeS (pre_strict hcf hA.pre) hen
     refine ⟨.inr ⟨b, B, S.hb, S.hB, (pre_tree hwf hcf hA.pre).2, by cases e; exact he, hD⟩,
       by rw [hGs, hA.sizeS], hRT.size, fr_trans hRT.fr hGf, fun a hh => hfin a hh, hsinv,
-      fun _ => S.lazy_after hA hRT, fun hent => ?_⟩
+      fun _ => S.lazy_after hA hRT, fun hent => ?_, hA.wbh⟩
     exfalso
     obtain ⟨j, hj⟩ := Array.mem_iff_getElem?.1 he
     obtain ⟨-, E, hE', hpe⟩ := hwf.succLink b B ⟨S.hb, S.hB⟩ j e hj
@@ -406,7 +404,7 @@ theorem refines_of_glob {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce c
         { entryFrame env (Ctx.make c.tabs c.f) args mem with
           regs := Array.replicate c.g.valueTab.size none } c.f.entry 0 := by
       refine ⟨.inl rfl, by simp [entryFrame, Ctx.make], by simp, rfl, fun a hh => ?_,
-        sinv_entry memOK_set hpre.1, fun h => absurd rfl h, fun _ a y h => ?_⟩
+        sinv_entry memOK_set hpre.1, fun h => absurd rfl h, fun _ a y h => ?_, hpre.2.2⟩
       · obtain ⟨h1, h2⟩ := held_lt hGl hh
         simp only [entryFrame, Ctx.make, Array.getElem?_replicate, h1, h2, ↓reduceIte]
       · simp only [entryFrame, Array.getElem?_replicate] at h
