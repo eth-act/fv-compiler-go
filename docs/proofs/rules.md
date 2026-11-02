@@ -672,7 +672,7 @@ of `x` as selections of a `Make` (`makeSelOK`, tried for every rule), and `final
 listed value whose definition differs from the replayed one only if it is a term nothing in the
 output reads (`readIn`; `final_den` is stated for read values). The `ld` layer takes neither kind
 of skipped event. Witness: `GoFV.Proof.Witness.drp_checkedRewrite` (`pick1`, `{dec.rules:120,
-dec.rules:115}`). Decompose builtin in the fragment: quick-v3 9060 → 9180. **Not provable as
+dec.rules:115}`). Decompose builtin in the fragment: quick-v3 9060 → 9180, full-v4 90847 → 91514. **Not provable as
 `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
 `:102` (`imakeOfStructMake`). **Pending**: the size-0 `Store` elimination `:10` (`=> mem`).
