@@ -376,8 +376,9 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
     obtain ⟨uz, huz, -, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ z hzf
     exact e4 z ((ofm z).2 ⟨hzf, uz, huz, hzp uz huz⟩)
   obtain ⟨T, hT, hTf, hTs, hTk, hTr, -, -, -⟩ := tgt_loop hE TH (L := og.toList) (M := [])
-    (by simp) (fun x hx hn _ => hsrc x hx hn) (fun x _ _ _ z hz => hsrcF x z hz)
-    (fun c z hc _ _ A P Q hA _ => ⟨fun uc huc => by
+    (U := fun _ => False) (by simp) (fun _ h => h.elim) (fun _ _ h => h.elim)
+    (fun x hx hn _ _ => hsrc x hx hn) (fun x _ _ _ _ z hz => hsrcF x z hz)
+    (fun c z hc _ _ _ A P Q hA _ => ⟨fun uc huc => by
       obtain ⟨u, y, hu, -, hev⟩ := hsrc c (by rw [hA]; simp) (B.common c hc).2
       rw [huc] at hu; cases hu
       exact .inl ⟨y, hev⟩, fun z hz => hsrcF c z hz⟩)
@@ -397,7 +398,7 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
     fun x y hy => ?_, hlisted, hGSok, hGSq⟩
   have hn := H.notNew (hlisted x y hy)
   by_cases hxo : x ∈ og.toList
-  · exact hTr x hxo hn y hy
+  · exact hTr x hxo hn id y hy
   · rw [hTk x hxo]; exact TH.hrel0 x hxo hn y hy
 
 end

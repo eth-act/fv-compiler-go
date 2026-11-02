@@ -92,7 +92,11 @@ theorem selectNAddr_avoids (k : Int64) {args : List Val} (h : ∀ z ∈ args, Va
       · trivial
       · split
         · rename_i p hp
-          exact hA _ (List.mem_of_getElem? hp)
+          have hp' := hA _ (List.mem_of_getElem? hp)
+          unfold Ptr.word
+          split
+          · trivial
+          · exact hp'
         · trivial
     · trivial
   · trivial

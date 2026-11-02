@@ -269,14 +269,24 @@ theorem Dep.left_arg {N : α → Prop} {D : α → List α} {a y : α} : Dep N D
   | .arg _ hy h => ⟨_, hy, h⟩
   | .trans h _ => h.left_arg
 
+/-- The first node reading `a` on a dependency path from `a` to `y`: `y` itself, or a node `y`
+depends on. -/
+theorem Dep.first {N : α → Prop} {D : α → List α} {a y : α} :
+    Dep N D a y → ∃ b, N b ∧ a ∈ D b ∧ (b = y ∨ Dep N D b y)
+  | .arg _ hy h => ⟨_, hy, h, .inl rfl⟩
+  | .trans h1 h2 => by
+    obtain ⟨b, hb, hab, hby⟩ := h1.first
+    exact ⟨b, hb, hab, .inr (hby.elim (fun h => h ▸ h2) (fun h => .trans h h2))⟩
+
 /-- **The panic transfer with the canonical rank, with exempt nodes.** `transfer_rank` for the
-source nodes outside a set `X` of target nodes that are no target node's arguments (whose
-source arguments need not `Feed` them). -/
+source nodes outside a set `X` of target nodes whose source arguments need not `Feed` them, and
+whose target readers are non-pure source nodes that read them in the source too (none, for a
+node the pass invalidated). -/
 theorem transfer_rank_ex {N N' : α → Prop} {D D' : α → List α} {pure : α → Prop} {np : α → Bool}
     {o o' : List α} (hs : Topo N D o) (hk : PureFirst N D pure o) (ht : Topo N' D' o')
     (hnp : ∀ x, np x = true ↔ N x ∧ ¬ pure x) (hseq : o.filter np = o'.filter np)
     {r : α} {k k' : Nat} (hr : o[k]? = some r) (hr' : o'[k']? = some r) (hrp : np r = true)
-    (X : α → Prop) (hX : ∀ a b, N' b → a ∈ D' b → ¬ X a)
+    (X : α → Prop) (hX : ∀ a b, N' b → a ∈ D' b → X a → N b ∧ ¬ pure b ∧ a ∈ D b)
     (pres : ∀ a y, N a → N y → a ∈ D y → N' y → ¬ X y → Feeds N N' D D' pure y a) :
     ∀ j y, j < k' → o'[j]? = some y → N y → ¬ X y → ∃ i < k, o[i]? = some y := by
   intro j
@@ -305,10 +315,27 @@ theorem transfer_rank_ex {N N' : α → Prop} {D D' : α → List α} {pure : α
           intro hNa i2 hk2 hia
           obtain ⟨ja, hja⟩ := List.getElem?_of_mem ((ht.mem a).2 hN'a)
           have hjaj : ja < j := ht.dep_lt hd hja hy
-          obtain ⟨b, hNb, hab⟩ := hd.left_arg
-          obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa (hX a b hNb hab)
-          have := idx_unique hs.nodup hia hai3
-          omega
+          by_cases hXa : X a
+          · -- an exempt `a`: its first reader on the path to `y` is a non-pure source node
+            -- reading it, listed before `r` in both orders, so `a` is before `r` in `o`
+            obtain ⟨b, hN'b, hab, hby⟩ := hd.first
+            obtain ⟨hNb, hpb, habS⟩ := hX a b hN'b hab hXa
+            obtain ⟨jb, hjb⟩ := List.getElem?_of_mem ((ht.mem b).2 hN'b)
+            have hjbj : jb ≤ j := by
+              rcases hby with rfl | hby
+              · exact Nat.le_of_eq (idx_unique ht.nodup hjb hy)
+              · exact Nat.le_of_lt (ht.dep_lt hby hjb hy)
+            have hnb : np b = true := (hnp b).2 ⟨hNb, hpb⟩
+            have hbb : Before (o'.filter np) b r :=
+              (before_filter np hnb hrp o').2 ⟨jb, k', by omega, hjb, hr'⟩
+            rw [← hseq] at hbb
+            obtain ⟨ib, hib⟩ := List.getElem?_of_mem ((hs.mem b).2 hNb)
+            have hibk := idx_lt_of_before hs.nodup ((before_filter np hnb hrp o).1 hbb) hib hr
+            have := hs.dep_lt (.arg hNa hNb habS) hia hib
+            omega
+          · obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa hXa
+            have := idx_unique hs.nodup hia hai3
+            omega
         | @through a hpa _ ihb =>
           intro hNa i2 hk2 hia
           have hk2' : k < i2 := by
@@ -338,6 +365,6 @@ theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α �
     (pres : ∀ a y, N a → N y → a ∈ D y → N' y → Feeds N N' D D' pure y a) :
     ∀ j y, j < k' → o'[j]? = some y → N y → ∃ i < k, o[i]? = some y :=
   fun j y hj hy hNy => transfer_rank_ex hs hk ht hnp hseq hr hr' hrp (fun _ => False)
-    (fun _ _ _ _ h => h) (fun a y ha hy hay hy' _ => pres a y ha hy hay hy') j y hj hy hNy id
+    (fun _ _ _ _ h => h.elim) (fun a y ha hy hay hy' _ => pres a y ha hy hay hy') j y hj hy hNy id
 
 end GoFV.Proof.Order

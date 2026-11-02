@@ -1104,6 +1104,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   have hsw := ecc_args_split1 w.args hws
   have hi : invalidated g x = false := by
     unfold invalidated; rw [hw]; dsimp only; rw [hwop]; decide
+  have hfd : frameDet f g x = false := frameDet_of_tgt hw (by rw [hwop]; decide)
   have hasl : (u.args.extract 0 (u.args.size - 1)).toList.length = (ownOuts tabs f).length := by
     simp only [Array.toList_extract, List.extract_eq_take_drop, List.drop_zero, Nat.sub_zero,
       List.length_take, Array.length_toList]
@@ -1111,7 +1112,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   have hmemu : ∀ a ∈ (u.args.extract 0 (u.args.size - 1)).toList, a ∈ u.args :=
     fun a ha => Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha)
   have hrel : ∀ a ∈ (u.args.extract 0 (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
-    fun a ha => ecc_argRel hi hu hRS hRu hfront (hmemu a ha)
+    fun a ha => ecc_argRel hi hfd hu hRS hRu hfront (hmemu a ha)
   have hG := ecr_forall₂_hasTy (u := u) hasl hrp hsp hrel
   have hwfR : ∀ e ∈ argPairs true (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList,
       wf (tabs.ty e.1.type) = true := fun e he => by
@@ -1131,7 +1132,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     (fun a ha => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
       exact himk _ (hmemu _ (ecr_argPairs_mem he).2.1))
-    (fun q hq yq hyq hn' _ => hfront q (ecFront_tgt hi hw
+    (fun q hq yq hyq hn' _ => hfront q (ecFront_tgt hi hfd hw
       (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)) hn') yq hyq)
   simp only [ecPieceVals_false] at hP
   rw [ecr_argPairs_zip _ hasl, ← ecr_pieces_filter] at hP
@@ -1181,7 +1182,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     (fun a ha => by
       obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
       exact himk _ (hmemu _ (ecr_argPairs_mem (hspm e he)).2.1))
-    (fun q hq yq hyq hn' _ => hfront q (ecFront_own hi (by rw [hosz]; exact hq) hn') yq hyq)
+    (fun q hq yq hyq hn' _ => hfront q (ecFront_own hi hfd (by rw [hosz]; exact hq) hn') yq hyq)
   simp only [ecPieceVals_false] at hS
   rw [← ecr_sp_zip _ hasl, List.flatMap_map] at hS
   -- the evaluations
@@ -1207,7 +1208,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   cases hmv : rv frS u.args[u.args.size - 1]! with
   | mem m0 =>
     obtain ⟨M0', hM0T, hM0R⟩ := ecw_front_mem hmsp hmv (hRu _ hm)
-      (hfront _ (ecFront_src hi hu hm (ec_not_invalidated hmsp)))
+      (hfront _ (ecFront_src hi hfd hu hm (ec_not_invalidated hmsp)))
     obtain ⟨MT, hMT, hWT, hpt⟩ := ecw_chain hNC hL _ hch hELt hshs M0' hM0T
     rw [hMT, show Val.retype .mem (.mem m0) = .mem m0 from rfl,
       ecf_convRes (by rw [List.length_map, hasl])]

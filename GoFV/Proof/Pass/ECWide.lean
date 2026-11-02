@@ -470,7 +470,7 @@ theorem ecw_piece {tabs : Tables} {f g : Func} {c : ID} {cu cw : Value}
   rw [List.length_map] at husl
   have hycT : yc.hasTy (.tuple us) = true := by
     rw [ecT_shapeOf_value hcu] at hyc; rw [← hus]; exact hyc
-  have hwf := hwfo pp (List.mem_of_getElem? hp)
+  have hwf := hwfo pp (List.mem_of_getElem? hp) hpr
   have hi : ai.toInt = ((ai.toInt.toNat : Nat) : Int) := by omega
   rcases ecA_tuple_cases hycT with rfl | ⟨vs, rfl, hvs⟩
   · rw [ecA_selectN_poison, ecA_retype_poison, ecw_leafVals_poison hwf, List.getElem?_map] at ha
@@ -750,6 +750,7 @@ theorem obl_wideStore {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT
     he2, hl⟩ := ecw_wideStoreOK hok
   obtain ⟨hop, hwop, hus, hws1, hch⟩ := ecw_wideChain hzs
   have hinv : invalidated g x = false := by unfold invalidated; rw [hw]; dsimp only; rw [hwop]; rfl
+  have hfd : frameDet f g x = false := frameDet_of_src hu (by rw [hop]; decide)
   obtain ⟨cw, hcw, hcok⟩ := hcall xu cu hxu hcu hcallc
   rw [funext (ecCv_of_not_special (tabs := tabs) (ecw_store_not_special hu hw hop hwop))]
   cases hS : evalValue env (Ctx.make tabs f) frS u with
@@ -758,9 +759,9 @@ theorem obl_wideStore {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT
   | ok y =>
   obtain ⟨q, M, M1, hq, hM, hW, rfl⟩ := ecw_store_src hu huid hop hus hvm hS
   have hpT := ecw_front_ptr hs0 hq (hRS _ (ecw_mem_three hus 0 (by decide)))
-    (hfr _ (ecFront_src hinv hu (ecw_mem_three hus 0 (by decide)) (ec_not_invalidated hs0)))
+    (hfr _ (ecFront_src hinv hfd hu (ecw_mem_three hus 0 (by decide)) (ec_not_invalidated hs0)))
   obtain ⟨M', hMT, hMR⟩ := ecw_front_mem hs2 hM (hRS _ (ecw_mem_three hus 2 (by decide)))
-    (hfr _ (ecFront_src hinv hu (ecw_mem_three hus 2 (by decide)) (ec_not_invalidated hs2)))
+    (hfr _ (ecFront_src hinv hfd hu (ecw_mem_three hus 2 (by decide)) (ec_not_invalidated hs2)))
   -- the target's chain of leaf stores
   have hw0 : w.args[0]! ∈ w.args := by rw [← Array.mem_toList_iff, ec_args_one hws1]; simp
   have hwid := (hL x hLx w hw).1
@@ -799,7 +800,7 @@ theorem obl_wideStore {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT
     rw [hva]; exact this
   have hyc := (hRegs _ _ (reg_rv (hra _ hc))).1
   rw [← shapeOf_eq] at hyc
-  obtain ⟨yc', hyc', hR⟩ := hfr _ (ecFront_wide hinv hu (ecw_mem_three hus 1 (by decide)) hws hxu hc) _
+  obtain ⟨yc', hyc', hR⟩ := hfr _ (ecFront_wide hinv hfd hu (ecw_mem_three hus 1 (by decide)) hws hxu hc) _
     (reg_rv (hra _ hc))
   -- the pieces the leaf stores write refine the source's leaves
   have hxs : RefinesList (leafVals (tabs.ty pp.type) (rv frS u.args[1]!))

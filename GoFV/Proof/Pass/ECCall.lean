@@ -127,11 +127,12 @@ theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT HS0 
 /-- An argument of a `Move` of `x`'s wide stack arguments that the source defines is in
 `ecFront`. -/
 theorem eco_mem_front_move {f g : Func} {x z q : ID} {mw : Value} (hi : invalidated g x = false)
+    (hfd : frameDet f g x = false)
     (hz : z ∈ stackMoves f g x)
     (hmw : g.value? z = some mw) (hq : q ∈ mw.args) (hn : isNewB f q = false) :
     q ∈ ecFront f g x := by
   unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true]
+  rw [hi, hfd, Bool.or_false, if_neg Bool.false_ne_true]
   refine List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
     ⟨List.mem_append_left _ (List.mem_append_right _ (List.mem_flatMap.2 ⟨z, hz, ?_⟩)),
       by rw [hn]; rfl⟩))
@@ -140,13 +141,13 @@ theorem eco_mem_front_move {f g : Func} {x z q : ID} {mw : Value} (hi : invalida
 
 /-- `EcArgRel` of the source arguments of `x` in an obligation's frames. -/
 theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Frame}
-    (hi : invalidated g x = false)
+    (hi : invalidated g x = false) (hfd : frameDet f g x = false)
     (hu : f.value? x = some u) (hRS : RegsOK (Ctx.make tabs f) frS) (hRu : ∀ a ∈ u.args, Reg frS a)
     (hfront : ∀ a ∈ ecFront f g x, ∀ y, frS.regs[a]? = some (some y) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y')
     {a : ID} (ha : a ∈ u.args) : EcArgRel tabs f g frS T a := by
   have hr := reg_rv (hRu a ha)
-  exact ⟨_, hr, hRS a _ hr, fun hia => hfront a (ecFront_src hi hu ha hia) _ hr⟩
+  exact ⟨_, hr, hRS a _ hr, fun hia => hfront a (ecFront_src hi hfd hu ha hia) _ hr⟩
 
 /-- The Go-typed arguments have their parameters' shapes. -/
 theorem ecc_pieces_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} :
@@ -279,7 +280,8 @@ go to memory). -/
 theorem ecc_encodeResults {tabs : Tables} {act : Nat} :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, wf (tabs.ty p.type) = true) → {m : Mem} → {res : List Val × Mem} →
+      (∀ p ∈ ps, p.regs.isEmpty = false → wf (tabs.ty p.type) = true) → {m : Mem} →
+      {res : List Val × Mem} →
       encodeResults tabs act ps rs m = some res → res.1 = ecfPieces tabs ps rs
   | _, _, .nil, _, _, _, h => by
     simp only [encodeResults, Option.some.injEq] at h
@@ -305,7 +307,7 @@ theorem ecc_encodeResults {tabs : Tables} {act : Nat} :
         cases h
         simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons,
           regLeafVals_reg (Bool.eq_false_iff.2 hst), ← ih he,
-          toPieces_eq_leafVals (hw p List.mem_cons_self) hr]
+          toPieces_eq_leafVals (hw p List.mem_cons_self (Bool.eq_false_iff.2 hst)) hr]
 
 theorem ecc_retypeResults {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length →
@@ -372,7 +374,8 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
     (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
     (hpost : (w.op == .StaticCall || w.op == .ClosureCall || w.op == .InterCall) = true)
     (haux : w.aux = u.aux) {abi : CallABI} (habi : callABI? ctx.tabs u.aux = some abi)
-    (houts : ∀ p ∈ outsOf abi, wf (ctx.tabs.ty p.type) = true) {argv argv' G P' : List Val} {mv mv' : Val}
+    (houts : ∀ p ∈ outsOf abi, p.regs.isEmpty = false → wf (ctx.tabs.ty p.type) = true)
+    {argv argv' G P' : List Val} {mv mv' : Val}
     (hct : (callTarget ctx u argv).2.2 = G ++ [mv]) (hct' : (callTarget ctx' w argv').2.2 = P' ++ [mv'])
     (hcallee : (callTarget ctx u argv).1 = none ∨ (callTarget ctx' w argv').1 = (callTarget ctx u argv).1)
     (hclo : OptRefines (callTarget ctx u argv).2.1 (callTarget ctx' w argv').2.1)
@@ -810,6 +813,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
     obtain ⟨hwid, hLw⟩ := hL x hLx w hw
     have hi : invalidated g x = false := by
       unfold invalidated; rw [hw]; exact Bool.eq_false_iff.2 fun h => hinv (beq_iff_eq.1 h)
+    have hfd : frameDet f g x = false := frameDet_of_src hu fun h => by rw [h] at hmap; cases hmap
     have houts := ec_outsOK_wf houtsR
     have hsu := ecc_args_split u.args k hkn
     have hsw := ecc_args_split w.args k hws
@@ -841,7 +845,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       cases e.1.regs.isEmpty <;> cases reg <;> decide
     -- the Go-typed arguments
     have hrel : ∀ a ∈ (u.args.extract k (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
-      fun a ha => ecc_argRel hi hu hRS hRu hfront (hmas a ha)
+      fun a ha => ecc_argRel hi hfd hu hRS hRu hfront (hmas a ha)
     have hmemPair : ∀ {reg : Bool} {e : ABIParam × ID},
         e ∈ argPairs reg (insOf abi) (u.args.extract k (u.args.size - 1)).toList →
         e.1 ∈ insOf abi ∧ e.2 ∈ (u.args.extract k (u.args.size - 1)).toList := fun he =>
@@ -860,7 +864,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun a ha => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
         exact himk _ (hmas _ (hmemPair he).2))
-      (fun q hq yq hyq hn' _ => hfront q (ecFront_tgt hi hw
+      (fun q hq yq hyq hn' _ => hfront q (ecFront_tgt hi hfd hw
         (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))) hn') yq hyq)
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => ecPieceVals true (tabs.ty p.type) r)] at hP
     -- the stack arguments: the ones the `Move`s copy (`sp0`) and the stored ones (`sp1`)
@@ -912,13 +916,13 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun q hq yq hyq hn' hiq => by
         have := hsrc q hq
         rw [hn', Bool.false_or, Array.contains_iff_mem] at this
-        exact hfront q (ecFront_src hi hu this hiq) yq hyq)
+        exact hfront q (ecFront_src hi hfd hu this hiq) yq hyq)
     simp only [ecPieceVals_false] at hS
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => leafVals (tabs.ty p.type) r), List.map_map] at hS
     -- the leading arguments and the memory
     have hsame : ∀ a ∈ u.args, special f g a = false →
         Sem.Refines (rv frS a) (rv T a) := fun a ha hs => by
-      obtain ⟨y', hy', hr⟩ := hfront a (ecFront_src hi hu ha (ec_not_invalidated hs)) _
+      obtain ⟨y', hy', hr⟩ := hfront a (ecFront_src hi hfd hu ha (ec_not_invalidated hs)) _
         (reg_rv (hRu a ha))
       rw [ecCv_of_not_special hs] at hr
       rw [rv_of hy']
@@ -1052,7 +1056,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         -- the target's source pointer refines the source's
         have hsm : z ∈ stackMoves f g x := by
           unfold stackMoves; rw [hu, hw]; dsimp only; rw [if_pos hcall]; exact hz
-        obtain ⟨ysT, hysT, hrys⟩ := hfront _ (eco_mem_front_move hi hsm hmvw (hmem3 1 (by decide)) hsn) _
+        obtain ⟨ysT, hysT, hrys⟩ := hfront _ (eco_mem_front_move hi hfd hsm hmvw (hmem3 1 (by decide)) hsn) _
           (by rw [← hsrc0]; exact reg_rv hsrcR)
         rw [ecCv_of_not_special hss] at hrys
         rw [rv_of hysT] at hs

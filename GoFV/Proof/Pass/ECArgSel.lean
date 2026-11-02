@@ -287,7 +287,7 @@ theorem ecA_convTuple_eq (tabs : Tables) :
   | _ :: _, [] => by simp [convTuple, ecA_convList]
 
 theorem ecA_convList_length (tabs : Tables) :
-    ∀ (ps : List ABIParam) (vs : List Val), (∀ p ∈ ps, wf (tabs.ty p.type) = true) →
+    ∀ (ps : List ABIParam) (vs : List Val), (∀ p ∈ ps, p.regs.isEmpty = false → wf (tabs.ty p.type) = true) →
       ps.length ≤ vs.length →
       (ecA_convList tabs ps vs).length = (leafTys tabs ps).length + (vs.length - ps.length)
   | [], vs, _, _ => by simp [ecA_convList, leafTys]
@@ -296,7 +296,7 @@ theorem ecA_convList_length (tabs : Tables) :
       (by simpa using hl)
     cases h : p.regs.isEmpty
     · simp only [ecA_convList, regLeafVals_reg h, leafTys_cons_reg tabs h, List.length_append,
-        List.length_map, leafVals_length (hw p List.mem_cons_self), ih, List.length_cons]
+        List.length_map, leafVals_length (hw p List.mem_cons_self h), ih, List.length_cons]
       omega
     · simp only [ecA_convList, regLeafVals_stack h, leafTys_cons_stack tabs h, List.nil_append, ih,
         List.length_cons]
@@ -305,7 +305,7 @@ theorem ecA_convList_length (tabs : Tables) :
 
 /-- The component after the pieces is the memory. -/
 theorem ecA_convList_rest (tabs : Tables) :
-    ∀ (ps : List ABIParam) (vs : List Val), (∀ p ∈ ps, wf (tabs.ty p.type) = true) →
+    ∀ (ps : List ABIParam) (vs : List Val), (∀ p ∈ ps, p.regs.isEmpty = false → wf (tabs.ty p.type) = true) →
       ps.length ≤ vs.length → ∀ j,
       (ecA_convList tabs ps vs)[(leafTys tabs ps).length + j]? = vs[ps.length + j]?
   | [], vs, _, _, j => by simp [ecA_convList, leafTys]
@@ -313,7 +313,7 @@ theorem ecA_convList_rest (tabs : Tables) :
     have ih := ecA_convList_rest tabs ps vs (fun q hq => hw q (List.mem_cons_of_mem _ hq))
       (by simpa using hl) j
     cases h : p.regs.isEmpty
-    · have hlv := leafVals_length (v := v) (hw p List.mem_cons_self)
+    · have hlv := leafVals_length (v := v) (hw p List.mem_cons_self h)
       rw [ecA_convList, regLeafVals_reg h, leafTys_cons_reg tabs h, List.length_append,
         List.length_map, Nat.add_assoc, List.getElem?_append_right (by omega), hlv,
         Nat.add_sub_cancel_left, ih, List.length_cons, Nat.add_right_comm, List.getElem?_cons_succ]
@@ -324,7 +324,7 @@ theorem ecA_convList_rest (tabs : Tables) :
 /-- The pieces of register-assigned result `i`. -/
 theorem ecA_convList_piece (tabs : Tables) :
     ∀ (i : Nat) (ps : List ABIParam) (vs : List Val) (p : ABIParam) (v : Val),
-      (∀ q ∈ ps, wf (tabs.ty q.type) = true) → ps[i]? = some p → vs[i]? = some v →
+      (∀ q ∈ ps, q.regs.isEmpty = false → wf (tabs.ty q.type) = true) → ps[i]? = some p → vs[i]? = some v →
       p.regs.isEmpty = false →
       ∀ j, j < (leaves (tabs.ty p.type)).length →
       (ecA_convList tabs ps vs)[(leafTys tabs (ps.take i)).length + j]? =
@@ -332,14 +332,14 @@ theorem ecA_convList_piece (tabs : Tables) :
   | 0, p' :: ps, v' :: vs, p, v, hw, hp, hv, hpr, j, hj => by
     cases hp
     cases hv
-    have hlv := leafVals_length (v := v') (hw p' List.mem_cons_self)
+    have hlv := leafVals_length (v := v') (hw p' List.mem_cons_self hpr)
     rw [ecA_convList, regLeafVals_reg hpr, List.take_zero, leafTys_nil, List.length_nil,
       Nat.zero_add, List.getElem?_append_left (by omega)]
   | i + 1, p' :: ps, v' :: vs, p, v, hw, hp, hv, hpr, j, hj => by
     have ih := ecA_convList_piece tabs i ps vs p v (fun q hq => hw q (List.mem_cons_of_mem _ hq))
       hp hv hpr j hj
     cases h : p'.regs.isEmpty
-    · have hlv := leafVals_length (v := v') (hw p' List.mem_cons_self)
+    · have hlv := leafVals_length (v := v') (hw p' List.mem_cons_self h)
       rw [ecA_convList, regLeafVals_reg h, List.take_succ_cons, leafTys_cons_reg tabs h,
         List.length_append, List.length_map, Nat.add_assoc, List.getElem?_append_right (by omega),
         hlv, Nat.add_sub_cancel_left]
@@ -564,7 +564,8 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
   have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
   obtain ⟨yc, hyc⟩ := hRS c hcmem
   obtain ⟨hinvc, hoo, htup, hrtup⟩ := ecA_callOK_facts hcw hcok
-  obtain ⟨yc', hyc', hR⟩ := hfr c (ecFront_src hinv hu hcmem hinvc) yc hyc
+  obtain ⟨yc', hyc', hR⟩ := hfr c (ecFront_src hinv (frameDet_of_src (g := g) hu (by rw [hop]; decide)) hu hcmem
+    hinvc) yc hyc
   have hwfo := ec_outsOK_wf hoo
   rw [ecA_cv_call hcu hcall hinvc, ecT_shapeOf_value hcw] at hR
   obtain ⟨us, hus, husl, huse, husm⟩ := ecA_tupleOf_get htup
@@ -661,7 +662,7 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
     refine .ok ?_
     obtain ⟨ys, F, S, hyT⟩ := ecT_node hN hL _ x _ ls w yT hmt hw hLx hEw hevT
     rw [eqE_retype heq, hyT]
-    have hwf := hwfo p (List.mem_of_getElem? hp)
+    have hwf := hwfo p (List.mem_of_getElem? hp) hpr
     rcases ecA_tuple_cases hycT with rfl | ⟨vs, rfl, hvs⟩
     · rw [ecA_selectN_poison, ecA_retype_poison]; exact .poison _
     · obtain ⟨hl, hget⟩ := ecA_hasTyPre_get hvs
