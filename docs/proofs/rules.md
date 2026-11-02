@@ -503,10 +503,12 @@ relates its input to the result by `segRel`:
   last of them, by its fresh roots and its anchor (`segRoots`, `segBlockOK`);
 - `roSegsOK tabs ro f g` (`Layer.seg` with `ro := roSyms penv.tables f0`, the pass input's
   read-only symbols: `SRODATA` symbols its `Addr`s name, with the global image's allocation
-  `Sem.rodataAlloc` of their bytes `Sem.rodataBytes?`; the zero `..stmp_N` symbols are exported
-  with an empty `data`): the symbol of each read-only segment is one of `ro` whose bytes are all
-  zero, and `f` passes `WBCheck.memTyOK` (values of memory shape are memory ops; moved to
-  `GoFV/Opt/MemTy.lean`).
+  `Sem.rodataAlloc` of their bytes `Sem.rodataBytes?`, and type descriptors (`typeinfo` set,
+  not `SRODATA` data, as `Sem.globalImage`: `Sem.typeDescAlloc`, the header words from the
+  `rtype` line or the type table; issue #69, for `newobject`); the zero `..stmp_N` symbols are
+  exported with an empty `data`): the symbol of each read-only segment is one of `ro` whose
+  bytes are all zero, and `f` passes `WBCheck.memTyOK` (values of memory shape are memory ops;
+  moved to `GoFV/Opt/MemTy.lean`).
 
 Nothing in the semantics ties a global's allocation to its `LSym` data (`addGlobals` adds only
 the allocations a memory lacks, and a contract may return any memory), so the read-only segments

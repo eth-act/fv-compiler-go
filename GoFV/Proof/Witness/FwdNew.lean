@@ -12,14 +12,15 @@ func newArr(t *int) *[2]int {
 }
 ```
 
-as one block, where `type:[2]int` is a read-only (`SRODATA`) type descriptor whose size word is
-16. The checked rewrite pass with `{:1352, :1362}` (forwardings, `RuleSet.loads`) turns both
-writes into copies of the call's memory: the call's type argument is an `Addr` of one of the
-input's read-only symbols (`RewriteCheck.roSyms`) whose type descriptor has a positive size
-(`RewriteCheck.freshNew`, `fwdRoOK`), so under `Sem.Env.AllocZero` from a memory holding the
-symbol (`Sem.RoImage`) the result block is all zero in its memory, and neither write changes a
-byte. The precondition `RwPre` holds on `Env.p1` with the symbol's allocation in the global image
-(`fn_rwPre`).
+as one block, where `type:[2]int` is a type descriptor (as the export writes them: no `SRODATA`
+bytes, `typeinfo` and an `rtype` line with size 16 and no pointer bytes), whose image in the
+global memory is `Sem.typeDescAlloc`. The checked rewrite pass with `{:1352, :1362}`
+(forwardings, `RuleSet.loads`) turns both writes into copies of the call's memory: the call's type
+argument is an `Addr` of one of the input's read-only symbols (`RewriteCheck.roSyms`) whose type
+descriptor has a positive size (`RewriteCheck.freshNew`, `fwdRoOK`), so under
+`Sem.Env.AllocZero` from a memory holding the descriptor (`Sem.RoImage`) the result block is all
+zero in its memory, and neither write changes a byte. The precondition `RwPre` holds on `Env.p1`
+with the descriptor in the global image (`fn_rwPre`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -33,15 +34,16 @@ def fnNewABI : CallABI :=
     params := #[{ out := false, index := 0, type := 3, name := none, regs := #[0], offset := 0 },
                 { out := true, index := 0, type := 5, name := none, regs := #[0], offset := -1 }] }
 
-/-- The bytes of the type descriptor `type:[2]int`: size word 16, pointer-bytes word 0. -/
-def fnTypeBytes : ByteArray :=
-  ByteArray.mk #[16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+/-- The `rtype` line of `type:[2]int`: size 16, no pointer bytes. -/
+def fnRType : RType :=
+  { size := some 16, ptrdata := some 0, hash := some 0, abiKind := some 17,
+    gcdata := GoStr.ofString "", elemSym := GoStr.ofString "" }
 
-/-- The read-only symbol `type:[2]int`. -/
+/-- The type descriptor symbol `type:[2]int` (of the type `[2]int`, type 4). -/
 def fnSym : AuxDef :=
   { fmt := GoStr.ofString "type:[2]int",
-    kind := .sym (GoStr.ofString "type:[2]int") 0 "SRODATA" 16 default none none
-      (some fnTypeBytes) #[] none }
+    kind := .sym (GoStr.ofString "type:[2]int") 0 "" 0 default (some 4) none none #[]
+      (some fnRType) }
 
 /-- The call aux of `runtime.newobject`. -/
 def fnNewCall : AuxDef :=
@@ -132,16 +134,17 @@ theorem fn_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := fmRules) (penv := fnPassEnv)
         (f := fnFunc) (out := out) fmRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
-/-- `Env.p1` with the global image's allocation of `type:[2]int`. -/
+/-- `Env.p1` with the global image's allocation of `type:[2]int` (`Sem.globalImage`'s
+`typeDescAlloc`). -/
 def fnEnv : Env :=
-  { Env.p1 with globals := [("type:[2]int", rodataAlloc fnTypeBytes 16 #[])] }
+  { Env.p1 with globals := [("type:[2]int", typeDescAlloc fnTabs 4 (some fnRType))] }
 
 theorem fn_roSyms : RewriteCheck.roSyms fnTabs fnFunc =
-    [("type:[2]int", rodataAlloc fnTypeBytes 16 #[])] := by
+    [("type:[2]int", typeDescAlloc fnTabs 4 (some fnRType))] := by
   decide +kernel
 
-/-- **Non-vacuity of `RwPre` with the type descriptor**: on `Env.p1` with the symbol in the global
-image and an empty memory, `newArr`'s read-only symbol holds its exported bytes. -/
+/-- **Non-vacuity of `RwPre` with the type descriptor**: on `Env.p1` with the descriptor in the
+global image and an empty memory, `newArr`'s read-only symbol holds its image. -/
 theorem fn_rwPre (args : List Val) :
     GoFV.Proof.Pass.Rewrite.RwPre fnTabs fnFunc fnEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,

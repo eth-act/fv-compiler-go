@@ -2464,12 +2464,17 @@ def segRel (tabs : Tables) (f g : Func) : Bool :=
       | none => false) &&
     f.blocks.all (segBlockOK f g segs news)
 
-/-- The read-only data symbol `aux` names in `tabs` (`SRODATA` with exported bytes,
-`Sem.rodataBytes?`), with its allocation in the global image (`Sem.rodataAlloc`). -/
+/-- The read-only symbol `aux` names in `tabs`, with its allocation in the global image
+(`Sem.globalImage`): an `SRODATA` symbol with exported bytes (`Sem.rodataBytes?`,
+`Sem.rodataAlloc`), or a type descriptor (`typeinfo` set, `Sem.typeDescAlloc`: the size and
+pointer-bytes words `newobject` reads, issue #69). -/
 def roSym? (tabs : Tables) (aux : Option AuxRef) : Option (String × Sem.Alloc) :=
   match aux.bind tabs.aux? with
-  | some { kind := .sym name _ "SRODATA" size _ ti itab data relocs _, .. } =>
-    (Sem.rodataBytes? data ti itab).map fun d => (name.toStringLossy, Sem.rodataAlloc d size relocs)
+  | some { kind := .sym name _ kind size _ ti itab data relocs rt, .. } =>
+    match kind, Sem.rodataBytes? data ti itab, ti with
+    | "SRODATA", some d, _ => some (name.toStringLossy, Sem.rodataAlloc d size relocs)
+    | _, _, some t => some (name.toStringLossy, Sem.typeDescAlloc tabs t rt)
+    | _, _, _ => none
   | _ => none
 
 /-- The read-only data symbols `f`'s `Addr`s name in `tabs`, with their allocations: the
