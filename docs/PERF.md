@@ -12,7 +12,7 @@ comments on PRs that cross the thresholds below. Anyone can run the same scripts
 | `scripts/olean-top.lean M.olean` | largest constants of an `.olean` (Expr nodes, string-literal bytes such as `bv_decide` certificates) |
 | `scripts/perf-bench.py [NAME...]` | runs the executables listed in `perf/bench.tsv`, appends to `perf/bench-history.tsv` |
 | `scripts/perf-graph.py COMMIT` | critical path (CPU) through the import graph and the costliest rebuild cones |
-| `scripts/perf-watch.py` | one pass of the watch loop: records origin/main and open PR heads, writes compare reports |
+| `scripts/perf-watch.py` | one pass of the watch loop: records origin/main (skipped when it changes no `.lean`, lakefile, toolchain or `tools/` file since the last recording) and open PR heads, writes compare reports |
 
 All builds and runs go through `scripts/memcap.sh` (8G cap per module, shared Lake cache), one
 module at a time; nothing starts while `MemAvailable` is below 10G.
