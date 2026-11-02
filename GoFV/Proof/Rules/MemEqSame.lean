@@ -4,13 +4,18 @@ import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values08
 
 /-!
-# Rule lemmas: `MemEq` of the same pointer (`generic.rules:1592`), `NeqPtr` of a pointer and an
-offset of it (`generic.rules:1680`)
+# Rule lemmas: `MemEq` of the same pointer (`generic.rules:1592`) or of length 0 (`:1590`),
+`NeqPtr` of a pointer and an offset of it (`generic.rules:1680`)
 
 `(MemEq p q _ _) && isSamePtr(p, q) => (ConstBool [true])` under `Rule.SoundT` (`DenT.lean`):
 `FrameOK`, which the rewrite validator checks on the instance (`condFrameOK`: `p` and `q` match
 the same value), says that the leaves bound to `p` and `q` are equal. `memEq` reads the same bytes
 twice, so it is `poison` or `true` (`memEq_self`; issue #69).
+
+`(MemEq _ _ (Const64 [0]) _) => (ConstBool [true])` under `Rule.Sound`: a read of no bytes is
+`#[]` at any pointer (`Mem.read`), so two such reads are equal and poison-free; the length
+constant at any type shape is `0` or not an integer (`retype_i64_zero`), and `memEq` is `poison`
+or `true` (`memEq_len0`).
 
 `(NeqPtr (AddPtr p1 o1) p2) && isSamePtr(p1, p2) => (IsNonNil o1)`: `p1` and `p2` are the same
 leaf, a pointer `p` (`Pat.argsOK`: `AddPtr`'s pointer argument), and the offset a 64-bit integer
@@ -67,6 +72,42 @@ theorem r_generic_1592_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   · exact Refines.poison _
   · simp [Conv.constBool, Val.retype]
     exact Refines.refl _
+
+private theorem retype_i64_zero {t : Ty} {w : Width} {k : BitVec w.bits}
+    (h : Val.retype t (Val.i64 0) = .int w k) : k.toNat = 0 := by
+  cases t <;> simp only [Val.retype, reduceCtorEq] at h
+  · split at h
+    · cases h; simp
+    · cases h
+  · cases h; rfl
+
+/-- `MemEq` of length 0 (at any type shape of the length constant) is `poison` or `true`. -/
+private theorem memEq_len0 (t : Ty) (a b m : Val) :
+    Refines (memEq [a, b, Val.retype t (Val.i64 0), m]) (.bool true) := by
+  unfold memEq
+  split
+  · rename_i p q w k mm heq
+    simp only [List.cons.injEq] at heq
+    obtain ⟨rfl, rfl, hk, rfl, -⟩ := heq
+    rw [retype_i64_zero hk]
+    have hr : ∀ (m : Mem) p, m.read p 0 = some #[] := fun _ _ => rfl
+    split
+    · simp only [hr, Array.any_empty, Bool.or_false, Bool.false_eq_true, ite_false,
+        beq_self_eq_true]
+      exact Refines.bool true
+    · exact Refines.poison _
+  · exact Refines.poison _
+
+/-- `generic.rules:1590`: `(MemEq _ _ (Const64 [0]) _) => (ConstBool <typ.Bool> [true])` -/
+theorem r_generic_1590_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1590 := by
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  exact memEq_len0 _ _ _ _
 
 /-- `p + k` is `p` iff `k = 0`. -/
 theorem ptr_add_eq_self (p : Ptr) (k : BitVec 64) : (p.add k).eq p = (k == 0) := by

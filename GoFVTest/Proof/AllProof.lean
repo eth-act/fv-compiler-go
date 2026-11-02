@@ -342,6 +342,7 @@ import GoFV.Proof.Rules.AndB4
 import GoFV.Proof.Rules.ArrayLoad
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.AttrCond
+import GoFV.Proof.Rules.BitLen
 import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
