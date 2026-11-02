@@ -194,4 +194,39 @@ theorem copyReach_den {M : Defs} {tabs : Tables} {ρ : ID → Val} (hT : Term.Ty
             exact Sem.Refines.trans (den_fuel_mono _ _ _ k (k + 1) _ (by omega))
               (copyReach_den hT N _ w hr (k + 1))
 
+/-- A word shape keeps a 64-bit integer word: a 64-bit integer, a pointer without a concrete
+address, or `poison`. -/
+theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
+    (hz : z.hasTy (.int .w64) = true) : z.retype t = z := by
+  cases z with
+  | poison => exact retype_poison _
+  | int w x =>
+    cases w <;> simp [Val.hasTy] at hz
+    cases t with
+    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype]
+    | ptr e => rfl
+    | _ => simp [wordTy] at ht
+  | ptr p =>
+    simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
+    cases t with
+    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype, hz]
+    | ptr e => rfl
+    | _ => simp [wordTy] at ht
+  | _ => simp [Val.hasTy] at hz
+
+/-- `Convert` at a word shape of a 64-bit integer word is one (integer → pointer is the
+identity; a pointer without a concrete address does not convert to an integer). -/
+theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : List Val) :
+    (PtrOps.convert t (z :: l)).hasTy (.int .w64) = true := by
+  unfold PtrOps.convert
+  split
+  · rename_i x m he
+    cases he
+    split
+    · rename_i p
+      simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
+      simp [hz, Val.hasTy]
+    · exact hz
+  · rfl
+
 end GoFV.Proof.Pass.Rewrite

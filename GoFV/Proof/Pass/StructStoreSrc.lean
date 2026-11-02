@@ -446,19 +446,58 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
     · rw [Ty.eq_of_beq ht]
       rw [Option.any_eq_true] at hw
       obtain ⟨wv, hwv, hwop⟩ := hw
-      simp only [beq_iff_eq] at hwop
       obtain ⟨hAw, hrw⟩ := copy_reg H hT hid _ hA (copyReach_copyEnd f.valueTab _ a)
       generalize copyEnd tabs f.valueTab f.valueTab.size a = w at hwv hAw hrw
       obtain ⟨wv', yw, hwv', hyw, hevw⟩ := H.val w hAw
       rw [hwv] at hwv'; cases hwv'
-      have hevw := hevw (by rw [hwop]; decide)
-      rw [evalValue_of_regs (regs_of_ok hevw), evalOp_term (by rw [hwop]; decide), hwop,
-        GoFV.Proof.Rules.opVal_addr, hid w wv hAw hwv, tys_of_value hwv, Option.getD_some] at hevw
-      simp only [pure, Res.bind, bind] at hevw
-      cases hevw
       rw [hrw, hya] at hyw
       cases hyw
-      exact retype_w64_addrVal _ _ _
+      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hwop
+      rcases hwop with hwop | ⟨⟨hwop, hTw⟩, hx⟩
+      · have hevw := hevw (by rw [hwop]; decide)
+        rw [evalValue_of_regs (regs_of_ok hevw), evalOp_term (by rw [hwop]; decide), hwop,
+          GoFV.Proof.Rules.opVal_addr, hid w wv hAw hwv, tys_of_value hwv, Option.getD_some] at hevw
+        simp only [pure, Res.bind, bind] at hevw
+        cases hevw
+        exact retype_w64_addrVal _ _ _
+      · -- a `Convert` at a word shape of a 64-bit integer: a 64-bit integer word
+        rw [Option.any_eq_true] at hx
+        obtain ⟨xv, hxv, hxs⟩ := hx
+        cases hx0 : wv.args[0]? with
+        | none => rw [hx0] at hxv; cases hxv
+        | some x =>
+        rw [hx0, Option.bind_some] at hxv
+        have hevw := hevw (by rw [hwop]; decide)
+        have hAx := H.cl w wv hAw hwv (by rw [hwop]; decide) x (Array.mem_of_getElem? hx0)
+        obtain ⟨xv', yx, hxv', hyx, -⟩ := H.val x hAx
+        rw [hxv] at hxv'; cases hxv'
+        have htx := hT x yx hyx
+        rw [tys_of_value hxv, Option.getD_some] at htx
+        have hsx : tabs.ty xv.type = .int .w64 := by
+          revert hxs
+          cases tabs.ty xv.type with
+          | int w => cases w <;> simp
+          | _ => simp
+        rw [hsx] at htx
+        have hzx : (rv S x).hasTy (.int .w64) = true := by
+          simp only [rv, hyx, Option.join_some, Option.getD_some]
+          rw [← htx]; exact Val.retype_hasTy _ _
+        obtain ⟨l, hl⟩ : ∃ l, wv.args.toList = x :: l := by
+          rw [← Array.getElem?_toList] at hx0
+          cases hl : wv.args.toList with
+          | nil => rw [hl] at hx0; cases hx0
+          | cons y l => rw [hl] at hx0; cases hx0; exact ⟨l, rfl⟩
+        rw [evalValue_of_regs (regs_of_ok hevw), evalOp_term (by rw [hwop]; decide), hwop,
+          GoFV.Proof.Rules.opVal_pure (by decide), hid w wv hAw hwv, tys_of_value hwv,
+          Option.getD_some, hl, List.map_cons] at hevw
+        simp only [pure, Res.bind, bind] at hevw
+        cases hevw
+        have hc := GoFV.Proof.Pass.Rewrite.convert_word (t := tabs.ty wv.type) hzx
+          (l.map (rv S))
+        rw [show evalPure .Convert (tabs.ty wv.type) wv.auxInt wv.aux (rv S x :: l.map (rv S)) =
+          PtrOps.convert (tabs.ty wv.type) (rv S x :: l.map (rv S)) from rfl,
+          GoFV.Proof.Pass.Rewrite.retype_word hTw hc]
+        exact GoFV.Proof.Pass.Rewrite.retype_word rfl hc
   have hagg : Val.retype (tabs.ty d.smv.type) (.agg (d.smv.args.toList.map (rv S))) =
         .agg (d.smv.args.toList.map (rv S)) ∨
       Val.retype (tabs.ty d.smv.type) (.agg (d.smv.args.toList.map (rv S))) = .poison := by
