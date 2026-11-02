@@ -86,9 +86,9 @@ theorem step (hfs : env.FrameSafe) {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK 
   | stuck msg => exact True.intro
   | panic e m =>
     obtain ⟨ps, psT, oS, oT, hps, hpr, hoS, hoT, hfilt, hev, hT⟩ := parts _ hen nofun
-    obtain ⟨m', hm', hEq⟩ := (blk ps psT oS oT hps hpr hoS hoT hfilt).panicCase hev
+    obtain ⟨m', hm', hEq, heA, hmA⟩ := (blk ps psT oS oT hps hpr hoS hoT hfilt).panicCase hev
     rw [hT, hm']
-    exact ⟨m', rfl, hEq⟩
+    exact ⟨m', rfl, hEq, heA, hmA⟩
   | ok G =>
   obtain ⟨ps, psT, oS, oT, hps, hpr, hoS, hoT, hfilt, hev, hT⟩ := parts _ hen nofun
   have K := blk ps psT oS oT hps hpr hoS hoT hfilt
@@ -212,6 +212,23 @@ theorem entry_ok {args : List Val} {mem : Mem} (hinit : InitAvoids env args mem)
   · simp [entryFrame, Array.getElem?_replicate] at h
   · exact frameAllocs_avoids himg (addGlobals_avoids hglob hmem)
 
+/-- The open-coded defer variables are not eliminated (`ARelD.nodefer`). -/
+theorem deferAvoid_UE (R : ARelD tabs f g T E) : DeferRel.DeferAvoid (UE E) (deferInfo tabs) 0 := by
+  have hv := DeferRel.deferInfo_vars tabs
+  refine ⟨fun nb hb hu => ?_, fun i sn hs hu => ?_⟩
+  · obtain ⟨n, hnE, he⟩ := hu
+    split at he
+    · cases he
+    · cases he
+      have := R.nodefer _ hnE
+      rw [hv.1 nb hb] at this; cases this
+  · obtain ⟨n, hnE, he⟩ := hu
+    split at he
+    · cases he
+    · cases he
+      have := R.nodefer _ hnE
+      rw [hv.2 i sn hs] at this; cases this
+
 /-- **dead auto elim's output relation gives refinement** under frame-safe contracts, for
 inputs that avoid the frame temporaries. -/
 theorem refines_of_rel {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (R : ARelD tabs f g T E) :
@@ -238,8 +255,9 @@ theorem refines_of_rel {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (R : ARel
       unfold entryFrame frameMem frameAllocs
       rw [hpty, hloc, hsz]; rfl
     rw [hentry, houts, show (Ctx.make tabs g).act = (Ctx.make tabs f).act from rfl,
+      show (Ctx.make tabs g).defers = (Ctx.make tabs f).defers from rfl,
       show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from cfgView_entry R.cfg]
-    exact finish_rel (tempU_UE E) hd (runLoop_simD
+    exact finish_rel hfs (tempU0_UE E) (deferAvoid_UE R) hd (runLoop_simD
       (fun frS frT bid i => SimAt env tabs f T E frS frT bid i)
       (fun frS frT bid i h => step hfs hwf hc R h) fuel _ _ _ _ (entry_ok hinit)
       (finish_defined hd))

@@ -700,4 +700,75 @@ theorem finish_panicked_refines (hR : MemRel U R) (hU : TempU U) {env : Env}
       exact .panicked _ (by rw [hdrop r r' hrr]; exact Mem.Refines.refl _)
     | _ => exact key.elim
 
+
+/-! ## The open-coded defer variables -/
+
+/-- **The variables `deferInfo` names are `DAE.deferVar`s** (open-coded defer slots or the
+`deferBits` variable). -/
+theorem deferInfo_vars (tabs : Tables) :
+    (∀ nb, (deferInfo tabs).bits = some nb → Opt.DAE.deferVar tabs nb.1 = true) ∧
+    ∀ (i : Nat) sn, (deferInfo tabs).slots[i]? = some (some sn) →
+      Opt.DAE.deferVar tabs sn.1 = true := by
+  unfold deferInfo
+  suffices h : ∀ (l : List Nat) (di : DeferInfo),
+      ((∀ nb, di.bits = some nb → Opt.DAE.deferVar tabs nb.1 = true) ∧
+        ∀ (i : Nat) sn, di.slots[i]? = some (some sn) → Opt.DAE.deferVar tabs sn.1 = true) →
+      let di' := l.foldl (fun di n =>
+        match tabs.aux? n with
+        | some { kind := .name _ cls _ off _ fl _, .. } =>
+          if cls != .PAUTO then di
+          else if fl.deferbits then
+            { di with bits := di.bits <|> some (n, tabs.forgeable n) }
+          else if fl.opendeferslot && 0 ≤ off then
+            let i := off.toNat
+            let slots := if i < di.slots.size then di.slots
+              else di.slots ++ Array.replicate (i + 1 - di.slots.size) none
+            { di with slots := slots.set! i (some (n, tabs.forgeable n)) }
+          else di
+        | _ => di) di
+      (∀ nb, di'.bits = some nb → Opt.DAE.deferVar tabs nb.1 = true) ∧
+        ∀ (i : Nat) sn, di'.slots[i]? = some (some sn) → Opt.DAE.deferVar tabs sn.1 = true from
+    h _ {} ⟨fun _ h => (by cases h), fun _ _ h => (by simp at h)⟩
+  intro l
+  induction l with
+  | nil => intro di h; exact h
+  | cons n l ih =>
+    intro di h
+    simp only [List.foldl_cons]
+    apply ih
+    split
+    · rename_i fmt sym cls ty off esc fl pos heq
+      have hv : Opt.DAE.deferVar tabs n = (fl.opendeferslot || fl.deferbits) := by
+        unfold Opt.DAE.deferVar; rw [heq]
+      split
+      · exact h
+      split
+      · rename_i hdb
+        refine ⟨fun nb hb => ?_, h.2⟩
+        cases hd : di.bits with
+        | some x => rw [hd] at hb; cases hb; exact h.1 _ hd
+        | none =>
+          rw [hd] at hb
+          cases hb
+          rw [hv, hdb, Bool.or_true]
+      split
+      · rename_i hos
+        simp only [Bool.and_eq_true, decide_eq_true_eq] at hos
+        refine ⟨h.1, fun i sn hs => ?_⟩
+        simp only [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds] at hs
+        repeat' split at hs
+        all_goals first
+          | (cases hs; rw [hv, hos.1, Bool.true_or])
+          | exact h.2 i sn hs
+          | (simp at hs; done)
+          | (rw [Array.getElem?_append] at hs
+             split at hs
+             · exact h.2 i sn hs
+             · first
+                 | (simp only [Array.getElem?_replicate] at hs; split at hs <;> cases hs)
+                 | cases hs
+                 | simp_all)
+      · exact h
+    · exact h
+
 end GoFV.Proof.DeferRel
