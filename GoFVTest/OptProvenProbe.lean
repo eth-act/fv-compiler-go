@@ -472,12 +472,32 @@ def segsWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) (k 
   | f, seg, ev :: evs => segsWhy env tabs t f0 g k f (seg.push ev) evs
 
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite
-section, and those whose every rewrite section the checked variant reproduces. -/
-def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × Nat) :
-    IO (Std.HashMap String Count × Nat × Nat) := do
-  let (st, fns, fnsChecked) := st
+section, and those whose every rewrite section the checked variant reproduces; `out`: per file
+its report lines (`REJECT`, `FALLBACK`, `BLOCKED`). -/
+structure St where
+  counts : Std.HashMap String Count := {}
+  fns : Nat := 0
+  fnsChecked : Nat := 0
+  out : Array (String × Array String) := #[]
+
+def Count.merge (a b : Count) : Count :=
+  { runs := a.runs + b.runs, fullSame := a.fullSame + b.fullSame
+    provenSame := a.provenSame + b.provenSame, provenNoop := a.provenNoop + b.provenNoop
+    errors := a.errors + b.errors, firedFull := a.firedFull + b.firedFull
+    firedProven := a.firedProven + b.firedProven, vStock := a.vStock + b.vStock
+    vProven := a.vProven + b.vProven, checkedSame := a.checkedSame + b.checkedSame
+    rejected := a.rejected + b.rejected, fallback := a.fallback + b.fallback }
+
+/-- Two workers' results together. -/
+def St.merge (a b : St) : St :=
+  { counts := b.counts.fold (fun m k c => m.insert k ((m.getD k {}).merge c)) a.counts
+    fns := a.fns + b.fns, fnsChecked := a.fnsChecked + b.fnsChecked, out := a.out ++ b.out }
+
+def checkFile (path : System.FilePath) (S : St) : IO St := do
   let data ← IO.FS.readBinFile path
-  let .ok e := parseExport data | return (st, fns, fnsChecked)
+  let .ok e := parseExport data | return S
+  let st := S.counts
+  let mut rep : Array String := #[]
   let typs := ((e.sections[0]?).bind (·.typs)).getD #[]
   let base : PassEnv :=
     { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
@@ -550,10 +570,10 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
         let reason := if !tabsAgree prev out.tables input then
             "tables: the input tells the result's tables from its own (tabsAgree)"
           else segsWhy env out.tables proven input out.func 0 input #[] log.toList
-        IO.println s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"
+        rep := rep.push s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"
         if provenSec then blockers := blockers.push s!"{name}: {reason.take 160}"
         if let some r2 := fb then
-          if !r2.isEmpty then IO.println s!"  without forwardings: {r2}"
+          if !r2.isEmpty then rep := rep.push s!"  without forwardings: {r2}"
       if (compare prev co tables s).isNone then
         c := { c with checkedSame := c.checkedSame + 1 }
       else allChecked := false
@@ -562,25 +582,45 @@ def checkFile (path : System.FilePath) (st : Std.HashMap String Count × Nat × 
       allChecked := false
     st := st.insert name c
   if any && allProven && !allChecked then
-    IO.println s!"BLOCKED {path}: {" || ".intercalate blockers.toList}"
-  return (st, if any then fns + 1 else fns, if any && allChecked then fnsChecked + 1 else fnsChecked)
+    rep := rep.push s!"BLOCKED {path}: {" || ".intercalate blockers.toList}"
+  return { counts := st, fns := if any then S.fns + 1 else S.fns
+           fnsChecked := if any && allChecked then S.fnsChecked + 1 else S.fnsChecked
+           out := if rep.isEmpty then S.out else S.out.push (path.toString, rep) }
 
 def pct (a b : Nat) : String :=
   if b == 0 then "-" else
   let x := (a * 10000 + b / 2) / b
   s!"{x / 100}.{if x % 100 < 10 then "0" else ""}{x % 100}%"
 
+partial def parseArgs : List String → Nat × Array String → Nat × Array String
+  | [], o => o
+  | "--jobs" :: n :: rest, (_, ps) => parseArgs rest (max (n.toNat?.getD 1) 1, ps)
+  | a :: rest, (j, ps) => parseArgs rest (j, ps.push a)
+
+/-- `opt-proven-probe [--jobs N] <dir|file>...`: `N` workers, round robin over the files; the
+report lines per file in file order, then the table. -/
 def main (args : List String) : IO UInt32 := do
+  let (jobs, paths) := parseArgs args (1, #[])
   let mut files := #[]
-  for a in args do
+  for a in paths do
     let p : System.FilePath := a
     if ← p.isDir then
       files := files ++ ((← p.walkDir).filter (·.extension == some "ssa"))
     else files := files.push p
-  let mut acc : Std.HashMap String Count × Nat × Nat := ({}, 0, 0)
-  for path in files.qsort (·.toString < ·.toString) do
-    acc ← checkFile path acc
-  let (st, fns, fnsChecked) := acc
+  files := files.qsort (·.toString < ·.toString)
+  let tasks ← (List.range jobs).toArray.mapM fun j => IO.asTask (prio := .dedicated) do
+    let mut st : St := {}
+    for h : i in [0:files.size] do
+      if i % jobs == j then st ← checkFile files[i] st
+    return st
+  let mut acc : St := {}
+  for t in tasks do
+    match ← IO.wait t with
+    | .ok s => acc := acc.merge s
+    | .error e => IO.eprintln s!"worker failed: {e}"; return 2
+  for (_, ls) in acc.out.qsort (·.1 < ·.1) do
+    for l in ls do IO.println l
+  let (st, fns, fnsChecked) := (acc.counts, acc.fns, acc.fnsChecked)
   IO.println s!"Functions with a rewrite section: {fns}; every rewrite section at the stock result under the checked proven-only passes: {fnsChecked} ({pct fnsChecked fns})"
   IO.println "| Pass | Runs | Full parity | Proven-only parity | Proven-only no-op | Rules fired (full) | Rules fired (proven-only) | Firings kept | Values stock | Values proven-only | Validator rejects | Forwarding fallbacks | Checked parity | Errors |"
   IO.println "| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |"
