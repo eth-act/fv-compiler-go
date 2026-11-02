@@ -398,7 +398,8 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
       simp only [ite_true] at this
       exact this
   · simp only [hp, Bool.false_eq_true, ite_false]
-    have := core R hRA false
+    have := core _ (retypeResults_avoids hU ctx.tabs (List.filter (fun x => !x.out)
+      ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) hRA) false
     simp only [Bool.false_eq_true, ite_false] at this
     exact this
 

@@ -433,7 +433,8 @@ interface is the **Go-typed** argument and result lists, so pre- and post-`expan
 call the same contracts:
 
 - **Before `expand calls`**: `StaticLECall {AuxCall} args… mem` passes Go-typed values
-  (composites as `agg`; non-SSA-able arguments as `blob`s made by `Dereference`, gO 435-440);
+  (composites as `agg`; non-SSA-able arguments as `blob`s made by `Dereference`, gO 435-440),
+  retyped at the shapes of the ABI's input parameters (§9.3);
   the result is `tuple (results ++ [mem, addrs])`, read by `SelectN`; stack-assigned results
   are also stored in the caller's outgoing-arguments area, at the addresses `addrs`
   (`SelectNAddr`, §4.8).
@@ -678,10 +679,13 @@ prints every block entry and value of one run.
   activation (`runActivation`: activation number `Mem.nextAct`, its frame and outgoing area
   allocated in the caller's memory, the closure context for `GetClosurePtr`, `finish` with the
   frame freed), at most `d` calls deep, `fuel` block entries each; deeper calls use `base`.
-- **Calls** (`callOp`): `StaticLECall`/`ClosureLECall`/`InterLECall` pass Go-typed arguments;
-  `StaticCall`/`ClosureCall`/`InterCall` decode them from register pieces and the outgoing area
-  by the `AuxCall` ABI (`decodeArgs`) and encode results back (`encodeResults`). The tuple is
-  `results ++ [mem, addrs]`, `addrs` the stack results' addresses (`SelectNAddr`, §4.8). A
+- **Calls** (`callOp`): `StaticLECall`/`ClosureLECall`/`InterLECall` pass Go-typed arguments,
+  retyped at the shapes of the `AuxCall` ABI's input parameters (`retypeResults`, as the
+  results; #28: an `unsafe.Pointer` passed to a `uintptr` parameter is its address, as the post
+  form decodes it); `StaticCall`/`ClosureCall`/`InterCall` decode them from register pieces and
+  the outgoing area by the `AuxCall` ABI (`decodeArgs`) and encode results back
+  (`encodeResults`). The tuple is `results ++ [mem, addrs]`, `addrs` the stack results' addresses
+  (`SelectNAddr`, §4.8). A
   poison argument is `stuck`; a contract's panic is the call's panic. The contract sees the
   caller's outgoing-arguments area poisoned (`Mem.poisonBlock (.outargs act)`), and in both
   forms the call is `stuck` unless the slots of its stack-assigned input parameters are

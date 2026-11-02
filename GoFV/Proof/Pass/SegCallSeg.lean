@@ -168,6 +168,9 @@ private theorem ofPieces_ptrW (o : Option Nat) {a : Val} (ha : PtrW a) :
       (by show ABI.List.Forall₂ _ _ [(0, _)]; exact .cons rfl .nil)]; rfl
   · exact ofPieces_ptr o P
 
+private theorem retype_ptrW {a : Val} (ha : PtrW a) (o : Option Nat) : a.retype (.ptr o) = a := by
+  rcases ha with rfl | ⟨P, rfl⟩ <;> rfl
+
 private theorem decodeArgs_twoW {tabs : Tables} {act : Nat} {m : Mem} {ps : List ABIParam}
     (h : inShapes tabs 2 ps = true) {a : Val} (ha : PtrW a) (x : BitVec 64) :
     decodeArgs tabs act m (ps.filter (!·.out)) [a, .int .w64 x] = some [a, .int .w64 x] := by
@@ -206,7 +209,8 @@ private theorem callOp_memclr_ptr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v :
   obtain ⟨name, M, args, c, rs, m', r, hname, -, hargs, hx, hr, -, -⟩ :=
     callOp_ok (simpleCall_op hs) hc
   rw [calleeIs_eq hn] at hname; cases hname
-  have hA := callOp_args hs (fun ps h => decodeArgs_twoW h ha x) hargs
+  have hA := callOp_args hs (fun ps h => decodeArgs_twoW h ha x)
+    (fun ps h => retypeArgs_two h (retype_ptrW ha) x) hargs
   subst hA
   obtain rfl := hE.1 c hx
   rcases ha with rfl | ha
@@ -221,7 +225,8 @@ private theorem callOp_memmove_ptr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v 
   obtain ⟨name, M, args, c, rs, m', r, hname, -, hargs, hx, hr, -, -⟩ :=
     callOp_ok (simpleCall_op hs) hc
   rw [calleeIs_eq hn] at hname; cases hname
-  have hA := callOp_args hs (fun ps h => decodeArgs_threeW h ha hb x) hargs
+  have hA := callOp_args hs (fun ps h => decodeArgs_threeW h ha hb x)
+    (fun ps h => retypeArgs_three h (retype_ptrW ha) (retype_ptrW hb) x) hargs
   subst hA
   obtain rfl := hE.2 c hx
   rcases ha with rfl | ⟨P, rfl⟩ <;> rcases hb with rfl | ⟨Q, rfl⟩

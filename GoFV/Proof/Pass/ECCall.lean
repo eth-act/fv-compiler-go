@@ -148,7 +148,7 @@ theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Fr
 
 /-- The Go-typed arguments have their parameters' shapes. -/
 theorem ecc_pieces_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} :
-    ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs (typeShapes tabs) f g ps as pcs = true →
+    ∀ (ps : List ABIParam) (as pcs : List ID), piecesOK tabs (typeShapes tabs) f g false ps as pcs = true →
       (∀ a ∈ as, EcArgRel tabs f g frS T a) →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps
         (as.map (rv frS))
@@ -156,7 +156,7 @@ theorem ecc_pieces_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} :
   | [], _ :: _, _, h, _ | _ :: _, [], _, h, _ => by simp [piecesOK] at h
   | p :: ps, a :: as, pcs, h, hrel => by
     unfold piecesOK at h
-    simp only [Bool.and_eq_true] at h
+    simp only [Bool.and_eq_true, Bool.false_and, Bool.or_false] at h
     obtain ⟨y, hyS, hry, -⟩ := hrel a List.mem_cons_self
     refine .cons ?_ (ecc_pieces_hasTy ps as _ h.2 fun b hb => hrel b (List.mem_cons_of_mem _ hb))
     rw [rv_of hyS]
@@ -218,13 +218,14 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
   have hrel : ∀ a ∈ (u.args.extract 0 (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
     fun a ha => ecc_argRel hi hu hRS hRu hfront (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha))
   have hG := ecc_pieces_hasTy _ _ _ hpc hrel
-  have hP := ec_pieces hNC hL hRS _ _ _ hpc (fun p hp => (hreg' p hp).2.1)
+  have hP := ec_pieces hNC hL hRS false _ _ _ hpc (fun p hp => (hreg' p hp).2.1)
     (fun q hq => hRw q (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)))
     (fun q hq hn' => have hq' := Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)
       ⟨hEw q hq' hn', hLw q hq' hn'⟩) hrel
     (fun a ha => himk a (Array.mem_toList_iff.1 (ecc_mem_of_split hsu ha)))
     (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
       (Array.mem_toList_iff.1 (ecc_mem_of_split hsw hq)) hn') yq hyq)
+  simp only [ecPieceVals_false] at hP
   -- the memory argument
   have hm : u.args[u.args.size - 1]! ∈ u.args := by
     rw [← Array.mem_toList_iff, hsu]; simp
@@ -432,9 +433,9 @@ def EcCallRes (tabs : Tables) (outs : List ABIParam) (y y' : Val) : Prop :=
     List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) outs rs ∧
     Sem.Refines (.tuple (ecfPieces tabs outs rs ++ [.mem m, a])) y'
 
-/-- **The call**: the source's call on the Go-typed arguments and the target's on their pieces
-and its memory, which hold the Go-typed arguments (`decodeArgs`) and agree with the source's
-outside the outgoing-arguments area. -/
+/-- **The call**: the source's call on the Go-typed arguments (retyped at the parameters' shapes)
+and the target's on their pieces and its memory, which hold the Go-typed arguments (`decodeArgs`)
+and agree with the source's outside the outgoing-arguments area. -/
 theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.tabs = ctx.tabs)
     (hact : ctx'.act = ctx.act) {u w : Value}
     (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
@@ -444,12 +445,13 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
     (hct : (callTarget ctx u argv).2.2 = G ++ [mv]) (hct' : (callTarget ctx' w argv').2.2 = P' ++ [mv'])
     (hcallee : (callTarget ctx u argv).1 = none ∨ (callTarget ctx' w argv').1 = (callTarget ctx u argv).1)
     (hclo : OptRefines (callTarget ctx u argv).2.1 (callTarget ctx' w argv').2.1)
-    (hmem : ∀ m, mv = .mem m → G.any Val.hasPoison = false →
+    (hmem : ∀ m, mv = .mem m → (retypeResults ctx.tabs (insOf abi) G).any Val.hasPoison = false →
       outargsOK ctx.tabs ctx.act m (insOf abi) = true →
       ∃ mN D, mv' = .mem mN ∧
         Mem.Refines (m.poisonBlock (.outargs ctx.act)) (mN.poisonBlock (.outargs ctx.act)) ∧
         outargsOK ctx.tabs ctx.act mN (insOf abi) = true ∧
-        decodeArgs ctx.tabs ctx.act mN (insOf abi) P' = some D ∧ Sem.RefinesList G D) :
+        decodeArgs ctx.tabs ctx.act mN (insOf abi) P' = some D ∧
+        Sem.RefinesList (retypeResults ctx.tabs (insOf abi) G) D) :
     Res.Rel (EcCallRes ctx.tabs (outsOf abi)) (callOp env ctx u argv) (callOp env ctx' w argv') := by
   have habi' : callABI? ctx'.tabs w.aux = some abi := by rw [htabs, haux]; exact habi
   unfold callOp
@@ -476,7 +478,8 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
         simp only [hpre, hpost, Bool.false_eq_true, ↓reduceIte, Option.map_some, Option.getD_some]
         simp only [insOf, outsOf] at hmem houts ⊢
         dsimp only [pure, Res.bind]
-        by_cases hp : (G.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true
+        generalize retypeResults ctx.tabs (abi.params.toList.filter (!·.out)) G = G' at hmem ⊢
+        by_cases hp : (G'.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true
         · rw [if_pos hp]; exact .stuck _ _
         rw [if_neg hp]
         simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
@@ -498,7 +501,7 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
             dsimp only
             have := hE _ _ hx hp.1 hp.2 hargs hclo hpm
             revert this
-            generalize c G clo (m.poisonBlock (.outargs ctx.act)) = o
+            generalize c G' clo (m.poisonBlock (.outargs ctx.act)) = o
             generalize c D clo' (mN.poisonBlock (.outargs ctx.act)) = o'
             intro ho
             cases ho with
@@ -540,15 +543,17 @@ theorem ecc_map_refines {F G : ID → Val} :
 
 /-! ## Calls: register and stack arguments -/
 
-/-- The pairs of the parameters and arguments `piecesOK` accepts have the parameters' shapes. -/
-theorem ecc_piecesOK_eqE {tabs : Tables} {sh : Array Ty} {f g : Func} :
-    ∀ {ps : List ABIParam} {as pcs : List ID}, piecesOK tabs sh f g ps as pcs = true →
-      ∀ x ∈ ps.zip as, eqE (shapeOf sh f x.2) (tabs.ty x.1.type) = true
+/-- The pairs of the parameters and arguments `piecesOK` accepts have the parameters' shapes (or,
+with `cast`, are pointers of 64-bit integer parameters). -/
+theorem ecc_piecesOK_eqE {tabs : Tables} {sh : Array Ty} {f g : Func} {cast : Bool} :
+    ∀ {ps : List ABIParam} {as pcs : List ID}, piecesOK tabs sh f g cast ps as pcs = true →
+      ∀ x ∈ ps.zip as, eqE (shapeOf sh f x.2) (tabs.ty x.1.type) = true ∨
+        cast = true ∧ castOK (shapeOf sh f x.2) (tabs.ty x.1.type) = true
   | [], _, _, _, x, hx => by simp at hx
   | _ :: _, [], _, h, _, _ => by simp [piecesOK] at h
   | p :: ps, a :: as, pcs, h, x, hx => by
     unfold piecesOK at h
-    simp only [Bool.and_eq_true] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at h
     rw [List.zip_cons_cons] at hx
     rcases List.mem_cons.1 hx with rfl | hx
     · exact h.1.1.1.1
@@ -573,35 +578,84 @@ theorem ecc_argPairs_map (reg : Bool) (F : ID → Val) (ps : List ABIParam) (as 
       (argPairs reg ps as).map fun e => (e.1, F e.2) := by
   unfold argPairs; rw [List.filter_map]; rfl
 
-/-- **`decodeArgs` of register and stack arguments**: the register pieces refine the leaf values
-of the register-assigned arguments, and each stack slot decodes to a refinement of its argument. -/
+/-- A pointer as the register piece of a 64-bit integer: its address (`decodeInt`), as retyping. -/
+theorem ecc_ofPieces_ptr (q : Ptr) : ofPieces (.int .w64) [.ptr q] = (Val.ptr q).retype (.int .w64) := by
+  have hb : putBytes (Array.replicate 8 Byte.poison) 0 (ptrBytes q) = ptrBytes q := by
+    have hs : (putBytes (Array.replicate 8 Byte.poison) 0 (ptrBytes q)).size = (ptrBytes q).size := by
+      rw [putBytes_size]; simp [ptrBytes]
+    have ha := putBytes_agree (dst := Array.replicate 8 Byte.poison) (off := 0) (src := ptrBytes q)
+      (by simp [ptrBytes])
+    apply Array.ext_getElem?
+    intro k
+    by_cases hk : k < (ptrBytes q).size
+    · have := ha k hk
+      simpa using this
+    · rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
+  show decode (putBytes (Array.replicate 8 Byte.poison) 0 (ptrBytes q)) 0 (.int .w64) = _
+  rw [hb]
+  show decodeInt .w64 ((ptrBytes q).extract 0 (0 + 8)) = _
+  rw [Array.extract_eq_self_of_le (by simp [ptrBytes])]
+  unfold decodeInt
+  rw [bytesNat?_ptrBytes, bytesPtr?_ptrBytes]
+  simp only [Val.retype]
+  cases q.addr? <;> rfl
+
+theorem ecc_ecPieceVals_length {t : Ty} (hw : wf t = true) (cast : Bool) (r : Val) :
+    (ecPieceVals cast t r).length = (leaves t).length := by
+  unfold ecPieceVals
+  split
+  · rfl
+  · exact leafVals_length hw
+
+/-- **A register argument from its pieces**: an argument of its parameter's shape (or a pointer
+of a 64-bit integer parameter) retyped at the parameter's shape is refined by assembling refined
+pieces. -/
+theorem ecc_ofPieces_arg {t : Ty} {v : Val} (hw : wf t = true)
+    (hv : v.hasTy t = true ∨ t = .int .w64 ∧ ∃ e, v.hasTy (.ptr e) = true) {ys : List Val}
+    (h : Sem.RefinesList (ecPieceVals true t v) ys) : Sem.Refines (v.retype t) (ofPieces t ys) := by
+  rcases hv with hv | ⟨rfl, e, hv⟩
+  · rw [ecPieceVals_of_hasTy true hv] at h
+    rw [Val.retype_of_hasTy hv]
+    exact (ofPieces_leafVals hw hv).trans (ofPieces_mono _ h)
+  · cases v with
+    | poison => exact .poison _
+    | ptr q =>
+      rw [← ecc_ofPieces_ptr]
+      exact ofPieces_mono _ h
+    | _ => simp [Val.hasTy] at hv
+
+/-- **`decodeArgs` of register and stack arguments**: the register pieces refine the expected
+pieces of the register-assigned arguments (`ecPieceVals`), and each stack slot decodes to a
+refinement of its argument; the decoded arguments refine the arguments retyped at the
+parameters' shapes. -/
 theorem ecc_decodeArgs_mixed {tabs : Tables} {act : Nat} {M : Mem} :
     ∀ (L : List (ABIParam × Val)) (P' : List Val),
-      (∀ x ∈ L, wf (tabs.ty x.1.type) = true ∧ x.2.hasTy (tabs.ty x.1.type) = true) →
-      (∀ x ∈ L, x.1.regs.isEmpty = false → (leaves (tabs.ty x.1.type)).length = x.1.regs.size) →
+      (∀ x ∈ L, x.1.regs.isEmpty = false → wf (tabs.ty x.1.type) = true ∧
+        (leaves (tabs.ty x.1.type)).length = x.1.regs.size ∧
+        (x.2.hasTy (tabs.ty x.1.type) = true ∨
+          tabs.ty x.1.type = .int .w64 ∧ ∃ e, x.2.hasTy (.ptr e) = true)) →
       (∀ x ∈ L, x.1.regs.isEmpty = true → ∃ bs,
         M.read ⟨.outargs act, BitVec.ofInt 64 x.1.offset⟩ (tabs.ty x.1.type).size = some bs ∧
-        Sem.Refines x.2 (decode bs 0 (tabs.ty x.1.type))) →
+        Sem.Refines (x.2.retype (tabs.ty x.1.type)) (decode bs 0 (tabs.ty x.1.type))) →
       Sem.RefinesList ((L.filter fun x => !x.1.regs.isEmpty == true).flatMap
-        fun x => leafVals (tabs.ty x.1.type) x.2) P' →
-      ∃ D, decodeArgs tabs act M (L.map Prod.fst) P' = some D ∧ Sem.RefinesList (L.map Prod.snd) D
-  | [], P', _, _, _, h => by
+        fun x => ecPieceVals true (tabs.ty x.1.type) x.2) P' →
+      ∃ D, decodeArgs tabs act M (L.map Prod.fst) P' = some D ∧
+        Sem.RefinesList (retypeResults tabs (L.map Prod.fst) (L.map Prod.snd)) D
+  | [], P', _, _, h => by
     rw [RefinesList.nil_inv h]
     exact ⟨[], rfl, .nil⟩
-  | (p, v) :: L, P', hw, hr, hs, hP => by
-    obtain ⟨hwp, hvp⟩ := hw (p, v) List.mem_cons_self
-    dsimp only at hwp hvp
+  | (p, v) :: L, P', hr, hs, hP => by
+    simp only [List.map_cons, retypeResults]
     cases he : p.regs.isEmpty with
     | false =>
+      obtain ⟨hwp, hlp, hvp⟩ := hr (p, v) List.mem_cons_self he
       rw [List.filter_cons, if_pos (by simp [he]), List.flatMap_cons] at hP
       obtain ⟨y1, y2, rfl, h1, h2⟩ := ecs_rl_split hP
-      obtain ⟨D, hD, hGD⟩ := ecc_decodeArgs_mixed L y2 (fun x hx => hw x (List.mem_cons_of_mem _ hx))
-        (fun x hx => hr x (List.mem_cons_of_mem _ hx)) (fun x hx => hs x (List.mem_cons_of_mem _ hx)) h2
+      obtain ⟨D, hD, hGD⟩ := ecc_decodeArgs_mixed L y2 (fun x hx => hr x (List.mem_cons_of_mem _ hx))
+        (fun x hx => hs x (List.mem_cons_of_mem _ hx)) h2
       have hlv : y1.length = p.regs.size := by
-        rw [← ecs_rl_length h1, leafVals_length hwp]; exact hr (p, v) List.mem_cons_self he
-      refine ⟨ofPieces (tabs.ty p.type) y1 :: D, ?_,
-        .cons ((ofPieces_leafVals hwp hvp).trans (ofPieces_mono _ h1)) hGD⟩
-      rw [List.map_cons]
+        rw [← ecs_rl_length h1, ecc_ecPieceVals_length hwp]; exact hlp
+      refine ⟨ofPieces (tabs.ty p.type) y1 :: D, ?_, .cons (ecc_ofPieces_arg hwp hvp h1) hGD⟩
       unfold decodeArgs
       have hnl : ¬ (y1 ++ y2).length < p.regs.size := by rw [List.length_append]; omega
       simp only [he, Bool.false_eq_true, ↓reduceIte, hnl, List.take_left' hlv, List.drop_left' hlv,
@@ -609,11 +663,10 @@ theorem ecc_decodeArgs_mixed {tabs : Tables} {act : Nat} {M : Mem} :
       rfl
     | true =>
       rw [List.filter_cons, if_neg (by simp [he])] at hP
-      obtain ⟨D, hD, hGD⟩ := ecc_decodeArgs_mixed L P' (fun x hx => hw x (List.mem_cons_of_mem _ hx))
-        (fun x hx => hr x (List.mem_cons_of_mem _ hx)) (fun x hx => hs x (List.mem_cons_of_mem _ hx)) hP
+      obtain ⟨D, hD, hGD⟩ := ecc_decodeArgs_mixed L P' (fun x hx => hr x (List.mem_cons_of_mem _ hx))
+        (fun x hx => hs x (List.mem_cons_of_mem _ hx)) hP
       obtain ⟨bs, hbs, hv⟩ := hs (p, v) List.mem_cons_self he
       refine ⟨decode bs 0 (tabs.ty p.type) :: D, ?_, .cons hv hGD⟩
-      rw [List.map_cons]
       unfold decodeArgs
       simp only [he, ↓reduceIte]
       rw [hbs]
@@ -789,16 +842,23 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       rw [← Array.mem_toList_iff, hsw]; exact ha
     have hmas : ∀ a ∈ (u.args.extract k (u.args.size - 1)).toList, a ∈ u.args := fun a ha =>
       hmu a (List.mem_append_left _ (List.mem_append_right _ ha))
-    have hins : ∀ p ∈ insOf abi, wf (tabs.ty p.type) = true ∧
-        (if p.regs.isEmpty then 0 ≤ p.offset else (leaves (tabs.ty p.type)).length = p.regs.size) := by
-      intro p hp
+    have hinsR : ∀ p ∈ insOf abi, p.regs.isEmpty = false →
+        wf (tabs.ty p.type) = true ∧ (leaves (tabs.ty p.type)).length = p.regs.size := by
+      intro p hp hr
       have := List.all_eq_true.1 hinsOK p hp
-      rw [Bool.and_eq_true] at this
-      refine ⟨this.1, ?_⟩
-      have h2 := this.2
-      split
-      · next hr => rw [if_pos hr] at h2; exact of_decide_eq_true h2
-      · next hr => rw [if_neg hr] at h2; exact beq_iff_eq.1 h2
+      rw [hr, if_neg (by simp), Bool.and_eq_true] at this
+      exact ⟨this.1, beq_iff_eq.1 this.2⟩
+    have hinsS : ∀ p ∈ insOf abi, p.regs.isEmpty = true → movTy (tabs.ty p.type) = true ∧ 0 ≤ p.offset := by
+      intro p hp hr
+      have := List.all_eq_true.1 hinsOK p hp
+      rw [hr, if_pos rfl, Bool.and_eq_true] at this
+      exact ⟨this.1, of_decide_eq_true this.2⟩
+    have hregOf : ∀ {reg : Bool} {e : ABIParam × ID},
+        e ∈ argPairs reg (insOf abi) (u.args.extract k (u.args.size - 1)).toList →
+        e.1.regs.isEmpty = !reg := fun {reg e} he => by
+      have := (List.mem_filter.1 he).2
+      revert this
+      cases e.1.regs.isEmpty <;> cases reg <;> decide
     -- the Go-typed arguments
     have hrel : ∀ a ∈ (u.args.extract k (u.args.size - 1)).toList, EcArgRel tabs f g frS T a :=
       fun a ha => ecc_argRel hi hu hRS hRu hfront (hmas a ha)
@@ -807,10 +867,10 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         e.1 ∈ insOf abi ∧ e.2 ∈ (u.args.extract k (u.args.size - 1)).toList := fun he =>
       List.of_mem_zip (List.mem_filter.1 he).1
     -- the register pieces
-    have hP := ec_pieces hNC hL hRS _ _ _ hpc
+    have hP := ec_pieces hNC hL hRS true _ _ _ hpc
       (fun p hp => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-        exact (hins _ (hmemPair he).1).1)
+        exact (hinsR _ (hmemPair he).1 (hregOf he)).1)
       (fun q hq => hRw q (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))))
       (fun q hq hn' => have hq' := hmw q (List.mem_append_left _ (List.mem_append_right _ hq))
         ⟨hEw q hq' hn', hLw q hq' hn'⟩)
@@ -822,12 +882,12 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         exact himk _ (hmas _ (hmemPair he).2))
       (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
         (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))) hn') yq hyq)
-    rw [ecc_zip_map, ecc_flatMap_pat (fun p r => leafVals (tabs.ty p.type) r)] at hP
+    rw [ecc_zip_map, ecc_flatMap_pat (fun p r => ecPieceVals true (tabs.ty p.type) r)] at hP
     -- the stack arguments: the one the `Move` copies (`sp0`) and the stored ones (`sp1`)
     obtain ⟨hsorted, zs, sp0, sp1, hcs, hsp01, hst, hmv0⟩ := ecc_stackOK_inv hstack
     unfold storeArgsOK at hst
     simp only [Bool.and_eq_true, List.all_eq_true] at hst
-    obtain ⟨⟨hsOK, hpcS⟩, hsrc⟩ := hst
+    obtain ⟨⟨⟨hsOK, hpcS⟩, hsrc⟩, hwfS⟩ := hst
     have hm1 : ∀ {e}, e ∈ sp1 → e ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList :=
       fun he => by rw [hsp01]; exact List.mem_append_right _ he
     have hcs' := hcs
@@ -851,10 +911,10 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       obtain ⟨wz, hwz, hsz, hsv, hcl, hreg⟩ := hzval z hz
       refine ⟨z, hz, wz, hwz, ?_, hcl, hreg⟩
       rw [hsv, ← Array.mem_toList_iff, ecs_args_three hsz]; simp
-    have hS := ec_pieces hNC hL hRS _ _ _ hpcS
+    have hS := ec_pieces hNC hL hRS false _ _ _ hpcS
       (fun p hp => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-        exact (hins _ (hmemPair (hm1 he)).1).1)
+        exact hwfS _ he)
       (fun q hq => by
         obtain ⟨z, -, wz, -, hqa, -, hreg⟩ := hpcv q hq
         exact hreg q hqa)
@@ -871,6 +931,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         have := hsrc q hq
         rw [hn', Bool.false_or, Array.contains_iff_mem] at this
         exact hfront q (ecFront_src hi hu this) yq hyq)
+    simp only [ecPieceVals_false] at hS
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => leafVals (tabs.ty p.type) r), List.map_map] at hS
     -- the leading arguments and the memory
     have hsame : ∀ a ∈ u.args, special f g a = false →
@@ -894,14 +955,16 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       hlk hlr
     -- the call's memory and the decoded arguments
     have hmem : ∀ m, rv frS u.args[u.args.size - 1]! = .mem m →
-        ((u.args.extract k (u.args.size - 1)).toList.map (rv frS)).any Val.hasPoison = false →
+        (retypeResults tabs (insOf abi)
+          ((u.args.extract k (u.args.size - 1)).toList.map (rv frS))).any Val.hasPoison = false →
         outargsOK tabs 0 m (insOf abi) = true →
         ∃ mN D, rv T w.args[w.args.size - 1]! = .mem mN ∧
           Mem.Refines (m.poisonBlock (.outargs 0)) (mN.poisonBlock (.outargs 0)) ∧
           outargsOK tabs 0 mN (insOf abi) = true ∧
           decodeArgs tabs 0 mN (insOf abi) ((w.args.extract k (w.args.size - 1)).toList.map (rv T)) =
             some D ∧
-          Sem.RefinesList ((u.args.extract k (u.args.size - 1)).toList.map (rv frS)) D := by
+          Sem.RefinesList (retypeResults tabs (insOf abi)
+            ((u.args.extract k (u.args.size - 1)).toList.map (rv frS))) D := by
       intro m hm _ hokm
       rw [hm] at hmv
       obtain ⟨M, hMT, hMR⟩ : ∃ M, rv T u.args[u.args.size - 1]! = .mem M ∧ Mem.Refines m M := by
@@ -979,7 +1042,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         rw [ecCv_of_not_special hss] at hrys
         rw [rv_of hysT] at hs
         subst hs
-        have hP := ecs_move_arg hMR (hins _ (hmemPair hpa).1).1 heqa hmt hrys hrd'
+        have hP := ecs_move_arg hMR (hinsS _ (hmemPair hpa).1 (hregOf hpa)).1 heqa hmt hrys hrd'
         refine ⟨_, by rw [hbase]; exact rv_of hy, fun blk => ecs_find_write hW1 blk,
           ecs_poisonBlock_write hW1, fun e he => ?_⟩
         rw [List.mem_singleton.1 he]
@@ -991,7 +1054,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       have hat : ∀ s ∈ leafSlots tabs (sp1.map Prod.fst), atom s.2 = true := fun s hs => by
         obtain ⟨p, hp, l, hl, rfl⟩ := ecs_mem_leafSlots hs
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-        exact (mem_leaves (hins _ (hmemPair (hm1 he)).1).1 hl).2
+        exact (mem_leaves (hwfS _ he) hl).2
       obtain ⟨Mt, hMt, hW⟩ := ecs_chain hNC hL _ hcs' htopEL hsOK hat
         (fun z hz wz qw hwz hqw hn => hHS _ ⟨z, .inl ⟨zs, hcs, hz⟩, wz, qw, hwz, hqw, hn, rfl⟩) M1 hM1
       have hblk : ∀ e ∈ List.zipWith ecsW (leafSlots tabs (sp1.map Prod.fst))
@@ -1008,34 +1071,42 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       have hpw := ecs_slotsSorted_pairwise hsorted
       rw [hsp01, List.map_append, List.pairwise_append] at hpw
       -- the arguments, register and stack
-      have hpairs : ∀ e ∈ (insOf abi).zip (u.args.extract k (u.args.size - 1)).toList,
-          (rv frS e.2).hasTy (tabs.ty e.1.type) = true := fun e he => by
-        have hb : e ∈ argPairs (!e.1.regs.isEmpty) (insOf abi) (u.args.extract k (u.args.size - 1)).toList :=
-          List.mem_filter.2 ⟨he, by simp⟩
-        have heq : eqE (shapeOf (typeShapes tabs) f e.2) (tabs.ty e.1.type) = true := by
-          cases hr : e.1.regs.isEmpty with
-          | false =>
-            rw [hr] at hb
-            exact ecc_piecesOK_eqE hpc e (by rw [ecc_zip_fst_snd]; exact hb)
-          | true =>
-            rw [hr, Bool.not_true, hsp01] at hb
-            rcases List.mem_append.1 hb with h0 | h1
-            · rcases hmv0 with ⟨-, rfl⟩ | ⟨z, p, a, -, rfl, hmok⟩
-              · exact absurd h0 List.not_mem_nil
-              · rw [List.mem_singleton.1 h0]
-                obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, heqa, -⟩ := ecc_moveOK_spec hmok
-                exact heqa
-            · exact ecc_piecesOK_eqE hpcS e (by rw [ecc_zip_fst_snd]; exact h1)
+      have hshape : ∀ e ∈ (insOf abi).zip (u.args.extract k (u.args.size - 1)).toList,
+          (rv frS e.2).hasTy (shapeOf (typeShapes tabs) f e.2) = true := fun e he => by
         have hreg := reg_rv (hRu _ (hmas _ (List.of_mem_zip he).2))
         have := (hRS _ _ hreg).1
-        rwa [← shapeOf_eq, eqE_hasTy heq] at this
+        rwa [← shapeOf_eq] at this
+      have hpairs : ∀ e ∈ (insOf abi).zip (u.args.extract k (u.args.size - 1)).toList,
+          e.1.regs.isEmpty = true → (rv frS e.2).hasTy (tabs.ty e.1.type) = true := fun e he hr => by
+        have hb : e ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList :=
+          List.mem_filter.2 ⟨he, by simp [hr]⟩
+        have heq : eqE (shapeOf (typeShapes tabs) f e.2) (tabs.ty e.1.type) = true := by
+          rw [hsp01] at hb
+          rcases List.mem_append.1 hb with h0 | h1
+          · rcases hmv0 with ⟨-, rfl⟩ | ⟨z, p, a, -, rfl, hmok⟩
+            · exact absurd h0 List.not_mem_nil
+            · rw [List.mem_singleton.1 h0]
+              obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, heqa, -⟩ := ecc_moveOK_spec hmok
+              exact heqa
+          · have := ecc_piecesOK_eqE hpcS e (by rw [ecc_zip_fst_snd]; exact h1)
+            simpa using this
+        rw [← eqE_hasTy heq]; exact hshape e he
+      have hpairsR : ∀ e ∈ (insOf abi).zip (u.args.extract k (u.args.size - 1)).toList,
+          e.1.regs.isEmpty = false → (rv frS e.2).hasTy (tabs.ty e.1.type) = true ∨
+            tabs.ty e.1.type = .int .w64 ∧ ∃ e', (rv frS e.2).hasTy (.ptr e') = true := fun e he hr => by
+        have hb : e ∈ argPairs true (insOf abi) (u.args.extract k (u.args.size - 1)).toList :=
+          List.mem_filter.2 ⟨he, by simp [hr]⟩
+        rcases ecc_piecesOK_eqE hpc e (by rw [ecc_zip_fst_snd]; exact hb) with heq | ⟨-, hc⟩
+        · exact .inl (by rw [← eqE_hasTy heq]; exact hshape e he)
+        · obtain ⟨⟨e', hs⟩, ht⟩ := ec_castOK hc
+          exact .inr ⟨ht, e', by rw [← hs]; exact hshape e he⟩
       have hlenL : (insOf abi).length = (u.args.extract k (u.args.size - 1)).toList.length := hlen
       have hstk := ecs_stack_params (M := Mt) (sp1.map fun e => (e.1, rv frS e.2)) _ hS
         (by
           rw [List.map_map]
           exact ecs_reads (ecs_leafSlots_pairwise (fun p hp => by
               obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
-              exact (hins _ (hmemPair (hm1 he)).1).1)
+              exact hwfS _ he)
             hpw.2.1) (ecs_storesOK_bounds hsOK) hW)
         (by
           rw [List.map_map]
@@ -1044,32 +1115,28 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
           have hmz := (List.mem_filter.1 (hm1 he))
           have hr : e.1.regs.isEmpty = true := by simpa using hmz.2
-          obtain ⟨hwe, hoff⟩ := hins _ (hmemPair (hm1 he)).1
-          rw [if_pos hr] at hoff
-          refine ⟨hwe, hpairs e hmz.1, hoff, ?_⟩
+          have hwe := hwfS _ he
+          have hoff := (hinsS _ (hmemPair (hm1 he)).1 hr).2
+          refine ⟨hwe, hpairs e hmz.1 hr, hoff, ?_⟩
           have := List.all_eq_true.1 hokM e.1 (hmemPair (hm1 he)).1
           rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff] at this
           exact this)
       obtain ⟨D, hD, hGD⟩ := ecc_decodeArgs_mixed (act := 0) (M := Mt)
         (((insOf abi).zip (u.args.extract k (u.args.size - 1)).toList).map fun e => (e.1, rv frS e.2))
         ((w.args.extract k (w.args.size - 1)).toList.map (rv T))
-        (fun xe hxe => by
-          obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
-          exact ⟨(hins _ (List.of_mem_zip he).1).1, hpairs e he⟩)
         (fun xe hxe hr => by
           obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
-          have := (hins _ (List.of_mem_zip he).1).2
           dsimp only at hr ⊢
-          rw [if_neg (by rw [hr]; exact Bool.false_ne_true)] at this
-          exact this)
+          obtain ⟨h1, h2⟩ := hinsR _ (List.of_mem_zip he).1 hr
+          exact ⟨h1, h2, hpairsR e he hr⟩)
         (fun xe hxe hr => by
           have hmf : xe ∈ (((insOf abi).zip (u.args.extract k (u.args.size - 1)).toList).map
               fun e => (e.1, rv frS e.2)).filter (fun x => !x.1.regs.isEmpty == false) :=
             List.mem_filter.2 ⟨hxe, by simp [hr]⟩
           rw [ecc_argPairs_map, hsp01, List.map_append, List.mem_append] at hmf
           obtain ⟨e, he, rfl⟩ := List.mem_map.1 hxe
-          obtain ⟨-, hoff⟩ := hins _ (List.of_mem_zip he).1
-          rw [if_pos hr] at hoff
+          rw [Val.retype_of_hasTy (hpairs e he hr)]
+          have hoff := (hinsS _ (List.of_mem_zip he).1 hr).2
           rw [ecs_ofInt hoff]
           rcases hmf with h0 | h1
           · obtain ⟨e0, he0, hee⟩ := List.mem_map.1 h0
@@ -1098,8 +1165,8 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           (u.args.extract k (u.args.size - 1)).toList.map (rv frS) := by
         rw [List.map_map, show (Prod.snd ∘ fun e : ABIParam × ID => (e.1, rv frS e.2)) =
           rv frS ∘ Prod.snd from rfl, ← List.map_map, List.map_snd_zip (by omega)]
+      rw [hfst, hsnd] at hGD
       rw [hfst] at hD
-      rw [hsnd] at hGD
       exact ⟨Mt, D, hMt, hpoi, hokM, hD, hGD⟩
     have hrel' := ecc_callOp hE (ctx := Ctx.make tabs f) (ctx' := Ctx.make tabs g) rfl rfl hpre hpost
       hwaux habi houts hct hct' hcallee hclo (fun m hm hp hokm => hmem m hm hp hokm)
@@ -1159,6 +1226,120 @@ theorem ecc_bind_def {R : Res Val} {F : Val → Val}
   | panic e m => exact .inr ⟨e, m, rfl⟩
   | stuck msg => rcases h with ⟨_, h⟩ | ⟨_, _, h⟩ <;> cases h
 
+/-! ## `poison` survives retyping -/
+
+theorem ecc_hasPoison_retypePtr {p : Val} (h : p.hasPoison = true) : p.retypePtr.hasPoison = true := by
+  cases p <;> simp_all [Val.retypePtr, Val.hasPoison]
+
+theorem ecc_hasPoison_retypeI64 {p : Val} (h : p.hasPoison = true) : p.retypeI64.hasPoison = true := by
+  cases p <;> simp_all [Val.retypeI64, Val.hasPoison]
+
+theorem ecc_hasPoison_retype_str (vs : List Val) (h : (Val.agg vs).hasPoison = true) :
+    ((Val.agg vs).retype .str).hasPoison = true := by
+  match vs, h with
+  | [p, l], h =>
+    simp only [Val.retype, Val.ofStr]
+    split
+    · simp only [Val.hasPoison, Val.anyPoison, Bool.or_false, Bool.or_eq_true] at h ⊢
+      rcases h with h | h
+      · exact .inl (ecc_hasPoison_retypePtr h)
+      · exact .inr (ecc_hasPoison_retypeI64 h)
+    · rfl
+  | [], _ | [_], _ | _ :: _ :: _ :: _, _ => simp [Val.retype, Val.hasPoison]
+
+theorem ecc_hasPoison_retype_slice (e : Option Nat) (vs : List Val) (h : (Val.agg vs).hasPoison = true) :
+    ((Val.agg vs).retype (.slice e)).hasPoison = true := by
+  match vs, h with
+  | [p, l, c], h =>
+    simp only [Val.retype, Val.ofSlice]
+    split
+    · simp only [Val.hasPoison, Val.anyPoison, Bool.or_false, Bool.or_eq_true] at h ⊢
+      rcases h with h | h | h
+      · exact .inl (ecc_hasPoison_retypePtr h)
+      · exact .inr (.inl (ecc_hasPoison_retypeI64 h))
+      · exact .inr (.inr (ecc_hasPoison_retypeI64 h))
+    · rfl
+  | [], _ | [_], _ | [_, _], _ | _ :: _ :: _ :: _ :: _, _ => simp [Val.retype, Val.hasPoison]
+
+mutual
+/-- Retyping keeps a `poison` inside a value. -/
+theorem ecc_hasPoison_retype : (t : Ty) → (v : Val) → v.hasPoison = true → (v.retype t).hasPoison = true
+  | t, .poison, _ => by cases t <;> rfl
+  | _, .int _ _, h | _, .bool _, h | _, .mem _, h | _, .ptr _, h | _, .empty, h => by
+    simp [Val.hasPoison] at h
+  | t, .tuple vs, h => by
+    cases t with
+    | tuple ts =>
+      simp only [Val.retype]
+      split
+      · rename_i vs' hr
+        simp only [Val.hasPoison] at h ⊢
+        exact ecc_anyPoison_retypePre ts vs h hr
+      · rfl
+    | _ => simp [Val.retype, Val.hasPoison]
+  | t, .agg vs, h => by
+    cases t with
+    | agg fs n =>
+      simp only [Val.retype]
+      split
+      · rename_i vs' hr
+        simp only [Val.hasPoison] at h ⊢
+        exact ecc_anyPoison_retypeFields fs vs h hr
+      · rfl
+    | str => exact ecc_hasPoison_retype_str vs h
+    | slice e => exact ecc_hasPoison_retype_slice e vs h
+    | _ => simp [Val.retype, Val.hasPoison]
+  | t, .blob bs, h => by
+    cases t with
+    | blob n => simp only [Val.retype]; split <;> simp_all [Val.hasPoison]
+    | _ => simp [Val.retype, Val.hasPoison]
+theorem ecc_anyPoison_retypePre : (ts : List Ty) → (vs : List Val) → Val.anyPoison vs = true →
+    ∀ {vs'}, Val.retypePre ts vs = some vs' → Val.anyPoison vs' = true
+  | [], vs, h, _, hr => by simp only [Val.retypePre, Option.some.injEq] at hr; subst hr; exact h
+  | t :: ts, v :: vs, h, _, hr => by
+    simp only [Val.retypePre] at hr
+    cases hr' : Val.retypePre ts vs with
+    | none => rw [hr'] at hr; cases hr
+    | some ws =>
+      rw [hr'] at hr
+      simp only [Option.map_some, Option.some.injEq] at hr
+      subst hr
+      simp only [Val.anyPoison, Bool.or_eq_true] at h ⊢
+      rcases h with h | h
+      · exact .inl (ecc_hasPoison_retype t v h)
+      · exact .inr (ecc_anyPoison_retypePre ts vs h hr')
+  | _ :: _, [], h, _, _ => by simp [Val.anyPoison] at h
+theorem ecc_anyPoison_retypeFields : (fs : List (Nat × Ty)) → (vs : List Val) → Val.anyPoison vs = true →
+    ∀ {vs'}, Val.retypeFields fs vs = some vs' → Val.anyPoison vs' = true
+  | [], [], h, _, _ => by simp [Val.anyPoison] at h
+  | (_, t) :: fs, v :: vs, h, _, hr => by
+    simp only [Val.retypeFields] at hr
+    cases hr' : Val.retypeFields fs vs with
+    | none => rw [hr'] at hr; cases hr
+    | some ws =>
+      rw [hr'] at hr
+      simp only [Option.map_some, Option.some.injEq] at hr
+      subst hr
+      simp only [Val.anyPoison, Bool.or_eq_true] at h ⊢
+      rcases h with h | h
+      · exact .inl (ecc_hasPoison_retype t v h)
+      · exact .inr (ecc_anyPoison_retypeFields fs vs h hr')
+  | [], _ :: _, _, _, hr => by simp [Val.retypeFields] at hr
+  | _ :: _, [], _, _, hr => by simp [Val.retypeFields] at hr
+end
+
+/-- Retyping arguments keeps a `poison` among them. -/
+theorem ecc_anyPoison_retypeResults (tabs : Tables) :
+    ∀ (ps : List ABIParam) {G : List Val}, G.any Val.hasPoison = true →
+      (retypeResults tabs ps G).any Val.hasPoison = true
+  | [], _, h => h
+  | _ :: _, [], h => h
+  | p :: ps, v :: G, h => by
+    simp only [retypeResults, List.any_cons, Bool.or_eq_true] at h ⊢
+    rcases h with h | h
+    · exact .inl (ecc_hasPoison_retype _ v h)
+    · exact .inr (ecc_anyPoison_retypeResults tabs ps h)
+
 /-- A source call that completes or panics had Go-typed arguments without `poison`. -/
 theorem ecc_callOp_noPoison {env : Env} {ctx : Ctx} {u : Value} {abi : CallABI}
     (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
@@ -1191,7 +1372,7 @@ theorem ecc_callOp_noPoison {env : Env} {ctx : Ctx} {u : Value} {abi : CallABI}
       | false => rfl
       | true =>
         exfalso
-        rw [if_pos (by simp [hp])] at h
+        rw [if_pos (by simp [ecc_anyPoison_retypeResults _ _ hp])] at h
         exact hns _ ⟨_, rfl⟩ h
     | _ => exact absurd h (hns _ ⟨_, rfl⟩)
 
@@ -1251,7 +1432,7 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     have hain : a ∈ (u.args.extract k (u.args.size - 1)).toList := (List.of_mem_zip hpe.1).2
     have hr : p.regs.isEmpty = true := by simpa using hpe.2
     have hins := List.all_eq_true.1 hinsOK p hpin
-    rw [Bool.and_eq_true, if_pos hr] at hins
+    rw [hr, if_pos rfl, Bool.and_eq_true] at hins
     have hoff0 : 0 ≤ p.offset := of_decide_eq_true hins.2
     -- the source reached the call: its memory's stack-argument slots are writable, its arguments
     -- have no `poison`
@@ -1386,8 +1567,8 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     obtain ⟨-, zs0, sp0, sp1, hzs0, hsp01, hst, hmv0⟩ := ecc_stackOK_inv hstack
     rw [hzs] at hzs0; cases hzs0
     unfold storeArgsOK at hst
-    simp only [Bool.and_eq_true] at hst
-    obtain ⟨⟨hsOK, -⟩, -⟩ := hst
+    simp only [Bool.and_eq_true, List.all_eq_true] at hst
+    obtain ⟨⟨⟨hsOK, -⟩, -⟩, hwfS⟩ := hst
     have hcs' := hzs
     unfold callStores at hcs'
     obtain ⟨wz', n', zs', hwz', hnz, hop, hsz, hc, rest, hsplit⟩ := ecs_chain_mem hcs' hz
@@ -1459,11 +1640,11 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     have hpin : e.1 ∈ insOf abi := (List.of_mem_zip hpe.1).1
     have hr : e.1.regs.isEmpty = true := by simpa using hpe.2
     have hins := List.all_eq_true.1 hinsOK e.1 hpin
-    rw [Bool.and_eq_true, if_pos hr] at hins
+    rw [hr, if_pos rfl, Bool.and_eq_true] at hins
     have hoff0 : 0 ≤ e.1.offset := of_decide_eq_true hins.2
     have hcw := List.all_eq_true.1 hokM e.1 hpin
     rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff0] at hcw
-    have hl' := mem_leaves hins.1 hl
+    have hl' := mem_leaves (hwfS e he1) hl
     have hcw' := ecs_canWrite_sub (k := l.1) (l := l.2.size) hl'.1 hcw (by dsimp only at hsb; omega)
     rw [show e.1.offset.toNat + l.1 = (e.1.offset + (l.1 : Int)).toNat by omega,
       ← ecs_canWrite_congr hA0, ← ecs_canWrite_congr hA] at hcw'
