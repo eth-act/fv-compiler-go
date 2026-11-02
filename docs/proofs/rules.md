@@ -1240,7 +1240,10 @@ verified 91,652 → 91,718 (on f100340). With the nil seeds `:1376` (`Convert`) 
 (`Interp.snapRule`) and word-typed `Addr` bases (1,368 rules): 91,718 → 91,839 (on 5059a31).
 With forwardings of nested structs (`fwdTy` through `fwdFields` of strings, slices and structs,
 `fwdErase`; mostly `cmd/go`'s `Cache[struct{Path, Version string}]`): 91,839 → 91,965 (on
-bddd8ee).
+bddd8ee). With snapshots before the forwardings of `Load`s not in the pass's input
+(`Interp.builtLoad`: `Load`s that struct-load expansions and `Load` selections built, which the
+forwarding layers of the segment did not have): 91,965 → 92,089 (on 59a7370; the probe's
+run time is unchanged, 8.5 → 7.9 min).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

@@ -382,7 +382,9 @@ def fwdMoveWhy (tabs : Tables) (f g : Func) (u w : Value) : String := Id.run do
     return s!"move: offset {offp.auxInt.toInt} size {(tabs.ty u.type).size}"
   let some mv := f.value? u.args[1]! | return "move: mem missing"
   if !(mv.op == .Move && mv.args.size == 3) then return s!"move: mem {mv.op.name}"
-  if !(top.args[1]! == mv.args[2]! && offp.args[0]! == mv.args[1]!) then return "move: args"
+  if !(top.args[1]! == mv.args[2]! && offp.args[0]! == mv.args[1]!) then
+    let cr := fun (a b : ID) => copyReach tabs f.valueTab f.valueTab.size a b
+    return s!"move: args mem {top.args[1]! == mv.args[2]!}/{cr mv.args[2]! top.args[1]!}/{cr top.args[1]! mv.args[2]!} src {offp.args[0]! == mv.args[1]!}/{cr mv.args[1]! offp.args[0]!}/{cr offp.args[0]! mv.args[1]!}: {desc tabs f 2 mv.args[1]!} vs {desc tabs g 2 offp.args[0]!}"
   if !decide (offp.auxInt.toInt.toNat + (tabs.ty u.type).size ≤ mv.auxInt.toInt.toNat) then
     return s!"move: range {offp.auxInt.toInt}+{(tabs.ty u.type).size} > {mv.auxInt.toInt}"
   return s!"move: ptr {desc tabs f 3 u.args[0]!} vs {desc tabs f 3 mv.args[0]!} + {offp.auxInt.toInt}"
@@ -471,6 +473,10 @@ def fwdRelWhy (env : PassEnv) (tabs : Tables) (ro : List (String × Sem.Alloc)) 
         else if u.op == .Load && (w.op == .Addr || w.op == .Const32 || w.op == .Const8 ||
             w.op == .Const64) then
           return some s!"v{z} {fixedWhy tabs ro f u w}"
+        else if u.op == .Move && w.op == .Move && u.args.size == 3 && w.args.size == 3 then
+          let cr := fun (a b : ID) => copyReach tabs f.valueTab f.valueTab.size a b
+          let op := fun (a : ID) => ((f.value? a).map (·.op.name)).getD "?"
+          return some s!"v{z} rep Move->Move dst {cr u.args[0]! w.args[0]!} src {cr u.args[1]! w.args[1]!} mem {cr u.args[2]! w.args[2]!} umem {op u.args[2]!} wmem {op w.args[2]!}"
         else return some s!"v{z} rep {u.op.name}->{w.op.name}"
       | _, _ => return some s!"v{z} rep"
   if !fwdRel tabs ro f f' then return some "rel"

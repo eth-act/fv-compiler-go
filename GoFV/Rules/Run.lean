@@ -82,7 +82,8 @@ def rewriteRun (t : Interp.Table) (removeDead logOn : Bool) (env : PassEnv) (f :
     Except String (PassOut × Nat × Array RwEvent) := do
   let rw ← RwEnv.ofPassEnv env
   let st : RwState := { f, tables := env.tables, pending := XPosMap.ofCache f.cache.lineStarts,
-                        log := if logOn then some #[] else none }
+                        log := if logOn then some #[] else none,
+                        input := if logOn then some f else none }
   match (Apply.applyRewrite t removeDead).run rw |>.run st with
   | .ok _ s =>
     let f := s.f

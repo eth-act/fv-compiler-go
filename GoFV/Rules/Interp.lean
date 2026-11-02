@@ -406,6 +406,14 @@ def snapRule (r : Rule) : Bool :=
   | .op .Load .. => (r.cond matches some (.call "isFixedLoad" ..))
   | _ => false
 
+/-- The `Load` `v` is not one of the pass's input (`RwState.input`): an earlier rewrite built it
+(a struct-load expansion, a selection of a `Load`). Its forwardings are logged after a snapshot,
+as `snapRule`'s, so the validator's layer starts from a function that has the `Load`. -/
+def builtLoad (v : ID) : RwM Bool := do
+  match (← get).input with
+  | some f0 => return !(f0.value? v).any (·.op == .Load)
+  | none => return false
+
 /-- `rewriteValue<file>(v)`. -/
 def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let o := (← val v).op
@@ -418,8 +426,9 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
       if ← tryRule v ns[i] (rs.size + i) (snap := snapRule ns[i].rule) then return true
   if o == .Load then
     let ls := t.loads
+    let built ← builtLoad v
     for h : i in [0:ls.size] do
-      if ← tryRule v ls[i] (rs.size + i) (snap := snapRule ls[i].rule) then return true
+      if ← tryRule v ls[i] (rs.size + i) (snap := built || snapRule ls[i].rule) then return true
     let ss := t.structLoads
     for h : i in [0:ss.size] do
       if ← tryRule v ss[i] (rs.size + ls.size + i) (slDefs := true) then return true
