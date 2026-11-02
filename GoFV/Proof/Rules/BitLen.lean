@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values01
 
 /-!
@@ -113,5 +114,19 @@ theorem r_generic_65_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_6
 
 /-- `generic.rules:68`: `(BitLen8 (Const8 [c])) && config.PtrSize == 4 => (Const32 [int32(bits.Len8(uint8(c)))])` -/
 theorem r_generic_68_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_68 := by rule_auto
+
+/-- `generic.rules:62` at `BitLen32 (Const32 [5])` (the result `Const64 [3]`). -/
+theorem inst_r_generic_62 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_62
+    (PEnv.ofLists [] [([], .int .w64), ([0], .int .w32)] (.int .w64) [([0], 5)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_62]
+  rule_eval
+
+/-- `generic.rules:61` at `BitLen64 (Const64 [-1])` (the result `Const64 [64]`). -/
+theorem inst_r_generic_61 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_61
+    (PEnv.ofLists [] [([], .int .w64), ([0], .int .w64)] (.int .w64) [([0], -1)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_61]
+  rule_eval
 
 end GoFV.Proof.Rules

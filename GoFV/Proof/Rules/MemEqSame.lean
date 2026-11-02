@@ -211,6 +211,15 @@ theorem inst_r_generic_1592 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   · subst h; simp [lenVar?]
   · subst h; simp
 
+/-- `generic.rules:1590` at `MemEq p p 0 mem` (`p` the heap block's address word `2^40`). -/
+theorem inst_r_generic_1590 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1590
+    (PEnv.ofLists [([0], .i64 (2 ^ 40)), ([1], .i64 (2 ^ 40)), ([3], .mem {})]
+      [([], .bool), ([0], .ptr none), ([1], .ptr none), ([2], .int .w64), ([3], .mem)] (.int .w64) [])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1590]
+  rule_eval
+  simp [memEq, Mem.read, Val.asPtrWord, Val.hasTy]
+
 /-- `generic.rules:1680` at `p + 8 != p` for a heap pointer `p` (its address word `2^40`). -/
 theorem inst_r_generic_1680 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_1680 {}
     { leaf := fun p => if p = [1, 0] then .int .w64 8 else .int .w64 (2 ^ 40)
