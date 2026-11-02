@@ -3077,8 +3077,9 @@ related by copyelim's relation (`CopyCheck.copyOK`), and the next segment starts
 latter. The log is split likewise before every `Phi` selection (`RwEvent.snap pre`): the
 selection becomes a copy in the `ps` layer of the next segment, which starts from `pre`, so a
 rule logged before it matches the selection, not the copy; and before the nil-check eliminations
-of `IsNonNil`s and `Convert`s and the fixed loads (`Interp.snapRule`), whose matched values
-earlier rewrites usually built (the layers of the next segment find them in `pre`). -/
+of `IsNonNil`s and `Convert`s, the fixed loads (`Interp.snapRule`) and the forwardings of `Load`s
+not in the pass's input (`Interp.builtLoad`), whose matched values earlier rewrites built (the
+layers of the next segment find them in `pre`). -/
 
 /-- `h` without the `Invalid` values listed in its blocks. -/
 def dropInvalid (h : Func) : Func :=

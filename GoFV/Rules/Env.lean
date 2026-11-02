@@ -86,6 +86,8 @@ structure RwState where
   typeObjs : Array (ID × GoFV.Opt.TypeObj) := #[]
   /-- The steps taken, if recorded (`some`). -/
   log : Option (Array RwEvent) := none
+  /-- The pass's input, when the log is recorded (`Interp.builtLoad`). -/
+  input : Option Func := none
 
 /-- The rewrite monad. Errors are Go's `Fatalf`/panics or constructs the port does not cover. -/
 abbrev RwM := ReaderT RwEnv (EStateM String RwState)
