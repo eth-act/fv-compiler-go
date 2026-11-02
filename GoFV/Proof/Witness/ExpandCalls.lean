@@ -1,6 +1,7 @@
 import GoFV.Proof.Pass.ECMain
 import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.HasWaitingReaders
+import GoFV.Proof.Witness.StackF2
 import GoFV.Proof.Witness.Util
 
 /-!
@@ -117,6 +118,7 @@ theorem expandCalls_stack_witness :
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag,
       Env.p1_mono, Env.p1_frameKeep⟩
 
+<<<<<<< HEAD
 /-! ## A tail call's stack-argument `Move` -/
 
 /-- A source block: the tail call `v2 = TailLECall v1` on the initial memory. -/
@@ -145,4 +147,47 @@ theorem expandCalls_tailMove_witness :
     ECCheck.tailAnchoredB tailF tailG tailFB tailGB 3 = true := by
   decide +kernel
 
+=======
+/-! ## A self-moved stack-assigned result -/
+
+/-- `check`'s environment for the pass output of `test/stack` `f2`. -/
+def sf2OutCheckEnv (o : PassOut) : CheckEnv := { tabs := o.tables, typs := sf2Typs }
+
+theorem sf2_checks :
+    (check sf2CheckEnv sf2).toBool = true ∧ expandCallsFrag sf2PassEnv sf2 = true ∧
+      (sf2.value? 10).map (·.args) = some #[9, 5] := by
+  decide +kernel
+
+theorem sf2_pass :
+    ((expandCallsPass sf2PassEnv sf2).toOption.map fun o =>
+      (check (sf2OutCheckEnv o) o.func).toBool &&
+        (o.func.value? 9).map (·.op) == some .Invalid &&
+        (o.func.value? 10).map (·.args) == some #[5]) = some true := by
+  decide +kernel
+
+/-- **Non-vacuity of `expandCalls_refines` on a self-moved stack-assigned result**: `test/stack`
+`f2` returns its `[3000]byte` result (a byte blob, no `wf` shape) by a self-move
+(`MakeResult v9 v5`, `v9 = Dereference (LocalAddr {~r0}) v5`); expand calls stores nothing,
+invalidates `v9` and returns `MakeResult v5`, and the output refines the input under monotone
+contracts that keep the caller's frame. -/
+theorem expandCalls_selfMove_witness :
+    ∃ out, expandCallsPass sf2PassEnv sf2 = .ok out ∧
+      (sf2.value? 10).map (·.args) = some #[9, 5] ∧
+      (out.func.value? 9).map (·.op) = some .Invalid ∧
+      (out.func.value? 10).map (·.args) = some #[5] ∧
+      RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) out.tables out.func sf2PassEnv.tables
+        sf2 := by
+  obtain ⟨hc, hfrag, hres⟩ := sf2_checks
+  have hp := sf2_pass
+  cases hpe : expandCallsPass sf2PassEnv sf2 with
+  | error e => rw [hpe] at hp; cases hp
+  | ok out =>
+    rw [hpe] at hp
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true,
+      beq_iff_eq] at hp
+    obtain ⟨⟨hcg, hinv⟩, hmr⟩ := hp
+    exact ⟨out, rfl, hres, hinv, hmr,
+      GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag⟩
+
+>>>>>>> f9751f1 (expand calls: self-move witness test/stack f2 (refs #28))
 end GoFV.Proof.Witness
