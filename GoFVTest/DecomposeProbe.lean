@@ -121,7 +121,9 @@ def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
         let some av := f.value? a | return "link: arg"
         let some sv := g.value? s | return "link: store"
         if !RewriteCheck.ssFieldOK tabs f a (tabs.ty av.type) t then
-          return s!"link: field {repr t} arg {repr (tabs.ty av.type)}"
+          let e := (f.value? (RewriteCheck.copyEnd tabs f.valueTab f.valueTab.size a)).map
+            fun w => s!"{w.op.name}{(w.args[0]?.bind f.value?).map (fun x => s!"({x.op.name} {repr (tabs.ty x.type)})")}"
+          return s!"link: field {repr t} arg {repr (tabs.ty av.type)} {e}"
         if !Ty.beq (Sem.auxTy tabs sv.aux) t then return "link: store shape"
         if !RewriteCheck.ssPtrOK tabs f g fv.block dst p o then return "link: pointer"
         let prev := if k = 0 then r.2 else (r.1[k - 1]?.map (·.2)).getD 0
@@ -266,7 +268,14 @@ def segWhy (env : PassEnv) (T : Tables) (f0 g2 : Func) :
       s!"phielim seg {k}: " ++
         layersWhy env Decompose.decProvenTable f0 { func := h, tables := T } RewriteCheck.decLayers f seg
     else if !checkOK ce h then s!"phielim {k}: check pre"
-    else if !CopyCheck.copyOK T h h' then s!"phielim {k}: copyOK"
+    else if !CopyCheck.copyOK T h h' then
+      let bad := (h.blocks.toList.filterMap h.block?).flatMap (·.values.toList) |>.find?
+        fun x => !CopyCheck.copyValueOK T h h' x
+      match bad.bind h'.value? with
+      | some gv =>
+        let arg := (gv.args[0]?.bind h'.value?).map fun w => s!"{w.op.name} {repr (T.ty w.type)}"
+        s!"phielim {k}: copyOK {gv.op.name} {repr (T.ty gv.type)} of {arg}"
+      | none => s!"phielim {k}: copyOK"
     else if !checkOK ce h' then s!"phielim {k}: check elim"
     else segWhy env T f0 g2 (k + 1) h' #[] evs
   | k, f, seg, ev :: evs => segWhy env T f0 g2 k f (seg.push ev) evs

@@ -121,4 +121,31 @@ theorem mks_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := mksRules) (penv := mksPassEnv)
         (f := mksFunc) (out := out) mksRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
+/-! ## `(ITab (IMake itab _)) => itab` with a `uintptr` itab (`dec.rules:82`, issue #17) -/
+
+/-- `uintptr` (type 1), `uint8` (2), `*uint8` (3), `interface {}` (4). -/
+def itsTabs : Tables where
+  types := #[none, some (mkT .UINTPTR (some 8) "uintptr"), some (mkT .UINT8 (some 1) "uint8"),
+    some (mkT .PTR (some 8) "*uint8" (.elem 2)), some (mkT .INTER (some 16) "interface {}")]
+  auxes := #[]
+
+/-- `v1 = ArgIntReg <uintptr>`, `v2 = ArgIntReg <*uint8>`, `v3 = IMake <interface {}> v1 v2`,
+`v4 = ITab <*uint8> v3`; `v5 = Convert <*uint8> v1 v0`, `v6 = IMake v5 v2`, `v7 = ITab <*uint8> v6`. -/
+def itsDefs : RewriteCheck.Defs := #[none,
+  some (mkVi 1 .ArgIntReg 1 0 p0 1 #[] 1), some (mkVi 2 .ArgIntReg 3 0 p0 1 #[] 1),
+  some (mkVi 3 .IMake 4 0 p0 1 #[1, 2] 1), some (mkVi 4 .ITab 3 0 p0 1 #[3] 1),
+  some (mkVi 5 .Convert 3 0 p0 1 #[1, 0] 1), some (mkVi 6 .IMake 4 0 p0 1 #[5, 2] 1),
+  some (mkVi 7 .ITab 3 0 p0 1 #[6] 1)]
+
+/-- The validator accepts making a pointer-typed `ITab` a `Copy` of its `IMake`'s itab word: a
+`uintptr` (`v4` becomes `Copy <uintptr> v1`), and a `Convert <*uint8>` of one (`v7` becomes
+`Copy <*uint8> v5`), both only through `RewriteCheck.intWord` (the itab's `uintptr` shape is not
+the `ITab`'s pointer shape, and neither itab is an `Addr`). -/
+theorem its_makeSelOK :
+    RewriteCheck.makeSelOK itsTabs itsDefs 4 [mkVi 4 .Copy 1 0 p0 1 #[1] 1] = true ∧
+    RewriteCheck.makeSelOK itsTabs itsDefs 7 [mkVi 7 .Copy 3 0 p0 1 #[5] 1] = true ∧
+    GoFV.Proof.Rules.shapeSub (itsTabs.ty 1) (itsTabs.ty 3) = false ∧
+    GoFV.Proof.Rules.shapeSub (itsTabs.ty 3) (itsTabs.ty 1) = false := by
+  decide +kernel
+
 end GoFV.Proof.Witness
