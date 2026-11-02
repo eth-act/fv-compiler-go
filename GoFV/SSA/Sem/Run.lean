@@ -390,7 +390,7 @@ def schedule (f : Func) (b : Block) : Option (Array ID) :=
     | none => (greedy vs.toList vs.size vs.toList []).map List.toArray
   else none
 
-/-- What the panic machinery needs of a function's open-coded defers (§9.6): its `deferBits`
+/-- What the panic machinery needs of a function's open-coded defers (§9.7): its `deferBits`
 variable (the `deferbits` name flag, export format 4) and its `opendeferslot` variables by
 index (their frame offset at SSA time), each with whether its frame block is `Blk.local`
 (`Tables.forgeable`). -/
@@ -662,7 +662,7 @@ def outargsOK (tabs : Tables) (act : Nat) (m : Mem) (ins : List ABIParam) : Bool
   ins.all fun p => !p.regs.isEmpty ||
     m.canWrite ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ (tabs.ty p.type).size
 
-/-! ## Deferred calls and recover (§9.6, phase P5) -/
+/-! ## Deferred calls and recover (§9.7, phase P5) -/
 
 /-- The `deferproc` entries of every activation, oldest first: 16 bytes each (`entryTy`: the
 activation number, the closure). A global without an address and without a Go name. -/
@@ -1092,7 +1092,7 @@ def stepTerm (fr : Frame) (b : Block) : Res Next :=
       | _, _ => .stuck s!"b{b.id}: Ret without memory"
     | _ => .stuck s!"b{b.id}: Ret control is not a MakeResult"
   | .Exit => .stuck s!"b{b.id}: Exit reached (a non-returning call returned)"
-  -- `deferproc` returned: the normal path (a recovery returns through `finish`, §9.6)
+  -- `deferproc` returned: the normal path (a recovery returns through `finish`, §9.7)
   | .Defer => succ b 0
   | k => .stuck s!"b{b.id}: block kind {k.name} is not in phase P1"
 
@@ -1209,7 +1209,7 @@ def entryFrame (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) : Frame :=
   { regs := Array.replicate ctx.f.valueTab.size none, args,
     mem0 := frameMem env ctx images mem, images }
 
-/-- The next deferred call of activation `act` (§9.6): the closure of the highest set bit of
+/-- The next deferred call of activation `act` (§9.7): the closure of the highest set bit of
 the open-coded `deferBits` (the bit cleared), else the newest `deferproc` entry of `act`
 (removed); `none` if there is none. An undefined `deferBits` is observed (an error). -/
 def nextDefer (di : DeferInfo) (act : Nat) (m : Mem) : Except String (Option (Val × Mem)) :=
@@ -1244,7 +1244,7 @@ def restorePanicRec (pe : Option Panic) (saved : Option Alloc) (r : Mem) : Mem :
   | some _, none => r.free panicBlk
   | none, _ => r
 
-/-- Run the deferred calls of activation `act` (at most `n`; §9.6). While panicking
+/-- Run the deferred calls of activation `act` (at most `n`; §9.7). While panicking
 (`pe = some e`) each runs with a panic record that lets it `recover` (`gorecover`), restored
 afterwards (an outer panic's record, `none`: removed); a recovery ends the panic, the remaining
 deferred calls run as at a normal exit, and the activation returns the values of its result
@@ -1289,7 +1289,7 @@ def runDefers (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : Defe
 
 /-- The outcome of an activation from its loop's outcome: Go-typed results (`goResults`) and
 the memory without the frame; at a panic, the frames of the activation's callees are gone and
-its deferred calls run (`runDefers`, §9.6); other outcomes unchanged. A `MakeResult` component
+its deferred calls run (`runDefers`, §9.7); other outcomes unchanged. A `MakeResult` component
 containing poison is observed (`stuck`) before decoding, so `finish` preserves refinement
 (`docs/plans/semantics.md` §3.5). -/
 def finish (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : DeferInfo) (act : Nat) :

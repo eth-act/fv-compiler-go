@@ -68,7 +68,7 @@ theorem Mem.Refines.outargsOK {m m' : Mem} (h : Mem.Refines m m') (tabs : Tables
   simp only [h.canWrite]
 
 
-/-! ## Deferred calls and recover (§9.6) -/
+/-! ## Deferred calls and recover (§9.7) -/
 
 theorem Refines.ne_poison {a b : Val} (h : Refines a b) (ha : a ≠ .poison) : b ≠ .poison := by
   cases h <;> first | exact absurd rfl ha | (intro h; cases h)

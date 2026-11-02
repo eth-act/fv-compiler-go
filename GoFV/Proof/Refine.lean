@@ -60,7 +60,7 @@ theorem OutcomeRefines.panicked_refl {act : Nat} (e : Panic) (m : Mem) :
 
 /-- Related outcomes of `runLoop` (the input of `finish`): refined results in a refined memory,
 or the same panic with memories related by `P`. The panicking activation's deferred calls see its
-frame (`finish`, §9.6), so lock-step simulations relate panics by equality (`finish_refines`);
+frame (`finish`, §9.7), so lock-step simulations relate panics by equality (`finish_refines`);
 `Mem.Refines` needs monotone contracts (`GoFV.Proof.finish_refines_mono`). -/
 inductive LoopRefines (P : Mem → Mem → Prop) : Outcome → Outcome → Prop where
   | returned {rs rs' : List Val} {m m' : Mem} : RefinesList rs rs' → Mem.Refines m m' →
