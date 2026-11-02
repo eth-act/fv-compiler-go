@@ -104,6 +104,11 @@ avoiding): the problem, the trick, the numbers, where it is used.
   via the exe got different files for the same input hash. Setting `weakLeanArgs` at package
   level covers libs and exes. Lib modules stay byte-identical and nothing rebuilds, since the
   arguments are untraced (#1).
+  The flip side of untraced arguments: the shared cache kept serving the old path-bearing
+  `.olean` for the unchanged input hash. Deleting that one mapping
+  (`../gofv-lake-cache/outputs/gofv/<depHash>.json`; `depHash` is in the module's `.trace`) made
+  the next build store the clean one. The artifact files themselves are left alone, because
+  worktrees hard-link them.
 
 #### `exact lemma args` can spend seconds in a failed unification; `have h := lemma args; exact h`
 - **Problem:** `ecc_storeObl` (`GoFV.Proof.Pass.ECCall`) closed a goal stated over
