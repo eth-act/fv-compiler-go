@@ -632,26 +632,27 @@ shape `int8`). `evalE` models `IsPtrShaped`, `IsString`, `IsSlice`, `IsInterface
 (`kindE`: false at every other shape, the oracle's at the kind's shape, which a struct can
 share), `config.PtrSize` (8, `configField`) and the pointer `typ.*Ptr` types.
 
-**Proven** (26 value rules, and the 7 `Store` splits below): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
+**Proven** (32 value rules, and the 7 `Store` splits below): the selections of a `Make` `:13`, `:14`, `:42`, `:43`, `:58`–`:61`, `:82`, `:83`,
 `:126` (`select_retype_make`), and `:115`, `:116` (a selection of a pointer is `poison`; the
 matched value is then always `poison`, so `rule-sat` finds no instance: the rewrite never changes a
 defined value); `:106` (and `generic.rules:973`), the variadic `(StructSelect [i]
 x:(StructMake ___)) => x.Args[i]`, as `Rule.MakeSel` (below); the Load splits `:45`, `:63`,
-`:87` (`DecLoad.lean`: the condition fixes the string, slice or interface shape, `.other` gives
-`poison`; there the split is a struct-load expansion whose first component is read at the
-pointer itself, `loadSplit_ref` from `StructLoad.structLoad_ref`, the read bounded by the
-block's address window; `rule-sat` has no memory instances, so the non-vacuity witness is the
-pass execution `GoFV.Proof.Witness.ls_checkedRewrite`: `strLen`, `{dec.rules:45}`); the
-extractors of a `Load` `:135`, `:136`, `:144`, `:146`, `:150`, `:151`, `:154` (`DecLoad.lean`:
-component `k` of a `Load` of the kind's shape is refined by the `Load` of field `k` at its offset,
-`selLoad_ref`/`selLoad0_ref`, `SelLoad.lean`; witness `GoFV.Proof.Witness.xs_checkedRewrite`,
-`{dec.rules:136}`) and `:132`, `:141` as `Rule.LoadSel` (below).
+`:87`, `:16`, `:28` (`DecLoad.lean`: the condition fixes the string, slice, interface or complex
+shape, `.other` gives `poison`; `t.Size()` of an aggregate shape is its size, `shapeSize`, so a
+complex rule's size conjunct is false at the other complex shape; there the split is a
+struct-load expansion whose first component is read at the pointer itself, `loadSplit_ref` from
+`StructLoad.structLoad_ref`, the read bounded by the block's address window; `rule-sat` has no
+memory instances, so the non-vacuity witnesses are the pass executions
+`GoFV.Proof.Witness.ls_checkedRewrite`: `strLen`, `{dec.rules:45}`, and `lc_checkedRewrite`:
+`realOf`, `{dec.rules:16}`); the extractors of a `Load` `:135`, `:136`, `:144`, `:146`, `:150`,
+`:151`, `:154`, `:158`, `:159`, `:163`, `:164` (`DecLoad.lean`: component `k` of a `Load` of the
+kind's shape is refined by the `Load` of field `k` at its offset, `selLoad_ref`/`selLoad0_ref`,
+`SelLoad.lean`; witness `GoFV.Proof.Witness.xs_checkedRewrite`, `{dec.rules:136}`) and `:132`,
+`:141` as `Rule.LoadSel` (below).
 **False under the semantics**: `:119`, `:120` (a one-field pointer-shaped aggregate is `.agg [p]`,
 Go's is the pointer; `docs/plans/semantics.md` §10). **Not provable as `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
-`:102` (`imakeOfStructMake`). **Pending**: `:16`/`:28` and the complex extractors `:158`–`:164`
-(`t.IsComplex()` and `t.Size()` of an aggregate shape are not modelled); the size-0 `Store`
-elimination `:10` (`=> mem`).
+`:102` (`imakeOfStructMake`). **Pending**: the size-0 `Store` elimination `:10` (`=> mem`).
 
 **`Store` splits** (`:23`, `:35`, `:51`, `:72`, `:93`, `:129` in place, `:123` =
 `rewriteStructStore`; `EffectRule.StructStore`, `GoFV/Proof/Rules/DecStore.lean`). A `Store` of

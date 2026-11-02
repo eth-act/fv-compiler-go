@@ -137,4 +137,8 @@ theorem kindE_slice {t : Ty} (h : kindE .slice t ≠ some false) : sliceShape t 
 theorem kindE_inter {t : Ty} (h : kindE .inter t ≠ some false) : interShape t = true ∨ t = .other := by
   cases t <;> simp_all [kindE] <;> split at h <;> simp_all
 
+theorem kindE_complex {t : Ty} (h : kindE .complex t ≠ some false) :
+    complexShape t = true ∨ t = .other := by
+  cases t <;> simp_all [kindE] <;> split at h <;> simp_all
+
 end GoFV.Proof.Rules

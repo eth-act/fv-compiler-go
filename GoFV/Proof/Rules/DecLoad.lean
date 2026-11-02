@@ -7,12 +7,13 @@ import GoFV.Proof.Rules.SelLoad
 # Rule lemmas: `dec` rules, `Load` splits (`dec.rules`, issue #17)
 
 `(Load <t> ptr mem) && t.IsString() => (StringMake (Load <typ.BytePtr> ptr mem) (Load <typ.Int>
-(OffPtr <typ.IntPtr> [config.PtrSize] ptr) mem))` (`:45`), and the slice (`:63`) and interface
-(`:87`) forms: a `Load` of a composite is refined by the `Make` of its components' `Load`s.
-The condition fixes the shape (`kindE`: false at every shape but the kind's; at `.other` the
-`Load` is `poison`); there it is a `rewriteStructLoad` expansion whose first component is read at
-the pointer itself (`loadSplit_ref`, from `StructLoad.structLoad_ref`: a valid read of the
-composite's bytes reads each component's bytes at its offset, inside the block's window).
+(OffPtr <typ.IntPtr> [config.PtrSize] ptr) mem))` (`:45`), and the slice (`:63`), interface
+(`:87`) and complex (`:16`, `:28`) forms: a `Load` of a composite is refined by the `Make` of its
+components' `Load`s. The condition fixes the shape (`kindE`: false at every shape but the kind's;
+at `.other` the `Load` is `poison`; a complex rule's `t.Size()` conjunct is false at the other
+complex shape, `shapeSize`); there it is a `rewriteStructLoad` expansion whose first component is
+read at the pointer itself (`loadSplit_ref`, from `StructLoad.structLoad_ref`: a valid read of
+the composite's bytes reads each component's bytes at its offset, inside the block's window).
 -/
 
 namespace GoFV.Proof.Rules
@@ -137,6 +138,42 @@ theorem r_dec_87_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_87 := by
     rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
     exact .poison _
 
+theorem complexShape_eq {t : Ty} (h : complexShape t = true) :
+    t = .agg [(0, .int .w32), (4, .int .w32)] 8 ∨ t = .agg [(0, .int .w64), (8, .int .w64)] 16 := by
+  unfold complexShape at h; split at h <;> first | exact .inl rfl | exact .inr rfl | cases h
+
+/-- `dec.rules:16`: `(Load <t> ptr mem) && t.IsComplex() && t.Size() == 8 => (ComplexMake (Load <typ.Float32> ptr mem) (Load <typ.Float32> (OffPtr <typ.Float32Ptr> [4] ptr) mem) )` -/
+theorem r_dec_16_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_16 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_16
+  have hk : kindE .complex (e.ty []) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rw [← Val.retype_of_hasTy hty]
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · rw [h8]
+      exact loadSplit_ref (by decide) (by decide) _ _ ⟨⟨some 4, rfl⟩, trivial⟩
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h16, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+  · rw [ho] at hty ⊢
+    rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
+    exact .poison _
+
+/-- `dec.rules:28`: `(Load <t> ptr mem) && t.IsComplex() && t.Size() == 16 => (ComplexMake (Load <typ.Float64> ptr mem) (Load <typ.Float64> (OffPtr <typ.Float64Ptr> [8] ptr) mem) )` -/
+theorem r_dec_28_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_28 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_28
+  have hk : kindE .complex (e.ty []) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rw [← Val.retype_of_hasTy hty]
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h8, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+    · rw [h16]
+      exact loadSplit_ref (by decide) (by decide) _ _ ⟨⟨some 8, rfl⟩, trivial⟩
+  · rw [ho] at hty ⊢
+    rw [Val.retype_of_hasTy hty, eq_poison_of_other hty]
+    exact .poison _
+
 /-! ## Extractors of a `Load` (`dec.rules:135`–`:154`)
 
 `(StringPtr x:(Load <t> ptr mem)) && t.IsString() => @x.Block (Load <typ.BytePtr> ptr mem)` and
@@ -187,6 +224,54 @@ theorem r_dec_146_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_146 := by
   rcases kindE_inter hk with hs | ho
   · rw [interShape_eq hs]
     exact selLoad_ref (by decide) (by decide) _ _ rfl (some 8)
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:158`: `(ComplexReal x:(Load <t> ptr mem)) && t.IsComplex() && t.Size() == 8 => @x.Block (Load <typ.Float32> ptr mem)` -/
+theorem r_dec_158_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_158 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_158
+  have hk : kindE .complex (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · rw [h8]; exact selLoad0_ref (by decide) (by decide) _ _ rfl
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h16, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:159`: `(ComplexImag x:(Load <t> ptr mem)) && t.IsComplex() && t.Size() == 8 => @x.Block (Load <typ.Float32> (OffPtr <typ.Float32Ptr> [4] ptr) mem)` -/
+theorem r_dec_159_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_159 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_159
+  have hk : kindE .complex (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · rw [h8]; exact selLoad_ref (by decide) (by decide) _ _ rfl (some 4)
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h16, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:163`: `(ComplexReal x:(Load <t> ptr mem)) && t.IsComplex() && t.Size() == 16 => @x.Block (Load <typ.Float64> ptr mem)` -/
+theorem r_dec_163_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_163 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_163
+  have hk : kindE .complex (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h8, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+    · rw [h16]; exact selLoad0_ref (by decide) (by decide) _ _ rfl
+  · rw [ho]; exact selLoad_other _ _ _
+
+/-- `dec.rules:164`: `(ComplexImag x:(Load <t> ptr mem)) && t.IsComplex() && t.Size() == 16 => @x.Block (Load <typ.Float64> (OffPtr <typ.Float64Ptr> [8] ptr) mem)` -/
+theorem r_dec_164_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_164 := by
+  dec_unfold GoFV.Rules.Generated.Dec.r_dec_164
+  have hk : kindE .complex (e.ty [0]) ≠ some false := by
+    intro hk; simp [kindDV_ty, hk, binE_land_bool] at hcond
+  rcases kindE_complex hk with hs | ho
+  · rcases complexShape_eq hs with h8 | h16
+    · obtain ⟨b, hb⟩ := hbt ((Expr.var 0).method "IsComplex" [] GoTy.bool) rfl
+      simp [kindDV_ty, h8, kindE, complexShape, shapeSize, hb, binE_land_bool] at hcond
+    · rw [h16]; exact selLoad_ref (by decide) (by decide) _ _ rfl (some 8)
   · rw [ho]; exact selLoad_other _ _ _
 
 /-- `dec.rules:150`: `(SlicePtr x:(Load <t> ptr mem)) && t.IsSlice() => @x.Block (Load <t.Elem().PtrTo()> ptr mem)` -/

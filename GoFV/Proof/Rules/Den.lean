@@ -188,10 +188,12 @@ def typesShape : Int → Option Ty
   | 16 => some .bool
   | _ => none
 
-/-- Byte size of an integer or boolean shape (`t.Size()`). -/
+/-- Byte size of an integer or boolean shape, or of an aggregate shape (`t.Size()`; `Sem.tyOf`
+gives a struct, `[1]T` array, interface or complex type the shape `.agg fs n` with `n` its size). -/
 def shapeSize : Ty → Option Int
   | .int w => some (w.bits / 8)
   | .bool => some 1
+  | .agg _ n => some n
   | _ => none
 
 /-- The shape of a string (`Sem.tyOf` of `STRING`). -/
@@ -209,15 +211,21 @@ def interShape : Ty → Bool
   | .agg [(0, .int .w64), (8, .ptr (some 1))] 16 => true
   | _ => false
 
+/-- The shape of a complex number (`Sem.tyOf` of `COMPLEX64`, `COMPLEX128`). -/
+def complexShape : Ty → Bool
+  | .agg [(0, .int .w32), (4, .int .w32)] 8 => true
+  | .agg [(0, .int .w64), (8, .int .w64)] 16 => true
+  | _ => false
+
 /-- The type predicates `kindE` models. -/
 inductive KindPred where
-  | ptrShaped | string | slice | inter
+  | ptrShaped | string | slice | inter | complex
 
-/-- `t.IsPtrShaped()`, `t.IsString()`, `t.IsSlice()`, `t.IsInterface()` of a type of shape `t`,
-as far as the shape decides it (`Sem.tyOf`): a pointer shape is exactly a pointer-shaped type
-(`PTR`, `UNSAFEPTR`, `MAP`, `CHAN`, `FUNC`); a string, slice or interface has the kind's
-shape, so the predicate is false at every other shape, and at the kind's shape (which a
-struct can share) and at `.other` (an unknown type) it is the oracle's. -/
+/-- `t.IsPtrShaped()`, `t.IsString()`, `t.IsSlice()`, `t.IsInterface()`, `t.IsComplex()` of a type
+of shape `t`, as far as the shape decides it (`Sem.tyOf`): a pointer shape is exactly a
+pointer-shaped type (`PTR`, `UNSAFEPTR`, `MAP`, `CHAN`, `FUNC`); a string, slice, interface or
+complex number has the kind's shape, so the predicate is false at every other shape, and at the
+kind's shape (which a struct can share) and at `.other` (an unknown type) it is the oracle's. -/
 def kindE : KindPred → Ty → Option Bool
   | _, .other => none
   | .ptrShaped, .ptr _ => some true
@@ -225,6 +233,7 @@ def kindE : KindPred → Ty → Option Bool
   | .string, t => if strShape t then none else some false
   | .slice, t => if sliceShape t then none else some false
   | .inter, t => if interShape t then none else some false
+  | .complex, t => if complexShape t then none else some false
 
 /-- `kindE` of a type value. -/
 def kindDV (k : KindPred) : DV → Option DV
@@ -519,6 +528,7 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   | "IsString", [] => kindDV .string dy
   | "IsSlice", [] => kindDV .slice dy
   | "IsInterface", [] => kindDV .inter dy
+  | "IsComplex", [] => kindDV .complex dy
   | _, _ => none
 
 /-- Builtins: `min` of two integers. -/

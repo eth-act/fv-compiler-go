@@ -350,11 +350,11 @@ theorem dec_allSound : Proven.dec.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.dec, ForallL]
     exact ⟨⟨Rule.checked_of_sound r_dec_116_sound rfl, Rule.checked_of_sound r_dec_126_sound rfl, .inr (.inr r_dec_132_sound), trivial⟩,
-    ⟨Rule.checked_of_sound r_dec_14_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_dec_13_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_dec_14_sound rfl, Rule.checked_of_sound r_dec_159_sound rfl, Rule.checked_of_sound r_dec_164_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_dec_13_sound rfl, Rule.checked_of_sound r_dec_158_sound rfl, Rule.checked_of_sound r_dec_163_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_83_sound rfl, Rule.checked_of_sound r_dec_146_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_82_sound rfl, Rule.checked_of_sound r_dec_144_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_dec_45_sound rfl, Rule.checked_of_sound r_dec_63_sound rfl, Rule.checked_of_sound r_dec_87_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_sound r_dec_16_sound rfl, Rule.checked_of_sound r_dec_28_sound rfl, Rule.checked_of_sound r_dec_45_sound rfl, Rule.checked_of_sound r_dec_63_sound rfl, Rule.checked_of_sound r_dec_87_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_60_sound rfl, Rule.checked_of_sound r_dec_154_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_59_sound rfl, Rule.checked_of_sound r_dec_151_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_58_sound rfl, Rule.checked_of_sound r_dec_150_sound rfl, trivial⟩,
