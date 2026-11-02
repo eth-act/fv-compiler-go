@@ -1,18 +1,22 @@
 import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.Pass.DSEMem
 import GoFV.Proof.NilPre
+import GoFV.Proof.Pass.ECChain
+import GoFV.Proof.Pass.ECTree
 
 /-!
 # Dropped identity writes (issues #151, #69)
 
 The forwarding layer turns a memory root whose write changes no byte into a `Copy` of its memory
 (`RewriteCheck.dropOK`): a `Store` of a zero-sized type (`generic.rules:1005`), a `Store` of a
-constant term of value `0`, `false` or `poison` (`zeroConst`: `Const64 [0]`, `SliceLen (ConstSlice)`,
-…; `termConst_den`) into zero bytes (`:943`, `:948`, `:954`, `:961`, `:1357`, `:1362`), a
+term of a zero value (`ZeroV`: `0`, `false`, `poison`, the empty value or a composite of such;
+`zeroConst`: a constant term such as `Const64 [0]`, `ConstNil`, `ConstString {""}`, or a selection
+of a zero component such as `SliceLen (SliceMake p (Const64 [0]) c)`; `zeroAt_den`) into zero
+bytes (`:943`, `:948`, `:954`, `:961`, `:1357`, `:1362`), a
 `Zero` of a `Zero` of the same size at an equal pointer (`:2158`), a `Zero` of zero bytes
 (`:1352`). `drop_mem`: the dropped root's memory is refined by its memory argument's, as every
-byte written refines the byte already there (`write_refines_self`): the encoding of a `0`,
-`false` or `poison` has `0` or `poison` bytes (`encode_zero`), and the bytes a successful write
+byte written refines the byte already there (`write_refines_self`): the encoding of a zero
+value has `0` or `poison` bytes (`encode_zero`), and the bytes a successful write
 overwrites read back as zeros through the disjoint writes of the chain (`zeroChain_read`) from a
 `Zero` that cleared them or from the memory of a malloc call that returned a fresh zeroed block
 (`fresh_blockZero`, under the frame invariant `FreshQ` the forwarding layer's source invariant
@@ -78,8 +82,13 @@ theorem zeros_refine : ∀ {l : List Byte}, (∀ c ∈ l, c = .b 0 ∨ c = .pois
 
 /-! ## Zero values -/
 
-/-- A `0`, `false` or `poison`. -/
-def ZeroV (v : Val) : Prop := v = .poison ∨ v = .bool false ∨ ∃ w, v = .int w 0
+/-- A `0`, `false`, `poison`, the empty value, or a composite of such (`zeroVal`). -/
+inductive ZeroV : Val → Prop
+  | poison : ZeroV .poison
+  | bool : ZeroV (.bool false)
+  | int (w : Width) : ZeroV (.int w 0)
+  | empty : ZeroV .empty
+  | agg {vs : List Val} : (∀ v ∈ vs, ZeroV v) → ZeroV (.agg vs)
 
 theorem intBytes_zero (n : Nat) : ∀ c ∈ (intBytes n 0).toList, c = .b 0 ∨ c = .poison := by
   intro c hc
@@ -93,15 +102,72 @@ theorem replicate_poison_zero (n : Nat) :
   simp only [Array.toList_replicate, List.mem_replicate] at hc
   exact .inr hc.2
 
+private theorem putBytes_loop_zero {src : Array Byte}
+    (hs : ∀ c ∈ src.toList, c = .b 0 ∨ c = .poison) (off : Nat) :
+    ∀ (l : List Nat) (d : Array Byte), (∀ c ∈ d.toList, c = .b 0 ∨ c = .poison) →
+      ∀ c ∈ (l.foldl (fun d i => if off + i < d.size then d.set! (off + i) src[i]! else d)
+        d).toList, c = .b 0 ∨ c = .poison
+  | [], _, h => h
+  | i :: l, d, h => by
+    refine putBytes_loop_zero hs off l _ ?_
+    dsimp only
+    split
+    · intro c hc
+      simp only [Array.set!_eq_setIfInBounds, Array.toList_setIfInBounds] at hc
+      rcases List.mem_or_eq_of_mem_set hc with h' | rfl
+      · exact h _ h'
+      · by_cases hi : i < src.size
+        · rw [getElem!_pos src i hi]; exact hs _ (Array.getElem_mem_toList hi)
+        · rw [getElem!_neg src i hi]; exact .inl rfl
+    · exact h
+
+/-- Writing bytes that are `0` or `poison` into such bytes leaves such bytes. -/
+theorem putBytes_zero {src : Array Byte} (hs : ∀ c ∈ src.toList, c = .b 0 ∨ c = .poison)
+    (off : Nat) (d : Array Byte) (hd : ∀ c ∈ d.toList, c = .b 0 ∨ c = .poison) :
+    ∀ c ∈ (putBytes d off src).toList, c = .b 0 ∨ c = .poison :=
+  putBytes_loop_zero hs off _ d hd
+
+theorem encodeWord_zero {v : Val} (h : ZeroV v) :
+    ∀ c ∈ (encodeWord v).toList, c = .b 0 ∨ c = .poison := by
+  cases h with
+  | int w =>
+    cases w with
+    | w64 => simpa [encodeWord] using intBytes_zero 8
+    | _ => simp only [encodeWord]; exact replicate_poison_zero _
+  | _ => simp only [encodeWord]; exact replicate_poison_zero _
+
+theorem encodeWords_zero : ∀ {vs : List Val}, (∀ v ∈ vs, ZeroV v) → ∀ (os : List Nat)
+    (buf : Array Byte), (∀ c ∈ buf.toList, c = .b 0 ∨ c = .poison) →
+      ∀ c ∈ (encodeWords buf os vs).toList, c = .b 0 ∨ c = .poison
+  | [], _, os, buf, hb => by cases os <;> simpa [encodeWords] using hb
+  | v :: vs, hz, [], buf, hb => by simpa [encodeWords] using hb
+  | v :: vs, hz, o :: os, buf, hb => by
+    simp only [encodeWords]
+    exact encodeWords_zero (fun w hw => hz w (List.mem_cons_of_mem _ hw)) os _
+      (putBytes_zero (encodeWord_zero (hz v List.mem_cons_self)) o _ hb)
+
+theorem encodeFields_zero : ∀ {vs : List Val},
+    (∀ v ∈ vs, ∀ t, ∀ c ∈ (encode t v).toList, c = .b 0 ∨ c = .poison) →
+    ∀ (fs : List (Nat × Ty)) (buf : Array Byte), (∀ c ∈ buf.toList, c = .b 0 ∨ c = .poison) →
+      ∀ c ∈ (encodeFields buf fs vs).toList, c = .b 0 ∨ c = .poison
+  | [], _, fs, buf, hb => by cases fs <;> simpa [encodeFields] using hb
+  | v :: vs, hz, [], buf, hb => by simpa [encodeFields] using hb
+  | v :: vs, hz, (o, t) :: fs, buf, hb => by
+    simp only [encodeFields]
+    exact encodeFields_zero (fun w hw => hz w (List.mem_cons_of_mem _ hw)) fs _
+      (putBytes_zero (hz v List.mem_cons_self t) o _ hb)
+
 /-- **The bytes of a zero value**, at every shape, are `0` or `poison`. -/
 theorem encode_zero {v : Val} (h : ZeroV v) (t : Ty) :
     ∀ c ∈ (encode t v).toList, c = .b 0 ∨ c = .poison := by
-  rcases h with rfl | rfl | ⟨w, rfl⟩
-  · rw [encode_poison]; exact replicate_poison_zero _
-  · cases t with
+  induction h generalizing t with
+  | poison => rw [encode_poison]; exact replicate_poison_zero _
+  | bool =>
+    cases t with
     | bool => intro c hc; simp [encode] at hc; exact .inl hc
     | _ => simp only [encode]; exact replicate_poison_zero _
-  · cases t with
+  | int w =>
+    cases t with
     | int w' =>
       simp only [encode]
       split
@@ -111,6 +177,13 @@ theorem encode_zero {v : Val} (h : ZeroV v) (t : Ty) :
       cases w with
       | w64 => simpa [encode] using intBytes_zero 8
       | _ => simp only [encode]; exact replicate_poison_zero _
+    | _ => simp only [encode]; exact replicate_poison_zero _
+  | empty => cases t <;> (simp only [encode]; exact replicate_poison_zero _)
+  | agg hz ih =>
+    cases t with
+    | agg fs n => simp only [encode]; exact encodeFields_zero ih fs _ (replicate_poison_zero _)
+    | str => simp only [encode]; exact encodeWords_zero hz _ _ (replicate_poison_zero _)
+    | slice e => simp only [encode]; exact encodeWords_zero hz _ _ (replicate_poison_zero _)
     | _ => simp only [encode]; exact replicate_poison_zero _
 
 /-! ## The dropped roots -/
@@ -149,22 +222,228 @@ theorem memDef_zero {tabs : Tables} {s : Value} (hs : s.op = .Zero) {a c y : Val
   obtain ⟨q, hq, M', hw, rfl⟩ := h
   exact ⟨q, m0, M', hq, rfl, hw, rfl⟩
 
-theorem zeroConst_spec {tabs : Tables} {f : Func} {x : ID} (h : zeroConst tabs f x = true) :
-    ∃ y, termConst tabs f 4 x = some y ∧ ZeroV y := by
-  unfold zeroConst at h
-  split at h
-  · next hx => exact ⟨_, hx, .inl rfl⟩
-  · next hx => exact ⟨_, hx, .inr (.inl rfl)⟩
-  · next w c hx => exact ⟨_, hx, .inr (.inr ⟨w, by rw [beq_iff_eq.1 h]⟩)⟩
-  · cases h
+mutual
+theorem zeroVal_spec : ∀ {v : Val}, zeroVal v = true → ZeroV v
+  | .poison, _ => .poison
+  | .bool false, _ => .bool
+  | .bool true, h => by simp [zeroVal] at h
+  | .empty, _ => .empty
+  | .int w c, h => by
+    simp only [zeroVal, beq_iff_eq] at h
+    subst h; exact .int w
+  | .agg vs, h => .agg (zeroVals_spec (by simpa [zeroVal] using h))
+  | .mem _, h | .tuple _, h | .ptr _, h | .blob _, h => by simp [zeroVal] at h
+theorem zeroVals_spec : ∀ {vs : List Val}, zeroVals vs = true → ∀ v ∈ vs, ZeroV v
+  | [], _, _, hv => absurd hv List.not_mem_nil
+  | v :: vs, h, _, .head _ => by
+    simp only [zeroVals, Bool.and_eq_true] at h
+    exact zeroVal_spec h.1
+  | v :: vs, h, w, .tail _ hw => by
+    simp only [zeroVals, Bool.and_eq_true] at h
+    exact zeroVals_spec h.2 w hw
+end
+
+private theorem refinesList_mem : ∀ {as bs : List Val}, Sem.RefinesList as bs →
+    ∀ a ∈ as, ∃ b ∈ bs, Sem.Refines a b
+  | _, _, .nil, _, h => absurd h List.not_mem_nil
+  | _, _, .cons hr hl, a, h => by
+    rcases List.mem_cons.1 h with rfl | h
+    · exact ⟨_, List.mem_cons_self, hr⟩
+    · obtain ⟨b, hb, h'⟩ := refinesList_mem hl a h
+      exact ⟨b, List.mem_cons_of_mem _ hb, h'⟩
 
 /-- A value refined by a zero value is one. -/
 theorem zeroV_of_refines {a b : Val} (h : Sem.Refines a b) (hb : ZeroV b) : ZeroV a := by
-  cases h with
-  | poison => exact .inl rfl
-  | int => exact hb
-  | bool => exact hb
-  | _ => rcases hb with h | h | ⟨_, h⟩ <;> cases h
+  induction hb generalizing a with
+  | poison => cases h; exact .poison
+  | bool => cases h <;> constructor
+  | int w => cases h <;> constructor
+  | empty => cases h <;> constructor
+  | agg _ ih =>
+    cases h with
+    | poison => exact .poison
+    | agg hl =>
+      exact .agg fun a' ha' => by
+        obtain ⟨b', hb', hr⟩ := refinesList_mem hl a' ha'
+        exact ih b' hb' hr
+
+theorem valPath_poison : ∀ ps : List Nat, valPath ps .poison = .poison
+  | [] => rfl
+  | _ :: _ => rfl
+
+/-- A value refined by one whose component `ps` is zero has a zero component `ps`. -/
+theorem zeroV_path_of_refines : ∀ (ps : List Nat) {a b : Val}, Sem.Refines a b →
+    ZeroV (valPath ps b) → ZeroV (valPath ps a)
+  | [], _, _, h, hb => zeroV_of_refines h hb
+  | i :: ps, _, _, h, hb => by
+    cases h with
+    | poison => rw [valPath_poison]; exact .poison
+    | agg hl =>
+      simp only [valPath] at hb ⊢
+      exact zeroV_path_of_refines ps (GoFV.Proof.EC.ec_getD_mono hl i) hb
+    | _ => simp only [valPath]; exact .poison
+
+/-- A retyped composite is `poison` or the composite of its retyped components. -/
+theorem retypeFields_getD : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},
+    Val.retypeFields fs vs = some vs' →
+      ∀ i, ∃ t', vs'.getD i .poison = (vs.getD i .poison).retype t'
+  | [], [], _, h, i => by
+    simp only [Val.retypeFields, Option.some.injEq] at h
+    subst h
+    exact ⟨.bool, by simp [retype_poison]⟩
+  | (_, t) :: fs, v :: vs, vs', h, i => by
+    simp only [Val.retypeFields, Option.map_eq_some_iff] at h
+    obtain ⟨ws, hws, rfl⟩ := h
+    cases i with
+    | zero => exact ⟨t, rfl⟩
+    | succ i => exact retypeFields_getD hws i
+  | [], _ :: _, _, h, _ => by simp [Val.retypeFields] at h
+  | _ :: _, [], _, h, _ => by simp [Val.retypeFields] at h
+
+theorem word_ne_agg (p : Ptr) (vs : List Val) : p.word ≠ .agg vs := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> simp
+
+/-- Only a composite retypes to a composite, componentwise. -/
+theorem retype_eq_agg {v : Val} {t : Ty} {vs' : List Val} (h : v.retype t = .agg vs') :
+    ∃ vs, v = .agg vs ∧ ∀ i, ∃ t', vs'.getD i .poison = (vs.getD i .poison).retype t' := by
+  cases v with
+  | agg vs =>
+    refine ⟨vs, rfl, ?_⟩
+    cases t with
+    | agg fs n =>
+      simp only [Val.retype] at h
+      split at h
+      · next ws hws => cases h; exact retypeFields_getD hws
+      · cases h
+    | str =>
+      match vs, h with
+      | [p, l], h =>
+        simp only [Val.retype, Val.ofStr] at h
+        split at h
+        · cases h
+          intro i
+          match i with
+          | 0 => exact ⟨.ptr none, Val.retypePtr_eq none p⟩
+          | 1 => exact ⟨.int .w64, Val.retypeI64_eq l⟩
+          | _ + 2 => exact ⟨.bool, by simp [retype_poison]⟩
+        · cases h
+    | slice e =>
+      match vs, h with
+      | [p, l, c], h =>
+        simp only [Val.retype, Val.ofSlice] at h
+        split at h
+        · cases h
+          intro i
+          match i with
+          | 0 => exact ⟨.ptr e, Val.retypePtr_eq e p⟩
+          | 1 => exact ⟨.int .w64, Val.retypeI64_eq l⟩
+          | 2 => exact ⟨.int .w64, Val.retypeI64_eq c⟩
+          | _ + 3 => exact ⟨.bool, by simp [retype_poison]⟩
+        · cases h
+    | _ => simp [Val.retype] at h
+  | poison => rw [retype_poison] at h; cases h
+  | int w x =>
+    cases t with
+    | int w' => simp only [Val.retype] at h; split at h <;> cases h
+    | ptr e => cases w <;> simp [Val.retype] at h
+    | _ => simp [Val.retype] at h
+  | ptr p =>
+    cases t with
+    | int w => cases w <;> simp [Val.retype, word_ne_agg] at h
+    | ptr e => simp [Val.retype, word_ne_agg] at h
+    | _ => simp [Val.retype] at h
+  | tuple vs =>
+    cases t with
+    | tuple ts => simp only [Val.retype] at h; split at h <;> cases h
+    | _ => simp [Val.retype] at h
+  | blob bs =>
+    cases t with
+    | blob n => simp only [Val.retype] at h; split at h <;> cases h
+    | _ => simp [Val.retype] at h
+  | bool b => cases t <;> simp [Val.retype] at h
+  | mem m => cases t <;> simp [Val.retype] at h
+  | empty => cases t <;> simp [Val.retype] at h
+
+/-- A composite retypes to `poison` or a composite. -/
+theorem retype_agg_cases (vs : List Val) (t : Ty) :
+    (Val.agg vs).retype t = .poison ∨ ∃ vs', (Val.agg vs).retype t = .agg vs' := by
+  cases t with
+  | agg fs n =>
+    simp only [Val.retype]
+    split
+    · exact .inr ⟨_, rfl⟩
+    · exact .inl rfl
+  | str =>
+    match vs with
+    | [p, l] =>
+      simp only [Val.retype, Val.ofStr]
+      split
+      · exact .inr ⟨_, rfl⟩
+      · exact .inl rfl
+    | [] | [_] | _ :: _ :: _ :: _ => exact .inl rfl
+  | slice e =>
+    match vs with
+    | [p, l, c] =>
+      simp only [Val.retype, Val.ofSlice]
+      split
+      · exact .inr ⟨_, rfl⟩
+      · exact .inl rfl
+    | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => exact .inl rfl
+  | _ => exact .inl rfl
+
+/-- **A retyped zero value is one.** -/
+theorem zeroV_retype {v : Val} (h : ZeroV v) (t : Ty) : ZeroV (v.retype t) := by
+  induction h generalizing t with
+  | poison => rw [retype_poison]; exact .poison
+  | bool => cases t <;> simp only [Val.retype] <;> constructor
+  | int w =>
+    cases t with
+    | int w' =>
+      simp only [Val.retype]
+      split
+      · rw [show BitVec.setWidth w'.bits (0 : BitVec w.bits) = 0 by simp]; exact .int _
+      · exact .poison
+    | ptr e =>
+      cases w with
+      | w64 => exact .int _
+      | _ => exact .poison
+    | _ => exact .poison
+  | empty => cases t <;> simp only [Val.retype] <;> constructor
+  | @agg vs _ ih =>
+    rcases retype_agg_cases vs t with hr | ⟨vs', hr⟩
+    · rw [hr]; exact .poison
+    · obtain ⟨_, he, hc⟩ := retype_eq_agg hr
+      cases he
+      rw [hr]
+      refine .agg fun v' hv' => ?_
+      obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hv'
+      obtain ⟨t', ht'⟩ := hc i
+      rw [show vs'[i] = vs'.getD i .poison by
+        rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi, Option.getD_some], ht']
+      by_cases hi' : i < vs.length
+      · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi', Option.getD_some]
+        exact ih _ (List.getElem_mem hi') t'
+      · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega), Option.getD_none,
+          retype_poison]
+        exact .poison
+
+/-- **A retyped value with a zero component `ps` has one.** -/
+theorem zeroV_path_retype : ∀ (ps : List Nat) {v : Val} (t : Ty), ZeroV (valPath ps v) →
+    ZeroV (valPath ps (v.retype t))
+  | [], _, t, h => zeroV_retype h t
+  | i :: ps, v, t, h => by
+    cases hr : v.retype t with
+    | agg vs' =>
+      obtain ⟨vs, rfl, hc⟩ := retype_eq_agg hr
+      obtain ⟨t', ht'⟩ := hc i
+      simp only [valPath] at h ⊢
+      rw [ht']
+      exact zeroV_path_retype ps t' h
+    | _ => simp only [valPath]; exact .poison
+
+theorem valPath_select (ps : List Nat) (i : Nat) (d : Val) :
+    valPath ps (Comp.select i [d]) = valPath (i :: ps) d := by
+  cases d <;> simp [Comp.select, valPath, valPath_poison]
 
 section
 variable {tabs : Tables} {f : Func} {ρ : ID → Val}
@@ -285,14 +564,61 @@ theorem read_of_write {m m' : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p b
       rw [if_pos ⟨hc.1.1.2, hc.1.2, hc.2⟩]
     · cases hw
 
-/-- **A `zeroConst` denotes a zero value** at every fuel: below the term's depth a value its
-value refines (`den_fuel_mono`). -/
+/-- **A `zeroAt` term has a zero component** at every fuel: a constant term below its depth a
+value its value refines (`den_fuel_mono`), a selection the component one step deeper of its
+argument (`valPath_select`), a make op its arguments' (`ecT_make_term`), each retyped
+(`zeroV_path_retype`). -/
+theorem zeroAt_den : ∀ (n : Nat) (ps : List Nat) (x : ID), zeroAt tabs f n ps x = true →
+    ∀ k, ZeroV (valPath ps (den f.value? tabs ρ k x))
+  | 0, _, _, h, _ => by simp [zeroAt] at h
+  | n + 1, ps, x, h, k => by
+    simp only [zeroAt, Bool.or_eq_true] at h
+    rcases h with hc | hs
+    · split at hc
+      · next c hcx =>
+        have h2 := den_fuel_mono f.value? tabs ρ k (max k 4) x (Nat.le_max_left _ _)
+        rw [termConst_den 4 x c hcx (max k 4) (Nat.le_max_right _ _)] at h2
+        exact zeroV_path_of_refines ps h2 (zeroVal_spec hc)
+      · cases hc
+    cases k with
+    | zero => rw [show den f.value? tabs ρ 0 x = .poison from rfl, valPath_poison]; exact .poison
+    | succ k =>
+    split at hs
+    · next v hv =>
+      split at hs
+      · next i hi =>
+        simp only [Bool.and_eq_true, beq_iff_eq] at hs
+        obtain ⟨ht, hfr, hev⟩ := GoFV.Proof.EC.ec_sel hi
+        rw [den_succ_term hv ht, toList_one hs.1, List.map_cons, List.map_nil,
+          GoFV.Proof.Rules.opVal_pure hfr, hev]
+        apply zeroV_path_retype
+        rw [valPath_select]
+        exact zeroAt_den n (i :: ps) _ hs.2 k
+      · simp only [Bool.and_eq_true] at hs
+        obtain ⟨ht, hev⟩ := GoFV.Proof.EC.ecT_make_term hs.1
+        have hfr : GoFV.Proof.Rules.frameOp v.op = false := by
+          rcases GoFV.Proof.EC.ecT_make_cases hs.1 with h | h | h | h | h | h <;> rw [h] <;> rfl
+        rw [den_succ_term hv ht, GoFV.Proof.Rules.opVal_pure hfr, hev]
+        apply zeroV_path_retype
+        obtain ⟨-, h2⟩ := hs
+        cases ps with
+        | nil =>
+          refine .agg fun d hd => ?_
+          obtain ⟨a, ha, rfl⟩ := List.mem_map.1 hd
+          exact zeroAt_den n [] a (List.all_eq_true.1 h2 a ha) k
+        | cons i ps' =>
+          simp only [Bool.and_eq_true, decide_eq_true_eq] at h2
+          simp only [valPath]
+          rw [List.getD_eq_getElem?_getD, List.getElem?_map, Array.getElem?_toList,
+            Array.getElem?_eq_getElem h2.1, Option.map_some, Option.getD_some,
+            ← getElem!_pos v.args i h2.1]
+          exact zeroAt_den n ps' _ h2.2 k
+    · cases hs
+
+/-- **A `zeroConst` denotes a zero value** at every fuel (`zeroAt_den`). -/
 theorem zeroConst_den {x : ID} (h : zeroConst tabs f x = true) (k : Nat) :
-    ZeroV (den f.value? tabs ρ k x) := by
-  obtain ⟨y, hy, hz⟩ := zeroConst_spec h
-  have h2 := den_fuel_mono f.value? tabs ρ k (max k 4) x (Nat.le_max_left _ _)
-  rw [termConst_den 4 x y hy (max k 4) (Nat.le_max_right _ _)] at h2
-  exact zeroV_of_refines h2 hz
+    ZeroV (den f.value? tabs ρ k x) :=
+  zeroAt_den 10 [] x h k
 
 /-- **Zero bytes through a chain** (`zeroChain`): a successful read at the pointer gives zeros,
 read through the disjoint writes from the `Zero` that cleared them or from the memory of a fresh
