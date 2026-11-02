@@ -953,7 +953,7 @@ needs a later phase of the semantics.
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
 | `generic` | AndB | 36 | 0 | 0 | 0 | 36 |
 | `generic` | ArraySelect | 1 | 1 | 0 | 0 | 2 |
-| `generic` | BitLen | 0 | 8 | 0 | 0 | 8 |
+| `generic` | BitLen | 8 | 0 | 0 | 0 | 8 |
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
 | `generic` | Com | 12 | 0 | 0 | 0 | 12 |
@@ -974,14 +974,14 @@ needs a later phase of the semantics.
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 0 | 1 | 0 | 1 | 2 |
 | `generic` | InterLECall | 0 | 0 | 0 | 1 | 1 |
-| `generic` | IsInBounds | 8 | 21 | 0 | 0 | 29 |
+| `generic` | IsInBounds | 11 | 18 | 0 | 0 | 29 |
 | `generic` | IsNonNil | 2 | 2 | 0 | 3 | 6 |
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Load | 17 | 1 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
-| `generic` | MemEq | 1 | 10 | 0 | 0 | 11 |
+| `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
 | `generic` | Move | 3 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
@@ -1023,7 +1023,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1346 | 210 | 31 | 258 | 1762 |
+| all | | 1358 | 198 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -1184,6 +1184,12 @@ With the writes into fresh size-specialised allocations (`:1352`, `:1357`, `:136
 (on 6680a52). Of the full-v5 functions the validator alone keeps off stock (2,932), 1,244 drop a
 `Zero` of a `runtime.newobject` result (`fwd₂: drop zero SelectN`) and about 220 a chain of zero
 writes into one allocation (`drop arg vs mem`).
+With `:61`–`:64` (`BitLen` of a constant: `bitsLen_toNat`, `BitLen.lean`), `:1590` (`MemEq` of
+length 0: `memEq_len0`, `MemEqSame.lean`) and `:260`, `:264`, `:267` (`IsInBounds` of a shifted
+byte, half-word or word: `ult_shr`, `pow_cond`, `IsInBounds.lean`; 1,358 rules): full-v5 fully
+verified 91,370 → 91,409 (on a5d70b2). `:579` (`Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`,
+`c < e`) is false for `c < 0`: the shift by a negative amount fills with the sign, which the
+rewrite's `x << (e-c)` shifts out (`x = -1`, `d = 1`, `c = -1`, `e = 1`: `2` against `0`).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
