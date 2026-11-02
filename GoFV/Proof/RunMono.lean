@@ -168,9 +168,10 @@ theorem popDefer_mono (act : Nat) {m m' : Mem} (h : Mem.Refines m m') :
     | none => exact .error _ _
     | some k =>
       rw [ha.asInt hk]
+      dsimp only
       by_cases hb : (k.toNat == act) = true
-      · rw [if_pos hb, if_pos hb]; exact .some hc (setDeferEntries_mono h he.dropLast)
-      · rw [if_neg hb, if_neg hb]; exact .none
+      · simp only [hb, ↓reduceIte]; exact .some hc (setDeferEntries_mono h he.dropLast)
+      · simp only [hb, Bool.false_eq_true, ↓reduceIte]; exact .none
 
 theorem nextDefer_mono (di : DeferInfo) (act : Nat) {m m' : Mem} (h : Mem.Refines m m') :
     DeferNextRefines (nextDefer di act m) (nextDefer di act m') := by
@@ -265,8 +266,8 @@ theorem deferredCode?_mono {m m' : Mem} (h : Mem.Refines m m') {c c' : Val} (hc 
     refine ⟨?_, Val.hasPoison_of_asPtrWord hp⟩
     dsimp only at hd ⊢
     by_cases hn : p.isNil = true
-    · rw [if_pos hn] at hd ⊢; exact hd
-    · rw [if_neg hn] at hd ⊢
+    · simp only [hn, ↓reduceIte] at hd ⊢; exact hd
+    · simp only [hn, Bool.false_eq_true, ↓reduceIte] at hd ⊢
       cases ht : codeTarget? (m.load (.ptr none) p) with
       | none => rw [ht] at hd; cases hd
       | some name =>
@@ -308,19 +309,15 @@ theorem deferprocStack_mono (act : Nat) : (deferprocStack act).Mono := by
     by_cases hx : x = .poison
     · subst hx; exact .stuck _ _
     · have hx' := hl.ne_poison hx
-      have e1 : (match x with
-          | .poison => COutcome.stuck "deferprocStack: undefined fn"
-          | fn => .returned [] (pushDefer act fn m)) = .returned [] (pushDefer act x m) := by
-        cases x <;> first | exact absurd rfl hx | rfl
-      have e2 : (match x' with
-          | .poison => COutcome.stuck "deferprocStack: undefined fn"
-          | fn => .returned [] (pushDefer act fn m')) = .returned [] (pushDefer act x' m') := by
-        cases x' <;> first | exact absurd rfl hx' | rfl
-      rw [e1, e2]
-      exact .returned .nil (pushDefer_mono act hl hm)
+      split
+      · exact absurd rfl hx
+      · exact .returned .nil (pushDefer_mono act hl hm)
   match args, args', ha with
   | [], _, .nil => exact .stuck _ _
-  | _ :: _ :: _, _, .cons _ (.cons _ _) => exact .stuck _ _
+  | a :: _ :: _, _, .cons _ (.cons _ _) =>
+    cases a with
+    | int w x => cases w <;> exact .stuck _ _
+    | _ => exact .stuck _ _
   | [a], _, .cons hf .nil =>
     cases hf with
     | poison => exact .stuck _ _
@@ -386,9 +383,9 @@ theorem gorecover_mono (act : Nat) : (gorecover act).Mono := by
     | false =>
       dsimp only
       by_cases hc : (k != 0 && (act == k || (w && act == k + 1))) = true
-      · rw [if_pos hc, if_pos hc]
+      · simp only [hc, ↓reduceIte]
         exact .returned (.cons hv .nil) (setPanicRec_mono hm true w k hv)
-      · rw [if_neg hc, if_neg hc]
+      · simp only [hc, Bool.false_eq_true, ↓reduceIte]
         exact .returned (.cons (Refines.refl _) .nil) hm
 
 /-- `Env.atAct` keeps monotonicity: its runtime entry points are monotone. -/
@@ -405,11 +402,129 @@ theorem Env.Mono.atAct {env : Env} (hE : env.Mono) (act : Nat) : (env.atAct act)
         · cases h; exact gorecover_mono act
         · exact hE name c h
 
+theorem nilClosure_eq {clo clo' : Option Val} (hc : OptRefines clo clo')
+    (hp : (clo.map Val.hasPoison).getD false = false) : nilClosure clo' = nilClosure clo := by
+  cases hc with
+  | none => rfl
+  | @some c c' hcc =>
+    have hc0 : c ≠ .poison := by rintro rfl; simp [Val.hasPoison] at hp
+    simp only [nilClosure, Option.bind_some, hcc.asPtrWord_eq hc0]
+
 end GoFV.SSA.Sem
 
 namespace GoFV.Proof
 
 open GoFV.SSA GoFV.SSA.Sem
+
+/-! ## `finish` with monotone contracts -/
+
+theorem restorePanicRec_mono (pe : Option Panic) {s s' : Option Alloc}
+    (hs : (s = none ∧ s' = none) ∨ ∃ a a', s = some a ∧ s' = some a' ∧ Alloc.Refines a a')
+    {r r' : Mem} (h : Mem.Refines r r') :
+    Mem.Refines (restorePanicRec pe s r) (restorePanicRec pe s' r') := by
+  rcases hs with ⟨rfl, rfl⟩ | ⟨a, a', rfl, rfl, ha⟩ <;> cases pe <;> simp only [restorePanicRec]
+  · exact h
+  · exact h.free _
+  · exact h
+  · exact h.set _ ha
+
+/-- `runDefers` maps refined memories to refined outcomes. -/
+theorem runDefers_mono {env : Env} (hE : env.Mono) (outs : Array (Option AuxRef × Ty × Nat))
+    (di : DeferInfo) (act k : Nat) :
+    ∀ (n : Nat) (pe : Option Panic) {m m' : Mem}, Mem.Refines m m' →
+      (runDefers env outs di act n pe m).Defined →
+      OutcomeRefines k (runDefers env outs di act n pe m) (runDefers env outs di act n pe m')
+  | 0, _, _, _, _, hd => hd.elim
+  | n + 1, pe, m, m', h, hd => by
+    simp only [runDefers] at hd ⊢
+    have hn := nextDefer_mono di act h
+    revert hd hn
+    generalize nextDefer di act m = r
+    generalize nextDefer di act m' = r'
+    intro hd hn
+    cases hn with
+    | error => exact hd.elim
+    | none =>
+      cases pe with
+      | some e => exact .panicked e (h.dropFrames k)
+      | none =>
+        dsimp only at hd ⊢
+        have hg := goResults_mono (outs := stackOuts outs) (act := act) (rs := []) rfl .nil h
+        revert hd
+        generalize goResults (stackOuts outs) act [] m = g at hg ⊢
+        generalize goResults (stackOuts outs) act [] m' = g' at hg ⊢
+        cases hg with
+        | ok hv => intro _; exact .returned hv (h.freeFrame act)
+        | panic e hm' => intro _; exact .panicked e (hm'.dropFrames k)
+        | stuck => intro hd; exact hd.elim
+    | @some c c' m1 m1' hc hm1 =>
+      dsimp only at hd ⊢
+      cases hdc : deferredCode? m1 c with
+      | error => rw [hdc] at hd; exact hd.elim
+      | ok code =>
+        obtain ⟨hdc', hcp⟩ := deferredCode?_mono hm1 hc hdc
+        rw [hdc] at hd
+        rw [hdc']
+        dsimp only at hd ⊢
+        have hres : ∀ {r r' : Mem}, Mem.Refines r r' →
+            Mem.Refines (restorePanicRec pe (m1.find? panicBlk) r)
+              (restorePanicRec pe (m1'.find? panicBlk) r') :=
+          fun h => restorePanicRec_mono pe (hm1.find? panicBlk) h
+        cases pe with
+        | none =>
+          dsimp only at hd ⊢
+          have ho := callDeferred_mono hE act hc hcp code hm1
+          revert hd ho
+          generalize callDeferred env act c code m1 = o
+          generalize callDeferred env act c' code m1' = o'
+          intro hd ho
+          cases ho with
+          | returned _ hm3 => exact runDefers_mono hE outs di act k n none hm3 hd
+          | panicked e2 hm3 =>
+            exact runDefers_mono hE outs di act k n (some e2) ((hres hm3).dropFrames _) hd
+          | stuck => exact hd.elim
+        | some e =>
+          dsimp only at hd ⊢
+          rw [← hm1.nextAct]
+          have ho := callDeferred_mono hE act hc hcp code
+            (setPanicRec_mono hm1 false (deferredWrapper code) m1.nextAct (Sem.Refines.refl e.toAny))
+          revert hd ho
+          generalize callDeferred env act c code _ = o
+          generalize callDeferred env act c' code _ = o'
+          intro hd ho
+          cases ho with
+          | returned _ hm3 =>
+            dsimp only at hd ⊢
+            have hp := panicRec?_mono hm3
+            revert hd hp
+            generalize panicRec? _ = p
+            generalize panicRec? _ = p'
+            intro hd hp
+            cases hp with
+            | error => exact hd.elim
+            | none => exact hd.elim
+            | some r w j hv =>
+              cases r with
+              | true => exact runDefers_mono hE outs di act k n none (hres hm3) hd
+              | false => exact runDefers_mono hE outs di act k n (some e) (hres hm3) hd
+          | panicked e2 hm3 =>
+            exact runDefers_mono hE outs di act k n (some e2) ((hres hm3).dropFrames _) hd
+          | stuck => exact hd.elim
+
+/-- **`finish` preserves refinement** under monotone contracts: loop outcomes that panic with
+refined memories (`LoopRefines Mem.Refines`) have refined `finish` outcomes, since the deferred
+calls `finish` runs at a panic are monotone (`runDefers_mono`). -/
+theorem finish_refines_mono {env : Env} (hE : env.Mono) {outs : Array (Option AuxRef × Ty × Nat)}
+    {di : DeferInfo} {act k : Nat} {o o' : Outcome} (hd : (finish env outs di act o).Defined)
+    (h : LoopRefines Mem.Refines o o') :
+    OutcomeRefines k (finish env outs di act o) (finish env outs di act o') := by
+  cases h with
+  | returned hr hm => exact finish_returned_refines hd hr hm
+  | panicked e hm =>
+    have hm' := hm.dropFrames (act + 1)
+    simp only [finish] at hd ⊢
+    rw [← (deferEntries_mono hm').length_eq]
+    exact runDefers_mono hE outs di act k _ (some e) hm' hd
 
 /-- `evalOp` is monotone in every environment with `P`. -/
 def EvalOpMono (P : Env → Prop) : Prop :=
@@ -443,89 +558,51 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
   rcases T' with ⟨callee?', clo', rest'⟩
   intro hc hclo hrest
   dsimp only at hc hclo hrest ⊢
-  cases callee? with
-  | none => exact .stuck _ _
-  | some callee =>
-    rcases hc with hc | hc
-    · cases hc
-    · subst hc
-      dsimp only [bind, Res.bind, Res.ofOption]
-      rcases hrest.getLast? with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
-      · rw [h1]; exact .stuck _ _
-      · rw [h1, h2]
-        cases ha with
-        | @mem m m' hm =>
+  dsimp only [bind, Res.bind, Res.ofOption]
+  rcases hrest.getLast? with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
+  · rw [h1]; exact .stuck _ _
+  · rw [h1, h2]
+    cases ha with
+    | @mem m m' hm =>
+      dsimp only
+      have hpieces := hrest.dropLast
+      -- the Go-typed arguments
+      by_cases hpost : (v.op == Op.StaticCall || v.op == Op.ClosureCall || v.op == Op.InterCall) = true
+      · simp only [hpost, ↓reduceIte]
+        cases hd : decodeArgs ctx.tabs ctx.act m _ rest.dropLast with
+        | none => exact .stuck _ _
+        | some args =>
+          obtain ⟨args', hd', ha⟩ := decodeArgs_mono ctx.tabs ctx.act hm _ hpieces hd
+          rw [hd']
           dsimp only
-          have hpieces := hrest.dropLast
-          -- the Go-typed arguments
-          by_cases hpost : (v.op == Op.StaticCall || v.op == Op.ClosureCall || v.op == Op.InterCall) = true
-          · simp only [hpost, ↓reduceIte]
-            cases hd : decodeArgs ctx.tabs ctx.act m _ rest.dropLast with
-            | none => exact .stuck _ _
-            | some args =>
-              obtain ⟨args', hd', ha⟩ := decodeArgs_mono ctx.tabs ctx.act hm _ hpieces hd
-              rw [hd']
-              dsimp only
-              revert ha
-              generalize args = A
-              generalize args' = A'
-              intro ha
-              split
-              · exact .stuck _ _
-              · next hp =>
-                simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
-                have hp1 := ha.any_hasPoison hp.1
-                have hp2 : (clo'.map Val.hasPoison).getD false = false := by
-                  cases hclo with
-                  | none => rfl
-                  | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
-                simp only [hp1, hp2, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
-                rw [hm.outargsOK]
-                split
-                · exact .stuck _ _
-                cases hx : env.extern callee with
-                | none => exact .stuck _ _
-                | some c =>
-                  dsimp only
-                  have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
-                  revert this
-                  generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
-                  generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
-                  intro ho
-                  cases ho with
-                  | returned hr0 hm' =>
-                    dsimp only
-                    cases he : encodeResults ctx.tabs ctx.act _ _ _ with
-                    | none => exact .stuck _ _
-                    | some r =>
-                      obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ (retypeResults_mono ctx.tabs _ hr0) hm' he
-                      rw [he']
-                      dsimp only
-                      exact .ok (.tuple (hr1.append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
-                  | panicked e hm' => exact .panic e hm'
-                  | stuck msg o => exact .stuck _ _
-          · simp only [hpost, Bool.false_eq_true, ↓reduceIte]
-            dsimp only [pure, Res.bind]
-            have ha := retypeResults_mono ctx.tabs
-              ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)) hpieces
-            revert ha
-            generalize retypeResults ctx.tabs _ rest.dropLast = A
-            generalize retypeResults ctx.tabs _ rest'.dropLast = A'
-            intro ha
+          revert ha
+          generalize args = A
+          generalize args' = A'
+          intro ha
+          split
+          · exact .stuck _ _
+          · next hp =>
+            simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
+            have hp1 := ha.any_hasPoison hp.1
+            have hp2 : (clo'.map Val.hasPoison).getD false = false := by
+              cases hclo with
+              | none => rfl
+              | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
+            simp only [hp1, hp2, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
+            rw [hm.outargsOK]
             split
             · exact .stuck _ _
-            · next hp =>
-              simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
-              have hp1 := ha.any_hasPoison hp.1
-              have hp2 : (clo'.map Val.hasPoison).getD false = false := by
-                cases hclo with
-                | none => rfl
-                | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
-              simp only [hp1, hp2, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
-              rw [hm.outargsOK]
-              split
-              · exact .stuck _ _
-              cases hx : env.extern callee with
+            rw [nilClosure_eq hclo hp.2]
+            split
+            · exact .panic _ (hm.poisonBlock _)
+            cases callee? with
+            | none => exact .stuck _ _
+            | some callee =>
+              rcases hc with hc | hc
+              · cases hc
+              subst hc
+              dsimp only
+              cases hx : (env.atAct ctx.act).extern callee with
               | none => exact .stuck _ _
               | some c =>
                 dsimp only
@@ -543,10 +620,62 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
                     obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ (retypeResults_mono ctx.tabs _ hr0) hm' he
                     rw [he']
                     dsimp only
-                    exact .ok (.tuple ((retypeResults_mono ctx.tabs _ hr0).append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
+                    exact .ok (.tuple (hr1.append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
                 | panicked e hm' => exact .panic e hm'
                 | stuck msg o => exact .stuck _ _
-        | _ => exact .stuck _ _
+      · simp only [hpost, Bool.false_eq_true, ↓reduceIte]
+        dsimp only [pure, Res.bind]
+        have ha := retypeResults_mono ctx.tabs
+          ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)) hpieces
+        revert ha
+        generalize retypeResults ctx.tabs _ rest.dropLast = A
+        generalize retypeResults ctx.tabs _ rest'.dropLast = A'
+        intro ha
+        split
+        · exact .stuck _ _
+        · next hp =>
+          simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at hp
+          have hp1 := ha.any_hasPoison hp.1
+          have hp2 : (clo'.map Val.hasPoison).getD false = false := by
+            cases hclo with
+            | none => rfl
+            | some hcc => exact (hcc.noPoison (by simpa using hp.2)).1
+          simp only [hp1, hp2, Bool.or_false, Bool.false_eq_true, ↓reduceIte]
+          rw [hm.outargsOK]
+          split
+          · exact .stuck _ _
+          rw [nilClosure_eq hclo hp.2]
+          split
+          · exact .panic _ (hm.poisonBlock _)
+          cases callee? with
+          | none => exact .stuck _ _
+          | some callee =>
+            rcases hc with hc | hc
+            · cases hc
+            subst hc
+            dsimp only
+            cases hx : (env.atAct ctx.act).extern callee with
+            | none => exact .stuck _ _
+            | some c =>
+              dsimp only
+              have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBlock (.outargs ctx.act))
+              revert this
+              generalize c A clo (m.poisonBlock (.outargs ctx.act)) = o
+              generalize c A' clo' (m'.poisonBlock (.outargs ctx.act)) = o'
+              intro ho
+              cases ho with
+              | returned hr0 hm' =>
+                dsimp only
+                cases he : encodeResults ctx.tabs ctx.act _ _ _ with
+                | none => exact .stuck _ _
+                | some r =>
+                  obtain ⟨r', he', hr1, hr2⟩ := encodeResults_mono ctx.tabs ctx.act _ (retypeResults_mono ctx.tabs _ hr0) hm' he
+                  rw [he']
+                  dsimp only
+                  exact .ok (.tuple ((retypeResults_mono ctx.tabs _ hr0).append (.cons (.mem hr2) (.cons (Sem.Refines.refl _) .nil))))
+              | panicked e hm' => exact .panic e hm'
+              | stuck msg o => exact .stuck _ _
+    | _ => exact .stuck _ _
 
 theorem writeRes_mono (w w' : String) {a b : Option Mem}
     (h : ∀ m, a = some m → ∃ m', b = some m' ∧ Mem.Refines m m') :
