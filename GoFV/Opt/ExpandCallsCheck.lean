@@ -1093,6 +1093,15 @@ def noNpAfter (np : ID → Bool) : List ID → ID → Bool
   | [], _ => false
   | y :: l, z => if y == z then l.all (fun x => !np x) else noNpAfter np l z
 
+/-- New value `z` runs only when the source reaches a tail call `x` of block `fb` (`TailLECall*`,
+`stuck` in the source): in `g`'s schedule of `gb` no source non-pure node lies between `z` and
+`x` (the `Move`s and `Store`s of a tail call's stack arguments). -/
+def tailAnchoredB (f g : Func) (fb gb : Block) (z : ID) : Bool :=
+  match schedule g gb with
+  | some og => fb.values.any fun x =>
+      isTail f x && !invalidated g x && gapOK (npOf f fb) og.toList z x
+  | none => false
+
 /-- The checks of block `bid` (`anc`: the ancestor test of `g`'s dominator certificate). -/
 def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Func) (bid : ID) : Bool :=
   match f.block? bid, g.block? bid with
@@ -1216,7 +1225,7 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     let sts := fb.values.toList.flatMap (stackStores f g)
     let wsts := fb.values.toList.flatMap (wideStores f g)
     let rsts := fb.values.toList.flatMap (ownStores f g)
-    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z || wsts.contains z || rsts.contains z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
+    gb.values.all (fun z => match g.value? z with | some w => (!isNewB f z || (w.op != .Phi && (newEvalB tabs g w || sts.contains z || wsts.contains z || rsts.contains z || tailAnchoredB f g fb gb z))) && w.args.all (fun a => !isNewB f a || gb.values.contains a || (valsOf g g.entry).contains a || placedSDom g anc fb.id a) | none => !isNewB f z)
   | _, _ => false
 
 /-- **The checker**: `g` is `f` after `expand calls`, both read in `tabs`. -/

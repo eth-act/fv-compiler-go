@@ -43,6 +43,13 @@ theorem leafTys_cons_stack (tabs : Tables) {p : ABIParam} (h : p.regs.isEmpty = 
     (ps : List ABIParam) : leafTys tabs (p :: ps) = leafTys tabs ps := by
   simp only [leafTys, List.flatMap_cons, h, ite_true, List.nil_append]
 
+theorem tailOp_eq {op : Op} (h : tailOp op = true) : op = .TailLECall ∨ op = .TailLECallInter := by
+  unfold tailOp at h
+  split at h
+  · exact .inl rfl
+  · exact .inr rfl
+  · cases h
+
 /-- The result shapes of an accepted call (`outsOK`): each well-formed. -/
 theorem ec_outsOK_wf {tabs : Tables} {ps : List ABIParam} (h : outsOK tabs ps = true) :
     ∀ p ∈ ps, wf (tabs.ty p.type) = true := by
