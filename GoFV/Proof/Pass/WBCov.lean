@@ -5,8 +5,9 @@ import GoFV.Proof.Pass.WBNpOrder
 
 `cov_intro`: a value of the chain has its source facts (`Cov`) when the source evaluated, in the
 reference frame, every value of a set `P` closed under in-block arguments that contains the value
-itself (kept, role `held`) or the run its role copies (stores and dropped nil check), and the
-run's memory is a memory for a `WB`. `runMem_of_ev`: a run whose first store the source evaluated
+itself (kept, role `held`) or the run its role copies (stores and dropped nil check; a helper
+call: all of its run's stores, with the runtime's helpers, `WbHelpers`), and the run's memory is
+a memory for a `WB`. `runMem_of_ev`: a run whose first store the source evaluated
 has a memory. `grOK_panic`: the reference frame of a block entry that panics after the prefix
 `pre` of its schedule.
 -/

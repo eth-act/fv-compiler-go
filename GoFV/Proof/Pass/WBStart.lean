@@ -7,8 +7,9 @@ import GoFV.Proof.MemInv
 
 `SimAt env c frS frT b i`: the source enters block `b` along edge `i` with frame `frS` (lemma (D)
 for the strict dominators, `SInv`), the target enters `b` (the first segment of its chain) with
-`frT`: the source's frame but for the registers, equal on held values, with the flag address and
-constant once the entry block has run.
+`frT`: the source's frame but for the registers, equal on held values, with the flag address,
+constant and the flag address's `SB` once the entry block has run; the environment's
+write-barrier helpers are the runtime's (`WbHelpers`, from `WbPre`).
 
 From a reference frame `Gr` of the source after (a prefix of) block `b`: `grOK` (the facts the
 chain's values read), `regs0`/`phis0` (the target at the chain's entry), `final_held` (held

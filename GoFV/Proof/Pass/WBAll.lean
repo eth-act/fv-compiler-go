@@ -7,7 +7,9 @@ import GoFV.Proof.Pass.WBCall
 `Setup`: the static facts about block `b` of `f` and its chain in `g` (`chainRuns?`, `blockOK`).
 `Cov`: the source facts a value of the chain needs, by role (a kept non-`Phi` value, a run's
 store and a nil check copied: the source evaluated them in the reference frame `Gr`; the `WB`:
-the run's memory is a memory). `local_seg`/`local_t`: a non-`Phi` value listed in a segment or
+the run's memory is a memory; a helper call: the helpers are the runtime's, the run's memory is
+a memory and the source evaluated the run's stores, whose address arguments hold words).
+`local_seg`/`local_t`: a non-`Phi` value listed in a segment or
 a buffer block of the chain whose `Cov` holds evaluates as `QR` says (`LocalQ`), dispatching on
 `roleOf` to the local steps of `WBLocal`.
 -/

@@ -7,10 +7,10 @@ import GoFV.Proof.Pass.WBEnter
 The blocks of the chain of block `b` (segments `segsOf b rs`, buffer blocks `r.sp.t`): listed,
 distinct, with schedules, the split blocks' `If` on the run's flag, the last block with `b`'s
 terminator (`seg_block`, `t_block`, `split_block`, `last_block`). Which values are listed where
-(`held_seg`, `held_t`, `lazy_entry`, `avail_not_seg`, `avail_not_t`), the `Phi`s of the
-segments (`phi_seg0`, `phi_seg`, `t_nophi`), and the arguments of a segment's or buffer
-block's values that are not listed there: available at its entry (`Avail`, `args_seg`,
-`args_t`).
+(`held_seg`, `held_t`, `lazy_entry`, `sb_entry`, `avail_not_seg`, `avail_not_t`), the role of the
+flag address's `SB` outside the entry's chain (`sb_role`), the `Phi`s of the segments
+(`phi_seg0`, `phi_seg`, `t_nophi`), and the arguments of a segment's or buffer block's values
+that are not listed there: available at its entry (`Avail`, `args_seg`, `args_t`).
 -/
 
 namespace GoFV.Proof.WB
