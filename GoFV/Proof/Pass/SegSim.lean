@@ -3,6 +3,7 @@ import GoFV.Proof.Pass.SegChain
 import GoFV.Proof.Pass.SegCallSeg
 import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Pass.SegRo
+import GoFV.Proof.Pass.SegMove
 
 /-!
 # Segment rewrites refine their input (issue #151)
@@ -32,12 +33,13 @@ theorem segs_sound (R : SRel tabs f g) (hM : env.MemOps) {ro : List (String × A
     (hs : segOK tabs f g x = some (D, N)) (hgid : ∀ n ∈ segL x N, ∀ v, g.value? n = some v → v.id = n) :
     SegSound (RoQ tabs ro f) env tabs f g x D N := by
   obtain ⟨d⟩ := segOK_spec hs
-  rcases d.hkind with h | h | h
+  rcases d.hkind with h | h | h | h
   · exact chainSeg_sound d.hfv d.hgv h hgid _ env
   · exact callSeg_sound d.hfv d.hgv d.hgid d.hgty h hM
-  · obtain ⟨-, -, hop, -⟩ := roSeg_spec h
-    obtain ⟨hm, hsrc⟩ := roSegsOK_spec hro hs d.hfv hop
+  · obtain ⟨-, -, hop, -, -, -, -, hgop, -⟩ := roSeg_spec h
+    obtain ⟨hm, hsrc⟩ := roSegsOK_spec hro hs d.hfv hop d.hgv hgop
     exact roSeg_sound d.hfv d.hgv d.hgid d.hgty h hsrc hm env
+  · exact moveSeg_sound d.hfv d.hgv h hgid d.hgty _ env
 
 /-- The simulation relation at the entry of block `bid` along edge `i`. -/
 structure SimAt (Q : Mem → Prop) (env : Env) (tabs : Tables) (f g : Func) (frS frT : Frame)
@@ -162,7 +164,7 @@ theorem phiStep_rel {frS frT : Frame} (hr : RR f g frS.regs frT.regs) {bid : ID}
     rw [d.hfv] at hfv; cases hfv
     rw [d.hgv] at hgv; cases hgv
     have h1 : (d.gv.op == .Phi) = false := by
-      simpa using root_ne_phi (d.hroot z (by simp [segL])) d.hgv
+      simpa using root_ne_phi d.hroot d.hgv
     have h2 : (d.fv.op == .Phi) = false := by simpa using d.hfph
     simp only [h1, h2, Bool.false_eq_true, ↓reduceIte]
     exact .ok .none
@@ -278,7 +280,7 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
         obtain ⟨hzf, ⟨x0, D0, N0, hs0, hzN⟩, v, hv, -⟩ := hEf z (Array.mem_toList_iff.1 hz)
         obtain ⟨d⟩ := segOK_spec hs0
         have hnp : (v.op == .Phi) = false := by
-          simpa using root_ne_phi (d.hroot z (by simp [segL, hzN])) hv
+          simpa using d.ne_phi (by simp [segL, hzN]) hv
         unfold phiStep
         simp only [show (Ctx.make tabs g).f = g from rfl, hv, hnp, Bool.false_eq_true,
           ↓reduceIte])

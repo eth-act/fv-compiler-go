@@ -285,7 +285,8 @@ def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
     | some u, some w =>
       if !ssSame u w && (segOK tabs f f' z).isNone then
         return some s!"v{z} {u.op.name}→{w.op.name}: no segment (chain \
-          {(chainSeg? tabs f f' z u w).isSome}, call {(callSeg? tabs f f' u w).isSome})"
+          {(chainSeg? tabs f f' z u w).isSome}, call {(callSeg? tabs f f' u w).isSome}, \
+          move {(moveSeg? tabs f f' z u w).isSome})"
     | _, _ => pure ()
   if !segRel tabs f f' then return some "rel"
   if let .error e := check { tabs := tabs, typs := env.typs } f' then return some s!"check {e}"
@@ -297,7 +298,7 @@ def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
         | none => acc
     let ro := RewriteCheck.roSyms env.tables f
     let movs := (RewriteCheck.segList (RewriteCheck.segArr tabs f f')).filter fun s =>
-      (f.value? s.1).any (·.op == .Move)
+      (f.value? s.1).any (·.op == .Move) && (f'.value? s.1).any (·.op == .Zero)
     let srcs := movs.map fun s => match f.value? s.1 with
       | some fv => match fv.args.toList with
         | [_, s, _] => match f.value? s with

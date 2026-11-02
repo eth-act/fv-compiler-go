@@ -2486,12 +2486,73 @@ def roSeg? (tabs : Tables) (f : Func) (fv gv : Value) : Option (List ID × List 
     else none
   | _, _ => none
 
-/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?` or `roSeg?`): listed in
-its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block and type kept); its
-dropped values are listed in that block, its fresh values in that block of `g`; the fresh values
-and the anchor are roots of `g`, each of their arguments an earlier one of them, or an argument of
-a root of `f` of the segment (a dropped root, or the anchor) that is not dropped. The dropped and
-fresh values. -/
+/-- One store of a move segment: the `Store` `sa` of `f` (block `b`) at an `OffPtr [o]` of `p` (up
+to copies, pointer shape) with `0 ≤ o` and `o + size ≤ n` (positive size) became the `Store` `sb`
+of `g` with the same aux, type and value, at a fresh `OffPtr [o]` of `dst` (pointer shape). -/
+def moveStoreOK (tabs : Tables) (f g : Func) (p dst : ID) (n : Int64) (b : ID) (sa sb : Value) :
+    Bool :=
+  let sz := (Sem.auxTy tabs sa.aux).size
+  sa.op == .Store && sb.op == .Store && sa.args.size == 3 && sb.args.size == 3 &&
+    sb.aux == sa.aux && sb.type == sa.type && sb.args[1]! == sa.args[1]! && sa.block == b &&
+    sb.block == b && decide (0 < sz) && (f.value? sb.args[0]!).isNone &&
+    match f.value? sa.args[0]!, g.value? sb.args[0]! with
+    | some q, some q' =>
+      q.op == .OffPtr && q.args.size == 1 && isPtrTy (tabs.ty q.type) &&
+        copyEnd tabs f.valueTab f.valueTab.size q.args[0]! ==
+          copyEnd tabs f.valueTab f.valueTab.size p &&
+        q'.op == .OffPtr && q'.args == #[dst] && q'.auxInt == q.auxInt &&
+        isPtrTy (tabs.ty q'.type) && decide (0 ≤ q.auxInt.toInt) &&
+        decide (q.auxInt.toInt + sz ≤ n.toInt)
+    | _, _ => false
+
+/-- A move segment at the `Move` `x` (`generic.rules:1978` family; `f`'s `fv`, `g`'s `gv`): in `f`
+`Move [n] dst p mem` whose memory is (a `VarDef` of) `k ≥ 1` `Store`s of `x`'s block over a
+`Zero [n] p' _` (`p'` and the stores' `OffPtr`s of `p` up to copies), in `g` the same `Store`s
+(`moveStoreOK`) at fresh `OffPtr`s of `dst`, the anchor the first, over a fresh `Zero [n] dst mem`
+(of the `Zero`'s type).
+Nothing is dropped; the fresh values in dependency order: the `OffPtr`s, the `Zero`, the stores
+below the anchor bottom first. -/
+def moveSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (List ID × List ID) :=
+  match fv.op, fv.args.toList with
+  | .Move, [d, p, m] =>
+    let m1 := match f.value? m with
+      | some mv => if mv.op == .VarDef && mv.args.size == 1 then mv.args[0]! else m
+      | none => m
+    let (ns, m0) := freshChain f g 5 (lastArg gv)
+    match ns.getLast?, storesF f ns.length m1 with
+    | some z', some (fs, z) =>
+      match f.value? z, g.value? z' with
+      | some zv, some zv' =>
+        let n := fv.auxInt
+        let gs := x :: ns.dropLast
+        if gv.op == .Store && m0 == m && decide (0 ≤ n.toInt) && zv.op == .Zero &&
+            zv.args.size == 2 && zv.auxInt == n &&
+            copyEnd tabs f.valueTab f.valueTab.size zv.args[0]! ==
+              copyEnd tabs f.valueTab f.valueTab.size p &&
+            zv'.op == .Zero && zv'.args == #[d, m] && zv'.auxInt == n && zv'.type == zv.type &&
+            (fs.zip gs).all (fun (a, b) => match f.value? a, g.value? b with
+              | some sa, some sb => moveStoreOK tabs f g p d n fv.block sa sb
+              | _, _ => false) then
+          some ([], (gs.filterMap fun b => (g.value? b).map (·.args[0]!)) ++ ns.reverse)
+        else none
+      | _, _ => none
+    | _, _ => none
+  | _, _ => none
+
+/-- `a` is an argument of `s` in `f`, or an argument of one of its arguments, … (`k` levels),
+through values that are no `Phi`s. -/
+def argReach (f : Func) : Nat → ID → ID → Bool
+  | 0, _, _ => false
+  | k + 1, s, a => (f.value? s).any fun sv => sv.op != .Phi &&
+      (sv.args.contains a || sv.args.any fun b => argReach f k b a)
+
+/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?`, `roSeg?` or
+`moveSeg?`): listed in its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block
+and type kept); its dropped values are listed in that block, its fresh values in that block of
+`g`; the anchor is a root of `g`, and so is each fresh value but `OffPtr`s of arguments of roots
+of `f` of the segment (a dropped root, or the anchor); each argument of the fresh values and of
+the anchor is an earlier one of them, or reached from a root of `f` of the segment through the
+arguments (`argReach`) and not dropped. The dropped and fresh values. -/
 def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
@@ -2499,16 +2560,20 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
     if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
         (fv.op == .Store || fv.op == .SelectN || fv.op == .Move) && f.blocks.contains fv.block &&
         listed x then
-      match ((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
-          fun _ => roSeg? tabs f fv gv with
+      match (((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
+          fun _ => roSeg? tabs f fv gv).orElse fun _ => moveSeg? tabs f g x fv gv with
       | some (D, N) =>
         let L := N ++ [x]
         let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
+          (D ++ [x]).any fun s => CSE.rootNode f s && argReach f 8 s a
+        let argOf (a : ID) : Bool :=
           (D ++ [x]).any fun s => CSE.rootNode f s && (f.value? s).any (·.args.contains a)
         if D.all listed && D.all (CSE.rootNode f) &&
             N.all (fun n => (f.value? n).isNone && (g.block? fv.block).any (·.values.contains n) &&
               (g.value? n).any (·.block == fv.block)) &&
-            L.all (CSE.rootNode g) &&
+            CSE.rootNode g x &&
+            N.all (fun n => CSE.rootNode g n ||
+              (g.value? n).any fun v => v.op == .OffPtr && v.args.all argOf) &&
             (List.range L.length).all (fun i => (g.value? (L.getD i 0)).all fun v =>
               v.args.all fun a => (L.take i).contains a || ext a) then some (D, N)
         else none
@@ -2619,11 +2684,12 @@ def roSrcOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (fv : V
       ro.any fun e => e.1 == n && e.2.data.all (· == .b 0)
   | _ => false
 
-/-- The read-only segments (`roSeg?`; the anchors that are `Move`s of `f`) copy from symbols of
+/-- The read-only segments (`roSeg?`; the anchors that are `Move`s of `f` and `Zero`s of `g`) copy from symbols of
 `ro` whose bytes are zero, and `f` passes `WBCheck.memTyOK` (so every memory a run of `f` holds
 has the symbols of `ro`, `GoFV.Proof.MemInv`). -/
 def roSegsOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) : Bool :=
-  let movs := (segList (segArr tabs f g)).filter fun s => (f.value? s.1).any (·.op == .Move)
+  let movs := (segList (segArr tabs f g)).filter fun s =>
+    (f.value? s.1).any (·.op == .Move) && (g.value? s.1).any (·.op == .Zero)
   movs.isEmpty ||
     (WBCheck.memTyOK tabs f && movs.all fun s => (f.value? s.1).all (roSrcOK tabs ro f))
 
