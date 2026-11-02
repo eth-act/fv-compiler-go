@@ -148,12 +148,13 @@ def ssWhy (tabs : Tables) (f g : Func) : String := Id.run do
     | _, _ => pure ()
   return "global"
 
-/-- The first event of `log` the replay rejects, by class. -/
+/-- The first event of `log` the strict replay rejects (the lax one of `validate` skips it), by
+class. -/
 def replayWhy (tabs : Tables) (t : GoFV.Rules.Interp.Table) (f : Func)
     (log : Array GoFV.Rules.RwEvent) : String := Id.run do
   for i in [0:log.size] do
-    if (RewriteCheck.replay tabs t f f.valueTab [] (log.toList.take (i + 1))).isNone then
-      let M := match RewriteCheck.replay tabs t f f.valueTab [] (log.toList.take i) with
+    if (RewriteCheck.replay tabs t f false f.valueTab [] (log.toList.take (i + 1))).isNone then
+      let M := match RewriteCheck.replay tabs t f false f.valueTab [] (log.toList.take i) with
         | some (M, _) => M
         | none => f.valueTab
       let some ev := log[i]? | return "?"
@@ -188,8 +189,11 @@ def validateWhy (tabs : Tables) (t : GoFV.Rules.Interp.Table) (f g : Func)
   if !RewriteCheck.atomsOK f g then "atomsOK"
   else if !RewriteCheck.closedOK f then "closedOK f"
   else if !RewriteCheck.closedOK g then "closedOK g"
-  else match RewriteCheck.replay tabs t f f.valueTab [] log.toList with
-    | some (M, B) => if RewriteCheck.finalOK tabs f g M B then "?" else "finalOK"
+  else match RewriteCheck.replay tabs t f true f.valueTab [] log.toList with
+    | some (M, B) =>
+      if RewriteCheck.finalOK tabs f g M B then "?"
+      else if (RewriteCheck.replay tabs t f false f.valueTab [] log.toList).isSome then "finalOK"
+      else s!"finalOK: skipped {replayWhy tabs t f log}"
     | none => s!"replay: {replayWhy tabs t f log}"
 
 /-- The first layer of `RewriteCheck.layersOK` that fails (`ld`, `ss`, or the final

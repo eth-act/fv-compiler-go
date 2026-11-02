@@ -20,12 +20,12 @@ open GoFV.SSA GoFV.Opt GoFV.Rules
 
 /-- The replay reads only the table's value and block rules. -/
 theorem replay_congr {t T : Interp.Table} (hv : T.values = t.values) (hb : T.blocks = t.blocks)
-    (tabs : Tables) (f : Func) :
+    (tabs : Tables) (f : Func) (lax : Bool) :
     ∀ (M : RewriteCheck.Defs) (B : RewriteCheck.BMap) (evs : List RwEvent),
-      RewriteCheck.replay tabs T f M B evs = RewriteCheck.replay tabs t f M B evs
+      RewriteCheck.replay tabs T f lax M B evs = RewriteCheck.replay tabs t f lax M B evs
   | _, _, [] => rfl
   | M, B, ev :: evs => by
-    cases ev <;> simp only [RewriteCheck.replay, hv, hb, replay_congr hv hb tabs f _ _ evs]
+    cases ev <;> simp only [RewriteCheck.replay, hv, hb, replay_congr hv hb tabs f lax _ _ evs]
 
 /-- The validator reads only the table's value and block rules (the layers read the others). -/
 theorem validate_congr {t T : Interp.Table} (hv : T.values = t.values) (hb : T.blocks = t.blocks)

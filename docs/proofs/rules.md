@@ -674,10 +674,25 @@ is `.agg [p]`, Go's is the pointer; `docs/plans/semantics.md` §10). The checked
 applies their events: `RewriteCheck.replay` keeps the `Make` (and skips the copy-argument
 replacements the kept definitions do not justify), validates the selections of it Go makes copies
 of `x` as selections of a `Make` (`makeSelOK`, tried for every rule), and `finalOK` accepts a
-listed value whose definition differs from the replayed one only if it is a term nothing in the
-output reads (`readIn`; `final_den` is stated for read values). The `ld` layer takes neither kind
-of skipped event. Witness: `GoFV.Proof.Witness.drp_checkedRewrite` (`pick1`, `{dec.rules:120,
-dec.rules:115}`). Decompose builtin in the fragment: quick-v3 9060 → 9180, full-v4 90847 → 91514. **Not provable as
+listed value whose definition differs from the replayed one only if it is a term the output
+does not read. Witness: `GoFV.Proof.Witness.drp_checkedRewrite` (`pick1`, `{dec.rules:120,
+dec.rules:115}`). Decompose builtin in the fragment: quick-v3 9060 → 9180, full-v4 90847 → 91514.
+A dropped `Make` that stays read (issue #17, class 3) needs three more parts. (1) Go's `copyOf`
+retypes a selection whose argument copy elimination replaced by the dropped `Make`'s `x`
+(`StructSelect <Q> [0] v4` of `v4 = StructMake <R> v3` becomes `Copy <Q> p`): `validate` replays
+`lax`, skipping a table rule's event it does not validate like a dropped one (keeping a
+definition is always sound; `replay_inv` takes it as an identity step), while the `ld` layer
+replays strictly. (2) Later selections read through the kept ones: `makeSelOK` resolves the
+selected value through compatible copies and selections of a `Make`'s argument (`selArg`,
+`selRes`, at most `selFuel` = 8 steps; `selRes_den`: the resolved value's denotation refines the
+original's). (3) A dead `StructMake` the rewrite leaves (`leaveDeadValues`) can still list the
+dropped `Make` as argument: "read" is now liveness (`liveMarks`, an untrusted worklist, checked
+closed by `liveOK`: the controls, the arguments of listed atoms and of read listed terms are
+read; `Live`, `liveOK_facts`), and `final_den` is stated for read values. Witness:
+`GoFV.Proof.Witness.decNested_witness` (`nest`, the proven dec rules: a selection skipped by
+`lax`, one resolved through a kept selection, one through a copy, and a dead `StructMake` over a
+dropped one; `main` before rejected the run). Decompose builtin in the fragment (base f52e649):
+quick-v4 9199 → 9200, full-v5 91647 → 92054. **Not provable as
 `Rule.Sound`**: `:103`,
 `:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
 `:102` (`imakeOfStructMake`). **Pending**: the size-0 `Store` elimination `:10` (`=> mem`).

@@ -41,16 +41,21 @@ replays the log on a map of definitions, starting from the input `f`:
   #151: `rewriteStructLoad`, `Load <struct> p m` → `StructMake` of field `Load`s at `OffPtr`s);
 * a rule event of a selection of a `Make` (`GoFV.Proof.Rules.makeSelShape`, issue #17, e.g.
   `(ITab (IMake itab _)) => itab` or the variadic `(StructSelect [i] x:(StructMake ___)) =>
-  x.Args[i]`) is first checked per instance (`makeSelOK`), else as a rule instance (`ruleOK`);
+  x.Args[i]`) is first checked per instance (`makeSelOK`, the selected value resolved through
+  compatible copies and selections of `Make`s, `selRes`), else as a rule instance (`ruleOK`);
 * a rule event of an unconditional selection of a `Load` with an `@b` result
   (`GoFV.Proof.Rules.loadSelShape`, issue #17, `dec.rules:132`, `:141`) is checked per instance
   only (`loadSelOK`);
+* an event of a dropped rule (`dropShape`), a copy-argument replacement the copies do not
+  justify, and (in `validate`, `lax`) a table rule's event that is not validated are skipped:
+  the value keeps its definition;
 * a phi elimination rejects;
-* finally every value listed in the output `g` has the replayed definition up to copies:
-  each argument (and each control of `g`) is the replayed one or reached from it through
-  `Copy`s of the same shape (`copyReach`), which is how copy elimination and `copySource`'s
-  path compression rewrite arguments; every block of `g` has its replayed terminator (kind,
-  successors in the replayed order, controls up to copies).
+* finally every value listed in the output `g` that `g` reads (`liveMarks`, `liveOK`), and every
+  atom, has the replayed definition up to copies: each argument (and each control of `g`) is
+  the replayed one or reached from it through `Copy`s of the same shape (`copyReach`), which is
+  how copy elimination and `copySource`'s path compression rewrite arguments; every block of
+  `g` has its replayed terminator (kind, successors in the replayed order, controls up to
+  copies).
 
 `Rule.Sound` of every rule of the table then gives that each definition of `g` refines the
 input's as a term over the unchanged values (`GoFV.Proof.Term`).
@@ -839,32 +844,67 @@ def copyReachW (tabs : Tables) (M : Defs) (n : Nat) (a w : ID) : Bool :=
         intWord tabs M 4 x.args[0]! && copyReach tabs M n x.args[0]! w
     | none => false
 
-/-- The event `(v, defs)` selects an argument of a `Make`: `v` is a selection of component `k`
-(`selIndex?`) of `s` in `M`, `s` a `Make` whose argument `k` is a defined value `a`, `defs` is
-`v` as `Copy a` at `a`'s type (`copyOf`), and where the `Make`'s shape has a component `k`, `a`'s
-shape is that component's and `v`'s (`shapeSub`), or `a` is a 64-bit integer word (`intWord`)
-and both are word shapes (`wordTy`). -/
+/-- `y` is a `Make` whose component `k` is its argument `a` (defined as `w`) at the shape the
+selection `x` keeps: where `y`'s shape has a component `k`, `a`'s shape is that component's and
+`x`'s (`shapeSub`), or `a` is a 64-bit integer word (`intWord`) and both are word shapes
+(`wordTy`). -/
+def selArgOK (tabs : Tables) (M : Defs) (x y w : Value) (k : Nat) (a : ID) : Bool :=
+  makeOp y.op &&
+    match fieldShape? (tabs.ty y.type) k with
+    | some fk =>
+      (shapeSub (tabs.ty w.type) fk && shapeSub (tabs.ty w.type) (tabs.ty x.type)) ||
+      (intWord tabs M 4 a && wordTy fk && wordTy (tabs.ty x.type))
+    | none => true
+
+/-- The argument the selection `x` reads: `x` selects component `k` (`selIndex?`) of `s`, the
+resolver `r` takes `s` to a `Make` whose argument `k` is a defined value `a`, at a shape the
+selection keeps (`selArgOK`). -/
+def selArg (tabs : Tables) (M : Defs) (r : ID → ID) (x : Value) : Option ID :=
+  match x.args.toList, selIndex? x.op x.auxInt with
+  | [s], some k =>
+    match M.get? (r s) with
+    | some y =>
+      match y.args[k]? with
+      | some a =>
+        match M.get? a with
+        | some w => if selArgOK tabs M x y w k a then some a else none
+        | none => none
+      | none => none
+    | none => none
+  | _, _ => none
+
+/-- `a` resolved within `n` steps through copies compatible with their argument (`copyCompat`)
+and selections of a `Make`'s argument (`selArg`): a value whose denotation refines `a`'s (a
+selection of a `Make` the replay kept, issue #17: `(StructSelect [0] (StructSelect [1] x))` of
+`x = StructMake _ (StructMake p)` whose dropped inner `Make` Go made a copy of `p`). -/
+def selRes (tabs : Tables) (M : Defs) : Nat → ID → ID
+  | 0, a => a
+  | n + 1, a =>
+    match M.get? a with
+    | some x =>
+      if x.op == .Copy && x.args.size == 1 &&
+          (M.get? x.args[0]!).any (fun y => copyCompat (tabs.ty x.type) (tabs.ty y.type)) then
+        selRes tabs M n x.args[0]!
+      else
+        match selArg tabs M (selRes tabs M n) x with
+        | some b => selRes tabs M n b
+        | none => a
+    | none => a
+
+/-- Steps `makeSelOK` resolves a selection's argument through. -/
+def selFuel : Nat := 8
+
+/-- The event `(v, defs)` selects an argument of a `Make`: `v`'s selection reads `a` (`selArg`,
+its argument resolved by `selRes`), and `defs` is `v` as `Copy a` at `a`'s type (`copyOf`). -/
 def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
   match M.get? v, defs with
   | some x, [u] =>
-    match x.args.toList, selIndex? x.op x.auxInt with
-    | [s], some k =>
-      match M.get? s with
-      | some y =>
-        match y.args[k]? with
-        | some a =>
-          match M.get? a with
-          | some w =>
-            makeOp y.op && u.id == v && u.op == .Copy && u.args == #[a] && u.type == w.type &&
-            (match fieldShape? (tabs.ty y.type) k with
-              | some fk =>
-                (shapeSub (tabs.ty w.type) fk && shapeSub (tabs.ty w.type) (tabs.ty x.type)) ||
-                (intWord tabs M 4 a && wordTy fk && wordTy (tabs.ty x.type))
-              | none => true)
-          | none => false
-        | none => false
+    match selArg tabs M (selRes tabs M selFuel) x with
+    | some a =>
+      match M.get? a with
+      | some w => u.id == v && u.op == .Copy && u.args == #[a] && u.type == w.type
       | none => false
-    | _, _ => false
+    | none => false
   | _, _ => false
 
 /-! ## Selections of a `Load` without a condition (issue #17)
@@ -909,8 +949,11 @@ def loadSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
 if an event is not validated. An event of a dropped rule (`dropShape`) and a copy-argument
 replacement the copies of `M` do not justify are skipped: `M` keeps its definition, and
 `finalOK` accepts the output only where that value is no longer read (issue #17). A selection of
-a `Make` (`makeSelOK`) is accepted from any rule. -/
-def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
+a `Make` (`makeSelOK`) is accepted from any rule. With `lax` (`validate`), an event of a table
+rule that is not validated is skipped the same way (keeping a definition is always sound;
+`finalOK` decides): a selection of a dropped `Make` whose argument Go's `copyOf` retyped, issue
+#17. The `ld` layer replays strictly, to take only validated events. -/
+def replay (tabs : Tables) (t : Interp.Table) (f : Func) (lax : Bool) :
     Defs → BMap → List RwEvent → Option (Defs × BMap)
   | M, B, [] => some (M, B)
   | M, B, .rule v i _ defs :: evs =>
@@ -920,27 +963,27 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
       | none =>
         if structLoadOK tabs M v defs.toList then
-          replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+          replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
         else none
       | some cr =>
         if makeSelOK tabs M v defs.toList then
-          replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
-        else if dropShape cr.rule then replay tabs t f M B evs
+          replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else if dropShape cr.rule then replay tabs t f lax M B evs
         else if loadSelShape cr.rule then
           if loadSelOK tabs M v defs.toList then
-            replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+            replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
           else none
         else if ruleOK tabs M cr.rule v defs.toList then
-          replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
-        else none
+          replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
+        else if lax then replay tabs t f lax M B evs else none
   | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none
     | some x =>
       if h : i < x.args.size then
         if copyReachW tabs M M.size x.args[i] src then
-          replay tabs t f (M.put v { x with args := x.args.set i src }) B evs
-        else replay tabs t f M B evs
+          replay tabs t f lax (M.put v { x with args := x.args.set i src }) B evs
+        else replay tabs t f lax M B evs
       else none
   | M, B, .control b i c :: evs =>
     match bstate f B b with
@@ -948,7 +991,7 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
     | some st =>
       if h : i < st.ctrls.size then
         if copyReach tabs M M.size st.ctrls[i] c then
-          replay tabs t f M ((b, { st with ctrls := st.ctrls.set i c }) :: B) evs
+          replay tabs t f lax M ((b, { st with ctrls := st.ctrls.set i c }) :: B) evs
         else none
       else none
   | _, _, .phielim .. :: _ => none
@@ -963,7 +1006,8 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
       | some br =>
         match blockOK tabs M br st nc with
         | none => none
-        | some (defs, st') => replay tabs t f (defs.foldl (fun M u => M.put u.id u) M) ((b, st') :: B) evs
+        | some (defs, st') =>
+          replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) ((b, st') :: B) evs
 
 /-- A value that is not a term node: phis, roots and frame-dependent values (`termOp`). -/
 @[inline] def isAtom (x : Value) : Bool := !termOp x.op
@@ -1054,17 +1098,65 @@ def closedOK (h : Func) : Bool :=
       hb.values.all fun x => (h.value? x).all fun u => u.args.all fun a => L[a]? == some true
     | none => true
 
-/-- `x` is read in `h`: a control of a block of `h`, or an argument of a value listed in one. -/
-def readIn (h : Func) (x : ID) : Bool :=
-  h.blocks.any fun b => (h.block? b).any fun hb =>
-    hb.controls.contains x || hb.values.any fun y => (h.value? y).any fun u => u.args.contains x
+/-! ### Values the output reads
+
+`finalOK` compares the replayed definition of a listed value only where the output reads it: the
+controls of `h`'s blocks, the arguments of its listed atoms, and the arguments of its listed terms
+that are read themselves. A term read only by unread terms is dead (a dropped `Make` the replay
+kept, still an argument of an unread `StructMake`, issue #17). `liveMarks` computes the marks
+(untrusted, a worklist), `liveOK` checks that they are closed under these rules. -/
+
+/-- The listed terms' arguments by ID, the roots (controls and the listed atoms' arguments), and
+the number of arguments of listed values. -/
+def liveInit (h : Func) : Array (Option (Array ID)) × List ID × Nat :=
+  h.blocks.toList.foldl (init := (Array.replicate h.valueTab.size none, [], 0)) fun (T, R, n) b =>
+    match h.block? b with
+    | some hb =>
+      hb.values.toList.foldl (init := (T, hb.controls.toList ++ R, n)) fun (T, R, n) x =>
+        match h.value? x with
+        | some u =>
+          if termOp u.op then (T.set! x (some u.args), R, n + u.args.size)
+          else (T, u.args.toList ++ R, n + u.args.size)
+        | none => (T, R, n)
+    | none => (T, R, n)
+
+/-- The worklist of `liveMarks`: mark each popped value once, pushing a listed term's
+arguments. -/
+def liveGo (T : Array (Option (Array ID))) : Nat → List ID → Array Bool → Array Bool
+  | 0, _, L => L
+  | _ + 1, [], L => L
+  | n + 1, x :: xs, L =>
+    if L[x]? == some true then liveGo T n xs L
+    else
+      match T[x]? with
+      | some (some as) => liveGo T n (as.toList ++ xs) (L.set! x true)
+      | _ => liveGo T n xs (L.set! x true)
+
+/-- Marks of the values `h` reads (`liveOK` checks them). -/
+def liveMarks (h : Func) : Array Bool :=
+  let (T, R, n) := liveInit h
+  liveGo T (R.length + n + 1) R (Array.replicate h.valueTab.size false)
+
+/-- The marks `L` hold the controls of `h`'s blocks, the arguments of its listed atoms, and the
+arguments of its marked listed terms. -/
+def liveOK (h : Func) (L : Array Bool) : Bool :=
+  h.blocks.all fun b =>
+    match h.block? b with
+    | some hb =>
+      hb.controls.all (fun c => L[c]? == some true) &&
+      hb.values.all fun x => (h.value? x).all fun u =>
+        (termOp u.op && L[x]? != some true) || u.args.all fun a => L[a]? == some true
+    | none => true
 
 /-- Every value listed in `g` has its replayed definition, up to copies in its arguments, or is a
-term that nothing in `g` reads (`readIn`; the replay kept the input's definition of a dropped
-rule's value, issue #17), and every block of `g` its replayed terminator (`bstate`): the kind,
-the successors (swapped if the replay swapped them, then from two), the controls up to copies. -/
+term that `g` does not read (`liveMarks`, closed by `liveOK`; the replay kept the input's
+definition of a dropped rule's value or of an event it skipped, issue #17), and every block of `g`
+its replayed terminator (`bstate`): the kind, the successors (swapped if the replay swapped them,
+then from two), the controls up to copies. -/
 def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
   let n := M.size
+  let L := liveMarks g
+  liveOK g L &&
   g.blocks.all fun b =>
     match bstate f B b, f.block? b, g.block? b with
     | some st, some fb, some gb =>
@@ -1079,7 +1171,7 @@ def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
           (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
             u.aux == m.aux && u.args.size == m.args.size &&
             (m.args.toList.zip u.args.toList).all fun (a, a') => copyReachW tabs M n a a') ||
-          (termOp u.op && !readIn g x)
+          (termOp u.op && L[x]? != some true)
         | _, _ => false
     | _, _, _ => false
 
@@ -1087,7 +1179,7 @@ def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
 `log`) is related to `f` as the theorems need. -/
 def validate (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : Bool :=
   atomsOK f g && closedOK f && closedOK g &&
-  match replay tabs t f f.valueTab [] log.toList with
+  match replay tabs t f true f.valueTab [] log.toList with
   | some (M, B) => finalOK tabs f g M B
   | none => false
 
@@ -2556,7 +2648,7 @@ def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEven
     | some u =>
       if ldTarget s.M u && i < ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 &&
           !(((t.values[u.op.ctorIdx]?).bind (·[i]?)).any (dropShape ·.rule)) then
-        match replay tabs t f s.M [] [ev] with
+        match replay tabs t f false s.M [] [ev] with
         | some (M', _) =>
           let ds := match defs.toList with | w :: ds => w :: (ds.filter (·.id != v)).reverse | [] => []
           { g := slApply s.g v ds, M := M', taken := s.taken.push ev
@@ -2569,7 +2661,7 @@ def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEven
     | some u, some w =>
       if (u.op == .Load || w.op == .Load) &&
           (u.args[i]?).any (copyReachW tabs s.M s.M.size · src) then
-        match replay tabs t f s.M [] [ev] with
+        match replay tabs t f false s.M [] [ev] with
         | some (M', _) =>
           { g := s.g.setArg v i src, M := M', taken := s.taken.push ev
             rest := s.rest.filter fun | .copyArg y j _ => !(y == v && j == i) | _ => true }

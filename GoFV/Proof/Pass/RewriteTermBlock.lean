@@ -389,11 +389,12 @@ theorem BInv.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀
 
 /-! ## The replay -/
 
-/-- **Replay**: a successful replay of the log keeps `ReplayInv` and `BInv`. -/
+/-- **Replay**: a successful replay of the log keeps `ReplayInv` and `BInv` (strict or `lax`: a
+skipped event keeps both). -/
 theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
-    {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop} :
+    {f : Func} {lax : Bool} {D₀ : ID → Option Value} {C₀ : ID → Prop} :
     ∀ (evs : List RwEvent) (M M' : Defs) (B B' : BMap) (C : ID → Prop),
-      replay tabs (GoFV.Rules.Interp.Table.ofRuleSet s) f M B evs = some (M', B') →
+      replay tabs (GoFV.Rules.Interp.Table.ofRuleSet s) f lax M B evs = some (M', B') →
       ReplayInv tabs D₀ C₀ M C → BInv tabs f D₀ C₀ M C B →
       ∃ C', ReplayInv tabs D₀ C₀ M' C' ∧ BInv tabs f D₀ C₀ M' C' B'
   | [], M, M', B, B', C, h, hI, hB => by
@@ -448,7 +449,9 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
           (fun h' => h'.elim (fun h' => absurd h' hnls) (fun h' => absurd h' hnd)))
       exact replay_inv hs evs _ M' B B' _ h (hI.rule hsd F)
         (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ n y hy => F.step hsd hI.closed hρ n y hy)
-    · cases h
+    · split at h
+      · exact replay_inv hs evs M M' B B' C h hI hB
+      · cases h
   | .copyArg v i src :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replay at h
     split at h

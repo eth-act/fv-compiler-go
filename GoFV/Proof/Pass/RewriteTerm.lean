@@ -135,21 +135,45 @@ theorem zip_all_get' {α β : Type} {f : α × β → Bool} :
     simp only [List.zip_cons_cons, List.all_cons, Bool.and_eq_true] at h
     exact zip_all_get' h.2 k (by simpa using h1) (by simpa using h2)
 
+/-- `x` is marked by `liveMarks h` (read by the output, closed by `liveOK`). -/
+def Live (h : Func) (x : ID) : Prop := (liveMarks h)[x]? = some true
+
+theorem liveOK_facts {h : Func} {L : Array Bool} (hl : liveOK h L = true) : ∀ b ∈ h.blocks, ∀ hb,
+    h.block? b = some hb → (∀ c ∈ hb.controls, L[c]? = some true) ∧
+      ∀ x ∈ hb.values, ∀ u, h.value? x = some u → (termOp u.op = false ∨ L[x]? = some true) →
+        ∀ a ∈ u.args, L[a]? = some true := by
+  intro b hb hbk hbb
+  unfold liveOK at hl
+  have := (Array.all_eq_true_iff_forall_mem.1 hl) b hb
+  simp only [hbb, Bool.and_eq_true] at this
+  obtain ⟨h1, h2⟩ := this
+  refine ⟨fun c hc => ?_, fun x hx u hu hlx a ha => ?_⟩
+  · simpa using (Array.all_eq_true_iff_forall_mem.1 h1) c hc
+  · have := (Array.all_eq_true_iff_forall_mem.1 h2) x hx
+    simp only [hu, Option.all_some, Bool.or_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq] at this
+    rcases this with ⟨ht, hn⟩ | hall
+    · rcases hlx with hlx | hlx
+      · rw [hlx] at ht; cases ht
+      · exact absurd hlx hn
+    · simpa using (Array.all_eq_true_iff_forall_mem.1 hall) a ha
+
 theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
-    (h : finalOK tabs f g M B = true) :
+    (h : finalOK tabs f g M B = true) : liveOK g (liveMarks g) = true ∧
     ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ st fb, bstate f B b = some st ∧
       f.block? b = some fb ∧ gb.kind = st.kind ∧
       gb.succs = (if st.swapped then swapS fb.succs else fb.succs) ∧
       (st.swapped = true → fb.succs.size = 2) ∧ gb.controls.size = st.ctrls.size ∧
       (∀ k (h1 : k < st.ctrls.size) (h2 : k < gb.controls.size),
         copyReach tabs M M.size st.ctrls[k] gb.controls[k] = true) ∧
-      ∀ x ∈ gb.values, (readIn g x = true ∨ ∀ u, g.value? x = some u → termOp u.op = false) →
+      ∀ x ∈ gb.values, (Live g x ∨ ∀ u, g.value? x = some u → termOp u.op = false) →
         ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.op = m.op ∧
         u.type = m.type ∧ u.auxInt = m.auxInt ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
         ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
           copyReachW tabs M M.size m.args[j] u.args[j] = true := by
-  intro b hb gb hgb
   unfold finalOK at h
+  simp only [Bool.and_eq_true] at h
+  obtain ⟨hlive, h⟩ := h
+  refine ⟨hlive, fun b hb gb hgb => ?_⟩
   have := (Array.all_eq_true_iff_forall_mem.1 h) b hb
   split at this
   · rename_i st fb gb' hst hfb hgb'
@@ -169,8 +193,7 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
     · have := (Array.all_eq_true_iff_forall_mem.1 hv) x hx
       split at this
       · rename_i m u hm hu
-        simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_eq_eq_not,
-          Bool.not_true] at this
+        simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at this
         rcases this with this | ⟨ht, hr⟩
         · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
           refine ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, fun j h1 h2 => ?_⟩
@@ -178,41 +201,39 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
             (by simp [hsz]) j (by simpa using h1) (by simpa using h2)
           simpa using this
         · rcases hrd with hrd | hrd
-          · rw [hr] at hrd; cases hrd
+          · exact absurd hrd hr
           · rw [hrd u hu] at ht; cases ht
       · cases this
   · cases this
 
-/-- An argument of a value listed in a block of `h` is read in `h`. -/
-theorem readIn_arg {h : Func} {b : ID} (hb : b ∈ h.blocks) {hb' : Block}
-    (hbb : h.block? b = some hb') {y : ID} (hy : y ∈ hb'.values) {u : Value}
-    (hu : h.value? y = some u) {a : ID} (ha : a ∈ u.args) : readIn h a = true := by
-  unfold readIn
-  simp only [Array.any_eq_true', Option.any_eq_true, Bool.or_eq_true]
-  exact ⟨b, hb, hb', hbb, .inr ⟨y, hy, u, hu, by simpa using ha⟩⟩
+/-- An argument of a value listed in a block of `h` that is an atom or read is read. -/
+theorem live_arg {h : Func} (hl : liveOK h (liveMarks h) = true) {b : ID} (hb : b ∈ h.blocks)
+    {hb' : Block} (hbb : h.block? b = some hb') {y : ID} (hy : y ∈ hb'.values) {u : Value}
+    (hu : h.value? y = some u) (hly : termOp u.op = false ∨ Live h y) {a : ID} (ha : a ∈ u.args) :
+    Live h a :=
+  (liveOK_facts hl b hb hb' hbb).2 y hy u hu hly a ha
 
-/-- A control of a block of `h` is read in `h`. -/
-theorem readIn_ctrl {h : Func} {b : ID} (hb : b ∈ h.blocks) {hb' : Block}
-    (hbb : h.block? b = some hb') {c : ID} (hc : c ∈ hb'.controls) : readIn h c = true := by
-  unfold readIn
-  simp only [Array.any_eq_true', Option.any_eq_true, Bool.or_eq_true]
-  exact ⟨b, hb, hb', hbb, .inl (by simpa using hc)⟩
+/-- A control of a block of `h` is read. -/
+theorem live_ctrl {h : Func} (hl : liveOK h (liveMarks h) = true) {b : ID} (hb : b ∈ h.blocks)
+    {hb' : Block} (hbb : h.block? b = some hb') {c : ID} (hc : c ∈ hb'.controls) : Live h c :=
+  (liveOK_facts hl b hb hb' hbb).1 c hc
 
 /-! ## The final definitions -/
 
-/-- The replayed definitions refine those listed in `g` and read in `g` (up to the copies
-`finalOK` allows). -/
+/-- The replayed definitions refine those listed in `g` and read by `g` (`Live`; up to the
+copies `finalOK` allows). -/
 theorem final_den {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
     (hfin : finalOK tabs f g M B = true)
     (hcg : closedOK g = true) {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
     (hT : Term.Typed M.get? tabs ρ) :
-    ∀ n x, LM g x → readIn g x = true →
+    ∀ n x, LM g x → Live g x →
       Sem.Refines (den M.get? tabs ρ n x) (den (listedDefs g) tabs ρ' n x)
   | 0, _, _, _ => .poison _
   | n + 1, x, hx, hr => by
     have hmk := listedMarks_sound g x hx
     obtain ⟨b, hb, gb, hgb, hxv, -, -, -⟩ := id hmk
-    obtain ⟨-, -, -, -, -, -, -, -, -, hvals⟩ := finalOK_facts hfin b hb gb hgb
+    obtain ⟨hlive, hfacts⟩ := finalOK_facts hfin
+    obtain ⟨-, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
     obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv (.inl hr)
     have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
     have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
@@ -223,7 +244,7 @@ theorem final_den {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
       simp only [Array.getElem_toList]
       exact (copyReachW_den hT (hargs j (by simpa using h1) (by simpa using h2)) n).trans
         (final_den hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem _))
-          (readIn_arg hb hgb hxv hu (Array.getElem_mem _)))
+          (live_arg hlive hb hgb hxv hu (.inr hr) (Array.getElem_mem _)))
     · have h1 : ¬ IsTerm M.get? x := fun ⟨w, hw, hw'⟩ => by
         rw [hm] at hw; cases hw; exact ht hw'
       have h2 : ¬ IsTerm (listedDefs g) x := fun ⟨w, hw, hw'⟩ => by
@@ -258,7 +279,8 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
       have hbf : b ∈ f.blocks := hbl ▸ hb
       have hargsf := (closedOK_facts hcf b hbf fb hfb).2 a haf u' hu'
       obtain ⟨a'', ha'', -, hsz'', hrest⟩ := hI.atoms a u' hu' (hop ▸ hat) hargsf
-      obtain ⟨-, -, -, -, -, -, -, -, -, hvals⟩ := finalOK_facts hv b hb gb hgb
+      obtain ⟨hlive, hfacts⟩ := finalOK_facts hv
+      obtain ⟨-, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
       obtain ⟨m, w, hm, hw, -, -, -, -, hszw, hargs⟩ := hvals a ha
         (.inr fun w hw => by rw [hu] at hw; cases hw; exact hat)
       have hma : m = a'' := Option.some.inj (hm.symm.trans ha'')
@@ -276,11 +298,13 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
       have h1 := hk ρ hT
       rw [getElem!_pos m.args i (by omega)] at h1
       exact h1.trans ((copyReachW_den hTM hcopy k).trans
-        (final_den hv hcg hρ hTM k _ hmark (readIn_arg hb hgb ha hu (Array.getElem_mem hi))))
+        (final_den hv hcg hρ hTM k _ hmark (live_arg hlive hb hgb ha hu (.inl hat)
+          (Array.getElem_mem hi))))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := atomsOK_facts hA b hb gb hgb
       rw [hfb] at hfb'; obtain rfl := Option.some.inj hfb'
-      obtain ⟨st, fb'', hst, hfb'', hk, hsu, -, hsz, hctl, -⟩ := finalOK_facts hv b hb gb hgb
+      obtain ⟨hlive, hfacts⟩ := finalOK_facts hv
+      obtain ⟨st, fb'', hst, hfb'', hk, hsu, -, hsz, hctl, -⟩ := hfacts b hb gb hgb
       rw [hfb] at hfb''; obtain rfl := Option.some.inj hfb''
       have hbf : b ∈ f.blocks := hbl ▸ hb
       obtain ⟨hsw, -, hrel⟩ := hB b fb st hfb (closedOK_facts hcf b hbf fb hfb).1 hst
@@ -307,7 +331,7 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
           have h2' : k < gb.controls.size := by simpa using h2
           exact (copyReach_den hTM _ _ _ (hctl k h1' h2') m).trans (final_den hv hcg hρ hTM m _
             ((closedOK_facts hcg b hb gb hgb).1 _ (Array.getElem_mem h2'))
-            (readIn_ctrl hb hgb (Array.getElem_mem h2')))
+            (live_ctrl hlive hb hgb (Array.getElem_mem h2')))
   · cases hv
 
 end GoFV.Proof.Pass.Rewrite
