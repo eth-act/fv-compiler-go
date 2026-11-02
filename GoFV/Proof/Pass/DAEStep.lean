@@ -38,7 +38,7 @@ theorem resRel_stuck (msg : String) (r' : Res Val) : ResRel U (.stuck msg) r' :=
   ⟨fun _ h => (nomatch h), fun _ _ h => (nomatch h)⟩
 
 theorem resRel_of_call {r r' : Res Val} (h : CallRel U r r') : ResRel U r r' :=
-  ⟨fun y hy => (h.1 y hy).2, h.2⟩
+  ⟨fun y hy => (h.1 y hy).2, fun e m hp => (h.2 e m hp).2.2⟩
 
 /-- A `memRoot` that is neither a `NilCheck` nor stuck returns. -/
 theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv argv' : List Val}
