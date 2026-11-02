@@ -182,6 +182,18 @@ def regTupleOf (lts : List Ty) (t : Ty) : Bool :=
       | _ => false
   | _ => false
 
+/-- A shape a register piece may have: an integer, a boolean or a pointer. -/
+def scalarTy : Ty → Bool
+  | .int _ | .bool | .ptr _ => true
+  | _ => false
+
+/-- Some register piece of leaf shape `lt` (in `lts`) stands where `goResults`' Go-typed path
+expects a result of a shape `t` (in `ts`) that is no scalar: no value without `poison` has both
+shapes (a register holds a scalar, `regShapeOK`), so that path is not taken. -/
+def preMismatch : List Ty → List Ty → Bool
+  | lt :: lts, t :: ts => (scalarTy lt && !scalarTy t) || preMismatch lts ts
+  | _, _ => false
+
 /-- The post-`expand calls` op of a call op and its number of leading arguments. -/
 def callOpMap : Op → Option (Op × Nat)
   | .StaticLECall => some (.StaticCall, 0)
@@ -558,16 +570,42 @@ chain from the target's memory argument down to the source's (empty if they are 
 def resStores (f g : Func) (u w : Value) : Option (List ID) :=
   storeChain g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! u.args[u.args.size - 1]!
 
+/-- **A self-move**: the argument `a` of `MakeResult` `u` for the stack-assigned result `p` is
+`Dereference (LocalAddr {n}) mem` of `p`'s own slot `n` (a pointer-shaped `LocalAddr`) on `u`'s
+memory, of `p`'s shape (not zero-sized, `moveTy`), and the pass invalidated it
+(`rewriteFuncResults` skips it: the slot already holds the result, so no store). -/
+def selfMoveOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u : Value) (e : ABIParam × ID) :
+    Bool :=
+  invalidated g e.2 && moveTy (tabs.ty e.1.type) && moveTy (shapeOf sh f e.2) &&
+  match e.1.name, f.value? e.2 with
+  | some n, some au =>
+    au.op == .Dereference && au.args.size == 2 && au.args[1]! == u.args[u.args.size - 1]! &&
+      eqE (shapeOf sh f e.2) (tabs.ty e.1.type) &&
+      (match shapeOf sh f au.args[0]! with
+       | .ptr _ => true
+       | _ => false) &&
+      match f.value? au.args[0]! with
+      | some pu => pu.op == .LocalAddr && pu.aux == some n
+      | none => false
+  | _, _ => false
+
+/-- Per result of `MakeResult` `u` (with arguments `as`), whether it is a stack-assigned
+self-move (`selfMoveOK`). -/
+def selfMoves (tabs : Tables) (sh : Array Ty) (f g : Func) (u : Value) (ps : List ABIParam)
+    (as : List ID) : List Bool :=
+  (ps.zip as).map fun e => e.1.regs.isEmpty && selfMoveOK tabs sh f g u e
+
 /-- The frame variables of `f` in `tabs` (`Ctx.locals`). -/
 def localsOf (tabs : Tables) (f : Func) : Array (AuxRef × Nat × Option Nat) :=
   frameLocals tabs (((abiParams tabs f).filter (!·.out)).map (·.name))
 
-/-- The frame slot of the stack-assigned own result `p`: a well-formed shape inside the frame
-blocks' window, a name that is a `Blk.local` (`forgeable`), allocated by the frame (`locals`)
-with at least `p`'s size wherever it is listed. -/
+/-- The frame slot of the stack-assigned own result `p`: a `movTy` shape (byte blobs allowed:
+a result that is only ever a self-move is read back as bytes; a stored one needs `wf`,
+`resultOK`) inside the frame blocks' window, a name that is a `Blk.local` (`forgeable`),
+allocated by the frame (`locals`) with at least `p`'s size wherever it is listed. -/
 def resSlotOK (tabs : Tables) (locals : Array (AuxRef × Nat × Option Nat)) (p : ABIParam) : Bool :=
   let t := tabs.ty p.type
-  wf t && decide (t.size < 2 ^ 24) &&
+  movTy t && decide (t.size < 2 ^ 24) &&
     match p.name with
     | some n => tabs.forgeable n && locals.any (·.1 == n) &&
         locals.all (fun e => e.1 != n || decide (t.size ≤ e.2.1))
@@ -581,15 +619,18 @@ def namesDistinct : List (Option AuxRef) → Bool
 /-- **The function's own results**: register-assigned with as many registers as their shapes
 have leaves (`regParamsOK`), or, with stack-assigned ones, each register-assigned one so and
 each stack-assigned one in its frame slot (`resSlotOK`, distinct names), fewer or more register
-pieces than results (`goResults` then reads the slots), and memories only in memory ops
-(`WBCheck.memTyOK`: the source run's memories keep the slots, `EC.EcQ`). -/
+pieces than results or a scalar piece where a result is no scalar (`preMismatch`: `goResults`
+then reads the slots), and memories only in memory ops (`WBCheck.memTyOK`: the source run's
+memories keep the slots, `EC.EcQ`). -/
 def ownOutsOK (tabs : Tables) (f : Func) : Bool :=
   let outs := ownOuts tabs f
   regParamsOK tabs outs ||
     (outs.all (fun p => if p.regs.isEmpty then resSlotOK tabs (localsOf tabs f) p
         else wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size) &&
       namesDistinct ((outs.filter (·.regs.isEmpty)).map (·.name)) &&
-      (leafTys tabs outs).length != outs.length && WBCheck.memTyOK tabs f)
+      ((leafTys tabs outs).length != outs.length ||
+        preMismatch (leafTys tabs outs) (outs.map (tabs.ty ·.type))) &&
+      WBCheck.memTyOK tabs f)
 
 /-! ## The classes of source values -/
 
@@ -685,18 +726,20 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
 
 /-- **result**: a `MakeResult` of the function's results becomes the register pieces of its
 register-assigned results (selector chains) on a chain of new `Store`s of the leaves of its
-stack-assigned results into their frame slots (`resStoresOK`; the stored values selector chains,
-a stored value the source defines one of the results) on the source's memory. -/
+stored stack-assigned results into their frame slots (`resStoresOK`; well-formed shapes, the
+stored values selector chains, a stored value the source defines one of the results) on the
+source's memory; a self-moved stack-assigned result (`selfMoveOK`) is stored by nothing. -/
 def resultOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
   let outs := ownOuts tabs f
   let n := u.args.size
   let as := (u.args.extract 0 (n - 1)).toList
   let rp := argPairs true outs as
-  let sp := argPairs false outs as
+  let sp := (argPairs false outs as).filter fun e => !selfMoveOK tabs sh f g u e
   w.op == .MakeResult && n == outs.length + 1 && w.args.size ≥ 1 &&
     !special f g u.args[n - 1]! &&
     piecesOK tabs sh f g false (rp.map (·.1)) (rp.map (·.2))
       (w.args.extract 0 (w.args.size - 1)).toList &&
+    sp.all (fun e => wf (tabs.ty e.1.type)) &&
     (match resStores f g u w with
      | some zs =>
        resStoresOK tabs sh g (isNewB f) (resSlots tabs (sp.map (·.1))) zs &&
@@ -1051,6 +1094,17 @@ def ownStores (f g : Func) (x : ID) : List ID :=
 /-- The address argument of value `x` of `f`. -/
 def addrArg (f : Func) (x : ID) : ID := ((f.value? x).map (·.args[0]!)).getD x
 
+/-- The `LocalAddr`s that the self-moves of value `x` of `f` read (`selfMoveOK`); none unless `x`
+is a `MakeResult`. -/
+def selfAddrs (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : List ID :=
+  match f.value? x with
+  | some u =>
+    if u.op == .MakeResult then
+      (((argPairs false (ownOuts tabs f) (u.args.extract 0 (u.args.size - 1)).toList).filter
+        (selfMoveOK tabs sh f g u)).map fun e => addrArg f e.2)
+    else []
+  | none => []
+
 /-- The leaves of the Make-tree of a stack-assigned call result `x` of `f` (`SelectN [i] c`; the
 `Load`s of `stkLeavesOK`); none for other values. -/
 def stackLoads (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : List ID :=
@@ -1209,7 +1263,8 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     -- result stores (of the `Ret` control): values of the block, with no source non-pure node
     -- after one in `g`'s schedule (a store runs only when the source completes the block); the
     -- source memory reaches them; an invalidated argument of the block is before its reader in
-    -- `g`'s schedule
+    -- `g`'s schedule; the `LocalAddr` of a self-move, if a value of the block, too (its source
+    -- register holds its evaluation)
     (match schedule g gb with
      | some og => fb.values.all fun x => (ownStores f g x).all (fun z =>
          gb.values.contains z && noNpAfter (npOf f fb) og.toList z &&
@@ -1218,7 +1273,9 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
          (invalidated g x || match f.value? x with
           | some u => u.args.all fun a => !invalidated g a || !fb.values.contains a ||
               beforeB og.toList a x
-          | none => true)
+          | none => true) &&
+         (selfAddrs tabs sh f g x).all fun p => !fb.values.contains p ||
+           (!invalidated g p && beforeB og.toList p x)
      | none => false) &&
     -- new values; their new arguments are values of the block, of the entry block, or placed
     -- in a strict dominator

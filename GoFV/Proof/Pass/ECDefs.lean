@@ -68,40 +68,64 @@ def convTuple (tabs : Tables) (outs : List ABIParam) : Val → Val
     .tuple ((outs.zip vs).flatMap (fun (p, v) => regLeafVals tabs p v) ++ vs.drop outs.length)
   | _ => .poison
 
-/-- The memory `m` with the encodings of the stack-assigned results `rs` of `outs` written into
+/-- The memory `m` with the encodings of the stack-assigned results `rs` of `qs` written into
 their frame slots (`⟨.local 0 n, 0⟩` for result `n`), as the target's result stores leave it
-before its `Ret`; `none` if a write fails or a stack-assigned result has no name. -/
-def resMem (tabs : Tables) : List ABIParam → List Val → Mem → Option Mem
-  | p :: ps, r :: rs, m =>
-    if p.regs.isEmpty then
-      match p.name with
-      | some n => (m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty p.type) r)).bind (resMem tabs ps rs)
+before its `Ret`; a result marked as a self-move (`q.2`: already in its slot, `SkipOK`) is not
+written. `none` if a write fails or a written result has no name. -/
+def resMem (tabs : Tables) : List (ABIParam × Bool) → List Val → Mem → Option Mem
+  | q :: qs, r :: rs, m =>
+    if q.1.regs.isEmpty && !q.2 then
+      match q.1.name with
+      | some n => (m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty q.1.type) r)).bind (resMem tabs qs rs)
       | none => none
-    else resMem tabs ps rs m
+    else resMem tabs qs rs m
   | _, _, m => some m
 
-/-- The conversion of a `MakeResult`'s tuple `(results…, mem)`: the register pieces of the
-register-assigned results (`convTuple`) and the memory with the stack-assigned results in their
-frame slots (`resMem`; `poison` if a slot cannot be written). -/
-def convRes (tabs : Tables) (outs : List ABIParam) : Val → Val
+/-- A self-moved result `r` of shape `t` is already in its slot `n` of `m`: it contains `poison`
+(the source's `Ret` is then stuck), or it refines the decoding of the slot's bytes. -/
+def SelfHeld (t : Ty) (n : AuxRef) (r : Val) (m : Mem) : Prop :=
+  r.hasPoison = true ∨ ∃ bs, m.read ⟨.local 0 n, 0⟩ t.size = some bs ∧ Sem.Refines r (decode bs 0 t)
+
+/-- The results marked skipped in `qs` are stack-assigned, named and `SelfHeld` in `m`. -/
+def SkipOK (tabs : Tables) (m : Mem) : List (ABIParam × Bool) → List Val → Prop
+  | q :: qs, r :: rs => (q.2 = true → q.1.regs.isEmpty = true ∧
+      ∃ n, q.1.name = some n ∧ SelfHeld (tabs.ty q.1.type) n r m) ∧ SkipOK tabs m qs rs
+  | _, _ => True
+
+/-- The results `ps` (values `rs`, memory `m`) marked skipped: the self-move candidates `cs` that
+are stack-assigned, named and `SelfHeld` (decided classically: only proofs read it). -/
+noncomputable def resSkip (tabs : Tables) (m : Mem) :
+    List ABIParam → List Bool → List Val → List (ABIParam × Bool)
+  | [], _, _ => []
+  | p :: ps, cs, rs => (p, cs.headD false && p.regs.isEmpty &&
+      @decide (∃ n, p.name = some n ∧ SelfHeld (tabs.ty p.type) n (rs.headD .poison) m)
+        (Classical.propDecidable _)) ::
+    resSkip tabs m ps cs.tail rs.tail
+
+/-- The conversion of a `MakeResult`'s tuple `(results…, mem)` (`cs`: its self-move
+candidates): the register pieces of the register-assigned results (`convTuple`) and the memory
+with the stack-assigned results in their frame slots (`resMem`, skipping the self-moves already
+there, `resSkip`; `poison` if a slot cannot be written). -/
+noncomputable def convRes (tabs : Tables) (outs : List ABIParam) (cs : List Bool) : Val → Val
   | .tuple vs =>
     match vs.getLast? with
     | some (.mem m) =>
-      match resMem tabs outs vs m with
+      match resMem tabs (resSkip tabs m outs cs vs) vs m with
       | some M => .tuple ((outs.zip vs).flatMap (fun (p, v) => regLeafVals tabs p v) ++ [.mem M])
       | none => .poison
     | _ => .poison
   | _ => .poison
 
 /-- **The conversion of `expand calls`.** -/
-def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
+noncomputable def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
   if invalidated g x then .poison else
   match f.value? x with
   | some u =>
     if (callOpMap u.op).isSome then
       (convTuple tabs (callOuts tabs u.aux) y).retype (shapeOf (typeShapes tabs) g x)
     else if u.op == .MakeResult then
-      (convRes tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g x)
+      (convRes tabs (ownOuts tabs f) (selfMoves tabs (typeShapes tabs) f g u (ownOuts tabs f)
+        (u.args.extract 0 (u.args.size - 1)).toList) y).retype (shapeOf (typeShapes tabs) g x)
     else if wideSel f g x then .poison
     else y
   | none => y
@@ -167,14 +191,16 @@ theorem ecFront_wide_cases {f g : Func} {x a : ID}
 each of its result's shape; the target's refine the register pieces of the source's, each
 retyped at the shape of a register that holds its leaf without loss (`regShapeOK`: the leaf's
 shape, or a pointer register for a pointer or 64-bit integer leaf); the target's memory refines
-the source's with the stack-assigned results in their frame slots (`resMem`). -/
+the source's with the stack-assigned results in their frame slots (`resMem`), but the self-moves
+(`qs`, `SkipOK`), already there. -/
 def ecRR (tabs : Tables) (f : Func) (rs : List Val) (m : Mem) (rs' : List Val) (m' : Mem) : Prop :=
   List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) (ownOuts tabs f) rs ∧
     ∃ rts : List Ty,
       List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs (ownOuts tabs f)) rts ∧
       RefinesList (List.zipWith Val.retype rts
         (((ownOuts tabs f).zip rs).flatMap fun (p, r) => regLeafVals tabs p r)) rs' ∧
-      ∃ M, resMem tabs (ownOuts tabs f) rs m = some M ∧ Mem.Refines M m'
+      ∃ qs : List (ABIParam × Bool), qs.map (·.1) = ownOuts tabs f ∧ SkipOK tabs m qs rs ∧
+        ∃ M, resMem tabs qs rs m = some M ∧ Mem.Refines M m'
 
 /-- What `blockOK`'s `imkArgOK` gives for an argument `a` of a converted value `x` of block `fb`
 whose node in `g` is an `IMake` (the `IMake` data shortcut, `ECCheck.imakeData`): the source
