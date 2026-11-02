@@ -1190,12 +1190,13 @@ def loadSP (g : Func) (l : ID) : ID :=
   ((g.value? l).bind fun w => (g.value? w.args[0]!).map (·.args[0]!)).getD l
 def loadMem (g : Func) (l : ID) : ID := ((g.value? l).map (·.args[1]!)).getD l
 
-/-- `a` is the call whose stack-assigned result's address value `y` of `f` is (`selAddr`); the
-target's `Copy` of `y` does not read it. -/
-def selAddrArgB (tabs : Tables) (f : Func) (y a : ID) : Bool :=
-  match f.value? y with
-  | some u => selAddr tabs f u && u.args[0]! == a
-  | none => false
+/-- `x` is a source `SelectNAddr` that became a `Copy` (`selAddrOK`: of the slot's
+`OffPtr [off] SP`): its target node no longer reads the call, so `g`'s schedule may place it
+before the call; the target evaluates it from the frame alone (**frame-determined**). -/
+def frameDet (f g : Func) (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | some u, some w => u.op == .SelectNAddr && w.op == .Copy
+  | _, _ => false
 
 /-- The `SP` under the address that the target's `Copy` of a result address `x` of `f`
 (`selAddrOK`) reads; none for other values. -/
@@ -1263,21 +1264,25 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
       | some of, some og => of.toList.filter (npOf f fb) == og.toList.filter (npOf f fb)
       | _, _ => false) &&
     -- every argument of a source node reaches it in `g` (but those of a value the pass
-    -- invalidated, and the `Dereference` a call's `Move` copies, whose own arguments reach it);
-    -- a wide call result (dead in `g`) is pure and its arguments reach it instead
-    -- (`Order.Feeds.through`); the call of a result address (`selAddr`, whose `Copy` in `g`
-    -- does not read it) precedes it in `g`'s schedule
-    fb.values.all (fun y => !nodeF y || invalidated g y ||
+    -- invalidated or made frame-determined, and the `Dereference` a call's `Move` copies, whose
+    -- own arguments reach it); a wide call result (dead in `g`) is pure and its arguments reach
+    -- it instead (`Order.Feeds.through`)
+    fb.values.all (fun y => !nodeF y || invalidated g y || frameDet f g y ||
       match f.value? y with
       | some u => u.args.all fun a => (!nodeF a || wideSel f g a || (nodeG a &&
           (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y)) ||
           (moveArgB f g y a && throughB f g nodeF nodeG fuel a y) ||
-          (invalidated g a && throughB f g nodeF nodeG fuel a y) ||
-          (selAddrArgB tabs f y a && !invalidated g a && match schedule g gb with
-            | some og => beforeB og.toList a y
-            | none => false)) &&
+          (invalidated g a && throughB f g nodeF nodeG fuel a y)) &&
           (!wideSel f g a || throughB f g nodeF nodeG fuel a y)
       | none => false) &&
+    -- a frame-determined value is read in `gb` only by source non-pure nodes that read it in the
+    -- source too (the source evaluates it before them; `Order.transfer_rank_ex`)
+    gb.values.all (fun b => match g.value? b with
+      | some w => w.op == .Phi || w.args.all (fun a => !frameDet f g a ||
+          (npOf f fb b && match f.value? b with
+            | some ub => ub.args.contains a
+            | none => false))
+      | none => true) &&
     -- no node of `gb` reads an invalidated value
     gb.values.all (fun z => match g.value? z with
       | some w => w.op == .Phi || w.args.all (fun a => !invalidated g a)

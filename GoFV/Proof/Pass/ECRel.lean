@@ -78,6 +78,17 @@ def SchedBefore (g : Func) (gb : Block) (a x : ID) : Prop :=
 /-- The target node of `x` is `Invalid` (a source value the pass no longer uses). -/
 def TgtInvalid (g : Func) (x : ID) : Prop := ∃ w, g.value? x = some w ∧ w.op = .Invalid
 
+/-- Source value `x` is a `SelectNAddr` whose target node is a `Copy` (of its slot's
+`OffPtr [off] SP`, `ECCheck.selAddrOK`): the target evaluates it from the frame alone, and its
+schedule may list it before the source evaluates it (**frame-determined**). -/
+def FrameX (f g : Func) (x : ID) : Prop :=
+  ∃ u w, f.value? x = some u ∧ u.op = .SelectNAddr ∧ g.value? x = some w ∧ w.op = .Copy
+
+/-- A value whose source node is not a `SelectNAddr` is not frame-determined. -/
+theorem not_frameX {f g : Func} {x : ID} {u : Value} (hu : f.value? x = some u)
+    (h : u.op ≠ .SelectNAddr) : ¬ FrameX f g x := fun ⟨u', _, hu', hop, _⟩ => by
+  rw [hu] at hu'; cases hu'; exact h hop
+
 /-- `z` is a non-`Phi` value of block `fb` and a source argument of `x`. -/
 def SrcArg (f : Func) (fb : Block) (x z : ID) : Prop :=
   z ∈ fb.values ∧ (∃ u, f.value? x = some u ∧ z ∈ u.args) ∧ ∀ uz, f.value? z = some uz → uz.op ≠ .Phi
@@ -85,11 +96,12 @@ def SrcArg (f : Func) (fb : Block) (x z : ID) : Prop :=
 /-- The values whose source registers hold their evaluations when `x` of block `fb` is
 evaluated: values of `fb` that `x` depends on in the target's block `gb`, the non-`Phi` values
 placed in strict dominators of `fb` (`Avail.DInv`), values of `fb` that precede `x` in the
-target's schedule, and `x`'s source arguments in `fb` (the source evaluated them before `x`). -/
+target's schedule (but frame-determined ones, which the target may evaluate before the source
+does), and `x`'s source arguments in `fb` (the source evaluated them before `x`). -/
 def Held (f g : Func) (fb gb : Block) (x z : ID) : Prop :=
   (z ∈ fb.values ∧ Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) z x) ∨
     (∃ v, Placed f z v ∧ v.op ≠ .Phi ∧ Anc (make f) v.block fb.id ∧ v.block ≠ fb.id) ∨
-    (z ∈ fb.values ∧ ¬ TgtInvalid g z ∧ SchedBefore g gb z x) ∨ SrcArg f fb x z
+    (z ∈ fb.values ∧ ¬ TgtInvalid g z ∧ ¬ FrameX f g z ∧ SchedBefore g gb z x) ∨ SrcArg f fb x z
 
 /-- `z` is a non-`Phi` value of `g` placed in a strict dominator of block `gb` (its target
 register holds its evaluation in `gb`, `Avail.DInv` on the target). -/
@@ -161,15 +173,16 @@ def NewObl (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (front :
     ∃ y, evalValue env (Ctx.make tabs g) T w = .ok y
 
 /-- New value `z` of block `gb` is anchored at a source value `c` of `fb` (whose target node is
-not `Invalid`): its obligation `NewObl` (with a `front` of source values that reach it in `gb`,
-the values of `fb` before it in the target's schedule, and the values `HeldT` in `g`), and in
-`g`'s schedule no source non-pure node lies between `z` and `c` (`z` runs only when the source
-reaches `c`). -/
+neither `Invalid` nor frame-determined): its obligation `NewObl` (with a `front` of source values
+that reach it in `gb`, the values of `fb` before it in the target's schedule but frame-determined
+ones, and the values `HeldT` in `g`), and in `g`'s schedule no source non-pure node lies between
+`z` and `c` (`z` runs only when the source reaches `c`). -/
 def AnchoredAt (tabs : Tables) (f g : Func) (cv : Cv) (isNew : ID → Bool) (fb gb : Block)
     (z : ID) : Prop :=
-  ∃ c ∈ fb.values, ¬ TgtInvalid g c ∧ ∃ fr : List ID,
+  ∃ c ∈ fb.values, ¬ TgtInvalid g c ∧ ¬ FrameX f g c ∧ ∃ fr : List ID,
     NewObl tabs f g cv isNew fr
-      (fun a => (a ∈ fb.values ∧ ¬ TgtInvalid g a ∧ SchedBefore g gb a z) ∨ SrcArg f fb c a)
+      (fun a => (a ∈ fb.values ∧ ¬ TgtInvalid g a ∧ ¬ FrameX f g a ∧ SchedBefore g gb a z) ∨
+        SrcArg f fb c a)
       (HeldT g gb z) c z ∧
     (∀ a ∈ fr, isNew a = false ∧ (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a z)) ∧
@@ -243,19 +256,24 @@ structure CvBlock (fb gb : Block) : Prop where
     of.toList.filter (npIn (schedNodes f fb).toList) = og.toList.filter (npIn (schedNodes f fb).toList)
   feeds : ∀ a y, NodeIn (schedNodes f fb).toList a → NodeIn (schedNodes f fb).toList y →
     a ∈ argsOf (schedNodes f fb).toList y → NodeIn (schedNodes g gb).toList y → ¬ TgtInvalid g y →
+    ¬ FrameX f g y →
     Feeds (NodeIn (schedNodes f fb).toList) (NodeIn (schedNodes g gb).toList)
       (argsOf (schedNodes f fb).toList) (argsOf (schedNodes g gb).toList)
-      (PureIn (schedNodes f fb).toList) y a ∨ (¬ TgtInvalid g a ∧ SchedBefore g gb a y)
+      (PureIn (schedNodes f fb).toList) y a
   invalid : ∀ x ∈ fb.values, TgtInvalid g x →
     (∀ y, cv x y = .poison) ∧ ∀ w, g.value? x = some w → NewEval tabs g w
   invArgs : ∀ a b, NodeIn (schedNodes g gb).toList b → a ∈ argsOf (schedNodes g gb).toList b →
     ¬ TgtInvalid g a
+  /-- a frame-determined value's target readers are non-pure source nodes reading it -/
+  fxArgs : ∀ a b, NodeIn (schedNodes g gb).toList b → a ∈ argsOf (schedNodes g gb).toList b →
+    FrameX f g a → NodeIn (schedNodes f fb).toList b ∧ ¬ PureIn (schedNodes f fb).toList b ∧
+      a ∈ argsOf (schedNodes f fb).toList b
   obl : ((make f).depthOf fb.id).isSome → ∀ x ∈ fb.values, ∀ u, f.value? x = some u →
     u.op ≠ .Phi → Obl tabs f g cv isNew (front x) (Held f g fb gb x) (HeldT g gb x) x
   front : ∀ x ∈ fb.values, ∀ u, f.value? x = some u → u.op ≠ .Phi → ∀ a ∈ front x, isNew a = false ∧
     (a ∈ gb.values → (∃ w, g.value? a = some w ∧ w.op = .Phi) ∨
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x ∨
-      SchedBefore g gb a x)
+      (SchedBefore g gb a x ∧ ¬ FrameX f g a))
   ctrl : fb.kind = .If ∨ fb.kind = .JumpTable → ∀ c ∈ fb.controls, ∀ y, cv c y = y
   ret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y y', RegOK (Ctx.make tabs f) c y →
     Sem.Refines (cv c y) y' →

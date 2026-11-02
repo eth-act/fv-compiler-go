@@ -108,7 +108,7 @@ theorem eco_blockOK {tabs : Tables} {anc : ID → ID → Bool} {f g : Func} {bid
   | some gb =>
     rw [hgb] at h
     simp only [Bool.and_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ :=
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hsub⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hval⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ :=
       h
     refine ⟨gb, rfl, fun x hx => ?_, fun x hx u hu hphi => ?_⟩
     · exact Array.contains_iff_mem.1 (Array.all_eq_true'.1 hsub x hx)
@@ -187,7 +187,8 @@ theorem eco_selectOK {tabs : Tables} {f g : Func} {x c : ID} {u w cu : Value}
       · rename_i ls hls
         simp only [Bool.and_eq_true] at h
         split at h
-        · exact eco_mkTree_stk hw hinv hls ((Bool.and_eq_true _ _).1 h.2).2
+        · rw [Bool.and_eq_true] at h
+          exact eco_mkTree_stk hw hinv hls h.2.2
         · exact eco_mkTree_sel hw hinv hls h.2
       · cases h
     · cases h
@@ -260,7 +261,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       HeldT g gb x a)
     (hma : (callOpMap u.op).isSome = true → ∀ w, g.value? x = some w → ∀ a, ecMoveArg f g u w a →
       SrcArg f fb x a)
-    (hdep : invalidated g x = false → ∀ a ∈ u.args, a ∈ fb.values →
+    (hdep : invalidated g x = false → frameDet f g x = false → ∀ a ∈ u.args, a ∈ fb.values →
       (∀ ua, f.value? a = some ua → ua.op ≠ .Phi) → moveArgB f g x a = false →
       wideSel f g a = false → invalidated g a = false →
       Dep (NodeIn (schedNodes g gb).toList) (argsOf (schedNodes g gb).toList) a x)
@@ -268,7 +269,8 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
       (isNewB f (loadSP g l) = false → HeldT g gb x (loadSP g l)) ∧
       (isNewB f (loadMem g l) = false → HeldT g gb x (loadMem g l)))
     (hsa : ∀ p ∈ selfAddrs tabs (typeShapes tabs) f g x, p ∈ fb.values →
-      ¬ TgtInvalid g p ∧ SchedBefore g gb p x) :
+      ¬ TgtInvalid g p ∧ SchedBefore g gb p x)
+    (haddr : ∀ s ∈ addrSP tabs f g x, isNewB f s = false → HeldT g gb x s) :
     Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) (Held f g fb gb x) (HeldT g gb x) x := by
   have Wf := check_wf hf
   have Wg := check_wf hg
@@ -356,7 +358,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
               unfold argPairs
               exact List.mem_filter.2 ⟨he, by simp [hst]⟩
             obtain ⟨hni, hsb⟩ := hsa _ hmem hpf
-            exact .inr (.inr (.inl ⟨hpf, hni, hsb⟩))
+            exact .inr (.inr (.inl ⟨hpf, hni, not_frameX hpu (by rw [hpop]; decide), hsb⟩))
           · have hpl' : Placed f e.2 au := ⟨hau, hvb, blk, hblk', hab⟩
             have hp0 : au.args[0]! ∈ au.args := by
               rw [← Array.mem_toList_iff, ec_args_two hsz]
@@ -421,7 +423,8 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
               by_cases hcf : u.args[0]! ∈ fb.values
               · have hmv : moveArgB f g x u.args[0]! = false := by
                   unfold moveArgB stackMoves; rw [hu, hw]; dsimp only; rw [if_neg hc]; rfl
-                exact .inl ⟨hcf, hdep hinv _ hcmem hcf (fun ua hua => by
+                exact .inl ⟨hcf, hdep hinv (frameDet_of_src hu (by rw [hsel]; decide)) _ hcmem hcf
+                  (fun ua hua => by
                   rw [hcu] at hua; cases hua; exact hcphi) hmv
                   (ecA_not_wideSel hcu fun h => absurd hcall (by rw [h]; decide))
                   (ecA_callOK_facts hcw hvc).1⟩
@@ -483,17 +486,49 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
     have hinv : invalidated g x = false := by
       unfold invalidated; rw [hw]; exact Bool.eq_false_iff.2 hi
     have hwid : w.id = x := (hL x hLx w hw).1
-    by_cases ha : (u.op == .Arg && !identOK f g u w) = true
-    · rw [ite_eq_left ha] at hv
-      simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at ha
-      exact obl_arg hu hw ha.1 hinv ha.2 hv hown huid _ hLx hL
-    rw [ite_eq_right ha] at hv
     have hsp : special f g x = false := by
       unfold special converted
       rw [hu, hinv, hws']
       dsimp only
       rw [Bool.eq_false_iff.2 hc, Bool.eq_false_iff.2 hr]
       rfl
+    by_cases hsel : selAddr tabs f u = true
+    · -- a result address: its call is held in the source, the `SP` under it in the target
+      rw [if_pos hsel] at hv
+      have hsel' := hsel
+      unfold selAddr at hsel'
+      simp only [Bool.and_eq_true, beq_iff_eq] at hsel'
+      obtain ⟨⟨hop, hsz⟩, hso⟩ := hsel'
+      obtain ⟨p, hst⟩ := Option.isSome_iff_exists.1 hso
+      obtain ⟨cu, hcu, hcall, -, -, -⟩ := ecr_stackOut hst
+      have hargs : u.args.toList = [u.args[0]!] := ec_args_one hsz
+      have hcmem : u.args[0]! ∈ u.args :=
+        Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton_self _)
+      obtain ⟨cw, hcw, hcok⟩ :=
+        eco_callOK hf hec (Wf.argListed bid fb x u ⟨⟨hbid, hfb⟩, hx, hu⟩ _ hcmem) hcu hcall
+      have hcphi : cu.op ≠ .Phi := fun h => absurd hcall (by rw [h]; decide)
+      have hHc : Held f g fb gb x u.args[0]! := by
+        by_cases hcf : u.args[0]! ∈ fb.values
+        · exact .inr (.inr (.inr ⟨hcf, ⟨u, hu, hcmem⟩, fun uz huz => by
+            rw [hcu] at huz; cases huz; exact hcphi⟩))
+        · have hpl : Placed f x u :=
+            ⟨hu, by rw [hublk]; exact hbid, fb, by rw [hublk]; exact hfb, hx⟩
+          obtain ⟨va, ⟨hva, hvb, blk, hblk', hab⟩, hanc⟩ :=
+            AtomSim.arg_anc Wf hcert hpl (by rw [hublk, ← hfid]; exact htree) hphi hcmem
+          rw [hcu] at hva
+          cases hva
+          rw [hublk, ← hfid] at hanc
+          refine .inr (.inl ⟨cu, ⟨hcu, hvb, blk, hblk', hab⟩, hcphi, hanc, fun he => hcf ?_⟩)
+          rw [he, hfid, hfb] at hblk'
+          cases hblk'
+          exact hab
+      exact obl_selAddr hu hw huid hop hargs hsel hst hcw hcok hcu hv hsp _ hLx hL hHc haddr
+    rw [if_neg hsel] at hv
+    by_cases ha : (u.op == .Arg && !identOK f g u w) = true
+    · rw [ite_eq_left ha] at hv
+      simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at ha
+      exact obl_arg hu hw ha.1 hinv ha.2 hv hown huid _ hLx hL
+    rw [ite_eq_right ha] at hv
     exact obl_ident hu hw huid hwid hv hsp hown
 
 end GoFV.Proof.EC

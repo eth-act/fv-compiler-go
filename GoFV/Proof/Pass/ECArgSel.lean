@@ -564,7 +564,8 @@ theorem obl_select {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c : ID} 
   have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
   obtain ⟨yc, hyc⟩ := hRS c hcmem
   obtain ⟨hinvc, hoo, htup, hrtup⟩ := ecA_callOK_facts hcw hcok
-  obtain ⟨yc', hyc', hR⟩ := hfr c (ecFront_src hinv hu hcmem hinvc) yc hyc
+  obtain ⟨yc', hyc', hR⟩ := hfr c (ecFront_src hinv (frameDet_of_src (g := g) hu (by rw [hop]; decide)) hu hcmem
+    hinvc) yc hyc
   have hwfo := ec_outsOK_wf hoo
   rw [ecA_cv_call hcu hcall hinvc, ecT_shapeOf_value hcw] at hR
   obtain ⟨us, hus, husl, huse, husm⟩ := ecA_tupleOf_get htup

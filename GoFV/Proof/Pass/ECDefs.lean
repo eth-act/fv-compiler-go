@@ -135,9 +135,10 @@ pass invalidated (their conversion is `poison`, and no target node reads their r
 arguments (and, for a call, its wide stack arguments' `Move`s' arguments; for a `MakeResult`, the
 values its result stores store) in the target that the source defines, and the arguments of its
 wide call-result arguments (`wideSel`: the call whose register pieces a wide store writes); none
-for a value the pass invalidated (its target node reads nothing). -/
+for a value the pass invalidated (its target node reads nothing) or made frame-determined
+(`frameDet`: its target node reads only new values). -/
 def ecFront (f g : Func) (x : ID) : List ID :=
-  if invalidated g x then [] else
+  if invalidated g x || frameDet f g x then [] else
   (((f.value? x).map (·.args.toList)).getD []).filter (fun a => !invalidated g a) ++
     ((((g.value? x).map (·.args.toList)).getD []) ++
       (stackMoves f g x).flatMap (fun z => ((g.value? z).map (·.args.toList)).getD []) ++
@@ -148,18 +149,37 @@ def ecFront (f g : Func) (x : ID) : List ID :=
 
 /-- A value a result store of `x` stores, which the source defines, is in the front. -/
 theorem ecFront_own {f g : Func} {x q : ID} (hi : invalidated g x = false)
+    (hfd : frameDet f g x = false)
     (hq : q ∈ (ownStores f g x).map (storeVal g)) (hn : isNewB f q = false) :
     q ∈ ecFront f g x := by
   unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true]
+  rw [hi, hfd, Bool.or_false, if_neg Bool.false_ne_true]
   exact List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
     ⟨List.mem_append_right _ hq, by rw [hn]; rfl⟩))
 
+/-- A value whose source node is not a `SelectNAddr` is not frame-determined. -/
+theorem frameDet_of_src {f g : Func} {x : ID} {u : Value} (hu : f.value? x = some u)
+    (h : u.op ≠ .SelectNAddr) : frameDet f g x = false := by
+  unfold frameDet
+  rw [hu]
+  cases g.value? x with
+  | none => rfl
+  | some w => simp [h]
+
+/-- A value whose target node is not a `Copy` is not frame-determined. -/
+theorem frameDet_of_tgt {f g : Func} {x : ID} {w : Value} (hw : g.value? x = some w)
+    (h : w.op ≠ .Copy) : frameDet f g x = false := by
+  unfold frameDet
+  rw [hw]
+  cases f.value? x with
+  | none => rfl
+  | some u => simp [h]
+
 theorem ecFront_src {f g : Func} {x a : ID} {u : Value} (hi : invalidated g x = false)
-    (hu : f.value? x = some u) (ha : a ∈ u.args) (hia : invalidated g a = false) :
-    a ∈ ecFront f g x := by
+    (hfd : frameDet f g x = false) (hu : f.value? x = some u) (ha : a ∈ u.args)
+    (hia : invalidated g a = false) : a ∈ ecFront f g x := by
   unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true, hu]
+  rw [hi, hfd, Bool.or_false, if_neg Bool.false_ne_true, hu]
   exact List.mem_append_left _ (List.mem_append_left _
     (List.mem_filter.2 ⟨Array.mem_toList_iff.2 ha, by rw [hia]; rfl⟩))
 
@@ -171,20 +191,22 @@ theorem ec_not_invalidated {f g : Func} {a : ID} (h : special f g a = false) :
   exact h.1.2
 
 theorem ecFront_tgt {f g : Func} {x a : ID} {w : Value} (hi : invalidated g x = false)
+    (hfd : frameDet f g x = false)
     (hw : g.value? x = some w) (ha : a ∈ w.args) (hn : isNewB f a = false) :
     a ∈ ecFront f g x := by
   unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true, hw]
+  rw [hi, hfd, Bool.or_false, if_neg Bool.false_ne_true, hw]
   refine List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2 ⟨?_, ?_⟩))
   · exact List.mem_append_left _ (List.mem_append_left _ (Array.mem_toList_iff.2 ha))
   · simp [hn]
 
 /-- An argument of a wide call-result argument (`wideSel`) is in the front. -/
 theorem ecFront_wide {f g : Func} {x a c : ID} {u au : Value} (hi : invalidated g x = false)
-    (hu : f.value? x = some u) (ha : a ∈ u.args) (hwa : wideSel f g a = true)
+    (hfd : frameDet f g x = false) (hu : f.value? x = some u) (ha : a ∈ u.args)
+    (hwa : wideSel f g a = true)
     (hau : f.value? a = some au) (hc : c ∈ au.args) : c ∈ ecFront f g x := by
   unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true, hu]
+  rw [hi, hfd, Bool.or_false, if_neg Bool.false_ne_true, hu]
   refine List.mem_append_right _ (List.mem_flatMap.2 ⟨a, List.mem_filter.2
     ⟨Array.mem_toList_iff.2 ha, hwa⟩, ?_⟩)
   rw [hau]

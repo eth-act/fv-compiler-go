@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECMain
 import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.StackF2
+import GoFV.Proof.Witness.UuidNew
+import GoFV.Proof.PtrAddr
 import GoFV.Proof.Witness.Util
 
 /-!
@@ -392,7 +394,8 @@ theorem ec_not_invalidated_witness : ECCheck.invalidated ivG 5 = false :=
 theorem hwr_ownStores :
     ((expandCallsPass hwrPassEnv hwr).toOption.map fun o =>
       ECCheck.ownStores hwr o.func 11 == [2] && (o.func.value? 2).map (·.args[1]!) == some 10 &&
-        !ECCheck.invalidated o.func 11 && !ECCheck.isNewB hwr 10) = some true := by
+        !ECCheck.invalidated o.func 11 && !ECCheck.isNewB hwr 10 &&
+        !ECCheck.frameDet hwr o.func 11) = some true := by
   decide +kernel
 
 /-- `EC.ecFront_own` on `syscall_hasWaitingReaders`: its result store `v2` stores the source
@@ -407,8 +410,8 @@ theorem expandCalls_ownFront_witness :
     rw [hpe] at hp
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true,
       beq_iff_eq, Bool.not_eq_true'] at hp
-    obtain ⟨⟨⟨hos, hv2⟩, hi⟩, hn⟩ := hp
-    refine ⟨out, rfl, hos, EC.ecFront_own hi ?_ hn⟩
+    obtain ⟨⟨⟨⟨hos, hv2⟩, hi⟩, hn⟩, hfd⟩ := hp
+    refine ⟨out, rfl, hos, EC.ecFront_own hi hfd ?_ hn⟩
     have hsv : ECCheck.storeVal out.func 2 = 10 := by
       unfold ECCheck.storeVal
       cases h2 : out.func.value? 2 with
@@ -418,5 +421,51 @@ theorem expandCalls_ownFront_witness :
         exact Option.some.inj hv2
     rw [hos, List.map_cons, List.map_nil, hsv]
     exact List.mem_singleton_self _
+
+/-! ## A stack-assigned call result read by its address -/
+
+/-- `check`'s environment for the pass output of `uuid.New`. -/
+def uuidOutCheckEnv (o : PassOut) : CheckEnv := { tabs := o.tables, typs := sf2Typs }
+
+theorem uuid_checks :
+    (check uuidCheckEnv uuidNew).toBool = true ∧ expandCallsFrag uuidPassEnv uuidNew = true ∧
+      (uuidNew.value? 8).map (·.op) = some .SelectNAddr := by
+  decide +kernel
+
+theorem uuid_pass :
+    ((expandCallsPass uuidPassEnv uuidNew).toOption.map fun o =>
+      (check (uuidOutCheckEnv o) o.func).toBool &&
+        (o.func.value? 8).map (·.op) == some .Copy &&
+        (o.func.value? 6).map (·.op) == some .StaticCall) = some true := by
+  decide +kernel
+
+/-- **Non-vacuity of `expandCalls_refines` on a result address**: `uuid.New` reads its callee's
+`[16]byte` result (a byte blob, no `wf` shape) by its address (`v8 = SelectNAddr v6`); expand
+calls computes the address from the frame (`v8 = Copy (OffPtr [8] SP)`, frame-determined), and
+the output refines the input under monotone contracts that keep the caller's frame. -/
+theorem expandCalls_selAddr_witness :
+    ∃ out, expandCallsPass uuidPassEnv uuidNew = .ok out ∧
+      (uuidNew.value? 8).map (·.op) = some .SelectNAddr ∧
+      (out.func.value? 8).map (·.op) = some .Copy ∧
+      (out.func.value? 6).map (·.op) = some .StaticCall ∧
+      RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) out.tables out.func uuidPassEnv.tables
+        uuidNew := by
+  obtain ⟨hc, hfrag, hsa⟩ := uuid_checks
+  have hp := uuid_pass
+  cases hpe : expandCallsPass uuidPassEnv uuidNew with
+  | error e => rw [hpe] at hp; cases hp
+  | ok out =>
+    rw [hpe] at hp
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true,
+      beq_iff_eq] at hp
+    obtain ⟨⟨hcg, hcp⟩, hcall⟩ := hp
+    exact ⟨out, rfl, hsa, hcp, hcall,
+      GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag⟩
+
+/-- `Ptr.word_outargs` at the slot of offset 8 of activation 0 (`uuid.New`'s callee result):
+its word reads back as the slot. -/
+theorem expandCalls_slotWord_witness :
+    ∃ x, (⟨.outargs 0, 8⟩ : Ptr).word = .int .w64 x ∧ Ptr.ofAddr x = ⟨.outargs 0, 8⟩ :=
+  Ptr.word_outargs (by decide) (by decide)
 
 end GoFV.Proof.Witness

@@ -192,9 +192,8 @@ theorem ecr_outsOK {tabs : Tables} {ps : List ABIParam} (h : outsOK tabs ps = tr
   rw [Bool.and_eq_true, List.all_eq_true] at h
   refine ⟨fun p hp hst => ?_, ecs_slotsSorted_pairwise h.2⟩
   have := h.1 p hp
-  rw [Bool.and_eq_true, hst, if_pos rfl, Bool.and_eq_true, decide_eq_true_eq,
-    decide_eq_true_eq] at this
-  exact this.2
+  rw [hst, if_pos rfl, Bool.and_eq_true, decide_eq_true_eq, decide_eq_true_eq] at this
+  exact this
 
 /-! ## The target's leaves -/
 
@@ -365,7 +364,8 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
   have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
   obtain ⟨yc, hyc⟩ := hRS c hcmem
   obtain ⟨hinvc, hoo, htup, hrtup⟩ := ecA_callOK_facts hcw hcok
-  obtain ⟨yc', hyc', hR⟩ := hfr c (ecFront_src hinv hu hcmem hinvc) yc hyc
+  obtain ⟨yc', hyc', hR⟩ := hfr c (ecFront_src hinv (frameDet_of_src (g := g) hu (by rw [hop]; decide)) hu hcmem
+    hinvc) yc hyc
   have hwfo := ec_outsOK_wf hoo
   obtain ⟨hbnd, hpw⟩ := ecr_outsOK hoo
   rw [ecA_cv_call hcu hcall hinvc, ecT_shapeOf_value hcw] at hR
@@ -623,8 +623,9 @@ theorem ecr_selectNAddr_slot {ai : Int64} {act : Nat} {outs : List ABIParam} {p 
   have hl : (rs ++ [Val.mem m, ecrAddrs act outs]).getLast? = some (ecrAddrs act outs) := by
     rw [show rs ++ [Val.mem m, ecrAddrs act outs] = (rs ++ [Val.mem m]) ++ [ecrAddrs act outs] by
       simp, List.getLast?_concat]
-  simp only [Tuple.selectNAddr, hl, ecrAddrs, show ¬ ai.toInt < 0 by omega, ↓reduceIte,
-    List.getElem?_map, hp, Option.map_some, hpst]
+  simp only [Tuple.selectNAddr, hl]
+  simp only [ecrAddrs, show ¬ ai.toInt < 0 by omega, ↓reduceIte, List.getElem?_map, hp,
+    Option.map_some, hpst]
 
 /-- The slot of offset `k` of activation 0's outgoing-arguments area converts to its address. -/
 theorem ecr_slot_word {k : Nat} (hk : k < 2 ^ 24) :
@@ -728,8 +729,8 @@ theorem obl_selAddr {tabs : Tables} {f g : Func} {x c : ID} {u w cu cw : Value}
   rw [hw] at hw'; cases hw'
   rw [funext (ecCv_of_not_special (tabs := tabs) hsp0)]
   have hc0 : u.args[0]! = c := by
-    have h := congrArg (·[0]!) hargs
-    simpa using h
+    have hua : u.args = #[c] := Array.ext' (by rw [hargs])
+    simp [hua]
   obtain ⟨cu', hcu', hcall, hi0, hp, hpst⟩ := ecr_stackOut hst
   rw [hcu] at hcu'; cases hcu'
   -- the target's node: `Copy q`
@@ -780,6 +781,7 @@ theorem obl_selAddr {tabs : Tables} {f g : Func} {x c : ID} {u w cu cw : Value}
   rw [hco0] at hevc
   obtain ⟨rs, m, a, m0, P, rfl, hF, -, ha⟩ := ecr_callOp_src' hpre habi hco0
   obtain ⟨us, hus, husl, hue, hul⟩ := ecf_tupleOf htup
+  rw [hco] at hue husl
   rw [ecf_valueTy] at hus
   have hycv : yc = .tuple (rs ++ [.mem m, a]) := by
     simp only [Res.bind, Res.ok.injEq] at hevc

@@ -110,6 +110,32 @@ theorem convert_asPtrWord (t : Ty) (p : Ptr) (m : Val) {x : BitVec 64}
     | _ => cases h
   | _ => cases h
 
+/-- **`Ptr.word` reads back as the pointer** wherever a pointer is read (`Val.asPtrWord`): the
+concrete address of a convertible pointer converts back to it (`Ptr.ofAddr_addr`), any other
+pointer stays a pointer. -/
+theorem Ptr.word_asPtrWord (p : Ptr) : p.word.asPtrWord = some p := by
+  unfold Ptr.word
+  cases hc : p.convertible <;> cases ha : p.addr?
+  · rfl
+  · rfl
+  · rfl
+  · simp only [Val.asPtrWord, Ptr.ofAddr_addr hc ha]
+
+/-- **A slot of an outgoing-arguments area is an integer word** (`SelectNAddr`'s result,
+`Tuple.selectNAddr`): the area of every activation numbered below `2^20` has a concrete address
+(`Blk.base?`), and for every offset inside its window the word `Ptr.ofAddr` reads back is exactly
+the slot `⟨outargs act, off⟩`. -/
+theorem Ptr.word_outargs {act : Nat} {off : BitVec 64} (ha : act < 2 ^ 20)
+    (ho : off.toNat < 2 ^ 24) :
+    ∃ x, (⟨.outargs act, off⟩ : Ptr).word = .int .w64 x ∧
+      Ptr.ofAddr x = ⟨.outargs act, off⟩ := by
+  have hc : (⟨.outargs act, off⟩ : Ptr).convertible = true := by
+    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨ha, ho⟩
+  refine ⟨BitVec.ofNat 64 (2 ^ 62 + act * 2 ^ 42) + off, ?_, Ptr.ofAddr_addr hc rfl⟩
+  unfold Ptr.word
+  rw [hc]
+  rfl
+
 /-- **Pointer arithmetic on an integer word** (§3.3): where the pointer at address `x` plus `k`
 stays inside its block's address window, the integer `x + k` addresses that pointer. -/
 theorem Ptr.ofAddr_add_of_inWindow {x k : BitVec 64} (h : ((Ptr.ofAddr x).add k).inWindow = true) :

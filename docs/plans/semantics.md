@@ -429,8 +429,16 @@ expand: Go-typed results, memory last; post-expand: register pieces, memory last
 `SelectNAddr [i]` is the address of stack-assigned result `i` in the outgoing-arguments area
 (§5): a call's tuple carries, after its memory, the addresses of its results (`poison` for
 register results), so `SelectNAddr` is a pure op of its argument (`evalValue` never looks at
-other values of the function; `poison` for a register result); a tuple has the shape of its type when its first components do
-(`Val.hasTyPre`). `MakeResult` builds the `Ret` control (§7).
+other values of the function; `poison` for a register result). It returns the slot's address
+as the **integer word** address arithmetic computes for it (`Ptr.word`: the concrete address of
+a `Ptr.convertible` pointer, else the pointer), because after `expand calls` Go computes it as
+`OffPtr [off] SP` of the `uintptr` `SP` (`rewriteSelectOrArg`'s `offsetFrom(SP,
+OffsetOfResult)`), an integer word: both forms then agree on the value. Every reader of a
+pointer-shaped value reads it through `Val.asPtrWord`, and the word reads back as the slot
+itself (`Ptr.word_asPtrWord`; `Ptr.word_outargs`: an outgoing-arguments area always has a
+concrete address, and for an activation below `2^20` and an offset inside the `2^24` window
+`Ptr.ofAddr` of the word is exactly `⟨outargs act, off⟩`). A tuple has the shape of its type
+when its first components do (`Val.hasTyPre`). `MakeResult` builds the `Ret` control (§7).
 
 ### 4.9 Pseudo and out-of-phase ops
 `Copy` identity; `Phi` §3.6; `Convert` §3.3 (memory argument only orders it). `InlMark` no

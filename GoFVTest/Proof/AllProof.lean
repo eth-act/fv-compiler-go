@@ -574,6 +574,7 @@ import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TabsAgreeMod
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
+import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.Witness.WFCheck
 import GoFV.Proof.Witness.WriteBarrier
 import GoFV.Proof.Witness.ZCSE

@@ -109,7 +109,14 @@ theorem obl_ident {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT : I
     have hfa : a ∈ ecFront f g x := by
       have hi : invalidated g x = false := by
         unfold special at hsp; simp only [Bool.or_eq_false_iff] at hsp; exact hsp.1.2
-      exact ecFront_src hi hu (Array.mem_toList_iff.1 ha) (ec_not_invalidated hsa')
+      have hfd : frameDet f g x = false := by
+        unfold frameDet; rw [hu, hw]
+        refine Bool.eq_false_iff.2 fun h => ?_
+        simp only [Bool.and_eq_true, beq_iff_eq] at h
+        unfold identOK at hok
+        rw [h.1, h.2] at hok
+        simp at hok
+      exact ecFront_src hi hfd hu (Array.mem_toList_iff.1 ha) (ec_not_invalidated hsa')
     obtain ⟨y', hy', hyy⟩ := hfront a hfa y hy
     rw [ecCv_of_not_special hsa'] at hyy
     exact ⟨y', hy', hyy⟩
