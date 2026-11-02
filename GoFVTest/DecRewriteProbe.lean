@@ -196,6 +196,7 @@ def replayWhy (tabs : Tables) (t : Interp.Table) (f : Func) :
         else .error "control: copyReach"
       else .error "control: index"
   | _, _, .phielim .. :: _ => .error "phielim"
+  | _, _, .snap .. :: _ => .error "snap"
   | _, _, .blockRule .. :: _ => .error "blockRule"
 
 /-- The first value of `g` that `finalOK` rejects. -/

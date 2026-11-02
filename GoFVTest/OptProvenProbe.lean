@@ -126,6 +126,7 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
           else return s!"control b{b} {i}: v{st.ctrls[i]} does not reach v{c}"
         else return s!"control b{b} {i}: no control"
     | .phielim .. => return "phielim"
+    | .snap .. => return "snap"
     | .blockRule b i nc =>
       match bstate f B b with
       | none => return s!"blockRule at missing b{b}"
@@ -461,6 +462,13 @@ def segsWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) (k 
     else if !CopyCheck.copyOK tabs h h' then s!"{pk}: {phiWhy tabs h h'}"
     else if let .error e := check ce h' then s!"{pk}: check post {e}"
     else s!"{pk} → {segsWhy env tabs t f0 g (k + 1) h' #[] evs}"
+  | f, seg, .snap pre :: evs =>
+    let h := dropInvalid pre
+    let pk := s!"snap#{k}"
+    if !layersOK env t f0 { func := h, tables := tabs } layers f seg then
+      s!"{pk}: {layersWhy env tabs t f0 h layers f seg}"
+    else if let .error e := check { tabs := tabs, typs := env.typs } h then s!"{pk}: check {e}"
+    else s!"{pk} → {segsWhy env tabs t f0 g (k + 1) h #[] evs}"
   | f, seg, ev :: evs => segsWhy env tabs t f0 g k f (seg.push ev) evs
 
 /-- Per stock pass name the counts; `fns`/`fnsChecked`: functions (export files) with a rewrite

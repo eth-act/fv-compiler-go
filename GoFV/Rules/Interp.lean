@@ -322,9 +322,10 @@ def structStoreDefs (f0 f : Func) (v : ID) : Array Value :=
 
 /-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. `slDefs`: log the
 values a struct-load expansion built (`structLoadDefs`) after `v`; `ssDefs`: those of a
-struct-store split (`structStoreDefs`). -/
-def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs : Bool := false) :
-    RwM Bool := do
+struct-store split (`structStoreDefs`); `snap`: log the function before the rule's edit as a
+`snap` event before the rule's. -/
+def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs : Bool := false)
+    (snap : Bool := false) : RwM Bool := do
   let r := cr.rule
   let x ← val v
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
@@ -334,18 +335,19 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
     if !(← pendingOk sc st) then return false
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
-    -- the function before a struct-store split (its fresh values are those it lacks); kept
-    -- only then, as holding it makes the rule's edits copy the tables
-    let f0? ← if ssDefs && (← get).log.isSome then some <$> getF else pure none
+    -- the function before a struct-store split (its fresh values are those it lacks) or a
+    -- snapshot; kept only then, as holding it makes the rule's edits copy the tables
+    let f0? ← if (ssDefs || snap) && (← get).log.isSome then some <$> getF else pure none
     let built ← applyResult sc r v
     modify fun s => { s with fired := s.fired + 1 }
     if (← get).log.isSome then
       let f ← getF
       let defs := (#[some v] ++ built).filterMap fun id => id.bind f.value?
       let defs := if slDefs then defs ++ structLoadDefs f v else defs
-      let defs := match f0? with
-        | some f0 => defs ++ structStoreDefs f0 f v
-        | none => defs
+      let defs := match f0?, ssDefs with
+        | some f0, true => defs ++ structStoreDefs f0 f v
+        | _, _ => defs
+      if snap then if let some f0 := f0? then logEv fun _ => .snap f0
       logEv fun _ => .rule v idx st.binds defs
     return true
 
@@ -424,9 +426,10 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let n := t.segBase o
   for h : i in [0:gs.size] do
     if ← tryRule v gs[i] (n + i) then return true
+  -- `Phi` selections log the function before them (the validator splits the log there)
   let ps := t.phiSels
   for h : i in [0:ps.size] do
-    if ← tryRule v ps[i] (n + gs.size + i) then return true
+    if ← tryRule v ps[i] (n + gs.size + i) (snap := true) then return true
   return false
 
 /-! ## Block rules -/

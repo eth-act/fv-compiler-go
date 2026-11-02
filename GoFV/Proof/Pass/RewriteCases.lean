@@ -186,7 +186,7 @@ theorem checkedRewrite_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out
       simp only [pure, Except.pure, Except.ok.injEq] at h
       subst h; exact .inl ⟨rfl, rfl⟩
 
-/-- Without phi eliminations, `segsOK` is `layersOK` on the whole log. -/
+/-- Without phi eliminations and snapshots, `segsOK` is `layersOK` on the whole log. -/
 theorem segsOK_noPhi {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} (f : Func) :
     ∀ (evs : List RwEvent) (seg : Array RwEvent), (∀ ev ∈ evs, RewriteCheck.notPhiElim ev = true) →
       RewriteCheck.segsOK penv t f0 out f seg evs =
@@ -199,6 +199,7 @@ theorem segsOK_noPhi {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pass
       apply Array.ext'; simp
     cases ev with
     | phielim v d pre => cases h _ List.mem_cons_self
+    | snap pre => cases h _ List.mem_cons_self
     | _ => simp only [RewriteCheck.segsOK]; rw [ih, ha]
 
 /-- A table without nil-check eliminations (`Interp.Table.nilChecks`) has no nil-check events. -/
