@@ -87,10 +87,21 @@ theorem r_generic_2146_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 … => (Move {t1} [s] dst src midmem)` -/
 theorem r_generic_2155_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2155 := rfl
 
+/-- `generic.rules:2251`: `(Load (Addr {s} sb) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` (issue #69: the read from the read-only symbol's allocation, `RewriteCheck.fixedOK`,
+under `Sem.RoImage`) -/
+theorem r_generic_2251_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2251 := rfl
+
+/-- `generic.rules:2255`: `(Load (OffPtr [off] (Addr {s} sb) ) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
+theorem r_generic_2255_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2255 := rfl
+
 /-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
 `Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e
 mem)`, a changed write) do not have the shape. -/
 example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_842 = false := rfl
 example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_997 = false := rfl
+/-- The fixed loads through `Convert` or `ITab` (`:2256`, `:2257`), whose pointers `fixedOK`
+does not follow, do not have the shape. -/
+example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_2256 = false := rfl
+example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_2257 = false := rfl
 
 end GoFV.Proof.Rules

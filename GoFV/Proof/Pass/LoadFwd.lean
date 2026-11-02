@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.LoadFwdInv
+import GoFV.Proof.Pass.LoadFwdFixed
 import GoFV.Proof.Pass.LoadFwdMoveSrc
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.AtomSim
@@ -27,8 +27,8 @@ namespace GoFV.Proof.Pass.LoadFwd
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.RewriteCheck GoFV.Proof.Term GoFV.Proof.AtomSim
 open GoFV.Proof.Pass.Rewrite GoFV.Proof.CSE.Mem
 
-/-- What `fwdRel` establishes. -/
-structure FwdFacts (tabs : Tables) (f g : Func) : Prop where
+/-- What `fwdRel` (with the read-only symbols `ro`) establishes. -/
+structure FwdFacts (tabs : Tables) (ro : List (String × Alloc)) (f g : Func) : Prop where
   atoms : atomsXOK f g = true
   cf : closedOK f = true
   cg : closedOK g = true
@@ -36,7 +36,7 @@ structure FwdFacts (tabs : Tables) (f g : Func) : Prop where
   bext : ∀ b ∈ f.blocks, ∀ fb, f.block? b = some fb → ∃ gb, g.block? b = some gb ∧
     gb = { fb with values := gb.values } ∧ ∀ x ∈ fb.values, x ∈ gb.values
   rank : fwdRankOK f (fwdRank f) = true
-  rep : ∀ x < f.valueTab.size, fwdRepOK tabs f g x = true
+  rep : ∀ x < f.valueTab.size, fwdRepOK tabs ro f g x = true
 
 theorem blocksExtOK_spec {f g : Func} (h : blocksExtOK f g = true) :
     g.blocks = f.blocks ∧ ∀ b ∈ f.blocks, ∀ fb, f.block? b = some fb → ∃ gb,
@@ -54,8 +54,8 @@ theorem blocksExtOK_spec {f g : Func} (h : blocksExtOK f g = true) :
       Array.contains_iff_mem] at this
     exact ⟨gb, rfl, this.1, this.2⟩
 
-theorem fwdRel_spec {tabs : Tables} {f g : Func} (h : fwdRel tabs f g = true) :
-    FwdFacts tabs f g := by
+theorem fwdRel_spec {tabs : Tables} {ro : List (String × Alloc)} {f g : Func}
+    (h : fwdRel tabs ro f g = true) : FwdFacts tabs ro f g := by
   unfold fwdRel at h
   simp only [Bool.and_eq_true, List.all_eq_true, List.mem_range] at h
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h6⟩, h7⟩ := h
@@ -79,18 +79,6 @@ theorem fwdRankOK_spec {f : Func} {rk : Array Nat} (h : fwdRankOK f rk = true) {
     · exact absurd h1 hph
     · intro a ha
       simpa using (Array.all_eq_true_iff_forall_mem.1 h1) a ha
-
-theorem loadOp_other {t : Ty} {p m : Val} (h : ¬ ∃ a M, p.asPtrWord = some a ∧ m = .mem M) :
-    loadOp t [p, m] = .poison := by
-  unfold loadOp
-  split
-  · rename_i a M heq
-    simp only [List.cons.injEq] at heq
-    obtain ⟨rfl, rfl, -⟩ := heq
-    split
-    · rename_i q hq; exact absurd ⟨q, M, hq, rfl⟩ h
-    · rfl
-  · rfl
 
 /-- `fwdScalarEq` shapes retype alike. -/
 theorem fwdScalarEq_retype {t s : Ty} (h : fwdScalarEq t s = true) :
@@ -405,7 +393,7 @@ theorem memCopyReach_den {g : Func} {tabs : Tables} {ρ : ID → Val} :
         exact memCopyReach_den N hr (retype_eq_mem hk)
 
 section
-variable {tabs : Tables} {f g : Func} (F : FwdFacts tabs f g)
+variable {tabs : Tables} {ro : List (String × Alloc)} {f g : Func} (F : FwdFacts tabs ro f g)
 include F
 
 /-- A value listed in `f` is listed in `g`, as `g`'s value. -/
@@ -422,7 +410,8 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
       ((w.op = u.op ∧ w.auxInt = u.auxInt ∧ w.aux = u.aux ∧ w.args = u.args) ∨
        (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true) ∨
        fwdConstOK tabs f u w = true ∨ dropOK tabs f g u w = true ∨
-       fwdMoveRep tabs f g u w = true ∨ moveSrcOK tabs f u w = true) := by
+       fwdMoveRep tabs f g u w = true ∨ moveSrcOK tabs f u w = true ∨
+       fixedOK tabs ro f u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
@@ -433,12 +422,13 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
-    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hm
+    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | (((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hm
     · exact .inl ⟨hop, hai, hax, hargs⟩
     · exact .inr (.inl ⟨hop, hsz, hok⟩)
     · exact .inr (.inr (.inl hc))
     · exact .inr (.inr (.inr (.inl hd)))
-    · exact .inr (.inr (.inr (.inr (.inr hs))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inl hs)))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr hx)))))
     · exact .inr (.inr (.inr (.inr (.inl hm))))
 
 /-- The arguments of a value listed in `f` are listed. -/
@@ -647,9 +637,11 @@ theorem drop_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
   exact retype_mono _ (.mem hR)
 
 /-- **Values as terms**: each value listed in `f` is refined by the same value listed in `g`,
-for valuations whose memory roots hold the writes of their arguments. -/
+for valuations whose memory roots hold the writes of their arguments, under the forwarding
+layer's frame invariant (`FwdQ`: fresh malloc calls' registers, the read-only symbols `ro` in the
+registers' memories). -/
 theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.value? tabs ρ)
-    (hM : MemAtoms f.value? tabs ρ) (hQ : FreshQ tabs f ρ) :
+    (hM : MemAtoms f.value? tabs ρ) (hQ : FwdQ tabs ro f ρ) :
     ∀ (r : Nat) (x : ID), (fwdRank f)[x]?.getD 0 = r → LM f x → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n x) (den (listedDefs g) tabs ρ' m x) := by
   intro r
@@ -665,9 +657,9 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   have hIH : ∀ a, (fwdRank f)[a]?.getD 0 < r → LM f a → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla => ih _ ha a rfl hla
-  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms
+  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms | hfx
   rotate_left 3
-  · exact drop_den F hT hM hQ hx hu hL hwty hdrop (fun a ha hla => hIH a (hr ▸ ha) hla) n
+  · exact drop_den F hT hM hQ.1 hx hu hL hwty hdrop (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · exact move_den F hT hM hx hu hL hwty hmv (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · -- a `Move` with a changed source: an atom of both
     obtain ⟨huop, hwop, -⟩ := moveSrcOK_spec hms
@@ -675,6 +667,8 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     rw [den_succ_atom (not_term_of hu (by rw [huop]; decide)),
       den_succ_atom (not_term_of hL (by rw [hwop]; decide))]
     exact hρ x
+  · -- a fixed load from a read-only symbol
+    exact ⟨1, fixed_den hM hQ F.cf hu (lm_arg F hx hu) hL hwty hfx n⟩
   · by_cases ht : termOp u.op = true
     · have hph : u.op ≠ .Phi := fun h => by rw [h] at ht; cases ht
       obtain ⟨m, hm⟩ := fuel_list (F := fun a => den f.value? tabs ρ n a)
@@ -756,11 +750,10 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
 /-- **A changed `Move` source writes a refined memory** (`moveSrcOK`): the source's `Move` copies
 from `tmp` in a memory where `tmp` holds what the inner `Move` read at `src` (or `poison`), and
 `src` still holds it (`moveSrc_mem`). -/
-theorem moveSrc_chgRef {ro : List (String × Alloc)} {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
+theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
     (h : moveSrcOK tabs f u w = true) :
     ChgRefP (FwdQ tabs ro f) f.value? tabs u (listedDefs g) w := by
   intro ρ ρ' hρ hT _ hQ hM k y hy
-  have hQ := hQ.1
   obtain ⟨huop, hwop, hu3, hw3, hai, -, hc0, hc2, mv, hmv, hcase⟩ := moveSrcOK_spec h
   have hu0 : u.args[0]! ∈ u.args := by
     rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
@@ -876,12 +869,12 @@ theorem moveSrc_chgRef {ro : List (String × Alloc)} {u w : Value} (hargs : ∀ 
   simp [memDef, hwop, hai, hd0, hd1, hr', hw', -Int64.toNat_toInt]
 
 /-- Each value listed in `f` refines as a term in `g`, under the forwarding layer's frame
-invariant (`FwdQ`, whose first part gives the fresh malloc calls' registers). -/
-theorem fwd_termRefP {ro : List (String × Alloc)} {x : ID} (hx : LM f x) (P : ID → Val → Prop)
+invariant (`FwdQ`). -/
+theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop)
     (S : ID → Prop) : TermRefP P (FwdQ tabs ro f) S f.value? tabs x (listedDefs g) tabs x :=
-  fun _ _ hρ hT _ _ _ hQ hM n => fwd_den F hρ hT hM hQ.1 _ x rfl hx n
+  fun _ _ hρ hT _ _ _ hQ hM n => fwd_den F hρ hT hM hQ _ x rfl hx n
 
-theorem fwd_atomArgs {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = true) :
+theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
     AtomArgsRefX (fwdInv tabs ro f hro) g := by
   intro b hb gb hgb a ha u hu ht
   have hbf : b ∈ f.blocks := F.blocks ▸ hb
@@ -892,13 +885,14 @@ theorem fwd_atomArgs {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = tr
   rw [hu] at hw; cases hw
   have hargs := (closedOK_facts F.cf b hbf fb hfb).2 a haf u' hu'
   have hsame : (u.aux = u'.aux ∧ u.args = u'.args) ∨ moveSrcOK tabs f u' u = true := by
-    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h
+    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h
     · exact .inl ⟨hax, h⟩
     · rw [h] at ht; cases ht
     · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
     · rw [(dropOK_spec h).1] at ht; cases ht
     · rw [(fwdMoveRep_spec h).1] at ht; cases ht
     · exact .inr h
+    · rw [fixedOK_term h] at ht; cases ht
   rcases hsame with hsame | hms
   · refine .inl ⟨u', hu', hop, hty, hai, hsame.1.symm, hsz, fun i hi => ?_⟩
     have hi' : i < u'.args.size := hsame.2 ▸ hi
@@ -908,7 +902,7 @@ theorem fwd_atomArgs {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = tr
   · obtain ⟨huop, hwop, -⟩ := moveSrcOK_spec hms
     exact .inr ⟨u', hu', huop.trans hwop.symm, .inr hwop, moveSrc_chgRef F hargs hms⟩
 
-theorem fwd_steps {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = true) :
+theorem fwd_steps (hro : fwdRoOK tabs ro f = true) :
     StepRefsP (fwdInv tabs ro f hro) g := by
   refine ControlsRefP.toStepRefsP (fun b hb fb gb hfb hgb => ?_) fun b hb fb gb hfb hgb => ?_
   · have hbf : b ∈ f.blocks := F.blocks ▸ hb
@@ -925,12 +919,12 @@ theorem fwd_steps {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = true)
 
 end
 
-/-- **Load-of-Store forwarding (and dropping identity writes) refines its input** under monotone
-contracts whose malloc-family contracts return zeroed blocks, from initial memories with the
-read-only symbols `ro` (which `fwdRoOK` reads `newobject`'s type sizes from) under contracts that
-keep them. -/
+/-- **Load-of-Store forwarding (and dropping identity writes, fixed loads) refines its input**
+under monotone contracts whose malloc-family contracts return zeroed blocks, from initial
+memories with the read-only symbols `ro` (which `fwdRoOK` reads `newobject`'s type sizes from and
+fixed loads read, `fixedOK`) under contracts that keep them. -/
 theorem fwd_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {ro : List (String × Alloc)}
-    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs f g = true)
+    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs ro f g = true)
     (hro : fwdRoOK tabs ro f = true) :
     RefinesFrom (fun env _ mem => env.Mono ∧ env.AllocZero ∧ RoImage ro env mem) tabs g tabs f :=
   have F := fwdRel_spec h

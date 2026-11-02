@@ -1,0 +1,139 @@
+import GoFV.Proof.Witness.FwdNew
+
+/-!
+# Witness function for a fixed load from a read-only symbol (issue #69)
+
+```go
+func dictEntry(t *int) *[2]int {
+	// v4 = Addr {main..dict.f} SB: 16 bytes of SRODATA, an R_ADDR relocation to main.T at 8
+	return *(**[2]int)(unsafe.Add(unsafe.Pointer(&main..dict.f), 8))
+	// v6 = Load <*[2]int> (OffPtr [8] v4) mem  (generic.rules:2255: isFixedLoad)
+}
+```
+
+as one block. The checked rewrite pass with `{:2255}` (forwardings, `RuleSet.loads`) turns the
+`Load` into `Addr {main.T} SB` (`rewriteFixedLoad`): the Load's pointer is an `Addr` of one of the
+input's read-only symbols (`RewriteCheck.roSyms`) at offset 8, and the read there from the
+symbol's allocation alone (`Sem.rodataAlloc`: the relocation as a pointer to `main.T`) is the
+`Addr`'s value (`RewriteCheck.fixedOK`). The precondition `RwPre` holds on `Env.p1` with the
+symbol in the global image (`ff_rwPre`).
+-/
+
+namespace GoFV.Proof.Witness
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules
+
+/-- The relocation of `main..dict.f` at offset 8 to `main.T`. -/
+def ffReloc : Reloc :=
+  { off := 8, siz := 8, type := "R_ADDR", add := 0, target := GoStr.ofString "main.T",
+    targetAbi := 0 }
+
+/-- The `SRODATA` symbol `main..dict.f`: 16 zero bytes, the relocation at 8. -/
+def ffSym : AuxDef :=
+  { fmt := GoStr.ofString "main..dict.f",
+    kind := .sym (GoStr.ofString "main..dict.f") 0 "SRODATA" 16 default none none
+      (some (ByteArray.mk (Array.replicate 16 0))) #[ffReloc] none }
+
+/-- `fnTabs` with the symbol `main..dict.f` as aux 9. -/
+def ffTabs : Tables where
+  types := fnTabs.types
+  auxes := fnTabs.auxes.set! 9 (some ffSym)
+
+/-- `dictEntry`, the input of `opt`. -/
+def ffFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 7
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[7] #[] #[] #[1, 2, 3, 4, 5, 6, 7])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 2 #[] 1),
+    some (mkV 2 .Arg 3 (some 3) p0 0 #[] 1),
+    some (mkV 3 .SB 15 none p0 1 #[] 1),
+    some (mkV 4 .Addr 3 (some 9) p0 1 #[3] 1),
+    some (mkVi 5 .OffPtr 3 8 p0 1 #[4] 1),
+    some (mkV 6 .Load 5 none p0 1 #[5, 1] 1),
+    some (mkVi 7 .MakeResult 35 0 p0 1 #[6, 1] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- The rule set `{generic.rules:2255}`, as a forwarding. -/
+def ffRules : RuleSet where
+  name := "generic"
+  values := []
+  blocks := []
+  loads := [Generated.Generic.r_generic_2255]
+
+theorem ffRules_allSound : ffRules.AllSound :=
+  GoFV.Proof.Rules.RuleSet.allSound_of trivial trivial
+
+def ffPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "dictEntry", typs := fnTyps, tables := ffTabs }
+
+def ffCheckEnv : CheckEnv := { tabs := ffTabs, typs := fnTyps }
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` keeps a result, which
+passes `check`, where the `Load` `v6` became an `Addr` of the `SB` `v3`. -/
+theorem ff_checks :
+    (check ffCheckEnv ffFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet ffRules) ffPassEnv ffFunc).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := fnTyps } o.func).toBool,
+        (o.func.value? 6).map fun v => (v.op, v.args))) =
+      some (true, some (.Addr, #[3])) := by
+  decide +kernel
+
+/-- **Pass execution witness** for a fixed load (`generic.rules:2255`): on `dictEntry`, the
+checked rewrite pass replaces the `Load` by the `Addr` of the relocation target
+(`v6 = Addr {main.T} v3`), and the result refines the input (`checkedRewrite_refines`, through
+`LoadFwd.fwd_refines` under `RoImage`). -/
+theorem ff_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet ffRules) ffPassEnv ffFunc = .ok out ∧
+      (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.Addr, #[3]) ∧
+      check ffCheckEnv ffFunc = .ok () ∧
+      check { tabs := out.tables, typs := fnTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre ffPassEnv.tables ffFunc) out.tables out.func
+        ffPassEnv.tables ffFunc := by
+  obtain ⟨h1, h2⟩ := ff_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet ffRules) ffPassEnv ffFunc with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h6⟩ := h2
+    exact ⟨out, rfl, h6, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := ffRules) (penv := ffPassEnv)
+        (f := ffFunc) (out := out) ffRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
+/-- The global image's allocation of `main..dict.f` (`Sem.globalImage`'s `rodataAlloc`). -/
+def ffAlloc : Alloc := rodataAlloc (ByteArray.mk (Array.replicate 16 0)) 16 #[ffReloc]
+
+/-- `Env.p1` with the global image's allocation of `main..dict.f`. -/
+def ffEnv : Env := { Env.p1 with globals := [("main..dict.f", ffAlloc)] }
+
+theorem ff_roSyms : RewriteCheck.roSyms ffTabs ffFunc = [("main..dict.f", ffAlloc)] := by
+  decide +kernel
+
+/-- **Non-vacuity of `RwPre` with the read-only symbol**: on `Env.p1` with the symbol in the
+global image and an empty memory, `dictEntry`'s read-only symbol holds its image. -/
+theorem ff_rwPre (args : List Val) :
+    GoFV.Proof.Pass.Rewrite.RwPre ffTabs ffFunc ffEnv args {} := by
+  refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
+    ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
+    fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
+  · rw [show NilCheck.dictParams ffTabs ffFunc = [] by decide +kernel]
+    exact DictArgs.nil args
+  · rw [ff_roSyms]
+    intro n a h
+    simp only [List.mem_singleton, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨rfl, by decide +kernel⟩
+
+end GoFV.Proof.Witness

@@ -1584,6 +1584,25 @@ def newSymOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (c : I
     (WBCheck.symName? tabs a.aux).any fun n =>
       ro.any fun e => e.1 == n && (roTypeInfo? e.2).any (0 < ·.1)
 
+/-- The read-only symbol `aux` names in `tabs`, with its allocation in the global image
+(`Sem.globalImage`): an `SRODATA` symbol with exported bytes (`Sem.rodataBytes?`,
+`Sem.rodataAlloc`), or a type descriptor (`typeinfo` set, `Sem.typeDescAlloc`: the size and
+pointer-bytes words `newobject` reads, issue #69). -/
+def roSym? (tabs : Tables) (aux : Option AuxRef) : Option (String × Sem.Alloc) :=
+  match aux.bind tabs.aux? with
+  | some { kind := .sym name _ kind size _ ti itab data relocs rt, .. } =>
+    match kind, Sem.rodataBytes? data ti itab, ti with
+    | "SRODATA", some d, _ => some (name.toStringLossy, Sem.rodataAlloc d size relocs)
+    | _, _, some t => some (name.toStringLossy, Sem.typeDescAlloc tabs t rt)
+    | _, _, _ => none
+  | _ => none
+
+/-- The read-only data symbols `f`'s `Addr`s name in `tabs`, with their allocations: the
+symbols the precondition `RoImage` of the rewrite passes pins for their input. -/
+def roSyms (tabs : Tables) (f : Func) : List (String × Sem.Alloc) :=
+  f.valueTab.toList.filterMap fun o => o.bind fun v =>
+    if v.op == .Addr then roSym? tabs v.aux else none
+
 /-- The forwarding layer's read-only condition on `f` (issue #69): if `f` has `freshNew` calls,
 their type arguments pass `newSymOK` against the read-only symbols `ro` of the precondition
 (`Sem.RoImage`), and `f` passes `WBCheck.memTyOK` (so every memory a run of `f` holds keeps
@@ -1694,12 +1713,44 @@ def moveSrcOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
       | _, _ => false)
   | none => false
 
+/-- What a `Load` of shape `t` reads at offset `o` of the read-only symbol `n` from its
+allocation `a` alone, retyped (`fixedOK`). -/
+def fixedSrc (n : String) (a : Sem.Alloc) (t : Sem.Ty) (o : BitVec 64) : Sem.Val :=
+  ((({} : Sem.Mem).set (.global n) a).load t ((⟨.global n, 0⟩ : Sem.Ptr).add o)).retype t
+
+/-- `a` is `poison`, or the integer or pointer `b` (`fixedOK`). -/
+def fixedEq : Sem.Val → Sem.Val → Bool
+  | .poison, _ => true
+  | .int w x, .int w' y => if h : w = w' then (h ▸ x) == y else false
+  | .ptr p, .ptr q => p == q
+  | _, _ => false
+
+/-- The value `w` a fixed load (`generic.rules:2251`, `:2255`, `rewriteFixedLoad`, issue #69)
+gives the `Load` `u` of `f`: the Load's pointer is an `Addr` of a read-only symbol `n` of `ro`
+(`baseBlk?`) at a constant offset (`ptrBase`), and the read at that offset from the symbol's
+allocation alone (`fixedSrc`) is `poison` or `w`'s value (`fixedEq`); `w` is an argument-less
+`Const64`, `Const32` or `Const8`, or an `Addr` (whose value ignores its argument,
+`Rules.opVal_addr`). `f` passes `WBCheck.memTyOK`, so the memory the Load reads holds the symbols
+`ro` (`LoadFwd.FwdQ`). -/
+def fixedOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : Value) : Bool :=
+  u.op == .Load && u.args.size == 2 &&
+  (w.op == .Addr || ((w.op == .Const64 || w.op == .Const32 || w.op == .Const8) && w.args.size == 0)) &&
+  (match baseBlk? tabs f (ptrBase tabs f 8 u.args[0]!).1 with
+   | some (.global n) =>
+     ro.any fun e => e.1 == n &&
+       fixedEq (fixedSrc n e.2 (tabs.ty u.type) (ptrBase tabs f 8 u.args[0]!).2)
+         ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty u.type) w.auxInt w.aux []).retype
+           (tabs.ty u.type))
+   | _ => false) &&
+  WBCheck.memTyOK tabs f
+
 /-- The new definition `w` in `g` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads
-back (`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`); or of the memory root
-`u`, a `Copy` of its memory (`dropOK`), or a `Move` from another source (`moveSrcOK`). -/
-def fwdNewOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
+back (`fwdOK`), a constant of the bits it reads back (`fwdConstOK`), or the value of a fixed load
+from the read-only symbols `ro` (`fixedOK`); or of the memory root `u`, a `Copy` of its memory
+(`dropOK`), or a `Move` from another source (`moveSrcOK`). -/
+def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
-    dropOK tabs f g u w || moveSrcOK tabs f u w
+    dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -1764,15 +1815,15 @@ def fwdRankOK (f : Func) (rk : Array Nat) : Bool :=
     | none => true
 
 /-- Value `x` of `f` is unchanged in `g` (but for its use count), or a `Load` got a new definition
-`fwdNewOK` or `fwdMoveRep` accepts. -/
-def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
+`fwdNewOK` (with the read-only symbols `ro`) or `fwdMoveRep` accepts. -/
+def fwdRepOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | none, _ => true
   | some _, none => false
   | some u, some w =>
     w.id == u.id && w.block == u.block && w.type == u.type &&
     ((w.op == u.op && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args) ||
-     fwdNewOK tabs f g u w || fwdMoveRep tabs f g u w)
+     fwdNewOK tabs ro f g u w || fwdMoveRep tabs f g u w)
 
 /-- `g`'s blocks are `f`'s, but for values appended to their lists (the fresh values of a
 forwarding through a `Move`, `fwdMoveRep`). -/
@@ -1782,12 +1833,12 @@ def blocksExtOK (f g : Func) : Bool :=
     | some fb, some gb => gb == { fb with values := gb.values } && fb.values.all (gb.values.contains ·)
     | _, _ => false
 
-/-- `g` is `f` with Loads forwarded and identity writes dropped: the same blocks (`blocksExtOK`)
-and atoms but the dropped roots (`atomsXOK`), every value as `fwdRepOK` says, ranks ordering
-`f`'s listed values after their arguments. -/
-def fwdRel (tabs : Tables) (f g : Func) : Bool :=
+/-- `g` is `f` with Loads forwarded (fixed loads from the read-only symbols `ro`) and identity
+writes dropped: the same blocks (`blocksExtOK`) and atoms but the dropped roots (`atomsXOK`),
+every value as `fwdRepOK` says, ranks ordering `f`'s listed values after their arguments. -/
+def fwdRel (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) : Bool :=
   atomsXOK f g && closedOK f && closedOK g && blocksExtOK f g &&
-  fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs f g ·)
+  fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs ro f g ·)
 
 /-- The variable a chain of at most `n` `Store`s binds as a stored value is `y`. -/
 def storesBind (y : Nat) : Nat → Pat → Bool
@@ -1808,10 +1859,17 @@ def patBinds (y : Nat) : Pat → Bool
 a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005`, `:943`,
 `:948`, `:954`, `:961`, `:2158`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
 => (Move dst src m)` and its form through a `VarDef` (`:2146`, `:2155`); the validator checks
-each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included. -/
+each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included; or a
+fixed load `(Load (Addr {s} _) _)`, `(Load (OffPtr [off] (Addr {s} _)) _) && isFixedLoad(v, s,
+off) => rewriteFixedLoad(v, s, sb, off)` (`:2251`, `:2255`; `fixedOK`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
+  | .op .Load none _ _ _ .fixed [.op .Addr none _ _ _ .fixed [_] _, .wild] _,
+      .copy (.call "rewriteFixedLoad" _ _), none => true
+  | .op .Load none _ _ _ .fixed
+      [.op .OffPtr none _ _ _ .fixed [.op .Addr none _ _ _ .fixed [_] _] _, .wild] _,
+      .copy (.call "rewriteFixedLoad" _ _), none => true
   | .op .Load none _ _ _ .fixed [_, .op .Store none _ _ _ .fixed [_, .op o none _ _ _ .fixed [] _, _] _]
       _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Move ..] _, .build [n0, n1], some _ =>
@@ -1824,9 +1882,9 @@ def fwdShapeOK (r : Rule) : Bool :=
   | _, _, _ => false
 
 /-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, or the `Move`
-whose source it changes), its new definition (a `Copy`, a constant or a `Move`) and the fresh
-values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads` rule event
-(`fwdShapeOK`; tried on a `Store` after its `structStores`, `Interp.rewriteValue`). -/
+whose source it changes), its new definition (a `Copy`, a constant, an `Addr` or a `Move`) and
+the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads` rule
+event (`fwdShapeOK`; tried on a `Store` after its `structStores`, `Interp.rewriteValue`). -/
 def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
@@ -1842,7 +1900,8 @@ def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value ×
             else none
           | some cr, w :: _ =>
             if fwdShapeOK cr.rule &&
-                ((w.op == .Copy && w.args.size == 1) || const64Op w.op || w.op == .Move) then
+                ((w.op == .Copy && w.args.size == 1) || const64Op w.op || w.op == .Move ||
+                  w.op == .Addr || w.op == .Const32 || w.op == .Const8) then
               some (v, w, [])
             else none
           | _, _ => none
@@ -1872,10 +1931,11 @@ def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
 
 /-- The forwarding of the `Load` `u` of `f` to `w` with the fresh values `ds` (`fwdEvent?`) is
 one the validator accepts in `f` alone: `fwdNewOK` (with `f` for the output, so a dropped write
-whose memory was dropped in the same layer is not selected), or `fwdMoveOK` of the fresh
-`[offp, top]` with `w` a `Copy` of `top`. -/
-def fwdEvOK (tabs : Tables) (f : Func) (u w : Value) : List Value → Bool
-  | [] => fwdNewOK tabs f f u w
+whose memory was dropped in the same layer is not selected; fixed loads from the read-only
+symbols `ro`), or `fwdMoveOK` of the fresh `[offp, top]` with `w` a `Copy` of `top`. -/
+def fwdEvOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : Value) :
+    List Value → Bool
+  | [] => fwdNewOK tabs ro f f u w
   | [offp, top] =>
     w.args == #[top.id] && top.args[0]! == offp.id && fwdMoveOK tabs f u top offp
   | _ => false
@@ -1884,19 +1944,19 @@ def fwdEvOK (tabs : Tables) (f : Func) (u w : Value) : List Value → Bool
 in `f`; its fresh values put in first), any other event kept, but for the copy-argument
 replacements of the forwarded `Load` logged before it (copy elimination on the `Load`'s
 arguments, which the forwarding validated in `f` replaces). -/
-def fwdStep (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (p : Func × Array RwEvent)
-    (ev : RwEvent) : Func × Array RwEvent :=
+def fwdStep (t : Interp.Table) (tabs : Tables) (ro : List (String × Sem.Alloc)) (sel : Bool)
+    (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
   match fwdEvent? t f ev with
   | some (v, w, ds) =>
-    if sel && !(f.value? v).any (fwdEvOK tabs f · w ds) then (p.1, p.2.push ev)
+    if sel && !(f.value? v).any (fwdEvOK tabs ro f · w ds) then (p.1, p.2.push ev)
     else (fwdCopy (ds.foldl ssPut p.1) v w, p.2.filter fun | .copyArg z _ _ => z != v | _ => true)
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdEvOK`
-holds of), and the remaining events. -/
+holds of, with `f`'s read-only symbols), and the remaining events. -/
 def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (log : Array RwEvent) :
     Func × Array RwEvent :=
-  log.foldl (fwdStep t tabs sel f) (f, #[])
+  log.foldl (fwdStep t tabs (if sel then roSyms tabs f else []) sel f) (f, #[])
 
 /-! ## Struct-store splits (issues #151, #17)
 
@@ -2482,25 +2542,6 @@ def segRel (tabs : Tables) (f g : Func) : Bool :=
       | none => false) &&
     f.blocks.all (segBlockOK f g segs news)
 
-/-- The read-only symbol `aux` names in `tabs`, with its allocation in the global image
-(`Sem.globalImage`): an `SRODATA` symbol with exported bytes (`Sem.rodataBytes?`,
-`Sem.rodataAlloc`), or a type descriptor (`typeinfo` set, `Sem.typeDescAlloc`: the size and
-pointer-bytes words `newobject` reads, issue #69). -/
-def roSym? (tabs : Tables) (aux : Option AuxRef) : Option (String × Sem.Alloc) :=
-  match aux.bind tabs.aux? with
-  | some { kind := .sym name _ kind size _ ti itab data relocs rt, .. } =>
-    match kind, Sem.rodataBytes? data ti itab, ti with
-    | "SRODATA", some d, _ => some (name.toStringLossy, Sem.rodataAlloc d size relocs)
-    | _, _, some t => some (name.toStringLossy, Sem.typeDescAlloc tabs t rt)
-    | _, _, _ => none
-  | _ => none
-
-/-- The read-only data symbols `f`'s `Addr`s name in `tabs`, with their allocations: the
-symbols the precondition `RoImage` of the rewrite passes pins for their input. -/
-def roSyms (tabs : Tables) (f : Func) : List (String × Sem.Alloc) :=
-  f.valueTab.toList.filterMap fun o => o.bind fun v =>
-    if v.op == .Addr then roSym? tabs v.aux else none
-
 /-- Every read-only data symbol defined in `tabs`, with its allocation. With `tabs` the export
 file's frontend tables this covers every symbol a pass can introduce (passes take new symbols
 from the frontend), so the verified pipeline pins these, not only its input's (`pipelineRo`). -/
@@ -2888,7 +2929,7 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
   | .nil _, f, _, f' => RewriteCheck.nilOK env tabs f0 f f'
   | .fwd _, f, _, f' =>
-    RewriteCheck.fwdRel tabs f f' &&
+    RewriteCheck.fwdRel tabs (RewriteCheck.roSyms env.tables f0) f f' &&
       RewriteCheck.fwdRoOK tabs (RewriteCheck.roSyms env.tables f0) f &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .sl, f, log, f' =>
