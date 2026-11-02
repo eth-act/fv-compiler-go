@@ -145,7 +145,7 @@ theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Fr
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y')
     {a : ID} (ha : a ∈ u.args) : EcArgRel tabs f g frS T a := by
   have hr := reg_rv (hRu a ha)
-  exact ⟨_, hr, hRS a _ hr, hfront a (ecFront_src hi hu ha) _ hr⟩
+  exact ⟨_, hr, hRS a _ hr, fun hia => hfront a (ecFront_src hi hu ha hia) _ hr⟩
 
 /-- The Go-typed arguments have their parameters' shapes. -/
 theorem ecc_pieces_hasTy {tabs : Tables} {f g : Func} {frS T : Frame} :
@@ -859,7 +859,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun a ha => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
         exact himk _ (hmas _ (hmemPair he).2))
-      (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
+      (fun q hq yq hyq hn' _ => hfront q (ecFront_tgt hi hw
         (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))) hn') yq hyq)
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => ecPieceVals true (tabs.ty p.type) r)] at hP
     -- the stack arguments: the ones the `Move`s copy (`sp0`) and the stored ones (`sp1`)
@@ -908,16 +908,17 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun a ha => by
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 ha
         exact himk _ (hmas _ (hmemPair (hm1 he)).2))
-      (fun q hq yq hyq hn' => by
+      (fun q hq yq hyq hn' hiq => by
         have := hsrc q hq
         rw [hn', Bool.false_or, Array.contains_iff_mem] at this
-        exact hfront q (ecFront_src hi hu this) yq hyq)
+        exact hfront q (ecFront_src hi hu this hiq) yq hyq)
     simp only [ecPieceVals_false] at hS
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => leafVals (tabs.ty p.type) r), List.map_map] at hS
     -- the leading arguments and the memory
     have hsame : ∀ a ∈ u.args, special f g a = false →
         Sem.Refines (rv frS a) (rv T a) := fun a ha hs => by
-      obtain ⟨y', hy', hr⟩ := hfront a (ecFront_src hi hu ha) _ (reg_rv (hRu a ha))
+      obtain ⟨y', hy', hr⟩ := hfront a (ecFront_src hi hu ha (ec_not_invalidated hs)) _
+        (reg_rv (hRu a ha))
       rw [ecCv_of_not_special hs] at hr
       rw [rv_of hy']
       exact hr

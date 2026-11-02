@@ -259,10 +259,6 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !gapOK (npOf f fb) og.toList z x then return "result store before a non-pure node"
         if !(!nodeG (callMem f x) || depB g nodeG (fun _ => true) (gb.values.size + 1) (callMem f x) z) then
           return "result store memory"
-      if let some u := f.value? x then
-        if !invalidated g x && !(u.args.all fun a => !invalidated g a || !fb.values.contains a ||
-            beforeB og.toList a x) then
-          return "invalidated argument placement"
       if !(selfAddrs tabs sh f g x).all (fun p => !fb.values.contains p ||
           (!invalidated g p && beforeB og.toList p x)) then
         return "self-move LocalAddr placement"

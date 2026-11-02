@@ -108,8 +108,6 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
       fb.kind = .Ret ∧ fb.controls[0]? = some x ∧
       (ecs_node g gb (callMem f x) = true →
         depB g (ecs_node g gb) (fun _ => true) (gb.values.size + 1) (callMem f x) z = true)) ∧
-    (invalidated g x = false → ∀ u, f.value? x = some u → ∀ a ∈ u.args, invalidated g a = true →
-      a ∈ fb.values → beforeB og.toList a x = true) ∧
     (∀ p ∈ selfAddrs tabs sh f g x, p ∈ fb.values →
       invalidated g p = false ∧ beforeB og.toList p x = true)
   newv : ∀ z ∈ gb.values, ∀ w, g.value? z = some w →
@@ -284,18 +282,14 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
       refine ⟨og, hog, fun x hx => ?_⟩
       have hx' := Array.all_eq_true'.1 hres x hx
       simp only [Bool.and_eq_true] at hx'
-      obtain ⟨⟨hz, hbf⟩, hsa⟩ := hx'
-      refine ⟨fun z hz' => ?_, fun hxi u hu a ha hai haf => ?_, fun p hp hpf => ?_⟩
+      obtain ⟨hz, hsa⟩ := hx'
+      refine ⟨fun z hz' => ?_, fun p hp hpf => ?_⟩
       · have := List.all_eq_true.1 hz z hz'
         simp only [Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true', beq_iff_eq,
           Array.contains_iff_mem] at this
         obtain ⟨⟨⟨⟨hzm, hna⟩, hk'⟩, hc0⟩, hcm⟩ := this
         exact ⟨hzm, hna, hk', hc0, fun hn => hcm.resolve_left fun h =>
           Bool.false_ne_true (h.symm.trans hn)⟩
-      · rw [hxi, Bool.false_or, hu] at hbf; dsimp only at hbf
-        have := Array.all_eq_true'.1 hbf a ha
-        rw [hai, Array.contains_iff_mem.2 haf, Bool.not_true, Bool.false_or, Bool.false_or] at this
-        exact this
       · have := List.all_eq_true.1 hsa p hp
         rw [Array.contains_iff_mem.2 hpf, Bool.not_true, Bool.false_or, Bool.and_eq_true,
           Bool.not_eq_true'] at this
@@ -1056,7 +1050,7 @@ theorem ecs_selfAddrBefore {tabs : Tables} {f g : Func} {bid : ID} {fb gb : Bloc
       ¬ TgtInvalid g p ∧ SchedBefore g gb p x := by
   intro x hx p hp hpf
   obtain ⟨og, hog, H⟩ := (ecs_parts hfb hgb hb).own
-  obtain ⟨hi, hbf⟩ := (H x hx).2.2 p hp hpf
+  obtain ⟨hi, hbf⟩ := (H x hx).2 p hp hpf
   refine ⟨fun ⟨w, hw, hwop⟩ => ?_, ecs_schedBefore hog hbf⟩
   unfold invalidated at hi
   rw [hw] at hi
@@ -1369,7 +1363,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
   rw [hu, hw] at ha
   simp only [Option.map_some, Option.getD_some, List.mem_append, List.mem_filter,
     Bool.not_eq_true'] at ha
-  rcases ha with ha | ⟨ha | ha, han⟩
+  rcases ha with ⟨ha, hia0⟩ | ⟨ha | ha, han⟩
   · obtain ⟨bid', b', hB', hab'⟩ := hwf.argListed bid fb x u ⟨⟨hbm, hfb⟩, hx, hu⟩ a
       (Array.mem_toList_iff.1 ha)
     obtain ⟨ua, hua, -, -⟩ := hwf.valueId bid' b' hB' a hab'
@@ -1388,9 +1382,7 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
         · obtain ⟨og, hog, H⟩ := P.stack
           obtain ⟨-, hbf⟩ := (H x hx).2.1 u hu a (Array.mem_toList_iff.1 ha) hma
           exact .inr (.inr (ecs_schedBefore hog hbf))
-        · obtain ⟨og, hog, H⟩ := P.own
-          exact .inr (.inr (ecs_schedBefore hog
-            ((H x hx).2.1 hinv' u hu a (Array.mem_toList_iff.1 ha) hia haf)))
+        · rw [hia0] at hia; cases hia
       · exact .inr (.inr (ecs_wideBefore hfb hgb hb x hx u hu a (Array.mem_toList_iff.1 ha) hws
           haf))
   · refine ⟨han, fun hag => ?_⟩

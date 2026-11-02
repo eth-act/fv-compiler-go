@@ -331,7 +331,7 @@ theorem ec_imake {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {a q :
     (hyt : y.hasTy t = true) (hyS : frS.regs[a]? = some (some y))
     (hya : T.regs[a]? = some (some ya)) (hyy : Sem.Refines y ya)
     (hRS : RegsOK (Ctx.make tabs f) frS) (hF : EcImkFacts env tabs f g frS T a) (hq : Reg T q)
-    (hfq : ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false →
+    (hfq : ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false → invalidated g q = false →
       ∃ yq', T.regs[q]? = some (some yq') ∧ Sem.Refines (ecCv tabs f g q yq) yq') :
     Sem.Refines (ecPathVal π y) (rv T q) := by
   unfold imakeData at himk
@@ -435,7 +435,7 @@ theorem ec_imake {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {a q :
           rcases hshape with ⟨e1, _, hfp, -⟩ | ⟨_, _, _, _, -, hga⟩
           · rw [hfp] at hydt
             rw [Val.retype_of_hasTy (by rw [ec_hasTy_ptr yd e e1]; exact hydt)]
-            obtain ⟨yq', hyq', hr⟩ := hfq yd hyd (eco_not_new_of_ptr hfp)
+            obtain ⟨yq', hyq', hr⟩ := hfq yd hyd (eco_not_new_of_ptr hfp) (ec_not_invalidated hsp)
             rw [ecCv_of_not_special hsp] at hr
             rw [rv_of hyq']
             exact hr
@@ -497,10 +497,11 @@ theorem ec_pairs {P : List (Nat × Ty) × ID → Bool} {F : List (Nat × Ty) →
   | [], _ :: _, hl, _, _ | _ :: _, [], hl, _, _ => by simp at hl
 
 /-- What the pieces lemma needs of a source argument `a`: a register of its shape whose
-conversion the target's register refines. -/
+conversion the target's register refines, unless the pass invalidated `a` (no target node reads
+it). -/
 def EcArgRel (tabs : Tables) (f g : Func) (frS T : Frame) (a : ID) : Prop :=
   ∃ y, frS.regs[a]? = some (some y) ∧ RegOK (Ctx.make tabs f) a y ∧
-    ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y'
+    (invalidated g a = false → ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y')
 
 /-- **The register pieces of the arguments** (`piecesOK`): the target's registers of the pieces
 refine the expected pieces (`ecPieceVals`: the leaf values) of the source's registers of the
@@ -513,7 +514,7 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
       (∀ p ∈ ps, wf (tabs.ty p.type) = true) →
       (∀ q ∈ pcs, Reg T q) → (∀ q ∈ pcs, isNewB f q = true → E q ∧ L q) →
       (∀ a ∈ as, EcArgRel tabs f g frS T a) → (∀ a ∈ as, EcImkFacts env tabs f g frS T a) →
-      (∀ q ∈ pcs, ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false →
+      (∀ q ∈ pcs, ∀ yq, frS.regs[q]? = some (some yq) → isNewB f q = false → invalidated g q = false →
         ∃ yq', T.regs[q]? = some (some yq') ∧ Sem.Refines (ecCv tabs f g q yq) yq') →
       Sem.RefinesList ((ps.zip (as.map (rv frS))).flatMap fun (p, r) => ecPieceVals cast (tabs.ty p.type) r)
         (pcs.map (rv T))
@@ -525,7 +526,7 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
     simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.or_eq_true] at h
     obtain ⟨⟨⟨⟨heq, hlen⟩, hsp⟩, hall⟩, hrest⟩ := h
     have hw := hwf p List.mem_cons_self
-    obtain ⟨y, hyS, hry, y', hyT, hyy⟩ := hrel a List.mem_cons_self
+    obtain ⟨y, hyS, hry, hyR⟩ := hrel a List.mem_cons_self
     simp only [List.map_cons, List.zip_cons_cons, List.flatMap_cons, rv_of hyS]
     rw [← List.take_append_drop (leafPaths (tabs.ty p.type)).length pcs, List.map_append]
     refine RefinesList.append ?_ (ec_pieces hNC hL hRS cast ps as _ hrest (fun q hq => hwf q
@@ -545,6 +546,7 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
         rcases hsp with he | hs
         · rw [List.isEmpty_iff] at he; rw [he] at hπ; cases hπ
         · simpa using hs
+      obtain ⟨y', hyT, hyy⟩ := hyR (ec_not_invalidated hns)
       rw [ecCv_of_not_special hns] at hyy
       simp only [Bool.or_eq_true] at hP
       rcases hP with hc | hi
@@ -564,6 +566,7 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
         rcases hsp with he | hs
         · cases he
         · simpa using hs
+      obtain ⟨y', hyT, hyy⟩ := hyR (ec_not_invalidated hns)
       rw [ecCv_of_not_special hns] at hyy
       obtain ⟨q, pcs', rfl⟩ : ∃ q pcs', pcs = q :: pcs' := by
         cases pcs with
