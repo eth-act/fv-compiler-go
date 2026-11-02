@@ -103,12 +103,55 @@ def plEnv : PassEnv :=
     ("rttype.GCData", #[.word "32:PTR:8"]),
     ("rttype.PtrType.Elem", #[.word "48:PTR:8"])] }
 
-/-- `Env.p1` with the global `main.g` (8 zero bytes) and a read-only, zero
-`runtime.writeBarrier` flag. -/
+/-- `Env.p1` with the write-barrier helpers (`withWbHelpers`), the global `main.g` (8 zero bytes)
+and a read-only, zero `runtime.writeBarrier` flag. -/
 def plRunEnv : Env :=
-  { Env.p1 with
+  { withWbHelpers Env.p1 with
     globals := [("main.g", { data := Array.replicate 8 (.b 0) }),
       ("runtime.writeBarrier", { data := #[.b 0, .b 0, .b 0, .b 0], writable := false })] }
+
+/-! ## The environment's contracts -/
+
+theorem plRunEnv_mono : plRunEnv.Mono := fun name c hc => by
+  rcases withWbHelpers_extern hc with rfl | hc
+  · intro _ _ _ _ _ _ _ _ _ _ hm
+    exact .returned .nil hm
+  · exact Env.p1_mono name c hc
+
+theorem plRunEnv_frameSafe : plRunEnv.FrameSafe := fun name c hc => by
+  rcases withWbHelpers_extern hc with rfl | hc
+  · intro _ _ _ _ _ _ _ _ hm hmm
+    exact ⟨rfl, fun _ h => absurd h List.not_mem_nil, hm, hmm⟩
+  · exact p1_frameSafe name c hc
+
+theorem plRunEnv_tempOblivious : plRunEnv.TempOblivious := fun name c hc => by
+  rcases withWbHelpers_extern hc with rfl | hc
+  · intro _ _ _ _ _ _ _ _ hm hmm
+    exact ⟨rfl, fun _ h => absurd h List.not_mem_nil, hm, hmm⟩
+  · exact p1_tempOblivious name c hc
+
+theorem plRunEnv_keeps {R : Mem → Mem → Prop} (hR : ∀ m, R m m) :
+    ∀ name c, plRunEnv.extern name = some c → c.Keeps R := fun name c hc => by
+  rcases withWbHelpers_extern hc with rfl | hc
+  · intro _ _ m rs m' h
+    cases h
+    exact ⟨hR m, fun _ h => absurd h List.not_mem_nil⟩
+  · exact Env.p1_keeps R name c hc
+
+theorem plRunEnv_memOps : plRunEnv.MemOps :=
+  ⟨fun _ h => (by cases h), fun _ h => (by cases h)⟩
+
+theorem plRunEnv_allocNonNil : plRunEnv.AllocNonNil := fun name c hm hc => by
+  simp only [plRunEnv, withWbHelpers] at hc
+  split at hc
+  · next hn => rcases hn with rfl | rfl <;> exact absurd hm (by decide +kernel)
+  · exact Env.p1_allocNonNil name c hm hc
+
+theorem plRunEnv_allocZero : plRunEnv.AllocZero := fun name c hm hc => by
+  simp only [plRunEnv, withWbHelpers] at hc
+  split at hc
+  · next hn => rcases hn with rfl | rfl <;> exact absurd hm (by decide +kernel)
+  · exact Env.p1_allocZero name c hm hc
 
 /-! ## Certificates -/
 
@@ -143,22 +186,23 @@ theorem plF_ro : GoFV.Opt.Verified.pipelineRo plEnv plF = [] := by decide +kerne
 
 theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
   refine ⟨⟨⟨{ data := #[.b 0, .b 0, .b 0, .b 0], writable := false }, by decide +kernel,
-    rfl, by decide, fun i hi => ?_⟩, by decide +kernel⟩, ?_⟩
+    rfl, by decide, fun i hi => ?_⟩, by decide +kernel⟩, ?_, withWbHelpers_wbHelpers Env.p1⟩
   · match i, hi with
     | 0, _ => exact ⟨0, rfl⟩
     | 1, _ => exact ⟨0, rfl⟩
     | 2, _ => exact ⟨0, rfl⟩
     | 3, _ => exact ⟨0, rfl⟩
-  · intro name c hc args clo m _ _ _
-    simp only [plRunEnv, Env.p1] at hc
+  · refine withWbHelpers_contractsOK (env := Env.p1) ?_
+    intro name c hc args clo m _ _ _
+    simp only [Env.p1] at hc
     split at hc <;> cases hc <;> trivial
 
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF)
     (GoFV.Opt.Verified.pipelineRo plEnv plF) plRunEnv [] {} :=
-  ⟨Env.p1_mono, p1_frameSafe, plRunEnv_initAvoids, Env.p1_allocNonNil,
-    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, p1_tempOblivious, Env.p1_memOps,
-    by rw [plF_ro]; exact RoImage.nil (env := plRunEnv) (fun name c hc => Env.p1_keepsRo name c hc) {},
-    fun name c hc => Env.p1_frameKeep name c hc, fun n c hm h => Env.p1_allocZero n c hm h⟩
+  ⟨plRunEnv_mono, plRunEnv_frameSafe, plRunEnv_initAvoids, plRunEnv_allocNonNil,
+    by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, plRunEnv_tempOblivious, plRunEnv_memOps,
+    by rw [plF_ro]; exact RoImage.nil (env := plRunEnv) (plRunEnv_keeps Mem.KeepsRo.refl) {},
+    plRunEnv_keeps Mem.KeepsFrame.refl, plRunEnv_allocZero⟩
 
 /-! ## The witness -/
 

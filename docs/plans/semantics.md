@@ -725,7 +725,10 @@ prints every block entry and value of one run.
   then the spill slots of its register arguments, which it may use as their homes): the contract
   sees the area below `callFrame` (`spillOff + spillSize` of the `AuxCall` ABI, or the end of a
   stack argument's slot beyond it, none in Go) poisoned (`Mem.poisonBelow (.outargs act)
-  (callFrame …)`, #36), and the caller's bytes above it survive the call; in both
+  (callFrame …)`, #36), and the caller's bytes above it survive the call. A callee listed in
+  `Env.noSpill` (a trusted fact about the runtime binary, §9.6; default: none) never uses the
+  spill slots, so its frame ends at its last stack argument's slot (0 for register-only
+  callees, whose call then poisons nothing); in both
   forms the call is `stuck` unless the slots of its stack-assigned input parameters are
   writable in its memory (`outargsOK`, built on `Mem.canWrite`; #28): a run's frame always
   allocates the area, so post-`expand calls` stores of stack arguments into it cannot fail
@@ -848,9 +851,22 @@ branch to a buffer block that records the pointers for the GC (`WB`, buffer `Sto
   expansion must refine the plain store for either flag value; the loaded value is defined as
   long as its bytes are (`GoFV.Proof.WB.load_flag`).
 - **Helpers**: `runtime.wbZero`, `runtime.wbMove` = `Runtime.wbHelper` (no effect the semantics
-  models; the zeroing/copy is the sequence's own `Zero`/`Move`). Calls clobber the caller's
-  outgoing-arguments area (`callOp`), so sequences with helper calls are outside the
-  writebarrier proof for now (#36).
+  models; the zeroing/copy is the sequence's own `Zero`/`Move`). They take only register
+  arguments, so their frame in the caller's outgoing area is just the spill slots of those
+  registers (`outargs[0, 16)`/`[0, 24)`). `writebarrier` does not copy a "volatile" `MoveWB`
+  source (an `SP`-based address, e.g. a stack result of an earlier call) before the helper call
+  when the helpers take register arguments (`writebarrier.go:315-352`): Go relies on the helpers
+  never spilling into that area.
+- **Trusted assumption `Env.noSpill`** (#36): `env.noSpill "runtime.wbZero"` and
+  `env.noSpill "runtime.wbMove"`, i.e. a call of either clobbers none of its caller's outgoing
+  area (`callFrame … false`). Evidence (go1.27.3, linux/arm64, the pinned runtime; disassembly
+  on #36): their only stores are the link register at the callee's new `SP` and the frame
+  pointer below it, both inside their own 48-byte frame; nothing is stored at or above the entry
+  `SP`, and `bulkBarrierPreWrite`'s spill area lies in their own frame. The runtime is always
+  compiled with optimizations (`cmd/compile/internal/base/flag.go:366-369` forces `Flag.N = 0`
+  for it), so no compiler flag makes them spill. The assumption is a conjunct of the
+  writebarrier precondition `WB.WbPre`, hence of the pipeline's `VPre`; no other theorem uses
+  it.
 
 Difftest additions (`tools/semdiff/prog/wb.go`): 12 functions storing pointers into heap objects
 and through pointers (list building, struct/string fields, struct copies and clears, pointer

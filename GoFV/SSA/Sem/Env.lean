@@ -28,6 +28,11 @@ structure Env where
   /-- The global image (`Sem/Image.lean`, `globalImage`): initial allocations of the global
   symbols, by name; a run adds those its memory does not have yet. -/
   globals : List (String × Alloc) := []
+  /-- Callees that never use the spill slots of their register arguments in their caller's
+  outgoing-arguments area (a trusted fact about the runtime binary, §9.6: only
+  `runtime.wbZero`/`runtime.wbMove` are relied on); a call of one clobbers only the slots of
+  its stack arguments (`callFrame`). -/
+  noSpill : String → Bool := fun _ => false
 
 namespace Env
 

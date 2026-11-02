@@ -649,7 +649,7 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
               | none => exact .stuck _ _
               | some c =>
                 dsimp only
-                generalize callFrame ctx.tabs v.aux _ = F
+                generalize callFrame ctx.tabs v.aux _ _ = F
                 have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBelow (.outargs ctx.act) F)
                 revert this
                 generalize c A clo (m.poisonBelow (.outargs ctx.act) F) = o
@@ -702,7 +702,7 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
             | none => exact .stuck _ _
             | some c =>
               dsimp only
-              generalize callFrame ctx.tabs v.aux _ = F
+              generalize callFrame ctx.tabs v.aux _ _ = F
               have := hE.atAct ctx.act _ _ hx hp.1 hp.2 ha hclo (hm.poisonBelow (.outargs ctx.act) F)
               revert this
               generalize c A clo (m.poisonBelow (.outargs ctx.act) F) = o

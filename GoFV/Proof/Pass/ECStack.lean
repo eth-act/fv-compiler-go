@@ -313,10 +313,11 @@ private theorem callFrame_fold_ge (tabs : Tables) :
 
 /-- **A stack-assigned input parameter's slot lies below its call's frame end.** -/
 theorem slot_le_callFrame {tabs : Tables} {aux : Option AuxRef} {ins : List ABIParam}
-    {p : ABIParam} (hp : p ∈ ins) (hr : p.regs.isEmpty = true) :
-    (BitVec.ofInt 64 p.offset).toNat + (tabs.ty p.type).size ≤ callFrame tabs aux ins := by
+    {p : ABIParam} (hp : p ∈ ins) (hr : p.regs.isEmpty = true) (sp : Bool) :
+    (BitVec.ofInt 64 p.offset).toNat + (tabs.ty p.type).size ≤ callFrame tabs aux ins sp := by
   unfold callFrame
-  generalize ((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0 = n
+  generalize (if sp then ((callABI? tabs aux).map fun a => (a.spillOff + a.spillSize).toNat).getD 0
+    else 0) = n
   induction ins generalizing n with
   | nil => cases hp
   | cons q qs ih =>

@@ -407,7 +407,7 @@ theorem callOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ct
     | none => (try dsimp only); exact callRel_stuck _ _
     | some c =>
     try dsimp only
-    generalize callFrame ctx.tabs v.aux _ = F
+    generalize callFrame ctx.tabs v.aux _ _ = F
     have hc := DeferRel.atAct_respects memRel_eqX hU (respects_of_tempOblivious hE hX) ctx.act
       callee c hx args clo (M.poisonBelow (.outargs ctx.act) F) (M'.poisonBelow (.outargs ctx.act) F)
       hargs hcloA (DAE.memAvoids_poisonBelow hMA _ _) (EqX.poisonBelow hm _ _)
@@ -492,7 +492,7 @@ theorem callOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ct
     | none => (try dsimp only); exact callRel_stuck _ _
     | some c =>
     try dsimp only
-    generalize callFrame ctx.tabs v.aux _ = F
+    generalize callFrame ctx.tabs v.aux _ _ = F
     have hc := DeferRel.atAct_respects memRel_eqX hU (respects_of_tempOblivious hE hX) ctx.act
       callee c hx args clo (M.poisonBelow (.outargs ctx.act) F) (M'.poisonBelow (.outargs ctx.act) F)
       hargs hcloA (DAE.memAvoids_poisonBelow hMA _ _) (EqX.poisonBelow hm _ _)

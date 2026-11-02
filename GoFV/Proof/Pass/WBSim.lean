@@ -1,6 +1,7 @@
 import GoFV.Proof.Pass.WBPanic
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.TabsAgree
+import GoFV.SSA.Sem.Runtime
 
 /-!
 # writebarrier refines its input (issue #36)
@@ -22,11 +23,24 @@ namespace GoFV.Proof.WB
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
 open GoFV.Proof.MemInv (SInv ContractsOK sinv_enter sinv_entry)
 
+/-- The write-barrier helpers are the runtime's (`Runtime.wbHelper`), and a call of either clobbers
+none of its caller's outgoing-arguments area (`Env.noSpill`). The `noSpill` half is a **trusted
+assumption** about the runtime binary (docs/plans/semantics.md §9.6, evidence on #36): in the
+pinned go1.27.3 linux/arm64 runtime, `runtime.wbZero`/`runtime.wbMove` store only the link
+register and frame pointer inside their own frame, never at or above their entry `SP`, and the
+runtime is always compiled with optimizations (`cmd/compile/internal/base/flag.go:366-369`), so
+they never use the spill slots of their register arguments in the caller's frame. -/
+def WbHelpers (env : Env) : Prop :=
+  env.extern "runtime.wbZero" = some Runtime.wbHelper ∧
+    env.extern "runtime.wbMove" = some Runtime.wbHelper ∧
+    env.noSpill "runtime.wbZero" = true ∧ env.noSpill "runtime.wbMove" = true
+
 /-- The inputs of `writebarrier_refines`: the memory with the global image has a defined,
-read-only write-barrier flag and no write-barrier buffer, and the environment's contracts keep
-that. -/
+read-only write-barrier flag and no write-barrier buffer, the environment's contracts keep
+that, and its write-barrier helpers are the runtime's and do not spill into the caller's frame
+(`WbHelpers`, a trusted assumption). -/
 def WbPre (env : Env) (_args : List Val) (mem : Mem) : Prop :=
-  MemOK (addGlobals env mem) ∧ ContractsOK MemOK env
+  MemOK (addGlobals env mem) ∧ ContractsOK MemOK env ∧ WbHelpers env
 
 /-- The global facts of an accepted `writebarrier` result. -/
 structure Glob (c : WBCheck.Ctx) (ce ce' : CheckEnv) : Prop where
@@ -399,7 +413,7 @@ theorem refines_of_glob {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce c
         split at h <;> simp at h
     obtain ⟨fuelT, h⟩ := runLoop_simIH (ctxS := Ctx.make c.tabs c.f) (ctxT := Ctx.make c.tabs c.g)
       (R env c) (fun n ih frS bS iS frT bT iT hR hd' =>
-        step hGl hpre.2 n ih frS bS iS frT bT iT hR hd') fuel _ c.f.entry 0 _ c.f.entry 0
+        step hGl hpre.2.1 n ih frS bS iS frT bT iT hR hd') fuel _ c.f.entry 0 _ c.f.entry 0
       ⟨rfl, rfl, hA0⟩ (finish_defined hd)
     exact ⟨fuelT, finish_refines hd h⟩
 
