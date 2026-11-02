@@ -24,22 +24,22 @@ def StepSimR (R : Frame → ID → Nat → Frame → ID → Nat → Prop)
   | .stuck, _ => True
 
 /-- Outcomes of `runLoop` related: returns of poison-free results by `RR` (`finish` gets stuck
-on the others), panics alike with refined memories once the frames of activation `act` and later
-are dropped. -/
-inductive RunRel (RR : List Val → Mem → List Val → Mem → Prop) (act : Nat) : Outcome → Outcome → Prop
+on the others), panics alike with refined memories (the deferred calls `finish` runs see the
+panicking frame, `finish_refines_mono`). -/
+inductive RunRel (RR : List Val → Mem → List Val → Mem → Prop) : Outcome → Outcome → Prop
   | returned {rs : List Val} {m : Mem} {oT : Outcome} :
       (Val.anyPoison rs = false → ∃ rs' m', oT = .returned rs' m' ∧ RR rs m rs' m') →
-      RunRel RR act (.returned rs m) oT
-  | panicked (e : Panic) {m m' : Mem} : Mem.Refines (m.dropFrames act) (m'.dropFrames act) →
-      RunRel RR act (.panicked e m) (.panicked e m')
+      RunRel RR (.returned rs m) oT
+  | panicked (e : Panic) {m m' : Mem} : Mem.Refines m m' →
+      RunRel RR (.panicked e m) (.panicked e m')
 
 /-- **Lock-step simulation** with a return relation. -/
-theorem runLoop_simR {env : Env} {ctxS ctxT : Ctx} {act : Nat}
+theorem runLoop_simR {env : Env} {ctxS ctxT : Ctx}
     (R : Frame → ID → Nat → Frame → ID → Nat → Prop) (RR : List Val → Mem → List Val → Mem → Prop)
     (hsim : ∀ frS bS iS frT bT iT, R frS bS iS frT bT iT →
       StepSimR R RR (blockStep env ctxS frS bS iS) (blockStep env ctxT frT bT iT)) :
     ∀ fuel frS bS iS frT bT iT, R frS bS iS frT bT iT → (runLoop env ctxS fuel frS bS iS).Defined →
-      RunRel RR act (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuel frT bT iT) := by
+      RunRel RR (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuel frT bT iT) := by
   intro fuel
   induction fuel with
   | zero => intro _ _ _ _ _ _ _ h; exact h.elim
@@ -65,7 +65,7 @@ theorem runLoop_simR {env : Env} {ctxS ctxT : Ctx} {act : Nat}
       rw [hS] at hs
       obtain ⟨m', hT, hm⟩ := hs
       rw [p1 _ _ hS, p2 _ _ hT]
-      exact .panicked e (hm.dropFrames act)
+      exact .panicked e hm
     | stuck => exact absurd hd (s1 hS)
 
 /-! ## Terminators -/
@@ -355,16 +355,18 @@ theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Boo
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
       · rw [← H.entry_eq]; exact dinv_entry H.cg _
       · simp only [entryFrame, Array.getElem?_replicate] at h; split at h <;> simp at h
-    have hrun := runLoop_simR (act := 0) (SimR env tabs f g cv) RR
+    have hrun := runLoop_simR (SimR env tabs f g cv) RR
       (fun frS bS iS frT bT iT ⟨hb, hi, hR⟩ => by
         subst hb; subst hi; exact step H hE.1 hE.2 hR) fuel _ _ _
       _ _ _ ⟨H.entry_eq, rfl, hA⟩ (finish_defined hd)
     rw [show (Ctx.make tabs f).act = 0 from rfl]
-    change (finish (Ctx.make tabs f).outs 0 (runLoop env (Ctx.make tabs f) fuel
-      (entryFrame env (Ctx.make tabs f) args mem) f.entry 0)).Defined at hd
-    change OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (runLoop env (Ctx.make tabs f) fuel
-      (entryFrame env (Ctx.make tabs f) args mem) f.entry 0)) (finish (Ctx.make tabs f).outs 0
-      (runLoop env (Ctx.make tabs g) fuel (entryFrame env (Ctx.make tabs g) args mem) g.entry 0))
+    change (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0
+      (runLoop env (Ctx.make tabs f) fuel (entryFrame env (Ctx.make tabs f) args mem) f.entry
+        0)).Defined at hd
+    change OutcomeRefines 0 (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0
+      (runLoop env (Ctx.make tabs f) fuel (entryFrame env (Ctx.make tabs f) args mem) f.entry 0))
+      (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0
+        (runLoop env (Ctx.make tabs g) fuel (entryFrame env (Ctx.make tabs g) args mem) g.entry 0))
     revert hd hrun
     generalize runLoop env (Ctx.make tabs f) fuel (entryFrame env (Ctx.make tabs f) args mem)
       f.entry 0 = oS
@@ -378,7 +380,7 @@ theorem cvSim_refines {tabs : Tables} {f g : Func} {cv : Cv} {isNew : ID → Boo
         | false => rfl
         | true => simp only [finish, h, ite_true] at hd; exact hd.elim
       obtain ⟨rs', m', rfl, hr⟩ := hRR hp
-      exact hrel.finish _ _ _ _ hr hd
-    | panicked e hm => exact .panicked e hm
+      exact hrel.finish env _ _ _ _ hr hd
+    | panicked e hm => exact finish_refines_mono hE.1 hd (.panicked e hm)
 
 end GoFV.Proof.EC
