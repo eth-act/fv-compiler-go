@@ -45,6 +45,12 @@ def Ev (env : Env) (c : WBCheck.Ctx) (Gr : Frame) (x : ID) : Prop :=
   ∃ u y, c.f.value? x = some u ∧ Gr.regs[x]? = some (some y) ∧
     evalValue env (Ctx.make c.tabs c.f) Gr u = .ok y
 
+/-- Non-`Phi` values outside `B` that are arguments of `B`'s non-`Phi` values evaluate in `Gr` (a
+kept nil check of a dominating block, a run's nil check). -/
+def OutEv (env : Env) (c : WBCheck.Ctx) (B : Block) (Gr : Frame) : Prop :=
+  ∀ n, n ∉ B.values → (∃ y ∈ B.values, ∃ u, c.f.value? y = some u ∧ u.op ≠ .Phi ∧ n ∈ u.args) →
+    ∀ un, c.f.value? n = some un → un.op ≠ .Phi → Ev env c Gr n
+
 /-- The source facts a value of the chain needs, by role. -/
 def Cov (env : Env) (c : WBCheck.Ctx) (rs : List Run) (Gr : Frame) (x : ID) : Prop :=
   match c.roleOf rs x with
@@ -279,6 +285,23 @@ private theorem nc_mem (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? =
   rw [hu2] at hm
   simpa using hm
 
+/-- The source nil check of a run (possibly outside `B`) has its ID. -/
+private theorem nc_fid (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) {n : ID}
+    (hn : r.nc = some n) {u : Value} (hu : c.f.value? n = some u)
+    (hsrc : ∀ x ∈ r.src, x ∈ B.values ∧ c.K.getD x false = false) : u.id = n := by
+  obtain ⟨-, -, -, -, hnc, -⟩ := runOf_spec (S.runOf hr)
+  obtain ⟨x0, v0, a, nv, hx0, hv0, -, ha, hnv, -, -, hid⟩ := hnc n hn
+  obtain ⟨ce, hwf⟩ := S.wf
+  have hx0B := (hsrc x0 (List.mem_of_getElem? hx0)).1
+  obtain ⟨bid, B', hbB', haB'⟩ :=
+    hwf.argListed b B x0 v0 ⟨⟨S.hb, S.hB⟩, hx0B, hv0⟩ a (Array.mem_of_getElem? ha)
+  obtain ⟨v', hv', hvid, -⟩ := hwf.valueId bid B' hbB' a haB'
+  rw [hnv] at hv'; cases hv'
+  have han : a = n := hvid.symm.trans hid
+  subst han
+  rw [hu] at hnv; cases hnv
+  exact hid
+
 /-! ## The roles -/
 
 private theorem loc_wbaddr (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} {x : ID}
@@ -347,8 +370,8 @@ private theorem seg_nc (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH :
   rw [hr] at hr'; cases hr'
   rw [hn] at hn'; cases hn'
   rw [hu] at hu'; cases hu'
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hnc⟩ := runOK_spec (S.run hr)
-  exact local_nc hH hw hid hu (S.fid (hnc n hn).1 hu)
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsrc, -⟩ := runOK_spec (S.run hr)
+  exact local_nc hH hw hid hu (S.nc_fid hr hn hu hsrc)
     (fun y' hy' => by simp only [QR, hρ]; exact ⟨r, n, hr, hn, hy'⟩) ⟨y, hy, hev⟩ hopu hopw hty
     hu2 hw2 (availIn_spec hav).1
     (fun z hq _ _ => by
@@ -368,10 +391,10 @@ private theorem t_nc (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH : H
   rw [hr] at hr'; cases hr'
   rw [hn] at hn'; cases hn'
   rw [hu] at hu'; cases hu'
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, hmh, -, hsrc, hnc⟩ := runOK_spec (S.run hr)
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, hmh, -, hsrc, -⟩ := runOK_spec (S.run hr)
   have hmS : mS = r.sp.mem := S.nc_mem hr hn hu hu2 hsrc
   subst hmS
-  exact local_nc hH hw hid hu (S.fid (hnc n hn).1 hu)
+  exact local_nc hH hw hid hu (S.nc_fid hr hn hu hsrc)
     (fun y' hy' => by simp only [QR, hρ]; exact ⟨r, n, hr, hn, hy'⟩) ⟨y, hy, hev⟩ hopu hopw hty
     hu2 hw2 (availIn_spec hav).1 (fun z hq M hM => ⟨M, hH _ _ _ hmh hq hM⟩)
 

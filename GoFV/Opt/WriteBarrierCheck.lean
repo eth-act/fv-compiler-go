@@ -29,11 +29,12 @@ arguments only, the arguments of one of the run's `Zero`s/`Move`s) with their me
 `SelectN [0]`), the lazily created `SB`/`SP`/`Const32`/`Addr` of `g`'s entry, or an argument-free
 `Invalid` (`otherRole`).
 `roleOK` checks each role's fields, arguments and block; arguments of new values that are held
-are arguments of a source value of `b` (so they are available where the source evaluates that
-value). `runOK` also checks that each run's values are listed where their roles say (flag in
-`cⱼ`, copies and `WBend` in `cⱼ₊₁`), that the run's memory is held and the nil-check copies have
-their roles; `blockOK` that the chain's blocks are listed in `g` and every kept value of `b` is
-listed in a segment.
+are arguments of a source value of `b`, or of a source value outside `b` that one reads (`srcArg`;
+so they are available where the source evaluates that value). `runOK` also checks that each run's
+values are listed where their roles say (flag in `cⱼ`, copies and `WBend` in `cⱼ₊₁`), that the
+run's memory is held, that its nil check is a value of `b` or kept (one of a dominating block) and
+the nil-check copies have their roles; `blockOK` that the chain's blocks are listed in `g` and
+every kept value of `b` is listed in a segment.
 
 Order: the non-pure nodes of `b`'s schedule are the kept ones of `c₀`, then per run the dropped
 nil check and the run's stores, then the kept ones of `cⱼ₊₁` (`npOK`); the nil-check copies
@@ -286,13 +287,16 @@ def roleOf (rs : List Run) (x : ID) : Role :=
     | .none => otherRole c.g x
     | r => r
 
-/-- `a` is an argument of a non-`Phi` value of block `b` of `f`. -/
+/-- `a` is an argument of a non-`Phi` value of block `b` of `f`, or of a non-`Phi` value outside
+`b` that is one (a kept nil check of a dominating block whose pointer a nil-check copy reads). -/
 def srcArg (B : Block) (a : ID) : Bool :=
-  B.values.any fun y => (c.f.value? y).any fun u => u.op != .Phi && u.args.contains a
+  B.values.any fun y => (c.f.value? y).any fun u => u.op != .Phi &&
+    (u.args.contains a || u.args.any fun y' => !B.values.contains y' &&
+      (c.f.value? y').any fun u' => u'.op != .Phi && u'.args.contains a)
 
 /-- An argument `a` available in segment `j` of the chain `segs` of block `B`: held, and either
-not a value of `B` (then an argument of a non-`Phi` value of `B`, `srcArg`) or listed in a
-segment up to `j`. -/
+not a value of `B` (then an argument of a non-`Phi` value of `B` or of one of its non-`Phi`
+arguments, `srcArg`) or listed in a segment up to `j`. -/
 def availIn (B : Block) (segs : List ID) (j : Nat) (a : ID) : Bool :=
   c.held a &&
     (if B.values.contains a then (segs.take (j + 1)).any fun s => (vals c.g s).contains a
@@ -563,7 +567,8 @@ def runOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (j : Nat) (r : R
   r.ncEnd.all (fun y => c.roleOf rs y == .ncEnd j) &&
   r.src.all (fun x => B.values.contains x && !c.K.getD x false) &&
   (match r.nc with
-    | some n => B.values.contains n && (c.f.value? n).any (·.op == .NilCheck)
+    | some n => (B.values.contains n || c.K.getD n false) &&
+        (c.f.value? n).any (·.op == .NilCheck)
     | none => true)
 
 /-- Block `b` of `f` and its chain in `g`. -/
