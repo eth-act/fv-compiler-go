@@ -89,7 +89,7 @@ private theorem callSeg_spec {tabs : Tables} {f g : Func} {fv gv : Value} {D N :
 
 private theorem constSize_spec {tabs : Tables} {f : Func} {n : ID} {k : Int64}
     (h : constSize tabs f n k = true) :
-    termConst tabs f 4 n = some (.int .w64 (BitVec.ofInt 64 k.toInt)) := by
+    termConst tabs f 6 n = some (.int .w64 (BitVec.ofInt 64 k.toInt)) := by
   simp only [constSize, Bool.and_eq_true, decide_eq_true_eq] at h
   obtain ⟨-, h⟩ := h
   split at h
@@ -106,6 +106,46 @@ private theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
   | k + 1, a, y, ha, h => by
     obtain ⟨v, y', hv, hr, hev⟩ := hA.val a ha
     simp only [termConst, hv] at h
+    have hreg : ∀ {z : ID} {zv : Value} {yz : Val}, A z → f.value? z = some zv →
+        termOp zv.op = true → S.regs[z]? = some (some yz) →
+        yz = (GoFV.Proof.Rules.opVal tabs zv.op (tabs.ty zv.type) zv.auxInt zv.aux
+          (zv.args.toList.map (rv S))).retype (tabs.ty zv.type) := by
+      intro z zv yz hz hzv hzt hzr
+      obtain ⟨zv', yz', hzv', hzr', hzev⟩ := hA.val z hz
+      rw [hzv] at hzv'; cases hzv'
+      rw [hzr] at hzr'; cases hzr'
+      have := GoFV.Proof.AtomSim.evalValue_term hzt
+        (hzev fun e => by rw [e] at hzt; exact absurd hzt (by decide))
+      rwa [hid z zv hz hzv, tys_of_value hzv, Option.getD_some] at this
+    split at h
+    next hs =>
+      cases k with
+      | zero => cases h
+      | succ j =>
+      dsimp only at h
+      split at h
+      next l c hlc =>
+        split at h
+        next lv cv hl hc =>
+          cases h
+          obtain ⟨hop, m, mv, e, hva, hmv, hmop, hma, hty⟩ := AtomSim.sliceMakeLC_spec hlc
+          have ht : termOp v.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
+          have htm : termOp mv.op = true := by rw [hmop]; rfl
+          have hnphi : v.op ≠ .Phi := fun e => by rw [e] at ht; exact absurd ht (by decide)
+          have hmA : A m := hA.cl a v ha hv hnphi m (by rw [hva]; simp)
+          have hmnp : mv.op ≠ .Phi := by rw [hmop]; decide
+          have hlA : A l := hA.cl m mv hmA hmv hmnp l (by rw [hma]; simp)
+          have hcA : A c := hA.cl m mv hmA hmv hmnp c (by rw [hma]; simp)
+          obtain ⟨ym, hym⟩ := Avail.reg hA hmA
+          rw [hr, hreg ha hv ht hr, hva]
+          simp only [List.map_toArray, List.map_cons, List.map_nil, rv_of hym]
+          rw [hreg hmA hmv htm hym, hty, hma]
+          simp only [List.map_toArray, List.map_cons, List.map_nil,
+            rv_of (termConst_reg hA hid j l lv hlA hl), rv_of (termConst_reg hA hid j c cv hcA hc),
+            hmop, AtomSim.opVal_sliceComp _ _ _ _ _ _ _ _ _ _ _ hop]
+        next => cases h
+      next => cases h
+    next =>
     split at h
     next ht =>
       obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
@@ -338,7 +378,7 @@ private theorem memclr_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g 
   -- the size is its constant term's value
   have hyn' : yn = .int .w64 (BitVec.ofInt 64 gv.auxInt.toInt) :=
     Option.some.inj (Option.some.inj
-      (hyn.symm.trans (termConst_reg hA hid 4 n _ (hmem n (by simp)) (constSize_spec hcs))))
+      (hyn.symm.trans (termConst_reg hA hid 6 n _ (hmem n (by simp)) (constSize_spec hcs))))
   subst hyn'
   -- the pointer is a pointer or `poison`
   obtain ⟨pv, o, hpv, hpt⟩ := ptrArgB_spec hp
@@ -395,7 +435,7 @@ private theorem memmove_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g
   -- the size is its constant term's value
   have hyn' : yn = .int .w64 (BitVec.ofInt 64 gv.auxInt.toInt) :=
     Option.some.inj (Option.some.inj
-      (hyn.symm.trans (termConst_reg hA hid 4 n _ (hmem n (by simp)) (constSize_spec hcs))))
+      (hyn.symm.trans (termConst_reg hA hid 6 n _ (hmem n (by simp)) (constSize_spec hcs))))
   subst hyn'
   -- the pointers are pointers or `poison`
   obtain ⟨dv, o, hdv, hdt⟩ := ptrArgB_spec hd
@@ -515,6 +555,35 @@ private def csGS : Func :=
 `memclrNoHeapPointers(SP, len("0123456789abcdef") * 1)` call becoming `Zero [16] SP mem`. -/
 theorem callSeg_witness_str :
     callSeg? csTabsS csFS csGS (csVal 5 .SelectN 2 0 none #[1]) (csVal 5 .Zero 2 16 none #[2, 4]) =
+      some ([1], []) := by
+  decide +kernel
+
+/-- `csTabs` with a slice type (3). -/
+private def csTabsL : Tables :=
+  { csTabs with
+    types := csTabs.types.push (some { (default : TypeDef) with kind := .SLICE, size := some 24 }) }
+
+/-- `csF` with the size `v3 = Mul64 v6 v7` (`v6 = SliceLen v8`, `v7 = Const64 [1]`,
+`v8 = SliceMake v2 v9 v9`, `v9 = Sub64 v10 v11`, `v10 = Const64 [16]`, `v11 = Const64 [0]`): the
+slice's pointer `SP` is no constant (`copy(a[0:16], …)`'s size before value rules fold it). -/
+private def csFL : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (csVal 1 .StaticLECall 2 0 (some 0) #[2, 3, 4]),
+      some (csVal 2 .SP 1 0 none #[]), some (csVal 3 .Mul64 0 0 none #[6, 7]),
+      some (csVal 4 .InitMem 2 0 none #[]), some (csVal 5 .SelectN 2 0 none #[1]),
+      some (csVal 6 .SliceLen 0 0 none #[8]), some (csVal 7 .Const64 0 1 none #[]),
+      some (csVal 8 .SliceMake 3 0 none #[2, 9, 9]), some (csVal 9 .Sub64 0 0 none #[10, 11]),
+      some (csVal 10 .Const64 0 16 none #[]), some (csVal 11 .Const64 0 0 none #[])] }
+
+/-- `csFL` with `v5 = Zero [16] v2 v4`. -/
+private def csGL : Func :=
+  { csFL with
+    valueTab := (csFL.valueTab.set! 1 none).set! 5 (some (csVal 5 .Zero 2 16 none #[2, 4])) }
+
+/-- Non-vacuity of slice lengths in the size (`sliceMakeLC?`): `callSeg?` accepts `SelectN [0]`
+of `memclrNoHeapPointers(SP, len(SliceMake SP (16-0) (16-0)) * 1)` becoming `Zero [16] SP mem`. -/
+theorem callSeg_witness_sliceLen :
+    callSeg? csTabsL csFL csGL (csVal 5 .SelectN 2 0 none #[1]) (csVal 5 .Zero 2 16 none #[2, 4]) =
       some ([1], []) := by
   decide +kernel
 

@@ -217,7 +217,8 @@ theorem den_fix (hT : Term.Typed f.value? tabs ρ) {x : ID} {v : Value} (hv : f.
       have := hT x ht (by rw [hv]; rfl)
       simpa [shape, hv] using this
 
-/-- **A constant term denotes its value** at the fuel of its depth and above (`den_succ_term`). -/
+/-- **A constant term denotes its value** at the fuel of its depth and above (`den_succ_term`;
+a `SliceLen`/`SliceCap` of a `SliceMake` by `AtomSim.opVal_sliceComp`). -/
 theorem termConst_den :
     ∀ (k : Nat) (a : ID) (y : Val), termConst tabs f k a = some y →
       ∀ n, k ≤ n → den f.value? tabs ρ n a = y
@@ -227,27 +228,51 @@ theorem termConst_den :
     split at h
     next v hv =>
       split at h
-      next ht =>
-        obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
-        have hl : ∀ (l : List ID) (cs : List Val), l.mapM (termConst tabs f k) = some cs →
-            l.map (den f.value? tabs ρ n) = cs := by
-          intro l
-          induction l with
-          | nil => intro cs h; simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; simp [h]
-          | cons b l ih =>
-            intro cs h
-            rw [List.mapM_cons] at h
-            cases hc : termConst tabs f k b with
-            | none => rw [hc] at h; cases h
-            | some c =>
-              cases hcs' : l.mapM (termConst tabs f k) with
-              | none => rw [hc, hcs'] at h; cases h
-              | some cs' =>
-                rw [hc, hcs'] at h
-                cases h
-                rw [List.map_cons, termConst_den k b c hc n (by omega), ih cs' hcs']
-        rw [den_succ_term hv ht, hl _ cs hcs]
-      next => cases h
+      next hs =>
+        cases k with
+        | zero => cases h
+        | succ j =>
+        dsimp only at h
+        split at h
+        next l c hlc =>
+          split at h
+          next lv cv hl hc =>
+            cases h
+            obtain ⟨hop, m, mv, e, hva, hmv, hmop, hma, hty⟩ := AtomSim.sliceMakeLC_spec hlc
+            have ht : termOp v.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
+            have htm : termOp mv.op = true := by rw [hmop]; rfl
+            obtain ⟨n', rfl⟩ : ∃ n', n = n' + 1 := ⟨n - 1, by omega⟩
+            rw [den_succ_term hv ht, hva]
+            simp only [List.map_toArray, List.map_cons, List.map_nil]
+            rw [den_succ_term hmv htm, hty, hma]
+            simp only [List.map_toArray, List.map_cons, List.map_nil]
+            rw [termConst_den j l lv hl n' (by omega), termConst_den j c cv hc n' (by omega),
+              hmop, AtomSim.opVal_sliceComp _ _ _ _ _ _ _ _ _ _ _ hop]
+          next => cases h
+        next => cases h
+      next =>
+        split at h
+        next ht =>
+          obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
+          have hl : ∀ (l : List ID) (cs : List Val), l.mapM (termConst tabs f k) = some cs →
+              l.map (den f.value? tabs ρ n) = cs := by
+            intro l
+            induction l with
+            | nil => intro cs h; simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h; simp [h]
+            | cons b l ih =>
+              intro cs h
+              rw [List.mapM_cons] at h
+              cases hc : termConst tabs f k b with
+              | none => rw [hc] at h; cases h
+              | some c =>
+                cases hcs' : l.mapM (termConst tabs f k) with
+                | none => rw [hc, hcs'] at h; cases h
+                | some cs' =>
+                  rw [hc, hcs'] at h
+                  cases h
+                  rw [List.map_cons, termConst_den k b c hc n (by omega), ih cs' hcs']
+          rw [den_succ_term hv ht, hl _ cs hcs]
+        next => cases h
     next => cases h
   | _ + 1, _, _, _, 0, hn => absurd hn (by omega)
 
