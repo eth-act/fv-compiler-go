@@ -12,9 +12,11 @@ control-flow graph, blocks and values except for eliminated writes (`elimV`: a `
 writes. Then the source's and the target's memories differ only in the variables of `E`, which
 nothing reads (`#31`).
 
-* `tag x`: the variable whose `LocalAddr` the pointer-typed `x` is, through `OffPtr`/`AddPtr`/
-  `PtrIndex`/`Copy` (argument 0); checked locally at every value (`tagOK`). `x` is *tainted* when
-  its tag is in `E`.
+* `tag x`: the variable whose `LocalAddr` the word-typed (`wordShaped`: pointer or 64-bit
+  integer) `x` is, through `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` (argument 0); checked locally at
+  every value (`tagOK`). `x` is *tainted* when its tag is in `E`. A pointer into a frame
+  temporary has no integer form, so it stays a pointer at both word shapes (`Ptr.word`, #290): a
+  `uintptr` `Copy` of a tainted pointer is tainted too.
 * A tainted argument is allowed only as argument 0 of a tainted pointer op (`OffPtr`, `AddPtr`,
   `PtrIndex`, `Copy`), as the destination (argument 0) of an eliminated `Store`/`Zero`/`Move`, or
   as the source (argument 1) of an eliminated `Move`; no control is tainted (`usesOK`).
@@ -49,9 +51,16 @@ def elimV (fv gv : Value) : Bool :=
 /-- Ops whose pointer value points into the allocation of their argument 0. -/
 def propOp (op : Op) : Bool := op == .OffPtr || op == .AddPtr || op == .PtrIndex || op == .Copy
 
+/-- The type of `t` has a word shape: a pointer or a 64-bit integer, which `Val.retype` maps
+alike (`Ptr.word`, #290). -/
+def wordShaped (tabs : Tables) (t : TypeRef) : Bool :=
+  match tabs.ty t with
+  | .ptr _ | .int .w64 => true
+  | _ => false
+
 /-- The tag of value `fv` from the tags of its arguments. -/
 def tagStep (tabs : Tables) (T : ID → Option AuxRef) (fv : Value) : Option AuxRef :=
-  if !NilCheck.ptrShaped tabs fv.type then none
+  if !wordShaped tabs fv.type then none
   else if fv.op == .LocalAddr then fv.aux
   else if propOp fv.op then (fv.args[0]?).bind T
   else none

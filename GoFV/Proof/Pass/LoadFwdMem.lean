@@ -140,14 +140,11 @@ theorem decode_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.scalarTy t = true) {x
       cases w with
       | w64 =>
         simp only [Val.retype] at hx
-        split at hx
-        · cases hx
-        · rename_i hp
-          simp only [encode, decode, decodeInt, Nat.zero_add]
-          rw [Array.extract_eq_self_of_le (by rw [ptrBytes_size]; exact Nat.le_refl _),
-            bytesNat?_ptrBytes]
-          simp only [bytesPtr?_ptrBytes, hp]
-          exact Sem.Refines.refl _
+        simp only [encode, decode, decodeInt, Nat.zero_add]
+        rw [Array.extract_eq_self_of_le (by rw [ptrBytes_size]; exact Nat.le_refl _),
+          bytesNat?_ptrBytes]
+        simp only [bytesPtr?_ptrBytes, hx]
+        exact Sem.Refines.refl _
       | _ => simp [Val.retype] at hx
     | _ => simp [Val.retype] at hx
   | bool =>
@@ -159,9 +156,11 @@ theorem decode_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.scalarTy t = true) {x
     cases x with
     | poison => exact .poison _
     | ptr p =>
+      simp only [Val.retype] at hx
       simp only [encode, decode, decodePtr, Nat.zero_add]
       rw [Array.extract_eq_self_of_le (by rw [ptrBytes_size]; exact Nat.le_refl _),
         bytesPtr?_ptrBytes]
+      simp only [hx]
       exact Sem.Refines.refl _
     | int w v =>
       cases w with

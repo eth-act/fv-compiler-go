@@ -404,9 +404,9 @@ private theorem ecs_ptr_inWindow {k : Nat} (hk : k < 2 ^ 24) : (ecsSlot k).inWin
   rw [BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega)]
   exact hk
 
-/-- `OffPtr [k]` of the area's start, as a pointer. -/
+/-- `OffPtr [k]` of the area's start, as a pointer: slot `k`'s word. -/
 theorem ecs_offPtr_ptr {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^ 24) :
-    PtrOps.offPtr ai [.ptr (ecsSlot 0)] = .ptr (ecsSlot k) := by
+    PtrOps.offPtr ai [.ptr (ecsSlot 0)] = (ecsSlot k).word := by
   simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast, Ptr.add, ecsSlot]
   rw [show BitVec.ofNat 64 0 + BitVec.ofNat 64 k = BitVec.ofNat 64 k by simp]
   simp only [PtrOps.ptrRes]
@@ -579,9 +579,8 @@ theorem ecs_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
     split at hssh
     · next e' he' =>
       rw [he']
-      show ((PtrOps.offPtr qw.auxInt [.ptr (ecsSlot 0)]).retype (.ptr e)).asPtrWord = _
-      rw [ecs_offPtr_ptr hai' hk]
-      rfl
+      rw [show Val.retype (.ptr e') (.ptr (ecsSlot 0)) = (ecsSlot 0).word from rfl,
+        PtrOps.offPtr_word, ecs_offPtr_ptr hai' hk, Ptr.word_retype_ptr, Ptr.word_asPtrWord]
     · next he' =>
       rw [he']
       exact ecs_offPtr_int hai' hk e

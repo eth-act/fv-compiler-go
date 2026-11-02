@@ -122,8 +122,7 @@ theorem evalAll_rel {env : Env} {tabs : Tables} {f : Func} (H : Hyps env X tabs 
     | ok y =>
       obtain ⟨y', hT, hy⟩ := hr.1 y hS
       rw [hT]
-      have hav := value_avoids H.E H.temp I.fok I.av hfv hid (H.ok x fv hfv)
-        (fun n hn => H.loc x fv n hfv hn) hS
+      have hav := value_avoids H.E H.temp I.fok I.av (fun n hn => H.loc x fv n hfv hn) hS
       have hty : y.retype ((Ctx.make tabs f).tys[x]?.getD .other) = y := by
         rw [← hid]; exact evalValue_typed hS
       exact evalAll_rel H o (fun z hz => hO z (List.mem_cons_of_mem _ hz)) (I.set x hy hav hty)

@@ -92,7 +92,7 @@ theorem safe_argVal_dict {tabs : Tables} {f : Func} {fr : Frame} {n : AuxRef} {e
       simp [bytesPtr?, ptrBytes, List.range, List.range.loop]
     show Safe (decodePtr ((ptrBytes p).extract 0 8))
     rw [Array.extract_eq_self_of_le (by omega), decodePtr, hb]
-    exact hnn
+    exact safe_word hnn
 
 /-- A static call that returns: its callee's contract returned `rs`, and the call's value is the
 tuple of `rs` at the ABI's result shapes, then the memory and the result addresses. -/
@@ -135,20 +135,19 @@ theorem callOp_static_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {
   · cases h
 
 /-- The first result of a call whose contract returned a non-nil pointer first, at a pointer
-shape (or no ABI result shape). -/
+shape (or no ABI result shape), is `Safe`. -/
 theorem retypeResults_head {tabs : Tables} {outs : List ABIParam} {rs : List Val} {p : Ptr}
-    (hrs : rs.head? = some (.ptr p))
+    (hrs : rs.head? = some (.ptr p)) (hnn : p.blk ≠ .nil)
     (hout : (match outs with | [] => true | o :: _ => NilCheck.ptrShaped tabs o.type) = true) :
-    ∃ rest, retypeResults tabs outs rs = .ptr p :: rest := by
+    ∃ v rest, retypeResults tabs outs rs = v :: rest ∧ Safe v := by
   match rs, hrs, outs, hout with
-  | .ptr p :: rs, rfl, [], _ => exact ⟨rs, rfl⟩
+  | .ptr p :: rs, rfl, [], _ => exact ⟨_, rs, rfl, hnn⟩
   | .ptr p :: rs, rfl, o :: os, hout =>
     simp only at hout
     unfold NilCheck.ptrShaped at hout
-    refine ⟨retypeResults tabs os rs, ?_⟩
-    simp only [retypeResults]
+    refine ⟨_, retypeResults tabs os rs, rfl, ?_⟩
     split at hout
-    · next e he => rw [he]; rfl
+    · next e he => rw [he]; exact safe_word hnn
     · cases hout
 
 /-- **The `SelectN [0]` of a malloc-family call is `Safe`** under `Env.AllocNonNil`. -/
@@ -178,7 +177,7 @@ theorem safe_selectN_malloc {env : Env} {tabs : Tables} {f : Func} {fr : Frame} 
   have hn' : cv.aux.bind tabs.callee? = some name := hn
   rw [hn'] at hname
   obtain ⟨p, hp, hnn⟩ := hA.atAct _ name c' (by simpa using hname) hc args none m rs m' hret
-  obtain ⟨rest, hrest⟩ := retypeResults_head (tabs := tabs) hp hout
+  obtain ⟨v, rest, hrest, hv⟩ := retypeResults_head (tabs := tabs) hp hnn hout
   have : (Ctx.make tabs f).tabs = tabs := rfl
   rw [this, hrest]
   simp only [List.cons_append, Val.retype]
@@ -186,8 +185,8 @@ theorem safe_selectN_malloc {env : Env} {tabs : Tables} {f : Func} {fr : Frame} 
   · simp only [Val.retypePre, Option.map_eq_some_iff] at *
     rename_i vs' hvs'
     obtain ⟨l, -, rfl⟩ := hvs'
-    simp only [Tuple.selectN, Val.retype]
-    exact hnn
+    simp only [Tuple.selectN]
+    exact safe_retype_ptr _ hv
   · trivial
 
 end GoFV.Proof.Nil

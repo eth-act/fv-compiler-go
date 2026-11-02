@@ -538,7 +538,6 @@ theorem ecc_ofPieces_ptr (q : Ptr) : ofPieces (.int .w64) [.ptr q] = (Val.ptr q)
   unfold decodeInt
   rw [bytesNat?_ptrBytes, bytesPtr?_ptrBytes]
   simp only [Val.retype]
-  cases q.addr? <;> rfl
 
 theorem ecc_ecPieceVals_length {t : Ty} (hw : wf t = true) (cast : Bool) (r : Val) :
     (ecPieceVals cast t r).length = (leaves t).length := by

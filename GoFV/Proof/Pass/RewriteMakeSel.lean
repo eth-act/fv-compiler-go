@@ -13,9 +13,9 @@ argument, `SAFacts.den_le`; `selRes_den`: the resolved value's denotation refine
 #17). `MSFacts.step`: on a set closed under arguments, every denotation after the event refines
 the one before at the same fuel (`select_retype_make_get` at `v`: component `k` of the retyped
 `Make` is `a` retyped at the field's shape, which keeps `a`'s denotation since `a`'s shape is
-the field's and `v`'s, or `a` is a 64-bit integer word (`intWord`: an integer, a global
-pointer, or a `Convert`/`Copy` of one; `intWord_den`) under word shapes (`retype_word`);
-monotonicity elsewhere). `ReplayInv.makeSel`: the event keeps the replay invariant.
+the field's and `v`'s, or all three are word shapes, which have the same values (`wordVal_den`,
+`retype_word`, #290); monotonicity elsewhere). `ReplayInv.makeSel`: the event keeps the replay
+invariant.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -62,7 +62,7 @@ structure SAFacts (tabs : Tables) (M : Defs) (r : ID → ID) (x : Value) (a : ID
   hsh : ∀ fk, GoFV.Proof.Rules.fieldShape? (tabs.ty y.type) k = some fk →
     (GoFV.Proof.Rules.shapeSub (tabs.ty w.type) fk = true ∧
       GoFV.Proof.Rules.shapeSub (tabs.ty w.type) (tabs.ty x.type) = true) ∨
-    (intWord tabs M 4 a = true ∧ wordTy fk = true ∧ wordTy (tabs.ty x.type) = true)
+    (wordTy (tabs.ty w.type) = true ∧ wordTy fk = true ∧ wordTy (tabs.ty x.type) = true)
 
 theorem saFacts {tabs : Tables} {M : Defs} {r : ID → ID} {x : Value} {a : ID}
     (h : selArg tabs M r x = some a) : Nonempty (SAFacts tabs M r x a) := by
@@ -161,7 +161,7 @@ theorem SAFacts.sel_ref (F : SAFacts tabs M r x a) {ρ : ID → Val}
       · have hty : (den M.get? tabs ρ m a).hasTy (tabs.ty F.w.type) = true := by
           rw [← hfix]; exact Val.retype_hasTy _ _
         rw [GoFV.Proof.Rules.retype_of_shapeSub hty h1, GoFV.Proof.Rules.retype_of_shapeSub hty h2]
-      · have hg := intWord_den (tabs := tabs) (ρ := ρ) hT 4 a m hi
+      · have hg := wordVal_den (tabs := tabs) (ρ := ρ) (a := a) hT (by simp [wordVal, F.hw, hi]) m
         rw [retype_word h1 hg, retype_word h2 hg]
     rw [hkeep, ← hfix]
     exact retype_mono _ hz

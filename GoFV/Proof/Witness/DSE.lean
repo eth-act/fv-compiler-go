@@ -8,8 +8,8 @@ import GoFV.Proof.Witness.Util
 dse turns `f10`'s `v8 = Zero [16] (LocalAddr {~r0}) v7`, whose 16 bytes the two `Store`s of `s`
 overwrite, into `Copy v7` (`f10Out`). By kernel evaluation: dse's result is `f10Out`, its checker
 `DSE.drel` accepts it (so `f10` is in `dseFrag`), input and output pass `check`, and the input
-returns `[2]*S{s, s}` (the 16 bytes of `s` twice). `dse_refines` then gives that the output
-returns the same.
+returns `[2]*S{s, s}` (the 16 bytes of `s` twice: `s` is a heap pointer, stored as its address
+word, `Ptr.word`). `dse_refines` then gives that the output returns the same.
 -/
 
 namespace GoFV.Proof.Witness
@@ -34,10 +34,10 @@ theorem returnsBlob_iff {o : Outcome} {v : List Byte} :
 
 /-! ## The run (kernel evaluation) -/
 
-/-- The input returns `[2]*S{s, s}` (one block entry). -/
+/-- The input returns `[2]*S{s, s}` (one block entry, address `2^40`). -/
 theorem f10_run :
     returnsBlob (run Env.p1 f10Tabs f10 f10Args {} 1)
-      (ptrBytes ⟨.heap 0, 0⟩ ++ ptrBytes ⟨.heap 0, 0⟩).toList = true := by
+      (intBytes 8 (2 ^ 40) ++ intBytes 8 (2 ^ 40)).toList = true := by
   decide +kernel
 
 /-! ## The pass -/
@@ -91,7 +91,7 @@ returns the source's result `[2]*S{s, s}`. -/
 theorem dse_witness :
     ∃ out, dsePass f10PassEnv f10 = .ok out ∧ (out.func.value? 8).map (·.op) = some .Copy ∧
       ∃ fuel m, run Env.p1 out.tables out.func f10Args {} fuel =
-        .returned [.blob (ptrBytes ⟨.heap 0, 0⟩ ++ ptrBytes ⟨.heap 0, 0⟩).toList] m := by
+        .returned [.blob (intBytes 8 (2 ^ 40) ++ intBytes 8 (2 ^ 40)).toList] m := by
   obtain ⟨h1, h2, -⟩ := f10_checks
   obtain ⟨m, hm⟩ := returnsBlob_iff.1 f10_run
   refine ⟨_, f10_dsePass, f10_elim.2, ?_⟩

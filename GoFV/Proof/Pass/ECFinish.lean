@@ -255,9 +255,9 @@ theorem ecf_leafVals_np : (t : Ty) → wf t = true → {v : Val} → v.hasPoison
     | agg vs =>
       obtain ⟨p, l, rfl, hpp, -⟩ := Val.hasTy_agg_str.1 hy
       cases p <;> first
-        | (simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord]; done)
+        | (simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord, Ptr.word_of_not_convertible]; done)
         | (rename_i w _; cases w <;>
-            simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord])
+            simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord, Ptr.word_of_not_convertible])
     | poison => simp [Val.hasPoison] at hp
     | _ => simp [Val.hasTy] at hy
   | .slice _, _, v, hp, hy => by
@@ -265,9 +265,9 @@ theorem ecf_leafVals_np : (t : Ty) → wf t = true → {v : Val} → v.hasPoison
     | agg vs =>
       obtain ⟨p, l, c, rfl, hpp, -⟩ := Val.hasTy_agg_slice.1 hy
       cases p <;> first
-        | (simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord]; done)
+        | (simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord, Ptr.word_of_not_convertible]; done)
         | (rename_i w _; cases w <;>
-            simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord])
+            simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord, Ptr.word_of_not_convertible])
     | poison => simp [Val.hasPoison] at hp
     | _ => simp [Val.hasTy] at hy
   | .blob _, h, _, _, _ | .mem, h, _, _, _ | .tuple _, h, _, _, _ | .other, h, _, _, _ => nomatch h
@@ -427,12 +427,12 @@ theorem ecf_retype_reg {rt lt : Ty} (h : regShapeOK rt lt = true) {p : Val}
     rw [hb, Bool.false_or] at h
     split at h
     · cases p with
-      | ptr q => rfl
+      | ptr q => simp only [Val.retype]; exact Ptr.word_of_not_convertible (by simpa [Val.hasTy] using hy)
       | int w a => cases w <;> first | rfl | simp [Val.hasTy] at hy
       | poison => simp [Val.hasPoison] at hp
       | _ => simp [Val.hasTy] at hy
     · cases p with
-      | ptr q => rfl
+      | ptr q => simp only [Val.retype]; exact Ptr.word_of_not_convertible (by simpa [Val.hasTy] using hy)
       | int w a => cases w <;> first | rfl | simp [Val.hasTy] at hy
       | poison => simp [Val.hasPoison] at hp
       | _ => simp [Val.hasTy] at hy

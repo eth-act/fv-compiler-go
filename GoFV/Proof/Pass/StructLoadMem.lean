@@ -316,12 +316,12 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
             simp only [Val.asPtrWord, Ptr.ofAddr_add_of_inWindow hwin]
           · simp only [Option.some.injEq] at hp; subst hp
             have hq : PtrOps.offPtr (Int64.ofNat f.1) [.ptr q] =
-                .ptr (q.add (BitVec.ofNat 64 f.1)) := by
+                (q.add (BitVec.ofNat 64 f.1)).word := by
               show PtrOps.ptrRes (q.add (BitVec.ofInt 64 (Int64.ofNat f.1).toInt)) = _
               rw [ofInt_toInt_ofNat]
               unfold PtrOps.ptrRes
               rw [if_pos hwin]
-            exact ⟨_, hq, rfl, rfl⟩
+            exact ⟨_, hq, Ptr.word_retype_ptr _ e, Ptr.word_asPtrWord _⟩
         obtain ⟨Q, hQ, hQr, hQp⟩ := hq
         unfold fieldVal at he
         rw [he, hQ, hQr]

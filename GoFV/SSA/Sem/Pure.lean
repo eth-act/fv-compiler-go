@@ -271,9 +271,10 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .SliceCap => Comp.select 2 args
   | .StructSelect => Comp.selectAux auxInt args
   | .ArraySelect => Comp.selectAux auxInt args
-  | .ConstNil => .ptr Ptr.null
-  | .ConstSlice => .agg [.ptr Ptr.null, .i64 0, .i64 0]
-  | .ConstInterface => .agg [.i64 0, .ptr Ptr.null]
+  -- the nil pointer as its word (`Ptr.word`, §3.2): address 0
+  | .ConstNil => .i64 0
+  | .ConstSlice => .agg [.i64 0, .i64 0, .i64 0]
+  | .ConstInterface => .agg [.i64 0, .i64 0]
   | .Empty => .empty
   -- a feature the guarded code does not need: arm64's only use guards the LSE `*Variant`
   -- atomics, which mean the same as their base forms (`Sem/Atomic.lean`)

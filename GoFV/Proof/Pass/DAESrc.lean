@@ -11,9 +11,11 @@ into the temporary of its tag; any other `x` holds no pointer into `U` (`Val.Avo
 frame's inputs avoid `U` (`FrameOK`: argument images, initial memory, no closure context).
 
 `src_step`: a value the source evaluates keeps the invariant, from its arguments': a tagged
-`LocalAddr` or pointer op (`propOp`) points into its tag's temporary; an eliminated write writes
-only into `U`; a kept op of `ptrOps` maps avoiding arguments to an avoiding result
-(`evalOp_avoids`); any other kept value has a shape without pointers (`noPtr_avoids`).
+(word-shaped, `wordShaped`) `LocalAddr` or pointer op (`propOp`) points into its tag's temporary
+(at both word shapes: a temporary has no integer form, `Ptr.word`); an eliminated write writes
+only into `U`; any other kept op maps avoiding arguments to an avoiding result (`evalOp_avoids`:
+every op of `evalOp`, the pure ones by `evalPure_avoids`), and an untagged `LocalAddr` names no
+temporary of `U` or has a shape that is not a word, where its pointer is `poison`.
 -/
 
 namespace GoFV.Proof.DAE
@@ -92,122 +94,7 @@ theorem argVals_snoc {fr : Frame} {as : Array ID} {vs : List Val} (h : CSE.argVa
   cases hz'
   exact ⟨_, Array.getElem_mem hka, hr⟩
 
-/-! ## The pointer ops -/
-
-theorem ptrRes_avoids {p : Ptr} (h : ¬ U p.blk) : Val.Avoids U (PtrOps.ptrRes p) := by
-  unfold PtrOps.ptrRes; split
-  · exact h
-  · trivial
-
-theorem ptrRes_cases (p : Ptr) : PtrOps.ptrRes p = .poison ∨ PtrOps.ptrRes p = .ptr p := by
-  unfold PtrOps.ptrRes; split
-  · exact .inr rfl
-  · exact .inl rfl
-
-theorem wordRes_avoids (x k : BitVec 64) : Val.Avoids U (PtrOps.wordRes x k) := by
-  unfold PtrOps.wordRes; split <;> trivial
-
-theorem offPtr_avoids (k : Int64) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (PtrOps.offPtr k args) := by
-  unfold PtrOps.offPtr
-  split
-  · exact ptrRes_avoids (h _ List.mem_cons_self)
-  · exact wordRes_avoids _ _
-  · trivial
-
-theorem addPtr_avoids {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (PtrOps.addPtr args) := by
-  unfold PtrOps.addPtr
-  split
-  · split
-    · exact ptrRes_avoids (h _ List.mem_cons_self)
-    · trivial
-  · split
-    · exact wordRes_avoids _ _
-    · trivial
-  · trivial
-
-theorem ptrIndex_avoids (e : Option Nat) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (PtrOps.ptrIndex e args) := by
-  unfold PtrOps.ptrIndex
-  split
-  · split
-    · exact ptrRes_avoids (h _ List.mem_cons_self)
-    · trivial
-  · split
-    · exact wordRes_avoids _ _
-    · trivial
-  · trivial
-
-theorem convert_avoids (t : Ty) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (PtrOps.convert t args) := by
-  unfold PtrOps.convert
-  split
-  · split
-    · split <;> trivial
-    · exact h _ List.mem_cons_self
-  · trivial
-
-theorem condSelect_avoids {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (Cmp.condSelect args) := by
-  unfold Cmp.condSelect
-  split
-  · split
-    · exact h _ List.mem_cons_self
-    · exact h _ (List.mem_cons_of_mem _ List.mem_cons_self)
-    · trivial
-  · trivial
-
-theorem getD_avoids {vs : List Val} (h : Val.AvoidsList U vs) (i : Nat) :
-    Val.Avoids U (vs.getD i .poison) := by
-  rw [avoidsList_iff] at h
-  cases hi : vs[i]? with
-  | none => simp [List.getD, hi]; trivial
-  | some z => simp [List.getD, hi]; exact h z (List.mem_of_getElem? hi)
-
-theorem select_avoids (i : Nat) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (Tuple.select i args) := by
-  unfold Tuple.select
-  split
-  · exact getD_avoids (h _ List.mem_cons_self) i
-  · trivial
-
-theorem selectN_avoids (k : Int64) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (Tuple.selectN k args) := by
-  unfold Tuple.selectN
-  split
-  · split
-    · trivial
-    · exact getD_avoids (h _ List.mem_cons_self) _
-  · trivial
-
-theorem loadOp_avoids (hU : TempU U) (t : Ty) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
-    Val.Avoids U (loadOp t args) := by
-  unfold loadOp
-  split
-  · split
-    · rename_i hp
-      exact load_avoids hU (h _ (List.mem_cons_of_mem _ List.mem_cons_self)) t
-        (asPtrWord_notU hU (h _ List.mem_cons_self) hp)
-    · trivial
-  · trivial
-
-theorem atomicLoad_avoids (hU : TempU U) (t : Ty) {args : List Val}
-    (h : ∀ z ∈ args, Val.Avoids U z) : Val.Avoids U (atomicLoad t args) := by
-  unfold atomicLoad
-  split
-  · rename_i a m
-    have hm : m.Avoids U := h _ (List.mem_cons_of_mem _ List.mem_cons_self)
-    split
-    · rename_i hp
-      refine ⟨?_, hm, trivial⟩
-      split
-      · trivial
-      · exact load_avoids hU hm _ (asPtrWord_notU hU (h _ List.mem_cons_self) hp)
-    · trivial
-  · trivial
-
-/-! ## The ops of `ptrOps` -/
+/-! ## Every op keeps values avoiding `U` -/
 
 theorem evalOp_pure2 {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} {argv : List Val}
     (hop : v.op = .Phi ∨ v.op = .OffPtr ∨ v.op = .AddPtr ∨ v.op = .PtrIndex ∨ v.op = .ConstNil ∨
@@ -228,149 +115,143 @@ theorem argVal_avoids (hU : TempU U) {ctx : Ctx} {fr : Frame} (hfr : FrameOK U f
       · cases h
         exact decode_avoids hU (hfr.images img (Array.mem_of_getElem? himg)) _ _
 
-/-- **A kept op of `ptrOps` (but `LocalAddr`) on avoiding arguments has an avoiding result.** -/
-theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {fr : Frame}
-    (hfr : FrameOK U fr) {v : Value} {argv : List Val} {ty : Ty} {r : Val}
-    (hop : v.op ∈ ptrOps) (hla : v.op ≠ .LocalAddr) (hargs : ∀ z ∈ argv, Val.Avoids U z)
-    (h : evalOp env ctx fr v argv ty = .ok r) : Val.Avoids U r := by
-  simp only [ptrOps, List.mem_cons, List.mem_nil_iff, or_false] at hop
-  -- the pure ops
-  have pure2 : ∀ op, v.op = op → (op = .Phi ∨ op = .OffPtr ∨ op = .AddPtr ∨ op = .PtrIndex ∨
-      op = .ConstNil ∨ op = .CondSelect ∨ op = .GetG) → Val.Avoids U r := by
-    intro op hv ho
-    rw [evalOp_pure2 (hv ▸ ho)] at h
-    cases h
-    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rw [hv]
+theorem writeRes_avoids {what : String} {M : Mem} (hM : M.Avoids U) {p : Ptr} {bs : Array Byte}
+    (hb : ¬ U p.blk → BAv U bs) {y : Val} (h : writeRes what (M.write p bs) = .ok y) :
+    Val.Avoids U y := by
+  cases hw : M.write p bs with
+  | none => rw [hw] at h; cases h
+  | some M' => rw [hw] at h; cases h; exact memAvoids_write hM hw hb
+
+/-- **A memory root keeps values avoiding frame temporaries.** -/
+theorem memRoot_avoids (hU : TempU U) {ctx : Ctx} {v : Value} {argv : List Val}
+    (hav : ∀ a ∈ argv, Val.Avoids U a) {y : Val} (h : memRoot ctx v argv = .ok y) :
+    Val.Avoids U y := by
+  unfold memRoot at h
+  have m3 : ∀ {α : Type} {a b c : α}, c ∈ [a, b, c] := by simp
+  have m2 : ∀ {α : Type} {a b : α}, b ∈ [a, b] := by simp
+  have m23 : ∀ {α : Type} {a b c : α}, b ∈ [a, b, c] := by simp
+  have m1 : ∀ {α : Type} {a : α}, a ∈ [a] := by simp
+  split at h
+  iterate 2
+    · dsimp only at h
+      split at h
+      · exact writeRes_avoids (hav _ m3) (fun _ => encode_avoids _ (hav _ m23)) h
+      · cases h
+  iterate 2
+    · dsimp only at h
+      split at h
+      · split at h
+        · rename_i hs _ _ hr
+          exact writeRes_avoids (hav _ m3)
+            (fun _ => read_avoids (hav _ m3) hr (asPtrWord_notU hU (hav _ m23) hs)) h
+        · cases h
+      · cases h
+  iterate 2
+    · dsimp only at h
+      split at h
+      · refine writeRes_avoids (hav _ m2) (fun _ z hz => ?_) h
+        simp only [Array.toList_replicate, List.mem_replicate] at hz
+        rw [hz.2]; trivial
+      · cases h
+  · dsimp only at h
+    split at h
+    · cases h; exact memAvoids_poison (hav _ m1) _
+    · cases h
+  · cases h; exact hav _ m1
+  · cases h; exact DeferRel.memAvoids_filter (hav _ m1) _
+  · cases h; exact hav _ m2
+  · dsimp only at h
+    split at h
+    · split at h
+      · cases h
+      · cases h; exact hav _ (List.mem_cons_self)
+    · cases h
+  · split at h <;> cases h
+
+/-- The frame values avoid `U` (a `LocalAddr` naming no block of `U`). -/
+theorem frameVal_avoids (hU : TempU U) {ctx : Ctx} {v : Value} {x : Val}
+    (hloc : ∀ n, v.op = .LocalAddr → v.aux = some n → ¬ U (frameBlk ctx.tabs ctx.act n))
+    (hf : frameVal ctx v = some x) : Val.Avoids U x := by
+  have hnot : ∀ b, (∀ a n, b ≠ .temp a n) → ¬ U b := fun b hb hu => by
+    obtain ⟨a, n, hn⟩ := hU _ hu; exact hb a n hn
+  unfold frameVal at hf
+  split at hf
+  · cases hf; exact hnot _ fun _ _ hn => nomatch hn
+  · cases hf; trivial
+  · rename_i hop
+    cases hax : v.aux with
+    | none => rw [hax] at hf; cases hf
+    | some n => rw [hax] at hf; cases hf; exact hloc n hop hax
+  · split at hf <;> cases hf
+    · exact hnot _ fun _ _ hn => nomatch hn
     · trivial
-    · exact offPtr_avoids _ hargs
-    · exact addPtr_avoids hargs
-    · exact ptrIndex_avoids _ hargs
-    · show ¬ U Blk.nil
-      intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
-    · exact condSelect_avoids hargs
-    · show ¬ U (Blk.global "runtime.g")
-      intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
-  have pure1 : ∀ op, v.op = op → (op = .Copy ∨ op = .Select0 ∨ op = .Select1 ∨
-      op = .SelectN ∨ op = .MakeResult ∨ op = .Convert ∨ op = .Load ∨ op = .AtomicLoad32 ∨
-      op = .AtomicLoad64 ∨ op = .AtomicLoadPtr) → Val.Avoids U r := by
-    intro op hv ho
-    rw [evalOp_pureOp (by rcases ho with h | h | h | h | h | h | h | h | h | h <;> simp [hv, h])]
-      at h
-    cases h
-    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> rw [hv]
-    · rcases argv with _ | ⟨x, _ | ⟨y, rest⟩⟩
+  · split at hf <;> cases hf
+    · refine ofStr_avoids ⟨?_, trivial, trivial⟩
+      split
       · trivial
-      · exact hargs _ List.mem_cons_self
-      · trivial
-    · exact select_avoids 0 hargs
-    · exact select_avoids 1 hargs
-    · exact selectN_avoids _ hargs
-    · show Val.AvoidsList U argv
-      exact avoidsList_iff.2 hargs
-    · exact convert_avoids _ hargs
-    · exact loadOp_avoids hU _ hargs
-    · exact atomicLoad_avoids hU _ hargs
-    · exact atomicLoad_avoids hU _ hargs
-    · exact atomicLoad_avoids hU _ hargs
-  have roots : ∀ op, v.op = op → (op = .Store ∨ op = .Zero ∨ op = .Move ∨ op = .VarDef ∨
-      op = .VarLive ∨ op = .KeepAlive ∨ op = .NilCheck) → Val.Avoids U r := by
-    intro op hv ho
-    rw [evalOp_memRoot (by rcases ho with h | h | h | h | h | h | h <;> simp [hv, h])] at h
-    rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · exact write_avoids hU (.inl hv) hargs h
-    · exact write_avoids hU (.inr (.inl hv)) hargs h
-    · exact write_avoids hU (.inr (.inr hv)) hargs h
-    · obtain ⟨M, n, rfl, -, rfl, -⟩ := DSE.varDef_shape hv h
-      exact memAvoids_poison (hargs _ List.mem_cons_self) _
-    · obtain ⟨L, M, rfl, rfl, -⟩ := varLive_spec (.inl hv) h
-      exact hargs _ (by simp)
-    · obtain ⟨L, M, rfl, rfl, -⟩ := varLive_spec (.inr hv) h
-      exact hargs _ (by simp)
-    · obtain ⟨M, rfl, -⟩ := nilCheck_ok hv h
-      exact hargs _ List.mem_cons_self
-  have calls : v.op = .StaticCall ∨ v.op = .InterCall ∨ v.op = .ClosureCall → Val.Avoids U r := by
-    intro ho
-    have he : evalOp env ctx fr v argv ty = callOp env ctx v argv := by
-      rcases ho with h | h | h <;> simp only [evalOp, h]
-    rw [he] at h
-    rcases List.eq_nil_or_concat argv with rfl | ⟨L, w, rfl⟩
-    · obtain ⟨msg, hm⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
-      rw [hm] at h; cases h
-    · rw [List.concat_eq_append] at hargs h
-      exact ((callOp_rel hfs hU (.refl w) hargs).1 r h).1
-  rcases hop with h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 |
-    h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1 |
-    h1 | h1 | h1 | h1 | h1 | h1 | h1 | h1
-  · exact pure2 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure2 _ h1 (by simp)
-  · exact pure2 _ h1 (by simp)
-  · exact pure2 _ h1 (by simp)
-  · exact absurd h1 hla
-  · -- Addr
-    simp only [evalOp, frameVal, h1] at h
-    split at h
-    · rename_i x hx
-      cases h
-      split at hx
-      · cases hx; intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
-      · cases hx; trivial
-    · rename_i hx
-      split at hx <;> cases hx
-  · exact pure2 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure2 _ h1 (by simp)
-  · exact pure2 _ h1 (by simp)
-  · -- GetClosurePtr
-    simp only [evalOp, h1, hfr.closure] at h
-    cases h; trivial
-  · -- Arg
-    simp only [evalOp, h1] at h
-    split at h
+      · exact hnot _ fun _ _ hn => nomatch hn
+    · trivial
+  · cases hf
+
+/-- **Every op keeps values avoiding frame temporaries**: on arguments that avoid `U`, in a frame
+whose inputs avoid `U`, a value whose calls return avoiding results (`hcall`) and that is not
+a `LocalAddr` of a block of `U` (`hloc`) evaluates to a result that avoids `U`. -/
+theorem evalOp_avoids {env : Env} (hU : TempU U) {ctx : Ctx} {fr : Frame} (hfr : FrameOK U fr)
+    {v : Value} {argv : List Val} {ty : Ty} {r : Val}
+    (hcall : ∀ r, callOp env ctx v argv = .ok r → Val.Avoids U r)
+    (hloc : ∀ n, v.op = .LocalAddr → v.aux = some n → ¬ U (frameBlk ctx.tabs ctx.act n))
+    (hargs : ∀ z ∈ argv, Val.Avoids U z) (h : evalOp env ctx fr v argv ty = .ok r) :
+    Val.Avoids U r := by
+  unfold evalOp at h
+  split at h
+  · cases h; exact hfr.mem0
+  · split at h
     · exact argVal_avoids hU hfr h
     · cases h
-  · -- ArgIntReg
-    simp only [evalOp, h1] at h
-    split at h
+  · split at h
     · exact argVal_avoids hU hfr h
     · cases h
-  · -- InitMem
-    simp only [evalOp, h1] at h
-    cases h; exact hfr.mem0
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact pure1 _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · exact roots _ h1 (by simp)
-  · -- PanicBounds
-    rw [evalOp_panicBounds h1] at h
-    exact absurd h panicBounds_not_ok
-  · exact calls (.inl h1)
-  · exact calls (.inr (.inl h1))
-  · exact calls (.inr (.inr h1))
-  all_goals
-    rw [evalOp_atomic (by simp [h1])] at h
-    exact atomicRoot_avoids hU hargs h
+  · cases h
+    unfold argFloat
+    split
+    · split
+      · rename_i hx; exact argVal_avoids hU hfr hx
+      · trivial
+    · trivial
+  · exact absurd h panicBounds_not_ok
+  iterate 6 exact hcall _ h
+  · cases h; rw [hfr.closure]; trivial
+  iterate 11 exact memRoot_avoids hU hargs h
+  · split at h
+    · cases h; exact frameVal_avoids hU hloc (by assumption)
+    · split at h
+      · exact atomicRoot_avoids hU hargs h
+      · cases h; exact evalPure_avoids hU _ _ _ _ hargs
+
+/-- A call on avoiding arguments returns an avoiding result (the contracts are frame-safe). -/
+theorem callOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {v : Value}
+    {argv : List Val} (hargs : ∀ z ∈ argv, Val.Avoids U z) :
+    ∀ r, callOp env ctx v argv = .ok r → Val.Avoids U r := by
+  intro r h
+  rcases List.eq_nil_or_concat argv with rfl | ⟨L, w, rfl⟩
+  · obtain ⟨msg, hm⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
+    rw [hm] at h; cases h
+  · rw [List.concat_eq_append] at hargs h
+    exact ((callOp_rel hfs hU (.refl w) hargs).1 r h).1
 
 /-! ## The source step -/
 
-theorem ptrShaped_iff {tabs : Tables} {t : TypeRef} :
-    NilCheck.ptrShaped tabs t = true ↔ ∃ e, tabs.ty t = .ptr e := by
-  unfold NilCheck.ptrShaped
+theorem wordShaped_iff {tabs : Tables} {t : TypeRef} :
+    wordShaped tabs t = true ↔ (∃ e, tabs.ty t = .ptr e) ∨ tabs.ty t = .int .w64 := by
+  unfold wordShaped
   split
-  · rename_i e he; exact ⟨fun _ => ⟨e, he⟩, fun _ => rfl⟩
-  · rename_i hne
-    exact ⟨fun h => (nomatch h), fun ⟨e, he⟩ => absurd he (hne e)⟩
+  · rename_i e he; exact ⟨fun _ => .inl ⟨e, he⟩, fun _ => rfl⟩
+  · rename_i he; exact ⟨fun _ => .inr he, fun _ => rfl⟩
+  · rename_i hne hni
+    exact ⟨fun h => (nomatch h), fun h => by
+      rcases h with ⟨e, he⟩ | he
+      · exact absurd he (hne e)
+      · exact absurd he hni⟩
 
 theorem evalOp_localAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} (hop : v.op = .LocalAddr) :
@@ -380,27 +261,33 @@ theorem evalOp_localAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv 
   simp only [evalOp, frameVal, hop]
   cases v.aux <;> rfl
 
-/-- A pointer into a temporary is an integer at an integer shape and `poison` at a shape that is
-not a pointer. -/
-theorem retype_temp_avoids (U : Blk → Prop) {t : Ty} (ht : ∀ e, t ≠ .ptr e) (a n : Nat) (off : BitVec 64) :
-    Val.Avoids U ((Val.ptr ⟨.temp a n, off⟩).retype t) := by
+/-- A pointer into a temporary is `poison` at a shape that is not a word. -/
+theorem retype_temp_avoids (U : Blk → Prop) {t : Ty} (ht : ∀ e, t ≠ .ptr e) (hi : t ≠ .int .w64)
+    (a n : Nat) (off : BitVec 64) : Val.Avoids U ((Val.ptr ⟨.temp a n, off⟩).retype t) := by
   cases t with
-  | int w => cases w <;> simp [Val.retype, Ptr.addr?, Blk.base?] <;> trivial
+  | int w => cases w <;> first | exact absurd rfl hi | trivial
   | ptr e => exact absurd rfl (ht e)
   | _ => trivial
 
-theorem retype_ptr_shape {e : Option Nat} {z : Val} {n : Nat}
+/-- At a word shape a pointer into a temporary stays itself (it has no integer form). -/
+theorem retype_word_shape {t : Ty} (ht : (∃ e, t = .ptr e) ∨ t = .int .w64) {z : Val} {n : Nat}
     (h : z = .poison ∨ ∃ off, z = .ptr ⟨.temp 0 n, off⟩) :
-    z.retype (.ptr e) = .poison ∨ ∃ off, z.retype (.ptr e) = .ptr ⟨.temp 0 n, off⟩ := by
+    z.retype t = .poison ∨ ∃ off, z.retype t = .ptr ⟨.temp 0 n, off⟩ := by
   rcases h with rfl | ⟨off, rfl⟩
-  · exact .inl rfl
-  · exact .inr ⟨off, rfl⟩
+  · exact .inl (by cases t <;> rfl)
+  · rcases ht with ⟨e, rfl⟩ | rfl
+    · exact .inr ⟨off, rfl⟩
+    · exact .inr ⟨off, rfl⟩
 
 theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :
     PtrOps.ptrRes p = .poison ∨ ∃ off, PtrOps.ptrRes p = .ptr ⟨.temp 0 n, off⟩ := by
-  rcases ptrRes_cases p with h | h
-  · exact .inl h
-  · exact .inr ⟨p.off, by rw [h]; cases p; simp only at hp; rw [hp]⟩
+  obtain ⟨b, off⟩ := p
+  simp only at hp
+  subst hp
+  unfold PtrOps.ptrRes
+  split
+  · exact .inr ⟨off, rfl⟩
+  · exact .inl rfl
 
 /-- A pointer op on a tainted argument 0 points into the same temporary. -/
 theorem prop_tainted {op : Op} (hop : propOp op = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
@@ -493,8 +380,8 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
     · cases htag
     rename_i hps
     simp only [Bool.not_eq_true', Bool.not_eq_false] at hps
-    obtain ⟨e, he⟩ := ptrShaped_iff.1 hps
-    rw [he]
+    have hw : (∃ e, tabs.ty fv.type = .ptr e) ∨ tabs.ty fv.type = .int .w64 :=
+      wordShaped_iff.1 hps
     split at htag
     · rename_i hla
       have hla' : fv.op = .LocalAddr := beq_iff_eq.1 hla
@@ -503,7 +390,7 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
       rw [evalOp_localAddr hla', htag] at hr
       simp only [hfb] at hr
       cases hr
-      exact .inr ⟨0, rfl⟩
+      exact retype_word_shape hw (.inr ⟨0, rfl⟩)
     split at htag
     · rename_i hp
       cases ha : fv.args[0]? with
@@ -520,11 +407,11 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
         | cons z' rest =>
           simp only [List.getElem?_cons_zero, Option.some.injEq] at hz
           subst hz
-          exact retype_ptr_shape (prop_tainted hp _ _ _ hzI)
+          exact retype_word_shape hw (prop_tainted hp _ _ _ hzI)
     · cases htag
   · refine ⟨fun n hn hnE => absurd ⟨n, hn, hnE⟩ ht, fun _ => ?_⟩
     obtain ⟨gv, hgv, hk⟩ := R.value x fv hfv
-    rcases hk with ⟨hs, hok⟩ | ⟨he, n, hname', hnE⟩
+    rcases hk with ⟨hs, -⟩ | ⟨he, n, hname', hnE⟩
     · -- a kept value: every argument is untainted
       have hargA : ∀ z ∈ vs, Val.Avoids (UE E) z := fun z hz => by
         obtain ⟨a, ha, hI⟩ := hargInv z hz
@@ -536,33 +423,33 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
           exact ht ⟨n, hTx.trans hn, hnE⟩
         · rw [hgv] at hgv'; cases hgv'
           exact elimV_ne_same he hs
-      rcases (opOK_spec hok).2 with hp | hn
-      · by_cases hla : fv.op = .LocalAddr
-        · rw [evalOp_localAddr hla] at hr
-          cases hr
-          cases hax : fv.aux with
-          | none => exact retype_avoids hU _ trivial
-          | some n =>
-            by_cases hps : NilCheck.ptrShaped tabs fv.type = true
-            · obtain ⟨e, he⟩ := ptrShaped_iff.1 hps
-              rw [he]
-              show ¬ UE E (frameBlk tabs 0 n)
-              rintro ⟨m, hmE, hm⟩
-              have hnm : n = m := by
-                unfold frameBlk at hm; split at hm <;> cases hm; rfl
-              subst hnm
-              refine ht ⟨n, ?_, hmE⟩
-              rw [← htag]
-              unfold tagStep
-              simp [hps, hla, hax]
-            · have hnp : ∀ e, tabs.ty fv.type ≠ .ptr e := fun e he => hps (ptrShaped_iff.2 ⟨e, he⟩)
-              show Val.Avoids _ ((Val.ptr ⟨frameBlk tabs 0 n, 0⟩).retype _)
-              unfold frameBlk
-              split
-              · exact retype_avoids hU _ (show ¬ UE E (.local 0 n) from fun ⟨m, _, hm⟩ => by cases hm)
-              · exact retype_temp_avoids _ hnp 0 n 0
-        · exact retype_avoids hU _ (evalOp_avoids hfs hU hfr hp hla hargA hr)
-      · exact noPtr_avoids hU hty hn
+      by_cases hla : fv.op = .LocalAddr
+      · rw [evalOp_localAddr hla] at hr
+        cases hr
+        cases hax : fv.aux with
+        | none => exact retype_avoids hU _ trivial
+        | some n =>
+          by_cases hps : wordShaped tabs fv.type = true
+          · refine retype_avoids hU _ ?_
+            show ¬ UE E (frameBlk tabs 0 n)
+            rintro ⟨m, hmE, hm⟩
+            have hnm : n = m := by
+              unfold frameBlk at hm; split at hm <;> cases hm; rfl
+            subst hnm
+            refine ht ⟨n, ?_, hmE⟩
+            rw [← htag]
+            unfold tagStep
+            simp [hps, hla, hax]
+          · have hnp : ∀ e, tabs.ty fv.type ≠ .ptr e := fun e he =>
+              hps (wordShaped_iff.2 (.inl ⟨e, he⟩))
+            have hni : tabs.ty fv.type ≠ .int .w64 := fun he => hps (wordShaped_iff.2 (.inr he))
+            show Val.Avoids _ ((Val.ptr ⟨frameBlk tabs 0 n, 0⟩).retype _)
+            unfold frameBlk
+            split
+            · exact retype_avoids hU _ (show ¬ UE E (.local 0 n) from fun ⟨m, _, hm⟩ => by cases hm)
+            · exact retype_temp_avoids _ hnp hni 0 n 0
+      · exact retype_avoids hU _ (evalOp_avoids hU hfr (callOp_avoids hfs hU hargA)
+          (fun _ h _ => absurd h hla) hargA hr)
     · -- an eliminated write
       obtain ⟨hop, -⟩ := elimV_spec he
       have hmA : ∀ M, Val.mem M ∈ vs → M.Avoids (UE E) := fun M hM => by

@@ -57,7 +57,7 @@ theorem int_of_retype {v : Val} {wa wt w : Width} {X : BitVec w.bits} (hv : v.ha
   | int w0 Y => exact ⟨w0, Y, rfl⟩
   | ptr p =>
     cases wa <;> simp [Val.hasTy] at hv
-    cases wt <;> simp [Val.retype, hv] at h
+    cases wt <;> simp [Val.retype, hv, Ptr.word_of_not_convertible hv] at h
   | poison => cases wt <;> cases h
   | _ => cases wt <;> cases h
 

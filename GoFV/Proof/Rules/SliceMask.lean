@@ -155,7 +155,7 @@ theorem r_generic_1053_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
 /-! ## Non-vacuity -/
 
 theorem inst_r_generic_1053 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_1053 {}
-    { leaf := fun p => if p = [0, 0] then .ptr ⟨.heap 0, 0⟩ else
+    { leaf := fun p => if p = [0, 0] then .int .w64 (2 ^ 40) else
         if p = [0, 1, 0] then .int .w64 8 else .int .w64 5
       ty := fun p => if p = [] then .slice none else
         if p = [0] ∨ p = [0, 0] then .ptr none else .int .w64

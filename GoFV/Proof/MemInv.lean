@@ -129,13 +129,17 @@ theorem memsOK_of_tuple {vs : List Val} (h : MemsOK P (.tuple vs)) : ∀ v ∈ v
 
 /-! ## Decoding and retyping -/
 
+/-- A pointer's word holds no memory. -/
+theorem word_mems (p : Ptr) : p.word.mems = [] := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+
 theorem decodeInt_mems (w : Width) (bs : Array Byte) : (decodeInt w bs).mems = [] := by
   unfold decodeInt; split
   · rfl
-  · split <;> (try split) <;> rfl
+  · split <;> (try split) <;> first | rfl | exact word_mems _
 
 theorem decodePtr_mems (bs : Array Byte) : (decodePtr bs).mems = [] := by
-  unfold decodePtr; split <;> (try split) <;> rfl
+  unfold decodePtr; split <;> (try split) <;> first | rfl | exact word_mems _
 
 theorem ofStr_mems {vs : List Val} (h : Val.memsL vs = []) : (Val.ofStr vs).mems = [] := by
   unfold Val.ofStr; split
@@ -148,12 +152,12 @@ theorem ofSlice_mems {vs : List Val} (h : Val.memsL vs = []) : (Val.ofSlice vs).
   · rfl
 
 theorem retypePtr_mems (v : Val) : v.retypePtr.mems = [] := by
-  unfold Val.retypePtr; split <;> rfl
+  unfold Val.retypePtr; split <;> first | rfl | exact word_mems _
 
 theorem retypeI64_mems (v : Val) : v.retypeI64.mems = [] := by
   unfold Val.retypeI64; split
   · split <;> rfl
-  · split <;> rfl
+  · first | rfl | exact word_mems _ | (split <;> first | rfl | exact word_mems _)
   · rfl
 
 /-- A string holds no memory. -/
@@ -184,9 +188,10 @@ theorem decode_mems : (bs : Array Byte) → (off : Nat) → (t : Ty) → (decode
     simp only [decode, decodeInt]
     split
     · rfl
-    · split <;> (try split) <;> rfl
+    · split <;> (try split) <;> first | rfl | exact word_mems _
   | bs, off, .bool => by simp only [decode]; split <;> (try split) <;> rfl
-  | bs, off, .ptr _ => by simp only [decode, decodePtr]; split <;> (try split) <;> rfl
+  | bs, off, .ptr _ => by
+    simp only [decode, decodePtr]; split <;> (try split) <;> first | rfl | exact word_mems _
   | bs, off, .agg fs _ => by
     simp only [decode, Val.mems]; exact decodeFields_mems bs off fs
   | bs, off, .str => by

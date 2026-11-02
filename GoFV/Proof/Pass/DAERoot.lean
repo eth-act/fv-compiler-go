@@ -1,3 +1,4 @@
+import GoFV.Proof.Pass.DAEPure
 import GoFV.Proof.Pass.DAEOps
 import GoFV.Proof.AtomicSim
 
@@ -256,19 +257,12 @@ theorem evalOp_atomic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : L
   rcases hop with h | h | h | h | h | h | h | h | h <;>
     simp only [evalOp, frameVal, h] <;> rfl
 
-theorem int2_avoids (w : Width) (f : BitVec w.bits → BitVec w.bits → BitVec w.bits)
-    (l : List Val) : Val.Avoids U (int2 w (fun x y => .int w (f x y)) l) := by
-  unfold int2
-  split
-  · split <;> trivial
-  · trivial
-
 theorem atomicStep_avoids (k : Atomic.Kind) (w : Width) {o x : Val} (ho : Val.Avoids U o)
     (hx : Val.Avoids U x) :
     Val.Avoids U (Atomic.step k w o x).1 ∧ ∀ r, (Atomic.step k w o x).2 = some r → Val.Avoids U r := by
   cases k <;> simp only [Atomic.step, Int.add, Int.and, Int.or] <;>
     refine ⟨?_, fun r hr => ?_⟩ <;> (try cases hr) <;>
-    first | exact hx | exact ho | exact int2_avoids _ _ _
+    first | exact hx | exact ho | exact int2_avoids (fun _ _ => by trivial) _
 
 theorem atomicResult_avoids {r : Option Val} {m : Mem} (hr : ∀ y, r = some y → Val.Avoids U y)
     (hm : m.Avoids U) : Val.Avoids U (Atomic.result r m) := by

@@ -51,8 +51,8 @@ theorem r_generic_278_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
     exact refines_retype_of_hasTy hty
 
 theorem inst_r_generic_278 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_278
-    (PEnv.ofLists [([0, 0], .agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]),
-      ([0, 1], .agg [.ptr Ptr.null, .int .w64 2, .int .w64 5])]
+    (PEnv.ofLists [([0, 0], .agg [.int .w64 0, .int .w64 2, .int .w64 5]),
+      ([0, 1], .agg [.int .w64 0, .int .w64 2, .int .w64 5])]
       [([], .bool), ([0, 0], .slice (some 8)), ([0, 1], .slice (some 8))] (.int .w64) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_278]

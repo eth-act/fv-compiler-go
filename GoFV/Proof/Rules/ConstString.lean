@@ -79,7 +79,8 @@ theorem r_generic_1022_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   simp only [opVal, reduceCtorEq, ite_false, reduceEvalPure]
   have hc : Conv.const .w64 (Int64.ofNat s.size) = .int .w64 (BitVec.ofNat 64 s.size) := by
     simp only [Conv.const, Width.bits, Int64.toInt, BitVec.ofInt_toInt]; rfl
-  simp only [hc, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq]
+  simp only [hc, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq, Ptr.word,
+    Ptr.convertible]
   unfold Val.ofStr at hty ⊢
   split
   · rename_i hok
@@ -90,7 +91,7 @@ theorem r_generic_1022_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
 
 theorem strVal_of_strAux_empty {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
     (h : strAux? tabs a = some (s, d)) (hs : s.size = 0) :
-    strVal tabs a = .agg [.ptr Ptr.null, .int .w64 (BitVec.ofNat 64 0)] := by
+    strVal tabs a = .agg [.int .w64 0, .int .w64 (BitVec.ofNat 64 0)] := by
   unfold strAux? at h
   unfold strVal
   split at h
@@ -121,7 +122,7 @@ theorem r_generic_1015_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   rw [hb, hi, h0]
   simp only [opVal, reduceCtorEq, ite_false, reduceEvalPure]
   simp only [Conv.const, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq]
-  show _ → Refines _ (Val.retype (e.ty []) (.agg [.ptr Ptr.null, .int .w64 (BitVec.ofNat 64 0)]))
+  show _ → Refines _ (Val.retype (e.ty []) (.agg [.int .w64 0, .int .w64 (BitVec.ofNat 64 0)]))
   rw [Val.retype_of_hasTy hty]
   exact fun _ => Refines.refl _
 
@@ -201,7 +202,7 @@ theorem inst_r_generic_1011 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   rule_eval
   have h2 : (2#64).msb = false := by decide
   simp [Comp.select, Comp.make, Val.retype, Val.retypeFields, Val.ofStr, Val.strOK, Val.retypePtr,
-    Val.retypeI64, h2]
+    Val.retypeI64, h2, Ptr.word, Ptr.convertible]
   exact ⟨fun xe x h => by subst h; simp [strDataVar?], fun xe x h => by subst h; simp [auxVar?]⟩
 
 end GoFV.Proof.Rules

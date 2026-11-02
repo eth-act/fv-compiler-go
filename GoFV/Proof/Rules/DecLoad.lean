@@ -80,7 +80,8 @@ theorem loadSplit_ref {t0 : Ty} {fs : List (Nat × Ty)} {n : Nat}
     rw [hq]
     unfold PtrOps.ptrRes
     split
-    · exact Refines.refl _
+    · rw [Ptr.word_retype_ptr, loadOp_word]
+      exact Refines.refl _
     · rw [retype_poison, loadOp_of_asPtrWord_none (P := .poison) rfl]
       exact retype_mono _ (.poison _)
   | int w x =>

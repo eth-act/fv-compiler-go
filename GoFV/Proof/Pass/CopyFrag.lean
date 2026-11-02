@@ -108,8 +108,8 @@ theorem GlobalOrPoison.retype {y : Val} (h : GlobalOrPoison y) (t : Ty) :
       · left; rfl
       · left; rfl
       · left; rfl
-      · right; exact ⟨p, by simp [Val.retype, hp], hp⟩
-    | ptr e => right; exact ⟨p, rfl, hp⟩
+      · right; exact ⟨p, by simp [Val.retype, Ptr.word, hp], hp⟩
+    | ptr e => right; exact ⟨p, by simp [Val.retype, Ptr.word, hp], hp⟩
     | _ => left; rfl
 
 /-- At a word shape, `retype` keeps `poison` and a global pointer. -/
@@ -118,16 +118,17 @@ theorem GlobalOrPoison.retype_word {y : Val} (h : GlobalOrPoison y) {t : Ty}
   rcases h with rfl | ⟨p, rfl, hp⟩
   · cases t <;> rfl
   · match t, ht with
-    | .int .w64, _ => simp [Val.retype, hp]
-    | .ptr _, _ => rfl
+    | .int .w64, _ => simp [Val.retype, Ptr.word, hp]
+    | .ptr _, _ => simp [Val.retype, Ptr.word, hp]
 
 mutual
 /-- Shapes that `Val.retype` does not tell apart: equal up to pointers' and slices' element
-sizes and composites' sizes. -/
+sizes and composites' sizes, and the two word shapes (`Val.retype_ptr_eq_i64`, #290). -/
 def retypeEqB : Ty → Ty → Bool
   | .int w, .int w' => w == w'
   | .bool, .bool | .mem, .mem | .other, .other | .empty, .empty | .ptr _, .ptr _ | .str, .str
   | .slice _, .slice _ => true
+  | .int .w64, .ptr _ | .ptr _, .int .w64 => true
   | .tuple ts, .tuple ts' => retypeEqListB ts ts'
   | .agg fs _, .agg fs' _ => retypeEqFieldsB fs fs'
   | .blob n, .blob n' => n == n'
@@ -155,6 +156,14 @@ theorem retypeEqB_sound : ∀ {t1 t2 : Ty}, retypeEqB t1 t2 = true → RetypeEq 
   | .ptr _, .ptr _, _ => fun v => by cases v with
     | int w _ => cases w <;> rfl
     | _ => rfl
+  | .int w, .ptr e, h => by
+    cases w with
+    | w64 => exact fun v => (Val.retype_ptr_eq_i64 v e).symm
+    | _ => simp [retypeEqB] at h
+  | .ptr e, .int w, h => by
+    cases w with
+    | w64 => exact fun v => Val.retype_ptr_eq_i64 v e
+    | _ => simp [retypeEqB] at h
   | .opaque _, .opaque _, _ => fun v => by cases v <;> rfl
   | .blob _, .blob _, h => by simp only [retypeEqB, beq_iff_eq] at h; subst h; exact RetypeEq.refl _
   | .tuple ts, .tuple ts', h => fun v => by
@@ -170,7 +179,7 @@ theorem retypeEqB_sound : ∀ {t1 t2 : Ty}, retypeEqB t1 t2 = true → RetypeEq 
     | int w _ => cases w <;> rfl
     | _ => rfl
   | .int _, .bool, h | .int _, .mem, h | .int _, .tuple _, h | .int _, .other, h
-  | .int _, .ptr _, h | .int _, .agg _ _, h | .int _, .blob _, h | .int _, .empty, h
+  | .int _, .agg _ _, h | .int _, .blob _, h | .int _, .empty, h
   | .int _, .opaque _, h | .bool, .int _, h | .bool, .mem, h | .bool, .tuple _, h
   | .bool, .other, h | .bool, .ptr _, h | .bool, .agg _ _, h | .bool, .blob _, h
   | .bool, .empty, h | .bool, .opaque _, h | .mem, .int _, h | .mem, .bool, h
@@ -180,7 +189,7 @@ theorem retypeEqB_sound : ∀ {t1 t2 : Ty}, retypeEqB t1 t2 = true → RetypeEq 
   | .tuple _, .agg _ _, h | .tuple _, .blob _, h | .tuple _, .empty, h
   | .tuple _, .opaque _, h | .other, .int _, h | .other, .bool, h | .other, .mem, h
   | .other, .tuple _, h | .other, .ptr _, h | .other, .agg _ _, h | .other, .blob _, h
-  | .other, .empty, h | .other, .opaque _, h | .ptr _, .int _, h | .ptr _, .bool, h
+  | .other, .empty, h | .other, .opaque _, h | .ptr _, .bool, h
   | .ptr _, .mem, h | .ptr _, .tuple _, h | .ptr _, .other, h | .ptr _, .agg _ _, h
   | .ptr _, .blob _, h | .ptr _, .empty, h | .ptr _, .opaque _, h | .agg _ _, .int _, h
   | .agg _ _, .bool, h | .agg _ _, .mem, h | .agg _ _, .tuple _, h | .agg _ _, .other, h

@@ -616,7 +616,7 @@ theorem offPtr_safe {ai : Int64} {w : Val} (hw : Safe w) : Safe (PtrOps.offPtr a
   | .ptr q, hw =>
     simp only [PtrOps.offPtr, PtrOps.ptrRes]
     split
-    · simpa [Ptr.add, Safe] using hw
+    · exact safe_word (by simpa [Ptr.add, Safe] using hw)
     · trivial
   | .int .w64 x, hw => exact wordRes_safe hw
   | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
@@ -629,7 +629,10 @@ theorem addPtr_safe {w i : Val} (hw : Safe w) : Safe (PtrOps.addPtr [w, i]) := b
     unfold PtrOps.addPtr
     simp only
     split
-    · simp only [PtrOps.ptrRes]; split <;> simp_all [Safe, Ptr.add]
+    · simp only [PtrOps.ptrRes]
+      split
+      · exact safe_word (by simpa [Ptr.add, Safe] using hw)
+      · trivial
     · trivial
   | .int .w64 x, hw =>
     unfold PtrOps.addPtr
@@ -648,7 +651,10 @@ theorem ptrIndex_safe {el : Option Nat} {w i : Val} (hw : Safe w) :
     unfold PtrOps.ptrIndex
     simp only
     split
-    · simp only [PtrOps.ptrRes]; split <;> simp_all [Safe, Ptr.add]
+    · simp only [PtrOps.ptrRes]
+      split
+      · exact safe_word (by simpa [Ptr.add, Safe] using hw)
+      · trivial
     · trivial
   | .int .w64 x, hw =>
     unfold PtrOps.ptrIndex
@@ -773,8 +779,8 @@ omit K in
 theorem safe_global_retype (s : String) (o : BitVec 64) (t : Ty) :
     Safe ((Val.ptr ⟨.global s, o⟩).retype t) := by
   cases t with
-  | int w => cases w <;> simp [Val.retype, Ptr.addr?, Blk.base?, Safe]
-  | _ => simp [Val.retype, Safe]
+  | int w => cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Safe]
+  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Safe]
 
 omit K in
 /-- The data pointer of a non-empty string constant, at any shape of the constant (`poison` if
@@ -795,7 +801,7 @@ theorem safe_str_select (s : String) (x : Val) (t : Ty) :
     | str =>
       simp only [Val.retype, Val.retypePtr]
       unfold Val.ofStr
-      split <;> simp [Comp.select, Safe]
+      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Safe]
     | _ => simp [Val.retype, Comp.select, Safe]
   · cases t <;> simp [Val.retype, Comp.select, Safe]
 

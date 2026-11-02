@@ -254,11 +254,11 @@ theorem decode_encode_atom : (t : Ty) → (p : Val) → atom t = true → p.hasT
     | ptr q =>
       cases w with
       | w64 =>
-        simp only [Val.hasTy, Option.isNone_iff_eq_none] at hp
+        simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at hp
         show decodeInt .w64 (ptrBytes q) = .ptr q
         unfold decodeInt
         rw [bytesNat?_ptrBytes, bytesPtr?_ptrBytes]
-        simp only [hp]
+        exact Ptr.word_of_not_convertible hp
       | _ => simp [Val.hasTy] at hp
     | _ => simp [Val.hasTy] at hp
   | .bool, p, _, hp => by
@@ -276,6 +276,8 @@ theorem decode_encode_atom : (t : Ty) → (p : Val) → atom t = true → p.hasT
     | ptr q =>
       show decodePtr ((ptrBytes q).extract 0 (0 + 8)) = .ptr q
       rw [Array.extract_eq_self_of_le (by simp [ptrBytes]), decodePtr, bytesPtr?_ptrBytes]
+      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at hp
+      exact Ptr.word_of_not_convertible hp
     | int w x =>
       cases w with
       | w64 =>

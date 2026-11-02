@@ -85,18 +85,6 @@ def Blk.endsInWindow (b : Blk) (e : Nat) : Bool :=
   | some w => decide (e ≤ w)
   | none => true
 
-/-- `p` converts to an integer and back to itself (`Ptr.ofAddr_addr`): inside its window, its
-block's number small enough for the address encoding, and not a frame temporary (whose address
-the program never takes) or a global (no concrete address). -/
-def Ptr.convertible (p : Ptr) : Bool :=
-  match p.blk with
-  | .nil => decide (p.off.toNat < 2 ^ 40)
-  | .heap n => decide (n + 1 < 2 ^ 22) && decide (p.off.toNat < 2 ^ 40)
-  | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 2 ^ 20) &&
-      decide (p.off.toNat < 2 ^ 24)
-  | .outargs a => decide (a < 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
-  | .temp _ _ | .global _ | .wbuf => false
-
 /-- A pointer as the word a program computes for it by address arithmetic: its concrete address
 when it converts back to itself (`Ptr.convertible`, `Ptr.ofAddr_addr`), else the pointer. -/
 def Ptr.word (p : Ptr) : Val :=
@@ -226,26 +214,24 @@ def bytesPtr? (bs : Array Byte) : Option Ptr :=
     else none
   | _ => none
 
-/-- An integer of width `w` from its bytes: concrete bytes, or (64-bit) the concrete address
-of a stored pointer; a stored pointer to a global, which has no concrete address, stays a
-pointer (a `uintptr` holding a code or data address, e.g. a closure's code word); otherwise
+/-- An integer of width `w` from its bytes: concrete bytes, or (64-bit) the word of a stored
+pointer (`Ptr.word`, §3.2: its concrete address if it converts back to itself; else the pointer,
+e.g. a `uintptr` holding a closure's code word, a global without a concrete address); otherwise
 `poison`. -/
 def decodeInt (w : Width) (bs : Array Byte) : Val :=
   match bytesNat? bs with
   | some n => .int w (BitVec.ofNat w.bits n)
   | none =>
     match w, bytesPtr? bs with
-    | .w64, some p => match p.addr? with
-      | some a => .int .w64 a
-      | none => .ptr p
+    | .w64, some p => p.word
     | _, _ => .poison
 
-/-- A pointer word from 8 bytes: a stored pointer from its fragments, concrete bytes as the
-64-bit integer they hold (the pointer at that address, `Val.asPtrWord`, §3.3), so a word
-loads back as it was stored. -/
+/-- A pointer word from 8 bytes: a stored pointer from its fragments, as its word (`Ptr.word`:
+its address if it converts back to itself, §3.2), concrete bytes as the 64-bit integer they hold
+(the pointer at that address, `Val.asPtrWord`, §3.3), so a word loads back as it was stored. -/
 def decodePtr (bs : Array Byte) : Val :=
   match bytesPtr? bs with
-  | some p => .ptr p
+  | some p => p.word
   | none => match bytesNat? bs with
     | some n => .int .w64 (BitVec.ofNat 64 n)
     | none => .poison

@@ -506,8 +506,9 @@ def callE (vtys : List GoTy) (e : PEnv) (fn : String) (args : List Expr) (dargs 
 with a known element size `k` is the element type known by its size only, a record with the
 one attribute `Size` (`t.Elem().Size()` is `k`; any other use of it is the oracle's); `t.Elem()`
 of a slice shape `.slice el` (data pointer `.ptr el`), or of an aggregate of at least two fields
-whose first is a pointer `.ptr el`, is the element type known by its pointer type only, the
-record with the one attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an
+whose first is a pointer `.ptr el` (or the 64-bit integer word, which has the same values as a
+pointer, `Val.hasTy_ptr_eq_i64`: `.ptr none`), is the element type known by its pointer type
+only, the record with the one attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an
 aggregate of one field at offset 0 is that field's shape (`Sem.tyOf` of a one-element array
 `[1]T`: `T`'s shape); the kind predicates by `kindE`. The method name is matched first, so that
 a method of an unknown type shape is still `none`. -/
@@ -521,6 +522,7 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
     | .ty (.ptr (some k)) => some (.strct [("Size", .int k)])
     | .ty (.slice el) => some (.strct [("PtrTo", .ty (.ptr el))])
     | .ty (.agg ((_, .ptr el) :: _ :: _) _) => some (.strct [("PtrTo", .ty (.ptr el))])
+    | .ty (.agg ((_, .int .w64) :: _ :: _) _) => some (.strct [("PtrTo", .ty (.ptr none))])
     | .ty (.agg [(0, f)] _) => some (.ty f)
     | _ => none
   | "PtrTo", [] => match dy with

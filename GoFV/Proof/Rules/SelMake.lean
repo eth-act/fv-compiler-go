@@ -118,7 +118,9 @@ theorem refines_retype_ptr {L s : Val} {T : Ty} {e : Option Nat} (hs : s.isPtrWo
   cases s with
   | poison => rw [eq_poison_of_refines h]; exact .poison _
   | ptr P =>
-    have h' : Refines L (.ptr P) := by simpa [Val.retype] using h
+    have hc : P.convertible = false := by simpa [Val.isPtrWord] using hs
+    have h' : Refines L (.ptr P) := by
+      simpa [Val.retype, Ptr.word_of_not_convertible hc] using h
     cases h' with
     | poison => exact .poison _
     | ptr => exact refines_retype_of_hasTy hty
@@ -186,7 +188,7 @@ theorem r_generic_1038_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
 /-! ## Non-vacuity -/
 
 /-- A slice with `len 2 ≤ cap 5`. -/
-private def slice25 : Val := .agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]
+private def slice25 : Val := .agg [.int .w64 0, .int .w64 2, .int .w64 5]
 
 theorem inst_r_generic_1035 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1035
     (PEnv.ofLists [([0, 0, 0], slice25), ([1, 0], .int .w64 2), ([2, 0], .int .w64 5)]
@@ -199,7 +201,7 @@ theorem inst_r_generic_1035 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
     Val.retypeI64]
 
 theorem inst_r_generic_1036 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1036
-    (PEnv.ofLists [([0, 0], .ptr Ptr.null), ([0, 1, 0], slice25), ([2, 0], .int .w64 7)]
+    (PEnv.ofLists [([0, 0], .int .w64 0), ([0, 1, 0], slice25), ([2, 0], .int .w64 7)]
       [([0], .slice (some 8)), ([0, 0], .ptr (some 8)), ([0, 1, 0], .slice (some 8))] (.int .w64) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1036]
@@ -208,7 +210,7 @@ theorem inst_r_generic_1036 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
     Val.retypeI64]
 
 theorem inst_r_generic_1037 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1037
-    (PEnv.ofLists [([0, 0], .ptr Ptr.null), ([1, 0], .int .w64 2), ([0, 2, 0], slice25)]
+    (PEnv.ofLists [([0, 0], .int .w64 0), ([1, 0], .int .w64 2), ([0, 2, 0], slice25)]
       [([0], .slice (some 8)), ([0, 0], .ptr (some 8)), ([0, 2, 0], .slice (some 8))] (.int .w64) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1037]
@@ -217,7 +219,7 @@ theorem inst_r_generic_1037 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
     Val.retypeI64]
 
 theorem inst_r_generic_1038 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1038
-    (PEnv.ofLists [([0, 0], .ptr Ptr.null), ([1, 0], .int .w64 1), ([0, 2, 0], slice25)]
+    (PEnv.ofLists [([0, 0], .int .w64 0), ([1, 0], .int .w64 1), ([0, 2, 0], slice25)]
       [([0], .slice (some 8)), ([0, 0], .ptr (some 8)), ([0, 2, 0], .slice (some 8))] (.int .w64) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1038]
