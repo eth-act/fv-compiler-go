@@ -118,7 +118,6 @@ theorem expandCalls_stack_witness :
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag,
       Env.p1_mono, Env.p1_frameKeep⟩
 
-<<<<<<< HEAD
 /-! ## A tail call's stack-argument `Move` -/
 
 /-- A source block: the tail call `v2 = TailLECall v1` on the initial memory. -/
@@ -147,7 +146,6 @@ theorem expandCalls_tailMove_witness :
     ECCheck.tailAnchoredB tailF tailG tailFB tailGB 3 = true := by
   decide +kernel
 
-=======
 /-! ## A self-moved stack-assigned result -/
 
 /-- `check`'s environment for the pass output of `test/stack` `f2`. -/
@@ -189,5 +187,4 @@ theorem expandCalls_selfMove_witness :
     exact ⟨out, rfl, hres, hinv, hmr,
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag⟩
 
->>>>>>> f9751f1 (expand calls: self-move witness test/stack f2 (refs #28))
 end GoFV.Proof.Witness
