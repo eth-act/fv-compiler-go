@@ -218,6 +218,12 @@ def compare(base, head, label, header, wt=None):
     return out, r.returncode == 1
 
 
+def lean_input(path):
+    """Whether a changed path can change a module build or a benchmark."""
+    return (path.endswith(".lean") or path in ("lakefile.toml", "lake-manifest.json",
+            "lean-toolchain") or path.startswith("tools/"))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--dry-run", action="store_true")
@@ -230,15 +236,21 @@ def main():
     new = []
     main_sha = sh("git", "rev-parse", "origin/main")
     if a.only is None or "main" in a.only:
-        record(wt, main_sha, a.dry_run)
         prev = next((c for c in sh("git", "rev-list", "--first-parent", "--max-count=200",
-                                   main_sha).split()[1:] if short(c) in recorded()), None)
-        if prev and short(main_sha) in recorded():
-            log = sh("git", "log", "--oneline", "--first-parent", f"{prev}..{main_sha}")
-            res = compare(prev, main_sha, "main", f"main `{short(prev)}` → `{short(main_sha)}`:\n"
-                          + "\n".join("    " + l for l in log.splitlines()), wt=wt)
-            if res:
-                new.append(res)
+                                   main_sha).split() if short(c) in recorded()), None)
+        changed = sh("git", "diff", "--name-only", prev, main_sha).split() if prev else ["?"]
+        if prev and prev != main_sha and not any(lean_input(p) for p in changed):
+            # docs/perf/scripts only (e.g. this loop's own history PRs): nothing to measure
+            print(f"perf-watch: main {short(main_sha)} changes no Lean inputs since "
+                  f"{short(prev)}; not recorded", flush=True)
+        else:
+            record(wt, main_sha, a.dry_run)
+            if prev and prev != main_sha and short(main_sha) in recorded():
+                log = sh("git", "log", "--oneline", "--first-parent", f"{prev}..{main_sha}")
+                res = compare(prev, main_sha, "main", f"main `{short(prev)}` → `{short(main_sha)}`:\n"
+                              + "\n".join("    " + l for l in log.splitlines()), wt=wt)
+                if res:
+                    new.append(res)
     for pr in prs:
         if a.only is not None and str(pr["number"]) not in a.only:
             continue
