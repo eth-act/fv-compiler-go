@@ -124,13 +124,18 @@ theorem segOK_spec {x : ID} {D N : List ID} (h : segOK tabs f g x = some (D, N))
       intro n hn
       rcases hrt n hn with h | h
       · exact .inl h
-      · obtain ⟨v, hv, hop, hall⟩ := h
-        refine .inr ⟨v, hv, by simpa using hop, fun a ha => ?_⟩
-        have := hall a ha
-        simp only [List.any_eq_true, Bool.and_eq_true, Option.any_eq_true, List.mem_append,
-          List.mem_singleton, Array.contains_iff_mem] at this
-        obtain ⟨s, hs, hr, sv, hsv, has⟩ := this
-        exact ⟨s, by simpa [List.mem_append] using hs, hr, sv, hsv, has⟩
+      · right
+        cases hgn : g.value? n with
+        | none => simp [hgn] at h
+        | some v =>
+          simp only [hgn, Option.any_some, Bool.and_eq_true, beq_iff_eq,
+            Array.all_eq_true'] at h
+          refine ⟨v, rfl, h.1, fun a ha => ?_⟩
+          have := h.2 a ha
+          simp only [List.any_eq_true, Bool.and_eq_true, Option.any_eq_true, List.mem_append,
+            List.mem_singleton, Array.contains_iff_mem] at this
+          obtain ⟨s, hs, hr, sv, hsv, has⟩ := this
+          exact ⟨s, by simpa [List.mem_append] using hs, hr, sv, hsv, has⟩
     exact ⟨⟨fv, gv, hfv, hgv, hns', hgid, hgbl, hgty, hfph', hfop, hbm', any_contains_iff.1 hli, hkind,
       fun d hd => ⟨any_contains_iff.1 (hDl d hd), hDr d hd⟩, hN', hrx, hF', hA', h0⟩⟩
   next => cases h

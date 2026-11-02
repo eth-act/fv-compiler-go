@@ -142,7 +142,7 @@ theorem writes_one (P : Ptr) (m : Mem) (o : Nat) (bs : Array Byte) :
   rw [writes]
   cases m.write (P.add (BitVec.ofNat 64 o)) bs <;> rfl
 
-private theorem writes_snoc {P : Ptr} {m W : Mem} {ws : List (Nat × Array Byte)} {o : Nat}
+theorem writes_snoc {P : Ptr} {m W : Mem} {ws : List (Nat × Array Byte)} {o : Nat}
     {bs : Array Byte} (h : writes P m (ws ++ [(o, bs)]) = some W) :
     ∃ W1, writes P m ws = some W1 ∧ W1.write (P.add (BitVec.ofNat 64 o)) bs = some W := by
   rw [writes_append] at h

@@ -73,20 +73,17 @@ theorem read_write_putBytes {m m' : Mem} {P : Ptr} {n o : Nat} {R E : Array Byte
     have hRs : (a.data.extract P.off.toNat (P.off.toNat + n)).size = n := by
       simp only [Array.size_extract]; omega
     rw [StructStore.putBytes_getElem? (by rw [hRs]; exact ho)]
-    simp only [Array.getElem?_extract]
-    by_cases hj : j < n
-    · rw [if_pos (by simp only [CSE.Mem.foldl_set_size]; omega), if_pos (by omega),
-        foldl_set_getElem? _ _ _ _ (Nat.le_refl _) (by omega)]
-      by_cases hj' : o ≤ j ∧ j < o + E.size
-      · rw [if_pos ⟨by omega, by omega⟩, if_pos hj']; congr 1; omega
-      · rw [if_neg (by omega), if_neg hj']
-        simp only [Array.getElem?_extract, if_pos (show P.off.toNat + j < a.data.size by omega),
-          if_pos hj]
-    · rw [if_neg (by simp only [CSE.Mem.foldl_set_size]; omega), if_neg (by omega)]
-      by_cases hj' : o ≤ j ∧ j < o + E.size
-      · omega
-      · rw [if_neg hj']
-        simp only [Array.getElem?_extract, if_neg hj]
+    dsimp only
+    simp only [Array.getElem?_extract, CSE.Mem.foldl_set_size,
+      foldl_set_getElem? _ _ _ _ (Nat.le_refl _) (show P.off.toNat + o + E.size ≤ a.data.size by omega)]
+    have hC : (P.off.toNat + o ≤ P.off.toNat + j ∧ P.off.toNat + j < P.off.toNat + o + E.size) ↔
+        (o ≤ j ∧ j < o + E.size) := by omega
+    simp only [hC]
+    by_cases hA : o ≤ j ∧ j < o + E.size
+    · have hB : j < min (P.off.toNat + n) a.data.size - P.off.toNat := by omega
+      simp only [hA, hB, and_self, ite_true]
+      congr 1; omega
+    · simp only [hA, ite_false, false_and, and_false]
 
 /-- **Writes inside a written buffer**: writing the buffer and then the writes `ws` at their
 offsets succeeds, and is the write of the buffer with them put in. -/
@@ -116,7 +113,7 @@ theorem move_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {d p m : ID} {d
       Mm.read P v.auxInt.toInt.toNat = some R ∧ Mm.write Dst R = some Ms ∧
       y = (Val.mem Ms).retype (ctx.tys[v.id]?.getD .other) := by
   obtain ⟨argv, r, hargs, ho, rfl⟩ := CSE.Mem.evalValue_ok h
-  have hv : v.args = #[d, p, m] := by rw [← Array.toArray_toList v.args, ha]
+  have hv : v.args = #[d, p, m] := Array.ext' ha
   have : argv = [dv, pv, mv] := CSE.Mem.map_some_inj (by rw [← hargs, hv]; simp [hd, hp, hm])
   subst this
   have ho' : memRoot ctx v [dv, pv, mv] = .ok r := by
@@ -138,14 +135,14 @@ theorem varDef_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {m : ID} {mv 
     rw [show evalOp env ctx fr v [mv] (ctx.tys[v.id]?.getD .other) =
       memRoot ctx v [mv] by simp only [evalOp, hop]] at ho
     exact ho
-  unfold memRoot at ho'
-  rw [hop] at ho'
-  split at ho' <;> try (rename_i h1 _; cases h1; done)
-  · rename_i M _
+  simp only [memRoot, hop] at ho'
+  cases mv with
+  | mem M =>
+    simp only at ho'
     split at ho'
     · cases ho'; exact ⟨M, _, rfl, rfl⟩
     · cases ho'
-  all_goals (split at ho' <;> cases ho')
+  | _ => simp at ho' <;> (split at ho' <;> cases ho')
 
 /-- A `Zero` evaluates to its write at its address word. -/
 theorem zero_eval {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {q m : ID} {Q : Ptr}
@@ -188,7 +185,7 @@ theorem offPtr_eval {env : Env} {tabs : Tables} {g : Func} {fr : Frame} {q d : I
   have hai : BitVec.ofInt 64 qv.auxInt.toInt = BitVec.ofNat 64 qv.auxInt.toInt.toNat := by
     rw [← Int.toNat_of_nonneg h0]; simp
   rw [Option.getD_some, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hD, Option.bind_some,
-    hai, Ptr.step?, if_pos hin]
+    hai, Ptr.step?, ite_eq_left hin]
 
 /-! ## The validator's facts -/
 
@@ -206,14 +203,14 @@ theorem moveStoreOK_spec {tabs : Tables} {f g : Func} {p dst : ID} {n : Int64} {
         q.auxInt.toInt + (auxTy tabs sa.aux).size ≤ n.toInt := by
   unfold moveStoreOK at h
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, Option.isNone_iff_eq_none] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩, h13⟩ := h
-  split at h13
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩ := h
+  split at h12
   · rename_i q q' hq hq'
-    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h13
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨k1, k2⟩, k3⟩, k4⟩, k5⟩, k6⟩, k7⟩, k8⟩, k9⟩, k10⟩, k11⟩ := h13
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h12
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨k1, k2⟩, k3⟩, k4⟩, k5⟩, k6⟩, k7⟩, k8⟩, k9⟩, k10⟩ := h12
     exact ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, q, q', hq, hq', k1, k2, k3, k4, k5, k6, k7,
       k8, k9, k10⟩
-  · cases h13
+  · cases h12
 
 /-! ## The chains -/
 
@@ -225,7 +222,7 @@ def GChain (g : Func) : ID → List ID → ID → Prop
 theorem fchain_gchain {f g : Func} : ∀ {t m0 z' : ID} {ns : List ID},
     FChain f g t (ns ++ [z']) m0 → GChain g t ns z'
   | _, _, _, [], h => by obtain ⟨h1, -⟩ := h; exact h1.symm
-  | _, _, _, _ :: _, ⟨h1, -, uv, huv, h⟩ => ⟨h1, uv, huv, fchain_gchain h⟩
+  | _, _, _, _ :: _, ⟨h1, _, uv, huv, h⟩ => ⟨h1, uv, huv, fchain_gchain h⟩
 
 theorem fchain_last {f g : Func} : ∀ {t m0 z' : ID} {ns : List ID},
     FChain f g t (ns ++ [z']) m0 → ∃ zv, g.value? z' = some zv ∧ f.value? z' = none ∧
@@ -242,7 +239,7 @@ theorem fchain_fresh {f g : Func} : ∀ {t m0 : ID} {ns : List ID},
     · exact fchain_fresh h u hu
 
 /-- Every value of `gs` has its pair in `fs` when the lists are as long. -/
-theorem zip_all_right {α : Type} {P : ID × ID → Bool} : ∀ {fs gs : List ID},
+theorem zip_all_right {P : ID × ID → Bool} : ∀ {fs gs : List ID},
     (fs.zip gs).all P = true → fs.length = gs.length → ∀ b ∈ gs, ∃ a, P (a, b) = true
   | [], [], _, _, b, hb => absurd hb List.not_mem_nil
   | a :: fs, c :: gs, h, hl, b, hb => by
@@ -252,6 +249,34 @@ theorem zip_all_right {α : Type} {P : ID × ID → Bool} : ∀ {fs gs : List ID
     · exact zip_all_right h.2 (by simpa using hl) b hb
   | [], _ :: _, _, hl, _, _ => by cases hl
   | _ :: _, [], _, hl, _, _ => by cases hl
+
+/-- The `OffPtr`s of the target's stores hold words of `Dst` plus their offsets. -/
+def OffOK (g : Func) (Dst : Ptr) (Fr : Frame) (gs : List ID) : Prop :=
+  ∀ b ∈ gs, ∀ sb q', g.value? b = some sb → g.value? sb.args[0]! = some q' → q'.op = .OffPtr →
+    ∃ y, Fr.regs[sb.args[0]!]? = some (some y) ∧
+      y.asPtrWord = some (Dst.add (BitVec.ofNat 64 q'.auxInt.toInt.toNat))
+
+/-- Setting a register that is no `OffPtr` keeps `OffOK`. -/
+theorem OffOK.set_other {g : Func} {Dst : Ptr} {Fr : Frame} {gs : List ID} (h : OffOK g Dst Fr gs)
+    {t : ID} {tv : Value} (htv : g.value? t = some tv) (hop : tv.op ≠ .OffPtr) (y : Val) :
+    OffOK g Dst (Fr.set t y) gs := by
+  intro b hb sb q' hsb hq' hqop
+  have hne : t ≠ sb.args[0]! := by
+    rintro he; rw [← he, htv] at hq'; cases hq'; exact hop hqop
+  rw [Proof.Frame.set_regs_ne hne]
+  exact h b hb sb q' hsb hq' hqop
+
+/-- Setting an `OffPtr`'s register to a word of `Dst` plus its offset keeps `OffOK`. -/
+theorem OffOK.set_off {g : Func} {Dst : Ptr} {Fr : Frame} {gs : List ID} (h : OffOK g Dst Fr gs)
+    {q : ID} {qv : Value} (hqv : g.value? q = some qv) {y : Val} (hlt : q < Fr.regs.size)
+    (hy : y.asPtrWord = some (Dst.add (BitVec.ofNat 64 qv.auxInt.toInt.toNat))) :
+    OffOK g Dst (Fr.set q y) gs := by
+  intro b hb sb q' hsb hq' hqop
+  by_cases he : q = sb.args[0]!
+  · rw [← he, hqv] at hq'; cases hq'
+    rw [← he]; exact ⟨y, Proof.Frame.set_regs_self hlt, hy⟩
+  · rw [Proof.Frame.set_regs_ne he]
+    exact h b hb sb q' hsb hq' hqop
 
 section
 variable {env : Env} {tabs : Tables} {f g : Func} {S : Frame} {A : ID → Prop}
@@ -310,36 +335,8 @@ theorem eval_offs (H : Avail env tabs f S A) {d : ID} {dv : Val} {Dst : Ptr} (hd
             rw [hb] at hsb''; cases hsb''
             rw [hqv] at hq''; cases hq''
             exact ⟨y, Proof.Frame.set_regs_self hlt, hyw⟩
-          exact h5 [b'] this b' List.mem_cons_self sb' qv hb hqv hqop'
+          exact h5 _ this _ List.mem_cons_self _ _ hb hqv hqop'
         · exact h4 b' hb'
-
-/-- The `OffPtr`s of the target's stores hold words of `Dst` plus their offsets. -/
-def OffOK (g : Func) (Dst : Ptr) (Fr : Frame) (gs : List ID) : Prop :=
-  ∀ b ∈ gs, ∀ sb q', g.value? b = some sb → g.value? sb.args[0]! = some q' → q'.op = .OffPtr →
-    ∃ y, Fr.regs[sb.args[0]!]? = some (some y) ∧
-      y.asPtrWord = some (Dst.add (BitVec.ofNat 64 q'.auxInt.toInt.toNat))
-
-/-- Setting a register that is no `OffPtr` keeps `OffOK`. -/
-theorem OffOK.set_other {g : Func} {Dst : Ptr} {Fr : Frame} {gs : List ID} (h : OffOK g Dst Fr gs)
-    {t : ID} {tv : Value} (htv : g.value? t = some tv) (hop : tv.op ≠ .OffPtr) (y : Val) :
-    OffOK g Dst (Fr.set t y) gs := by
-  intro b hb sb q' hsb hq' hqop
-  have hne : t ≠ sb.args[0]! := by
-    rintro he; rw [← he, htv] at hq'; cases hq'; exact hop hqop
-  rw [Proof.Frame.set_regs_ne hne]
-  exact h b hb sb q' hsb hq' hqop
-
-/-- Setting an `OffPtr`'s register to a word of `Dst` plus its offset keeps `OffOK`. -/
-theorem OffOK.set_off {g : Func} {Dst : Ptr} {Fr : Frame} {gs : List ID} (h : OffOK g Dst Fr gs)
-    {q : ID} {qv : Value} (hqv : g.value? q = some qv) {y : Val} (hlt : q < Fr.regs.size)
-    (hy : y.asPtrWord = some (Dst.add (BitVec.ofNat 64 qv.auxInt.toInt.toNat))) :
-    OffOK g Dst (Fr.set q y) gs := by
-  intro b hb sb q' hsb hq' hqop
-  by_cases he : q = sb.args[0]!
-  · rw [← he, hqv] at hq'; cases hq'
-    rw [← he]; exact ⟨y, Proof.Frame.set_regs_self hlt, hy⟩
-  · rw [Proof.Frame.set_regs_ne he]
-    exact h b hb sb q' hsb hq' hqop
 
 /-- **The stores below the anchor**: if the source's stores from `s` (over `z`) evaluated to `M`,
 its `n` bytes at `P` are the zeros with the stores' bytes `ws` put in (bottom first), and the
@@ -357,7 +354,8 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
         | _, _ => false) = true →
       S.regs[s]? = some (some (.mem M)) → A s →
       ∃ ws, M.read P n.toInt.toNat = some (putAll (Array.replicate n.toInt.toNat (.b 0)) ws) ∧
-        (∀ w ∈ ws, w.1 + w.2.size ≤ n.toInt.toNat) ∧ (∃ Mz, S.regs[z]? = some (some (.mem Mz))) ∧
+        (∀ w ∈ ws, w.1 + w.2.size ≤ n.toInt.toNat) ∧
+        (∃ Mz, S.regs[z]? = some (some (.mem Mz)) ∧ A z) ∧
         ∀ Tz T, writes Dst Tz ws = some T →
         ∀ Fr : Frame, (∀ a, A a → Fr.regs[a]? = S.regs[a]?) → g.valueTab.size ≤ Fr.regs.size →
           OffOK g Dst Fr gs → Fr.regs[z']? = some (some (.mem Tz)) →
@@ -372,7 +370,7 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
     have hs : s = z := hsc
     have ht : t = z' := hgc
     subst hs ht
-    refine ⟨[], hz M hM hA, by simp, ⟨M, hM⟩, fun Tz T hW Fr hag hsz _ hz' _ => ?_⟩
+    refine ⟨[], hz M hM hA, by simp, ⟨M, hM, hA⟩, fun Tz T hW Fr hag hsz _ hz' _ => ?_⟩
     cases hW
     exact ⟨Fr, rfl, hz', hag, hsz, fun _ h => h⟩
   | s' :: fs1, gs, s, t, M, hsc, hgc, hlen, hgid, hzip, hM, hA => by
@@ -400,6 +398,7 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
     rw [hs] at hv'
     cases hv'
     obtain ⟨Q, M1, M2, hQ, rfl, hw, rfl⟩ := store_ok hop ha hqv hxv hmv (hev (by rw [hop]; decide))
+    change M1.write _ (encode (auxTy tabs sv.aux) xv) = some M2 at hw
     have ho : q.auxInt.toInt = ((q.auxInt.toInt.toNat : Nat) : Int) := (Int.toNat_of_nonneg h0).symm
     have hQe := offPtr_reg H hT hid hA0 hpA hq hqop (by rw [hqa]) ho hqty hce hP hpv hqv hQ
     subst hQe
@@ -408,15 +407,17 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
     obtain ⟨ws1, hr1, hin1, hMz, htg⟩ := move_below H hT hid hpA hP hpv hz fs1 gs1 sv.args[2]!
       (lastArg tv) M1 hsc1 hgc1 (by simpa using hlen)
       (fun u hu => hgid u (List.mem_cons_of_mem _ hu)) hzip1 hmv hA2
-    have hsz : (encode (auxTy tabs sv.aux) xv).size + q.auxInt.toInt.toNat ≤ n.toInt.toNat := by
-      rw [Sem.encode_size]; omega
+    have he : (encode (auxTy tabs sv.aux) xv).size = (auxTy tabs sv.aux).size := Sem.encode_size _ _
+    have hle' : q.auxInt.toInt.toNat + (auxTy tabs sv.aux).size ≤ n.toInt.toNat := by omega
     refine ⟨ws1 ++ [(q.auxInt.toInt.toNat, encode (auxTy tabs sv.aux) xv)], ?_, ?_, hMz, ?_⟩
     · rw [putAll_snoc]
-      exact read_write_putBytes hr1 hw (by omega)
+      exact read_write_putBytes hr1 hw (by rw [he]; exact hle')
     · intro w hw'
       rcases List.mem_append.1 hw' with hw' | hw'
       · exact hin1 w hw'
-      · simp only [List.mem_singleton] at hw'; subst hw'; simp only; omega
+      · simp only [List.mem_singleton] at hw'; subst hw'
+        show q.auxInt.toInt.toNat + (encode (auxTy tabs sv.aux) xv).size ≤ _
+        rw [he]; exact hle'
     intro Tz T hW Fr hag hfsz hoff hz' hnew
     obtain ⟨W1, hW1, hw1⟩ := writes_snoc hW
     obtain ⟨Fr1, he1, hr1', hag1, hsz1, hoff1⟩ := htg Tz W1 hW1 Fr hag hfsz
@@ -454,7 +455,7 @@ end
 theorem moveSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N : List ID}
     (h : moveSeg? tabs f g x fv gv = some (D, N)) :
     D = [] ∧ fv.op = .Move ∧ ∃ d p m m1 ns z' fs z zv zv', fv.args.toList = [d, p, m] ∧
-      (m1 = m ∨ ∃ mv, f.value? m = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1]) ∧
+      (m1 = m ∨ ∃ mv : Value, f.value? m = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1]) ∧
       FChain f g (lastArg gv) (ns ++ [z']) m ∧ storesF f (ns.length + 1) m1 = some (fs, z) ∧
       f.value? z = some zv ∧ g.value? z' = some zv' ∧ gv.op = .Store ∧ 0 ≤ fv.auxInt.toInt ∧
       zv.op = .Zero ∧ zv.args.size = 2 ∧ zv.auxInt = fv.auxInt ∧
@@ -469,10 +470,9 @@ theorem moveSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N 
   split at h
   case h_2 => cases h
   rename_i d p m hop hargs
-  generalize hm1 : (match f.value? m with
-    | some mv => if mv.op == .VarDef && mv.args.size == 1 then mv.args[0]! else m
-    | none => m) = m1 at h
-  have hm1' : m1 = m ∨ ∃ mv, f.value? m = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1] := by
+  generalize hm1 : underVarDef f m = m1 at h
+  have hm1' : m1 = m ∨ ∃ mv : Value, f.value? m = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1] := by
+    unfold underVarDef at hm1
     cases hmv : f.value? m with
     | none => rw [hmv] at hm1; exact .inl hm1.symm
     | some mv =>
@@ -510,16 +510,16 @@ theorem moveSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N 
   simp only [Option.some.injEq, Prod.mk.injEq] at h
   obtain ⟨rfl, rfl⟩ := h
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hgop, hm0⟩, h0⟩, hzop⟩, hzsz⟩, hzai⟩, hce⟩, hz'op⟩, hz'a⟩, hz'ai⟩, hz'ty⟩,
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hgop, hm0⟩, h0⟩, hzop⟩, hzsz⟩, hzai⟩, hce⟩, hz'op⟩, hz'a⟩, hz'ai⟩, hz'ty⟩,
     hzip⟩ := hc
-  subst hm0
-  obtain ⟨ns, rfl⟩ : ∃ ns, ns0 = ns ++ [z'] := ⟨_, (List.dropLast_append_getLast? hl).symm⟩
+  obtain ⟨ns, rfl⟩ := List.getLast?_eq_some_iff.1 hl
   have hfc' := freshChain_chain hfc
-  simp only [List.dropLast_concat, List.reverse_append, List.reverse_singleton,
-    List.singleton_append] at hzip ⊢
+  rw [hm0] at hfc'
+  simp only [List.dropLast_concat] at hzip
   refine ⟨rfl, hop, d, p, m, m1, ns, z', fs, z, zv, zv', hargs, hm1', hfc', ?_, hzv, hzv',
-    hgop, h0, hzop, hzsz, hzai, hce, hz'op, hz'a, hz'ai, hz'ty, hzip, rfl⟩
-  simpa using hsf
+    hgop, h0, hzop, hzsz, hzai, hce, hz'op, hz'a, hz'ai, hz'ty, hzip, ?_⟩
+  · simpa using hsf
+  · simp [List.dropLast_concat, List.reverse_append]
 
 /-! ## The obligation -/
 
@@ -544,7 +544,7 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
     rw [hfv] at hsv; cases hsv
     rcases Proof.evalValue_panic_op hpan with hc | hc <;> rw [hop] at hc <;> revert hc <;> decide
   have hxA : A x := hroots x (by simp) hroot
-  have hfa' : fv.args = #[d, p, m] := by rw [← Array.toArray_toList fv.args, hfa]
+  have hfa' : fv.args = #[d, p, m] := Array.ext' hfa
   have hcx := H.cl x fv hxA hfv hnphi
   have hdA := hcx d (by rw [hfa']; simp)
   have hpA := hcx p (by rw [hfa']; simp)
@@ -556,8 +556,7 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
   -- the source's `Move`
   obtain ⟨Dst, P, Mm, R, Ms, hD, hP, rfl, hR, hMs, rfl⟩ :=
     move_ok hop hfa hdv hpv hmv (Avail.eval H hxA hfv hnphi hyx)
-  set nn := fv.auxInt.toInt.toNat with hnn
-  have hRs : R.size = nn := DSE.read_size hR
+  have hRs : R.size = fv.auxInt.toInt.toNat := DSE.read_size hR
   -- the stores' memory, which the `Move`'s refines
   obtain ⟨M1, hM1, hm1A, href⟩ : ∃ M1, S.regs[m1]? = some (some (.mem M1)) ∧ A m1 ∧
       Mem.Refines Mm M1 := by
@@ -571,5 +570,207 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
       obtain ⟨-, hMm⟩ := retype_mem_eq hy.symm
       subst hMm
       exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
-  sorry
+  -- the chains
+  obtain ⟨hsc, hlen⟩ := storesF_chain hsf
+  have hgc := fchain_gchain hfc
+  obtain ⟨zv'', hzv'', hfz', hlz'⟩ := fchain_last hfc
+  rw [hzv'] at hzv''; cases hzv''
+  have hnsf : ∀ u ∈ ns, f.value? u = none := fun u hu =>
+    fchain_fresh hfc u (List.mem_append_left _ hu)
+  cases fs with
+  | nil => cases hlen
+  | cons m1' fs1 =>
+  obtain ⟨hm1', sv1, hsv1, hop1, hsz1, hsc1⟩ := hsc
+  subst m1'
+  have hzip0 := hzip
+  simp only [List.zip_cons_cons, List.all_cons, hsv1, hgv, Bool.and_eq_true] at hzip
+  obtain ⟨hpair, hzip1⟩ := hzip
+  -- the `Zero`: its memory holds zeros at `P`
+  have hz : ∀ M, S.regs[z]? = some (some (.mem M)) → A z → M.read P fv.auxInt.toInt.toNat = some (Array.replicate fv.auxInt.toInt.toNat (.b 0)) := by
+    intro M hM hzA
+    have hza := CSE.Mem.args_two hzsz
+    have hzcl := H.cl z zv hzA hzv (by rw [hzop]; decide)
+    have hqA := hzcl zv.args[0]! (by rw [hza]; simp)
+    have hm0A := hzcl zv.args[1]! (by rw [hza]; simp)
+    obtain ⟨_, qv, -, hqv, -⟩ := H.val _ hqA
+    obtain ⟨_, m0v, -, hm0v, -⟩ := H.val _ hm0A
+    obtain ⟨zv2, yz, hzv2, hyz, hevz⟩ := H.val z hzA
+    rw [hzv] at hzv2; cases hzv2
+    obtain ⟨Q, M0, Z, hQw, rfl, hZ, rfl⟩ := zero_ok hzop hza hqv hm0v (hevz (by rw [hzop]; decide))
+    rw [hM] at hyz
+    have hMZ := (retype_mem_eq (Option.some.inj (Option.some.inj hyz)).symm).2
+    subst hMZ
+    have h1 := (StructStore.copy_reg H hT hid f.valueTab.size hqA
+      (StructStore.copyReach_copyEnd _ f.valueTab.size _)).2
+    have h2 := (StructStore.copy_reg H hT hid f.valueTab.size hpA
+      (StructStore.copyReach_copyEnd _ f.valueTab.size p)).2
+    rw [hce, h2, hpv] at h1
+    rw [← h1] at hqv
+    cases (Option.some.inj (Option.some.inj hqv))
+    rw [hP] at hQw; cases hQw
+    have := Pass.LoadFwd.read_write_self hZ
+    rwa [Array.size_replicate, hzai] at this
+  -- the anchor's source store and the stores below it
+  have ha1 := CSE.Mem.args_three hsz1
+  have hcl1 := H.cl m1 sv1 hm1A hsv1 (by rw [hop1]; decide)
+  have hA0 := hcl1 sv1.args[0]! (by rw [ha1]; simp)
+  have hA1 := hcl1 sv1.args[1]! (by rw [ha1]; simp)
+  have hA2 := hcl1 sv1.args[2]! (by rw [ha1]; simp)
+  obtain ⟨_, qv1, -, hqv1, -⟩ := H.val _ hA0
+  obtain ⟨_, xv1, -, hxv1, -⟩ := H.val _ hA1
+  obtain ⟨_, mv2, -, hmv2, -⟩ := H.val _ hA2
+  obtain ⟨v1, y1, hv1, hy1, hev1⟩ := H.val m1 hm1A
+  rw [hsv1] at hv1; cases hv1
+  obtain ⟨Q1, M2, M1', hQ1, rfl, hw1, rfl⟩ :=
+    store_ok hop1 ha1 hqv1 hxv1 hmv2 (hev1 (by rw [hop1]; decide))
+  obtain ⟨hsop, htop, hsa, hta, haux, htype, hval, -, -, hszp, hqf, q, q', hq, hq', hqop, hqa,
+    hqty, hce1, hq'op, hq'a, hq'ai, hq'ty, h0q, hle⟩ := moveStoreOK_spec hpair
+  have ho : q.auxInt.toInt = ((q.auxInt.toInt.toNat : Nat) : Int) := (Int.toNat_of_nonneg h0q).symm
+  have hQe := offPtr_reg H hT hid hA0 hpA hq hqop (by rw [hqa]) ho hqty hce1 hpv hP hqv1 hQ1
+  subst hQe
+  rw [hid m1 sv1 hm1A hsv1, Proof.tys_of_value hsv1, Option.getD_some, hM1] at hy1
+  obtain ⟨hty1, hM1'⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy1)).symm
+  subst M1'
+  change M2.write _ (encode (auxTy tabs sv1.aux) xv1) = some M1 at hw1
+  obtain ⟨ws1, hr1, hin1, ⟨Mz, hMz, hzA⟩, htg⟩ := move_below (b := fv.block) (dst := d) (z' := z')
+    (Dst := Dst) H hT hid hpA hpv hP hz fs1 ns sv1.args[2]! (lastArg gv) M2 hsc1 hgc
+    (by simpa using hlen) (fun u hu v hv => hgid u (by simp [hu]) v hv) hzip1 hmv2 hA2
+  have he : (encode (auxTy tabs sv1.aux) xv1).size = (auxTy tabs sv1.aux).size :=
+    Sem.encode_size _ _
+  have hle' : q.auxInt.toInt.toNat + (auxTy tabs sv1.aux).size ≤ fv.auxInt.toInt.toNat := by omega
+  obtain ⟨ws, hws⟩ : ∃ ws, ws = ws1 ++ [(q.auxInt.toInt.toNat, encode (auxTy tabs sv1.aux) xv1)] :=
+    ⟨_, rfl⟩
+  have hW : M1.read P fv.auxInt.toInt.toNat =
+      some (putAll (Array.replicate fv.auxInt.toInt.toNat (.b 0)) ws) := by
+    rw [hws, putAll_snoc]
+    exact read_write_putBytes hr1 hw1 (by rw [he]; exact hle')
+  have hin : ∀ w ∈ ws, w.1 + w.2.size ≤ fv.auxInt.toInt.toNat := by
+    intro w hw'
+    rw [hws] at hw'
+    rcases List.mem_append.1 hw' with hw' | hw'
+    · exact hin1 w hw'
+    · simp only [List.mem_singleton] at hw'; subst hw'
+      show q.auxInt.toInt.toNat + (encode (auxTy tabs sv1.aux) xv1).size ≤ _
+      rw [he]; exact hle'
+  -- the `Move` read bytes the stores' bytes refine
+  obtain ⟨R', hR', hRR⟩ := href.read hR
+  rw [hW] at hR'; cases hR'
+  -- the target's writes
+  obtain ⟨Tz, hTz⟩ := StructStore.write_size_congr hMs (bs' := Array.replicate fv.auxInt.toInt.toNat (.b 0))
+    (by rw [Array.size_replicate, hRs])
+  obtain ⟨T, hWs, hT⟩ := writes_putBytes ws hTz fun w hw' => by
+    rw [Array.size_replicate]; exact hin w hw'
+  obtain ⟨T', hT', hMsT⟩ := (Mem.Refines.refl Mm).write hRR hMs
+  rw [hT] at hT'; cases hT'
+  rw [hws] at hWs
+  obtain ⟨W1, hW1, hwT⟩ := writes_snoc hWs
+  -- the fresh `OffPtr`s
+  have hoffs : ∀ b ∈ x :: ns, ∀ sb, g.value? b = some sb → ∃ qv, g.value? sb.args[0]! = some qv ∧
+      qv.id = sb.args[0]! ∧ qv.op = .OffPtr ∧ qv.args = #[d] ∧
+      isPtrTy (tabs.ty qv.type) = true ∧ 0 ≤ qv.auxInt.toInt ∧
+      (Dst.add (BitVec.ofNat 64 qv.auxInt.toInt.toNat)).inWindow = true ∧
+      f.value? sb.args[0]! = none := by
+    intro b hb sb hsb
+    obtain ⟨a, hpa⟩ := zip_all_right hzip0 (by simpa using hlen) b hb
+    cases hfa' : f.value? a with
+    | none => simp only [hfa', hsb] at hpa; cases hpa
+    | some sa =>
+    simp only [hfa', hsb] at hpa
+    obtain ⟨-, -, -, -, -, -, -, -, -, hszp', hqf', qa, qb, -, hqb, -, -, -, -, hqbop, hqba, hqbai,
+      hqbty, h0a, hlea⟩ := moveStoreOK_spec hpa
+    have hqbm : sb.args[0]! ∈ (x :: ns).filterMap fun b => (g.value? b).map (·.args[0]!) :=
+      List.mem_filterMap.2 ⟨b, hb, by simp [hsb]⟩
+    refine ⟨qb, hqb, hgid _ (by simp [hqbm]) qb hqb, hqbop, hqba, hqbty, by rw [hqbai]; exact h0a,
+      ?_, hqf'⟩
+    rw [hqbai]
+    exact StructStore.inWindow_of_write hMs (by rw [hRs]; omega)
+  obtain ⟨FrA, heA, hagA, hszA, hoffA, -⟩ :=
+    eval_offs (g := g) H hdA hdv hD (x :: ns) hoffs S (fun _ _ => rfl) hsize
+  -- the fresh `Zero`
+  have hzty : tabs.ty zv.type = .mem := by
+    have hza := CSE.Mem.args_two hzsz
+    have hzcl := H.cl z zv hzA hzv (by rw [hzop]; decide)
+    obtain ⟨_, qv, -, hqv, -⟩ := H.val _ (hzcl zv.args[0]! (by rw [hza]; simp))
+    obtain ⟨_, m0v, -, hm0v, -⟩ := H.val _ (hzcl zv.args[1]! (by rw [hza]; simp))
+    obtain ⟨zv2, yz, hzv2, hyz, hevz⟩ := H.val z hzA
+    rw [hzv] at hzv2; cases hzv2
+    obtain ⟨Q, M0, Z, -, rfl, -, rfl⟩ := zero_ok hzop hza hqv hm0v (hevz (by rw [hzop]; decide))
+    rw [hid z zv hzA hzv, Proof.tys_of_value hzv, Option.getD_some, hMz] at hyz
+    exact (retype_mem_eq (Option.some.inj (Option.some.inj hyz)).symm).1
+  have hzvid : zv'.id = z' := hgid z' (by simp) zv' hzv'
+  have hTz' : Mm.write Dst (Array.replicate zv'.auxInt.toInt.toNat (.b 0)) = some Tz := by
+    rw [hz'ai]; exact hTz
+  have hevz := zero_eval (env := env) (ctx := Ctx.make tabs g) (fr := FrA) hz'op hz'a
+    (by rw [hagA d hdA]; exact hdv) hD (by rw [hagA m hmA]; exact hmv) hTz'
+  rw [hzvid, Proof.tys_of_value hzv', Option.getD_some, hz'ty, hzty, retype_mem_mem] at hevz
+  have hzlt : z' < FrA.regs.size := Nat.lt_of_lt_of_le (CheckFacts.lt_of_value? hzv') hszA
+  have hagB : ∀ a, A a → (FrA.set z' (.mem Tz)).regs[a]? = S.regs[a]? := fun a ha => by
+    have hne : z' ≠ a := by
+      rintro rfl
+      obtain ⟨_, _, hv, -⟩ := H.val z' ha
+      rw [hfz'] at hv; cases hv
+    rw [Proof.Frame.set_regs_ne hne, hagA a ha]
+  have hoffB := hoffA.set_other hzv' (by rw [hz'op]; decide) (.mem Tz)
+  -- the fresh stores below the anchor
+  obtain ⟨FrC, heC, hrC, hagC, hszC, hoffC⟩ := htg Tz W1 hW1 (FrA.set z' (.mem Tz)) hagB
+    (by simpa [Frame.set] using hszA) (fun b hb => hoffB b (List.mem_cons_of_mem _ hb))
+    (Proof.Frame.set_regs_self hzlt) hnsf
+  -- the anchor
+  obtain ⟨yq, hyq, hyqw⟩ := hoffC _ hoffB x List.mem_cons_self gv q' hgv hq' hq'op
+  rw [hq'ai] at hyqw
+  have hga : gv.args = #[gv.args[0]!, sv1.args[1]!, lastArg gv] := by
+    rw [lastArg_three hta, ← hval]; exact CSE.Mem.args_three hta
+  have hev := store_eval (env := env) (ctx := Ctx.make tabs g) htop hga hyq hyqw
+    (by rw [hagC _ hA1]; exact hxv1) hrC
+    (by rw [show (Ctx.make tabs g).tabs = tabs from rfl, haux]; exact hwT)
+  rw [hgid x (by simp) gv hgv, Proof.tys_of_value hgv, Option.getD_some] at hev
+  have hxlt : x < FrC.regs.size := Nat.lt_of_lt_of_le (CheckFacts.lt_of_value? hgv) hszC
+  refine ⟨FrC.set x ((Val.mem T).retype (tabs.ty gv.type)), ?_, fun _ => ⟨_, _, hyx,
+    Proof.Frame.set_regs_self hxlt, ?_⟩⟩
+  · rw [List.append_assoc, Proof.evalAll_append, heA]
+    dsimp only
+    rw [List.cons_append, Proof.evalAll_cons]
+    simp only [Proof.stepV, show (Ctx.make tabs g).f = g from rfl, hzv', hevz]
+    rw [Proof.evalAll_append, heC]
+    dsimp only
+    rw [Proof.evalAll_cons]
+    simp only [Proof.stepV, show (Ctx.make tabs g).f = g from rfl, hgv, hev]
+    rfl
+  · rw [hid x fv hxA hfv, Proof.tys_of_value hfv, Option.getD_some, ← hty]
+    exact retype_mono _ (.mem hMsT)
+/-! ## Non-vacuity: a `Move` of a store over a zeroed temporary
+
+`f`: `v4 = Zero [16] v3 v1` (`v3 = OffPtr [16] SP`), `v7 = Store {int64} (OffPtr [8] v3) v6 v4`,
+`v8 = Move [16] SP v3 v7`; `g`: `v8 = Store {int64} v9 v6 v10` over the fresh
+`v9 = OffPtr [8] SP` and `v10 = Zero [16] SP v7`. Nothing is dropped; `[v9, v10]` are fresh. -/
+
+section Witness
+open GoFV.Proof.CSE.Mem.Witness (tabs val)
+
+private def mv (id : ID) (op : Op) (type : TypeRef) (auxInt : Int64) (aux : Option AuxRef)
+    (args : Array ID) : Value :=
+  { val id op type aux args with auxInt }
+
+private def mf : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (mv 1 .InitMem 2 0 none #[]), some (mv 2 .SP 1 0 none #[]),
+      some (mv 3 .OffPtr 1 16 none #[2]), some (mv 4 .Zero 2 16 (some 2) #[3, 1]),
+      some (mv 5 .OffPtr 1 8 none #[3]), some (mv 6 .Const64 0 0 none #[]),
+      some (mv 7 .Store 2 0 (some 2) #[5, 6, 4]), some (mv 8 .Move 2 16 (some 2) #[2, 3, 7])] }
+
+private def mg : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (mv 1 .InitMem 2 0 none #[]), some (mv 2 .SP 1 0 none #[]),
+      some (mv 3 .OffPtr 1 16 none #[2]), some (mv 4 .Zero 2 16 (some 2) #[3, 1]),
+      some (mv 5 .OffPtr 1 8 none #[3]), some (mv 6 .Const64 0 0 none #[]),
+      some (mv 7 .Store 2 0 (some 2) #[5, 6, 4]), some (mv 8 .Store 2 0 (some 2) #[9, 6, 10]),
+      some (mv 9 .OffPtr 1 8 none #[2]), some (mv 10 .Zero 2 16 (some 2) #[2, 7])] }
+
+theorem moveSeg_witness :
+    moveSeg? tabs mf mg 8 (mv 8 .Move 2 16 (some 2) #[2, 3, 7]) (mv 8 .Store 2 0 (some 2) #[9, 6, 10]) =
+      some ([], [9, 10]) := by
+  decide +kernel
+
+end Witness
+
 end GoFV.Proof.Seg

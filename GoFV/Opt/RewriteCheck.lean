@@ -2505,6 +2505,12 @@ def moveStoreOK (tabs : Tables) (f g : Func) (p dst : ID) (n : Int64) (b : ID) (
         decide (q.auxInt.toInt + sz ≤ n.toInt)
     | _, _ => false
 
+/-- The memory `m` of `f`, or the memory under it if it is a `VarDef`. -/
+def underVarDef (f : Func) (m : ID) : ID :=
+  match f.value? m with
+  | some mv => if mv.op == .VarDef && mv.args.size == 1 then mv.args[0]! else m
+  | none => m
+
 /-- A move segment at the `Move` `x` (`generic.rules:1978` family; `f`'s `fv`, `g`'s `gv`): in `f`
 `Move [n] dst p mem` whose memory is (a `VarDef` of) `k ≥ 1` `Store`s of `x`'s block over a
 `Zero [n] p' _` (`p'` and the stores' `OffPtr`s of `p` up to copies), in `g` the same `Store`s
@@ -2515,11 +2521,8 @@ below the anchor bottom first. -/
 def moveSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (List ID × List ID) :=
   match fv.op, fv.args.toList with
   | .Move, [d, p, m] =>
-    let m1 := match f.value? m with
-      | some mv => if mv.op == .VarDef && mv.args.size == 1 then mv.args[0]! else m
-      | none => m
     let (ns, m0) := freshChain f g 5 (lastArg gv)
-    match ns.getLast?, storesF f ns.length m1 with
+    match ns.getLast?, storesF f ns.length (underVarDef f m) with
     | some z', some (fs, z) =>
       match f.value? z, g.value? z' with
       | some zv, some zv' =>
