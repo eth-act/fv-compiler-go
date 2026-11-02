@@ -391,5 +391,7 @@ def Env.runtime : Env where
           name == "runtime.panicdottypeI" || name == "runtime.fatal" then
         some (panics (.runtime name))
       else none
+  -- the write-barrier helpers never spill into their caller's frame (trusted, §9.6)
+  noSpill name := name == "runtime.wbZero" || name == "runtime.wbMove"
 
 end GoFV.SSA.Sem

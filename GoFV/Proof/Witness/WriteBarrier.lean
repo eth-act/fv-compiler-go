@@ -22,8 +22,9 @@ flag `Neq32 (Load (Addr {runtime.writeBarrier} SB) v1) (Const32 [0])`: the buffe
 the new and the old pointer (`WB [2]`, two buffer `Store`s), the end block merges the memory
 (`Phi`), re-emits the store and ends in the `WBend` marker made from `v9`. The checker
 `WBCheck.wbOK` accepts the result, input and output pass `check` (kernel evaluation), so
-`writebarrier_refines` applies; its precondition `WbPre` holds, e.g., on `Env.p1` with a
-read-only `runtime.writeBarrier` flag (`wbPre_witness`).
+`writebarrier_refines` applies; its precondition `WbPre` holds, e.g., on `Env.p1` with the
+write-barrier helpers (`withWbHelpers`) and a read-only `runtime.writeBarrier` flag
+(`wbPre_witness`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -184,22 +185,53 @@ theorem writebarrier_witness :
     have hf : check spCheckEnv spFunc = .ok () := ok_of_toBool sp_check
     exact ⟨out, rfl, hne, hf, hg, GoFV.Proof.writebarrier_refines h hf hg⟩
 
-/-- `Env.p1` with a read-only, zero `runtime.writeBarrier` flag. -/
+/-- `env` with the runtime's write-barrier helpers (`Runtime.wbHelper`), which do not spill into
+their caller's frame (`Env.noSpill`). -/
+def withWbHelpers (env : Env) : Env :=
+  { env with
+    extern := fun name =>
+      if name = "runtime.wbZero" ∨ name = "runtime.wbMove" then some Runtime.wbHelper
+      else env.extern name
+    noSpill := fun name => name == "runtime.wbZero" || name == "runtime.wbMove" || env.noSpill name }
+
+theorem withWbHelpers_extern {env : Env} {name : String} {c : Contract}
+    (h : (withWbHelpers env).extern name = some c) :
+    c = Runtime.wbHelper ∨ env.extern name = some c := by
+  simp only [withWbHelpers] at h
+  split at h
+  · exact .inl (Option.some.inj h).symm
+  · exact .inr h
+
+theorem withWbHelpers_wbHelpers (env : Env) : WB.WbHelpers (withWbHelpers env) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> simp [withWbHelpers]
+
+/-- `env`'s contracts keep `P` (`MemInv.ContractsOK`) with the write-barrier helpers too: these
+return the memory they are given. -/
+theorem withWbHelpers_contractsOK {P : Mem → Prop} {env : Env} (h : MemInv.ContractsOK P env) :
+    MemInv.ContractsOK P (withWbHelpers env) := by
+  intro name c hc args clo m ha hcl hm
+  rcases withWbHelpers_extern hc with rfl | hc
+  · exact ⟨hm, fun r hr => absurd hr List.not_mem_nil⟩
+  · exact h name c hc args clo m ha hcl hm
+
+/-- `Env.p1` with the write-barrier helpers and a read-only, zero `runtime.writeBarrier` flag. -/
 def spEnv : Env :=
-  { Env.p1 with
+  { withWbHelpers Env.p1 with
     globals := [("runtime.writeBarrier", { data := #[.b 0, .b 0, .b 0, .b 0], writable := false })] }
 
-/-- **Non-vacuity of `WbPre`**: `spEnv` (whose contracts only panic) on the empty memory. -/
+/-- **Non-vacuity of `WbPre`**: `spEnv` (whose contracts panic or are the write-barrier helpers)
+on the empty memory. -/
 theorem wbPre_witness : WB.WbPre spEnv [.ptr ⟨.heap 0, 0⟩] {} := by
   refine ⟨⟨⟨{ data := #[.b 0, .b 0, .b 0, .b 0], writable := false }, by decide +kernel,
-    rfl, by decide, fun i hi => ?_⟩, by decide +kernel⟩, ?_⟩
+    rfl, by decide, fun i hi => ?_⟩, by decide +kernel⟩, ?_, withWbHelpers_wbHelpers Env.p1⟩
   · match i, hi with
     | 0, _ => exact ⟨0, rfl⟩
     | 1, _ => exact ⟨0, rfl⟩
     | 2, _ => exact ⟨0, rfl⟩
     | 3, _ => exact ⟨0, rfl⟩
-  · intro name c hc args clo m _ _ _
-    simp only [spEnv, Env.p1] at hc
+  · refine withWbHelpers_contractsOK (env := Env.p1) ?_
+    intro name c hc args clo m _ _ _
+    simp only [Env.p1] at hc
     split at hc <;> cases hc <;> trivial
 
 end GoFV.Proof.Witness

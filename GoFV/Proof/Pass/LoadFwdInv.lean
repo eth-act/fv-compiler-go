@@ -73,7 +73,8 @@ private theorem callOp_static {env : Env} {ctx : Ctx} {v : Value} {argv : List V
         (!·.out)) argv.dropLast).any Val.hasPoison = false ∧
       c (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
         (!·.out)) argv.dropLast) none (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
-        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out)))) =
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out))
+        (!env.noSpill name))) =
           .returned rs m' ∧
       encodeResults ctx.tabs ctx.act ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
         (·.out)) (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
