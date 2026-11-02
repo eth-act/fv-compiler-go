@@ -360,17 +360,14 @@ theorem typeInfo_global {M : Mem} {n : String} {a : Alloc} (hf : M.find? (.globa
     split at h
     · rename_i s' pb' h1 h2
       cases h
-      have r1 : M.read (Ptr.add ⟨.global n, 0⟩ (BitVec.ofNat 64 0)) 8 =
-          some (a.data.extract 0 8) := by
-        simp only [Mem.read, Ptr.add, hf]
-        rw [if_pos (by simp [Blk.endsInWindow, Blk.window?]; omega)]
-        rfl
-      have r2 : M.read (Ptr.add ⟨.global n, 0⟩ (BitVec.ofNat 64 8)) 8 =
-          some (a.data.extract 8 16) := by
-        simp only [Mem.read, Ptr.add, hf]
-        rw [if_pos (by simp [Blk.endsInWindow, Blk.window?]; omega)]
-        rfl
-      simp [Runtime.typeInfo, Runtime.readWord, r1, r2, h1, h2]
+      have r1 : M.read ⟨.global n, 0⟩ 8 = some (a.data.extract 0 8) := by
+        simp [Mem.read, hf, Blk.endsInWindow, Blk.window?] <;> omega
+      have r2 : M.read ⟨.global n, 8⟩ 8 = some (a.data.extract 8 16) := by
+        simp [Mem.read, hf, Blk.endsInWindow, Blk.window?] <;> omega
+      simp only [Runtime.typeInfo, Runtime.readWord, Ptr.add]
+      rw [show (0 : BitVec 64) + BitVec.ofNat 64 0 = 0 by decide,
+        show (0 : BitVec 64) + BitVec.ofNat 64 8 = 8 by decide, r1, r2]
+      simp [h1, h2]
     · cases h
   · cases h
 
