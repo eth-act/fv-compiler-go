@@ -55,6 +55,7 @@ def tabsAgree (tabs tabs' : Tables) (f : Func) : Bool :=
   decide ((frameLocals tabs' params).toList = ls.toList) &&
   ls.toList.all (fun l => tabs'.forgeable l.1 == tabs.forgeable l.1) &&
   outargsSize tabs' == outargsSize tabs &&
+  decide (deferInfo tabs' = deferInfo tabs) &&
   f.valueTab.toList.all fun o => Ty.beq (valueTy sh' o) (valueTy sh o) && valueAuxAgree tabs tabs' o
 
 

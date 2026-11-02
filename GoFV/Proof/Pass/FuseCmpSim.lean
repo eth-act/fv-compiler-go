@@ -131,7 +131,7 @@ theorem normal_step {tabs : Tables} {env : Env} {n : Nat}
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f st) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : R env tabs f st frS bS iS frT bT iT)
     (hp : bS ≠ st.p) (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨rfl, hb, hbb, ht, hs, hfT, hsz, hag, hidx, hpt, hdi⟩ := hR
   obtain ⟨fb, gb, hfb, hgb, hid, hvals, hk, hc, hsu⟩ := S.block_out hb hp hbb
@@ -269,7 +269,7 @@ theorem p_step {tabs : Tables} {env : Env} {n : Nat}
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f st) n)
     {frS frT : Frame} {iS iT : Nat} (hR : R env tabs f st frS st.p iS frT st.p iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS st.p iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act
+    ∃ fuelT, LoopRefines Eq
       (runLoop env (Ctx.make tabs f) (n + 1) frS st.p iS)
       (runLoop env (Ctx.make tabs g) fuelT frT st.p iT) := by
   obtain ⟨ce, hwf⟩ := S.wf
@@ -521,7 +521,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f st) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : R env tabs f st frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   by_cases hp : bS = st.p
   · subst hp

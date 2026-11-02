@@ -36,6 +36,23 @@ theorem tempX_extraX (tabs tabs' : Tables) : TempX (extraX tabs tabs') := by
   · exact ⟨_, rfl⟩
   · cases h
 
+/-- The open-coded defer variables are not extra frame temporaries (`tabs` defines them). -/
+theorem deferAvoid_extraX (tabs tabs' : Tables) :
+    DeferRel.DeferAvoid (extraX tabs tabs' · = true) (deferInfo tabs) 0 := by
+  have hv := DeferRel.deferInfo_vars tabs
+  have key : ∀ (n : AuxRef) (b : Bool), DAE.deferVar tabs n = true →
+      ¬ extraX tabs tabs' (if b then .local 0 n else .temp 0 n) = true := by
+    intro n b hd hx
+    cases b with
+    | true => cases hx
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte, extraX, Bool.and_eq_true,
+        Option.isNone_iff_eq_none] at hx
+      unfold DAE.deferVar at hd
+      rw [hx.1] at hd
+      cases hd
+  exact ⟨fun nb hb => key _ _ (hv.1 nb hb), fun i sn hs => key _ _ (hv.2 i sn hs)⟩
+
 /-! ## What the check gives -/
 
 theorem frameLocals_aux {tabs : Tables} {params : Array (Option AuxRef)}
@@ -75,13 +92,13 @@ theorem tabsAgreeMod_sound {tabs tabs' : Tables} {f : Func} (h : tabsAgreeMod ta
   unfold tabsAgreeMod at h
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, beq_iff_eq,
     Bool.or_eq_true, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨hps, hpty⟩, hls⟩, hext⟩, hforg⟩, hout⟩, hvals⟩, hops⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hps, hdi⟩, hpty⟩, hls⟩, hext⟩, hforg⟩, hout⟩, hvals⟩, hops⟩ := h
   have hps' : abiParams tabs' f = abiParams tabs f := Array.toList_inj.mp hps
   have hty : ∀ p ∈ abiParams tabs f, tabs'.ty p.type = tabs.ty p.type :=
     fun p hp => Ty.eq_of_beq (hpty p (Array.mem_def.mp hp))
   refine ⟨?_, hout, hls, fun l hl hn => ?_, hforg, fun id v hv => ?_, fun id v hv => ?_⟩
   · unfold Ctx.make
-    simp only [hps']
+    simp only [hps', hdi]
     congr 1
     · exact Array.map_congr_left fun o ho => Ty.eq_of_beq (hvals o (Array.mem_def.mp ho)).1
     · exact Array.map_congr_left fun p hp => hty p (Array.mem_filter.mp hp).1
@@ -153,35 +170,35 @@ end
 section
 variable {U : Blk → Prop}
 
-theorem byte_avoids_of (hU : DAE.TempU U) {x : Byte} (h : ∀ n, Byte.Avoids (· = .temp 0 n) x) :
+theorem byte_avoids_of (hU : DAE.TempU U) {x : Byte} (h : ∀ a n, Byte.Avoids (· = .temp a n) x) :
     Byte.Avoids U x := by
   cases x with
-  | frag p k => intro hu; obtain ⟨n, hn⟩ := hU _ hu; exact h n hn
+  | frag p k => intro hu; obtain ⟨a, n, hn⟩ := hU _ hu; exact h a n hn
   | _ => trivial
 
-theorem mem_avoids_of (hU : DAE.TempU U) {m : Mem} (h : ∀ n, m.Avoids (· = .temp 0 n)) :
+theorem mem_avoids_of (hU : DAE.TempU U) {m : Mem} (h : ∀ a n, m.Avoids (· = .temp a n)) :
     m.Avoids U := by
   intro b a hm hb x hx
   cases x with
   | frag p k =>
     intro hu
-    obtain ⟨n, hn⟩ := hU _ hu
-    exact h n b a hm (fun hb' => hb (hb' ▸ hn ▸ hu)) _ hx hn
+    obtain ⟨k, n, hn⟩ := hU _ hu
+    exact h k n b a hm (fun hb' => hb (hb' ▸ hn ▸ hu)) _ hx hn
   | _ => trivial
 
 mutual
-theorem val_avoids_of (hU : DAE.TempU U) : {v : Val} → (∀ n, v.Avoids (· = .temp 0 n)) →
+theorem val_avoids_of (hU : DAE.TempU U) : {v : Val} → (∀ a n, v.Avoids (· = .temp a n)) →
     Val.Avoids U v
-  | .ptr p, h => by intro hu; obtain ⟨n, hn⟩ := hU _ hu; exact h n hn
+  | .ptr p, h => by intro hu; obtain ⟨a, n, hn⟩ := hU _ hu; exact h a n hn
   | .tuple vs, h => valList_avoids_of hU (vs := vs) h
   | .agg vs, h => valList_avoids_of hU (vs := vs) h
-  | .blob bs, h => fun x hx => byte_avoids_of hU fun n => h n x hx
+  | .blob bs, h => fun x hx => byte_avoids_of hU fun a n => h a n x hx
   | .mem m, h => mem_avoids_of hU h
   | .int _ _, _ | .bool _, _ | .empty, _ | .poison, _ => trivial
 theorem valList_avoids_of (hU : DAE.TempU U) : {vs : List Val} →
-    (∀ n, Val.AvoidsList (· = .temp 0 n) vs) → Val.AvoidsList U vs
+    (∀ a n, Val.AvoidsList (· = .temp a n) vs) → Val.AvoidsList U vs
   | [], _ => trivial
-  | _ :: _, h => ⟨val_avoids_of hU fun n => (h n).1, valList_avoids_of hU fun n => (h n).2⟩
+  | _ :: _, h => ⟨val_avoids_of hU fun a n => (h a n).1, valList_avoids_of hU fun a n => (h a n).2⟩
 end
 
 theorem addGlobals_avoids {env : Env} (hg : ∀ g ∈ env.globals, DAE.BAv U g.2.data) {m : Mem}
@@ -298,9 +315,9 @@ theorem step {env : Env} {tabs : Tables} {f : Func} (H : Hyps env X tabs f) {ce 
   cases hen : enterBlock env (Ctx.make tabs f) S b i with
   | stuck msg => exact True.intro
   | panic e m =>
-    obtain ⟨m', hT, hm⟩ := E.2 e m hen
+    obtain ⟨m', hT, hm, he, hmA⟩ := E.2 e m hen
     rw [hT]
-    exact ⟨m', rfl, hm⟩
+    exact ⟨m', rfl, hm, he, hmA⟩
   | ok G =>
     obtain ⟨GT, hGT, IG⟩ := E.1 G hen
     rw [hGT]
@@ -356,17 +373,18 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
   have houts : (Ctx.make tabs' f).outs = (Ctx.make tabs f).outs := by rw [A.ctx]
   have hact : (Ctx.make tabs' f).act = (Ctx.make tabs f).act := by rw [A.ctx]
   have hfe : (Ctx.make tabs' f).f.entry = (Ctx.make tabs f).f.entry := by rw [A.ctx]
-  rw [hpar, houts, hact, hfe]
+  have hdef : (Ctx.make tabs' f).defers = (Ctx.make tabs f).defers := by rw [A.ctx]
+  rw [hpar, houts, hact, hfe, hdef]
   split
   · rename_i hn; simp only [hn] at hd; exact hd.elim
   · rename_i hn
     simp only [hn] at hd
     have hargs : ∀ v ∈ args, Val.Avoids (fun b => extraX tabs tabs' b = true) v := fun v hv =>
-      val_avoids_of hU fun n => (hinit 0 n).1 v hv
+      val_avoids_of hU fun a n => (hinit a n).1 v hv
     have hmem : mem.Avoids (fun b => extraX tabs tabs' b = true) :=
-      mem_avoids_of hU fun n => (hinit 0 n).2.1
+      mem_avoids_of hU fun a n => (hinit a n).2.1
     have hglob : ∀ g ∈ env.globals, DAE.BAv (fun b => extraX tabs tabs' b = true) g.2.data :=
-      fun g hg x hx => byte_avoids_of hU fun n => (hinit 0 n).2.2.2 g hg x hx
+      fun g hg x hx => byte_avoids_of hU fun a n => (hinit a n).2.2.2 g hg x hx
     have himg : ∀ img ∈ (args.toArray.zip (Ctx.make tabs f).paramTys).map (fun (a, t) => encode t a),
         DAE.BAv (fun b => extraX tabs tabs' b = true) img := by
       intro img hi
@@ -387,7 +405,7 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
       · unfold entryFrame; rw [hpty]; exact frameMem_eqX A env _ mem
       · simp [entryFrame, Array.getElem?_replicate] at hz
       · simp [entryFrame, Array.getElem?_replicate] at hz
-    exact finish_rel hX hd (runLoop_simX
+    exact finish_rel hE hX (deferAvoid_extraX tabs tabs') hd (runLoop_simX
       (fun S T bid _ => FInv (extraX tabs tabs') tabs f S T ∧ bid ∈ f.blocks)
       (fun S T bid i hA => step H hwf hA) fuel _ _ _ _ ⟨I0, hwf.entry⟩ (finish_defined hd))
 

@@ -23,13 +23,14 @@ variable {U : Blk → Prop}
 inductive ORel (U : Blk → Prop) : Outcome → Outcome → Prop where
   | ret {rs rs' : List Val} {m m' : Mem} : VRL U rs rs' → Mem.EqOff U m m' →
       ORel U (.returned rs m) (.returned rs' m')
-  | panic (e : Panic) {m m' : Mem} : Mem.EqOff U m m' → ORel U (.panicked e m) (.panicked e m')
+  | panic (e : Panic) {m m' : Mem} : Mem.EqOff U m m' → e.Avoids U → m.Avoids U →
+      ORel U (.panicked e m) (.panicked e m')
 
 /-- The target's block step matches a source block step along the same edge. -/
 def StepRelD (U : Blk → Prop) (R : Frame → Frame → ID → Nat → Prop) : Step → Step → Prop
   | .goto frS e, sT => ∃ frT, sT = .goto frT e ∧ R frS frT e.b e.i
   | .ret rs m, sT => ∃ rs' m', sT = .ret rs' m' ∧ VRL U rs rs' ∧ Mem.EqOff U m m'
-  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ Mem.EqOff U m m'
+  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ Mem.EqOff U m m' ∧ e.Avoids U ∧ m.Avoids U
   | .stuck, _ => True
 
 /-- **Lock-step simulation** with related outcomes. -/
@@ -60,9 +61,9 @@ theorem runLoop_simD {env : Env} {ctxS ctxT : Ctx} (R : Frame → Frame → ID �
       exact .ret hr hm
     | panic e m =>
       rw [hS] at hs
-      obtain ⟨m', hT, hm⟩ := hs
+      obtain ⟨m', hT, hm, he, hmA⟩ := hs
       rw [p1 _ _ hS, p2 _ _ hT]
-      exact .panic e hm
+      exact .panic e hm he hmA
     | stuck => exact absurd hd (s1 hS)
 
 /-! ## `finish` -/
@@ -89,7 +90,7 @@ theorem putBytes_fold_eq : ∀ {pieces pieces' : List Val}, VRL U pieces pieces'
     exact putBytes_fold_eq t ls _
 
 theorem local_notU (hU : TempU U) (a n : Nat) : ¬ U (.local a n) := by
-  intro hu; obtain ⟨k, hk⟩ := hU _ hu; cases hk
+  intro hu; obtain ⟨_, k, hk⟩ := hU _ hu; cases hk
 
 theorem goResults_post_eq (hU : TempU U) {m m' : Mem} (hm : Mem.EqOff U m m') :
     ∀ (os : List (Option AuxRef × Ty × Nat)) {pieces pieces' : List Val},
@@ -137,18 +138,21 @@ theorem goResults_eq (hU : TempU U) (outs : Array (Option AuxRef × Ty × Nat)) 
   unfold goResults
   simp only [hr.length, hasTy_zip_eq' hr, encode_zip_eq hr, goResults_post_eq hU hm _ hr]
 
-/-- **`finish` turns related loop outcomes into refinement.** -/
-theorem finish_rel (hU : TempU U) {outs : Array (Option AuxRef × Ty × Nat)} {o o' : Outcome}
-    (hd : (finish outs 0 o).Defined) (h : ORel U o o') :
-    OutcomeRefines 0 (finish outs 0 o) (finish outs 0 o') := by
+/-- **`finish` turns related loop outcomes into refinement**: at a panic, the deferred calls run
+on memories equal outside `U` (`DeferRel.finish_panicked_refines`; the open-coded defer variables
+are outside `U`, `hdi`). -/
+theorem finish_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU0 U)
+    {outs : Array (Option AuxRef × Ty × Nat)} {di : DeferInfo} (hdi : DeferRel.DeferAvoid U di 0)
+    {o o' : Outcome} (hd : (finish env outs di 0 o).Defined) (h : ORel U o o') :
+    OutcomeRefines 0 (finish env outs di 0 o) (finish env outs di 0 o') := by
   cases h with
-  | panic e hm =>
-    refine .panicked e ?_
-    rw [EqOff.dropFrames hU hm]
-    exact Mem.Refines.refl _
+  | panic e hm he hmA =>
+    exact DeferRel.finish_panicked_refines memRel_eqOff hU.tempU
+      (respects_of_frameSafe hfs hU.tempU) outs hdi (fun _ _ h => EqOff.freeFrame hU h)
+      (fun _ _ h => EqOff.dropFrames hU.tempU h) he hmA hm hd
   | @ret rs rs' m m' hr hm =>
-    have hfin : finish outs 0 (.returned rs' m') = finish outs 0 (.returned rs m) := by
-      simp only [finish, hr.anyPoison, goResults_eq hU outs hr hm, EqOff.freeFrame hU hm]
+    have hfin : finish env outs di 0 (.returned rs' m') = finish env outs di 0 (.returned rs m) := by
+      simp only [finish, hr.anyPoison, goResults_eq hU.tempU outs hr hm, EqOff.freeFrame hU hm]
     rw [hfin]
     exact OutcomeRefines.refl hd
 

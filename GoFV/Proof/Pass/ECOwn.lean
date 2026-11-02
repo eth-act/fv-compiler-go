@@ -334,18 +334,19 @@ theorem ecr_goResults_own {tabs : Tables} {ps : List ABIParam} {rs : List Val}
 target's from its register pieces and its slots (`ecr_resMem_read`); the frame is freed alike
 (`ecr_resMem_freeFrame`). -/
 theorem finish_ecRR {tabs : Tables} {f : Func} (hown : EcOwn tabs f) :
-    ∀ rs m rs' m', ecRR tabs f rs m rs' m' →
-      (finish (Ctx.make tabs f).outs 0 (.returned rs m)).Defined →
-      OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (.returned rs m))
-        (finish (Ctx.make tabs f).outs 0 (.returned rs' m')) := by
-  intro rs m rs' m' ⟨hf, rts, hrts, hP, M, hM, hm⟩ hd
+    ∀ env rs m rs' m', ecRR tabs f rs m rs' m' →
+      (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m)).Defined →
+      OutcomeRefines 0 (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m))
+        (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs' m')) := by
+  intro env rs m rs' m' ⟨hf, rts, hrts, hP, M, hM, hm⟩ hd
   have hp : Val.anyPoison rs = false := by
     cases h : Val.anyPoison rs
     · rfl
     · simp only [finish, h, ↓reduceIte] at hd; exact hd.elim
   have hwf : ∀ p ∈ ownOuts tabs f, wf (tabs.ty p.type) = true := fun p hp => (hown.ok p hp).1
   have hPp := ecf_regs_np hf hown.ok hp hrts
-  have hsrc : finish (Ctx.make tabs f).outs 0 (.returned rs m) = .returned rs (m.freeFrame 0) := by
+  have hsrc : finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m) =
+      .returned rs (m.freeFrame 0) := by
     simp only [finish, hp, Bool.false_eq_true, ↓reduceIte,
       ecf_goResults_src (ecf_outs tabs f) hf hwf hp 0 m]
   have hgo : goResults (Ctx.make tabs f).outs 0 (ecfRegs tabs (ownOuts tabs f) rs rts) M = .ok rs := by
@@ -358,14 +359,15 @@ theorem finish_ecRR {tabs : Tables} {f : Func} (hown : EcOwn tabs f) :
           · rfl
           · exact absurd ⟨p, hp', h⟩ hs)
       exact ecf_goResults_reg (ecf_outs tabs f) hf hreg hp hrts 0 M
-  have hmid : finish (Ctx.make tabs f).outs 0 (.returned (ecfRegs tabs (ownOuts tabs f) rs rts) M) =
-      .returned rs (m.freeFrame 0) := by
+  have hmid : finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0
+      (.returned (ecfRegs tabs (ownOuts tabs f) rs rts) M) = .returned rs (m.freeFrame 0) := by
     simp only [finish, hPp, Bool.false_eq_true, ↓reduceIte, hgo, ecr_resMem_freeFrame hM]
-  have h1 : OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (.returned rs m))
-      (finish (Ctx.make tabs f).outs 0 (.returned (ecfRegs tabs (ownOuts tabs f) rs rts) M)) := by
+  have h1 : OutcomeRefines 0 (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m))
+      (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0
+        (.returned (ecfRegs tabs (ownOuts tabs f) rs rts) M)) := by
     rw [hsrc, hmid]; exact OutcomeRefines.refl trivial
-  have h2 := finish_refines (outs := (Ctx.make tabs f).outs) (act := 0) (k := 0)
-    (by rw [hmid]; trivial) (OutcomeRefines.returned hP hm)
+  have h2 := finish_returned_refines (env := env) (outs := (Ctx.make tabs f).outs)
+    (di := (Ctx.make tabs f).defers) (act := 0) (k := 0) (by rw [hmid]; trivial) hP hm
   exact h1.trans h2
 
 /-! ## The `Ret` control: a `MakeResult` -/

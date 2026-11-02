@@ -89,21 +89,23 @@ theorem runLoop_blockStep (env : Env) (ctx : Ctx) (fuel : Nat) (fr : Frame) (bid
 
 /-- The target's step matches a source step, possibly along another edge (`R frS bS iS frT bT
 iT` relates the source entering block `bS` along edge `iS` and the target entering `bT` along
-`iT`; passes that delete edges shift predecessor indices). Returns and panics may end in a
-refined memory (`Mem.Refines`: a rewrite may make a poison value defined, which may be stored). -/
-def StepSimE (R : Frame → ID → Nat → Frame → ID → Nat → Prop) : Step → Step → Prop
+`iT`; passes that delete edges shift predecessor indices). Returns may end in a refined memory
+(`Mem.Refines`: a rewrite may make a poison value defined, which may be stored), panics in
+memories related by `P` (`LoopRefines`). -/
+def StepSimE (P : Mem → Mem → Prop) (R : Frame → ID → Nat → Frame → ID → Nat → Prop) :
+    Step → Step → Prop
   | .goto frS e, sT => ∃ frT e', sT = .goto frT e' ∧ R frS e.b e.i frT e'.b e'.i
   | .ret rs m, sT => ∃ rs' m', sT = .ret rs' m' ∧ RefinesList rs rs' ∧ Mem.Refines m m'
-  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ Mem.Refines m m'
+  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ P m m'
   | .stuck, _ => True
 
 /-- **Lock-step simulation**, the target's block and edge index related to the source's. -/
-theorem runLoop_simE {env : Env} {ctxS ctxT : Ctx} {act : Nat}
+theorem runLoop_simE {env : Env} {ctxS ctxT : Ctx} {P : Mem → Mem → Prop}
     (R : Frame → ID → Nat → Frame → ID → Nat → Prop)
     (hsim : ∀ frS bS iS frT bT iT, R frS bS iS frT bT iT →
-      StepSimE R (blockStep env ctxS frS bS iS) (blockStep env ctxT frT bT iT)) :
+      StepSimE P R (blockStep env ctxS frS bS iS) (blockStep env ctxT frT bT iT)) :
     ∀ fuel frS bS iS frT bT iT, R frS bS iS frT bT iT → (runLoop env ctxS fuel frS bS iS).Defined →
-      OutcomeRefines act (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuel frT bT iT) := by
+      LoopRefines P (runLoop env ctxS fuel frS bS iS) (runLoop env ctxT fuel frT bT iT) := by
   intro fuel
   induction fuel with
   | zero => intro _ _ _ _ _ _ _ h; exact h.elim
@@ -128,7 +130,7 @@ theorem runLoop_simE {env : Env} {ctxS ctxT : Ctx} {act : Nat}
       rw [hS] at hs
       obtain ⟨m', hT, hm⟩ := hs
       rw [p1 _ _ hS, p2 _ _ hT]
-      exact .panicked e (hm.dropFrames act)
+      exact .panicked e hm
     | stuck => exact absurd hd (s1 hS)
 
 /-- The target's step matches a source step along the same edge (`R` relates the states at
@@ -140,11 +142,11 @@ def StepSim (R : Frame → Frame → ID → Nat → Prop) : Step → Step → Pr
   | .stuck, _ => True
 
 /-- **Lock-step simulation** along the same edges. -/
-theorem runLoop_sim {env : Env} {ctxS ctxT : Ctx} {act : Nat} (R : Frame → Frame → ID → Nat → Prop)
+theorem runLoop_sim {env : Env} {ctxS ctxT : Ctx} (R : Frame → Frame → ID → Nat → Prop)
     (hsim : ∀ frS frT bid i, R frS frT bid i →
       StepSim R (blockStep env ctxS frS bid i) (blockStep env ctxT frT bid i)) :
     ∀ fuel frS frT bid i, R frS frT bid i → (runLoop env ctxS fuel frS bid i).Defined →
-      OutcomeRefines act (runLoop env ctxS fuel frS bid i) (runLoop env ctxT fuel frT bid i) := by
+      LoopRefines Eq (runLoop env ctxS fuel frS bid i) (runLoop env ctxT fuel frT bid i) := by
   intro fuel frS frT bid i hR hd
   refine runLoop_simE (fun frS bS iS frT bT iT => bT = bS ∧ iT = iS ∧ R frS frT bS iS)
     (fun frS bS iS frT bT iT ⟨hb, hi, hR⟩ => ?_) fuel frS bid i frT bid i ⟨rfl, rfl, hR⟩ hd
@@ -156,7 +158,7 @@ theorem runLoop_sim {env : Env} {ctxS ctxT : Ctx} {act : Nat} (R : Frame → Fra
   cases sS with
   | goto frS' e => rintro ⟨frT', hT, hR'⟩; exact ⟨frT', e, hT, rfl, rfl, hR'⟩
   | ret rs m => rintro ⟨rs', hT, hr⟩; exact ⟨rs', m, hT, hr, Mem.Refines.refl m⟩
-  | panic e m => intro hT; exact ⟨m, hT, Mem.Refines.refl m⟩
+  | panic e m => intro hT; exact ⟨m, hT, rfl⟩
   | stuck => exact id
 
 /-! ## Evaluation against a reference frame -/

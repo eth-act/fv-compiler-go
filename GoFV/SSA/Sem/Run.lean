@@ -390,6 +390,15 @@ def schedule (f : Func) (b : Block) : Option (Array ID) :=
     | none => (greedy vs.toList vs.size vs.toList []).map List.toArray
   else none
 
+/-- What the panic machinery needs of a function's open-coded defers (§9.7): its `deferBits`
+variable (the `deferbits` name flag, export format 4) and its `opendeferslot` variables by
+index (their frame offset at SSA time), each with whether its frame block is `Blk.local`
+(`Tables.forgeable`). -/
+structure DeferInfo where
+  bits : Option (AuxRef × Bool) := none
+  slots : Array (Option (AuxRef × Bool)) := #[]
+  deriving Inhabited, DecidableEq
+
 /-- The static context of a function's runs, computed once. -/
 structure Ctx where
   f : Func
@@ -410,6 +419,8 @@ structure Ctx where
   locals : Array (AuxRef × Nat × Option Nat) := #[]
   /-- The activation number (frame blocks are `Blk.local act name`/`Blk.temp act name`). -/
   act : Nat := 0
+  /-- The open-coded defers (`deferInfo`). -/
+  defers : DeferInfo := {}
   deriving Inhabited
 
 /-- A variable whose address the function converts to an integer (`addrconv`, export format
@@ -421,6 +432,22 @@ def _root_.GoFV.SSA.Tables.forgeable (tabs : Tables) (n : AuxRef) : Bool :=
   match tabs.aux? n with
   | some { kind := .name _ cls _ _ _ fl _, .. } => cls != .PAUTO || fl.addrconv
   | _ => true
+
+/-- The open-coded defer variables of the tables' function (`DeferInfo`). -/
+def deferInfo (tabs : Tables) : DeferInfo :=
+  (List.range tabs.auxes.size).foldl (fun di n =>
+    match tabs.aux? n with
+    | some { kind := .name _ cls _ off _ fl _, .. } =>
+      if cls != .PAUTO then di
+      else if fl.deferbits then
+        { di with bits := di.bits <|> some (n, tabs.forgeable n) }
+      else if fl.opendeferslot && 0 ≤ off then
+        let i := off.toNat
+        let slots := if i < di.slots.size then di.slots
+          else di.slots ++ Array.replicate (i + 1 - di.slots.size) none
+        { di with slots := slots.set! i (some (n, tabs.forgeable n)) }
+      else di
+    | _ => di) {}
 
 /-- The frame block of variable `n` of activation `act`. -/
 def frameBlk (tabs : Tables) (act : Nat) (n : AuxRef) : Blk :=
@@ -476,7 +503,8 @@ def Ctx.make (tabs : Tables) (f : Func) : Ctx :=
     params := params
     paramTys := ins.map (tabs.ty ·.type)
     outs := (ps.filter (·.out)).map fun p => (p.name, tabs.ty p.type, p.regs.size)
-    locals := frameLocals tabs params }
+    locals := frameLocals tabs params
+    defers := deferInfo tabs }
 
 /-- The state of an activation: the latest value of each value ID (by ID), the function's
 arguments and initial memory. -/
@@ -634,6 +662,205 @@ def outargsOK (tabs : Tables) (act : Nat) (m : Mem) (ins : List ABIParam) : Bool
   ins.all fun p => !p.regs.isEmpty ||
     m.canWrite ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ (tabs.ty p.type).size
 
+/-! ## Deferred calls and recover (§9.7, phase P5) -/
+
+/-- The `deferproc` entries of every activation, oldest first: 16 bytes each (`entryTy`: the
+activation number, the closure). A global without an address and without a Go name. -/
+def deferBlk : Blk := .global "gofv:defers"
+
+/-- The panic record `recover` reads (`recTy`). -/
+def panicBlk : Blk := .global "gofv:panic"
+
+/-- A `deferproc` entry: the activation that registered it, the closure. -/
+def entryTy : Ty := .agg [(0, .int .w64), (8, .ptr none)] 16
+
+/-- The panic record: whether `recover` was called, whether the deferred function is a
+wrapper, the activation of the deferred call (0: none; activation 0 is a run's own, never a
+deferred call's), the value `recover` returns. -/
+def recTy : Ty := .agg [(0, .int .w8), (1, .int .w8), (8, .int .w64), (16, .iface)] 32
+
+/-- The `deferproc` entries (activation, closure), oldest first. -/
+def deferEntries (m : Mem) : List (Val × Val) :=
+  match m.find? deferBlk with
+  | some a => (List.range (a.data.size / 16)).map fun i =>
+      (decode a.data (16 * i) (.int .w64), decode a.data (16 * i + 8) (.ptr none))
+  | none => []
+
+def setDeferEntries (m : Mem) (es : List (Val × Val)) : Mem :=
+  m.set deferBlk { data := (es.map fun (a, c) => encode entryTy (.agg [a, c])).foldl (· ++ ·) #[] }
+
+/-- `deferproc` of activation `act`: a new entry. -/
+def pushDefer (act : Nat) (clo : Val) (m : Mem) : Mem :=
+  setDeferEntries m (deferEntries m ++ [(.i64 (BitVec.ofNat 64 act), clo)])
+
+/-- The newest entry, removed, if activation `act` registered it (an undefined entry is
+observed: an error). -/
+def popDefer (act : Nat) (m : Mem) : Except String (Option (Val × Mem)) :=
+  let es := deferEntries m
+  match es.getLast? with
+  | some (a, c) =>
+    match a.asInt .w64 with
+    | some k => .ok (if k.toNat == act then some (c, setDeferEntries m es.dropLast) else none)
+    | none => .error "undefined defer entry"
+  | none => .ok none
+
+def setPanicRec (m : Mem) (recovered wrapper : Bool) (act : Nat) (v : Val) : Mem :=
+  m.set panicBlk { data := encode recTy (.agg [.i8 (if recovered then 1 else 0),
+    .i8 (if wrapper then 1 else 0), .i64 (BitVec.ofNat 64 act), v]) }
+
+/-- The panic record (recovered, wrapper, activation, value), `none` without one; an
+undefined record is observed (an error). -/
+def panicRec? (m : Mem) : Except String (Option (Bool × Bool × Nat × Val)) :=
+  match m.find? panicBlk with
+  | none => .ok none
+  | some a =>
+    match decode a.data 0 recTy with
+    | .agg [r, w, k, v] =>
+      match r.asInt .w8, w.asInt .w8, k.asInt .w64 with
+      | some r, some w, some k => .ok (some (r != 0, w != 0, k.toNat, v))
+      | _, _, _ => .error "undefined panic record"
+    | _ => .error "undefined panic record"
+
+/-- The nil `any`. -/
+def nilIface : Val := .agg [.i64 0, .ptr Ptr.null]
+
+/-- The value `recover` returns for a panic: `gopanic`'s argument, or for a runtime error a
+non-nil `any` whose type word is an opaque global (its data word is not modelled). -/
+def _root_.GoFV.SSA.Sem.Panic.toAny : Panic → Val
+  | .value bs => decode bs.toArray 0 .iface
+  | _ => .agg [.ptr ⟨.global "gofv:runtime.Error", 0⟩, .poison]
+
+/-- A wrapper function by its link name (`deferwrap` closures, method value wrappers), which
+`recover`'s stack walk skips. -/
+def isWrapperName (name : String) : Bool :=
+  (name.splitOn ".deferwrap").length > 1 || name.endsWith "-fm"
+
+/-- The code symbol of the deferred closure `clo` (a pointer word, `Val.asPtrWord`; its code is
+its first word): `none` for a nil closure (calling it faults); an undefined closure or code word
+is an error. `runDefers` reads it before it sets the panic record, so the record's wrapper flag
+(`deferredWrapper`) and the call (`callDeferred`) name the same callee. -/
+def deferredCode? (m : Mem) (clo : Val) : Except String (Option String) :=
+  match clo.asPtrWord with
+  | some p =>
+    if p.isNil then .ok none
+    else
+      match codeTarget? (m.load (.ptr none) p) with
+      | some name => .ok (some name)
+      | none => .error "deferred call without a known callee"
+  | none => .error "deferred call of an undefined closure"
+
+/-- The deferred function with code symbol `code` (`deferredCode?`, read before the panic record
+is set) is a wrapper. -/
+def deferredWrapper : Option String → Bool
+  | some n => isWrapperName n
+  | none => false
+
+/-- Run the deferred closure `clo` of activation `act` with code symbol `code` (`deferredCode?`,
+read before the panic record is set; `none`: a nil closure, which faults): a closure call without
+arguments. The caller's outgoing area is the callee's (`callOp`). -/
+def callDeferred (env : Env) (act : Nat) (clo : Val) : Option String → Mem → COutcome
+  | none, m => .panicked .nilDeref m
+  | some name, m =>
+    match env.extern name with
+    | some c => c [] (some clo) (m.poisonBlock (.outargs act))
+    | none => .stuck s!"deferred call {name}: no contract"
+
+/-- The runtime's block `b` (`deferBlk`, `panicBlk`) may be replaced: it is absent or writable.
+The runtime entry points never overwrite a read-only allocation there (only an initial memory
+or a global image could hold one): they are `stuck` instead, so contracts keep the read-only
+allocations (`Mem.KeepsRo`). -/
+def rtWritable (m : Mem) (b : Blk) : Bool :=
+  match m.find? b with
+  | some a => a.writable
+  | none => true
+
+/-- `runtime.deferproc(fn)` from activation `act`. -/
+def deferproc (act : Nat) : Contract := fun args _ m =>
+  match args with
+  | [fn] =>
+    if rtWritable m deferBlk then .returned [] (pushDefer act fn m)
+    else .stuck "deferproc: read-only defer list"
+  | _ => .stuck "deferproc: bad arguments"
+
+/-- `runtime.deferprocStack(d *_defer)` from activation `act`: `d.fn` is at offset 24 (`d` is
+passed as a `uintptr`: after `expand calls` an integer, whose variable is `addrconv`). -/
+def deferprocStack (act : Nat) : Contract := fun args _ m =>
+  let reg (d : Ptr) : COutcome :=
+    match m.load (.ptr none) ⟨d.blk, d.off + 24⟩ with
+    | .poison => .stuck "deferprocStack: undefined fn"
+    | fn =>
+      if rtWritable m deferBlk then .returned [] (pushDefer act fn m)
+      else .stuck "deferprocStack: read-only defer list"
+  match args with
+  | [.ptr d] => reg d
+  | [.int .w64 x] => reg (Ptr.ofAddr x)
+  | _ => .stuck "deferprocStack: bad arguments"
+
+/-- `runtime.deferreturn()` from activation `act`: runs the activation's `deferproc` entries,
+newest first. -/
+def deferreturn (env : Env) (act : Nat) : Contract := fun _ _ m =>
+  go (deferEntries m).length m
+where
+  go : Nat → Mem → COutcome
+    | 0, m => .returned [] m
+    | n + 1, m =>
+      if !rtWritable m deferBlk then .stuck "deferreturn: read-only defer list" else
+      match popDefer act m with
+      | .error msg => .stuck msg
+      | .ok none => .returned [] m
+      | .ok (some (clo, m)) =>
+        match deferredCode? m clo with
+        | .error msg => .stuck msg
+        | .ok code =>
+          match callDeferred env act clo code m with
+          | .returned _ m => go n m
+          | o => o
+
+/-- `runtime.gorecover()` from activation `act` (`runtime/panic.go`): the panic's value if a
+panic is being handled, not yet recovered, and the caller is the deferred function the panic
+machinery called, or that function's direct callee when it is a wrapper; `nil` otherwise. -/
+def gorecover (act : Nat) : Contract := fun _ _ m =>
+  match panicRec? m with
+  | .error msg => .stuck msg
+  | .ok (some (false, w, k, v)) =>
+    if k != 0 && (act == k || (w && act == k + 1)) then
+      if rtWritable m panicBlk then .returned [v] (setPanicRec m true w k v)
+      else .stuck "gorecover: read-only panic record"
+    else .returned [nilIface] m
+  | .ok _ => .returned [nilIface] m
+
+/-- The environment of a call from activation `act`: `env` with the runtime entry points that
+work on the caller's activation (`deferproc`, `deferprocStack`, `deferreturn`, `gorecover`). -/
+def _root_.GoFV.SSA.Sem.Env.atAct (env : Env) (act : Nat) : Env :=
+  { env with extern := fun name =>
+      if name == "runtime.deferproc" then some (deferproc act)
+      else if name == "runtime.deferprocStack" then some (deferprocStack act)
+      else if name == "runtime.deferreturn" then some (deferreturn env act)
+      else if name == "runtime.gorecover" then some (gorecover act)
+      else env.extern name }
+
+/-- The runtime entry points `Env.atAct` overrides. -/
+def isDeferName (name : String) : Bool :=
+  name == "runtime.deferproc" || name == "runtime.deferprocStack" ||
+    name == "runtime.deferreturn" || name == "runtime.gorecover"
+
+/-- Other callees are `env`'s. -/
+theorem _root_.GoFV.SSA.Sem.Env.atAct_extern_of {env : Env} {act : Nat} {name : String}
+    (h : isDeferName name = false) : (env.atAct act).extern name = env.extern name := by
+  simp only [isDeferName, Bool.or_eq_false_iff, beq_eq_false_iff_ne, ne_eq] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+  simp [Env.atAct, h1, h2, h3, h4]
+
+/-- The closure of a closure call is the nil pointer word (`Val.asPtrWord`). Go loads the code
+word from the closure without a nil check (arm64 faults), so the call panics with `nilDeref`
+(`deferNilFunc`: an open-coded `defer f()` of a nil `f` at a normal exit). -/
+def nilClosure (clo : Option Val) : Bool :=
+  match clo.bind Val.asPtrWord with
+  | some p => p.isNil
+  | none => false
+
+@[simp] theorem nilClosure_none : nilClosure none = false := rfl
+
 /-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
 `InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
 post-`expand calls` forms `StaticCall`, `ClosureCall`, `InterCall` pass register pieces and
@@ -648,27 +875,31 @@ sees that area poisoned, in both forms, so post-`expand calls` argument stores i
 invisible to the callee except through the decoded arguments. In both forms the call is
 `stuck` unless the slots of its stack-assigned arguments are writable in its memory
 (`outargsOK`; always so in a run, whose frame allocates the area): the post form's argument
-stores into them then cannot fail where the pre form's call succeeds. -/
+stores into them then cannot fail where the pre form's call succeeds. A closure call through a
+nil closure (`nilClosure`) faults loading the closure's code word once its arguments are passed:
+a `nilDeref` panic on the memory the callee would see, decided by the closure (the code word
+loaded from it is `poison`, so the callee is unknown). -/
 def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   let (callee?, clo, rest) := callTarget ctx v argv
-  let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
   let m ← match rest.getLast? with
     | some (.mem m) => .ok m
-    | _ => .stuck s!"call {callee}: no memory argument"
+    | _ => .stuck s!"v{v.id}: call without a memory argument"
   let pieces := rest.dropLast
   let post := v.op == .StaticCall || v.op == .ClosureCall || v.op == .InterCall
   let params := ((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []
   let ins := params.filter (!·.out)
   let outs := params.filter (·.out)
   let args ← if post then
-      Res.ofOption s!"call {callee}: arguments do not match the ABI" (decodeArgs ctx.tabs ctx.act m ins pieces)
+      Res.ofOption s!"v{v.id}: call arguments do not match the ABI" (decodeArgs ctx.tabs ctx.act m ins pieces)
     else pure (retypeResults ctx.tabs ins pieces)
   if args.any Val.hasPoison || (clo.map Val.hasPoison).getD false then
-    .stuck s!"call {callee}: poison argument"
+    .stuck s!"v{v.id}: call with a poison argument"
   else if !outargsOK ctx.tabs ctx.act m ins then
-    .stuck s!"call {callee}: outgoing-arguments area not writable"
+    .stuck s!"v{v.id}: call with an outgoing-arguments area not writable"
+  else if nilClosure clo then .panic .nilDeref (m.poisonBlock (.outargs ctx.act))
   else
-    let c ← Res.ofOption s!"call {callee}: no contract" (env.extern callee)
+    let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
+    let c ← Res.ofOption s!"call {callee}: no contract" ((env.atAct ctx.act).extern callee)
     match c args clo (m.poisonBlock (.outargs ctx.act)) with
     | .returned rs m' =>
       let rs := retypeResults ctx.tabs outs rs
@@ -861,6 +1092,8 @@ def stepTerm (fr : Frame) (b : Block) : Res Next :=
       | _, _ => .stuck s!"b{b.id}: Ret without memory"
     | _ => .stuck s!"b{b.id}: Ret control is not a MakeResult"
   | .Exit => .stuck s!"b{b.id}: Exit reached (a non-returning call returned)"
+  -- `deferproc` returned: the normal path (a recovery returns through `finish`, §9.7)
+  | .Defer => succ b 0
   | k => .stuck s!"b{b.id}: block kind {k.name} is not in phase P1"
 
 /-- Run from the entry of block `b` (entered along edge index `i`) with at most `fuel` block
@@ -976,22 +1209,105 @@ def entryFrame (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) : Frame :=
   { regs := Array.replicate ctx.f.valueTab.size none, args,
     mem0 := frameMem env ctx images mem, images }
 
+/-- The next deferred call of activation `act` (§9.7): the closure of the highest set bit of
+the open-coded `deferBits` (the bit cleared), else the newest `deferproc` entry of `act`
+(removed); `none` if there is none. An undefined `deferBits` is observed (an error). -/
+def nextDefer (di : DeferInfo) (act : Nat) (m : Mem) : Except String (Option (Val × Mem)) :=
+  let blk (n : AuxRef × Bool) : Blk := if n.2 then .local act n.1 else .temp act n.1
+  match di.bits with
+  | none => popDefer act m
+  | some nb =>
+    let p : Ptr := ⟨blk nb, 0⟩
+    match (m.load (.int .w8) p).asInt .w8 with
+    | none => .error "panic: undefined deferBits"
+    | some bits =>
+      match (List.range 8).reverse.find? (fun i => bits.getLsbD i) with
+      | none => popDefer act m
+      | some i =>
+        match di.slots[i]? with
+        | some (some sn) =>
+          match m.write p (encode (.int .w8) (.i8 (bits &&& ~~~((1 : BitVec 8) <<< i)))) with
+          | some m' => .ok (some (m.load (.ptr none) ⟨blk sn, 0⟩, m'))
+          | none => .error "panic: deferBits not writable"
+        | _ => .error s!"panic: no open-coded defer slot {i}"
+
+/-- The results of a recovered activation: its result variables (`PPARAMOUT`, in memory in a
+function with defers) at their result types. -/
+def stackOuts (outs : Array (Option AuxRef × Ty × Nat)) : Array (Option AuxRef × Ty × Nat) :=
+  outs.map fun (n, t, _) => (n, t, 0)
+
+/-- The memory `r` after a deferred call of `runDefers` with the panic record `saved` from
+before the call restored while panicking (`pe = some _`; `saved = none`: removed). -/
+def restorePanicRec (pe : Option Panic) (saved : Option Alloc) (r : Mem) : Mem :=
+  match pe, saved with
+  | some _, some a => r.set panicBlk a
+  | some _, none => r.free panicBlk
+  | none, _ => r
+
+/-- Run the deferred calls of activation `act` (at most `n`; §9.7). While panicking
+(`pe = some e`) each runs with a panic record that lets it `recover` (`gorecover`), restored
+afterwards (an outer panic's record, `none`: removed); a recovery ends the panic, the remaining
+deferred calls run as at a normal exit, and the activation returns the values of its result
+variables with its frame freed. A deferred call that panics replaces the panic; the frames of
+its activations are gone (`dropFrames`). When no deferred call is left, a panic propagates with
+the memory as it is. The deferred closure's code is read (`deferredCode?`) before the panic
+record is set. -/
+def runDefers (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : DeferInfo)
+    (act : Nat) : Nat → Option Panic → Mem → Outcome
+  | 0, _, _ => .stuck "too many deferred calls"
+  | n + 1, pe, m =>
+    match nextDefer di act m with
+    | .error msg => .stuck msg
+    | .ok none =>
+      match pe with
+      | some e => .panicked e m
+      | none =>
+        match goResults (stackOuts outs) act [] m with
+        | .ok vals => .returned vals (m.freeFrame act)
+        | .panic e m => .panicked e m
+        | .stuck msg => .stuck msg
+    | .ok (some (clo, m1)) =>
+      match deferredCode? m1 clo with
+      | .error msg => .stuck msg
+      | .ok code =>
+      let restore := restorePanicRec pe (m1.find? panicBlk)
+      let m2 := match pe with
+        | some e => setPanicRec m1 false (deferredWrapper code) m1.nextAct e.toAny
+        | none => m1
+      match callDeferred env act clo code m2 with
+      | .returned _ m3 =>
+        match pe with
+        | some e =>
+          match panicRec? m3 with
+          | .ok (some (true, _)) => runDefers env outs di act n none (restore m3)
+          | .ok (some (false, _)) => runDefers env outs di act n (some e) (restore m3)
+          | .ok none => .stuck "panic record lost"
+          | .error msg => .stuck msg
+        | none => runDefers env outs di act n none m3
+      | .panicked e2 m3 => runDefers env outs di act n (some e2) ((restore m3).dropFrames (act + 1))
+      | .stuck msg => .stuck msg
+
 /-- The outcome of an activation from its loop's outcome: Go-typed results (`goResults`) and
-the memory without the frame; other outcomes unchanged. A `MakeResult` component containing
-poison is observed (`stuck`) before decoding, so `finish` preserves refinement
+the memory without the frame; at a panic, the frames of the activation's callees are gone and
+its deferred calls run (`runDefers`, §9.7); other outcomes unchanged. A `MakeResult` component
+containing poison is observed (`stuck`) before decoding, so `finish` preserves refinement
 (`docs/plans/semantics.md` §3.5). -/
-def finish (outs : Array (Option AuxRef × Ty × Nat)) (act : Nat) : Outcome → Outcome
+def finish (env : Env) (outs : Array (Option AuxRef × Ty × Nat)) (di : DeferInfo) (act : Nat) :
+    Outcome → Outcome
   | .returned rs m =>
     if Val.anyPoison rs then .stuck "poison result" else
     match goResults outs act rs m with
     | .ok vals => .returned vals (m.freeFrame act)
     | .panic e m => .panicked e m
     | .stuck msg => .stuck msg
+  | .panicked e m =>
+    let m := m.dropFrames (act + 1)
+    runDefers env outs di act (9 + (deferEntries m).length) (some e) m
   | o => o
 
 /-- `finish` only defines defined outcomes. -/
-theorem finish_defined {outs : Array (Option AuxRef × Ty × Nat)} {act : Nat} {o : Outcome}
-    (h : (finish outs act o).Defined) : o.Defined := by
+theorem finish_defined {env : Env} {outs : Array (Option AuxRef × Ty × Nat)} {di : DeferInfo}
+    {act : Nat} {o : Outcome} (h : (finish env outs di act o).Defined) : o.Defined := by
   cases o with
   | returned => trivial
   | panicked => trivial
@@ -1005,7 +1321,8 @@ def runCtx (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) (fuel : Nat) : 
   if args.length != ctx.params.size then
     .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
   else
-    finish ctx.outs ctx.act (runLoop env ctx fuel (entryFrame env ctx args mem) ctx.f.entry 0)
+    finish env ctx.outs ctx.defers ctx.act
+      (runLoop env ctx fuel (entryFrame env ctx args mem) ctx.f.entry 0)
 
 /-! ## Program functions as callees -/
 
@@ -1028,7 +1345,7 @@ def runActivation (env : Env) (ctx : Ctx) (clo : Option Val) (args : List Val) (
     .stuck s!"{args.length} arguments for {ctx.params.size} parameters"
   else
     let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
-    finish ctx.outs act
+    finish env ctx.outs ctx.defers act
       (runLoop env ctx fuel
         { regs := Array.replicate ctx.f.valueTab.size none, args, images, closure := clo,
           mem0 := frameAllocs ctx images mem } ctx.f.entry 0)

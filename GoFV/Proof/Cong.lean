@@ -232,7 +232,8 @@ theorem run_congr {f g : Func} (h : eraseF f = eraseF g) (env : Env) (tabs : Tab
   split
   · rfl
   · rw [runLoop_congr hc, hc.outs, hc.act, entryFrame_ctx hc hsize]
-    show finish _ _ (runLoop env _ fuel _ f.entry 0) = finish _ _ (runLoop env _ fuel _ g.entry 0)
+    show finish env _ (deferInfo tabs) _ (runLoop env _ fuel _ f.entry 0) =
+      finish env _ (deferInfo tabs) _ (runLoop env _ fuel _ g.entry 0)
     rw [hentry]
 
 theorem Refines.of_eraseF {tabs : Tables} {f g : Func} (h : eraseF g = eraseF f) :

@@ -57,26 +57,28 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
       (if v.op = .StaticCall then
         decodeArgs ctx.tabs ctx.act M ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast = some args
       else args = retypeResults ctx.tabs ((callParams ctx.tabs v).filter (!·.out)) argv.dropLast) ∧
-      env.extern name = some c ∧ c args none (M.poisonBlock (.outargs ctx.act)) = .returned rs m' ∧
+      (env.atAct ctx.act).extern name = some c ∧ c args none (M.poisonBlock (.outargs ctx.act)) = .returned rs m' ∧
       encodeResults ctx.tabs ctx.act ((callParams ctx.tabs v).filter (·.out))
         (retypeResults ctx.tabs ((callParams ctx.tabs v).filter (·.out)) rs) m' = some r ∧
       y = .tuple ((if v.op = .StaticCall then r.1
           else retypeResults ctx.tabs ((callParams ctx.tabs v).filter (·.out)) rs) ++
         [.mem r.2, .agg (((callParams ctx.tabs v).filter (·.out)).map fun p =>
           if p.regs.isEmpty then .ptr ⟨.outargs ctx.act, BitVec.ofInt 64 p.offset⟩ else .poison)]) := by
-  rcases hop with hop | hop <;> unfold callOp at hc <;> simp only [callTarget, hop] at hc <;>
+  rcases hop with hop | hop <;> unfold callOp at hc <;>
+    simp only [callTarget, hop, nilClosure_none] at hc <;>
     simp only [hop] <;>
-    cases hn : v.aux.bind ctx.tabs.callee? <;> simp only [hn, Res.ofOption] at hc <;>
-    (try cases hc) <;>
-    cases hm : argv.getLast? <;> simp only [hm] at hc <;> (try cases hc) <;> rename_i name w <;>
+    cases hm : argv.getLast? <;> simp only [hm] at hc <;> (try cases hc) <;> rename_i w <;>
     cases w <;> simp only [res_ok_bind] at hc <;> (try cases hc) <;>
     simp (config := {decide := true}) only [Bool.or_false, ite_true, ite_false, res_pure,
-      Option.map_none, Option.getD_none] at hc ⊢ <;>
+      Option.map_none, Option.getD_none, Bool.false_eq_true, Res.ofOption] at hc ⊢ <;>
     (try simp only [res_ok_bind] at hc)
   · split at hc
     · cases hc
     split at hc
     · cases hc
+    cases hn : v.aux.bind ctx.tabs.callee? <;> simp only [hn, Res.ofOption, res_ok_bind] at hc
+    · cases hc
+    rename_i name
     split at hc
     · rename_i c hx
       simp only [res_ok_bind] at hc
@@ -98,6 +100,9 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
       · cases hc
       split at hc
       · cases hc
+      cases hn : v.aux.bind ctx.tabs.callee? <;> simp only [hn, Res.ofOption, res_ok_bind] at hc
+      · cases hc
+      rename_i name
       split at hc
       · rename_i c hx
         simp only [res_ok_bind] at hc
@@ -117,20 +122,22 @@ theorem callOp_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {y : Val
 /-- A static call panics only when its callee's contract does. -/
 theorem callOp_panic {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {e : Panic} {m : Mem}
     (hop : v.op = .StaticLECall ∨ v.op = .StaticCall) (hc : callOp env ctx v argv = .panic e m) :
-    ∃ name c args M, v.aux.bind ctx.tabs.callee? = some name ∧ env.extern name = some c ∧
+    ∃ name c args M, v.aux.bind ctx.tabs.callee? = some name ∧ (env.atAct ctx.act).extern name = some c ∧
       c args none M = .panicked e m := by
-  rcases hop with hop | hop <;> unfold callOp at hc <;> simp only [callTarget, hop] at hc <;>
-    cases hn : v.aux.bind ctx.tabs.callee? <;> simp only [hn, Res.ofOption] at hc <;>
-    (try cases hc) <;>
-    cases hm : argv.getLast? <;> simp only [hm] at hc <;> (try cases hc) <;> rename_i name w <;>
+  rcases hop with hop | hop <;> unfold callOp at hc <;>
+    simp only [callTarget, hop, nilClosure_none] at hc <;>
+    cases hm : argv.getLast? <;> simp only [hm] at hc <;> (try cases hc) <;> rename_i w <;>
     cases w <;> simp only [res_ok_bind] at hc <;> (try cases hc) <;>
     simp (config := {decide := true}) only [Bool.or_false, ite_true, ite_false, res_pure,
-      Option.map_none, Option.getD_none] at hc <;>
+      Option.map_none, Option.getD_none, Bool.false_eq_true, Res.ofOption] at hc <;>
     (try simp only [res_ok_bind] at hc)
   · split at hc
     · cases hc
     split at hc
     · cases hc
+    cases hn : v.aux.bind ctx.tabs.callee? <;> simp only [hn, Res.ofOption, res_ok_bind] at hc
+    · cases hc
+    rename_i name
     split at hc
     · rename_i c hx
       simp only [res_ok_bind] at hc
@@ -147,6 +154,9 @@ theorem callOp_panic {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {e : 
       · cases hc
       split at hc
       · cases hc
+      cases hn : v.aux.bind ctx.tabs.callee? <;> simp only [hn, Res.ofOption, res_ok_bind] at hc
+      · cases hc
+      rename_i name
       split at hc
       · rename_i c hx
         simp only [res_ok_bind] at hc
@@ -378,7 +388,7 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
   have ha := callOp_args hs (fun ps h => decodeArgs_two h (ofPieces_ptrWord · hpa) x)
     (fun ps h => retypeArgs_two h (retype_ptrWord hpa) x) hargs
   subst ha
-  obtain rfl := hE.1 c hx
+  obtain rfl := (hE.atAct ctx.act).1 c hx
   simp only [Runtime.memclr, Runtime.ok?, runtime_asPtr_eq, hpa, Runtime.asInt] at hr
   cases hw : (M.poisonBlock (.outargs ctx.act)).write P (Array.replicate x.toInt.toNat (.b 0)) with
   | none =>
@@ -411,7 +421,7 @@ theorem callOp_memmove {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P 
     decodeArgs_three h (ofPieces_ptrWord · hpa) (ofPieces_ptrWord · hqb) x)
     (fun ps h => retypeArgs_three h (retype_ptrWord hpa) (retype_ptrWord hqb) x) hargs
   subst ha
-  obtain rfl := hE.2 c hx
+  obtain rfl := (hE.atAct ctx.act).2 c hx
   simp only [Runtime.memmove, Runtime.ok?, runtime_asPtr_eq, hpa, hqb, Runtime.asInt] at hr
   have hP := poisonBlock_refines M (.outargs ctx.act)
   cases hrd : (M.poisonBlock (.outargs ctx.act)).read Q x.toInt.toNat with
@@ -443,7 +453,7 @@ theorem callOp_memclr_not_panic {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : V
   intro hc
   obtain ⟨name, c, args, M, hname, hx, hr⟩ := callOp_panic (simpleCall_op hs) hc
   rw [calleeIs_eq hn] at hname; cases hname
-  obtain rfl := hE.1 c hx
+  obtain rfl := (hE.atAct ctx.act).1 c hx
   simp only [Runtime.memclr, Runtime.ok?] at hr
   split at hr <;> cases hr
 
@@ -454,7 +464,7 @@ theorem callOp_memmove_not_panic {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : 
   intro hc
   obtain ⟨name, c, args, M, hname, hx, hr⟩ := callOp_panic (simpleCall_op hs) hc
   rw [calleeIs_eq hn] at hname; cases hname
-  obtain rfl := hE.2 c hx
+  obtain rfl := (hE.atAct ctx.act).2 c hx
   simp only [Runtime.memmove, Runtime.ok?] at hr
   split at hr <;> cases hr
 

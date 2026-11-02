@@ -272,7 +272,7 @@ theorem dead_refines (hf : WFDom ce f) {B : Block} (hB : f.block? b = some B)
     rw [hen]
     have hr := dead_runLoop (tabs := tabs) (env := env) hf.wf hB hp fuel
       (entryFrame env (Ctx.make tabs f) args mem) f.entry 0 hf.wf.entry (Ne.symm he)
-    exact congrArg (finish (Ctx.make tabs f).outs (Ctx.make tabs f).act) hr
+    exact congrArg (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers (Ctx.make tabs f).act) hr
 
 end
 

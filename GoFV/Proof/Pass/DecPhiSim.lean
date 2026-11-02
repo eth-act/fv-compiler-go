@@ -280,7 +280,7 @@ def SimR (tabs : Tables) (f g : Func) (S : Frame) (bS : ID) (iS : Nat) (T : Fram
 /-- **One block step.** -/
 theorem step (H : Hyp tabs f g ce ce') {env : Env} (hE : env.Mono) {S T : Frame} {b : ID}
     {i : Nat} (hA : SimAt tabs f g S T b) :
-    StepSimE (SimR tabs f g) (blockStep env (Ctx.make tabs f) S b i)
+    StepSimE Mem.Refines (SimR tabs f g) (blockStep env (Ctx.make tabs f) S b i)
       (blockStep env (Ctx.make tabs g) T b i) := by
   unfold blockStep
   simp only [show (Ctx.make tabs f).f = f from rfl, show (Ctx.make tabs g).f = g from rfl]
@@ -372,7 +372,7 @@ theorem decPhis_refines (h : decPhiCheck tabs f g = true) (hf : check ce f = .ok
         rel := fun z _ s π _ y hy => by
           simp [entryFrame, Array.getElem?_replicate] at hy
         typed := typed_replicate _ _ _ rfl }
-    refine finish_refines hd (runLoop_simE (SimR tabs f g) (fun frS bS iS frT bT iT hR => ?_) fuel
+    refine finish_refines_mono hE hd (runLoop_simE (SimR tabs f g) (fun frS bS iS frT bT iT hR => ?_) fuel
       _ _ _ _ _ _ ⟨H.entry_eq, rfl, hA⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, R⟩ := hR
     exact step H hE R

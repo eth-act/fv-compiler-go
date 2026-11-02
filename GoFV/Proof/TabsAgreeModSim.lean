@@ -99,7 +99,8 @@ theorem evalAll_rel {env : Env} {tabs : Tables} {f : Func} (H : Hyps env X tabs 
       (∀ S', evalAll env (Ctx.make tabs f) S o = .ok S' →
         ∃ T', evalAll env (Ctx.make tabs f) T o = .ok T' ∧ FInv X tabs f S' T') ∧
       (∀ e m, evalAll env (Ctx.make tabs f) S o = .panic e m →
-        ∃ m', evalAll env (Ctx.make tabs f) T o = .panic e m' ∧ EqX X m m')
+        ∃ m', evalAll env (Ctx.make tabs f) T o = .panic e m' ∧ EqX X m m' ∧
+          e.Avoids (X · = true) ∧ m.Avoids (X · = true))
   | [], S, T, _, I => ⟨fun S' h => (by cases h; exact ⟨T, rfl, I⟩), fun e m h => (by cases h)⟩
   | x :: o, S, T, hO, I => by
     obtain ⟨fv, hfv, hid⟩ := hO x List.mem_cons_self
@@ -112,11 +113,12 @@ theorem evalAll_rel {env : Env} {tabs : Tables} {f : Func} (H : Hyps env X tabs 
     | stuck msg => exact ⟨fun _ h => (by simp at h), fun _ _ h => (by simp at h)⟩
     | panic e m =>
       obtain ⟨m', hT, hm⟩ := hr.2 e m hS
+      have hpa := evalValue_panic_avoidsX H.E H.temp I.av hS
       rw [hT]
       refine ⟨fun _ h => (by simp at h), fun e' m'' h => ?_⟩
       simp only [Res.panic.injEq] at h
       obtain ⟨rfl, rfl⟩ := h
-      exact ⟨m', rfl, hm⟩
+      exact ⟨m', rfl, hm, hpa⟩
     | ok y =>
       obtain ⟨y', hT, hy⟩ := hr.1 y hS
       rw [hT]
@@ -234,7 +236,8 @@ theorem enterBlock_rel {env : Env} {tabs : Tables} {f : Func} (H : Hyps env X ta
     (∀ S', enterBlock env (Ctx.make tabs f) S b i = .ok S' →
       ∃ T', enterBlock env (Ctx.make tabs f) T b i = .ok T' ∧ FInv X tabs f S' T') ∧
     (∀ e m, enterBlock env (Ctx.make tabs f) S b i = .panic e m →
-      ∃ m', enterBlock env (Ctx.make tabs f) T b i = .panic e m' ∧ EqX X m m') := by
+      ∃ m', enterBlock env (Ctx.make tabs f) T b i = .panic e m' ∧ EqX X m m' ∧
+        e.Avoids (X · = true) ∧ m.Avoids (X · = true)) := by
   have hnd := hwf.valuesNodup bid b ⟨hbin, hb⟩
   have hown := valuesOwn hwf hbin hb
   obtain ⟨b', hb', hid⟩ := hwf.blockId bid hbin
@@ -318,33 +321,21 @@ theorem stepTerm_rel {G GT : Frame} {b b' : Block} (hk : b'.kind = b.kind) (hs :
     rw [hk]
     simp only [hsucc, hid]
     cases hkb : b.kind <;> simp only [hkb] at h ⊢
-    · cases h
-    · exact h
-    · cases hc0 : Sem.control G b 0 with
-      | ok y =>
-        obtain ⟨y', hy', hv⟩ := hct 0 y hc0
-        rw [hc0] at h
-        rw [hy']
-        cases y with
-        | bool c => rw [hv.eq nofun nofun]; exact h
-        | _ => simp [bind, Res.bind] at h
-      | panic _ _ => exact absurd hc0 DAE.control_not_panic
-      | stuck _ => rw [hc0] at h; cases h
-    · cases h
-    · exact absurd hkb hR
-    · cases h
-    · cases h
-    · cases hc0 : Sem.control G b 0 with
-      | ok y =>
-        obtain ⟨y', hy', hv⟩ := hct 0 y hc0
-        rw [hc0] at h
-        rw [hy']
-        cases y with
-        | int w x => rw [hv.eq nofun nofun]; exact h
-        | _ => simp [bind, Res.bind] at h
-      | panic _ _ => exact absurd hc0 DAE.control_not_panic
-      | stuck _ => rw [hc0] at h; cases h
-    · exact h
+    all_goals first
+      | exact h
+      | exact absurd hkb hR
+      | (cases hc0 : Sem.control G b 0 with
+          | ok y =>
+            obtain ⟨y', hy', hv⟩ := hct 0 y hc0
+            rw [hc0] at h
+            rw [hy']
+            cases y with
+            | bool c => rw [hv.eq nofun nofun]; exact h
+            | int w x => rw [hv.eq nofun nofun]; exact h
+            | _ => simp [bind, Res.bind] at h
+          | panic _ _ => exact absurd hc0 DAE.control_not_panic
+          | stuck _ => rw [hc0] at h; cases h)
+      | cases h
   refine ⟨fun e h => ?_, fun rs m h => ?_⟩
   · by_cases hR : b.kind = .Ret
     · unfold stepTerm at h
@@ -403,13 +394,15 @@ theorem stepTerm_rel {G GT : Frame} {b b' : Block} (hk : b'.kind = b.kind) (hs :
 inductive ORel (X : Blk → Bool) : Outcome → Outcome → Prop where
   | ret {rs rs' : List Val} {m m' : Mem} : VRL X rs rs' → EqX X m m' →
       ORel X (.returned rs m) (.returned rs' m')
-  | panic (e : Panic) {m m' : Mem} : EqX X m m' → ORel X (.panicked e m) (.panicked e m')
+  | panic (e : Panic) {m m' : Mem} : EqX X m m' → e.Avoids (X · = true) →
+      m.Avoids (X · = true) → ORel X (.panicked e m) (.panicked e m')
 
 /-- The target's block step matches a source block step along the same edge. -/
 def StepRelX (X : Blk → Bool) (R : Frame → Frame → ID → Nat → Prop) : Step → Step → Prop
   | .goto frS e, sT => ∃ frT, sT = .goto frT e ∧ R frS frT e.b e.i
   | .ret rs m, sT => ∃ rs' m', sT = .ret rs' m' ∧ VRL X rs rs' ∧ EqX X m m'
-  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ EqX X m m'
+  | .panic e m, sT => ∃ m', sT = .panic e m' ∧ EqX X m m' ∧ e.Avoids (X · = true) ∧
+      m.Avoids (X · = true)
   | .stuck, _ => True
 
 /-- **Lock-step simulation** with related outcomes. -/
@@ -440,9 +433,9 @@ theorem runLoop_simX {env : Env} {ctxS ctxT : Ctx} (R : Frame → Frame → ID �
       exact .ret hr hm
     | panic e m =>
       rw [hS] at hs
-      obtain ⟨m', hT, hm⟩ := hs
+      obtain ⟨m', hT, hm, he, hmA⟩ := hs
       rw [p1 _ _ hS, p2 _ _ hT]
-      exact .panic e hm
+      exact .panic e hm he hmA
     | stuck => exact absurd hd (s1 hS)
 
 /-! ## `finish` -/
@@ -519,20 +512,23 @@ theorem goResults_eq (hX : TempX X) (outs : Array (Option AuxRef × Ty × Nat)) 
   unfold goResults
   simp only [hr.length, hasTy_zip_eq' hr, encode_zip_eq hr, goResults_post_eq hX hm _ hr]
 
-/-- **`finish` turns related loop outcomes into refinement.** -/
-theorem finish_rel (hX : TempX X) {outs : Array (Option AuxRef × Ty × Nat)} {o o' : Outcome}
-    (hd : (finish outs 0 o).Defined) (h : ORel X o o') :
-    OutcomeRefines 0 (finish outs 0 o) (finish outs 0 o') := by
+/-- **`finish` turns related loop outcomes into refinement**: at a panic, the deferred calls run
+on memories equal once `X` is erased (`DeferRel.finish_panicked_refines`; the open-coded defer
+variables are outside `X`, `hdi`). -/
+theorem finish_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X)
+    {outs : Array (Option AuxRef × Ty × Nat)} {di : DeferInfo}
+    (hdi : DeferRel.DeferAvoid (X · = true) di 0) {o o' : Outcome}
+    (hd : (finish env outs di 0 o).Defined) (h : ORel X o o') :
+    OutcomeRefines 0 (finish env outs di 0 o) (finish env outs di 0 o') := by
   cases h with
-  | panic e hm =>
-    refine .panicked e ?_
-    rw [EqX.dropFrames hX hm]
-    exact Mem.Refines.refl _
+  | panic e hm he hmA =>
+    exact DeferRel.finish_panicked_refines memRel_eqX (tempU_of hX)
+      (respects_of_tempOblivious hE hX) outs hdi (fun _ _ h => (EqX.freeFrame hX h).symm)
+      (fun _ _ h => (EqX.dropFrames hX h).symm) he hmA hm hd
   | @ret rs rs' m m' hr hm =>
-    have hfin : finish outs 0 (.returned rs' m') = finish outs 0 (.returned rs m) := by
+    have hfin : finish env outs di 0 (.returned rs' m') = finish env outs di 0 (.returned rs m) := by
       simp only [finish, hr.anyPoison, goResults_eq hX outs hr hm, (EqX.freeFrame hX hm).symm]
     rw [hfin]
     exact OutcomeRefines.refl hd
-
 
 end GoFV.Proof.TabsMod

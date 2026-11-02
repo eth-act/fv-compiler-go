@@ -5,7 +5,8 @@ import GoFV.Proof.Pass.DAEBlockBase
 
 `okCase`: if the source evaluates the block's schedule to `G`, the target evaluates its schedule
 to a frame whose registers are related to `G`'s; `panicCase`: if the source panics, the target
-panics alike with a memory equal outside `U`. Induction along the target's schedule
+panics alike with a memory equal outside `U` (and the source's panic value and memory avoid
+`U`, `src_panic`). Induction along the target's schedule
 (`CSE.evalAll_loop`): a value the source evaluated before it stops evaluates to a related
 register (`tgt_rel`); a value it did not reach (it panicked first) is pure in the target (the
 roots of `g` keep their order, `CSE.roots_before`): an eliminated write's `Copy`, or a pure value
@@ -211,7 +212,8 @@ theorem nodeOf_x {x : ID} {v : Value} (hx : x ∈ fb.values) (hv : f.value? x = 
 /-- **The panic case.** -/
 theorem panicCase {e : Panic} {m : Mem}
     (h : evalAll env (Ctx.make tabs f) F0 oS.toList = .panic e m) :
-    ∃ m', evalAll env (Ctx.make tabs g) F0T oT.toList = .panic e m' ∧ Mem.EqOff (UE E) m m' := by
+    ∃ m', evalAll env (Ctx.make tabs g) F0T oT.toList = .panic e m' ∧ Mem.EqOff (UE E) m m' ∧
+      e.Avoids (UE E) ∧ m.Avoids (UE E) := by
   obtain ⟨ce, hwf⟩ := K.wf
   obtain ⟨pre, r, post, Gp, hsplit, hpre, hrp⟩ := evalAll_panic_split h
   have hk : oS.toList[pre.length]? = some r := by rw [hsplit]; simp
@@ -293,7 +295,10 @@ theorem panicCase {e : Panic} {m : Mem}
   have hsplitT := CSE.split_at hk'
   have hR := K.valRel hS hT' hpr hk' ⟨pre.length, Nat.le_refl _, hk⟩ hrv
   obtain ⟨m', hm', hEq⟩ := hR.2 e m hrp
-  refine ⟨m', ?_, hEq⟩
+  have hrp' : evalValue env (Ctx.make tabs f) Gp rv = .panic e m := by
+    rw [stepV_of (ctx := Ctx.make tabs f) hrv] at hrp; exact hrp
+  obtain ⟨heA, hmA⟩ := src_panic K.fs K.rel (regsP_inv hpr) hrv hrp'
+  refine ⟨m', ?_, hEq, heA, hmA⟩
   rw [hsplitT, evalAll_append, h1]
   show evalAll env (Ctx.make tabs g) T' (r :: oT.toList.drop (k' + 1)) = _
   rw [evalAll_cons, hm']

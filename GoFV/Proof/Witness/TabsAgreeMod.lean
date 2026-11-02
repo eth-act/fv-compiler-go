@@ -37,8 +37,15 @@ theorem p1_tempOblivious : Env.p1.TempOblivious := by
   simp only at hc
   split at hc
   all_goals first
-    | (cases hc; exact ⟨rfl, hm, hmm⟩)
+    | (cases hc; exact ⟨rfl, trivial, hm, hmm⟩)
     | cases hc
+
+/-- **The defer entry points of a call from activation 0 over `Env.p1` cannot tell whether
+unreachable frame temporaries exist** (`Env.TempOblivious.atAct`); the environment has them
+(`gorecover`). -/
+theorem p1_atAct_tempOblivious : (Env.p1.atAct 0).TempOblivious ∧
+    (Env.p1.atAct 0).extern "runtime.gorecover" = some (gorecover 0) :=
+  ⟨p1_tempOblivious.atAct 0, rfl⟩
 
 theorem clampArgs_initAvoids (x : BitVec 64) : InitAvoids Env.p1 (clampArgs x) {} := by
   intro a n

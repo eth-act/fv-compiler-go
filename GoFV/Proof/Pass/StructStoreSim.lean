@@ -162,7 +162,7 @@ def SimR (env : Env) (tabs : Tables) (f g : Func) (frS : Frame) (bS : ID) (iS : 
 theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g)
     (R : SRel tabs f g) (hE : env.Mono) {frS frT : Frame} {bid : ID} {i : Nat}
     (hA : SimAt env tabs f g frS frT bid i) :
-    StepSimE (SimR env tabs f g) (blockStep env (Ctx.make tabs f) frS bid i)
+    StepSimE Mem.Refines (SimR env tabs f g) (blockStep env (Ctx.make tabs f) frS bid i)
       (blockStep env (Ctx.make tabs g) frT bid i) := by
   have hbt := CSE.pre_tree hwf hc hA.pre
   unfold blockStep
@@ -302,7 +302,7 @@ theorem ss_refines {ce ce' : CheckEnv} (hf : check ce f = .ok ()) (hg : check ce
         typed := typed_replicate _ _ _ rfl
         pre := .inl rfl }
     rw [show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from cfgView_entry R.cfg]
-    refine finish_refines hd (runLoop_simE (SimR env tabs f g)
+    refine finish_refines_mono hE hd (runLoop_simE (SimR env tabs f g)
       (fun frS bS iS frT bT iT hR => ?_) fuel _ _ _ _ _ _ ⟨rfl, rfl, hA0⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, hA⟩ := hR
     exact step hwf hc hwg R hE hA

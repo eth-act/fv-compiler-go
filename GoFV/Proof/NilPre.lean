@@ -90,9 +90,29 @@ theorem Env.runtime_allocNonNil : Env.runtime.AllocNonNil := by
     · split at hc
       · next hp =>
         exfalso
-        simp only [Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at hp
-        rcases hp with ((((((rfl | rfl) | rfl) | rfl) | rfl) | rfl) | rfl) <;> revert hm <;>
-          decide +kernel
-      · cases hc
+        simp only [beq_iff_eq] at hp
+        subst hp
+        revert hm
+        decide +kernel
+      · split at hc
+        · next hp =>
+          exfalso
+          simp only [Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at hp
+          rcases hp with (((((rfl | rfl) | rfl) | rfl) | rfl) | rfl) <;> revert hm <;>
+            decide +kernel
+        · cases hc
+
+/-- `Env.atAct` keeps the malloc-family contracts. -/
+theorem Env.AllocNonNil.atAct {env : Env} (h : env.AllocNonNil) (act : Nat) :
+    (env.atAct act).AllocNonNil := by
+  intro name c hm hc
+  have hn : isDeferName name = false := by
+    cases hd : isDeferName name
+    · rfl
+    · exfalso
+      simp only [isDeferName, Bool.or_eq_true, beq_iff_eq] at hd
+      rcases hd with ((rfl | rfl) | rfl) | rfl <;> revert hm <;> decide +kernel
+  rw [Env.atAct_extern_of hn] at hc
+  exact h name c hm hc
 
 end GoFV.SSA.Sem

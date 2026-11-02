@@ -223,7 +223,7 @@ theorem sim_step {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel tabs f g s env) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : Rel tabs f g s env frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨rfl, hBm, gB, hgB, hiT, hns, hiS, hrel, hdf, hsrc, hsS, hsz, hty, hA, hfrS⟩ := hR
   subst hiS

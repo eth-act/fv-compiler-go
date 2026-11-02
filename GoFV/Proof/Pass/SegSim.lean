@@ -216,7 +216,7 @@ theorem step {ce ce' : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (hwg : WF ce' g
     (hQ : ∀ fr fr' o, MemInv.SInv Q fr → (∀ x ∈ o, ∃ b ∈ f.blocks, x ∈ WBCheck.vals f b) →
       evalAll env (Ctx.make tabs f) fr o = .ok fr' → MemInv.SInv Q fr')
     {frS frT : Frame} {bid : ID} {i : Nat} (hA : SimAt Q env tabs f g frS frT bid i) :
-    StepSimE (SimR Q env tabs f g) (blockStep env (Ctx.make tabs f) frS bid i)
+    StepSimE Mem.Refines (SimR Q env tabs f g) (blockStep env (Ctx.make tabs f) frS bid i)
       (blockStep env (Ctx.make tabs g) frT bid i) := by
   have hbt := CSE.pre_tree hwf hc hA.pre
   unfold blockStep
@@ -392,7 +392,7 @@ theorem seg_refines {ce ce' : CheckEnv} (hf : check ce f = .ok ()) (hg : check c
         pre := .inl rfl
         inv := roQ_entry hRo args }
     rw [show (Ctx.make tabs g).f.entry = (Ctx.make tabs f).f.entry from cfgView_entry R.cfg]
-    refine finish_refines hd (runLoop_simE (SimR (RoQ tabs ro f) env tabs f g)
+    refine finish_refines_mono hE hd (runLoop_simE (SimR (RoQ tabs ro f) env tabs f g)
       (fun frS bS iS frT bT iT hR => ?_) fuel _ _ _ _ _ _ ⟨rfl, rfl, hA0⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, hA⟩ := hR
     exact step hwf hc hwg R hE hsound

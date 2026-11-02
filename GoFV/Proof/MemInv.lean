@@ -47,12 +47,16 @@ namespace GoFV.Proof.MemInv
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck
 
 /-- A memory predicate kept by writes, by `poisonBlock`s of blocks that are neither globals nor
-the write-barrier buffer (frame blocks: `VarDef`, a callee's outgoing-arguments area) and by
-freeing the buffer. (The frame allocations of a run's entry are `set`s: `sinv_entry`.) -/
+the write-barrier buffer (frame blocks: `VarDef`, a callee's outgoing-arguments area), by
+freeing the buffer, and by the defer contracts' replacements of the runtime's blocks where they
+are absent or writable (`rtWritable`). (The frame allocations of a run's entry are `set`s:
+`sinv_entry`.) -/
 structure MemPred (P : Mem → Prop) : Prop where
   write : ∀ {m m' : Mem} {p : Ptr} {bs : Array Byte}, P m → m.write p bs = some m' → P m'
   poison : ∀ {m : Mem} {b : Blk}, P m → (∀ n, b ≠ .global n) → b ≠ .wbuf → P (m.poisonBlock b)
   free_wbuf : ∀ {m : Mem}, P m → P (m.free .wbuf)
+  rt : ∀ {m : Mem} {b : Blk} (a : Alloc), (b = deferBlk ∨ b = panicBlk) → a.writable = true →
+    rtWritable m b = true → P m → P (m.set b a)
 
 /-- A predicate kept by every `set` of a block that is neither a global nor the write-barrier
 buffer is kept by its `poisonBlock`s. -/
@@ -294,6 +298,181 @@ def ContractsOK (P : Mem → Prop) (env : Env) : Prop :=
     | .returned rs m' => P m' ∧ ∀ r ∈ rs, MemsOK P r
     | _ => True
 
+/-! ## The defer contracts (`Env.atAct`) -/
+
+theorem decode_entries_mems {m : Mem} {a c : Val} (h : (deferEntries m).getLast? = some (a, c)) :
+    c.mems = [] := by
+  have hm := List.mem_of_getLast? h
+  unfold deferEntries at hm
+  split at hm
+  · obtain ⟨i, -, he⟩ := List.mem_map.1 hm
+    simp only [Prod.mk.injEq] at he
+    rw [← he.2]; exact decode_mems _ _ _
+  · cases hm
+
+theorem popDefer_some {act : Nat} {m m' : Mem} {clo : Val}
+    (h : popDefer act m = .ok (some (clo, m'))) :
+    clo.mems = [] ∧ ∃ es, m' = setDeferEntries m es := by
+  simp only [popDefer] at h
+  split at h
+  · next a c hl =>
+    split at h
+    · split at h
+      · cases h; exact ⟨decode_entries_mems hl, _, rfl⟩
+      · cases h
+    · cases h
+  · cases h
+
+theorem panicRec_mems {m : Mem} {r w : Bool} {k : Nat} {v : Val}
+    (h : panicRec? m = .ok (some (r, w, k, v))) : v.mems = [] := by
+  unfold panicRec? at h
+  split at h
+  · cases h
+  · next a _ =>
+    have hd := decode_mems a.data 0 recTy
+    split at h
+    · next r' w' k' v' he =>
+      rw [he] at hd
+      split at h
+      · cases h
+        simp only [Val.mems, Val.memsL, List.append_eq_nil_iff] at hd
+        exact hd.2.2.2.1
+      · cases h
+    · cases h
+
+/-- What `ContractsOK` asks of a contract's outcome, from its `returned` case. -/
+theorem okOut_of {o : COutcome} (h : ∀ rs m', o = .returned rs m' → P m' ∧ ∀ r ∈ rs, MemsOK P r) :
+    match (generalizing := false) o with
+    | .returned rs m' => P m' ∧ ∀ r ∈ rs, MemsOK P r
+    | _ => True := by
+  cases o with
+  | returned rs m' => exact h rs m' rfl
+  | panicked => trivial
+  | stuck => trivial
+
+section DeferContracts
+
+variable (hP : MemPred P) {env : Env} (hE : ContractsOK P env) (act : Nat)
+include hP hE
+
+theorem deferreturn_go_ok : ∀ (n : Nat) (m : Mem), P m →
+    match deferreturn.go env act n m with
+    | .returned rs m' => P m' ∧ ∀ r ∈ rs, MemsOK P r
+    | _ => True
+  | 0, m, hm => ⟨hm, fun _ h => by cases h⟩
+  | n + 1, m, hm => by
+    apply okOut_of
+    intro rs m' ho
+    simp only [deferreturn.go] at ho
+    split at ho
+    · cases ho
+    next hw =>
+    simp only [Bool.not_eq_true', Bool.not_eq_false] at hw
+    cases hp : popDefer act m with
+    | error msg => rw [hp] at ho; cases ho
+    | ok o =>
+      rw [hp] at ho
+      cases o with
+      | none => cases ho; exact ⟨hm, fun _ h => by cases h⟩
+      | some p =>
+        obtain ⟨clo, m1⟩ := p
+        obtain ⟨hclo, es, rfl⟩ := popDefer_some hp
+        have hm1 : P (setDeferEntries m es) := hP.rt _ (.inl rfl) rfl hw hm
+        dsimp only at ho
+        cases hd : deferredCode? (setDeferEntries m es) clo with
+        | error msg => rw [hd] at ho; cases ho
+        | ok code =>
+          rw [hd] at ho
+          dsimp only at ho
+          cases code with
+          | none => cases ho
+          | some name =>
+            simp only [callDeferred] at ho
+            cases hx : env.extern name with
+            | none => rw [hx] at ho; cases ho
+            | some c =>
+              rw [hx] at ho
+              dsimp only at ho
+              have H := hE name c hx [] (some clo) _ (fun _ h => by cases h)
+                (fun a ha => by cases ha; exact memsOK_of_mems_nil hclo)
+                (hP.poison (b := .outargs act) hm1 (fun _ h => by cases h) (fun h => by cases h))
+              revert ho H
+              cases c [] (some clo) ((setDeferEntries m es).poisonBlock (.outargs act)) with
+              | returned rs2 m2 =>
+                intro ho H
+                have := deferreturn_go_ok n m2 H.1
+                dsimp only at ho
+                rw [ho] at this
+                exact this
+              | panicked e m2 => intro ho _; cases ho
+              | stuck msg => intro ho _; cases ho
+
+omit hE in
+theorem gorecover_ok {args : List Val} {clo : Option Val} {m : Mem} (hm : P m) :
+    match gorecover act args clo m with
+    | .returned rs m' => P m' ∧ ∀ r ∈ rs, MemsOK P r
+    | _ => True := by
+  have hnil : P m ∧ ∀ r ∈ [nilIface], MemsOK P r := ⟨hm, fun r hr => by
+    rw [List.mem_singleton.1 hr]; exact memsOK_of_mems_nil rfl⟩
+  apply okOut_of
+  intro rs m' ho
+  simp only [gorecover] at ho
+  cases hr : panicRec? m with
+  | error msg => rw [hr] at ho; cases ho
+  | ok o =>
+    rw [hr] at ho
+    rcases o with _ | ⟨_ | _, w, k, v⟩
+    · cases ho; exact hnil
+    · dsimp only at ho
+      split at ho
+      · split at ho
+        · next hw =>
+          cases ho
+          refine ⟨hP.rt _ (.inr rfl) rfl hw hm, fun r hr' => ?_⟩
+          rw [List.mem_singleton.1 hr']
+          exact memsOK_of_mems_nil (panicRec_mems hr)
+        · cases ho
+      · cases ho; exact hnil
+    · cases ho; exact hnil
+
+/-- **`Env.atAct` keeps `ContractsOK P`**: its defer contracts replace the runtime's blocks only
+where they are writable (`MemPred.rt`) and call the environment's contracts. -/
+theorem ContractsOK.atAct : ContractsOK P (env.atAct act) := by
+  intro name c hc args clo m _ _ hm
+  simp only [Env.atAct] at hc
+  split at hc
+  · cases hc
+    apply okOut_of
+    intro rs m' ho
+    simp only [deferproc] at ho
+    split at ho
+    · split at ho
+      · next hw => cases ho; exact ⟨hP.rt _ (.inl rfl) rfl hw hm, fun _ h => by cases h⟩
+      · cases ho
+    · cases ho
+  split at hc
+  · cases hc
+    apply okOut_of
+    intro rs m' ho
+    simp only [deferprocStack] at ho
+    split at ho
+    all_goals first
+      | cases ho
+      | (split at ho
+         · cases ho
+         · split at ho
+           · next hw => cases ho; exact ⟨hP.rt _ (.inl rfl) rfl hw hm, fun _ h => by cases h⟩
+           · cases ho)
+  split at hc
+  · cases hc
+    exact deferreturn_go_ok hP hE act _ m hm
+  split at hc
+  · cases hc
+    exact gorecover_ok hP act hm
+  · exact hE name c hc args clo m ‹_› ‹_› hm
+
+end DeferContracts
+
 theorem decodeArgs_mems (tabs : Tables) (act : Nat) (m : Mem) :
     ∀ (ps : List ABIParam) {pieces args : List Val}, (∀ p ∈ pieces, MemsOK P p) →
       decodeArgs tabs act m ps pieces = some args → ∀ a ∈ args, MemsOK P a
@@ -404,7 +583,6 @@ theorem callOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx :
   obtain ⟨callee?, clo, rest⟩ := T
   obtain ⟨hclo, hrest⟩ := hsub
   dsimp only at h hclo hrest
-  obtain ⟨callee, -, h⟩ := bind_ok_inv h
   have hR : ∀ a ∈ rest.dropLast, MemsOK P a := fun a h' => ha a (hrest a (List.dropLast_subset _ h'))
   have hcl : ∀ a ∈ clo, MemsOK P a := fun a h' => ha a (hclo a h')
   split at h
@@ -432,9 +610,12 @@ theorem callOp_mems (hP : MemPred P) {env : Env} (hE : ContractsOK P env) {ctx :
     · cases h
     split at h
     · cases h
+    split at h
+    · cases h
+    obtain ⟨callee, -, h⟩ := bind_ok_inv h
     obtain ⟨c, hc, h⟩ := bind_ok_inv h
-    have hcc := hE callee c (ofOption_ok hc) args clo (M'.poisonBlock (.outargs ctx.act)) hA hcl
-      (hP.poison hM' (fun _ h => by cases h) (by simp))
+    have hcc := ContractsOK.atAct hP hE ctx.act callee c (ofOption_ok hc) args clo
+      (M'.poisonBlock (.outargs ctx.act)) hA hcl (hP.poison hM' (fun _ h => by cases h) (by simp))
     cases hco : c args clo (M'.poisonBlock (.outargs ctx.act)) with
     | stuck msg => rw [hco] at h; cases h
     | panicked e m' => rw [hco] at h; cases h
@@ -963,6 +1144,7 @@ theorem MemPred.imp {c : Prop} (hP : MemPred P) : MemPred (fun m => c → P m) w
   write h hw := fun hc => hP.write (h hc) hw
   poison h hg hw := fun hc => hP.poison (h hc) hg hw
   free_wbuf h := fun hc => hP.free_wbuf (h hc)
+  rt a hb ha hw h := fun hc => hP.rt a hb ha hw (h hc)
 
 theorem ContractsOK.imp {c : Prop} {env : Env} (h : c → ContractsOK P env) :
     ContractsOK (fun m => c → P m) env := by

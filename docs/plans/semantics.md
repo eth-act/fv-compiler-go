@@ -1,6 +1,6 @@
 # Plan: semantics of generic Go SSA (`GoFV.SSA.run`, issue #9)
 
-Status: plan (G5); phases P1–P4 implemented (§9.1–§9.4). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
+Status: plan (G5); phases P1–P4 implemented (§9.1–§9.4), P5 atomics (§9.5) and defer/recover (§9.7). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
 Source of truth for the ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/genericOps.go`
 (go1.27.3; "gO line" below) and the rules `_gen/{generic,dec,divisible,divmod}.rules`.
 `decOps.go`, `divisibleOps.go` and `divmodOps.go` define **no** ops (they only name rule sets),
@@ -499,7 +499,7 @@ inductive Panic
   | bounds (kind : Nat) (x y : Int)   -- PanicBounds: kind = ssa.BoundsKind auxint (op.go:470-489); also the PanicBoundsC/CC aux forms
   | nilDeref                          -- NilCheck of nil
   | divide | shift                    -- runtime.panicdivide / panicshift contracts
-  | value (v : Val)                   -- gopanic with a payload (P3)
+  | value (bytes : List Byte)         -- gopanic's `any` argument encoded at `Ty.iface` (P5, §9.7)
   | runtime (name : String)           -- any other panicking contract
 ```
 
@@ -508,16 +508,17 @@ inductive Panic
 its value is `p`. (Since P3: a check of `nil + k` panics too, like the machine's load in page 0,
 so a pointer that passed a check is not nil-derived and `OffPtr`/`AddPtr` of it keep it so,
 which `nilcheckelim` relies on, `nilcheck.go:59`; `GoFV.Proof.evalOp_nilCheck_blk`.) `PanicBounds [kind] idx len mem` ⇒ `panicked (bounds kind idx len)`; the block
-after it is an `Exit` block. Recovery (`recover` in a deferred call) is P5: until then a
-`panicked` outcome ends the run. Its memory is compared (`Mem.Refines`) after dropping the
+after it is an `Exit` block. Recovery (`recover` in a deferred call) is P5 (§9.7): `finish`
+runs the activation's deferred calls at a panic, and a `panicked` outcome left after them ends
+the run. Its memory is compared (`Mem.Refines`) after dropping the
 frames the run created (`Mem.dropFrames act`: the allocations `.local a _` and `.outargs a`
 with `a ≥ act` — the run's own activation and its callees', which get fresh numbers
 `Mem.nextAct`): a deferred function with `recover` could observe heap, globals and the
 caller's memory (also through pointer arguments), which must still refine, while the
 unwound frames are unobservable — this is what lets `dead auto elim` and `nilcheckelim` drop
-or move stores to frame slots before a panic. **P5** (recover) must narrow this to the
-frames actually unwound up to the recovering activation (a recovering function's own frame
-and open-coded defer slots stay observable).
+or move stores to frame slots before a panic. Within the run, the deferred calls see the
+activation's own frame (`finish` drops only the callees' frames, `dropFrames (act + 1)`), so
+the run's open-coded defer slots, `deferBits` and result variables stay observable there.
 
 ## 7. Block kinds
 
@@ -530,7 +531,7 @@ and open-coded defer slots stay observable).
 | `Ret` | `MakeResult` / 0 | `returned` with the Go-typed results: pre-expand the `MakeResult` args except the last (non-SSA-able results as `blob`s from `Dereference`); post-expand decoded from register pieces + results area by `f.OwnAux`; memory = last arg minus the frame |
 | `RetJmp` | tail call / 0 | the activation's outcome is the tail callee's outcome |
 | `Exit` | memory of a non-returning call / 0 | reaching the terminator means the call returned: `stuck` (contracts of panicking functions never return) |
-| `Defer` | the `deferproc` call / 2 | P5: the call registers the deferred closure in `Mem.rt`; `Succs[0]` normally, `Succs[1]` when the runtime reports a recovered panic. Before P5: `Succs[0]` only, recovery `stuck` |
+| `Defer` | the `deferproc` call / 2 | P5 (§9.7): the call registered the deferred closure (`Env.atAct`'s `deferproc`); `Succs[0]`. `Succs[1]` (the recovery edge to `f.DeferReturn`) is never taken: a recovery returns through `finish` (`runDefers`) |
 
 ## 8. Outcome, fuel, entry point
 
@@ -849,6 +850,88 @@ Results (`--n 100 --seed 3`): 237 functions, 23,700 calls; native agrees with ev
 section 0 than on main: 6 more section-0 runs are stuck on a write to the now read-only flag
 (the runtime functions that switch the GC phase write it).
 
+### 9.7 P5 defer/recover as implemented (#10)
+
+`run` executes one goroutine; its panics run the panicking activation's deferred calls, which
+may `recover`.
+
+- **Panic values**: `Panic.value bytes` is `runtime.gopanic(v any)`'s argument encoded at
+  `Ty.iface` (`.agg [(0, .int .w64), (8, .ptr _)] 16`: type/itab word, data word); `recover`
+  returns it decoded (`Panic.toAny`). Any other panic's value is a non-nil `any` whose type word
+  points to the opaque global `gofv:runtime.Error` and whose data word is `poison` (not
+  modelled).
+- **Runtime state** in two globals without an address and without a Go name (no program pointer
+  reaches them): `gofv:defers`, the `deferproc` entries oldest first (16 bytes each: activation
+  number, closure; `deferEntries`, `pushDefer`, `popDefer`), and `gofv:panic`, the panic record
+  (`recTy`: recovered, wrapper, deferred activation, value; `setPanicRec`, `panicRec?`). An
+  undefined entry, record or `deferBits` is observed (`stuck`), which keeps the semantics
+  monotone.
+- **Calls at an activation** (`Env.atAct env act`; `callOp` looks its callee up in
+  `env.atAct ctx.act`, other names are `env`'s, `Env.atAct_extern_of`):
+  `runtime.deferproc(fn)` and `runtime.deferprocStack(d)` (`d.fn` at offset 24; `d` is a
+  `uintptr` after `expand calls`, `Ptr.ofAddr`) append an entry of `act`;
+  `runtime.deferreturn()` runs `act`'s entries newest first (`callDeferred`: a closure call
+  without arguments; the caller's outgoing area is the callee's); `runtime.gorecover()` returns
+  the record's value and marks it recovered iff a panic is being handled, it is not yet
+  recovered, and the caller is the deferred call's activation or, when the deferred function is
+  a wrapper (`isWrapperName`: `.deferwrap…`, `-fm`), that function's direct callee; otherwise the
+  nil `any`.
+- **Open-coded defers** (`DeferInfo`, `Ctx.defers`, `deferInfo tabs`): the `deferBits` autotmp
+  (name flag `deferbits`, export format 4, `docs/contracts/export.md`) and the `opendeferslot`
+  closure slots by frame offset, each with whether its block is `Blk.local` (`forgeable`). At a
+  normal exit they are ordinary code (the frontend's exit blocks test the bits and call the
+  closures); only the panic path reads them.
+- **Nil closures** (`nilClosure`): a closure call through the nil pointer word faults loading the
+  closure's code word, after its arguments are passed: `callOp` panics `nilDeref` after the
+  `poison` and `outargsOK` checks, with the memory the callee would see (outgoing area
+  poisoned), so the call is monotone and `expand calls` (whose argument stores precede the call)
+  refines it. `deferNilFunc`: an open-coded `defer f()` of a nil `f`.
+- **`Defer` block**: successor 0 (the `deferproc` call returned). Successor 1 (the recovery
+  edge) is never taken: a recovery returns through `finish`.
+- **Panics** (`finish env outs di act`): at `panicked e m` the frames of the activation's
+  callees are gone (`m.dropFrames (act + 1)`) and `runDefers` runs the deferred calls, at most
+  9 + the number of entries. `nextDefer` takes the closure of the highest set bit of
+  `deferBits` (and clears it), then `act`'s newest `deferproc` entry (removed). Before each call
+  the closure's code is read (`deferredCode?`; a nil closure panics `nilDeref`), the panic
+  record is set (its activation is the deferred call's, the memory's next activation number),
+  and the record from before the call is restored afterwards (`restorePanicRec`). A recovery
+  ends the panic: the remaining deferred calls run as at a normal exit, and the activation
+  returns the values of its result variables (`stackOuts`: the `PPARAMOUT` slots, in memory in
+  a function with defers) with its frame freed. A panic in a deferred call replaces the current
+  one (its callees' frames dropped). With no deferred call left the panic propagates with the
+  memory as it is (the activation's frame dropped by the caller's comparison, §6).
+- **Proofs**: `Env.Mono.atAct`, `callOp_mono`, `runDefers_mono` and
+  `GoFV.Proof.finish_refines_mono` (`LoopRefines Mem.Refines` loop outcomes, `RunMono`);
+  `Env.FrameSafe.atAct`, `Env.TempOblivious.atAct` (contract panics avoid the eliminated
+  temporaries); `finish_rel` of dead auto elim and the extra-temporaries tables check run the
+  deferred calls on related memories; the dead auto elim checker keeps the `deferbits` and
+  `opendeferslot` variables. `LoopRefines P` relates loop outcomes (`P` the memories at a
+  panic), `StepSimE P R`/`runLoop_simE` produce it, `finish_refines` takes `LoopRefines Eq`.
+  Witnesses (`GoFVTest/Proof/Witness/Defer.lean`): `decide +kernel` runs of an open-coded defer
+  that recovers and of a `deferproc`/`deferreturn` function.
+
+Difftest additions (`tools/semdiff/prog/defers.go`): 17 functions: defer order, defers in
+loops (`deferproc`), `deferprocStack`, deferred arguments and results, `recover` of division,
+index, value and string panics, re-panics, `recover` without a panic and in a helper (nil),
+nested panics, a nil deferred function, panics propagating through callees, `recover` in a
+loop, recovering twice.
+
+Results (`--n 100 --seed 3`, format-4 toolchain): 254 functions, 25,400 calls (24,140 returned,
+1,260 panicked); native agrees with every section on 25,396, every `defers.go` function but
+`recoverLoop` included. The 4 others disagree on all 33 sections of their function (the 132
+section mismatches): 2 are `makeBad(16, 2^32)` (§9.5), 2 are `recoverLoop(251|255, 0)` (three
+deferred closures recover the division panic and add to the heap-moved result `r`; natively 300),
+`stuck` with "poison result": the heap-moved-result gap of §10. Corpus (`sem-difftest corpus 2
+1`, quick-v4 plain): 4,560 calls defined at section 0 (2,363 functions), 145,528 later-section
+runs agree, 0 differ, 392 stuck in 10 functions, all known gaps (§3.3's out-of-bounds pointer
+arithmetic in 7 runtime helpers, `getGodebugEarly`/`goenvs_unix` at `nilcheckelim` and
+`newStructT`'s `VarDef`, §10). With the same semantics quick-v3 has 4,641 defined calls (main's
+semantics: 4,535): its files lack the `deferbits` flag, so a panic skipped the open-coded
+defers; in quick-v4 the deferred call runs, and `corpus` mode, which has no program functions
+as callees, is `stuck` at it (`deferred call main.…: no contract`; 42 functions of `test/recover`,
+`recover1`, `recover2`, `closure4`, `method` and `devirtualization_nil_panics` on those 139
+files). `sched-probe` (quick-v4): 2,961,638 blocks, every Kahn schedule valid.
+
 ## 10. Open questions and risks
 
 - **NaN encodings and the rules** (P4): IEEE 754 and the Go spec leave the encoding of a NaN
@@ -925,6 +1008,27 @@ section 0 than on main: 6 more section-0 runs are stuck on a write to the now re
   `Val.retype` at a one-field pointer-shaped aggregate wrap/unwrap. Meanwhile the two rules are
   `Rule.Drop` (`docs/proofs/rules.md`, "Dropped"): the checked rewrite keeps the `Make` and
   accepts the output only where nothing reads the rewritten value.
+- **Defer/recover gaps** (P5, §9.7). Each makes the model differ from Go, never unsoundly for
+  the proofs (the model is a semantics of its own; the difftest shows the differences):
+  - **`defer recover()`**: Go's `recover` returns nil unless a deferred function calls it
+    directly, and here `recover` is the deferred call itself (the frontend wraps it in a
+    `deferwrap` closure). The model's wrapper rule (`gorecover`: the record's activation, or
+    its direct callee when the deferred function is a wrapper) lets it recover.
+  - **`recover` in a function inlined into the deferred function**: Go's stack walk counts
+    inlined frames, so it returns nil; inlined code runs in the deferred activation itself, so
+    the model recovers.
+  - **Results moved to the heap after a recovery** (`recoverLoop`): Go resumes at the shared
+    `f.DeferReturn` block (the `Defer` blocks' successor 1), which calls `deferreturn` and then
+    reads results that escaped to the heap through SSA values (`Dereference (Copy v)`, the
+    `&r` pointer). The model's `runDefers` has only the memory: it reads the result variable's
+    stack slot (`stackOuts`), which is `poison`, so the run is `stuck` (sound: no
+    obligation). Counts (functions calling `runtime.deferproc`/`deferprocStack`, of them with a
+    `PPARAMOUT` moved to the heap, i.e. with a `&<name>` name): quick-v3 and quick-v4 9 / 1
+    (`examples/defers.withCleanup`), full-v4 and full-v5 114 / 5 (`net/http.(*Transport).dialConn`,
+    `internal/fuzz.(*workerClient).fuzz`/`.minimize`, `cmd/go/internal/doc.do`,
+    `cmd/go/internal/load.TestPackagesAndErrors`). A fix would resume `runLoop` at
+    `f.DeferReturn` with the frame of the panic (recovery inside `runLoop`, or `panicked`
+    outcomes carrying the frame); every `runLoop` simulation would change.
 
 ## 11. Per-op table
 

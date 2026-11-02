@@ -38,7 +38,7 @@ theorem resRel_stuck (msg : String) (r' : Res Val) : ResRel U (.stuck msg) r' :=
   ⟨fun _ h => (nomatch h), fun _ _ h => (nomatch h)⟩
 
 theorem resRel_of_call {r r' : Res Val} (h : CallRel U r r') : ResRel U r r' :=
-  ⟨fun y hy => (h.1 y hy).2, h.2⟩
+  ⟨fun y hy => (h.1 y hy).2, fun e m hp => (h.2 e m hp).2.2⟩
 
 /-- A `memRoot` that is neither a `NilCheck` nor stuck returns. -/
 theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv argv' : List Val}
@@ -405,5 +405,90 @@ theorem tgt_rel {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
         rcases (hinv a _ hza).tainted hname hnE with h' | ⟨off, h'⟩
         · subst h'; cases hap
         · subst h'; cases hap; exact ⟨n, hnE, rfl⟩
+
+/-! ## The source's panics avoid `U` -/
+
+/-- A call on arguments avoiding `U` panics with a value and a memory avoiding `U`. -/
+theorem callOp_panic_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx}
+    {v : Value} {argv : List Val} (hargs : ∀ z ∈ argv, Val.Avoids U z) {e : Panic} {m : Mem}
+    (h : callOp env ctx v argv = .panic e m) : e.Avoids U ∧ m.Avoids U := by
+  rcases List.eq_nil_or_concat argv with rfl | ⟨L, w, rfl⟩
+  · obtain ⟨msg, hm⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
+    rw [hm] at h; cases h
+  · rw [List.concat_eq_append] at h hargs
+    obtain ⟨h1, h2, -⟩ := (callOp_rel hfs hU (.refl w) hargs).2 e m h
+    exact ⟨h1, h2⟩
+
+/-- A `memRoot` panics only at a `NilCheck`, on its memory argument. -/
+theorem memRoot_panic_avoids {ctx : Ctx} {v : Value} {argv : List Val}
+    (hargs : ∀ z ∈ argv, Val.Avoids U z) {e : Panic} {m : Mem}
+    (h : memRoot ctx v argv = .panic e m) : e.Avoids U ∧ m.Avoids U := by
+  have hop := memRoot_panic h
+  obtain ⟨x, rfl, -⟩ := nilCheck_panic hop h
+  refine ⟨?_, hargs (.mem m) (by simp)⟩
+  unfold memRoot at h
+  rw [hop] at h
+  dsimp only at h
+  split at h
+  · split at h
+    · cases h; trivial
+    · cases h
+  · cases h
+
+/-- **An op on arguments avoiding `U` panics with a value and a memory avoiding `U`.** -/
+theorem evalOp_panic_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx}
+    {fr : Frame} {v : Value} {argv : List Val} {ty : Ty} (hargs : ∀ z ∈ argv, Val.Avoids U z)
+    {e : Panic} {m : Mem} (h : evalOp env ctx fr v argv ty = .panic e m) :
+    e.Avoids U ∧ m.Avoids U := by
+  have pb : ∀ {k : Int64} {e : Panic} {m : Mem}, panicBounds k argv = .panic e m →
+      e.Avoids U ∧ m.Avoids U := by
+    intro k e m h
+    unfold panicBounds at h
+    split at h
+    · cases h; exact ⟨trivial, hargs (.mem _) (by simp)⟩
+    · cases h
+  unfold evalOp at h
+  split at h
+  all_goals first
+    | cases h
+    | exact absurd h argVal_not_panic
+    | exact memRoot_panic_avoids hargs h
+    | exact callOp_panic_avoids hfs hU hargs h
+    | exact pb h
+    | (split at h <;> first
+        | cases h
+        | exact absurd h argVal_not_panic
+        | (split at h
+           · exact absurd h atomicRoot_ne_panic
+           · cases h))
+
+/-- **A value the source evaluates panics avoiding the eliminated variables**: its panic value
+and memory (the arguments of a kept panicking value are untainted). -/
+theorem src_panic {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
+    (R : ARelD tabs f g T E) {fr : Frame} (hinv : RegsP (SInv T E) fr)
+    {x : ID} {fv : Value} (hfv : f.value? x = some fv) {e : Panic} {m : Mem}
+    (h : evalValue env (Ctx.make tabs f) fr fv = .panic e m) :
+    e.Avoids (UE E) ∧ m.Avoids (UE E) := by
+  have hU := tempU_UE E
+  obtain ⟨vs, hvs, hr⟩ := evalValue_panic_inv h
+  obtain ⟨gv, hgv, hk⟩ := R.value x fv hfv
+  rcases hk with ⟨hs, -⟩ | ⟨he, -⟩
+  · refine evalOp_panic_avoids hfs hU (fun z hz => ?_) hr
+    obtain ⟨a, ha, hr'⟩ := argVals_mem hvs hz
+    refine (hinv a z hr').untainted fun hta => ?_
+    obtain ⟨i, hi⟩ := Array.getElem?_of_mem ha
+    rcases uses_spec hfv (R.uses x (DSE.lt_of_value? hfv)) hi hta with
+      ⟨-, hprop, -⟩ | ⟨gv', hgv', he, -⟩
+    · have hpan := evalValue_panic_op h
+      simp only [propOp, Bool.or_eq_true, beq_iff_eq] at hprop
+      rcases hpan with hc | hn
+      · rcases hprop with ((hp | hp) | hp) | hp <;> rw [hp] at hc <;> cases hc
+      · rcases hprop with ((hp | hp) | hp) | hp <;> rw [hp] at hn <;> cases hn
+    · rw [hgv] at hgv'; cases hgv'
+      exact elimV_ne_same he hs
+  · obtain ⟨hop, -⟩ := elimV_spec he
+    have hpan := evalValue_panic_op h
+    rcases hop with hop | hop | hop | hop <;> rw [hop] at hpan <;> rcases hpan with hc | hc <;>
+      cases hc
 
 end GoFV.Proof.DAE

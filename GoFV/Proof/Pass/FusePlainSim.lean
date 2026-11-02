@@ -204,7 +204,7 @@ theorem chain {tabs : Tables} {env : Env} {n : Nat}
       DInv env (Ctx.make tabs f) (fun a => SDom f a y ∧ a ≠ y) G →
       Reachable f y → G.regs.size = f.valueTab.size → m ≤ n + 1 →
       (runLoop env (Ctx.make tabs f) m G y idx).Defined →
-      ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) m G y idx)
+      ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) m G y idx)
         (runLoop env (Ctx.make tabs g) fuelT fr c i) := by
   intro suf
   induction suf with
@@ -296,7 +296,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (R env tabs f run b0 c) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : R env tabs f run b0 c frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hfT, hiT, hbT, hb, hnt, ht, hs, hdi⟩ := hR
   rw [hfT, hiT, hbT]

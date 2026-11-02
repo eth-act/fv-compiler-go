@@ -36,6 +36,12 @@ def Val.AvoidsList (U : Blk → Prop) : List Val → Prop
   | v :: vs => Val.Avoids U v ∧ Val.AvoidsList U vs
 end
 
+/-- The value of a `gopanic` (`Panic.value`, which `recover` returns) holds no fragment of a
+pointer into `U`; other panics carry no pointer. -/
+def Panic.Avoids (U : Blk → Prop) : Panic → Prop
+  | .value bs => ∀ x ∈ bs, Byte.Avoids U x
+  | _ => True
+
 /-- `m` and `m'` have the same allocations (order, sizes, writability) and counters, and the
 same bytes outside `U`. -/
 def Mem.EqOff (U : Blk → Prop) (m m' : Mem) : Prop :=
@@ -43,7 +49,8 @@ def Mem.EqOff (U : Blk → Prop) (m m' : Mem) : Prop :=
   ∀ (i : Nat) b b' a a', m.blocks[i]? = some (b, a) → m'.blocks[i]? = some (b', a') →
     b = b' ∧ a.data.size = a'.data.size ∧ a.writable = a'.writable ∧ (¬ U b → a.data = a'.data)
 
-/-- A contract cannot observe or leak `temp` blocks it is given no pointer to. -/
+/-- A contract cannot observe or leak `temp` blocks it is given no pointer to (nor panic with a
+value holding one: the deferred calls of the panicking activation may `recover` it). -/
 def Contract.FrameSafe (c : Contract) : Prop :=
   ∀ (U : Blk → Prop), (∀ b, U b → ∃ a n, b = .temp a n) →
   ∀ args clo m m', (∀ v ∈ args, v.Avoids U) → (∀ v ∈ clo, v.Avoids U) → m.Avoids U →
@@ -52,7 +59,7 @@ def Contract.FrameSafe (c : Contract) : Prop :=
     | .stuck _, _ => True
     | .returned rs r, .returned rs' r' =>
       rs' = rs ∧ (∀ v ∈ rs, v.Avoids U) ∧ r.Avoids U ∧ Mem.EqOff U r r'
-    | .panicked e r, .panicked e' r' => e' = e ∧ r.Avoids U ∧ Mem.EqOff U r r'
+    | .panicked e r, .panicked e' r' => e' = e ∧ e.Avoids U ∧ r.Avoids U ∧ Mem.EqOff U r r'
     | _, _ => False
 
 /-- Every contract of the environment is frame-safe. -/
@@ -65,9 +72,9 @@ def Mem.erase (X : Blk → Bool) (m : Mem) : Mem :=
 /-- A contract cannot tell whether `temp` blocks it is given no pointer to exist: given
 arguments, closure context and memory that hold no pointer into a set `X` of `temp` blocks, it
 behaves the same on memories that are equal once the blocks of `X` are removed (`Mem.erase`),
-and returns no pointer into them. `Contract.FrameSafe` relates memories with the same
-allocations only; this is what running a function in tables that add frame temporaries needs
-(`GoFV.Proof.run_tabsAgreeMod`, #17). -/
+and returns (or panics with) no pointer into them. `Contract.FrameSafe` relates memories with the
+same allocations only; this is what running a function in tables that add frame temporaries
+needs (`GoFV.Proof.run_tabsAgreeMod`, #17). -/
 def Contract.TempOblivious (c : Contract) : Prop :=
   ∀ (X : Blk → Bool), (∀ b, X b = true → ∃ a n, b = .temp a n) →
   ∀ args clo m m', (∀ v ∈ args, v.Avoids (X · = true)) → (∀ v ∈ clo, v.Avoids (X · = true)) →
@@ -76,7 +83,8 @@ def Contract.TempOblivious (c : Contract) : Prop :=
     | .stuck _, _ => True
     | .returned rs r, .returned rs' r' =>
       rs' = rs ∧ (∀ v ∈ rs, v.Avoids (X · = true)) ∧ r.Avoids (X · = true) ∧ r.erase X = r'.erase X
-    | .panicked e r, .panicked e' r' => e' = e ∧ r.Avoids (X · = true) ∧ r.erase X = r'.erase X
+    | .panicked e r, .panicked e' r' =>
+      e' = e ∧ e.Avoids (X · = true) ∧ r.Avoids (X · = true) ∧ r.erase X = r'.erase X
     | _, _ => False
 
 /-- Every contract of the environment cannot tell whether unreachable `temp` blocks exist. -/

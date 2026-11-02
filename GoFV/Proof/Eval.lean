@@ -321,8 +321,7 @@ theorem callOp_nil_stuck {env : Env} {ctx : Ctx} {v : Value} :
   obtain ⟨a, b, hr⟩ := hr
   unfold callOp
   rw [hr]
-  simp only [bind, Res.bind, Res.ofOption, List.getLast?_nil]
-  cases a <;> simp
+  exact ⟨_, rfl⟩
 
 theorem callOp_nil {env : Env} {ctx : Ctx} {v : Value} {e : Panic} {m : Mem} :
     callOp env ctx v [] ≠ .panic e m := by

@@ -99,8 +99,8 @@ theorem decodeInt_avoids {U : Blk → Prop} {bs : Array Byte} (h : BAv U bs) (w 
 
 theorem ofAddr_notU {U : Blk → Prop} (hU : TempU U) (x : BitVec 64) : ¬ U (Ptr.ofAddr x).blk := by
   intro hu
-  obtain ⟨n, hn⟩ := hU _ hu
-  exact Ptr.ofAddr_ne_temp x 0 n hn
+  obtain ⟨a, n, hn⟩ := hU _ hu
+  exact Ptr.ofAddr_ne_temp x a n hn
 
 /-- The pointer a word avoiding `U` reads as avoids `U` (an integer word's `Ptr.ofAddr` is never
 a frame temporary). -/
@@ -399,7 +399,7 @@ theorem load_avoids {U : Blk → Prop} (hU : TempU U) {m : Mem} (h : m.Avoids U)
 theorem addr_none_notU {U : Blk → Prop} (hU : TempU U) {p : Ptr} (h : p.addr? = none) :
     ¬ U p.blk := by
   intro hu
-  obtain ⟨n, hn⟩ := hU _ hu
+  obtain ⟨a, n, hn⟩ := hU _ hu
   simp [Ptr.addr?, hn, Blk.base?] at h
 
 theorem retypePtr_avoids {U : Blk → Prop} (hU : TempU U) {v : Val} (h : Val.Avoids U v) :

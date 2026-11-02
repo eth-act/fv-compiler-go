@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.DAERoot
+import GoFV.Proof.DeferRel
 
 /-!
 # dead auto elim: calls under frame-safe contracts
@@ -45,7 +46,7 @@ theorem toPieces_avoids (hU : TempU U) (t : Ty) {v : Val} (h : Val.Avoids U v) :
   exact decode_avoids hU (encode_avoids t h) o lt
 
 theorem outargs_notU (hU : TempU U) (a : Nat) : ¬ U (.outargs a) := by
-  intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
+  intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
 
 /-- `decodeArgs` reads only the outgoing-arguments area. -/
 theorem decodeArgs_eqOff (hU : TempU U) (tabs : Tables) (act : Nat) {m m' : Mem}
@@ -172,10 +173,12 @@ theorem callTarget_snoc (ctx : Ctx) (v : Value) (L : List Val) :
       exact .inl ⟨_, none, L, by simp, fun y hy => hy, fun x => by rw [key]⟩
 
 /-- Related call results: a returning source's result avoids `U` and the target returns a
-related one; a panicking source's target panics alike with a related memory. -/
+related one; a panicking source's panic value and memory avoid `U`, and its target panics alike
+with a related memory. -/
 def CallRel (U : Blk → Prop) (r r' : Res Val) : Prop :=
   (∀ y, r = .ok y → Val.Avoids U y ∧ ∃ y', r' = .ok y' ∧ VR U y y') ∧
-    (∀ e m, r = .panic e m → ∃ m', r' = .panic e m' ∧ Mem.EqOff U m m')
+    (∀ e m, r = .panic e m →
+      e.Avoids U ∧ m.Avoids U ∧ ∃ m', r' = .panic e m' ∧ Mem.EqOff U m m')
 
 theorem callRel_stuck (msg : String) (r' : Res Val) : CallRel U (.stuck msg) r' :=
   ⟨fun _ h => (nomatch h), fun _ _ h => (nomatch h)⟩
@@ -205,202 +208,227 @@ theorem retypeResults_avoids (hU : TempU U) (tabs : Tables) :
     · exact retype_avoids hU _ (h r List.mem_cons_self)
     · exact retypeResults_avoids hU tabs ps (fun y hy => h y (List.mem_cons_of_mem _ hy)) x hx
 
+/-- `Mem.EqOff U` is a memory relation the panic machinery keeps (`DeferRel.MemRel`). -/
+theorem memRel_eqOff : DeferRel.MemRel U (Mem.EqOff U) where
+  refl := EqOff.refl U
+  find h b hu := EqOff.find_eq h b hu
+  set h b a _ := EqOff.set h (ARel.refl U (b, a))
+  write h _ hw := EqOff.write h hw
+  poison h b := EqOff.poison h b
+  filter h F hF := EqOff.filter h F hF
+  nextAct h := h.2.1.symm
+
+/-- The environment's contracts respect `U` and `Mem.EqOff U`. -/
+theorem respects_of_frameSafe {env : Env} (hfs : env.FrameSafe) (hU : TempU U) :
+    ∀ name c, env.extern name = some c → DeferRel.Respects U (Mem.EqOff U) c :=
+  fun name c hc => DeferRel.respects_of_frameSafe (hfs name c hc) hU
+
+/-- **The runtime entry points of a call from activation `act` are frame-safe** when the
+environment's contracts are. -/
+theorem _root_.GoFV.SSA.Sem.Env.FrameSafe.atAct {env : Env} (h : env.FrameSafe) (act : Nat) :
+    (env.atAct act).FrameSafe := fun name c hc =>
+  DeferRel.frameSafe_of_respects fun _ hU =>
+    DeferRel.atAct_respects memRel_eqOff hU (respects_of_frameSafe h hU) act name c hc
+
 /-- **A call on related arguments.** -/
 theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {v : Value}
     {L : List Val} {w w' : Val} (hw : VR U w w') (hav : ∀ a ∈ L ++ [w], Val.Avoids U a) :
     CallRel U (callOp env ctx v (L ++ [w])) (callOp env ctx v (L ++ [w'])) := by
-  rcases callTarget_snoc ctx v L with ⟨c, clo, R, hclo, hR, hT⟩ | hT
+  rcases callTarget_snoc ctx v L with ⟨callee?, clo, R, hclo, hR, hT⟩ | hT
   rotate_left
   · obtain ⟨msg, h⟩ := callOp_rest_nil (env := env) (hT w)
-    rw [h]; exact callRel_stuck _ _
+    rw [h]; (try dsimp only); exact callRel_stuck _ _
   unfold callOp
   rw [hT w, hT w']
   dsimp only
   simp only [List.getLast?_concat, List.dropLast_concat]
-  cases c with
-  | none => exact callRel_stuck _ _
-  | some callee =>
   have hwA : Val.Avoids U w := hav w (by simp)
   have hLA : ∀ a ∈ L, Val.Avoids U a := fun a ha => hav a (by simp [ha])
   rcases Classical.em (∃ M, w = .mem M) with ⟨M, rfl⟩ | hwm
   rotate_left
   · have : ∀ M, w ≠ .mem M := fun M h => hwm ⟨M, h⟩
-    cases w <;> first | exact absurd rfl (this _) | exact callRel_stuck _ _
+    cases w <;> first | exact absurd rfl (this _) | (try dsimp only); exact callRel_stuck _ _
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
-  dsimp only [bind, Res.bind, Res.ofOption]
+  dsimp only [bind, Res.bind]
   have hMA : M.Avoids U := hwA
   have hRA : ∀ a ∈ R, Val.Avoids U a := fun a ha => hLA a (hR a ha)
   have hcloA : ∀ y ∈ clo, Val.Avoids U y := fun y hy => hLA y (hclo y hy)
-  have hTemp : ∀ b, U b → ∃ a n, b = .temp a n := fun b hb => by
-    obtain ⟨n, hn⟩ := hU b hb; exact ⟨0, n, hn⟩
   rw [decodeArgs_eqOff hU _ _ hm]
-  -- the arguments are the same on both sides and avoid `U`
-  have core : ∀ (args : List Val), (∀ a ∈ args, Val.Avoids U a) → ∀ (post : Bool),
-      CallRel U
-        (if (args.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true then
-          Res.stuck (toString "call " ++ toString callee ++ toString ": poison argument")
-        else if (!outargsOK ctx.tabs ctx.act M (List.filter (fun x => !x.out)
-            ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))) = true then
-          Res.stuck (toString "call " ++ toString callee ++ toString ": outgoing-arguments area not writable")
-        else
-          Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
-            (env.extern callee)) fun c =>
-          match c args clo (M.poisonBlock (.outargs ctx.act)) with
-          | .returned rs m' =>
-            Res.bind (Res.ofOption (toString "call " ++ toString callee ++
-                toString ": results do not match the ABI")
-              (encodeResults ctx.tabs ctx.act
-                (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))
-                (retypeResults ctx.tabs (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs)
-                m')) fun x =>
-            if post = true then
-              .ok (Val.tuple (x.fst ++ [Val.mem x.snd, Val.agg (List.map (fun p =>
-                if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
-                else Val.poison) (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
-            else
-              .ok (Val.tuple (retypeResults ctx.tabs (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs ++
-                [Val.mem x.snd, Val.agg (List.map (fun p =>
-                if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
-                else Val.poison) (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
-          | .panicked e m' => .panic e m'
-          | .stuck msg => .stuck msg)
-        (if (args.any Val.hasPoison || (clo.map Val.hasPoison).getD false) = true then
-          Res.stuck (toString "call " ++ toString callee ++ toString ": poison argument")
-        else if (!outargsOK ctx.tabs ctx.act M' (List.filter (fun x => !x.out)
-            ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))) = true then
-          Res.stuck (toString "call " ++ toString callee ++ toString ": outgoing-arguments area not writable")
-        else
-          Res.bind (Res.ofOption (toString "call " ++ toString callee ++ toString ": no contract")
-            (env.extern callee)) fun c =>
-          match c args clo (M'.poisonBlock (.outargs ctx.act)) with
-          | .returned rs m' =>
-            Res.bind (Res.ofOption (toString "call " ++ toString callee ++
-                toString ": results do not match the ABI")
-              (encodeResults ctx.tabs ctx.act
-                (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD []))
-                (retypeResults ctx.tabs (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs)
-                m')) fun x =>
-            if post = true then
-              .ok (Val.tuple (x.fst ++ [Val.mem x.snd, Val.agg (List.map (fun p =>
-                if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
-                else Val.poison) (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
-            else
-              .ok (Val.tuple (retypeResults ctx.tabs (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) rs ++
-                [Val.mem x.snd, Val.agg (List.map (fun p =>
-                if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
-                else Val.poison) (List.filter (fun x => x.out)
-                  ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])))]))
-          | .panicked e m' => .panic e m'
-          | .stuck msg => .stuck msg) := by
-    intro args hargs post
+  -- the same arguments on both sides, avoiding `U`
+  split
+  · simp only [Res.ofOption]
     split
-    · exact callRel_stuck _ _
+    rotate_left
+    · rename_i hd; exfalso; split at hd <;> cases hd
+    · (try dsimp only); exact callRel_stuck _ _
+    rename_i args hd
+    have hargs : ∀ a ∈ args, Val.Avoids U a := by
+      split at hd
+      · rename_i hdec; cases hd; exact decodeArgs_avoids hU _ _ hMA _ hRA hdec
+      · cases hd
+    rw [hd]
+    try dsimp only
+    try dsimp only
+    split
+    · (try dsimp only); exact callRel_stuck _ _
     rw [EqOff.outargsOK hm]
     split
-    · exact callRel_stuck _ _
-    cases hx : env.extern callee with
-    | none => exact callRel_stuck _ _
+    · (try dsimp only); exact callRel_stuck _ _
+    split
+    · refine ⟨fun _ h => (nomatch h), fun e m h => ?_⟩
+      cases h
+      exact ⟨trivial, memAvoids_poison hMA _, _, rfl, EqOff.poison hm _⟩
+    cases callee? with
+    | none => (try dsimp only); exact callRel_stuck _ _
+    | some callee =>
+    simp only [Res.ofOption]
+    try dsimp only
+    cases hx : (env.atAct ctx.act).extern callee with
+    | none => (try dsimp only); exact callRel_stuck _ _
     | some c =>
-    dsimp only [Res.ofOption, Res.bind]
-    have hc := hfs callee c hx U hTemp args clo (M.poisonBlock (.outargs ctx.act))
-      (M'.poisonBlock (.outargs ctx.act)) hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
+    try dsimp only
+    have hc := DeferRel.atAct_respects memRel_eqOff hU (respects_of_frameSafe hfs hU) ctx.act
+      callee c hx args clo (M.poisonBlock (.outargs ctx.act)) (M'.poisonBlock (.outargs ctx.act))
+      hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
     revert hc
     generalize c args clo (M.poisonBlock (.outargs ctx.act)) = o
     generalize c args clo (M'.poisonBlock (.outargs ctx.act)) = o'
     intro hc
-    have haddr : ∀ (ps : List ABIParam), Val.Avoids U (Val.agg (ps.map fun p =>
-        if p.regs.isEmpty = true then Val.ptr ⟨Blk.outargs ctx.act, BitVec.ofInt 64 p.offset⟩
-        else Val.poison)) := by
-      intro ps
-      show Val.AvoidsList U _
-      rw [avoidsList_iff]
-      intro a ha
-      simp only [List.mem_map] at ha
-      obtain ⟨p, -, rfl⟩ := ha
-      split
-      · exact outargs_notU hU _
-      · trivial
     cases o with
-    | stuck msg => exact callRel_stuck _ _
+    | stuck msg => (try dsimp only); exact callRel_stuck _ _
     | panicked e r =>
       cases o' with
       | panicked e' r' =>
-        obtain ⟨rfl, -, hrr⟩ := hc
-        exact ⟨fun _ h => (nomatch h), fun e1 m1 h => by cases h; exact ⟨r', rfl, hrr⟩⟩
-      | returned _ _ => exact hc.elim
-      | stuck _ => exact hc.elim
+        obtain ⟨rfl, heA, hrA, hrr⟩ := hc
+        exact ⟨fun _ h => (nomatch h), fun e1 m1 h => by cases h; exact ⟨heA, hrA, r', rfl, hrr⟩⟩
+      | returned _ _ => exact (hc : False).elim
+      | stuck _ => exact (hc : False).elim
     | returned rs r =>
       cases o' with
       | returned rs' r' =>
         obtain ⟨rfl, hrsA0, hrA, hrr⟩ := hc
-        dsimp only
-        have hrsA := retypeResults_avoids hU ctx.tabs (List.filter (fun x => x.out)
-          ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) hrsA0
-        cases he : encodeResults ctx.tabs ctx.act
-            (List.filter (fun x => x.out) ((Option.map (fun x => x.params.toList)
-              (callABI? ctx.tabs v.aux)).getD [])) (retypeResults ctx.tabs (List.filter
-                (fun x => x.out) ((Option.map (fun x => x.params.toList)
-                (callABI? ctx.tabs v.aux)).getD [])) rs') r with
-        | none => exact callRel_stuck _ _
-        | some x =>
-          obtain ⟨m1', he', hm1, hA⟩ := encodeResults_eqOff hU ctx.tabs ctx.act _ _ hrr he
-          obtain ⟨hA1, hA2⟩ := hA hrsA hrA
-          rw [he']
-          dsimp only
-          refine ⟨fun y hy => ?_, fun _ _ h => ?_⟩
-          · cases post
-            · simp only [Bool.false_eq_true, ite_false] at hy ⊢
-              cases hy
-              refine ⟨?_, _, rfl, .tuple (VRL.append (VRL.refl _)
-                (.cons (.mem hm1) (.cons (.refl _) .nil)))⟩
-              show Val.AvoidsList U _
+        try dsimp only
+        try simp only [Res.ofOption]
+        split
+        rotate_left
+        · rename_i hd; exfalso; split at hd <;> cases hd
+        · (try dsimp only); exact callRel_stuck _ _
+        rename_i x he
+        split at he
+        rotate_left
+        · cases he
+        rename_i hea
+        cases he
+        obtain ⟨m1', he', hm1, hA⟩ := encodeResults_eqOff hU ctx.tabs ctx.act _ _ hrr hea
+        obtain ⟨hA1, hA2⟩ := hA (retypeResults_avoids hU ctx.tabs _ hrsA0) hrA
+        rw [he']
+        try dsimp only
+        refine ⟨fun y hy => ?_, fun _ _ h => ?_⟩
+        · cases hy
+          refine ⟨?_, _, rfl, .tuple (VRL.append (VRL.refl _)
+            (.cons (.mem hm1) (.cons (.refl _) .nil)))⟩
+          show Val.AvoidsList U _
+          rw [avoidsList_iff]
+          intro a ha
+          rcases List.mem_append.1 ha with ha | ha
+          · exact hA2 a ha
+          · simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
+            rcases ha with rfl | rfl
+            · exact hA1
+            · show Val.AvoidsList U _
               rw [avoidsList_iff]
               intro a ha
-              rcases List.mem_append.1 ha with ha | ha
-              · exact hrsA a ha
-              · simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
-                rcases ha with rfl | rfl
-                · exact hA1
-                · exact haddr _
-            · simp only [ite_true] at hy ⊢
-              cases hy
-              refine ⟨?_, _, rfl, .tuple (VRL.append (VRL.refl _)
-                (.cons (.mem hm1) (.cons (.refl _) .nil)))⟩
-              show Val.AvoidsList U _
+              simp only [List.mem_map] at ha
+              obtain ⟨p, -, rfl⟩ := ha
+              split
+              · exact outargs_notU hU _
+              · trivial
+        · cases h
+      | panicked _ _ => exact (hc : False).elim
+      | stuck _ => exact (hc : False).elim
+  · simp only [pure]
+    try dsimp only
+    have hargs := retypeResults_avoids hU ctx.tabs (List.filter (fun x => !x.out)
+      ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) hRA
+    generalize retypeResults ctx.tabs (List.filter (fun x => !x.out)
+      ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) R = args
+      at hargs ⊢
+    split
+    · (try dsimp only); exact callRel_stuck _ _
+    rw [EqOff.outargsOK hm]
+    split
+    · (try dsimp only); exact callRel_stuck _ _
+    split
+    · refine ⟨fun _ h => (nomatch h), fun e m h => ?_⟩
+      cases h
+      exact ⟨trivial, memAvoids_poison hMA _, _, rfl, EqOff.poison hm _⟩
+    cases callee? with
+    | none => (try dsimp only); exact callRel_stuck _ _
+    | some callee =>
+    simp only [Res.ofOption]
+    try dsimp only
+    cases hx : (env.atAct ctx.act).extern callee with
+    | none => (try dsimp only); exact callRel_stuck _ _
+    | some c =>
+    try dsimp only
+    have hc := DeferRel.atAct_respects memRel_eqOff hU (respects_of_frameSafe hfs hU) ctx.act
+      callee c hx args clo (M.poisonBlock (.outargs ctx.act)) (M'.poisonBlock (.outargs ctx.act))
+      hargs hcloA (memAvoids_poison hMA _) (EqOff.poison hm _)
+    revert hc
+    generalize c args clo (M.poisonBlock (.outargs ctx.act)) = o
+    generalize c args clo (M'.poisonBlock (.outargs ctx.act)) = o'
+    intro hc
+    cases o with
+    | stuck msg => (try dsimp only); exact callRel_stuck _ _
+    | panicked e r =>
+      cases o' with
+      | panicked e' r' =>
+        obtain ⟨rfl, heA, hrA, hrr⟩ := hc
+        exact ⟨fun _ h => (nomatch h), fun e1 m1 h => by cases h; exact ⟨heA, hrA, r', rfl, hrr⟩⟩
+      | returned _ _ => exact (hc : False).elim
+      | stuck _ => exact (hc : False).elim
+    | returned rs r =>
+      cases o' with
+      | returned rs' r' =>
+        obtain ⟨rfl, hrsA0, hrA, hrr⟩ := hc
+        try dsimp only
+        try simp only [Res.ofOption]
+        split
+        rotate_left
+        · rename_i hd; exfalso; split at hd <;> cases hd
+        · (try dsimp only); exact callRel_stuck _ _
+        rename_i x he
+        split at he
+        rotate_left
+        · cases he
+        rename_i hea
+        cases he
+        obtain ⟨m1', he', hm1, hA⟩ := encodeResults_eqOff hU ctx.tabs ctx.act _ _ hrr hea
+        obtain ⟨hA1, -⟩ := hA (retypeResults_avoids hU ctx.tabs _ hrsA0) hrA
+        rw [he']
+        try dsimp only
+        refine ⟨fun y hy => ?_, fun _ _ h => ?_⟩
+        · cases hy
+          refine ⟨?_, _, rfl, .tuple (VRL.append (VRL.refl _)
+            (.cons (.mem hm1) (.cons (.refl _) .nil)))⟩
+          show Val.AvoidsList U _
+          rw [avoidsList_iff]
+          intro a ha
+          rcases List.mem_append.1 ha with ha | ha
+          · exact retypeResults_avoids hU ctx.tabs _ hrsA0 a ha
+          · simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
+            rcases ha with rfl | rfl
+            · exact hA1
+            · show Val.AvoidsList U _
               rw [avoidsList_iff]
               intro a ha
-              rcases List.mem_append.1 ha with ha | ha
-              · exact hA2 a ha
-              · simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
-                rcases ha with rfl | rfl
-                · exact hA1
-                · exact haddr _
-          · cases post <;> simp at h
-      | panicked _ _ => exact hc.elim
-      | stuck _ => exact hc.elim
-  by_cases hp : (v.op == Op.StaticCall || v.op == Op.ClosureCall || v.op == Op.InterCall) = true
-  · simp only [hp, ite_true]
-    cases hd : decodeArgs ctx.tabs ctx.act M
-        (List.filter (fun x => !x.out) ((Option.map (fun x => x.params.toList)
-          (callABI? ctx.tabs v.aux)).getD [])) R with
-    | none => exact callRel_stuck _ _
-    | some args =>
-      have := core args (decodeArgs_avoids hU _ _ hMA _ hRA hd) true
-      simp only [ite_true] at this
-      exact this
-  · simp only [hp, Bool.false_eq_true, ite_false]
-    have := core _ (retypeResults_avoids hU ctx.tabs (List.filter (fun x => !x.out)
-      ((Option.map (fun x => x.params.toList) (callABI? ctx.tabs v.aux)).getD [])) hRA) false
-    simp only [Bool.false_eq_true, ite_false] at this
-    exact this
+              simp only [List.mem_map] at ha
+              obtain ⟨p, -, rfl⟩ := ha
+              split
+              · exact outargs_notU hU _
+              · trivial
+        · cases h
+      | panicked _ _ => exact (hc : False).elim
+      | stuck _ => exact (hc : False).elim
 
 end GoFV.Proof.DAE

@@ -79,7 +79,7 @@ theorem normal_step {env : Env} {tabs : Tables} {n : Nat}
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f s R) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : Rel env tabs f s R frS bS iS frT bT iT)
     (hnb : bS ≠ s.b) (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hb, hna, hI, ht, hs, hdi, hA⟩ := hR
   rw [hbT]
@@ -134,17 +134,17 @@ theorem normal_step {env : Env} {tabs : Tables} {n : Nat}
 theorem side1_target {env : Env} {tabs : Tables} {G GT : Frame} (hAG : Agr (s.inX f R) G GT)
     (hGs : G.regs.size = f.valueTab.size)
     (hdi : DInv env (Ctx.make tabs f) (fun a => SDom f a s.b) G) (hbr : Reachable f s.b) :
-    ∃ GT2, Agr (s.inX f R) G GT2 ∧ ∀ (act : Nat) (o : Outcome),
-      (∃ fuel, OutcomeRefines act o
+    ∃ GT2, Agr (s.inX f R) G GT2 ∧ ∀ (o : Outcome),
+      (∃ fuel, LoopRefines Eq o
         (runLoop env (Ctx.make tabs g) fuel GT2 s.ss (tIdx s f s.ss s.j1))) →
-      ∃ fuel, OutcomeRefines act o
+      ∃ fuel, LoopRefines Eq o
         (runLoop env (Ctx.make tabs g) fuel GT (s.rmE f s.e1).b (s.rmE f s.e1).i) := by
   have hs1 := S.rel.side1
   cases ha1 : s.arm1 with
   | none =>
     rw [ha1] at hs1
     have he := direct_spec hs1
-    refine ⟨GT, hAG, fun act o h => ?_⟩
+    refine ⟨GT, hAG, fun o h => ?_⟩
     rw [rmE_eq, he]; exact h
   | some a1 =>
     rw [ha1] at hs1
@@ -190,7 +190,7 @@ theorem side1_target {env : Env} {tabs : Tables} {G GT : Frame} (hAG : Agr (s.in
       (by rw [S.rel.blocks]; exact ha1m) hA1' hss hsc (fr := GT)
       (by rw [hAG.2.1, hGs, S.rel.vsize]) hdef (tIdx s f a1 s.e1.i)
     refine ⟨GT2, ⟨FusePlain.frame_trans h2 hAG.1, by rw [h3, hAG.2.1], fun a haX => ?_⟩,
-      fun act o h => ?_⟩
+      fun o h => ?_⟩
     · have hna : a ∉ A1'.values := fun hm => by
         rw [hv] at hm; rw [hX a hm] at haX; cases haX
       rw [h4 a hna, hAG.2.2 a haX]
@@ -208,7 +208,7 @@ theorem b_step {env : Env} {tabs : Tables} {n : Nat}
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f s R) n)
     {frS frT : Frame} {iS bT iT : Nat} (hR : Rel env tabs f s R frS s.b iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS s.b iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS s.b iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS s.b iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   obtain ⟨hbT, hb, hna, hI, ht, hs, hdi, hA⟩ := hR
   rw [hbT]
@@ -268,7 +268,7 @@ theorem b_step {env : Env} {tabs : Tables} {n : Nat}
       have hee : e = s.e0 := by simpa using he'.symm
       subst hee
       obtain ⟨GT2, hAG2, hlift⟩ := S.side1_target hAG hGs hdiB ht
-      refine refines_goto hTb (hlift _ _ ?_)
+      refine refines_goto hTb (hlift _ ?_)
       have hs0 := S.rel.side0
       obtain ⟨hdi0, ht0, hGs0, hem0⟩ := S.dinv_step hb hB ht hs hdi hG (e := s.e0)
         (by rw [hsu]; simp)
@@ -338,7 +338,7 @@ theorem sim_step {tabs : Tables} {env : Env} (n : Nat)
     (ih : SimUpTo env (Ctx.make tabs f) (Ctx.make tabs g) (Rel env tabs f s R) n)
     {frS frT : Frame} {bS iS bT iT : Nat} (hR : Rel env tabs f s R frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make tabs f).act (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
+    ∃ fuelT, LoopRefines Eq (runLoop env (Ctx.make tabs f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make tabs g) fuelT frT bT iT) := by
   by_cases hb : bS = s.b
   · subst hb; exact S.b_step ih hR hd

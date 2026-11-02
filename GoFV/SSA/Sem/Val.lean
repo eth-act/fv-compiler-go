@@ -324,6 +324,11 @@ def Val.checkLen : Ty → Val → Val
   | .slice _, .agg vs => Val.ofSlice vs
   | _, v => v
 
+/-- The shape of an interface (`Sem/Layout.lean`): the type/itab word as an integer, the data
+word as a pointer. -/
+def Ty.iface : Ty := .agg [(0, .int .w64), (8, .ptr (some 1))] 16
+
+
 /-- Why a run panicked (§6): `PanicBounds`, `NilCheck` of nil, and the runtime's panicking
 entry points the environment models (`runtime.panicdivide`, `runtime.panicshift`,
 `runtime.panicoverflow`). -/
@@ -341,6 +346,9 @@ inductive Panic where
   | error (msg : String)
   /-- `NilCheck` of a nil pointer (§6). -/
   | nilDeref
+  /-- `runtime.gopanic(v)` (P5): the bytes of the `any` argument `v` (its encoding at the
+  interface shape), which `recover` returns. -/
+  | value (bytes : List Byte)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Panic
@@ -376,6 +384,7 @@ def message : Panic → String
   | .runtime name => s!"panic in {name}"
   | .error msg => "runtime error: " ++ msg
   | .nilDeref => "runtime error: invalid memory address or nil pointer dereference"
+  | .value _ => "panic value"
 
 end Panic
 

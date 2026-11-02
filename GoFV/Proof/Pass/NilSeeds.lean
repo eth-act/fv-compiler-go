@@ -99,38 +99,39 @@ tuple of `rs` at the ABI's result shapes, then the memory and the result address
 theorem callOp_static_ok {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {r : Val}
     (hop : v.op = .StaticLECall) (h : callOp env ctx v argv = .ok r) :
     ∃ name c args m rs m' tail, v.aux.bind ctx.tabs.callee? = some name ∧
-      env.extern name = some c ∧ c args none m = .returned rs m' ∧
+      (env.atAct ctx.act).extern name = some c ∧ c args none m = .returned rs m' ∧
       r = .tuple (retypeResults ctx.tabs
         ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (·.out)) rs ++ tail) := by
   unfold callOp at h
-  simp only [callTarget, hop] at h
-  cases hname : v.aux.bind ctx.tabs.callee? with
-  | none => rw [hname] at h; cases h
-  | some name =>
-  rw [hname] at h
-  simp only [Res.ofOption, bind, Res.bind, pure] at h
+  simp only [callTarget, hop, nilClosure_none] at h
   have hb : (Op.StaticLECall == Op.StaticCall || Op.StaticLECall == Op.ClosureCall ||
       Op.StaticLECall == Op.InterCall) = false := by decide
-  simp only [hb, Bool.false_eq_true, ite_false, Option.map_none, Option.getD_none, Bool.or_false] at h
+  simp only [Res.ofOption, bind, Res.bind, pure, hb, Bool.false_eq_true, ite_false,
+    Option.map_none, Option.getD_none, Bool.or_false] at h
   split at h
   · next m hm =>
     split at h
     · cases h
     split at h
     · cases h
-    · cases hc : env.extern name with
-      | none => rw [hc] at h; cases h
-      | some c =>
-        rw [hc] at h
-        simp only at h
+    cases hname : v.aux.bind ctx.tabs.callee? with
+    | none => rw [hname] at h; cases h
+    | some name =>
+    rw [hname] at h
+    simp only at h
+    cases hc : (env.atAct ctx.act).extern name with
+    | none => rw [hc] at h; cases h
+    | some c =>
+      rw [hc] at h
+      simp only at h
+      split at h
+      · next rs m' hret =>
         split at h
-        · next rs m' hret =>
-          split at h
-          · cases h
-            exact ⟨name, c, _, _, rs, m', _, rfl, hc, hret, rfl⟩
-          all_goals cases h
         · cases h
-        · cases h
+          exact ⟨name, c, _, _, rs, m', _, rfl, hc, hret, rfl⟩
+        all_goals cases h
+      · cases h
+      · cases h
   · cases h
 
 /-- The first result of a call whose contract returned a non-nil pointer first, at a pointer
@@ -176,7 +177,7 @@ theorem safe_selectN_malloc {env : Env} {tabs : Tables} {f : Func} {fr : Frame} 
   obtain ⟨name, c', args, m, rs, m', tail, hn, hc, hret, rfl⟩ := callOp_static_ok hop hr
   have hn' : cv.aux.bind tabs.callee? = some name := hn
   rw [hn'] at hname
-  obtain ⟨p, hp, hnn⟩ := hA name c' (by simpa using hname) hc args none m rs m' hret
+  obtain ⟨p, hp, hnn⟩ := hA.atAct _ name c' (by simpa using hname) hc args none m rs m' hret
   obtain ⟨rest, hrest⟩ := retypeResults_head (tabs := tabs) hp hout
   have : (Ctx.make tabs f).tabs = tabs := rfl
   rw [this, hrest]

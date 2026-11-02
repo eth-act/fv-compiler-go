@@ -77,12 +77,12 @@
  		if f.Log() || f.HTMLWriter != nil {
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1348 @@
+@@ -0,0 +1,1402 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 3).
++// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 4).
 +// Enabled by GOFV_SSA_EXPORT=<dir>. Read-only: it never calls caching accessors, never
 +// computes type sizes and never creates symbols, so compilation is unchanged.
 +
@@ -181,6 +181,7 @@
 +func gofvNewExporter(f *Func, set *gofvSettings) *gofvExporter {
 +	pkg := base.Ctxt.Pkgpath
 +	gofvMarkAddrConv(f)
++	gofvMarkDeferBits(f)
 +	x := &gofvExporter{
 +		f:        f,
 +		set:      set,
@@ -192,7 +193,7 @@
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-ssa 3\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
++	fmt.Fprintf(&x.out, "gofv-ssa 4\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
 +	return x
@@ -201,15 +202,18 @@
 +// gofvAddrConvNames holds the names marked by gofvMarkAddrConv in this compilation.
 +var gofvAddrConvNames sync.Map // *ir.Name -> struct{}
 +
-+// gofvMarkAddrConv marks the names whose address reaches a Convert to an integer in f (the
-+// "addrconv" name flag, format 3): backwards from every such Convert's argument through the
-+// non-memory arguments of every value except Load/Dereference (whose result is memory
-+// contents, not an address computed from the argument) to LocalAddr. Calls are included: the
-+// runtime returns pointers derived from its arguments (growsliceBuf returns the stack buffer
-+// the frontend passes, whose address append then converts to compare with the stack bounds).
-+// Every exporter marks its function when it is made (the start section for GOFV_SSA_EXPORT);
-+// marks are never removed, so a later export of the same function (the driver's re-exports,
-+// after passes deleted conversions) shows the flags of the first.
++// gofvMarkAddrConv marks the names whose address reaches a conversion to an integer in f (the
++// "addrconv" name flag, format 3): backwards from the argument of every Convert to an integer
++// and (format 4) from every pointer-shaped argument a late-expanded call passes at an
++// integer-typed parameter, an implicit conversion (runtime.deferprocStack(d uintptr) gets the
++// _defer temp's LocalAddr directly; integer arguments are not seeds), through the non-memory
++// arguments of every value except Load/Dereference (whose result is memory contents, not an
++// address computed from the argument) to LocalAddr. Calls are included: the runtime returns
++// pointers derived from its arguments (growsliceBuf returns the stack buffer the frontend
++// passes, whose address append then converts to compare with the stack bounds). Every
++// exporter marks its function when it is made (the start section for GOFV_SSA_EXPORT); marks
++// are never removed, so a later export of the same function (the driver's re-exports, after
++// passes deleted conversions) shows the flags of the first.
 +func gofvMarkAddrConv(f *Func) {
 +	seen := map[*Value]bool{}
 +	var work []*Value
@@ -221,8 +225,29 @@
 +	}
 +	for _, b := range f.Blocks {
 +		for _, v := range b.Values {
-+			if v.Op == OpConvert && v.Type.IsInteger() {
-+				push(v.Args[0])
++			switch v.Op {
++			case OpConvert:
++				if v.Type.IsInteger() {
++					push(v.Args[0])
++				}
++			case OpStaticLECall, OpTailLECall, OpInterLECall, OpTailLECallInter, OpClosureLECall:
++				// Inputs follow the fixed code pointer (and closure context); memory is last.
++				first := 0
++				switch v.Op {
++				case OpInterLECall, OpTailLECallInter:
++					first = 1
++				case OpClosureLECall:
++					first = 2
++				}
++				call, ok := v.Aux.(*AuxCall)
++				if !ok || call.abiInfo == nil || int64(len(v.Args)-1-first) != call.NArgs() {
++					continue
++				}
++				for i, a := range v.Args[first : len(v.Args)-1] {
++					if call.TypeOfArg(int64(i)).IsInteger() && a.Type.IsPtrShaped() {
++						push(a)
++					}
++				}
 +			}
 +		}
 +	}
@@ -246,6 +271,35 @@
 +// gofvAddrConv reports whether n is marked (gofvMarkAddrConv).
 +func gofvAddrConv(n *ir.Name) bool {
 +	_, ok := gofvAddrConvNames.Load(n)
++	return ok
++}
++
++// gofvDeferBitsNames holds the names marked by gofvMarkDeferBits in this compilation.
++var gofvDeferBitsNames sync.Map // *ir.Name -> struct{}
++
++// gofvMarkDeferBits marks f's open-coded defer bitmask (the "deferbits" name flag, format 4):
++// ssagen's deferBitsTemp, an addrtaken uint8 autotmp PAUTO kept alive by a VarLive (the
++// opendeferslot closures are kept alive by VarLives too, but are not uint8 and carry their
++// own flag). The runtime reads it at a panic to run the open-coded defers whose bits are set.
++// Marked when the exporter is made and never removed, like gofvMarkAddrConv.
++func gofvMarkDeferBits(f *Func) {
++	for _, b := range f.Blocks {
++		for _, v := range b.Values {
++			if v.Op != OpVarLive {
++				continue
++			}
++			n, ok := v.Aux.(*ir.Name)
++			if ok && n.Class == ir.PAUTO && n.AutoTemp() && n.Addrtaken() && !n.OpenDeferSlot() &&
++				n.Type().Kind() == types.TUINT8 {
++				gofvDeferBitsNames.Store(n, struct{}{})
++			}
++		}
++	}
++}
++
++// gofvDeferBits reports whether n is marked (gofvMarkDeferBits).
++func gofvDeferBits(n *ir.Name) bool {
++	_, ok := gofvDeferBitsNames.Load(n)
 +	return ok
 +}
 +
@@ -655,8 +709,8 @@
 +			sym = a.Sym().Name
 +		}
 +		flags := gofvFlags(
-+			[]string{"addrtaken", "used", "autotmp", "nonmergeable", "opendeferslot", "readonly", "addrconv"},
-+			[]bool{a.Addrtaken(), a.Used(), a.AutoTemp(), a.NonMergeable(), a.OpenDeferSlot(), a.Readonly(), gofvAddrConv(a)})
++			[]string{"addrtaken", "used", "autotmp", "nonmergeable", "opendeferslot", "readonly", "addrconv", "deferbits"},
++			[]bool{a.Addrtaken(), a.Used(), a.AutoTemp(), a.NonMergeable(), a.OpenDeferSlot(), a.Readonly(), gofvAddrConv(a), gofvDeferBits(a)})
 +		fmt.Fprintf(&b, "name %s %s %s %s %d %d %s %s\n", gofvQuote(render), gofvQuote(sym), a.Class.String(),
 +			x.typ(a.Type()), a.FrameOffset(), a.Esc(), flags, x.pos(a.Pos()))
 +	case *obj.LSym:

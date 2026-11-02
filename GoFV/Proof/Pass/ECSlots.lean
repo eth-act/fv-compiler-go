@@ -61,6 +61,8 @@ theorem slotsOK_pred (ctx : Ctx) : MemInv.MemPred (SlotsOK ctx) where
   poison h _ _ := slotsOK_congr (fun b _ => find_poisonBlock_attr _ _ b) h
   free_wbuf h := slotsOK_congr (fun b hb => by
     rw [WB.free_eq_erase, TabsMod.erase_find (by cases b <;> first | rfl | cases hb)]) h
+  rt a hb _ _ h := slotsOK_congr (fun b' hb' => by
+    rw [CSE.Mem.find?_set, if_neg (by rintro rfl; rcases hb with rfl | rfl <;> cases hb')]) h
 
 theorem ecQ_pred {tabs : Tables} {f : Func} : MemInv.MemPred (EcQ tabs f) := (slotsOK_pred _).imp
 

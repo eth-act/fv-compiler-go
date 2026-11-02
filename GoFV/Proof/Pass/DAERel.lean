@@ -32,6 +32,7 @@ structure ARelD (tabs : Tables) (f g : Func) (T : ID → Option AuxRef) (E : Lis
   ownAux : g.ownAux = f.ownAux
   vsize : g.valueTab.size = f.valueTab.size
   temp : ∀ n ∈ E, tabs.forgeable n = false
+  nodefer : ∀ n ∈ E, deferVar tabs n = false
   block : ∀ bid ∈ f.blocks, ∀ fb, f.block? bid = some fb → ∃ gb, g.block? bid = some gb ∧
     gb.kind = fb.kind ∧ gb.values = fb.values ∧ gb.controls = fb.controls ∧
     ∀ c ∈ fb.controls, ¬ Tainted T E c
@@ -60,12 +61,17 @@ theorem arel_sound {tabs : Tables} {f g : Func} (h : arel tabs f g = true) :
   simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, List.mem_range,
     Array.all_eq_true'] at h
   obtain ⟨⟨⟨⟨⟨⟨hcfg, hown⟩, hsz⟩, hE⟩, hblk⟩, hval⟩, hsch⟩ := h
-  refine ⟨hcfg, hown, hsz, fun n hn => ?_, fun bid hb fb hfb => ?_, fun x fv hfv => ?_,
-    fun x hx => (hval x hx).1.1.2, fun x fv hfv => ?_, fun bid hb fb gb hfb hgb oS hoS => ?_⟩
+  refine ⟨hcfg, hown, hsz, fun n hn => ?_, fun n hn => ?_, fun bid hb fb hfb => ?_,
+    fun x fv hfv => ?_, fun x hx => (hval x hx).1.1.2, fun x fv hfv => ?_,
+    fun bid hb fb gb hfb hgb oS hoS => ?_⟩
   · have := hE n hn
     unfold unforgeable at this
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at this
     exact this.1
+  · have := hE n hn
+    unfold unforgeable at this
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at this
+    exact this.2
   · have := hblk bid hb
     unfold blockOK at this
     rw [hfb] at this

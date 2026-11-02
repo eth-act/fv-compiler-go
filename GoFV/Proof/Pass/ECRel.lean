@@ -272,10 +272,10 @@ structure CvRel : Prop where
   ownAux : g.ownAux = f.ownAux
   block : ∀ bid ∈ f.blocks, ∀ fb, f.block? bid = some fb → ∃ gb, g.block? bid = some gb ∧
     CvBlock tabs f g cv isNew front RR fb gb
-  finish : ∀ rs m rs' m', RR rs m rs' m' →
-    (finish (Ctx.make tabs f).outs 0 (.returned rs m)).Defined →
-    OutcomeRefines 0 (finish (Ctx.make tabs f).outs 0 (.returned rs m))
-      (finish (Ctx.make tabs f).outs 0 (.returned rs' m'))
+  finish : ∀ env rs m rs' m', RR rs m rs' m' →
+    (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m)).Defined →
+    OutcomeRefines 0 (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs m))
+      (finish env (Ctx.make tabs f).outs (Ctx.make tabs f).defers 0 (.returned rs' m'))
   entry : ∀ env args mem, EcQ tabs f (entryFrame env (Ctx.make tabs f) args mem).mem0
 
 end

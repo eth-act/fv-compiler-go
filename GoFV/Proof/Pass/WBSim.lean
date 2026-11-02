@@ -304,7 +304,7 @@ theorem step {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {env : 
     (frS : Frame) (bS : ID) (iS : Nat) (frT : Frame) (bT : ID) (iT : Nat)
     (hR : R env c frS bS iS frT bT iT)
     (hd : (runLoop env (Ctx.make c.tabs c.f) (n + 1) frS bS iS).Defined) :
-    ∃ fuelT, OutcomeRefines (Ctx.make c.tabs c.f).act
+    ∃ fuelT, LoopRefines Eq
       (runLoop env (Ctx.make c.tabs c.f) (n + 1) frS bS iS)
       (runLoop env (Ctx.make c.tabs c.g) fuelT frT bT iT) := by
   obtain ⟨rfl, rfl, hA⟩ := hR
@@ -316,7 +316,7 @@ theorem step {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {env : 
   | stuck msg => rw [hen] at hd; exact hd.elim
   | panic e m =>
     obtain ⟨n', hn'⟩ := S.chain_panic hGl.all hGl.wf hGl.cert hE hA hen
-    exact ⟨n', by rw [hn']; simp only; exact OutcomeRefines.panicked_refl e m⟩
+    exact ⟨n', by rw [hn']; simp only; exact LoopRefines.panicked_refl e m⟩
   | ok G =>
     rw [hen] at hd
     simp only at hd ⊢
@@ -339,7 +339,7 @@ theorem step {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {env : 
         refine ⟨0 + 1 + n', ?_⟩
         rw [hwalk (0 + 1), runLoop_ret (blockStep_ret (ctx := Ctx.make c.tabs c.g) hL henT
           (hst _ hs))]
-        exact OutcomeRefines.refl trivial
+        exact LoopRefines.refl trivial
 
 /-- A held value is a value of both functions. -/
 private theorem held_lt {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce ce') {a : ID}

@@ -19,8 +19,8 @@ nothing reads (`#31`).
   `PtrIndex`, `Copy`), as the destination (argument 0) of an eliminated `Store`/`Zero`/`Move`, or
   as the source (argument 1) of an eliminated `Move`; no control is tainted (`usesOK`).
 * Every variable of `E` is a frame variable whose address the program cannot rebuild from an
-  integer (`unforgeable`: a `PAUTO` without the `addrconv` flag, `Blk.temp`) and is not an
-  open-coded defer slot.
+  integer (`unforgeable`: a `PAUTO` without the `addrconv` flag, `Blk.temp`) and is not one the
+  panic machinery reads (`deferVar`: an open-coded defer slot or the `deferBits` variable).
 * Every block's schedule in `g` lists the roots of `g` in `f`'s order (`DSE.schedOK`).
 * Every kept value with a memory- or tuple-shaped argument (shape `mem`/`tuple`) has it last
   and an op of `memOps` (or is a `Phi`), and every kept value whose shape may hold a pointer, a
@@ -83,13 +83,17 @@ def names (f g : Func) (T : ID → Option AuxRef) : List AuxRef :=
       else E
     | _, _ => E) []
 
+/-- A frame variable the panic machinery reads at a panic (`Sem.deferInfo`, `Sem.nextDefer`): an
+open-coded defer slot or the `deferBits` variable. -/
+def deferVar (tabs : Tables) (n : AuxRef) : Bool :=
+  match tabs.aux? n with
+  | some { kind := .name _ _ _ _ _ fl _, .. } => fl.opendeferslot || fl.deferbits
+  | _ => false
+
 /-- A frame variable whose address no integer conversion reaches (`Blk.temp`: not
-`Tables.forgeable`), and not an open-coded defer slot. -/
+`Tables.forgeable`), and not one the panic machinery reads (`deferVar`). -/
 def unforgeable (tabs : Tables) (n : AuxRef) : Bool :=
-  !tabs.forgeable n &&
-    match tabs.aux? n with
-    | some { kind := .name _ _ _ _ _ fl _, .. } => !fl.opendeferslot
-    | _ => false
+  !tabs.forgeable n && !deferVar tabs n
 
 /-- Value `x`: kept or an eliminated write to a variable of `E`. -/
 def valueOK (f g : Func) (T : ID → Option AuxRef) (E : List AuxRef) (x : ID) : Bool :=

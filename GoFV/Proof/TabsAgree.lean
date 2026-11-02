@@ -273,7 +273,7 @@ theorem tabsAgree_sound {tabs tabs' : Tables} {f : Func} (h : tabsAgree tabs tab
     Agree tabs tabs' f := by
   unfold tabsAgree at h
   simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨⟨⟨⟨hps, hpty⟩, hls⟩, hforg⟩, hout⟩, hvals⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨hps, hpty⟩, hls⟩, hforg⟩, hout⟩, hdi⟩, hvals⟩ := h
   have hps' : abiParams tabs' f = abiParams tabs f := Array.toList_inj.mp hps
   have hty : ∀ p ∈ abiParams tabs f, tabs'.ty p.type = tabs.ty p.type :=
     fun p hp => Ty.eq_of_beq (hpty p (Array.mem_def.mp hp))

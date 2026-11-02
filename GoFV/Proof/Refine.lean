@@ -58,26 +58,64 @@ theorem OutcomeRefines.panicked_refl {act : Nat} (e : Panic) (m : Mem) :
     OutcomeRefines act (.panicked e m) (.panicked e m) :=
   .panicked e (Mem.Refines.refl _)
 
-/-- `finish` (Go-typed results, frame removal) preserves outcome refinement. -/
-theorem finish_refines {outs : Array (Option AuxRef × Ty × Nat)} {act k : Nat} {o o' : Outcome}
-    (hd : (finish outs act o).Defined) (h : OutcomeRefines k o o') :
-    OutcomeRefines k (finish outs act o) (finish outs act o') := by
+/-- Related outcomes of `runLoop` (the input of `finish`): refined results in a refined memory,
+or the same panic with memories related by `P`. The panicking activation's deferred calls see its
+frame (`finish`, §9.7), so lock-step simulations relate panics by equality (`finish_refines`);
+`Mem.Refines` needs monotone contracts (`GoFV.Proof.finish_refines_mono`). -/
+inductive LoopRefines (P : Mem → Mem → Prop) : Outcome → Outcome → Prop where
+  | returned {rs rs' : List Val} {m m' : Mem} : RefinesList rs rs' → Mem.Refines m m' →
+      LoopRefines P (.returned rs m) (.returned rs' m')
+  | panicked (e : Panic) {m m' : Mem} : P m m' → LoopRefines P (.panicked e m) (.panicked e m')
+
+/-- Equal memories at a panic (what lock-step simulations produce). -/
+theorem LoopRefines.panicked_refl (e : Panic) (m : Mem) :
+    LoopRefines Eq (.panicked e m) (.panicked e m) :=
+  .panicked e rfl
+
+theorem LoopRefines.refl {o : Outcome} (h : o.Defined) : LoopRefines Eq o o := by
+  cases o with
+  | returned rs m => exact .returned (RefinesList.refl rs) (Mem.Refines.refl m)
+  | panicked e m => exact .panicked e rfl
+  | stuck => exact h.elim
+  | outOfFuel => exact h.elim
+
+theorem LoopRefines.defined_left {P : Mem → Mem → Prop} {a b : Outcome}
+    (h : LoopRefines P a b) : a.Defined := by
+  cases h <;> trivial
+
+theorem LoopRefines.defined_right {P : Mem → Mem → Prop} {a b : Outcome}
+    (h : LoopRefines P a b) : b.Defined := by
+  cases h <;> trivial
+
+/-- `finish` of returned outcomes (Go-typed results, frame removal) preserves refinement. -/
+theorem finish_returned_refines {env : Env} {outs : Array (Option AuxRef × Ty × Nat)}
+    {di : DeferInfo} {act k : Nat} {rs rs' : List Val} {m m' : Mem}
+    (hd : (finish env outs di act (.returned rs m)).Defined) (hr : RefinesList rs rs')
+    (hm : Mem.Refines m m') :
+    OutcomeRefines k (finish env outs di act (.returned rs m))
+      (finish env outs di act (.returned rs' m')) := by
+  by_cases hp : Val.anyPoison rs = true
+  · simp only [finish, hp, ite_true] at hd; exact hd.elim
+  · have hp' : Val.anyPoison rs = false := by simpa using hp
+    have hp'' := (hr.noPoison hp').1
+    simp only [finish, hp', hp'', Bool.false_eq_true, ↓reduceIte] at hd ⊢
+    have hg := goResults_mono (outs := outs) (act := act) hp' hr hm
+    revert hd
+    generalize goResults outs act rs m = g at hg ⊢
+    generalize goResults outs act rs' m' = g' at hg ⊢
+    cases hg with
+    | ok hv => intro _; exact .returned hv (hm.freeFrame act)
+    | panic e hm' => intro _; exact .panicked e (hm'.dropFrames k)
+    | stuck msg r => intro hd; exact hd.elim
+
+/-- **`finish` preserves refinement** of loop outcomes that panic with equal memories. -/
+theorem finish_refines {env : Env} {outs : Array (Option AuxRef × Ty × Nat)} {di : DeferInfo}
+    {act k : Nat} {o o' : Outcome} (hd : (finish env outs di act o).Defined)
+    (h : LoopRefines Eq o o') :
+    OutcomeRefines k (finish env outs di act o) (finish env outs di act o') := by
   cases h with
-  | panicked e hm => exact .panicked e hm
-  | @returned rs rs' m m' hr hm =>
-    by_cases hp : Val.anyPoison rs = true
-    · simp only [finish, hp, ite_true] at hd; exact hd.elim
-    · have hp' : Val.anyPoison rs = false := by simpa using hp
-      have hp'' := (hr.noPoison hp').1
-      simp only [finish, hp', hp'', Bool.false_eq_true, ↓reduceIte] at hd ⊢
-      have hg := goResults_mono (outs := outs) (act := act) hp' hr hm
-      revert hd
-      generalize goResults outs act rs m = g at hg ⊢
-      generalize goResults outs act rs' m' = g' at hg ⊢
-      cases hg with
-      | ok hv => intro _; exact .returned hv (hm.freeFrame act)
-      | panic e hm' => intro _; exact .panicked e (hm'.dropFrames k)
-      | stuck msg r => intro hd; exact hd.elim
+  | panicked e hm => subst hm; exact OutcomeRefines.refl hd
+  | returned hr hm => exact finish_returned_refines hd hr hm
 
 /-! ## Fuel monotonicity -/
 

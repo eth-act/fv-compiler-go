@@ -23,7 +23,9 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.DAE
 /-- The frame temporaries of the eliminated names. -/
 def UE (E : List AuxRef) (b : Blk) : Prop := ∃ n ∈ E, b = .temp 0 n
 
-theorem tempU_UE (E : List AuxRef) : TempU (UE E) := fun _ ⟨n, _, h⟩ => ⟨n, h⟩
+theorem tempU0_UE (E : List AuxRef) : TempU0 (UE E) := fun _ ⟨n, _, h⟩ => ⟨n, h⟩
+
+theorem tempU_UE (E : List AuxRef) : TempU (UE E) := (tempU0_UE E).tempU
 
 /-- The source's invariant of register `x` holding `y`. -/
 def SInv (T : ID → Option AuxRef) (E : List AuxRef) (x : ID) (y : Val) : Prop :=
@@ -244,10 +246,10 @@ theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ct
     · exact addPtr_avoids hargs
     · exact ptrIndex_avoids _ hargs
     · show ¬ U Blk.nil
-      intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
+      intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
     · exact condSelect_avoids hargs
     · show ¬ U (Blk.global "runtime.g")
-      intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
+      intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
   have pure1 : ∀ op, v.op = op → (op = .Copy ∨ op = .Select0 ∨ op = .Select1 ∨
       op = .SelectN ∨ op = .MakeResult ∨ op = .Convert ∨ op = .Load ∨ op = .AtomicLoad32 ∨
       op = .AtomicLoad64 ∨ op = .AtomicLoadPtr) → Val.Avoids U r := by
@@ -311,7 +313,7 @@ theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ct
     · rename_i x hx
       cases h
       split at hx
-      · cases hx; intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
+      · cases hx; intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
       · cases hx; trivial
     · rename_i hx
       split at hx <;> cases hx
