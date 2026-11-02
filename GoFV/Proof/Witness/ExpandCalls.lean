@@ -18,7 +18,9 @@ agree with the input's and `ECCheck.ecCheck` accepts the output), so `expandCall
 applies; its contracts' condition holds for `Env.p1` (`Env.p1_mono`, `Env.p1_frameKeep`). A
 synthetic call with two wide stack arguments, each copied by its own `Move` (the upper one reading
 a frame variable), is accepted by `ECCheck.ecCheck`, and `EC.ecm_moves` reads both slots back on
-concrete memories.
+concrete memories. A two-block variant of `test/stack` `f2` whose invalidated self-move
+`Dereference` the target schedules after its `MakeResult`, with an unused `Mul64uhilo` (a tuple
+of integers), is accepted and refines its source.
 -/
 
 namespace GoFV.Proof.Witness
@@ -297,5 +299,94 @@ theorem expandCalls_moves_witness :
   obtain ⟨b0, h0, rfl⟩ := hR _ List.mem_cons_self
   obtain ⟨b1, h1, rfl⟩ := hR _ (List.mem_cons_of_mem _ List.mem_cons_self)
   exact ⟨Mt, hMt, h0, h1⟩
+
+/-! ## An invalidated self-move after its `MakeResult`; an integer tuple op -/
+
+/-- `f2`'s tables with the tuple type `t37 = (uint64, uint64)`. -/
+def ivTabs : Tables :=
+  { sf2Tabs with types := sf2Tabs.types.push (some (mkTy .TUPLE none none none false false false
+      false "(uint64,uint64)" "" (.tuple 12 12))) }
+
+def ivCheckEnv : CheckEnv := { tabs := ivTabs, typs := sf2Typs }
+
+def ivV (id : ID) (op : Op) (t : TypeRef) (auxInt : Int64) (aux : Option AuxRef) (uses : Nat)
+    (args : Array ID) (blk : ID) : Value :=
+  { id, op, type := t, auxInt, aux, pos := p0, uses, args, block := blk }
+
+/-- The entry block: `f2`'s slot cleared (`v5 = Zero [3000] (LocalAddr {~r0}) v1`) and an unused
+`v8 = Mul64uhilo v6 v7` (of the tuple type `t37`). -/
+def ivFB1 : Block := mkB 1 .Plain p0 #[] #[⟨2, 0⟩] #[] #[1, 2, 4, 5, 6, 7, 8]
+
+/-- The exit block: the self-move `v10 = MakeResult v9 v5`, `v9 = Dereference v4 v5`. -/
+def ivFB2 : Block := mkB 2 .Ret p0 #[10] #[] #[⟨1, 0⟩] #[9, 10]
+
+def ivF : Func :=
+  { sf2 with
+    valueTab := #[none, some (ivV 1 .InitMem 30 0 none 2 #[] 1),
+      some (ivV 2 .SP 17 0 none 1 #[] 1), none,
+      some (ivV 4 .LocalAddr 35 0 (some 3) 2 #[2, 1] 1),
+      some (ivV 5 .Zero 30 3000 (some 4) 2 #[4, 1] 1),
+      some (ivV 6 .Const64 12 3 none 1 #[] 1), some (ivV 7 .Const64 12 5 none 1 #[] 1),
+      some (ivV 8 .Mul64uhilo 37 0 none 0 #[6, 7] 1),
+      some (ivV 9 .Dereference 2 0 none 1 #[4, 5] 2),
+      some (ivV 10 .MakeResult 36 0 none 1 #[9, 5] 2)]
+    blockTab := #[none, some ivFB1, some ivFB2], blocks := #[1, 2], bidLast := 2
+    freeValues := [3], cache := {} }
+
+/-- Its rewrite: `v9` invalidated, `v10 = MakeResult v5`; with both nodes ready, the schedule
+puts `v10` first. -/
+def ivGB2 : Block := mkB 2 .Ret p0 #[10] #[] #[⟨1, 0⟩] #[9, 10]
+
+def ivG : Func :=
+  { ivF with
+    valueTab := #[none, some (ivV 1 .InitMem 30 0 none 2 #[] 1),
+      some (ivV 2 .SP 17 0 none 1 #[] 1), none,
+      some (ivV 4 .LocalAddr 35 0 (some 3) 1 #[2, 1] 1),
+      some (ivV 5 .Zero 30 3000 (some 4) 1 #[4, 1] 1),
+      some (ivV 6 .Const64 12 3 none 1 #[] 1), some (ivV 7 .Const64 12 5 none 1 #[] 1),
+      some (ivV 8 .Mul64uhilo 37 0 none 0 #[6, 7] 1),
+      some (ivV 9 .Invalid 2 0 none 0 #[] 2),
+      some (ivV 10 .MakeResult 34 0 none 1 #[5] 2)]
+    blockTab := #[none, some ivFB1, some ivGB2] }
+
+theorem iv_checks :
+    (check ivCheckEnv ivF).toBool = true ∧ (check ivCheckEnv ivG).toBool = true ∧
+      ECCheck.ecCheck ivTabs ivF ivG = true ∧ schedule ivG ivGB2 = some #[10, 9] ∧
+      WBCheck.memFree (ivTabs.ty 37) = false := by
+  decide +kernel
+
+/-- **Non-vacuity of the invalidated-argument and `memFreeOps` relaxations**: the target
+schedules the invalidated self-move `v9` after its `MakeResult` `v10` (so `v9` does not precede
+it, `beforeB`), the source holds the tuple-typed `Mul64uhilo` `v8` (a shape that may hold a
+memory, `memFree` false), `ecCheck` accepts, and the target refines the source under monotone
+contracts that keep the caller's frame. -/
+theorem expandCalls_invalidLate_witness :
+    schedule ivG ivGB2 = some #[10, 9] ∧ ECCheck.beforeB [10, 9] 9 10 = false ∧
+      (ivF.value? 8).map (·.op) = some .Mul64uhilo ∧ WBCheck.memFree (ivTabs.ty 37) = false ∧
+      RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) ivTabs ivG ivTabs ivF := by
+  obtain ⟨hf, hg, hec, hs, hmf⟩ := iv_checks
+  exact ⟨hs, by decide, rfl, hmf, EC.cvSim_refines (ok_of_toBool hf) (ok_of_toBool hg)
+    (EC.ecRel_of_check (ok_of_toBool hf) (ok_of_toBool hg) hec)⟩
+
+/-- `MemInv.evalOp_memFreeOps_mems` at `Mul64uhilo` on `3` and `5` (any environment, context and
+frame): the result is `(0, 15)`, without memories. -/
+theorem memFreeOps_witness (env : Env) (ctx : Ctx) (fr : Frame) :
+    ∃ r, evalOp env ctx fr (ivV 8 .Mul64uhilo 37 0 none 0 #[6, 7] 1)
+        [.int .w64 3, .int .w64 5] (.tuple [.int .w64, .int .w64]) = .ok r ∧
+      r.mems = [] ∧ r = .tuple [.int .w64 0, .int .w64 15] :=
+  have h := TabsMod.evalOp_pure_of (env := env) (ctx := ctx) (fr := fr)
+    (v := ivV 8 .Mul64uhilo 37 0 none 0 #[6, 7] 1) (argv := [.int .w64 3, .int .w64 5])
+    (ty := .tuple [.int .w64, .int .w64]) (by decide) rfl
+  ⟨_, h, MemInv.evalOp_memFreeOps_mems rfl h, by rfl⟩
+
+/-- `MemInv.int3_mems` on a ternary op returning its first operand. -/
+theorem int3_mems_witness :
+    (GoFV.SSA.Sem.int3 .w64 (fun x _ _ => .int .w64 x) [.int .w64 1, .int .w64 2, .int .w64 3]).mems
+      = [] :=
+  MemInv.int3_mems .w64 _ (fun _ _ _ => rfl) _
+
+/-- `EC.ec_not_invalidated` on the witness's `Zero` `v5` (unconverted). -/
+theorem ec_not_invalidated_witness : ECCheck.invalidated ivG 5 = false :=
+  EC.ec_not_invalidated (f := ivF) (by decide +kernel)
 
 end GoFV.Proof.Witness
