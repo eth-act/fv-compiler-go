@@ -176,6 +176,9 @@ def compare(base, head, label, header, wt=None):
             if ab is None:
                 continue
             cb, ch = ab
+            # as for benchmarks below: the head's A/B minimum replaces an inflated recording
+            # (`lake lean` CPU; the recording is `lake build` CPU, ~0.3 s more)
+            lower(HISTORY, short(head), "module", {m: ch}, "cpu_s")
             real = ch > cb * 1.25 and ch - cb > 5
             notes.append(f"- A/B re-timing of `{m}` (interleaved, min of 2 each): "
                          f"{cb:.1f} s → {ch:.1f} s CPU: {'confirmed' if real else 'noise, dropped'}")
