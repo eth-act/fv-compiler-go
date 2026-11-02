@@ -14,6 +14,10 @@ registers in `G`, other atoms are ops that never get stuck. Afterwards `DenOK` h
 the atoms both frames hold are refined.
 -/
 
+-- Parallel elaboration (-j4) wrote this module's constants in a different order on every build
+-- (3 builds, 3 hashes), so importers missed the shared cache (#1; LEARNINGS.md).
+set_option Elab.async false
+
 namespace GoFV.Proof.AtomSim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof.Dom GoFV.Opt.RewriteCheck GoFV.Proof.Term
