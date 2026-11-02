@@ -103,18 +103,24 @@ theorem ecr_encodeResults_read {tabs : Tables} {act : Nat} :
         · cases he'; exact absurd hst' hst
         · exact ecr_encodeResults_read (res := r'') he hpw (fun q hq => hb q (List.mem_cons_of_mem _ hq)) p' r' hm hst'
 
+/-- The result addresses a call's tuple carries after its memory (`callOp`): the slot of each
+stack-assigned result, `poison` for a register-assigned one. -/
+def ecrAddrs (act : Nat) (outs : List ABIParam) : Val :=
+  .agg (outs.map fun p =>
+    if p.regs.isEmpty then .ptr ⟨.outargs act, BitVec.ofInt 64 p.offset⟩ else .poison)
 
 /-- **The source's call** (pre-`expand calls` form) returns its Go-typed results (of their
 shapes), the memory `encodeResults` returns (the stack results written into the outgoing area)
-and the result addresses. -/
-theorem ecr_callOp_src {env : Env} {ctx : Ctx} {u : Value} {argv : List Val} {y : Val}
+and the result addresses (`ecrAddrs`). -/
+theorem ecr_callOp_src' {env : Env} {ctx : Ctx} {u : Value} {argv : List Val} {y : Val}
     {abi : CallABI}
     (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
     (habi : callABI? ctx.tabs u.aux = some abi) (h : callOp env ctx u argv = .ok y) :
     ∃ rs m a m0 P, y = .tuple (rs ++ [.mem m, a]) ∧
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (ctx.tabs.ty p.type) = true)
         (outsOf abi) rs ∧
-      encodeResults ctx.tabs ctx.act (outsOf abi) rs m0 = some (P, m) := by
+      encodeResults ctx.tabs ctx.act (outsOf abi) rs m0 = some (P, m) ∧
+      a = ecrAddrs ctx.act (outsOf abi) := by
   unfold callOp at h
   rw [habi] at h
   revert h
@@ -160,10 +166,23 @@ theorem ecr_callOp_src {env : Env} {ctx : Ctx} {u : Value} {argv : List Val} {y 
             cases h
             have hlen := ecc_encodeResults_length he
             rw [ecc_retypeResults_length] at hlen
-            exact ⟨_, _, _, m', r.1, rfl, ecc_retypeResults hlen, he⟩
+            exact ⟨_, _, _, m', r.1, rfl, ecc_retypeResults hlen, he, rfl⟩
         | panicked e m' => rw [ho] at h; cases h
         | stuck msg => rw [ho] at h; cases h
     | _ => cases h
+
+/-- `ecr_callOp_src'` without the addresses. -/
+theorem ecr_callOp_src {env : Env} {ctx : Ctx} {u : Value} {argv : List Val} {y : Val}
+    {abi : CallABI}
+    (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
+    (habi : callABI? ctx.tabs u.aux = some abi) (h : callOp env ctx u argv = .ok y) :
+    ∃ rs m a m0 P, y = .tuple (rs ++ [.mem m, a]) ∧
+      List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (ctx.tabs.ty p.type) = true)
+        (outsOf abi) rs ∧
+      encodeResults ctx.tabs ctx.act (outsOf abi) rs m0 = some (P, m) := by
+  obtain ⟨rs, m, a, m0, P, h1, h2, h3, -⟩ := ecr_callOp_src' hpre habi h
+  exact ⟨rs, m, a, m0, P, h1, h2, h3⟩
+
 /-- `outsOK`'s stack slots: inside the area's window, disjoint and in order. -/
 theorem ecr_outsOK {tabs : Tables} {ps : List ABIParam} (h : outsOK tabs ps = true) :
     (∀ p ∈ ps, p.regs.isEmpty = true → 0 ≤ p.offset ∧ p.offset + (tabs.ty p.type).size < 2 ^ 24) ∧
@@ -400,7 +419,6 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
   have hrt : r.hasTy (tabs.ty p.type) = true := by
     obtain ⟨_, h1, h2⟩ := ecT_forall₂_get' hF u.auxInt.toInt.toNat r hr
     rw [hp] at h1; cases h1; exact h2
-  have hwf := hwfo p (List.mem_of_getElem? hp)
   -- the source's evaluation of `x`
   have htS : (Ctx.make tabs f).tys[u.id]?.getD .other = shapeOf (typeShapes tabs) f x := by
     rw [huid, shapeOf_eq]
@@ -424,7 +442,7 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
   rw [hmt] at hok
   dsimp only at hok
   simp only [Bool.and_eq_true, hpst, ↓reduceIte] at hok
-  obtain ⟨hlen, hstk⟩ := hok
+  obtain ⟨hlen, hwf, hstk⟩ := hok
   have hlen' : ls.length = (leaves (tabs.ty p.type)).length := beq_iff_eq.1 hlen
   have hls : stackLoads tabs (typeShapes tabs) f g x = ls := by
     rw [ecr_stackLoads hu hop hargs hcu hcall hi0 hp hpst, hmt]; rfl
@@ -560,5 +578,228 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
   rw [hLa] at h2
   rw [hslot]
   exact h2
+
+/-! ## Result addresses (`SelectNAddr`) -/
+
+/-- `stackOut?`: the call, its op, the result's index and assignment. -/
+theorem ecr_stackOut {tabs : Tables} {f : Func} {c : ID} {i : Int64} {p : ABIParam}
+    (h : stackOut? tabs f c i = some p) :
+    ∃ cu, f.value? c = some cu ∧ (callOpMap cu.op).isSome = true ∧ 0 ≤ i.toInt ∧
+      (callOuts tabs cu.aux)[i.toInt.toNat]? = some p ∧ p.regs.isEmpty = true := by
+  unfold stackOut? at h
+  cases hcu : f.value? c with
+  | none => rw [hcu] at h; cases h
+  | some cu =>
+    rw [hcu] at h
+    dsimp only at h
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      split at h
+      · rename_i p' hp'
+        split at h
+        · rename_i hst; cases h; exact ⟨cu, rfl, hc.1, hc.2, hp', hst⟩
+        · cases h
+      · cases h
+    · cases h
+
+theorem ecr_eval_selectNAddr {env : Env} {ctx : Ctx} {fr : Frame} {w : Value}
+    (h : w.op = .SelectNAddr) (hr : ∀ a ∈ w.args, Reg fr a) :
+    evalValue env ctx fr w = .ok ((Tuple.selectNAddr w.auxInt (w.args.toList.map (rv fr))).retype
+      (ctx.tys[w.id]?.getD .other)) := by
+  rw [ecT_eval_term (by rw [h]; decide) (by rw [h]; decide) hr, h]; rfl
+
+theorem ecr_eval_copy {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} (h : w.op = .Copy)
+    (hr : ∀ a ∈ w.args, Reg fr a) {q : ID} (hq : w.args.toList = [q]) :
+    evalValue env ctx fr w = .ok ((rv fr q).retype (ctx.tys[w.id]?.getD .other)) := by
+  rw [ecT_eval_term (by rw [h]; decide) (by rw [h]; decide) hr, h, hq]; rfl
+
+/-- `SelectNAddr` of a stack-assigned result of a call's tuple: the slot's address word. -/
+theorem ecr_selectNAddr_slot {ai : Int64} {act : Nat} {outs : List ABIParam} {p : ABIParam}
+    (hi0 : 0 ≤ ai.toInt) (hp : outs[ai.toInt.toNat]? = some p) (hpst : p.regs.isEmpty = true)
+    (rs : List Val) (m : Mem) :
+    Tuple.selectNAddr ai [.tuple (rs ++ [.mem m, ecrAddrs act outs])] =
+      (⟨.outargs act, BitVec.ofInt 64 p.offset⟩ : Ptr).word := by
+  have hl : (rs ++ [Val.mem m, ecrAddrs act outs]).getLast? = some (ecrAddrs act outs) := by
+    rw [show rs ++ [Val.mem m, ecrAddrs act outs] = (rs ++ [Val.mem m]) ++ [ecrAddrs act outs] by
+      simp, List.getLast?_concat]
+  simp only [Tuple.selectNAddr, hl, ecrAddrs, show ¬ ai.toInt < 0 by omega, ↓reduceIte,
+    List.getElem?_map, hp, Option.map_some, hpst]
+
+/-- The slot of offset `k` of activation 0's outgoing-arguments area converts to its address. -/
+theorem ecr_slot_word {k : Nat} (hk : k < 2 ^ 24) :
+    (ecsSlot k).word = .int .w64 (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 k) := by
+  have hc : (ecsSlot k).convertible = true := by
+    simp only [Ptr.convertible, ecsSlot, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]
+    omega
+  unfold Ptr.word
+  rw [hc]
+  rfl
+
+/-- `OffPtr [k]` of the area's start as a `uintptr`, at a pointer shape: slot `k`'s address
+word. -/
+theorem ecr_offPtr_word {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^ 24)
+    (e : Option Nat) :
+    (PtrOps.offPtr ai [(Val.ptr (ecsSlot 0)).retype (.int .w64)]).retype (.ptr e) =
+      (ecsSlot k).word := by
+  have h1 : (Val.ptr (ecsSlot 0)).retype (.int .w64) =
+      .int .w64 (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) := rfl
+  have hA : Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) = ecsSlot 0 :=
+    Ptr.ofAddr_addr (p := ecsSlot 0) (by decide) rfl
+  have hs : (ecsSlot 0).add (BitVec.ofNat 64 k) = ecsSlot k := by
+    simp only [Ptr.add, ecsSlot]
+    rw [show BitVec.ofNat 64 0 + BitVec.ofNat 64 k = BitVec.ofNat 64 k by simp]
+  have hw : ((Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0)).add
+      (BitVec.ofNat 64 k)).inWindow = true := by
+    rw [hA, hs]
+    simp only [Ptr.inWindow, ecsSlot, Blk.window?, decide_eq_true_eq, BitVec.toNat_ofNat]
+    omega
+  rw [h1, ecr_slot_word hk]
+  simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast]
+  unfold PtrOps.wordRes
+  rw [if_pos hw]
+  show Val.int .w64 _ = Val.int .w64 _
+  simp
+
+/-- **The address of a result address's `OffPtr [off]` of a `uintptr` `SP`** (`selAddrOK`): the
+register of the `OffPtr` holds the slot's address word. -/
+theorem ecr_addr_word {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID → Prop}
+    (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
+    {q : ID} {off : Int} (hok : spOffOK (typeShapes tabs) g (isNewB f) q off = true)
+    (hEq : E q) (hLq : L q)
+    (hint : ∀ qw, g.value? q = some qw → shapeOf (typeShapes tabs) g qw.args[0]! = .int .w64)
+    (hsp : ∀ qw, g.value? q = some qw → isNewB f qw.args[0]! = false →
+      EcTgtHolds env tabs g T qw.args[0]!) :
+    T.regs[q]? = some (some (ecsSlot off.toNat).word) := by
+  unfold spOffOK at hok
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hok
+  obtain ⟨⟨⟨-, h0⟩, h24⟩, hm⟩ := hok
+  obtain ⟨-, qw, yq, hqw, hcl, hyq, hevq⟩ := hNC q hEq
+  change g.value? q = some qw at hqw
+  obtain ⟨hqid, hLcl⟩ := hL q hLq qw hqw
+  rw [hqw] at hm
+  dsimp only at hm
+  simp only [Bool.and_eq_true, beq_iff_eq] at hm
+  obtain ⟨⟨⟨⟨hop, hai⟩, hsz⟩, hqsh⟩, hspop, -⟩ := hm
+  have hk : off.toNat < 2 ^ 24 := by omega
+  have hai' : qw.auxInt.toInt = (off.toNat : Int) := by rw [hai]; omega
+  have hS : EcTgtHolds env tabs g T qw.args[0]! := by
+    cases hn : isNewB f qw.args[0]! with
+    | false => exact hsp qw hqw hn
+    | true =>
+      have hm0 : qw.args[0]! ∈ qw.args := by
+        rw [← Array.mem_toList_iff, ec_args_one hsz]; exact List.mem_singleton_self _
+      exact ecs_holds_of_new hNC hL (hcl _ hm0 hn) (hLcl _ hm0 hn)
+  obtain ⟨sw, hsw, hspop'⟩ : ∃ sw, g.value? qw.args[0]! = some sw ∧ sw.op = .SP := by
+    cases h : g.value? qw.args[0]! with
+    | none => rw [h] at hspop; cases hspop
+    | some sw => rw [h] at hspop; exact ⟨sw, rfl, beq_iff_eq.1 hspop⟩
+  obtain ⟨hsid, ys, hys, hevs⟩ := hS sw hsw
+  have hysv := ecs_sp_val hsw hsid hspop' hevs
+  have hv := evalValue_term (by rw [hop]; decide) hevq
+  rw [hop, GoFV.Proof.Rules.opVal_pure (by decide), ec_args_one hsz, hqid, ← shapeOf_eq] at hv
+  simp only [List.map_cons, List.map_nil, rv_of hys, hysv, hint qw hqw] at hv
+  change yq = (PtrOps.offPtr qw.auxInt [Val.retype (.int .w64)
+    (.ptr (ecsSlot 0))]).retype (shapeOf (typeShapes tabs) g q) at hv
+  rw [hyq, hv]
+  split at hqsh
+  · next e he => rw [he, ecr_offPtr_word hai' hk e]
+  · cases hqsh
+
+/-- **The obligation of a result address** (`selAddrOK`): the source's `SelectNAddr [i] c` reads
+the slot's address from the call's tuple (`ecrAddrs`), the target's `Copy` of `OffPtr [off] SP`
+computes the same word (`Ptr.word`); given that the source register of the call holds its
+evaluation (`HS c`) and the target register of a source `SP` under the `OffPtr` holds its own
+(`HT`). -/
+theorem obl_selAddr {tabs : Tables} {f g : Func} {x c : ID} {u w cu cw : Value}
+    {HS HT : ID → Prop} {p : ABIParam}
+    (hu : f.value? x = some u) (hw : g.value? x = some w) (huid : u.id = x)
+    (hop : u.op = .SelectNAddr) (hargs : u.args.toList = [c]) (hsa : selAddr tabs f u = true)
+    (hst : stackOut? tabs f c u.auxInt = some p) (hcw : g.value? c = some cw)
+    (hcok : callOK tabs (typeShapes tabs) f g cu cw = true) (hcu : f.value? c = some cu)
+    (hok : selAddrOK tabs (typeShapes tabs) f g u w = true) (hsp0 : special f g x = false)
+    (L : ID → Prop) (hLx : L x)
+    (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
+    (hHS : HS c) (hHT : ∀ s ∈ addrSP tabs f g x, isNewB f s = false → HT s) :
+    Obl tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g x) HS HT x := by
+  intro u' w' hu' hw' env _ frS T _ _ E hN hEw hRT hRS _ hSH hTH
+  rw [hu] at hu'; cases hu'
+  rw [hw] at hw'; cases hw'
+  rw [funext (ecCv_of_not_special (tabs := tabs) hsp0)]
+  have hc0 : u.args[0]! = c := by
+    have h := congrArg (·[0]!) hargs
+    simpa using h
+  obtain ⟨cu', hcu', hcall, hi0, hp, hpst⟩ := ecr_stackOut hst
+  rw [hcu] at hcu'; cases hcu'
+  -- the target's node: `Copy q`
+  unfold selAddrOK at hok
+  rw [hc0, hst] at hok
+  dsimp only at hok
+  simp only [Bool.and_eq_true, beq_iff_eq] at hok
+  obtain ⟨⟨⟨⟨hwop, hwty⟩, hwsz⟩, hq⟩, hsh⟩ := hok
+  have hwq : w.args.toList = [w.args[0]!] := ec_args_one hwsz
+  have hqm : w.args[0]! ∈ w.args := by
+    rw [← Array.mem_toList_iff, hwq]; exact List.mem_singleton_self _
+  have hqn : isNewB f w.args[0]! = true := by
+    unfold spOffOK at hq; simp only [Bool.and_eq_true] at hq; exact hq.1.1.1
+  have hreg := ecr_addr_word (env := env) (T := T) hN hL hq (hEw _ hqm hqn)
+    ((hL x hLx w hw).2 _ hqm hqn)
+    (fun qw hqw => by
+      rw [hqw] at hsh; dsimp only at hsh
+      split at hsh
+      · assumption
+      · cases hsh)
+    (fun qw hqw hn => hTH _ (hHT _ (by
+      unfold addrSP loadSP
+      rw [hu, hw]
+      simp [hsa, hwop, hqw]) hn))
+  -- the source's call: its evaluation
+  have hcmem : c ∈ u.args := Array.mem_toList_iff.1 (by rw [hargs]; exact List.mem_singleton.2 rfl)
+  obtain ⟨yc, hyc⟩ := hRS c hcmem
+  obtain ⟨-, hoo, htup, -⟩ := ecA_callOK_facts hcw hcok
+  obtain ⟨op, k, abi, hmap, habi⟩ : ∃ op k abi, callOpMap cu.op = some (op, k) ∧
+      callABI? tabs cu.aux = some abi := by
+    unfold callOK at hcok
+    split at hcok
+    · rename_i op k abi hm ha; exact ⟨op, k, abi, hm, ha⟩
+    · cases hcok
+  have hco : callOuts tabs cu.aux = outsOf abi := by unfold callOuts; rw [habi]; rfl
+  obtain ⟨hopu, hpre, -, -⟩ := ecc_callOpMap hmap
+  obtain ⟨hcid, yc0, hyc0, hevc⟩ := hSH c hHS cu hcu
+  rw [hyc] at hyc0
+  cases hyc0
+  have hopu' : cu.op = .StaticLECall ∨ cu.op = .ClosureLECall ∨ cu.op = .InterLECall ∨
+      cu.op = .StaticCall ∨ cu.op = .ClosureCall ∨ cu.op = .InterCall := by
+    rcases hopu with h | h | h <;> simp [h]
+  rw [evalValue_of_regs (regs_of_ok hevc), ecc_evalOp_call hopu'] at hevc
+  cases hco0 : callOp env (Ctx.make tabs f) cu (cu.args.toList.map (rv frS)) with
+  | panic e m => rw [hco0] at hevc; cases hevc
+  | stuck msg => rw [hco0] at hevc; cases hevc
+  | ok y0 =>
+  rw [hco0] at hevc
+  obtain ⟨rs, m, a, m0, P, rfl, hF, -, ha⟩ := ecr_callOp_src' hpre habi hco0
+  obtain ⟨us, hus, husl, hue, hul⟩ := ecf_tupleOf htup
+  rw [ecf_valueTy] at hus
+  have hycv : yc = .tuple (rs ++ [.mem m, a]) := by
+    simp only [Res.bind, Res.ok.injEq] at hevc
+    rw [← hevc, hcid, tys_of_value hcu, Option.getD_some, hus, Val.retype_of_hasTy]
+    show Val.hasTyPre _ us = true
+    exact ecc_hasTyPre_call (tl := [a]) hF hue (by rw [husl, List.length_map]) hul m
+  subst hycv
+  rw [← hco] at ha
+  -- both evaluations: the slot's address word, at the same shape
+  have hp0 : 0 ≤ p.offset := by
+    obtain ⟨hbnd, -⟩ := ecr_outsOK hoo
+    exact (hbnd p (List.mem_of_getElem? hp) hpst).1
+  have hslot : (⟨.outargs (Ctx.make tabs f).act, BitVec.ofInt 64 p.offset⟩ : Ptr) =
+      ecsSlot p.offset.toNat := by
+    simp only [ecsSlot, ecs_ofInt hp0]; rfl
+  have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = (Ctx.make tabs f).tys[u.id]?.getD .other := by
+    rw [(hL x hLx w hw).1, huid, ← shapeOf_eq, ← shapeOf_eq]
+    unfold shapeOf; rw [hu, hw]; simp only [valueTy, hwty]
+  rw [ecr_eval_selectNAddr hop hRS, hargs, List.map_cons, List.map_nil, rv_of hyc, ha,
+    ecr_selectNAddr_slot hi0 hp hpst, hslot, ecr_eval_copy hwop hRT hwq, rv_of hreg, hty]
+  exact .ok (Sem.Refines.refl _)
 
 end GoFV.Proof.EC

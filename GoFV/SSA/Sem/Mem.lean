@@ -97,6 +97,13 @@ def Ptr.convertible (p : Ptr) : Bool :=
   | .outargs a => decide (a < 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
   | .temp _ _ | .global _ | .wbuf => false
 
+/-- A pointer as the word a program computes for it by address arithmetic: its concrete address
+when it converts back to itself (`Ptr.convertible`, `Ptr.ofAddr_addr`), else the pointer. -/
+def Ptr.word (p : Ptr) : Val :=
+  match p.convertible, p.addr? with
+  | true, some a => .int .w64 a
+  | _, _ => .ptr p
+
 /-- Pointer equality (`EqPtr`): the same block and offset (§3.3: pointers of different
 allocations are never equal; a pointer that left its allocation is `poison`). -/
 def Ptr.eq (p q : Ptr) : Bool := p.blk == q.blk && p.off == q.off

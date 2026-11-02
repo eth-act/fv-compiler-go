@@ -269,15 +269,29 @@ theorem Dep.left_arg {N : α → Prop} {D : α → List α} {a y : α} : Dep N D
   | .arg _ hy h => ⟨_, hy, h⟩
   | .trans h _ => h.left_arg
 
+/-- In a list without duplicates `A ++ a :: B`, every position of a member of `B` is after `a`'s. -/
+theorem idx_before {o A B : List α} {a y : α} (hnd : o.Nodup) (h : o = A ++ a :: B)
+    (hy : y ∈ B) : ∀ jy, o[jy]? = some y → ∃ ja < jy, o[ja]? = some a := by
+  intro jy hjy
+  obtain ⟨i, hi⟩ := List.getElem?_of_mem hy
+  have h1 : o[A.length + 1 + i]? = some y := by
+    rw [h, List.getElem?_append_right (by omega), show A.length + 1 + i - A.length = i + 1 by omega,
+      List.getElem?_cons_succ, hi]
+  have := idx_unique hnd hjy h1
+  refine ⟨A.length, by omega, ?_⟩
+  rw [h, List.getElem?_append_right (Nat.le_refl _), Nat.sub_self, List.getElem?_cons_zero]
+
 /-- **The panic transfer with the canonical rank, with exempt nodes.** `transfer_rank` for the
 source nodes outside a set `X` of target nodes that are no target node's arguments (whose
-source arguments need not `Feed` them). -/
+source arguments need not `Feed` them); an argument of a source node may also be a target node
+outside `X` that the target lists before it (a node whose target form no longer reads it). -/
 theorem transfer_rank_ex {N N' : α → Prop} {D D' : α → List α} {pure : α → Prop} {np : α → Bool}
     {o o' : List α} (hs : Topo N D o) (hk : PureFirst N D pure o) (ht : Topo N' D' o')
     (hnp : ∀ x, np x = true ↔ N x ∧ ¬ pure x) (hseq : o.filter np = o'.filter np)
     {r : α} {k k' : Nat} (hr : o[k]? = some r) (hr' : o'[k']? = some r) (hrp : np r = true)
     (X : α → Prop) (hX : ∀ a b, N' b → a ∈ D' b → ¬ X a)
-    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → ¬ X y → Feeds N N' D D' pure y a) :
+    (pres : ∀ a y, N a → N y → a ∈ D y → N' y → ¬ X y → Feeds N N' D D' pure y a ∨
+      (¬ X a ∧ ∀ jy, o'[jy]? = some y → ∃ ja < jy, o'[ja]? = some a)) :
     ∀ j y, j < k' → o'[j]? = some y → N y → ¬ X y → ∃ i < k, o[i]? = some y := by
   intro j
   induction j using Nat.strongRecOn with
@@ -320,7 +334,12 @@ theorem transfer_rank_ex {N N' : α → Prop} {D D' : α → List α} {pure : α
           exact ihb b hb hNb hNb i4 hk4 hib
       by_cases hpy : pure y
       · obtain ⟨a, ha, hNa, i2, hk2, _, hia⟩ := hk k i r y hki hr hi hpr hpy
-        exact feeds a (pres a y hNa hNy ha hN'y hXy) hNa i2 hk2 hia
+        rcases pres a y hNa hNy ha hN'y hXy with hf | ⟨hXa, hb⟩
+        · exact feeds a hf hNa i2 hk2 hia
+        · obtain ⟨ja, hjaj, hja⟩ := hb j hy
+          obtain ⟨i3, hi3, hai3⟩ := ih ja hjaj a (by omega) hja hNa hXa
+          have := idx_unique hs.nodup hia hai3
+          omega
       · have hny : np y = true := (hnp y).2 ⟨hNy, hpy⟩
         have hb : Before (o'.filter np) y r := (before_filter np hny hrp o').2 ⟨j, k', hj, hy, hr'⟩
         rw [← hseq] at hb
@@ -338,6 +357,6 @@ theorem transfer_rank {N N' : α → Prop} {D D' : α → List α} {pure : α �
     (pres : ∀ a y, N a → N y → a ∈ D y → N' y → Feeds N N' D D' pure y a) :
     ∀ j y, j < k' → o'[j]? = some y → N y → ∃ i < k, o[i]? = some y :=
   fun j y hj hy hNy => transfer_rank_ex hs hk ht hnp hseq hr hr' hrp (fun _ => False)
-    (fun _ _ _ _ h => h) (fun a y ha hy hay hy' _ => pres a y ha hy hay hy') j y hj hy hNy id
+    (fun _ _ _ _ h => h) (fun a y ha hy hay hy' _ => .inl (pres a y ha hy hay hy')) j y hj hy hNy id
 
 end GoFV.Proof.Order

@@ -70,7 +70,10 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
   have htr := transfer_rank_ex hspS.topo hspS.pureFirst hspT.topo (fun x => npIn_iff) hseq
     (k := pre.length) (k' := preT.length) (by rw [hof]; simp) (by rw [hogT]; simp) hnp
     (TgtInvalid g) (fun a b hb hab => B.invArgs a b hb hab)
-    (fun a y ha hy hay hy' hyi => B.feeds a y ha hy hay hy' hyi)
+    (fun a y ha hy hay hy' hyi => (B.feeds a y ha hy hay hy' hyi).imp_right fun ⟨hai, hsb⟩ =>
+      ⟨hai, by
+        obtain ⟨A, B', hAB, hyB⟩ := hsb og hsg
+        exact idx_before ogn hAB hyB⟩)
   have hGk : ∀ a, a ∉ oS.toList → G.regs[a]? = (setPhis ps frS.regs)[a]? :=
     fun a ha => g3 a fun hm => ha (hpreo a hm)
   have hGok : RegsOK (Ctx.make tabs f) G :=

@@ -470,7 +470,7 @@ theorem ecw_piece {tabs : Tables} {f g : Func} {c : ID} {cu cw : Value}
   rw [List.length_map] at husl
   have hycT : yc.hasTy (.tuple us) = true := by
     rw [ecT_shapeOf_value hcu] at hyc; rw [← hus]; exact hyc
-  have hwf := hwfo pp (List.mem_of_getElem? hp)
+  have hwf := hwfo pp (List.mem_of_getElem? hp) hpr
   have hi : ai.toInt = ((ai.toInt.toNat : Nat) : Int) := by omega
   rcases ecA_tuple_cases hycT with rfl | ⟨vs, rfl, hvs⟩
   · rw [ecA_selectN_poison, ecA_retype_poison, ecw_leafVals_poison hwf, List.getElem?_map] at ha

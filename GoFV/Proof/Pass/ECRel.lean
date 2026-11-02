@@ -245,7 +245,7 @@ structure CvBlock (fb gb : Block) : Prop where
     a ∈ argsOf (schedNodes f fb).toList y → NodeIn (schedNodes g gb).toList y → ¬ TgtInvalid g y →
     Feeds (NodeIn (schedNodes f fb).toList) (NodeIn (schedNodes g gb).toList)
       (argsOf (schedNodes f fb).toList) (argsOf (schedNodes g gb).toList)
-      (PureIn (schedNodes f fb).toList) y a
+      (PureIn (schedNodes f fb).toList) y a ∨ (¬ TgtInvalid g a ∧ SchedBefore g gb a y)
   invalid : ∀ x ∈ fb.values, TgtInvalid g x →
     (∀ y, cv x y = .poison) ∧ ∀ w, g.value? x = some w → NewEval tabs g w
   invArgs : ∀ a b, NodeIn (schedNodes g gb).toList b → a ∈ argsOf (schedNodes g gb).toList b →

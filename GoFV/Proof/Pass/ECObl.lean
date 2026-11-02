@@ -187,7 +187,7 @@ theorem eco_selectOK {tabs : Tables} {f g : Func} {x c : ID} {u w cu : Value}
       · rename_i ls hls
         simp only [Bool.and_eq_true] at h
         split at h
-        · exact eco_mkTree_stk hw hinv hls h.2
+        · exact eco_mkTree_stk hw hinv hls ((Bool.and_eq_true _ _).1 h.2).2
         · exact eco_mkTree_sel hw hinv hls h.2
       · cases h
     · cases h

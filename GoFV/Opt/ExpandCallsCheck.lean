@@ -475,13 +475,15 @@ def stackOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : Li
 
 /-! ## Stack-assigned results -/
 
-/-- The result parameters' shapes: a register-assigned one has as many registers as leaves, a
-stack-assigned one a slot inside the outgoing-arguments area's window; both well-formed; the
-stack slots disjoint, in increasing offset order. -/
+/-- The result parameters' shapes: a register-assigned one well-formed with as many registers as
+leaves, a stack-assigned one (any shape: the call writes its encoding into its slot, and the
+source reads it back by its address, `SelectNAddr`, or by `selectOK`'s leaf loads, which need
+`wf`) a slot inside the outgoing-arguments area's window; the stack slots disjoint, in
+increasing offset order. -/
 def outsOK (tabs : Tables) (ps : List ABIParam) : Bool :=
-  ps.all (fun p => wf (tabs.ty p.type) &&
+  ps.all (fun p =>
     (if p.regs.isEmpty then decide (0 ≤ p.offset) && decide (p.offset + (tabs.ty p.type).size < 2 ^ 24)
-     else (leaves (tabs.ty p.type)).length == p.regs.size)) &&
+     else wf (tabs.ty p.type) && (leaves (tabs.ty p.type)).length == p.regs.size)) &&
     slotsSorted tabs (ps.filter (·.regs.isEmpty))
 
 /-- Value `m` of `g` is the memory of call `c` with `k` register pieces: `SelectN [k] c` of shape
@@ -743,12 +745,43 @@ def selectOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) (u w : Value)
             match mkTree sh g (isNewB f) (tabs.types.size + 1) x t with
             | some ls => ls.length == (leaves t).length &&
                 if p.regs.isEmpty then
-                  stkLeavesOK sh g (isNewB f) c (leafTys tabs outs).length p.offset (leaves t) ls
+                  wf t && stkLeavesOK sh g (isNewB f) c (leafTys tabs outs).length p.offset (leaves t) ls
                 else selLeavesOK g c first 0 ls
             | none => false
         | none => false
     | none => false
   | _ => false
+
+/-- The result `i` of the call `c` of `f` is stack-assigned: its assignment if so. -/
+def stackOut? (tabs : Tables) (f : Func) (c : ID) (i : Int64) : Option ABIParam :=
+  match f.value? c with
+  | some cu =>
+    if (callOpMap cu.op).isSome && decide (0 ≤ i.toInt) then
+      match (callOuts tabs cu.aux)[i.toInt.toNat]? with
+      | some p => if p.regs.isEmpty then some p else none
+      | none => none
+    else none
+  | none => none
+
+/-- `u` is the address `SelectNAddr [i] c` of a stack-assigned result of a converted call `c`. -/
+def selAddr (tabs : Tables) (f : Func) (u : Value) : Bool :=
+  u.op == .SelectNAddr && u.args.size == 1 && (stackOut? tabs f u.args[0]! u.auxInt).isSome
+
+/-- **result address**: `u = SelectNAddr [i] c` (`selAddr`) became `Copy q` of the same type
+(`rewriteSelectOrArg`'s `offsetFrom(SP, OffsetOfResult)`), `q` a new `OffPtr [off] SP` at the
+result's slot (`spOffOK`) of an `SP` of shape `uintptr`: both evaluate to the slot's address
+word (`Ptr.word`). -/
+def selAddrOK (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) : Bool :=
+  match stackOut? tabs f u.args[0]! u.auxInt with
+  | some p =>
+    w.op == .Copy && w.type == u.type && w.args.size == 1 &&
+      spOffOK sh g (isNewB f) w.args[0]! p.offset &&
+      (match g.value? w.args[0]! with
+       | some qw => (match shapeOf sh g qw.args[0]! with
+           | .int .w64 => true
+           | _ => false)
+       | none => false)
+  | none => false
 
 /-- **result**: a `MakeResult` of the function's results becomes the register pieces of its
 register-assigned results (selector chains) on a chain of new `Store`s of the leaves of its
@@ -833,6 +866,7 @@ def valueOK (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : Bool :=
       selectOK tabs sh f g x u w
     else if u.op == .Store && w.op == .Copy then wideStoreOK tabs sh f g u w
     else if w.op == .Invalid then Sem.prio u.op == 0 && u.op != .Phi
+    else if selAddr tabs f u then selAddrOK tabs sh f g u w
     else if u.op == .Arg && !identOK f g u w then argOK tabs sh f g x u
     else identOK f g u w
   | _, _ => false
@@ -1156,6 +1190,20 @@ def loadSP (g : Func) (l : ID) : ID :=
   ((g.value? l).bind fun w => (g.value? w.args[0]!).map (·.args[0]!)).getD l
 def loadMem (g : Func) (l : ID) : ID := ((g.value? l).map (·.args[1]!)).getD l
 
+/-- `a` is the call whose stack-assigned result's address value `y` of `f` is (`selAddr`); the
+target's `Copy` of `y` does not read it. -/
+def selAddrArgB (tabs : Tables) (f : Func) (y a : ID) : Bool :=
+  match f.value? y with
+  | some u => selAddr tabs f u && u.args[0]! == a
+  | none => false
+
+/-- The `SP` under the address that the target's `Copy` of a result address `x` of `f`
+(`selAddrOK`) reads; none for other values. -/
+def addrSP (tabs : Tables) (f g : Func) (x : ID) : List ID :=
+  match f.value? x, g.value? x with
+  | some u, some w => if selAddr tabs f u && w.op == .Copy then [loadSP g x] else []
+  | _, _ => []
+
 /-- `c` occurs in `l`, and no node with `np` comes before its first occurrence. -/
 def noNpUntil (np : ID → Bool) : List ID → ID → Bool
   | [], _ => false
@@ -1217,13 +1265,17 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
     -- every argument of a source node reaches it in `g` (but those of a value the pass
     -- invalidated, and the `Dereference` a call's `Move` copies, whose own arguments reach it);
     -- a wide call result (dead in `g`) is pure and its arguments reach it instead
-    -- (`Order.Feeds.through`)
+    -- (`Order.Feeds.through`); the call of a result address (`selAddr`, whose `Copy` in `g`
+    -- does not read it) precedes it in `g`'s schedule
     fb.values.all (fun y => !nodeF y || invalidated g y ||
       match f.value? y with
       | some u => u.args.all fun a => (!nodeF a || wideSel f g a || (nodeG a &&
           (depB g nodeG (isNewB f) fuel a y || depB g nodeG (fun _ => true) fuel a y)) ||
           (moveArgB f g y a && throughB f g nodeF nodeG fuel a y) ||
-          (invalidated g a && throughB f g nodeF nodeG fuel a y)) &&
+          (invalidated g a && throughB f g nodeF nodeG fuel a y) ||
+          (selAddrArgB tabs f y a && !invalidated g a && match schedule g gb with
+            | some og => beforeB og.toList a y
+            | none => false)) &&
           (!wideSel f g a || throughB f g nodeF nodeG fuel a y)
       | none => false) &&
     -- no node of `gb` reads an invalidated value
@@ -1282,12 +1334,15 @@ def blockOK (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : Fu
          | none => true
      | none => false) &&
     -- stack-result loads: the `SP` under the address and the call's memory are held (new,
-    -- placed in a strict dominator, or the result depends on them)
-    fb.values.all (fun x => (stackLoads tabs sh f g x).all fun l =>
+    -- placed in a strict dominator, or the result depends on them); so is the `SP` under a
+    -- result address
+    fb.values.all (fun x => (stackLoads tabs sh f g x).all (fun l =>
       (isNewB f (loadSP g l) || placedSDom g anc fb.id (loadSP g l) ||
         depB g nodeG (fun _ => true) fuel (loadSP g l) x) &&
       (isNewB f (loadMem g l) || placedSDom g anc fb.id (loadMem g l) ||
         depB g nodeG (fun _ => true) fuel (loadMem g l) x)) &&
+      (addrSP tabs f g x).all fun s =>
+        isNewB f s || placedSDom g anc fb.id s || depB g nodeG (fun _ => true) fuel s x) &&
     -- result stores (of the `Ret` control): values of the block, with no source non-pure node
     -- after one in `g`'s schedule (a store runs only when the source completes the block); the
     -- source memory reaches them; the `LocalAddr` of a self-move, if a value of the block, is

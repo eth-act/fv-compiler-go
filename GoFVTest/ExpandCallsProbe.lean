@@ -21,10 +21,11 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ECCheck
 namespace GoFVTest.ExpandCallsProbe
 
 /-- The class name of source value `u`. -/
-def className (f g : Func) (u w : Value) : String :=
+def className (tabs : Tables) (f g : Func) (u w : Value) : String :=
   if (callOpMap u.op).isSome then s!"call {u.op.name}"
   else if u.op == .MakeResult then "result"
   else if u.op == .SelectN && u.args.size == 1 && converted f u.args[0]! then "select"
+  else if selAddr tabs f u && w.op != .Invalid then s!"result address (→{w.op.name})"
   else if u.op == .Arg && !identOK f g u w then "arg"
   else s!"ident {u.op.name}→{w.op.name}"
 
@@ -149,7 +150,7 @@ def wideWhy (sh : Array Ty) (f g : Func) (x : ID) (u : Value) : String := Id.run
 def valueWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (x : ID) : String :=
   match f.value? x, g.value? x with
   | some u, some w =>
-    let c := className f g u w
+    let c := className tabs f g u w
     if c.startsWith "call" then s!"{c}: {callWhy tabs sh f g u w}"
     else if c == "result" then
       let outs := ownOuts tabs f

@@ -279,7 +279,8 @@ go to memory). -/
 theorem ecc_encodeResults {tabs : Tables} {act : Nat} :
     {ps : List ABIParam} → {rs : List Val} →
       List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) ps rs →
-      (∀ p ∈ ps, wf (tabs.ty p.type) = true) → {m : Mem} → {res : List Val × Mem} →
+      (∀ p ∈ ps, p.regs.isEmpty = false → wf (tabs.ty p.type) = true) → {m : Mem} →
+      {res : List Val × Mem} →
       encodeResults tabs act ps rs m = some res → res.1 = ecfPieces tabs ps rs
   | _, _, .nil, _, _, _, h => by
     simp only [encodeResults, Option.some.injEq] at h
@@ -305,7 +306,7 @@ theorem ecc_encodeResults {tabs : Tables} {act : Nat} :
         cases h
         simp only [ecfPieces, List.zip_cons_cons, List.flatMap_cons,
           regLeafVals_reg (Bool.eq_false_iff.2 hst), ← ih he,
-          toPieces_eq_leafVals (hw p List.mem_cons_self) hr]
+          toPieces_eq_leafVals (hw p List.mem_cons_self (Bool.eq_false_iff.2 hst)) hr]
 
 theorem ecc_retypeResults {tabs : Tables} :
     {ps : List ABIParam} → {rs : List Val} → rs.length = ps.length →
@@ -372,7 +373,8 @@ theorem ecc_callOp {env : Env} (hE : env.Mono) {ctx ctx' : Ctx} (htabs : ctx'.ta
     (hpre : (u.op == .StaticCall || u.op == .ClosureCall || u.op == .InterCall) = false)
     (hpost : (w.op == .StaticCall || w.op == .ClosureCall || w.op == .InterCall) = true)
     (haux : w.aux = u.aux) {abi : CallABI} (habi : callABI? ctx.tabs u.aux = some abi)
-    (houts : ∀ p ∈ outsOf abi, wf (ctx.tabs.ty p.type) = true) {argv argv' G P' : List Val} {mv mv' : Val}
+    (houts : ∀ p ∈ outsOf abi, p.regs.isEmpty = false → wf (ctx.tabs.ty p.type) = true)
+    {argv argv' G P' : List Val} {mv mv' : Val}
     (hct : (callTarget ctx u argv).2.2 = G ++ [mv]) (hct' : (callTarget ctx' w argv').2.2 = P' ++ [mv'])
     (hcallee : (callTarget ctx u argv).1 = none ∨ (callTarget ctx' w argv').1 = (callTarget ctx u argv).1)
     (hclo : OptRefines (callTarget ctx u argv).2.1 (callTarget ctx' w argv').2.1)

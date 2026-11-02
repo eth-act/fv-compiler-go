@@ -50,14 +50,14 @@ theorem tailOp_eq {op : Op} (h : tailOp op = true) : op = .TailLECall ∨ op = .
   · exact .inr rfl
   · cases h
 
-/-- The result shapes of an accepted call (`outsOK`): each well-formed. -/
+/-- The register-assigned result shapes of an accepted call (`outsOK`): each well-formed. -/
 theorem ec_outsOK_wf {tabs : Tables} {ps : List ABIParam} (h : outsOK tabs ps = true) :
-    ∀ p ∈ ps, wf (tabs.ty p.type) = true := by
-  intro p hp
+    ∀ p ∈ ps, p.regs.isEmpty = false → wf (tabs.ty p.type) = true := by
+  intro p hp hr
   unfold outsOK at h
   rw [Bool.and_eq_true, List.all_eq_true] at h
   have := h.1 p hp
-  rw [Bool.and_eq_true] at this
+  simp only [hr, Bool.false_eq_true, ↓reduceIte, Bool.and_eq_true] at this
   exact this.1
 
 /-- The register pieces of the results `outs` of a tuple `(results…, rest…)` (none for a

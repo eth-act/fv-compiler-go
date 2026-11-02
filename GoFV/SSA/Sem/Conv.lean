@@ -1,4 +1,5 @@
 import GoFV.SSA.Sem.Cmp
+import GoFV.SSA.Sem.Mem
 
 /-!
 # Integer conversions, constants, tuples (`docs/plans/semantics.md` §4.5, §4.8)
@@ -41,14 +42,16 @@ def selectN (auxInt : Int64) : List Val → Val
   | _ => .poison
 
 /-- `SelectNAddr [i]`: the address of stack-assigned result `i` of a call, which the call's
-tuple carries after its memory (`callOp`); `poison` for a register result or a non-call. -/
+tuple carries after its memory (`callOp`), as the word address arithmetic computes it
+(`Ptr.word`: after `expand calls` it is `OffPtr [off] SP` of the `uintptr` `SP`, an integer
+word); `poison` for a register result or a non-call. -/
 def selectNAddr (auxInt : Int64) : List Val → Val
   | [.tuple vs] =>
     match vs.getLast? with
     | some (.agg addrs) =>
       if auxInt.toInt < 0 then .poison
       else match addrs[auxInt.toInt.toNat]? with
-        | some (.ptr p) => .ptr p
+        | some (.ptr p) => p.word
         | _ => .poison
     | _ => .poison
   | _ => .poison
