@@ -131,7 +131,8 @@ theorem lastMarks_spec {f g : Func} {x : ID} (h : (lastMarks f g).getD x false =
 theorem lazyOK_some {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : ID}
     (h : lazyOK tabs f g K Lst = some (some (wa, c0))) :
     (∃ w, g.value? wa = some w ∧ w.op = .Addr ∧ symName? tabs w.aux = some "runtime.writeBarrier" ∧
-      isPtrTy (tabs.ty w.type) = true ∧ w.args.size = 1 ∧ w.args[0]! ∈ vals g g.entry) ∧
+      isPtrTy (tabs.ty w.type) = true ∧ w.args.size = 1 ∧ w.args[0]! ∈ vals g g.entry ∧
+      ∃ v, g.value? w.args[0]! = some v ∧ v.op = .SB ∧ v.args = #[]) ∧
     (∃ w, g.value? c0 = some w ∧ w.op = .Const32 ∧ w.auxInt = (0 : Int64) ∧ w.args = #[] ∧
       tabs.ty w.type = .int .w32) ∧
     wa ∈ vals g g.entry ∧ c0 ∈ vals g g.entry ∧
@@ -150,19 +151,23 @@ theorem lazyOK_some {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0 : I
   | nil => simp [pure] at h
   | cons s ss =>
     simp only [Option.bind_eq_some_iff, pure, Option.some.injEq] at h
-    obtain ⟨u1, hall, w, hw, cv, hcv, u2, hwa, u3, hc0, u4, hge, u5, -, heq⟩ := h
+    obtain ⟨u1, hall, w, hw, cv, hcv, u2, hwa, u3, hc0, u4, hge, u5, hsb, u6, -, heq⟩ := h
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     have hall := guard_some hall
     have hwa := guard_some hwa
     have hc0 := guard_some hc0
     have hge := guard_some hge
+    have hsb := guard_some hsb
+    obtain ⟨v, hv, hsb⟩ := (Option.any_eq_true _ _).1 hsb
+    simp only [Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at hsb
     simp only [Bool.and_eq_true, beq_iff_eq] at hwa
     simp only [Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at hc0
     simp only [Bool.and_eq_true, Array.contains_iff_mem] at hge
     obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := hwa
     obtain ⟨⟨⟨h5, h6⟩, h7⟩, h8⟩ := hc0
-    refine ⟨⟨w, hw, h1, h2, h3, h4, hge.2⟩, ⟨cv, hcv, h5, h6, h7, ?_⟩, hge.1.1, hge.1.2, ?_⟩
+    refine ⟨⟨w, hw, h1, h2, h3, h4, hge.2, v, hv, hsb⟩, ⟨cv, hcv, h5, h6, h7, ?_⟩, hge.1.1, hge.1.2,
+      ?_⟩
     · split at h8
       · assumption
       · cases h8
@@ -194,7 +199,7 @@ theorem lazyOK_not_held {tabs : Tables} {f g : Func} {K Lst : Array Bool} {wa c0
   | nil => simp [pure] at h
   | cons s ss =>
     simp only [Option.bind_eq_some_iff, pure, Option.some.injEq] at h
-    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, u5, hnh, heq⟩ := h
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, u5, hnh, heq⟩ := h
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     have hnh := guard_some hnh
@@ -219,7 +224,7 @@ theorem lazyOK_none {tabs : Tables} {f g : Func} {K Lst : Array Bool}
     exact List.eq_nil_iff_forall_not_mem.2 fun r hr => List.not_mem_nil (hmem b hb rs l hc r hr)
   | cons s ss =>
     simp only [Option.bind_eq_some_iff, pure, Option.some.injEq] at h
-    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, heq⟩ := h
+    obtain ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, heq⟩ := h
     cases heq
 
 private theorem arr_one {α : Type} [Inhabited α] {a : Array α} (h : a.size = 1) : a = #[a[0]!] := by

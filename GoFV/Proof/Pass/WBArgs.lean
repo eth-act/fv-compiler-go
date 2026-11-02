@@ -564,9 +564,9 @@ private theorem lazy_info (S : Setup c b B rs l) {a : ID}
     · exact ⟨h1, h3, w1, hw1, .inl hop1⟩
     · exact ⟨h2, h3, w2, hw2, .inr hop2⟩
 
-/-- The `SB` the flag address reads is listed in the entry. -/
+/-- The `SB` the flag address reads: an argument-free `SB` listed in the entry. -/
 theorem sb_entry (S : Setup c b B rs l) {a : ID} (hl : c.isSb a = true) :
-    a ∈ vals c.g c.f.entry := by
+    a ∈ vals c.g c.f.entry ∧ ∃ v, c.g.value? a = some v ∧ v.op = .SB ∧ v.args = #[] := by
   unfold Ctx.isSb Ctx.sbOf at hl
   cases hz : c.lazy with
   | none => rw [hz] at hl; simp at hl
@@ -575,10 +575,10 @@ theorem sb_entry (S : Setup c b B rs l) {a : ID} (hl : c.isSb a = true) :
     rw [hz] at hl
     obtain ⟨-, -, -, -, -, hlz⟩ := ctxOf_spec S.ctx
     rw [hz] at hlz
-    obtain ⟨⟨w1, hw1, -, -, -, -, hmem⟩, -⟩ := lazyOK_some hlz
+    obtain ⟨⟨w1, hw1, -, -, -, -, hmem, hsb⟩, -⟩ := lazyOK_some hlz
     simp only [Option.bind_some, hw1, beq_iff_eq] at hl
-    rw [getElem!_def, hl] at hmem
-    rw [← S.entry]; exact hmem
+    rw [getElem!_def, hl] at hmem hsb
+    rw [← S.entry]; exact ⟨hmem, hsb⟩
 
 /-- The flag address, constant or `SB`: listed in the entry. -/
 private theorem entry_mem (S : Setup c b B rs l) {a : ID}
@@ -588,7 +588,7 @@ private theorem entry_mem (S : Setup c b B rs l) {a : ID}
   · obtain ⟨hm, he, -⟩ := lazy_info S (.inl hl); exact ⟨hm, he⟩
   · obtain ⟨hm, he, -⟩ := lazy_info S (.inr hl); exact ⟨hm, he⟩
   · obtain ⟨ce, hg⟩ := S.wg
-    exact ⟨sb_entry S hl, by rw [← S.entry]; exact hg.entry⟩
+    exact ⟨(sb_entry S hl).1, by rw [← S.entry]; exact hg.entry⟩
 
 /-- When `b` is not the entry, no block of its chain is `g`'s entry. -/
 theorem entry_not_chain (S : Setup c b B rs l) (hb : b ≠ c.f.entry) :
@@ -634,6 +634,59 @@ theorem avail_not_t (S : Setup c b B rs l) {Gr : Frame} {k : Nat} {r : Run} {a :
     exact entry_not_chain S hb r.sp.t
       (List.mem_append_right _ (List.mem_map.2 ⟨r, List.mem_of_getElem? hr, rfl⟩))
       (listed_once S htb he hx hm)
+
+/-- A value listed in no block of the chain has no role of a run. -/
+private theorem roleRun_unlisted (S : Setup c b B rs l) {x : ID}
+    (hx : ∀ s ∈ segsOf b rs ++ rs.map (·.sp.t), x ∉ vals c.g s) :
+    ∀ (rs' : List Run) (k : Nat), (∀ r ∈ rs', r ∈ rs) → roleRun c.g x rs' k = .none
+  | [], _, _ => rfl
+  | r :: rs', k, hsub => by
+    have hr : r ∈ rs := hsub r List.mem_cons_self
+    obtain ⟨j, hj⟩ := List.getElem?_of_mem hr
+    obtain ⟨h1, h2, -, -, -, -, -, -, htgt, hncE, hload, hflag, -⟩ := runOK_spec (run_ok S hj)
+    have hc : x ∉ vals c.g r.sp.c := hx _ (List.mem_append_left _ (List.mem_of_getElem? h1))
+    have he : x ∉ vals c.g r.sp.e := hx _ (List.mem_append_left _ (List.mem_of_getElem? h2))
+    have ht : x ∉ vals c.g r.sp.t :=
+      hx _ (List.mem_append_right _ (List.mem_map.2 ⟨r, hr, rfl⟩))
+    rw [roleRun, if_neg (by simp only [beq_iff_eq]; rintro rfl; exact hc hload),
+      if_neg (by simp only [beq_iff_eq]; rintro rfl; exact hc hflag),
+      if_neg (by simp only [beq_iff_eq]; rintro rfl; exact he (phi_mem S hj)),
+      if_neg (by simp only [beq_iff_eq]; intro h; exact he (hncE x h))]
+    cases hk : r.tgt.idxOf? x with
+    | some k' =>
+      obtain ⟨hlt, heq, -⟩ := List.idxOf?_eq_some_iff.1 hk
+      exact absurd (htgt x (heq ▸ List.getElem_mem hlt)) he
+    | none =>
+      dsimp only
+      rw [if_neg (by rw [Array.contains_iff_mem]; exact ht),
+        if_neg (by simp only [Bool.and_eq_true, Array.contains_iff_mem]; exact fun h => hc h.1)]
+      exact roleRun_unlisted S hx rs' (k + 1) fun r' hr' => hsub r' (List.mem_cons_of_mem _ hr')
+
+/-- The `SB` the flag address reads, outside the entry's chain: the flag address, the constant,
+held, or lazy. -/
+theorem sb_role (S : Setup c b B rs l) (hb : b ≠ c.f.entry) {a : ID} (hl : c.isSb a = true) :
+    c.isWbaddr a = true ∨ c.isConst0 a = true ∨ (c.held a = true ∧ c.roleOf rs a = .held) ∨
+      c.roleOf rs a = .lazy := by
+  obtain ⟨haE, v, hv, hop, hargs⟩ := sb_entry S hl
+  by_cases h1 : c.isWbaddr a = true
+  · exact .inl h1
+  by_cases h2 : c.isConst0 a = true
+  · exact .inr (.inl h2)
+  right; right
+  unfold Ctx.roleOf
+  rw [if_neg h1, if_neg h2]
+  by_cases h3 : c.held a = true
+  · left; exact ⟨h3, by rw [if_pos h3]⟩
+  right
+  have hEg : c.f.entry ∈ c.g.blocks := (entry_mem S (.inr (.inr hl))).2
+  have hun : ∀ s ∈ segsOf b rs ++ rs.map (·.sp.t), a ∉ vals c.g s := fun s hs has =>
+    entry_not_chain S hb s hs (listed_once S
+      ((blockOK_spec S.ok S.hB S.ch).2.2.2.1 s hs) hEg has haE)
+  rw [if_neg h3, roleRun_unlisted S hun rs 0 fun _ h => h]
+  dsimp only
+  unfold otherRole
+  rw [hv]
+  simp [hop, hargs]
 
 /-- The `Phi`s of the first segment are kept `Phi`s of `B` with held arguments. -/
 theorem phi_seg0 (S : Setup c b B rs l) {s x : ID} {v : Value} (hs : (segsOf b rs)[0]? = some s)

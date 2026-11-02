@@ -102,7 +102,7 @@ theorem phis_next (S : Setup c b B rs l) {Gr : Frame} {k : Nat} {r : Run} (hr : 
     {F : Frame} {e : Nat} (he : e < 2)
     (hz : ∀ a, #[r.sp.mem, r.memThen][e]? = some a →
       (r.memThen = r.sp.mem ∨ c.roleOf rs r.memThen = .sel1 k ∨
-        c.roleOf rs r.memThen = .bstore k) →
+        c.roleOf rs r.memThen = .bstore k ∨ c.roleOf rs r.memThen = .seln k) →
       ∃ z, F.regs[a]? = some (some z) ∧ ∃ M m, RunMem Gr rs k M ∧ z = .mem m ∧ W M m) :
     Phis c b rs Gr (k + 1) F e := by
   intro s hs x hx v hv hp
@@ -210,10 +210,12 @@ theorem seg_step (S : Setup c b B rs l) {env : Env} {Gr fr0 frT : Frame}
           S.avail_not_t hr (S.avail_of_availIn hG (S.mem_held hr).2) ((hv _).2 hm)
         exact ⟨_, by rw [hout2 _ hmn]; exact hmem, M, M, hM, rfl, W.refl hnob⟩
       · have hin : r.memThen ∈ vals c.g r.sp.t := by
-          rcases hmt with h | h
+          rcases hmt with h | h | h
           · obtain ⟨r', hr', hx, -⟩ := roleOf_then (o := .Select1) (j := k) (by rw [h]; rfl)
             rw [hr] at hr'; cases hr'; exact hx
           · obtain ⟨r', hr', hx, -⟩ := roleOf_then (o := .Store) (j := k) (by rw [h]; rfl)
+            rw [hr] at hr'; cases hr'; exact hx
+          · obtain ⟨r', hr', hx, -⟩ := roleOf_then (o := .SelectN) (j := k) (by rw [h]; rfl)
             rw [hr] at hr'; cases hr'; exact hx
         obtain ⟨z, hz, hq⟩ := hQ2 _ (.inr ((hv _).1 hin))
         refine ⟨z, hz, ?_⟩
@@ -223,9 +225,16 @@ theorem seg_step (S : Setup c b B rs l) {env : Env} {Gr fr0 frT : Frame}
           rw [hr] at hr'; cases hr'
           rw [MemAt, hMr] at hM'; cases hM'
           exact ⟨M, m, hM, rfl, hB.w hnob⟩
-        rcases hmt with h | h
+        rcases hmt with h | h | h
         · simp only [QR, h] at hq; exact key z hq
         · simp only [QR, h] at hq; exact key z hq
+        · simp only [QR, h] at hq
+          obtain ⟨r', M', m, hr', hM', rfl, hB⟩ := hq
+          rw [hr] at hr'; cases hr'
+          rw [MemAt, hMr] at hM'; cases hM'
+          rcases hB with hB | hB
+          · exact ⟨M, m, hM, rfl, hB.w hnob⟩
+          · rw [hB]; exact ⟨M, M, hM, rfl, W.refl hnob⟩
 
 /-- **Walking the chain** to segment `k`. -/
 theorem walk_to (S : Setup c b B rs l) {env : Env} {Gr fr0 frT : Frame}

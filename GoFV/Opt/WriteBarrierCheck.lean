@@ -571,7 +571,8 @@ def blockOK (b : ID) : Bool :=
 end Ctx
 
 /-- The flag address and `Const32 [0]` the runs use, checked once: new values of `g`'s entry
-with the expected fields, the same for every split. -/
+with the expected fields (the flag address reads an `SB` of the entry), the same for every
+split. -/
 def lazyOK (tabs : Tables) (f g : Func) (K Lst : Array Bool) : Option (Option (ID × ID)) := do
   let runs ← f.blocks.toList.mapM (chainRuns? f g ·)
   let splits := runs.flatMap fun (rs, _) => rs.map (·.sp)
@@ -587,6 +588,7 @@ def lazyOK (tabs : Tables) (f g : Func) (K Lst : Array Bool) : Option (Option (I
     guard (c0.op == .Const32 && c0.auxInt == (0 : Int64) && c0.args.isEmpty &&
       (match tabs.ty c0.type with | .int .w32 => true | _ => false))
     guard (ge.contains s.wbaddr && ge.contains s.const0 && ge.contains wa.args[0]!)
+    guard ((g.value? wa.args[0]!).any fun v => v.op == .SB && v.args.isEmpty)
     -- the flag address is new (`writebarrier` creates it), so it holds no source value
     guard (!K.getD s.wbaddr false && !Lst.getD s.wbaddr false)
     return some (s.wbaddr, s.const0)
