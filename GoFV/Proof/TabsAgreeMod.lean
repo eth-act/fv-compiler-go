@@ -153,35 +153,35 @@ end
 section
 variable {U : Blk → Prop}
 
-theorem byte_avoids_of (hU : DAE.TempU U) {x : Byte} (h : ∀ n, Byte.Avoids (· = .temp 0 n) x) :
+theorem byte_avoids_of (hU : DAE.TempU U) {x : Byte} (h : ∀ a n, Byte.Avoids (· = .temp a n) x) :
     Byte.Avoids U x := by
   cases x with
-  | frag p k => intro hu; obtain ⟨n, hn⟩ := hU _ hu; exact h n hn
+  | frag p k => intro hu; obtain ⟨a, n, hn⟩ := hU _ hu; exact h a n hn
   | _ => trivial
 
-theorem mem_avoids_of (hU : DAE.TempU U) {m : Mem} (h : ∀ n, m.Avoids (· = .temp 0 n)) :
+theorem mem_avoids_of (hU : DAE.TempU U) {m : Mem} (h : ∀ a n, m.Avoids (· = .temp a n)) :
     m.Avoids U := by
   intro b a hm hb x hx
   cases x with
   | frag p k =>
     intro hu
-    obtain ⟨n, hn⟩ := hU _ hu
-    exact h n b a hm (fun hb' => hb (hb' ▸ hn ▸ hu)) _ hx hn
+    obtain ⟨k, n, hn⟩ := hU _ hu
+    exact h k n b a hm (fun hb' => hb (hb' ▸ hn ▸ hu)) _ hx hn
   | _ => trivial
 
 mutual
-theorem val_avoids_of (hU : DAE.TempU U) : {v : Val} → (∀ n, v.Avoids (· = .temp 0 n)) →
+theorem val_avoids_of (hU : DAE.TempU U) : {v : Val} → (∀ a n, v.Avoids (· = .temp a n)) →
     Val.Avoids U v
-  | .ptr p, h => by intro hu; obtain ⟨n, hn⟩ := hU _ hu; exact h n hn
+  | .ptr p, h => by intro hu; obtain ⟨a, n, hn⟩ := hU _ hu; exact h a n hn
   | .tuple vs, h => valList_avoids_of hU (vs := vs) h
   | .agg vs, h => valList_avoids_of hU (vs := vs) h
-  | .blob bs, h => fun x hx => byte_avoids_of hU fun n => h n x hx
+  | .blob bs, h => fun x hx => byte_avoids_of hU fun a n => h a n x hx
   | .mem m, h => mem_avoids_of hU h
   | .int _ _, _ | .bool _, _ | .empty, _ | .poison, _ => trivial
 theorem valList_avoids_of (hU : DAE.TempU U) : {vs : List Val} →
-    (∀ n, Val.AvoidsList (· = .temp 0 n) vs) → Val.AvoidsList U vs
+    (∀ a n, Val.AvoidsList (· = .temp a n) vs) → Val.AvoidsList U vs
   | [], _ => trivial
-  | _ :: _, h => ⟨val_avoids_of hU fun n => (h n).1, valList_avoids_of hU fun n => (h n).2⟩
+  | _ :: _, h => ⟨val_avoids_of hU fun a n => (h a n).1, valList_avoids_of hU fun a n => (h a n).2⟩
 end
 
 theorem addGlobals_avoids {env : Env} (hg : ∀ g ∈ env.globals, DAE.BAv U g.2.data) {m : Mem}
@@ -362,11 +362,11 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
   · rename_i hn
     simp only [hn] at hd
     have hargs : ∀ v ∈ args, Val.Avoids (fun b => extraX tabs tabs' b = true) v := fun v hv =>
-      val_avoids_of hU fun n => (hinit 0 n).1 v hv
+      val_avoids_of hU fun a n => (hinit a n).1 v hv
     have hmem : mem.Avoids (fun b => extraX tabs tabs' b = true) :=
-      mem_avoids_of hU fun n => (hinit 0 n).2.1
+      mem_avoids_of hU fun a n => (hinit a n).2.1
     have hglob : ∀ g ∈ env.globals, DAE.BAv (fun b => extraX tabs tabs' b = true) g.2.data :=
-      fun g hg x hx => byte_avoids_of hU fun n => (hinit 0 n).2.2.2 g hg x hx
+      fun g hg x hx => byte_avoids_of hU fun a n => (hinit a n).2.2.2 g hg x hx
     have himg : ∀ img ∈ (args.toArray.zip (Ctx.make tabs f).paramTys).map (fun (a, t) => encode t a),
         DAE.BAv (fun b => extraX tabs tabs' b = true) img := by
       intro img hi

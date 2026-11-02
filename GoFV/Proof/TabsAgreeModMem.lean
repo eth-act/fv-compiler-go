@@ -29,7 +29,7 @@ def TempX (X : Blk → Bool) : Prop := ∀ b, X b = true → ∃ n, b = .temp 0 
 section
 variable {X : Blk → Bool}
 
-theorem tempU_of (hX : TempX X) : DAE.TempU (X · = true) := hX
+theorem tempU_of (hX : TempX X) : DAE.TempU (X · = true) := DAE.TempU0.tempU hX
 
 theorem mem_ext {m m' : Mem} (h1 : m.blocks.toList = m'.blocks.toList)
     (h2 : m.nextHeap = m'.nextHeap) (h3 : m.nextAct = m'.nextAct) : m = m' := by

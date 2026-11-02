@@ -89,7 +89,7 @@ theorem putBytes_fold_eq : ∀ {pieces pieces' : List Val}, VRL U pieces pieces'
     exact putBytes_fold_eq t ls _
 
 theorem local_notU (hU : TempU U) (a n : Nat) : ¬ U (.local a n) := by
-  intro hu; obtain ⟨k, hk⟩ := hU _ hu; cases hk
+  intro hu; obtain ⟨_, k, hk⟩ := hU _ hu; cases hk
 
 theorem goResults_post_eq (hU : TempU U) {m m' : Mem} (hm : Mem.EqOff U m m') :
     ∀ (os : List (Option AuxRef × Ty × Nat)) {pieces pieces' : List Val},

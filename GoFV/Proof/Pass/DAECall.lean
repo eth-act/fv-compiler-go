@@ -45,7 +45,7 @@ theorem toPieces_avoids (hU : TempU U) (t : Ty) {v : Val} (h : Val.Avoids U v) :
   exact decode_avoids hU (encode_avoids t h) o lt
 
 theorem outargs_notU (hU : TempU U) (a : Nat) : ¬ U (.outargs a) := by
-  intro hu; obtain ⟨n, hn⟩ := hU _ hu; cases hn
+  intro hu; obtain ⟨_, n, hn⟩ := hU _ hu; cases hn
 
 /-- `decodeArgs` reads only the outgoing-arguments area. -/
 theorem decodeArgs_eqOff (hU : TempU U) (tabs : Tables) (act : Nat) {m m' : Mem}
@@ -235,8 +235,7 @@ theorem callOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
   have hMA : M.Avoids U := hwA
   have hRA : ∀ a ∈ R, Val.Avoids U a := fun a ha => hLA a (hR a ha)
   have hcloA : ∀ y ∈ clo, Val.Avoids U y := fun y hy => hLA y (hclo y hy)
-  have hTemp : ∀ b, U b → ∃ a n, b = .temp a n := fun b hb => by
-    obtain ⟨n, hn⟩ := hU b hb; exact ⟨0, n, hn⟩
+  have hTemp : ∀ b, U b → ∃ a n, b = .temp a n := hU
   rw [decodeArgs_eqOff hU _ _ hm]
   -- the arguments are the same on both sides and avoid `U`
   have core : ∀ (args : List Val), (∀ a ∈ args, Val.Avoids U a) → ∀ (post : Bool),

@@ -18,8 +18,15 @@ namespace GoFV.Proof.DAE
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof.DSE
 
-/-- `U` holds only frame temporaries of activation 0. -/
-def TempU (U : Blk → Prop) : Prop := ∀ b, U b → ∃ n, b = .temp 0 n
+/-- `U` holds only frame temporaries (of any activation: a callee's `U` may be a caller's
+frame temporaries, `Contract.FrameSafe`). -/
+def TempU (U : Blk → Prop) : Prop := ∀ b, U b → ∃ a n, b = .temp a n
+
+/-- `U` holds only frame temporaries of activation 0 (a run's own). -/
+def TempU0 (U : Blk → Prop) : Prop := ∀ b, U b → ∃ n, b = .temp 0 n
+
+theorem TempU0.tempU {U : Blk → Prop} (h : TempU0 U) : TempU U :=
+  fun b hb => let ⟨n, hn⟩ := h b hb; ⟨0, n, hn⟩
 
 /-- Entries of one block: the same size and writability, the same bytes outside `U`. -/
 def ARel (U : Blk → Prop) (e e' : Blk × Alloc) : Prop :=
@@ -267,7 +274,7 @@ theorem EqOff.filter_eq {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m')
   simpa using key
 
 /-- The frame removal at a return: equal memories. -/
-theorem EqOff.freeFrame {U : Blk → Prop} (hU : TempU U) {m m' : Mem} (h : Mem.EqOff U m m') :
+theorem EqOff.freeFrame {U : Blk → Prop} (hU : TempU0 U) {m m' : Mem} (h : Mem.EqOff U m m') :
     m'.freeFrame 0 = m.freeFrame 0 := by
   unfold Mem.freeFrame
   refine EqOff.filter_eq h _ (fun _ _ _ => rfl) fun e hu => ?_
@@ -282,10 +289,19 @@ theorem EqOff.dropFrames {U : Blk → Prop} (hU : TempU U) {m m' : Mem} (h : Mem
     m'.dropFrames 0 = m.dropFrames 0 := by
   unfold Mem.dropFrames
   refine EqOff.filter_eq h _ (fun _ _ _ => rfl) fun e hu => ?_
-  obtain ⟨n, hn⟩ := hU _ hu
+  obtain ⟨a, n, hn⟩ := hU _ hu
   obtain ⟨b, a⟩ := e
   simp only at hn
   subst hn
-  rfl
+  simp
+
+/-- Filtering the allocations by a block predicate on both sides. -/
+theorem EqOff.filter {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (F : Blk → Bool) :
+    Mem.EqOff U { m with blocks := m.blocks.filter fun e => F e.1 }
+      { m' with blocks := m'.blocks.filter fun e => F e.1 } := by
+  obtain ⟨h1, h2, h3⟩ := eqOff_iff.1 h
+  refine eqOff_iff.2 ⟨h1, h2, ?_⟩
+  simp only [Array.toList_filter]
+  exact h3.filter _ fun _ _ _ => rfl
 
 end GoFV.Proof.DAE
