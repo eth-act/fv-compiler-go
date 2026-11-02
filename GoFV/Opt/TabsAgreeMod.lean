@@ -69,8 +69,9 @@ def tamOpOK (tabs : Tables) (f : Func) (fv : Value) : Bool :=
     (tamPtrOps.contains fv.op || atomicRootOp fv.op || DAE.noPtrTy (tabs.ty fv.type))
 
 /-- `tabsAgree` up to extra frame temporaries (see the module comment): the frame variables of
-`tabs'` that `tabs` defines are `tabs`' frame variables, every other one is not forgeable, and
-every value of `f` is in the ops the proof covers (`tamOpOK`). Every other conjunct is
+`tabs'` that `tabs` defines are `tabs`' frame variables, every other one is not forgeable, the
+open-coded defer variables are the same (`deferInfo`), and every value of `f` is in the ops the
+proof covers (`tamOpOK`). Every other conjunct is
 `tabsAgree`'s. -/
 def tabsAgreeMod (tabs tabs' : Tables) (f : Func) : Bool :=
   let ps := abiParams tabs f
@@ -80,6 +81,7 @@ def tabsAgreeMod (tabs tabs' : Tables) (f : Func) : Bool :=
   let sh := typeShapes tabs
   let sh' := typeShapes tabs'
   decide ((abiParams tabs' f).toList = ps.toList) &&
+  decide (deferInfo tabs' = deferInfo tabs) &&
   ps.toList.all (fun p => Ty.beq (tabs'.ty p.type) (tabs.ty p.type)) &&
   decide (ls'.toList.filter (fun l => (tabs.aux? l.1).isSome) = ls.toList) &&
   ls'.toList.all (fun l => (tabs.aux? l.1).isSome || !tabs'.forgeable l.1) &&

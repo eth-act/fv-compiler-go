@@ -411,4 +411,53 @@ theorem value_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {tabs :
   · exact DAE.retype_avoids hU _ (evalOp_avoids hE hX hfok hloc hp hargs hr)
   · exact DAE.noPtr_avoids hU (Val.retype_hasTy _ _) hn
 
+/-! ## The source's panics avoid `X` -/
+
+/-- An op on arguments avoiding `X` panics with a value and a memory avoiding `X`. -/
+theorem evalOp_panic_avoidsX {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx}
+    {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (hargs : ∀ z ∈ argv, Val.Avoids (X · = true) z) {e : Panic} {m : Mem}
+    (h : evalOp env ctx fr v argv ty = .panic e m) :
+    e.Avoids (X · = true) ∧ m.Avoids (X · = true) := by
+  have pb : ∀ {k : Int64} {e : Panic} {m : Mem}, panicBounds k argv = .panic e m →
+      e.Avoids (X · = true) ∧ m.Avoids (X · = true) := by
+    intro k e m h
+    unfold panicBounds at h
+    split at h
+    · cases h; exact ⟨trivial, hargs (.mem _) (by simp)⟩
+    · cases h
+  have call : ∀ {e : Panic} {m : Mem}, callOp env ctx v argv = .panic e m →
+      e.Avoids (X · = true) ∧ m.Avoids (X · = true) := by
+    intro e m h
+    rcases List.eq_nil_or_concat argv with rfl | ⟨L, w, rfl⟩
+    · obtain ⟨msg, hm⟩ := callOp_nil_stuck (env := env) (ctx := ctx) (v := v)
+      rw [hm] at h; cases h
+    · rw [List.concat_eq_append] at h hargs
+      obtain ⟨h1, h2, -⟩ := (callOp_rel hE hX (.refl w) hargs).2 e m h
+      exact ⟨h1, h2⟩
+  unfold evalOp at h
+  split at h
+  all_goals first
+    | cases h
+    | exact absurd h argVal_not_panic
+    | exact DAE.memRoot_panic_avoids hargs h
+    | exact call h
+    | exact pb h
+    | (split at h <;> first
+        | cases h
+        | exact absurd h argVal_not_panic
+        | (split at h
+           · exact absurd h atomicRoot_ne_panic
+           · cases h))
+
+/-- **A value evaluated from registers avoiding `X` panics avoiding `X`.** -/
+theorem evalValue_panic_avoidsX {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx}
+    {S : Frame} (hav : DAE.RegsP (fun _ y => Val.Avoids (X · = true) y) S) {fv : Value}
+    {e : Panic} {m : Mem} (h : evalValue env ctx S fv = .panic e m) :
+    e.Avoids (X · = true) ∧ m.Avoids (X · = true) := by
+  obtain ⟨vs, hvs, hr⟩ := DAE.evalValue_panic_inv h
+  refine evalOp_panic_avoidsX hE hX (fun z hz => ?_) hr
+  obtain ⟨a, -, ha⟩ := DAE.argVals_mem hvs hz
+  exact hav a z ha
+
 end GoFV.Proof.TabsMod
