@@ -89,14 +89,14 @@ avoiding): the problem, the trick, the numbers, where it is used.
   With `-Dlinter.ambiguousOpen=false` it is path-free and byte-identical from two directories.
   Every linter that warns in a build log is a candidate: the build logs of the recorded commits
   name only `unusedVariables` and `ambiguousOpen`.
-- **Parallel elaboration can reorder a module's constants** (since `-j4`, 03d6b3f). Two modules
-  so far wrote a different `.olean` on almost every build, with the same 82 constants and sizes
-  serialized in a different order: `GoFV.Proof.Pass.DSEVal` (2 builds, 2 hashes) and
-  `GoFV.Proof.Pass.SegCall` (5 builds, 4 hashes). `set_option Elab.async false` at the top of the
-  file made both byte-identical over 3 builds, at no measurable CPU cost (DSEVal 11.2 s and
-  SegCall 7.5 s, either way). Most modules are unaffected (the other ~770 at 6289b62 are
-  reproducible), so apply it per module when the watch loop reports `repro` = differs
-  (#215, #1).
+- **Parallel elaboration can reorder a module's constants** (since `-j4`, 03d6b3f). Three modules
+  so far wrote a different `.olean` on almost every build: the same constants, serialized in a
+  different order. They were `GoFV.Proof.Pass.DSEVal` (2 builds, 2 hashes),
+  `GoFV.Proof.Pass.SegCall` (5 builds, 4 hashes) and `GoFV.Proof.AtomSimLoop` (3 builds,
+  3 hashes). With `set_option Elab.async false` at the top of the file, each was byte-identical
+  over 3 builds, at no measurable CPU cost (DSEVal 11.2 s, SegCall 7.5 s, AtomSimLoop 8 s,
+  either way). Most modules are unaffected, so apply it per module when the watch loop
+  reports `repro` = differs (#215, #296, #1).
 
 #### `exact lemma args` can spend seconds in a failed unification; `have h := lemma args; exact h`
 - **Problem:** `ecc_storeObl` (`GoFV.Proof.Pass.ECCall`) closed a goal stated over
