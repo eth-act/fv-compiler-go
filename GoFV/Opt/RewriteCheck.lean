@@ -7,6 +7,7 @@ import GoFV.Opt.Checked
 import GoFV.Opt.CopyRelCheck
 import GoFV.Opt.MemCall
 import GoFV.Opt.MemTy
+import GoFV.Opt.ExpandCallsCheck
 import GoFV.SSA.Sem.Image
 
 /-!
@@ -1497,15 +1498,52 @@ def fwdConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
     fwdOK tabs f u x
   | none => false
 
-/-- A constant term (`termConst`) whose value is a zero integer, `false` or `poison`
-(`isConstZero` but for pointers, floats and composites; whose bytes are `0` or `poison` at every
-shape; a `ConstNil` is a pointer, whose bytes are fragments): `Const64 [0]`, `ConstBool [0]`,
-`SliceLen (ConstSlice)`, … -/
-def zeroConst (tabs : Tables) (f : Func) (x : ID) : Bool :=
-  match termConst tabs f 4 x with
-  | some .poison | some (.bool false) => true
-  | some (.int _ c) => c == 0
+mutual
+/-- A value whose bytes are `0` or `poison` at every shape: `0`, `false`, `poison`, the empty
+value, or a composite of such (e.g. the empty string `ConstString {""}`, `ConstSlice`,
+`ConstInterface`; a nil pointer is the word `0`, #290). -/
+def zeroVal : Sem.Val → Bool
+  | .poison | .bool false | .empty => true
+  | .int _ c => c == 0
+  | .agg vs => zeroVals vs
   | _ => false
+def zeroVals : List Sem.Val → Bool
+  | [] => true
+  | v :: vs => zeroVal v && zeroVals vs
+end
+
+/-- Component `ps` (outermost first) of a composite value, `poison` where there is none. -/
+def valPath : List Nat → Sem.Val → Sem.Val
+  | [], v => v
+  | i :: ps, .agg vs => valPath ps (vs.getD i .poison)
+  | _ :: _, _ => .poison
+
+/-- Component `ps` of `x`'s value is a `zeroVal`, at most `k` deep: a constant term
+(`termConst`) whose component is one, a selection (`ECCheck.selIdx?`) of an argument whose
+component `i :: ps` is, or a composite built by a make op (`ECCheck.isMake`) whose argument `i`
+has a zero component `ps'` (`ps = i :: ps'`) or all of whose arguments are zero (`ps = []`).
+E.g. `SliceLen (SliceMake p (Const64 [0]) c)`, `ITab (StructSelect [0] (StructMake
+(ConstInterface) x))`. -/
+def zeroAt (tabs : Tables) (f : Func) : Nat → List Nat → ID → Bool
+  | 0, _, _ => false
+  | k + 1, ps, x =>
+    (match termConst tabs f 4 x with
+     | some c => zeroVal (valPath ps c)
+     | none => false) ||
+    match f.value? x with
+    | some v =>
+      match ECCheck.selIdx? v with
+      | some i => v.args.size == 1 && zeroAt tabs f k (i :: ps) v.args[0]!
+      | none =>
+        ECCheck.isMake v.op &&
+        match ps with
+        | [] => v.args.toList.all (zeroAt tabs f k [])
+        | i :: ps' => decide (i < v.args.size) && zeroAt tabs f k ps' v.args[i]!
+    | none => false
+
+/-- A term whose value is zero (`zeroAt`, ten deep): `Const64 [0]`, `ConstBool [0]`, `ConstNil`,
+`ConstString {""}`, `SliceLen (ConstSlice)`, a selection of a zero field of a `StructMake`, … -/
+def zeroConst (tabs : Tables) (f : Func) (x : ID) : Bool := zeroAt tabs f 10 [] x
 
 /-- A size-specialised malloc call that asks for zeroed memory (issue #69; `ssagen.newObject`:
 `mallocgc*SC*(size, typ, true)`, `Sem.AllocReq`): a call other than `newobject`, of four
