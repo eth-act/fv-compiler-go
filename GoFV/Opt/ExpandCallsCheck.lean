@@ -26,8 +26,9 @@ classes:
   `InterCall` with the same leading arguments and, per input parameter, its register pieces
   computed by selector chains (`SlicePtr`, `StructSelect [i]`, …) of the Go argument, or for a
   stack-assigned one a chain of new `Store`s of those pieces into its slots of the
-  outgoing-arguments area on the call's memory (`stackOK`), the first one possibly a new `Move`
-  copying a wide argument `Dereference src mem` from `src` into its slot (`moveOK`); the call's
+  outgoing-arguments area on the call's memory (`stackOK`), the leading ones possibly copied
+  by a chain of new `Move`s, one per wide argument `Dereference src mem`, from `src` into its
+  slot (`moveOK`; a `Move` above another reads a frame variable, `localSrcOK`); the call's
   type is the register types of its register-assigned results (`regShapeOK`);
 * **select**: a register-assigned call result `SelectN [i] c` becomes a Make-tree over
   `SelectN [firstReg + j] c`, a stack-assigned one a Make-tree of `Load`s of its leaf slots
