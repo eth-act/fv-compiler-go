@@ -377,13 +377,14 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       rw [e1] at hbs
       exact blockZero_read (by simpa [Ptr.add] using hz) hn hbs
 
-theorem dropOK_spec {u w : Value} (h : dropOK tabs f u w = true) :
+theorem dropOK_spec {g : Func} {u w : Value} (h : dropOK tabs f g u w = true) :
     w.op = .Copy ∧ w.args.size = 1 ∧ (u.op = .Store ∨ u.op = .Zero) ∧ ∃ i < u.args.size,
-      copyReach tabs f.valueTab f.valueTab.size u.args[i]! w.args[0]! = true := by
+      memReach tabs f g u.args[i]! w.args[0]! = true := by
   unfold dropOK at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨hc, hs⟩, (⟨⟨⟨hop, hsz⟩, hcr⟩, -⟩ | ⟨⟨⟨hop, hsz⟩, hcr⟩, -⟩)⟩ := h
+  obtain ⟨⟨hc, hs⟩, (⟨⟨⟨hop, hsz⟩, hcr⟩, -⟩ | ⟨⟨hop, hsz⟩, (⟨hcr, -⟩ | ⟨hcr, -⟩)⟩)⟩ := h
   · exact ⟨hc, hs, .inl hop, 2, by omega, hcr⟩
+  · exact ⟨hc, hs, .inr hop, 1, by omega, by simp [memReach, hcr]⟩
   · exact ⟨hc, hs, .inr hop, 1, by omega, hcr⟩
 
 /-- A memory refined by a value is a memory. -/
@@ -393,21 +394,40 @@ theorem refines_mem' {M : Mem} {v : Val} (h : Sem.Refines (.mem M) v) :
   | mem h => exact ⟨_, rfl, h⟩
 
 /-- **A dropped write is refined by its memory** (`dropOK`): the root's memory is refined by
-the memory of `w`'s argument. -/
+the memory of `w`'s argument in `f`, or (`memCopyReach` in `g`) by the memory of the root's
+memory argument, from which `w`'s argument copies in `g`. -/
 theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ)
-    (hQ : FreshQ tabs f ρ) {u w : Value} (h : dropOK tabs f u w = true) {k : Nat} {y : Val}
-    (hy : memDef tabs u (u.args.toList.map (den f.value? tabs ρ k)) = some y) :
-    ∃ M1 M0, y = .mem M1 ∧ den f.value? tabs ρ k w.args[0]! = .mem M0 ∧ Mem.Refines M1 M0 := by
+    (hQ : FreshQ tabs f ρ) {g : Func} {u w : Value} (h : dropOK tabs f g u w = true) {k : Nat}
+    {y : Val} (hy : memDef tabs u (u.args.toList.map (den f.value? tabs ρ k)) = some y) :
+    ∃ M1, y = .mem M1 ∧
+      ((∃ i < u.args.size, copyReach tabs f.valueTab f.valueTab.size u.args[i]! w.args[0]! = true ∧
+          ∃ M0, den f.value? tabs ρ k w.args[0]! = .mem M0 ∧ Mem.Refines M1 M0) ∨
+        ∃ i < u.args.size, memCopyReach g g.valueTab.size u.args[i]! w.args[0]! = true ∧
+          ∃ M0, den f.value? tabs ρ k u.args[i]! = .mem M0 ∧ Mem.Refines M1 M0) := by
+  -- a write that changes nothing, of a memory `w`'s argument holds (`memReach`)
+  have reach : ∀ {i : Nat} {M1 m0 : Mem}, i < u.args.size →
+      memReach tabs f g u.args[i]! w.args[0]! = true →
+      den f.value? tabs ρ k u.args[i]! = .mem m0 → Mem.Refines M1 m0 →
+      (∃ i < u.args.size, copyReach tabs f.valueTab f.valueTab.size u.args[i]! w.args[0]! = true ∧
+          ∃ M0, den f.value? tabs ρ k w.args[0]! = .mem M0 ∧ Mem.Refines M1 M0) ∨
+        ∃ i < u.args.size, memCopyReach g g.valueTab.size u.args[i]! w.args[0]! = true ∧
+          ∃ M0, den f.value? tabs ρ k u.args[i]! = .mem M0 ∧ Mem.Refines M1 M0 := by
+    intro i M1 m0 hi hr hm0 hW
+    unfold memReach at hr
+    rw [Bool.or_eq_true] at hr
+    rcases hr with hcr | hcr
+    · have hc := copyReach_den (M := f.valueTab) hT _ _ _ hcr k
+      rw [show den (Defs.get? f.valueTab) tabs ρ k u.args[i]! = .mem m0 from hm0] at hc
+      obtain ⟨m0', hm0', hR⟩ := refines_mem' hc
+      exact .inl ⟨i, hi, hcr, m0', hm0', hW.trans hR⟩
+    · exact .inr ⟨i, hi, hcr, m0, hm0, hW⟩
   unfold dropOK at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  obtain ⟨-, (⟨⟨⟨hsop, hssz⟩, hcr⟩, hcase⟩ | ⟨⟨⟨hzop, hzsz⟩, hcr⟩, hcase⟩)⟩ := h
+  obtain ⟨-, (⟨⟨⟨hsop, hssz⟩, hcr⟩, hcase⟩ | ⟨⟨hzop, hzsz⟩, (⟨hcr, hcase⟩ | ⟨hcr, hch⟩)⟩)⟩ := h
   · -- a `Store`
     rw [toList_three hssz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
     obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_store (.inl hsop) hy
-    have hc := copyReach_den (M := f.valueTab) hT _ _ _ hcr k
-    rw [show den (Defs.get? f.valueTab) tabs ρ k u.args[2]! = .mem m0 from hm0] at hc
-    obtain ⟨m0', hm0', hR⟩ := refines_mem' hc
-    refine ⟨M', m0', rfl, hm0', Mem.Refines.trans ?_ hR⟩
+    refine ⟨M', rfl, reach (by omega) hcr hm0 ?_⟩
     have hsz : (encode (auxTy tabs u.aux) (den f.value? tabs ρ k u.args[1]!)).size =
         (auxTy tabs u.aux).size := GoFV.Proof.CSE.Mem.encode_size _ _
     by_cases h0 : (auxTy tabs u.aux).size = 0
@@ -426,28 +446,13 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     refine write_refines_self (Mem.Refines.refl _) hrd hwr ?_
     have := zeros_refine (encode_zero (zeroConst_den (ρ := ρ) hzc k) (auxTy tabs u.aux))
     simpa [BytesRefineA, hsz] using this
-  · -- a `Zero` of a `Zero`, or of zero bytes
+  · -- a `Zero` of a `Zero`
     rw [toList_two hzsz, List.map_cons, List.map_cons, List.map_nil] at hy
     obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_zero hzop hy
     have hc := copyReach_den (M := f.valueTab) hT _ _ _ hcr k
     rw [show den (Defs.get? f.valueTab) tabs ρ k u.args[1]! = .mem m0 from hm0] at hc
     obtain ⟨m0', hm0', hR⟩ := refines_mem' hc
-    refine ⟨M', m0', rfl, hm0', ?_⟩
-    rcases hcase.symm with hch | hcase
-    · -- the bytes it clears are zero
-      by_cases h0 : u.auxInt.toInt.toNat = 0
-      · have he : (Array.replicate u.auxInt.toInt.toNat (Byte.b 0)).isEmpty = true := by
-          rw [Array.isEmpty_iff_size_eq_zero, Array.size_replicate, h0]
-        unfold Mem.write at hwr
-        simp only [he, ite_true] at hwr
-        cases hwr
-        exact hR
-      obtain ⟨bs0, hrd⟩ := read_of_write hwr (by rw [Array.size_replicate]; exact h0)
-      rw [Array.size_replicate] at hrd
-      have hz := zeroChain_read hT hM hQ h0 hq 8 _ hch hm0 hrd
-      subst hz
-      exact (write_refines_self (Mem.Refines.refl _) (by rw [Array.size_replicate]; exact hrd) hwr
-        (BytesRefineA.refl _)).trans hR
+    refine ⟨M', rfl, .inl ⟨1, by omega, hcr, m0', hm0', ?_⟩⟩
     cases hz : f.value? w.args[0]! with
     | none => rw [hz] at hcase; cases hcase
     | some z =>
@@ -472,6 +477,23 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     have hrd := read_write_self hw2
     rw [hai] at hrd
     exact write_refines_self hR hrd hwr (BytesRefineA.refl _)
+  · -- a `Zero` of zero bytes
+    rw [toList_two hzsz, List.map_cons, List.map_cons, List.map_nil] at hy
+    obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_zero hzop hy
+    refine ⟨M', rfl, reach (by omega) hcr hm0 ?_⟩
+    by_cases h0 : u.auxInt.toInt.toNat = 0
+    · have he : (Array.replicate u.auxInt.toInt.toNat (Byte.b 0)).isEmpty = true := by
+        rw [Array.isEmpty_iff_size_eq_zero, Array.size_replicate, h0]
+      unfold Mem.write at hwr
+      simp only [he, ite_true] at hwr
+      cases hwr
+      exact Mem.Refines.refl _
+    obtain ⟨bs0, hrd⟩ := read_of_write hwr (by rw [Array.size_replicate]; exact h0)
+    rw [Array.size_replicate] at hrd
+    have hz := zeroChain_read hT hM hQ h0 hq 8 _ hch hm0 hrd
+    subst hz
+    exact write_refines_self (Mem.Refines.refl _) (by rw [Array.size_replicate]; exact hrd) hwr
+      (BytesRefineA.refl _)
 
 end
 

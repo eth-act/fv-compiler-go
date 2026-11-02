@@ -1619,27 +1619,48 @@ def zeroChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) : Nat → ID → Boo
         | none => false)
     | none => false
 
-/-- The memory root `u` of `f` becomes `w`, a `Copy` of its memory (reached from `u`'s memory
-argument through compatible copies, `copyReach`: copy elimination ran before the rule matched),
-as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`,
-`:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized type), a `Store` of a
-`zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s and `Store`s), a `Zero`
-of a `Zero` of the same size at an equal pointer (`samePtrB`), or a `Zero` of zero bytes
-(`zeroChain`). -/
-def dropOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+/-- `y` is listed in `g` (`Proof.listedDefs`): a value of a block of `g` that lists it. -/
+def listedB (g : Func) (y : ID) : Bool :=
+  (g.value? y).any fun v => g.blocks.contains v.block && (g.block? v.block).any (·.values.contains y)
+
+/-- `w` is `a`, or reached from `a` through at most `n` `Copy`s listed in `g` (`listedB`): a
+memory one of them holds is the one `w` holds (`retype` keeps only memories as memories). -/
+def memCopyReach (g : Func) : Nat → ID → ID → Bool
+  | 0, a, w => a == w
+  | n + 1, a, w =>
+    a == w ||
+    (listedB g a &&
+      match g.value? a with
+      | some x => x.op == .Copy && x.args.size == 1 && memCopyReach g n x.args[0]! w
+      | none => false)
+
+/-- The memory `w` of `g` holds what the memory `a` of `f` does: `w` is reached from `a` through
+compatible copies of `f` (`copyReach`: copy elimination ran before the rule matched), or through
+copies of `g` (`memCopyReach`: the writes between were dropped in the same layer, issue #69). -/
+def memReach (tabs : Tables) (f g : Func) (a w : ID) : Bool :=
+  copyReach tabs f.valueTab f.valueTab.size a w || memCopyReach g g.valueTab.size a w
+
+/-- The memory root `u` of `f` becomes `w` in `g`, a `Copy` of its memory (`memReach` from `u`'s
+memory argument), as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`,
+`:961`, `:2158`, `:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized type), a
+`Store` of a `zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s and
+`Store`s), a `Zero` of a `Zero` of the same size at an equal pointer (`samePtrB`, reached through
+copies of `f`), or a `Zero` of zero bytes (`zeroChain`). -/
+def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 &&
   ((u.op == .Store && u.args.size == 3 &&
-    copyReach tabs f.valueTab f.valueTab.size u.args[2]! w.args[0]! &&
+    memReach tabs f g u.args[2]! w.args[0]! &&
     ((Sem.auxTy tabs u.aux).size == 0 ||
       (zeroConst tabs f u.args[1]! &&
         zeroChain tabs f u.args[0]! (Sem.auxTy tabs u.aux).size 8 u.args[2]!))) ||
    (u.op == .Zero && u.args.size == 2 &&
-    copyReach tabs f.valueTab f.valueTab.size u.args[1]! w.args[0]! &&
-    ((match f.value? w.args[0]! with
+    ((copyReach tabs f.valueTab f.valueTab.size u.args[1]! w.args[0]! &&
+      match f.value? w.args[0]! with
       | some z => z.op == .Zero && z.args.size == 2 && z.auxInt == u.auxInt &&
           samePtrB tabs f u.args[0]! z.args[0]!
       | none => false) ||
-     zeroChain tabs f u.args[0]! u.auxInt.toInt.toNat 8 u.args[1]!)))
+     (memReach tabs f g u.args[1]! w.args[0]! &&
+      zeroChain tabs f u.args[0]! u.auxInt.toInt.toNat 8 u.args[1]!))))
 
 /-- The inner `Move` `im` of a changed `Move` source (`moveSrcOK`): of `u`'s size, its
 destination equal to `u`'s source (`samePtrB`), its source reaching `w`'s through compatible
@@ -1673,12 +1694,12 @@ def moveSrcOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
       | _, _ => false)
   | none => false
 
-/-- The new definition `w` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads back
-(`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`); or of the memory root `u`, a
-`Copy` of its memory (`dropOK`), or a `Move` from another source (`moveSrcOK`). -/
-def fwdNewOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+/-- The new definition `w` in `g` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads
+back (`fwdOK`), or a constant of the bits it reads back (`fwdConstOK`); or of the memory root
+`u`, a `Copy` of its memory (`dropOK`), or a `Move` from another source (`moveSrcOK`). -/
+def fwdNewOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
-    dropOK tabs f u w || moveSrcOK tabs f u w
+    dropOK tabs f g u w || moveSrcOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -1698,10 +1719,6 @@ def fwdMoveOK (tabs : Tables) (f : Func) (u top offp : Value) : Bool :=
       (ptrBase tabs f 8 mv.args[0]!).2 + BitVec.ofInt 64 offp.auxInt.toInt &&
     baseSameB tabs f 8 (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 mv.args[0]!).1
   | none => false
-
-/-- `y` is listed in `g` (`Proof.listedDefs`): a value of a block of `g` that lists it. -/
-def listedB (g : Func) (y : ID) : Bool :=
-  (g.value? y).any fun v => g.blocks.contains v.block && (g.block? v.block).any (·.values.contains y)
 
 /-- The new definition `w` of the `Load` `u` of `f` in `g`: `Copy y` of the listed `Load` `y` of
 `g` through the listed `OffPtr` of the `Move`'s source that `fwdMoveOK` accepts. -/
@@ -1755,7 +1772,7 @@ def fwdRepOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
   | some u, some w =>
     w.id == u.id && w.block == u.block && w.type == u.type &&
     ((w.op == u.op && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args) ||
-     fwdNewOK tabs f u w || fwdMoveRep tabs f g u w)
+     fwdNewOK tabs f g u w || fwdMoveRep tabs f g u w)
 
 /-- `g`'s blocks are `f`'s, but for values appended to their lists (the fresh values of a
 forwarding through a `Move`, `fwdMoveRep`). -/
@@ -1854,10 +1871,11 @@ def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
   | none => f
 
 /-- The forwarding of the `Load` `u` of `f` to `w` with the fresh values `ds` (`fwdEvent?`) is
-one the validator accepts in `f`: `fwdNewOK`, or `fwdMoveOK` of the fresh `[offp, top]` with `w`
-a `Copy` of `top`. -/
+one the validator accepts in `f` alone: `fwdNewOK` (with `f` for the output, so a dropped write
+whose memory was dropped in the same layer is not selected), or `fwdMoveOK` of the fresh
+`[offp, top]` with `w` a `Copy` of `top`. -/
 def fwdEvOK (tabs : Tables) (f : Func) (u w : Value) : List Value → Bool
-  | [] => fwdNewOK tabs f u w
+  | [] => fwdNewOK tabs f f u w
   | [offp, top] =>
     w.args == #[top.id] && top.args[0]! == offp.id && fwdMoveOK tabs f u top offp
   | _ => false
