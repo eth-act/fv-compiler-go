@@ -3,6 +3,7 @@ import GoFV.Rules.Generated.Generic
 import GoFV.Rules.Generated.Dec
 import GoFV.Rules.Generated.Divisible
 import GoFV.Rules.Generated.Divmod
+import GoFV.Rules.Guarded
 
 /-!
 # Proven-only rule sets
@@ -15,14 +16,15 @@ rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel` o
 `EffectRule.StructStore` lemma (struct-store splits) or `EffectRule.Seg` lemma (segment
 rewrites; issue #151) or `EffectRule.PhiSel` lemma (selections of `Phi`s of `SliceMake`s; issue #69,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
-(`GoFV.Opt.optProven`, …; issue #113) and of the decompose builtin rewrite step (issue #17).
+(`GoFV.Opt.optProven`, …; issue #113) and of the decompose builtin rewrite step (issue #17). A
+rule proven in its guarded form (`GoFV.Rules.Guarded`, issue #290) is in its set in that form.
 -/
 
 namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1198 proven value rules, 3 proven block rules, 7
+/-- `generic.rules` restricted to its 1199 proven value rules, 3 proven block rules, 7
 nil-check eliminations, 15 Load-of-Store forwardings, 1 struct-load
 expansions, 1 struct-store splits, 7 segment rules and 2 `Phi`
 selections. -/
@@ -46,6 +48,7 @@ def generic : RuleSet where
     (.ConstInterface, [Generated.Generic.r_generic_1057]),
     (.ConstSlice, [Generated.Generic.r_generic_1044]),
     (.ConstString, [Generated.Generic.r_generic_1015, Generated.Generic.r_generic_1022]),
+    (.Convert, [Guarded.r_generic_1072]),
     (.Div16, [Generated.Generic.r_generic_173, Generated.Generic.r_generic_1083, Generated.Generic.r_generic_1092]),
     (.Div16u, [Generated.Generic.r_generic_177, Generated.Generic.r_generic_1098]),
     (.Div32, [Generated.Generic.r_generic_174, Generated.Generic.r_generic_1084, Generated.Generic.r_generic_1093]),

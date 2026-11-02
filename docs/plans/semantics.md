@@ -150,8 +150,11 @@ its block number small enough for the address encoding, not a frame temporary or
 then `Ptr.ofAddr` of its address is the pointer again (`Ptr.ofAddr_addr`,
 `GoFV/Proof/PtrAddr.lean`), so the integer `Convert (Convert p)` reads as `p` wherever a
 pointer is read (`convert_asPtrWord`). It is not `p` itself, and the two are not related by
-`Sem.Refines`: `generic.rules:1072` (`Convert (Convert p)` → `p`) is no longer in the proven
-rule set (#290 tracks refinement modulo pointer-word equivalence, which would restore it).
+`Sem.Refines`: `generic.rules:1072` (`Convert (Convert p)` → `p`) is proven only at an integer
+type (the round trip `uintptr → unsafe.Pointer → uintptr`, which gives back the leaf's word;
+`GoFV.Rules.Guarded.r_generic_1072`), not at a pointer type (#290: refinement modulo
+pointer-word equivalence would need every consumer, memory bytes and contracts to identify `int
+(addr p)` with `ptr p`; docs/proofs/rules.md "Findings").
 The checkers that compare pointers structurally require pointer-typed values, since an
 integer-shaped retype of a non-`convertible` pointer reads back as a different pointer:
 `RewriteCheck.baseBlk?` (`LocalAddr`/`Addr`), `baseSameB`'s `AddPtr`/`PtrIndex` arm and the
