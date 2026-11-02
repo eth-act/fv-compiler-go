@@ -53,13 +53,15 @@ def PhisQ (tabs : Tables) (f : Func) (Q : ID → (ID → Val) → Prop) (fr : Fr
 (entered along an edge `i` with `L b i`), every register `a` holds a value `y` with `P b a y`,
 and the registers as a whole satisfy the frame-level invariant `Q b` (e.g. relations between
 registers), which is closed under poisoning registers. Both hold at the entry, and each step
-of the source keeps them: a term or atom evaluated in `b`, and the edge from a predecessor `p`
+of the source keeps them: a term or atom evaluated in `b` (in an environment `E` holds of, e.g.
+one whose malloc contracts return zeroed blocks), and the edge from a predecessor `p`
 (the terminator's choice, from the frame at the end of `p`, whose values of `V` are their terms
 over the atoms) with the `Phi`s of the successor. -/
 structure SrcInv (tabs : Tables) (f : Func) where
   P : ID → ID → Val → Prop
   L : ID → Nat → Prop
   Q : ID → (ID → Val) → Prop
+  E : Env → Prop := fun _ => True
   start : L f.entry 0 ∧ ∀ a, P f.entry a .poison
   qstart : Q f.entry fun _ => .poison
   poisonAtom : ∀ b a, ¬ IsTerm f.value? a → P b a .poison
@@ -76,7 +78,8 @@ structure SrcInv (tabs : Tables) (f : Func) where
   atom : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
     termOp v.op = false → v.op ≠ .Phi → ∀ y : Val, P b x (y.retype (tabs.ty v.type))
   qstep : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
-    v.id = x → v.op ≠ .Phi → ∀ env (fr : Frame) y, evalValue env (Ctx.make tabs f) fr v = .ok y →
+    v.id = x → v.op ≠ .Phi → ∀ env, E env → ∀ (fr : Frame) y,
+      evalValue env (Ctx.make tabs f) fr v = .ok y →
       (∀ a, P b a (rv fr a)) → Q b (rv fr) → Q b (rv (fr.set x y))
 
 /-- The trivial invariant. -/
@@ -92,7 +95,7 @@ def SrcInv.triv (tabs : Tables) (f : Func) : SrcInv tabs f where
     ⟨trivial, fun _ => trivial, fun _ _ _ _ _ _ _ _ _ => trivial, fun _ _ _ _ => trivial⟩
   term _ _ _ _ _ _ _ _ _ _ := trivial
   atom _ _ _ _ _ _ _ _ _ _ := trivial
-  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
 
 /-- The arguments of every atom of `g` refine, as terms under the invariant, those of the same
 atom of `f`: for a non-`Phi` atom the invariant at its block, for argument `i` of a `Phi` the
@@ -155,10 +158,11 @@ theorem ControlsRefP.toStepRefsP {tabs : Tables} {f g : Func} {I : SrcInv tabs f
 
 /-- **A changed store** (issue #35) **or `Move`** (issue #151): the target's root `w`, on its
 arguments' terms, writes a memory refining the write of the source's root `u` on its arguments'
-terms, for source valuations whose memory roots hold the writes of their arguments (`MemAtoms`). -/
-def ChgRefP (D : ID → Option Value) (tabs : Tables) (u : Value) (E : ID → Option Value)
-    (w : Value) : Prop :=
-  ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs ρ' → MemAtoms D tabs ρ →
+terms, for source valuations satisfying the frame invariant `Q` whose memory roots hold the
+writes of their arguments (`MemAtoms`). -/
+def ChgRefP (Q : (ID → Val) → Prop) (D : ID → Option Value) (tabs : Tables) (u : Value)
+    (E : ID → Option Value) (w : Value) : Prop :=
+  ∀ ρ ρ', ValRef ρ ρ' → Term.Typed D tabs ρ → Term.Typed E tabs ρ' → Q ρ → MemAtoms D tabs ρ →
     ∀ n y, memDef tabs u (u.args.toList.map (den D tabs ρ n)) = some y →
       ∃ m y', memDef tabs w (w.args.toList.map (den E tabs ρ' m)) = some y' ∧ Sem.Refines y y'
 
@@ -179,7 +183,7 @@ def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
           TermRefP (I.P p) (I.Q p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!)) ∨
     (∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ (u.op = .Store ∨ u.op = .Move) ∧
-      ChgRefP f.value? tabs u' (listedDefs g) u)
+      ChgRefP (I.Q b) f.value? tabs u' (listedDefs g) u)
 
 theorem AtomArgsRefP.toX {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
     (h : AtomArgsRefP I g) : AtomArgsRefX I g :=

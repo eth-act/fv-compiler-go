@@ -15,6 +15,8 @@ contracts: lock-step simulation (`runLoop_simE`) with the relation `BRel` at blo
 `atomSim_refines`: the trivial invariant, `Term.TermStepRef`. `atomSimX_refines` (issue #35):
 the generalised atom relation (`AtomsX`, `AtomArgsRefX`: a `Store` may change into another
 `Store` whose write refines the source's, and a root of `f` that is no root of `g` is a `Store`).
+`atomSimXE_refines` (issue #69): under contracts the invariant's environment predicate `I.E`
+holds of (e.g. malloc contracts returning zeroed blocks, `Env.AllocZero`).
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -78,7 +80,7 @@ end
 
 /-- **One block entry.** -/
 theorem block_sim {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
-    {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) (hEI : I.E env) {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) :
     StepSimE Mem.Refines (SimR tabs f g I) (blockStep env (Ctx.make tabs f) frS b i)
       (blockStep env (Ctx.make tabs g) frT b i) := by
@@ -91,7 +93,7 @@ theorem block_sim {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
     dsimp only
     cases he : enterBlock env (Ctx.make tabs f) frS fb i with
     | ok FS =>
-      obtain ⟨FT, heT, E⟩ := enter_ok H hE R B he
+      obtain ⟨FT, heT, E⟩ := enter_ok H hE hEI R B he
       rw [heT]
       dsimp only
       have hst := term_sim H B R E
@@ -105,7 +107,7 @@ theorem block_sim {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       | panic e hm => exact ⟨_, rfl, hm⟩
       | stuck msg r => trivial
     | panic e m =>
-      obtain ⟨m', heT, hm⟩ := enter_panic H hE R B he
+      obtain ⟨m', heT, hm⟩ := enter_panic H hE hEI R B he
       rw [heT]
       exact ⟨m', rfl, hm⟩
     | stuck msg => trivial
@@ -170,15 +172,16 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       qinv := hq,
       pre := .inl (hphi f ce H.wf _) }
 
-/-- **The atom simulation**, generalised (issue #35): changed and dropped stores. -/
-theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
+/-- **The atom simulation**, generalised (issue #35): changed and dropped stores, under
+contracts the invariant's environment predicate holds of (issue #69). -/
+theorem atomSimXE_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : AtomsX f g) (I : SrcInv tabs f)
     (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) :
-    RefinesUnder Env.Mono tabs g tabs f := by
+    RefinesUnder (fun env => env.Mono ∧ I.E env) tabs g tabs f := by
   have H : Hyp tabs f g ce ce' I := ⟨check_wf hf, check_wf hg, certOK_of_check (check_domCert hf),
     certOK_of_check (check_domCert hg), hA, h1, h2⟩
-  intro env hE args mem fuel hd
+  intro env ⟨hE, hEI⟩ args mem fuel hd
   refine ⟨fuel, ?_⟩
   have hc := ctx_eq (tabs := tabs) H.ok.ownAux
   have hpar : (Ctx.make tabs g).params = (Ctx.make tabs f).params := by rw [hc]
@@ -196,15 +199,24 @@ theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     refine finish_refines_mono hE hd (runLoop_simE (SimR tabs f g I) (fun frS bS iS frT bT iT hR => ?_) fuel
       _ _ _ _ _ _ ⟨H.ok.entry.symm, rfl, entry_rel H env args mem⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, R⟩ := hR
-    exact block_sim H hE R
+    exact block_sim H hE hEI R
+
+/-- **The atom simulation**, generalised (issue #35): changed and dropped stores, for an
+invariant whose environment predicate always holds. -/
+theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
+    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
+    (hA : AtomsX f g) (I : SrcInv tabs f)
+    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hI : ∀ env, I.E env := by intro; trivial) :
+    RefinesUnder Env.Mono tabs g tabs f :=
+  fun env hE => atomSimXE_refines hf hg hA I h1 h2 env ⟨hE, hI env⟩
 
 /-- **The atom simulation** under a source-side invariant. -/
 theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) :
+    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) (hI : ∀ env, I.E env := by intro; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
-  atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2
+  atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2 hI
 
 /-- **The atom simulation.** -/
 theorem atomSim_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}

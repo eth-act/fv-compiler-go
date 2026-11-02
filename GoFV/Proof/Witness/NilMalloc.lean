@@ -148,7 +148,7 @@ theorem nm_checkedRewrite :
 /-- **Non-vacuity of `RwPre` with a dictionary**: monotone contracts without allocators or memory
 runtime calls (`Env.p1`) and a non-nil `.dict` argument. -/
 theorem nm_rwPre : GoFV.Proof.Pass.Rewrite.RwPre nmTabs nmFunc Env.p1 [.ptr ⟨.heap 0, 0⟩] {} := by
-  refine ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, ?_⟩, Env.p1_memOps, ?_⟩
+  refine ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, ?_⟩, Env.p1_memOps, Env.p1_allocZero, ?_⟩
   · rw [nm_dictParams]
     intro i hi
     simp only [List.mem_singleton] at hi

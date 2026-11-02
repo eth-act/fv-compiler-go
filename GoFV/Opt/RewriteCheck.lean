@@ -1519,9 +1519,39 @@ def zeroConst (tabs : Tables) (f : Func) (x : ID) : Bool :=
   | some (.int _ c) => c == 0
   | _ => false
 
-/-- Memory `m` of `f` holds zero bytes at the `n` bytes at pointer `p`: through at most `d`
-`Copy`s and `Store`s at pointers disjoint from them (`disjointB`), a `Zero [k] q _` with `p` at
-offset `o` of `q` (`ptrBase`, `baseSameB`) and `o + n ≤ k`. -/
+/-- A size-specialised malloc call that asks for zeroed memory (issue #69; `ssagen.newObject`:
+`mallocgc*SC*(size, typ, true)`, `Sem.AllocReq`): a malloc-family `StaticLECall`
+(`NilCheck.mallocCall`) other than `newobject`, of four arguments and of a type whose first two
+components are a pointer and a memory, with one ABI result and parameters of the shapes
+`uintptr`, any, `bool`, whose size argument is a positive `Const64` and whose `needzero`
+argument is `ConstBool [1]`. Under `Sem.Env.AllocZero` its first result points to a heap block
+that is all zero in its memory. -/
+def freshCall (tabs : Tables) (f : Func) (c : ID) : Bool :=
+  NilCheck.mallocCall tabs f c &&
+  match f.value? c with
+  | some cv =>
+    cv.aux.bind tabs.callee? != some "runtime.newobject" && cv.args.size == 4 &&
+    (match tabs.ty cv.type with
+     | .tuple (.ptr _ :: .mem :: _) => true
+     | _ => false) &&
+    ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)).length == 1 &&
+    (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter
+        (!·.out)).map (tabs.ty ·.type) with
+     | [.int .w64, _, .bool] => true
+     | _ => false) &&
+    match f.value? cv.args[0]!, f.value? cv.args[2]! with
+    | some s, some z =>
+      s.op == .Const64 && s.args.size == 0 && decide (0 < s.auxInt.toInt) &&
+        (tabs.ty s.type matches .int .w64) &&
+        z.op == .ConstBool && z.args.size == 0 && z.auxInt == 1 && (tabs.ty z.type matches .bool)
+    | _, _ => false
+  | none => false
+
+/-- Memory `m` of `f` holds zero bytes at the `n` bytes at pointer `p` where they can be read:
+through at most `d` `Copy`s and `Store`s at pointers disjoint from them (`disjointB`), a
+`Zero [k] q _` with `p` at offset `o` of `q` (`ptrBase`, `baseSameB`) and `o + n ≤ k`, or the
+memory `SelectN [1] c` of a call `c` that returns a fresh zeroed block (`freshCall`) with `p`
+in its first result `SelectN [0] c` (`ptrBase`, of pointer shape). -/
 def zeroChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) : Nat → ID → Bool
   | 0, _ => false
   | d + 1, m =>
@@ -1534,15 +1564,22 @@ def zeroChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) : Nat → ID → Boo
       (s.op == .Zero && s.args.size == 2 &&
         decide (((ptrBase tabs f 8 p).2 - (ptrBase tabs f 8 s.args[0]!).2).toNat + n ≤
           s.auxInt.toInt.toNat) &&
-        baseSameB tabs f 8 (ptrBase tabs f 8 p).1 (ptrBase tabs f 8 s.args[0]!).1)
+        baseSameB tabs f 8 (ptrBase tabs f 8 p).1 (ptrBase tabs f 8 s.args[0]!).1) ||
+      (s.op == .SelectN && s.auxInt == 1 && s.args.size == 1 && freshCall tabs f s.args[0]! &&
+        ptrVal tabs f (ptrBase tabs f 8 p).1 &&
+        match f.value? (ptrBase tabs f 8 p).1 with
+        | some q => q.op == .SelectN && q.auxInt == 0 && q.args.size == 1 &&
+            q.args[0]! == s.args[0]!
+        | none => false)
     | none => false
 
 /-- The memory root `u` of `f` becomes `w`, a `Copy` of its memory (reached from `u`'s memory
 argument through compatible copies, `copyReach`: copy elimination ran before the rule matched),
-as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`): a
-`Store` of zero bytes (of a zero-sized type), a `Store` of a `zeroConst` into bytes a `Zero`
-cleared (`zeroChain` through at most eight `Copy`s and `Store`s), or a `Zero` of a `Zero` of the
-same size at an equal pointer (`samePtrB`). -/
+as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`,
+`:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized type), a `Store` of a
+`zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s and `Store`s), a `Zero`
+of a `Zero` of the same size at an equal pointer (`samePtrB`), or a `Zero` of zero bytes
+(`zeroChain`). -/
 def dropOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 &&
   ((u.op == .Store && u.args.size == 3 &&
@@ -1552,10 +1589,11 @@ def dropOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
         zeroChain tabs f u.args[0]! (Sem.auxTy tabs u.aux).size 8 u.args[2]!))) ||
    (u.op == .Zero && u.args.size == 2 &&
     copyReach tabs f.valueTab f.valueTab.size u.args[1]! w.args[0]! &&
-    match f.value? w.args[0]! with
-    | some z => z.op == .Zero && z.args.size == 2 && z.auxInt == u.auxInt &&
-        samePtrB tabs f u.args[0]! z.args[0]!
-    | none => false))
+    ((match f.value? w.args[0]! with
+      | some z => z.op == .Zero && z.args.size == 2 && z.auxInt == u.auxInt &&
+          samePtrB tabs f u.args[0]! z.args[0]!
+      | none => false) ||
+     zeroChain tabs f u.args[0]! u.auxInt.toInt.toNat 8 u.args[1]!)))
 
 /-- The inner `Move` `im` of a changed `Move` source (`moveSrcOK`): of `u`'s size, its
 destination equal to `u`'s source (`samePtrB`), its source reaching `w`'s through compatible

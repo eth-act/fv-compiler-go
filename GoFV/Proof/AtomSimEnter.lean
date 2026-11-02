@@ -292,7 +292,7 @@ theorem inv_phis {tabs : Tables} {f : Func} {I : SrcInv tabs f} {fr : Frame} {b 
 
 /-- Evaluating values of block `b` keeps the invariants. -/
 theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {b : ID} {fb : Block}
-    (hfb : f.block? b = some fb) :
+    (hfb : f.block? b = some fb) (hEI : I.E env) :
     ∀ {L : List ID} {fr G : Frame},
       (∀ x ∈ L, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values) →
       evalAll env (Ctx.make tabs f) fr L = .ok G →
@@ -328,8 +328,8 @@ theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {
             have := evalValue_typed he
             rw [hty] at this
             rw [← this]; exact I.atom b fb hfb x hxb v hv ht hph y
-        refine inv_evalAll hfb (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h (fun a => ?_)
-          (I.qstep b fb hfb x hxb v hv hid hph env fr y he hinv hq)
+        refine inv_evalAll hfb hEI (fun z hz => hL z (List.mem_cons_of_mem _ hz)) h (fun a => ?_)
+          (I.qstep b fb hfb x hxb v hv hid hph env hEI fr y he hinv hq)
         rw [rv_set]
         split
         · next hh => obtain ⟨rfl, -⟩ := hh; exact hy

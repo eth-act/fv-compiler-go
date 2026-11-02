@@ -122,7 +122,7 @@ image and an empty memory, `copyZero`'s read-only symbol holds its exported byte
 theorem zr_rwPre (args : List Val) : GoFV.Proof.Pass.Rewrite.RwPre zrTabs zrFunc zrEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
-    fun n c h => Env.p1_keepsRo n c h, ?_⟩
+    fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
   · rw [show NilCheck.dictParams zrTabs zrFunc = [] by decide +kernel]
     exact DictArgs.nil args
   · rw [zr_roSyms]
