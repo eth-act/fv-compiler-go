@@ -11,8 +11,9 @@ refinement (`Rule.SoundT` denotes the `Store` by its register, about which a val
 nothing) but that the `Load` reads the stored value back, which depends on the instance: the
 checked rewrite validates each instance (`GoFV.Opt.RewriteCheck.fwdPre`, `fwdRel`, `fwdOK`:
 through `Store`s at pointers disjoint from the read, `disjointB`, a `Store` at a pointer equal
-to the Load's, `samePtrB`; the `Load`, the `Store`'s type and the value have one integer,
-boolean or pointer shape, `fwdTyEq`) and `GoFV.Proof.Pass.LoadFwd.fwd_refines` proves the
+to the Load's, `samePtrB`; the `Load`, the `Store`'s type and the value have one shape that
+reads back what was written, `fwdTyEq`: scalars, strings, slices and nested structs of them)
+and `GoFV.Proof.Pass.LoadFwd.fwd_refines` proves the
 forwarded function refines its input, under the atom simulation's `MemAtoms` (a `Store`'s
 register is the write of its arguments, a `LocalAddr`'s its frame variable). The rule-level
 obligation `EffectRule.LoadFwd` is the shape that makes this per-instance check apply
