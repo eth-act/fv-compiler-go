@@ -241,33 +241,21 @@ theorem stepTerm_rel {G GT : Frame} {b b' : Block} (hk : b'.kind = b.kind) (hs :
     rw [hk]
     simp only [hsucc, hid]
     cases hkb : b.kind <;> simp only [hkb] at h ⊢
-    · cases h
-    · exact h
-    · cases hc0 : Sem.control G b 0 with
-      | ok y =>
-        obtain ⟨y', hy', hv⟩ := hct 0 y hc0
-        rw [hc0] at h
-        rw [hy']
-        cases y with
-        | bool c => rw [hv.eq nofun nofun]; exact h
-        | _ => simp [bind, Res.bind] at h
-      | panic _ _ => exact absurd hc0 control_not_panic
-      | stuck _ => rw [hc0] at h; cases h
-    · cases h
-    · exact absurd hkb hR
-    · cases h
-    · cases h
-    · cases hc0 : Sem.control G b 0 with
-      | ok y =>
-        obtain ⟨y', hy', hv⟩ := hct 0 y hc0
-        rw [hc0] at h
-        rw [hy']
-        cases y with
-        | int w x => rw [hv.eq nofun nofun]; exact h
-        | _ => simp [bind, Res.bind] at h
-      | panic _ _ => exact absurd hc0 control_not_panic
-      | stuck _ => rw [hc0] at h; cases h
-    · exact h
+    all_goals first
+      | exact h
+      | exact absurd hkb hR
+      | (cases hc0 : Sem.control G b 0 with
+          | ok y =>
+            obtain ⟨y', hy', hv⟩ := hct 0 y hc0
+            rw [hc0] at h
+            rw [hy']
+            cases y with
+            | bool c => rw [hv.eq nofun nofun]; exact h
+            | int w x => rw [hv.eq nofun nofun]; exact h
+            | _ => simp [bind, Res.bind] at h
+          | panic _ _ => exact absurd hc0 control_not_panic
+          | stuck _ => rw [hc0] at h; cases h)
+      | cases h
   refine ⟨fun e h => ?_, fun rs m h => ?_⟩
   · by_cases hR : b.kind = .Ret
     · unfold stepTerm at h
