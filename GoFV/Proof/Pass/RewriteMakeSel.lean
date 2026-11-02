@@ -44,26 +44,6 @@ theorem make_facts {op : Op} (h : GoFV.Proof.Rules.makeOp op = true) :
   cases op <;> simp only [GoFV.Proof.Rules.makeOp, reduceCtorEq] at h
   all_goals exact ⟨by decide, by decide, fun _ _ _ _ => rfl⟩
 
-/-- A word shape keeps a 64-bit integer word: a 64-bit integer, a pointer without a concrete
-address, or `poison`. -/
-theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
-    (hz : z.hasTy (.int .w64) = true) : z.retype t = z := by
-  cases z with
-  | poison => exact retype_poison _
-  | int w x =>
-    cases w <;> simp [Val.hasTy] at hz
-    cases t with
-    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype]
-    | ptr e => rfl
-    | _ => simp [wordTy] at ht
-  | ptr p =>
-    simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
-    cases t with
-    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype, hz]
-    | ptr e => rfl
-    | _ => simp [wordTy] at ht
-  | _ => simp [Val.hasTy] at hz
-
 /-- An `Addr` denotes `poison` or a global pointer, which has no concrete address. -/
 theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a : ID} {w : Value}
     (hw : D a = some w) (hop : w.op = .Addr) :
@@ -79,21 +59,6 @@ theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a 
       | ptr e => exact .inr ⟨_, rfl, rfl⟩
       | _ => exact .inl rfl
     · exact .inl (retype_poison _)
-
-/-- `Convert` at a word shape of a 64-bit integer word is one (integer → pointer is the
-identity; a pointer without a concrete address does not convert to an integer). -/
-theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : List Val) :
-    (PtrOps.convert t (z :: l)).hasTy (.int .w64) = true := by
-  unfold PtrOps.convert
-  split
-  · rename_i x m he
-    cases he
-    split
-    · rename_i p
-      simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
-      simp [hz, Val.hasTy]
-    · exact hz
-  · rfl
 
 /-- A value accepted by `intWord` denotes a 64-bit integer word at every fuel. -/
 theorem intWord_den {tabs : Tables} {M : Defs} {ρ : ID → Val}
