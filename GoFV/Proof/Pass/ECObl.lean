@@ -55,13 +55,6 @@ theorem obl_invalid {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {HS HT :
 
 /-! ## Tail calls -/
 
-theorem tailOp_eq {op : Op} (h : tailOp op = true) : op = .TailLECall ∨ op = .TailLECallInter := by
-  unfold tailOp at h
-  split at h
-  · exact .inl rfl
-  · exact .inr rfl
-  · cases h
-
 /-- **The obligation of a tail call**: `TailLECall*` is outside the semantics' phases, so the
 source's evaluation is `stuck`. -/
 theorem obl_tail {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT : ID → Prop}

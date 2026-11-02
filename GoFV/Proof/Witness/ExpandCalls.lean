@@ -117,4 +117,32 @@ theorem expandCalls_stack_witness :
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag,
       Env.p1_mono, Env.p1_frameKeep⟩
 
+/-! ## A tail call's stack-argument `Move` -/
+
+/-- A source block: the tail call `v2 = TailLECall v1` on the initial memory. -/
+def tailFB : Block := mkB 1 .RetJmp p0 #[2] #[] #[] #[1, 2]
+
+def tailF : Func :=
+  { hwr with
+    valueTab := #[none, some (mkV 1 .InitMem 0 none p0 2 #[] 1),
+      some (mkV 2 .TailLECall 0 none p0 0 #[1] 1)]
+    blockTab := #[none, some tailFB], blocks := #[1] }
+
+/-- Its rewrite: a new `v3 = Move v1 v1 v1` (a stack argument's copy) right before the tail
+call `v2 = TailCall v3`. -/
+def tailGB : Block := mkB 1 .RetJmp p0 #[2] #[] #[] #[1, 2, 3]
+
+def tailG : Func :=
+  { hwr with
+    valueTab := #[none, some (mkV 1 .InitMem 0 none p0 3 #[] 1),
+      some (mkV 2 .TailCall 0 none p0 0 #[3] 1), some (mkV 3 .Move 0 none p0 1 #[1, 1, 1] 1)]
+    blockTab := #[none, some tailGB], blocks := #[1] }
+
+/-- `blockOK` accepts the new `Move` of a tail call's stack argument as anchored at the tail
+call (`tailAnchoredB`, `ECStruct`'s `AnchoredAt` with a vacuous obligation: the source's tail
+call is `stuck`). -/
+theorem expandCalls_tailMove_witness :
+    ECCheck.tailAnchoredB tailF tailG tailFB tailGB 3 = true := by
+  decide +kernel
+
 end GoFV.Proof.Witness

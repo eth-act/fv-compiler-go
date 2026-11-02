@@ -3,6 +3,7 @@ import GoFV.Proof.Merge
 import GoFV.Proof.Avail
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Pass.CSEOp
+import GoFV.Proof.Pass.ECTyped
 
 /-!
 # `expand calls`: the structural soundness of `blockOK` (issue #28)
@@ -109,7 +110,8 @@ structure ecs_Parts (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (
   newv : ∀ z ∈ gb.values, ∀ w, g.value? z = some w →
     (isNewB f z = true → w.op ≠ .Phi ∧
       (newEvalB tabs g w = true ∨ (∃ x ∈ fb.values, z ∈ stackStores f g x) ∨
-        (∃ x ∈ fb.values, z ∈ wideStores f g x) ∨ ∃ x ∈ fb.values, z ∈ ownStores f g x)) ∧
+        (∃ x ∈ fb.values, z ∈ wideStores f g x) ∨ (∃ x ∈ fb.values, z ∈ ownStores f g x) ∨
+        tailAnchoredB f g fb gb z = true)) ∧
       ∀ a ∈ w.args, isNewB f a = true →
         a ∈ gb.values ∨ a ∈ valsOf g g.entry ∨ placedSDom g anc fb.id a = true
 
@@ -291,11 +293,12 @@ theorem ecs_parts {tabs : Tables} {sh : Array Ty} {anc : ID → ID → Bool} {f 
     · simp only [hzn, Bool.not_true, Bool.false_or, Bool.and_eq_true, bne_iff_ne, Bool.or_eq_true,
         List.contains_iff_mem, List.mem_flatMap] at hn
       refine ⟨hn.1, ?_⟩
-      rcases hn.2 with ((h | ⟨x, hx, hz'⟩) | ⟨x, hx, hz'⟩) | ⟨x, hx, hz'⟩
+      rcases hn.2 with (((h | ⟨x, hx, hz'⟩) | ⟨x, hx, hz'⟩) | ⟨x, hx, hz'⟩) | h
       · exact .inl h
       · exact .inr (.inl ⟨x, Array.mem_toList_iff.1 hx, hz'⟩)
       · exact .inr (.inr (.inl ⟨x, Array.mem_toList_iff.1 hx, hz'⟩))
-      · exact .inr (.inr (.inr ⟨x, Array.mem_toList_iff.1 hx, hz'⟩))
+      · exact .inr (.inr (.inr (.inl ⟨x, Array.mem_toList_iff.1 hx, hz'⟩)))
+      · exact .inr (.inr (.inr (.inr h)))
     · have := ha a ha'
       simp only [han, Bool.not_true, Bool.false_or, Bool.or_eq_true, Array.contains_iff_mem] at this
       rcases this with (h | h) | h
@@ -1090,6 +1093,46 @@ private theorem ecs_invalidated_iff {g : Func} {y : ID} : invalidated g y = true
   | none => simp
   | some w => simp
 
+/-- **A new value before a tail call is anchored at it** (`tailAnchoredB`): the source's
+`TailLECall*` is `stuck`, so the source never reaches it and the obligation holds vacuously. -/
+private theorem ecs_tailAnchored {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID}
+    {fb gb : Block} (hwf : WF ce f) (hwg : WF ce' g) (hbm : bid ∈ f.blocks)
+    (hbg : bid ∈ g.blocks) (hfb : f.block? bid = some fb) (hgb : g.block? bid = some gb)
+    {z : ID} (h : tailAnchoredB f g fb gb z = true) :
+    AnchoredAt tabs f g (ecCv tabs f g) (isNewB f) fb gb z := by
+  have hownF := valuesOwn hwf hbm hfb
+  have hndF := hwf.valuesNodup bid fb ⟨hbm, hfb⟩
+  have hownG := valuesOwn hwg hbg hgb
+  have hndG := hwg.valuesNodup bid gb ⟨hbg, hgb⟩
+  unfold tailAnchoredB at h
+  split at h
+  · rename_i og hog
+    obtain ⟨x, hx, hxh⟩ := Array.any_eq_true'.1 h
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hxh
+    obtain ⟨⟨ht, hi⟩, hgap⟩ := hxh
+    refine ⟨x, hx, fun hti => ?_, [], ?_, fun a ha => absurd ha List.not_mem_nil, ?_⟩
+    · rw [ecs_invalidated_iff.2 hti] at hi; cases hi
+    · intro w _ env G T _ E _ _ _ _ _ _ hR _
+      exfalso
+      unfold isTail at ht
+      cases hu : f.value? x with
+      | none => rw [hu] at ht; cases ht
+      | some u =>
+        rw [hu] at ht
+        obtain ⟨msg, hs⟩ := evalOp_tail (env := env) (ctx := Ctx.make tabs f) (fr := G)
+          (argv := u.args.toList.map (AtomSim.rv G)) (ty := (Ctx.make tabs f).tys[u.id]?.getD .other)
+          (tailOp_eq ht)
+        rcases hR u hu with ⟨y, hy⟩ | ⟨e, m, hy⟩
+        · rw [AtomSim.evalValue_of_regs (AtomSim.regs_of_ok hy), hs] at hy; cases hy
+        · rw [AtomSim.evalValue_of_regs (AtomSim.regs_of_panic hy), hs] at hy; cases hy
+    · intro og' hog' A B hAB
+      rw [hog] at hog'
+      cases hog'
+      rw [npIn_schedNodes hownF hndF]
+      rw [hAB] at hgap
+      exact ecs_gap hgap (hAB ▸ (schedule_topo hownG hndG hog).1)
+  · cases h
+
 /-- An argument `a` of `y` accepted by `throughB` (pure in `f`, its node arguments reaching `y`
 in `g`) `Feeds` `y`. -/
 private theorem ecs_through {f g : Func} {fb gb : Block} (hownF : ValuesOwn f fb)
@@ -1191,11 +1234,12 @@ theorem ecs_block {tabs : Tables} {ce ce' : CheckEnv} {f g : Func} {bid : ID} {f
       newOK := fun z hz hn w hw => by
         obtain ⟨hph, he⟩ := (P.newv z hz w hw).1 hn
         refine ⟨hph, ?_⟩
-        rcases he with he | ⟨x, hx, hzx⟩ | ⟨x, hx, hzx⟩ | ⟨x, hx, hzx⟩
+        rcases he with he | ⟨x, hx, hzx⟩ | ⟨x, hx, hzx⟩ | ⟨x, hx, hzx⟩ | ht
         · exact .inl (newEval_of_newEvalB he)
         · exact .inr (.inl (ecs_anchored hwf hwg hcg hbm hbg hfb hgb hid hb hx hzx))
         · exact .inr (.inl (ecs_wideAnchored hwf hwg hbm hbg hfb hgb hb hx hzx))
         · exact .inr (.inr (ecs_retAnchored hwf hwg hbm hbg hfb hgb hb hown hx hzx))
+        · exact .inr (.inl (ecs_tailAnchored hwf hwg hbm hbg hfb hgb ht))
       newArgs := fun z hz w hw a ha hn => by
         rcases (P.newv z hz w hw).2 a ha hn with h | h | h
         · exact .inl h
