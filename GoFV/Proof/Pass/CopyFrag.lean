@@ -90,6 +90,37 @@ theorem retypeInto_other (t : Ty) : RetypeInto .other t := fun v => by
   rw [h]
   cases t <;> rfl
 
+/-- A word shape: `uintptr`/`int` (`.int .w64`) or a pointer. -/
+def wordShape : Ty → Bool
+  | .int .w64 | .ptr _ => true
+  | _ => false
+
+/-- `poison` or a pointer without a concrete address (a global; the value of an `Addr`). -/
+def GlobalOrPoison (y : Val) : Prop := y = .poison ∨ ∃ p, y = .ptr p ∧ p.addr? = none
+
+theorem GlobalOrPoison.retype {y : Val} (h : GlobalOrPoison y) (t : Ty) :
+    GlobalOrPoison (y.retype t) := by
+  rcases h with rfl | ⟨p, rfl, hp⟩
+  · left; cases t <;> rfl
+  · cases t with
+    | int w =>
+      cases w
+      · left; rfl
+      · left; rfl
+      · left; rfl
+      · right; exact ⟨p, by simp [Val.retype, hp], hp⟩
+    | ptr e => right; exact ⟨p, rfl, hp⟩
+    | _ => left; rfl
+
+/-- At a word shape, `retype` keeps `poison` and a global pointer. -/
+theorem GlobalOrPoison.retype_word {y : Val} (h : GlobalOrPoison y) {t : Ty}
+    (ht : wordShape t = true) : y.retype t = y := by
+  rcases h with rfl | ⟨p, rfl, hp⟩
+  · cases t <;> rfl
+  · match t, ht with
+    | .int .w64, _ => simp [Val.retype, hp]
+    | .ptr _, _ => rfl
+
 mutual
 /-- Shapes that `Val.retype` does not tell apart: equal up to pointers' and slices' element
 sizes and composites' sizes. -/

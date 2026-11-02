@@ -721,7 +721,17 @@ Decompose builtin's rewrite check splits the log at these events as `RewriteChec
 under `Env.Mono`) on each segment. Witness: `GoFV.Proof.Witness.decPhiElim_witness` (`pickLen`:
 a string phi's length component over two `StringMake q n`, kernel evaluation). Decompose
 builtin in the fragment: quick-v3 8645 → 8731 (87 sections had a phi elimination; the 3 still
-rejected fail on other classes), full-v4 81847 → 82590.
+rejected fail on other classes), full-v4 81847 → 82590. A `Phi <uintptr>` whose arguments are
+one `Addr <*uint8>` (the itab word of an interface phi over `IMake`s of one itab symbol) becomes
+`Copy <uintptr>` of the `Addr`, whose shapes `retypeEqB` does not relate: `CopyCheck.copyOK`
+accepts it (`CopyRelCheck.copyValueOK`: the value was a `Phi`, the copy has a word shape, the
+argument is an `Addr`), since an `Addr` evaluates to a global pointer or `poison`
+(`CopyElim.evalValue_addr`, `GlobalOrPoison`), which `retype` keeps at a word shape
+(`CopyElim.CopyArgOK`); in the next segment the copy-argument replacements of the copy by the
+`Addr` and `finalOK`'s arguments go through `RewriteCheck.copyReachW` (`copyReach`, or first a
+word `Copy` of an `intWord`; `copyReachW_den` by `intWord_den` and `retype_word`). Witness:
+`GoFV.Proof.Witness.pa_checkedRewrite` (`pa`, kernel evaluation). Decompose builtin in the
+fragment: quick-v4 9180 → 9199, full-v5 91625 → 91647.
 
 **`@b` results** (`… => @x.Block (…)`). The block a result is built in is not read by the term
 denotations, so `resultOK` accepts a `build` whose node 0 is a fresh `t` (not `v`) with `v`

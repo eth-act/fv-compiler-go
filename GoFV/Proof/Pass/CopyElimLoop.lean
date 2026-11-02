@@ -129,7 +129,7 @@ theorem rel_of_ctl (hwf : WF ce f) (hI : Inv tabs f G) (hset : Settled f (vw G))
       obtain ⟨wv', hwv', -, -, hty', -⟩ := value_of_vw hw'
       obtain ⟨xv', hxv', -, hxt, -⟩ := hI.keep_some hvx
       rw [hxv] at hxv'; cases hxv'
-      refine ⟨wv', hwv', ?_⟩
+      refine ⟨wv', hwv', .inl ?_⟩
       rw [hty', hkw.2.1]
       exact hty.trans (.of_eq (congrArg _ hxt.symm))
 

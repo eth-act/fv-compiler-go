@@ -828,6 +828,17 @@ def intWord (tabs : Tables) (M : Defs) : Nat → ID → Bool
           | none => false)
     | none => false
 
+/-- `copyReach`, or first a `Copy` at a word shape of a 64-bit integer word (`intWord`: the
+identity on its argument's value) and then `copyReach` from its argument: the `Copy <uintptr>` of
+an `Addr <*uint8>` a phi elimination leaves (issue #17), whose shapes `copyCompat` does not
+relate. -/
+def copyReachW (tabs : Tables) (M : Defs) (n : Nat) (a w : ID) : Bool :=
+  copyReach tabs M n a w ||
+    match M.get? a with
+    | some x => x.op == .Copy && x.args.size == 1 && wordTy (tabs.ty x.type) &&
+        intWord tabs M 4 x.args[0]! && copyReach tabs M n x.args[0]! w
+    | none => false
+
 /-- The event `(v, defs)` selects an argument of a `Make`: `v` is a selection of component `k`
 (`selIndex?`) of `s` in `M`, `s` a `Make` whose argument `k` is a defined value `a`, `defs` is
 `v` as `Copy a` at `a`'s type (`copyOf`), and where the `Make`'s shape has a component `k`, `a`'s
@@ -927,7 +938,7 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) :
     | none => none
     | some x =>
       if h : i < x.args.size then
-        if copyReach tabs M M.size x.args[i] src then
+        if copyReachW tabs M M.size x.args[i] src then
           replay tabs t f (M.put v { x with args := x.args.set i src }) B evs
         else replay tabs t f M B evs
       else none
@@ -1067,7 +1078,7 @@ def finalOK (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : Bool :=
         | some m, some u =>
           (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
             u.aux == m.aux && u.args.size == m.args.size &&
-            (m.args.toList.zip u.args.toList).all fun (a, a') => copyReach tabs M n a a') ||
+            (m.args.toList.zip u.args.toList).all fun (a, a') => copyReachW tabs M n a a') ||
           (termOp u.op && !readIn g x)
         | _, _ => false
     | _, _, _ => false
@@ -2557,7 +2568,7 @@ def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEven
     match s.M.get? v, s.M.get? src with
     | some u, some w =>
       if (u.op == .Load || w.op == .Load) &&
-          (u.args[i]?).any (copyReach tabs s.M s.M.size · src) then
+          (u.args[i]?).any (copyReachW tabs s.M s.M.size · src) then
         match replay tabs t f s.M [] [ev] with
         | some (M', _) =>
           { g := s.g.setArg v i src, M := M', taken := s.taken.push ev

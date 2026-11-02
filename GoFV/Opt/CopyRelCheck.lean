@@ -21,7 +21,9 @@ def copyArg (g : Func) (w a : ID) : Bool :=
   a == w || (g.value? a).any fun u => u.op == .Copy && u.args == #[w]
 
 /-- `g`'s value `x` (listed in block `kb` of `k`) is `k`'s or a `Phi` of `k` turned copy,
-copies of `g` retype like their argument, and `k`'s value has no zero-size aggregate type. -/
+copies of `g` retype like their argument, or a `Phi` of `k` turned copy copies an `Addr` (a
+global pointer, which has no concrete address) at a word shape (`uintptr` or a pointer; issue
+#17), and `k`'s value has no zero-size aggregate type. -/
 def copyValueOK (tabs : Tables) (k g : Func) (x : ID) : Bool :=
   (match k.value? x, g.value? x with
     | some kv, some gv =>
@@ -34,7 +36,9 @@ def copyValueOK (tabs : Tables) (k g : Func) (x : ID) : Bool :=
     | none, _ => true) &&
   (g.value? x).all fun gv => gv.op != .Copy || gv.args.size != 1 ||
     (g.value? gv.args[0]!).any fun wv =>
-      GoFV.Proof.CopyElim.retypeEqB (tabs.ty wv.type) (tabs.ty gv.type)
+      GoFV.Proof.CopyElim.retypeEqB (tabs.ty wv.type) (tabs.ty gv.type) ||
+        (wv.op == .Addr && GoFV.Proof.CopyElim.wordShape (tabs.ty gv.type) &&
+          (k.value? x).all (·.op == .Phi))
 
 /-- **`g` is `k` with some `Phi`s turned copies** (`CopyElim.CopyRel tabs k g` and
 `CopyElim.EmptyFrag tabs k`). -/

@@ -132,4 +132,98 @@ theorem pz_checkedRewrite :
     exact Pass.Rewrite.checkedRewrite_refines (s := azRules) (penv := pePassEnv) (f := pz)
       (out := out) azRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)
 
+/-! ## A `Phi <uintptr>` of a `*uint8` `Addr` turned copy (issue #17)
+
+`pa` returns the itab-like word `uintptr(unsafe.Pointer(&g))` through a branch: `v6 = Phi
+<uintptr> v4 v4` of `v4 = Addr <*uint8> {main.g} SB` in `b4` (as decompose builtin leaves the
+itab component of an interface `Phi` whose `IMake`s share one itab symbol). `phielimValue` turns
+it into `Copy <uintptr> v4`; the copy changes no value (an `Addr` is a global pointer, which has
+no concrete address, or `poison`), but the shapes differ (`retypeEqB` of `*uint8` and `uintptr`
+is false), so `CopyCheck.copyOK` accepts it only through its `Addr` case
+(`CopyElim.CopyArgOK`). -/
+
+/-- `abiInfo` of `pa`: no parameters, one `uintptr` result. -/
+def peaABI : CallABI :=
+  { peABI with params := #[{ out := true, index := 0, type := 10, name := some 3, regs := #[0],
+                             offset := -1 }] }
+
+/-- The definition tables: `uintptr` (10), `*uint8` (12), the data symbol `main.g` (aux 4). -/
+def peaTabs : Tables where
+  types :=
+    let t := Array.replicate 41 (none : Option TypeDef)
+    let t := t.set! 1 (some (mkT .FUNC (some 8) "func() uintptr" (.func 0 0 1 #[])))
+    let t := t.set! 6 (some (mkT .BOOL (some 1) "bool"))
+    let t := t.set! 10 (some (mkT .UINTPTR (some 8) "uintptr"))
+    let t := t.set! 11 (some (mkT .UINT8 (some 1) "uint8"))
+    let t := t.set! 12 (some (mkT .PTR (some 8) "*uint8" (.elem 11)))
+    let t := t.set! 31 (some (mkT .SSA none "mem"))
+    let t := t.set! 32 (some (mkT .SSA none "void"))
+    t.set! 40 (some (mkT .RESULTS none "uintptr,mem" (.results #[10, 31])))
+  auxes := #[none,
+    some { fmt := GoStr.ofString "AuxCall{main.pa}", kind := .call (some 2) (some peaABI) },
+    some { fmt := GoStr.ofString "main.pa",
+           kind := .sym (GoStr.ofString "main.pa") 1 "" 0 default none none none #[] none },
+    some (paramNameT "~r0" .PPARAMOUT 10 0),
+    some { fmt := GoStr.ofString "main.g",
+           kind := .sym (GoStr.ofString "main.g") 0 "SNOPTRBSS" 8 default none none none #[]
+             none }]
+
+/-- `pa`, the input of the rewrite pass. -/
+def pa : Func :=
+  { pz with
+    vidLast := 7
+    blockTab := #[none,
+      some (mkB 1 .If p0 #[2] #[⟨2, 0⟩, ⟨3, 0⟩] #[] #[1, 2, 3, 4]),
+      some (mkB 2 .Plain p0 #[] #[⟨4, 0⟩] #[⟨1, 0⟩] #[]),
+      some (mkB 3 .Plain p0 #[] #[⟨4, 1⟩] #[⟨1, 1⟩] #[]),
+      some (mkB 4 .Ret p0 #[7] #[] #[⟨2, 0⟩, ⟨3, 0⟩] #[6, 7])]
+    valueTab := #[none,
+      some (mkVi 1 .InitMem 31 0 p0 1 #[] 1),
+      some (mkVi 2 .ConstBool 6 1 p0 1 #[] 1),
+      some (mkV 3 .SB 10 none p0 1 #[] 1),
+      some (mkV 4 .Addr 12 (some 4) p0 2 #[3] 1),
+      none,
+      some (mkVi 6 .Phi 10 0 p0 1 #[4, 4] 4),
+      some (mkVi 7 .MakeResult 40 0 p0 1 #[6, 1] 4)]
+    consts := #[(1, #[2])] }
+
+def peaTyps : Array (String × TypeRef) :=
+  #[("Bool", 6), ("Uintptr", 10), ("BytePtr", 12), ("Mem", 31), ("Void", 32)]
+
+def peaCheckEnv : CheckEnv := { tabs := peaTabs, typs := peaTyps }
+
+def peaPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "pa", typs := peaTyps, tables := peaTabs }
+
+/-- By kernel evaluation: the input passes `check`; the rewrite logs a phi elimination;
+`checkedRewrite` keeps a result that returns `v4` directly and passes `check`; the `Addr`'s and
+the `Phi`'s shapes do not retype alike. -/
+theorem pa_checks :
+    (check peaCheckEnv pa).toBool = true ∧
+    (rewriteRun (Interp.Table.ofRuleSet azRules) true true peaPassEnv pa).toOption.map
+      (fun r => RewriteCheck.noPhiElim r.2.2) = some false ∧
+    (checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa).toOption.map
+      (fun o => ((check peaCheckEnv o.func).toBool, (o.func.value? 7).map (·.args))) =
+      some (true, some #[4, 1]) ∧
+    CopyElim.retypeEqB (peaTabs.ty 12) (peaTabs.ty 10) = false := by
+  decide +kernel
+
+/-- **Witness of `CopyElim.CopyArgOK`'s `Addr` case** (through `checkedRewrite_refines`): on
+`pa`, the rewrite turns the `Phi <uintptr>` of a `*uint8` `Addr` into a copy of it, the checked
+pass keeps its result (`MakeResult v4 v1`), and the result refines the input. -/
+theorem pa_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa = .ok out ∧
+      (out.func.value? 7).map (·.args) = some #[4, 1] ∧
+      RefinesFrom (Pass.Rewrite.RwPre peaPassEnv.tables pa) out.tables out.func
+        peaPassEnv.tables pa := by
+  obtain ⟨h1, -, h2, -⟩ := pa_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h7⟩ := h2
+    exact ⟨out, rfl, h7, Pass.Rewrite.checkedRewrite_refines (s := azRules) (penv := peaPassEnv)
+      (f := pa) (out := out) azRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
 end GoFV.Proof.Witness

@@ -163,7 +163,8 @@ theorem copyEqBase (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i :
     have hpu := phiUse S.cf hbt.1 hfb hbt.2 hx hfv hph ha he hpt
     have hla : Listed f a :=
       hwf.argListed _ _ _ _ ⟨⟨hbt.1, hfb⟩, hx, hfv⟩ a (Array.mem_of_getElem? ha)
-    obtain ⟨y', h1, h2⟩ := S.argEq hDT (A := fun z => Anc (make f) z fb.preds[i].b) hpu
+    obtain ⟨y', h1, h2⟩ := S.argEq hDT (A := fun z => Anc (make f) z fb.preds[i].b)
+      (fun _ _ hz hz' => Anc.trans S.cp hz' hz) hpu
       hA.tyT hla hpu (hrelA a (Array.mem_of_getElem? ha))
     rw [hy] at h1; cases h1
     obtain ⟨hwU', hwne⟩ := S.phiOut hbt hne hfb hx hfv hgu hph hop hargs hrelA
@@ -179,11 +180,19 @@ theorem copyEqBase (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i :
     obtain ⟨wv, hwv, hsh⟩ := S.rel.copyShape bid hbt.1 hbt.2 fb hfb u hx gu w hgu hop hargs
     have := hA.tyT w y h2
     rw [tys_of_value hwv] at this; simp only [Option.getD_some] at this
-    rw [tys_of_value hfv]; simp only [Option.getD_some]; rw [← hty, hsh.apply this]
+    have haddr : wv.op = .Addr → GlobalOrPoison y := fun hwop => by
+      obtain ⟨bw', fbw', hbw', hfbw', hxw', hbwg', -⟩ := S.usedG hwl hwU'
+      obtain ⟨hplw, hwb⟩ := S.placedG hbw' hfbw' hxw' hwv
+      obtain ⟨y', hy', hev'⟩ := hA.upT S w wv hplw (by rw [hwb, ← hbwg']; exact ⟨hwU', hwne⟩)
+      rw [h2] at hy'; cases hy'
+      exact evalValue_addr hwop (hev' (by rw [hwop]; decide))
+    rw [tys_of_value hfv]; simp only [Option.getD_some]; rw [← hty, hsh.apply this haddr]
   · -- the copy is defined in a strict dominator of `bid`
     have hcase : blockOf f u ≠ bid := by rw [hbo]; exact hbb
     rw [hbo] at hcase hu
     obtain ⟨y, h1, h2⟩ := S.argEq (hA.upT S) (A := fun z => Anc (make f) z bid ∧ z ≠ bid)
+      (fun _ _ hz hz' => ⟨Anc.trans S.cp hz' hz.1,
+        fun he => hz.2 (Anc.antisymm S.cp hz.1 (by rw [← he]; exact hz'))⟩)
       (by rw [hbo]; exact ⟨hu, hcase⟩) hA.tyT hl (by rw [hbo]; exact hu)
       (.inr ⟨gu, hgu, hop, hargs⟩)
     have hwne : blockOf g w ≠ bid := fun he => hcase
@@ -269,7 +278,8 @@ theorem copyEq (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat
       have := hM.typed w y hy
       rw [tys_of_value hfw] at this; simp only [Option.getD_some] at this
       rw [hfid, tys_of_value hfv]; simp only [Option.getD_some]
-      rw [← hty]; exact hsh.apply (by rw [htyw]; exact this)
+      have hri := hsh.resolve_right fun ⟨_, _, hph⟩ => hnph (hph fv hfv)
+      rw [← hty]; exact hri.apply (by rw [htyw]; exact this)
     rcases hra with rfl | ⟨ufa, hufa, hopa, hargsa⟩
     · exact ⟨y0, by rw [hyu, hshape y0 hy0], hy0⟩
     · -- `fa` is itself a copy of `w`: by induction or a base case

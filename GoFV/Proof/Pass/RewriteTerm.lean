@@ -147,7 +147,7 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
         ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.op = m.op ∧
         u.type = m.type ∧ u.auxInt = m.auxInt ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
         ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
-          copyReach tabs M M.size m.args[j] u.args[j] = true := by
+          copyReachW tabs M M.size m.args[j] u.args[j] = true := by
   intro b hb gb hgb
   unfold finalOK at h
   have := (Array.all_eq_true_iff_forall_mem.1 h) b hb
@@ -174,7 +174,7 @@ theorem finalOK_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
         rcases this with this | ⟨ht, hr⟩
         · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
           refine ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, fun j h1 h2 => ?_⟩
-          have := zip_all_get (f := fun x : ID × ID => copyReach tabs M M.size x.1 x.2) hargs
+          have := zip_all_get (f := fun x : ID × ID => copyReachW tabs M M.size x.1 x.2) hargs
             (by simp [hsz]) j (by simpa using h1) (by simpa using h2)
           simpa using this
         · rcases hrd with hrd | hrd
@@ -221,7 +221,7 @@ theorem final_den {tabs : Tables} {f g : Func} {M : Defs} {B : BMap}
       apply retype_mono; apply GoFV.Proof.Rules.opVal_mono
       refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
       simp only [Array.getElem_toList]
-      exact (copyReach_den hT _ _ _ (hargs j (by simpa using h1) (by simpa using h2)) n).trans
+      exact (copyReachW_den hT (hargs j (by simpa using h1) (by simpa using h2)) n).trans
         (final_den hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem _))
           (readIn_arg hb hgb hxv hu (Array.getElem_mem _)))
     · have h1 : ¬ IsTerm M.get? x := fun ⟨w, hw, hw'⟩ => by
@@ -275,7 +275,7 @@ theorem validate_termRef {tabs : Tables} {s : RuleSet} {f g : Func} {log : Array
       rw [getElem!_pos u.args i hi]
       have h1 := hk ρ hT
       rw [getElem!_pos m.args i (by omega)] at h1
-      exact h1.trans ((copyReach_den hTM _ _ _ hcopy k).trans
+      exact h1.trans ((copyReachW_den hTM hcopy k).trans
         (final_den hv hcg hρ hTM k _ hmark (readIn_arg hb hgb ha hu (Array.getElem_mem hi))))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := atomsOK_facts hA b hb gb hgb
