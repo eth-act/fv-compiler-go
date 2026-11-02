@@ -3055,9 +3055,12 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .seg => segPre t
   | .ps => psPre t
 
-/-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs). -/
+/-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs;
+selective forwarding rounds after the segments for forwardings through `Move`s whose sources
+earlier forwardings changed). -/
 def layers : List Layer :=
-  [.ps, .nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd false, .nil false]
+  [.ps, .nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd true, .fwd true, .fwd true, .fwd true,
+   .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/

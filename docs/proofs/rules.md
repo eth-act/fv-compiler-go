@@ -633,7 +633,8 @@ The nil-check eliminations, forwardings, struct-store splits (`generic.rules:975
 events out of the log and applies them to the input in layers (`RewriteCheck.layersOK` over
 `RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
 of, struct-load expansions, struct-store splits of the input's `Store`s, those of the first
-layer's fresh field stores, segment rewrites, the remaining forwardings, the remaining nil-check
+layer's fresh field stores, segment rewrites, four more rounds of forwardings `fwdOK` holds of,
+the remaining forwardings, the remaining nil-check
 eliminations), each related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` +
 `check`, `validate` with the layer's events alone + `check`, `ssRel` + `check`, `segRel` +
 `check`; a layer without events
@@ -643,7 +644,10 @@ its input, the later layer of its kind the rest: a split's pointer may be an eli
 (a `Copy` after the first nil-check layer) and its `StructMake`'s arguments forwarded `Load`s, a
 forwarded field `Load` may read a split's field `Store` (only after the split layer), and an
 eliminated nil check's pointer may be a forwarded `Load` (`generic.rules:1367` after `:800`:
-only after the forwarding layers).
+only after the forwarding layers). The selective forwarding rounds after the segments order
+forwardings that build on each other: a `Load` through a `Move` (`:827`) reads the source that
+an earlier `:2146` gave the `Move` (`fwdMoveOK` looks the `Move` up in the layer's input), and a
+`Move`'s source changes along a chain of `Move`s (`moveSrcOK` looks the inner `Move` up there).
 
 A `Store` of a `Load` that `:974` expanded (a struct copy `*p = *q`) stores the expansion's
 `StructMake` of fresh field `Load`s when `:975` splits it, which the split relation needs in its
@@ -1243,7 +1247,10 @@ With forwardings of nested structs (`fwdTy` through `fwdFields` of strings, slic
 bddd8ee). With snapshots before the forwardings of `Load`s not in the pass's input
 (`Interp.builtLoad`: `Load`s that struct-load expansions and `Load` selections built, which the
 forwarding layers of the segment did not have): 91,965 → 92,089 (on 59a7370; the probe's
-run time is unchanged, 8.5 → 7.9 min).
+run time is unchanged, 8.5 → 7.9 min). With four selective forwarding rounds after the segments
+(`RewriteCheck.layers`; `fwd₂: move: args` and `rep Move->Move`, forwardings through `Move`s
+whose sources earlier forwardings changed: 143 → 17 such functions blocked): 92,089 → 92,223
+(on 762c0fc).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
