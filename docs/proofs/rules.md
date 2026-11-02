@@ -270,7 +270,8 @@ non-empty aggregate of such fields at increasing, non-overlapping offsets (`fwdA
 `fwdAggEq`: strings, interfaces, flat structs); the `Store`'s type that shape or a pointer
 stored as `int64`, `fwdStoreTy`), and ranks ordering every listed non-`Phi` value after its
 arguments (`fwdRank`, `fwdRankOK`). Pointers: `ptrBase` (a base and a constant offset through
-`OffPtr`s, pointer `Copy`s and `PtrIndex`es by a constant index, `constIdx?`: a constant term
+`OffPtr`s, pointer `Copy`s, pointer-shaped `Convert`s and `ITab`s of `IMake`s (`wordStep?`) and
+`PtrIndex`es by a constant index, `constIdx?`: a constant term
 of the 64-bit integer shape, `termConst`, e.g. `Div64 (Sub64 (Const64 [32]) (Const64 [1]))
 (Const64 [32])` before the value rules fold it; the index times
 the element size of the `PtrIndex`'s pointer shape; `ptrIndex_den` evaluates the index at a fuel
@@ -362,12 +363,16 @@ env.Mono ∧ env.AllocZero ∧ RoImage ro env mem)`. `zeroChain_read` reads zero
 `fm_checkedRewrite` (`mallocgcSmallNoScanSC2`), `fn_checkedRewrite`/`fn_rwPre` (`newobject`,
 `Witness/FwdNew.lean`).
 
-**Fixed loads** (`:2251`, `:2255`, issue #69): `(Load (OffPtr [off] (Addr {s} sb)) _) &&
-isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` (and its form at offset 0) resets the
+**Fixed loads** (`:2251`–`:2258`, issue #69): `(Load (OffPtr [off] (Addr {s} sb)) _) &&
+isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` (and its forms at offset 0, through
+`Convert` and through `ITab (IMake …)`) resets the
 `Load` to the `Addr` of a relocation target of the `SRODATA` symbol `s` (mostly `.dict.` entries)
 or to a constant of a type descriptor's header (`Size_`, `PtrBytes`, `Hash`, `Kind_`).
-`fwdShapeOK` takes these two patterns (`:2252`–`:2254`, `:2256`–`:2258`, through `Convert` or
-`ITab`, it does not); `fwdEvent?` accepts an `Addr`, `Const64`, `Const32` or `Const8`
+`fwdShapeOK` takes the eight patterns (`fixedPtrPat`); `ptrBase` follows a pointer-shaped
+`Convert` and the `ITab` of an `IMake` (`wordStep?`, `wordStep_den`: a `Convert` to a pointer
+type is the identity on the word; the itab word is the `IMake`'s first argument retyped as the
+interface's first field and then as a pointer, `retype_eq_agg`, `asPtrWord_of_retype`; witness
+`fi_checkedRewrite`, `Witness/FwdFixedItab.lean`); `fwdEvent?` accepts an `Addr`, `Const64`, `Const32` or `Const8`
 definition. `fwdNewOK tabs ro f g` accepts `fixedOK tabs ro f u w`: the Load's pointer is an
 `Addr` of one of the pass input's read-only symbols `(n, a) ∈ ro` (`ptrBase`, `baseBlk?`), at
 offset `o`; `w` is an argument-less constant or an `Addr` (`opVal_addr` ignores its `SB`); the read
@@ -384,9 +389,7 @@ symbol's block, where the memory's read is the allocation's (`read_congr_find`,
 
 Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
 block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second
-`Zero` leaves `poison` where the source has zeros; and stores of `ConstNil` (pointer fragments of
-`nil`, not `0` bytes) or `SliceLen` of a constant slice (`isConstZero` cases beyond integer
-constants), which fall back.
+`Zero` leaves `poison` where the source has zeros.
 
 **Changed `Move` sources** (`:2146`, `:2155`): `(Move {t1} [s] dst tmp1 midmem:(Move {t2} [s] tmp2
 src _)) && isSamePtr(tmp1, tmp2) && isStackPtr(src) && disjoint(src, s, tmp2, s) && … => (Move
@@ -976,7 +979,7 @@ needs a later phase of the semantics.
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
-| `generic` | Load | 9 | 1 | 0 | 33 | 35 |
+| `generic` | Load | 17 | 1 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 1 | 10 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
@@ -1020,7 +1023,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1338 | 210 | 31 | 258 | 1762 |
+| all | | 1346 | 210 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
