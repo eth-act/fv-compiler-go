@@ -551,6 +551,12 @@ theorem ecc_ofPieces_arg {t : Ty} {v : Val} (hw : wf t = true)
     | ptr q =>
       rw [← ecc_ofPieces_ptr]
       exact ofPieces_mono _ h
+    | int w x =>
+      have hv' : (Val.int w x).hasTy (.int .w64) = true := by
+        cases w <;> simp_all [Val.hasTy]
+      rw [ecPieceVals_of_hasTy true hv'] at h
+      rw [Val.retype_of_hasTy hv']
+      exact (ofPieces_leafVals hw hv').trans (ofPieces_mono _ h)
     | _ => simp [Val.hasTy] at hv
 
 /-- **`decodeArgs` of register and stack arguments**: the register pieces refine the expected

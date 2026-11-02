@@ -20,7 +20,6 @@ import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString
-import GoFV.Proof.Rules.Convert
 import GoFV.Proof.Rules.Dec
 import GoFV.Proof.Rules.DecLoad
 import GoFV.Proof.Rules.DecLoadSel
@@ -174,7 +173,6 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.checked_of_sound r_generic_1057_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_1044_sound rfl, trivial⟩,
     ⟨Rule.checked_of_soundT r_generic_1015_sound, Rule.checked_of_soundT r_generic_1022_sound, trivial⟩,
-    ⟨Rule.checked_of_sound r_generic_1072_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_173_sound rfl, Rule.checked_of_sound r_generic_1083_sound rfl, Rule.checked_of_sound r_generic_1092_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_177_sound rfl, Rule.checked_of_sound r_generic_1098_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_174_sound rfl, Rule.checked_of_sound r_generic_1084_sound rfl, Rule.checked_of_sound r_generic_1093_sound rfl, trivial⟩,

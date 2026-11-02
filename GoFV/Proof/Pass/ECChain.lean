@@ -578,6 +578,13 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
       cases y with
       | ptr r => exact .cons hyy .nil
       | poison => exact .cons (.poison _) .nil
+      | int w x =>
+        cases w with
+        | w64 =>
+          have hr : (Val.int .w64 x).retype (.int .w64) = .int .w64 x := by simp [Val.retype]
+          rw [ecPieceVals_of_hasTy true rfl, leafVals_atom rfl, hr]
+          exact .cons hyy .nil
+        | _ => simp [Val.hasTy] at hyp
       | _ => simp [Val.hasTy] at hyp
 
 end GoFV.Proof.EC

@@ -181,7 +181,7 @@ theorem ptrIndex_den {a : ID} {u : Value} (hu : f.value? a = some u) (hop : u.op
   | some q =>
     rw [hq] at hK
     simp only [Option.bind_some, asOffset, Ptr.step?] at hK
-    refine ⟨max k 4, q, rfl, ?_⟩
+    refine ⟨max k 4, q, hq, ?_⟩
     split at hK <;> cases hK
     rw [BitVec.signExtend_eq]
 
