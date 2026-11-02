@@ -44,6 +44,7 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Load-of-Store forwardings. -/
   | fwd {f f' g : Func} : RewriteCheck.fwdRel tabs f f' = true →
+      RewriteCheck.fwdRoOK tabs (RewriteCheck.roSyms penv.tables f0) f = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Validated rewrite events (struct-load expansions). -/
@@ -71,7 +72,7 @@ theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Int
   induction h with
   | refl f => exact .refl f
   | nil h _ ih => exact .nil h ih
-  | fwd h hc _ ih => exact .fwd h hc ih
+  | fwd h hr hc _ ih => exact .fwd h hr hc ih
   | rw h hc _ ih => exact .rw (by rwa [validate_congr hv hb] at h) hc ih
   | ss h hc _ ih => exact .ss h hc ih
   | seg h hr hc _ ih => exact .seg h hr hc ih
@@ -97,7 +98,7 @@ theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pa
       | nil sel => exact .nil hL hc
       | fwd sel =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
-        exact .fwd hL.1 hL.2 hc
+        exact .fwd hL.1.1 hL.1.2 hL.2 hc
       | sl =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .rw hL.1 hL.2 hc

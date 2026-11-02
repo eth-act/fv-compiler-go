@@ -193,7 +193,7 @@ def kbInv {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array B
     exact ⟨⟨hm, hR⟩, hinv, kb_phis hwf K hm hl hinv, fun _ _ _ _ => trivial⟩
   term _ _ _ x _ v hv ht ρ hρ := kb_term hwf K hv ht ρ hρ
   atom _ _ _ x _ v hv ht hph y := kb_atom hwf K hv ht hph y
-  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
+  qstep _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ := trivial
 
 @[simp] theorem kbInv_P {tabs : Tables} {f g : Func} {E : Array (Int64 × Int64)} {R : Array Bool}
     {ce : CheckEnv} (hwf : WF ce f) (K : KbFacts tabs f g E R) (b a : ID) (y : Val) :
