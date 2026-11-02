@@ -209,6 +209,15 @@ has pointer shape (`NilCheck.ptrField`) and whose argument `i` is a `safePtr` po
 `GoFV.Proof.Witness.ns_checkedRewrite`, `sm_checkedRewrite` and `cv_checkedRewrite` (`:1376`)
 (`GoFV/Proof/Witness/NilSel.lean`, kernel evaluation).
 
+`(IsNonNil (LocalAddr _ _)) => (ConstBool [true])` (`:1691`; `LocalAddr` is no term node) is
+validated the same way: `nilChecks` are also tried on an `IsNonNil` after its row, `nilElimOK`
+takes `(IsNonNil (Addr|LocalAddr …)) => (ConstBool [true])`, `nilPre` turns the `IsNonNil` into
+`ConstBool [1]`, and `nrel` accepts that when its pointer is an `NilCheck.nnSeed` (pointer-typed
+`LocalAddr` with a name or `Addr` of a symbol: its frame value is a non-nil pointer, never
+`poison`, so the source's `IsNonNil` is `true`, `VRel.nns`, `Nil.nnSeed_reg`; Go's nilcheckelim
+uses the same `nonNilValues`). Witness: `GoFV.Proof.Witness.ln_checkedRewrite`
+(`GoFV/Proof/Witness/NilSel.lean`, kernel evaluation).
+
 `safePtr true` (the rewrite passes' seeds) also takes as non-nil the first result of a
 malloc-family call (`NilCheck.mallocCall`: a `StaticLECall` of `runtime.newobject` or a
 `runtime.mallocgc*SC*` allocator, `NilCheck.mallocName`, whose type and ABI give the result a
@@ -245,7 +254,8 @@ input names a read-only symbol the pipeline input does not is skipped), and
 (RewriteCheck.roSyms env.tables f)`.
 Witness: `GoFV.Proof.Witness.nm_checkedRewrite` (`newInt(.dict)`: both nil checks removed,
 kernel evaluation) and `nm_rwPre` (the precondition with a dictionary). Proven:
-`generic.rules:1062`, `:1367`, `:1372`, `:1375`, `:1376`, `:1381`, `:1384`, `:1388` (all of them).
+`generic.rules:1062`, `:1367`, `:1372`, `:1375`, `:1376`, `:1381`, `:1384`, `:1388` (all of the
+nil-check eliminations) and `:1691`.
 
 ### Load-of-Store forwarding: `EffectRule.LoadFwd` (`GoFV/Proof/Rules/LoadFwd.lean`)
 

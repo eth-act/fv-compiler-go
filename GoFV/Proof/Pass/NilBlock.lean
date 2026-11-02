@@ -64,6 +64,7 @@ theorem vrel_phi {x : ID} {fv gv : Value} (h : VRel xt tabs f g x fv gv) : gv.op
   | same hop => rw [hop]
   | nc h1 h2 => rw [h1, h2]; decide
   | nn h1 h2 => rw [h1, h2]; decide
+  | nns h1 h2 => rw [h1, h2]; decide
   | after h1 h2 => rw [h1, h2]; decide
 
 namespace Blk
@@ -228,6 +229,8 @@ theorem tgtArg {x : ID} (hx : Node f fb x) {gv : Value} (hgv : g.value? x = some
       rw [K.hfb] at hfb'; cases hfb'
       exact .inr ⟨hm, _, hn', by rw [hop']; decide⟩
   | nn hop hcb hai hs0 =>
+    rw [Array.eq_empty_of_size_eq_zero hs0] at ha; simp at ha
+  | nns hop hcb hai hs0 =>
     rw [Array.eq_empty_of_size_eq_zero hs0] at ha; simp at ha
   | @after nc hop hcp hs1 hn hA =>
     have hanc : a = nc := by
@@ -444,6 +447,71 @@ theorem evalOp_pure {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
   rfl
 
 omit K in
+/-- A pointer into an allocation is non-nil as its word. -/
+theorem nn_word {q : Ptr} (h : q.blk ≠ .nil) : NN q.word := by
+  rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨hc, a, ha, hw⟩ <;> rw [hw]
+  · exact h
+  · show (Ptr.ofAddr a).blk ≠ .nil
+    rw [Ptr.ofAddr_addr hc ha]; exact h
+
+omit K in
+/-- What `nnSeed` says of a value: a pointer-typed `Addr` or `LocalAddr` whose frame value is a
+non-nil pointer. -/
+theorem nnSeed_spec {z : ID} (h : Opt.NilCheck.nnSeed tabs f z = true) :
+    ∃ v e, f.value? z = some v ∧ tabs.ty v.type = .ptr e ∧ (v.op = .Addr ∨ v.op = .LocalAddr) ∧
+      ∃ q, frameVal (Ctx.make tabs f) v = some (.ptr q) ∧ q.blk ≠ .nil := by
+  unfold Opt.NilCheck.nnSeed at h
+  cases hv : f.value? z with
+  | none => rw [hv] at h; cases h
+  | some v =>
+    rw [hv] at h
+    simp only [Bool.and_eq_true] at h
+    obtain ⟨hp, hop⟩ := h
+    unfold Opt.NilCheck.ptrShaped at hp
+    split at hp
+    · next e he =>
+      refine ⟨v, e, rfl, he, ?_⟩
+      split at hop
+      · next h1 =>
+        obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 hop
+        refine ⟨.inr h1, _, by unfold frameVal; rw [h1]; simp [hn]; rfl, ?_⟩
+        unfold frameBlk; split <;> nofun
+      · next h1 =>
+        split at hop
+        · next name _ _ _ _ _ _ _ _ _ _ _ hk =>
+          refine ⟨.inl h1, ?_⟩
+          unfold frameVal; rw [h1]
+          simp only [Ctx.make] at hk ⊢
+          rw [hk]; exact ⟨_, rfl, nofun⟩
+        · cases hop
+      · cases hop
+    · cases hp
+
+/-- **`nnSeed` values hold non-nil pointers** in the source's frames. -/
+theorem nnSeed_reg {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
+    {z : ID} (h : Opt.NilCheck.nnSeed tabs f z = true) (hz : Base f bid z ∨ z ∈ oS.toList.take k) :
+    ∃ y, S.regs[z]? = some (some y) ∧ NN y := by
+  obtain ⟨v, e, hv, he, hop, q, hq, hqn⟩ := nnSeed_spec h
+  have hph : v.op ≠ .Phi := by rcases hop with h1 | h1 <;> rw [h1] <;> decide
+  obtain ⟨b, blk, hbin, hxb, hid⟩ := K.listed_avail hz hv
+  obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
+  have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = .ptr e := by
+    rw [hid, tys_of_value hv]; simpa using he
+  refine ⟨y, hy, ?_⟩
+  obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := v)
+    (by rw [hev]; nofun)
+  rw [evalValue_of_argVals hvs, hty] at hev
+  obtain ⟨r, hr, hyr⟩ := bind_ok hev
+  subst hyr
+  have hnr : isRoot v.op = false ∧ v.op ≠ .InitMem ∧ v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg ∧
+      v.op ≠ .GetClosurePtr ∧ v.op ≠ .ArgFloatReg := by
+    rcases hop with h1 | h1 <;> rw [h1] <;> decide
+  obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr
+  rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6, hq] at hr
+  cases hr
+  exact nn_word hqn
+
+omit K in
 theorem isNonNil_nn {q : Val} (h : NN q) : PtrOps.isNonNil [q] = .bool true := by
   match q, h with
   | .ptr p, h => simp only [NN] at h; simp [PtrOps.isNonNil, Ptr.isNil, h]
@@ -560,6 +628,26 @@ theorem sameOk {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
   | @nn p nc hop hcb hai hs0 hs1 hp hne hj =>
     rw [hvb] at hj
     obtain ⟨yp, -, hyp, hnn, -⟩ := K.just_nn hS (Nat.le_of_lt hik) hiS hj hne
+    obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := fv)
+      (by rw [hev]; nofun)
+    have hfa : fv.args = #[p] := by
+      apply Array.ext (by simp [hs1]); intro k h1 h2
+      have : k = 0 := by simp at h2; omega
+      subst this; simpa [Array.getElem?_eq_getElem h1] using hp
+    have hvs' : vs = [yp] := by
+      rw [hfa] at hvs; unfold argVals at hvs
+      simp [hyp] at hvs; exact hvs.symm
+    subst hvs'
+    rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop), hop] at hev
+    obtain ⟨r, hr, hyr⟩ := bind_ok hev
+    cases hr
+    have hT0 : argVals T gv.args = some [] := by
+      rw [Array.eq_empty_of_size_eq_zero hs0]; rfl
+    rw [evalValue_of_argVals hT0, evalOp_pure (.inr hcb), hcb, hai, hyr, hid, hxid, htys]
+    change Res.ok (Val.retype _ (Conv.constBool 1)) = Res.ok (Val.retype _ (PtrOps.isNonNil [yp]))
+    rw [isNonNil_nn hnn]; rfl
+  | @nns p hop hcb hai hs0 hs1 hp hns =>
+    obtain ⟨yp, hyp, hnn⟩ := K.nnSeed_reg hS hns (hsrc p (Array.mem_of_getElem? hp))
     obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := fv)
       (by rw [hev]; nofun)
     have hfa : fv.args = #[p] := by
@@ -1152,6 +1240,10 @@ theorem panic_same {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     exfalso
     rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop)] at hrp
     cases hrp
+  | @nns p hop hcb hai hs0 hs1 hp hns =>
+    exfalso
+    rw [evalValue_of_argVals hvs, evalOp_pure (.inl hop)] at hrp
+    cases hrp
   | @after nc hop hcp hs1 hn hA => exact absurd ⟨hcp, hn, hA, hop⟩ (hna nc)
 
 /-- The root the source panics at is a root of the target. -/
@@ -1406,6 +1498,7 @@ theorem prefixLoop {pre : List ID} {Gp : Frame}
       cases hrel with
       | nc _ hcp => rw [hcp]; decide
       | nn _ hcb => rw [hcb]; decide
+      | nns _ hcb => rw [hcb]; decide
       | after _ hcp => rw [hcp]; decide
       | same hop =>
         rw [hop]
@@ -1441,6 +1534,9 @@ theorem root_f_of_g {y : ID} {fy : Value} (hfy : f.value? y = some fy) (hy : roo
     simp only [Opt.NilCheck.root, hgy, hcp, Option.map_some, Option.getD_some] at hy
     exact absurd hy (by decide)
   | nn _ hcb =>
+    simp only [Opt.NilCheck.root, hgy, hcb, Option.map_some, Option.getD_some] at hy
+    exact absurd hy (by decide)
+  | nns _ hcb =>
     simp only [Opt.NilCheck.root, hgy, hcb, Option.map_some, Option.getD_some] at hy
     exact absurd hy (by decide)
   | after _ hcp =>

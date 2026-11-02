@@ -14,7 +14,9 @@ the same values possibly reordered, the `Phi`s in the same order) and values, ex
   into an allocation (`safePtr`: `Addr`, `LocalAddr`, a nil check, `GetG`, the `StringPtr` of a
   non-empty string constant, or `OffPtr`/`AddPtr`/`PtrIndex`/`Copy` of such a pointer or a
   `StructSelect` of a `StructMake`'s pointer field that is one, all pointer-typed);
-* an `IsNonNil p` may become `ConstBool [1]` when a nil check of `p` justifies it;
+* an `IsNonNil p` may become `ConstBool [1]` when a nil check of `p` justifies it or `p` holds a
+  non-nil pointer whenever it is evaluated (`nnSeed`: an `Addr` of a symbol or a `LocalAddr` with
+  a name, pointer-typed; Go's `nonNilValues`);
 
 and every block's schedule in `g` runs the roots of `f`'s, minus the removed checks, in the same
 order. `nilFrag penv f`: the checker accepts `nilcheckelim`'s output. Go's remaining assumptions
@@ -152,6 +154,21 @@ def safePtr (xt : Bool) (tabs : Tables) (f : Func) : Nat → ID → Bool
           | none => false
       | _ => false
 
+/-- `x` is pointer-typed and holds a non-nil pointer whenever it is evaluated (`Sem.frameVal`,
+never `poison`): an `Addr` of a symbol or a `LocalAddr` with a name. -/
+def nnSeed (tabs : Tables) (f : Func) (x : ID) : Bool :=
+  match f.value? x with
+  | some v =>
+    ptrShaped tabs v.type &&
+      match v.op with
+      | .LocalAddr => v.aux.isSome
+      | .Addr =>
+        match v.aux.bind tabs.aux? with
+        | some { kind := .sym .., .. } => true
+        | _ => false
+      | _ => false
+  | none => false
+
 /-- `o` lists `a` before `b`. -/
 def listedBefore (o : Array ID) (a b : ID) : Bool :=
   match o.findIdx? (· == a), o.findIdx? (· == b) with
@@ -198,7 +215,8 @@ def after (f g : Func) (fv : Value) (x nc : ID) : Bool :=
       | none => false
   | _, _, _ => false
 
-/-- `x` is unchanged, a justified removed nil check, or a justified constant `IsNonNil`. -/
+/-- `x` is unchanged, a justified removed nil check, or a justified constant `IsNonNil` (by a nil
+check or `nnSeed`). -/
 def valueOK (xt : Bool) (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | none, none => true
@@ -212,7 +230,7 @@ def valueOK (xt : Bool) (tabs : Tables) (c : DomCert.Cert) (f g : Func) (x : ID)
      (fv.op == .IsNonNil && gv.op == .ConstBool && gv.auxInt == 1 && gv.args.size == 0 &&
        fv.args.size == 1 &&
        match fv.args[0]? with
-       | some p => (List.range f.valueTab.size).any fun nc =>
+       | some p => nnSeed tabs f p || (List.range f.valueTab.size).any fun nc =>
            nc != p && justified xt tabs c f fv.block x p nc ((f.getV nc).type) false
        | none => false))
   | _, _ => false

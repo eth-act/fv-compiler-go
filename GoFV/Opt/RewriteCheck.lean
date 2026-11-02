@@ -1179,7 +1179,9 @@ into a term (`Copy x`). The validator takes these events out of the log: `nilPre
 the input (`NilCheck p mem` → `Copy p`, as `v.reset(OpCopy)`), the checked pass relates input
 and `nilPre` by nilcheckelim's checker (`NilCheck.nrel`: `p` is a `safePtr` seed, so the check
 cannot panic, and the other roots keep their order), and `validate` relates `nilPre` and the
-output with the remaining events. -/
+output with the remaining events. The row also holds `(IsNonNil (Op …)) => (ConstBool [true])`
+with `Op` an `Addr` or `LocalAddr` (tried on an `IsNonNil` after its row), which `nilPre`
+applies alike (`IsNonNil p` → `ConstBool [1]`) and `nrel` justifies by `NilCheck.nnSeed`. -/
 
 /-- A nil-check elimination `(NilCheck x:(Op …) _) => x` whose pointer op nilcheckelim's
 checker can justify by itself (`NilCheck.safePtr true`: `Addr`, `LocalAddr`, `NilCheck`, `GetG`,
@@ -1190,15 +1192,18 @@ def nilElimOK (r : Rule) : Bool :=
   | .op .NilCheck none _ _ _ .fixed [.op o (some x) _ _ _ _ _ _, _] _, .copy (.var y) =>
     x == y &&
       (o matches .Addr | .LocalAddr | .NilCheck | .GetG | .OffPtr | .Convert | .SelectN | .Arg)
+  | .op .IsNonNil none _ _ _ .fixed [.op o _ _ _ _ _ _ _] _, .build [n] =>
+    (o matches .Addr | .LocalAddr) && n.op == .ConstBool && n.ty.isNone && n.aux.isNone &&
+      n.args.isEmpty && (n.auxInt matches some (.lit .bool (.bool true)))
   | _, _ => false
 
-/-- The nil check `v` of `f` that event `ev` eliminates, if it is a `nilChecks` rule event
-(`nilElimOK`). -/
+/-- The nil check (or `IsNonNil`) `v` of `f` that event `ev` eliminates, if it is a `nilChecks`
+rule event (`nilElimOK`). -/
 def nilEvent? (t : Interp.Table) (f : Func) : RwEvent → Option ID
   | .rule v i _ _ =>
     match f.value? v with
     | some x =>
-      if x.op == .NilCheck then
+      if x.op == .NilCheck || x.op == .IsNonNil then
         let n := ((t.values[x.op.ctorIdx]?).map (·.size)).getD 0
         if n ≤ i then
           match t.nilChecks[i - n]? with
@@ -1210,23 +1215,29 @@ def nilEvent? (t : Interp.Table) (f : Func) : RwEvent → Option ID
   | _ => none
 
 /-- `v.reset(OpCopy)` with its pointer argument: the nil check `v` of `f` becomes `Copy p`, its
-other arguments lose a use. -/
+other arguments lose a use; an `IsNonNil` `v` becomes `ConstBool [1]` (`v.reset(OpConstBool)`),
+its argument loses a use. -/
 def nilCopy (f : Func) (v : ID) : Func :=
   match f.value? v with
   | some x =>
     if x.op == .NilCheck && 0 < x.args.size then
       let f := (x.args.extract 1 x.args.size).foldl (fun f a => f.modV a fun u => { u with uses := u.uses - 1 }) f
       f.modV v fun u => { u with op := .Copy, auxInt := 0, aux := none, args := #[x.args[0]!] }
+    else if x.op == .IsNonNil then
+      let f := x.args.foldl (fun f a => f.modV a fun u => { u with uses := u.uses - 1 }) f
+      f.modV v fun u => { u with op := .ConstBool, auxInt := 1, aux := none, args := #[] }
     else f
   | none => f
 
 /-- The nil check `v` of `f` checks a pointer nilcheckelim's checker takes as non-nil by itself
-(`NilCheck.safePtr true`). -/
+(`NilCheck.safePtr true`); the `IsNonNil` `v` tests an `NilCheck.nnSeed`. -/
 def nilSafe (tabs : Tables) (f : Func) (v : ID) : Bool :=
   match f.value? v with
   | some x =>
     match x.args[0]? with
-    | some p => NilCheck.safePtr true tabs f f.valueTab.size p
+    | some p =>
+      if x.op == .IsNonNil then NilCheck.nnSeed tabs f p
+      else NilCheck.safePtr true tabs f f.valueTab.size p
     | none => false
   | none => false
 

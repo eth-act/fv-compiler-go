@@ -18,6 +18,12 @@ precondition `Sem.Env.AllocNonNil` and `Sem.DictArgs`) and the other roots keep 
 shape that makes this per-instance check apply: the result is the checked pointer, and the
 pointer's op can be a `safePtr true` seed (`RewriteCheck.nilElimOK`, which the validator also
 checks).
+
+`(IsNonNil (LocalAddr _ _)) => (ConstBool [true])` (`generic.rules:1691`) has the same kind of
+obligation: `LocalAddr` is not a term node, so the rule is validated per instance like the nil
+checks (`RuleSet.nilChecks` are also tried on an `IsNonNil`; `nilPre` turns it into
+`ConstBool [1]`), and `nrel` takes a pointer-typed `LocalAddr` with a name, or an `Addr` of a
+symbol, as non-nil whenever it is evaluated (`NilCheck.nnSeed`, `GoFV.Proof.Nil.nnSeed_reg`).
 -/
 
 namespace GoFV.Proof.Rules
@@ -51,5 +57,9 @@ theorem r_generic_1372_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r
 
 /-- `generic.rules:1384`: `(NilCheck ptr:(Arg {sym}) _) && isDictArgSym(sym) => ptr` -/
 theorem r_generic_1384_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r_generic_1384 := rfl
+
+/-- `generic.rules:1691`: `(IsNonNil (LocalAddr _ _)) => (ConstBool [true])`; the `LocalAddr`
+is an `NilCheck.nnSeed`, which `nrel` takes as non-nil. -/
+theorem r_generic_1691_sound : EffectRule.NilElim GoFV.Rules.Generated.Generic.r_generic_1691 := rfl
 
 end GoFV.Proof.Rules

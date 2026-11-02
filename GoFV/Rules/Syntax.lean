@@ -249,9 +249,9 @@ structure BlockRule where
   deriving Repr, Inhabited
 
 /-- One rule file: value rules per op (ops sorted by Go name, as rulegen's `switch v.Op`) and
-block rules per block kind, each list in matching order. `nilChecks`: rules on `NilCheck`
-values tried after `values`' `NilCheck` row, which the checked rewrite validates per instance
-as nil-check eliminations; `loads`: Load-of-Store forwarding rules on `Load` values tried after
+block rules per block kind, each list in matching order. `nilChecks`: rules on `NilCheck` (and
+`IsNonNil`) values tried after `values`' `NilCheck` (`IsNonNil`) row, which the checked rewrite
+validates per instance as nil-check eliminations; `loads`: Load-of-Store forwarding rules on `Load` values tried after
 `values`' `Load` row, validated per instance as forwardings; `structLoads`: struct-load
 expansions (`rewriteStructLoad`) tried on `Load` values after `loads`, validated per instance;
 `structStores`: struct-store splits (`rewriteStructStore`) tried on `Store` values after

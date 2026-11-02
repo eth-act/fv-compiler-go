@@ -22,7 +22,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1220 proven value rules, 3 proven block rules, 8
+/-- `generic.rules` restricted to its 1220 proven value rules, 3 proven block rules, 9
 nil-check eliminations, 26 Load-of-Store forwardings, 1 struct-load
 expansions, 2 struct-store splits, 15 segment rules and 2 `Phi`
 selections. -/
@@ -219,7 +219,7 @@ def generic : RuleSet where
     (.ZeroExt8to32, [Generated.Generic.r_generic_101, Generated.Generic.r_generic_757]),
     (.ZeroExt8to64, [Generated.Generic.r_generic_102, Generated.Generic.r_generic_754])]
   blocks := [(.If, [Generated.Generic.r_generic_1064, Generated.Generic.r_generic_1065, Generated.Generic.r_generic_1066])]
-  nilChecks := [Generated.Generic.r_generic_1062, Generated.Generic.r_generic_1367, Generated.Generic.r_generic_1372, Generated.Generic.r_generic_1375, Generated.Generic.r_generic_1376, Generated.Generic.r_generic_1381, Generated.Generic.r_generic_1384, Generated.Generic.r_generic_1388]
+  nilChecks := [Generated.Generic.r_generic_1691, Generated.Generic.r_generic_1062, Generated.Generic.r_generic_1367, Generated.Generic.r_generic_1372, Generated.Generic.r_generic_1375, Generated.Generic.r_generic_1376, Generated.Generic.r_generic_1381, Generated.Generic.r_generic_1384, Generated.Generic.r_generic_1388]
   loads := [Generated.Generic.r_generic_800, Generated.Generic.r_generic_806, Generated.Generic.r_generic_813, Generated.Generic.r_generic_821, Generated.Generic.r_generic_827, Generated.Generic.r_generic_830, Generated.Generic.r_generic_832, Generated.Generic.r_generic_2251, Generated.Generic.r_generic_2252, Generated.Generic.r_generic_2253, Generated.Generic.r_generic_2254, Generated.Generic.r_generic_2255, Generated.Generic.r_generic_2256, Generated.Generic.r_generic_2257, Generated.Generic.r_generic_2258, Generated.Generic.r_generic_2146, Generated.Generic.r_generic_2155, Generated.Generic.r_generic_943, Generated.Generic.r_generic_948, Generated.Generic.r_generic_954, Generated.Generic.r_generic_961, Generated.Generic.r_generic_1005, Generated.Generic.r_generic_1357, Generated.Generic.r_generic_1362, Generated.Generic.r_generic_1352, Generated.Generic.r_generic_2158]
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975, Generated.Generic.r_generic_997]
