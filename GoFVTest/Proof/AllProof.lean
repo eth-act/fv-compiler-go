@@ -29,6 +29,7 @@ import GoFV.Proof.Enter
 import GoFV.Proof.Eval
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
+import GoFV.Proof.FrameKeep
 import GoFV.Proof.MemInv
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.MemRefine
@@ -133,10 +134,12 @@ import GoFV.Proof.Pass.ECLoop
 import GoFV.Proof.Pass.ECMain
 import GoFV.Proof.Pass.ECObl
 import GoFV.Proof.Pass.ECOk
+import GoFV.Proof.Pass.ECOwn
 import GoFV.Proof.Pass.ECPanic
 import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.Pass.ECShape
 import GoFV.Proof.Pass.ECSim
+import GoFV.Proof.Pass.ECSlots
 import GoFV.Proof.Pass.ECStack
 import GoFV.Proof.Pass.ECStackRes
 import GoFV.Proof.Pass.ECStruct
@@ -531,6 +534,7 @@ import GoFV.Proof.Witness.FuseLate
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.FwdCopy
 import GoFV.Proof.Witness.FwdDrop
+import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd

@@ -26,15 +26,17 @@ import GoFV.Proof.Pass.Decompose
 /-!
 # The verified generic pipeline refines its input (issue #189)
 
-The pass theorems conclude six relations: `Refines`, `RefinesUnder Env.Mono` (passes that
-rewrite call arguments rely on monotone contracts), `RefinesFrom (FrameSafe ∧ InitAvoids)`
+The pass theorems conclude seven relations: `Refines`, `RefinesUnder Env.Mono` (passes that
+rewrite call arguments rely on monotone contracts), `RefinesUnder (Env.Mono ∧ Env.FrameKeep)`
+(expand calls: the function's stack-assigned results stay writable in their frame slots across
+calls), `RefinesFrom (FrameSafe ∧ InitAvoids)`
 (dead auto elim), `RefinesFrom (RwPre tabs f)` (the checked rewrite passes: monotone
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments of
 the pass input `f`, the runtime's memory-call contracts; issue #151), `RefinesFrom WbPre`
 (writebarrier: a defined, read-only write-barrier flag and no write-barrier buffer, kept by the
 contracts; issue #36) and
 `RefinesFrom DecPre` (decompose user/builtin: monotone contracts that cannot tell whether
-unreachable frame temporaries exist, `InitAvoids`; issue #17). All six imply
+unreachable frame temporaries exist, `InitAvoids`; issue #17). All seven imply
 `VRefines k ro := RefinesFrom (VPre k ro)`, where
 `VPre k ro` is their conjunction with the input's dictionary parameters `k` and read-only
 symbols `ro` (`relHolds_toV`; the pipeline runs a proven pass only on states whose dictionary
@@ -57,14 +59,15 @@ dictionary parameters are `k` (`NilCheck.dictParams`): monotone, frame-safe cont
 malloc-family contracts that return non-nil pointers, inputs that hold no pointer into a frame
 temporary, non-nil dictionary arguments, a memory with a defined, read-only write-barrier
 flag and no write-barrier buffer, kept by the contracts (`WB.WbPre`), contracts that cannot
-tell whether unreachable frame temporaries exist (`Env.TempOblivious`), and
+tell whether unreachable frame temporaries exist (`Env.TempOblivious`),
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
-(`Env.MemOps`), and read-only symbols `ro` holding their exported bytes in the memory with the
-global image, kept by the contracts (`RoImage`). -/
+(`Env.MemOps`), read-only symbols `ro` holding their exported bytes in the memory with the
+global image, kept by the contracts (`RoImage`), and contracts that keep the caller's frame
+blocks and return no memory (`Env.FrameKeep`). -/
 def VPre (k : List Nat) (ro : List (String × Alloc)) (env : Env) (args : List Val) (mem : Mem) :
     Prop :=
   env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧
-    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem
+    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem ∧ env.FrameKeep
 
 /-- The refinement the verified pipeline establishes. -/
 abbrev VRefines (k : List Nat) (ro : List (String × Alloc)) (tabs' : Tables) (f' : Func)
@@ -79,6 +82,11 @@ theorem Refines.toV (h : Refines tabs' f' tabs f) : VRefines k ro tabs' f' tabs 
 theorem RefinesUnder.toV (h : RefinesUnder Env.Mono tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.1) h.from
 
+theorem RefinesUnder.frameKeep_toV
+    (h : RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) tabs' f' tabs f) :
+    VRefines k ro tabs' f' tabs f :=
+  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2.2.2.2⟩) h.from
+
 theorem RefinesFrom.frameSafe_toV
     (h : RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem) tabs' f' tabs f) :
     VRefines k ro tabs' f' tabs f :=
@@ -89,7 +97,7 @@ theorem RefinesFrom.rw_toV (hk : NilCheck.dictParams tabs f = k)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
     ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2.1,
-      hp.2.2.2.2.2.2.2.2.sub hro⟩) h
+      hp.2.2.2.2.2.2.2.2.1.sub hro⟩) h
 
 theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2.1) h
@@ -106,6 +114,7 @@ def relHolds : Rel → Tables → Func → Tables → Func → Prop
   | .rw => fun tabs' f' tabs f => RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f
   | .wb => RefinesFrom WB.WbPre
   | .dec => RefinesFrom Decompose.DecPre
+  | .frameKeep => RefinesUnder (fun env => env.Mono ∧ env.FrameKeep)
 
 /-- Each pass relation implies the pipeline's, for an input with dictionary parameters `k`. -/
 theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k)
@@ -117,6 +126,7 @@ theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k)
   | .rw, h => RefinesFrom.rw_toV hk hro h
   | .wb, h => RefinesFrom.wb_toV h
   | .dec, h => RefinesFrom.dec_toV h
+  | .frameKeep, h => RefinesUnder.frameKeep_toV h
 
 /-- A `proven` step's theorem: the result relates to the input when both pass `check` and the
 guard accepts the input. -/

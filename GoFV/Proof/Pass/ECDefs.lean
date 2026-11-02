@@ -7,11 +7,13 @@ import GoFV.Opt.ExpandCallsCheck
 The parameters of `CvRel` for `expand calls` (`GoFV.Opt.ECCheck.ecCheck`): the conversion `ecCv`
 (identity, except for calls and `MakeResult`s, whose tuple of Go-typed results becomes the
 register pieces of the register-assigned results, `convTuple`/`regLeafVals`, at the shape of
-the target's register types (a stack-assigned result stays in the call's memory, in both forms),
+the target's register types (a call's stack-assigned result stays in the call's memory, in both
+forms; a function's stack-assigned result is written into its frame slot, `convRes`/`resMem`),
 and for the values the pass invalidated, which become `poison`), the new values (`isNewB`: IDs the
 source does not define), the source values a value's obligation reads (`ecFront`: its arguments
 in the source and its non-new arguments in the target) and the relation of `Ret` outcomes
-(`ecRR`: the target returns the register pieces of the source's results, at register shapes).
+(`ecRR`: the target returns the register pieces of the source's results, at register shapes, and
+a memory refining the source's with the stack-assigned results in their frame slots).
 -/
 
 namespace GoFV.Proof.EC
@@ -59,6 +61,31 @@ def convTuple (tabs : Tables) (outs : List ABIParam) : Val → Val
     .tuple ((outs.zip vs).flatMap (fun (p, v) => regLeafVals tabs p v) ++ vs.drop outs.length)
   | _ => .poison
 
+/-- The memory `m` with the encodings of the stack-assigned results `rs` of `outs` written into
+their frame slots (`⟨.local 0 n, 0⟩` for result `n`), as the target's result stores leave it
+before its `Ret`; `none` if a write fails or a stack-assigned result has no name. -/
+def resMem (tabs : Tables) : List ABIParam → List Val → Mem → Option Mem
+  | p :: ps, r :: rs, m =>
+    if p.regs.isEmpty then
+      match p.name with
+      | some n => (m.write ⟨.local 0 n, 0⟩ (encode (tabs.ty p.type) r)).bind (resMem tabs ps rs)
+      | none => none
+    else resMem tabs ps rs m
+  | _, _, m => some m
+
+/-- The conversion of a `MakeResult`'s tuple `(results…, mem)`: the register pieces of the
+register-assigned results (`convTuple`) and the memory with the stack-assigned results in their
+frame slots (`resMem`; `poison` if a slot cannot be written). -/
+def convRes (tabs : Tables) (outs : List ABIParam) : Val → Val
+  | .tuple vs =>
+    match vs.getLast? with
+    | some (.mem m) =>
+      match resMem tabs outs vs m with
+      | some M => .tuple ((outs.zip vs).flatMap (fun (p, v) => regLeafVals tabs p v) ++ [.mem M])
+      | none => .poison
+    | _ => .poison
+  | _ => .poison
+
 /-- **The conversion of `expand calls`.** -/
 def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
   if invalidated g x then .poison else
@@ -67,7 +94,7 @@ def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
     if (callOpMap u.op).isSome then
       (convTuple tabs (callOuts tabs u.aux) y).retype (shapeOf (typeShapes tabs) g x)
     else if u.op == .MakeResult then
-      (convTuple tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g x)
+      (convRes tabs (ownOuts tabs f) y).retype (shapeOf (typeShapes tabs) g x)
     else if wideSel f g x then .poison
     else y
   | none => y
@@ -132,14 +159,15 @@ theorem ecFront_wide_cases {f g : Func} {x a : ID}
 /-- **The relation of `Ret` outcomes**: the source's results, one per result of the function,
 each of its result's shape; the target's refine the register pieces of the source's, each
 retyped at the shape of a register that holds its leaf without loss (`regShapeOK`: the leaf's
-shape, or a pointer register for a pointer or 64-bit integer leaf); the memories refine. -/
+shape, or a pointer register for a pointer or 64-bit integer leaf); the target's memory refines
+the source's with the stack-assigned results in their frame slots (`resMem`). -/
 def ecRR (tabs : Tables) (f : Func) (rs : List Val) (m : Mem) (rs' : List Val) (m' : Mem) : Prop :=
   List.Forall₂ (fun (p : ABIParam) (r : Val) => r.hasTy (tabs.ty p.type) = true) (ownOuts tabs f) rs ∧
     ∃ rts : List Ty,
       List.Forall₂ (fun lt rt => regShapeOK rt lt = true) (leafTys tabs (ownOuts tabs f)) rts ∧
       RefinesList (List.zipWith Val.retype rts
         (((ownOuts tabs f).zip rs).flatMap fun (p, r) => regLeafVals tabs p r)) rs' ∧
-      Mem.Refines m m'
+      ∃ M, resMem tabs (ownOuts tabs f) rs m = some M ∧ Mem.Refines M m'
 
 /-- What `blockOK`'s `imkArgOK` gives for an argument `a` of a converted value `x` of block `fb`
 whose node in `g` is an `IMake` (the `IMake` data shortcut, `ECCheck.imakeData`): the source

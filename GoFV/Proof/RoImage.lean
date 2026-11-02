@@ -33,9 +33,20 @@ def RoMem (ro : List (String × Alloc)) (m : Mem) : Prop :=
 def Mem.KeepsRo (m m' : Mem) : Prop :=
   ∀ n a, m.find? (.global n) = some a → a.writable = false → m'.find? (.global n) = some a
 
+/-- A relation between memories that writes and fresh heap allocations keep (reflexive and
+transitive): what the runtime's contracts do to memory keeps it (`Env.runtime_keeps`). -/
+structure MemSteps (R : Mem → Mem → Prop) : Prop where
+  refl : ∀ m, R m m
+  trans : ∀ {m1 m2 m3 : Mem}, R m1 m2 → R m2 m3 → R m1 m3
+  write : ∀ {m m' : Mem} {p : Ptr} {bs : Array Byte}, m.write p bs = some m' → R m m'
+  allocHeap : ∀ (m : Mem) (data : Array Byte), R m (m.allocHeap data).2
+
+/-- A contract's returns relate its memories by `R` and hold no memory. -/
+def Contract.Keeps (R : Mem → Mem → Prop) (c : Contract) : Prop :=
+  ∀ args clo m rs m', c args clo m = .returned rs m' → R m m' ∧ ∀ r ∈ rs, r.mems = []
+
 /-- A contract keeps the read-only global allocations and returns no memory. -/
-def Contract.KeepsRo (c : Contract) : Prop :=
-  ∀ args clo m rs m', c args clo m = .returned rs m' → m.KeepsRo m' ∧ ∀ r ∈ rs, r.mems = []
+def Contract.KeepsRo (c : Contract) : Prop := c.Keeps Mem.KeepsRo
 
 /-- Every contract of the environment keeps the read-only global allocations. -/
 def Env.KeepsRo (env : Env) : Prop := ∀ name c, env.extern name = some c → c.KeepsRo
@@ -93,10 +104,19 @@ theorem Mem.keepsRo_set {m : Mem} {b : Blk} (hg : ∀ n, b ≠ .global n) (a : A
 theorem Mem.keepsRo_allocHeap (m : Mem) (data : Array Byte) : m.KeepsRo (m.allocHeap data).2 :=
   Mem.keepsRo_set (b := .heap m.nextHeap) (fun _ h => by cases h) _
 
+/-- Writes and fresh heap allocations keep the read-only allocations. -/
+theorem Mem.keepsRo_steps : MemSteps Mem.KeepsRo :=
+  ⟨Mem.KeepsRo.refl, fun h1 h2 => h1.trans h2, Mem.keepsRo_write, Mem.keepsRo_allocHeap⟩
+
+/-- `RoMem ro` is kept by every `set` of a block that is no global. -/
+theorem roMem_set {ro : List (String × Alloc)} {m : Mem} {b : Blk} (a : Alloc) (h : RoMem ro m)
+    (hg : ∀ n, b ≠ .global n) (_hw : b ≠ .wbuf) : RoMem ro (m.set b a) :=
+  h.keep (Mem.keepsRo_set hg a)
+
 /-- **`RoMem ro` is a memory invariant.** -/
 theorem roMem_pred (ro : List (String × Alloc)) : MemInv.MemPred (RoMem ro) where
   write h hw := h.keep (Mem.keepsRo_write hw)
-  set a h hg _ := h.keep (Mem.keepsRo_set hg a)
+  poison h hg hw := MemInv.poison_of_set roMem_set h hg hw
   free_wbuf h := fun n a hm => by
     obtain ⟨hw, hf⟩ := h n a hm
     refine ⟨hw, ?_⟩
@@ -118,74 +138,76 @@ theorem Env.KeepsRo.contractsOK {env : Env} (h : env.KeepsRo) (ro : List (String
 
 namespace Runtime
 
-theorem alloc_keepsRo {m : Mem} {n : Nat} {a : Ptr × Mem} (h : alloc m n = some a) :
-    m.KeepsRo a.2 := by
+variable {R : Mem → Mem → Prop}
+
+theorem alloc_keeps (hR : MemSteps R) {m : Mem} {n : Nat} {a : Ptr × Mem} (h : alloc m n = some a) :
+    R m a.2 := by
   unfold alloc at h
   split at h
-  · cases h; exact Mem.KeepsRo.refl _
+  · cases h; exact hR.refl _
   · split at h
     · cases h
-    · cases h; exact Mem.keepsRo_allocHeap _ _
+    · cases h; exact hR.allocHeap _ _
 
-theorem allocBytes_keepsRo {m : Mem} {bs : Array Byte} {a : Ptr × Mem}
-    (h : allocBytes m bs = some a) : m.KeepsRo a.2 := by
+theorem allocBytes_keeps (hR : MemSteps R) {m : Mem} {bs : Array Byte} {a : Ptr × Mem}
+    (h : allocBytes m bs = some a) : R m a.2 := by
   unfold allocBytes at h
   split at h
-  · cases h; exact Mem.KeepsRo.refl _
+  · cases h; exact hR.refl _
   · split at h
     · cases h
-    · cases h; exact Mem.keepsRo_allocHeap _ _
+    · cases h; exact hR.allocHeap _ _
 
-theorem newString_keepsRo {m : Mem} {bs : Array Byte} {a : Val × Mem}
-    (h : newString m bs = some a) : m.KeepsRo a.2 ∧ a.1.mems = [] := by
+theorem newString_keeps (hR : MemSteps R) {m : Mem} {bs : Array Byte} {a : Val × Mem}
+    (h : newString m bs = some a) : R m a.2 ∧ a.1.mems = [] := by
   unfold newString at h
   split at h
-  · cases h; exact ⟨Mem.KeepsRo.refl _, rfl⟩
+  · cases h; exact ⟨hR.refl _, rfl⟩
   · simp only [bind, Option.bind_eq_some_iff, pure] at h
     obtain ⟨b, ha, h⟩ := h
     cases h
-    exact ⟨allocBytes_keepsRo ha, rfl⟩
+    exact ⟨allocBytes_keeps hR ha, rfl⟩
 
 theorem sliceVal_mems (p : Ptr) (len cap : Nat) : (sliceVal p len cap).mems = [] := rfl
 
 theorem strVal_mems (p : Ptr) (n : Nat) : (strVal p n).mems = [] := rfl
 
 /-- An `ok?` contract keeps the read-only allocations if its result does. -/
-theorem ok?_keepsRo {name : String} {o : Option (List Val × Mem)} {m : Mem} {rs : List Val}
+theorem ok?_keeps {name : String} {o : Option (List Val × Mem)} {m : Mem} {rs : List Val}
     {m' : Mem} (hr : ok? name o = .returned rs m')
-    (h : ∀ a, o = some a → m.KeepsRo a.2 ∧ ∀ r ∈ a.1, r.mems = []) :
-    m.KeepsRo m' ∧ ∀ r ∈ rs, r.mems = [] := by
+    (h : ∀ a, o = some a → R m a.2 ∧ ∀ r ∈ a.1, r.mems = []) :
+    R m m' ∧ ∀ r ∈ rs, r.mems = [] := by
   cases o with
   | none => cases hr
   | some a => cases hr; exact h _ rfl
 
-theorem panics_keepsRo (e : Panic) : (panics e).KeepsRo := by
+theorem panics_keeps (e : Panic) : (panics e).Keeps R := by
   intro _ _ _ _ _ h; cases h
 
-theorem noEffect_keepsRo : noEffect.KeepsRo := by
-  intro _ _ _ _ _ h; cases h; exact ⟨Mem.KeepsRo.refl _, by simp⟩
+theorem noEffect_keeps (hR : MemSteps R) : noEffect.Keeps R := by
+  intro _ _ _ _ _ h; cases h; exact ⟨hR.refl _, by simp⟩
 
-theorem newobject_keepsRo : newobject.KeepsRo := by
+theorem newobject_keeps (hR : MemSteps R) : newobject.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, b, hal, ho⟩ := ho
     cases ho
-    exact ⟨alloc_keepsRo hal, by simp [Val.mems]⟩
+    exact ⟨alloc_keeps hR hal, by simp [Val.mems]⟩
 
-theorem mallocSized_keepsRo : mallocSized.KeepsRo := by
+theorem mallocSized_keeps (hR : MemSteps R) : mallocSized.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, b, hal, ho⟩ := ho
     cases ho
-    exact ⟨alloc_keepsRo hal, by simp [Val.mems]⟩
+    exact ⟨alloc_keeps hR hal, by simp [Val.mems]⟩
 
-theorem makeslice_keepsRo : makeslice.KeepsRo := by
+theorem makeslice_keeps (hR : MemSteps R) : makeslice.Keeps R := by
   intro args clo m rs m' hr
   unfold makeslice at hr
   split at hr
@@ -195,15 +217,15 @@ theorem makeslice_keepsRo : makeslice.KeepsRo := by
       · dsimp only at hr
         split at hr
         · split at hr <;> cases hr
-        · refine ok?_keepsRo hr fun a ho => ?_
+        · refine ok?_keeps hr fun a ho => ?_
           simp only [bind, Option.bind_eq_some_iff, pure] at ho
           obtain ⟨b, hal, ho⟩ := ho
           cases ho
-          exact ⟨alloc_keepsRo hal, by simp [Val.mems]⟩
+          exact ⟨alloc_keeps hR hal, by simp [Val.mems]⟩
     · cases hr
   · cases hr
 
-theorem growslice_keepsRo : growslice.KeepsRo := by
+theorem growslice_keeps (hR : MemSteps R) : growslice.Keeps R := by
   intro args clo m rs m' hr
   unfold growslice at hr
   split at hr
@@ -214,55 +236,55 @@ theorem growslice_keepsRo : growslice.KeepsRo := by
         split at hr
         · cases hr
         · split at hr
-          · cases hr; exact ⟨Mem.KeepsRo.refl _, by simp [sliceVal_mems]⟩
+          · cases hr; exact ⟨hR.refl _, by simp [sliceVal_mems]⟩
           · split at hr
             · cases hr
-            · refine ok?_keepsRo hr fun a ho => ?_
+            · refine ok?_keeps hr fun a ho => ?_
               simp only [bind, Option.bind_eq_some_iff, pure] at ho
               obtain ⟨b, hal, bs, -, m2, hw, ho⟩ := ho
               cases ho
-              exact ⟨(alloc_keepsRo hal).trans (Mem.keepsRo_write hw), by simp [sliceVal_mems]⟩
+              exact ⟨hR.trans (alloc_keeps hR hal) (hR.write hw), by simp [sliceVal_mems]⟩
     · cases hr
   · cases hr
 
 /-- `growsliceBuf`'s tail: the zeroed capacity. -/
-private theorem growsliceBuf_tail {m1 : Mem} {c : Prop} [Decidable c] {p : Ptr} {bs : Array Byte}
+private theorem growsliceBuf_tail (hR : MemSteps R) {m1 : Mem} {c : Prop} [Decidable c] {p : Ptr} {bs : Array Byte}
     {v : Val} {a : List Val × Mem}
     (h : (if c then (m1.write p bs).bind fun m => some ([v], m) else (some m1).bind
-      fun m => some ([v], m)) = some a) : m1.KeepsRo a.2 ∧ a.1 = [v] := by
+      fun m => some ([v], m)) = some a) : R m1 a.2 ∧ a.1 = [v] := by
   split at h
   · simp only [Option.bind_eq_some_iff] at h
     obtain ⟨m2, hw, h⟩ := h
     cases h
-    exact ⟨Mem.keepsRo_write hw, rfl⟩
-  · cases h; exact ⟨Mem.KeepsRo.refl _, rfl⟩
+    exact ⟨hR.write hw, rfl⟩
+  · cases h; exact ⟨hR.refl _, rfl⟩
 
-theorem growsliceBuf_keepsRo : growsliceBuf.KeepsRo := by
+theorem growsliceBuf_keeps (hR : MemSteps R) : growsliceBuf.Keeps R := by
   intro args clo m rs m' hr
   unfold growsliceBuf at hr
   split at hr
   · split at hr
     · split at hr
-      · exact growslice_keepsRo _ _ _ _ _ hr
+      · exact growslice_keeps hR _ _ _ _ _ hr
       · split at hr
         · cases hr
         · split at hr
           · cases hr
-          · refine ok?_keepsRo hr fun a ho => ?_
+          · refine ok?_keeps hr fun a ho => ?_
             simp only [bind, pure] at ho
             split at ho
             · simp only [Option.bind_eq_some_iff] at ho
               obtain ⟨bs, -, m1, hw, ho⟩ := ho
-              obtain ⟨hk, hrs⟩ := growsliceBuf_tail ho
-              exact ⟨(Mem.keepsRo_write hw).trans hk, by simp [hrs, sliceVal_mems]⟩
-            · obtain ⟨hk, hrs⟩ := growsliceBuf_tail (m1 := m) ho
+              obtain ⟨hk, hrs⟩ := growsliceBuf_tail hR ho
+              exact ⟨hR.trans (hR.write hw) hk, by simp [hrs, sliceVal_mems]⟩
+            · obtain ⟨hk, hrs⟩ := growsliceBuf_tail (m1 := m) hR ho
               exact ⟨hk, by simp [hrs, sliceVal_mems]⟩
     · cases hr
   · cases hr
 
-theorem moveSlice_keepsRo (noScan : Bool) : (moveSlice noScan).KeepsRo := by
+theorem moveSlice_keeps (hR : MemSteps R) (noScan : Bool) : (moveSlice noScan).Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _, _], ho =>
     simp only [bind, pure] at ho
@@ -270,23 +292,23 @@ theorem moveSlice_keepsRo (noScan : Bool) : (moveSlice noScan).KeepsRo := by
     case isTrue =>
       obtain ⟨size, -, o, -, l, -, cap, -, ho⟩ := ho
       split at ho
-      · cases ho; exact ⟨Mem.KeepsRo.refl _, by simp [sliceVal_mems]⟩
+      · cases ho; exact ⟨hR.refl _, by simp [sliceVal_mems]⟩
       · simp only [Option.bind_eq_some_iff] at ho
         obtain ⟨bs, -, b, hal, ho⟩ := ho
         cases ho
-        exact ⟨allocBytes_keepsRo hal, by simp [sliceVal_mems]⟩
+        exact ⟨allocBytes_keeps hR hal, by simp [sliceVal_mems]⟩
     case isFalse =>
       obtain ⟨_, -, size, -, o, -, l, -, cap, -, ho⟩ := ho
       split at ho
-      · cases ho; exact ⟨Mem.KeepsRo.refl _, by simp [sliceVal_mems]⟩
+      · cases ho; exact ⟨hR.refl _, by simp [sliceVal_mems]⟩
       · simp only [Option.bind_eq_some_iff] at ho
         obtain ⟨bs, -, b, hal, ho⟩ := ho
         cases ho
-        exact ⟨allocBytes_keepsRo hal, by simp [sliceVal_mems]⟩
+        exact ⟨allocBytes_keeps hR hal, by simp [sliceVal_mems]⟩
 
-theorem moveSliceNoCap_keepsRo (noScan : Bool) : (moveSliceNoCap noScan).KeepsRo := by
+theorem moveSliceNoCap_keeps (hR : MemSteps R) (noScan : Bool) : (moveSliceNoCap noScan).Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _], ho =>
     simp only [bind, pure] at ho
@@ -294,63 +316,63 @@ theorem moveSliceNoCap_keepsRo (noScan : Bool) : (moveSliceNoCap noScan).KeepsRo
     case isTrue =>
       obtain ⟨sp, -, o, -, l, -, ho⟩ := ho
       split at ho
-      · cases ho; exact ⟨Mem.KeepsRo.refl _, by simp [sliceVal_mems]⟩
+      · cases ho; exact ⟨hR.refl _, by simp [sliceVal_mems]⟩
       · simp only [Option.bind_eq_some_iff] at ho
         obtain ⟨b, hal, bs, -, m2, hw, ho⟩ := ho
         cases ho
-        exact ⟨(alloc_keepsRo hal).trans (Mem.keepsRo_write hw), by simp [sliceVal_mems]⟩
+        exact ⟨hR.trans (alloc_keeps hR hal) (hR.write hw), by simp [sliceVal_mems]⟩
     case isFalse =>
       obtain ⟨_, -, sp, -, o, -, l, -, ho⟩ := ho
       split at ho
-      · cases ho; exact ⟨Mem.KeepsRo.refl _, by simp [sliceVal_mems]⟩
+      · cases ho; exact ⟨hR.refl _, by simp [sliceVal_mems]⟩
       · simp only [Option.bind_eq_some_iff] at ho
         obtain ⟨b, hal, bs, -, m2, hw, ho⟩ := ho
         cases ho
-        exact ⟨(alloc_keepsRo hal).trans (Mem.keepsRo_write hw), by simp [sliceVal_mems]⟩
+        exact ⟨hR.trans (alloc_keeps hR hal) (hR.write hw), by simp [sliceVal_mems]⟩
 
-theorem memmove_keepsRo : memmove.KeepsRo := by
+theorem memmove_keeps (hR : MemSteps R) : memmove.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, bs, -, _, -, m1, hw, ho⟩ := ho
     cases ho
-    exact ⟨Mem.keepsRo_write hw, by simp⟩
+    exact ⟨hR.write hw, by simp⟩
 
-theorem memclr_keepsRo : memclr.KeepsRo := by
+theorem memclr_keeps (hR : MemSteps R) : memclr.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, m1, hw, ho⟩ := ho
     cases ho
-    exact ⟨Mem.keepsRo_write hw, by simp⟩
+    exact ⟨hR.write hw, by simp⟩
 
-theorem typedmemmove_keepsRo : typedmemmove.KeepsRo := by
+theorem typedmemmove_keeps (hR : MemSteps R) : typedmemmove.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, _, -, bs, -, _, -, m1, hw, ho⟩ := ho
     cases ho
-    exact ⟨Mem.keepsRo_write hw, by simp⟩
+    exact ⟨hR.write hw, by simp⟩
 
-theorem typedslicecopy_keepsRo : typedslicecopy.KeepsRo := by
+theorem typedslicecopy_keeps (hR : MemSteps R) : typedslicecopy.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _, _, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, _, -, _, -, _, -, bs, -, _, -, m1, hw, ho⟩ := ho
     cases ho
-    exact ⟨Mem.keepsRo_write hw, by simp [Val.mems]⟩
+    exact ⟨hR.write hw, by simp [Val.mems]⟩
 
-theorem memequal_keepsRo : memequal.KeepsRo := by
+theorem memequal_keeps (hR : MemSteps R) : memequal.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
@@ -358,64 +380,64 @@ theorem memequal_keepsRo : memequal.KeepsRo := by
     split at ho
     · cases ho
     · cases ho
-      exact ⟨Mem.KeepsRo.refl _, by simp [Val.mems]⟩
+      exact ⟨hR.refl _, by simp [Val.mems]⟩
 
-theorem convT_keepsRo (t : Ty) : (convT t).KeepsRo := by
+theorem convT_keeps (hR : MemSteps R) (t : Ty) : (convT t).Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨b, hal, ho⟩ := ho
     cases ho
-    exact ⟨allocBytes_keepsRo hal, by simp [Val.mems]⟩
+    exact ⟨allocBytes_keeps hR hal, by simp [Val.mems]⟩
 
-theorem convTtyp_keepsRo : convTtyp.KeepsRo := by
+theorem convTtyp_keeps (hR : MemSteps R) : convTtyp.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, _, -, bs, -, b, hal, ho⟩ := ho
     cases ho
-    exact ⟨allocBytes_keepsRo hal, by simp [Val.mems]⟩
+    exact ⟨allocBytes_keeps hR hal, by simp [Val.mems]⟩
 
-theorem concatstringN_keepsRo : concatstringN.KeepsRo := by
+theorem concatstringN_keeps (hR : MemSteps R) : concatstringN.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | _ :: _, ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨bs, -, b, hn, ho⟩ := ho
     cases ho
-    obtain ⟨hk, hs⟩ := newString_keepsRo hn
+    obtain ⟨hk, hs⟩ := newString_keeps hR hn
     exact ⟨hk, by simp [hs]⟩
 
-theorem concatstrings_keepsRo : concatstrings.KeepsRo := by
+theorem concatstrings_keeps (hR : MemSteps R) : concatstrings.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, .agg [_, _, _]], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, bs, -, b, hn, ho⟩ := ho
     cases ho
-    obtain ⟨hk, hs⟩ := newString_keepsRo hn
+    obtain ⟨hk, hs⟩ := newString_keeps hR hn
     exact ⟨hk, by simp [hs]⟩
 
-theorem slicebytetostring_keepsRo : slicebytetostring.KeepsRo := by
+theorem slicebytetostring_keeps (hR : MemSteps R) : slicebytetostring.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
     obtain ⟨_, -, _, -, bs, -, b, hn, ho⟩ := ho
     cases ho
-    obtain ⟨hk, hs⟩ := newString_keepsRo hn
+    obtain ⟨hk, hs⟩ := newString_keeps hR hn
     exact ⟨hk, by simp [hs]⟩
 
-theorem stringtoslicebyte_keepsRo : stringtoslicebyte.KeepsRo := by
+theorem stringtoslicebyte_keeps (hR : MemSteps R) : stringtoslicebyte.Keeps R := by
   intro args clo m rs m' hr
-  refine ok?_keepsRo hr fun a ho => ?_
+  refine ok?_keeps hr fun a ho => ?_
   match args, ho with
   | [_, _], ho =>
     simp only [bind, Option.bind_eq_some_iff, pure] at ho
@@ -424,42 +446,49 @@ theorem stringtoslicebyte_keepsRo : stringtoslicebyte.KeepsRo := by
     · simp only [Option.bind_eq_some_iff] at ho
       obtain ⟨m1, hw, ho⟩ := ho
       cases ho
-      exact ⟨Mem.keepsRo_write hw, by simp [sliceVal_mems]⟩
+      exact ⟨hR.write hw, by simp [sliceVal_mems]⟩
     · simp only [Option.bind_eq_some_iff] at ho
       obtain ⟨b, hal, m2, hw, ho⟩ := ho
       cases ho
-      exact ⟨(alloc_keepsRo hal).trans (Mem.keepsRo_write hw), by simp [sliceVal_mems]⟩
+      exact ⟨hR.trans (alloc_keeps hR hal) (hR.write hw), by simp [sliceVal_mems]⟩
 
 end Runtime
 
 open Runtime in
-/-- **The runtime's contracts keep the read-only allocations**: they only write (which needs a
-writable allocation) and allocate heap blocks. -/
-theorem Env.runtime_keepsRo : Env.runtime.KeepsRo := by
+/-- **The runtime's contracts keep every memory relation that writes and fresh heap allocations
+keep** (`MemSteps`): they only write and allocate heap blocks. -/
+theorem Env.runtime_keeps {R : Mem → Mem → Prop} (hR : MemSteps R) :
+    ∀ name c, Env.runtime.extern name = some c → c.Keeps R := by
   intro name c hc
   simp only [Env.runtime] at hc
   split at hc
   all_goals first
     | (cases hc; first
-        | exact panics_keepsRo _ | exact noEffect_keepsRo | exact newobject_keepsRo
-        | exact makeslice_keepsRo | exact growslice_keepsRo | exact growsliceBuf_keepsRo
-        | exact moveSlice_keepsRo _ | exact moveSliceNoCap_keepsRo _ | exact memmove_keepsRo
-        | exact memclr_keepsRo | exact typedmemmove_keepsRo | exact typedslicecopy_keepsRo
-        | exact memequal_keepsRo | exact convT_keepsRo _ | exact convTtyp_keepsRo
-        | exact concatstringN_keepsRo | exact concatstrings_keepsRo
-        | exact slicebytetostring_keepsRo | exact stringtoslicebyte_keepsRo)
+        | exact panics_keeps _ | exact noEffect_keeps hR | exact newobject_keeps hR
+        | exact makeslice_keeps hR | exact growslice_keeps hR | exact growsliceBuf_keeps hR
+        | exact moveSlice_keeps hR _ | exact moveSliceNoCap_keeps hR _ | exact memmove_keeps hR
+        | exact memclr_keeps hR | exact typedmemmove_keeps hR | exact typedslicecopy_keeps hR
+        | exact memequal_keeps hR | exact convT_keeps hR _ | exact convTtyp_keeps hR
+        | exact concatstringN_keeps hR | exact concatstrings_keeps hR
+        | exact slicebytetostring_keeps hR | exact stringtoslicebyte_keeps hR)
     | (split at hc
-       · cases hc; exact mallocSized_keepsRo
+       · cases hc; exact mallocSized_keeps hR
        · split at hc
-         · cases hc; exact panics_keepsRo _
+         · cases hc; exact panics_keeps _
          · cases hc)
 
-/-- `Env.p1`'s contracts only panic. -/
-theorem Env.p1_keepsRo : Env.p1.KeepsRo := by
+/-- **The runtime's contracts keep the read-only allocations**: they only write (which needs a
+writable allocation) and allocate heap blocks. -/
+theorem Env.runtime_keepsRo : Env.runtime.KeepsRo := Env.runtime_keeps Mem.keepsRo_steps
+
+/-- `Env.p1`'s contracts only panic: they keep any memory relation. -/
+theorem Env.p1_keeps (R : Mem → Mem → Prop) : ∀ name c, Env.p1.extern name = some c → c.Keeps R := by
   intro name c hc
   simp only [Env.p1] at hc
-  split at hc <;> first | (cases hc; exact Runtime.panics_keepsRo _) | cases hc
+  split at hc <;> first | (cases hc; exact Runtime.panics_keeps _) | cases hc
   all_goals intro _ _ _ _ _ h; cases h
+
+theorem Env.p1_keepsRo : Env.p1.KeepsRo := Env.p1_keeps _
 
 theorem RoImage.sub {ro ro' : List (String × Alloc)} {env : Env} {mem : Mem}
     (h : RoImage ro env mem) (hs : ∀ e ∈ ro', e ∈ ro) : RoImage ro' env mem :=

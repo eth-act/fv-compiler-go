@@ -10,11 +10,13 @@ import GoFV.Proof.TabsAgree
 the conversion simulation's `CvRel` with the conversion `ecCv`, the new values `isNewB f`, the
 fronts `ecFront` and the return relation `ecRR`: per block the structural fields from `blockOK`
 (`ecs_block`), the obligations by class (`eco_obl`, with the `IMake` facts `ecs_imk`), the `Ret`
-relation of the `MakeResult` control (`ret_result`), and `finish` (`finish_ecRR`).
+relation of the `MakeResult` control (`ret_result`), `finish` (`finish_ecRR`) and the result
+slots of the entry frame (`ecr_entry`).
 
 `expandCalls_refines`: on the fragment `expandCallsFrag` (the checker accepts the pass's output in
 the output tables, and the input runs alike in the input and output tables, `tabsAgree`), the
-output of `expandCallsPass` refines its input under monotone contracts.
+output of `expandCallsPass` refines its input under monotone contracts that keep the caller's
+frame (`Env.FrameKeep`: the function's stack-assigned results stay writable in their slots).
 -/
 
 namespace GoFV.Proof.EC
@@ -22,29 +24,15 @@ namespace GoFV.Proof.EC
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert Dom GoFV.Opt GoFV.Opt.ECCheck GoFV.Proof.AtomSim
   GoFV.Proof.Order
 
-/-- `valueOK` of a `MakeResult`: the target's node at its ID passes `resultOK`. -/
-theorem ecm_valueOK_result {tabs : Tables} {f g : Func} {x : ID} {u : Value}
-    (h : valueOK tabs (typeShapes tabs) f g x = true) (hu : f.value? x = some u)
-    (hop : u.op = .MakeResult) :
-    ∃ w, g.value? x = some w ∧ resultOK tabs (typeShapes tabs) f g u w = true := by
-  unfold valueOK at h
-  rw [hu] at h
-  cases hw : g.value? x with
-  | none => rw [hw] at h; cases h
-  | some w =>
-    rw [hw] at h
-    have hc : (callOpMap u.op).isSome = false := by rw [hop]; rfl
-    simp only [hc, hop, Bool.false_eq_true, ite_false, beq_self_eq_true, ite_true] at h
-    exact ⟨w, rfl, h⟩
-
 /-- **`ecCheck` gives the conversion simulation's relation.** -/
 theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (hec : ecCheck tabs f g = true) :
     CvRel tabs f g (ecCv tabs f g) (isNewB f) (ecFront f g) (ecRR tabs f) := by
-  obtain ⟨hcfg, hown, hreg, hblk⟩ := eco_ecCheck hec
+  obtain ⟨hcfg, hown, hoo, hblk⟩ := eco_ecCheck hec
+  have hres := ecr_ownOuts hoo
   have hwf := check_wf hf
   have hwg := check_wf hg
-  refine ⟨hcfg, hown, fun bid hbm fb hfb => ?_, finish_ecRR hreg⟩
+  refine ⟨hcfg, hown, fun bid hbm fb hfb => ?_, finish_ecRR hres, ecr_entry hres⟩
   have hb := hblk bid hbm
   obtain ⟨gb, hgb, -⟩ := eco_blockOK hb hfb
   have hbg : bid ∈ g.blocks := by
@@ -59,7 +47,7 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     rw [hfid, hgid]
   have hcg : CertOK g := certOK_of_check (check_domCert hg)
   have himk := ecs_imk hwg hcg hbg hfb hgb hid hb
-  refine ⟨gb, hgb, ecs_block hwf hwg hcg hcfg hbm hfb hgb hid hb
+  refine ⟨gb, hgb, ecs_block hwf hwg hcg hcfg hbm hfb hgb hid hb hres
     (fun htree x hx u hu hphi => eco_obl hf hg hec hbm hfb hgb htree hx hu hphi
       (fun hcv => himk x hx hcv u hu) (ecs_spHeld hwg hcg hbg hfb hgb hid hb x hx u hu)
       (ecs_moveArgHeld hfb hgb hb x hx u hu)
@@ -72,14 +60,15 @@ theorem ecRel_of_check {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     hwf.ctrlListed bid fb ⟨hbm, hfb⟩ c (Array.mem_of_getElem? hc0)
   have hphi : u.op ≠ .Phi := by rw [hop]; decide
   obtain ⟨-, -, -, hval⟩ := eco_blockOK (hblk cbid hcbm) hcb
-  obtain ⟨w, hw, hok⟩ := ecm_valueOK_result (hval c hccb u hu hphi) hu hop
-  exact ret_result hu hw hop hok hreg
+  obtain ⟨w, hw, hok⟩ := ecs_resultOK (hval c hccb u hu hphi) hu hop
+  exact ret_result hu hw hop hok hres
 
-/-- **`expand calls` refines its input** on the fragment `expandCallsFrag`. -/
+/-- **`expand calls` refines its input** on the fragment `expandCallsFrag`, under monotone
+contracts that keep the caller's frame. -/
 theorem expandCalls_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : expandCallsPass penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) (hfrag : expandCallsFrag penv f = true) :
-    RefinesUnder Env.Mono out.tables out.func penv.tables f := by
+    RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) out.tables out.func penv.tables f := by
   unfold expandCallsFrag at hfrag
   rw [h] at hfrag
   simp only [Bool.and_eq_true] at hfrag

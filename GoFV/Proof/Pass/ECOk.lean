@@ -183,7 +183,8 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
         (setPhis psT frT.regs)[z]? = some (some y') ∧ Sem.Refines y y')
     {G : Frame} (hG : G = { frS with regs := G.regs })
     (hGk : ∀ a, a ∉ oS.toList → G.regs[a]? = (setPhis ps frS.regs)[a]?)
-    (hGok : RegsOK (Ctx.make tabs f) G) :
+    (hGok : RegsOK (Ctx.make tabs f) G)
+    (hGq : ∀ (a : ID) (m : Mem), G.regs[a]? = some (some (Val.mem m)) → EcQ tabs f m) :
     TgtHyp env tabs f g cv isNew front RR fb gb og G { frT with regs := setPhis psT frT.regs }
       (fun z => isNew z = true ∧ SDomPlaced g gb z) := by
   have hbm' : b ∈ g.blocks := H.blocks_eq ▸ hbm
@@ -217,7 +218,7 @@ theorem tgtHyp_of (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS f
       rw [hk z hz]; exact pT3 z (.inl hz)
   refine ⟨B, hsg, ogn, ogt, ogm, fun x hx w hw => ?_, ?_, by simp [pT1, hA.szT], hA.img,
     ?_, ?_, ?_, ?_, ?_, ?_, hGok,
-    by rw [hfid]; exact hbt.2, ?_, ?_, ?_, hDT, ?_⟩
+    by rw [hfid]; exact hbt.2, ?_, ?_, ?_, hDT, ?_, hGq⟩
   · obtain ⟨w', hw', hid, -⟩ := H.wg.valueId b gb ⟨hbm', hgb⟩ x hx
     rw [hw] at hw'; cases hw'; exact hid
   · rw [hG]; conv => lhs; rw [hA.frame]
@@ -318,18 +319,23 @@ theorem block_parts (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} {frS
   exact ⟨gb, ps, oS, og, psT, hgb, B, hbt.1, hbt.2, hps, hsf, hsg, hev, hpsT, hphiT,
     CSE.enterBlock_of_parts hpsT (by rw [hgid, sched_of_block hgb, hsg])⟩
 
-/-- **A block the source enters successfully is entered by the target.** -/
+/-- **A block the source enters successfully is entered by the target**, given that a `Ret`
+terminator of the block reads results and a memory of the source's control (`hret`: else the
+source is stuck at the terminator). -/
 theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : env.Mono)
-    {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv frS frT b i)
+    (hK : env.FrameKeep) {frS frT : Frame} {b : ID} {i : Nat} (hA : SimAt env tabs f g cv frS frT b i)
     {fb : Block} (hfb : f.block? b = some fb) {GS : Frame}
-    (hen : enterBlock env (Ctx.make tabs f) frS fb i = .ok GS) :
+    (hen : enterBlock env (Ctx.make tabs f) frS fb i = .ok GS)
+    (hret : fb.kind = .Ret → ∀ c, fb.controls[0]? = some c → ∀ y, GS.regs[c]? = some (some y) →
+      ∃ rs m, retOf y = some (rs, m)) :
     ∃ gb GT, g.block? b = some gb ∧ CvBlock tabs f g cv isNew front RR fb gb ∧
       enterBlock env (Ctx.make tabs g) frT gb i = .ok GT ∧
       GT = { GS with regs := GT.regs } ∧ GT.regs.size = g.valueTab.size ∧
       GS.regs.size = f.valueTab.size ∧
       (∀ x y, GS.regs[x]? = some (some y) →
         ∃ y', GT.regs[x]? = some (some y') ∧ Sem.Refines (cv x y) y') ∧
-      (∀ x y, GS.regs[x]? = some (some y) → Listed f x) ∧ RegsOK (Ctx.make tabs f) GS := by
+      (∀ x y, GS.regs[x]? = some (some y) → Listed f x) ∧ RegsOK (Ctx.make tabs f) GS ∧
+      MemInv.SInv (EcQ tabs f) GS := by
   obtain ⟨gb, ps, oS, og, psT, hgb, B, hbm, -, hps, hsf, hsg, hev, hpsT, hphiT, hentT⟩ :=
     block_parts H hA hfb hen (fun _ h => nomatch h)
   have hbm' : b ∈ g.blocks := H.blocks_eq ▸ hbm
@@ -342,8 +348,9 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ofn oft (by rw [pS1, hA.szS]; rfl) hev
   have hGSok : RegsOK (Ctx.make tabs f) GS :=
     regsOK_block H hbm hfb hps hA.ok (fun x hx => ((ofm x).1 hx).1) hev
+  have hGSq := ecQ_enter hK H.wf hbm hfb hA.slots hen
   have TH := tgtHyp_of H hA hbm hfb hgb B hps hsf hsg hpsT hphiT (G := GS)
-    (by rw [e1]) e3 hGSok
+    (by rw [e1]) e3 hGSok (ecQ_memQ hGSq)
   have hlisted : ∀ x y, GS.regs[x]? = some (some y) → Listed f x := by
     intro x y hy
     by_cases hxo : x ∈ oS.toList
@@ -370,14 +377,24 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
     exact e4 z ((ofm z).2 ⟨hzf, uz, huz, hzp uz huz⟩)
   obtain ⟨T, hT, hTf, hTs, hTk, hTr, -, -, -⟩ := tgt_loop hE TH (L := og.toList) (M := [])
     (by simp) (fun x hx hn _ => hsrc x hx hn) (fun x _ _ _ z hz => hsrcF x z hz)
-    fun c z hc _ _ A P Q hA _ => ⟨fun uc huc => by
+    (fun c z hc _ _ A P Q hA _ => ⟨fun uc huc => by
       obtain ⟨u, y, hu, -, hev⟩ := hsrc c (by rw [hA]; simp) (B.common c hc).2
       rw [huc] at hu; cases hu
-      exact .inl ⟨y, hev⟩, fun z hz => hsrcF c z hz⟩
+      exact .inl ⟨y, hev⟩, fun z hz => hsrcF c z hz⟩)
+    fun z _ hra c hc0 => by
+      obtain ⟨hk, c', hc0', hcf, hcph, -⟩ := hra
+      rw [hc0] at hc0'; cases hc0'
+      refine ⟨fun uc huc => ?_, hret hk c hc0⟩
+      obtain ⟨u, y, hu, hy, hev⟩ := e4 c ((ofm c).2 ⟨hcf, uc, huc, hcph uc huc⟩)
+      change f.value? c = some u at hu
+      rw [huc] at hu; cases hu
+      obtain ⟨u', hu', hid, -⟩ := H.wf.valueId b fb ⟨hbm, hfb⟩ c hcf
+      rw [huc] at hu'; cases hu'
+      exact ⟨hid, y, hy, hev⟩
   have hGT : T = { GS with regs := T.regs } := by rw [TH.hT0] at hTf; exact hTf
   refine ⟨gb, T, hgb, B, by rw [hentT, hT], hGT, by rw [hTs]; simp [pT1, hA.szT],
     by rw [e2, pS1, hA.szS],
-    fun x y hy => ?_, hlisted, hGSok⟩
+    fun x y hy => ?_, hlisted, hGSok, hGSq⟩
   have hn := H.notNew (hlisted x y hy)
   by_cases hxo : x ∈ og.toList
   · exact hTr x hxo hn y hy

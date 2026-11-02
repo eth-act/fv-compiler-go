@@ -652,7 +652,7 @@ theorem ecw_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
     (hLz : L z) :
     NewObl tabs f g (ecCv tabs f g) (isNewB f) [u.args[0]!, u.args[2]!] HS HT x z := by
-  intro wz hwz env G T _ E hNC hEw hRw hfront _ _ hreach
+  intro wz hwz env G T _ E hNC hEw hRw hfront _ _ hreach _
   obtain ⟨-, hvm, -, hs0, hs2, zs0, xu, cu, pp, hzs0, -, -, -, -, -, -, hwf, he1, -, hl⟩ :=
     ecw_wideStoreOK hok
   rw [hzs] at hzs0; cases hzs0

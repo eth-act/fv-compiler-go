@@ -37,7 +37,7 @@ theorem roQ_contracts {env : Env} (hK : env.KeepsRo) : MemInv.ContractsOK (RoQ t
 /-- The source's entry frame has the invariant. -/
 theorem roQ_entry {env : Env} (h : RoImage ro env mem) (args : List Val) :
     MemInv.SInv (RoQ tabs ro f) (entryFrame env (Ctx.make tabs f) args mem) :=
-  MemInv.sinv_entry roQ_pred fun _ => h.2
+  MemInv.sinv_entry (fun a h hg hw hc => roMem_set a (h hc) hg hw) fun _ => h.2
 
 /-- A block entry keeps the invariant. -/
 theorem roQ_enter {env : Env} (hK : env.KeepsRo) {ce : CheckEnv} (hwf : WF ce f) {b : ID}
