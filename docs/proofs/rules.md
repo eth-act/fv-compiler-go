@@ -527,8 +527,12 @@ relates its input to the result by `segRel`:
   `segTiles`) or `callSeg?` (the call's arguments reach the callee as they are,
   `MemCall.simpleCall`, the size a constant term `termConst` evaluates as the semantics does,
   e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value rules fold to a `Const64`
-  only later in the log (`constSize`; `termConst_reg`: an available term's register is its
-  value), `g`'s `Zero`/`Move` on the call's arguments) or `roSeg?` (in `f` `Move [n] dst src mem`
+  only later in the log, or with a `SliceLen`/`SliceCap` of a `SliceMake` of slice shape whose
+  length and capacity are constant terms, whatever its pointer (`sliceMakeLC?`, `sliceComp`:
+  `retype` at a slice shape checks only `Val.sliceOK`, which does not read the pointer,
+  `AtomSim.opVal_sliceComp`; `copy(a[i:j], …)` with constant bounds; `constSize` 6 deep;
+  `termConst_reg`: an available term's register is its value; witness
+  `callSeg_witness_sliceLen`), `g`'s `Zero`/`Move` on the call's arguments) or `roSeg?` (in `f` `Move [n] dst src mem`
   with `src` an `Addr` of a symbol, in `g` `Zero [n] dst mem`; nothing dropped or fresh) or
   `moveSeg?` (`:1978`/`:1992`/`:2011`/`:2035` and the `VarDef` forms `:2049`/`:2064`/`:2084`/`:2109`,
   issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies, (a `VarDef` of) `k` `Store`s
@@ -1214,7 +1218,9 @@ rules): full-v5 fully verified 91,409 → 91,551 (on b6cb036). With store pointe
 `OffPtr`s (`offFrom`; the pass folds them, `:964`, before it matches the `Move`), memories and
 `Zero`s up to copies and stores in any block: 91,551 → 91,652 (on 5a1b620; of the 198 functions
 the move segments were the only obstacle of, 110 remain, 71 of them `SelectN→Move` call segments
-whose size is `Mul64 (SliceLen (SliceMake p (Sub64 c d) …)) (Const64 [1])`).
+whose size is `Mul64 (SliceLen (SliceMake p (Sub64 c d) …)) (Const64 [1])`). With those sizes
+(`termConst` through `SliceLen`/`SliceCap` of `SliceMake`): 110 → 32 of the 198; full-v5 fully
+verified 91,652 → 91,718 (on f100340).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
