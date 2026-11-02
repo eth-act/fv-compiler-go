@@ -44,6 +44,7 @@ structure SimAt (env : Env) (c : WBCheck.Ctx) (frS frT : Frame) (b : ID) (i : Na
   sinv : SInv MemOK frS
   lazy : b ≠ c.f.entry → LazyRegs c frT
   entry : b = c.f.entry → ∀ (a : ID) (y : Val), frS.regs[a]? ≠ some (some y)
+  wbh : WbHelpers env
 
 theorem pre_tree {ce : CheckEnv} {c : WBCheck.Ctx} (hwf : WF ce c.f) (hc : CertOK c.f)
     {env : Env} {fr : Frame} {b : ID} {i : Nat} (h : Pre env c fr b i) :

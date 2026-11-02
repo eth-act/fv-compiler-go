@@ -55,7 +55,7 @@ theorem src_np (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r)
   obtain ⟨u, hu, hop, -⟩ := hsrcs k s hk
   unfold npOf
   simp only [Array.contains_iff_mem.2 (hsrc s hs).1, hu, Bool.true_and]
-  rcases hop with h | h | h <;> rw [h] <;> decide
+  rcases hop with h | h | h | h | h <;> rw [h] <;> decide
 
 theorem ncs_np (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) {n : ID}
     (hn : n ∈ ncsOf c r) : npOf c.f B n = true := by
@@ -217,7 +217,7 @@ private theorem bs_pos_roleOK (S : Setup c b B rs l) {J : Nat} {x : ID}
 when the runs before `J` are in a closed set `P` of evaluated values and the held values in
 question are too. -/
 theorem cov_of_runs (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Prop}
-    (hEv : ∀ x, P x → Ev env c Gr x)
+    (hEv : ∀ x, P x → Ev env c Gr x) (hW : WbHelpers env)
     (hPcl : ∀ x a v, P x → c.f.value? x = some v → a ∈ v.args → a ∈ B.values →
       (∀ va, c.f.value? a = some va → va.op ≠ .Phi) → P a)
     {J : Nat} (hruns : ∀ j r, j < J → rs[j]? = some r →
@@ -231,15 +231,17 @@ theorem cov_of_runs (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → 
     cases hw : c.g.value? x with
     | none => unfold Ctx.roleOK at hok; rw [hw] at hok; cases hok
     | some w => exact ⟨w, rfl⟩
-  refine S.cov_intro hEv hPcl hheld ?_ ?_
+  refine S.cov_intro hEv hPcl hW hheld ?_ ?_
   · intro j' hρ r hr
     refine hruns j' r ?_ hr
-    rcases hρ with ⟨k, hρ⟩ | hρ | hρ
+    rcases hρ with ⟨k, hρ⟩ | hρ | hρ | hρ
     · obtain ⟨hi, hjj, -⟩ := roleOK_tgt hok hw hρ
       have := hF hi; omega
     · obtain ⟨hi, hjj, -⟩ := roleOK_ncEnd hok hw hρ
       have := hF hi; omega
     · obtain ⟨hi, hjj, -⟩ := roleOK_ncThen hok hw hρ
+      have := hT hi; omega
+    · obtain ⟨hi, hjj, -⟩ := roleOK_call hok hw hρ
       have := hT hi; omega
   · intro j' hρ
     obtain ⟨hi, hjj, r, hr, -⟩ := roleOK_wb hok hw hρ

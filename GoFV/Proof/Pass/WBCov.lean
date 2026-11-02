@@ -60,6 +60,9 @@ private theorem roleRun_tgt' {g : Func} {x : ID} :
           rw [hv] at h
           exact absurd h thenRole_ne'.1
       · rw [if_neg h5] at h
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at h; cases h
+        rw [if_neg h6] at h
         obtain ⟨hk', r', hr', hx⟩ := roleRun_tgt' h
         refine ⟨by omega, r', ?_, hx⟩
         rw [show j - k = (j - (k + 1)) + 1 by omega]
@@ -97,6 +100,9 @@ private theorem roleRun_ncEnd' {g : Func} {x : ID} :
           rw [hv] at h
           exact absurd h (thenRole_ne' (k := 0)).2
       · rw [if_neg h5] at h
+        by_cases h6 : ((vals g r.sp.c).contains x && (g.value? x).any (·.op == .Addr)) = true
+        · rw [if_pos h6] at h; cases h
+        rw [if_neg h6] at h
         obtain ⟨hk', r', hr', hx⟩ := roleRun_ncEnd' h
         refine ⟨by omega, r', ?_, hx⟩
         rw [show j - k = (j - (k + 1)) + 1 by omega]
@@ -195,12 +201,14 @@ theorem runMem_of_ev (S : Setup c b B rs l) {env : Env} {Gr : Frame} {j : Nat} {
   obtain ⟨u', hu', hop, hlast⟩ := hsrc 0 s0 hs0
   rw [hu] at hu'; cases hu'
   obtain ⟨L, r0, hL, hop0, -⟩ := evalValue_inv hev'
-  rw [DAE.evalOp_memRoot (by rcases hop with h | h | h <;> simp [h])] at hop0
+  rw [DAE.evalOp_memRoot (by rcases hop with h | h | h | h | h <;> simp [h])] at hop0
   have hM : ∃ M, L.getLast? = some (.mem M) := by
-    rcases hop with h | h | h
+    rcases hop with h | h | h | h | h
     · obtain ⟨a, q, x, M, M', rfl, -, -, -⟩ := store_inv h hop0; exact ⟨M, rfl⟩
     · obtain ⟨M, n, rfl, -⟩ := varDef_inv h hop0; exact ⟨M, rfl⟩
     · obtain ⟨M, rfl, -⟩ := varLive_inv h hop0; exact ⟨M, rfl⟩
+    · obtain ⟨a, b', d, s', bs, M, M', rfl, -⟩ := move_inv h hop0; exact ⟨M, rfl⟩
+    · obtain ⟨a, p, M, M', rfl, -⟩ := zero_inv h hop0; exact ⟨M, rfl⟩
   obtain ⟨M, hM⟩ := hM
   rw [List.getLast?_eq_getElem?] at hlast hM
   rw [regsAre_length hL] at hM
@@ -213,11 +221,11 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
     (hEv : ∀ x, P x → Ev env c Gr x)
     (hPcl : ∀ x a v, P x → c.f.value? x = some v → a ∈ v.args → a ∈ B.values →
       (∀ va, c.f.value? a = some va → va.op ≠ .Phi) → P a)
-    {x : ID}
+    {x : ID} (hW : WbHelpers env)
     (hheld : c.roleOf rs x = .held → c.K.getD x false = true →
       (∀ u, c.f.value? x = some u → u.op ≠ .Phi) → P x)
     (hrun : ∀ j, ((∃ k, c.roleOf rs x = .tgt j k) ∨ c.roleOf rs x = .ncEnd j ∨
-        c.roleOf rs x = .ncThen j) →
+        c.roleOf rs x = .ncThen j ∨ c.roleOf rs x = .call j) →
       ∀ r, rs[j]? = some r → (∀ s ∈ r.src, P s) ∧ (∀ n ∈ ncsOf c r, P n))
     (hwb : ∀ j, c.roleOf rs x = .wb j → ∃ M, RunMem Gr rs j M) :
     Cov env c rs Gr x := by
@@ -252,10 +260,17 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
     obtain ⟨w, hw⟩ := roleOK_val' hok
     obtain ⟨-, -, r', n, hr', hn, -⟩ := roleOK_ncThen hok hw hρ
     rw [hr] at hr'; cases hr'
-    exact ⟨r, n, hr, hn, hEv n (nc_P S hPcl hr (hrun j (.inr (.inr hρ)) r hr) hn)⟩
+    exact ⟨r, n, hr, hn, hEv n (nc_P S hPcl hr (hrun j (.inr (.inr (.inl hρ))) r hr) hn)⟩
   | wb j =>
     simp only [Cov, hρ]
     exact hwb j hρ
+  | call j =>
+    simp only [Cov, hρ]
+    obtain ⟨r, hr, -⟩ := roleOf_then (o := .StaticCall) (j := j) (by rw [hρ]; rfl)
+    have hP := (hrun j (.inr (.inr (.inr hρ))) r hr).1
+    obtain ⟨-, -, -, -, -, -, hpos, -⟩ := runOK_spec (run_ok' S hr)
+    exact ⟨hW, runMem_of_ev S hr (List.getElem?_eq_getElem hpos)
+      (hEv _ (hP _ (List.getElem_mem hpos))), r, hr, fun s hs => hEv s (hP s hs)⟩
   | _ => simp only [Cov, hρ]
 
 /-- **The reference frame of a panicking block entry.** -/
