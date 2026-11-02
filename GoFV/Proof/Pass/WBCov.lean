@@ -6,10 +6,12 @@ import GoFV.Proof.Pass.WBNpOrder
 `cov_intro`: a value of the chain has its source facts (`Cov`) when the source evaluated, in the
 reference frame, every value of a set `P` closed under in-block arguments that contains the value
 itself (kept, role `held`) or the run its role copies (stores and dropped nil check; a helper
-call: all of its run's stores, with the runtime's helpers, `WbHelpers`), and the run's memory is
-a memory for a `WB`. `runMem_of_ev`: a run whose first store the source evaluated
-has a memory. `grOK_panic`: the reference frame of a block entry that panics after the prefix
-`pre` of its schedule.
+call: all of its run's stores, with the runtime's helpers, `WbHelpers`), the non-`Phi` values
+outside `B` that `B` reads evaluate (`OutEv`; a run's kept nil check of a dominating block), and
+the run's memory is a memory for a `WB`. `outEv_of`: `OutEv` from the dominator tree
+(`pre_strict`). `runMem_of_ev`: a run whose first store the source evaluated has a memory.
+`grOK_panic`: the reference frame of a block entry that panics after the prefix `pre` of its
+schedule.
 -/
 
 namespace GoFV.Proof.WB
@@ -168,18 +170,20 @@ private theorem run_of' (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? 
     runOf? c.f c.g r.sp = some r :=
   ((chainRuns_spec S.ch).1 j r hr).2.2.2
 
-/-- The dropped nil check of a run is in a closed set containing the run's stores and its
-dropped nil checks. -/
-private theorem nc_P (S : Setup c b B rs l) {P : ID → Prop}
+/-- The source nil check of a run evaluates: in `B`, it is in a closed set containing the run's
+stores and its dropped nil checks; outside `B` (kept, of a dominating block), by `OutEv`. -/
+private theorem nc_ev (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Prop}
+    (hEv : ∀ x, P x → Ev env c Gr x) (hout : OutEv env c B Gr)
     (hPcl : ∀ x a v, P x → c.f.value? x = some v → a ∈ v.args → a ∈ B.values →
       (∀ va, c.f.value? a = some va → va.op ≠ .Phi) → P a)
     {j : Nat} {r : Run} (hr : rs[j]? = some r)
-    (hrun : (∀ s ∈ r.src, P s) ∧ (∀ n ∈ ncsOf c r, P n)) {n : ID} (hn : r.nc = some n) : P n := by
+    (hrun : (∀ s ∈ r.src, P s) ∧ (∀ n ∈ ncsOf c r, P n)) {n : ID} (hn : r.nc = some n) :
+    Ev env c Gr n := by
   by_cases hK : c.K.getD n false = true
-  · obtain ⟨x0, v0, a, nv, hx0, hv0, -, ha, hnv, hnop, -, hnid⟩ :=
+  · obtain ⟨x0, v0, a, nv, hx0, hv0, hv0op, ha, hnv, hnop, -, hnid⟩ :=
       (runOf_spec (run_of' S hr)).2.2.2.2.1 n hn
     obtain ⟨ce, hwf⟩ := S.wf
-    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsrc, hnc⟩ := runOK_spec (run_ok' S hr)
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsrc, -⟩ := runOK_spec (run_ok' S hr)
     have hx0B := (hsrc x0 (List.mem_of_getElem? hx0)).1
     have hau : a ∈ v0.args := Array.mem_iff_getElem?.2 ⟨0, ha⟩
     obtain ⟨bid, blk, hbin, hablk⟩ := hwf.argListed b B x0 v0 ⟨⟨S.hb, S.hB⟩, hx0B, hv0⟩ a hau
@@ -187,11 +191,15 @@ private theorem nc_P (S : Setup c b B rs l) {P : ID → Prop}
     rw [hnv] at hva; cases hva
     have han : a = n := hvid.symm.trans hnid
     subst han
-    obtain ⟨hnB, -⟩ := hnc a hn
-    exact hPcl x0 a v0 (hrun.1 x0 (List.mem_of_getElem? hx0)) hv0 hau hnB
-      fun va' hva' => by rw [hnv] at hva'; cases hva'; rw [hnop]; exact fun h => by cases h
+    have hnp : nv.op ≠ .Phi := by rw [hnop]; exact fun h => by cases h
+    by_cases haB : a ∈ B.values
+    · exact hEv a (hPcl x0 a v0 (hrun.1 x0 (List.mem_of_getElem? hx0)) hv0 hau haB
+        fun va' hva' => by rw [hnv] at hva'; cases hva'; exact hnp)
+    · have hv0p : v0.op ≠ .Phi := by
+        rcases hv0op with h | h | h <;> rw [h] <;> exact fun h => by cases h
+      exact hout a haB ⟨x0, hx0B, v0, hv0, hv0p, hau⟩ nv hnv hnp
   · have hK' : c.K.getD n false = false := by simpa using hK
-    exact hrun.2 n (by simp [ncsOf, hn, hK'])
+    exact hEv n (hrun.2 n (by simp [ncsOf, hn, hK']))
 
 /-- A run whose first store the source evaluated: its memory is a memory. -/
 theorem runMem_of_ev (S : Setup c b B rs l) {env : Env} {Gr : Frame} {j : Nat} {r : Run}
@@ -222,7 +230,7 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
     (hEv : ∀ x, P x → Ev env c Gr x)
     (hPcl : ∀ x a v, P x → c.f.value? x = some v → a ∈ v.args → a ∈ B.values →
       (∀ va, c.f.value? a = some va → va.op ≠ .Phi) → P a)
-    {x : ID} (hW : WbHelpers env)
+    (hout : OutEv env c B Gr) {x : ID} (hW : WbHelpers env)
     (hheld : c.roleOf rs x = .held → c.K.getD x false = true →
       (∀ u, c.f.value? x = some u → u.op ≠ .Phi) → P x)
     (hrun : ∀ j, ((∃ k, c.roleOf rs x = .tgt j k) ∨ c.roleOf rs x = .ncEnd j ∨
@@ -251,7 +259,7 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
     obtain ⟨w, hw⟩ := roleOK_val' hok
     obtain ⟨-, -, r', n, hr', hn, -⟩ := roleOK_ncEnd hok hw hρ
     rw [hr] at hr'; cases hr'
-    exact ⟨r, n, hr, hn, hEv n (nc_P S hPcl hr (hrun j (.inr (.inl hρ)) r hr) hn)⟩
+    exact ⟨r, n, hr, hn, nc_ev S hEv hout hPcl hr (hrun j (.inr (.inl hρ)) r hr) hn⟩
   | ncThen j =>
     simp only [Cov, hρ]
     obtain ⟨r, hr, hxT, -⟩ := roleOf_then (o := .NilCheck) (j := j) (by rw [hρ]; rfl)
@@ -261,7 +269,7 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
     obtain ⟨w, hw⟩ := roleOK_val' hok
     obtain ⟨-, -, r', n, hr', hn, -⟩ := roleOK_ncThen hok hw hρ
     rw [hr] at hr'; cases hr'
-    exact ⟨r, n, hr, hn, hEv n (nc_P S hPcl hr (hrun j (.inr (.inr (.inl hρ))) r hr) hn)⟩
+    exact ⟨r, n, hr, hn, nc_ev S hEv hout hPcl hr (hrun j (.inr (.inr (.inl hρ))) r hr) hn⟩
   | wb j =>
     simp only [Cov, hρ]
     exact hwb j hρ
@@ -273,6 +281,39 @@ theorem cov_intro (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Pr
     exact ⟨hW, runMem_of_ev S hr (List.getElem?_eq_getElem hpos)
       (hEv _ (hP _ (List.getElem_mem hpos))), r, hr, fun s hs => hEv s (hP s hs)⟩
   | _ => simp only [Cov, hρ]
+
+/-- **Values outside `B` that `B` reads evaluate in the reference frame**: such a value's block
+strictly dominates `b`, so the block entry's frame holds it, evaluated (`pre_strict`); its
+arguments, from blocks dominating that block, are not values of `B`, where `Gr` agrees with the
+entry's frame. -/
+theorem outEv_of (S : Setup c b B rs l) {ce : CheckEnv} (hwf : WF ce c.f) (hcf : CertOK c.f)
+    {env : Env} {frS frT : Frame} {i : Nat} (hA : SimAt env c frS frT b i) {Gr : Frame}
+    (hGf : Gr = { frS with regs := Gr.regs })
+    (hGo : ∀ z, z ∉ B.values → Gr.regs[z]? = frS.regs[z]?) : OutEv env c B Gr := by
+  rintro n hnB ⟨y, hyB, u, hu, hnp, hnu⟩ un hun hunp
+  have hd := pre_strict hcf hA.pre
+  obtain ⟨-, hbT⟩ := pre_tree hwf hcf hA.pre
+  have huse := hcf.domRel.uses S.hb S.hB hbT hyB hu hnp hnu
+  obtain ⟨bid, blk, ⟨hbid, hblk⟩, hnblk⟩ := hwf.argListed b B y u ⟨⟨S.hb, S.hB⟩, hyB, hu⟩ n hnu
+  obtain ⟨vn, hvn, -, hvnb⟩ := hwf.valueId bid blk ⟨hbid, hblk⟩ n hnblk
+  have hunb : un.block = bid := by rw [hun] at hvn; cases hvn; exact hvnb
+  have hbn : blockOf c.f n = bid := by unfold blockOf; rw [hun]; exact hunb
+  rw [hbn] at huse
+  have hne : bid ≠ b := fun h => by
+    subst h; rw [S.hB] at hblk; cases hblk; exact hnB hnblk
+  obtain ⟨z, hz, hev⟩ := hd n un ⟨hun, hunb ▸ hbid, blk, hunb ▸ hblk, hnblk⟩
+    (by rw [hunb]; exact ⟨huse, hne⟩)
+  have hargs : ∀ a ∈ un.args, frS.regs[a]? = Gr.regs[a]? := by
+    intro a ha
+    refine (hGo a fun haB => hne ?_).symm
+    have hua := hcf.domRel.uses hbid hblk (hcf.domRel.left huse) hnblk hun hunp ha
+    obtain ⟨va, hva, -, hvab⟩ := hwf.valueId b B ⟨S.hb, S.hB⟩ a haB
+    have hba : blockOf c.f a = b := by unfold blockOf; rw [hva]; exact hvab
+    rw [hba] at hua
+    exact hcf.domRel.antisymm huse hua
+  refine ⟨un, z, hun, (hGo n hnB).trans hz, ?_⟩
+  rw [← evalValue_congr hGf hargs]
+  exact hev hunp
 
 /-- **The reference frame of a panicking block entry.** -/
 theorem grOK_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' = true)
@@ -317,20 +358,25 @@ theorem grOK_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
         cases ha'
       · rw [hkeep a (.inr ⟨v, hv, hp⟩)] at hy
         exact hA.entry hb a y hy
-  · intro a hh haB ⟨y, hyB, u, hu, hnp, hau⟩
-    rw [hGo a haB]
-    have hd := pre_strict hcf hA.pre
-    obtain ⟨-, hbT⟩ := pre_tree hwf hcf hA.pre
-    have huse := hcf.domRel.uses S.hb S.hB hbT hyB hu hnp hau
-    obtain ⟨bid, blk, ⟨hbid, hblk⟩, hablk⟩ := hwf.argListed b B y u ⟨⟨S.hb, S.hB⟩, hyB, hu⟩ a hau
-    obtain ⟨va, hva, -, hvab⟩ := hwf.valueId bid blk ⟨hbid, hblk⟩ a hablk
-    have hba : blockOf c.f a = bid := by unfold blockOf; rw [hva]; exact hvab
-    rw [hba] at huse
-    have hne : bid ≠ b := fun h => by
-      subst h; rw [S.hB] at hblk; cases hblk; exact haB hablk
-    obtain ⟨z, hz, -⟩ := hd a va ⟨hva, hvab ▸ hbid, blk, hvab ▸ hblk, hablk⟩
-      (by rw [hvab]; exact ⟨huse, hne⟩)
-    exact ⟨z, hz⟩
+  · rintro a hh haB ⟨y, hyB, u, hu, hnp, hau | ⟨y', hy', hy'B, u', hu', hp', ha'⟩⟩
+    · rw [hGo a haB]
+      have hd := pre_strict hcf hA.pre
+      obtain ⟨-, hbT⟩ := pre_tree hwf hcf hA.pre
+      have huse := hcf.domRel.uses S.hb S.hB hbT hyB hu hnp hau
+      obtain ⟨bid, blk, ⟨hbid, hblk⟩, hablk⟩ :=
+        hwf.argListed b B y u ⟨⟨S.hb, S.hB⟩, hyB, hu⟩ a hau
+      obtain ⟨va, hva, -, hvab⟩ := hwf.valueId bid blk ⟨hbid, hblk⟩ a hablk
+      have hba : blockOf c.f a = bid := by unfold blockOf; rw [hva]; exact hvab
+      rw [hba] at huse
+      have hne : bid ≠ b := fun h => by
+        subst h; rw [S.hB] at hblk; cases hblk; exact haB hablk
+      obtain ⟨z, hz, -⟩ := hd a va ⟨hva, hvab ▸ hbid, blk, hvab ▸ hblk, hablk⟩
+        (by rw [hvab]; exact ⟨huse, hne⟩)
+      exact ⟨z, hz⟩
+    · obtain ⟨u'', z, hu'', -, hev⟩ :=
+        S.outEv_of hwf hcf hA hGf hGo y' hy'B ⟨y, hyB, u, hu, hnp, hy'⟩ u' hu' hp'
+      rw [hu'] at hu''; cases hu''
+      exact evalValue_args_def (fun msg h => by rw [hev] at h; cases h) a ha'
 
 end Setup
 

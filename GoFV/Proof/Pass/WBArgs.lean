@@ -17,12 +17,10 @@ namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
 
-/-- Held values outside `B` that are arguments of `B`'s non-`Phi` values have registers in
-`Gr`. -/
+/-- Held values outside `B` that are arguments of `B`'s non-`Phi` values, or of their non-`Phi`
+arguments outside `B` (`SrcArg`), have registers in `Gr`. -/
 def OutDef (c : WBCheck.Ctx) (B : Block) (Gr : Frame) : Prop :=
-  ∀ a, c.held a = true → a ∉ B.values →
-    (∃ y ∈ B.values, ∃ u, c.f.value? y = some u ∧ u.op ≠ .Phi ∧ a ∈ u.args) →
-      ∃ z, Gr.regs[a]? = some (some z)
+  ∀ a, c.held a = true → a ∉ B.values → SrcArg c B a → ∃ z, Gr.regs[a]? = some (some z)
 
 /-- The registers available at the entry of segment `k` of the chain of `b`: held values outside
 `B` that `Gr` holds, the values of the earlier segments, and (when `b` is not the entry) the flag

@@ -115,10 +115,12 @@ theorem run_facts (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some
     · rename_i n' hn'
       split at hn
       · simp at hn
-      · simp only [List.mem_singleton] at hn
+      · rename_i hK
+        simp only [List.mem_singleton] at hn
         subst hn
         obtain ⟨hB, u, hu, hop⟩ := hnc _ hn'
-        exact ⟨hB, fun u' hu' => by rw [hu] at hu'; cases hu'; rw [hop]; exact fun h => by cases h⟩
+        exact ⟨hB.resolve_right hK,
+          fun u' hu' => by rw [hu] at hu'; cases hu'; rw [hop]; exact fun h => by cases h⟩
     · simp at hn
 
 /-- A value of `B` that is the flag address or constant is not a `Phi`. -/
@@ -240,10 +242,14 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
   have hvx : ∀ x ∈ B.values, ∃ u, c.f.value? x = some u := fun x hx => by
     obtain ⟨u, hu, -, -⟩ := hwf.valueId b B ⟨S.hb, S.hB⟩ x hx
     exact ⟨u, hu⟩
+  have hoe : OutEv env c B G := S.outEv_of hwf hcf hA hGf hGo
   have hO : OutDef c B G := by
-    rintro a - - ⟨y, hy, u, hu, hp, ha⟩
-    obtain ⟨z, -, hev⟩ := hGv y hy u hu hp
-    exact evalValue_args_def (fun msg h => by rw [hev] at h; cases h) a ha
+    rintro a - - ⟨y, hy, u, hu, hp, ha | ⟨y', hy', hy'B, u', hu', hp', ha'⟩⟩
+    · obtain ⟨z, -, hev⟩ := hGv y hy u hu hp
+      exact evalValue_args_def (fun msg h => by rw [hev] at h; cases h) a ha
+    · obtain ⟨u'', z, hu'', -, hev⟩ := hoe y' hy'B ⟨y, hy, u, hu, hp, hy'⟩ u' hu' hp'
+      rw [hu'] at hu''; cases hu''
+      exact evalValue_args_def (fun msg h => by rw [hev] at h; cases h) a ha'
   have hG : GrOK c B rs G frS := S.grOK hall hA hGf hsinv hGo
     (fun _ a ha y _ hl => by
       obtain ⟨u, hu⟩ := hvx a ha
@@ -269,7 +275,7 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
     intro j x hx
     refine S.cov_intro (P := fun x => x ∈ B.values ∧ ∀ u, c.f.value? x = some u → u.op ≠ .Phi)
       (fun x ⟨hx, hp⟩ => by obtain ⟨u, hu⟩ := hvx x hx; exact hP x hx u hu (hp u hu))
-      (fun _ a _ _ _ _ ha hap => ⟨ha, hap⟩) hA.wbh ?_ ?_ ?_
+      (fun _ a _ _ _ _ ha hap => ⟨ha, hap⟩) hoe hA.wbh ?_ ?_ ?_
     · intro hrole hK hp
       have hh : c.held x = true := by simp [Ctx.held, hK]
       rcases hx with hx | hx

@@ -31,6 +31,7 @@ structure SrcPanic (env : Env) (c : WBCheck.Ctx) (B : Block) (rs : List Run) (fr
   rnp : npOf c.f B r = true
   pan : stepV env (Ctx.make c.tabs c.f) Gr r = .panic e m
   out : ∀ z, z ∉ B.values → Gr.regs[z]? = frS.regs[z]?
+  outEv : OutEv env c B Gr
   phis : ∀ x ∈ B.values, ∀ u, c.f.value? x = some u → u.op = .Phi →
     ∃ a y, u.args[i]? = some a ∧ frS.regs[a]? = some (some y) ∧
       Gr.regs[x]? = some (some (y.retype ((Ctx.make c.tabs c.f).tys[x]?.getD .other)))
@@ -154,7 +155,7 @@ theorem panic_kept (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
   have hcovP : ∀ x, ((∃ j, j ≤ k ∧ InSeg c b rs j x) ∨ (∃ j, j < k ∧ InT c rs j x)) →
       (c.roleOf rs x = .held → c.K.getD x false = true →
         (∀ u, c.f.value? x = some u → u.op ≠ .Phi) → x ∈ pre) → Cov env c rs Gr x :=
-    fun x hpos hheld => S.cov_of_runs SP.ev hA.wbh hPcl hruns hpos hheld
+    fun x hpos hheld => S.cov_of_runs SP.ev hA.wbh hPcl SP.outEv hruns hpos hheld
   have hcovW : ∀ j x, j < k → (InSeg c b rs j x ∨ InT c rs j x) → Cov env c rs Gr x := by
     intro j x hj hx
     refine hcovP x (hx.elim (fun h => .inl ⟨j, by omega, h⟩) (fun h => .inr ⟨j, hj, h⟩)) ?_
@@ -344,7 +345,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
   have hcovP : ∀ x, ((∃ j, j ≤ j0 ∧ InSeg c b rs j x) ∨ (∃ j, j < j0 ∧ InT c rs j x)) →
       (c.roleOf rs x = .held → c.K.getD x false = true →
         (∀ u, c.f.value? x = some u → u.op ≠ .Phi) → x ∈ pre) → Cov env c rs Gr x :=
-    fun x hpos hheld => S.cov_of_runs SP.ev hA.wbh hPcl hruns hpos hheld
+    fun x hpos hheld => S.cov_of_runs SP.ev hA.wbh hPcl SP.outEv hruns hpos hheld
   have hcovS : ∀ j x, j ≤ j0 → InSeg c b rs j x → Cov env c rs Gr x := by
     intro j x hj hx
     refine hcovP x (.inl ⟨j, hj, hx⟩) fun _ hK' hp => ?_
@@ -411,7 +412,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
         have hok := S.tOK hr0 hxt
         have hpx := hpureT x hx
         refine S.local_t SP.grOK.held SP.grOK.mems ⟨r0, hr0, hxt⟩ hw
-          (S.cov_intro SP.ev hPcl hA.wbh (fun _ hK' _ =>
+          (S.cov_intro SP.ev hPcl SP.outEv hA.wbh (fun _ hK' _ =>
             (S.held_t ⟨r0, hr0, hxt⟩ (by simp [Ctx.held, hK'])).elim) ?_ ?_)
         · rintro j' hρ r'' -
           exfalso
@@ -476,7 +477,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
         have hpx := hpureE x hx
         refine localQ_mono (S.local_seg SP.grOK.fr SP.grOK.held SP.grOK.mems ⟨_, hse, hxs⟩ hw hwp
           ?_) (fun a z h => h.1) (fun z hq => ⟨hq, fun he => ?_⟩)
-        · refine S.cov_intro SP.ev hPcl hA.wbh (fun _ hK' hp => ?_) ?_ ?_
+        · refine S.cov_intro SP.ev hPcl SP.outEv hA.wbh (fun _ hK' hp => ?_) ?_ ?_
           · have hh : c.held x = true := by simp [Ctx.held, hK']
             exact hApre x ⟨S.held_seg ⟨_, hse, hxs⟩ hh, hp, hh, .inr ⟨hxs, hx⟩⟩
           · rintro j' hρ r'' -
@@ -530,7 +531,7 @@ theorem chain_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.bloc
       ev := fun x hx => by obtain ⟨v, y, hv, hy, hev⟩ := hGv x hx; exact ⟨v, y, hv, hy, hev⟩,
       grOK := S.grOK_panic hall hwf hcf hE hA hps ho hsplit hpre hGf hGo hGv,
       rB := hrB, rnp := npOf_true hrB hrv (prio_panicking hrop) hrnp, pan := hrp, out := hGo,
-      phis := hGp }
+      outEv := S.outEv_of hwf hcf hA hGf hGo, phis := hGp }
   have hcovB := (blockOK_spec S.ok S.hB S.ch).2.2.2.2.2.1 r hrB
   by_cases hK : c.K.getD r false = true
   · obtain ⟨s, hs, hrs⟩ := hcovB.1 hK

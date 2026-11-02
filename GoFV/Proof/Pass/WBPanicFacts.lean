@@ -61,7 +61,7 @@ theorem ncs_np (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r)
     (hn : n ∈ ncsOf c r) : npOf c.f B n = true := by
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hnc⟩ :=
     runOK_spec ((blockOK_spec S.ok S.hB S.ch).2.2.2.2.1 j r hr)
-  have hn' : r.nc = some n := by
+  obtain ⟨hn', hK⟩ : r.nc = some n ∧ c.K.getD n false = false := by
     unfold ncsOf at hn
     cases h : r.nc with
     | none => simp only [h] at hn; cases hn
@@ -69,10 +69,13 @@ theorem ncs_np (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r)
       simp only [h] at hn
       split at hn
       · cases hn
-      · rw [List.mem_singleton.1 hn]
+      · rename_i hK
+        obtain rfl := List.mem_singleton.1 hn
+        exact ⟨rfl, by simpa using hK⟩
   obtain ⟨hnB, u, hu, hop⟩ := hnc n hn'
   unfold npOf
-  simp only [Array.contains_iff_mem.2 hnB, hu, Bool.true_and]
+  simp only [Array.contains_iff_mem.2 (hnB.resolve_right (by rw [hK]; decide)), hu,
+    Bool.true_and]
   rw [hop]; decide
 
 private theorem bs_topo_before {D : ID → List ID} : ∀ {o : List ID}, TopoRem D o →
@@ -219,7 +222,7 @@ question are too. -/
 theorem cov_of_runs (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → Prop}
     (hEv : ∀ x, P x → Ev env c Gr x) (hW : WbHelpers env)
     (hPcl : ∀ x a v, P x → c.f.value? x = some v → a ∈ v.args → a ∈ B.values →
-      (∀ va, c.f.value? a = some va → va.op ≠ .Phi) → P a)
+      (∀ va, c.f.value? a = some va → va.op ≠ .Phi) → P a) (hout : OutEv env c B Gr)
     {J : Nat} (hruns : ∀ j r, j < J → rs[j]? = some r →
       (∀ s ∈ r.src, P s) ∧ (∀ n ∈ ncsOf c r, P n))
     {x : ID} (hpos : (∃ j, j ≤ J ∧ InSeg c b rs j x) ∨ (∃ j, j < J ∧ InT c rs j x))
@@ -231,7 +234,7 @@ theorem cov_of_runs (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → 
     cases hw : c.g.value? x with
     | none => unfold Ctx.roleOK at hok; rw [hw] at hok; cases hok
     | some w => exact ⟨w, rfl⟩
-  refine S.cov_intro hEv hPcl hW hheld ?_ ?_
+  refine S.cov_intro hEv hPcl hout hW hheld ?_ ?_
   · intro j' hρ r hr
     refine hruns j' r ?_ hr
     rcases hρ with ⟨k, hρ⟩ | hρ | hρ | hρ

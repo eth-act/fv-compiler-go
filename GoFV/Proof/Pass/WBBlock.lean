@@ -17,13 +17,20 @@ def ncsOf (c : WBCheck.Ctx) (r : Run) : List ID :=
   | some n => if c.K.getD n false then [] else [n]
   | none => []
 
+/-- `a` is an argument of a non-`Phi` value of `B`, or of a non-`Phi` value outside `B` that is one
+(`Ctx.srcArg`). -/
+def SrcArg (c : WBCheck.Ctx) (B : Block) (a : ID) : Prop :=
+  ∃ y ∈ B.values, ∃ u, c.f.value? y = some u ∧ u.op ≠ .Phi ∧
+    (a ∈ u.args ∨ ∃ y' ∈ u.args, y' ∉ B.values ∧ ∃ u', c.f.value? y' = some u' ∧
+      u'.op ≠ .Phi ∧ a ∈ u'.args)
+
 section
 variable {c : WBCheck.Ctx}
 
 theorem availIn_spec {B : Block} {segs : List ID} {j : Nat} {a : ID}
     (h : c.availIn B segs j a = true) :
     c.held a = true ∧ (a ∈ B.values → ∃ s ∈ segs.take (j + 1), a ∈ vals c.g s) ∧
-      (a ∉ B.values → ∃ y ∈ B.values, ∃ u, c.f.value? y = some u ∧ u.op ≠ .Phi ∧ a ∈ u.args) := by
+      (a ∉ B.values → SrcArg c B a) := by
   unfold Ctx.availIn at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨hh, h2⟩ := h
@@ -42,8 +49,22 @@ theorem availIn_spec {B : Block} {segs : List ID} {j : Nat} {a : ID}
     | none => rw [hv] at hu; cases hu
     | some u =>
       rw [hv] at hu
-      simp only [Option.any_some, Bool.and_eq_true, bne_iff_ne, ne_eq] at hu
-      exact ⟨y, hy, u, hv, hu.1, Array.contains_iff_mem.1 hu.2⟩
+      simp only [Option.any_some, Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.or_eq_true] at hu
+      obtain ⟨hnp, hor⟩ := hu
+      refine ⟨y, hy, u, hv, hnp, ?_⟩
+      rcases hor with h | h
+      · exact .inl (Array.contains_iff_mem.1 h)
+      · obtain ⟨y', hy', h'⟩ := Array.any_eq_true'.1 h
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at h'
+        obtain ⟨hnc, h'⟩ := h'
+        cases hv' : c.f.value? y' with
+        | none => rw [hv'] at h'; cases h'
+        | some u' =>
+          rw [hv'] at h'
+          simp only [Option.any_some, Bool.and_eq_true, bne_iff_ne, ne_eq] at h'
+          refine .inr ⟨y', hy', fun hm => ?_, u', hv', h'.1, Array.contains_iff_mem.1 h'.2⟩
+          rw [Array.contains_iff_mem.2 hm] at hnc
+          cases hnc
 
 theorem keptNP_spec {s : ID} {l : List ID} (h : c.keptNP s = some l) :
     ∃ C o, c.g.block? s = some C ∧ Sem.schedule c.g C = some o ∧
@@ -80,7 +101,8 @@ theorem runOK_spec {b : ID} {B : Block} {segs : List ID} {rs : List Run} {j : Na
     r.sp.load ∈ vals c.g r.sp.c ∧ r.sp.flag ∈ vals c.g r.sp.c ∧ c.roleOf rs r.sp.flag = .flag j ∧
     c.held r.sp.mem = true ∧ (∀ y, r.ncEnd = some y → c.roleOf rs y = .ncEnd j) ∧
     (∀ x ∈ r.src, x ∈ B.values ∧ c.K.getD x false = false) ∧
-    (∀ n, r.nc = some n → n ∈ B.values ∧ ∃ u, c.f.value? n = some u ∧ u.op = .NilCheck) := by
+    (∀ n, r.nc = some n → (n ∈ B.values ∨ c.K.getD n false = true) ∧
+      ∃ u, c.f.value? n = some u ∧ u.op = .NilCheck) := by
   unfold Ctx.runOK at h
   simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, hT⟩, hE⟩, hC⟩, hlen⟩, hpos⟩, hlast⟩, htgt⟩, hncE⟩, hload⟩, hflag⟩,
@@ -131,9 +153,9 @@ theorem runOK_spec {b : ID} {B : Block} {segs : List ID} {rs : List Run} {j : Na
     exact ⟨Array.contains_iff_mem.1 this.1, this.2⟩
   · intro n hn
     rw [hn] at hnc
-    simp only [Bool.and_eq_true] at hnc
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at hnc
     obtain ⟨hm, ha⟩ := hnc
-    refine ⟨Array.contains_iff_mem.1 hm, ?_⟩
+    refine ⟨hm.imp_left Array.contains_iff_mem.1, ?_⟩
     cases hv : c.f.value? n with
     | none => rw [hv] at ha; cases ha
     | some u => rw [hv] at ha; exact ⟨u, rfl, beq_iff_eq.1 ha⟩
