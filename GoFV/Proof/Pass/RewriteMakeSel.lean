@@ -11,9 +11,9 @@ selection `v` of component `k` of `s = Make …` as `Copy a` of the `Make`'s arg
 `MSFacts.step`: on a set closed under arguments, every denotation after the event refines the
 one before at the same fuel (`select_retype_make_get` at `v`: component `k` of the retyped
 `Make` is `a` retyped at the field's shape, which keeps `a`'s denotation since `a`'s shape is
-the field's and `v`'s, or `a` is an `Addr`, a global pointer without a concrete address, under
-word shapes: `addr_den`, `retype_word`; monotonicity elsewhere). `ReplayInv.makeSel`: the event
-keeps the replay invariant.
+the field's and `v`'s, or `a` is a 64-bit integer word (`intWord`: an integer, a global
+pointer, or a `Convert`/`Copy` of one; `intWord_den`) under word shapes (`retype_word`);
+monotonicity elsewhere). `ReplayInv.makeSel`: the event keeps the replay invariant.
 -/
 
 namespace GoFV.Proof.Pass.Rewrite
@@ -44,15 +44,25 @@ theorem make_facts {op : Op} (h : GoFV.Proof.Rules.makeOp op = true) :
   cases op <;> simp only [GoFV.Proof.Rules.makeOp, reduceCtorEq] at h
   all_goals exact ⟨by decide, by decide, fun _ _ _ _ => rfl⟩
 
-/-- A word shape keeps `poison` and a pointer without a concrete address. -/
+/-- A word shape keeps a 64-bit integer word: a 64-bit integer, a pointer without a concrete
+address, or `poison`. -/
 theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
-    (hz : z = .poison ∨ ∃ p, z = .ptr p ∧ p.addr? = none) : z.retype t = z := by
-  rcases hz with rfl | ⟨p, rfl, hp⟩
-  · exact retype_poison _
-  · cases t with
-    | int w => cases w <;> simp [wordTy] at ht; simp [Val.retype, hp]
+    (hz : z.hasTy (.int .w64) = true) : z.retype t = z := by
+  cases z with
+  | poison => exact retype_poison _
+  | int w x =>
+    cases w <;> simp [Val.hasTy] at hz
+    cases t with
+    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype]
     | ptr e => rfl
     | _ => simp [wordTy] at ht
+  | ptr p =>
+    simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
+    cases t with
+    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype, hz]
+    | ptr e => rfl
+    | _ => simp [wordTy] at ht
+  | _ => simp [Val.hasTy] at hz
 
 /-- An `Addr` denotes `poison` or a global pointer, which has no concrete address. -/
 theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a : ID} {w : Value}
@@ -69,6 +79,67 @@ theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a 
       | ptr e => exact .inr ⟨_, rfl, rfl⟩
       | _ => exact .inl rfl
     · exact .inl (retype_poison _)
+
+/-- `Convert` at a word shape of a 64-bit integer word is one (integer → pointer is the
+identity; a pointer without a concrete address does not convert to an integer). -/
+theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : List Val) :
+    (PtrOps.convert t (z :: l)).hasTy (.int .w64) = true := by
+  unfold PtrOps.convert
+  split
+  · rename_i x m he
+    cases he
+    split
+    · rename_i p
+      simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
+      simp [hz, Val.hasTy]
+    · exact hz
+  · rfl
+
+/-- A value accepted by `intWord` denotes a 64-bit integer word at every fuel. -/
+theorem intWord_den {tabs : Tables} {M : Defs} {ρ : ID → Val}
+    (hT : Term.Typed M.get? tabs ρ) :
+    ∀ n a m, intWord tabs M n a = true → (den M.get? tabs ρ m a).hasTy (.int .w64) = true
+  | 0, _, _, h => by simp [intWord] at h
+  | _ + 1, _, 0, _ => rfl
+  | n + 1, a, m + 1, h => by
+    unfold intWord at h
+    split at h
+    · rename_i w hw
+      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+      rcases h with (hi | hop) | ⟨⟨hop, ht⟩, hx⟩
+      · have hty := den_hasTy hT (m + 1) hw
+        revert hi hty
+        cases tabs.ty w.type with
+        | int w' => cases w' <;> simp
+        | _ => simp
+      · rcases addr_den hw hop (m + 1) with h | ⟨p, h, hp⟩ <;> rw [h]
+        · rfl
+        · simp [Val.hasTy, hp]
+      · split at hx
+        · rename_i x hx0
+          have ih := intWord_den hT n x m hx
+          have hargs : ∃ l, w.args.toList = x :: l := by
+            rw [← Array.getElem?_toList] at hx0
+            cases hl : w.args.toList with
+            | nil => rw [hl] at hx0; cases hx0
+            | cons y l => rw [hl] at hx0; cases hx0; exact ⟨l, rfl⟩
+          obtain ⟨l, hl⟩ := hargs
+          have hterm : termOp w.op = true := by rcases hop with h | h <;> rw [h] <;> decide
+          rw [den_succ_term hw hterm, GoFV.Proof.Rules.opVal_pure (by rcases hop with h | h <;>
+            rw [h] <;> decide), hl, List.map_cons]
+          have hv : (evalPure w.op (tabs.ty w.type) w.auxInt w.aux
+              (den M.get? tabs ρ m x :: l.map (den M.get? tabs ρ m))).hasTy (.int .w64) = true := by
+            rcases hop with h | h <;> rw [h]
+            · exact convert_word ih _
+            · show (match den M.get? tabs ρ m x :: l.map (den M.get? tabs ρ m) with
+                | [x] => x | _ => .poison).hasTy _ = true
+              cases l with
+              | nil => exact ih
+              | cons _ _ => rfl
+          rw [retype_word ht hv]
+          exact hv
+        · cases hx
+    · cases h
 
 /-- What `makeSelOK` establishes about an event `(v, [u])`. -/
 structure MSFacts (tabs : Tables) (M : Defs) (v : ID) (u : Value) where
@@ -92,7 +163,7 @@ structure MSFacts (tabs : Tables) (M : Defs) (v : ID) (u : Value) where
   hsh : ∀ fk, GoFV.Proof.Rules.fieldShape? (tabs.ty y.type) k = some fk →
     (GoFV.Proof.Rules.shapeSub (tabs.ty w.type) fk = true ∧
       GoFV.Proof.Rules.shapeSub (tabs.ty w.type) (tabs.ty x.type) = true) ∨
-    (w.op = .Addr ∧ wordTy fk = true ∧ wordTy (tabs.ty x.type) = true)
+    (intWord tabs M 4 a = true ∧ wordTy fk = true ∧ wordTy (tabs.ty x.type) = true)
 
 theorem msFacts {tabs : Tables} {M : Defs} {v : ID} {defs : List Value}
     (h : makeSelOK tabs M v defs = true) : ∃ u, defs = [u] ∧ Nonempty (MSFacts tabs M v u) := by
@@ -197,11 +268,11 @@ theorem MSFacts.sel_ref (F : MSFacts tabs M v u) {ρ : ID → Val} (hT : Term.Ty
       exact den_retype hT m F.a (by rw [F.hw]; rfl)
     have hkeep : ((den M.get? tabs ρ m F.a).retype f).retype (tabs.ty F.x.type) =
         den M.get? tabs ρ m F.a := by
-      rcases F.hsh f hf with ⟨h1, h2⟩ | ⟨hop, h1, h2⟩
+      rcases F.hsh f hf with ⟨h1, h2⟩ | ⟨hi, h1, h2⟩
       · have hty : (den M.get? tabs ρ m F.a).hasTy (tabs.ty F.w.type) = true := by
           rw [← hfix]; exact Val.retype_hasTy _ _
         rw [GoFV.Proof.Rules.retype_of_shapeSub hty h1, GoFV.Proof.Rules.retype_of_shapeSub hty h2]
-      · have hg := addr_den (tabs := tabs) (ρ := ρ) F.hw hop m
+      · have hg := intWord_den (tabs := tabs) (ρ := ρ) hT 4 F.a m hi
         rw [retype_word h1 hg, retype_word h2 hg]
     rw [hkeep, ← hfix]
     exact retype_mono _ hz

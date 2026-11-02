@@ -735,16 +735,23 @@ invariant. Pass execution witness: `GoFV.Proof.Witness.lsel_checkedRewrite` (`lo
 `makeSelShape` (a selection op over a `Make` op pattern, copy result, no `@b`) is first validated
 per instance (`RewriteCheck.makeSelOK`): `v` selects component `k` (`selIndex?`) of `s = Make …`
 whose argument `k` is a value `a`, `v` becomes `Copy a` at `a`'s type, and where the `Make`'s
-shape has a component `k`, `a`'s shape is that component's and `v`'s (`shapeSub`), or `a` is an
-`Addr` and both are word shapes (`.int .w64` or a pointer: a global has no concrete address,
-so `retype` at both keeps it). Else the event is checked as a rule instance (`ruleOK`).
+shape has a component `k`, `a`'s shape is that component's and `v`'s (`shapeSub`), or `a` is a
+64-bit integer word and both are word shapes (`.int .w64` or a pointer). `RewriteCheck.intWord`
+decides "a 64-bit integer word" (an integer, a pointer without a concrete address, or
+`poison`): `a` has the `.int .w64` shape, is an `Addr` (a global), or is a `Convert`/`Copy` at a
+word shape of one (`Convert` integer → pointer is the identity), up to 4 steps; `retype` at
+either word shape keeps such a value (#312: a 64-bit integer keeps its word at a pointer shape).
+Else the event is checked as a rule instance (`ruleOK`).
 `MSFacts.step` proves the per-instance case refines the selection as a term at the same fuel:
 component `k` of the retyped `Make` is argument `k` retyped at the field's shape
-(`select_retype_make_get`), so only the selected argument matters (`addr_den`, `retype_word`
-for an `Addr`). This accepts `(IData (IMake itab data))` whose itab is typed `*uint8` (the
+(`select_retype_make_get`), so only the selected argument matters (`intWord_den`,
+`retype_word`). This accepts `(IData (IMake itab data))` whose itab is typed `*uint8` (the
 interface's itab word is `.int .w64`; `Pat.argsOK` asks it of every `Make` argument) and
-`(ITab (IMake itab _))` with an `Addr {go:itab.…}` itab (agreed with Semantics5: no semantic
-change; an itab with a concrete address is not kept by `retype` at `.int .w64`). A `___` pattern
+`(ITab (IMake itab _))` (`dec.rules:82`, typed `*uint8` or `uintptr`) whose itab is a `uintptr`
+(`ArgIntReg`, `SelectN`, `Load`, `Phi`, `ConstNil`), an `Addr {go:itab.…}` or a `Convert` of a
+`uintptr`. Not accepted: a pointer-typed itab that is an atom of the term denotation (`NilCheck`
+of an `Addr`, a pointer-typed `Phi`): its value may be a pointer with a concrete address, which
+the interface's `.int .w64` itab word turns into its address. A `___` pattern
 has no `Rule.Sound` form (`Pat.arityOk`): `RuleSet.AllSound` asks of each value rule
 `Rule.Checked` = `Rule.SoundT` or `Rule.MakeSel` (`makeSelShape` and no `Pat.arityOk`), whose
 events only `makeSelOK` accepts. Pass execution witness: `GoFV.Proof.Witness.mks_checkedRewrite`

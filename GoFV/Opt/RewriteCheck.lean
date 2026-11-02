@@ -795,20 +795,38 @@ x:(StructMake ___)) => x.Args[i]` of `dec.rules:106`/`generic.rules:973`, …) m
 (`makeSelOK`); the variadic ones have no `Rule.Sound` form and only this check. Component `k`
 of a `Make` retyped at an aggregate shape is argument `k` retyped at the field's shape, so only
 the selected argument matters: it is kept when its shape is the field's and the selection's
-(`shapeSub`), or when it is an `Addr` (a global pointer, which has no concrete address: a
-64-bit integer or pointer shape keeps it, e.g. an itab `Addr {go:itab.…}` typed `*uint8` under
-the interface's `uintptr` itab word); without a field `k` the selection is `poison`. -/
+(`shapeSub`), or when it is a 64-bit integer word (`intWord`: a 64-bit integer or a pointer
+without a concrete address, which every word shape keeps, §3.3; e.g. the interface's `uintptr`
+itab word read by a pointer-typed `ITab`, or an itab `Addr {go:itab.…}` typed `*uint8`); without
+a field `k` the selection is `poison`. -/
 
-/-- A 64-bit integer or pointer shape: `retype` at it keeps a pointer without a concrete address. -/
+/-- A 64-bit integer or pointer shape: `retype` at it keeps a 64-bit integer and a pointer
+without a concrete address. -/
 def wordTy : Sem.Ty → Bool
   | .int .w64 | .ptr _ => true
   | _ => false
 
+/-- `a` denotes a 64-bit integer word in `M`, within `n` steps: a 64-bit integer, a pointer
+without a concrete address, or `poison` (`Val.hasTy _ (.int .w64)`). It has the 64-bit integer
+shape, is an `Addr` (a global), or is a `Convert`/`Copy` at a word shape of such a value
+(`Convert` integer → pointer is the identity). -/
+def intWord (tabs : Tables) (M : Defs) : Nat → ID → Bool
+  | 0, _ => false
+  | n + 1, a =>
+    match M.get? a with
+    | some w =>
+      (tabs.ty w.type matches .int .w64) || w.op == .Addr ||
+        ((w.op == .Convert || w.op == .Copy) && wordTy (tabs.ty w.type) &&
+          match w.args[0]? with
+          | some x => intWord tabs M n x
+          | none => false)
+    | none => false
+
 /-- The event `(v, defs)` selects an argument of a `Make`: `v` is a selection of component `k`
 (`selIndex?`) of `s` in `M`, `s` a `Make` whose argument `k` is a defined value `a`, `defs` is
 `v` as `Copy a` at `a`'s type (`copyOf`), and where the `Make`'s shape has a component `k`, `a`'s
-shape is that component's and `v`'s (`shapeSub`), or `a` is an `Addr` and both are word shapes
-(`wordTy`). -/
+shape is that component's and `v`'s (`shapeSub`), or `a` is a 64-bit integer word (`intWord`)
+and both are word shapes (`wordTy`). -/
 def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
   match M.get? v, defs with
   | some x, [u] =>
@@ -824,7 +842,7 @@ def makeSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
             (match fieldShape? (tabs.ty y.type) k with
               | some fk =>
                 (shapeSub (tabs.ty w.type) fk && shapeSub (tabs.ty w.type) (tabs.ty x.type)) ||
-                (w.op == .Addr && wordTy fk && wordTy (tabs.ty x.type))
+                (intWord tabs M 4 a && wordTy fk && wordTy (tabs.ty x.type))
               | none => true)
           | none => false
         | none => false
