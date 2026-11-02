@@ -122,30 +122,28 @@ theorem retype_eq_mem {t : Ty} {v : Val} {M : Mem} (h : v.retype t = .mem M) : v
   split at h <;> (repeat' split at h) <;>
     (try simp only [Val.ofStr, Val.ofSlice] at h) <;> (try split at h) <;> simp_all
 
-/-- A `Store`'s write: a pointer, a memory and the written memory. -/
+/-- A `Store`'s write: a pointer word, a memory and the written memory. -/
 theorem memDef_store {tabs : Tables} {s : Value} (hs : s.op = .Store ∨ s.op = .StoreWB)
     {a b c y : Val} (h : memDef tabs s [a, b, c] = some y) :
-    ∃ q m0 M', a = .ptr q ∧ c = .mem m0 ∧ m0.write q (encode (auxTy tabs s.aux) b) = some M' ∧
-      y = .mem M' := by
+    ∃ q m0 M', a.asPtrWord = some q ∧ c = .mem m0 ∧
+      m0.write q (encode (auxTy tabs s.aux) b) = some M' ∧ y = .mem M' := by
   rcases hs with hs | hs <;>
-  · cases a <;> try (simp [memDef, hs] at h; done)
-    cases c <;> try (simp [memDef, hs] at h; done)
-    rename_i q m0
-    simp only [memDef, hs, Option.map_eq_some_iff] at h
-    obtain ⟨M', hw, rfl⟩ := h
-    exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
+  · cases c <;> try (simp [memDef, hs] at h; done)
+    rename_i m0
+    simp only [memDef, hs, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+    obtain ⟨q, hq, M', hw, rfl⟩ := h
+    exact ⟨q, m0, M', hq, rfl, hw, rfl⟩
 
-/-- A `Zero`'s write: a pointer, a memory and the written memory. -/
+/-- A `Zero`'s write: a pointer word, a memory and the written memory. -/
 theorem memDef_zero {tabs : Tables} {s : Value} (hs : s.op = .Zero) {a c y : Val}
     (h : memDef tabs s [a, c] = some y) :
-    ∃ q m0 M', a = .ptr q ∧ c = .mem m0 ∧
+    ∃ q m0 M', a.asPtrWord = some q ∧ c = .mem m0 ∧
       m0.write q (Array.replicate s.auxInt.toInt.toNat (.b 0)) = some M' ∧ y = .mem M' := by
-  cases a <;> try (simp [memDef, hs] at h; done)
   cases c <;> try (simp [memDef, hs] at h; done)
-  rename_i q m0
-  simp only [memDef, hs, Option.map_eq_some_iff] at h
-  obtain ⟨M', hw, rfl⟩ := h
-  exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
+  rename_i m0
+  simp only [memDef, hs, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+  obtain ⟨q, hq, M', hw, rfl⟩ := h
+  exact ⟨q, m0, M', hq, rfl, hw, rfl⟩
 
 theorem zeroConst_spec {tabs : Tables} {f : Func} {x : ID} (h : zeroConst tabs f x = true) :
     ∃ y, termConst tabs f 4 x = some y ∧ ZeroV y := by
@@ -179,7 +177,8 @@ theorem zeroConst_den {x : ID} (h : zeroConst tabs f x = true) (k : Nat) :
 /-- **Cleared bytes through a chain** (`zeroChain`): the memory holds zeros at the pointer, read
 through the disjoint writes from the `Zero` that cleared them. -/
 theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ)
-    {p : ID} {n : Nat} (hn : n ≠ 0) {kp : Nat} {P : Ptr} (hp : den f.value? tabs ρ kp p = .ptr P) :
+    {p : ID} {n : Nat} (hn : n ≠ 0) {kp : Nat} {P : Ptr}
+    (hp : (den f.value? tabs ρ kp p).asPtrWord = some P) :
     ∀ (d : Nat) (m : ID), zeroChain tabs f p n d m = true → ∀ {k : Nat} {M : Mem},
       den f.value? tabs ρ k m = .mem M → M.read P n = some (Array.replicate n (.b 0))
   | 0, _, h, _, _, _ => by simp [zeroChain] at h
@@ -212,7 +211,7 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       rw [hm] at hρs
       have hMM := retype_mem hρs.symm
       subst hMM
-      rw [read_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact disjoint_sep hT hM hdis hp hq)]
+      rw [read_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact disjoint_sep hM hdis hp hq)]
       exact zeroChain_read hT hM hn hp d _ hch hm0
     · -- the `Zero`
       have hmem : memOp s.op = true := by rw [hzop]; rfl
@@ -228,9 +227,9 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       have hMM := retype_mem hρs.symm
       subst hMM
       -- the pointer: `q` plus the offset
-      obtain ⟨k1, q1, h1, e1⟩ := ptrBase_den hT 8 p _ P hp
-      obtain ⟨k2, q2, h2, e2⟩ := ptrBase_den hT 8 s.args[0]! _ q hq
-      have hq12 := baseSame_den hT hM 8 _ _ hbase h1 h2
+      obtain ⟨k1, q1, h1, e1⟩ := ptrBase_den 8 p _ P hp
+      obtain ⟨k2, q2, h2, e2⟩ := ptrBase_den 8 s.args[0]! _ q hq
+      have hq12 := baseSame_den hM 8 _ _ hbase h1 h2
       have hP : P = q.add (BitVec.ofNat 64
           ((ptrBase tabs f 8 p).2 - (ptrBase tabs f 8 s.args[0]!).2).toNat) := by
         rw [e1, e2, hq12, ptr_add_add, BitVec.ofNat_toNat, BitVec.setWidth_eq,
@@ -315,7 +314,7 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     rw [hm0'] at hρ2
     have hMM := retype_mem hρ2.symm
     subst hMM
-    have hqQ := samePtr_den hT hM hsame hq hQ
+    have hqQ := samePtr_den hM hsame hq hQ
     subst hqQ
     have hrd := read_write_self hw2
     rw [hai] at hrd

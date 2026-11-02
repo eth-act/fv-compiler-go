@@ -128,26 +128,38 @@ private theorem evalOp_memRoot {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     evalOp env ctx fr v argv ty = memRoot ctx v argv := by
   rcases hop with hop | hop <;> simp only [evalOp, hop]
 
-/-- A `Move` that returns read its source and wrote the bytes at its destination. -/
+/-- A global pointer, retyped at any shape, reads as itself where it reads as a pointer (it has
+no address to become an integer). -/
+theorem retype_global_asPtrWord {n : String} {t : Ty} {Q : Ptr}
+    (h : ((Val.ptr ⟨.global n, 0⟩).retype t).asPtrWord = some Q) : Q = ⟨.global n, 0⟩ := by
+  cases t with
+  | int w => cases w <;> simp_all [Val.retype, Val.asPtrWord, Ptr.addr?, Blk.base?]
+  | _ => simp_all [Val.retype, Val.asPtrWord]
+
+/-- A `Move` that returns read its source and wrote the bytes at its destination (both
+pointer words). -/
 theorem memRoot_move {ctx : Ctx} {v : Value} (hop : v.op = .Move) {a b c r : Val}
     (h : memRoot ctx v [a, b, c] = .ok r) :
-    ∃ D Q M bs M', a = .ptr D ∧ b = .ptr Q ∧ c = .mem M ∧
+    ∃ D Q M bs M', a.asPtrWord = some D ∧ b.asPtrWord = some Q ∧ c = .mem M ∧
       M.read Q v.auxInt.toInt.toNat = some bs ∧ M.write D bs = some M' ∧ r = .mem M' := by
   unfold memRoot at h
   rw [hop] at h
   split at h
   case h_3 =>
-    rename_i _ _ D Q M _ hargs
+    rename_i _ _ a' b' M _ hargs
     simp only [List.cons.injEq, and_true] at hargs
     obtain ⟨rfl, rfl, rfl⟩ := hargs
     dsimp only at h
     split at h
-    · rename_i bs hbs
-      unfold writeRes at h
+    · rename_i D Q hD hQ
       split at h
-      · rename_i M' hw
-        cases h
-        exact ⟨D, Q, M, bs, M', rfl, rfl, rfl, hbs, hw, rfl⟩
+      · rename_i bs hbs
+        unfold writeRes at h
+        split at h
+        · rename_i M' hw
+          cases h
+          exact ⟨D, Q, M, bs, M', hD, hQ, rfl, hbs, hw, rfl⟩
+        · cases h
       · cases h
     · cases h
   all_goals first
@@ -204,7 +216,7 @@ theorem roSeg_sound {x : ID} {fv gv : Value} {D N : List ID} (hfv : f.value? x =
   | stuck msg => rw [hmr] at hev; cases hev
   | ok r =>
   rw [hmr] at hev; cases hev
-  obtain ⟨P, Q, M, bs, M', rfl, rfl, rfl, hrd, hw, rfl⟩ := memRoot_move hop hmr
+  obtain ⟨P, Q, M, bs, M', hPw, hQw, rfl, hrd, hw, rfl⟩ := memRoot_move hop hmr
   -- the source pointer is the symbol's block
   have hsnp : sv.op ≠ .Phi := by rw [hsa]; decide
   have hevs := hA.eval (hmem s (by simp)) hsv hsnp hys
@@ -212,7 +224,8 @@ theorem roSeg_sound {x : ID} {fv gv : Value} {D N : List ID} (hfv : f.value? x =
     CSE.Mem.evalOp_frameVal (.inl hsa) (frameVal_addr hsa hn)] at hevs
   have hQ : Q = ⟨.global n, 0⟩ := by
     simp only [Res.bind_ok, Res.ok.injEq] at hevs
-    exact Pass.LoadFwd.retype_ptr_eq hevs
+    rw [← hevs] at hQw
+    exact retype_global_asPtrWord hQw
   subst hQ
   -- the memory has the symbol: the bytes read are zero
   have hRo : RoMem ro M := hinv m _ hym M (by simp [Val.mems]) hm
@@ -231,7 +244,7 @@ theorem roSeg_sound {x : ID} {fv gv : Value} {D N : List ID} (hfv : f.value? x =
     rw [evalValue_of_regs hreg, htg, evalOp_memRoot (.inl hgop), hga]
     show (memRoot _ gv [rv S d, rv S m]).bind _ = _
     rw [rv_of hyd, rv_of hym]
-    simp only [memRoot, hgop, hai, hw, writeRes]
+    simp only [memRoot, hgop, hai, hPw, hw, writeRes]
     rfl
   have hf : (Ctx.make tabs g).f = g := rfl
   refine ⟨{ S with regs := S.regs.set! x (some ((Val.mem M').retype (tabs.ty gv.type))) }, ?_,

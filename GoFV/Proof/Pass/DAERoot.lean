@@ -17,15 +17,17 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.DAE GoFV.Proof.DSE
 
 variable {U : Blk → Prop}
 
-/-- What a `Store`/`Zero`/`Move` that succeeds does: its write, the bytes it writes (avoiding
-`U` when its arguments and memory do), and the same write on another memory (a `Move` reading
-it alike). -/
+/-- What a `Store`/`Zero`/`Move` that succeeds does: its write through its address word, the
+bytes it writes (avoiding `U` when its arguments and memory do), and the same write on another
+memory (a `Move` reading it alike). -/
 theorem write_spec {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
     (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move) (h : memRoot ctx v argv = .ok y) :
-    ∃ p L M bs M1, argv = .ptr p :: (L ++ [.mem M]) ∧ M.write p bs = some M1 ∧ y = .mem M1 ∧
-      (∀ U : Blk → Prop, (∀ a ∈ L, Val.Avoids U a) → M.Avoids U → BAv U bs) ∧
-      ∀ M' M1', (∀ s, v.op = .Move → L = [.ptr s] → M'.read s bs.size = M.read s bs.size) →
-        M'.write p bs = some M1' → memRoot ctx v (.ptr p :: (L ++ [.mem M'])) = .ok (.mem M1') := by
+    ∃ a p L M bs M1, argv = a :: (L ++ [.mem M]) ∧ a.asPtrWord = some p ∧
+      M.write p bs = some M1 ∧ y = .mem M1 ∧
+      (∀ U : Blk → Prop, TempU U → (∀ a ∈ L, Val.Avoids U a) → M.Avoids U → BAv U bs) ∧
+      ∀ M' M1', (∀ b s, v.op = .Move → L = [b] → b.asPtrWord = some s →
+          M'.read s bs.size = M.read s bs.size) →
+        M'.write p bs = some M1' → memRoot ctx v (a :: (L ++ [.mem M'])) = .ok (.mem M1') := by
   rcases hop with hop | hop | hop
   · unfold memRoot at h
     simp only [hop] at h
@@ -34,11 +36,16 @@ theorem write_spec {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
       | contradiction
       | (split at h <;> cases h <;> done)
       | skip
-    rename_i p x M _
+    rename_i a x M _
+    cases hp : a.asPtrWord with
+    | none => rw [hp] at h; cases h
+    | some p =>
+    rw [hp] at h
     obtain ⟨M1, hw, rfl⟩ := CSE.Mem.writeRes_ok h
-    refine ⟨p, [x], M, _, M1, rfl, hw, rfl, fun U hL _ => encode_avoids _ (hL x (by simp)), ?_⟩
+    refine ⟨a, p, [x], M, _, M1, rfl, hp, hw, rfl,
+      fun U _ hL _ => encode_avoids _ (hL x (by simp)), ?_⟩
     intro M' M1' _ hw'
-    simp only [List.cons_append, List.nil_append, memRoot, hop, hw']
+    simp only [List.cons_append, List.nil_append, memRoot, hop, hp, hw']
     rfl
   · unfold memRoot at h
     simp only [hop] at h
@@ -47,37 +54,47 @@ theorem write_spec {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
       | contradiction
       | (split at h <;> cases h <;> done)
       | skip
-    rename_i p M _
+    rename_i a M _
+    cases hp : a.asPtrWord with
+    | none => rw [hp] at h; cases h
+    | some p =>
+    rw [hp] at h
     obtain ⟨M1, hw, rfl⟩ := CSE.Mem.writeRes_ok h
-    refine ⟨p, [], M, _, M1, rfl, hw, rfl, fun U _ _ => ?_, ?_⟩
+    refine ⟨a, p, [], M, _, M1, rfl, hp, hw, rfl, fun U _ _ _ => ?_, ?_⟩
     · intro x hx
       simp only [Array.toList_replicate, List.mem_replicate] at hx
       rw [hx.2]; trivial
     · intro M' M1' _ hw'
-      simp only [List.nil_append, memRoot, hop, hw']
+      simp only [List.nil_append, memRoot, hop, hp, hw']
       rfl
   · unfold memRoot at h
     simp only [hop] at h
     split at h
     all_goals first
       | contradiction
-      | skip
-    all_goals first
       | (split at h <;> cases h <;> done)
       | skip
-    rename_i d s M _
+    rename_i a b M _
+    cases hp : a.asPtrWord with
+    | none => rw [hp] at h; cases h
+    | some d =>
+    cases hq : b.asPtrWord with
+    | none => rw [hp, hq] at h; cases h
+    | some s =>
+    rw [hp, hq] at h
+    simp only at h
     cases hr : M.read s v.auxInt.toInt.toNat with
     | none => rw [hr] at h; cases h
     | some bs =>
       rw [hr] at h
       obtain ⟨M1, hw, rfl⟩ := CSE.Mem.writeRes_ok h
       have hsz := DSE.read_size hr
-      refine ⟨d, [.ptr s], M, bs, M1, rfl, hw, rfl,
-        fun U hL hM => read_avoids hM hr (hL (.ptr s) (by simp)), ?_⟩
+      refine ⟨a, d, [b], M, bs, M1, rfl, hp, hw, rfl, fun U hU hL hM => ?_, ?_⟩
+      · exact read_avoids hM hr (asPtrWord_notU hU (hL b (by simp)) hq)
       intro M' M1' hrd hw'
       have hr' : M'.read s v.auxInt.toInt.toNat = some bs := by
-        rw [← hsz, hrd s hop rfl, hsz, hr]
-      simp only [List.cons_append, List.nil_append, memRoot, hop, hr', hw']
+        rw [← hsz, hrd b s hop rfl hq, hsz, hr]
+      simp only [List.cons_append, List.nil_append, memRoot, hop, hp, hq, hr', hw']
       rfl
 
 theorem snoc_cons_eq {L L' : List Val} {a w : Val} {M : Mem} (h : L ++ [w] = a :: (L' ++ [.mem M])) :
@@ -86,29 +103,30 @@ theorem snoc_cons_eq {L L' : List Val} {a w : Val} {M : Mem} (h : L ++ [w] = a :
   exact this
 
 /-- **A kept `Store`/`Zero`/`Move`** on related memories. -/
-theorem write_rel {ctx : Ctx} {v : Value} (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move)
+theorem write_rel (hU : TempU U) {ctx : Ctx} {v : Value}
+    (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move)
     {L : List Val} {w w' : Val} (hw : VR U w w') (hav : ∀ a ∈ L, Val.Avoids U a) {y : Val}
     (h : memRoot ctx v (L ++ [w]) = .ok y) :
     ∃ y', memRoot ctx v (L ++ [w']) = .ok y' ∧ VR U y y' := by
-  obtain ⟨p, L0, M, bs, M1, he, hwr, rfl, -, htgt⟩ := write_spec hop h
+  obtain ⟨a, p, L0, M, bs, M1, he, -, hwr, rfl, -, htgt⟩ := write_spec hop h
   obtain ⟨rfl, rfl⟩ := snoc_cons_eq he
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
-  have hp : ¬ U p.blk := hav _ List.mem_cons_self
   obtain ⟨M1', hw', hm1⟩ := EqOff.write hm hwr
   refine ⟨_, ?_, .mem hm1⟩
   rw [List.cons_append]
-  refine htgt M' M1' (fun s _ hL => ?_) hw'
+  refine htgt M' M1' (fun b s _ hL hs => ?_) hw'
   subst hL
-  exact EqOff.read hm s _ (hav (.ptr s) (by simp))
+  exact EqOff.read hm s _ (asPtrWord_notU hU (hav b (by simp)) hs)
 
 /-- A kept `Store`/`Zero`/`Move` keeps the source's memory avoiding `U`. -/
-theorem write_avoids {ctx : Ctx} {v : Value} (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move)
+theorem write_avoids (hU : TempU U) {ctx : Ctx} {v : Value}
+    (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move)
     {argv : List Val} (hav : ∀ a ∈ argv, Val.Avoids U a) {y : Val}
     (h : memRoot ctx v argv = .ok y) : Val.Avoids U y := by
-  obtain ⟨p, L0, M, bs, M1, rfl, hwr, rfl, hb, -⟩ := write_spec hop h
+  obtain ⟨a, p, L0, M, bs, M1, rfl, -, hwr, rfl, hb, -⟩ := write_spec hop h
   have hM : M.Avoids U := hav (.mem M) (by simp)
   exact memAvoids_write hM hwr fun _ =>
-    hb U (fun a ha => hav a (by simp [ha])) hM
+    hb U hU (fun a ha => hav a (by simp [ha])) hM
 
 theorem evalOp_memRoot {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move ∨ v.op = .VarDef ∨ v.op = .VarLive ∨
@@ -165,52 +183,25 @@ theorem varDef_rel {ctx : Ctx} {v : Value} (hop : v.op = .VarDef) {L : List Val}
 
 /-! ## `NilCheck` and `PanicBounds` -/
 
-theorem nilCheck_stuck {ctx : Ctx} {v : Value} (hop : v.op = .NilCheck) {argv : List Val}
-    (h1 : ∀ p m, argv ≠ [.ptr p, .mem m]) (h2 : ∀ x m, argv ≠ [.int .w64 x, .mem m]) :
-    ∃ msg, memRoot ctx v argv = .stuck msg := by
-  unfold memRoot
-  split
-  all_goals first | (exfalso; simp_all; done) | skip
-  split <;> exact ⟨_, rfl⟩
-
-theorem nilCheck_shape {ctx : Ctx} {v : Value} (hop : v.op = .NilCheck) {argv : List Val}
-    (hs : ∀ msg, memRoot ctx v argv ≠ .stuck msg) :
-    (∃ p M, argv = [.ptr p, .mem M]) ∨ (∃ x M, argv = [.int .w64 x, .mem M]) := by
-  by_cases h1 : ∃ p M, argv = [.ptr p, .mem M]
-  · exact .inl h1
-  by_cases h2 : ∃ x M, argv = [.int .w64 x, .mem M]
-  · exact .inr h2
-  obtain ⟨msg, hm⟩ := nilCheck_stuck (ctx := ctx) hop (fun p M he => h1 ⟨p, M, he⟩)
-    (fun x M he => h2 ⟨x, M, he⟩)
-  exact absurd hm (hs msg)
-
 theorem nilCheck_ok {ctx : Ctx} {v : Value} (hop : v.op = .NilCheck) {argv : List Val} {y : Val}
     (h : memRoot ctx v argv = .ok y) :
     ∃ M, argv = [y, .mem M] ∧ ∀ M', memRoot ctx v [y, .mem M'] = .ok y := by
-  rcases nilCheck_shape hop (fun msg h' => by rw [h] at h'; cases h') with
-    ⟨p, M, rfl⟩ | ⟨x, M, rfl⟩
-  · simp only [memRoot, hop] at h ⊢
-    split at h
-    · cases h
-    · cases h; rename_i hn; exact ⟨M, rfl, fun M' => by simp [hn]⟩
-  · simp only [memRoot, hop] at h ⊢
-    split at h
-    · cases h
-    · cases h; rename_i hn; exact ⟨M, rfl, fun M' => by simp [hn]⟩
+  obtain ⟨a, M, p, rfl, hp, he⟩ := memRoot_nilCheck_res hop h (fun _ => nofun)
+  by_cases hb : p.blk = .nil
+  · simp [hb] at he
+  · simp only [hb, beq_iff_eq, ↓reduceIte, Res.ok.injEq] at he
+    subst he
+    exact ⟨M, rfl, fun M' => by rw [memRoot_nilCheck hop _ _ hp]; simp [hb]⟩
 
 theorem nilCheck_panic {ctx : Ctx} {v : Value} (hop : v.op = .NilCheck) {argv : List Val}
     {e : Panic} {m : Mem} (h : memRoot ctx v argv = .panic e m) :
     ∃ x, argv = [x, .mem m] ∧ ∀ M', memRoot ctx v [x, .mem M'] = .panic e M' := by
-  rcases nilCheck_shape hop (fun msg h' => by rw [h] at h'; cases h') with
-    ⟨p, M, rfl⟩ | ⟨x, M, rfl⟩
-  · simp only [memRoot, hop] at h ⊢
-    split at h
-    · cases h; rename_i hn; exact ⟨_, rfl, fun M' => by simp [hn]⟩
-    · cases h
-  · simp only [memRoot, hop] at h ⊢
-    split at h
-    · cases h; rename_i hn; exact ⟨_, rfl, fun M' => by simp [hn]⟩
-    · cases h
+  obtain ⟨a, M, p, rfl, hp, he⟩ := memRoot_nilCheck_res hop h (fun _ => nofun)
+  by_cases hb : p.blk = .nil
+  · simp only [hb, beq_self_eq_true, ↓reduceIte, Res.panic.injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    exact ⟨a, rfl, fun M' => by rw [memRoot_nilCheck hop _ _ hp]; simp [hb]⟩
+  · simp [hb] at he
 
 /-- **A kept `NilCheck`** on related memories. -/
 theorem nilCheck_rel {ctx : Ctx} {v : Value} (hop : v.op = .NilCheck) {L : List Val} {w w' : Val}
@@ -332,7 +323,8 @@ theorem atomicRoot_avoids (hU : TempU U) {v : Value} {argv : List Val} {y : Val}
     · cases h
   · unfold Atomic.rmwRoot at h; split at h
     · split at h
-      · exact atomicRmw_avoids hU (hargs (.ptr _) (by simp)) (hargs _ (by simp))
+      · rename_i hap _
+        exact atomicRmw_avoids hU (asPtrWord_notU hU (hargs _ (by simp)) hap) (hargs _ (by simp))
           (hargs (.mem _) (by simp)) h
       · cases h
     · cases h

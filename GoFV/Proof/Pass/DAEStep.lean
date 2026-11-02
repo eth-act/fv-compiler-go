@@ -47,7 +47,7 @@ theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv a
   ⟨hok, fun _ _ h => absurd (memRoot_panic h) hn⟩
 
 /-- **A kept atomic root** on related memories. -/
-theorem atomicRoot_rel {v : Value} {L : List Val} {w w' : Val} (hw : VR U w w')
+theorem atomicRoot_rel (hU : TempU U) {v : Value} {L : List Val} {w w' : Val} (hw : VR U w w')
     (hav : ∀ a ∈ L, Val.Avoids U a) :
     ResRel U (atomicRoot v (L ++ [w])) (atomicRoot v (L ++ [w'])) := by
   refine ⟨fun y h => ?_, fun e m h => absurd h atomicRoot_ne_panic⟩
@@ -55,7 +55,8 @@ theorem atomicRoot_rel {v : Value} {L : List Val} {w w' : Val} (hw : VR U w w')
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
   have hR : AtomicSimRel (Mem.EqOff U) (fun b => ¬ U b) :=
     ⟨fun t p h hp => EqOff.load h t p hp, fun _ _ h _ hw => EqOff.write h hw⟩
-  obtain ⟨y', hy', m1, m1', hm1, hs⟩ := atomicRoot_sim hR (fun p hp => hav _ hp) hm h
+  obtain ⟨y', hy', m1, m1', hm1, hs⟩ :=
+    atomicRoot_sim hR (fun p hp => hav _ hp) (ofAddr_notU hU) hm h
   refine ⟨y', hy', ?_⟩
   rcases hs with ⟨rfl, rfl⟩ | ⟨z, rfl, rfl⟩
   · exact .mem hm1
@@ -89,12 +90,12 @@ theorem memOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {
     · show VR U (PtrOps.convert ty (L ++ [w])) (PtrOps.convert ty (L ++ [w']))
       rw [convert_eq ty L w w']; exact .refl _
     · show VR U (loadOp ty (L ++ [w])) (loadOp ty (L ++ [w']))
-      rw [loadOp_eq ty L hw (hL (by rw [hv]; nofun))]; exact .refl _
-    · exact atomicLoad_rel ty L hw (hL (by rw [hv]; nofun))
-    · exact atomicLoad_rel ty L hw (hL (by rw [hv]; nofun))
-    · exact atomicLoad_rel ty L hw (hL (by rw [hv]; nofun))
+      rw [loadOp_eq hU ty L hw (hL (by rw [hv]; nofun))]; exact .refl _
+    · exact atomicLoad_rel hU ty L hw (hL (by rw [hv]; nofun))
+    · exact atomicLoad_rel hU ty L hw (hL (by rw [hv]; nofun))
+    · exact atomicLoad_rel hU ty L hw (hL (by rw [hv]; nofun))
     · show VR U (memEq (L ++ [w])) (memEq (L ++ [w']))
-      rw [memEq_eq L hw (hL (by rw [hv]; nofun))]; exact .refl _
+      rw [memEq_eq hU L hw (hL (by rw [hv]; nofun))]; exact .refl _
   have argfree : v.op = .LocalAddr ∨ v.op = .GetCallerSP ∨ v.op = .InlMark ∨ v.op = .GetG →
       ResRel U (evalOp env ctx fr v (L ++ [w]) ty) (evalOp env ctx fr v (L ++ [w']) ty) := by
     intro ho
@@ -111,9 +112,9 @@ theorem memOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {
     refine memRoot_resRel (by rw [hv]; rcases ho with rfl | rfl | rfl | rfl | rfl | rfl <;> nofun)
       fun y h => ?_
     rcases ho with rfl | rfl | rfl | rfl | rfl | rfl
-    · exact write_rel (.inl hv) hw hL h
-    · exact write_rel (.inr (.inl hv)) hw hL h
-    · exact write_rel (.inr (.inr hv)) hw hL h
+    · exact write_rel hU (.inl hv) hw hL h
+    · exact write_rel hU (.inr (.inl hv)) hw hL h
+    · exact write_rel hU (.inr (.inr hv)) hw hL h
     · exact (varDef_rel hv hw h).1
     · exact (varLive_rel (.inl hv) hw h).1
     · exact (varLive_rel (.inr hv) hw h).1
@@ -162,7 +163,7 @@ theorem memOp_rel {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {
     have he : ∀ argv, evalOp env ctx fr v argv ty = atomicRoot v argv :=
       fun argv => evalOp_atomic (by simp [h1])
     rw [he, he]
-    exact atomicRoot_rel hw fun a ha => hav (by rw [h1]; nofun) a (by simp [ha])
+    exact atomicRoot_rel hU hw fun a ha => hav (by rw [h1]; nofun) a (by simp [ha])
 
 /-! ## Registers -/
 
@@ -384,9 +385,9 @@ theorem tgt_rel {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
     all_goals
       have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
       rw [evalOp_memRoot (by simp [hop])] at hr
-      obtain ⟨p, L, M, bs, M1, hvsE, hw, rfl, -, -⟩ := write_spec hop3 hr
+      obtain ⟨a0, p, L, M, bs, M1, hvsE, hap, hw, rfl, -, -⟩ := write_spec hop3 hr
       rw [hvsE] at hvs
-      have hSM := DSE.argVals_back (L := .ptr p :: L) hvs hback
+      have hSM := DSE.argVals_back (L := a0 :: L) hvs hback
       rw [hSm] at hSM; cases hSM
       obtain ⟨M', rfl, hm⟩ := VR.mem_inv hVm
       refine .mem (EqOff.write_left hm hw ?_)
@@ -402,7 +403,7 @@ theorem tgt_rel {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
         simp only [List.cons_append, List.getElem?_cons_zero, Option.some.injEq] at hz
         subst hz
         rcases (hinv a _ hza).tainted hname hnE with h' | ⟨off, h'⟩
-        · cases h'
-        · cases h'; exact ⟨n, hnE, rfl⟩
+        · subst h'; cases hap
+        · subst h'; cases hap; exact ⟨n, hnE, rfl⟩
 
 end GoFV.Proof.DAE

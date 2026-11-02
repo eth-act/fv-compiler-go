@@ -230,14 +230,38 @@ theorem writeRes_not_panic {what : String} {o : Option Mem} {e : Panic} {m : Mem
 /-- Of the memory roots only `NilCheck` panics. -/
 theorem memRoot_panic {ctx : Ctx} {v : Value} {argv : List Val} {e : Panic} {m : Mem}
     (h : memRoot ctx v argv = .panic e m) : v.op = .NilCheck := by
+  by_cases hn : v.op = .NilCheck
+  · exact hn
+  exfalso
   unfold memRoot at h
-  split at h <;> (try exact absurd h writeRes_not_panic) <;> (try (rename_i hop _; exact hop))
-  all_goals first
-    | (split at h <;> first | exact absurd h writeRes_not_panic | cases h)
-    | (split at h <;> cases h)
-    | cases h
-    | (rename_i hop; exact hop)
-  all_goals assumption
+  split at h
+  all_goals (repeat' (first | exact absurd h writeRes_not_panic | (cases h; done) | split at h))
+  all_goals simp_all
+
+/-- A `NilCheck` on a word and a memory (`Val.asPtrWord`, §6). -/
+theorem memRoot_nilCheck {ctx : Ctx} {v : Value} (hn : v.op = .NilCheck) (a : Val) (m : Mem)
+    {p : Ptr} (hp : a.asPtrWord = some p) :
+    memRoot ctx v [a, .mem m] = if p.blk == .nil then .panic .nilDeref m else .ok a := by
+  unfold memRoot; rw [hn]; simp only [hp]
+
+/-- A `NilCheck` that does not get stuck reads a pointer word and a memory, and panics exactly
+when the word points into `Blk.nil`. -/
+theorem memRoot_nilCheck_res {ctx : Ctx} {v : Value} {argv : List Val} {res : Res Val}
+    (hn : v.op = .NilCheck) (h : memRoot ctx v argv = res) (hs : ∀ msg, res ≠ .stuck msg) :
+    ∃ a m p, argv = [a, .mem m] ∧ a.asPtrWord = some p ∧
+      res = if p.blk == .nil then .panic .nilDeref m else .ok a := by
+  subst h
+  unfold memRoot at hs ⊢; rw [hn] at hs ⊢
+  rcases argv with _ | ⟨a, _ | ⟨b, _ | ⟨c, rest⟩⟩⟩
+  · exfalso; simp only at hs; split at hs <;> exact hs _ rfl
+  · exfalso; simp only at hs; split at hs <;> exact hs _ rfl
+  case cons.cons.cons => exfalso; simp only at hs; split at hs <;> exact hs _ rfl
+  rcases b with _ | _ | m | _ | _ | _ | _ | _ | _
+  all_goals try (exfalso; simp only at hs; split at hs <;> exact hs _ rfl; done)
+  simp only at hs ⊢
+  cases hp : a.asPtrWord with
+  | none => simp only [hp] at hs; exact absurd rfl (hs _)
+  | some p => exact ⟨a, m, p, rfl, hp, rfl⟩
 
 /-- The ops whose evaluation may panic: calls (`Op.call`, including `PanicBounds`) and
 `NilCheck`. -/
@@ -270,19 +294,24 @@ theorem evalOp_nilCheck_blk {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ar
   unfold evalOp at h; rw [hop] at h
   change memRoot ctx v argv = .ok r at h
   unfold memRoot at h; rw [hop] at h
-  split at h
-  all_goals first
-    | contradiction
-    | skip
-  · split at h
+  rcases argv with _ | ⟨a, _ | ⟨b, _ | ⟨c, rest⟩⟩⟩
+  · simp only at h; split at h <;> cases h
+  · simp only at h; split at h <;> cases h
+  case cons.cons.cons => simp only at h; split at h <;> cases h
+  rcases b with _ | _ | m | _ | _ | _ | _ | _ | _
+  all_goals try (simp only at h; split at h <;> cases h; done)
+  simp only at h
+  cases hp : a.asPtrWord with
+  | none => simp only [hp, reduceCtorEq] at h
+  | some p =>
+    simp only [hp] at h
+    split at h
     · cases h
-    · rename_i hb; cases h
-      exact .inl ⟨_, _, rfl, rfl, by simpa using hb⟩
-  · split at h
-    · cases h
-    · rename_i hb; cases h
-      exact .inr ⟨_, _, rfl, rfl, by simpa using hb⟩
-  · split at h <;> cases h
+    · rename_i hb; injection h with h; subst h
+      rcases a with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+        simp only [Val.asPtrWord, reduceCtorEq, Option.some.injEq] at hp
+      · subst hp; exact .inr ⟨_, _, rfl, rfl, by simpa using hb⟩
+      · subst hp; exact .inl ⟨_, _, rfl, rfl, by simpa using hb⟩
 
 /-- A call without arguments (it lacks its memory) is stuck. -/
 theorem callOp_nil_stuck {env : Env} {ctx : Ctx} {v : Value} :

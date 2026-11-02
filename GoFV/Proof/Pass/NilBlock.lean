@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.NilSeeds
+import GoFV.Proof.PtrAddr
 
 /-!
 # nilcheckelim: one block's evaluation
@@ -600,21 +601,29 @@ theorem avail_args {k : Nat} {z : ID} {v : Value} (hz : Base f bid z ∨ z ∈ o
     exact (K.srcArg hiz hv ha).imp id (K.take_mono (Nat.le_of_lt hizk))
 
 omit K in
-theorem offPtr_safe {ai : Int64} {w : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
-    Safe (PtrOps.offPtr ai [w]) := by
+/-- Arithmetic on a `Safe` integer word stays in its block (`Ptr.ofAddr_add_of_inWindow`). -/
+theorem wordRes_safe {x k : BitVec 64} (hw : Safe (.int .w64 x)) : Safe (PtrOps.wordRes x k) := by
+  unfold PtrOps.wordRes
+  split
+  · rename_i h
+    show (Ptr.ofAddr (x + k)).blk ≠ .nil
+    rw [Ptr.ofAddr_add_of_inWindow h]; exact hw
+  · trivial
+
+omit K in
+theorem offPtr_safe {ai : Int64} {w : Val} (hw : Safe w) : Safe (PtrOps.offPtr ai [w]) := by
   match w, hw with
   | .ptr q, hw =>
     simp only [PtrOps.offPtr, PtrOps.ptrRes]
     split
     · simpa [Ptr.add, Safe] using hw
     · trivial
-  | .int .w64 x, _ => exact absurd rfl (hni x)
+  | .int .w64 x, hw => exact wordRes_safe hw
   | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
   | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.offPtr, Safe]
 
 omit K in
-theorem addPtr_safe {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
-    Safe (PtrOps.addPtr [w, i]) := by
+theorem addPtr_safe {w i : Val} (hw : Safe w) : Safe (PtrOps.addPtr [w, i]) := by
   match w, hw with
   | .ptr q, hw =>
     unfold PtrOps.addPtr
@@ -622,12 +631,17 @@ theorem addPtr_safe {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
     split
     · simp only [PtrOps.ptrRes]; split <;> simp_all [Safe, Ptr.add]
     · trivial
-  | .int .w64 x, _ => exact absurd rfl (hni x)
+  | .int .w64 x, hw =>
+    unfold PtrOps.addPtr
+    simp only
+    split
+    · exact wordRes_safe hw
+    · trivial
   | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
   | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.addPtr, Safe]
 
 omit K in
-theorem ptrIndex_safe {el : Option Nat} {w i : Val} (hw : Safe w) (hni : ∀ x, w ≠ .int .w64 x) :
+theorem ptrIndex_safe {el : Option Nat} {w i : Val} (hw : Safe w) :
     Safe (PtrOps.ptrIndex el [w, i]) := by
   match w, hw with
   | .ptr q, hw =>
@@ -636,15 +650,14 @@ theorem ptrIndex_safe {el : Option Nat} {w i : Val} (hw : Safe w) (hni : ∀ x, 
     split
     · simp only [PtrOps.ptrRes]; split <;> simp_all [Safe, Ptr.add]
     · trivial
-  | .int .w64 x, _ => exact absurd rfl (hni x)
+  | .int .w64 x, hw =>
+    unfold PtrOps.ptrIndex
+    simp only
+    split
+    · exact wordRes_safe hw
+    · trivial
   | .int .w8 _, _ | .int .w16 _, _ | .int .w32 _, _ | .bool _, _ | .mem _, _ | .tuple _, _
   | .agg _, _ | .blob _, _ | .empty, _ | .poison, _ => simp [PtrOps.ptrIndex, Safe]
-
-omit K in
-/-- A pointer-shaped register is no 64-bit integer. -/
-theorem not_int_of_ptr {y : Val} {e : Option Nat} (h : y.retype (.ptr e) = y) :
-    ∀ x, y ≠ .int .w64 x := by
-  rintro x rfl; simp [Val.retype] at h
 
 omit K in
 /-- What `safePtr` says of a value. -/
@@ -853,7 +866,7 @@ theorem ptrField_spec {t : TypeRef} {i : Nat} (h : Opt.NilCheck.ptrField tabs t 
 theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k)) :
     ∀ (n : Nat) (z : ID), Opt.NilCheck.safePtr xt tabs f n z = true →
       (Base f bid z ∨ z ∈ oS.toList.take k) →
-        ∃ y, S.regs[z]? = some (some y) ∧ Safe y ∧ ∀ x, y ≠ .int .w64 x
+        ∃ y, S.regs[z]? = some (some y) ∧ Safe y
   | 0, _, h, _ => by simp [Opt.NilCheck.safePtr] at h
   | n + 1, z, h, hz => by
     obtain ⟨ce, hwf⟩ := K.wf
@@ -866,9 +879,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     obtain ⟨y, hy, hev⟩ := K.availS hS hz hv hph
     have hty : (Ctx.make tabs f).tys[v.id]?.getD .other = .ptr e := by
       rw [hid, tys_of_value hv]; simpa using he
-    have htyp := evalValue_typed hev
-    rw [hty] at htyp
-    refine ⟨y, hy, ?_, not_int_of_ptr htyp⟩
+    refine ⟨y, hy, ?_⟩
     obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := S) (v := v)
       (by rw [hev]; nofun)
     rw [evalValue_of_argVals hvs, hty] at hev
@@ -907,7 +918,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         frameVal_none (by rcases h1 with h1 | h1 | h1 | h1 <;> rw [h1] <;> decide)
       rw [hfv] at hr; cases hr
       have haa := K.avail_args hz hv hph (Array.mem_of_getElem? ha)
-      obtain ⟨ya, hya, hsa', hni⟩ := safe_chain hS n a hsa haa
+      obtain ⟨ya, hya, hsa'⟩ := safe_chain hS n a hsa haa
       -- a one-argument op: its argument list is `[ya]`
       have one : ∀ {o : Op}, v.op = o → o.argLen = 1 → vs = [ya] := by
         intro o ho hl
@@ -934,13 +945,13 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
         exact ⟨yi, rfl⟩
       rcases h1 with h1 | h1 | h1 | h1
       · rw [one h1 (by decide), h1]
-        exact offPtr_safe hsa' hni
+        exact offPtr_safe hsa'
       · obtain ⟨yi, rfl⟩ := two h1 (by decide)
         rw [h1]
-        exact addPtr_safe hsa' hni
+        exact addPtr_safe hsa'
       · obtain ⟨yi, rfl⟩ := two h1 (by decide)
         rw [h1]
-        exact ptrIndex_safe hsa' hni
+        exact ptrIndex_safe hsa'
       · rw [one h1 (by decide), h1]
         exact hsa'
     · -- the first result of a malloc-family call (`Env.AllocNonNil`)
@@ -1025,7 +1036,7 @@ theorem safe_chain {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
       obtain ⟨-, -, -, -, haid⟩ := K.listed_avail haa hsm
       obtain ⟨ysm, hysm, hevs⟩ := K.availS hS haa hsm hph'
       have hba := K.avail_args haa hsm hph' (Array.mem_of_getElem? hbb)
-      obtain ⟨yb, hyb, hsb', -⟩ := safe_chain hS n bb hsb hba
+      obtain ⟨yb, hyb, hsb'⟩ := safe_chain hS n bb hsb hba
       have har := hwf.arity b blk z v ⟨hbin, hxb, hv⟩ (by rw [h1]; decide)
       rw [h1, show Op.StructSelect.argLen = 1 by decide] at har
       have hsz : v.args.size = 1 := by exact_mod_cast har
@@ -1075,7 +1086,7 @@ theorem seedNoPanic {S : Frame} {k i : Nat} (hS : SFacts env tabs f F0 S (oS.toL
     | same hne => exact absurd rfl hne
   have hav : Base f bid p' ∨ p' ∈ oS.toList.take k :=
     (K.srcArg hi hfv (by rw [hargs]; simp)).imp id (K.take_mono hik)
-  obtain ⟨y, hy, hsafe, -⟩ := K.safe_chain hS _ p' hsp hav
+  obtain ⟨y, hy, hsafe⟩ := K.safe_chain hS _ p' hsp hav
   rw [hyp] at hy; cases hy
   exact nilCheck_safe hop hsafe h
 

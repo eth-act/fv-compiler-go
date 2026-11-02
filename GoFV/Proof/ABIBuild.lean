@@ -420,7 +420,7 @@ theorem build_leafVals_aux : (t : Ty) → (v : Val) → wf t = true → v.hasTy 
     | agg vs =>
       obtain ⟨p, l, rfl, hp, hl⟩ := Val.hasTy_agg_str.1 hv
       have hp' : p.retype (.ptr (some 1)) = p := by
-        rw [← Val.retypePtr_eq]; exact Val.retypePtr_of_isPtrOrPoison hp
+        rw [← Val.retypePtr_eq]; exact Val.retypePtr_of_isPtrWord hp
       simp only [leafVals, List.headD_cons, List.tail_cons, build, List.drop_succ_cons,
         List.drop_zero, hp', Val.retype_of_hasTy (show (Val.int .w64 l).hasTy (.int .w64) = true from rfl),
         Val.retype_of_hasTy hv]
@@ -432,7 +432,7 @@ theorem build_leafVals_aux : (t : Ty) → (v : Val) → wf t = true → v.hasTy 
     | agg vs =>
       obtain ⟨p, l, c, rfl, hp, hl, hc, hlc⟩ := Val.hasTy_agg_slice.1 hv
       have hp' : p.retype (.ptr e) = p := by
-        rw [← Val.retypePtr_eq]; exact Val.retypePtr_of_isPtrOrPoison hp
+        rw [← Val.retypePtr_eq]; exact Val.retypePtr_of_isPtrWord hp
       simp only [leafVals, List.headD_cons, List.tail_cons, build, List.drop_succ_cons,
         List.drop_zero, hp', Val.retype_of_hasTy (show (Val.int .w64 l).hasTy (.int .w64) = true from rfl),
         Val.retype_of_hasTy (show (Val.int .w64 c).hasTy (.int .w64) = true from rfl),

@@ -60,26 +60,37 @@ theorem selLoad0_ref {fs : List (Nat × Ty)} {n : Nat} (hl : GoFV.Opt.RewriteChe
     (ho : ∀ f ∈ fs, f.1 < n) (P Mv : Val) {k : Nat} {t : Ty} (hk : fs[k]? = some (0, t)) :
     Refines (Comp.select k [(loadOp (.agg fs n) [P, Mv]).retype (.agg fs n)])
       ((loadOp t [P, Mv]).retype t) := by
-  cases P with
-  | ptr p =>
-    refine (selLoad_ref hl ho (.ptr p) Mv hk none).trans ?_
-    unfold fieldVal
-    have hq : PtrOps.offPtr (Int64.ofNat 0) [.ptr p] = PtrOps.ptrRes p := by
-      show PtrOps.ptrRes (p.add _) = _
-      congr 1
-      cases p
-      simp [Ptr.add]
-    rw [hq]
-    unfold PtrOps.ptrRes
-    split
-    · exact Refines.refl _
-    · show Refines ((loadOp t [Val.poison.retype (.ptr none), Mv]).retype t) _
-      rw [retype_poison_sl]
-      exact retype_mono _ (.poison _)
-  | _ =>
-    show Refines (Comp.select k [Val.poison.retype _]) _
-    rw [retype_poison_sl]
+  have hnone : ∀ {A : Val}, A.asPtrWord = none → ∀ t', loadOp t' [A, Mv] = .poison := by
+    intro A hA t'
+    cases Mv <;> simp only [loadOp, hA]
+  cases hA : P.asPtrWord with
+  | none =>
+    rw [hnone hA, hnone hA, retype_poison_sl, retype_poison_sl]
     exact .poison _
+  | some q =>
+    rcases P with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | p | _ | _ | _ | _ <;>
+      simp only [Val.asPtrWord, reduceCtorEq] at hA
+    · refine (selLoad_ref hl ho (.int .w64 x) Mv hk none).trans ?_
+      unfold fieldVal
+      have hq : PtrOps.offPtr (Int64.ofNat 0) [.int .w64 x] = .int .w64 x := by
+        show PtrOps.wordRes x (BitVec.ofInt 64 (Int64.ofNat 0).toInt) = _
+        rw [show BitVec.ofInt 64 (Int64.ofNat 0).toInt = 0 by decide]
+        exact PtrOps.wordRes_zero x
+      rw [hq]
+      exact Refines.refl _
+    · refine (selLoad_ref hl ho (.ptr p) Mv hk none).trans ?_
+      unfold fieldVal
+      have hq : PtrOps.offPtr (Int64.ofNat 0) [.ptr p] = PtrOps.ptrRes p := by
+        show PtrOps.ptrRes (p.add _) = _
+        congr 1
+        cases p
+        simp [Ptr.add]
+      rw [hq]
+      unfold PtrOps.ptrRes
+      split
+      · exact Refines.refl _
+      · rw [retype_poison_sl, hnone rfl, retype_poison_sl]
+        exact .poison _
 
 /-- Only `poison` has the shape `.other`: `retype` there is `poison`. -/
 theorem retype_other (v : Val) : v.retype .other = .poison := by

@@ -273,12 +273,13 @@ def memOp (op : Op) : Bool :=
 `Sem.frameVal`). -/
 def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
   match v.op, argv with
-  | .Store, [.ptr p, x, .mem m] | .StoreWB, [.ptr p, x, .mem m] =>
-    (m.write p (encode (auxTy tabs v.aux) x)).map .mem
-  | .Move, [.ptr d, .ptr s, .mem m] | .MoveWB, [.ptr d, .ptr s, .mem m] =>
-    (m.read s v.auxInt.toInt.toNat).bind fun bs => (m.write d bs).map .mem
-  | .Zero, [.ptr p, .mem m] | .ZeroWB, [.ptr p, .mem m] =>
-    (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0))).map .mem
+  | .Store, [a, x, .mem m] | .StoreWB, [a, x, .mem m] =>
+    a.asPtrWord.bind fun p => (m.write p (encode (auxTy tabs v.aux) x)).map .mem
+  | .Move, [a, b, .mem m] | .MoveWB, [a, b, .mem m] =>
+    a.asPtrWord.bind fun d => b.asPtrWord.bind fun s =>
+      (m.read s v.auxInt.toInt.toNat).bind fun bs => (m.write d bs).map .mem
+  | .Zero, [a, .mem m] | .ZeroWB, [a, .mem m] =>
+    a.asPtrWord.bind fun p => (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0))).map .mem
   | .VarDef, [.mem m] => v.aux.map fun n => .mem (m.poisonBlock (frameBlk tabs 0 n))
   | .LocalAddr, _ => some ((v.aux.map fun n => Val.ptr ⟨frameBlk tabs 0 n, 0⟩).getD .poison)
   | _, _ => none
@@ -292,8 +293,9 @@ theorem memRoot_memDef {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
     memDef ctx.tabs v argv = some y := by
   unfold memRoot at h
   split at h
-  rotate_left 12
-  · split at h <;> cases h
+  all_goals first
+    | (split at h <;> cases h <;> done)
+    | skip
   all_goals (rename_i hop)
   all_goals first
     | (simp [memOp, hop] at hm; done)

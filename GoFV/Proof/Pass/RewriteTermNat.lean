@@ -83,11 +83,7 @@ theorem eqFirst_hasTy (neg : Bool) (args : List Val) :
   · rfl
 
 theorem memEq_hasTy (args : List Val) : (memEq args).hasTy .bool = true := by
-  unfold memEq; split
-  · split
-    · split <;> rfl
-    · rfl
-  · rfl
+  unfold memEq; (repeat' split) <;> rfl
 
 theorem shift_hasTy {w a : Width} {b : Bool} {f : BitVec w.bits → Nat → BitVec w.bits}
     (args : List Val) : (Shift.shift w a b f args).hasTy (.int w) = true := by
@@ -191,9 +187,11 @@ theorem isPtrTy_hasTy {t : Ty} (ht : GoFV.Proof.Rules.isPtrTy t = true) (p : Ptr
     (Val.ptr p).hasTy t = true := by
   obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht; rfl
 
-theorem int_not_hasTy_ptr {t : Ty} (ht : GoFV.Proof.Rules.isPtrTy t = true) {w : Width}
-    {x : BitVec w.bits} : (Val.int w x).hasTy t = false := by
-  obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht; rfl
+/-- Pointer arithmetic on an integer word has every pointer shape. -/
+theorem wordRes_hasTy {t : Ty} (ht : GoFV.Proof.Rules.isPtrTy t = true) (x k : BitVec 64) :
+    (PtrOps.wordRes x k).hasTy t = true := by
+  obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht
+  unfold PtrOps.wordRes; split <;> rfl
 
 /-- A value of a 64-bit integer shape is `poison`, a 64-bit integer or a pointer. -/
 theorem of_hasTy_int64 {t : Ty} (ht : GoFV.Proof.Rules.isInt64Ty t = true) {a : Val}
@@ -205,13 +203,14 @@ theorem of_hasTy_int64 {t : Ty} (ht : GoFV.Proof.Rules.isInt64Ty t = true) {a : 
   | ptr p => exact .inr (.inr ⟨p, rfl⟩)
   | _ => simp [Val.hasTy] at ha
 
-/-- A value of a pointer shape is `poison` or a pointer. -/
+/-- A value of a pointer shape is `poison`, an integer word or a pointer. -/
 theorem of_hasTy_ptr {t : Ty} (ht : GoFV.Proof.Rules.isPtrTy t = true) {a : Val}
-    (ha : a.hasTy t = true) : a = .poison ∨ ∃ p, a = .ptr p := by
+    (ha : a.hasTy t = true) : a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p := by
   obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht
   cases a with
   | poison => exact .inl rfl
-  | ptr p => exact .inr ⟨p, rfl⟩
+  | ptr p => exact .inr (.inr ⟨p, rfl⟩)
+  | int w x => cases w <;> first | exact .inr (.inl ⟨x, rfl⟩) | simp [Val.hasTy] at ha
   | _ => simp [Val.hasTy] at ha
 
 /-- **`ptrTop`**: a pointer op whose first argument has the shape `argShapeOk` asks for has the
@@ -230,9 +229,7 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
     · unfold PtrOps.ptrRes; split
       · exact isPtrTy_hasTy h _
       · rfl
-    · obtain ⟨t, ht, hx⟩ := h0 _ rfl
-      simp only [GoFV.Proof.Rules.argShapeOk, bne_self_eq_false, Bool.false_or] at ht
-      rw [int_not_hasTy_ptr ht] at hx; cases hx
+    · exact wordRes_hasTy h _ _
     · rfl
   case AddPtr =>
     simp only [ptrTop] at h
@@ -244,10 +241,9 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
         · exact isPtrTy_hasTy h _
         · rfl
       · rfl
-    · obtain ⟨t, ht, hx⟩ := h0 _ rfl
-      simp only [GoFV.Proof.Rules.argShapeOk, beq_self_eq_true, ite_true,
-        Bool.and_eq_true] at ht
-      rw [int_not_hasTy_ptr ht.1] at hx; cases hx
+    · split
+      · exact wordRes_hasTy h _ _
+      · rfl
     · rfl
   case PtrIndex =>
     simp only [ptrTop] at h
@@ -258,6 +254,9 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
       · unfold PtrOps.ptrRes; split
         · exact isPtrTy_hasTy h _
         · rfl
+      · rfl
+    · split
+      · exact wordRes_hasTy h _ _
       · rfl
     · rfl
   case Convert =>
@@ -270,24 +269,19 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
       simp only [GoFV.Proof.Rules.argShapeOk, bne_self_eq_false, Bool.false_or,
         GoFV.Proof.Rules.convArgOk] at ht
       split
-      · split
-        · rfl
-        · rfl
-      · rfl
-      · rename_i hne1 hne2
+      · split <;> rfl
+      · rename_i hne
         rcases h with h | h
         · obtain ⟨el, rfl⟩ := eq_of_isPtrTy h
           simp only [GoFV.Proof.Rules.convArgOk] at ht
-          rcases of_hasTy_int64 ht hx with rfl | ⟨y, rfl⟩ | ⟨p, rfl⟩
-          · rfl
-          · exact (hne2 el y rfl rfl).elim
-          · rfl
+          rcases of_hasTy_int64 ht hx with rfl | ⟨y, rfl⟩ | ⟨p, rfl⟩ <;> rfl
         · have hw := eq_of_isInt64Ty h
           subst hw
           simp only [GoFV.Proof.Rules.convArgOk] at ht
-          rcases of_hasTy_ptr ht hx with rfl | ⟨p, rfl⟩
+          rcases of_hasTy_ptr ht hx with rfl | ⟨y, rfl⟩ | ⟨p, rfl⟩
           · rfl
-          · exact (hne1 p rfl rfl).elim
+          · rfl
+          · exact (hne p rfl rfl).elim
     · rfl
   all_goals exact absurd h (by simp [ptrTop])
 
@@ -497,7 +491,9 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
     (loadOp t args).hasTy t = true := by
   unfold loadOp
   split
-  · rename_i p m
+  · split
+    rotate_left
+    · rfl
     rw [load_asAgg]
     apply Val.checkLen_hasTy
     unfold loadShape at h

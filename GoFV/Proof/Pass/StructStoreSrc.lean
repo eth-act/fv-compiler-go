@@ -210,7 +210,7 @@ theorem evalPure_offPtr (ty : Ty) (ai : Int64) (ax : Option AuxRef) (xs : List V
 theorem retype_ptr_indep {v : Val} {e e' : Option Nat} (h : v.retype (.ptr e) = v) :
     v.retype (.ptr e') = v := by
   cases v with
-  | int w x => cases w <;> simp [Val.retype] at h
+  | int w x => cases w <;> simp_all [Val.retype]
   | _ => simp_all [Val.retype]
 
 theorem ssMakeOp_cases {op : Op} (h : ssMakeOp op = true) :
@@ -321,17 +321,22 @@ theorem copy_reg {S : Frame} {A : ID → Prop} (H : Avail env tabs f S A)
 
 /-! ## Evaluations of the ops of a split -/
 
+/-- A `Store` that evaluated wrote at its address word (`Val.asPtrWord`). -/
 theorem memRoot_store_ok {ctx : Ctx} {v : Value} (hop : v.op = .Store) {a b c r : Val}
     (h : memRoot ctx v [a, b, c] = .ok r) :
-    ∃ P M M', a = .ptr P ∧ c = .mem M ∧ M.write P (encode (auxTy ctx.tabs v.aux) b) = some M' ∧
-      r = .mem M' := by
+    ∃ P M M', a.asPtrWord = some P ∧ c = .mem M ∧
+      M.write P (encode (auxTy ctx.tabs v.aux) b) = some M' ∧ r = .mem M' := by
   unfold memRoot at h
   rw [hop] at h
-  cases a <;> cases c <;> simp only at h <;> try (split at h <;> cases h)
-  rename_i P M
-  cases hw : M.write P (encode (auxTy ctx.tabs v.aux) b) with
-  | none => rw [hw] at h; cases h
-  | some M' => rw [hw] at h; cases h; exact ⟨P, M, M', rfl, rfl, hw, rfl⟩
+  cases c <;> simp only at h <;> try (split at h <;> cases h)
+  rename_i M
+  cases hp : a.asPtrWord with
+  | none => rw [hp] at h; cases h
+  | some P =>
+    rw [hp] at h; simp only at h
+    cases hw : M.write P (encode (auxTy ctx.tabs v.aux) b) with
+    | none => rw [hw] at h; cases h
+    | some M' => rw [hw] at h; cases h; exact ⟨P, M, M', rfl, rfl, hw, rfl⟩
 
 theorem retypeFields_self : ∀ (fs : List (Nat × Ty)) (vs : List Val), vs.length = fs.length →
     (∀ i (hi : i < fs.length) (hv : i < vs.length), Val.retype fs[i].2 vs[i] = vs[i]) →
@@ -365,11 +370,11 @@ theorem own {k : Nat} {z : ID} {v : Value} (hz : Base f bid z ∨ z ∈ oS.toLis
     rw [hv] at hv'; cases hv'; exact hid
 
 /-- **A split `Store` the source evaluated** wrote the registers of the `StructMake`'s arguments
-at the struct's fields, or (a string or slice `Make` whose lengths are invalid: `poison`) a memory
-that write refines. -/
+at the struct's fields (at the pointer word of its address register `dst`), or (a string or slice
+`Make` whose lengths are invalid: `poison`) a memory that write refines. -/
 theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     {x : ID} {ps : List (ID × ID)} (d : SplitD tabs f g x ps) (hx : x ∈ oS.toList.take k) :
-    ∃ P M MS MS0, S.regs[d.dst]? = some (some (.ptr P)) ∧ S.regs[d.mem]? = some (some (.mem M)) ∧
+    ∃ P M MS MS0, (rv S d.dst).asPtrWord = some P ∧ S.regs[d.mem]? = some (some (.mem M)) ∧
       M.write P (encode (.agg d.fs d.n) (.agg (d.smv.args.toList.map (rv S)))) = some MS ∧
       Mem.Refines MS0 MS ∧
       S.regs[x]? = some (some ((Val.mem MS0).retype (tabs.ty d.fv.type))) := by
@@ -396,9 +401,8 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
   have hreg : ∀ a ∈ d.fv.args, S.regs[a]? = some (some (rv S a)) := fun a ha => by
     obtain ⟨-, ya, -, hya, -⟩ := H.val a (hmem a ha)
     simp [rv, hya]
-  have hdst := hreg d.dst (by rw [d.hfargs]; simp)
   have hmm := hreg d.mem (by rw [d.hfargs]; simp)
-  rw [hP] at hdst; rw [hM] at hmm
+  rw [hM] at hmm
   -- the stored value: the `StructMake`'s, through copies
   have hsmA := hmem d.sm (by rw [d.hfargs]; simp)
   obtain ⟨hA1, hr1⟩ := copy_reg H hT hid _ hsmA (copyReach_copyEnd f.valueTab _ d.sm)
@@ -469,14 +473,14 @@ theorem split_src {g : Func} {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S 
     have hsmreg : rv S d.sm = .agg (d.smv.args.toList.map (rv S)) := by
       simp only [rv, ← hr1, hysm, Option.join_some, Option.getD_some]
     rw [hsmreg] at hw
-    exact ⟨P, M, MS, MS, hdst, hmm, hw, Mem.Refines.refl _, hreg⟩
+    exact ⟨P, M, MS, MS, hP, hmm, hw, Mem.Refines.refl _, hreg⟩
   · rw [hagg] at hysm
     have hsmreg : rv S d.sm = .poison := by
       simp only [rv, ← hr1, hysm, Option.join_some, Option.getD_some]
     rw [hsmreg] at hw
     obtain ⟨MS', hw', hr⟩ := (Mem.Refines.refl M).write
       (encode_mono (.agg d.fs d.n) (.poison (.agg (d.smv.args.toList.map (rv S))))) hw
-    exact ⟨P, M, MS', MS, hdst, hmm, hw', hr, hreg⟩
+    exact ⟨P, M, MS', MS, hP, hmm, hw', hr, hreg⟩
 
 end Src
 

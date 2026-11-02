@@ -128,7 +128,14 @@ theorem vaddr_offPtr (k : Int64) (v : Val) :
     split
     · exact .inr (by simp [vaddr, ptrV_add])
     · exact .inl rfl
-  | int w x => exact .inr (by cases w <;> simp [PtrOps.offPtr, vaddr, VAddr.add])
+  | int w x =>
+    cases w
+    case w64 =>
+      simp only [PtrOps.offPtr, PtrOps.wordRes]
+      split
+      · exact .inr (by simp [vaddr, VAddr.add])
+      · exact .inl rfl
+    all_goals exact .inr (by simp [PtrOps.offPtr, vaddr, VAddr.add])
   | _ => exact .inl rfl
 
 /-- `v` points `k` bytes past `bv` (or is `poison`: the arithmetic left the allocation). -/
@@ -165,19 +172,30 @@ theorem rel_step {ty : Ty} (hty : CSE.keepsPtr ty = true) {av bv : Val} {K : Int
     · right; rw [retype_keep hty]
     · left; cases ty <;> rfl
 
-/-- Two pointers relating to one value point `kq - kp` bytes apart within a block. -/
-theorem rel_same {P Q : Ptr} {bv : Val} {kp kq : Int} (hp : Rel (.ptr P) bv kp)
-    (hq : Rel (.ptr Q) bv kq) (hb : P.blk = Q.blk) :
+/-- A pointer word points where the pointer it reads as does. -/
+theorem vaddr_of_asPtrWord {v : Val} {P : Ptr} (h : v.asPtrWord = some P) :
+    vaddr v = some (ptrV P) := by
+  rcases v with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+    simp only [Val.asPtrWord, reduceCtorEq, Option.some.injEq] at h
+  · subst h; simp [vaddr, ptrV_ofAddr]
+  · subst h; rfl
+
+/-- Two pointer words relating to one value point `kq - kp` bytes apart within a block. -/
+theorem rel_same {pv qv : Val} {P Q : Ptr} {bv : Val} {kp kq : Int}
+    (hpP : pv.asPtrWord = some P) (hqQ : qv.asPtrWord = some Q) (hp : Rel pv bv kp)
+    (hq : Rel qv bv kq) (hb : P.blk = Q.blk) :
     Q.off = P.off + BitVec.ofInt 64 (kq - kp) := by
   obtain ⟨hp, -⟩ := hp
   obtain ⟨hq, -⟩ := hq
+  rw [vaddr_of_asPtrWord hpP] at hp
+  rw [vaddr_of_asPtrWord hqQ] at hq
   rcases hp with hp | ⟨V, hV, hp⟩
   · cases hp
   rcases hq with hq | ⟨V', hV', hq⟩
   · cases hq
   rw [hV] at hV'
   cases hV'
-  simp only [vaddr, Option.some.injEq] at hp hq
+  simp only [Option.some.injEq] at hp hq
   have hs : BitVec.ofInt 64 (kq - kp) = BitVec.ofInt 64 kq - BitVec.ofInt 64 kp := by
     rw [Int.sub_eq_add_neg, BitVec.ofInt_add, BitVec.ofInt_neg, BitVec.sub_eq_add_neg]
   rw [hs]

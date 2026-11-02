@@ -311,9 +311,38 @@ elab "rule_split_or" : tactic => withMainContext do
       return
   throwError "rule_split_or: no disjunction"
 
+syntax "rule_split1" : tactic
+
+/-- Case split on the shape `t` of a 64-bit integer leaf (`tyOtherInt t .w64 = false`: the
+64-bit integer shape or a pointer shape, `tyOtherInt_w64_eq_false`) when the condition reads
+`t` (`t.Size()`), then `rule_norm` and the further splits of `rule_split1` in both cases (the
+pointer case is new with §3.3's pointer words; the caller's `repeat rule_split1` follows the
+first goal only). -/
+syntax "rule_split_ptr_or" : tactic
+
+elab_rules : tactic
+  | `(tactic| rule_split_ptr_or) => withMainContext do
+    let some hc := (← getLCtx).findFromUserName? `hcond
+      | throwError "rule_split_ptr_or: no condition"
+    let cty ← instantiateMVars hc.type
+    for h in ← getLCtx do
+      if h.isImplementationDetail then continue
+      let some (_, lhs, rhs) := (← instantiateMVars h.type).eq? | continue
+      unless lhs.isAppOfArity ``tyOtherInt 2 && rhs.isConstOf ``Bool.false &&
+          (lhs.getArg! 1).isConstOf ``GoFV.SSA.Sem.Width.w64 do continue
+      let t := lhs.getArg! 0
+      unless t.isAppOfArity ``PEnv.ty 2 && (cty.find? (· == t)).isSome do continue
+      let ts ← Term.exprToSyntax t
+      let hs ← Term.exprToSyntax h.toExpr
+      evalTactic (← `(tactic| (
+        rcases (GoFV.Proof.Rules.tyOtherInt_w64_eq_false $ts).1 $hs with hor | ⟨_, hor⟩ <;>
+          (try rule_norm) <;> (try rule_split_ptr_or) <;> (repeat rule_split1))))
+      return
+    throwError "rule_split_ptr_or: no 64-bit leaf shape read by the condition"
+
 /-- One case split on a `splitCandidate?` of the goal or a hypothesis, followed by `rule_norm`
 in every case. A leaf read as an integer (a boolean) is replaced by it. -/
-elab "rule_split1" : tactic => withMainContext do
+elab_rules : tactic | `(tactic| rule_split1) => withMainContext do
   let g ← getMainGoal
   let mut cand := splitCandidate? (← instantiateMVars (← g.getType))
   for h in ← getLCtx do
@@ -347,7 +376,7 @@ elab "rule_split1" : tactic => withMainContext do
         (try have hv := val_asInt_eq_some.mp hsplit) <;>
         (try (have hv0 := val_poison_of_asInt_none hsplit (by with_reducible assumption)) <;>
           rcases hv0 with hv | ⟨hw64, pv, hv⟩) <;>
-        (try rule_norm))))
+        (try rule_norm) <;> (try rule_split_ptr_or))))
   else if c.isAppOfArity ``GoFV.SSA.Sem.Val.asBool 1 then
     evalTactic (← `(tactic| (
       rcases hsplit : $stx with _ | xs <;>
@@ -358,7 +387,7 @@ elab "rule_split1" : tactic => withMainContext do
     let l ← Term.exprToSyntax (c.getArg! 0)
     evalTactic (← `(tactic| (
       rcases GoFV.Proof.Rules.val_asNat_cases $l with hsplit | ⟨(_ | _ | _ | _), xs, hv⟩ <;>
-        (try rule_norm))))
+        (try rule_norm) <;> (try rule_split_ptr_or))))
   else
     evalTactic (← `(tactic| (rcases hsplit : $stx with _ | xs <;> (try rule_norm))))
 

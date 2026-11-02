@@ -21,9 +21,10 @@ theorem r_generic_126_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
   simp only [Nat.reduceAdd] at h1
   rw [h0] at hlt
   rw [h1] at hty ⊢
-  rcases val_of_hasTy_ptr hlt with hl | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
+  rcases val_of_hasTy_ptr hlt with hl | ⟨x, hl⟩ | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
   · exact Refines.poison _
-  · simp [PtrOps.addPtr, PtrOps.offPtr, Conv.const, Val.retype, asOffset] at hty ⊢
+  all_goals
+    simp [PtrOps.addPtr, PtrOps.offPtr, Conv.const, Val.retype, asOffset] at hty ⊢
     exact refines_retype_of_hasTy hty
 
 end GoFV.Proof.Rules

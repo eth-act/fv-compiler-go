@@ -90,9 +90,10 @@ theorem select_slice_len {x : Val} {el : Option Nat} (h : x.hasTy (.slice el) = 
     · exact .inr ⟨l, rfl⟩
     · exact .inr ⟨c, rfl⟩
 
-/-- The data pointer (component 0) of a value of a slice shape: a pointer or `poison`. -/
+/-- The data pointer (component 0) of a value of a slice shape: a pointer word (a pointer, a
+64-bit integer, or `poison`). -/
 theorem select_slice_ptr {x : Val} {el : Option Nat} (h : x.hasTy (.slice el) = true) :
-    (Comp.select 0 [x]).isPtrOrPoison = true := by
+    (Comp.select 0 [x]).isPtrWord = true := by
   cases x with
   | poison => rfl
   | agg vs =>
@@ -111,9 +112,8 @@ theorem refines_retype_len {L s : Val} {T : Ty}
     | poison => exact .poison _
     | int => exact refines_retype_of_hasTy hty
 
-/-- A value `L` of shape `T` refining a pointer (or `poison`) `s` at a pointer shape refines `s`
-at `T`. -/
-theorem refines_retype_ptr {L s : Val} {T : Ty} {e : Option Nat} (hs : s.isPtrOrPoison = true)
+/-- A value `L` of shape `T` refining a pointer word `s` at a pointer shape refines `s` at `T`. -/
+theorem refines_retype_ptr {L s : Val} {T : Ty} {e : Option Nat} (hs : s.isPtrWord = true)
     (h : Refines L (s.retype (.ptr e))) (hty : L.hasTy T = true) : Refines L (s.retype T) := by
   cases s with
   | poison => rw [eq_poison_of_refines h]; exact .poison _
@@ -122,7 +122,13 @@ theorem refines_retype_ptr {L s : Val} {T : Ty} {e : Option Nat} (hs : s.isPtrOr
     cases h' with
     | poison => exact .poison _
     | ptr => exact refines_retype_of_hasTy hty
-  | _ => simp [Val.isPtrOrPoison] at hs
+  | int w x =>
+    cases w <;> simp only [Val.isPtrWord, Bool.false_eq_true] at hs
+    have h' : Refines L (.int .w64 x) := by simpa [Val.retype] using h
+    cases h' with
+    | poison => exact .poison _
+    | int => exact refines_retype_of_hasTy hty
+  | _ => simp [Val.isPtrWord] at hs
 
 /-- `generic.rules:1035`: `(SlicePtr (SliceMake (SlicePtr x) _ _)) => (SlicePtr x)` -/
 theorem r_generic_1035_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1035 := by

@@ -46,8 +46,8 @@ theorem memRoot_resRel {ctx : Ctx} {v : Value} (hn : v.op ≠ .NilCheck) {argv a
 /-! ## The ops of `tamMemOps` -/
 
 /-- **The pure ops of `tamMemOps`** on equal arguments but a related last one. -/
-theorem evalPure_rel {op : Op} (hop : op ∈ tamMemOps) (hn : op ∉ evalOpArms) (ty : Ty) (k : Int64)
-    (aux : Option AuxRef) {L : List Val} {w w' : Val} (hw : VR X w w')
+theorem evalPure_rel (hX : TempX X) {op : Op} (hop : op ∈ tamMemOps) (hn : op ∉ evalOpArms)
+    (ty : Ty) (k : Int64) (aux : Option AuxRef) {L : List Val} {w w' : Val} (hw : VR X w w')
     (hL : ∀ a ∈ L, Val.Avoids U a) :
     VR X (evalPure op ty k aux (L ++ [w])) (evalPure op ty k aux (L ++ [w'])) := by
   simp only [tamMemOps, DAE.memOps, List.cons_append, List.nil_append, List.mem_cons,
@@ -76,16 +76,16 @@ theorem evalPure_rel {op : Op} (hop : op ∈ tamMemOps) (hn : op ∉ evalOpArms)
     exact .tuple (VRL.snoc L hw)
   · -- Load
     show VR X (loadOp ty (L ++ [w])) (loadOp ty (L ++ [w']))
-    rw [loadOp_eq ty L hw hL]; exact .refl _
+    rw [loadOp_eq hX ty L hw hL]; exact .refl _
   · -- AtomicLoad32
-    exact atomicLoad_rel ty L hw hL
+    exact atomicLoad_rel hX ty L hw hL
   · -- AtomicLoad64
-    exact atomicLoad_rel ty L hw hL
+    exact atomicLoad_rel hX ty L hw hL
   · -- AtomicLoadPtr
-    exact atomicLoad_rel ty L hw hL
+    exact atomicLoad_rel hX ty L hw hL
   · -- MemEq
     show VR X (memEq (L ++ [w])) (memEq (L ++ [w']))
-    rw [memEq_eq L hw hL]; exact .refl _
+    rw [memEq_eq hX L hw hL]; exact .refl _
   · -- Store
     exact absurd (by decide) hn
   · -- Zero
@@ -134,13 +134,13 @@ theorem evalPure_rel {op : Op} (hop : op ∈ tamMemOps) (hn : op ∉ evalOpArms)
     exact absurd (by decide) hn
   · -- Dereference
     show VR X (loadOp ty (L ++ [w])) (loadOp ty (L ++ [w']))
-    rw [loadOp_eq ty L hw hL]; exact .refl _
+    rw [loadOp_eq hX ty L hw hL]; exact .refl _
   · -- AtomicLoad8
-    exact atomicLoad_rel ty L hw hL
+    exact atomicLoad_rel hX ty L hw hL
   · -- AtomicLoadAcq32
-    exact atomicLoad_rel ty L hw hL
+    exact atomicLoad_rel hX ty L hw hL
   · -- AtomicLoadAcq64
-    exact atomicLoad_rel ty L hw hL
+    exact atomicLoad_rel hX ty L hw hL
   · -- SelectNAddr
     show VR X (Tuple.selectNAddr k (L ++ [w])) (Tuple.selectNAddr k (L ++ [w']))
     rw [selectNAddr_eq k L hw]; exact .refl _
@@ -164,7 +164,8 @@ theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx
       have hR : AtomicSimRel (EqX X) (fun b => X b = false) :=
         ⟨fun t p h hp => EqX.load h t p hp, fun _ _ h hp hw => EqX.write h hp hw⟩
       obtain ⟨y', hy', m1, m1', hm1, hs⟩ := atomicRoot_sim hR
-        (fun p hp => by have := hL _ hp; simp only [Val.Avoids] at this; simpa using this) hm h
+        (fun p hp => by have := hL _ hp; simp only [Val.Avoids] at this; simpa using this)
+        (fun x => by simpa using DAE.ofAddr_notU (tempU_of hX) x) hm h
       refine ⟨y', hy', ?_⟩
       rcases hs with ⟨rfl, rfl⟩ | ⟨z, rfl, rfl⟩
       · exact .mem hm1
@@ -172,7 +173,7 @@ theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx
     · have hr' : isRoot v.op = false := by simpa using hr
       rw [evalOp_pure_of harm hr', evalOp_pure_of harm hr']
       rcases hop with hop | hop
-      · exact resRel_ok (evalPure_rel hop harm _ _ _ hw hL)
+      · exact resRel_ok (evalPure_rel hX hop harm _ _ _ hw hL)
       · simp only [atomicRootOp, Bool.and_eq_true] at hop; rw [hop.1] at hr'; cases hr'
   have hop : v.op ∈ tamMemOps := hop.resolve_right fun h => by
     simp only [atomicRootOp, Bool.and_eq_true, Bool.not_eq_true'] at h
@@ -199,9 +200,9 @@ theorem memOp_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx
     refine memRoot_resRel (by rcases ho with h | h | h | h | h | h <;> rw [h] <;> nofun)
       fun y h => ?_
     rcases ho with h1 | h1 | h1 | h1 | h1 | h1
-    · exact write_rel (.inl h1) hw hL h
-    · exact write_rel (.inr (.inl h1)) hw hL h
-    · exact write_rel (.inr (.inr h1)) hw hL h
+    · exact write_rel hX (.inl h1) hw hL h
+    · exact write_rel hX (.inr (.inl h1)) hw hL h
+    · exact write_rel hX (.inr (.inr h1)) hw hL h
     · exact varDef_rel h1 hw h
     · exact varLive_rel (.inl h1) hw h
     · exact varLive_rel (.inr h1) hw h

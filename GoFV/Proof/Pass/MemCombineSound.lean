@@ -107,9 +107,14 @@ theorem shift_cases (w : Width) (b : Bool) (F : BitVec w.bits → Nat → BitVec
     simp only [Shift.shift, ha, Val.asInt_int]
     rw [if_neg (by simp; omega), Nat.min_eq_left (by omega)]
 
+/-- A load that is not `poison` reads its memory through its pointer word. -/
 theorem loadOp_inv {t : Ty} {a b : Val} (h : loadOp t [a, b] ≠ .poison) :
-    ∃ Q M, a = .ptr Q ∧ b = .mem M ∧ loadOp t [a, b] = M.load t Q := by
-  cases a <;> cases b <;> first | exact ⟨_, _, rfl, rfl, rfl⟩ | exact (h rfl).elim
+    ∃ Q M, a.asPtrWord = some Q ∧ b = .mem M ∧ loadOp t [a, b] = M.load t Q := by
+  cases b <;> try exact (h rfl).elim
+  rename_i M
+  cases ha : a.asPtrWord with
+  | none => exact (h (by simp only [loadOp, ha])).elim
+  | some Q => exact ⟨Q, M, rfl, rfl, by simp only [loadOp, ha]⟩
 
 theorem load_int (M : Mem) (wt : Width) (Q : Ptr) :
     M.load (.int wt) Q = match M.read Q wt.bytes with
@@ -132,7 +137,7 @@ theorem bytesNat?_concrete {bs : Array Byte} {k : Nat} (h : bytesNat? bs = some 
 
 /-- **A load narrower than 8 bytes** that is an integer read concrete bytes through its split
 pointer, and the description's bytes are the integer's. -/
-theorem load_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} (hT : Term.Typed D tabs ρ)
+theorem load_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
     {n : Nat} {v : Value} {wt : Width} (hb8 : wt.bytes < 8)
     (hpt : ptrTyped tabs D (splitP tabs D 64 v.args[0]! none 0).1 = true) {w : Width}
     {X : BitVec w.bits}
@@ -177,7 +182,7 @@ theorem load_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} (
         omega
       obtain ⟨Y, hY, hYb⟩ := decodeInt_concrete hxs hlen
       refine ⟨wt, Y, hY, ?_, ?_⟩
-      · obtain ⟨P, I, hbP, hI, hpq⟩ := splitP_sound hT (m := n) 64 n v.args[0]! none 0 (Nat.le_refl _)
+      · obtain ⟨P, I, hbP, hI, hpq⟩ := splitP_sound (m := n) 64 n v.args[0]! none 0 (Nat.le_refl _)
           hS hpt hpQ rfl
         have hQ : ptrAt Q 0 0 = Q := by simp [ptrAt]
         rw [hQ] at hpq
@@ -189,7 +194,7 @@ theorem load_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} (
       · intro l hl
         rw [List.mem_singleton] at hl
         subst hl
-        obtain ⟨P, I, hbP, hI, hpq⟩ := splitP_sound hT (m := n) 64 n v.args[0]! none 0 (Nat.le_refl _)
+        obtain ⟨P, I, hbP, hI, hpq⟩ := splitP_sound (m := n) 64 n v.args[0]! none 0 (Nat.le_refl _)
           hS hpt hpQ rfl
         have hQ : ptrAt Q 0 0 = Q := by simp [ptrAt]
         rw [hQ] at hpq
@@ -281,7 +286,7 @@ theorem symOp_sound (hT : Term.Typed D tabs ρ) {n : Nat} {rec : ID → Option D
   · -- `Load`
     obtain ⟨hsz, hb8, hpt, rfl⟩ := symLoad_spec hl
     rw [ho, args_two hsz] at hE ⊢
-    exact load_sound hT (hb8 rfl) hpt hE
+    exact load_sound (hb8 rfl) hpt hE
   · -- `ZeroExt`
     obtain ⟨-, -, hle, hev⟩ := zextW_spec hw
     obtain ⟨hra, hla⟩ := symArg_spec ha

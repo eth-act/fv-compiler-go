@@ -26,7 +26,9 @@ theorem loadOp_asAgg (t : Ty) (args : List Val) :
     loadOp t args = Val.checkLen t (loadOp t.asAgg args) := by
   unfold loadOp
   split
-  · exact load_asAgg _ _ _
+  · split
+    · exact load_asAgg _ _ _
+    · exact (Val.checkLen_poison t).symm
   · exact (Val.checkLen_poison t).symm
 
 /-- Component `k` of a length-checked string or slice: refined by whatever refines component `k`
@@ -43,6 +45,16 @@ theorem select_checkLen_ref {t : Ty} {k : Nat} {L X : Val}
   · exact h
   · exact .poison _
 
+/-- A `Load` at a value that is no pointer word is `poison`. -/
+theorem loadOp_of_asPtrWord_none {t : Ty} {P Mv : Val} (h : P.asPtrWord = none) :
+    loadOp t [P, Mv] = .poison := by
+  unfold loadOp
+  split
+  · rename_i a m heq
+    simp only [List.cons.injEq, and_true] at heq
+    rw [← heq.1, h]
+  · rfl
+
 /-- A `Load` of an aggregate whose first field is at offset 0 is refined by the `Make` of the
 `Load` of the first field at the pointer itself and the field `Load`s at `OffPtr`s. -/
 theorem loadSplit_ref {t0 : Ty} {fs : List (Nat × Ty)} {n : Nat}
@@ -51,6 +63,9 @@ theorem loadSplit_ref {t0 : Ty} {fs : List (Nat × Ty)} {n : Nat}
     (hvs : Fields (fun v f => ∃ e, v = fieldVal P Mv f.1 (.ptr e) f.2) vs fs) :
     Refines ((loadOp (.agg ((0, t0) :: fs) n) [P, Mv]).retype (.agg ((0, t0) :: fs) n))
       ((Comp.make ((loadOp t0 [P, Mv]).retype t0 :: vs)).retype (.agg ((0, t0) :: fs) n)) := by
+  by_cases hw : P.asPtrWord = none
+  · rw [loadOp_of_asPtrWord_none hw, loadOp_of_asPtrWord_none hw, retype_poison]
+    exact .poison _
   cases P with
   | ptr p =>
     have h := structLoad_ref hl ho (.ptr p) Mv
@@ -66,13 +81,23 @@ theorem loadSplit_ref {t0 : Ty} {fs : List (Nat × Ty)} {n : Nat}
     unfold PtrOps.ptrRes
     split
     · exact Refines.refl _
-    · show Refines ((loadOp t0 [Val.poison.retype (.ptr none), Mv]).retype t0) _
-      rw [retype_poison]
+    · rw [retype_poison, loadOp_of_asPtrWord_none (P := .poison) rfl]
       exact retype_mono _ (.poison _)
-  | _ =>
-    show Refines (Val.poison.retype _) _
-    rw [retype_poison]
-    exact .poison _
+  | int w x =>
+    cases w
+    case w64 =>
+      have h := structLoad_ref hl ho (.int .w64 x) Mv
+        (vs := fieldVal (.int .w64 x) Mv 0 (.ptr none) t0 :: vs) ⟨⟨none, rfl⟩, hvs⟩
+      refine h.trans (retype_mono _ (.agg (.cons ?_ (RefinesList.refl vs))))
+      unfold fieldVal
+      have hq : (PtrOps.offPtr (Int64.ofNat 0) [.int .w64 x]).retype (.ptr none) = .int .w64 x := by
+        show (PtrOps.wordRes x (BitVec.ofInt 64 (Int64.ofNat 0).toInt)).retype (.ptr none) = _
+        rw [show BitVec.ofInt 64 (Int64.ofNat 0).toInt = 0 by decide, PtrOps.wordRes_zero]
+        rfl
+      rw [hq]
+      exact Refines.refl _
+    all_goals exact absurd rfl hw
+  | _ => exact absurd rfl hw
 
 /-- `kindDV` of a type value refutes the condition only at `some false`. -/
 theorem kindDV_ty (k : KindPred) (t : Ty) : kindDV k (DV.ty t) = (kindE k t).map DV.bool := rfl

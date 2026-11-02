@@ -24,7 +24,7 @@ theorem shapeSub_hasTy {f t : Ty} (h : shapeSub f t = true) {v : Val}
   · rw [← Ty.eq_of_beq h]; exact hv
   · cases f <;> simp only [isPtrTy, Bool.false_eq_true] at hf
     cases t <;> simp only [isPtrTy, Bool.false_eq_true] at ht
-    cases v <;> simp_all [Val.hasTy]
+    rcases v with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;> simp_all [Val.hasTy]
 
 /-- `retype` at a shape `f` that a value's shape `t` is `shapeSub` of keeps the value. -/
 theorem retype_of_shapeSub {t f : Ty} {v : Val} (hv : v.hasTy t = true) (h : shapeSub t f = true) :

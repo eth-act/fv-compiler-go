@@ -56,8 +56,8 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
     rw [hgv] at hgv'; cases hgv'
     have hvoff : ∀ (y : Val) x' ps (d : SplitD tabs f g x' ps), x' ∈ oS.toList.take k →
         ∀ (i : Nat) (s : ID) (o : Nat) (t : Ty) (P : Ptr), ps[i]? = some (x, s) →
-        d.fs[i]? = some (o, t) → f.value? x = none → S.regs[d.dst]? = some (some (.ptr P)) →
-        y = .ptr (P.add (BitVec.ofNat 64 o)) :=
+        d.fs[i]? = some (o, t) → f.value? x = none → (rv S d.dst).asPtrWord = some P →
+        y.asPtrWord = some (P.add (BitVec.ofNat 64 o)) :=
       fun y x' ps d _ i s o t P _ _ hn => by rw [hfx] at hn; cases hn
     by_cases hxS : x ∈ oS.toList.take k
     · obtain ⟨y, hy, hr⟩ : ∃ y, evalValue env (Ctx.make tabs g) T gv = .ok y ∧
@@ -75,7 +75,7 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
       exact ⟨M2, M2', hw2, rfl, hr2⟩
     · have hvst : ∀ (y : Val) x' ps (d : SplitD tabs f g x' ps), x' ∈ oS.toList.take k →
           ∀ (i : Nat) (p : ID) (P : Ptr) (M : Mem), ps[i]? = some (p, x) →
-          S.regs[d.dst]? = some (some (.ptr P)) → S.regs[d.mem]? = some (some (.mem M)) →
+          (rv S d.dst).asPtrWord = some P → S.regs[d.mem]? = some (some (.mem M)) →
           ∃ Mk M', M.write P (bufK S d (i + 1)) = some Mk ∧ y = .mem M' ∧ Mem.Refines Mk M' :=
         fun y x' ps d hx' i p P M hi => by
           have := hself x' ps d i p hi; subst this; exact absurd hx' hxS
@@ -153,8 +153,8 @@ theorem step (hE : env.Mono) {S T : Frame} {k j : Nat} {x : ID}
         rw [hfi] at hfi'; cases hfi'
         have L := L1.hoff hpf
         have h := L.hp; rw [L0.hp] at h; cases h
-        have := K.offVal hS hT hjT d hx' hfi L hP
-        rw [hy] at this; cases this; rfl
+        obtain ⟨y', hy', hpw⟩ := K.offVal hS hT hjT d hx' hfi L hP
+        rw [hy] at hy'; cases hy'; exact hpw
       · intro x' ps d hx' i p P M hi hP hM
         obtain ⟨o', t', a, av, sv, ov, -, -, L⟩ := link_at d hi
         have h := L.hs; rw [L0.hp] at h; cases h

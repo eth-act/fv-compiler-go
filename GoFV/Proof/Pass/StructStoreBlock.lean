@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.StructStoreSrc
+import GoFV.Proof.PtrAddr
 
 /-!
 # Struct-store splits: one block of the target (issue #151)
@@ -7,7 +8,8 @@ import GoFV.Proof.Pass.StructStoreSrc
 source's values, then the splits' fresh values; the source's roots with each split `Store`
 replaced by its chain of field stores), the target entered with registers refining the source's
 (`RR`). `TFacts`: the target's frame after a prefix of its schedule; its registers refine the
-source's on what both evaluated, a fresh `OffPtr` holds its field's address (`off`) and a fresh
+source's on what both evaluated, a fresh `OffPtr` holds a word of its field's address (`off`: the
+source's `dst` read as a pointer word, `Val.asPtrWord`, moved by the field's offset) and a fresh
 field store a memory refining the struct write with the fields so far (`store`: the struct's
 bytes `bufK` start `poison`, `StructStoreMem`).
 -/
@@ -67,11 +69,11 @@ structure TFacts (tabs : Tables) (f g : Func) (F0T S T : Frame) (pre done : List
     T.regs[x]? = some (some yT) ∧ Sem.Refines yS yT
   off : ∀ x ps (d : SplitD tabs f g x ps), x ∈ pre → ∀ (k : Nat) (p s : ID) (o : Nat) (t : Ty)
     (P : Ptr), ps[k]? = some (p, s) →
-    d.fs[k]? = some (o, t) → f.value? p = none → p ∈ done → S.regs[d.dst]? = some (some (.ptr P)) →
-    T.regs[p]? = some (some (.ptr (P.add (BitVec.ofNat 64 o))))
+    d.fs[k]? = some (o, t) → f.value? p = none → p ∈ done → (rv S d.dst).asPtrWord = some P →
+    ∃ yp, T.regs[p]? = some (some yp) ∧ yp.asPtrWord = some (P.add (BitVec.ofNat 64 o))
   store : ∀ x ps (d : SplitD tabs f g x ps), x ∈ pre → ∀ (k : Nat) (p s : ID) (P : Ptr) (M : Mem),
     ps[k]? = some (p, s) →
-    s ∈ done → S.regs[d.dst]? = some (some (.ptr P)) → S.regs[d.mem]? = some (some (.mem M)) →
+    s ∈ done → (rv S d.dst).asPtrWord = some P → S.regs[d.mem]? = some (some (.mem M)) →
     ∃ Mk M', M.write P (bufK S d (k + 1)) = some Mk ∧ T.regs[s]? = some (some (.mem M')) ∧
       Mem.Refines Mk M'
 
@@ -262,9 +264,9 @@ theorem tstep {S T : Frame} {pre : List ID} {j : Nat} {x : ID} (hj : oT.toList[j
     (hrel : x ∈ pre → ∃ yS, S.regs[x]? = some (some yS) ∧ Sem.Refines yS y)
     (hoff : ∀ x' ps (d : SplitD tabs f g x' ps), x' ∈ pre → ∀ (k : Nat) (s : ID) (o : Nat)
       (t : Ty) (P : Ptr), ps[k]? = some (x, s) → d.fs[k]? = some (o, t) → f.value? x = none →
-      S.regs[d.dst]? = some (some (.ptr P)) → y = .ptr (P.add (BitVec.ofNat 64 o)))
+      (rv S d.dst).asPtrWord = some P → y.asPtrWord = some (P.add (BitVec.ofNat 64 o)))
     (hstore : ∀ x' ps (d : SplitD tabs f g x' ps), x' ∈ pre → ∀ (k : Nat) (p : ID) (P : Ptr)
-      (M : Mem), ps[k]? = some (p, x) → S.regs[d.dst]? = some (some (.ptr P)) →
+      (M : Mem), ps[k]? = some (p, x) → (rv S d.dst).asPtrWord = some P →
       S.regs[d.mem]? = some (some (.mem M)) →
       ∃ Mk M', M.write P (bufK S d (k + 1)) = some Mk ∧ y = .mem M' ∧ Mem.Refines Mk M') :
     TFacts tabs f g F0T S (T.set x y) pre (oT.toList.take (j + 1)) := by
@@ -294,7 +296,7 @@ theorem tstep {S T : Frame} {pre : List ID} {j : Nat} {x : ID} (hj : oT.toList[j
   · rcases List.mem_append.1 hp with hp | hp
     · rw [hkeep p (fun h => hnot (h ▸ hp))]; exact hT.off x' ps d hx' k p s o t P hk hf hpf hp hP
     · simp only [List.mem_singleton] at hp; subst hp
-      rw [hself, hoff x' ps d hx' k s o t P hk hf hpf hP]
+      exact ⟨y, hself, hoff x' ps d hx' k s o t P hk hf hpf hP⟩
   · rcases List.mem_append.1 hs with hs | hs
     · rw [hkeep s (fun h => hnot (h ▸ hs))]; exact hT.store x' ps d hx' k p s P M hk hs hP hM
     · simp only [List.mem_singleton] at hs; subst hs
@@ -431,7 +433,8 @@ theorem store_val {S T : Frame} {x : ID} {ps : List (ID × ID)} (d : SplitD tabs
     {k o : Nat} {t : Ty} {a p s : ID} {av sv ov : Value}
     (hfk : d.fs[k]? = some (o, t)) (hak : d.smv.args[k]? = some a)
     (L : Link tabs f g d.fv.block d.dst x ps d.m0 k o t a p s av sv ov) {P : Ptr} {M Mk M' : Mem}
-    (hp : T.regs[p]? = some (some (.ptr (P.add (BitVec.ofNat 64 o)))))
+    {yp : Val} (hp : T.regs[p]? = some (some yp))
+    (hyp : yp.asPtrWord = some (P.add (BitVec.ofNat 64 o)))
     {vT : Val} (hw : T.regs[sv.args[1]!]? = some (some vT)) (hwr : Sem.Refines (rv S a) vT)
     (hpk : M.write P (bufK S d k) = some Mk)
     (hpT : T.regs[prevId ps d.m0 k]? = some (some (.mem M'))) (hpr : Mem.Refines Mk M') :
@@ -457,11 +460,10 @@ theorem store_val {S T : Frame} {x : ID} {ps : List (ID × ID)} (d : SplitD tabs
   rw [evalValue_of_regs hreg, CSE.Mem.evalOp_memRoot (.inl L.hsop), hargs]
   simp only [List.map_toArray, List.map_cons, List.map_nil, AtomSim.rv_of hp, AtomSim.rv_of hw,
     AtomSim.rv_of hpT]
-  have hm : memRoot (Ctx.make tabs g) sv [.ptr (P.add (BitVec.ofNat 64 o)), vT, .mem M'] =
-      .ok (.mem M2') := by
+  have hm : memRoot (Ctx.make tabs g) sv [yp, vT, .mem M'] = .ok (.mem M2') := by
     unfold memRoot
     rw [L.hsop]
-    simp only [writeRes]
+    simp only [hyp, writeRes]
     rw [show auxTy (Ctx.make tabs g).tabs sv.aux = t from L.hsty, hwT]
   rw [hm, L.hsid, tys_of_value L.hs, L.hsmem]
   rfl
@@ -557,7 +559,7 @@ theorem prevInv_succ {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.
     (hjT : oT.toList[j]? = some x) {gv : Value} (hgv : g.value? x = some gv) {x' : ID}
     {ps : List (ID × ID)} (d : SplitD tabs f g x' ps) (hx' : x' ∈ oS.toList.take k) {i : Nat}
     (hil : i < ps.length) (harg : prevId ps d.m0 (i + 1) ∈ gv.args) {P : Ptr} {M : Mem}
-    (hP : S.regs[d.dst]? = some (some (.ptr P))) (hM : S.regs[d.mem]? = some (some (.mem M))) :
+    (hP : (rv S d.dst).asPtrWord = some P) (hM : S.regs[d.mem]? = some (some (.mem M))) :
     ∃ Mk M', M.write P (bufK S d (i + 1)) = some Mk ∧
       T.regs[prevId ps d.m0 (i + 1)]? = some (some (.mem M')) ∧ Mem.Refines Mk M' := by
   obtain ⟨⟨p, s⟩, hq⟩ : ∃ q, ps[i]? = some q := ⟨_, List.getElem?_eq_getElem hil⟩
@@ -574,7 +576,7 @@ theorem prevInv {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     (hjT : oT.toList[j]? = some x) {gv : Value} (hgv : g.value? x = some gv) {x' : ID}
     {ps : List (ID × ID)} (d : SplitD tabs f g x' ps) (hx' : x' ∈ oS.toList.take k) {i : Nat}
     (hi : i ≤ ps.length) (harg : prevId ps d.m0 i ∈ gv.args) {P : Ptr} {M MS : Mem}
-    (hP : S.regs[d.dst]? = some (some (.ptr P))) (hM : S.regs[d.mem]? = some (some (.mem M)))
+    (hP : (rv S d.dst).asPtrWord = some P) (hM : S.regs[d.mem]? = some (some (.mem M)))
     (hMS : M.write P (encode (.agg d.fs d.n) (.agg (d.smv.args.toList.map (rv S)))) = some MS) :
     ∃ Mk M', M.write P (bufK S d i) = some Mk ∧
       T.regs[prevId ps d.m0 i]? = some (some (.mem M')) ∧ Mem.Refines Mk M' := by
@@ -624,14 +626,15 @@ theorem prevInv {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     exact ⟨MB, _, by rw [bufK_zero]; exact hMB, h2, write_poison_left hMM hMB⟩
   | succ i => exact K.prevInv_succ hS hT hjT hgv d hx' (by omega) harg hP hM
 
-/-- **A fresh `OffPtr`** of a split the source evaluated: its field's address. -/
+/-- **A fresh `OffPtr`** of a split the source evaluated: a word of its field's address. -/
 theorem offVal {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList.take k))
     (hT : TFacts tabs f g F0T S T (oS.toList.take k) (oT.toList.take j)) {x : ID}
     (hjT : oT.toList[j]? = some x) {x' : ID} {ps : List (ID × ID)} (d : SplitD tabs f g x' ps)
     (hx' : x' ∈ oS.toList.take k) {i o : Nat} {t : Ty} {ov : Value}
     (hfi : d.fs[i]? = some (o, t)) (L : POff tabs f g d.fv.block d.dst x o ov)
-    {P : Ptr} (hP : S.regs[d.dst]? = some (some (.ptr P))) :
-    evalValue env (Ctx.make tabs g) T ov = .ok (.ptr (P.add (BitVec.ofNat 64 o))) := by
+    {P : Ptr} (hP : (rv S d.dst).asPtrWord = some P) :
+    ∃ y, evalValue env (Ctx.make tabs g) T ov = .ok y ∧
+      y.asPtrWord = some (P.add (BitVec.ofNat 64 o)) := by
   obtain ⟨P', M, MS, -, hP', -, hMS, -, -⟩ := K.split_src hS d hx'
   rw [hP] at hP'; cases hP'
   have H := K.avail hS
@@ -642,8 +645,8 @@ theorem offVal {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
   generalize hd' : ov.args[0]! = d' at hargs hdst
   obtain ⟨hA, hr⟩ := copy_reg H hTy K.hidA _ hdA hdst
   obtain ⟨yS, yT, h1, h2, h3⟩ := K.argRel hS hT hjT L.hp (by rw [hargs]; simp) hA
-  rw [hr, hP] at h1; cases h1
-  cases h3
+  rw [hr] at h1
+  have hyT : yT.asPtrWord = some P := h3.asPtrWord (by rw [← AtomSim.rv_of h1]; exact hP)
   have hreg : ∀ b ∈ ov.args, Reg T b := fun b hb => by
     rw [hargs] at hb; simp only [List.mem_toArray, List.mem_singleton] at hb; subst hb
     exact ⟨_, h2⟩
@@ -651,13 +654,14 @@ theorem offVal {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
     rw [Sem.encode_size]; simp only [Ty.size]; exact d.hlt (o, t) (List.mem_of_getElem? hfi)
   rw [evalValue_of_regs hreg, evalOp_term (by rw [L.hpop]; decide),
     GoFV.Proof.Rules.opVal_pure (by rw [L.hpop]; decide), L.hpop, evalPure_offPtr, hargs]
-  simp only [List.map_toArray, List.map_cons, List.map_nil, AtomSim.rv_of h2, PtrOps.offPtr,
-    L.hpai, ofInt_ofNat, PtrOps.ptrRes, inWindow_of_write hMS hlt, ite_true]
+  simp only [List.map_toArray, List.map_cons, List.map_nil, AtomSim.rv_of h2]
   rw [L.hpid, tys_of_value L.hp]
+  refine ⟨_, rfl, ?_⟩
   have hpt := L.hpty
   generalize tabs.ty ov.type = ty at hpt ⊢
   cases ty <;> simp [isPtrTy] at hpt
-  rfl
+  rw [Option.getD_some, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hyT, Option.bind_some,
+    L.hpai, ofInt_ofNat, Ptr.step?, if_pos (inWindow_of_write hMS hlt)]
 
 /-- **A fresh field store** of a split the source evaluated: a memory refining the struct write
 with the fields up to it. -/
@@ -665,7 +669,7 @@ theorem storeAt {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
     (hT : TFacts tabs f g F0T S T (oS.toList.take k) (oT.toList.take j)) {x : ID}
     (hjT : oT.toList[j]? = some x) {x' : ID} {ps : List (ID × ID)} (d : SplitD tabs f g x' ps)
     (hx' : x' ∈ oS.toList.take k) {i : Nat} {p : ID} (hi : ps[i]? = some (p, x)) {P : Ptr}
-    {M : Mem} (hP : S.regs[d.dst]? = some (some (.ptr P)))
+    {M : Mem} (hP : (rv S d.dst).asPtrWord = some P)
     (hM : S.regs[d.mem]? = some (some (.mem M))) :
     ∃ sv M2 M2', g.value? x = some sv ∧ evalValue env (Ctx.make tabs g) T sv = .ok (.mem M2') ∧
       M.write P (bufK S d (i + 1)) = some M2 ∧ Mem.Refines M2 M2' := by
@@ -681,7 +685,8 @@ theorem storeAt {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
   have H := K.avail hS
   have hTy := K.typedS hS (K.hLk k)
   -- the field's pointer: a fresh `OffPtr`, or (offset `0`) `dst` itself through copies
-  have hp : T.regs[p]? = some (some (.ptr (P.add (BitVec.ofNat 64 o)))) := by
+  have hp : ∃ yp, T.regs[p]? = some (some yp) ∧
+      yp.asPtrWord = some (P.add (BitVec.ofNat 64 o)) := by
     cases hpf : f.value? p with
     | none =>
       exact hT.off x' ps d hx' i p x o t P hi hfi hpf
@@ -693,9 +698,11 @@ theorem storeAt {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
         (by rw [d.hfargs]; simp)
       obtain ⟨hpA, hrp⟩ := copy_reg H hTy K.hidA _ hdA hdp
       obtain ⟨yS, yT, h1, h2, h3⟩ := K.argRel hS hT hjT L.hs hpm hpA
-      rw [hrp, hP] at h1; cases h1
-      cases h3
-      rw [h2, GoFV.Proof.MemCombine.Ptr.add_zero]
+      rw [hrp] at h1
+      refine ⟨yT, h2, ?_⟩
+      rw [GoFV.Proof.MemCombine.Ptr.add_zero]
+      exact h3.asPtrWord (by rw [← AtomSim.rv_of h1]; exact hP)
+  obtain ⟨yp, hp, hyp⟩ := hp
   have haA := K.fieldA hS d hx' (Array.mem_of_getElem? hai)
   obtain ⟨hwA, hwr⟩ := copy_reg H hTy K.hidA _ haA L.hw
   have hwm : sv.args[1]! ∈ sv.args := by rw [hargs]; simp
@@ -704,7 +711,8 @@ theorem storeAt {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toLis
   have hra : rv S a = yS := AtomSim.rv_of h1
   obtain ⟨Mk, M', hk1, hk2, hk3⟩ := K.prevInv hS hT hjT L.hs d hx' (Nat.le_of_lt hil)
     (by rw [hargs]; simp) hP hM hMS
-  obtain ⟨M2, M2', he, hw2, hr2⟩ := store_val d hfi hai L hp h2 (by rw [hra]; exact h3) hk1 hk2 hk3
+  obtain ⟨M2, M2', he, hw2, hr2⟩ :=
+    store_val d hfi hai L hp hyp h2 (by rw [hra]; exact h3) hk1 hk2 hk3
   exact ⟨sv, M2, M2', L.hs, he, hw2, hr2⟩
 
 /-- **A split the source evaluated**: its `Copy` holds a memory refining the struct write. -/

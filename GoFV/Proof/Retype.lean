@@ -49,7 +49,7 @@ theorem Val.sliceOK_iff {vs : List Val} : Val.sliceOK vs = true ↔
 
 /-- A value of the string shape that is an aggregate. -/
 theorem Val.hasTy_agg_str {vs : List Val} : Val.hasTy (.agg vs) .str = true ↔
-    ∃ p l, vs = [p, .int .w64 l] ∧ p.isPtrOrPoison = true ∧ l.msb = false := by
+    ∃ p l, vs = [p, .int .w64 l] ∧ p.isPtrWord = true ∧ l.msb = false := by
   simp only [Val.hasTy, Bool.and_eq_true, Val.strOK_iff]
   constructor
   · rintro ⟨⟨p, l, rfl, hl⟩, hp⟩
@@ -60,7 +60,7 @@ theorem Val.hasTy_agg_str {vs : List Val} : Val.hasTy (.agg vs) .str = true ↔
 /-- A value of a slice shape that is an aggregate. -/
 theorem Val.hasTy_agg_slice {vs : List Val} {e : Option Nat} :
     Val.hasTy (.agg vs) (.slice e) = true ↔
-    ∃ p l c, vs = [p, .int .w64 l, .int .w64 c] ∧ p.isPtrOrPoison = true ∧ l.msb = false ∧
+    ∃ p l c, vs = [p, .int .w64 l, .int .w64 c] ∧ p.isPtrWord = true ∧ l.msb = false ∧
       c.msb = false ∧ l.toNat ≤ c.toNat := by
   simp only [Val.hasTy, Bool.and_eq_true, Val.sliceOK_iff]
   constructor
@@ -69,7 +69,7 @@ theorem Val.hasTy_agg_slice {vs : List Val} {e : Option Nat} :
   · rintro ⟨p, l, c, rfl, hp, hl, hc, hlc⟩
     exact ⟨⟨p, l, c, rfl, hl, hc, hlc⟩, by simpa using hp⟩
 
-theorem Val.isPtrOrPoison_retypePtr (v : Val) : v.retypePtr.isPtrOrPoison = true := by
+theorem Val.isPtrWord_retypePtr (v : Val) : v.retypePtr.isPtrWord = true := by
   cases v with
   | int w x => cases w <;> rfl
   | _ => rfl
@@ -78,7 +78,7 @@ theorem Val.ofStr_hasTy (p l : Val) : (Val.ofStr [p.retypePtr, l]).hasTy .str = 
   unfold Val.ofStr; split
   · next h =>
     simp only [Val.hasTy, h, Bool.true_and]
-    simp [Val.isPtrOrPoison_retypePtr]
+    simp [Val.isPtrWord_retypePtr]
   · rfl
 
 theorem Val.ofSlice_hasTy (e : Option Nat) (p l c : Val) :
@@ -86,7 +86,7 @@ theorem Val.ofSlice_hasTy (e : Option Nat) (p l c : Val) :
   unfold Val.ofSlice; split
   · next h =>
     simp only [Val.hasTy, h, Bool.true_and]
-    simp [Val.isPtrOrPoison_retypePtr]
+    simp [Val.isPtrWord_retypePtr]
   · rfl
 
 theorem Val.ofStr_of_ok {vs : List Val} (h : Val.strOK vs = true) : Val.ofStr vs = .agg vs := by
@@ -96,17 +96,19 @@ theorem Val.ofSlice_of_ok {vs : List Val} (h : Val.sliceOK vs = true) :
     Val.ofSlice vs = .agg vs := by
   simp [Val.ofSlice, h]
 
-theorem Val.retypePtr_of_isPtrOrPoison {p : Val} (h : p.isPtrOrPoison = true) :
+theorem Val.retypePtr_of_isPtrWord {p : Val} (h : p.isPtrWord = true) :
     p.retypePtr = p := by
-  cases p <;> simp_all [Val.isPtrOrPoison, Val.retypePtr]
+  cases p with
+  | int w x => cases w <;> simp_all [Val.isPtrWord, Val.retypePtr]
+  | _ => simp_all [Val.isPtrWord, Val.retypePtr]
 
-theorem Val.ofStr_hasTy_of {p : Val} (hp : p.isPtrOrPoison = true) (l : Val) :
+theorem Val.ofStr_hasTy_of {p : Val} (hp : p.isPtrWord = true) (l : Val) :
     (Val.ofStr [p, l]).hasTy .str = true := by
-  rw [← Val.retypePtr_of_isPtrOrPoison hp]; exact Val.ofStr_hasTy p l
+  rw [← Val.retypePtr_of_isPtrWord hp]; exact Val.ofStr_hasTy p l
 
-theorem Val.ofSlice_hasTy_of {p : Val} (hp : p.isPtrOrPoison = true) (e : Option Nat) (l c : Val) :
+theorem Val.ofSlice_hasTy_of {p : Val} (hp : p.isPtrWord = true) (e : Option Nat) (l c : Val) :
     (Val.ofSlice [p, l, c]).hasTy (.slice e) = true := by
-  rw [← Val.retypePtr_of_isPtrOrPoison hp]; exact Val.ofSlice_hasTy e p l c
+  rw [← Val.retypePtr_of_isPtrWord hp]; exact Val.ofSlice_hasTy e p l c
 
 theorem Val.retypeI64_int (l : BitVec 64) : (Val.int .w64 l).retypeI64 = .int .w64 l := by
   simp [Val.retypeI64, BitVec.setWidth_eq]
@@ -263,11 +265,11 @@ theorem Val.retype_of_hasTy : ∀ {t : Ty} {v : Val}, v.hasTy t = true → v.ret
   | .empty, .empty, _ => rfl
   | .str, .agg vs, h => by
     obtain ⟨p, l, rfl, hp, hl⟩ := Val.hasTy_agg_str.1 h
-    simp only [Val.retype, Val.retypePtr_of_isPtrOrPoison hp, Val.retypeI64_int]
+    simp only [Val.retype, Val.retypePtr_of_isPtrWord hp, Val.retypeI64_int]
     exact Val.ofStr_of_ok (Val.strOK_iff.2 ⟨p, l, rfl, hl⟩)
   | .slice _, .agg vs, h => by
     obtain ⟨p, l, c, rfl, hp, hl, hc, hlc⟩ := Val.hasTy_agg_slice.1 h
-    simp only [Val.retype, Val.retypePtr_of_isPtrOrPoison hp, Val.retypeI64_int]
+    simp only [Val.retype, Val.retypePtr_of_isPtrWord hp, Val.retypeI64_int]
     exact Val.ofSlice_of_ok (Val.sliceOK_iff.2 ⟨p, l, c, rfl, hl, hc, hlc⟩)
   | .str, .int _ _, h | .str, .bool _, h | .str, .mem _, h | .str, .tuple _, h
   | .str, .ptr _, h | .str, .blob _, h | .str, .empty, h => by simp [Val.hasTy] at h
@@ -284,7 +286,8 @@ theorem Val.retype_of_hasTy : ∀ {t : Ty} {v : Val}, v.hasTy t = true → v.ret
   | .other, .int _ _, h | .other, .bool _, h | .other, .mem _, h | .other, .tuple _, h
   | .other, .ptr _, h | .other, .agg _, h | .other, .blob _, h | .other, .empty, h => by
     simp [Val.hasTy] at h
-  | .ptr _, .int _ _, h | .ptr _, .bool _, h | .ptr _, .mem _, h | .ptr _, .tuple _, h
+  | .ptr _, .int w _, h => by cases w <;> first | rfl | simp [Val.hasTy] at h
+  | .ptr _, .bool _, h | .ptr _, .mem _, h | .ptr _, .tuple _, h
   | .ptr _, .agg _, h | .ptr _, .blob _, h | .ptr _, .empty, h => by simp [Val.hasTy] at h
   | .agg _ _, .int _ _, h | .agg _ _, .bool _, h | .agg _ _, .mem _, h | .agg _ _, .tuple _, h
   | .agg _ _, .ptr _, h | .agg _ _, .blob _, h | .agg _ _, .empty, h => by simp [Val.hasTy] at h

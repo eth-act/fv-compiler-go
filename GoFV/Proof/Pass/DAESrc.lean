@@ -102,12 +102,15 @@ theorem ptrRes_cases (p : Ptr) : PtrOps.ptrRes p = .poison ∨ PtrOps.ptrRes p =
   · exact .inr rfl
   · exact .inl rfl
 
+theorem wordRes_avoids (x k : BitVec 64) : Val.Avoids U (PtrOps.wordRes x k) := by
+  unfold PtrOps.wordRes; split <;> trivial
+
 theorem offPtr_avoids (k : Int64) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
     Val.Avoids U (PtrOps.offPtr k args) := by
   unfold PtrOps.offPtr
   split
   · exact ptrRes_avoids (h _ List.mem_cons_self)
-  · trivial
+  · exact wordRes_avoids _ _
   · trivial
 
 theorem addPtr_avoids {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
@@ -117,7 +120,9 @@ theorem addPtr_avoids {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
   · split
     · exact ptrRes_avoids (h _ List.mem_cons_self)
     · trivial
-  · split <;> trivial
+  · split
+    · exact wordRes_avoids _ _
+    · trivial
   · trivial
 
 theorem ptrIndex_avoids (e : Option Nat) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
@@ -127,15 +132,17 @@ theorem ptrIndex_avoids (e : Option Nat) {args : List Val} (h : ∀ z ∈ args, 
   · split
     · exact ptrRes_avoids (h _ List.mem_cons_self)
     · trivial
+  · split
+    · exact wordRes_avoids _ _
+    · trivial
   · trivial
 
-theorem convert_avoids (hU : TempU U) (t : Ty) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
+theorem convert_avoids (t : Ty) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
     Val.Avoids U (PtrOps.convert t args) := by
   unfold PtrOps.convert
   split
   · split
     · split <;> trivial
-    · exact ofAddr_notU hU _
     · exact h _ List.mem_cons_self
   · trivial
 
@@ -176,21 +183,25 @@ theorem loadOp_avoids (hU : TempU U) (t : Ty) {args : List Val} (h : ∀ z ∈ a
     Val.Avoids U (loadOp t args) := by
   unfold loadOp
   split
-  · exact load_avoids hU (h _ (List.mem_cons_of_mem _ List.mem_cons_self)) t
-      (h _ List.mem_cons_self)
+  · split
+    · rename_i hp
+      exact load_avoids hU (h _ (List.mem_cons_of_mem _ List.mem_cons_self)) t
+        (asPtrWord_notU hU (h _ List.mem_cons_self) hp)
+    · trivial
   · trivial
 
 theorem atomicLoad_avoids (hU : TempU U) (t : Ty) {args : List Val}
     (h : ∀ z ∈ args, Val.Avoids U z) : Val.Avoids U (atomicLoad t args) := by
   unfold atomicLoad
   split
-  · rename_i p m
+  · rename_i a m
     have hm : m.Avoids U := h _ (List.mem_cons_of_mem _ List.mem_cons_self)
     split
-    · refine ⟨?_, hm, trivial⟩
+    · rename_i hp
+      refine ⟨?_, hm, trivial⟩
       split
       · trivial
-      · exact load_avoids hU hm _ (h _ List.mem_cons_self)
+      · exact load_avoids hU hm _ (asPtrWord_notU hU (h _ List.mem_cons_self) hp)
     · trivial
   · trivial
 
@@ -254,7 +265,7 @@ theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ct
     · exact selectN_avoids _ hargs
     · show Val.AvoidsList U argv
       exact avoidsList_iff.2 hargs
-    · exact convert_avoids hU _ hargs
+    · exact convert_avoids _ hargs
     · exact loadOp_avoids hU _ hargs
     · exact atomicLoad_avoids hU _ hargs
     · exact atomicLoad_avoids hU _ hargs
@@ -264,9 +275,9 @@ theorem evalOp_avoids {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ct
     intro op hv ho
     rw [evalOp_memRoot (by rcases ho with h | h | h | h | h | h | h <;> simp [hv, h])] at h
     rcases ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · exact write_avoids (.inl hv) hargs h
-    · exact write_avoids (.inr (.inl hv)) hargs h
-    · exact write_avoids (.inr (.inr hv)) hargs h
+    · exact write_avoids hU (.inl hv) hargs h
+    · exact write_avoids hU (.inr (.inl hv)) hargs h
+    · exact write_avoids hU (.inr (.inr hv)) hargs h
     · obtain ⟨M, n, rfl, -, rfl, -⟩ := DSE.varDef_shape hv h
       exact memAvoids_poison (hargs _ List.mem_cons_self) _
     · obtain ⟨L, M, rfl, rfl, -⟩ := varLive_spec (.inl hv) h
@@ -564,7 +575,7 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
       all_goals
         have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
         rw [evalOp_memRoot (by simp [hop])] at hr
-        obtain ⟨p, L, M, bs, M1, rfl, hw, rfl, -, -⟩ := write_spec hop3 hr
+        obtain ⟨a0, p, L, M, bs, M1, rfl, hap, hw, rfl, -, -⟩ := write_spec hop3 hr
         refine memAvoids_write (hmA M (by simp)) hw fun hpU => ?_
         exfalso
         have hname : nameOf T fv = (fv.args[0]?).bind T := by
@@ -579,7 +590,7 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
           simp only [List.cons_append, List.getElem?_cons_zero, Option.some.injEq] at hz
           subst hz
           rcases (hinv a _ hza).tainted hname' hnE with h' | ⟨off, h'⟩
-          · cases h'
-          · cases h'; exact hpU ⟨n, hnE, rfl⟩
+          · subst h'; cases hap
+          · subst h'; cases hap; exact hpU ⟨n, hnE, rfl⟩
 
 end GoFV.Proof.DAE

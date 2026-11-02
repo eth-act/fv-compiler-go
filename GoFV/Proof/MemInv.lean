@@ -525,7 +525,12 @@ theorem memRoot_mems (hP : MemPred P) {ctx : Sem.Ctx} {v : Value} {argv : List V
        | (cases h; done)
        | (cases h; exact memsOK_of_mems_nil rfl)
        | (cases h; exact memsOK_mem (hP.poison (hm _ (by simp)) (frameBlk_ne _ _ _).1
-           (frameBlk_ne _ _ _).2)))
+           (frameBlk_ne _ _ _).2))
+       | (cases h; exact ha _ (by simp))
+       | (split at h <;> first
+          | exact wr (hm _ (by simp)) h
+          | (cases h; done)
+          | (cases h; exact ha _ (by simp))))
 
 /-- A read-modify-write returns the old value or an integer. -/
 theorem step_mems (k : Atomic.Kind) (w : Width) (m : Mem) (t : Ty) (p : Ptr) (x : Val) {y : Val}

@@ -1,4 +1,5 @@
 import GoFV.Proof.Retype
+import GoFV.Proof.PtrAddr
 import GoFV.Opt.RewriteCheck
 
 /-!
@@ -267,9 +268,11 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
     (hvs : Fields (fun v f => ∃ e, v = fieldVal P Mv f.1 (.ptr e) f.2) vs fs) :
     Refines ((loadOp (.agg fs n) [P, Mv]).retype (.agg fs n))
       ((Comp.make vs).retype (.agg fs n)) := by
-  by_cases hP : ∃ p m, P = .ptr p ∧ Mv = .mem m
-  · obtain ⟨p, m, rfl, rfl⟩ := hP
-    simp only [loadOp]
+  by_cases hP : ∃ p m, P.asPtrWord = some p ∧ Mv = .mem m
+  · obtain ⟨p, m, hp, rfl⟩ := hP
+    have hl0 : loadOp (.agg fs n) [P, .mem m] = m.load (.agg fs n) p := by
+      simp only [loadOp, hp]
+    rw [hl0]
     unfold Mem.load
     simp only
     cases hr : m.read p (Ty.agg fs n).size with
@@ -281,29 +284,49 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
         obtain ⟨hlo, hle⟩ := layouts_mem hl f hf
         have hon := ho f hf
         obtain ⟨a, _, _, h2, h3, _⟩ := read_facts hr (by omega)
+        have hin : ∀ w, p.blk.window? = some w → p.off.toNat + f.1 < w := by
+          intro w hw
+          unfold Blk.endsInWindow at h3
+          rw [hw] at h3
+          simp only [decide_eq_true_eq] at h3
+          omega
         have hwin : (p.add (BitVec.ofNat 64 f.1)).inWindow = true := by
           unfold Ptr.inWindow
-          unfold Blk.endsInWindow at h3
           rw [off_add h2 (Nat.le_of_lt hon)]
           show (match p.blk.window? with
             | some w => decide (p.off.toNat + f.1 < w)
             | none => true) = true
           split
           · rename_i w hw
-            rw [hw] at h3
-            simp only [decide_eq_true_eq] at h3 ⊢
-            omega
+            exact decide_eq_true (hin w hw)
           · rfl
-        have hq : PtrOps.offPtr (Int64.ofNat f.1) [.ptr p] = .ptr (p.add (BitVec.ofNat 64 f.1)) := by
-          show PtrOps.ptrRes (p.add (BitVec.ofInt 64 (Int64.ofNat f.1).toInt)) = _
-          rw [ofInt_toInt_ofNat]
-          unfold PtrOps.ptrRes
-          rw [if_pos hwin]
-        have hrt : (Val.ptr (p.add (BitVec.ofNat 64 f.1))).retype (.ptr e) =
-            .ptr (p.add (BitVec.ofNat 64 f.1)) := rfl
+        -- the field's address, a pointer or (for an integer word) the integer moved by `f.1`
+        have hq : ∃ Q, PtrOps.offPtr (Int64.ofNat f.1) [P] = Q ∧ Q.retype (.ptr e) = Q ∧
+            Q.asPtrWord = some (p.add (BitVec.ofNat 64 f.1)) := by
+          rcases P with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+            simp only [Val.asPtrWord, reduceCtorEq] at hp
+          · simp only [Option.some.injEq] at hp; subst hp
+            have hq : PtrOps.offPtr (Int64.ofNat f.1) [.int .w64 x] =
+                .int .w64 (x + BitVec.ofNat 64 f.1) := by
+              show PtrOps.wordRes x (BitVec.ofInt 64 (Int64.ofNat f.1).toInt) = _
+              rw [ofInt_toInt_ofNat]
+              unfold PtrOps.wordRes
+              rw [if_pos hwin]
+            refine ⟨_, hq, rfl, ?_⟩
+            simp only [Val.asPtrWord, Ptr.ofAddr_add_of_inWindow hwin]
+          · simp only [Option.some.injEq] at hp; subst hp
+            have hq : PtrOps.offPtr (Int64.ofNat f.1) [.ptr q] =
+                .ptr (q.add (BitVec.ofNat 64 f.1)) := by
+              show PtrOps.ptrRes (q.add (BitVec.ofInt 64 (Int64.ofNat f.1).toInt)) = _
+              rw [ofInt_toInt_ofNat]
+              unfold PtrOps.ptrRes
+              rw [if_pos hwin]
+            exact ⟨_, hq, rfl, rfl⟩
+        obtain ⟨Q, hQ, hQr, hQp⟩ := hq
         unfold fieldVal at he
-        rw [he, hq, hrt]
-        show (m.load f.2 (p.add (BitVec.ofNat 64 f.1))).retype f.2 = _
+        rw [he, hQ, hQr]
+        show (loadOp f.2 [Q, .mem m]).retype f.2 = _
+        simp only [loadOp, hQp]
         rw [load_field hr hlo hle]
       dsimp only
       by_cases hap : allPoison bs 0 n = true
@@ -318,9 +341,13 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
   · have : loadOp (.agg fs n) [P, Mv] = .poison := by
       unfold loadOp
       split
-      · rename_i p m h
+      · rename_i a m h
         simp only [List.cons.injEq, and_true] at h
-        exact absurd ⟨p, m, h.1, h.2⟩ hP
+        obtain ⟨rfl, rfl⟩ := h
+        split
+        · rename_i p hp
+          exact absurd ⟨p, m, hp, rfl⟩ hP
+        · rfl
       · rfl
     rw [this]
     exact .poison _

@@ -159,7 +159,7 @@ theorem concrete_list {bs : Array Byte} (hc : Concrete bs) :
 /-- The memory bytes of a load read from concrete bytes are the integer's. -/
 theorem mbs_sem {V : ID → Val} {mm b : ID} {i : Option ID} {o : _root_.Int} {wt : Width}
     {M : Mem} {P : Ptr} {I : BitVec 64} {bs : Array Byte} {xs : List (BitVec 8)}
-    (hm : V mm = .mem M) (hp : V b = .ptr P) (hI : idxVal V i = some I)
+    (hm : V mm = .mem M) (hp : (V b).asPtrWord = some P) (hI : idxVal V i = some I)
     (hrd : M.read (ptrAt P I o) wt.bytes = some bs) (hxs : bs.toList = xs.map .b)
     {Y : BitVec wt.bits} (hY : ∀ k (hk : k < wt.bytes), byteOf Y.toNat k = xs[k]'(by
       have := congrArg List.length hxs; have := read_size hrd
@@ -256,7 +256,8 @@ theorem symOp_complete (hT : Term.Typed E tabs ρ) {m n : Nat} (hmn : m ≤ n)
     obtain ⟨Y, hY, hYb⟩ := decodeInt_concrete hxs hlen
     refine ⟨wt, Y, ?_, ?_⟩
     · change loadOp (.int wt) [den E tabs ρ n v.args[0]!, den E tabs ρ n v.args[1]!] = _
-      rw [hq', hm']
+      rw [hm']
+      simp only [loadOp, hq']
       change M'.load (.int wt) (ptrAt P I o) = _
       rw [load_int, hrd']
       dsimp only

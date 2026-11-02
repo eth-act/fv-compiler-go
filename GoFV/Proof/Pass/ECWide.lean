@@ -200,7 +200,9 @@ theorem ecw_split_str : EcwSplit .str := by
       obtain ⟨p, l, rfl, hp, -⟩ := Val.hasTy_agg_str.1 hv
       refine ⟨?_, ?_⟩
       · simp [leafVals, leafValsFields, Ty.strAgg, Val.retype_idem]
-      · cases p <;> simp_all [Val.hasTy, Val.hasTyList, Ty.strAgg, Val.isPtrOrPoison]
+      · cases p with
+        | int w x => cases w <;> simp_all [Val.hasTy, Val.hasTyList, Ty.strAgg, Val.isPtrWord]
+        | _ => simp_all [Val.hasTy, Val.hasTyList, Ty.strAgg, Val.isPtrWord]
     | _ => simp [Val.hasTy] at hv
   rw [hl] at hx
   exact hS v hv' q M M' M1 xs hM hw hx
@@ -220,7 +222,9 @@ theorem ecw_split_slice (e : Option Nat) : EcwSplit (.slice e) := by
       obtain ⟨p, l, c, rfl, hp, -⟩ := Val.hasTy_agg_slice.1 hv
       refine ⟨?_, ?_⟩
       · simp [leafVals, leafValsFields, Ty.sliceAgg, Val.retype_idem]
-      · cases p <;> simp_all [Val.hasTy, Val.hasTyList, Ty.sliceAgg, Val.isPtrOrPoison]
+      · cases p with
+        | int w x => cases w <;> simp_all [Val.hasTy, Val.hasTyList, Ty.sliceAgg, Val.isPtrWord]
+        | _ => simp_all [Val.hasTy, Val.hasTyList, Ty.sliceAgg, Val.isPtrWord]
     | _ => simp [Val.hasTy] at hv
   rw [hl] at hx
   exact hS v hv' q M M' M1 xs hM hw hx
@@ -305,6 +309,7 @@ theorem ecw_memRoot_store {ctx : Ctx} {u : Value} {argv : List Val} {e : Panic} 
   all_goals first
     | contradiction
     | (simp only [writeRes] at h; split at h <;> cases h)
+    | (split at h <;> first | (simp only [writeRes] at h; split at h <;> cases h) | cases h)
     | (simp only at h; split at h <;> cases h)
 
 theorem ecw_store_not_panic {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {e : Panic} {m : Mem}
@@ -323,10 +328,8 @@ theorem ecw_store_not_panic {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {e 
 
 /-! ## Chains of leaf stores -/
 
-/-- The pointer a value holds (`Ptr.null` for others). -/
-def ecwPtr : Val → Ptr
-  | .ptr p => p
-  | _ => Ptr.null
+/-- The pointer a pointer word reads as (`Ptr.null` for other values). -/
+def ecwPtr (v : Val) : Ptr := v.asPtrWord.getD Ptr.null
 
 /-- The write of `Store` node `z` of `g` in frame `T`. -/
 def ecwW (tabs : Tables) (g : Func) (T : Frame) (z : ID) : Ptr × Array Byte :=
@@ -343,7 +346,8 @@ theorem ecw_chain {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID
       (zs ≠ [] → E z ∧ L z) → (∀ z' ∈ zs, shapeOf (typeShapes tabs) g z' = .mem) →
       ∀ M, rv T b = .mem M → ∃ M', rv T z = .mem M' ∧
         writeAll M (zs.map (ecwW tabs g T)) = some M' ∧
-        ∀ z' ∈ zs, ∀ wz, g.value? z' = some wz → rv T wz.args[0]! = .ptr (ecwPtr (rv T wz.args[0]!))
+        ∀ z' ∈ zs, ∀ wz, g.value? z' = some wz →
+          (rv T wz.args[0]!).asPtrWord = some (ecwPtr (rv T wz.args[0]!))
   | 0, _, _, _, h, _, _, _, _ => by simp [storeChain] at h
   | n + 1, z, b, zs, h, hEL, hsh, M, hM => by
     rcases ecs_storeChain_step h with ⟨rfl, rfl⟩ | ⟨w, zs', -, hw, -, hop, hsz, hc, rfl⟩
@@ -367,12 +371,12 @@ theorem ecw_chain {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID
     refine ⟨M1, rv_of hy, ?_, ?_⟩
     · rw [List.map_append]
       refine writeAll_snoc hW' ?_
-      simp only [ecwW, hw, hP, ecwPtr]
+      simp only [ecwW, hw, hP, ecwPtr, Option.getD_some]
       exact hW
     · intro z' hz' wz hwz
       rcases List.mem_append.1 hz' with hz' | hz'
       · exact hpt z' hz' wz hwz
-      · rw [List.mem_singleton.1 hz', hw] at hwz; cases hwz; rw [hP]; rfl
+      · rw [List.mem_singleton.1 hz', hw] at hwz; cases hwz; simp only [ecwPtr, hP, Option.getD_some]
 
 /-- The facts of the leaf stores of a wide store. -/
 theorem ecw_wideLeaves_get {tabs : Tables} {sh : Array Ty} {g : Func} {nw : ID → Bool} {p c : ID}
@@ -412,9 +416,10 @@ theorem ecw_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
     (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
     {p a : ID} {o : Nat} {q : Ptr}
-    (hok : wideAddrOK (typeShapes tabs) g (isNewB f) p o a = true) (hp : rv T p = .ptr q)
-    (hEa : isNewB f a = true → E a ∧ L a) :
-    rv T a = .ptr (q.add (BitVec.ofNat 64 o)) ∨ rv T a = PtrOps.ptrRes (q.add (BitVec.ofNat 64 o)) := by
+    (hok : wideAddrOK (typeShapes tabs) g (isNewB f) p o a = true)
+    (hp : (rv T p).asPtrWord = some q) (hEa : isNewB f a = true → E a ∧ L a) :
+    (rv T a).asPtrWord = some (q.add (BitVec.ofNat 64 o)) ∨
+      (rv T a).asPtrWord = q.step? (BitVec.ofNat 64 o) := by
   unfold wideAddrOK at hok
   simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hok
   rcases hok with ⟨rfl, rfl⟩ | ⟨hn, hm⟩
@@ -430,15 +435,13 @@ theorem ecw_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
     have hid := (hL a hLa aw haw).1
     have hv := evalValue_term (by rw [hop]; decide) hev
     rw [hop, GoFV.Proof.Rules.opVal_pure (by decide), hargs, hid, ← shapeOf_eq] at hv
-    simp only [List.map_cons, List.map_nil, hp] at hv
-    change ya = (PtrOps.offPtr aw.auxInt [.ptr q]).retype (shapeOf (typeShapes tabs) g a) at hv
+    simp only [List.map_cons, List.map_nil] at hv
+    change ya = (PtrOps.offPtr aw.auxInt [rv T p]).retype (shapeOf (typeShapes tabs) g a) at hv
     rw [rv_of hya, hv]
-    simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast]
     split at hsh
     · next e he =>
-      rw [he]
-      unfold PtrOps.ptrRes
-      split <;> rfl
+      rw [he, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hp, Option.bind_some]
+      simp only [hai, BitVec.ofInt_natCast]
     · cases hsh
 
 /-! ## The register pieces of the wide result -/
@@ -607,7 +610,7 @@ theorem ecw_store_src {env : Env} {tabs : Tables} {f : Func} {x : ID} {u : Value
     {y : Val} (hu : f.value? x = some u) (huid : u.id = x) (hop : u.op = .Store)
     (hus : u.args.size = 3) (hvm : valueTy (typeShapes tabs) (some u) = .mem)
     (hy : evalValue env (Ctx.make tabs f) G u = .ok y) :
-    ∃ q M M1, rv G u.args[0]! = .ptr q ∧ rv G u.args[2]! = .mem M ∧
+    ∃ q M M1, (rv G u.args[0]!).asPtrWord = some q ∧ rv G u.args[2]! = .mem M ∧
       M.write q (encode (auxTy tabs u.aux) (rv G u.args[1]!)) = some M1 ∧ y = .mem M1 := by
   have htyu : (Ctx.make tabs f).tys[u.id]?.getD .other = .mem := by
     rw [huid, ← shapeOf_eq, ecT_shapeOf_value hu]; exact hvm
@@ -615,17 +618,17 @@ theorem ecw_store_src {env : Env} {tabs : Tables} {f : Func} {x : ID} {u : Value
   rw [show (Ctx.make tabs f).tabs = tabs from rfl] at h3
   exact ⟨q, M, M1, h1, h2, h3, h4⟩
 
-/-- The target's register of the store's address (memory) holds the source's pointer
+/-- The target's register of the store's address (memory) reads as the source's pointer
 (a refinement of its memory). -/
 theorem ecw_front_ptr {tabs : Tables} {f g : Func} {a : ID} {G T : Frame} {q : Ptr}
-    (hs : special f g a = false) (hG : rv G a = .ptr q) (hr : Reg G a)
+    (hs : special f g a = false) (hG : (rv G a).asPtrWord = some q) (hr : Reg G a)
     (hfr : ∀ y, G.regs[a]? = some (some y) →
       ∃ y', T.regs[a]? = some (some y') ∧ Sem.Refines (ecCv tabs f g a y) y') :
-    rv T a = .ptr q := by
+    (rv T a).asPtrWord = some q := by
   obtain ⟨y', hy', hr'⟩ := hfr _ (reg_rv hr)
-  rw [ecCv_of_not_special hs, hG] at hr'
-  cases hr'
-  exact rv_of hy'
+  rw [ecCv_of_not_special hs] at hr'
+  rw [rv_of hy']
+  exact hr'.asPtrWord hG
 
 theorem ecw_front_mem {tabs : Tables} {f g : Func} {a : ID} {G T : Frame} {M : Mem}
     (hs : special f g a = false) (hG : rv G a = .mem M) (hr : Reg G a)
@@ -701,11 +704,11 @@ theorem ecw_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
   -- the leaf's address
   have hwin : (q.add (BitVec.ofNat 64 o)).inWindow = true :=
     inWindow_of_write hW (by rw [Sem.encode_size, ecT_eqE_size he1]; omega)
-  have ha : rv T wz.args[0]! = .ptr (q.add (BitVec.ofNat 64 o)) := by
+  have ha : (rv T wz.args[0]!).asPtrWord = some (q.add (BitVec.ofNat 64 o)) := by
     rcases ecw_addr hNC hL haddr hpT (fun hn => ⟨hEw _ (ecw_mem_three hzsz 0 (by decide)) hn,
       hLcl _ (ecw_mem_three hzsz 0 (by decide)) hn⟩) with h | h
     · exact h
-    · rw [h]; unfold PtrOps.ptrRes; rw [if_pos hwin]
+    · rw [h]; unfold Ptr.step?; rw [if_pos hwin]
   -- the write
   have hsz' : (encode (auxTy tabs wz.aux) (rv T wz.args[1]!)).size = lt.size := by
     rw [Sem.encode_size, ecT_eqE_size haux]
@@ -715,19 +718,17 @@ theorem ecw_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     rw [hwid, ← shapeOf_eq]; exact hsh
   exact ⟨_, ecs_store_eval hzop hRw hzargs htyz ha hMb hW2⟩
 
-/-- The address of a leaf store holds `q + o` (it evaluated to a pointer). -/
+/-- The address of a leaf store reads as `q + o` (it evaluated to a pointer word). -/
 theorem ecw_ptr_eq {v : Val} {q : Ptr} {o : Nat}
-    (h : v = .ptr (q.add (BitVec.ofNat 64 o)) ∨ v = PtrOps.ptrRes (q.add (BitVec.ofNat 64 o)))
-    (hp : v = .ptr (ecwPtr v)) : ecwPtr v = q.add (BitVec.ofNat 64 o) := by
+    (h : v.asPtrWord = some (q.add (BitVec.ofNat 64 o)) ∨ v.asPtrWord = q.step? (BitVec.ofNat 64 o))
+    (hp : v.asPtrWord = some (ecwPtr v)) : ecwPtr v = q.add (BitVec.ofNat 64 o) := by
   rcases h with h | h
-  · rw [h]; rfl
-  · rw [h] at hp ⊢
-    unfold PtrOps.ptrRes at hp ⊢
-    split
-    · rfl
-    · rename_i hn
-      rw [if_neg hn] at hp
-      cases hp
+  · rw [h] at hp; exact (Option.some.inj hp).symm
+  · rw [h] at hp
+    unfold Ptr.step? at hp
+    split at hp
+    · exact (Option.some.inj hp).symm
+    · cases hp
 
 /-- **The obligation of a wide store**: the source stores the wide call result `a = SelectN [i] c`
 at `p`; the target writes the register pieces `SelectN [first + k] c` leaf by leaf at `p + o`

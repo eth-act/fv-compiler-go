@@ -208,52 +208,41 @@ theorem bind_panic_iff {x : Res Val} {k : Val → Res Val} {e : Panic} {m : Mem}
 theorem nilCheck_ok {ctx ctx' : Sem.Ctx} {v v' : Value} (hv : v.op = .NilCheck)
     (hv' : v'.op = .NilCheck) {p : Val} {m m' : Mem} {y : Val}
     (h : memRoot ctx v [p, .mem m] = .ok y) : memRoot ctx' v' [p, .mem m'] = .ok y := by
-  unfold memRoot at h ⊢
-  rw [hv] at h; rw [hv']
-  cases p with
-  | ptr q =>
-    dsimp only at h ⊢
-    split at h
-    · cases h
-    · rw [if_neg ‹_›]; exact h
-  | int w x =>
-    cases w <;> (dsimp only at h ⊢) <;> (try simp at h)
-    split at h
-    · cases h
-    · simp_all
-  | _ => simp at h
+  obtain ⟨a, m1, q, he, hq, hr⟩ := memRoot_nilCheck_res hv h (fun _ h => nomatch h)
+  simp only [List.cons.injEq, Val.mem.injEq, and_true] at he
+  obtain ⟨rfl, rfl⟩ := he
+  rw [memRoot_nilCheck hv' _ _ hq]
+  split at hr
+  · cases hr
+  · rw [if_neg ‹_›]; exact hr.symm
 
 theorem nilCheck_panic {ctx ctx' : Sem.Ctx} {v v' : Value} (hv : v.op = .NilCheck)
     (hv' : v'.op = .NilCheck) {p : Val} {m : Mem} {e : Panic} {m0 : Mem}
     (h : memRoot ctx v [p, .mem m] = .panic e m0) : m0 = m ∧ memRoot ctx' v' [p, .mem m] = .panic e m := by
-  unfold memRoot at h ⊢
-  rw [hv] at h; rw [hv']
-  cases p with
-  | ptr q =>
-    dsimp only at h ⊢
-    split at h
-    · cases h; rw [if_pos ‹_›]; exact ⟨rfl, rfl⟩
-    · cases h
-  | int w x =>
-    cases w <;> (dsimp only at h ⊢) <;> (try simp at h)
-    split at h
-    · cases h; simp_all
-    · cases h
-  | _ => simp at h
+  obtain ⟨a, m1, q, he, hq, hr⟩ := memRoot_nilCheck_res hv h (fun _ h => nomatch h)
+  simp only [List.cons.injEq, Val.mem.injEq, and_true] at he
+  obtain ⟨rfl, rfl⟩ := he
+  rw [memRoot_nilCheck hv' _ _ hq]
+  split at hr
+  · cases hr; rw [if_pos ‹_›]; exact ⟨rfl, rfl⟩
+  · cases hr
 
 theorem frameBlk_ne_wbuf (tabs : Tables) (act : Nat) (n : AuxRef) : frameBlk tabs act n ≠ .wbuf := by
   unfold frameBlk; split <;> simp
 
 theorem store_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Store)
-    (h : memRoot ctx u argv = .ok y) : ∃ q x M M', argv = [.ptr q, x, .mem M] ∧
-      M.write q (encode (auxTy ctx.tabs u.aux) x) = some M' ∧ y = .mem M' := by
+    (h : memRoot ctx u argv = .ok y) : ∃ a q x M M', argv = [a, x, .mem M] ∧
+      a.asPtrWord = some q ∧ M.write q (encode (auxTy ctx.tabs u.aux) x) = some M' ∧
+      y = .mem M' := by
   unfold memRoot at h
   rw [hu] at h
   split at h
   all_goals first
     | contradiction
-    | (simp only [writeRes] at h; split at h
-       · cases h; exact ⟨_, _, _, _, rfl, ‹_›, rfl⟩
+    | (split at h
+       · simp only [writeRes] at h; split at h
+         · cases h; exact ⟨_, _, _, _, _, rfl, ‹_›, ‹_›, rfl⟩
+         · cases h
        · cases h)
     | (simp only at h; split at h <;> cases h)
 
@@ -282,25 +271,15 @@ theorem varLive_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu 
 
 theorem nilCheck_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .NilCheck)
     (h : memRoot ctx u argv = .ok y) : ∃ p M, argv = [p, .mem M] := by
-  unfold memRoot at h
-  rw [hu] at h
-  split at h
-  all_goals first
-    | contradiction
-    | exact ⟨_, _, rfl⟩
-    | (simp only at h; split at h <;> cases h)
+  obtain ⟨_, _, _, he, -, -⟩ := memRoot_nilCheck_res hu h (fun _ h => nomatch h)
+  exact ⟨_, _, he⟩
 
 theorem nilCheck_inv_panic {ctx : Sem.Ctx} {u : Value} {argv : List Val} {e : Panic} {m : Mem}
     (hu : u.op = .NilCheck) (h : memRoot ctx u argv = .panic e m) : ∃ p, argv = [p, .mem m] := by
-  unfold memRoot at h
-  rw [hu] at h
-  split at h
-  all_goals first
-    | contradiction
-    | (simp only at h; split at h
-       · cases h; exact ⟨_, rfl⟩
-       · cases h)
-    | (simp only at h; split at h <;> cases h)
+  obtain ⟨_, _, _, rfl, -, hr⟩ := memRoot_nilCheck_res hu h (fun _ h => nomatch h)
+  split at hr
+  · cases hr; exact ⟨_, rfl⟩
+  · cases hr
 
 theorem append_single_inj {L L' : List Val} {a b : Val} (h : L ++ [a] = L' ++ [b]) : L = L' ∧ a = b := by
   have := List.append_inj' h rfl
@@ -314,12 +293,12 @@ theorem memRoot_copy {ctxS ctxT : Sem.Ctx} (htabs : ctxT.tabs = ctxS.tabs) (hact
     (h : memRoot ctxS u (L ++ [.mem M]) = .ok y) :
     ∃ M' m', y = .mem M' ∧ memRoot ctxT w (L ++ [.mem m]) = .ok (.mem m') ∧ W M' m' := by
   rcases hu with hu | hu | hu
-  · obtain ⟨q, x, M0, M', he, hwr, rfl⟩ := store_inv hu h
-    obtain ⟨hL, hM⟩ := append_single_inj (L' := [.ptr q, x]) (b := .mem M0) he
+  · obtain ⟨a, q, x, M0, M', he, hq, hwr, rfl⟩ := store_inv hu h
+    obtain ⟨hL, hM⟩ := append_single_inj (L' := [a, x]) (b := .mem M0) he
     cases hM; subst hL
     obtain ⟨m', hm', hW'⟩ := hW.write hwr
     refine ⟨M', m', rfl, ?_, hW'⟩
-    simp only [memRoot, hop, hu, List.cons_append, List.nil_append, writeRes, haux, htabs, hm']
+    simp only [memRoot, hop, hu, List.cons_append, List.nil_append, hq, writeRes, haux, htabs, hm']
   · obtain ⟨M0, n, he, hn, rfl⟩ := varDef_inv hu h
     obtain ⟨hL, hM⟩ := append_single_inj (L' := []) (b := .mem M0) he
     cases hM; subst hL
@@ -454,7 +433,7 @@ theorem local_load {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs 
     obtain ⟨v, hv⟩ := load_flag (hS _ _ hM)
     refine ⟨v.setWidth 32, ?_⟩
     show (loadOp (.int .w32) [.ptr flagPtr, .mem M]).retype (.int .w32) = _
-    simp only [loadOp, flagPtr]
+    simp only [loadOp, flagPtr, Val.asPtrWord]
     rw [hv]
     simp [Val.retype]
 
@@ -771,7 +750,7 @@ theorem local_bstore {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {r
   refine ⟨.mem m', ?_, ?_⟩
   · rw [stepV_eq hw, evalValue_of (L := [_, _, _]) (by rw [hargs]; exact ⟨hzo, hzv, hzm, trivial⟩),
       tys_get hw hid, hty, DAE.evalOp_memRoot (.inl hop)]
-    simp only [memRoot, hop, writeRes]
+    simp only [memRoot, hop, writeRes, Val.asPtrWord]
     rw [show (Ctx.make tabs g).tabs = tabs from rfl, haux, hm']
     rfl
   · simp only [QR, hrole]

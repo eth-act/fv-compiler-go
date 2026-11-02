@@ -26,16 +26,20 @@ theorem evalOp_nilCheck {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv :
     {ty : Ty} (h : v.op = .NilCheck) : evalOp env ctx fr v argv ty = memRoot ctx v argv := by
   simp only [evalOp, h]
 
+/-- `NN` through `Val.asPtrWord`: the word reads as a pointer outside `Blk.nil`. -/
+theorem nn_iff {q : Val} : NN q ↔ ∃ p, q.asPtrWord = some p ∧ p.blk ≠ .nil := by
+  rcases q with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+    simp [NN, Val.asPtrWord]
+
 /-- A nil check that passes returns its pointer, which it passes on. -/
 theorem nilCheck_ok {ctx : Ctx} {n : Value} {argv : List Val} {r : Val} (hn : n.op = .NilCheck)
     (h : memRoot ctx n argv = .ok r) : ∃ a, argv = [r, a] ∧ NN r := by
-  unfold memRoot at h
-  rw [hn] at h
-  split at h <;> (try simp only [reduceCtorEq] at *)
-  all_goals first
-    | (split at h <;> cases h <;> rename_i hh <;> exact ⟨_, rfl, by simpa [NN] using hh⟩)
-    | (split at h <;> cases h)
-    | skip
+  obtain ⟨a, m, p, rfl, hp, he⟩ := memRoot_nilCheck_res hn h (fun _ => nofun)
+  by_cases hb : p.blk = .nil
+  · simp [hb] at he
+  · simp only [hb, beq_iff_eq, ↓reduceIte, Res.ok.injEq] at he
+    subst he
+    exact ⟨_, rfl, nn_iff.2 ⟨p, hp, hb⟩⟩
 
 /-- A nil check that panics does so on a pointer or address it does not pass on, with its
 memory argument. -/
@@ -43,14 +47,16 @@ theorem nilCheck_panic {ctx : Ctx} {n : Value} {argv : List Val} {e : Panic} {m 
     (hn : n.op = .NilCheck) (h : memRoot ctx n argv = .panic e m) :
     ∃ q, argv = [q, .mem m] ∧ e = .nilDeref ∧ ¬ NN q ∧
       ((∃ p, q = .ptr p) ∨ ∃ x, q = .int .w64 x) := by
-  unfold memRoot at h
-  rw [hn] at h
-  split at h <;> (try simp only [reduceCtorEq] at *)
-  all_goals first
-    | (split at h <;> cases h <;> rename_i hh <;>
-        exact ⟨_, rfl, rfl, by simp only [NN, Classical.not_not]; simpa using hh, by simp⟩)
-    | (split at h <;> cases h)
-    | skip
+  obtain ⟨a, m', p, rfl, hp, he⟩ := memRoot_nilCheck_res hn h (fun _ => nofun)
+  by_cases hb : p.blk = .nil
+  · simp only [hb, beq_self_eq_true, ↓reduceIte, Res.panic.injEq] at he
+    obtain ⟨rfl, rfl⟩ := he
+    refine ⟨a, rfl, rfl, fun hn => ?_, ?_⟩
+    · obtain ⟨p', hp', hb'⟩ := nn_iff.1 hn
+      rw [hp] at hp'; cases hp'; exact hb' hb
+    · rcases a with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+        simp_all [Val.asPtrWord]
+  · simp [hb] at he
 
 /-- A nil check panics on a pointer or address it does not pass on. -/
 theorem nilCheck_panic_of {ctx : Ctx} {n : Value} {q : Val} {m : Mem} (hn : n.op = .NilCheck)
@@ -58,9 +64,9 @@ theorem nilCheck_panic_of {ctx : Ctx} {n : Value} {q : Val} {m : Mem} (hn : n.op
     memRoot ctx n [q, .mem m] = .panic .nilDeref m := by
   rcases hs with ⟨p, rfl⟩ | ⟨x, rfl⟩
   · simp only [NN, Classical.not_not] at hq
-    unfold memRoot; rw [hn]; simp [hq]
+    unfold memRoot; rw [hn]; simp [Val.asPtrWord, hq]
   · simp only [NN, Classical.not_not] at hq
-    unfold memRoot; rw [hn]; simp [hq]
+    unfold memRoot; rw [hn]; simp [Val.asPtrWord, hq]
 
 /-- A nil check on a value it passes on returns it, on any memory, and never panics. -/
 theorem nilCheck_nn {ctx : Ctx} {n : Value} {q a : Val} (hn : n.op = .NilCheck) (hq : NN q) :
@@ -71,13 +77,8 @@ theorem nilCheck_nn {ctx : Ctx} {n : Value} {q a : Val} (hn : n.op = .NilCheck) 
     simp only [List.cons.injEq] at hq'
     rw [hq'.1] at hq; exact hnn hq
   · subst ha
-    match q, hq with
-    | .ptr p, hq =>
-      simp only [NN] at hq
-      unfold memRoot; rw [hn]; simp [hq]
-    | .int .w64 x, hq =>
-      simp only [NN] at hq
-      unfold memRoot; rw [hn]; simp [hq]
+    obtain ⟨p, hp, hb⟩ := nn_iff.1 hq
+    unfold memRoot; rw [hn]; simp [hp, hb]
 
 /-- A value no nil check panics on and that pointer arithmetic keeps so: a pointer into an
 allocation, an integer address of one, or any non-address value. -/

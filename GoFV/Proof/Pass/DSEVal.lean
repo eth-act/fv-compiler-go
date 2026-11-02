@@ -60,20 +60,22 @@ theorem VRel.retype_mem {Q : Blk → Nat → Prop} {mS mT : Mem} (t : Ty) (h : M
 variable {env : Env} {tabs : Tables} {f g : Func}
 
 theorem ptrAlloc_val {fr : Frame} {A : ID → Prop} (H : Avail env tabs f fr A) {p : ID} (hp : A p)
-    {a : CSE.Alloc} (h : ptrAlloc tabs f p = some a) {P : Ptr}
-    (hv : fr.regs[p]? = some (some (.ptr P))) : P.blk = blkOf a ∧
+    {a : CSE.Alloc} (h : ptrAlloc tabs f p = some a) {pv : Val} {P : Ptr}
+    (hv : fr.regs[p]? = some (some pv)) (hP : pv.asPtrWord = some P) : P.blk = blkOf a ∧
       P.off = BitVec.ofInt 64 (CSE.baseOff tabs f 64 p 0).2 := by
   obtain ⟨hAb, hrel⟩ := baseOff_rel H 64 p 0 hp
   obtain ⟨bv, hbv⟩ := H.reg hAb
   have hb := allocOf_val H hAb h hbv
   subst hb
-  have := ((hrel _ _ hv hbv).2 _ _ rfl).resolve_left nofun
-  cases this
+  have := ((hrel _ _ hv hbv).2 _ _ rfl).resolve_left (by rintro rfl; cases hP)
+  subst this
+  cases hP
   simp
 
 theorem ptrLoc_val {fr : Frame} {A : ID → Prop} (H : Avail env tabs f fr A) {p : ID} (hp : A p)
-    {a : CSE.Alloc} {o : Int} (h : ptrLoc tabs f p = some (a, o)) {P : Ptr}
-    (hv : fr.regs[p]? = some (some (.ptr P))) : P.blk = blkOf a ∧ P.off.toNat = o.toNat ∧ 0 ≤ o := by
+    {a : CSE.Alloc} {o : Int} (h : ptrLoc tabs f p = some (a, o)) {pv : Val} {P : Ptr}
+    (hv : fr.regs[p]? = some (some pv)) (hP : pv.asPtrWord = some P) :
+    P.blk = blkOf a ∧ P.off.toNat = o.toNat ∧ 0 ≤ o := by
   unfold ptrLoc at h
   cases ha : ptrAlloc tabs f p with
   | none => rw [ha] at h; cases h
@@ -83,17 +85,18 @@ theorem ptrLoc_val {fr : Frame} {A : ID → Prop} (H : Avail env tabs f fr A) {p
     split at h
     · rename_i hc
       cases h
-      obtain ⟨hb, hoff⟩ := ptrAlloc_val H hp ha hv
+      obtain ⟨hb, hoff⟩ := ptrAlloc_val H hp ha hv hP
       refine ⟨hb, ?_, hc.1⟩
       rw [hoff, BitVec.toNat_ofInt]
       congr 1
       exact Int.emod_eq_of_lt hc.1 (by have := hc.2; omega)
     · cases h
 
-/-- The bytes a store with a static range writes, if its pointer is the range's. -/
+/-- The bytes a store with a static range writes, if its pointer word is the range's. -/
 theorem region_range {fv : Value} {iv : Iv} (h : range? tabs f fv = some iv) {fr : Frame}
     {A : ID → Prop} (H : Avail env tabs f fr A) (hA : ∀ a ∈ fv.args, A a) {P : Ptr}
-    (hP : ∀ p, fv.args[0]? = some p → fr.regs[p]? = some (some (.ptr P))) {b : Blk} {k : Nat} :
+    (hP : ∀ p, fv.args[0]? = some p → ∃ pv, fr.regs[p]? = some (some pv) ∧ pv.asPtrWord = some P)
+    {b : Blk} {k : Nat} :
     Region P (wsize tabs fv) b k ↔ b = blkOf iv.1 ∧ iv.2.1 ≤ (k : Int) ∧ (k : Int) < iv.2.2 := by
   unfold range? at h
   cases hp : fv.args[0]? with
@@ -107,7 +110,8 @@ theorem region_range {fv : Value} {iv : Iv} (h : range? tabs f fv = some iv) {fr
       obtain ⟨a, o⟩ := ao
       rw [hl] at h
       cases h
-      obtain ⟨hb, ho, h0⟩ := ptrLoc_val H (hA p (Array.mem_of_getElem? hp)) hl (hP p hp)
+      obtain ⟨pv, hpv, hpP⟩ := hP p hp
+      obtain ⟨hb, ho, h0⟩ := ptrLoc_val H (hA p (Array.mem_of_getElem? hp)) hl hpv hpP
       unfold Region
       rw [hb, ho]
       simp only
@@ -221,13 +225,15 @@ theorem read_size {M : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (h : M.read p 
       · cases h
 
 /-- What a `Store`/`Zero`/`Move` that succeeds does, and that it does the same write on another
-memory (a `Move` reading it alike). -/
+memory (a `Move` reading it alike). Addresses are pointer words (`Val.asPtrWord`). -/
 theorem write_shape {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
     (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move) (h : memRoot ctx v argv = .ok y) :
-    ∃ p L M bs M1, argv = .ptr p :: (L ++ [.mem M]) ∧ M.write p bs = some M1 ∧ y = .mem M1 ∧
-      bs.size = wsize ctx.tabs v ∧ (v.op = .Move → ∃ s, L = [.ptr s] ∧ M.read s bs.size = some bs) ∧
-      ∀ M' M1', (∀ s, v.op = .Move → L = [.ptr s] → M'.read s bs.size = M.read s bs.size) →
-        M'.write p bs = some M1' → memRoot ctx v (.ptr p :: (L ++ [.mem M'])) = .ok (.mem M1') := by
+    ∃ a p L M bs M1, argv = a :: (L ++ [.mem M]) ∧ a.asPtrWord = some p ∧
+      M.write p bs = some M1 ∧ y = .mem M1 ∧ bs.size = wsize ctx.tabs v ∧
+      (v.op = .Move → ∃ b s, L = [b] ∧ b.asPtrWord = some s ∧ M.read s bs.size = some bs) ∧
+      ∀ M' M1', (∀ b s, v.op = .Move → L = [b] → b.asPtrWord = some s →
+          M'.read s bs.size = M.read s bs.size) →
+        M'.write p bs = some M1' → memRoot ctx v (a :: (L ++ [.mem M'])) = .ok (.mem M1') := by
   rcases hop with hop | hop | hop
   · unfold memRoot at h
     simp only [hop] at h
@@ -236,12 +242,16 @@ theorem write_shape {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
       | contradiction
       | (split at h <;> cases h <;> done)
       | skip
-    rename_i p x M _
+    rename_i a x M _
+    cases hp : a.asPtrWord with
+    | none => rw [hp] at h; cases h
+    | some p =>
+    rw [hp] at h
     obtain ⟨M1, hw, rfl⟩ := writeRes_ok h
-    refine ⟨p, [x], M, _, M1, rfl, hw, rfl, ?_, (fun h => by rw [hop] at h; cases h), ?_⟩
+    refine ⟨a, p, [x], M, _, M1, rfl, hp, hw, rfl, ?_, (fun h => by rw [hop] at h; cases h), ?_⟩
     · unfold wsize; rw [hop]; exact Sem.encode_size _ _
     · intro M' M1' _ hw'
-      simp only [List.cons_append, List.nil_append, memRoot, hop, hw']
+      simp only [List.cons_append, List.nil_append, memRoot, hop, hp, hw']
       rfl
   · unfold memRoot at h
     simp only [hop] at h
@@ -250,35 +260,46 @@ theorem write_shape {ctx : Ctx} {v : Value} {argv : List Val} {y : Val}
       | contradiction
       | (split at h <;> cases h <;> done)
       | skip
-    rename_i p M _
+    rename_i a M _
+    cases hp : a.asPtrWord with
+    | none => rw [hp] at h; cases h
+    | some p =>
+    rw [hp] at h
     obtain ⟨M1, hw, rfl⟩ := writeRes_ok h
-    refine ⟨p, [], M, _, M1, rfl, hw, rfl, ?_, (fun h => by rw [hop] at h; cases h), ?_⟩
+    refine ⟨a, p, [], M, _, M1, rfl, hp, hw, rfl, ?_, (fun h => by rw [hop] at h; cases h), ?_⟩
     · unfold wsize; rw [hop]; simp
     · intro M' M1' _ hw'
-      simp only [List.nil_append, memRoot, hop, hw']
+      simp only [List.nil_append, memRoot, hop, hp, hw']
       rfl
   · unfold memRoot at h
     simp only [hop] at h
     split at h
     all_goals first
       | contradiction
-      | skip
-    all_goals first
       | (split at h <;> cases h <;> done)
       | skip
-    rename_i d s M _
+    rename_i a b M _
+    cases hp : a.asPtrWord with
+    | none => rw [hp] at h; cases h
+    | some d =>
+    cases hq : b.asPtrWord with
+    | none => rw [hp, hq] at h; cases h
+    | some s =>
+    rw [hp, hq] at h
+    simp only at h
     cases hr : M.read s v.auxInt.toInt.toNat with
     | none => rw [hr] at h; cases h
     | some bs =>
       rw [hr] at h
       obtain ⟨M1, hw, rfl⟩ := writeRes_ok h
       have hsz := read_size hr
-      refine ⟨d, [.ptr s], M, bs, M1, rfl, hw, rfl, ?_, fun _ => ⟨s, rfl, by rw [hsz, hr]⟩, ?_⟩
+      refine ⟨a, d, [b], M, bs, M1, rfl, hp, hw, rfl, ?_,
+        fun _ => ⟨b, s, rfl, hq, by rw [hsz, hr]⟩, ?_⟩
       · unfold wsize; rw [hop]; simpa using hsz
       · intro M' M1' hrd hw'
         have hr' : M'.read s v.auxInt.toInt.toNat = some bs := by
-          rw [← hsz, hrd s hop rfl, hsz, hr]
-        simp only [List.cons_append, List.nil_append, memRoot, hop, hr', hw']
+          rw [← hsz, hrd b s hop rfl hq, hsz, hr]
+        simp only [List.cons_append, List.nil_append, memRoot, hop, hp, hq, hr', hw']
         rfl
 
 /-- What a `VarDef` that succeeds does, and on another memory. -/

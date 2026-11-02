@@ -242,14 +242,17 @@ def renderBytes (tabs : Tables) (m : Mem) : Nat → TypeRef → Array Byte → N
       let size := (typeSize? tabs t).getD 0
       match td.kind, td.tail, decode bs off ty with
       | .BOOL, _, .bool b => toString b
-      | .STRING, _, .agg [.ptr p, .int _ n] =>
+      | .STRING, _, .agg [w, .int _ n] =>
         if n.toNat == 0 then "\"\"" else
-        match m.read p n.toNat with
+        match w.asPtrWord.bind (m.read · n.toNat) with
         | some cs => match cs.mapM (fun | .b x => some (UInt8.ofNat x.toNat) | _ => none) with
           | some u => goQuote u
           | none => "<poison string>"
         | none => "<bad string>"
-      | .SLICE, .elem e, .agg [.ptr p, .int _ n, _] =>
+      | .SLICE, .elem e, .agg [w, .int _ n, _] =>
+        match w.asPtrWord with
+        | none => "<bad slice>"
+        | some p =>
         if p.isNil then "nil" else
         let es := (typeSize? tabs e).getD 0
         match m.read p (n.toNat * es) with
@@ -263,7 +266,10 @@ def renderBytes (tabs : Tables) (m : Mem) : Nat → TypeRef → Array Byte → N
       | .STRUCT, .struct fs, _ =>
         "{" ++ ",".intercalate (fs.toList.map fun f =>
           renderBytes tabs m d f.type bs (off + (f.offset.getD 0).toNat)) ++ "}"
-      | .PTR, .elem e, .ptr p =>
+      | .PTR, .elem e, w =>
+        match w.asPtrWord with
+        | none => s!"<{w.render}>"
+        | some p =>
         if p.isNil then "nil" else
         let es := (typeSize? tabs e).getD 0
         match m.read p es with

@@ -256,7 +256,9 @@ theorem ec_leafPaths_head_hasTy {t : Ty} {y : Val} (hy : y.hasTy t = true) {k : 
       simp only [leafPaths, List.mem_cons, List.cons.injEq, Prod.mk.injEq, List.not_mem_nil,
         or_false] at hm
       rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩
-      · cases p <;> simp_all [Comp.select, Val.hasTy, Val.isPtrOrPoison]
+      · cases p <;> first
+          | (simp_all [Comp.select, Val.hasTy, Val.isPtrWord]; done)
+          | (rename_i w _; cases w <;> simp_all [Comp.select, Val.hasTy, Val.isPtrWord])
       · rfl
     | poison => rfl
     | _ => simp [Val.hasTy] at hy
@@ -267,7 +269,9 @@ theorem ec_leafPaths_head_hasTy {t : Ty} {y : Val} (hy : y.hasTy t = true) {k : 
       simp only [leafPaths, List.mem_cons, List.cons.injEq, Prod.mk.injEq, List.not_mem_nil,
         or_false] at hm
       rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩
-      · cases p <;> simp_all [Comp.select, Val.hasTy, Val.isPtrOrPoison]
+      · cases p <;> first
+          | (simp_all [Comp.select, Val.hasTy, Val.isPtrWord]; done)
+          | (rename_i w _; cases w <;> simp_all [Comp.select, Val.hasTy, Val.isPtrWord])
       · rfl
       · rfl
     | poison => rfl
@@ -301,7 +305,9 @@ theorem ec_agg_retype_ptr (vs : List Val) (t : Ty) (e : Option Nat) :
   | _ => rfl
 
 theorem ec_hasTy_ptr (v : Val) (e e' : Option Nat) : v.hasTy (.ptr e) = v.hasTy (.ptr e') := by
-  cases v <;> rfl
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
 
 /-- A value of an aggregate shape retyped at a pointer is `poison`. -/
 theorem eco_retype_ptr_of_agg {v : Val} {fs : List (Nat × Ty)} {n : Nat} (e : Option Nat)

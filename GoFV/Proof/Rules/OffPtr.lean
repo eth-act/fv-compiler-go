@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.Generic.Values08
 
 /-!
@@ -20,8 +21,25 @@ theorem r_generic_964_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
   obtain ⟨⟨el0, h0⟩, ⟨el1, h1⟩⟩ := hat
   rw [h1] at hlt
   rw [h0] at hty ⊢
-  rcases val_of_hasTy_ptr hlt with hl | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
+  rcases val_of_hasTy_ptr hlt with hl | ⟨x, hl⟩ | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
   · exact Refines.poison _
+  · by_cases hw : ((Ptr.ofAddr x).add (BitVec.ofInt 64 (e.auxInt [0]).toInt)).inWindow = true
+    · have h1 : PtrOps.wordRes x (BitVec.ofInt 64 (e.auxInt [0]).toInt) =
+          .int .w64 (x + BitVec.ofInt 64 (e.auxInt [0]).toInt) := by
+        unfold PtrOps.wordRes; rw [if_pos hw]
+      simp only [PtrOps.offPtr] at hty ⊢
+      rw [h1] at hty ⊢
+      have hr : ∀ z, Val.retype (.ptr el0) (.int .w64 z) = .int .w64 z := fun _ => rfl
+      simp only [hr, PtrOps.offPtr] at hty ⊢
+      rw [PtrOps.wordRes_wordRes hw] at hty ⊢
+      rw [ofInt_int64_ofInt (by decide), ofInt_wrapInt_true (by decide), BitVec.ofInt_add]
+      rw [BitVec.add_comm (BitVec.ofInt 64 (e.auxInt [0]).toInt)] at hty ⊢
+      exact refines_retype_of_hasTy hty
+    · have h1 : PtrOps.wordRes x (BitVec.ofInt 64 (e.auxInt [0]).toInt) = .poison := by
+        unfold PtrOps.wordRes; rw [if_neg hw]
+      simp only [PtrOps.offPtr] at hty ⊢
+      rw [h1]
+      exact Refines.poison _
   · simp only [PtrOps.offPtr, retype_ptrRes_ptr] at hty ⊢
     rw [ofInt_int64_ofInt (by decide), ofInt_wrapInt_true (by decide), BitVec.ofInt_add,
       BitVec.add_comm]
@@ -38,8 +56,14 @@ theorem r_generic_965_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
   obtain ⟨el0, h0⟩ := hat
   simp only [DV.int.injEq] at hc
   rw [h0] at hlt
-  rcases val_of_hasTy_ptr hlt with hl | ⟨p, hl⟩ <;> rw [hl]
+  rcases val_of_hasTy_ptr hlt with hl | ⟨x, hl⟩ | ⟨p, hl⟩ <;> rw [hl]
   · exact Refines.poison _
+  · simp only [PtrOps.offPtr, hc, PtrOps.wordRes]
+    have : x + BitVec.ofInt 64 (0 : Int) = x := by simp
+    rw [this]
+    split
+    · exact Refines.refl _
+    · exact Refines.poison _
   · simp only [PtrOps.offPtr, hc]
     have : p.add (BitVec.ofInt 64 0) = p := by simp [Ptr.add]
     rw [this]; exact ptrRes_refines p

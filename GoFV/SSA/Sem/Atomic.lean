@@ -137,18 +137,18 @@ def prefetch (v : Value) : Val → Res Val
 
 /-- A read-modify-write root `p x mem`. -/
 def rmwRoot (v : Value) : Val → Val → Val → Res Val
-  | .ptr p, x, .mem m =>
-    match info? v.op with
-    | some (k, t) => rmw v k t p x m
-    | none => unmodelled v
+  | a, x, .mem m =>
+    match a.asPtrWord, info? v.op with
+    | some p, some (k, t) => rmw v k t p x m
+    | _, _ => unmodelled v
   | _, _, _ => unmodelled v
 
 /-- A compare-and-swap root `p old new mem`. -/
 def casRoot (v : Value) : Val → Val → Val → Val → Res Val
-  | .ptr p, o, n, .mem m =>
-    match casWidth? v.op with
-    | some w => cas v w p o n m
-    | none => unmodelled v
+  | a, o, n, .mem m =>
+    match a.asPtrWord, casWidth? v.op with
+    | some p, some w => cas v w p o n m
+    | _, _ => unmodelled v
   | _, _, _, _ => unmodelled v
 
 end Atomic

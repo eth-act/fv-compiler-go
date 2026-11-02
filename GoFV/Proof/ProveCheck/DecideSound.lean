@@ -452,7 +452,8 @@ theorem decides_sound (h : AsmHolds D tabs ρ A) :
                       | none => rw [hu] at hwa; cases hwa
                       | some u =>
                         rw [hu] at hwa
-                        have hsh := den_int_shape h.typed hu ha
+                        have hsh := (den_int_shape h.typed hu ha).resolve_right
+                          (by rintro ⟨e', hsh⟩; simp [hsh, Ty.width?] at hwa)
                         simp only [Option.bind_some, hsh, Ty.width?, Option.some.injEq] at hwa
                         subst hwa
                         have hbN : den D tabs ρ m b = .int wi n' := hb ▸ asInt_eq hn

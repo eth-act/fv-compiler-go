@@ -91,8 +91,7 @@ theorem constVal_sound {w : Width} {z : ID} {c : Int} (h : constVal D w z = some
       | zero => simp [den] at hz
       | succ K =>
         rw [den_succ_term hd ht, rTab_opVal hl] at hz
-        have hty := retype_int_shape hz
-        rw [hty] at hz
+        replace hz := retype_int_int hz
         simp only [rOpEval, Conv.const] at hz
         rw [← retype_int_val hz]
     · cases h
@@ -119,8 +118,7 @@ theorem addConst_sound {w : Width} {x a : ID} {c : Int} (h : addConst D w x = so
       · rename_i hw
         simp only [beq_iff_eq] at hw; subst w'
         rw [rTab_opVal hl] at hx
-        have hty := retype_int_shape hx
-        rw [hty] at hx
+        replace hx := retype_int_int hx
         simp only [Ty.width?, rOpEval] at hx
         obtain ⟨u, u', A0, B0, hv, rfl, rfl, hf⟩ := int2_res hx
         have hy := retype_int_val hf
@@ -158,8 +156,7 @@ theorem addConst_sound {w : Width} {x a : ID} {c : Int} (h : addConst D w x = so
         simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
         rw [rTab_opVal hl] at hx
-        have hty := retype_int_shape hx
-        rw [hty] at hx
+        replace hx := retype_int_int hx
         simp only [Ty.width?, rOpEval] at hx
         obtain ⟨u, u', A0, B0, hv, rfl, rfl, hf⟩ := int2_res hx
         have hy := retype_int_val hf

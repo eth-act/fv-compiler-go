@@ -16,10 +16,11 @@ model's memory contracts, `Env.MemOps`):
 * the call never panics (`callOp_memclr_not_panic`, `callOp_memmove_not_panic`), and `SelectN` is
   no root;
 * in a source frame where the call is available (`CSE.Mem.Avail`, it is a root of `f`), its
-  arguments have registers: the pointers are pointers (`Proof.Typed` at a pointer shape leaves a
-  pointer or `poison`, and a `poison` pointer makes the contract stuck: `callOp_memclr_ptr`,
-  `callOp_memmove_ptr`), the size is its constant term's value (`termConst_reg`: each node of an
-  available term evaluates from its arguments' registers); so the call's memory `Mc`
+  arguments have registers: the pointers are pointer words (`Proof.Typed` at a pointer shape
+  leaves a pointer word or `poison`, and a `poison` pointer makes the contract stuck:
+  `callOp_memclr_ptr`, `callOp_memmove_ptr`), the size is its constant term's value
+  (`termConst_reg`: each node of an available term evaluates from its arguments' registers); so
+  the call's memory `Mc`
   refines the plain write `M'` (`callOp_memclr`, `callOp_memmove`), which the target's
   `Zero`/`Move` computes from the same registers; the source's `SelectN [0]` of the call's tuple
   (retyped at the call's and at `x`'s type) is `Mc` or `poison`, refined by the target's `M'`
@@ -146,10 +147,10 @@ private theorem ptrArgB_spec {tabs : Tables} {f : Func} {p : ID} (h : ptrArgB ta
 
 /-! ## Registers -/
 
-/-- A pointer-shaped word: a pointer or `poison`. -/
-private def PtrW (a : Val) : Prop := a = .poison ∨ ∃ P, a = .ptr P
+/-- A pointer-shaped word: a pointer word (`Val.asPtrWord`) or `poison`. -/
+private def PtrW (a : Val) : Prop := a = .poison ∨ ∃ P, a.asPtrWord = some P
 
-/-- A register of a `Typed` frame at a pointer shape is a pointer or `poison`. -/
+/-- A register of a `Typed` frame at a pointer shape is a pointer word or `poison`. -/
 private theorem ptrW_of_typed {ctx : Ctx} {S : Frame} (hT : Proof.Typed ctx S) {p : ID}
     {o : Option Nat}
     (hty : ctx.tys[p]? = some (.ptr o)) {y : Val} (hy : S.regs[p]? = some (some y)) : PtrW y := by
@@ -158,58 +159,30 @@ private theorem ptrW_of_typed {ctx : Ctx} {S : Frame} (hT : Proof.Typed ctx S) {
   cases y with
   | poison => exact .inl rfl
   | ptr P => exact .inr ⟨P, rfl⟩
-  | int w x => cases w <;> cases h
+  | int w x => cases w <;> first | exact .inr ⟨_, rfl⟩ | cases h
   | _ => cases h
 
 private theorem ofPieces_ptrW (o : Option Nat) {a : Val} (ha : PtrW a) :
     ofPieces (.ptr o) [a] = a := by
-  rcases ha with rfl | ⟨P, rfl⟩
+  rcases ha with rfl | ⟨P, hP⟩
   · rw [ABI.ofPieces_eq_build rfl
       (by show ABI.List.Forall₂ _ _ [(0, _)]; exact .cons rfl .nil)]; rfl
-  · exact ofPieces_ptr o P
+  · exact ofPieces_ptrWord o hP
 
 private theorem retype_ptrW {a : Val} (ha : PtrW a) (o : Option Nat) : a.retype (.ptr o) = a := by
-  rcases ha with rfl | ⟨P, rfl⟩ <;> rfl
+  rcases ha with rfl | ⟨P, hP⟩
+  · rfl
+  · exact retype_ptrWord hP o
 
-private theorem decodeArgs_twoW {tabs : Tables} {act : Nat} {m : Mem} {ps : List ABIParam}
-    (h : inShapes tabs 2 ps = true) {a : Val} (ha : PtrW a) (x : BitVec 64) :
-    decodeArgs tabs act m (ps.filter (!·.out)) [a, .int .w64 x] = some [a, .int .w64 x] := by
-  have hl : ps.length = 2 := by simp only [inShapes, Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1
-  rcases ps with _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, rest⟩⟩⟩ <;> simp at hl
-  simp only [inShapes, List.dropLast, List.all, List.getLast?_cons_cons, List.getLast?_singleton,
-    Option.all, Bool.and_eq_true, Bool.and_true] at h
-  obtain ⟨⟨-, h1⟩, h2⟩ := h
-  obtain ⟨h11, h12, o, h13⟩ := inShape_ptr h1
-  obtain ⟨h21, h22, h23⟩ := inShape_int h2
-  simp only [List.filter, h11, h21, Bool.not_false]
-  rw [decodeArgs_reg h12, decodeArgs_reg h22, h13, h23, ofPieces_ptrW o ha, ofPieces_int]
-  rfl
-
-private theorem decodeArgs_threeW {tabs : Tables} {act : Nat} {m : Mem} {ps : List ABIParam}
-    (h : inShapes tabs 3 ps = true) {a b : Val} (ha : PtrW a) (hb : PtrW b) (x : BitVec 64) :
-    decodeArgs tabs act m (ps.filter (!·.out)) [a, b, .int .w64 x] = some [a, b, .int .w64 x] := by
-  have hl : ps.length = 3 := by simp only [inShapes, Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1
-  rcases ps with _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, _ | ⟨p4, rest⟩⟩⟩⟩ <;> simp at hl
-  simp only [inShapes, List.dropLast, List.all, List.getLast?_cons_cons, List.getLast?_singleton,
-    Option.all, Bool.and_eq_true, Bool.and_true] at h
-  obtain ⟨⟨-, h1, h2⟩, h3⟩ := h
-  obtain ⟨h11, h12, o, h13⟩ := inShape_ptr h1
-  obtain ⟨h21, h22, o', h23⟩ := inShape_ptr h2
-  obtain ⟨h31, h32, h33⟩ := inShape_int h3
-  simp only [List.filter, h11, h21, h31, Bool.not_false]
-  rw [decodeArgs_reg h12, decodeArgs_reg h22, decodeArgs_reg h32, h13, h23, h33,
-    ofPieces_ptrW o ha, ofPieces_ptrW o' hb, ofPieces_int]
-  rfl
-
-/-- A returning `memclrNoHeapPointers` call got a pointer, not `poison`. -/
+/-- A returning `memclrNoHeapPointers` call got a pointer word, not `poison`. -/
 private theorem callOp_memclr_ptr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {a : Val}
     {x : BitVec 64} {mm y : Val} (hs : simpleCall ctx.tabs v 2 = true)
     (hn : calleeIs ctx.tabs v "runtime.memclrNoHeapPointers" = true) (ha : PtrW a)
-    (hc : callOp env ctx v [a, .int .w64 x, mm] = .ok y) : ∃ P, a = .ptr P := by
+    (hc : callOp env ctx v [a, .int .w64 x, mm] = .ok y) : ∃ P, a.asPtrWord = some P := by
   obtain ⟨name, M, args, c, rs, m', r, hname, -, hargs, hx, hr, -, -⟩ :=
     callOp_ok (simpleCall_op hs) hc
   rw [calleeIs_eq hn] at hname; cases hname
-  have hA := callOp_args hs (fun ps h => decodeArgs_twoW h ha x)
+  have hA := callOp_args hs (fun ps h => decodeArgs_two h (ofPieces_ptrW · ha) x)
     (fun ps h => retypeArgs_two h (retype_ptrW ha) x) hargs
   subst hA
   obtain rfl := hE.1 c hx
@@ -217,23 +190,25 @@ private theorem callOp_memclr_ptr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v :
   · simp [Runtime.memclr, Runtime.ok?, Runtime.asPtr] at hr
   · exact ha
 
-/-- A returning `memmove` call got pointers, not `poison`. -/
+/-- A returning `memmove` call got pointer words, not `poison`. -/
 private theorem callOp_memmove_ptr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {a b : Val}
     {x : BitVec 64} {mm y : Val} (hs : simpleCall ctx.tabs v 3 = true)
     (hn : calleeIs ctx.tabs v "runtime.memmove" = true) (ha : PtrW a) (hb : PtrW b)
-    (hc : callOp env ctx v [a, b, .int .w64 x, mm] = .ok y) : ∃ P Q, a = .ptr P ∧ b = .ptr Q := by
+    (hc : callOp env ctx v [a, b, .int .w64 x, mm] = .ok y) :
+    ∃ P Q, a.asPtrWord = some P ∧ b.asPtrWord = some Q := by
   obtain ⟨name, M, args, c, rs, m', r, hname, -, hargs, hx, hr, -, -⟩ :=
     callOp_ok (simpleCall_op hs) hc
   rw [calleeIs_eq hn] at hname; cases hname
-  have hA := callOp_args hs (fun ps h => decodeArgs_threeW h ha hb x)
+  have hA := callOp_args hs (fun ps h =>
+    decodeArgs_three h (ofPieces_ptrW · ha) (ofPieces_ptrW · hb) x)
     (fun ps h => retypeArgs_three h (retype_ptrW ha) (retype_ptrW hb) x) hargs
   subst hA
   obtain rfl := hE.2 c hx
-  rcases ha with rfl | ⟨P, rfl⟩ <;> rcases hb with rfl | ⟨Q, rfl⟩
+  rcases ha with rfl | ⟨P, hP⟩ <;> rcases hb with rfl | ⟨Q, hQ⟩
   · simp [Runtime.memmove, Runtime.ok?, Runtime.asPtr] at hr
-  · simp [Runtime.memmove, Runtime.ok?, Runtime.asPtr] at hr
-  · simp [Runtime.memmove, Runtime.ok?, Runtime.asPtr] at hr
-  · exact ⟨P, Q, rfl, rfl⟩
+  · simp [Runtime.memmove, Runtime.ok?, runtime_asPtr_eq, hQ, Val.asPtrWord] at hr
+  · simp [Runtime.memmove, Runtime.ok?, runtime_asPtr_eq, hP, Val.asPtrWord] at hr
+  · exact ⟨P, Q, hP, hQ⟩
 
 /-! ## Evaluation -/
 
@@ -380,8 +355,8 @@ private theorem memclr_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g 
   | stuck msg => rw [hco] at hevc; cases hevc
   | ok r =>
     rw [hco] at hevc; cases hevc
-    obtain ⟨P, rfl⟩ := callOp_memclr_ptr (ctx := Ctx.make tabs f) hE hs hn hpw hco
-    obtain ⟨M, M', Mc, rfl, hw, rfl, hR⟩ := callOp_memclr (ctx := Ctx.make tabs f) hE hs hn hco
+    obtain ⟨P, hPw⟩ := callOp_memclr_ptr (ctx := Ctx.make tabs f) hE hs hn hpw hco
+    obtain ⟨M, M', Mc, rfl, hw, rfl, hR⟩ := callOp_memclr (ctx := Ctx.make tabs f) hE hs hn hPw hco
     rw [const64_toInt] at hw
     refine anchor_finish hA hid hsz hfv hgv hgid hty hop hfa hai hyc hR ?_ ?_
     · rw [hga]; intro a ha
@@ -392,7 +367,7 @@ private theorem memclr_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g 
     · rw [hga]
       show evalOp _ _ _ _ [rv S p, rv S m] _ = _
       rw [rv_of hyp, rv_of hym, evalOp_mem (.inl hgop)]
-      simp only [memRoot, hgop, hw]
+      simp only [memRoot, hgop, hPw, hw]
       rfl
 
 /-- The `memmove` segment (`generic.rules:1730`). -/
@@ -438,9 +413,9 @@ private theorem memmove_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g
   | stuck msg => rw [hco] at hevc; cases hevc
   | ok r =>
     rw [hco] at hevc; cases hevc
-    obtain ⟨P, Q, rfl, rfl⟩ := callOp_memmove_ptr (ctx := Ctx.make tabs f) hE hs hn hdw hsw hco
+    obtain ⟨P, Q, hPw, hQw⟩ := callOp_memmove_ptr (ctx := Ctx.make tabs f) hE hs hn hdw hsw hco
     obtain ⟨M, bs, M', Mc, rfl, hrd, hw, rfl, hR⟩ :=
-      callOp_memmove (ctx := Ctx.make tabs f) hE hs hn hco
+      callOp_memmove (ctx := Ctx.make tabs f) hE hs hn hPw hQw hco
     rw [const64_toInt] at hrd
     refine anchor_finish hA hid hsz hfv hgv hgid hty hop hfa hai hyc hR ?_ ?_
     · rw [hga]; intro a ha
@@ -452,7 +427,7 @@ private theorem memmove_sound {env : Env} (hE : env.MemOps) {tabs : Tables} {f g
     · rw [hga]
       show evalOp _ _ _ _ [rv S d, rv S s, rv S m] _ = _
       rw [rv_of hyd, rv_of hys, rv_of hym, evalOp_mem (.inr hgop)]
-      simp only [memRoot, hgop, hrd, hw]
+      simp only [memRoot, hgop, hPw, hQw, hrd, hw]
       rfl
 
 /-- **The call segments are sound** (`generic.rules:1638`, `:1730`): in environments with the

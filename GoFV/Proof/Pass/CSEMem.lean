@@ -62,30 +62,31 @@ theorem store_val {v : Value} {q x m : ID} {qv xv mv y : Val} (hop : v.op = .Sto
     (ha : v.args = #[q, x, m]) (hq : fr.regs[q]? = some (some qv))
     (hx : fr.regs[x]? = some (some xv)) (hm : fr.regs[m]? = some (some mv))
     (h : evalValue env (Ctx.make tabs f) fr v = .ok y) :
-    ∃ Q M M', qv = .ptr Q ∧ mv = .mem M ∧ M.write Q (encode (auxTy tabs v.aux) xv) = some M' ∧
-      y = .mem M' := by
+    ∃ Q M M', qv.asPtrWord = some Q ∧ mv = .mem M ∧
+      M.write Q (encode (auxTy tabs v.aux) xv) = some M' ∧ y = .mem M' := by
   obtain ⟨argv, r, hargs, ho, rfl⟩ := evalValue_ok h
   have : argv = [qv, xv, mv] := map_some_inj (by rw [← hargs, ha]; simp [hq, hx, hm])
   subst this
   rw [evalOp_memRoot (.inl hop)] at ho
   unfold memRoot at ho
   simp only [hop] at ho
-  split at ho
-  all_goals first
-    | contradiction
-    | (rename_i hc
-       obtain ⟨rfl, rfl, rfl⟩ := hc
-       obtain ⟨M', hw, rfl⟩ := writeRes_ok ho
-       exact ⟨_, _, M', rfl, rfl, hw, by rw [tys_getD]; exact retype_mem hnb _⟩)
-    | (split at ho <;> cases ho)
-    | cases ho
+  cases mv with
+  | mem M =>
+    simp only at ho
+    cases hQ : qv.asPtrWord with
+    | none => simp only [hQ] at ho; cases ho
+    | some Q =>
+      simp only [hQ] at ho
+      obtain ⟨M', hw, rfl⟩ := writeRes_ok ho
+      exact ⟨Q, M, M', rfl, rfl, hw, by rw [tys_getD]; exact retype_mem hnb _⟩
+  | _ => simp only at ho; split at ho <;> cases ho
 
 /-- A `Zero`'s write. -/
 theorem zero_val {v : Value} {q m : ID} {qv mv y : Val} (hop : v.op = .Zero)
     (hnb : CSE.keepsMem (CSE.valShape tabs f v) = true)
     (ha : v.args = #[q, m]) (hq : fr.regs[q]? = some (some qv))
     (hm : fr.regs[m]? = some (some mv)) (h : evalValue env (Ctx.make tabs f) fr v = .ok y) :
-    ∃ Q M M', qv = .ptr Q ∧ mv = .mem M ∧
+    ∃ Q M M', qv.asPtrWord = some Q ∧ mv = .mem M ∧
       M.write Q (Array.replicate v.auxInt.toInt.toNat (.b 0)) = some M' ∧ y = .mem M' := by
   obtain ⟨argv, r, hargs, ho, rfl⟩ := evalValue_ok h
   have : argv = [qv, mv] := map_some_inj (by rw [← hargs, ha]; simp [hq, hm])
@@ -93,20 +94,23 @@ theorem zero_val {v : Value} {q m : ID} {qv mv y : Val} (hop : v.op = .Zero)
   rw [evalOp_memRoot (.inr hop)] at ho
   unfold memRoot at ho
   simp only [hop] at ho
-  split at ho
-  all_goals first
-    | contradiction
-    | (rename_i hc
-       obtain ⟨rfl, rfl⟩ := hc
-       obtain ⟨M', hw, rfl⟩ := writeRes_ok ho
-       exact ⟨_, _, M', rfl, rfl, hw, by rw [tys_getD]; exact retype_mem hnb _⟩)
-    | (split at ho <;> cases ho)
-    | cases ho
+  cases mv with
+  | mem M =>
+    simp only at ho
+    cases hQ : qv.asPtrWord with
+    | none => simp only [hQ] at ho; cases ho
+    | some Q =>
+      simp only [hQ] at ho
+      obtain ⟨M', hw, rfl⟩ := writeRes_ok ho
+      exact ⟨Q, M, M', rfl, rfl, hw, by rw [tys_getD]; exact retype_mem hnb _⟩
+  | _ => simp only at ho; split at ho <;> cases ho
 
-/-- `disjointP` gives separate accesses at the pointers' values. -/
+/-- `disjointP` gives separate accesses at the pointers' values (pointer words: pointers, or
+integers read as the pointers at their addresses). -/
 theorem disjointP_sep (H : Avail env tabs f fr A) {p q : ID} {w k : Nat} {wq : Int}
-    (hd : CSE.disjointP tabs f p (w : Int) q wq = true) (hp : A p) (hq : A q) {P Q : Ptr}
-    (hpv : fr.regs[p]? = some (some (.ptr P))) (hqv : fr.regs[q]? = some (some (.ptr Q)))
+    (hd : CSE.disjointP tabs f p (w : Int) q wq = true) (hp : A p) (hq : A q) {pv qv : Val}
+    {P Q : Ptr} (hpv : fr.regs[p]? = some (some pv)) (hqv : fr.regs[q]? = some (some qv))
+    (hpP : pv.asPtrWord = some P) (hqQ : qv.asPtrWord = some Q)
     (hk : k = 0 ∨ (k : Int) = wq) : Sep P w Q k := by
   unfold CSE.disjointP at hd
   simp only [Bool.or_eq_true, beq_iff_eq] at hd
@@ -132,14 +136,20 @@ theorem disjointP_sep (H : Avail env tabs f fr A) {p q : ID} {w k : Nat} {wq : I
     subst hbb
     rw [hbvp] at hbvq
     cases hbvq
-    exact apart_sep hd hk (rel_same rp rq hb)
+    exact apart_sep hd hk (rel_same hpP hqQ rp rq hb)
   · split at hd
     · rename_i a b hpa hqb
       have ep := allocOf_val H hAp hpa hbvp
       have eq := allocOf_val H hAq hqb hbvq
       subst ep eq
-      have e1 := Val.ptr.inj ((rp.2 _ _ rfl).resolve_left nofun)
-      have e2 := Val.ptr.inj ((rq.2 _ _ rfl).resolve_left nofun)
+      have e1 : P = ⟨blkOf a, 0 + BitVec.ofInt 64 op⟩ := by
+        rcases rp.2 _ _ rfl with h | h <;> rw [h] at hpP
+        · cases hpP
+        · exact (Option.some.inj hpP).symm
+      have e2 : Q = ⟨blkOf b, 0 + BitVec.ofInt 64 oq⟩ := by
+        rcases rq.2 _ _ rfl with h | h <;> rw [h] at hqQ
+        · cases hqQ
+        · exact (Option.some.inj hqQ).symm
       subst e1 e2
       have hab := blkOf_inj hb
       subst hab
@@ -152,15 +162,16 @@ theorem disjointP_sep (H : Avail env tabs f fr A) {p q : ID} {w k : Nat} {wq : I
 /-- A load reads the same through its memory argument as through the arguments it skips to. -/
 theorem load_mem_eq {ty : Ty} {ai : Int64} {aux : Option AuxRef} {pv : Val} {M M' : Sem.Mem}
     {Q : Ptr} {bs : Array Byte} (hw : M.write Q bs = some M')
-    (hs : ∀ P, pv = .ptr P → Sep P ty.size Q bs.size) :
+    (hs : ∀ P, pv.asPtrWord = some P → Sep P ty.size Q bs.size) :
     evalPure .Load ty ai aux [pv, .mem M'] = evalPure .Load ty ai aux [pv, .mem M] := by
   show loadOp ty [pv, .mem M'] = loadOp ty [pv, .mem M]
-  cases pv with
-  | ptr P =>
+  simp only [loadOp]
+  cases hP : pv.asPtrWord with
+  | none => rfl
+  | some P =>
     show M'.load ty P = M.load ty P
     unfold Sem.Mem.load
-    split <;> first | rfl | rw [read_write_sep hw (hs P rfl)]
-  | _ => rfl
+    split <;> first | rfl | rw [read_write_sep hw (hs P hP)]
 
 theorem memSkip_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} {m m' : ID}
     (hm : A m) (hs : CSE.memSkip tabs f p ty.size m = some m') :
@@ -185,11 +196,10 @@ theorem memSkip_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} 
       refine ⟨hmem 2 (by decide), fun ai aux pv mv mv' hpv h1 h2 => ?_⟩
       obtain ⟨qv, hqv⟩ := H.reg (hmem 0 (by decide))
       obtain ⟨xv, hxv⟩ := H.reg (hmem 1 (by decide))
-      obtain ⟨Q, M, M', rfl, rfl, hw, rfl⟩ :=
+      obtain ⟨Q, M, M', hQ, rfl, hw, rfl⟩ :=
         store_val hop hnb (args_three hsz) hqv hxv h2 (H.eval hm hv hphi h1)
       refine load_mem_eq hw fun P hP => ?_
-      subst hP
-      exact disjointP_sep H hdj hp (hmem 0 (by decide)) hpv hqv (.inr (by rw [encode_size]))
+      exact disjointP_sep H hdj hp (hmem 0 (by decide)) hpv hqv hP hQ (.inr (by rw [encode_size]))
     · split at hs
       · rename_i hc
         simp only [Bool.and_eq_true, beq_iff_eq] at hc
@@ -200,11 +210,11 @@ theorem memSkip_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} 
           fun i hi => H.cl m d hm hv hphi _ (getElem!_mem (by omega))
         refine ⟨hmem 1 (by decide), fun ai aux pv mv mv' hpv h1 h2 => ?_⟩
         obtain ⟨qv, hqv⟩ := H.reg (hmem 0 (by decide))
-        obtain ⟨Q, M, M', rfl, rfl, hw, rfl⟩ :=
+        obtain ⟨Q, M, M', hQ, rfl, hw, rfl⟩ :=
           zero_val hop hnb (args_two hsz) hqv h2 (H.eval hm hv hphi h1)
         refine load_mem_eq hw fun P hP => ?_
-        subst hP
-        exact disjointP_sep H hdj hp (hmem 0 (by decide)) hpv hqv (by simp only [Array.size_replicate]; omega)
+        exact disjointP_sep H hdj hp (hmem 0 (by decide)) hpv hqv hP hQ
+          (by simp only [Array.size_replicate]; omega)
       · cases hs
 
 theorem memWalk_sound (H : Avail env tabs f fr A) {p : ID} (hp : A p) {ty : Ty} :

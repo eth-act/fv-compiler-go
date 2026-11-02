@@ -354,6 +354,16 @@ theorem PtrOps.ptrIndex_mono (e : Option Nat) :
         cases hc : asOffset c with
         | none => exact .poison _
         | some k => rw [h'.asOffset hc]; exact Refines.refl _
+    | int w x =>
+      cases w <;> simp only [PtrOps.ptrIndex]
+      all_goals first
+        | exact .poison _
+        | (cases e with
+            | none => exact .poison _
+            | some e =>
+              cases hc : asOffset c with
+              | none => exact .poison _
+              | some k => rw [h'.asOffset hc]; exact Refines.refl _)
     | poison => exact .poison _
     | _ => exact .poison _
   | .cons _ (.cons _ (.cons _ _)) => by simp only [PtrOps.ptrIndex]; exact .poison _
@@ -361,15 +371,14 @@ theorem PtrOps.ptrIndex_mono (e : Option Nat) :
 theorem PtrOps.subPtr_mono : RefinesList as bs → Refines (PtrOps.subPtr as) (PtrOps.subPtr bs)
   | .nil => by simp only [PtrOps.subPtr]; exact .poison _
   | .cons _ .nil => by simp only [PtrOps.subPtr]; exact .poison _
-  | .cons h (.cons h' .nil) => by
-    cases h with
-    | ptr p =>
-      cases h' with
-      | ptr q => exact Refines.refl _
-      | poison => exact .poison _
-      | _ => exact .poison _
-    | poison => exact .poison _
-    | _ => exact .poison _
+  | .cons (a := a) h (.cons (a := c) h' .nil) => by
+    simp only [PtrOps.subPtr]
+    cases ha : a.asPtrWord with
+    | none => exact .poison _
+    | some x =>
+      cases hc : c.asPtrWord with
+      | none => exact .poison _
+      | some y => rw [h.asPtrWord ha, h'.asPtrWord hc]; exact Refines.refl _
   | .cons _ (.cons _ (.cons _ _)) => by simp only [PtrOps.subPtr]; exact .poison _
 
 theorem PtrOps.eqPtr_mono (neg : Bool) : RefinesList as bs → Refines (PtrOps.eqPtr neg as) (PtrOps.eqPtr neg bs)
@@ -461,37 +470,34 @@ theorem PtrOps.eqFirst_mono (neg : Bool) : RefinesList as bs → Refines (PtrOps
 theorem loadOp_mono (t : Ty) : RefinesList as bs → Refines (loadOp t as) (loadOp t bs)
   | .nil => by simp only [loadOp]; exact .poison _
   | .cons _ .nil => by simp only [loadOp]; exact .poison _
-  | .cons h (.cons h' .nil) => by
-    cases h with
-    | ptr p =>
-      cases h' with
-      | mem hm => exact load_mono hm t p
-      | poison => exact .poison _
-      | _ => exact .poison _
-    | poison => exact .poison _
-    | _ => exact .poison _
+  | .cons (a := a) h (.cons h' .nil) => by
+    cases h' with
+    | @mem m m' hm =>
+      simp only [loadOp]
+      cases ha : a.asPtrWord with
+      | none => exact .poison _
+      | some p => rw [h.asPtrWord ha]; exact load_mono hm t p
+    | _ => simp only [loadOp]; exact .poison _
   | .cons _ (.cons _ (.cons _ _)) => by simp only [loadOp]; exact .poison _
 
 theorem atomicLoad_mono (t : Ty) : RefinesList as bs → Refines (atomicLoad t as) (atomicLoad t bs)
   | .nil => by simp only [atomicLoad]; exact .poison _
   | .cons _ .nil => by simp only [atomicLoad]; exact .poison _
-  | .cons h (.cons h' .nil) => by
-    cases h with
-    | ptr p =>
-      cases h' with
-      | @mem m m' hm =>
-        simp only [atomicLoad]
+  | .cons (a := a) h (.cons h' .nil) => by
+    cases h' with
+    | @mem m m' hm =>
+      simp only [atomicLoad]
+      cases ha : a.asPtrWord with
+      | none => exact .poison _
+      | some p =>
+        rw [h.asPtrWord ha]
         split
-        · next vt =>
-          refine .tuple (.cons ?_ (.cons (.mem hm) .nil))
+        · refine .tuple (.cons ?_ (.cons (.mem hm) .nil))
           split
           · exact .poison _
-          · exact load_mono hm vt p
+          · exact load_mono hm _ _
         · exact .poison _
-      | poison => exact .poison _
-      | _ => exact .poison _
-    | poison => exact .poison _
-    | _ => exact .poison _
+    | _ => simp only [atomicLoad]; exact .poison _
   | .cons _ (.cons _ (.cons _ _)) => by simp only [atomicLoad]; exact .poison _
 
 theorem wbOp_mono (n : Int64) : RefinesList as bs → Refines (wbOp n as) (wbOp n bs)
@@ -510,16 +516,20 @@ theorem memEq_mono : RefinesList as bs → Refines (memEq as) (memEq bs)
   | .cons _ .nil => by simp only [memEq]; exact .poison _
   | .cons _ (.cons _ .nil) => by simp only [memEq]; exact .poison _
   | .cons _ (.cons _ (.cons _ .nil)) => by simp only [memEq]; exact .poison _
-  | .cons h1 (.cons h2 (.cons h3 (.cons h4 .nil))) => by
-    cases h1 with
-    | ptr p =>
-      cases h2 with
-      | ptr q =>
-        cases h3 with
-        | int w n =>
-          cases h4 with
-          | @mem m m' hm =>
-            simp only [memEq]
+  | .cons (a := a1) h1 (.cons (a := a2) h2 (.cons h3 (.cons h4 .nil))) => by
+    cases h3 with
+    | int w n =>
+      cases h4 with
+      | @mem m m' hm =>
+        simp only [memEq]
+        cases hpa : a1.asPtrWord with
+        | none => exact .poison _
+        | some p =>
+          cases hqa : a2.asPtrWord with
+          | none => exact .poison _
+          | some q =>
+            rw [h1.asPtrWord hpa, h2.asPtrWord hqa]
+            dsimp only
             cases ha : m.read p n.toNat with
             | none => exact .poison _
             | some x =>
@@ -540,14 +550,8 @@ theorem memEq_mono : RefinesList as bs → Refines (memEq as) (memEq bs)
                     exact hp (by simp only [Bool.or_eq_true, Array.any_eq_true']; exact .inr ⟨_, by simpa using hz, rfl⟩)
                   rw [← hxr.eq hpx, ← hyr.eq hpy]
                   exact Refines.refl _
-          | poison => exact .poison _
-          | _ => exact .poison _
-        | poison => exact .poison _
-        | _ => exact .poison _
-      | poison => exact .poison _
-      | _ => exact .poison _
-    | poison => exact .poison _
-    | _ => exact .poison _
+      | _ => simp only [memEq]; exact .poison _
+    | _ => simp only [memEq]; exact .poison _
   | .cons _ (.cons _ (.cons _ (.cons _ (.cons _ _)))) => by simp only [memEq]; exact .poison _
 
 /-! ## `evalPure` -/

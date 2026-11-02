@@ -62,8 +62,6 @@ theorem eqPtr_swap (neg : Bool) (a b : Val) (rest : List Val) :
 
 theorem memEq_swap (a b : Val) (rest : List Val) :
     memEq (b :: a :: rest) = memEq (a :: b :: rest) := by
-  cases b <;> cases a <;> try rfl
-  rename_i q p
   rcases rest with _ | ⟨c, rest⟩
   · rfl
   cases c <;> try rfl
@@ -74,6 +72,7 @@ theorem memEq_swap (a b : Val) (rest : List Val) :
   rename_i m
   rcases rest with _ | ⟨e, rest⟩
   · delta memEq; dsimp only
+    rcases b.asPtrWord with _ | p <;> rcases a.asPtrWord with _ | q <;> dsimp only
     cases m.read p n.toNat <;> cases m.read q n.toNat <;>
       first | rfl | simp only [Bool.or_comm, BEq.comm]
   · rfl

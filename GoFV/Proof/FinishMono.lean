@@ -45,8 +45,8 @@ theorem Val.any_hasPoison (l : List Val) : l.any Val.hasPoison = Val.anyPoison l
   | cons v l ih => simp only [List.any_cons, Val.anyPoison, ih]
 
 private theorem np_cases {a b : Val} (h : Refines a b) (hp : a.hasPoison = false) :
-    a.isPtrOrPoison = b.isPtrOrPoison ∧ (∀ x : BitVec 64, a = .int .w64 x ↔ b = .int .w64 x) := by
-  cases h <;> simp_all [Val.hasPoison, Val.isPtrOrPoison]
+    a.isPtrWord = b.isPtrWord ∧ (∀ x : BitVec 64, a = .int .w64 x ↔ b = .int .w64 x) := by
+  cases h <;> simp_all [Val.hasPoison, Val.isPtrWord]
 
 /-- Poison-free refined components have the same string and slice shapes. -/
 private theorem np_lens {as bs : List Val} (hl : RefinesList as bs) (h : Val.anyPoison as = false) :

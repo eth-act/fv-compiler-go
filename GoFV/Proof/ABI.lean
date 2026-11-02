@@ -40,7 +40,7 @@ theorem decodePtr_hasTy (e : Option Nat) (bs : Array Byte) :
   · rfl
   · split <;> rfl
 
-theorem decodePtr_isPtrOrPoison (bs : Array Byte) : (decodePtr bs).isPtrOrPoison = true := by
+theorem decodePtr_isPtrWord (bs : Array Byte) : (decodePtr bs).isPtrWord = true := by
   unfold decodePtr
   split
   · rfl
@@ -57,8 +57,8 @@ theorem decode_hasTy_aux : (t : Ty) → (bs : Array Byte) → (o : Nat) → wf t
     · rfl
   | .ptr e, _, _, _ => decodePtr_hasTy e _
   | .agg fs n, bs, o, h => decodeFields_hasTy fs n 0 bs o h
-  | .str, bs, o, _ => Val.ofStr_hasTy_of (decodePtr_isPtrOrPoison _) _
-  | .slice e, bs, o, _ => Val.ofSlice_hasTy_of (decodePtr_isPtrOrPoison _) e _ _
+  | .str, bs, o, _ => Val.ofStr_hasTy_of (decodePtr_isPtrWord _) _
+  | .slice e, bs, o, _ => Val.ofSlice_hasTy_of (decodePtr_isPtrWord _) e _ _
   | .empty, _, _, _ | .opaque _, _, _, _ => rfl
   | .blob _, _, _, h | .mem, _, _, h | .tuple _, _, _, h | .other, _, _, h => nomatch h
 theorem decodeFields_hasTy : (fs : List (Nat × Ty)) → (n s : Nat) → (bs : Array Byte) →
@@ -172,7 +172,8 @@ theorem leaves_decode_encode : (t : Ty) → (v : Val) → {buf : Array Byte} →
       rw [encode_str_agg] at h
       have := leavesFields_decode_encode_atoms [(0, .ptr (some 1)), (8, .int .w64)] [p, .int .w64 l]
         16 0 (buf0 := Array.replicate 16 .poison) (by decide) (by decide)
-        (by cases p <;> simp_all [Val.hasTyList, Val.hasTy, Val.isPtrOrPoison])
+        (by rcases p with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;>
+          simp_all [Val.hasTyList, Val.hasTy, Val.isPtrWord])
         (by simp) h
       refine Eq.trans ?_ (this.trans ?_)
       · rfl
@@ -188,7 +189,8 @@ theorem leaves_decode_encode : (t : Ty) → (v : Val) → {buf : Array Byte} →
       have := leavesFields_decode_encode_atoms [(0, .ptr e), (8, .int .w64), (16, .int .w64)]
         [p, .int .w64 l, .int .w64 c] 24 0 (buf0 := Array.replicate 24 .poison)
         (by simp [atom]) (by simp [wfFields, wf, Ty.size, Width.bytes, Width.bits])
-        (by cases p <;> simp_all [Val.hasTyList, Val.hasTy, Val.isPtrOrPoison])
+        (by rcases p with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;>
+          simp_all [Val.hasTyList, Val.hasTy, Val.isPtrWord])
         (by simp) h
       refine Eq.trans ?_ (this.trans ?_)
       · rfl
