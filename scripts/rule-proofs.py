@@ -17,8 +17,11 @@
                                             # theorem of GoFV/Proof; fails on non-standard axioms
   scripts/rule-proofs.py proven             # the proven-only rule sets GoFV/Rules/Proven.lean
                                             # and their soundness GoFV/Proof/Rules/Proven.lean
-  scripts/rule-proofs.py fire [CORPUS]      # `lake exe rule-fire-probe` on the quick corpus ->
-                                            # tmp/rules/fire.tsv and the firing table of the doc
+  scripts/rule-proofs.py fire [CORPUS] [-j N]
+                                            # `lake exe rule-fire-probe` and `opt-proven-probe`
+                                            # (N workers) on the corpus (default: the newest
+                                            # quick one) -> tmp/rules/fire[-full].tsv and the
+                                            # firing table of the doc (`fire-full`: a full corpus)
 
 Every Lean command runs under scripts/memcap.sh. Temporary files live in tmp/rules/.
 """
@@ -518,27 +521,56 @@ def sat():
         sys.exit(1)
 
 
-def fire(corpus):
+def blocked_class(reason):
+    """The class of a validator rejection (`opt-proven-probe`'s reason): the pass and the last
+    layer's verdict, without value ids, positions and types."""
+    sec, _, why = reason.partition(": ")
+    last = why.rsplit(" → ", 1)[-1]
+    last = re.sub(r"\(\d+\)|#\d+", "", last)
+    last = re.split(r"<|GoFV\.", last, maxsplit=1)[0]
+    last = re.sub(r"\bv\d+:?", "", last)
+    last = re.sub(r"depth \d+", "depth N", last)
+    return f"{sec}: " + re.sub(r"\s+", " ", last).strip(" :")
+
+
+def fire(corpus, jobs):
     """Firing frequencies and obstacles of the proven-only passes (`GoFVTest/RuleFireProbe.lean`)
-    joined with the rule names and classes; rewrites the `fire` table of docs/proofs/rules.md."""
+    joined with the rule names and classes, and the classes of the validator rejections that are a
+    function's only obstacle (`BLOCKED` lines of `GoFVTest/OptProvenProbe.lean`); rewrites the
+    `fire` table of docs/proofs/rules.md (`fire-full` for a full corpus: `corpus full` in the
+    corpus's manifest.txt)."""
     if corpus is None:
         main_root = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=ROOT,
                                    capture_output=True, text=True).stdout.split("\n")[0].split()[1]
         corpus = os.path.realpath(sorted(
             __import__("glob").glob(os.path.join(os.path.dirname(main_root), "gofv-corpus", "*",
                                                  "plain")))[-1])
-    cmd = [os.path.join(ROOT, "scripts", "memcap.sh"), "lake", "exe", "rule-fire-probe", corpus]
-    r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
-    if r.returncode != 0:
-        sys.exit(r.stderr + r.stdout)
+    manifest = os.path.join(os.path.dirname(corpus), "manifest.txt")
+    full = os.path.exists(manifest) and "\ncorpus full\n" in open(manifest).read()
+    block = "fire-full" if full else "fire"
+    os.makedirs(TMP, exist_ok=True)
+
+    def probe(exe):
+        cmd = [os.path.join(ROOT, "scripts", "memcap.sh"), "lake", "exe", exe, "--jobs",
+               str(jobs), corpus]
+        r = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
+        if r.returncode != 0:
+            sys.exit(r.stderr + r.stdout)
+        open(os.path.join(TMP, f"{block}-{exe}.out"), "w").write(r.stdout)
+        return r.stdout
+    out = probe("rule-fire-probe")
     idx = collections.defaultdict(list)
     for row in load_class():
         if m := re.match(r"`(\w+)\.rules:(\d+)`", row["doc"]):
             idx[(m.group(1), m.group(2), row["op"])].append(row)
-    summary, rows = "", []
-    for line in r.stdout.splitlines():
+    summary, rows, pairs = "", [], collections.Counter()
+    for line in out.splitlines():
         if line.startswith("SUMMARY"):
             summary = line
+        elif line.startswith("OFF\t"):
+            rs = line.split("\t")[1].split(",")
+            if len(rs) == 2:
+                pairs[tuple(sorted(rs))] += 1
         elif line.startswith("RULE\t"):
             _, k, pr, n, sole, unb = line.split("\t")
             loc, op = k.split(" ", 1)
@@ -552,7 +584,7 @@ def fire(corpus):
             cls = rs[0]["cls"] if rs else "?"
             rows.append((f"{f}.rules:{ln} {op}", name, cls, pr == "true", int(n), int(sole), int(unb)))
     rows.sort(key=lambda x: (-x[6], -x[5], -x[4]))
-    with open(os.path.join(TMP, "fire.tsv"), "w") as fh:
+    with open(os.path.join(TMP, f"{block}.tsv"), "w") as fh:
         for row in rows:
             fh.write("\t".join(map(str, row)) + "\n")
     m = re.search(r"functions (\d+) proven-only-at-stock (\d+) checked-at-stock (\d+) "
@@ -571,8 +603,24 @@ def fire(corpus):
     shown += sorted([x for x in unproven if x[6] == 0 and x[5] == 0], key=lambda x: -x[4])[:15]
     for k, name, cls, _, n, sole, unb in shown:
         lines.append(f"| `{k}` | `{name}` | {cls} | {n} | {sole} | {unb} |")
+    keys = {f"{r[0].split('.rules:')[0]}:{r[0].split('.rules:')[1]}": r[0] for r in rows}
+    lines += ["", "Functions off stock whose sections off stock fire exactly two unproven rules, "
+              "by pair (the 15 most frequent):", "", "| Rules | Functions |", "| --- | --: |"]
+    for (a, b), n in pairs.most_common(15):
+        lines.append(f"| `{keys.get(a, a)}`, `{keys.get(b, b)}` | {n} |")
+    blocked = collections.Counter()
+    for line in probe("opt-proven-probe").splitlines():
+        if line.startswith("BLOCKED "):
+            reasons = line.split(": ", 1)[1].split(" || ")
+            blocked[" ‖ ".join(sorted({blocked_class(x) for x in reasons}))] += 1
+    lines += ["", f"Validator rejections that are a function's only obstacle (`BLOCKED` lines of "
+              f"`opt-proven-probe`: every section at stock under the proven-only passes, not under "
+              f"the checked ones; {sum(blocked.values())} functions), by class (pass and the last "
+              f"layer's verdict):", "", "| Class | Functions |", "| --- | --: |"]
+    for c, n in blocked.most_common():
+        lines.append(f"| `{c}` | {n} |")
     doc = open(DOC).read()
-    doc = re.sub(r"(<!-- BEGIN fire -->\n).*?(<!-- END fire -->)",
+    doc = re.sub(rf"(<!-- BEGIN {block} -->\n).*?(<!-- END {block} -->)",
                  lambda mm: mm.group(1) + "<!-- Generated by scripts/rule-proofs.py fire. -->\n\n"
                  + "\n".join(lines) + "\n\n" + mm.group(2), doc, flags=re.S)
     open(DOC, "w").write(doc)
@@ -615,7 +663,7 @@ def main():
     elif a.cmd == "proven":
         proven_sets()
     elif a.cmd == "fire":
-        fire(a.fams[0] if a.fams else None)
+        fire(a.fams[0] if a.fams else None, a.jobs)
     else:
         table()
 
