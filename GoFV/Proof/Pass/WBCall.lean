@@ -34,8 +34,8 @@ theorem ofPieces_word {z : Val} (h : WordV z) : (ofPieces (.int .w64) [z]).hasPo
   cases z with
   | ptr q =>
     rw [EC.ecc_ofPieces_ptr]
-    simp only [Val.retype]
-    split <;> rfl
+    show q.word.hasPoison = false
+    rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨-, a, -, hw⟩ <;> rw [hw] <;> rfl
   | int w x =>
     cases w <;> simp only [WordV] at h
     rw [Seg.ofPieces_int]; rfl
