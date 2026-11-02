@@ -420,7 +420,7 @@ theorem eco_obl {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {bid x : ID} {f
             have hHc : Held f g fb gb x u.args[0]! := by
               by_cases hcf : u.args[0]! ∈ fb.values
               · have hmv : moveArgB f g x u.args[0]! = false := by
-                  unfold moveArgB stackMove; rw [hu, hw]; dsimp only; rw [if_neg hc]; rfl
+                  unfold moveArgB stackMoves; rw [hu, hw]; dsimp only; rw [if_neg hc]; rfl
                 exact .inl ⟨hcf, hdep hinv _ hcmem hcf (fun ua hua => by
                   rw [hcu] at hua; cases hua; exact hcphi) hmv
                   (ecA_not_wideSel hcu fun h => absurd hcall (by rw [h]; decide))

@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.ECStack
+import GoFV.Proof.Pass.ECMoves
 import GoFV.Proof.Pass.ECFinish
 import GoFV.Proof.CallMono
 import GoFV.Proof.MemRefine
@@ -124,17 +124,18 @@ theorem obl_of_imk {tabs : Tables} {f g : Func} {x : ID} {u : Value} {HS HT HS0 
   · exact .inl ⟨hheldT a h1, hheldT _ h2, eco_ifaceShape h3⟩
   · exact .inr ⟨hheldS a h1, hau, eco_ifaceShape h3, hsp, hsh⟩
 
-/-- An argument of the `Move` of `x`'s wide stack argument that the source defines is in
+/-- An argument of a `Move` of `x`'s wide stack arguments that the source defines is in
 `ecFront`. -/
 theorem eco_mem_front_move {f g : Func} {x z q : ID} {mw : Value} (hi : invalidated g x = false)
-    (hz : stackMove f g x = some z)
+    (hz : z ∈ stackMoves f g x)
     (hmw : g.value? z = some mw) (hq : q ∈ mw.args) (hn : isNewB f q = false) :
     q ∈ ecFront f g x := by
   unfold ecFront
-  rw [hi, if_neg Bool.false_ne_true, hz]
-  simp only [Option.bind_some, hmw, Option.map_some, Option.getD_some]
-  exact List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
-    ⟨List.mem_append_right _ (Array.mem_toList_iff.2 hq), by rw [hn]; rfl⟩))
+  rw [hi, if_neg Bool.false_ne_true]
+  refine List.mem_append_left _ (List.mem_append_right _ (List.mem_filter.2
+    ⟨List.mem_append_right _ (List.mem_flatMap.2 ⟨z, hz, ?_⟩), by rw [hn]; rfl⟩))
+  rw [hmw]
+  exact Array.mem_toList_iff.2 hq
 
 /-- `EcArgRel` of the source arguments of `x` in an obligation's frames. -/
 theorem ecc_argRel {tabs : Tables} {f g : Func} {x : ID} {u : Value} {frS T : Frame}
@@ -672,57 +673,19 @@ theorem ecc_callOp_outargs {env : Env} {ctx : Ctx} {u : Value} {abi : CallABI}
         exact hns _ ⟨_, rfl⟩ h
   | _ => exact absurd h (hns _ ⟨_, rfl⟩)
 
-/-- The `SP`s under the addresses of the stack-argument stores and the `Move` of call `u` (`w`
-in `g`) that the source defines: what the call's obligation needs the target to hold. -/
+/-- The values of `g` the obligation of call `u` (`w` in `g`) needs the target to hold: the `SP`s
+under the addresses of the stack-argument stores and `Move`s that the source defines, and the
+source of each `Move` above another (a frame variable, `localSrcOK`). -/
 def ecStackSP (f g : Func) (u w : Value) (a : ID) : Prop :=
-  ∃ z, ((∃ zs, callStores f g u w = some zs ∧ z ∈ zs) ∨ callMove f g u w = some z) ∧
+  (∃ z, ((∃ zs, callStores f g u w = some zs ∧ z ∈ zs) ∨ z ∈ callMoves f g u w) ∧
     ∃ wz qw, g.value? z = some wz ∧ g.value? wz.args[0]! = some qw ∧
-      isNewB f qw.args[0]! = false ∧ a = qw.args[0]!
+      isNewB f qw.args[0]! = false ∧ a = qw.args[0]!) ∨
+  ∃ z ∈ callMoves f g u w, moveMem g z ≠ u.args[u.args.size - 1]! ∧ a = moveSrc g z
 
-/-- The `Dereference` arguments of call `u` (`w` in `g`) when the target copies a wide stack
-argument with a `Move`: what the call's obligation needs the source to hold. -/
+/-- The `Dereference` arguments of call `u` (`w` in `g`) when the target copies wide stack
+arguments with `Move`s: what the call's obligation needs the source to hold. -/
 def ecMoveArg (f g : Func) (u w : Value) (a : ID) : Prop :=
-  (callMove f g u w).isSome = true ∧ a ∈ u.args ∧ ∃ au, f.value? a = some au ∧ au.op = .Dereference
-
-/-- The parts of `stackOK`: the stack parameters split into the one the `Move` copies (if any)
-and the ones the `Store`s write. -/
-theorem ecc_stackOK_inv {tabs : Tables} {sh : Array Ty} {f g : Func} {u w : Value}
-    {ins : List ABIParam} {as : List ID} (h : stackOK tabs sh f g u w ins as = true) :
-    slotsSorted tabs ((argPairs false ins as).map (·.1)) = true ∧
-    ∃ zs sp0 sp1, callStores f g u w = some zs ∧ argPairs false ins as = sp0 ++ sp1 ∧
-      storeArgsOK tabs sh f g u sp1 zs = true ∧
-      ((callMove f g u w = none ∧ sp0 = []) ∨
-        ∃ z p a, callMove f g u w = some z ∧ sp0 = [(p, a)] ∧ moveOK tabs sh f g u p a z = true) := by
-  unfold stackOK at h
-  simp only [Bool.and_eq_true] at h
-  obtain ⟨hs, h⟩ := h
-  refine ⟨hs, ?_⟩
-  split at h
-  · rename_i zs hzs
-    split at h
-    · rename_i hm
-      exact ⟨zs, [], _, hzs, rfl, h, .inl ⟨hm, rfl⟩⟩
-    · rename_i z p a sp' hm hsp
-      rw [Bool.and_eq_true] at h
-      exact ⟨zs, [(p, a)], sp', hzs, by rw [hsp]; rfl, h.2, .inr ⟨z, p, a, hm, rfl, h.1⟩⟩
-    · cases h
-  · cases h
-
-/-- The `Move` of a wide stack argument: a new `Move` on the source call's memory. -/
-theorem ecc_callMove_spec {f g : Func} {u w : Value} {z : ID} (h : callMove f g u w = some z) :
-    isNewB f z = true ∧ ∃ mw, g.value? z = some mw ∧ mw.op = .Move ∧ mw.args.size = 3 ∧
-      mw.args[2]! = u.args[u.args.size - 1]! := by
-  unfold callMove at h
-  dsimp only at h
-  split at h
-  · rename_i mw hmw
-    split at h
-    · rename_i hc
-      cases h
-      simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      exact ⟨hc.1.1.1, mw, hmw, hc.1.1.2, hc.1.2, hc.2⟩
-    · cases h
-  · cases h
+  callMoves f g u w ≠ [] ∧ a ∈ u.args ∧ ∃ au, f.value? a = some au ∧ au.op = .Dereference
 
 /-- The facts of `moveOK`. -/
 theorem ecc_moveOK_spec {tabs : Tables} {sh : Array Ty} {f g : Func} {u : Value} {p : ABIParam}
@@ -744,6 +707,85 @@ theorem ecc_moveOK_spec {tabs : Tables} {sh : Array Ty} {f g : Func} {u : Value}
     split at h4
     · assumption
     · cases h4
+  · cases h
+
+/-- The parts of `stackOK`: the stack parameters split into the ones the `Move`s copy (one per
+`Move`, bottom first) and the ones the `Store`s write. -/
+theorem ecc_stackOK_inv {tabs : Tables} {sh : Array Ty} {f g : Func} {u w : Value}
+    {ins : List ABIParam} {as : List ID} (h : stackOK tabs sh f g u w ins as = true) :
+    slotsSorted tabs ((argPairs false ins as).map (·.1)) = true ∧
+    ∃ zs sp0 sp1, callStores f g u w = some zs ∧ argPairs false ins as = sp0 ++ sp1 ∧
+      storeArgsOK tabs sh f g u sp1 zs = true ∧ sp0.length = (callMoves f g u w).length ∧
+      (∀ e ∈ sp0.zip (callMoves f g u w), moveOK tabs sh f g u e.1.1 e.1.2 e.2 = true) ∧
+      ∀ z ∈ callMoves f g u w, moveMem g z = u.args[u.args.size - 1]! ∨ localSrcOK sh g z = true := by
+  unfold stackOK at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at h
+  obtain ⟨⟨⟨⟨hs, hle⟩, hmv⟩, hloc⟩, h⟩ := h
+  split at h
+  · rename_i zs hzs
+    refine ⟨hs, zs, _, _, hzs, (List.take_append_drop _ _).symm, h, ?_, hmv, fun z hz => ?_⟩
+    · rw [List.length_take]; omega
+    · have := hloc z hz
+      simpa only [Bool.or_eq_true, beq_iff_eq] using this
+  · cases h
+
+/-- Each `Move` of a call has its parameter. -/
+theorem ecc_move_pair {α β : Type} {l : List α} {ms : List β} (hlen : l.length = ms.length)
+    {z : β} (hz : z ∈ ms) : ∃ e, (e, z) ∈ l.zip ms := by
+  obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 hz
+  refine ⟨l[i]'(by omega), List.mem_iff_getElem.2 ⟨i, by rw [List.length_zip]; omega, ?_⟩⟩
+  rw [List.getElem_zip]
+
+/-- Each parameter a call's `Move`s copy has its `Move`. -/
+theorem ecc_move_pair' {α β : Type} {l : List α} {ms : List β} (hlen : l.length = ms.length)
+    {e : α} (he : e ∈ l) : ∃ z, (e, z) ∈ l.zip ms := by
+  obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 he
+  refine ⟨ms[i]'(by omega), List.mem_iff_getElem.2 ⟨i, by rw [List.length_zip]; omega, ?_⟩⟩
+  rw [List.getElem_zip]
+
+theorem ecc_spOffOK_bounds {sh : Array Ty} {g : Func} {nw : ID → Bool} {q : ID} {off : Int}
+    (h : spOffOK sh g nw q off = true) : 0 ≤ off ∧ off < 2 ^ 24 := by
+  unfold spOffOK at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1.1.2, h.1.2⟩
+
+/-- A call's `Move`s are the chain from `callBase` down to the call's memory. -/
+theorem ecc_callMoves_chain {f g : Func} {u w : Value} (hne : callMoves f g u w ≠ []) :
+    moveChain g (isNewB f) (g.valueTab.size + 1) (callBase f g u w) u.args[u.args.size - 1]! =
+      some (callMoves f g u w) := by
+  have h : moveChain g (isNewB f) (g.valueTab.size + 1)
+      (storeBottom g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]!)
+      u.args[u.args.size - 1]! = some (callMoves f g u w) := by
+    unfold callMoves at hne ⊢
+    dsimp only at hne ⊢
+    revert hne
+    cases moveChain g (isNewB f) (g.valueTab.size + 1)
+      (storeBottom g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]!)
+      u.args[u.args.size - 1]! with
+    | none => intro hne; exact absurd rfl hne
+    | some ms => intro _; rfl
+  have hb : callBase f g u w =
+      storeBottom g (isNewB f) (g.valueTab.size + 1) w.args[w.args.size - 1]! := by
+    unfold callBase; rw [ecm_last h hne]; rfl
+  rw [hb]; exact h
+
+theorem ecc_callBase_nil {f g : Func} {u w : Value} (h : callMoves f g u w = []) :
+    callBase f g u w = u.args[u.args.size - 1]! := by
+  unfold callBase; rw [h]; rfl
+
+/-- The facts of `localSrcOK`. -/
+theorem ecc_localSrcOK_spec {sh : Array Ty} {g : Func} {z : ID} (h : localSrcOK sh g z = true) :
+    ∃ sw n e, g.value? (moveSrc g z) = some sw ∧ sw.op = .LocalAddr ∧ sw.aux = some n ∧
+      shapeOf sh g (moveSrc g z) = .ptr e := by
+  unfold localSrcOK at h
+  split at h
+  · rename_i sw hsw
+    simp only [Bool.and_eq_true, beq_iff_eq, Option.isSome_iff_exists] at h
+    obtain ⟨⟨hop, n, hn⟩, hsh⟩ := h
+    split at hsh
+    · rename_i e he
+      exact ⟨sw, n, e, hsw, hop, hn, he⟩
+    · cases hsh
   · cases h
 
 theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
@@ -820,8 +862,10 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
       (fun q hq yq hyq hn' => hfront q (ecFront_tgt hi hw
         (hmw q (List.mem_append_left _ (List.mem_append_right _ hq))) hn') yq hyq)
     rw [ecc_zip_map, ecc_flatMap_pat (fun p r => ecPieceVals true (tabs.ty p.type) r)] at hP
-    -- the stack arguments: the one the `Move` copies (`sp0`) and the stored ones (`sp1`)
-    obtain ⟨hsorted, zs, sp0, sp1, hcs, hsp01, hst, hmv0⟩ := ecc_stackOK_inv hstack
+    -- the stack arguments: the ones the `Move`s copy (`sp0`) and the stored ones (`sp1`)
+    obtain ⟨hsorted, zs, sp0, sp1, hcs, hsp01, hst, hlen0, hmovOK, hloc⟩ := ecc_stackOK_inv hstack
+    have hmS0 : ∀ {e}, e ∈ sp0 → e ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList :=
+      fun he => by rw [hsp01]; exact List.mem_append_left _ he
     unfold storeArgsOK at hst
     simp only [Bool.and_eq_true, List.all_eq_true] at hst
     obtain ⟨⟨⟨hsOK, hpcS⟩, hsrc⟩, hwfS⟩ := hst
@@ -910,35 +954,55 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         intro hmv
         cases hmv with
         | mem h => exact ⟨_, rfl, h⟩
-      -- the memory the stores start from: the call's, or the `Move`'s copy into it
-      obtain ⟨M1, hM1, hA1, hP1, hmov⟩ : ∃ M1, rv T (callBase f g u w) = .mem M1 ∧
+      -- the memory the stores start from: the call's, or the top `Move`'s, with the copies of
+      -- the leading stack arguments in their slots
+      have hpw0 : sp0.Pairwise
+          (fun e e' => e.1.offset + ((tabs.ty e.1.type).size : Int) ≤ e'.1.offset) := by
+        have hpw := ecs_slotsSorted_pairwise hsorted
+        rw [hsp01, List.map_append, List.pairwise_append] at hpw
+        exact List.pairwise_map.1 hpw.1
+      have hbd0 : ∀ e ∈ sp0, 0 ≤ e.1.offset ∧ e.1.offset < 2 ^ 24 := fun e he => by
+        obtain ⟨z, hez⟩ := ecc_move_pair' hlen0 he
+        obtain ⟨mw, -, -, -, -, hoff, -⟩ := ecc_moveOK_spec (hmovOK _ hez)
+        exact ecc_spOffOK_bounds hoff
+      obtain ⟨M1, hM1, hA1, hP1, -, hmov⟩ : ∃ M1, rv T (callBase f g u w) = .mem M1 ∧
           (∀ blk, (M1.find? blk).map ecsAttr = (M.find? blk).map ecsAttr) ∧
           M1.poisonBlock (.outargs 0) = M.poisonBlock (.outargs 0) ∧
-          ∀ e ∈ sp0, ∃ bs, M.write (ecsSlot e.1.offset.toNat) bs = some M1 ∧
-            bs.size = (tabs.ty e.1.type).size ∧
+          (∀ q k, q.blk ≠ .outargs 0 → M1.read q k = M.read q k) ∧
+          ∀ e ∈ sp0, ∃ bs, M1.read (ecsSlot e.1.offset.toNat) (tabs.ty e.1.type).size = some bs ∧
             Sem.Refines (rv frS e.2) (decode bs 0 (tabs.ty e.1.type)) := by
-        rcases hmv0 with ⟨hnone, rfl⟩ | ⟨z, p, a, hz, rfl, hmok⟩
-        · exact ⟨M, by unfold callBase; rw [hnone]; exact hMT, fun _ => rfl, rfl,
+        by_cases hne : callMoves f g u w = []
+        · have h0 : sp0 = [] := List.eq_nil_of_length_eq_zero (by rw [hlen0, hne]; rfl)
+          subst h0
+          exact ⟨M, by rw [ecc_callBase_nil hne]; exact hMT, fun _ => rfl, rfl, fun _ _ _ => rfl,
             fun e he => absurd he List.not_mem_nil⟩
-        obtain ⟨hzn, mw, hmvw, hmop, hmsz, hm2⟩ := ecc_callMove_spec hz
-        obtain ⟨mw', au, hmw', hau, -, hoff, hai, hsh, hauop, hau2, hsrc0, hamem, heqa, hmt, hsn, hss⟩ :=
-          ecc_moveOK_spec hmok
-        rw [hmvw] at hmw'; cases hmw'
-        have hbase : callBase f g u w = z := by unfold callBase; rw [hz]; rfl
-        -- the `Move` is a new value of `E`
-        have hzEL : E z ∧ L z := by
-          have hcz := hcs'
-          rw [hbase] at hcz
-          by_cases hne : zs = []
-          · subst hne
-            have he := ecs_storeChain_nil hcz
-            have hm : z ∈ w.args := by rw [← he]; exact hmw _ (List.mem_append_right _ (by simp))
+        have hmc := ecc_callMoves_chain hne
+        -- the top `Move` is a new value of `E`, and so are the ones below it
+        have hzn := ecm_new hmc hne
+        have hzEL : E (callBase f g u w) ∧ L (callBase f g u w) := by
+          by_cases hne' : zs = []
+          · subst hne'
+            have he := ecs_storeChain_nil hcs'
+            have hm : callBase f g u w ∈ w.args := by
+              rw [← he]; exact hmw _ (List.mem_append_right _ (by simp))
             exact ⟨hEw _ hm hzn, hLw _ hm hzn⟩
-          · exact ecs_chain_base_E hNC hL _ hcz (htopEL hne) hzn
-        obtain ⟨-, mw', y, hmw', hcl, hy, hev⟩ := hNC z hzEL.1
+          · exact ecs_chain_base_E hNC hL _ hcs' (htopEL hne') hzn
+        have hmE := ecm_E hNC hL _ hmc (fun _ => hzEL)
+        refine ecm_moves hMT (fun p => (tabs.ty p.type).size)
+          (fun e bs => Sem.Refines (rv frS e.2) (decode bs 0 (tabs.ty e.1.type))) _ hmc hlen0 hpw0
+          hbd0 ?_
+        intro e z hez mw M0 hmvw hM0
+        have hz := (List.of_mem_zip hez).2
+        have he0 := (List.of_mem_zip hez).1
+        obtain ⟨wz, -, -, hwz, -, hmop, -, -, -⟩ := ecm_mem hmc hz
+        rw [hmvw] at hwz; cases hwz
+        obtain ⟨mw', au, hmw', hau, hmsz, hoff, hai, hsh, hauop, hau2, hsrc0, hamem, heqa, hmt, hsn, hss⟩ :=
+          ecc_moveOK_spec (hmovOK _ hez)
+        rw [hmvw] at hmw'; cases hmw'
+        obtain ⟨-, mw', y, hmw', hcl, hy, hev⟩ := hNC z (hmE z hz).1
         change g.value? z = some mw' at hmw'
         rw [hmvw] at hmw'; cases hmw'
-        obtain ⟨hmid, hLcl⟩ := hL z hzEL.2 mw hmvw
+        obtain ⟨hmid, hLcl⟩ := hL z (hmE z hz).2 mw hmvw
         have hargs := ecs_args_three hmsz
         have hmem3 : ∀ i, i < 3 → mw.args[i]! ∈ mw.args := fun i hi => by
           rw [← Array.mem_toList_iff, hargs]
@@ -946,24 +1010,35 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           | 0, _ | 1, _ | 2, _ => simp
         have hty : (Ctx.make tabs g).tys[mw.id]?.getD .other = .mem := by
           rw [hmid, ← shapeOf_eq]; exact hsh
-        obtain ⟨d, s, M0, bs, M1, hd, hs, hM0, hrd, hW1, rfl⟩ := ecs_move_val hmop hargs hty hev
-        rw [hm2, hMT] at hM0; cases hM0
+        obtain ⟨d, s, M0', bs, Mz, hd, hs, hM0', hrd, hW1, rfl⟩ := ecs_move_val hmop hargs hty hev
+        rw [hM0] at hM0'; cases hM0'
         -- the destination: the parameter's slot
         have hEq : E mw.args[0]! ∧ L mw.args[0]! := by
           have hn : isNewB f mw.args[0]! = true := by
             unfold spOffOK at hoff; simp only [Bool.and_eq_true] at hoff; exact hoff.1.1.1
           exact ⟨hcl _ (hmem3 0 (by decide)) hn, hLcl _ (hmem3 0 (by decide)) hn⟩
         have ha := ecs_addr hNC hL hoff hEq.1 hEq.2 fun qw hqw hn =>
-          hHS _ ⟨z, .inr hz, mw, qw, hmvw, hqw, hn, rfl⟩
+          hHS _ (.inl ⟨z, .inr hz, mw, qw, hmvw, hqw, hn, rfl⟩)
         obtain ⟨a0, ha0, hasl⟩ := ha
         rw [rv_of ha0, hasl] at hd; cases hd
-        have hrd' : M.read s (tabs.ty p.type).size = some bs := by
+        have hrd' : M0.read s (tabs.ty e.1.type).size = some bs := by
           rw [hai] at hrd; simpa using hrd
+        refine ⟨s, bs, Mz, hrd', hW1, rv_of hy, ?_, fun hrdM => ?_⟩
+        · -- the bottom `Move` reads the call's memory; one above another a frame variable
+          by_cases hbot : moveMem g z = u.args[u.args.size - 1]!
+          · left; rw [← hbot]; unfold moveMem; rw [hmvw]; rfl
+          · right
+            obtain ⟨sw, n, e', hsw, hsop, hsax, hssh⟩ :=
+              ecc_localSrcOK_spec ((hloc z hz).resolve_left hbot)
+            obtain ⟨hsid, ys, hys, hevs⟩ := hHS _ (.inr ⟨z, hz, hbot, rfl⟩) sw hsw
+            obtain ⟨q, hq, hqb⟩ := ecm_localAddr_val hsw hsid hsop hsax hssh hevs
+            have hsrc : moveSrc g z = mw.args[1]! := by unfold moveSrc; rw [hmvw]; rfl
+            rw [hsrc] at hys
+            rw [rv_of hys, hq] at hs; cases hs
+            exact hqb
         -- the source's `Dereference`
-        have hpa : (p, a) ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList := by
-          rw [hsp01]; simp
         obtain ⟨haid, ya, hya, heva⟩ :=
-          hMA a ⟨by rw [hz]; rfl, hmas _ (hmemPair hpa).2, au, hau, hauop⟩ au hau
+          hMA e.2 ⟨hne, hmas _ (hmemPair (hmS0 he0)).2, au, hau, hauop⟩ au hau
         have hargsA := ec_args_two hau2
         have hsrcR : Reg frS au.args[0]! := regs_of_ok heva _ (by rw [← Array.mem_toList_iff, hargsA]; simp)
         have hva := evalValue_term (by rw [hauop]; decide) heva
@@ -973,17 +1048,14 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           hsrc0, hamem] at hva
         simp only [List.map_cons, List.map_nil, hm] at hva
         -- the target's source pointer refines the source's
-        have hsm : stackMove f g x = some z := by
-          unfold stackMove; rw [hu, hw]; dsimp only; rw [if_pos hcall, hz]
+        have hsm : z ∈ stackMoves f g x := by
+          unfold stackMoves; rw [hu, hw]; dsimp only; rw [if_pos hcall]; exact hz
         obtain ⟨ysT, hysT, hrys⟩ := hfront _ (eco_mem_front_move hi hsm hmvw (hmem3 1 (by decide)) hsn) _
           (by rw [← hsrc0]; exact reg_rv hsrcR)
         rw [ecCv_of_not_special hss] at hrys
         rw [rv_of hysT] at hs
-        have hP := ecs_move_arg hMR (hinsS _ (hmemPair hpa).1 (hregOf hpa)).1 heqa hmt hrys hs hrd'
-        refine ⟨_, by rw [hbase]; exact rv_of hy, fun blk => ecs_find_write hW1 blk,
-          ecs_poisonBlock_write hW1, fun e he => ?_⟩
-        rw [List.mem_singleton.1 he]
-        refine ⟨bs, hW1, ecs_read_size hrd', ?_⟩
+        have hP := ecs_move_arg hMR (hinsS _ (hmemPair (hmS0 he0)).1 (hregOf (hmS0 he0))).1 heqa hmt
+          hrys hs hrdM
         rw [rv_of hya, hva]
         rw [hsrc0] at hP
         exact hP
@@ -993,7 +1065,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         obtain ⟨e, he, rfl⟩ := List.mem_map.1 hp
         exact (mem_leaves (hwfS _ he) hl).2
       obtain ⟨Mt, hMt, hW⟩ := ecs_chain hNC hL _ hcs' htopEL hsOK hat
-        (fun z hz wz qw hwz hqw hn => hHS _ ⟨z, .inl ⟨zs, hcs, hz⟩, wz, qw, hwz, hqw, hn, rfl⟩) M1 hM1
+        (fun z hz wz qw hwz hqw hn => hHS _ (.inl ⟨z, .inl ⟨zs, hcs, hz⟩, wz, qw, hwz, hqw, hn, rfl⟩)) M1 hM1
       have hblk : ∀ e ∈ List.zipWith ecsW (leafSlots tabs (sp1.map Prod.fst))
           (zs.map fun z => rv T (storeVal g z)), e.1.blk = .outargs 0 := fun e he => by
         obtain ⟨a, -, b, rfl⟩ := ecs_mem_zipWith he
@@ -1020,11 +1092,9 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
         have heq : eqE (shapeOf (typeShapes tabs) f e.2) (tabs.ty e.1.type) = true := by
           rw [hsp01] at hb
           rcases List.mem_append.1 hb with h0 | h1
-          · rcases hmv0 with ⟨-, rfl⟩ | ⟨z, p, a, -, rfl, hmok⟩
-            · exact absurd h0 List.not_mem_nil
-            · rw [List.mem_singleton.1 h0]
-              obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, heqa, -⟩ := ecc_moveOK_spec hmok
-              exact heqa
+          · obtain ⟨z, hez⟩ := ecc_move_pair' hlen0 h0
+            obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, heqa, -⟩ := ecc_moveOK_spec (hmovOK _ hez)
+            exact heqa
           · have := ecc_piecesOK_eqE hpcS e (by rw [ecc_zip_fst_snd]; exact h1)
             simpa using this
         rw [← eqE_hasTy heq]; exact hshape e he
@@ -1077,19 +1147,19 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           rw [ecs_ofInt hoff]
           rcases hmf with h0 | h1
           · obtain ⟨e0, he0, hee⟩ := List.mem_map.1 h0
-            obtain ⟨bs, hW1, hsz, hv⟩ := hmov e0 he0
+            obtain ⟨bs, hrd1, hv⟩ := hmov e0 he0
+            have hb0 := hbd0 e0 he0
             simp only [Prod.mk.injEq] at hee
             obtain ⟨hp0, hv0⟩ := hee
-            rw [hp0] at hW1 hsz hv
+            rw [hp0] at hrd1 hv hb0
             rw [hv0] at hv
             refine ⟨bs, ?_, hv⟩
-            rw [← hsz]
-            refine ecs_move_read hW1 hW fun s hs => ⟨?_, (ecs_storesOK_bounds hsOK s hs).2⟩
+            refine ecm_read_writeAll (by omega) hrd1 hW fun s hs =>
+              ⟨?_, (ecs_storesOK_bounds hsOK s hs).2⟩
             obtain ⟨q, hq, l, -, rfl⟩ := ecs_mem_leafSlots hs
             have h2 := hpw.2.2 e0.1 (List.mem_map.2 ⟨e0, he0, rfl⟩) q hq
             rw [hp0] at h2
             dsimp only
-            rw [hsz]
             omega
           · exact hstk _ h1)
         (by rw [ecc_argPairs_map]; exact hP)
@@ -1321,13 +1391,14 @@ theorem ecs_moveTy_eqE {s t : Ty} (h : eqE s t = true) (ht : moveTy t = true) : 
   have he : erase s = erase t := Ty.eq_of_beq h
   cases t <;> cases s <;> simp_all [erase, moveTy]
 
-/-- **The obligation of the `Move` of a wide stack argument** `z` of call `x` (`NewObl`, anchored
-at `x`): once the source has reached the call, the `Dereference` the `Move` copies read its bytes
+/-- **The obligation of a `Move` of a wide stack argument** `z` of call `x` (`NewObl`, anchored at
+`x`): once the source has reached the call, the `Dereference` the `Move` copies read its bytes
 (the call's arguments have no `poison`), so does the target's refining memory at the same
-pointer, and the parameter's slot is writable (`outargsOK`). -/
+pointer, and so does the memory below `z` (the `Move`s below keep the allocations' sizes), and
+the parameter's slot is writable (`outargsOK`). -/
 theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT : ID → Prop}
     (hu : f.value? x = some u) (hw : g.value? x = some w) (hcall : (callOpMap u.op).isSome = true)
-    (hok : callOK tabs (typeShapes tabs) f g u w = true) (hz : callMove f g u w = some z)
+    (hok : callOK tabs (typeShapes tabs) f g u w = true) (hz : z ∈ callMoves f g u w)
     (L : ID → Prop)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
     (hLz : L z)
@@ -1348,19 +1419,19 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
         u.op = .StaticCall ∨ u.op = .ClosureCall ∨ u.op = .InterCall := by
       rcases hopu with h | h | h <;> simp [h]
     have hsu := ecc_args_split u.args k hkn
-    -- the `Move` and the parameter it copies
-    obtain ⟨-, zs, sp0, sp1, -, hsp01, -, hmv0⟩ := ecc_stackOK_inv hstack
-    obtain ⟨p, a, rfl, hmok⟩ : ∃ p a, sp0 = [(p, a)] ∧ moveOK tabs (typeShapes tabs) f g u p a z = true := by
-      rcases hmv0 with ⟨hn, -⟩ | ⟨z', p, a, hz', h0, hm⟩
-      · rw [hz] at hn; cases hn
-      · rw [hz] at hz'; cases hz'; exact ⟨p, a, h0, hm⟩
-    obtain ⟨hzn, mw', hmw', hmop, hmsz, hm2⟩ := ecc_callMove_spec hz
+    -- the `Move`, the parameter it copies and the `Move`s below it
+    obtain ⟨-, zs, sp0, sp1, -, hsp01, -, hlen0, hmovOK, -⟩ := ecc_stackOK_inv hstack
+    have hmne : callMoves f g u w ≠ [] := List.ne_nil_of_mem hz
+    have hmc := ecc_callMoves_chain hmne
+    obtain ⟨⟨p, a⟩, hez⟩ := ecc_move_pair hlen0 hz
+    have hmok := hmovOK _ hez
+    obtain ⟨mw', n', ms', hmw', -, hmop, hmsz, hc', rest, hsplit⟩ := ecm_mem hmc hz
     rw [hmw] at hmw'; cases hmw'
     obtain ⟨mw', au, hmw', hau, -, hoff, hai, hsh, hauop, hau2, hsrc0, hamem, heqa, hmt, hsn, hss⟩ :=
       ecc_moveOK_spec hmok
     rw [hmw] at hmw'; cases hmw'
     have hpa : (p, a) ∈ argPairs false (insOf abi) (u.args.extract k (u.args.size - 1)).toList := by
-      rw [hsp01]; simp
+      rw [hsp01]; exact List.mem_append_left _ (List.of_mem_zip hez).1
     have hpe := List.mem_filter.1 hpa
     have hpin : p ∈ insOf abi := (List.of_mem_zip hpe.1).1
     have hain : a ∈ (u.args.extract k (u.args.size - 1)).toList := (List.of_mem_zip hpe.1).2
@@ -1392,7 +1463,7 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     -- the `Dereference` read its bytes
     have hamu : a ∈ u.args := by
       rw [← Array.mem_toList_iff, hsu]; exact List.mem_append_left _ (List.mem_append_right _ hain)
-    obtain ⟨haid, ya, hya, heva⟩ := hheldS a (hMA a ⟨by rw [hz]; rfl, hamu, au, hau, hauop⟩) au hau
+    obtain ⟨haid, ya, hya, heva⟩ := hheldS a (hMA a ⟨hmne, hamu, au, hau, hauop⟩) au hau
     have hargsA := ec_args_two hau2
     have hsrcR : Reg G au.args[0]! := regs_of_ok heva _ (by rw [← Array.mem_toList_iff, hargsA]; simp)
     have hva := evalValue_term (by rw [hauop]; decide) heva
@@ -1422,13 +1493,23 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     rw [ecCv_of_not_special hssz] at hryS
     have hyS' : yS.asPtrWord = some p0 := hryS.asPtrWord hP0
     obtain ⟨bs, hrd, -⟩ := hMR.read hrd0
-    -- the destination
+    -- the memory below: the `Move`s below keep the allocations' sizes
     obtain ⟨hmid, hLcl⟩ := hL z hLz mw hmw
     have hargs := ecs_args_three hmsz
     have hmem3 : ∀ i, i < 3 → mw.args[i]! ∈ mw.args := fun i hi => by
       rw [← Array.mem_toList_iff, hargs]
       match i, hi with
       | 0, _ | 1, _ | 2, _ => simp
+    obtain ⟨M0, hM0, hA0⟩ := ecm_attr hNC hL n' hc'
+      (fun hne' => have hn := ecm_new hc' hne'
+        ⟨hEw _ (hmem3 2 (by decide)) hn, hLcl _ (hmem3 2 (by decide)) hn⟩)
+      (fun z' hz' => by
+        obtain ⟨e', he'⟩ := ecc_move_pair hlen0 (by rw [hsplit]; simp [hz'] : z' ∈ callMoves f g u w)
+        obtain ⟨-, -, -, -, -, -, -, hsh', -⟩ := ecc_moveOK_spec (hmovOK _ he')
+        exact hsh')
+      M (rv_of hyM)
+    obtain ⟨bs', hrd0'⟩ := ecm_read_congr hA0 hrd
+    -- the destination
     have hEq : E mw.args[0]! ∧ L mw.args[0]! := by
       have hn : isNewB f mw.args[0]! = true := by
         unfold spOffOK at hoff; simp only [Bool.and_eq_true] at hoff; exact hoff.1.1.1
@@ -1436,17 +1517,17 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     have ha := ecs_addr hNC hL hoff hEq.1 hEq.2 fun qw hqw hn => hheldT _ (hsp mw qw hmw hqw hn)
     have hokM : outargsOK tabs 0 M (insOf abi) = true := by rw [hMR.outargsOK]; exact hokm
     have hcw := List.all_eq_true.1 hokM p hpin
-    rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff0] at hcw
-    rw [← ecs_read_size hrd] at hcw
+    rw [hr, Bool.not_true, Bool.false_or, ecs_ofInt hoff0, ← ecs_canWrite_congr hA0] at hcw
+    rw [← ecs_read_size hrd0'] at hcw
     obtain ⟨M1, hW⟩ := ecs_write_of_canWrite hcw
     have hty : (Ctx.make tabs g).tys[mw.id]?.getD .other = .mem := by
       rw [hmid, ← shapeOf_eq]; exact hsh
     have hsrcT : (rv T mw.args[1]!).asPtrWord = some p0 := by
       have := rv_of hyS
       rw [ecMoveSrc_of hmw] at this; rw [this]; exact hyS'
-    have hrd' : M.read p0 mw.auxInt.toInt.toNat = some bs := by rw [hai]; simpa using hrd
+    have hrd' : M0.read p0 mw.auxInt.toInt.toNat = some bs' := by rw [hai]; simpa using hrd0'
     obtain ⟨a0, ha0, hasl⟩ := ha
-    exact ⟨_, ecs_move_eval hmop hRw hargs hty (by rw [rv_of ha0]; exact hasl) hsrcT (by rw [hm2]; exact rv_of hyM) hrd' hW⟩
+    exact ⟨_, ecs_move_eval hmop hRw hargs hty (by rw [rv_of ha0]; exact hasl) hsrcT hM0 hrd' hW⟩
   · cases hok
 
 /-- **The obligation of a stack-argument store** `z` of call `x` (`NewObl`, anchored at `x`): once
@@ -1498,7 +1579,7 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
       | mem h => exact ⟨_, rfl, h⟩
     have hokM : outargsOK tabs 0 M (insOf abi) = true := by rw [hMR.outargsOK]; exact hokm
     -- the stores below `z`
-    obtain ⟨-, zs0, sp0, sp1, hzs0, hsp01, hst, hmv0⟩ := ecc_stackOK_inv hstack
+    obtain ⟨-, zs0, sp0, sp1, hzs0, hsp01, hst, hlen0, hmovOK, -⟩ := ecc_stackOK_inv hstack
     rw [hzs] at hzs0; cases hzs0
     unfold storeArgsOK at hst
     simp only [Bool.and_eq_true, List.all_eq_true] at hst
@@ -1526,41 +1607,27 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     have hEL : zs' ≠ [] → E wz.args[2]! ∧ L wz.args[2]! := fun hne => by
       have hn := ecs_storeChain_new hc hne
       exact ⟨hEw _ (hmem 2 (by decide)) hn, hLcl _ (hmem 2 (by decide)) hn⟩
-    -- the memory the stores start from: the call's, or the `Move`'s copy into it
+    -- the memory the stores start from: the call's, or the top `Move`'s
     obtain ⟨Mb0, hMb0, hA0⟩ : ∃ Mb0, rv T (callBase f g u w) = .mem Mb0 ∧
         ∀ blk, (Mb0.find? blk).map ecsAttr = (M.find? blk).map ecsAttr := by
-      cases hmv : callMove f g u w with
-      | none => exact ⟨M, by unfold callBase; rw [hmv]; exact rv_of hy', fun _ => rfl⟩
-      | some z0 =>
-        obtain ⟨hzn, mw, hmvw, hmop, hmsz, hm2⟩ := ecc_callMove_spec hmv
-        have hmok : ∃ p a, moveOK tabs (typeShapes tabs) f g u p a z0 = true := by
-          rcases hmv0 with ⟨hn, -⟩ | ⟨z', p, a, hz', -, hm⟩
-          · rw [hmv] at hn; cases hn
-          · rw [hmv] at hz'; cases hz'; exact ⟨p, a, hm⟩
-        obtain ⟨p, a, hmok⟩ := hmok
-        obtain ⟨mw', -, hmw', -, -, -, -, hsh, -⟩ := ecc_moveOK_spec hmok
-        rw [hmvw] at hmw'; cases hmw'
-        have hbase : callBase f g u w = z0 := by unfold callBase; rw [hmv]; rfl
-        have hc0 := hc
-        rw [hbase] at hc0
-        have hz0EL : E z0 ∧ L z0 := by
-          by_cases hne : zs' = []
-          · subst hne
-            have he := ecs_storeChain_nil hc0
-            rw [← he]
-            rw [← he] at hzn
-            exact ⟨hEw _ (hmem 2 (by decide)) hzn, hLcl _ (hmem 2 (by decide)) hzn⟩
-          · exact ecs_chain_base_E hNC hL _ hc0 (hEL hne) hzn
-        obtain ⟨-, mw', y0, hmw', -, hy0, hev0⟩ := hNC z0 hz0EL.1
-        change g.value? z0 = some mw' at hmw'
-        rw [hmvw] at hmw'; cases hmw'
-        have hmid := (hL z0 hz0EL.2 mw hmvw).1
-        have hty0 : (Ctx.make tabs g).tys[mw.id]?.getD .other = .mem := by
-          rw [hmid, ← shapeOf_eq]; exact hsh
-        obtain ⟨d0, s0, M0, bs0, M1, -, -, hM0, -, hW1, rfl⟩ :=
-          ecs_move_val hmop (ecs_args_three hmsz) hty0 hev0
-        rw [hm2, rv_of hy'] at hM0; cases hM0
-        exact ⟨M1, by rw [hbase]; exact rv_of hy0, fun blk => ecs_find_write hW1 blk⟩
+      by_cases hne : callMoves f g u w = []
+      · exact ⟨M, by rw [ecc_callBase_nil hne]; exact rv_of hy', fun _ => rfl⟩
+      have hmc := ecc_callMoves_chain hne
+      have hzn := ecm_new hmc hne
+      have hz0EL : E (callBase f g u w) ∧ L (callBase f g u w) := by
+        by_cases hne' : zs' = []
+        · subst hne'
+          have he := ecs_storeChain_nil hc
+          rw [← he]
+          rw [← he] at hzn
+          exact ⟨hEw _ (hmem 2 (by decide)) hzn, hLcl _ (hmem 2 (by decide)) hzn⟩
+        · exact ecs_chain_base_E hNC hL _ hc (hEL hne') hzn
+      exact ecm_attr hNC hL _ hmc (fun _ => hz0EL)
+        (fun z' hz' => by
+          obtain ⟨e', he'⟩ := ecc_move_pair hlen0 hz'
+          obtain ⟨-, -, -, -, -, -, -, hsh', -⟩ := ecc_moveOK_spec (hmovOK _ he')
+          exact hsh')
+        M (rv_of hy')
     obtain ⟨Mb, hMb, hA⟩ := ecs_chain_attr hNC hL n' hc hEL h1 Mb0 hMb0
     -- `z`'s slot is writable
     have hsm : s ∈ leafSlots tabs (sp1.map Prod.fst) := by

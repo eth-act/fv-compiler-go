@@ -131,7 +131,7 @@ noncomputable def ecCv (tabs : Tables) (f g : Func) : Cv := fun x y =>
   | none => y
 
 /-- The source values the obligation of `x` reads: its arguments in the source, its arguments
-(and, for a call, its wide stack argument's `Move`'s arguments) in the target that the source
+(and, for a call, its wide stack arguments' `Move`s' arguments) in the target that the source
 defines, and the arguments of its wide call-result arguments (`wideSel`: the call whose register
 pieces a wide store writes); none for a value the pass invalidated (its target node reads
 nothing). -/
@@ -139,7 +139,8 @@ def ecFront (f g : Func) (x : ID) : List ID :=
   if invalidated g x then [] else
   ((f.value? x).map (·.args.toList)).getD [] ++
     ((((g.value? x).map (·.args.toList)).getD []) ++
-      (((stackMove f g x).bind g.value?).map (·.args.toList)).getD []).filter (fun a => !isNewB f a) ++
+      (stackMoves f g x).flatMap (fun z => ((g.value? z).map (·.args.toList)).getD [])).filter
+        (fun a => !isNewB f a) ++
     ((((f.value? x).map (·.args.toList)).getD []).filter (wideSel f g)).flatMap
       (fun a => ((f.value? a).map (·.args.toList)).getD [])
 

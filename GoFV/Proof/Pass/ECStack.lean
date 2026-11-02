@@ -1195,22 +1195,6 @@ theorem ecs_move_arg {m M : Mem} (hMR : Mem.Refines m M) {t ta : Ty} (hw : movTy
       rw [← ecT_eqE_decode he]
       exact ecs_decodeLoad_le bs 0 ta
 
-/-- **A moved argument reads back** after the stores above it, whose slots lie after its. -/
-theorem ecs_move_read {M M1 Mt : Mem} {o0 : Nat} {bs : Array Byte} {ss : List (Int × Ty)}
-    {ys : List Val} (hw1 : M.write (ecsSlot o0) bs = some M1)
-    (hw : writeAll M1 (List.zipWith ecsW ss ys) = some Mt)
-    (hle : ∀ s ∈ ss, ((o0 + bs.size : Nat) : Int) ≤ s.1 ∧ s.1 < 2 ^ 24) :
-    Mt.read (ecsSlot o0) bs.size = some bs := by
-  refine writeAll_read (A := []) (B := List.zipWith ecsW ss ys) (m := M) ?_ ?_
-  · simp only [List.nil_append, writeAll, hw1, Option.bind_some]; exact hw
-  · intro e he
-    obtain ⟨s, hs, y, rfl⟩ := ecs_mem_zipWith he
-    have h := hle s hs
-    refine .inr (.inr (.inr (.inl ?_)))
-    simp only [ecsW, ecsSlot, BitVec.toNat_ofNat]
-    rw [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)]
-    omega
-
 /-- A `Dereference` without `poison` read its bytes. -/
 theorem ecs_deref_read {ta : Ty} (hmt : moveTy ta = true) {P : Val} {m : Mem}
     (h : ((loadOp ta [P, .mem m]).retype ta).hasPoison = false) :

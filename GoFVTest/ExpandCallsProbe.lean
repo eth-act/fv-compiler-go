@@ -58,12 +58,15 @@ def stackWhy (tabs : Tables) (sh : Array Ty) (f g : Func) (u w : Value) (ins : L
     | some mw => s!"no store chain (memory arg {mw.op.name})"
     | none => "no store chain"
   | some zs =>
-    let (sp, mv) := match callMove f g u w, sp with
-      | some z, e :: sp' => (sp', some (e, z))
-      | _, _ => (sp, none)
-    if (callMove f g u w).isSome && mv.isNone then "move without a stack parameter"
-    else if mv.any (fun ((p, a), z) => !moveOK tabs sh f g u p a z) then "move"
-    else if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
+    let ms := callMoves f g u w
+    if ms.length > sp.length then "more moves than stack parameters"
+    else if !((sp.take ms.length).zip ms).all (fun ((p, a), z) => moveOK tabs sh f g u p a z) then "move"
+    else if !ms.all (fun z => moveMem g z == u.args[u.args.size - 1]! || localSrcOK sh g z) then
+      let src := ms.filterMap fun z => (g.value? (moveSrc g z)).map (·.op.name)
+      s!"upper move source not a frame variable ({src})"
+    else
+    let sp := sp.drop ms.length
+    if !storesOK tabs sh g (isNewB f) (leafSlots tabs (sp.map (·.1))) zs then
       s!"stores ({zs.length} for {(leafSlots tabs (sp.map (·.1))).length} slots)"
     else if !piecesOK tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g)) then
       s!"store values: {piecesWhy tabs sh f g false (sp.map (·.1)) (sp.map (·.2)) (zs.map (storeVal g))}"
@@ -246,6 +249,10 @@ def blockWhy (tabs : Tables) (sh : Array Ty) (anc : ID → ID → Bool) (f g : F
         if !(u.args.all fun a => !moveArgB f g x a ||
             (fb.values.contains a && beforeB og.toList a x)) then
           return "move: Dereference placement"
+      for z in stackMoves f g x do
+        if !(moveMem g z == callMem f x || placedSDom g anc fb.id (moveSrc g z) ||
+            depB g nodeG (fun _ => true) (gb.values.size + 1) (moveSrc g z) z) then
+          return "move source not held"
     for x in fb.values do
       for z in ownStores f g x do
         if !gb.values.contains z then return "result store in other block"
