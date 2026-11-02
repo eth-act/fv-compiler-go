@@ -323,25 +323,37 @@ dropped root is no root of `g`, so `fwdRel` compares atoms by `atomsXOK` (`atoms
 call:(StaticLECall ___)) mem:(SelectN [1] call)) && isMalloc(call.Aux) => mem` and the zero
 `Store`s at `SelectN [0] call` or an `OffPtr` of it are `dropOK` too: `zeroChain` ends, besides at
 a `Zero`, at the memory `SelectN [1] c` of a call `c` that returns a fresh zeroed block
-(`freshCall`: a size-specialised `runtime.mallocgc*SC*` allocator, not `newobject`, of four
-arguments, of a type `(ptr, mem, …)` with one ABI result and parameters of the shapes `uintptr`,
-any, `bool`, whose size is a positive `Const64` and whose `needzero` is `ConstBool [1]`, as
-`ssagen.newObject` calls it) with `p` in `SelectN [0] c` (`ptrBase`); a `Zero` of such bytes is
-dropped like a zero `Store` (`dropOK`'s `Zero` case with `zeroChain`). The precondition
-`Env.AllocZero` (in `RwPre` and `VPre`; `GoFV/Proof/NilPre.lean`) says that a malloc-family
-contract asked for a positive size with `needzero` set (`AllocReq`) returns a fresh all-zero heap
-block; the runtime's contracts satisfy it (`Env.runtime_allocZero`, `Runtime.alloc_zero`), `Env.p1`
-has none (`Env.p1_allocZero`). The atom simulation carries it as the invariant's environment
-predicate (`SrcInv.E`, `atomSimXE_refines : RefinesUnder (fun env => env.Mono ∧ I.E env)`; `qstep`
-gets `E env`), with `LoadFwd.fwdInv` (`GoFV/Proof/Pass/LoadFwdInv.lean`): constants' registers
-hold their values (`ConstReg`), and a fresh call's register is `poison` or a tuple whose pointer
-is to a heap block all zero in its memory (`FreshQ`, `fresh_eval`: the size and `needzero`
-registers retype at the ABI's shapes to the request `AllocReq`, and `encodeResults` only writes
-the outgoing-arguments area). `zeroChain_read` reads zeros from such a block (`fresh_blockZero`,
-`blockZero_read`) through the disjoint writes. Not done: `runtime.newobject`, whose size is the
-type descriptor's (`AllocReq` covers it; the checker would read the size from the read-only
-symbol, `RoImage`), and chains of dropped writes in one layer (the root's memory is a write
-dropped in the same layer, `copyReach` fails in `f`).
+(`freshCall`: a malloc-family call that is `freshSC` or `freshNew`) with `p` in `SelectN [0] c`
+(`ptrBase`); a `Zero` of such bytes is dropped like a zero `Store` (`dropOK`'s `Zero` case with
+`zeroChain`). `freshSC`: a size-specialised `runtime.mallocgc*SC*` allocator of four arguments, of
+a type `(ptr, mem, …)` with one ABI result and parameters of the shapes `uintptr`, any, `bool`,
+whose size is a positive `Const64` and whose `needzero` is `ConstBool [1]`, as `ssagen.newObject`
+calls it. `freshNew`: `runtime.newobject(typ)` of the same result shape with one pointer-shaped
+parameter, whose type argument is an `Addr` of a symbol; the forwarding layer also requires
+`fwdRoOK` (`layerOK .fwd`, `LayerChain.fwd`): if `f` has such calls, `f` passes
+`WBCheck.memTyOK` and every type symbol is one of the pass input's read-only symbols
+(`roSyms`) whose descriptor's size word (`roTypeInfo?`: the first 8 of at least 16 bytes) is
+positive (`newSymOK`). The precondition `Env.AllocZero` (in `RwPre` and `VPre`;
+`GoFV/Proof/NilPre.lean`) says that a malloc-family contract asked for a positive size
+(`AllocReq`: `newobject` of a type descriptor whose size `Runtime.typeInfo` reads as positive, or
+a size-specialised allocator with `needzero` set) returns a fresh all-zero heap block; the
+runtime's contracts satisfy it (`Env.runtime_allocZero`, `Runtime.alloc_zero`), `Env.p1` has none
+(`Env.p1_allocZero`). The atom simulation carries it as the invariant's environment predicate on
+the initial memory (`SrcInv.E env mem0`, `atomSimXE_refines : RefinesFrom (fun env args mem =>
+env.Mono ∧ I.E env (entryFrame …).mem0)`; `qstep` gets `E env fr.mem0` and `b ∈ f.blocks`), with
+`LoadFwd.fwdInv` (`GoFV/Proof/Pass/LoadFwdInv.lean`; `E env m := AllocZero ∧ KeepsRo ∧ RoMem ro
+m`): constants' and `Addr`s' registers hold their values (`ConstReg`), a fresh call's register is
+`poison` or a tuple whose pointer is to a heap block all zero in its memory, and for a `memTyOK`
+`f` every memory a register holds has the read-only symbols (`FwdQ`; `fresh_eval_sc`: the size
+and `needzero` registers retype at the ABI's shapes to the request; `fresh_eval_new`: the type
+argument is the symbol's pointer, and the call's memory holds its descriptor, so
+`Runtime.typeInfo` reads its positive size; `encodeResults` only writes the outgoing-arguments
+area). `LoadFwd.fwd_refines … (hro : fwdRoOK tabs ro f = true) : RefinesFrom (fun env _ mem =>
+env.Mono ∧ env.AllocZero ∧ RoImage ro env mem)`. `zeroChain_read` reads zeros from such a block
+(`fresh_blockZero`, `blockZero_read`) through the disjoint writes. Witnesses:
+`fm_checkedRewrite` (`mallocgcSmallNoScanSC2`), `fn_checkedRewrite`/`fn_rwPre` (`newobject`,
+`Witness/FwdNew.lean`). Not done: chains of dropped writes in one layer (the root's memory is a
+write dropped in the same layer, `copyReach` fails in `f`).
 
 Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
 block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second

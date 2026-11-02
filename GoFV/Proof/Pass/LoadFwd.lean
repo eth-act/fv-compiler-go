@@ -10,7 +10,8 @@ import GoFV.Proof.AtomSim
 the value a `Store` wrote, through `Store`s at disjoint addresses, at a pointer equal to the
 Load's, and memory roots whose write changes no byte replaced by `Copy` of their memory, every
 other value unchanged), `g` refines `f` under monotone contracts whose malloc-family contracts
-return zeroed blocks (`Env.AllocZero`), by the generalised atom simulation
+return zeroed blocks (`Env.AllocZero`) from initial memories with the read-only symbols `ro`
+(`RoImage`, for `newobject`'s type sizes, `fwdRoOK`), by the generalised atom simulation
 (`AtomSim.atomSimXE_refines`, invariant `fwdInv`: constants' registers hold their values, fresh
 malloc calls' registers their zeroed blocks). Its premises hold because every value listed in
 `f` is refined by the same value in `g` as a term (`fwd_den`), for valuations whose memory roots
@@ -714,10 +715,11 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
 /-- **A changed `Move` source writes a refined memory** (`moveSrcOK`): the source's `Move` copies
 from `tmp` in a memory where `tmp` holds what the inner `Move` read at `src` (or `poison`), and
 `src` still holds it (`moveSrc_mem`). -/
-theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
+theorem moveSrc_chgRef {ro : List (String × Alloc)} {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
     (h : moveSrcOK tabs f u w = true) :
-    ChgRefP (FreshQ tabs f) f.value? tabs u (listedDefs g) w := by
+    ChgRefP (FwdQ tabs ro f) f.value? tabs u (listedDefs g) w := by
   intro ρ ρ' hρ hT _ hQ hM k y hy
+  have hQ := hQ.1
   obtain ⟨huop, hwop, hu3, hw3, hai, -, hc0, hc2, mv, hmv, hcase⟩ := moveSrcOK_spec h
   have hu0 : u.args[0]! ∈ u.args := by
     rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
@@ -832,13 +834,14 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
   rw [toList_three hw3, List.map_cons, List.map_cons, List.map_cons, List.map_nil, hMt']
   simp [memDef, hwop, hai, hd0, hd1, hr', hw', -Int64.toNat_toInt]
 
-/-- Each value listed in `f` refines as a term in `g`, under any invariant whose frame part gives
-the fresh malloc calls' registers (`FreshQ`). -/
-theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop) (S : ID → Prop) :
-    TermRefP P (FreshQ tabs f) S f.value? tabs x (listedDefs g) tabs x :=
-  fun _ _ hρ hT _ _ _ hQ hM n => fwd_den F hρ hT hM hQ _ x rfl hx n
+/-- Each value listed in `f` refines as a term in `g`, under the forwarding layer's frame
+invariant (`FwdQ`, whose first part gives the fresh malloc calls' registers). -/
+theorem fwd_termRefP {ro : List (String × Alloc)} {x : ID} (hx : LM f x) (P : ID → Val → Prop)
+    (S : ID → Prop) : TermRefP P (FwdQ tabs ro f) S f.value? tabs x (listedDefs g) tabs x :=
+  fun _ _ hρ hT _ _ _ hQ hM n => fwd_den F hρ hT hM hQ.1 _ x rfl hx n
 
-theorem fwd_atomArgs : AtomArgsRefX (fwdInv tabs f) g := by
+theorem fwd_atomArgs {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = true) :
+    AtomArgsRefX (fwdInv tabs ro f hro) g := by
   intro b hb gb hgb a ha u hu ht
   have hbf : b ∈ f.blocks := F.blocks ▸ hb
   obtain ⟨fb, gb', hfb, hgb', BA⟩ := (atomsXOK_spec F.atoms).block b hbf
@@ -864,7 +867,8 @@ theorem fwd_atomArgs : AtomArgsRefX (fwdInv tabs f) g := by
   · obtain ⟨huop, hwop, -⟩ := moveSrcOK_spec hms
     exact .inr ⟨u', hu', huop.trans hwop.symm, .inr hwop, moveSrc_chgRef F hargs hms⟩
 
-theorem fwd_steps : StepRefsP (fwdInv tabs f) g := by
+theorem fwd_steps {ro : List (String × Alloc)} (hro : fwdRoOK tabs ro f = true) :
+    StepRefsP (fwdInv tabs ro f hro) g := by
   refine ControlsRefP.toStepRefsP (fun b hb fb gb hfb hgb => ?_) fun b hb fb gb hfb hgb => ?_
   · have hbf : b ∈ f.blocks := F.blocks ▸ hb
     obtain ⟨gb', hgb', hext, -⟩ := F.bext b hbf fb hfb
@@ -881,12 +885,16 @@ theorem fwd_steps : StepRefsP (fwdInv tabs f) g := by
 end
 
 /-- **Load-of-Store forwarding (and dropping identity writes) refines its input** under monotone
-contracts whose malloc-family contracts return zeroed blocks. -/
-theorem fwd_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
-    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs f g = true) :
-    RefinesUnder (fun env => env.Mono ∧ env.AllocZero) tabs g tabs f :=
+contracts whose malloc-family contracts return zeroed blocks, from initial memories with the
+read-only symbols `ro` (which `fwdRoOK` reads `newobject`'s type sizes from) under contracts that
+keep them. -/
+theorem fwd_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {ro : List (String × Alloc)}
+    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs f g = true)
+    (hro : fwdRoOK tabs ro f = true) :
+    RefinesFrom (fun env _ mem => env.Mono ∧ env.AllocZero ∧ RoImage ro env mem) tabs g tabs f :=
   have F := fwdRel_spec h
-  atomSimXE_refines hf hg (atomsXOK_spec F.atoms) (fwdInv tabs f) (fwd_atomArgs F)
-    (fwd_steps F)
+  (atomSimXE_refines hf hg (atomsXOK_spec F.atoms) (fwdInv tabs ro f hro) (fwd_atomArgs F hro)
+    (fwd_steps F hro)).mono fun _ _ _ h =>
+    ⟨h.1, h.2.1, h.2.2.1, (MemInv.sinv_entry (fun a h hg hw => roMem_set a h hg hw) h.2.2.2).1⟩
 
 end GoFV.Proof.Pass.LoadFwd

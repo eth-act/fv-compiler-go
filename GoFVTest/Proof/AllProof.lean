@@ -543,6 +543,7 @@ import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.FwdCopy
 import GoFV.Proof.Witness.FwdDrop
 import GoFV.Proof.Witness.FwdMalloc
+import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits

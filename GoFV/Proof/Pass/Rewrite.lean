@@ -90,11 +90,6 @@ theorem RefinesUnder.toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
     (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.1) h.from
 
-theorem RefinesUnder.allocZero_toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
-    (h : RefinesUnder (fun env => env.Mono ∧ env.AllocZero) tabs' f' tabs f) :
-    RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
-  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.1⟩) h.from
-
 /-- **The layers refine**: each step of a `LayerChain` from a checked function refines it under
 `RwPre` of the pass's input `f0` (nil-check eliminations: nilcheckelim's relation with the rewrite
 passes' seeds, `Nil.refinesFrom_of_rel`; forwardings: `LoadFwd.fwd_refines`; struct-load
@@ -117,10 +112,11 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
     unfold NilPre
     rw [hd]
     exact hp.2.1
-  | @fwd f f' g hr hck _ ih =>
+  | @fwd f f' g hr hro hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
-    exact ⟨ce', hg, (RefinesUnder.allocZero_toRw (LoadFwd.fwd_refines hf hf' hr)).trans R'⟩
+    exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.1, hp.2.2.2.2⟩)
+      (LoadFwd.fwd_refines hf hf' hr hro)).trans R'⟩
   | @rw f f' g evs hv hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
