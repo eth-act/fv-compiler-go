@@ -256,7 +256,9 @@ theorem ec_leafPaths_head_hasTy {t : Ty} {y : Val} (hy : y.hasTy t = true) {k : 
       simp only [leafPaths, List.mem_cons, List.cons.injEq, Prod.mk.injEq, List.not_mem_nil,
         or_false] at hm
       rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩
-      · cases p <;> simp_all [Comp.select, Val.hasTy, Val.isPtrOrPoison]
+      · cases p <;> first
+          | (simp_all [Comp.select, Val.hasTy, Val.isPtrWord]; done)
+          | (rename_i w _; cases w <;> simp_all [Comp.select, Val.hasTy, Val.isPtrWord])
       · rfl
     | poison => rfl
     | _ => simp [Val.hasTy] at hy
@@ -267,7 +269,9 @@ theorem ec_leafPaths_head_hasTy {t : Ty} {y : Val} (hy : y.hasTy t = true) {k : 
       simp only [leafPaths, List.mem_cons, List.cons.injEq, Prod.mk.injEq, List.not_mem_nil,
         or_false] at hm
       rcases hm with ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩ | ⟨⟨rfl, rfl⟩, -⟩
-      · cases p <;> simp_all [Comp.select, Val.hasTy, Val.isPtrOrPoison]
+      · cases p <;> first
+          | (simp_all [Comp.select, Val.hasTy, Val.isPtrWord]; done)
+          | (rename_i w _; cases w <;> simp_all [Comp.select, Val.hasTy, Val.isPtrWord])
       · rfl
       · rfl
     | poison => rfl
@@ -301,7 +305,9 @@ theorem ec_agg_retype_ptr (vs : List Val) (t : Ty) (e : Option Nat) :
   | _ => rfl
 
 theorem ec_hasTy_ptr (v : Val) (e e' : Option Nat) : v.hasTy (.ptr e) = v.hasTy (.ptr e') := by
-  cases v <;> rfl
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
 
 /-- A value of an aggregate shape retyped at a pointer is `poison`. -/
 theorem eco_retype_ptr_of_agg {v : Val} {fs : List (Nat × Ty)} {n : Nat} (e : Option Nat)
@@ -572,6 +578,13 @@ theorem ec_pieces {tabs : Tables} {f g : Func} {env : Env} {frS T : Frame} {E L 
       cases y with
       | ptr r => exact .cons hyy .nil
       | poison => exact .cons (.poison _) .nil
+      | int w x =>
+        cases w with
+        | w64 =>
+          have hr : (Val.int .w64 x).retype (.int .w64) = .int .w64 x := by simp [Val.retype]
+          rw [ecPieceVals_of_hasTy true rfl, leafVals_atom rfl, hr]
+          exact .cons hyy .nil
+        | _ => simp [Val.hasTy] at hyp
       | _ => simp [Val.hasTy] at hyp
 
 end GoFV.Proof.EC

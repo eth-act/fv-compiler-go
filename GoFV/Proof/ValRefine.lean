@@ -683,14 +683,16 @@ theorem Val.hasTy_asAgg {v : Val} {t : Ty} (h : v.hasTy t = true) :
     | poison => rfl
     | agg vs =>
       obtain ⟨p, l, rfl, hp, -⟩ := Val.hasTy_agg_str.1 h
-      cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.strAgg, Val.hasTyList]
+      rcases p with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;>
+        simp_all [Val.isPtrWord, Val.hasTy, Ty.asAgg, Ty.strAgg, Val.hasTyList]
     | _ => simp [Val.hasTy] at h
   case slice e =>
     cases v with
     | poison => rfl
     | agg vs =>
       obtain ⟨p, l, c, rfl, hp, -⟩ := Val.hasTy_agg_slice.1 h
-      cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.sliceAgg, Val.hasTyList]
+      rcases p with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;>
+        simp_all [Val.isPtrWord, Val.hasTy, Ty.asAgg, Ty.sliceAgg, Val.hasTyList]
     | _ => simp [Val.hasTy] at h
   all_goals exact h
 
@@ -706,7 +708,8 @@ theorem Val.checkLen_hasTy {v : Val} {t : Ty} (h : v.hasTy t.asAgg = true) :
       split
       · next hs =>
         obtain ⟨p, l, rfl, -⟩ := Val.strOK_iff.1 hs
-        cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.strAgg, Val.hasTyList]
+        rcases p with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;>
+          simp_all [Val.isPtrWord, Val.hasTy, Ty.asAgg, Ty.strAgg, Val.hasTyList]
       · rfl
     | _ => simp [Val.hasTy, Ty.asAgg, Ty.strAgg] at h
   case slice e =>
@@ -717,7 +720,8 @@ theorem Val.checkLen_hasTy {v : Val} {t : Ty} (h : v.hasTy t.asAgg = true) :
       split
       · next hs =>
         obtain ⟨p, l, c, rfl, -⟩ := Val.sliceOK_iff.1 hs
-        cases p <;> simp_all [Val.isPtrOrPoison, Val.hasTy, Ty.asAgg, Ty.sliceAgg, Val.hasTyList]
+        rcases p with ⟨_ | _ | _ | _, _⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;>
+          simp_all [Val.isPtrWord, Val.hasTy, Ty.asAgg, Ty.sliceAgg, Val.hasTyList]
       · rfl
     | _ => simp [Val.hasTy, Ty.asAgg, Ty.sliceAgg] at h
   all_goals exact h

@@ -1,3 +1,4 @@
+import GoFV.Proof.PtrAddr
 import GoFV.Proof.Pass.ECChain
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.MemCombineBytes
@@ -329,37 +330,42 @@ theorem ecs_offPtr_ptr {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^
   simp only [PtrOps.ptrRes]
   rw [if_pos (ecs_ptr_inWindow hk)]
 
-/-- `OffPtr [k]` of the area's start as a `uintptr`, read back as a pointer. -/
+/-- `OffPtr [k]` of the area's start as a `uintptr`, read as a pointer: an integer word addressing
+slot `k` (§3.3). -/
 theorem ecs_offPtr_int {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^ 24) (e : Option Nat) :
-    (PtrOps.offPtr ai [(Val.ptr (ecsSlot 0)).retype (.int .w64)]).retype (.ptr e) =
-      .ptr (ecsSlot k) := by
+    ((PtrOps.offPtr ai [(Val.ptr (ecsSlot 0)).retype (.int .w64)]).retype (.ptr e)).asPtrWord =
+      some (ecsSlot k) := by
   have h1 : (Val.ptr (ecsSlot 0)).retype (.int .w64) =
       .int .w64 (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) := rfl
+  have hA : Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) = ecsSlot 0 :=
+    Ptr.ofAddr_addr (p := ecsSlot 0) (by decide) rfl
+  have hs : (ecsSlot 0).add (BitVec.ofNat 64 k) = ecsSlot k := by
+    simp only [Ptr.add, ecsSlot]
+    rw [show BitVec.ofNat 64 0 + BitVec.ofNat 64 k = BitVec.ofNat 64 k by simp]
+  have hw : ((Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0)).add
+      (BitVec.ofNat 64 k)).inWindow = true := by
+    rw [hA, hs]; exact ecs_ptr_inWindow hk
   rw [h1]
-  simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast, Val.retype]
-  congr 1
-  have hx : (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0 + BitVec.ofNat 64 k).toNat =
-      2 ^ 62 + k := by
-    simp only [BitVec.toNat_add, BitVec.toNat_ofNat]
-    omega
-  unfold Ptr.ofAddr
-  simp only [hx]
-  rw [if_neg (by omega), if_neg (by omega)]
-  have e1 : (2 ^ 62 + k - 2 ^ 62) = k := by omega
-  simp only [e1, Nat.div_eq_of_lt (show k < 2 ^ 42 by omega), Nat.mod_eq_of_lt (show k < 2 ^ 42 by omega),
-    Nat.div_eq_of_lt hk, Nat.mod_eq_of_lt hk, beq_self_eq_true, ite_true]
+  simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast]
+  unfold PtrOps.wordRes
+  rw [if_pos hw]
+  show (Val.int .w64 _).asPtrWord = _
+  simp only [Val.asPtrWord, Ptr.ofAddr_add_of_inWindow hw, hA, hs]
 
 /-- `Store`'s write (`memRoot`). -/
 theorem ecs_store_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Store)
-    (h : memRoot ctx u argv = .ok y) : ∃ q x M M', argv = [.ptr q, x, .mem M] ∧
-      M.write q (encode (auxTy ctx.tabs u.aux) x) = some M' ∧ y = .mem M' := by
+    (h : memRoot ctx u argv = .ok y) : ∃ a q x M M', argv = [a, x, .mem M] ∧
+      a.asPtrWord = some q ∧ M.write q (encode (auxTy ctx.tabs u.aux) x) = some M' ∧
+      y = .mem M' := by
   unfold memRoot at h
   rw [hu] at h
   split at h
   all_goals first
     | contradiction
-    | (simp only [writeRes] at h; split at h
-       · cases h; exact ⟨_, _, _, _, rfl, ‹_›, rfl⟩
+    | (split at h
+       · simp only [writeRes] at h; split at h
+         · cases h; exact ⟨_, _, _, _, _, rfl, ‹_›, ‹_›, rfl⟩
+         · cases h
        · cases h)
     | (simp only at h; split at h <;> cases h)
 
@@ -367,7 +373,7 @@ theorem ecs_store_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : 
 theorem ecs_store_eval {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (hu : u.op = .Store)
     (hreg : ∀ a ∈ u.args, Reg fr a) (hargs : u.args.toList = [u.args[0]!, u.args[1]!, u.args[2]!])
     (hty : ctx.tys[u.id]?.getD .other = .mem) {q : Ptr} {M M' : Mem}
-    (hq : rv fr u.args[0]! = .ptr q) (hm : rv fr u.args[2]! = .mem M)
+    (hq : (rv fr u.args[0]!).asPtrWord = some q) (hm : rv fr u.args[2]! = .mem M)
     (hw : M.write q (encode (auxTy ctx.tabs u.aux) (rv fr u.args[1]!)) = some M') :
     evalValue env ctx fr u = .ok (.mem M') := by
   rw [evalValue_of_regs hreg, hty, hargs]
@@ -375,9 +381,11 @@ theorem ecs_store_eval {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (hu : u.
       memRoot ctx u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] := by
     unfold evalOp; rw [hu]
   simp only [List.map_cons, List.map_nil]
-  rw [he, hq, hm]
+  rw [he, hm]
   unfold memRoot
   rw [hu]
+  dsimp only
+  rw [hq]
   dsimp only
   rw [hw]
   rfl
@@ -386,7 +394,7 @@ theorem ecs_store_eval {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (hu : u.
 theorem ecs_store_val {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {y : Val}
     (hu : u.op = .Store) (hargs : u.args.toList = [u.args[0]!, u.args[1]!, u.args[2]!])
     (hty : ctx.tys[u.id]?.getD .other = .mem) (h : evalValue env ctx fr u = .ok y) :
-    ∃ q M M', rv fr u.args[0]! = .ptr q ∧ rv fr u.args[2]! = .mem M ∧
+    ∃ q M M', (rv fr u.args[0]!).asPtrWord = some q ∧ rv fr u.args[2]! = .mem M ∧
       M.write q (encode (auxTy ctx.tabs u.aux) (rv fr u.args[1]!)) = some M' ∧ y = .mem M' := by
   have hreg := regs_of_ok h
   rw [evalValue_of_regs hreg, hty, hargs] at h
@@ -396,11 +404,11 @@ theorem ecs_store_val {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {y : Val}
   cases hr : memRoot ctx u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] with
   | ok r =>
     rw [hr] at h
-    obtain ⟨q, x, M, M', hl, hw, rfl⟩ := ecs_store_inv hu hr
+    obtain ⟨a, q, x, M, M', hl, hq, hw, rfl⟩ := ecs_store_inv hu hr
     simp only [List.cons.injEq, and_true] at hl
     obtain ⟨h1, h2, h3⟩ := hl
     cases h
-    exact ⟨q, M, M', h1, h3, by rw [h2]; exact hw, rfl⟩
+    exact ⟨q, M, M', by rw [h1]; exact hq, h3, by rw [h2]; exact hw, rfl⟩
   | panic e m => rw [hr] at h; cases h
   | stuck msg => rw [hr] at h; cases h
 
@@ -448,7 +456,7 @@ theorem ecs_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
     (hEq : E q) (hLq : L q)
     (hsp : ∀ qw, g.value? q = some qw → isNewB f qw.args[0]! = false →
       EcTgtHolds env tabs g T qw.args[0]!) :
-    T.regs[q]? = some (some (.ptr (ecsSlot off.toNat))) := by
+    ∃ a, T.regs[q]? = some (some a) ∧ a.asPtrWord = some (ecsSlot off.toNat) := by
   unfold spOffOK at hok
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hok
   obtain ⟨⟨⟨-, h0⟩, h24⟩, hm⟩ := hok
@@ -481,19 +489,20 @@ theorem ecs_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
   simp only [List.map_cons, List.map_nil, rv_of hys, hysv] at hv
   change yq = (PtrOps.offPtr qw.auxInt [Val.retype (shapeOf (typeShapes tabs) g qw.args[0]!)
     (.ptr (ecsSlot 0))]).retype (shapeOf (typeShapes tabs) g q) at hv
-  rw [hyq, hv]
+  refine ⟨yq, hyq, ?_⟩
+  rw [hv]
   split at hqsh
   · next e he =>
     rw [he]
     split at hssh
     · next e' he' =>
       rw [he']
-      show some (some ((PtrOps.offPtr qw.auxInt [.ptr (ecsSlot 0)]).retype (.ptr e))) = _
+      show ((PtrOps.offPtr qw.auxInt [.ptr (ecsSlot 0)]).retype (.ptr e)).asPtrWord = _
       rw [ecs_offPtr_ptr hai' hk]
       rfl
     · next he' =>
       rw [he']
-      rw [ecs_offPtr_int hai' hk]
+      exact ecs_offPtr_int hai' hk e
     · cases hssh
   · cases hqsh
 
@@ -634,7 +643,8 @@ theorem ecs_chain {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID
         unfold spOffOK at hoff; simp only [Bool.and_eq_true] at hoff; exact hoff.1.1.1
       exact ⟨hcl _ (hmem 0 (by decide)) hn, hLcl _ (hmem 0 (by decide)) hn⟩
     have ha := ecs_addr hNC hL hoff hEq.1 hEq.2 fun qw hqw => hsp z (by simp) w qw hw hqw
-    rw [rv_of ha] at hP; cases hP
+    obtain ⟨a0, ha0, hasl⟩ := ha
+    rw [rv_of ha0, hasl] at hP; cases hP
     rw [show (Ctx.make tabs g).tabs = tabs from rfl, ecs_encode_eqE (hat s (by simp)) haux] at hW
     refine ⟨M1, rv_of hy, ?_⟩
     have hlen : s1.length = (zs'.map fun z => rv T (storeVal g z)).length := by
@@ -996,7 +1006,8 @@ theorem ecs_storesOK_bounds {tabs : Tables} {sh : Array Ty} {g : Func} {nw : ID 
 
 /-- `Move`'s copy (`memRoot`). -/
 theorem ecs_move_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Move)
-    (h : memRoot ctx u argv = .ok y) : ∃ d s M bs M', argv = [.ptr d, .ptr s, .mem M] ∧
+    (h : memRoot ctx u argv = .ok y) : ∃ a b d s M bs M', argv = [a, b, .mem M] ∧
+      a.asPtrWord = some d ∧ b.asPtrWord = some s ∧
       M.read s u.auxInt.toInt.toNat = some bs ∧ M.write d bs = some M' ∧ y = .mem M' := by
   unfold memRoot at h
   rw [hu] at h
@@ -1004,9 +1015,11 @@ theorem ecs_move_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u
   all_goals first
     | contradiction
     | (split at h
-       · simp only [writeRes] at h
-         split at h
-         · cases h; exact ⟨_, _, _, _, _, rfl, ‹_›, ‹_›, rfl⟩
+       · split at h
+         · simp only [writeRes] at h
+           split at h
+           · cases h; exact ⟨_, _, _, _, _, _, _, rfl, ‹_›, ‹_›, ‹_›, ‹_›, rfl⟩
+           · cases h
          · cases h
        · cases h)
     | (simp only at h; split at h <;> cases h)
@@ -1015,7 +1028,7 @@ theorem ecs_move_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u
 theorem ecs_move_val {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {y : Val}
     (hu : u.op = .Move) (hargs : u.args.toList = [u.args[0]!, u.args[1]!, u.args[2]!])
     (hty : ctx.tys[u.id]?.getD .other = .mem) (h : evalValue env ctx fr u = .ok y) :
-    ∃ d s M bs M', rv fr u.args[0]! = .ptr d ∧ rv fr u.args[1]! = .ptr s ∧
+    ∃ d s M bs M', (rv fr u.args[0]!).asPtrWord = some d ∧ (rv fr u.args[1]!).asPtrWord = some s ∧
       rv fr u.args[2]! = .mem M ∧ M.read s u.auxInt.toInt.toNat = some bs ∧
       M.write d bs = some M' ∧ y = .mem M' := by
   have hreg := regs_of_ok h
@@ -1026,11 +1039,11 @@ theorem ecs_move_val {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {y : Val}
   cases hr : memRoot ctx u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] with
   | ok r =>
     rw [hr] at h
-    obtain ⟨d, s, M, bs, M', hl, hrd, hw, rfl⟩ := ecs_move_inv hu hr
+    obtain ⟨a, b, d, s, M, bs, M', hl, hd, hs, hrd, hw, rfl⟩ := ecs_move_inv hu hr
     simp only [List.cons.injEq, and_true] at hl
     obtain ⟨h1, h2, h3⟩ := hl
     cases h
-    exact ⟨d, s, M, bs, M', h1, h2, h3, hrd, hw, rfl⟩
+    exact ⟨d, s, M, bs, M', by rw [h1]; exact hd, by rw [h2]; exact hs, h3, hrd, hw, rfl⟩
   | panic e m => rw [hr] at h; cases h
   | stuck msg => rw [hr] at h; cases h
 
@@ -1038,7 +1051,7 @@ theorem ecs_move_val {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {y : Val}
 theorem ecs_move_eval {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (hu : u.op = .Move)
     (hreg : ∀ a ∈ u.args, Reg fr a) (hargs : u.args.toList = [u.args[0]!, u.args[1]!, u.args[2]!])
     (hty : ctx.tys[u.id]?.getD .other = .mem) {d s : Ptr} {M M' : Mem} {bs : Array Byte}
-    (hd : rv fr u.args[0]! = .ptr d) (hs : rv fr u.args[1]! = .ptr s)
+    (hd : (rv fr u.args[0]!).asPtrWord = some d) (hs : (rv fr u.args[1]!).asPtrWord = some s)
     (hm : rv fr u.args[2]! = .mem M) (hrd : M.read s u.auxInt.toInt.toNat = some bs)
     (hw : M.write d bs = some M') :
     evalValue env ctx fr u = .ok (.mem M') := by
@@ -1047,9 +1060,11 @@ theorem ecs_move_eval {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (hu : u.o
       memRoot ctx u [rv fr u.args[0]!, rv fr u.args[1]!, rv fr u.args[2]!] := by
     unfold evalOp; rw [hu]
   simp only [List.map_cons, List.map_nil]
-  rw [he, hd, hs, hm]
+  rw [he, hm]
   unfold memRoot
   rw [hu]
+  dsimp only
+  rw [hd, hs]
   dsimp only
   rw [hrd]
   dsimp only
@@ -1126,8 +1141,8 @@ theorem ecs_decode_hasTy_mov : (t : Ty) → (bs : Array Byte) → (o : Nat) → 
     · rfl
   | .ptr e, _, _, _, _ => decodePtr_hasTy e _
   | .agg fs n, bs, o, h, hs => ecs_decodeFields_hasTy_mov fs n 0 bs o h hs
-  | .str, _, _, _, _ => Val.ofStr_hasTy_of (decodePtr_isPtrOrPoison _) _
-  | .slice e, _, _, _, _ => Val.ofSlice_hasTy_of (decodePtr_isPtrOrPoison _) e _ _
+  | .str, _, _, _, _ => Val.ofStr_hasTy_of (decodePtr_isPtrWord _) _
+  | .slice e, _, _, _, _ => Val.ofSlice_hasTy_of (decodePtr_isPtrWord _) e _ _
   | .empty, _, _, _, _ | .opaque _, _, _, _, _ => rfl
   | .blob n, bs, o, _, hs => by
     simp only [Ty.size] at hs
@@ -1147,22 +1162,24 @@ theorem ecs_decodeFields_hasTy_mov : (fs : List (Nat × Ty)) → (n s : Nat) →
 end
 
 /-- **A wide argument copied by a `Move`**: the source's `Dereference` of `P` (refined by the
-target's pointer `.ptr s`) at its memory `m` (refined by `M`) is refined by the bytes the target
-reads at `s` decoded at the parameter's shape `t`. -/
+target's pointer word `Q`, reading as `s`) at its memory `m` (refined by `M`) is refined by the
+bytes the target reads at `s` decoded at the parameter's shape `t`. -/
 theorem ecs_move_arg {m M : Mem} (hMR : Mem.Refines m M) {t ta : Ty} (hw : movTy t = true)
-    (he : eqE ta t = true) (hmt : moveTy t = true) {P : Val} {s : Ptr} (hP : Sem.Refines P (.ptr s))
-    {bs : Array Byte} (hrd : M.read s t.size = some bs) :
+    (he : eqE ta t = true) (hmt : moveTy t = true) {P Q : Val} {s : Ptr} (hP : Sem.Refines P Q)
+    (hQ : Q.asPtrWord = some s) {bs : Array Byte} (hrd : M.read s t.size = some bs) :
     Sem.Refines ((loadOp ta [P, .mem m]).retype ta) (decode bs 0 t) := by
   have hdt : (decode bs 0 t).retype ta = decode bs 0 t := by
     apply Val.retype_of_hasTy
     rw [eqE_hasTy he]; exact ecs_decode_hasTy_mov t bs 0 hw (by rw [ecs_read_size hrd]; omega)
-  cases hP with
-  | poison =>
-    simp only [loadOp]
+  have hPw : P = .poison ∨ P.asPtrWord = some s := by
+    cases hP with
+    | poison => exact .inl rfl
+    | _ => first | exact .inr hQ | simp [Val.asPtrWord] at hQ
+  rcases hPw with rfl | hPw
+  · simp only [loadOp, Val.asPtrWord]
     rw [show Val.retype ta .poison = .poison by cases ta <;> rfl]
     exact .poison _
-  | ptr p =>
-    simp only [loadOp]
+  · simp only [loadOp, hPw]
     rw [← hdt]
     refine retype_mono ta ((load_mono hMR ta s).trans ?_)
     have hsz := ecT_eqE_size he
@@ -1197,12 +1214,12 @@ theorem ecs_move_read {M M1 Mt : Mem} {o0 : Nat} {bs : Array Byte} {ss : List (I
 /-- A `Dereference` without `poison` read its bytes. -/
 theorem ecs_deref_read {ta : Ty} (hmt : moveTy ta = true) {P : Val} {m : Mem}
     (h : ((loadOp ta [P, .mem m]).retype ta).hasPoison = false) :
-    ∃ p bs, P = .ptr p ∧ m.read p ta.size = some bs := by
+    ∃ p bs, P.asPtrWord = some p ∧ m.read p ta.size = some bs := by
   have hpo : ∀ t : Ty, Val.retype t .poison = .poison := fun t => by cases t <;> rfl
-  cases P with
-  | ptr p =>
+  cases hP : P.asPtrWord with
+  | some p =>
     refine ⟨p, ?_⟩
-    simp only [loadOp] at h
+    simp only [loadOp, hP] at h
     cases hr : m.read p ta.size with
     | some bs => exact ⟨bs, rfl, rfl⟩
     | none =>
@@ -1213,6 +1230,6 @@ theorem ecs_deref_read {ta : Ty} (hmt : moveTy ta = true) {P : Val} {m : Mem}
       all_goals first
         | (rw [hpo] at h; cases h)
         | (rw [hr] at h; dsimp only at h; rw [hpo] at h; cases h)
-  | _ => simp only [loadOp, hpo, Val.hasPoison] at h; cases h
+  | none => simp only [loadOp, hP, hpo, Val.hasPoison] at h; cases h
 
 end GoFV.Proof.EC

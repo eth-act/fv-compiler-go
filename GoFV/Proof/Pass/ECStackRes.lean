@@ -507,7 +507,7 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
     simp only [Bool.and_eq_true] at hq
     exact hq.1.1.1
   obtain ⟨hEq, hLq⟩ := hEarg _ hm0 hqnew
-  have hqv := ecs_addr hN hL hq hEq hLq fun qw hqw hn => by
+  obtain ⟨a0, hqv, hasl⟩ := ecs_addr hN hL hq hEq hLq fun qw hqw hn => by
     have e : loadSP g l = qw.args[0]! := by unfold loadSP; rw [hwl]; simp [hqw]
     rw [← e] at hn ⊢
     exact hTH _ (hHsp hn)
@@ -540,6 +540,8 @@ theorem obl_selectStack {tabs : Tables} {f g : Func} {x : ID} {u w : Value} {c :
   -- the leaf's evaluation
   rw [ecr_eval_load hwop (regs_of_ok hev), hargs2, List.map_cons, List.map_cons, List.map_nil,
     rv_of hqv, rv_of hym, hid, ← shapeOf_eq] at hev
+  simp only [show ∀ m, Val.retype Ty.mem (Val.mem m) = .mem m from fun _ => rfl, loadOp,
+    hasl] at hev
   cases hev
   have hat := (mem_leaves hwf (List.mem_of_getElem? he)).2
   rw [ecr_leafVals_get hwf hrt he] at ha

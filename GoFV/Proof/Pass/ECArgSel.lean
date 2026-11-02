@@ -449,14 +449,15 @@ theorem ecA_regShape {rt lt : Ty} {a : Val} (h : regShapeOK rt lt = true) (ha : 
     · cases a with
       | poison => rfl
       | ptr q => rfl
+      | int w x => cases w <;> first | rfl | simp [Val.hasTy] at ha
       | _ => simp [Val.hasTy] at ha
     · cases a with
       | poison => rfl
       | int w x =>
         simp only [Val.hasTy, beq_iff_eq] at ha
         subst ha
-        show Val.retype (.int .w64) (.ptr (Ptr.ofAddr x)) = _
-        simp only [Val.retype, GoFV.Proof.CSE.Mem.addr_ofAddr]
+        show Val.retype (.int .w64) (.int .w64 x) = _
+        simp [Val.retype, BitVec.setWidth_eq]
       | ptr q =>
         simp only [Val.hasTy, Option.isNone_iff_eq_none] at ha
         show Val.retype (.int .w64) (.ptr q) = _

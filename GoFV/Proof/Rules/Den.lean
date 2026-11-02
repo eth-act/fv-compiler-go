@@ -188,11 +188,13 @@ def typesShape : Int → Option Ty
   | 16 => some .bool
   | _ => none
 
-/-- Byte size of an integer or boolean shape, or of an aggregate shape (`t.Size()`; `Sem.tyOf`
-gives a struct, `[1]T` array, interface or complex type the shape `.agg fs n` with `n` its size). -/
+/-- Byte size of an integer, boolean or pointer shape, or of an aggregate shape (`t.Size()`;
+`Ty.size`; `Sem.tyOf` gives a struct, `[1]T` array, interface or complex type the shape
+`.agg fs n` with `n` its size). -/
 def shapeSize : Ty → Option Int
   | .int w => some (w.bits / 8)
   | .bool => some 1
+  | .ptr _ => some 8
   | .agg _ n => some n
   | _ => none
 

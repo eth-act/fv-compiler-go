@@ -105,18 +105,36 @@ theorem retype_bool_or {t : Ty} {z : Val} {b : Bool} (h : z = .poison ∨ z = .b
 theorem width_some {t : Ty} {w : Width} (h : t.width? = some w) : t = .int w := by
   cases t <;> simp [Ty.width?] at h; subst h; rfl
 
-/-- A value retyped at shape `t` that is a `w`-bit integer: `t` is `int w`. -/
+/-- A value retyped at shape `t` that is a `w`-bit integer: `t` is `int w`, or a pointer shape
+holding a 64-bit word (§3.3). -/
 theorem retype_int_shape {t : Ty} {z : Val} {w : Width} {y : BitVec w.bits}
-    (h : z.retype t = .int w y) : t = .int w := by
+    (h : z.retype t = .int w y) : t = .int w ∨ ∃ e, t = .ptr e := by
   have := Val.retype_hasTy t z
   rw [h] at this
-  cases t <;> simp [Val.hasTy] at this
-  subst this; rfl
+  cases t with
+  | int w' => simp [Val.hasTy] at this; subst this; exact .inl rfl
+  | ptr e => exact .inr ⟨e, rfl⟩
+  | _ => simp [Val.hasTy] at this
 
-/-- The value of a term or typed atom that is a `w`-bit integer has shape `int w`. -/
+/-- A value retyped at some shape that is a `w`-bit integer is that integer retyped at `int w`. -/
+theorem retype_int_int {t : Ty} {z : Val} {w : Width} {y : BitVec w.bits}
+    (h : z.retype t = .int w y) : z.retype (.int w) = .int w y := by
+  rcases retype_int_shape h with rfl | ⟨e, rfl⟩
+  · exact h
+  · cases z with
+    | int w' x =>
+      cases w' <;> simp only [Val.retype, reduceCtorEq] at h
+      cases h
+      exact retype_int_self _ _
+    | ptr p => simp only [Val.retype, reduceCtorEq] at h
+    | _ => simp only [Val.retype, reduceCtorEq] at h
+
+/-- The value of a term or typed atom that is a `w`-bit integer has shape `int w` or a pointer
+shape. -/
 theorem den_int_shape {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
     (hty : Term.Typed D tabs ρ) {n : Nat} {a : ID} {u : Value} (hu : D a = some u) {w : Width}
-    {y : BitVec w.bits} (h : den D tabs ρ n a = .int w y) : tabs.ty u.type = .int w := by
+    {y : BitVec w.bits} (h : den D tabs ρ n a = .int w y) :
+    tabs.ty u.type = .int w ∨ ∃ e, tabs.ty u.type = .ptr e := by
   cases n with
   | zero => simp [den] at h
   | succ n =>

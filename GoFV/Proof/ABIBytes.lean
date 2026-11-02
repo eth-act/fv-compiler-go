@@ -219,6 +219,9 @@ theorem bytesNat?_ptrBytes (q : Ptr) : bytesNat? (ptrBytes q) = none := by
 theorem bytesPtr?_ptrBytes (q : Ptr) : bytesPtr? (ptrBytes q) = some q := by
   unfold bytesPtr? ptrBytes; simp [List.range_succ]
 
+theorem bytesPtr?_intBytes (x : Nat) : bytesPtr? (intBytes 8 x) = none := by
+  unfold bytesPtr? intBytes; simp [List.range_succ]
+
 theorem ofNat_toNat_mod (w : Width) (x : BitVec w.bits) :
     BitVec.ofNat w.bits (x.toNat % 2 ^ (8 * w.bytes)) = x := by
   have e : 8 * w.bytes = w.bits := by cases w <;> rfl
@@ -273,6 +276,15 @@ theorem decode_encode_atom : (t : Ty) → (p : Val) → atom t = true → p.hasT
     | ptr q =>
       show decodePtr ((ptrBytes q).extract 0 (0 + 8)) = .ptr q
       rw [Array.extract_eq_self_of_le (by simp [ptrBytes]), decodePtr, bytesPtr?_ptrBytes]
+    | int w x =>
+      cases w with
+      | w64 =>
+        show decodePtr ((intBytes 8 x.toNat).extract 0 (0 + 8)) = .int .w64 x
+        rw [Array.extract_eq_self_of_le (by simp [intBytes])]
+        unfold decodePtr
+        rw [bytesPtr?_intBytes, bytesNat?_intBytes]
+        exact congrArg (Val.int .w64) (ofNat_toNat_mod .w64 x)
+      | _ => simp [Val.hasTy] at hp
     | _ => simp [Val.hasTy] at hp
   | .opaque _, p, _, hp => by
     cases p with

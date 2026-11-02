@@ -55,11 +55,11 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
   obtain ⟨gv', hgv', hsv⟩ := hrel.value x fv hfv
   rw [hgv] at hgv'; cases hgv'
   -- the source argument registers `vs` and `x`'s arguments
-  have hP0 : ∀ (Q : Ptr) (L : List Val), vs = .ptr Q :: L → ∀ p, fv.args[0]? = some p →
-      S.regs[p]? = some (some (.ptr Q)) := by
-    intro Q L hvsE p hp
+  have hP0 : ∀ (Q : Ptr) (a0 : Val) (L : List Val), vs = a0 :: L → a0.asPtrWord = some Q →
+      ∀ p, fv.args[0]? = some p → ∃ pv, S.regs[p]? = some (some pv) ∧ pv.asPtrWord = some Q := by
+    intro Q a0 L hvsE hQ p hp
     obtain ⟨v, hv, hr'⟩ := argVals_get hvs hp
-    rw [hvsE] at hv; simp at hv; subst hv; exact hr'
+    rw [hvsE] at hv; simp at hv; subst hv; exact ⟨_, hr', hQ⟩
   rcases hsv with hs | he
   · -- a kept value
     obtain ⟨hgid, hgop, hgax, hgai, hgty, -, hgargs⟩ := sameV_spec hs
@@ -136,21 +136,22 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
       exact ivQ_filter hq (by rw [blkOf_frameAlloc]; exact hb)
     all_goals
       have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
-      obtain ⟨p, L, M, bs, M1, hvsE, hw, rfl, hbs, -, htgt⟩ := write_shape hop3 hr
-      have hvs2 : argVals S fv.args = some ((.ptr p :: L) ++ [.mem M]) := by rw [hvs, hvsE]; rfl
+      obtain ⟨a0, p, L, M, bs, M1, hvsE, hap, hw, rfl, hbs, -, htgt⟩ := write_shape hop3 hr
+      have hvs2 : argVals S fv.args = some ((a0 :: L) ++ [.mem M]) := by rw [hvs, hvsE]; rfl
       have hSM := argVals_back hvs2 hback
       rw [hSa] at hSM; cases hSM
       obtain ⟨MT, rfl, hMem⟩ := hVa.mem
-      have hvsT : argVals T gv.args = some ((.ptr p :: L) ++ [.mem MT]) := by
+      have hvsT : argVals T gv.args = some ((a0 :: L) ++ [.mem MT]) := by
         rw [hgargs]; exact argVals_last hvs2 hback hpop hTa
-      have hrd : ∀ s, fv.op = .Move → L = [.ptr s] → MT.read s bs.size = M.read s bs.size := by
-        intro s hm hL
+      have hrd : ∀ b s, fv.op = .Move → L = [b] → b.asPtrWord = some s →
+          MT.read s bs.size = M.read s bs.size := by
+        intro b s hm hL hbs'
         obtain ⟨sid, al, hs1, hal, hall', -⟩ :=
           pend_move hfv hgv hne hm (by rw [hpm]; exact hpa) hpend
-        have hsv : S.regs[sid]? = some (some (.ptr s)) := by
+        have hsv : S.regs[sid]? = some (some b) := by
           obtain ⟨v, hv, hr'⟩ := argVals_get hvs hs1
           rw [hvsE, hL] at hv; simp at hv; subst hv; exact hr'
-        have hblk := (ptrAlloc_val H (hA sid (Array.mem_of_getElem? hs1)) hal hsv).1
+        have hblk := (ptrAlloc_val H (hA sid (Array.mem_of_getElem? hs1)) hal hsv hbs').1
         refine hMem.read s _ fun k => ?_
         rw [hblk, ← hpm]
         exact ivQ_not_alloc hall' k
@@ -172,7 +173,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
       | some rg =>
         refine ivQ_sub hq fun hreg => hnr ?_
         rw [hbs]
-        exact (region_range hrr H hA (hP0 p (L ++ [.mem M]) hvsE)).2 hreg
+        exact (region_range hrr H hA (hP0 p a0 (L ++ [.mem M]) hvsE hap)).2 hreg
   · -- an eliminated store
     obtain ⟨hop, hgc, -, -, hgid, hgty, -, m, hback, hgargs⟩ := elimV_spec he
     obtain ⟨iv, hrr, hPx⟩ := pend_elim hfv hgv he hpend
@@ -182,8 +183,8 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
       · exact .inr (.inl h)
       · exact .inr (.inr (.inl h))
     rw [evalOp_chain hop4] at hr
-    obtain ⟨p, L, M, bs, M1, hvsE, hw, rfl, hbs, -, -⟩ := write_shape hop hr
-    have hvs2 : argVals S fv.args = some ((.ptr p :: L) ++ [.mem M]) := by rw [hvs, hvsE]; rfl
+    obtain ⟨a0, p, L, M, bs, M1, hvsE, hap, hw, rfl, hbs, -, -⟩ := write_shape hop hr
+    have hvs2 : argVals S fv.args = some ((a0 :: L) ++ [.mem M]) := by rw [hvs, hvsE]; rfl
     have hSM := argVals_back hvs2 hback
     obtain ⟨vS, vT, hSa, hTa, hVa⟩ := hargs m (by rw [hgargs]; simp)
     rw [hSa] at hSM; cases hSM
@@ -197,7 +198,7 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
     intro b k hbk
     rw [hPx, hpm]
     have hreg : Region p bs.size b k → b = blkOf iv.1 ∧ iv.2.1 ≤ (k : Int) ∧ (k : Int) < iv.2.2 :=
-      fun h => by rw [hbs] at h; exact (region_range hrr H hA (hP0 p (L ++ [.mem M]) hvsE)).1 h
+      fun h => by rw [hbs] at h; exact (region_range hrr H hA (hP0 p a0 (L ++ [.mem M]) hvsE hap)).1 h
     by_cases hlt : iv.2.1 < iv.2.2
     · simp only [hlt, ↓reduceIte]
       rcases hbk with h | h

@@ -26,14 +26,6 @@ theorem read_poisonBlock_ne {m : Mem} {b : Blk} {p : Ptr} (n : Nat) (h : p.blk �
   | some a =>
     simp only [Mem.read, find?_set, ite_eq_right (fun e : b = p.blk => h e.symm)]
 
-theorem ptr_of_refines {p : Ptr} {v : Val} (h : Sem.Refines (.ptr p) v) : v = .ptr p := by
-  cases h; rfl
-
-/-- A term that is a pointer at some fuel is that pointer at every larger fuel. -/
-theorem den_ptr_mono {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {k k' : Nat} {a : ID}
-    {p : Ptr} (h : den D tabs ρ k a = .ptr p) (hk : k ≤ k') : den D tabs ρ k' a = .ptr p :=
-  ptr_of_refines (h ▸ den_fuel_mono D tabs ρ k k' a hk)
-
 private theorem read_size' {M : Mem} {p : Ptr} {n : Nat} {bs : Array Byte}
     (h : M.read p n = some bs) : bs.size = n := by
   by_cases hn : n = 0

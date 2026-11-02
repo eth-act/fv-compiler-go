@@ -150,16 +150,17 @@ theorem evalOp_nilCheck_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {arg
   -- `if _ then panic else ok (first argument)`
   rcases argv with _ | ⟨a, rest⟩
   · cases h
-  rcases a with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | p | _ | _ | _ | _ <;>
+  rcases rest with _ | ⟨b, rest⟩ <;>
     try (first | (cases h; done) | exact absurd h ite_stuck_ne_ok)
-  all_goals
-    rcases rest with _ | ⟨b, rest⟩ <;>
-      try (first | (cases h; done) | exact absurd h ite_stuck_ne_ok)
-    rcases b with _ | _ | m | _ | _ | _ | _ | _ | _ <;>
-      try (first | (cases h; done) | exact absurd h ite_stuck_ne_ok)
-    rcases rest with _ | ⟨c, rest⟩ <;>
-      try (first | (cases h; done) | exact absurd h ite_stuck_ne_ok)
-    exact ⟨_, congrArg (· :: _) (ite_panic_ok h)⟩
+  rcases b with _ | _ | m | _ | _ | _ | _ | _ | _ <;>
+    try (first | (cases h; done) | exact absurd h ite_stuck_ne_ok)
+  rcases rest with _ | ⟨c, rest⟩ <;>
+    try (first | (cases h; done) | exact absurd h ite_stuck_ne_ok)
+  refine ⟨_, congrArg (· :: _) ?_⟩
+  dsimp only at h
+  split at h
+  · exact ite_panic_ok h
+  · cases h
 
 theorem evalOp_load {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} (hop : v.op = .Load) :

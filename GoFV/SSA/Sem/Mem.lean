@@ -45,6 +45,19 @@ def Ptr.ofAddr (x : BitVec 64) : Ptr :=
     let off := BitVec.ofNat 64 (r % 2 ^ 24)
     if k == 0 then ⟨.outargs a, off⟩ else ⟨.local a k, off⟩
 
+namespace Val
+
+/-- The pointer of a pointer-shaped word: a pointer, or a 64-bit integer read as the pointer
+at that concrete address (§3.3: a pointer-typed value may hold an integer word, e.g. a
+`uintptr` itab word after `decompose builtin` or concrete bytes loaded at a pointer type).
+Every op that dereferences, compares or offsets a pointer reads its operand through it. -/
+def asPtrWord : Val → Option Ptr
+  | .ptr p => some p
+  | .int .w64 x => some (Ptr.ofAddr x)
+  | _ => none
+
+end Val
+
 /-- `p` is the nil pointer (concrete address 0). -/
 def Ptr.isNil (p : Ptr) : Bool := p.blk == .nil && p.off == 0
 
@@ -213,12 +226,14 @@ def decodeInt (w : Width) (bs : Array Byte) : Val :=
       | none => .ptr p
     | _, _ => .poison
 
-/-- A pointer from 8 bytes: its fragments, or a concrete address. -/
+/-- A pointer word from 8 bytes: a stored pointer from its fragments, concrete bytes as the
+64-bit integer they hold (the pointer at that address, `Val.asPtrWord`, §3.3), so a word
+loads back as it was stored. -/
 def decodePtr (bs : Array Byte) : Val :=
   match bytesPtr? bs with
   | some p => .ptr p
   | none => match bytesNat? bs with
-    | some n => .ptr (Ptr.ofAddr (BitVec.ofNat 64 n))
+    | some n => .int .w64 (BitVec.ofNat 64 n)
     | none => .poison
 
 mutual

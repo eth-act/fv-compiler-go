@@ -21,6 +21,11 @@ variable {X : Blk → Bool}
 
 theorem notX {b : Blk} (h : ¬ X b = true) : X b = false := by simpa using h
 
+/-- The pointer a word avoiding `X` reads as is outside `X` (`DAE.asPtrWord_notU`). -/
+theorem wordX (hX : TempX X) {a : Val} (ha : Val.Avoids (X · = true) a) {p : Ptr}
+    (hp : a.asPtrWord = some p) : X p.blk = false :=
+  notX (DAE.asPtrWord_notU (tempU_of hX) ha hp)
+
 theorem VRL.snoc (L : List Val) {w w' : Val} (h : VR X w w') : VRL X (L ++ [w]) (L ++ [w']) :=
   VRL.append (VRL.refl L) (.cons h .nil)
 
@@ -102,7 +107,7 @@ theorem copy_rel (ty : Ty) (k : Int64) (ax : Option AuxRef) (L : List Val) {w w'
 
 /-! ## Loads -/
 
-theorem loadOp_eq (t : Ty) (L : List Val) {w w' : Val} (h : VR X w w')
+theorem loadOp_eq (hX : TempX X) (t : Ty) (L : List Val) {w w' : Val} (h : VR X w w')
     (hav : ∀ a ∈ L, Val.Avoids (X · = true) a) : loadOp t (L ++ [w']) = loadOp t (L ++ [w]) := by
   match L, hav with
   | [x], hav =>
@@ -110,15 +115,14 @@ theorem loadOp_eq (t : Ty) (L : List Val) {w w' : Val} (h : VR X w w')
     | refl => rfl
     | tuple => cases x <;> rfl
     | mem hm =>
-      cases x with
-      | ptr p =>
-        simp only [List.cons_append, List.nil_append, loadOp]
-        exact EqX.load hm t p (notX (hav _ List.mem_cons_self))
-      | _ => rfl
+      simp only [List.cons_append, List.nil_append, loadOp]
+      cases hp : x.asPtrWord with
+      | none => rfl
+      | some p => exact EqX.load hm t p (wordX hX (hav _ List.mem_cons_self) hp)
   | [], _ => rw [DAE.loadOp_len t (by simp), DAE.loadOp_len t (by simp)]
   | _ :: _ :: _, _ => rw [DAE.loadOp_len t (by simp), DAE.loadOp_len t (by simp)]
 
-theorem atomicLoad_rel (t : Ty) (L : List Val) {w w' : Val} (h : VR X w w')
+theorem atomicLoad_rel (hX : TempX X) (t : Ty) (L : List Val) {w w' : Val} (h : VR X w w')
     (hav : ∀ a ∈ L, Val.Avoids (X · = true) a) :
     VR X (atomicLoad t (L ++ [w])) (atomicLoad t (L ++ [w'])) := by
   match L, hav with
@@ -127,22 +131,24 @@ theorem atomicLoad_rel (t : Ty) (L : List Val) {w w' : Val} (h : VR X w w')
     | refl => exact .refl _
     | tuple => cases x <;> exact .refl _
     | mem hm =>
-      cases x with
-      | ptr p =>
-        simp only [List.cons_append, List.nil_append, atomicLoad]
-        have hu : X p.blk = false := notX (hav _ List.mem_cons_self)
+      simp only [List.cons_append, List.nil_append, atomicLoad]
+      cases hp : x.asPtrWord with
+      | none => exact .refl _
+      | some p =>
+        have hu : X p.blk = false := wordX hX (hav _ List.mem_cons_self) hp
         split
-        · split
+        · rename_i heq
+          cases heq
+          split
           · exact .tuple (.cons (.refl _) (.cons (.mem hm) .nil))
           · rw [EqX.load hm _ p hu]
             exact .tuple (.cons (.refl _) (.cons (.mem hm) .nil))
         · exact .refl _
-      | _ => exact .refl _
   | [], _ => rw [DAE.atomicLoad_len t (by simp), DAE.atomicLoad_len t (by simp)]; exact .refl _
   | _ :: _ :: _, _ =>
     rw [DAE.atomicLoad_len t (by simp), DAE.atomicLoad_len t (by simp)]; exact .refl _
 
-theorem memEq_eq (L : List Val) {w w' : Val} (h : VR X w w')
+theorem memEq_eq (hX : TempX X) (L : List Val) {w w' : Val} (h : VR X w w')
     (hav : ∀ a ∈ L, Val.Avoids (X · = true) a) : memEq (L ++ [w']) = memEq (L ++ [w]) := by
   match L, hav with
   | [a, b, c], hav =>
@@ -151,12 +157,18 @@ theorem memEq_eq (L : List Val) {w w' : Val} (h : VR X w w')
     | refl => rfl
     | tuple => rw [DAE.memEq_tuple, DAE.memEq_tuple]
     | mem hm =>
-      rcases a with _ | _ | _ | _ | p | _ | _ | _ | _ <;> try rfl
-      rcases b with _ | _ | _ | _ | q | _ | _ | _ | _ <;> try rfl
       rcases c with ⟨w, n⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;> try rfl
-      have hp : X p.blk = false := notX (hav _ List.mem_cons_self)
-      have hq : X q.blk = false := notX (hav _ (List.mem_cons_of_mem _ List.mem_cons_self))
-      simp only [memEq, EqX.read hm _ _ hp, EqX.read hm _ _ hq]
+      simp only [memEq]
+      cases hp : a.asPtrWord with
+      | none => rfl
+      | some p =>
+      cases hq : b.asPtrWord with
+      | none => rfl
+      | some q =>
+      have hp' : X p.blk = false := wordX hX (hav _ List.mem_cons_self) hp
+      have hq' : X q.blk = false :=
+        wordX hX (hav _ (List.mem_cons_of_mem _ List.mem_cons_self)) hq
+      simp only [EqX.read hm _ _ hp', EqX.read hm _ _ hq']
   | [], _ => rw [DAE.memEq_len (by simp), DAE.memEq_len (by simp)]
   | [_], _ => rw [DAE.memEq_len (by simp), DAE.memEq_len (by simp)]
   | [_, _], _ => rw [DAE.memEq_len (by simp), DAE.memEq_len (by simp)]
@@ -165,20 +177,21 @@ theorem memEq_eq (L : List Val) {w w' : Val} (h : VR X w w')
 /-! ## The memory roots -/
 
 /-- **A `Store`/`Zero`/`Move`** on related memories. -/
-theorem write_rel {ctx : Ctx} {v : Value} (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move)
+theorem write_rel (hX : TempX X) {ctx : Ctx} {v : Value}
+    (hop : v.op = .Store ∨ v.op = .Zero ∨ v.op = .Move)
     {L : List Val} {w w' : Val} (hw : VR X w w') (hav : ∀ a ∈ L, Val.Avoids (X · = true) a)
     {y : Val} (h : memRoot ctx v (L ++ [w]) = .ok y) :
     ∃ y', memRoot ctx v (L ++ [w']) = .ok y' ∧ VR X y y' := by
-  obtain ⟨p, L0, M, bs, M1, he, hwr, rfl, -, htgt⟩ := DAE.write_spec hop h
+  obtain ⟨a, p, L0, M, bs, M1, he, hap, hwr, rfl, -, htgt⟩ := DAE.write_spec hop h
   obtain ⟨rfl, rfl⟩ := DAE.snoc_cons_eq he
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
-  have hp : X p.blk = false := notX (hav _ List.mem_cons_self)
+  have hp : X p.blk = false := wordX hX (hav _ List.mem_cons_self) hap
   obtain ⟨M1', hw', hm1⟩ := EqX.write hm hp hwr
   refine ⟨_, ?_, .mem hm1⟩
   rw [List.cons_append]
-  refine htgt M' M1' (fun s _ hL => ?_) hw'
+  refine htgt M' M1' (fun b s _ hL hs => ?_) hw'
   subst hL
-  exact EqX.read hm s _ (notX (hav (.ptr s) (by simp)))
+  exact EqX.read hm s _ (wordX hX (hav b (by simp)) hs)
 
 /-- **`VarLive`, `KeepAlive`** pass their memory through. -/
 theorem varLive_rel {ctx : Ctx} {v : Value} (hop : v.op = .VarLive ∨ v.op = .KeepAlive)

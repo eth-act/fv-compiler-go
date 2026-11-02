@@ -13,8 +13,10 @@ generic.rules:1638 and :1730 replace `SelectN [0]` of a static call of
 functions are the runtime model's (`Env.MemOps`), a call that the checks of
 `GoFV.Opt.MemCall` accept (`simpleCall`, `calleeIs`) and that returns:
 
-* `callOp_memclr`: takes a memory `M` and yields `(mem Mc, agg [])`, where the plain write
-  `M.write P (replicate n 0)` (what `Zero` does) succeeds with `M'` and `Mc ⊑ M'`;
+* `callOp_memclr`: on a pointer word `a` of `P` (`Val.asPtrWord`, which the contract's
+  `Runtime.asPtr` agrees with: `runtime_asPtr_eq`), takes a memory `M` and yields
+  `(mem Mc, agg [])`, where the plain write `M.write P (replicate n 0)` (what `Zero` does)
+  succeeds with `M'` and `Mc ⊑ M'`;
 * `callOp_memmove`: likewise with `M.read Q n = some bs` and `M.write P bs` (what `Move` does);
 * `callOp_memclr_not_panic`, `callOp_memmove_not_panic`: never panics.
 
@@ -229,36 +231,62 @@ theorem ofPieces_ptr (o : Option Nat) (P : Ptr) : ofPieces (.ptr o) [.ptr P] = .
 theorem ofPieces_int (x : BitVec 64) : ofPieces (.int .w64) [.int .w64 x] = .int .w64 x := by
   rw [ABI.ofPieces_eq_build rfl (by show ABI.List.Forall₂ _ _ [(0, _)]; exact .cons rfl .nil)]; rfl
 
+/-- A pointer word decodes from its register piece at a pointer shape as itself. -/
+theorem ofPieces_ptrWord (o : Option Nat) {a : Val} {P : Ptr} (ha : a.asPtrWord = some P) :
+    ofPieces (.ptr o) [a] = a := by
+  cases a with
+  | ptr P => exact ofPieces_ptr o P
+  | int w x =>
+    cases w <;> simp only [Val.asPtrWord, reduceCtorEq] at ha
+    rw [ABI.ofPieces_eq_build rfl (by show ABI.List.Forall₂ _ _ [(0, _)]; exact .cons rfl .nil)]; rfl
+  | _ => simp only [Val.asPtrWord, reduceCtorEq] at ha
+
+/-- The runtime model reads a pointer argument as a pointer word. -/
+theorem runtime_asPtr_eq (a : Val) : Runtime.asPtr a = a.asPtrWord := by
+  cases a with
+  | int w x => cases w <;> rfl
+  | _ => rfl
+
 theorem decodeArgs_two {tabs : Tables} {act : Nat} {m : Mem} {ps : List ABIParam}
-    (h : inShapes tabs 2 ps = true) (P : Ptr) (x : BitVec 64) :
-    decodeArgs tabs act m (ps.filter (!·.out)) [.ptr P, .int .w64 x] = some [.ptr P, .int .w64 x] := by
+    (h : inShapes tabs 2 ps = true) {a : Val} (ha : ∀ o, ofPieces (.ptr o) [a] = a)
+    (x : BitVec 64) :
+    decodeArgs tabs act m (ps.filter (!·.out)) [a, .int .w64 x] = some [a, .int .w64 x] := by
   have hl : ps.length = 2 := by simp only [inShapes, Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1
-  rcases ps with _ | ⟨a, _ | ⟨b, _ | ⟨c, rest⟩⟩⟩ <;> simp at hl
+  rcases ps with _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, rest⟩⟩⟩ <;> simp at hl
   simp only [inShapes, List.dropLast, List.all, List.getLast?_cons_cons, List.getLast?_singleton, Option.all, Bool.and_eq_true,
     Bool.and_true] at h
-  obtain ⟨⟨-, ha⟩, hb⟩ := h
-  obtain ⟨ha1, ha2, o, ha3⟩ := inShape_ptr ha
-  obtain ⟨hb1, hb2, hb3⟩ := inShape_int hb
+  obtain ⟨⟨-, h1⟩, h2⟩ := h
+  obtain ⟨ha1, ha2, o, ha3⟩ := inShape_ptr h1
+  obtain ⟨hb1, hb2, hb3⟩ := inShape_int h2
   simp only [List.filter, ha1, hb1, Bool.not_false]
-  rw [decodeArgs_reg ha2, decodeArgs_reg hb2, ha3, hb3, ofPieces_ptr, ofPieces_int]
+  rw [decodeArgs_reg ha2, decodeArgs_reg hb2, ha3, hb3, ha, ofPieces_int]
   rfl
 
 theorem decodeArgs_three {tabs : Tables} {act : Nat} {m : Mem} {ps : List ABIParam}
-    (h : inShapes tabs 3 ps = true) (P Q : Ptr) (x : BitVec 64) :
-    decodeArgs tabs act m (ps.filter (!·.out)) [.ptr P, .ptr Q, .int .w64 x] =
-      some [.ptr P, .ptr Q, .int .w64 x] := by
+    (h : inShapes tabs 3 ps = true) {a b : Val} (ha : ∀ o, ofPieces (.ptr o) [a] = a)
+    (hb : ∀ o, ofPieces (.ptr o) [b] = b) (x : BitVec 64) :
+    decodeArgs tabs act m (ps.filter (!·.out)) [a, b, .int .w64 x] =
+      some [a, b, .int .w64 x] := by
   have hl : ps.length = 3 := by simp only [inShapes, Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1
-  rcases ps with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, rest⟩⟩⟩⟩ <;> simp at hl
+  rcases ps with _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, _ | ⟨p4, rest⟩⟩⟩⟩ <;> simp at hl
   simp only [inShapes, List.dropLast, List.all, List.getLast?_cons_cons, List.getLast?_singleton, Option.all, Bool.and_eq_true,
     Bool.and_true] at h
-  obtain ⟨⟨-, ha, hb⟩, hc⟩ := h
-  obtain ⟨ha1, ha2, o, ha3⟩ := inShape_ptr ha
-  obtain ⟨hb1, hb2, o', hb3⟩ := inShape_ptr hb
-  obtain ⟨hc1, hc2, hc3⟩ := inShape_int hc
+  obtain ⟨⟨-, h1, h2⟩, h3⟩ := h
+  obtain ⟨ha1, ha2, o, ha3⟩ := inShape_ptr h1
+  obtain ⟨hb1, hb2, o', hb3⟩ := inShape_ptr h2
+  obtain ⟨hc1, hc2, hc3⟩ := inShape_int h3
   simp only [List.filter, ha1, hb1, hc1, Bool.not_false]
-  rw [decodeArgs_reg ha2, decodeArgs_reg hb2, decodeArgs_reg hc2, ha3, hb3, hc3, ofPieces_ptr,
-    ofPieces_ptr, ofPieces_int]
+  rw [decodeArgs_reg ha2, decodeArgs_reg hb2, decodeArgs_reg hc2, ha3, hb3, hc3, ha, hb,
+    ofPieces_int]
   rfl
+
+/-- A pointer word keeps itself at every pointer shape. -/
+theorem retype_ptrWord {a : Val} {P : Ptr} (h : a.asPtrWord = some P) (o : Option Nat) :
+    a.retype (.ptr o) = a := by
+  cases a with
+  | ptr p => rfl
+  | int w x => cases w <;> first | rfl | simp [Val.asPtrWord] at h
+  | _ => simp [Val.asPtrWord] at h
 
 theorem retype_int64 (x : BitVec 64) : (Val.int .w64 x).retype (.int .w64) = .int .w64 x := by
   simp [Val.retype]
@@ -334,12 +362,12 @@ theorem callOp_args {ctx : Ctx} {v : Value} {k : Nat} {M : Mem} {pieces args : L
     · rw [callParams, hn]; rfl
     · rw [callParams, habi, Option.map_some, Option.getD_some, hret _ hsh]
 
-/-- A returning `memclrNoHeapPointers(P, x)` call refines the plain write of `x` zero bytes
-(`Zero`). -/
-theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P : Ptr}
+/-- A returning `memclrNoHeapPointers(a, x)` call on a pointer word `a` of `P` refines the plain
+write of `x` zero bytes at `P` (`Zero`). -/
+theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P : Ptr} {a : Val}
     {x : BitVec 64} {mm y : Val} (hs : simpleCall ctx.tabs v 2 = true)
     (hn : calleeIs ctx.tabs v "runtime.memclrNoHeapPointers" = true)
-    (hc : callOp env ctx v [.ptr P, .int .w64 x, mm] = .ok y) :
+    (hpa : a.asPtrWord = some P) (hc : callOp env ctx v [a, .int .w64 x, mm] = .ok y) :
     ∃ M M' Mc, mm = .mem M ∧ M.write P (Array.replicate x.toInt.toNat (.b 0)) = some M' ∧
       y = .tuple [.mem Mc, .agg []] ∧ Mem.Refines Mc M' := by
   obtain ⟨name, M, args, c, rs, m', r, hname, hm, hargs, hx, hr, he, hy⟩ :=
@@ -347,11 +375,11 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
   rw [calleeIs_eq hn] at hname; cases hname
   simp only [List.getLast?_cons_cons, List.getLast?_singleton, Option.some.injEq] at hm
   subst hm
-  have ha := callOp_args hs (fun ps h => decodeArgs_two h P x)
-    (fun ps h => retypeArgs_two h (fun _ => rfl) x) hargs
+  have ha := callOp_args hs (fun ps h => decodeArgs_two h (ofPieces_ptrWord · hpa) x)
+    (fun ps h => retypeArgs_two h (retype_ptrWord hpa) x) hargs
   subst ha
   obtain rfl := hE.1 c hx
-  simp only [Runtime.memclr, Runtime.ok?, Runtime.asPtr, Runtime.asInt] at hr
+  simp only [Runtime.memclr, Runtime.ok?, runtime_asPtr_eq, hpa, Runtime.asInt] at hr
   cases hw : (M.poisonBlock (.outargs ctx.act)).write P (Array.replicate x.toInt.toNat (.b 0)) with
   | none =>
     simp only [hw, Option.pure_def, Option.bind_eq_bind, Option.bind_some, Option.bind_none] at hr
@@ -366,12 +394,12 @@ theorem callOp_memclr {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P :
     rw [hy, hout]
     split <;> rfl
 
-/-- A returning `memmove(P, Q, x)` call refines the plain read of `x` bytes at `Q` and their
-write at `P` (`Move`). -/
+/-- A returning `memmove(a, b, x)` call on pointer words `a`, `b` of `P`, `Q` refines the plain
+read of `x` bytes at `Q` and their write at `P` (`Move`). -/
 theorem callOp_memmove {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P Q : Ptr}
-    {x : BitVec 64} {mm y : Val} (hs : simpleCall ctx.tabs v 3 = true)
-    (hn : calleeIs ctx.tabs v "runtime.memmove" = true)
-    (hc : callOp env ctx v [.ptr P, .ptr Q, .int .w64 x, mm] = .ok y) :
+    {a b : Val} {x : BitVec 64} {mm y : Val} (hs : simpleCall ctx.tabs v 3 = true)
+    (hn : calleeIs ctx.tabs v "runtime.memmove" = true) (hpa : a.asPtrWord = some P)
+    (hqb : b.asPtrWord = some Q) (hc : callOp env ctx v [a, b, .int .w64 x, mm] = .ok y) :
     ∃ M bs M' Mc, mm = .mem M ∧ M.read Q x.toInt.toNat = some bs ∧ M.write P bs = some M' ∧
       y = .tuple [.mem Mc, .agg []] ∧ Mem.Refines Mc M' := by
   obtain ⟨name, M, args, c, rs, m', r, hname, hm, hargs, hx, hr, he, hy⟩ :=
@@ -379,11 +407,12 @@ theorem callOp_memmove {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : Value} {P 
   rw [calleeIs_eq hn] at hname; cases hname
   simp only [List.getLast?_cons_cons, List.getLast?_singleton, Option.some.injEq] at hm
   subst hm
-  have ha := callOp_args hs (fun ps h => decodeArgs_three h P Q x)
-    (fun ps h => retypeArgs_three h (fun _ => rfl) (fun _ => rfl) x) hargs
+  have ha := callOp_args hs (fun ps h =>
+    decodeArgs_three h (ofPieces_ptrWord · hpa) (ofPieces_ptrWord · hqb) x)
+    (fun ps h => retypeArgs_three h (retype_ptrWord hpa) (retype_ptrWord hqb) x) hargs
   subst ha
   obtain rfl := hE.2 c hx
-  simp only [Runtime.memmove, Runtime.ok?, Runtime.asPtr, Runtime.asInt] at hr
+  simp only [Runtime.memmove, Runtime.ok?, runtime_asPtr_eq, hpa, hqb, Runtime.asInt] at hr
   have hP := poisonBlock_refines M (.outargs ctx.act)
   cases hrd : (M.poisonBlock (.outargs ctx.act)).read Q x.toInt.toNat with
   | none =>

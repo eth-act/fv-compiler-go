@@ -21,8 +21,29 @@ theorem r_generic_970_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
   simp only [Nat.reduceAdd] at h1
   rw [h0, h1] at hlt
   obtain ⟨hl0, hl1⟩ := hlt
-  rcases val_of_hasTy_ptr hl0 with hp | ⟨p, hp⟩ <;> rw [hp] at hty ⊢
+  rcases val_of_hasTy_ptr hl0 with hp | ⟨y, hp⟩ | ⟨p, hp⟩ <;> rw [hp] at hty ⊢
   · exact Refines.poison _
+  · -- an integer word: integer-word arithmetic on both sides
+    rcases val_of_hasTy_int64 hl1 with hx | ⟨x, hx⟩ | ⟨q, hx, -⟩ <;> rw [hx] at hty ⊢
+    · simp [PtrOps.ptrIndex, asOffset]; exact Refines.poison _
+    · rcases hT : e.ty [] with _ | _ | _ | _ | _ | (_ | k) | _ | _ | _ | _ <;>
+        simp [PtrOps.ptrIndex, hT, asOffset] at hty ⊢ <;> try exact Refines.poison _
+      have hk : BitVec.ofInt Width.w64.bits ((k : Int).bmod Int64.size) = BitVec.ofNat 64 k := by
+        have hs : Int64.size = 2 ^ 64 := rfl
+        rw [hs, ofInt_bmod_of_le (w := Width.w64.bits) (k := 64) (by decide), BitVec.ofInt_natCast]
+      suffices key : ∀ M, M = Val.int .w64 (x * BitVec.ofNat 64 k) →
+          Refines (PtrOps.wordRes y (x * BitVec.ofNat 64 k))
+            (Val.retype (Ty.ptr (some k)) (PtrOps.addPtr [Val.int .w64 y, M])) by
+        apply key
+        simp [Sem.Int.mul, int2, Conv.const, Val.retype, Val.asInt, strctField]
+        rw [hk]
+      rintro M rfl
+      have hse : (x * BitVec.ofNat 64 k).signExtend 64 = x * BitVec.ofNat 64 k := by simp
+      simp only [PtrOps.addPtr, asOffset, hse, PtrOps.wordRes]
+      split
+      · exact Refines.refl _
+      · exact Refines.poison _
+    · simp [PtrOps.ptrIndex, asOffset]; exact Refines.poison _
   rcases val_of_hasTy_int64 hl1 with hx | ⟨x, hx⟩ | ⟨q, hx, -⟩ <;> rw [hx] at hty ⊢
   · simp [PtrOps.ptrIndex, asOffset]; exact Refines.poison _
   · rcases hT : e.ty [] with _ | _ | _ | _ | _ | (_ | k) | _ | _ | _ | _ <;>

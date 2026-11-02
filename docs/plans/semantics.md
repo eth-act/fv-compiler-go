@@ -83,12 +83,16 @@ a narrower type keeps the low bits; a wider one would expose undefined high bits
 `poison` (a non-boolean at `bool`, a boolean or memory at an integer shape, a 32-bit integer at a
 pointer shape, …), composites are retyped componentwise, so `(v.retype t).hasTy t` always holds
 (`Val.retype_hasTy`, `GoFV/Proof/Retype.lean`) and every register has its value's shape
-(`GoFV.Proof.evalValue_hasTy`, `Typed.hasTy`). The one mix Go relies on is kept: a pointer
-without a concrete address (a global: a closure's code pointer loaded as `uintptr`,
-`unsafe.Pointer` ↔ `uintptr` of a global) stays a pointer at the 64-bit integer shape, which
-`Val.hasTy` accepts. Well-typed producers yield values of their shape anyway: the change left
-every difftest outcome unchanged (native 11,900 calls; corpus 39,131 defined calls, same
-counts). Other shape mismatches give `poison` inside `evalPure` (pure ops never fail).
+(`GoFV.Proof.evalValue_hasTy`, `Typed.hasTy`). Well-typed producers yield values of their shape
+anyway: total shaping left every difftest outcome unchanged (native 11,900 calls; corpus 39,131
+defined calls, same counts). Other shape mismatches give `poison` inside `evalPure` (pure ops
+never fail). Two mixes Go relies on are kept. A pointer without a concrete address (a global: a
+closure's code pointer loaded as `uintptr`, `unsafe.Pointer` ↔ `uintptr` of a global) stays a
+pointer at the 64-bit integer shape, which `Val.hasTy` accepts. And a 64-bit integer **keeps
+its word at a pointer shape** (`Val.retype (.ptr _) (.int .w64 a) = .int .w64 a`,
+`Val.hasTy (.int .w64 _) (.ptr _)`; #10): the word is the pointer at its address (§3.3), so a
+`uintptr` itab word that `decompose builtin` passes on as `*itab` (`dec.rules:82`) is the same
+value on both sides.
 **Strings and slices** have their own shapes, `Ty.str` (pointer, length) and `Ty.slice e`
 (pointer, length, capacity), with the layout of the aggregate they used to be (`Ty.asAgg`:
 offsets 0/8/16, sizes 16/24; `Sem/Layout.lean` maps `STRING`/`SLICE` to them). Their values
@@ -117,9 +121,14 @@ the low `N` bits. `bool` is separate from `int w8` because Go SSA keeps `Bool` d
 address (`Alloc.base`, bump-allocated as in clifv's `Mem.alloc`, never reused), used only
 where Go exposes addresses:
 
-- `Convert` ptr→uintptr gives `base + off`; uintptr→ptr finds the live allocation whose
-  `[base, base+size]` contains the address (one-past-the-end included; ambiguity between
-  adjacent allocations is avoided by clifv's 16-byte gap) and is `poison` if none;
+- `Convert` ptr→uintptr gives `base + off` (`Ptr.addr?`); uintptr→ptr is the identity: the
+  integer keeps its word at the pointer shape (§3.2);
+- every op that reads a pointer reads a **pointer word** through `Val.asPtrWord`: a pointer
+  is itself, a 64-bit integer `a` is `Ptr.ofAddr a` (the heap or frame block whose encoding
+  contains the address, else `Blk.nil`). That covers `Load`/`Store`/`Move`/`Zero` (and their
+  `WB` forms), `NilCheck`, atomics, `MemEq`, `SubPtr`, `EqPtr`/`NeqPtr`, the runtime contracts
+  that take pointers (`Runtime.asPtr`) and the SemDiff renderer. `decodePtr` of 8 concrete bytes
+  gives the integer they hold, so a word loads back as it was stored;
 - `EqPtr`/`NeqPtr` compare concrete addresses, so `&a[len(a)] == &b[0]` behaves as on the
   machine;
 - `SubPtr` (unused by the frontend today) is the difference of concrete addresses.
@@ -128,12 +137,25 @@ where Go exposes addresses:
 offset leaves its block's **address window** (`Blk.window?`: `nil` and heap blocks `2^40`, frame
 blocks `2^24`; globals unbounded) is `poison` (#156). Every allocation is smaller than its
 window, so in-bounds and one-past-the-end pointers are unaffected; Go's unsafe rules make
-anything else invalid. `EqPtr`/`NeqPtr` compare block and offset (pointers into different
-allocations are never equal; `Ptr.eq_iff`), so `EqPtr (ConstNil) p` is `!IsNonNil p`.
+anything else invalid. On an integer word `x` they add as integers under the window rule of the
+pointer at that address (`PtrOps.wordRes`: `x + k` if `(Ptr.ofAddr x).add k` is in its window,
+else `poison`), so the word behaves exactly like that pointer (`Ptr.ofAddr_add_of_inWindow`,
+`PtrOps.offPtr_asPtrWord`/`addPtr_asPtrWord`/`ptrIndex_asPtrWord`, `GoFV/Proof/PtrAddr.lean`).
+Without the window rule a non-nil word could step into the nil window, where the source's
+`NilCheck` panics but a target with the check removed does not. `EqPtr`/`NeqPtr` compare block
+and offset (pointers into different allocations are never equal; `Ptr.eq_iff`), so
+`EqPtr (ConstNil) p` is `!IsNonNil p`.
 `Convert` ptr→uintptr is `poison` unless the pointer is `Ptr.convertible` (inside its window,
 its block number small enough for the address encoding, not a frame temporary or global);
 then `Ptr.ofAddr` of its address is the pointer again (`Ptr.ofAddr_addr`,
-`GoFV/Proof/PtrAddr.lean`), so `Convert (Convert p)` is `p` (`convert_convert`).
+`GoFV/Proof/PtrAddr.lean`), so the integer `Convert (Convert p)` reads as `p` wherever a
+pointer is read (`convert_asPtrWord`). It is not `p` itself, and the two are not related by
+`Sem.Refines`: `generic.rules:1072` (`Convert (Convert p)` → `p`) is no longer in the proven
+rule set (#290 tracks refinement modulo pointer-word equivalence, which would restore it).
+The checkers that compare pointers structurally require pointer-typed values, since an
+integer-shaped retype of a non-`convertible` pointer reads back as a different pointer:
+`RewriteCheck.baseBlk?` (`LocalAddr`/`Addr`), `baseSameB`'s `AddPtr`/`PtrIndex` arm and the
+`OffPtr`s of `segTiles`. Go types these values as pointers anyway.
 Consequence: `generic.rules:1071/1075` (`Convert (Add (Convert p) off)` → `AddPtr p off`) do
 not refine when `off` leaves the allocation — the source's integer arithmetic lands, through
 `Ptr.ofAddr`, in some other block, while the target's `AddPtr` is `poison`. Go makes that case

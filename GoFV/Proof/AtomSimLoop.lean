@@ -54,69 +54,65 @@ theorem rv_set_ne {T : Frame} {x a : ID} {y : Val} (h : x ≠ a) : rv (T.set x y
 theorem memDef_store_mono {tabs : Tables} {v : Value} (hop : v.op = .Store) {as bs : List Val}
     (h : RefinesList as bs) {y : Val} (hy : memDef tabs v as = some y) :
     ∃ y', memDef tabs v bs = some y' ∧ Sem.Refines y y' := by
-  obtain ⟨q, x, m0, M', rfl, hw, rfl⟩ : ∃ q x m0 M', as = [.ptr q, x, .mem m0] ∧
-      m0.write q (encode (auxTy tabs v.aux) x) = some M' ∧ y = .mem M' := by
+  obtain ⟨a, q, x, m0, M', rfl, hq, hw, rfl⟩ : ∃ a q x m0 M', as = [a, x, .mem m0] ∧
+      a.asPtrWord = some q ∧ m0.write q (encode (auxTy tabs v.aux) x) = some M' ∧ y = .mem M' := by
     match as with
     | [a, b, c] =>
-      cases a <;> try (simp [memDef, hop] at hy; done)
       cases c <;> try (simp [memDef, hop] at hy; done)
-      simp only [memDef, hop, Option.map_eq_some_iff] at hy
-      obtain ⟨M', hw, rfl⟩ := hy
-      exact ⟨_, _, _, M', rfl, hw, rfl⟩
+      simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hy
+      obtain ⟨q, hq, M', hw, rfl⟩ := hy
+      exact ⟨_, _, _, _, M', rfl, hq, hw, rfl⟩
     | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at hy
   obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
   obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
   obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
-  cases h.nil_inv; cases h1; cases h3 with | mem hm =>
+  cases h.nil_inv; cases h3 with | mem hm =>
   obtain ⟨M'', hw', hMM⟩ := hm.write (encode_mono _ h2) hw
-  exact ⟨.mem M'', by simp [memDef, hop, hw'], .mem hMM⟩
+  exact ⟨.mem M'', by simp [memDef, hop, h1.asPtrWord hq, hw'], .mem hMM⟩
 
 /-- A `Store` whose write succeeds evaluates to it. -/
 theorem memRoot_of_memDef_store {ctx : Ctx} {v : Value} (hop : v.op = .Store) {argv : List Val}
     {y : Val} (h : memDef ctx.tabs v argv = some y) : memRoot ctx v argv = .ok y := by
   match argv with
   | [a, b, c] =>
-    cases a <;> try (simp [memDef, hop] at h; done)
     cases c <;> try (simp [memDef, hop] at h; done)
-    simp only [memDef, hop, Option.map_eq_some_iff] at h
-    obtain ⟨M', hw, rfl⟩ := h
-    simp [memRoot, hop, hw, writeRes]
+    simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
+    obtain ⟨q, hq, M', hw, rfl⟩ := h
+    simp [memRoot, hop, hq, hw, writeRes]
   | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at h
 
 /-- A `Move`'s copy on refined arguments succeeds with a refined memory. -/
 theorem memDef_move_mono {tabs : Tables} {v : Value} (hop : v.op = .Move) {as bs : List Val}
     (h : RefinesList as bs) {y : Val} (hy : memDef tabs v as = some y) :
     ∃ y', memDef tabs v bs = some y' ∧ Sem.Refines y y' := by
-  obtain ⟨d, s, m0, cs, M', rfl, hr, hw, rfl⟩ : ∃ d s m0 cs M', as = [.ptr d, .ptr s, .mem m0] ∧
+  obtain ⟨a, b, d, s, m0, cs, M', rfl, hd, hs, hr, hw, rfl⟩ : ∃ a b d s m0 cs M',
+      as = [a, b, .mem m0] ∧ a.asPtrWord = some d ∧ b.asPtrWord = some s ∧
       m0.read s v.auxInt.toInt.toNat = some cs ∧ m0.write d cs = some M' ∧ y = .mem M' := by
     match as with
     | [a, b, c] =>
-      cases a <;> try (simp [memDef, hop] at hy; done)
-      cases b <;> try (simp [memDef, hop] at hy; done)
       cases c <;> try (simp [memDef, hop] at hy; done)
       simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at hy
-      obtain ⟨cs, hr, M', hw, rfl⟩ := hy
-      exact ⟨_, _, _, cs, M', rfl, hr, hw, rfl⟩
+      obtain ⟨d, hd, s, hs, cs, hr, M', hw, rfl⟩ := hy
+      exact ⟨_, _, _, _, _, cs, M', rfl, hd, hs, hr, hw, rfl⟩
     | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at hy
   obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
   obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
   obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
-  cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
+  cases h.nil_inv; cases h3 with | mem hm =>
   obtain ⟨cs', hr', hcs⟩ := hm.read hr
   obtain ⟨M'', hw', hMM⟩ := hm.write hcs hw
-  exact ⟨.mem M'', by simp [memDef, hop, hr', hw', -Int64.toNat_toInt], .mem hMM⟩
+  exact ⟨.mem M'', by simp [memDef, hop, h1.asPtrWord hd, h2.asPtrWord hs, hr', hw',
+    -Int64.toNat_toInt], .mem hMM⟩
 
 /-- A `Move` whose copy succeeds evaluates to it. -/
 theorem memRoot_of_memDef_move {ctx : Ctx} {v : Value} (hop : v.op = .Move) {argv : List Val}
     {y : Val} (h : memDef ctx.tabs v argv = some y) : memRoot ctx v argv = .ok y := by
   match argv with
   | [a, b, c] =>
-    cases a <;> try (simp [memDef, hop] at h; done)
-    cases b <;> try (simp [memDef, hop] at h; done)
     cases c <;> try (simp [memDef, hop] at h; done)
     simp only [memDef, hop, Option.bind_eq_some_iff, Option.map_eq_some_iff] at h
-    obtain ⟨cs, hr, M', hw, rfl⟩ := h
-    simp [memRoot, hop, hr, hw, writeRes, -Int64.toNat_toInt]
+    obtain ⟨d, hd, s, hs, cs, hr, M', hw, rfl⟩ := h
+    simp [memRoot, hop, hd, hs, hr, hw, writeRes, -Int64.toNat_toInt]
   | [] | [_] | [_, _] | _ :: _ :: _ :: _ :: _ => simp [memDef, hop] at h
 
 theorem memDef_chg_mono {tabs : Tables} {v : Value} (hop : v.op = .Store ∨ v.op = .Move)

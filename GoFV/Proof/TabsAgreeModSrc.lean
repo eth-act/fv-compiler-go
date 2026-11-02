@@ -144,7 +144,7 @@ theorem evalPure_avoids (hX : TempX X) {op : Op} (hop : op ∈ tamPtrOps) (hn : 
   · -- ConstNil
     exact hnil
   · -- Convert
-    exact DAE.convert_avoids hU _ h
+    exact DAE.convert_avoids _ h
   · -- CondSelect
     exact DAE.condSelect_avoids h
   · -- GetG
@@ -403,13 +403,13 @@ theorem evalOp_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx :
     simp only [evalOp, h1, hfr.closure] at h
     cases h; trivial
   · rw [DAE.evalOp_memRoot (by simp [h1])] at h
-    exact DAE.write_avoids (.inl h1) hargs h
+    exact DAE.write_avoids hU (.inl h1) hargs h
   · exact excl _ h1 (by decide)
   · rw [DAE.evalOp_memRoot (by simp [h1])] at h
-    exact DAE.write_avoids (.inr (.inr h1)) hargs h
+    exact DAE.write_avoids hU (.inr (.inr h1)) hargs h
   · exact excl _ h1 (by decide)
   · rw [DAE.evalOp_memRoot (by simp [h1])] at h
-    exact DAE.write_avoids (.inr (.inl h1)) hargs h
+    exact DAE.write_avoids hU (.inr (.inl h1)) hargs h
   · exact excl _ h1 (by decide)
   · -- VarDef
     rw [DAE.evalOp_memRoot (by simp [h1])] at h

@@ -1,3 +1,4 @@
+import GoFV.Proof.PtrAddr
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.RewriteTermDen
 
@@ -72,20 +73,17 @@ theorem retype_ptr_elem (e e' : Option Nat) (v : Val) :
   | int w x => cases w <;> rfl
   | _ => rfl
 
-/-- A value fixed by retyping at a pointer shape is `poison` or a pointer. -/
+/-- A value fixed by retyping at a pointer shape is `poison`, an integer word or a pointer. -/
 theorem ptr_fixed {t : Ty} (ht : isPtrTy t = true) {w : Val} (h : w.retype t = w) :
-    w = .poison ∨ ∃ p, w = .ptr p := by
+    w = .poison ∨ (∃ x, w = .int .w64 x) ∨ ∃ p, w = .ptr p := by
   cases t with
   | ptr e =>
     cases w with
     | poison => exact .inl rfl
-    | ptr p => exact .inr ⟨p, rfl⟩
-    | int w x => cases w <;> simp [Val.retype] at h
+    | ptr p => exact .inr (.inr ⟨p, rfl⟩)
+    | int w x => cases w <;> first | exact .inr (.inl ⟨x, rfl⟩) | simp [Val.retype] at h
     | _ => simp [Val.retype] at h
   | _ => simp [isPtrTy] at ht
-
-theorem ptr_refines {p : Ptr} {v : Val} (h : Sem.Refines (.ptr p) v) : v = .ptr p := by
-  cases h; rfl
 
 theorem ptr_add_zero (p : Ptr) : p.add 0 = p := by
   simp [Ptr.add]
@@ -93,15 +91,15 @@ theorem ptr_add_zero (p : Ptr) : p.add 0 = p := by
 theorem ptr_add_add (p : Ptr) (a b : BitVec 64) : (p.add a).add b = p.add (a + b) := by
   simp [Ptr.add, BitVec.add_assoc]
 
-/-- Two fuels of one pointer-valued term agree. -/
+/-- Two fuels of one pointer-word term read the same pointer. -/
 theorem den_ptr_fuel {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {x : ID}
-    {k k' : Nat} {p q : Ptr} (h : den D tabs ρ k x = .ptr p) (h' : den D tabs ρ k' x = .ptr q) :
-    p = q := by
+    {k k' : Nat} {p q : Ptr} (h : (den D tabs ρ k x).asPtrWord = some p)
+    (h' : (den D tabs ρ k' x).asPtrWord = some q) : p = q := by
   rcases Nat.le_total k k' with hk | hk
-  · have := den_fuel_mono D tabs ρ k k' x hk
-    rw [h, h'] at this; cases this; rfl
-  · have := den_fuel_mono D tabs ρ k' k x hk
-    rw [h, h'] at this; cases this; rfl
+  · have := Refines.asPtrWord (den_fuel_mono D tabs ρ k k' x hk) h
+    rw [h'] at this; cases this; rfl
+  · have := Refines.asPtrWord (den_fuel_mono D tabs ρ k' k x hk) h'
+    rw [h] at this; cases this; rfl
 
 section
 variable {tabs : Tables} {f : Func} {ρ : ID → Val}
@@ -119,16 +117,6 @@ theorem den_fix (hT : Term.Typed f.value? tabs ρ) {x : ID} {v : Value} (hv : f.
     · rw [den_succ_atom ht]
       have := hT x ht (by rw [hv]; rfl)
       simpa [shape, hv] using this
-
-/-- A pointer-shaped value is `poison` or a pointer. -/
-theorem den_ptrVal (hT : Term.Typed f.value? tabs ρ) {x : ID} (hx : ptrVal tabs f x = true)
-    (k : Nat) : den f.value? tabs ρ k x = .poison ∨ ∃ p, den f.value? tabs ρ k x = .ptr p := by
-  unfold ptrVal at hx
-  cases hv : f.value? x with
-  | none => rw [hv] at hx; simp at hx
-  | some v =>
-    rw [hv] at hx
-    exact ptr_fixed (by simpa using hx) (den_fix hT hv k)
 
 /-- **A constant term denotes its value** at the fuel of its depth and above (`den_succ_term`). -/
 theorem termConst_den :
@@ -171,38 +159,36 @@ theorem constIdx_spec {i : ID} {kk : BitVec 64} (h : constIdx? tabs f i = some k
   · next hk => cases h; exact hk
   · cases h
 
-/-- A `PtrIndex` by a constant index: the pointer plus the index times the element size (at a
-fuel where the index term is evaluated, `termConst_den`; `den` only grows with the fuel,
-`den_fuel_mono`). -/
-theorem ptrIndex_den (hT : Term.Typed f.value? tabs ρ) {a : ID} {u : Value}
-    (hu : f.value? a = some u) (hop : u.op = .PtrIndex) (hsz : u.args.size = 2)
-    (hpv : ptrVal tabs f u.args[0]! = true) {e : Nat} (hty : tabs.ty u.type = .ptr (some e))
+/-- A `PtrIndex` by a constant index: the pointer word's pointer plus the index times the
+element size (at a fuel where the index term is evaluated, `termConst_den`; `den` only grows
+with the fuel, `den_fuel_mono`). -/
+theorem ptrIndex_den {a : ID} {u : Value} (hu : f.value? a = some u) (hop : u.op = .PtrIndex)
+    (hsz : u.args.size = 2) {e : Nat} (hty : tabs.ty u.type = .ptr (some e))
     {kk : BitVec 64} (hci : constIdx? tabs f u.args[1]! = some kk) {k : Nat} {p : Ptr}
-    (h : den f.value? tabs ρ k a = .ptr p) :
-    ∃ k' q, den f.value? tabs ρ k' u.args[0]! = .ptr q ∧ p = q.add (kk * BitVec.ofNat 64 e) := by
+    (h : (den f.value? tabs ρ k a).asPtrWord = some p) :
+    ∃ k' q, (den f.value? tabs ρ k' u.args[0]!).asPtrWord = some q ∧
+      p = q.add (kk * BitVec.ofNat 64 e) := by
   have ht : termOp u.op = true := by rw [hop]; rfl
   have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
-  have hK : den f.value? tabs ρ (max k 4 + 1) a = .ptr p := by
-    have h2 := den_fuel_mono f.value? tabs ρ k (max k 4 + 1) a (by omega)
-    rw [h] at h2
-    generalize den f.value? tabs ρ (max k 4 + 1) a = y at h2 ⊢
-    cases h2; rfl
+  have hK : (den f.value? tabs ρ (max k 4 + 1) a).asPtrWord = some p :=
+    (den_fuel_mono f.value? tabs ρ k (max k 4 + 1) a (by omega)).asPtrWord h
   rw [den_succ_term hu ht, toList_two hsz, List.map_cons, List.map_cons, List.map_nil,
-    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty,
+    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty, Val.asPtrWord_retype_ptr,
+    PtrOps.ptrIndex_asPtrWord,
     termConst_den 4 _ _ (constIdx_spec hci) (max k 4) (Nat.le_max_right _ _)] at hK
-  rcases den_ptrVal hT hpv (max k 4) with h0 | ⟨q0, h0⟩
-  · rw [h0] at hK; simp [PtrOps.ptrIndex, Val.retype] at hK
-  · refine ⟨max k 4, q0, h0, ?_⟩
-    rw [h0] at hK
-    simp only [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes] at hK
-    split at hK
-    · rw [retype_ptr_eq hK]; simp
-    · simp [Val.retype] at hK
+  cases hq : (den f.value? tabs ρ (max k 4) u.args[0]!).asPtrWord with
+  | none => rw [hq] at hK; cases hK
+  | some q =>
+    rw [hq] at hK
+    simp only [Option.bind_some, asOffset, Ptr.step?] at hK
+    refine ⟨max k 4, q, hq, ?_⟩
+    split at hK <;> cases hK
+    rw [BitVec.signExtend_eq]
 
 /-- One `ptrStep?`: the argument's pointer plus the offset. -/
-theorem ptrStep_den (hT : Term.Typed f.value? tabs ρ) {a c : ID} {o : BitVec 64}
-    (hs : ptrStep? tabs f a = some (c, o)) {k : Nat} {p : Ptr}
-    (h : den f.value? tabs ρ k a = .ptr p) : ∃ k' q, den f.value? tabs ρ k' c = .ptr q ∧ p = q.add o := by
+theorem ptrStep_den {a c : ID} {o : BitVec 64} (hs : ptrStep? tabs f a = some (c, o)) {k : Nat}
+    {p : Ptr} (h : (den f.value? tabs ρ k a).asPtrWord = some p) :
+    ∃ k' q, (den f.value? tabs ρ k' c).asPtrWord = some q ∧ p = q.add o := by
   unfold ptrStep? at hs
   cases hu : f.value? a with
   | none => rw [hu] at hs; cases hs
@@ -214,48 +200,48 @@ theorem ptrStep_den (hT : Term.Typed f.value? tabs ρ) {a c : ID} {o : BitVec 64
     simp only [Option.some.injEq, Prod.mk.injEq] at hs
     obtain ⟨rfl, rfl⟩ := hs
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
-    obtain ⟨⟨⟨hop, hsz⟩, -⟩, hpv⟩ := hc
+    obtain ⟨⟨⟨hop, hsz⟩, hpt⟩, -⟩ := hc
+    obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
+      revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
     have ht : termOp u.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
     have hfo : GoFV.Proof.Rules.frameOp u.op = false := by
       rcases hop with h | h <;> rw [h] <;> rfl
     cases k with
-    | zero => simp [den] at h
+    | zero => simp [den, Val.asPtrWord] at h
     | succ k =>
     refine ⟨k, ?_⟩
     rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
-      GoFV.Proof.Rules.opVal_pure hfo] at h
-    rcases den_ptrVal hT hpv k with h0 | ⟨q0, h0⟩
-    · rw [h0] at h
-      rcases hop with hop | hop <;> rw [hop] at h
-      · rw [evalPure_offPtr] at h; simp [PtrOps.offPtr, Val.retype] at h
-      · rw [evalPure_copy] at h; simp [Val.retype] at h
-    · refine ⟨q0, h0, ?_⟩
-      rw [h0] at h
-      rcases hop with hop | hop
-      · rw [hop, evalPure_offPtr] at h
-        simp only [PtrOps.offPtr, PtrOps.ptrRes] at h
-        split at h
-        · rw [retype_ptr_eq h, hop]; rfl
-        · simp [Val.retype] at h
-      · rw [hop, evalPure_copy] at h
-        rw [retype_ptr_eq h, hop]
-        simp [Ptr.add]
+      GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr] at h
+    rcases hop with hop | hop
+    · rw [hop, evalPure_offPtr, PtrOps.offPtr_asPtrWord] at h
+      cases hq : (den f.value? tabs ρ k u.args[0]!).asPtrWord with
+      | none => rw [hq] at h; cases h
+      | some q =>
+        rw [hq] at h
+        simp only [Option.bind_some, Ptr.step?] at h
+        refine ⟨q, rfl, ?_⟩
+        split at h <;> cases h
+        rw [hop]; rfl
+    · rw [hop, evalPure_copy] at h
+      refine ⟨p, h, ?_⟩
+      rw [hop]
+      exact (ptr_add_zero p).symm
   · split at hs
     · rename_i hc
       simp only [Bool.and_eq_true, beq_iff_eq] at hc
-      obtain ⟨⟨hop, hsz⟩, hpv⟩ := hc
+      obtain ⟨⟨hop, hsz⟩, -⟩ := hc
       split at hs
       · next e kk hty hci =>
         simp only [Option.some.injEq, Prod.mk.injEq] at hs
         obtain ⟨rfl, rfl⟩ := hs
-        exact ptrIndex_den hT hu hop hsz hpv hty hci h
+        exact ptrIndex_den hu hop hsz hty hci h
       · cases hs
     · cases hs
 
-/-- **Base and offset**: a pointer is its `ptrBase`'s pointer plus the offset. -/
-theorem ptrBase_den (hT : Term.Typed f.value? tabs ρ) :
-    ∀ (n : Nat) (a : ID) (k : Nat) (p : Ptr), den f.value? tabs ρ k a = .ptr p →
-      ∃ k' q, den f.value? tabs ρ k' (ptrBase tabs f n a).1 = .ptr q ∧
+/-- **Base and offset**: a pointer word reads as its `ptrBase`'s pointer plus the offset. -/
+theorem ptrBase_den :
+    ∀ (n : Nat) (a : ID) (k : Nat) (p : Ptr), (den f.value? tabs ρ k a).asPtrWord = some p →
+      ∃ k' q, (den f.value? tabs ρ k' (ptrBase tabs f n a).1).asPtrWord = some q ∧
         p = q.add (ptrBase tabs f n a).2
   | 0, a, k, p, h => ⟨k, p, h, (ptr_add_zero p).symm⟩
   | n + 1, a, k, p, h => by
@@ -266,14 +252,14 @@ theorem ptrBase_den (hT : Term.Typed f.value? tabs ρ) :
     | some co =>
       obtain ⟨c, o⟩ := co
       simp only [ptrBase, hs]
-      obtain ⟨k0, q0, h0, rfl⟩ := ptrStep_den hT hs h
-      obtain ⟨k', q, hq, rfl⟩ := ptrBase_den hT n c k0 q0 h0
+      obtain ⟨k0, q0, h0, rfl⟩ := ptrStep_den hs h
+      obtain ⟨k', q, hq, rfl⟩ := ptrBase_den n c k0 q0 h0
       exact ⟨k', q, hq, ptr_add_add q _ o⟩
 
-/-- A `LocalAddr`/`Addr` with a known allocation (`baseBlk?`) evaluates to its start. -/
+/-- A pointer-shaped `LocalAddr`/`Addr` with a known allocation (`baseBlk?`) reads as its start. -/
 theorem baseBlk_den (hM : MemAtoms f.value? tabs ρ) {a : ID} {B : Blk}
-    (hB : baseBlk? tabs f a = some B) {k : Nat} {P : Ptr} (h : den f.value? tabs ρ k a = .ptr P) :
-    P = ⟨B, 0⟩ := by
+    (hB : baseBlk? tabs f a = some B) {k : Nat} {P : Ptr}
+    (h : (den f.value? tabs ρ k a).asPtrWord = some P) : P = ⟨B, 0⟩ := by
   unfold baseBlk? at hB
   cases hu : f.value? a with
   | none => rw [hu] at hB; cases hB
@@ -281,14 +267,17 @@ theorem baseBlk_den (hM : MemAtoms f.value? tabs ρ) {a : ID} {B : Blk}
     rw [hu] at hB
     dsimp only at hB
     cases k with
-    | zero => simp [den] at h
+    | zero => simp [den, Val.asPtrWord] at h
     | succ k =>
     split at hB
     · rename_i hl
-      rw [beq_iff_eq] at hl
+      simp only [Bool.and_eq_true, beq_iff_eq] at hl
+      obtain ⟨hl, hpt⟩ := hl
+      obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
+        revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
       have hat : ¬ IsTerm f.value? a := not_term_of hu (by rw [hl]; decide)
       rw [den_succ_atom hat] at h
-      obtain ⟨N, hN⟩ := hM a u hu (by rw [hl]; rfl) (by rw [h]; nofun)
+      obtain ⟨N, hN⟩ := hM a u hu (by rw [hl]; rfl) (by intro h0; rw [h0] at h; cases h)
       obtain ⟨y, hy, hρ⟩ := hN N (Nat.le_refl _)
       unfold memDef at hy
       rw [hl] at hy
@@ -298,19 +287,26 @@ theorem baseBlk_den (hM : MemAtoms f.value? tabs ρ) {a : ID} {B : Blk}
       | none => rw [hax] at hB; cases hB
       | some n =>
         rw [hax] at hB; cases hB
-        rw [h, hax] at hρ
-        exact retype_ptr_eq hρ.symm
+        have hsh : shape f.value? tabs a = .ptr e := by simp [shape, hu, he]
+        rw [hρ, hax, hsh, Val.asPtrWord_retype_ptr] at h
+        simp only [Option.map_some, Option.getD_some, Val.asPtrWord, Option.some.injEq] at h
+        exact h.symm
     · split at hB
       · rename_i _ hd
-        rw [beq_iff_eq] at hd
+        simp only [Bool.and_eq_true, beq_iff_eq] at hd
+        obtain ⟨hd, hpt⟩ := hd
+        obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
+          revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
         have ht : termOp u.op = true := by rw [hd]; rfl
-        rw [den_succ_term hu ht, hd, GoFV.Proof.Rules.opVal_addr] at h
+        rw [den_succ_term hu ht, hd, GoFV.Proof.Rules.opVal_addr, he,
+          Val.asPtrWord_retype_ptr] at h
         unfold GoFV.Proof.Rules.addrVal at h
         split at hB
         · rename_i name _ _ _ hax
           cases hB
           rw [hax] at h
-          exact retype_ptr_eq h
+          simp only [Val.asPtrWord, Option.some.injEq] at h
+          exact h.symm
         · cases hB
       · cases hB
 
@@ -357,33 +353,38 @@ theorem idxSame_den {i j : ID} (h : idxSame tabs f i j = true) {k k' : Nat} {o o
   · have := hint (den_fuel_mono _ _ _ _ _ _ hk) hj
     rw [hi] at this; cases this; rfl
 
-/-- `AddPtr`/`PtrIndex` on a pointer and an integer: the value depends on the index's offset. -/
-theorem evalPure_ptrArith {op : Op} (hop : op = .AddPtr ∨ op = .PtrIndex) {t : Ty} {ai : Int64}
-    {ax : Option AuxRef} {x i : Val} {P : Ptr} (ht : x = .poison ∨ ∃ p, x = .ptr p)
-    (h : (evalPure op t ai ax [x, i]).retype t = .ptr P) :
-    ∃ p o, x = .ptr p ∧ asOffset i = some o ∧
-      ∀ i', asOffset i' = some o → evalPure op t ai ax [x, i'] = evalPure op t ai ax [x, i] := by
-  rcases ht with rfl | ⟨p, rfl⟩
-  · rcases hop with rfl | rfl
-    · rw [evalPure_addPtr] at h; simp [PtrOps.addPtr, Val.retype] at h
-    · rw [evalPure_ptrIndex] at h; simp [PtrOps.ptrIndex, Val.retype] at h
-  · cases ho : asOffset i with
-    | none =>
-      rcases hop with rfl | rfl
-      · rw [evalPure_addPtr] at h; simp [PtrOps.addPtr, ho, Val.retype] at h
-      · rw [evalPure_ptrIndex] at h
-        simp only [PtrOps.ptrIndex, ho] at h
-        revert h; split <;> simp_all [Val.retype]
-    | some o =>
-      refine ⟨p, o, rfl, rfl, fun i' hi' => ?_⟩
-      rcases hop with rfl | rfl
-      · rw [evalPure_addPtr, evalPure_addPtr]; simp only [PtrOps.addPtr, ho, hi']
-      · rw [evalPure_ptrIndex, evalPure_ptrIndex]; simp only [PtrOps.ptrIndex, ho, hi']
+/-- `AddPtr`/`PtrIndex` at a pointer shape reads as a pointer that depends only on its operand's
+pointer and its index's offset. -/
+theorem evalPure_ptrArith {op : Op} (hop : op = .AddPtr ∨ op = .PtrIndex) {e : Option Nat}
+    {ai : Int64} {ax : Option AuxRef} {x i : Val} {P : Ptr}
+    (h : (evalPure op (.ptr e) ai ax [x, i]).asPtrWord = some P) :
+    ∃ p o, x.asPtrWord = some p ∧ asOffset i = some o ∧ ∀ x' i', x'.asPtrWord = some p →
+      asOffset i' = some o → (evalPure op (.ptr e) ai ax [x', i']).asPtrWord = some P := by
+  cases hx : x.asPtrWord with
+  | none =>
+    rcases hop with rfl | rfl
+    · rw [evalPure_addPtr, PtrOps.addPtr_asPtrWord, hx] at h; cases h
+    · rw [evalPure_ptrIndex, PtrOps.ptrIndex_asPtrWord, hx] at h; cases h
+  | some p =>
+  cases hi : asOffset i with
+  | none =>
+    rcases hop with rfl | rfl
+    · rw [evalPure_addPtr, PtrOps.addPtr_asPtrWord, hx, hi] at h; cases h
+    · rw [evalPure_ptrIndex, PtrOps.ptrIndex_asPtrWord, hx, hi] at h
+      simp at h
+  | some o =>
+  refine ⟨p, o, rfl, rfl, fun x' i' hx' hi' => ?_⟩
+  rcases hop with rfl | rfl
+  · rw [evalPure_addPtr, PtrOps.addPtr_asPtrWord, hx, hi] at h
+    rw [evalPure_addPtr, PtrOps.addPtr_asPtrWord, hx', hi']; exact h
+  · rw [evalPure_ptrIndex, PtrOps.ptrIndex_asPtrWord, hx, hi] at h
+    rw [evalPure_ptrIndex, PtrOps.ptrIndex_asPtrWord, hx', hi']; exact h
 
-/-- **Equal bases** where both are pointers. -/
-theorem baseSame_den (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ) :
+/-- **Equal bases** where both read as pointers. -/
+theorem baseSame_den (hM : MemAtoms f.value? tabs ρ) :
     ∀ (n : Nat) (a b : ID), baseSameB tabs f n a b = true → ∀ {k k' : Nat} {p q : Ptr},
-      den f.value? tabs ρ k a = .ptr p → den f.value? tabs ρ k' b = .ptr q → p = q
+      (den f.value? tabs ρ k a).asPtrWord = some p →
+        (den f.value? tabs ρ k' b).asPtrWord = some q → p = q
   | 0, a, b, h, k, k', p, q, ha, hb => by
     simp only [baseSameB, beq_iff_eq] at h
     subst h; exact den_ptr_fuel ha hb
@@ -405,44 +406,47 @@ theorem baseSame_den (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? 
       | some w =>
       rw [hu, hw] at h
       simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hop, hop'⟩, hsu⟩, hsw⟩, hty⟩, hai⟩, hax⟩, hpu⟩, hpw⟩, hoff⟩, hbase⟩,
-        hidx⟩ := h
+      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hop, hop'⟩, hsu⟩, hsw⟩, hty⟩, hai⟩, hax⟩, -⟩, -⟩, hoff⟩, hbase⟩,
+        hidx⟩, hpt⟩ := h
+      obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
+        revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
+      have hwe : tabs.ty w.type = .ptr e := by rw [← tyEq_sound hty, he]
       have ht : termOp u.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
       have hfo : GoFV.Proof.Rules.frameOp u.op = false := by
         rcases hop with h | h <;> rw [h] <;> rfl
-      have hop2 : w.op = .AddPtr ∨ w.op = .PtrIndex := hop' ▸ hop
       have hargs : ∀ {v : Value}, v.args.size = 2 → v.args.toList = [v.args[0]!, v.args[1]!] :=
         fun hs => toList_two hs
       cases k with
-      | zero => simp [den] at ha
+      | zero => simp [den, Val.asPtrWord] at ha
       | succ k =>
       cases k' with
-      | zero => simp [den] at hb
+      | zero => simp [den, Val.asPtrWord] at hb
       | succ k' =>
       rw [den_succ_term hu ht, hargs hsu, List.map_cons, List.map_cons, List.map_nil,
-        GoFV.Proof.Rules.opVal_pure hfo] at ha
+        GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr] at ha
       rw [den_succ_term hw (hop' ▸ ht), hargs hsw, List.map_cons, List.map_cons, List.map_nil,
-        GoFV.Proof.Rules.opVal_pure (hop' ▸ hfo)] at hb
-      obtain ⟨pa, oa, hpa, hoa, hia⟩ := evalPure_ptrArith hop (den_ptrVal hT hpu k) ha
-      obtain ⟨pb, ob, hpb, hob, hib⟩ := evalPure_ptrArith hop2 (den_ptrVal hT hpw k') hb
+        GoFV.Proof.Rules.opVal_pure (hop' ▸ hfo), hwe, Val.asPtrWord_retype_ptr] at hb
+      obtain ⟨pa, oa, hpa, hoa, hia⟩ := evalPure_ptrArith hop ha
+      obtain ⟨pb, ob, hpb, hob, -⟩ := evalPure_ptrArith (hop' ▸ hop) hb
       have hab : pa = pb := by
-        obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den hT 8 _ k pa hpa
-        obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den hT 8 _ k' pb hpb
-        rw [e1, e2, hoff, baseSame_den hT hM n _ _ hbase h1 h2]
+        obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den 8 _ k pa hpa
+        obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den 8 _ k' pb hpb
+        rw [e1, e2, hoff, baseSame_den hM n _ _ hbase h1 h2]
       have hoo : oa = ob := idxSame_den hidx hoa hob
-      rw [hpa] at ha hia; rw [hpb, ← hab] at hb hib
-      rw [← hib _ (hoo ▸ hoa), ← hop', ← tyEq_sound hty, ← hai, ← hax] at hb
-      rw [ha] at hb; cases hb; rfl
+      have := hia _ _ (hab ▸ hpb) (hoo ▸ hob)
+      rw [← hop', ← hai, ← hax] at hb
+      rw [this] at hb; cases hb; rfl
 
 /-- **Equal pointers** (`samePtrB`) where both are pointers. -/
-theorem samePtr_den (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ) {a b : ID}
+theorem samePtr_den (hM : MemAtoms f.value? tabs ρ) {a b : ID}
     (h : samePtrB tabs f a b = true) {k k' : Nat} {p q : Ptr}
-    (ha : den f.value? tabs ρ k a = .ptr p) (hb : den f.value? tabs ρ k' b = .ptr q) : p = q := by
+    (ha : (den f.value? tabs ρ k a).asPtrWord = some p)
+    (hb : (den f.value? tabs ρ k' b).asPtrWord = some q) : p = q := by
   unfold samePtrB at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den hT 8 a k p ha
-  obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den hT 8 b k' q hb
-  rw [e1, e2, h.1, baseSame_den hT hM 8 _ _ h.2 h1 h2]
+  obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den 8 a k p ha
+  obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den 8 b k' q hb
+  rw [e1, e2, h.1, baseSame_den hM 8 _ _ h.2 h1 h2]
 
 /-- Offsets `offSep` separates, from one base. -/
 theorem offSep_sep {B : Ptr} {o o' : BitVec 64} {n k : Nat} (h : offSep o n o' k = true) :
@@ -457,16 +461,16 @@ theorem offSep_sep {B : Ptr} {o o' : BitVec 64} {n k : Nat} (h : offSep o n o' k
   omega
 
 /-- **Disjoint pointers** (`disjointB`) address separate bytes where both are pointers. -/
-theorem disjoint_sep (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ) {a b : ID}
+theorem disjoint_sep (hM : MemAtoms f.value? tabs ρ) {a b : ID}
     {n m : Nat} (h : disjointB tabs f a n b m = true) {k k' : Nat} {p q : Ptr}
-    (ha : den f.value? tabs ρ k a = .ptr p) (hb : den f.value? tabs ρ k' b = .ptr q) :
-    Sep p n q m := by
+    (ha : (den f.value? tabs ρ k a).asPtrWord = some p)
+    (hb : (den f.value? tabs ρ k' b).asPtrWord = some q) : Sep p n q m := by
   unfold disjointB at h
   simp only [Bool.or_eq_true, Bool.and_eq_true] at h
-  obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den hT 8 a k p ha
-  obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den hT 8 b k' q hb
+  obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den 8 a k p ha
+  obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den 8 b k' q hb
   rcases h with ⟨hs, hb'⟩ | h
-  · rw [e1, e2, ← baseSame_den hT hM 8 _ _ hb' h1 h2]
+  · rw [e1, e2, ← baseSame_den hM 8 _ _ hb' h1 h2]
     exact offSep_sep hs
   · split at h
     · rename_i x y hx hy

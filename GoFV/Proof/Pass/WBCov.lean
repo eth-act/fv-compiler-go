@@ -198,7 +198,7 @@ theorem runMem_of_ev (S : Setup c b B rs l) {env : Env} {Gr : Frame} {j : Nat} {
   rw [DAE.evalOp_memRoot (by rcases hop with h | h | h <;> simp [h])] at hop0
   have hM : ∃ M, L.getLast? = some (.mem M) := by
     rcases hop with h | h | h
-    · obtain ⟨q, x, M, M', rfl, -, -⟩ := store_inv h hop0; exact ⟨M, rfl⟩
+    · obtain ⟨a, q, x, M, M', rfl, -, -, -⟩ := store_inv h hop0; exact ⟨M, rfl⟩
     · obtain ⟨M, n, rfl, -⟩ := varDef_inv h hop0; exact ⟨M, rfl⟩
     · obtain ⟨M, rfl, -⟩ := varLive_inv h hop0; exact ⟨M, rfl⟩
   obtain ⟨M, hM⟩ := hM

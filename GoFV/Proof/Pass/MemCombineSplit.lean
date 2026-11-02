@@ -1,14 +1,17 @@
 import GoFV.Proof.Pass.MemCombineSem
 import GoFV.Proof.AtomSimRef
+import GoFV.Proof.PtrAddr
 
 /-!
 # memcombine: pointers taken apart (issue #35)
 
 `splitP_sound`: if `splitP` takes `p` apart into `base + idx + off` (`base` pointer-typed),
-`p`'s value is a pointer `Q` and the index so far has a value, then `base` is a pointer `P`, the
-new index has a value `I` and `Q + idx + off = P + I + off'` (`ptrAt`). The values are those of
-`den` at one fuel (`V n := den D tabs ρ n`); values defined at a lower fuel keep their value at a
-higher one (`den_lift_ptr`, `den_lift_int`).
+`p`'s value reads as a pointer `Q` (a pointer word, `Val.asPtrWord`) and the index so far has a
+value, then `base` reads as a pointer `P`, the new index has a value `I` and
+`Q + idx + off = P + I + off'` (`ptrAt`). Pointer arithmetic reads its operand as a pointer word
+(`PtrOps.offPtr_asPtrWord`, `PtrOps.addPtr_asPtrWord`), so an integer word steps like the pointer
+at its address. The values are those of `den` at one fuel (`V n := den D tabs ρ n`); values
+defined at a lower fuel keep their value at a higher one (`den_lift_ptr`, `den_lift_int`).
 -/
 
 namespace GoFV.Proof.MemCombine
@@ -20,8 +23,8 @@ section
 variable {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}
 
 theorem den_lift_ptr {n m : Nat} {x : ID} {P : Ptr} (hle : n ≤ m)
-    (h : den D tabs ρ n x = .ptr P) : den D tabs ρ m x = .ptr P :=
-  refines_ptr (h ▸ den_fuel_mono D tabs ρ n m x hle)
+    (h : (den D tabs ρ n x).asPtrWord = some P) : (den D tabs ρ m x).asPtrWord = some P :=
+  (den_fuel_mono D tabs ρ n m x hle).asPtrWord h
 
 theorem den_lift_int {n m : Nat} {x : ID} {w : Width} {X : BitVec w.bits} (hle : n ≤ m)
     (h : den D tabs ρ n x = .int w X) : den D tabs ρ m x = .int w X :=
@@ -30,37 +33,6 @@ theorem den_lift_int {n m : Nat} {x : ID} {w : Width} {X : BitVec w.bits} (hle :
 theorem idxVal_lift {n m : Nat} (hle : n ≤ m) {i : Option ID} {I : BitVec 64}
     (h : idxVal (den D tabs ρ n) i = some I) : idxVal (den D tabs ρ m) i = some I :=
   idxVal_mono (fun y => den_fuel_mono D tabs ρ n m y hle) h
-
-theorem retype_ptr_cases (t : Option Nat) (v : Val) :
-    v.retype (.ptr t) = .poison ∨ ∃ P, v.retype (.ptr t) = .ptr P := by
-  cases v with
-  | int w x => cases w <;> first | exact .inl rfl | exact .inr ⟨_, rfl⟩
-  | ptr p => exact .inr ⟨_, rfl⟩
-  | _ => exact .inl rfl
-
-/-- A pointer-typed value is a pointer or `poison`. -/
-theorem den_ptrTyped (hT : Term.Typed D tabs ρ) {p : ID} (hp : ptrTyped tabs D p = true) (n : Nat) :
-    den D tabs ρ n p = .poison ∨ ∃ P, den D tabs ρ n p = .ptr P := by
-  unfold ptrTyped at hp
-  cases hD : D p with
-  | none => rw [hD] at hp; cases hp
-  | some v =>
-    rw [hD] at hp
-    dsimp only at hp
-    split at hp
-    · rename_i t ht
-      cases n with
-      | zero => exact .inl rfl
-      | succ n =>
-        by_cases hte : termOp v.op = true
-        · rw [den_succ_term hD hte, ht]; exact retype_ptr_cases _ _
-        · have hat : ¬ IsTerm D p := fun ⟨v', hv', ht'⟩ => by
-            rw [hD] at hv'; cases hv'; exact hte ht'
-          rw [den_succ_atom hat]
-          have hty := hT p hat (by rw [hD]; rfl)
-          simp only [shape, hD, Option.map_some, Option.getD_some, ht] at hty
-          rw [← hty]; exact retype_ptr_cases _ _
-    · cases hp
 
 theorem args_one {α : Type} {a : Array ID} (h : a.size = 1) (F : ID → α) :
     a.toList.map F = [F a[0]!] := by
@@ -87,16 +59,9 @@ theorem den_term {n : Nat} {x : ID} {v : Value} (hD : D x = some v) (ht : termOp
       (v.args.toList.map (den D tabs ρ n))).retype (tabs.ty v.type) := by
   rw [den_succ_term hD ht, GoFV.Proof.Rules.opVal_pure hf]
 
-theorem retype_ptrTy_ptr {t : Ty} {v : Val} {Q : Ptr} (ht : ∃ e, t = .ptr e)
-    (h : v.retype t = .ptr Q) : v = .ptr Q ∨ ∃ w x, v = .int w x := by
-  obtain ⟨e, rfl⟩ := ht
-  cases v with
-  | ptr p => cases h; exact .inl rfl
-  | int w x => exact .inr ⟨w, x, rfl⟩
-  | _ => cases h
-
-theorem ptrRes_eq {p Q : Ptr} (h : PtrOps.ptrRes p = .ptr Q) : p = Q := by
-  unfold PtrOps.ptrRes at h; split at h <;> cases h; rfl
+/-- A step of pointer arithmetic that stays in its window adds. -/
+theorem step?_add_eq {p q : Ptr} {k : BitVec 64} (h : p.step? k = some q) : p.add k = q := by
+  unfold Ptr.step? at h; split at h <;> cases h; rfl
 
 theorem asInt_eq {w : Width} {v : Val} {x : BitVec w.bits} (h : v.asInt w = some x) :
     v = .int w x := by
@@ -186,19 +151,18 @@ theorem addConst_sound {y j : ID} {c : Int} {n : Nat} {K : BitVec 64}
       · cases h
     · cases h
 
-
-/-- **`splitP` is sound**: `p` (its value at fuel `n`) plus the index (values at fuel `m ≥ n`)
-and offset so far is `base + idx' + off'`. -/
-theorem splitP_sound (hT : Term.Typed D tabs ρ) {m : Nat} : ∀ (N n : Nat) (p : ID)
+/-- **`splitP` is sound**: `p` (its value at fuel `n`, read as a pointer word) plus the index
+(values at fuel `m ≥ n`) and offset so far is `base + idx' + off'`. -/
+theorem splitP_sound {m : Nat} : ∀ (N n : Nat) (p : ID)
     (i : Option ID) (o : Int) {b : ID} {i' : Option ID} {o' : Int} {Q : Ptr} {I : BitVec 64},
     n ≤ m → splitP tabs D N p i o = (b, i', o') → ptrTyped tabs D b = true →
-    den D tabs ρ n p = .ptr Q → idxVal (den D tabs ρ m) i = some I →
-    ∃ P I', den D tabs ρ m b = .ptr P ∧ idxVal (den D tabs ρ m) i' = some I' ∧
+    (den D tabs ρ n p).asPtrWord = some Q → idxVal (den D tabs ρ m) i = some I →
+    ∃ P I', (den D tabs ρ m b).asPtrWord = some P ∧ idxVal (den D tabs ρ m) i' = some I' ∧
       ptrAt P I' o' = ptrAt Q I o
   | 0, n, p, i, o, b, i', o', Q, I, hle, hs, _, hp, hI => by
     cases hs; exact ⟨Q, I, den_lift_ptr hle hp, hI, rfl⟩
   | N + 1, n, p, i, o, b, i', o', Q, I, hle, hs, hb, hp, hI => by
-    have stop : (b, i', o') = (p, i, o) → ∃ P I', den D tabs ρ m b = .ptr P ∧
+    have stop : (b, i', o') = (p, i, o) → ∃ P I', (den D tabs ρ m b).asPtrWord = some P ∧
         idxVal (den D tabs ρ m) i' = some I' ∧ ptrAt P I' o' = ptrAt Q I o := fun h => by
       cases h; exact ⟨Q, I, den_lift_ptr hle hp, hI, rfl⟩
     unfold splitP at hs
@@ -209,7 +173,7 @@ theorem splitP_sound (hT : Term.Typed D tabs ρ) {m : Nat} : ∀ (N n : Nat) (p 
       dsimp only at hs
       by_cases hpt : ptrTyped tabs D p = true
       · simp only [hpt, Bool.not_true, Bool.false_eq_true, ite_false] at hs
-        have hpty : ∃ e, tabs.ty v.type = .ptr e := by
+        obtain ⟨e, he⟩ : ∃ e, tabs.ty v.type = .ptr e := by
           unfold ptrTyped at hpt; rw [hD] at hpt; dsimp only at hpt
           split at hpt
           · exact ⟨_, ‹_›⟩
@@ -223,27 +187,21 @@ theorem splitP_sound (hT : Term.Typed D tabs ρ) {m : Nat} : ∀ (N n : Nat) (p 
           simp only [Bool.and_eq_true, beq_iff_eq] at hoff
           obtain ⟨hop, hsz⟩ := hoff
           have hp' := hp
-          rw [den_term hD (by rw [hop]; decide) (by rw [hop]; decide), hop, args_one hsz] at hp'
-          change (PtrOps.offPtr v.auxInt [den D tabs ρ n v.args[0]!]).retype _ = _ at hp'
+          rw [den_term hD (by rw [hop]; decide) (by rw [hop]; decide), hop, args_one hsz, he]
+            at hp'
+          change ((PtrOps.offPtr v.auxInt [den D tabs ρ n v.args[0]!]).retype _).asPtrWord = _
+            at hp'
+          rw [Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord] at hp'
+          obtain ⟨Q', h0, hQ⟩ := Option.bind_eq_some_iff.1 hp'
+          have hQ := step?_add_eq hQ
           -- the argument is pointer-typed (else `splitP` stops at it, which is not)
           by_cases hat : ptrTyped tabs D v.args[0]! = true
-          · rcases den_ptrTyped hT hat n with h0 | ⟨Q', h0⟩
-            · rw [h0] at hp'
-              change Val.retype _ .poison = _ at hp'
-              rw [retype_poison] at hp'; cases hp'
-            · rw [h0] at hp'
-              obtain ⟨e, he⟩ := hpty
-              rw [he] at hp'
-              have hQ : Q'.add (BitVec.ofInt 64 v.auxInt.toInt) = Q := by
-                change (PtrOps.ptrRes _).retype _ = _ at hp'
-                unfold PtrOps.ptrRes at hp'
-                split at hp' <;> cases hp'; rfl
-              obtain ⟨P, I', h1, h2, h3⟩ := splitP_sound hT N n _ i _ (by omega) hs hb h0 hI
-              refine ⟨P, I', h1, h2, ?_⟩
-              rw [h3, ← hQ]
-              simp only [ptrAt, Ptr.add, BitVec.ofInt_add]
-              congr 1
-              ac_rfl
+          · obtain ⟨P, I', h1, h2, h3⟩ := splitP_sound N n _ i _ (by omega) hs hb h0 hI
+            refine ⟨P, I', h1, h2, ?_⟩
+            rw [h3, ← hQ]
+            simp only [ptrAt, Ptr.add, BitVec.ofInt_add]
+            congr 1
+            ac_rfl
           · rw [splitP_self (Bool.eq_false_iff.2 hat)] at hs
             cases hs; exact absurd hb hat
         · simp only [Bool.not_eq_true] at hoff
@@ -255,51 +213,40 @@ theorem splitP_sound (hT : Term.Typed D tabs ρ) {m : Nat} : ∀ (N n : Nat) (p 
             have hI0 : I = 0 := by cases hI; rfl
             subst hI0
             have hp' := hp
-            rw [den_term hD (by rw [hop]; decide) (by rw [hop]; decide), hop, args_two hsz] at hp'
-            change (PtrOps.addPtr [den D tabs ρ n v.args[0]!, den D tabs ρ n v.args[1]!]).retype _ = _
+            rw [den_term hD (by rw [hop]; decide) (by rw [hop]; decide), hop, args_two hsz, he]
               at hp'
+            change ((PtrOps.addPtr [den D tabs ρ n v.args[0]!, den D tabs ρ n v.args[1]!]).retype
+              _).asPtrWord = _ at hp'
+            rw [Val.asPtrWord_retype_ptr, PtrOps.addPtr_asPtrWord] at hp'
+            obtain ⟨Q', h0, hp''⟩ := Option.bind_eq_some_iff.1 hp'
+            obtain ⟨K, hk, hQ⟩ := Option.bind_eq_some_iff.1 hp''
+            have hQ := step?_add_eq hQ
             by_cases hat : ptrTyped tabs D v.args[0]! = true
-            · rcases den_ptrTyped hT hat n with h0 | ⟨Q', h0⟩
-              · rw [h0] at hp'
-                change Val.retype _ .poison = _ at hp'
-                rw [retype_poison] at hp'; cases hp'
-              · rw [h0] at hp'
-                obtain ⟨e, he⟩ := hpty
-                rw [he] at hp'
-                cases hk : asOffset (den D tabs ρ n v.args[1]!) with
-                | none =>
-                  simp only [PtrOps.addPtr, hk] at hp'
-                  rw [retype_poison] at hp'; cases hp'
-                | some K =>
-                  have hQ : Q'.add K = Q := by
-                    simp only [PtrOps.addPtr, hk] at hp'
-                    unfold PtrOps.ptrRes at hp'
-                    split at hp' <;> cases hp'; rfl
-                  have hK : idxVal (den D tabs ρ m) (some v.args[1]!) = some K :=
-                    idxVal_lift (n := n) (m := m) (i := some v.args[1]!) (by omega) hk
-                  cases hac : addConst tabs D v.args[1]! with
-                  | none =>
-                    rw [hac] at hs
-                    dsimp only at hs
-                    obtain ⟨P, I', h1, h2, h3⟩ :=
-                      splitP_sound hT N n _ (some v.args[1]!) o (by omega) hs hb h0 hK
-                    refine ⟨P, I', h1, h2, ?_⟩
-                    rw [h3, ← hQ]
-                    simp only [ptrAt, Ptr.add]
-                    congr 1
-                    simp
-                  | some cj =>
-                    obtain ⟨c, j⟩ := cj
-                    rw [hac] at hs
-                    dsimp only at hs
-                    obtain ⟨J, hJ, hKJ⟩ := addConst_sound hac hk
-                    obtain ⟨P, I', h1, h2, h3⟩ := splitP_sound hT N n _ (some j) (o + c)
-                      (by omega) hs hb h0 (idxVal_lift (n := n) (m := m) (i := some j) (by omega) hJ)
-                    refine ⟨P, I', h1, h2, ?_⟩
-                    rw [h3, ← hQ, hKJ]
-                    simp only [ptrAt, Ptr.add, BitVec.add_zero, BitVec.ofInt_add]
-                    congr 1
-                    ac_rfl
+            · have hK : idxVal (den D tabs ρ m) (some v.args[1]!) = some K :=
+                idxVal_lift (n := n) (m := m) (i := some v.args[1]!) (by omega) hk
+              cases hac : addConst tabs D v.args[1]! with
+              | none =>
+                rw [hac] at hs
+                dsimp only at hs
+                obtain ⟨P, I', h1, h2, h3⟩ :=
+                  splitP_sound N n _ (some v.args[1]!) o (by omega) hs hb h0 hK
+                refine ⟨P, I', h1, h2, ?_⟩
+                rw [h3, ← hQ]
+                simp only [ptrAt, Ptr.add]
+                congr 1
+                simp
+              | some cj =>
+                obtain ⟨c, j⟩ := cj
+                rw [hac] at hs
+                dsimp only at hs
+                obtain ⟨J, hJ, hKJ⟩ := addConst_sound hac hk
+                obtain ⟨P, I', h1, h2, h3⟩ := splitP_sound N n _ (some j) (o + c)
+                  (by omega) hs hb h0 (idxVal_lift (n := n) (m := m) (i := some j) (by omega) hJ)
+                refine ⟨P, I', h1, h2, ?_⟩
+                rw [h3, ← hQ, hKJ]
+                simp only [ptrAt, Ptr.add, BitVec.add_zero, BitVec.ofInt_add]
+                congr 1
+                ac_rfl
             · have hself := splitP_self (tabs := tabs) (D := D) (Bool.eq_false_iff.2 hat) N
               cases hac : addConst tabs D v.args[1]! with
               | none =>

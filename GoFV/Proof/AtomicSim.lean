@@ -104,11 +104,17 @@ theorem atomicRoot_ok_mem {v : Value} {L : List Val} {w y : Val}
   · rcases L with _ | ⟨e, L⟩ <;> cases h
 
 /-- **An atomic root on related memories** returns alike when its pointer arguments point into
-`G`. -/
+`G` (an integer address word points to `Ptr.ofAddr` of it, which `hG` puts into `G`). -/
 theorem atomicRoot_sim (hR : AtomicSimRel R G) {v : Value} {L : List Val} {M M' : Mem} {y : Val}
-    (hL : ∀ p, Val.ptr p ∈ L → G p.blk) (hm : R M M')
+    (hL : ∀ p, Val.ptr p ∈ L → G p.blk) (hG : ∀ x, G (Ptr.ofAddr x).blk) (hm : R M M')
     (h : atomicRoot v (L ++ [.mem M]) = .ok y) :
     ∃ y', atomicRoot v (L ++ [.mem M']) = .ok y' ∧ AtomicSame R y y' := by
+  have hA : ∀ a ∈ L, ∀ p, a.asPtrWord = some p → G p.blk := by
+    intro a ha p hp
+    rcases a with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+      simp only [Val.asPtrWord, reduceCtorEq, Option.some.injEq] at hp
+    · subst hp; exact hG x
+    · subst hp; exact hL _ ha
   rcases L with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, L⟩⟩⟩⟩ <;>
     simp only [List.nil_append, List.cons_append, atomicRoot] at h ⊢
   · unfold Atomic.barrier at h ⊢
@@ -121,26 +127,26 @@ theorem atomicRoot_sim (hR : AtomicSimRel R G) {v : Value} {L : List Val} {M M' 
     · cases h; exact ⟨_, rfl, M, M', hm, .inl ⟨rfl, rfl⟩⟩
     · cases h
   · unfold Atomic.rmwRoot at h ⊢
-    cases a with
-    | ptr p =>
-      dsimp only at h ⊢
+    dsimp only at h ⊢
+    cases hp : a.asPtrWord with
+    | none => simp only [hp, Atomic.unmodelled] at h; cases h
+    | some p =>
       cases hi : Atomic.info? v.op with
-      | none => simp only [hi, Atomic.unmodelled] at h; cases h
+      | none => simp only [hp, hi, Atomic.unmodelled] at h; cases h
       | some kt =>
         obtain ⟨k, t⟩ := kt
-        simp only [hi] at h ⊢
-        exact atomicRmw_sim hR (hL p (by simp)) hm h
-    | _ => simp only [Atomic.unmodelled] at h; cases h
+        simp only [hp, hi] at h ⊢
+        exact atomicRmw_sim hR (hA a (by simp) p hp) hm h
   · unfold Atomic.casRoot at h ⊢
-    cases a with
-    | ptr p =>
-      dsimp only at h ⊢
+    dsimp only at h ⊢
+    cases hp : a.asPtrWord with
+    | none => simp only [hp, Atomic.unmodelled] at h; cases h
+    | some p =>
       cases hc : Atomic.casWidth? v.op with
-      | none => simp only [hc, Atomic.unmodelled] at h; cases h
+      | none => simp only [hp, hc, Atomic.unmodelled] at h; cases h
       | some cw =>
-        simp only [hc] at h ⊢
-        exact atomicCas_sim hR (hL p (by simp)) hm h
-    | _ => simp only [Atomic.unmodelled] at h; cases h
+        simp only [hp, hc] at h ⊢
+        exact atomicCas_sim hR (hA a (by simp) p hp) hm h
   · rcases L with _ | ⟨e, L⟩ <;> cases h
 
 /-- `atomicRoot` of an op it does not model is `stuck`. -/

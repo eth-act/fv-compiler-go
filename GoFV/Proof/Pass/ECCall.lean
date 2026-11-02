@@ -551,6 +551,12 @@ theorem ecc_ofPieces_arg {t : Ty} {v : Val} (hw : wf t = true)
     | ptr q =>
       rw [← ecc_ofPieces_ptr]
       exact ofPieces_mono _ h
+    | int w x =>
+      have hv' : (Val.int w x).hasTy (.int .w64) = true := by
+        cases w <;> simp_all [Val.hasTy]
+      rw [ecPieceVals_of_hasTy true hv'] at h
+      rw [Val.retype_of_hasTy hv']
+      exact (ofPieces_leafVals hw hv').trans (ofPieces_mono _ h)
     | _ => simp [Val.hasTy] at hv
 
 /-- **`decodeArgs` of register and stack arguments**: the register pieces refine the expected
@@ -947,7 +953,8 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           exact ⟨hcl _ (hmem3 0 (by decide)) hn, hLcl _ (hmem3 0 (by decide)) hn⟩
         have ha := ecs_addr hNC hL hoff hEq.1 hEq.2 fun qw hqw hn =>
           hHS _ ⟨z, .inr hz, mw, qw, hmvw, hqw, hn, rfl⟩
-        rw [rv_of ha] at hd; cases hd
+        obtain ⟨a0, ha0, hasl⟩ := ha
+        rw [rv_of ha0, hasl] at hd; cases hd
         have hrd' : M.read s (tabs.ty p.type).size = some bs := by
           rw [hai] at hrd; simpa using hrd
         -- the source's `Dereference`
@@ -970,8 +977,7 @@ theorem obl_call_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           (by rw [← hsrc0]; exact reg_rv hsrcR)
         rw [ecCv_of_not_special hss] at hrys
         rw [rv_of hysT] at hs
-        subst hs
-        have hP := ecs_move_arg hMR (hinsS _ (hmemPair hpa).1 (hregOf hpa)).1 heqa hmt hrys hrd'
+        have hP := ecs_move_arg hMR (hinsS _ (hmemPair hpa).1 (hregOf hpa)).1 heqa hmt hrys hs hrd'
         refine ⟨_, by rw [hbase]; exact rv_of hy, fun blk => ecs_find_write hW1 blk,
           ecs_poisonBlock_write hW1, fun e he => ?_⟩
         rw [List.mem_singleton.1 he]
@@ -1407,16 +1413,15 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     obtain ⟨M, rfl, hMR⟩ : ∃ M, yM = .mem M ∧ Mem.Refines m M := by
       cases hryM with
       | mem h => exact ⟨_, rfl, h⟩
-    have hsrcG : G.regs[ecMoveSrc g z]? = some (some (.ptr p0)) := by
+    have hsrcG : G.regs[ecMoveSrc g z]? = some (some (rv G mw.args[1]!)) := by
       have := reg_rv hsrcR
       rw [hsrc0] at this
       rw [ecMoveSrc_of hmw]
-      rw [this, hP0]
+      exact this
     obtain ⟨yS, hyS, hryS⟩ := hfront _ (List.mem_cons_of_mem _ List.mem_cons_self) _ hsrcG
     have hssz : special f g (ecMoveSrc g z) = false := by rw [ecMoveSrc_of hmw]; exact hss
     rw [ecCv_of_not_special hssz] at hryS
-    have hyS' : yS = .ptr p0 := by cases hryS; rfl
-    subst hyS'
+    have hyS' : yS.asPtrWord = some p0 := hryS.asPtrWord hP0
     obtain ⟨bs, hrd, -⟩ := hMR.read hrd0
     -- the destination
     obtain ⟨hmid, hLcl⟩ := hL z hLz mw hmw
@@ -1437,11 +1442,12 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     obtain ⟨M1, hW⟩ := ecs_write_of_canWrite hcw
     have hty : (Ctx.make tabs g).tys[mw.id]?.getD .other = .mem := by
       rw [hmid, ← shapeOf_eq]; exact hsh
-    have hsrcT : rv T mw.args[1]! = .ptr p0 := by
+    have hsrcT : (rv T mw.args[1]!).asPtrWord = some p0 := by
       have := rv_of hyS
-      rw [ecMoveSrc_of hmw] at this; exact this
+      rw [ecMoveSrc_of hmw] at this; rw [this]; exact hyS'
     have hrd' : M.read p0 mw.auxInt.toInt.toNat = some bs := by rw [hai]; simpa using hrd
-    exact ⟨_, ecs_move_eval hmop hRw hargs hty (rv_of ha) hsrcT (by rw [hm2]; exact rv_of hyM) hrd' hW⟩
+    obtain ⟨a0, ha0, hasl⟩ := ha
+    exact ⟨_, ecs_move_eval hmop hRw hargs hty (by rw [rv_of ha0]; exact hasl) hsrcT (by rw [hm2]; exact rv_of hyM) hrd' hW⟩
   · cases hok
 
 /-- **The obligation of a stack-argument store** `z` of call `x` (`NewObl`, anchored at `x`): once
@@ -1588,7 +1594,8 @@ theorem ecc_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS H
     obtain ⟨M1, hW⟩ := ecs_write_of_canWrite (by rw [hsz']; exact hcw')
     have hty : (Ctx.make tabs g).tys[wz.id]?.getD .other = .mem := by
       rw [hwid, ← shapeOf_eq]; exact hsh
-    exact ⟨_, ecs_store_eval hop hRw hargs hty (rv_of ha) hMb hW⟩
+    obtain ⟨a0, ha0, hasl⟩ := ha
+    exact ⟨_, ecs_store_eval hop hRw hargs hty (by rw [rv_of ha0]; exact hasl) hMb hW⟩
   · cases hok
 
 end GoFV.Proof.EC

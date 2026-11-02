@@ -10,8 +10,9 @@ obligation (`AtomSim.ChgRefP`).
   each store of the chain down to the target's memory `m0` holds the write of its arguments'
   terms; at every large fuel the chain's writes (`stStep`) applied to `m0`'s memory succeed with a
   memory refining the root's.
-- Each store writes, through its pointer `base + idx + off` (`splitP_sound`, one base and index
-  for the chain), the encoding of its value, which is `poison` or the bytes of its description
+- Each store writes, through its pointer word `base + idx + off` (`Val.asPtrWord`; `splitP_sound`,
+  one base and index for the chain), the encoding of its value, which is `poison` or the bytes of
+  its description
   (`recBytes`: `symOf_sound`, or the byte of a `ConstBool`); the offsets tile the target's width
   from the target's pointer, so the writes are one write of their bytes (`write_tiling`).
 - The target writes at that pointer (a pointer of the chain, refined by `mc_ref`) on a memory
@@ -38,21 +39,24 @@ theorem args_three {α : Type} {a : Array ID} (h : a.size = 3) (F : ID → α) :
     a.toList.map F = [F a[0]!, F a[1]!, F a[2]!] := by
   rcases a with ⟨_ | ⟨x, _ | ⟨y, _ | ⟨z, _ | ⟨t, l⟩⟩⟩⟩⟩ <;> simp_all
 
-/-- A `Store`'s write: a pointer, a memory and the written memory. -/
+/-- A `Store`'s write: a pointer word, a memory and the written memory. -/
 theorem memDef_store_spec {tabs : Tables} {s : Value} (hs : s.op = .Store)
     {a b c y : Val} (h : memDef tabs s [a, b, c] = some y) :
-    ∃ q m0 M', a = .ptr q ∧ c = .mem m0 ∧ m0.write q (encode (auxTy tabs s.aux) b) = some M' ∧
-      y = .mem M' := by
-  cases a <;> try (simp [memDef, hs] at h; done)
+    ∃ q m0 M', a.asPtrWord = some q ∧ c = .mem m0 ∧
+      m0.write q (encode (auxTy tabs s.aux) b) = some M' ∧ y = .mem M' := by
   cases c <;> try (simp [memDef, hs] at h; done)
-  rename_i q m0
-  simp only [memDef, hs, Option.map_eq_some_iff] at h
-  obtain ⟨M', hw, rfl⟩ := h
-  exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
+  rename_i m0
+  cases ha : a.asPtrWord with
+  | none => simp [memDef, hs, ha] at h
+  | some q =>
+    simp only [memDef, hs, ha, Option.bind_some, Option.map_eq_some_iff] at h
+    obtain ⟨M', hw, rfl⟩ := h
+    exact ⟨q, m0, M', rfl, rfl, hw, rfl⟩
 
-theorem memDef_store_eq {tabs : Tables} {s : Value} (hs : s.op = .Store) (q : Ptr) (b : Val)
-    (m : Mem) : memDef tabs s [.ptr q, b, .mem m] = (m.write q (encode (auxTy tabs s.aux) b)).map .mem := by
-  simp [memDef, hs]
+theorem memDef_store_eq {tabs : Tables} {s : Value} (hs : s.op = .Store) {a : Val} {q : Ptr}
+    (ha : a.asPtrWord = some q) (b : Val) (m : Mem) :
+    memDef tabs s [a, b, .mem m] = (m.write q (encode (auxTy tabs s.aux) b)).map .mem := by
+  simp [memDef, hs, ha]
 
 theorem refines_mem_inv {M : Mem} {v : Val} (h : Sem.Refines (.mem M) v) :
     ∃ M', v = .mem M' ∧ Mem.Refines M M' := by
@@ -145,7 +149,7 @@ theorem chain_den {m0 : ID} : ∀ (N : Nat) (z : ID) (S : List ID), chainTo D m0
         .cons (den_fuel_mono D tabs ρ N0 K _ ((Nat.max_le.1 hK).2))
           (.cons (den_fuel_mono D tabs ρ N0 K _ ((Nat.max_le.1 hK).2)) (.cons (.mem hr) .nil))
       obtain ⟨y'', hy'', hyy⟩ := memDef_store_mono hop hl
-        (by rw [hq, memDef_store_eq hop, hw]; rfl)
+        (by rw [memDef_store_eq hop hq, hw]; rfl)
       obtain ⟨Mz', rfl, hMM⟩ := refines_mem_inv hyy
       refine ⟨M0, Mz', h0, ?_, hMM⟩
       rw [List.reverse_cons, List.foldlM_append, hf]
@@ -522,8 +526,9 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
   obtain ⟨hlb, hls⟩ := hleaves
   have hstore : ∀ s ∈ S, ∀ v, f.value? s = some v → v.op = .Store := fun s hs v hv => by
     obtain ⟨v', hv', hop, -⟩ := hSt s hs; rw [hv] at hv'; cases hv'; exact hop
-  -- every store of the chain writes through a pointer
-  have hptr : ∀ s ∈ S, ∀ v, f.value? s = some v → ∃ P, den f.value? tabs ρ F v.args[0]! = .ptr P := by
+  -- every store of the chain writes through a pointer word
+  have hptr : ∀ s ∈ S, ∀ v, f.value? s = some v →
+      ∃ P, (den f.value? tabs ρ F v.args[0]!).asPtrWord = some P := by
     intro s hs v hv
     obtain ⟨m, m', hm⟩ := foldlM_some_mem hfold s (List.mem_reverse.2 hs)
     simp only [stStep, hv] at hm
@@ -536,12 +541,13 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
   obtain ⟨s0, hs0, v0, hv0, -, hp0, hsp0, -⟩ := pairs_mem' hrel _ hr0
   simp only at hp0 hsp0
   obtain ⟨P0, hP0⟩ := hptr s0 hs0 v0 hv0
-  obtain ⟨P, I, hPb, hI, hPQ0⟩ := splitP_sound hTf (m := F) 64 F v0.args[0]! none 0 (Nat.le_refl _)
+  obtain ⟨P, I, hPb, hI, hPQ0⟩ := splitP_sound (m := F) 64 F v0.args[0]! none 0 (Nat.le_refl _)
     hsp0.symm hb0 hP0 rfl
   rw [ptrAt_zero] at hPQ0
-  have hQ : den f.value? tabs ρ F w.args[0]! = .ptr (ptrAt P I o0) := by rw [hp0, hP0, hPQ0]
+  have hQ : (den f.value? tabs ρ F w.args[0]!).asPtrWord = some (ptrAt P I o0) := by
+    rw [hp0, hP0, hPQ0]
   have hPs : ∀ s ∈ S, ∀ v, f.value? s = some v → ∃ r ∈ recs, StRel tabs f.value? s r ∧
-      den f.value? tabs ρ F v.args[0]! = .ptr (ptrAt P I r.2.1.2.2) := by
+      (den f.value? tabs ρ F v.args[0]!).asPtrWord = some (ptrAt P I r.2.1.2.2) := by
     intro s hs v hv
     obtain ⟨⟨rp, ⟨rb, ri, ro⟩, rd⟩, hr, hsr⟩ := pairs_mem hrel s hs
     obtain ⟨v', hv', h3', hr1, hsp, hsb'⟩ := hsr
@@ -550,7 +556,7 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
     obtain ⟨hb, hi⟩ := hbase _ hr
     simp only at hb hi hsp
     subst hb hi
-    obtain ⟨P', I', hP', hI', hPs'⟩ := splitP_sound hTf (m := F) 64 F _ none 0 (Nat.le_refl _)
+    obtain ⟨P', I', hP', hI', hPs'⟩ := splitP_sound (m := F) 64 F _ none 0 (Nat.le_refl _)
       hsp.symm hb0 hPs rfl
     rw [hPb] at hP'; cases hP'; rw [hI] at hI'; cases hI'
     rw [ptrAt_zero] at hPs'
@@ -566,7 +572,7 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
     simp only at hsp hPs
     have hro : o0 ≤ ro := (hrec _ hr).1
     simp only [tileD, tileE, stStep, hv, ← hsp]
-    rw [hPs, memDef_store_eq hop, ptrAt_le hro]
+    rw [memDef_store_eq hop hPs, ptrAt_le hro]
     cases m.write _ _ <;> rfl
   have hfold' := hfold
   rw [foldlM_congr_map (H := fun s => (tileD tabs f.value? o0 s, tileE tabs f.value? ρ F s))
@@ -642,9 +648,7 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
     have := hSb _ _ hp (i - tileD tabs f.value? o0 s) (by omega)
     rwa [Nat.add_sub_cancel' h1] at this
   -- the target's pointer and memory
-  have hQ' := hM _ hpwM
-  rw [hQ] at hQ'
-  have hQT := refines_ptr hQ'
+  have hQT := (hM _ hpwM).asPtrWord hQ
   have hm0' := hM _ hm0M
   rw [h0] at hm0'
   obtain ⟨M0', hM0', hMM0⟩ := refines_mem_inv hm0'
@@ -654,14 +658,13 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
       ∃ m y', memDef tabs w (w.args.toList.map (den (listedDefs g) tabs ρ' m)) = some y' ∧
         Sem.Refines (.mem Mt) y' := by
     intro mt hmt hST
-    have hpT := den_fuel_mono (listedDefs g) tabs ρ' _ mt w.args[0]! hmt
-    rw [hQT] at hpT
+    have hpT := (den_fuel_mono (listedDefs g) tabs ρ' _ mt w.args[0]! hmt).asPtrWord hQT
     have hmT := den_fuel_mono (listedDefs g) tabs ρ' _ mt w.args[2]! hmt
     rw [hM0'] at hmT
     obtain ⟨M0'', hM0'', hMM0'⟩ := refines_mem_inv hmT
     obtain ⟨Mt', hwT, hMt⟩ := (hMM0.trans hMM0').write hST hwr
     refine ⟨mt, .mem Mt', ?_, .mem hMt⟩
-    rw [args_three hw3, refines_ptr hpT, hM0'', memDef_store_eq hws, haux, hwT]
+    rw [args_three hw3, hM0'', memDef_store_eq hws hpT, haux, hwT]
     rfl
   by_cases hdef : ∃ s ∈ S, ∃ v r C, f.value? s = some v ∧ storedBytes tabs f.value? v = some r ∧
       semL (den f.value? tabs ρ F) r.1 = some C ∧ ∀ l ∈ r.2, LoadOK (den f.value? tabs ρ F) l
@@ -779,7 +782,7 @@ theorem store_chgRef {x : ID} {u w : Value} (hu : f.value? x = some u)
     .cons (den_fuel_mono _ _ _ _ _ _ hnK) (.cons (den_fuel_mono _ _ _ _ _ _ hnK)
       (.cons (.mem hr1) .nil))
   obtain ⟨y'', hy'', hyy⟩ := memDef_store_mono hus hl
-    (by rw [hpk, memDef_store_eq hus, hwk]; rfl)
+    (by rw [memDef_store_eq hus hpk, hwk]; rfl)
   obtain ⟨Mtop', rfl, hMM⟩ := refines_mem_inv hyy
   have hfold : (x :: S').reverse.foldlM (stStep tabs f.value? ρ (max K1 n)) M0 = some Mtop' := by
     rw [List.reverse_cons, List.foldlM_append, hf]; simp [stStep, hu, hy'']

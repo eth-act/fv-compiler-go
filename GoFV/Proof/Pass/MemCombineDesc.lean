@@ -55,7 +55,8 @@ theorem concrete_getElem? {bs : Array Byte} (hc : Concrete bs) {j : Nat} (hj : j
 
 /-- A memory byte inside a concrete read is defined, as that byte. -/
 theorem mb_sem {V : ID → Val} {m b : ID} {i : Option ID} {o o' : _root_.Int} {n : Nat}
-    {M : Mem} {P : Ptr} {I : BitVec 64} {bs : Array Byte} (hm : V m = .mem M) (hp : V b = .ptr P)
+    {M : Mem} {P : Ptr} {I : BitVec 64} {bs : Array Byte} (hm : V m = .mem M)
+    (hp : (V b).asPtrWord = some P)
     (hI : idxVal V i = some I) (hrd : M.read (ptrAt P I o) n = some bs) (h1 : o ≤ o')
     (h2 : o' < o + n) {c : BitVec 8} (hc : bs[(o' - o).toNat]? = some (.b c)) :
     (SB.mb m b i o').sem V = some c := by

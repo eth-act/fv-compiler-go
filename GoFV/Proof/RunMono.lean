@@ -227,54 +227,78 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
-    cases h.nil_inv; cases h1; cases h3 with | mem hm =>
+    cases h.nil_inv; cases h3 with | mem hm =>
     rw [heq]; dsimp only
-    exact writeRes_mono _ _ fun m1 hw => hm.write (encode_mono _ h2) hw
+    split
+    · next p hp =>
+      rw [h1.asPtrWord hp]
+      exact writeRes_mono _ _ fun m1 hw => hm.write (encode_mono _ h2) hw
+    · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
-    cases h.nil_inv; cases h1; cases h3 with | mem hm =>
+    cases h.nil_inv; cases h3 with | mem hm =>
     rw [heq]; dsimp only
-    exact writeRes_mono _ _ fun m1 hw => hm.write (encode_mono _ h2) hw
+    split
+    · next p hp =>
+      rw [h1.asPtrWord hp]
+      exact writeRes_mono _ _ fun m1 hw => hm.write (encode_mono _ h2) hw
+    · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
-    cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
+    cases h.nil_inv; cases h3 with | mem hm =>
     rw [heq]; dsimp only
-    cases hr : Mem.read _ _ _ with
-    | none => exact .stuck _ _
-    | some bs =>
-      obtain ⟨bs', hr', hb⟩ := hm.read hr
-      rw [hr']
-      exact writeRes_mono _ _ fun m1 hw => hm.write hb hw
+    split
+    · next d s hd hs =>
+      rw [h1.asPtrWord hd, h2.asPtrWord hs]; dsimp only
+      cases hr : Mem.read _ _ _ with
+      | none => exact .stuck _ _
+      | some bs =>
+        obtain ⟨bs', hr', hb⟩ := hm.read hr
+        rw [hr']
+        exact writeRes_mono _ _ fun m1 hw => hm.write hb hw
+    · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h3, h⟩ := h.cons_inv
-    cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm =>
+    cases h.nil_inv; cases h3 with | mem hm =>
     rw [heq]; dsimp only
-    cases hr : Mem.read _ _ _ with
-    | none => exact .stuck _ _
-    | some bs =>
-      obtain ⟨bs', hr', hb⟩ := hm.read hr
-      rw [hr']
-      exact writeRes_mono _ _ fun m1 hw => hm.write hb hw
+    split
+    · next d s hd hs =>
+      rw [h1.asPtrWord hd, h2.asPtrWord hs]; dsimp only
+      cases hr : Mem.read _ _ _ with
+      | none => exact .stuck _ _
+      | some bs =>
+        obtain ⟨bs', hr', hb⟩ := hm.read hr
+        rw [hr']
+        exact writeRes_mono _ _ fun m1 hw => hm.write hb hw
+    · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     cases h.nil_inv
-    cases h1; cases h2 with | mem hm =>
+    cases h2 with | mem hm =>
     rw [heq]; dsimp only
-    exact writeRes_mono _ _ fun m1 hw => hm.write (BytesRefineA.refl _) hw
+    split
+    · next p hp =>
+      rw [h1.asPtrWord hp]
+      exact writeRes_mono _ _ fun m1 hw => hm.write (BytesRefineA.refl _) hw
+    · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     cases h.nil_inv
-    cases h1; cases h2 with | mem hm =>
+    cases h2 with | mem hm =>
     rw [heq]; dsimp only
-    exact writeRes_mono _ _ fun m1 hw => hm.write (BytesRefineA.refl _) hw
+    split
+    · next p hp =>
+      rw [h1.asPtrWord hp]
+      exact writeRes_mono _ _ fun m1 hw => hm.write (BytesRefineA.refl _) hw
+    · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     cases h.nil_inv
@@ -306,20 +330,15 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
     cases h.nil_inv
-    cases h1; cases h2 with | mem hm =>
+    cases h2 with | mem hm =>
     rw [heq]; dsimp only
     split
-    · exact .panic _ hm
-    · exact .ok (Sem.Refines.refl _)
-  · next heq =>
-    obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
-    obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
-    cases h.nil_inv
-    cases h1; cases h2 with | mem hm =>
-    rw [heq]; dsimp only
-    split
-    · exact .panic _ hm
-    · exact .ok (Sem.Refines.refl _)
+    · next p hp =>
+      rw [h1.asPtrWord hp]; dsimp only
+      split
+      · exact .panic _ hm
+      · exact .ok h1
+    · exact .stuck _ _
   · split <;> exact .stuck _ _
 
 /-! ## Atomics (`Sem/Atomic.lean`) -/
@@ -410,15 +429,14 @@ theorem atomicRoot_mono (v : Value) {as bs : List Val} (h : RefinesList as bs) :
     cases h.nil_inv
     dsimp only
     unfold Atomic.rmwRoot
-    cases h1 with
-    | ptr p =>
-      cases h3 with
-      | mem hm =>
-        dsimp only
-        cases Atomic.info? v.op with
-        | none => exact .stuck _ _
-        | some kt => obtain ⟨k, t⟩ := kt; exact atomicRmw_mono v k t p h2 hm
-      | _ => exact .stuck _ _
+    cases h3 with
+    | @mem m m' hm =>
+      dsimp only
+      split
+      · next p k t hp hi =>
+        rw [h1.asPtrWord hp, hi]
+        exact atomicRmw_mono v k t p h2 hm
+      · simp only [Atomic.unmodelled]; exact .stuck _ _
     | _ => exact .stuck _ _
   · obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv
     obtain ⟨_, _, rfl, h2, h⟩ := h.cons_inv
@@ -427,15 +445,14 @@ theorem atomicRoot_mono (v : Value) {as bs : List Val} (h : RefinesList as bs) :
     cases h.nil_inv
     dsimp only
     unfold Atomic.casRoot
-    cases h1 with
-    | ptr p =>
-      cases h4 with
-      | mem hm =>
-        dsimp only
-        cases Atomic.casWidth? v.op with
-        | none => exact .stuck _ _
-        | some w => exact atomicCas_mono v w p h2 h3 hm
-      | _ => exact .stuck _ _
+    cases h4 with
+    | @mem m m' hm =>
+      dsimp only
+      split
+      · next p w hp hw =>
+        rw [h1.asPtrWord hp, hw]
+        exact atomicCas_mono v w p h2 h3 hm
+      · simp only [Atomic.unmodelled]; exact .stuck _ _
     | _ => exact .stuck _ _
   · exact .stuck _ _
 

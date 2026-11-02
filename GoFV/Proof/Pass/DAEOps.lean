@@ -136,7 +136,7 @@ theorem convert_eq (t : Ty) (L : List Val) (w w' : Val) :
 
 /-! ## Loads -/
 
-theorem loadOp_eq (t : Ty) (L : List Val) {w w' : Val} (h : VR U w w')
+theorem loadOp_eq (hU : TempU U) (t : Ty) (L : List Val) {w w' : Val} (h : VR U w w')
     (hav : ∀ a ∈ L, Val.Avoids U a) : loadOp t (L ++ [w']) = loadOp t (L ++ [w]) := by
   match L, hav with
   | [x], hav =>
@@ -144,15 +144,14 @@ theorem loadOp_eq (t : Ty) (L : List Val) {w w' : Val} (h : VR U w w')
     | refl => rfl
     | tuple => cases x <;> rfl
     | mem hm =>
-      cases x with
-      | ptr p =>
-        simp only [List.cons_append, List.nil_append, loadOp]
-        exact EqOff.load hm t p (hav _ List.mem_cons_self)
-      | _ => rfl
+      simp only [List.cons_append, List.nil_append, loadOp]
+      cases hp : x.asPtrWord with
+      | none => rfl
+      | some p => exact EqOff.load hm t p (asPtrWord_notU hU (hav _ List.mem_cons_self) hp)
   | [], _ => rw [loadOp_len t (by simp), loadOp_len t (by simp)]
   | _ :: _ :: _, _ => rw [loadOp_len t (by simp), loadOp_len t (by simp)]
 
-theorem atomicLoad_rel (t : Ty) (L : List Val) {w w' : Val} (h : VR U w w')
+theorem atomicLoad_rel (hU : TempU U) (t : Ty) (L : List Val) {w w' : Val} (h : VR U w w')
     (hav : ∀ a ∈ L, Val.Avoids U a) :
     VR U (atomicLoad t (L ++ [w])) (atomicLoad t (L ++ [w'])) := by
   match L, hav with
@@ -161,17 +160,19 @@ theorem atomicLoad_rel (t : Ty) (L : List Val) {w w' : Val} (h : VR U w w')
     | refl => exact .refl _
     | tuple => cases x <;> exact .refl _
     | mem hm =>
-      cases x with
-      | ptr p =>
-        simp only [List.cons_append, List.nil_append, atomicLoad]
-        have hu : ¬ U p.blk := hav _ List.mem_cons_self
+      simp only [List.cons_append, List.nil_append, atomicLoad]
+      cases hp : x.asPtrWord with
+      | none => exact .refl _
+      | some p =>
+        have hu : ¬ U p.blk := asPtrWord_notU hU (hav _ List.mem_cons_self) hp
         split
-        · split
+        · rename_i heq
+          cases heq
+          split
           · exact .tuple (.cons (.refl _) (.cons (.mem hm) .nil))
           · rw [EqOff.load hm _ p hu]
             exact .tuple (.cons (.refl _) (.cons (.mem hm) .nil))
         · exact .refl _
-      | _ => exact .refl _
   | [], _ => rw [atomicLoad_len t (by simp), atomicLoad_len t (by simp)]; exact .refl _
   | _ :: _ :: _, _ => rw [atomicLoad_len t (by simp), atomicLoad_len t (by simp)]; exact .refl _
 
@@ -180,8 +181,8 @@ theorem memEq_tuple (a b c : Val) (vs : List Val) : memEq [a, b, c, .tuple vs] =
   · rename_i h; simp at h
   · rfl
 
-theorem memEq_eq (L : List Val) {w w' : Val} (h : VR U w w') (hav : ∀ a ∈ L, Val.Avoids U a) :
-    memEq (L ++ [w']) = memEq (L ++ [w]) := by
+theorem memEq_eq (hU : TempU U) (L : List Val) {w w' : Val} (h : VR U w w')
+    (hav : ∀ a ∈ L, Val.Avoids U a) : memEq (L ++ [w']) = memEq (L ++ [w]) := by
   match L, hav with
   | [a, b, c], hav =>
     simp only [List.cons_append, List.nil_append]
@@ -189,12 +190,18 @@ theorem memEq_eq (L : List Val) {w w' : Val} (h : VR U w w') (hav : ∀ a ∈ L,
     | refl => rfl
     | tuple => rw [memEq_tuple, memEq_tuple]
     | mem hm =>
-      rcases a with _ | _ | _ | _ | p | _ | _ | _ | _ <;> try rfl
-      rcases b with _ | _ | _ | _ | q | _ | _ | _ | _ <;> try rfl
       rcases c with ⟨w, n⟩ | _ | _ | _ | _ | _ | _ | _ | _ <;> try rfl
-      have hp : ¬ U p.blk := hav _ List.mem_cons_self
-      have hq : ¬ U q.blk := hav _ (List.mem_cons_of_mem _ List.mem_cons_self)
-      simp only [memEq, EqOff.read hm _ _ hp, EqOff.read hm _ _ hq]
+      simp only [memEq]
+      cases hp : a.asPtrWord with
+      | none => rfl
+      | some p =>
+      cases hq : b.asPtrWord with
+      | none => rfl
+      | some q =>
+      have hp' : ¬ U p.blk := asPtrWord_notU hU (hav _ List.mem_cons_self) hp
+      have hq' : ¬ U q.blk :=
+        asPtrWord_notU hU (hav _ (List.mem_cons_of_mem _ List.mem_cons_self)) hq
+      simp only [EqOff.read hm _ _ hp', EqOff.read hm _ _ hq']
   | [], _ => rw [memEq_len (by simp), memEq_len (by simp)]
   | [_], _ => rw [memEq_len (by simp), memEq_len (by simp)]
   | [_, _], _ => rw [memEq_len (by simp), memEq_len (by simp)]

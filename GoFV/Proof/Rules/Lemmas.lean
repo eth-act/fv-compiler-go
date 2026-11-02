@@ -68,17 +68,45 @@ theorem val_poison_of_asInt_none {v : Val} {w : Width} (h : v.asInt w = none)
   | _ => simp [Val.hasTy] at ht
 
 /-- An integer of width `w` read back at `w` through a retype to `t` fails: `t` is an integer
-shape of another width (narrower: the low bits; wider: `poison`) or not an integer shape (a
-pointer for `w = 64`, else `poison`; `Val.retype`). -/
+shape of another width (narrower: the low bits; wider: `poison`), a pointer shape for `w ≠ 64`
+(a 64-bit integer keeps its word there), or another shape (`poison`; `Val.retype`). -/
 def tyOtherInt (t : Ty) (w : Width) : Bool :=
   match t with
   | .int w' => w' != w
+  | .ptr _ => w != .w64
   | _ => true
 
 @[rule_sem] theorem tyOtherInt_int (w w' : Width) : tyOtherInt (Ty.int w') w = (w' != w) := rfl
 @[rule_sem] theorem tyOtherInt_bool (w : Width) : tyOtherInt Ty.bool w = true := rfl
 @[rule_sem] theorem tyOtherInt_ptr (w : Width) (e : Option Nat) :
-    tyOtherInt (Ty.ptr e) w = true := rfl
+    tyOtherInt (Ty.ptr e) w = (w != .w64) := rfl
+
+/-- Below 64 bits only the integer shape of the width keeps an integer (as on pointer-free
+shapes before §3.3's pointer words): the rule tactics get the type itself. -/
+@[rule_sem] theorem tyOtherInt_w8_eq_false (t : Ty) : tyOtherInt t .w8 = false ↔ t = .int .w8 := by
+  cases t with
+  | int w => cases w <;> simp [tyOtherInt]
+  | _ => simp [tyOtherInt]
+
+@[rule_sem] theorem tyOtherInt_w16_eq_false (t : Ty) :
+    tyOtherInt t .w16 = false ↔ t = .int .w16 := by
+  cases t with
+  | int w => cases w <;> simp [tyOtherInt]
+  | _ => simp [tyOtherInt]
+
+@[rule_sem] theorem tyOtherInt_w32_eq_false (t : Ty) :
+    tyOtherInt t .w32 = false ↔ t = .int .w32 := by
+  cases t with
+  | int w => cases w <;> simp [tyOtherInt]
+  | _ => simp [tyOtherInt]
+
+/-- At 64 bits an integer keeps its word at its integer shape and at every pointer shape
+(`rule_split_ptr_or` splits on it where a condition reads the type). -/
+theorem tyOtherInt_w64_eq_false (t : Ty) :
+    tyOtherInt t .w64 = false ↔ t = .int .w64 ∨ ∃ el, t = .ptr el := by
+  cases t with
+  | int w => cases w <;> simp [tyOtherInt]
+  | _ => simp [tyOtherInt]
 
 @[rule_sem] theorem retype_int_same (w : Width) (x : BitVec w.bits) :
     (Val.int w x).retype (.int w) = .int w x := by
@@ -141,11 +169,23 @@ theorem tyIsBool_eq {t : Ty} (h : tyIsBool t = true) : t = .bool := by
     generalize Val.retype _ v = r at hb ⊢
     cases r <;> simp_all [Val.hasTy, Val.asBool]
 
+/-- An integer has its own integer shape; a 64-bit integer also every pointer shape (a pointer
+word holding a concrete address, §3.3): exactly the shapes at which it reads back as itself. -/
 @[rule_sem] theorem hasTy_int (w : Width) (x : BitVec w.bits) (t : Ty) :
-    (Val.int w x).hasTy t = true ↔ t = .int w := by
+    (Val.int w x).hasTy t = true ↔ tyOtherInt t w = false := by
   cases t with
-  | int w' => simp only [Val.hasTy, beq_iff_eq, Ty.int.injEq]; exact eq_comm
-  | _ => simp [Val.hasTy]
+  | int w' => simp only [Val.hasTy, tyOtherInt, bne_eq_false_iff_eq]; exact ⟨fun h => (beq_iff_eq.1 h).symm, fun h => beq_iff_eq.2 h.symm⟩
+  | ptr e => cases w <;> simp [Val.hasTy, tyOtherInt]
+  | _ => simp [Val.hasTy, tyOtherInt]
+
+/-- A 64-bit integer keeps its word at a pointer shape. -/
+@[rule_sem] theorem retype_int64_of_isPtrTy {t : Ty} (h : isPtrTy t = true) (x : BitVec 64) :
+    (Val.int .w64 x).retype t = .int .w64 x := by
+  cases t <;> first | rfl | cases h
+
+@[rule_sem] theorem tyOtherInt_of_isPtrTy {t : Ty} (h : isPtrTy t = true) :
+    tyOtherInt t .w64 = false := by
+  cases t <;> first | rfl | cases h
 
 @[rule_sem] theorem hasTy_bool (b : Bool) (t : Ty) : (Val.bool b).hasTy t = true ↔ t = .bool := by
   cases t <;> simp [Val.hasTy]
@@ -390,17 +430,18 @@ width, and every integer width is a multiple of every rotation width. The rotate
 constants and adds the facts `omega` needs about the remaining atoms (`&&&`, `Int.tmod`). -/
 
 /-- Whether a `w`-bit integer retyped to `t` is no longer an integer amount: a wider integer
-shape or a `bool` shape (`poison`), or a pointer shape (`Val.retype`). -/
+shape or a `bool` shape (`poison`), or a pointer shape unless `w = 64` (`Val.retype`). -/
 def retypeNone (t : Ty) (w : Width) : Bool :=
   match t with
   | .int w' => decide (w.bits < w'.bits)
+  | .ptr _ => w != .w64
   | _ => true
 
 @[rule_sem] theorem retypeNone_int (w w' : Width) :
     retypeNone (.int w') w = decide (w.bits < w'.bits) := rfl
 @[rule_sem] theorem retypeNone_bool (w : Width) : retypeNone .bool w = true := rfl
 @[rule_sem] theorem retypeNone_ptr (e : Option Nat) (w : Width) :
-    retypeNone (.ptr e) w = true := rfl
+    retypeNone (.ptr e) w = (w != .w64) := rfl
 
 /-- A retype that keeps a `w`-bit integer an integer of width `w` keeps it an amount. -/
 @[rule_sem] theorem retypeNone_of_tyOtherInt {t : Ty} {w : Width} (h : tyOtherInt t w = false) :
@@ -409,6 +450,7 @@ def retypeNone (t : Ty) (w : Width) : Bool :=
   | int w' =>
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; simp [retypeNone]
+  | ptr e => simpa [tyOtherInt, retypeNone] using h
   | _ => simp [tyOtherInt] at h
 
 theorem rotateLeft_mod_pow {W : Width} (y : BitVec W.bits) (n b : Nat) (hb : 8 ≤ b) :
@@ -653,6 +695,9 @@ attribute [rule_cmp] toInt_omega BitVec.ult_iff_toNat_lt BitVec.ule_iff_toNat_le
   | int w' =>
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; simp [Val.retype, Val.asNat, BitVec.setWidth_eq]
+  | ptr e =>
+    simp only [tyOtherInt, bne_eq_false_iff_eq] at h
+    subst h; rfl
   | _ => cases h
 
 @[rule_sem] theorem int64_zero_beq_one : ((0 : Int64) == 1) = false := by decide
@@ -812,6 +857,9 @@ cleared or filled with the sign (`rule_ext`), negated comparisons and boolean eq
   | int w' =>
     simp only [tyOtherInt, bne_eq_false_iff_eq] at h
     subst h; exact retype_int_same w' x
+  | ptr e =>
+    simp only [tyOtherInt, bne_eq_false_iff_eq] at h
+    subst h; rfl
   | _ => simp [tyOtherInt] at h
 
 @[rule_arith] theorem setWidth_ofInt_of_le {w k : Nat} (h : w ≤ k) (c : Int) :
@@ -1281,10 +1329,15 @@ theorem isSliceTy_iff {t : Ty} : isSliceTy t = true ↔ ∃ el, t = .slice el :=
 
 @[rule_sem] theorem nonNeg_poison : Val.poison.nonNeg = true := rfl
 
-/-- A value of a pointer shape is `poison` or a pointer. -/
+/-- A value of a pointer shape is `poison`, a 64-bit integer (the pointer at that address) or a
+pointer. -/
 theorem val_of_hasTy_ptr {a : Val} {el : Option Nat} (h : a.hasTy (.ptr el) = true) :
-    a = .poison ∨ ∃ p, a = .ptr p := by
-  cases a <;> simp_all [Val.hasTy]
+    a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p := by
+  cases a with
+  | int w x => cases w <;> first | exact .inr (.inl ⟨x, rfl⟩) | simp [Val.hasTy] at h
+  | ptr p => exact .inr (.inr ⟨p, rfl⟩)
+  | poison => exact .inl rfl
+  | _ => simp [Val.hasTy] at h
 
 /-- A value of the 64-bit integer shape is `poison`, an integer, or a pointer without address. -/
 theorem val_of_hasTy_int64 {a : Val} (h : a.hasTy (.int .w64) = true) :
@@ -1339,9 +1392,10 @@ theorem ty_of_hasTy_null {t : Ty} (h : (Val.ptr Ptr.null).hasTy t = true) :
   | _ => simp [Val.hasTy] at h
 
 theorem ty_of_hasTy_int64 {t : Ty} {x : BitVec 64} (h : (Val.int .w64 x).hasTy t = true) :
-    t = .int .w64 := by
+    t = .int .w64 ∨ ∃ el, t = .ptr el := by
   cases t with
-  | int w => cases w <;> first | rfl | simp [Val.hasTy] at h
+  | int w => cases w <;> first | exact .inl rfl | simp [Val.hasTy] at h
+  | ptr el => exact .inr ⟨el, rfl⟩
   | _ => simp [Val.hasTy] at h
 
 theorem ty_of_hasTy_agg {vs : List Val} {t : Ty} (h : (Val.agg vs).hasTy t = true) :
@@ -1382,9 +1436,7 @@ integer or a pointer. -/
 theorem val_of_hasTy_word {a : Val} {t : Ty} (ht : (∃ el, t = .ptr el) ∨ t = .int .w64)
     (h : a.hasTy t = true) : a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p := by
   rcases ht with ⟨el, rfl⟩ | rfl
-  · rcases val_of_hasTy_ptr h with h | h
-    · exact .inl h
-    · exact .inr (.inr h)
+  · exact val_of_hasTy_ptr h
   · rcases val_of_hasTy_int64 h with h | h | ⟨p, h, -⟩
     · exact .inl h
     · exact .inr (.inl h)

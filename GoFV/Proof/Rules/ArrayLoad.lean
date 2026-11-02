@@ -53,9 +53,9 @@ theorem r_generic_994_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic
   intro _ _ _ hty _ _ _
   generalize e.leaf [0] = P at hty ⊢
   generalize e.leaf [1] = Mv at hty ⊢
-  by_cases hpm : ∃ p m, P = .ptr p ∧ Mv = .mem m
-  · obtain ⟨p, m, rfl, rfl⟩ := hpm
-    simp only [loadOp] at hty ⊢
+  by_cases hpm : ∃ p m, P.asPtrWord = some p ∧ Mv = .mem m
+  · obtain ⟨p, m, hp, rfl⟩ := hpm
+    simp only [loadOp, hp] at hty ⊢
     rcases load_one m p f with h | h <;> rw [h] at hty ⊢
     · exact .poison _
     · have h1 : (m.load f p).hasTy f = true := by simpa [Val.hasTy, Val.hasTyList] using hty
@@ -65,9 +65,12 @@ theorem r_generic_994_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic
       exact Refines.refl _
   · have hl : loadOp (.agg [(0, f)] f.size) [P, Mv] = .poison := by
       unfold loadOp; split
-      · rename_i p m heq
+      · rename_i a m heq
         simp only [List.cons.injEq, and_true] at heq
-        exact absurd ⟨p, m, heq⟩ hpm
+        obtain ⟨ha, hm⟩ := heq
+        cases hp : a.asPtrWord with
+        | none => rfl
+        | some p => exact absurd ⟨p, m, by rw [ha]; exact hp, hm⟩ hpm
       · rfl
     rw [hl]
     exact .poison _

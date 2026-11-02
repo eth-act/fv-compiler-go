@@ -1,4 +1,5 @@
 import GoFV.Proof.Rules.ConstString
+import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values08
 
@@ -35,11 +36,14 @@ theorem memEq_self (x n m : Val) :
     · rename_i a b ha hb
       rw [ha] at hb; cases hb
       split
+      · rename_i bs cs h1 h2
+        rw [h1] at h2; cases h2
+        split
+        · exact .inl rfl
+        · exact .inr (by simp)
       · exact .inl rfl
-      · exact .inr (by simp)
     · exact .inl rfl
   · exact .inl rfl
-
 /-- `generic.rules:1592`: `(MemEq p q _ _) && isSamePtr(p, q) => (ConstBool <typ.Bool> [true])` -/
 theorem r_generic_1592_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1592 := by
   refine ⟨rfl, fun tabs e or _ => ?_⟩
@@ -103,8 +107,31 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   rw [hn]
   have hrp : ∀ q, Val.retype (.ptr elA) (.ptr q) = .ptr q := fun _ => rfl
   have hr0 : Val.retype (.ptr elA) .poison = .poison := rfl
-  rcases val_of_hasTy_ptr hP0 with hl | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
+  rcases val_of_hasTy_ptr hP0 with hl | ⟨y, hl⟩ | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
   · simp only [PtrOps.addPtr, hr0, PtrOps.eqPtr, Val.asPtrWord]; exact Refines.poison _
+  · rcases val_of_hasTy_int64 hO0 with ho | ⟨x, ho⟩ | ⟨q, ho, -⟩ <;> rw [ho] at hty ⊢
+    · simp only [PtrOps.addPtr, asOffset, hr0, PtrOps.eqPtr, Val.asPtrWord]
+      exact Refines.poison _
+    · have hri : ∀ z, Val.retype (.ptr elA) (.int .w64 z) = .int .w64 z := fun _ => rfl
+      by_cases hw : ((Ptr.ofAddr y).add (BitVec.signExtend 64 x)).inWindow = true
+      · have h1 : PtrOps.wordRes y (BitVec.signExtend 64 x) =
+            .int .w64 (y + BitVec.signExtend 64 x) := by
+          unfold PtrOps.wordRes; rw [if_pos hw]
+        simp only [PtrOps.addPtr, asOffset, h1, hri, PtrOps.eqPtr, Val.asPtrWord,
+          Ptr.ofAddr_add_of_inWindow hw, ptr_add_eq_self, PtrOps.isNonNil] at hty ⊢
+        have hx : ((BitVec.signExtend 64 x == 0) != true) = (x != 0) := by
+          have h64 : BitVec.signExtend 64 x = x := BitVec.signExtend_eq x
+          rw [h64]
+          show ((x == (0 : BitVec 64)) != true) = !(x == (0 : BitVec 64))
+          cases (x == (0 : BitVec 64)) <;> rfl
+        rw [hx] at hty ⊢
+        exact refines_retype_of_hasTy hty
+      · have h1 : PtrOps.wordRes y (BitVec.signExtend 64 x) = .poison := by
+          unfold PtrOps.wordRes; rw [if_neg hw]
+        simp only [PtrOps.addPtr, asOffset, h1, hr0, PtrOps.eqPtr, Val.asPtrWord]
+        exact Refines.poison _
+    · simp only [PtrOps.addPtr, asOffset, hr0, PtrOps.eqPtr, Val.asPtrWord]
+      exact Refines.poison _
   rcases val_of_hasTy_int64 hO0 with ho | ⟨x, ho⟩ | ⟨q, ho, -⟩ <;> rw [ho] at hty ⊢
   · simp only [PtrOps.addPtr, asOffset, hr0, PtrOps.eqPtr, Val.asPtrWord]
     exact Refines.poison _
@@ -137,7 +164,7 @@ theorem inst_r_generic_1592 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1592, FrameOK, Result.nodes, samePtrVars, sameLeaves,
     numElem1Vars, shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT, sigmaT,
-    Pat.bindsT, Pat.bindssT, emptyStrVars, opVal, memEq, Mem.read]
+    Pat.bindsT, Pat.bindssT, emptyStrVars, opVal, memEq, Mem.read, Val.asPtrWord]
   rule_eval
   refine ⟨fun ae x h => ?_, fun ae b h => ?_⟩
   · subst h; simp [lenVar?]

@@ -698,18 +698,26 @@ def auxTy (tabs : Tables) (aux : Option AuxRef) : Ty :=
 `Zero {T} [n] p mem` (and their write-barrier forms, which have the same semantics),
 `VarDef {n} mem`, `VarLive {n} mem`, `KeepAlive x mem`, `WBend mem` (the end of a
 write-barrier sequence: the GC has taken the buffer, `Blk.wbuf` is freed), `NilCheck p mem`
-(§6). The address of a write and the pointer of a nil check are observation points. -/
+(§6). The address of a write and the pointer of a nil check are observation points; an
+integer word is the pointer at its address (`Val.asPtrWord`, §3.3). -/
 def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
   let what := s!"v{v.id}: {v.op.name}"
   match v.op, argv with
-  | .Store, [.ptr p, x, .mem m] | .StoreWB, [.ptr p, x, .mem m] =>
-    writeRes what (m.write p (encode (auxTy ctx.tabs v.aux) x))
-  | .Move, [.ptr d, .ptr s, .mem m] | .MoveWB, [.ptr d, .ptr s, .mem m] =>
-    match m.read s v.auxInt.toInt.toNat with
-    | some bs => writeRes what (m.write d bs)
-    | none => .stuck s!"{what}: invalid source"
-  | .Zero, [.ptr p, .mem m] | .ZeroWB, [.ptr p, .mem m] =>
-    writeRes what (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0)))
+  | .Store, [a, x, .mem m] | .StoreWB, [a, x, .mem m] =>
+    match a.asPtrWord with
+    | some p => writeRes what (m.write p (encode (auxTy ctx.tabs v.aux) x))
+    | none => .stuck s!"{what}: undefined or ill-typed address"
+  | .Move, [a, b, .mem m] | .MoveWB, [a, b, .mem m] =>
+    match a.asPtrWord, b.asPtrWord with
+    | some d, some s =>
+      match m.read s v.auxInt.toInt.toNat with
+      | some bs => writeRes what (m.write d bs)
+      | none => .stuck s!"{what}: invalid source"
+    | _, _ => .stuck s!"{what}: undefined or ill-typed address"
+  | .Zero, [a, .mem m] | .ZeroWB, [a, .mem m] =>
+    match a.asPtrWord with
+    | some p => writeRes what (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0)))
+    | none => .stuck s!"{what}: undefined or ill-typed address"
   | .VarDef, [.mem m] =>
     match v.aux with
     | some n => .ok (.mem (m.poisonBlock (frameBlk ctx.tabs ctx.act n)))
@@ -717,9 +725,10 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
   | .VarLive, [.mem m] => .ok (.mem m)
   | .WBend, [.mem m] => .ok (.mem (m.free .wbuf))
   | .KeepAlive, [_, .mem m] => .ok (.mem m)
-  | .NilCheck, [.ptr p, .mem m] => if p.blk == .nil then .panic .nilDeref m else .ok (.ptr p)
-  | .NilCheck, [.int .w64 x, .mem m] =>
-    if (Ptr.ofAddr x).blk == .nil then .panic .nilDeref m else .ok (.int .w64 x)
+  | .NilCheck, [a, .mem m] =>
+    match a.asPtrWord with
+    | some p => if p.blk == .nil then .panic .nilDeref m else .ok a
+    | none => .stuck s!"{what}: undefined or ill-typed pointer"
   | _, args =>
     if args.any (fun | .poison => true | _ => false) then .stuck s!"{what}: poison argument"
     else .stuck s!"{what}: ill-typed arguments"

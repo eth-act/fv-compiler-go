@@ -6,13 +6,14 @@ import GoFV.Proof.MemRefine
 # memcombine: what a symbolic byte means (issue #35)
 
 `SB.sem V s`: the byte a symbolic byte stands for when the values are `V` — a constant, byte `k`
-of an integer value, or the byte at `base + idx + off` in a memory value (`ptrAt`), read as a
-one-byte access that must be valid and concrete. `LoadOK V r`: the load `r` of a description
-reads, through its pointer (which is `base + idx + off`), `r.size` concrete bytes.
+of an integer value, or the byte at `base + idx + off` in a memory value (`ptrAt`, `base` read as
+a pointer word, `Val.asPtrWord`), read as a one-byte access that must be valid and concrete.
+`LoadOK V r`: the load `r` of a description reads, through its pointer (which reads as
+`base + idx + off`), `r.size` concrete bytes.
 
 Both are monotone in `V` (`sem_mono`, `loadOK_mono`): a refinement of the values keeps every
-defined byte. `splitP_sound`: a pointer `splitP` takes apart is, when it is a pointer,
-`base + idx + off`.
+defined byte. `splitP_sound` (`MemCombineSplit`): a pointer `splitP` takes apart is, when it
+reads as a pointer, `base + idx + off`.
 -/
 
 namespace GoFV.Proof.MemCombine
@@ -45,18 +46,19 @@ def _root_.GoFV.Opt.MemCombine.Check.SB.sem (V : ID → Val) : SB → Option (Bi
   | .lit b => some b
   | .vb y k => byte? (V y) k
   | .mb m b i o =>
-    match V m, V b, idxVal V i with
-    | .mem M, .ptr P, some I => byteAt M (ptrAt P I o)
+    match V m, (V b).asPtrWord, idxVal V i with
+    | .mem M, some P, some I => byteAt M (ptrAt P I o)
     | _, _, _ => none
 
 /-- All bytes of an array are concrete. -/
 def Concrete (bs : Array Byte) : Prop := ∀ x ∈ bs.toList, ∃ b, x = .b b
 
-/-- **A load of a description**: its pointer is `base + idx + off` and reads `size` concrete
-bytes of its memory. -/
+/-- **A load of a description**: its pointer reads as `base + idx + off` (pointer words,
+`Val.asPtrWord`) and reads `size` concrete bytes of its memory. -/
 def LoadOK (V : ID → Val) (r : LoadRec) : Prop :=
-  ∃ M P I bs, V r.mem = .mem M ∧ V r.base = .ptr P ∧ idxVal V r.idx = some I ∧
-    V r.ptr = .ptr (ptrAt P I r.off) ∧ M.read (ptrAt P I r.off) r.size = some bs ∧ Concrete bs
+  ∃ M P I bs, V r.mem = .mem M ∧ (V r.base).asPtrWord = some P ∧ idxVal V r.idx = some I ∧
+    (V r.ptr).asPtrWord = some (ptrAt P I r.off) ∧ M.read (ptrAt P I r.off) r.size = some bs ∧
+    Concrete bs
 
 /-! ## Monotonicity -/
 
@@ -120,19 +122,18 @@ theorem sem_mono {V V' : ID → Val} (h : ∀ y, Sem.Refines (V y) (V' y)) {s : 
     cases hm : V m with
     | mem M =>
       rw [hm] at hs
-      cases hp : V bb with
-      | ptr P =>
+      cases hp : (V bb).asPtrWord with
+      | some P =>
         rw [hp] at hs
         cases hI : idxVal V i with
         | none => rw [hI] at hs; cases hs
         | some I =>
           rw [hI] at hs
           have h1 : Sem.Refines (.mem M) (V' m) := hm ▸ h m
-          have h2 : Sem.Refines (.ptr P) (V' bb) := hp ▸ h bb
           obtain ⟨M', hm', hM⟩ := refines_mem h1
-          rw [hm', refines_ptr h2, idxVal_mono h hI]
+          rw [hm', (h bb).asPtrWord hp, idxVal_mono h hI]
           exact byteAt_mono hM hs
-      | _ => rw [hp] at hs; cases hs
+      | none => rw [hp] at hs; cases hs
     | _ => rw [hm] at hs; cases hs
 
 theorem concrete_mono {bs bs' : Array Byte} (h : BytesRefineA bs bs') (hc : Concrete bs) :
@@ -143,11 +144,10 @@ theorem loadOK_mono {V V' : ID → Val} (h : ∀ y, Sem.Refines (V y) (V' y)) {r
     (hr : LoadOK V r) : LoadOK V' r := by
   obtain ⟨M, P, I, bs, hm, hp, hI, hq, hrd, hc⟩ := hr
   have h1 : Sem.Refines (.mem M) (V' r.mem) := hm ▸ h r.mem
-  have h2 : Sem.Refines (.ptr P) (V' r.base) := hp ▸ h r.base
-  have h3 : Sem.Refines (.ptr (ptrAt P I r.off)) (V' r.ptr) := hq ▸ h r.ptr
   obtain ⟨M', hm', hM⟩ := refines_mem h1
   obtain ⟨bs', hrd', hbs⟩ := Mem.Refines.read hM hrd
-  refine ⟨M', P, I, bs', hm', refines_ptr h2, idxVal_mono h hI, refines_ptr h3, hrd', ?_⟩
+  refine ⟨M', P, I, bs', hm', (h r.base).asPtrWord hp, idxVal_mono h hI, (h r.ptr).asPtrWord hq,
+    hrd', ?_⟩
   rw [concrete_mono hbs hc]; exact hc
 
 end GoFV.Proof.MemCombine

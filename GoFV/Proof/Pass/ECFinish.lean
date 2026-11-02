@@ -50,13 +50,13 @@ theorem ecf_refines_eq : (t : Ty) → wf t = true → {a b : Val} → Sem.Refine
       obtain ⟨p, l, rfl, hpp, -⟩ := Val.hasTy_agg_str.1 hy
       rcases hl with _ | ⟨h1, _ | ⟨h2, h3⟩⟩
       cases h3; cases h2
-      cases h1 <;> simp_all [Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
+      cases h1 <;> simp_all [Val.hasPoison, Val.anyPoison, Val.isPtrWord]
   | .slice _, ht, _, _, h, hp, hy => eq_base ht h hp hy fun as bs ha hb hl => by
       subst ha hb
       obtain ⟨p, l, c, rfl, hpp, -⟩ := Val.hasTy_agg_slice.1 hy
       rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, h4⟩⟩⟩
       cases h4; cases h3; cases h2
-      cases h1 <;> simp_all [Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
+      cases h1 <;> simp_all [Val.hasPoison, Val.anyPoison, Val.isPtrWord]
   | .int _, ht, _, _, h, hp, hy | .bool, ht, _, _, h, hp, hy | .ptr _, ht, _, _, h, hp, hy
   | .opaque _, ht, _, _, h, hp, hy | .empty, ht, _, _, h, hp, hy | .blob _, ht, _, _, h, hp, hy
   | .mem, ht, _, _, h, hp, hy | .tuple _, ht, _, _, h, hp, hy | .other, ht, _, _, h, hp, hy =>
@@ -94,14 +94,20 @@ theorem ecf_leafVals_np : (t : Ty) → wf t = true → {v : Val} → v.hasPoison
     cases v with
     | agg vs =>
       obtain ⟨p, l, rfl, hpp, -⟩ := Val.hasTy_agg_str.1 hy
-      cases p <;> simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
+      cases p <;> first
+        | (simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord]; done)
+        | (rename_i w _; cases w <;>
+            simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord])
     | poison => simp [Val.hasPoison] at hp
     | _ => simp [Val.hasTy] at hy
   | .slice _, _, v, hp, hy => by
     cases v with
     | agg vs =>
       obtain ⟨p, l, c, rfl, hpp, -⟩ := Val.hasTy_agg_slice.1 hy
-      cases p <;> simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrOrPoison]
+      cases p <;> first
+        | (simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord]; done)
+        | (rename_i w _; cases w <;>
+            simp_all [leafVals, Val.retype, Val.hasPoison, Val.anyPoison, Val.isPtrWord])
     | poison => simp [Val.hasPoison] at hp
     | _ => simp [Val.hasTy] at hy
   | .blob _, h, _, _, _ | .mem, h, _, _, _ | .tuple _, h, _, _, _ | .other, h, _, _, _ => nomatch h
@@ -234,67 +240,37 @@ theorem ecf_pieces_np {tabs : Tables} :
 
 /-! ## The target's pieces: retyped at their registers' shapes -/
 
-private theorem ecf_ofNat_add_eq {x : BitVec 64} {base r : Nat} (h : base + r = x.toNat) :
-    BitVec.ofNat 64 base + BitVec.ofNat 64 r = x := by
-  rw [BitVec.ofNat_add_ofNat, h, BitVec.ofNat_toNat, BitVec.setWidth_eq]
-
-/-- The pointer at an address has that address. -/
-private theorem ecf_addr_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x := by
-  have hx : x.toNat < 18446744073709551616 := x.isLt
-  unfold Ptr.ofAddr
-  dsimp only
-  split
-  · simp [Ptr.addr?, Blk.base?]
-  · split
-    · simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq]
-      apply ecf_ofNat_add_eq
-      omega
-    · split <;> simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq] <;>
-        apply ecf_ofNat_add_eq <;> simp only [beq_iff_eq] at * <;> omega
-
-/-- A poison-free piece of shape `lt` retyped at a register shape `rt` holding it: itself, or
-(a 64-bit integer in a pointer register) the pointer at its address. -/
+/-- A piece of shape `lt` retyped at a register shape `rt` holding it is itself (a 64-bit
+integer in a pointer register keeps its word, §3.3). -/
 theorem ecf_retype_reg {rt lt : Ty} (h : regShapeOK rt lt = true) {p : Val}
-    (hy : p.hasTy lt = true) (hp : p.hasPoison = false) :
-    p.retype rt = p ∨ ∃ a, lt = .int .w64 ∧ p = .int .w64 a ∧ p.retype rt = .ptr (Ptr.ofAddr a) := by
+    (hy : p.hasTy lt = true) (hp : p.hasPoison = false) : p.retype rt = p := by
   unfold regShapeOK at h
   cases hb : Ty.beq rt lt with
-  | true => rw [Ty.eq_of_beq hb]; exact .inl (Val.retype_of_hasTy hy)
+  | true => rw [Ty.eq_of_beq hb]; exact Val.retype_of_hasTy hy
   | false =>
     rw [hb, Bool.false_or] at h
     split at h
     · cases p with
-      | ptr q => exact .inl rfl
+      | ptr q => rfl
+      | int w a => cases w <;> first | rfl | simp [Val.hasTy] at hy
       | poison => simp [Val.hasPoison] at hp
       | _ => simp [Val.hasTy] at hy
     · cases p with
-      | ptr q => exact .inl rfl
-      | int w a =>
-        simp only [Val.hasTy, beq_iff_eq] at hy
-        subst hy
-        exact .inr ⟨a, rfl, rfl, rfl⟩
+      | ptr q => rfl
+      | int w a => cases w <;> first | rfl | simp [Val.hasTy] at hy
       | poison => simp [Val.hasPoison] at hp
       | _ => simp [Val.hasTy] at hy
     · cases h
 
 theorem ecf_retype_reg_np {rt lt : Ty} (h : regShapeOK rt lt = true) {p : Val}
     (hy : p.hasTy lt = true) (hp : p.hasPoison = false) : (p.retype rt).hasPoison = false := by
-  rcases ecf_retype_reg h hy hp with e | ⟨a, -, -, e⟩
-  · rw [e]; exact hp
-  · rw [e]; rfl
+  rw [ecf_retype_reg h hy hp]; exact hp
 
 /-- The leaf shape decodes a retyped piece's encoding as the piece. -/
 theorem ecf_decode_reg {rt lt : Ty} (h : regShapeOK rt lt = true) (hl : atom lt = true) {p : Val}
     (hy : p.hasTy lt = true) (hp : p.hasPoison = false) :
     decode (encode lt (p.retype rt)) 0 lt = p := by
-  rcases ecf_retype_reg h hy hp with e | ⟨a, rfl, rfl, e⟩
-  · rw [e]; exact decode_encode_atom lt p hl hy
-  · rw [e]
-    show decodeInt .w64 ((ptrBytes (Ptr.ofAddr a)).extract 0 (0 + 8)) = .int .w64 a
-    rw [Array.extract_eq_self_of_le (by simp [ptrBytes])]
-    unfold decodeInt
-    rw [bytesNat?_ptrBytes, bytesPtr?_ptrBytes]
-    simp only [ecf_addr_ofAddr]
+  rw [ecf_retype_reg h hy hp]; exact decode_encode_atom lt p hl hy
 
 /-- Decoding the leaves of a buffer assembled from retyped pieces gives the pieces back. -/
 theorem ecf_foldl_decode_reg : {ps : List Val} → {L : List (Nat × Ty)} →
@@ -492,9 +468,7 @@ theorem ecf_single_reg {t : Ty} (hw : wf t = true) {r x : Val} (hr : r.hasTy t =
     rw [← hl.1, Val.retype_of_hasTy hr]
     exact ecf_decode_reg hrl rfl hr hp
   | agg fs n =>
-    rcases ecf_retype_reg hrl hxl hxp with e | ⟨a, -, -, e⟩
-    · rw [e] at hx; exact (ecf_atom_agg hla hxl hx hxp).elim
-    · rw [e] at hx; simp [Val.hasTy] at hx
+    rw [ecf_retype_reg hrl hxl hxp] at hx; exact (ecf_atom_agg hla hxl hx hxp).elim
   | empty => simp [leafVals] at hl
   | str | slice => cases r <;> simp [leafVals] at hl
   | blob | mem | tuple | other => simp [wf] at hw

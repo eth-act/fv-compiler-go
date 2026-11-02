@@ -277,9 +277,10 @@ inductive Ty where
 
 namespace Val
 
-/-- A value of the pointer shape (`Val.hasTy _ (.ptr _)`): a pointer or `poison`. -/
-def isPtrOrPoison : Val → Bool
-  | .ptr _ | .poison => true
+/-- A value of the pointer shape (`Val.hasTy _ (.ptr _)`): a pointer, a 64-bit integer (the
+pointer at that concrete address, §3.3) or `poison`. -/
+def isPtrWord : Val → Bool
+  | .ptr _ | .int .w64 _ | .poison => true
   | _ => false
 
 /-- The lengths of a string value (`Ty.str`, components pointer and length) are valid: the

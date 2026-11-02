@@ -1206,13 +1206,13 @@ def termEqB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
 def idxSame (tabs : Tables) (f : Func) (i j : ID) : Bool := termEqB tabs f 4 i j
 
 /-- The allocation base pointer `a` points to at offset 0, where it is known statically: a
-`LocalAddr`'s frame variable (in activation 0, where the atom simulation runs: `Sem.frameVal`,
-`AtomSim.MemAtoms`) or an `Addr`'s global (`Sem.addrVal`). -/
+pointer-shaped `LocalAddr`'s frame variable (in activation 0, where the atom simulation runs:
+`Sem.frameVal`, `AtomSim.MemAtoms`) or a pointer-shaped `Addr`'s global (`Sem.addrVal`). -/
 def baseBlk? (tabs : Tables) (f : Func) (a : ID) : Option Sem.Blk :=
   match f.value? a with
   | some u =>
-    if u.op == .LocalAddr then u.aux.map (Sem.frameBlk tabs 0)
-    else if u.op == .Addr then
+    if u.op == .LocalAddr && isPtrTy (tabs.ty u.type) then u.aux.map (Sem.frameBlk tabs 0)
+    else if u.op == .Addr && isPtrTy (tabs.ty u.type) then
       match u.aux.bind tabs.aux? with
       | some { kind := .sym name .., .. } => some (.global name.toStringLossy)
       | _ => none
@@ -1220,8 +1220,8 @@ def baseBlk? (tabs : Tables) (f : Func) (a : ID) : Option Sem.Blk :=
   | none => none
 
 /-- Base pointers equal where both are pointers: the same value, the start of one allocation
-(`baseBlk?`), or `AddPtr`/`PtrIndex` nodes of one shape on such pointers (`ptrBase`, the same
-offset) by equal indices (`idxSame`). -/
+(`baseBlk?`), or `AddPtr`/`PtrIndex` nodes of one pointer shape on such pointers (`ptrBase`, the
+same offset) by equal indices (`idxSame`). -/
 def baseSameB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
   | 0, a, b => a == b
   | n + 1, a, b =>
@@ -1237,7 +1237,7 @@ def baseSameB (tabs : Tables) (f : Func) : Nat → ID → ID → Bool
         ptrVal tabs f u.args[0]! && ptrVal tabs f w.args[0]! &&
         (ptrBase tabs f 8 u.args[0]!).2 == (ptrBase tabs f 8 w.args[0]!).2 &&
         baseSameB tabs f n (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 w.args[0]!).1 &&
-        idxSame tabs f u.args[1]! w.args[1]!
+        idxSame tabs f u.args[1]! w.args[1]! && isPtrTy (tabs.ty u.type)
     | _, _ => false
 
 /-- Pointers equal where both are pointers (`isSamePtr`): equal bases (`baseSameB`) at the same
@@ -2031,8 +2031,9 @@ def storesF (f : Func) : Nat → ID → Option (List ID × ID)
     | none => none
 
 /-- The `Store`s `ss` of `f` (last first) tile `[o, n)` of the pointer `p`: each at an `OffPtr` of
-`p` (up to copies) by the offset where the previous one ends (`o` for the first), of positive
-size, the last ending at `n`. -/
+`p` (up to copies) by the offset where the previous one ends (`o` for the first), of pointer
+shape (an integer-typed `OffPtr` would hold the address word, which need not read back as the
+pointer, `Ptr.convertible`), of positive size, the last ending at `n`. -/
 def segTiles (tabs : Tables) (f : Func) (p : ID) : Nat → List Value → Nat → Bool
   | o, [], n => o == n
   | o, s :: ss, n =>
@@ -2041,6 +2042,7 @@ def segTiles (tabs : Tables) (f : Func) (p : ID) : Nat → List Value → Nat �
     (match f.value? s.args[0]! with
      | some op =>
        op.op == .OffPtr && op.args.size == 1 && op.auxInt.toInt == (o : Int) &&
+         isPtrTy (tabs.ty op.type) &&
          copyEnd tabs f.valueTab f.valueTab.size op.args[0]! ==
            copyEnd tabs f.valueTab f.valueTab.size p
      | none => false) &&

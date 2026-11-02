@@ -916,7 +916,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot p hpo (by simpa using hps))
           rw [hpn] at hn'; cases hn'
           have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
-          have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr hbase hEa)
+          have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr (by rw [hbase]; rfl) hEa)
             (hpt z (List.mem_of_getElem? hk) zw hzw)
           rw [hP', hsv', ecw_encode_eqE haux]
       rw [← hlist, hWT] at hWT'
@@ -1058,10 +1058,11 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
   have hEa : isNewB f wz.args[0]! = true → E wz.args[0]! ∧ L wz.args[0]! := fun hn' =>
     ⟨hEw _ hq0 hn', hLcl _ hq0 hn'⟩
   have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
-  have ha : rv T wz.args[0]! = .ptr ((⟨.local 0 n, 0⟩ : Ptr).add (BitVec.ofNat 64 o)) := by
-    rcases ecw_addr hNC hL haddr hbase hEa with h | h
+  have ha : (rv T wz.args[0]!).asPtrWord =
+      some ((⟨.local 0 n, 0⟩ : Ptr).add (BitVec.ofNat 64 o)) := by
+    rcases ecw_addr hNC hL haddr (by rw [hbase]; rfl) hEa with h | h
     · exact h
-    · rw [h]; unfold PtrOps.ptrRes; rw [if_pos hwin]
+    · rw [h]; unfold Ptr.step?; rw [if_pos hwin]
   -- the write
   have hsz' : (encode (auxTy tabs wz.aux) (rv T wz.args[1]!)).size = lt.size := by
     rw [encode_size, ecT_eqE_size haux]

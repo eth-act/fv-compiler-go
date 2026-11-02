@@ -164,7 +164,15 @@ theorem decode_encode {t : Ty} (ht : GoFV.Opt.RewriteCheck.scalarTy t = true) {x
         bytesPtr?_ptrBytes]
       exact Sem.Refines.refl _
     | int w v =>
-      cases w <;> simp [Val.retype] at hx
+      cases w with
+      | w64 =>
+        simp only [encode, decode, decodePtr, Nat.zero_add]
+        rw [Array.extract_eq_self_of_le (by rw [intBytes_size]; exact Nat.le_refl _),
+          GoFV.Proof.ABI.bytesPtr?_intBytes, bytesNat?_intBytes]
+        dsimp only
+        rw [Nat.mod_eq_of_lt v.isLt, BitVec.ofNat_toNat, BitVec.setWidth_eq]
+        exact Sem.Refines.refl _
+      | _ => simp [Val.retype] at hx
     | _ => simp [Val.retype] at hx
   | _ => simp [GoFV.Opt.RewriteCheck.scalarTy] at ht
 

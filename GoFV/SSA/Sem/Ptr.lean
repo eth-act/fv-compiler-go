@@ -11,23 +11,6 @@ offset mod 2^64; `Convert` and pointer comparison use the concrete addresses of 
 
 namespace GoFV.SSA.Sem
 
-namespace Val
-
-/-- The pointer of a pointer value. -/
-def asPtr : Val → Option Ptr
-  | .ptr p => some p
-  | _ => none
-
-/-- The pointer of a pointer-shaped word: a pointer, or a 64-bit integer read as the pointer
-at that concrete address (`uintptr`-typed words such as `ConstNil <uintptr>` or an itab word
-after `decompose builtin`). -/
-def asPtrWord : Val → Option Ptr
-  | .ptr p => some p
-  | .int .w64 x => some (Ptr.ofAddr x)
-  | _ => none
-
-end Val
-
 namespace Ptr
 
 /-- `p + k` (offset mod 2^64). -/
@@ -46,10 +29,16 @@ namespace PtrOps
 (Go's unsafe rules: arithmetic stays inside the allocation or one past its end; §3.3). -/
 def ptrRes (p : Ptr) : Val := if p.inWindow then .ptr p else .poison
 
-/-- `OffPtr [off] p`: `p + off` (an integer `p`, e.g. a `uintptr`, adds as an integer). -/
+/-- The result of pointer arithmetic on an integer word `x` (a pointer-typed value holding a
+concrete address, §3.3): the integer `x + k`, under the window rule of the pointer at that
+address (`ptrRes`), so the word behaves as that pointer (`Ptr.ofAddr_add_of_inWindow`). -/
+def wordRes (x k : BitVec 64) : Val :=
+  if ((Ptr.ofAddr x).add k).inWindow then .int .w64 (x + k) else .poison
+
+/-- `OffPtr [off] p`: `p + off` (an integer word adds as an integer, `wordRes`). -/
 def offPtr (auxInt : Int64) : List Val → Val
   | [.ptr p] => ptrRes (p.add (BitVec.ofInt 64 auxInt.toInt))
-  | [.int .w64 x] => .int .w64 (x + BitVec.ofInt 64 auxInt.toInt)
+  | [.int .w64 x] => wordRes x (BitVec.ofInt 64 auxInt.toInt)
   | _ => .poison
 
 /-- `AddPtr p i`: `p + i`. -/
@@ -58,22 +47,28 @@ def addPtr : List Val → Val
     | some k => ptrRes (p.add k)
     | none => .poison
   | [.int .w64 x, i] => match asOffset i with
-    | some k => .int .w64 (x + k)
+    | some k => wordRes x k
     | none => .poison
   | _ => .poison
 
-/-- `PtrIndex <*T> p i`: `p + i·sizeof(T)` (`elem` from the result type). -/
+/-- `PtrIndex <*T> p i`: `p + i·sizeof(T)` (`elem` from the result type; an integer word adds
+as an integer, like `AddPtr`). -/
 def ptrIndex (elem : Option Nat) : List Val → Val
   | [.ptr p, i] => match elem, asOffset i with
     | some e, some k => ptrRes (p.add (k * BitVec.ofNat 64 e))
+    | _, _ => .poison
+  | [.int .w64 x, i] => match elem, asOffset i with
+    | some e, some k => wordRes x (k * BitVec.ofNat 64 e)
     | _, _ => .poison
   | _ => .poison
 
 /-- `SubPtr p q`: the difference of concrete addresses. -/
 def subPtr : List Val → Val
-  | [.ptr p, .ptr q] => match p.addr?, q.addr? with
-    | some a, some b => .int .w64 (a - b)
-    | _, _ => if p.blk == q.blk then .int .w64 (p.off - q.off) else .poison
+  | [a, b] => match a.asPtrWord, b.asPtrWord with
+    | some p, some q => match p.addr?, q.addr? with
+      | some x, some y => .int .w64 (x - y)
+      | _, _ => if p.blk == q.blk then .int .w64 (p.off - q.off) else .poison
+    | _, _ => .poison
   | _ => .poison
 
 /-- `EqPtr`/`NeqPtr` (`neg`). -/
@@ -90,14 +85,13 @@ def isNonNil : List Val → Val
   | _ => .poison
 
 /-- `Convert x mem` to shape `t`: pointer → integer by concrete address (`poison` unless the
-pointer converts back to itself, `Ptr.convertible`), integer → pointer by `Ptr.ofAddr`; the
-memory argument only orders it. -/
+pointer converts back to itself, `Ptr.convertible`); an integer keeps its word at a pointer
+shape (§3.3), so integer → pointer is the identity; the memory argument only orders it. -/
 def convert (t : Ty) : List Val → Val
   | [x, _] => match t, x with
     | .int .w64, .ptr p => match p.convertible, p.addr? with
       | true, some a => .int .w64 a
       | _, _ => .poison
-    | .ptr _, .int .w64 a => .ptr (Ptr.ofAddr a)
     | _, x => x
   | _ => .poison
 
@@ -132,27 +126,32 @@ end Comp
 §9 P5 pulled forward: they only read): `(value, mem)`. An access that is not naturally
 aligned within its allocation reads `poison`. -/
 def atomicLoad (t : Ty) : List Val → Val
-  | [.ptr p, .mem m] =>
-    match t with
-    | .tuple [vt, .mem] =>
+  | [a, .mem m] =>
+    match a.asPtrWord, t with
+    | some p, .tuple [vt, .mem] =>
       let v := if vt.size == 0 || p.off.toNat % vt.size != 0 then .poison else m.load vt p
       .tuple [v, .mem m]
-    | _ => .poison
+    | _, _ => .poison
   | _ => .poison
 
 /-- `MemEq p q n mem`: the `n` bytes at `p` and `q` are equal; `poison` if either range is
 invalid or holds poison bytes. -/
 def memEq : List Val → Val
-  | [.ptr p, .ptr q, .int _ n, .mem m] =>
-    match m.read p n.toNat, m.read q n.toNat with
-    | some a, some b =>
-      if a.any (· == .poison) || b.any (· == .poison) then .poison else .bool (a == b)
+  | [x, y, .int _ n, .mem m] =>
+    match x.asPtrWord, y.asPtrWord with
+    | some p, some q =>
+      match m.read p n.toNat, m.read q n.toNat with
+      | some a, some b =>
+        if a.any (· == .poison) || b.any (· == .poison) then .poison else .bool (a == b)
+      | _, _ => .poison
     | _, _ => .poison
   | _ => .poison
 
 /-- `Load <T> p mem`, `Dereference <T> p mem`. -/
 def loadOp (t : Ty) : List Val → Val
-  | [.ptr p, .mem m] => m.load t p
+  | [a, .mem m] => match a.asPtrWord with
+    | some p => m.load t p
+    | none => .poison
   | _ => .poison
 
 /-- `WB [n] mem` (the write-barrier buffer, §9): `(the buffer, mem)` with a fresh buffer of `n`

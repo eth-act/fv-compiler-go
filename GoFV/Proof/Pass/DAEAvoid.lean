@@ -102,15 +102,22 @@ theorem ofAddr_notU {U : Blk → Prop} (hU : TempU U) (x : BitVec 64) : ¬ U (Pt
   obtain ⟨n, hn⟩ := hU _ hu
   exact Ptr.ofAddr_ne_temp x 0 n hn
 
+/-- The pointer a word avoiding `U` reads as avoids `U` (an integer word's `Ptr.ofAddr` is never
+a frame temporary). -/
+theorem asPtrWord_notU {U : Blk → Prop} (hU : TempU U) {a : Val} (ha : Val.Avoids U a) {p : Ptr}
+    (hp : a.asPtrWord = some p) : ¬ U p.blk := by
+  rcases a with ⟨_ | _ | _ | _, x⟩ | _ | _ | _ | q | _ | _ | _ | _ <;>
+    simp only [Val.asPtrWord, reduceCtorEq, Option.some.injEq] at hp
+  · subst hp; exact ofAddr_notU hU x
+  · subst hp; exact ha
+
 theorem decodePtr_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h : BAv U bs) :
     Val.Avoids U (decodePtr bs) := by
   unfold decodePtr
   split
   · rename_i p hp
     exact h _ (bytesPtr?_mem hp)
-  · split
-    · exact ofAddr_notU hU _
-    · trivial
+  · split <;> trivial
 
 theorem ofStr_avoids {U : Blk → Prop} {vs : List Val} (h : Val.AvoidsList U vs) :
     Val.Avoids U (Val.ofStr vs) := by
@@ -399,7 +406,7 @@ theorem retypePtr_avoids {U : Blk → Prop} (hU : TempU U) {v : Val} (h : Val.Av
     Val.Avoids U v.retypePtr := by
   unfold Val.retypePtr
   split
-  · exact ofAddr_notU hU _
+  · trivial
   · exact h
   · trivial
 

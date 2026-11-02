@@ -52,8 +52,8 @@ theorem covered_loadOK {V V' : ID → Val} {sf : List LoadRec} (hs : ∀ s ∈ s
   have hbas : t.base ∈ t.ids := by simp [LoadRec.ids]
   have hptr : t.ptr ∈ t.ids := by simp [LoadRec.ids]
   obtain ⟨M', hm', hMM⟩ := refines_mem (hm ▸ hids _ hmem)
-  have hp' := refines_ptr (hp ▸ hids _ hbas)
-  have hq' := refines_ptr (hq ▸ hids _ hptr)
+  have hp' := (hids _ hbas).asPtrWord hp
+  have hq' := (hids _ hptr).asPtrWord hq
   have hI' : idxVal V' t.idx = some I := by
     cases hti : t.idx with
     | none => rw [hti] at hI; exact hI
