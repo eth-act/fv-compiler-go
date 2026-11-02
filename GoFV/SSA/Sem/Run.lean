@@ -835,13 +835,15 @@ theorem _root_.GoFV.SSA.Sem.Env.atAct_extern_of {env : Env} {act : Nat} {name : 
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
   simp [Env.atAct, h1, h2, h3, h4]
 
-/-- The memory of a closure call whose closure is the nil pointer word (`Val.asPtrWord`). Go
-loads the code word from the closure without a nil check (arm64 faults), so the call panics with
-`nilDeref` (`deferNilFunc`: an open-coded `defer f()` of a nil `f` at a normal exit). -/
-def nilClosureMem? (clo : Option Val) (rest : List Val) : Option Mem :=
-  match clo.bind Val.asPtrWord, rest.getLast? with
-  | some p, some (.mem m) => if p.isNil then some m else none
-  | _, _ => none
+/-- The closure of a closure call is the nil pointer word (`Val.asPtrWord`). Go loads the code
+word from the closure without a nil check (arm64 faults), so the call panics with `nilDeref`
+(`deferNilFunc`: an open-coded `defer f()` of a nil `f` at a normal exit). -/
+def nilClosure (clo : Option Val) : Bool :=
+  match clo.bind Val.asPtrWord with
+  | some p => p.isNil
+  | none => false
+
+@[simp] theorem nilClosure_none : nilClosure none = false := rfl
 
 /-- A call (§5): `StaticLECall {AuxCall} args… mem`, `ClosureLECall code ctx args… mem`,
 `InterLECall code args… mem` pass Go-typed arguments and yield `(results…, mem)`; their
@@ -858,30 +860,29 @@ invisible to the callee except through the decoded arguments. In both forms the 
 `stuck` unless the slots of its stack-assigned arguments are writable in its memory
 (`outargsOK`; always so in a run, whose frame allocates the area): the post form's argument
 stores into them then cannot fail where the pre form's call succeeds. A closure call through a
-nil closure faults loading the closure's code word (`nilClosureMem?`): a `nilDeref` panic, decided
-by the closure (the code word loaded from it is `poison`). -/
+nil closure (`nilClosure`) faults loading the closure's code word once its arguments are passed:
+a `nilDeref` panic on the memory the callee would see, decided by the closure (the code word
+loaded from it is `poison`, so the callee is unknown). -/
 def callOp (env : Env) (ctx : Ctx) (v : Value) (argv : List Val) : Res Val := do
   let (callee?, clo, rest) := callTarget ctx v argv
-  match nilClosureMem? clo rest with
-  | some m => .panic .nilDeref m
-  | none =>
-  let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
   let m ← match rest.getLast? with
     | some (.mem m) => .ok m
-    | _ => .stuck s!"call {callee}: no memory argument"
+    | _ => .stuck s!"v{v.id}: call without a memory argument"
   let pieces := rest.dropLast
   let post := v.op == .StaticCall || v.op == .ClosureCall || v.op == .InterCall
   let params := ((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []
   let ins := params.filter (!·.out)
   let outs := params.filter (·.out)
   let args ← if post then
-      Res.ofOption s!"call {callee}: arguments do not match the ABI" (decodeArgs ctx.tabs ctx.act m ins pieces)
+      Res.ofOption s!"v{v.id}: call arguments do not match the ABI" (decodeArgs ctx.tabs ctx.act m ins pieces)
     else pure (retypeResults ctx.tabs ins pieces)
   if args.any Val.hasPoison || (clo.map Val.hasPoison).getD false then
-    .stuck s!"call {callee}: poison argument"
+    .stuck s!"v{v.id}: call with a poison argument"
   else if !outargsOK ctx.tabs ctx.act m ins then
-    .stuck s!"call {callee}: outgoing-arguments area not writable"
+    .stuck s!"v{v.id}: call with an outgoing-arguments area not writable"
+  else if nilClosure clo then .panic .nilDeref (m.poisonBlock (.outargs ctx.act))
   else
+    let callee ← Res.ofOption s!"v{v.id}: call without a known callee" callee?
     let c ← Res.ofOption s!"call {callee}: no contract" ((env.atAct ctx.act).extern callee)
     match c args clo (m.poisonBlock (.outargs ctx.act)) with
     | .returned rs m' =>
