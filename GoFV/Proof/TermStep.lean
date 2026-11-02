@@ -47,6 +47,7 @@ def stepVals (b : Block) (cs : List Val) : Res Next :=
       | _, _ => .stuck s!"b{b.id}: Ret without memory"
     | _ => .stuck s!"b{b.id}: Ret control is not a MakeResult"
   | .Exit => .stuck s!"b{b.id}: Exit reached (a non-returning call returned)"
+  | .Defer => succ b 0
   | k => .stuck s!"b{b.id}: block kind {k.name} is not in phase P1"
 
 theorem control_eq_ctlV {fr : Frame} {b : Block} (h : ∀ c ∈ b.controls, Reg fr c) (k : Nat) :
@@ -143,6 +144,7 @@ theorem stepVals_mono {b b' : Block} (hk : b'.kind = b.kind) (hs : b'.succs = b.
         | _ => exact .stuck _ _
     | _ => exact .stuck _ _
   · exact .stuck _ _
+  · exact succ_refl b 0
   · exact .stuck _ _
 
 /-- A relation into `stepVals` carries over to refined controls. -/

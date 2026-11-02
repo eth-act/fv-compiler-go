@@ -80,7 +80,7 @@ end
 theorem block_sim {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) :
-    StepSimE (SimR tabs f g I) (blockStep env (Ctx.make tabs f) frS b i)
+    StepSimE Mem.Refines (SimR tabs f g I) (blockStep env (Ctx.make tabs f) frS b i)
       (blockStep env (Ctx.make tabs g) frT b i) := by
   unfold blockStep
   cases hfb : (Ctx.make tabs f).f.block? b with
@@ -193,7 +193,7 @@ theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   · next hn => simp only [hn] at hd; exact hd.elim
   · next hn =>
     simp only [hn] at hd
-    refine finish_refines hd (runLoop_simE (SimR tabs f g I) (fun frS bS iS frT bT iT hR => ?_) fuel
+    refine finish_refines_mono hE hd (runLoop_simE (SimR tabs f g I) (fun frS bS iS frT bT iT hR => ?_) fuel
       _ _ _ _ _ _ ⟨H.ok.entry.symm, rfl, entry_rel H env args mem⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, R⟩ := hR
     exact block_sim H hE R

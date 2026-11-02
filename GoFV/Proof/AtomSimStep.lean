@@ -105,6 +105,7 @@ theorem stepTerm_mono2 {fr fr' : Frame} {b b' : Block} (hk : b'.kind = b.kind)
         | _ => exact .stuck _ _
     | _ => exact .stuck _ _
   · exact .stuck _ _
+  · exact succ_refl b 0
   · exact .stuck _ _
 
 end GoFV.Proof.AtomSim
