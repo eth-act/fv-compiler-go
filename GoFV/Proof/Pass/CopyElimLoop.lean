@@ -112,7 +112,7 @@ theorem rel_of_ctl (hwf : WF ce f) (hI : Inv tabs f G) (hset : Settled f (vw G))
     | phi w h1 h2 h3 h4 h5 =>
       refine .phi w h1 (hop.trans h2) (hargs.trans h3) fun a ha => ?_
       exact argRel_of_join hset hg (hal a ha) (h5 a ha) (hsk w (by rw [h3]; simp))
-    | empty h1 h2 h3 => exact .empty h1 (hop.trans h2)
+    | empty h1 h2 h3 => exact .empty h1 (hop.trans h2) (hargs.trans h3)
   · intro bid hm _ fb hfb x hx gv w hgv hop hargs
     have hxl : Listed f x := ⟨bid, fb, ⟨hm, hfb⟩, hx⟩
     have hvx : vw G x = some (strip gv) := by rw [← hg]; exact vw_of_value? hgv

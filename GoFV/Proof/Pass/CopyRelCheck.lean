@@ -20,7 +20,7 @@ theorem copyValueOK_spec {tabs : Tables} {k g : Func} {x : ID}
     (∀ kv, k.value? x = some kv → ∃ gv, g.value? x = some gv ∧ gv.block = kv.block ∧
       gv.type = kv.type ∧ zeroSizeAggregate tabs kv.type ≠ .ok true ∧ ValRel tabs g kv gv) ∧
     (∀ gv w, g.value? x = some gv → gv.op = .Copy → gv.args = #[w] →
-      ∃ wv, g.value? w = some wv ∧ RetypeEq (tabs.ty wv.type) (tabs.ty gv.type)) := by
+      ∃ wv, g.value? w = some wv ∧ RetypeInto (tabs.ty wv.type) (tabs.ty gv.type)) := by
   unfold copyValueOK at H
   rw [Bool.and_eq_true] at H
   obtain ⟨H1, H2⟩ := H
@@ -54,7 +54,7 @@ theorem copyValueOK_spec {tabs : Tables} {k g : Func} {x : ID}
     · exact absurd hsz h
     · rw [h0] at h
       obtain ⟨wv, hwv, hr⟩ := (Option.any_eq_true _ _).1 h
-      exact ⟨wv, hwv, retypeEqB_sound hr⟩
+      exact ⟨wv, hwv, (retypeEqB_sound hr).into⟩
 
 /-- **`copyOK` gives `CopyRel` and `EmptyFrag`.** -/
 theorem copyOK_spec {tabs : Tables} {k g : Func} (H : copyOK tabs k g = true) :
@@ -86,9 +86,9 @@ theorem copyOK_spec {tabs : Tables} {k g : Func} (H : copyOK tabs k g = true) :
   · intro bid hb _ kb hkb x hx gv w hgv hop hargs
     obtain ⟨-, -, -, -, -, h4⟩ := hblk bid hb kb hkb
     exact (copyValueOK_spec (h4 x hx)).2 gv w hgv hop hargs
-  · intro bid hb _ kb hkb x hx kv hkv
+  · intro bid hb _ kb hkb x hx kv hkv hz'
     obtain ⟨-, -, -, -, -, h4⟩ := hblk bid hb kb hkb
     obtain ⟨-, -, -, -, hz, -⟩ := (copyValueOK_spec (h4 x hx)).1 kv hkv
-    exact hz
+    exact absurd hz' hz
 
 end GoFV.Proof.CopyRelCheck

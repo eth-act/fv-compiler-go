@@ -7,8 +7,9 @@ import GoFV.Proof.Order
 # copyelim: from the static relation to the refinement
 
 `refines_of_rel`: if input `f` and output `g` both pass `check`, are related by `CopyRel`, and
-`f` has no zero-size aggregate values in tree blocks (`EmptyFrag`), every run of `g` from the
-entry is the run of `f`: the two runs visit the same blocks with equal frames.
+`f`'s tree values of zero-size aggregate type are `EmptyOK` (`EmptyFrag`: an `Empty` or an
+`Arg` at offset 0, which evaluate to `.empty` like the `Empty` phielim makes of them), every run
+of `g` from the entry is the run of `f`: the two runs visit the same blocks with equal frames.
 
 The block step (`enter_ok`, `enter_panic`): the target's `Phi`s read related arguments, which
 hold equal registers (lemma (D) of `g` at the predecessor, `ArgRel`); a `Phi` that became a
@@ -56,18 +57,48 @@ theorem cfgView_block {f g : Func} (h : cfgView g = cfgView f) {bid : ID} {fb : 
         simp only [Option.map_some, Option.some.injEq, Block.mk.injEq] at ht
         exact ⟨gb, rfl, ht.1, ht.2.2.2.2.2.2.2.1, ht.2.2.2.2.2.2.2.2.1⟩
 
-/-- The input fragment of copyelim's simulation: no value of a tree block has a zero-size
-aggregate type (phielim would turn it into `Empty`). -/
+/-- A zero-size value the simulation accepts although phielim turns it into `Empty`: it has
+shape `empty` and no arguments, and is an `Empty` or an `Arg` at offset 0, so that wherever its
+evaluation is defined it is `.empty`, the value of `Empty` (`evalValue_emptyOK`). -/
+def EmptyOK (tabs : Tables) (fv : Value) : Prop :=
+  tabs.ty fv.type = .empty ∧ fv.args = #[] ∧ (fv.op = .Empty ∨ fv.op = .Arg ∧ fv.auxInt = 0)
+
+theorem EmptyOK.not_phi {tabs : Tables} {fv : Value} (h : EmptyOK tabs fv) : fv.op ≠ .Phi := by
+  rcases h.2.2 with h | ⟨h, -⟩ <;> rw [h] <;> decide
+
+theorem EmptyOK.prio {tabs : Tables} {fv : Value} (h : EmptyOK tabs fv) : prio fv.op = 0 := by
+  rcases h.2.2 with h | ⟨h, -⟩ <;> rw [h] <;> rfl
+
+/-- Decides `EmptyOK`. -/
+def emptyOKB (tabs : Tables) (fv : Value) : Bool :=
+  (match tabs.ty fv.type with
+   | .empty => true
+   | _ => false) && fv.args.isEmpty &&
+    (fv.op == .Empty || (fv.op == .Arg && fv.auxInt == 0))
+
+theorem emptyOKB_sound {tabs : Tables} {fv : Value} (h : emptyOKB tabs fv = true) :
+    EmptyOK tabs fv := by
+  unfold emptyOKB at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Array.isEmpty_iff] at h
+  obtain ⟨⟨hty, hargs⟩, hop⟩ := h
+  refine ⟨?_, hargs, hop⟩
+  split at hty
+  · assumption
+  · cases hty
+
+/-- The input fragment of copyelim's simulation: every value of a tree block that has a
+zero-size aggregate type (which phielim turns into `Empty`) is `EmptyOK`. -/
 structure EmptyFrag (tabs : Tables) (f : Func) : Prop where
   noEmpty : ∀ bid ∈ f.blocks, ((make f).depthOf bid).isSome → ∀ fb, f.block? bid = some fb →
-    ∀ x ∈ fb.values, ∀ fv, f.value? x = some fv → zeroSizeAggregate tabs fv.type ≠ .ok true
+    ∀ x ∈ fb.values, ∀ fv, f.value? x = some fv → zeroSizeAggregate tabs fv.type = .ok true →
+      EmptyOK tabs fv
 
 /-- `r` is `.ok true`. -/
 def isOkTrue : Except String Bool → Bool
   | .ok true => true
   | _ => false
 
-/-- Decides `EmptyFrag`: no tree value has a zero-size aggregate type. -/
+/-- Decides `EmptyFrag`: every tree value of a zero-size aggregate type is `EmptyOK`. -/
 def emptyFragB (tabs : Tables) (f : Func) : Bool :=
   let C := make f
   f.blocks.all fun bid =>
@@ -76,7 +107,7 @@ def emptyFragB (tabs : Tables) (f : Func) : Bool :=
     | none => true
     | some fb =>
       fb.values.all fun x => match f.value? x with
-        | some fv => !isOkTrue (zeroSizeAggregate tabs fv.type)
+        | some fv => !isOkTrue (zeroSizeAggregate tabs fv.type) || emptyOKB tabs fv
         | none => true
 
 theorem emptyFrag_of {tabs : Tables} {f : Func} (h : emptyFragB tabs f = true) :
@@ -89,8 +120,41 @@ theorem emptyFrag_of {tabs : Tables} {f : Func} (h : emptyFragB tabs f = true) :
   simp only [DomCert.Cert.inTree, ht, Bool.not_true, Bool.false_or, hfb,
     Array.all_eq_true'] at h
   have := h x hx
-  simp only [hfv, hz, isOkTrue] at this
-  cases this
+  simp only [hfv, hz, isOkTrue, Bool.not_true, Bool.false_or] at this
+  exact emptyOKB_sound this
+
+/-- An `Empty` without arguments evaluates to `.empty` at shape `empty`. -/
+theorem evalValue_empty {env : Env} {ctx : Ctx} {fr : Frame} {gv : Value} (hop : gv.op = .Empty)
+    (hargs : gv.args = #[]) (hty : ctx.tys[gv.id]? = some .empty) :
+    evalValue env ctx fr gv = .ok .empty := by
+  unfold evalValue evalOp frameVal
+  simp only [hargs, hty, Option.getD_some, hop]
+  rfl
+
+/-- An `EmptyOK` value evaluates to `.empty` wherever it is defined. -/
+theorem evalValue_emptyOK {tabs : Tables} {env : Env} {ctx : Ctx} {fr : Frame} {fv : Value}
+    (he : EmptyOK tabs fv) (hty : ctx.tys[fv.id]? = some .empty)
+    (hdef : ∀ msg, evalValue env ctx fr fv ≠ .stuck msg) :
+    evalValue env ctx fr fv = .ok .empty := by
+  obtain ⟨-, hargs, hop⟩ := he
+  rcases hop with hop | ⟨hop, hai⟩
+  · exact evalValue_empty hop hargs hty
+  unfold evalValue at hdef ⊢
+  simp only [hargs, hty, Option.getD_some] at hdef ⊢
+  unfold evalOp at hdef ⊢
+  simp only [hop, hai] at hdef ⊢
+  cases hn : fv.aux with
+  | none => simp only [hn] at hdef; exact absurd rfl (hdef _)
+  | some n =>
+    simp only [hn] at hdef ⊢
+    unfold argVal at hdef ⊢
+    split
+    · rename_i hi; simp only [hi] at hdef; exact absurd rfl (hdef _)
+    · rename_i i hi
+      simp only [hi] at hdef
+      split
+      · rename_i himg; simp only [himg] at hdef; exact absurd rfl (hdef _)
+      · rfl
 
 /-- Everything the simulation uses about copyelim's input `f` and output `g`. -/
 structure Setup (tabs : Tables) (f g : Func) : Prop where
@@ -135,7 +199,7 @@ theorem value {b : ID} (hb : Tree f b) {fb : Block} (hfb : f.block? b = some fb)
     (hx : x ∈ fb.values) :
     ∃ fv gv, f.value? x = some fv ∧ g.value? x = some gv ∧ fv.block = b ∧ fv.id = x ∧
       gv.block = b ∧ gv.type = fv.type ∧ ValRel tabs g fv gv ∧
-      zeroSizeAggregate tabs fv.type ≠ .ok true := by
+      (zeroSizeAggregate tabs fv.type = .ok true → EmptyOK tabs fv) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨fv, hfv, hid, hblk⟩ := hwf.valueId b fb ⟨hb.1, hfb⟩ x hx
   obtain ⟨gv, hgv, h1, h2, h3⟩ := S.rel.value b hb.1 hb.2 fb hfb x hx fv hfv
@@ -236,7 +300,7 @@ theorem argEq {env : Env} {fr : Frame} {A : ID → Prop} {q a w : ID}
     rw [tys_of_value hgv] at hy
     refine ⟨y0, ?_, hy0⟩
     simp only [Option.getD_some] at this
-    rw [hy]; simp only [Option.getD_some]; rw [← hsh y0, this]
+    rw [hy]; simp only [Option.getD_some]; rw [hsh.apply this]
 
 /-- A `Phi` of a non-entry tree block that became `Copy w` copies a value of a strict
 dominator. -/

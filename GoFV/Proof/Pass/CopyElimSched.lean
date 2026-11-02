@@ -29,17 +29,17 @@ theorem mem_formerPhis {b : Block} {z : ID} :
 
 /-- The target value of a non-`Phi` value of a tree block is not a `Phi`; of a `Phi` that stays
 a `Phi`, a `Phi`. -/
-theorem valRel_phi {fv gv : Value} (hrel : ValRel tabs g fv gv) (he : zeroSizeAggregate tabs fv.type ≠ .ok true) :
+theorem valRel_phi {fv gv : Value} (hrel : ValRel tabs g fv gv) :
     (gv.op = .Phi → fv.op = .Phi) := by
   intro hg
   cases hrel with
   | same hop => rw [← hop, hg]
   | phi _ hph => exact hph
-  | empty hz => exact absurd hz he
+  | empty _ hop => rw [hop] at hg; cases hg
 
 /-- A copy of `g` that is not a `Phi` of `f` was a copy in `f`, of a related argument. -/
 theorem copyArg {fv gv : Value} {w : ID} (hrel : ValRel tabs g fv gv) (hnph : fv.op ≠ .Phi)
-    (he : zeroSizeAggregate tabs fv.type ≠ .ok true) (hop : gv.op = .Copy)
+    (hop : gv.op = .Copy)
     (hargs : gv.args = #[w]) : fv.op = .Copy ∧ ∃ fa, fv.args = #[fa] ∧ ArgRel g fa w := by
   cases hrel with
   | same hop' _ _ hsz hargs' =>
@@ -52,7 +52,7 @@ theorem copyArg {fv gv : Value} {w : ID} (hrel : ValRel tabs g fv gv) (hnph : fv
       apply Array.ext; · simp [h1]
       · intro j hj _; simp [h1] at hj; subst hj; simp, hr0⟩
   | phi _ hph => exact absurd hph hnph
-  | empty hz => exact absurd hz he
+  | empty _ hop' => rw [hop] at hop'; cases hop'
 
 /-- The block of a value listed in a tree block, in `g`. -/
 theorem blockOf_g (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Block}
@@ -118,7 +118,7 @@ theorem copyBefore (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Bloc
   obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hyb
   rw [hfv] at hfv'; cases hfv'
   rw [hgy] at hgv; cases hgv
-  obtain ⟨-, fa, hfargs, hra⟩ := copyArg hrel hnph hz hop hargs
+  obtain ⟨-, fa, hfargs, hra⟩ := copyArg hrel hnph hop hargs
   have hfaU : Anc (make f) (blockOf f fa) bid :=
     uses S.cf hbt.1 hfb hbt.2 hyb hfv hnph (a := fa) (by rw [hfargs]; simp)
   have hfal : Listed f fa :=
@@ -178,7 +178,7 @@ theorem targetSched (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Blo
       · obtain ⟨hx, fv, hfv, hne⟩ := (omem x).1 h
         obtain ⟨fv', gv, hfv', hgv, -, -, -, -, hrel, hz⟩ := S.value hbt hfb hx
         rw [hfv] at hfv'; cases hfv'
-        exact ⟨hx, gv, hgv, fun hp => hne (valRel_phi hrel hz hp)⟩
+        exact ⟨hx, gv, hgv, fun hp => hne (valRel_phi hrel hp)⟩
     · rintro ⟨hx, hgn⟩; exact hsplit x hx hgn
   -- positions in `formerPhis ++ oS`
   have hposF : ∀ a, a ∈ formerPhis f g fb → ∃ i < (formerPhis f g fb).length,
@@ -217,13 +217,13 @@ theorem targetSched (S : Setup tabs f g) {bid : ID} (hbt : Tree f bid) {fb : Blo
           rw [hw] at ha; simp at ha; subst ha
           exact absurd hagb
             (S.phiOut hbt (hpe x hxb fv hfv hph) hfb hxb hfv hgv hph hcop hw hr).2
-        | empty hzz => exact absurd hzz hz
+        | empty hzz => exact absurd hph (hz hzz).not_phi
       · rw [List.getElem?_append_right hjn] at hj
         obtain ⟨-, fv2, hfv2, hnph⟩ := (omem x).1 (List.mem_of_getElem? hj)
         rw [hfv] at hfv2; cases hfv2
         cases hrel with
         | phi _ hph => exact absurd hph hnph
-        | empty hzz => exact absurd hzz hz
+        | empty _ _ hga => rw [hga] at ha; simp at ha
         | same hop _ _ hsz hargs' =>
           obtain ⟨k, hk⟩ := List.getElem?_of_mem ha
           have hk' : gv.args[k]? = some a := by simpa using hk
