@@ -511,7 +511,7 @@ def blocked_class(reason):
     """The class of a validator rejection (`opt-proven-probe`'s reason): the pass and the last
     layer's verdict, without value ids, positions and types."""
     sec, _, why = reason.partition(": ")
-    last = why.rsplit(" → ", 1)[-1]
+    last = re.sub(r" ⟨.*⟩$", "", why).rsplit(" → ", 1)[-1]
     last = re.sub(r"\(\d+\)|#\d+", "", last)
     last = re.split(r"<|GoFV\.", last, maxsplit=1)[0]
     last = re.sub(r"\bv\d+:?", "", last)
