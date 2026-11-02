@@ -287,11 +287,24 @@ theorem callDeferred_mono {env : Env} (hE : env.Mono) (act : Nat) {c c' : Val}
     | none => exact .stuck _ _
     | some f => exact hE name f hx rfl (by simpa using hp) .nil (.some hc) (h.poisonBlock _)
 
+/-- Refined memories have the same writable runtime blocks. -/
+theorem Mem.Refines.rtWritable_eq {m m' : Mem} (h : Mem.Refines m m') (b : Blk) :
+    rtWritable m' b = rtWritable m b := by
+  unfold rtWritable
+  rcases h.find? b with ⟨h1, h2⟩ | ⟨a, a', h1, h2, ha⟩
+  · rw [h1, h2]
+  · rw [h1, h2]; exact ha.writable.symm
+
 theorem deferproc_mono (act : Nat) : (deferproc act).Mono := by
   intro args args' _ _ _ _ _ _ ha _ hm
   unfold deferproc
   match args, args', ha with
-  | [_], _, .cons hf .nil => exact .returned .nil (pushDefer_mono act hf hm)
+  | [_], _, .cons hf .nil =>
+    dsimp only
+    rw [hm.rtWritable_eq]
+    split
+    · exact .returned .nil (pushDefer_mono act hf hm)
+    · exact .stuck _ _
   | [], _, .nil => exact .stuck _ _
   | _ :: _ :: _, _, .cons _ (.cons _ _) => exact .stuck _ _
 
@@ -311,7 +324,10 @@ theorem deferprocStack_mono (act : Nat) : (deferprocStack act).Mono := by
     · have hx' := hl.ne_poison hx
       split
       · exact absurd rfl hx
-      · exact .returned .nil (pushDefer_mono act hl hm)
+      · rw [hm.rtWritable_eq]
+        split
+        · exact .returned .nil (pushDefer_mono act hl hm)
+        · exact .stuck _ _
   match args, args', ha with
   | [], _, .nil => exact .stuck _ _
   | a :: _ :: _, _, .cons _ (.cons _ _) =>
@@ -334,6 +350,10 @@ theorem deferreturn_go_mono {env : Env} (hE : env.Mono) (act : Nat) :
   | 0, _, _, h => .returned .nil h
   | n + 1, m, m', h => by
     simp only [deferreturn.go]
+    rw [h.rtWritable_eq]
+    by_cases hw : (!rtWritable m deferBlk) = true
+    · simp only [hw, ↓reduceIte]; exact .stuck _ _
+    simp only [hw, Bool.false_eq_true, ↓reduceIte]
     have hp := popDefer_mono act h
     revert hp
     generalize popDefer act m = r
@@ -384,7 +404,10 @@ theorem gorecover_mono (act : Nat) : (gorecover act).Mono := by
       dsimp only
       by_cases hc : (k != 0 && (act == k || (w && act == k + 1))) = true
       · simp only [hc, ↓reduceIte]
-        exact .returned (.cons hv .nil) (setPanicRec_mono hm true w k hv)
+        rw [hm.rtWritable_eq]
+        split
+        · exact .returned (.cons hv .nil) (setPanicRec_mono hm true w k hv)
+        · exact .stuck _ _
       · simp only [hc, Bool.false_eq_true, ↓reduceIte]
         exact .returned (.cons (Refines.refl _) .nil) hm
 
