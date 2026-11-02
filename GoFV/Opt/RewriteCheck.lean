@@ -1183,11 +1183,13 @@ output with the remaining events. -/
 
 /-- A nil-check elimination `(NilCheck x:(Op …) _) => x` whose pointer op nilcheckelim's
 checker can justify by itself (`NilCheck.safePtr true`: `Addr`, `LocalAddr`, `NilCheck`, `GetG`,
-`OffPtr` of such a pointer, the `SelectN [0]` of a malloc-family call, a dictionary `Arg`). -/
+`OffPtr` or `Convert` of such a pointer, the `SelectN [0]` of a malloc-family call, a dictionary
+`Arg`). -/
 def nilElimOK (r : Rule) : Bool :=
   match r.pat, r.result with
   | .op .NilCheck none _ _ _ .fixed [.op o (some x) _ _ _ _ _ _, _] _, .copy (.var y) =>
-    x == y && (o matches .Addr | .LocalAddr | .NilCheck | .GetG | .OffPtr | .SelectN | .Arg)
+    x == y &&
+      (o matches .Addr | .LocalAddr | .NilCheck | .GetG | .OffPtr | .Convert | .SelectN | .Arg)
   | _, _ => false
 
 /-- The nil check `v` of `f` that event `ev` eliminates, if it is a `nilChecks` rule event
