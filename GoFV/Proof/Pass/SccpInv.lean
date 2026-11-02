@@ -116,7 +116,7 @@ theorem control_ok {fr : Frame} {b : Block} {k : Nat} {y : Val} (h : Sem.control
 
 /-- The successor a terminator takes, by its kind and controls. -/
 theorem stepTerm_goto {fr : Frame} {b : Block} {e : Edge} (h : stepTerm fr b = .ok (.goto e)) :
-    ((b.kind = .Plain ∨ b.kind = .First) ∧ b.succs[0]? = some e) ∨
+    ((b.kind = .Plain ∨ b.kind = .First ∨ b.kind = .Defer) ∧ b.succs[0]? = some e) ∨
     (b.kind = .If ∧ ∃ c t, b.controls[0]? = some c ∧ rv fr c = .bool t ∧
       b.succs[if t then 0 else 1]? = some e) ∨
     (b.kind = .JumpTable ∧ ∃ c w x, b.controls[0]? = some c ∧ rv fr c = .int w x ∧
@@ -126,7 +126,8 @@ theorem stepTerm_goto {fr : Frame} {b : Block} {e : Edge} (h : stepTerm fr b = .
   all_goals first
     | (cases h; done)
     | exact .inl ⟨.inl rfl, KnownBits.succ_idx h⟩
-    | exact .inl ⟨.inr rfl, KnownBits.succ_idx h⟩
+    | exact .inl ⟨.inr (.inl rfl), KnownBits.succ_idx h⟩
+    | exact .inl ⟨.inr (.inr rfl), KnownBits.succ_idx h⟩
     | (cases hc0 : Sem.control fr b 0 with
         | ok v =>
           rw [hc0] at h
@@ -150,7 +151,8 @@ variable {tabs : Tables} {f : Func} {C : Array (Option Lat)}
 theorem stepTerm_feasible {fr : Frame} {b : Block} {e : Edge}
     (hP : ∀ a, Claim tabs f C a (rv fr a)) (h : stepTerm fr b = .ok (.goto e)) :
     ∃ k, b.succs[k]? = some e ∧ feasible tabs f C b k = true := by
-  rcases stepTerm_goto h with ⟨hk | hk, he⟩ | ⟨hk, c, t, hc, hy, he⟩ | ⟨hk, c, w, x, hc, hy, he⟩
+  rcases stepTerm_goto h with ⟨hk | hk | hk, he⟩ | ⟨hk, c, t, hc, hy, he⟩ | ⟨hk, c, w, x, hc, hy, he⟩
+  · exact ⟨0, he, by simp [feasible, hk]⟩
   · exact ⟨0, he, by simp [feasible, hk]⟩
   · exact ⟨0, he, by simp [feasible, hk]⟩
   · refine ⟨_, he, ?_⟩
