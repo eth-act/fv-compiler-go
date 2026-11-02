@@ -9,13 +9,13 @@
 # 4. `sem-difftest run` runs every call on every exported section and compares with native.
 #
 # usage: scripts/sem-difftest.sh [--go <patched go binary>] [--n N] [--seed S]
-#   default go: third_party/go-build/bin/go of this checkout, else of the exporter worktree.
+#   default go: third_party/go-build/bin/go of this checkout (scripts/build-go.sh). The toolchain
+#   must match the current patches/go (scripts/check-toolchain.sh): a stale one, e.g. built before
+#   export format 4, gives spurious mismatches (recover tests "lean panicked, native returned").
 # Work files go to tmp/semdiff/ (calls.txt, native.txt, export/).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-main_root=$(git -C "$root" worktree list --porcelain | sed -n '1s/^worktree //p')
 gob=$root/third_party/go-build/bin/go
-[ -x "$gob" ] || gob=$(dirname "${main_root:-$root}")/fv-compiler-go-wt/exporter/third_party/go-build/bin/go
 n=40 seed=1
 while [ $# -gt 0 ]; do
   case $1 in
@@ -25,7 +25,8 @@ while [ $# -gt 0 ]; do
     *) echo "usage: $0 [--go GO] [--n N] [--seed S]" >&2; exit 2 ;;
   esac
 done
-[ -x "$gob" ] || { echo "sem-difftest: no patched toolchain (scripts/build-go.sh)" >&2; exit 1; }
+[ -x "$gob" ] || { echo "sem-difftest: no patched toolchain at $gob (scripts/build-go.sh, or --go)" >&2; exit 1; }
+"$root/scripts/check-toolchain.sh" "$gob" >&2 || exit 1
 command -v qemu-aarch64-static >/dev/null || { echo "sem-difftest: qemu-aarch64-static missing" >&2; exit 1; }
 
 w=$root/tmp/semdiff
