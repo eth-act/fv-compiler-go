@@ -318,10 +318,36 @@ most eight `Copy`s and `Store`s `disjointB` from the write, then `p = q + o` by 
 with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a `samePtrB` pointer. The
 dropped root is no root of `g`, so `fwdRel` compares atoms by `atomsXOK` (`atomsOK` but changed
 `Store`s and dropped `Store`/`Zero` roots; memcombine's check, now shared) instead of `atomsOK`.
+
+**Writes into a fresh allocation** (`:1352`, `:1357`, `:1362`, issue #69): `(Zero (SelectN [0]
+call:(StaticLECall ___)) mem:(SelectN [1] call)) && isMalloc(call.Aux) => mem` and the zero
+`Store`s at `SelectN [0] call` or an `OffPtr` of it are `dropOK` too: `zeroChain` ends, besides at
+a `Zero`, at the memory `SelectN [1] c` of a call `c` that returns a fresh zeroed block
+(`freshCall`: a size-specialised `runtime.mallocgc*SC*` allocator, not `newobject`, of four
+arguments, of a type `(ptr, mem, …)` with one ABI result and parameters of the shapes `uintptr`,
+any, `bool`, whose size is a positive `Const64` and whose `needzero` is `ConstBool [1]`, as
+`ssagen.newObject` calls it) with `p` in `SelectN [0] c` (`ptrBase`); a `Zero` of such bytes is
+dropped like a zero `Store` (`dropOK`'s `Zero` case with `zeroChain`). The precondition
+`Env.AllocZero` (in `RwPre` and `VPre`; `GoFV/Proof/NilPre.lean`) says that a malloc-family
+contract asked for a positive size with `needzero` set (`AllocReq`) returns a fresh all-zero heap
+block; the runtime's contracts satisfy it (`Env.runtime_allocZero`, `Runtime.alloc_zero`), `Env.p1`
+has none (`Env.p1_allocZero`). The atom simulation carries it as the invariant's environment
+predicate (`SrcInv.E`, `atomSimXE_refines : RefinesUnder (fun env => env.Mono ∧ I.E env)`; `qstep`
+gets `E env`), with `LoadFwd.fwdInv` (`GoFV/Proof/Pass/LoadFwdInv.lean`): constants' registers
+hold their values (`ConstReg`), and a fresh call's register is `poison` or a tuple whose pointer
+is to a heap block all zero in its memory (`FreshQ`, `fresh_eval`: the size and `needzero`
+registers retype at the ABI's shapes to the request `AllocReq`, and `encodeResults` only writes
+the outgoing-arguments area). `zeroChain_read` reads zeros from such a block (`fresh_blockZero`,
+`blockZero_read`) through the disjoint writes. Not done: `runtime.newobject`, whose size is the
+type descriptor's (`AllocReq` covers it; the checker would read the size from the read-only
+symbol, `RoImage`), and chains of dropped writes in one layer (the root's memory is a write
+dropped in the same layer, `copyReach` fails in `f`).
+
 Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
 block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second
-`Zero` leaves `poison` where the source has zeros; and stores of `ConstNil`/`SliceLen` of a
-constant slice (`isConstZero` cases beyond integer constants), which fall back.
+`Zero` leaves `poison` where the source has zeros; and stores of `ConstNil` (pointer fragments of
+`nil`, not `0` bytes) or `SliceLen` of a constant slice (`isConstZero` cases beyond integer
+constants), which fall back.
 
 **Changed `Move` sources** (`:2146`, `:2155`): `(Move {t1} [s] dst tmp1 midmem:(Move {t2} [s] tmp2
 src _)) && isSamePtr(tmp1, tmp2) && isStackPtr(src) && disjoint(src, s, tmp2, s) && … => (Move
@@ -338,9 +364,9 @@ root of the atom simulation (`memOp`/`memDef`: its memory with the variable's bl
 (`ChgRefP`: the target's write on its arguments' terms refines the source's).
 
 **Theorem.** `LoadFwd.fwd_refines : check ce f = .ok () → check ce' g = .ok () → fwdRel tabs f
-g = true → RefinesUnder Env.Mono tabs g tabs f`, by the generalised atom simulation
-(`atomSimX_refines`; `AtomsX` allows a dropped root that is a `Store` or a `Zero`, neither of which
-panics, `enter_panic`). It needs a fact about
+g = true → RefinesUnder (fun env => env.Mono ∧ env.AllocZero) tabs g tabs f`, by the generalised
+atom simulation (`atomSimXE_refines` with `fwdInv`; `AtomsX` allows a dropped root that is a
+`Store` or a `Zero`, neither of which panics, `enter_panic`). It needs a fact about
 the source's memory roots that no valuation of the atoms has: `MemDefs` (on the source's `DenOK`
 set of a block entry, each `Store`/`Move`/`Zero` register is `memDef`, the write of its arguments'
 registers, which are in the set, and each `LocalAddr` register its frame variable in activation
@@ -377,7 +403,7 @@ against the zeros `zeroChain_read` reads through the disjoint writes from the `Z
 (`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
 `generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:943`, `:948`, `:954`,
-`:961`, `:1005`, `:2146`, `:2155`, `:2158`; witnesses
+`:961`, `:1005`, `:1352`, `:1357`, `:1362`, `:2146`, `:2155`, `:2158`; witnesses
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
@@ -387,9 +413,11 @@ string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`
 `Load` reads `q[1]` before the `Move`; `GoFV/Proof/Witness/FwdCopy.lean`) and
 `zd_checkedRewrite` (`*(*struct{})(p) = struct{}{}; *p = [2]int{}; *p = [2]int{}; p[1] = 0` with
 `:1005`, `:2158`, `:943`: the three writes dropped, the result returns the first `Zero`'s memory;
-`GoFV/Proof/Witness/FwdDrop.lean`) and `mv_checkedRewrite` (`t = s; d = t` on `[4]int` frame
-variables with `:2155`: the second `Move` copies from `s`; `GoFV/Proof/Witness/MoveSrc.lean`),
-kernel evaluation.
+`GoFV/Proof/Witness/FwdDrop.lean`), `fm_checkedRewrite` (`p := new([2]int); *p = [2]int{};
+p[1] = 0` through `runtime.mallocgcSmallNoScanSC2(16, t, true)` with `:1352`, `:1362`: both
+writes dropped, the result returns the call's memory; `GoFV/Proof/Witness/FwdMalloc.lean`) and
+`mv_checkedRewrite` (`t = s; d = t` on `[4]int` frame variables with `:2155`: the second `Move`
+copies from `s`; `GoFV/Proof/Witness/MoveSrc.lean`), kernel evaluation.
 
 **Fallback.** `checkedRewrite t` tries the tables `checkedTiers t` in order: `t`, then without
 the table's forwardings (`{t with loads := #[]}`), then also without its struct-store splits,
@@ -862,7 +890,7 @@ needs a later phase of the semantics.
 
 | File | Family | Proven | Pending (P1/P2) | False | Not pure | Total |
 | --- | --- | --: | --: | --: | --: | --: |
-| `dec` | ArrayMake | 0 | 0 | 1 | 0 | 1 |
+| `dec` | ArrayMake | 1 | 0 | 0 | 0 | 1 |
 | `dec` | ArraySelect | 3 | 1 | 0 | 0 | 4 |
 | `dec` | ComplexImag | 3 | 0 | 0 | 0 | 3 |
 | `dec` | ComplexReal | 3 | 0 | 0 | 0 | 3 |
@@ -877,7 +905,7 @@ needs a later phase of the semantics.
 | `dec` | Store | 7 | 0 | 0 | 8 | 8 |
 | `dec` | StringLen | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StringPtr | 2 | 0 | 0 | 0 | 2 |
-| `dec` | StructMake | 0 | 0 | 1 | 0 | 1 |
+| `dec` | StructMake | 1 | 0 | 0 | 0 | 1 |
 | `dec` | StructSelect | 3 | 2 | 0 | 1 | 5 |
 | `divisible` | Eq | 16 | 0 | 0 | 0 | 16 |
 | `divisible` | Neq | 16 | 0 | 0 | 0 | 16 |
@@ -891,14 +919,14 @@ needs a later phase of the semantics.
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
 | `generic` | Com | 12 | 0 | 0 | 0 | 12 |
-| `generic` | CondSelect | 0 | 45 | 14 | 0 | 59 |
+| `generic` | CondSelect | 3 | 42 | 14 | 0 | 59 |
 | `generic` | ConstInterface | 1 | 0 | 0 | 0 | 1 |
 | `generic` | ConstSlice | 1 | 0 | 1 | 0 | 2 |
 | `generic` | ConstString | 2 | 0 | 0 | 4 | 4 |
 | `generic` | Convert | 1 | 4 | 0 | 0 | 5 |
 | `generic` | Ctz | 0 | 8 | 0 | 0 | 8 |
 | `generic` | Cvt | 0 | 0 | 0 | 11 | 11 |
-| `generic` | CvtBoolToUint | 0 | 2 | 0 | 0 | 2 |
+| `generic` | CvtBoolToUint | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Div | 22 | 1 | 0 | 4 | 26 |
 | `generic` | Eq | 58 | 0 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
@@ -948,16 +976,16 @@ needs a later phase of the semantics.
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticLECall | 0 | 0 | 0 | 24 | 24 |
-| `generic` | Store | 9 | 0 | 0 | 21 | 21 |
+| `generic` | Store | 12 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
-| `generic` | Xor | 56 | 8 | 4 | 0 | 68 |
-| `generic` | Zero | 1 | 0 | 0 | 6 | 6 |
+| `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
+| `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1323 | 219 | 33 | 258 | 1762 |
+| all | | 1338 | 210 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -1113,6 +1141,11 @@ builtin` 1,423 → 3,305, functions that now reach it).
 With `:59`/`:60` (`CvtBoolToUint8` of a constant), `:292–:294` (`CondSelect` of equal or constant
 arms: `Refines.refl`, `CondSelect.lean`) and `:657` (`Xor` by all ones: `BitVec.allOnes_xor`,
 `XorCom.lean`; 1,335 rules): 8,629 → 8,631 on quick-v4; full-v5 fully verified 81,245 → 81,252.
+With the writes into fresh size-specialised allocations (`:1352`, `:1357`, `:1362` under
+`Env.AllocZero`; 1,338 rules): 8,631 → 8,662 on quick-v4; full-v5 fully verified 81,252 → 82,169
+(on 6680a52). Of the full-v5 functions the validator alone keeps off stock (2,932), 1,244 drop a
+`Zero` of a `runtime.newobject` result (`fwd₂: drop zero SelectN`) and about 220 a chain of zero
+writes into one allocation (`drop arg vs mem`).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -1186,99 +1219,92 @@ Full corpus (`scripts/rule-proofs.py fire <corpus>/full-v5/plain -j 6`, about 11
 <!-- BEGIN fire-full -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `full-v5/plain`: 96535 functions with a rewrite section; every section at stock under the proven-only passes 82712, under the checked passes 81993 (validator the only obstacle: 719). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 128, 1: 9216, 2: 2340, 3 or more: 2139.
+Corpus `full-v5/plain`: 96535 functions with a rewrite section; every section at stock under the proven-only passes 89706, under the checked passes 86774 (validator the only obstacle: 2932). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 108, 1: 4364, 2: 1123, 3 or more: 1234.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
-| `generic.rules:997 Store` | `r_generic_997` | mem | 9904 | 3782 | 3787 |
-| `generic.rules:1352 Zero` | `r_generic_1352` | call | 5355 | 1540 | 1526 |
-| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 4346 | 1464 | 1458 |
-| `generic.rules:2255 Load` | `r_generic_2255` | mem | 1316 | 806 | 830 |
-| `generic.rules:1362 Store` | `r_generic_1362` | call | 5752 | 312 | 312 |
+| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 4346 | 1916 | 1708 |
+| `generic.rules:2255 Load` | `r_generic_2255` | mem | 1316 | 906 | 935 |
 | `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 521 | 221 | 221 |
-| `generic.rules:1978 Move` | `r_generic_1978` | mem | 154 | 91 | 90 |
-| `generic.rules:981 IMake` | `r_generic_981` | ptr | 141 | 58 | 55 |
-| `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 451 | 50 | 51 |
+| `generic.rules:1978 Move` | `r_generic_1978` | mem | 154 | 94 | 94 |
+| `generic.rules:981 IMake` | `r_generic_981` | ptr | 141 | 78 | 76 |
+| `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 451 | 73 | 76 |
+| `generic.rules:2257 Load` | `r_generic_2257` | mem | 160 | 63 | 62 |
+| `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 167 | 52 | 52 |
+| `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 104 | 52 | 52 |
+| `generic.rules:785 Phi` | `r_generic_785` | phi | 479 | 51 | 52 |
 | `generic.rules:2159 Zero` | `r_generic_2159` | mem | 89 | 47 | 47 |
-| `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 167 | 45 | 45 |
-| `generic.rules:2251 Load` | `r_generic_2251` | mem | 291 | 36 | 38 |
-| `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 96 | 52 | 37 |
-| `generic.rules:785 Phi` | `r_generic_785` | phi | 479 | 36 | 36 |
-| `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 144 | 36 | 33 |
-| `generic.rules:1357 Store` | `r_generic_1357` | call | 457 | 33 | 33 |
-| `generic.rules:919 Store` | `r_generic_919` | mem | 98 | 29 | 29 |
+| `generic.rules:2251 Load` | `r_generic_2251` | mem | 291 | 41 | 44 |
+| `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 96 | 61 | 41 |
+| `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 144 | 41 | 37 |
+| `generic.rules:2011 Move` | `r_generic_2011` | mem | 63 | 36 | 35 |
+| `generic.rules:1992 Move` | `r_generic_1992` | mem | 107 | 35 | 35 |
+| `generic.rules:919 Store` | `r_generic_919` | mem | 98 | 35 | 35 |
+| `generic.rules:2084 Move` | `r_generic_2084` | mem | 61 | 34 | 34 |
+| `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 130 | 31 | 33 |
 | `generic.rules:2368 CondSelect` | `r_generic_2368` | P1 | 96 | 38 | 27 |
-| `generic.rules:2257 Load` | `r_generic_2257` | mem | 160 | 27 | 27 |
-| `generic.rules:1992 Move` | `r_generic_1992` | mem | 107 | 27 | 27 |
-| `generic.rules:2011 Move` | `r_generic_2011` | mem | 63 | 27 | 26 |
-| `generic.rules:2084 Move` | `r_generic_2084` | mem | 61 | 24 | 24 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 84 | 23 | 23 |
-| `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 104 | 21 | 21 |
+| `generic.rules:982 StructSelect` | `r_generic_982` | P2 | 121 | 20 | 21 |
+| `generic.rules:2109 Move` | `r_generic_2109` | mem | 47 | 22 | 20 |
+| `generic.rules:924 Store` | `r_generic_924` | mem | 49 | 20 | 19 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 51 | 19 | 19 |
-| `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 130 | 18 | 18 |
-| `generic.rules:2109 Move` | `r_generic_2109` | mem | 47 | 19 | 17 |
+| `generic.rules:2035 Move` | `r_generic_2035` | mem | 29 | 19 | 18 |
 | `generic.rules:1068 Phi` | `r_generic_1068` | phi | 103 | 19 | 16 |
-| `generic.rules:1590 MemEq` | `r_generic_1590` | P2 | 17 | 6 | 12 |
-| `generic.rules:924 Store` | `r_generic_924` | mem | 49 | 12 | 11 |
-| `generic.rules:2035 Move` | `r_generic_2035` | mem | 29 | 11 | 11 |
-| `generic.rules:2064 Move` | `r_generic_2064` | mem | 49 | 10 | 10 |
+| `generic.rules:902 Load` | `r_generic_902` | mem | 1581 | 14 | 14 |
+| `generic.rules:1590 MemEq` | `r_generic_1590` | P2 | 17 | 7 | 14 |
+| `generic.rules:2064 Move` | `r_generic_2064` | mem | 49 | 12 | 12 |
+| `generic.rules:784 Phi` | `r_generic_784` | phi | 13 | 11 | 11 |
+| `generic.rules:62 BitLen32` | `r_generic_62` | P1 | 17 | 10 | 10 |
 | `generic.rules:2325 CondSelect` | `r_generic_2325/r_generic_2325_2/r_generic_2325_3` | P1 | 29 | 12 | 9 |
-| `generic.rules:902 Load` | `r_generic_902` | mem | 1581 | 9 | 9 |
 | `generic.rules:579 Lsh32x64` | `r_generic_579/r_generic_579_2` | P1 | 40 | 9 | 9 |
-| `generic.rules:982 StructSelect` | `r_generic_982` | P2 | 121 | 8 | 9 |
-| `generic.rules:294 CondSelect` | `r_generic_294` | P1 | 12 | 8 | 8 |
+| `generic.rules:260 IsInBounds` | `r_generic_260` | P1 | 9 | 9 | 9 |
+| `generic.rules:2049 Move` | `r_generic_2049` | mem | 12 | 8 | 8 |
 | `generic.rules:2306 StaticLECall` | `r_generic_2306` | call | 11 | 8 | 8 |
-| `generic.rules:260 IsInBounds` | `r_generic_260` | P1 | 9 | 8 | 8 |
+| `generic.rules:782 Phi` | `r_generic_782` | phi | 43 | 7 | 7 |
 | `generic.rules:2166 Or64` | `r_generic_2166_2` | P1 | 37 | 7 | 7 |
 | `generic.rules:514 Rsh32Ux64` | `r_generic_514` | P1 | 20 | 7 | 7 |
 | `generic.rules:887 Load` | `r_generic_887` | mem | 275 | 6 | 6 |
-| `generic.rules:782 Phi` | `r_generic_782` | phi | 43 | 6 | 6 |
-| `generic.rules:2049 Move` | `r_generic_2049` | mem | 12 | 6 | 6 |
+| `generic.rules:2131 SelectN` | `r_generic_2131/r_generic_2131_2` | call | 69 | 6 | 6 |
 | `generic.rules:1908 Move` | `r_generic_1908` | mem | 11 | 6 | 6 |
 | `generic.rules:1824 Move` | `r_generic_1824` | mem | 6 | 6 | 6 |
-| `generic.rules:59 CvtBoolToUint8` | `r_generic_59` | P1 | 6 | 6 | 6 |
 | `generic.rules:2351 CondSelect` | `r_generic_2351/r_generic_2351_2/r_generic_2351_3` | P1 | 11 | 5 | 5 |
-| `generic.rules:2131 SelectN` | `r_generic_2131/r_generic_2131_2` | call | 69 | 4 | 4 |
-| `generic.rules:657 Xor8` | `r_generic_657_4` | P1 | 13 | 4 | 4 |
-| `generic.rules:1673 NeqPtr` | `r_generic_1673` | mem | 11 | 4 | 4 |
-| `divmod.rules:140 Div32u` | `r_divmod_140` | P1 | 5 | 4 | 4 |
+| `generic.rules:1673 NeqPtr` | `r_generic_1673` | mem | 11 | 5 | 5 |
+| `divmod.rules:140 Div32u` | `r_divmod_140` | P1 | 5 | 5 | 5 |
 | `generic.rules:264 IsInBounds` | `r_generic_264` | P1 | 4 | 4 | 4 |
-| `generic.rules:62 BitLen32` | `r_generic_62` | P1 | 17 | 3 | 3 |
+| `generic.rules:1560 MemEq` | `r_generic_1560` | P2 | 431 | 3 | 3 |
+| `generic.rules:1568 MemEq` | `r_generic_1568` | P2 | 389 | 3 | 3 |
 | `generic.rules:61 BitLen64` | `r_generic_61` | P1 | 8 | 3 | 3 |
-| `generic.rules:293 CondSelect` | `r_generic_293` | P1 | 6 | 3 | 3 |
 | `generic.rules:2355 CondSelect` | `r_generic_2355/r_generic_2355_2/r_generic_2355_3/r_generic_2355_4` | P1 | 3 | 3 | 3 |
 | `generic.rules:1663 NeqPtr` | `r_generic_1663` | P2 | 6 | 3 | 2 |
-| `generic.rules:1568 MemEq` | `r_generic_1568` | P2 | 389 | 2 | 2 |
 | `generic.rules:575 Lsh32x64` | `r_generic_575/r_generic_575_2` | P1 | 111 | 2 | 2 |
 | `generic.rules:267 IsInBounds` | `r_generic_267` | P1 | 7 | 2 | 2 |
+| `generic.rules:1657 NeqPtr` | `r_generic_1657` | mem | 6 | 2 | 2 |
 | `divmod.rules:193 Div32u` | `r_divmod_193` | P1 | 5 | 2 | 2 |
 | `generic.rules:1819 Move` | `r_generic_1819` | mem | 4 | 2 | 2 |
+| `generic.rules:2169 Or8` | `r_generic_2169_2` | P1 | 3 | 2 | 2 |
 | `generic.rules:1925 Move` | `r_generic_1925` | mem | 2 | 2 | 2 |
 | `generic.rules:1330 Div32F` | `r_generic_1330` | float | 2 | 2 | 2 |
 | `generic.rules:1324 Mul64F` | `r_generic_1324_2` | float | 2 | 2 | 2 |
+| `generic.rules:1871 Move` | `r_generic_1871` | mem | 6 | 1 | 2 |
 | `generic.rules:1584 MemEq` | `r_generic_1584` | P2 | 930 | 1 | 1 |
-| `generic.rules:1560 MemEq` | `r_generic_1560` | P2 | 431 | 1 | 1 |
 | `generic.rules:1564 Load` | `r_generic_1564` | mem | 425 | 1 | 1 |
 | `generic.rules:1576 MemEq` | `r_generic_1576` | P2 | 401 | 1 | 1 |
-| `generic.rules:784 Phi` | `r_generic_784` | phi | 13 | 1 | 1 |
 | `generic.rules:47 Cvt64Fto32F` | `r_generic_47` | float | 8 | 1 | 1 |
 | `generic.rules:1658 NeqPtr` | `r_generic_1658` | mem | 7 | 1 | 1 |
 | `generic.rules:48 Cvt32Fto64F` | `r_generic_48` | float | 6 | 1 | 1 |
-| `generic.rules:1657 NeqPtr` | `r_generic_1657` | mem | 6 | 1 | 1 |
 | `generic.rules:930 Store` | `r_generic_930` | mem | 3 | 1 | 1 |
 | `generic.rules:52 Cvt64to64F` | `r_generic_52` | float | 3 | 1 | 1 |
-| `generic.rules:2169 Or8` | `r_generic_2169_2` | P1 | 3 | 1 | 1 |
 | `generic.rules:1661 NeqPtr` | `r_generic_1661` | P2 | 3 | 1 | 1 |
 | `generic.rules:1659 NeqPtr` | `r_generic_1659` | mem | 2 | 1 | 1 |
 | `generic.rules:2332 CondSelect` | `r_generic_2332/r_generic_2332_2/r_generic_2332_3` | P1 | 2 | 1 | 1 |
 | `generic.rules:2168 Or16` | `r_generic_2168_2` | P1 | 1 | 1 | 1 |
+| `generic.rules:1000 IMake` | `r_generic_1000` | P2 | 1 | 1 | 1 |
 | `generic.rules:1964 Move` | `r_generic_1964` | mem | 1 | 1 | 1 |
 | `generic.rules:553 And32` | `r_generic_553` | P1 | 1 | 1 | 1 |
 | `generic.rules:125 Add64F` | `r_generic_125` | float | 1 | 1 | 1 |
-| `generic.rules:1871 Move` | `r_generic_1871` | mem | 6 | 0 | 1 |
-| `generic.rules:2378 CondSelect` | `r_generic_2378/r_generic_2378_2/r_generic_2378_3` | P1 | 155 | 57 | 0 |
-| `generic.rules:2322 CondSelect` | `r_generic_2322` | P1 | 124 | 23 | 0 |
-| `generic.rules:2361 CondSelect` | `r_generic_2361/r_generic_2361_2/r_generic_2361_3/r_generic_2361_4` | P1 | 7 | 4 | 0 |
+| `generic.rules:2378 CondSelect` | `r_generic_2378/r_generic_2378_2/r_generic_2378_3` | P1 | 155 | 63 | 0 |
+| `generic.rules:2322 CondSelect` | `r_generic_2322` | P1 | 124 | 28 | 0 |
+| `generic.rules:2361 CondSelect` | `r_generic_2361/r_generic_2361_2/r_generic_2361_3/r_generic_2361_4` | P1 | 7 | 6 | 0 |
 | `generic.rules:578 Lsh64x64` | `r_generic_578/r_generic_578_2` | P1 | 13 | 2 | 0 |
 | `generic.rules:2338 CondSelect` | `r_generic_2338` | P1 | 8 | 2 | 0 |
 | `generic.rules:562 Rsh64Ux64` | `r_generic_562` | P1 | 2 | 2 | 0 |
@@ -1302,61 +1328,89 @@ Functions off stock whose sections off stock fire exactly two unproven rules, by
 
 | Rules | Functions |
 | --- | --: |
-| `generic.rules:1352 Zero`, `generic.rules:1362 Store` | 491 |
-| `generic.rules:1072 Convert`, `generic.rules:1352 Zero` | 318 |
-| `generic.rules:1352 Zero`, `generic.rules:997 Store` | 266 |
-| `generic.rules:1343 SelectN`, `generic.rules:2287 StaticLECall` | 120 |
-| `generic.rules:1560 MemEq`, `generic.rules:1564 Load` | 102 |
-| `generic.rules:1072 Convert`, `generic.rules:997 Store` | 67 |
-| `generic.rules:1357 Store`, `generic.rules:1362 Store` | 67 |
-| `generic.rules:1362 Store`, `generic.rules:997 Store` | 63 |
-| `generic.rules:2128 SliceLen`, `generic.rules:785 Phi` | 63 |
-| `generic.rules:1072 Convert`, `generic.rules:2255 Load` | 37 |
-| `generic.rules:2255 Load`, `generic.rules:997 Store` | 36 |
-| `generic.rules:1352 Zero`, `generic.rules:2255 Load` | 34 |
+| `generic.rules:1343 SelectN`, `generic.rules:2287 StaticLECall` | 212 |
+| `generic.rules:1560 MemEq`, `generic.rules:1564 Load` | 178 |
+| `generic.rules:2128 SliceLen`, `generic.rules:785 Phi` | 111 |
+| `generic.rules:1568 MemEq`, `generic.rules:1572 Load` | 49 |
+| `generic.rules:1072 Convert`, `generic.rules:2255 Load` | 43 |
+| `generic.rules:1576 MemEq`, `generic.rules:1580 Load` | 39 |
+| `generic.rules:862 Load`, `generic.rules:902 Load` | 35 |
 | `generic.rules:2267 SelectN`, `generic.rules:2271 SelectN` | 33 |
-| `generic.rules:862 Load`, `generic.rules:902 Load` | 32 |
-| `generic.rules:1568 MemEq`, `generic.rules:1572 Load` | 27 |
+| `generic.rules:1072 Convert`, `generic.rules:2378 CondSelect` | 29 |
+| `generic.rules:1584 MemEq`, `generic.rules:1588 Load` | 26 |
+| `generic.rules:851 Load`, `generic.rules:902 Load` | 25 |
+| `generic.rules:1068 Phi`, `generic.rules:1072 Convert` | 23 |
+| `generic.rules:2131 SelectN`, `generic.rules:785 Phi` | 21 |
+| `generic.rules:1343 SelectN`, `generic.rules:1643 StaticLECall` | 18 |
+| `generic.rules:1071 Convert`, `generic.rules:1072 Convert` | 14 |
 
-Validator rejections that are a function's only obstacle (`BLOCKED` lines of `opt-proven-probe`: every section at stock under the proven-only passes, not under the checked ones; 719 functions), by class (pass and the last layer's verdict):
+Validator rejections that are a function's only obstacle (`BLOCKED` lines of `opt-proven-probe`: every section at stock under the proven-only passes, not under the checked ones; 2932 functions), by class (pass and the last layer's verdict):
 
 | Class | Functions |
 | --- | --: |
-| `opt: fwd₂: depth N: store type` | 122 |
-| `opt: no rule of the row, not a struct-load expansion: Load` | 117 |
-| `opt: ss: chain start Store` | 115 |
-| `opt: fwd₂: move: args` | 51 |
-| `opt: seg: SelectN→Move: no segment (chain false, call false)` | 50 |
-| `opt: ss: stored Load` | 33 |
-| `opt: fwd₂: rep Move->Move` | 33 |
+| `opt: fwd₂: drop zero SelectN` | 1233 |
+| `opt: fwd₂: drop arg vs mem` | 247 |
+| `opt: fwd₂: drop value ConstNil` | 237 |
+| `opt: ss: chain start Store` | 155 |
+| `opt: fwd₂: drop value StringPtr` | 128 |
+| `opt: fwd₂: depth N: store type` | 125 |
+| `opt: no rule of the row, not a struct-load expansion: Load` | 120 |
+| `opt: fwd₂: drop value StructSelect` | 103 |
+| `opt: seg: SelectN→Move: no segment (chain false, call false)` | 67 |
+| `opt: fwd₂: move: args` | 64 |
+| `opt: ss: stored Load` | 47 |
+| `opt: fwd₂: rep Move->Move` | 41 |
+| `opt: fwd₂: drop value SliceLen` | 33 |
 | `opt: fwd₂: depth N: not disjoint LocalAddr` | 33 |
-| `opt: ss: field 1 of 2` | 17 |
-| `late opt: fwd₂: depth N: not disjoint OffPtr` | 16 |
-| `opt: ss: stored StructSelect` | 15 |
-| `opt: fwd₂: drop arg vs mem` | 14 |
+| `opt: fwd₂: drop chain SelectN` | 28 |
+| `opt: ss: stored ArrayMake1` | 26 |
+| `opt: ss: store shape` | 23 |
+| `opt: ss: stored StructSelect` | 23 |
+| `late opt: fwd₂: depth N: not disjoint OffPtr` | 19 |
+| `opt: ss: field 1 of 2` | 18 |
+| `middle opt: fwd₂: rep Move->Move` | 14 |
 | `late opt: rule generic:1687 [args]` | 13 |
-| `middle opt: fwd₂: rep Move->Move` | 13 |
-| `middle opt: fwd₂: drop arg vs mem` | 12 |
-| `opt: ss: field 3 of 4` | 10 |
-| `opt: fwd₂: drop value ConstNil` | 7 |
-| `opt: fwd₂: drop value ConstString` | 7 |
-| `opt: atoms` | 6 |
-| `late opt: rule generic:964 [args]` | 5 |
+| `middle opt: fwd₂: drop arg vs mem` | 13 |
+| `opt: ss: field 3 of 4` | 12 |
+| `late opt: rule generic:964 [args]` | 10 |
+| `opt: fwd₂: drop value IData` | 9 |
+| `late opt: rule generic:294 [top]` | 9 |
+| `opt: fwd₂: drop value ITab` | 8 |
+| `opt: fwd₂: drop value ConstString` | 8 |
+| `opt: fwd₂: depth N: not disjoint OffPtr` | 7 |
+| `opt: atoms` | 7 |
+| `late opt: fwd₂: depth N: not disjoint OffPtr ‖ opt: fwd₂: drop zero SelectN` | 6 |
 | `late opt: fwd₂: depth N: store type` | 5 |
-| `opt: fwd₂: drop value SliceLen` | 4 |
-| `opt: fwd₂: depth N: not disjoint OffPtr` | 4 |
+| `opt: fwd₂: drop value StringLen` | 4 |
+| `late opt: fwd₂: depth N: not disjoint OffPtr ‖ opt: fwd₂: drop arg vs mem` | 3 |
 | `late opt: fwd₂: drop value ConstNil` | 3 |
 | `opt: ss: field 2 of 3` | 2 |
 | `opt: fwd₂: rep Load->Const64F` | 2 |
 | `middle opt: fwd₂: depth N: not disjoint OffPtr` | 2 |
+| `late opt: rule generic:293 [top]` | 2 |
 | `opt: fwd₂: depth N: not disjoint PtrIndex` | 1 |
+| `middle opt: fwd₂: depth N: not disjoint OffPtr ‖ opt: fwd₂: drop zero SelectN` | 1 |
 | `late opt: rule generic:964 [args] ‖ opt: fwd₂: drop value ConstNil` | 1 |
+| `late opt: fwd₂: depth N: not disjoint OffPtr ‖ opt: fwd₂: drop value ConstNil` | 1 |
+| `middle opt: fwd₂: drop chain SelectN ‖ opt: fwd₂: drop zero SelectN` | 1 |
+| `late opt: fwd₂: depth N: not disjoint OffPtr ‖ opt: fwd₂: drop chain Zero` | 1 |
+| `opt: snap: fwd₂: drop zero SelectN` | 1 |
+| `late opt: fwd₂: drop value ConstNil ‖ opt: fwd₂: drop arg vs mem` | 1 |
+| `opt: ss: chain start Zero` | 1 |
 | `late opt: fwd₂: depth N: not disjoint LocalAddr` | 1 |
 | `late opt: fwd₂: drop arg vs mem` | 1 |
 | `middle opt: fwd₂: move: ptr AddPtr` | 1 |
+| `late opt: seg: SelectN→Zero: no segment (chain false, call false) ‖ opt: fwd₂: drop value SliceLen` | 1 |
+| `late opt: seg: SelectN→Zero: no segment (chain false, call false)` | 1 |
+| `late opt: rule generic:294 [top] ‖ opt: fwd₂: drop zero SelectN` | 1 |
 | `opt: fwd₂: drop value ConstInterface` | 1 |
+| `opt: fwd₂: move: ptr AddPtr` | 1 |
 | `opt: fwd₂: drop value ConstSlice` | 1 |
+| `late opt: fwd₂: drop arg vs mem ‖ opt: fwd₂: drop zero SelectN` | 1 |
+| `late opt: rule generic:964 [args] ‖ opt: ss: stored Load` | 1 |
+| `late opt: rule generic:294 [top] ‖ opt: ss: stored Load` | 1 |
 | `middle opt: seg: Store→Store: no segment (chain false, call false)` | 1 |
+| `opt: snap: ss: store shape` | 1 |
 
 <!-- END fire-full -->
 
@@ -1365,25 +1419,22 @@ Quick corpus:
 <!-- BEGIN fire -->
 <!-- Generated by scripts/rule-proofs.py fire. -->
 
-Corpus `quick-v4/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 8604, under the checked passes 8583 (validator the only obstacle: 21). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 17, 1: 482, 2: 103, 3 or more: 91.
+Corpus `quick-v4/plain`: 9297 functions with a rewrite section; every section at stock under the proven-only passes 8750, under the checked passes 8662 (validator the only obstacle: 88). Functions off stock by the number of unproven rules the full passes fire on their sections off stock: 0: 12, 1: 387, 2: 70, 3 or more: 78.
 
 | Rule | Lemma | Class | Firings | Sole obstacle | Unblocks |
 | --- | --- | --- | --: | --: | --: |
 | `generic.rules:1071 Convert` | `r_generic_1071/r_generic_1071_2` | P2 | 218 | 120 | 120 |
-| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 83 | 83 |
-| `generic.rules:997 Store` | `r_generic_997` | mem | 241 | 50 | 50 |
-| `generic.rules:1352 Zero` | `r_generic_1352` | call | 85 | 48 | 46 |
-| `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 43 | 43 |
-| `generic.rules:1362 Store` | `r_generic_1362` | call | 107 | 14 | 15 |
+| `generic.rules:1072 Convert` | `r_generic_1072` | P2 | 291 | 99 | 97 |
+| `generic.rules:2255 Load` | `r_generic_2255` | mem | 181 | 50 | 50 |
 | `generic.rules:2342 CondSelect` | `r_generic_2342/r_generic_2342_2/r_generic_2342_3` | P1 | 24 | 16 | 10 |
-| `generic.rules:1357 Store` | `r_generic_1357` | call | 28 | 9 | 9 |
 | `generic.rules:1075 Convert` | `r_generic_1075/r_generic_1075_2` | P2 | 21 | 9 | 9 |
+| `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 56 | 8 | 8 |
 | `generic.rules:2371 CondSelect` | `r_generic_2371/r_generic_2371_2/r_generic_2371_3` | P1 | 9 | 8 | 8 |
-| `generic.rules:1691 IsNonNil` | `r_generic_1691` | mem | 56 | 7 | 7 |
 | `generic.rules:2251 Load` | `r_generic_2251` | mem | 16 | 6 | 6 |
 | `generic.rules:2159 Zero` | `r_generic_2159` | mem | 6 | 6 | 6 |
 | `generic.rules:2049 Move` | `r_generic_2049` | mem | 4 | 4 | 4 |
 | `generic.rules:785 Phi` | `r_generic_785` | phi | 89 | 3 | 3 |
+| `generic.rules:1871 Move` | `r_generic_1871` | mem | 8 | 3 | 3 |
 | `generic.rules:2355 CondSelect` | `r_generic_2355/r_generic_2355_2/r_generic_2355_3/r_generic_2355_4` | P1 | 3 | 3 | 3 |
 | `generic.rules:2128 SliceLen` | `r_generic_2128/r_generic_2128_2` | call | 100 | 2 | 2 |
 | `divmod.rules:148 Div64u` | `r_divmod_148` | P1 | 29 | 2 | 2 |
@@ -1400,24 +1451,23 @@ Corpus `quick-v4/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1648 EqPtr` | `r_generic_1648` | ptr | 22 | 1 | 1 |
 | `generic.rules:981 IMake` | `r_generic_981` | ptr | 15 | 1 | 1 |
 | `generic.rules:1651 NeqPtr` | `r_generic_1651` | ptr | 11 | 1 | 1 |
-| `generic.rules:1871 Move` | `r_generic_1871` | mem | 8 | 1 | 1 |
 | `generic.rules:1750 Zero` | `r_generic_1750` | mem | 6 | 1 | 1 |
 | `generic.rules:56 Cvt64Fto64` | `r_generic_56` | float | 6 | 1 | 1 |
+| `generic.rules:2131 SelectN` | `r_generic_2131/r_generic_2131_2` | call | 6 | 1 | 1 |
 | `generic.rules:54 Cvt32Fto64` | `r_generic_54` | float | 5 | 1 | 1 |
 | `generic.rules:1068 Phi` | `r_generic_1068` | phi | 5 | 1 | 1 |
 | `generic.rules:1564 Load` | `r_generic_1564` | mem | 2 | 1 | 1 |
 | `generic.rules:1654 EqPtr` | `r_generic_1654` | mem | 2 | 1 | 1 |
 | `generic.rules:1663 NeqPtr` | `r_generic_1663` | P2 | 2 | 1 | 1 |
-| `generic.rules:59 CvtBoolToUint8` | `r_generic_59` | P1 | 2 | 1 | 1 |
 | `generic.rules:2168 Or16` | `r_generic_2168_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:1925 Move` | `r_generic_1925` | mem | 1 | 1 | 1 |
 | `generic.rules:2035 Move` | `r_generic_2035` | mem | 1 | 1 | 1 |
-| `generic.rules:294 CondSelect` | `r_generic_294` | P1 | 1 | 1 | 1 |
 | `generic.rules:1742 Move` | `r_generic_1742` | mem | 1 | 1 | 1 |
 | `generic.rules:2167 Or32` | `r_generic_2167_2` | P1 | 1 | 1 | 1 |
 | `generic.rules:52 Cvt64to64F` | `r_generic_52` | float | 1 | 1 | 1 |
 | `generic.rules:1330 Div32F` | `r_generic_1330` | float | 1 | 1 | 1 |
 | `generic.rules:2368 CondSelect` | `r_generic_2368` | P1 | 1 | 1 | 1 |
+| `generic.rules:2011 Move` | `r_generic_2011` | mem | 1 | 1 | 1 |
 | `generic.rules:2378 CondSelect` | `r_generic_2378/r_generic_2378_2/r_generic_2378_3` | P1 | 18 | 6 | 0 |
 | `generic.rules:2322 CondSelect` | `r_generic_2322` | P1 | 2 | 1 | 0 |
 | `generic.rules:2338 CondSelect` | `r_generic_2338` | P1 | 2 | 1 | 0 |
@@ -1427,7 +1477,6 @@ Corpus `quick-v4/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:1343 SelectN` | `r_generic_1343` | mem | 66 | 0 | 0 |
 | `generic.rules:1588 Load` | `r_generic_1588` | mem | 61 | 0 | 0 |
 | `generic.rules:2256 Load` | `r_generic_2256` | mem | 58 | 0 | 0 |
-| `generic.rules:292 CondSelect` | `r_generic_292` | P1 | 24 | 0 | 0 |
 | `generic.rules:2279 StaticLECall` | `r_generic_2279` | call | 24 | 0 | 0 |
 | `generic.rules:1339 Select0` | `r_generic_1339` | P1 | 21 | 0 | 0 |
 | `generic.rules:1340 Select1` | `r_generic_1340` | P1 | 21 | 0 | 0 |
@@ -1436,39 +1485,50 @@ Corpus `quick-v4/plain`: 9297 functions with a rewrite section; every section at
 | `generic.rules:782 Phi` | `r_generic_782` | phi | 18 | 0 | 0 |
 | `generic.rules:1607 MemEq` | `r_generic_1607` | P2 | 16 | 0 | 0 |
 | `generic.rules:125 Add64F` | `r_generic_125` | float | 13 | 0 | 0 |
+| `generic.rules:193 Mul64uover` | `r_generic_193_2` | P1 | 12 | 0 | 0 |
 
 Functions off stock whose sections off stock fire exactly two unproven rules, by pair (the 15 most frequent):
 
 | Rules | Functions |
 | --- | --: |
-| `generic.rules:1072 Convert`, `generic.rules:292 CondSelect` | 9 |
-| `generic.rules:1352 Zero`, `generic.rules:1362 Store` | 9 |
+| `generic.rules:2128 SliceLen`, `generic.rules:785 Phi` | 10 |
 | `generic.rules:1072 Convert`, `generic.rules:2378 CondSelect` | 7 |
-| `generic.rules:2128 SliceLen`, `generic.rules:785 Phi` | 7 |
 | `generic.rules:1376 NilCheck`, `generic.rules:2255 Load` | 6 |
 | `generic.rules:1071 Convert`, `generic.rules:1072 Convert` | 5 |
-| `generic.rules:1357 Store`, `generic.rules:1362 Store` | 5 |
 | `generic.rules:1584 MemEq`, `generic.rules:1588 Load` | 5 |
 | `generic.rules:782 Phi`, `generic.rules:785 Phi` | 5 |
 | `generic.rules:1071 Convert`, `generic.rules:1075 Convert` | 4 |
 | `generic.rules:1343 SelectN`, `generic.rules:2279 StaticLECall` | 4 |
-| `generic.rules:1072 Convert`, `generic.rules:1352 Zero` | 3 |
 | `generic.rules:1072 Convert`, `generic.rules:2255 Load` | 3 |
 | `generic.rules:1343 SelectN`, `generic.rules:1643 StaticLECall` | 3 |
-| `generic.rules:1072 Convert`, `generic.rules:997 Store` | 2 |
+| `generic.rules:1343 SelectN`, `generic.rules:2287 StaticLECall` | 2 |
+| `generic.rules:1068 Phi`, `generic.rules:2378 CondSelect` | 1 |
+| `generic.rules:1071 Convert`, `generic.rules:2342 CondSelect` | 1 |
+| `generic.rules:1071 Convert`, `generic.rules:538 Rsh64Ux64` | 1 |
+| `generic.rules:1068 Phi`, `generic.rules:1072 Convert` | 1 |
 
-Validator rejections that are a function's only obstacle (`BLOCKED` lines of `opt-proven-probe`: every section at stock under the proven-only passes, not under the checked ones; 21 functions), by class (pass and the last layer's verdict):
+Validator rejections that are a function's only obstacle (`BLOCKED` lines of `opt-proven-probe`: every section at stock under the proven-only passes, not under the checked ones; 88 functions), by class (pass and the last layer's verdict):
 
 | Class | Functions |
 | --- | --: |
-| `opt: fwd₂: drop arg vs mem` | 6 |
+| `opt: fwd₂: drop zero SelectN` | 28 |
+| `opt: fwd₂: drop arg vs mem` | 12 |
+| `opt: fwd₂: drop value ConstNil` | 12 |
+| `opt: fwd₂: drop chain SelectN` | 8 |
+| `opt: ss: chain start Store` | 4 |
+| `late opt: fwd₂: depth N: not disjoint OffPtr` | 3 |
 | `opt: ss: stored StructSelect` | 2 |
 | `opt: fwd₂: depth N: not disjoint OffPtr` | 2 |
 | `late opt: fwd₂: depth N: store type` | 2 |
-| `late opt: fwd₂: depth N: not disjoint OffPtr` | 2 |
-| `opt: fwd₂: drop value ConstNil` | 2 |
-| `opt: ss: chain start Store` | 1 |
+| `opt: ss: store shape` | 2 |
+| `opt: ss: stored ArrayMake1` | 2 |
+| `opt: fwd₂: drop value StructSelect` | 2 |
+| `opt: fwd₂: drop value SliceLen` | 1 |
+| `opt: fwd₂: drop value StringPtr` | 1 |
+| `opt: no rule of the row, not a struct-load expansion: Load` | 1 |
+| `late opt: rule generic:294 [top] ‖ opt: ss: stored Load` | 1 |
 | `middle opt: seg: Store→Store: no segment (chain false, call false)` | 1 |
+| `opt: snap: ss: store shape` | 1 |
 | `middle opt: fwd₂: depth N: not disjoint OffPtr` | 1 |
 | `opt: ss: stored Load` | 1 |
 | `opt: rule generic:1687 [args]` | 1 |

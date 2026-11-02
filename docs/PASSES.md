@@ -83,7 +83,7 @@ Env.FrameKeep)` (expand calls), `RefinesFrom (FrameSafe ∧ InitAvoids)`, `Refin
 f)`, `RefinesFrom WbPre` or `RefinesFrom DecPre`. All of them imply `RefinesFrom (VPre k ro)` with
 `VPre k ro env args mem := env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧
 DictArgs k args ∧ WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem ∧
-env.FrameKeep`
+env.FrameKeep ∧ env.AllocZero`
 (`k` the input's dictionary parameters, `ro` its read-only symbols; `GoFV/Proof/Pass/Pipeline.lean`),
 which composes.
 `stockPasses_sound` checks each theorem against its table entry.

@@ -62,12 +62,14 @@ flag and no write-barrier buffer, kept by the contracts (`WB.WbPre`), contracts 
 tell whether unreachable frame temporaries exist (`Env.TempOblivious`),
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
 (`Env.MemOps`), read-only symbols `ro` holding their exported bytes in the memory with the
-global image, kept by the contracts (`RoImage`), and contracts that keep the caller's frame
-blocks and return no memory (`Env.FrameKeep`). -/
+global image, kept by the contracts (`RoImage`), contracts that keep the caller's frame
+blocks and return no memory (`Env.FrameKeep`), and malloc-family contracts asked for a positive
+size that return an all-zero heap block (`Env.AllocZero`). -/
 def VPre (k : List Nat) (ro : List (String × Alloc)) (env : Env) (args : List Val) (mem : Mem) :
     Prop :=
   env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧
-    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem ∧ env.FrameKeep
+    WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem ∧
+    env.FrameKeep ∧ env.AllocZero
 
 /-- The refinement the verified pipeline establishes. -/
 abbrev VRefines (k : List Nat) (ro : List (String × Alloc)) (tabs' : Tables) (f' : Func)
@@ -85,7 +87,7 @@ theorem RefinesUnder.toV (h : RefinesUnder Env.Mono tabs' f' tabs f) : VRefines 
 theorem RefinesUnder.frameKeep_toV
     (h : RefinesUnder (fun env => env.Mono ∧ env.FrameKeep) tabs' f' tabs f) :
     VRefines k ro tabs' f' tabs f :=
-  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2.2.2.2⟩) h.from
+  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2.2.2.2.1⟩) h.from
 
 theorem RefinesFrom.frameSafe_toV
     (h : RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem) tabs' f' tabs f) :
@@ -97,7 +99,7 @@ theorem RefinesFrom.rw_toV (hk : NilCheck.dictParams tabs f = k)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
     ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2.1,
-      hp.2.2.2.2.2.2.2.2.1.sub hro⟩) h
+      hp.2.2.2.2.2.2.2.2.2.2, hp.2.2.2.2.2.2.2.2.1.sub hro⟩) h
 
 theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2.1) h

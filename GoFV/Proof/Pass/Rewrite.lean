@@ -25,7 +25,8 @@ rewrite pass with its log, kept only if `RewriteCheck.validate` accepts it) refi
 return non-nil pointers and non-nil dictionary arguments, `NilPre`, for the nil-check
 eliminations of issue #151; the runtime's `memclrNoHeapPointers`/`memmove` contracts, if any,
 `Env.MemOps`; the read-only symbols `f`'s `Addr`s name in the initial memory, kept by the
-contracts, `RoImage`), in the pass's extended tables. A rejected result is the input
+contracts, `RoImage`; malloc-family contracts that return all-zero heap blocks,
+`Env.AllocZero`), in the pass's extended tables. A rejected result is the input
 (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as terms in
 the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
@@ -66,13 +67,16 @@ theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments
 (`NilPre`: the nil-check eliminations `generic.rules:1367`/`:1372`/`:1384`, issue #151), and
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
-(`Env.MemOps`: for the `Zero`/`Move` of such calls, `generic.rules:1638`/`:1730`), and the
+(`Env.MemOps`: for the `Zero`/`Move` of such calls, `generic.rules:1638`/`:1730`), the
 read-only symbols `f`'s `Addr`s name holding their exported bytes in the memory with the global
-image, kept by the contracts (`RoImage`: for `Move`s from them, `generic.rules:1743`). It depends
-on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`) and those symbols
-(`RewriteCheck.roSyms`). -/
+image, kept by the contracts (`RoImage`: for `Move`s from them, `generic.rules:1743`), and
+malloc-family contracts asked for a positive size that return an all-zero heap block
+(`Env.AllocZero`: for the `Zero`s and zero `Store`s of a fresh allocation,
+`generic.rules:1352`/`:1357`/`:1362`, issue #69). It depends on `f` only through its dictionary
+parameters (`Opt.NilCheck.dictParams`) and those symbols (`RewriteCheck.roSyms`). -/
 def RwPre (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
-  env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ RoImage (RewriteCheck.roSyms tabs f) env mem
+  env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ env.AllocZero ∧
+    RoImage (RewriteCheck.roSyms tabs f) env mem
 
 /-- `RwPre` holds on `Env.p1` (no malloc-family or memory runtime contract) for a function
 without dictionary parameters and read-only symbols. -/
@@ -80,11 +84,16 @@ theorem RwPre.p1 {tabs : Tables} {f : Func} (h : NilCheck.dictParams tabs f = []
     (hro : RewriteCheck.roSyms tabs f = []) (args : List Val) (mem : Mem) :
     RwPre tabs f Env.p1 args mem :=
   ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps,
-    by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem⟩
+    Env.p1_allocZero, by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem⟩
 
 theorem RefinesUnder.toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
     (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.1) h.from
+
+theorem RefinesUnder.allocZero_toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
+    (h : RefinesUnder (fun env => env.Mono ∧ env.AllocZero) tabs' f' tabs f) :
+    RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
+  RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.1⟩) h.from
 
 /-- **The layers refine**: each step of a `LayerChain` from a checked function refines it under
 `RwPre` of the pass's input `f0` (nil-check eliminations: nilcheckelim's relation with the rewrite
@@ -111,7 +120,7 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
   | @fwd f f' g hr hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
-    exact ⟨ce', hg, (RefinesUnder.toRw (LoadFwd.fwd_refines hf hf' hr)).trans R'⟩
+    exact ⟨ce', hg, (RefinesUnder.allocZero_toRw (LoadFwd.fwd_refines hf hf' hr)).trans R'⟩
   | @rw f f' g evs hv hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
@@ -126,21 +135,22 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
   | @seg f f' g hr hro hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
-    exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2⟩)
+    exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.1, hp.2.2.2.2⟩)
       (Seg.seg_refines hf hf' hr hro)).trans R'⟩
   | @ps f f' g hr hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesUnder.toRw (PhiSel.ps_refines hf hf' hr)).trans R'⟩
 
-/-- **Layers without nil-check eliminations refine** under monotone contracts alone (issue #17,
-the decompose builtin rewrite step, `RewriteCheck.decLayers`): each layer `layersOK` takes is
-related by its own refinement (forwardings `LoadFwd.fwd_refines`; struct-load and value-rule
-`Load` expansions the validator and the atom simulation; splits `StructStore.ss_refines`), and
-the output to the last layer's function by `validate`. -/
+/-- **Layers without nil-check eliminations and forwardings refine** under monotone contracts
+alone (issue #17, the decompose builtin rewrite step, `RewriteCheck.decLayers`): each layer
+`layersOK` takes is related by its own refinement (struct-load and value-rule `Load` expansions
+the validator and the atom simulation; splits `StructStore.ss_refines`), and the output to the
+last layer's function by `validate`. -/
 theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : Func}
     {out : PassOut} {ce' : CheckEnv} (hg : check ce' out.func = .ok ()) :
-    ∀ (Ls : List RewriteCheck.Layer), (∀ sel, RewriteCheck.Layer.nil sel ∉ Ls) →
+    ∀ (Ls : List RewriteCheck.Layer),
+      (∀ sel, RewriteCheck.Layer.nil sel ∉ Ls ∧ RewriteCheck.Layer.fwd sel ∉ Ls) →
       RewriteCheck.Layer.seg ∉ Ls →
       ∀ (f : Func) (log : Array RwEvent) {ce : CheckEnv}, check ce f = .ok () →
       RewriteCheck.layersOK penv (Interp.Table.ofRuleSet s) f0 out Ls f log = true →
@@ -151,8 +161,9 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
     obtain ⟨h1, h2⟩ := validate_termRef h hs
     exact AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2
   | L :: Ls, hn, hns, f, log, ce, hf, h => by
-    have hn' : ∀ sel, RewriteCheck.Layer.nil sel ∉ Ls :=
-      fun sel hm => hn sel (List.mem_cons_of_mem _ hm)
+    have hn' : ∀ sel, RewriteCheck.Layer.nil sel ∉ Ls ∧ RewriteCheck.Layer.fwd sel ∉ Ls :=
+      fun sel => ⟨fun hm => (hn sel).1 (List.mem_cons_of_mem _ hm),
+        fun hm => (hn sel).2 (List.mem_cons_of_mem _ hm)⟩
     have hns' : RewriteCheck.Layer.seg ∉ Ls := fun hm => hns (List.mem_cons_of_mem _ hm)
     rw [RewriteCheck.layersOK] at h
     split at h
@@ -162,12 +173,8 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
     · rw [Bool.and_eq_true] at h
       obtain ⟨hL, hr⟩ := h
       cases L with
-      | nil sel => exact absurd List.mem_cons_self (hn sel)
-      | fwd sel =>
-        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
-        have hf' := checkOK_sound hL.2
-        exact (LoadFwd.fwd_refines hf hf' hL.1).trans
-          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
+      | nil sel => exact absurd List.mem_cons_self (hn sel).1
+      | fwd sel => exact absurd List.mem_cons_self (hn sel).2
       | sl =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2

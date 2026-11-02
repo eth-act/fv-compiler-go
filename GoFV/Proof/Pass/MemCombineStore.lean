@@ -760,10 +760,10 @@ theorem tile_target {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hTf : Term.Type
     · exact absurd ⟨s, hs, v, r.2.2, C, hv, hsb, hC, hL⟩ hdef
 
 /-- **A combined store** writes a memory refining the one its chain of stores wrote. -/
-theorem store_chgRef {x : ID} {u w : Value} (hu : f.value? x = some u)
+theorem store_chgRef {Q : (ID → Val) → Prop} {x : ID} {u w : Value} (hu : f.value? x = some u)
     (hs : storeOK tabs f g (relMarks f g R) x u w = true) :
-    ChgRefP f.value? tabs u (listedDefs g) w := by
-  intro ρ ρ' hρ hTf hTg hMA n y hy
+    ChgRefP Q f.value? tabs u (listedDefs g) w := by
+  intro ρ ρ' hρ hTf hTg _ hMA n y hy
   obtain ⟨hus, hws, hu3, hw3, hm0M, hpwM, S, recs, b0, i0, o0, r0, ww, svv, bt, sg, hS, hSlen,
     hrecs, hr0, hb0, hbase, haux, hsv, hsvw, hbt, hbtl, hvbw, hleaves, htile⟩ := storeOK_spec hs
   rw [args_three hu3] at hy

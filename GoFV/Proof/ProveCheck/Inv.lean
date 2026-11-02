@@ -231,7 +231,7 @@ def proveInv (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv RB) : 
         (hR.hrels.here f.entry hwf.entry (hR.tree _ hwf.entry) _ ‹_›)
       rw [den_succ_atom (phi_not_term hzv hzph)] at hZ; cases hZ
   qpois _ _ _ hQ hρ := qrel_pois hQ hρ
-  qstep _ _ hbb x hx v hv _ hph _ _ y _ _ hQ := qrel_step hwf hc hR hbb hx hv hph y hQ
+  qstep _ _ hbb x hx v hv _ hph _ _ _ y _ _ hQ := qrel_step hwf hc hR hbb hx hv hph y hQ
   poisonAtom b a hat := ⟨retype_poison' _, fun hb v hv => by
       obtain ⟨bb, hbb, -⟩ := hwf.blockId b hb
       obtain ⟨cv, hp, -, -, ht⟩ := fact_placed hc hR hb hbb hv
