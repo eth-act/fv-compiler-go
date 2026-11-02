@@ -29,8 +29,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Opt Dom
 
 theorem frameVal_addr {ctx : Ctx} {v : Value} (hop : v.op = .Addr) :
     ∃ x, frameVal ctx v = some x ∧ GlobalOrPoison x := by
-  unfold frameVal
-  rw [hop]
+  simp only [frameVal, hop]
   split
   · exact ⟨_, rfl, .inr ⟨_, rfl, rfl⟩⟩
   · exact ⟨_, rfl, .inl rfl⟩

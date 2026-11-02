@@ -43,14 +43,14 @@ inductive ValRel (tabs : Tables) (g : Func) (fv gv : Value) : Prop where
 /-- What a copy `x` of shape `t` needs of its argument `wv`: values of `wv`'s shape keep their
 value at `t` (`RetypeInto`), or `x` was a `Phi` (`fx`: its input value), `wv` is an `Addr` (it
 evaluates to a global pointer or `poison`, `GlobalOrPoison`) and `t` a word shape. -/
-def CopyArgOK (tabs : Tables) (fx : Option Value) (wv : Value) (t : Ty) : Prop :=
+def CopyArgOK (tabs : Tables) (fx : Option Value) (wv : Value) (t : Sem.Ty) : Prop :=
   RetypeInto (tabs.ty wv.type) t ∨
     (wv.op = .Addr ∧ wordShape t = true ∧ ∀ fv, fx = some fv → fv.op = .Phi)
 
 /-- The argument's register `y` (fixed at its shape, and a global pointer or `poison` when it is
 an `Addr`'s) keeps its value at the copy's shape. -/
-theorem CopyArgOK.apply {tabs : Tables} {fx : Option Value} {wv : Value} {t : Ty}
-    (h : CopyArgOK tabs fx wv t) {y : Val}
+theorem CopyArgOK.apply {tabs : Tables} {fx : Option Value} {wv : Value} {t : Sem.Ty}
+    (h : CopyArgOK tabs fx wv t) {y : Sem.Val}
     (hy : y.retype (tabs.ty wv.type) = y) (ha : wv.op = .Addr → GlobalOrPoison y) :
     y.retype t = y :=
   h.elim (fun h => h.apply hy) (fun ⟨hop, ht, _⟩ => (ha hop).retype_word ht)
