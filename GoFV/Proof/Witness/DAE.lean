@@ -50,6 +50,12 @@ theorem p1_frameSafe : Env.p1.FrameSafe := by
     | (cases hc; exact ⟨rfl, trivial, hm, hmm⟩)
     | cases hc
 
+/-- **The defer entry points of a call from activation 0 over `Env.p1` are frame-safe**
+(`Env.FrameSafe.atAct`); the environment has them (`deferproc`). -/
+theorem p1_atAct_frameSafe : (Env.p1.atAct 0).FrameSafe ∧
+    (Env.p1.atAct 0).extern "runtime.deferproc" = some (deferproc 0) :=
+  ⟨p1_frameSafe.atAct 0, rfl⟩
+
 theorem stackF0_initAvoids : InitAvoids Env.p1 [] {} := by
   intro a n
   refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun _ h => ?_⟩
