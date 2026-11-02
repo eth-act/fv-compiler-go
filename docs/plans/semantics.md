@@ -1,6 +1,6 @@
 # Plan: semantics of generic Go SSA (`GoFV.SSA.run`, issue #9)
 
-Status: plan (G5); phases P1–P4 implemented (§9.1–§9.4). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
+Status: plan (G5); phases P1–P4 implemented (§9.1–§9.4), P5 atomics (§9.5) and defer/recover (§9.7). Implementation and native difftest: #10. Pass survey: `docs/PASSES.md`.
 Source of truth for the ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/genericOps.go`
 (go1.27.3; "gO line" below) and the rules `_gen/{generic,dec,divisible,divmod}.rules`.
 `decOps.go`, `divisibleOps.go` and `divmodOps.go` define **no** ops (they only name rule sets),
@@ -916,6 +916,22 @@ index, value and string panics, re-panics, `recover` without a panic and in a he
 nested panics, a nil deferred function, panics propagating through callees, `recover` in a
 loop, recovering twice.
 
+Results (`--n 100 --seed 3`, format-4 toolchain): 254 functions, 25,400 calls (24,140 returned,
+1,260 panicked); native agrees with every section on 25,396, every `defers.go` function but
+`recoverLoop` included. The 4 others disagree on all 33 sections of their function (the 132
+section mismatches): 2 are `makeBad(16, 2^32)` (§9.5), 2 are `recoverLoop(251|255, 0)` (three
+deferred closures recover the division panic and add to the heap-moved result `r`; natively 300),
+`stuck` with "poison result": the heap-moved-result gap of §10. Corpus (`sem-difftest corpus 2
+1`, quick-v4 plain): 4,560 calls defined at section 0 (2,363 functions), 145,528 later-section
+runs agree, 0 differ, 392 stuck in 10 functions, all known gaps (§3.3's out-of-bounds pointer
+arithmetic in 7 runtime helpers, `getGodebugEarly`/`goenvs_unix` at `nilcheckelim` and
+`newStructT`'s `VarDef`, §10). With the same semantics quick-v3 has 4,641 defined calls (main's
+semantics: 4,535): its files lack the `deferbits` flag, so a panic skipped the open-coded
+defers; in quick-v4 the deferred call runs, and `corpus` mode, which has no program functions
+as callees, is `stuck` at it (`deferred call main.…: no contract`; 42 functions of `test/recover`,
+`recover1`, `recover2`, `closure4`, `method` and `devirtualization_nil_panics` on those 139
+files). `sched-probe` (quick-v4): 2,961,638 blocks, every Kahn schedule valid.
+
 ## 10. Open questions and risks
 
 - **NaN encodings and the rules** (P4): IEEE 754 and the Go spec leave the encoding of a NaN
@@ -1006,8 +1022,11 @@ loop, recovering twice.
     reads results that escaped to the heap through SSA values (`Dereference (Copy v)`, the
     `&r` pointer). The model's `runDefers` has only the memory: it reads the result variable's
     stack slot (`stackOuts`), which is `poison`, so the run is `stuck` (sound: no
-    obligation). Counts (functions with `deferproc`/`deferprocStack`, of them with a result
-    moved to the heap): quick-v3 9 / 1, full-v4 114 / 5. A fix would resume `runLoop` at
+    obligation). Counts (functions calling `runtime.deferproc`/`deferprocStack`, of them with a
+    `PPARAMOUT` moved to the heap, i.e. with a `&<name>` name): quick-v3 and quick-v4 9 / 1
+    (`examples/defers.withCleanup`), full-v4 and full-v5 114 / 5 (`net/http.(*Transport).dialConn`,
+    `internal/fuzz.(*workerClient).fuzz`/`.minimize`, `cmd/go/internal/doc.do`,
+    `cmd/go/internal/load.TestPackagesAndErrors`). A fix would resume `runLoop` at
     `f.DeferReturn` with the frame of the panic (recovery inside `runLoop`, or `panicked`
     outcomes carrying the frame); every `runLoop` simulation would change.
 
