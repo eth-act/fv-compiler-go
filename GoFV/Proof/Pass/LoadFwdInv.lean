@@ -244,7 +244,16 @@ private theorem fresh_of_req {env : Env} (hA : env.AllocZero) {fr : Frame} {c : 
   rw [hctx, hos] at henc
   rw [hos] at hout
   simp only [hctx, hos]
-  obtain ⟨rest, hrest⟩ := Nil.retypeResults_head (tabs := tabs) (outs := [o]) hhead hout
+  obtain ⟨rest, hrest⟩ : ∃ rest, retypeResults tabs [o] rs = p.word :: rest := by
+    match rs, hhead with
+    | .ptr p :: rs, rfl =>
+      simp only at hout
+      unfold NilCheck.ptrShaped at hout
+      refine ⟨retypeResults tabs [] rs, ?_⟩
+      simp only [retypeResults]
+      split at hout
+      · next e he => rw [he]; rfl
+      · cases hout
   rw [hrest] at henc ⊢
   have hrest0 : rest = [] := by
     cases rest with
@@ -259,16 +268,13 @@ private theorem fresh_of_req {env : Env} (hA : env.AllocZero) {fr : Frame} {c : 
     have := encodeResults_find (b := p.blk) (by rw [hk]; nofun) henc
     rw [this] at ha
     exact hzero a ha
-  simp only [List.cons_append, List.nil_append, Val.retype, Val.retypePre]
-  split
-  · rename_i vs' hvs''
-    cases hr : Val.retypePre ts [addrs] with
-    | none => rw [hr] at hvs''; cases hvs''
-    | some l =>
-      rw [hr] at hvs''
-      cases hvs''
-      exact .inr ⟨p, k, m'', l, rfl, hk, hz''⟩
-  · exact .inl rfl
+  change FreshReg (match Option.map (fun x => p.word.retype (.ptr e0) :: x)
+      (Option.map (fun x => Val.mem m'' :: x) (Val.retypePre ts [addrs])) with
+    | some vs' => Val.tuple vs' | none => .poison)
+  rw [Ptr.word_retype_ptr]
+  cases Val.retypePre ts [addrs] with
+  | none => exact .inl rfl
+  | some l => exact .inr ⟨p, k, m'', l, rfl, hk, hz''⟩
 
 /-- **A size-specialised fresh call's register** (`freshSC`): its size and `needzero` arguments
 are the registers of a positive `Const64` and of `ConstBool [1]`, the request `AllocReq`. -/

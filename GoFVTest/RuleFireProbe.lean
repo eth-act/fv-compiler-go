@@ -36,13 +36,10 @@ def keysOf (s : RuleSet) : List String :=
     (s.nilChecks ++ s.loads ++ s.structLoads ++ s.structStores ++ s.segs ++ s.phiSels).map key
 
 /-- The rules proven as generated, value and block rules and the per-instance validated ones
-(nil-check eliminations, forwardings, struct loads and stores, segments, phi selections): a rule
-proven only in its guarded form (`GoFV.Rules.Guarded`, #290) counts as unproven, its firings
-outside the guard keep functions off stock. -/
+(nil-check eliminations, forwardings, struct loads and stores, segments, phi selections). -/
 def provenKeys : Std.HashSet String :=
-  let guarded := Guarded.all.map key
-  ((keysOf Proven.generic ++ keysOf Proven.divisible ++ keysOf Proven.divmod).filter
-    (!guarded.contains ·)).foldl (fun s k => s.insert k) {}
+  (keysOf Proven.generic ++ keysOf Proven.divisible ++ keysOf Proven.divmod).foldl
+    (fun s k => s.insert k) {}
 
 /-- Pass name, full rule set, proven rule set, full table, proven table. -/
 def variants : List (String × RuleSet × RuleSet × Interp.Table × Interp.Table) :=
@@ -53,7 +50,7 @@ def variants : List (String × RuleSet × RuleSet × Interp.Table × Interp.Tabl
      divisibleProvenTable),
    ("divmod", Generated.Divmod.ruleSet, Proven.divmod, divmodTable, divmodProvenTable)]
 
-/-- The proven set `p` (its value and block rules, a guarded one in its guarded form, and its
+/-- The proven set `p` (its value and block rules and its
 per-instance validated tables) with the rule `extra` of the full set `s` added as a value or block
 rule, in `s`'s matching order. -/
 def withExtra (s p : RuleSet) (extra : String) : Interp.Table :=

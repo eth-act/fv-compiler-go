@@ -736,8 +736,8 @@ def panicRec? (m : Mem) : Except String (Option (Bool × Bool × Nat × Val)) :=
       | _, _, _ => .error "undefined panic record"
     | _ => .error "undefined panic record"
 
-/-- The nil `any`. -/
-def nilIface : Val := .agg [.i64 0, .ptr Ptr.null]
+/-- The nil `any` (its data word the nil pointer's word, address 0). -/
+def nilIface : Val := .agg [.i64 0, .i64 0]
 
 /-- The value `recover` returns for a panic: `gopanic`'s argument, or for a runtime error a
 non-nil `any` whose type word is an opaque global (its data word is not modelled). -/
@@ -998,7 +998,7 @@ def frameVal (ctx : Ctx) (v : Value) : Option Val :=
   | .ConstString =>
     match v.aux.bind ctx.tabs.aux? with
     | some { kind := .str s dataSym, .. } =>
-      some (Val.ofStr [if s.size == 0 then .ptr Ptr.null else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
+      some (Val.ofStr [if s.size == 0 then .i64 0 else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
         .i64 (BitVec.ofNat 64 s.size)])
     | _ => some .poison
   | _ => none

@@ -158,8 +158,8 @@ theorem targetPre (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : 
       have hpu := phiUse S.cf hbt.1 hfb hbt.2 hz hfv hph ha he hpt
       have hla : Listed f a :=
         hwf.argListed _ _ _ _ ⟨⟨hbt.1, hfb⟩, hz, hfv⟩ a (Array.mem_of_getElem? ha)
-      obtain ⟨y', h1, h2⟩ := S.argEq hDT (A := fun z => Anc (make f) z fb.preds[i].b)
-        (fun _ _ hz hz' => Anc.trans S.cp hz' hz) hpu hA.tyT hla hpu hr
+      obtain ⟨y', h1, h2⟩ := S.argEq hDT (A := fun z => Anc (make f) z fb.preds[i].b) hpu hA.tyT
+        hla hpu hr
       rw [hy] at h1; cases h1
       exact ⟨a, y, ha, hy, ga, hga, h2⟩
   -- the target collects its `Phi`s

@@ -86,13 +86,20 @@ pointer shape, …), composites are retyped componentwise, so `(v.retype t).hasT
 (`GoFV.Proof.evalValue_hasTy`, `Typed.hasTy`). Well-typed producers yield values of their shape
 anyway: total shaping left every difftest outcome unchanged (native 11,900 calls; corpus 39,131
 defined calls, same counts). Other shape mismatches give `poison` inside `evalPure` (pure ops
-never fail). Two mixes Go relies on are kept. A pointer without a concrete address (a global: a
-closure's code pointer loaded as `uintptr`, `unsafe.Pointer` ↔ `uintptr` of a global) stays a
-pointer at the 64-bit integer shape, which `Val.hasTy` accepts. And a 64-bit integer **keeps
-its word at a pointer shape** (`Val.retype (.ptr _) (.int .w64 a) = .int .w64 a`,
-`Val.hasTy (.int .w64 _) (.ptr _)`; #10): the word is the pointer at its address (§3.3), so a
-`uintptr` itab word that `decompose builtin` passes on as `*itab` (`dec.rules:82`) is the same
-value on both sides.
+never fail). **The two word shapes** (`.int .w64` and pointers) **have the same values and
+retype alike** (#10, #290; `Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`): a 64-bit integer
+keeps its word at a pointer shape (the pointer at its address, §3.3), and a pointer becomes its
+**word** (`Ptr.word`): its concrete address if it converts back to itself (`Ptr.convertible`:
+nil, heap and forgeable frame pointers inside their windows), else the pointer (a global, which
+has no concrete address, e.g. a closure's code pointer loaded as `uintptr`; a frame temporary,
+whose address no integer converts back to). So a register never holds a convertible pointer as
+a pointer: `Val.hasTy (.ptr p) t = !p.convertible` at both word shapes, `decodePtr` of a stored
+pointer's fragments gives its word, and a word copied between a `uintptr` and a pointer type (an
+itab word that `decompose builtin` passes on as `*itab`, `dec.rules:82`; the round trip
+`unsafe.Pointer(uintptr(p))`, `generic.rules:1072`; a phi elimination's `Copy` between the two)
+is the same value on both sides. Every consumer reads a pointer through `Val.asPtrWord`, so this
+changes no outcome; only stored words differ: a convertible pointer is stored as the concrete
+bytes of its address, not as fragments (a narrow load of them is defined, as on the machine).
 **Strings and slices** have their own shapes, `Ty.str` (pointer, length) and `Ty.slice e`
 (pointer, length, capacity), with the layout of the aggregate they used to be (`Ty.asAgg`:
 offsets 0/8/16, sizes 16/24; `Sem/Layout.lean` maps `STRING`/`SLICE` to them). Their values
@@ -122,13 +129,15 @@ address (`Alloc.base`, bump-allocated as in clifv's `Mem.alloc`, never reused), 
 where Go exposes addresses:
 
 - `Convert` ptr→uintptr gives `base + off` (`Ptr.addr?`); uintptr→ptr is the identity: the
-  integer keeps its word at the pointer shape (§3.2);
+  integer keeps its word at the pointer shape (§3.2), and a convertible pointer is already held
+  as its address;
 - every op that reads a pointer reads a **pointer word** through `Val.asPtrWord`: a pointer
   is itself, a 64-bit integer `a` is `Ptr.ofAddr a` (the heap or frame block whose encoding
   contains the address, else `Blk.nil`). That covers `Load`/`Store`/`Move`/`Zero` (and their
   `WB` forms), `NilCheck`, atomics, `MemEq`, `SubPtr`, `EqPtr`/`NeqPtr`, the runtime contracts
   that take pointers (`Runtime.asPtr`) and the SemDiff renderer. `decodePtr` of 8 concrete bytes
-  gives the integer they hold, so a word loads back as it was stored;
+  gives the integer they hold, and of a pointer's fragments the pointer's word, so a word loads
+  back as it was stored;
 - `EqPtr`/`NeqPtr` compare concrete addresses, so `&a[len(a)] == &b[0]` behaves as on the
   machine;
 - `SubPtr` (unused by the frontend today) is the difference of concrete addresses.
@@ -148,17 +157,14 @@ and offset (pointers into different allocations are never equal; `Ptr.eq_iff`), 
 `Convert` ptr→uintptr is `poison` unless the pointer is `Ptr.convertible` (inside its window,
 its block number small enough for the address encoding, not a frame temporary or global);
 then `Ptr.ofAddr` of its address is the pointer again (`Ptr.ofAddr_addr`,
-`GoFV/Proof/PtrAddr.lean`), so the integer `Convert (Convert p)` reads as `p` wherever a
-pointer is read (`convert_asPtrWord`). It is not `p` itself, and the two are not related by
-`Sem.Refines`: `generic.rules:1072` (`Convert (Convert p)` → `p`) is proven only at an integer
-type (the round trip `uintptr → unsafe.Pointer → uintptr`, which gives back the leaf's word;
-`GoFV.Rules.Guarded.r_generic_1072`), not at a pointer type (#290: refinement modulo
-pointer-word equivalence would need every consumer, memory bytes and contracts to identify `int
-(addr p)` with `ptr p`; docs/proofs/rules.md "Findings").
-The checkers that compare pointers structurally require pointer-typed values, since an
-integer-shaped retype of a non-`convertible` pointer reads back as a different pointer:
-`RewriteCheck.baseBlk?` (`LocalAddr`/`Addr`), `baseSameB`'s `AddPtr`/`PtrIndex` arm and the
-`OffPtr`s of `segTiles`. Go types these values as pointers anyway.
+`GoFV/Proof/PtrAddr.lean`). Since a register holds such a pointer as its address (`Ptr.word`,
+§3.2), `Convert (Convert p)` is `p` itself at either word type, and `generic.rules:1072`
+(`Convert (Convert p)` → `p`) is a `Sem.Refines` refinement at both (#290;
+`GoFV/Proof/Rules/Convert.lean`). Before #290 a register could hold a convertible pointer as a
+pointer, and the pointer round trip gave the source `int (addr p)` and the target `ptr p`.
+The checkers that compare pointers structurally (`RewriteCheck.baseBlk?` for
+`LocalAddr`/`Addr`, `baseSameB`'s `AddPtr`/`PtrIndex` arm and the `OffPtr`s of `segTiles`) take
+pointer-typed values; Go types these values as pointers.
 Consequence: `generic.rules:1071/1075` (`Convert (Add (Convert p) off)` → `AddPtr p off`) do
 not refine when `off` leaves the allocation — the source's integer arithmetic lands, through
 `Ptr.ofAddr`, in some other block, while the target's `AddPtr` is `poison`. Go makes that case

@@ -1,6 +1,7 @@
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Retype
+import GoFV.Proof.PtrAddr
 
 /-!
 # Lemmas of the rule-lemma tactics (`GoFV/Proof/Rules/Tactic.lean`)
@@ -1339,9 +1340,10 @@ theorem val_of_hasTy_ptr {a : Val} {el : Option Nat} (h : a.hasTy (.ptr el) = tr
   | poison => exact .inl rfl
   | _ => simp [Val.hasTy] at h
 
-/-- A value of the 64-bit integer shape is `poison`, an integer, or a pointer without address. -/
+/-- A value of the 64-bit integer shape is `poison`, an integer, or a pointer that does not
+convert to an integer. -/
 theorem val_of_hasTy_int64 {a : Val} (h : a.hasTy (.int .w64) = true) :
-    a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p ∧ p.addr? = none := by
+    a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p ∧ p.convertible = false := by
   cases a with
   | poison => exact .inl rfl
   | int w x => cases w <;> first | exact .inr (.inl ⟨x, rfl⟩) | simp [Val.hasTy] at h
@@ -1356,21 +1358,25 @@ theorem refines_retype_of_hasTy {v : Val} {t : Ty} (h : v.hasTy t = true) :
     Refines v (v.retype t) := by
   rw [Val.retype_of_hasTy h]; exact Refines.refl _
 
-/-- A pointer-arithmetic result refines the pointer (it is the pointer or `poison`, #156). -/
-theorem ptrRes_refines (p : Ptr) : Refines (PtrOps.ptrRes p) (.ptr p) := by
+/-- A pointer-arithmetic result refines the pointer's word (it is the word or `poison`, #156). -/
+theorem ptrRes_refines (p : Ptr) : Refines (PtrOps.ptrRes p) p.word := by
   unfold PtrOps.ptrRes; split
   · exact Refines.refl _
   · exact Refines.poison _
 
 theorem retype_ptrRes_ptr (e : Option Nat) (p : Ptr) :
     (PtrOps.ptrRes p).retype (.ptr e) = PtrOps.ptrRes p := by
-  unfold PtrOps.ptrRes; split <;> rfl
+  unfold PtrOps.ptrRes; split
+  · exact Ptr.word_retype_ptr _ e
+  · rfl
 
 /-- `OffPtr` of a pointer-arithmetic result: `poison` if the first step left the window. -/
 theorem offPtr_ptrRes (k : Int64) (q : Ptr) :
     PtrOps.offPtr k [PtrOps.ptrRes q] =
       if q.inWindow then PtrOps.ptrRes (q.add (BitVec.ofInt 64 k.toInt)) else .poison := by
-  unfold PtrOps.ptrRes; split <;> rfl
+  by_cases h : q.inWindow = true
+  · rw [if_pos h, show PtrOps.ptrRes q = q.word from if_pos h, PtrOps.offPtr_word]; rfl
+  · rw [if_neg h, show PtrOps.ptrRes q = .poison from if_neg h]; rfl
 
 /-- Two steps of pointer arithmetic refine one step by the sum (the intermediate pointer may
 leave the window where the sum does not). -/
@@ -1382,14 +1388,6 @@ theorem ptrRes_two_steps (p : Ptr) (a b : BitVec 64) (t : Ty) :
   · rw [Val.retype]; exact Refines.poison _
 
 /-! ## Constant composites (`generic.rules:1044`, `:1057`) -/
-
-/-- A shape of the nil pointer is a pointer shape (its concrete address is 0). -/
-theorem ty_of_hasTy_null {t : Ty} (h : (Val.ptr Ptr.null).hasTy t = true) :
-    ∃ el, t = .ptr el := by
-  cases t with
-  | ptr el => exact ⟨el, rfl⟩
-  | int w => cases w <;> simp [Val.hasTy, Ptr.null, Ptr.addr?, Blk.base?] at h
-  | _ => simp [Val.hasTy] at h
 
 theorem ty_of_hasTy_int64 {t : Ty} {x : BitVec 64} (h : (Val.int .w64 x).hasTy t = true) :
     t = .int .w64 ∨ ∃ el, t = .ptr el := by
@@ -1442,10 +1440,14 @@ theorem val_of_hasTy_word {a : Val} {t : Ty} (ht : (∃ el, t = .ptr el) ∨ t =
     · exact .inr (.inl h)
     · exact .inr (.inr ⟨p, h⟩)
 
-/-- The nil constant at a pointer-word shape reads as the nil pointer. -/
+/-- The nil constant (the word 0, `Ptr.null_word`) at a pointer-word shape reads as the nil
+pointer. -/
 theorem null_word {t : Ty} (ht : (∃ el, t = .ptr el) ∨ t = .int .w64) :
-    ((Val.ptr Ptr.null).retype t).asPtrWord = some Ptr.null := by
-  rcases ht with ⟨el, rfl⟩ | rfl <;> rfl
+    ((Val.i64 0).retype t).asPtrWord = some Ptr.null := by
+  rw [show Val.i64 0 = Ptr.null.word from Ptr.null_word.symm]
+  rcases ht with ⟨el, rfl⟩ | rfl
+  · rw [Ptr.word_retype_ptr, Ptr.word_asPtrWord]
+  · rw [Ptr.word_retype_i64, Ptr.word_asPtrWord]
 
 theorem not_beq_bne {α : Type} [BEq α] (a b : α) : (!(a == b)) = (a != b) := rfl
 

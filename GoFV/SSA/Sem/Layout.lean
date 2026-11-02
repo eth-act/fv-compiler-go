@@ -90,41 +90,41 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
 def _root_.GoFV.SSA.Tables.ty (tabs : Tables) (t : TypeRef) : Ty := tyOf tabs 32 t
 
 /-- `Val.retype` at a pointer shape (`Val.retype_ptr`): the string and slice pointers. A 64-bit
-integer keeps its word (§3.3: the pointer at that concrete address, `Val.asPtrWord`). -/
+integer keeps its word (§3.3: the pointer at that concrete address, `Val.asPtrWord`); a pointer
+becomes its word (`Ptr.word`: its address if it converts back to itself). -/
 def Val.retypePtr : Val → Val
   | .int .w64 a => .int .w64 a
-  | .ptr p => .ptr p
+  | .ptr p => p.word
   | _ => .poison
 
 /-- `Val.retype` at `.int .w64` (`Val.retype_i64`): the string and slice lengths. -/
 def Val.retypeI64 : Val → Val
   | .int w x => if Width.w64.bits ≤ w.bits then .int .w64 (x.setWidth 64) else .poison
-  | .ptr p => match p.addr? with
-    | some a => .int .w64 a
-    | none => .ptr p
+  | .ptr p => p.word
   | _ => .poison
 
 mutual
 /-- A value as a value of type shape `t` (§3.2). Go types a value by its `Type`, not by its
 op: rules build e.g. `(Rsh64x64 <t> …)` with `t` = `int32` (`divmod.rules`), whose meaning is
 the low 32 bits of the 64-bit shift. An integer narrower than the op keeps the low bits; a
-wider type would expose undefined high bits and is `poison`. A `uintptr`-typed value that
-holds a pointer (`ConstNil <uintptr>`, `Convert`) becomes its concrete address; a global, which
-has no concrete address, stays a pointer at an integer type. A 64-bit integer typed as a
-pointer keeps its word: pointer consumers read it as the pointer at that address
-(`Val.asPtrWord`, §3.3), so a `uintptr` word copied to a pointer-typed value (an itab word
-after `decompose builtin`) is unchanged. Composites are retyped componentwise (a call's tuple
+wider type would expose undefined high bits and is `poison`. The two word shapes (`.int .w64`
+and pointers) retype alike (§3.2, #290): a 64-bit integer keeps its word, and a pointer becomes
+its word (`Ptr.word`): its concrete address if it converts back to itself
+(`Ptr.convertible`), else the pointer (a global, which has no concrete address, a frame
+temporary, whose address no integer converts back to). So every register holds a pointer that
+has an integer form in that form, pointer consumers read it as the pointer at that address
+(`Val.asPtrWord`), and a word copied between a `uintptr` and a pointer type (an itab word after
+`decompose builtin`, `Convert`, a phi elimination's `Copy`) is unchanged. Composites are retyped
+componentwise (a call's tuple
 keeps its components beyond the type's). Every other mismatch of value and shape is `poison`,
 so `(v.retype t).hasTy t` always holds (#108). A string or slice whose length or capacity
 is not a valid signed `int` (`Val.strOK`, `Val.sliceOK`: `0 ≤ len ≤ cap`) is `poison`. -/
 def Val.retype : Ty → Val → Val
   | _, .poison => .poison
   | .int w', .int w x => if w'.bits ≤ w.bits then .int w' (x.setWidth w'.bits) else .poison
-  | .int .w64, .ptr p => match p.addr? with
-    | some a => .int .w64 a
-    | none => .ptr p
+  | .int .w64, .ptr p => p.word
   | .ptr _, .int .w64 a => .int .w64 a
-  | .ptr _, .ptr p => .ptr p
+  | .ptr _, .ptr p => p.word
   | .bool, .bool b => .bool b
   | .mem, .mem m => .mem m
   | .tuple ts, .tuple vs => match Val.retypePre ts vs with
@@ -149,22 +149,21 @@ def Val.retypeFields : List (Nat × Ty) → List Val → Option (List Val)
 end
 
 mutual
-/-- `v` has shape `t` (`poison` has every shape; an address-less pointer has the 64-bit integer
-shape too, and a 64-bit integer the pointer shape; a string or slice has valid lengths,
-`Val.strOK`/`Val.sliceOK`). -/
+/-- `v` has shape `t` (`poison` has every shape; the two word shapes have the same values: a
+64-bit integer and a pointer that does not convert to an integer, `Val.retype`; a string or
+slice has valid lengths, `Val.strOK`/`Val.sliceOK`). -/
 def Val.hasTy : Val → Ty → Bool
   | .poison, _ => true
   | .int w _, .int w' => w == w'
   | .bool _, .bool => true
   | .mem _, .mem => true
   | .tuple vs, .tuple ts => Val.hasTyPre vs ts
-  | .ptr _, .ptr _ => true
-  -- a pointer word may be a concrete address (a `uintptr` copied to a pointer type, concrete
-  -- bytes loaded at a pointer type, §3.3)
+  -- a word: a 64-bit integer (a pointer that converts to an integer is held as its address,
+  -- `Ptr.word`; a `uintptr` copied to a pointer type; concrete bytes loaded at a pointer type,
+  -- §3.3) or a pointer without an integer form (a global, a frame temporary)
+  | .ptr p, .ptr _ => !p.convertible
   | .int .w64 _, .ptr _ => true
-  -- a `uintptr`/`int64` may hold a pointer without a concrete address (a global: code
-  -- pointers of closures, `unsafe.Pointer` ↔ `uintptr`)
-  | .ptr p, .int .w64 => p.addr?.isNone
+  | .ptr p, .int .w64 => !p.convertible
   | .agg vs, .agg fs _ => Val.hasTyList vs (fs.map (·.2))
   | .agg vs, .str => Val.strOK vs && vs.head?.all Val.isPtrWord
   | .agg vs, .slice _ => Val.sliceOK vs && vs.head?.all Val.isPtrWord

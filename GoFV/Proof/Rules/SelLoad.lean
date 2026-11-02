@@ -88,7 +88,8 @@ theorem selLoad0_ref {fs : List (Nat × Ty)} {n : Nat} (hl : GoFV.Opt.RewriteChe
       rw [hq]
       unfold PtrOps.ptrRes
       split
-      · exact Refines.refl _
+      · rw [Ptr.word_retype_ptr, loadOp_word]
+        exact Refines.refl _
       · rw [retype_poison_sl, hnone rfl, retype_poison_sl]
         exact .poison _
 

@@ -359,11 +359,11 @@ theorem sls_agg : RewriteCheck.fwdAgg (slsTabs.ty 5) = true ∧
 def slsStrTy : Ty := .agg [(0, .ptr (some 1)), (8, .int .w64)] 16
 
 /-- Non-vacuity of `LoadFwd.decodeLoad_encode` and `LoadFwd.load_write` at the string shape: a
-stored string (pointer and length) loads back, and a stored `poison` string loads as `poison`,
-where `decode` (register pieces, ABI) never gives `poison` at an aggregate. -/
+stored string (pointer word and length) loads back, and a stored `poison` string loads as
+`poison`, where `decode` (register pieces, ABI) never gives `poison` at an aggregate. -/
 theorem sls_decodeLoad :
-    Sem.Refines (decodeLoad (encode slsStrTy (.agg [.ptr (Ptr.ofAddr 4096), .int .w64 5])) 0
-      slsStrTy) (.agg [.ptr (Ptr.ofAddr 4096), .int .w64 5]) ∧
+    Sem.Refines (decodeLoad (encode slsStrTy (.agg [.int .w64 4096, .int .w64 5])) 0
+      slsStrTy) (.agg [.int .w64 4096, .int .w64 5]) ∧
     decodeLoad (encode slsStrTy .poison) 0 slsStrTy = .poison ∧
     decode (encode slsStrTy .poison) 0 slsStrTy ≠ .poison := by
   have ht : RewriteCheck.fwdTy slsStrTy = true := by decide +kernel

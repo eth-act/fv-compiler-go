@@ -8,8 +8,8 @@ import GoFV.Opt.DeadAutosCheck
 `U` holds only frame temporaries (`TempU`): encoding an avoiding value gives avoiding bytes,
 decoding avoiding bytes an avoiding value (an integer converts to no frame temporary,
 `Ptr.ofAddr_ne_temp`), writes of avoiding bytes, `poisonBlock` and `Mem.set` of avoiding
-allocations keep a memory avoiding, and so does `Val.retype`. A value of a shape that holds no
-pointer (`DAE.noPtrTy`) avoids every `U` of frame temporaries.
+allocations keep a memory avoiding, and so does `Val.retype` (a pointer's word `Ptr.word` avoids
+what the pointer avoids, `word_avoids`).
 -/
 
 namespace GoFV.Proof.DAE
@@ -85,6 +85,13 @@ theorem bytesPtr?_mem {bs : Array Byte} {p : Ptr} (h : bytesPtr? bs = some p) :
     · cases h
   · cases h
 
+/-- **A pointer's word avoids every set it points outside of** (`Ptr.word`: an integer avoids
+everything, else the pointer itself). -/
+theorem word_avoids {U : Blk → Prop} {p : Ptr} (h : ¬ U p.blk) : Val.Avoids U p.word := by
+  rcases Ptr.word_cases p with ⟨-, hw⟩ | ⟨-, a, -, hw⟩ <;> rw [hw]
+  · exact h
+  · trivial
+
 theorem decodeInt_avoids {U : Blk → Prop} {bs : Array Byte} (h : BAv U bs) (w : Width) :
     Val.Avoids U (decodeInt w bs) := by
   unfold decodeInt
@@ -92,9 +99,7 @@ theorem decodeInt_avoids {U : Blk → Prop} {bs : Array Byte} (h : BAv U bs) (w 
   · trivial
   · split
     · rename_i p hp
-      split
-      · trivial
-      · exact h _ (bytesPtr?_mem hp)
+      exact word_avoids (h _ (bytesPtr?_mem hp))
     · trivial
 
 theorem ofAddr_notU {U : Blk → Prop} (hU : TempU U) (x : BitVec 64) : ¬ U (Ptr.ofAddr x).blk := by
@@ -116,7 +121,7 @@ theorem decodePtr_avoids {U : Blk → Prop} (hU : TempU U) {bs : Array Byte} (h 
   unfold decodePtr
   split
   · rename_i p hp
-    exact h _ (bytesPtr?_mem hp)
+    exact word_avoids (h _ (bytesPtr?_mem hp))
   · split <;> trivial
 
 theorem ofStr_avoids {U : Blk → Prop} {vs : List Val} (h : Val.AvoidsList U vs) :
@@ -407,20 +412,14 @@ theorem load_avoids {U : Blk → Prop} (hU : TempU U) {m : Mem} (h : m.Avoids U)
     · rename_i bs hr; exact decodeLoad_avoids hU (read_avoids h hr hu) 0 _
     · trivial
 
-/-! ## Retyping and shapes -/
-
-theorem addr_none_notU {U : Blk → Prop} (hU : TempU U) {p : Ptr} (h : p.addr? = none) :
-    ¬ U p.blk := by
-  intro hu
-  obtain ⟨a, n, hn⟩ := hU _ hu
-  simp [Ptr.addr?, hn, Blk.base?] at h
+/-! ## Retyping -/
 
 theorem retypePtr_avoids {U : Blk → Prop} (hU : TempU U) {v : Val} (h : Val.Avoids U v) :
     Val.Avoids U v.retypePtr := by
   unfold Val.retypePtr
   split
   · trivial
-  · exact h
+  · exact word_avoids h
   · trivial
 
 theorem retypeI64_avoids {U : Blk → Prop} {v : Val} (h : Val.Avoids U v) :
@@ -428,9 +427,7 @@ theorem retypeI64_avoids {U : Blk → Prop} {v : Val} (h : Val.Avoids U v) :
   unfold Val.retypeI64
   split
   · split <;> trivial
-  · split
-    · trivial
-    · exact h
+  · exact word_avoids h
   · trivial
 
 theorem retype_str_avoids {U : Blk → Prop} (hU : TempU U) :
@@ -455,16 +452,11 @@ theorem retype_avoids {U : Blk → Prop} (hU : TempU U) :
   | .int w', .int w x, _ => by unfold Val.retype; split <;> trivial
   | .int w', .ptr p, h => by
     cases w' with
-    | w64 =>
-      unfold Val.retype
-      split
-      · trivial
-      · exact h
+    | w64 => exact word_avoids h
     | _ => trivial
   | .ptr _, .int w x, _ => by
-    cases w
-    all_goals first | exact ofAddr_notU hU _ | trivial
-  | .ptr _, .ptr p, h => h
+    cases w <;> trivial
+  | .ptr _, .ptr p, h => word_avoids h
   | .bool, .bool _, _ => trivial
   | .mem, .mem _, h => h
   | .tuple ts, .tuple vs, h => by
@@ -535,51 +527,6 @@ theorem retypeFields_avoids {U : Blk → Prop} (hU : TempU U) :
     | some ws' =>
       rw [h'] at hr; cases hr
       exact ⟨retype_avoids hU t h1, retypeFields_avoids hU fs h2 h'⟩
-end
-
-mutual
-/-- **A value of a pointer-free shape avoids every set of frame temporaries.** -/
-theorem noPtr_avoids {U : Blk → Prop} (hU : TempU U) :
-    ∀ {t : Ty} {v : Val}, v.hasTy t = true → noPtrTy t = true → Val.Avoids U v
-  | _, .poison, _, _ => trivial
-  | .int _, .int _ _, _, _ => trivial
-  | .int w, .ptr p, h, _ => by
-    cases w <;> simp only [Val.hasTy, reduceCtorEq] at h
-    exact addr_none_notU hU (Option.isNone_iff_eq_none.1 h)
-  | .bool, .bool _, _, _ => trivial
-  | .empty, .empty, _, _ => trivial
-  | .agg fs _, .agg vs, h, hn => by
-    simp only [Val.hasTy] at h
-    simp only [noPtrTy] at hn
-    exact noPtrFields_avoids hU fs h hn
-  | .ptr _, _, _, hn | .mem, _, _, hn | .tuple _, _, _, hn | .blob _, _, _, hn
-  | .str, _, _, hn | .slice _, _, _, hn => by
-    simp [noPtrTy] at hn
-  | .int _, .bool _, h, _ | .int _, .mem _, h, _ | .int _, .tuple _, h, _
-  | .int _, .agg _, h, _ | .int _, .blob _, h, _ | .int _, .empty, h, _
-  | .bool, .int _ _, h, _ | .bool, .mem _, h, _ | .bool, .tuple _, h, _ | .bool, .ptr _, h, _
-  | .bool, .agg _, h, _ | .bool, .blob _, h, _ | .bool, .empty, h, _
-  | .empty, .int _ _, h, _ | .empty, .bool _, h, _ | .empty, .mem _, h, _
-  | .empty, .tuple _, h, _ | .empty, .ptr _, h, _ | .empty, .agg _, h, _ | .empty, .blob _, h, _
-  | .other, .int _ _, h, _ | .other, .bool _, h, _ | .other, .mem _, h, _
-  | .other, .tuple _, h, _ | .other, .ptr _, h, _ | .other, .agg _, h, _ | .other, .blob _, h, _
-  | .other, .empty, h, _
-  | .opaque _, .int _ _, h, _ | .opaque _, .bool _, h, _ | .opaque _, .mem _, h, _
-  | .opaque _, .tuple _, h, _ | .opaque _, .ptr _, h, _ | .opaque _, .agg _, h, _
-  | .opaque _, .blob _, h, _ | .opaque _, .empty, h, _
-  | .agg _ _, .int _ _, h, _ | .agg _ _, .bool _, h, _ | .agg _ _, .mem _, h, _
-  | .agg _ _, .tuple _, h, _ | .agg _ _, .ptr _, h, _ | .agg _ _, .blob _, h, _
-  | .agg _ _, .empty, h, _ => by simp [Val.hasTy] at h
-theorem noPtrFields_avoids {U : Blk → Prop} (hU : TempU U) :
-    ∀ (fs : List (Nat × Ty)) {vs : List Val}, Val.hasTyList vs (fs.map (·.2)) = true →
-      noPtrFields fs = true → Val.AvoidsList U vs
-  | [], [], _, _ => trivial
-  | [], _ :: _, h, _ => by simp [Val.hasTyList] at h
-  | _ :: _, [], h, _ => by simp [Val.hasTyList] at h
-  | (o, t) :: fs, v :: vs, h, hn => by
-    simp only [List.map_cons, Val.hasTyList, Bool.and_eq_true] at h
-    simp only [noPtrFields, Bool.and_eq_true] at hn
-    exact ⟨noPtr_avoids hU h.1 hn.1, noPtrFields_avoids hU fs h.2 hn.2⟩
 end
 
 end GoFV.Proof.DAE

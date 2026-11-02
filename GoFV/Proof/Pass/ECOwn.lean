@@ -971,14 +971,14 @@ theorem ecr_base_EL {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : 
     have hpa : p ∈ aw.args := by rw [← Array.mem_toList_iff, hm.1.2]; simp
     exact ⟨hcl p hpa hp, (hL a hLa aw haw).2 p hpa hp⟩
 
-/-- A new `LocalAddr {n}` of a `Blk.local` variable (`forgeable`) holds the start of the
-variable's frame block of activation 0. -/
+/-- A new `LocalAddr {n}` of a `Blk.local` variable (`forgeable`) holds the word of the start of
+the variable's frame block of activation 0. -/
 theorem ecr_localAddr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID → Prop}
     (hNC : NewCons env (Ctx.make tabs g) (isNewB f) T E)
     (hL : ∀ z, L z → ∀ w, g.value? z = some w → w.id = z ∧ ∀ a ∈ w.args, isNewB f a = true → L a)
     {n : AuxRef} {p : ID} (hok : localAddrOK (typeShapes tabs) g (isNewB f) n p = true)
     (hfg : tabs.forgeable n = true) (hEL : isNewB f p = true → E p ∧ L p) :
-    rv T p = .ptr ⟨.local 0 n, 0⟩ := by
+    rv T p = (⟨.local 0 n, 0⟩ : Ptr).word := by
   unfold localAddrOK at hok
   rw [Bool.and_eq_true] at hok
   obtain ⟨hn, hm⟩ := hok
@@ -1026,7 +1026,7 @@ theorem ecr_selfHeld {env : Env} {tabs : Tables} {f g : Func} {frS : Frame} {u :
   have hpa' : addrArg f e.2 = au.args[0]! := by unfold addrArg; rw [hau]; rfl
   rw [hpa'] at hpa
   obtain ⟨hpid, yp, hyp, hevp⟩ := hpa pu hpu
-  have hP : rv frS au.args[0]! = .ptr ⟨.local 0 n, 0⟩ := by
+  have hP : rv frS au.args[0]! = (⟨.local 0 n, 0⟩ : Ptr).word := by
     rw [evalValue_of_regs (regs_of_ok hevp)] at hevp
     have he : evalOp env (Ctx.make tabs f) frS pu (pu.args.toList.map (rv frS))
         ((Ctx.make tabs f).tys[pu.id]?.getD .other) = .ok (.ptr ⟨.local 0 n, 0⟩) := by
@@ -1045,13 +1045,14 @@ theorem ecr_selfHeld {env : Env} {tabs : Tables} {f g : Func} {frS : Frame} {u :
   rw [hop, GoFV.Proof.Rules.opVal_pure (by decide), hep, hargsA, haid, ← shapeOf_eq] at hva
   simp only [List.map_cons, List.map_nil, hP, hmem, hm] at hva
   rw [rv_of hya, hva]
-  cases hpo' : ((loadOp (shapeOf (typeShapes tabs) f e.2) [.ptr ⟨.local 0 n, 0⟩, .mem m]).retype
+  cases hpo' : ((loadOp (shapeOf (typeShapes tabs) f e.2) [(⟨.local 0 n, 0⟩ : Ptr).word, .mem m]).retype
       (shapeOf (typeShapes tabs) f e.2)).hasPoison
   · right
     obtain ⟨p, bs, hpw, hrd⟩ := ecs_deref_read hmta hpo'
-    cases hpw
+    rw [Ptr.word_asPtrWord] at hpw; cases hpw
     rw [ecT_eqE_size heq] at hrd
-    exact ⟨bs, hrd, ecs_move_arg (Mem.Refines.refl m) hmov heq hmt (Sem.Refines.refl _) rfl hrd⟩
+    exact ⟨bs, hrd, ecs_move_arg (Mem.Refines.refl m) hmov heq hmt (Sem.Refines.refl _)
+      (Ptr.word_asPtrWord _) hrd⟩
   · exact .inl hpo'
 
 /-- The values whose source registers the `MakeResult` obligation needs to hold their
@@ -1289,7 +1290,7 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot e.1 hpo (by simpa using hps))
           rw [hpn] at hn'; cases hn'
           have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
-          have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr (by rw [hbase]; rfl) hEa)
+          have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr (by rw [hbase]; exact Ptr.word_asPtrWord _) hEa)
             (hpt z (List.mem_of_getElem? hk) zw hzw)
           rw [hP', hsv', ecw_encode_eqE haux]
       rw [← hlist, hWT] at hWT'
@@ -1436,7 +1437,7 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
   have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
   have ha : (rv T wz.args[0]!).asPtrWord =
       some ((⟨.local 0 n, 0⟩ : Ptr).add (BitVec.ofNat 64 o)) := by
-    rcases ecw_addr hNC hL haddr (by rw [hbase]; rfl) hEa with h | h
+    rcases ecw_addr hNC hL haddr (by rw [hbase]; exact Ptr.word_asPtrWord _) hEa with h | h
     · exact h
     · rw [h]; unfold Ptr.step?; rw [if_pos hwin]
   -- the write

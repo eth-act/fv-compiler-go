@@ -49,7 +49,7 @@ theorem eqFirst_refines (neg : Bool) (t T : Ty) (x y : Val)
 theorem asPtrWord_retype_ptr (el : Option Nat) (a : Val) (h : a.asPtrWord.isSome) :
     (a.retype (.ptr el)).asPtrWord = a.asPtrWord := by
   cases a with
-  | ptr p => rfl
+  | ptr p => exact Ptr.word_asPtrWord p
   | int w x => cases w <;> first | rfl | simp [Val.asPtrWord] at h
   | _ => simp [Val.asPtrWord] at h
 
@@ -102,12 +102,12 @@ theorem r_generic_793_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
 
 /-! Non-vacuity (`rule-sat` draws no aggregate leaves): instances at the interface shape (two
 itab words, equal for `:790`, different for `:791`) and at the shape of `[]int64` (the same and
-different heap blocks). -/
+different globals). -/
 
 /-- `generic.rules:790` at two interfaces with the same itab word. -/
 theorem inst_r_generic_790 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_790
-    (PEnv.ofLists [([0], .agg [.int .w64 8, .ptr ⟨.heap 0, 0⟩]),
-        ([1], .agg [.int .w64 8, .ptr ⟨.heap 1, 0⟩])]
+    (PEnv.ofLists [([0], .agg [.int .w64 8, .ptr ⟨.global "g", 0⟩]),
+        ([1], .agg [.int .w64 8, .ptr ⟨.global "h", 0⟩])]
       [([], .bool)] (.agg [(0, .int .w64), (8, .ptr (some 1))] 16) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_790]
@@ -116,28 +116,28 @@ theorem inst_r_generic_790 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_79
 
 /-- `generic.rules:791` at two interfaces with different itab words. -/
 theorem inst_r_generic_791 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_791
-    (PEnv.ofLists [([0], .agg [.int .w64 8, .ptr ⟨.heap 0, 0⟩]),
-        ([1], .agg [.int .w64 16, .ptr ⟨.heap 1, 0⟩])]
+    (PEnv.ofLists [([0], .agg [.int .w64 8, .ptr ⟨.global "g", 0⟩]),
+        ([1], .agg [.int .w64 16, .ptr ⟨.global "h", 0⟩])]
       [([], .bool)] (.agg [(0, .int .w64), (8, .ptr (some 1))] 16) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_791]
   rule_eval
   simp [PtrOps.eqFirst, Val.asPtrWord, Ptr.eq]
 
-/-- `generic.rules:792` at two slices of the same heap block. -/
+/-- `generic.rules:792` at two slices of the same global. -/
 theorem inst_r_generic_792 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_792
-    (PEnv.ofLists [([0], .agg [.ptr ⟨.heap 0, 0⟩, .int .w64 1, .int .w64 1]),
-        ([1], .agg [.ptr ⟨.heap 0, 0⟩, .int .w64 1, .int .w64 1])]
+    (PEnv.ofLists [([0], .agg [.ptr ⟨.global "g", 0⟩, .int .w64 1, .int .w64 1]),
+        ([1], .agg [.ptr ⟨.global "g", 0⟩, .int .w64 1, .int .w64 1])]
       [([], .bool)] (.agg [(0, .ptr (some 8)), (8, .int .w64), (16, .int .w64)] 24) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_792]
   rule_eval
   simp [PtrOps.eqFirst, Val.asPtrWord, Ptr.eq]
 
-/-- `generic.rules:793` at two slices of different heap blocks. -/
+/-- `generic.rules:793` at two slices of different globals. -/
 theorem inst_r_generic_793 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_793
-    (PEnv.ofLists [([0], .agg [.ptr ⟨.heap 0, 0⟩, .int .w64 1, .int .w64 1]),
-        ([1], .agg [.ptr ⟨.heap 1, 0⟩, .int .w64 1, .int .w64 1])]
+    (PEnv.ofLists [([0], .agg [.ptr ⟨.global "g", 0⟩, .int .w64 1, .int .w64 1]),
+        ([1], .agg [.ptr ⟨.global "h", 0⟩, .int .w64 1, .int .w64 1])]
       [([], .bool)] (.agg [(0, .ptr (some 8)), (8, .int .w64), (16, .int .w64)] 24) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_793]

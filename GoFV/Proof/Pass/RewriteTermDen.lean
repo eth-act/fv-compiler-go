@@ -194,28 +194,17 @@ theorem copyReach_den {M : Defs} {tabs : Tables} {ρ : ID → Val} (hT : Term.Ty
             exact Sem.Refines.trans (den_fuel_mono _ _ _ k (k + 1) _ (by omega))
               (copyReach_den hT N _ w hr (k + 1))
 
-/-- A word shape keeps a 64-bit integer word: a 64-bit integer, a pointer without a concrete
-address, or `poison`. -/
+/-- A word shape keeps a 64-bit integer word: the two word shapes have the same values
+(`Val.hasTy_ptr_eq_i64`, #290). -/
 theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
     (hz : z.hasTy (.int .w64) = true) : z.retype t = z := by
-  cases z with
-  | poison => exact retype_poison _
-  | int w x =>
-    cases w <;> simp [Val.hasTy] at hz
-    cases t with
-    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype]
-    | ptr e => rfl
-    | _ => simp [wordTy] at ht
-  | ptr p =>
-    simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
-    cases t with
-    | int w' => cases w' <;> simp [wordTy] at ht; simp [Val.retype, hz]
-    | ptr e => rfl
-    | _ => simp [wordTy] at ht
-  | _ => simp [Val.hasTy] at hz
+  cases t with
+  | int w => cases w <;> simp [wordTy] at ht; exact Val.retype_of_hasTy hz
+  | ptr e => exact Val.retype_of_hasTy (by rw [Val.hasTy_ptr_eq_i64]; exact hz)
+  | _ => simp [wordTy] at ht
 
 /-- `Convert` at a word shape of a 64-bit integer word is one (integer → pointer is the
-identity; a pointer without a concrete address does not convert to an integer). -/
+identity; a pointer that does not convert to an integer gives `poison`). -/
 theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : List Val) :
     (PtrOps.convert t (z :: l)).hasTy (.int .w64) = true := by
   unfold PtrOps.convert
@@ -224,72 +213,26 @@ theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : L
     cases he
     split
     · rename_i p
-      simp only [Val.hasTy, Option.isNone_iff_eq_none] at hz
+      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at hz
       simp [hz, Val.hasTy]
     · exact hz
   · rfl
 
-/-- An `Addr` denotes `poison` or a global pointer, which has no concrete address. -/
-theorem addr_den {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {a : ID} {w : Value}
-    (hw : D a = some w) (hop : w.op = .Addr) :
-    ∀ m, den D tabs ρ m a = .poison ∨ ∃ p, den D tabs ρ m a = .ptr p ∧ p.addr? = none
-  | 0 => .inl rfl
-  | m + 1 => by
-    rw [den_succ_term hw (by rw [hop]; rfl), hop, GoFV.Proof.Rules.opVal_addr]
-    unfold GoFV.Proof.Rules.addrVal
-    split
-    · generalize tabs.ty w.type = t
-      cases t with
-      | int w => cases w <;> first | exact .inl rfl | exact .inr ⟨_, rfl, rfl⟩
-      | ptr e => exact .inr ⟨_, rfl, rfl⟩
-      | _ => exact .inl rfl
-    · exact .inl (retype_poison _)
-
-/-- A value accepted by `intWord` denotes a 64-bit integer word at every fuel. -/
-theorem intWord_den {tabs : Tables} {M : Defs} {ρ : ID → Val}
-    (hT : Term.Typed M.get? tabs ρ) :
-    ∀ n a m, intWord tabs M n a = true → (den M.get? tabs ρ m a).hasTy (.int .w64) = true
-  | 0, _, _, h => by simp [intWord] at h
-  | _ + 1, _, 0, _ => rfl
-  | n + 1, a, m + 1, h => by
-    unfold intWord at h
-    split at h
-    · rename_i w hw
-      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
-      rcases h with (hi | hop) | ⟨⟨hop, ht⟩, hx⟩
-      · have hty := den_hasTy hT (m + 1) hw
-        revert hi hty
-        cases tabs.ty w.type with
-        | int w' => cases w' <;> simp
-        | _ => simp
-      · rcases addr_den hw hop (m + 1) with h | ⟨p, h, hp⟩ <;> rw [h]
-        · rfl
-        · simp [Val.hasTy, hp]
-      · split at hx
-        · rename_i x hx0
-          have ih := intWord_den hT n x m hx
-          have hargs : ∃ l, w.args.toList = x :: l := by
-            rw [← Array.getElem?_toList] at hx0
-            cases hl : w.args.toList with
-            | nil => rw [hl] at hx0; cases hx0
-            | cons y l => rw [hl] at hx0; cases hx0; exact ⟨l, rfl⟩
-          obtain ⟨l, hl⟩ := hargs
-          have hterm : termOp w.op = true := by rcases hop with h | h <;> rw [h] <;> decide
-          rw [den_succ_term hw hterm, GoFV.Proof.Rules.opVal_pure (by rcases hop with h | h <;>
-            rw [h] <;> decide), hl, List.map_cons]
-          have hv : (evalPure w.op (tabs.ty w.type) w.auxInt w.aux
-              (den M.get? tabs ρ m x :: l.map (den M.get? tabs ρ m))).hasTy (.int .w64) = true := by
-            rcases hop with h | h <;> rw [h]
-            · exact convert_word ih _
-            · show (match den M.get? tabs ρ m x :: l.map (den M.get? tabs ρ m) with
-                | [x] => x | _ => .poison).hasTy _ = true
-              cases l with
-              | nil => exact ih
-              | cons _ _ => rfl
-          rw [retype_word ht hv]
-          exact hv
-        · cases hx
-    · cases h
+/-- A value of a word shape (`wordVal`) denotes a 64-bit integer word at every fuel. -/
+theorem wordVal_den {tabs : Tables} {M : Defs} {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ)
+    {a : ID} (h : wordVal tabs M a = true) (m : Nat) :
+    (den M.get? tabs ρ m a).hasTy (.int .w64) = true := by
+  unfold wordVal at h
+  cases hw : M.get? a with
+  | none => rw [hw] at h; cases h
+  | some w =>
+    rw [hw, Option.any_some] at h
+    have hty := den_hasTy hT m hw
+    revert h hty
+    cases tabs.ty w.type with
+    | int w' => cases w' <;> simp [wordTy]
+    | ptr e => intro _ hty; rwa [Val.hasTy_ptr_eq_i64] at hty
+    | _ => simp [wordTy]
 
 /-- A value reached through `copyReachW` (a word `Copy` of a 64-bit integer word first) has a
 larger denotation at the same fuel. -/
@@ -311,7 +254,7 @@ theorem copyReachW_den {M : Defs} {tabs : Tables} {ρ : ID → Val} (hT : Term.T
       | succ k =>
         rw [den_succ_term hx (by rw [hop]; exact termOp_copy), toList_of_size_one hsz, hop]
         show Sem.Refines ((den M.get? tabs ρ k x.args[0]!).retype (tabs.ty x.type)) _
-        rw [retype_word ht (intWord_den hT 4 _ k hi)]
+        rw [retype_word ht (wordVal_den hT hi k)]
         exact Sem.Refines.trans (den_fuel_mono _ _ _ k (k + 1) _ (by omega))
           (copyReach_den hT N _ w hr (k + 1))
 

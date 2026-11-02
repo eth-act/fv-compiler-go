@@ -52,19 +52,15 @@ theorem evalPure_ptrIndex (ty : Ty) (ai : Int64) (aux : Option AuxRef) (args : L
       PtrOps.ptrIndex (match ty with | .ptr e => e | _ => none) args := rfl
 
 /-- A value retyped at a pointer shape is a pointer when it stays one: retyping keeps a
-pointer's allocation and offset. -/
+pointer's allocation and offset (a pointer's word is the pointer or its address). -/
 theorem retype_ptr_eq {q P : Ptr} {t : Ty} (h : (Val.ptr q).retype t = .ptr P) : P = q := by
-  cases t with
-  | int w =>
-    cases w with
-    | w64 =>
-      simp only [Val.retype] at h
-      split at h
-      · cases h
-      · cases h; rfl
+  have hw : q.word = .ptr P := by
+    cases t with
+    | int w => cases w <;> first | exact h | simp [Val.retype] at h
+    | ptr e => exact h
     | _ => simp [Val.retype] at h
-  | ptr e => simp only [Val.retype] at h; cases h; rfl
-  | _ => simp [Val.retype] at h
+  rcases Ptr.word_cases q with ⟨-, h'⟩ | ⟨-, a, -, h'⟩ <;> rw [h'] at hw <;> cases hw
+  rfl
 
 /-- Retyping at pointer shapes forgets the element size. -/
 theorem retype_ptr_elem (e e' : Option Nat) (v : Val) :

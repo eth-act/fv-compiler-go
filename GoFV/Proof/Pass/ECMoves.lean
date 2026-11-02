@@ -292,7 +292,7 @@ theorem ecm_localAddr_val {env : Env} {tabs : Tables} {g : Func} {T : Frame} {s 
   rw [he] at hev
   cases hev
   rw [hid, ← shapeOf_eq, hsh]
-  refine ⟨_, rfl, ?_⟩
+  refine ⟨_, Ptr.word_asPtrWord _, ?_⟩
   unfold frameBlk
   split <;> nofun
 

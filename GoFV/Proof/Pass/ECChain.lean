@@ -474,8 +474,7 @@ theorem ecPieceVals_of_hasTy (cast : Bool) {t : Ty} {r : Val} (h : r.hasTy t = t
     split
     · simp only [Val.hasTy] at h
       simp only [leafVals, Val.retype, List.cons.injEq, and_true]
-      revert h
-      split <;> simp_all
+      rw [Ptr.word_of_not_convertible (by simpa using h)]
     · rfl
 
 theorem ec_castOK {s t : Ty} (h : castOK s t = true) : (∃ e, s = .ptr e) ∧ t = .int .w64 := by

@@ -1,5 +1,6 @@
 import GoFV.SSA.Sem.Ptr
 import GoFV.SSA.Sem.Layout
+import GoFV.Proof.Retype
 
 /-!
 # Concrete addresses round-trip (#156)
@@ -210,6 +211,62 @@ theorem PtrOps.wordRes_wordRes {x a b : BitVec 64} (h : ((Ptr.ofAddr x).add a).i
   unfold PtrOps.wordRes
   rw [Ptr.ofAddr_add_of_inWindow h, BitVec.add_assoc, e]
 
+/-! ## Pointer arithmetic on a pointer's word -/
+
+/-- Stepping a convertible pointer inside its window keeps it convertible. -/
+theorem Ptr.convertible_add {p : Ptr} {k : BitVec 64} (hc : p.convertible = true)
+    (hw : (p.add k).inWindow = true) : (p.add k).convertible = true := by
+  obtain ⟨b, off⟩ := p
+  cases b <;> simp_all [Ptr.convertible, Ptr.add, Ptr.inWindow, Blk.window?]
+
+theorem Ptr.addr?_add (p : Ptr) (k : BitVec 64) : (p.add k).addr? = p.addr?.map (· + k) := by
+  obtain ⟨b, off⟩ := p
+  simp only [Ptr.addr?, Ptr.add, Option.map_map]
+  cases b.base? <;> simp [BitVec.add_assoc]
+
+/-- A convertible pointer stepped inside its window is the word of its address plus the step. -/
+theorem Ptr.word_add {p : Ptr} {k a : BitVec 64} (hc : p.convertible = true)
+    (ha : p.addr? = some a) (hw : (p.add k).inWindow = true) :
+    (p.add k).word = .int .w64 (a + k) := by
+  unfold Ptr.word
+  rw [Ptr.convertible_add hc hw, Ptr.addr?_add, ha]
+  rfl
+
+/-- Arithmetic on the address of a convertible pointer is the pointer's arithmetic. -/
+theorem PtrOps.wordRes_addr {p : Ptr} {a : BitVec 64} (hc : p.convertible = true)
+    (ha : p.addr? = some a) (k : BitVec 64) : PtrOps.wordRes a k = PtrOps.ptrRes (p.add k) := by
+  unfold PtrOps.wordRes PtrOps.ptrRes
+  rw [Ptr.ofAddr_addr hc ha]
+  split
+  · rename_i hw; rw [Ptr.word_add hc ha hw]
+  · rfl
+
+/-- **Pointer arithmetic does not tell a pointer from its word** (`Ptr.word`, #290). -/
+theorem PtrOps.offPtr_word (ai : Int64) (p : Ptr) :
+    PtrOps.offPtr ai [p.word] = PtrOps.offPtr ai [.ptr p] := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
+  exact PtrOps.wordRes_addr hc ha _
+
+theorem PtrOps.addPtr_word (p : Ptr) (i : Val) :
+    PtrOps.addPtr [p.word, i] = PtrOps.addPtr [.ptr p, i] := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
+  simp only [PtrOps.addPtr]
+  split
+  · exact PtrOps.wordRes_addr hc ha _
+  · rfl
+
+theorem PtrOps.ptrIndex_word (el : Option Nat) (p : Ptr) (i : Val) :
+    PtrOps.ptrIndex el [p.word, i] = PtrOps.ptrIndex el [.ptr p, i] := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
+  simp only [PtrOps.ptrIndex]
+  split
+  · exact PtrOps.wordRes_addr hc ha _
+  · rfl
+
+/-- A `Load` reads its address through `Val.asPtrWord`: a pointer and its word load alike. -/
+theorem loadOp_word (t : Ty) (p : Ptr) (m : Val) : loadOp t [p.word, m] = loadOp t [.ptr p, m] := by
+  cases m <;> simp only [loadOp] <;> rw [Ptr.word_asPtrWord] <;> rfl
+
 theorem Ptr.eq_iff (p q : Ptr) : p.eq q = true ↔ p = q := by
   obtain ⟨b, o⟩ := p; obtain ⟨b', o'⟩ := q
   simp [Ptr.eq]
@@ -260,7 +317,9 @@ def Ptr.step? (p : Ptr) (k : BitVec 64) : Option Ptr :=
 
 theorem PtrOps.ptrRes_asPtrWord (p : Ptr) (k : BitVec 64) :
     (PtrOps.ptrRes (p.add k)).asPtrWord = p.step? k := by
-  unfold PtrOps.ptrRes Ptr.step?; split <;> rfl
+  unfold PtrOps.ptrRes Ptr.step?; split
+  · exact Ptr.word_asPtrWord _
+  · rfl
 
 theorem PtrOps.wordRes_asPtrWord (x k : BitVec 64) :
     (PtrOps.wordRes x k).asPtrWord = (Ptr.ofAddr x).step? k := by
@@ -317,6 +376,7 @@ theorem Val.asPtrWord_retype_ptr (e : Option Nat) (v : Val) :
     (v.retype (.ptr e)).asPtrWord = v.asPtrWord := by
   cases v with
   | int w x => cases w <;> rfl
+  | ptr p => exact Ptr.word_asPtrWord p
   | _ => rfl
 
 end GoFV.SSA.Sem

@@ -25,9 +25,10 @@ def asOffset : Val → Option (BitVec 64)
 
 namespace PtrOps
 
-/-- The result of pointer arithmetic: `poison` when it leaves its block's address window
-(Go's unsafe rules: arithmetic stays inside the allocation or one past its end; §3.3). -/
-def ptrRes (p : Ptr) : Val := if p.inWindow then .ptr p else .poison
+/-- The result of pointer arithmetic, as its word (`Ptr.word`, §3.2): `poison` when it leaves
+its block's address window (Go's unsafe rules: arithmetic stays inside the allocation or one past
+its end; §3.3). -/
+def ptrRes (p : Ptr) : Val := if p.inWindow then p.word else .poison
 
 /-- The result of pointer arithmetic on an integer word `x` (a pointer-typed value holding a
 concrete address, §3.3): the integer `x + k`, under the window rule of the pointer at that

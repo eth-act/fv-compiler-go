@@ -105,7 +105,6 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   rw [hA'] at hty ⊢
   have hn : ∀ x, evalPure .IsNonNil (e.ty []) 0 none [x] = PtrOps.isNonNil [x] := fun _ => rfl
   rw [hn]
-  have hrp : ∀ q, Val.retype (.ptr elA) (.ptr q) = .ptr q := fun _ => rfl
   have hr0 : Val.retype (.ptr elA) .poison = .poison := rfl
   rcases val_of_hasTy_ptr hP0 with hl | ⟨y, hl⟩ | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
   · simp only [PtrOps.addPtr, hr0, PtrOps.eqPtr, Val.asPtrWord]; exact Refines.poison _
@@ -137,8 +136,8 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     exact Refines.poison _
   · simp only [PtrOps.addPtr, asOffset, PtrOps.ptrRes] at hty ⊢
     by_cases hw : (p.add (BitVec.signExtend 64 x)).inWindow = true
-    · simp only [hw, ↓reduceIte, hrp, PtrOps.eqPtr, Val.asPtrWord, ptr_add_eq_self,
-        PtrOps.isNonNil] at hty ⊢
+    · simp only [hw, ↓reduceIte, Ptr.word_retype_ptr, PtrOps.eqPtr, Ptr.word_asPtrWord] at hty ⊢
+      simp only [Val.asPtrWord, ptr_add_eq_self, PtrOps.isNonNil] at hty ⊢
       have hx : ((BitVec.signExtend 64 x == 0) != true) = (x != 0) := by
         have h64 : BitVec.signExtend 64 x = x := BitVec.signExtend_eq x
         rw [h64]
@@ -153,10 +152,11 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
 
 /-! ## Non-vacuity (`rule-sat` draws no tables) -/
 
-/-- `generic.rules:1592` at `MemEq p p 0 mem` (an empty comparison is valid at any pointer). -/
+/-- `generic.rules:1592` at `MemEq p p 0 mem` (an empty comparison is valid at any pointer; `p`
+the heap block's address word `2^40`). -/
 theorem inst_r_generic_1592 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_1592 {}
     { leaf := fun p => if p = [2] then .int .w64 0 else if p = [3] then .mem {} else
-        .ptr ⟨.heap 0, 0⟩
+        .int .w64 (2 ^ 40)
       ty := fun p => if p = [] then .bool else if p = [2] then .int .w64 else
         if p = [3] then .mem else .ptr none
       auxInt := fun _ => 0, aux := fun _ => none }
@@ -170,9 +170,9 @@ theorem inst_r_generic_1592 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   · subst h; simp [lenVar?]
   · subst h; simp
 
-/-- `generic.rules:1680` at `p + 8 != p` for a heap pointer `p`. -/
+/-- `generic.rules:1680` at `p + 8 != p` for a heap pointer `p` (its address word `2^40`). -/
 theorem inst_r_generic_1680 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_1680 {}
-    { leaf := fun p => if p = [1, 0] then .int .w64 8 else .ptr ⟨.heap 0, 0⟩
+    { leaf := fun p => if p = [1, 0] then .int .w64 8 else .int .w64 (2 ^ 40)
       ty := fun p => if p = [] then .bool else if p = [1, 0] then .int .w64 else .ptr none
       auxInt := fun _ => 0, aux := fun _ => none }
     (Oracle.const true) := by
@@ -181,7 +181,7 @@ theorem inst_r_generic_1680 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     numElem1Vars, shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT,
     emptyStrVars, opVal]
   rule_eval
-  simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?,
-    Val.retype, PtrOps.eqPtr, Val.asPtrWord]
+  refine fun h => absurd (congrArg (fun v => match v with | Val.poison => true | _ => false) h) ?_
+  decide +kernel
 
 end GoFV.Proof.Rules

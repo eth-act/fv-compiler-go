@@ -354,7 +354,7 @@ theorem toAny_avoids (hU : TempU U) {e : Panic} (he : e.Avoids U) : e.toAny.Avoi
   | _ => exact ⟨global_notU hU _, trivial, trivial⟩
 
 theorem nilIface_avoids (hU : TempU U) : nilIface.Avoids U :=
-  ⟨trivial, nil_notU hU, trivial⟩
+  ⟨trivial, trivial, trivial⟩
 
 theorem restorePanicRec_avoids {m : Mem} (hm : m.Avoids U) (pe : Option Panic)
     {saved : Option Alloc} (hs : ∀ a, saved = some a → ¬ U panicBlk → BAv U a.data) :

@@ -172,10 +172,11 @@ variable {tabs : Tables} {f : Func} {ρ : ID → Val}
 /-! ## Fresh malloc calls -/
 
 /-- A register of a fresh malloc call (`freshCall`, issue #69): `poison`, or a tuple whose first
-component points to a heap block whose bytes are all zero in its second component, a memory. -/
+component is the word of a pointer to a heap block whose bytes are all zero in its second
+component, a memory. -/
 def FreshReg (y : Val) : Prop :=
-  y = .poison ∨ ∃ p k M rest, y = .tuple (.ptr p :: .mem M :: rest) ∧ p.blk = .heap k ∧
-    M.BlockZero p.blk
+  y = .poison ∨ ∃ (p : Ptr) (k : Nat) (M : Mem) (rest : List Val),
+    y = .tuple (p.word :: .mem M :: rest) ∧ p.blk = .heap k ∧ M.BlockZero p.blk
 
 /-- The registers of `f`'s fresh malloc calls are `FreshReg`. -/
 def FreshQ (tabs : Tables) (f : Func) (ρ : ID → Val) : Prop :=
@@ -247,7 +248,7 @@ theorem fresh_blockZero (hQ : FreshQ tabs f ρ) {m b : ID} {s q : Value}
   simp only [Tuple.selectN] at hm hp
   have hM : M' = M := retype_mem (by simpa using hm)
   subst hM
-  have hP : p = P := by simpa [Val.retype, Val.asPtrWord] using hp
+  have hP : p = P := by simpa [Ptr.word_retype_ptr, Ptr.word_asPtrWord] using hp
   subst hP
   exact hz
 

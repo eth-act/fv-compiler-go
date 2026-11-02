@@ -29,7 +29,7 @@ theorem r_generic_1684_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   rule_unfold
   obtain ⟨h0, h1⟩ := hat
   have hn := null_word h0
-  generalize Val.retype (e.ty [0]) (Val.ptr Ptr.null) = n at hn hty ⊢
+  generalize Val.retype (e.ty [0]) (Val.i64 0) = n at hn hty ⊢
   rcases val_of_hasTy_word h1 hlt with hl | ⟨x, hl⟩ | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
   · simp only [PtrOps.eqPtr, hn]; simp only [Val.asPtrWord]; exact Refines.poison _
   all_goals
@@ -43,7 +43,7 @@ theorem r_generic_1683_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   rule_unfold
   obtain ⟨h0, h1⟩ := hat
   have hn := null_word h0
-  generalize Val.retype (e.ty [0]) (Val.ptr Ptr.null) = n at hn hty ⊢
+  generalize Val.retype (e.ty [0]) (Val.i64 0) = n at hn hty ⊢
   rcases val_of_hasTy_word h1 hlt with hl | ⟨x, hl⟩ | ⟨p, hl⟩ <;> rw [hl] at hty ⊢
   · simp only [PtrOps.eqPtr, hn]; simp only [Val.asPtrWord]; exact Refines.poison _
   all_goals
@@ -68,9 +68,9 @@ theorem r_generic_1646_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   · exact Refines.poison _
   · exact refines_retype_of_hasTy hty
 
-/-- `generic.rules:1646` at a heap pointer. -/
+/-- `generic.rules:1646` at a global pointer. -/
 theorem inst_r_generic_1646 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1646
-    (PEnv.ofLists [([0], .ptr ⟨.heap 0, 8⟩), ([1], .ptr ⟨.heap 0, 8⟩)] [([], .bool)] (.ptr none) [])
+    (PEnv.ofLists [([0], .ptr ⟨.global "g", 8⟩), ([1], .ptr ⟨.global "g", 8⟩)] [([], .bool)] (.ptr none) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1646]
   rule_eval
@@ -88,9 +88,9 @@ theorem r_generic_1647_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   · exact Refines.poison _
   · exact refines_retype_of_hasTy hty
 
-/-- `generic.rules:1647` at a heap pointer. -/
+/-- `generic.rules:1647` at a global pointer. -/
 theorem inst_r_generic_1647 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1647
-    (PEnv.ofLists [([0], .ptr ⟨.heap 0, 8⟩), ([1], .ptr ⟨.heap 0, 8⟩)] [([], .bool)] (.ptr none) [])
+    (PEnv.ofLists [([0], .ptr ⟨.global "g", 8⟩), ([1], .ptr ⟨.global "g", 8⟩)] [([], .bool)] (.ptr none) [])
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1647]
   rule_eval
@@ -155,6 +155,6 @@ theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩
   · subst h; simp
   · subst h; simp
-  · simp [Val.retype, PtrOps.isNonNil]
+  · simp [Val.retype, PtrOps.isNonNil, Ptr.word, Ptr.convertible]
 
 end GoFV.Proof.Rules

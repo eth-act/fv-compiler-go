@@ -89,6 +89,7 @@ import GoFV.Proof.Pass.DAEEnter
 import GoFV.Proof.Pass.DAEFinish
 import GoFV.Proof.Pass.DAEMem
 import GoFV.Proof.Pass.DAEOps
+import GoFV.Proof.Pass.DAEPure
 import GoFV.Proof.Pass.DAERel
 import GoFV.Proof.Pass.DAERoot
 import GoFV.Proof.Pass.DAESim

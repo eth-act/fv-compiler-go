@@ -388,28 +388,17 @@ theorem value_rel {env : Env} (hE : env.TempOblivious) (hX : TempX X) {tabs : Ta
     obtain ⟨a, -, hza⟩ := DAE.argVals_mem hvs hz
     exact hav a z hza
 
-/-- **The source's result avoids `X`** (a value in `tamOpOK` whose `LocalAddr` names no block of
-`X`, on registers and frame inputs that avoid `X`). -/
+/-- **The source's result avoids `X`** (a value whose `LocalAddr` names no block of `X`, on
+registers and frame inputs that avoid `X`). -/
 theorem value_avoids {env : Env} (hE : env.TempOblivious) (hX : TempX X) {tabs : Tables}
     {f : Func} {S : Frame} (hfok : DAE.FrameOK U S) (hav : DAE.RegsP (fun _ y => Val.Avoids U y) S)
-    {x : ID} {fv : Value} (hfv : f.value? x = some fv) (hid : fv.id = x)
-    (hok : tamOpOK tabs f fv = true)
-    (hloc : ∀ n, fv.aux = some n → X (frameBlk tabs 0 n) = false) {y : Val}
+    {fv : Value} (hloc : ∀ n, fv.aux = some n → X (frameBlk tabs 0 n) = false) {y : Val}
     (h : evalValue env (Ctx.make tabs f) S fv = .ok y) : Val.Avoids U y := by
-  have hU := tempU_of hX
   obtain ⟨vs, r, hvs, hr, rfl⟩ := DAE.evalValue_ok_inv h
   have hargs : ∀ z ∈ vs, Val.Avoids U z := fun z hz => by
     obtain ⟨a, -, hza⟩ := DAE.argVals_mem hvs hz
     exact hav a z hza
-  have hty : (Ctx.make tabs f).tys[fv.id]?.getD .other = tabs.ty fv.type := by
-    rw [hid, tys_of_value hfv]; rfl
-  rw [hty] at hr ⊢
-  rcases tamOpOK_spec hok with hsr | ⟨-, hp | hn⟩
-  · obtain ⟨msg, hm⟩ := evalOp_stuckRoot (env := env) (ctx := Ctx.make tabs f) (fr := S)
-      (argv := vs) (ty := tabs.ty fv.type) hsr
-    rw [hm] at hr; cases hr
-  · exact DAE.retype_avoids hU _ (evalOp_avoids hE hX hfok hloc hp hargs hr)
-  · exact DAE.noPtr_avoids hU (Val.retype_hasTy _ _) hn
+  exact DAE.retype_avoids (tempU_of hX) _ (evalOp_avoids hE hX hfok hloc hargs hr)
 
 /-! ## The source's panics avoid `X` -/
 

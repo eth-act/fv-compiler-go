@@ -141,13 +141,12 @@ theorem disjointP_sep (H : Avail env tabs f fr A) {p q : ID} {w k : Nat} {wq : I
     · rename_i a b hpa hqb
       have ep := allocOf_val H hAp hpa hbvp
       have eq := allocOf_val H hAq hqb hbvq
-      subst ep eq
       have e1 : P = ⟨blkOf a, 0 + BitVec.ofInt 64 op⟩ := by
-        rcases rp.2 _ _ rfl with h | h <;> rw [h] at hpP
+        rcases rp.2 _ _ ep with h | h <;> rw [h] at hpP
         · cases hpP
         · exact (Option.some.inj hpP).symm
       have e2 : Q = ⟨blkOf b, 0 + BitVec.ofInt 64 oq⟩ := by
-        rcases rq.2 _ _ rfl with h | h <;> rw [h] at hqQ
+        rcases rq.2 _ _ eq with h | h <;> rw [h] at hqQ
         · cases hqQ
         · exact (Option.some.inj hqQ).symm
       subst e1 e2

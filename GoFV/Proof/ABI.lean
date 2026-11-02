@@ -28,22 +28,20 @@ theorem decodeInt_hasTy (w : Width) (bs : Array Byte) : (decodeInt w bs).hasTy (
   split
   · simp [Val.hasTy]
   · split
-    · split
-      · simp [Val.hasTy]
-      · next h => simp [Val.hasTy, h]
+    · exact Ptr.word_hasTy_i64 _
     · rfl
 
 theorem decodePtr_hasTy (e : Option Nat) (bs : Array Byte) :
     (decodePtr bs).hasTy (.ptr e) = true := by
   unfold decodePtr
   split
-  · rfl
+  · exact Ptr.word_hasTy_ptr _ e
   · split <;> rfl
 
 theorem decodePtr_isPtrWord (bs : Array Byte) : (decodePtr bs).isPtrWord = true := by
   unfold decodePtr
   split
-  · rfl
+  · exact Ptr.isPtrWord_word _
   · split <;> rfl
 
 mutual
@@ -305,14 +303,15 @@ theorem ofPieces_leafVals {t : Ty} {v : Val} (hw : wf t = true) (hv : v.hasTy t 
 /-- The shape of a slice of `int64` (`tyOf`, `.SLICE`). -/
 def sliceTy : Ty := .slice (some 8)
 
-/-- A slice value: a heap pointer, length 2, capacity 3. -/
-def sliceVal : Val := .agg [.ptr ⟨.heap 0, 0⟩, .int .w64 2, .int .w64 3]
+/-- A slice value: a heap pointer (as its word, the address `2^40` of `⟨heap 0, 0⟩`), length 2,
+capacity 3. -/
+def sliceVal : Val := .agg [.int .w64 (2 ^ 40), .int .w64 2, .int .w64 3]
 
 theorem sliceTy_wf : wf sliceTy = true ∧ sliceVal.hasTy sliceTy = true := ⟨rfl, rfl⟩
 
 /-- The round trips at the slice: its three pieces and back, exactly. -/
 theorem slice_roundtrip :
-    toPieces sliceTy sliceVal = [.ptr ⟨.heap 0, 0⟩, .int .w64 2, .int .w64 3] ∧
+    toPieces sliceTy sliceVal = [.int .w64 (2 ^ 40), .int .w64 2, .int .w64 3] ∧
       ofPieces sliceTy (leafVals sliceTy sliceVal) = build sliceTy (leafVals sliceTy sliceVal) ∧
       Refines sliceVal (decode (encode sliceTy sliceVal) 0 sliceTy) ∧
       Refines sliceVal (ofPieces sliceTy (leafVals sliceTy sliceVal)) :=

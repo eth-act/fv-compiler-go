@@ -40,15 +40,13 @@ theorem r_generic_964_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
       simp only [PtrOps.offPtr] at hty ⊢
       rw [h1]
       exact Refines.poison _
-  · simp only [PtrOps.offPtr, retype_ptrRes_ptr] at hty ⊢
+  · have hi : ∀ k : Int64, PtrOps.offPtr k [.ptr p] = PtrOps.ptrRes (p.add (BitVec.ofInt 64 k.toInt)) :=
+      fun _ => rfl
+    rw [← Val.retype_of_hasTy hty]
+    rw [hi, retype_ptrRes_ptr, offPtr_ptrRes, hi]
     rw [ofInt_int64_ofInt (by decide), ofInt_wrapInt_true (by decide), BitVec.ofInt_add,
       BitVec.add_comm]
-    unfold PtrOps.ptrRes at hty ⊢
-    by_cases hw : (p.add (BitVec.ofInt 64 (e.auxInt [0]).toInt)).inWindow = true
-    · simp only [hw, ite_true] at hty ⊢
-      rw [ptr_add_add] at hty ⊢
-      exact refines_retype_of_hasTy hty
-    · simp only [hw, Bool.false_eq_true, ite_false]; exact Refines.poison _
+    exact ptrRes_two_steps p _ _ _
 
 /-- `generic.rules:965`: `(OffPtr p [0]) && v.Type.Compare(p.Type) == types.CMPeq => p` -/
 theorem r_generic_965_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_965 := by
@@ -66,6 +64,10 @@ theorem r_generic_965_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
     · exact Refines.poison _
   · simp only [PtrOps.offPtr, hc]
     have : p.add (BitVec.ofInt 64 0) = p := by simp [Ptr.add]
-    rw [this]; exact ptrRes_refines p
+    rw [this]
+    rw [hl] at hlt
+    have hcv : p.convertible = false := by simpa [Val.hasTy] using hlt
+    have h := ptrRes_refines p
+    rwa [Ptr.word_of_not_convertible hcv] at h
 
 end GoFV.Proof.Rules

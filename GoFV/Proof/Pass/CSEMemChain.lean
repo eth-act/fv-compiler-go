@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.CSEMemBytes
 import GoFV.Proof.Eval
+import GoFV.Proof.PtrAddr
 import GoFV.Opt.CSEMem
 
 /-!
@@ -87,6 +88,11 @@ theorem ofAddr_not_global (x : BitVec 64) (s : String) : (Ptr.ofAddr x).blk ≠ 
 
 theorem ptrV_ofAddr (x : BitVec 64) : ptrV (Ptr.ofAddr x) = .conc x := ptrV_of_addr (addr_ofAddr x)
 
+/-- A pointer's word points where the pointer does. -/
+theorem vaddr_word (p : Ptr) : vaddr p.word = vaddr (.ptr p) := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, ha, h⟩ <;> rw [h]
+  simp [vaddr, ptrV_of_addr ha]
+
 /-- `Val.retype` keeps where a value points, or makes it point nowhere. -/
 theorem vaddr_retype (t : Ty) (v : Val) : vaddr (v.retype t) = none ∨ vaddr (v.retype t) = vaddr v := by
   unfold Val.retype
@@ -98,20 +104,19 @@ theorem vaddr_retype (t : Ty) (v : Val) : vaddr (v.retype t) = none ∨ vaddr (v
       cases w' <;> cases w <;> simp_all [vaddr, Width.bits, BitVec.setWidth_eq]
     · exact .inl rfl
   · rename_i p
-    split
-    · rename_i a ha
-      exact .inr (by simp [vaddr, ptrV_of_addr ha])
-    · exact .inr rfl
+    exact .inr (vaddr_word p)
   · exact .inr (by simp [vaddr, ptrV_ofAddr])
-  · exact .inr rfl
+  · rename_i p
+    exact .inr (vaddr_word p)
   all_goals first
     | exact .inl rfl
     | exact .inr rfl
     | (split <;> first | exact .inl rfl | exact .inr rfl)
     | (simp only [Val.ofStr, Val.ofSlice]; split <;> first | exact .inl rfl | exact .inr rfl)
 
-theorem retype_keep {t : Ty} (h : CSE.keepsPtr t = true) (p : Ptr) : (Val.ptr p).retype t = .ptr p := by
-  cases t <;> first | rfl | cases h
+theorem asPtrWord_retype_keep {t : Ty} (h : CSE.keepsPtr t = true) (v : Val) :
+    (v.retype t).asPtrWord = v.asPtrWord := by
+  cases t <;> first | exact Val.asPtrWord_retype_ptr _ v | cases h
 
 theorem retype_global {t : Ty} (h : CSE.keepsGlobal t = true) (s : String) (o : BitVec 64) :
     (Val.ptr ⟨.global s, o⟩).retype t = .ptr ⟨.global s, o⟩ := by
@@ -126,7 +131,7 @@ theorem vaddr_offPtr (k : Int64) (v : Val) :
   | ptr p =>
     simp only [PtrOps.offPtr, PtrOps.ptrRes]
     split
-    · exact .inr (by simp [vaddr, ptrV_add])
+    · exact .inr (by rw [vaddr_word]; simp [vaddr, ptrV_add])
     · exact .inl rfl
   | int w x =>
     cases w
@@ -138,10 +143,12 @@ theorem vaddr_offPtr (k : Int64) (v : Val) :
     all_goals exact .inr (by simp [PtrOps.offPtr, vaddr, VAddr.add])
   | _ => exact .inl rfl
 
-/-- `v` points `k` bytes past `bv` (or is `poison`: the arithmetic left the allocation). -/
+/-- `v` points `k` bytes past `bv` (or reads as no pointer: the arithmetic left the
+allocation). -/
 def Rel (v bv : Val) (k : Int) : Prop :=
   (vaddr v = none ∨ ∃ V, vaddr bv = some V ∧ vaddr v = some (V.add (BitVec.ofInt 64 k))) ∧
-  ∀ B o, bv = .ptr ⟨B, o⟩ → v = .poison ∨ v = .ptr ⟨B, o + BitVec.ofInt 64 k⟩
+  ∀ B o, bv.asPtrWord = some ⟨B, o⟩ →
+    v.asPtrWord = none ∨ v.asPtrWord = some ⟨B, o + BitVec.ofInt 64 k⟩
 
 theorem rel_refl (v : Val) : Rel v v 0 :=
   ⟨by cases h : vaddr v with
@@ -163,14 +170,14 @@ theorem rel_step {ty : Ty} (hty : CSE.keepsPtr ty = true) {av bv : Val} {K : Int
       · exact .inl (by rw [h1]; rfl)
       · refine .inr ⟨V, hV, ?_⟩
         rw [h1, Option.map_some, VAddr.add_add, BitVec.ofInt_add]
-  · rcases h2 B o hb with h2 | h2
-    · left; rw [h2]; simp [PtrOps.offPtr, Val.retype]
-    rw [h2]
-    simp only [PtrOps.offPtr, PtrOps.ptrRes, Ptr.add]
+  · rw [asPtrWord_retype_keep hty, PtrOps.offPtr_asPtrWord]
+    rcases h2 B o hb with h2 | h2 <;> rw [h2]
+    · exact .inl rfl
+    simp only [Option.bind_some, Ptr.step?, Ptr.add]
     simp only [BitVec.ofInt_add, BitVec.add_assoc]
     split
-    · right; rw [retype_keep hty]
-    · left; cases ty <;> rfl
+    · exact .inr rfl
+    · exact .inl rfl
 
 /-- A pointer word points where the pointer it reads as does. -/
 theorem vaddr_of_asPtrWord {v : Val} {P : Ptr} (h : v.asPtrWord = some P) :
@@ -380,7 +387,7 @@ theorem blkOf_inj {a b : CSE.Alloc} (h : blkOf a = blkOf b) : a = b := by
 /-- An `allocOf` base is a pointer to the start of its allocation. -/
 theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : A b)
     (ha : CSE.allocOf tabs f b = some al) {bv : Val} (hr : fr.regs[b]? = some (some bv)) :
-    bv = .ptr ⟨blkOf al, 0⟩ := by
+    bv.asPtrWord = some ⟨blkOf al, 0⟩ := by
   unfold CSE.allocOf at ha
   cases hv : f.value? b with
   | none => rw [hv] at ha; cases ha
@@ -407,7 +414,7 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
         · cases ha
       rw [evalOp_frameVal (.inl hop) hf] at ho
       cases ho
-      rw [tys_getD]; exact retype_global hkg _ _
+      rw [tys_getD, retype_global hkg]; rfl
     · have hne : (x.op == .Addr && CSE.keepsGlobal (CSE.valShape tabs f x)) = false := by
         cases h1 : (x.op == .Addr) <;> cases h2 : CSE.keepsGlobal (CSE.valShape tabs f x) <;>
           simp_all
@@ -427,7 +434,7 @@ theorem allocOf_val (H : Avail env tabs f fr A) {b : ID} {al : CSE.Alloc} (hb : 
             rw [blkOf_frameAlloc]; simp only [frameVal, hop, hx]; rfl
           rw [evalOp_frameVal (.inr hop) hf] at ho
           cases ho
-          rw [tys_getD]; exact retype_keep hk _
+          rw [tys_getD, asPtrWord_retype_keep hk]; rfl
       · cases ha
 
 end GoFV.Proof.CSE.Mem

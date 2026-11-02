@@ -25,7 +25,7 @@ def addrVal (tabs : Tables) (ax : Option AuxRef) : Val :=
 def strVal (tabs : Tables) (ax : Option AuxRef) : Val :=
   match ax.bind tabs.aux? with
   | some { kind := .str s dataSym, .. } =>
-    Val.ofStr [if s.size == 0 then .ptr Ptr.null else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
+    Val.ofStr [if s.size == 0 then .i64 0 else .ptr ⟨.global dataSym.toStringLossy, 0⟩,
       .i64 (BitVec.ofNat 64 s.size)]
   | _ => .poison
 

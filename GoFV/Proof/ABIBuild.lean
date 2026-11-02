@@ -465,7 +465,7 @@ theorem retype_decodePtr (e : Option Nat) (bs : Array Byte) :
     (decodePtr bs).retype (.ptr e) = decodePtr bs := by
   unfold decodePtr
   split
-  · rfl
+  · exact Ptr.word_retype_ptr _ e
   · split <;> rfl
 
 theorem retypeI64_decodeInt (bs : Array Byte) : (decodeInt .w64 bs).retypeI64 = decodeInt .w64 bs := by
@@ -473,9 +473,7 @@ theorem retypeI64_decodeInt (bs : Array Byte) : (decodeInt .w64 bs).retypeI64 = 
   split
   · simp [Val.retypeI64, BitVec.setWidth_eq]
   · split
-    · split
-      · simp [Val.retypeI64, BitVec.setWidth_eq]
-      · next h => simp [Val.retypeI64, h]
+    · rw [Val.retypeI64_eq]; exact Ptr.word_retype_i64 _
     · rfl
 
 mutual

@@ -4,12 +4,78 @@ import GoFV.SSA.Sem.Layout
 # `Val.retype` gives a value of the shape
 
 `Val.retype_hasTy`: `(v.retype t).hasTy t` for every value and shape (#108): a misfit becomes
-`poison`; an address-less pointer is kept at the 64-bit integer shape, which `hasTy` accepts.
-`Val.retype_of_hasTy`: a value of the shape is unchanged; so `retype` is idempotent
-(`Val.retype_idem`).
+`poison`; a pointer becomes its word (`Ptr.word`: its address if it converts back to itself),
+which both word shapes accept (#290). `Val.retype_of_hasTy`: a value of the shape is unchanged;
+so `retype` is idempotent (`Val.retype_idem`). The two word shapes have the same values and
+retype alike (`Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`).
 -/
 
 namespace GoFV.SSA.Sem
+
+/-! ## Words -/
+
+/-- A pointer that converts to an integer has a concrete address. -/
+theorem Ptr.addr?_isSome_of_convertible {p : Ptr} (h : p.convertible = true) :
+    p.addr?.isSome = true := by
+  rcases p with ⟨b, off⟩
+  cases b <;> simp_all [Ptr.convertible, Ptr.addr?, Blk.base?]
+
+/-- A pointer's word: its address if it converts back to itself, else the pointer (which then
+does not convert). -/
+theorem Ptr.word_cases (p : Ptr) :
+    (p.convertible = false ∧ p.word = .ptr p) ∨
+      (p.convertible = true ∧ ∃ a, p.addr? = some a ∧ p.word = .int .w64 a) := by
+  cases hc : p.convertible with
+  | false => exact .inl ⟨rfl, by simp [Ptr.word, hc]⟩
+  | true =>
+    have hs := Ptr.addr?_isSome_of_convertible hc
+    cases ha : p.addr? with
+    | none => rw [ha] at hs; cases hs
+    | some a => exact .inr ⟨rfl, a, rfl, by simp [Ptr.word, hc, ha]⟩
+
+/-- A pointer's word is a 64-bit integer or a pointer. -/
+theorem Ptr.word_eq_int {p : Ptr} {w : Width} {y : BitVec w.bits} (h : p.word = .int w y) :
+    w = .w64 := by
+  rcases Ptr.word_cases p with ⟨-, h'⟩ | ⟨-, a, -, h'⟩ <;> rw [h'] at h
+  · cases h
+  · cases h; rfl
+
+@[simp] theorem Ptr.word_ne_bool (p : Ptr) (b : Bool) : p.word ≠ .bool b := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+
+@[simp] theorem Ptr.word_ne_poison (p : Ptr) : p.word ≠ .poison := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+
+@[simp] theorem Ptr.word_ne_mem (p : Ptr) (m : Mem) : p.word ≠ .mem m := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+
+@[simp] theorem Ptr.word_ne_agg (p : Ptr) (vs : List Val) : p.word ≠ .agg vs := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+
+@[simp] theorem Ptr.word_ne_tuple (p : Ptr) (vs : List Val) : p.word ≠ .tuple vs := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+
+/-- The nil pointer's word is address 0. -/
+theorem Ptr.null_word : Ptr.null.word = .int .w64 0 := rfl
+
+theorem Ptr.word_of_not_convertible {p : Ptr} (h : p.convertible = false) : p.word = .ptr p := by
+  simp [Ptr.word, h]
+
+/-- A pointer's word is a word: a 64-bit integer or a pointer that does not convert. -/
+theorem Ptr.isPtrWord_word (p : Ptr) : p.word.isPtrWord = true := by
+  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩
+  · simp [h, Val.isPtrWord, hc]
+  · simp [h, Val.isPtrWord]
+
+theorem Ptr.word_hasTy_ptr (p : Ptr) (e : Option Nat) : p.word.hasTy (.ptr e) = true := by
+  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩
+  · simp [h, Val.hasTy, hc]
+  · simp [h, Val.hasTy]
+
+theorem Ptr.word_hasTy_i64 (p : Ptr) : p.word.hasTy (.int .w64) = true := by
+  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩
+  · simp [h, Val.hasTy, hc]
+  · simp [h, Val.hasTy]
 
 theorem Val.retypePtr_eq (e : Option Nat) (v : Val) : v.retypePtr = v.retype (.ptr e) := by
   cases v with
@@ -18,6 +84,20 @@ theorem Val.retypePtr_eq (e : Option Nat) (v : Val) : v.retypePtr = v.retype (.p
 
 theorem Val.retypeI64_eq (v : Val) : v.retypeI64 = v.retype (.int .w64) := by
   cases v <;> rfl
+
+/-- **The two word shapes have the same values** (#290). -/
+theorem Val.hasTy_ptr_eq_i64 (v : Val) (e : Option Nat) :
+    v.hasTy (.ptr e) = v.hasTy (.int .w64) := by
+  cases v with
+  | int w x => cases w <;> rfl
+  | _ => rfl
+
+/-- **The two word shapes retype alike** (#290). -/
+theorem Val.retype_ptr_eq_i64 (v : Val) (e : Option Nat) :
+    v.retype (.ptr e) = v.retype (.int .w64) := by
+  cases v with
+  | int w x => cases w <;> simp [Val.retype, BitVec.setWidth_eq, Width.bits]
+  | _ => rfl
 
 /-- The components of a string value with a valid length. -/
 theorem Val.strOK_iff {vs : List Val} : Val.strOK vs = true ↔
@@ -72,6 +152,7 @@ theorem Val.hasTy_agg_slice {vs : List Val} {e : Option Nat} :
 theorem Val.isPtrWord_retypePtr (v : Val) : v.retypePtr.isPtrWord = true := by
   cases v with
   | int w x => cases w <;> rfl
+  | ptr p => exact Ptr.isPtrWord_word p
   | _ => rfl
 
 theorem Val.ofStr_hasTy (p l : Val) : (Val.ofStr [p.retypePtr, l]).hasTy .str = true := by
@@ -100,6 +181,9 @@ theorem Val.retypePtr_of_isPtrWord {p : Val} (h : p.isPtrWord = true) :
     p.retypePtr = p := by
   cases p with
   | int w x => cases w <;> simp_all [Val.isPtrWord, Val.retypePtr]
+  | ptr q =>
+    simp only [Val.isPtrWord, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    exact Ptr.word_of_not_convertible h
   | _ => simp_all [Val.isPtrWord, Val.retypePtr]
 
 theorem Val.ofStr_hasTy_of {p : Val} (hp : p.isPtrWord = true) (l : Val) :
@@ -150,14 +234,10 @@ theorem Val.retype_hasTy : ∀ (t : Ty) (v : Val), (v.retype t).hasTy t = true
     · rfl
   | .int w', .ptr p => by
     cases w' with
-    | w64 =>
-      unfold Val.retype
-      cases h : p.addr? with
-      | some a => simp [Val.hasTy]
-      | none => simp [Val.hasTy, h]
+    | w64 => exact Ptr.word_hasTy_i64 p
     | _ => rfl
   | .ptr e, .int w x => by cases w <;> rfl
-  | .ptr e, .ptr p => rfl
+  | .ptr e, .ptr p => Ptr.word_hasTy_ptr p e
   | .bool, .bool b => rfl
   | .mem, .mem m => rfl
   | .tuple ts, .tuple vs => by
@@ -247,10 +327,12 @@ theorem Val.retype_of_hasTy : ∀ {t : Ty} {v : Val}, v.hasTy t = true → v.ret
   | .int w', .ptr p, h => by
     cases w' with
     | w64 =>
-      simp only [Val.hasTy, Option.isNone_iff_eq_none] at h
-      unfold Val.retype; rw [h]
+      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+      exact Ptr.word_of_not_convertible h
     | _ => simp [Val.hasTy] at h
-  | .ptr _, .ptr _, _ => rfl
+  | .ptr _, .ptr _, h => by
+    simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    exact Ptr.word_of_not_convertible h
   | .bool, .bool _, _ => rfl
   | .mem, .mem _, _ => rfl
   | .tuple ts, .tuple vs, h => by
@@ -322,24 +404,43 @@ end
 theorem Val.retype_idem (t : Ty) (v : Val) : (v.retype t).retype t = v.retype t :=
   Val.retype_of_hasTy (Val.retype_hasTy t v)
 
+/-- A pointer's word is a value of either word shape (it retypes to itself). -/
+theorem Ptr.word_retype_ptr (p : Ptr) (e : Option Nat) : p.word.retype (.ptr e) = p.word :=
+  Val.retype_of_hasTy (Ptr.word_hasTy_ptr p e)
+
+theorem Ptr.word_retype_i64 (p : Ptr) : p.word.retype (.int .w64) = p.word :=
+  Val.retype_of_hasTy (Ptr.word_hasTy_i64 p)
+
+/-- A pointer without a concrete address is its own word. -/
+theorem Ptr.word_of_addr_none {p : Ptr} (h : p.addr? = none) : p.word = .ptr p := by
+  simp [Ptr.word, h]
+
+
 /-! ## Witnesses -/
 
 /-- `Val.hasTy_str` applies to a defined string of length 3 (and a negative length is not a
 string: it retypes to `poison`). -/
-example : ∃ p l, Val.agg [.ptr Ptr.null, .int .w64 3] = .agg [p, .int .w64 l] ∧ l.msb = false ∧
-    0 ≤ l.toInt :=
-  (Val.hasTy_str (v := .agg [.ptr Ptr.null, .int .w64 3]) (by decide)).resolve_left nofun
+example : ∃ p l, Val.agg [.ptr ⟨.global "s", 0⟩, .int .w64 3] = .agg [p, .int .w64 l] ∧
+    l.msb = false ∧ 0 ≤ l.toInt :=
+  (Val.hasTy_str (v := .agg [.ptr ⟨.global "s", 0⟩, .int .w64 3]) (by decide)).resolve_left nofun
 
 example : (Val.agg [.ptr Ptr.null, .int .w64 (-1)]).retype .str = .poison := rfl
 
 /-- `Val.hasTy_slice` applies to a defined slice with `len 2 ≤ cap 5`. -/
-example : ∃ p l c, Val.agg [.ptr Ptr.null, .int .w64 2, .int .w64 5] =
+example : ∃ p l c, Val.agg [.int .w64 0, .int .w64 2, .int .w64 5] =
     .agg [p, .int .w64 l, .int .w64 c] ∧ l.msb = false ∧ c.msb = false ∧ 0 ≤ l.toInt ∧
     l.toInt ≤ c.toInt :=
-  (Val.hasTy_slice (v := .agg [.ptr Ptr.null, .int .w64 2, .int .w64 5]) (e := some 8)
+  (Val.hasTy_slice (v := .agg [.int .w64 0, .int .w64 2, .int .w64 5]) (e := some 8)
     (by decide)).resolve_left nofun
 
 example : (Val.agg [.ptr Ptr.null, .int .w64 5, .int .w64 2]).retype (.slice (some 8)) =
     .poison := rfl
+
+/-- A convertible pointer retypes to its address at a pointer shape (`⟨heap 0, 8⟩` is at
+`2^40 + 8`), and a global stays a pointer at both word shapes. -/
+example : (Val.ptr ⟨.heap 0, 8⟩).retype (.ptr none) = .int .w64 (2 ^ 40 + 8) := by
+  simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.addr?, Blk.base?]; decide
+
+example : (Val.ptr ⟨.global "s", 0⟩).retype (.int .w64) = .ptr ⟨.global "s", 0⟩ := rfl
 
 end GoFV.SSA.Sem

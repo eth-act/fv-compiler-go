@@ -64,6 +64,18 @@ structure Ptr where
 /-- The nil pointer. -/
 def Ptr.null : Ptr := ⟨.nil, 0⟩
 
+/-- `p` converts to an integer and back to itself (`Ptr.ofAddr_addr`): inside its window, its
+block's number small enough for the address encoding, and not a frame temporary (whose address
+the program never takes) or a global (no concrete address). -/
+def Ptr.convertible (p : Ptr) : Bool :=
+  match p.blk with
+  | .nil => decide (p.off.toNat < 2 ^ 40)
+  | .heap n => decide (n + 1 < 2 ^ 22) && decide (p.off.toNat < 2 ^ 40)
+  | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 2 ^ 20) &&
+      decide (p.off.toNat < 2 ^ 24)
+  | .outargs a => decide (a < 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
+  | .temp _ _ | .global _ | .wbuf => false
+
 /-- A byte of memory: a concrete byte, byte `i` of a stored pointer, or poison (§3.4). -/
 inductive Byte where
   | b (x : BitVec 8)
@@ -277,10 +289,12 @@ inductive Ty where
 
 namespace Val
 
-/-- A value of the pointer shape (`Val.hasTy _ (.ptr _)`): a pointer, a 64-bit integer (the
-pointer at that concrete address, §3.3) or `poison`. -/
+/-- A value of the pointer shape (`Val.hasTy _ (.ptr _)`): a 64-bit integer (the pointer at
+that concrete address, §3.3), a pointer that does not convert to an integer (a convertible one
+is held as its address, `Ptr.word`) or `poison`. -/
 def isPtrWord : Val → Bool
-  | .ptr _ | .int .w64 _ | .poison => true
+  | .ptr p => !p.convertible
+  | .int .w64 _ | .poison => true
   | _ => false
 
 /-- The lengths of a string value (`Ty.str`, components pointer and length) are valid: the

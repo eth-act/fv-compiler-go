@@ -80,9 +80,10 @@ theorem r_generic_994_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic
 /-- A heap block of eight zero bytes. -/
 def zeroMem : Mem := { blocks := #[(.heap 0, { data := Array.replicate 8 (.b 0) })] }
 
-/-- `generic.rules:994` at a `Load <[1]int64>` of eight zero bytes. -/
+/-- `generic.rules:994` at a `Load <[1]int64>` of eight zero bytes (the heap block's address
+word `2^40`). -/
 theorem inst_r_generic_994 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_994 {}
-    { leaf := fun p => if p = [0] then .ptr ⟨.heap 0, 0⟩ else .mem zeroMem
+    { leaf := fun p => if p = [0] then .int .w64 (2 ^ 40) else .mem zeroMem
       ty := fun p => if p = [] then .agg [(0, .int .w64)] 8 else if p = [0] then .ptr (some 8)
         else .mem
       auxInt := fun _ => 0, aux := fun _ => none }
@@ -94,7 +95,7 @@ theorem inst_r_generic_994 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_9
   rule_eval
   refine ⟨⟨.int .w64, by simp [sigmaT, Pat.bindsT, Pat.bindssT]; rfl⟩, by decide +kernel, ?_⟩
   intro h
-  have h' : (loadOp (.agg [(0, .int .w64)] 8) [.ptr ⟨.heap 0, 0#64⟩, .mem zeroMem]).hasTy .other =
+  have h' : (loadOp (.agg [(0, .int .w64)] 8) [.int .w64 (2#64 ^ 40), .mem zeroMem]).hasTy .other =
       false := by decide +kernel
   rw [h] at h'
   cases h'

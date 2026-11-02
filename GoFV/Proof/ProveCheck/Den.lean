@@ -126,7 +126,10 @@ theorem retype_int_int {t : Ty} {z : Val} {w : Width} {y : BitVec w.bits}
       cases w' <;> simp only [Val.retype, reduceCtorEq] at h
       cases h
       exact retype_int_self _ _
-    | ptr p => simp only [Val.retype, reduceCtorEq] at h
+    | ptr p =>
+      simp only [Val.retype] at h
+      obtain rfl := Ptr.word_eq_int h
+      exact h
     | _ => simp only [Val.retype, reduceCtorEq] at h
 
 /-- The value of a term or typed atom that is a `w`-bit integer has shape `int w` or a pointer
