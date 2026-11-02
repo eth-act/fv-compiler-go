@@ -260,15 +260,6 @@ private theorem t_ok (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = s
   rw [blk_vals hT] at hx
   exact hall x hx
 
-/-- The run's `WB` has at most 8 slots. -/
-private theorem wbN8 (S : Setup c b B rs l) {a : ID} {i : Nat} (ha : c.roleOf rs a = .wb i) :
-    ∀ r, rs[i]? = some r → r.wbN ≤ 8 := by
-  intro r hr
-  have ht : thenOp (c.roleOf rs a) = some (i, .WB) := by rw [ha]; rfl
-  obtain ⟨r', hr', hat, wa, hwa, -⟩ := roleOf_then ht
-  obtain ⟨-, -, r3, hr3, -, -, -, h8, -⟩ := roleOK_wb (S.t_ok hr' hat) hwa ha
-  rw [hr] at hr3; cases hr3; exact h8
-
 /-- The source nil check's memory is the run's memory. -/
 private theorem nc_mem (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) {n : ID}
     (hn : r.nc = some n) {u : Value} (hu : c.f.value? n = some u) {p mS : ID}
@@ -551,10 +542,10 @@ private theorem t_call (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH :
       exact ⟨r, M, M, hr, hMr, rfl, .inr rfl⟩
     · simp only [QR, h] at hq
       obtain ⟨r', M', m, hr', hM', rfl, hB⟩ := hq
-      exact ⟨r', M', m, hr', hM', rfl, .inl hB⟩
+      exact ⟨r', M', m, hr', hM', rfl, .inl ⟨_, hB⟩⟩
     · simp only [QR, h] at hq
       obtain ⟨r', M', m, hr', hM', rfl, hB⟩ := hq
-      exact ⟨r', M', m, hr', hM', rfl, .inl hB⟩
+      exact ⟨r', M', m, hr', hM', rfl, .inl ⟨_, hB⟩⟩
     · simp only [QR, h] at hq
       exact hq
 
@@ -629,21 +620,24 @@ theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
   | tgt i k => exact absurd (roleOK_tgt hok hw hρ).1 (fun h => nomatch h)
   | ncThen i => exact S.t_nc hH hok hw hid hρ hcov
   | wb i =>
-    obtain ⟨-, rfl, r', hr', hargs, hn, -, -, e, hty⟩ := roleOK_wb hok hw hρ
-    obtain ⟨M, hRM⟩ := hcov
-    exact local_wb hH hw hid hρ hr' hRM (then_op hρ rfl hw) hargs (S.memHeld hr') hn hty
+    obtain ⟨-, rfl, hargs, h0, h8, ⟨e, hty⟩, r', hr', ha⟩ := roleOK_wb hok hw hρ
+    exact local_wb hH hM hw hid hρ hr' hcov (then_op hρ rfl hw) hargs (S.memHeld hr') ha
+      (wbSize_of hw).symm (by omega) hty
   | sel0 i =>
     obtain ⟨-, rfl, hargs, ha, h0, -⟩ := roleOK_sel hok hw (.inl hρ)
-    exact local_sel hM (S.wbN8 ha) hw hid hargs ha (.inl ⟨then_op hρ rfl hw, hρ, h0 hρ⟩)
+    exact local_sel hw hid hargs ha (.inl ⟨then_op hρ rfl hw, hρ, h0 hρ⟩)
   | sel1 i =>
     obtain ⟨-, rfl, hargs, ha, -, h1⟩ := roleOK_sel hok hw (.inr hρ)
-    exact local_sel hM (S.wbN8 ha) hw hid hargs ha (.inr ⟨then_op hρ rfl hw, hρ, h1 hρ⟩)
+    exact local_sel hw hid hargs ha
+      (.inr ⟨then_op hρ rfl hw, hρ, h1 hρ, memSize_sel1 hρ hw hargs⟩)
   | off i =>
-    obtain ⟨-, rfl, hargs, hty, ha, r', hr', h0, h8, hlt⟩ := roleOK_off hok hw hρ
+    obtain ⟨-, rfl, hargs, hty, ha, h0, h8, hlt⟩ := roleOK_off hok hw hρ
+    obtain ⟨r', hr', -⟩ := roleOf_then (o := .OffPtr) (j := i) (by rw [hρ]; rfl)
     exact local_off hw hid hρ hr' (then_op hρ rfl hw) hargs ha hty h0 h8 hlt
   | bstore i =>
-    obtain ⟨-, rfl, hargs, hty, haux, ho, -, hmm⟩ := roleOK_bstore hok hw hρ
-    exact local_bstore hw hid hρ (then_op hρ rfl hw) hargs ho hmm haux hty
+    obtain ⟨-, rfl, hargs, hty, haux, ho, -, hmm, hgen⟩ := roleOK_bstore hok hw hρ
+    exact local_bstore hw hid hρ (then_op hρ rfl hw) hargs ho hmm (memSize_eq hgen)
+      ((memSize_bstore hρ hw hargs).trans (memSize_eq hgen).symm) haux hty
   | tload i =>
     exact local_true hw (by rw [then_op hρ rfl hw]; decide) (fun y => by simp only [QR, hρ])
   | taddr i => exact absurd (roleOK_taddr hok hw hρ).1 (fun h => nomatch h)

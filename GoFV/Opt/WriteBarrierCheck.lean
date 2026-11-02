@@ -20,8 +20,10 @@ constant `const0` (values of `g`'s entry block), a value of run `j` (`roleRun`: 
 `Load`/`Neq32` and the type addresses `Addr {type:T} SB` of the helper calls, `SB` the flag
 address's; in `cⱼ₊₁` the memory `Phi [memⱼ, memThen]`, the nil-check copy and the run's
 stores re-emitted in order, `Run.tgt`; in `tⱼ₊₁` by op (`thenRole`): the nil-check copy,
-`WB [n] memⱼ` with its `Select0`/`Select1`, buffer pointers `OffPtr [8k]` (`k < n ≤ 8`), buffer
-`Store`s of `uintptr` on a memory chain from the `Select1` and old-value `Load`s, and the
+`WB [n]`s (`n ≤ 8`, one per 8 buffer entries: on `memⱼ` or on the last buffer `Store` of the
+previous one) with their `Select0`/`Select1`, buffer pointers `OffPtr [8k]` (`k < n` of their
+`WB`, `offSize`), buffer `Store`s of `uintptr` through them on a memory chain from the
+`Select1` of the same `WB` (`memWb`) and old-value `Load`s, and the
 `runtime.wbZero(typ, dst)`/`runtime.wbMove(typ, dst, src)` calls (`StaticCall`, register
 arguments only, the arguments of one of the run's `Zero`s/`Move`s) with their memory
 `SelectN [0]`), the lazily created `SB`/`SP`/`Const32`/`Addr` of `g`'s entry, or an argument-free
@@ -102,8 +104,7 @@ def chainOf (f g : Func) : Nat → ID → Option (List Split × ID)
     | some s => (chainOf f g fuel s.e).map fun (ss, l) => (s :: ss, l)
 
 /-- A run: the source stores `src` (in memory order, from `mem`) and their copies `tgt` in the
-end block, the last store `last` (`WBend` in `g`), the memory `Phi`, the nil checks and the
-size `wbN` of the buffer block's `WB` (0: none). -/
+end block, the last store `last` (`WBend` in `g`), the memory `Phi` and the nil checks. -/
 structure Run where
   sp : Split
   src : List ID
@@ -113,7 +114,6 @@ structure Run where
   memThen : ID
   nc : Option ID
   ncEnd : Option ID
-  wbN : Nat
   deriving Inhabited, Repr
 
 /-- The source chain of memory ops ending at `x`, `k` of them, back to memory `mem`. -/
@@ -150,10 +150,7 @@ def runOf? (f g : Func) (s : Split) : Option Run := do
       | some n => if n.op == Op.NilCheck && n.args[1]? == some s.mem then some n.id else none
       | none => none
     else none
-  let wbN := match (vals g s.t).toList.find? (fun x => (g.value? x).any (·.op == Op.WB)) with
-    | some w => ((g.value? w).map (·.auxInt.toInt.toNat)).getD 0
-    | none => 0
-  return { sp := s, src, tgt, last, phi, memThen := pv.args[1]!, nc, ncEnd, wbN }
+  return { sp := s, src, tgt, last, phi, memThen := pv.args[1]!, nc, ncEnd }
 
 /-- The runs and the last block of `b`'s chain. -/
 def chainRuns? (f g : Func) (b : ID) : Option (List Run × ID) := do
@@ -345,6 +342,29 @@ def tMem (rs : List Run) (r : Run) (i : Nat) (m : ID) : Bool :=
     | .sel1 k | .bstore k | .seln k => k == i
     | _ => false)
 
+/-- The size `n` of the `WB [n]` `x`. -/
+def wbSize (x : ID) : Nat := ((c.g.value? x).map (·.auxInt.toInt.toNat)).getD 0
+
+/-- The first argument of `x`. -/
+def arg0 (x : ID) : Option ID := (c.g.value? x).bind (·.args[0]?)
+
+/-- The `WB` whose buffer the pointer `o = OffPtr (Select0 wb)` points into. -/
+def offWb (o : ID) : Option ID := (c.arg0 o).bind c.arg0
+
+/-- The `WB` whose buffer the memory `m` holds: a `Select1` of it, or a buffer `Store` through
+one of its pointers. -/
+def memWb (rs : List Run) (m : ID) : Option ID :=
+  match c.roleOf rs m with
+  | .sel1 _ => c.arg0 m
+  | .bstore _ => (c.arg0 m).bind c.offWb
+  | _ => none
+
+/-- The number of entries of the buffer the pointer `o` points into. -/
+def offSize (o : ID) : Nat := ((c.offWb o).map c.wbSize).getD 0
+
+/-- The number of entries of the buffer the memory `m` holds. -/
+def memSize (rs : List Run) (m : ID) : Nat := ((c.memWb rs m).map c.wbSize).getD 0
+
 /-- The helper call `w` of run `r` (number `i`, its buffer block checked as segment `j`'s):
 `wbZero(typ, dst)` or `wbMove(typ, dst, src)` with register arguments of shape `uintptr`, `typ` a
 type address of the run, `dst`/`src` the arguments of one of the run's `Zero`s/`Move`s (`dst`
@@ -445,11 +465,12 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
             | none => false)
         | none => false)
     | .wb i =>
-      inT && i == j &&
+      inT && i == j && w.args.size == 1 && 0 < w.auxInt.toInt && w.auxInt.toInt ≤ 8 &&
+      (match c.tabs.ty w.type with | .tuple [.ptr _, .mem] => true | _ => false) &&
       (match rs[i]? with
-        | some r => w.args == #[r.sp.mem] && w.auxInt.toInt.toNat == r.wbN && 0 < r.wbN &&
-            r.wbN ≤ 8 && 0 ≤ w.auxInt.toInt &&
-            (match c.tabs.ty w.type with | .tuple [.ptr _, .mem] => true | _ => false)
+        | some r => w.args[0]! == r.sp.mem || (match c.roleOf rs w.args[0]! with
+            | .sel1 k | .bstore k => k == i
+            | _ => false)
         | none => false)
     | .sel0 i =>
       inT && i == j && w.args.size == 1 && tyIs c.tabs w isPtrTy &&
@@ -459,11 +480,8 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
         c.roleOf rs w.args[0]! == .wb i
     | .off i =>
       inT && i == j && w.args.size == 1 && tyIs c.tabs w isPtrTy &&
-        c.roleOf rs w.args[0]! == .sel0 i &&
-        (match rs[i]? with
-          | some r => 0 ≤ w.auxInt.toInt && w.auxInt.toInt % 8 == 0 &&
-              w.auxInt.toInt / 8 < r.wbN
-          | none => false)
+        c.roleOf rs w.args[0]! == .sel0 i && 0 ≤ w.auxInt.toInt && w.auxInt.toInt % 8 == 0 &&
+        w.auxInt.toInt / 8 < c.offSize x
     | .bstore i =>
       inT && i == j && w.args.size == 3 && tyIs c.tabs w isMemTy &&
         (match Sem.auxTy c.tabs w.aux with | .int .w64 => true | _ => false) &&
@@ -473,7 +491,8 @@ def roleOK (b : ID) (B : Block) (segs : List ID) (rs : List Run) (inT : Bool) (j
           | none => false) &&
         (match c.roleOf rs w.args[2]! with
           | .sel1 k | .bstore k => k == i
-          | _ => false)
+          | _ => false) &&
+        c.memWb rs w.args[2]! == c.offWb w.args[0]!
     | .taddr i =>
       !inT && i == j && w.op == .Addr && w.args.size == 1 && c.isSb w.args[0]! &&
         (symName? c.tabs w.aux).isSome &&

@@ -423,9 +423,7 @@ theorem runOf_spec {f g : Func} {s : Split} {r : Run} (h : runOf? f g s = some r
       f.value? a = some nv ∧ nv.op = .NilCheck ∧
       nv.args[1]? = some s.mem ∧ nv.id = n) ∧
     (∃ pv, g.value? r.phi = some pv ∧ pv.op = .Phi ∧ pv.args = #[s.mem, r.memThen]) ∧
-    (vals g s.e)[0]? = some r.phi ∧
-    (∀ x w, (vals g s.t).toList.find? (fun x => (g.value? x).any (·.op == Op.WB)) = some x →
-      g.value? x = some w → r.wbN = w.auxInt.toInt.toNat) := by
+    (vals g s.e)[0]? = some r.phi := by
   simp only [runOf?, Option.bind_eq_bind, Option.bind_eq_some_iff, pure, Option.some.injEq] at h
   obtain ⟨phi, hphi, pv, hpv, u1, hg1, last, hlast, src, hsc, s0, hs0, v0, hv0, rfl⟩ := h
   have hg1 := guard_some hg1
@@ -436,7 +434,7 @@ theorem runOf_spec {f g : Func} {s : Split} {r : Run} (h : runOf? f g s = some r
     cases src with
     | nil => cases hs0
     | cons _ _ => simp
-  refine ⟨rfl, c1, c3 (c1 ▸ hpos), c4, ?_, ⟨pv, hpv, hph, ?_⟩, hphi, ?_⟩
+  refine ⟨rfl, c1, c3 (c1 ▸ hpos), c4, ?_, ⟨pv, hpv, hph, ?_⟩, hphi⟩
   · intro n hn
     dsimp only at hn
     split at hn
@@ -461,9 +459,5 @@ theorem runOf_spec {f g : Func} {s : Split} {r : Run} (h : runOf? f g s = some r
   · have := arr_two hsz
     rw [hm0] at this
     exact this
-  · intro x w hx hw
-    dsimp only
-    rw [hx]
-    simp [hw]
 
 end GoFV.Proof.WB

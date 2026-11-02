@@ -447,7 +447,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
       roleOK_ncEnd (S.segOK hse ((hvE yE).2 hyE')) hwy (hEro yE hyE)
     rw [hr0] at hr'; cases hr'
     rw [hn] at hn'; cases hn'
-    obtain ⟨-, -, -, -, -, ⟨pv, hpv, hpvop, -⟩, hphi0, -⟩ :=
+    obtain ⟨-, -, -, -, -, ⟨pv, hpv, hpvop, -⟩, hphi0⟩ :=
       runOf_spec ((chainRuns_spec S.ch).1 j0 r0 hr0).2.2.2
     have hphiE : r0.phi ∈ vals c.g r0.sp.e := Array.mem_iff_getElem?.2 ⟨0, hphi0⟩
     have hnob : m.find? .wbuf = none := (SP.grOK.mems _ _ hMr).nobuf

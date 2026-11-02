@@ -244,7 +244,7 @@ theorem cov_of_runs (S : Setup c b B rs l) {env : Env} {Gr : Frame} {P : ID → 
     · obtain ⟨hi, hjj, -⟩ := roleOK_call hok hw hρ
       have := hT hi; omega
   · intro j' hρ
-    obtain ⟨hi, hjj, r, hr, -⟩ := roleOK_wb hok hw hρ
+    obtain ⟨hi, hjj, -, -, -, -, r, hr, -⟩ := roleOK_wb hok hw hρ
     have hlt := hT hi
     obtain ⟨-, -, -, -, -, -, hpos', -⟩ :=
       runOK_spec ((blockOK_spec S.ok S.hB S.ch).2.2.2.2.1 j' r hr)

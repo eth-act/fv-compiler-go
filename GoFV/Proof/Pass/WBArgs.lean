@@ -416,7 +416,7 @@ private theorem run_of (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? =
 
 private theorem phi_mem (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? = some r) :
     r.phi ∈ vals c.g r.sp.e := by
-  obtain ⟨-, -, -, -, -, -, h, -⟩ := runOf_spec (run_of S hr)
+  obtain ⟨-, -, -, -, -, -, h⟩ := runOf_spec (run_of S hr)
   exact List.mem_of_getElem? (l := (vals c.g r.sp.e).toList) (by simpa using h) |>
     Array.mem_toList_iff.1
 
@@ -954,13 +954,16 @@ theorem args_t (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : Nat
     rcases ha with rfl | rfl
     · exact avail_succ S hO hr hav
     · exact avail_succ S hO hr hmem
-  · obtain ⟨-, hik, r', hr', hargs, -⟩ := roleOK_wb hok hw hρ
+  · obtain ⟨-, hik, hargs, -, -, -, r', hr', hm⟩ := roleOK_wb hok hw hρ
     subst hik
     rw [hr] at hr'; cases hr'
     rw [hargs] at ha
     simp only [List.mem_toArray, List.mem_singleton] at ha
     subst ha
-    exact avail_succ S hO hr hmem
+    rcases hm with hm | hm | hm
+    · rw [hm]; exact avail_succ S hO hr hmem
+    · exact absurd (in_t hr (by rw [hm]; rfl)) hna
+    · exact absurd (in_t hr (by rw [hm]; rfl)) hna
   · obtain ⟨-, hik, hargs, hrole, -⟩ := roleOK_sel hok hw (.inl hρ)
     subst hik
     rw [hargs] at ha
@@ -979,7 +982,7 @@ theorem args_t (S : Setup c b B rs l) {Gr : Frame} (hO : OutDef c B Gr) {k : Nat
     simp only [List.mem_toArray, List.mem_singleton] at ha
     subst ha
     exact absurd (in_t hr (by rw [hrole]; rfl)) hna
-  · obtain ⟨-, hik, hargs, -, -, h0, ⟨r', hr', h1⟩, h2⟩ := roleOK_bstore hok hw hρ
+  · obtain ⟨-, hik, hargs, -, -, h0, ⟨r', hr', h1⟩, h2, -⟩ := roleOK_bstore hok hw hρ
     subst hik
     rw [hr] at hr'; cases hr'
     rw [hargs] at ha
