@@ -1,4 +1,4 @@
-import GoFV.Proof.Low.SimAtom
+import GoFV.Proof.Low.SimMem
 import GoFV.Proof.Pass.RewriteTermDen
 
 /-!
@@ -22,38 +22,11 @@ namespace GoFV.Proof.Low.Sim
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof GoFV.Proof.Dom GoFV.Proof.Low
   GoFV.Proof.Term GoFV.Proof.AtomSim GoFV.Opt.LowerCheck GoFV.Opt.LowerTerm
 
-/-! ## `atomPair` -/
-
-theorem atomPair_spec {u w : Value} (h : atomPair u w = true) :
-    (u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.type = w.type ∧ u.auxInt = w.auxInt ∧
-      u.aux = w.aux ∧ u.args.size = w.args.size ∧ u.block = w.block ∧ u.id = w.id := by
-  unfold atomPair at h
-  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h
-  exact ⟨h1, h2, h3, h4, h5, h6, h7⟩
-
-/-- Corresponding atoms are both `Phi`s or neither. -/
-theorem atomPair_phi {u w : Value} (h : atomPair u w = true) : w.op = .Phi ↔ u.op = .Phi := by
-  rcases (atomPair_spec h).1 with h | h
-  · rw [h]
-  · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
-      rw [h1, h2] <;> decide
-
-/-- Corresponding atoms are both roots or neither. -/
-theorem atomPair_isRoot {u w : Value} (h : atomPair u w = true) : isRoot w.op = isRoot u.op := by
-  rcases (atomPair_spec h).1 with h | h
-  · rw [h]
-  · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
-      rw [h1, h2] <;> decide
-
 theorem termVL_phi {tabs : Tables} {v : Value} (h : v.op = .Phi) : termVL tabs v = false := by
   have hg : Op.Phi.generic = true := by decide
   have ht : GoFV.Opt.RewriteCheck.termOp .Phi = false := by decide
   unfold termVL
   simp only [h, hg, ht, ite_true]
-
-theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
-  unfold Ctx.makeL; split <;> rfl
 
 theorem makeL_act (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).act = 0 := by
   unfold Ctx.makeL; split <;> rfl
@@ -67,7 +40,7 @@ def rootL (h : Func) (x : ID) : Bool := (h.value? x).any (Sem.isRoot ·.op)
 structure BlockAtomsL (tabs : Tables) (f g : Func) (fb gb : Block) : Prop where
   id : fb.id = gb.id
   sub : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termVL tabs w = false →
-    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ termVL tabs u = false ∧ atomPair u w = true
+    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ termVL tabs u = false ∧ atomPair tabs u w = true
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (rootL f) = og.toList.filter (rootL g)
 
@@ -131,6 +104,7 @@ structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) : Prop where
   args : AtomArgsRefL tabs f g
   ctrls : TermStepRefL tabs f g
   low : f.lowered = true → g.lowered = true
+  glow : g.lowered = true
   gen : ∀ x u, f.value? x = some u → termVL tabs u = false → u.op.generic = true
   shp : ∀ x u, f.value? x = some u → shp f.lowered tabs u.type = shp g.lowered tabs u.type
 
@@ -140,13 +114,13 @@ include H
 
 /-- An atom placed in `g` is placed in the same block of `f`, as a corresponding atom. -/
 theorem gatomL {a : ID} {w : Value} (hp : Placed g a w) (ht : termVL tabs w = false) :
-    ∃ u, Placed f a u ∧ termVL tabs u = false ∧ atomPair u w = true := by
+    ∃ u, Placed f a u ∧ termVL tabs u = false ∧ atomPair tabs u w = true := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hp
   have hbm' : w.block ∈ f.blocks := by rw [H.ok.blocks]; exact hbm
   obtain ⟨fc, gc, hfc, hgc, hBA⟩ := H.ok.block w.block hbm'
   rw [hblk] at hgc; cases hgc
   obtain ⟨hxf, u, hu, hut, hs⟩ := hBA.sub a hx w hw ht
-  have hub : u.block = w.block := (atomPair_spec hs).2.2.2.2.2.1
+  have hub : u.block = w.block := (atomPair_spec hs).2.2.2.1
   exact ⟨u, ⟨hu, by rw [hub]; exact hbm', fc, by rw [hub]; exact hfc, hxf⟩, hut, hs⟩
 
 /-- An atom the target defines has the source's shape. -/
@@ -216,7 +190,7 @@ arguments' registers refine where both frames hold them as terms over the atoms,
 pair whose arguments the frames hold evaluates to refinements (`atomPair_eval`). -/
 theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
     {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (ht : termVL tabs w = false) :
-    atomPair u w = true ∧
+    atomPair tabs u w = true ∧
     (∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
       Sem.Refines (rv G u.args[i]!) (rv T w.args[i]!)) ∧
     (∀ env : Env, env.Mono → (∀ a ∈ u.args, VS a) → (∀ a ∈ w.args, VT a) → w.op ≠ .Phi →
@@ -225,7 +199,7 @@ theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
   obtain ⟨u', hu', hpair, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
   rw [hu] at hu'; cases hu'
-  obtain ⟨hop, hty, hai, hax, hsz, -, hid⟩ := atomPair_spec hpair
+  obtain ⟨-, hty, hsz, -, hid⟩ := atomPair_spec hpair
   have hargs : ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
       Sem.Refines (rv G u.args[i]!) (rv T w.args[i]!) := fun i hi h1 h2 =>
     termRefL_regs H hDS hDT hVT hrel htyS htyT (hTR i hi) h1 h2
@@ -235,7 +209,7 @@ theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
   have hut : termVL tabs u = false := by
     obtain ⟨u2, hpu, hut, -⟩ := gatomL H ⟨hw, hbm, blk, hblk, hx⟩ ht
     rw [hpu.1] at hu; cases hu; exact hut
-  refine atomPair_eval hE H.ok.ownAux H.low hfr hpair (H.gen x u hu hut) ?_
+  refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair (H.gen x u hu hut) ?_
     (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
   · rw [hid, hwid, tysL_of_value hw, tysL_of_value hu, H.shp x u hu, hty]
   · have hi' : i < w.args.size := hsz ▸ hi
@@ -247,10 +221,10 @@ end
 
 /-- A non-root atom of `g` other than `Arg`/`ArgIntReg` evaluates. -/
 theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv : List Val} {ty : Ty}
-    (hp : atomPair u w = true) (hgen : u.op.generic = true) (hr : isRoot w.op = false)
+    (hp : atomPair tabs u w = true) (hgen : u.op.generic = true) (hr : isRoot w.op = false)
     (ha : w.op ≠ .Arg) (hai : w.op ≠ .ArgIntReg) :
     ∃ y, evalOpL false env ctx fr w argv ty = .ok y := by
-  rcases (atomPair_spec hp).1 with hop | hop
+  rcases (atomPair_spec hp).1 with ⟨hop | hop, -⟩ | hm
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
@@ -262,6 +236,8 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
       · rw [atomPair_isRoot hp, ho] at hr; exact absurd hr (by decide)
       · exact evalOp_safe (v := { w with op := u.op }) (by rw [ho]; decide)
           (by rw [ho]; decide) (by rw [ho]; decide)
+  · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
+    rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
 
 end
 

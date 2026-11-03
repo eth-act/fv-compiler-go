@@ -24,11 +24,18 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low GoFV.Opt.L
 
 /-! ## `opValL` at an op -/
 
-/-- `opValL` of an arm64 op other than `MOVDaddr`: `Arm64.evalPure`. -/
+/-- `opValL` of an arm64 op other than `MOVDaddr` and the integer loads: `Arm64.evalPure`. -/
 theorem opValL_arm {o : Op} (hg : o.generic = false) (hm : (o == .ARM64MOVDaddr) = false)
-    (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val) :
-    opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
-  simp only [opValL, hg, hm, Bool.false_eq_true, ite_false]
+    (hl : ldOp? o = none) (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
+    (args : List Val) : opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
+  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
+
+/-- `opValL` of an integer load: `ldVal`. -/
+theorem opValL_ld {o : Op} {n : Nat} {s : Bool} (hg : o.generic = false)
+    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = some (n, s)) (tabs : Tables) (ty : Ty)
+    (ai : Int64) (ax : Option AuxRef) (args : List Val) :
+    opValL tabs o ty ai ax args = ldVal tabs n s ty ai ax args := by
+  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
 
 /-- `opValL` of a generic op other than `Addr`/`ConstString`: `evalPure`. -/
 theorem opValL_gen {o : Op} (hg : o.generic = true) (hf : frameOp o = false)
@@ -506,7 +513,8 @@ theorem termVL_arm (o : Op) (hg : o.generic = false) (hm : (o == .ARM64MOVDaddr)
     (ht : (armTerm o && !actOp o && !isRoot o) = true) :
     ∀ tabs (v : Value), v.op = o → termVL tabs v = true := by
   intro tabs v hv
-  simp only [termVL, hv, hg, hm, Bool.false_eq_true, ite_false, ht]
+  have hl : ldOp? o = none := ldOp?_of_act (by simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2)
+  simp only [termVL, hv, hg, hm, hl, Option.isSome_none, Bool.false_eq_true, ite_false, ht]
 
 /-- An ellipsis rule `(o ...) => (o' ...)` on terms with `SetOpSound o o'`. -/
 theorem checked_setOp {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
@@ -520,6 +528,11 @@ theorem checked_setOp {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
 theorem checked_rename {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
     (hr : r.result = .setOp o') (hc : r.cond = none) (hb : r.block = none)
     (hn : renameOp o o' = true) : ArmRule.Checked r :=
-  .inr (.inr ⟨o, o', hp, hr, hc, hb, hn⟩)
+  .inr (.inr (.inl ⟨o, o', hp, hr, hc, hb, hn⟩))
+
+/-- A rule on a store (`ArmRule.Mem`). -/
+theorem checked_store {r : Rule} {n ty ai ax ar args c}
+    (hp : r.pat = .op .Store n ty ai ax ar args c) : ArmRule.Checked r :=
+  .inr (.inr (.inr ⟨n, ty, ai, ax, ar, args, c, hp⟩))
 
 end GoFV.Proof.Low.Rules

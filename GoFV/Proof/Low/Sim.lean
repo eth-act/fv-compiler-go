@@ -5,7 +5,8 @@ import GoFV.Proof.Low.SimEnter
 
 `GoFV.Proof.Low.atomSimL_refines`: Phase 1's atom simulation (`GoFV.Proof.AtomSim`) over `runL`
 on both sides. Two checked functions with the same blocks whose atoms correspond
-(`LowerCheck.atomsOKL`: the same op and fields, or an atom renamed by `renameOp`), whose
+(`LowerCheck.atomsOKL`: the same op and fields, an atom renamed by `renameOp`, or a `Store`
+lowered to an arm64 store, `memLower`), whose
 corresponding atoms' arguments in `g` refine those of `f` as lowered terms over the atoms
 (`AtomArgsRefL`) and whose terminators refine as functions of their controls' terms
 (`TermStepRefL`) refine each other under monotone contracts: lock-step simulation
@@ -174,7 +175,7 @@ theorem atomSimL_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     RefinesLFrom (fun env _ _ => env.Mono) tabs g tabs f := by
   have H : Sim.Hyp tabs f g ce ce' := ⟨check_wf hf, check_wf hg,
     certOK_of_check (check_domCert hf), certOK_of_check (check_domCert hg), atomsOKL_spec hA, h1,
-    h2, fun _ => hgl, hfa, shp_eq_of hsh hgl⟩
+    h2, fun _ => hgl, hgl, hfa, shp_eq_of hsh hgl⟩
   intro env args mem hE fuel hd
   refine ⟨fuel, ?_⟩
   have hc := ctxL_eq (tabs := tabs) H.ok.ownAux

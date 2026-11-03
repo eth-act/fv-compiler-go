@@ -56,11 +56,11 @@ def TermRefL (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID) (l
     Sem.Refines (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
 
 /-- The arguments of every atom listed in `g` refine, as terms, those of the atom of `f` it
-corresponds to (`atomPair`: the same ID and fields, or a renamed op). -/
+corresponds to (`atomPair`: the same ID and fields, a renamed op, or a lowered store). -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false →
-    ∃ u', f.value? a = some u' ∧ atomPair u' u = true ∧
+    ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧
       ∀ i < u.args.size,
         TermRefL f.lowered f.value? tabs u'.args[i]! g.lowered (listedDefs g) tabs u.args[i]!
 

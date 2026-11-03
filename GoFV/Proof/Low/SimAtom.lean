@@ -4,9 +4,10 @@ import GoFV.Proof.CallMono
 /-!
 # Corresponding atoms evaluate to refinements (issue #385)
 
-`GoFV.Proof.Low.atomPair_eval`: an atom `w` of the lowered function `g` that corresponds to the
-atom `u` of `f` (`LowerCheck.atomPair`; `u`'s op is generic) evaluates (`Sem.evalValueL`, mode of
-`g`) to a refinement of `u`'s evaluation (mode of `f`) on refined argument registers:
+The pieces of `GoFV.Proof.Low.atomPair_eval` (`SimMem.lean`): an atom `w` of the lowered function
+`g` that corresponds to the atom `u` of `f` (`LowerCheck.atomPair`; `u`'s op is generic) evaluates
+(`Sem.evalValueL`, mode of `g`) to a refinement of `u`'s evaluation (mode of `f`) on refined
+argument registers:
 
 * the same op: Phase 1's `evalOp_mono`, then the shaping (`rty_le`: Phase 1's `retype` is
   refined by `retypeL`, at the same shape);
@@ -404,66 +405,3 @@ theorem evalOp_postCall {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv :
   rcases hc with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> (unfold evalOp; rw [h])
 
 end GoFV.Proof.Low.Sim
-
-namespace GoFV.Proof.Low
-
-open GoFV.SSA GoFV.SSA.Sem GoFV.Proof GoFV.Proof.AtomSim GoFV.Opt.LowerCheck Sim
-
-/-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` corresponding to the atom
-`u` of `f` (`atomPair`, `u` generic), in frames of one activation whose argument registers are
-refined, at the same shape, evaluates in `g`'s mode to a refinement of `u` in `f`'s mode. -/
-theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
-    (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) {GS GT : Frame}
-    (hfr : GT = { GS with regs := GT.regs }) {u w : Value} (hp : atomPair u w = true)
-    (hgen : u.op.generic = true)
-    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
-    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
-    (hargs : ∀ i < u.args.size, Sem.Refines (rv GS u.args[i]!) (rv GT w.args[i]!)) :
-    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
-      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
-  unfold atomPair at hp
-  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hp
-  obtain ⟨⟨⟨⟨⟨⟨hop, -⟩, hai⟩, hax⟩, hsz⟩, -⟩, hid⟩ := hp
-  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
-  have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) := by
-    refine refinesList_idx (by simp [hsz]) fun i a a' ha ha' => ?_
-    rw [Array.getElem?_toList] at ha ha'
-    obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
-    obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
-    have := hargs i hi
-    rwa [getElem!_pos u.args i hi, getElem!_pos w.args i hi'] at this
-  generalize hty' : (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
-  generalize u.args.toList.map (rv GS) = AS at hlist
-  generalize w.args.toList.map (rv GT) = AT at hlist
-  -- the source's op on the target's arguments, in the target's activation
-  have hctx : Ctx.makeL tabs g =
-      { (Ctx.makeL tabs f) with f := (Ctx.makeL tabs g).f, sched := (Ctx.makeL tabs g).sched, tys := (Ctx.makeL tabs g).tys } := by
-    rw [makeL_f]; exact ctxL_eq (tabs := tabs) hown
-  have hmono : Res.Refines (evalOp env (Ctx.makeL tabs f) GS u AS ty)
-      (evalOp env (Ctx.makeL tabs g) GT { w with op := u.op } AT ty) := by
-    have h1 := evalOp_mono env hE (Ctx.makeL tabs f) (Ctx.makeL tabs g) hctx GS GT (by rw [hfr])
-      (by rw [hfr]) (by rw [hfr]) (by rw [hfr]) u ty hlist
-    rwa [← evalOp_congr (ctx := Ctx.makeL tabs g) (ctx' := Ctx.makeL tabs g) (fr := GT) (v := u)
-      (v' := { w with op := u.op }) rfl hax.symm hai.symm hid.symm rfl rfl rfl] at h1
-  have hsrc : evalOpL false env (Ctx.makeL tabs f) GS u AS ty = evalOp env (Ctx.makeL tabs f) GS u AS ty :=
-    evalOpL_generic _ _ _ _ _ _ hgen
-  have hev : Res.Refines (evalOpL false env (Ctx.makeL tabs f) GS u AS ty)
-      (evalOpL false env (Ctx.makeL tabs g) GT w AT ty) := by
-    rw [hsrc]
-    rcases hop with hop | hop
-    · have hw : { w with op := u.op } = w := by rw [hop]
-      rw [hw] at hmono
-      rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
-      exact hmono
-    · rcases evalOpL_rename (env := env) (ctx := Ctx.makeL tabs g) (fr := GT) (argv := AT) (ty := ty)
-          hop with ⟨k, hk, he⟩ | ⟨-, he⟩
-      · rw [he]
-        have ht : evalOp env (Ctx.makeL tabs g) GT { w with op := u.op } AT ty =
-            callOp env (Ctx.makeL tabs g) { w with op := u.op } AT := evalOp_postCall hk
-        rw [ht] at hmono
-        have hfit := callOp_fit hE (Ctx.makeL tabs g) { w with op := u.op } (k := k) hk AT
-        exact resRefines_trans hmono hfit
-      · rw [he]; exact hmono
-  exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
-
-end GoFV.Proof.Low

@@ -60,18 +60,51 @@ def movAddr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (args : List Val) 
   | [a] => (movPtr tabs ai ax a).elim .poison PtrOps.ptrRes
   | _ => .poison
 
+/-- The integer loads `Load` lowers to, with their size and signedness (`MOV{B,BU,H,HU,W,WU,D}load`;
+`Sem.arm64Op`'s `ld`). -/
+def ldOp? : Op → Option (Nat × Bool)
+  | .ARM64MOVBload => some (1, true)
+  | .ARM64MOVBUload => some (1, false)
+  | .ARM64MOVHload => some (2, true)
+  | .ARM64MOVHUload => some (2, false)
+  | .ARM64MOVWload => some (4, true)
+  | .ARM64MOVWUload => some (4, false)
+  | .ARM64MOVDload => some (8, false)
+  | _ => none
+
+/-- An `n`-byte integer load `[ai] {ax} a mem` without a frame variable aux (`Sem.arm64Op`'s `ld`):
+the memory at `movPtr`, `poison` without an address. -/
+def ldVal (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64) (ax : Option AuxRef) :
+    List Val → Val
+  | [a, .mem m] => (movPtr tabs ai ax a).elim .poison (Arm64.loadN ty n s m)
+  | _ => .poison
+
 /-- The value of a lowered term node before shaping: Phase 1's `opVal` for a generic op,
-`movAddr` for `MOVDaddr`, `Arm64.evalPure` otherwise. -/
+`movAddr` for `MOVDaddr`, `ldVal` for an integer load, `Arm64.evalPure` otherwise. -/
 def opValL (tabs : Tables) (op : Op) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
     (args : List Val) : Val :=
   if op.generic then Rules.opVal tabs op ty ai ax args
   else if op == .ARM64MOVDaddr then movAddr tabs ai ax args
-  else Arm64.evalPure op ty ai ax args
+  else match ldOp? op with
+    | some (n, s) => ldVal tabs n s ty ai ax args
+    | none => Arm64.evalPure op ty ai ax args
+
+/-- The integer loads are activation ops (`Sem.arm64Op`). -/
+theorem ldOp?_of_act {o : Op} (h : actOp o = false) : ldOp? o = none := by
+  unfold ldOp?
+  split <;> first | rfl | exact absurd h (by decide)
+
+theorem ldOp?_mem {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
+    o = .ARM64MOVBload ∨ o = .ARM64MOVBUload ∨ o = .ARM64MOVHload ∨ o = .ARM64MOVHUload ∨
+      o = .ARM64MOVWload ∨ o = .ARM64MOVWUload ∨ o = .ARM64MOVDload := by
+  unfold ldOp? at h
+  split at h <;> simp_all
 
 /-- The value `v` is a term of a lowered function (module doc of `GoFV.Opt.LowerTerm`). -/
 def termVL (tabs : Tables) (v : Value) : Bool :=
   if v.op.generic then GoFV.Opt.RewriteCheck.termOp v.op
   else if v.op == .ARM64MOVDaddr then !auxIsName tabs v.aux
+  else if (ldOp? v.op).isSome then !auxIsName tabs v.aux
   else armTerm v.op && !actOp v.op && !isRoot v.op
 
 /-! ## Commutation choices -/
@@ -328,6 +361,28 @@ def ArmRule.Rename (r : Rule) : Prop :=
   ∃ o o', ellipsisOn o r.pat = true ∧ r.result = .setOp o' ∧ r.cond = none ∧ r.block = none ∧
     renameOp o o' = true
 
+/-- The access size of the arm64 stores `(Store {t} ptr val mem)` lowers to
+(`MOV{B,H,W,D}store`, `FMOV{S,D}store`, offset 0, no aux). -/
+def stSize : Op → Option Nat
+  | .ARM64MOVBstore => some 1
+  | .ARM64MOVHstore => some 2
+  | .ARM64MOVWstore | .ARM64FMOVSstore => some 4
+  | .ARM64MOVDstore | .ARM64FMOVDstore => some 8
+  | _ => none
+
+/-- A scalar shape of `n` bytes: a boolean (1), an integer (its width), a pointer (8). -/
+def fitsB (ty : Ty) (n : Nat) : Bool :=
+  match ty with
+  | .bool => n == 1
+  | .int w => n == w.bytes
+  | .ptr _ => n == 8
+  | _ => false
+
+/-- The atom `w` lowers the memory atom `u`: a `Store {t}` of a scalar `t` of the arm64 store's
+size, at offset 0 without aux (`GoFV.Proof.Low.Sim.store_lower_eval`). -/
+def memLower (tabs : Tables) (u w : Value) : Bool :=
+  w.auxInt == 0 && w.aux == none && u.op == .Store && (stSize w.op).any (fitsB (auxTy tabs u.aux))
+
 /-! ## Block rules -/
 
 /-- Whether a conditional block of kind `k` (auxint `ai`) on the control `c` takes its first
@@ -385,9 +440,16 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
 
 /-! ## Rule sets -/
 
+/-- A rule on a store (`(Store {t} ptr val mem)`, an atom): the validator accepts its events only
+as a lowered store it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`), so
+the rule carries no obligation of its own. -/
+def ArmRule.Mem (r : Rule) : Prop :=
+  ∃ n ty ai ax ar args c, r.pat = .op .Store n ty ai ax ar args c
+
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
-ellipsis rule on terms, or an atom rename. -/
-def ArmRule.Checked (r : Rule) : Prop := ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r
+ellipsis rule on terms, an atom rename, or a rule on a store. -/
+def ArmRule.Checked (r : Rule) : Prop :=
+  ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r
 
 /-- Every value rule of `s` is `ArmRule.Checked`, every block rule `BlockRuleL.Sound`, and `s`
 has no rules in the per-instance tables (`nilChecks` … `phiSels`, Phase 1's generic layers). -/

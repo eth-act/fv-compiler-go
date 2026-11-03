@@ -21,7 +21,9 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   the rule's control pattern, the block's auxint (tracked in `BStateL`) as the rule asks, the new
   controls the rule's variables, the new auxint the rule's;
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
-  `renameOp` with the same type, auxint, aux and arguments' count;
+  `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
+  arm64 store (`memLower`); a rule event lowering a store is replayed as its new definition
+  (`atomDef`);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/
@@ -170,6 +172,17 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
     else none
   | _, _ => none
 
+/-- A rule event at the atom `v` whose one definition `u` lowers it as a store (`memLower`:
+`(Store {t} ptr val mem) => (MOVDstore ptr val mem)` and the other sizes): `u`, an atom with `v`'s
+arguments and type. -/
+def atomDef (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option Value :=
+  match M.get? v, defs with
+  | some x, [u] =>
+    if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.args == x.args &&
+        u.type == x.type && memLower tabs x u then some u
+    else none
+  | _, _ => none
+
 /-! ## Copies -/
 
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it (`RewriteCheck.copyCompat`
@@ -287,7 +300,9 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
         | _ =>
           if ruleOKL tabs M cr.rule v defs.toList then
             replayL tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
-          else none
+          else match atomDef tabs M v defs.toList with
+            | some u => replayL tabs t f (M.put v u) B evs
+            | none => none
   | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none
@@ -332,10 +347,12 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
     | none => false
 
 /-- The atom `w` of `g` corresponds to the atom `u` of `f`: the same fields, or `w` renames `u`
-(`renameOp`) with the same type, auxint, aux and number of arguments. -/
-def atomPair (u w : Value) : Bool :=
-  (u.op == w.op || renameOp u.op w.op) && u.type == w.type && u.auxInt == w.auxInt &&
-    u.aux == w.aux && u.args.size == w.args.size && u.block == w.block && u.id == w.id
+(`renameOp`) with the same type, auxint, aux and number of arguments, or `w` lowers the store `u`
+(`memLower`) with the same type and number of arguments. -/
+def atomPair (tabs : Tables) (u w : Value) : Bool :=
+  ((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
+    memLower tabs u w) &&
+  u.type == w.type && u.args.size == w.args.size && u.block == w.block && u.id == w.id
 
 /-- `RewriteCheck.atomsOK` with `atomPair`: the same entry, blocks and own aux; every atom of `g`
 corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtom`), and each block
@@ -349,7 +366,7 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       let af := atomsOfL tabs f fb
       let ag := atomsOfL tabs g gb
       ag.all (fun x => af.contains x && match f.value? x, g.value? x with
-        | some u, some w => atomPair u w
+        | some u, some w => atomPair tabs u w
         | _, _ => false) &&
       af.all (fun x => ag.contains x || (f.value? x).any (dropAtom ·.op)) &&
       match Sem.schedule f fb, Sem.schedule g gb with

@@ -130,7 +130,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     have ht : termVL tabs w = false := termVL_phi hph
     obtain ⟨u, hpu, -, hs⟩ := gatomL H hpw ht
     have huph : u.op = .Phi := (atomPair_phi hs).1 hph
-    obtain ⟨-, hty, -, -, hsz, hblk, -⟩ := atomPair_spec hs
+    obtain ⟨-, hty, hsz, hblk, -⟩ := atomPair_spec hs
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -296,7 +296,7 @@ theorem src_evalL {env : Env} (htree : ((make f).depthOf b).isSome) {frP G : Fra
 /-- A scheduled atom of `g` is scheduled in `f`, as a corresponding atom. -/
 theorem atomL_sched {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w)
     (ht : termVL tabs w = false) :
-    ∃ u, f.value? x = some u ∧ termVL tabs u = false ∧ atomPair u w = true ∧ x ∈ of.toList ∧
+    ∃ u, f.value? x = some u ∧ termVL tabs u = false ∧ atomPair tabs u w = true ∧ x ∈ of.toList ∧
       Placed g x w := by
   obtain ⟨hxb, w', hw', hph⟩ := (B.mT x).1 hx
   rw [hw] at hw'; cases hw'
@@ -309,7 +309,7 @@ theorem atomL_out {a : ID} {w : Value} (hp : Placed g a w) (ht : termVL tabs w =
     (hne : w.block ≠ b) : a ∉ gb.values ∧ a ∉ fb.values := by
   obtain ⟨u, hpu, -, hs⟩ := gatomL H hp ht
   exact ⟨not_mem_of_placed H.wg hp B.bmT B.hgb hne,
-    not_mem_of_placed H.wf hpu B.bmS B.hfb ((atomPair_spec hs).2.2.2.2.2.1 ▸ hne)⟩
+    not_mem_of_placed H.wf hpu B.bmS B.hfb ((atomPair_spec hs).2.2.2.1 ▸ hne)⟩
 
 end
 
@@ -515,13 +515,16 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
     cases ha
 
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
-theorem atomPair_op_of_generic {u w : Value} (h : atomPair u w = true) (hg : w.op.generic = true) :
-    u.op = w.op := by
-  rcases (atomPair_spec h).1 with h | h
+theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
+    (hg : w.op.generic = true) : u.op = w.op := by
+  rcases (atomPair_spec h).1 with ⟨h | h, -⟩ | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ <;>
       rw [h2] at hg <;> exact absurd hg (by decide)
+  · exfalso
+    obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases h
+    generalize w.op = o at hs hg; cases hs <;> exact absurd hg (by decide)
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
@@ -573,7 +576,13 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
         exfalso
         simp only [beq_iff_eq] at hm
         rw [hm] at this; exact absurd this (by decide)
-      · simp [this]
+      · split
+        · rename_i hl
+          exfalso
+          obtain ⟨p, hp⟩ := Option.isSome_iff_exists.1 hl
+          rcases ldOp?_mem hp with h | h | h | h | h | h | h <;> rw [h] at this <;>
+            exact absurd this (by decide)
+        · simp [this]
   obtain ⟨u, hu, -, hpair, -, hpwr⟩ := atomL_sched H B hrog.1 hwr hwrt
   rw [hur] at hu; cases hu
   -- the `Phi`s and the frames after them
