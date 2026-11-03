@@ -53,7 +53,7 @@ elab "arm_unfold" : tactic => do
       rule_unfold_ds, rule_helper, rule_unfold_s]
     intro $(mkIdent `hwf):ident $(mkIdent `hc):ident $(mkIdent `hcond):ident
       $(mkIdent `hty):ident $(mkIdent `hat):ident $(mkIdent `htop):ident $(mkIdent `harg):ident
-      $(mkIdent `hcs):ident
+      $(mkIdent `hcs):ident $(mkIdent `hfit):ident
     (try simp (config := { decide := true }) only [Pat.argsOKL, Pat.argsOKLs, Bool.and_eq_true,
       Bool.or_eq_true, decide_eq_true_eq, and_true, true_and, false_or, true_or, or_true,
       Nat.reduceAdd] at $(mkIdent `harg):ident)

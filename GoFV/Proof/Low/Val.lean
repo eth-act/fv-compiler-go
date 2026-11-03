@@ -36,7 +36,7 @@ theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hax : u.
 theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = true) :
     f.blocks = g.blocks ∧ ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ fb, f.block? b = some fb ∧
       fb.id = gb.id ∧ ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termVL tabs w = false →
-        x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ atomPair u w = true ∧ termVL tabs u = false := by
+        x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ atomPair tabs u w = true ∧ termVL tabs u = false := by
   unfold atomsOKL at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨-, hbl⟩, -⟩, h⟩ := h
@@ -68,12 +68,12 @@ theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = tru
     · cases hfd
   · cases this
 
-theorem atomPair_facts {u w : Value} (h : atomPair u w = true) :
-    u.type = w.type ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux ∧ u.args.size = w.args.size := by
+theorem atomPair_facts {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
+    u.type = w.type ∧ u.args.size = w.args.size := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨-, h1⟩, h2⟩, h3⟩, h4⟩, -⟩, -⟩ := h
-  exact ⟨h1, h2, h3, h4⟩
+  obtain ⟨⟨⟨⟨-, h1⟩, h2⟩, -⟩, -⟩ := h
+  exact ⟨h1, h2⟩
 
 /-- `x` is marked by `liveMarksL tabs h` (read by the output). -/
 def LiveL (tabs : Tables) (h : Func) (x : ID) : Prop := (liveMarksL tabs h)[x]? = some true
@@ -355,7 +355,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       subst hma
       have huw : u = w := Option.some.inj (hu.symm.trans hw)
       subst huw
-      have hi' : i < u'.args.size := (atomPair_facts hp).2.2.2 ▸ hi
+      have hi' : i < u'.args.size := (atomPair_facts hp).2 ▸ hi
       have hcopy := hargs i (by omega) hi
       have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
       have hlv : LiveL tabs g u.args[i] :=

@@ -53,6 +53,7 @@ import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
 import GoFV.Proof.Low.Rules.Flags
 import GoFV.Proof.Low.Rules.Kit
+import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
@@ -653,6 +654,7 @@ import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Witness.LoopRotateLoc
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
+import GoFV.Proof.Witness.LowerLoadStore
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine

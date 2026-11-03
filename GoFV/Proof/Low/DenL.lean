@@ -42,6 +42,56 @@ theorem rty_hasTy (low : Bool) (t : Ty) (v : Val) : (rty low t v).hasTy t = true
 /-- `rty` is `runL`'s shaping (`Sem.LMode.retype`). -/
 theorem LMode.retype_eq (md : LMode) (t : Ty) (v : Val) : md.retype t v = rty md.low t v := rfl
 
+/-- An arm64 load on a refined memory refines. -/
+theorem loadN_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : Bool) (p : Ptr) :
+    Sem.Refines (Arm64.loadN ty n s m p) (Arm64.loadN ty n s m' p) := by
+  unfold Arm64.loadN
+  split
+  · have hl := GoFV.SSA.Sem.load_mono h (.int .w64) p
+    revert hl
+    generalize m.load (.int .w64) p = x
+    generalize m'.load (.int .w64) p = y
+    intro hl
+    cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _ | (constructor; assumption)
+  · split
+    · rename_i w _
+      have hl := GoFV.SSA.Sem.load_mono h (.int w) p
+      revert hl
+      generalize m.load (.int w) p = x
+      generalize m'.load (.int w) p = y
+      intro hl
+      cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _
+    · exact Sem.Refines.refl _
+
+/-- `ldVal` is monotone. -/
+theorem ldVal_mono (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64)
+    (ax : Option AuxRef) {as bs : List Val} (hr : RefinesList as bs) :
+    Sem.Refines (ldVal tabs n s ty ai ax as) (ldVal tabs n s ty ai ax bs) := by
+  cases hr with
+  | nil => exact .poison _
+  | @cons a a' _ _ h1 hr =>
+  cases hr with
+  | nil => exact .poison _
+  | @cons b b' _ _ h2 hr =>
+  cases hr with
+  | @cons c _ l _ _ _ =>
+    have : ldVal tabs n s ty ai ax (a :: b :: c :: l) = .poison := by cases b <;> rfl
+    rw [this]; exact .poison _
+  | nil =>
+  cases h2 with
+  | mem hm =>
+    have hp : movPtr tabs ai ax a = none ∨ movPtr tabs ai ax a = movPtr tabs ai ax a' := by
+      cases ax with
+      | some _ => exact .inr rfl
+      | none => cases h1 <;> first | exact .inr rfl | exact .inl rfl
+    rcases hp with he | he
+    · simp only [ldVal, he, Option.elim]; exact .poison _
+    · simp only [ldVal, he]
+      cases movPtr tabs ai ax a' with
+      | none => exact .poison _
+      | some p => exact loadN_mono hm ty n s p
+  | _ => first | exact .poison _ | exact Sem.Refines.refl _
+
 /-- `opValL` of a term value is monotone. -/
 theorem opValL_mono_term {tabs : Tables} {v : Value} (ht : termVL tabs v = true) (ty : Ty)
     {as bs : List Val} (h : RefinesList as bs) :
@@ -54,9 +104,13 @@ theorem opValL_mono_term {tabs : Tables} {v : Value} (ht : termVL tabs v = true)
     · simp only [hm, beq_self_eq_true, ite_true]; exact movAddr_mono tabs v.auxInt v.aux h
     · have hm' : (v.op == .ARM64MOVDaddr) = false := by simpa using hm
       simp only [hm', Bool.false_eq_true, ite_false]
-      unfold termVL at ht
-      simp only [hg, Bool.false_eq_true, ite_false, hm', Bool.and_eq_true] at ht
-      exact armPure_mono ht.1.1 ty v.auxInt v.aux h
+      cases hl : ldOp? v.op with
+      | some p => exact ldVal_mono tabs p.1 p.2 ty v.auxInt v.aux h
+      | none =>
+        unfold termVL at ht
+        simp only [hg, Bool.false_eq_true, ite_false, hm', hl, Option.isSome_none,
+          Bool.and_eq_true] at ht
+        exact armPure_mono ht.1.1 ty v.auxInt v.aux h
 
 /-! ## `denL` -/
 
@@ -157,8 +211,26 @@ theorem arm64Op_movAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv :
     | nil => dsimp only; rw [symAddr_eq hn]
     | cons => rfl
 
+/-- An integer load without a frame variable aux evaluates to `ldVal`. -/
+theorem arm64Op_ld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    {p : Nat × Bool} (hl : ldOp? v.op = some p) (hn : auxIsName ctx.tabs v.aux = false) :
+    evalOpL false env ctx fr v argv ty = .ok (ldVal ctx.tabs p.1 p.2 ty v.auxInt v.aux argv) := by
+  have h0 : nilFaults false ctx v argv = none := rfl
+  have hs := fun a => symAddr_eq (ctx := ctx) (v := v) (a := a) hn
+  rcases ldOp?_mem hl with h | h | h | h | h | h | h <;> rw [h] at hl <;> cases hl <;>
+  · unfold evalOpL
+    rw [h, if_neg (by decide)]
+    dsimp only
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [h]
+    dsimp only
+    unfold ldVal
+    split <;> simp_all
+
 /-- A term value evaluates by `opValL` (`Sem.evalOpL`: Phase 1's `evalOp` of a generic term
-op, `arm64Op` of `MOVDaddr`, `Arm64.evalPure` of an `armTerm` op). -/
+op, `arm64Op` of `MOVDaddr` and of an integer load, `Arm64.evalPure` of an `armTerm` op). -/
 theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} (ht : termVL ctx.tabs v = true) :
     evalOpL false env ctx fr v argv ty = .ok (opValL ctx.tabs v.op ty v.auxInt v.aux argv) := by
@@ -177,7 +249,15 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
       rw [this, arm64Op_movAddr hm ht]
       simp only [opValL, hm, hg', Bool.false_eq_true, ite_false, beq_self_eq_true, ite_true]
     · have hm' : (v.op == .ARM64MOVDaddr) = false := by simpa using hm
-      simp only [hm', Bool.false_eq_true, ite_false, Bool.and_eq_true, Bool.not_eq_true'] at ht
+      simp only [hm', Bool.false_eq_true, ite_false] at ht
+      cases hl : ldOp? v.op with
+      | some p =>
+        simp only [hl, Option.isSome_some, ite_true, Bool.not_eq_true'] at ht
+        rw [arm64Op_ld hl ht]
+        simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl]
+      | none =>
+      simp only [hl, Option.isSome_none, Bool.false_eq_true, ite_false, Bool.and_eq_true,
+        Bool.not_eq_true'] at ht
       obtain ⟨⟨-, ha⟩, hr⟩ := ht
       have : evalOpL false env ctx fr v argv ty = pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
         unfold evalOpL
@@ -187,6 +267,6 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
           | (rename_i h; rw [h] at ha; exact absurd ha (by decide))
           | (rw [hr]; rfl)
       rw [this]
-      simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', pure]
+      simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, pure]
 
 end GoFV.Proof.Low

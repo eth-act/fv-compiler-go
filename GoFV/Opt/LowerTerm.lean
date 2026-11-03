@@ -11,7 +11,9 @@ arguments' values, `GoFV.Proof.Low.denL`) rather than atoms (`GoFV.Proof.Low.Ato
   whose `Arm64.evalPure` is proven monotone (`armTerm`, `GoFV.Proof.Low.armPure_mono`);
 * `MOVDaddr` without a frame variable aux (`auxIsName`): its value is its base moved by its
   offset, or a global symbol's address at its offset, both from the tables alone
-  (`Sem.symAddr`).
+  (`Sem.symAddr`);
+* an integer load `MOV{B,BU,H,HU,W,WU,D}load` without a frame variable aux: the memory argument
+  read at that address (`GoFV.Proof.Low.ldVal`), as Phase 1's `Load` is a term.
 
 Every other arm64 op is an atom; the checked `lower` only accepts atoms of the output that
 correspond to atoms of the input (`GoFV.Opt.LowerCheck.atomPair`).

@@ -90,6 +90,9 @@ def ruleWhyL (tabs : Tables) (M : Defs) (r0 : Rule) (v : ID) (defs : List Value)
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond"
         else if !Pat.argsOK e.ty [] r.pat then "args"
+        else if !Pat.topOKL (e.ty []) r.pat then s!"top {repr (e.ty [])}"
+        else if !Pat.argsOKL e.ty [] r.pat then "argsL"
+        else if !resFitsL (e.ty []) r.result then s!"fits {repr (e.ty [])}"
         else if !leavesOK M I [] r.pat then "leaves"
         else if !resultOKL tabs M e r.pat ev or σ I r x defs then
           s!"result defs={defs.map fun u => (u.id, u.op.name, u.args.toList, u.type)} x={(x.id, x.type)}"
@@ -107,7 +110,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       | some fb, some gb =>
         for x in atomsOfL tabs g gb do
           match f.value? x, g.value? x with
-          | some u, some w => if !atomPair u w then return s!"atoms: {u.op.name} -> {w.op.name} v{x}"
+          | some u, some w => if !atomPair tabs u w then return s!"atoms: {u.op.name} -> {w.op.name} v{x}"
           | none, some w => return s!"atoms: new atom {w.op.name} v{x}"
           | _, _ => return s!"atoms: v{x}?"
         for x in atomsOfL tabs f fb do
@@ -134,7 +137,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
             | none => return s!"setOp {key cr.rule}"
           | _ =>
             if ruleOKL tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
-            else return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
+            else match atomDef tabs M v defs.toList with
+              | some u => M := M.put v u
+              | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
     | .copyArg v i src =>
       match M.get? v with
       | none => return "copyArg missing"

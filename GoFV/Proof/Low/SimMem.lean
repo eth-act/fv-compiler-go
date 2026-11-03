@@ -3,17 +3,17 @@ import GoFV.Proof.Low.SimAtom
 /-!
 # Lowered loads and stores refine the generic ones (issue #385)
 
-`ARM64.rules` lowers `(Load <t> ptr mem)` to `MOV{B,BU,H,HU,W,WU,D}load`/`FMOV{S,D}load ptr mem`
-by the width and signedness of `t`, and `(Store {t} ptr val mem)` to
-`MOV{B,H,W,D}store`/`FMOV{S,D}store ptr val mem` by `t`'s size (offset 0, no aux). Here, for a
-value shape `ty` with a scalar layout (`LoadFits`/`StoreFits`: a boolean of 1 byte, an integer
-or float of `w.bytes`, a pointer of 8 bytes):
+`ARM64.rules` lowers `(Load <t> ptr mem)` to `MOV{B,BU,H,HU,W,WU,D}load ptr mem` by the width and
+signedness of `t`, and `(Store {t} ptr val mem)` to `MOV{B,H,W,D}store`/`FMOV{S,D}store ptr val
+mem` by `t`'s size (offset 0, no aux). Here, for a value shape `ty` with a scalar layout
+(`LoadFits`/`StoreFits`: a boolean of 1 byte, an integer of `w.bytes`, a pointer of 8 bytes):
 
-* `load_lower_eval`: Phase 1's `Load` (`evalOp`: `loadOp`, the memory decoded at `ty`) shaped in
-  either mode is refined by the arm64 load (`arm64Op`'s `ld n signed`: `Arm64.loadN`) shaped by
-  `retypeL`, on refined arguments. A narrow load's extension is cut by `retypeL`; a boolean byte
-  other than 0/1 is `poison` in Phase 1 and its low bit in the load; a pointer-typed 8-byte load
-  reads the same word (`decodeInt .w64 = decodePtr`).
+* `ld_ref`: Phase 1's `Load` (`loadOp`, the memory decoded at `ty`) shaped by `retypeL` is
+  refined by the arm64 load (`ldRes`, `Arm64.loadN`) shaped by `retypeL`. A narrow load's
+  extension is cut by `retypeL`; a boolean byte other than 0/1 is `poison` in Phase 1 and its low
+  bit in the load; a pointer-typed 8-byte load reads the same word (`decodeInt .w64 =
+  decodePtr`). Loads are terms on both sides (`termVL`, `opValL`'s `ldVal`), so the load rules are
+  `ArmRule.Sound` (`Rules/LoadStore.lean`; the size fit is the validator's `resFitsL`).
 * `store_lower_eval`: Phase 1's `Store` (`memRoot`: the write of `encode ty val`) is refined by
   the arm64 store (`arm64Op`'s `st n`: the write of `Arm64.storeBytes n val`): the stored bytes
   agree, or the generic ones are `poison` (`encode_le_storeBytes`).
@@ -21,6 +21,10 @@ or float of `w.bytes`, a pointer of 8 bytes):
 A `Store {t}` of an aggregate shape (`StoreFits` excludes it: a size-1/2/4/8 struct, `[1]T` or
 `complex64`) would not refine: `encode` writes the fields' bytes, `storeBytes` `poison`
 (`Arm64.reg` of an aggregate is `none`).
+
+Stores are atoms: the validator pairs them by `memLower` (`LowerCheck.atomPair`;
+`memLower_cases`), and `GoFV.Proof.Low.atomPair_eval` relates every corresponding pair of atoms:
+the same op, a renamed op (`SimAtom.lean`), or a lowered store (`store_lower_eval`).
 -/
 
 namespace GoFV.Proof.Low.Sim
@@ -28,18 +32,6 @@ namespace GoFV.Proof.Low.Sim
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof GoFV.Proof.Low GoFV.Proof.AtomSim
 
 /-! ## The lowered memory ops -/
-
-/-- The plain arm64 loads `Load` lowers to, with their size and signedness. -/
-inductive LdOp : Op → Nat → Bool → Prop
-  | b : LdOp .ARM64MOVBload 1 true
-  | bu : LdOp .ARM64MOVBUload 1 false
-  | h : LdOp .ARM64MOVHload 2 true
-  | hu : LdOp .ARM64MOVHUload 2 false
-  | w : LdOp .ARM64MOVWload 4 true
-  | wu : LdOp .ARM64MOVWUload 4 false
-  | d : LdOp .ARM64MOVDload 8 false
-  | fs : LdOp .ARM64FMOVSload 4 false
-  | fd : LdOp .ARM64FMOVDload 8 false
 
 /-- The plain arm64 stores `Store` lowers to, with their size. -/
 inductive StOp : Op → Nat → Prop
@@ -67,24 +59,6 @@ def ldRes (ty : Ty) (n : Nat) (s : Bool) : List Val → Val
 theorem symAddr_zero {ctx : Ctx} {w : Value} (hax : w.aux = none) (hai : w.auxInt = 0) (a : Val) :
     symAddr ctx w a = Arm64.addr a 0 := by
   unfold symAddr; rw [hax, hai]; rfl
-
-theorem evalOpL_ld {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
-    {n : Nat} {s : Bool} (h : LdOp w.op n s) (hax : w.aux = none) (hai : w.auxInt = 0) :
-    evalOpL false env ctx fr w argv ty = .ok (ldRes ty n s argv) := by
-  have h0 : nilFaults false ctx w argv = none := rfl
-  have hs := symAddr_zero (ctx := ctx) hax hai
-  generalize hop : w.op = o at h
-  cases h <;>
-  · unfold evalOpL
-    rw [hop, if_neg (by decide)]
-    dsimp only
-    unfold arm64Op
-    rw [h0]
-    dsimp only
-    rw [hop]
-    dsimp only
-    unfold ldRes
-    split <;> simp_all
 
 /-- A lowered store on an address, a value and a memory writes `storeBytes`. -/
 theorem evalOpL_st {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty} {n : Nat}
@@ -330,26 +304,6 @@ theorem ld_ref {ty : Ty} {n : Nat} (hfit : LoadFits ty n) (s : Bool) (argv : Lis
     | _ => exact hp0 _
   · cases x <;> exact hp0 _
 
-/-- A generic `Load` evaluates to `loadOp`. -/
-theorem evalOp_load {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} {argv : List Val} {ty : Ty}
-    (hu : u.op = .Load) : evalOp env ctx fr u argv ty = .ok (loadOp ty argv) := by
-  rw [evalOp_term (by rw [hu]; decide), hu, GoFV.Proof.Rules.opVal_pure (by decide)]
-  rfl
-
-/-- **`Load` lowered to an arm64 load** (`ARM64.rules` `(Load <t> ptr mem)`, offset 0, no aux):
-on refined arguments, the arm64 load shaped by `retypeL` refines the generic load shaped in
-either mode (`rty lS`), at a shape the load's size fits. -/
-theorem load_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Value}
-    (hu : u.op = .Load) {n : Nat} {s : Bool} (hld : LdOp w.op n s) (hax : w.aux = none)
-    (hai : w.auxInt = 0) {ty : Ty} (hfit : LoadFits ty n) (lS : Bool) {argv argv' : List Val}
-    (h : RefinesList argv argv') :
-    Res.Refines ((evalOp env ctx fr u argv ty).bind fun r => .ok (rty lS ty r))
-      ((evalOpL false env ctx' fr' w argv' ty).bind fun r => .ok (rty true ty r)) := by
-  rw [evalOp_load hu, evalOpL_ld hld hax hai]
-  refine .ok ?_
-  exact ((rty_le (lT := true) (fun _ => rfl) ty (Sem.Refines.refl _)).trans
-    (retypeL_mono ty (loadOp_mono ty h))).trans (ld_ref hfit s argv')
-
 /-! ## Stores -/
 
 private theorem resRefines_trans {a b c : Res Val} (h1 : Res.Refines a b) (h2 : Res.Refines b c) :
@@ -515,4 +469,137 @@ theorem store_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
   refine Res.Rel.bind (resRefines_trans (memRoot_mono ctx u h) (st_ref hu hst hax hai hfit argv'))
     fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
 
+/-! ## `memLower` and `atomPair` -/
+
+open GoFV.Opt.LowerCheck
+
+theorem stSize_stOp {o : Op} {n : Nat} (h : stSize o = some n) : StOp o n := by
+  unfold stSize at h
+  split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h <;>
+    first | exact .b | exact .h | exact .w | exact .d | exact .fs | exact .fd
+
+theorem fitsB_store {ty : Ty} {n : Nat} (h : fitsB ty n = true) : StoreFits ty n := by
+  unfold fitsB at h
+  split at h <;> simp only [beq_iff_eq, reduceCtorEq] at h
+  · exact .inl ⟨rfl, h⟩
+  · exact .inr (.inl ⟨_, rfl, h⟩)
+  · exact .inr (.inr ⟨_, rfl, h⟩)
+
+/-- What `memLower` says. -/
+theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
+    w.auxInt = 0 ∧ w.aux = none ∧ u.op = .Store ∧ ∃ n, StOp w.op n ∧ StoreFits (auxTy tabs u.aux) n := by
+  unfold memLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Option.any_eq_true] at h
+  obtain ⟨⟨⟨hai, hax⟩, hu⟩, n, hn, hf⟩ := h
+  exact ⟨hai, hax, hu, n, stSize_stOp hn, fitsB_store hf⟩
+
+theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
+    (((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
+        memLower tabs u w = true) ∧
+      u.type = w.type ∧ u.args.size = w.args.size ∧ u.block = w.block ∧ u.id = w.id := by
+  unfold atomPair at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  refine ⟨?_, h2, h3, h4, h5⟩
+  rcases h1 with ⟨⟨h1, h6⟩, h7⟩ | h1
+  · exact .inl ⟨h1, h6, h7⟩
+  · exact .inr h1
+
+/-- A lowered store and the `Store` it lowers: no `Phi`s, both roots. -/
+theorem memLower_ops {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
+    u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot w.op = isRoot u.op := by
+  obtain ⟨-, -, hu, n, hs, -⟩ := memLower_cases h
+  generalize w.op = o at hs
+  rw [hu]; cases hs <;> decide
+
+/-- Corresponding atoms are both `Phi`s or neither. -/
+theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
+    w.op = .Phi ↔ u.op = .Phi := by
+  rcases (atomPair_spec h).1 with ⟨h | h, -⟩ | h
+  · rw [h]
+  · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
+      rw [h1, h2] <;> decide
+  · obtain ⟨h1, h2, -⟩ := memLower_ops h
+    exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
+
+/-- Corresponding atoms are both roots or neither. -/
+theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
+    isRoot w.op = isRoot u.op := by
+  rcases (atomPair_spec h).1 with ⟨h | h, -⟩ | h
+  · rw [h]
+  · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
+      rw [h1, h2] <;> decide
+  · exact (memLower_ops h).2.2
+
+theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
+  unfold Ctx.makeL; split <;> rfl
+
+
 end GoFV.Proof.Low.Sim
+
+namespace GoFV.Proof.Low
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Proof GoFV.Proof.AtomSim GoFV.Opt.LowerCheck Sim
+
+/-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
+the atom `u` of `f` (`atomPair`, `u` generic), in frames of one activation whose argument registers
+are refined, at the same shape, evaluates in `g`'s mode to a refinement of `u` in `f`'s mode. -/
+theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
+    (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
+    {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
+    (hp : atomPair tabs u w = true) (hgen : u.op.generic = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    (hargs : ∀ i < u.args.size, Sem.Refines (rv GS u.args[i]!) (rv GT w.args[i]!)) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  obtain ⟨hk, -, hsz, -, hid⟩ := atomPair_spec hp
+  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
+  have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) := by
+    refine refinesList_idx (by simp [hsz]) fun i a a' ha ha' => ?_
+    rw [Array.getElem?_toList] at ha ha'
+    obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
+    obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
+    have := hargs i hi
+    rwa [getElem!_pos u.args i hi, getElem!_pos w.args i hi'] at this
+  generalize hty' : (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
+  rcases hk with ⟨hop, hai, hax⟩ | hm
+  case inr =>
+    -- a lowered store
+    obtain ⟨hwai, hwax, hu, n, hst, hfit⟩ := memLower_cases hm
+    rw [hgl, evalOpL_generic _ _ _ _ _ _ hgen]
+    exact store_lower_eval hu hst hwax hwai (by rw [makeL_tabs]; exact hfit) f.lowered hlist
+  generalize u.args.toList.map (rv GS) = AS at hlist
+  generalize w.args.toList.map (rv GT) = AT at hlist
+  -- the source's op on the target's arguments, in the target's activation
+  have hctx : Ctx.makeL tabs g =
+      { (Ctx.makeL tabs f) with f := (Ctx.makeL tabs g).f, sched := (Ctx.makeL tabs g).sched, tys := (Ctx.makeL tabs g).tys } := by
+    rw [makeL_f]; exact ctxL_eq (tabs := tabs) hown
+  have hmono : Res.Refines (evalOp env (Ctx.makeL tabs f) GS u AS ty)
+      (evalOp env (Ctx.makeL tabs g) GT { w with op := u.op } AT ty) := by
+    have h1 := evalOp_mono env hE (Ctx.makeL tabs f) (Ctx.makeL tabs g) hctx GS GT (by rw [hfr])
+      (by rw [hfr]) (by rw [hfr]) (by rw [hfr]) u ty hlist
+    rwa [← evalOp_congr (ctx := Ctx.makeL tabs g) (ctx' := Ctx.makeL tabs g) (fr := GT) (v := u)
+      (v' := { w with op := u.op }) rfl hax.symm hai.symm hid.symm rfl rfl rfl] at h1
+  have hsrc : evalOpL false env (Ctx.makeL tabs f) GS u AS ty = evalOp env (Ctx.makeL tabs f) GS u AS ty :=
+    evalOpL_generic _ _ _ _ _ _ hgen
+  have hev : Res.Refines (evalOpL false env (Ctx.makeL tabs f) GS u AS ty)
+      (evalOpL false env (Ctx.makeL tabs g) GT w AT ty) := by
+    rw [hsrc]
+    rcases hop with hop | hop
+    · have hw : { w with op := u.op } = w := by rw [hop]
+      rw [hw] at hmono
+      rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
+      exact hmono
+    · rcases evalOpL_rename (env := env) (ctx := Ctx.makeL tabs g) (fr := GT) (argv := AT) (ty := ty)
+          hop with ⟨k, hk, he⟩ | ⟨-, he⟩
+      · rw [he]
+        have ht : evalOp env (Ctx.makeL tabs g) GT { w with op := u.op } AT ty =
+            callOp env (Ctx.makeL tabs g) { w with op := u.op } AT := evalOp_postCall hk
+        rw [ht] at hmono
+        have hfit := callOp_fit hE (Ctx.makeL tabs g) { w with op := u.op } (k := k) hk AT
+        exact resRefines_trans hmono hfit
+      · rw [he]; exact hmono
+  exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
+
+end GoFV.Proof.Low
