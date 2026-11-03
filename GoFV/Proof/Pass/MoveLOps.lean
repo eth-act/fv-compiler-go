@@ -19,7 +19,7 @@ theorem evalOpL_pure {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v :
     evalOpL faulting env ctx fr v argv ty =
       if isRoot v.op then atomicRoot v argv else pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
   unfold evalOpL
-  rw [if_neg (by rw [hg]; decide)]
+  rw [ite_eq_right (by rw [hg]; decide)]
   split
   all_goals first
     | rfl
@@ -30,7 +30,7 @@ theorem evalOpL_act {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (ha : actOp v.op = true) :
     evalOpL faulting env ctx fr v argv ty = arm64Op faulting env ctx fr v argv ty := by
   unfold evalOpL
-  rw [if_neg (by rw [hg]; decide)]
+  rw [ite_eq_right (by rw [hg]; decide)]
   generalize v.op = op at ha ⊢
   cases op
   all_goals first

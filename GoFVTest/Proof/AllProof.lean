@@ -259,6 +259,12 @@ import GoFV.Proof.Pass.MemCombineSem
 import GoFV.Proof.Pass.MemCombineSound
 import GoFV.Proof.Pass.MemCombineSplit
 import GoFV.Proof.Pass.MemCombineStore
+import GoFV.Proof.Pass.MoveL
+import GoFV.Proof.Pass.MoveLCheck
+import GoFV.Proof.Pass.MoveLEnter
+import GoFV.Proof.Pass.MoveLOps
+import GoFV.Proof.Pass.MoveLPhase
+import GoFV.Proof.Pass.MoveLRel
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.Pass.NilRel
@@ -334,6 +340,7 @@ import GoFV.Proof.Pass.StructStoreMem
 import GoFV.Proof.Pass.StructStoreRel
 import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Pass.StructStoreSrc
+import GoFV.Proof.Pass.TightenL
 import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Pass.TrimLocCheck
 import GoFV.Proof.Pass.WBAll
@@ -662,6 +669,7 @@ import GoFV.Proof.Witness.StructStore
 import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TabsAgreeMod
+import GoFV.Proof.Witness.TightenL
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.TrimLoc
 import GoFV.Proof.Witness.Util

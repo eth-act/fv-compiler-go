@@ -53,9 +53,9 @@ theorem okLocal_spec {x : ID} (h : okLocal ok f g x = true) :
   · have := List.all_eq_true.1 hargs k (List.mem_range.2 hk)
     refine ⟨relFuel, ?_⟩
     simpa [getElem!_pos, hk, hk'] using this
-  · rw [if_pos (by rw [hp])] at hrest
+  · rw [ite_eq_left (by rw [hp])] at hrest
     simpa using hrest
-  · rw [if_neg (by simpa using hp)] at hrest
+  · rw [ite_eq_right (by simpa using hp)] at hrest
     simp only [Bool.and_eq_true, beq_iff_eq] at hrest
     exact ⟨hrest.1.1, hrest.1.2, hrest.2⟩
 

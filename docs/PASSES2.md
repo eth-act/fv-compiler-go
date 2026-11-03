@@ -576,6 +576,32 @@ For comparison only, supported architectures combine the pointer expression into
 
 **Issue summary:** Implement required index-47 tightening, including the precise `-N`/10,000-block guard. Port one-time movability/memory analysis, distinct-register-argument heuristic with flags exception, phi-edge LCA targets, reducible-loop depth correction, and append/swap-remove fixpoint movement. Reuse actual loopnest cache state; do not confuse this pass with rematerialization-based phi tightening (`tighten.go:14-176`).
 
+**Proof (#385):** `GoFV.Proof.MoveL.tighten_refinesL` (`GoFV/Proof/Pass/TightenL.lean`):
+`tightenPass penv f = .ok out`, `check ce f = .ok ()`, `check ce' out.func = .ok ()` and
+`moveB f out.func = true` give `RefinesL out.tables out.func penv.tables f` (`runL`). Checked
+wrapper over the fixed-CFG value-motion validator `moveB` (`GoFV/Proof/Pass/MoveLCheck.lean`,
+shared with phi tighten, tighten tuple selectors and loop invariant):
+`refinesL_of_move (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (hm : moveB f g = true)
+: RefinesL tabs g tabs f` (`GoFV/Proof/Pass/MoveL.lean`). `moveB` checks same entry, block list,
+`ownAux` and `lowered`; per block the same kind, `auxInt`, edges and controls; a certificate of
+related values (`okCert`, the greatest fixed point of `okLocal`, validated by `certValid`: an
+in-place value of `g` has the source's op, type, aux, auxint, first-argument sign extension and
+related arguments; a `Phi` stays in its block) and a relation `relB` (identity in the
+certificate, a clone of a total op with the same arguments, or a `Copy` of a related value);
+every value of a `g` block is a `Phi` or non-total value in place in the `f` block, or total
+(`totalOp`: non-root ops whose non-faulting lowered evaluation is `.ok` for every argument list
+and ignores the value's ID, `totalOp_ok`); and the panic order (`orderOK`: every call or nil check
+of `f`'s schedule is in `g`'s, with every non-total value `g` evaluates before it evaluated
+before it by `f`). The proof is a lock-step simulation on the same blocks and edges: per block
+the source's schedule runs with the target fixed, then the target's (`phaseS`, `phaseT`), keeping
+lemma (D) by IDs and agreement of related registers on the values placed in the dominators of
+both sides. Witness `GoFV.Proof.Witness.tightenL_witness` (`clampTL`: lowered clamp with its
+second `CMP` in the entry block; tighten moves it into `b2`, the output returns
+`clamp(12, 0, 10) = 10`). Coverage (`lake exe move-probe`): quick-v7 9,297 sections, 8,643 with
+input and output checked, 3,118 changed, `moveB` accepts 8,643 (0 rejections); full-v9 96,560
+sections, 90,656 checked, 41,995 changed, accepted 90,656 (0 rejections). The sections not
+counted have an input that fails `check` (654 and 5,904).
+
 ### merge conditional branches — issue #401
 
 **Function / files:** `mergeConditionalBranches` and its private CFG/condition-conversion helpers, `merge_conditional_branches.go:59-890`.

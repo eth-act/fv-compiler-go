@@ -98,10 +98,10 @@ theorem valueOK_spec {fb : Block} {x : ID} (h : valueOK ok g fb x = true) :
   rw [hg] at h
   dsimp only at h
   refine ⟨gv, rfl, fun hp => ?_, fun hp => ?_⟩
-  · rw [if_pos (by rw [hp]; decide)] at h
+  · rw [ite_eq_left (by rw [hp]; decide)] at h
     simp only [Bool.and_eq_true, Array.contains_iff_mem] at h
     exact h
-  · rw [if_neg (by simpa using hp)] at h
+  · rw [ite_eq_right (by simpa using hp)] at h
     simp only [Bool.or_eq_true, Bool.and_eq_true, Array.contains_iff_mem] at h
     exact h
 
