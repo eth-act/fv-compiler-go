@@ -2,7 +2,7 @@ name = "gofv"
 defaultTargets = ["GoFV"]
 # Linter warnings embed absolute paths in .oleans and defeat the shared cache (lean-build-hygiene).
 # Package level, so lean_exe root modules get these arguments too (#1).
-weakLeanArgs = ["-Dlinter.unusedVariables=false", "-Dlinter.unusedSimpArgs=false", "-Dlinter.unnecessarySimpa=false", "-Dlinter.unusedSectionVars=false", "-Dlinter.ambiguousOpen=false", "-j4"]
+weakLeanArgs = ["-Dlinter.unusedVariables=false", "-Dlinter.unusedSimpArgs=false", "-Dlinter.unnecessarySimpa=false", "-Dlinter.unusedSectionVars=false", "-Dlinter.ambiguousOpen=false", "-Dlinter.constructorNameAsVariable=false", "-Dlinter.defProp=false", "-j4"]
 
 [[lean_lib]]
 name = "GoFV"

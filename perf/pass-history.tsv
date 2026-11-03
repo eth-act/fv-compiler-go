@@ -2031,3 +2031,180 @@ date	commit	bench	pass	time_s	runs	corpus	bin_hash
 2026-11-03T13:25:12Z	66d613895896	pass-parity-corpus	loop rotate	0.00	1	9b846eb8bf4e	12c2113d6c716447
 2026-11-03T13:25:12Z	66d613895896	pass-parity-corpus	trim	0.00	1	9b846eb8bf4e	12c2113d6c716447
 2026-11-03T13:25:12Z	66d613895896	pass-parity-corpus	regalloc	3.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	number lines	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	early phielim and copyelim	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	late phielim and copyelim	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	early deadcode	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	pre-opt deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	opt deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	gcse deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	generic deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	lowered deadcode for cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	lowered deadcode	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	late deadcode	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	opt	9.70	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	middle opt	4.80	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	late opt	5.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	divisible	0.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	divmod	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	zero arg cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	short circuit	0.90	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	early fuse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	nilcheckelim	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	expand calls	0.50	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	late fuse	2.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	softfloat	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	sccp	1.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	check bce	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	dead auto elim	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	dse	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	memcombine	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	writebarrier	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	insert resched checks	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	cpufeatures	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	rewrite tern	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	known bits	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	phiopt	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	branchelim	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	generic cse	1.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	prove	3.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	decompose user	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	decompose builtin	1.70	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	lower	5.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	late lower	0.50	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	addressing modes	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	pair	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	lowered cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	elim unread autos	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	tighten tuple selectors	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	checkLower	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	loop invariant	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	tighten	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	critical	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	phi tighten	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	likelyadjust	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	layout	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	schedule	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	late nilcheck	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	flagalloc	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	loop rotate	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	trim	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T13:47:17Z	d66733f788e0	pass-parity-corpus	regalloc	3.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	number lines	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	early phielim and copyelim	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	late phielim and copyelim	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	early deadcode	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	pre-opt deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	opt deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	gcse deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	generic deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	lowered deadcode for cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	lowered deadcode	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	late deadcode	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	opt	9.70	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	middle opt	4.80	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	late opt	5.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	divisible	0.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	divmod	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	zero arg cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	short circuit	0.90	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	early fuse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	nilcheckelim	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	expand calls	0.50	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	late fuse	2.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	softfloat	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	sccp	1.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	check bce	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	dead auto elim	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	dse	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	memcombine	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	writebarrier	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	insert resched checks	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	cpufeatures	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	rewrite tern	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	known bits	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	phiopt	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	branchelim	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	generic cse	1.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	prove	3.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	decompose user	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	decompose builtin	1.70	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	lower	5.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	late lower	0.50	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	addressing modes	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	pair	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	lowered cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	elim unread autos	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	tighten tuple selectors	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	checkLower	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	loop invariant	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	tighten	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	critical	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	phi tighten	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	likelyadjust	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	layout	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	schedule	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	late nilcheck	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	flagalloc	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	loop rotate	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	trim	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:13:23Z	1a11c63fd169	pass-parity-corpus	regalloc	3.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	number lines	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	early phielim and copyelim	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	late phielim and copyelim	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	early deadcode	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	pre-opt deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	opt deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	gcse deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	generic deadcode	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	lowered deadcode for cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	lowered deadcode	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	late deadcode	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	opt	9.70	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	middle opt	4.80	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	late opt	5.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	divisible	0.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	divmod	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	zero arg cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	short circuit	0.90	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	early fuse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	nilcheckelim	0.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	expand calls	0.50	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	late fuse	2.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	softfloat	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	sccp	1.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	check bce	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	dead auto elim	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	dse	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	memcombine	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	writebarrier	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	insert resched checks	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	cpufeatures	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	rewrite tern	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	known bits	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	phiopt	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	branchelim	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	generic cse	1.60	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	prove	3.30	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	decompose user	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	decompose builtin	1.70	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	lower	5.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	late lower	0.50	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	addressing modes	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	pair	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	lowered cse	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	elim unread autos	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	tighten tuple selectors	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	checkLower	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	loop invariant	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	tighten	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	critical	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	phi tighten	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	likelyadjust	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	layout	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	schedule	0.40	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	late nilcheck	0.10	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	flagalloc	0.20	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	loop rotate	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	trim	0.00	1	9b846eb8bf4e	12c2113d6c716447
+2026-11-03T14:25:32Z	6454e3155e99	pass-parity-corpus	regalloc	3.30	1	9b846eb8bf4e	12c2113d6c716447
