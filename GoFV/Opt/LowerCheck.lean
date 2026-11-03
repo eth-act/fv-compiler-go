@@ -96,7 +96,7 @@ def nodeOKL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Orac
   u.op == n.op && termVL tabs u &&
   GoFV.Opt.CSE.tyEq (shpL tabs u.type) (nodeTyL ev or topTy n.ty) &&
   u.auxInt == (match n.auxInt with
-    | some ae => (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae)
+    | some ae => (toAuxIntL n.op.auxType (ev ae)).getD (or.auxInt ae)
     | none => 0) &&
   u.aux == nodeAuxL e pat or n.aux &&
   u.args.size == n.args.length &&

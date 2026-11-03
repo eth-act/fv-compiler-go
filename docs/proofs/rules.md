@@ -1989,6 +1989,24 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   (`x | (c^d) == c` iff `x == c || x == d` when `d ⊆ c` and `c^d` is one bit); `onebit_int`
   and `onebit_int_ne` read it off the condition's `Int` facts.
 
+- **`ARM64.rules` lowering rules false under the semantics** (#385, P2ProofLow; model limits,
+  not Go bugs; the checked lower leaves them out of `GoFV.Rules.ProvenARM64`):
+  - `:243`, `:251` (`(EqPtr x y) => (Equal (CMP x y))`, `NeqPtr` → `NotEqual`): Phase 1
+    compares pointers by allocation and offset, `CMP` compares the two 64-bit words, and two
+    distinct allocations can have the same address in the model (`Blk.base?` gives `local a k`
+    and `temp a k` one base, and offsets wrap mod 2^64): at `x` the address of the frame
+    variable `local 0 1` and `y` the pointer `temp 0 1 + 0`, `EqPtr` is `false` and `CMP` sees
+    equal words. A proof needs disjoint addresses for distinct live allocations.
+  - `:450` (`(IsNonNil ptr) => (NotEqual (CMPconst [0] ptr))`): a non-convertible pointer can
+    have address 0 (`heap 0 + (2^64 - 2^40)` wraps to 0); Phase 1 calls it non-nil (`nil` is a
+    block, not an address), `CMPconst [0]` sets `Z`. A proof needs non-nil pointers to have
+    non-zero addresses (offsets inside the allocation's window).
+  - `:148`–`:150` (the ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)`): the
+    rename keeps the narrow operand, and Phase 1's `Lsh64x<a>` asks for a 64-bit one: on the
+    `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. A proof needs
+    `Lsh64x<a>` to read its operand's low 64 bits at any integer width.
+  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean` and `Shift.lean`.
+
 ## Narrow result types
 
 `Rule.Sound` assumes the matched value's type is not narrower than its op. The checker does

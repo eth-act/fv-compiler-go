@@ -13,11 +13,15 @@ import GoFV.Proof.Low.Rules.Cmp
   (`ZeroExt`) forms (155-157, 162-164): the low bits of the wide shift of the extension are the
   narrow shift at every amount (`sshr_signExtend`, `ushr_setWidth`, `refines_shiftExt`).
 
+* `(Lsh64x64 <t> x y) && !shiftIsBounded(v) => (CSEL [OpARM64LessThanU] (SLL <t> x y) (Const64 <t>
+  [0]) (CMPconst [64] y))` and the `CMPWconst`/`SRL` forms (169, 170, 173, 174): `LO` on the
+  compare's flags is `y < 64`, and the shift by 64 or more is 0 (`refines_shiftCsel`); the `SRA`
+  forms (177, 178) clamp the amount to 63 (`refines_sraCsel`). The `CCop` auxint
+  `[OpARM64LessThanU]` is its Go opcode number (`toAuxIntL`).
+
 Not proven: the ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)` (148-150) are false
 under Phase 1's semantics (`Lsh64x<a>` asks for a 64-bit operand: on the `int8` value 1 shifted by
-0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`); the `CSEL` forms 169, 170, 173, 174, 177, 178 build
-`CSEL [OpARM64LessThanU]`, whose auxint the obligation takes from the oracle (`nodeDenL`:
-`toAuxIntD .CCop` of `DV.op` is `none`), so they cannot be proven under the current contract.
+0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -526,5 +530,212 @@ theorem r_ARM64_164_4_sound : ArmRule.Checked r_ARM64_164_4 := by
   all_goals arm_norm
   exact refines_shiftExt .w8 .w8 (fun x => x.setWidth 64) (fun x n => x >>> n) (fun x n => x >>> n)
     (fun x n => ushr_setWidth (by decide) x n) _ hwf _ _
+
+/-! ## Unbounded shifts by `CSEL` (`ARM64.rules:169-178`) -/
+
+set_option maxRecDepth 100000 in
+/-- The `CCop` auxint `OpARM64LessThanU` (its Go opcode number, `toAuxIntL`) is `LO`. -/
+theorem ofAux_lessThanU : Cond.ofAux (Int64.ofNat Op.ARM64LessThanU.goNum) = some .lo := by
+  rfl
+
+/-- `LO` on the flags of `CMPconst [64] y`: `y < 64` (an integer of at most 64 bits). -/
+theorem lo_cmp64 (a : Width) (ha : a.bits ≤ 64) (s : BitVec a.bits) :
+    Cond.lo.onVal ((Arm64.cmp (.int a s) (.int .w64 (BitVec.ofInt 64 64))).retypeL .flags) =
+      some (decide (s.toNat < 64)) := by
+  rw [cmp_int, retypeL_flags_toVal, (cond_sub _ _ (sub_lt64 _ _)).2.2.2.2.1]
+  have hs := Nat.lt_of_lt_of_le s.isLt (Nat.pow_le_pow_right (by decide) ha)
+  simp [BitVec.ult, BitVec.toNat_setWidth, Nat.mod_eq_of_lt hs]
+
+/-- `LO` on the flags of `CMPWconst [64] y`: `y < 64` (a 32-bit integer). -/
+theorem lo_cmp32 (s : BitVec Width.w32.bits) :
+    Cond.lo.onVal ((Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd)
+      [.int .w32 s]).retypeL .flags) = some (decide (s.toNat < 64)) := by
+  simp only [Arm64.flags1w, Arm64.reg32, Arm64.reg, Option.map_some,
+    BitVec.setWidth_setWidth_of_le _ (show 32 ≤ 64 by decide), setWidth_w32, retypeL_flags_toVal]
+  rw [(cond_sub _ _ (sub_lt32 _ _)).2.2.2.2.1]
+  simp [BitVec.ult, Arm64.imm32]
+
+/-- A left shift by 64 or more is 0. -/
+theorem shiftLeft_ge (x : BitVec 64) (n : Nat) (h : 64 ≤ n) : x <<< n = 0 := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_shiftLeft, BitVec.toNat_ofNat]
+  rw [Nat.shiftLeft_eq, Nat.mul_mod, show 2 ^ n % 2 ^ 64 = 0 from
+    Nat.mod_eq_zero_of_dvd (Nat.pow_dvd_pow 2 h)]
+  simp
+
+/-- A logical right shift by 64 or more is 0. -/
+theorem ushiftRight_ge (x : BitVec 64) (n : Nat) (h : 64 ≤ n) : x >>> n = 0 := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ushiftRight, BitVec.toNat_ofNat, Nat.zero_mod]
+  rw [Nat.shiftRight_eq_div_pow]
+  exact Nat.div_eq_of_lt (Nat.lt_of_lt_of_le x.isLt (Nat.pow_le_pow_right (by decide) h))
+
+/-- An arithmetic right shift by 63 or more is the shift by 63 (all sign bits). -/
+theorem sshiftRight_ge (x : BitVec 64) (n : Nat) (h : 63 ≤ n) : x.sshiftRight n = x.sshiftRight 63 := by
+  rcases Nat.eq_or_lt_of_le h with rfl | h'
+  · rfl
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_sshiftRight]
+  have hn : ¬ n + i < 64 := by omega
+  by_cases h2 : 63 + i < 64
+  · obtain rfl : i = 0 := by omega
+    simp [show ¬ n < 64 by omega, BitVec.msb_eq_getLsbD_last]
+  · simp [hn, h2]
+
+/-- An unbounded 64-bit shift (`f`: 0 at 64 or more) as `CSEL [LessThanU] (shift x y) 0 (CMP… [64] y)`
+(`ARM64.rules:169/170/173/174`; `G`: the flags of the compare, `LO` iff `y < 64`). -/
+theorem refines_shiftCsel (a : Width) (ha : a.bits ≤ 64) (f : BitVec 64 → Nat → BitVec 64)
+    (hf : ∀ x n, 64 ≤ n → f x n = 0) (k : Int64) (hk : k = 0) (G : Val → Val)
+    (hG : ∀ s : BitVec a.bits, Cond.lo.onVal (G (.int a s)) = some (decide (s.toNat < 64)))
+    (A B : Val) :
+    Refines (Val.retypeL (.int .w64) ((Val.asInt .w64 A).elim Val.poison fun x =>
+        (Val.asInt a B).elim Val.poison fun s =>
+        if (k == 1 && decide (64 ≤ s.toNat)) = true then Val.poison else Val.int .w64 (f x s.toNat)))
+      (Val.retypeL (.int .w64) (Arm64.csel (.int .w64) (Int64.ofNat Op.ARM64LessThanU.goNum) none
+        [Val.retypeL (.int .w64) (Arm64.op2 (.int .w64) (fun x y => f x (y.toNat % 64)) [A, B]),
+          Val.retypeL (.int .w64) (Val.i64 (BitVec.ofInt 64 0)), G B])) := by
+  subst hk
+  rcases asInt_cases .w64 A with h | ⟨x, rfl⟩
+  · simp only [h, Option.elim, retypeL_poison]; exact .poison _
+  rcases asInt_cases a B with h | ⟨s, rfl⟩
+  · simp only [h, Val.asInt_int, Option.elim, retypeL_poison]; exact .poison _
+  have hs : (s.setWidth 64).toNat = s.toNat := toNat_setWidth_of_le s ha
+  simp only [Val.asInt_int, Option.elim, Arm64.csel, Arm64.condOn, ofAux_lessThanU,
+    Option.bind_some, hG, Arm64.op2, Arm64.reg, setWidth_w64, retypeL_res_int, retypeL_int_self]
+  by_cases h64 : s.toNat < 64
+  · simp only [h64, decide_true, Arm64.regVal, Arm64.reg, Arm64.res, hs, Nat.mod_eq_of_lt h64]
+    have h01 : ((0 : Int64) == 1) = false := by decide
+    simp only [h01, Bool.false_and, Bool.false_eq_true, ite_false, BitVec.setWidth_eq]
+    exact Refines.refl _
+  · simp only [h64, decide_false, Arm64.regVal, Arm64.reg, Arm64.res]
+    have h01 : ((0 : Int64) == 1) = false := by decide
+    simp only [h01, Bool.false_and, Bool.false_eq_true, ite_false, BitVec.setWidth_eq,
+      hf x s.toNat (by omega)]
+    exact Refines.refl _
+
+/-- An unbounded 64-bit arithmetic right shift as `SRA x (CSEL [LessThanU] <T> y 63 (CMP… [64] y))`
+(`ARM64.rules:177/178`): the amount clamped to 63 at the shape `T` of `y`, whose register reads
+back (`hT`, `hY`). -/
+theorem refines_sraCsel (a : Width) (ha : a.bits ≤ 64) (k : Int64) (hk : k = 0) (T : Ty)
+    (G : Val → Val)
+    (hG : ∀ s : BitVec a.bits, Cond.lo.onVal (G (.int a s)) = some (decide (s.toNat < 64)))
+    (hT : ∀ s : BitVec a.bits, Arm64.reg ((Arm64.regVal T (.int a s)).retypeL T) = some (s.setWidth 64))
+    (hY : Arm64.reg ((Arm64.regVal T ((Val.i64 (BitVec.ofInt 64 63)).retypeL T)).retypeL T) = some 63)
+    (A B : Val) :
+    Refines (Val.retypeL (.int .w64) ((Val.asInt .w64 A).elim Val.poison fun x =>
+        (Val.asInt a B).elim Val.poison fun s =>
+        if (k == 1 && decide (64 ≤ s.toNat)) = true then Val.poison
+        else Val.int .w64 (x.sshiftRight s.toNat)))
+      (Val.retypeL (.int .w64) (Arm64.op2 (.int .w64) (fun x y => x.sshiftRight (y.toNat % 64))
+        [A, Val.retypeL T (Arm64.csel T (Int64.ofNat Op.ARM64LessThanU.goNum) none
+          [B, Val.retypeL T (Val.i64 (BitVec.ofInt 64 63)), G B])])) := by
+  subst hk
+  rcases asInt_cases .w64 A with h | ⟨x, rfl⟩
+  · simp only [h, Option.elim, retypeL_poison]; exact .poison _
+  rcases asInt_cases a B with h | ⟨s, rfl⟩
+  · simp only [h, Val.asInt_int, Option.elim, retypeL_poison]; exact .poison _
+  have hs : (s.setWidth 64).toNat = s.toNat := toNat_setWidth_of_le s ha
+  have h01 : ((0 : Int64) == 1) = false := by decide
+  simp only [Val.asInt_int, Option.elim, Arm64.csel, Arm64.condOn, ofAux_lessThanU,
+    Option.bind_some, hG, h01, Bool.false_and, Bool.false_eq_true, ite_false]
+  have hx : Arm64.reg (.int .w64 x) = some x := by simp [Arm64.reg]
+  by_cases h64 : s.toNat < 64
+  · simp only [h64, decide_true, Arm64.op2, hx, hT, setWidth_w64, retypeL_res_int,
+      BitVec.setWidth_eq, hs, Nat.mod_eq_of_lt h64]
+    exact Refines.refl _
+  · simp only [h64, decide_false, Arm64.op2, hx, hY, setWidth_w64, retypeL_res_int,
+      BitVec.setWidth_eq]
+    rw [sshiftRight_ge x s.toNat (by omega)]
+    exact Refines.refl _
+
+/-- `ARM64.rules:169`: `(Lsh64x64 <t> x y) && !shiftIsBounded(v) => (CSEL [OpARM64LessThanU] (SLL <t> x y) (Const64 <t> [0]) (CMPconst [64] y))` -/
+theorem r_ARM64_169_sound : ArmRule.Checked r_ARM64_169 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have hk : e.auxInt [] = 0 := by simpa using hcond
+  exact refines_shiftCsel .w64 (by decide) (fun x n => x <<< n) shiftLeft_ge _ hk
+    (fun B => Val.retypeL Ty.flags (Arm64.cmp B (Val.int .w64 (BitVec.ofInt 64 64)))) (lo_cmp64 .w64 (by decide)) _ _
+
+/-- `ARM64.rules:170`: `(Lsh64x32 <t> x y) && !shiftIsBounded(v) => (CSEL [OpARM64LessThanU] (SLL <t> x y) (Const64 <t> [0]) (CMPWconst [64] y))` -/
+theorem r_ARM64_170_sound : ArmRule.Checked r_ARM64_170 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have hk : e.auxInt [] = 0 := by simpa using hcond
+  exact refines_shiftCsel .w32 (by decide) (fun x n => x <<< n) shiftLeft_ge _ hk
+    (fun B => Val.retypeL Ty.flags (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd) [B])) lo_cmp32 _ _
+
+/-- `ARM64.rules:173`: `(Rsh64Ux64 <t> x y) && !shiftIsBounded(v) => (CSEL [OpARM64LessThanU] (SRL <t> x y) (Const64 <t> [0]) (CMPconst [64] y))` -/
+theorem r_ARM64_173_sound : ArmRule.Checked r_ARM64_173 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have hk : e.auxInt [] = 0 := by simpa using hcond
+  exact refines_shiftCsel .w64 (by decide) (fun x n => x >>> n) ushiftRight_ge _ hk
+    (fun B => Val.retypeL Ty.flags (Arm64.cmp B (Val.int .w64 (BitVec.ofInt 64 64)))) (lo_cmp64 .w64 (by decide)) _ _
+
+/-- `ARM64.rules:174`: `(Rsh64Ux32 <t> x y) && !shiftIsBounded(v) => (CSEL [OpARM64LessThanU] (SRL <t> x y) (Const64 <t> [0]) (CMPWconst [64] y))` -/
+theorem r_ARM64_174_sound : ArmRule.Checked r_ARM64_174 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have hk : e.auxInt [] = 0 := by simpa using hcond
+  exact refines_shiftCsel .w32 (by decide) (fun x n => x >>> n) ushiftRight_ge _ hk
+    (fun B => Val.retypeL Ty.flags (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd) [B])) lo_cmp32 _ _
+
+/-- `CSEL`'s selected 32-bit input at the 32-bit shape: its zero-extended register. -/
+theorem reg_regVal_w32 (s : BitVec Width.w32.bits) :
+    Arm64.reg ((Arm64.regVal (.int .w32) (.int .w32 s)).retypeL (.int .w32)) = some (s.setWidth 64) := by
+  simp only [Arm64.regVal, Arm64.reg, Arm64.res]
+  rw [retypeL_int_int .w64 .w32 _ (by decide)]
+  simp only [BitVec.setWidth_setWidth_of_le _ (show Width.w32.bits ≤ 64 by decide)]
+  rfl
+
+/-- `ARM64.rules:177`: `(Rsh64x64 <t> x y) && !shiftIsBounded(v) => (SRA x (CSEL [OpARM64LessThanU] <y.Type> y (Const64 <y.Type> [63]) (CMPconst [64] y)))` -/
+theorem r_ARM64_177_sound : ArmRule.Checked r_ARM64_177 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have hk : e.auxInt [] = 0 := by simpa using hcond
+  have hT := hty.2
+  generalize e.ty [1] = T at hT ⊢
+  generalize e.leaf [1] = B at hT ⊢
+  rcases asInt_cases .w64 B with hB | ⟨s, rfl⟩
+  · rcases asInt_cases .w64 (e.leaf [0]) with h0 | ⟨x, h0⟩ <;>
+      simp only [h0, hB, Val.asInt_int, Option.elim, retypeL_poison] <;> exact .poison _
+  cases T <;> simp [Val.hasTy] at hT
+  all_goals first
+    | (subst hT; exact refines_sraCsel .w64 (by decide) _ hk _ (fun B => Val.retypeL Ty.flags (Arm64.cmp B (Val.int .w64 (BitVec.ofInt 64 64)))) (lo_cmp64 .w64 (by decide))
+        (fun s => by simp [Arm64.regVal, Arm64.reg, Arm64.res, Val.retypeL, Val.widen, Val.retype])
+        rfl _ _)
+    | exact refines_sraCsel .w64 (by decide) _ hk _ (fun B => Val.retypeL Ty.flags (Arm64.cmp B (Val.int .w64 (BitVec.ofInt 64 64)))) (lo_cmp64 .w64 (by decide))
+        (fun s => by simp [Arm64.regVal, Arm64.reg, Arm64.res, Val.retypeL, Val.widen, Val.retype])
+        rfl _ _
+
+/-- `ARM64.rules:178`: `(Rsh64x32 <t> x y) && !shiftIsBounded(v) => (SRA x (CSEL [OpARM64LessThanU] <y.Type> y (Const64 <y.Type> [63]) (CMPWconst [64] y)))` -/
+theorem r_ARM64_178_sound : ArmRule.Checked r_ARM64_178 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have hk : e.auxInt [] = 0 := by simpa using hcond
+  have hT := hty.2
+  generalize e.ty [1] = T at hT ⊢
+  generalize e.leaf [1] = B at hT ⊢
+  rcases asInt_cases .w32 B with hB | ⟨s, rfl⟩
+  · rcases asInt_cases .w64 (e.leaf [0]) with h0 | ⟨x, h0⟩ <;>
+      simp only [h0, hB, Val.asInt_int, Option.elim, retypeL_poison] <;> exact .poison _
+  cases T <;> simp [Val.hasTy] at hT
+  subst hT
+  exact refines_sraCsel .w32 (by decide) _ hk _ (fun B => Val.retypeL Ty.flags
+    (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd) [B])) lo_cmp32
+    reg_regVal_w32 rfl _ _
 
 end GoFV.Proof.Low.Rules
