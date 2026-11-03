@@ -8,6 +8,7 @@ import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
 import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.LoadStore
+import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
@@ -29,7 +30,10 @@ set_option maxRecDepth 4096 in
 theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   refine ⟨?_, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · simp only [ProvenARM64.lower, ForallL]
-    exact ⟨⟨r_ARM64_1201_sound, trivial⟩,
+    exact ⟨⟨r_ARM64_1000_sound, r_ARM64_1201_sound, trivial⟩,
+      ⟨r_ARM64_972_sound, trivial⟩,
+      ⟨r_ARM64_990_sound, trivial⟩,
+      ⟨r_ARM64_992_sound, trivial⟩,
       ⟨r_ARM64_776_sound, r_ARM64_905_sound, trivial⟩,
       ⟨r_ARM64_773_sound, r_ARM64_901_sound, trivial⟩,
       ⟨r_ARM64_661_sound, trivial⟩,
@@ -43,6 +47,11 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_673_sound, trivial⟩,
       ⟨r_ARM64_670_sound, trivial⟩,
       ⟨r_ARM64_764_sound, r_ARM64_889_sound, trivial⟩,
+      ⟨r_ARM64_973_sound, trivial⟩,
+      ⟨r_ARM64_983_sound, trivial⟩,
+      ⟨r_ARM64_985_sound, trivial⟩,
+      ⟨r_ARM64_984_sound, trivial⟩,
+      ⟨r_ARM64_974_sound, trivial⟩,
       ⟨r_ARM64_5_sound, trivial⟩,
       ⟨r_ARM64_5_2_sound, trivial⟩,
       ⟨r_ARM64_5_3_sound, trivial⟩,
@@ -186,7 +195,9 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_200_sound, trivial⟩,
       ⟨r_ARM64_202_sound, trivial⟩, trivial⟩
   · simp only [ProvenARM64.lower, ForallL]
-    exact ⟨⟨r_ARM64_461_sound, r_ARM64_462_sound, r_ARM64_463_sound, r_ARM64_464_sound, r_ARM64_465_sound, r_ARM64_466_sound, r_ARM64_467_sound, r_ARM64_468_sound, r_ARM64_469_sound, r_ARM64_470_sound, r_ARM64_471_sound, r_ARM64_472_sound, r_ARM64_473_sound, r_ARM64_474_sound, r_ARM64_476_sound, trivial⟩,
+    exact ⟨⟨r_ARM64_600_sound, r_ARM64_601_sound, trivial⟩,
+      ⟨r_ARM64_461_sound, r_ARM64_462_sound, r_ARM64_463_sound, r_ARM64_464_sound, r_ARM64_465_sound, r_ARM64_466_sound, r_ARM64_467_sound, r_ARM64_468_sound, r_ARM64_469_sound, r_ARM64_470_sound, r_ARM64_471_sound, r_ARM64_472_sound, r_ARM64_473_sound, r_ARM64_474_sound, r_ARM64_476_sound, trivial⟩,
+      ⟨r_ARM64_600_2_sound, r_ARM64_601_2_sound, trivial⟩,
       ⟨r_ARM64_526_sound, r_ARM64_527_sound, r_ARM64_528_sound, r_ARM64_529_sound, r_ARM64_530_sound, r_ARM64_531_sound, r_ARM64_532_sound, r_ARM64_533_sound, r_ARM64_534_sound, r_ARM64_535_sound, r_ARM64_536_sound, r_ARM64_537_sound, r_ARM64_538_sound, r_ARM64_539_sound, trivial⟩,
       ⟨r_ARM64_541_sound, r_ARM64_542_sound, r_ARM64_543_sound, r_ARM64_544_sound, r_ARM64_545_sound, r_ARM64_546_sound, r_ARM64_547_sound, r_ARM64_548_sound, r_ARM64_549_sound, r_ARM64_550_sound, r_ARM64_551_sound, r_ARM64_552_sound, r_ARM64_553_sound, r_ARM64_554_sound, trivial⟩, trivial⟩
 
