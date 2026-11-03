@@ -227,7 +227,8 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
         · have hg := H.gen x u hu hut
           rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
         · have hw' := (argFree_cases hf).1
-          rcases renameOp_cases hop with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ <;>
+          rcases renameOp_cases hop with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
+              ⟨-, h2⟩ <;>
             rw [h2] at hw' <;> cases hw'
         · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
           rw [(argFree_cases hf).1] at hs; cases hs
@@ -254,7 +255,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
-      ⟨k, hk, -⟩ | ⟨ho, he⟩
+      ⟨k, hk, -⟩ | ⟨ho, he⟩ | ⟨ho, -⟩
     · rw [atomPair_isRoot hp] at hr
       rcases hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hr <;> exact absurd hr (by decide)
     · rw [he]
@@ -262,6 +263,8 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
       · rw [atomPair_isRoot hp, ho] at hr; exact absurd hr (by decide)
       · exact evalOp_safe (v := { w with op := u.op }) (by rw [ho]; decide)
           (by rw [ho]; decide) (by rw [ho]; decide)
+    · rw [atomPair_isRoot hp] at hr
+      rcases ho with ho | ho <;> rw [ho] at hr <;> exact absurd hr (by decide)
   · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
     rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
   · exact evalOpL_movDaddr_ok (addrLower_cases ha).2.1

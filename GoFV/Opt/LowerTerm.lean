@@ -13,7 +13,9 @@ arguments' values, `GoFV.Proof.Low.denL`) rather than atoms (`GoFV.Proof.Low.Ato
   offset, or a global symbol's address at its offset, both from the tables alone
   (`Sem.symAddr`);
 * an integer load `MOV{B,BU,H,HU,W,WU,D}load` without a frame variable aux: the memory argument
-  read at that address (`GoFV.Proof.Low.ldVal`), as Phase 1's `Load` is a term.
+  read at that address (`GoFV.Proof.Low.ldVal`), as Phase 1's `Load` is a term;
+* an acquiring load `LDAR`/`LDARB`/`LDARW` (`ldarOp`): `Sem.arm64Op` runs it in non-faulting mode
+  as `Arm64.evalPure`, Phase 1's `atomicLoad` (the `AtomicLoad*` it lowers are terms).
 
 Every other arm64 op is an atom; the checked `lower` only accepts atoms of the output that
 correspond to atoms of the input (`GoFV.Opt.LowerCheck.atomPair`).
@@ -22,6 +24,12 @@ correspond to atoms of the input (`GoFV.Opt.LowerCheck.atomPair`).
 namespace GoFV.Opt.LowerTerm
 
 open GoFV.SSA
+
+/-- The acquiring loads: activation ops (`actOp`) whose `Sem.arm64Op` in non-faulting mode is
+`Arm64.evalPure` (`atomicLoad`), so they are terms of lowered SSA. -/
+def ldarOp : Op → Bool
+  | .ARM64LDAR | .ARM64LDARB | .ARM64LDARW => true
+  | _ => false
 
 /-- The arm64 ops `Sem.evalOpL` evaluates with the activation (`Sem.arm64Op`). -/
 def actOp : Op → Bool
