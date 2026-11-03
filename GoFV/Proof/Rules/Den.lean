@@ -682,7 +682,10 @@ def ifaceArgOk (t : Ty) : Bool :=
   | none => true
 
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
-the pointer argument of `OffPtr`/`AddPtr`/`PtrIndex`/`IsNonNil`, both of `EqPtr`/`NeqPtr` a
+the pointer argument of `OffPtr`/`IsNonNil` a word (a pointer or a 64-bit integer: `SP` and
+some `ConstNil`s are `uintptr`-typed; the two word shapes have the same values and retype alike,
+`Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`), the pointer argument of `AddPtr`/`PtrIndex`,
+both of `EqPtr`/`NeqPtr` a
 pointer or a 64-bit integer (`uintptr`: the itabs `NeqInter` compares, `generic.rules:791`), a
 64-bit integer offset of `AddPtr`/`PtrIndex`, an `AddPtr` itself of a pointer shape (a
 `uintptr`-typed one would be compared by the concrete address, which a pointer that does not
@@ -703,7 +706,7 @@ arguments of the float arithmetic and comparisons floats of their width (shape `
 arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
-  | .OffPtr | .IsNonNil => i != 0 || isPtrTy t
+  | .OffPtr | .IsNonNil => i != 0 || isPtrTy t || isInt64Ty t
   | .EqPtr | .NeqPtr => isPtrTy t || isInt64Ty t
   | .AddPtr => if i == 0 then isPtrTy t && isPtrTy ty else i != 1 || isInt64Ty t
   | .PtrIndex => if i == 0 then isPtrTy t else i != 1 || isInt64Ty t

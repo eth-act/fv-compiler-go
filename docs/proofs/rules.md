@@ -30,8 +30,10 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   whose result uses a leaf's type (`(Neg64 <y.Type> y)`, `(Add64 <c.Type> c d)` under
   `c.Type.Size() == 8`) is unprovable: the leaf could be an 8-bit integer typed `int64`.
 - **Argument shapes** (`Pat.argsOK e.ty [] r.pat = true`, #69 RuleProofs7): at every op node
-  the arguments' types have the shapes `argShapeOk` asks for: the pointer argument of `OffPtr`,
-  `AddPtr`, `PtrIndex`, `IsNonNil` pointer-typed, both of `EqPtr`/`NeqPtr` pointer words (a
+  the arguments' types have the shapes `argShapeOk` asks for: the pointer argument of `AddPtr`,
+  `PtrIndex` pointer-typed, that of `OffPtr`/`IsNonNil` a word (a pointer or a 64-bit integer:
+  `SP` and some `ConstNil`s are `uintptr`-typed, `generic.rules:964`/`:1687` in late opt; the two
+  word shapes have the same values and retype alike, `wordShape_ptr`), both of `EqPtr`/`NeqPtr` pointer words (a
   pointer or a 64-bit integer: `uintptr` itabs), the offset of
   `AddPtr`/`PtrIndex` a 64-bit integer, `Convert` between a pointer and a 64-bit integer (by
   its result shape; a `Convert` of any other shape is excluded), both arguments of

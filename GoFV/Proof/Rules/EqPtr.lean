@@ -99,14 +99,21 @@ theorem inst_r_generic_1647 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1
 /-- `generic.rules:1687`: `(IsNonNil (ConstNil)) => (ConstBool [false])` -/
 theorem r_generic_1687_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1687 := by
   rule_unfold
-  obtain ⟨el, hel⟩ := hat
-  rw [hel] at hty ⊢
+  obtain ⟨hr, -⟩ := wordShape_ptr hat
+  simp only [hr] at hty ⊢
   simp only [Val.retype, PtrOps.isNonNil, Ptr.isNil, Ptr.null] at hty ⊢
   exact refines_retype_of_hasTy hty
 
 /-- `generic.rules:1687` at a pointer-typed `ConstNil`. -/
 theorem inst_r_generic_1687 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
     (PEnv.ofLists [] [([], .bool)] (.ptr none) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1687]
+  rule_eval
+  simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
+
+/-- `generic.rules:1687` at a `uintptr`-typed `ConstNil` (a word argument, `argShapeOk`). -/
+theorem inst_r_generic_1687_i64 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
+    (PEnv.ofLists [] [([], .bool)] (.int .w64) []) (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_1687]
   rule_eval
   simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
@@ -120,12 +127,14 @@ theorem r_generic_1689_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   simp only [resDenT, nodeDenT, List.length_cons, List.length_nil, List.getElem?_cons_zero,
     List.map_nil]
   simp only [GoFV.Rules.Generated.Generic.r_generic_1689, Pat.argsOK, Pat.argsOKs, argShapeOk,
-    Bool.and_eq_true, and_true] at hargs
-  obtain ⟨el, hel⟩ := isPtrTy_iff.1 hargs
-  rw [hel, opVal_pure (by decide)] at hty ⊢
+    Bool.and_eq_true, and_true, bne_self_eq_false, Bool.false_or, Bool.or_eq_true, isPtrTy_iff,
+    isInt64Ty_iff] at hargs
+  obtain ⟨hr, -⟩ := wordShape_ptr hargs
+  rw [opVal_pure (by decide)] at hty ⊢
   rw [opVal_pure (by decide)]
-  have ha : Val.retype (.ptr el) (addrVal tabs (e.aux [0])) = .poison ∨
-      ∃ n, Val.retype (.ptr el) (addrVal tabs (e.aux [0])) = .ptr ⟨.global n, 0⟩ := by
+  simp only [hr] at hty ⊢
+  have ha : Val.retype (.ptr none) (addrVal tabs (e.aux [0])) = .poison ∨
+      ∃ n, Val.retype (.ptr none) (addrVal tabs (e.aux [0])) = .ptr ⟨.global n, 0⟩ := by
     unfold addrVal; split
     · exact .inr ⟨_, rfl⟩
     · exact .inl rfl
