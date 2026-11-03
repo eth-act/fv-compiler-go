@@ -87,7 +87,8 @@ theorem fi_checkedRewrite :
       (out.func.value? 8).map (fun v => (v.op, v.args)) = some (.Addr, #[3]) ∧
       check fiCheckEnv fiFunc = .ok () ∧
       check { tabs := out.tables, typs := fnTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre fiPassEnv.tables fiFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre fiPassEnv.tables fiPassEnv.frontend fiFunc)
+      out.tables out.func
         fiPassEnv.tables fiFunc := by
   obtain ⟨h1, h2⟩ := fi_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet fiRules) fiPassEnv fiFunc with

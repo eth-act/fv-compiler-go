@@ -131,9 +131,10 @@ theorem nf_checkedRewrite :
       (out.func.value? 9).map (·.args) = some #[4, 6] ∧
       check nfCheckEnv nfFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nfPassEnv.tables nfFunc) out.tables out.func
-        nfPassEnv.tables nfFunc ∧
-      ∀ args mem, GoFV.Proof.Pass.Rewrite.RwPre nfPassEnv.tables nfFunc Env.p1 args mem := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nfPassEnv.tables nfPassEnv.frontend nfFunc)
+        out.tables out.func nfPassEnv.tables nfFunc ∧
+      ∀ args mem,
+        GoFV.Proof.Pass.Rewrite.RwPre nfPassEnv.tables nfPassEnv.frontend nfFunc Env.p1 args mem := by
   obtain ⟨h1, -, h2⟩ := nf_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet nfRules) nfPassEnv nfFunc with
   | error e => rw [hc] at h2; cases h2

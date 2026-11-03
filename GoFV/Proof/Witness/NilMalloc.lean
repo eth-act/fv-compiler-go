@@ -132,7 +132,8 @@ theorem nm_checkedRewrite :
       (out.func.value? 8).map (·.args) = some #[5, 6] ∧
       check nmCheckEnv nmFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nmPassEnv.tables nmFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nmPassEnv.tables nmPassEnv.frontend nmFunc)
+        out.tables out.func
         nmPassEnv.tables nmFunc := by
   obtain ⟨h1, h2⟩ := nm_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet nmRules) nmPassEnv nmFunc with
@@ -147,14 +148,15 @@ theorem nm_checkedRewrite :
 
 /-- **Non-vacuity of `RwPre` with a dictionary**: monotone contracts without allocators or memory
 runtime calls (`Env.p1`) and a non-nil `.dict` argument. -/
-theorem nm_rwPre : GoFV.Proof.Pass.Rewrite.RwPre nmTabs nmFunc Env.p1 [.ptr ⟨.heap 0, 0⟩] {} := by
+theorem nm_rwPre :
+    GoFV.Proof.Pass.Rewrite.RwPre nmTabs nmPassEnv.frontend nmFunc Env.p1 [.ptr ⟨.heap 0, 0⟩] {} := by
   refine ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, ?_⟩, Env.p1_memOps, Env.p1_allocZero, ?_⟩
   · rw [nm_dictParams]
     intro i hi
     simp only [List.mem_singleton] at hi
     subst hi
     exact ⟨_, rfl, nofun⟩
-  · rw [show GoFV.Opt.RewriteCheck.roSyms nmTabs nmFunc = [] by decide +kernel]
+  · rw [show GoFV.Opt.RewriteCheck.roPass nmTabs nmPassEnv.frontend nmFunc = [] by decide +kernel]
     exact RoImage.nil Env.p1_keepsRo _
 
 end GoFV.Proof.Witness

@@ -16,7 +16,8 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules GoFV.Proof
 theorem addZero_refines :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) azPassEnv addZero = .ok out ∧
       (out.func.value? 5).map (·.args) = some #[2, 1] ∧
-      RefinesFrom (Pass.Rewrite.RwPre azTabs addZero) out.tables out.func azTabs addZero ∧
+      RefinesFrom (Pass.Rewrite.RwPre azTabs azPassEnv.frontend addZero) out.tables out.func
+        azTabs addZero ∧
       ∃ fuel m, run Env.p1 out.tables out.func [.i64 7] {} fuel = .returned [.i64 7] m := by
   obtain ⟨out, hc, -, h5, -, hf, hg⟩ := addZero_checkedRewrite
   have hR := GoFV.Proof.Pass.Rewrite.checkedRewrite_refines azRules_allSound hc hf hg

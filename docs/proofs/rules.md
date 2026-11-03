@@ -1250,7 +1250,9 @@ forwarding layers of the segment did not have): 91,965 → 92,089 (on 59a7370; t
 run time is unchanged, 8.5 → 7.9 min). With four selective forwarding rounds after the segments
 (`RewriteCheck.layers`; `fwd₂: move: args` and `rep Move->Move`, forwardings through `Move`s
 whose sources earlier forwardings changed: 143 → 17 such functions blocked): 92,089 → 92,223
-(on 762c0fc).
+(on 762c0fc). With the frontend's read-only symbols pinned by the rewrite passes' precondition
+(`RwPre tabs fe f`, `RewriteCheck.roPass`: a fixed load from a dictionary a first fixed load's
+`Addr` names, `reflect.TypeFor[T]`; 149 → 2 such functions blocked): 92,223 → 92,372 (on 8e39eeb).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and

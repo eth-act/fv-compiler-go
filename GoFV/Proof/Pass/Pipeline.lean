@@ -30,7 +30,7 @@ The pass theorems conclude seven relations: `Refines`, `RefinesUnder Env.Mono` (
 rewrite call arguments rely on monotone contracts), `RefinesUnder (Env.Mono ∧ Env.FrameKeep)`
 (expand calls: the function's stack-assigned results stay writable in their frame slots across
 calls), `RefinesFrom (FrameSafe ∧ InitAvoids)`
-(dead auto elim), `RefinesFrom (RwPre tabs f)` (the checked rewrite passes: monotone
+(dead auto elim), `RefinesFrom (RwPre tabs fe f)` (the checked rewrite passes: monotone
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments of
 the pass input `f`, the runtime's memory-call contracts; issue #151), `RefinesFrom WbPre`
 (writebarrier: a defined, read-only write-barrier flag and no write-barrier buffer, kept by the
@@ -94,9 +94,9 @@ theorem RefinesFrom.frameSafe_toV
     VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => ⟨hp.2.1, hp.2.2.1⟩) h
 
-theorem RefinesFrom.rw_toV (hk : NilCheck.dictParams tabs f = k)
-    (hro : ∀ e ∈ RewriteCheck.roSyms tabs f, e ∈ ro)
-    (h : RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
+theorem RefinesFrom.rw_toV {fe : Tables} (hk : NilCheck.dictParams tabs f = k)
+    (hro : ∀ e ∈ RewriteCheck.roPass tabs fe f, e ∈ ro)
+    (h : RefinesFrom (Pass.Rewrite.RwPre tabs fe f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
     ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2.1,
       hp.2.2.2.2.2.2.2.2.2.2, hp.2.2.2.2.2.2.2.2.1.sub hro⟩) h
@@ -108,20 +108,21 @@ theorem RefinesFrom.dec_toV (h : RefinesFrom Decompose.DecPre tabs' f' tabs f) :
     VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.2.2.2.2.1, hp.2.2.1⟩) h
 
-/-- The relation a `Rel` names. -/
-def relHolds : Rel → Tables → Func → Tables → Func → Prop
-  | .refines => Refines
-  | .mono => RefinesUnder Env.Mono
-  | .frameSafe => RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem)
-  | .rw => fun tabs' f' tabs f => RefinesFrom (Pass.Rewrite.RwPre tabs f) tabs' f' tabs f
-  | .wb => RefinesFrom WB.WbPre
-  | .dec => RefinesFrom Decompose.DecPre
-  | .frameKeep => RefinesUnder (fun env => env.Mono ∧ env.FrameKeep)
+/-- The relation a `Rel` names (`fe`: the frontend tables, which the rewrite passes'
+precondition reads). -/
+def relHolds : Rel → Tables → Tables → Func → Tables → Func → Prop
+  | .refines => fun _ => Refines
+  | .mono => fun _ => RefinesUnder Env.Mono
+  | .frameSafe => fun _ => RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem)
+  | .rw => fun fe tabs' f' tabs f => RefinesFrom (Pass.Rewrite.RwPre tabs fe f) tabs' f' tabs f
+  | .wb => fun _ => RefinesFrom WB.WbPre
+  | .dec => fun _ => RefinesFrom Decompose.DecPre
+  | .frameKeep => fun _ => RefinesUnder (fun env => env.Mono ∧ env.FrameKeep)
 
 /-- Each pass relation implies the pipeline's, for an input with dictionary parameters `k`. -/
-theorem relHolds_toV (hk : NilCheck.dictParams tabs f = k)
-    (hro : ∀ e ∈ RewriteCheck.roSyms tabs f, e ∈ ro) :
-    {r : Rel} → relHolds r tabs' f' tabs f → VRefines k ro tabs' f' tabs f
+theorem relHolds_toV {fe : Tables} (hk : NilCheck.dictParams tabs f = k)
+    (hro : ∀ e ∈ RewriteCheck.roPass tabs fe f, e ∈ ro) :
+    {r : Rel} → relHolds r fe tabs' f' tabs f → VRefines k ro tabs' f' tabs f
   | .refines, h => Refines.toV h
   | .mono, h => RefinesUnder.toV h
   | .frameSafe, h => RefinesFrom.frameSafe_toV h
@@ -135,7 +136,7 @@ guard accepts the input. -/
 def stepSound : Verified.Step → Prop
   | .proven run rel guard => ∀ (penv : PassEnv) (f : Func) (out : PassOut) (ce ce' : CheckEnv),
       run penv f = .ok out → check ce f = .ok () → check ce' out.func = .ok () →
-      guard penv f = true → relHolds rel out.tables out.func penv.tables f
+      guard penv f = true → relHolds rel penv.frontend out.tables out.func penv.tables f
   | .stock _ => True
 
 theorem deadcodeStep_sound : stepSound deadcodeStep :=
@@ -300,6 +301,16 @@ theorem ro_sub {l ro : List (String × Alloc)} (h : l.all ro.contains = true) :
   rw [List.all_eq_true] at h
   exact List.contains_iff_mem.1 (h e he)
 
+/-- The rewrite passes' read-only symbols on a state are pinned by the pipeline's precondition:
+the state's own (checked by `runPass`) and the frontend's (`pipelineRo` has them all). -/
+theorem roPass_sub {st : VState} (h : Inv env f0 st)
+    (hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true) (name : String) :
+    ∀ e ∈ RewriteCheck.roPass st.tables (st.passEnv env name).frontend st.func,
+      e ∈ pipelineRo env f0 := fun e he => by
+  rcases List.mem_append.1 he with he | he
+  · exact (h.2.2.2 ▸ ro_sub hro) e he
+  · exact List.mem_append.2 (.inl (List.mem_append.2 (.inl (List.mem_append.2 (.inr he)))))
+
 theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h : Inv env f0 st)
     (hr : runPass env st p = .ok st') : Inv env f0 st' := by
   rcases p with ⟨name, required, simd, disabled, step, full⟩
@@ -340,7 +351,7 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
               by_cases hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true
               · exact hro
               · simp_all
-            exact relHolds_toV (hd.trans h.2.2.1) (ro_sub (h.2.2.2 ▸ hro))
+            exact relHolds_toV (hd.trans h.2.2.1) (roPass_sub h hro name)
               (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
           | some fp =>
             simp only at hr
@@ -363,7 +374,7 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
                   by_cases hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true
                   · exact hro
                   · simp_all
-                exact relHolds_toV (hd.trans h.2.2.1) (ro_sub (h.2.2.2 ▸ hro))
+                exact relHolds_toV (hd.trans h.2.2.1) (roPass_sub h hro name)
                   (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
               · cases hr; exact h.continue (fun hn => by cases hn)
 

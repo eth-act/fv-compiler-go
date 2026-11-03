@@ -21,12 +21,12 @@ import GoFV.Opt.Opt
 `checkedRewrite_refines`: for a rule set all of whose value rules are sound (`RuleSet.AllSound`,
 one `Rule.Sound` lemma per rule), the checked rewrite pass (`GoFV.Opt.checkedRewrite`: the
 rewrite pass with its log, kept only if `RewriteCheck.validate` accepts it) refines its input
-`f` under `RwPre penv.tables f` (monotone contracts, `Env.Mono`; malloc-family contracts that
-return non-nil pointers and non-nil dictionary arguments, `NilPre`, for the nil-check
-eliminations of issue #151; the runtime's `memclrNoHeapPointers`/`memmove` contracts, if any,
-`Env.MemOps`; the read-only symbols `f`'s `Addr`s name in the initial memory, kept by the
-contracts, `RoImage`; malloc-family contracts that return all-zero heap blocks,
-`Env.AllocZero`), in the pass's extended tables. A rejected result is the input
+`f` under `RwPre penv.tables penv.frontend f` (monotone contracts, `Env.Mono`; malloc-family
+contracts that return non-nil pointers and non-nil dictionary arguments, `NilPre`, for the
+nil-check eliminations of issue #151; the runtime's `memclrNoHeapPointers`/`memmove` contracts,
+if any, `Env.MemOps`; the read-only symbols `f`'s `Addr`s name and those the frontend defines in
+the initial memory, kept by the contracts, `RoImage`; malloc-family contracts that return
+all-zero heap blocks, `Env.AllocZero`), in the pass's extended tables. A rejected result is the input
 (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as terms in
 the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
@@ -63,31 +63,33 @@ theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {
   obtain ⟨h1, h2⟩ := validate_termRef hv hs
   exact refinesUnder_of_tabsAgree hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
 
-/-- The precondition of the checked rewrite passes on `f` in the tables `tabs`: monotone
-contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments
-(`NilPre`: the nil-check eliminations `generic.rules:1367`/`:1372`/`:1384`, issue #151), and
-`runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
-(`Env.MemOps`: for the `Zero`/`Move` of such calls, `generic.rules:1638`/`:1730`), the
-read-only symbols `f`'s `Addr`s name holding their exported bytes in the memory with the global
-image, kept by the contracts (`RoImage`: for `Move`s from them, `generic.rules:1743`), and
-malloc-family contracts asked for a positive size that return an all-zero heap block
-(`Env.AllocZero`: for the `Zero`s and zero `Store`s of a fresh allocation,
-`generic.rules:1352`/`:1357`/`:1362`, issue #69). It depends on `f` only through its dictionary
-parameters (`Opt.NilCheck.dictParams`) and those symbols (`RewriteCheck.roSyms`). -/
-def RwPre (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
+/-- The precondition of the checked rewrite passes on `f` in the tables `tabs` with the frontend
+tables `fe`: monotone contracts, malloc-family contracts that return non-nil pointers, non-nil
+dictionary arguments (`NilPre`: the nil-check eliminations `generic.rules:1367`/`:1372`/`:1384`,
+issue #151), and `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the
+runtime's, if present (`Env.MemOps`: for the `Zero`/`Move` of such calls,
+`generic.rules:1638`/`:1730`), the read-only symbols `f`'s `Addr`s name and those `fe` defines
+holding their exported bytes in the memory with the global image, kept by the contracts
+(`RoImage` of `RewriteCheck.roPass`: for `Move`s from them, `generic.rules:1743`, and fixed
+loads, also from a symbol a pass took from the frontend), and malloc-family contracts asked for
+a positive size that return an all-zero heap block (`Env.AllocZero`: for the `Zero`s and zero
+`Store`s of a fresh allocation, `generic.rules:1352`/`:1357`/`:1362`, issue #69). It depends on
+`f` only through its dictionary parameters (`Opt.NilCheck.dictParams`) and its read-only symbols
+(`RewriteCheck.roSyms`). -/
+def RwPre (tabs fe : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
   env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ env.AllocZero ∧
-    RoImage (RewriteCheck.roSyms tabs f) env mem
+    RoImage (RewriteCheck.roPass tabs fe f) env mem
 
 /-- `RwPre` holds on `Env.p1` (no malloc-family or memory runtime contract) for a function
 without dictionary parameters and read-only symbols. -/
-theorem RwPre.p1 {tabs : Tables} {f : Func} (h : NilCheck.dictParams tabs f = [])
-    (hro : RewriteCheck.roSyms tabs f = []) (args : List Val) (mem : Mem) :
-    RwPre tabs f Env.p1 args mem :=
+theorem RwPre.p1 {tabs fe : Tables} {f : Func} (h : NilCheck.dictParams tabs f = [])
+    (hro : RewriteCheck.roPass tabs fe f = []) (args : List Val) (mem : Mem) :
+    RwPre tabs fe f Env.p1 args mem :=
   ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps,
     Env.p1_allocZero, by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem⟩
 
-theorem RefinesUnder.toRw {tabs₀ tabs tabs' : Tables} {f₀ f f' : Func}
-    (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ f₀) tabs' f' tabs f :=
+theorem RefinesUnder.toRw {tabs₀ fe₀ tabs tabs' : Tables} {f₀ f f' : Func}
+    (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ fe₀ f₀) tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.1) h.from
 
 /-- **The layers refine**: each step of a `LayerChain` from a checked function refines it under
@@ -99,7 +101,7 @@ expansions: the validator and the atom simulation; struct-store splits:
 theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : Tables}
     {f0 f g : Func} (hc : LayerChain penv tabs f0 (Interp.Table.ofRuleSet s) f g) {ce : CheckEnv}
     (hf : check ce f = .ok ()) :
-    ∃ ce', check ce' g = .ok () ∧ RefinesFrom (RwPre penv.tables f0) tabs g tabs f := by
+    ∃ ce', check ce' g = .ok () ∧ RefinesFrom (RwPre penv.tables penv.frontend f0) tabs g tabs f := by
   induction hc generalizing ce with
   | refl f => exact ⟨ce, hf, RefinesUnder.toRw (RefinesUnder.refl _ _ _)⟩
   | @nil f f' g hL _ ih =>
@@ -205,7 +207,7 @@ theorem layers_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
     {out : PassOut} {log : Array RwEvent} {ce ce' : CheckEnv}
     (h : RewriteCheck.layersOK penv T f0 out RewriteCheck.layers f log = true)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
-    RefinesFrom (RwPre penv.tables f0) out.tables out.func out.tables f := by
+    RefinesFrom (RwPre penv.tables penv.frontend f0) out.tables out.func out.tables f := by
   obtain ⟨g, log', hc, hv⟩ := layersOK_cases _ _ _ h
   rw [validate_congr hvs hbs] at hv
   obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
@@ -225,7 +227,7 @@ theorem segs_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
     {out : PassOut} {ce' : CheckEnv} (hg : check ce' out.func = .ok ()) :
     ∀ (evs : List RwEvent) (f : Func) (seg : Array RwEvent) {ce : CheckEnv},
       check ce f = .ok () → RewriteCheck.segsOK penv T f0 out f seg evs = true →
-      RefinesFrom (RwPre penv.tables f0) out.tables out.func out.tables f
+      RefinesFrom (RwPre penv.tables penv.frontend f0) out.tables out.func out.tables f
   | [], _, _, _, hf, h => layers_refines hs hvs hbs h hf hg
   | ev :: evs, f, seg, _, hf, h => by
     cases ev with
@@ -255,7 +257,7 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
     (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
-    RefinesFrom (RwPre penv.tables f) out.tables out.func penv.tables f := by
+    RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f := by
   rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, T, hvs, hbs, log, hseg⟩
   · rw [he, ht]; exact RefinesUnder.toRw (RefinesUnder.refl _ _ _)
   exact refinesFrom_of_tabsAgree hta (segs_refines hs hvs hbs hg _ f #[] hf hseg)
@@ -264,21 +266,21 @@ theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
 theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : optChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
-    RefinesFrom (RwPre penv.tables f) out.tables out.func penv.tables f :=
+    RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f :=
   checkedRewrite_refines generic_allSound h hf hg
 
 /-- `divisible` with its proven rules, validated. -/
 theorem divisible_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : divisibleChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
-    RefinesFrom (RwPre penv.tables f) out.tables out.func penv.tables f :=
+    RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f :=
   checkedRewrite_refines divisible_allSound h hf hg
 
 /-- `divmod` with its proven rules, validated. -/
 theorem divmod_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : divmodChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
-    RefinesFrom (RwPre penv.tables f) out.tables out.func penv.tables f :=
+    RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f :=
   checkedRewrite_refines divmod_allSound h hf hg
 
 end GoFV.Proof.Pass.Rewrite

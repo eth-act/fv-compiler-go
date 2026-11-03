@@ -2745,6 +2745,13 @@ def roStrs (tabs : Tables) : List (String × Sem.Alloc) :=
                    else some (dn.toStringLossy, Sem.rodataAlloc t.bytes t.bytes.size #[])
     | _ => none
 
+/-- The read-only symbols the rewrite passes' precondition pins (`Pass.Rewrite.RwPre`) for the
+input `f` in `tabs` with the frontend tables `fe`: those `f`'s `Addr`s name and every one the
+frontend defines (`roAll`), so a fixed load from a symbol a pass took from the frontend (the
+dictionary a first fixed load's `Addr` names, `reflect.TypeFor[T]`, issue #69) reads pinned
+bytes. -/
+def roPass (tabs fe : Tables) (f : Func) : List (String × Sem.Alloc) := roSyms tabs f ++ roAll fe
+
 /-- The source of the `Move` `fv` of `f` is an `Addr` of a symbol of `ro` whose bytes are zero. -/
 def roSrcOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (fv : Value) : Bool :=
   match fv.args.toList with
@@ -3115,15 +3122,15 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
 
 /-- The layer `L` relates `f` (a layer's input with the log `log`, from the pass's input `f0`)
 and `f'`: `nilOK`, `fwdRel`, `validate` with the expansions it applied (`slTaken`, `ldTaken`),
-`ssRel`, or `segRel` with its read-only segments' symbols among `f0`'s (`roSegsOK`, `roSyms`), and
-`f'` passes `check`. -/
+`ssRel`, or `segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`,
+`roPass`), and `f'` passes `check`. -/
 def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
     (f0 : GoFV.SSA.Func) :
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
   | .nil _, f, _, f' => RewriteCheck.nilOK env tabs f0 f f'
   | .fwd _, f, _, f' =>
-    RewriteCheck.fwdRel tabs (RewriteCheck.roSyms env.tables f0) f f' &&
-      RewriteCheck.fwdRoOK tabs (RewriteCheck.roSyms env.tables f0) f &&
+    RewriteCheck.fwdRel tabs (RewriteCheck.roPass env.tables env.frontend f0) f f' &&
+      RewriteCheck.fwdRoOK tabs (RewriteCheck.roPass env.tables env.frontend f0) f &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .sl, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.slTaken t tabs f log) &&
@@ -3131,7 +3138,7 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
   | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .seg, f, _, f' =>
     RewriteCheck.segRel tabs f f' &&
-      RewriteCheck.roSegsOK tabs (RewriteCheck.roSyms env.tables f0) f f' &&
+      RewriteCheck.roSegsOK tabs (RewriteCheck.roPass env.tables env.frontend f0) f f' &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .ps, f, _, f' =>
     RewriteCheck.psRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'

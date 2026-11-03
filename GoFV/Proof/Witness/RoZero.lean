@@ -96,7 +96,8 @@ theorem zr_checkedRewrite :
       (out.func.value? 6).map (fun v => (v.op, v.auxInt, v.args)) = some (.Zero, 16, #[2, 1]) ∧
       check zrCheckEnv zrFunc = .ok () ∧
       check { tabs := out.tables, typs := zrTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre zrPassEnv.tables zrFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre zrPassEnv.tables zrPassEnv.frontend zrFunc)
+        out.tables out.func
         zrPassEnv.tables zrFunc := by
   obtain ⟨h1, h2⟩ := zr_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet zrRules) zrPassEnv zrFunc with
@@ -113,19 +114,20 @@ theorem zr_checkedRewrite :
 def zrEnv : Env :=
   { Env.p1 with globals := [("main..stmp_0", rodataAlloc (ByteArray.mk (Array.replicate 16 0)) 16 #[])] }
 
-theorem zr_roSyms : RewriteCheck.roSyms zrTabs zrFunc =
+theorem zr_roPass : RewriteCheck.roPass zrTabs zrPassEnv.frontend zrFunc =
     [("main..stmp_0", rodataAlloc (ByteArray.mk (Array.replicate 16 0)) 16 #[])] := by
   decide +kernel
 
 /-- **Non-vacuity of `RwPre` with a read-only symbol**: on `Env.p1` with the symbol in the global
 image and an empty memory, `copyZero`'s read-only symbol holds its exported bytes. -/
-theorem zr_rwPre (args : List Val) : GoFV.Proof.Pass.Rewrite.RwPre zrTabs zrFunc zrEnv args {} := by
+theorem zr_rwPre (args : List Val) :
+    GoFV.Proof.Pass.Rewrite.RwPre zrTabs zrPassEnv.frontend zrFunc zrEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
     fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
   · rw [show NilCheck.dictParams zrTabs zrFunc = [] by decide +kernel]
     exact DictArgs.nil args
-  · rw [zr_roSyms]
+  · rw [zr_roPass]
     intro n a h
     simp only [List.mem_singleton, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h

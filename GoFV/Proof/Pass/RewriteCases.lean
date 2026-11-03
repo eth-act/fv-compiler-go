@@ -43,8 +43,9 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
   | nil {f f' g : Func} : RewriteCheck.nilOK penv tabs f0 f f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Load-of-Store forwardings. -/
-  | fwd {f f' g : Func} : RewriteCheck.fwdRel tabs (RewriteCheck.roSyms penv.tables f0) f f' = true →
-      RewriteCheck.fwdRoOK tabs (RewriteCheck.roSyms penv.tables f0) f = true →
+  | fwd {f f' g : Func} :
+      RewriteCheck.fwdRel tabs (RewriteCheck.roPass penv.tables penv.frontend f0) f f' = true →
+      RewriteCheck.fwdRoOK tabs (RewriteCheck.roPass penv.tables penv.frontend f0) f = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Validated rewrite events (struct-load expansions). -/
@@ -57,7 +58,7 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- Segment rewrites. -/
   | seg {f f' g : Func} : RewriteCheck.segRel tabs f f' = true →
-      RewriteCheck.roSegsOK tabs (RewriteCheck.roSyms penv.tables f0) f f' = true →
+      RewriteCheck.roSegsOK tabs (RewriteCheck.roPass penv.tables penv.frontend f0) f f' = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
   /-- `Phi` selections. -/

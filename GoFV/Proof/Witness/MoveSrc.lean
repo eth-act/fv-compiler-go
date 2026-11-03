@@ -112,7 +112,8 @@ theorem mv_checkedRewrite :
       (out.func.value? 9).map (·.args) = some #[8, 3, 7] ∧
       check mvCheckEnv mvFunc = .ok () ∧
       check { tabs := out.tables, typs := mvTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mvPassEnv.tables mvFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mvPassEnv.tables mvPassEnv.frontend mvFunc)
+      out.tables out.func
         mvPassEnv.tables mvFunc := by
   obtain ⟨h1, h2⟩ := mv_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet mvRules) mvPassEnv mvFunc with

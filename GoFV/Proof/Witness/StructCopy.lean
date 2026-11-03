@@ -118,7 +118,8 @@ theorem sc_checkedRewrite :
           (v.op, x.op)) = some (.Store, .Load) ∧
       check scCheckEnv scFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre scPassEnv.tables scFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre scPassEnv.tables scPassEnv.frontend scFunc)
+      out.tables out.func
         scPassEnv.tables scFunc := by
   obtain ⟨h1, h2⟩ := sc_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet scRules) scPassEnv scFunc with

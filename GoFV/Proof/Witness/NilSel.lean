@@ -123,7 +123,8 @@ theorem ns_checkedRewrite :
       (out.func.value? 5).map (·.args) = some #[3, 1] ∧
       check nsCheckEnv nsFunc = .ok () ∧
       check { tabs := out.tables, typs := hiTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nsPassEnv.tables nsFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nsPassEnv.tables nsPassEnv.frontend nsFunc)
+      out.tables out.func
         nsPassEnv.tables nsFunc := by
   obtain ⟨-, h1, h2⟩ := ns_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet nsRules) nsPassEnv nsFunc with
@@ -204,7 +205,8 @@ theorem sm_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[2, 1] ∧
       check smCheckEnv smFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre smPassEnv.tables smFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre smPassEnv.tables smPassEnv.frontend smFunc)
+      out.tables out.func
         smPassEnv.tables smFunc := by
   obtain ⟨-, h1, h2⟩ := sm_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet smRules) smPassEnv smFunc with
@@ -292,7 +294,8 @@ theorem cv_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[4, 1] ∧
       check cvCheckEnv cvFunc = .ok () ∧
       check { tabs := out.tables, typs := cvTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre cvPassEnv.tables cvFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre cvPassEnv.tables cvPassEnv.frontend cvFunc)
+      out.tables out.func
         cvPassEnv.tables cvFunc := by
   obtain ⟨-, h1, h2⟩ := cv_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet cvRules) cvPassEnv cvFunc with
@@ -388,7 +391,8 @@ theorem ln_checkedRewrite :
       (out.func.value? 4).map (fun v => (v.op, v.auxInt)) = some (.ConstBool, 1) ∧
       check lnCheckEnv lnFunc = .ok () ∧
       check { tabs := out.tables, typs := lnTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lnPassEnv.tables lnFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lnPassEnv.tables lnPassEnv.frontend lnFunc)
+      out.tables out.func
         lnPassEnv.tables lnFunc := by
   obtain ⟨-, h1, h2⟩ := ln_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet lnRules) lnPassEnv lnFunc with
