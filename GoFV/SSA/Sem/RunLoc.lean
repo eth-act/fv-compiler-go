@@ -1,4 +1,4 @@
-import GoFV.SSA.Sem.RunL
+import GoFV.SSA.Sem.RunSched
 import GoFV.SSA.RegARM64
 import GoFV.SSA.OpARM64
 import GoFV.SSA.RegMask
@@ -13,14 +13,20 @@ not evaluated as SSA: `runLoc` keeps a machine state and never reads data by val
 * **State** (`LocState`): the register file (Go's register numbers, `ARM64.registers`), the flags
   register, the stack slots written so far, and the current memory. The activation (arguments'
   images, closure context, initial memory) is Phase 1's `Frame`.
-* **Values** run in `b.Values` order. A value reads each argument from the argument's home and
-  writes its result to its own home (`LocState.read`, `LocState.write`); its op is `runL`'s
-  (`evalOpL`, with faulting memory ops as under `runSched`), so every op means what it means in
-  L0/L1. A tuple's components go to the home's registers in order; a memory component is the
-  current memory, a flags component the flags register; a value of type `mem` or `flags` has no
-  home and is the current memory or the flags register.
+* **Values** run in `b.Values` order. A value reads each argument from the argument's home at the
+  argument's shape and writes its result to its own home (`LocState.read`, `LocState.write`);
+  its op is `runL`'s (`evalOpL`, with faulting memory ops as under `runSched`) and values take
+  their shapes as under `runSched` (`LMode.loc f = LMode.sched f`: `Val.retypeL` in a lowered
+  function, Phase 1's `Val.retype` in one with no arm64 op), so every op means what it means in
+  L0/L1, and a register holding a wider value read at a narrower type gives its low bits. A
+  tuple's components go to the home's registers in order (a result that is not a tuple writes
+  `poison` to every component); a memory component is the current memory, a flags component the
+  flags register; a value of type `mem` or `flags` has no home and is the current memory or the
+  flags register.
 * **Moves.** `Copy`, `LoadReg` (slot to register) and `StoreReg` (register to slot) move their
-  argument. A slot write kills the slots of the same variable it overlaps.
+  argument. A slot write kills the slots of the same variable it overlaps. `MOVDreg`/`MOVDnop`
+  copy the upper bits of their argument's register (`movdLoc`): a `LoadReg` sign-extends exactly
+  the signed narrow types (`loadByType`), a `Copy` keeps its argument's bits.
 * **`ZERO`** reads as the 0 of the reader's shape and ignores writes: regalloc homes zero
   constants of every type there (a `bool` `false` and an `int64` `0` share it).
 * **Clobbers.** After a value, the registers its op clobbers (`regInfo.clobbers`: every
@@ -114,8 +120,12 @@ def LocState.readParts (s : LocState) : List Ty → List (Option Nat) → List V
         | none :: rs => .poison :: s.readParts ts rs
         | [] => .poison :: s.readParts ts []
 
-/-- The value of `id` read from its home. -/
-def LocState.read (lc : LocCtx) (s : LocState) (id : ID) : Res Val :=
+/-- The mode of `runLoc` for `f`: `runSched`'s (memory ops fault; values of a lowered function
+are read as registers, `Val.retypeL`, those of a function with no arm64 op as in Phase 1). -/
+def LMode.loc (f : Func) : LMode := LMode.sched f
+
+/-- The contents of the home of `id`, as stored. -/
+def LocState.raw (lc : LocCtx) (s : LocState) (id : ID) : Res Val :=
   let t := lc.ty id
   match lc.home id, t with
   | some (.slot k), _ => .ok ((s.slots.lookup k).getD .poison)
@@ -126,6 +136,13 @@ def LocState.read (lc : LocCtx) (s : LocState) (id : ID) : Res Val :=
   | none, .mem => .ok s.mem
   | none, t =>
     if t.isFlags then .ok s.flags else .stuck s!"v{id} has no home"
+
+/-- The value of `id` read from its home at its shape (`LMode.retype`): a register holds 64
+bits, and a value of a narrower type is its low bits, as under `runSched`, where a phi or a
+move of a narrower type takes its argument at that type. -/
+def LocState.read (lc : LocCtx) (s : LocState) (id : ID) : Res Val := do
+  let x ← s.raw lc id
+  pure ((LMode.loc lc.ctx.f).retype (lc.ty id) x)
 
 /-- Register `r` set to `x`. -/
 def LocState.setReg (s : LocState) (r : Nat) (x : Val) : LocState :=
@@ -156,15 +173,21 @@ def LocState.setSlot (tabs : Tables) (s : LocState) (k : SlotKey) (x : Val) : Lo
       | _, _ => true
   { s with slots := (k, x) :: s.slots.filter fun (k', _) => !overlaps k' }
 
+/-- The components of a result `x` at a tuple of `n` shapes: a tuple's own, `poison` for any other
+value (every result register is written). -/
+def Val.partsOf (n : Nat) : Val → List Val
+  | .tuple xs => xs
+  | _ => List.replicate n .poison
+
 /-- The result `x` of value `id` written to its home. -/
 def LocState.write (lc : LocCtx) (s : LocState) (id : ID) (x : Val) : LocState :=
   let t := lc.ty id
-  match lc.home id, t, x with
-  | some (.slot k), _, _ => s.setSlot lc.ctx.tabs k x
-  | h, .tuple ts, .tuple xs => s.writeParts ts xs ((h.map Location.regList).getD [])
-  | some (.reg r), _, _ => s.setReg r x
-  | _, .mem, _ => { s with mem := x }
-  | _, t, _ => if t.isFlags then { s with flags := x } else s
+  match lc.home id, t with
+  | some (.slot k), _ => s.setSlot lc.ctx.tabs k x
+  | h, .tuple ts => s.writeParts ts (x.partsOf ts.length) ((h.map Location.regList).getD [])
+  | some (.reg r), _ => s.setReg r x
+  | _, .mem => { s with mem := x }
+  | _, t => if t.isFlags then { s with flags := x } else s
 
 /-- The registers of mask `m` set to `poison`. -/
 def LocState.clobberMask (s : LocState) (m : RegMask) : LocState :=
@@ -192,8 +215,39 @@ def LocState.clobber (lc : LocCtx) (s : LocState) (v : Value) : LocState :=
     | none => s
   if v.op.clobberFlags then { s with flags := .poison } else s
 
-/-- The mode of `runLoc`: a lowered function whose memory ops fault (`runSched`'s). -/
-def LMode.loc : LMode := ⟨true, true⟩
+/-- Type `t` is a signed integer type. -/
+def typeSigned (tabs : Tables) (t : TypeRef) : Bool :=
+  match tabs.type? t with
+  | some d => d.kind == .INT8 || d.kind == .INT16 || d.kind == .INT32 || d.kind == .INT64 ||
+    d.kind == .INT
+  | none => false
+
+/-- The register holding value `id` has the upper bits of a sign extension of its low bits
+(`MOVDreg`/`MOVDnop` copy them, `arm64Op`): a `LoadReg` loads by its type (`loadByType`: a signed
+narrow integer type sign-extends), a `Copy` is a register move (`MOVD`) and has its argument's
+bits; any other value as under `runL` (`Arm64.signExtends` of its op). -/
+def LocCtx.signOf (lc : LocCtx) : Nat → ID → Bool
+  | 0, _ => false
+  | n + 1, id =>
+    match lc.ctx.f.value? id with
+    | some u =>
+      match u.op with
+      | .LoadReg => typeSigned lc.ctx.tabs u.type
+      | .Copy => match u.args[0]? with
+        | some a => lc.signOf n a
+        | none => false
+      | op => Arm64.signExtends op
+    | none => false
+
+/-- `MOVDreg x`/`MOVDnop x` (`arm64Op`) with the upper bits of `x`'s register (`LocCtx.signOf`). -/
+def movdLoc (lc : LocCtx) (v : Value) (argv : List Val) (ty : Ty) : Val :=
+  match argv with
+  | [a] =>
+    let sx := (v.args[0]?.map (lc.signOf lc.ctx.f.valueTab.size)).getD false
+    match a with
+    | .int _ x => Arm64.res ty (if sx then x.signExtend 64 else x.setWidth 64)
+    | a => Arm64.regVal ty a
+  | _ => .poison
 
 /-- Run value `v` on the state `s`. -/
 def stepLoc (env : Env) (lc : LocCtx) (s : LocState) (v : Value) : Res LocState :=
@@ -203,11 +257,13 @@ def stepLoc (env : Env) (lc : LocCtx) (s : LocState) (v : Value) : Res LocState 
   else do
     let argv ← v.args.toList.mapM (s.read lc)
     let ty := lc.ty v.id
+    let md := LMode.loc lc.ctx.f
     let r ← match v.op, argv with
       | .LoadReg, [x] | .StoreReg, [x] => pure x
       | .LoadReg, _ | .StoreReg, _ => .stuck s!"v{v.id}: {v.op.name} without one argument"
-      | _, _ => evalOpL LMode.loc.faulting env lc.ctx s.fr v argv ty
-    pure ((s.clobber lc v).write lc v.id (LMode.loc.retype ty r))
+      | .ARM64MOVDreg, _ | .ARM64MOVDnop, _ => pure (movdLoc lc v argv ty)
+      | _, _ => evalOpL md.faulting env lc.ctx s.fr v argv ty
+    pure ((s.clobber lc v).write lc v.id (md.retype ty r))
 
 /-- Run the values of block `b` in order. -/
 def enterBlockLoc (env : Env) (lc : LocCtx) (s : LocState) (b : Block) : Res LocState := do
@@ -224,7 +280,7 @@ def LocState.control (lc : LocCtx) (s : LocState) (c : ID) : Res Val :=
   | some v =>
     if v.op == .MakeResult then do
       let xs ← v.args.toList.mapM (s.read lc)
-      pure ((Val.tuple xs).retypeL (lc.ty c))
+      pure ((LMode.loc lc.ctx.f).retype (lc.ty c) (Val.tuple xs))
     else s.read lc c
   | none => .stuck s!"control v{c} is not in the function"
 
