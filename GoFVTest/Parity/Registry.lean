@@ -25,6 +25,11 @@ import GoFV.Opt.Decompose
 import GoFV.Opt.SccpReplay
 import GoFV.Opt.SccpCheck
 import GoFV.Opt.Lower
+import GoFV.Opt.CheckLower
+import GoFV.Opt.ElimUnreadAutos
+import GoFV.Opt.TupleSelectors
+import GoFV.Opt.Pair
+import GoFV.Opt.LoweredCSE
 import GoFV.Opt.Schedule
 import GoFV.Opt.NilCheckLate
 import GoFV.Opt.FlagAlloc
@@ -48,7 +53,7 @@ def registry : Array PassEntry := #[
   { fn := "copyelim", names := #["early phielim and copyelim"], run := copyelimPass },
   { fn := "deadcode", run := deadcodePass,
     names := #["early deadcode", "pre-opt deadcode", "opt deadcode", "gcse deadcode",
-               "generic deadcode"] },
+               "generic deadcode", "lowered deadcode for cse", "lowered deadcode"] },
   { fn := "opt", names := #["opt", "middle opt", "late opt"], run := opt },
   { fn := "divisible", names := #["divisible"], run := divisible },
   { fn := "divmod", names := #["divmod"], run := divmod },
@@ -81,6 +86,13 @@ def registry : Array PassEntry := #[
     run := Decompose.postExpandCallsDecomposePass },
   { fn := "lower", names := #["lower"], run := lower },
   { fn := "lateLower", names := #["late lower"], run := lateLower },
+  { fn := "addressingModes", names := #["addressing modes"], run := addressingModesPass },
+  { fn := "pair", names := #["pair"], run := pairPass },
+  { fn := "cse", names := #["lowered cse"], run := loweredCsePass },
+  { fn := "elimUnreadAutos", names := #["elim unread autos"], run := elimUnreadAutosPass },
+  { fn := "tightenTupleSelectors", names := #["tighten tuple selectors"],
+    run := tightenTupleSelectorsPass },
+  { fn := "checkLower", names := #["checkLower"], run := checkLowerPass },
   { fn := "schedule", names := #["schedule"], run := schedulePass },
   { fn := "nilcheckelim2", names := #["late nilcheck"], run := nilcheckelim2Pass },
   { fn := "flagalloc", names := #["flagalloc"], run := flagallocPass },
