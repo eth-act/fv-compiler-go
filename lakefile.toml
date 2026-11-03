@@ -174,3 +174,7 @@ root = "GoFVTest.NilLateProbe"
 [[lean_exe]]
 name = "csel-probe"
 root = "GoFVTest.CseLProbe"
+
+[[lean_exe]]
+name = "unread-probe"
+root = "GoFVTest.UnreadProbe"
