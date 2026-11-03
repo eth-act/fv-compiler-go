@@ -1,8 +1,8 @@
 # Plan: the regalloc checker (H7, #385)
 
 Status: checker implemented (`GoFV/Opt/RegallocCheck.lean`, probe `regalloc-probe`); soundness
-staged (§6). Context: `docs/plans/semantics2.md` §7 (L2, `runLoc`), `docs/PASSES2.md` §1.5 (the
-output is not SSA: arguments need not dominate their uses). The allocator
+proven (`checkRA_sound`, §4, §6). Context: `docs/plans/semantics2.md` §7 (L2, `runLoc`),
+`docs/PASSES2.md` §1.5 (the output is not SSA: arguments need not dominate their uses). The allocator
 (`GoFV/Opt/Regalloc/*`, 100% parity, #425) is untrusted; only the checker is proven.
 
 ## 1. What is compared
@@ -102,15 +102,18 @@ by forward iteration with intersection at merges (untrusted; no fixpoint theory 
 ## 4. Soundness statement
 
 ```
-theorem checkRA_sound (h : checkWith (Cx.make tabs f g) cert = .ok ()) (htabs : tabsAgree tabs₀ tabs f) :
-    RefinesLS tabs g tabs₀ f
+theorem GoFV.Proof.RA.checkWith_sound {cert : Cert} (h : checkWith (Cx.make tabs f g) cert = .ok ()) :
+    RefinesLS tabs g tabs f
+theorem GoFV.Proof.RA.checkRA_sound (h : checkRA tabs f g = .ok ()) : RefinesLS tabs g tabs f
 ```
 
-(`GoFV/Proof/RefineLoc.lean`: every returning or panicking `runSched` of `f` is a `runLoc` of
-`g`), in fact with equal outcomes and equal fuel: block entries correspond one to one, and
-every target value that is not a move, a rematerialisation or a phi computes the same
-`evalOpL` on the same arguments as its source value. No precondition on the inputs is needed
-(`RefinesLSFrom P` for any `P`), so it composes with the Phase 2 chain's `VPre₂`.
+(`GoFV/Proof/Regalloc/Sound.lean`; `RefinesLS`, `GoFV/Proof/RefineLoc.lean`: every returning or
+panicking `runSched` of `f` is a `runLoc` of `g`), in fact with equal outcomes and equal fuel:
+block entries correspond one to one, and every target value that is not a move, a
+rematerialisation or a phi computes the same `evalOpL` on the same arguments as its source
+value. Any certificate will do (`certify` is untrusted). No precondition on the inputs is needed
+(`RefinesLS.from P` for any `P`), so it composes with the Phase 2 chain's `VPre₂`; the source
+runs in the `regalloc` section's tables, which a pipeline relates to `f`'s own by `tabsAgree`.
 
 ## 5. The simulation
 
@@ -142,12 +145,20 @@ their constant. Then:
 3. **Values**: `argOK` → the target argument equals the source's; kept values give equal
    `evalOpL` results (context independence of `evalOpL` from `ctx.f` and `ctx.sched`; `movdLoc`
    vs. `arm64Op`'s `MOVDreg` under `signOK`); moves, rematerialisations, `KeepAlive`.
-4. **Blocks**: `walk` simulation (`evalAllL` with skipped constants); `termOK`; `phiEdge`.
-5. **Loop and theorem**: fuel induction, `finish`, `checkRA_sound`; witness on a function with a
-   spill and a call (`LoadReg`/`StoreReg` around a `CALLstatic`).
+4. **Blocks** (`Block.lean`): `walk_sim` (`evalAllL` of the schedule, with skipped constants,
+   against `enterListLoc`; both panic alike or both continue with `Match`); `term_sim`
+   (`termOK`: the same `stepTermL` result, the target's controls staged); `phiEdge_sim` and
+   `sub_sound` (the source's phis along an accepted edge, then the certificate).
+5. **Loop and theorem** (`Sound.lean`): `loop_sim` by induction on fuel (`EntryInv`: after the
+   source's phis, the certificate's facts), `checkWith_sound`, `checkRA_sound`. Witness
+   (`GoFV/Proof/Witness/RandnRA.lean`): `runtime.randn` from the corpus, whose argument is
+   spilled (`StoreReg`) before a `CALLstatic` of `runtime.rand` and reloaded (`LoadReg`) after;
+   `checkRA` accepts by kernel evaluation and both runs return `randn(1000) = 71`.
 
-Status: none of stages 1–5 is merged yet; merged so far are the refinement notions and fuel
-lemmas (`GoFV/Proof/RefineLoc.lean`, #445) and the L1/L2 `clamp` witness (`ClampRA.lean`).
+Status: stages 1–5 proven, no `sorry`, standard axioms only.
+
+Kernel evaluation of `checkRA` needs a function without frame constants: `constReps` and
+`rematHints` key `Std.HashMap`s by the op's name, and `String.hash` is opaque to the kernel.
 
 ## 7. Probe (`lake exe regalloc-probe <corpus>`)
 
