@@ -9,8 +9,9 @@ import GoFV.Proof.Pass.LoadFwdMem
 
 `moveSeg_sound` discharges `SegSound` for the move segments (`generic.rules:1978` family,
 `RewriteCheck.moveSeg?`): in `f`, `x = Move [n] dst p m` with `m` (up to copies `mc`, or the
-memory under the `VarDef` `mc`) `Store op1 d1 (… (Store opk dk z1))` over `z1` reaching
-`z = Zero [n] p' _` through copies, every `opi` `oi` bytes past `p` (`offFrom`: through
+memory under the `VarDef` `mc`) `Store op1 d1 (… (Store opk dk z1))` over `z1` (each store's memory
+the next one through copies, `CChain`) reaching `z = Zero [n] p' _` through copies, every `opi`
+`oi` bytes past `p` (`offFrom`: through
 `OffPtr`s to a value `samePtr` relates to `p`) and `p'` equal to `p`; in `g`,
 `x = Store op1' d1 (… (Store opk' dk z'))` over the fresh `z' = Zero [n] dst mc`, the fresh
 `opi' = OffPtr [oi] dst`.
@@ -213,6 +214,40 @@ theorem moveStoreOK_spec {tabs : Tables} {f g : Func} {p dst : ID} {n : Int64} {
   · cases h12
 
 /-! ## The chains -/
+
+/-- `ss` are `Store`s of `f` from `m` down their memory arguments through copies (`copyEnd`;
+first first), over `z`. -/
+def CChain (tabs : Tables) (f : Func) : ID → List ID → ID → Prop
+  | m, [], z => m = z
+  | m, s :: ss, z => s = m ∧ ∃ sv, f.value? m = some sv ∧ sv.op = .Store ∧ sv.args.size = 3 ∧
+      CChain tabs f (copyEnd tabs f.valueTab f.valueTab.size sv.args[2]!) ss z
+
+theorem storesC_chain {tabs : Tables} {f : Func} : ∀ {k : Nat} {m : ID} {ss : List ID} {z : ID},
+    storesC tabs f k m = some (ss, z) → CChain tabs f m ss z ∧ ss.length = k
+  | 0, m, ss, z, h => by
+    simp only [storesC, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨rfl, rfl⟩
+  | k + 1, m, ss, z, h => by
+    unfold storesC at h
+    cases hm : f.value? m with
+    | none => rw [hm] at h; cases h
+    | some s =>
+      rw [hm] at h
+      simp only at h
+      split at h
+      · rename_i hc
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        cases hr : storesC tabs f k (copyEnd tabs f.valueTab f.valueTab.size s.args[2]!) with
+        | none => rw [hr] at h; cases h
+        | some r =>
+          obtain ⟨r1, r2⟩ := r
+          rw [hr] at h
+          simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          obtain ⟨h1, h2⟩ := storesC_chain hr
+          exact ⟨⟨rfl, s, hm, hc.1, hc.2, h1⟩, by simp [h2]⟩
+      · cases h
 
 /-- `gs` are values of `g` from `t` down their last arguments, over `z'`. -/
 def GChain (g : Func) : ID → List ID → ID → Prop
@@ -448,7 +483,7 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
     (hpv : pv.asPtrWord = some P)
     (hz : ∀ M, S.regs[z]? = some (some (.mem M)) → A z →
       M.read P n.toInt.toNat = some (Array.replicate n.toInt.toNat (.b 0))) :
-    ∀ (fs gs : List ID) (s t : ID) (M : Mem), SChain f s fs z → GChain g t gs z' →
+    ∀ (fs gs : List ID) (s t : ID) (M : Mem), CChain tabs f s fs z → GChain g t gs z' →
       fs.length = gs.length → (∀ u ∈ gs, ∀ v, g.value? u = some v → v.id = u) →
       (fs.zip gs).all (fun (a, c) => match f.value? a, g.value? c with
         | some sa, some sb => moveStoreOK tabs f g pz dst n b sa sb
@@ -506,9 +541,11 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
     subst hQe
     rw [hid s sv hA hs, Proof.tys_of_value hs, Option.getD_some, hM] at hy
     obtain ⟨hty, rfl⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy)).symm
-    obtain ⟨ws1, hr1, hin1, hMz, htg⟩ := move_below H hT hid hpA hP hpv hz fs1 gs1 sv.args[2]!
+    obtain ⟨hcA, hcr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hA2
+      (StructStore.copyReach_copyEnd f.valueTab f.valueTab.size sv.args[2]!)
+    obtain ⟨ws1, hr1, hin1, hMz, htg⟩ := move_below H hT hid hpA hP hpv hz fs1 gs1 _
       (lastArg tv) M1 hsc1 hgc1 (by simpa using hlen)
-      (fun u hu => hgid u (List.mem_cons_of_mem _ hu)) hzip1 hmv hA2
+      (fun u hu => hgid u (List.mem_cons_of_mem _ hu)) hzip1 (hcr.trans hmv) hcA
     have he : (encode (auxTy tabs sv.aux) xv).size = (auxTy tabs sv.aux).size := Sem.encode_size _ _
     have hle' : q'.auxInt.toInt.toNat + (auxTy tabs sv.aux).size ≤ n.toInt.toNat := by omega
     refine ⟨ws1 ++ [(q'.auxInt.toInt.toNat, encode (auxTy tabs sv.aux) xv)], ?_, ?_, hMz, ?_⟩
@@ -558,7 +595,7 @@ theorem moveSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N 
     D = [] ∧ fv.op = .Move ∧ ∃ d p m mc m1 ns z' fs z1 z zv zv', fv.args.toList = [d, p, m] ∧
       copyReach tabs f.valueTab f.valueTab.size m mc = true ∧
       (m1 = mc ∨ ∃ mv : Value, f.value? mc = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1]) ∧
-      FChain f g (lastArg gv) (ns ++ [z']) mc ∧ storesF f (ns.length + 1) m1 = some (fs, z1) ∧
+      FChain f g (lastArg gv) (ns ++ [z']) mc ∧ storesC tabs f (ns.length + 1) m1 = some (fs, z1) ∧
       copyReach tabs f.valueTab f.valueTab.size z1 z = true ∧
       f.value? z = some zv ∧ g.value? z' = some zv' ∧ gv.op = .Store ∧ 0 ≤ fv.auxInt.toInt ∧
       zv.op = .Zero ∧ zv.args.size = 2 ∧ zv.auxInt = fv.auxInt ∧
@@ -595,7 +632,7 @@ theorem moveSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N 
   | none => rw [hl] at h; cases h
   | some z' =>
   rw [hl] at h
-  cases hsf : storesF f ns0.length m1 with
+  cases hsf : storesC tabs f ns0.length m1 with
   | none => rw [hsf] at h; cases h
   | some r =>
   obtain ⟨fs, z1⟩ := r
@@ -681,7 +718,7 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
       subst hMm
       exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
   -- the chains
-  obtain ⟨hsc, hlen⟩ := storesF_chain hsf
+  obtain ⟨hsc, hlen⟩ := storesC_chain hsf
   have hgc := fchain_gchain hfc
   obtain ⟨zv'', hzv'', hfz', hlz'⟩ := fchain_last hfc
   rw [hzv'] at hzv''; cases hzv''
@@ -745,9 +782,12 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
   obtain ⟨hty1, hM1'⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy1)).symm
   subst M1'
   change M2.write _ (encode (auxTy tabs sv1.aux) xv1) = some M1 at hw1
+  obtain ⟨hcA2, hcr2⟩ := StructStore.copy_reg H hT hid f.valueTab.size hA2
+    (StructStore.copyReach_copyEnd f.valueTab f.valueTab.size sv1.args[2]!)
   obtain ⟨ws1, hr1, hin1, ⟨Mz1, hMz1, hz1A⟩, htg⟩ := move_below (b := fv.block) (dst := d)
-    (z' := z') (Dst := Dst) H hT hid hpA hpv hP hz1' fs1 ns sv1.args[2]! (lastArg gv) M2 hsc1 hgc
-    (by simpa using hlen) (fun u hu v hv => hgid u (by simp [hu]) v hv) hzip1 hmv2 hA2
+    (z' := z') (Dst := Dst) H hT hid hpA hpv hP hz1' fs1 ns _ (lastArg gv) M2 hsc1 hgc
+    (by simpa using hlen) (fun u hu v hv => hgid u (by simp [hu]) v hv) hzip1 (hcr2.trans hmv2)
+    hcA2
   obtain ⟨hzA, hzr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hz1A hz1
   have hMz := hzr.trans hMz1
   have he : (encode (auxTy tabs sv1.aux) xv1).size = (auxTy tabs sv1.aux).size :=
@@ -902,6 +942,28 @@ private def mg2 : Func :=
 theorem moveSeg_witness_nested :
     moveSeg? tabs mf2 mg2 8 (mv 8 .Move 2 16 (some 2) #[2, 3, 12])
       (mv 8 .Store 2 0 (some 2) #[9, 6, 10]) = some ([], [9, 10]) := by
+  decide +kernel
+
+/-- Two stores with a copy `v11` between them (`storesC`): `v14` at `v3` over `Copy v7`, `v7` at
+`OffPtr [8] v3` over the `Zero`; in `g` both at fresh `OffPtr`s of `SP` over a fresh `Zero`. -/
+private def mf3 : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (mv 1 .InitMem 2 0 none #[]), some (mv 2 .SP 1 0 none #[]),
+      some (mv 3 .OffPtr 1 16 none #[2]), some (mv 4 .Zero 2 16 (some 2) #[3, 1]),
+      some (mv 5 .OffPtr 1 8 none #[3]), some (mv 6 .Const64 0 0 none #[]),
+      some (mv 7 .Store 2 0 (some 2) #[5, 6, 4]), some (mv 8 .Move 2 16 (some 2) #[2, 3, 14]),
+      none, none, some (mv 11 .Copy 2 0 none #[7]), none, none,
+      some (mv 14 .Store 2 0 (some 2) #[3, 6, 11])] }
+
+private def mg3 : Func :=
+  { mf3 with
+    valueTab := (mf3.valueTab.set! 8 (some (mv 8 .Store 2 0 (some 2) #[18, 6, 15]))) ++
+      #[some (mv 15 .Store 2 0 (some 2) #[16, 6, 17]), some (mv 16 .OffPtr 1 8 none #[2]),
+        some (mv 17 .Zero 2 16 (some 2) #[2, 14]), some (mv 18 .OffPtr 1 0 none #[2])] }
+
+theorem moveSeg_witness_copy :
+    moveSeg? tabs mf3 mg3 8 (mv 8 .Move 2 16 (some 2) #[2, 3, 14])
+      (mv 8 .Store 2 0 (some 2) #[18, 6, 15]) = some ([], [18, 16, 17, 15]) := by
   decide +kernel
 
 end Witness

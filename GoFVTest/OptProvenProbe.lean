@@ -77,7 +77,9 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
           | _ => false) then "top"
         else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !leavesOK M I [] r.pat then "leaves"
-        else if !resultOK tabs M ev or σ I r x defs then "result"
+        else if !resultOK tabs M ev or σ I r x defs then
+          s!"result (defs {defs.map fun (u : Value) => (u.id, u.op.name, u.args.toList, u.type)}, inst \
+            {I}, args {x.args.toList.map fun a => ((M.get? a).map fun (y : Value) => (y.op.name, y.type))})"
         else if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frame"
         else if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) then "condFrame"
         else "ok"
@@ -154,7 +156,7 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
         match M.get? x, g.value? x with
         | some m, some u =>
           if !(u.op == m.op && u.type == m.type && u.auxInt == m.auxInt && u.aux == m.aux) then
-            return s!"final: v{x} fields {m.op.name}->{u.op.name}"
+            return s!"final: v{x} fields {m.op.name}->{u.op.name} ({m.type}/{u.type} {m.auxInt}/{u.auxInt} {m.aux.isSome}/{u.aux.isSome} args {m.args}/{u.args})"
           for (a, a') in m.args.toList.zip u.args.toList do
             if !copyReach tabs M M.size a a' then
               return s!"final: v{x} {u.op.name} arg v{a}({((M.get? a).map (·.op.name)).getD "-"})->v{a'}"
@@ -305,13 +307,21 @@ def ssRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := Id
   return none
 
 open GoFV.Rules RewriteCheck in
+/-- The values of `h` from `a` down the last arguments (diagnostics). -/
+def memChain (h : Func) : Nat → ID → List String
+  | 0, _ => []
+  | k + 1, a => match h.value? a with
+    | some v => s!"v{a}:{v.op.name}" :: memChain h k (lastArg v)
+    | none => [s!"v{a}:-"]
+
+open GoFV.Rules RewriteCheck in
 /-- Which part of `moveSeg?` fails for the `Move` `x` (diagnostics). -/
 def moveSegWhy (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : String :=
   match fv.op, fv.args.toList with
   | .Move, [d, p, m] =>
     let mc := copyEnd tabs f.valueTab f.valueTab.size m
     let (ns, m0) := freshChain f g 5 (lastArg gv)
-    match ns.getLast?, storesF f ns.length (underVarDef f mc) with
+    match ns.getLast?, storesC tabs f ns.length (underVarDef f mc) with
     | some z', some (fs, z1) =>
       let z := copyEnd tabs f.valueTab f.valueTab.size z1
       match f.value? z, g.value? z' with
@@ -336,7 +346,8 @@ def moveSegWhy (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : String :=
           | none => "?"
       | _, _ => "missing zero"
     | none, _ => s!"no fresh chain from {desc tabs g 2 (lastArg gv)}"
-    | _, none => s!"no stores of {ns.length} under {desc tabs f 3 (underVarDef f mc)}"
+    | _, none =>
+      s!"no stores of {ns.length} under {memChain f 7 (underVarDef f mc)} (g {memChain g 7 (lastArg gv)})"
   | _, _ => "not a Move"
 
 open GoFV.Rules RewriteCheck in
@@ -541,7 +552,8 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
           some s!"sl({k}): check {e}"
         else some s!"sl({k}): {why tabs t f f' (slTaken t tabs f log)}"
       | .ss => (ssRelWhy env tabs f f').map (s!"ss({k}): " ++ ·)
-      | .seg => (segRelWhy env tabs f f').map (s!"seg({k}): " ++ ·)
+      | .seg sel => (segRelWhy env tabs f f').map
+        (s!"seg{if sel then "₁" else "₂"}({k}): " ++ ·)
       | .ps =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else if !psRel tabs f f' then some s!"ps({k}): psRel {psWhy tabs f f'}"
@@ -557,7 +569,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .fwd sel => s!"fwd{if sel then "₁" else "₂"}({k})"
         | .sl => s!"sl({k})"
         | .ss => s!"ss({k})"
-        | .seg => s!"seg({k})"
+        | .seg sel => s!"seg{if sel then "₁" else "₂"}({k})"
         | .ps => s!"ps({k})"
         | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"

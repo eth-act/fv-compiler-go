@@ -2112,22 +2112,24 @@ def fwdEvOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : 
   | _ => false
 
 /-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdEvOK` holds of
-in `f`; its fresh values put in first), any other event kept, but for the copy-argument
-replacements of the forwarded `Load` logged before it (copy elimination on the `Load`'s
-arguments, which the forwarding validated in `f` replaces). -/
+in `f` and not at a value of `late`; its fresh values put in first), any other event kept, but for
+the copy-argument replacements of the forwarded `Load` logged before it (copy elimination on the
+`Load`'s arguments, which the forwarding validated in `f` replaces). -/
 def fwdStep (t : Interp.Table) (tabs : Tables) (ro : List (String × Sem.Alloc)) (sel : Bool)
-    (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
+    (late : List ID) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
   match fwdEvent? t f ev with
   | some (v, w, ds) =>
-    if sel && !(f.value? v).any (fwdEvOK tabs ro f · w ds) then (p.1, p.2.push ev)
+    if sel && (late.contains v || !(f.value? v).any (fwdEvOK tabs ro f · w ds)) then
+      (p.1, p.2.push ev)
     else (fwdCopy (ds.foldl ssPut p.1) v w, p.2.filter fun | .copyArg z _ _ => z != v | _ => true)
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdEvOK`
-holds of, with `f`'s read-only symbols), and the remaining events. -/
-def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (f : Func) (log : Array RwEvent) :
-    Func × Array RwEvent :=
-  log.foldl (fwdStep t tabs (if sel then roSyms tabs f else []) sel f) (f, #[])
+holds of, with `f`'s read-only symbols, and none at a value of `late`), and the remaining
+events. -/
+def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (late : List ID) (f : Func)
+    (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (fwdStep t tabs (if sel then roSyms tabs f else []) sel late f) (f, #[])
 
 /-! ## Struct-store splits (issues #151, #17)
 
@@ -2534,23 +2536,69 @@ def segApply (f : Func) (v : ID) (w : Value) (ds : List Value) (D : List ID) : F
     D.foldl segFree f
   | none => f
 
-/-- One event of `segPre`: a segment rewrite of a value of `f` is applied, any other event kept,
-but for the copy-argument replacements of its anchor and dropped values logged before it. -/
-def segStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
-    Func × Array RwEvent :=
+/-- One event of `segPre`: a segment rewrite of a value of `f` (not of `late`) is applied, any other
+event kept, but for the copy-argument replacements of its anchor and dropped values logged before
+it. -/
+def segStep (t : Interp.Table) (f : Func) (late : List ID) (p : Func × Array RwEvent)
+    (ev : RwEvent) : Func × Array RwEvent :=
   match segEvent? t f ev with
   | some (v, w, ds) =>
     match f.value? v with
     | some u =>
+      if late.contains v then (p.1, p.2.push ev) else
       let D := segDrops f u w ds
       (segApply p.1 v w ds D,
         p.2.filter fun | .copyArg y _ _ => y != v && !D.contains y | _ => true)
     | none => (p.1, p.2.push ev)
   | none => (p.1, p.2.push ev)
 
-/-- The input with the log's segment rewrites applied, and the remaining events. -/
-def segPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
-  log.foldl (segStep t f) (f, #[])
+/-- The values of `f` from `m` down the last arguments (at most `k`). -/
+def segMemChain (f : Func) : Nat → ID → List ID
+  | 0, _ => []
+  | k + 1, m =>
+    match f.value? m with
+    | some s => m :: segMemChain f k (lastArg s)
+    | none => []
+
+/-- The values of `f` on the memory chain (`segMemChain`, 8 deep) below the anchor of the
+segment event `ev`. -/
+def segEvChain (t : Interp.Table) (f : Func) (ev : RwEvent) : Option (ID × List ID) :=
+  (segEvent? t f ev).bind fun (x, _, _) =>
+    (f.value? x).map fun u => (x, segMemChain f 8 (lastArg u))
+
+/-- The anchors of the log's segment events whose memory chain in `f` has the anchor of an
+earlier one: the pass matched the later rule on the earlier one's result (a `Move` of stores over
+a `Move` it had turned into stores), which the first segment layer (`.seg true`) leaves to the
+second. -/
+def segLate (t : Interp.Table) (f : Func) (log : Array RwEvent) : List ID :=
+  (log.foldl (init := (([] : List ID), ([] : List ID))) fun acc ev =>
+    match segEvChain t f ev with
+    | some (x, ch) => (x :: acc.1, if ch.any acc.1.contains then x :: acc.2 else acc.2)
+    | none => acc).2
+
+/-- The values of `f` that a rule event rewrites after a segment event whose memory chain in `f`
+has them, or after another rule event (no forwarding) at them: the pass matched the segment's rule
+with those values as they were (a dead zero `Store` the pass dropped only after it matched a `Move`
+of the stores), or the later rule on the value the earlier one redefined (a zero `Store` dropped
+after its split in place, `generic.rules:997`), so the selective forwarding layers leave their
+forwardings to the later ones. -/
+def fwdLate (t : Interp.Table) (f : Func) (log : Array RwEvent) : List ID :=
+  (log.foldl (init := (([] : List ID), ([] : List ID), ([] : List ID))) fun acc ev =>
+    match segEvChain t f ev with
+    | some (x, ch) => (ch ++ acc.1, x :: acc.2.1, acc.2.2)
+    | none =>
+      match ev with
+      | .rule v _ _ _ =>
+        if acc.1.contains v || acc.2.1.contains v then (acc.1, acc.2.1, v :: acc.2.2)
+        else if (fwdEvent? t f ev).isSome then acc
+        else (acc.1, v :: acc.2.1, acc.2.2)
+      | _ => acc).2.2
+
+/-- The input with the log's segment rewrites applied (with `sel` none of `segLate`), and the
+remaining events. -/
+def segPre (t : Interp.Table) (sel : Bool) (f : Func) (log : Array RwEvent) :
+    Func × Array RwEvent :=
+  log.foldl (segStep t f (if sel then segLate t f log else [])) (f, #[])
 
 /-- The values of `g` from `m` down the last arguments while they are no values of `f` (a
 segment's fresh values), first first, and the value below them (at most `k`). -/
@@ -2570,6 +2618,20 @@ def storesF (f : Func) : Nat → ID → Option (List ID × ID)
     | some s =>
       if s.op == .Store && s.args.size == 3 then
         (storesF f k s.args[2]!).map fun r => (m :: r.1, r.2)
+      else none
+    | none => none
+
+/-- `k` `Store`s of `f` from `m` down their memory arguments through copies (`copyEnd`: a struct-
+store split leaves a `Copy` of its chain's last store between two stores), first first, and the
+memory below them. -/
+def storesC (tabs : Tables) (f : Func) : Nat → ID → Option (List ID × ID)
+  | 0, m => some ([], m)
+  | k + 1, m =>
+    match f.value? m with
+    | some s =>
+      if s.op == .Store && s.args.size == 3 then
+        (storesC tabs f k (copyEnd tabs f.valueTab f.valueTab.size s.args[2]!)).map
+          fun r => (m :: r.1, r.2)
       else none
     | none => none
 
@@ -2722,9 +2784,10 @@ def underVarDef (f : Func) (m : ID) : ID :=
   | none => m
 
 /-- A move segment at the `Move` `x` (`generic.rules:1978` family; `f`'s `fv`, `g`'s `gv`): in `f`
-`Move [n] dst p mem` whose memory is, up to copies (`mc`), (a `VarDef` of) `k ≥ 1` `Store`s of
-`x`'s block over, up to copies, a `Zero [n] p' _` (`p'` equal to `p`, the stores' pointers
-offsets of `p`), in `g` the same `Store`s (`moveStoreOK`) at fresh `OffPtr`s of `dst`, the anchor
+`Move [n] dst p mem` whose memory is, up to copies (`mc`), (a `VarDef` of) `k ≥ 1` `Store`s
+(`storesC`: through copies) over, up to copies, a `Zero [n] p' _` (`p'` equal to `p`, the
+stores' pointers offsets of `p`), in `g` the same `Store`s (`moveStoreOK`) at fresh `OffPtr`s of
+`dst`, the anchor
 the first, over a fresh `Zero [n] dst mc` (of the `Zero`'s type).
 Nothing is dropped; the fresh values in dependency order: the `OffPtr`s, the `Zero`, the stores
 below the anchor bottom first. -/
@@ -2733,7 +2796,7 @@ def moveSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (Lis
   | .Move, [d, p, m] =>
     let mc := copyEnd tabs f.valueTab f.valueTab.size m
     let (ns, m0) := freshChain f g 5 (lastArg gv)
-    match ns.getLast?, storesF f ns.length (underVarDef f mc) with
+    match ns.getLast?, storesC tabs f ns.length (underVarDef f mc) with
     | some z', some (fs, z1) =>
       let z := copyEnd tabs f.valueTab f.valueTab.size z1
       match f.value? z, g.value? z' with
@@ -3168,8 +3231,9 @@ structure LdSt where
   rest : Array RwEvent
 
 /-- One event of `ldPre` (input `f`): a value-rule event on an `ldTarget` of the definitions so
-far, or a copy-argument replacement of a `Load`'s argument or by a `Load`, that the replay
-validates on them is applied and taken (not an event the replay skips: of a dropped rule,
+far, or a copy-argument replacement of a `Load`'s argument or by a `Load` at a value no event left
+in the log redefines before it (the replacement is of the redefined value's argument), that the
+replay validates on them is applied and taken (not an event the replay skips: of a dropped rule,
 `dropShape`, or a replacement the copies do not justify); any other event kept, but for the
 copy-argument replacements a taken event supersedes. -/
 def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEvent) : LdSt :=
@@ -3192,7 +3256,8 @@ def ldStep (t : Interp.Table) (tabs : Tables) (f : Func) (s : LdSt) (ev : RwEven
     match s.M.get? v, s.M.get? src with
     | some u, some w =>
       if (u.op == .Load || w.op == .Load) &&
-          (u.args[i]?).any (copyReachW tabs s.M s.M.size · src) then
+          (u.args[i]?).any (copyReachW tabs s.M s.M.size · src) &&
+          !s.rest.any (fun | .rule y _ _ _ => y == v | _ => false) then
         match replay tabs t f false s.M [] [ev] with
         | some (M', _) =>
           { g := s.g.setArg v i src, M := M', taken := s.taken.push ev
@@ -3229,38 +3294,39 @@ and its stored values forwarded `Load`s or an expanded `Load`, a split may split
 another (nested structs), a forwarded `Load` may read a field `Store` of a split, an eliminated nil
 check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a split's field stores. -/
 
-/-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`), struct-load
-expansions (`slPre`), struct-store splits (`ssPre`), value-rule `Load` expansions (`ldPre`),
-segment rewrites (`segPre`), selections of `Phi`s of `SliceMake`s (`psPre`). -/
+/-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`; selective ones
+leave the rewrites `fwdLate` names), struct-load expansions (`slPre`), struct-store splits
+(`ssPre`), value-rule `Load` expansions (`ldPre`), segment rewrites (`segPre`; selective ones leave
+those `segLate` names), selections of `Phi`s of `SliceMake`s (`psPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
   | sl
   | ss
   | ld
-  | seg
+  | seg (sel : Bool)
   | ps
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
     Func × Array RwEvent
   | .nil sel => nilPre t tabs sel
-  | .fwd sel => fwdPre t tabs sel
+  | .fwd sel => fun f log => fwdPre t tabs sel (if sel then fwdLate t f log else []) f log
   | .sl => slPre t tabs
   | .ss => ssPre t tabs
   | .ld => ldPre t tabs
-  | .seg => segPre t
+  | .seg sel => segPre t sel
   | .ps => psPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second struct-load layer and a second split
 layer for nested structs; the value-rule `Load` expansions and selections of `Make`s and `Load`s
 before the splits, which store their results; a struct-load layer after the first split layer
-for `Load`s whose memory a split rebased, before the splits of their expansions; selective
-forwarding rounds after the segments for forwardings through `Move`s whose sources earlier
-forwardings changed). -/
+for `Load`s whose memory a split rebased, before the splits of their expansions; a second segment
+layer for segments over another's result; selective forwarding rounds after the segments for
+forwardings through `Move`s whose sources earlier forwardings changed). -/
 def layers : List Layer :=
-  [.ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg, .fwd true, .fwd true,
-   .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
+  [.ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true, .seg false, .fwd true,
+   .fwd true, .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/
@@ -3329,7 +3395,7 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
     RewriteCheck.validate tabs t f f' (RewriteCheck.slTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .ss, f, _, f' => RewriteCheck.ssRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
-  | .seg, f, _, f' =>
+  | .seg _, f, _, f' =>
     RewriteCheck.segRel tabs f f' &&
       RewriteCheck.roSegsOK tabs (RewriteCheck.roPass env.tables env.frontend f0) f f' &&
       checkOK { tabs := tabs, typs := env.typs } f'

@@ -588,8 +588,10 @@ relates its input to the result by `segRel`:
   issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies, (a `VarDef` of) `k` `Store`s
   at pointers `o` bytes past `p` inside `[0, n)` (`offFrom`: through up to four `OffPtr`s to a
   value equal to `p`, since the pass folds nested `OffPtr`s, `:964`, before it matches the
-  `Move`; the stores in any block) over, up to copies, a `Zero [n] p _`, pointers equal up to
-  copies or `LocalAddr`s of one variable (`samePtr`); in `g` the same `Store`s at fresh
+  `Move`; the stores in any block, each store's memory the next one up to copies, `storesC`: a
+  struct-store split leaves a `Copy` between two stores) over, up to copies, a `Zero [n] p _`,
+  pointers equal up to copies or `LocalAddr`s of one variable (`samePtr`); in `g` the same
+  `Store`s at fresh
   `OffPtr [o]`s of `dst` over a fresh `Zero [n] dst m'`, `m'` the end of `m`'s copies,
   `moveStoreOK`; nothing dropped), the
   dropped values listed roots of the block, the fresh ones listed in `g`'s block, the anchor and
@@ -670,8 +672,8 @@ events out of the log and applies them to the input in layers (`RewriteCheck.lay
 of, struct-load expansions, those of the first layer's fresh field `Load`s, value-rule `Load`
 expansions and selections of `Load`s and `Make`s (`ldPre`, as for decompose builtin), struct-store
 splits of the input's `Store`s of `Make`s, struct-load expansions whose `Load`'s memory a split
-rebased, the remaining splits (a second round for the fresh field stores of nested structs), segment
-rewrites, four more rounds of forwardings `fwdOK` holds of, the remaining forwardings, the
+rebased, the remaining splits (a second round for the fresh field stores of nested structs), two
+segment layers, four more rounds of forwardings `fwdOK` holds of, the remaining forwardings, the
 remaining nil-check eliminations), each related to its input by its own relation (`layerOK`:
 `nilOK`, `fwdRel` + `check`, `validate` with the layer's events alone + `check`, `ssRel` +
 `check`, `segRel` + `check`; a layer that leaves the log's events as they are, `sameLog`, is
@@ -687,6 +689,18 @@ only after the forwarding layers). The selective forwarding rounds after the seg
 forwardings that build on each other: a `Load` through a `Move` (`:827`) reads the source that
 an earlier `:2146` gave the `Move` (`fwdMoveOK` looks the `Move` up in the layer's input), and a
 `Move`'s source changes along a chain of `Move`s (`moveSrcOK` looks the inner `Move` up there).
+The selective layers also keep the pass's order where a later event matched what an earlier one
+built (issue #69). A selective forwarding layer leaves a rewrite of a value that a segment
+event logged before it has on its memory chain (`segMemChain`, 8 deep below the anchor), or that
+another rule event logged before it redefines (`fwdLate`): the pass matched a `Move` of three
+stores and only then dropped the dead zero `Store` among them (`:948`), and it dropped a zero
+`Store` of a fresh allocation only after splitting it in place (`:997`). The first segment layer
+(`.seg true`) leaves a segment whose memory chain has the anchor of a segment logged before it
+(`segLate`: a `Move` of stores over a `Move` the pass had already turned into stores) to the
+second (`.seg false`), where that anchor is the rewritten chain. The `ld` layer takes a
+copy-argument replacement only at a value no event left in the log redefines before it: copy
+elimination replaced the argument of the rule's result, `(Xor8 (Const8 [-1]) x) => (Com8 x)`
+with `x` a forwarded `Load`, not of the matched value.
 
 A `Store` of a `Load` that `:974` expanded (a struct copy `*p = *q`) stores the expansion's
 `StructMake` of fresh field `Load`s when `:975` splits it, which the split relation needs in its
