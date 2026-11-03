@@ -74,11 +74,8 @@ order, only the free list order differs, and from `regalloc` on the export write
 sorted (`docs/contracts/export.md`, "Format 5"); the port (`GoFV/Opt/Regalloc.lean`) sweeps the
 copies by ascending ID and returns the free list sorted, so no replay is needed. `stackalloc` and
 the edge shuffle create autos with `f.NewLocal`, named `.autotmp_<len(curfn.Dcl)>` by the
-frontend; `len(curfn.Dcl)` is frontend state the export does not carry (the driver reads it with
-`GOFVDclLen`). The pass takes it as `PassEnv.dclLen`, and the harness sets it to the smallest
-`<n>` among the `.autotmp_<n>` autos new in the stock section (`Compare.dclLenOf`; 0 when there is
-none): only the first auto's number comes from the stock output, the count, order, types,
-positions and numbering of all autos are still compared. The `regalloc` line's slots are part of
+frontend. The pass takes `len(curfn.Dcl)` as `PassEnv.dclLen`, and the harness sets it to the
+input section's `dcllen` (format 5.1, `docs/contracts/export.md`; 0 in older files). The `regalloc` line's slots are part of
 the renumbering walk (`Renumber.funcRefs`).
 
 Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays
@@ -141,7 +138,9 @@ randomized map iteration sets `replay` (above); no other pass may.
 ## Results
 
 Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types keyed by
-`String()` too; 9,297 functions):
+`String()` too; 9,297 functions). Latest run (#386, export format 5.1, after the #426 fix):
+every registered pass is at 100% on quick-v7 (9,297 functions) and on full-v9 (96,560
+functions), 0 mismatches and 0 pass errors on both; `ssa-roundtrip` has 0 failures on both.
 
 | pass | fn | functions | match | mismatch | parity | notes |
 | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -201,6 +200,6 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | schedule | schedule | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`fstate scheduled`); full-v6: 96,553/96,553 |
 | late nilcheck | nilcheckelim2 | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 3311 functions changed by the pass; removed checks leave the value table unfreed; full-v6: 96,553/96,553 |
 | flagalloc | flagalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 415 functions changed by the pass; full-v6: 96,553/96,553 |
-| regalloc | regalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`f.RegAlloc`); full-v6: 96,553/96,553; `PassEnv.dclLen` from the stock section's first new auto (above) |
+| regalloc | regalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`f.RegAlloc`); full-v6: 96,553/96,553; `PassEnv.dclLen` from the input section's `dcllen` (above): quick-v7 9,297/9,297, full-v9 96,560/96,560 (format 5.1) |
 | loop rotate | loopRotate | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 1672 functions changed by the pass; `f.loopnest()` (`Func.loopnest`; regalloc left it cached in every input); full-v6: 96,553/96,553 |
 | trim | trim | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 2780 functions changed by the pass; `flagslive`/`hotness` list blocks of `f.Blocks` only, so a trimmed block's entries go; full-v6: 96,553/96,553 |

@@ -1,4 +1,4 @@
-# Contract: per-pass SSA export (`gofv-ssa` v5)
+# Contract: per-pass SSA export (`gofv-ssa` v5.1)
 
 Owner: Exporter (issue #4; format 5: #379). Consumers: LeanIR (parser/printer, #21), RulesExport
 (#22), every pass port (G4, H*). Changing the format bumps the version in the first line and is
@@ -7,8 +7,8 @@ and also marks `addrconv` from pointers passed at integer-typed call parameters.
 adds the sections of the lowered passes (`lower` … `trim`) with their state: machine ops and
 block kinds, the cached loop nest, `flagslive`/`hotness`/`fstate`/`regalloc`/`tempregs`, the
 `callreg` sub-line of `call` aux values, the `typelink` line and the machine `config` keys
-(section "Format 5"). The sections before `lower` are byte-identical to v4's. The parser reads
-v2–v4 files too.
+(section "Format 5"). The sections before `lower` are byte-identical to v4's. v5.1 (#386) adds
+one line per section, `dcllen` (section "Format 5.1"). The parser reads v2–v5 files too.
 
 The patched `go1.27.3` compiler (`patches/go/*.patch`, built by `scripts/build-go.sh` into
 `third_party/go-build`) writes, for each selected function, the complete SSA state the passes
@@ -89,7 +89,7 @@ is deliberately not exported; no pass reads it.
 ## File layout
 
 ```
-gofv-ssa 5
+gofv-ssa 5.1
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi> <nosplit 0|1> <pgohot 0|1>
 config <key> <value>                  (one line per key; table below)
@@ -131,6 +131,7 @@ hotness <b:h,…>                       (v5, zero or one)
 fstate <flags>                        (v5, zero or one)
 regalloc <len> <v:loc,…>              (v5, zero or one)
 tempregs <v:reg,…>                    (v5, zero or one)
+dcllen <n>                            (v5.1)
 zvar <v:class,…>                      (zero or one; see below)
 warn "<text>"                         (zero or more)
 end
@@ -140,8 +141,8 @@ Presence: `typs` is present in section 0 only. `f`, `names`, `splits`, `canon`, 
 (payload `-` when empty). `named` has one line per `f.Names` entry (none iff `names -`);
 `namedx` zero or more lines; each `cache <name>` line is present iff that cache is non-nil, in
 the order `postorder`, `idom`, `sdom`, `loopnest`, `auxmap`, `linestarts`. The v5 lines
-`flagslive` … `tempregs` are present iff non-empty (section "Format 5"). `zvar` is present iff
-non-empty. All `warn` lines of a section come together just before `end`, in emission order.
+`flagslive` … `tempregs` are present iff non-empty (section "Format 5"). `dcllen` is always
+present in v5.1 (section "Format 5.1"). `zvar` is present iff non-empty. All `warn` lines of a section come together just before `end`, in emission order.
 
 `zvar <v<ID>:<class>,…>`: type-object classes for `zcse`, which keys zero-argument values on
 the `*types.Type` **pointer**. Types are numbered by identity (above), but the backend creates
@@ -272,7 +273,15 @@ tests: `symIsRO`, `symIsROZero`, `isFixedLoad`, `read8..64`, `IsReadOnlyGlobalAd
 `contentaddressable`, `wrapper`, `abiwrapper`. For every other symbol the line has
 `- 0 -` there (`STEXT` sizes etc. change while other functions are assembled concurrently); `data` is `lsym.P` as lower-case hex (`-` if empty) and is
 only written when `SymKind` is `SRODATA` (the only case `symIsRO`, `read8..64`, `isFixedLoad`
-read it), else `-`. `typeinfo`/`itabinfo` are the types of `lsym.TypeInfo()`/`lsym.ItabInfo()`.
+read it), else `-`. `typeinfo`/`itabinfo` are the types of `lsym.TypeInfo()`/`lsym.ItabInfo()`,
+except for a type descriptor whose `TypeInfo` was set while functions are compiled concurrently
+(`base.Ctxt.InParallel`): its object is that of whichever function called
+`reflectdata.TypeLinksym` first (`[4]byte` or `[4]uint8`; with or without a cached pointer type,
+so `ptrcache` changed too), so the export has the type this function asked for: its first
+`TypeLinksym` argument (`ssagen` `reflectType`, `writebarrier`, the pointer element in
+`rewriteFixedLoad`; the driver's importer), recorded in `Func.gofvTypeInfo` (#426). The passes
+read only identity properties of the type, which all these objects share. A concurrently set
+`TypeInfo` that the function did not ask for is exported as is, with a `warn` (none in the corpus).
 
 `reloc <off> <siz> <type> <add> "<target name>" <target abi>`: `objabi.RelocType.String()`
 (`R_ADDR`, `R_WEAKADDR`, …); target name `""` if nil. Relocations are written only for
@@ -413,6 +422,19 @@ files (`ExportFile.typeLink` is then empty).
 Other state the lowered passes read is static (`opcodeTable` `regInfo`, `asm`, `faultOnNilArg0`,
 … and the ARM64 rules: `tools/opsgen`, `tools/rules2lean`) or a `config` line (below).
 
+## Format 5.1: `len(curfn.Dcl)`
+
+The first line is `gofv-ssa 5.1`. Each section has, after the lowered-pass lines and before `zvar`,
+`dcllen <n>`: `len(curfn.Dcl)` when the section was written (`f.fe.Func().Dcl`). Every new auto
+appends to `Dcl` (`fe.SplitSlot` of a non-address-taken `PAUTO`, `f.NewLocal`), and `f.NewLocal`
+(`stackalloc`, the `regalloc` shuffle, `writebarrier`) names its auto `.autotmp_<len(Dcl)>`
+(`typecheck.TempAt`), so a pass's input section's `dcllen` is the pass's `PassEnv.dclLen`. Like
+`zvar` it describes frontend state, not the function; a chained pipeline computes it as the input
+section's `dcllen` plus the `name` aux values the passes create (`GoFVTest.Driver.newAutos`), and
+the driver's importer compares it with the compiler's after an import. The Lean parser returns it
+next to the `ExportFile` (`GoFV.SSA.ExportExt`, `parseExportExt`), so that `Section` and
+`ExportFile`, which every pass and proof module imports, are unchanged. Absent before v5.1.
+
 ## Pointer cache (`ptrcache`)
 
 `ptrcache <t,…>` (once per file, after the file-level `warn` lines; `-` if empty): the type
@@ -497,9 +519,6 @@ one of them must raise it on #4.
   `ssagen`/`genssa` (Phase 3) or SIMD only; `ctxt.Flag_locationlists` (debug info, genssa).
 - The `loopnest`'s `po`/`sdom` (see `cache loopnest`) and `f` fields.
 - `ir.Name` frame offsets of autos (`AllocFrame` runs after `ssa.Compile`).
-- `len(curfn.Dcl)`, which numbers the autos `regalloc`/`stackalloc` create with `f.NewLocal`
-  (`.autotmp_<n>`, `typecheck.TempAt`): the port takes it as `PassEnv.dclLen` (the driver from
-  the frontend, parity from the stock section's first new auto; `docs/PARITY.md`).
 - `ir.Name` details beyond the listed flags (positions of definitions, `Curfn`, closure vars,
   `Heapaddr`, …): read by `ssagen`, not by the passes. New autos made by `decompose`
   (`fe.SplitSlot`) get `Sym.Name = parent + suffix`, `Class = PAUTO`, `used`, `escnever`;

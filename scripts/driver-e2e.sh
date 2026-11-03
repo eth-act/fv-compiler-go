@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end checks of the gofv driver (docs/DRIVER.md, issue #12): build std and the corpus
 # programs for linux/arm64 with the driver toolchain twice — stock (no GOFV_SSA_DRIVER) and
-# with the Lean pipeline (GOFV_SSA_DRIVER=gofv-ssa-opt) — compare the package archives and
+# with the Lean pipeline through trim (GOFV_SSA_DRIVER=gofv-ssa-opt) — compare the package archives and
 # linked binaries byte for byte, run every test program of both builds under
 # qemu-aarch64-static and compare their output and exit status, and summarise the driver's
 # per-function statistics (GOFV_SSA_DRIVER_STATS).
@@ -174,10 +174,10 @@ report=$out/report.md
       }
       END {
         printf "- functions compiled: %d\n", n
-        printf "- every pass before lower by Lean: %d\n", full
+        printf "- every pass (number lines through trim) by Lean: %d\n", full
         printf "- some passes by Lean, some by the stock compiler (mixed mode): %d\n", part
         printf "- all passes by the stock compiler (fallback): %d\n", none
-        printf "- pass runs before lower: Lean %d, stock %d\n", lp, sp
+        printf "- pass runs: Lean %d, stock %d\n", lp, sp
         print "- events by kind (and pass):"
         for (k in r) printf "  - %s: %d\n", k, r[k]
       }' "$out/lean/stats.txt"

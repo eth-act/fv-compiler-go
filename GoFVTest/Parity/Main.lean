@@ -82,11 +82,11 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
   let st := { st with files := st.files + 1 }
   -- Phase 1 instances only: skip the lowered sections (format 5) unparsed.
   let stop := if insts.any (loweredPasses.contains ·.name) then none else some "lower"
-  match (match stop with | some p => parseExportUntil p data | none => parseExport data) with
+  match (match stop with | some p => parseExportUntilExt p data | none => parseExportExt data) with
   | .error e =>
     IO.eprintln s!"PARSE ERROR {path}: {e}"
     return { st with parseErrors := st.parseErrors + 1 }
-  | .ok e =>
+  | .ok (e, ext) =>
     let typs := ((e.sections[0]?).bind (·.typs)).getD #[]
     let base : PassEnv :=
       { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
@@ -121,7 +121,8 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
         let inst := insts[ii]
         if inst.name != name then continue
         let env := { base with passName := name, tables := prev
-                               zvar := zvarFn e.sections[k-1]!.zvar, dclLen := dclLenOf prev s.defs }
+                               zvar := zvarFn e.sections[k-1]!.zvar
+                               dclLen := (ext.dclLen? (k-1)).getD 0 }
         let input := e.sections[k-1]!.func
         let t0 ← IO.monoNanosNow
         let r ← IO.lazyPure fun _ => inst.entry.run env input

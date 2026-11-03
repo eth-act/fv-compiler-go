@@ -7,23 +7,25 @@ import GoFV.SSA.Print
 /-!
 # `gofv-ssa-opt`
 
-The Lean generic pipeline as a program (`docs/DRIVER.md`).
+The Lean pipeline (`number lines` through `trim`) as a program (`docs/DRIVER.md`).
 
 - `gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>`: read a `gofv-ssa` file whose first
-  section is the function to optimise (`ssa.Compile`'s input, or the state before pass `--from`),
+  section is the function to compile (`ssa.Compile`'s input, or the state before pass `--from`),
   run the enabled stock passes in `compile.go` order with the registered Lean ports, and print
   to stdout a status line followed, if there is a result, by a `gofv-ssa` file with one section:
-  the definitions the passes created or changed, and the function (the input of `lower`).
+  the definitions the passes created or changed, and the function (after `trim`, the input of
+  `genssa`), with its `dcllen`.
   Status lines: `status ok`, `status unported "<pass>"`, `status error "<pass>" "<msg>"`. On
   `unported`/`error` the result (the input of the pass that stopped the run) is only printed with
   `--partial`. `--to <pass>` stops after that pass (debugging).
-- `gofv-ssa-opt --list`: one line per stock pass before `lower`: `ported|unported "<name>"`.
+- `gofv-ssa-opt --list`: one line per stock pass: `ported|unported "<name>"`.
 - `gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N]
   [--table FILE] <dir|file>...`:
   whole-pipeline parity over stock export files. The pipeline starts from what the driver would export (section
-  0, its definitions, the type order of those types), chains the Lean results, and compares the
-  state after every pass with the stock section of that pass, as the importer compares (a new
-  symbol by name and ABI, map lines as sets); `--strict` compares as `pass-parity`.
+  0, its definitions, the type order of those types), chains the Lean results through `trim`, and
+  compares the state after every pass with the stock section of that pass, as the importer
+  compares (a new symbol by name and ABI, map lines as sets; the chain's `dcllen` with the
+  section's); `--strict` compares as `pass-parity`.
 -/
 
 open GoFV.SSA GoFV.Opt GoFVTest.Parity
@@ -100,7 +102,8 @@ def baseEnv (e : ExportFile) (tables : Tables) (wholeFile : Bool := false) : Pas
     { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
       pgohot := e.pgohot, config := e.config, typs
       typeOrder := TypeOrder.ofGroups e.typeOrder e.typeCmp
-      tables, frontend := e.frontendTables, ptrCache := ptrCacheFn e.ptrCache }
+      tables, frontend := e.frontendTables, ptrCache := ptrCacheFn e.ptrCache
+      typeLink := typeLinkFn e.typeLink }
   if wholeFile then env else
   let fe := driverFrontend e tables
   { env with
@@ -138,24 +141,33 @@ def padTables (t all : Tables) : Tables :=
   { t with types := pad t.types all.types.size, auxes := pad t.auxes all.auxes.size
            slots := pad t.slots all.slots.size }
 
-/-- Driver mode: optimise the first section of `e` from stock pass index `start`. -/
-def optimise (e : ExportFile) (start : Nat) (partialOut : Bool) (stopAfter : Option String := none) :
-    String := Id.run do
+/-- The result file of driver mode: one section `sec` (after `st.ran` passes), with its `dcllen`
+when the input has one. -/
+def resultText (e : ExportFile) (x : ExportExt) (sec : Section) (effects : Array Effect)
+    (dclLen : Nat) : String :=
+  let effects := effects.foldl (init := "") fun s e => match e with
+    | .useIface a => s ++ s!"effect useiface a{a}\n"
+  effects ++ printExportExt
+    { e with sections := #[sec], warns := #[], typeOrder := #[], typeCmp := #[], frontend := #[] }
+    { minor := x.minor, dclLen := #[(x.dclLen? 0).map fun _ => dclLen] }
+
+/-- Driver mode: optimise the first section of `e` (format 5.1 additions `x`) from stock pass
+index `start`. -/
+def optimise (e : ExportFile) (x : ExportExt) (start : Nat) (partialOut : Bool)
+    (stopAfter : Option String := none) : String := Id.run do
   let some s0 := e.sections[0]? | return "status error \"input\" \"no section\"\n"
   let tables := padTables (({} : Tables).addAll s0.defs) e.frontendTables
   -- the input is the driver's own export: its type order and frontend block are the function's
   let env := baseEnv e tables (wholeFile := true)
-  let (stop, st) := (runFrom (m := Id) env (State.ofSection s0.func tables s0.zvar) start
+  let (stop, st) := (runFrom (m := Id) env
+    (State.ofSection s0.func tables s0.zvar ((x.dclLen? 0).getD 0)) start
     (fun name _ => pure (stopAfter != some name)))
   let status := statusLine stop ++ "\n"
   let ok := match stop with | .done | .halted _ => true | _ => false
   if !ok && !partialOut then return status
   let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
                          func := st.func, typs := none, zvar := #[], warns := #[] }
-  let effects := st.effects.foldl (init := "") fun s e => match e with
-    | .useIface a => s ++ s!"effect useiface a{a}\n"
-  return status ++ effects ++
-    printExport { e with sections := #[sec], warns := #[], typeOrder := #[], typeCmp := #[], frontend := #[] }
+  return status ++ resultText e x sec st.effects st.dclLen
 
 /-! ## `--check` -/
 
@@ -188,7 +200,7 @@ structure Stats where
   /-- `--mixed`: unported passes taken from the stock file, by pass. -/
   stockRun : Std.HashMap String Nat := {}
   parseErrors : Nat := 0
-  counts : Array PassCount := Array.replicate stockPasses.size {}
+  counts : Array PassCount := Array.replicate pipelinePasses.size {}
   reports : Array (String × String × String) := #[]
 
 def bumpMap (m : Std.HashMap String Nat) (k : String) (n : Nat := 1) : Std.HashMap String Nat :=
@@ -251,9 +263,9 @@ pass with the stock section of that pass. With `mixed`, an unported pass is take
 file (its output section, with the tables and type order in force there) and the chain goes on
 from there, as `GOFV_SSA_DRIVER_MODE=mixed` does; the unported passes met are returned. Unless
 `strict`, states are compared as the importer compares them (`compare`'s `loose`). -/
-def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
+def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) (x : ExportExt) :
     Outcome × Array PassCount × Array String := Id.run do
-  let mut counts := Array.replicate stockPasses.size ({} : PassCount)
+  let mut counts := Array.replicate pipelinePasses.size ({} : PassCount)
   let some s0 := e.sections[0]? | return (.parseError "no section", counts, #[])
   let mut base := ({} : Tables).addAll s0.defs
   let mut func := s0.func
@@ -261,18 +273,19 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
   let mut start := 0
   let mut stockRun := #[]
   let mut zvar := s0.zvar
-  for _ in [0:stockPasses.size + 1] do
+  let mut dclLen := (x.dclLen? 0).getD 0
+  for _ in [0:pipelinePasses.size + 1] do
     -- Type rounds (as the driver): rerun the segment with the types the Lean passes created
     -- added to its input, so that they are ranked in the type order.
     let mut tables0 := base
     let mut out : (Stop × State) × Walk :=
-      ((.done, State.ofSection func base zvar), { k, tables := base, counts })
+      ((.done, State.ofSection func base zvar dclLen), { k, tables := base, counts })
     for round in [0:typeRounds] do
       let t0 := tables0
       let env := baseEnv e t0 wholeFile
       let step (name : String) (st : State) : StateM Walk Bool := do
         let w ← get
-        let pi := (passIndex? name).getD 0
+        let pi := (pipelineIndex? name).getD 0
         let bump (same : Bool) (w : Walk) : Walk :=
           { w with counts := w.counts.modify pi fun c =>
               { runs := c.runs + 1, same := c.same + (if same then 1 else 0) } }
@@ -283,10 +296,15 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
           set { bump false w with failure := some (name, s!"stock section {w.k} is \"{s.pass.toStringLossy}\"") }
           return false
         let want := w.tables.addAll s.defs
-        match compare t0 { func := st.func, tables := st.tables } want s (loose := !strict) with
+        let d := match compare t0 { func := st.func, tables := st.tables } want s (loose := !strict) with
+          | some d => some d
+          | none => match x.dclLen? w.k with
+            | some n => if n == st.dclLen then none else some s!"dcllen {st.dclLen}, stock {n}"
+            | none => none
+        match d with
         | none => set { bump true w with k := w.k + 1, tables := want }; return true
         | some d => set { bump false w with failure := some (name, d) }; return false
-      out := (runFrom env (State.ofSection func t0 zvar) start step).run { k, tables := t0, counts }
+      out := (runFrom env (State.ofSection func t0 zvar dclLen) start step).run { k, tables := t0, counts }
       let added := stockTypesFor e.frontendTables t0 out.1.2.tables
       if added.isEmpty || round + 1 == typeRounds then break
       tables0 := t0.addAll added
@@ -306,8 +324,9 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) :
       base := w.tables.addAll s.defs
       func := s.func
       zvar := s.zvar
+      dclLen := (x.dclLen? w.k).getD dclLen
       k := w.k + 1
-      start := (passIndex? p).getD 0 + 1
+      start := (pipelineIndex? p).getD 0 + 1
     | .done =>
       match e.sections[w.k]? with
       | some s => return (.diverged s.pass.toStringLossy "stock runs this pass, the Lean pipeline does not", counts, stockRun)
@@ -319,9 +338,9 @@ def checkFile (mixed wholeFile strict : Bool) (maxReport : Nat) (path : System.F
   let data ← IO.FS.readBinFile path
   let st := { st with files := st.files + 1 }
   let (o, counts, stockRun) : Outcome × Array PassCount × Array String :=
-    match parseExportUntil "lower" data with
+    match parseExportExt data with
     | .error e => (Outcome.parseError e, #[], #[])
-    | .ok e => checkExport mixed wholeFile strict e
+    | .ok (e, x) => checkExport mixed wholeFile strict e x
   let st := { st with stockRun := stockRun.foldl (fun m p => bumpMap m p) st.stockRun }
   let st := { st with counts := st.counts.mapIdx fun i (x : PassCount) =>
                 let y := counts.getD i {}
@@ -346,7 +365,7 @@ def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
   else return #[p]
 
 def sortedMap (m : Std.HashMap String Nat) : Array (String × Nat) :=
-  m.toArray.qsort fun a b => (passIndex? a.1).getD 999 < (passIndex? b.1).getD 999
+  m.toArray.qsort fun a b => (pipelineIndex? a.1).getD 999 < (pipelineIndex? b.1).getD 999
 
 def tableText (mixed : Bool) (st : Stats) (ms : Nat) : String := Id.run do
   let mut out := s!"files: {st.files}, parse errors: {st.parseErrors}, wall: {ms / 1000} s\n\n"
@@ -365,8 +384,8 @@ def tableText (mixed : Bool) (st : Stats) (ms : Nat) : String := Id.run do
   out := out ++ s!"- Lean pass errors: {n st.errors}\n"
   for (p, c) in sortedMap st.errors do out := out ++ s!"  - at `{p}`: {c}\n"
   out := out ++ "\n| pass | ported | chains reaching it | identical |\n| --- | --- | ---: | ---: |\n"
-  for h : i in [0:stockPasses.size] do
-    let p := stockPasses[i]
+  for h : i in [0:pipelinePasses.size] do
+    let p := pipelinePasses[i]
     let c := st.counts[i]!
     out := out ++ s!"| {p.name} | {if (port? p.name).isSome then "yes" else "no"} | {c.runs} | {c.same} |\n"
   return out
@@ -466,22 +485,31 @@ def vstatsFields (st : VState) : String :=
     skipped={n fun | .skipped _ => true | _ => false}\tunverified={n (!·.ok)}"
 
 /-- Driver mode with the verified pipeline (`GoFV.Opt.verifiedPipeline`): optimise the first
-section of `e` from stock pass index `start`. Returns the output and the `--vstats` fields. -/
-def optimiseVerified (e : ExportFile) (start : Nat) : String × String := Id.run do
+section of `e` (format 5.1 additions `x`) from stock pass index `start`. The passes from `lower`
+on have no theorems yet: their registered ports run after the verified pipeline, as in driver
+mode. Returns the output and the `--vstats` fields (the verdicts of the passes before `lower`,
+then `lowered=<n>`, the number of passes from `lower` on that ran). -/
+def optimiseVerified (e : ExportFile) (x : ExportExt) (start : Nat) : String × String := Id.run do
   let some s0 := e.sections[0]? | return ("status error \"input\" \"no section\"\n", "error \"input\"")
   let tables := padTables (({} : Tables).addAll s0.defs) e.frontendTables
   let env := baseEnv e tables (wholeFile := true)
   match verifiedPipeline env s0.func start s0.zvar with
   | .error err =>
     (s!"status error {GoStr.quote err.pass} {GoStr.quote err.msg}\n", s!"error {GoStr.quote err.pass}")
-  | .ok st =>
-    let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
-                           func := st.func, typs := none, zvar := #[], warns := #[] }
-    let effects := st.effects.foldl (init := "") fun s e => match e with
-      | .useIface a => s ++ s!"effect useiface a{a}\n"
-    ("status ok\n" ++ effects ++
-      printExport { e with sections := #[sec], warns := #[], typeOrder := #[], typeCmp := #[], frontend := #[] },
-     vstatsFields st)
+  | .ok vst =>
+    let st0 : State :=
+      { func := vst.func, tables := vst.tables, ran := vst.ran, last := vst.last
+        effects := vst.effects, zvar := vst.zvar, nextClass := vst.nextClass
+        dclLen := (x.dclLen? 0).getD 0 + newAutos tables vst.tables }
+    let (stop, st) := runFrom (m := Id) env st0 (max start stockPasses.size)
+    match stop with
+    | .done | .halted _ =>
+      let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
+                             func := st.func, typs := none, zvar := #[], warns := #[] }
+      ("status ok\n" ++ resultText e x sec st.effects st.dclLen,
+       s!"{vstatsFields vst}\tlowered={st.ran - vst.ran}")
+    | .unported p => (statusLine stop ++ "\n", s!"unported {GoStr.quote p}")
+    | .error p _ => (statusLine stop ++ "\n", s!"error {GoStr.quote p}")
 
 /-- One function through the verified pipeline, against the stock file. -/
 structure VFile where
@@ -730,7 +758,7 @@ def main (args : List String) : IO UInt32 := do
     | .ok o => pure o
     | .error e => IO.eprintln e; IO.eprintln usage; return 2
   if o.list then
-    for p in stockPasses do
+    for p in pipelinePasses do
       IO.println s!"{if (port? p.name).isSome then "ported" else "unported"} {GoStr.quote p.name}"
     return 0
   if o.check then
@@ -740,23 +768,23 @@ def main (args : List String) : IO UInt32 := do
   let #[path] := o.paths | IO.eprintln usage; return 2
   let start ← match o.start with
     | none => pure 0
-    | some p => match passIndex? p with
+    | some p => match pipelineIndex? p with
       | some i => pure i
-      | none => IO.eprintln s!"--from {p}: not a stock pass before lower"; return 2
+      | none => IO.eprintln s!"--from {p}: not a stock pass"; return 2
   let data ← IO.FS.readBinFile path
-  match parseExportUntil "lower" data with
+  match parseExportExt data with
   | .error e =>
     IO.println s!"status error \"parse\" {GoStr.quote e}"
     return 0
-  | .ok e =>
+  | .ok (e, x) =>
     if o.verified then
-      let (out, fields) ← IO.lazyPure fun _ => optimiseVerified e start
+      let (out, fields) ← IO.lazyPure fun _ => optimiseVerified e x start
       (← IO.getStdout).putStr out
       if let some p := o.vstats then
         let h ← IO.FS.Handle.mk p .append
         h.putStr s!"{GoStr.quote e.pkg}\t{GoStr.quote e.name}\t{e.abi}\t{fields}\n"
       return 0
-    let out ← IO.lazyPure fun _ => optimise e start o.partialOut o.stopAfter
+    let out ← IO.lazyPure fun _ => optimise e x start o.partialOut o.stopAfter
     (← IO.getStdout).putStr out
     return 0
 

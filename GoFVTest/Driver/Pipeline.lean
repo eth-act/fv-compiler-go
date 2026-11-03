@@ -2,12 +2,14 @@ import GoFVTest.Parity.Registry
 import GoFV.Opt.Verified
 
 /-!
-# The Lean generic pipeline
+# The Lean pipeline
 
-`GoFV.Opt.stockPasses` (`compile.go`'s `passes` table from `number lines` up to, not including,
-`lower`), with `StockPass.enabled` (`optimize || required`, not `disabled`, as in
-`ssa.Compile`). The pipeline chains the registered Lean ports and stops at the first enabled pass
-without a port (`docs/DRIVER.md`). `GoFV.Opt.verifiedPipeline` is the verified variant.
+`pipelinePasses` is `compile.go`'s `passes` table from `number lines` to `trim`, the last pass of
+`ssa.Compile`: `GoFV.Opt.stockPasses` (up to, not including, `lower`; the verified pipeline's
+table) followed by `loweredStockPasses` (`lower` … `trim`), with `StockPass.enabled`
+(`optimize || required`, not `disabled`, as in `ssa.Compile`). The pipeline chains the
+registered Lean ports and stops at the first enabled pass without a port (`docs/DRIVER.md`).
+`GoFV.Opt.verifiedPipeline` is the verified variant of the passes before `lower`.
 -/
 
 namespace GoFVTest.Driver
@@ -17,9 +19,36 @@ open GoFV.SSA GoFV.Opt GoFVTest.Parity
 /-- The registered port of stock pass `name`. -/
 def port? (name : String) : Option PassEntry := registry.find? (·.names.contains name)
 
+/-- `compile.go`'s `passes` from `lower` to `trim` (`GoFV.SSA.loweredPasses`) with their
+`required` flags; none has a `disabled` condition for linux/arm64. They have no theorem: the
+verified pipeline does not run them (`Verified.Step.stock`, the registered port). -/
+def loweredStockPasses : Array StockPass :=
+  let required := #["lower", "late lower", "tighten tuple selectors", "lowered deadcode",
+    "checkLower", "tighten", "critical", "layout", "schedule", "flagalloc", "regalloc"]
+  loweredPasses.map fun name =>
+    { name, required := required.contains name
+      step := .stock fun env f => match port? name with
+        | some e => e.run env f
+        | none => .error s!"no port of {name}" }
+
+/-- `compile.go`'s `passes`, `number lines` … `trim`. -/
+def pipelinePasses : Array StockPass := stockPasses ++ loweredStockPasses
+
+/-- Index of stock pass `name` in `pipelinePasses`. -/
+def pipelineIndex? (name : String) : Option Nat := pipelinePasses.findIdx? (·.name == name)
+
+/-- The autos a pass created (`fe.SplitSlot`, `f.NewLocal`: each appends to `curfn.Dcl`): the
+`name` aux values `out` defines and `input` does not. -/
+def newAutos (input out : Tables) : Nat := Id.run do
+  let mut k := 0
+  for h : i in [0:out.auxes.size] do
+    if let some { kind := .name .., .. } := out.auxes[i] then
+      if (input.aux? i).isNone then k := k + 1
+  return k
+
 /-- Why the pipeline stopped. -/
 inductive Stop where
-  /-- Every enabled pass up to `lower` ran. -/
+  /-- Every enabled pass up to and including `trim` ran. -/
   | done
   /-- The enabled pass `pass` has no Lean port. -/
   | unported (pass : String)
@@ -43,22 +72,27 @@ structure State where
   zvar : Std.HashMap ID Nat := {}
   /-- The next unused class. -/
   nextClass : Nat := 1
+  /-- `len(curfn.Dcl)`: the input section's `dcllen`, plus the autos the passes run so far
+  created (`newAutos`); the next pass's `PassEnv.dclLen`. -/
+  dclLen : Nat := 0
 
-/-- The initial state of a segment whose input section is `func` with `zvar` classes `zv`. -/
-def State.ofSection (func : Func) (tables : Tables) (zv : Array (ID × Nat)) : State :=
+/-- The initial state of a segment whose input section is `func` with `zvar` classes `zv` and
+`dcllen` `dclLen`. -/
+def State.ofSection (func : Func) (tables : Tables) (zv : Array (ID × Nat)) (dclLen : Nat) : State :=
   { func, tables, zvar := zv.foldl (fun m (v, c) => m.insert v c) {}
-    nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1 }
+    nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1, dclLen }
 
-/-- Run the enabled passes from index `start` until `lower` or the first unported or failing
-pass. `step` sees each pass's result (name, state after it) and may stop the run (`false`).
-Returns why it stopped and the last state (the input of the pass it stopped at). -/
+/-- Run the enabled passes from index `start` through `trim` or until the first unported or
+failing pass. `step` sees each pass's result (name, state after it) and may stop the run
+(`false`). Returns why it stopped and the last state (the input of the pass it stopped at). -/
 def runFrom {m : Type → Type} [Monad m] (env : PassEnv) (st : State) (start : Nat := 0)
     (step : String → State → m Bool := fun _ _ => pure true) : m (Stop × State) := do
   let mut st := st
-  for h : i in [start:stockPasses.size] do
-    let p := stockPasses[i]
+  for h : i in [start:pipelinePasses.size] do
+    let p := pipelinePasses[i]
     let zv := st.zvar
-    let penv := { env with passName := p.name, tables := st.tables, zvar := fun v => zv.getD v 0 }
+    let penv := { env with passName := p.name, tables := st.tables, zvar := fun v => zv.getD v 0
+                           dclLen := st.dclLen }
     match p.enabled penv with
     | .error e => return (.error p.name e, st)
     | .ok false => continue
@@ -69,7 +103,8 @@ def runFrom {m : Type → Type} [Monad m] (env : PassEnv) (st : State) (start : 
     | .ok out =>
       let (zvar, nextClass) := nextZvar st.func out st.zvar st.nextClass
       st := { func := out.func, tables := out.tables, ran := st.ran + 1, last := p.name
-              effects := st.effects ++ out.effects, zvar, nextClass }
+              effects := st.effects ++ out.effects, zvar, nextClass
+              dclLen := st.dclLen + newAutos st.tables out.tables }
       if !(← step p.name st) then return (.halted p.name, st)
   return (.done, st)
 

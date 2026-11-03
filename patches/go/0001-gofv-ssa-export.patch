@@ -28,7 +28,47 @@
  // integer parameter registers.
 --- a/src/cmd/compile/internal/reflectdata/reflect.go
 +++ b/src/cmd/compile/internal/reflectdata/reflect.go
-@@ -1264,6 +1264,21 @@
+@@ -577,11 +577,39 @@
+ 	if lsym.Extra == nil {
+ 		ti := lsym.NewTypeInfo()
+ 		ti.Type = t
++		if gofvConcurrent != nil && base.Ctxt.InParallel {
++			gofvConcurrent[lsym] = true
++		}
+ 	}
+ 	signatmu.Unlock()
+ 	return lsym
+ }
+ 
++// gofvConcurrent holds the type descriptor symbols whose TypeInfo was set while functions are
++// compiled concurrently (base.Ctxt.InParallel): their TypeInfo type is the object of whichever
++// function asked first, so it depends on goroutine order (#426). Nil (not tracked) unless
++// GOFVTrackTypeInfo was called.
++var gofvConcurrent map[*obj.LSym]bool
++
++// GOFVTrackTypeInfo starts tracking gofvConcurrent. The gofv SSA exporter and driver call it
++// at start-up, before any function is compiled.
++func GOFVTrackTypeInfo() {
++	if gofvConcurrent == nil {
++		gofvConcurrent = map[*obj.LSym]bool{}
++	}
++}
++
++// GOFVConcurrentTypeInfo reports whether s's TypeInfo was set while functions were compiled
++// concurrently (false when not tracked).
++func GOFVConcurrentTypeInfo(s *obj.LSym) bool {
++	if gofvConcurrent == nil {
++		return false
++	}
++	signatmu.Lock()
++	defer signatmu.Unlock()
++	return gofvConcurrent[s]
++}
++
+ // TypePtrAt returns an expression that evaluates to the
+ // *runtime._type value for t.
+ func TypePtrAt(pos src.XPos, t *types.Type) *ir.AddrExpr {
+@@ -1264,6 +1292,21 @@
  	return
  }
  
@@ -82,12 +122,12 @@
  		// Ensure we write any pending phases to the html
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1663 @@
+@@ -0,0 +1,1720 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 5).
++// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 5.1).
 +// Enabled by GOFV_SSA_EXPORT=<dir>. Read-only: it never calls caching accessors, never
 +// computes type sizes and never creates symbols, so compilation is unchanged.
 +
@@ -139,6 +179,55 @@
 +	}
 +	return s
 +})
++
++func init() {
++	if os.Getenv("GOFV_SSA_EXPORT") != "" {
++		reflectdata.GOFVTrackTypeInfo()
++	}
++}
++
++// GOFVNoteTypeInfo records that f obtained the type descriptor symbol s
++// (reflectdata.TypeLinksym) for t. Only symbols whose TypeInfo was set while functions were
++// compiled concurrently are recorded, at f's first request: their TypeInfo type is the object
++// of whichever function asked first, while the object f asks for depends on f alone (#426).
++func (f *Func) GOFVNoteTypeInfo(s *obj.LSym, t *types.Type) {
++	if _, ok := f.gofvTypeInfo[s]; ok || !reflectdata.GOFVConcurrentTypeInfo(s) {
++		return
++	}
++	if f.gofvTypeInfo == nil {
++		f.gofvTypeInfo = map[*obj.LSym]*types.Type{}
++	}
++	f.gofvTypeInfo[s] = t
++}
++
++// gofvNoteElemTypeInfo is GOFVNoteTypeInfo for the element type descriptor elem that
++// rewriteFixedLoad obtains from the pointer type descriptor s: the element of s's type as f
++// determines it.
++func (f *Func) gofvNoteElemTypeInfo(elem, s *obj.LSym) {
++	if !reflectdata.GOFVConcurrentTypeInfo(elem) {
++		return
++	}
++	if t, _ := f.gofvTypeInfoOf(s); t != nil && t.IsPtr() {
++		f.GOFVNoteTypeInfo(elem, t.Elem())
++	}
++}
++
++// gofvTypeInfoOf returns the type of s's TypeInfo as f's compilation determines it (nil if s
++// has none): the type f asked for if the TypeInfo was set concurrently (GOFVNoteTypeInfo),
++// else the TypeInfo's, which was set before the concurrent compilation. ok is false if the
++// TypeInfo was set concurrently and f did not ask for s (the type then depends on goroutine
++// order).
++func (f *Func) gofvTypeInfoOf(s *obj.LSym) (t *types.Type, ok bool) {
++	if t, ok := f.gofvTypeInfo[s]; ok {
++		return t, true
++	}
++	ti := s.TypeInfo()
++	if ti == nil {
++		return nil, true
++	}
++	t, _ = ti.Type.(*types.Type)
++	return t, !reflectdata.GOFVConcurrentTypeInfo(s)
++}
 +
 +// gofvExporter accumulates one function's export file.
 +type gofvExporter struct {
@@ -198,7 +287,7 @@
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-ssa 5\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
++	fmt.Fprintf(&x.out, "gofv-ssa 5.1\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
 +	return x
@@ -920,10 +1009,13 @@
 +	flags := gofvFlags(
 +		[]string{"dupok", "local", "static", "contentaddressable", "wrapper", "abiwrapper"},
 +		[]bool{s.DuplicateOK(), s.Local(), s.Static(), s.ContentAddressable(), s.Wrapper(), s.ABIWrapper()})
-+	var tinfo, iinfo *types.Type
-+	if ti := s.TypeInfo(); ti != nil {
-+		tinfo, _ = ti.Type.(*types.Type)
++	// The TypeInfo type of a symbol made while functions are compiled concurrently is the
++	// object of whichever function asked first; the export has the one this function asked for.
++	tinfo, ok := x.f.gofvTypeInfoOf(s)
++	if !ok {
++		x.warn("typeinfo of %s set concurrently by another function", s.Name)
 +	}
++	var iinfo *types.Type
 +	if ii := s.ItabInfo(); ii != nil {
 +		iinfo, _ = ii.Type.(*types.Type)
 +	}
@@ -1367,6 +1459,11 @@
 +
 +	x.lowered(w)
 +
++	// Format 5.1: len(curfn.Dcl), which numbers the autos f.NewLocal makes (.autotmp_<n>).
++	if fn := f.fe.Func(); fn != nil {
++		fmt.Fprintf(w, "dcllen %d\n", len(fn.Dcl))
++	}
++
 +	x.zvar(w)
 +
 +	fmt.Fprintf(&x.out, "pass %d %s\n", x.nsec, gofvQuote(name))
@@ -1746,6 +1843,65 @@
 +	}
 +	return r
 +}
+--- a/src/cmd/compile/internal/ssa/func.go
++++ b/src/cmd/compile/internal/ssa/func.go
+@@ -85,6 +85,10 @@
+ 
+ 	auxmap    auxmap             // map from aux values to opaque ids used by CSE
+ 	constants map[int64][]*Value // constants cache, keyed by constant value; users must check value's Op and Type
++
++	// gofvTypeInfo maps the type descriptor symbols this function obtained whose TypeInfo
++	// another function set concurrently to the type this function asked for (export_gofv.go).
++	gofvTypeInfo map[*obj.LSym]*types.Type
+ }
+ 
+ type LocalSlotSplitKey struct {
+--- a/src/cmd/compile/internal/ssa/rewrite.go
++++ b/src/cmd/compile/internal/ssa/rewrite.go
+@@ -2221,6 +2221,7 @@
+ 
+ 		if t.IsPtr() && off == rttype.PtrType.OffsetOf("Elem") {
+ 			elemSym := reflectdata.TypeLinksym(t.Elem())
++			f.gofvNoteElemTypeInfo(elemSym, lsym)
+ 			reflectdata.MarkTypeSymUsedInInterface(elemSym, f.fe.Func().Linksym())
+ 			v.reset(OpAddr)
+ 			v.Aux = symToAux(elemSym)
+--- a/src/cmd/compile/internal/ssa/writebarrier.go
++++ b/src/cmd/compile/internal/ssa/writebarrier.go
+@@ -482,6 +482,7 @@
+ 			switch w.Op {
+ 			case OpZeroWB:
+ 				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
++				f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
+ 				// zeroWB(&typ, dst)
+ 				taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
+ 				memThen = wbcall(pos, bThen, wbZero, sp, memThen, taddr, dst)
+@@ -498,6 +499,7 @@
+ 					}
+ 				}
+ 				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
++				f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
+ 				// moveWB(&typ, dst, src)
+ 				taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
+ 				memThen = wbcall(pos, bThen, wbMove, sp, memThen, taddr, dst, src)
+@@ -544,6 +546,7 @@
+ 				if buildcfg.Experiment.CgoCheck2 {
+ 					// Issue cgo checking code.
+ 					typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
++					f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
+ 					taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
+ 					mem = wbcall(pos, bEnd, cgoCheckMemmove, sp, mem, taddr, dst, src)
+ 				}
+--- a/src/cmd/compile/internal/ssagen/ssa.go
++++ b/src/cmd/compile/internal/ssagen/ssa.go
+@@ -921,6 +921,7 @@
+ 	// TODO(mdempsky): Make this Fatalf under Unified IR; frontend needs
+ 	// to supply RType expressions.
+ 	lsym := reflectdata.TypeLinksym(typ)
++	s.f.GOFVNoteTypeInfo(lsym, typ)
+ 	return s.entryNewValue1A(ssa.OpAddr, types.NewPtr(types.Types[types.TUINT8]), lsym, s.sb)
+ }
+ 
 --- a/src/cmd/compile/internal/staticdata/data.go
 +++ b/src/cmd/compile/internal/staticdata/data.go
 @@ -70,9 +70,9 @@

@@ -1,7 +1,8 @@
 # Driver: the Lean pipeline inside `cmd/compile`
 
-Milestone G7, issue #12. The patched compiler can run the Lean generic pipeline in place of the
-stock passes before `lower`, per function, and continue with the stock `lower` onward.
+Milestone G7 (issue #12), extended through `trim` by H8 (#386). The patched compiler can run the
+Lean pipeline in place of every pass of `ssa.Compile` (`number lines` through `trim`, including
+`regalloc`), per function, import the allocated function and continue with the stock `genssa`.
 
 ## Pieces
 
@@ -13,12 +14,17 @@ stock passes before `lower`, per function, and continue with the stock `lower` o
 
 ### `gofv-ssa-opt`
 
-`GoFV.Opt.stockPasses` (`GoFV/Opt/Verified.lean`) is `compile.go`'s `passes` table from
-`number lines` to `rewrite tern` with each pass's `required` flag and Go `disabled` condition
-(from the export's `config` lines); a pass runs iff `optimize || required` and `disabled` does
-not hold (`StockPass.enabled`) — exactly `ssa.Compile`'s test. Ports come from
+`GoFVTest.Driver.pipelinePasses` (`GoFVTest/Driver/Pipeline.lean`) is `compile.go`'s `passes`
+table from `number lines` to `trim`: `GoFV.Opt.stockPasses` (`GoFV/Opt/Verified.lean`, `number
+lines` … `rewrite tern`, the verified pipeline's table) followed by `loweredStockPasses` (`lower`
+… `trim`), with each pass's `required` flag and Go `disabled` condition (from the export's
+`config` lines); a pass runs iff `optimize || required` and `disabled` does not hold
+(`StockPass.enabled`) — exactly `ssa.Compile`'s test. Ports come from
 `GoFVTest/Parity/Registry.lean`: registering a port for parity also makes the driver use it.
-`--verified` runs the verified pipeline instead (below).
+`--verified` runs the verified pipeline instead (below). The chain carries `len(curfn.Dcl)`
+(`State.dclLen`, `regalloc`'s `PassEnv.dclLen`): the input section's `dcllen` (export format
+5.1) plus the `name` aux values each pass creates (`newAutos`), and the passes from `lower` on
+get the file's `typelink` groups (`PassEnv.typeLink`).
 
 ```
 gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
@@ -34,19 +40,21 @@ gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [
   `ok` (or, with `--partial`, for the others), by a `gofv-ssa` file with one section named after
   the last pass run: the definitions the passes created or changed (types, aux values, slots
   at the numbers the Lean passes gave them; redefinitions at their own numbers) and the
-  function. The input's type order, `typecmp` exceptions and `frontend` block form the pass
-  environment (`PassEnv.typeOrder`, `PassEnv.frontend`).
-- `--list` prints `ported|unported "<name>"` per stock pass; the compiler reads it once.
+  function, with its `dcllen` when the input has one. The input's type order, `typecmp`
+  exceptions, `typelink` groups and `frontend` block form the pass environment
+  (`PassEnv.typeOrder`, `PassEnv.typeLink`, `PassEnv.frontend`).
+- `--list` prints `ported|unported "<name>"` per stock pass (all of `ssa.Compile`'s); the compiler
+  reads it once.
 - `--check` is whole-pipeline parity over stock export files (below).
 
 ### The import (`patches/go/0002-gofv-driver.patch`)
 
 - `ssa/driver_gofv.go`: settings, the per-function driver, the reader of `gofv-ssa-opt`'s output
   and the importer.
-- `ssa/compile.go`: `gofvDriverStart(f)` before the pass loop; `drv.skip(i)` for each enabled pass
-  before `lower`; `drv.finish()` writes the statistics line.
+- `ssa/compile.go`: `gofvDriverStart(f)` before the pass loop; `drv.skip(i)` for each enabled
+  pass; `drv.finish()` writes the statistics line.
 - `ssagen/ssa.go`: `ssafn.GOFVDclLen`/`GOFVDclTruncate`, so an abandoned import can drop the
-  autos `fe.SplitSlot` made for it.
+  autos `fe.SplitSlot` and `f.NewLocal` made for it.
 - `cmd/internal/src/xpos.go`: `src.GOFVXPos(index, lico)` builds an `XPos` from exported fields.
 
 For a segment starting at pass `i`, the driver exports the current `f` in process with the
@@ -59,8 +67,12 @@ exporter of 0001 (`gofvNewExporter`, `section("start")`, `tail()`), pipes it int
    with `fe.Syslook` (the config's runtime symbols), `reflectdata.TypeLinksym` (type
    descriptors, so the linker emits them) or `base.Ctxt.LookupABI`; `*AuxCall`s with the ABI
    analysis of their parameter types (`ABIAnalyzeTypes`, with an empty `regInfo` when registers
-   are used, as `StaticAuxCall` makes it: without it `Reg` drops the register arguments); new autos with `fe.SplitSlot` of the
-   parent slot (the suffix is what the new name adds to the parent's); `stringAux`, `int64Aux`,
+   are used, as `StaticAuxCall` makes it: without it `Reg` drops the register arguments); new
+   autos with `fe.SplitSlot` of the parent slot (the suffix is what the new name adds to the
+   parent's) or, for `.autotmp_<n>` (`stackalloc`, the `regalloc` shuffle, `writebarrier`), with
+   `f.NewLocal` at the definition's position and type, in number order (Lean numbers them in
+   creation order, and `TempAt` names them from `len(Dcl)`); jump tables (`<fn>.jump<b>`,
+   `lower`'s `JumpTable` rule) as `makeJumpTableSym` makes them; `stringAux`, `int64Aux`,
    `AuxNameOffset`, `PanicBoundsC(C)`, `auxMark` directly. Objects of the export's `frontend`
    block (and the types their symbols refer to) that a pass copied to new numbers are the
    block's compiler objects, renumbered (a type's references are resolved first, so a
@@ -80,10 +92,20 @@ exporter of 0001 (`gofvNewExporter`, `section("start")`, `tail()`), pipes it int
    objects with the listed IDs, linked like `freeValue`/`freeBlock` do), `Names`,
    `NamedValues`, `CanonicalLocalSlots`, `CanonicalLocalSplits`, the constant cache (with
    `InCache`), and the CFG caches (`postorder`, `idom`, `sdom`, `auxmap`, `linestarts` with its
-   leftover entries; a cached loop nest is recomputed with `loopnestfor`). `DeferReturn` is
-   remapped by block ID.
+   leftover entries, the loop nest from its `cache loopnest` line with the cached postorder and
+   dominator tree). Ops and block kinds are generic or ARM64 (`ARM64<name>`, the ranges of
+   `opGen.go`). The state of the lowered passes: `f.RegAlloc` (`&Config.registers[i]` by name,
+   inline `LocalSlot`s, `LocPair`, `LocResults`), `f.tempRegs`, `FlagsLiveAtEnd`, `Hotness`,
+   `f.scheduled`, `f.laidout`. `NamedValues` can name values that are in no block and not on the
+   free list (`regalloc` drops rematerializable values from the schedule without freeing them):
+   they become `Value`s with just their ID (`BuildFuncDebug` reads only that). The register
+   constraints `regalloc` caches in `*AuxCall`s are replayed as `regspec` does (`Reg` with the
+   op's `regInfo` for each call whose `AuxCall` has a `regInfo`, `OwnAux.ResultReg` for
+   `MakeResult`, in value order; undone if the import fails), and every Lean definition with a
+   `callreg` line must then render as it. `DeferReturn` is remapped by block ID.
 3. **Check.** `f` is exported again with the same exporter; the section must equal the Lean
-   output's function text byte for byte, with no new definitions, except that the entries of
+   output's function text byte for byte (its `dcllen` included: the frontend's `len(Dcl)` after
+   the import is the Lean pipeline's), with no new definitions, except that the entries of
    `namedx`, `splits` and `canon` (Go maps, which the exporter sorts by object numbers) are
    compared as sets.
 4. **Cache.** The imported values and blocks are not in `f.Cache`'s storage, which `Cache.Reset`
@@ -124,7 +146,7 @@ a higher number by key in the cut tables (#119).
 | Variable | Meaning |
 | --- | --- |
 | `GOFV_SSA_DRIVER=<path>` | enable; path of `gofv-ssa-opt` |
-| `GOFV_SSA_DRIVER_MODE=full` (default) | one segment from `number lines`; only a complete pipeline (`status ok`) is imported, anything else runs all stock passes |
+| `GOFV_SSA_DRIVER_MODE=full` (default) | one segment from `number lines` through `trim`; only a complete pipeline (`status ok`) is imported, anything else runs all stock passes |
 | `GOFV_SSA_DRIVER_MODE=mixed` | every maximal run of ported passes is a segment (`--partial`): the state before an unported or failing pass is imported, the stock compiler runs that pass, and the next ported pass starts a new segment |
 | `GOFV_SSA_DRIVER_PKG`, `GOFV_SSA_DRIVER_FUNC` | regexps selecting packages / `<pkgpath>.<f.Name>` (default all) |
 | `GOFV_SSA_DRIVER_STATS=<file>` | append one line per function: `"<pkg>" "<func>" <abi> lean=<n> stock=<n>` and one field per event (`unported "<pass>"`, `error "<pass>: <msg>"`, `import "<reason>"`, `exec`, `parse`), tab-separated |
@@ -140,8 +162,11 @@ refinement theorem, the stock port of the others, `check` between passes. Its ou
 format of driver mode and is always `status ok` unless a pass fails; `--vstats FILE` appends one
 line per function: `"<pkg>" "<func>" <abi>`, then `verified` or `unverified "<pass>: <verdict>"`
 (the first run that is not proven, identity or skipped) and the number of runs per verdict,
-tab-separated. A function whose line says `verified` is, by `verifiedPipeline_refines`, refined
-by the output. The output differs from stock wherever a checked variant undoes a rewrite, so
+tab-separated, and `lowered=<n>`. The passes from `lower` on have no theorems yet (H7, #385):
+after the verified pipeline their registered ports run, as in driver mode, so that the driver
+can import the state after `trim`; `lowered=<n>` counts them. A function whose line says
+`verified` is, by `verifiedPipeline_refines`, refined by the verified pipeline's result (the
+input of `lower`); the passes from `lower` on are trusted ports. The output differs from stock wherever a checked variant undoes a rewrite, so
 the importer's check against the Lean text still applies but stock identity does not.
 
 How each pass of `GoFV.Opt.stockPasses` runs (`stockPasses_sound` checks every `proven`/`guarded`
@@ -181,12 +206,13 @@ reports (`docs/GATE.md`).
 ## Whole-pipeline parity (`gofv-ssa-opt --check`)
 
 Per-pass parity (`docs/PARITY.md`) replays each pass on the stock input. `--check` chains the
-Lean results instead: it starts from section 0 with what the driver exports (section 0's
+Lean results instead, through `trim` (the output of `regalloc` feeds `loop rotate` and `trim`): it starts from section 0 with what the driver exports (section 0's
 definitions, the type order and `typecmp` exceptions restricted to those types, and the frontend
 closure the exporter's `frontend` block computes for them), runs the pipeline, and compares the
 state after every pass with the stock section of that pass (objects not in section 0 are paired
 by `renumber`'s canonical walk, so the Lean numbering of new objects is free). The chain also
-checks the pass sequence (the stock file must have a section for exactly the enabled passes). It
+checks the pass sequence (the stock file must have a section for exactly the enabled passes) and,
+after every pass, the chain's `len(curfn.Dcl)` against the section's `dcllen` (format 5.1). It
 runs the type rounds as the driver does. Outcomes per function: identical to the end, identical
 up to the first unported pass, first divergence at a pass, or a Lean pass error.
 
@@ -208,8 +234,19 @@ the map lines' order, as `pass-parity`.
 
 ## Results
 
-Issue #12 has the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`, `std` and the corpus
-programs built for linux/arm64 by `scripts/driver-e2e.sh`). State of the known gaps:
+Issue #12 has the earlier numbers and #386 the H8 ones (corpus `gofv-corpus/2aae1000ea1d`, `std`
+and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, export format 5.1:
+
+- `gofv-ssa-opt --check` (`number lines` through `trim`): the whole pipeline is identical for
+  9,297/9,297 functions of quick-v7 (42 s, `--jobs 4`) and 96,560/96,560 of full-v9 (786 s).
+  There are 0 divergences and 0 Lean pass errors.
+- `driver-e2e.sh --mode full -p 8`: 372/372 std archives byte-identical. 183 programs: 183
+  binaries byte-identical, and 183 with the same output and exit status under qemu. 44,189
+  functions go through Lean from `number lines` to `trim`, with 0 fallbacks: PASS (17 min).
+- `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock. 40,887 of 42,899
+  functions are fully verified, with 0 pass errors and 0 fallbacks: PASS (18 min).
+
+State of the known gaps:
 
 - Type-object identity for `zero arg cse` (#101): the pipeline tracks `*types.Type` object
   classes itself. It starts from the input section's `zvar`. Each pass reports the objects of

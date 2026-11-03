@@ -65,15 +65,15 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let t1 ← IO.monoNanosNow
   let st := { st with files := st.files + 1, bytes := st.bytes + data.size,
                       readNs := st.readNs + (t1 - t0) }
-  let r ← IO.lazyPure fun _ => parseExport data
+  let r ← IO.lazyPure fun _ => parseExportExt data
   let t2 ← IO.monoNanosNow
   let st := { st with parseNs := st.parseNs + (t2 - t1) }
   match r with
   | .error e =>
     IO.eprintln s!"FAIL {path}: parse error: {e}"
     return { st with failed := st.failed + 1 }
-  | .ok e =>
-    let out ← IO.lazyPure fun _ => printExport e
+  | .ok (e, x) =>
+    let out ← IO.lazyPure fun _ => printExportExt e x
     let t3 ← IO.monoNanosNow
     let st := { st with
       printNs := st.printNs + (t3 - t2),

@@ -1,4 +1,5 @@
 import GoFV.SSA.Export
+import GoFV.SSA.ExportExt
 import GoFV.SSA.RegARM64
 import Std.Data.HashMap.Basic
 
@@ -731,10 +732,12 @@ def func : L (Func × Option (Array (String × TypeRef))) := do
       freeValues := freeValues.toList, freeBlocks := freeBlocks.toList, cache := cache, low }
   return (f, typs)
 
-def sectionP : L Section := do
+/-- A section and its `dcllen` (format 5.1, `ExportExt`). -/
+def sectionP : L (Section × Option Nat) := do
   let (index, pass) ← line "pass" do return (← w natW, ← str)
   let defs ← defs
   let (func, typs) ← func
+  let dclLen ← if ← tagIs "dcllen" then some <$> line "dcllen" (w natW) else pure none
   let zvar ← if ← tagIs "zvar" then
       line "zvar" (w (listW fun e => do
         let some (a, b) := e.split2 58 | throw s!"bad zvar entry {e}"
@@ -745,12 +748,17 @@ def sectionP : L Section := do
     if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
   line "end" (pure ())
-  return { index, pass, defs, func, typs, zvar, warns }
+  return ({ index, pass, defs, func, typs, zvar, warns }, dclLen)
 
 /-- The file; with `stop = some p`, the sections from the first one named `p` on are skipped
 (not parsed, not checked) and the result holds the sections before it. -/
-def file (stop : Option String := none) : L ExportFile := do
-  let version ← line "gofv-ssa" (w natW)
+def file (stop : Option String := none) : L (ExportFile × ExportExt) := do
+  let (version, minor) ← line "gofv-ssa" (w fun s => match s.split2 46 with
+    | some (a, b) => do
+      let m ← natW b
+      if m == 0 then throw s!"non-canonical version {s}"
+      return (← natW a, m)
+    | none => return (← natW s, 0))
   let pkg ← line "pkg" str
   let (name, abi, nosplit, pgohot) ← line "func" do
     return (← str, ← w natW, ← w boolW, ← w boolW)
@@ -759,6 +767,7 @@ def file (stop : Option String := none) : L ExportFile := do
     if !(← tagIs "config") then break
     config := config.push (← line "config" do return (← wordStr, ← rest))
   let mut sections := #[]
+  let mut dclLen := #[]
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "pass") then break
     if let some p := stop then
@@ -771,7 +780,9 @@ def file (stop : Option String := none) : L ExportFile := do
           if (← get) ≥ (← read).lines.size then break
           set ((← get) + 1)
         break
-    sections := sections.push (← sectionP)
+    let (sec, dl) ← sectionP
+    sections := sections.push sec
+    dclLen := dclLen.push dl
   line "frontend" (pure ())
   let frontend ← defs
   line "end" (pure ())
@@ -798,25 +809,34 @@ def file (stop : Option String := none) : L ExportFile := do
   let typeOrder ← line "typeorder" (w (listW fun g => (g.split 61).mapM (refW 't')))
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
-  return { version, pkg, name, abi, nosplit, pgohot, config, sections, frontend, warns, ptrCache,
-           typeCmp, typeOrder, typeLink }
+  return ({ version, pkg, name, abi, nosplit, pgohot, config, sections, frontend, warns, ptrCache,
+            typeCmp, typeOrder, typeLink }, { minor, dclLen })
 
 end Parse
 
-/-- Parses a `gofv-ssa` file. -/
-def parseExport (data : ByteArray) : Except String ExportFile := do
+/-- Parses a `gofv-ssa` file, with its format 5.1 additions. -/
+def parseExportExt (data : ByteArray) : Except String (ExportFile × ExportExt) := do
   let ls ← Parse.lines data
   match (Parse.file none ⟨data, ls⟩).run 0 with
   | .ok f _ => pure f
   | .error e _ => throw e
 
-/-- Parses a `gofv-ssa` file up to the input of pass `stop`: the sections from the first one
-named `stop` on are skipped unparsed (format 5 files continue past `lower`; the Phase 1 tools
-read them with `stop := "lower"`, which is the whole file for format 4). -/
-def parseExportUntil (stop : String) (data : ByteArray) : Except String ExportFile := do
+/-- Parses a `gofv-ssa` file. -/
+def parseExport (data : ByteArray) : Except String ExportFile := (·.1) <$> parseExportExt data
+
+/-- Parses a `gofv-ssa` file up to the input of pass `stop`, with its format 5.1 additions: the
+sections from the first one named `stop` on are skipped unparsed (format 5 files continue past
+`lower`; the Phase 1 tools read them with `stop := "lower"`, which is the whole file for format
+4). -/
+def parseExportUntilExt (stop : String) (data : ByteArray) :
+    Except String (ExportFile × ExportExt) := do
   let ls ← Parse.lines data
   match (Parse.file (some stop) ⟨data, ls⟩).run 0 with
   | .ok f _ => pure f
   | .error e _ => throw e
+
+/-- `parseExportUntilExt` without the format 5.1 additions. -/
+def parseExportUntil (stop : String) (data : ByteArray) : Except String ExportFile :=
+  (·.1) <$> parseExportUntilExt stop data
 
 end GoFV.SSA
