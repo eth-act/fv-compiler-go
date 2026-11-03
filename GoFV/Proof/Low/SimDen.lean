@@ -271,6 +271,41 @@ theorem evalValueL_termL_eq {low : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v
   change ((evalOpL false env ctx fr v _ _).bind _) = _
   rw [evalOpL_termVL ht]; rfl
 
+/-! ## Frame addresses in registers -/
+
+/-- The registers of the frame addresses (`LocalAddr {n}`) of `D` in `fr`: `poison` or the
+address word of `n` in activation `act` at a word shape (`FrameVals` of the registers). -/
+def RegsFrame (tabs : Tables) (act : Nat) (D : ID → Option Value) (fr : Frame) : Prop :=
+  ∀ a l n y, D a = some l → l.op = .LocalAddr → l.aux = some n → fr.regs[a]? = some (some y) →
+    y = .poison ∨ (y = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)
+
+/-- A pointer at shape `T` (`Val.retype`, `Val.retypeL`) is `poison` or its word at a word
+shape. -/
+theorem retype_ptr_frame (low : Bool) (T : Ty) (q : Ptr) :
+    rty low T (.ptr q) = .poison ∨ (rty low T (.ptr q) = q.word ∧ wordShape T = true) := by
+  have h : (Val.ptr q).retypeL T = (Val.ptr q).retype T := by
+    unfold Val.retypeL
+    cases T <;> rfl
+  unfold rty
+  cases low <;> simp only [Bool.false_eq_true, ite_false, ite_true, h] <;>
+    cases T with
+    | int w => cases w <;> simp [Val.retype, wordShape]
+    | _ => simp [Val.retype, wordShape]
+
+/-- A `LocalAddr {n}` evaluates to `poison` or `n`'s address word at a word shape. -/
+theorem evalValueL_localAddr {low : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {y : Val} {n : AuxRef} (hop : v.op = .LocalAddr) (hax : v.aux = some n)
+    (h : evalValueL ⟨low, false⟩ env ctx fr v = .ok y) :
+    y = .poison ∨ (y = (framePtr ctx.tabs ctx.act n).word ∧
+      wordShape (ctx.tys[v.id]?.getD .other) = true) := by
+  rw [evalValueL_of_regs (regsL_of_ok h)] at h
+  change ((evalOpL false env ctx fr v _ _).bind _) = _ at h
+  have hg : v.op.generic = true := by rw [hop]; rfl
+  simp only [evalOpL, hg, ite_true, evalOp_localAddr hop, hax, Option.map_some,
+    Option.getD_some] at h
+  cases h
+  exact retype_ptr_frame low _ _
+
 /-! ## Applying the term relations to frames -/
 
 section
@@ -288,7 +323,8 @@ include hl hS hG hrel htyS htyT hsh
 /-- The valuations of the frames' atoms, refined and typed. -/
 private theorem vals_exist : ∃ ρ ρ' : ID → Val, ValRef ρ ρ' ∧ TypedL lowS D tabs ρ ∧
     TypedL lowT E tabs ρ' ∧ (∀ a, VS a → ¬ IsTermL tabs D a → ρ a = rv FS a) ∧
-    (∀ a, VT a → ¬ IsTermL tabs E a → ρ' a = rv FT a) := by
+    (∀ a, VT a → ¬ IsTermL tabs E a → ρ' a = rv FT a) ∧
+    (∀ a, ¬ (VS a ∧ ¬ IsTermL tabs D a) → ρ a = .poison) := by
   classical
   let ρ : ID → Val := fun a => if VS a ∧ ¬ IsTermL tabs D a then rv FS a else .poison
   let ρ' : ID → Val := fun a =>
@@ -296,7 +332,8 @@ private theorem vals_exist : ∃ ρ ρ' : ID → Val, ValRef ρ ρ' ∧ TypedL l
     else if ¬ IsTermL tabs E a ∧ (E a).isSome then rty lowT (shapeL lowT E tabs a) (ρ a)
     else ρ a
   refine ⟨ρ, ρ', fun a => ?_, fun a hat _ => ?_, fun a hat hdef => ?_,
-    fun a ha hat => by simp [ρ, ha, hat], fun a ha hat => by simp [ρ', ha, hat]⟩
+    fun a ha hat => by simp [ρ, ha, hat], fun a ha hat => by simp [ρ', ha, hat],
+    fun a h => if_neg h⟩
   · by_cases h1 : VT a ∧ ¬ IsTermL tabs E a
     · by_cases h2 : VS a ∧ ¬ IsTermL tabs D a
       · simp only [ρ', ρ, h1, h2, and_self, ite_true]
@@ -327,15 +364,23 @@ private theorem vals_exist : ∃ ρ ρ' : ID → Val, ValRef ρ ρ' ∧ TypedL l
       simp only [ρ', h1, h3, false_and, and_self, ite_true, ite_false]
       exact rty_idem _ _ _
 
-/-- **`ArgTermRefL` on registers.** -/
-theorem argTermRefL_apply {o : Option Int64} {x y : ID}
+/-- **`ArgTermRefL` on registers**, the source's frame addresses those of activation `act`. -/
+theorem argTermRefL_apply {act : Nat} (hfr : RegsFrame tabs act D FS)
+    {o : Option (Int64 × Option AuxRef)} {x y : ID}
     (hT : ArgTermRefL o lowS D tabs x lowT E tabs y) (hxS : VS x) (hyT : VT y) :
-    ArgRel o (rv FS x) (rv FT y) := by
-  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ'⟩ := vals_exist hl hS hG hrel htyS htyT hsh
+    ArgRel tabs act o (rv FS x) (rv FT y) := by
+  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', hρp⟩ := vals_exist hl hS hG hrel htyS htyT hsh
+  have hF : FrameVals tabs act D ρ := fun a l n hl' hop hax => by
+    by_cases h : VS a ∧ ¬ IsTermL tabs D a
+    · rw [hρ a h.1 h.2]
+      obtain ⟨z, hz⟩ := (hS a h.1).1
+      rw [rv_of hz]
+      exact hfr a l n z hl' hop hax hz
+    · rw [hρp a h]; exact .inl rfl
   obtain ⟨N, hN⟩ := (hS x hxS).2 ρ hρ
   obtain ⟨M, hM⟩ := (hG y hyT).2 ρ' hρ'
   obtain ⟨m, h⟩ := hT N
-  have h := h ρ ρ' hval htD htE
+  have h := h act ρ ρ' hval htD htE hF
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]
   exact h.trans_right (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M))
@@ -347,7 +392,7 @@ theorem termStepRefL_apply {fb gb : Block}
         (stepValsL gb (gb.controls.toList.map (denL lowT E tabs ρ' m))))
     (hxS : ∀ c ∈ fb.controls, VS c) (hyT : ∀ c ∈ gb.controls, VT c) :
     Res.Rel Next.Refines (stepTermL FS fb) (stepTermL FT gb) := by
-  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ'⟩ := vals_exist hl hS hG hrel htyS htyT hsh
+  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', -⟩ := vals_exist hl hS hG hrel htyS htyT hsh
   obtain ⟨N, hN⟩ := hS.list hρ (l := fb.controls.toList)
     fun a ha => hxS a (Array.mem_toList_iff.1 ha)
   obtain ⟨M, hM⟩ := hG.list hρ' (l := gb.controls.toList)

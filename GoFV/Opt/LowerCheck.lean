@@ -24,8 +24,9 @@ input `f`, and the output `g` must have the replayed definitions. The difference
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
   arm64 store (`memLower`), or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event
-  lowering a store or a frame address, or folding an `ADDconst` offset into an arm64 store
-  (`stFold`), is replayed as its new definitions (`atomDef`);
+  lowering a store or a frame address, or folding an `ADDconst` offset (`stFold`) or a global
+  symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, is replayed as its
+  new definitions (`atomDef`);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/
@@ -191,11 +192,32 @@ def stFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
       u.args == #[y.args[0]!, x.args[1]!, x.args[2]!]
   | none => false
 
+/-- The atom `u` folds the address `MOVDaddr [k2] {sym} b` of the arm64 store `x` (`x`'s argument
+0 in `M`) into its offset and aux (`(MOV…store [k1] {sym1} (MOVDaddr [k2] {sym2} ptr) val mem) &&
+canMergeSym(sym1,sym2) … => (MOV…store [k1+k2] {mergeSym(sym1,sym2)} ptr val mem)`,
+`ARM64.rules:881-905`): the same op and type, `x` without aux, `u` with the `MOVDaddr`'s, `b` for
+the address, the offset `k1 + k2` (`k1` and the sum small and non-negative, `offOK`); the
+`MOVDaddr` either a term (a global symbol, at a word shape) or, at offset 0, the lowered frame
+address of the `LocalAddr` of `f` with the same aux (a frame variable). -/
+def stFoldAddr (tabs : Tables) (f : Func) (M : Defs) (x u : Value) : Bool :=
+  (stSize x.op).isSome && u.op == x.op && u.type == x.type && x.aux == none &&
+  x.args.size == 3 && offOK x.auxInt && offOK u.auxInt &&
+  match M.get? x.args[0]! with
+  | some m =>
+    m.op == .ARM64MOVDaddr && m.args.size == 1 && m.aux.isSome && u.aux == m.aux &&
+      u.auxInt.toInt == x.auxInt.toInt + m.auxInt.toInt &&
+      u.args == #[m.args[0]!, x.args[1]!, x.args[2]!] &&
+      (termVL tabs m && wordShape (shpL tabs m.type) ||
+        !termVL tabs m && m.auxInt == 0 &&
+          (f.value? x.args[0]!).any fun l => l.op == .LocalAddr && l.aux == m.aux)
+  | none => false
+
 /-- A rule event at the atom `v` replayed as the atom its top result node `u` defines (the log
 lists the reset value, then the nodes, as for any `build`), with `v`'s type:
-* a lowered store (`memLower` at offset 0: `(Store {t} ptr val mem) => (MOVDstore ptr val mem)`
-  and the other sizes), on `v`'s arguments;
-* an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`);
+* a lowered store (`memLower` at offset 0 without aux: `(Store {t} ptr val mem) => (MOVDstore ptr
+  val mem)` and the other sizes), on `v`'s arguments;
+* an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
+  or frame variable's address (`stFoldAddr`);
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
   some of `v`'s arguments, or `(MOVDaddr {sym} (SPanchored base mem))`, whose second node `s` is a
   fresh term on some of `v`'s arguments (`u` reads no argument, `argFree`).
@@ -205,9 +227,10 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
   match M.get? v, defs with
   | some x, [_, u] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
-        (u.args == x.args && memLower tabs x u && u.auxInt == 0 ||
+        (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
           u.args.all x.args.contains && addrLower tabs x u ||
-          stFold tabs M x u && (f.value? v).any (·.op == .Store)) then some (u, none)
+          (stFold tabs M x u || stFoldAddr tabs f M x u) && (f.value? v).any (·.op == .Store))
+        then some (u, none)
     else none
   | some x, [_, u, s] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&

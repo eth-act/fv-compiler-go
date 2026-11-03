@@ -7,10 +7,11 @@ Phase 1's `AtomSimBlock`/`AtomSimEnter`/`AtomSimNoPanic`/`AtomSimPanic` over `ru
 trivial source invariant. `BRel frS frT b i`: the source and target frames at the entry of block
 `b` along edge `i`: the same activation inputs, registers typed in each function's mode, `b` a
 tree block of both dominator trees, every atom of `g` the target holds refined from the source's
-register, and sets `VS`/`VT` with `DenOKL` that contain the values of the strict ancestors of `b`
-and the `Phi` arguments along edge `i`. `enter_ok`: a source block entry without panic is matched
-by the target's, the frames afterwards related (`EndRel`); `enter_panic`: a panicking one by a
-target panic with a refined memory.
+register, the source's frame addresses those of activation 0 (`RegsFrame`), and sets `VS`/`VT`
+with `DenOKL` that contain the values of the strict ancestors of `b` and the `Phi` arguments
+along edge `i`. `enter_ok`: a source block entry without panic is matched by the target's, the
+frames afterwards related (`EndRel`); `enter_panic`: a panicking one by a target panic with a
+refined memory.
 -/
 
 namespace GoFV.Proof.Low.Sim
@@ -30,6 +31,7 @@ structure BRel (tabs : Tables) (f g : Func) (frS frT : Frame) (b : ID) (i : Nat)
   treeT : ((make g).depthOf b).isSome
   atoms : ∀ a w, Placed g a w → termVL tabs w = false → ∀ y', frT.regs[a]? = some (some y') →
     ∃ y, frS.regs[a]? = some (some y) ∧ Sem.Refines y y'
+  frames : RegsFrame tabs 0 f.value? frS
   den : ∃ VS VT, DenOKL f.lowered f.value? tabs frS VS ∧
     DenOKL g.lowered (listedDefs g) tabs frT VT ∧
     (∀ x, VT x → ∃ w, Placed g x w) ∧ (∀ x, SAnc f b x → VS x) ∧ (∀ x, SAnc g b x → VT x) ∧
@@ -150,7 +152,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       rw [getElem!_pos u.args i hi]; exact (Array.getElem?_eq_some_iff.1 ha).2
     have hai' : w.args[i]! = a' := by
       rw [getElem!_pos w.args i hi']; exact (Array.getElem?_eq_some_iff.1 ha').2
-    have hr := (atom_ref H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.fr hpw hpu.1 ht).2.1
+    have hr := (atom_ref H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.frames R.fr hpw hpu.1 ht).2.1
       (by cases hf : argFree tabs w
           · rfl
           · exact absurd hph (by rw [(argFree_cases hf).1]; decide)) i hi'
@@ -318,6 +320,29 @@ theorem atomL_out {a : ID} {w : Value} (hp : Placed g a w) (ht : termVL tabs w =
   exact ⟨not_mem_of_placed H.wg hp B.bmT B.hgb hne,
     not_mem_of_placed H.wf hpu B.bmS B.hfb ((atomPair_spec hs).2.2.1 ▸ hne)⟩
 
+/-- **The source's frame addresses after a schedule prefix** `P`, evaluated from the frame after
+the `Phi`s: a `LocalAddr` of `P` evaluates to its address word (`evalValueL_localAddr`), the
+others keep their registers from the block entry (`setPhis` writes only `Phi`s). -/
+theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID × Val)}
+    (hfrS : RegsFrame tabs 0 f.value? frS) (hPof : ∀ x ∈ P, x ∈ of.toList)
+    (hphi : ∀ z, (z ∉ fb.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi) →
+      (setPhis psS frS.regs)[z]? = frS.regs[z]?)
+    (hkeep : ∀ z, z ∉ P → G.regs[z]? = (setPhis psS frS.regs)[z]?)
+    (hev : ∀ x ∈ P, ∃ u y, f.value? x = some u ∧ G.regs[x]? = some (some y) ∧
+      evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u = .ok y) :
+    RegsFrame tabs 0 f.value? G := by
+  intro a l n y hl hop hax hy
+  by_cases haP : a ∈ P
+  · obtain ⟨u, y', hu, hy', hevu⟩ := hev a haP
+    rw [hl] at hu; cases hu
+    rw [hy] at hy'; cases hy'
+    have h := evalValueL_localAddr hop hax hevu
+    rw [makeL_tabs, makeL_act, (sched_ownL H B a (hPof a haP) l hl).1, tysL_of_value hl,
+      H.shp a l hl, H.glow] at h
+    exact h
+  · rw [hkeep a haP, hphi a (.inr ⟨l, hl, by rw [hop]; decide⟩)] at hy
+    exact hfrS a l n y hl hop hax hy
+
 end
 
 /-- The frames after a block entry. -/
@@ -334,6 +359,7 @@ structure EndRel (tabs : Tables) (f g : Func) (b : ID) (fb gb : Block) (of og : 
     ¬ IsTermL tabs f.value? a → ¬ IsTermL tabs (listedDefs g) a → Sem.Refines (rv FS a) (rv FT a)
   atoms : ∀ a w, Placed g a w → termVL tabs w = false → ∀ y', FT.regs[a]? = some (some y') →
     ∃ y, FS.regs[a]? = some (some y) ∧ Sem.Refines y y'
+  frames : RegsFrame tabs 0 f.value? FS
 
 /-- The frames after the `Phi`s, and their relation. -/
 private theorem after_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
@@ -419,8 +445,9 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     obtain ⟨y, hy, hof, hyy⟩ := hat0 a ha hatE
     rw [rv_of (show FS.regs[a]? = some (some y) by rw [g5 a hof]; exact hy)]
     exact hyy
+  have hfrFS := regsFrame_eval H B R.frames (P := of.toList) (fun x hx => hx) pS3 g5 g6
   obtain ⟨FT, hevT, l1, l2, l3, l4, l5, l6⟩ := tgt_loop H hE (og := og.toList) (L := og.toList)
-    (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hT1
+    (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hfrFS hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrel0 B.ndT B.tpT
     (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
@@ -442,7 +469,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
   refine ⟨FT, enterBlockL_of hpsT (by rw [schedL_of_block B.hgb B.idT, B.sT]) hevT, ?_⟩
   have hfr : FT = { FS with regs := FT.regs } := frame_trans l1 hfrT
   refine ⟨hfr, by rw [g2, pS1, R.szS], by rw [l2, pT1, R.szT], g3, l3, g4, l4,
-    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_⟩
+    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_, hfrFS⟩
   by_cases hwb : w.block = b
   · have haz : a ∈ gb.values := by
       obtain ⟨-, -, blk, hblk, hx⟩ := hpw
@@ -632,8 +659,9 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
     exact hyy
   have hogpre : ∀ x ∈ preT, x ∈ og.toList := fun x hx => by
     rw [hog]; exact List.mem_append_left _ hx
+  have hfrG := regsFrame_eval H B R.frames (P := pre) hpreof pS3 g5 g6
   obtain ⟨T, hevT, l1, l2, l3, l4, l5, l6⟩ := tgt_loop H hE (og := og.toList) (L := preT)
-    (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hT1
+    (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hfrG hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrelT0 B.ndT B.tpT
     (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
@@ -675,7 +703,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
     (fun a ha => ha.elim (v1_placed H.wg B.bmT B.hgb a) fun hm => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 (hogpre a hm)
       exact ⟨w, (placed_in H.wg B.bmT B.hgb hxb hw).1⟩)
-    l6 g3 l3 (frame_trans l1 hfrT) hpwr hur hwrt).2.2 env hE (hargsS r (.inr rfl) ur hur)
+    l6 g3 l3 hfrG (frame_trans l1 hfrT) hpwr hur hwrt).2.2 env hE (hargsS r (.inr rfl) ur hur)
     (fun a ha => by
       rcases sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT r hrog.1 wr hwr a ha with h | h
       · exact .inl h

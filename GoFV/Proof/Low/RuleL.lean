@@ -424,11 +424,22 @@ def stSize : Op → Option Nat
   | .ARM64MOVDstore | .ARM64FMOVDstore => some 8
   | _ => none
 
+/-- An arm64 store's aux `Sem.symAddr` reads: none (the base's address), a global symbol, or a
+frame variable. -/
+def stAux (tabs : Tables) : Option AuxRef → Bool
+  | none => true
+  | some n =>
+    match tabs.aux? n with
+    | some { kind := .sym .., .. } | some { kind := .name .., .. } => true
+    | _ => false
+
 /-- The atom `w` lowers the memory atom `u`: a `Store {t}` of a scalar `t` of the arm64 store's
-size, without aux, at a small non-negative offset (`offOK`: 0 as lowered, or a folded `ADDconst`
-offset, `ARM64.rules:758-776`; `GoFV.Proof.Low.Sim.store_lower_eval`). -/
+size, at a small non-negative offset (`offOK`: 0 as lowered, or a folded `ADDconst` offset,
+`ARM64.rules:758-776`) and an aux `Sem.symAddr` reads (`stAux`: none, or a symbol or frame
+variable folded in, `881-905`; `GoFV.Proof.Low.Sim.store_lower_eval`). -/
 def memLower (tabs : Tables) (u w : Value) : Bool :=
-  offOK w.auxInt && w.aux == none && u.op == .Store && (stSize w.op).any (fitsB (auxTy tabs u.aux))
+  offOK w.auxInt && stAux tabs w.aux && u.op == .Store &&
+    (stSize w.op).any (fitsB (auxTy tabs u.aux))
 
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a

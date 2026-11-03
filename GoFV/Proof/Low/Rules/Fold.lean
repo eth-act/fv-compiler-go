@@ -2,7 +2,8 @@ import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.AddrFold
 
 /-!
-# Lowering rule lemmas: offsets folded into loads (`ARM64.rules:658-676`) and stores (`758-776`)
+# Lowering rule lemmas: offsets folded into loads (`ARM64.rules:658-676`) and stores (`758-776`),
+symbols and frame variables folded into stores (`881-905`)
 
 `(MOV{B,BU,H,HU,W,WU,D}load [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2)
 && … => (MOV…load [off1+int32(off2)] {sym} ptr mem)`. The validator admits an instance only
@@ -13,7 +14,10 @@ addresses are the same (`GoFV.Proof.Low.addr_fold`).
 [off1+int32(off2)] {sym} ptr val mem)` and `FMOV{S,D}store`: stores are atoms, the validator
 replays the fold as the store's new definition (`LowerCheck.stFold`, the store lowering a `Store`,
 its address related by `AddrRef`, `GoFV.Proof.Low.addrRef_fold`), so these rules are
-`ArmRule.Mem` (`checked_armStore`).
+`ArmRule.Mem` (`checked_armStore`). Likewise `(MOV…store [off1] {sym1} (MOVDaddr [off2] {sym2}
+ptr) val mem) && canMergeSym(sym1,sym2) && … => (MOV…store [off1+off2] {mergeSym(sym1,sym2)} ptr
+val mem)`: the validator replays a global symbol's or a frame variable's address folded into the
+store (`LowerCheck.stFoldAddr`; `GoFV.Proof.Low.addrRef_foldSym`, `addrRef_foldFrame`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -116,5 +120,23 @@ theorem r_ARM64_773_sound : ArmRule.Checked r_ARM64_773 := checked_armStore rfl 
 
 /-- `ARM64.rules:776`: `(FMOVDstore [off1] {sym} (ADDconst [off2] ptr) val mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDstore [off1+int32(off2)] {sym} ptr val mem)` -/
 theorem r_ARM64_776_sound : ArmRule.Checked r_ARM64_776 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:881`: `(MOVBstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVBstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
+theorem r_ARM64_881_sound : ArmRule.Checked r_ARM64_881 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:885`: `(MOVHstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVHstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
+theorem r_ARM64_885_sound : ArmRule.Checked r_ARM64_885 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:889`: `(MOVWstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVWstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
+theorem r_ARM64_889_sound : ArmRule.Checked r_ARM64_889 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:893`: `(MOVDstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVDstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
+theorem r_ARM64_893_sound : ArmRule.Checked r_ARM64_893 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:901`: `(FMOVSstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVSstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
+theorem r_ARM64_901_sound : ArmRule.Checked r_ARM64_901 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:905`: `(FMOVDstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
+theorem r_ARM64_905_sound : ArmRule.Checked r_ARM64_905 := checked_armStore rfl rfl
 
 end GoFV.Proof.Low.Rules

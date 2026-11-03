@@ -12,12 +12,15 @@ value's shape `shp low`, then `rty low`), reading atoms (and values `D` does not
 registers, `Val.retypeL`, at the lowered shapes, `Sem.tyOfL`).
 
 `ArgTermRefL o lowD D x lowE E y`: for every fuel on the left there is one on the right such that
-for valuations `ρ ⊑ ρ'` whose atom values are fixed by `rty` at their shapes (`TypedL`), `denL lowD
-D … x` and `denL lowE E … y` are related by `ArgRel o`: refinement, or (`o = some k`, the address
-of an arm64 store lowering a `Store`, `stArg`) `AddrRef k`: the second moved by `k` is, as an
-address, the pointer word the first is. `AtomArgsRefL` and `TermStepRefL` are the premises of the
-atom simulation (`GoFV.Proof.Low.atomSimL_refines`) that the validator
-(`GoFV.Opt.LowerCheck.validateL`) establishes (`GoFV.Proof.Low.validateL_termRef`).
+for valuations `ρ ⊑ ρ'` whose atom values are fixed by `rty` at their shapes (`TypedL`) and whose
+frame addresses (`LocalAddr {n}` atoms of `D`) hold `n`'s address in some activation `act`
+(`FrameVals`), `denL lowD D … x` and `denL lowE E … y` are related by `ArgRel act o`: refinement,
+or (`o = some (k, ax)`, the address of an arm64 store lowering a `Store`, `stArg`) `AddrRef act ax
+k`: the store's address on the second (`addrAt`, `Sem.symAddr`: a global symbol's or frame
+variable's at the offset, or the base moved by it) is, as an address, the pointer word the first
+is. `AtomArgsRefL` and `TermStepRefL` are the premises of the atom simulation
+(`GoFV.Proof.Low.atomSimL_refines`) that the validator (`GoFV.Opt.LowerCheck.validateL`)
+establishes (`GoFV.Proof.Low.validateL_termRef`).
 -/
 
 namespace GoFV.Proof.Low
@@ -51,16 +54,30 @@ do). -/
 def TypedL (low : Bool) (D : ID → Option Value) (tabs : Tables) (ρ : ID → Val) : Prop :=
   ∀ a, ¬ IsTermL tabs D a → (D a).isSome → rty low (shapeL low D tabs a) (ρ a) = ρ a
 
-/-- `y` moved by `k` is, as an arm64 address (`Arm64.addr`), the pointer word `x` is
-(`Val.asPtrWord`, the address a `Store` writes at). -/
-def AddrRef (k : Int64) (x y : Val) : Prop :=
-  ∀ p, x.asPtrWord = some p → Arm64.addr y (BitVec.ofInt 64 k.toInt) = some p
+/-- The address an arm64 store at offset `k` with aux `ax` writes at on the base `y`, in
+activation `act` (`Sem.symAddr`): a global symbol's or a frame variable's at the offset, or the
+base moved by it. -/
+def addrAt (tabs : Tables) (act : Nat) (ax : Option AuxRef) (k : Int64) (y : Val) : Option Ptr :=
+  match ax with
+  | some n =>
+    match tabs.aux? n with
+    | some { kind := .sym name .., .. } =>
+      some ⟨.global name.toStringLossy, BitVec.ofInt 64 k.toInt⟩
+    | some { kind := .name .., .. } => some ⟨frameBlk tabs act n, BitVec.ofInt 64 k.toInt⟩
+    | _ => none
+  | none => Arm64.addr y (BitVec.ofInt 64 k.toInt)
+
+/-- An arm64 store's address on base `y` (`addrAt` at its aux and offset) is the pointer word `x`
+is (`Val.asPtrWord`, the address a `Store` writes at). -/
+def AddrRef (tabs : Tables) (act : Nat) (ax : Option AuxRef) (k : Int64) (x y : Val) : Prop :=
+  ∀ p, x.asPtrWord = some p → addrAt tabs act ax k y = some p
 
 /-- How argument `i` of the atom `w` relates to argument `i` of the atom `u` it corresponds to:
-the address of an arm64 store lowering a `Store` (argument 0) at the store's offset
-(`AddrRef`, `ARM64.rules:758-776` fold `ADDconst` offsets into it), else by refinement. -/
-def stArg (u w : Value) (i : Nat) : Option Int64 :=
-  if i == 0 && u.op == .Store && (stSize w.op).isSome then some w.auxInt else none
+the address of an arm64 store lowering a `Store` (argument 0) at the store's offset and aux
+(`AddrRef`; `ARM64.rules:758-776` fold `ADDconst` offsets into it, `881-905` symbols and frame
+variables), else by refinement. -/
+def stArg (u w : Value) (i : Nat) : Option (Int64 × Option AuxRef) :=
+  if i == 0 && u.op == .Store && (stSize w.op).isSome then some (w.auxInt, w.aux) else none
 
 /-- `stArg` is refinement unless `w` is an arm64 store. -/
 theorem stArg_none {u w : Value} {i : Nat} (h : stSize w.op = none) : stArg u w i = none := by
@@ -82,30 +99,41 @@ theorem stArg_self (a : Value) (i : Nat) : stArg a a i = none := by
 
 /-- The address argument of an arm64 store lowering a `Store`. -/
 theorem stArg_zero {u w : Value} (hu : u.op = .Store) (hw : (stSize w.op).isSome = true) :
-    stArg u w 0 = some w.auxInt := by
+    stArg u w 0 = some (w.auxInt, w.aux) := by
   unfold stArg; simp [hu, hw]
 
 /-- The arguments of an arm64 store lowering a `Store`. -/
 theorem stArg_store {u w : Value} {i : Nat} (hu : u.op = .Store) (hw : (stSize w.op).isSome = true) :
-    stArg u w i = if i = 0 then some w.auxInt else none := by
+    stArg u w i = if i = 0 then some (w.auxInt, w.aux) else none := by
   unfold stArg; simp [hu, hw]
 
-/-- `stArg` reads the op and the auxint. -/
-theorem stArg_congr {u w w' : Value} {i : Nat} (hop : w.op = w'.op) (hai : w.auxInt = w'.auxInt) :
-    stArg u w i = stArg u w' i := by
-  unfold stArg; rw [hop, hai]
+/-- `stArg` reads the op, the auxint and the aux. -/
+theorem stArg_congr {u w w' : Value} {i : Nat} (hop : w.op = w'.op) (hai : w.auxInt = w'.auxInt)
+    (hax : w.aux = w'.aux) : stArg u w i = stArg u w' i := by
+  unfold stArg; rw [hop, hai, hax]
 
-/-- `Sem.Refines`, or `AddrRef` at an offset. -/
-def ArgRel : Option Int64 → Val → Val → Prop
+/-- `Sem.Refines`, or `AddrRef` at an offset and aux, in activation `act`. -/
+def ArgRel (tabs : Tables) (act : Nat) : Option (Int64 × Option AuxRef) → Val → Val → Prop
   | none, x, y => Sem.Refines x y
-  | some k, x, y => AddrRef k x y
+  | some (k, ax), x, y => AddrRef tabs act ax k x y
+
+/-- The address of the frame variable `n` in activation `act` (`Sem.frameVal`). -/
+def framePtr (tabs : Tables) (act : Nat) (n : AuxRef) : Ptr := ⟨frameBlk tabs act n, 0⟩
+
+/-- The atoms of `D` that are frame addresses (`LocalAddr {n}`) hold, under `ρ`, the address of
+`n` in activation `act` as a word (`Ptr.word`) at a word shape, or `poison` (as `runL`'s
+registers do, `Sem.frameVal` shaped). -/
+def FrameVals (tabs : Tables) (act : Nat) (D : ID → Option Value) (ρ : ID → Val) : Prop :=
+  ∀ a l n, D a = some l → l.op = .LocalAddr → l.aux = some n →
+    ρ a = .poison ∨ (ρ a = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)
 
 /-- `y` in `E` (mode `lowE`) is related by `ArgRel o` to `x` in `D` (mode `lowD`) as a term over
-the atoms. -/
-def ArgTermRefL (o : Option Int64) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID)
-    (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) : Prop :=
-  ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
-    ArgRel o (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
+the atoms, in every activation whose frame addresses the valuation of `D` holds (`FrameVals`). -/
+def ArgTermRefL (o : Option (Int64 × Option AuxRef)) (lowD : Bool) (D : ID → Option Value)
+    (tabs : Tables) (x : ID) (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) :
+    Prop :=
+  ∀ n, ∃ m, ∀ act ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs act D ρ → ArgRel tabs act o (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
 
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
@@ -117,23 +145,30 @@ theorem addr_of_refines {y y' : Val} {k : BitVec 64} {p : Ptr} (h : Sem.Refines 
     (hp : Arm64.addr y k = some p) : y' = y := by
   cases h <;> first | rfl | simp [Arm64.addr, Arm64.reg] at hp
 
+/-- A defined store address is read off a base its refinements equal. -/
+theorem addrAt_of_refines {tabs : Tables} {act : Nat} {ax : Option AuxRef} {k : Int64}
+    {y y' : Val} {p : Ptr} (h : Sem.Refines y y') (hp : addrAt tabs act ax k y = some p) :
+    addrAt tabs act ax k y' = some p := by
+  cases ax with
+  | none => unfold addrAt at hp ⊢; rw [addr_of_refines h hp]; exact hp
+  | some n => exact hp
+
 /-- `ArgRel` is closed under refinement on the right. -/
-theorem ArgRel.trans_right {o : Option Int64} {x y y' : Val} (h : ArgRel o x y)
-    (h2 : Sem.Refines y y') : ArgRel o x y' := by
-  cases o with
-  | none => exact Sem.Refines.trans h h2
-  | some k =>
-    intro p hp
-    have := h p hp
-    rw [addr_of_refines h2 this]; exact this
+theorem ArgRel.trans_right {tabs : Tables} {act : Nat} {o : Option (Int64 × Option AuxRef)}
+    {x y y' : Val} (h : ArgRel tabs act o x y) (h2 : Sem.Refines y y') :
+    ArgRel tabs act o x y' := by
+  rcases o with _ | ⟨k, ax⟩
+  · exact Sem.Refines.trans h h2
+  · intro p hp
+    exact addrAt_of_refines h2 (h p hp)
 
 /-- `ArgRel` is closed under refinement on the left. -/
-theorem ArgRel.trans_left {o : Option Int64} {x x' y : Val} (h1 : Sem.Refines x x')
-    (h : ArgRel o x' y) : ArgRel o x y := by
-  cases o with
-  | none => exact Sem.Refines.trans h1 h
-  | some k =>
-    intro p hp
+theorem ArgRel.trans_left {tabs : Tables} {act : Nat} {o : Option (Int64 × Option AuxRef)}
+    {x x' y : Val} (h1 : Sem.Refines x x') (h : ArgRel tabs act o x' y) :
+    ArgRel tabs act o x y := by
+  rcases o with _ | ⟨k, ax⟩
+  · exact Sem.Refines.trans h1 h
+  · intro p hp
     exact h p (by rw [asPtrWord_of_refines h1 hp]; exact hp)
 
 /-- A pointer word is its own arm64 address at offset 0. -/
@@ -151,9 +186,11 @@ theorem addr_of_asPtrWord {a : Val} {p : Ptr} (h : a.asPtrWord = some p) :
     simp [Arm64.addr, Arm64.reg]
   | _ => simp [Val.asPtrWord] at h
 
-/-- A refinement is an address at offset 0. -/
-theorem addrRef_zero {x y : Val} (h : Sem.Refines x y) : AddrRef 0 x y := by
+/-- A refinement is a store address at offset 0 without aux. -/
+theorem addrRef_zero {tabs : Tables} {act : Nat} {x y : Val} (h : Sem.Refines x y) :
+    AddrRef tabs act none 0 x y := by
   intro p hp
+  unfold addrAt
   rw [asPtrWord_of_refines h hp, show BitVec.ofInt 64 (0 : Int64).toInt = 0 by decide]
   exact addr_of_asPtrWord hp
 

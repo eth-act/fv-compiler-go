@@ -58,23 +58,23 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 174 proven value rules and 43 proven block rules. -/
+/-- `ARM64.rules` restricted to its 180 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
-    (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776]),
-    (.ARM64FMOVSstore, [Generated.ARM64.r_ARM64_773]),
+    (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776, Generated.ARM64.r_ARM64_905]),
+    (.ARM64FMOVSstore, [Generated.ARM64.r_ARM64_773, Generated.ARM64.r_ARM64_901]),
     (.ARM64MOVBUload, [Generated.ARM64.r_ARM64_661]),
     (.ARM64MOVBload, [Generated.ARM64.r_ARM64_658]),
-    (.ARM64MOVBstore, [Generated.ARM64.r_ARM64_758]),
+    (.ARM64MOVBstore, [Generated.ARM64.r_ARM64_758, Generated.ARM64.r_ARM64_881]),
     (.ARM64MOVDload, [Generated.ARM64.r_ARM64_676]),
-    (.ARM64MOVDstore, [Generated.ARM64.r_ARM64_767]),
+    (.ARM64MOVDstore, [Generated.ARM64.r_ARM64_767, Generated.ARM64.r_ARM64_893]),
     (.ARM64MOVHUload, [Generated.ARM64.r_ARM64_667]),
     (.ARM64MOVHload, [Generated.ARM64.r_ARM64_664]),
-    (.ARM64MOVHstore, [Generated.ARM64.r_ARM64_761]),
+    (.ARM64MOVHstore, [Generated.ARM64.r_ARM64_761, Generated.ARM64.r_ARM64_885]),
     (.ARM64MOVWUload, [Generated.ARM64.r_ARM64_673]),
     (.ARM64MOVWload, [Generated.ARM64.r_ARM64_670]),
-    (.ARM64MOVWstore, [Generated.ARM64.r_ARM64_764]),
+    (.ARM64MOVWstore, [Generated.ARM64.r_ARM64_764, Generated.ARM64.r_ARM64_889]),
     (.Add16, [Generated.ARM64.r_ARM64_5]),
     (.Add32, [Generated.ARM64.r_ARM64_5_2]),
     (.Add64, [Generated.ARM64.r_ARM64_5_3]),
