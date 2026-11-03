@@ -96,16 +96,19 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
 def _root_.GoFV.SSA.Tables.ty (tabs : Tables) (t : TypeRef) : Ty := tyOf tabs 32 t
 
 /-- `Val.retype` at a pointer shape (`Val.retype_ptr`): the string and slice pointers. A 64-bit
-integer keeps its word (§3.3: the pointer at that concrete address, `Val.asPtrWord`); a pointer
-becomes its word (`Ptr.word`: its address if it converts back to itself). -/
+integer keeps its word (§3.3: the pointer at that concrete address, `Val.asPtrWord`), a narrower
+one or a boolean is zero-extended (as at `.int .w64`); a pointer becomes its word (`Ptr.word`: its
+address if it converts back to itself). -/
 def Val.retypePtr : Val → Val
-  | .int .w64 a => .int .w64 a
+  | .int _ a => .int .w64 (a.setWidth 64)
+  | .bool b => .int .w64 (if b then 1 else 0)
   | .ptr p => p.word
   | _ => .poison
 
 /-- `Val.retype` at `.int .w64` (`Val.retype_i64`): the string and slice lengths. -/
 def Val.retypeI64 : Val → Val
-  | .int w x => if Width.w64.bits ≤ w.bits then .int .w64 (x.setWidth 64) else .poison
+  | .int _ x => .int .w64 (x.setWidth 64)
+  | .bool b => .int .w64 (if b then 1 else 0)
   | .ptr p => p.word
   | _ => .poison
 
@@ -134,7 +137,8 @@ def Val.retype : Ty → Val → Val
   | .int w', .int _ x => .int w' (x.setWidth w'.bits)
   | .int w', .bool b => .int w' (if b then 1 else 0)
   | .int .w64, .ptr p => p.word
-  | .ptr _, .int .w64 a => .int .w64 a
+  | .ptr _, .int _ a => .int .w64 (a.setWidth 64)
+  | .ptr _, .bool b => .int .w64 (if b then 1 else 0)
   | .ptr _, .ptr p => p.word
   | .bool, .bool b => .bool b
   | .mem, .mem m => .mem m
