@@ -197,6 +197,16 @@ def copyOf (f : Func) (v a : ID) : Func :=
   let f := (f.resetArgs v).addArg v a
   f.modV v fun x => { x with auxInt := 0, aux := none, type := t }
 
+/-- `v.copyInto(b)` (`value.go:446-458`): a new value with `v`'s op, type, aux, `AuxInt` and
+arguments appended to `b`, at `v.Pos.WithNotStmt()`; fatal (after the allocation, as in Go) if
+an argument is memory-typed (`isMem`). -/
+def copyInto (f : Func) (isMem : TypeRef → Bool) (v b : ID) : Except String (Func × ID) := do
+  let x := f.getV v
+  let (f, c) := f.newValueArgs b x.pos.withNotStmt x.op x.type x.auxInt x.aux x.args
+  for a in x.args do
+    if isMem (f.getV a).type then throw s!"v{v}: can't move a value with a memory arg"
+  return (f, c)
+
 /-! ## Block controls (`block.go:180-275`) -/
 
 /-- `b.ResetControls()`. -/
