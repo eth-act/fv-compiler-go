@@ -350,6 +350,8 @@ For comparison only, supported architectures combine the pointer expression into
 
 **Proof strategy & difficulty:** **Parity S incremental / proof M incremental:** instantiate the existing reachability/liveness proof with sound ARM64 effect classifications; prove discarded flag/tuple computations have no observable effect. The new obligation is the opcode interpretation, not a different graph algorithm (`deadcode.go:110-155`).
 
+**Proof (#385):** `GoFV.Proof.Dead.deadcode_refinesL` (`GoFV/Proof/Pass/DeadcodePassL.lean`; shared by the three lowered deadcode instances, all `deadcodePass`): `check` of input and output, Phase 1's `DeadFrag`, `out.func.lowered = f.lowered` and `DeadFragL` (decided by `deadFragLB`) give `RefinesL out.tables out.func penv.tables f`; witness `GoFV.Proof.Witness.deadcodeL_witness`. Coverage (`lake exe lowfrag-probe`, all hypotheses decided per section, after the CCop `check` fix #458): quick-v7 9,287 of 9,297 sections covered, 3,579 of the 3,589 the pass changes; full-v9 96,504 of 96,560, 44,502 of 44,558 changed. Outside: `DeadFrag` (quick-v7 9, full-v9 46), `DeadFragL` (0, 10), output no longer lowered (1, 0).
+
 **Issue summary:** Reuse Phase 1 deadcode at index 39; optional and off under `-N`. Extend liveness-root metadata to ARM64, retain the fatal nonnil-`RegAlloc` precondition, and preserve all existing ordered pruning, positions, names, and LIFO freeing behavior. Its purpose is to remove dead candidates immediately before lowered CSE (`compile.go:498-499`; `deadcode.go:161-313`).
 
 ### lowered cse — issue #393
@@ -516,6 +518,8 @@ accepts 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked, 67 change
 
 **Proof strategy & difficulty:** **Parity S incremental / proof M incremental:** reuse the Phase 1 proof with ARM64 effects and tuple/CSE cleanup instantiated; maintain reachability, effect retention, and use-closed live sets (`deadcode.go:98-155,170-313`).
 
+**Proof (#385):** `GoFV.Proof.Dead.deadcode_refinesL` (see lowered deadcode for cse). Coverage (`lake exe lowfrag-probe`): quick-v7 9,286 of 9,297 sections covered, 1,228 of the 1,231 changed; full-v9 96,512 of 96,560, 12,621 of 12,652 changed. Outside: `DeadFrag` (quick-v7 9, full-v9 46), `DeadFragL` (2, 2).
+
 **Issue summary:** Wire the unchanged deadcode algorithm at required index 43, including under `-N`, to remove lowered duplicates and selector/unread-auto Copies before `checkLower`. Preserve ordered freeing, named values, statement relocation, and the nonnil-RegAlloc fatal check (`compile.go:501-503,585`; `deadcode.go:161-313`).
 
 ### checkLower — issue #397
@@ -615,6 +619,8 @@ accepted 90,656 (0 rejections); not counted: inputs failing `check`
 **Depends on:** Phase 1 implementation and existing reset/argument/control mutators; later deadcode physically removes redundant definitions (`copyelim.go:9-21,74-80`).
 
 **Proof strategy & difficulty:** **Parity S / proof M, reusable from Phase 1:** copy identity, redundant-phi semantics, zero-size value erasure, and unobservable unreachable copy cycles (`copyelim.go:36-70,100-155`).
+
+**Proof (#385):** `GoFV.Proof.CopyElim.copyelim_refinesL` (`GoFV/Proof/Pass/CopyElimPassL.lean`; see docs/PASSES.md, early phielim and copyelim): `check` of input and output, `CopyFrag`, `EmptyFrag`, `out.func.lowered = f.lowered` and `CopyLFrag` (decided by `copyLFragB`) give `RefinesL out.tables out.func penv.tables f`; witness `GoFV.Proof.Witness.copyelimL_witness`. Coverage (`lake exe lowfrag-probe`): the Lean pass changes no section of either corpus; all hypotheses hold on quick-v7 9,288 of 9,297 and full-v9 96,514 of 96,560 sections (outside: `CopyFrag`, 9 and 46).
 
 **Issue summary:** Reuse Phase 1 copy/phi elimination unchanged at optional index 46; no separate ARM64 implementation is needed. Preserve zero-size resets, copy-cycle handling, fixpoint traversal, names/controls, Uses, and retained definitions (`compile.go:505`; `copyelim.go:10-157`).
 
@@ -727,6 +733,8 @@ counted have an input that fails `check` (654 and 5,904).
 **Depends on:** Phase 1 deadcode plus exact incoming code-motion ordering; follows tighten and precedes critical (`compile.go:506-510`).
 
 **Proof strategy & difficulty:** **Parity S incremental / proof M incremental:** reuse lowered deadcode obligations and prove preceding code motion still satisfies SSA/liveness assumptions (`deadcode.go:137-155,170-313`).
+
+**Proof (#385):** `GoFV.Proof.Dead.deadcode_refinesL` (see lowered deadcode for cse). Coverage (`lake exe lowfrag-probe`): quick-v7 9,288 of 9,297 sections covered, 336 of the 337 changed; full-v9 96,514 of 96,560, 4,340 of 4,352 changed. Outside: `DeadFrag` only (quick-v7 9, full-v9 46).
 
 **Issue summary:** Reuse deadcode at optional index 48, off under `-N`, with ARM64 root metadata and unchanged fatal post-regalloc guard. Preserve the code-motion-produced value order because it controls statement relocation and the free-list state consumed by subsequent block/value creation (`compile.go:509-511`; `deadcode.go:161-313`).
 
