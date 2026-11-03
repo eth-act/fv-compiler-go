@@ -29,7 +29,7 @@
  }
 --- a/src/cmd/compile/internal/ssagen/ssa.go
 +++ b/src/cmd/compile/internal/ssagen/ssa.go
-@@ -7994,6 +7994,12 @@
+@@ -7995,6 +7995,12 @@
  }
  
  // SplitSlot returns a slot representing the data of parent starting at offset.
@@ -59,7 +59,7 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,2314 @@
+@@ -0,0 +1,2324 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -152,6 +152,14 @@
 +	}
 +	return s
 +})
++
++// The driver exports through the exporter, which needs the type descriptor symbols whose
++// TypeInfo is set concurrently (GOFVNoteTypeInfo).
++func init() {
++	if os.Getenv("GOFV_SSA_DRIVER") != "" {
++		reflectdata.GOFVTrackTypeInfo()
++	}
++}
 +
 +// gofvDriver is the per-function driver state.
 +type gofvDriver struct {
@@ -1092,7 +1100,9 @@
 +	if tn, ok := strings.CutPrefix(name, "type:"); ok {
 +		for _, t := range im.x.typeList {
 +			if t != nil && t.GOFVSizeKnown() && types.TypeSymName(t) == tn {
-+				return reflectdata.TypeLinksym(t), nil
++				s := reflectdata.TypeLinksym(t)
++				im.f.GOFVNoteTypeInfo(s, t)
++				return s, nil
 +			}
 +		}
 +		return nil, fmt.Errorf("aux a%d: no type for symbol %s", n, name)

@@ -273,7 +273,15 @@ tests: `symIsRO`, `symIsROZero`, `isFixedLoad`, `read8..64`, `IsReadOnlyGlobalAd
 `contentaddressable`, `wrapper`, `abiwrapper`. For every other symbol the line has
 `- 0 -` there (`STEXT` sizes etc. change while other functions are assembled concurrently); `data` is `lsym.P` as lower-case hex (`-` if empty) and is
 only written when `SymKind` is `SRODATA` (the only case `symIsRO`, `read8..64`, `isFixedLoad`
-read it), else `-`. `typeinfo`/`itabinfo` are the types of `lsym.TypeInfo()`/`lsym.ItabInfo()`.
+read it), else `-`. `typeinfo`/`itabinfo` are the types of `lsym.TypeInfo()`/`lsym.ItabInfo()`,
+except for a type descriptor whose `TypeInfo` was set while functions are compiled concurrently
+(`base.Ctxt.InParallel`): its object is that of whichever function called
+`reflectdata.TypeLinksym` first (`[4]byte` or `[4]uint8`; with or without a cached pointer type,
+so `ptrcache` changed too), so the export has the type this function asked for: its first
+`TypeLinksym` argument (`ssagen` `reflectType`, `writebarrier`, the pointer element in
+`rewriteFixedLoad`; the driver's importer), recorded in `Func.gofvTypeInfo` (#426). The passes
+read only identity properties of the type, which all these objects share. A concurrently set
+`TypeInfo` that the function did not ask for is exported as is, with a `warn` (none in the corpus).
 
 `reloc <off> <siz> <type> <add> "<target name>" <target abi>`: `objabi.RelocType.String()`
 (`R_ADDR`, `R_WEAKADDR`, …); target name `""` if nil. Relocations are written only for
