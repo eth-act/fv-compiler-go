@@ -474,13 +474,13 @@ theorem _root_.GoFV.SSA.Func.notArm64_of_lowered {f : Func} (h : f.lowered = fal
 theorem evalOpL_generic (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) {v : Value}
     (argv : List Val) (ty : Ty) (hg : v.op.generic = true) :
     evalOpL faulting env ctx fr v argv ty = evalOp env ctx fr v argv ty := by
-  simp only [evalOpL, hg, if_true]
+  simp only [evalOpL, hg, ite_true]
 
 theorem evalValueL_generic {md : LMode} (hlow : md.low = false) (env : Env) (ctx : Ctx)
     (fr : Frame) {v : Value} (hg : v.op.generic = true) :
     evalValueL md env ctx fr v = evalValue env ctx fr v := by
   simp only [evalValueL, evalValue, evalOpL_generic _ _ _ _ _ _ hg, LMode.retype, hlow,
-    Bool.false_eq_true, if_false]
+    Bool.false_eq_true, ite_false]
 
 theorem evalAllL_generic {md : LMode} (hlow : md.low = false) (env : Env) (ctx : Ctx)
     (hv : ∀ id v, ctx.f.value? id = some v → v.op.generic = true) :
@@ -501,13 +501,13 @@ theorem evalAllL_generic {md : LMode} (hlow : md.low = false) (env : Env) (ctx :
 theorem enterBlockL_generic {md : LMode} (hlow : md.low = false) (env : Env) (ctx : Ctx)
     (hv : ∀ id v, ctx.f.value? id = some v → v.op.generic = true) (fr : Frame) (b : Block)
     (i : Nat) : enterBlockL md env ctx fr b i = enterBlock env ctx fr b i := by
-  simp only [enterBlockL, enterBlock, LMode.retype, hlow, Bool.false_eq_true, if_false,
+  simp only [enterBlockL, enterBlock, LMode.retype, hlow, Bool.false_eq_true, ite_false,
     evalAllL_generic hlow env ctx hv]
   rfl
 
 theorem stepTermL_generic (fr : Frame) {b : Block} (hb : b.kind.isArm64 = false) :
     stepTermL fr b = stepTerm fr b := by
-  simp only [stepTermL, hb, Bool.false_eq_true, if_false]
+  simp only [stepTermL, hb, Bool.false_eq_true, ite_false]
 
 theorem runLoopL_generic {md : LMode} (hlow : md.low = false) (env : Env) (ctx : Ctx)
     (hv : ∀ id v, ctx.f.value? id = some v → v.op.generic = true)
@@ -539,7 +539,7 @@ theorem runLoopL_generic {md : LMode} (hlow : md.low = false) (env : Env) (ctx :
 
 theorem Ctx.makeL_of_generic {tabs : Tables} {f : Func} (h : f.lowered = false) :
     Ctx.makeL tabs f = Ctx.make tabs f := by
-  simp only [Ctx.makeL, h, Bool.false_eq_true, if_false]
+  simp only [Ctx.makeL, h, Bool.false_eq_true, ite_false]
 
 end GoFV.SSA.Sem
 
