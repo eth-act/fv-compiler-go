@@ -155,7 +155,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
           · rfl
           · exact absurd hph (by rw [(argFree_cases hf).1]; decide)) i hi'
       (by rw [hai]; exact hVSa) (by rw [hai']; exact hVTa)
-    rw [hai, hai', rv_of hy] at hr
+    rw [hai, hai', rv_of hy, stArg_of_ne (by rw [huph]; decide)] at hr
     have hshape : (Ctx.makeL tabs g).tys[z]?.getD .other = (Ctx.makeL tabs f).tys[z]?.getD .other := by
       rw [tysL_of_value hw, tysL_of_value hpu.1, H.shp z u hpu.1, hty]
     rw [hshape]

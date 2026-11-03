@@ -8,7 +8,7 @@ value of `V` has a register in `fr`, and for every valuation `ρ` that agrees wi
 on the atoms of `V`, `denL low D tabs ρ n x` is the register of `x` for all large `n`
 (`denOKL_terms`: kept by evaluating term nodes in dependency order).
 
-`termRefL_apply` / `termStepRefL_apply` apply `TermRefL` / `TermStepRefL` to the registers of a
+`argTermRefL_apply` / `termStepRefL_apply` apply `ArgTermRefL` / `TermStepRefL` to the registers of a
 source frame (mode `lowS`) and a target frame (mode `lowT`, `lowS → lowT`): the valuations are
 the frames' atom registers; on an atom only the source holds, the target's valuation is the
 source's register shaped at the target's shape (`rty_le`), which is the source's own shape there.
@@ -327,9 +327,10 @@ private theorem vals_exist : ∃ ρ ρ' : ID → Val, ValRef ρ ρ' ∧ TypedL l
       simp only [ρ', h1, h3, false_and, and_self, ite_true, ite_false]
       exact rty_idem _ _ _
 
-/-- **`TermRefL` on registers.** -/
-theorem termRefL_apply {x y : ID} (hT : TermRefL lowS D tabs x lowT E tabs y) (hxS : VS x)
-    (hyT : VT y) : Sem.Refines (rv FS x) (rv FT y) := by
+/-- **`ArgTermRefL` on registers.** -/
+theorem argTermRefL_apply {o : Option Int64} {x y : ID}
+    (hT : ArgTermRefL o lowS D tabs x lowT E tabs y) (hxS : VS x) (hyT : VT y) :
+    ArgRel o (rv FS x) (rv FT y) := by
   obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ'⟩ := vals_exist hl hS hG hrel htyS htyT hsh
   obtain ⟨N, hN⟩ := (hS x hxS).2 ρ hρ
   obtain ⟨M, hM⟩ := (hG y hyT).2 ρ' hρ'
@@ -337,7 +338,7 @@ theorem termRefL_apply {x y : ID} (hT : TermRefL lowS D tabs x lowT E tabs y) (h
   have h := h ρ ρ' hval htD htE
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]
-  exact Sem.Refines.trans h (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M))
+  exact h.trans_right (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M))
 
 /-- **The terminators on registers**, as functions of their controls' terms. -/
 theorem termStepRefL_apply {fb gb : Block}

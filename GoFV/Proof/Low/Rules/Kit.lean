@@ -538,6 +538,12 @@ theorem checked_store {r : Rule} {n ty ai ax ar args c}
 /-- A rule on a frame address (`ArmRule.Mem`). -/
 theorem checked_localAddr {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .LocalAddr n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨.LocalAddr, n, ty, ai, ax, ar, args, c, hp, .inr rfl⟩))
+  .inr (.inr (.inr ⟨.LocalAddr, n, ty, ai, ax, ar, args, c, hp, .inr (.inl rfl)⟩))
+
+/-- A rule on an arm64 store (`ArmRule.Mem`). -/
+theorem checked_armStore {r : Rule} {o n ty ai ax ar args c}
+    (hp : r.pat = .op o n ty ai ax ar args c) (ho : (stSize o).isSome = true) :
+    ArmRule.Checked r :=
+  .inr (.inr (.inr ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr ho)⟩))
 
 end GoFV.Proof.Low.Rules
