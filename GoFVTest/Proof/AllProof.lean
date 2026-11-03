@@ -25,6 +25,7 @@ import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
 import GoFV.Proof.Cong
 import GoFV.Proof.CongL
+import GoFV.Proof.CongLoc
 import GoFV.Proof.DeferRel
 import GoFV.Proof.DomCert
 import GoFV.Proof.DomRel
@@ -246,6 +247,7 @@ import GoFV.Proof.Pass.LoadFwdInv
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.LoadFwdMoveSrc
 import GoFV.Proof.Pass.LoadFwdPtr
+import GoFV.Proof.Pass.LoopRotateLoc
 import GoFV.Proof.Pass.LowCong
 import GoFV.Proof.Pass.MemCombine
 import GoFV.Proof.Pass.MemCombineBytes
@@ -332,6 +334,8 @@ import GoFV.Proof.Pass.StructStoreMem
 import GoFV.Proof.Pass.StructStoreRel
 import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Pass.StructStoreSrc
+import GoFV.Proof.Pass.TrimLoc
+import GoFV.Proof.Pass.TrimLocCheck
 import GoFV.Proof.Pass.WBAll
 import GoFV.Proof.Pass.WBArgs
 import GoFV.Proof.Pass.WBBlock
@@ -560,6 +564,7 @@ import GoFV.Proof.SchedFast
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.SimL
+import GoFV.Proof.SimLoc
 import GoFV.Proof.Speculate
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.TabsAgreeMod
@@ -625,6 +630,7 @@ import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Witness.LoadSel
 import GoFV.Proof.Witness.LoadSplit
+import GoFV.Proof.Witness.LoopRotateLoc
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.MakeSel
@@ -657,6 +663,7 @@ import GoFV.Proof.Witness.SumOfInt
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.TabsAgreeMod
 import GoFV.Proof.Witness.TraceFP
+import GoFV.Proof.Witness.TrimLoc
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.Witness.WFCheck
