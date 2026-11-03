@@ -195,6 +195,7 @@ theorem add_av (ty : Ty) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) 
     Val.Avoids U (Arm64.add ty args) := by
   unfold Arm64.add
   split
+  · exact op2_av _ _ _
   · split
     · exact ptrResAdd_av (h _ (by simp)) _
     · trivial
