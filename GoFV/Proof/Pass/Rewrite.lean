@@ -177,7 +177,7 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
     {out : PassOut} {ce' : CheckEnv} (hg : check ce' out.func = .ok ()) :
     ∀ (Ls : List RewriteCheck.Layer),
       (∀ sel, RewriteCheck.Layer.nil sel ∉ Ls ∧ RewriteCheck.Layer.fwd sel ∉ Ls) →
-      RewriteCheck.Layer.seg ∉ Ls →
+      (∀ sel, RewriteCheck.Layer.seg sel ∉ Ls) →
       ∀ (f : Func) (log : Array RwEvent) {ce : CheckEnv}, check ce f = .ok () →
       RewriteCheck.layersOK penv (Interp.Table.ofRuleSet s) f0 out Ls f log = true →
       RefinesUnder Env.Mono out.tables out.func out.tables f
@@ -190,7 +190,8 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
     have hn' : ∀ sel, RewriteCheck.Layer.nil sel ∉ Ls ∧ RewriteCheck.Layer.fwd sel ∉ Ls :=
       fun sel => ⟨fun hm => (hn sel).1 (List.mem_cons_of_mem _ hm),
         fun hm => (hn sel).2 (List.mem_cons_of_mem _ hm)⟩
-    have hns' : RewriteCheck.Layer.seg ∉ Ls := fun hm => hns (List.mem_cons_of_mem _ hm)
+    have hns' : ∀ sel, RewriteCheck.Layer.seg sel ∉ Ls :=
+      fun sel hm => hns sel (List.mem_cons_of_mem _ hm)
     rw [RewriteCheck.layersOK] at h
     split at h
     next f' log' _ =>
@@ -220,7 +221,7 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
         have hf' := checkOK_sound hL.2
         exact (StructStore.ss_refines hf hf' hL.1).trans
           (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
-      | seg => exact absurd List.mem_cons_self hns
+      | seg sel => exact absurd List.mem_cons_self (hns sel)
       | ps =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2

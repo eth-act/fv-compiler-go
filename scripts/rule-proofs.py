@@ -509,9 +509,10 @@ def sat():
 
 def blocked_class(reason):
     """The class of a validator rejection (`opt-proven-probe`'s reason): the pass and the last
-    layer's verdict, without value ids, positions and types."""
+    layer's verdict, without value ids, positions, types and the `⟨…` details but their first word
+    (the probe cuts long reasons, so the closing `⟩` may be missing)."""
     sec, _, why = reason.partition(": ")
-    last = re.sub(r" ⟨.*⟩$", "", why).rsplit(" → ", 1)[-1]
+    last = re.sub(r" ⟨(\S*).*$", r" ⟨\1⟩", why).rsplit(" → ", 1)[-1]
     last = re.sub(r"\(\d+\)|#\d+", "", last)
     last = re.split(r"<|GoFV\.", last, maxsplit=1)[0]
     last = re.sub(r"\bv\d+:?", "", last)

@@ -109,7 +109,7 @@ theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pa
       | ld =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .rw hL.1 hL.2 hc
-      | seg =>
+      | seg _ =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .seg hL.1.1 hL.1.2 hL.2 hc
       | ps =>
@@ -247,9 +247,10 @@ theorem fwdEvent?_none {t : Interp.Table} (h : t.loads = #[]) (f : Func) (ev : R
   | _ => rfl
 
 theorem fwdPre_none {t : Interp.Table} (h : t.loads = #[]) (tabs : Tables) (sel : Bool)
-    (f : Func) (log : Array RwEvent) : RewriteCheck.fwdPre t tabs sel f log = (f, log) := by
+    (late : List ID) (f : Func) (log : Array RwEvent) :
+    RewriteCheck.fwdPre t tabs sel late f log = (f, log) := by
   have key : ∀ (ro : List (String × GoFV.SSA.Sem.Alloc)) (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.fwdStep t tabs ro sel f) (f, acc) = (f, acc ++ l.toArray) := by
+      l.foldl (RewriteCheck.fwdStep t tabs ro sel late f) (f, acc) = (f, acc ++ l.toArray) := by
     intro ro l
     induction l with
     | nil => intro acc; simp
@@ -304,11 +305,11 @@ theorem segEvent?_none {t : Interp.Table} (h : t.segs = #[]) (f : Func) (ev : Rw
     · rfl
   | _ => rfl
 
-theorem segPre_none {t : Interp.Table} (h : t.segs = #[]) (f : Func) (log : Array RwEvent) :
-    RewriteCheck.segPre t f log = (f, log) := by
-  have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.segStep t f) (f, acc) = (f, acc ++ l.toArray) := by
-    intro l
+theorem segPre_none {t : Interp.Table} (h : t.segs = #[]) (sel : Bool) (f : Func)
+    (log : Array RwEvent) : RewriteCheck.segPre t sel f log = (f, log) := by
+  have key : ∀ (late : List ID) (l : List RwEvent) (acc : Array RwEvent),
+      l.foldl (RewriteCheck.segStep t f late) (f, acc) = (f, acc ++ l.toArray) := by
+    intro late l
     induction l with
     | nil => intro acc; simp
     | cons ev l ih =>
@@ -520,11 +521,11 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
           · intro L hL
             cases L with
             | nil sel => exact nilPre_none h0 _ sel f log
-            | fwd sel => exact fwdPre_none h1 _ sel f log
+            | fwd sel => exact fwdPre_none h1 _ sel _ f log
             | sl => exact slPre_none h4 _ f log
             | ss => exact ssPre_none h2 _ f log
             | ld => exact ldPre_none hld log
-            | seg => exact segPre_none h5 f log
+            | seg sel => exact segPre_none h5 sel f log
             | ps => exact psPre_none h6 f log
         · cases h3
 
