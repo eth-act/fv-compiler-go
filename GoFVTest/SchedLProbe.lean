@@ -86,7 +86,6 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
     if (f.block? b).isNone then continue
     match sS[b]?.join, sT[b]?.join with
     | some oS, some oT =>
-      let tys := (Ctx.makeL tabs f).tys
       if let some gb := g.block? b then
         if oT.toList != gb.values.toList.filter (!isPhi g ·) then return "target order: not the block's non-Phis"
         if !topoB g oT.toList then return "target order: not topological"
