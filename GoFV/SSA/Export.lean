@@ -24,6 +24,14 @@ inductive Def where
   | slot (n : SlotRef) (s : SlotDef)
   deriving DecidableEq, Inhabited
 
+/-- The stock passes from `lower` on (`compile.go` `passes`, go1.27.3; "merge conditional
+branches" is commented out there), whose sections format 5 adds. -/
+def loweredPasses : Array String := #["lower", "addressing modes", "late lower", "pair",
+  "lowered deadcode for cse", "lowered cse", "elim unread autos", "tighten tuple selectors",
+  "lowered deadcode", "checkLower", "loop invariant", "late phielim and copyelim", "tighten",
+  "late deadcode", "critical", "phi tighten", "likelyadjust", "layout", "schedule",
+  "late nilcheck", "flagalloc", "regalloc", "loop rotate", "trim"]
+
 /-- The function after one pass (section `index`; 0 is `start`). -/
 structure Section where
   index : Nat
@@ -66,6 +74,9 @@ structure ExportFile where
   typeCmp : Array (TypeRef × TypeRef × Ordering)
   /-- `typeorder`: groups of `CMPeq` types in ascending `types.(*Type).Compare` order. -/
   typeOrder : Array (Array TypeRef)
+  /-- `typelink` (format 5): groups (of two or more) of type numbers sharing a `LinkString`
+  (`stackalloc` reuses slots across them). -/
+  typeLink : Array (Array TypeRef) := #[]
   deriving DecidableEq, Inhabited
 
 /-- The definition tables in force at some point of a file, indexed by table number (position

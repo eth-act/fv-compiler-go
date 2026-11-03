@@ -1,4 +1,5 @@
 import GoFV.SSA.Export
+import GoFV.SSA.RegARM64
 import Std.Data.HashMap.Basic
 
 /-!
@@ -214,6 +215,64 @@ def hexW (s : Sl) : Except String (Option ByteArray) := do
     | _, _ => throw s!"bad hex {s}"
   return some out
 
+/-- Lower-case hex number (canonical: no leading zeros) below `2^64`. -/
+def hex64W (s : Sl) : Except String UInt64 := do
+  if s.size == 0 || s.size > 16 || (s.size > 1 && s.get 0 == 48) then throw s!"bad hex number {s}"
+  let mut v : Nat := 0
+  for i in [0:s.size] do
+    match hexVal (s.get i) with
+    | some h => v := v * 16 + h.toNat
+    | none => throw s!"bad hex number {s}"
+  return v.toUInt64
+
+/-- A `regMask`: hex, `v2` digits followed by exactly 16 `v1` digits when `v2 ≠ 0`. -/
+def maskW (s : Sl) : Except String RegMask := do
+  if s.size ≤ 16 then return { v1 := ← hex64W s }
+  let k := s.size - 16
+  let hi : Sl := { s with stop := s.start + k }
+  let lo : Sl := { s with start := s.start + k }
+  let v2 ← hex64W hi
+  -- v1 is zero-padded: strip leading zeros before the canonical check
+  let mut j := 0
+  for _ in [0:15] do
+    if lo.get j == 48 then j := j + 1 else break
+  return { v1 := ← hex64W (lo.drop j), v2 }
+
+/-- Register numbers by Go name. -/
+def regTable : Std.HashMap String Nat :=
+  ARM64.registers.foldl (fun m r => m.insert r.name r.num) {}
+
+/-- A register name. -/
+def regW (s : Sl) : Except String Nat :=
+  match regTable[s.toString]? with
+  | some r => pure r
+  | none => throw s!"unknown register {s}"
+
+/-- A register name or `-`. -/
+def optRegW (s : Sl) : Except String (Option Nat) :=
+  if s.isDash then pure none else some <$> regW s
+
+/-- `<idx>:<mask>`. -/
+def regIdxW (s : Sl) : Except String RegIdx := do
+  let ps ← partsW s ':' 2
+  return ⟨← natW ps[0]!, ← maskW ps[1]!⟩
+
+/-- An `f.RegAlloc` location: register, `@<slot>`, `(<r>;<r>)`, `[<r>;…]`. -/
+def locationW (s : Sl) : Except String Location := do
+  if s.size == 0 then throw "empty location"
+  let c := s.get 0
+  if c == 64 then return .slot (← slotKeyW (s.drop 1))
+  if c == 40 || c == 91 then
+    let close : UInt8 := if c == 40 then 41 else 93
+    if s.size < 2 || s.get (s.size - 1) != close then throw s!"bad location {s}"
+    let inner : Sl := { s with start := s.start + 1, stop := s.stop - 1 }
+    if c == 40 then
+      let ps ← partsW inner ';' 2
+      return .pair (← optRegW ps[0]!) (← optRegW ps[1]!)
+    if inner.size == 0 then return .results #[]
+    return .results (← (inner.split 59).mapM optRegW)
+  return .reg (← regW s)
+
 /-! ## Line parsers -/
 
 /-- The line being parsed: tokens are read from the state (byte index of the next token) up to
@@ -272,9 +331,9 @@ def rest : F (Array Token) := fun c => do
 
 /-! ## Records -/
 
-/-- Lookup of op names. -/
+/-- Lookup of op names (`Op.exportName`: machine ops with their architecture prefix). -/
 def opTable : Std.HashMap ByteArray Op :=
-  Op.all.foldl (fun m o => m.insert o.name.toUTF8 o) {}
+  Op.all.foldl (fun m o => m.insert o.exportName.toUTF8 o) {}
 
 def opW (s : Sl) : Except String Op :=
   match opTable[s.data.extract s.start s.stop]? with
@@ -282,7 +341,7 @@ def opW (s : Sl) : Except String Op :=
   | none => throw s!"unknown op {s}"
 
 def blockKindW (s : Sl) : Except String BlockKind :=
-  match BlockKind.all.find? (s.eqStr ·.name) with
+  match BlockKind.all.find? (s.eqStr ·.exportName) with
   | some k => pure k
   | none => throw s!"unknown block kind {s}"
 
@@ -324,6 +383,37 @@ def relocLine : F Reloc := do
 
 def rtypeLine : F RType := do
   return ⟨← w optIntW, ← w optIntW, ← w optIntW, ← w optIntW, ← str, ← str⟩
+
+/-- `callreg <inputs> <outputs> <clobbers> <flags>` (format 5). -/
+def regInfoLine : F RegInfo := do
+  let ins ← w (listW regIdxW)
+  let outs ← w (listW regIdxW)
+  let clobbers ← w maskW
+  let (a0, a1) ← w (flagsW [("clobbersarg0", (·.1), fun (_, b) => (true, b)),
+    ("clobbersarg1", (·.2), fun (a, _) => (a, true))])
+  return { inputs := ins.toList, outputs := outs.toList, clobbers, clobbersArg0 := a0,
+           clobbersArg1 := a1 }
+
+/-- A loop nest entry `b<header>:<outer|->:<nBlocks>:<depth>:<isInner>:<unavoidableCall>`. -/
+def loopW (s : Sl) : Except String Loop := do
+  let ps ← partsW s ':' 6
+  return ⟨← refW 'b' ps[0]!, ← (if ps[1]!.isDash then pure none else some <$> natW ps[1]!),
+    ← intW ps[2]!, ← intW ps[3]!, ← boolW ps[4]!, ← boolW ps[5]!⟩
+
+/-- `b<ID>:<n>`. -/
+def blockNatW (s : Sl) : Except String (ID × Nat) := do
+  let ps ← partsW s ':' 2
+  return (← refW 'b' ps[0]!, ← natW ps[1]!)
+
+/-- `v<ID>:<location>`. -/
+def locEntryW (s : Sl) : Except String (ID × Location) := do
+  let some (a, b) := s.split2 58 | throw s!"bad regalloc entry {s}"
+  return (← refW 'v' a, ← locationW b)
+
+/-- `v<ID>:<register>`. -/
+def tempRegW (s : Sl) : Except String (ID × Nat) := do
+  let ps ← partsW s ':' 2
+  return (← refW 'v' ps[0]!, ← regW ps[1]!)
 
 def abiParamLine : F ABIParam := do
   let dir ← wordStr
@@ -367,7 +457,8 @@ def auxLine : F (AuxRef × AuxDef × AuxMore) := do
       else
         let abi ← match natW abi with | .ok a => pure a | .error e => throw e
         let nin ← w natW; let nout ← w natW
-        let c : CallABI := ⟨abi, nin, nout, ← w intW, ← w intW, ← w intW, ← w intW, #[]⟩
+        let c : CallABI := { abi, nin, nout, spillOff := ← w intW, spillSize := ← w intW,
+                             inRegs := ← w intW, outRegs := ← w intW, params := #[] }
         pure (AuxKind.call fn (some c), AuxMore.call (nin + nout))
     | "nameoff" => do pure (AuxKind.nameOff (← w (refW 'a')) (← w intW), AuxMore.none)
     | "type" => do pure (AuxKind.type (← w (refW 't')), AuxMore.none)
@@ -543,7 +634,8 @@ def defs : L (Array Def) := do
           let mut ps := #[]
           for _ in [0:np] do
             ps := ps.push (← line "abiparam" abiParamLine)
-          pure (AuxKind.call fn (some { c with params := ps }))
+          let reg ← if ← tagIs "callreg" then some <$> line "callreg" regInfoLine else pure none
+          pure (AuxKind.call fn (some { c with params := ps, reg }))
         | _, k => pure k
       out := out.push (.aux n { d with kind })
     | some "slot" =>
@@ -608,18 +700,35 @@ def func : L (Func × Option (Array (String × TypeRef))) := do
       | "sdom" =>
         let es ← w (listW sdomNodeW)
         return (3, { cache with sdom := some (← liftE (byBlockW blocks (bidLast + 1) es)) })
-      | "loopnest" => return (4, { cache with loopnest := true })
+      | "loopnest" =>
+        let ln : LoopNest := ⟨← w natW, ← w boolW, ← w (listW loopW), ← w (listW blockNatW)⟩
+        return (4, { cache with loopnest := some ln })
       | "auxmap" => return (5, { cache with auxmap := some (← w (listW auxmapEntryW)) })
       | "linestarts" => return (6, { cache with lineStarts := some (← w (listW lineRangeW)) })
       | c => throw s!"unknown cache {c}"
     if r ≤ rank then throw s!"line {(← get)}: cache line out of order"
     rank := r
     cache := c
+  -- lowered-pass state (format 5), each line optional, in this order
+  let mut low : Lowered := {}
+  if ← tagIs "flagslive" then
+    low := { low with flagsLive := ← line "flagslive" (w (listW (refW 'b'))) }
+  if ← tagIs "hotness" then
+    low := { low with hotness := ← line "hotness" (w (listW blockNatW)) }
+  if ← tagIs "fstate" then
+    let (sc, lo) ← line "fstate" (w (flagsW [("scheduled", (·.1), fun (_, b) => (true, b)),
+      ("laidout", (·.2), fun (a, _) => (a, true))]))
+    low := { low with scheduled := sc, laidout := lo }
+  if ← tagIs "regalloc" then
+    let ra ← line "regalloc" do return (← w natW, ← w (listW locEntryW))
+    low := { low with regAlloc := some ra }
+  if ← tagIs "tempregs" then
+    low := { low with tempRegs := some (← line "tempregs" (w (listW tempRegW))) }
   let f : Func :=
     { entry := entry, type := type, ownAux := ownAux, vidLast := vidLast, bidLast := bidLast
       blocks := blocks, blockTab := blockTab, valueTab := valueTab, names := named
       namedx := namedx, splits := splits, canon := canon, consts := consts
-      freeValues := freeValues.toList, freeBlocks := freeBlocks.toList, cache := cache }
+      freeValues := freeValues.toList, freeBlocks := freeBlocks.toList, cache := cache, low }
   return (f, typs)
 
 def sectionP : L Section := do
@@ -638,7 +747,9 @@ def sectionP : L Section := do
   line "end" (pure ())
   return { index, pass, defs, func, typs, zvar, warns }
 
-def file : L ExportFile := do
+/-- The file; with `stop = some p`, the sections from the first one named `p` on are skipped
+(not parsed, not checked) and the result holds the sections before it. -/
+def file (stop : Option String := none) : L ExportFile := do
   let version ← line "gofv-ssa" (w natW)
   let pkg ← line "pkg" str
   let (name, abi, nosplit, pgohot) ← line "func" do
@@ -650,6 +761,16 @@ def file : L ExportFile := do
   let mut sections := #[]
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "pass") then break
+    if let some p := stop then
+      let save ← get
+      let (_, pass) ← line "pass" do return (← w natW, ← str)
+      set save
+      if pass.toStringLossy == p then
+        for _ in [0:(← read).lines.size] do
+          if ← tagIs "frontend" then break
+          if (← get) ≥ (← read).lines.size then break
+          set ((← get) + 1)
+        break
     sections := sections.push (← sectionP)
   line "frontend" (pure ())
   let frontend ← defs
@@ -659,6 +780,9 @@ def file : L ExportFile := do
     if !(← tagIs "warn") then break
     warns := warns.push (← line "warn" str)
   let ptrCache ← line "ptrcache" (w (listW (refW 't')))
+  let typeLink ← if ← tagIs "typelink" then
+      line "typelink" (w (listW fun g => (g.split 61).mapM (refW 't')))
+    else pure #[]
   let mut typeCmp := #[]
   for _ in [0:(← read).lines.size] do
     if !(← tagIs "typecmp") then break
@@ -675,14 +799,23 @@ def file : L ExportFile := do
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
   return { version, pkg, name, abi, nosplit, pgohot, config, sections, frontend, warns, ptrCache,
-           typeCmp, typeOrder }
+           typeCmp, typeOrder, typeLink }
 
 end Parse
 
 /-- Parses a `gofv-ssa` file. -/
 def parseExport (data : ByteArray) : Except String ExportFile := do
   let ls ← Parse.lines data
-  match (Parse.file ⟨data, ls⟩).run 0 with
+  match (Parse.file none ⟨data, ls⟩).run 0 with
+  | .ok f _ => pure f
+  | .error e _ => throw e
+
+/-- Parses a `gofv-ssa` file up to the input of pass `stop`: the sections from the first one
+named `stop` on are skipped unparsed (format 5 files continue past `lower`; the Phase 1 tools
+read them with `stop := "lower"`, which is the whole file for format 4). -/
+def parseExportUntil (stop : String) (data : ByteArray) : Except String ExportFile := do
+  let ls ← Parse.lines data
+  match (Parse.file (some stop) ⟨data, ls⟩).run 0 with
   | .ok f _ => pure f
   | .error e _ => throw e
 

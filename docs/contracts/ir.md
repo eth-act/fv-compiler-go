@@ -80,8 +80,14 @@ Go-like cost.
   (`f.Names` with `f.NamedValues`), `namedx`, `splits`, `canon`, `consts` (`f.constants`) and
   `cache` (the `f.cached*` analyses and `auxmap`, which survive between passes; `idom` and
   `sdom` are indexed by block ID like Go's slices, the printer projects them on `f.Blocks`;
-  read them through `GoFV.SSA.Analysis.CfgCache`, drop them with `invalidateCFG`).
-  Accessors: `f.block? id`, `f.value? id`.
+  `loopnest : Option LoopNest` holds the loop nest's contents (`Loop`: header, outer index,
+  `nBlocks`, depth, `isInner`, `containsUnavoidableCall`; `b2l`); read them through
+  `GoFV.SSA.Analysis.CfgCache`, drop them with `invalidateCFG`) and `low : Lowered` (format 5,
+  empty before `lower`): `flagsLive` (`FlagsLiveAtEnd` blocks), `hotness`, `scheduled`,
+  `laidout`, `regAlloc` (`f.RegAlloc`: length and non-nil `Location`s — `reg` (Go's dense
+  register number, `GoFV.SSA.ARM64.registers`), `slot`, `pair`, `results`) and `tempRegs`.
+  `CallABI.reg` is the `AuxCall`'s cached `regInfo` (`callreg`). Accessors: `f.block? id`,
+  `f.value? id`.
 - Types, aux values, local slots and position bases are not stored in the `Func`: they are
   per-file tables (`Tables`, indexed by table number) that a section's definitions extend or
   redefine; `ExportFile.tablesAt k` gives the tables in force for section `k`. Two references
@@ -106,6 +112,8 @@ scans to be evaluated over `List`s with `@[csimp]` swaps to the `Array` versions
   order, records in documented order and presence) and reports the first bad line otherwise.
 - `printExport (parseExport x) = x` byte for byte on every accepted file; `lake exe
   ssa-roundtrip <dir>...` checks this for every `*.ssa` file below the directories.
+- `parseExportUntil p` parses only the sections before the first one named `p` (the rest is
+  skipped unparsed, up to the `frontend` block); the Phase 1 tools use `"lower"`.
 - A pass port reads `sections[k-1].func` with `tablesAt (k-1)`, runs the pass, and compares its
   `Func` with `sections[k].func`; objects a pass creates are matched to section `k`'s new
   definitions by content (export.md, "Definitions").

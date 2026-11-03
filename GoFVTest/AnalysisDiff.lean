@@ -97,7 +97,7 @@ def checkStoreOrder (path : System.FilePath) (e : ExportFile) (k : Nat) (st : St
 
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let data ← IO.FS.readBinFile path
-  match parseExport data with
+  match parseExportUntil "lower" data with
   | .error e =>
     IO.eprintln s!"FAIL {path}: parse error: {e}"
     return { st with failed := st.failed + 1 }
@@ -108,7 +108,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
     for h : k in [0:secs.size] do
       let f := secs[k].func
       let c := f.cache
-      if c.loopnest then st := { st with loopnest := st.loopnest + 1 }
+      if c.loopnest.isSome then st := { st with loopnest := st.loopnest + 1 }
       if let some po := c.postorder then
         st := { st with poCached := st.poCached + 1 }
         if Analysis.postorder f == po then st := { st with poFresh := st.poFresh + 1 }

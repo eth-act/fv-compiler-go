@@ -36,6 +36,27 @@ structure LineRange where
   pending : Array (Int × Int)
   deriving DecidableEq, Inhabited, Repr
 
+/-- A loop of the cached loop nest (`likelyadjust.go` `loop`); `outer` is an index into
+`LoopNest.loops`. -/
+structure Loop where
+  header : ID
+  outer : Option Nat
+  nBlocks : Int
+  depth : Int
+  isInner : Bool
+  /-- `containsUnavoidableCall` (computed and stored by `regalloc`). -/
+  unavoidableCall : Bool
+  deriving DecidableEq, Inhabited, Repr
+
+/-- `f.cachedLoopnest` (`loopnest`, format 5): `b2l` has `b2lSize` slots (the block count when
+the nest was built); its non-nil entries `(block ID, index into loops)` ascending by ID. -/
+structure LoopNest where
+  b2lSize : Nat
+  irreducible : Bool
+  loops : Array Loop
+  b2l : Array (ID × Nat)
+  deriving DecidableEq, Inhabited, Repr
+
 /-- The `f.cached*` analyses that are non-nil (`cache` lines). -/
 structure Caches where
   postorder : Option (Array ID) := none
@@ -44,11 +65,35 @@ structure Caches where
   idom : Option (Array (Option ID)) := none
   /-- `f.cachedSdom`, indexed by block ID (exported like `idom`). -/
   sdom : Option (Array SdomNode) := none
-  /-- Only presence is exported. -/
-  loopnest : Bool := false
+  /-- `f.cachedLoopnest` (contents from format 5; no format-4 file has one). -/
+  loopnest : Option LoopNest := none
   /-- `f.auxmap`: CSE's aux numbering (`none` key = nil aux), sorted by id. -/
   auxmap : Option (Array (Option AuxRef × Int)) := none
   lineStarts : Option (Array LineRange) := none
+  deriving DecidableEq, Inhabited, Repr
+
+/-- An `f.RegAlloc` entry (`ssa.Location`): a register (Go's dense register number, the index
+into `GoFV.SSA.ARM64.registers`), a `LocalSlot`, a `LocPair` or `LocResults` of registers
+(`none` for nil elements). -/
+inductive Location where
+  | reg (r : Nat)
+  | slot (k : SlotKey)
+  | pair (a b : Option Nat)
+  | results (rs : Array (Option Nat))
+  deriving DecidableEq, Inhabited, Repr
+
+/-- State of the lowered passes (format 5; all empty before `lower`). -/
+structure Lowered where
+  /-- Blocks with `FlagsLiveAtEnd` (set by `flagalloc`), ascending ID. -/
+  flagsLive : Array ID := #[]
+  /-- Non-zero `Block.Hotness` (set by `loop rotate`), ascending ID. -/
+  hotness : Array (ID × Nat) := #[]
+  scheduled : Bool := false
+  laidout : Bool := false
+  /-- `f.RegAlloc` when non-nil: its length and the non-nil entries, ascending ID. -/
+  regAlloc : Option (Nat × Array (ID × Location)) := none
+  /-- `f.tempRegs` when non-nil, ascending ID. -/
+  tempRegs : Option (Array (ID × Nat)) := none
   deriving DecidableEq, Inhabited, Repr
 
 /-- An `ssa.Func`. -/
@@ -82,6 +127,8 @@ structure Func where
   /-- `f.freeBlocks`, head first. -/
   freeBlocks : List ID
   cache : Caches
+  /-- Lowered-pass state (format 5). -/
+  low : Lowered := {}
   deriving DecidableEq, Inhabited
 
 namespace Func

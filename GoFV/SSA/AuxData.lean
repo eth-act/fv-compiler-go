@@ -1,5 +1,6 @@
 import GoFV.SSA.Type
 import GoFV.SSA.Pos
+import GoFV.SSA.OpInfo
 
 /-!
 # Aux objects and local slots
@@ -128,6 +129,9 @@ structure CallABI where
   outRegs : Int
   /-- `nin + nout` parameter assignments: inputs, then outputs. -/
   params : Array ABIParam
+  /-- `callreg` (format 5): the register constraints `AuxCall.Reg`/`ResultReg` cached in the
+  `AuxCall` (filled by `regalloc`); `none` while nil or empty. -/
+  reg : Option RegInfo := none
   deriving DecidableEq, Inhabited, Repr
 
 /-- The Go dynamic type of an aux value with its contents. -/

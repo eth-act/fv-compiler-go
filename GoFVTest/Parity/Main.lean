@@ -80,7 +80,9 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
     IO Stats := do
   let data ← IO.FS.readBinFile path
   let st := { st with files := st.files + 1 }
-  match parseExport data with
+  -- Phase 1 instances only: skip the lowered sections (format 5) unparsed.
+  let stop := if insts.any (loweredPasses.contains ·.name) then none else some "lower"
+  match (match stop with | some p => parseExportUntil p data | none => parseExport data) with
   | .error e =>
     IO.eprintln s!"PARSE ERROR {path}: {e}"
     return { st with parseErrors := st.parseErrors + 1 }

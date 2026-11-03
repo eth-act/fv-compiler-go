@@ -1,4 +1,5 @@
 import GoFV.SSA.Export
+import GoFV.SSA.RegARM64
 
 /-!
 # Printer of the export format
@@ -63,6 +64,48 @@ def token : Token → W Unit
   | .word w => s w
   | .str x => q x
 
+/-- A `regMask` as lower-case hex (`v2` then `v1` padded to 16 digits when `v2 ≠ 0`). -/
+def mask (m : RegMask) : W Unit := do
+  let hx (x : UInt64) : String := String.ofList (Nat.toDigits 16 x.toNat)
+  if m.v2 != 0 then
+    s (hx m.v2)
+    let l := hx m.v1
+    s (String.ofList (List.replicate (16 - l.length) '0')); s l
+  else s (hx m.v1)
+
+/-- A register by its Go name (`GoFV.SSA.ARM64.registers`). -/
+def reg (r : Nat) : W Unit :=
+  match ARM64.registers[r]? with
+  | some x => s x.name
+  | none => s s!"?{r}"
+
+def optReg : Option Nat → W Unit
+  | some r => reg r
+  | none => s "-"
+
+def regIdx (x : RegIdx) : W Unit := do n x.idx; s ":"; mask x.regs
+
+/-- `callreg <inputs> <outputs> <clobbers> <flags>`. -/
+def regInfo (r : RegInfo) : W Unit := do
+  s "callreg "; list regIdx r.inputs.toArray; sp; list regIdx r.outputs.toArray; sp
+  mask r.clobbers; sp
+  list s ((if r.clobbersArg0 then #["clobbersarg0"] else #[]) ++
+    (if r.clobbersArg1 then #["clobbersarg1"] else #[])); nl
+
+/-- An `f.RegAlloc` location. -/
+def location : Location → W Unit
+  | .reg r => reg r
+  | .slot k => do s "@"; slotKey k
+  | .pair a b => do s "("; optReg a; s ";"; optReg b; s ")"
+  | .results rs => do
+    s "["
+    let mut first := true
+    for r in rs do
+      if !first then s ";"
+      first := false
+      optReg r
+    s "]"
+
 def field (k : Nat) (f : Field) : W Unit := do
   s "field "; n k; sp; q f.name; sp; ref 't' f.type; sp; optInt f.offset; sp; bool f.embedded; nl
 
@@ -107,6 +150,7 @@ def auxDef (r : AuxRef) (a : AuxDef) : W Unit := do
     for p in c.params do
       s "abiparam "; s (if p.out then "out" else "in"); sp; n p.index; sp; ref 't' p.type; sp
       optRef 'a' p.name; sp; list n p.regs; sp; i p.offset; nl
+    if let some r := c.reg then regInfo r
   | .nameOff x off => do s "nameoff "; q a.fmt; sp; ref 'a' x; sp; i off; nl
   | .type t => do s "type "; q a.fmt; sp; ref 't' t; nl
   | .int x => do s "int "; q a.fmt; sp; i x; nl
@@ -125,11 +169,11 @@ def defn : Def → W Unit
     optRef 's' d.splitOf; sp; i d.splitOffset; nl
 
 def value (v : Value) : W Unit := do
-  s "v "; ref 'v' v.id; sp; s v.op.name; sp; ref 't' v.type; sp; i64 v.auxInt; sp
+  s "v "; ref 'v' v.id; sp; s v.op.exportName; sp; ref 't' v.type; sp; i64 v.auxInt; sp
   optRef 'a' v.aux; sp; pos v.pos; sp; n v.uses; sp; list (ref 'v') v.args; nl
 
 def block (f : Func) (b : Block) : W Unit := do
-  s "b "; ref 'b' b.id; sp; s b.kind.name; sp; pos b.pos; sp; i b.likely.toInt; sp
+  s "b "; ref 'b' b.id; sp; s b.kind.exportName; sp; pos b.pos; sp; i b.likely.toInt; sp
   i64 b.auxInt; sp; optRef 'a' b.aux; sp; list (ref 'v') b.controls; sp; list edge b.succs; sp
   list edge b.preds; nl
   for id in b.values do
@@ -178,7 +222,13 @@ def func (f : Func) (typs : Option (Array (String × TypeRef))) : W Unit := do
         optRef 'b' x.sibling; s ":"; i x.entry; s ":"; i x.exit
       else s "?") f.blocks
     nl
-  if c.loopnest then s "cache loopnest\n"
+  if let some ln := c.loopnest then
+    s "cache loopnest "; n ln.b2lSize; sp; bool ln.irreducible; sp
+    list (fun (l : Loop) => do
+      ref 'b' l.header; s ":"; (match l.outer with | some o => n o | none => s "-"); s ":"
+      i l.nBlocks; s ":"; i l.depth; s ":"; bool l.isInner; s ":"; bool l.unavoidableCall)
+      ln.loops
+    sp; list (fun ((b, k) : ID × Nat) => do ref 'b' b; s ":"; n k) ln.b2l; nl
   if let some m := c.auxmap then
     s "cache auxmap "; list (fun (a, k) => do optRef 'a' a; s ":"; i k) m; nl
   if let some ls := c.lineStarts then
@@ -192,6 +242,20 @@ def func (f : Func) (typs : Option (Array (String × TypeRef))) : W Unit := do
         for (l, v) in x.pending do
           s ":"; i l; s "="; i v) ls
     nl
+  let lo := f.low
+  if !lo.flagsLive.isEmpty then
+    s "flagslive "; list (ref 'b') lo.flagsLive; nl
+  if !lo.hotness.isEmpty then
+    s "hotness "; list (fun ((b, h) : ID × Nat) => do ref 'b' b; s ":"; n h) lo.hotness; nl
+  if lo.scheduled || lo.laidout then
+    s "fstate "
+    list s ((if lo.scheduled then #["scheduled"] else #[]) ++ (if lo.laidout then #["laidout"] else #[]))
+    nl
+  if let some (k, es) := lo.regAlloc then
+    s "regalloc "; n k; sp; list (fun ((v, l) : ID × Location) => do ref 'v' v; s ":"; location l) es
+    nl
+  if let some es := lo.tempRegs then
+    s "tempregs "; list (fun ((v, r) : ID × Nat) => do ref 'v' v; s ":"; reg r) es; nl
 
 def sectionW (x : Section) : W Unit := do
   s "pass "; n x.index; sp; q x.pass; nl
@@ -220,6 +284,15 @@ def file (e : ExportFile) : W Unit := do
   for m in e.warns do
     s "warn "; q m; nl
   s "ptrcache "; list (ref 't') e.ptrCache; nl
+  if e.version ≥ 5 then
+    s "typelink "
+    list (fun g => do
+      let mut first := true
+      for t in g do
+        if !first then s "="
+        first := false
+        ref 't' t) e.typeLink
+    nl
   for (a, b, o) in e.typeCmp do
     s "typecmp "; ref 't' a; sp; ref 't' b; sp
     s (match o with | .lt => "lt" | .eq => "eq" | .gt => "gt"); nl

@@ -319,7 +319,7 @@ def checkFile (mixed wholeFile strict : Bool) (maxReport : Nat) (path : System.F
   let data ← IO.FS.readBinFile path
   let st := { st with files := st.files + 1 }
   let (o, counts, stockRun) : Outcome × Array PassCount × Array String :=
-    match parseExport data with
+    match parseExportUntil "lower" data with
     | .error e => (Outcome.parseError e, #[], #[])
     | .ok e => checkExport mixed wholeFile strict e
   let st := { st with stockRun := stockRun.foldl (fun m p => bumpMap m p) st.stockRun }
@@ -607,7 +607,7 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
     if (st.reports.filter (·.2.1 == kind)).size < maxReport then
       { st with reports := st.reports.push (path.toString, kind, detail) }
     else st
-  match parseExport data >>= verifiedExport wholeFile with
+  match parseExportUntil "lower" data >>= verifiedExport wholeFile with
   | .error m =>
     IO.eprintln s!"PARSE ERROR {path}: {m}"
     return { st with parseErrors := st.parseErrors + 1 }
@@ -744,7 +744,7 @@ def main (args : List String) : IO UInt32 := do
       | some i => pure i
       | none => IO.eprintln s!"--from {p}: not a stock pass before lower"; return 2
   let data ← IO.FS.readBinFile path
-  match parseExport data with
+  match parseExportUntil "lower" data with
   | .error e =>
     IO.println s!"status error \"parse\" {GoStr.quote e}"
     return 0
