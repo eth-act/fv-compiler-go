@@ -7,9 +7,10 @@ import GoFV.Opt.ScheduleCheck
 # `lake exe schedl-probe [--jobs N] <dir>...`: `scheduleCheck` on the corpus
 
 For every `schedule` section (input: the previous section), runs the Lean `schedule` on the
-input and counts the sections whose input and output pass `check`, those the pass changed, and
-those `scheduleCheck` accepts (what `schedule_refinesSchedLF` covers); for the rejected ones the
-first failing condition, and small accepted witness candidates.
+input and counts the sections whose input passes `check` (the hypothesis of
+`schedule_refinesSchedLF`; the output's `check` is reported, not needed), those the pass changed,
+and those `scheduleCheck` accepts (what `schedule_refinesSchedLF` covers); for the rejected ones
+the first failing condition, and small accepted witness candidates.
 -/
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ScheduleCheck
@@ -19,6 +20,7 @@ namespace GoFVTest.SchedLProbe
 structure Cnt where
   secs : Nat := 0
   passErr : Nat := 0
+  outUnchecked : Nat := 0
   checked : Nat := 0
   changed : Nat := 0
   accepted : Nat := 0
@@ -28,6 +30,7 @@ structure Cnt where
 
 def Cnt.merge (a b : Cnt) : Cnt :=
   { secs := a.secs + b.secs, passErr := a.passErr + b.passErr, checked := a.checked + b.checked
+    outUnchecked := a.outUnchecked + b.outUnchecked
     changed := a.changed + b.changed, accepted := a.accepted + b.accepted
     acceptedChanged := a.acceptedChanged + b.acceptedChanged
     whys := b.whys.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.whys
@@ -133,15 +136,14 @@ def doFile (pass : String) (path : System.FilePath) (c : Cnt) : IO Cnt := do
       let g := out.func
       let cf := check { tabs := prev, typs } f
       let cg := check { tabs := out.tables, typs } g
-      let okf := cf.toBool
-      let okg := cg.toBool
-      if !(okf && okg) then
-        let msg := match (if okf then cg else cf) with
+      if !cf.toBool then
+        let msg := match cf with
           | .error m => ((m.splitOn ":").headD m).toList.take 60 |> String.ofList
           | .ok _ => ""
-        let key := (if okf then "output not checked: " else "input not checked: ") ++ msg
+        let key := "input not checked: " ++ msg
         c := { c with whys := c.whys.insert key (c.whys.getD key 0 + 1) }
         continue
+      if !cg.toBool then c := { c with outUnchecked := c.outUnchecked + 1 }
       let ch := g != f
       c := { c with checked := c.checked + 1, changed := c.changed + (if ch then 1 else 0) }
       if scheduleCheck prev f g then
@@ -179,7 +181,7 @@ def main (args : List String) : IO UInt32 := do
     match ← IO.wait t with
     | .ok x => c := c.merge x
     | .error err => IO.eprintln s!"task error: {err}"; return 1
-  IO.println s!"schedule: sections {c.secs}, pass errors {c.passErr}, both checked {c.checked}, changed {c.changed}, scheduleCheck accepted {c.accepted} (changed {c.acceptedChanged}), rejected {c.checked - c.accepted}"
+  IO.println s!"schedule: sections {c.secs}, pass errors {c.passErr}, input checked {c.checked} (output not checked {c.outUnchecked}), changed {c.changed}, scheduleCheck accepted {c.accepted} (changed {c.acceptedChanged}), rejected {c.checked - c.accepted}"
   IO.println "outside (first failing condition):"
   for (k, n) in c.whys.toList.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"  {n} {k}"
