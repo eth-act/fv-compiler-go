@@ -68,6 +68,19 @@ two values into one block). `tests/sccp-order/run.sh [n] [go-build]` exports a p
 has one `n` times and runs the check: 16 stock exports split 8/8 between the two predecessor
 orders, and all match (8 by replay).
 
+**`regalloc`: copy deletion and new autos.** Stock `regalloc` also ranges over a Go map (`s.copies`,
+"Erase any copies we never used"): the set of freed copies is the same fixed point in every
+order, only the free list order differs, and from `regalloc` on the export writes `freev`
+sorted (`docs/contracts/export.md`, "Format 5"); the port (`GoFV/Opt/Regalloc.lean`) sweeps the
+copies by ascending ID and returns the free list sorted, so no replay is needed. `stackalloc` and
+the edge shuffle create autos with `f.NewLocal`, named `.autotmp_<len(curfn.Dcl)>` by the
+frontend; `len(curfn.Dcl)` is frontend state the export does not carry (the driver reads it with
+`GOFVDclLen`). The pass takes it as `PassEnv.dclLen`, and the harness sets it to the smallest
+`<n>` among the `.autotmp_<n>` autos new in the stock section (`Compare.dclLenOf`; 0 when there is
+none): only the first auto's number comes from the stock output, the count, order, types,
+positions and numbering of all autos are still compared. The `regalloc` line's slots are part of
+the renumbering walk (`Renumber.funcRefs`).
+
 Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays
 constant: the whole corpus (9,297 files, 1.25 GB) runs in about 25 s with 4 jobs and 130 MB.
 

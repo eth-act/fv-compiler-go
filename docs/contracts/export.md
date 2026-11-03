@@ -497,6 +497,9 @@ one of them must raise it on #4.
   `ssagen`/`genssa` (Phase 3) or SIMD only; `ctxt.Flag_locationlists` (debug info, genssa).
 - The `loopnest`'s `po`/`sdom` (see `cache loopnest`) and `f` fields.
 - `ir.Name` frame offsets of autos (`AllocFrame` runs after `ssa.Compile`).
+- `len(curfn.Dcl)`, which numbers the autos `regalloc`/`stackalloc` create with `f.NewLocal`
+  (`.autotmp_<n>`, `typecheck.TempAt`): the port takes it as `PassEnv.dclLen` (the driver from
+  the frontend, parity from the stock section's first new auto; `docs/PARITY.md`).
 - `ir.Name` details beyond the listed flags (positions of definitions, `Curfn`, closure vars,
   `Heapaddr`, …): read by `ssagen`, not by the passes. New autos made by `decompose`
   (`fe.SplitSlot`) get `Sym.Name = parent + suffix`, `Class = PAUTO`, `used`, `escnever`;
