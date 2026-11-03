@@ -413,7 +413,7 @@ theorem evalOpL_armA {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Li
     (hop : v.op ∈ armA) :
     evalOpL false env ctx fr v argv ty = arm64Op false env ctx fr v argv ty := by
   unfold evalOpL
-  rw [if_neg (by simp [armA_generic hop])]
+  rw [ite_eq_right (by simp [armA_generic hop])]
   split
   all_goals first
     | rfl
@@ -424,10 +424,10 @@ theorem evalOpL_armP {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Li
     evalOpL false env ctx fr v argv ty = .ok (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
   obtain ⟨hg, hr⟩ := armP_generic hop
   unfold evalOpL
-  rw [if_neg (by simp [hg])]
+  rw [ite_eq_right (by simp [hg])]
   split
   all_goals first
-    | (rw [if_neg (by simp [hr])]; rfl)
+    | (rw [ite_eq_right (by simp [hr])]; rfl)
     | (rename_i heq; rw [heq] at hop; exact absurd hop (by decide))
     | (rename_i heq; unfold arm64Op; simp only [nilFaults, Bool.not_false, ite_true]
        rw [heq]; rfl)

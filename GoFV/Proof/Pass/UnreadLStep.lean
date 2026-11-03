@@ -121,12 +121,30 @@ theorem tysL_eq (R : URel tabs f g E) (x : ID) :
       · exact (elimV_spec he).2.2.2.2.2.1
     rw [tysL_of_value hgv, tysL_of_value hf, hty, R.low]
 
-theorem signExt_elim {fv gv : Value} (he : elimV fv gv = true) :
-    Arm64.signExtends gv.op = Arm64.signExtends fv.op := by
+/-- An eliminated write and its `Copy` both hold no sign-extended register. -/
+theorem signExt_elim {val? val?' : ID → Option Value} {fv gv : Value} (he : elimV fv gv = true) :
+    Arm64.signExtendsIn val?' gv = Arm64.signExtendsIn val? fv := by
   obtain ⟨hop, hc, -⟩ := elimV_spec he
+  unfold Arm64.signExtendsIn
   rw [hc]
   simp only [elimOps, List.mem_cons, List.not_mem_nil, or_false] at hop
   rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
+
+/-- Whether a value is an `LDPSW` is the same in `g` and `f`. -/
+theorem ldpsw_eq (R : URel tabs f g E) (a : ID) :
+    (g.value? a).map (·.op == .ARM64LDPSW) = (f.value? a).map (·.op == .ARM64LDPSW) := by
+  cases hf : f.value? a with
+  | none => rw [R.none a hf]
+  | some fv =>
+    obtain ⟨gv, hgv, hk⟩ := R.value a fv hf
+    rw [hgv]
+    simp only [Option.map_some, Option.some.injEq]
+    rcases hk with ⟨hs, -⟩ | ⟨he, -⟩
+    · rw [(DSE.sameV_spec hs).2.1]
+    · obtain ⟨hop, hc, -⟩ := elimV_spec he
+      rw [hc]
+      simp only [elimOps, List.mem_cons, List.not_mem_nil, or_false] at hop
+      rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
 
 /-- The sign extensions the evaluation reads of `g` are `f`'s. -/
 theorem sxOf_eq (R : URel tabs f g E) (v : Value) : sxOf g v = sxOf f v := by
@@ -136,13 +154,18 @@ theorem sxOf_eq (R : URel tabs f g E) (v : Value) : sxOf g v = sxOf f v := by
   | some a =>
     simp only [Option.bind_some]
     cases hf : f.value? a with
-    | none => rw [R.none a hf]
+    | none => rw [R.none a hf]; rfl
     | some fv =>
       obtain ⟨gv, hgv, hk⟩ := R.value a fv hf
       rw [hgv]
       simp only [Option.map_some, Option.some.injEq]
       rcases hk with ⟨hs, -⟩ | ⟨he, -⟩
-      · rw [(DSE.sameV_spec hs).2.1]
+      · obtain ⟨-, hop, -, -, -, -, hargs⟩ := DSE.sameV_spec hs
+        refine Arm64.signExtendsIn_congr hop fun _ => ?_
+        rw [hargs]
+        cases fv.args[0]? with
+        | none => rfl
+        | some c => exact ldpsw_eq R c
       · exact signExt_elim he
 
 end Ctx
