@@ -13,7 +13,52 @@ namespace GoFV.Rules.ProvenARM64
 
 open GoFV.Rules
 
-/-- `ARM64.rules` restricted to its 62 proven value rules and 43 proven block rules. -/
+mutual
+/-- `e` with Go's `b2i` calls named `bool2int`, as Phase 1's rule denotation (`evalE`) knows them
+(`GoFV.Rules.Eval` evaluates both alike). -/
+def Expr.b2iNorm : Expr → Expr
+  | .field x n t => .field (Expr.b2iNorm x) n t
+  | .call f as t => .call (if f == "b2i" then "bool2int" else f) (Expr.b2iNorms as) t
+  | .method x n as t => .method (Expr.b2iNorm x) n (Expr.b2iNorms as) t
+  | .builtin f as t => .builtin f (Expr.b2iNorms as) t
+  | .conv t x => .conv t (Expr.b2iNorm x)
+  | .assert t x => .assert t (Expr.b2iNorm x)
+  | .unop o x t => .unop o (Expr.b2iNorm x) t
+  | .binop o x y t => .binop o (Expr.b2iNorm x) (Expr.b2iNorm y) t
+  | .index x i t => .index (Expr.b2iNorm x) (Expr.b2iNorm i) t
+  | .deref x t => .deref (Expr.b2iNorm x) t
+  | e => e
+/-- `Expr.b2iNorm` of each expression. -/
+def Expr.b2iNorms : List Expr → List Expr
+  | [] => []
+  | e :: es => Expr.b2iNorm e :: Expr.b2iNorms es
+end
+
+/-- `Expr.b2iNorm` of a result node's expressions. -/
+def RNode.b2iNorm (n : RNode) : RNode where
+  op := n.op
+  ty := n.ty.map Expr.b2iNorm
+  auxInt := n.auxInt.map Expr.b2iNorm
+  aux := n.aux.map Expr.b2iNorm
+  args := n.args.map fun
+    | .expr e => .expr (Expr.b2iNorm e)
+    | a => a
+
+/-- A rule with Go's `b2i` calls of its condition and result named `bool2int`. -/
+def b2iNorm (r : Rule) : Rule where
+  loc := r.loc
+  op := r.op
+  vars := r.vars
+  pat := r.pat
+  cond := r.cond.map Expr.b2iNorm
+  block := r.block
+  result := match r.result with
+    | .copy e => .copy (Expr.b2iNorm e)
+    | .build ns => .build (ns.map RNode.b2iNorm)
+    | res => res
+  pos := r.pos
+
+/-- `ARM64.rules` restricted to its 139 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
@@ -35,8 +80,41 @@ def lower : RuleSet where
     (.Const32, [Generated.ARM64.r_ARM64_182_2]),
     (.Const64, [Generated.ARM64.r_ARM64_182_3]),
     (.Const8, [Generated.ARM64.r_ARM64_182_4]),
+    (.ConstBool, [b2iNorm Generated.ARM64.r_ARM64_185]),
     (.ConstNil, [Generated.ARM64.r_ARM64_184]),
+    (.Eq16, [Generated.ARM64.r_ARM64_240]),
+    (.Eq32, [Generated.ARM64.r_ARM64_241]),
+    (.Eq32F, [Generated.ARM64.r_ARM64_244]),
+    (.Eq64, [Generated.ARM64.r_ARM64_242]),
+    (.Eq64F, [Generated.ARM64.r_ARM64_245]),
+    (.Eq8, [Generated.ARM64.r_ARM64_239]),
     (.InterCall, [Generated.ARM64.r_ARM64_444]),
+    (.IsInBounds, [Generated.ARM64.r_ARM64_451]),
+    (.IsSliceInBounds, [Generated.ARM64.r_ARM64_452]),
+    (.Leq16, [Generated.ARM64.r_ARM64_282]),
+    (.Leq16U, [Generated.ARM64.r_ARM64_291]),
+    (.Leq32, [Generated.ARM64.r_ARM64_283]),
+    (.Leq32F, [Generated.ARM64.r_ARM64_287]),
+    (.Leq32U, [Generated.ARM64.r_ARM64_292]),
+    (.Leq64, [Generated.ARM64.r_ARM64_284]),
+    (.Leq64F, [Generated.ARM64.r_ARM64_288]),
+    (.Leq64U, [Generated.ARM64.r_ARM64_293]),
+    (.Leq8, [Generated.ARM64.r_ARM64_281]),
+    (.Leq8U, [Generated.ARM64.r_ARM64_290]),
+    (.Less16, [Generated.ARM64.r_ARM64_254]),
+    (.Less16U, [Generated.ARM64.r_ARM64_277]),
+    (.Less32, [Generated.ARM64.r_ARM64_255]),
+    (.Less32F, [Generated.ARM64.r_ARM64_263]),
+    (.Less32U, [Generated.ARM64.r_ARM64_278]),
+    (.Less64, [Generated.ARM64.r_ARM64_256]),
+    (.Less64F, [Generated.ARM64.r_ARM64_264]),
+    (.Less64U, [Generated.ARM64.r_ARM64_279]),
+    (.Less8, [Generated.ARM64.r_ARM64_254_2]),
+    (.Less8U, [Generated.ARM64.r_ARM64_276]),
+    (.Lsh64x16, [Generated.ARM64.r_ARM64_152, Generated.ARM64.r_ARM64_171]),
+    (.Lsh64x32, [Generated.ARM64.r_ARM64_152_2]),
+    (.Lsh64x64, [Generated.ARM64.r_ARM64_152_3]),
+    (.Lsh64x8, [Generated.ARM64.r_ARM64_152_4, Generated.ARM64.r_ARM64_171_2]),
     (.Mul16, [Generated.ARM64.r_ARM64_12]),
     (.Mul32, [Generated.ARM64.r_ARM64_12_2]),
     (.Mul64, [Generated.ARM64.r_ARM64_11]),
@@ -45,12 +123,50 @@ def lower : RuleSet where
     (.Neg32, [Generated.ARM64.r_ARM64_48_2]),
     (.Neg64, [Generated.ARM64.r_ARM64_48_3]),
     (.Neg8, [Generated.ARM64.r_ARM64_48_4]),
+    (.Neq16, [Generated.ARM64.r_ARM64_248]),
+    (.Neq32, [Generated.ARM64.r_ARM64_249]),
+    (.Neq32F, [Generated.ARM64.r_ARM64_252]),
+    (.Neq64, [Generated.ARM64.r_ARM64_250]),
+    (.Neq64F, [Generated.ARM64.r_ARM64_252_2]),
+    (.Neq8, [Generated.ARM64.r_ARM64_247]),
     (.NilCheck, [Generated.ARM64.r_ARM64_449]),
     (.OffPtr, [Generated.ARM64.r_ARM64_306]),
     (.Or16, [Generated.ARM64.r_ARM64_44]),
     (.Or32, [Generated.ARM64.r_ARM64_44_2]),
     (.Or64, [Generated.ARM64.r_ARM64_44_3]),
     (.Or8, [Generated.ARM64.r_ARM64_44_4]),
+    (.Rsh16Ux16, [Generated.ARM64.r_ARM64_163]),
+    (.Rsh16Ux32, [Generated.ARM64.r_ARM64_163_2]),
+    (.Rsh16Ux64, [Generated.ARM64.r_ARM64_163_3]),
+    (.Rsh16Ux8, [Generated.ARM64.r_ARM64_163_4]),
+    (.Rsh16x16, [Generated.ARM64.r_ARM64_156]),
+    (.Rsh16x32, [Generated.ARM64.r_ARM64_156_2]),
+    (.Rsh16x64, [Generated.ARM64.r_ARM64_156_3]),
+    (.Rsh16x8, [Generated.ARM64.r_ARM64_156_4]),
+    (.Rsh32Ux16, [Generated.ARM64.r_ARM64_162]),
+    (.Rsh32Ux32, [Generated.ARM64.r_ARM64_162_2]),
+    (.Rsh32Ux64, [Generated.ARM64.r_ARM64_162_3]),
+    (.Rsh32Ux8, [Generated.ARM64.r_ARM64_162_4]),
+    (.Rsh32x16, [Generated.ARM64.r_ARM64_155]),
+    (.Rsh32x32, [Generated.ARM64.r_ARM64_155_2]),
+    (.Rsh32x64, [Generated.ARM64.r_ARM64_155_3]),
+    (.Rsh32x8, [Generated.ARM64.r_ARM64_155_4]),
+    (.Rsh64Ux16, [Generated.ARM64.r_ARM64_166, Generated.ARM64.r_ARM64_175]),
+    (.Rsh64Ux32, [Generated.ARM64.r_ARM64_166_2]),
+    (.Rsh64Ux64, [Generated.ARM64.r_ARM64_166_3]),
+    (.Rsh64Ux8, [Generated.ARM64.r_ARM64_166_4, Generated.ARM64.r_ARM64_175_2]),
+    (.Rsh64x16, [Generated.ARM64.r_ARM64_159, Generated.ARM64.r_ARM64_179]),
+    (.Rsh64x32, [Generated.ARM64.r_ARM64_159_2]),
+    (.Rsh64x64, [Generated.ARM64.r_ARM64_159_3]),
+    (.Rsh64x8, [Generated.ARM64.r_ARM64_159_4, Generated.ARM64.r_ARM64_179_2]),
+    (.Rsh8Ux16, [Generated.ARM64.r_ARM64_164]),
+    (.Rsh8Ux32, [Generated.ARM64.r_ARM64_164_2]),
+    (.Rsh8Ux64, [Generated.ARM64.r_ARM64_164_3]),
+    (.Rsh8Ux8, [Generated.ARM64.r_ARM64_164_4]),
+    (.Rsh8x16, [Generated.ARM64.r_ARM64_157]),
+    (.Rsh8x32, [Generated.ARM64.r_ARM64_157_2]),
+    (.Rsh8x64, [Generated.ARM64.r_ARM64_157_3]),
+    (.Rsh8x8, [Generated.ARM64.r_ARM64_157_4]),
     (.SignExt16to32, [Generated.ARM64.r_ARM64_208]),
     (.SignExt16to64, [Generated.ARM64.r_ARM64_210]),
     (.SignExt32to64, [Generated.ARM64.r_ARM64_211]),
