@@ -123,6 +123,22 @@ def Arm64.signExtendsIn (val? : ID → Option Value) (u : Value) : Bool :=
     | .Select0 | .Select1 => ((u.args[0]?.bind val?).map (·.op == .ARM64LDPSW)).getD false
     | _ => false
 
+/-- `signExtendsIn` reads of `u` its op and, for a `Select0`/`Select1`, the op of its first
+argument. -/
+theorem Arm64.signExtendsIn_congr {val? val?' : ID → Option Value} {u u' : Value}
+    (hop : u.op = u'.op)
+    (hsel : (u.op = .Select0 ∨ u.op = .Select1) →
+      ((u.args[0]?.bind val?).map (·.op == .ARM64LDPSW)) =
+        ((u'.args[0]?.bind val?').map (·.op == .ARM64LDPSW))) :
+    Arm64.signExtendsIn val? u = Arm64.signExtendsIn val?' u' := by
+  unfold Arm64.signExtendsIn
+  rw [hop]
+  congr 1
+  split
+  next h => rw [hsel (Or.inl (hop.trans h))]
+  next h => rw [hsel (Or.inr (hop.trans h))]
+  next => rfl
+
 /-- The address `base + auxInt + aux` of a `SymOff` op (`MOV*load`, `MOV*store`, `LDP`, `STP`,
 `MOVDaddr`, …): the aux's global symbol or frame variable at the offset (the base is then `SB` or
 `SP`, `addressing modes`' `mergeSym`), else the base moved by the offset. -/

@@ -32,9 +32,10 @@ attribute [local irreducible] schedule kahn schedValid
 
 /-! ## Ops -/
 
-/-- The op of the first argument of `v` under `ctx`, as `ARM64MOVDreg` reads it. -/
+/-- Whether the first argument of `v` under `ctx` sign-extends, as `ARM64MOVDreg` reads it
+(`Arm64.signExtendsIn`). -/
 def sxArgLoc (ctx : Ctx) (v : Value) : Option Bool :=
-  (v.args[0]?.bind ctx.f.value?).map fun u => Arm64.signExtends u.op
+  (v.args[0]?.bind ctx.f.value?).map (Arm64.signExtendsIn ctx.f.value?)
 
 /-- What `evalOpL` reads of its context: the tables, the activation's layout and the op of the
 first argument. -/
@@ -174,10 +175,9 @@ theorem stepLoc_congr {env : Env} {lc lc' : LocCtx} (h : LocEq lc lc') (s : LocS
   | some a =>
     simp only [Option.bind_some]
     rcases map_eraseV_eq (h.ctx.value a) with ⟨h1, h2⟩ | ⟨u, u', h1, h2, he⟩
+    · rw [h1, h2]; rfl
     · rw [h1, h2]
-    · rw [h1, h2]
-      have : u.op = u'.op := by have := congrArg Value.op he; exact this
-      simp only [Option.map_some, this]
+      simp only [Option.map_some, signExtendsIn_eraseV h.ctx.value he]
 
 theorem enterListLoc_congr {env : Env} {lc lc' : LocCtx} (h : LocEq lc lc') :
     ∀ (s : LocState) (ids : List ID), enterListLoc env lc s ids = enterListLoc env lc' s ids := by

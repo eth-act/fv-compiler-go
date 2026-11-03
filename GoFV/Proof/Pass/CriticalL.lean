@@ -272,8 +272,20 @@ theorem sxOf_rel (R : CritRel f g) {fv gv : Value} (hargs : gv.args = fv.args) :
   | some a =>
     simp only [Option.bind_some]
     rcases value_rel R a with ⟨h1, h2⟩ | ⟨fa, ga, h1, h2, he⟩
+    · rw [h1, h2]; rfl
     · rw [h1, h2]
-    · rw [h1, h2]; simp only [Option.map_some, eraseA_op he]
+      simp only [Option.map_some, Option.some.injEq]
+      obtain ⟨-, hop, -, -, -, hargs'⟩ := eraseA_eq he
+      refine Arm64.signExtendsIn_congr hop fun hs => ?_
+      have hnp : ga.op ≠ .Phi := by rcases hs with h | h <;> rw [h] <;> decide
+      rw [hargs' hnp]
+      cases fa.args[0]? with
+      | none => rfl
+      | some c =>
+        simp only [Option.bind_some]
+        rcases value_rel R c with ⟨h3, h4⟩ | ⟨fc, gc, h3, h4, hec⟩
+        · rw [h3, h4]
+        · rw [h3, h4]; simp only [Option.map_some, eraseA_op hec]
 
 /-- A source value of a block, other than a `Phi`, evaluates in the target as in the source. -/
 theorem evalValueL_rel (R : CritRel f g) {md : LMode} {env : Env} {tabs : Tables} {fr : Frame}
