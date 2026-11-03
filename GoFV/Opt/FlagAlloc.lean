@@ -1,5 +1,5 @@
 import GoFV.Opt.LowTy
-import GoFV.SSA.Alloc
+import GoFV.SSA.CopyInto
 import GoFV.SSA.Analysis.CfgCache
 
 /-!
