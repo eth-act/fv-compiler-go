@@ -1,6 +1,8 @@
 import GoFV.Proof.CongL
 import GoFV.Proof.RefineLoc
 import GoFV.Proof.Frame
+import GoFV.Proof.FrameL
+import GoFV.Proof.SimLocSign
 
 /-!
 # `runLoc` ignores block order, positions, predictions, caches and the lowered-pass flags
@@ -60,8 +62,8 @@ theorem evalOpL_eraseV (fa : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Val
 
 /-! ## Contexts -/
 
-/-- Two `runLoc` contexts with the same tables, activation layout, homes and temporary
-registers. -/
+/-- Two `runLoc` contexts with the same tables, activation layout, homes, temporary registers,
+`lowered` (the mode), value-table size and `signOf` (`movdLoc`). -/
 structure LocCtxW (lc lc' : LocCtx) : Prop where
   tabs : lc.ctx.tabs = lc'.ctx.tabs
   params : lc.ctx.params = lc'.ctx.params
@@ -72,11 +74,16 @@ structure LocCtxW (lc lc' : LocCtx) : Prop where
   defers : lc.ctx.defers = lc'.ctx.defers
   homes : lc.homes = lc'.homes
   temps : lc.temps = lc'.temps
+  lowered : lc.ctx.f.lowered = lc'.ctx.f.lowered
+  size : lc.ctx.f.valueTab.size = lc'.ctx.f.valueTab.size
+  signOf : ∀ n id, lc.signOf n id = lc'.signOf n id
 
 theorem read_congrW {lc lc' : LocCtx} (h : LocCtxW lc lc') (s : LocState) {id : ID}
     (hty : lc.ty id = lc'.ty id) : s.read lc id = s.read lc' id := by
-  unfold LocState.read LocCtx.home
-  rw [h.homes, hty]
+  have hmd : LMode.loc lc.ctx.f = LMode.loc lc'.ctx.f := by
+    unfold LMode.loc LMode.sched; rw [h.lowered]
+  unfold LocState.read LocState.raw LocCtx.home
+  rw [h.homes, hty, hmd]
 
 theorem write_congrW {lc lc' : LocCtx} (h : LocCtxW lc lc') (s : LocState) {id : ID}
     (hty : lc.ty id = lc'.ty id) (x : Val) : s.write lc id x = s.write lc' id x := by
@@ -91,6 +98,15 @@ theorem clobber_congrW {lc lc' : LocCtx} (h : LocCtxW lc lc') (s : LocState) (v 
 theorem stepLoc_eraseV (env : Env) (lc : LocCtx) (s : LocState) (v : Value) :
     stepLoc env lc s (eraseV v) = stepLoc env lc s v := (rfl)
 
+theorem mode_congrW {lc lc' : LocCtx} (h : LocCtxW lc lc') :
+    LMode.loc lc.ctx.f = LMode.loc lc'.ctx.f := by
+  unfold LMode.loc LMode.sched; rw [h.lowered]
+
+theorem movdLoc_congrW {lc lc' : LocCtx} (h : LocCtxW lc lc') (v : Value) (argv : List Val)
+    (ty : Ty) : movdLoc lc v argv ty = movdLoc lc' v argv ty := by
+  unfold movdLoc
+  rw [h.size, funext fun n => funext fun id => h.signOf n id]
+
 /-- A value runs alike under two `LocCtxW` contexts when it and its arguments have the same
 shapes there and its first argument the same op. -/
 theorem stepLoc_congrW {env : Env} {lc lc' : LocCtx} (h : LocCtxW lc lc') (s : LocState)
@@ -101,10 +117,11 @@ theorem stepLoc_congrW {env : Env} {lc lc' : LocCtx} (h : LocCtxW lc lc') (s : L
     mapM_congr' _ fun a ha => read_congrW h s (hargs a (Array.mem_toList_iff.1 ha))
   have hw : ∀ s x, LocState.write lc s v.id x = LocState.write lc' s v.id x :=
     fun s x => write_congrW h s hty x
+  have hmd := mode_congrW h
   unfold stepLoc
-  simp only [LocCtx.home, h.homes, hm, hty, clobber_congrW h s v, hw,
-    evalOpL_ctxW (fa := LMode.loc.faulting) (env := env) h.tabs h.params h.paramTys h.outs
-      h.locals h.act h.defers s.fr v _ _ hsx]
+  simp only [LocCtx.home, h.homes, hm, hty, clobber_congrW h s v, hw, hmd, movdLoc_congrW h,
+    evalOpL_ctxW (fa := (LMode.loc lc'.ctx.f).faulting) (env := env) h.tabs h.params h.paramTys
+      h.outs h.locals h.act h.defers s.fr v _ _ hsx]
   rfl
 
 /-! ## Blocks as value lists -/
@@ -151,13 +168,20 @@ theorem locCtxW_make (tabs : Tables) {f g : Func} (h : eraseFL f = eraseFL g)
     have e2 : (eraseFL g).valueTab.size = g.valueTab.size := Array.size_map ..
     rw [← e1, ← e2, h]
   have hown : f.ownAux = g.ownAux := by have := congrArg Func.ownAux h; exact this
-  refine ⟨hc.tabs, hc.params, hc.paramTys, hc.outs, hc.locals, hc.act, ?_, ?_, ?_⟩
+  have hf : ∀ g : Func, (LocCtx.make tabs g).ctx.f = g := fun g => makeL_f tabs g
+  have hsv : ∀ o : Option Value, signView (o.map eraseV) = signView o := fun o => by
+    cases o <;> rfl
+  refine ⟨hc.tabs, hc.params, hc.paramTys, hc.outs, hc.locals, hc.act, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · show (Ctx.makeL tabs f).defers = (Ctx.makeL tabs g).defers
     unfold Ctx.makeL; split <;> split <;> rfl
   · show (LocCtx.make tabs f).homes = (LocCtx.make tabs g).homes
     unfold LocCtx.make; simp only [hsize, hra]
   · show (LocCtx.make tabs f).temps = (LocCtx.make tabs g).temps
     unfold LocCtx.make; simp only [hsize, htr]
+  · rw [hf, hf]; exact lowered_of_eraseFL h
+  · rw [hf, hf]; exact hsize
+  · refine signOf_congr hc.tabs fun id => ?_
+    rw [hf, hf, ← hsv, eraseF_value_of_eraseFL h id, hsv]
 
 /-- `runLoc`'s contexts of two functions with the same `eraseFL`, homes and temporary
 registers. -/
@@ -204,7 +228,7 @@ theorem control_congr {lc lc' : LocCtx} (h : LocEq lc lc') (s : LocState) (c : I
   · rw [h1, h2]
     have hop : v.op = v'.op := by have := congrArg Value.op he; exact this
     have hargs : v.args = v'.args := by have := congrArg Value.args he; exact this
-    simp only [hop, hargs, hm, read_congrW h.w s (hty c), hty c]
+    simp only [hop, hargs, hm, read_congrW h.w s (hty c), hty c, mode_congrW h.w]
 
 theorem stepTermLoc_congr {lc lc' : LocCtx} (h : LocEq lc lc') (s : LocState) {b b' : Block}
     (hb : eraseB b = eraseB b') : stepTermLoc lc s b = stepTermLoc lc' s b' := by

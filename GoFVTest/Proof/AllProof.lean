@@ -583,6 +583,7 @@ import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 import GoFV.Proof.SimL
 import GoFV.Proof.SimLoc
+import GoFV.Proof.SimLocSign
 import GoFV.Proof.Speculate
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.TabsAgreeMod
