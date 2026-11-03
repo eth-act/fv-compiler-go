@@ -5,7 +5,8 @@ import GoFV.SSA.Sem.RunLoc
 
 `runLoc`'s `MOVDreg`/`MOVDnop` (`movdLoc`) copy the upper bits of their argument's register as
 `LocCtx.signOf` determines them: a `LoadReg` by its type, a `Copy` through its argument, any other
-value by its op. `signView` is what `signOf` reads of a value (`signOf_succ`); two contexts with the
+value as under `runL` (`Arm64.signExtendsIn`: its op, or a selector of `LDPSW`). `signView val? o`
+is what `signOf` reads of value `o` of the value table `val?` (`signOf_succ`); two contexts with the
 same tables whose functions have the same `signView` at every ID have the same `signOf`
 (`signOf_congr`).
 -/
@@ -21,13 +22,13 @@ inductive SignView where
   | other (b : Bool)
   deriving DecidableEq
 
-/-- What `LocCtx.signOf` reads of value `o` (`none`: absent). -/
-def signView : Option Value → SignView
+/-- What `LocCtx.signOf` reads of value `o` (`none`: absent) of the value table `val?`. -/
+def signView (val? : ID → Option Value) : Option Value → SignView
   | some u =>
     match u.op with
     | .LoadReg => .load u.type
     | .Copy => .copy u.args[0]?
-    | op => .other (Arm64.signExtends op)
+    | _ => .other (Arm64.signExtendsIn val? u)
   | none => .other false
 
 /-- One step of `signOf`, through `signView`. -/
@@ -38,7 +39,8 @@ def signStep (tabs : Tables) (rec : ID → Bool) : SignView → Bool
   | .other b => b
 
 theorem signOf_succ (lc : LocCtx) (n : Nat) (id : ID) :
-    lc.signOf (n + 1) id = signStep lc.ctx.tabs (lc.signOf n) (signView (lc.ctx.f.value? id)) := by
+    lc.signOf (n + 1) id =
+      signStep lc.ctx.tabs (lc.signOf n) (signView lc.ctx.f.value? (lc.ctx.f.value? id)) := by
   unfold LocCtx.signOf
   cases lc.ctx.f.value? id with
   | none => rfl
@@ -49,7 +51,8 @@ theorem signOf_succ (lc : LocCtx) (n : Nat) (id : ID) :
 
 /-- Two contexts with the same tables and `signView`s have the same `signOf`. -/
 theorem signOf_congr {lc lc' : LocCtx} (ht : lc.ctx.tabs = lc'.ctx.tabs)
-    (h : ∀ id, signView (lc.ctx.f.value? id) = signView (lc'.ctx.f.value? id)) :
+    (h : ∀ id, signView lc.ctx.f.value? (lc.ctx.f.value? id) =
+      signView lc'.ctx.f.value? (lc'.ctx.f.value? id)) :
     ∀ n id, lc.signOf n id = lc'.signOf n id := by
   intro n
   induction n with

@@ -159,6 +159,24 @@ theorem enterBlockLoc_eq (env : Env) (lc : LocCtx) (s : LocState) (b : Block) :
 
 /-! ## `eraseFL`-equal functions with the same homes run alike -/
 
+/-- Erasure-equal values of erasure-equal value tables have the same `signView`. -/
+theorem signView_eraseV {val? val?' : ID → Option Value}
+    (hv : ∀ id, (val? id).map eraseV = (val?' id).map eraseV) {o o' : Option Value}
+    (ho : o.map eraseV = o'.map eraseV) : signView val? o = signView val?' o' := by
+  cases o with
+  | none => cases o' with
+    | none => rfl
+    | some _ => cases ho
+  | some u => cases o' with
+    | none => cases ho
+    | some u' =>
+      have he : eraseV u = eraseV u' := Option.some.inj ho
+      have hop : u.op = u'.op := by have := congrArg Value.op he; exact this
+      have hty : u.type = u'.type := by have := congrArg Value.type he; exact this
+      have hargs : u.args = u'.args := by have := congrArg Value.args he; exact this
+      have hsx := signExtendsIn_eraseV hv he
+      simp only [signView, hop, hty, hargs, hsx]
+
 theorem locCtxW_make (tabs : Tables) {f g : Func} (h : eraseFL f = eraseFL g)
     (hra : f.low.regAlloc = g.low.regAlloc) (htr : f.low.tempRegs = g.low.tempRegs) :
     LocCtxW (LocCtx.make tabs f) (LocCtx.make tabs g) := by
@@ -169,8 +187,6 @@ theorem locCtxW_make (tabs : Tables) {f g : Func} (h : eraseFL f = eraseFL g)
     rw [← e1, ← e2, h]
   have hown : f.ownAux = g.ownAux := by have := congrArg Func.ownAux h; exact this
   have hf : ∀ g : Func, (LocCtx.make tabs g).ctx.f = g := fun g => makeL_f tabs g
-  have hsv : ∀ o : Option Value, signView (o.map eraseV) = signView o := fun o => by
-    cases o <;> rfl
   refine ⟨hc.tabs, hc.params, hc.paramTys, hc.outs, hc.locals, hc.act, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · show (Ctx.makeL tabs f).defers = (Ctx.makeL tabs g).defers
     unfold Ctx.makeL; split <;> split <;> rfl
@@ -181,7 +197,8 @@ theorem locCtxW_make (tabs : Tables) {f g : Func} (h : eraseFL f = eraseFL g)
   · rw [hf, hf]; exact lowered_of_eraseFL h
   · rw [hf, hf]; exact hsize
   · refine signOf_congr hc.tabs fun id => ?_
-    rw [hf, hf, ← hsv, eraseF_value_of_eraseFL h id, hsv]
+    rw [hf, hf]
+    exact signView_eraseV (eraseF_value_of_eraseFL h) (eraseF_value_of_eraseFL h id)
 
 /-- `runLoc`'s contexts of two functions with the same `eraseFL`, homes and temporary
 registers. -/

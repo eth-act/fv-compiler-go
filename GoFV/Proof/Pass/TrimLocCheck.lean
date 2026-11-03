@@ -139,7 +139,8 @@ def blocksIdx (g : Func) : List (ID × Block) :=
 /-- **signs**: `f` and `g` have the same `signView` at every ID (what `runLoc`'s `MOVDreg`
 reads of the function, `LocCtx.signOf`). -/
 def signsLocB (f g : Func) : Bool :=
-  (List.range f.valueTab.size).all fun id => signView (f.value? id) == signView (g.value? id)
+  (List.range f.valueTab.size).all fun id =>
+    signView f.value? (f.value? id) == signView g.value? (g.value? id)
 
 /-- **`trimRelB f g`**: see the module comment. -/
 def trimRelB (f g : Func) : Bool :=

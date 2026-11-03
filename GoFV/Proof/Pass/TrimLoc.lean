@@ -101,7 +101,7 @@ structure Facts (f g : Func) : Prop where
   entryOK : entryLocB f g f.entry g.entry = true
   block : ∀ t T, g.block? t = some T → T.id = t ∧ keptLocB f g T = true ∧
     closedLocB g T = true ∧ phisLocB g (locHomes g) T = true
-  sign : ∀ id, signView (f.value? id) = signView (g.value? id)
+  sign : ∀ id, signView f.value? (f.value? id) = signView g.value? (g.value? id)
 
 private theorem lt_of_block {f : Func} {bid : ID} {b : Block} (h : f.block? bid = some b) :
     bid < f.blockTab.size := by
@@ -164,7 +164,7 @@ theorem facts_of_trimRelB {f g : Func} (h : trimRelB f g = true) : Facts f g := 
     simp only [List.all_eq_true, List.mem_range, beq_iff_eq] at hs
     rcases Nat.lt_or_ge id f.valueTab.size with hl | hl
     · exact hs id hl
-    · rw [value?_none_of_ge hl, value?_none_of_ge (h5 ▸ hl)]
+    · rw [value?_none_of_ge hl, value?_none_of_ge (h5 ▸ hl)]; rfl
 
 theorem locCtxW_trim (tabs : Tables) {f g : Func} (F : Facts f g) :
     LocCtxW (LocCtx.make tabs f) (LocCtx.make tabs g) := by

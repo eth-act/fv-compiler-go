@@ -225,7 +225,7 @@ def typeSigned (tabs : Tables) (t : TypeRef) : Bool :=
 /-- The register holding value `id` has the upper bits of a sign extension of its low bits
 (`MOVDreg`/`MOVDnop` copy them, `arm64Op`): a `LoadReg` loads by its type (`loadByType`: a signed
 narrow integer type sign-extends), a `Copy` is a register move (`MOVD`) and has its argument's
-bits; any other value as under `runL` (`Arm64.signExtends` of its op). -/
+bits; any other value as under `runL` (`Arm64.signExtendsIn`: its op, or a selector of `LDPSW`). -/
 def LocCtx.signOf (lc : LocCtx) : Nat → ID → Bool
   | 0, _ => false
   | n + 1, id =>
@@ -236,7 +236,7 @@ def LocCtx.signOf (lc : LocCtx) : Nat → ID → Bool
       | .Copy => match u.args[0]? with
         | some a => lc.signOf n a
         | none => false
-      | op => Arm64.signExtends op
+      | _ => Arm64.signExtendsIn lc.ctx.f.value? u
     | none => false
 
 /-- `MOVDreg x`/`MOVDnop x` (`arm64Op`) with the upper bits of `x`'s register (`LocCtx.signOf`). -/

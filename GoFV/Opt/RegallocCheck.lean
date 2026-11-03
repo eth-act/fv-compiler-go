@@ -336,7 +336,7 @@ def sameOp (u w : Value) : Bool :=
 (`LocCtx.signOf`); the two must agree. -/
 def signOK (cx : Cx) (w u : Value) : Bool :=
   if w.op == .ARM64MOVDreg || w.op == .ARM64MOVDnop then
-    let src := (u.args[0]?.bind cx.f.value?).map fun x => Arm64.signExtends x.op
+    let src := (u.args[0]?.bind cx.f.value?).map (Arm64.signExtendsIn cx.f.value?)
     let tgt := (w.args[0]?.map (cx.lc.signOf cx.g.valueTab.size)).getD false
     src.getD false == tgt
   else true
