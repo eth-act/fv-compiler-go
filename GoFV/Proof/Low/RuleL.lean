@@ -9,9 +9,8 @@ and `Val.retype`. A lowering rule relates generic and arm64 ops, so its denotati
 `runL` gives a term of a lowered function (`Sem.evalOpL`, `Sem.LMode.retype` with `low`):
 
 * `opValL`: a generic op by Phase 1's `Rules.opVal` (`evalPure`, the tables for
-  `Addr`/`ConstString`), `MOVDaddr` without a frame variable by `movAddr` (`Sem.symAddr` from
-  the tables alone), an integer load by `ldVal` (`Sem.symAddr` in activation 0, `runL`'s, for a
-  frame variable), any other arm64 op by `Arm64.evalPure`;
+  `Addr`/`ConstString`), `MOVDaddr` by `movAddr` and an integer load by `ldVal` (`Sem.symAddr`
+  in activation 0, `runL`'s, `symPtr`), any other arm64 op by `Arm64.evalPure`;
 * every node is shaped by `Val.retypeL` at its lowered shape (`Sem.tyOfL`: Go's `flags` type is
   `Ty.flags`).
 
@@ -48,20 +47,22 @@ def shp (low : Bool) (tabs : Tables) (t : TypeRef) : Ty := if low then shpL tabs
 /-- A value at shape `t` in mode `low` (`Sem.LMode.retype`). -/
 def rty (low : Bool) (t : Ty) (v : Val) : Val := if low then v.retypeL t else v.retype t
 
-/-- The address of `MOVDaddr [ai] {ax} a` without a frame variable aux: a global symbol at the
-offset, or the base moved by the offset (`Sem.symAddr` without the frame). -/
-def movPtr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (a : Val) : Option Ptr :=
+/-- The address `[ai] {ax} a` of `MOVDaddr` and of an integer load (`Sem.symAddr` in activation
+0, the activation `runL` runs a function in, `Ctx.makeL`): a global symbol at the offset, a frame
+variable's block at the offset, or the base moved by the offset. -/
+def symPtr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (a : Val) : Option Ptr :=
   match ax with
   | some n =>
     match tabs.aux? n with
     | some { kind := .sym name .., .. } => some ⟨.global name.toStringLossy, BitVec.ofInt 64 ai.toInt⟩
+    | some { kind := .name .., .. } => some ⟨frameBlk tabs 0 n, BitVec.ofInt 64 ai.toInt⟩
     | _ => none
   | none => Arm64.addr a (BitVec.ofInt 64 ai.toInt)
 
-/-- `MOVDaddr [ai] {ax} a` without a frame variable aux (`Sem.arm64Op`). -/
+/-- `MOVDaddr [ai] {ax} a` (`Sem.arm64Op` in activation 0). -/
 def movAddr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (args : List Val) : Val :=
   match args with
-  | [a] => (movPtr tabs ai ax a).elim .poison PtrOps.ptrRes
+  | [a] => (symPtr tabs ai ax a).elim .poison PtrOps.ptrRes
   | _ => .poison
 
 /-- The integer loads `Load` lowers to, with their size and signedness (`MOV{B,BU,H,HU,W,WU,D}load`;
@@ -76,22 +77,11 @@ def ldOp? : Op → Option (Nat × Bool)
   | .ARM64MOVDload => some (8, false)
   | _ => none
 
-/-- The address of an integer load `[ai] {ax} a` (`Sem.symAddr` in activation 0, the activation
-`runL` runs a function in, `Ctx.makeL`): `movPtr`, and a frame variable's block at the offset. -/
-def ldPtr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (a : Val) : Option Ptr :=
-  match ax with
-  | some n =>
-    match tabs.aux? n with
-    | some { kind := .sym name .., .. } => some ⟨.global name.toStringLossy, BitVec.ofInt 64 ai.toInt⟩
-    | some { kind := .name .., .. } => some ⟨frameBlk tabs 0 n, BitVec.ofInt 64 ai.toInt⟩
-    | _ => none
-  | none => Arm64.addr a (BitVec.ofInt 64 ai.toInt)
-
 /-- An `n`-byte integer load `[ai] {ax} a mem` (`Sem.arm64Op`'s `ld` in activation 0): the memory
-at `ldPtr`, `poison` without an address. -/
+at `symPtr`, `poison` without an address. -/
 def ldVal (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64) (ax : Option AuxRef) :
     List Val → Val
-  | [a, .mem m] => (ldPtr tabs ai ax a).elim .poison (Arm64.loadN ty n s m)
+  | [a, .mem m] => (symPtr tabs ai ax a).elim .poison (Arm64.loadN ty n s m)
   | _ => .poison
 
 /-- The value of a lowered term node before shaping: Phase 1's `opVal` for a generic op,
@@ -145,7 +135,7 @@ theorem armPure_ldar {op : Op} (h : ldarOp op = true) (ty : Ty) (k : Int64) (ax 
 /-- The value `v` is a term of a lowered function (module doc of `GoFV.Opt.LowerTerm`). -/
 def termVL (tabs : Tables) (v : Value) : Bool :=
   if v.op.generic then GoFV.Opt.RewriteCheck.termOp v.op
-  else if v.op == .ARM64MOVDaddr then !auxIsName tabs v.aux
+  else if v.op == .ARM64MOVDaddr then !(auxIsName tabs v.aux && v.auxInt == 0)
   else if (ldOp? v.op).isSome then true
   else if ldarOp v.op then true
   else armTerm v.op && !actOp v.op && !isRoot v.op
@@ -399,22 +389,26 @@ address by the rule) has no aux, and its offset and the base node's are small an
 register pointer outside its block's window (`Ptr.inWindow`) moved back into it by the base's
 offset has a concrete address that the second offset could carry into another allocation
 (`Ptr.ofAddr`), where the folded offset stays in the first. An `ADDconst` on a `MOVDaddr` node
-(folded into its offset, `ARM64.rules:650`) needs the `MOVDaddr` to have an aux and both
-offsets small and non-negative: without a symbol, `ADDconst` adds to a word without the window
-check of `MOVDaddr`'s `ptrRes`. -/
-def Pat.addrOKL (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) : Pat → Bool
+(folded into its offset, `ARM64.rules:650`) needs the `MOVDaddr` to have an aux, both offsets
+small and non-negative and both nodes word shapes (`ty`): without a symbol, `ADDconst` adds to a
+word without the window check of `MOVDaddr`'s `ptrRes`, and at a narrow or boolean shape it
+reads a frame variable's address word as an integer where `retypeL` makes the folded address
+`poison`. -/
+def Pat.addrOKL (ty : Path → Ty) (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) :
+    Pat → Bool
   | .op o _ _ _ _ _ args _ =>
     (match args with
       | .op o' .. :: _ => (!addrOp o || (ax p == none && offOK (ai p) && offOK (ai (0 :: p)))) &&
           (o != .ARM64ADDconst || o' != .ARM64MOVDaddr ||
-            ((ax (0 :: p)).isSome && offOK (ai p) && offOK (ai (0 :: p))))
-      | _ => true) && Pat.addrOKLs ax ai p 0 args
+            ((ax (0 :: p)).isSome && offOK (ai p) && offOK (ai (0 :: p)) && wordShape (ty p) &&
+              wordShape (ty (0 :: p))))
+      | _ => true) && Pat.addrOKLs ty ax ai p 0 args
   | _ => true
 /-- `Pat.addrOKL` of the arguments `i, i+1, …` of the node at `p`. -/
-def Pat.addrOKLs (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) (i : Nat) :
-    List Pat → Bool
+def Pat.addrOKLs (ty : Path → Ty) (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path)
+    (i : Nat) : List Pat → Bool
   | [] => true
-  | q :: qs => Pat.addrOKL ax ai (i :: p) q && Pat.addrOKLs ax ai p (i + 1) qs
+  | q :: qs => Pat.addrOKL ty ax ai (i :: p) q && Pat.addrOKLs ty ax ai p (i + 1) qs
 end
 
 /-- **The obligation of one swapped form of a value rule** (module doc). -/
@@ -432,7 +426,7 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     Pat.argsOKL e.ty [] r.pat = true →
     copyShapeOK ev e r.result →
     resFitsL (e.ty []) r.result = true →
-    Pat.addrOKL e.aux e.auxInt [] r.pat = true →
+    Pat.addrOKL e.ty e.aux e.auxInt [] r.pat = true →
     Refines ((Pat.rawL tabs e r.pat).retypeL (e.ty []))
       (resDenL tabs e r.pat ev or σ (e.ty []) r.result)
 

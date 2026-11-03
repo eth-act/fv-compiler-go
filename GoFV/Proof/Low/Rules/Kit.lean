@@ -283,7 +283,7 @@ theorem refines_addr_movAddr (T : Ty) (tabs : Tables) (ax : Option AuxRef) (base
   cases ax with
   | none => simp only [addrVal, Option.bind_none, retypeL_poison]; exact .poison _
   | some n =>
-    simp only [addrVal, Option.bind_some, movAddr, movPtr]
+    simp only [addrVal, Option.bind_some, movAddr, symPtr]
     rcases hx : tabs.aux? n with _ | ⟨fmt, k⟩
     · rw [retypeL_poison]; exact .poison _
     · cases k with

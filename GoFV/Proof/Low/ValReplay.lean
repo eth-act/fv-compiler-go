@@ -471,7 +471,7 @@ def ArgsRefL (tabs : Tables) (D₀ : ID → Option Value) (M : Defs) (C : ID →
 /-- What holds along the replay from the definitions `D₀` (lowered mode) and a closed set `C₀`:
 the current definitions `M` with a set `C ⊇ C₀` closed under arguments; refining denotations of
 `C₀` (the valuation holding `D₀`'s frame addresses of activation 0, `FrameVals`, which a frame
-variable's load reads, `ReplayInvL.ldFold`); the atoms of `D₀` with arguments in `C₀` stay atoms
+variable's load reads, `ReplayInvL.frameFold`); the atoms of `D₀` with arguments in `C₀` stay atoms
 of the same type, with related arguments (`ArgsRefL`) unless they read none (`argFree`, a lowered
 frame address). -/
 structure ReplayInvL (tabs : Tables) (D₀ : ID → Option Value) (C₀ : ID → Prop) (M : Defs)
@@ -772,10 +772,16 @@ theorem stFoldAddr_cases {f : Func} {x u : Value} (h : stFoldAddr tabs f M x u =
         exact ⟨l, rfl, h19.1, h19.2⟩
   · cases h8
 
-/-- A `MOVDaddr` is a term unless its aux is a frame variable. -/
+/-- A `MOVDaddr` is a term unless it is a frame variable's address at offset 0. -/
 theorem termVL_movDaddr {m : Value} (h : m.op = .ARM64MOVDaddr) :
-    termVL tabs m = !GoFV.Opt.LowerTerm.auxIsName tabs m.aux := by
+    termVL tabs m = !(GoFV.Opt.LowerTerm.auxIsName tabs m.aux && m.auxInt == 0) := by
   unfold termVL; rw [h]; rfl
+
+/-- A `MOVDaddr` atom is a frame variable's address at offset 0. -/
+theorem movDaddr_atom {m : Value} (h : m.op = .ARM64MOVDaddr) (ht : termVL tabs m = false) :
+    GoFV.Opt.LowerTerm.auxIsName tabs m.aux = true ∧ m.auxInt = 0 := by
+  rw [termVL_movDaddr h] at ht
+  simpa using ht
 
 /-- No store address is the pointer word of a value moved from `poison`. -/
 theorem addrRef_poison {act act' : Nat} {ax : Option AuxRef} {k k' : Int64} {x z : Val}
@@ -794,7 +800,7 @@ theorem ReplayInvL.foldAddr {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
     (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
     (hfold : stFoldAddr tabs f M x u = true) (hsrc : ∀ a, D₀ v = some a → a.op = .Store) :
     ReplayInvL tabs D₀ C₀ (M.put v u) C := by
-  obtain ⟨m, hm, hst, hop, hty, hxa, hsz, hk1, -, hmop, hmsz, hmax, hua, hk, hargs, hcase⟩ :=
+  obtain ⟨m, hm, hst, hop, hty, hxa, hsz, hk1, hk0, hmop, hmsz, hmax, hua, hk, hargs, hcase⟩ :=
     stFoldAddr_cases hfold
   obtain ⟨nn, hnn⟩ : ∃ nn, m.aux = some nn := Option.isSome_iff_exists.1 hmax
   have hb := args_one hmsz
@@ -804,16 +810,16 @@ theorem ReplayInvL.foldAddr {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
   rw [hxa] at h1
   rw [hua, hnn]
   rcases hcase with ⟨hmt, hmw⟩ | ⟨hmt, hm0, l, hl, hlop, hlax⟩
-  · -- a global symbol
+  · -- a global symbol's or frame variable's address term
     rcases j with _ | j
     · exact addrRef_poison h1
     · rw [denT_succ hm hmt, hmop, hb, hnn,
         show (#[m.args[0]!] : Array ID).toList = [m.args[0]!] from rfl] at h1
       simp only [List.map_cons, List.map_nil, opValL_movDaddr] at h1
-      exact addrRef_foldSym hmw hk h1 _
+      exact addrRef_foldSym hmw hk1 hk0 hk h1 _
   · -- a frame variable
     have hname : GoFV.Opt.LowerTerm.auxIsName tabs (some nn) = true := by
-      rw [termVL_movDaddr hmop, hnn] at hmt; simpa using hmt
+      have := (movDaddr_atom hmop hmt).1; rwa [hnn] at this
     have hk' : u.auxInt.toInt = x.auxInt.toInt := by rw [hk, hm0]; simp
     have hden : denL true M.get? tabs ρ j x.args[0]! = .poison ∨
         denL true M.get? tabs ρ j x.args[0]! = (framePtr tabs 0 nn).word := by
@@ -890,18 +896,20 @@ theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayIn
     · exact ⟨a', by rw [copyPut_get]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
         hr.step (fun _ h => h) hI.typed hstep⟩
 
-/-! ### A frame variable's address folded into an integer load (`ldFoldAddr`) -/
+/-! ### A frame variable's address folded into a load or an `ADDconst` (`frameFold`) -/
 
-/-- What `ldFoldAddr` says. -/
-theorem ldFoldAddr_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
-    (h : ldFoldAddr tabs f M v defs = some u) :
-    ∃ x m, M.get? v = some x ∧ M.get? x.args[0]! = some m ∧ u.id = v ∧
-      (ldOp? x.op).isSome = true ∧ u.op = x.op ∧ u.type = x.type ∧ x.aux = none ∧
-      x.args.size = 2 ∧ offOK x.auxInt = true ∧ u.auxInt = x.auxInt ∧ m.op = .ARM64MOVDaddr ∧
-      termVL tabs m = false ∧ m.args.size = 1 ∧ u.aux = m.aux ∧
-      u.args = #[m.args[0]!, x.args[1]!] ∧
-      ∃ l, f.value? x.args[0]! = some l ∧ l.op = .LocalAddr ∧ l.aux = m.aux := by
-  unfold ldFoldAddr at h
+/-- What `frameFold` says. -/
+theorem frameFold_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
+    (h : frameFold tabs f M v defs = some u) :
+    ∃ x m, M.get? v = some x ∧ M.get? x.args[0]! = some m ∧ u.type = x.type ∧
+      u.auxInt = x.auxInt ∧ offOK x.auxInt = true ∧ termVL tabs x = true ∧
+      termVL tabs u = true ∧ m.op = .ARM64MOVDaddr ∧ termVL tabs m = false ∧ m.args.size = 1 ∧
+      u.aux = m.aux ∧ (∃ l, f.value? x.args[0]! = some l ∧ l.op = .LocalAddr ∧ l.aux = m.aux) ∧
+      (((ldOp? x.op).isSome = true ∧ u.op = x.op ∧ x.aux = none ∧ x.args.size = 2 ∧
+          u.args = #[m.args[0]!, x.args[1]!]) ∨
+        (x.op = .ARM64ADDconst ∧ u.op = .ARM64MOVDaddr ∧ x.args.size = 1 ∧
+          wordShape (shpL tabs x.type) = true ∧ u.args = #[m.args[0]!])) := by
+  unfold frameFold at h
   split at h
   · rename_i x _ u' hx
     split at h
@@ -909,16 +917,19 @@ theorem ldFoldAddr_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
       split at h
       · rename_i hc
         cases h
-        simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
-        obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩, -⟩, h13⟩, h14⟩,
-          h15⟩, h16⟩ := hc
-        refine ⟨x, m, hx, hm, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h13, h14, h15, ?_⟩
-        cases hl : f.value? x.args[0]! with
-        | none => rw [hl] at h16; cases h16
-        | some l =>
-          rw [hl] at h16
-          simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h16
-          exact ⟨l, rfl, h16.1, h16.2⟩
+        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
+        obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩, h12⟩,
+          h13⟩, h14⟩ := hc
+        refine ⟨x, m, hx, hm, h4, h5, h6, h7, h8, h9, h10, h11, h12, ?_, ?_⟩
+        · cases hl : f.value? x.args[0]! with
+          | none => rw [hl] at h13; cases h13
+          | some l =>
+            rw [hl] at h13
+            simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h13
+            exact ⟨l, rfl, h13.1, h13.2⟩
+        · rcases h14 with ⟨⟨⟨⟨a1, a2⟩, a3⟩, a4⟩, a5⟩ | ⟨⟨⟨⟨a1, a2⟩, a3⟩, a4⟩, a5⟩
+          · exact .inl ⟨a1, a2, a3, a4, a5⟩
+          · exact .inr ⟨a1, a2, a3, a4, a5⟩
       · cases h
     · cases h
   · cases h
@@ -935,15 +946,15 @@ theorem ldOp_arm {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
     o.generic = false ∧ (o == .ARM64MOVDaddr) = false := by
   rcases ldOp?_mem h with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
 
-/-- A load's address at a frame variable's aux: the variable's block in activation 0. -/
-theorem ldPtr_name {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (some n) = true)
+/-- An address at a frame variable's aux: the variable's block in activation 0. -/
+theorem symPtr_name {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (some n) = true)
     (k : Int64) (y : Val) :
-    ldPtr tabs k (some n) y = some ⟨frameBlk tabs 0 n, BitVec.ofInt 64 k.toInt⟩ := by
+    symPtr tabs k (some n) y = some ⟨frameBlk tabs 0 n, BitVec.ofInt 64 k.toInt⟩ := by
   unfold GoFV.Opt.LowerTerm.auxIsName at hn
   simp only [Option.bind_some] at hn
   split at hn
   · rename_i hd
-    simp only [ldPtr, hd]
+    simp only [symPtr, hd]
   · cases hn
 
 /-- **The folded load**: an integer load at offset `k` (no aux) of a frame variable `n`'s address
@@ -954,12 +965,12 @@ theorem ldVal_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (so
     (hw : w = .poison ∨ w = (framePtr tabs 0 n).word) (hX : Sem.Refines X X') (z : Val)
     (sz : Nat) (s : Bool) (T : Ty) :
     Sem.Refines (ldVal tabs sz s T k none [w, X]) (ldVal tabs sz s T k (some n) [z, X']) := by
-  have hp : ldPtr tabs k none w = none ∨ ldPtr tabs k none w = ldPtr tabs k (some n) z := by
+  have hp : symPtr tabs k none w = none ∨ symPtr tabs k none w = symPtr tabs k (some n) z := by
     rcases hw with rfl | rfl
     · exact .inl rfl
     · right
       obtain ⟨b, -⟩ := offOK_toNat hk
-      rw [ldPtr_name hn]
+      rw [symPtr_name hn]
       exact addr_framePtr tabs 0 n (by omega)
   rcases hp with hp | hp
   · have : ldVal tabs sz s T k none [w, X] = .poison := by
@@ -970,44 +981,65 @@ theorem ldVal_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (so
     rw [this]
     exact ldVal_mono tabs sz s T k (some n) (.cons (Sem.Refines.refl z) (.cons hX .nil))
 
+/-- **The folded offset**: `ADDconst [k]` (at a word shape) of a frame variable `n`'s address
+register (`poison` or the address word in activation 0, `FrameVals`) is refined by `MOVDaddr [k]
+{n}` on any base: the address word moved by `k` inside the frame block's window
+(`Ptr.word_add`). -/
+theorem addConst_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (some n) = true)
+    {k : Int64} (hk : offOK k = true) {T : Ty} (hT : wordShape T = true) {w : Val}
+    (hw : w = .poison ∨ w = (framePtr tabs 0 n).word) (z : Val) :
+    Sem.Refines ((Arm64.addP T w (BitVec.ofInt 64 k.toInt)).retypeL T)
+      ((movAddr tabs k (some n) [z]).retypeL T) := by
+  rcases hw with rfl | rfl
+  · simp only [Arm64.addP, Arm64.reg, retypeL_poison]; exact .poison _
+  obtain ⟨b, -⟩ := offOK_toNat hk
+  have hq : (⟨frameBlk tabs 0 n, BitVec.ofInt 64 k.toInt⟩ : Ptr) =
+      (framePtr tabs 0 n).add (BitVec.ofInt 64 k.toInt) := by simp [framePtr, Ptr.add]
+  have hw : ((framePtr tabs 0 n).add (BitVec.ofInt 64 k.toInt)).inWindow = true := by
+    rw [← hq]; exact frame_inWindow tabs 0 n (by omega)
+  simp only [movAddr, symPtr_name hn, Option.elim, hq, PtrOps.ptrRes, hw, ite_true]
+  rcases Ptr.word_cases (framePtr tabs 0 n) with ⟨-, h⟩ | ⟨hc, a, ha, h⟩
+  · rw [h]
+    simp only [Arm64.addP, PtrOps.ptrRes, hw, ite_true]
+    exact Sem.Refines.refl _
+  · rw [h, Ptr.word_add hc ha hw]
+    have hres : Arm64.res T (a + BitVec.ofInt 64 k.toInt) =
+        .int .w64 (a + BitVec.ofInt 64 k.toInt) := by
+      rcases wordShape_cases hT with rfl | ⟨e, rfl⟩ <;> rfl
+    simp only [Arm64.addP, Arm64.reg, BitVec.setWidth_eq, hres]
+    exact Sem.Refines.refl _
+
 /-- An integer load is a term. -/
 theorem termVL_ld {x : Value} {p : Nat × Bool} (hl : ldOp? x.op = some p) :
     termVL tabs x = true := by
   obtain ⟨hg, hm⟩ := ldOp_arm hl
   simp only [termVL, hg, hm, hl, Bool.false_eq_true, ite_false, Option.isSome_some, ite_true]
 
-/-- **The denotations after the fold refine those before**, the address register holding the
-frame variable's address of activation 0. -/
-theorem ldFold_den {v : ID} {x u m : Value} {n : AuxRef} {sz : Nat} {sg : Bool}
-    (hx : M.get? v = some x) (hl : ldOp? x.op = some (sz, sg)) (hop : u.op = x.op)
-    (hty : u.type = x.type) (hxa : x.aux = none) (hsz : x.args.size = 2)
-    (hk : offOK x.auxInt = true) (hai : u.auxInt = x.auxInt) (hm : M.get? x.args[0]! = some m)
-    (hmt : termVL tabs m = false) (hua : u.aux = some n)
-    (hn : GoFV.Opt.LowerTerm.auxIsName tabs (some n) = true)
-    (huargs : u.args = #[m.args[0]!, x.args[1]!]) {ρ : ID → Val}
-    (hρ : ρ x.args[0]! = .poison ∨ ρ x.args[0]! = (framePtr tabs 0 n).word) :
+/-- **Replacing the term `x` at `v` by the term `u`** refines every denotation, where the top
+node does (`htop`) for argument values refining each other whose value at the atom `a0` is the
+one `ρ` gives it (`poison` or a frame variable's address word). -/
+theorem framePut_den {v a0 : ID} {x u : Value} {n : AuxRef} (hx : M.get? v = some x)
+    (hxt : termVL tabs x = true) (hut : termVL tabs u = true) (ha0 : ¬ IsTermL tabs M.get? a0)
+    {ρ : ID → Val} (hρ : ρ a0 = .poison ∨ ρ a0 = (framePtr tabs 0 n).word)
+    (htop : ∀ F G : ID → Val, (∀ a, Sem.Refines (F a) (G a)) →
+      (F a0 = .poison ∨ F a0 = (framePtr tabs 0 n).word) →
+      Sem.Refines
+        ((opValL tabs x.op (shpL tabs x.type) x.auxInt x.aux (x.args.toList.map F)).retypeL
+          (shpL tabs x.type))
+        ((opValL tabs u.op (shpL tabs u.type) u.auxInt u.aux (u.args.toList.map G)).retypeL
+          (shpL tabs u.type))) :
     ∀ k y, Sem.Refines (denL true M.get? tabs ρ k y) (denL true (M.put v u).get? tabs ρ k y)
   | 0, _ => .poison _
   | k + 1, y => by
-    have ih := fun a => ldFold_den hx hl hop hty hxa hsz hk hai hm hmt hua hn huargs hρ k a
+    have ih := fun a => framePut_den hx hxt hut ha0 hρ htop k a
     by_cases hyv : y = v
     · subst hyv
       have hnew : (M.put y u).get? y = some u := by rw [get?_put]; simp
-      have hxt : termVL tabs x = true := termVL_ld hl
-      have hut : termVL tabs u = true := termVL_ld (by rw [hop]; exact hl)
-      have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := by rw [args_two hsz]; rfl
-      have hul : u.args.toList = [m.args[0]!, x.args[1]!] := by rw [huargs]
-      rw [denT_succ hx hxt, denT_succ hnew hut, hop, hty, hai, hua, hxa, hxl, hul]
-      simp only [List.map_cons, List.map_nil]
-      obtain ⟨hg, hmd⟩ := ldOp_arm hl
-      rw [opValL_ld hg hmd hl, opValL_ld hg hmd hl]
-      refine retypeL_mono _ (ldVal_frameFold hn hk ?_ (ih _) _ _ _ _)
+      rw [denT_succ hx hxt, denT_succ hnew hut]
+      refine htop _ _ ih ?_
       rcases k with _ | k
       · exact .inl rfl
-      · have hna : ¬ IsTermL tabs M.get? x.args[0]! := fun ⟨w, hw, hw'⟩ => by
-          rw [hm] at hw; cases hw; rw [hmt] at hw'; cases hw'
-        rw [denL_succ_atom hna]
-        exact hρ
+      · rw [denL_succ_atom ha0]; exact hρ
     · have h' : (M.put v u).get? y = M.get? y := by rw [get?_put]; simp [hyv]
       cases hmy : M.get? y with
       | none =>
@@ -1027,44 +1059,74 @@ theorem ldFold_den {v : ID} {x u m : Value} {n : AuxRef} {sz : Nat} {sg : Bool}
             rw [hw'] at hw; cases hw; exact htw hw''
           rw [denL_succ_atom h1, denL_succ_atom h2]; exact Sem.Refines.refl _
 
-/-- **A frame variable's address folded into an integer load** (`ldFoldAddr`): the load `x` at
-`v`, whose address is the lowered frame address `MOVDaddr {n}` of a `LocalAddr {n}` of `f`,
-becomes the load of `n` at the same offset. Its denotation refines the old one where the
-valuation holds the frame addresses of activation 0 (`FrameVals`, `ldFold_den`): the step `M →
-M.put v u` refines every denotation, and `ReplayInvL` carries over. -/
-theorem ReplayInvL.ldFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID} {defs : List Value}
-    {u : Value} (hI : ReplayInvL tabs D₀ C₀ M C) (hld : ldFoldAddr tabs f M v defs = some u) :
+/-- **A frame variable's address folded into an integer load or an `ADDconst`** (`frameFold`):
+the term `x` at `v`, whose address argument is the lowered frame address `MOVDaddr {n}` of a
+`LocalAddr {n}` of `f`, becomes the load of `n` or `MOVDaddr {n}` at the same offset. Its
+denotation refines the old one where the valuation holds the frame addresses of activation 0
+(`FrameVals`; `ldVal_frameFold`, `addConst_frameFold`): the step `M → M.put v u` refines every
+denotation, and `ReplayInvL` carries over. -/
+theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
+    {defs : List Value} {u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+    (hld : frameFold tabs f M v defs = some u) :
     ReplayInvL tabs D₀ C₀ (M.put v u) C ∧
       ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
         Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) := by
-  obtain ⟨x, m, hx, hm, -, hl0, hop, hty, hxa, hsz, hk, hai, hmop, hmt, hmsz, hua, huargs, l, hlf,
-    hlop, hlax⟩ := ldFoldAddr_cases hld
-  obtain ⟨⟨sz, sg⟩, hl⟩ := Option.isSome_iff_exists.1 hl0
-  have hname : GoFV.Opt.LowerTerm.auxIsName tabs m.aux = true := by
-    rw [termVL_movDaddr hmop] at hmt; simpa using hmt
+  obtain ⟨x, m, hx, hm, hty, hai, hk, hxt, hut, hmop, hmt, hmsz, hua, ⟨l, hlf, hlop, hlax⟩,
+    hcase⟩ := frameFold_cases hld
+  obtain ⟨hname, -⟩ := movDaddr_atom hmop hmt
   obtain ⟨nn, hnn⟩ : ∃ nn, m.aux = some nn := by
     cases h : m.aux with
     | none => rw [h] at hname; cases hname
     | some nn => exact ⟨nn, rfl⟩
   rw [hnn] at hname
-  have hxt : termVL tabs x = true := termVL_ld hl
-  have hut : termVL tabs u = true := termVL_ld (by rw [hop]; exact hl)
+  have ha0 : ¬ IsTermL tabs M.get? x.args[0]! := fun ⟨w, hw, hw'⟩ => by
+    rw [hm] at hw; cases hw; rw [hmt] at hw'; cases hw'
+  have htop : ∀ F G : ID → Val, (∀ a, Sem.Refines (F a) (G a)) →
+      (F x.args[0]! = .poison ∨ F x.args[0]! = (framePtr tabs 0 nn).word) →
+      Sem.Refines
+        ((opValL tabs x.op (shpL tabs x.type) x.auxInt x.aux (x.args.toList.map F)).retypeL
+          (shpL tabs x.type))
+        ((opValL tabs u.op (shpL tabs u.type) u.auxInt u.aux (u.args.toList.map G)).retypeL
+          (shpL tabs u.type)) := by
+    intro F G hFG hF
+    rw [hty, hai, hua, hnn]
+    rcases hcase with ⟨hl0, hop, hxa, hsz, huargs⟩ | ⟨hop, huop, hsz, hw, huargs⟩
+    · obtain ⟨⟨sz, sg⟩, hl⟩ := Option.isSome_iff_exists.1 hl0
+      obtain ⟨hg, hmd⟩ := ldOp_arm hl
+      have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := by rw [args_two hsz]
+      have hul : u.args.toList = [m.args[0]!, x.args[1]!] := by rw [huargs]
+      rw [hop, hxa, hxl, hul]
+      simp only [List.map_cons, List.map_nil]
+      rw [opValL_ld hg hmd hl, opValL_ld hg hmd hl]
+      exact retypeL_mono _ (ldVal_frameFold hname hk hF (hFG _) _ _ _ _)
+    · have hxl : x.args.toList = [x.args[0]!] := by rw [args_one hsz]
+      have hul : u.args.toList = [m.args[0]!] := by rw [huargs]
+      rw [hop, huop, hxl, hul]
+      simp only [List.map_cons, List.map_nil, opValL_addConst, opValL_movDaddr]
+      exact addConst_frameFold hname hk hw hF _
   have hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
       Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) :=
-    fun ρ _ hF n y _ => ldFold_den hx hl hop hty hxa hsz hk hai hm hmt (hua.trans hnn) hname
-      huargs (by
+    fun ρ _ hF n y _ => framePut_den hx hxt hut ha0 (n := nn) (by
         rcases hF _ l nn (by rw [hD]; exact hlf) hlop (by rw [hlax, hnn]) with h | ⟨h, -⟩
         · exact .inl h
-        · exact .inr h) n y
+        · exact .inr h) htop n y
   have hcl : C v → ∀ a ∈ u.args, C a := fun hv a ha => by
     have hxa' := closed_args hI.closed hx hv
-    have h0 : C x.args[0]! := hxa' _ (by rw [getElem!_pos x.args 0 (by omega)]; exact Array.getElem_mem _)
-    rw [huargs] at ha
-    simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
-    rcases ha with rfl | rfl
-    · exact closed_args hI.closed hm h0 _
-        (by rw [getElem!_pos m.args 0 (by omega)]; exact Array.getElem_mem _)
-    · exact hxa' _ (by rw [getElem!_pos x.args 1 (by omega)]; exact Array.getElem_mem _)
+    have hsz0 : 0 < x.args.size := by
+      rcases hcase with ⟨-, -, -, h, -⟩ | ⟨-, -, h, -, -⟩ <;> omega
+    have h0 : C x.args[0]! :=
+      hxa' _ (by rw [getElem!_pos x.args 0 hsz0]; exact Array.getElem_mem _)
+    have hm0 : C m.args[0]! := closed_args hI.closed hm h0 _
+      (by rw [getElem!_pos m.args 0 (by omega)]; exact Array.getElem_mem _)
+    rcases hcase with ⟨-, -, -, hsz, huargs⟩ | ⟨-, -, -, -, huargs⟩
+    · rw [huargs] at ha
+      simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
+      rcases ha with rfl | rfl
+      · exact hm0
+      · exact hxa' _ (by rw [getElem!_pos x.args 1 (by omega)]; exact Array.getElem_mem _)
+    · rw [huargs] at ha
+      simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
+      rw [ha]; exact hm0
   refine ⟨{ closed := put_closed hcl hI.closed
             sub := hI.sub
             typed := fun ρ h => put_typed hx hty (by rw [hxt, hut]) (hI.typed ρ h)
@@ -1226,10 +1288,10 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
           exact replayL_inv hs hD evs _ M' B B' _ h hI2
             (hB1.mono (g := id) (fun _ h => h) hI1.typed fun ρ _ _ n y _ => by
               rw [rename_den hx1 ht ht']; exact Sem.Refines.refl _)
-        · -- a frame variable's address folded into a load (`ldFoldAddr`)
+        · -- a frame variable's address folded into a load or an `ADDconst` (`frameFold`)
           split at h
           · rename_i u hld
-            obtain ⟨hI', hstep⟩ := hI.ldFold hD hld
+            obtain ⟨hI', hstep⟩ := hI.frameFold hD hld
             exact replayL_inv hs hD evs _ M' B B' C h hI'
               (hB.mono (g := id) (fun _ h => h) hI.typed hstep)
           · cases h

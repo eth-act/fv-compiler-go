@@ -65,7 +65,7 @@ structure RuleFactsL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List
   htop : Pat.topOKL ((envL tabs M I).ty []) r.pat = true
   hargsL : Pat.argsOKL (envL tabs M I).ty [] r.pat = true
   hfit : resFitsL ((envL tabs M I).ty []) r.result = true
-  hadr : Pat.addrOKL (envL tabs M I).aux (envL tabs M I).auxInt [] r.pat = true
+  hadr : Pat.addrOKL (envL tabs M I).ty (envL tabs M I).aux (envL tabs M I).auxInt [] r.pat = true
   hleaves : leavesOK M I [] r.pat = true
   hres : resultOKL tabs M (envL tabs M I) r.pat (stEvL tabs M r defs I) (stOrL tabs r defs)
     (stσL tabs M r I) I r xv defs = true

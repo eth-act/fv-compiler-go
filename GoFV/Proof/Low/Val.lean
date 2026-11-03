@@ -29,9 +29,9 @@ open GoFV.Proof.Pass.Rewrite (LM Marked listedMarks_sound listedDefs_of_marked c
 
 /-! ## `atomsOKL`, `liveOKL`, `finalOKL` -/
 
-theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hax : u.aux = m.aux) :
-    termVL tabs u = termVL tabs m := by
-  unfold termVL; rw [hop, hax]
+theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hai : u.auxInt = m.auxInt)
+    (hax : u.aux = m.aux) : termVL tabs u = termVL tabs m := by
+  unfold termVL; rw [hop, hai, hax]
 
 theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = true) :
     f.blocks = g.blocks ∧ ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ fb, f.block? b = some fb ∧
@@ -164,7 +164,7 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv (.inl hr)
     have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
     have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
-    have htt := termVL_congr (tabs := tabs) hop hax
+    have htt := termVL_congr (tabs := tabs) hop hai hax
     by_cases ht : termVL tabs m = true
     · rw [denT_succ hm ht, denT_succ hL (htt ▸ ht), hop, hty, hai, hax]
       apply retypeL_mono; apply opValL_mono_term ht

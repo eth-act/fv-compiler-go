@@ -239,6 +239,23 @@ theorem addrAt_name {tabs : Tables} {act : Nat} {n : AuxRef} (hn : auxIsName tab
     simp only [addrAt, hd]
   · cases hn
 
+/-- A pointer's word moved by an offset that keeps it inside its block's window addresses the
+moved pointer (`Ptr.ofAddr_add_of_inWindow`). -/
+theorem addr_word {p : Ptr} {k : BitVec 64} (hw : (p.add k).inWindow = true) :
+    Arm64.addr p.word k = some (p.add k) := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩
+  · rw [h]; rfl
+  · rw [h]
+    simp only [Arm64.addr, Arm64.reg, BitVec.setWidth_eq, Option.map_some, Option.some.injEq]
+    have he : Ptr.ofAddr a = p := Ptr.ofAddr_addr hc ha
+    rw [Ptr.ofAddr_add_of_inWindow (by rw [he]; exact hw), he]
+
+/-- A frame block's offsets below `2^24` are inside its window. -/
+theorem frame_inWindow (tabs : Tables) (act : Nat) (n : AuxRef) {k : BitVec 64}
+    (hk : k.toNat < 2 ^ 24) : (⟨frameBlk tabs act n, k⟩ : Ptr).inWindow = true := by
+  unfold frameBlk
+  split <;> simp [Ptr.inWindow, Blk.window?, hk]
+
 /-- A frame variable's address as a word, moved by an offset inside the frame block's window, is
 the variable's address at that offset. -/
 theorem addr_framePtr (tabs : Tables) (act : Nat) (n : AuxRef) {k : BitVec 64}
@@ -246,16 +263,7 @@ theorem addr_framePtr (tabs : Tables) (act : Nat) (n : AuxRef) {k : BitVec 64}
     Arm64.addr (framePtr tabs act n).word k = some ⟨frameBlk tabs act n, k⟩ := by
   have hq : (framePtr tabs act n).add k = ⟨frameBlk tabs act n, k⟩ := by
     simp [framePtr, Ptr.add]
-  have hwin : ((framePtr tabs act n).add k).inWindow = true := by
-    rw [hq]
-    unfold frameBlk
-    split <;> simp [Ptr.inWindow, Blk.window?, hk]
-  rcases Ptr.word_cases (framePtr tabs act n) with ⟨-, h⟩ | ⟨hc, a, ha, h⟩
-  · rw [h, ← hq]; rfl
-  · rw [h]
-    simp only [Arm64.addr, Arm64.reg, BitVec.setWidth_eq, Option.map_some, Option.some.injEq]
-    have he : Ptr.ofAddr a = framePtr tabs act n := Ptr.ofAddr_addr hc ha
-    rw [Ptr.ofAddr_add_of_inWindow (by rw [he]; exact hwin), he, hq]
+  rw [addr_word (by rw [hq]; exact frame_inWindow tabs act n hk), hq]
 
 /-- **A frame variable's address folded into a store** (`ARM64.rules:881-905`): if the frame
 address `y` (`poison` or the variable's address word, `FrameVals`) moved by `k1` is the pointer
@@ -308,17 +316,19 @@ theorem loadN_outWindow {q : Ptr} (hq : q.inWindow = false) (ty : Ty) (n : Nat) 
     · simp only [Mem.load, hr _ (hs _)]
     · rfl
 
-/-- **A global symbol's address folded into a store** (`ARM64.rules:881-905`): if `MOVDaddr [k2]
-{n} b` (at a word shape) moved by `k1` is the pointer word of `x`, then the store at the aux `n`
-and offset `k = k1 + k2` writes at it, on any base. -/
-theorem addrRef_foldSym {tabs : Tables} {act : Nat} {n : AuxRef} {T : Ty}
-    (hT : wordShape T = true) {k1 k2 k : Int64} (hk : k.toInt = k1.toInt + k2.toInt)
-    {x b : Val} (h : AddrRef tabs act none k1 x ((movAddr tabs k2 (some n) [b]).retypeL T))
-    (z : Val) : AddrRef tabs act (some n) k x z := by
+/-- **A global symbol's or frame variable's address term folded into a store**
+(`ARM64.rules:881-905`): if `MOVDaddr [k2] {n} b` (at a word shape; a frame variable's in
+activation 0, `movAddr`) moved by `k1` is the pointer word of `x`, then the store at the aux `n`
+and offset `k = k1 + k2` writes at it, on any base, for small non-negative `k1` and `k`. -/
+theorem addrRef_foldSym {tabs : Tables} {n : AuxRef} {T : Ty}
+    (hT : wordShape T = true) {k1 k2 k : Int64} (h1 : offOK k1 = true) (hk0 : offOK k = true)
+    (hk : k.toInt = k1.toInt + k2.toInt)
+    {x b : Val} (h : AddrRef tabs 0 none k1 x ((movAddr tabs k2 (some n) [b]).retypeL T))
+    (z : Val) : AddrRef tabs 0 (some n) k x z := by
   have hw := wordShape_cases hT
   intro p hp
   have hy := h p hp
-  simp only [addrAt, movAddr, movPtr] at hy ⊢
+  simp only [addrAt, movAddr, symPtr] at hy ⊢
   split at hy
   · rename_i hd
     simp only [hd]
@@ -326,6 +336,27 @@ theorem addrRef_foldSym {tabs : Tables} {act : Nat} {n : AuxRef} {T : Ty}
       word_retypeL hw] at hy
     simp only [Ptr.word, Ptr.convertible, Arm64.addr, Ptr.add, Option.some.injEq] at hy
     rw [← hy, hk, BitVec.ofInt_add, BitVec.add_comm]
+  · rename_i hd
+    simp only [hd]
+    simp only [Option.elim_some, PtrOps.ptrRes] at hy
+    obtain ⟨-, a1, b1⟩ := offOK_toNat h1
+    obtain ⟨-, a0, b0⟩ := offOK_toNat hk0
+    split at hy
+    · rename_i hwin
+      rw [word_retypeL hw] at hy
+      have hk2 : 0 ≤ k2.toInt := by
+        refine Classical.byContradiction fun hneg => ?_
+        have : (BitVec.ofInt 64 k2.toInt).toNat ≥ 2 ^ 63 := by
+          rw [BitVec.toNat_ofInt]; omega
+        unfold frameBlk at hwin
+        split at hwin <;> simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq] at hwin <;> omega
+      have hsum : (BitVec.ofInt 64 k2.toInt + BitVec.ofInt 64 k1.toInt).toNat < 2 ^ 24 := by
+        rw [← BitVec.ofInt_add, BitVec.toNat_ofInt]; omega
+      rw [addr_word (by simp only [Ptr.add]; exact frame_inWindow tabs 0 _ hsum)] at hy
+      simp only [Ptr.add, Option.some.injEq] at hy
+      rw [← hy, hk, BitVec.ofInt_add, BitVec.add_comm]
+    · simp only [retypeL_poison, Arm64.addr, Arm64.reg] at hy
+      cases hy
   · simp only [Option.elim_none, retypeL_poison, Arm64.addr, Arm64.reg] at hy
     cases hy
 
