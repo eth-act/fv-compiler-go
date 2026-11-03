@@ -1,0 +1,878 @@
+import GoFV.Proof.RetypeL
+import GoFV.Proof.Speculate
+import GoFV.Opt.ScheduleCheck
+
+/-!
+# `schedule` on `runSched`: what a value's class says about its evaluation
+
+The classes of `scheduleCheck` (`GoFV.Opt.ScheduleCheck.cls`) under faulting evaluation
+(`LMode.faulting`, `runSched` and `runLF`):
+
+* `evalValueL_safe`: a `Cls.safe` value evaluates whenever its arguments have registers;
+* `evalValueL_load`: a `Cls.load` value (`faultOp`) evaluates or panics with `nilDeref` of its
+  last argument's memory;
+* `evalValueL_panic_info`: a value that panics may panic (`mayPanic`); a `Cls.load` or
+  `Cls.nil` one panics with `nilDeref` of its last argument's memory, and a load or nil check
+  that panics has a pointer-like first argument;
+* nil checks: an evaluated one returns its pointer (`evalValueL_nc_ok`); a nil check of a
+  pointer word on a memory evaluates or panics with `nilDeref` of it (`evalValueL_nc_word`);
+* a symbolic `symAddrOp` (`MOV*load`, `MOV*store`, `MOVDaddr` at a symbol or frame variable)
+  ignores its first argument's value (`evalValueL_arg0`), which `schedule`'s `SPanchored` bypass
+  changes.
+-/
+
+namespace GoFV.Proof.SchedL
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ScheduleCheck GoFV.Proof
+
+/-- `r'` evaluates where `r` does, alike (`stuck` messages aside). -/
+def ResSim (r r' : Res Val) : Prop :=
+  (∀ y, r = .ok y → r' = .ok y) ∧ (∀ e m, r = .panic e m → r' = .panic e m)
+
+theorem ResSim.of_eq {r r' : Res Val} (h : r' = r) : ResSim r r' :=
+  ⟨fun _ hy => h ▸ hy, fun _ _ hm => h ▸ hm⟩
+
+/-! ## Arguments -/
+
+theorem mapM_ofOption_spec {m : ID → String} {r : ID → Option Val} :
+    ∀ {l : List ID} {L : List Val}, l.mapM (fun a => Res.ofOption (m a) (r a)) = .ok L →
+      L.length = l.length ∧ ∀ (k : Nat) a, l[k]? = some a → ∃ z, r a = some z ∧ L[k]? = some z
+  | [], L, h => by
+    rw [List.mapM_nil] at h; cases h; exact ⟨rfl, fun _ _ h => by simp at h⟩
+  | a :: l, L, h => by
+    rw [List.mapM_cons] at h
+    cases ha : r a with
+    | none => rw [ha] at h; cases h
+    | some z =>
+      rw [ha] at h
+      change (l.mapM (fun a => Res.ofOption (m a) (r a))).bind (fun L' => .ok (z :: L')) = _ at h
+      cases hl : l.mapM (fun a => Res.ofOption (m a) (r a)) with
+      | panic e mm => rw [hl] at h; cases h
+      | stuck msg => rw [hl] at h; cases h
+      | ok L' =>
+        rw [hl] at h; cases h
+        obtain ⟨h1, h2⟩ := mapM_ofOption_spec hl
+        refine ⟨by simp [h1], fun k b hb => ?_⟩
+        cases k with
+        | zero => simp at hb; subst hb; exact ⟨z, ha, rfl⟩
+        | succ k => exact h2 k b (by simpa using hb)
+
+/-- The arguments `evalValueL` reads. -/
+abbrev argsM (fr : Frame) (v : Value) : Res (List Val) :=
+  v.args.toList.mapM fun a => Res.ofOption s!"v{v.id}: argument v{a} has no value" (fr.regs[a]?).join
+
+theorem evalValueL_bind {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} (hm : argsM fr v = .ok argv) :
+    evalValueL md env ctx fr v =
+      (evalOpL md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other)).bind
+        (fun r => .ok (md.retype (ctx.tys[v.id]?.getD .other) r)) := by
+  unfold evalValueL; simp only [argsM] at hm; rw [hm]; rfl
+
+theorem argsM_ok {fr : Frame} {v : Value} (h : ∀ a ∈ v.args, ∃ z, fr.regs[a]? = some (some z)) :
+    ∃ argv, argsM fr v = .ok argv :=
+  mapM_ofOption_ok fun a ha => by
+    obtain ⟨z, hz⟩ := h a (Array.mem_toList_iff.1 ha)
+    exact ⟨z, by rw [hz]; rfl⟩
+
+/-- The `k`-th argument value is the `k`-th argument's register. -/
+theorem argsM_get {fr : Frame} {v : Value} {argv : List Val} (h : argsM fr v = .ok argv)
+    {k : Nat} {a : ID} (ha : v.args[k]? = some a) :
+    ∃ z, fr.regs[a]? = some (some z) ∧ argv[k]? = some z := by
+  obtain ⟨-, h2⟩ := mapM_ofOption_spec h
+  obtain ⟨z, hz, hk⟩ := h2 k a (by rw [Array.getElem?_toList]; exact ha)
+  refine ⟨z, ?_, hk⟩
+  cases hr : fr.regs[a]? with
+  | none => rw [hr] at hz; cases hz
+  | some o => rw [hr] at hz; simp at hz; rw [hz]
+
+theorem argsM_length {fr : Frame} {v : Value} {argv : List Val} (h : argsM fr v = .ok argv) :
+    argv.length = v.args.size := by
+  simpa using (mapM_ofOption_spec h).1
+
+/-- The last argument value is the last argument's register. -/
+theorem argsM_last {fr : Frame} {v : Value} {argv : List Val} (h : argsM fr v = .ok argv)
+    {z : Val} (hz : argv.getLast? = some z) :
+    ∃ ℓ, v.args.back? = some ℓ ∧ fr.regs[ℓ]? = some (some z) := by
+  have hl := argsM_length h
+  have hne : argv ≠ [] := by intro h0; rw [h0] at hz; cases hz
+  have hpos : 0 < argv.length := List.length_pos_iff.2 hne
+  have hk : argv[argv.length - 1]? = some z := by
+    rw [List.getLast?_eq_getElem?] at hz; exact hz
+  have hsz : v.args.size - 1 < v.args.size := by omega
+  obtain ⟨y, hy, hk'⟩ := argsM_get h (k := v.args.size - 1) (a := v.args[v.args.size - 1])
+    (by simp [hsz])
+  rw [hl] at hk; rw [hk] at hk'; cases hk'
+  exact ⟨_, by simp [Array.back?, hsz], hy⟩
+
+/-- The first argument value is the first argument's register. -/
+theorem argsM_head {fr : Frame} {v : Value} {argv : List Val} (h : argsM fr v = .ok argv)
+    {z : Val} (hz : argv.head? = some z) :
+    ∃ p, v.args[0]? = some p ∧ fr.regs[p]? = some (some z) := by
+  have hl := argsM_length h
+  have hne : argv ≠ [] := by intro h0; rw [h0] at hz; cases hz
+  have hpos : 0 < v.args.size := by rw [← hl]; exact List.length_pos_iff.2 hne
+  obtain ⟨y, hy, hk⟩ := argsM_get h (k := 0) (a := v.args[0]) (by simp [hpos])
+  rw [List.head?_eq_getElem?] at hz; rw [hz] at hk; cases hk
+  exact ⟨_, by simp [hpos], hy⟩
+
+/-! ## Ops -/
+
+theorem actOps_generic {op : Op} (h : op ∈ actOps) : op.generic = false := by
+  simp only [actOps, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h <;>
+    subst h <;> rfl
+
+/-- `evalOpL` of an op of `actOps` is `arm64Op`. -/
+theorem evalOpL_act {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (h : v.op ∈ actOps) :
+    evalOpL faulting env ctx fr v argv ty = arm64Op faulting env ctx fr v argv ty := by
+  simp only [actOps, List.mem_cons, List.not_mem_nil, or_false] at h
+  unfold evalOpL
+  rcases h with h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h <;>
+    rw [h] <;> rfl
+
+/-- `evalOpL` of an arm64 op not in `actOps`: `atomicRoot` for a root, else `Arm64.evalPure`. -/
+theorem evalOpL_nonact {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (h : v.op ∉ actOps) :
+    evalOpL faulting env ctx fr v argv ty =
+      if isRoot v.op then atomicRoot v argv else pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
+  unfold evalOpL
+  simp only [hg, Bool.false_eq_true, ite_false]
+  split
+  all_goals first
+    | rfl
+    | (rename_i heq; exact absurd (by rw [heq]; decide) h)
+
+theorem mem_of_decide {op : Op} {l : List Op} (h : decide (op ∈ l) = true) : op ∈ l :=
+  of_decide_eq_true h
+
+/-! ## `nilFaults` -/
+
+theorem nilFaults_none_of {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val}
+    (h0 : v.op.faultOnNilArg0 = false) (h1 : v.op.faultOnNilArg1 = false) :
+    nilFaults faulting ctx v argv = none := by
+  unfold nilFaults
+  split
+  · rfl
+  · split
+    · simp [h0, h1]
+    · rfl
+
+theorem nilFaults_mem {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val} {m : Mem}
+    (h : nilFaults faulting ctx v argv = some m) : argv.getLast? = some (.mem m) := by
+  cases faulting
+  · simp [nilFaults] at h
+  · simp only [nilFaults, Bool.not_true, Bool.false_eq_true, ite_false] at h
+    cases hl : argv.getLast? with
+    | none => rw [hl] at h; simp at h
+    | some x =>
+      rw [hl] at h
+      cases x with
+      | mem m' =>
+        simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+        rw [h.2]
+      | _ => simp at h
+
+/-- The access `nilFaults` finds through the first argument, for an op that does not fault on
+its second. -/
+theorem nilFaults_at0 {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val} {m : Mem}
+    (h1 : v.op.faultOnNilArg1 = false) (h : nilFaults faulting ctx v argv = some m) :
+    ∃ a q, argv.head? = some a ∧ q.nilFault = true ∧
+      (if v.op.auxType == .SymOff then symAddr ctx v a else Arm64.addr a 0) = some q := by
+  cases faulting
+  · simp [nilFaults] at h
+  · simp only [nilFaults, Bool.not_true, Bool.false_eq_true, ite_false] at h
+    cases hl : argv.getLast? with
+    | none => rw [hl] at h; simp at h
+    | some x =>
+      rw [hl] at h
+      cases x with
+      | mem m' =>
+        simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+        obtain ⟨hc, -⟩ := h
+        simp only [h1, Bool.not_false, ite_true, Option.map_none, Option.getD_none,
+          Bool.or_false, Bool.and_eq_true] at hc
+        obtain ⟨-, hc⟩ := hc
+        split at hc
+        · simp at hc
+        · cases hh : argv.head? with
+          | none => rw [hh] at hc; simp at hc
+          | some a =>
+            rw [hh] at hc
+            simp only [Option.bind_some] at hc
+            cases hq : (if v.op.auxType == .SymOff then symAddr ctx v a else Arm64.addr a 0) with
+            | none => rw [hq] at hc; simp at hc
+            | some q => rw [hq] at hc; exact ⟨a, q, rfl, by simpa using hc, hq⟩
+      | _ => simp at h
+
+/-- A symbolic value's address (`symAddr`) is a global or frame address, whatever its base. -/
+theorem symAddr_symbolic {ctx : Ctx} {v : Value} (h : symbolic ctx.tabs v = true) :
+    ∃ q, q.blk ≠ .nil ∧ ∀ a, symAddr ctx v a = some q := by
+  unfold symbolic at h
+  cases hx : v.aux with
+  | none => simp [hx] at h
+  | some n =>
+    rw [hx] at h
+    simp only [Option.bind_some] at h
+    cases hd : ctx.tabs.aux? n with
+    | none => simp [hd] at h
+    | some d =>
+      rw [hd] at h
+      obtain ⟨_, kind⟩ := d
+      cases kind with
+      | sym name =>
+        exact ⟨⟨.global name.toStringLossy, BitVec.ofInt 64 v.auxInt.toInt⟩, by simp,
+          fun _ => by simp [symAddr, hx, hd]⟩
+      | name =>
+        refine ⟨⟨frameBlk ctx.tabs ctx.act n, BitVec.ofInt 64 v.auxInt.toInt⟩, ?_,
+          fun _ => by simp [symAddr, hx, hd]⟩
+        simp only [frameBlk]; split <;> simp
+      | _ => simp at h
+
+/-- A nil-page access through `symAddr`: the base without a symbol, at some offset. -/
+theorem symAddr_nilFault {ctx : Ctx} {v : Value} {a : Val} {q : Ptr}
+    (h : symAddr ctx v a = some q) (hq : q.nilFault = true) : ∃ k, Arm64.addr a k = some q := by
+  unfold symAddr at h
+  split at h
+  · rename_i n hx
+    split at h
+    · cases h; simp [Ptr.nilFault] at hq
+    · cases h; simp only [Ptr.nilFault, frameBlk, Bool.and_eq_true, beq_iff_eq] at hq
+      split at hq <;> simp at hq
+    · cases h
+  · exact ⟨_, h⟩
+
+/-- `nilFaults` of a symbolic `symAddrOp` finds nothing. -/
+theorem nilFaults_symbolic {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val}
+    (hop : v.op ∈ symAddrOps) (hs : symbolic ctx.tabs v = true) :
+    nilFaults faulting ctx v argv = none := by
+  obtain ⟨q, hq, hall⟩ := symAddr_symbolic hs
+  have hf : v.op.faultOnNilArg1 = false ∧ v.op.auxType = .SymOff := by
+    simp only [symAddrOps, ldOps, stOps, List.mem_append, List.mem_cons, List.not_mem_nil,
+      or_false] at hop
+    rcases hop with ((h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h|h|h|h|h|h|h|h))|h <;>
+      rw [h] <;> exact ⟨rfl, rfl⟩
+  cases hn : nilFaults faulting ctx v argv with
+  | none => rfl
+  | some m =>
+    obtain ⟨a, q', -, hq', hs'⟩ := nilFaults_at0 hf.1 hn
+    rw [hf.2, hall a] at hs'
+    simp at hs'; subst hs'
+    simp [Ptr.nilFault, hq] at hq'
+
+/-! ## Pointer-like arguments -/
+
+/-- An address can be formed from `a` (`Arm64.addr`). -/
+def PtrIsh (a : Val) : Prop := ∃ k q, Arm64.addr a k = some q
+
+/-- A pointer-like value of a word shape is a pointer word. -/
+theorem asPtrWord_of_ptrIsh {a : Val} {t : Ty} (hw : wordShape t = true) (ht : a.hasTy t = true)
+    (h : PtrIsh a ∨ ∃ q, a.asPtrWord = some q) : ∃ q, a.asPtrWord = some q := by
+  rcases h with ⟨k, q, hq⟩ | h
+  · cases a with
+    | ptr p => exact ⟨p, rfl⟩
+    | int w x =>
+      cases t with
+      | int w' =>
+        cases w' <;> simp [wordShape] at hw
+        simp only [Val.hasTy, beq_iff_eq] at ht; subst ht; exact ⟨_, rfl⟩
+      | ptr e => cases w <;> simp [Val.hasTy] at ht; exact ⟨_, rfl⟩
+      | _ => simp [wordShape] at hw
+    | poison => simp [Arm64.addr, Arm64.reg] at hq
+    | bool b =>
+      cases t with
+      | int w' => simp [Val.hasTy] at ht
+      | ptr e => simp [Val.hasTy] at ht
+      | _ => simp [wordShape] at hw
+    | _ => simp [Arm64.addr, Arm64.reg] at hq
+  · exact h
+
+/-! ## `arm64Op` by class (faulting) -/
+
+theorem arm64Op_actSafe {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (h : v.op ∈ actSafeOps) : ∃ y, arm64Op true env ctx fr v argv ty = .ok y := by
+  simp only [actSafeOps, List.mem_cons, List.not_mem_nil, or_false] at h
+  have hnf : nilFaults true ctx v argv = none := by
+    apply nilFaults_none_of <;> rcases h with h|h|h|h|h <;> rw [h] <;> rfl
+  unfold arm64Op
+  simp only [hnf]
+  rcases h with h|h|h|h|h <;> rw [h] <;> dsimp only <;> (repeat' split) <;> exact ⟨_, rfl⟩
+
+/-- The body of `arm64Op` for a `faultOp` evaluates. -/
+theorem arm64Op_fault_none {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (h : v.op ∈ faultOps) (hnf : nilFaults true ctx v argv = none) :
+    ∃ y, arm64Op true env ctx fr v argv ty = .ok y := by
+  simp only [faultOps, ldOps, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at h
+  unfold arm64Op
+  simp only [hnf]
+  rcases h with (h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h) <;> rw [h] <;> dsimp only <;>
+    first | exact ⟨_, rfl⟩ | ((repeat' split) <;> exact ⟨_, rfl⟩)
+
+theorem arm64Op_fault {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (h : v.op ∈ faultOps) : (∃ y, arm64Op true env ctx fr v argv ty = .ok y) ∨
+      ∃ m, argv.getLast? = some (.mem m) ∧ arm64Op true env ctx fr v argv ty = .panic .nilDeref m := by
+  cases hnf : nilFaults true ctx v argv with
+  | some m => exact .inr ⟨m, nilFaults_mem hnf, by unfold arm64Op; simp only [hnf]⟩
+  | none => exact .inl (arm64Op_fault_none h hnf)
+
+theorem ldOps_sub {op : Op} (h : op ∈ ldOps) : op ∈ faultOps ∧ op ∈ symAddrOps ∧ op ∈ actOps ∧
+    op.faultOnNilArg1 = false ∧ op.auxType = .SymOff := by
+  simp only [ldOps, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h <;> subst h <;> decide
+
+theorem faultOps_act {op : Op} (h : op ∈ faultOps) : op ∈ actOps := by
+  simp only [faultOps, ldOps, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with (h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h) <;> subst h <;> decide
+
+theorem symAddrOps_act {op : Op} (h : op ∈ symAddrOps) : op ∈ actOps := by
+  simp only [symAddrOps, ldOps, stOps, List.mem_append, List.mem_cons, List.not_mem_nil,
+    or_false] at h
+  rcases h with ((h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h|h|h|h|h|h|h|h))|h <;> subst h <;>
+    decide
+
+theorem actSafeOps_act {op : Op} (h : op ∈ actSafeOps) : op ∈ actOps := by
+  simp only [actSafeOps, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with h|h|h|h|h <;> subst h <;> decide
+
+/-- A load at a symbol or frame variable evaluates. -/
+theorem arm64Op_symld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (h : v.op ∈ ldOps) (hs : symbolic ctx.tabs v = true) :
+    ∃ y, arm64Op true env ctx fr v argv ty = .ok y :=
+  arm64Op_fault_none (ldOps_sub h).1 (nilFaults_symbolic (ldOps_sub h).2.1 hs)
+
+/-- A load panics only with `nilDeref` of its memory, at a pointer-like base. -/
+theorem arm64Op_ld_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} {e : Panic} {m : Mem} (h : v.op ∈ ldOps)
+    (hp : arm64Op true env ctx fr v argv ty = .panic e m) :
+    e = .nilDeref ∧ argv.getLast? = some (.mem m) ∧ ∃ a, argv.head? = some a ∧ PtrIsh a := by
+  obtain ⟨hf, -, -, h1, hsym⟩ := ldOps_sub h
+  cases hnf : nilFaults true ctx v argv with
+  | none =>
+    obtain ⟨y, hy⟩ := arm64Op_fault_none (ty := ty) (env := env) (fr := fr) hf hnf
+    rw [hy] at hp; cases hp
+  | some m' =>
+    have hp' : arm64Op true env ctx fr v argv ty = .panic .nilDeref m' := by
+      unfold arm64Op; simp only [hnf]
+    rw [hp'] at hp; cases hp
+    refine ⟨rfl, nilFaults_mem hnf, ?_⟩
+    obtain ⟨a, q, ha, hq, hs⟩ := nilFaults_at0 h1 hnf
+    rw [hsym] at hs
+    simp only [beq_self_eq_true, ite_true] at hs
+    obtain ⟨k, hk⟩ := symAddr_nilFault hs hq
+    exact ⟨a, ha, k, q, hk⟩
+
+/-- A `faultOp` panics only with `nilDeref` of its memory. -/
+theorem arm64Op_fault_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} {e : Panic} {m : Mem} (h : v.op ∈ faultOps)
+    (hp : arm64Op true env ctx fr v argv ty = .panic e m) :
+    e = .nilDeref ∧ argv.getLast? = some (.mem m) := by
+  rcases arm64Op_fault (env := env) (fr := fr) (ty := ty) (argv := argv) h with ⟨y, hy⟩ | ⟨m', hm, hy⟩
+  · rw [hy] at hp; cases hp
+  · rw [hy] at hp; cases hp; exact ⟨rfl, hm⟩
+
+/-! ## Nil checks -/
+
+theorem nilCheck_cases {op : Op} (h : op.nilCheck = true) :
+    op = .NilCheck ∨ op = .ARM64LoweredNilCheck := by
+  unfold Op.nilCheck at h
+  split at h
+  · exact .inr rfl
+  · exact .inl rfl
+  · cases h
+
+theorem memRoot_nc_ok {ctx : Ctx} {w : Value} {argv : List Val} {y : Val} (hw : w.op = .NilCheck)
+    (h : memRoot ctx w argv = .ok y) : ∃ a m, argv = [a, .mem m] ∧ y = a := by
+  unfold memRoot at h
+  rw [hw] at h
+  split at h
+  all_goals first
+    | (simp_all; done)
+    | (split at h
+       · rename_i p hp
+         by_cases hb : (p.blk == .nil) = true
+         · simp [hb] at h
+         · simp only [hb, Bool.false_eq_true, ite_false, Res.ok.injEq] at h
+           subst h
+           exact ⟨_, _, rfl, rfl⟩
+       · cases h)
+    | (split at h <;> cases h)
+
+theorem memRoot_nc_panic {ctx : Ctx} {w : Value} {argv : List Val} {e : Panic} {m : Mem}
+    (hw : w.op = .NilCheck) (h : memRoot ctx w argv = .panic e m) :
+    e = .nilDeref ∧ ∃ a, argv = [a, .mem m] ∧ ∃ p, a.asPtrWord = some p := by
+  unfold memRoot at h
+  rw [hw] at h
+  split at h
+  all_goals first
+    | (simp_all; done)
+    | (split at h
+       · rename_i p hp
+         by_cases hb : (p.blk == .nil) = true
+         · simp only [hb, ite_true, Res.panic.injEq] at h
+           obtain ⟨rfl, rfl⟩ := h
+           exact ⟨rfl, _, rfl, p, hp⟩
+         · simp [hb] at h
+       · cases h)
+    | (split at h <;> cases h)
+
+theorem memRoot_nc_word {ctx : Ctx} {w : Value} {a : Val} {m : Mem} {p : Ptr}
+    (hw : w.op = .NilCheck) (hp : a.asPtrWord = some p) :
+    memRoot ctx w [a, .mem m] = .ok a ∨ memRoot ctx w [a, .mem m] = .panic .nilDeref m := by
+  unfold memRoot
+  rw [hw]
+  simp only [hp]
+  split
+  · exact .inr rfl
+  · exact .inl rfl
+
+theorem evalOpL_ncG {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (h : v.op = .NilCheck) :
+    evalOpL faulting env ctx fr v argv ty = memRoot ctx v argv := by
+  unfold evalOpL evalOp
+  rw [h]
+  rfl
+
+theorem evalOpL_ncL {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (h : v.op = .ARM64LoweredNilCheck) :
+    evalOpL faulting env ctx fr v argv ty =
+      match nilFaults faulting ctx v argv with
+      | some m => .panic .nilDeref m
+      | none => memRoot ctx { v with op := .NilCheck } argv := by
+  rw [evalOpL_act (by rw [h]; decide)]
+  unfold arm64Op
+  rw [h]
+  rfl
+
+/-- A nil check's evaluation does not read the shape it is evaluated at. -/
+theorem evalOpL_nc_ty {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty ty' : Ty} (h : v.op.nilCheck = true) :
+    evalOpL faulting env ctx fr v argv ty = evalOpL faulting env ctx fr v argv ty' := by
+  rcases nilCheck_cases h with h | h
+  · rw [evalOpL_ncG h, evalOpL_ncG h]
+  · rw [evalOpL_ncL h, evalOpL_ncL h]
+
+/-- An evaluated nil check returns its pointer. -/
+theorem evalOpL_nc_ok {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} {y : Val} (h : v.op.nilCheck = true)
+    (ho : evalOpL faulting env ctx fr v argv ty = .ok y) : ∃ a m, argv = [a, .mem m] ∧ y = a := by
+  rcases nilCheck_cases h with h | h
+  · rw [evalOpL_ncG h] at ho; exact memRoot_nc_ok h ho
+  · rw [evalOpL_ncL h] at ho
+    split at ho
+    · cases ho
+    · exact memRoot_nc_ok rfl ho
+
+/-- A nil check that panics: `nilDeref` of its memory, at a pointer-like pointer. -/
+theorem evalOpL_nc_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} {e : Panic} {m : Mem} (h : v.op.nilCheck = true)
+    (ho : evalOpL true env ctx fr v argv ty = .panic e m) :
+    e = .nilDeref ∧ argv.getLast? = some (.mem m) ∧
+      ∃ a, argv.head? = some a ∧ (PtrIsh a ∨ ∃ p, a.asPtrWord = some p) := by
+  have hm : ∀ a, argv = [a, .mem m] → argv.getLast? = some (.mem m) := by
+    intro a h; subst h; rfl
+  rcases nilCheck_cases h with h | h
+  · rw [evalOpL_ncG h] at ho
+    obtain ⟨he, a, ha, p, hp⟩ := memRoot_nc_panic h ho
+    exact ⟨he, hm a ha, a, by rw [ha]; rfl, .inr ⟨p, hp⟩⟩
+  · rw [evalOpL_ncL h] at ho
+    split at ho
+    · rename_i m' hnf
+      cases ho
+      refine ⟨rfl, nilFaults_mem hnf, ?_⟩
+      obtain ⟨a, q, ha, hq, hs⟩ := nilFaults_at0 (by rw [h]; rfl) hnf
+      have hat : (Op.ARM64LoweredNilCheck.auxType == .SymOff) = false := rfl
+      rw [h, hat] at hs
+      exact ⟨a, ha, .inl ⟨0, q, by simpa using hs⟩⟩
+    · obtain ⟨he, a, ha, p, hp⟩ := memRoot_nc_panic rfl ho
+      exact ⟨he, hm a ha, a, by rw [ha]; rfl, .inr ⟨p, hp⟩⟩
+
+/-- A lowered nil check of a pointer word on a memory evaluates or panics with `nilDeref` of it. -/
+theorem evalOpL_nc_word {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} {a : Val}
+    {m : Mem} {p : Ptr} (h : v.op = .ARM64LoweredNilCheck) (hp : a.asPtrWord = some p) :
+    (∃ y, evalOpL true env ctx fr v [a, .mem m] ty = .ok y) ∨
+      evalOpL true env ctx fr v [a, .mem m] ty = .panic .nilDeref m := by
+  rw [evalOpL_ncL h]
+  split
+  · rename_i m' hnf
+    have := nilFaults_mem hnf
+    simp at this; subst this
+    exact .inr rfl
+  · rcases memRoot_nc_word (ctx := ctx) (w := { v with op := .NilCheck }) (m := m) rfl hp with h | h
+    · exact .inl ⟨a, h⟩
+    · exact .inr h
+
+/-! ## Symbolic `symAddrOp`s ignore their base -/
+
+theorem ite_stuck_ne_ok {c : Prop} [Decidable c] {s1 s2 : String} {y : Val} :
+    (if c then Res.stuck s1 else Res.stuck s2) ≠ (.ok y : Res Val) := by
+  split <;> nofun
+
+theorem ite_stuck_ne_panic {c : Prop} [Decidable c] {s1 s2 : String} {e : Panic} {m : Mem} :
+    (if c then Res.stuck s1 else Res.stuck s2) ≠ (.panic e m : Res Val) := by
+  split <;> nofun
+
+theorem arm64Op_arg0 {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} {a a' : Val}
+    {rest : List Val} (hop : v.op ∈ symAddrOps) (hs : symbolic ctx.tabs v = true) :
+    ResSim (arm64Op true env ctx fr v (a :: rest) ty) (arm64Op true env ctx fr v (a' :: rest) ty) := by
+  obtain ⟨q, -, hall⟩ := symAddr_symbolic hs
+  have hn : ∀ l, nilFaults true ctx v l = none := fun l => nilFaults_symbolic hop hs
+  unfold arm64Op
+  simp only [hn]
+  simp only [symAddrOps, ldOps, stOps, List.mem_append, List.mem_cons, List.not_mem_nil,
+    or_false] at hop
+  rcases hop with ((h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h|h|h|h|h|h|h|h))|h <;> rw [h] <;>
+    dsimp only <;> simp only [hall] <;>
+    exact ⟨fun y hy => by
+        split at hy <;> (try (obtain ⟨-, rfl⟩ := ‹_ ∧ rest = _›)) <;> simp_all [ite_stuck_ne_ok],
+      fun e m hm => by
+        split at hm <;> (try (obtain ⟨-, rfl⟩ := ‹_ ∧ rest = _›)) <;> simp_all [ite_stuck_ne_panic]⟩
+
+/-! ## Classes -/
+
+theorem cls_safe {tabs : Tables} {v : Value} (h : cls tabs v = .safe) :
+    (v.op.generic = true ∧ specSafeOp v.op = true) ∨
+      (v.op.generic = false ∧ ((v.op ∈ ldOps ∧ symbolic tabs v = true) ∨ v.op ∈ actSafeOps ∨
+        (v.op ∉ actOps ∧ isRoot v.op = false))) := by
+  unfold cls at h
+  split at h
+  · split at h
+    · exact .inl ⟨‹_›, ‹_›⟩
+    · cases h
+  · rename_i hg
+    refine .inr ⟨by simpa using hg, ?_⟩
+    split at h
+    · cases h
+    split at h
+    · rename_i hl
+      simp only [ldOp, Bool.and_eq_true, decide_eq_true_eq] at hl
+      exact .inl hl
+    split at h
+    · cases h
+    split at h
+    · rename_i ha; exact .inr (.inl (of_decide_eq_true ha))
+    split at h
+    · rename_i hn
+      simp only [actOp, Bool.and_eq_true, Bool.not_eq_true', decide_eq_false_iff_not] at hn
+      exact .inr (.inr hn)
+    · cases h
+
+theorem cls_load {tabs : Tables} {v : Value} (h : cls tabs v = .load) :
+    v.op.generic = false ∧ v.op ∈ faultOps := by
+  unfold cls at h
+  split at h
+  · split at h <;> cases h
+  · rename_i hg
+    split at h
+    · cases h
+    split at h
+    · cases h
+    split at h
+    · rename_i hf; exact ⟨by simpa using hg, of_decide_eq_true hf⟩
+    split at h
+    · cases h
+    split at h <;> cases h
+
+theorem cls_nil {tabs : Tables} {v : Value} (h : cls tabs v = .nil) :
+    v.op = .ARM64LoweredNilCheck ∧ v.args.size = 2 := by
+  unfold cls at h
+  split at h
+  · split at h <;> cases h
+  · split at h
+    · rename_i hn; simpa using hn
+    split at h
+    · cases h
+    split at h
+    · cases h
+    split at h
+    · cases h
+    split at h <;> cases h
+
+theorem mayPanic_false {tabs : Tables} {v : Value} (h : mayPanic tabs v = false) :
+    (v.op.generic = true ∧ v.op.call = false ∧ v.op.nilCheck = false) ∨
+      (v.op.generic = false ∧ cls tabs v = .safe) := by
+  unfold mayPanic at h
+  split at h
+  · rename_i hg
+    simp only [Bool.or_eq_false_iff] at h
+    exact .inl ⟨hg, h⟩
+  · rename_i hg
+    exact .inr ⟨by simpa using hg, by simpa using h⟩
+
+/-! ## Evaluation by class -/
+
+theorem evalOp_specSafe {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {L : List Val} {ty : Ty}
+    (hs : specSafeOp v.op = true) : ∃ r, evalOp env ctx fr v L ty = .ok r := by
+  have hroot : isRoot v.op = false := by
+    simp only [specSafeOp, Bool.and_eq_true, Bool.not_eq_true'] at hs; exact hs.1.1.1
+  have hne : ∀ op, isRoot op = true → v.op ≠ op := fun op h he => by rw [he] at hroot; simp_all
+  have hspec : v.op ≠ .Arg ∧ v.op ≠ .ArgIntReg := by
+    simp only [specSafeOp, Bool.and_eq_true, bne_iff_ne, ne_eq] at hs
+    exact ⟨hs.1.2, hs.2⟩
+  unfold evalOp
+  split
+  · exact ⟨_, rfl⟩
+  · exact absurd ‹_› hspec.1
+  · exact absurd ‹_› hspec.2
+  all_goals first
+    | exact absurd ‹v.op = _› (hne _ (by decide))
+    | exact ⟨_, rfl⟩
+    | skip
+  split
+  · exact ⟨_, rfl⟩
+  · rw [hroot]
+    exact ⟨_, rfl⟩
+
+/-- A `Cls.safe` value's op evaluates. -/
+theorem evalOpL_safe {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (hc : cls ctx.tabs v = .safe) : ∃ r, evalOpL true env ctx fr v argv ty = .ok r := by
+  rcases cls_safe hc with ⟨hg, hs⟩ | ⟨hg, (⟨hl, hs⟩ | ha | ⟨hna, hr⟩)⟩
+  · rw [evalOpL_generic _ _ _ _ _ _ hg]; exact evalOp_specSafe hs
+  · rw [evalOpL_act (ldOps_sub hl).2.2.1]; exact arm64Op_symld hl hs
+  · rw [evalOpL_act (actSafeOps_act ha)]; exact arm64Op_actSafe ha
+  · rw [evalOpL_nonact hg hna, hr]; exact ⟨_, rfl⟩
+
+theorem evalValueL_args_ok {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {r : Res Val} (h : evalValueL md env ctx fr v = r) (hr : ∀ msg, r ≠ .stuck msg) :
+    ∃ argv, argsM fr v = .ok argv := by
+  cases hm : argsM fr v with
+  | ok argv => exact ⟨argv, rfl⟩
+  | panic e m => exact absurd hm mapM_ofOption_ne_panic
+  | stuck msg =>
+    unfold evalValueL at h
+    simp only [argsM] at hm
+    rw [hm] at h
+    exact absurd h.symm (hr _)
+
+/-- **A `Cls.safe` value evaluates** wherever its arguments have registers. -/
+theorem evalValueL_safe {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    (hf : md.faulting = true) (hc : cls ctx.tabs v = .safe)
+    (hargs : ∀ a ∈ v.args, ∃ z, fr.regs[a]? = some (some z)) :
+    ∃ y, evalValueL md env ctx fr v = .ok y := by
+  obtain ⟨argv, hm⟩ := argsM_ok hargs
+  rw [evalValueL_bind hm, hf]
+  obtain ⟨r, hr⟩ := evalOpL_safe (env := env) (fr := fr) (argv := argv)
+    (ty := ctx.tys[v.id]?.getD .other) hc
+  rw [hr]
+  exact ⟨_, rfl⟩
+
+/-- **A `Cls.load` value evaluates or panics with `nilDeref` of its last argument's memory.** -/
+theorem evalValueL_load {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    (hf : md.faulting = true) (hc : cls ctx.tabs v = .load)
+    (hargs : ∀ a ∈ v.args, ∃ z, fr.regs[a]? = some (some z)) :
+    (∃ y, evalValueL md env ctx fr v = .ok y) ∨
+      ∃ ℓ m, v.args.back? = some ℓ ∧ fr.regs[ℓ]? = some (some (.mem m)) ∧
+        evalValueL md env ctx fr v = .panic .nilDeref m := by
+  obtain ⟨-, hfo⟩ := cls_load hc
+  obtain ⟨argv, hm⟩ := argsM_ok hargs
+  rw [evalValueL_bind hm, hf, evalOpL_act (faultOps_act hfo)]
+  rcases arm64Op_fault (env := env) (ctx := ctx) (fr := fr) (argv := argv)
+    (ty := ctx.tys[v.id]?.getD .other) hfo with ⟨y, hy⟩ | ⟨m, hl, hy⟩
+  · rw [hy]; exact .inl ⟨_, rfl⟩
+  · rw [hy]
+    obtain ⟨ℓ, hℓ, hr⟩ := argsM_last hm hl
+    exact .inr ⟨ℓ, m, hℓ, hr, rfl⟩
+
+/-- **What a panic says** (memory ops faulting): the value may panic; a `Cls.load` or `Cls.nil`
+one panics with `nilDeref` of its last argument's memory; a load or nil check that panics has a
+pointer-like first argument. -/
+theorem evalValueL_panic_info {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {e : Panic} {m : Mem} (hf : md.faulting = true)
+    (h : evalValueL md env ctx fr v = .panic e m) :
+    mayPanic ctx.tabs v = true ∧
+      ((cls ctx.tabs v = .load ∨ cls ctx.tabs v = .nil) →
+        e = .nilDeref ∧ ∃ ℓ, v.args.back? = some ℓ ∧ fr.regs[ℓ]? = some (some (.mem m))) ∧
+      ((v.op ∈ ldOps ∨ cls ctx.tabs v = .nil) →
+        ∃ p a, v.args[0]? = some p ∧ fr.regs[p]? = some (some a) ∧
+          (PtrIsh a ∨ ∃ q, a.asPtrWord = some q)) := by
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm, hf] at h
+  generalize ctx.tys[v.id]?.getD .other = ty at h
+  have ho : evalOpL true env ctx fr v argv ty = .panic e m := by
+    cases ho : evalOpL true env ctx fr v argv ty with
+    | ok r => rw [ho] at h; cases h
+    | stuck msg => rw [ho] at h; cases h
+    | panic e' m' => rw [ho] at h; cases h; rfl
+  refine ⟨?_, fun hc => ?_, fun hc => ?_⟩
+  · cases hp : mayPanic ctx.tabs v
+    · exfalso
+      rcases mayPanic_false hp with ⟨hg, hc, hn⟩ | ⟨-, hs⟩
+      · rw [evalOpL_generic _ _ _ _ _ _ hg] at ho
+        rcases evalOp_panic_op ho with h' | h'
+        · rw [hc] at h'; cases h'
+        · rw [h'] at hn; cases hn
+      · obtain ⟨r, hr⟩ := evalOpL_safe (env := env) (fr := fr) (argv := argv) (ty := ty) hs
+        rw [hr] at ho; cases ho
+    · rfl
+  · rcases hc with hc | hc
+    · obtain ⟨-, hfo⟩ := cls_load hc
+      rw [evalOpL_act (faultOps_act hfo)] at ho
+      obtain ⟨he, hl⟩ := arm64Op_fault_panic hfo ho
+      exact ⟨he, argsM_last hm hl⟩
+    · obtain ⟨hnc, -⟩ := cls_nil hc
+      obtain ⟨he, hl, -⟩ := evalOpL_nc_panic (by rw [hnc]; rfl) ho
+      exact ⟨he, argsM_last hm hl⟩
+  · rcases hc with hc | hc
+    · rw [evalOpL_act (ldOps_sub hc).2.2.1] at ho
+      obtain ⟨-, -, a, ha, hpa⟩ := arm64Op_ld_panic hc ho
+      obtain ⟨p, hp, hr⟩ := argsM_head hm ha
+      exact ⟨p, a, hp, hr, .inl hpa⟩
+    · obtain ⟨hnc, -⟩ := cls_nil hc
+      obtain ⟨-, -, a, ha, hpa⟩ := evalOpL_nc_panic (by rw [hnc]; rfl) ho
+      obtain ⟨p, hp, hr⟩ := argsM_head hm ha
+      exact ⟨p, a, hp, hr, hpa⟩
+
+/-- **An evaluated nil check returns its pointer**, at its shape. -/
+theorem evalValueL_nc_ok {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hnc : v.op.nilCheck = true) (h : evalValueL md env ctx fr v = .ok y) :
+    ∃ p yp, v.args[0]? = some p ∧ fr.regs[p]? = some (some yp) ∧
+      y = md.retype (ctx.tys[v.id]?.getD .other) yp := by
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm] at h
+  cases ho : evalOpL md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
+  | panic e m => rw [ho] at h; cases h
+  | stuck msg => rw [ho] at h; cases h
+  | ok r =>
+    rw [ho] at h; cases h
+    obtain ⟨a, m, hargv, hra⟩ := evalOpL_nc_ok hnc ho
+    subst hargv
+    obtain ⟨p, hp, hr⟩ := argsM_head hm rfl
+    exact ⟨p, a, hp, hr, by rw [hra]⟩
+
+/-- **A nil check of a pointer word on a memory evaluates or panics with `nilDeref` of it.** -/
+theorem evalValueL_nc_word {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {p ℓ : ID} {a : Val} {q : Ptr} {m : Mem} (hf : md.faulting = true)
+    (hop : v.op = .ARM64LoweredNilCheck) (hargs : v.args = #[p, ℓ])
+    (hp : fr.regs[p]? = some (some a)) (hq : a.asPtrWord = some q)
+    (hl : fr.regs[ℓ]? = some (some (.mem m))) :
+    (∃ y, evalValueL md env ctx fr v = .ok y) ∨ evalValueL md env ctx fr v = .panic .nilDeref m := by
+  have hm : argsM fr v = .ok [a, .mem m] := by
+    simp only [argsM, hargs]
+    simp [hp, hl, Res.ofOption]
+    rfl
+  rw [evalValueL_bind hm, hf]
+  rcases evalOpL_nc_word (env := env) (ctx := ctx) (fr := fr) (ty := ctx.tys[v.id]?.getD .other)
+    (m := m) hop hq with ⟨y, hy⟩ | hy
+  · rw [hy]; exact .inl ⟨_, rfl⟩
+  · rw [hy]; exact .inr rfl
+
+/-! ## Value correspondence -/
+
+/-- `evalOpL` of a symbolic `symAddrOp` ignores its first argument. -/
+theorem evalOpL_arg0 {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} {a a' : Val}
+    {rest : List Val} (hop : v.op ∈ symAddrOps) (hs : symbolic ctx.tabs v = true) :
+    ResSim (evalOpL true env ctx fr v (a :: rest) ty) (evalOpL true env ctx fr v (a' :: rest) ty) := by
+  rw [evalOpL_act (symAddrOps_act hop), evalOpL_act (symAddrOps_act hop)]
+  exact arm64Op_arg0 hop hs
+
+theorem ResSim.trans {r1 r2 r3 : Res Val} (h12 : ResSim r1 r2) (h23 : ResSim r2 r3) :
+    ResSim r1 r3 :=
+  ⟨fun y h => h23.1 y (h12.1 y h), fun e m h => h23.2 e m (h12.2 e m h)⟩
+
+/-- **Value correspondence.** A value `v'` of another function (context `ctx'`, frame `fr'` of
+the same activation) with `v`'s op, aux, auxint and ID evaluates where `v` does, alike, when its
+arguments hold `v`'s arguments' registers, except possibly the base of a symbolic `symAddrOp`
+(the result alike when the shapes agree; a nil check may change its shape). -/
+theorem evalValueL_vc {md : LMode} {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v v' : Value}
+    (hf : md.faulting = true) (hop : v'.op = v.op) (haux : v'.aux = v.aux)
+    (hai : v'.auxInt = v.auxInt) (hid : v'.id = v.id) (hsz : v'.args.size = v.args.size)
+    (htabs : ctx'.tabs = ctx.tabs) (hpar : ctx'.params = ctx.params) (hact : ctx'.act = ctx.act)
+    (hsx : sxOf ctx'.f v' = sxOf ctx.f v) (hfr : fr' = { fr with regs := fr'.regs })
+    (hty : ctx'.tys[v.id]? = ctx.tys[v.id]? ∨ v.op.nilCheck = true)
+    (hargs : ∀ (k : Nat) (a : ID), v.args[k]? = some a → ∃ a' y, v'.args[k]? = some a' ∧
+      fr.regs[a]? = some (some y) ∧ ∃ y', fr'.regs[a']? = some (some y') ∧
+        (y' = y ∨ (k = 0 ∧ v.op ∈ symAddrOps ∧ symbolic ctx.tabs v = true))) :
+    (∀ y, evalValueL md env ctx fr v = .ok y → ∃ y', evalValueL md env ctx' fr' v' = .ok y' ∧
+      (ctx'.tys[v.id]? = ctx.tys[v.id]? → y' = y)) ∧
+    (∀ e m, evalValueL md env ctx fr v = .panic e m → evalValueL md env ctx' fr' v' = .panic e m) := by
+  -- the argument lists
+  obtain ⟨argv, hm⟩ := argsM_ok (fr := fr) (v := v) fun a ha => by
+    obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 ha
+    obtain ⟨-, y, -, hy, -⟩ := hargs k a hk
+    exact ⟨y, hy⟩
+  obtain ⟨argv', hm'⟩ := argsM_ok (fr := fr') (v := v') fun a' ha' => by
+    obtain ⟨k, hk⟩ := Array.mem_iff_getElem?.1 ha'
+    have hkl : k < v.args.size := by rw [← hsz]; exact (Array.getElem?_eq_some_iff.1 hk).1
+    obtain ⟨a'', -, hk', -, y', hy', -⟩ := hargs k v.args[k] (by simp [hkl])
+    rw [hk] at hk'; cases hk'
+    exact ⟨y', hy'⟩
+  have hl := argsM_length hm
+  have hl' := argsM_length hm'
+  -- position `k` of the two lists
+  have hpos : ∀ k (hk : k < v.args.size), ∃ y y', argv[k]? = some y ∧ argv'[k]? = some y' ∧
+      (y' = y ∨ (k = 0 ∧ v.op ∈ symAddrOps ∧ symbolic ctx.tabs v = true)) := by
+    intro k hk
+    obtain ⟨a', y, hk', hy, y', hy', hrel⟩ := hargs k v.args[k] (by simp [hk])
+    obtain ⟨z, hz, hz'⟩ := argsM_get hm (k := k) (a := v.args[k]) (by simp [hk])
+    obtain ⟨z', hzz, hz''⟩ := argsM_get hm' hk'
+    rw [hy] at hz; cases hz
+    rw [hy'] at hzz; cases hzz
+    exact ⟨y, y', hz', hz'', hrel⟩
+  have hrel : argv' = argv ∨ (v.op ∈ symAddrOps ∧ symbolic ctx.tabs v = true ∧
+      ∃ a a' rest, argv = a :: rest ∧ argv' = a' :: rest) := by
+    by_cases hx : v.op ∈ symAddrOps ∧ symbolic ctx.tabs v = true
+    · cases argv with
+      | nil =>
+        left
+        have : argv'.length = 0 := by rw [hl', hsz, ← hl]; rfl
+        exact List.eq_nil_of_length_eq_zero this
+      | cons a rest =>
+        cases argv' with
+        | nil => simp at hl'; simp at hl; omega
+        | cons a' rest' =>
+          refine .inr ⟨hx.1, hx.2, a, a', rest, rfl, ?_⟩
+          congr 1
+          apply List.ext_getElem?
+          intro k
+          by_cases hk : k + 1 < v.args.size
+          · obtain ⟨y, y', h1, h2, hr⟩ := hpos (k + 1) hk
+            simp only [List.getElem?_cons_succ] at h1 h2
+            rw [h1, h2]
+            rcases hr with rfl | ⟨h0, -⟩
+            · rfl
+            · omega
+          · have e1 : rest.length ≤ k := by simp at hl; omega
+            have e2 : rest'.length ≤ k := by simp at hl'; omega
+            rw [List.getElem?_eq_none e1, List.getElem?_eq_none e2]
+    · left
+      apply List.ext_getElem?
+      intro k
+      by_cases hk : k < v.args.size
+      · obtain ⟨y, y', h1, h2, hr⟩ := hpos k hk
+        rw [h1, h2]
+        rcases hr with rfl | ⟨-, h3, h4⟩
+        · rfl
+        · exact absurd ⟨h3, h4⟩ hx
+      · rw [List.getElem?_eq_none (by omega), List.getElem?_eq_none (by omega)]
+  -- the op
+  have hT : evalOpL true env ctx' fr' v' argv' (ctx'.tys[v'.id]?.getD .other) =
+      evalOpL true env ctx fr v argv' (ctx'.tys[v.id]?.getD .other) := by
+    rw [hfr, evalOpL_frame, evalOpL_congr hop haux hai hid htabs hpar hact hsx, hid]
+  have hS : ResSim (evalOpL true env ctx fr v argv (ctx.tys[v.id]?.getD .other))
+      (evalOpL true env ctx fr v argv' (ctx'.tys[v.id]?.getD .other)) := by
+    have hty' : evalOpL true env ctx fr v argv' (ctx'.tys[v.id]?.getD .other) =
+        evalOpL true env ctx fr v argv' (ctx.tys[v.id]?.getD .other) := by
+      rcases hty with h | h
+      · rw [h]
+      · exact evalOpL_nc_ty h
+    rw [hty']
+    rcases hrel with h | ⟨h1, h2, a, a', rest, rfl, rfl⟩
+    · rw [h]; exact ResSim.of_eq rfl
+    · exact evalOpL_arg0 h1 h2
+  rw [evalValueL_bind hm, hf]
+  rw [evalValueL_bind hm', hf, hT, hid]
+  refine ⟨fun y hy => ?_, fun e m hp => ?_⟩
+  · cases hr : evalOpL true env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
+    | ok r =>
+      rw [hr] at hy; cases hy
+      rw [hS.1 r hr]
+      exact ⟨_, rfl, fun h => by rw [h]⟩
+    | panic e m => rw [hr] at hy; cases hy
+    | stuck msg => rw [hr] at hy; cases hy
+  · cases hr : evalOpL true env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
+    | ok r => rw [hr] at hp; cases hp
+    | panic e' m' =>
+      rw [hr] at hp; cases hp
+      rw [hS.2 _ _ hr]; rfl
+    | stuck msg => rw [hr] at hp; cases hp
+
+end GoFV.Proof.SchedL
