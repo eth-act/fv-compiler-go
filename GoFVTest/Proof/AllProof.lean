@@ -391,6 +391,7 @@ import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
 import GoFV.Proof.RefineL
 import GoFV.Proof.RefineLoc
+import GoFV.Proof.RefineSched
 import GoFV.Proof.Retype
 import GoFV.Proof.RetypeL
 import GoFV.Proof.RoImage
@@ -659,6 +660,7 @@ import GoFV.Proof.Witness.RoZero
 import GoFV.Proof.Witness.RunL
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
+import GoFV.Proof.Witness.SchedL
 import GoFV.Proof.Witness.Seg
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
