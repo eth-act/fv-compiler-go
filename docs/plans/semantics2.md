@@ -417,7 +417,8 @@ clifv's `checkAlloc` (`FV/Backend/RegallocCheck.lean`, `checkAlloc_sound`,
    memory); `f.RegAlloc` covers every value that needs a home.
 4. *Theorem.* `checkRegalloc f g = true → Refines (runLoc g) (runSched f)`, by a simulation
    whose relation is "every location's set member equals that origin's value in the source
-   run" (clifv's `Match`), with `runSched f` driving.
+   run" (clifv's `Match`), with `runSched f` driving. Done: `GoFV.Proof.RA.checkRA_sound`
+   (`docs/plans/regalloc-check.md` §4).
 
 Go's own validation is weaker and is not a substitute: `checkFunc` skips dominance after
 regalloc, and `ssagen` only checks phi homes. A *direct* simulation proof of Go's 3,623-line

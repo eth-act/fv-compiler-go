@@ -650,6 +650,19 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   after `copyelimPass` (the same comparison on one literal `Func` reduces). Single passes,
   `check` and `run` on the same function reduce fine; the pipeline fact is one
   `native_decide`, listed in `scripts/axioms-allowlist.txt`, built in seconds.
+- **`split at h` on a deeply nested `do` blows up; `rw [if_pos c]`/`rw [if_neg c]` does not**
+  (#385, regalloc checker specs): a `do` block with several `if … then throw …` checks elaborates
+  to nested `have __do_jp := …` join points, each used in both branches. `dsimp only at h` (zeta)
+  copies each join point into both branches, and the following `split at h` hit simp's
+  `maxSteps` on `stepValue` (six levels). Case on each condition with `by_cases hc : c = true`
+  and rewrite with `if_pos hc`/`if_neg hc` (no simp), `cases h` on the `throw` branch; the
+  bind after a check is `exc_bind_ok` (`(x >>= k) = .ok y → ∃ a, x = .ok a ∧ k a = .ok y`). The
+  five spec lemmas of `GoFV/Proof/Regalloc` elaborate in about a second.
+- **`Std.HashMap` with `String` (or any `Prod`) keys does not reduce in the kernel**:
+  `String.hash` and `mixHash` are opaque, so `decide +kernel` on a checker that inserts into or
+  looks up such a map gets stuck. `checkRA`'s witness (`Witness/RandnRA.lean`) is a function
+  without frame constants, whose `constReps`/`rematHints` maps are never touched; the whole
+  check then reduces in about 2 s.
 - **memcombine witnesses with stores** (#35): `memcombineChecked` now runs the store half and
   `tabsAgree`, so the kernel-evaluated witnesses got slower: `GoFV.Proof.Witness.MemCombine`
   (Uint16, loads) builds in 32 s wall (was ~19 s CPU), the new `Witness.MemCombineStore`

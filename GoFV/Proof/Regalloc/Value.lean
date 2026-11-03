@@ -3,10 +3,11 @@ import GoFV.Proof.Regalloc.Read
 /-!
 # Regalloc checker soundness, stage 3: values
 
-One target value against the source (`docs/plans/regalloc-check.md` §3): a kept value computes
-its source value's result (`kept_sim`; it panics when the source does), a `KeepAlive` turned into
-`Copy`/`VarLive` its memory (`keepAlive_sim`), and a move or a rematerialised constant leaves the
-source alone (`new_sim`); each preserves `Match` with the checker's new facts.
+One kept target value against the source (`docs/plans/regalloc-check.md` §3): its arguments read
+the source's (`regsAre_srcVal`, `keptChecks_spec`), its `stepLoc` is the source op's `evalOpL`
+result written at its home (`kept_step`), and that write keeps `Match` with the checker's new
+facts (`kept_match`). `KeepAlive`, moves and rematerialisations: `Steps.lean`; the walk:
+`Block.lean`.
 -/
 
 namespace GoFV.Proof.RA

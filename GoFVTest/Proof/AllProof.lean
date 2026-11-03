@@ -423,6 +423,15 @@ import GoFV.Proof.Refine
 import GoFV.Proof.RefineL
 import GoFV.Proof.RefineLoc
 import GoFV.Proof.RefineSched
+import GoFV.Proof.Regalloc.Block
+import GoFV.Proof.Regalloc.Facts
+import GoFV.Proof.Regalloc.Loc
+import GoFV.Proof.Regalloc.Match
+import GoFV.Proof.Regalloc.Ops
+import GoFV.Proof.Regalloc.Read
+import GoFV.Proof.Regalloc.Sound
+import GoFV.Proof.Regalloc.Steps
+import GoFV.Proof.Regalloc.Value
 import GoFV.Proof.Retype
 import GoFV.Proof.RetypeL
 import GoFV.Proof.RoImage
@@ -696,6 +705,7 @@ import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.PhiTightenL
 import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.Prove
+import GoFV.Proof.Witness.RandnRA
 import GoFV.Proof.Witness.RoZero
 import GoFV.Proof.Witness.RunL
 import GoFV.Proof.Witness.Sccp
