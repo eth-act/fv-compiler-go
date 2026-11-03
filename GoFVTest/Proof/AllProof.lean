@@ -341,6 +341,7 @@ import GoFV.Proof.PtrAddr
 import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
 import GoFV.Proof.RefineL
+import GoFV.Proof.RefineLoc
 import GoFV.Proof.Retype
 import GoFV.Proof.RetypeL
 import GoFV.Proof.RoImage
@@ -543,6 +544,7 @@ import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.ClampL
+import GoFV.Proof.Witness.ClampRA
 import GoFV.Proof.Witness.CondSel
 import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim
