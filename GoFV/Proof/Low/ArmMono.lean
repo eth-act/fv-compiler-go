@@ -1,4 +1,6 @@
 import GoFV.Proof.Low.RuleL
+import GoFV.Proof.Low.ArmMonoOps
+import GoFV.Proof.Low.ArmMonoRetype
 import GoFV.Proof.PureMono
 import GoFV.Proof.Retype
 import GoFV.Proof.Eval
@@ -17,28 +19,31 @@ namespace GoFV.Proof.Low
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.LowerTerm
 
+/-- **The pure arm64 term ops are monotone** (`GoFV.Proof.Low.ArmMonoOps`: one family lemma of
+`GoFV.Proof.Low.ArmMonoFam` per op). -/
 theorem armPure_mono {op : Op} (h : armTerm op = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
     {as bs : List Val} (hr : RefinesList as bs) :
-    Refines (Arm64.evalPure op ty k ax as) (Arm64.evalPure op ty k ax bs) := by
-  sorry
+    Refines (Arm64.evalPure op ty k ax as) (Arm64.evalPure op ty k ax bs) :=
+  Mono.armPure_cases h ty k ax hr
 
 theorem movAddr_mono (tabs : Tables) (ai : Int64) (ax : Option AuxRef) {as bs : List Val}
-    (hr : RefinesList as bs) : Refines (movAddr tabs ai ax as) (movAddr tabs ai ax bs) := by
-  sorry
+    (hr : RefinesList as bs) : Refines (movAddr tabs ai ax as) (movAddr tabs ai ax bs) :=
+  Mono.movAddr_mono' tabs ai ax hr
 
-theorem retypeL_mono (t : Ty) {v v' : Val} (h : Refines v v') : Refines (v.retypeL t) (v'.retypeL t) := by
-  sorry
+theorem retypeL_mono (t : Ty) {v v' : Val} (h : Refines v v') : Refines (v.retypeL t) (v'.retypeL t) :=
+  retype_mono t (Mono.widen_mono t h)
 
 theorem retypeL_idem (t : Ty) (v : Val) : (v.retypeL t).retypeL t = v.retypeL t := by
-  sorry
+  unfold Val.retypeL
+  rw [Mono.widen_of_hasTy _ _ (Val.retype_hasTy t _), retype_idem]
 
-theorem retypeL_hasTy (t : Ty) (v : Val) : (v.retypeL t).hasTy t = true := by
-  sorry
+theorem retypeL_hasTy (t : Ty) (v : Val) : (v.retypeL t).hasTy t = true :=
+  Val.retype_hasTy t _
 
-theorem retype_le_retypeL (t : Ty) (v : Val) : Refines (v.retype t) (v.retypeL t) := by
-  sorry
+theorem retype_le_retypeL (t : Ty) (v : Val) : Refines (v.retype t) (v.retypeL t) :=
+  Mono.retype_le_widen t v
 
 theorem retypeL_poison (t : Ty) : Val.poison.retypeL t = .poison := by
-  sorry
+  cases t <;> rfl
 
 end GoFV.Proof.Low
