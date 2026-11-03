@@ -161,6 +161,14 @@ def nodeAuxL (e : PEnv) (pat : Pat) (or : Oracle) : Option Expr → Option AuxRe
   | some xe => or.aux xe
   | none => none
 
+/-- `toAuxIntD` for lowered result nodes: an op at a `CCop` auxint (`CSEL [OpARM64LessThanU]`) is
+its Go opcode number (Go's `opToAuxInt`, `GoFV.Rules.Interp.toAuxInt`). -/
+def toAuxIntL (aty : AuxType) : DV → Option Int64
+  | .op o => match aty with
+    | .CCop => some (Int64.ofNat o.goNum)
+    | _ => none
+  | d => toAuxIntD aty d
+
 /-- `nodeDen` with `opValL`, `retypeL`, `nodeTyL` and `nodeAuxL`. -/
 def nodeDenL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Oracle)
     (σ : Nat → DV) (topTy : Ty) (nodes : List RNode) : Nat → Nat → Val
@@ -171,7 +179,7 @@ def nodeDenL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Ora
     | some n =>
       let t := nodeTyL ev or topTy n.ty
       let ai := match n.auxInt with
-        | some ae => (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae)
+        | some ae => (toAuxIntL n.op.auxType (ev ae)).getD (or.auxInt ae)
         | none => 0
       let ax := nodeAuxL e pat or n.aux
       let argv := n.args.map fun

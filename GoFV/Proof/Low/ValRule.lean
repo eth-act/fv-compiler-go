@@ -257,7 +257,7 @@ def tySelL (ev : GoFV.Rules.Expr → DV) (or : Oracle) (topTy : Ty) (n : RNode) 
 /-- The auxint of a result node. -/
 def aiSelL (ev : GoFV.Rules.Expr → DV) (or : Oracle) (n : RNode) : Int64 :=
   match n.auxInt with
-  | some ae => (toAuxIntD n.op.auxType (ev ae)).getD (or.auxInt ae)
+  | some ae => (toAuxIntL n.op.auxType (ev ae)).getD (or.auxInt ae)
   | none => 0
 
 /-- The value of a result argument. -/

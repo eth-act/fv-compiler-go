@@ -58,7 +58,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 139 proven value rules and 43 proven block rules. -/
+/-- `ARM64.rules` restricted to its 145 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
@@ -112,8 +112,8 @@ def lower : RuleSet where
     (.Less8, [Generated.ARM64.r_ARM64_254_2]),
     (.Less8U, [Generated.ARM64.r_ARM64_276]),
     (.Lsh64x16, [Generated.ARM64.r_ARM64_152, Generated.ARM64.r_ARM64_171]),
-    (.Lsh64x32, [Generated.ARM64.r_ARM64_152_2]),
-    (.Lsh64x64, [Generated.ARM64.r_ARM64_152_3]),
+    (.Lsh64x32, [Generated.ARM64.r_ARM64_152_2, Generated.ARM64.r_ARM64_170]),
+    (.Lsh64x64, [Generated.ARM64.r_ARM64_152_3, Generated.ARM64.r_ARM64_169]),
     (.Lsh64x8, [Generated.ARM64.r_ARM64_152_4, Generated.ARM64.r_ARM64_171_2]),
     (.Mul16, [Generated.ARM64.r_ARM64_12]),
     (.Mul32, [Generated.ARM64.r_ARM64_12_2]),
@@ -152,12 +152,12 @@ def lower : RuleSet where
     (.Rsh32x64, [Generated.ARM64.r_ARM64_155_3]),
     (.Rsh32x8, [Generated.ARM64.r_ARM64_155_4]),
     (.Rsh64Ux16, [Generated.ARM64.r_ARM64_166, Generated.ARM64.r_ARM64_175]),
-    (.Rsh64Ux32, [Generated.ARM64.r_ARM64_166_2]),
-    (.Rsh64Ux64, [Generated.ARM64.r_ARM64_166_3]),
+    (.Rsh64Ux32, [Generated.ARM64.r_ARM64_166_2, Generated.ARM64.r_ARM64_174]),
+    (.Rsh64Ux64, [Generated.ARM64.r_ARM64_166_3, Generated.ARM64.r_ARM64_173]),
     (.Rsh64Ux8, [Generated.ARM64.r_ARM64_166_4, Generated.ARM64.r_ARM64_175_2]),
     (.Rsh64x16, [Generated.ARM64.r_ARM64_159, Generated.ARM64.r_ARM64_179]),
-    (.Rsh64x32, [Generated.ARM64.r_ARM64_159_2]),
-    (.Rsh64x64, [Generated.ARM64.r_ARM64_159_3]),
+    (.Rsh64x32, [Generated.ARM64.r_ARM64_159_2, Generated.ARM64.r_ARM64_178]),
+    (.Rsh64x64, [Generated.ARM64.r_ARM64_159_3, Generated.ARM64.r_ARM64_177]),
     (.Rsh64x8, [Generated.ARM64.r_ARM64_159_4, Generated.ARM64.r_ARM64_179_2]),
     (.Rsh8Ux16, [Generated.ARM64.r_ARM64_164]),
     (.Rsh8Ux32, [Generated.ARM64.r_ARM64_164_2]),

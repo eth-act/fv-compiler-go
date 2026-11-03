@@ -46,7 +46,7 @@ elab "arm_unfold" : tactic => do
     refine ⟨rfl, ?_⟩
     intro $(mkIdent `tabs):ident $(mkIdent `e):ident $(mkIdent `or):ident $(mkIdent `hbt):ident
     dsimp only [Rule.swapC, Pat.swapC, Pat.swapCs, GoFV.Opt.RewriteCheck.swap01, $rid:ident,
-      Pat.denL, Pat.densL, Pat.rawL, sigmaL, Pat.bindsL, Pat.bindssL, resDenL, nodeDenL,
+      Pat.denL, Pat.densL, Pat.rawL, sigmaL, Pat.bindsL, Pat.bindssL, resDenL, nodeDenL, toAuxIntL,
       nodeTyL, nodeAuxL, Pat.auxPos, Pat.auxPoss, Pat.topOKL, rule_unfold_ds]
     simp only [Pat.denL, Pat.densL, Pat.rawL, sigmaL, Pat.bindsL, Pat.bindssL, nodeDenL,
       Pat.auxPos, Pat.auxPoss, GoFV.Rules.Field.bindsVar, Option.orElse_some, Option.orElse_none,

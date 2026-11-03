@@ -196,6 +196,11 @@ def checkAux (e : CheckEnv) (v : Value) : Except String Unit := do
       if !inRange 0 15 then throw s!"bad FlagConstant AuxInt value for v{v.id}"
       pure (false, true)
     | .PanicBoundsC | .PanicBoundsCC => pure (true, true)
+    | .CCop =>
+      match (if ai < 0 then none else Op.ofGoNum? ai.toNat) with
+      | some o => if o == .Invalid then throw s!"value v{v.id} has an AuxInt value that is not a valid opcode"
+      | none => throw s!"value v{v.id} has an AuxInt value that is not a valid opcode"
+      pure (false, true)
     | .SizeAndAlign =>
       match auxKind? e v.aux with
       | some (.int _) => pure (true, true)
