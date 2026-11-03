@@ -179,13 +179,16 @@ theorem argTermRefL_regs (hfrS : RegsFrame tabs 0 f.value? G)
     (tyS' H hDS hDT hVT hrel htyS htyT) (tyT' H hDS hDT hVT hrel htyS htyT)
     (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) hfrS hT hx hy
 
-/-- The terminators between two frames whose atoms are refined. -/
-theorem termStepRefL_regs {b : ID} (hb : b ∈ g.blocks) {fb gb : Block} (hfb : f.block? b = some fb)
-    (hgb : g.block? b = some gb) (hx : ∀ c ∈ fb.controls, VS c) (hy : ∀ c ∈ gb.controls, VT c) :
+/-- The terminators between two frames whose atoms are refined, the source's frame addresses
+those of activation 0 (`RegsFrame`). -/
+theorem termStepRefL_regs (hfrS : RegsFrame tabs 0 f.value? G) {b : ID} (hb : b ∈ g.blocks)
+    {fb gb : Block} (hfb : f.block? b = some fb) (hgb : g.block? b = some gb)
+    (hx : ∀ c ∈ fb.controls, VS c) (hy : ∀ c ∈ gb.controls, VT c) :
     Res.Rel Next.Refines (stepTermL G fb) (stepTermL T gb) :=
   termStepRefL_apply H.low hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
     (tyS' H hDS hDT hVT hrel htyS htyT) (tyT' H hDS hDT hVT hrel htyS htyT)
-    (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) (H.ctrls b hb fb gb hfb hgb).2 hx hy
+    (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) hfrS (H.ctrls b hb fb gb hfb hgb).2
+    hx hy
 
 /-- **Corresponding atoms, given the frames' relation** (the only use of `AtomArgsRefL`): their
 arguments' registers are related (`ArgRel` of `stArg`) where both frames hold them as terms over
@@ -412,7 +415,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
         .ok (rty g.lowered (shp g.lowered tabs w.type) (opValL tabs w.op (shp g.lowered tabs w.type)
           w.auxInt w.aux (w.args.toList.map (rv T)))) := by
       have := evalValueL_termL_eq (low := g.lowered) (env := env) (ctx := Ctx.makeL tabs g)
-        (by rw [makeL_tabs]; exact hterm) hreg
+        (by rw [makeL_tabs]; exact hterm) (makeL_act tabs g) hreg
       rw [makeL_tabs, hty] at this
       exact this
     refine ⟨_, by rw [hstepV, hev], ?_⟩

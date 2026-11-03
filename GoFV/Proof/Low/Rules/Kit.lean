@@ -30,13 +30,6 @@ theorem opValL_arm {o : Op} (hg : o.generic = false) (hm : (o == .ARM64MOVDaddr)
     (args : List Val) : opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
   simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
 
-/-- `opValL` of an integer load: `ldVal`. -/
-theorem opValL_ld {o : Op} {n : Nat} {s : Bool} (hg : o.generic = false)
-    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = some (n, s)) (tabs : Tables) (ty : Ty)
-    (ai : Int64) (ax : Option AuxRef) (args : List Val) :
-    opValL tabs o ty ai ax args = ldVal tabs n s ty ai ax args := by
-  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
-
 /-- `opValL` of a generic op other than `Addr`/`ConstString`: `evalPure`. -/
 theorem opValL_gen {o : Op} (hg : o.generic = true) (hf : frameOp o = false)
     (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val) :

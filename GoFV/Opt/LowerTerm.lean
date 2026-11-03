@@ -12,8 +12,9 @@ arguments' values, `GoFV.Proof.Low.denL`) rather than atoms (`GoFV.Proof.Low.Ato
 * `MOVDaddr` without a frame variable aux (`auxIsName`): its value is its base moved by its
   offset, or a global symbol's address at its offset, both from the tables alone
   (`Sem.symAddr`);
-* an integer load `MOV{B,BU,H,HU,W,WU,D}load` without a frame variable aux: the memory argument
-  read at that address (`GoFV.Proof.Low.ldVal`), as Phase 1's `Load` is a term;
+* an integer load `MOV{B,BU,H,HU,W,WU,D}load`: the memory argument read at its address
+  (`GoFV.Proof.Low.ldVal`), as Phase 1's `Load` is a term; a frame variable's address is the
+  activation's, and `runL` runs a function in activation 0 (`Sem.Ctx.makeL`);
 * an acquiring load `LDAR`/`LDARB`/`LDARW` (`ldarOp`): `Sem.arm64Op` runs it in non-faulting mode
   as `Arm64.evalPure`, Phase 1's `atomicLoad` (the `AtomicLoad*` it lowers are terms).
 

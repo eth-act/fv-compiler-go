@@ -10,7 +10,8 @@ and `Val.retype`. A lowering rule relates generic and arm64 ops, so its denotati
 
 * `opValL`: a generic op by Phase 1's `Rules.opVal` (`evalPure`, the tables for
   `Addr`/`ConstString`), `MOVDaddr` without a frame variable by `movAddr` (`Sem.symAddr` from
-  the tables alone), any other arm64 op by `Arm64.evalPure`;
+  the tables alone), an integer load by `ldVal` (`Sem.symAddr` in activation 0, `runL`'s, for a
+  frame variable), any other arm64 op by `Arm64.evalPure`;
 * every node is shaped by `Val.retypeL` at its lowered shape (`Sem.tyOfL`: Go's `flags` type is
   `Ty.flags`).
 
@@ -23,7 +24,7 @@ after `retypeL` (an arm64 op computes a 64-bit register that `retypeL` narrows t
 a generic top op is assumed to produce its shape (`topOKL`, Phase 1's `topOK`). Two premises the
 validator checks on the instance: an integer load at the top reads as many bytes as the shape has
 (`resFitsL`), and an addressing node whose base the rule folds has no symbol and small
-non-negative offsets (`Pat.addrOKL`).
+non-negative offsets, an `ADDconst` folded into a `MOVDaddr` an aux (`Pat.addrOKL`).
 
 `SetOpSound o o'`: the ellipsis rule `(o ...) => (o' ...)` on a term (same arguments, type and
 fields), at shapes where a generic `o` produces its shape (`topOKL`). `BlockRuleL.Sound`: a block
@@ -75,11 +76,22 @@ def ldOp? : Op → Option (Nat × Bool)
   | .ARM64MOVDload => some (8, false)
   | _ => none
 
-/-- An `n`-byte integer load `[ai] {ax} a mem` without a frame variable aux (`Sem.arm64Op`'s `ld`):
-the memory at `movPtr`, `poison` without an address. -/
+/-- The address of an integer load `[ai] {ax} a` (`Sem.symAddr` in activation 0, the activation
+`runL` runs a function in, `Ctx.makeL`): `movPtr`, and a frame variable's block at the offset. -/
+def ldPtr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (a : Val) : Option Ptr :=
+  match ax with
+  | some n =>
+    match tabs.aux? n with
+    | some { kind := .sym name .., .. } => some ⟨.global name.toStringLossy, BitVec.ofInt 64 ai.toInt⟩
+    | some { kind := .name .., .. } => some ⟨frameBlk tabs 0 n, BitVec.ofInt 64 ai.toInt⟩
+    | _ => none
+  | none => Arm64.addr a (BitVec.ofInt 64 ai.toInt)
+
+/-- An `n`-byte integer load `[ai] {ax} a mem` (`Sem.arm64Op`'s `ld` in activation 0): the memory
+at `ldPtr`, `poison` without an address. -/
 def ldVal (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64) (ax : Option AuxRef) :
     List Val → Val
-  | [a, .mem m] => (movPtr tabs ai ax a).elim .poison (Arm64.loadN ty n s m)
+  | [a, .mem m] => (ldPtr tabs ai ax a).elim .poison (Arm64.loadN ty n s m)
   | _ => .poison
 
 /-- The value of a lowered term node before shaping: Phase 1's `opVal` for a generic op,
@@ -91,6 +103,13 @@ def opValL (tabs : Tables) (op : Op) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
   else match ldOp? op with
     | some (n, s) => ldVal tabs n s ty ai ax args
     | none => Arm64.evalPure op ty ai ax args
+
+/-- `opValL` of an integer load: `ldVal`. -/
+theorem opValL_ld {o : Op} {n : Nat} {s : Bool} (hg : o.generic = false)
+    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = some (n, s)) (tabs : Tables) (ty : Ty)
+    (ai : Int64) (ax : Option AuxRef) (args : List Val) :
+    opValL tabs o ty ai ax args = ldVal tabs n s ty ai ax args := by
+  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
 
 /-- The integer loads are activation ops (`Sem.arm64Op`). -/
 theorem ldOp?_of_act {o : Op} (h : actOp o = false) : ldOp? o = none := by
@@ -127,7 +146,7 @@ theorem armPure_ldar {op : Op} (h : ldarOp op = true) (ty : Ty) (k : Int64) (ax 
 def termVL (tabs : Tables) (v : Value) : Bool :=
   if v.op.generic then GoFV.Opt.RewriteCheck.termOp v.op
   else if v.op == .ARM64MOVDaddr then !auxIsName tabs v.aux
-  else if (ldOp? v.op).isSome then !auxIsName tabs v.aux
+  else if (ldOp? v.op).isSome then true
   else if ldarOp v.op then true
   else armTerm v.op && !actOp v.op && !isRoot v.op
 
@@ -208,13 +227,22 @@ def nodeTyL (ev : Expr → DV) (or : Oracle) (topTy : Ty) : Option Expr → Ty
       | _ => or.ty te
   | none => topTy
 
-/-- The aux of a result node: the aux a rule variable bound in the pattern (`{sym}`), else the
+/-- The aux of a result node: the aux a rule variable bound in the pattern (`{sym}`), Go's
+`mergeSym(sym1,sym2)` of two bound auxes (the one that is set, if the other is not), else the
 oracle's. -/
 def nodeAuxL (e : PEnv) (pat : Pat) (or : Oracle) : Option Expr → Option AuxRef
   | some (.var x) =>
     match Pat.auxPos x [] pat with
     | some p => e.aux p
     | none => or.aux (.var x)
+  | some (.call "mergeSym" [.var x, .var y] t) =>
+    match Pat.auxPos x [] pat, Pat.auxPos y [] pat with
+    | some p, some q =>
+      match e.aux p, e.aux q with
+      | none, a => a
+      | a, none => a
+      | _, _ => or.aux (.call "mergeSym" [.var x, .var y] t)
+    | _, _ => or.aux (.call "mergeSym" [.var x, .var y] t)
   | some xe => or.aux xe
   | none => none
 
@@ -370,11 +398,16 @@ address by the rule) has no aux, and its offset and the base node's are small an
 (`offOK`): under the semantics a symbol's address ignores the base (`Sem.symAddr`), and a
 register pointer outside its block's window (`Ptr.inWindow`) moved back into it by the base's
 offset has a concrete address that the second offset could carry into another allocation
-(`Ptr.ofAddr`), where the folded offset stays in the first. -/
+(`Ptr.ofAddr`), where the folded offset stays in the first. An `ADDconst` on a `MOVDaddr` node
+(folded into its offset, `ARM64.rules:650`) needs the `MOVDaddr` to have an aux and both
+offsets small and non-negative: without a symbol, `ADDconst` adds to a word without the window
+check of `MOVDaddr`'s `ptrRes`. -/
 def Pat.addrOKL (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) : Pat → Bool
   | .op o _ _ _ _ _ args _ =>
     (match args with
-      | .op .. :: _ => !addrOp o || (ax p == none && offOK (ai p) && offOK (ai (0 :: p)))
+      | .op o' .. :: _ => (!addrOp o || (ax p == none && offOK (ai p) && offOK (ai (0 :: p)))) &&
+          (o != .ARM64ADDconst || o' != .ARM64MOVDaddr ||
+            ((ax (0 :: p)).isSome && offOK (ai p) && offOK (ai (0 :: p))))
       | _ => true) && Pat.addrOKLs ax ai p 0 args
   | _ => true
 /-- `Pat.addrOKL` of the arguments `i, i+1, …` of the node at `p`. -/
