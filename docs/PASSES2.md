@@ -489,9 +489,9 @@ op, type, aux, auxint and argument; the original, now `Copy clone`, and a later 
 9,297/9,297, full-v9 96,560/96,560) so that the kernel evaluates the pass. Witness
 `GoFV.Proof.Witness.tupleSelL_witness` (`tupL`: `Select0 (ADDSflags x lo)` in the block after
 the tuple's; the selector is cloned into the tuple's block, the output returns `5 + 3 = 8`).
-Coverage (`lake exe move-probe`): quick-v7 9,297 sections, 8,643 checked, 7 changed, `moveB`
-accepts 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked, 67 changed, accepted
-90,656 (0 rejections); not counted: inputs failing `check` (654 and 5,904).
+Coverage (`lake exe move-probe`): quick-v7 9,297 sections, all checked, 7 changed, `moveB`
+accepts 9,297 (0 rejections); full-v9 96,560 sections, all checked, 99 changed, accepted 96,560
+(0 rejections; 2 of them have a selector control turned into a `Copy`, related by `relB`).
 
 ### lowered deadcode — issue #396
 
@@ -590,10 +590,9 @@ critical), then hoisting on a fixed CFG (`refinesL_of_move`, see tighten; hoiste
 total ops). Witness `GoFV.Proof.Witness.licmL_witness` (`licmLoop`: a counting loop whose body
 computes the invariant step `x + 1`; licm splits the non-`Plain` entry edge with a preheader
 `b6`, hoists the step there, and the output returns 12 for `x = 2, n = 10`). Coverage (`lake exe
-move-probe`, all three checked hypotheses): quick-v7 9,297 sections, 8,643 checked, 193
-changed, accepted 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked, 3,300 changed,
-accepted 90,656 (0 rejections); not counted: inputs failing `check`
-(654 and 5,904).
+move-probe`, all three checked hypotheses): quick-v7 9,297 sections, all checked, 271
+changed, accepted 9,297 (0 rejections); full-v9 96,560 sections, all checked, 3,822 changed,
+accepted 96,560 (0 rejections).
 
 ### late phielim and copyelim — issue #399
 
@@ -674,10 +673,12 @@ the source's schedule runs with the target fixed, then the target's (`phaseS`, `
 lemma (D) by IDs and agreement of related registers on the values placed in the dominators of
 both sides. Witness `GoFV.Proof.Witness.tightenL_witness` (`clampTL`: lowered clamp with its
 second `CMP` in the entry block; tighten moves it into `b2`, the output returns
-`clamp(12, 0, 10) = 10`). Coverage (`lake exe move-probe`): quick-v7 9,297 sections, 8,643 with
-input and output checked, 3,118 changed, `moveB` accepts 8,643 (0 rejections); full-v9 96,560
-sections, 90,656 checked, 41,995 changed, accepted 90,656 (0 rejections). The sections not
-counted have an input that fails `check` (654 and 5,904).
+`clamp(12, 0, 10) = 10`). Coverage (`lake exe move-probe`, after the `CCop` check fix #458): quick-v7
+9,297 sections, all with input and output checked, 3,600 changed, `moveB` accepts 9,297 (0
+rejections); full-v9 96,560 sections, all checked, 46,641 changed, accepted 96,560 (0
+rejections). A block control is related to itself by `relB` (not only the certificate): a
+selector control that tighten tuple selectors turns into a `Copy` stays a control (2 full-v9
+sections, `norm.nextComposed`).
 
 ### merge conditional branches — issue #401
 
@@ -821,9 +822,9 @@ total op with the source value's op, type, aux, auxint and arguments, and the `P
 is related to the source `Phi` edge-wise. Witness `GoFV.Proof.Witness.phiTightenL_witness`
 (`phiTL`: `Phi (MOVDconst [7]) x` after an `EQ` split into two `Plain` predecessors; the
 constant is cloned into `b2`, the output returns 7 for `x = 0`). Coverage (`lake exe
-move-probe`): quick-v7 9,297 sections, 8,643 checked, 280 changed, `moveB` accepts 8,643 (0
-rejections); full-v9 96,560 sections, 90,656 checked, 6,018 changed, accepted 90,656 (0
-rejections); not counted: inputs failing `check` (654 and 5,904).
+move-probe`): quick-v7 9,297 sections, all checked, 423 changed, `moveB` accepts 9,297 (0
+rejections); full-v9 96,560 sections, all checked, 7,535 changed, accepted 96,560 (0
+rejections).
 
 ### likelyadjust — issue #405
 

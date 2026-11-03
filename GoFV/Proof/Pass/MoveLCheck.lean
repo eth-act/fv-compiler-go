@@ -20,7 +20,8 @@ rearrangement of `f`; `GoFV.Proof.MoveL.refinesL_of_move` proves that it then re
   `ArgIntReg`, the arm64 ops `Arm64.evalPure` evaluates, and the arm64 loads, `MOVDaddr`,
   `MOVDreg`, `MOVDnop`, `LoweredGetClosurePtr`, `LoweredGetCallerSP`, `LoweredMemEq`.
 * **Blocks** (`blockOK`): `g` lists the blocks of `f`, each with the same kind, `auxInt`,
-  edges and controls (each control in the certificate); every value of `g`'s block is a `Phi`
+  edges and controls (each control related to itself, `relB`: a selector turned into a `Copy`
+  stays a control); every value of `g`'s block is a `Phi`
   of `f`'s block in the certificate, a non-`Phi` of `f`'s block in the certificate, or total.
 * **Panics in order** (`orderOK`): every value of `f`'s schedule that may panic (`mayPanic`: a
   call or a nil check) is in `g`'s schedule of the block and in the certificate, and every
@@ -165,7 +166,8 @@ def blockOK (ok : Array Bool) (f g : Func) (b : ID) : Bool :=
   match f.block? b, g.block? b with
   | some fb, some gb =>
     gb.kind == fb.kind && gb.auxInt == fb.auxInt && gb.succs == fb.succs &&
-      gb.preds == fb.preds && gb.controls == fb.controls && gb.controls.all (okAt ok) &&
+      gb.preds == fb.preds && gb.controls == fb.controls &&
+      gb.controls.all (fun c => relB ok f g relFuel c c) &&
       gb.values.all (valueOK ok g fb) &&
       match schedule g gb, schedule f fb with
       | some oT, some oS => orderOK ok f g oT.toList oS.toList

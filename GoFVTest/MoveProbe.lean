@@ -40,7 +40,7 @@ def why (ok : Array Bool) (f g : Func) : Option String := Id.run do
     if gb.succs != fb.succs then return some "succs"
     if gb.preds != fb.preds then return some "preds"
     if gb.controls != fb.controls then return some "controls"
-    if !gb.controls.all (okAt ok) then return some "control not related"
+    if !gb.controls.all (fun c => relB ok f g relFuel c c) then return some "control not related"
     for x in gb.values do
       if !valueOK ok g fb x then
         let gv := g.getV x

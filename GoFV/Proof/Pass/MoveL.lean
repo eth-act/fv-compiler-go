@@ -221,7 +221,7 @@ theorem stepL (S : Setup ok f g) (hmd : md.faulting = false) {frS frT : Frame} {
       obtain ⟨vg, hpg, hbg'⟩ := placed_of_listed hwg (hwg.ctrlListed b gb ⟨hbg, hgb⟩ c hcg')
       obtain ⟨vf, hpf, hbf'⟩ := placed_of_listed hwf (hwf.ctrlListed b fb ⟨hb, hfb⟩ c hc)
       exact hagA c c ⟨vg, hpg, hbg' ▸ hcg.domRel.ctrlUse hbg hgb htg hcg'⟩
-        ⟨vf, hpf, hbf' ▸ hcf.domRel.ctrlUse hb hfb htf hc⟩ (rel_ident (hcok c hcg'))
+        ⟨vf, hpf, hbf' ▸ hcf.domRel.ctrlUse hb hfb htf hc⟩ ⟨relFuel, hcok c hcg'⟩
     cases hst : stepTermL GS fb with
     | stuck msg => exact True.intro
     | panic e m => exact absurd hst Dead.stepTermL_not_panic
