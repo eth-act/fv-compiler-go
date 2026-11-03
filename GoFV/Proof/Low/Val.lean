@@ -334,8 +334,8 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
   obtain ⟨hbl, hAf⟩ := atomsOKL_facts hA
   split at hv
   · rename_i M B hrep
-    obtain ⟨C, hI, hB⟩ := replayL_inv (D₀ := f.value?) (C₀ := LM f) hs log.toList _ M _ B _
-      hrep (ReplayInvL.init (marked_closed hcf)) (BInvL.init tabs f (LM f))
+    obtain ⟨C, hI, hB⟩ := replayL_inv (D₀ := f.value?) (C₀ := LM f) hs (fun _ => rfl) log.toList
+      _ M _ B _ hrep (ReplayInvL.init (marked_closed hcf)) (BInvL.init tabs f (LM f))
     obtain ⟨hlive, hfacts⟩ := finalOKL_facts hv
     have hTM : ∀ ρ, TypedL true M.get? tabs (midVal tabs f ρ) :=
       fun ρ => hI.typed _ (mid_typed tabs f ρ)
@@ -348,7 +348,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       have hargsf := (closedOK_facts hcf b hbf fb hfb).2 a haf u' hu'
       obtain ⟨a'', ha'', -, hrest⟩ := hI.atoms a u' hu' hu't hargsf
       obtain ⟨-, -, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
-      obtain ⟨m, w, hm, hw, hop, -, -, hax, hszw, hargs⟩ := hvals a ha
+      obtain ⟨m, w, hm, hw, hop, -, hai, hax, hszw, hargs⟩ := hvals a ha
         (.inr fun w hw => by rw [hu] at hw; cases hw; exact hat)
       have hma : m = a'' := Option.some.inj (hm.symm.trans ha'')
       subst hma
@@ -368,9 +368,10 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       rw [hgl] at hT'
       rw [hgl, getElem!_pos u.args i hi]
       have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ)
-      rw [getElem!_pos m.args i (by omega)] at h1
-      exact (bridge_den hsh hT n _).trans (h1.trans ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
-        (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))
+      rw [getElem!_pos m.args i (by omega), stArg_congr (u := u') (i := i) hop.symm hai.symm] at h1
+      exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
+        ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
+          (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := hAf b hb gb hgb
       rw [hfb] at hfb'; obtain rfl := Option.some.inj hfb'

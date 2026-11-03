@@ -137,7 +137,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
             | none => return s!"setOp {key cr.rule}"
           | _ =>
             if ruleOKL tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
-            else match atomDef tabs M v defs.toList with
+            else match atomDef tabs f M v defs.toList with
               | some (u, none) => M := M.put v u
               | some (u, some s) => M := (M.put s.id s).put v u
               | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"

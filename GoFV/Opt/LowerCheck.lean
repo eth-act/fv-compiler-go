@@ -24,7 +24,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
   arm64 store (`memLower`), or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event
-  lowering a store or a frame address is replayed as its new definitions (`atomDef`);
+  lowering a store or a frame address, or folding an `ADDconst` offset into an arm64 store
+  (`stFold`), is replayed as its new definitions (`atomDef`);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/
@@ -173,21 +174,39 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
     else none
   | _, _ => none
 
+/-- The atom `u` folds the address `ADDconst [k2] b` of the arm64 store `x` (`x`'s argument 0 in
+`M`, a term at a word shape) into its offset (`(MOV…store [k1] {sym} (ADDconst [k2] ptr) val mem)
+=> (MOV…store [k1+int32(k2)] {sym} ptr val mem)`, `ARM64.rules:758-776`): the same op and type,
+no aux, `b` for the address, the offset `k1 + k2`, all three offsets small and non-negative
+(`offOK`). -/
+def stFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
+  (stSize x.op).isSome && u.op == x.op && u.type == x.type && x.aux == none && u.aux == none &&
+  x.args.size == 3 && offOK x.auxInt && offOK u.auxInt &&
+  match M.get? x.args[0]! with
+  | some y =>
+    y.op == .ARM64ADDconst && termVL tabs y && y.args.size == 1 &&
+      wordShape (shpL tabs y.type) && offOK y.auxInt &&
+      u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt &&
+      u.args == #[y.args[0]!, x.args[1]!, x.args[2]!]
+  | none => false
+
 /-- A rule event at the atom `v` replayed as the atom its top result node `u` defines (the log
 lists the reset value, then the nodes, as for any `build`), with `v`'s type:
-* a lowered store (`memLower`: `(Store {t} ptr val mem) => (MOVDstore ptr val mem)` and the other
-  sizes), on `v`'s arguments;
+* a lowered store (`memLower` at offset 0: `(Store {t} ptr val mem) => (MOVDstore ptr val mem)`
+  and the other sizes), on `v`'s arguments;
+* an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`);
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
   some of `v`'s arguments, or `(MOVDaddr {sym} (SPanchored base mem))`, whose second node `s` is a
   fresh term on some of `v`'s arguments (`u` reads no argument, `argFree`).
 The new definitions: `u` and the fresh term, if any. -/
-def atomDef (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) :
+def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
     Option (Value × Option Value) :=
   match M.get? v, defs with
   | some x, [_, u] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
-        (u.args == x.args && memLower tabs x u ||
-          u.args.all x.args.contains && addrLower tabs x u) then some (u, none)
+        (u.args == x.args && memLower tabs x u && u.auxInt == 0 ||
+          u.args.all x.args.contains && addrLower tabs x u ||
+          stFold tabs M x u && (f.value? v).any (·.op == .Store)) then some (u, none)
     else none
   | some x, [_, u, s] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
@@ -313,7 +332,7 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
         | _ =>
           if ruleOKL tabs M cr.rule v defs.toList then
             replayL tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
-          else match atomDef tabs M v defs.toList with
+          else match atomDef tabs f M v defs.toList with
             | some (u, none) => replayL tabs t f (M.put v u) B evs
             | some (u, some s) => replayL tabs t f ((M.put s.id s).put v u) B evs
             | none => none

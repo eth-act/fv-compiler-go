@@ -415,7 +415,7 @@ def ArmRule.Rename (r : Rule) : Prop :=
     renameOp o o' = true
 
 /-- The access size of the arm64 stores `(Store {t} ptr val mem)` lowers to
-(`MOV{B,H,W,D}store`, `FMOV{S,D}store`, offset 0, no aux). -/
+(`MOV{B,H,W,D}store`, `FMOV{S,D}store`). -/
 def stSize : Op → Option Nat
   | .ARM64MOVBstore => some 1
   | .ARM64MOVHstore => some 2
@@ -424,9 +424,10 @@ def stSize : Op → Option Nat
   | _ => none
 
 /-- The atom `w` lowers the memory atom `u`: a `Store {t}` of a scalar `t` of the arm64 store's
-size, at offset 0 without aux (`GoFV.Proof.Low.Sim.store_lower_eval`). -/
+size, without aux, at a small non-negative offset (`offOK`: 0 as lowered, or a folded `ADDconst`
+offset, `ARM64.rules:758-776`; `GoFV.Proof.Low.Sim.store_lower_eval`). -/
 def memLower (tabs : Tables) (u w : Value) : Bool :=
-  w.auxInt == 0 && w.aux == none && u.op == .Store && (stSize w.op).any (fitsB (auxTy tabs u.aux))
+  offOK w.auxInt && w.aux == none && u.op == .Store && (stSize w.op).any (fitsB (auxTy tabs u.aux))
 
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
@@ -447,6 +448,17 @@ theorem memLower_op {tabs : Tables} {u w : Value} (h : memLower tabs u w = true)
   unfold memLower at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   exact h.1.2
+
+/-- Renamed atoms are no arm64 stores. -/
+theorem renameOp_stSize {o o' : Op} (h : renameOp o o' = true) :
+    stSize o = none ∧ stSize o' = none := by
+  unfold renameOp at h
+  split at h <;> first | (cases h; done) | exact ⟨rfl, rfl⟩
+
+/-- Generic ops are no arm64 stores. -/
+theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by
+  unfold stSize
+  split <;> first | rfl | exact absurd h (by decide)
 
 /-- What `addrLower` says. -/
 theorem addrLower_cases {tabs : Tables} {u w : Value} (h : addrLower tabs u w = true) :
@@ -532,12 +544,13 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
 
 /-! ## Rule sets -/
 
-/-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`): the
-validator accepts its events only as a lowered store or frame address it pairs with the atom
-itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `addrLower`), so the rule carries no obligation
-of its own. -/
+/-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`, an
+arm64 store `stSize` knows): the validator accepts its events only as a lowered store, a folded
+store offset or a frame address it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`,
+`memLower`, `stFold`, `addrLower`), so the rule carries no obligation of its own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
-  ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧ (o = .Store ∨ o = .LocalAddr)
+  ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
+    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome)
 
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
 ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/

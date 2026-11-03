@@ -15,8 +15,10 @@ mem` by `t`'s size (offset 0, no aux). Here, for a value shape `ty` with a scala
   decodePtr`). Loads are terms on both sides (`termVL`, `opValL`'s `ldVal`), so the load rules are
   `ArmRule.Sound` (`Rules/LoadStore.lean`; the size fit is the validator's `resFitsL`).
 * `store_lower_eval`: Phase 1's `Store` (`memRoot`: the write of `encode ty val`) is refined by
-  the arm64 store (`arm64Op`'s `st n`: the write of `Arm64.storeBytes n val`): the stored bytes
-  agree, or the generic ones are `poison` (`encode_le_storeBytes`).
+  the arm64 store (`arm64Op`'s `st n`: the write of `Arm64.storeBytes n val`) whose address moved
+  by its offset is the `Store`'s (`AddrRef`; the offset is an `ADDconst` folded into it,
+  `ARM64.rules:758-776`): the stored bytes agree, or the generic ones are `poison`
+  (`encode_le_storeBytes`).
 
 A `Store {t}` of an aggregate shape (`StoreFits` excludes it: a size-1/2/4/8 struct, `[1]T` or
 `complex64`) would not refine: `encode` writes the fields' bytes, `storeBytes` `poison`
@@ -56,17 +58,17 @@ def ldRes (ty : Ty) (n : Nat) (s : Bool) : List Val → Val
   | [a, .mem m] => (Arm64.addr a 0).elim .poison (Arm64.loadN ty n s m)
   | _ => .poison
 
-theorem symAddr_zero {ctx : Ctx} {w : Value} (hax : w.aux = none) (hai : w.auxInt = 0) (a : Val) :
-    symAddr ctx w a = Arm64.addr a 0 := by
-  unfold symAddr; rw [hax, hai]; rfl
+theorem symAddr_none {ctx : Ctx} {w : Value} (hax : w.aux = none) (a : Val) :
+    symAddr ctx w a = Arm64.addr a (BitVec.ofInt 64 w.auxInt.toInt) := by
+  unfold symAddr; rw [hax]
 
 /-- A lowered store on an address, a value and a memory writes `storeBytes`. -/
 theorem evalOpL_st {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty} {n : Nat}
-    (hst : StOp w.op n) (hax : w.aux = none) (hai : w.auxInt = 0) {a x : Val} {m : Mem} {p : Ptr}
-    (hp : Arm64.addr a 0 = some p) :
+    (hst : StOp w.op n) (hax : w.aux = none) {a x : Val} {m : Mem} {p : Ptr}
+    (hp : Arm64.addr a (BitVec.ofInt 64 w.auxInt.toInt) = some p) :
     ∃ what, evalOpL false env ctx fr w [a, x, .mem m] ty = writeRes what (Arm64.storeN n p x m) := by
   have h0 : nilFaults false ctx w [a, x, .mem m] = none := rfl
-  have hs := symAddr_zero (ctx := ctx) hax hai a
+  have hs := symAddr_none (ctx := ctx) hax a
   rw [hp] at hs
   generalize hop : w.op = o at hst
   cases hst <;>
@@ -80,21 +82,6 @@ theorem evalOpL_st {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty} {n
     rw [hop]
     dsimp only
     rw [hs]
-
-/-! ## Addresses -/
-
-theorem addr_of_asPtrWord {a : Val} {p : Ptr} (h : a.asPtrWord = some p) : Arm64.addr a 0 = some p := by
-  cases a with
-  | ptr q =>
-    simp only [Val.asPtrWord, Option.some.injEq] at h
-    subst h
-    simp [Arm64.addr, Ptr.add]
-  | int w x =>
-    cases w <;> simp only [Val.asPtrWord, reduceCtorEq] at h
-    simp only [Option.some.injEq] at h
-    subst h
-    simp [Arm64.addr, Arm64.reg]
-  | _ => simp [Val.asPtrWord] at h
 
 /-! ## Loads -/
 
@@ -418,17 +405,18 @@ theorem encode_le_storeBytes {ty : Ty} {n : Nat} (hfit : StoreFits ty n) (x : Va
     | blob bs => exact absurd rfl (hb bs)
     | _ => exact hpois rfl
 
-/-- The lowered store on the same arguments refines the generic `Store`. -/
 private theorem stuck_ite {c : Bool} {m1 m2 : String} (r : Res Val) :
     Res.Refines (if c then .stuck m1 else .stuck m2) r := by
   split <;> exact .stuck _ _
 
+/-- The lowered store refines the generic `Store` on the same value and memory, its address
+holding the `Store`'s at its offset (`AddrRef`). -/
 theorem st_ref {env : Env} {ctx ctx' : Ctx} {fr : Frame} {u w : Value} (hu : u.op = .Store)
-    {n : Nat} (hst : StOp w.op n) (hax : w.aux = none) (hai : w.auxInt = 0)
-    (hfit : StoreFits (auxTy ctx.tabs u.aux) n) {ty : Ty} (argv : List Val) :
-    Res.Refines (memRoot ctx u argv) (evalOpL false env ctx' fr w argv ty) := by
-  rcases argv with _ | ⟨a, _ | ⟨x, _ | ⟨y, _ | ⟨z, l⟩⟩⟩⟩
-  · unfold memRoot; rw [hu]; exact stuck_ite _
+    {n : Nat} (hst : StOp w.op n) (hax : w.aux = none)
+    (hfit : StoreFits (auxTy ctx.tabs u.aux) n) {ty : Ty} {a a' : Val} (ha : AddrRef w.auxInt a a')
+    (rest : List Val) :
+    Res.Refines (memRoot ctx u (a :: rest)) (evalOpL false env ctx' fr w (a' :: rest) ty) := by
+  rcases rest with _ | ⟨x, _ | ⟨y, _ | ⟨z, l⟩⟩⟩
   · unfold memRoot; rw [hu]; exact stuck_ite _
   · unfold memRoot; rw [hu]; exact stuck_ite _
   · cases y with
@@ -442,7 +430,7 @@ theorem st_ref {env : Env} {ctx ctx' : Ctx} {fr : Frame} {u w : Value} (hu : u.o
       | none => exact .stuck _ _
       | some p =>
         obtain ⟨what, he⟩ := evalOpL_st (env := env) (ctx := ctx') (fr := fr) (ty := ty) (x := x)
-          (m := m) hst hax hai (addr_of_asPtrWord hp)
+          (m := m) hst hax (ha p hp)
         rw [he]
         dsimp only
         cases hw : m.write p (encode (auxTy ctx.tabs u.aux) x) with
@@ -454,20 +442,25 @@ theorem st_ref {env : Env} {ctx ctx' : Ctx} {fr : Frame} {u w : Value} (hu : u.o
     | _ => unfold memRoot; rw [hu]; exact stuck_ite _
   · cases x <;> cases y <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
 
-/-- **`Store` lowered to an arm64 store** (`ARM64.rules` `(Store {t} ptr val mem)`, offset 0, no
-aux): on refined arguments, the arm64 store refines the generic one (both shaped), at a scalar
-shape of the store's size. -/
+/-- **`Store` lowered to an arm64 store** (`ARM64.rules` `(Store {t} ptr val mem)`, its offset
+folded, `758-776`; no aux): on arguments whose address holds the `Store`'s at the store's offset
+(`AddrRef`) and whose value and memory are refined, the arm64 store refines the generic one (both
+shaped), at a scalar shape of the store's size. -/
 theorem store_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
     {u w : Value} (hu : u.op = .Store) {n : Nat} (hst : StOp w.op n) (hax : w.aux = none)
-    (hai : w.auxInt = 0) (hfit : StoreFits (auxTy ctx.tabs u.aux) n) {ty : Ty} (lS : Bool)
-    {argv argv' : List Val} (h : RefinesList argv argv') :
+    (hfit : StoreFits (auxTy ctx.tabs u.aux) n) {ty : Ty} (lS : Bool) {argv argv' : List Val}
+    (h : (argv = [] ∧ argv' = []) ∨ ∃ a a' r r', argv = a :: r ∧ argv' = a' :: r' ∧
+      AddrRef w.auxInt a a' ∧ RefinesList r r') :
     Res.Refines ((evalOp env ctx fr u argv ty).bind fun r => .ok (rty lS ty r))
       ((evalOpL false env ctx' fr' w argv' ty).bind fun r => .ok (rty true ty r)) := by
   have hS : evalOp env ctx fr u argv ty = memRoot ctx u argv := by
     unfold evalOp; rw [hu]
   rw [hS]
-  refine Res.Rel.bind (resRefines_trans (memRoot_mono ctx u h) (st_ref hu hst hax hai hfit argv'))
-    fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
+  rcases h with ⟨rfl, rfl⟩ | ⟨a, a', r, r', rfl, rfl, ha, hr⟩
+  · exact Res.Rel.bind (by unfold memRoot; rw [hu]; exact stuck_ite _)
+      fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
+  · exact Res.Rel.bind (resRefines_trans (memRoot_mono ctx u (.cons (Sem.Refines.refl a) hr))
+      (st_ref hu hst hax hfit ha r')) fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
 
 /-! ## `memLower` and `atomPair` -/
 
@@ -487,7 +480,8 @@ theorem fitsB_store {ty : Ty} {n : Nat} (h : fitsB ty n = true) : StoreFits ty n
 
 /-- What `memLower` says. -/
 theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
-    w.auxInt = 0 ∧ w.aux = none ∧ u.op = .Store ∧ ∃ n, StOp w.op n ∧ StoreFits (auxTy tabs u.aux) n := by
+    offOK w.auxInt = true ∧ w.aux = none ∧ u.op = .Store ∧
+      ∃ n, StOp w.op n ∧ StoreFits (auxTy tabs u.aux) n := by
   unfold memLower at h
   simp only [Bool.and_eq_true, beq_iff_eq, Option.any_eq_true] at h
   obtain ⟨⟨⟨hai, hax⟩, hu⟩, n, hn, hf⟩ := h
@@ -614,24 +608,44 @@ theorem addr_lower_eval {tabs : Tables} {f g : Func} {env : Env} (hown : f.ownAu
   rw [hgl]
   exact ptr_rty_word _ _ _
 
+/-- A plain arm64 store's size. -/
+theorem stOp_stSize {o : Op} {n : Nat} (h : StOp o n) : (stSize o).isSome = true := by
+  cases h <;> rfl
+
+/-- The registers of a store's arguments: none, or the address related at the offset (`AddrRef`)
+and the others refined. -/
+theorem stArgs_split {F G : ID → Val} {k : Int64} : ∀ {l l' : List ID}, l.length = l'.length →
+    (∀ (i : Nat) a a', l[i]? = some a → l'[i]? = some a' →
+      ArgRel (if i = 0 then some k else none) (F a) (G a')) →
+    (l.map F = [] ∧ l'.map G = []) ∨ ∃ a a' r r', l.map F = a :: r ∧ l'.map G = a' :: r' ∧
+      AddrRef k a a' ∧ RefinesList r r'
+  | [], [], _, _ => .inl ⟨rfl, rfl⟩
+  | b :: l, b' :: l', hl, h => .inr ⟨F b, G b', l.map F, l'.map G, rfl, rfl,
+      by simpa [ArgRel] using h 0 b b' rfl rfl,
+      refinesList_idx (by simpa using hl) fun i a a' ha ha' => by
+        simpa [ArgRel] using h (i + 1) a a' ha ha'⟩
+  | [], _ :: _, hl, _ => absurd hl (by simp)
+  | _ :: _, [], hl, _ => absurd hl (by simp)
+
 /-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
 the atom `u` of `f` (`atomPair`, `u` generic, not a lowered frame address), in frames of one
-activation whose argument registers are refined, at the same shape, evaluates in `g`'s mode to a
-refinement of `u` in `f`'s mode. -/
+activation whose argument registers are related (`ArgRel` of `stArg`: refined, or a lowered
+store's address at its offset), at the same shape, evaluates in `g`'s mode to a refinement of `u`
+in `f`'s mode. -/
 theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
     (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
-    (hargs : ∀ i < u.args.size, Sem.Refines (rv GS u.args[i]!) (rv GT w.args[i]!)) :
+    (hargs : ∀ i < u.args.size, ArgRel (stArg u w i) (rv GS u.args[i]!) (rv GT w.args[i]!)) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
   obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
-  have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) := by
-    refine refinesList_idx (by simp [hsz]) fun i a a' ha ha' => ?_
+  have hrel : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
+      ArgRel (stArg u w i) (rv GS a) (rv GT a') := fun i a a' ha ha' => by
     rw [Array.getElem?_toList] at ha ha'
     obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
     obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
@@ -641,9 +655,20 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
   rcases hk with ⟨hop, hai, hax⟩ | hm
   case inr =>
     -- a lowered store
-    obtain ⟨hwai, hwax, hu, n, hst, hfit⟩ := memLower_cases hm
+    obtain ⟨-, hwax, hu, n, hst, hfit⟩ := memLower_cases hm
     rw [hgl, evalOpL_generic _ _ _ _ _ _ hgen]
-    exact store_lower_eval hu hst hwax hwai (by rw [makeL_tabs]; exact hfit) f.lowered hlist
+    refine store_lower_eval hu hst hwax (by rw [makeL_tabs]; exact hfit) f.lowered
+      (stArgs_split (by simp [hsz]) fun i a a' ha ha' => ?_)
+    have := hrel i a a' ha ha'
+    rwa [stArg_store hu (stOp_stSize hst)] at this
+  have hwst : stSize w.op = none := by
+    rcases hop with hop | hop
+    · rw [← hop]; exact stSize_generic hgen
+    · exact (renameOp_stSize hop).2
+  have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
+    refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
+      have := hrel i a a' ha ha'
+      rwa [stArg_none hwst] at this
   generalize u.args.toList.map (rv GS) = AS at hlist
   generalize w.args.toList.map (rv GT) = AT at hlist
   -- the source's op on the target's arguments, in the target's activation

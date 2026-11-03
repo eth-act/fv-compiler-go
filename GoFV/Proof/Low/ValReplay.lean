@@ -1,4 +1,5 @@
 import GoFV.Proof.Low.ValBlock
+import GoFV.Proof.Low.AddrFold
 
 /-!
 # Replaying the lowering log refines the denotations (issue #385)
@@ -7,11 +8,13 @@ The lowered counterpart of `GoFV/Proof/Pass/RewriteTermReplay.lean` and `replay_
 (`RewriteTermBlock.lean`) for `GoFV.Opt.LowerCheck.replayL`: starting from the input's
 definitions `D₀` read in lowered mode, the values of a set `C₀` closed under arguments keep a
 refining lowered denotation (`ReplayInvL`), and the atoms of `D₀` whose arguments are in `C₀`
-keep their fields but the op (an atom rename, `renameOp`) while their arguments (rewritten only by
-`copyArg` events, through compatible copies) keep refining denotations (`ReplayInvL.atoms`, the one
-place that relates an atom's arguments). Value rule events use `RuleFactsL.step` and
-`ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom renames change no
-denotation (`rename_den`); terminators keep `BInvL`.
+stay atoms (renamed, `renameOp`; lowered stores and frame addresses, `atomDef`) whose arguments
+(rewritten by `copyArg` events, through compatible copies) keep related denotations
+(`ReplayInvL.atoms`, the one place that relates an atom's arguments: `ArgRel` of `stArg`,
+refinement, or for the address of an arm64 store lowering a `Store` the `AddrRef` at its offset,
+which an `ADDconst` offset folded into the store keeps, `ReplayInvL.fold`). Value rule events use
+`RuleFactsL.step` and `ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom
+replacements change no denotation (`rename_den`); terminators keep `BInvL`.
 -/
 
 namespace GoFV.Proof.Low.Val
@@ -165,35 +168,55 @@ theorem termVL_localAddr (tabs : Tables) (v : Value) (h : v.op = .LocalAddr) :
     termVL tabs v = false := by
   rw [termVL_gen (by decide) h]; decide
 
-/-- The atoms `ArmRule.Mem` rules match. -/
-theorem termVL_mem (tabs : Tables) (v : Value) {o : Op} (ho : o = .Store ∨ o = .LocalAddr)
+/-- The arm64 stores are atoms. -/
+theorem termVL_st (tabs : Tables) (v : Value) {o : Op} (ho : (stSize o).isSome = true)
     (h : v.op = o) : termVL tabs v = false := by
-  rcases ho with rfl | rfl
+  unfold stSize at ho
+  split at ho <;> first
+    | (cases ho; done)
+    | (rw [termVL_arm (by decide) (by decide) (by decide) h]; decide)
+
+/-- The atoms `ArmRule.Mem` rules match. -/
+theorem termVL_mem (tabs : Tables) (v : Value) {o : Op}
+    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true)
+    (h : v.op = o) : termVL tabs v = false := by
+  rcases ho with rfl | rfl | ho
   · exact termVL_store tabs v h
   · exact termVL_localAddr tabs v h
+  · exact termVL_st tabs v ho h
 
-/-- What `atomDef` establishes for one new definition: a lowered store on the same arguments or a
-lowered frame address on some of them. -/
-theorem atomDef_one {tabs : Tables} {M : Defs} {v : ID} {defs : List Value} {u : Value}
-    (h : atomDef tabs M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧ termVL tabs x = false ∧
-      termVL tabs u = false ∧ u.type = x.type ∧
-      ((u.args = x.args ∧ memLower tabs x u = true) ∨
-        ((∀ a ∈ u.args, a ∈ x.args) ∧ addrLower tabs x u = true)) := by
+theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
+    ∃ a, o = some a ∧ a.op = .Store := by
+  cases o with
+  | none => cases h
+  | some a => exact ⟨a, rfl, by simpa using h⟩
+
+/-- What `atomDef` establishes for one new definition: a lowered store on the same arguments at
+offset 0, a lowered frame address on some of them, or an offset folded into an arm64 store of a
+`Store` of `f`. -/
+theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List Value} {u : Value}
+    (h : atomDef tabs f M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧
+      termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
+      ((u.args = x.args ∧ memLower tabs x u = true ∧ u.auxInt = 0) ∨
+        ((∀ a ∈ u.args, a ∈ x.args) ∧ addrLower tabs x u = true) ∨
+        (stFold tabs M x u = true ∧ ∃ a, f.value? v = some a ∧ a.op = .Store)) := by
   unfold atomDef at h
   split at h
   · rename_i x _ u' hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨hc, h⟩ := h
     cases h
-    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true',
-      Array.all_eq_true, Array.contains_iff_mem] at hc
+    simp only [Bool.and_eq_true, Bool.or_eq_true] at hc
     obtain ⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hk⟩ := hc
-    refine ⟨x, hx, ht, ht', hty, ?_⟩
-    rcases hk with ⟨h1, h2⟩ | ⟨h1, h2⟩
-    · exact .inl ⟨h1, h2⟩
-    · exact .inr ⟨fun a ha => by
-        obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
-        exact h1 i hi, h2⟩
+    simp only [Bool.not_eq_true'] at ht ht'
+    refine ⟨x, hx, ht, ht', beq_iff_eq.1 hty, ?_⟩
+    rcases hk with (⟨⟨h1, h2⟩, h3⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩
+    · exact .inl ⟨beq_iff_eq.1 h1, h2, beq_iff_eq.1 h3⟩
+    · refine .inr (.inl ⟨fun a ha => ?_, h2⟩)
+      simp only [Array.all_eq_true, Array.contains_iff_mem] at h1
+      obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
+      exact h1 i hi
+    · exact .inr (.inr ⟨h1, any_store h2⟩)
   · rename_i x _ u' s hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨-, h⟩ := h
@@ -202,8 +225,8 @@ theorem atomDef_one {tabs : Tables} {M : Defs} {v : ID} {defs : List Value} {u :
 
 /-- What `atomDef` establishes for two new definitions: a lowered frame address on a fresh term
 on some of the atom's arguments. -/
-theorem atomDef_two {tabs : Tables} {M : Defs} {v : ID} {defs : List Value} {u s : Value}
-    (h : atomDef tabs M v defs = some (u, some s)) : ∃ x, M.get? v = some x ∧
+theorem atomDef_two {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List Value}
+    {u s : Value} (h : atomDef tabs f M v defs = some (u, some s)) : ∃ x, M.get? v = some x ∧
       termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
       addrLower tabs x u = true ∧ u.args = #[s.id] ∧ s.id ≠ v ∧ M.get? s.id = none ∧
       termVL tabs s = true ∧ ∀ a ∈ s.args, a ∈ x.args := by
@@ -431,18 +454,18 @@ end CopyArg
 
 /-! ## The replay invariant -/
 
-/-- The arguments of `a'` (in `M`) are as many as those of `a` (in `D₀`), in `C`, and refine
-them. -/
+/-- The arguments of `a'` (in `M`) are as many as those of `a` (in `D₀`), in `C`, and related to
+them (`ArgRel` of `stArg`: refinement, or the address of an arm64 store lowering a `Store`). -/
 def ArgsRefL (tabs : Tables) (D₀ : ID → Option Value) (M : Defs) (C : ID → Prop) (a a' : Value) :
     Prop :=
   a'.args.size = a.args.size ∧
     ∀ i < a.args.size, C a'.args[i]! ∧ ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
-      Sem.Refines (denL true D₀ tabs ρ n a.args[i]!) (denL true M.get? tabs ρ m a'.args[i]!)
+      ArgRel (stArg a a' i) (denL true D₀ tabs ρ n a.args[i]!) (denL true M.get? tabs ρ m a'.args[i]!)
 
 /-- What holds along the replay from the definitions `D₀` (lowered mode) and a closed set `C₀`:
 the current definitions `M` with a set `C ⊇ C₀` closed under arguments; refining denotations of
-`C₀`; the atoms of `D₀` with arguments in `C₀` stay atoms of the same type, with refining
-arguments unless they read none (`argFree`, a lowered frame address). -/
+`C₀`; the atoms of `D₀` with arguments in `C₀` stay atoms of the same type, with related
+arguments (`ArgsRefL`) unless they read none (`argFree`, a lowered frame address). -/
 structure ReplayInvL (tabs : Tables) (D₀ : ID → Option Value) (C₀ : ID → Prop) (M : Defs)
     (C : ID → Prop) : Prop where
   closed : DefClosed M C
@@ -462,7 +485,7 @@ theorem ReplayInvL.init {tabs : Tables} {M : Defs} {C₀ : ID → Prop} (hC : De
   denRef := fun _ _ n => ⟨n, fun _ _ => Sem.Refines.refl _⟩
   atoms := fun y a hy ha hargs => ⟨a, hy, ha, .inr ⟨rfl, fun i hi =>
     ⟨hargs _ (by rw [getElem!_pos a.args i hi]; exact Array.getElem_mem hi),
-      fun n => ⟨n, fun _ _ => Sem.Refines.refl _⟩⟩⟩⟩
+      fun n => ⟨n, fun _ _ => by rw [stArg_self]; exact Sem.Refines.refl _⟩⟩⟩⟩
 
 section Inv
 
@@ -481,6 +504,19 @@ theorem denL_compose {M' : Defs} {y y' : ID} {g : Nat → Nat}
   obtain ⟨m, hm⟩ := h1 n
   exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans (h2 ρ (hty ρ hρ) m)⟩
 
+/-- Compose an argument relation from `D₀` with one step `M → M'`. -/
+theorem argRel_compose {M' : Defs} {y y' : ID} {o : Option Int64} {g : Nat → Nat}
+    (h1 : ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
+      ArgRel o (denL true D₀ tabs ρ n y) (denL true M.get? tabs ρ m y'))
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (h2 : ∀ ρ, TypedL true M.get? tabs ρ → ∀ n,
+      Sem.Refines (denL true M.get? tabs ρ n y') (denL true M'.get? tabs ρ (g n) y')) :
+    ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
+      ArgRel o (denL true D₀ tabs ρ n y) (denL true M'.get? tabs ρ m y') := by
+  intro n
+  obtain ⟨m, hm⟩ := h1 n
+  exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans_right (h2 ρ (hty ρ hρ) m)⟩
+
 /-- `ArgsRefL` along a step `M → M'` refining the denotations of `C ⊆ C'`. -/
 theorem ArgsRefL.step {M' : Defs} {C' : ID → Prop} {a a' : Value} {g : Nat → Nat}
     (h : ArgsRefL tabs D₀ M C a a') (hsub : ∀ y, C y → C' y)
@@ -489,7 +525,7 @@ theorem ArgsRefL.step {M' : Defs} {C' : ID → Prop} {a a' : Value} {g : Nat →
       Sem.Refines (denL true M.get? tabs ρ n y) (denL true M'.get? tabs ρ (g n) y)) :
     ArgsRefL tabs D₀ M' C' a a' :=
   ⟨h.1, fun i hi => ⟨hsub _ (h.2 i hi).1,
-    denL_compose (h.2 i hi).2 hty fun ρ hρ n => hstep ρ hρ n _ (h.2 i hi).1⟩⟩
+    argRel_compose (h.2 i hi).2 hty fun ρ hρ n => hstep ρ hρ n _ (h.2 i hi).1⟩⟩
 
 theorem ReplayInvL.rule {r : Rule} {v : ID} {defs : List Value} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hs : ArmRule.Sound1 r) (F : RuleFactsL tabs M r v defs) :
@@ -522,12 +558,13 @@ theorem ReplayInvL.setOp {v : ID} {x : Value} {o' : Op} (hI : ReplayInvL tabs D�
       hr.step (g := id) (fun _ h => h) hI.typed fun ρ _ n z _ => setOp_den hx ht ht' htop hso n z⟩
 
 /-- Replacing the atom `x` at `v` by an atom `x'` of the same type: a rename, a lowered store
-(the same arguments) or a lowered frame address (`argFree`). -/
+(the same arguments, related as before) or a lowered frame address (`argFree`). -/
 theorem ReplayInvL.atomPut {v : ID} {x x' : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs x' = false)
     (hty : x'.type = x.type) (hcl : C v → ∀ a ∈ x'.args, C a)
     (hargs : argFree tabs x' = true ∨
-      (x'.args = x.args ∧ (argFree tabs x = true → argFree tabs x' = true))) :
+      (x'.args = x.args ∧ (argFree tabs x = true → argFree tabs x' = true) ∧
+        ∀ (a : Value) (i : Nat) (s t : Val), ArgRel (stArg a x i) s t → ArgRel (stArg a x' i) s t)) :
     ReplayInvL tabs D₀ C₀ (M.put v x') C where
   closed := put_closed hcl hI.closed
   sub := hI.sub
@@ -543,16 +580,137 @@ theorem ReplayInvL.atomPut {v : ID} {x x' : Value} (hI : ReplayInvL tabs D₀ C�
     · subst hyv
       rw [hx] at ha'; cases ha'
       refine ⟨x', by rw [get?_put]; simp, ht', ?_⟩
-      rcases hargs with hf | ⟨heq, hf⟩
+      rcases hargs with hf | ⟨heq, hf, hrel⟩
       · exact .inl hf
       · rcases hrest with hr | hr
         · exact .inl (hf hr)
         · refine .inr ?_
-          have hr' := hr.step (fun _ h => h) hI.typed hstep
-          unfold ArgsRefL at hr' ⊢
-          rw [heq]; exact hr'
+          obtain ⟨hsz, hr'⟩ := hr.step (fun _ h => h) hI.typed hstep
+          refine ⟨by rw [heq]; exact hsz, fun i hi => ?_⟩
+          obtain ⟨hc, hd⟩ := hr' i hi
+          refine ⟨by rw [heq]; exact hc, fun n => ?_⟩
+          obtain ⟨m, hm⟩ := hd n
+          exact ⟨m, fun ρ hρ => by rw [heq]; exact hrel a i _ _ (hm ρ hρ)⟩
     · exact ⟨a', by rw [get?_put]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
         hr.step (fun _ h => h) hI.typed hstep⟩
+
+/-- What `stFold` says. -/
+theorem stFold_cases {x u : Value} (h : stFold tabs M x u = true) :
+    ∃ y, M.get? x.args[0]! = some y ∧ (stSize x.op).isSome = true ∧ u.op = x.op ∧
+      u.type = x.type ∧ x.args.size = 3 ∧ offOK x.auxInt = true ∧ offOK u.auxInt = true ∧
+      y.op = .ARM64ADDconst ∧ termVL tabs y = true ∧ y.args.size = 1 ∧
+      wordShape (shpL tabs y.type) = true ∧ offOK y.auxInt = true ∧
+      u.auxInt.toInt = x.auxInt.toInt + y.auxInt.toInt ∧
+      u.args = #[y.args[0]!, x.args[1]!, x.args[2]!] := by
+  unfold stFold at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, -⟩, -⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
+  split at h9
+  · rename_i y hy
+    simp only [Bool.and_eq_true, beq_iff_eq] at h9
+    obtain ⟨⟨⟨⟨⟨⟨h10, h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩ := h9
+    exact ⟨y, hy, h1, h2, h3, h6, h7, h8, h10, h11, h12, h13, h14, h15, h16⟩
+  · cases h9
+
+/-- A word shape is at least 64 bits wide. -/
+theorem argWidth_of_wordShape {T : Ty} (h : wordShape T = true) : 64 ≤ argWidth T := by
+  cases T with
+  | int w => cases w <;> simp_all [wordShape, argWidth, Width.bits]
+  | ptr e => simp [argWidth]
+  | _ => simp [wordShape] at h
+
+/-- **An offset folded into an arm64 store** of a `Store` of `D₀` (`stFold`): the store's address
+(argument 0, `ADDconst [k2] b` in `M`) becomes `b`, its offset `k1 + k2`, related by `AddrRef`
+at the new offset (`addrRef_fold`); value and memory stay. -/
+theorem ReplayInvL.fold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+    (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
+    (hfold : stFold tabs M x u = true) (hsrc : ∀ a, D₀ v = some a → a.op = .Store) :
+    ReplayInvL tabs D₀ C₀ (M.put v u) C := by
+  obtain ⟨y, hy, hst, hop, hty, hsz, hk1, -, hyop, hyt, hysz, hyw, hk2, hk, hargs⟩ :=
+    stFold_cases hfold
+  obtain ⟨b, hb⟩ : ∃ b, y.args = #[b] := by
+    rcases hy' : y.args with ⟨l⟩
+    rw [hy'] at hysz
+    obtain ⟨b, rfl⟩ := List.length_eq_one_iff.1 (by simpa using hysz)
+    exact ⟨b, rfl⟩
+  have hb0 : y.args[0]! = b := by rw [hb]; rfl
+  rw [hb0] at hargs
+  have hmem : ∀ i, i < x.args.size → x.args[i]! ∈ x.args := fun i h => by
+    rw [getElem!_pos x.args i h]; exact Array.getElem_mem h
+  -- `b` is in a closed set holding `x`'s address
+  have hbC : ∀ {C' : ID → Prop}, DefClosed M C' → C' x.args[0]! → C' b := fun hC h0 => by
+    obtain ⟨m, hm, ha⟩ := hC _ h0
+    rw [hy] at hm; cases hm
+    exact ha b (by rw [hb]; simp)
+  have hcl : C v → ∀ a ∈ u.args, C a := fun hv a ha => by
+    have hxa := closed_args hI.closed hx hv
+    rw [hargs] at ha
+    simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
+    rcases ha with rfl | rfl | rfl
+    · exact hbC hI.closed (hxa _ (hmem 0 (by omega)))
+    · exact hxa _ (hmem 1 (by omega))
+    · exact hxa _ (hmem 2 (by omega))
+  have hstep : ∀ ρ, TypedL true M.get? tabs ρ → ∀ n z, C z →
+      Sem.Refines (denL true M.get? tabs ρ n z) (denL true (M.put v u).get? tabs ρ (id n) z) :=
+    fun ρ _ n z _ => by rw [rename_den hx ht ht']; exact Sem.Refines.refl _
+  refine
+    { closed := put_closed hcl hI.closed
+      sub := hI.sub
+      typed := fun ρ h => put_typed hx hty (by rw [ht, ht']) (hI.typed ρ h)
+      denRef := fun z hz => denL_compose (g := id) (hI.denRef z hz) hI.typed
+        fun ρ _ n => by rw [rename_den hx ht ht']; exact Sem.Refines.refl _
+      atoms := fun z a hz ha hargs' => ?_ }
+  obtain ⟨a', ha', hat, hrest⟩ := hI.atoms z a hz ha hargs'
+  by_cases hzv : z ≠ v
+  · exact ⟨a', by rw [get?_put]; simp [hzv, ha'], hat, hrest.imp id fun hr =>
+      hr.step (fun _ h => h) hI.typed hstep⟩
+  obtain rfl : z = v := Classical.byContradiction hzv
+  rw [hx] at ha'; cases ha'
+  refine ⟨u, by rw [get?_put]; simp, ht', .inr ?_⟩
+  have hS := hsrc a hz
+  rcases hrest with hf | ⟨hsza, hr⟩
+  · exact absurd hst (by rw [(argFree_cases hf).1]; decide)
+  have hu3 : u.args.size = 3 := by rw [hargs]; rfl
+  refine ⟨by omega, fun i hi => ?_⟩
+  rcases i with _ | _ | _ | i
+  · -- the address
+    obtain ⟨hc0, hd0⟩ := hr 0 hi
+    rw [stArg_zero hS hst] at hd0
+    have hu0 : u.args[0]! = b := by rw [hargs]; rfl
+    rw [hu0]
+    have hbM : C b := hbC hI.closed hc0
+    refine ⟨hbM, ?_⟩
+    rw [stArg_zero hS (by rw [hop]; exact hst)]
+    refine argRel_compose (o := some u.auxInt) (g := id) ?_ hI.typed
+      fun ρ hρ n => hstep ρ hρ n b hbM
+    intro n
+    obtain ⟨m, hm⟩ := hd0 n
+    obtain ⟨w, hw, -⟩ := hI.closed b hbM
+    rcases m with _ | m
+    · refine ⟨0, fun ρ hρ p hp => ?_⟩
+      have := hm ρ hρ p hp
+      simp [denL, Arm64.addr, Arm64.reg] at this
+    · refine ⟨m, fun ρ hρ => ?_⟩
+      have h1 := hm ρ hρ
+      rw [denT_succ hy hyt, hyop, hb, show (#[b] : Array ID).toList = [b] from rfl] at h1
+      simp only [List.map_cons, List.map_nil, opValL_addConst] at h1
+      exact addrRef_fold (den_hasTyL (hI.typed ρ hρ) m hw) (argWidth_of_wordShape hyw)
+        hk1 hk2 hk h1
+  · -- the value
+    have e : u.args[1]! = x.args[1]! := by rw [hargs]; rfl
+    obtain ⟨hc, hd⟩ := (hr 1 hi)
+    refine ⟨by rw [e]; exact hc, ?_⟩
+    rw [e, stArg_succ]
+    rw [stArg_succ] at hd
+    exact argRel_compose (g := id) hd hI.typed fun ρ hρ n => hstep ρ hρ n _ hc
+  · -- the memory
+    have e : u.args[2]! = x.args[2]! := by rw [hargs]; rfl
+    obtain ⟨hc, hd⟩ := (hr 2 hi)
+    refine ⟨by rw [e]; exact hc, ?_⟩
+    rw [e, stArg_succ]
+    rw [stArg_succ] at hd
+    exact argRel_compose (g := id) hd hI.typed fun ρ hρ n => hstep ρ hρ n _ hc
+  · omega
 
 /-- Putting a term at a fresh key; the key joins the closed set if `P` holds. -/
 theorem ReplayInvL.fresh {s : Value} {P : Prop} (hI : ReplayInvL tabs D₀ C₀ M C)
@@ -609,9 +767,9 @@ theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayIn
         rw [getElem!_pos x.args i hi] at h1
         intro n
         obtain ⟨m, hm⟩ := h1 n
-        exact ⟨m, fun ρ hρ => (hm ρ hρ).trans ((copyReachL_den (hI.typed ρ hρ) _ _ _ hr m).trans
+        exact ⟨m, fun ρ hρ => (hm ρ hρ).trans_right ((copyReachL_den (hI.typed ρ hρ) _ _ _ hr m).trans
           (hstep ρ (hI.typed ρ hρ) m src hsrc))⟩
-      · exact ⟨(hrest j hj).1, denL_compose (g := id) (hrest j hj).2 hI.typed
+      · exact ⟨(hrest j hj).1, argRel_compose (g := id) (hrest j hj).2 hI.typed
           fun ρ hρ n => hstep ρ hρ n _ (hrest j hj).1⟩
     · exact ⟨a', by rw [copyPut_get]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
         hr.step (fun _ h => h) hI.typed hstep⟩
@@ -631,9 +789,10 @@ theorem ruleOKL_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : Lis
     obtain ⟨⟨ht, hid⟩, sw, hsw, h1⟩ := h
     exact ⟨sw, hsw, ruleFactsL hx ht hid h1⟩
 
-/-- **Replay**: a successful replay of the log keeps `ReplayInvL` and `BInvL`. -/
+/-- **Replay**: a successful replay of the log keeps `ReplayInvL` and `BInvL` (from `D₀`, `f`'s
+definitions). -/
 theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
-    {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop} :
+    {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop} (hD : ∀ y, D₀ y = f.value? y) :
     ∀ (evs : List RwEvent) (M M' : Defs) (B B' : BMapL) (C : ID → Prop),
       replayL tabs (GoFV.Rules.Interp.Table.ofRuleSet s) f M B evs = some (M', B') →
       ReplayInvL tabs D₀ C₀ M C → BInvL tabs f D₀ C₀ M C B →
@@ -677,14 +836,18 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               rw [hc] at hpat
               injection hpat with hxo
               rw [termVL_mem tabs x hom hxo] at ht; cases ht
-          exact replayL_inv hs evs _ M' B B' C h (hI.setOp hx ht ht' htop hso)
+          exact replayL_inv hs hD evs _ M' B B' C h (hI.setOp hx ht ht' htop hso)
             (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ n y _ => setOp_den hx ht ht' htop hso n y)
         · have ht' := renameOp_dst hren tabs { x with op := o' } rfl
           have hfree : argFree tabs x = true → argFree tabs { x with op := o' } = true :=
             fun hf => absurd (argFree_cases hf).1 (renameOp_src_ne hren)
-          exact replayL_inv hs evs _ M' B B' C h
+          have hrel : ∀ (a : Value) (i : Nat) (s t : Val), ArgRel (stArg a x i) s t →
+              ArgRel (stArg a { x with op := o' } i) s t := fun a i s t h => by
+            rw [stArg_none (w := { x with op := o' }) (renameOp_stSize hren).2]
+            rwa [stArg_none (renameOp_stSize hren).1] at h
+          exact replayL_inv hs hD evs _ M' B B' C h
             (hI.atomPut hx ht ht' rfl (fun hv a ha => closed_args hI.closed hx hv a ha)
-              (.inr ⟨rfl, hfree⟩))
+              (.inr ⟨rfl, hfree, hrel⟩))
             (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ n y _ => by
               rw [rename_den hx ht ht']; exact Sem.Refines.refl _)
       · cases h
@@ -711,26 +874,31 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         have hput : defs.foldl (fun M u => M.put u.id u) M = putAll M defs.toList := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
-        exact replayL_inv hs evs _ M' B B' _ h (hI.rule hsd F)
+        exact replayL_inv hs hD evs _ M' B B' _ h (hI.rule hsd F)
           (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ n y hy => F.step hsd hI.closed hρ n y hy)
-      · -- a lowered store or frame address (`atomDef`)
+      · -- a lowered store, a folded store offset or a frame address (`atomDef`)
         split at h
         · rename_i u hdef
           obtain ⟨x0, hx0, ht, ht', hty, hk⟩ := atomDef_one hdef
-          have hcl : C v → ∀ a ∈ u.args, C a := fun hv a ha => by
-            have hxa := closed_args hI.closed hx0 hv
-            rcases hk with ⟨heq, -⟩ | ⟨hsub, -⟩
-            · exact hxa a (heq ▸ ha)
-            · exact hxa a (hsub a ha)
-          have hfree : argFree tabs u = true ∨
-              (u.args = x0.args ∧ (argFree tabs x0 = true → argFree tabs u = true)) := by
-            rcases hk with ⟨heq, hm⟩ | ⟨-, hal⟩
-            · exact .inr ⟨heq, fun hf =>
-                absurd ((memLower_op hm).symm.trans (argFree_cases hf).1) (by decide)⟩
-            · exact .inl (argFree_of_addrLower hal)
-          exact replayL_inv hs evs _ M' B B' C h (hI.atomPut hx0 ht ht' hty hcl hfree)
-            (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ n y _ => by
-              rw [rename_den hx0 ht ht']; exact Sem.Refines.refl _)
+          have hB' := hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ n y _ => by
+            rw [rename_den (x' := u) hx0 ht ht']; exact Sem.Refines.refl _
+          rcases hk with ⟨heq, hm, h0⟩ | ⟨hsub, hal⟩ | ⟨hfold, a, ha, hS⟩
+          · have hrel : ∀ (a : Value) (i : Nat) (s t : Val), ArgRel (stArg a x0 i) s t →
+                ArgRel (stArg a u i) s t := fun a i s t h => by
+              rw [stArg_none (by rw [memLower_op hm]; rfl)] at h
+              unfold stArg; split
+              · rw [h0]; exact addrRef_zero h
+              · exact h
+            exact replayL_inv hs hD evs _ M' B B' C h
+              (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (heq ▸ ha))
+                (.inr ⟨heq, fun hf =>
+                  absurd ((memLower_op hm).symm.trans (argFree_cases hf).1) (by decide), hrel⟩)) hB'
+          · exact replayL_inv hs hD evs _ M' B B' C h
+              (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (hsub a ha))
+                (.inl (argFree_of_addrLower hal))) hB'
+          · exact replayL_inv hs hD evs _ M' B B' C h
+              (hI.fold hx0 ht ht' hfold fun a' ha' => by
+                rw [hD, ha] at ha'; cases ha'; exact hS) hB'
         · rename_i u s hdef
           obtain ⟨x0, hx0, ht, ht', hty, hal, hua, hsv, hsn, hst, hsa⟩ := atomDef_two hdef
           have hI1 := hI.fresh (P := C v) hsn hst fun hv a ha =>
@@ -747,7 +915,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
             (fun y h => .inl h)
             hI.typed fun ρ _ n y hy => by
               rw [denL_put_fresh hsn hI.closed _ y hy]; exact Sem.Refines.refl _
-          exact replayL_inv hs evs _ M' B B' _ h hI2
+          exact replayL_inv hs hD evs _ M' B B' _ h hI2
             (hB1.mono (g := id) (fun _ h => h) hI1.typed fun ρ _ n y _ => by
               rw [rename_den hx1 ht ht']; exact Sem.Refines.refl _)
         · cases h
@@ -760,10 +928,10 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · rename_i hi
       split at h
       · rename_i hrc
-        exact replayL_inv hs evs _ M' B B' C h (hI.copy hx hi hrc)
+        exact replayL_inv hs hD evs _ M' B B' C h (hI.copy hx hi hrc)
           (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ n y hy =>
             copyPut_denL hx hi hrc hI.closed hρ n y hy)
-      · exact replayL_inv hs evs M M' B B' C h hI hB
+      · exact replayL_inv hs hD evs M M' B B' C h hI hB
     · cases h
   | .control b i c :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replayL at h
@@ -774,7 +942,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · rename_i hi
       split at h
       · rename_i hrc
-        exact replayL_inv hs evs M M' _ B' C h hI (hB.control hI.closed hI.typed hst hi hrc)
+        exact replayL_inv hs hD evs M M' _ B' C h hI (hB.control hI.closed hI.typed hst hi hrc)
       · cases h
     · cases h
   | .phielim .. :: _, M, M', B, B', C, h, _, _ => by simp [replayL] at h
@@ -794,7 +962,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     split at h
     · cases h
     rename_i st' hok
-    exact replayL_inv hs evs M M' _ B' C h hI
+    exact replayL_inv hs hD evs M M' _ B' C h hI
       (hB.block hI.closed hI.typed hst h2' (ofRuleSetL_blockSound hs hbr) hok)
 
 end GoFV.Proof.Low.Val
