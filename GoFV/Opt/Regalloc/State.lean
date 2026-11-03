@@ -1,5 +1,6 @@
 import GoFV.Opt.Pass
 import GoFV.SSA.Alloc
+import GoFV.SSA.CopyInto
 import GoFV.SSA.ABI
 import GoFV.SSA.OpARM64
 import GoFV.SSA.RegARM64
@@ -350,24 +351,25 @@ def newValue0 (b : ID) (pos : Pos) (op : Op) (t : TypeRef) : M ID := do
   set { s with f }
   return id
 
-/-- Shared part of `copyInto`/`copyIntoWithXPos`: a clone of `v` at the end of `b`. -/
-def cloneInto (v : Value) (b : ID) (pos : Pos) : M ID := do
-  for a in v.args do
-    if (← read).isMemory (← val a).type then
-      fatal s!"can't move a value with a memory arg v{v.id}"
+/-- `v.copyInto(b)` (`GoFV.SSA.Func.copyInto`). -/
+def copyInto (v : Value) (b : ID) : M ID := do
+  let c ← read
+  let (f, id) ← liftE ((← get).f.copyInto c.isMemory v.id b)
+  modify fun s => { s with f }
+  return id
+
+/-- `v.copyIntoWithXPos(b, pos)` (`value.go:465`): `copyInto` at `pos`, keeping a statement mark
+of `v` on the same line. -/
+def copyIntoWithXPos (v : Value) (b : ID) (pos : Pos) : M ID := do
+  let pos := if v.pos.isStmt == Pos.isStmtMark && pos.isStmt != Pos.isStmtMark &&
+      v.pos.sameFileAndLine pos then pos.withIsStmt else pos
   let s ← get
   let (f, id) := s.f.newValueArgs b pos v.op v.type v.auxInt v.aux v.args
   set { s with f }
+  for a in v.args do
+    if (← read).isMemory (← val a).type then
+      fatal s!"can't move a value with a memory arg v{v.id}"
   return id
-
-/-- `v.copyInto(b)`. -/
-def copyInto (v : Value) (b : ID) : M ID := cloneInto v b v.pos.withNotStmt
-
-/-- `v.copyIntoWithXPos(b, pos)`. -/
-def copyIntoWithXPos (v : Value) (b : ID) (pos : Pos) : M ID :=
-  let pos := if v.pos.isStmt == Pos.isStmtMark && pos.isStmt != Pos.isStmtMark &&
-      v.pos.sameFileAndLine pos then pos.withIsStmt else pos
-  cloneInto v b pos
 
 /-- `f.newValueNoBlock(op, t, pos)`. -/
 def newValueNoBlock (op : Op) (t : TypeRef) (pos : Pos) : M ID := do
