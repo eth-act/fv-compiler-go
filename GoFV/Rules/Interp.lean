@@ -356,7 +356,7 @@ set's `nilChecks`/`loads`, tried on a `NilCheck` or `IsNonNil`/`Load` after its 
 continues the row's); `structLoads`: the rule set's `structLoads`, tried on a `Load` after `loads`;
 `structStores`: the rule set's `structStores`, tried on a `Store` after its row, then `loads`
 (dropped identity writes, also tried on a `Zero` after its row; changed `Move` sources on a
-`Move` after its row); `segs`: the rule set's `segs`,
+`Move` after its row; the lengths of `growslice` results on a `SliceLen` after its row); `segs`: the rule set's `segs`,
 tried on every value after the others (from `segBase`); `phiSels`: the rule set's `phiSels`, tried
 on every value after `segs` (from `psBase`). -/
 structure Table where
@@ -375,7 +375,7 @@ def Table.segBase (t : Table) (o : Op) : Nat :=
   t.values[o.ctorIdx]!.size + (if o == .NilCheck || o == .IsNonNil then t.nilChecks.size else 0) +
     (if o == .Load then t.loads.size + t.structLoads.size else 0) +
     (if o == .Store then t.structStores.size + t.loads.size else 0) +
-    (if o == .Zero || o == .Move then t.loads.size else 0)
+    (if o == .Zero || o == .Move || o == .SliceLen then t.loads.size else 0)
 
 /-- The index of the first `phiSels` rule on a value of op `o`: after the `segs`. -/
 def Table.psBase (t : Table) (o : Op) : Nat := t.segBase o + t.segs.size
@@ -439,7 +439,7 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     let ls := t.loads
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + ss.size + i) then return true
-  if o == .Zero || o == .Move then
+  if o == .Zero || o == .Move || o == .SliceLen then
     let ls := t.loads
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + i) then return true
