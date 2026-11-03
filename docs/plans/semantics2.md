@@ -139,7 +139,8 @@ through one lifting `liftW`, with these provenance cases taken first:
 
 This inherits Phase 1's open points on concrete addresses (#156: out-of-window arithmetic, nil
 comparison by block, `Convert` round-trips). Lowered code adds one: an `ADD p i` whose `i` is
-itself an address (rare; `unsafe` code) is computed on words.
+itself a pointer (rare; `unsafe` code) is computed on words, the sum of the two addresses
+(`poison` if one has none), symmetrically, as `ADD` is `commutative` and cse swaps its operands.
 
 **Totality.** ARM64 ops are total, as the instructions are: `UDIV`/`SDIV` by zero give 0, shifts
 take the amount modulo the width, `CLZ`/`RBIT` of 0 are defined. Passes rely on it: `loop
