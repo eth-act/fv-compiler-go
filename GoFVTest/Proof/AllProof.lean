@@ -18,6 +18,7 @@ import GoFV.Proof.AtomSimSet
 import GoFV.Proof.AtomSimStep
 import GoFV.Proof.AtomicSim
 import GoFV.Proof.Avail
+import GoFV.Proof.AvailL
 import GoFV.Proof.Block
 import GoFV.Proof.CallMono
 import GoFV.Proof.CheckFacts
