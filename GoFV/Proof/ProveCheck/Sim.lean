@@ -241,10 +241,10 @@ theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F 
   refine ⟨fun hnp => ?_, fun hph p pb k hp hpb hk => ?_⟩
   · rcases hper i hi' with e | hf
     · rw [← e]
-      exact prove_termRefP hc hR hbf (facts_sanc hc hR hbf hfb) hLM
-        (uses hc hbf hfb htree haf hu' (hop ▸ hnp) hmem)
+      exact (prove_termRefP hc hR hbf (facts_sanc hc hR hbf hfb) hLM
+        (uses hc hbf hfb htree haf hu' (hop ▸ hnp) hmem)).weakenQ fun _ h => h.1
     · rw [argAsm_of_not_phi (hop ▸ hnp)] at hf
-      exact fold_termRefP hR hbf (facts_sanc hc hR hbf hfb) hf
+      exact (fold_termRefP hR hbf (facts_sanc hc hR hbf hfb) hf).weakenQ fun _ h => h.1
   · obtain ⟨-, cb, hcb, hpred⟩ := hwf.succLink p pb ⟨hp, hpb⟩ k _ hk
     rw [hfb] at hcb; cases hcb
     rcases hper i hi' with e | hf
@@ -252,10 +252,10 @@ theorem prove_atomArgs (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F 
       have hpt : ((make f).depthOf p).isSome := by simpa [Cert.inTree] using hR.tree _ hp
       have hget : u'.args[i]? = some u'.args[i]! := by
         rw [getElem!_pos u'.args i hi']; exact Array.getElem?_eq_getElem hi'
-      exact prove_termRefP hc hR hp (facts_ancV hc hR hp hpb) hLM
-        (phiUse hc hbf hfb htree haf hu' (hop ▸ hph) hget hpred hpt)
+      exact (prove_termRefP hc hR hp (facts_ancV hc hR hp hpb) hLM
+        (phiUse hc hbf hfb htree haf hu' (hop ▸ hph) hget hpred hpt)).weakenQ fun _ h => h.1
     · rw [argAsm_of_phi (hop ▸ hph) hpred] at hf
-      exact fold_termRefP hR hp (facts_ancV hc hR hp hpb) hf
+      exact (fold_termRefP hR hp (facts_ancV hc hR hp hpb) hf).weakenQ fun _ h => h.1
 
 /-- A removed branch: the `If`'s control, when not `poison`, takes the kept successor. -/
 theorem branch_step (hR : RelSpec tabs f g F inv RB) {b : ID} (hb : b ∈ f.blocks)
@@ -314,9 +314,11 @@ theorem prove_steps (hwf : WF ce f) (hc : CertOK f) (hR : RelSpec tabs f g F inv
     have hk2 : k < fb.controls.size := hctl ▸ hk'
     have hcm : fb.controls[k]! ∈ fb.controls := by
       rw [getElem!_pos fb.controls k hk2]; exact Array.getElem_mem hk2
-    exact prove_termRefP hc hR hbf (facts_sanc hc hR hbf hfb)
-      ((closedOK_facts hR.closedF b hbf fb hfb).1 _ hcm) (ctrlUse hc hbf hfb htree hcm)
-  · exact branch_step hR hbf (facts_sanc hc hR hbf hfb) hbr
+    exact (prove_termRefP hc hR hbf (facts_sanc hc hR hbf hfb)
+      ((closedOK_facts hR.closedF b hbf fb hfb).1 _ hcm) (ctrlUse hc hbf hfb htree hcm)).weakenQ
+      fun _ h => h.1
+  · obtain ⟨h1, h2⟩ := branch_step hR hbf (facts_sanc hc hR hbf hfb) hbr
+    exact ⟨h1, h2.weakenQ fun _ h => h.1⟩
 
 end
 

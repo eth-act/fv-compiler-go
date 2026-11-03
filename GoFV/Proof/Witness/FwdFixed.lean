@@ -130,7 +130,8 @@ theorem ff_rwPre (args : List Val) (hargs : ∀ v ∈ args, ∀ a n, v.Avoids (�
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
     fun n c hm h => Env.p1_allocZero n c hm h, ⟨fun n c h => Env.p1_keepsRo n c h, ?_⟩,
-    GoFV.Proof.Pass.Rewrite.initAvoids_empty hargs (by decide +kernel)⟩
+    GoFV.Proof.Pass.Rewrite.initAvoids_empty hargs (by decide +kernel),
+    fun n c hn h => Env.p1_growLen n c hn h⟩
   · rw [show NilCheck.dictParams ffTabs ffFunc = [] by decide +kernel]
     exact DictArgs.nil args
   · rw [ff_roPass]
@@ -260,7 +261,8 @@ theorem fg_rwPre (args : List Val) (hargs : ∀ v ∈ args, ∀ a n, v.Avoids (�
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
     fun n c hm h => Env.p1_allocZero n c hm h, ⟨fun n c h => Env.p1_keepsRo n c h, ?_⟩,
-    GoFV.Proof.Pass.Rewrite.initAvoids_empty hargs (by decide +kernel)⟩
+    GoFV.Proof.Pass.Rewrite.initAvoids_empty hargs (by decide +kernel),
+    fun n c hn h => Env.p1_growLen n c hn h⟩
   · rw [show NilCheck.dictParams ffTabs fgFunc = [] by decide +kernel]
     exact DictArgs.nil args
   · rw [fg_roPass]

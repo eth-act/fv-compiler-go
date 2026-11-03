@@ -473,6 +473,83 @@ theorem memAtoms_of {D : ID → Option Value} {tabs : Tables} {fr : Frame} {V : 
   obtain ⟨N, hN⟩ := hD.list hV (l := v.args.toList) fun c hc => h1 c (Array.mem_toList_iff.1 hc)
   exact ⟨N, fun k hk => ⟨y, by rw [hN k hk]; exact h2, by rw [hV a ha hat]; exact h3⟩⟩
 
+/-! ## Relations of atoms to their arguments (issue #69)
+
+A source invariant may relate an atom's value to the values its arguments had when it was
+evaluated (`SrcInv.R`, e.g. a `runtime.growslice` call's result length to its length argument).
+`RDefs`: the non-`Phi` atoms of a set of values are so related to their arguments' registers,
+which are in the set (kept along a block entry as `MemDefs`). `RAtoms`: a valuation whose
+non-`Phi` atoms, where not `poison`, are so related to their arguments' terms (`rAtoms_of`). -/
+
+/-- The non-`Phi` atoms of `V` are related by `R` to their arguments' registers, which are in
+`V`. -/
+def RDefs (R : Value → List Val → Val → Prop) (D : ID → Option Value) (fr : Frame)
+    (V : ID → Prop) : Prop :=
+  ∀ a, V a → ∀ v, D a = some v → termOp v.op = false → v.op ≠ .Phi →
+    (∀ c ∈ v.args, V c) ∧ R v (v.args.toList.map (rv fr)) (rv fr a)
+
+/-- The non-`Phi` atoms `ρ` does not make `poison` are related by `R` to their arguments' terms,
+for all large fuels. -/
+def RAtoms (R : Value → List Val → Val → Prop) (D : ID → Option Value) (tabs : Tables)
+    (ρ : ID → Val) : Prop :=
+  ∀ a v, D a = some v → termOp v.op = false → v.op ≠ .Phi → ρ a ≠ .poison →
+    ∃ N, ∀ k, N ≤ k → R v (v.args.toList.map (den D tabs ρ k)) (ρ a)
+
+section
+variable {R : Value → List Val → Val → Prop} {D : ID → Option Value}
+
+theorem rDefs_empty (R : Value → List Val → Val → Prop) (D : ID → Option Value) (fr : Frame) :
+    RDefs R D fr (fun _ => False) := fun _ h => h.elim
+
+theorem RDefs.iff {fr : Frame} {V W : ID → Prop} (h : RDefs R D fr V) (hVW : ∀ x, V x ↔ W x) :
+    RDefs R D fr W := by
+  intro a ha v hv ht hp
+  obtain ⟨h1, h2⟩ := h a ((hVW a).2 ha) v hv ht hp
+  exact ⟨fun c hc => (hVW c).1 (h1 c hc), h2⟩
+
+/-- Registers of `V` unchanged. -/
+theorem RDefs.frame {fr fr' : Frame} {V : ID → Prop} (h : RDefs R D fr V)
+    (hk : ∀ a, V a → fr'.regs[a]? = fr.regs[a]?) : RDefs R D fr' V := by
+  intro a ha v hv ht hp
+  obtain ⟨h1, h2⟩ := h a ha v hv ht hp
+  have hrv : ∀ c, V c → rv fr' c = rv fr c := fun c hc => by unfold rv; rw [hk c hc]
+  refine ⟨h1, ?_⟩
+  rw [List.map_congr_left (fun c hc => hrv c (h1 c (Array.mem_toList_iff.1 hc))), hrv a ha]
+  exact h2
+
+/-- A subset closed under the arguments of non-`Phi` atoms. -/
+theorem RDefs.restrict {fr : Frame} {V W : ID → Prop} (h : RDefs R D fr V) (hWV : ∀ x, W x → V x)
+    (hW : ∀ x, W x → ∀ v, D x = some v → termOp v.op = false → v.op ≠ .Phi → ∀ c ∈ v.args, W c) :
+    RDefs R D fr W := fun a ha v hv ht hp =>
+  ⟨hW a ha v hv ht hp, (h a (hWV a ha) v hv ht hp).2⟩
+
+/-- Adding values, each non-`Phi` atom of them with its arguments in the union and related to
+their registers. -/
+theorem RDefs.union {fr : Frame} {V W : ID → Prop} (h : RDefs R D fr V)
+    (hW : ∀ x, W x → ¬ V x → ∀ v, D x = some v → termOp v.op = false → v.op ≠ .Phi →
+      (∀ c ∈ v.args, V c ∨ W c) ∧ R v (v.args.toList.map (rv fr)) (rv fr x)) :
+    RDefs R D fr (fun a => V a ∨ W a) := by
+  intro a ha v hv ht hp
+  by_cases hV : V a
+  · obtain ⟨h1, h2⟩ := h a hV v hv ht hp
+    exact ⟨fun c hc => .inl (h1 c hc), h2⟩
+  · exact hW a (ha.resolve_left hV) hV v hv ht hp
+
+/-- **`RAtoms` of a valuation** that agrees with the registers on the atoms of `V` and is
+`poison` on the other atoms. -/
+theorem rAtoms_of {tabs : Tables} {fr : Frame} {V : ID → Prop} (hD : DenOK D tabs fr V)
+    (hM : RDefs R D fr V) {ρ : ID → Val} (hV : ∀ a, V a → ¬ IsTerm D a → ρ a = rv fr a)
+    (hpois : ∀ a, ¬ IsTerm D a → ρ a ≠ .poison → V a) : RAtoms R D tabs ρ := by
+  intro a v hv ht hp hne
+  have hat : ¬ IsTerm D a := fun ⟨v', hv', ht'⟩ => by
+    rw [hv] at hv'; cases hv'; rw [ht] at ht'; cases ht'
+  have ha := hpois a hat hne
+  obtain ⟨h1, h2⟩ := hM a ha v hv ht hp
+  obtain ⟨N, hN⟩ := hD.list hV (l := v.args.toList) fun c hc => h1 c (Array.mem_toList_iff.1 hc)
+  exact ⟨N, fun k hk => by rw [hN k hk, hV a ha hat]; exact h2⟩
+
+end
+
 
 theorem refOK_of_topo {D : ID → List ID} :
     ∀ {L : List ID} {V : ID → Prop}, TopoRem D L → (∀ x ∈ L, ∀ a ∈ D x, V a ∨ a ∈ L) →

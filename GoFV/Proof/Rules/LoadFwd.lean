@@ -27,7 +27,8 @@ open GoFV.Rules
 /-- **The obligation of a Load-of-Store forwarding rule**: `(Load _ (Store _ x _)) => x`, also
 through up to three more `Store`s, `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and
 its converse, or `(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src)
-mem)`; or a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem`
+mem)`; or a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem`; or the length
+of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …))) => newLen`
 (`RewriteCheck.fwdShapeOK`); each instance is validated by `RewriteCheck.fwdRel`. -/
 def EffectRule.LoadFwd (r : Rule) : Prop := GoFV.Opt.RewriteCheck.fwdShapeOK r = true
 
@@ -87,6 +88,9 @@ theorem r_generic_2146_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2155`: `(Move {t1} [s] dst tmp1 midmem:(VarDef (Move {t2} [s] tmp2 src _))) &&
 … => (Move {t1} [s] dst src midmem)` -/
 theorem r_generic_2155_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2155 := rfl
+
+/-- `generic.rules:2128`: `(SliceLen (SelectN [0] (StaticLECall {sym} _ newLen:(Const64) _ _ _ _))) && (isSameCall(sym, "runtime.growslice") || isSameCall(sym, "runtime.growsliceNoAlias")) => newLen` -/
+theorem r_generic_2128_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2128 := rfl
 
 /-- `generic.rules:2251`: `(Load (Addr {s} sb) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` (issue #69: the read from the read-only symbol's allocation, `RewriteCheck.fixedOK`,
 under `Sem.RoImage`) -/

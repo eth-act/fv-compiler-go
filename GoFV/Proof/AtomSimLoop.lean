@@ -137,7 +137,9 @@ theorem chgRef_apply {Q : (ID → Val) → Prop} {D E : ID → Option Value} {ta
     (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a)
     (hMS : MemDefs D tabs FS VS) (huS : ∀ a ∈ u.args, VS a) (hwT : ∀ a ∈ w.args, VT a)
-    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ) {y : Val}
+    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) →
+      (∀ a, VS a → ¬ IsTerm D a → ρ a = rv FS a) → (∀ a, ¬ IsTerm D a → ρ a ≠ .poison → VS a) →
+      Q ρ) {y : Val}
     (hy : memDef tabs u (u.args.toList.map (rv FS)) = some y) :
     ∃ y', memDef tabs w (w.args.toList.map (rv FT)) = some y' ∧ Sem.Refines y y' := by
   classical
@@ -162,17 +164,17 @@ theorem chgRef_apply {Q : (ID → Val) → Prop} {D E : ID → Option Value} {ta
       by_cases h2 : VS a ∧ ¬ IsTerm D a
       · simp only [ρ, h2]; exact hsh a h2.1 h2.2 hat hdef h1
       · simp only [ρ, h2, ite_false]; exact retype_poison _
-  have hMA : MemAtoms D tabs ρ := memAtoms_of hS hMS (fun a ha hat => by simp [ρ, ha, hat])
-    fun a hat hne => by
-      by_cases h2 : VS a ∧ ¬ IsTerm D a
-      · exact h2.1
-      · exact absurd (ite_eq_right h2) hne
+  have hρV : ∀ a, ¬ IsTerm D a → ρ a ≠ .poison → VS a := fun a hat hne => by
+    by_cases h2 : VS a ∧ ¬ IsTerm D a
+    · exact h2.1
+    · exact absurd (ite_eq_right h2) hne
+  have hMA : MemAtoms D tabs ρ := memAtoms_of hS hMS (fun a ha hat => by simp [ρ, ha, hat]) hρV
   obtain ⟨N, hN⟩ := hS.list (ρ := ρ) (fun a ha hat => by simp [ρ, ha, hat]) (l := u.args.toList)
     fun a ha => huS a (Array.mem_toList_iff.1 ha)
-  have hQρ : Q ρ := hQ ρ fun a => by
+  have hQρ : Q ρ := hQ ρ (fun a => by
     by_cases h : VS a ∧ ¬ IsTerm D a
     · exact .inl (if_pos h)
-    · exact .inr (if_neg h)
+    · exact .inr (if_neg h)) (fun a ha hat => by simp [ρ, ha, hat]) hρV
   obtain ⟨m, y', hy', hyy⟩ :=
     hC ρ ρ' hval htD htE hQρ hMA N y (by rw [hN N (Nat.le_refl N)]; exact hy)
   obtain ⟨M, hM⟩ := hG.list (ρ := ρ') (fun a ha hat => by simp [ρ', ha, hat]) (l := w.args.toList)
@@ -188,6 +190,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     {env : Env} (hE : env.Mono) {G T : Frame} {VS VT : ID → Prop}
     (hfr : T = { G with regs := T.regs })
     (hDS : DenOK f.value? tabs G VS) (hMS : MemDefs f.value? tabs G VS)
+    (hRS : RDefs I.R f.value? G VS)
     (hDT : DenOK (listedDefs g) tabs T VT)
     (hVT : ∀ a, VT a → ∃ w, Placed g a w)
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
@@ -222,7 +225,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
       (fun a ha hat hat' hdef _ => ?_) hinv (I.poisonAtom _) hSV
-      (fun ρ hρ => I.qpois _ _ ρ hq hρ) hMS
+      (fun ρ hρ hV hp => ⟨I.qpois _ _ ρ hq hρ, rAtoms_of hDS hRS hV hp⟩) hMS
     rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat
   · -- a changed store or `Move`: the source's write, refined by the target's (`chgRef_apply`)
     rw [hu] at hu'; cases hu'
@@ -238,7 +241,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
       obtain ⟨r', hr', hrr⟩ := chgRef_apply hC hws hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
         htyS' (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
         (fun a ha hat hat' hdef _ => by rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat)
-        hMS hargsS hargsT (fun ρ hρ => I.qpois _ _ ρ hq hρ) hr
+        hMS hargsS hargsT (fun ρ hρ hV hp => ⟨I.qpois _ _ ρ hq hρ, rAtoms_of hDS hRS hV hp⟩) hr
       rw [evalValue_of_regs (fun a ha => (hDT a (hargsT a ha)).1),
         evalOp_memOp hmw (by rcases hws with h | h <;> rw [h] <;> decide),
         memRoot_of_memDef_chg (ctx := Ctx.make tabs g) hws hr', hty]
@@ -271,6 +274,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     (hsz : T0.regs.size = g.valueTab.size)
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T0)
     (hDS : DenOK f.value? tabs G VS) (hMS : MemDefs f.value? tabs G VS)
+    (hRS : RDefs I.R f.value? G VS)
     (hDT : DenOK (listedDefs g) tabs T0 VT1)
     (hVT1 : ∀ a, VT1 a → ∃ w, Placed g a w) (hdisj : ∀ x ∈ og, ¬ VT1 x)
     (hrel0 : ∀ a, VT1 a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
@@ -355,7 +359,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
           · exact hVT1 a ha
           · obtain ⟨w, hp, -⟩ := hplaced a (by rw [hog']; exact List.mem_append_left _ ha)
             exact ⟨w, hp⟩
-        have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hMS hTD hVTd
+        have hr := tgt_atom_ref H hE (by rw [hTf, hfr]) hDS hMS hRS hTD hVTd
           (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt hpw hu hs hterm hwphi hargsS hargs
           (hwb ▸ hinv) (hwb ▸ hq) (hwb ▸ hSV)
         rw [hevS] at hr

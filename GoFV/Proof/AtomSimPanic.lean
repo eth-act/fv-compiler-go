@@ -114,10 +114,11 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
   rw [hur] at hu; cases hu
   -- the `Phi`s and the frames after them
   obtain ⟨psT, hpsT, hphis⟩ := tgt_phis H R B hpsS
-  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, hsT, -, -, hMS⟩ := R.den
+  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, hsT, -, -, hMS, hRS⟩ := R.den
   have hS1 := denOK_phis H.wf B.bmS B.hfb rfl hDS hsS (closed_sanc_f H.wf H.cf b) phi_not_term_f
     R.szS hpsS
   have hM1 := memDefs_phis H.wf H.cf B.bmS B.hfb rfl hMS hsS hpsS
+  have hR1 := rDefs_phis H.wf H.cf B.bmS B.hfb rfl hRS hsS hpsS
   have hT1 := denOK_phis H.wg B.bmT B.hgb rfl hDT hsT (closed_sanc_g H.wg H.cg b) phi_not_term_g
     R.szT hpsT
   obtain ⟨pS1, pS2, pS3, pS4⟩ := phis_spec B.vS hpsS
@@ -129,6 +130,8 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := src_eval H B R.treeS (P := pre) (Q := r :: post)
     hof hS1 (by rw [pS1, R.szS]) htyPS hpre
   have hMG := src_eval_mem H B R.treeS (P := pre) (Q := r :: post) hof hS1 hM1
+    (by rw [pS1, R.szS]) htyPS hpre
+  have hRG := src_eval_rdefs H B R.treeS (P := pre) (Q := r :: post) hof hS1 hR1 hEI
     (by rw [pS1, R.szS]) htyPS hpre
   obtain ⟨hinvG, hqG⟩ := inv_evalAll (I := I) B.bmS B.hfb
     (fr := { frS with regs := setPhis psS frS.regs }) hEI
@@ -188,7 +191,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
       rw [rv_of hy']; exact hyy
   have hogpre : ∀ x ∈ preT, x ∈ og.toList := fun x hx => by rw [hog]; exact List.mem_append_left _ hx
   obtain ⟨T, hevT, l1, l2, l3, l4, l5, l6⟩ := tgt_loop H hE (og := og.toList) (L := preT)
-    (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hMG hT1
+    (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hMG hRG hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrelT0 B.ndT B.tpT
     (b := b) (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
@@ -221,7 +224,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
   -- the root `r` in the target
   have hrblk : wr.block = b :=
     (placed_in H.wg B.bmT B.hgb ((B.mT r).1 hrog.1).1 hwr).2.1
-  have hrT := tgt_atom_ref H hE (frame_trans l1 hfrT) g4 hMG l4
+  have hrT := tgt_atom_ref H hE (frame_trans l1 hfrT) g4 hMG hRG l4
     (fun a ha => ha.elim (v1_placed H.wg B.bmT B.hgb a) fun hm => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 (hogpre a hm)
       exact ⟨w, (placed_in H.wg B.bmT B.hgb hxb hw).1⟩)

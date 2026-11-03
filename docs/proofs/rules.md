@@ -382,6 +382,34 @@ env.Mono ∧ env.AllocZero ∧ RoImage ro env mem)`. `zeroChain_read` reads zero
 `fm_checkedRewrite` (`mallocgcSmallNoScanSC2`), `fn_checkedRewrite`/`fn_rwPre` (`newobject`,
 `Witness/FwdNew.lean`).
 
+**`growslice` lengths** (`:2128`, issue #69): `(SliceLen (SelectN [0] (StaticLECall {sym} _
+newLen:(Const64) _ _ _ _))) && (isSameCall(sym, "runtime.growslice") || isSameCall(sym,
+"runtime.growsliceNoAlias")) => newLen` is a forwarding rule (`fwdShapeOK`; the interpreter tries
+`loads` on a `SliceLen` after its row). `fwdNewOK` accepts `growOK tabs f u w`: `u` is `SliceLen
+(SelectN [0] c)` of the 64-bit integer shape, the `SelectN` of a slice shape, `c` a call `growV`
+accepts (a `StaticLECall` of `runtime.growslice`/`runtime.growsliceNoAlias` with six arguments, a
+type `(slice, …)`, one slice ABI result and a second ABI parameter of the 64-bit integer shape),
+and `w` is `Copy` of `c`'s second argument, whatever its definition: in the forwarding layer's
+input the length is often not yet the `Const64` later value rules fold it to (`Add64 (SliceLen
+(SliceMake _ (Sub64 x x) _)) (Const64 [2])`). The precondition `Env.GrowLen` (in `RwPre` and
+`VPre`; `GoFV/Proof/MemOpsPre.lean`) says that these contracts, when they return, got no pointer
+as `newLen` and return a slice of length `newLen` if it is a 64-bit integer
+(`Env.runtime_growLen`: `Runtime.growslice` returns only for a nonnegative integer `newLen`;
+`Env.p1_growLen`). The call's result relates to the value its length argument had when it was
+evaluated, which a register-level invariant (`Q`) cannot keep (the argument's atoms may be
+evaluated again in a loop before the call is). The atom simulation therefore carries a relation of
+atoms to their arguments' values (`SrcInv.R`, established by `rstep` from each evaluation under
+`E`, default `True`): `RDefs` keeps it for the atoms whose arguments' registers are still those
+they were evaluated on (along a block entry as `MemDefs`: the strict ancestors' atoms and the
+evaluated prefix), and `TermRefP`'s premises get `RAtoms` of the valuation with the frame-level
+invariant (`SrcInv.QR b ρ := Q b ρ ∧ RAtoms R …`; `TermRefP.weakenQ`/`StepRefP.weakenQ` for
+invariants that do not use it). `LoadFwd.fwdInv` has `R := growR tabs` (`grow_eval`: the
+register of a `growV` call is `poison` or a tuple whose first component is `poison` or a slice of
+length the argument at the 64-bit integer shape, `GrowRes`) and `E` with `Env.GrowLen`;
+`grow_src` gives `SliceLen (SelectN [0] c)` as `poison` or that argument, which `fwd_den`
+refines by the argument's term in `g`. `LoadFwd.fwd_refines`' precondition gets
+`env.GrowLen`. Witness: `gr_checkedRewrite`/`gr_rwPre` (`Witness/FwdGrow.lean`).
+
 **Fixed loads** (`:2251`–`:2258`, issue #69): `(Load (OffPtr [off] (Addr {s} sb)) _) &&
 isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` (and its forms at offset 0, through
 `Convert` and through `ITab (IMake …)`) resets the

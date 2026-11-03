@@ -37,6 +37,13 @@ theorem TermRef.toP {D E : ID → Option Value} {tabs tabs' : Tables} {x y : ID}
   let ⟨m, hm⟩ := h n
   ⟨m, hm ρ ρ' h1 h2 h3⟩
 
+/-- A stronger frame-level invariant: `TermRefP` for fewer valuations. -/
+theorem TermRefP.weakenQ {P : ID → Val → Prop} {Q Q' : (ID → Val) → Prop} {S : ID → Prop}
+    {D E : ID → Option Value} {tabs tabs' : Tables} {x y : ID}
+    (h : TermRefP P Q S D tabs x E tabs' y) (hq : ∀ ρ, Q' ρ → Q ρ) :
+    TermRefP P Q' S D tabs x E tabs' y :=
+  fun ρ ρ' h1 h2 h3 h4 h5 hQ hM n => h ρ ρ' h1 h2 h3 h4 h5 (hq ρ hQ) hM n
+
 theorem retype_poison (t : Ty) : Val.poison.retype t = .poison := by cases t <;> rfl
 
 /-- A context's shape of a value is `shape` of its function's value table. -/
@@ -67,7 +74,9 @@ theorem termRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S :
     (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a)
     (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a)
-    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ)
+    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) →
+      (∀ a, VS a → ¬ IsTerm D a → ρ a = rv FS a) → (∀ a, ¬ IsTerm D a → ρ a ≠ .poison → VS a) →
+      Q ρ)
     (hMS : MemDefs D tabs FS VS) :
     Sem.Refines (rv FS x) (rv FT y) := by
   classical
@@ -101,15 +110,15 @@ theorem termRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S :
   have hPS : ∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a) := fun a ha => by
     obtain ⟨N', hN'⟩ := (hS a (hSV a ha)).2 ρ fun b hb hbt => by simp [ρ, hb, hbt]
     exact ⟨N', fun k hk => by rw [hN' k hk]; exact hP a⟩
-  have hQρ : Q ρ := hQ ρ fun a => by
+  have hρV : ∀ a, ¬ IsTerm D a → ρ a ≠ .poison → VS a := fun a hat hne => by
+    by_cases h2 : VS a ∧ ¬ IsTerm D a
+    · exact h2.1
+    · exact absurd (ite_eq_right h2) hne
+  have hQρ : Q ρ := hQ ρ (fun a => by
     by_cases h2 : VS a ∧ ¬ IsTerm D a
     · exact .inl (ite_eq_left h2)
-    · exact .inr (ite_eq_right h2)
-  have hMA : MemAtoms D tabs ρ := memAtoms_of hS hMS (fun a ha hat => by simp [ρ, ha, hat])
-    fun a hat hne => by
-      by_cases h2 : VS a ∧ ¬ IsTerm D a
-      · exact h2.1
-      · exact absurd (ite_eq_right h2) hne
+    · exact .inr (ite_eq_right h2)) (fun a ha hat => by simp [ρ, ha, hat]) hρV
+  have hMA : MemAtoms D tabs ρ := memAtoms_of hS hMS (fun a ha hat => by simp [ρ, ha, hat]) hρV
   obtain ⟨m, h⟩ := hT ρ ρ' hval htD htE hPρ hPS hQρ hMA N
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]

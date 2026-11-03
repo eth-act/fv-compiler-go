@@ -362,6 +362,117 @@ theorem memCopyReach_den {g : Func} {tabs : Tables} {ρ : ID → Val} :
           GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy] at hk
         exact memCopyReach_den N hr (retype_eq_mem hk)
 
+/-! ## The lengths of `growslice` results (`generic.rules:2128`) -/
+
+theorem int64_of_matches {t : Ty} (h : (t matches .int .w64) = true) : t = .int .w64 := by
+  split at h
+  · rfl
+  · cases h
+
+theorem slice_of_matches {t : Ty} (h : (t matches .slice _) = true) : ∃ e, t = .slice e := by
+  split at h
+  · exact ⟨_, rfl⟩
+  · cases h
+
+theorem growOK_spec {tabs : Tables} {f : Func} {u w : Value} (h : growOK tabs f u w = true) :
+    u.op = .SliceLen ∧ u.args.size = 1 ∧ tabs.ty u.type = .int .w64 ∧ w.op = .Copy ∧
+      w.args.size = 1 ∧ ∃ s cv, f.value? u.args[0]! = some s ∧ s.op = .SelectN ∧ s.auxInt = 0 ∧
+        s.args.size = 1 ∧ (∃ e, tabs.ty s.type = .slice e) ∧ f.value? s.args[0]! = some cv ∧
+        growV tabs cv = true ∧ cv.args[1]! = w.args[0]! := by
+  unfold growOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨huop, husz⟩, huty⟩, hwop⟩, hwsz⟩, h⟩ := h
+  refine ⟨huop, husz, int64_of_matches huty, hwop, hwsz, ?_⟩
+  cases hs : f.value? u.args[0]! with
+  | none => rw [hs] at h; cases h
+  | some s =>
+    rw [hs] at h
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨hsop, hsai⟩, hssz⟩, hsty⟩, h⟩ := h
+    cases hcv : f.value? s.args[0]! with
+    | none => rw [hcv] at h; cases h
+    | some cv =>
+      rw [hcv] at h
+      simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+      exact ⟨s, cv, rfl, hsop, hsai, hssz, slice_of_matches hsty, hcv, h.1, h.2⟩
+
+/-- The value `SliceLen (SelectN [0] c)` denotes, past the fuel its arguments need. -/
+private theorem grow_den {tabs : Tables} {f : Func} {ρ : ID → Val} {x : ID} {u s cv : Value}
+    {e : Option Nat} (hu : f.value? x = some u) (huop : u.op = .SliceLen) (husz : u.args.size = 1)
+    (huty : tabs.ty u.type = .int .w64) (hs : f.value? u.args[0]! = some s)
+    (hsop : s.op = .SelectN) (hsai : s.auxInt = 0) (hssz : s.args.size = 1)
+    (hsty : tabs.ty s.type = .slice e) (hcv : f.value? s.args[0]! = some cv)
+    (hcop : cv.op = .StaticLECall) (n : Nat) :
+    den f.value? tabs ρ n x = .poison ∨
+      den f.value? tabs ρ n x = (Comp.select 1 [(Tuple.selectN 0 [ρ s.args[0]!]).retype
+        (.slice e)]).retype (.int .w64) := by
+  match n with
+  | 0 => exact .inl rfl
+  | 1 =>
+    left
+    rw [den_succ_term hu (by rw [huop]; rfl), toList_one husz, huop, huty]
+    rfl
+  | 2 =>
+    left
+    rw [den_succ_term hu (by rw [huop]; rfl), toList_one husz, huop, huty, List.map_cons,
+      List.map_nil, den_succ_term hs (by rw [hsop]; rfl), toList_one hssz, hsop, hsty, hsai]
+    rfl
+  | n + 3 =>
+    right
+    rw [den_succ_term hu (by rw [huop]; rfl), toList_one husz, huop, huty, List.map_cons,
+      List.map_nil, den_succ_term hs (by rw [hsop]; rfl), toList_one hssz, hsop, hsty, hsai,
+      List.map_cons, List.map_nil,
+      den_succ_atom (not_term_of hcv (by rw [hcop]; decide))]
+    rfl
+
+/-- **The source of a `growslice` length** (`growOK`): under the forwarding layer's relation of
+the call to its arguments (`RAtoms` of `growR`), `SliceLen (SelectN [0] c)` is `poison` or the
+call's length argument at the 64-bit integer shape. -/
+theorem grow_src {tabs : Tables} {f : Func} {ρ : ID → Val}
+    (hR : RAtoms (growR tabs) f.value? tabs ρ) {x : ID} {u s cv : Value} {e : Option Nat}
+    (hu : f.value? x = some u) (huop : u.op = .SliceLen) (husz : u.args.size = 1)
+    (huty : tabs.ty u.type = .int .w64) (hs : f.value? u.args[0]! = some s)
+    (hsop : s.op = .SelectN) (hsai : s.auxInt = 0) (hssz : s.args.size = 1)
+    (hsty : tabs.ty s.type = .slice e) (hcv : f.value? s.args[0]! = some cv)
+    (hgv : growV tabs cv = true) :
+    ∃ N, ∀ n k, N ≤ k → Sem.Refines (den f.value? tabs ρ n x)
+      ((den f.value? tabs ρ k cv.args[1]!).retype (.int .w64)) := by
+  have hgv' := hgv
+  unfold growV at hgv'
+  simp only [Bool.and_eq_true, beq_iff_eq] at hgv'
+  obtain ⟨⟨⟨⟨⟨hcop, hcsz⟩, -⟩, -⟩, -⟩, -⟩ := hgv'
+  by_cases hp : ρ s.args[0]! = .poison
+  · refine ⟨0, fun n k _ => ?_⟩
+    rcases grow_den hu huop husz huty hs hsop hsai hssz hsty hcv hcop (ρ := ρ) n with h | h <;>
+      rw [h]
+    · exact .poison _
+    · rw [hp]; exact .poison _
+  obtain ⟨N, hN⟩ := hR _ cv hcv (by rw [hcop]; rfl) (by rw [hcop]; decide) hp
+  have hl1 : ∀ k, ((cv.args.toList.map (den f.value? tabs ρ k))[1]?.getD .poison) =
+      den f.value? tabs ρ k cv.args[1]! := fun k => by
+    rw [List.getElem?_map, Array.getElem?_toList, getElem!_pos cv.args 1 (by omega),
+      Array.getElem?_eq_getElem (show 1 < cv.args.size by omega)]
+    rfl
+  refine ⟨N, fun n k hk => ?_⟩
+  have hG := hN k hk hgv
+  rw [hl1] at hG
+  rcases hG with hG | ⟨s0, rest, hG, hs0⟩
+  · exact absurd hG hp
+  rcases grow_den hu huop husz huty hs hsop hsai hssz hsty hcv hcop (ρ := ρ) n with h | h <;>
+    rw [h]
+  · exact .poison _
+  rw [hG]
+  rcases hs0 with rfl | ⟨p, L, cap, hA, rfl⟩
+  · exact .poison _
+  rw [hA]
+  show Sem.Refines ((Comp.select 1 [(Val.agg [p, .int .w64 L, cap]).retype (.slice e)]).retype
+    (.int .w64)) _
+  rcases retype_slice_len e p cap L with h1 | ⟨p', cap', h1⟩ <;> rw [h1]
+  · exact .poison _
+  · show Sem.Refines ((Val.int .w64 L).retype (.int .w64)) _
+    rw [retype_i64]
+    exact .refl _
+
 section
 variable {tabs : Tables} {ro : List (String × Alloc)} {f g : Func} (F : FwdFacts tabs ro f g)
 include F
@@ -381,7 +492,7 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
        (w.op = .Copy ∧ w.args.size = 1 ∧ fwdOK tabs f u (w.args[0]?.getD 0) = true) ∨
        fwdConstOK tabs f u w = true ∨ dropOK tabs f g u w = true ∨
        fwdMoveRep tabs f g u w = true ∨ moveSrcOK tabs f u w = true ∨
-       fixedOK tabs ro f u w = true) := by
+       fixedOK tabs ro f u w = true ∨ growOK tabs f u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
@@ -392,13 +503,15 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
-    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | (((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hm
+    rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ | ((((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hg) |
+      hm
     · exact .inl ⟨hop, hai, hax, hargs⟩
     · exact .inr (.inl ⟨hop, hsz, hok⟩)
     · exact .inr (.inr (.inl hc))
     · exact .inr (.inr (.inr (.inl hd)))
     · exact .inr (.inr (.inr (.inr (.inr (.inl hs)))))
-    · exact .inr (.inr (.inr (.inr (.inr (.inr hx)))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inl hx))))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr hg))))))
     · exact .inr (.inr (.inr (.inr (.inl hm))))
 
 /-- The arguments of a value listed in `f` are listed. -/
@@ -611,7 +724,8 @@ for valuations whose memory roots hold the writes of their arguments, under the 
 layer's frame invariant (`FwdQ`: fresh malloc calls' registers, the read-only symbols `ro` in the
 registers' memories). -/
 theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.value? tabs ρ)
-    (hM : MemAtoms f.value? tabs ρ) (hQ : FwdQ tabs ro f ρ) :
+    (hM : MemAtoms f.value? tabs ρ) (hQ : FwdQ tabs ro f ρ)
+    (hR : RAtoms (growR tabs) f.value? tabs ρ) :
     ∀ (r : Nat) (x : ID), (fwdRank f)[x]?.getD 0 = r → LM f x → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n x) (den (listedDefs g) tabs ρ' m x) := by
   intro r
@@ -627,7 +741,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   have hIH : ∀ a, (fwdRank f)[a]?.getD 0 < r → LM f a → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla => ih _ ha a rfl hla
-  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms | hfx
+  rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms | hfx | hgr
   rotate_left 3
   · exact drop_den F hT hM hQ.1 hQ.2.2 hx hu hL hwty hdrop (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · exact move_den F hT hM hx hu hL hwty hmv (fun a ha hla => hIH a (hr ▸ ha) hla) n
@@ -639,6 +753,33 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     exact hρ x
   · -- a fixed load from a read-only symbol
     exact ⟨1, fixed_den hM hQ F.cf hu (lm_arg F hx hu) hL hwty hfx n⟩
+  · -- the length of a `growslice` result: a `Copy` of the call's length argument
+    obtain ⟨huop, husz, huty, hwop, hwsz, s, cv, hs, hsop, hsai, hssz, ⟨e, hsty⟩, hcv, hgv, harg⟩ :=
+      growOK_spec hgr
+    have hcsz : cv.args.size = 6 := by
+      unfold growV at hgv; simp only [Bool.and_eq_true, beq_iff_eq] at hgv; exact hgv.1.1.1.1.2
+    have hcop : cv.op = .StaticLECall := by
+      unfold growV at hgv; simp only [Bool.and_eq_true, beq_iff_eq] at hgv; exact hgv.1.1.1.1.1
+    have hu0 : u.args[0]! ∈ u.args := by
+      rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
+    have hs0 : s.args[0]! ∈ s.args := by
+      rw [getElem!_pos s.args 0 (by omega)]; exact Array.getElem_mem _
+    have hc1 : cv.args[1]! ∈ cv.args := by
+      rw [getElem!_pos cv.args 1 (by omega)]; exact Array.getElem_mem _
+    have hls := lm_arg F hx hu _ hu0
+    have hlc := lm_arg F hls hs _ hs0
+    have hla := lm_arg F hlc hcv _ hc1
+    have hra : (fwdRank f)[cv.args[1]!]?.getD 0 < r := by
+      have h1 := fwdRankOK_spec F.rank hx hu (by rw [huop]; decide) _ hu0
+      have h2 := fwdRankOK_spec F.rank hls hs (by rw [hsop]; decide) _ hs0
+      have h3 := fwdRankOK_spec F.rank hlc hcv (by rw [hcop]; decide) _ hc1
+      omega
+    obtain ⟨N, hN⟩ := grow_src hR hu huop husz huty hs hsop hsai hssz hsty hcv hgv
+    obtain ⟨m, hm⟩ := hIH _ hra hla N
+    refine ⟨m + 1, ?_⟩
+    rw [den_succ_term hL (by rw [hwop]; rfl), hwop, toList_one hwsz, List.map_cons, List.map_nil,
+      GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty, huty, ← harg]
+    exact (hN (n + 1) N (Nat.le_refl N)).trans (retype_mono _ hm)
   · by_cases ht : termOp u.op = true
     · have hph : u.op ≠ .Phi := fun h => by rw [h] at ht; cases ht
       obtain ⟨m, hm⟩ := fuel_list (F := fun a => den f.value? tabs ρ n a)
@@ -722,8 +863,9 @@ from `tmp` in a memory where `tmp` holds what the inner `Move` read at `src` (or
 `src` still holds it (`moveSrc_mem`). -/
 theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
     (h : moveSrcOK tabs f u w = true) :
-    ChgRefP (FwdQ tabs ro f) f.value? tabs u (listedDefs g) w := by
-  intro ρ ρ' hρ hT _ hQ hM k y hy
+    ChgRefP (fun ρ => FwdQ tabs ro f ρ ∧ RAtoms (growR tabs) f.value? tabs ρ) f.value? tabs u
+      (listedDefs g) w := by
+  intro ρ ρ' hρ hT _ ⟨hQ, hR⟩ hM k y hy
   obtain ⟨huop, hwop, hu3, hw3, hai, -, hc0, hc2, mv, hmv, hcase⟩ := moveSrcOK_spec h
   have hu0 : u.args[0]! ∈ u.args := by
     rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
@@ -826,9 +968,9 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
   have hl1 := (copyReach_rank F _ hcr1 (hlim _ him1)).1
   have hS' : (den f.value? tabs ρ K w.args[1]!).asPtrWord = some S :=
     (copyReach_den (M := f.valueTab) hT _ _ _ hcr1 K).asPtrWord hS
-  obtain ⟨m0, hm0⟩ := fwd_den F hρ hT hM hQ _ _ rfl hl0 (k + 1)
-  obtain ⟨m1, hm1⟩ := fwd_den F hρ hT hM hQ _ _ rfl hl1 K
-  obtain ⟨m2, hm2⟩ := fwd_den F hρ hT hM hQ _ _ rfl hl2 (k + 1)
+  obtain ⟨m0, hm0⟩ := fwd_den F hρ hT hM hQ hR _ _ rfl hl0 (k + 1)
+  obtain ⟨m1, hm1⟩ := fwd_den F hρ hT hM hQ hR _ _ rfl hl1 K
+  obtain ⟨m2, hm2⟩ := fwd_den F hρ hT hM hQ hR _ _ rfl hl2 (k + 1)
   rw [hM2] at hm2
   obtain ⟨Mt, hMt, hM2t⟩ := refines_mem' hm2
   have hd0 : (den (listedDefs g) tabs ρ' (max m0 (max m1 m2)) w.args[0]!).asPtrWord = some Dp :=
@@ -847,10 +989,12 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
   simp [memDef, hwop, hai, hd0, hd1, hr', hw', -Int64.toNat_toInt]
 
 /-- Each value listed in `f` refines as a term in `g`, under the forwarding layer's frame
-invariant (`FwdQ`). -/
+invariant (`FwdQ`) and relation of atoms to their arguments (`growR`). -/
 theorem fwd_termRefP {x : ID} (hx : LM f x) (P : ID → Val → Prop)
-    (S : ID → Prop) : TermRefP P (FwdQ tabs ro f) S f.value? tabs x (listedDefs g) tabs x :=
-  fun _ _ hρ hT _ _ _ hQ hM n => fwd_den F hρ hT hM hQ _ x rfl hx n
+    (S : ID → Prop) :
+    TermRefP P (fun ρ => FwdQ tabs ro f ρ ∧ RAtoms (growR tabs) f.value? tabs ρ) S f.value? tabs x
+      (listedDefs g) tabs x :=
+  fun _ _ hρ hT _ _ _ hQ hM n => fwd_den F hρ hT hM hQ.1 hQ.2 _ x rfl hx n
 
 theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
     AtomArgsRefX (fwdInv tabs ro f hro) g := by
@@ -863,7 +1007,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
   rw [hu] at hw; cases hw
   have hargs := (closedOK_facts F.cf b hbf fb hfb).2 a haf u' hu'
   have hsame : (u.aux = u'.aux ∧ u.args = u'.args) ∨ moveSrcOK tabs f u' u = true := by
-    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h
+    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h | h
     · exact .inl ⟨hax, h⟩
     · rw [h] at ht; cases ht
     · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
@@ -871,6 +1015,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
     · rw [(fwdMoveRep_spec h).1] at ht; cases ht
     · exact .inr h
     · rw [fixedOK_term h] at ht; cases ht
+    · rw [(growOK_spec h).2.2.2.1] at ht; cases ht
   rcases hsame with hsame | hms
   · refine .inl ⟨u', hu', hop, hty, hai, hsame.1.symm, hsz, fun i hi => ?_⟩
     have hi' : i < u'.args.size := hsame.2 ▸ hi
@@ -897,19 +1042,20 @@ theorem fwd_steps (hro : fwdRoOK tabs ro f = true) :
 
 end
 
-/-- **Load-of-Store forwarding (and dropping identity writes, fixed loads) refines its input**
-under monotone contracts whose malloc-family contracts return zeroed blocks, from initial
-memories with the read-only symbols `ro` (which `fwdRoOK` reads `newobject`'s type sizes from and
-fixed loads read, `fixedOK`) under contracts that keep them. -/
+/-- **Load-of-Store forwarding (and dropping identity writes, fixed loads, `growslice` lengths)
+refines its input** under monotone contracts whose malloc-family contracts return zeroed blocks
+and whose `growslice` contracts return slices of the requested length (`Env.GrowLen`), from
+initial memories with the read-only symbols `ro` (which `fwdRoOK` reads `newobject`'s type sizes
+from and fixed loads read, `fixedOK`) under contracts that keep them. -/
 theorem fwd_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {ro : List (String × Alloc)}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs ro f g = true)
     (hro : fwdRoOK tabs ro f = true) :
     RefinesFrom (fun env args mem => env.Mono ∧ env.AllocZero ∧ RoImage ro env mem ∧
-      InitAvoids env args mem) tabs g tabs f :=
+      InitAvoids env args mem ∧ env.GrowLen) tabs g tabs f :=
   have F := fwdRel_spec h
   (atomSimXE_refines hf hg (atomsXOK_spec F.atoms) (fwdInv tabs ro f hro) (fwd_atomArgs F hro)
     (fwd_steps F hro)).mono fun _ _ _ h =>
     ⟨h.1, h.2.1, h.2.2.1.1, (MemInv.sinv_entry (fun a h hg hw => roMem_set a h hg hw) h.2.2.1.2).1,
-      images_avoid h.2.2.2 _⟩
+      images_avoid h.2.2.2.1 _, h.2.2.2.2⟩
 
 end GoFV.Proof.Pass.LoadFwd

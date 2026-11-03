@@ -209,8 +209,8 @@ theorem sc_steps : StepRefsP (sccpInv hwf K) g := by
   · refine ⟨fun e he => hs ▸ he, stepRefP_of_controls hk.symm hs.symm hid.symm (by rw [hctl])
       fun k hk' => ?_⟩
     rw [← hctl]
-    exact sc_controlRef hwf K hbf hfb (hctl ▸ hk')
-  · exact ⟨(firstOK_spec hF).2.2.1, sc_first hwf K hF⟩
+    exact (sc_controlRef hwf K hbf hfb (hctl ▸ hk')).weakenQ fun _ h => h.1
+  · exact ⟨(firstOK_spec hF).2.2.1, (sc_first hwf K hF).weakenQ fun _ h => h.1⟩
 
 end
 

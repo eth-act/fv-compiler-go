@@ -1854,13 +1854,43 @@ def fixedOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : 
    | _ => false) &&
   WBCheck.memTyOK tabs f
 
+/-- A call of `runtime.growslice` or `runtime.growsliceNoAlias` (whose contract returns a slice of
+the requested length, `Sem.Env.GrowLen`): a `StaticLECall` with six arguments (`oldPtr`,
+`newLen`, `oldCap`, `num`, `et`, the memory) of a type `(slice, …)`, its second ABI parameter of
+the 64-bit integer shape and its one ABI result a slice. -/
+def growV (tabs : Tables) (cv : Value) : Bool :=
+  cv.op == .StaticLECall && cv.args.size == 6 &&
+    ((cv.aux.bind tabs.callee?).any fun n =>
+      n == "runtime.growslice" || n == "runtime.growsliceNoAlias") &&
+    (tabs.ty cv.type matches .tuple (.slice _ :: _)) &&
+    (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) with
+     | [o] => (tabs.ty o.type matches .slice _)
+     | _ => false) &&
+    (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out))[1]? with
+     | some p => (tabs.ty p.type matches .int .w64)
+     | none => false)
+
+/-- The length of the slice a `growslice` call returns becomes its length argument
+(`generic.rules:2128`, there a `Const64`): `u` is `SliceLen (SelectN [0] c)` of the 64-bit
+integer shape, the `SelectN` of a slice shape, `c` a call `growV` accepts, and `w` is `Copy x` of
+`c`'s second argument `x`. -/
+def growOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  u.op == .SliceLen && u.args.size == 1 && (tabs.ty u.type matches .int .w64) &&
+  w.op == .Copy && w.args.size == 1 &&
+  match f.value? u.args[0]! with
+  | some s =>
+    s.op == .SelectN && s.auxInt == 0 && s.args.size == 1 && (tabs.ty s.type matches .slice _) &&
+      (f.value? s.args[0]!).any fun cv => growV tabs cv && cv.args[1]! == w.args[0]!
+  | none => false
+
 /-- The new definition `w` in `g` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads
 back (`fwdOK`), a constant of the bits it reads back (`fwdConstOK`), or the value of a fixed load
 from the read-only symbols `ro` (`fixedOK`); or of the memory root `u`, a `Copy` of its memory
-(`dropOK`), or a `Move` from another source (`moveSrcOK`). -/
+(`dropOK`), or a `Move` from another source (`moveSrcOK`); or of the `SliceLen` `u` of a
+`growslice` result, a `Copy` of its length argument (`growOK`). -/
 def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
-    dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w
+    dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w || growOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -1988,7 +2018,9 @@ a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005
 each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included; or a
 fixed load `(Load p _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` whose
 pointer `p` is `(Addr {s} _)`, through `Convert`, `ITab (IMake …)` and an `OffPtr [off]`
-(`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`). -/
+(`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`); or
+the length of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …)))
+=> newLen` (`:2128`; `growOK`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -2003,17 +2035,20 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .Move none _ _ _ .fixed [_, _, .op .Move ..] _, .build [n], none => n.op == .Move
   | .op .Move none _ _ _ .fixed [_, _, .op .VarDef _ _ _ _ .fixed [.op .Move ..] _] _, .build [n],
       none => n.op == .Move
+  | .op .SliceLen none _ _ _ .fixed
+      [.op .SelectN none _ _ _ .fixed [.op .StaticLECall none _ _ _ _ (_ :: .op .Const64 (some y) .. :: _) _] _] _,
+      .copy (.var z), none => y == z
   | _, _, _ => false
 
-/-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, or the `Move`
-whose source it changes), its new definition (a `Copy`, a constant, an `Addr` or a `Move`) and
+/-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, the `Move`
+whose source it changes, or the `SliceLen` of a `growslice` result), its new definition (a `Copy`, a constant, an `Addr` or a `Move`) and
 the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads` rule
 event (`fwdShapeOK`; tried on a `Store` after its `structStores`, `Interp.rewriteValue`). -/
 def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
-      if u.op == .Load || u.op == .Store || u.op == .Zero || u.op == .Move then
+      if u.op == .Load || u.op == .Store || u.op == .Zero || u.op == .Move || u.op == .SliceLen then
         let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 +
           if u.op == .Store then t.structStores.size else 0
         if n ≤ i then

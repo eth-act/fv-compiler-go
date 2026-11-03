@@ -57,12 +57,16 @@ of the source keeps them: a term or atom evaluated in `b` (in an environment and
 memory `E` holds of, e.g. one whose malloc contracts return zeroed blocks and whose read-only
 symbols hold their bytes), and the edge from a predecessor `p`
 (the terminator's choice, from the frame at the end of `p`, whose values of `V` are their terms
-over the atoms) with the `Phi`s of the successor. -/
+over the atoms) with the `Phi`s of the successor. `R v argv y`: a non-`Phi` atom `v` evaluated
+(in such an environment) to `y` on its arguments' registers `argv` (`rstep`); the simulation
+keeps it of the atoms whose arguments' registers are still those it was evaluated on
+(`RDefs`), so the `TermRefP` premises may assume it of the valuations' atoms (`QR`, `RAtoms`). -/
 structure SrcInv (tabs : Tables) (f : Func) where
   P : ID → ID → Val → Prop
   L : ID → Nat → Prop
   Q : ID → (ID → Val) → Prop
   E : Env → Mem → Array (Array Byte) → Prop := fun _ _ _ => True
+  R : Value → List Val → Val → Prop := fun _ _ _ => True
   start : L f.entry 0 ∧ ∀ a, P f.entry a .poison
   qstart : Q f.entry fun _ => .poison
   poisonAtom : ∀ b a, ¬ IsTerm f.value? a → P b a .poison
@@ -82,6 +86,15 @@ structure SrcInv (tabs : Tables) (f : Func) where
     v.id = x → v.op ≠ .Phi → ∀ env (fr : Frame), E env fr.mem0 fr.images → ∀ y,
       evalValue env (Ctx.make tabs f) fr v = .ok y →
       (∀ a, P b a (rv fr a)) → Q b (rv fr) → Q b (rv (fr.set x y))
+  rstep : ∀ x v, f.value? x = some v → v.id = x → termOp v.op = false → v.op ≠ .Phi →
+    ∀ env (fr : Frame), E env fr.mem0 fr.images → ∀ y,
+      evalValue env (Ctx.make tabs f) fr v = .ok y → R v (v.args.toList.map (rv fr)) y := by
+    intros; trivial
+
+/-- The frame-level invariant at block `b` together with the atoms' relation to their
+arguments' terms (`RAtoms`): what the `TermRefP` premises may assume of a valuation. -/
+def SrcInv.QR {tabs : Tables} {f : Func} (I : SrcInv tabs f) (b : ID) (ρ : ID → Val) : Prop :=
+  I.Q b ρ ∧ RAtoms I.R f.value? tabs ρ
 
 /-- The trivial invariant. -/
 def SrcInv.triv (tabs : Tables) (f : Func) : SrcInv tabs f where
@@ -109,10 +122,10 @@ def AtomArgsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
       u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
       ∀ i < u.args.size,
         (u.op ≠ .Phi →
-          TermRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs
+          TermRefP (I.P b) (I.QR b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!) ∧
         (u.op = .Phi → ∀ (p : ID) (pb : Block) (k : Nat), p ∈ f.blocks → f.block? p = some pb → pb.succs[k]? = some (⟨b, i⟩ : Edge) →
-          TermRefP (I.P p) (I.Q p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
+          TermRefP (I.P p) (I.QR p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!)
 
 /-- The controls of every block of `g` refine, as terms under the invariant at the block,
@@ -121,7 +134,7 @@ def ControlsRefP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
   ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
     fb.controls.size = gb.controls.size ∧
     ∀ k < gb.controls.size,
-      TermRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs
+      TermRefP (I.P b) (I.QR b) (SAnc f b) f.value? tabs fb.controls[k]! (listedDefs g) tabs
         gb.controls[k]!
 
 theorem AtomArgsRef.toP {tabs : Tables} {f g : Func} (h : AtomArgsRef tabs f g) (I : SrcInv tabs f) :
@@ -142,7 +155,7 @@ controls and successor order). -/
 def StepRefsP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
     (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
-      StepRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs fb (listedDefs g) gb
+      StepRefP (I.P b) (I.QR b) (SAnc f b) f.value? tabs fb (listedDefs g) gb
 
 theorem TermStepRef.toStepRefsP {tabs : Tables} {f g : Func} (h : TermStepRef tabs f g)
     (I : SrcInv tabs f) : StepRefsP I g := fun b hb fb gb hfb hgb =>
@@ -177,14 +190,14 @@ def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
       u'.aux = u.aux ∧ u'.args.size = u.args.size ∧
       ∀ i < u.args.size,
         (u.op ≠ .Phi →
-          TermRefP (I.P b) (I.Q b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs
+          TermRefP (I.P b) (I.QR b) (SAnc f b) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!) ∧
         (u.op = .Phi → ∀ (p : ID) (pb : Block) (k : Nat), p ∈ f.blocks → f.block? p = some pb →
           pb.succs[k]? = some (⟨b, i⟩ : Edge) →
-          TermRefP (I.P p) (I.Q p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
+          TermRefP (I.P p) (I.QR p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!)) ∨
     (∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ (u.op = .Store ∨ u.op = .Move) ∧
-      ChgRefP (I.Q b) f.value? tabs u' (listedDefs g) u)
+      ChgRefP (I.QR b) f.value? tabs u' (listedDefs g) u)
 
 theorem AtomArgsRefP.toX {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
     (h : AtomArgsRefP I g) : AtomArgsRefX I g :=
