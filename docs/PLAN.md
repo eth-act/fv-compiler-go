@@ -105,9 +105,14 @@ the Lean result. New in Phase 2:
   the ARM64 ops, block kinds and a flags shape), so Phase 1's proof machinery carries over;
   from `schedule` on, `runSched` follows `b.Values` order with faulting memory ops; after
   regalloc, `runLoc` runs on registers, the flags register and stack slots.
-- **ARM64 op semantics** are defined directly on `BitVec` and validated against clifv's
-  ASL-derived, qemu-co-simulated `FV/Arm` by per-op agreement theorems (option (c) of the
-  semantics plan).
+- **ARM64 op semantics** are defined directly on `BitVec` here, transcribed from the ASL, and
+  checked by our own co-simulation under qemu on Go-assembled instructions plus the native
+  semantic difftest (option (c) of the semantics plan). Nothing from clifv is vendored or
+  imported until the repository has a licence (#384); agreement theorems against an ASL-derived
+  model wait for that decision.
+- **FMA.** The Go spec allows fused multiply-add; the Phase 2 statements hold up to a
+  contraction of the source at exactly the shapes of the 12 `useFMA` rules
+  (`docs/plans/semantics2.md` §2.1).
 - **Regalloc is validated, not proven directly.** The port is exact but untrusted; a certified
   location checker in the style of clifv's `checkAlloc` gives `Refines (runLoc g) (runSched f)`.
 
@@ -118,7 +123,7 @@ the Lean result. New in Phase 2:
 | H3 | `lower` and `late lower` parity (Phase 1 rule interpreter with the ARM64 rule sets) | #381 |
 | H4 | Parity of the other passes: addressing modes, pair, the three deadcode instances, lowered cse, elim unread autos, tighten tuple selectors, checkLower, loop invariant, late phielim and copyelim, tighten, critical, phi tighten, likelyadjust, layout, schedule, late nilcheck, flagalloc, loop rotate, trim | #382 |
 | H5 | `regalloc` parity, including `stackalloc` and the edge shuffle | #383 |
-| H6 | Lowered semantics: flags, `evalArm64`, block kinds, `runSched`, `runLoc`; vendored `FV/Arm` subset, co-simulation on Go's encodings, agreement theorems; semantic difftest on every Phase 2 section | #384 |
+| H6 | Lowered semantics: flags, `evalArm64`, block kinds, `runSched`, `runLoc`; co-simulation of the ops on Go's encodings under qemu; semantic difftest on every Phase 2 section (agreement theorems against an ASL model after the licence decision) | #384 |
 | H7 | Proofs: ARM64 rule lemmas, one refinement theorem per pass, the schedule validator, the regalloc checker and its soundness, the verified pipeline through `trim` | #385 |
 | H8 | Driver end-to-end through regalloc: Lean pipeline from `number lines` to `trim` inside `cmd/compile`, import of homes and new autos, byte-identical objects | #386 |
 

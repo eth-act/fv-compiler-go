@@ -175,11 +175,13 @@ offset.
   `loop rotate`'s maps and regalloc's edge maps are only looked up or traversed through ordered
   slices (`cachedVals`); `flagalloc`'s `copyFlags` map writes distinct argument slots.
 - **Floating-point contraction.** `useFMA` rules (`_gen/ARM64.rules:1798-1809`) fuse
-  multiply-add, which rounds once; Phase 1's `evalPure` rounds twice. The lowering proof needs a
-  semantics that permits Go's contraction (`docs/plans/semantics2.md` §11; compare #176).
+  multiply-add, which rounds once; Phase 1's `evalPure` rounds twice. Decided on #384: the Go
+  spec permits it, and the `lower` theorem holds up to a contraction of the source at exactly
+  those 12 rule shapes (`docs/plans/semantics2.md` §2.1); Phase 1's semantics is unchanged.
 - **Ready-root order at `schedule`.** Phase 1's `run` orders ready roots NilCheck first, then by
   ID; Go's `schedule` orders by its score heap. Where two panicking roots are ready together the
-  outcomes can differ (#96; `docs/plans/semantics2.md` §6).
+  outcomes can differ (#96; `docs/plans/semantics2.md` §6). Deferred to the schedule proof
+  (#384); the default is a validator that rejects reordered panicking roots.
 - **Debug flags are not inert here**: regalloc's debug printing sorts the live slice in place
   (`regalloc.go:3392-3396`). The export runs with all debug levels 0.
 
