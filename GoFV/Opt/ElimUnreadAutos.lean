@@ -1,5 +1,5 @@
 import GoFV.Opt.ElimDeadAutos
-import Std.Data.HashSet
+import Std.Data.TreeSet
 
 /-!
 # elim unread autos (`deadstore.go:433-501`, `elimUnreadAutos`)
@@ -18,10 +18,12 @@ namespace GoFV.Opt
 
 open GoFV.SSA
 
-/-- `elimUnreadAutos(f)`; `abiInternal` is `f.ABISelf.Which() == obj.ABIInternal`. -/
+/-- `elimUnreadAutos(f)`; `abiInternal` is `f.ABISelf.Which() == obj.ABIInternal`. The seen
+names are a `Std.TreeSet` (not a `HashSet`, which the kernel does not evaluate: the witness
+`GoFV.Proof.Witness.elimUnreadAutosL_witness` runs the pass by `decide +kernel`). -/
 def elimUnreadAutos (tabs : Tables) (isMem : TypeRef → Bool) (abiInternal : Bool) (f : Func) :
     Except String Func := do
-  let mut seen : Std.HashSet AuxRef := {}
+  let mut seen : Std.TreeSet AuxRef := {}
   let mut stores : Array (ID × AuxRef) := #[]
   for b in f.blocks do
     for v in (f.getB b).values do
