@@ -111,7 +111,9 @@ def resultOKL (tabs : Tables) (M : Defs) (e : PEnv) (pat : Pat) (ev : Expr → D
   | .copy ce, none, [u] =>
     match DV.pos? (ev ce) with
     | some p => u.id == v.id && u.op == .Copy && u.args == #[I.at p] &&
-        (M.get? (I.at p)).any (·.type == u.type) && I.at p != v.id && u.auxInt == 0 && u.aux == none
+        (M.get? (I.at p)).any (fun y => y.type == u.type &&
+          GoFV.Opt.CSE.tyEq (shpL tabs y.type) (shpL tabs v.type)) &&
+        I.at p != v.id && u.auxInt == 0 && u.aux == none
     | none => false
   | .build nodes, none, u0 :: us =>
     let ids := us.map (·.id)
@@ -143,7 +145,7 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
     (match r.cond with
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
-    Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat &&
+    Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && Pat.argsOKL e.ty [] r.pat &&
     leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
@@ -234,11 +236,13 @@ def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStat
       | .First, [], [] => true
       | k, [(.var x, _)], [c'] => k != .First && (DV.pos? (σ x)).map I.at == some c'
       | _, _, _ => false
-    if consOK ev σ e I [] pat && wfOK e [] pat &&
+    if (Pat.sames pat).all (fun x => !(Pat.opNames pat).contains x) &&
+        consOK ev σ e I [] pat && wfOK e [] pat &&
         (match br.cond with
           | some cd => match ev cd with | .bool true => true | _ => false
           | none => true) &&
-        Pat.argsOK e.ty [] pat && Pat.topOKL (e.ty []) pat && leavesOK M I [] pat &&
+        Pat.argsOK e.ty [] pat && Pat.topOKL (e.ty []) pat && Pat.argsOKL e.ty [] pat &&
+        leavesOK M I [] pat &&
         blockAuxOKB br.auxInt st.auxInt &&
         ctrlsOK then
       match newAuxL ev br.newAuxInt with

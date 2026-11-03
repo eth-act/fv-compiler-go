@@ -199,6 +199,58 @@ def Pat.topOKL (ty : Ty) : Pat → Bool
   | .op o _ _ _ _ _ _ _ => GoFV.Proof.Low.topOKL o ty
   | _ => true
 
+/-- The bits of a value of shape `t` a register holds defined: an integer its width, a boolean 1,
+a pointer, flags or another aggregate 64; 0 for other shapes. -/
+def argWidth : Ty → Nat
+  | .int w => w.bits
+  | .bool => 1
+  | .ptr _ => 64
+  | .agg _ _ => 64
+  | _ => 0
+
+/-- The low bits of argument `i` an arm64 op of shape `ty` reads (`Arm64.reg` zero-extends a
+narrow value, while Go's registers hold full words): low-bit ops (add, subtract, multiply,
+logic, negate, left shift's operand) their result's width, `W` ops 32, sign and zero
+extensions their source width, every other op the whole register. -/
+def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
+  let w := match ty with
+    | .int w => w.bits
+    | .bool => 1
+    | _ => 64
+  match o with
+  | .ARM64ADD | .ARM64ADDconst | .ARM64SUB | .ARM64SUBconst | .ARM64MUL | .ARM64MNEG
+  | .ARM64NEG | .ARM64MVN | .ARM64AND | .ARM64ANDconst | .ARM64OR | .ARM64ORconst | .ARM64XOR
+  | .ARM64XORconst | .ARM64BIC | .ARM64EON | .ARM64ORN | .ARM64MADD | .ARM64MSUB => w
+  | .ARM64SLL | .ARM64SLLconst => if i == 0 then w else 64
+  | .ARM64MULW | .ARM64MNEGW | .ARM64DIVW | .ARM64UDIVW | .ARM64MODW | .ARM64UMODW
+  | .ARM64MADDW | .ARM64MSUBW | .ARM64CMPW | .ARM64CMPWconst | .ARM64CMNW | .ARM64CMNWconst
+  | .ARM64TSTW | .ARM64TSTWconst | .ARM64RORW | .ARM64RORWconst | .ARM64EXTRWconst
+  | .ARM64CLZW | .ARM64RBITW | .ARM64REVW | .ARM64REV16W | .ARM64MOVWreg | .ARM64MOVWUreg => 32
+  | .ARM64MOVBreg | .ARM64MOVBUreg => 8
+  | .ARM64MOVHreg | .ARM64MOVHUreg => 16
+  | _ => 64
+
+mutual
+/-- Every argument of every arm64 op node of the pattern at `p` holds the low bits the op reads
+(`armReadW`, `argWidth`), by the instance's types `ty`: Go types the operands of these ops at
+least as wide. -/
+def Pat.argsOKL (ty : Path → Ty) (p : Path) : Pat → Bool
+  | .op o _ _ _ _ _ args _ => Pat.argsOKLs ty p o 0 args
+  | _ => true
+/-- `Pat.argsOKL` of the arguments `i, i+1, …` of an `o` node at `p`. -/
+def Pat.argsOKLs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat → Bool
+  | [] => true
+  | q :: qs => (o.generic || decide (armReadW o (ty p) i ≤ argWidth (ty (i :: p)))) &&
+      Pat.argsOKL ty (i :: p) q && Pat.argsOKLs ty p o (i + 1) qs
+end
+
+/-- A `copy` result copies a value of the matched value's shape. -/
+def copyShapeOK (ev : Expr → DV) (e : PEnv) : Result → Prop
+  | .copy ce => match ev ce with
+    | .val _ (some p) => e.ty p = e.ty []
+    | _ => True
+  | _ => True
+
 /-- **The obligation of one swapped form of a value rule** (module doc). -/
 def ArmRule.Sound1 (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
@@ -211,6 +263,8 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     Pat.typed e [] r.pat →
     Pat.argsOK e.ty [] r.pat = true →
     Pat.topOKL (e.ty []) r.pat = true →
+    Pat.argsOKL e.ty [] r.pat = true →
+    copyShapeOK ev e r.result →
     Refines ((Pat.rawL tabs e r.pat).retypeL (e.ty []))
       (resDenL tabs e r.pat ev or σ (e.ty []) r.result)
 
@@ -302,7 +356,7 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
       let ev := evalE (br.vars.map (·.ty)) σ or e (Pat.denL tabs e [] pat')
       Pat.wf e [] pat' → Pat.cons ev σ e [] pat' → condHolds ev br.cond →
       Pat.typed e [] pat' → Pat.argsOK e.ty [] pat' = true → Pat.topOKL (e.ty []) pat' = true →
-      blockAuxOK br.auxInt ai →
+      Pat.argsOKL e.ty [] pat' = true → blockAuxOK br.auxInt ai →
       newAuxL ev br.newAuxInt = some ai' →
       ∀ b, brVal br.kind ai (Pat.denL tabs e [] pat') = some b →
         (match br.newKind, br.newControls with
