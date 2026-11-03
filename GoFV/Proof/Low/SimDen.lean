@@ -301,7 +301,8 @@ theorem evalValueL_localAddr {low : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {
   rw [evalValueL_of_regs (regsL_of_ok h)] at h
   change ((evalOpL false env ctx fr v _ _).bind _) = _ at h
   have hg : v.op.generic = true := by rw [hop]; rfl
-  simp only [evalOpL, hg, ite_true, evalOp_localAddr hop, hax, Option.map_some,
+  -- the lemma, not `simp only [evalOpL, …]`: unfolding exposes the 800-op `match` (7.5 s, #1)
+  simp only [evalOpL_generic _ _ _ _ _ _ hg, evalOp_localAddr hop, hax, Option.map_some,
     Option.getD_some] at h
   cases h
   exact retype_ptr_frame low _ _

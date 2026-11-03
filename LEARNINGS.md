@@ -138,6 +138,10 @@ avoiding): the problem, the trick, the numbers, where it is used.
   definitions inside `a`/`b` (`ShortCircSim.R_next`: `outOf`/`factsOf`, ~3.5 s per `exact`).
   `rw [h]; dsimp only; exact hrel` reduces the projection first: ShortCircSim 8.5 → 2.3 s CPU
   (`-j1`, #1).
+- **Never `simp only [evalOpL, …]`: use `evalOpL_generic`.** Unfolding `evalOpL` (800-op
+  `match`, `GoFV/SSA/Sem/RunL.lean`) inside `simp` costs seconds per call even when `hg` decides
+  the `if` first. `Low.SimDen.evalValueL_localAddr` 7.5 s → 0.2 s by
+  `simp only [evalOpL_generic _ _ _ _ _ _ hg, …]` (module 8.5 → 2.1 s CPU, #1).
 
 #### `bv_decide` certificates dominate rule-proof `.olean`s; try `grind` first on ring identities
 - **Problem:** PR #91's Add-family rule lemmas (87 theorems, `rule_auto` closing with
