@@ -142,3 +142,7 @@ root = "GoFVTest.DecomposeProbe"
 [[lean_exe]]
 name = "wb-probe"
 root = "GoFVTest.WBProbe"
+
+[[lean_exe]]
+name = "lower-probe"
+root = "GoFVTest.LowerProbe"
