@@ -23,6 +23,7 @@ import GoFV.Proof.CallMono
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.Checked
 import GoFV.Proof.Cong
+import GoFV.Proof.CongL
 import GoFV.Proof.DeferRel
 import GoFV.Proof.DomCert
 import GoFV.Proof.DomRel
@@ -193,6 +194,7 @@ import GoFV.Proof.Pass.LoadFwdInv
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.LoadFwdMoveSrc
 import GoFV.Proof.Pass.LoadFwdPtr
+import GoFV.Proof.Pass.LowCong
 import GoFV.Proof.Pass.MemCombine
 import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.Proof.Pass.MemCombineComplete
@@ -324,6 +326,7 @@ import GoFV.Proof.ProveCheck.Value
 import GoFV.Proof.PtrAddr
 import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
+import GoFV.Proof.RefineL
 import GoFV.Proof.Retype
 import GoFV.Proof.RoImage
 import GoFV.Proof.Rules.Add
@@ -523,6 +526,7 @@ import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE
 import GoFV.Proof.Witness.Clamp
+import GoFV.Proof.Witness.ClampL
 import GoFV.Proof.Witness.CondSel
 import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim
@@ -562,6 +566,7 @@ import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Witness.LoadSel
 import GoFV.Proof.Witness.LoadSplit
+import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine

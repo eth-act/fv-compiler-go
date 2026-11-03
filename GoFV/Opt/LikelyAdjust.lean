@@ -27,17 +27,17 @@ def likelyadjust (f : Func) : Except String Func := do
   let mut f := f
   for b in po do
     let blk := f.getB b
-    match blk.kind with
-    | .Exit =>
+    -- an `if` chain rather than a `match` on the kind: the proof splits it (`likelyadjust_eraseFL`)
+    if blk.kind == .Exit then
       loc := loc.set! b 3
       certain := certain.set! b 3
-    | .Ret | .RetJmp =>
+    else if blk.kind == .Ret || blk.kind == .RetJmp then
       loc := loc.set! b 2
       certain := certain.set! b 2
-    | .Defer =>
+    else if blk.kind == .Defer then
       loc := loc.set! b 1
       certain := certain.set! b (max 1 certain[blk.succs[0]!.b]!)
-    | _ =>
+    else
       if blk.succs.size == 1 then
         certain := certain.set! b certain[blk.succs[0]!.b]!
       else if blk.succs.size == 2 then
