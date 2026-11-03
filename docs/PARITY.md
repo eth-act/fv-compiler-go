@@ -169,6 +169,14 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | rewrite tern | rewriteTern | — | — | 0 | disabled in 9297 | `exp.simd 0` |
 | lower | lower | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 9057 functions changed by the pass; full-v6: 96,553/96,553 |
 | late lower | lateLower | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 3985 functions changed by the pass; full-v6: 96,553/96,553 |
+| addressing modes | addressingModes | 9297 | 9297 | 0 | 100% | identity on arm64; full-v6: 96,553/96,553 |
+| pair | pair | 9297 | 9297 | 0 | 100% | quick-v5; 2917 functions changed by the pass (5,269 load pairs, 7,052 store pairs); full-v6: 96,553/96,553 (44,081 changed); the load sort numbers auxes inside the comparator: `GoFV.Util.PdqSortM` (pdqsort with a stateful comparator, checked against Go by `scripts/util-difftest.sh`) |
+| lowered deadcode for cse | deadcode | 9297 | 9297 | 0 | 100% | quick-v5; 3589 functions changed by the pass; full-v6: 96,553/96,553 (44,552 changed) |
+| lowered cse | cse | 9297 | 9297 | 0 | 100% | quick-v5; 7618 functions changed by the pass (incl. `auxmap` only); full-v6: 96,553/96,553 (90,889 changed); `cse` unchecked (`loweredCsePass`) |
+| elim unread autos | elimUnreadAutos | 9297 | 9297 | 0 | 100% | quick-v5; 136 functions changed by the pass; full-v6: 96,553/96,553 (397 changed) |
+| tighten tuple selectors | tightenTupleSelectors | 9297 | 9297 | 0 | 100% | quick-v5; 7 functions changed by the pass; full-v6: 96,553/96,553 (99 changed) |
+| lowered deadcode | deadcode | 9297 | 9297 | 0 | 100% | quick-v5; 1231 functions changed by the pass; full-v6: 96,553/96,553 (12,652 changed) |
+| checkLower | checkLower | 9297 | 9297 | 0 | 100% | identity (no function fails); full-v6: 96,553/96,553 |
 | schedule | schedule | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`fstate scheduled`); full-v6: 96,553/96,553 |
 | late nilcheck | nilcheckelim2 | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 3311 functions changed by the pass; removed checks leave the value table unfreed; full-v6: 96,553/96,553 |
 | flagalloc | flagalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 415 functions changed by the pass; full-v6: 96,553/96,553 |

@@ -1,4 +1,5 @@
 import GoFV.Util.PdqSort
+import GoFV.Util.PdqSortM
 import GoFV.Util.SparseSet
 import GoFV.Util.SparseMapPos
 import Std.Data.HashMap
@@ -43,7 +44,9 @@ def parseInt (s : String) : Except String Int :=
   | some n => .ok n
   | none => .error s!"bad number {s}"
 
-/-- A sort case: `<cmp> <n> <keys> <perm>`; `less` selects `sort.Sort` over `slices.SortFunc`. -/
+/-- A sort case: `<cmp> <n> <keys> <perm>`; `less` selects `sort.Sort` over `slices.SortFunc`.
+`slices.SortFunc` cases also run `PdqSortM.sortFunc` with a comparator in `StateM` that counts
+its calls (the effectful port must give Go's result too). -/
 def checkSort (less : Bool) (toks : Array String) : Except String Unit := do
   let id ← parseNat toks[1]!
   let n ← parseNat toks[2]!
@@ -54,10 +57,15 @@ def checkSort (less : Bool) (toks : Array String) : Except String Unit := do
   let out :=
     if less then PdqSort.sortBy (fun x y => decide (cmpFn id x y < 0)) data
     else PdqSort.sortFunc (cmpFn id) data
+  let outM := if less then out else
+    ((PdqSortM.sortFunc (m := StateM Nat)
+      (fun x y => do modify (· + 1); return cmpFn id x y) data).run' 0).run
   for i in [0:n] do
     let want ← parseNat toks[3 + n + i]!
     if out[i]! &&& 0xfff != want then
       throw s!"position {i}: lean {out[i]! &&& 0xfff}, go {want}"
+    if outM[i]! &&& 0xfff != want then
+      throw s!"position {i}: lean (PdqSortM) {outM[i]! &&& 0xfff}, go {want}"
 
 def bracket (xs : Array String) : String := "[" ++ ",".intercalate xs.toList ++ "]"
 
