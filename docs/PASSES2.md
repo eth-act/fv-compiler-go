@@ -65,6 +65,70 @@ regalloc. `addressing modes` and `pair` dispatch on `f.Config.arch` (`addressing
 `memcombine`, `branchelim`, `known bits`, `cpufeatures` < `lower`; `generic deadcode`,
 `generic cse`, `insert resched checks` < `tighten`.
 
+### The verified pipeline through `trim` (#385, #189)
+
+`GoFV.Opt.verifiedPipelineFull` (`GoFV/Opt/VerifiedFull.lean`) runs Phase 1's
+`verifiedPipeline` (`docs/PASSES.md` §0), then this table (`GoFV.Opt.loweredVPasses`, same
+enabled test; `loweredVPasses_names`: the names are `GoFV.SSA.loweredPasses`). The state records
+its form (`Verified.Layer`: `gen` run by `run`, `low` by `runL`, `sched` by `runSched`, `loc` by
+`runLoc`). A pass with a theorem runs as `.proven run rel wf guard`: `rel` (`Verified.LRel`)
+names the theorem's runners and precondition, `wf` whether it needs `check` of its input and
+output, `guard` its remaining hypotheses, decided after the run on the input and the result.
+
+| pass | step (`run`, `rel`) | guard | theorem |
+| --- | --- | --- | --- |
+| lower | `lowerChecked`, `run` → `runL` under `Env.Mono`; stock `lower` as `full` | generic input without fused multiply-add shapes (`contractAll f = f`) | `Low.lower_refines_run` |
+| addressing modes, late lower, pair | stock | — | — (addressing modes is a no-op on arm64) |
+| lowered deadcode for cse, lowered deadcode, late deadcode | `deadcodePass`, `RefinesL` | `deadFragB`, `deadFragLB`, form kept | `Dead.deadcode_refinesL` |
+| lowered cse | `loweredCsePass`, `RefinesL` | `CSEL.frag` | `CSEL.loweredCse_refinesL` |
+| elim unread autos | `elimUnreadAutosPass`, `RefinesLFrom (FrameSafe ∧ InitAvoids)` | `unreadLFrag` | `UnreadL.elimUnreadAutos_refinesL` |
+| tighten tuple selectors, tighten, phi tighten | the pass, `RefinesL` | `moveB` | `MoveL.*_refinesL` |
+| checkLower, likelyadjust, layout | the pass, `RefinesL` | — | `checkLower_refinesL`, `likelyadjust_refinesL`, `layout_refinesL` |
+| loop invariant | `licmPass`, `RefinesL` | `check` of `unhoist`, `critRelB`, `moveB` | `MoveL.licm_refinesL` |
+| late phielim and copyelim | `copyelimPass`, `RefinesL` | `copyFrag`, `emptyFragB`, form kept, `copyLFragB` | `CopyElim.copyelim_refinesL` |
+| critical | `criticalPass`, `RefinesL` | `critRelB` | `Crit.critical_refinesL` |
+| schedule | `schedulePass`, `runL` → `runSched` on `NoNilFault` of the input | `scheduleCheck` | `SchedL.schedule_refinesSchedLF` (`.schedL`) |
+| late nilcheck | `nilcheckelim2Pass`, `RefinesSched` | `nilLateB` | `NilLateL.nilcheckelim2_refinesSched` |
+| flagalloc | stock (theorem in progress, P2ProofCfg2) | — | — |
+| regalloc | `regallocV`, `runSched` → `runLoc` | `tabsAgreeL` of the input in the output's tables, `checkRA` | `RA.checkRA_sound`, `runSched_tabsAgreeL` |
+| loop rotate, trim | the pass, `RefinesLoc` | trim: `trimRelB` | `loopRotate_refinesLoc`, `trim_refinesLoc` |
+
+Verdicts as before `lower`: `identity` (same function and tables in the same layer), `proven`,
+`skipped` (an optional proven pass whose hypotheses fail: its result is dropped), `unverified`
+(a stock port that changed the function; a required proven pass whose hypotheses fail; `lower`
+when the checked result is not the stock one, which is kept). `regallocV` is `regalloc` with the
+call auxes' register caches (`CallABI.reg`, `AuxCall.Reg`/`ResultReg`, which only `regalloc`
+reads in Go and no runner reads) dropped from its output tables (`eraseCallRegs`): they made
+every call aux of the input differ between the input's and the output's tables, so
+`tabsAgreeL` failed on every function with a call. Go's later phases do not read them.
+
+`GoFV/Proof/Pass/PipelineFull.lean`: `LayerRefines P lt tabs' f' ls tabs f` is the refinement
+with the runner of each side given by its layer (`RefinesFrom`, `RefinesLFrom`,
+`RefinesSchedLFrom`, `RefinesSchedFrom`, `RefinesLSFrom`, `RefinesLocFrom` are its instances);
+`LayerRefines.trans` composes across layers. `loweredVPasses_sound` checks each entry against
+its theorem (`stepSoundL`). `runSched_tabsAgreeL`: under `tabsAgreeL tabs tabs' f`, `runSched` of
+`f` is the same in both tables (as `runL_tabsAgreeL`; the schedule order depends only on the
+lowered shapes). The end-to-end theorem:
+
+```lean
+theorem GoFV.Proof.PipelineFull.verifiedPipelineFull_refines
+    (h : verifiedPipelineFull env f 0 zv dcl = .ok r) (hv : r.fullyVerified = true)
+    (hP : VPre (NilCheck.dictParams env.tables f) (pipelineRo env f) e args mem)
+    (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
+    (hd : (run e env.tables f args mem fuel).Defined) :
+    ∃ fuel', OutcomeRefines 0 (run e env.tables f args mem fuel)
+      (runLoc e r.st.tables r.st.func args mem fuel')
+```
+
+`r.nnf` are the `schedule` inputs (`schedule`'s theorem is stated against `runLF`, `runL` with
+faulting memory ops; `NoNilFault`: no run of that input faults in the nil page). The general form
+`verifiedPipelineFull_layer` holds from any start pass and for every `verified` state, in its
+layer. Witness: `verifiedPipelineFull_witness` (`GoFV/Proof/Witness/PipelineFull.lean`,
+`isNaN` from quick-v7, through `trim`, returns `true` under `runLoc` for a NaN argument).
+Fused multiply-add shapes (`Contract`, §2.1 of `docs/plans/semantics2.md`) are outside the
+guard: `lower_refines` relates the output to a contraction of its input, which does not compose
+with the refinement before `lower`.
+
 ## 1. Shared infrastructure new in Phase 2
 
 ### 1.1 Op metadata and registers

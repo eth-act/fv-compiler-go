@@ -154,23 +154,28 @@ a higher number by key in the cut tables (#119).
 
 Do not combine with `GOFV_SSA_EXPORT` (its sections are written only after stock passes).
 
-## Verified mode (`--verified`, issue #189)
+## Verified mode (`--verified`, issues #189, #385)
 
-`gofv-ssa-opt --verified <in.ssa>` runs `GoFV.Opt.verifiedPipeline` (`docs/PASSES.md` §0, "The
-verified pipeline") instead of the registered ports: the checked variant of every pass with a
-refinement theorem, the stock port of the others, `check` between passes. Its output has the
-format of driver mode and is always `status ok` unless a pass fails; `--vstats FILE` appends one
-line per function: `"<pkg>" "<func>" <abi>`, then `verified` or `unverified "<pass>: <verdict>"`
-(the first run that is not proven, identity or skipped) and the number of runs per verdict,
-tab-separated, and `lowered=<n>`. The passes from `lower` on have no theorems yet (H7, #385):
-after the verified pipeline their registered ports run, as in driver mode, so that the driver
-can import the state after `trim`; `lowered=<n>` counts them. A function whose line says
-`verified` is, by `verifiedPipeline_refines`, refined by the verified pipeline's result (the
-input of `lower`); the passes from `lower` on are trusted ports. The output differs from stock wherever a checked variant undoes a rewrite, so
-the importer's check against the Lean text still applies but stock identity does not.
+`gofv-ssa-opt --verified <in.ssa>` runs `GoFV.Opt.verifiedPipelineFull` (`docs/PASSES.md` §0,
+"The verified pipeline", for the passes before `lower`; `docs/PASSES2.md` §0, "The verified
+pipeline through `trim`", for the rest) instead of the registered ports: the checked variant of
+every pass with a refinement theorem, the stock port of the others, `check` between passes,
+from `number lines` through `trim`. Its output has the format of driver mode and is always
+`status ok` unless a pass fails; `--vstats FILE` appends one line per function:
+`"<pkg>" "<func>" <abi>`, then `verified` or `unverified "<pass>: <verdict>"` (the first run
+before `lower` that is not proven, identity or skipped), the number of runs per verdict before
+`lower`, `lowered=<n>` (the runs from `lower` on) and `trim=verified` or
+`trim=unverified "<pass>: <verdict>"` (through `trim`), tab-separated. A function whose line says
+`verified` is, by `verifiedPipeline_refines`, refined by the state before `lower`; one whose line
+says `trim=verified` is, by `verifiedPipelineFull_refines`, refined by the allocated function
+after `trim` (`runLoc` of the output against `run` of the input, under `VPre` and no nil-page
+fault of the `schedule` input). The output differs from stock wherever a checked variant undoes
+a rewrite or an optional pass is skipped, and in the call auxes' register caches (the verified
+`regalloc` drops `AuxCall.Reg`/`ResultReg`, which only Go's `regalloc` reads), so the importer's
+check against the Lean text still applies but stock identity does not.
 
 How each pass of `GoFV.Opt.stockPasses` runs (`stockPasses_sound` checks every `proven`/`guarded`
-entry against its theorem):
+entry against its theorem; the passes from `lower` on: `docs/PASSES2.md` §0):
 
 | status | passes |
 | --- | --- |
@@ -191,17 +196,20 @@ fails or a program's output or exit status differs from stock under qemu. The re
 per-function verdicts.
 
 `gofv-ssa-opt --check --verified <dir|file>...` is the corpus report: per function, the
-verified pipeline from section 0 (driver export environment and type rounds, as `--check`),
-the state after each pass compared with the stock section until the first difference, and the
-final state compared with the last stock section. It prints the functions fully verified, the
-functions whose final state equals stock, the unverified functions by first unverified run,
-the functions by first difference (pass and its verdict), a per-pass table of verdicts, and the
-skipped and unverified runs by reason. For deadcode and copyelim runs outside their fragment it
-adds which conditions of `deadFragB`/`copyGuard` fail (`GoFVTest/Driver/FragWhy.lean`, with
-the first offending value's op and type shapes): per run, for first unverified runs, and for
-functions whose only unverified runs are such deadcode runs. It exits 1 only for parse errors
-or no input. The nightly gate runs it on the full corpus, and `driver-e2e.sh --verified`, as
-reports (`docs/GATE.md`).
+verified pipeline through `trim` from section 0 (driver export environment and type rounds, as
+`--check`), the state after each pass compared with the stock section until the first difference
+(from `lower` on also the chain's `dcllen`; the stock tables without their call-register caches),
+and the final state compared with the last stock section (`trim`'s). It prints the functions fully
+verified through `rewrite tern` and through `trim` (and of those, the ones whose final state
+equals stock), the functions whose final state equals stock, the unverified functions by first
+unverified run before `lower`, the functions verified through `rewrite tern` but not through
+`trim` by their first unverified run, the functions by first difference (pass and its verdict), a
+per-pass table of verdicts, and the skipped and unverified runs by reason. For deadcode and
+copyelim runs before `lower` outside their fragment it adds which conditions of
+`deadFragB`/`copyGuard` fail (`GoFVTest/Driver/FragWhy.lean`, with the first offending value's op
+and type shapes): per run, for first unverified runs, and for functions whose only unverified
+runs are such deadcode runs. It exits 1 only for parse errors or no input. The nightly gate runs
+it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
 
 ## Whole-pipeline parity (`gofv-ssa-opt --check`)
 

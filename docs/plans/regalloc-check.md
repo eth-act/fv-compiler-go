@@ -10,7 +10,7 @@ proven (`checkRA_sound`, §4, §6). Context: `docs/plans/semantics2.md` §7 (L2,
 `checkRA tabs f g`: `f` is the input of `regalloc` (the `flagalloc` section, L1, run by
 `runSched`), `g` its output (the `regalloc` section, L2, run by `runLoc`), both in the tables
 `tabs` of the `regalloc` section (which extend those of `f`'s section by the new autos and the
-`AuxCall.Reg` caches; every lookup `f` makes is unchanged, `tabsAgree`).
+`AuxCall.Reg` caches).
 
 What the checker needs from `f`: its blocks (kinds, controls, successors), its values by ID, and
 `runSched`'s **schedule order** of each block (`Ctx.makeSched`, `schedOrder`: `b.Values` minus
@@ -112,8 +112,13 @@ panicking `runSched` of `f` is a `runLoc` of `g`), in fact with equal outcomes a
 block entries correspond one to one, and every target value that is not a move, a
 rematerialisation or a phi computes the same `evalOpL` on the same arguments as its source
 value. Any certificate will do (`certify` is untrusted). No precondition on the inputs is needed
-(`RefinesLS.from P` for any `P`), so it composes with the Phase 2 chain's `VPre₂`; the source
-runs in the `regalloc` section's tables, which a pipeline relates to `f`'s own by `tabsAgree`.
+(`RefinesLS.from P` for any `P`), so it composes with the Phase 2 chain. The source runs in the
+`regalloc` section's tables. Those differ from `f`'s own in the call auxes' register caches, so
+`tabsAgree` rejects them for every function with a call; the verified pipeline drops the caches
+from `regalloc`'s output tables (`GoFV.Opt.Verified.regallocV`, `eraseCallRegs`; no runner and,
+after `regalloc`, no Go code reads them) and checks `tabsAgreeL` of `f` in them
+(`GoFV.Proof.PipelineFull.runSched_tabsAgreeL`; `docs/PASSES2.md` §0, "The verified pipeline
+through `trim`").
 
 ## 5. The simulation
 
