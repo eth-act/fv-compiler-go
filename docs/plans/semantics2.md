@@ -17,15 +17,34 @@ each pass is proven against the form it consumes and produces.
 
 | Form | Produced by | What changes | Semantics |
 | --- | --- | --- | --- |
-| **L0, unscheduled lowered SSA** | `lower` … `layout` | ARM64 ops and block kinds replace generic ones; flags values; tuple results (`ADDSflags`, `LoweredMuluhilo`, …). Still SSA with explicit memory values; `b.Values` order is not an execution order. | `run` (Phase 1), extended with the ARM64 ops and block kinds (§3–§5) |
+| **L0, unscheduled lowered SSA** | `lower` … `layout` | ARM64 ops and block kinds replace generic ones; flags values; tuple results (`ADDSflags`, `LoweredMuluhilo`, …). Still SSA with explicit memory values; `b.Values` order is not an execution order. | `runL` (`Sem/RunL.lean`): Phase 1's runner with the ARM64 ops, block kinds and register reads of narrow values (§3–§5); `runL = run` on generic SSA (`runL_generic`) |
 | **L1, scheduled SSA** | `schedule`, `late nilcheck`, `flagalloc` | `b.Values` is the execution order; memory is linear (at most one memory value live, loads before the store that kills their memory); `late nilcheck` relies on faulting loads/stores replacing explicit nil checks; `flagalloc` keeps at most one flags value live. | `runSched` (§6): `b.Values` order, one current memory, faulting memory ops |
 | **L2, allocated SSA** | `regalloc`, `loop rotate`, `trim` | Every value has a home (`f.RegAlloc`): a register, a stack slot (`LocalSlot`), a pair or a result list. New `Copy`, `LoadReg`, `StoreReg` and rematerialised values; phis whose args share the phi's home. **Args no longer dominate uses** (`check.go:451-454` skips the dominance check once `f.RegAlloc != nil`): the function is not SSA any more, and evaluating it as SSA is wrong. | `runLoc` (§7): a machine state of registers, flags, stack slots and memory |
 
 The forms nest: L0 ⊇ generic SSA (Phase 1 ops stay legal), and a function in L1 or L2 is still
 a `GoFV.SSA.Func`. The point of three semantics instead of one machine semantics is reuse: every
-pass from `lower` to `layout` is proven against the **same** `run` as Phase 1, so the Phase 1
-machinery (`Refines`, `RefinesFrom`, `VPre`, `verifiedPipeline`, `check`, the rule interpreter's
-soundness #113) extends to it by adding op cases, not by restarting.
+pass from `lower` to `layout` is proven against `runL`, which is Phase 1's `run` on generic SSA,
+so the Phase 1 machinery (`Refines`, `RefinesFrom`, `VPre`, `verifiedPipeline`, `check`, the rule
+interpreter's soundness #113) extends to it by adding op cases, not by restarting.
+
+**Decision (#384, integrator): `runL` is a separate runner, Phase 1 byte-identical.** H6 first
+extended `run` itself (an arm64 arm in `evalOp`, an `Arm64.evalPure` fallback in `evalPure`, the
+arm64 kinds in `stepTerm`, and zero extension of narrow values in `Val.retype`/`encode`). The
+narrow values cannot be confined to arm64 ops: lowering hands narrow and boolean values to
+generic `Phi`s, `MakeResult`s and `Copy`s of wider types (§3), whose shaping is Phase 1's. So
+extending `run` changed Phase 1's definitions and broke Phase 1 lemmas that state the old shaping.
+Instead `runL` (`Sem/RunL.lean`) is Phase 1's block loop (`runCtxL`, `runLoopL`, `enterBlockL`,
+`evalValueL`) with `evalOpL` (Phase 1's `evalOp` for a generic op, the arm64 definitions
+otherwise), `stepTermL` (Phase 1's `stepTerm` for a generic kind) and, in a lowered function
+(`Func.lowered`: an arm64 op or block kind), `Val.retypeL` in place of `Val.retype`. Every Phase 1
+definition and proof is unchanged. The "same `run`" intent is a theorem:
+
+```
+theorem runL_generic (h : f.lowered = false) : runL env tabs f args mem fuel = run env tabs f args mem fuel
+```
+
+(`GoFV/SSA/Sem/RunL.lean`; witness `runL_generic_witness`, `clamp`). The `lower` theorem relates
+`run` of its input to `runL` of its output; the L0 → L0 passes are stated over `runL`.
 
 ## 2. Correctness criterion
 
@@ -34,8 +53,8 @@ As Phase 1 (`docs/PLAN.md` §1): a pass `p` is correct when every returning or p
 determinism and fuel monotonicity). Across forms the two runs use different semantics:
 
 ```
-Refines₀₀ (p f) f  :=  Refines over run      / run          -- lower … layout (L0 → L0)
-Refines₀₁ (schedule f) f   over runSched / run              -- the schedule pass (L0 → L1)
+Refines₀₀ (p f) f  :=  Refines over runL     / runL         -- lower … layout (L0 → L0; lower: runL / run)
+Refines₀₁ (schedule f) f   over runSched / runL             -- the schedule pass (L0 → L1)
 Refines₁₁ (p f) f   over runSched / runSched                -- late nilcheck, flagalloc
 Refines₁₂ (regalloc f) f   over runLoc / runSched           -- regalloc (L1 → L2)
 Refines₂₂ (p f) f   over runLoc / runLoc                    -- loop rotate, trim
@@ -72,7 +91,7 @@ uses). An explicit conversion, which the spec says prevents fusion, leaves a `Ro
 `lower` theorem is then
 
 ```
-∃ f', Contract f f' ∧ RefinesFrom VPre₂ (lower f) f'      -- run on both sides
+∃ f', Contract f f' ∧ RefinesFrom VPre₂ (lower f) f'      -- runL of lower f, run of f'
 ```
 
 and the Phase 2 end-to-end statement carries the same `∃ f', Contract f f' ∧ …`. Every other
@@ -131,8 +150,31 @@ cases above.
 
 **Booleans.** Lowered boolean producers (`Equal`, `LessThan`, …, `CSET`-like, `MOVBUreg` of a
 bool) keep type `bool`; the semantics returns `Val.bool` at `bool` type and `Val.int .w8 0/1`
-at `uint8`, as `retype` already does. `Val.retype` total shaping (Phase 1 #108) covers every
-lowered op unchanged.
+at `uint8`. An arm64 op whose type is `bool` yields the boolean of bit 0 of its register (the
+bit Go branches on, `(If c) => (TBNZ [0] c)`).
+
+**Narrow values in registers (as implemented, H6).** A value of a type narrower than 64 bits is
+held at its type's width (Phase 1's `retype`), but the register it lives in has upper bits that
+Go's rules rely on in exactly two ways, and `runL` follows both:
+
+1. *Dropped zero extensions.* `(MOVWUreg x) && ZeroUpper32Bits(x, 3) => x`,
+   `(MOVBUreg x:(Equal …)) => x` and `(CvtBoolToUint8 x) => (Copy x)` hand a narrower (or
+   boolean) value to a use of a wider type; Go's rewrite removes the copies inline
+   (`rewrite.go`, `applyRewrite`), so the use may be a generic `Phi`, `MakeResult` or `Copy`. An
+   arm64 op reads any narrower integer or boolean zero-extended (`Arm64.reg`). In a lowered
+   function `runL` shapes every value with `Val.retypeL`: a narrower integer or a boolean at a
+   wider integer or a pointer shape is zero-extended (`Val.widen`), then shaped by Phase 1's
+   `Val.retype`. Calls pass their register pieces at their leaves' shapes (`fitPieces`, since
+   Phase 1's `encode` makes a piece of another width `poison`), atomics their operands at the
+   location's width (`atomicArgs`). Phase 1's `Val.retype` and `encode` are unchanged (§1).
+2. *Register copies of extended loads.* `(MOVBreg x:(MOVBload …)) => (MOVDreg x)` and the other
+   "don't extend after proper load" / "fold double extensions" rules (`ARM64latelower.rules`)
+   pass a sign-extended narrow register on through `MOVDreg`/`MOVDnop`. These read the op of
+   their argument (`Arm64.signExtends`: a sign-extending load or extension) and sign-extend it,
+   else zero-extend (`Sem.arm64Op`).
+
+Results are 64-bit (`.int .w64`), narrowed by `retypeL` to the value's type; a `W` op
+zero-extends its 32-bit result, as writing `Wd` does.
 
 ## 4. Op semantics: options
 
@@ -202,7 +244,7 @@ ASL-derived model:
    included: LSE atomics (`LDADDAL`, `LDCLRAL`, `LDORAL`, `SWPAL`, `CASAL` for the `Variant`
    atomics), `LDAXR`/`STLXR`, `CNT`/`UADDLV` (popcount), q-register pairs, `DMB`, `PRFM`.
 3. The native semantic difftest (`scripts/sem-difftest.sh`) is extended to the lowered sections
-   (after every pass from `lower` to `trim`, under `run`, `runSched`, `runLoc` as appropriate):
+   (after every pass from `lower` to `trim`, under `runL`, `runSched`, `runLoc` as appropriate):
    the same inputs must give the same outcome on every section and natively.
 4. Pseudo and multi-instruction ops — memory ops, calls (`CALLstatic`, `CALLclosure`,
    `CALLinter`, `CALLtail*`), `LoweredNilCheck`, `DUFFZERO`/`DUFFCOPY`,
@@ -218,7 +260,8 @@ ASL-derived model:
 
 ### Recommendation and decision: (c)
 
-It keeps one `run` for generic and unscheduled lowered SSA (all of Phase 1 carries over), keeps
+It keeps one runner for generic and unscheduled lowered SSA (`runL`, equal to `run` on generic
+SSA, §1: all of Phase 1 carries over), keeps
 the rule lemmas at `BitVec` cost, and checks the op definitions against the machine through
 co-simulation now, with machine-checked agreement later. (b)'s advantages arrive through (c.5)
 without its domain and cost problems.
@@ -370,6 +413,7 @@ proven over `runLoc` directly; block order is not semantic until Phase 3 (fallth
 | `GoFV/SSA/Sem/Arm64/{Int,Shift,Bitfield,Mul,Cond,Float,Conv}.lean` | `evalArm64` per family, on `liftW` |
 | `GoFV/SSA/Sem/Arm64/Mem.lean` | lowered loads/stores/pairs/zero/move on the Phase 1 memory, faulting variants |
 | `GoFV/SSA/Sem/Arm64/Pseudo.lean` | calls, nil check, `GetG`, atomics, `MOVDaddr` of symbols, panics |
+| `GoFV/SSA/Sem/RunL.lean` | `runL` (L0, §1): `evalOpL`, `stepTermL`, `Val.retypeL`, `arm64Op`, `runL_generic` |
 | `GoFV/SSA/Sem/RunSched.lean`, `RunLoc.lean` | §6, §7 |
 | `GoFVTest/Arm64Cosim/*.lean`, `scripts/arm64-cosim.sh` | §4 (c.2) co-simulation of `evalArm64` against qemu on Go-assembled instructions |
 | `GoFV/SSA/Sem/FMA.lean` | `Contract f f'` (§2.1) |
