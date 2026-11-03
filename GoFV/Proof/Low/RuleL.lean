@@ -20,7 +20,10 @@ cases need not commute), every instance whose checks and condition hold, whose l
 shapes and whose op nodes' arguments the shapes `argShapeOk` asks for, the rewritten value
 refines the matched one, both at the matched value's shape. Unlike Phase 1 the top is compared
 after `retypeL` (an arm64 op computes a 64-bit register that `retypeL` narrows to a narrow type);
-a generic top op is assumed to produce its shape (`topOKL`, Phase 1's `topOK`).
+a generic top op is assumed to produce its shape (`topOKL`, Phase 1's `topOK`). Two premises the
+validator checks on the instance: an integer load at the top reads as many bytes as the shape has
+(`resFitsL`), and an addressing node whose base the rule folds has no symbol and small
+non-negative offsets (`Pat.addrOKL`).
 
 `SetOpSound o o'`: the ellipsis rule `(o ...) => (o' ...)` on a term (same arguments, type and
 fields), at shapes where a generic `o` produces its shape (`topOKL`). `BlockRuleL.Sound`: a block
@@ -253,7 +256,8 @@ def argWidth : Ty → Nat
 /-- The low bits of argument `i` an arm64 op of shape `ty` reads (`Arm64.reg` zero-extends a
 narrow value, while Go's registers hold full words): low-bit ops (add, subtract, multiply,
 logic, negate, left shift's operand) their result's width, `W` ops 32, sign and zero
-extensions their source width, every other op the whole register. -/
+extensions their source width, an integer load none of its memory argument, every other op the
+whole register. -/
 def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   let w := match ty with
     | .int w => w.bits
@@ -270,6 +274,8 @@ def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   | .ARM64CLZW | .ARM64RBITW | .ARM64REVW | .ARM64REV16W | .ARM64MOVWreg | .ARM64MOVWUreg => 32
   | .ARM64MOVBreg | .ARM64MOVBUreg => 8
   | .ARM64MOVHreg | .ARM64MOVHUreg => 16
+  | .ARM64MOVBload | .ARM64MOVBUload | .ARM64MOVHload | .ARM64MOVHUload | .ARM64MOVWload
+  | .ARM64MOVWUload | .ARM64MOVDload => if i == 0 then 64 else 0
   | _ => 64
 
 /-- The arm64 ops with pointer provenance cases (`Arm64.addP`, `add`, `sub`). -/
@@ -321,6 +327,33 @@ def resFitsL (ty : Ty) : Result → Bool
     | none => true
   | _ => true
 
+/-- An arm64 op whose address is `Sem.symAddr` of its aux, auxint and base (its argument 0): an
+integer load (`ldOp?`) or `MOVDaddr`. -/
+def addrOp (o : Op) : Bool := (ldOp? o).isSome || o == .ARM64MOVDaddr
+
+/-- A small non-negative offset: `[0, 2^23)`. -/
+def offOK (k : Int64) : Bool := decide (0 ≤ k.toInt) && decide (k.toInt < 2 ^ 23)
+
+mutual
+/-- An addressing node (`addrOp`) of the pattern whose base is an op node (folded into the
+address by the rule) has no aux, and its offset and the base node's are small and non-negative
+(`offOK`): under the semantics a symbol's address ignores the base (`Sem.symAddr`), and a
+register pointer outside its block's window (`Ptr.inWindow`) moved back into it by the base's
+offset has a concrete address that the second offset could carry into another allocation
+(`Ptr.ofAddr`), where the folded offset stays in the first. -/
+def Pat.addrOKL (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) : Pat → Bool
+  | .op o _ _ _ _ _ args _ =>
+    (match args with
+      | .op .. :: _ => !addrOp o || (ax p == none && offOK (ai p) && offOK (ai (0 :: p)))
+      | _ => true) && Pat.addrOKLs ax ai p 0 args
+  | _ => true
+/-- `Pat.addrOKL` of the arguments `i, i+1, …` of the node at `p`. -/
+def Pat.addrOKLs (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) (i : Nat) :
+    List Pat → Bool
+  | [] => true
+  | q :: qs => Pat.addrOKL ax ai (i :: p) q && Pat.addrOKLs ax ai p (i + 1) qs
+end
+
 /-- **The obligation of one swapped form of a value rule** (module doc). -/
 def ArmRule.Sound1 (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
@@ -336,6 +369,7 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     Pat.argsOKL e.ty [] r.pat = true →
     copyShapeOK ev e r.result →
     resFitsL (e.ty []) r.result = true →
+    Pat.addrOKL e.aux e.auxInt [] r.pat = true →
     Refines ((Pat.rawL tabs e r.pat).retypeL (e.ty []))
       (resDenL tabs e r.pat ev or σ (e.ty []) r.result)
 

@@ -65,6 +65,7 @@ structure RuleFactsL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List
   htop : Pat.topOKL ((envL tabs M I).ty []) r.pat = true
   hargsL : Pat.argsOKL (envL tabs M I).ty [] r.pat = true
   hfit : resFitsL ((envL tabs M I).ty []) r.result = true
+  hadr : Pat.addrOKL (envL tabs M I).aux (envL tabs M I).auxInt [] r.pat = true
   hleaves : leavesOK M I [] r.pat = true
   hres : resultOKL tabs M (envL tabs M I) r.pat (stEvL tabs M r defs I) (stOrL tabs r defs)
     (stσL tabs M r I) I r xv defs = true
@@ -80,7 +81,7 @@ theorem ruleFactsL {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {x : Value} {d
   · cases h
   rename_i I hm
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hargs⟩, htop⟩, hargsL⟩, hfit⟩, hleaves⟩, hres⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hargs⟩, htop⟩, hargsL⟩, hfit⟩, hadr⟩, hleaves⟩, hres⟩ := h
   obtain ⟨hmo, -, hn, hh⟩ := matchPatL_ok hm
   unfold patOK at hpat
   simp only [Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true', List.contains_eq_mem,
@@ -108,7 +109,7 @@ theorem ruleFactsL {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {x : Value} {d
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hx, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail',
     hcons := hcons, hwf := hwf, hcond := hcond', hargs := hargs, htop := htop, hargsL := hargsL,
-    hfit := hfit,
+    hfit := hfit, hadr := hadr,
     hleaves := hleaves, hres := hres,
     hreach := fun C hC hv => matchPatL_closed hC hm hv }⟩
 

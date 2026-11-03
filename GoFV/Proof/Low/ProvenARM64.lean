@@ -6,6 +6,7 @@ import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
+import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
@@ -29,6 +30,13 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   refine ⟨?_, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · simp only [ProvenARM64.lower, ForallL]
     exact ⟨⟨r_ARM64_1201_sound, trivial⟩,
+      ⟨r_ARM64_661_sound, trivial⟩,
+      ⟨r_ARM64_658_sound, trivial⟩,
+      ⟨r_ARM64_676_sound, trivial⟩,
+      ⟨r_ARM64_667_sound, trivial⟩,
+      ⟨r_ARM64_664_sound, trivial⟩,
+      ⟨r_ARM64_673_sound, trivial⟩,
+      ⟨r_ARM64_670_sound, trivial⟩,
       ⟨r_ARM64_5_sound, trivial⟩,
       ⟨r_ARM64_5_2_sound, trivial⟩,
       ⟨r_ARM64_5_3_sound, trivial⟩,
