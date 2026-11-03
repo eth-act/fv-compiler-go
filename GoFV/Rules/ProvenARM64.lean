@@ -13,7 +13,52 @@ namespace GoFV.Rules.ProvenARM64
 
 open GoFV.Rules
 
-/-- `ARM64.rules` restricted to its 96 proven value rules and 43 proven block rules. -/
+mutual
+/-- `e` with Go's `b2i` calls named `bool2int`, as Phase 1's rule denotation (`evalE`) knows them
+(`GoFV.Rules.Eval` evaluates both alike). -/
+def Expr.b2iNorm : Expr → Expr
+  | .field x n t => .field (Expr.b2iNorm x) n t
+  | .call f as t => .call (if f == "b2i" then "bool2int" else f) (Expr.b2iNorms as) t
+  | .method x n as t => .method (Expr.b2iNorm x) n (Expr.b2iNorms as) t
+  | .builtin f as t => .builtin f (Expr.b2iNorms as) t
+  | .conv t x => .conv t (Expr.b2iNorm x)
+  | .assert t x => .assert t (Expr.b2iNorm x)
+  | .unop o x t => .unop o (Expr.b2iNorm x) t
+  | .binop o x y t => .binop o (Expr.b2iNorm x) (Expr.b2iNorm y) t
+  | .index x i t => .index (Expr.b2iNorm x) (Expr.b2iNorm i) t
+  | .deref x t => .deref (Expr.b2iNorm x) t
+  | e => e
+/-- `Expr.b2iNorm` of each expression. -/
+def Expr.b2iNorms : List Expr → List Expr
+  | [] => []
+  | e :: es => Expr.b2iNorm e :: Expr.b2iNorms es
+end
+
+/-- `Expr.b2iNorm` of a result node's expressions. -/
+def RNode.b2iNorm (n : RNode) : RNode where
+  op := n.op
+  ty := n.ty.map Expr.b2iNorm
+  auxInt := n.auxInt.map Expr.b2iNorm
+  aux := n.aux.map Expr.b2iNorm
+  args := n.args.map fun
+    | .expr e => .expr (Expr.b2iNorm e)
+    | a => a
+
+/-- A rule with Go's `b2i` calls of its condition and result named `bool2int`. -/
+def b2iNorm (r : Rule) : Rule where
+  loc := r.loc
+  op := r.op
+  vars := r.vars
+  pat := r.pat
+  cond := r.cond.map Expr.b2iNorm
+  block := r.block
+  result := match r.result with
+    | .copy e => .copy (Expr.b2iNorm e)
+    | .build ns => .build (ns.map RNode.b2iNorm)
+    | res => res
+  pos := r.pos
+
+/-- `ARM64.rules` restricted to its 97 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
@@ -35,6 +80,7 @@ def lower : RuleSet where
     (.Const32, [Generated.ARM64.r_ARM64_182_2]),
     (.Const64, [Generated.ARM64.r_ARM64_182_3]),
     (.Const8, [Generated.ARM64.r_ARM64_182_4]),
+    (.ConstBool, [b2iNorm Generated.ARM64.r_ARM64_185]),
     (.ConstNil, [Generated.ARM64.r_ARM64_184]),
     (.Eq16, [Generated.ARM64.r_ARM64_240]),
     (.Eq32, [Generated.ARM64.r_ARM64_241]),

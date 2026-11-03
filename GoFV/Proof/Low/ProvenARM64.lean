@@ -5,6 +5,7 @@ import GoFV.Proof.Low.Rules.BlockCset
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
 import GoFV.Proof.Low.Rules.Const
+import GoFV.Proof.Low.Rules.ConstBool
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
@@ -44,6 +45,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_182_2_sound, trivial⟩,
       ⟨r_ARM64_182_3_sound, trivial⟩,
       ⟨r_ARM64_182_4_sound, trivial⟩,
+      ⟨r_ARM64_185_b2i_sound, trivial⟩,
       ⟨r_ARM64_184_sound, trivial⟩,
       ⟨r_ARM64_240_sound, trivial⟩,
       ⟨r_ARM64_241_sound, trivial⟩,
