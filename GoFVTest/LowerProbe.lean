@@ -3,6 +3,7 @@ import GoFV.SSA.Parse
 import GoFV.Opt.Lower
 import GoFV.Opt.RewriteCheck
 import GoFV.Opt.LowerCheck
+import GoFV.Opt.LowerChecked
 
 /-!
 # `lower-probe`: which `ARM64.rules` rules `lower` fires (issue #385)
@@ -190,11 +191,13 @@ structure St where
   fns : Array (Array String) := #[]
   errors : Nat := 0
   accepted : Nat := 0
+  checkedSame : Nat := 0
+  checkedProven : Nat := 0
   why : Std.HashMap String Nat := {}
 
 def St.merge (a b : St) : St :=
   { firings := b.firings.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.firings
-    fns := a.fns ++ b.fns, errors := a.errors + b.errors, accepted := a.accepted + b.accepted
+    fns := a.fns ++ b.fns, errors := a.errors + b.errors, accepted := a.accepted + b.accepted, checkedSame := a.checkedSame + b.checkedSame, checkedProven := a.checkedProven + b.checkedProven
     why := b.why.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.why }
 
 def checkFile (path : System.FilePath) (S : St) : IO St := do
@@ -214,6 +217,18 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     tables := tables.addAll s.defs
     if k == 0 || s.pass.toStringLossy != "lower" then continue
     let env := { base with passName := "lower", tables := prev }
+    -- the checked lower against stock
+    match lowerChecked env e.sections[k-1]!.func with
+    | .ok co =>
+      if (GoFVTest.Parity.compare prev co tables s).isNone then
+        S := { S with checkedSame := S.checkedSame + 1
+                      checkedProven := if co.func == e.sections[k-1]!.func then S.checkedProven else S.checkedProven + 1 }
+      else if (← IO.getEnv "LOWER_PROBE_MISS").isSome then
+        match rewriteRun lowerProvenTable true true env e.sections[k-1]!.func with
+        | .ok (o2, _, log2) =>
+          IO.println s!"MISS\t{whyL o2.tables lowerProvenTable e.sections[k-1]!.func o2.func log2}\t{path}"
+        | .error _ => pure ()
+    | .error _ => pure ()
     match rewriteRun lowerTable true true env e.sections[k-1]!.func with
     | .ok (out, _, log) =>
       let w := whyL out.tables lowerTable e.sections[k-1]!.func out.func log
@@ -262,6 +277,7 @@ def main (args : List String) : IO UInt32 := do
   for fs in acc.fns do
     for x in fs do nfn := nfn.insert x (nfn.getD x 0 + 1)
   IO.println s!"functions {acc.fns.size} errors {acc.errors} without firings {(acc.fns.filter (·.isEmpty)).size} validator accepts (full table) {acc.accepted}"
+  IO.println s!"checked lower (proven rules) at stock: {acc.checkedSame} of {acc.fns.size}, of which proven (not the input): {acc.checkedProven}"
   for (k, n) in acc.why.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"WHY\t{n}\t{k}"
   for (k, n) in acc.firings.toArray.qsort (fun a b => a.2 > b.2) do
