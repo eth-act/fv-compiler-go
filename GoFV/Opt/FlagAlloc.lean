@@ -1,5 +1,5 @@
 import GoFV.Opt.LowTy
-import GoFV.SSA.Alloc
+import GoFV.SSA.CopyInto
 import GoFV.SSA.Analysis.CfgCache
 
 /-!
@@ -28,15 +28,6 @@ namespace FlagAlloc
 def clobbersFlags (ty : LowTy) (v : Value) : Bool :=
   v.op.clobberFlags || (ty.tuple? v.type).any (fun (a, b) => ty.isFlags a || ty.isFlags b)
 
-/-- `v.copyInto(b)` (`value.go:446-458`): a new value with `v`'s op, type, aux and arguments
-appended to `b`, at `v.Pos.WithNotStmt()`; `Fatalf` if an argument has memory type. -/
-def copyInto (ty : LowTy) (f : Func) (v b : ID) : Except String (Func × ID) := do
-  let x := f.getV v
-  let (f, c) := f.newValueArgs b x.pos.withNotStmt x.op x.type x.auxInt x.aux x.args
-  if x.args.any fun a => ty.isMemory (f.getV a).type then
-    throw s!"can't move a value with a memory arg v{v}"
-  return (f, c)
-
 /-- `copyFlags(v, b)`: copies of `v`'s flags- and tuple-typed arguments (recursively, in
 argument order), then of `v`, with the copied arguments substituted. -/
 def copyFlags (ty : LowTy) : Nat → Func → ID → ID → Except String (Func × ID)
@@ -51,7 +42,7 @@ def copyFlags (ty : LowTy) : Nat → Func → ID → ID → Except String (Func 
         let (f', c) ← copyFlags ty fuel f args[i] b
         f := f'
         flagsArgs := flagsArgs.push (i, c)
-    let (f', c) ← copyInto ty f v b
+    let (f', c) ← f.copyInto ty.isMemory v b
     f := f'
     for (i, a) in flagsArgs do
       f := f.setArg c i a

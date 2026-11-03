@@ -35,6 +35,11 @@ import GoFV.Opt.NilCheckLate
 import GoFV.Opt.FlagAlloc
 import GoFV.Opt.LoopRotate
 import GoFV.Opt.Trim
+import GoFV.Opt.Licm
+import GoFV.Opt.Tighten
+import GoFV.Opt.Critical
+import GoFV.Opt.LikelyAdjust
+import GoFV.Opt.Layout
 
 /-!
 # Registered Lean passes
@@ -50,10 +55,12 @@ open GoFV.Opt
 
 def registry : Array PassEntry := #[
   { fn := "numberLines", names := #["number lines"], run := numberLinesPass },
-  { fn := "copyelim", names := #["early phielim and copyelim"], run := copyelimPass },
+  { fn := "copyelim", names := #["early phielim and copyelim", "late phielim and copyelim"],
+    run := copyelimPass },
   { fn := "deadcode", run := deadcodePass,
     names := #["early deadcode", "pre-opt deadcode", "opt deadcode", "gcse deadcode",
-               "generic deadcode", "lowered deadcode for cse", "lowered deadcode"] },
+               "generic deadcode", "lowered deadcode for cse", "lowered deadcode",
+               "late deadcode"] },
   { fn := "opt", names := #["opt", "middle opt", "late opt"], run := opt },
   { fn := "divisible", names := #["divisible"], run := divisible },
   { fn := "divmod", names := #["divmod"], run := divmod },
@@ -93,6 +100,12 @@ def registry : Array PassEntry := #[
   { fn := "tightenTupleSelectors", names := #["tighten tuple selectors"],
     run := tightenTupleSelectorsPass },
   { fn := "checkLower", names := #["checkLower"], run := checkLowerPass },
+  { fn := "licm", names := #["loop invariant"], run := licmPass },
+  { fn := "tighten", names := #["tighten"], run := tightenPass },
+  { fn := "critical", names := #["critical"], run := criticalPass },
+  { fn := "phiTighten", names := #["phi tighten"], run := phiTightenPass },
+  { fn := "likelyadjust", names := #["likelyadjust"], run := likelyadjustPass },
+  { fn := "layout", names := #["layout"], run := layoutPass },
   { fn := "schedule", names := #["schedule"], run := schedulePass },
   { fn := "nilcheckelim2", names := #["late nilcheck"], run := nilcheckelim2Pass },
   { fn := "flagalloc", names := #["flagalloc"], run := flagallocPass },

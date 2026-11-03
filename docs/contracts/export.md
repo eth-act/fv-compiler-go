@@ -359,8 +359,9 @@ constants (`constNilMagic` = 1111, …).
 - `cache idom <b<ID>:b<idom>|b<ID>:-,…>` (indexed by block ID; only blocks of `f.Blocks`)
 - `cache sdom <b<ID>:<parent>:<child>:<sibling>:<entry>:<exit>,…>`
 - `cache loopnest <len> <irreducible 0|1> <loops> <b2l>` (v5; `f.cachedLoopnest`, built by
-  `loopnestfor` in `likelyadjust`, `loop invariant`, `tighten`, `layout`, `regalloc` and kept
-  across passes that do not invalidate the CFG): `len` is `len(b2l)` (the block count when
+  `loopnestfor` when `f.loopnest()` finds no cached nest — in `tighten`, `likelyadjust`,
+  `regalloc` and `loop rotate`; `loop invariant` builds its own nest without caching it — and
+  kept across passes that do not invalidate the CFG): `len` is `len(b2l)` (the block count when
   the nest was built), `loops` the `loopnest.loops` in order as
   `b<header>:<outer>:<nBlocks>:<depth>:<isInner 0|1>:<containsUnavoidableCall 0|1>` (`outer` the
   index of the outer loop in `loops`, `-` for none; `containsUnavoidableCall` is filled in by

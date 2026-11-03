@@ -177,6 +177,14 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | tighten tuple selectors | tightenTupleSelectors | 9297 | 9297 | 0 | 100% | quick-v5; 7 functions changed by the pass; full-v6: 96,553/96,553 (99 changed) |
 | lowered deadcode | deadcode | 9297 | 9297 | 0 | 100% | quick-v5; 1231 functions changed by the pass; full-v6: 96,553/96,553 (12,652 changed) |
 | checkLower | checkLower | 9297 | 9297 | 0 | 100% | identity (no function fails); full-v6: 96,553/96,553 |
+| loop invariant | licm | 9297 | 9297 | 0 | 100% | quick-v5; 271 functions changed by the pass (full-v6: 3822); full-v6: 96,553/96,553 |
+| late phielim and copyelim | copyelim | 9297 | 9297 | 0 | 100% | quick-v5; identity on both corpora (`lowered deadcode` already ran copyelim); full-v6: 96,553/96,553 |
+| tighten | tighten | 9297 | 9297 | 0 | 100% | quick-v5; 3600 functions get values moved (full-v6: 46,639), every function gets idom/loopnest caches; full-v6: 96,553/96,553 |
+| late deadcode | deadcode | 9297 | 9297 | 0 | 100% | quick-v5; 14 functions changed (full-v6: 152); full-v6: 96,553/96,553 |
+| critical | critical | 9297 | 9297 | 0 | 100% | quick-v5; 2740 functions get splitter blocks (full-v6: 34,419); full-v6: 96,553/96,553 |
+| phi tighten | phiTighten | 9297 | 9297 | 0 | 100% | quick-v5; 423 functions changed (full-v6: 7535); full-v6: 96,553/96,553 |
+| likelyadjust | likelyadjust | 9297 | 9297 | 0 | 100% | quick-v5; 3282 functions get predictions (full-v6: 39,329); reads the cached, possibly stale postorder and loop nest; full-v6: 96,553/96,553 |
+| layout | layout | 9297 | 9297 | 0 | 100% | quick-v5; block order changed in 4228 functions (full-v6: 51,667), `laidout` set in all; full-v6: 96,553/96,553 |
 | schedule | schedule | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`fstate scheduled`); full-v6: 96,553/96,553 |
 | late nilcheck | nilcheckelim2 | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 3311 functions changed by the pass; removed checks leave the value table unfreed; full-v6: 96,553/96,553 |
 | flagalloc | flagalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 415 functions changed by the pass; full-v6: 96,553/96,553 |

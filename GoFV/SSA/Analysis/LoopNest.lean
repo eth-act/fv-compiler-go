@@ -6,7 +6,9 @@ import GoFV.SSA.Analysis.SparseTree
 A port of Go's `loopnestfor`: loops found from the postorder and the dominator tree, each
 block's innermost loop (`b2l`), loop nesting (`outer`), depths with Go's own self-check, and
 whether an irreducible loop was seen. Used by the checker's loop-construction check
-(`check.go`); `po` and `t` are passed explicitly (Go reads `f.postorder()` and `f.Sdom()`).
+(`check.go`) and, through `Func.loopnestfor`/`Func.loopnest` (`CfgCache`, which pass the
+cached postorder and dominator tree), by the lowered passes; `po` and `t` are passed
+explicitly (Go reads `f.postorder()` and `f.Sdom()`).
 -/
 
 namespace GoFV.SSA.Analysis
