@@ -476,4 +476,69 @@ theorem targs (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame} 
       exact (B.out a haS _ hm hrS).1
     · exact (B.out y hyS a haf haS).2.2.1
 
+/-! ## The walk -/
+
+theorem take_succ_of {o : List ID} {j : Nat} {y : ID} (h : o[j]? = some y) :
+    o.take (j + 1) = o.take j ++ [y] := by
+  rw [List.take_add_one, h]; rfl
+
+theorem not_mem_take_of {o : List ID} (hnd : o.Nodup) {j : Nat} {y : ID} (h : o[j]? = some y) :
+    y ∉ o.take j := by
+  intro hm
+  have hs := split_at h
+  rw [hs] at hnd
+  exact (List.nodup_append.1 hnd).2.2 y hm y List.mem_cons_self rfl
+
+/-- The invariant after one more target value. -/
+theorem inv_step {frPT H T : Frame} {P : List ID} {oT : List ID} (hnd : oT.Nodup) {j : Nat}
+    (I : Inv f frPT H T P (oT.take j)) {y : ID} (hyj : oT[j]? = some y) {z : Val}
+    (hlt : y < T.regs.size) (hin : y ∈ P → isNC f y = false → H.regs[y]? = some (some z)) :
+    Inv f frPT H (T.set y z) P (oT.take (j + 1)) := by
+  rw [take_succ_of hyj]
+  have hy := not_mem_take_of hnd hyj
+  refine ⟨?_, ?_, fun a ha => ?_, fun a ha haP han => ?_, fun a ha => ?_⟩
+  · rw [I.frT]; rfl
+  · simp [Frame.set, I.size]
+  · have hya : y ≠ a := fun h => ha (by rw [← h]; simp)
+    rw [Frame.set_regs_ne hya, I.out a (fun h => ha (List.mem_append_left _ h))]
+  · rcases List.mem_append.1 ha with ha | ha
+    · have hya : y ≠ a := fun h => hy (h ▸ ha)
+      rw [Frame.set_regs_ne hya, I.inP a ha haP han]
+    · simp at ha; subst ha; rw [Frame.set_regs_self hlt, hin haP han]
+  · rcases List.mem_append.1 ha with ha | ha
+    · have hya : y ≠ a := fun h => hy (h ▸ ha)
+      rw [Frame.set_regs_ne hya]; exact I.some a ha
+    · simp at ha; subst ha; exact ⟨z, Frame.set_regs_self hlt⟩
+
+/-- **The walk along the target order**, given what each value does. -/
+theorem walk_gen (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H : Frame} {P : List ID}
+    (B : BStep tabs f g md oS oT frPS frPT) {e : Panic} {m : Mem} :
+    ∀ (n : Nat), n ≤ oT.length →
+      (∀ j T y gv, j < n → Inv f frPT H T P (oT.take j) → oT[j]? = some y →
+        g.value? y = some gv →
+        evalValueL md env (Ctx.makeSched tabs g) T gv = .panic e m ∨
+          ∃ z, evalValueL md env (Ctx.makeSched tabs g) T gv = .ok z ∧
+            (y ∈ P → isNC f y = false → H.regs[y]? = some (some z))) →
+      evalAllL md env (Ctx.makeSched tabs g) frPT (oT.take n) = .panic e m ∨
+        ∃ T, evalAllL md env (Ctx.makeSched tabs g) frPT (oT.take n) = .ok T ∧
+          Inv f frPT H T P (oT.take n)
+  | 0, _, _ => .inr ⟨frPT, by simp; rfl, ⟨by rfl, rfl, fun _ _ => rfl, fun _ h => by simp at h,
+      fun _ h => by simp at h⟩⟩
+  | n + 1, hn, hstep => by
+    obtain ⟨y, hy⟩ : ∃ y, oT[n]? = some y := ⟨oT[n], List.getElem?_eq_getElem (by omega)⟩
+    rcases walk_gen S B n (by omega) (fun j T y gv hj => hstep j T y gv (by omega)) with h | ⟨T, hT, I⟩
+    · left
+      rw [take_succ_of hy, evalAllL_append, h]
+    · obtain ⟨fv, gv, hfv, hgv, -⟩ := tval S B (List.mem_of_getElem? hy)
+      have hev : evalAllL md env (Ctx.makeSched tabs g) frPT (oT.take (n + 1)) =
+          evalAllL md env (Ctx.makeSched tabs g) T [y] := by
+        rw [take_succ_of hy, evalAllL_append, hT]
+      rw [hev, evalAllL_cons, stepVL_of (by rw [makeSched_f]; exact hgv)]
+      rcases hstep n T y gv (by omega) I hy hgv with hp | ⟨z, hz, hin⟩
+      · rw [hp]; exact .inl rfl
+      · rw [hz]
+        have hlt : y < T.regs.size := by
+          rw [I.size, B.size, B.sizeS]; exact lt_of_value? hfv
+        exact .inr ⟨T.set y z, rfl, inv_step B.tNodup I hy hlt hin⟩
+
 end GoFV.Proof.SchedL

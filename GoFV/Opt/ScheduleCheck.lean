@@ -228,8 +228,8 @@ def valueOK (f g : Func) (id : ID) : Bool :=
     fv.op != .SPanchored && gv.id == fv.id && gv.op == fv.op && gv.aux == fv.aux &&
       gv.auxInt == fv.auxInt && gv.block == fv.block && gv.args == fv.args.map (rep f) &&
       (fv.op.nilCheck || gv.type == fv.type) &&
-      ((gv.args[0]?.bind g.value?).map fun u => Arm64.signExtends u.op) ==
-        ((fv.args[0]?.bind f.value?).map fun u => Arm64.signExtends u.op)
+      ((gv.args[0]?.bind g.value?).map (Arm64.signExtendsIn g.value?)) ==
+        ((fv.args[0]?.bind f.value?).map (Arm64.signExtendsIn f.value?))
   | none, some _ => false
 
 /-- Block `b` of `g` is `f`'s with its values permuted (minus the `SPanchored`s) and its controls

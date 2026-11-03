@@ -60,8 +60,8 @@ structure VRel (f g : Func) (fv gv : Value) : Prop where
   block : gv.block = fv.block
   args : gv.args = fv.args.map (rep f)
   type : fv.op.nilCheck = true ∨ gv.type = fv.type
-  sx : ((gv.args[0]?.bind g.value?).map fun u => Arm64.signExtends u.op) =
-    ((fv.args[0]?.bind f.value?).map fun u => Arm64.signExtends u.op)
+  sx : ((gv.args[0]?.bind g.value?).map (Arm64.signExtendsIn g.value?)) =
+    ((fv.args[0]?.bind f.value?).map (Arm64.signExtendsIn f.value?))
 
 namespace SchedRel
 
