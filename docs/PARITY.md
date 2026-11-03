@@ -74,11 +74,8 @@ order, only the free list order differs, and from `regalloc` on the export write
 sorted (`docs/contracts/export.md`, "Format 5"); the port (`GoFV/Opt/Regalloc.lean`) sweeps the
 copies by ascending ID and returns the free list sorted, so no replay is needed. `stackalloc` and
 the edge shuffle create autos with `f.NewLocal`, named `.autotmp_<len(curfn.Dcl)>` by the
-frontend; `len(curfn.Dcl)` is frontend state the export does not carry (the driver reads it with
-`GOFVDclLen`). The pass takes it as `PassEnv.dclLen`, and the harness sets it to the smallest
-`<n>` among the `.autotmp_<n>` autos new in the stock section (`Compare.dclLenOf`; 0 when there is
-none): only the first auto's number comes from the stock output, the count, order, types,
-positions and numbering of all autos are still compared. The `regalloc` line's slots are part of
+frontend. The pass takes `len(curfn.Dcl)` as `PassEnv.dclLen`, and the harness sets it to the
+input section's `dcllen` (format 5.1, `docs/contracts/export.md`; 0 in older files). The `regalloc` line's slots are part of
 the renumbering walk (`Renumber.funcRefs`).
 
 Files are processed one at a time per worker (`--jobs N` workers, round robin), so memory stays

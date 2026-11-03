@@ -33,21 +33,6 @@ def typeLinkFn (groups : Array (Array TypeRef)) : TypeRef → TypeRef :=
       | none => m) {}
   fun t => m.getD t t
 
-/-- `PassEnv.dclLen` for parity: `len(curfn.Dcl)` is not exported, so take it from the stock
-section's new autos (`f.NewLocal` names them `.autotmp_<len(Dcl)>`, one more per call): the
-smallest number among the `.autotmp_<n>` names defined in section `defs` that the input
-tables `input` do not have; 0 if there is none. -/
-def dclLenOf (input : Tables) (defs : Array Def) : Nat := Id.run do
-  let mut best : Option Nat := none
-  for d in defs do
-    let .aux n { kind := .name sym .., .. } := d | continue
-    if (input.aux? n).isSome then continue
-    let s := sym.toStringLossy
-    if !s.startsWith ".autotmp_" then continue
-    let some k := (s.drop 9).toNat? | continue
-    best := some (match best with | some b => min b k | none => k)
-  return best.getD 0
-
 /-- First differing line of two texts. -/
 def firstDiff (want got : String) : String := Id.run do
   let la := want.splitOn "\n"

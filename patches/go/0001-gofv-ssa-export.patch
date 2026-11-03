@@ -82,12 +82,12 @@
  		// Ensure we write any pending phases to the html
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1663 @@
+@@ -0,0 +1,1668 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 5).
++// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 5.1).
 +// Enabled by GOFV_SSA_EXPORT=<dir>. Read-only: it never calls caching accessors, never
 +// computes type sizes and never creates symbols, so compilation is unchanged.
 +
@@ -198,7 +198,7 @@
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-ssa 5\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
++	fmt.Fprintf(&x.out, "gofv-ssa 5.1\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
 +	return x
@@ -1366,6 +1366,11 @@
 +	}
 +
 +	x.lowered(w)
++
++	// Format 5.1: len(curfn.Dcl), which numbers the autos f.NewLocal makes (.autotmp_<n>).
++	if fn := f.fe.Func(); fn != nil {
++		fmt.Fprintf(w, "dcllen %d\n", len(fn.Dcl))
++	}
 +
 +	x.zvar(w)
 +

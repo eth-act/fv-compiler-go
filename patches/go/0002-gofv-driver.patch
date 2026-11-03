@@ -59,22 +59,25 @@
  // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,2006 @@
+@@ -0,0 +1,2314 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
 +package ssa
 +
-+// gofv driver (GOFV_SSA_DRIVER): run the Lean generic pipeline (gofv-ssa-opt) in place of
-+// the stock passes before lower. The function is exported in the gofv-ssa format (the
-+// exporter of export_gofv.go, in process), optimised by gofv-ssa-opt, and the result is
-+// imported back into f: values and blocks are rebuilt, types, aux values and local slots
-+// are resolved by table number into the compiler's own objects, and objects the Lean
-+// passes created are rebuilt through the compiler's constructors. Every import is checked
-+// by exporting the imported function again and comparing it with the Lean output byte for
-+// byte; on any error, unported pass or mismatch f is left (or restored) as it was and the
-+// stock passes run. See docs/DRIVER.md in the gofv repository.
++// gofv driver (GOFV_SSA_DRIVER): run the Lean pipeline (gofv-ssa-opt) in place of the stock
++// passes, from number lines through trim, the last pass of Compile. The function is exported
++// in the gofv-ssa format (the exporter of export_gofv.go, in process), compiled by
++// gofv-ssa-opt, and the result is imported back into f: values and blocks are rebuilt (machine
++// ops and block kinds included), types, aux values and local slots are resolved by table number
++// into the compiler's own objects, objects the Lean passes created are rebuilt through the
++// compiler's constructors, and the state of the lowered passes (f.RegAlloc, f.tempRegs,
++// FlagsLiveAtEnd, Hotness, scheduled/laidout, the AuxCall register caches) is set. Every import
++// is checked by exporting the imported function again and comparing it with the Lean output
++// byte for byte; on any error, unported pass or mismatch f is left (or restored) as it was and
++// the stock passes run. genssa then continues as after the stock passes. See docs/DRIVER.md in
++// the gofv repository.
 +
 +import (
 +	"bytes"
@@ -105,7 +108,6 @@
 +	dump  string // GOFV_SSA_DRIVER_DUMP: directory for each run's input and output (debugging)
 +	// ported[i]: passes[i] has a Lean port (gofv-ssa-opt --list).
 +	ported []bool
-+	lower  int
 +}
 +
 +var gofvDriverOnce = sync.OnceValue(func() *gofvDriverSettings {
@@ -141,12 +143,7 @@
 +		ported[uq] = st == "ported"
 +	}
 +	s.ported = make([]bool, len(passes))
-+	s.lower = -1
 +	for i, p := range passes {
-+		if p.name == "lower" {
-+			s.lower = i
-+			break
-+		}
 +		lp, known := ported[p.name]
 +		if !known {
 +			base.Fatalf("gofv driver: gofv-ssa-opt does not know pass %q", p.name)
@@ -188,9 +185,6 @@
 +// skip reports whether the stock loop skips the enabled pass passes[i]: the Lean pipeline
 +// ran it, or runs it now.
 +func (d *gofvDriver) skip(i int) bool {
-+	if i >= d.set.lower {
-+		return false
-+	}
 +	if i < d.resume {
 +		return true
 +	}
@@ -227,7 +221,7 @@
 +// which the stock loop then runs.
 +func (d *gofvDriver) segment(i int) {
 +	f := d.f
-+	f.pass = &passes[i] // read by loopnestfor during the import
++	f.pass = &passes[i] // the stock loop's state while the segment runs
 +	var extras []*types.Type
 +	var ex gofvExport
 +	var res *gofvResult
@@ -254,20 +248,20 @@
 +	stop := len(passes) // index of the pass the Lean run stopped at
 +	switch res.status {
 +	case "ok":
-+		stop = d.set.lower
 +	case "unported", "error":
 +		if res.status == "unported" {
 +			d.event("unported", res.pass)
 +		} else {
 +			d.event("error", res.pass+": "+res.msg)
 +		}
-+		for j := i; j < d.set.lower; j++ {
++		found := false
++		for j := i; j < len(passes); j++ {
 +			if passes[j].name == res.pass {
-+				stop = j
++				stop, found = j, true
 +				break
 +			}
 +		}
-+		if !d.set.mixed || stop == len(passes) || res.file == nil {
++		if !d.set.mixed || !found || res.file == nil {
 +			return
 +		}
 +	default:
@@ -396,7 +390,7 @@
 +
 +// finish appends this function's outcome to GOFV_SSA_DRIVER_STATS: one line of
 +// tab-separated fields "<pkg>" "<func>" <abi> lean=<n> stock=<n> [<kind> "<detail>"]...
-+// (n = passes before lower run by Lean and by the stock compiler; one field per event).
++// (n = passes run by Lean and by the stock compiler; one field per event).
 +func (d *gofvDriver) finish() {
 +	if d.set.stats == "" {
 +		return
@@ -573,25 +567,36 @@
 +// ---------------------------------------------------------------------------------------
 +// Importing.
 +
++// gofvOpsOnce maps the exported op names (export_gofv.go opName) to ops: Op.String() for the
++// generic ops and OpInvalid, "ARM64" followed by Op.String() for the ARM64 machine ops (the
++// ops between the first ARM64 and the first LOONG64 constant of opGen.go). Machine ops of other
++// architectures are not imported: gofv-ssa-opt lowers for linux/arm64 only.
 +var gofvOpsOnce = sync.OnceValue(func() map[string]Op {
 +	m := map[string]Op{}
 +	for i := range opcodeTable {
-+		if n := opcodeTable[i].name; n != "" {
-+			if _, dup := m[n]; !dup {
-+				m[n] = Op(i)
-+			}
++		op := Op(i)
++		switch {
++		case opcodeTable[i].generic || op == OpInvalid:
++			m[op.String()] = op
++		case op >= OpARM64ADCSflags && op < OpLOONG64NEGV:
++			m["ARM64"+op.String()] = op
 +		}
 +	}
 +	return m
 +})
 +
++// gofvKindsOnce maps the exported block kind names (export_gofv.go blockKindName) to kinds:
++// BlockKind.String() for the generic kinds (BlockPlain and after) and BlockInvalid, "ARM64"
++// followed by BlockKind.String() for the ARM64 kinds.
 +var gofvKindsOnce = sync.OnceValue(func() map[string]BlockKind {
 +	m := map[string]BlockKind{}
 +	for i := range blockString {
-+		if n := blockString[i]; n != "" {
-+			if _, dup := m[n]; !dup {
-+				m[n] = BlockKind(i)
-+			}
++		k := BlockKind(i)
++		switch {
++		case k >= BlockPlain || k == BlockInvalid:
++			m[k.String()] = k
++		case k >= BlockARM64EQ && k < BlockLOONG64EQZ:
++			m["ARM64"+k.String()] = k
 +		}
 +	}
 +	return m
@@ -609,15 +614,18 @@
 +	auxObj map[int]Aux
 +	slotOb map[int]*LocalSlot
 +	busy   map[[2]int]bool
-+	err error // buildType's failed reference
++	err    error // buildType's failed reference
 +	// types: the object used for each existing type number
 +	types map[int]*types.Type
 +	// placeholder: entries of x.slots that only hold a number free (see slotN)
 +	placeholder map[*LocalSlot]bool
-+	blocks map[ID]*Block
-+	values map[ID]*Value
-+	// undo restores aux objects mutated in place (AuxCall.Fn redefinitions).
++	blocks      map[ID]*Block
++	values      map[ID]*Value
++	// undo restores aux objects mutated in place (AuxCall.Fn redefinitions, register caches).
 +	undo []func()
++	// callregs: the AuxCall definitions whose callreg sub-line (the register constraints
++	// regalloc caches with Reg/ResultReg) is replayed after the values are built.
++	callregs []*gofvDefn
 +}
 +
 +func gofvKey(kind byte, n int) [2]int { return [2]int{int(kind), n} }
@@ -801,7 +809,8 @@
 +		}
 +		t = types.NewResults(ts)
 +	case "SSA":
-+		for _, c := range []*types.Type{types.TypeMem, types.TypeFlags, types.TypeVoid, types.TypeInt128, types.TypeResultMem} {
++		for _, c := range []*types.Type{types.TypeMem, types.TypeFlags, types.TypeVoid, types.TypeInt128, types.TypeResultMem,
++			types.TypeVec128, types.TypeVec256, types.TypeVec512, types.TypeMask} {
 +			if c.String() == str {
 +				t = c
 +			}
@@ -970,7 +979,9 @@
 +		}
 +		a = c
 +	case "name":
-+		// Names are created by fe.SplitSlot, together with their slot (see slotN).
++		// Names are created by fe.SplitSlot, together with their slot (see slotN), or by
++		// f.NewLocal (stackalloc, the regalloc shuffle; writebarrier): .autotmp_<len(Dcl)>,
++		// in number order, which is creation order.
 +		for _, sd := range im.res.defs {
 +			if sd.kind == 's' && sd.lines[0].toks[2] == fmt.Sprintf("a%d", n) {
 +				ls, err := im.slotN(sd.n)
@@ -982,7 +993,19 @@
 +				}
 +			}
 +		}
-+		return nil, fmt.Errorf("aux a%d: new ir.Name not made by a slot split", n)
++		// tail: "<sym>" <class> t<type> <frameoffset> <esc> <flags> <pos>
++		if len(tail) < 7 || !strings.HasPrefix(tail[0], ".autotmp_") || tail[1] != "PAUTO" {
++			return nil, fmt.Errorf("aux a%d: new ir.Name not made by a slot split or f.NewLocal", n)
++		}
++		t, err := im.typ(tail[2])
++		if err != nil {
++			return nil, err
++		}
++		pos, err := gofvPos(tail[6])
++		if err != nil {
++			return nil, err
++		}
++		a = im.f.NewLocal(pos, t)
 +	default:
 +		return nil, fmt.Errorf("aux a%d: cannot build a new %s", n, tag)
 +	}
@@ -1014,10 +1037,26 @@
 +		return fmt.Errorf("aux a%d: rendering defines new objects:\n%s", n, x.defs.String())
 +	}
 +	if got != d.text && !gofvSameSym(got, d) {
-+		return fmt.Errorf("aux a%d: rebuilt as\n%sLean:\n%s", n, got, d.text)
++		if _, isCall := a.(*AuxCall); !isCall || got != gofvWithoutCallreg(d.text) {
++			return fmt.Errorf("aux a%d: rebuilt as\n%sLean:\n%s", n, got, d.text)
++		}
++		// The register constraints regalloc caches in the AuxCall: replayed once the
++		// function's values exist (gofvImport).
++		im.callregs = append(im.callregs, d)
 +	}
 +	x.auxLast[n] = got
 +	return nil
++}
++
++// gofvWithoutCallreg is the text of an aux definition without its callreg sub-line.
++func gofvWithoutCallreg(text string) string {
++	var b strings.Builder
++	for _, l := range strings.SplitAfter(text, "\n") {
++		if !strings.HasPrefix(l, "callreg ") {
++			b.WriteString(l)
++		}
++	}
++	return b.String()
 +}
 +
 +// gofvSameSym reports whether the rendering got of a new symbol names the symbol d defines.
@@ -1057,6 +1096,12 @@
 +			}
 +		}
 +		return nil, fmt.Errorf("aux a%d: no type for symbol %s", n, name)
++	}
++	if fn := im.f.fe.Func(); fn != nil && fn.LSym != nil && strings.HasPrefix(name, fn.LSym.Name+".jump") && abiN == 0 {
++		// A jump table (lower's JumpTable rule): makeJumpTableSym, by name.
++		s := base.Ctxt.Lookup(name)
++		s.Set(obj.AttrStatic, true)
++		return s, nil
 +	}
 +	return base.Ctxt.LookupABI(name, obj.ABI(abiN)), nil
 +}
@@ -1284,6 +1329,18 @@
 +}
 +
 +func (im *gofvImporter) valueList(tok string) ([]*Value, error) {
++	return im.values1(tok, false)
++}
++
++// namedList is valueList for the values of a NamedValues entry. They can name values that are
++// neither in a block nor on the free list: regalloc drops rematerializable values from the
++// schedule without freeing them. Such a value is a Value with just its ID (what NamedValues'
++// readers after Compile use, BuildFuncDebug's valueNames).
++func (im *gofvImporter) namedList(tok string) ([]*Value, error) {
++	return im.values1(tok, true)
++}
++
++func (im *gofvImporter) values1(tok string, orphans bool) ([]*Value, error) {
 +	if tok == "-" {
 +		return nil, nil
 +	}
@@ -1294,6 +1351,10 @@
 +			return nil, err
 +		}
 +		v := im.values[ID(n)]
++		if v == nil && orphans && n > 0 && n <= int(im.f.vid.last) {
++			v = &Value{ID: ID(n)}
++			im.values[v.ID] = v
++		}
 +		if v == nil {
 +			return nil, fmt.Errorf("unknown value %s in %s", r, tok)
 +		}
@@ -1355,6 +1416,137 @@
 +	return LocalSlot{N: name, Type: t, Off: off, SplitOf: parent, SplitOffset: so}, nil
 +}
 +
++// reg is the register named name (Register.String(), export_gofv.go gofvRegName), nil for "-"
++// or an unknown name.
++func (im *gofvImporter) reg(name string) *Register {
++	rs := im.f.Config.registers
++	for i := range rs {
++		if rs[i].name == name {
++			return &rs[i]
++		}
++	}
++	return nil
++}
++
++// loc parses a f.RegAlloc entry (export_gofv.go loc): a register name, "@" and an inline
++// LocalSlot, "(" r0 ";" r1 ")" for a LocPair, "[" r ";" … "]" for LocResults ("-": nil).
++func (im *gofvImporter) loc(s string) (Location, error) {
++	elem := func(e string) (Location, error) {
++		if e == "-" {
++			return nil, nil
++		}
++		if r := im.reg(e); r != nil {
++			return r, nil
++		}
++		return nil, fmt.Errorf("unknown register %q in %q", e, s)
++	}
++	switch {
++	case strings.HasPrefix(s, "@"):
++		ls, err := im.inlineSlot(s[1:])
++		if err != nil {
++			return nil, err
++		}
++		return ls, nil
++	case strings.HasPrefix(s, "(") && strings.HasSuffix(s, ")"):
++		ps := strings.Split(s[1:len(s)-1], ";")
++		if len(ps) != 2 {
++			return nil, fmt.Errorf("bad location %q", s)
++		}
++		var p LocPair
++		for i, e := range ps {
++			l, err := elem(e)
++			if err != nil {
++				return nil, err
++			}
++			p[i] = l
++		}
++		return p, nil
++	case strings.HasPrefix(s, "[") && strings.HasSuffix(s, "]"):
++		rs := LocResults{}
++		if in := s[1 : len(s)-1]; in != "" {
++			for _, e := range strings.Split(in, ";") {
++				l, err := elem(e)
++				if err != nil {
++					return nil, err
++				}
++				rs = append(rs, l)
++			}
++		}
++		return rs, nil
++	default:
++		if r := im.reg(s); r != nil {
++			return r, nil
++		}
++		return nil, fmt.Errorf("bad location %q", s)
++	}
++}
++
++// loopnest rebuilds a cached loop nest from its export (export_gofv.go gofvLoopnest):
++// <len(b2l)> <hasIrreducible> <loops> <b2l>. The nest's po and sdom (the postorder and dominator
++// tree it was built from, read only while it is built) are not exported: the cached ones.
++func (im *gofvImporter) loopnest(t []string) (*loopnest, error) {
++	f := im.f
++	if len(t) != 4 {
++		return nil, fmt.Errorf("bad loopnest cache %q", t)
++	}
++	n, err := strconv.Atoi(t[0])
++	if err != nil {
++		return nil, err
++	}
++	ln := &loopnest{f: f, b2l: make([]*loop, n), po: f.cachedPostorder, sdom: f.cachedSdom, hasIrreducible: t[1] == "1"}
++	list := func(s string) []string {
++		if s == "-" {
++			return nil
++		}
++		return strings.Split(s, ",")
++	}
++	ls := list(t[2])
++	for range ls {
++		ln.loops = append(ln.loops, &loop{})
++	}
++	index := func(s string) (*loop, error) {
++		j, err := strconv.Atoi(s)
++		if err != nil || j < 0 || j >= len(ln.loops) {
++			return nil, fmt.Errorf("bad loop index %q", s)
++		}
++		return ln.loops[j], nil
++	}
++	for i, e := range ls {
++		// b<header>:<outer|->:<nBlocks>:<depth>:<isInner>:<containsUnavoidableCall>
++		p := strings.Split(e, ":")
++		if len(p) != 6 {
++			return nil, fmt.Errorf("bad loop %q", e)
++		}
++		l := ln.loops[i]
++		if l.header, err = im.block(p[0]); err != nil {
++			return nil, err
++		}
++		if p[1] != "-" {
++			if l.outer, err = index(p[1]); err != nil {
++				return nil, err
++			}
++		}
++		nb, err1 := strconv.ParseInt(p[2], 10, 32)
++		depth, err2 := strconv.ParseInt(p[3], 10, 16)
++		if err1 != nil || err2 != nil {
++			return nil, fmt.Errorf("bad loop %q", e)
++		}
++		l.nBlocks, l.depth = int32(nb), int16(depth)
++		l.isInner, l.containsUnavoidableCall = p[4] == "1", p[5] == "1"
++	}
++	for _, e := range list(t[3]) {
++		bs, js, _ := strings.Cut(e, ":")
++		id, _, err := gofvRef(bs, 'b')
++		if err != nil || id >= n {
++			return nil, fmt.Errorf("bad loop nest entry %q", e)
++		}
++		if ln.b2l[id], err = index(js); err != nil {
++			return nil, err
++		}
++	}
++	return ln, nil
++}
++
 +// gofvSizeScore counts the calculated sizes of t and of its elements, depth levels deep.
 +func gofvSizeScore(t *types.Type, depth int) int {
 +	if t == nil || depth == 0 || !t.GOFVSizeKnown() {
@@ -1409,7 +1601,7 @@
 +}
 +
 +// gofvDcl is implemented by ssagen's frontend: the length of Curfn.Dcl, which fe.SplitSlot
-+// appends to, and its truncation.
++// and f.NewLocal append to, and its truncation.
 +type gofvDcl interface {
 +	GOFVDclLen() int
 +	GOFVDclTruncate(int)
@@ -1436,12 +1628,16 @@
 +	cachedLineStarts     *xposmap
 +	auxmap               auxmap
 +	constants            map[int64][]*Value
++	RegAlloc             []Location
++	tempRegs             map[ID]*Register
++	scheduled, laidout   bool
 +}
 +
 +func gofvSave(f *Func) gofvSaved {
 +	return gofvSaved{f.Type, f.Blocks, f.Entry, f.bid, f.vid, f.DeferReturn, f.NamedValues, f.Names,
 +		f.CanonicalLocalSlots, f.CanonicalLocalSplits, f.OwnAux, f.freeValues, f.freeBlocks,
-+		f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts, f.auxmap, f.constants}
++		f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts, f.auxmap, f.constants,
++		f.RegAlloc, f.tempRegs, f.scheduled, f.laidout}
 +}
 +
 +func (s gofvSaved) restore(f *Func) {
@@ -1450,6 +1646,7 @@
 +	f.OwnAux, f.freeValues, f.freeBlocks = s.OwnAux, s.freeValues, s.freeBlocks
 +	f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts = s.cachedPostorder, s.cachedIdom, s.cachedSdom, s.cachedLoopnest, s.cachedLineStarts
 +	f.auxmap, f.constants = s.auxmap, s.constants
++	f.RegAlloc, f.tempRegs, f.scheduled, f.laidout = s.RegAlloc, s.tempRegs, s.scheduled, s.laidout
 +}
 +
 +// gofvImport replaces f's state by the result res of running gofv-ssa-opt on x's export of
@@ -1536,10 +1733,14 @@
 +			return err
 +		}
 +		x.defs.Reset()
-+		if got := x.auxDef(d.n, old); got != d.text || x.defs.Len() != 0 {
++		got := x.auxDef(d.n, old)
++		if x.defs.Len() != 0 || got != d.text && got != gofvWithoutCallreg(d.text) {
 +			return fmt.Errorf("aux a%d: redefined as\n%sLean:\n%s", d.n, got, d.text)
 +		}
-+		x.auxLast[d.n] = d.text
++		if got != d.text {
++			im.callregs = append(im.callregs, d) // replayed after the values are built
++		}
++		x.auxLast[d.n] = got
 +	}
 +
 +	// The type objects of the values of f, by ID.
@@ -1729,7 +1930,8 @@
 +	f.constants = map[int64][]*Value{}
 +	f.freeValues, f.freeBlocks = nil, nil
 +	f.cachedPostorder, f.cachedIdom, f.cachedSdom, f.cachedLoopnest, f.cachedLineStarts, f.auxmap = nil, nil, nil, nil, nil, nil
-+	loopnest := false
++	f.RegAlloc, f.tempRegs, f.scheduled, f.laidout = nil, nil, false, false
++	var loopnestToks []string // cache loopnest payload
 +	list := func(s string) []string {
 +		if s == "-" {
 +			return nil
@@ -1788,7 +1990,7 @@
 +			if err != nil {
 +				return err
 +			}
-+			vs, err := im.valueList(t[2])
++			vs, err := im.namedList(t[2])
 +			if err != nil {
 +				return err
 +			}
@@ -1798,7 +2000,7 @@
 +			if err != nil {
 +				return err
 +			}
-+			vs, err := im.valueList(t[2])
++			vs, err := im.namedList(t[2])
 +			if err != nil {
 +				return err
 +			}
@@ -1856,6 +2058,71 @@
 +				}
 +				v[0].InCache = true
 +				f.constants[key] = append(f.constants[key], v[0])
++			}
++		case "flagslive":
++			for _, r := range list(t[1]) {
++				b, err := im.block(r)
++				if err != nil {
++					return err
++				}
++				b.FlagsLiveAtEnd = true
++			}
++		case "hotness":
++			for _, e := range list(t[1]) {
++				bs, hs, _ := strings.Cut(e, ":")
++				b, err := im.block(bs)
++				if err != nil {
++					return err
++				}
++				h, err := strconv.ParseInt(hs, 10, 8)
++				if err != nil {
++					return err
++				}
++				b.Hotness = Hotness(h)
++			}
++		case "fstate":
++			for _, s := range list(t[1]) {
++				switch s {
++				case "scheduled":
++					f.scheduled = true
++				case "laidout":
++					f.laidout = true
++				default:
++					return fmt.Errorf("unknown fstate %q", s)
++				}
++			}
++		case "regalloc":
++			n, err := strconv.Atoi(t[1])
++			if err != nil {
++				return err
++			}
++			f.RegAlloc = make([]Location, n)
++			for _, e := range list(t[2]) {
++				vs, ls, _ := strings.Cut(e, ":")
++				id, _, err := gofvRef(vs, 'v')
++				if err != nil {
++					return err
++				}
++				if id >= n {
++					return fmt.Errorf("regalloc entry %q past %d", e, n)
++				}
++				if f.RegAlloc[id], err = im.loc(ls); err != nil {
++					return err
++				}
++			}
++		case "tempregs":
++			f.tempRegs = map[ID]*Register{}
++			for _, e := range list(t[1]) {
++				vs, rs, _ := strings.Cut(e, ":")
++				id, _, err := gofvRef(vs, 'v')
++				if err != nil {
++					return err
++				}
++				r := im.reg(rs)
++				if r == nil {
++					return fmt.Errorf("bad tempregs entry %q", e)
++				}
++				f.tempRegs[ID(id)] = r
 +			}
 +		case "cache":
 +			switch t[1] {
@@ -1915,7 +2182,7 @@
 +				}
 +				f.cachedSdom = sdom
 +			case "loopnest":
-+				loopnest = true
++				loopnestToks = t[2:]
 +			case "auxmap":
 +				m := auxmap{}
 +				for _, e := range list(t[2]) {
@@ -1969,10 +2236,51 @@
 +			}
 +		}
 +	}
-+	if loopnest {
-+		po, idom, sdom := f.cachedPostorder, f.cachedIdom, f.cachedSdom
-+		f.cachedLoopnest = loopnestfor(f)
-+		f.cachedPostorder, f.cachedIdom, f.cachedSdom = po, idom, sdom
++	if loopnestToks != nil {
++		ln, err := im.loopnest(loopnestToks)
++		if err != nil {
++			return err
++		}
++		f.cachedLoopnest = ln
++	}
++	// The register constraints regalloc caches in the AuxCalls (regspec: Reg for a call whose
++	// AuxCall has a regInfo, ResultReg of f.OwnAux for MakeResult), in value order; then every
++	// AuxCall definition with a callreg line must render as the Lean one (any other AuxCall
++	// changed here shows up as a redefinition in the check below).
++	touched := map[*AuxCall]bool{}
++	replay := func(a *AuxCall, op Op) {
++		if a == nil || a.reg == nil {
++			return
++		}
++		if !touched[a] {
++			touched[a] = true
++			old, val := a.reg, *a.reg
++			im.undo = append(im.undo, func() { *old = val; a.reg = old })
++		}
++		if op == OpMakeResult {
++			a.ResultReg(f.Config)
++		} else {
++			a.Reg(&opcodeTable[op].reg, f.Config)
++		}
++	}
++	for _, b := range f.Blocks {
++		for _, v := range b.Values {
++			switch {
++			case v.Op.IsCall():
++				a, _ := v.Aux.(*AuxCall)
++				replay(a, v.Op)
++			case v.Op == OpMakeResult:
++				replay(f.OwnAux, v.Op)
++			}
++		}
++	}
++	for _, d := range im.callregs {
++		x.defs.Reset()
++		got := x.auxDef(d.n, im.auxObj[d.n])
++		if x.defs.Len() != 0 || got != d.text {
++			return fmt.Errorf("aux a%d: register constraints\n%sLean:\n%s", d.n, got, d.text)
++		}
++		x.auxLast[d.n] = got
 +	}
 +
 +	// Check: the imported function, exported again, is the Lean output.

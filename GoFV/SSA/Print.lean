@@ -1,4 +1,5 @@
 import GoFV.SSA.Export
+import GoFV.SSA.ExportExt
 import GoFV.SSA.RegARM64
 
 /-!
@@ -257,10 +258,13 @@ def func (f : Func) (typs : Option (Array (String × TypeRef))) : W Unit := do
   if let some es := lo.tempRegs then
     s "tempregs "; list (fun ((v, r) : ID × Nat) => do ref 'v' v; s ":"; reg r) es; nl
 
-def sectionW (x : Section) : W Unit := do
+/-- A section, with its `dcllen` line (format 5.1) if `dclLen` is given. -/
+def sectionW (x : Section) (dclLen : Option Nat := none) : W Unit := do
   s "pass "; n x.index; sp; q x.pass; nl
   for d in x.defs do defn d
   func x.func x.typs
+  if let some k := dclLen then
+    s "dcllen "; n k; nl
   if !x.zvar.isEmpty then
     s "zvar "
     list (fun ((v, c) : ID × Nat) => do ref 'v' v; s ":"; n c) x.zvar
@@ -269,15 +273,18 @@ def sectionW (x : Section) : W Unit := do
     s "warn "; q m; nl
   s "end\n"
 
-def file (e : ExportFile) : W Unit := do
-  s "gofv-ssa "; n e.version; nl
+def file (e : ExportFile) (x : ExportExt := {}) : W Unit := do
+  s "gofv-ssa "; n e.version
+  if x.minor > 0 then
+    s "."; n x.minor
+  nl
   s "pkg "; q e.pkg; nl
   s "func "; q e.name; sp; n e.abi; sp; bool e.nosplit; sp; bool e.pgohot; nl
   for (k, ts) in e.config do
     s "config "; s k
     for t in ts do sp; token t
     nl
-  for x in e.sections do sectionW x
+  for h : k in [0:e.sections.size] do sectionW e.sections[k] (x.dclLen? k)
   s "frontend\n"
   for d in e.frontend do defn d
   s "end\n"
@@ -308,7 +315,10 @@ def file (e : ExportFile) : W Unit := do
 
 end Print
 
+/-- The canonical `gofv-ssa` text of an export file with its format 5.1 additions. -/
+def printExportExt (e : ExportFile) (x : ExportExt) : String := (Print.file e x |>.run "").2
+
 /-- The canonical `gofv-ssa` text of an export file. -/
-def printExport (e : ExportFile) : String := (Print.file e |>.run "").2
+def printExport (e : ExportFile) : String := printExportExt e {}
 
 end GoFV.SSA
