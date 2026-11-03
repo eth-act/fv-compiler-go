@@ -213,10 +213,19 @@ theorem evalOpL_act {fl : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
   all_goals first | exact absurd ha Bool.false_ne_true | rfl
 
 theorem isRoot_of_substOp {op : Op} (hs : CSEL.substOp op = true)
-    (hn : op ≠ .ARM64LoweredNilCheck) : isRoot op = false := by
-  simp only [CSEL.substOp, Bool.or_eq_true, beq_iff_eq, hn, false_or, Bool.and_eq_true,
+    (hn : op ≠ .ARM64LoweredNilCheck) (hm : op ≠ .ARM64LoweredMemEq) : isRoot op = false := by
+  simp only [CSEL.substOp, Bool.or_eq_true, beq_iff_eq, hn, hm, false_or, Bool.and_eq_true,
     Bool.not_eq_true'] at hs
   exact hs.1
+
+/-- `LoweredMemEq` is `memEq` of its arguments. -/
+theorem arm64Op_memEq {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (hop : v.op = .ARM64LoweredMemEq) :
+    arm64Op false env ctx fr v argv ty = .ok (memEq argv) := by
+  obtain ⟨id, op, type, auxInt, aux, pos, uses, args, block⟩ := v
+  dsimp only at hop
+  subst hop
+  rfl
 
 /-- A `LoweredNilCheck` that evaluates returns its first argument (Phase 1's `NilCheck`). -/
 theorem arm64Op_nilCheck_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
@@ -247,14 +256,20 @@ theorem evalOpL_ok_id {env : Env} {ctx : Ctx} {fr : Frame} {u v : Value} {argv :
     obtain ⟨rest1, e1⟩ := arm64Op_nilCheck_ok hn h1
     obtain ⟨rest2, e2⟩ := arm64Op_nilCheck_ok (hop.trans hn) h2
     rw [e1] at e2; cases e2; rfl
-  have hr := isRoot_of_substOp hs hn
+  by_cases hm : u.op = .ARM64LoweredMemEq
+  · have hg : u.op.generic = false := by rw [hm]; rfl
+    have ha : CSEL.arm64Act u.op = true := by rw [hm]; rfl
+    rw [evalOpL_act hg ha, arm64Op_memEq hm] at h1
+    rw [evalOpL_act (hop ▸ hg) (hop ▸ ha), arm64Op_memEq (hop.trans hm)] at h2
+    exact Res.ok.inj (h1.symm.trans h2)
+  have hr := isRoot_of_substOp hs hn hm
   cases hg : u.op.generic
   · cases ha : CSEL.arm64Act u.op
     · rw [evalOpL_tail hg ha, hr] at h1
       rw [evalOpL_tail (hop ▸ hg) (hop ▸ ha), hop, hr, hax, hai] at h2
       exact Res.ok.inj (h1.symm.trans h2)
     · have hok : CSEL.actOK u.op = true := by
-        simp only [CSEL.substOp, Bool.or_eq_true, beq_iff_eq, hn, false_or, hg, ha, hr,
+        simp only [CSEL.substOp, Bool.or_eq_true, beq_iff_eq, hn, hm, false_or, hg, ha, hr,
           Bool.not_false, Bool.true_and, Bool.false_or, Bool.not_true] at hs
         exact hs
       have e : evalOpL false env ctx fr v argv ty =

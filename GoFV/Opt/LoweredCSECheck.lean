@@ -13,8 +13,8 @@ with conditions the `runL` proof (`GoFV.Proof.CSEL.loweredCse_refinesL`) can use
   lowered memory arguments compare by identity);
 * the op's value is a function of the op, aux, auxint, argument registers and the producer of
   the first argument (`substOp`): a generic non-root op, a non-root arm64 op `Arm64.evalPure`
-  evaluates, an arm64 load, `MOVDaddr`, `MOVDreg`, `MOVDnop`, or `LoweredNilCheck` (its pointer,
-  if it does not panic);
+  evaluates, an arm64 load, `MOVDaddr`, `MOVDreg`, `MOVDnop`, `LoweredMemEq`, or
+  `LoweredNilCheck` (its pointer, if it does not panic);
 * arguments are redirected (and the first two of a commutative op possibly swapped) as
   `CSE.valueOK` checks: every commutative arm64 op evaluates symmetrically on them;
 * blocks keep their `auxInt` (an arm64 terminator reads it).
@@ -66,15 +66,16 @@ def actOK : Op → Bool
   | _ => false
 
 /-- The ops whose substitution the proof covers: `LoweredNilCheck` (its value is its pointer
-argument, if it does not panic), and the ops that are not roots and are generic, evaluated by
-`Arm64.evalPure`, or in `actOK`. -/
+argument, if it does not panic), `LoweredMemEq` (a function of its arguments), and the ops that
+are not roots and are generic, evaluated by `Arm64.evalPure`, or in `actOK`. -/
 def substOp (op : Op) : Bool :=
-  op == .ARM64LoweredNilCheck || !Sem.isRoot op && (op.generic || !arm64Act op || actOK op)
+  op == .ARM64LoweredNilCheck || op == .ARM64LoweredMemEq ||
+    !Sem.isRoot op && (op.generic || !arm64Act op || actOK op)
 
 /-- Whether `v`'s first argument sign-extends (what `MOVDreg`/`MOVDnop` read of the function,
 `GoFV.Proof.sxOf`). -/
 def sx (f : Func) (v : Value) : Option Bool :=
-  (v.args[0]?.bind f.value?).map fun u => Sem.Arm64.signExtends u.op
+  (v.args[0]?.bind f.value?).map (Sem.Arm64.signExtendsIn f.value?)
 
 /-- Value `x` reads in `g` what it reads in `f` of its first argument's producer (unless its op
 is commutative: such an op reads only its argument registers). -/
