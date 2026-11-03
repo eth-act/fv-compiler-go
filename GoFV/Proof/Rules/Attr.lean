@@ -28,3 +28,9 @@ register_simp_attr rule_unfold_s
 register_simp_attr rule_norm_s
 register_simp_attr rule_close_s
 register_simp_attr rule_eval
+
+/-- `rule_norm` (`Tactic.lean`) with `decide := true`: `rule_auto`'s fallback for the proofs that
+need it. -/
+register_option gofv.ruleNorm.decide : Bool := {
+  defValue := false
+  descr := "rule_norm: simp_all with decide := true (rule_auto's fallback)" }

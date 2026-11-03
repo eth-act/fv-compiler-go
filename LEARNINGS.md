@@ -509,6 +509,30 @@ avoiding): the problem, the trick, the numbers, where it is used.
   is an `∃` needs `⟨…, ⟨p1, p2, …⟩, -⟩`; a flat pattern sends `Q` into `cases`, which fails with
   "dependent elimination failed" on an equation of a big term.
 
+#### Rule tactics: `rule_norm` without `decide := true`, `rule_pow2`'s alternatives at reducible transparency
+- **Problem:** the rule modules are half of a cold `lake build` of `GoFV` (perf/history.tsv at
+  2ac1805: 1,489 of 2,987 CPU-s), spread over 170 modules of one-line `by rule_auto`/`rule_range`
+  proofs. `trace.profiler` on OrB2 and Xor2: 65–75% in `rule_norm`, the `simp_all` after every
+  case split (38 calls in one `rule_range` proof). `diagnostics`: few lemma attempts, but the
+  projections `PEnv.ty`/`auxInt`/`leaf` unfolded 40,851/24,176/12,355 times in one theorem —
+  `decide := true` evaluating a `Decidable` instance at every proposition, most of them stuck on
+  leaf reads. In Neq5, 23 elaborations of `rule_pow2`'s `first | exact divisible_pow2_u … | … |
+  exact divisible_pow2_s_ne …` took 20 s: on a signed `!=` goal the `_u_ne` attempt failed after
+  ~2.85 s of default-transparency unification through `bne` and `BitVec.sdiv`.
+- **Trick:** `rule_norm` without `decide`, with `Int.reduceEq/Ne/BEq/BNe`, which decide what
+  `decide` was needed for in most proofs (`if 8 == 0` of a literal divisor). The 8 proofs that
+  still need `decide` (`generic.rules:2246`/`:2247` in RotateLeft6/8/10/12) call `rule_auto_dec`
+  (option `gofv.ruleNorm.decide`) directly; `rule_auto` falls back to it only for proofs not yet
+  marked (a fallback alone made those 8 pay a failed attempt: RotateLeft8 19.9 → 33.0 s).
+  `with_reducible exact` for the four `divisible_pow2_*` alternatives: a wrong one fails on the
+  head symbol. Dropping `decide` alone broke 13 proofs in 9 modules although a three-module
+  sample had passed: check such a change with a full build.
+- **Effect** (4-core 8G orb, cold `lake build` of `GoFV`, no Lake cache, nothing else running,
+  same session): main 821.5 s wall / 3,195 CPU-s → 744.6 s / 2,922 CPU-s (−9.4% / −8.6%). Single
+  modules (`lake env lean`, CPU): Neq5 40.9 → 20.6 s, Xor2 34.0 → 28.3 s, OrB2 26.0 → 21.9 s,
+  RotateLeft4 10.9 → 9.7 s, RotateLeft8 19.9 → 21.9 s. Types of all 11,318 `GoFV` constants the
+  rule modules see unchanged (two new syntax constants), axioms audit 0 violations.
+
 #### prove validator: `rng` evaluated once per level and value via `@[csimp]` (#189, #24)
 - **Problem:** `gofv-ssa-opt --check --verified` on quick-v3 did not finish in 90 min:
   `proveChecked` took 13 s on `test/append verifyStruct` (stock `prove`: 0.1 s). gdb sampling
