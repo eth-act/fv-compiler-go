@@ -24,4 +24,35 @@ structure SymEffect where
   addr : Bool
   deriving DecidableEq, Inhabited, Repr
 
+/-- `ssa.regMask` (`regalloc.go`): bit `i` of `v1` (`i < 64`) or `v2` (`i ≥ 64`) allows register
+number `i` of the arch's register list (`GoFV.SSA.ARM64.registers`). -/
+structure RegMask where
+  v1 : UInt64 := 0
+  v2 : UInt64 := 0
+  deriving DecidableEq, Inhabited, Repr, Hashable
+
+/-- `ssa.inputInfo` / `ssa.outputInfo`: argument or result index `idx` and its allowed registers. -/
+structure RegIdx where
+  idx : Nat
+  regs : RegMask
+  deriving DecidableEq, Inhabited, Repr
+
+/-- `ssa.regInfo` as stored in `opcodeTable` (`op.go`): `inputs` (non-empty masks only) and
+`outputs` in allocation order (fewest allowed registers first), registers clobbered by the op,
+and whether it clobbers its first/second argument's register. -/
+structure RegInfo where
+  inputs : List RegIdx := []
+  clobbers : RegMask := {}
+  clobbersArg0 : Bool := false
+  clobbersArg1 : Bool := false
+  outputs : List RegIdx := []
+  deriving DecidableEq, Inhabited, Repr
+
+/-- `ssa.Register` without `objNum` (the `cmd/internal/obj` register number, an assembler
+detail): the dense register number `num` and Go's name (`Register.String()`). -/
+structure Register where
+  num : Nat
+  name : String
+  deriving DecidableEq, Inhabited, Repr
+
 end GoFV.SSA
