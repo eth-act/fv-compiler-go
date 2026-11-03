@@ -11,11 +11,13 @@ import GoFV.Proof.RefineLoc
 * `RefinesSchedLF tabs' f' tabs f`: the same against `runLF`, `runL` with faulting memory ops
   (`LMode.faulting`: an access to the nil page is a `nilDeref` panic, as under `runSched`).
 
-**The faulting gap.** `runSched` faults where `runL` reads `poison`: a load from the nil page
-(`Ptr.nilFault`) is `poison` under `runL` (Phase 1's loads are pure) and a `nilDeref` panic under
-`runSched` (the machine). So `schedule` cannot refine `runL` on a run that loads from the nil
-page and goes on. The `schedule` theorem is therefore stated against `runLF` (decision proposed on
-#385 and #96), which differs from `runL` only by those faults; `RefinesSchedLF.schedL` gives
+**The faulting gap.** `runSched` faults where `runL` reads `poison`: a load through a nil base
+in the nil page (`nilFaults`) is `poison` under `runL` (Phase 1's loads are pure) and a
+`nilDeref` panic under `runSched` (the machine); a lowered nil check of a wild pointer is
+`stuck` under `runSched` (`wildNil`). So `schedule` cannot refine `runL` on a run that loads from
+the nil page and goes on. The `schedule` theorem is therefore stated against `runLF` (decision
+proposed on #385 and #96), which differs from `runL` only by those faults and wild checks
+(`runLF_cases`, `GoFV.Proof.RunLFCases`); `RefinesSchedLF.schedL` gives
 `RefinesSchedLFrom (NoNilFault tabs f)`, a `runL` refinement on the inputs where `runL` and
 `runLF` agree.
 
@@ -162,7 +164,8 @@ theorem RefinesSchedLFFrom.mono {P Q : Env → List Val → Mem → Prop} {tabs 
     (h : RefinesSchedLFFrom P tabs' f' tabs f) : RefinesSchedLFFrom Q tabs' f' tabs f :=
   fun env args mem hQ => h env args mem (hPQ env args mem hQ)
 
-/-- The inputs on which `runL` and `runLF` of `f` agree: no run accesses the nil page. -/
+/-- The inputs on which `runL` and `runLF` of `f` agree: no run faults in the nil page or
+checks a wild pointer (`runLF_cases`). -/
 def NoNilFault (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
   ∀ fuel, runLF env tabs f args mem fuel = runL env tabs f args mem fuel
 
