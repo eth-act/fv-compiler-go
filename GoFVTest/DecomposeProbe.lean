@@ -208,7 +208,7 @@ def layersWhy (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Func) (out : P
       | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld" | .seg => "seg" | .ps => "ps"
     match L.pre t out.tables f log with
     | (f', log') =>
-      if log'.size == log.size then layersWhy env t f0 out Ls f log
+      if RewriteCheck.sameLog log'.toList log.toList then layersWhy env t f0 out Ls f log
       else if !RewriteCheck.layerOK env t out.tables f0 L f log f' then
         match L with
         | .ld =>

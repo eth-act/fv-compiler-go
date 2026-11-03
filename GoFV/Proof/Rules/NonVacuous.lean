@@ -328,6 +328,16 @@ theorem inst_r_generic_964 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_96
   simp [PtrOps.offPtr, Val.retype, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?, Ptr.word,
     Ptr.convertible]
 
+/-- `generic.rules:964` at a `uintptr`-typed `p` (the stack pointer `SP`; a word argument,
+`argShapeOk`) holding the integer word `4096`, `y = 16`, `x = 8`. -/
+theorem inst_r_generic_964_i64 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_964
+    (PEnv.ofLists [([0, 0], .i64 4096)] [([0, 0], .int .w64)] (.ptr none) [([0], 16), ([], 8)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_964]
+  rule_eval
+  simp [PtrOps.offPtr, Val.retype, PtrOps.wordRes, PtrOps.ptrRes, Ptr.add, Ptr.inWindow,
+    Blk.window?, Ptr.word, Ptr.convertible, Ptr.ofAddr]
+
 /-- `generic.rules:970`: `(PtrIndex <t> ptr idx) && config.PtrSize == 8 => (AddPtr ptr (Mul64
 <typ.Int> idx (Const64 <typ.Int> [t.Elem().Size()])))` at a global pointer, `idx = 3`, element
 size 8. -/

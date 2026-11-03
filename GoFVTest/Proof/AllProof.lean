@@ -523,6 +523,7 @@ import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE
 import GoFV.Proof.Witness.Clamp
+import GoFV.Proof.Witness.CondSel
 import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim
 import GoFV.Proof.Witness.CopyElimRel

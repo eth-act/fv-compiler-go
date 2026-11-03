@@ -191,7 +191,8 @@ theorem ss2_checks :
 /-- The split layer starts the second split's chain at `v8`'s memory `v6` in the input. -/
 theorem ss2_start :
     (GoFV.Rules.rewriteRun (Interp.Table.ofRuleSet ssRules) true true ssPassEnv ss2Func).toOption.map
-      (fun r => let g := (RewriteCheck.ssPre (Interp.Table.ofRuleSet ssRules) ss2Func r.2.2).1
+      (fun r => let g := (RewriteCheck.ssPre (Interp.Table.ofRuleSet ssRules) r.1.tables ss2Func
+          r.2.2).1
         (RewriteCheck.ssWalk g 2 ((g.value? 8).bind (·.args[0]?) |>.getD 0)).2) =
       some 6 := by
   decide +kernel

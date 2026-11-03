@@ -275,10 +275,10 @@ theorem ssEvent?_none {t : Interp.Table} (h : t.structStores = #[]) (f : Func) (
     · rfl
   | _ => rfl
 
-theorem ssPre_none {t : Interp.Table} (h : t.structStores = #[]) (f : Func) (log : Array RwEvent) :
-    RewriteCheck.ssPre t f log = (f, log) := by
+theorem ssPre_none {t : Interp.Table} (h : t.structStores = #[]) (tabs : Tables) (f : Func)
+    (log : Array RwEvent) : RewriteCheck.ssPre t tabs f log = (f, log) := by
   have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.ssStep t f) (f, acc) = (f, acc ++ l.toArray) := by
+      l.foldl (RewriteCheck.ssStep t tabs f) (f, acc) = (f, acc ++ l.toArray) := by
     intro l
     induction l with
     | nil => intro acc; simp
@@ -450,6 +450,12 @@ theorem ldPre_none {t : Interp.Table} {tabs : Tables} {f : Func}
   rw [← Array.foldl_toList, key]
   simp
 
+theorem sameLog_self : ∀ l : List RwEvent, RewriteCheck.sameLog l l = true
+  | [] => rfl
+  | e :: l => by
+    rw [RewriteCheck.sameLog, sameLog_self l, Bool.and_true]
+    cases e <;> simp [RewriteCheck.evSame]
+
 /-- Layers without events are skipped: `layersOK` is `validate`. -/
 theorem layersOK_none {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} {f : Func}
     {log : Array RwEvent} :
@@ -459,7 +465,7 @@ theorem layersOK_none {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pas
   | [], _ => by rw [RewriteCheck.layersOK]
   | L :: Ls, h => by
     rw [RewriteCheck.layersOK, h L List.mem_cons_self]
-    simp only [beq_self_eq_true, ite_true]
+    simp only [sameLog_self, ite_true]
     exact layersOK_none Ls (fun L' hL' => h L' (List.mem_cons_of_mem _ hL'))
 
 /-- `checkedRewrite_cases` for a table without nil-check eliminations, forwardings, struct-load
@@ -516,7 +522,7 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
             | nil sel => exact nilPre_none h0 _ sel f log
             | fwd sel => exact fwdPre_none h1 _ sel f log
             | sl => exact slPre_none h4 _ f log
-            | ss => exact ssPre_none h2 f log
+            | ss => exact ssPre_none h2 _ f log
             | ld => exact ldPre_none hld log
             | seg => exact segPre_none h5 f log
             | ps => exact psPre_none h6 f log

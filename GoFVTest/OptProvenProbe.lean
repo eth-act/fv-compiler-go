@@ -523,7 +523,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
   | [], f, log => why tabs t f g log
   | L :: Ls, f, log =>
     let (f', log') := L.pre t tabs f log
-    if log'.size == log.size then layersWhy env tabs t f0 g Ls f log else
+    if RewriteCheck.sameLog log'.toList log.toList then layersWhy env tabs t f0 g Ls f log else
     let k := log.size - log'.size
     let r : Option String := match L with
       | .nil sel =>

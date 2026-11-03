@@ -30,8 +30,10 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   whose result uses a leaf's type (`(Neg64 <y.Type> y)`, `(Add64 <c.Type> c d)` under
   `c.Type.Size() == 8`) is unprovable: the leaf could be an 8-bit integer typed `int64`.
 - **Argument shapes** (`Pat.argsOK e.ty [] r.pat = true`, #69 RuleProofs7): at every op node
-  the arguments' types have the shapes `argShapeOk` asks for: the pointer argument of `OffPtr`,
-  `AddPtr`, `PtrIndex`, `IsNonNil` pointer-typed, both of `EqPtr`/`NeqPtr` pointer words (a
+  the arguments' types have the shapes `argShapeOk` asks for: the pointer argument of `AddPtr`,
+  `PtrIndex` pointer-typed, that of `OffPtr`/`IsNonNil` a word (a pointer or a 64-bit integer:
+  `SP` and some `ConstNil`s are `uintptr`-typed, `generic.rules:964`/`:1687` in late opt; the two
+  word shapes have the same values and retype alike, `wordShape_ptr`), both of `EqPtr`/`NeqPtr` pointer words (a
   pointer or a 64-bit integer: `uintptr` itabs), the offset of
   `AddPtr`/`PtrIndex` a 64-bit integer, `Convert` between a pointer and a 64-bit integer (by
   its result shape; a `Convert` of any other shape is excluded), both arguments of
@@ -667,11 +669,14 @@ events out of the log and applies them to the input in layers (`RewriteCheck.lay
 `RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
 of, struct-load expansions, those of the first layer's fresh field `Load`s, value-rule `Load`
 expansions and selections of `Load`s and `Make`s (`ldPre`, as for decompose builtin), struct-store
-splits of the input's `Store`s, those of the first split layer's fresh field stores, segment
+splits of the input's `Store`s of `Make`s, struct-load expansions whose `Load`'s memory a split
+rebased, the remaining splits (a second round for the fresh field stores of nested structs), segment
 rewrites, four more rounds of forwardings `fwdOK` holds of, the remaining forwardings, the
 remaining nil-check eliminations), each related to its input by its own relation (`layerOK`:
 `nilOK`, `fwdRel` + `check`, `validate` with the layer's events alone + `check`, `ssRel` +
-`check`, `segRel` + `check`; a layer without events is skipped), and `validate` relates the last
+`check`, `segRel` + `check`; a layer that leaves the log's events as they are, `sameLog`, is
+skipped: a struct-load expansion whose `Load`'s memory copy elimination replaced moves that
+replacement to each fresh `Load`, so the log may keep its size), and `validate` relates the last
 function and the output with the remaining events.
 A selective layer (`nilPre`/`fwdPre` with `sel`) applies only the events its relation holds of in
 its input, the later layer of its kind the rest: a split's pointer may be an eliminated nil check
@@ -706,7 +711,15 @@ of that memory move to it, for `validate` to replay (`ssStep`, `ssFirst`). The s
 does the same for replacements of the `Load`'s pointer and memory before its expansion
 (`slRebase`, `slMove`: the fresh `OffPtr`s and `Load`s take the `Load`'s arguments). Witness:
 `GoFV.Proof.Witness.ss2_checkedRewrite` (`*p = P{x, y}; *p = P{y, x}`; `ss2_start`: the second
-chain starts at `v6`).
+chain starts at `v6`). The first split layer leaves a split whose stored value is not, up to
+copies, a `Make` in its input (a `Load` the struct-load layers could not expand yet: copy
+elimination moved its memory to the end of another split's chain, which only exists after the
+first split layer; the struct-load layer after it expands it). A field store whose stored value is
+not the `Make`'s argument up to copies (a value rule rewrote the argument, `(Mul64 x (Const64
+[1])) => x`, and copy elimination replaced it before the split, but the layers replay the rule
+only in `validate`; or the `ld` layer applied a later replacement of the argument) stores the
+argument instead, followed by a replacement of it by the logged value for `validate` to replay
+(none when the logged value is a copy of the argument: `ssStoredFixes`, `ssStep`).
 
 **Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (`nil`/`fwd`/`rw`/`ss`/`seg` steps
 `layerOK` accepts; `LayerChain.congr` moves the `rw` steps to a table with the same value and
@@ -804,7 +817,10 @@ is the top's shape (`compSub`: `shapeSub`, or a `.int .w64` component at a point
 `uintptr` itab word read by an `ITab <*uint8>`), or the argument is a scalar (the selection is
 then `poison`): `selTop`, proved by `raw_selTop` (`compSub_hasTy`). A `Load` at a scalar shape or
 an aggregate of scalars is a top (`loadTop`,
-`loadOp_hasTy`), and leaves may have any shape (`leavesOK`: defined). `argShapeOk` asks of the
+`loadOp_hasTy`), and so is a `CondSelect` whose arms' shapes are its own (`condTop`, `armSub`:
+`compSub`, or a pointer arm at the 64-bit integer shape; its value is an arm or `poison`,
+`condSelect_hasTy`; `branchelim`'s selects that `generic.rules:292–294` fold in late opt, e.g. a
+`uintptr` select between two symbol addresses), and leaves may have any shape (`leavesOK`: defined). `argShapeOk` asks of the
 arguments of a `Make` (`StringMake`, `SliceMake`, `IMake`, `ComplexMake`, `StructMake`,
 `ArrayMake1`) the shapes of their type's components (`makeArgOk`, `shapeSub`): without it
 `(StringPtr (StringMake ptr _)) => ptr` is false (a pointer leaf typed `int64` under a field of

@@ -1330,6 +1330,15 @@ theorem isSliceTy_iff {t : Ty} : isSliceTy t = true ↔ ∃ el, t = .slice el :=
 
 @[rule_sem] theorem nonNeg_poison : Val.poison.nonNeg = true := rfl
 
+/-- A word shape (a pointer shape or the 64-bit integer shape, `argShapeOk` of `OffPtr` and
+`IsNonNil`) has the values and the retyping of `.ptr none`. -/
+theorem wordShape_ptr {t : Ty} (h : (∃ el, t = .ptr el) ∨ t = .int .w64) :
+    (∀ v : Val, v.retype t = v.retype (.ptr none)) ∧ (∀ v : Val, v.hasTy t = v.hasTy (.ptr none)) := by
+  rcases h with ⟨el, rfl⟩ | rfl
+  · exact ⟨fun v => by rw [Val.retype_ptr_eq_i64 v el, Val.retype_ptr_eq_i64 v none],
+      fun v => by rw [Val.hasTy_ptr_eq_i64 v el, Val.hasTy_ptr_eq_i64 v none]⟩
+  · exact ⟨fun v => (Val.retype_ptr_eq_i64 v none).symm, fun v => (Val.hasTy_ptr_eq_i64 v none).symm⟩
+
 /-- A value of a pointer shape is `poison`, a 64-bit integer (the pointer at that address) or a
 pointer. -/
 theorem val_of_hasTy_ptr {a : Val} {el : Option Nat} (h : a.hasTy (.ptr el) = true) :
