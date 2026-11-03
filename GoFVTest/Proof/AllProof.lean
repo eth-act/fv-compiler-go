@@ -117,6 +117,8 @@ import GoFV.Proof.Pass.DeadEdgeWF
 import GoFV.Proof.Pass.DeadEdgeWalk
 import GoFV.Proof.Pass.DeadEdges
 import GoFV.Proof.Pass.DeadEnter
+import GoFV.Proof.Pass.DeadEnterL
+import GoFV.Proof.Pass.DeadFactsL
 import GoFV.Proof.Pass.DeadFrag
 import GoFV.Proof.Pass.DeadLive
 import GoFV.Proof.Pass.DeadRank
@@ -124,6 +126,7 @@ import GoFV.Proof.Pass.DeadReach
 import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Pass.DeadSim
+import GoFV.Proof.Pass.DeadSimL
 import GoFV.Proof.Pass.DeadTail
 import GoFV.Proof.Pass.DeadcodePass
 import GoFV.Proof.Pass.DecPhiBlock
@@ -541,6 +544,7 @@ import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.DSE
 import GoFV.Proof.Witness.DSECert
 import GoFV.Proof.Witness.Deadcode
+import GoFV.Proof.Witness.DeadcodeL
 import GoFV.Proof.Witness.DecNested
 import GoFV.Proof.Witness.DecPhiElim
 import GoFV.Proof.Witness.DecPhis
