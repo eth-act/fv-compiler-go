@@ -149,7 +149,7 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
     Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && Pat.argsOKL e.ty [] r.pat &&
-    resFitsL (e.ty []) r.result && leavesOK M I [] r.pat &&
+    resFitsL (e.ty []) r.result && Pat.addrOKL e.aux e.auxInt [] r.pat && leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
 /-- The rule event `(v, r, defs)` is a sound instance of one commutation choice of `r` on `M`
