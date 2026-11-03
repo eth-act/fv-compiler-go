@@ -663,6 +663,24 @@ For comparison only, supported architectures combine the pointer expression into
 
 **Issue summary:** Implement required index-49 critical-edge elimination with its single-phi/equal-argument splitter reuse optimization, not naive per-edge splitting. Reproduce dynamic block iteration, allocation/Pos order, swap-removal and phi simplification, and cache invalidation; establish the no-critical-edge invariant needed by regalloc (`critical.go:7-112`; `compile.go:571-576`).
 
+**Proof (#385):** `GoFV.Proof.Crit.critical_refinesL` (`GoFV/Proof/Pass/CriticalL.lean`):
+`criticalPass penv f = .ok out`, `check ce f = .ok ()` and `critRelB f out.func = true` give
+`RefinesL out.tables out.func penv.tables f` (`runL`). Checked wrapper: `critRelB` decides
+`CritRel` (`critRelB_sound`): same entry, `ownAux`, `lowered` and value table up to positions,
+use counts and `Phi` arguments (`eraseA`); every input block keeps kind, controls, values,
+`auxInt` and ID, and its successor `k` reaches, through a chain of splitters (empty `Plain`
+blocks, `SplitReach`; a shared splitter is itself split, so chains are longer than one), an edge
+to the same block whose `Phi`s read the argument the source edge's read (`PhiArgs`).
+`refinesL_of_critRel (hwf : WF ce f) (R : CritRel f g) : RefinesL tabs g tabs f` is a
+macro-step simulation (`runLoopL_simIH`, equal frames at related block entries, the splitters
+adding block entries that change nothing); licm composes it for its preheaders. Witness
+`GoFV.Proof.Witness.criticalL_witness` (`maxL`, lowered `max(x, lo)` with a `Phi`: the edge
+`b1 → b3` is split, the output returns `max(-3, 0) = 0` through the splitter). Coverage
+(`lake exe critical-probe`): quick-v7 9,297 sections, 8,643 with input and output checked, 2,306
+changed, `critRelB` accepts 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked,
+30,193 changed, accepted 90,656 (0 rejections). The sections not counted have an input that
+fails `check` (654 and 5,904).
+
 ### phi tighten — issue #404
 
 **Function / files:** `phiTighten`, `tighten.go:181-200`; `Value.rematerializeable`, `regalloc.go:2923-2935`; `copyInto`, `value.go:446-458`.
