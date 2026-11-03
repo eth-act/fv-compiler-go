@@ -2,6 +2,8 @@
 import GoFV.Proof.Low.RuleL
 import GoFV.Rules.ProvenARM64
 import GoFV.Proof.Low.Rules.BlockCset
+import GoFV.Proof.Low.Rules.Cmp
+import GoFV.Proof.Low.Rules.CmpF
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
@@ -43,7 +45,35 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_182_3_sound, trivial⟩,
       ⟨r_ARM64_182_4_sound, trivial⟩,
       ⟨r_ARM64_184_sound, trivial⟩,
+      ⟨r_ARM64_240_sound, trivial⟩,
+      ⟨r_ARM64_241_sound, trivial⟩,
+      ⟨r_ARM64_244_sound, trivial⟩,
+      ⟨r_ARM64_242_sound, trivial⟩,
+      ⟨r_ARM64_245_sound, trivial⟩,
+      ⟨r_ARM64_239_sound, trivial⟩,
       ⟨r_ARM64_444_sound, trivial⟩,
+      ⟨r_ARM64_451_sound, trivial⟩,
+      ⟨r_ARM64_452_sound, trivial⟩,
+      ⟨r_ARM64_282_sound, trivial⟩,
+      ⟨r_ARM64_291_sound, trivial⟩,
+      ⟨r_ARM64_283_sound, trivial⟩,
+      ⟨r_ARM64_287_sound, trivial⟩,
+      ⟨r_ARM64_292_sound, trivial⟩,
+      ⟨r_ARM64_284_sound, trivial⟩,
+      ⟨r_ARM64_288_sound, trivial⟩,
+      ⟨r_ARM64_293_sound, trivial⟩,
+      ⟨r_ARM64_281_sound, trivial⟩,
+      ⟨r_ARM64_290_sound, trivial⟩,
+      ⟨r_ARM64_254_sound, trivial⟩,
+      ⟨r_ARM64_277_sound, trivial⟩,
+      ⟨r_ARM64_255_sound, trivial⟩,
+      ⟨r_ARM64_263_sound, trivial⟩,
+      ⟨r_ARM64_278_sound, trivial⟩,
+      ⟨r_ARM64_256_sound, trivial⟩,
+      ⟨r_ARM64_264_sound, trivial⟩,
+      ⟨r_ARM64_279_sound, trivial⟩,
+      ⟨r_ARM64_254_2_sound, trivial⟩,
+      ⟨r_ARM64_276_sound, trivial⟩,
       ⟨r_ARM64_12_sound, trivial⟩,
       ⟨r_ARM64_12_2_sound, trivial⟩,
       ⟨r_ARM64_11_sound, trivial⟩,
@@ -52,6 +82,12 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_48_2_sound, trivial⟩,
       ⟨r_ARM64_48_3_sound, trivial⟩,
       ⟨r_ARM64_48_4_sound, trivial⟩,
+      ⟨r_ARM64_248_sound, trivial⟩,
+      ⟨r_ARM64_249_sound, trivial⟩,
+      ⟨r_ARM64_252_sound, trivial⟩,
+      ⟨r_ARM64_250_sound, trivial⟩,
+      ⟨r_ARM64_252_2_sound, trivial⟩,
+      ⟨r_ARM64_247_sound, trivial⟩,
       ⟨r_ARM64_449_sound, trivial⟩,
       ⟨r_ARM64_306_sound, trivial⟩,
       ⟨r_ARM64_44_sound, trivial⟩,
