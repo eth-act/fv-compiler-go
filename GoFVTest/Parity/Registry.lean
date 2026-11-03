@@ -25,6 +25,11 @@ import GoFV.Opt.Decompose
 import GoFV.Opt.SccpReplay
 import GoFV.Opt.SccpCheck
 import GoFV.Opt.Lower
+import GoFV.Opt.Schedule
+import GoFV.Opt.NilCheckLate
+import GoFV.Opt.FlagAlloc
+import GoFV.Opt.LoopRotate
+import GoFV.Opt.Trim
 
 /-!
 # Registered Lean passes
@@ -75,7 +80,12 @@ def registry : Array PassEntry := #[
   { fn := "postExpandCallsDecompose", names := #["decompose builtin"],
     run := Decompose.postExpandCallsDecomposePass },
   { fn := "lower", names := #["lower"], run := lower },
-  { fn := "lateLower", names := #["late lower"], run := lateLower }
+  { fn := "lateLower", names := #["late lower"], run := lateLower },
+  { fn := "schedule", names := #["schedule"], run := schedulePass },
+  { fn := "nilcheckelim2", names := #["late nilcheck"], run := nilcheckelim2Pass },
+  { fn := "flagalloc", names := #["flagalloc"], run := flagallocPass },
+  { fn := "loopRotate", names := #["loop rotate"], run := loopRotatePass },
+  { fn := "trim", names := #["trim"], run := trimPass }
 ]
 
 end GoFVTest.Parity
