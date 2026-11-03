@@ -218,15 +218,18 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     if k == 0 || s.pass.toStringLossy != "lower" then continue
     let env := { base with passName := "lower", tables := prev }
     -- the checked lower against stock
-    match lowerChecked env e.sections[k-1]!.func with
+    let full := (← IO.getEnv "LOWER_PROBE_FULL").isSome
+    let tbl := if full then lowerTable else lowerProvenTable
+    match GoFV.Opt.LowerCheck.checkedLowerWith tbl env (GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func) with
     | .ok co =>
       if (GoFVTest.Parity.compare prev co tables s).isNone then
         S := { S with checkedSame := S.checkedSame + 1
                       checkedProven := if co.func == e.sections[k-1]!.func then S.checkedProven else S.checkedProven + 1 }
       else if (← IO.getEnv "LOWER_PROBE_MISS").isSome then
-        match rewriteRun lowerProvenTable true true env e.sections[k-1]!.func with
+        let fc := GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func
+        match rewriteRun tbl true true env fc with
         | .ok (o2, _, log2) =>
-          IO.println s!"MISS\t{whyL o2.tables lowerProvenTable e.sections[k-1]!.func o2.func log2}\t{path}"
+          IO.println s!"MISS\t{whyL o2.tables tbl fc o2.func log2}\t{path}"
         | .error _ => pure ()
     | .error _ => pure ()
     match rewriteRun lowerTable true true env e.sections[k-1]!.func with

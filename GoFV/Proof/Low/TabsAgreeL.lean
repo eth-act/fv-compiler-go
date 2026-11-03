@@ -13,17 +13,6 @@ contexts: the arm64 ops read the tables only through the aux of the value (`Sem.
 `AuxAgree` covers.
 -/
 
-namespace GoFV.Opt.LowerCheck
-
-open GoFV.SSA GoFV.SSA.Sem
-
-/-- `tabsAgree`, and every value of `f` has the same lowered shape in both tables (`Ctx.makeL`'s
-`typeShapesL`). -/
-def tabsAgreeL (tabs tabs' : Tables) (f : Func) : Bool :=
-  GoFV.Opt.tabsAgree tabs tabs' f &&
-  f.valueTab.toList.all fun o => Ty.beq (valueTy (typeShapesL tabs') o) (valueTy (typeShapesL tabs) o)
-
-end GoFV.Opt.LowerCheck
 
 namespace GoFV.Proof.Low
 

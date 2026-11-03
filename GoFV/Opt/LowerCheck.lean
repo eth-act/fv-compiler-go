@@ -163,8 +163,8 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
   | some x, .setOp o' =>
     let x' := { x with op := o' }
     if x.id == v && ellipsisOn x.op r.pat && r.cond.isNone && r.block.isNone &&
-        topOKL x.op (shpL tabs x.type) &&
-        ((termVL tabs x && termVL tabs x') || (renameOp x.op o' && !termVL tabs x)) then some x'
+        ((termVL tabs x && termVL tabs x' && topOKL x.op (shpL tabs x.type)) ||
+          (renameOp x.op o' && !termVL tabs x)) then some x'
     else none
   | _, _ => none
 
@@ -429,12 +429,19 @@ def validateL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEve
 
 /-! ## The checked pass -/
 
+/-- `tabsAgree`, and every value of `f` has the same lowered shape in both tables (`Ctx.makeL`'s
+`typeShapesL`): `f` runs alike under `runL` in both (`GoFV.Proof.Low.runL_tabsAgreeL`). -/
+def tabsAgreeL (tabs tabs' : Tables) (f : Func) : Bool :=
+  GoFV.Opt.tabsAgree tabs tabs' f &&
+  f.valueTab.toList.all fun o =>
+    Sem.Ty.beq (Sem.valueTy (Sem.typeShapesL tabs') o) (Sem.valueTy (Sem.typeShapesL tabs) o)
+
 /-- `applyRewrite` with the lowering table `t` and its log; the result if the tables agree for
-`f` (`tabsAgree`), both functions pass `check` and `validateL` accepts it, else `none`. -/
+`f` (`tabsAgreeL`), both functions pass `check` and `validateL` accepts it, else `none`. -/
 def checkedRunL (t : Interp.Table) (env : PassEnv) (f : Func) : Except String (Option PassOut) := do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   let ce : CheckEnv := { tabs := out.tables, typs := env.typs }
-  return if tabsAgree env.tables out.tables f && checkOK { tabs := env.tables, typs := env.typs } f &&
+  return if tabsAgreeL env.tables out.tables f && checkOK { tabs := env.tables, typs := env.typs } f &&
       checkOK ce out.func && validateL out.tables t f out.func log then some out else none
 
 /-- **The checked lowering pass** with table `t`: the validated result, else the input. -/
