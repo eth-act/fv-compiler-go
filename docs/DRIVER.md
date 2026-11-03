@@ -234,8 +234,19 @@ the map lines' order, as `pass-parity`.
 
 ## Results
 
-Issue #12 has the latest numbers (corpus `gofv-corpus/2aae1000ea1d/plain`, `std` and the corpus
-programs built for linux/arm64 by `scripts/driver-e2e.sh`). State of the known gaps:
+Issue #12 has the earlier numbers and #386 the H8 ones (corpus `gofv-corpus/2aae1000ea1d`, `std`
+and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, export format 5.1:
+
+- `gofv-ssa-opt --check` (`number lines` through `trim`): the whole pipeline is identical for
+  9,297/9,297 functions of quick-v7 (42 s, `--jobs 4`) and 96,560/96,560 of full-v9 (786 s).
+  There are 0 divergences and 0 Lean pass errors.
+- `driver-e2e.sh --mode full -p 8`: 372/372 std archives byte-identical. 183 programs: 183
+  binaries byte-identical, and 183 with the same output and exit status under qemu. 44,189
+  functions go through Lean from `number lines` to `trim`, with 0 fallbacks: PASS (17 min).
+- `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock. 40,887 of 42,899
+  functions are fully verified, with 0 pass errors and 0 fallbacks: PASS (18 min).
+
+State of the known gaps:
 
 - Type-object identity for `zero arg cse` (#101): the pipeline tracks `*types.Type` object
   classes itself. It starts from the input section's `zvar`. Each pass reports the objects of
