@@ -320,3 +320,8 @@ date	commit	bench	status	wall_s	cpu_s	maxrss_mb	runs	load1	bin_hash	corpus
 2026-11-03T03:36:33Z	bde1c28431cb	ssa-check-corpus	cached	39.80	38.80	92	1	15.8	791ba25a2479bcf7	539fc0649fdf
 2026-11-03T03:36:33Z	bde1c28431cb	analysis-difftest-corpus	cached	37.23	37.19	89	1	22.1	a0a9f3b2c0da0df6	539fc0649fdf
 2026-11-03T03:36:33Z	bde1c28431cb	sem-difftest-corpus	cached	51.04	49.87	103	3	13.5	582aa1bad7218d3f	539fc0649fdf
+2026-11-03T08:20:39Z	2844d5bdf15d	ssa-roundtrip-corpus	unparsable	34.42	34.32	102	1	15.2	de11d308262fbdbb	04484c372bb8
+2026-11-03T08:20:39Z	2844d5bdf15d	pass-parity-corpus	skipped				0			04484c372bb8
+2026-11-03T08:20:39Z	2844d5bdf15d	ssa-check-corpus	skipped				0			04484c372bb8
+2026-11-03T08:20:39Z	2844d5bdf15d	analysis-difftest-corpus	skipped				0			04484c372bb8
+2026-11-03T08:20:39Z	2844d5bdf15d	sem-difftest-corpus	skipped				0			04484c372bb8
