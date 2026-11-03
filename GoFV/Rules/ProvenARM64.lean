@@ -58,7 +58,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 145 proven value rules and 43 proven block rules. -/
+/-- `ARM64.rules` restricted to its 159 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
@@ -111,6 +111,7 @@ def lower : RuleSet where
     (.Less64U, [Generated.ARM64.r_ARM64_279]),
     (.Less8, [Generated.ARM64.r_ARM64_254_2]),
     (.Less8U, [Generated.ARM64.r_ARM64_276]),
+    (.Load, [Generated.ARM64.r_ARM64_313, Generated.ARM64.r_ARM64_314, Generated.ARM64.r_ARM64_315, Generated.ARM64.r_ARM64_316, Generated.ARM64.r_ARM64_317, Generated.ARM64.r_ARM64_318, Generated.ARM64.r_ARM64_319, Generated.ARM64.r_ARM64_320]),
     (.Lsh64x16, [Generated.ARM64.r_ARM64_152, Generated.ARM64.r_ARM64_171]),
     (.Lsh64x32, [Generated.ARM64.r_ARM64_152_2, Generated.ARM64.r_ARM64_170]),
     (.Lsh64x64, [Generated.ARM64.r_ARM64_152_3, Generated.ARM64.r_ARM64_169]),
@@ -174,6 +175,7 @@ def lower : RuleSet where
     (.SignExt8to32, [Generated.ARM64.r_ARM64_207]),
     (.SignExt8to64, [Generated.ARM64.r_ARM64_209]),
     (.StaticCall, [Generated.ARM64.r_ARM64_442]),
+    (.Store, [Generated.ARM64.r_ARM64_326, Generated.ARM64.r_ARM64_327, Generated.ARM64.r_ARM64_328, Generated.ARM64.r_ARM64_329, Generated.ARM64.r_ARM64_330, Generated.ARM64.r_ARM64_331]),
     (.Sub16, [Generated.ARM64.r_ARM64_8]),
     (.Sub32, [Generated.ARM64.r_ARM64_8_2]),
     (.Sub64, [Generated.ARM64.r_ARM64_8_3]),

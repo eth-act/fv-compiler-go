@@ -6,6 +6,7 @@ import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
+import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
@@ -77,6 +78,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_279_sound, trivial⟩,
       ⟨r_ARM64_254_2_sound, trivial⟩,
       ⟨r_ARM64_276_sound, trivial⟩,
+      ⟨r_ARM64_313_sound, r_ARM64_314_sound, r_ARM64_315_sound, r_ARM64_316_sound, r_ARM64_317_sound, r_ARM64_318_sound, r_ARM64_319_sound, r_ARM64_320_sound, trivial⟩,
       ⟨r_ARM64_152_sound, r_ARM64_171_sound, trivial⟩,
       ⟨r_ARM64_152_2_sound, r_ARM64_170_sound, trivial⟩,
       ⟨r_ARM64_152_3_sound, r_ARM64_169_sound, trivial⟩,
@@ -140,6 +142,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_207_sound, trivial⟩,
       ⟨r_ARM64_209_sound, trivial⟩,
       ⟨r_ARM64_442_sound, trivial⟩,
+      ⟨r_ARM64_326_sound, r_ARM64_327_sound, r_ARM64_328_sound, r_ARM64_329_sound, r_ARM64_330_sound, r_ARM64_331_sound, trivial⟩,
       ⟨r_ARM64_8_sound, trivial⟩,
       ⟨r_ARM64_8_2_sound, trivial⟩,
       ⟨r_ARM64_8_3_sound, trivial⟩,

@@ -173,12 +173,12 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
     else none
   | _, _ => none
 
-/-- A rule event at the atom `v` whose one definition `u` lowers it as a store (`memLower`:
-`(Store {t} ptr val mem) => (MOVDstore ptr val mem)` and the other sizes): `u`, an atom with `v`'s
-arguments and type. -/
+/-- A rule event at the atom `v` whose one result node `u` lowers it as a store (`memLower`:
+`(Store {t} ptr val mem) => (MOVDstore ptr val mem)` and the other sizes; the log lists the reset
+value, then the node, as for any one-node `build`): `u`, an atom with `v`'s arguments and type. -/
 def atomDef (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option Value :=
   match M.get? v, defs with
-  | some x, [u] =>
+  | some x, [_, u] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.args == x.args &&
         u.type == x.type && memLower tabs x u then some u
     else none

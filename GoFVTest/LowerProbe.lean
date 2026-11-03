@@ -90,6 +90,9 @@ def ruleWhyL (tabs : Tables) (M : Defs) (r0 : Rule) (v : ID) (defs : List Value)
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond"
         else if !Pat.argsOK e.ty [] r.pat then "args"
+        else if !Pat.topOKL (e.ty []) r.pat then s!"top {repr (e.ty [])}"
+        else if !Pat.argsOKL e.ty [] r.pat then "argsL"
+        else if !resFitsL (e.ty []) r.result then s!"fits {repr (e.ty [])}"
         else if !leavesOK M I [] r.pat then "leaves"
         else if !resultOKL tabs M e r.pat ev or σ I r x defs then
           s!"result defs={defs.map fun u => (u.id, u.op.name, u.args.toList, u.type)} x={(x.id, x.type)}"

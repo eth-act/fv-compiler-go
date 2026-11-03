@@ -13,7 +13,7 @@ mem` by `t`'s size (offset 0, no aux). Here, for a value shape `ty` with a scala
   extension is cut by `retypeL`; a boolean byte other than 0/1 is `poison` in Phase 1 and its low
   bit in the load; a pointer-typed 8-byte load reads the same word (`decodeInt .w64 =
   decodePtr`). Loads are terms on both sides (`termVL`, `opValL`'s `ldVal`), so the load rules are
-  `ArmRule.Sound` (`Rules/Load.lean`).
+  `ArmRule.Sound` (`Rules/LoadStore.lean`; the size fit is the validator's `resFitsL`).
 * `store_lower_eval`: Phase 1's `Store` (`memRoot`: the write of `encode ty val`) is refined by
   the arm64 store (`arm64Op`'s `st n`: the write of `Arm64.storeBytes n val`): the stored bytes
   agree, or the generic ones are `poison` (`encode_le_storeBytes`).

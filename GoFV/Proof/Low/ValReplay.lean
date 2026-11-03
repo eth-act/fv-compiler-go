@@ -161,7 +161,7 @@ theorem atomDef_facts {tabs : Tables} {M : Defs} {v : ID} {defs : List Value} {u
       termVL tabs u = false ∧ u.args = x.args ∧ u.type = x.type := by
   unfold atomDef at h
   split at h
-  · rename_i x u' hx
+  · rename_i x _ u' hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨hc, h⟩ := h
     cases h

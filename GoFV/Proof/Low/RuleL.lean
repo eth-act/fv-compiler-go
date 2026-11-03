@@ -231,9 +231,10 @@ def resDenL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Orac
 
 /-- A generic top op produces a value of its type's shape (Phase 1's `RewriteCheck.topOK`: Go types
 these values at their op's width, and a narrow generic op read at a wider shape would be widened by
-`retypeL` where the arm64 op keeps its register); arm64 tops are unconstrained (`retypeL` narrows
-their 64-bit register). -/
-def topOKL (o : Op) (ty : Ty) : Bool := !o.generic || GoFV.Opt.RewriteCheck.topOK o ty
+`retypeL` where the arm64 op keeps its register), as does `Load` (`loadOp` decodes at the shape);
+arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
+def topOKL (o : Op) (ty : Ty) : Bool :=
+  !o.generic || o == .Load || GoFV.Opt.RewriteCheck.topOK o ty
 
 /-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
 def Pat.topOKL (ty : Ty) : Pat → Bool

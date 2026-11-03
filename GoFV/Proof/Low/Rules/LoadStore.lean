@@ -27,7 +27,7 @@ open GoFV.Rules.Generated.ARM64
 
 theorem fitsB_loadFits {ty : Ty} {n : Nat} (h : fitsB ty n = true) : Sim.LoadFits ty n := by
   unfold fitsB at h
-  split at h <;> simp only [beq_iff_eq, reduceCtorEq, Bool.false_eq_true] at h
+  split at h <;> simp only [beq_iff_eq, Bool.false_eq_true] at h
   · exact .inl ⟨rfl, h⟩
   · exact .inr (.inl ⟨_, rfl, h⟩)
   · exact .inr (.inr ⟨_, rfl, h⟩)
@@ -35,7 +35,8 @@ theorem fitsB_loadFits {ty : Ty} {n : Nat} (h : fitsB ty n = true) : Sim.LoadFit
 /-- `opValL` of a generic `Load`: `loadOp`. -/
 theorem opValL_load (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val) :
     opValL tabs .Load ty ai ax args = loadOp ty args := by
-  rw [opValL, if_pos (by decide), GoFV.Proof.Rules.opVal_pure (by decide)]
+  simp only [opValL, show Op.Load.generic = true by decide, ite_true,
+    GoFV.Proof.Rules.opVal_pure (op := .Load) (by decide)]
   rfl
 
 /-- An integer load at offset 0 without aux: `Sim.ldRes`. -/
@@ -52,7 +53,8 @@ theorem refines_ld {o : Op} {n : Nat} {s : Bool} (hl : ldOp? o = some (n, s))
     (hg : o.generic = false) (hm : (o == .ARM64MOVDaddr) = false) {T : Ty}
     (hfit : fitsB T n = true) (tabs : Tables) (ai : Int64) (ax : Option AuxRef)
     (args : List Val) :
-    Refines ((opValL tabs .Load T ai ax args).retypeL T) ((opValL tabs o T 0 none args).retypeL T) := by
+    Sem.Refines ((opValL tabs .Load T ai ax args).retypeL T)
+      ((opValL tabs o T 0 none args).retypeL T) := by
   rw [opValL_load, opValL_ld hg hm hl, ldVal_zero]
   exact Sim.ld_ref (fitsB_loadFits hfit) s args
 
