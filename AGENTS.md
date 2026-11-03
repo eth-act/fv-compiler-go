@@ -24,7 +24,9 @@
   parity on the corpus for touched passes, `#print axioms` of new theorems), rebase on
   origin/main, run `scripts/check-reverts.sh` (it fails if the branch silently undoes work
   already on main, as #191 undid #190; fix the rebase, or pass `--allow <path>` and say why in
-  the PR body for an intended revert), open the PR with the check results in its body and
+  the PR body for an intended revert; then, right after the squash merge, add the merge commit's
+  short hash with the PR number and reason to `scripts/reverts-ack.txt`, or the nightly gate's
+  `reverts` step goes red), open the PR with the check results in its body and
   `gh pr merge --squash`. Read `git diff --stat origin/main...HEAD` before merging: every
   deleted or shrunk file must be one you meant to change.
 - All `GoFV/Proof` modules import together (no name declared twice; docs/GATE.md `allproof`).
