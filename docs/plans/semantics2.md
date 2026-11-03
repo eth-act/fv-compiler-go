@@ -6,8 +6,9 @@ ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/ARM64Ops.go` (354 ops, pl
 ops that only `GOEXPERIMENT=simd` produces; 25 block kinds; "AO line" below), the rules
 `_gen/ARM64.rules` (1,233 source rules) and `_gen/ARM64latelower.rules` (69), and, for what an
 op means on the machine, the instructions `ssaGenValue`/`ssaGenBlock` emit for it
-(`cmd/compile/internal/arm64/ssa.go`, 2,223 lines). AArch64 model for reuse: clifv's `FV/Arm`
-(eth-act/clifv; `docs/contracts/arm.md`, `docs/decisions/arm-model.md` there).
+(`cmd/compile/internal/arm64/ssa.go`, 2,223 lines). Decisions taken on #384 (integrator, 2026-11-03, reversible) are
+recorded in §4 (licence), §6 (panic order) and §11 (FMA); clifv's `FV/Arm` (eth-act/clifv,
+`docs/contracts/arm.md` there) is discussed as an option only.
 
 ## 1. The three forms of lowered SSA
 
@@ -43,13 +44,40 @@ Refines₂₂ (p f) f   over runLoc / runLoc                    -- loop rotate, 
 All five share `Outcome`, `Val.Refines`, `Mem.Refines` and `OutcomeRefines`, so they compose
 into the Phase 2 end-to-end statement (H7/H8):
 
-> for `f` the input of `lower` and `g` the Lean pipeline's output after `trim`,
-> `RefinesFrom VPre₂ (runLoc g) (run f)`, and with Phase 1's `verifiedPipeline_refines`,
-> `runLoc g` refines `run f₀` for the ssagen output `f₀`.
+> for `f` the input of `lower` and `g` the Lean pipeline's output after `trim`, there is an
+> `f'` with `Contract f f'` (§2.1) and `RefinesFrom VPre₂ (runLoc g) (run f')`; with Phase 1's
+> `verifiedPipeline_refines`, `runLoc g` refines a contraction of the ssagen output `f₀`.
 
 `VPre₂` is Phase 1's `VPre` plus the lowered-code preconditions (§8): the runtime contracts hold
 for register-passed arguments, `g` (x28) is preserved by callees, and memory below
 `minZeroPage` (4,096, `nilcheck.go:192`) is unmapped.
+
+### 2.1 Floating-point contraction (decision on #384)
+
+The Go spec allows an implementation to fuse `x*y + z` into one rounding ("An implementation may
+combine multiple floating-point operations into a single fused operation, possibly across
+statements, and produce a result that differs from the value obtained by executing and rounding
+the instructions individually", `doc/go_spec.html:5092-5094`). `lower` does so with the 12 `useFMA` rules
+(`_gen/ARM64.rules:1798-1809`: `FADD`/`FSUB` of an `FMUL`/`FNMUL`, single and double precision,
+to `FMADD`/`FMSUB`/`FNMADD`/`FNMSUB`; `useFMA` is always true with the default `base.FmaHash ==
+nil`, `func.go:850-855`). No Phase 1 rule fuses.
+
+The relaxation is syntactic and limited to those shapes; Phase 1's semantics, `Val.Refines` and
+`OutcomeRefines` stay unchanged. `Contract f f'` holds when `f'` is `f` with some values whose
+op and argument shape match the left-hand side of one of the 12 rules (on the lowered ops, or the
+generic `Add/Sub{32,64}F` of a `Mul{32,64}F`/`Neg(Mul)` they come from) replaced by the fused op
+of the right-hand side, with the same arguments; the multiply itself stays (it may have other
+uses). An explicit conversion, which the spec says prevents fusion, leaves a `Round32F`/`Round64F`
+(lowered to `LoweredRound*F`) between the multiply and the add, so no rule shape matches it. The
+`lower` theorem is then
+
+```
+∃ f', Contract f f' ∧ RefinesFrom VPre₂ (lower f) f'      -- run on both sides
+```
+
+and the Phase 2 end-to-end statement carries the same `∃ f', Contract f f' ∧ …`. Every other
+float op must refine exactly. The rule lemmas for the 12 fused rules are proven against the
+fused op of `f'` (an equality), so the relaxation appears in exactly one place.
 
 ## 3. Values: flags and the lowered domain
 
@@ -157,55 +185,54 @@ per-instruction formula is hand-written").
 ### (c) Mixed
 
 Direct definitions as in (a) — the proof-facing semantics, in Phase 1's domain — **validated
-against** clifv's model:
+by an oracle**, today our own co-simulation, later (licence permitting) also proofs against an
+ASL-derived model:
 
-1. Every ARM64 op is defined directly (a), built from the same ASL helper functions the Arm
-   model uses (`AddWithCarry`, `DecodeBitMasks`, the bitfield move, `ConditionHolds` on
-   `Flags`; floats on `GoFV.IEEE`, which Phase 1 already ported from clifv's `FV/Float`).
-2. For each op whose `ssaGenValue` case emits one instruction on registers (integer ALU,
-   shifts, bitfields, extends, multiplies/divides, compares, conditional selects/compares,
-   float arithmetic, compare and conversion: about 250 ops), an **agreement theorem**
-   `evalArm64 op args = result of Arm.exec (the instruction) on the canonical state`, for all
-   inputs, by `bv_decide` after one symbolic step. This removes those definitions from the
-   trusted base, and is exactly the per-op lemma Phase 3 (`genssa`) needs.
-3. A **co-simulation** harness (clifv's `arm-cosim` design) runs the same instructions, as
-   words produced by Go's assembler, under `qemu-aarch64-static`, so the model itself is
-   checked on Go's encodings, including the forms (b.4) lists, which are added to the vendored
-   model in clifv's style (ASL-transcribed, co-simulated).
+1. Every ARM64 op is defined directly (a) in this repository, transcribed from the Arm ARM ASL
+   of the instruction `ssaGenValue` emits (`AddWithCarry`, `DecodeBitMasks`, the bitfield move,
+   `ConditionHolds` on `Flags`), each definition citing its ASL source; floats on the existing
+   `GoFV.IEEE` (`GoFV/SSA/Sem/Float/*`).
+2. **Co-simulation under `qemu-aarch64-static`, built here** (no code from clifv): for each op
+   whose `ssaGenValue` case emits one instruction on registers (integer ALU, shifts, bitfields,
+   extends, multiplies/divides, compares, conditional selects/compares, float arithmetic,
+   compare and conversion: about 250 ops), a harness assembles the instruction with Go's own
+   assembler (`cmd/asm`, the encodings `genssa` produces), runs it on random register and flag
+   states with edge-value bias, and compares with `evalArm64` (`GoFVTest/Arm64Cosim`, a
+   `scripts/arm64-cosim.sh`). The forms Go emits that a scalar model rarely covers are
+   included: LSE atomics (`LDADDAL`, `LDCLRAL`, `LDORAL`, `SWPAL`, `CASAL` for the `Variant`
+   atomics), `LDAXR`/`STLXR`, `CNT`/`UADDLV` (popcount), q-register pairs, `DMB`, `PRFM`.
+3. The native semantic difftest (`scripts/sem-difftest.sh`) is extended to the lowered sections
+   (after every pass from `lower` to `trim`, under `run`, `runSched`, `runLoc` as appropriate):
+   the same inputs must give the same outcome on every section and natively.
 4. Pseudo and multi-instruction ops — memory ops, calls (`CALLstatic`, `CALLclosure`,
    `CALLinter`, `CALLtail*`), `LoweredNilCheck`, `DUFFZERO`/`DUFFCOPY`,
    `LoweredZero`/`LoweredMove`, atomics, `LoweredGetClosurePtr`/`GetCallerSP`/`GetCallerPC`,
-   `GetG` (left generic on arm64, `lower.go:39-43`), `MOVDaddr` of a symbol, `LoweredPanicBounds*`, `LoweredMemEq`,
-   `LoweredRound*F`, write barrier calls — are defined on the Phase 1 memory model as the
-   generic op they come from (often literally `evalPure`/`evalValue` of that op), their
-   instruction sequences proven in Phase 3.
-5. The native semantic difftest (`scripts/sem-difftest.sh`) is extended to the lowered sections
-   (after every pass from `lower` to `trim`, under `run`, `runSched`, `runLoc` as appropriate):
-   the same inputs must give the same outcome on every section and natively.
+   `GetG` (left generic on arm64, `lower.go:39-43`), `MOVDaddr` of a symbol,
+   `LoweredPanicBounds*`, `LoweredMemEq`, `LoweredRound*F`, write barrier calls — are defined on
+   the Phase 1 memory model as the generic op they come from (often literally
+   `evalPure`/`evalValue` of that op), their instruction sequences proven in Phase 3.
+5. **Deferred until the licence decision:** per-op agreement theorems
+   `evalArm64 op args = result of Arm.exec (the instruction)` against an ASL-derived Lean
+   model (clifv's `FV/Arm` is the candidate), which would move the ~250 definitions out of the
+   trusted base and are the per-op lemmas Phase 3 (`genssa`) needs.
 
-### Recommendation: (c)
+### Recommendation and decision: (c)
 
 It keeps one `run` for generic and unscheduled lowered SSA (all of Phase 1 carries over), keeps
-the rule lemmas at `BitVec` cost, and still discharges the trust in ~250 op definitions against
-an ASL-derived, co-simulated model — with lemmas Phase 3 reuses. (b)'s advantages arrive
-through (c.2) without its domain and cost problems.
+the rule lemmas at `BitVec` cost, and checks the op definitions against the machine through
+co-simulation now, with machine-checked agreement later. (b)'s advantages arrive through (c.5)
+without its domain and cost problems.
 
-**Reusing clifv's `FV/Arm`.** It is LNSym-derived, Apache-2.0 (copyright Amazon.com; clifv's
-own additions are released under Apache-2.0 too, `third_party/NOTICE-lnsym.md` in clifv), 70
-modules, 14.8k lines, Lean core + `Std` only, pinned to the same `v4.34.1`. It imports
-`FV.Float`, of which GoFV already has a port (`GoFV.IEEE`, `GoFV/SSA/Sem/Float/*`). Two ways:
-
-- **Vendor** the needed subset into `GoFV/Arm` (as clifv vendored LNSym): keep every
-  copyright header, add a "Modified by fv-compiler-go" line to changed files, add
-  `third_party/NOTICE-lnsym.md` and a clifv notice, and point its float instructions at
-  `GoFV.IEEE`. **Recommended.**
-- `require` clifv in `lakefile.toml` at a pinned commit and import `FV.Arm` only: no copy, but
-  two IEEE cores (`FV.Float` and `GoFV.IEEE`) would need a bridge, and clifv's main moves
-  daily.
-
-fv-compiler-go has no `LICENSE` file; vendoring Apache-2.0 code into it is permitted with the
-notices above, but the repository owner should pick the project licence before the copy lands
-(H6 issue).
+**Licence decision (#384, integrator, reversible).** Nothing from clifv is vendored into or
+imported by this repository until the user picks a licence for it (fv-compiler-go has no
+`LICENSE` file). clifv's `FV/Arm` is LNSym-derived and Apache-2.0 (copyright Amazon.com;
+clifv's additions are released under Apache-2.0 too, `third_party/NOTICE-lnsym.md` in clifv),
+70 modules, 14.8k lines, Lean core + `Std`, same `v4.34.1`; once a licence exists, the options
+are vendoring the needed subset into `GoFV/Arm` with every copyright header, a "Modified by
+fv-compiler-go" line and the NOTICE files, or a pinned `require` (which would bring a second
+IEEE core, `FV.Float`, next to `GoFV.IEEE`). Until then (c.1–c.4) are the plan. Note for the
+licence decision: `GoFV.IEEE` itself was ported from clifv's `FV/Float` in Phase 1 (its module
+headers say so).
 
 ## 5. Block kinds
 
@@ -249,9 +276,11 @@ this is the identity on non-panicking runs. A subtlety to settle first: two read
 not ordered by their arguments (e.g. a `LoweredNilCheck` and a `LoweredPanicBounds*` on the
 same memory) are run nil check first by `run`'s rank but may be ordered the other way by Go's
 `schedule` score; the outcomes differ (`nilDeref` vs `bounds`). Phase 1 hit the same question
-(#96, canonical rank tie-break for NilCheck/roots); the fix is either a `run` rank that matches
-`schedule`'s scores or a semantics that admits either panic (nondeterministic choice among ready
-panicking roots, with `Refines` allowing any). Decide this at the start of H6.
+(#96, canonical rank tie-break for NilCheck/roots). **Decision (#384): deferred to the schedule
+proof.** Whoever proves `schedule` proposes on #96 either (a) a refinement that is
+nondeterministic in which ready panic is reported, or (b) a schedule validator that rejects any
+function in which two panicking roots are reordered relative to `run`'s rank. (b) is the default
+if (a) would need changes to `OutcomeRefines`. `runSched` itself does not depend on the choice.
 
 ## 7. `runLoc`: allocated SSA (L2)
 
@@ -342,8 +371,9 @@ proven over `runLoc` directly; block order is not semantic until Phase 3 (fallth
 | `GoFV/SSA/Sem/Arm64/Mem.lean` | lowered loads/stores/pairs/zero/move on the Phase 1 memory, faulting variants |
 | `GoFV/SSA/Sem/Arm64/Pseudo.lean` | calls, nil check, `GetG`, atomics, `MOVDaddr` of symbols, panics |
 | `GoFV/SSA/Sem/RunSched.lean`, `RunLoc.lean` | §6, §7 |
-| `GoFV/Arm/**` | vendored clifv `FV/Arm` subset (Apache-2.0, notices) |
-| `GoFV/Proof/Arm64Agree/*.lean` | §4 (c.2) agreement theorems, one module per family |
+| `GoFVTest/Arm64Cosim/*.lean`, `scripts/arm64-cosim.sh` | §4 (c.2) co-simulation of `evalArm64` against qemu on Go-assembled instructions |
+| `GoFV/SSA/Sem/FMA.lean` | `Contract f f'` (§2.1) |
+| (deferred) `GoFV/Arm/**`, `GoFV/Proof/Arm64Agree/*.lean` | §4 (c.5), only after the licence decision |
 | `GoFV/Proof/Regalloc/*.lean` | the checker, `Match`, `checkRegalloc_sound` |
 
 ## 10. Phasing (H6)
@@ -352,16 +382,16 @@ proven over `runLoc` directly; block order is not semantic until Phase 3 (fallth
 2. Memory and pseudo ops; difftest on all L0 sections.
 3. `runSched`, faulting ops, the schedule tie-break decision (§6); difftest on L1 sections.
 4. `runLoc`; difftest on L2 sections (requires the H1 export of homes).
-5. Vendored `GoFV/Arm`, Go-encoding co-simulation, agreement theorems (c.2–3).
+5. Co-simulation harness on Go's encodings (c.2), run per op family as the families land.
+6. After the licence decision only: an ASL-derived Lean model and agreement theorems (c.5).
 
 ## 11. Open questions and risks
 
-- Ready-root order (§6, #96) at `schedule`.
+- Ready-root order (§6, #96) at `schedule`: deferred to the schedule proof, validator by default.
 - Concrete addresses for lowered pointer compares and arithmetic (#156).
-- Float ops whose lowering is not one instruction (`LoweredRound32F/64F`, `FMOVDgpfp` moves,
-  `FMADD` fusion under `useFMA`): the fusion rules change rounding (Go permits FMA fusion;
-  Phase 1's `evalPure` has unfused `Mul`/`Add`), so the fused rules are refinements only under a
-  semantics that allows fusion; decide like the NaN-sign question of #176.
-- Popcount and other SIMD-register sequences (`VCNT`, `VUADDLV`) in the vendored model.
-- Build cost of `GoFV/Arm` (70 modules, 14.8k lines in clifv): keep it out of the pass proofs'
-  imports by depending on it only from `Arm64Agree`; measure it into `perf/` when it lands.
+- Float ops whose lowering is not one instruction (`LoweredRound32F/64F`, `FMOVDgpfp` moves).
+  FMA fusion is decided (§2.1).
+- Popcount and other SIMD-register sequences (`VCNT`, `VUADDLV`): defined directly on the
+  Phase 1 domain (they only move integer bits through a vector register), co-simulated (c.2).
+- The licence question (§4): until it is answered the op definitions stay in the trusted base,
+  checked by co-simulation and the native difftest only.
