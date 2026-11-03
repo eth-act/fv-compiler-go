@@ -144,8 +144,9 @@ func storeS2(p *P, x, y int) int {
 as one block: `v6 = Store {P} v2 v5 v1`, `v8 = Store {P} v2 v7 v6` (`v5`, `v7` the two
 `StructMake`s). The rewrite splits `v6` first; copy elimination then gives the second split's
 chain the first chain's last store as its memory, which `v8`'s memory `v6` (a `Store` in the
-input) does not reach through copies: `RewriteCheck.ssStart` takes it as the last store of the
-split `v6`'s chain (`ss2_start`). -/
+input) does not reach through copies: the split layer (`RewriteCheck.ssStep`) starts the chain at
+`v6` (a `Copy` of that store after the first split) and moves the copy-argument replacement to
+the chain's first store, for `validate` to replay (`ss2_start`). -/
 
 /-- `storeS2`, the input of `opt`. -/
 def ss2Func : Func where
@@ -187,15 +188,12 @@ theorem ss2_checks :
       some (true, some (.Store, some 3)) := by
   decide +kernel
 
-/-- The second split's chain starts at a store that `v8`'s memory does not reach through copies
-in the input: the last store of `v6`'s chain (`ssStart`'s second case). -/
+/-- The split layer starts the second split's chain at `v8`'s memory `v6` in the input. -/
 theorem ss2_start :
     (GoFV.Rules.rewriteRun (Interp.Table.ofRuleSet ssRules) true true ssPassEnv ss2Func).toOption.map
       (fun r => let g := (RewriteCheck.ssPre (Interp.Table.ofRuleSet ssRules) ss2Func r.2.2).1
-        let m0 := (RewriteCheck.ssWalk g 2 ((g.value? 8).bind (·.args[0]?) |>.getD 0)).2
-        (RewriteCheck.copyReach ssTabs ss2Func.valueTab ss2Func.valueTab.size 6 m0,
-          RewriteCheck.ssStart ssTabs ss2Func g 1 6 m0)) =
-      some (false, true) := by
+        (RewriteCheck.ssWalk g 2 ((g.value? 8).bind (·.args[0]?) |>.getD 0)).2) =
+      some 6 := by
   decide +kernel
 
 /-- **Pass execution witness** for consecutive splits: on `storeS2`, the checked rewrite pass

@@ -485,8 +485,8 @@ theorem read_of_write {m m' : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p b
 
 /-- **A `zeroAt` term has a zero component** at every fuel: a constant term below its depth a
 value its value refines (`den_fuel_mono`), a selection the component one step deeper of its
-argument (`valPath_select`), a make op its arguments' (`ecT_make_term`), each retyped
-(`zeroV_path_retype`). -/
+argument (`valPath_select`), a `Copy` its argument's, a make op its arguments' (`ecT_make_term`),
+each retyped (`zeroV_path_retype`). -/
 theorem zeroAt_den : ∀ (n : Nat) (ps : List Nat) (x : ID), zeroAt tabs f n ps x = true →
     ∀ k, ZeroV (valPath ps (den f.value? tabs ρ k x))
   | 0, _, _, h, _ => by simp [zeroAt] at h
@@ -513,7 +513,17 @@ theorem zeroAt_den : ∀ (n : Nat) (ps : List Nat) (x : ID), zeroAt tabs f n ps 
         apply zeroV_path_retype
         rw [valPath_select]
         exact zeroAt_den n (i :: ps) _ hs.2 k
-      · simp only [Bool.and_eq_true] at hs
+      · simp only [Bool.or_eq_true] at hs
+        rcases hs with hcp | hs
+        · simp only [Bool.and_eq_true, beq_iff_eq] at hcp
+          obtain ⟨⟨hop, h1⟩, h2⟩ := hcp
+          have ht : termOp v.op = true := by rw [hop]; rfl
+          have hfr : GoFV.Proof.Rules.frameOp v.op = false := by rw [hop]; rfl
+          rw [den_succ_term hv ht, toList_one h1, List.map_cons, List.map_nil,
+            GoFV.Proof.Rules.opVal_pure hfr, hop]
+          apply zeroV_path_retype
+          exact zeroAt_den n ps _ h2 k
+        simp only [Bool.and_eq_true] at hs
         obtain ⟨ht, hev⟩ := GoFV.Proof.EC.ecT_make_term hs.1
         have hfr : GoFV.Proof.Rules.frameOp v.op = false := by
           rcases GoFV.Proof.EC.ecT_make_cases hs.1 with h | h | h | h | h | h <;> rw [h] <;> rfl

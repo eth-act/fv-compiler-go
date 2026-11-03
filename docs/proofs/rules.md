@@ -632,13 +632,14 @@ The nil-check eliminations, forwardings, struct-store splits (`generic.rules:975
 `Seg.seg_refines`) change roots, so `RewriteCheck.accepts` takes their
 events out of the log and applies them to the input in layers (`RewriteCheck.layersOK` over
 `RewriteCheck.layers` = nil-check eliminations of `safePtr` pointers, forwardings `fwdOK` holds
-of, struct-load expansions, struct-store splits of the input's `Store`s, those of the first
-layer's fresh field stores, segment rewrites, four more rounds of forwardings `fwdOK` holds of,
-the remaining forwardings, the remaining nil-check
-eliminations), each related to its input by its own relation (`layerOK`: `nilOK`, `fwdRel` +
-`check`, `validate` with the layer's events alone + `check`, `ssRel` + `check`, `segRel` +
-`check`; a layer without events
-is skipped), and `validate` relates the last function and the output with the remaining events.
+of, struct-load expansions, those of the first layer's fresh field `Load`s, value-rule `Load`
+expansions and selections of `Load`s and `Make`s (`ldPre`, as for decompose builtin), struct-store
+splits of the input's `Store`s, those of the first split layer's fresh field stores, segment
+rewrites, four more rounds of forwardings `fwdOK` holds of, the remaining forwardings, the
+remaining nil-check eliminations), each related to its input by its own relation (`layerOK`:
+`nilOK`, `fwdRel` + `check`, `validate` with the layer's events alone + `check`, `ssRel` +
+`check`, `segRel` + `check`; a layer without events is skipped), and `validate` relates the last
+function and the output with the remaining events.
 A selective layer (`nilPre`/`fwdPre` with `sel`) applies only the events its relation holds of in
 its input, the later layer of its kind the rest: a split's pointer may be an eliminated nil check
 (a `Copy` after the first nil-check layer) and its `StructMake`'s arguments forwarded `Load`s, a
@@ -653,16 +654,26 @@ A `Store` of a `Load` that `:974` expanded (a struct copy `*p = *q`) stores the 
 `StructMake` of fresh field `Load`s when `:975` splits it, which the split relation needs in its
 input: the struct-load layer (`slPre`) applies the log's expansions that `structLoadOK` validates
 on its input (the `Load` becomes the `StructMake`, the fresh `OffPtr`s and `Load`s are put in,
-`slApply`) and is related to its input by `validate` with these events (`slTaken`). The split
-layer applies only splits of its input's `Store`s (`ssStep` looks the event up in the layer's
-input), so a split of a fresh field store of another split (a nested struct) is left to the
-second split layer, where that store is a `Store` of the input. A split's chain starts at the
-split `Store`'s memory up to copies, or, when that memory is another split `Store` of the block
-(with fields), at the last store of that split's chain (`ssStart`: copy elimination gives the
-second of two consecutive splits the first chain's last store); `StructStoreBlock.prevInv` then
-takes the chain's start from the other split's last field store (`startSplit`,
-`prevInv_succ`, `bufK_full`). Witness: `GoFV.Proof.Witness.ss2_checkedRewrite` (`*p = P{x, y};
-*p = P{y, x}`; `ss2_start`: the old condition fails, `ssStart` holds).
+`slApply`) and is related to its input by `validate` with these events (`slTaken`); a second
+struct-load layer expands the fresh field `Load`s of a nested struct. The `ld` layer before the
+splits applies the value-rule events on `Load`s and on selections of `Load`s and `Make`s that the
+replay validates: a `Store` of `[1]T` stores the `ArrayMake1` of `(Load <[1]T> …) =>
+(ArrayMake1 (Load <T> …))`, and a stored `Make` argument `StructSelect [i] (StructMake …)` is the
+selected argument after `(StructSelect [i] x:(StructMake ___)) => x.Args[i]`. `zeroAt` follows
+`Copy`s, so a dropped zero `Store` (`dropOK`) whose value is such a selection stays a zero term.
+The split layer applies only splits of its input's `Store`s (`ssStep` looks the event up in the
+layer's input), so a split of a fresh field store of another split (a nested struct), and a second
+split of a `Store` the layer split in place (`(Store dst (ArrayMake1 (StructMake …)) mem)`), are
+left to the second split layer, where that store is a `Store` of the input. A split's chain
+starts at a memory the split `Store`'s memory reaches through copies (`ssSplit?`). Copy
+elimination may give the chain's first store another memory than the `Store`'s: the last store of
+another split's chain (in any block) or the memory a split without fields stands for. Such an
+event's first store starts from the `Store`'s memory instead, and the copy-argument replacements
+of that memory move to it, for `validate` to replay (`ssStep`, `ssFirst`). The struct-load layer
+does the same for replacements of the `Load`'s pointer and memory before its expansion
+(`slRebase`, `slMove`: the fresh `OffPtr`s and `Load`s take the `Load`'s arguments). Witness:
+`GoFV.Proof.Witness.ss2_checkedRewrite` (`*p = P{x, y}; *p = P{y, x}`; `ss2_start`: the second
+chain starts at `v6`).
 
 **Theorems.** `layersOK_cases`: an accepted run gives a `LayerChain` (`nil`/`fwd`/`rw`/`ss`/`seg` steps
 `layerOK` accepts; `LayerChain.congr` moves the `rw` steps to a table with the same value and

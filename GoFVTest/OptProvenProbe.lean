@@ -242,25 +242,52 @@ open GoFV.Rules RewriteCheck in
 def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
-    match fv.args.toList, Sem.auxTy tabs fv.aux, gv.args.toList with
-    | [dst, sm, mem], .agg fs n, [last] =>
+    match fv.args.toList, (Sem.auxTy tabs fv.aux).asAgg with
+    | [dst, sm, mem], .agg fs n =>
       match f.value? (copyEnd tabs f.valueTab f.valueTab.size sm) with
       | some smv =>
+        let copy := gv.op == .Copy
+        let last := if copy then gv.args[0]?.getD 0 else x
         let r := ssWalk g fs.length last
-        if smv.op != .StructMake then s!"stored {smv.op.name}"
-        else if !Sem.Ty.beq (tabs.ty smv.type) (.agg fs n) then "StructMake shape"
+        if !ssMakeOp smv.op then s!"stored {desc tabs f 2 smv.id}"
+        else if !Sem.Ty.beq (tabs.ty smv.type).asAgg (.agg fs n) then "Make shape"
         else if !(layoutsOK n fs && fs.all (·.1 < n)) then "layout"
         else if smv.args.size != fs.length then "arity"
-        else if !(gv.op == .Copy && gv.type == fv.type) then "copy"
+        else if !(gv.type == fv.type && (copy || (gv.op == .Store && 0 < fs.length))) then
+          s!"copy {desc tabs g 2 x}"
         else if !(r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2) then
           s!"walk ({fs.length} fields) {desc tabs g 2 last}"
-        else if !ssStart tabs f g fv.block mem r.2 then
+        else if !copyReach tabs f.valueTab f.valueTab.size mem r.2 then
           s!"chain start {desc tabs f 2 mem} vs {desc tabs g 2 r.2}"
         else match (List.range fs.length).find? (fun k => !ssLink tabs f g fv.block dst x fs smv.args r.1 r.2 k) with
-          | some k => s!"field {k} of {fs.length}"
+          | some k =>
+            let ps : List (ID × ID) := r.1
+            let detail : String := match fs[k]?, smv.args[k]?, ps[k]? with
+              | some (o, t), some a, some (p, s) =>
+                let prev : ID := if k = 0 then r.2 else match ps[k - 1]? with
+                  | some q => q.2
+                  | none => 0
+                match f.value? a, g.value? s with
+                | some (av : Value), some (sv : Value) =>
+                  if !ssFieldOK tabs f a (tabs.ty av.type) t then
+                    s!"field type {repr (tabs.ty av.type)} vs {repr t}: {desc tabs f 2 a}"
+                  else if !((f.value? s).isNone || (s == x && k + 1 == r.1.length)) then "store not fresh"
+                  else if !(sv.op == Op.Store && sv.block == fv.block && sv.args.size == 3) then
+                    s!"store {desc tabs g 1 s}"
+                  else if sv.args[0]! != p || sv.args[2]! != prev then "chain"
+                  else if !copyReach tabs f.valueTab f.valueTab.size a sv.args[1]! then
+                    s!"stored {desc tabs f 2 a} vs {desc tabs g 2 sv.args[1]!}"
+                  else if !Sem.Ty.beq (Sem.auxTy tabs sv.aux) t then
+                    s!"store type {repr (Sem.auxTy tabs sv.aux)} vs {repr t}"
+                  else if !ssPtrOK tabs f g fv.block dst p o then
+                    s!"ptr {desc tabs g 2 p} dst {desc tabs f 2 dst} off {o}"
+                  else "?"
+                | _, _ => "missing"
+              | _, _, _ => "index"
+            s!"field {k} of {fs.length}: {detail}"
           | none => "ok"
-      | none => "no StructMake"
-    | _, _, _ => "store shape"
+      | none => "no Make"
+    | _, _ => s!"store shape {desc tabs f 2 x}"
   | _, _ => "missing"
 
 open GoFV.Rules RewriteCheck in
