@@ -33,6 +33,7 @@ import GoFV.Proof.EvalL
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
 import GoFV.Proof.FrameKeep
+import GoFV.Proof.FrameL
 import GoFV.Proof.MemInv
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.MemRefine
