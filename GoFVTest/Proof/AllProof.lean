@@ -29,6 +29,7 @@ import GoFV.Proof.DomCert
 import GoFV.Proof.DomRel
 import GoFV.Proof.Enter
 import GoFV.Proof.Eval
+import GoFV.Proof.EvalL
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
 import GoFV.Proof.FrameKeep
@@ -505,6 +506,7 @@ import GoFV.Proof.Sched
 import GoFV.Proof.SchedFast
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
+import GoFV.Proof.SimL
 import GoFV.Proof.Speculate
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.TabsAgreeMod
