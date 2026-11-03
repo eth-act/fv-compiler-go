@@ -438,15 +438,16 @@ at `elim unread autos`, quick-v7: the inlined `Float64frombits` parameter copy `
 by `MOVDstore` and never read; the pass makes it `Copy`, `urel` accepts, and the output returns
 the NaN `0x7FF8000000000001` under `runL`, all by `decide +kernel`; the pass keeps its seen names
 in a `Std.TreeSet` for this). Coverage (`lake exe unread-probe`): quick-v7 9,297 sections, 0
-pass errors, 8,643 with input and output passing `check`, 120 changed, 8,629 of 8,643 in
-`unreadLFrag` (106 of the 120 changed accepted; the 14 others: 10 eliminate a forgeable name,
-2 keep an `STLR`, 2 a `LoweredAtomicAdd64Variant`); full-v9 96,560 sections, 0 pass errors,
-90,656 checked, 326 changed, 90,630 of 90,656 in `unreadLFrag` (300 of the 326 changed
-accepted; the 26 others: 16 forgeable names, 3 `STLR`, 1 `STLRW`, 2
-`LoweredAtomicAdd64Variant`, 2 `LoweredAtomicCas64Variant`, 1 `LoweredAtomicCas32Variant`,
-1 `LoweredGetCallerSP` kept). The 14 / 26 rejections are open: an atomic or `GetCallerSP` op
-outside `armMemOps`, or an eliminated ABIInternal `PPARAM` or `addrconv` `PAUTO` (a
-`Blk.local` or forgeable block, outside dead auto elim's frame-temporary argument).
+pass errors, all 9,297 with input and output passing `check`, 136 changed, 9,280 of 9,297 in
+`unreadLFrag` (119 of the 136 changed accepted; the 17 others: 10 eliminate a forgeable name,
+3 keep an `STLR`, 1 an `STLRB`, 2 a `LoweredAtomicAdd64Variant`, 1 a
+`LoweredAtomicCas32Variant`); full-v9 96,560 sections, 0 pass errors, all 96,560 checked, 397
+changed, 96,527 of 96,560 in `unreadLFrag` (364 of the 397 changed accepted; the 33 others:
+16 forgeable names, 4 `STLR`, 1 `STLRB`, 1 `STLRW`, 4 `LoweredAtomicCas32Variant`, 2
+`LoweredAtomicCas64Variant`, 2 `LoweredAtomicAdd64Variant`, 3 `LoweredGetCallerSP` kept). The
+rejections are open: an atomic, release-store or `GetCallerSP` op outside `armMemOps`, or an
+eliminated ABIInternal `PPARAM` or `addrconv` `PAUTO` (a `Blk.local` or forgeable block,
+outside dead auto elim's frame-temporary argument).
 
 ### tighten tuple selectors — issue #395
 
