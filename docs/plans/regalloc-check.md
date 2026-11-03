@@ -70,9 +70,12 @@ Then, for the target value `w`:
    about `u`, and availability of values reading `u`, are dropped, `Cx.redefine`); the written
    locations (`writeLocs`: a register, a slot — killing overlapping slots of the same variable —,
    each component of a tuple home, memory, flags) lose their facts and hold `u` exactly. If an
-   available `v` has `u`'s op, aux, auxint, type and arguments, they hold `v` too (`flagalloc`'s
-   recomputation of a flags value at a block end has no SSA uses, the successor's control still
-   names the original). A `pureArm64` `u` becomes available.
+   available `v` has `u`'s op, aux, auxint, type and arguments (`pureEqs`), they hold `v` too
+   (`flagalloc`'s recomputation of a flags value at a block end has no SSA uses, the successor's
+   control still names the original); for a selector `u`, an available selector `v` of `u`'s op,
+   aux, auxint and type whose argument's component sits at the same location, exactly, holds
+   `u`'s new value too (`selEqs`: `flagalloc` recomputes a flags-producing tuple op and a new
+   `Select1` takes its flags). A `pureArm64` `u`, a selector and a `MakeResult` become available.
 2. **Moves** (`Copy`, `LoadReg`, `StoreReg`): the facts of the argument's location whose shape is
    the move's (and composes with the argument's, `composes`) are copied, exactly, to the
    destination. A move out of `ZERO` holds the zero constant the argument is.
@@ -150,17 +153,21 @@ lemmas (`GoFV/Proof/RefineLoc.lean`, #445) and the L1/L2 `clamp` witness (`Clamp
 
 | corpus | functions | accepted | rejected |
 | --- | --- | --- | --- |
-| quick-v5 | 9,297 | 9,297 | 0 |
-| full-v6 | 96,553 | 96,552 | 1 |
+| quick-v7 | 9,297 | 9,297 | 0 |
+| full-v9 | 96,560 | 96,560 | 0 |
+
+full-v9: 1,444,732 blocks, 7,250,138 target values, 70,980,509 certificate facts (at most 9,794
+per block); 67 minutes with 4 jobs on a loaded machine.
 
 `runtime.checkdead` and `pkgbits.(*Encoder).Flush`, rejected before #453, were a `runL`
 semantics gap, not regalloc errors: late lower turned `MOVWreg x:(MOVWload)` into `MOVDreg x`,
 then `pair` merged the load into `LDPSW`, so `x` is `Select1 (LDPSW …)`; `regalloc` reloads `x`
 with a sign-extending `MOVW`. #453 made `runL` sign-extend through the selectors of `LDPSW`
-(`Arm64.signExtendsIn`), and `LocCtx.signOf` and `signOK` follow it. Remaining full-v6 rejection:
-`json/v2.parseDurationBase10` (`missing-flags`, not yet classified; the failure may cascade
-through the certificate: `certify` propagates an empty fact set out of a failing block; first
-step for a continuation: skip failing blocks in `certify` to expose the root failure).
+(`Arm64.signExtendsIn`), and `LocCtx.signOf` and `signOK` follow it.
+`json/v2.parseDurationBase10` (`missing-flags`) was a checker gap: `flagalloc` recomputes a
+flags-producing tuple op and takes the flags with a new `Select1`, which the successor's control
+does not name; `selEqs` relates the two selectors. `certify` skips failing blocks (a failure is
+reported where it happens, not as missing facts in its successors).
 
 What the probe found on the way (each now handled, above): `ZERO` homes for zero constants of
 every type and moves out of it; duplicate and rematerialised frame constants (`Cx.canon`); the
