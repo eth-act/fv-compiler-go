@@ -85,22 +85,6 @@ private theorem makeL_with (tabs : Tables) (f : Func) :
   · exact ⟨_, rfl⟩
   · exact ⟨(Ctx.make tabs f).tys, rfl⟩
 
-private theorem locCtxW_trim (tabs : Tables) {f g : Func} (hown : f.ownAux = g.ownAux)
-    (hsize : f.valueTab.size = g.valueTab.size) (hra : f.low.regAlloc = g.low.regAlloc)
-    (htr : f.low.tempRegs = g.low.tempRegs) :
-    LocCtxW (LocCtx.make tabs f) (LocCtx.make tabs g) := by
-  have hps := abi_eq tabs hown
-  obtain ⟨t1, h1⟩ := makeL_with tabs f
-  obtain ⟨t2, h2⟩ := makeL_with tabs g
-  have hc : ∀ f, (LocCtx.make tabs f).ctx = Ctx.makeL tabs f := fun _ => rfl
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  all_goals first
-    | (show (LocCtx.make tabs f).homes = (LocCtx.make tabs g).homes
-       unfold LocCtx.make; simp only [hsize, hra])
-    | (show (LocCtx.make tabs f).temps = (LocCtx.make tabs g).temps
-       unfold LocCtx.make; simp only [hsize, htr])
-    | (rw [hc, hc, h1, h2]; simp only [Ctx.make, hps])
-
 /-! ## The checker's facts -/
 
 /-- What `trimRelB f g = true` gives. -/
@@ -117,6 +101,7 @@ structure Facts (f g : Func) : Prop where
   entryOK : entryLocB f g f.entry g.entry = true
   block : ∀ t T, g.block? t = some T → T.id = t ∧ keptLocB f g T = true ∧
     closedLocB g T = true ∧ phisLocB g (locHomes g) T = true
+  sign : ∀ id, signView f.value? (f.value? id) = signView g.value? (g.value? id)
 
 private theorem lt_of_block {f : Func} {bid : ID} {b : Block} (h : f.block? bid = some b) :
     bid < f.blockTab.size := by
@@ -132,14 +117,18 @@ private theorem lt_of_value {f : Func} {vid : ID} {v : Value} (h : f.value? vid 
   · exact hx
   · rw [Array.getElem?_eq_none hx] at h; cases h
 
+private theorem value?_none_of_ge {f : Func} {vid : ID} (h : f.valueTab.size ≤ vid) :
+    f.value? vid = none := by
+  unfold Func.value?; rw [Array.getElem?_eq_none h]; rfl
+
 theorem facts_of_trimRelB {f g : Func} (h : trimRelB f g = true) : Facts f g := by
   unfold trimRelB at h
   simp only [Bool.and_eq_true, List.all_eq_true] at h
-  obtain ⟨⟨⟨hc, hv⟩, he⟩, hb⟩ := h
+  obtain ⟨⟨⟨⟨hc, hv⟩, he⟩, hb⟩, hs⟩ := h
   unfold ctxLocB at hc
   simp only [Bool.and_eq_true, beq_iff_eq] at hc
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := hc
-  refine ⟨h1, h2, h3, h4, h5, h6, ?_, he, ?_⟩
+  refine ⟨h1, h2, h3, h4, h5, h6, ?_, he, ?_, ?_⟩
   · intro id v' hg
     have := hv id (List.mem_range.2 (lt_of_value hg))
     unfold valLocB at this
@@ -170,6 +159,31 @@ theorem facts_of_trimRelB {f g : Func} (h : trimRelB f g = true) : Facts f g := 
     simp only [Bool.and_eq_true, beq_iff_eq] at this
     obtain ⟨⟨⟨hid, hk⟩, hcl⟩, hph⟩ := this
     exact ⟨hid, hk, hcl, hph⟩
+  · intro id
+    unfold signsLocB at hs
+    simp only [List.all_eq_true, List.mem_range, beq_iff_eq] at hs
+    rcases Nat.lt_or_ge id f.valueTab.size with hl | hl
+    · exact hs id hl
+    · rw [value?_none_of_ge hl, value?_none_of_ge (h5 ▸ hl)]; rfl
+
+theorem locCtxW_trim (tabs : Tables) {f g : Func} (F : Facts f g) :
+    LocCtxW (LocCtx.make tabs f) (LocCtx.make tabs g) := by
+  have hps := abi_eq tabs F.ownAux
+  obtain ⟨t1, h1⟩ := makeL_with tabs f
+  obtain ⟨t2, h2⟩ := makeL_with tabs g
+  have hc : ∀ f, (LocCtx.make tabs f).ctx = Ctx.makeL tabs f := fun _ => rfl
+  have hf : ∀ g : Func, (LocCtx.make tabs g).ctx.f = g := fun g => makeL_f tabs g
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  all_goals first
+    | (show (LocCtx.make tabs f).homes = (LocCtx.make tabs g).homes
+       unfold LocCtx.make; simp only [F.size, F.regAlloc])
+    | (show (LocCtx.make tabs f).temps = (LocCtx.make tabs g).temps
+       unfold LocCtx.make; simp only [F.size, F.tempRegs])
+    | (rw [hf, hf]; exact F.lowered)
+    | (rw [hf, hf]; exact F.size)
+    | (refine signOf_congr (by rw [hc, hc, h1, h2]; rfl) fun id => ?_
+       rw [hf, hf]; exact F.sign id)
+    | (rw [hc, hc, h1, h2]; simp only [Ctx.make, hps])
 
 /-! ## Phis -/
 
@@ -193,16 +207,16 @@ private theorem enterList_cons {env : Env} {lc : LocCtx} {s : LocState} {id : ID
 
 private theorem np_phi {f : Func} {id : ID} {ids : List ID} {v : Value}
     (hv : f.value? id = some v) (hp : v.op = .Phi) : npLoc f (id :: ids) = npLoc f ids := by
-  unfold npLoc; simp [List.filter_cons, hv, hp]
+  unfold npLoc; simp [hv, hp]
 
 private theorem np_nphi {f : Func} {id : ID} {ids : List ID} {v : Value}
     (hv : f.value? id = some v) (hp : v.op ≠ .Phi) :
     npLoc f (id :: ids) = id :: npLoc f ids := by
-  unfold npLoc; simp [List.filter_cons, hv, hp]
+  unfold npLoc; simp [hv, hp]
 
 private theorem np_none {f : Func} {id : ID} {ids : List ID} (hv : f.value? id = none) :
     npLoc f (id :: ids) = id :: npLoc f ids := by
-  unfold npLoc; simp [List.filter_cons, hv]
+  unfold npLoc; simp [hv]
 
 private theorem stepLoc_phi (env : Env) (lc : LocCtx) (s : LocState) {v : Value}
     (hp : v.op = .Phi) :
@@ -291,7 +305,7 @@ theorem stepLoc_trim (env : Env) (s : LocState) {id : ID} {v' : Value}
   obtain ⟨v1, hf1, hid, -, -, he, -⟩ := F.value id v' hg
   rw [hf] at hf1; cases hf1
   have he := he hnp
-  have hw := locCtxW_trim tabs F.ownAux F.size F.regAlloc F.tempRegs
+  have hw := locCtxW_trim tabs F
   have hpres : ∀ a ∈ v'.args, ∃ u', g.value? a = some u' := fun a ha => by
     have := hargs a ha
     unfold hasV at this
@@ -397,11 +411,13 @@ theorem control_trim (s : LocState) {c : ID} {v' : Value} (hg : g.value? c = som
     (hmr : v'.op = .MakeResult → ∀ a ∈ v'.args, hasV g a = true) :
     s.control (LocCtx.make tabs f) c = s.control (LocCtx.make tabs g) c := by
   obtain ⟨v, hf, -, hop, -, he, -⟩ := F.value c v' hg
-  have hw := locCtxW_trim tabs F.ownAux F.size F.regAlloc F.tempRegs
+  have hw := locCtxW_trim tabs F
   unfold LocState.control
+  have hmd := mode_congrW hw
+  rw [mk_f, mk_f] at hmd
   rw [mk_f, mk_f, hf, hg]
   dsimp only
-  rw [hop, read_congrW hw s (ty_trim F hg), ty_trim F hg]
+  rw [hop, read_congrW hw s (ty_trim F hg), ty_trim F hg, hmd]
   by_cases hm : v'.op = .MakeResult
   · have hne : v'.op ≠ .Phi := by rw [hm]; decide
     have hargs : v.args = v'.args := by
@@ -601,7 +617,7 @@ theorem chase_run {tabs : Tables} {f g : Func} (env : Env) :
 theorem refinesLoc_of_trimRelB {tabs : Tables} {f g : Func} (h : trimRelB f g = true) :
     RefinesLoc tabs g tabs f := by
   have F := facts_of_trimRelB h
-  have hw := locCtxW_trim tabs F.ownAux F.size F.regAlloc F.tempRegs
+  have hw := locCtxW_trim tabs F
   refine refinesLoc_of_loop hw F.size fun env args mem fuel hd => ?_
   let R : LocState → ID → LocState → ID → Prop := fun sS x sT t =>
     sT = sS ∧ entryLocB f g x t = true

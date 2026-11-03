@@ -162,3 +162,7 @@ root = "GoFVTest.MoveProbe"
 [[lean_exe]]
 name = "schedl-probe"
 root = "GoFVTest.SchedLProbe"
+
+[[lean_exe]]
+name = "regalloc-probe"
+root = "GoFVTest.RegallocProbe"

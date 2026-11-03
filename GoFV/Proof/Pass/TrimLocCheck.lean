@@ -1,4 +1,4 @@
-import GoFV.SSA.Sem.RunLoc
+import GoFV.Proof.SimLocSign
 
 /-!
 # `trimRelB`: the decided relation of `trim`'s input and output over `runLoc`
@@ -22,7 +22,9 @@ chain (fuel `n`) and returns `t` and the non-`Phi` values `f` runs on the way, i
   entry point of the corresponding successor of `g`'s;
 * **closed**: the non-`Phi` values of `g`'s blocks, their arguments and the controls (and a
   `MakeResult` control's arguments) are values of `g`;
-* **phis**: every `Phi` of a block of `g` has its arguments' home (so it never gets stuck).
+* **phis**: every `Phi` of a block of `g` has its arguments' home (so it never gets stuck);
+* **signs**: `f` and `g` have the same `signView` at every ID (a dropped `Phi` and an absent value
+  look alike), so `runLoc`'s `MOVDreg`/`MOVDnop` read the same upper bits (`LocCtx.signOf`).
 
 `trim_refinesLoc` (`GoFV.Proof.Pass.TrimLoc`) proves that `trimRelB f g = true` makes `g`
 refine `f` under `runLoc`.
@@ -134,6 +136,12 @@ def phisLocB (g : Func) (hs : Array (Option Location)) (K' : Block) : Bool :=
 def blocksIdx (g : Func) : List (ID × Block) :=
   (List.range g.blockTab.size).filterMap fun i => (g.block? i).map (i, ·)
 
+/-- **signs**: `f` and `g` have the same `signView` at every ID (what `runLoc`'s `MOVDreg`
+reads of the function, `LocCtx.signOf`). -/
+def signsLocB (f g : Func) : Bool :=
+  (List.range f.valueTab.size).all fun id =>
+    signView f.value? (f.value? id) == signView g.value? (g.value? id)
+
 /-- **`trimRelB f g`**: see the module comment. -/
 def trimRelB (f g : Func) : Bool :=
   let hs := locHomes g
@@ -141,6 +149,7 @@ def trimRelB (f g : Func) : Bool :=
     (List.range g.valueTab.size).all (valLocB f g) &&
     entryLocB f g f.entry g.entry &&
     (blocksIdx g).all (fun (i, K') =>
-      K'.id == i && keptLocB f g K' && closedLocB g K' && phisLocB g hs K')
+      K'.id == i && keptLocB f g K' && closedLocB g K' && phisLocB g hs K') &&
+    signsLocB f g
 
 end GoFV.Proof.TrimLoc

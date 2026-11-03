@@ -25,7 +25,8 @@ def conds (f g : Func) : Array (String × Bool) :=
     ("blockId", bs.all fun (i, K') => K'.id == i),
     ("kept", bs.all fun (_, K') => keptLocB f g K'),
     ("closed", bs.all fun (_, K') => closedLocB g K'),
-    ("phis", bs.all fun (_, K') => phisLocB g hs K')]
+    ("phis", bs.all fun (_, K') => phisLocB g hs K'),
+    ("signs", signsLocB f g)]
 
 structure Cnt where
   secs : Nat := 0

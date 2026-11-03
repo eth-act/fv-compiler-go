@@ -366,15 +366,21 @@ activation's frame. `runLoc` never consults SSA value IDs for data — only home
 - `runLoc` runs `b.Values` in order on a `LocState`. The state holds the register file by Go's
   register number, the flags register, the stack slots written so far (a write kills the
   overlapping slots of the same variable) and the current memory. Each value reads its
-  arguments from their homes and writes its result to its home. Its op is `runL`'s (`evalOpL`,
-  faulting as under `runSched`), so every op means what it means in L0/L1 and `Arg`/`ArgIntReg`
-  read their parameter as there.
-- A tuple's components go to the home's registers (`LocPair`, `LocResults`) in order; a memory
-  component is the current memory and a flags component the flags register. A value of type
-  `mem` or `flags` has no home: it is the current memory or the flags register. So a flags value
-  computed in one block and read as the control of another reads the register, including
-  `flagalloc`'s unlinked recomputations.
-- `LoadReg`/`StoreReg`/`Copy` move their argument.
+  arguments from their homes at the arguments' shapes and writes its result to its home. Its op
+  is `runL`'s (`evalOpL`, faulting as under `runSched`) and values take their shapes as under
+  `runSched` (`LMode.loc f = LMode.sched f`), so every op means what it means in L0/L1,
+  `Arg`/`ArgIntReg` read their parameter as there, and a register read at a narrower type gives
+  its low bits.
+- A tuple's components go to the home's registers (`LocPair`, `LocResults`) in order (a result
+  that is not a tuple writes `poison` to every component); a memory component is the current
+  memory and a flags component the flags register. A value of type `mem` or `flags` has no home:
+  it is the current memory or the flags register. So a flags value computed in one block and
+  read as the control of another reads the register, including `flagalloc`'s unlinked
+  recomputations.
+- `LoadReg`/`StoreReg`/`Copy` move their argument. `MOVDreg`/`MOVDnop` copy the upper bits of
+  their argument's register (`movdLoc`, `LocCtx.signOf`): a `LoadReg` sign-extends exactly the
+  signed narrow types, a `Copy` keeps its argument's bits, any other producer as under `runL`
+  (`Arm64.signExtendsIn`).
 - `ZERO` reads as the 0 of the reader's shape and ignores writes. Regalloc homes zero constants of
   every type there; the first corpus run found 24 functions in which a `bool` `false` read an
   `int64` `0` from it.
