@@ -9,6 +9,7 @@ import GoFV.SSA.Value
 import GoFV.SSA.Block
 import GoFV.SSA.Func
 import GoFV.SSA.Export
+import GoFV.SSA.ExportExt
 import GoFV.SSA.Parse
 import GoFV.SSA.Print
 import GoFV.SSA.Live
