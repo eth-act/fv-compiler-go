@@ -10,6 +10,10 @@ value only its op, aux and auxint), pure arm64 ops (`Arm64.evalPure`, no ID), se
 `MakeResult`, `Copy`, `KeepAlive`, `VarLive`.
 -/
 
+-- Parallel elaboration (-j4) wrote this module's constants in a different order on every build
+-- (3 builds, 3 hashes), so importers missed the shared cache (#1; LEARNINGS.md).
+set_option Elab.async false
+
 namespace GoFV.Proof.RA
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.RegallocCheck

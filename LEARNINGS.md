@@ -98,13 +98,14 @@ avoiding): the problem, the trick, the numbers, where it is used.
   With `-Dlinter.ambiguousOpen=false` it is path-free and byte-identical from two directories.
   Every linter that warns in a build log is a candidate: the build logs of the recorded commits
   name only `unusedVariables` and `ambiguousOpen`.
-- **Parallel elaboration can reorder a module's constants** (since `-j4`, 03d6b3f). Three modules
+- **Parallel elaboration can reorder a module's constants** (since `-j4`, 03d6b3f). Several modules
   so far wrote a different `.olean` on almost every build: the same constants, serialized in a
   different order. They were `GoFV.Proof.Pass.DSEVal` (2 builds, 2 hashes),
   `GoFV.Proof.Pass.SegCall` (5 builds, 4 hashes) and `GoFV.Proof.AtomSimLoop` (3 builds,
   3 hashes). With `set_option Elab.async false` at the top of the file, each was byte-identical
   over 3 builds, at no measurable CPU cost (DSEVal 11.2 s, SegCall 7.5 s, AtomSimLoop 8 s,
-  either way). Most modules are unaffected, so apply it per module when the watch loop
+  either way). A fourth, `GoFV.Proof.Regalloc.Ops` (3 builds, 3 hashes), used less CPU
+  sequentially (35.7 vs 41.9 s) but more wall time (31 vs 17 s). Most modules are unaffected, so apply it per module when the watch loop
   reports `repro` = differs (#215, #296, #1).
 - **`weakLeanArgs` on a `lean_lib` do not reach `lean_exe` root modules.** Lake builds an exe's
   root module (`GoFVTest.OptProvenProbe`, root of `lean_exe opt-proven-probe`) with the exe's own
