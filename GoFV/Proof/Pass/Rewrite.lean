@@ -74,14 +74,16 @@ holding their exported bytes in the memory with the global image, kept by the co
 (`RoImage` of `RewriteCheck.roPass`: for `Move`s from them, `generic.rules:1743`, and fixed
 loads, also from a symbol a pass took from the frontend), and malloc-family contracts asked for
 a positive size that return an all-zero heap block (`Env.AllocZero`: for the `Zero`s and zero
-`Store`s of a fresh allocation, `generic.rules:1352`/`:1357`/`:1362`, issue #69), and inputs that
+`Store`s of a fresh allocation, `generic.rules:1352`/`:1357`/`:1362`, issue #69), inputs that
 hold no pointer into a frame temporary (`InitAvoids`: a frame temporary's `LocalAddr` and an
-argument's pointer address disjoint bytes, `RewriteCheck.disjointB`, issue #69). It depends on
+argument's pointer address disjoint bytes, `RewriteCheck.disjointB`, issue #69), and
+`runtime.growslice` contracts that return a slice of the requested length (`Env.GrowLen`: for
+the lengths of their results, `generic.rules:2128`, issue #69). It depends on
 `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`) and its read-only symbols
 (`RewriteCheck.roSyms`). -/
 def RwPre (tabs fe : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
   env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ env.AllocZero ∧
-    RoImage (RewriteCheck.roPass tabs fe f) env mem ∧ InitAvoids env args mem
+    RoImage (RewriteCheck.roPass tabs fe f) env mem ∧ InitAvoids env args mem ∧ env.GrowLen
 
 /-- The byte is no fragment of a pointer into a frame temporary. -/
 def byteNoTemp : Byte → Bool
@@ -112,7 +114,7 @@ theorem RwPre.p1 {tabs fe : Tables} {f : Func} (h : NilCheck.dictParams tabs f =
     (hro : RewriteCheck.roPass tabs fe f = []) {args : List Val} {mem : Mem}
     (hinit : InitAvoids Env.p1 args mem) : RwPre tabs fe f Env.p1 args mem :=
   ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps,
-    Env.p1_allocZero, by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem, hinit⟩
+    Env.p1_allocZero, by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem, hinit, Env.p1_growLen⟩
 
 theorem RefinesUnder.toRw {tabs₀ fe₀ tabs tabs' : Tables} {f₀ f f' : Func}
     (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ fe₀ f₀) tabs' f' tabs f :=

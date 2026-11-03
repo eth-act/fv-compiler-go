@@ -1858,35 +1858,29 @@ def fixedOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : 
 the requested length, `Sem.Env.GrowLen`): a `StaticLECall` with six arguments (`oldPtr`,
 `newLen`, `oldCap`, `num`, `et`, the memory) of a type `(slice, …)`, its second ABI parameter of
 the 64-bit integer shape and its one ABI result a slice. -/
-def growCall (tabs : Tables) (f : Func) (c : ID) : Bool :=
-  match f.value? c with
-  | some cv =>
-    cv.op == .StaticLECall && cv.args.size == 6 &&
-      ((cv.aux.bind tabs.callee?).any fun n =>
-        n == "runtime.growslice" || n == "runtime.growsliceNoAlias") &&
-      (tabs.ty cv.type matches .tuple (.slice _ :: _)) &&
-      (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) with
-       | [o] => (tabs.ty o.type matches .slice _)
-       | _ => false) &&
-      (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out))[1]? with
-       | some p => (tabs.ty p.type matches .int .w64)
-       | none => false)
-  | none => false
+def growV (tabs : Tables) (cv : Value) : Bool :=
+  cv.op == .StaticLECall && cv.args.size == 6 &&
+    ((cv.aux.bind tabs.callee?).any fun n =>
+      n == "runtime.growslice" || n == "runtime.growsliceNoAlias") &&
+    (tabs.ty cv.type matches .tuple (.slice _ :: _)) &&
+    (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) with
+     | [o] => (tabs.ty o.type matches .slice _)
+     | _ => false) &&
+    (match ((((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out))[1]? with
+     | some p => (tabs.ty p.type matches .int .w64)
+     | none => false)
 
-/-- The length of the slice a `growCall` returns becomes its `Const64` length argument
-(`generic.rules:2128`): `u` is `SliceLen (SelectN [0] c)` of the 64-bit integer shape, the
-`SelectN` of a slice shape, `c` a `growCall` whose second argument is the `Const64` `x` of that
-shape, and `w` is `Copy x`. -/
+/-- The length of the slice a `growslice` call returns becomes its length argument
+(`generic.rules:2128`, there a `Const64`): `u` is `SliceLen (SelectN [0] c)` of the 64-bit
+integer shape, the `SelectN` of a slice shape, `c` a call `growV` accepts, and `w` is `Copy x` of
+`c`'s second argument `x`. -/
 def growOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
   u.op == .SliceLen && u.args.size == 1 && (tabs.ty u.type matches .int .w64) &&
   w.op == .Copy && w.args.size == 1 &&
   match f.value? u.args[0]! with
   | some s =>
     s.op == .SelectN && s.auxInt == 0 && s.args.size == 1 && (tabs.ty s.type matches .slice _) &&
-      growCall tabs f s.args[0]! &&
-      (f.value? s.args[0]!).any (·.args[1]! == w.args[0]!) &&
-      (f.value? w.args[0]!).any fun k =>
-        k.op == .Const64 && k.args.size == 0 && (tabs.ty k.type matches .int .w64)
+      (f.value? s.args[0]!).any fun cv => growV tabs cv && cv.args[1]! == w.args[0]!
   | none => false
 
 /-- The new definition `w` in `g` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads

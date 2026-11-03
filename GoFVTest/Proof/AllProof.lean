@@ -551,6 +551,7 @@ import GoFV.Proof.Witness.FwdCopy
 import GoFV.Proof.Witness.FwdDrop
 import GoFV.Proof.Witness.FwdFixed
 import GoFV.Proof.Witness.FwdFixedItab
+import GoFV.Proof.Witness.FwdGrow
 import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdZeroStr

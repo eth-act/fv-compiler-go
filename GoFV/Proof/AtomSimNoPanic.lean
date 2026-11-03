@@ -137,6 +137,7 @@ structure EndRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (b : ID) (fb g
   inv : ∀ a, I.P b a (rv FS a)
   qinv : I.Q b (rv FS)
   mS : MemDefs f.value? tabs FS (fun a => V1 f b fb a ∨ a ∈ of.toList)
+  rS : RDefs I.R f.value? FS (fun a => V1 f b fb a ∨ a ∈ of.toList)
 
 /-- **A block entry without panic.** -/
 theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
@@ -149,10 +150,11 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   obtain ⟨psS, o, hpsS, ho, hevS⟩ := enterBlock_ok_split he
   rw [sched_eq B.hfb B.idS, B.sS] at ho; cases ho
   obtain ⟨psT, hpsT, hphis⟩ := tgt_phis H R B hpsS
-  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, hsT, -, -, hMS⟩ := R.den
+  obtain ⟨VS, VT, hDS, hDT, hVT, hsS, hsT, -, -, hMS, hRS⟩ := R.den
   have hS1 := denOK_phis H.wf B.bmS B.hfb rfl hDS hsS (closed_sanc_f H.wf H.cf b) phi_not_term_f
     R.szS hpsS
   have hM1 := memDefs_phis H.wf H.cf B.bmS B.hfb rfl hMS hsS hpsS
+  have hR1 := rDefs_phis H.wf H.cf B.bmS B.hfb rfl hRS hsS hpsS
   have hT1 := denOK_phis H.wg B.bmT B.hgb rfl hDT hsT (closed_sanc_g H.wg H.cg b) phi_not_term_g
     R.szT hpsT
   obtain ⟨pS1, pS2, pS3, pS4⟩ := phis_spec B.vS hpsS
@@ -164,6 +166,8 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   obtain ⟨g1, g2, g3, g4, g5, g6⟩ := src_eval H B R.treeS (P := of.toList) (Q := [])
     (by simp) hS1 (by rw [pS1, R.szS]) htyPS hevS
   have hMFS := src_eval_mem H B R.treeS (P := of.toList) (Q := []) (by simp) hS1 hM1
+    (by rw [pS1, R.szS]) htyPS hevS
+  have hRFS := src_eval_rdefs H B R.treeS (P := of.toList) (Q := []) (by simp) hS1 hR1 hEI
     (by rw [pS1, R.szS]) htyPS hevS
   obtain ⟨hinvFS, hqFS⟩ := inv_evalAll B.bmS B.hfb (fr := { frS with regs := setPhis psS frS.regs })
     hEI
@@ -198,7 +202,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
       show Sem.Refines y (rv { frT with regs := setPhis psT frT.regs } a)
       rw [rv_of hy']; exact hyy
   obtain ⟨FT, hevT, l1, l2, l3, l4, l5, l6⟩ := tgt_loop H hE (og := og.toList) (L := og.toList)
-    (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hMFS hT1
+    (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hMFS hRFS hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrel0 B.ndT B.tpT
     (b := b) (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
@@ -220,7 +224,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   refine ⟨FT, enterBlock_of hpsT (by rw [sched_eq B.hgb B.idT, B.sT]) hevT, ?_⟩
   have hfr : FT = { FS with regs := FT.regs } := frame_trans l1 hfrT
   refine ⟨hfr, by rw [g2, pS1, R.szS], by rw [l2, pT1, R.szT], g3, l3, g4, l4,
-    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_, hinvFS, hqFS, hMFS⟩
+    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt y' hy' => ?_, hinvFS, hqFS, hMFS, hRFS⟩
   by_cases hwb : w.block = b
   · have haz : a ∈ gb.values := by
       obtain ⟨-, -, blk, hblk, hx⟩ := hpw

@@ -64,13 +64,14 @@ tell whether unreachable frame temporaries exist (`Env.TempOblivious`),
 `runtime.memclrNoHeapPointers`/`runtime.memmove` contracts that are the runtime's, if present
 (`Env.MemOps`), read-only symbols `ro` holding their exported bytes in the memory with the
 global image, kept by the contracts (`RoImage`), contracts that keep the caller's frame
-blocks and return no memory (`Env.FrameKeep`), and malloc-family contracts asked for a positive
-size that return an all-zero heap block (`Env.AllocZero`). -/
+blocks and return no memory (`Env.FrameKeep`), malloc-family contracts asked for a positive
+size that return an all-zero heap block (`Env.AllocZero`), and `runtime.growslice` contracts that
+return a slice of the requested length (`Env.GrowLen`). -/
 def VPre (k : List Nat) (ro : List (String × Alloc)) (env : Env) (args : List Val) (mem : Mem) :
     Prop :=
   env.Mono ∧ env.FrameSafe ∧ InitAvoids env args mem ∧ env.AllocNonNil ∧ DictArgs k args ∧
     WB.WbPre env args mem ∧ env.TempOblivious ∧ env.MemOps ∧ RoImage ro env mem ∧
-    env.FrameKeep ∧ env.AllocZero
+    env.FrameKeep ∧ env.AllocZero ∧ env.GrowLen
 
 /-- The refinement the verified pipeline establishes. -/
 abbrev VRefines (k : List Nat) (ro : List (String × Alloc)) (tabs' : Tables) (f' : Func)
@@ -100,7 +101,7 @@ theorem RefinesFrom.rw_toV {fe : Tables} (hk : NilCheck.dictParams tabs f = k)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs fe f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
     ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2.1,
-      hp.2.2.2.2.2.2.2.2.2.2, hp.2.2.2.2.2.2.2.2.1.sub hro, hp.2.2.1⟩) h
+      hp.2.2.2.2.2.2.2.2.2.2.1, hp.2.2.2.2.2.2.2.2.1.sub hro, hp.2.2.1, hp.2.2.2.2.2.2.2.2.2.2.2⟩) h
 
 theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2.1) h

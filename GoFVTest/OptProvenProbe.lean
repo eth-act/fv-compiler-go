@@ -497,7 +497,7 @@ def fwdRelWhy (env : PassEnv) (tabs : Tables) (ro : List (String × Sem.Alloc)) 
           let s? := f.value? u.args[0]!
           let c := (s?.map (·.args[0]!)).getD 0
           let ok := fun (b : Bool) => if b then "1" else "0"
-          return some s!"v{z} grow: w {w.op.name}/{w.args.size} sel {ok (s?.any (·.op == .SelectN))} sliceTy {ok (s?.any (tabs.ty ·.type matches .slice _))} call {ok (growCall tabs f c)} {desc tabs f 1 c} arg {ok ((f.value? c).any (·.args[1]! == w.args[0]!))} const {desc tabs f 1 w.args[0]!}"
+          return some s!"v{z} grow: w {w.op.name}/{w.args.size} sel {ok (s?.any (·.op == .SelectN))} sliceTy {ok (s?.any (tabs.ty ·.type matches .slice _))} call {ok ((f.value? c).any (growV tabs))} {desc tabs f 1 c} arg {ok ((f.value? c).any (·.args[1]! == w.args[0]!))}"
         if w.op == .Copy && w.args.size == 1 then
           if (f.value? u.args[1]!).any (·.op == .Move) then
             return some s!"v{z} {fwdMoveWhy tabs f f' u w}"

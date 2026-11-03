@@ -183,6 +183,12 @@ theorem TermStepRef.toP {tabs : Tables} {f g : Func} (h : TermStepRef tabs f g) 
   let ⟨m, hm⟩ := (h b hb fb gb hfb hgb).2 n
   ⟨m, hm ρ ρ' h1 h2 h3⟩
 
+/-- A stronger frame-level invariant: `StepRefP` for fewer valuations. -/
+theorem StepRefP.weakenQ {P : ID → Val → Prop} {Q Q' : (ID → Val) → Prop} {S : ID → Prop}
+    {D E : ID → Option Value} {tabs : Tables} {fb gb : Block}
+    (h : StepRefP P Q S D tabs fb E gb) (hq : ∀ ρ, Q' ρ → Q ρ) : StepRefP P Q' S D tabs fb E gb :=
+  fun ρ ρ' h1 h2 h3 h4 h5 hQ hM n => h ρ ρ' h1 h2 h3 h4 h5 (hq ρ hQ) hM n
+
 /-- **`StepRefP` on frames** (as `termRef_apply`): if every control's register is its term's
 value over the atoms (`DenOK`) on both sides, the terminators are related. -/
 theorem termStepRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} {S : ID → Prop}
@@ -196,7 +202,9 @@ theorem termStepRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} 
     (hsh : ∀ a, VS a → ¬ IsTerm D a → ¬ IsTerm E a → (E a).isSome → ¬ VT a →
       (rv FS a).retype (shape E tabs a) = rv FS a)
     (hP : ∀ a, P a (rv FS a)) (hpois : ∀ a, ¬ IsTerm D a → P a .poison) (hSV : ∀ a, S a → VS a)
-    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) → Q ρ)
+    (hQ : ∀ ρ : ID → Val, (∀ a, ρ a = rv FS a ∨ ρ a = .poison) →
+      (∀ a, VS a → ¬ IsTerm D a → ρ a = rv FS a) → (∀ a, ¬ IsTerm D a → ρ a ≠ .poison → VS a) →
+      Q ρ)
     (hMS : AtomSim.MemDefs D tabs FS VS) :
     Res.Rel Next.Refines (stepTerm FS fb) (stepTerm FT gb) := by
   classical
@@ -232,15 +240,16 @@ theorem termStepRef_apply {P : ID → Val → Prop} {Q : (ID → Val) → Prop} 
   have hPS : ∀ a, S a → ∃ N, ∀ k, N ≤ k → P a (den D tabs ρ k a) := fun a ha => by
     obtain ⟨N', hN'⟩ := (hS a (hSV a ha)).2 ρ fun b hb hbt => by simp [ρ, hb, hbt]
     exact ⟨N', fun k hk => by rw [hN' k hk]; exact hP a⟩
-  have hQρ : Q ρ := hQ ρ fun a => by
+  have hρV : ∀ a, ¬ IsTerm D a → ρ a ≠ .poison → VS a := fun a hat hne => by
+    by_cases h2 : VS a ∧ ¬ IsTerm D a
+    · exact h2.1
+    · exact absurd (ite_eq_right h2) hne
+  have hQρ : Q ρ := hQ ρ (fun a => by
     by_cases h2 : VS a ∧ ¬ IsTerm D a
     · exact .inl (ite_eq_left h2)
-    · exact .inr (ite_eq_right h2)
+    · exact .inr (ite_eq_right h2)) (fun a ha hat => by simp [ρ, ha, hat]) hρV
   have hMA : AtomSim.MemAtoms D tabs ρ := AtomSim.memAtoms_of hS hMS
-    (fun a ha hat => by simp [ρ, ha, hat]) fun a hat hne => by
-      by_cases h2 : VS a ∧ ¬ IsTerm D a
-      · exact h2.1
-      · exact absurd (ite_eq_right h2) hne
+    (fun a ha hat => by simp [ρ, ha, hat]) hρV
   obtain ⟨m, h⟩ := hT ρ ρ' hval htD htE hPρ hPS hQρ hMA N
   rw [hN N (Nat.le_refl N)] at h
   have h2 := stepVals_right h (RefinesList.map _ _
