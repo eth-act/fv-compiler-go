@@ -303,6 +303,23 @@ def copyShapeOK (ev : Expr → DV) (e : PEnv) : Result → Prop
     | _ => True
   | _ => True
 
+/-- A scalar shape of `n` bytes: a boolean (1), an integer (its width), a pointer (8). -/
+def fitsB (ty : Ty) (n : Nat) : Bool :=
+  match ty with
+  | .bool => n == 1
+  | .int w => n == w.bytes
+  | .ptr _ => n == 8
+  | _ => false
+
+/-- A result whose top node is an integer load (`ldOp?`) reads as many bytes as the matched
+shape `ty` has (`fitsB`): Go's conditions (`is8BitInt(t)`, `t.IsBoolean()`, …) say so, the
+validator checks it on the instance (`ruleOK1`). -/
+def resFitsL (ty : Ty) : Result → Bool
+  | .build (n :: _) => match ldOp? n.op with
+    | some (k, _) => fitsB ty k
+    | none => true
+  | _ => true
+
 /-- **The obligation of one swapped form of a value rule** (module doc). -/
 def ArmRule.Sound1 (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
@@ -317,6 +334,7 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     Pat.topOKL (e.ty []) r.pat = true →
     Pat.argsOKL e.ty [] r.pat = true →
     copyShapeOK ev e r.result →
+    resFitsL (e.ty []) r.result = true →
     Refines ((Pat.rawL tabs e r.pat).retypeL (e.ty []))
       (resDenL tabs e r.pat ev or σ (e.ty []) r.result)
 
@@ -369,14 +387,6 @@ def stSize : Op → Option Nat
   | .ARM64MOVWstore | .ARM64FMOVSstore => some 4
   | .ARM64MOVDstore | .ARM64FMOVDstore => some 8
   | _ => none
-
-/-- A scalar shape of `n` bytes: a boolean (1), an integer (its width), a pointer (8). -/
-def fitsB (ty : Ty) (n : Nat) : Bool :=
-  match ty with
-  | .bool => n == 1
-  | .int w => n == w.bytes
-  | .ptr _ => n == 8
-  | _ => false
 
 /-- The atom `w` lowers the memory atom `u`: a `Store {t}` of a scalar `t` of the arm64 store's
 size, at offset 0 without aux (`GoFV.Proof.Low.Sim.store_lower_eval`). -/

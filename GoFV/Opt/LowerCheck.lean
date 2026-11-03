@@ -9,12 +9,13 @@ log of `applyRewrite` with a lowering rule table is replayed on a map of definit
 input `f`, and the output `g` must have the replayed definitions. The differences:
 
 * terms are the values `termVL` says (generic term ops, the monotone pure arm64 ops, `MOVDaddr`
-  without a frame variable), shaped by their lowered shapes (`shpL`);
+  and the integer loads `MOV{B,BU,H,HU,W,WU,D}load` without a frame variable), shaped by their
+  lowered shapes (`shpL`);
 * a rule event is checked as an instance of one commutation choice of the rule (`ruleOKL`: the
   swapped pattern `Rule.swapC` matched argument for argument, `matchPatL`), for the obligation
   `ArmRule.Sound`; result nodes take the type `nodeTyL` gives (Go's `types.TypeFlags` is the
-  flags shape) and the aux `nodeAuxL` gives (a pattern-bound `{sym}`); there are no block (`@b`)
-  results;
+  flags shape) and the aux `nodeAuxL` gives (a pattern-bound `{sym}`); a result whose top is an
+  integer load reads the matched shape's size (`resFitsL`); there are no block (`@b`) results;
 * an ellipsis rule `(o ...) => (o' ...)` (`setOp`) is replayed as the op change: on a term whose
   new op is a term (`ArmRule.SetOp`), or on an atom renamed by `renameOp` (`ArmRule.Rename`);
 * a block rule event is checked by `blockOKL` against `BlockRuleL.Sound`: one control matched by
@@ -148,7 +149,7 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
     Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && Pat.argsOKL e.ty [] r.pat &&
-    leavesOK M I [] r.pat &&
+    resFitsL (e.ty []) r.result && leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
 /-- The rule event `(v, r, defs)` is a sound instance of one commutation choice of `r` on `M`

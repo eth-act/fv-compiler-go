@@ -47,45 +47,50 @@ theorem loadN_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : 
     Sem.Refines (Arm64.loadN ty n s m p) (Arm64.loadN ty n s m' p) := by
   unfold Arm64.loadN
   split
-  · have hl := GoFV.Proof.load_mono h (.int .w64) p
+  · have hl := GoFV.SSA.Sem.load_mono h (.int .w64) p
     revert hl
     generalize m.load (.int .w64) p = x
     generalize m'.load (.int .w64) p = y
     intro hl
-    cases hl <;> first | exact .poison _ | exact Refines.refl _ | (constructor; assumption)
+    cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _ | (constructor; assumption)
   · split
     · rename_i w _
-      have hl := GoFV.Proof.load_mono h (.int w) p
+      have hl := GoFV.SSA.Sem.load_mono h (.int w) p
       revert hl
       generalize m.load (.int w) p = x
       generalize m'.load (.int w) p = y
       intro hl
-      cases hl <;> first | exact .poison _ | exact Refines.refl _
-    · exact Refines.refl _
+      cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _
+    · exact Sem.Refines.refl _
 
 /-- `ldVal` is monotone. -/
 theorem ldVal_mono (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64)
     (ax : Option AuxRef) {as bs : List Val} (hr : RefinesList as bs) :
     Sem.Refines (ldVal tabs n s ty ai ax as) (ldVal tabs n s ty ai ax bs) := by
-  rcases hr with _ | ⟨h1, _ | ⟨h2, _ | ⟨_, _⟩⟩⟩
-  · exact .poison _
-  · exact .poison _
-  · cases h2 with
-    | mem hm =>
-      have hp : ∀ a a', Sem.Refines a a' → (movPtr tabs ai ax a = none) ∨
-          movPtr tabs ai ax a = movPtr tabs ai ax a' := fun a a' ha => by
-        cases ax with
-        | some _ => exact .inr rfl
-        | none => cases ha <;> first | exact .inr rfl | exact .inl rfl
-      rename_i a a' _ _
-      rcases hp a a' h1 with he | he
-      · simp only [ldVal, he, Option.elim]; exact .poison _
-      · simp only [ldVal, he]
-        cases movPtr tabs ai ax a' with
-        | none => exact .poison _
-        | some p => exact loadN_mono hm ty n s p
-    | _ => first | exact .poison _ | exact Refines.refl _
-  · exact .poison _
+  cases hr with
+  | nil => exact .poison _
+  | @cons a a' _ _ h1 hr =>
+  cases hr with
+  | nil => exact .poison _
+  | @cons b b' _ _ h2 hr =>
+  cases hr with
+  | @cons c _ l _ _ _ =>
+    have : ldVal tabs n s ty ai ax (a :: b :: c :: l) = .poison := by cases b <;> rfl
+    rw [this]; exact .poison _
+  | nil =>
+  cases h2 with
+  | mem hm =>
+    have hp : movPtr tabs ai ax a = none ∨ movPtr tabs ai ax a = movPtr tabs ai ax a' := by
+      cases ax with
+      | some _ => exact .inr rfl
+      | none => cases h1 <;> first | exact .inr rfl | exact .inl rfl
+    rcases hp with he | he
+    · simp only [ldVal, he, Option.elim]; exact .poison _
+    · simp only [ldVal, he]
+      cases movPtr tabs ai ax a' with
+      | none => exact .poison _
+      | some p => exact loadN_mono hm ty n s p
+  | _ => first | exact .poison _ | exact Sem.Refines.refl _
 
 /-- `opValL` of a term value is monotone. -/
 theorem opValL_mono_term {tabs : Tables} {v : Value} (ht : termVL tabs v = true) (ty : Ty)
