@@ -1327,6 +1327,10 @@ whose sources earlier forwardings changed: 143 → 17 such functions blocked): 9
 (on 762c0fc). With the frontend's read-only symbols pinned by the rewrite passes' precondition
 (`RwPre tabs fe f`, `RewriteCheck.roPass`: a fixed load from a dictionary a first fixed load's
 `Addr` names, `reflect.TypeFor[T]`; 149 → 2 such functions blocked): 92,223 → 92,372 (on 8e39eeb).
+On full-v6 (format 5; `docs/proofs/STATUS.md`), with move segments through copies (`storesC`),
+the second segment layer (`segLate`), the late forwardings (`fwdLate`) and the `ld` layer's
+copy-argument order (RuleFull15): checked passes at stock 93,174 → 93,199, `BLOCKED` 130 → 105,
+fully verified (`gofv-ssa-opt --check --verified`) 92,902 → 92,918 (on 4c002f5).
 
 "No-op": the proven-only output equals the input (late opt's inputs carry dead values that
 every variant removes). The proven-only passes keep copy elimination, phi elimination and
@@ -1517,32 +1521,27 @@ Validator rejections that are a function's only obstacle (`BLOCKED` lines of `op
 | `opt: fwd₂: depth N: not disjoint LocalAddr` | 9 |
 | `opt: fwd₂: depth N: not disjoint SelectN` | 7 |
 | `opt: fwd₂: move: ptr AddPtr` | 6 |
-| `late opt: final: fields Copy->Copy` | 6 |
+| `late opt: final: fields Copy->Copy ⟨types⟩` | 6 |
 | `opt: seg₁: rel` | 5 |
+| `opt: seg₁: SelectN→Move: no segment (chain false, call false, move false) ⟨aux⟩` | 5 |
 | `late opt: fwd₂: depth N: store type` | 5 |
 | `opt: fwd₂: depth N: not disjoint OffPtr` | 4 |
 | `middle opt: fwd₂: depth N: not disjoint OffPtr` | 3 |
 | `opt: fwd₂: rep Load->Const64F` | 2 |
 | `opt: fwd₂: move: args mem true/true/true src false/true/false: Copy` | 2 |
 | `opt: rule arity` | 2 |
-| `opt: seg₁: Move→Store: no segment (chain false, call false, move false) ⟨zero Store` | 2 |
+| `late opt: seg₁: SelectN→Zero: no segment (chain false, call false, move false) ⟨aux⟩` | 2 |
+| `opt: seg₁: Move→Store: no segment (chain false, call false, move false) ⟨zero⟩` | 2 |
 | `opt: fwd₂: depth N: ptr NilCheck` | 2 |
 | `opt: nil₂: nrel: NilCheck seed=false mallocCall=false callee=none: Convert` | 2 |
 | `opt: fwd₂: drop chain SelectN` | 1 |
 | `late opt: fwd₂: depth N: not disjoint OffPtr ‖ opt: fwd₂: drop chain Zero` | 1 |
-| `opt: seg₁: Move→Store: no segment (chain false, call false, move false) ⟨store Store` | 1 |
+| `opt: seg₁: Move→Store: no segment (chain false, call false, move false) ⟨store⟩` | 1 |
 | `opt: snap: fwd₂: depth N: not disjoint OffPtr` | 1 |
 | `late opt: nil₂: nrel: NilCheck seed=false mallocCall=false callee=none: CondSelect` | 1 |
 | `opt: atoms` | 1 |
-| `opt: seg₁: SelectN→Move: no segment (chain false, call false, move false) ⟨aux 0 block true args 4 simple true g Move[73, 74, 77] f [73, 74, 76, 77] s` | 1 |
-| `opt: seg₁: SelectN→Move: no segment (chain false, call false, move false) ⟨aux 0 block true args 4 simple true g Move[63, 64, 67] f [63, 64, 66, 67] s` | 1 |
 | `middle opt: fwd₂: move: ptr AddPtr` | 1 |
 | `opt: fwd₂: drop chain Store` | 1 |
-| `late opt: seg₁: SelectN→Zero: no segment (chain false, call false, move false) ⟨aux 0 block true args 3 simple true g Zero[770, 799] f [208, 862, 799] s` | 1 |
-| `late opt: seg₁: SelectN→Zero: no segment (chain false, call false, move false) ⟨aux 0 block true args 3 simple true g Zero[1366, 1395] f [1557, 1463,` | 1 |
-| `opt: seg₁: SelectN→Move: no segment (chain false, call false, move false) ⟨aux 0 block true args 4 simple true g Move[303, 304, 307] f [303, 304, 306, 307] s` | 1 |
-| `opt: seg₁: SelectN→Move: no segment (chain false, call false, move false) ⟨aux 0 block true args 4 simple true g Move[300, 301, 304] f [300, 301, 303, 304] s` | 1 |
-| `opt: seg₁: SelectN→Move: no segment (chain false, call false, move false) ⟨aux 0 block true args 4 simple true g Move[269, 270, 273] f [269, 270, 272, 273] s` | 1 |
 | `opt: ss: field 0 of 1: ptr OffPtr` | 1 |
 | `opt: fwd₂: move: args mem false/true/false src true/true/true: LocalAddr` | 1 |
 | `middle opt: seg₁: Store→Store: no segment (chain false, call false, move false)` | 1 |
