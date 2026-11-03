@@ -8,6 +8,7 @@ target (`runSched`'s order `oT`) evaluates its own, agreeing with the source on 
 ran that is no nil check (`Inv`). `walk_panic`: if the source panics, the target panics alike.
 Before the source's panicking value `r` the target runs values the source ran before `r`
 (alike, `stepT`), values that never fail (`Cls.safe`), and values `swapOK` lets it run first
+(the source's `r` cannot be a load at a nil check's result, `ncBase`: that check passed)
 (a load on `r`'s memory, or a nil check of `r`'s pointer word on it), which evaluate or panic
 with `nilDeref` of that memory, as `r` does; at `r` the target panics as the source.
 -/
@@ -122,6 +123,31 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
     · exact absurd h (topo_mid hto a ha)
   obtain ⟨hmp, hld, hptr⟩ := evalValueL_panic_info hf hr
   rw [tabs_makeL] at hmp hld hptr
+  -- `r` is no load at a nil check's result: that check passed, so the base is not nil
+  have hrnb : ncBase f vr = false := by
+    cases hnb : ncBase f vr
+    · rfl
+    · exfalso
+      simp only [ncBase, Bool.and_eq_true] at hnb
+      obtain ⟨hld', hq⟩ := hnb
+      obtain ⟨q, hq0, hqnc⟩ : ∃ q, vr.args[0]? = some q ∧ isNC f q = true := by
+        cases h0 : vr.args[0]? with
+        | none => rw [h0] at hq; cases hq
+        | some q => rw [h0] at hq; exact ⟨q, rfl, by simpa using hq⟩
+      obtain ⟨p, a, hp, hHp, hnil⟩ := hptr (.inl (mem_of_decide hld'))
+      rw [hq0] at hp; cases hp
+      have hu := S.argUse hvr hq0
+      have hqargs : q ∈ argsF f r := by
+        rw [argsF_of hvr]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? hq0)
+      have hnn : NonNil a := by
+        by_cases hqS : q ∈ pre ++ r :: post
+        · have hqP := hdoneR q hqargs hqS
+          obtain ⟨vq, y, hvq, hy, hevq⟩ := Sr.eval q hqP
+          obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hqnc
+          exact ncNonNil hvq (B.sOwn q hqS vq hvq) hqnc ⟨y, hy, hevq⟩ Sr.typed hsh hne a hHp
+        · have hHq : H.regs[q]? = frPS.regs[q]? := Sr.out q (fun h => hqS (hPS q h))
+          exact (B.out r hrS q hqargs hqS).2.2.2.2 hqnc a (by rw [← hHq]; exact hHp)
+      exact hnn.not_nilBase hnil
   have hfr : mayFail tabs f r = true := by
     rw [mayFail_of hvr]; simpa using cls_ne_safe_of_mayPanic hmp
   have hrspa : isSPA f r = false := by
@@ -182,7 +208,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
   have hsw := B.swap j n r y hj hyj hn hfy hfr pre.length (pre.length + (l' + 1)) (by omega) hk hl
   unfold swapOK at hsw
   rw [hvr, hfv] at hsw
-  simp only [hmp, Bool.not_true, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
+  simp only [hmp, hrnb, Bool.not_true, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq,
     Bool.not_eq_true'] at hsw
   obtain ⟨⟨⟨hcr, hlast⟩, hnspa⟩, hcy⟩ := hsw
   obtain ⟨rfl, ℓ, hℓ, hHℓ⟩ := hld hcr
