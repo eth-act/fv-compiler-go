@@ -131,7 +131,12 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
           seen := seen.set! ii true
           st := bump st ii fun c => { c with funcs := c.funcs + 1 }
         st := bump st ii fun c => { c with runs := c.runs + 1, ns := c.ns + (t1 - t0) }
-        let detail : Option String := match r with
+        let detail : Option String :=
+          -- regalloc numbers its new autos from `dcllen` (format 5.1); without it 0 would be
+          -- used silently and give wrong numbers, so report it instead.
+          if name == "regalloc" && (ext.dclLen? (k-1)).isNone then
+            some "no dcllen line before regalloc (format < 5.1 corpus)"
+          else match r with
           | .error msg => some s!"pass error: {msg}"
           | .ok out => compare prev out tables s
         -- randomized map order: retry with the order the stock output shows

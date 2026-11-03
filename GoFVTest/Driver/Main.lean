@@ -156,6 +156,10 @@ index `start`. -/
 def optimise (e : ExportFile) (x : ExportExt) (start : Nat) (partialOut : Bool)
     (stopAfter : Option String := none) : String := Id.run do
   let some s0 := e.sections[0]? | return "status error \"input\" \"no section\"\n"
+  -- regalloc numbers its new autos from `dcllen` (format 5.1); the driver's own export always
+  -- has it, so a missing line means a stale toolchain: fail rather than use 0.
+  if (x.dclLen? 0).isNone && stopAfter.isNone then
+    return "status error \"input\" \"no dcllen line (format < 5.1; rebuild the toolchain)\"\n"
   let tables := padTables (({} : Tables).addAll s0.defs) e.frontendTables
   -- the input is the driver's own export: its type order and frontend block are the function's
   let env := baseEnv e tables (wholeFile := true)
@@ -274,6 +278,9 @@ def checkExport (mixed wholeFile strict : Bool) (e : ExportFile) (x : ExportExt)
   let mut stockRun := #[]
   let mut zvar := s0.zvar
   let mut dclLen := (x.dclLen? 0).getD 0
+  -- regalloc numbers its new autos from `dcllen` (format 5.1): fail rather than use 0.
+  if (x.dclLen? 0).isNone && e.sections.any (·.pass == "regalloc") then
+    return (.error "regalloc" "no dcllen line (format < 5.1 corpus)", counts, #[])
   for _ in [0:pipelinePasses.size + 1] do
     -- Type rounds (as the driver): rerun the segment with the types the Lean passes created
     -- added to its input, so that they are ranked in the type order.
