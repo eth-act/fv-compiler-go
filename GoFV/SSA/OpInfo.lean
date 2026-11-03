@@ -48,10 +48,12 @@ structure RegInfo where
   outputs : List RegIdx := []
   deriving DecidableEq, Inhabited, Repr
 
-/-- `ssa.Register` without `objNum` (the `cmd/internal/obj` register number, an assembler
-detail): the dense register number `num` and Go's name (`Register.String()`). -/
+/-- `ssa.Register` (`location.go`): the dense register number `num` (index into the arch's
+register list), `objNum` (the `cmd/internal/obj` register number, for the assembler) and Go's
+name (`Register.String()`). -/
 structure Register where
   num : Nat
+  objNum : Int
   name : String
   deriving DecidableEq, Inhabited, Repr
 

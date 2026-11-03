@@ -301,6 +301,7 @@ theorem nodeDenT_pure (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat
       cases a with
       | var x => rfl
       | node j => exact nodeDenT_pure tabs ev or σ topTy h fuel j
+      | expr _ => rfl
 
 theorem resDenT_pure (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (topTy : Ty)
     {res : Result} (h : res.nodes.all (fun n => !frameOp n.op) = true) :

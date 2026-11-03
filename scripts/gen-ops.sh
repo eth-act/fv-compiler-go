@@ -14,7 +14,7 @@ rev=$(git -C "$root/third_party/go" rev-parse HEAD)
 tag=$(cat "$root/third_party/go/VERSION" 2>/dev/null | head -1 || true)
 rm -rf "$work"
 mkdir -p "$work"
-cp "$root"/tools/opsgen/{go.mod,opsgen.go,opgen.go,regmask.go,nosimd.go} "$work/"
+cp "$root"/tools/opsgen/{go.mod,opsgen.go,opgen.go,objnum.go,regmask.go,nosimd.go} "$work/"
 # not simdgenericOps: tools/opsgen/nosimd.go; simdARM64ops only for the names of the SIMD ops
 for f in genericOps decOps divisibleOps divmodOps ARM64Ops simdARM64ops; do
   cp "$gen/$f.go" "$work/"

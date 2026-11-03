@@ -1,11 +1,12 @@
 # Rewrite rules as Lean data (`tools/rules2lean`, `GoFV/Rules`)
 
 The machine-independent rewrite passes (`opt`, `middle opt`, `late opt`, `divisible`,
-`divmod`, `decompose builtin`'s value rewrites) run rulegen-generated code over four rule files
-of the pinned compiler (`docs/PINS.md`). gofv exports those rules as Lean data; an interpreter
-(issue #7) replays them. This contract fixes the data format, the matching and construction
-semantics the interpreter must reproduce exactly (parity, `docs/PLAN.md` §2), and the Go
-helpers and expression forms the rules use.
+`divmod`, `decompose builtin`'s value rewrites) and the arm64 lowering passes (`lower`,
+`late lower`, Phase 2) run rulegen-generated code over six rule files of the pinned compiler
+(`docs/PINS.md`). gofv exports those rules as Lean data; an interpreter (issue #7) replays them.
+This contract fixes the data format, the matching and construction semantics the interpreter
+must reproduce exactly (parity, `docs/PLAN.md` §2), and the Go helpers and expression forms the
+rules use.
 
 | Rule file | Rewrite function | Used by (compile.go) | Dead values |
 | --- | --- | --- | --- |
@@ -13,9 +14,17 @@ helpers and expression forms the rules use.
 | `divisible.rules` | `rewriteValuedivisible` | `divisible` | `removeDeadValues` |
 | `divmod.rules` | `rewriteValuedivmod` | `divmod` | `removeDeadValues` |
 | `dec.rules` | `rewriteValuedec` | `decompose builtin` (`decomposeBuiltin`, after the phi decomposition) | `leaveDeadValues` |
+| `ARM64.rules` | `rewriteValueARM64`, `rewriteBlockARM64` (`Config.lowerValue`/`lowerBlock`) | `lower` (`lower.go: lower`) | `removeDeadValues` |
+| `ARM64latelower.rules` | `rewriteValueARM64latelower`, `rewriteBlockARM64latelower` (no block rules) | `late lower` (`lower.go: lateLower`) | `removeDeadValues` |
 
 `dec64.rules` is not exported: `decompose builtin` and `softfloat` only run it when
-`Config.RegSize == 4` or soft-float, never for linux/arm64.
+`Config.RegSize == 4` or soft-float, never for linux/arm64. `simdARM64.rules`, which rulegen
+appends to `ARM64.rules` (419 rewrite functions and dispatch cases of `rewriteARM64.go`), is
+not exported either: every one of its rules starts at a SIMD op (a generic SIMD op of
+`simdgenericOps.go` or an ARM64 op of `simdARM64ops.go`), which exist only under
+`GOEXPERIMENT=simd` and are not in `GoFV.SSA.Op` (`tools/opsgen/nosimd.go`). The exporter
+checks that every rule of the SIMD file starts at a SIMD op, that no other rule does, and that
+no exported rule mentions a SIMD op anywhere.
 
 ## Regeneration
 
@@ -29,21 +38,25 @@ scripts/memcap.sh lake build GoFV.Rules.Generated GoFVTest.Rules.Data
 that package (as `zz_rules2lean.go`, build tag `rules2lean`). The exporter therefore runs
 rulegen's own code unchanged: the rule-file reader (copied loop of `genRulesSuffix`),
 `expandOr`, `Rule.parse`, `parseValue`/`extract`/`split`/`splitNameExpr`, `varCount`,
-`typeName`, `parseEllipsisRules`, and the op and block tables (`genericOps`, `genericBlocks`).
-`third_party/go` is not modified (rulegen's own `main` is never reached; should the overlay
-not apply it would write to `tmp/rules2lean/rulegen-out`). It needs no network and takes about
-10 s and 0.35 GB.
+`typeName`, `parseEllipsisRules`, `getBlockInfo`, and the op and block tables (`genericOps`,
+`genericBlocks`, the `ARM64` arch). `third_party/go` is not modified (rulegen's own `main` is
+never reached; should the overlay not apply it would write to `tmp/rules2lean/rulegen-out`). It
+needs no network and takes about 5 s and 0.4 GB.
 
 Three checks run on every export and abort it on a mismatch:
 
 1. **Against the stock generated code.** For every rewrite function in the pinned
-   `rewrite{generic,dec,divisible,divmod}.go` and every `case Block…` of the block function,
-   the sequence of `// match:`, `// cond:`, `// result:` comments equals the exported rules in
-   order (1654 + 47 + 32 + 29 rules).
+   `rewrite{generic,dec,divisible,divmod,ARM64,ARM64latelower}.go` and every `case Block…` of
+   the block function, the sequence of `// match:`, `// cond:`, `// result:` comments equals
+   the exported rules in order (1654 + 47 + 32 + 29 + 1319 + 82 rules). The dispatch switch of
+   `rewriteValue<file>` has a case for exactly the exported ops: a call of the op's function,
+   or `v.Op = Op…` for an ellipsis rule (171 in `ARM64.rules`), with the exported target op.
 2. **Against rulegen's code generator.** Each rule is also passed through rulegen's real
    `genMatch`/`genResult` (`genBlockRewrite` for block rules). The sequence of declared Go
-   variables (which decides bind vs. compare, and so each variable's type) and the sequence of
-   `b.NewValue0` ops must equal the exporter's.
+   variables (which decides bind vs. compare, and so each variable's type), the sequence of
+   `b.NewValue0` ops and their position arguments (`v.Pos`, the faulting matched value's
+   `x.Pos`, `b.Pos`, a control's `Pos`), and the position `genMatch` chose must equal the
+   exporter's.
 3. **Type checking.** Every Go expression of every rule is type-checked by `go/types` inside a
    synthetic file added to the pinned `cmd/compile/internal/ssa` package (function bodies of
    the package are dropped; imports come from the pinned source tree, with
@@ -63,18 +76,22 @@ never edit):
 | Module | Contents |
 | --- | --- |
 | `GoFV.Rules.Generated.<File>.ValuesNN` | one `def r_<file>_<line> : Rule` per rule, and `def ops_<Op> : List Rule` per op in matching order; ops in Go-name order, about 120 rules per module, an op never split |
-| `GoFV.Rules.Generated.Generic.Blocks` | `def r_generic_<line> : BlockRule` and `def blocks_<Kind> : List BlockRule` |
+| `GoFV.Rules.Generated.<File>.Blocks` | `def r_<file>_<line> : BlockRule` and `def blocks_<Kind> : List BlockRule` (`Generic`, `ARM64`) |
 | `GoFV.Rules.Generated.<File>` | `ruleSet : RuleSet` (`values : List (Op × List Rule)` in Go-name order, `blocks`), `counts : Nat × Nat` |
-| `GoFV.Rules.Generated` | imports the four `<File>` modules |
+| `GoFV.Rules.Generated` | imports the six `<File>` modules |
 
-`<File>` is `Generic`, `Dec`, `Divisible`, `Divmod`; all in namespace
-`GoFV.Rules.Generated.<File>`. Rule names: `r_<file>_<line>` with the line of rulegen's `Loc`
-(the line where the rule's `=>` is found); rules expanded from one source rule by `|` get
-`_2`, `_3`, ... in expansion order. Each def's doc comment is the normalised rule text.
+`<File>` is `Generic`, `Dec`, `Divisible`, `Divmod`, `ARM64`, `ARM64latelower`; all in
+namespace `GoFV.Rules.Generated.<File>`. Rule names: `r_<file>_<line>` with the line of
+rulegen's `Loc` (the line where the rule's `=>` is found); rules expanded from one source rule
+by `|` get `_2`, `_3`, ... in expansion order. Each def's doc comment is the normalised rule
+text. Ops and block kinds are `GoFV.SSA.Op`/`BlockKind` constructors, i.e. the Go constant
+without `Op`/`Block` (`.Add64`, `.ARM64MOVDload`, `.ARM64EQ`); `ops_<Op>`/`blocks_<Kind>` use the
+same name.
 
 Counts: generic 241 ops / 1651 value rules + 1 block kind (`If`) / 3 block rules; dec 17 / 47;
-divisible 8 / 32; divmod 8 / 29 (after `|` expansion). The generated modules import only
-`GoFV.Rules.Syntax`, which imports only `GoFV.SSA.Op`.
+divisible 8 / 32; divmod 8 / 29; ARM64 506 ops / 1268 value rules (171 of them ellipsis rules)
+and 26 block kinds / 222 block rules; ARM64latelower 22 / 82 (after `|` expansion). The
+generated modules import only `GoFV.Rules.Syntax`, which imports only `GoFV.SSA.Op`.
 
 Build cost (`scripts/perf-record.py GoFV.Rules. GoFVTest.Rules.`, each module alone under
 memcap, machine load ~65; RSS includes the ~0.45 GB of importing `GoFV.SSA.Op`):
@@ -108,7 +125,8 @@ memcap, machine load ~65; RSS includes the ~0.45 GB of importing `GoFV.SSA.Op`):
 `GoFVTest/Rules/Data.lean` checks the counts (`rfl`) and, by `#guard`, that every rule is
 well formed against the op table: variable and node indices in range, `commute` only on
 commutative ops, pattern and result argument counts equal to `Op.argLen` (or the variadic
-checks), and `pat`/`op`/table key agree.
+checks), `pat`/`op`/table key agree, ellipsis targets have the source op's `argLen`, and block
+rules match and build `BlockKind.controls` controls.
 
 ## Data format (`GoFV/Rules/Syntax.lean`)
 
@@ -127,6 +145,9 @@ package ssa>"`, e.g. `"*Value"`, `"*types.Type"`, `"Sym"`, `"[37]*types.Type"`).
   `unop`; `binop` (`land`/`lor` short-circuit); `index`; `deref`.
 - Generic helpers (`isPowerOfTwo[T]`, `oneBit[T]`) are called as `call`; the instantiation is
   the argument's type.
+- A keyed struct literal `T{f1: e1, f2: e2}` (only `PanicBoundsC{C: c}` and
+  `PanicBoundsCC{Cx: …, Cy: …}` in `ARM64.rules`) is the pseudo-call
+  `call "T{f1,f2}" [e1, e2] T`: the struct with those fields, the others zero.
 
 **Variables.** `Rule.vars : List Var`, `Var = ⟨name, kind, ty⟩`, numbered in rulegen's
 declaration order. `kind`: `value` (`*Value`), `type` (a value's `Type`), `auxInt`
@@ -139,10 +160,15 @@ declaration order. `kind`: `value` (`*Value`), `type` (a value's `Type`), `auxIn
 
 **Results.** `Result.copy e` (`v.copyOf(e)`: a variable, a `{code}` result or a bare Go
 expression such as `x.Args[i]`, `rewriteStructStore(v)`); `Result.build nodes`; `Result.setOp o`
-(ellipsis rule `(Op ...) => (Op2 ...)`; none exist in the four files). `RNode = ⟨op, ty, auxInt,
-aux, args⟩`, `args : List RArg` (`var x` / `node j`). `Rule.block = some e` is `@e`.
-`Rule.pos` is the pattern path of the value whose `Pos` new values get (`[]` = `v`; always
-`[]` here because no generic op has `faultOnNilArg0/1`).
+(ellipsis rule `(Op ...) => (Op2 ...)`; 171 in `ARM64.rules`, none in the four Phase 1 files).
+`RNode = ⟨op, ty, auxInt, aux, args⟩`, `args : List RArg`: `var x`, `node j`, or `expr e`, a Go
+expression of type `*Value` that rulegen passes through to `AddArg` (`flagArg(boolval)`, five
+`CSEL`/`CSEL0` rules of `ARM64.rules`). `Rule.block = some e` is `@e`. `Rule.pos` is the pattern
+path of the value whose `Pos` new values get (`[]` = `v`): rulegen uses the position of the
+last matched op with `faultOnNilArg0/1` (preorder), so it is `[]` for every generic rule and
+for the ARM64 rules whose top op faults; 20 ARM64 rules have a deeper one (`[1]` for
+`(FMOVDload [off] {sym} ptr (MOVDstore [off] {sym} ptr val _))`, `[0, 0, 2, 2]` for the
+`runtime.memmove` → `Move` rule).
 
 **Block rules.** `BlockRule = ⟨loc, kind, vars, controls : List Pat, auxInt, aux, cond,
 newKind, newControls : List (NewControl × CtrlPos), newAuxInt, newAux, swapSuccs⟩`. A control
@@ -204,7 +230,8 @@ and the next rule is tried.
 Value creation is `b.NewValue0(pos, op, ty)` (`func.go: Func.newValue`): reuse the head of
 `f.freeValues` (LIFO, ID kept) if non-empty, else a fresh ID `f.vid.get()`; `Op`, `Type`,
 `Block = b`, `Pos = pos` (with the statement mark cleared if `notStmtBoundary(op)`), `AuxInt =
-0`, no args; appended to the end of `b.Values`. `pos` is `v.Pos` for every generic value rule.
+0`, no args; appended to the end of `b.Values`. `pos` is the `Pos` of the value at `Rule.pos`
+(`v.Pos` for every generic value rule).
 
 `Result.copy e`: evaluate `e` (this may itself build values: `rewriteStructStore`,
 `rewriteFixedLoad`, `devirtLECall`, ...), then `v.copyOf(e)`: if `e` is `v` nothing happens;
@@ -294,6 +321,14 @@ that code too. `decompose builtin` passes `leaveDeadValues` (no dead-value reset
   is the op's aux type's (`Op.auxType`): `Bool→bool`, `Int8..Int64`, `UInt8`, `Float32`,
   `Float64`, `SymOff/CallOff→int32`, `TypSize→int64`; aux side `String→string`,
   `Sym/SymOff/SymValAndOff→Sym`, `Call/CallOff→*AuxCall`, `Typ/TypSize→*types.Type`.
+- ARM64 aux types (rewrite.go): `ARM64BitField→arm64BitField` (`auxIntToArm64BitField` /
+  `arm64BitFieldToAuxInt`: identity on the int64; `lsb()`/`width()` unpack it, built by
+  `armBFAuxInt(lsb, width)`), `FlagConstant→flagConstant` (identity; its `eq`/`lt`/`ugt`/…
+  methods read the N/Z/C/V bits), `CCop→Op` (`auxIntToOp(i) = Op(i)`, `opToAuxInt(o) =
+  int64(o)`: the AuxInt holds **Go's opcode number** of the pinned opGen.go, which differs from
+  `Op.ctorIdx`; convert with `Op.goNum` / `Op.ofGoNum?`), and on the aux side
+  `PanicBoundsC`/`PanicBoundsCC` (`auxToPanicBoundsC(C)`, `panicBoundsC(C)ToAux`: the struct
+  values `{C}` / `{Cx, Cy}` stored in `Aux`).
 
 ## The interpreter (`GoFV/Rules`, `GoFV/Opt/Opt.lean`)
 

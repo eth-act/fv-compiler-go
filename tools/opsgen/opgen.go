@@ -321,6 +321,13 @@ func checkOpGen(file string, ops []lop, blocks []lblock, arm64 *arch, simd map[s
 		if intOf(el[0]) != int64(i) || name != arm64.regnames[i] {
 			log.Fatalf("opGen.go: register %d is %s, ARM64Ops.go has %s", i, name, arm64.regnames[i])
 		}
+		want := "0"
+		if n := objName(name); n != "" {
+			want = "arm64." + n
+		}
+		if got := nodeString(fset, el[1]); got != want {
+			log.Fatalf("opGen.go: register %s has objNum %s, expected %s", name, got, want)
+		}
 	}
 	ints := func(v string) []int {
 		var l []int

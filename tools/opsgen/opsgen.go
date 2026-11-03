@@ -487,7 +487,8 @@ func main() {
 
 	writeOps(*out, *source, archNames, ops, blocks, g)
 	writeARM64(*outARM64, *source, ops)
-	writeRegs(*outRegs, *source, arm64)
+	goroot := filepath.Join(*genDir, "..", "..", "..", "..", "..", "..")
+	writeRegs(*outRegs, *source, arm64, arm64ObjNums(goroot, arm64.regnames))
 	fmt.Printf("opsgen: %d ops (%d ARM64), %d block kinds, %d ARM64 registers -> %s, %s\n",
 		len(ops), g.nARM64, len(blocks), len(arm64.regnames), *out, *outARM64)
 }
@@ -690,7 +691,7 @@ func writeARM64(file, source string, ops []lop) {
 	}
 }
 
-func writeRegs(file, source string, a *arch) {
+func writeRegs(file, source string, a *arch, objNums []int64) {
 	w := new(bytes.Buffer)
 	header(w, source, "ARM64Ops.go")
 	fmt.Fprintln(w, "import GoFV.SSA.OpInfo")
@@ -699,14 +700,14 @@ func writeRegs(file, source string, a *arch) {
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "namespace ARM64")
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "/-- `registersARM64`: the %d registers known to regalloc, `num` = index (R18 = platform register\nand R27 = REGTMP are absent; `g` is R28, `ZERO` and `SP` are both encoding 31). -/\n", len(a.regnames))
+	fmt.Fprintf(w, "/-- `registersARM64`: the %d registers known to regalloc, `num` = index (R18 = platform register\nand R27 = REGTMP are absent; `g` is R28, `ZERO` and `SP` are both encoding 31), `objNum` =\n`cmd/internal/obj/arm64` register constant (`REG_<name>`, `REGSP`, `REGG`, `REGZERO`; 0 for SB). -/\n", len(a.regnames))
 	fmt.Fprintln(w, "def registers : Array Register := #[")
 	for i, r := range a.regnames {
 		sep := ","
 		if i == len(a.regnames)-1 {
 			sep = "]"
 		}
-		fmt.Fprintf(w, "  ⟨%d, %s⟩%s\n", i, leanString(r), sep)
+		fmt.Fprintf(w, "  ⟨%d, %d, %s⟩%s\n", i, objNums[i], leanString(r), sep)
 	}
 	fmt.Fprintln(w)
 	ints := func(l []int) string {
