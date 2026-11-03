@@ -303,10 +303,11 @@ def Pat.argsOKLs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat →
       Pat.argsOKL ty (i :: p) q && Pat.argsOKLs ty p o (i + 1) qs
 end
 
-/-- A `copy` result copies a value of the matched value's shape. -/
+/-- A `copy` result copies a value of a shape compatible with the matched value's
+(`RewriteCheck.copyCompat`: the same shape, or two pointer shapes). -/
 def copyShapeOK (ev : Expr → DV) (e : PEnv) : Result → Prop
   | .copy ce => match ev ce with
-    | .val _ (some p) => e.ty p = e.ty []
+    | .val _ (some p) => GoFV.Opt.RewriteCheck.copyCompat (e.ty p) (e.ty []) = true
     | _ => True
   | _ => True
 

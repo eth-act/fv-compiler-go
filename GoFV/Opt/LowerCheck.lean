@@ -106,8 +106,9 @@ def nodeOKL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Orac
   u.args.size == n.args.length &&
   (n.args.zip u.args.toList).all fun (a, w) => argID σ I ids a == some w
 
-/-- The built definitions are the result's (`resDenL`): a `copy` of a bound value (`copyOf` gives
-`v` the value's type), or an in-place `build` whose other nodes are fresh. -/
+/-- The built definitions are the result's (`resDenL`): a `copy` of a bound value of a compatible
+shape (`copyOf` gives `v` the value's type; `copyCompat`: the same shape, or two pointer shapes),
+or an in-place `build` whose other nodes are fresh. -/
 def resultOKL (tabs : Tables) (M : Defs) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Oracle)
     (σ : Nat → DV) (I : Inst) (r : Rule) (v : Value) (defs : List Value) : Bool :=
   let topTy := shpL tabs v.type
@@ -116,7 +117,7 @@ def resultOKL (tabs : Tables) (M : Defs) (e : PEnv) (pat : Pat) (ev : Expr → D
     match DV.pos? (ev ce) with
     | some p => u.id == v.id && u.op == .Copy && u.args == #[I.at p] &&
         (M.get? (I.at p)).any (fun y => y.type == u.type &&
-          GoFV.Opt.CSE.tyEq (shpL tabs y.type) (shpL tabs v.type)) &&
+          copyCompat (shpL tabs y.type) (shpL tabs v.type)) &&
         I.at p != v.id && u.auxInt == 0 && u.aux == none
     | none => false
   | .build nodes, none, u0 :: us =>

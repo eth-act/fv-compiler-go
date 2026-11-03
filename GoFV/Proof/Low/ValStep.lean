@@ -299,14 +299,14 @@ theorem RuleFactsL.top (hs : ArmRule.Sound1 r)
       · cases h1; exact hg.1 v2 R.p rfl hp
     have hup := hcases _ h' (hev2 R.ce)
     obtain ⟨y, hy, hyt, hsh⟩ : ∃ y, M.get? (F.I.at R.p) = some y ∧ y.type = R.u.type ∧
-        shpL tabs y.type = shpL tabs F.xv.type := by
+        GoFV.Opt.RewriteCheck.copyCompat (shpL tabs y.type) (shpL tabs F.xv.type) = true := by
       have := R.hty
       cases h : M.get? (F.I.at R.p) with
       | none => rw [h] at this; cases this
       | some y =>
         rw [h] at this
         simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at this
-        exact ⟨y, rfl, this.1, GoFV.Proof.Pass.Rewrite.tyEq_sound this.2⟩
+        exact ⟨y, rfl, this.1, this.2⟩
     have hcs : GoFV.Proof.Low.copyShapeOK (evalE (stVtysL r) (sigmaL tabs e' r.pat)
         (stOrL tabs r defs) e' (Pat.denL tabs e' [] r.pat)) e' r.result := by
       rw [R.hres]
