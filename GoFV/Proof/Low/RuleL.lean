@@ -247,6 +247,7 @@ def renameOp : Op → Op → Bool
   | .StaticCall, .ARM64CALLstatic => true
   | .ClosureCall, .ARM64CALLclosure => true
   | .InterCall, .ARM64CALLinter => true
+  | .GetClosurePtr, .ARM64LoweredGetClosurePtr => true
   | _, _ => false
 
 /-- An ellipsis rule without a condition renaming an atom (`renameOp`). -/
