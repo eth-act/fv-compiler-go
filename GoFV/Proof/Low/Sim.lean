@@ -55,7 +55,7 @@ theorem next_relL {frS frT : Frame} {i : Nat} (R : BRel tabs f g frS frT b i) {F
   obtain ⟨m1, m2, m3, -⟩ := next_sets H.wg H.cg B.bmT B.hgb R.treeT B.mT
     ((H.ctrls b B.bmT fb gb B.hfb B.hgb).1 e he)
   exact { fr := E.fr, szS := E.szS, szT := E.szT, tyS := E.tyS, tyT := E.tyT, mem := n4,
-          treeS := n3, treeT := m3, atoms := E.atoms,
+          treeS := n3, treeT := m3, atoms := E.atoms, frames := E.frames,
           den := ⟨_, _, E.dS, E.dT, vt_placedL H B, n1, m1, n2, m2⟩ }
 
 end
@@ -125,6 +125,9 @@ theorem entry_relL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
       mem := H.wf.entry, treeS := by simp [entry_depth H.cf.parents],
       treeT := by rw [← hge]; simp [entry_depth H.cg.parents],
       atoms := fun a w _ _ y' h => absurd h (hnone a y'),
+      frames := fun a l n y _ _ _ h => absurd h (by
+        simp only [entryFrame, makeL_f, Array.getElem?_replicate]
+        split <;> simp),
       den := ⟨fun _ => False, fun _ => False, denOKL_empty _ _ _ _, denOKL_empty _ _ _ _,
         fun _ h => h.elim, fun x h => hentry f ce H.wf H.cf x h,
         fun x h => hentry g ce' H.wg H.cg x (hge ▸ h), hphi f ce H.wf _, hge ▸ hphi g ce' H.wg _⟩ }

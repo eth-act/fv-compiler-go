@@ -169,13 +169,15 @@ private theorem tyT' : ∀ a, VT a → ¬ IsTermL tabs (listedDefs g) a →
     simp [shapeL, placed_listed hp, hp.1]
   rw [this, ← tysL_shape]; exact htyT a _ (reg_rv (hDT a ha).1)
 
-/-- `ArgTermRefL` between registers of two frames whose atoms are refined. -/
-theorem argTermRefL_regs {o : Option Int64} {x y : ID}
+/-- `ArgTermRefL` between registers of two frames whose atoms are refined, the source's frame
+addresses those of activation 0 (`RegsFrame`). -/
+theorem argTermRefL_regs (hfrS : RegsFrame tabs 0 f.value? G)
+    {o : Option (Int64 × Option AuxRef)} {x y : ID}
     (hT : ArgTermRefL o f.lowered f.value? tabs x g.lowered (listedDefs g) tabs y) (hx : VS x)
-    (hy : VT y) : ArgRel o (rv G x) (rv T y) :=
+    (hy : VT y) : ArgRel tabs 0 o (rv G x) (rv T y) :=
   argTermRefL_apply H.low hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
     (tyS' H hDS hDT hVT hrel htyS htyT) (tyT' H hDS hDT hVT hrel htyS htyT)
-    (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) hT hx hy
+    (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) hfrS hT hx hy
 
 /-- The terminators between two frames whose atoms are refined. -/
 theorem termStepRefL_regs {b : ID} (hb : b ∈ g.blocks) {fb gb : Block} (hfb : f.block? b = some fb)
@@ -189,11 +191,12 @@ theorem termStepRefL_regs {b : ID} (hb : b ∈ g.blocks) {fb gb : Block} (hfb : 
 arguments' registers are related (`ArgRel` of `stArg`) where both frames hold them as terms over
 the atoms (unless `w` reads no argument, `argFree`), and a non-`Phi` pair whose arguments the
 frames hold evaluates to refinements (`atomPair_eval`, `addr_lower_eval`). -/
-theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
-    {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (ht : termVL tabs w = false) :
+theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs := T.regs })
+    {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u)
+    (ht : termVL tabs w = false) :
     atomPair tabs u w = true ∧
     (argFree tabs w = false → ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
-      ArgRel (stArg u w i) (rv G u.args[i]!) (rv T w.args[i]!)) ∧
+      ArgRel tabs 0 (stArg u w i) (rv G u.args[i]!) (rv T w.args[i]!)) ∧
     (∀ env : Env, env.Mono → (∀ a ∈ u.args, VS a) → (∀ a ∈ w.args, VT a) → w.op ≠ .Phi →
       Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u)
         (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) T w)) := by
@@ -202,10 +205,10 @@ theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
   rw [hu] at hu'; cases hu'
   obtain ⟨-, hty, -, hid⟩ := atomPair_spec hpair
   have hargs : argFree tabs w = false → ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
-      ArgRel (stArg u w i) (rv G u.args[i]!) (rv T w.args[i]!) := fun hf i hi h1 h2 => by
+      ArgRel tabs 0 (stArg u w i) (rv G u.args[i]!) (rv T w.args[i]!) := fun hf i hi h1 h2 => by
     rcases hTR with hf' | hTR
     · rw [hf] at hf'; cases hf'
-    · exact argTermRefL_regs H hDS hDT hVT hrel htyS htyT (hTR i hi) h1 h2
+    · exact argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS (hTR i hi) h1 h2
   refine ⟨hpair, hargs, fun env hE hS hT _ => ?_⟩
   obtain ⟨w', hw', hwid, -⟩ := H.wg.valueId w.block blk ⟨hbm, hblk⟩ x hx
   rw [hw] at hw'; cases hw'
@@ -233,6 +236,7 @@ theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
     refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair hal (H.gen x u hu hut) hty'
       (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
     have hi' : i < w.args.size := hsz ▸ hi
+    rw [makeL_act]
     exact hargs hf i hi' (hS _ (getElem!_mem' hi)) (hT _ (getElem!_mem' hi'))
   · exact addr_lower_eval H.ok.ownAux H.glow hal hty'
       (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1)
@@ -343,7 +347,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     (hsz : T0.regs.size = g.valueTab.size)
     (htyS : RegsTyped ⟨f.lowered, false⟩ (Ctx.makeL tabs f) G)
     (htyT : RegsTyped ⟨g.lowered, false⟩ (Ctx.makeL tabs g) T0)
-    (hDS : DenOKL f.lowered f.value? tabs G VS)
+    (hDS : DenOKL f.lowered f.value? tabs G VS) (hfrS : RegsFrame tabs 0 f.value? G)
     (hDT : DenOKL g.lowered (listedDefs g) tabs T0 VT1)
     (hVT1 : ∀ a, VT1 a → ∃ w, Placed g a w) (hdisj : ∀ x ∈ og, ¬ VT1 x)
     (hrel0 : ∀ a, VT1 a → VS a → ¬ IsTermL tabs f.value? a → ¬ IsTermL tabs (listedDefs g) a →
@@ -436,7 +440,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
           · obtain ⟨w, hp, -⟩ := hplaced a (by rw [hog']; exact List.mem_append_left _ ha)
             exact ⟨w, hp⟩
         have hr := (atom_ref H hDS hTD hVTd (fun a h1 h2 h3 h4 => hTr a h1 h2 h3 h4) htyS hTt
-          (by rw [hTf, hfr]) hpw hpu2.1 hterm).2.2 env hE hargsS hargs hwphi
+          hfrS (by rw [hTf, hfr]) hpw hpu2.1 hterm).2.2 env hE hargsS hargs hwphi
         rw [hevS] at hr
         obtain ⟨y', hT, hyy⟩ := res_ok_of_refines hr
         exact ⟨y', hT, fun _ => ⟨y, hGy, hyy⟩⟩

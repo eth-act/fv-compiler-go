@@ -212,6 +212,17 @@ theorem mid_typed (tabs : Tables) (f : Func) (ρ : ID → Val) :
     simp only [midVal, hu, hut, Bool.false_eq_true, ite_false]
     exact retypeL_idem _ _
 
+/-- `midVal` keeps the frame addresses of `f`'s `LocalAddr`s (`FrameVals`): `poison` and an
+address word at a word shape are fixed by `retypeL` there. -/
+theorem mid_frame {tabs : Tables} {f : Func} {ρ : ID → Val} {act : Nat}
+    (hF : FrameVals tabs act f.value? ρ) : FrameVals tabs act f.value? (midVal tabs f ρ) := by
+  intro a l n hl hop hax
+  have hlt : termVL tabs l = false := termVL_localAddr tabs l hop
+  simp only [midVal, hl, hlt, Bool.false_eq_true, ite_false]
+  rcases hF a l n hl hop hax with h | ⟨h, hw⟩
+  · exact .inl (by rw [h]; exact retypeL_poison _)
+  · exact .inr ⟨by rw [h]; exact word_retypeL (wordShape_cases hw) _, hw⟩
+
 theorem mid_le {tabs : Tables} {f : Func} {ρ : ID → Val}
     (hsh : f.lowered = true ∨ shapesOK tabs f = true) (hT : TypedL f.lowered f.value? tabs ρ) :
     ∀ a, ¬ IsTermL tabs f.value? a → Sem.Refines (ρ a) (midVal tabs f ρ a) := by
@@ -364,11 +375,12 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)
       intro n
       obtain ⟨k, hk⟩ := (hrest i hi').2 n
-      refine ⟨k, fun ρ ρ' hρ hT hT' => ?_⟩
+      refine ⟨k, fun act ρ ρ' hρ hT hT' hF => ?_⟩
       rw [hgl] at hT'
       rw [hgl, getElem!_pos u.args i hi]
-      have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ)
-      rw [getElem!_pos m.args i (by omega), stArg_congr (u := u') (i := i) hop.symm hai.symm] at h1
+      have h1 := hk act (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+      rw [getElem!_pos m.args i (by omega),
+        stArg_congr (u := u') (i := i) hop.symm hai.symm hax.symm] at h1
       exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
         ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
           (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))

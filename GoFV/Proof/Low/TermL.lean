@@ -12,12 +12,15 @@ value's shape `shp low`, then `rty low`), reading atoms (and values `D` does not
 registers, `Val.retypeL`, at the lowered shapes, `Sem.tyOfL`).
 
 `ArgTermRefL o lowD D x lowE E y`: for every fuel on the left there is one on the right such that
-for valuations `ρ ⊑ ρ'` whose atom values are fixed by `rty` at their shapes (`TypedL`), `denL lowD
-D … x` and `denL lowE E … y` are related by `ArgRel o`: refinement, or (`o = some k`, the address
-of an arm64 store lowering a `Store`, `stArg`) `AddrRef k`: the second moved by `k` is, as an
-address, the pointer word the first is. `AtomArgsRefL` and `TermStepRefL` are the premises of the
-atom simulation (`GoFV.Proof.Low.atomSimL_refines`) that the validator
-(`GoFV.Opt.LowerCheck.validateL`) establishes (`GoFV.Proof.Low.validateL_termRef`).
+for valuations `ρ ⊑ ρ'` whose atom values are fixed by `rty` at their shapes (`TypedL`) and whose
+frame addresses (`LocalAddr {n}` atoms of `D`) hold `n`'s address in some activation `act`
+(`FrameVals`), `denL lowD D … x` and `denL lowE E … y` are related by `ArgRel act o`: refinement,
+or (`o = some (k, ax)`, the address of an arm64 store lowering a `Store`, `stArg`) `AddrRef act ax
+k`: the store's address on the second (`addrAt`, `Sem.symAddr`: a global symbol's or frame
+variable's at the offset, or the base moved by it) is, as an address, the pointer word the first
+is. `AtomArgsRefL` and `TermStepRefL` are the premises of the atom simulation
+(`GoFV.Proof.Low.atomSimL_refines`) that the validator (`GoFV.Opt.LowerCheck.validateL`)
+establishes (`GoFV.Proof.Low.validateL_termRef`).
 -/
 
 namespace GoFV.Proof.Low

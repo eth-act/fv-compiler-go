@@ -11,10 +11,12 @@ refining lowered denotation (`ReplayInvL`), and the atoms of `D₀` whose argume
 stay atoms (renamed, `renameOp`; lowered stores and frame addresses, `atomDef`) whose arguments
 (rewritten by `copyArg` events, through compatible copies) keep related denotations
 (`ReplayInvL.atoms`, the one place that relates an atom's arguments: `ArgRel` of `stArg`,
-refinement, or for the address of an arm64 store lowering a `Store` the `AddrRef` at its offset,
-which an `ADDconst` offset folded into the store keeps, `ReplayInvL.fold`). Value rule events use
-`RuleFactsL.step` and `ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom
-replacements change no denotation (`rename_den`); terminators keep `BInvL`.
+refinement, or for the address of an arm64 store lowering a `Store` the `AddrRef` at its offset
+and aux, which an `ADDconst` offset folded into the store keeps, `ReplayInvL.fold`, and a global
+symbol's or frame variable's address, `ReplayInvL.foldAddr`, the latter in every activation whose
+frame addresses the valuation holds, `FrameVals`). Value rule events use `RuleFactsL.step` and
+`ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom replacements change no
+denotation (`rename_den`); terminators keep `BInvL`.
 -/
 
 namespace GoFV.Proof.Low.Val
@@ -192,14 +194,15 @@ theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
   | some a => exact ⟨a, rfl, by simpa using h⟩
 
 /-- What `atomDef` establishes for one new definition: a lowered store on the same arguments at
-offset 0, a lowered frame address on some of them, or an offset folded into an arm64 store of a
-`Store` of `f`. -/
+offset 0 without aux, a lowered frame address on some of them, or an offset or a symbol's or
+frame variable's address folded into an arm64 store of a `Store` of `f`. -/
 theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List Value} {u : Value}
     (h : atomDef tabs f M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧
       termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
-      ((u.args = x.args ∧ memLower tabs x u = true ∧ u.auxInt = 0) ∨
+      ((u.args = x.args ∧ memLower tabs x u = true ∧ u.auxInt = 0 ∧ u.aux = none) ∨
         ((∀ a ∈ u.args, a ∈ x.args) ∧ addrLower tabs x u = true) ∨
-        (stFold tabs M x u = true ∧ ∃ a, f.value? v = some a ∧ a.op = .Store)) := by
+        ((stFold tabs M x u = true ∨ stFoldAddr tabs f M x u = true) ∧
+          ∃ a, f.value? v = some a ∧ a.op = .Store)) := by
   unfold atomDef at h
   split at h
   · rename_i x _ u' hx
@@ -210,8 +213,8 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
     obtain ⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hk⟩ := hc
     simp only [Bool.not_eq_true'] at ht ht'
     refine ⟨x, hx, ht, ht', beq_iff_eq.1 hty, ?_⟩
-    rcases hk with (⟨⟨h1, h2⟩, h3⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩
-    · exact .inl ⟨beq_iff_eq.1 h1, h2, beq_iff_eq.1 h3⟩
+    rcases hk with (⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩
+    · exact .inl ⟨beq_iff_eq.1 h1, h2, beq_iff_eq.1 h3, beq_iff_eq.1 h4⟩
     · refine .inr (.inl ⟨fun a ha => ?_, h2⟩)
       simp only [Array.all_eq_true, Array.contains_iff_mem] at h1
       obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
@@ -455,12 +458,14 @@ end CopyArg
 /-! ## The replay invariant -/
 
 /-- The arguments of `a'` (in `M`) are as many as those of `a` (in `D₀`), in `C`, and related to
-them (`ArgRel` of `stArg`: refinement, or the address of an arm64 store lowering a `Store`). -/
+them (`ArgRel` of `stArg`: refinement, or the address of an arm64 store lowering a `Store`) in
+every activation whose frame addresses the valuation holds (`FrameVals`). -/
 def ArgsRefL (tabs : Tables) (D₀ : ID → Option Value) (M : Defs) (C : ID → Prop) (a a' : Value) :
     Prop :=
   a'.args.size = a.args.size ∧
-    ∀ i < a.args.size, C a'.args[i]! ∧ ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
-      ArgRel (stArg a a' i) (denL true D₀ tabs ρ n a.args[i]!) (denL true M.get? tabs ρ m a'.args[i]!)
+    ∀ i < a.args.size, C a'.args[i]! ∧ ∀ n, ∃ m, ∀ act ρ, TypedL true D₀ tabs ρ →
+      FrameVals tabs act D₀ ρ → ArgRel tabs act (stArg a a' i) (denL true D₀ tabs ρ n a.args[i]!)
+        (denL true M.get? tabs ρ m a'.args[i]!)
 
 /-- What holds along the replay from the definitions `D₀` (lowered mode) and a closed set `C₀`:
 the current definitions `M` with a set `C ⊇ C₀` closed under arguments; refining denotations of
@@ -485,7 +490,7 @@ theorem ReplayInvL.init {tabs : Tables} {M : Defs} {C₀ : ID → Prop} (hC : De
   denRef := fun _ _ n => ⟨n, fun _ _ => Sem.Refines.refl _⟩
   atoms := fun y a hy ha hargs => ⟨a, hy, ha, .inr ⟨rfl, fun i hi =>
     ⟨hargs _ (by rw [getElem!_pos a.args i hi]; exact Array.getElem_mem hi),
-      fun n => ⟨n, fun _ _ => by rw [stArg_self]; exact Sem.Refines.refl _⟩⟩⟩⟩
+      fun n => ⟨n, fun _ _ _ _ => by rw [stArg_self]; exact Sem.Refines.refl _⟩⟩⟩⟩
 
 section Inv
 
@@ -505,17 +510,18 @@ theorem denL_compose {M' : Defs} {y y' : ID} {g : Nat → Nat}
   exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans (h2 ρ (hty ρ hρ) m)⟩
 
 /-- Compose an argument relation from `D₀` with one step `M → M'`. -/
-theorem argRel_compose {M' : Defs} {y y' : ID} {o : Option Int64} {g : Nat → Nat}
-    (h1 : ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
-      ArgRel o (denL true D₀ tabs ρ n y) (denL true M.get? tabs ρ m y'))
+theorem argRel_compose {M' : Defs} {y y' : ID} {o : Option (Int64 × Option AuxRef)}
+    {g : Nat → Nat}
+    (h1 : ∀ n, ∃ m, ∀ act ρ, TypedL true D₀ tabs ρ → FrameVals tabs act D₀ ρ →
+      ArgRel tabs act o (denL true D₀ tabs ρ n y) (denL true M.get? tabs ρ m y'))
     (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
     (h2 : ∀ ρ, TypedL true M.get? tabs ρ → ∀ n,
       Sem.Refines (denL true M.get? tabs ρ n y') (denL true M'.get? tabs ρ (g n) y')) :
-    ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
-      ArgRel o (denL true D₀ tabs ρ n y) (denL true M'.get? tabs ρ m y') := by
+    ∀ n, ∃ m, ∀ act ρ, TypedL true D₀ tabs ρ → FrameVals tabs act D₀ ρ →
+      ArgRel tabs act o (denL true D₀ tabs ρ n y) (denL true M'.get? tabs ρ m y') := by
   intro n
   obtain ⟨m, hm⟩ := h1 n
-  exact ⟨g m, fun ρ hρ => (hm ρ hρ).trans_right (h2 ρ (hty ρ hρ) m)⟩
+  exact ⟨g m, fun act ρ hρ hF => (hm act ρ hρ hF).trans_right (h2 ρ (hty ρ hρ) m)⟩
 
 /-- `ArgsRefL` along a step `M → M'` refining the denotations of `C ⊆ C'`. -/
 theorem ArgsRefL.step {M' : Defs} {C' : ID → Prop} {a a' : Value} {g : Nat → Nat}
@@ -564,7 +570,8 @@ theorem ReplayInvL.atomPut {v : ID} {x x' : Value} (hI : ReplayInvL tabs D₀ C�
     (hty : x'.type = x.type) (hcl : C v → ∀ a ∈ x'.args, C a)
     (hargs : argFree tabs x' = true ∨
       (x'.args = x.args ∧ (argFree tabs x = true → argFree tabs x' = true) ∧
-        ∀ (a : Value) (i : Nat) (s t : Val), ArgRel (stArg a x i) s t → ArgRel (stArg a x' i) s t)) :
+        ∀ (a : Value) (i act : Nat) (s t : Val), ArgRel tabs act (stArg a x i) s t →
+          ArgRel tabs act (stArg a x' i) s t)) :
     ReplayInvL tabs D₀ C₀ (M.put v x') C where
   closed := put_closed hcl hI.closed
   sub := hI.sub
@@ -590,7 +597,7 @@ theorem ReplayInvL.atomPut {v : ID} {x x' : Value} (hI : ReplayInvL tabs D₀ C�
           obtain ⟨hc, hd⟩ := hr' i hi
           refine ⟨by rw [heq]; exact hc, fun n => ?_⟩
           obtain ⟨m, hm⟩ := hd n
-          exact ⟨m, fun ρ hρ => by rw [heq]; exact hrel a i _ _ (hm ρ hρ)⟩
+          exact ⟨m, fun act ρ hρ hF => by rw [heq]; exact hrel a i act _ _ (hm act ρ hρ hF)⟩
     · exact ⟨a', by rw [get?_put]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
         hr.step (fun _ h => h) hI.typed hstep⟩
 
@@ -601,15 +608,15 @@ theorem stFold_cases {x u : Value} (h : stFold tabs M x u = true) :
       y.op = .ARM64ADDconst ∧ termVL tabs y = true ∧ y.args.size = 1 ∧
       wordShape (shpL tabs y.type) = true ∧ offOK y.auxInt = true ∧
       u.auxInt.toInt = x.auxInt.toInt + y.auxInt.toInt ∧
-      u.args = #[y.args[0]!, x.args[1]!, x.args[2]!] := by
+      u.args = #[y.args[0]!, x.args[1]!, x.args[2]!] ∧ x.aux = none ∧ u.aux = none := by
   unfold stFold at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, -⟩, -⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
   split at h9
   · rename_i y hy
     simp only [Bool.and_eq_true, beq_iff_eq] at h9
     obtain ⟨⟨⟨⟨⟨⟨h10, h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩ := h9
-    exact ⟨y, hy, h1, h2, h3, h6, h7, h8, h10, h11, h12, h13, h14, h15, h16⟩
+    exact ⟨y, hy, h1, h2, h3, h6, h7, h8, h10, h11, h12, h13, h14, h15, h16, h4, h5⟩
   · cases h9
 
 /-- A word shape is at least 64 bits wide. -/
@@ -619,29 +626,29 @@ theorem argWidth_of_wordShape {T : Ty} (h : wordShape T = true) : 64 ≤ argWidt
   | ptr e => simp [argWidth]
   | _ => simp [wordShape] at h
 
-/-- **An offset folded into an arm64 store** of a `Store` of `D₀` (`stFold`): the store's address
-(argument 0, `ADDconst [k2] b` in `M`) becomes `b`, its offset `k1 + k2`, related by `AddrRef`
-at the new offset (`addrRef_fold`); value and memory stay. -/
-theorem ReplayInvL.fold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+/-- **An address folded into an arm64 store** of a `Store` of `D₀`: the store's address
+(argument 0, defined in `M` with `b` among its arguments) becomes `b`, with the offset and aux
+`haddr` relates it at; value and memory stay. -/
+theorem ReplayInvL.foldWith {v b : ID} {x u y : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
-    (hfold : stFold tabs M x u = true) (hsrc : ∀ a, D₀ v = some a → a.op = .Store) :
+    (hst : (stSize x.op).isSome = true) (hop : u.op = x.op) (hty : u.type = x.type)
+    (hsz : x.args.size = 3) (hargs : u.args = #[b, x.args[1]!, x.args[2]!])
+    (hy : M.get? x.args[0]! = some y) (hb : b ∈ y.args)
+    (haddr : C b → ∀ s n, (∃ m, ∀ act ρ, TypedL true D₀ tabs ρ → FrameVals tabs act D₀ ρ →
+        ArgRel tabs act (some (x.auxInt, x.aux)) (denL true D₀ tabs ρ n s)
+          (denL true M.get? tabs ρ m x.args[0]!)) →
+      ∃ m, ∀ act ρ, TypedL true D₀ tabs ρ → FrameVals tabs act D₀ ρ →
+        ArgRel tabs act (some (u.auxInt, u.aux)) (denL true D₀ tabs ρ n s)
+          (denL true M.get? tabs ρ m b))
+    (hsrc : ∀ a, D₀ v = some a → a.op = .Store) :
     ReplayInvL tabs D₀ C₀ (M.put v u) C := by
-  obtain ⟨y, hy, hst, hop, hty, hsz, hk1, -, hyop, hyt, hysz, hyw, hk2, hk, hargs⟩ :=
-    stFold_cases hfold
-  obtain ⟨b, hb⟩ : ∃ b, y.args = #[b] := by
-    rcases hy' : y.args with ⟨l⟩
-    rw [hy'] at hysz
-    obtain ⟨b, rfl⟩ := List.length_eq_one_iff.1 (by simpa using hysz)
-    exact ⟨b, rfl⟩
-  have hb0 : y.args[0]! = b := by rw [hb]; rfl
-  rw [hb0] at hargs
   have hmem : ∀ i, i < x.args.size → x.args[i]! ∈ x.args := fun i h => by
     rw [getElem!_pos x.args i h]; exact Array.getElem_mem h
   -- `b` is in a closed set holding `x`'s address
   have hbC : ∀ {C' : ID → Prop}, DefClosed M C' → C' x.args[0]! → C' b := fun hC h0 => by
     obtain ⟨m, hm, ha⟩ := hC _ h0
     rw [hy] at hm; cases hm
-    exact ha b (by rw [hb]; simp)
+    exact ha b hb
   have hcl : C v → ∀ a ∈ u.args, C a := fun hv a ha => by
     have hxa := closed_args hI.closed hx hv
     rw [hargs] at ha
@@ -681,21 +688,8 @@ theorem ReplayInvL.fold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M
     have hbM : C b := hbC hI.closed hc0
     refine ⟨hbM, ?_⟩
     rw [stArg_zero hS (by rw [hop]; exact hst)]
-    refine argRel_compose (o := some u.auxInt) (g := id) ?_ hI.typed
+    exact argRel_compose (g := id) (fun n => haddr hbM _ n (hd0 n)) hI.typed
       fun ρ hρ n => hstep ρ hρ n b hbM
-    intro n
-    obtain ⟨m, hm⟩ := hd0 n
-    obtain ⟨w, hw, -⟩ := hI.closed b hbM
-    rcases m with _ | m
-    · refine ⟨0, fun ρ hρ p hp => ?_⟩
-      have := hm ρ hρ p hp
-      simp [denL, Arm64.addr, Arm64.reg] at this
-    · refine ⟨m, fun ρ hρ => ?_⟩
-      have h1 := hm ρ hρ
-      rw [denT_succ hy hyt, hyop, hb, show (#[b] : Array ID).toList = [b] from rfl] at h1
-      simp only [List.map_cons, List.map_nil, opValL_addConst] at h1
-      exact addrRef_fold (den_hasTyL (hI.typed ρ hρ) m hw) (argWidth_of_wordShape hyw)
-        hk1 hk2 hk h1
   · -- the value
     have e : u.args[1]! = x.args[1]! := by rw [hargs]; rfl
     obtain ⟨hc, hd⟩ := (hr 1 hi)
@@ -711,6 +705,124 @@ theorem ReplayInvL.fold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M
     rw [stArg_succ] at hd
     exact argRel_compose (g := id) hd hI.typed fun ρ hρ n => hstep ρ hρ n _ hc
   · omega
+
+/-- The one argument of a value with one argument. -/
+theorem args_one {y : Value} (h : y.args.size = 1) : y.args = #[y.args[0]!] := by
+  rcases hy' : y.args with ⟨l⟩
+  rw [hy'] at h
+  obtain ⟨b, rfl⟩ := List.length_eq_one_iff.1 (by simpa using h)
+  rfl
+
+/-- **An offset folded into an arm64 store** of a `Store` of `D₀` (`stFold`): the store's address
+(argument 0, `ADDconst [k2] b` in `M`) becomes `b`, its offset `k1 + k2`, related by `AddrRef`
+at the new offset (`addrRef_fold`); value and memory stay. -/
+theorem ReplayInvL.fold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+    (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
+    (hfold : stFold tabs M x u = true) (hsrc : ∀ a, D₀ v = some a → a.op = .Store) :
+    ReplayInvL tabs D₀ C₀ (M.put v u) C := by
+  obtain ⟨y, hy, hst, hop, hty, hsz, hk1, -, hyop, hyt, hysz, hyw, hk2, hk, hargs, hxa, hua⟩ :=
+    stFold_cases hfold
+  have hb := args_one hysz
+  refine hI.foldWith hx ht ht' hst hop hty hsz hargs hy (by rw [hb]; simp)
+    (fun hbM s n ⟨m, hm⟩ => ?_) hsrc
+  rw [hxa] at hm
+  rw [hua]
+  obtain ⟨w, hw, -⟩ := hI.closed _ hbM
+  rcases m with _ | m
+  · refine ⟨0, fun act ρ hρ hF p hp => ?_⟩
+    have := hm act ρ hρ hF p hp
+    simp [denL, addrAt, Arm64.addr, Arm64.reg] at this
+  · refine ⟨m, fun act ρ hρ hF => ?_⟩
+    have h1 := hm act ρ hρ hF
+    rw [denT_succ hy hyt, hyop, hb, show (#[y.args[0]!] : Array ID).toList = [y.args[0]!] from rfl]
+      at h1
+    simp only [List.map_cons, List.map_nil, opValL_addConst] at h1
+    exact addrRef_fold (den_hasTyL (hI.typed ρ hρ) m hw) (argWidth_of_wordShape hyw)
+      hk1 hk2 hk h1
+
+/-- What `stFoldAddr` says. -/
+theorem stFoldAddr_cases {f : Func} {x u : Value} (h : stFoldAddr tabs f M x u = true) :
+    ∃ m, M.get? x.args[0]! = some m ∧ (stSize x.op).isSome = true ∧ u.op = x.op ∧
+      u.type = x.type ∧ x.aux = none ∧ x.args.size = 3 ∧ offOK x.auxInt = true ∧
+      offOK u.auxInt = true ∧ m.op = .ARM64MOVDaddr ∧ m.args.size = 1 ∧ m.aux.isSome = true ∧
+      u.aux = m.aux ∧ u.auxInt.toInt = x.auxInt.toInt + m.auxInt.toInt ∧
+      u.args = #[m.args[0]!, x.args[1]!, x.args[2]!] ∧
+      ((termVL tabs m = true ∧ wordShape (shpL tabs m.type) = true) ∨
+        (termVL tabs m = false ∧ m.auxInt = 0 ∧
+          ∃ l, f.value? x.args[0]! = some l ∧ l.op = .LocalAddr ∧ l.aux = m.aux)) := by
+  unfold stFoldAddr at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h
+  split at h8
+  · rename_i m hm
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at h8
+    obtain ⟨⟨⟨⟨⟨⟨h10, h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩ := h8
+    refine ⟨m, hm, h1, h2, h3, h4, h5, h6, h7, h10, h11, h12, h13, h14, h15, ?_⟩
+    rcases h16 with h16 | ⟨⟨h17, h18⟩, h19⟩
+    · exact .inl h16
+    · refine .inr ⟨h17, h18, ?_⟩
+      cases hl : f.value? x.args[0]! with
+      | none => rw [hl] at h19; cases h19
+      | some l =>
+        rw [hl] at h19
+        simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h19
+        exact ⟨l, rfl, h19.1, h19.2⟩
+  · cases h8
+
+/-- A `MOVDaddr` is a term unless its aux is a frame variable. -/
+theorem termVL_movDaddr {m : Value} (h : m.op = .ARM64MOVDaddr) :
+    termVL tabs m = !GoFV.Opt.LowerTerm.auxIsName tabs m.aux := by
+  unfold termVL; rw [h]; rfl
+
+/-- No store address is the pointer word of a value moved from `poison`. -/
+theorem addrRef_poison {act act' : Nat} {ax : Option AuxRef} {k k' : Int64} {x z : Val}
+    (h : AddrRef tabs act none k x .poison) : AddrRef tabs act' ax k' x z := by
+  intro p hp
+  have := h p hp
+  simp [addrAt, Arm64.addr, Arm64.reg] at this
+
+/-- **A global symbol's or frame variable's address folded into an arm64 store** of a `Store` of
+`D₀` (`stFoldAddr`): the store's address (argument 0, `MOVDaddr [k2] {n} b` in `M`) becomes `b`,
+its offset `k1 + k2` and aux `n`, related by `AddrRef` at the new offset and aux: the global's
+address (`addrRef_foldSym`), or the frame variable's, which the source's `LocalAddr {n}` holds
+(`FrameVals`, `addrRef_foldFrame`); value and memory stay. -/
+theorem ReplayInvL.foldAddr {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID} {x u : Value}
+    (hI : ReplayInvL tabs D₀ C₀ M C)
+    (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
+    (hfold : stFoldAddr tabs f M x u = true) (hsrc : ∀ a, D₀ v = some a → a.op = .Store) :
+    ReplayInvL tabs D₀ C₀ (M.put v u) C := by
+  obtain ⟨m, hm, hst, hop, hty, hxa, hsz, hk1, -, hmop, hmsz, hmax, hua, hk, hargs, hcase⟩ :=
+    stFoldAddr_cases hfold
+  obtain ⟨nn, hnn⟩ : ∃ nn, m.aux = some nn := Option.isSome_iff_exists.1 hmax
+  have hb := args_one hmsz
+  refine hI.foldWith hx ht ht' hst hop hty hsz hargs hm (by rw [hb]; simp)
+    (fun _ s n ⟨j, hj⟩ => ⟨j, fun act ρ hρ hF => ?_⟩) hsrc
+  have h1 := hj act ρ hρ hF
+  rw [hxa] at h1
+  rw [hua, hnn]
+  rcases hcase with ⟨hmt, hmw⟩ | ⟨hmt, hm0, l, hl, hlop, hlax⟩
+  · -- a global symbol
+    rcases j with _ | j
+    · exact addrRef_poison h1
+    · rw [denT_succ hm hmt, hmop, hb, hnn,
+        show (#[m.args[0]!] : Array ID).toList = [m.args[0]!] from rfl] at h1
+      simp only [List.map_cons, List.map_nil, opValL_movDaddr] at h1
+      exact addrRef_foldSym hmw hk h1 _
+  · -- a frame variable
+    have hname : GoFV.Opt.LowerTerm.auxIsName tabs (some nn) = true := by
+      rw [termVL_movDaddr hmop, hnn] at hmt; simpa using hmt
+    have hk' : u.auxInt.toInt = x.auxInt.toInt := by rw [hk, hm0]; simp
+    have hden : denL true M.get? tabs ρ j x.args[0]! = .poison ∨
+        denL true M.get? tabs ρ j x.args[0]! = (framePtr tabs act nn).word := by
+      rcases j with _ | j
+      · exact .inl rfl
+      · have hna : ¬ IsTermL tabs M.get? x.args[0]! := fun ⟨w, hw, hw'⟩ => by
+          rw [hm] at hw; cases hw; rw [hmt] at hw'; cases hw'
+        rw [denL_succ_atom hna]
+        rcases hF _ l nn (by rw [hD]; exact hl) hlop (by rw [hlax, hnn]) with h | ⟨h, -⟩
+        · exact .inl h
+        · exact .inr h
+    exact addrRef_foldFrame hname hk1 hk' hden h1 _
 
 /-- Putting a term at a fresh key; the key joins the closed set if `P` holds. -/
 theorem ReplayInvL.fresh {s : Value} {P : Prop} (hI : ReplayInvL tabs D₀ C₀ M C)
@@ -767,8 +879,8 @@ theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayIn
         rw [getElem!_pos x.args i hi] at h1
         intro n
         obtain ⟨m, hm⟩ := h1 n
-        exact ⟨m, fun ρ hρ => (hm ρ hρ).trans_right ((copyReachL_den (hI.typed ρ hρ) _ _ _ hr m).trans
-          (hstep ρ (hI.typed ρ hρ) m src hsrc))⟩
+        exact ⟨m, fun act ρ hρ hF => (hm act ρ hρ hF).trans_right
+          ((copyReachL_den (hI.typed ρ hρ) _ _ _ hr m).trans (hstep ρ (hI.typed ρ hρ) m src hsrc))⟩
       · exact ⟨(hrest j hj).1, argRel_compose (g := id) (hrest j hj).2 hI.typed
           fun ρ hρ n => hstep ρ hρ n _ (hrest j hj).1⟩
     · exact ⟨a', by rw [copyPut_get]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
@@ -841,8 +953,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         · have ht' := renameOp_dst hren tabs { x with op := o' } rfl
           have hfree : argFree tabs x = true → argFree tabs { x with op := o' } = true :=
             fun hf => absurd (argFree_cases hf).1 (renameOp_src_ne hren)
-          have hrel : ∀ (a : Value) (i : Nat) (s t : Val), ArgRel (stArg a x i) s t →
-              ArgRel (stArg a { x with op := o' } i) s t := fun a i s t h => by
+          have hrel : ∀ (a : Value) (i act : Nat) (s t : Val), ArgRel tabs act (stArg a x i) s t →
+              ArgRel tabs act (stArg a { x with op := o' } i) s t := fun a i act s t h => by
             rw [stArg_none (w := { x with op := o' }) (renameOp_stSize hren).2]
             rwa [stArg_none (renameOp_stSize hren).1] at h
           exact replayL_inv hs hD evs _ M' B B' C h
@@ -882,13 +994,14 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
           obtain ⟨x0, hx0, ht, ht', hty, hk⟩ := atomDef_one hdef
           have hB' := hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ n y _ => by
             rw [rename_den (x' := u) hx0 ht ht']; exact Sem.Refines.refl _
-          rcases hk with ⟨heq, hm, h0⟩ | ⟨hsub, hal⟩ | ⟨hfold, a, ha, hS⟩
-          · have hrel : ∀ (a : Value) (i : Nat) (s t : Val), ArgRel (stArg a x0 i) s t →
-                ArgRel (stArg a u i) s t := fun a i s t h => by
-              rw [stArg_none (by rw [memLower_op hm]; rfl)] at h
-              unfold stArg; split
-              · rw [h0]; exact addrRef_zero h
-              · exact h
+          rcases hk with ⟨heq, hm, h0, hax⟩ | ⟨hsub, hal⟩ | ⟨hfold | hfold, a, ha, hS⟩
+          · have hrel : ∀ (a : Value) (i act : Nat) (s t : Val),
+                ArgRel tabs act (stArg a x0 i) s t → ArgRel tabs act (stArg a u i) s t :=
+              fun a i act s t h => by
+                rw [stArg_none (by rw [memLower_op hm]; rfl)] at h
+                unfold stArg; split
+                · rw [h0, hax]; exact addrRef_zero h
+                · exact h
             exact replayL_inv hs hD evs _ M' B B' C h
               (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (heq ▸ ha))
                 (.inr ⟨heq, fun hf =>
@@ -898,6 +1011,9 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
                 (.inl (argFree_of_addrLower hal))) hB'
           · exact replayL_inv hs hD evs _ M' B B' C h
               (hI.fold hx0 ht ht' hfold fun a' ha' => by
+                rw [hD, ha] at ha'; cases ha'; exact hS) hB'
+          · exact replayL_inv hs hD evs _ M' B B' C h
+              (hI.foldAddr hD hx0 ht ht' hfold fun a' ha' => by
                 rw [hD, ha] at ha'; cases ha'; exact hS) hB'
         · rename_i u s hdef
           obtain ⟨x0, hx0, ht, ht', hty, hal, hua, hsv, hsn, hst, hsa⟩ := atomDef_two hdef
