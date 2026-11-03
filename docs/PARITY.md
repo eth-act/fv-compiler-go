@@ -188,5 +188,5 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | schedule | schedule | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`fstate scheduled`); full-v6: 96,553/96,553 |
 | late nilcheck | nilcheckelim2 | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 3311 functions changed by the pass; removed checks leave the value table unfreed; full-v6: 96,553/96,553 |
 | flagalloc | flagalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 415 functions changed by the pass; full-v6: 96,553/96,553 |
-| loop rotate | loopRotate | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 1672 functions changed by the pass; reads the cached loop nest (present in every input); full-v6: 96,553/96,553 |
+| loop rotate | loopRotate | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 1672 functions changed by the pass; `f.loopnest()` (`Func.loopnest`; regalloc left it cached in every input); full-v6: 96,553/96,553 |
 | trim | trim | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 2780 functions changed by the pass; `flagslive`/`hotness` list blocks of `f.Blocks` only, so a trimmed block's entries go; full-v6: 96,553/96,553 |
