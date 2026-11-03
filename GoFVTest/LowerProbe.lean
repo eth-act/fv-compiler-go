@@ -217,6 +217,11 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     match rewriteRun lowerTable true true env e.sections[k-1]!.func with
     | .ok (out, _, log) =>
       let w := whyL out.tables lowerTable e.sections[k-1]!.func out.func log
+      let w := if w == "ok" then
+          (match check { tabs := out.tables, typs := env.typs } out.func with
+            | .ok () => "ok"
+            | .error m => s!"check out: {m.take 50}") else w
+      let w := if w == "ok" && !tabsAgree prev out.tables e.sections[k-1]!.func then "tabsAgree" else w
       if !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
       let w := if w.startsWith "rule" || w.startsWith "setOp" || w.startsWith "blockRule" || w.startsWith "atoms" || w.startsWith "final" then (w.splitOn " v").head! else w
       S := { S with why := S.why.insert w (S.why.getD w 0 + 1), accepted := if w == "ok" then S.accepted + 1 else S.accepted }
