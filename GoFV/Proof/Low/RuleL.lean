@@ -394,6 +394,53 @@ size, at offset 0 without aux (`GoFV.Proof.Low.Sim.store_lower_eval`). -/
 def memLower (tabs : Tables) (u w : Value) : Bool :=
   w.auxInt == 0 && w.aux == none && u.op == .Store && (stSize w.op).any (fitsB (auxTy tabs u.aux))
 
+/-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
+base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
+`.name` aux) at offset 0 and one argument, whose value it ignores
+(`GoFV.Proof.Low.addr_lower_eval`). -/
+def addrLower (tabs : Tables) (u w : Value) : Bool :=
+  u.op == .LocalAddr && w.op == .ARM64MOVDaddr && w.auxInt == 0 && w.aux == u.aux &&
+    auxIsName tabs u.aux && w.args.size == 1
+
+/-- An atom whose value reads no argument: `MOVDaddr` of a frame variable (a `.name` aux,
+`Sem.symAddr`). -/
+def argFree (tabs : Tables) (w : Value) : Bool :=
+  w.op == .ARM64MOVDaddr && auxIsName tabs w.aux
+
+/-- A lowered store lowers a `Store`. -/
+theorem memLower_op {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
+    u.op = .Store := by
+  unfold memLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  exact h.1.2
+
+/-- What `addrLower` says. -/
+theorem addrLower_cases {tabs : Tables} {u w : Value} (h : addrLower tabs u w = true) :
+    u.op = .LocalAddr ∧ w.op = .ARM64MOVDaddr ∧ w.auxInt = 0 ∧ w.aux = u.aux ∧
+      auxIsName tabs u.aux = true ∧ w.args.size = 1 := by
+  unfold addrLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, h6⟩
+
+/-- What `argFree` says. -/
+theorem argFree_cases {tabs : Tables} {w : Value} (h : argFree tabs w = true) :
+    w.op = .ARM64MOVDaddr ∧ auxIsName tabs w.aux = true := by
+  unfold argFree at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  exact h
+
+/-- A lowered frame address reads no argument. -/
+theorem argFree_of_addrLower {tabs : Tables} {u w : Value} (h : addrLower tabs u w = true) :
+    argFree tabs w = true := by
+  obtain ⟨-, h2, -, h4, h5, -⟩ := addrLower_cases h
+  simp only [argFree, h2, h4, h5, beq_self_eq_true, Bool.and_self]
+
+/-- `argFree` reads the op and the aux. -/
+theorem argFree_congr {tabs : Tables} {u w : Value} (hop : u.op = w.op) (hax : u.aux = w.aux) :
+    argFree tabs u = argFree tabs w := by
+  unfold argFree; rw [hop, hax]
+
 /-! ## Block rules -/
 
 /-- Whether a conditional block of kind `k` (auxint `ai`) on the control `c` takes its first
@@ -451,14 +498,15 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
 
 /-! ## Rule sets -/
 
-/-- A rule on a store (`(Store {t} ptr val mem)`, an atom): the validator accepts its events only
-as a lowered store it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`), so
-the rule carries no obligation of its own. -/
+/-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`): the
+validator accepts its events only as a lowered store or frame address it pairs with the atom
+itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `addrLower`), so the rule carries no obligation
+of its own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
-  ∃ n ty ai ax ar args c, r.pat = .op .Store n ty ai ax ar args c
+  ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧ (o = .Store ∨ o = .LocalAddr)
 
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
-ellipsis rule on terms, an atom rename, or a rule on a store. -/
+ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/
 def ArmRule.Checked (r : Rule) : Prop :=
   ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r
 

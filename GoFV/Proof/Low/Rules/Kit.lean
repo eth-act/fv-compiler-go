@@ -533,6 +533,11 @@ theorem checked_rename {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
 /-- A rule on a store (`ArmRule.Mem`). -/
 theorem checked_store {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .Store n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨n, ty, ai, ax, ar, args, c, hp⟩))
+  .inr (.inr (.inr ⟨.Store, n, ty, ai, ax, ar, args, c, hp, .inl rfl⟩))
+
+/-- A rule on a frame address (`ArmRule.Mem`). -/
+theorem checked_localAddr {r : Rule} {n ty ai ax ar args c}
+    (hp : r.pat = .op .LocalAddr n ty ai ax ar args c) : ArmRule.Checked r :=
+  .inr (.inr (.inr ⟨.LocalAddr, n, ty, ai, ax, ar, args, c, hp, .inr rfl⟩))
 
 end GoFV.Proof.Low.Rules

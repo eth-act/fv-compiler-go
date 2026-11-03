@@ -68,12 +68,11 @@ theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = tru
     · cases hfd
   · cases this
 
-theorem atomPair_facts {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
-    u.type = w.type ∧ u.args.size = w.args.size := by
+theorem atomPair_type {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
+    u.type = w.type := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨⟨⟨-, h1⟩, h2⟩, -⟩, -⟩ := h
-  exact ⟨h1, h2⟩
+  exact h.1.1.2
 
 /-- `x` is marked by `liveMarksL tabs h` (read by the output). -/
 def LiveL (tabs : Tables) (h : Func) (x : ID) : Prop := (liveMarksL tabs h)[x]? = some true
@@ -295,7 +294,7 @@ theorem mid_le_target {tabs : Tables} {f g : Func} (hA : atomsOKL tabs f g = tru
         simp only [Option.any_some, Array.contains_iff_mem] at hbv
         obtain ⟨fb, -, -, hat⟩ := (atomsOKL_facts hA).2 w.block hb' gb hgb
         obtain ⟨-, u', hu', hp, hu't⟩ := hat a hbv w hg hut
-        have hty := (atomPair_facts hp).1
+        have hty := atomPair_type hp
         simp only [midVal, hu', hu't, Bool.false_eq_true, ite_false]
         have hL' : listedDefs g a = some w := by
           simp [listedDefs, hg, Option.filter, hb, hb', hgb, hbv]
@@ -344,18 +343,21 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
     · intro b hb gb hgb a ha u hu hat
       obtain ⟨fb, hfb, -, hatoms⟩ := hAf b hb gb hgb
       obtain ⟨haf, u', hu', hp, hu't⟩ := hatoms a ha u hu hat
-      refine ⟨u', hu', hp, fun i hi => ?_⟩
+      refine ⟨u', hu', hp, ?_⟩
       have hbf : b ∈ f.blocks := hbl ▸ hb
       have hargsf := (closedOK_facts hcf b hbf fb hfb).2 a haf u' hu'
-      obtain ⟨a'', ha'', -, hsz'', hrest⟩ := hI.atoms a u' hu' hu't hargsf
+      obtain ⟨a'', ha'', -, hrest⟩ := hI.atoms a u' hu' hu't hargsf
       obtain ⟨-, -, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
-      obtain ⟨m, w, hm, hw, -, -, -, -, hszw, hargs⟩ := hvals a ha
+      obtain ⟨m, w, hm, hw, hop, -, -, hax, hszw, hargs⟩ := hvals a ha
         (.inr fun w hw => by rw [hu] at hw; cases hw; exact hat)
       have hma : m = a'' := Option.some.inj (hm.symm.trans ha'')
       subst hma
       have huw : u = w := Option.some.inj (hu.symm.trans hw)
       subst huw
-      have hi' : i < u'.args.size := (atomPair_facts hp).2 ▸ hi
+      rcases hrest with hfree | ⟨hsz'', hrest⟩
+      · exact .inl (by rw [argFree_congr hop hax]; exact hfree)
+      refine .inr fun i hi => ?_
+      have hi' : i < u'.args.size := by omega
       have hcopy := hargs i (by omega) hi
       have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
       have hlv : LiveL tabs g u.args[i] :=

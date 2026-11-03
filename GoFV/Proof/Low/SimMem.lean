@@ -494,16 +494,24 @@ theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = tr
   exact ⟨hai, hax, hu, n, stSize_stOp hn, fitsB_store hf⟩
 
 theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
-    (((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
-        memLower tabs u w = true) ∧
-      u.type = w.type ∧ u.args.size = w.args.size ∧ u.block = w.block ∧ u.id = w.id := by
+    (((((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
+        memLower tabs u w = true) ∧ u.args.size = w.args.size) ∨ addrLower tabs u w = true) ∧
+      u.type = w.type ∧ u.block = w.block ∧ u.id = w.id := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
-  refine ⟨?_, h2, h3, h4, h5⟩
-  rcases h1 with ⟨⟨h1, h6⟩, h7⟩ | h1
-  · exact .inl ⟨h1, h6, h7⟩
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+  refine ⟨?_, h2, h3, h4⟩
+  rcases h1 with ⟨⟨⟨h1, h6⟩, h7⟩ | h1, hs⟩ | h1
+  · exact .inl ⟨.inl ⟨h1, h6, h7⟩, hs⟩
+  · exact .inl ⟨.inr h1, hs⟩
   · exact .inr h1
+
+/-- Corresponding atoms other than a lowered frame address have as many arguments. -/
+theorem atomPair_size {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
+    (hn : addrLower tabs u w = false) : u.args.size = w.args.size := by
+  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha
+  · exact hs
+  · rw [hn] at ha; cases ha
 
 /-- A lowered store and the `Store` it lowers: no `Phi`s, both roots. -/
 theorem memLower_ops {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
@@ -512,24 +520,33 @@ theorem memLower_ops {tabs : Tables} {u w : Value} (h : memLower tabs u w = true
   generalize w.op = o at hs
   rw [hu]; cases hs <;> decide
 
+/-- A lowered frame address and the `LocalAddr` it lowers: no `Phi`s, no roots. -/
+theorem addrLower_ops {tabs : Tables} {u w : Value} (h : addrLower tabs u w = true) :
+    u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot w.op = isRoot u.op := by
+  obtain ⟨hu, hw, -⟩ := addrLower_cases h
+  rw [hu, hw]; decide
+
 /-- Corresponding atoms are both `Phi`s or neither. -/
 theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     w.op = .Phi ↔ u.op = .Phi := by
-  rcases (atomPair_spec h).1 with ⟨h | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
       rw [h1, h2] <;> decide
   · obtain ⟨h1, h2, -⟩ := memLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
+  · obtain ⟨h1, h2, -⟩ := addrLower_ops h
+    exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
 
 /-- Corresponding atoms are both roots or neither. -/
 theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     isRoot w.op = isRoot u.op := by
-  rcases (atomPair_spec h).1 with ⟨h | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
       rw [h1, h2] <;> decide
   · exact (memLower_ops h).2.2
+  · exact (addrLower_ops h).2.2
 
 theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
   unfold Ctx.makeL; split <;> rfl
@@ -541,19 +558,77 @@ namespace GoFV.Proof.Low
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof GoFV.Proof.AtomSim GoFV.Opt.LowerCheck Sim
 
+/-- A pointer shaped in any mode is refined by its word shaped in lowered mode: at the word shapes
+both are the word (`Val.retype`), at every other shape the pointer is `poison`. -/
+theorem ptr_rty_word (P : Ptr) (lS : Bool) (t : Ty) :
+    Sem.Refines (rty lS t (.ptr P)) (rty true t P.word) := by
+  refine (rty_le (fun _ => rfl) t (Sem.Refines.refl _)).trans ?_
+  show Sem.Refines (((Val.ptr P).widen t).retype t) ((P.word.widen t).retype t)
+  cases t with
+  | int w =>
+    cases w
+    · exact Sem.Refines.poison _
+    · exact Sem.Refines.poison _
+    · exact Sem.Refines.poison _
+    · rw [GoFV.Proof.Low.Mono.widen_of_hasTy _ _ (Ptr.word_hasTy_i64 P), Ptr.word_retype_i64]
+      exact Sem.Refines.refl _
+  | ptr e =>
+    rw [GoFV.Proof.Low.Mono.widen_of_hasTy _ _ (Ptr.word_hasTy_ptr P e), Ptr.word_retype_ptr]
+    exact Sem.Refines.refl _
+  | _ => exact Sem.Refines.poison _
+
+/-- **A lowered frame address refines the `LocalAddr` it lowers** (`addrLower`): `LocalAddr {n}`
+is the pointer to `n`'s frame block (`Sem.frameVal`); `MOVDaddr {n}` at offset 0 is that pointer's
+word (`Sem.symAddr`, `ptrRes`: a frame block's offset 0 is in its window), whatever its argument. -/
+theorem addr_lower_eval {tabs : Tables} {f g : Func} {env : Env} (hown : f.ownAux = g.ownAux)
+    (hgl : g.lowered = true) {GS GT : Frame} {u w : Value} (ha : addrLower tabs u w = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  obtain ⟨hu, hw, hai, hax, hn, hsz⟩ := addrLower_cases ha
+  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
+  generalize (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
+  cases hux : u.aux with
+  | none => rw [hux] at hn; cases hn
+  | some n =>
+  have hgen : u.op.generic = true := by rw [hu]; decide
+  rw [evalOpL_generic _ _ _ _ _ _ hgen, evalOp_localAddr hu, hux]
+  obtain ⟨a, hwa⟩ : ∃ a, w.args = #[a] := by
+    rcases hw' : w.args with ⟨l⟩
+    rw [hw'] at hsz
+    obtain ⟨a, rfl⟩ := List.length_eq_one_iff.1 (by simpa using hsz)
+    exact ⟨a, rfl⟩
+  rw [hwa]
+  change Res.Refines (Res.bind (.ok _) _)
+    (Res.bind (evalOpL false env (Ctx.makeL tabs g) GT w [rv GT a] ty) _)
+  have hact : (Ctx.makeL tabs g).act = (Ctx.makeL tabs f).act := by rw [ctxL_eq hown]
+  rw [evalOpL_movDaddr hw, symAddr_name (by rw [hax, hux]) (by rw [makeL_tabs, hax]; exact hn),
+    hai, hact, makeL_tabs, makeL_tabs]
+  have hoff : BitVec.ofInt 64 (0 : Int64).toInt = 0 := by decide
+  rw [hoff]
+  have hwin : ∀ act, (⟨frameBlk tabs act n, 0⟩ : Ptr).inWindow = true := fun act => by
+    unfold frameBlk; split <;> rfl
+  simp only [Option.elim, PtrOps.ptrRes, hwin, ite_true, Option.map_some, Option.getD_some]
+  refine .ok ?_
+  rw [hgl]
+  exact ptr_rty_word _ _ _
+
 /-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
-the atom `u` of `f` (`atomPair`, `u` generic), in frames of one activation whose argument registers
-are refined, at the same shape, evaluates in `g`'s mode to a refinement of `u` in `f`'s mode. -/
+the atom `u` of `f` (`atomPair`, `u` generic, not a lowered frame address), in frames of one
+activation whose argument registers are refined, at the same shape, evaluates in `g`'s mode to a
+refinement of `u` in `f`'s mode. -/
 theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
-    (hp : atomPair tabs u w = true) (hgen : u.op.generic = true)
+    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, Sem.Refines (rv GS u.args[i]!) (rv GT w.args[i]!)) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
-  obtain ⟨hk, -, hsz, -, hid⟩ := atomPair_spec hp
+  obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
+  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
   have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) := by
     refine refinesList_idx (by simp [hsz]) fun i a a' ha ha' => ?_
