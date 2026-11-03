@@ -63,7 +63,7 @@ theorem arg_before {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv 
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
-    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0) {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0 frS.images) {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData f g b fb gb of og) {e : Panic} {m : Mem}
     (he : enterBlock env (Ctx.make tabs f) frS fb i = .panic e m) :

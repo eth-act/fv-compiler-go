@@ -120,11 +120,12 @@ theorem zr_roPass : RewriteCheck.roPass zrTabs zrPassEnv.frontend zrFunc =
 
 /-- **Non-vacuity of `RwPre` with a read-only symbol**: on `Env.p1` with the symbol in the global
 image and an empty memory, `copyZero`'s read-only symbol holds its exported bytes. -/
-theorem zr_rwPre (args : List Val) :
+theorem zr_rwPre (args : List Val) (hargs : ∀ v ∈ args, ∀ a n, v.Avoids (· = .temp a n)) :
     GoFV.Proof.Pass.Rewrite.RwPre zrTabs zrPassEnv.frontend zrFunc zrEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
-    fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
+    fun n c hm h => Env.p1_allocZero n c hm h, ⟨fun n c h => Env.p1_keepsRo n c h, ?_⟩,
+    GoFV.Proof.Pass.Rewrite.initAvoids_empty hargs (by decide +kernel)⟩
   · rw [show NilCheck.dictParams zrTabs zrFunc = [] by decide +kernel]
     exact DictArgs.nil args
   · rw [zr_roPass]

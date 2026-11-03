@@ -140,7 +140,7 @@ structure EndRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (b : ID) (fb g
 
 /-- **A block entry without panic.** -/
 theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
-    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0) {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0 frS.images) {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData f g b fb gb of og) {FS : Frame}
     (he : enterBlock env (Ctx.make tabs f) frS fb i = .ok FS) :

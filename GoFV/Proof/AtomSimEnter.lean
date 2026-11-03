@@ -293,7 +293,7 @@ theorem inv_phis {tabs : Tables} {f : Func} {I : SrcInv tabs f} {fr : Frame} {b 
 /-- Evaluating values of block `b` keeps the invariants. -/
 theorem inv_evalAll {tabs : Tables} {f : Func} {I : SrcInv tabs f} {env : Env} {b : ID} {fb : Block}
     (hb : b ∈ f.blocks) (hfb : f.block? b = some fb) :
-    ∀ {L : List ID} {fr G : Frame}, I.E env fr.mem0 →
+    ∀ {L : List ID} {fr G : Frame}, I.E env fr.mem0 fr.images →
       (∀ x ∈ L, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values) →
       evalAll env (Ctx.make tabs f) fr L = .ok G →
       (∀ a, I.P b a (rv fr a)) → I.Q b (rv fr) → (∀ a, I.P b a (rv G a)) ∧ I.Q b (rv G)

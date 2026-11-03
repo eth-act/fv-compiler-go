@@ -293,8 +293,12 @@ the element size of the `PtrIndex`'s pointer shape; `ptrIndex_den` evaluates the
 above its depth, `den_fuel_mono`), `baseSameB` (the same value, the start of one allocation:
 `LocalAddr`s of one variable or `Addr`s of one symbol, `baseBlk?`, or `AddPtr`/`PtrIndex` of
 equal bases by structurally equal indices, `termEqB`), `samePtrB` (equal bases, equal offsets),
-`disjointB` (equal bases at offsets whose byte ranges do not overlap modulo 2^64, `offSep`, or
-bases in different allocations).
+`disjointB` (equal bases at offsets whose byte ranges do not overlap modulo 2^64, `offSep`,
+bases in different allocations, or a frame temporary's base against an argument's pointer:
+`tempBaseB`, `argPtrB`, an `Arg`/`ArgIntReg` through `OffPtr`, `Copy`, `AddPtr`, `PtrIndex` and
+`NilCheck`; `RwPre`'s `InitAvoids` puts no pointer into a frame temporary into the arguments, and
+the forwarding layer's frame invariant keeps that for their registers, `LoadFwd.ArgAv`,
+`argAv_set`, `argPtr_den`; `disjoint_sep`).
 
 **Constants** (`:830`, `:832`): `(Load <float64> p1 (Store {t2} p2 (Const64 [x]) _)) && … =>
 (Const64F [math.Float64frombits(uint64(x))])` and its converse rebuild the `Load` as a constant
@@ -415,7 +419,8 @@ another source, its destination and memory reached from `u`'s through compatible
 `w`'s memory is a `Move` `im` of the same size, or a `VarDef` of one (`moveInnerOK`): `im`'s
 destination `samePtrB` to `u`'s source, its source reaching `w`'s through compatible copies and
 `disjointB` from its destination, and under a `VarDef` its source in a known allocation
-(`baseBlk?`) other than the `VarDef`'s frame variable in activation 0. A `VarDef` is a memory
+(`baseBlk?`) other than the `VarDef`'s frame variable in activation 0, or, for a frame temporary,
+an argument's pointer (`argPtrB`). A `VarDef` is a memory
 root of the atom simulation (`memOp`/`memDef`: its memory with the variable's block poisoned,
 `Sem.memRoot` in activation 0); `AtomArgsRefX` allows a changed `Move` like a changed `Store`
 (`ChgRefP`: the target's write on its arguments' terms refines the source's).

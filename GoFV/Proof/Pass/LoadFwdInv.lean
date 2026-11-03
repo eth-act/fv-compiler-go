@@ -530,10 +530,11 @@ theorem fresh_phis {fr : Frame} {bb : Block} {i : Nat} {ps : List (ID × Val)}
   rw [setPhis_not_mem ps fr.regs c hnm]
 
 /-- The forwarding layer's frame invariant (issue #69): fresh malloc calls' registers
-(`FreshQ`), and, for an `f` that passes `WBCheck.memTyOK`, the read-only symbols `ro` in every
-memory a register holds. -/
+(`FreshQ`), for an `f` that passes `WBCheck.memTyOK` the read-only symbols `ro` in every memory
+a register holds, and argument pointers' registers avoiding the frame temporaries (`ArgAv`). -/
 def FwdQ (tabs : Tables) (ro : List (String × Alloc)) (f : Func) (ρ : ID → Val) : Prop :=
-  FreshQ tabs f ρ ∧ (WBCheck.memTyOK tabs f = true → ∀ a, MemInv.MemsOK (RoMem ro) (ρ a))
+  FreshQ tabs f ρ ∧ (WBCheck.memTyOK tabs f = true → ∀ a, MemInv.MemsOK (RoMem ro) (ρ a)) ∧
+    ArgAv tabs f ρ
 
 private theorem memsOK_rv {P : Mem → Prop} {fr : Frame}
     (h : ∀ (x : Nat) (y : Val), fr.regs[x]? = some (some y) → MemInv.MemsOK P y) (a : ID) :
@@ -563,26 +564,44 @@ private theorem ro_step {ro : List (String × Alloc)} {env : Env} (hK : env.Keep
   · exact (MemInv.evalOp_mems (roMem_pred ro) (hK.contractsOK ro) h0 hop ha hr).retype _
   · exact (MemInv.memsOK_of_mems_nil (MemInv.evalOp_memFreeOps_mems hit hr)).retype _
 
+/-- Setting the `Phi`s keeps the registers of argument pointers. -/
+theorem argPtr_phis {fr : Frame} {bb : Block} {i : Nat} {ps : List (ID × Val)}
+    (hps : bb.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) = .ok ps) {n : Nat} {c : ID}
+    (hc : argPtrB tabs f n c = true) : rv { fr with regs := setPhis ps fr.regs } c = rv fr c := by
+  have hnm : c ∉ ps.map Prod.fst := by
+    intro hm
+    obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hm
+    obtain ⟨-, h2, -⟩ := filterMapM_phi hps
+    obtain ⟨-, v, -, -, hv, hph, -⟩ := phiStep_some (h2 p hp)
+    obtain ⟨cv, hcv, hop⟩ := argPtrB_not_phi hc
+    change f.value? p.1 = some v at hv
+    rw [hcv] at hv
+    cases hv
+    exact hop hph
+  unfold rv
+  rw [setPhis_not_mem ps fr.regs c hnm]
+
 /-- **The forwarding layer's source invariant** (issue #69): constants' and `Addr`s' registers
-hold their values (`ConstReg`), fresh malloc calls' registers their zeroed blocks and memories the
-read-only symbols `ro` (`FwdQ`), under `Env.AllocZero` and `Env.KeepsRo` from an initial memory
-with the symbols. -/
+hold their values (`ConstReg`), fresh malloc calls' registers their zeroed blocks, memories the
+read-only symbols `ro` and argument pointers no pointer into a frame temporary (`FwdQ`), under
+`Env.AllocZero` and `Env.KeepsRo` from an initial memory with the symbols and argument images
+without such pointers. -/
 def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
     (hro : fwdRoOK tabs ro f = true) : SrcInv tabs f where
   P _ a y := ConstReg tabs f a y
   L _ _ := True
   Q _ ρ := FwdQ tabs ro f ρ
-  E env m := env.AllocZero ∧ env.KeepsRo ∧ RoMem ro m
+  E env m im := env.AllocZero ∧ env.KeepsRo ∧ RoMem ro m ∧ ∀ img ∈ im, GoFV.Proof.DAE.BAv Temp0 img
   start := ⟨trivial, fun _ _ _ _ _ => .inl rfl⟩
-  qstart := ⟨fun _ _ => .inl rfl, fun _ _ => MemInv.memsOK_poison⟩
+  qstart := ⟨fun _ _ => .inl rfl, fun _ _ => MemInv.memsOK_poison, argAv_poison tabs f⟩
   poisonAtom _ _ _ _ _ _ _ := .inl rfl
   qpois _ ρ ρ' hQ h := by
-    refine ⟨fun c hc => ?_, fun hm a => ?_⟩
+    refine ⟨fun c hc => ?_, fun hm a => ?_, argAv_pois hQ.2.2 h⟩
     · rcases h c with h | h <;> rw [h]
       · exact hQ.1 c hc
       · exact .inl rfl
     · rcases h a with h | h <;> rw [h]
-      · exact hQ.2 hm a
+      · exact hQ.2.1 hm a
       · exact MemInv.memsOK_poison
   edge _ _ _ fr _ _ _ _ hinv hq _ _ _ _ _ _ := by
     refine ⟨trivial, hinv, ?_, ?_⟩
@@ -590,16 +609,17 @@ def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
       rw [hv] at hv'; cases hv'; rw [hph] at ht; cases ht
     · intro _ ps _ hps
       refine ⟨fun c hc => ?_, fun hm => memsOK_rv (MemInv.setPhis_mems ps fr.regs
-        (fun p hp => ?_) fun a z hz => ?_)⟩
+        (fun p hp => ?_) fun a z hz => ?_), fun n c hc => ?_⟩
       · rw [fresh_phis hps hc]; exact hq.1 c hc
       · obtain ⟨-, hsome, -⟩ := filterMapM_phi hps
         obtain ⟨-, v, a, y, -, -, -, hy, hp2⟩ := phiStep_some (hsome p hp)
         rw [hp2]
-        have := hq.2 hm a
+        have := hq.2.1 hm a
         rw [rv_of hy] at this
         exact this.retype _
-      · have := hq.2 hm a
+      · have := hq.2.1 hm a
         rwa [rv_of hz] at this
+      · rw [argPtr_phis hps hc]; exact hq.2.2 n c hc
   term _ _ _ x _ v hv _ ρ _ v' hv' _ hsz := by
     rw [hv] at hv'
     cases hv'
@@ -611,17 +631,17 @@ def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
   atom _ _ _ _ _ v hv ht _ _ v' hv' ht' _ := by
     rw [hv] at hv'; cases hv'; rw [ht] at ht'; cases ht'
   qstep _ _ hb hbb x hx v hv hid _ _ fr hE y he hinv hq := by
-    refine ⟨fun c hc => ?_, fun hm a => ?_⟩
+    refine ⟨fun c hc => ?_, fun hm a => ?_, argAv_set hE.2.2.2 hv he hq.2.2⟩
     · rw [rv_set]
       split
       · next h =>
         obtain ⟨rfl, -⟩ := h
-        exact fresh_eval hE.1 hc hv hid hro hinv hq.2 he
+        exact fresh_eval hE.1 hc hv hid hro hinv hq.2.1 he
       · exact hq.1 c hc
     · rw [rv_set]
       split
-      · exact ro_step hE.2.1 hm hb hbb hx hv hid hE.2.2 (hq.2 hm) he
-      · exact hq.2 hm a
+      · exact ro_step hE.2.1 hm hb hbb hx hv hid hE.2.2.1 (hq.2.1 hm) he
+      · exact hq.2.1 hm a
 
 end
 

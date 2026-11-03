@@ -87,8 +87,9 @@ inductive Rel where
   `fe` (the checked rewrite passes): monotone contracts, malloc-family contracts that return
   non-nil pointers (`Env.AllocNonNil`), non-nil dictionary arguments
   (`NilCheck.dictParams tabs f`), the runtime's `memclrNoHeapPointers`/`memmove` contracts, if
-  present (`Env.MemOps`), and the read-only symbols `RewriteCheck.roPass tabs fe f` holding their
-  exported bytes (`RoImage`). -/
+  present (`Env.MemOps`), the read-only symbols `RewriteCheck.roPass tabs fe f` holding their
+  exported bytes (`RoImage`), and inputs that hold no pointer into a frame temporary
+  (`InitAvoids`). -/
   | rw
   /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
   read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/

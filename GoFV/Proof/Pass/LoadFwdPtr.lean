@@ -13,8 +13,9 @@ memory roots and `LocalAddr`s hold their definitions (`AtomSim.MemAtoms`), at ev
 * `baseBlk_den`: a `LocalAddr`/`Addr` evaluates to the start of its allocation;
 * `baseSame_den`, `samePtr_den`: pointers `baseSameB`/`samePtrB` relates are equal where both
   are pointers;
-* `disjoint_sep`: pointers `disjointB` relates address separate bytes (`CSE.Mem.Sep`), so a
-  `Load` reads through a `Store` at the other one (`load_write_sep`).
+* `offSep_sep`: offsets `offSep` separates address separate bytes (`CSE.Mem.Sep`) from one base,
+  so a `Load` reads through a `Store` at the other one (`load_write_sep`; `disjoint_sep` in
+  `LoadFwdArg`).
 -/
 
 namespace GoFV.Proof.Pass.LoadFwd
@@ -662,26 +663,6 @@ theorem offSep_sep {B : Ptr} {o o' : BitVec 64} {n k : Nat} (h : offSep o n o' k
   have ho := o.isLt
   have ho' := o'.isLt
   omega
-
-/-- **Disjoint pointers** (`disjointB`) address separate bytes where both are pointers. -/
-theorem disjoint_sep (hM : MemAtoms f.value? tabs ρ) {a b : ID}
-    {n m : Nat} (h : disjointB tabs f a n b m = true) {k k' : Nat} {p q : Ptr}
-    (ha : (den f.value? tabs ρ k a).asPtrWord = some p)
-    (hb : (den f.value? tabs ρ k' b).asPtrWord = some q) : Sep p n q m := by
-  unfold disjointB at h
-  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
-  obtain ⟨k1, qa, h1, e1⟩ := ptrBase_den 8 a k p ha
-  obtain ⟨k2, qb, h2, e2⟩ := ptrBase_den 8 b k' q hb
-  rcases h with ⟨hs, hb'⟩ | h
-  · rw [e1, e2, ← baseSame_den hM 8 _ _ hb' h1 h2]
-    exact offSep_sep hs
-  · split at h
-    · rename_i x y hx hy
-      rw [bne_iff_ne] at h
-      right; right; left
-      rw [e1, e2, baseBlk_den hM hx h1, baseBlk_den hM hy h2]
-      exact h
-    · cases h
 
 end
 

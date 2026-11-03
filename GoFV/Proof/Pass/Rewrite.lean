@@ -26,7 +26,8 @@ contracts that return non-nil pointers and non-nil dictionary arguments, `NilPre
 nil-check eliminations of issue #151; the runtime's `memclrNoHeapPointers`/`memmove` contracts,
 if any, `Env.MemOps`; the read-only symbols `f`'s `Addr`s name and those the frontend defines in
 the initial memory, kept by the contracts, `RoImage`; malloc-family contracts that return
-all-zero heap blocks, `Env.AllocZero`), in the pass's extended tables. A rejected result is the input
+all-zero heap blocks, `Env.AllocZero`; inputs without pointers into frame temporaries,
+`InitAvoids`), in the pass's extended tables. A rejected result is the input
 (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as terms in
 the extended tables (`validate_termRef`), which the atom simulation lifts to the function
 (`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
@@ -73,20 +74,45 @@ holding their exported bytes in the memory with the global image, kept by the co
 (`RoImage` of `RewriteCheck.roPass`: for `Move`s from them, `generic.rules:1743`, and fixed
 loads, also from a symbol a pass took from the frontend), and malloc-family contracts asked for
 a positive size that return an all-zero heap block (`Env.AllocZero`: for the `Zero`s and zero
-`Store`s of a fresh allocation, `generic.rules:1352`/`:1357`/`:1362`, issue #69). It depends on
+`Store`s of a fresh allocation, `generic.rules:1352`/`:1357`/`:1362`, issue #69), and inputs that
+hold no pointer into a frame temporary (`InitAvoids`: a frame temporary's `LocalAddr` and an
+argument's pointer address disjoint bytes, `RewriteCheck.disjointB`, issue #69). It depends on
 `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`) and its read-only symbols
 (`RewriteCheck.roSyms`). -/
 def RwPre (tabs fe : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
   env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ env.AllocZero ∧
-    RoImage (RewriteCheck.roPass tabs fe f) env mem
+    RoImage (RewriteCheck.roPass tabs fe f) env mem ∧ InitAvoids env args mem
+
+/-- The byte is no fragment of a pointer into a frame temporary. -/
+def byteNoTemp : Byte → Bool
+  | .frag p _ => !RewriteCheck.tempBlk p.blk
+  | _ => true
+
+/-- `InitAvoids` from an empty memory, for arguments that hold no pointer into a frame temporary
+and a global image without fragments of such pointers (`byteNoTemp`, decidable). -/
+theorem initAvoids_empty {env : Env} {args : List Val}
+    (hargs : ∀ v ∈ args, ∀ a n, v.Avoids (· = .temp a n))
+    (hg : env.globals.all (fun g => g.2.data.all byteNoTemp) = true) : InitAvoids env args {} := by
+  intro a n
+  refine ⟨fun v hv => hargs v hv a n, fun _ _ h => ?_, rfl, fun g hg' x hx => ?_⟩
+  · simp at h
+  · have h1 := List.all_eq_true.1 hg g hg'
+    rw [Array.all_eq_true_iff_forall_mem] at h1
+    have h2 := h1 x (Array.mem_toList_iff.1 hx)
+    cases x with
+    | frag p k =>
+      intro he
+      simp only [byteNoTemp, he, RewriteCheck.tempBlk, Bool.not_true, Bool.false_eq_true] at h2
+    | _ => trivial
 
 /-- `RwPre` holds on `Env.p1` (no malloc-family or memory runtime contract) for a function
-without dictionary parameters and read-only symbols. -/
+without dictionary parameters and read-only symbols, from inputs without pointers into frame
+temporaries. -/
 theorem RwPre.p1 {tabs fe : Tables} {f : Func} (h : NilCheck.dictParams tabs f = [])
-    (hro : RewriteCheck.roPass tabs fe f = []) (args : List Val) (mem : Mem) :
-    RwPre tabs fe f Env.p1 args mem :=
+    (hro : RewriteCheck.roPass tabs fe f = []) {args : List Val} {mem : Mem}
+    (hinit : InitAvoids Env.p1 args mem) : RwPre tabs fe f Env.p1 args mem :=
   ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, by rw [h]; exact DictArgs.nil args⟩, Env.p1_memOps,
-    Env.p1_allocZero, by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem⟩
+    Env.p1_allocZero, by rw [hro]; exact RoImage.nil Env.p1_keepsRo mem, hinit⟩
 
 theorem RefinesUnder.toRw {tabs₀ fe₀ tabs tabs' : Tables} {f₀ f f' : Func}
     (h : RefinesUnder Env.Mono tabs' f' tabs f) : RefinesFrom (RwPre tabs₀ fe₀ f₀) tabs' f' tabs f :=
@@ -133,7 +159,7 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
   | @seg f f' g hr hro hck _ ih =>
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
-    exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.1, hp.2.2.2.2⟩)
+    exact ⟨ce', hg, (RefinesFrom.mono (fun _ _ _ hp => ⟨hp.1, hp.2.2.1, hp.2.2.2.2.1⟩)
       (Seg.seg_refines hf hf' hr hro)).trans R'⟩
   | @ps f f' g hr hck _ ih =>
     have hf' := checkOK_sound hck

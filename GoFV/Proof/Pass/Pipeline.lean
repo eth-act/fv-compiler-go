@@ -32,7 +32,8 @@ rewrite call arguments rely on monotone contracts), `RefinesUnder (Env.Mono ∧ 
 calls), `RefinesFrom (FrameSafe ∧ InitAvoids)`
 (dead auto elim), `RefinesFrom (RwPre tabs fe f)` (the checked rewrite passes: monotone
 contracts, malloc-family contracts that return non-nil pointers, non-nil dictionary arguments of
-the pass input `f`, the runtime's memory-call contracts; issue #151), `RefinesFrom WbPre`
+the pass input `f`, the runtime's memory-call contracts, `InitAvoids`; issue #151),
+`RefinesFrom WbPre`
 (writebarrier: a defined, read-only write-barrier flag and no write-barrier buffer, kept by the
 contracts; issue #36) and
 `RefinesFrom DecPre` (decompose user/builtin: monotone contracts that cannot tell whether
@@ -99,7 +100,7 @@ theorem RefinesFrom.rw_toV {fe : Tables} (hk : NilCheck.dictParams tabs f = k)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs fe f) tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
     ⟨hp.1, ⟨hp.2.2.2.1, by rw [hk]; exact hp.2.2.2.2.1⟩, hp.2.2.2.2.2.2.2.1,
-      hp.2.2.2.2.2.2.2.2.2.2, hp.2.2.2.2.2.2.2.2.1.sub hro⟩) h
+      hp.2.2.2.2.2.2.2.2.2.2, hp.2.2.2.2.2.2.2.2.1.sub hro, hp.2.2.1⟩) h
 
 theorem RefinesFrom.wb_toV (h : RefinesFrom WB.WbPre tabs' f' tabs f) : VRefines k ro tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp => hp.2.2.2.2.2.1) h

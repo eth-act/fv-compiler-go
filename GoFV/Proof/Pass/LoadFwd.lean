@@ -283,8 +283,8 @@ theorem storedOK_spec {tabs : Tables} {f : Func} {t : Ty} {a x : ID}
 /-- **A `Load` through a `Store` chain** (`fwdChain`): the memory read at the Load's pointer
 holds, through the disjoint writes, the write of the stored value, which it reads back. -/
 theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed f.value? tabs ρ)
-    (hM : MemAtoms f.value? tabs ρ) {p x : ID} {t : Ty} {kp : Nat} {P : Ptr}
-    (hp : (den f.value? tabs ρ kp p).asPtrWord = some P) :
+    (hM : MemAtoms f.value? tabs ρ) (hA : ArgAv tabs f ρ) {p x : ID} {t : Ty} {kp : Nat}
+    {P : Ptr} (hp : (den f.value? tabs ρ kp p).asPtrWord = some P) :
     ∀ (d : Nat) (m : ID), fwdChain tabs f p t x d m = true → ∀ {k : Nat} {M : Mem},
       den f.value? tabs ρ k m = .mem M → ∃ K, Sem.Refines (M.load t P) (den f.value? tabs ρ K x)
   | 0, _, h, _, _, _ => by simp [fwdChain] at h
@@ -307,7 +307,7 @@ theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed
       rw [den_succ_term hs ht, toList_one hcsz, List.map_cons, List.map_nil, hcop,
         GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy] at hm
       have hm' : den f.value? tabs ρ k s.args[0]! = .mem M := retype_eq_mem hm
-      exact chain_load hT hM hp d _ hch hm'
+      exact chain_load hT hM hA hp d _ hch hm'
     have hmem : memOp s.op = true := by rcases hsop with h | h <;> rw [h] <;> rfl
     -- `ρ` holds the `Store`'s write
     cases k with
@@ -332,9 +332,9 @@ theorem chain_load {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed
       exact ⟨N, (load_write (fwdTyEq_fwdTy haty) hak hwr).trans
         (copyReach_den (M := f.valueTab) hT _ _ _ hcr N)⟩
     · -- a `Store` at a disjoint pointer
-      have hsep := disjoint_sep hM hdis hp hq
+      have hsep := disjoint_sep hM hA hdis hp hq
       rw [load_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact hsep)]
-      exact chain_load hT hM hp d _ hch hm0
+      exact chain_load hT hM hA hp d _ hch hm0
 
 /-- **A memory reached through listed copies of `g`** (`memCopyReach`) holds what its start
 holds (only a memory retypes to a memory, `retype_eq_mem`). -/
@@ -565,7 +565,7 @@ theorem move_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
 replacing it in `g` reads: `w`'s argument through copies of `f` (listed, below `x`), or the
 root's memory argument (below `x`) through copies of `g` (`memCopyReach_den`). -/
 theorem drop_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
-    (hM : MemAtoms f.value? tabs ρ) (hQ : FreshQ tabs f ρ) {x : ID} {u w : Value} (hx : LM f x)
+    (hM : MemAtoms f.value? tabs ρ) (hQ : FreshQ tabs f ρ) (hA : ArgAv tabs f ρ) {x : ID} {u w : Value} (hx : LM f x)
     (hu : f.value? x = some u) (hL : listedDefs g x = some w) (hwty : w.type = u.type)
     (h : dropOK tabs f g u w = true)
     (hIH : ∀ a, (fwdRank f)[a]?.getD 0 < (fwdRank f)[x]?.getD 0 → LM f a → ∀ n, ∃ m,
@@ -579,7 +579,7 @@ theorem drop_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
   · rw [hp]; exact ⟨0, .poison _⟩
   obtain ⟨N, hN⟩ := hM x u hu hmem hp
   obtain ⟨y, hy, hρx⟩ := hN N (Nat.le_refl _)
-  obtain ⟨M1, rfl, hcase⟩ := drop_mem hT hM hQ h hy
+  obtain ⟨M1, rfl, hcase⟩ := drop_mem hT hM hQ hA h hy
   -- the memory `w`'s argument holds in `g`
   obtain ⟨m, M0', hz, hR⟩ : ∃ m M0', den (listedDefs g) tabs ρ' m w.args[0]! = .mem M0' ∧
       Mem.Refines M1 M0' := by
@@ -629,7 +629,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     fun a ha hla => ih _ ha a rfl hla
   rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms | hfx
   rotate_left 3
-  · exact drop_den F hT hM hQ.1 hx hu hL hwty hdrop (fun a ha hla => hIH a (hr ▸ ha) hla) n
+  · exact drop_den F hT hM hQ.1 hQ.2.2 hx hu hL hwty hdrop (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · exact move_den F hT hM hx hu hL hwty hmv (fun a ha hla => hIH a (hr ▸ ha) hla) n
   · -- a `Move` with a changed source: an atom of both
     obtain ⟨huop, hwop, -⟩ := moveSrcOK_spec hms
@@ -688,7 +688,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     · obtain ⟨a, M, hpa, hsM⟩ := hcase
       rw [hsM]
       simp only [loadOp, hpa]
-      obtain ⟨K, hK⟩ := chain_load hT hM hpa 8 _ hch hsM
+      obtain ⟨K, hK⟩ := chain_load hT hM hQ.2.2 hpa 8 _ hch hsM
       obtain ⟨m, hm⟩ := hIH c hrc hlc K
       refine ⟨m + 1, ?_⟩
       rw [hden_t m]
@@ -709,7 +709,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     · obtain ⟨a, M, hpa, hsM⟩ := hcase
       rw [hsM]
       simp only [loadOp, hpa]
-      obtain ⟨K, hK⟩ := chain_load hT hM hpa 8 _ hch hsM
+      obtain ⟨K, hK⟩ := chain_load hT hM hQ.2.2 hpa 8 _ hch hsM
       have h1 := hK.trans (den_fuel_mono _ _ _ K (K + 1) c (Nat.le_succ K))
       rw [den_succ_term hcv (const64_term hcc), opVal_const64 hcc, hai,
         ← fwdTyEq_retype hty] at h1
@@ -801,17 +801,25 @@ theorem moveSrc_chgRef {u w : Value} (hargs : ∀ a ∈ u.args, LM f a)
       rw [hM2'] at hz2
       have hM2e := retype_mem hz2.symm
       subst hM2e
-      obtain ⟨Bs, hBs, hne⟩ := hB _ rfl
-      obtain ⟨kq, q, hq, hSq⟩ := ptrBase_den 8 im.args[1]! K S hS
-      have hq' := baseBlk_den hM hBs hq
       have hSb : S.blk ≠ frameBlk tabs 0 n := by
-        rw [hSq, hq']; simpa [Ptr.add] using hne
+        rcases hB _ rfl with ⟨Bs, hBs, hne⟩ | ⟨ht, harg⟩
+        · obtain ⟨kq, q, hq, hSq⟩ := ptrBase_den 8 im.args[1]! K S hS
+          have hq' := baseBlk_den hM hBs hq
+          rw [hSq, hq']; simpa [Ptr.add] using hne
+        · have hnS := GoFV.Proof.DAE.asPtrWord_notU tempU_temp0 (argPtr_den hQ.2.2 8 _ harg K) hS
+          intro he
+          apply hnS
+          rw [he]
+          unfold frameBlk at ht ⊢
+          by_cases hfg : tabs.forgeable n = true
+          · simp only [hfg, ↓reduceIte, tempBlk] at ht; cases ht
+          · simp only [hfg, Bool.false_eq_true, ↓reduceIte]; exact ⟨n, rfl⟩
       exact ⟨im, K, hlim, hi3, hsp, hcr1, hdj, T2, S, M0, Mi, bs0, hT2, hS, hr0, hw0,
         GoFV.Proof.Seg.poisonBlock_refines _ _, read_poisonBlock_ne _ hSb⟩
   -- the source's pointers against the inner `Move`'s
   have hTe : T = T2 := samePtr_den hM hsp hT1 hT2
   subst hTe
-  have hsep := disjoint_sep hM hdj hS hT2
+  have hsep := disjoint_sep hM hQ.2.2 hdj hS hT2
   -- the target's arguments: refined as terms (`fwd_den`)
   have him1 : im.args[1]! ∈ im.args := by
     rw [getElem!_pos im.args 1 (by omega)]; exact Array.getElem_mem _
@@ -896,10 +904,12 @@ fixed loads read, `fixedOK`) under contracts that keep them. -/
 theorem fwd_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {ro : List (String × Alloc)}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (h : fwdRel tabs ro f g = true)
     (hro : fwdRoOK tabs ro f = true) :
-    RefinesFrom (fun env _ mem => env.Mono ∧ env.AllocZero ∧ RoImage ro env mem) tabs g tabs f :=
+    RefinesFrom (fun env args mem => env.Mono ∧ env.AllocZero ∧ RoImage ro env mem ∧
+      InitAvoids env args mem) tabs g tabs f :=
   have F := fwdRel_spec h
   (atomSimXE_refines hf hg (atomsXOK_spec F.atoms) (fwdInv tabs ro f hro) (fwd_atomArgs F hro)
     (fwd_steps F hro)).mono fun _ _ _ h =>
-    ⟨h.1, h.2.1, h.2.2.1, (MemInv.sinv_entry (fun a h hg hw => roMem_set a h hg hw) h.2.2.2).1⟩
+    ⟨h.1, h.2.1, h.2.2.1.1, (MemInv.sinv_entry (fun a h hg hw => roMem_set a h hg hw) h.2.2.1.2).1,
+      images_avoid h.2.2.2 _⟩
 
 end GoFV.Proof.Pass.LoadFwd

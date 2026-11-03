@@ -241,6 +241,114 @@ theorem sl2_checkedRewrite :
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := sl2Rules) (penv := sl2PassEnv)
         (f := sl2Func) (out := out) sl2Rules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
+/-! ## A frame temporary through a `Store` at an argument: `storeLoadArg` (`generic.rules:806`)
+
+```go
+func storeLoadArg(p *int, x, y int) int {
+	var t int // a frame temporary (PAUTO, its address never converted)
+	t = x
+	*p = y
+	return t
+}
+```
+
+as one block: `v7 = Store (LocalAddr {t}) v3 v1`, `v8 = Store v2 v4 v7`, `v9 = Load
+(LocalAddr {t}) v8`. The rule `:806` reads through `v8`, which writes at the argument `p`; a
+frame temporary's pointer and an argument's pointer address separate bytes
+(`RewriteCheck.disjointB`'s `tempBaseB`/`argPtrB` case: the arguments hold no pointer into a frame
+temporary, `RwPre`'s `InitAvoids`, which the forwarding layer's frame invariant keeps for the
+argument pointers' registers, `LoadFwd.ArgAv`). -/
+
+/-- The definition tables of `storeLoadArg`: `sl2Tabs` with the frame temporary `t` (aux 8,
+`PAUTO`) and `uintptr` (type 15, `SP`). -/
+def slaTabs : Tables where
+  types := sl2Tabs.types.set! 15 (some (mkT .UINTPTR (some 8) "uintptr"))
+  auxes := sl2Tabs.auxes.push (some (paramNameT "t" .PAUTO 2 0))
+
+/-- `storeLoadArg`, the input of `opt`. -/
+def slaFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 10
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[10] #[] #[] #[1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 2 #[] 1),
+    some (mkV 2 .Arg 3 (some 3) p0 1 #[] 1),
+    some (mkV 3 .Arg 2 (some 4) p0 1 #[] 1),
+    some (mkV 4 .Arg 2 (some 7) p0 1 #[] 1),
+    some (mkVi 5 .SP 15 0 p0 1 #[] 1),
+    some (mkV 6 .LocalAddr 3 (some 8) p0 2 #[5, 1] 1),
+    some (mkV 7 .Store 29 (some 6) p0 1 #[6, 3, 1] 1),
+    some (mkV 8 .Store 29 (some 6) p0 2 #[2, 4, 7] 1),
+    some (mkVi 9 .Load 2 0 p0 1 #[6, 8] 1),
+    some (mkVi 10 .MakeResult 35 0 p0 1 #[9, 8] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+def slaTyps : Array (String × TypeRef) :=
+  #[("Int", 2), ("Uintptr", 15), ("Mem", 29), ("Void", 31)]
+
+def slaPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "storeLoadArg", typs := slaTyps, tables := slaTabs }
+
+def slaCheckEnv : CheckEnv := { tabs := slaTabs, typs := slaTyps }
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` with
+`{generic.rules:806}` keeps a result whose `MakeResult` reads `x` (`v3`) instead of the Load,
+which passes `check`. -/
+theorem sla_checks :
+    (check slaCheckEnv slaFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet sl2Rules) slaPassEnv slaFunc).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slaTyps } o.func).toBool,
+        (o.func.value? 10).map (·.args))) =
+      some (true, some #[3, 8]) := by
+  decide +kernel
+
+/-- **Pass execution witness** for a frame temporary against an argument's pointer: on
+`storeLoadArg`, the checked rewrite pass forwards `x` from the frame temporary `t` through the
+`Store` at the argument `p` to the `return` (`v10 = MakeResult v3 v8`), and the result refines
+the input under `RwPre` (`checkedRewrite_refines`, through `LoadFwd.fwd_refines`'s
+`disjoint_sep`). -/
+theorem sla_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet sl2Rules) slaPassEnv slaFunc = .ok out ∧
+      (out.func.value? 10).map (·.args) = some #[3, 8] ∧
+      check slaCheckEnv slaFunc = .ok () ∧
+      check { tabs := out.tables, typs := slaTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slaPassEnv.tables slaPassEnv.frontend slaFunc)
+      out.tables out.func slaPassEnv.tables slaFunc := by
+  obtain ⟨h1, h2⟩ := sla_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet sl2Rules) slaPassEnv slaFunc with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h10⟩ := h2
+    exact ⟨out, rfl, h10, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := sl2Rules) (penv := slaPassEnv)
+        (f := slaFunc) (out := out) sl2Rules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
+/-- **Non-vacuity of `sla_checkedRewrite`'s precondition**: `RwPre` holds on `Env.p1` for
+integer arguments from an empty memory. -/
+theorem sla_rwPre (x y : BitVec 64) :
+    GoFV.Proof.Pass.Rewrite.RwPre slaPassEnv.tables slaPassEnv.frontend slaFunc Env.p1
+      [.ptr ⟨.heap 0, 0⟩, .i64 x, .i64 y] {} :=
+  GoFV.Proof.Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
+    (GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
+      simp only [List.mem_cons, List.mem_nil_iff, or_false] at hv
+      rcases hv with rfl | rfl | rfl
+      · intro h; cases h
+      · trivial
+      · trivial) rfl)
+
 /-! ## An aggregate: `storeLoadStr` (`generic.rules:800` at a string)
 
 ```go

@@ -1441,15 +1441,42 @@ def offSep (o : BitVec 64) (n : Nat) (o' : BitVec 64) (k : Nat) : Bool :=
   (decide (n ≤ (o' - o).toNat) && decide ((o' - o).toNat + k ≤ 2 ^ 64)) ||
   (decide (k ≤ (o - o').toNat) && decide ((o - o').toNat + n ≤ 2 ^ 64))
 
+/-- Pointer `a` is an argument's word moved by at most `n` pointer steps: an `Arg` or
+`ArgIntReg`, or an `OffPtr`, `Copy`, `AddPtr`, `PtrIndex` or `NilCheck` of such a pointer (its
+first argument). A function's arguments hold no pointer into a frame temporary
+(`Sem.InitAvoids`), and none of these steps changes the block a pointer points into. -/
+def argPtrB (tabs : Tables) (f : Func) : Nat → ID → Bool
+  | 0, _ => false
+  | n + 1, a =>
+    match f.value? a with
+    | some u =>
+      u.op == .Arg || u.op == .ArgIntReg ||
+      (((u.op == .OffPtr || u.op == .Copy) && u.args.size == 1 ||
+          (u.op == .AddPtr || u.op == .PtrIndex || u.op == .NilCheck) && u.args.size == 2) &&
+        argPtrB tabs f n u.args[0]!)
+    | none => false
+
+/-- A frame temporary (`Sem.Blk.temp`: a `PAUTO` whose address is never converted to an
+integer, `Sem.frameBlk`). -/
+def tempBlk : Sem.Blk → Bool
+  | .temp _ _ => true
+  | _ => false
+
+/-- Pointer `a`'s base (`ptrBase`) is the start of a frame temporary (`baseBlk?`). -/
+def tempBaseB (tabs : Tables) (f : Func) (a : ID) : Bool :=
+  (baseBlk? tabs f (ptrBase tabs f 8 a).1).any tempBlk
+
 /-- Pointer `a` (`n` bytes) and pointer `b` (`k` bytes) address disjoint bytes where both are
-pointers (`disjoint`): equal bases (`baseSameB`) at separate offsets (`offSep`), or bases in
-different allocations (`baseBlk?`). -/
+pointers (`disjoint`): equal bases (`baseSameB`) at separate offsets (`offSep`), bases in
+different allocations (`baseBlk?`), or one in a frame temporary (`tempBaseB`) and the other an
+argument's pointer (`argPtrB`). -/
 def disjointB (tabs : Tables) (f : Func) (a : ID) (n : Nat) (b : ID) (k : Nat) : Bool :=
   (offSep (ptrBase tabs f 8 a).2 n (ptrBase tabs f 8 b).2 k &&
     baseSameB tabs f 8 (ptrBase tabs f 8 a).1 (ptrBase tabs f 8 b).1) ||
-  match baseBlk? tabs f (ptrBase tabs f 8 a).1, baseBlk? tabs f (ptrBase tabs f 8 b).1 with
-  | some x, some y => x != y
-  | _, _ => false
+  (match baseBlk? tabs f (ptrBase tabs f 8 a).1, baseBlk? tabs f (ptrBase tabs f 8 b).1 with
+   | some x, some y => x != y
+   | _, _ => false) ||
+  (tempBaseB tabs f a && argPtrB tabs f 8 b) || (argPtrB tabs f 8 a && tempBaseB tabs f b)
 
 mutual
 /-- A shape a `Store` writes and a `Load` reads back unchanged (`Sem.encode`,
@@ -1765,7 +1792,8 @@ def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
 /-- The inner `Move` `im` of a changed `Move` source (`moveSrcOK`): of `u`'s size, its
 destination equal to `u`'s source (`samePtrB`), its source reaching `w`'s through compatible
 copies and disjoint from its destination (`disjointB`); under a `VarDef` of the frame variable
-`B` (`some B`), its source in a known allocation other than `B` (`baseBlk?`). -/
+`B` (`some B`), its source in a known allocation other than `B` (`baseBlk?`) or, for a frame
+temporary `B`, an argument's pointer (`argPtrB`). -/
 def moveInnerOK (tabs : Tables) (f : Func) (u w im : Value) (B : Option Sem.Blk) : Bool :=
   im.op == .Move && im.args.size == 3 && im.auxInt == u.auxInt &&
   samePtrB tabs f u.args[1]! im.args[0]! &&
@@ -1773,7 +1801,8 @@ def moveInnerOK (tabs : Tables) (f : Func) (u w im : Value) (B : Option Sem.Blk)
   disjointB tabs f im.args[1]! u.auxInt.toInt.toNat im.args[0]! u.auxInt.toInt.toNat &&
   match B with
   | none => true
-  | some b => (baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1).any (· != b)
+  | some b => (baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1).any (· != b) ||
+      (tempBlk b && argPtrB tabs f 8 im.args[1]!)
 
 /-- The `Move` `u` of `f` becomes the `Move` `w` that reads its bytes where the `Move` below its
 memory copied them from (`generic.rules:2146`, `:2155`): `w` is `u` with another source, its
