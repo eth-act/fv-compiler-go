@@ -24,7 +24,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
   arm64 store (`memLower`), or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event
-  lowering a store or a frame address is replayed as its new definitions (`atomDef`);
+  lowering a store or a frame address, or folding an `ADDconst` offset into an arm64 store
+  (`stFold`), is replayed as its new definitions (`atomDef`);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/

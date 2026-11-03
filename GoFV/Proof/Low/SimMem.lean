@@ -15,8 +15,10 @@ mem` by `t`'s size (offset 0, no aux). Here, for a value shape `ty` with a scala
   decodePtr`). Loads are terms on both sides (`termVL`, `opValL`'s `ldVal`), so the load rules are
   `ArmRule.Sound` (`Rules/LoadStore.lean`; the size fit is the validator's `resFitsL`).
 * `store_lower_eval`: Phase 1's `Store` (`memRoot`: the write of `encode ty val`) is refined by
-  the arm64 store (`arm64Op`'s `st n`: the write of `Arm64.storeBytes n val`): the stored bytes
-  agree, or the generic ones are `poison` (`encode_le_storeBytes`).
+  the arm64 store (`arm64Op`'s `st n`: the write of `Arm64.storeBytes n val`) whose address moved
+  by its offset is the `Store`'s (`AddrRef`; the offset is an `ADDconst` folded into it,
+  `ARM64.rules:758-776`): the stored bytes agree, or the generic ones are `poison`
+  (`encode_le_storeBytes`).
 
 A `Store {t}` of an aggregate shape (`StoreFits` excludes it: a size-1/2/4/8 struct, `[1]T` or
 `complex64`) would not refine: `encode` writes the fields' bytes, `storeBytes` `poison`

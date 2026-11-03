@@ -8,11 +8,13 @@ The lowered counterpart of `GoFV/Proof/Pass/RewriteTermReplay.lean` and `replay_
 (`RewriteTermBlock.lean`) for `GoFV.Opt.LowerCheck.replayL`: starting from the input's
 definitions `D₀` read in lowered mode, the values of a set `C₀` closed under arguments keep a
 refining lowered denotation (`ReplayInvL`), and the atoms of `D₀` whose arguments are in `C₀`
-keep their fields but the op (an atom rename, `renameOp`) while their arguments (rewritten only by
-`copyArg` events, through compatible copies) keep refining denotations (`ReplayInvL.atoms`, the one
-place that relates an atom's arguments). Value rule events use `RuleFactsL.step` and
-`ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom renames change no
-denotation (`rename_den`); terminators keep `BInvL`.
+stay atoms (renamed, `renameOp`; lowered stores and frame addresses, `atomDef`) whose arguments
+(rewritten by `copyArg` events, through compatible copies) keep related denotations
+(`ReplayInvL.atoms`, the one place that relates an atom's arguments: `ArgRel` of `stArg`,
+refinement, or for the address of an arm64 store lowering a `Store` the `AddrRef` at its offset,
+which an `ADDconst` offset folded into the store keeps, `ReplayInvL.fold`). Value rule events use
+`RuleFactsL.step` and `ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom
+replacements change no denotation (`rename_den`); terminators keep `BInvL`.
 -/
 
 namespace GoFV.Proof.Low.Val
