@@ -6,7 +6,8 @@ import GoFV.SSA.Sem.Arm64.Reg
 Loads, stores and their pair, indexed and 128-bit forms, `LoweredZero`/`LoweredMove` (and their
 loop forms), on Phase 1's `Mem` with its access rule (`Sem/Mem.lean`): an invalid load gives
 `poison` (loads are pure, §3.4), an invalid store is `stuck` (`none` here; the caller decides).
-The address is computed by the caller (`Arm64.addr`, or the symbol of the aux in `Sem/Run.lean`).
+The address is computed by the caller (`Arm64.addr`, or the symbol of the aux, `Sem.symAddr` in
+`Sem/RunL.lean`).
 
 A narrow load is the `LDR{B,H,W}`/`LDRS{B,H,W}` of its op: the loaded bits zero- or
 sign-extended to the register. An 8-byte load reads a stored pointer back as its word

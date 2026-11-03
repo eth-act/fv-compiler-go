@@ -5,14 +5,14 @@ import GoFV.SSA.Sem.Arm64.Mem
 /-!
 # `Arm64.evalPure`: the pure arm64 ops of lowered SSA (`docs/plans/semantics2.md` §3–§4)
 
-The arm64 ops `evalValue` evaluates without the activation (no symbol, frame or closure): the
+The arm64 ops `runL` evaluates without the activation (no symbol, frame or closure): the
 arithmetic, logic, shift, bitfield, multiply/divide, compare, conditional, float and conversion
 ops, the register-indexed loads (`MOV*loadidx*`, no symbol), `LDAR*` (Phase 1's `AtomicLoad*`),
-`LoweredZero`/`LoweredMove` and their loop forms, `LoweredWB` (Phase 1's `WB`), `FlagConstant`.
-`Sem.evalPure` falls back to it for every op that is not generic (`Sem/Pure.lean`); it is `poison`
-for every other op. The ops that need the activation (loads and stores with a symbol,
+`LoweredZero`/`LoweredMove` and their loop forms, `LoweredWB` (Phase 1's `WB`), `FlagConstant`;
+`poison` for every other op. The ops that need the activation (loads and stores with a symbol,
 `MOVDaddr`, `MOVDreg`, calls, nil checks, panics, atomics, barriers) are `Sem.arm64Op`
-(`Sem/Run.lean`).
+(`Sem/RunL.lean`). Phase 1's `evalPure` is unchanged: lowered ops reach this module only through
+`runL`.
 
 One arm per op, calling its family (`Sem/Arm64/*`). Never `simp [Arm64.evalPure]` on an op
 variable.

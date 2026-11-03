@@ -10,10 +10,11 @@ bridge, used by every op family of `Sem/Arm64`:
 * **Reading** (`reg`): an integer of width `w` is the register holding it zero-extended (a value
   of a narrow type has unspecified upper bits on the machine; Go's rules only rely on them where
   the producing instruction defines them, and those producers keep their full register, see
-  `Sem/Run.lean` `arm64Op` for `MOVDreg`), a boolean is 0 or 1, a pointer its concrete address
+  `Sem/RunL.lean` `arm64Op` for `MOVDreg`), a boolean is 0 or 1, a pointer its concrete address
   (`Ptr.addr?`; a global has none, so an op that needs its bits is `poison`).
 * **Writing** (`res`): a 64-bit integer, or at the `bool` shape the boolean of bit 0 (the bit Go
-  branches on, `(If c) => (TBNZ [0] c)`); `Val.retype` then narrows to the value's type.
+  branches on, `(If c) => (TBNZ [0] c)`); `runL` then shapes it at the value's type
+  (`Val.retypeL`).
 * **Provenance** (`addP`): the pointer cases of §3 (`ADD p i`, `SUB p i`, `ADDconst`, …) add to a
   pointer that has no integer form as Phase 1's `AddPtr` does (`PtrOps.ptrRes`).
 -/

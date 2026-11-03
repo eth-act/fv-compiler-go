@@ -13,8 +13,9 @@ Three modes (driven by `scripts/sem-difftest.sh`):
   print `n` calls `<func>\t<arg>...` with random and edge-case arguments of its parameter
   types.
 - `run <dir> <calls> <native>`: run every call of `<calls>` on **every section** of the
-  function's export up to `schedule` (the generic sections and the lowered ones, `lower` …
-  `layout`, `docs/plans/semantics2.md` L0) with `GoFV.SSA.run`, and compare each outcome with the
+  function's export before `regalloc` (the generic sections with `GoFV.SSA.run`, the lowered
+  ones, `lower` … `layout`, with `GoFV.SSA.runL` and `schedule` … `flagalloc` with
+  `GoFV.SSA.runSched`, `docs/plans/semantics2.md` L0/L1), and compare each outcome with the
   native result
   (`<native>`, the output of `tools/semdiff/prog` under `qemu-aarch64-static`, one line
   `<call> -> <outcome>` per call). Exit status 1 on any disagreement.
@@ -295,6 +296,8 @@ def ssaFiles (p : System.FilePath) : IO (Array System.FilePath) := do
 /-- A parsed export: each section's tables and function, the signature, the global image. -/
 structure Loaded where
   sections : Array (String × Tables × Func × Ctx)
+  /-- Each section's mode (`runCtxL`): lowered functions read registers, L1 sections fault. -/
+  modes : Array LMode
   params : Array TypeRef
   results : Array TypeRef
   env : Env
@@ -312,20 +315,22 @@ def load (path : System.FilePath) : IO (Except String Loaded) := do
   | .ok e =>
     let mut tabs : Tables := {}
     let mut secs := #[]
+    let mut modes := #[]
     let mut sched := false
     for s in e.sections do
       tabs := tabs.addAll s.defs
       let pass := s.pass.toStringLossy
       if pass == schedPass then sched := true
-      let ctx := if sched then Ctx.makeSched tabs s.func else Ctx.make tabs s.func
+      let ctx := if sched then Ctx.makeSched tabs s.func else Ctx.makeL tabs s.func
       secs := secs.push (pass, tabs, s.func, ctx)
+      modes := modes.push ⟨s.func.lowered, sched⟩
     match secs[0]? with
     | none => return .error s!"{path}: no sections"
     | some (_, t0, f0, _) =>
       match signature t0 f0 with
       | none => return .error s!"{path}: signature outside the difftest's types"
       | some (ps, rs) =>
-        return .ok { sections := secs, params := ps, results := rs,
+        return .ok { sections := secs, modes, params := ps, results := rs,
                      env := { Env.runtime with globals := globalImage e } }
 
 /-- Program functions of an export directory, for calls (`Env.withFuncs`): each file's
@@ -384,7 +389,7 @@ def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel)
     | .error e => s!"stuck: bad arguments: {e}"
     | .ok (imgs, mem) =>
       let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)
-      match runCtx l.env ctx args mem fuel with
+      match runCtxL (l.modes[k]?.getD ⟨false, false⟩) l.env ctx args mem fuel with
       | .returned rs m =>
         let rsT := (rs.zip l.results.toList).map fun (v, t) =>
           renderBytes tabs m 8 t (encode (tabs.ty t) v) 0
@@ -733,7 +738,7 @@ def trace (path : String) (k : Nat) (texts : List String) : IO UInt32 := do
   for _ in [0:200] do
     let some b := f.block? bid | IO.println s!"b{bid} missing"; return 1
     IO.println s!"enter b{bid} from edge {i}"
-    match enterBlock l.env ctx fr b i with
+    match enterBlockL (l.modes[k]?.getD ⟨false, false⟩) l.env ctx fr b i with
     | .stuck msg => IO.println s!"  stuck: {msg}"; return 0
     | .panic e _ => IO.println s!"  panicked {e.message}"; return 0
     | .ok fr' =>
@@ -741,7 +746,7 @@ def trace (path : String) (k : Nat) (texts : List String) : IO UInt32 := do
       for vid in b.values do
         let op := ((f.value? vid).map (·.op.name)).getD "?"
         IO.println s!"  v{vid} {op} = {((fr.regs[vid]?).join.map Val.render).getD "-"}"
-      match stepTerm fr b with
+      match stepTermL fr b with
       | .ok (.goto e) => bid := e.b; i := e.i
       | .ok (.ret rs _) => IO.println s!"return {rs.map Val.render}"; return 0
       | .stuck msg => IO.println s!"  terminator stuck: {msg}"; return 0
