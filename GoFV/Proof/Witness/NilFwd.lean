@@ -133,7 +133,7 @@ theorem nf_checkedRewrite :
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
       RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nfPassEnv.tables nfPassEnv.frontend nfFunc)
         out.tables out.func nfPassEnv.tables nfFunc ∧
-      ∀ args mem,
+      ∀ args mem, InitAvoids Env.p1 args mem →
         GoFV.Proof.Pass.Rewrite.RwPre nfPassEnv.tables nfPassEnv.frontend nfFunc Env.p1 args mem := by
   obtain ⟨h1, -, h2⟩ := nf_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet nfRules) nfPassEnv nfFunc with
@@ -145,7 +145,7 @@ theorem nf_checkedRewrite :
     exact ⟨out, rfl, h9, ok_of_toBool h1, ok_of_toBool hg,
       GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := nfRules) (penv := nfPassEnv)
         (f := nfFunc) (out := out) nfRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg),
-      fun args mem => GoFV.Proof.Pass.Rewrite.RwPre.p1 nf_dictParams
-        (by decide +kernel) args mem⟩
+      fun _ _ hinit => GoFV.Proof.Pass.Rewrite.RwPre.p1 nf_dictParams
+        (by decide +kernel) hinit⟩
 
 end GoFV.Proof.Witness

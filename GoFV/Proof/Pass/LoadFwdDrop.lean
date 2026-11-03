@@ -1,4 +1,4 @@
-import GoFV.Proof.Pass.LoadFwdPtr
+import GoFV.Proof.Pass.LoadFwdArg
 import GoFV.Proof.Pass.DSEMem
 import GoFV.Proof.NilPre
 import GoFV.Proof.Pass.ECChain
@@ -313,7 +313,7 @@ theorem retype_agg_cases (vs : List Val) (t : Ty) :
 /-- **A retyped zero value is one.** -/
 theorem zeroV_retype {v : Val} (h : ZeroV v) (t : Ty) : ZeroV (v.retype t) := by
   induction h generalizing t with
-  | poison => rw [retype_poison]; exact .poison
+  | poison => rw [Rewrite.retype_poison]; exact .poison
   | bool => cases t <;> simp only [Val.retype] <;> constructor
   | int w =>
     cases t with
@@ -343,7 +343,7 @@ theorem zeroV_retype {v : Val} (h : ZeroV v) (t : Ty) : ZeroV (v.retype t) := by
       · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi', Option.getD_some]
         exact ih _ (List.getElem_mem hi') t'
       · rw [List.getD_eq_getElem?_getD, List.getElem?_eq_none (by omega), Option.getD_none,
-          retype_poison]
+          Rewrite.retype_poison]
         exact .poison
 
 /-- **A retyped value with a zero component `ps` has one.** -/
@@ -553,7 +553,7 @@ theorem zeroConst_den {x : ID} (h : zeroConst tabs f x = true) (k : Nat) :
 read through the disjoint writes from the `Zero` that cleared them or from the memory of a fresh
 malloc call (`FreshQ`). -/
 theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ)
-    (hQ : FreshQ tabs f ρ) {p : ID} {n : Nat} (hn : n ≠ 0) {kp : Nat} {P : Ptr}
+    (hQ : FreshQ tabs f ρ) (hA : ArgAv tabs f ρ) {p : ID} {n : Nat} (hn : n ≠ 0) {kp : Nat} {P : Ptr}
     (hp : (den f.value? tabs ρ kp p).asPtrWord = some P) :
     ∀ (d : Nat) (m : ID), zeroChain tabs f p n d m = true → ∀ {k : Nat} {M : Mem},
       den f.value? tabs ρ k m = .mem M → ∀ {bs : Array Byte}, M.read P n = some bs →
@@ -575,7 +575,7 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       | succ k =>
       rw [den_succ_term hs ht, toList_one hcsz, List.map_cons, List.map_nil, hcop,
         GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy] at hm
-      exact zeroChain_read hT hM hQ hn hp d _ hch (retype_eq_mem hm) hbs
+      exact zeroChain_read hT hM hQ hA hn hp d _ hch (retype_eq_mem hm) hbs
     · -- a `Store` at a disjoint pointer
       have hmem : memOp s.op = true := by rcases hsop with h | h <;> rw [h] <;> rfl
       cases k with
@@ -589,9 +589,9 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       rw [hm] at hρs
       have hMM := retype_mem hρs.symm
       subst hMM
-      rw [read_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact disjoint_sep hM hdis hp hq)]
+      rw [read_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact disjoint_sep hM hA hdis hp hq)]
         at hbs
-      exact zeroChain_read hT hM hQ hn hp d _ hch hm0 hbs
+      exact zeroChain_read hT hM hQ hA hn hp d _ hch hm0 hbs
     · -- the `Zero`
       have hmem : memOp s.op = true := by rw [hzop]; rfl
       cases k with
@@ -653,7 +653,7 @@ theorem refines_mem' {M : Mem} {v : Val} (h : Sem.Refines (.mem M) v) :
 the memory of `w`'s argument in `f`, or (`memCopyReach` in `g`) by the memory of the root's
 memory argument, from which `w`'s argument copies in `g`. -/
 theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs ρ)
-    (hQ : FreshQ tabs f ρ) {g : Func} {u w : Value} (h : dropOK tabs f g u w = true) {k : Nat}
+    (hQ : FreshQ tabs f ρ) (hA : ArgAv tabs f ρ) {g : Func} {u w : Value} (h : dropOK tabs f g u w = true) {k : Nat}
     {y : Val} (hy : memDef tabs u (u.args.toList.map (den f.value? tabs ρ k)) = some y) :
     ∃ M1, y = .mem M1 ∧
       ((∃ i < u.args.size, copyReach tabs f.valueTab f.valueTab.size u.args[i]! w.args[0]! = true ∧
@@ -697,7 +697,7 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     rcases hcase with h0' | ⟨hzc, hch⟩
     · exact absurd h0' h0
     obtain ⟨bs0, hrd⟩ := read_of_write hwr (by rw [hsz]; exact h0)
-    have hz := zeroChain_read hT hM hQ h0 hq 8 _ hch hm0 (by rw [← hsz]; exact hrd)
+    have hz := zeroChain_read hT hM hQ hA h0 hq 8 _ hch hm0 (by rw [← hsz]; exact hrd)
     subst hz
     refine write_refines_self (Mem.Refines.refl _) hrd hwr ?_
     have := zeros_refine (encode_zero (zeroConst_den (ρ := ρ) hzc k) (auxTy tabs u.aux))
@@ -746,7 +746,7 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
       exact Mem.Refines.refl _
     obtain ⟨bs0, hrd⟩ := read_of_write hwr (by rw [Array.size_replicate]; exact h0)
     rw [Array.size_replicate] at hrd
-    have hz := zeroChain_read hT hM hQ h0 hq 8 _ hch hm0 hrd
+    have hz := zeroChain_read hT hM hQ hA h0 hq 8 _ hch hm0 hrd
     subst hz
     exact write_refines_self (Mem.Refines.refl _) (by rw [Array.size_replicate]; exact hrd) hwr
       (BytesRefineA.refl _)

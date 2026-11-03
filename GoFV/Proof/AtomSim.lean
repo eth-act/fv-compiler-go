@@ -79,9 +79,10 @@ theorem next_rel {frS frT : Frame} {i : Nat} (R : BRel tabs f g I frS frT b i) {
 
 end
 
-/-- Evaluating values keeps the initial memory. -/
+/-- Evaluating values keeps the initial memory and the arguments' images. -/
 theorem evalAll_mem0 {env : Env} {ctx : Ctx} :
-    ∀ {L : List ID} {fr G : Frame}, evalAll env ctx fr L = .ok G → G.mem0 = fr.mem0
+    ∀ {L : List ID} {fr G : Frame}, evalAll env ctx fr L = .ok G →
+      (G.mem0, G.images) = (fr.mem0, fr.images)
   | [], _, _, h => by cases h; rfl
   | x :: L, fr, G, h => by
     unfold evalAll at h
@@ -92,9 +93,9 @@ theorem evalAll_mem0 {env : Env} {ctx : Ctx} :
       · cases h
       · cases h
 
-/-- A block step along an edge keeps the initial memory. -/
+/-- A block step along an edge keeps the initial memory and the arguments' images. -/
 theorem blockStep_mem0 {env : Env} {ctx : Ctx} {fr G : Frame} {b : ID} {i : Nat} {e : Edge}
-    (h : blockStep env ctx fr b i = .goto G e) : G.mem0 = fr.mem0 := by
+    (h : blockStep env ctx fr b i = .goto G e) : (G.mem0, G.images) = (fr.mem0, fr.images) := by
   unfold blockStep at h
   split at h
   · cases h
@@ -110,7 +111,7 @@ theorem blockStep_mem0 {env : Env} {ctx : Ctx} {fr G : Frame} {b : ID} {i : Nat}
 
 /-- **One block entry.** -/
 theorem block_sim {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
-    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0) {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) {frS frT : Frame} (hEI : I.E env frS.mem0 frS.images) {b : ID} {i : Nat}
     (R : BRel tabs f g I frS frT b i) :
     StepSimE Mem.Refines (SimR tabs f g I) (blockStep env (Ctx.make tabs f) frS b i)
       (blockStep env (Ctx.make tabs g) frT b i) := by
@@ -209,7 +210,8 @@ theorem atomSimXE_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hA : AtomsX f g) (I : SrcInv tabs f)
     (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) :
     RefinesFrom (fun env args mem =>
-      env.Mono ∧ I.E env (entryFrame env (Ctx.make tabs f) args mem).mem0) tabs g tabs f := by
+      env.Mono ∧ I.E env (entryFrame env (Ctx.make tabs f) args mem).mem0
+        (entryFrame env (Ctx.make tabs f) args mem).images) tabs g tabs f := by
   have H : Hyp tabs f g ce ce' I := ⟨check_wf hf, check_wf hg, certOK_of_check (check_domCert hf),
     certOK_of_check (check_domCert hg), hA, h1, h2⟩
   intro env args mem ⟨hE, hEI⟩ fuel hd
@@ -229,11 +231,12 @@ theorem atomSimXE_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     simp only [hn] at hd
     refine finish_refines_mono hE hd (runLoop_simE (fun frS bS iS frT bT iT =>
       SimR tabs f g I frS bS iS frT bT iT ∧
-        frS.mem0 = (entryFrame env (Ctx.make tabs f) args mem).mem0)
+        (frS.mem0, frS.images) = ((entryFrame env (Ctx.make tabs f) args mem).mem0,
+          (entryFrame env (Ctx.make tabs f) args mem).images))
       (fun frS bS iS frT bT iT hR => ?_) fuel
       _ _ _ _ _ _ ⟨⟨H.ok.entry.symm, rfl, entry_rel H env args mem⟩, rfl⟩ (finish_defined hd))
     obtain ⟨⟨rfl, rfl, R⟩, hm⟩ := hR
-    have hs := block_sim H hE (by rw [hm]; exact hEI) R
+    have hs := block_sim H hE (by simp only [Prod.mk.injEq] at hm; rw [hm.1, hm.2]; exact hEI) R
     generalize hS : blockStep env (Ctx.make tabs f) frS bT iT = sS at hs ⊢
     cases sS with
     | goto G e =>
@@ -248,15 +251,15 @@ invariant whose predicate always holds. -/
 theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : AtomsX f g) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hI : ∀ env m, I.E env m := by intros; trivial) :
+    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hI : ∀ env m im, I.E env m im := by intros; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
-  fun env hE args mem => atomSimXE_refines hf hg hA I h1 h2 env args mem ⟨hE, hI _ _⟩
+  fun env hE args mem => atomSimXE_refines hf hg hA I h1 h2 env args mem ⟨hE, hI _ _ _⟩
 
 /-- **The atom simulation** under a source-side invariant. -/
 theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) (hI : ∀ env m, I.E env m := by intros; trivial) :
+    (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) (hI : ∀ env m im, I.E env m im := by intros; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
   atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2 hI
 

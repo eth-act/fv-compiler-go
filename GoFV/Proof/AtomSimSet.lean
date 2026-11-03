@@ -62,7 +62,7 @@ structure SrcInv (tabs : Tables) (f : Func) where
   P : ID → ID → Val → Prop
   L : ID → Nat → Prop
   Q : ID → (ID → Val) → Prop
-  E : Env → Mem → Prop := fun _ _ => True
+  E : Env → Mem → Array (Array Byte) → Prop := fun _ _ _ => True
   start : L f.entry 0 ∧ ∀ a, P f.entry a .poison
   qstart : Q f.entry fun _ => .poison
   poisonAtom : ∀ b a, ¬ IsTerm f.value? a → P b a .poison
@@ -79,7 +79,7 @@ structure SrcInv (tabs : Tables) (f : Func) where
   atom : ∀ b bb, f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
     termOp v.op = false → v.op ≠ .Phi → ∀ y : Val, P b x (y.retype (tabs.ty v.type))
   qstep : ∀ b bb, b ∈ f.blocks → f.block? b = some bb → ∀ x ∈ bb.values, ∀ v, f.value? x = some v →
-    v.id = x → v.op ≠ .Phi → ∀ env (fr : Frame), E env fr.mem0 → ∀ y,
+    v.id = x → v.op ≠ .Phi → ∀ env (fr : Frame), E env fr.mem0 fr.images → ∀ y,
       evalValue env (Ctx.make tabs f) fr v = .ok y →
       (∀ a, P b a (rv fr a)) → Q b (rv fr) → Q b (rv (fr.set x y))
 

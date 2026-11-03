@@ -150,7 +150,9 @@ theorem nm_checkedRewrite :
 runtime calls (`Env.p1`) and a non-nil `.dict` argument. -/
 theorem nm_rwPre :
     GoFV.Proof.Pass.Rewrite.RwPre nmTabs nmPassEnv.frontend nmFunc Env.p1 [.ptr ⟨.heap 0, 0⟩] {} := by
-  refine ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, ?_⟩, Env.p1_memOps, Env.p1_allocZero, ?_⟩
+  refine ⟨Env.p1_mono, ⟨Env.p1_allocNonNil, ?_⟩, Env.p1_memOps, Env.p1_allocZero, ?_,
+    GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
+      simp only [List.mem_singleton] at hv; subst hv; intro h; cases h) rfl⟩
   · rw [nm_dictParams]
     intro i hi
     simp only [List.mem_singleton] at hi

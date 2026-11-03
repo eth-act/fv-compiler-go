@@ -180,7 +180,7 @@ theorem fixed_den {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {g : 
     have hu1 : u.args[1]! ∈ u.args := by
       rw [getElem!_pos u.args 1 (by omega)]; exact Array.getElem_mem _
     have hR : RoMem ro M := by
-      have := den_memsOK hmt hcf (hQ.2 hmt) n _ (hargs _ hu1)
+      have := den_memsOK hmt hcf (hQ.2.1 hmt) n _ (hargs _ hu1)
       rw [hsM] at this
       exact this.mem
     have hld' : M.load (tabs.ty u.type) ((⟨.global e.1, 0⟩ : Ptr).add (ptrBase tabs f 8 u.args[0]!).2)

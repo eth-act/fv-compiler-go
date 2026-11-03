@@ -146,11 +146,12 @@ theorem fn_roPass : RewriteCheck.roPass fnTabs fnPassEnv.frontend fnFunc =
 
 /-- **Non-vacuity of `RwPre` with the type descriptor**: on `Env.p1` with the descriptor in the
 global image and an empty memory, `newArr`'s read-only symbol holds its image. -/
-theorem fn_rwPre (args : List Val) :
+theorem fn_rwPre (args : List Val) (hargs : ∀ v ∈ args, ∀ a n, v.Avoids (· = .temp a n)) :
     GoFV.Proof.Pass.Rewrite.RwPre fnTabs fnPassEnv.frontend fnFunc fnEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
-    fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
+    fun n c hm h => Env.p1_allocZero n c hm h, ⟨fun n c h => Env.p1_keepsRo n c h, ?_⟩,
+    GoFV.Proof.Pass.Rewrite.initAvoids_empty hargs (by decide +kernel)⟩
   · rw [show NilCheck.dictParams fnTabs fnFunc = [] by decide +kernel]
     exact DictArgs.nil args
   · rw [fn_roPass]

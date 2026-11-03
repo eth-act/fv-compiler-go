@@ -68,19 +68,24 @@ theorem moveInnerOK_spec {tabs : Tables} {f : Func} {u w im : Value} {B : Option
       samePtrB tabs f u.args[1]! im.args[0]! = true ∧
       copyReach tabs f.valueTab f.valueTab.size im.args[1]! w.args[1]! = true ∧
       disjointB tabs f im.args[1]! u.auxInt.toInt.toNat im.args[0]! u.auxInt.toInt.toNat = true ∧
-      ∀ b, B = some b → ∃ Bs, baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1 = some Bs ∧ Bs ≠ b := by
+      ∀ b, B = some b →
+        (∃ Bs, baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1 = some Bs ∧ Bs ≠ b) ∨
+          tempBlk b = true ∧ argPtrB tabs f 8 im.args[1]! = true := by
   unfold moveInnerOK at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨hop, hsz⟩, hai⟩, hsp⟩, hcr⟩, hdj⟩, hB⟩ := h
   refine ⟨hop, hsz, hai, hsp, hcr, hdj, fun b hb => ?_⟩
   subst hb
-  simp only at hB
-  cases hk : baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1 with
-  | none => rw [hk] at hB; cases hB
-  | some Bs =>
-    rw [hk] at hB
-    simp only [Option.any_some, bne_iff_ne, ne_eq] at hB
-    exact ⟨Bs, rfl, hB⟩
+  simp only [Bool.or_eq_true, Bool.and_eq_true] at hB
+  rcases hB with hB | hB
+  · left
+    cases hk : baseBlk? tabs f (ptrBase tabs f 8 im.args[1]!).1 with
+    | none => rw [hk] at hB; cases hB
+    | some Bs =>
+      rw [hk] at hB
+      simp only [Option.any_some, bne_iff_ne, ne_eq] at hB
+      exact ⟨Bs, rfl, hB⟩
+  · exact .inr hB
 
 theorem moveSrcOK_spec {tabs : Tables} {f : Func} {u w : Value} (h : moveSrcOK tabs f u w = true) :
     u.op = .Move ∧ w.op = .Move ∧ u.args.size = 3 ∧ w.args.size = 3 ∧ w.auxInt = u.auxInt ∧

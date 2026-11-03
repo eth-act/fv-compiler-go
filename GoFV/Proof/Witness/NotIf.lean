@@ -140,7 +140,9 @@ theorem notIf_refines :
       cases out.func.block? 1 <;> simp_all
     · obtain ⟨m, hm⟩ := returnsInt_iff.1 h3
       obtain ⟨fuel', ho⟩ := hR Env.p1 [.bool false] {}
-        (Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel) _ _) 2 (by rw [hm]; trivial)
+        (Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
+          (Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
+            simp only [List.mem_singleton] at hv; subst hv; trivial) rfl)) 2 (by rw [hm]; trivial)
       rw [hm] at ho
       refine ⟨fuel', ?_⟩
       generalize run Env.p1 out.tables out.func [.bool false] {} fuel' = o at ho ⊢
