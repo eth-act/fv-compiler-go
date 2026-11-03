@@ -1,7 +1,5 @@
-import GoFV.Opt.Pass
-import GoFV.SSA.Alloc
+import GoFV.Opt.LowTy
 import GoFV.SSA.Analysis.CfgCache
-import GoFV.SSA.TypePred
 import GoFV.Util.SparseSet
 
 /-!
@@ -99,14 +97,8 @@ def LcaRange.find (lca : LcaRange) (a b : ID) : Except String ID := do
   if lca.blocks[bid1]!.depth < lca.blocks[bid2]!.depth then return bid1
   return bid2
 
-/-- `v.MemoryArg()` (not for phis): the last argument if it is memory-typed. -/
-def memoryArg (isMem : TypeRef → Bool) (f : Func) (x : Value) : Option ID :=
-  match x.args.back? with
-  | some a => if isMem (f.getV a).type then some a else none
-  | none => none
-
 /-- `memState(f, startMem, endMem)`: start and end memory by block ID. -/
-def memState (isMem : TypeRef → Bool) (f : Func) :
+def memState (ty : LowTy) (f : Func) :
     Except String (Array (Option ID) × Array (Option ID)) := do
   let nb := f.bidLast + 1
   let mut startMem : Array (Option ID) := Array.replicate nb none
@@ -116,9 +108,9 @@ def memState (isMem : TypeRef → Bool) (f : Func) :
     for v in (f.getB b).values do
       let x := f.getV v
       let mem : Option ID :=
-        if x.op == .Phi then (if isMem x.type then some v else none)
+        if x.op == .Phi then (if ty.isMemory x.type then some v else none)
         else if x.op == .InitMem then some v
-        else match memoryArg isMem f x with
+        else match ty.memoryArg f x with
           | some a => if (f.getV a).block != b then some a else none
           | none => none
       let some mem := mem | continue
@@ -155,15 +147,11 @@ def tighten (env : PassEnv) (f : Func) : Except String Func := do
     | some #[.word w] => w != "0"
     | _ => false
   if flagN && f.blocks.size < 10000 then return f
-  let some mem := env.typ? "Mem" | throw "tighten: no typ.Mem"
-  let some void := env.typ? "Void" | throw "tighten: no typ.Void"
-  let some flags := env.typ? "Flags" | throw "tighten: no typ.Flags"
-  let tabs := env.tables
-  let isMem := tabs.isMemory mem
-  let isTuple (t : TypeRef) : Bool := (tabs.type? t).map (·.kind) == some .TUPLE
-  let needRegister (t : TypeRef) : Bool := !isMem t && t != void && t != flags && !isTuple t
+  let ty ← LowTy.ofEnv env
+  let needRegister (t : TypeRef) : Bool :=
+    !ty.isMemory t && t != ty.void && !ty.isFlags t && !ty.isTuple t
   let nv := f.vidLast + 1
-  let (startMem, _) ← memState isMem f
+  let (startMem, _) ← memState ty f
   let mut canMove : Array Bool := Array.replicate nv false
   let mut distinct := Util.SparseSet.new nv
   for b in f.blocks do
@@ -178,7 +166,7 @@ def tighten (env : PassEnv) (f : Func) : Except String Func := do
       for a in x.args do
         let y := f.getV a
         if needRegister y.type && y.op != .SB && y.op != .SP then distinct := distinct.add a
-      if distinct.size ≥ 2 && x.type != flags then continue
+      if distinct.size ≥ 2 && !ty.isFlags x.type then continue
       canMove := canMove.set! v true
   let (dom, f) := f.idom
   let lca := makeLcaRange f dom
@@ -235,7 +223,7 @@ def tighten (env : PassEnv) (f : Func) : Except String Func := do
             | none => false
             | some t =>
               t != b &&
-                match memoryArg isMem f (f.getV v) with
+                match ty.memoryArg f (f.getV v) with
                 | some m => startMem[t]! == some m
                 | none => true
           match t, movable with
@@ -254,8 +242,7 @@ def tighten (env : PassEnv) (f : Func) : Except String Func := do
 (`regalloc.go:2923`: the op's bit and every argument's op `fixedReg`) and not in the
 corresponding predecessor is replaced by a fresh `copyInto` that predecessor, per occurrence. -/
 def phiTighten (env : PassEnv) (f : Func) : Except String Func := do
-  let some mem := env.typ? "Mem" | throw "phi tighten: no typ.Mem"
-  let isMem := env.tables.isMemory mem
+  let ty ← LowTy.ofEnv env
   let mut f := f
   for b in f.blocks do
     for v in (f.getB b).values do
@@ -268,7 +255,7 @@ def phiTighten (env : PassEnv) (f : Func) : Except String Func := do
         if !x.args.all fun w => (f.getV w).op.fixedReg then continue
         let p := (f.getB b).preds[i]!.b
         if x.block == p then continue
-        let (f', c) ← f.copyInto isMem a p
+        let (f', c) ← f.copyInto ty.isMemory a p
         f := f'.setArg v i c
   return f
 

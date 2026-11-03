@@ -1,7 +1,5 @@
-import GoFV.Opt.Pass
-import GoFV.SSA.Alloc
+import GoFV.Opt.LowTy
 import GoFV.SSA.Analysis.CfgCache
-import GoFV.SSA.TypePred
 
 /-!
 # loop invariant (`licm.go:36-159`)
@@ -29,7 +27,7 @@ open GoFV.SSA
 namespace Licm
 
 /-- The loop-dependent values (`loopDependent`, `licm.go:43-98`), by value ID. -/
-def dependent (tabs : Tables) (mem : TypeRef) (nest : Analysis.LoopNest) (f : Func) :
+def dependent (ty : LowTy) (nest : Analysis.LoopNest) (f : Func) :
     Except String (Array Bool) := do
   let inLeaf (b : ID) : Bool :=
     match nest.loopOf b with
@@ -48,12 +46,10 @@ def dependent (tabs : Tables) (mem : TypeRef) (nest : Analysis.LoopNest) (f : Fu
     for v in (f.getB b).values do
       let x := f.getV v
       if x.op.earlyOk then
-        let memArg := match x.args.back? with
-          | some a => tabs.isMemory mem (f.getV a).type
-          | none => false
-        if tabs.isMemory mem x.type || x.op.nilCheck || x.op.hasSideEffects || memArg then
+        if ty.isMemory x.type || x.op.nilCheck || x.op.hasSideEffects ||
+            (ty.memoryArg f x).isSome then
           throw s!"op {x.op.exportName} has bad earlyOk mark"
-        if (tabs.type? x.type).map (·.kind) != some .PTR then continue
+        if (ty.tabs.type? x.type).map (·.kind) != some .PTR then continue
       if x.op == .Select0 || x.op == .Select1 then continue
       dep := dep.set! v true
       queue := queue.push v
@@ -72,10 +68,10 @@ end Licm
 open Licm in
 /-- `licm(f)`. -/
 def licm (env : PassEnv) (f : Func) : Except String Func := do
-  let some mem := env.typ? "Mem" | throw "licm: no typ.Mem"
+  let ty ← LowTy.ofEnv env
   let (nest, f) ← f.loopnestfor
   if nest.loops.isEmpty || nest.hasIrreducible then return f
-  let dep ← dependent env.tables mem nest f
+  let dep ← dependent ty nest f
   let mut f := f
   for b in f.blocks do
     let some l := nest.loopOf b | continue
