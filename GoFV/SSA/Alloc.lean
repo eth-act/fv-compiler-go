@@ -65,7 +65,7 @@ namespace Func
 (`auxmap` and `cachedLineStarts` survive). -/
 def invalidateCFG (f : Func) : Func :=
   { f with cache := { f.cache with postorder := none, idom := none, sdom := none,
-                                   loopnest := false } }
+                                   loopnest := none } }
 
 /-! ## Constant cache removal (`func.go:356-395`) -/
 

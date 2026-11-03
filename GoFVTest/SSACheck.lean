@@ -82,7 +82,7 @@ def mutants (e : CheckEnv) (f : Func) : Array (String × Func) := Id.run do
 def checkFile (mutate : Bool) (path : System.FilePath) (st : Stats) : IO Stats := do
   let data ← IO.FS.readBinFile path
   let mut st := { st with files := st.files + 1 }
-  match parseExport data with
+  match parseExportUntil "lower" data with
   | .error e =>
     IO.eprintln s!"PARSE {path}: {e}"
     return { st with parseFailed := st.parseFailed + 1 }

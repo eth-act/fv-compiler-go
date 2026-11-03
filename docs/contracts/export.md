@@ -1,24 +1,34 @@
-# Contract: per-pass SSA export (`gofv-ssa` v4)
+# Contract: per-pass SSA export (`gofv-ssa` v5)
 
-Owner: Exporter (issue #4). Consumers: LeanIR (parser/printer, #21), RulesExport (#22), every
-pass port (G4). Changing the format bumps the version in the first line and is announced on #4.
-v3 (#31) adds the `addrconv` name flag. v4 (#10) adds the `deferbits` name flag and also marks
-`addrconv` from pointers passed at integer-typed call parameters; the parser reads v2 and v3 files too.
+Owner: Exporter (issue #4; format 5: #379). Consumers: LeanIR (parser/printer, #21), RulesExport
+(#22), every pass port (G4, H*). Changing the format bumps the version in the first line and is
+announced on #4. v3 (#31) adds the `addrconv` name flag. v4 (#10) adds the `deferbits` name flag
+and also marks `addrconv` from pointers passed at integer-typed call parameters. v5 (#379, Phase 2)
+adds the sections of the lowered passes (`lower` … `trim`) with their state: machine ops and
+block kinds, the cached loop nest, `flagslive`/`hotness`/`fstate`/`regalloc`/`tempregs`, the
+`callreg` sub-line of `call` aux values, the `typelink` line and the machine `config` keys
+(section "Format 5"). The sections before `lower` are byte-identical to v4's. The parser reads
+v2–v4 files too.
 
 The patched `go1.27.3` compiler (`patches/go/*.patch`, built by `scripts/build-go.sh` into
-`third_party/go-build`) writes, for each selected function, the complete SSA state the
-machine-independent passes can observe:
+`third_party/go-build`) writes, for each selected function, the complete SSA state the passes
+up to `trim` can observe:
 
 - section 0, `start`: the function as `ssagen` hands it to `ssa.Compile`, i.e. the input of
   `number lines`;
-- one section after every pass that runs, from `number lines` up to and including the last pass
-  before `lower` (so the last section is the input of `lower`). Passes that are disabled
-  (`insert resched checks` unless `GOEXPERIMENT=preemptibleloops`; `cpufeatures`,
-  `rewrite tern` without `GOEXPERIMENT=simd`) or skipped (non-required passes under `-N`) have no
-  section. Each section names its pass, so the pass list is self-describing.
+- one section after every pass that runs, from `number lines` up to and including `trim`, the
+  last pass of `ssa.Compile` (v4 stopped before `lower`: its last section was the input of
+  `lower`). Passes that are disabled (`insert resched checks` unless
+  `GOEXPERIMENT=preemptibleloops`; `cpufeatures`, `rewrite tern` without `GOEXPERIMENT=simd`) or
+  skipped (non-required passes under `-N`) have no section; `merge conditional branches` is
+  commented out of the pass list in go1.27.3. Each section names its pass, so the pass list is
+  self-describing. `GoFV.SSA.loweredPasses` lists the passes from `lower` on.
 
 Parity of a Lean pass `p` is checked as: parse sections `0..k-1` (definitions accumulate, see
-below), take the state of section `k-1`, run `p`, compare with section `k`.
+below), take the state of section `k-1`, run `p`, compare with section `k`. The Phase 1 tools
+(`pass-parity` without lowered instances, `gofv-ssa-opt`, `ssa-check`, `sem-difftest`,
+`analysis-difftest`) read files with `parseExportUntil "lower"`, which skips the lowered
+sections unparsed.
 
 ## Switching it on
 
@@ -79,7 +89,7 @@ is deliberately not exported; no pass reads it.
 ## File layout
 
 ```
-gofv-ssa 4
+gofv-ssa 5
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi> <nosplit 0|1> <pgohot 0|1>
 config <key> <value>                  (one line per key; table below)
@@ -91,6 +101,7 @@ frontend
 end
 warn "<text>"                         (zero or more)
 ptrcache <t,…>
+typelink <group,…>                    (v5)
 typecmp t<a> t<b> <lt|eq|gt>           (zero or more)
 typeorder <group> <group> …
 eof
@@ -112,9 +123,14 @@ namedx <slot> <v,…>                   (NamedValues keys not in f.Names, if any
 splits <entries>                      (f.CanonicalLocalSplits)
 canon <entries>                       (f.CanonicalLocalSlots)
 consts <entries>                      (f.constants)
-freev <v,…>                           (f.freeValues free list, head first)
+freev <v,…>                           (f.freeValues free list, head first; sorted once f.RegAlloc is set)
 freeb <b,…>                           (f.freeBlocks free list, head first)
 cache <name> <payload>                (f.cached*, f.auxmap: only those that are non-nil)
+flagslive <b,…>                       (v5, zero or one)
+hotness <b:h,…>                       (v5, zero or one)
+fstate <flags>                        (v5, zero or one)
+regalloc <len> <v:loc,…>              (v5, zero or one)
+tempregs <v:reg,…>                    (v5, zero or one)
 zvar <v:class,…>                      (zero or one; see below)
 warn "<text>"                         (zero or more)
 end
@@ -123,7 +139,8 @@ end
 Presence: `typs` is present in section 0 only. `f`, `names`, `splits`, `canon`, `consts`, `freev`, `freeb` are always present
 (payload `-` when empty). `named` has one line per `f.Names` entry (none iff `names -`);
 `namedx` zero or more lines; each `cache <name>` line is present iff that cache is non-nil, in
-the order `postorder`, `idom`, `sdom`, `loopnest`, `auxmap`, `linestarts`. `zvar` is present iff
+the order `postorder`, `idom`, `sdom`, `loopnest`, `auxmap`, `linestarts`. The v5 lines
+`flagslive` … `tempregs` are present iff non-empty (section "Format 5"). `zvar` is present iff
 non-empty. All `warn` lines of a section come together just before `end`, in emission order.
 
 `zvar <v<ID>:<class>,…>`: type-object classes for `zcse`, which keys zero-argument values on
@@ -274,6 +291,16 @@ effects of those functions. Fields that need an uncalculated size are `?`.
 is exported only for `f.OwnAux` (`ParamAssignmentForArgName`, the only reader); for calls it
 is `-` (callee names belong to functions compiled concurrently).
 
+`callreg <inputs> <outputs> <clobbers> <flags>` (v5; at most one, after the `abiparam` lines of
+a `call` definition): the `regInfo` that `AuxCall.Reg` (calls) and `AuxCall.ResultReg`
+(`f.OwnAux`, for `MakeResult`) cache in the `AuxCall` when `regalloc` asks for it. Inputs and
+outputs are `<idx>:<mask>` lists (`-` if empty), `clobbers` a mask, flags `clobbersarg0`,
+`clobbersarg1`. Absent while the cache is nil or empty (every section before `regalloc`); the
+aux is redefined in the section where it fills. Masks are `regMask` as lower-case hex, bit `i` =
+register number `i` (`v2` digits followed by `v1` zero-padded to 16 digits when `v2 ≠ 0`; `0`
+when empty). A port derives the same constraints from `abiparam` and `intparamregs`/
+`floatparamregs`; this line is the oracle.
+
 `slot s<n> a<name> t<type> <off> <splitof s|-> <splitoffset>`: a `*LocalSlot` (`N`, `Type`,
 `Off`, `SplitOf`, `SplitOffset`).
 
@@ -286,17 +313,28 @@ determine every ID a pass allocates (`newValue` pops `freeValues` first; `NewBlo
 
 `b b<ID> <kind> <pos> <likely> <auxint> <aux a|-> <controls v,…> <succs> <preds>`
 
-- `kind`: `BlockKind.String()` (`Plain`, `If`, `Defer`, `Ret`, `RetJmp`, `Exit`, `JumpTable`,
-  `First`).
+- `kind`: `BlockKind.String()` for the generic kinds (`Plain`, `If`, `Defer`, `Ret`, `RetJmp`,
+  `Exit`, `JumpTable`, `First`); for machine kinds (v5) the architecture prefix of the Go
+  constant followed by `String()`: `ARM64EQ`, `ARM64TBZ` (`auxint` = the bit number),
+  `ARM64LTnoov`, `ARM64JUMPTABLE` (`aux` = the `<fn>.jump<bid>` symbol of `makeJumpTableSym`, a
+  `sym` aux that is not `SRODATA`), … (`BlockKind.exportName`).
 - `likely`: `BranchPrediction` (−1, 0, 1).
 - `succs`, `preds`: `b<ID>:<i>` per edge in order, `i` = the edge's reverse index (`Edge.i`).
-- Fields that the generic passes never set (`CPUfeatures`, `FlagsLiveAtEnd`, `Hotness`) are
-  not exported; the exporter writes `warn "<block>: ..."` if one is non-zero.
+- `FlagsLiveAtEnd` and `Hotness` are the section's `flagslive` and `hotness` lines (v5);
+  `CPUfeatures` (SIMD only) is not exported: the exporter writes `warn "<block>: ..."` if it is
+  non-zero.
 
 `v v<ID> <op> t<type> <auxint> <aux a|-> <pos> <uses> <args v,…>`
 
-- `op`: `Op.String()` (generic op name, `Add64`, `Phi`, `InitMem`, … — the Lean constructor).
-- `auxint`: `v.AuxInt` as signed int64 (floats are `math.Float64bits`, as in Go).
+- `op`: `Op.String()` for generic ops and `OpInvalid` (`Add64`, `Phi`, `InitMem`, …); for
+  machine ops (v5) the architecture prefix of the Go constant followed by `String()`
+  (`ARM64ADD`, `ARM64MOVDload`, `ARM64LoweredNilCheck`, `ARM64CALLstatic`; `Op.exportName`, the
+  Lean constructor name).
+- `auxint`: `v.AuxInt` as signed int64 (floats are `math.Float64bits`, as in Go). For ops with
+  `auxType` `CCop` (`ARM64CSEL`, `ARM64CSINC`, `ARM64CSETM`, `ARM64CCMP`, …) it is the condition's
+  raw Go opcode number (`Op(v.AuxInt)`, the pin's `opGen.go` order including the ops of the
+  other architectures and SIMD; `Op.ofGoNum?`/`Op.goNum`). `ARM64BitField`,
+  `ARM64ConditionalParams`, `FlagConstant`, `SymValAndOff` auxints are raw too.
 - `uses`: `v.Uses` (redundant: equals the number of occurrences in `Args` and `Controls`;
   exported so a reader can check its own count).
 - The value's block is the preceding `b` line.
@@ -320,7 +358,16 @@ constants (`constNilMagic` = 1111, …).
 - `cache postorder <b,…>`
 - `cache idom <b<ID>:b<idom>|b<ID>:-,…>` (indexed by block ID; only blocks of `f.Blocks`)
 - `cache sdom <b<ID>:<parent>:<child>:<sibling>:<entry>:<exit>,…>`
-- `cache loopnest` (presence only; contents not exported — see gaps)
+- `cache loopnest <len> <irreducible 0|1> <loops> <b2l>` (v5; `f.cachedLoopnest`, built by
+  `loopnestfor` in `likelyadjust`, `loop invariant`, `tighten`, `layout`, `regalloc` and kept
+  across passes that do not invalidate the CFG): `len` is `len(b2l)` (the block count when
+  the nest was built), `loops` the `loopnest.loops` in order as
+  `b<header>:<outer>:<nBlocks>:<depth>:<isInner 0|1>:<containsUnavoidableCall 0|1>` (`outer` the
+  index of the outer loop in `loops`, `-` for none; `containsUnavoidableCall` is filled in by
+  `regalloc`), `b2l` the non-nil entries `b<ID>:<loop index>` ascending (stale entries for freed
+  blocks included). `po` and `sdom` of the nest are the postorder and dominator tree when it was
+  built; every pass that invalidates those also drops the nest (`invalidateCFG`). No v4 file
+  has a `cache loopnest` line.
 - `cache auxmap <a:id,…>`: `f.auxmap` (CSE's aux numbering, which persists across `cse`
   runs), sorted by id
 - `cache linestarts <entry>,…`: `f.cachedLineStarts`, built by `number lines` and used by later
@@ -332,6 +379,38 @@ constants (`constNilMagic` = 1111, …).
 `warn "<text>"`: an invariant the exporter expected did not hold (e.g. a value's `Block` field
 differs from the block listing it). Written just before `end`; `finish` may add `warn` lines
 before `typeorder`. The stats tool counts them; the corpus must have none.
+
+## Format 5: state of the lowered passes
+
+After the `cache` lines, each present only when not empty, in this order:
+
+- `flagslive <b,…>`: the blocks with `FlagsLiveAtEnd` (set by `flagalloc`), ascending ID.
+- `hotness <b<ID>:<h>,…>`: non-zero `Block.Hotness` bit sets (`HotNotFlowIn` 1, `HotInitial` 2,
+  `HotPgo` 4; set by `loop rotate`), ascending ID.
+- `fstate <flags>`: `scheduled` (`f.scheduled`, set by `schedule`), `laidout` (`f.laidout`, set
+  by `layout`).
+- `regalloc <len> <v<ID>:<loc>,…>`: `f.RegAlloc` (set by `regalloc`, read by every later pass):
+  its length and every non-nil entry, ascending ID (entries of freed values stay: `freeValue`
+  does not clear them). `<loc>` is a register name (`R0`, `F3`, `g`, `ZERO`, `SP`, …:
+  `Register.String()`, the names of `config registers`), `@<slot>` for a `LocalSlot` (inline
+  slot as in `namedx`; the autos `stackalloc`/`regalloc` create with `f.NewLocal` are `name` aux
+  values `.autotmp_<n>`, `PAUTO`, defined on first use), `(<r>;<r>)` for a `LocPair` and
+  `[<r>;…]` for a `LocResults` (`-` for a nil element; `[]` empty).
+- `tempregs <v<ID>:<reg>,…>`: `f.tempRegs`, ascending ID (present iff the map is non-nil).
+
+Value free list: once `f.RegAlloc` is set (the `regalloc` section and later) `freev` is written
+sorted by ID instead of in list order. `regalloc` frees its unused copies while ranging over a
+Go map (`regalloc.go`, "Erase any copies we never used"), so the list order differs between
+runs; no later pass in scope allocates values, and parity compares this canonical form.
+
+`typelink <group,…>` (once per file, after `ptrcache`; `-` if empty): groups `t3=t9` of type
+numbers that share a `LinkString()` (groups of one omitted; ordered by first number, members
+ascending). `stackalloc` keys its reusable slots by `LinkString` (`stackalloc.go`, issue 65783),
+which identifies types that the numbering keeps apart by spelling (`byte`/`uint8`). Absent in v4
+files (`ExportFile.typeLink` is then empty).
+
+Other state the lowered passes read is static (`opcodeTable` `regInfo`, `asm`, `faultOnNilArg0`,
+… and the ARM64 rules: `tools/opsgen`, `tools/rules2lean`) or a `config` line (below).
 
 ## Pointer cache (`ptrcache`)
 
@@ -390,6 +469,14 @@ corpus):
 | `syslook.writeBarrier`, `syslook.wbZero`, `syslook.wbMove`, `syslook.cgoCheckPtrWrite`, `syslook.cgoCheckMemmove`, `syslook.goschedguarded` | name of `fe.Syslook(name)`, a string | `"runtime.writeBarrier"`, … |
 | `zerobase` | name of `ir.Syms.Zerobase`, a string | `"runtime.zerobase"` |
 | `rttype.Size_`, `rttype.PtrBytes`, `rttype.Hash`, `rttype.Kind_`, `rttype.GCData`, `rttype.PtrType.Elem` | `<offset>:<kind>:<size>` of the runtime type descriptor fields `isFixedLoad` folds (`copyCompatibleType` needs kind and size) | `0:UINTPTR:8`, `8:UINTPTR:8`, `16:UINT32:4`, `23:UINT8:1`, `32:PTR:8`, `48:PTR:8` |
+| `registers` (v5) | `Config.registers` in number order: `<name>:<objNum>,…` (`num` = position) | `R0:8192,…,R17:8209,R19:8211,…,g:8220,R29:8221,R30:8222,ZERO:8223,SP:8383,F0:8224,…,SB:0` |
+| `gpregmask`, `fpregmask`, `fp32regmask`, `fp64regmask`, `simdregmask`, `specialregmask` (v5) | `Config.*RegMask` (hex masks as in `callreg`) | `13ffffff`, `7fffffff80000000`, `0`, `0`, `7fffffff80000000`, `0` |
+| `intparamregs`, `floatparamregs` (v5) | `Config.intParamRegs`, `Config.floatParamRegs` (register numbers) | `0,…,15`, `31,…,46` |
+| `fpreg`, `linkreg` (v5) | `Config.FPReg`, `Config.LinkReg` | -1, 28 |
+| `framepointer` (v5) | `buildcfg.FramePointerEnabled` (`regalloc` reserves the frame pointer) | 1 |
+| `clobberdeadreg` (v5) | `base.Flag.ClobberDeadReg` | 0 |
+| `flagN` (v5) | `base.Flag.N` (`tighten` tests it directly) | 0 |
+| `fmahash` (v5) | `base.FmaHash != nil` (the ARM64 rules' `useFMA`) | 0 |
 
 `Config.mulRecipes` (used by the `canMulStrengthReduce` rules) is not exported: it is built
 deterministically by `config.go` from arm64 instruction costs, which the port reproduces.
@@ -402,13 +489,13 @@ logging) has no effect on the SSA.
 These are either derivable, constant, or not read by any pass in scope. A pass port that needs
 one of them must raise it on #4.
 
-- `f.cachedLoopnest` contents (only presence). `loopnestfor` is deterministic in the CFG; a
-  stale loop nest across passes is not expected (every in-scope pass that changes the CFG
-  calls `invalidateCFG`), the presence flag lets a port check its assumption.
-- `f.Cache` (scratch slices, posets, `Cache.values` storage): no observable state.
+- `f.Cache` (scratch slices, posets, `Cache.values` storage, `stackAllocState`, regalloc's
+  scratch): no observable state.
 - `f.HTMLWriter`, `ruleMatches`, `dumpFileSeq`, `PrintOrHtmlSSA`: debugging only.
-- `f.RegAlloc`, `tempRegs`, `RegArgs`, `CloSlot`, `scheduled`, `laidout`, `maxCPUFeatures`,
-  `DeferReturn`: unset or unread before `lower`.
+- `f.RegArgs`, `CloSlot`, `maxCPUFeatures`, `DeferReturn`, `Block.CPUfeatures`: read by
+  `ssagen`/`genssa` (Phase 3) or SIMD only; `ctxt.Flag_locationlists` (debug info, genssa).
+- The `loopnest`'s `po`/`sdom` (see `cache loopnest`) and `f` fields.
+- `ir.Name` frame offsets of autos (`AllocFrame` runs after `ssa.Compile`).
 - `ir.Name` details beyond the listed flags (positions of definitions, `Curfn`, closure vars,
   `Heapaddr`, …): read by `ssagen`, not by the passes. New autos made by `decompose`
   (`fe.SplitSlot`) get `Sym.Name = parent + suffix`, `Class = PAUTO`, `used`, `escnever`;

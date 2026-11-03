@@ -299,7 +299,7 @@ structure Loaded where
 
 def load (path : System.FilePath) : IO (Except String Loaded) := do
   let data ← IO.FS.readBinFile path
-  match parseExport data with
+  match parseExportUntil "lower" data with
   | .error e => return .error s!"{path}: {e}"
   | .ok e =>
     let mut tabs : Tables := {}
@@ -323,7 +323,7 @@ def loadProgram (dir : String) : IO (Std.HashMap String Ctx × List (String × A
   let mut funcs : Std.HashMap String Ctx := {}
   let mut globals : Std.HashMap String Alloc := {}
   for path in ← ssaFiles dir do
-    let .ok e := parseExport (← IO.FS.readBinFile path) | continue
+    let .ok e := parseExportUntil "lower" (← IO.FS.readBinFile path) | continue
     let some s0 := e.sections[0]? | continue
     let tabs := e.tablesAt 0
     funcs := funcs.insert (e.pkg.toStringLossy ++ "." ++ e.name.toStringLossy) (Ctx.make tabs s0.func)

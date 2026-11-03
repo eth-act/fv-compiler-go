@@ -52,20 +52,15 @@
  	// Bytes we need for the ptrmask.
 --- a/src/cmd/compile/internal/ssa/compile.go
 +++ b/src/cmd/compile/internal/ssa/compile.go
-@@ -67,7 +67,12 @@
+@@ -67,6 +67,7 @@
  		checkFunc(f)
  	}
  	const logMemStats = false
 +	gofv := gofvBegin(f) // gofv SSA exporter (GOFV_SSA_EXPORT)
  	for _, p := range passes {
-+		if gofv != nil && p.name == "lower" {
-+			gofv.finish()
-+			gofv = nil
-+		}
  		if !f.Config.optimize && !p.required || p.disabled {
  			continue
- 		}
-@@ -96,6 +101,9 @@
+@@ -96,6 +97,9 @@
  		tStart := time.Now()
  		p.fn(f)
  		tEnd := time.Now()
@@ -75,14 +70,24 @@
  
  		// Need something less crude than "Log the whole intermediate result".
  		if f.Log() || f.HTMLWriter != nil {
+@@ -139,6 +143,9 @@
+ 			checkFunc(f)
+ 		}
+ 	}
++	if gofv != nil {
++		gofv.finish()
++	}
+ 
+ 	if f.HTMLWriter != nil {
+ 		// Ensure we write any pending phases to the html
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1402 @@
+@@ -0,0 +1,1663 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 4).
++// gofv per-pass SSA exporter (fv-compiler-go, docs/contracts/export.md, format gofv-ssa 5).
 +// Enabled by GOFV_SSA_EXPORT=<dir>. Read-only: it never calls caching accessors, never
 +// computes type sizes and never creates symbols, so compilation is unchanged.
 +
@@ -193,7 +198,7 @@
 +		slots:    map[*LocalSlot]int{},
 +		posbases: map[int32]bool{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-ssa 4\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
++	fmt.Fprintf(&x.out, "gofv-ssa 5\npkg %s\nfunc %s %d %d %d\n", gofvQuote(pkg), gofvQuote(f.Name),
 +		f.ABISelf.Which(), gofvBool(f.NoSplit), gofvBool(f.IsPgoHot))
 +	x.config()
 +	return x
@@ -419,6 +424,128 @@
 +			kv("rttype.PtrType.Elem", rtField(fld.Type, rttype.PtrType.OffsetOf("Elem")))
 +		}
 +	}
++	// Format 5: the machine description the lowered passes read (regalloc, flagalloc, the
++	// ARM64 rules). Registers are listed in number order (c.registers[i].num == i).
++	regs := make([]string, len(c.registers))
++	for i, r := range c.registers {
++		regs[i] = fmt.Sprintf("%s:%d", r.name, r.objNum)
++	}
++	kv("registers", gofvList(regs))
++	kv("gpregmask", gofvMask(c.gpRegMask))
++	kv("fpregmask", gofvMask(c.fpRegMask))
++	kv("fp32regmask", gofvMask(c.fp32RegMask))
++	kv("fp64regmask", gofvMask(c.fp64RegMask))
++	kv("simdregmask", gofvMask(c.simdRegMask))
++	kv("specialregmask", gofvMask(c.specialRegMask))
++	paramRegs := func(rs []int8) string {
++		xs := make([]string, len(rs))
++		for i, r := range rs {
++			xs[i] = strconv.Itoa(int(r))
++		}
++		return gofvList(xs)
++	}
++	kv("intparamregs", paramRegs(c.intParamRegs))
++	kv("floatparamregs", paramRegs(c.floatParamRegs))
++	kv("fpreg", c.FPReg)
++	kv("linkreg", c.LinkReg)
++	kv("framepointer", gofvBool(buildcfg.FramePointerEnabled))
++	kv("clobberdeadreg", gofvBool(base.Flag.ClobberDeadReg))
++	kv("flagN", int(base.Flag.N))
++	kv("fmahash", gofvBool(base.FmaHash != nil))
++}
++
++// gofvMask renders a regMask as lower-case hex (bit i = register number i), "0" if empty.
++func gofvMask(m regMask) string {
++	if m.v2 != 0 {
++		return fmt.Sprintf("%x%016x", m.v2, m.v1)
++	}
++	return fmt.Sprintf("%x", m.v1)
++}
++
++// opName is the exported name of op: Op.String() for generic ops and OpInvalid (values freed
++// in place), the architecture prefix of the Go constant (OpARM64ADD) followed by Op.String()
++// for machine ops.
++func (x *gofvExporter) opName(op Op) string {
++	if opcodeTable[op].generic || op == OpInvalid {
++		return op.String()
++	}
++	return x.archPrefix() + op.String()
++}
++
++// blockKindName is the exported name of a block kind: BlockKind.String() for the generic
++// kinds (BlockPlain and after), with the architecture prefix for machine kinds (BlockARM64EQ).
++func (x *gofvExporter) blockKindName(k BlockKind) string {
++	if k >= BlockPlain || k == BlockInvalid {
++		return k.String()
++	}
++	return x.archPrefix() + k.String()
++}
++
++// archPrefix is the architecture part of the Go constants of machine ops and block kinds.
++func (x *gofvExporter) archPrefix() string {
++	switch a := x.f.Config.arch; a {
++	case "arm64":
++		return "ARM64"
++	default:
++		return strings.ToUpper(a)
++	}
++}
++
++// gofvRegName is the exported name of a register (Register.String()).
++func gofvRegName(r *Register) string {
++	if r == nil {
++		return "-"
++	}
++	return r.name
++}
++
++// loc renders a Location (f.RegAlloc entry): a register name, "@" followed by an inline
++// LocalSlot, "(" r0 ";" r1 ")" for a LocPair and "[" r ";" … "]" for LocResults (elements
++// "-" when nil).
++func (x *gofvExporter) loc(l Location) string {
++	elem := func(e Location) string {
++		switch e := e.(type) {
++		case nil:
++			return "-"
++		case *Register:
++			return gofvRegName(e)
++		default:
++			x.warn("location element %T", e)
++			return "?"
++		}
++	}
++	switch l := l.(type) {
++	case *Register:
++		return gofvRegName(l)
++	case LocalSlot:
++		return "@" + x.slotInline(l)
++	case LocPair:
++		return "(" + elem(l[0]) + ";" + elem(l[1]) + ")"
++	case LocResults:
++		es := make([]string, len(l))
++		for i, e := range l {
++			es[i] = elem(e)
++		}
++		return "[" + strings.Join(es, ";") + "]"
++	default:
++		x.warn("location %T", l)
++		return "?"
++	}
++}
++
++// gofvRegInfo renders a regInfo (an AuxCall's lazily filled register constraints) as
++// "<inputs> <outputs> <clobbers> <flags>".
++func gofvRegInfo(r *regInfo) string {
++	ins := make([]string, len(r.inputs))
++	for i, in := range r.inputs {
++		ins[i] = fmt.Sprintf("%d:%s", in.idx, gofvMask(in.regs))
++	}
++	outs := make([]string, len(r.outputs))
++	for i, o := range r.outputs {
++		outs[i] = fmt.Sprintf("%d:%s", o.idx, gofvMask(o.regs))
++	}
++	return fmt.Sprintf("%s %s %s %s", gofvList(ins), gofvList(outs), gofvMask(r.clobbers),
++		gofvFlags([]string{"clobbersarg0", "clobbersarg1"}, []bool{r.clobbersArg0, r.clobbersArg1}))
 +}
 +
 +// pos renders an XPos and makes sure its base is defined.
@@ -746,6 +873,11 @@
 +				fmt.Fprintf(&b, "abiparam %s %d %s %s %s %d\n", d, i, x.typ(p.t), name, p.regs, p.off)
 +			}
 +		}
++		// Format 5: the register constraints Reg/ResultReg cache in the AuxCall (regalloc),
++		// when set and not empty.
++		if r := a.reg; r != nil && (len(r.inputs) > 0 || len(r.outputs) > 0 || !r.clobbers.empty() || r.clobbersArg0 || r.clobbersArg1) {
++			fmt.Fprintf(&b, "callreg %s\n", gofvRegInfo(r))
++		}
 +	case *AuxNameOffset:
 +		fmt.Fprintf(&b, "nameoff %s %s %d\n", gofvQuote(render), x.auxRef(a.Name), a.Offset)
 +	case *types.Type:
@@ -1002,8 +1134,8 @@
 +		x.typs(w)
 +	}
 +	for _, b := range f.Blocks {
-+		if b.CPUfeatures != 0 || b.FlagsLiveAtEnd || b.Hotness != 0 {
-+			x.warn("b%d: CPUfeatures/FlagsLiveAtEnd/Hotness set", b.ID)
++		if b.CPUfeatures != 0 {
++			x.warn("b%d: CPUfeatures set", b.ID)
 +		}
 +		var ctl []*Value
 +		for _, c := range b.Controls {
@@ -1011,13 +1143,13 @@
 +				ctl = append(ctl, c)
 +			}
 +		}
-+		fmt.Fprintf(w, "b b%d %s %s %d %d %s %s %s %s\n", b.ID, b.Kind.String(), x.pos(b.Pos), b.Likely, b.AuxInt,
++		fmt.Fprintf(w, "b b%d %s %s %d %d %s %s %s %s\n", b.ID, x.blockKindName(b.Kind), x.pos(b.Pos), b.Likely, b.AuxInt,
 +			x.auxRef(b.Aux), x.values(ctl), gofvEdges(b.Succs), gofvEdges(b.Preds))
 +		for _, v := range b.Values {
 +			if v.Block != b {
 +				x.warn("v%d listed in b%d but v.Block is %v", v.ID, b.ID, v.Block)
 +			}
-+			fmt.Fprintf(w, "v v%d %s %s %d %s %s %d %s\n", v.ID, v.Op.String(), x.typ(v.Type), v.AuxInt,
++			fmt.Fprintf(w, "v v%d %s %s %d %s %s %d %s\n", v.ID, x.opName(v.Op), x.typ(v.Type), v.AuxInt,
 +				x.auxRef(v.Aux), x.pos(v.Pos), v.Uses, x.values(v.Args))
 +		}
 +	}
@@ -1127,10 +1259,19 @@
 +	}
 +	fmt.Fprintf(w, "consts %s\n", gofvList(ks))
 +
-+	// Free lists.
-+	var fv []string
++	// Free lists. From regalloc on (f.RegAlloc set) the value free list is written sorted by
++	// ID: regalloc frees its unused copies in Go map order (regalloc.go, "Erase any copies we
++	// never used"), so the order is not reproducible; no later pass allocates values.
++	var fvs []ID
 +	for v := f.freeValues; v != nil; v = v.argstorage[0] {
-+		fv = append(fv, fmt.Sprintf("v%d", v.ID))
++		fvs = append(fvs, v.ID)
++	}
++	if f.RegAlloc != nil {
++		slices.Sort(fvs)
++	}
++	fv := make([]string, len(fvs))
++	for i, id := range fvs {
++		fv[i] = fmt.Sprintf("v%d", id)
 +	}
 +	fmt.Fprintf(w, "freev %s\n", gofvList(fv))
 +	var fb []string
@@ -1180,8 +1321,8 @@
 +		}
 +		fmt.Fprintf(w, "cache sdom %s\n", gofvList(ds))
 +	}
-+	if f.cachedLoopnest != nil {
-+		fmt.Fprintf(w, "cache loopnest\n")
++	if ln := f.cachedLoopnest; ln != nil {
++		fmt.Fprintf(w, "cache loopnest %s\n", gofvLoopnest(ln))
 +	}
 +	if f.auxmap != nil {
 +		type auxEnt struct {
@@ -1223,6 +1364,8 @@
 +		}
 +		fmt.Fprintf(w, "cache linestarts %s\n", gofvList(rs))
 +	}
++
++	x.lowered(w)
 +
 +	x.zvar(w)
 +
@@ -1284,6 +1427,128 @@
 +	x.out.WriteString("frontend\n")
 +	x.out.Write(x.defs.Bytes())
 +	x.out.WriteString("end\n")
++}
++
++// gofvLoopnest renders the cached loop nest (format 5):
++// "<len(b2l)> <hasIrreducible> <loops> <b2l>", loops in ln.loops order as
++// b<header>:<outer index|->:<nBlocks>:<depth>:<isInner>:<containsUnavoidableCall>, b2l as
++// b<ID>:<loop index> for every non-nil entry, ascending ID (stale entries included: b2l is
++// indexed by ID and never shrinks). ln.po and ln.sdom are the postorder and dominator tree at
++// the time the nest was built (the cached ones unless invalidated since; every pass that
++// invalidates them also drops the nest).
++func gofvLoopnest(ln *loopnest) string {
++	idx := make(map[*loop]int, len(ln.loops))
++	for i, l := range ln.loops {
++		idx[l] = i
++	}
++	ls := make([]string, len(ln.loops))
++	for i, l := range ln.loops {
++		outer := "-"
++		if l.outer != nil {
++			if j, ok := idx[l.outer]; ok {
++				outer = strconv.Itoa(j)
++			} else {
++				outer = "?"
++			}
++		}
++		ls[i] = fmt.Sprintf("b%d:%s:%d:%d:%d:%d", l.header.ID, outer, l.nBlocks, l.depth,
++			gofvBool(l.isInner), gofvBool(l.containsUnavoidableCall))
++	}
++	var bs []string
++	for id, l := range ln.b2l {
++		if l != nil {
++			j, ok := idx[l]
++			if !ok {
++				j = -1
++			}
++			bs = append(bs, fmt.Sprintf("b%d:%d", id, j))
++		}
++	}
++	return fmt.Sprintf("%d %d %s %s", len(ln.b2l), gofvBool(ln.hasIrreducible), gofvList(ls), gofvList(bs))
++}
++
++// lowered writes the state of the lowered passes (format 5), each line only when not empty:
++// flagslive (blocks with FlagsLiveAtEnd, set by flagalloc), hotness (Block.Hotness, set by
++// loop rotate), fstate (f.scheduled, f.laidout), regalloc (f.RegAlloc) and tempregs
++// (f.tempRegs). Blocks are listed by ascending ID, values by ascending ID.
++func (x *gofvExporter) lowered(w *bytes.Buffer) {
++	f := x.f
++	bs := slices.Clone(f.Blocks)
++	slices.SortFunc(bs, func(a, b *Block) int { return int(a.ID) - int(b.ID) })
++	var live, hot []string
++	for _, b := range bs {
++		if b.FlagsLiveAtEnd {
++			live = append(live, fmt.Sprintf("b%d", b.ID))
++		}
++		if b.Hotness != 0 {
++			hot = append(hot, fmt.Sprintf("b%d:%d", b.ID, b.Hotness))
++		}
++	}
++	if len(live) > 0 {
++		fmt.Fprintf(w, "flagslive %s\n", gofvList(live))
++	}
++	if len(hot) > 0 {
++		fmt.Fprintf(w, "hotness %s\n", gofvList(hot))
++	}
++	if f.scheduled || f.laidout {
++		fmt.Fprintf(w, "fstate %s\n", gofvFlags([]string{"scheduled", "laidout"}, []bool{f.scheduled, f.laidout}))
++	}
++	if f.RegAlloc != nil {
++		var es []string
++		for id, l := range f.RegAlloc {
++			if l != nil {
++				es = append(es, fmt.Sprintf("v%d:%s", id, x.loc(l)))
++			}
++		}
++		fmt.Fprintf(w, "regalloc %d %s\n", len(f.RegAlloc), gofvList(es))
++	}
++	if f.tempRegs != nil {
++		ids := make([]ID, 0, len(f.tempRegs))
++		for id := range f.tempRegs {
++			ids = append(ids, id)
++		}
++		slices.Sort(ids)
++		es := make([]string, len(ids))
++		for i, id := range ids {
++			es[i] = fmt.Sprintf("v%d:%s", id, gofvRegName(f.tempRegs[id]))
++		}
++		fmt.Fprintf(w, "tempregs %s\n", gofvList(es))
++	}
++}
++
++// typelink writes the groups of type numbers that share a LinkString (format 5): stackalloc
++// reuses stack slots across types with equal LinkString (types numbered apart by spelling,
++// e.g. byte and uint8, issue 65783). Groups of one are omitted; groups are ordered by their
++// first number, members ascending.
++func (x *gofvExporter) typelink() {
++	byLink := map[string][]int{}
++	var order []string
++	for i, d := range x.typeDefs {
++		if d == nil {
++			continue
++		}
++		ls, ok := gofvTry(d.rep.LinkString)
++		if !ok {
++			continue
++		}
++		if _, seen := byLink[ls]; !seen {
++			order = append(order, ls)
++		}
++		byLink[ls] = append(byLink[ls], i+1)
++	}
++	var gs []string
++	for _, ls := range order {
++		ns := byLink[ls]
++		if len(ns) < 2 {
++			continue
++		}
++		ms := make([]string, len(ns))
++		for i, n := range ns {
++			ms[i] = fmt.Sprintf("t%d", n)
++		}
++		gs = append(gs, strings.Join(ms, "="))
++	}
++	fmt.Fprintf(&x.out, "typelink %s\n", gofvList(gs))
 +}
 +
 +// zvar writes the type-object classes of zero-argument values (zcse keys them on the
@@ -1385,6 +1650,7 @@
 +	// cmpsym orders by name length, so *abi.Kind sorts between them): list every pair whose
 +	// Compare disagrees with the rank order (#68). typeList is in number order.
 +	x.ptrcache()
++	x.typelink()
 +	cmpName := map[types.Cmp]string{types.CMPlt: "lt", types.CMPeq: "eq", types.CMPgt: "gt"}
 +	for i, a := range x.typeList {
 +		for _, b := range x.typeList[i+1:] {
