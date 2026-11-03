@@ -91,7 +91,8 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
     let base : PassEnv :=
       { passName := "", pkg := e.pkg, funcName := e.name, abi := e.abi, nosplit := e.nosplit
         pgohot := e.pgohot, config := e.config, typs, typeOrder := TypeOrder.ofGroups e.typeOrder e.typeCmp
-        tables := {}, frontend := e.frontendTables, ptrCache := ptrCacheFn e.ptrCache }
+        tables := {}, frontend := e.frontendTables, ptrCache := ptrCacheFn e.ptrCache
+        typeLink := typeLinkFn e.typeLink }
     let mut st := st
     let mut seen := Array.replicate insts.size false
     let mut tables : Tables := {}
@@ -120,7 +121,7 @@ def checkFile (insts : Array Inst) (maxReport : Nat) (path : System.FilePath) (s
         let inst := insts[ii]
         if inst.name != name then continue
         let env := { base with passName := name, tables := prev
-                               zvar := zvarFn e.sections[k-1]!.zvar }
+                               zvar := zvarFn e.sections[k-1]!.zvar, dclLen := dclLenOf prev s.defs }
         let input := e.sections[k-1]!.func
         let t0 ← IO.monoNanosNow
         let r ← IO.lazyPure fun _ => inst.entry.run env input

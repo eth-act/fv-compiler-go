@@ -77,7 +77,9 @@ def func (r : Ren) (f : Func) : Func :=
     splits := f.splits.map fun (k, s) =>
       ({ k with parent := r.sl k.parent, type := r.ty k.type }, r.sl s)
     canon := f.canon.map fun (k, s) => (r.slotDef k, r.sl s)
-    cache := { f.cache with auxmap := f.cache.auxmap.map (·.map fun (a, n) => (a.map r.ax, n)) } }
+    cache := { f.cache with auxmap := f.cache.auxmap.map (·.map fun (a, n) => (a.map r.ax, n)) }
+    low := { f.low with regAlloc := f.low.regAlloc.map fun (n, es) => (n, es.map fun (v, l) =>
+      (v, match l with | .slot k => .slot (r.slotDef k) | l => l)) } }
 end Ren
 
 /-- The references of a function in print order. -/
@@ -101,6 +103,9 @@ def funcRefs (f : Func) : Array (RefKind × Nat) := Id.run do
   if let some m := f.cache.auxmap then
     for (a, _) in m do
       if let some a := a then out := out.push (.a, a)
+  if let some (_, es) := f.low.regAlloc then
+    for (_, l) in es do
+      if let .slot k := l then out := slotKey out k
   return out
 
 /-- The references inside a definition. With `symNameOnly`, a symbol's references (its
