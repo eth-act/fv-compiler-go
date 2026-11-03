@@ -135,6 +135,7 @@ import GoFV.Proof.Pass.DeadSim
 import GoFV.Proof.Pass.DeadSimL
 import GoFV.Proof.Pass.DeadTail
 import GoFV.Proof.Pass.DeadcodePass
+import GoFV.Proof.Pass.DeadcodePassL
 import GoFV.Proof.Pass.DecPhiBlock
 import GoFV.Proof.Pass.DecPhiRel
 import GoFV.Proof.Pass.DecPhiSim

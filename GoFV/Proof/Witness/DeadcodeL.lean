@@ -1,5 +1,4 @@
-import GoFV.Proof.Pass.DeadSimL
-import GoFV.Proof.Pass.DeadFactsL
+import GoFV.Proof.Pass.DeadcodePassL
 import GoFV.Proof.Witness.ClampL
 import GoFV.Proof.Witness.Deadcode
 
@@ -10,7 +9,10 @@ import GoFV.Proof.Witness.Deadcode
 `v23 = MOVDconst [7]` in `b1`. It passes `check`, is lowered, and returns `clamp(5, 0, 10) = 5`
 under `runL`. deadcode's tail (`deadTail`, liveness and freeing) removes `v23`; the output passes
 `check`, so `refinesL_of_deadRel` (with `deadTail_rel`, `deadTail_relL`) applies and the output
-returns 5 under `runL` too (`deadTailL_witness`).
+returns 5 under `runL` too (`deadTailL_witness`). The whole pass (`lowered deadcode`) accepts
+`deadL`, which is in `DeadFrag` and `DeadFragL`, and its output passes `check`, is lowered and
+lists fewer values (all by kernel evaluation), so `deadcode_refinesL` applies
+(`deadcodeL_witness`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -82,6 +84,51 @@ theorem deadTailL_witness :
     obtain ⟨fuel, m', h⟩ := RefinesL.returned_int
       (refinesL_of_deadRel ⟨⟨_, hwf⟩, ⟨_, hwg⟩, deadTail_rel hwg h3 hc⟩ (deadTail_relL h3 hc)
         (by rw [hgl, h2])) hm
+    exact ⟨fuel, m', h⟩
+
+/-- A pass environment for `deadL`. -/
+def deadLPassEnv : PassEnv where
+  passName := "lowered deadcode"
+  pkg := GoStr.ofString "main"
+  funcName := GoStr.ofString "clamp"
+  abi := 1
+  nosplit := false
+  pgohot := false
+  config := #[]
+  typs := #[]
+  typeOrder := default
+  tables := clampLTabs
+
+theorem deadL_pass_facts :
+    deadFragB clampLTabs deadL = true ∧ deadFragLB clampLTabs deadL = true ∧
+    ((deadcode clampLTabs deadL).toOption.map fun g =>
+      (check clampLCheckEnv g).toBool && g.lowered && decide (listedValues g < listedValues deadL)) =
+      some true := by
+  decide +kernel
+
+/-- **`deadcode_refinesL` is not vacuous**: `lowered deadcode` removes `deadL`'s dead arm64
+value, and the output returns `clamp(5, 0, 10) = 5` under `runL`, as `deadL` does. -/
+theorem deadcodeL_witness :
+    ∃ out, deadcodePass deadLPassEnv deadL = .ok out ∧ out.func.lowered = true ∧
+      listedValues out.func < listedValues deadL ∧
+      ∃ fuel m, runL Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
+  obtain ⟨h1, h2, -, h4, -⟩ := deadL_facts
+  obtain ⟨hd, hdL, h5⟩ := deadL_pass_facts
+  obtain ⟨m, hm⟩ := returnsInt_iff.1 h4
+  cases hc : deadcode clampLTabs deadL with
+  | error e => rw [hc] at h5; cases h5
+  | ok g =>
+    rw [hc] at h5
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true,
+      decide_eq_true_eq] at h5
+    obtain ⟨⟨hgc, hgl⟩, hv⟩ := h5
+    have hp : deadcodePass deadLPassEnv deadL = .ok { func := g, tables := clampLTabs } := by
+      simp only [deadcodePass, Pass.ofFunc, deadLPassEnv]
+      rw [hc]; rfl
+    refine ⟨_, hp, hgl, hv, ?_⟩
+    obtain ⟨fuel, m', h⟩ := RefinesL.returned_int
+      (deadcode_refinesL hp (check_ok_of_toBool h1) (ce' := clampLCheckEnv)
+        (check_ok_of_toBool hgc) (deadFrag_of hd) (by rw [hgl, h2]) (deadFragL_of hdL)) hm
     exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness
