@@ -411,6 +411,43 @@ For comparison only, supported architectures combine the pointer expression into
 
 **Issue summary:** Implement the small two-scan lowered unread-auto pass at index 41. Respect exact `SymEffect` cases, Uses-sensitive read detection, and ABIInternal parameter eligibility; rewrite stores/bookkeeping to memory copies without changing IDs, types, positions, or list order. No new stack objects are created (`deadstore.go:433-501`).
 
+**Proof (#385):** `GoFV.Proof.UnreadL.elimUnreadAutos_refinesL` (`GoFV/Proof/Pass/UnreadL.lean`):
+`elimUnreadAutosPass penv f = .ok out`, `check ce f = .ok ()`, `check ce' out.func = .ok ()` and
+`unreadLFrag penv f = true` give `RefinesLFrom (fun env args mem => env.FrameSafe ∧
+InitAvoids env args mem) out.tables out.func penv.tables f` (`runL`; the precondition of Phase
+1's `DAE.dead_auto_elim_refines`: frame-safe contracts, inputs holding no pointer into a frame
+temporary). The fragment `GoFV.Opt.unreadLFrag` (`GoFV/Proof/Pass/UnreadLRel.lean`, decided):
+the pass fails, changes nothing (`RefinesLFrom.refl`), or the checker `UnreadL.urel` accepts
+its output: same CFG view, `ownAux`, value-table size and `lowered`; every value kept
+(`DSE.sameV`) or an eliminated write (a symbol `MOV*store`/`FMOV*store`/`STP*` or `VarDef`
+become `Copy mem`) to a variable of `E`; every variable of `E` a frame temporary the panic
+machinery does not read (`DAE.unforgeable`: no ABIInternal `PPARAM`, no `addrconv`, no defer
+slot); no kept value names a variable of `E`; a memory- or tuple-shaped argument only last, of
+a `DAE.memOps` op or, on a memory, of `armMemOps` (arm64 loads, stores, calls, nil checks,
+bounds panics, barriers, `LoweredZero`/`Move`/`WB`, …); roots in schedule order
+(`DSE.schedOK`). `urel_sound` reads `URel` off it; `refinesL_of_urel`
+(`GoFV/Proof/Pass/UnreadLSim.lean`) is dead auto elim's lock-step simulation on `runL`:
+registers related by `VR` (equal, or memories equal outside the eliminated temporaries
+`UE E`), per value `tgt_rel` (`UnreadLStep`; kept arm64 memory ops by `armMemOp_rel`,
+`UnreadLOps`; values avoid `UE E`, `evalValueL_av`, `UnreadLSrc`/`UnreadLPure`/`UnreadLAvoid`),
+per block `UBlk.okCase`/`panicCase` (`UnreadLBlock`), `Phi`s `phisL_rel`, terminators
+`stepTermL_relU` (an arm64 kind never continues on a memory or tuple control), loop
+`runLoopL_simD`, results and frame removal by `DAE.finish_rel`. Witness
+`GoFV.Proof.Witness.elimUnreadAutosL_witness` (`GoFV/Proof/Witness/UnreadL.lean`, `math.NaN`
+at `elim unread autos`, quick-v7: the inlined `Float64frombits` parameter copy `b` is stored
+by `MOVDstore` and never read; the pass makes it `Copy`, `urel` accepts, and the output returns
+the NaN `0x7FF8000000000001` under `runL`, all by `decide +kernel`; the pass keeps its seen names
+in a `Std.TreeSet` for this). Coverage (`lake exe unread-probe`): quick-v7 9,297 sections, 0
+pass errors, 8,643 with input and output passing `check`, 120 changed, 8,629 of 8,643 in
+`unreadLFrag` (106 of the 120 changed accepted; the 14 others: 10 eliminate a forgeable name,
+2 keep an `STLR`, 2 a `LoweredAtomicAdd64Variant`); full-v9 96,560 sections, 0 pass errors,
+90,656 checked, 326 changed, 90,630 of 90,656 in `unreadLFrag` (300 of the 326 changed
+accepted; the 26 others: 16 forgeable names, 3 `STLR`, 1 `STLRW`, 2
+`LoweredAtomicAdd64Variant`, 2 `LoweredAtomicCas64Variant`, 1 `LoweredAtomicCas32Variant`,
+1 `LoweredGetCallerSP` kept). The 14 / 26 rejections are open: an atomic or `GetCallerSP` op
+outside `armMemOps`, or an eliminated ABIInternal `PPARAM` or `addrconv` `PAUTO` (a
+`Blk.local` or forgeable block, outside dead auto elim's frame-temporary argument).
+
 ### tighten tuple selectors — issue #395
 
 **Function / files:** `tightenTupleSelectors`, `tuple.go:14-71`; `copyOf` and `copyInto`, `value.go:429-458`.
