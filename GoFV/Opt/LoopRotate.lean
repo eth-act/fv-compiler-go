@@ -1,19 +1,21 @@
 import GoFV.Opt.Pass
 import GoFV.SSA.Alloc
+import GoFV.SSA.Analysis.CfgCache
 import GoFV.Util.PdqSort
 
 /-!
 # loop rotate (`looprotate.go`)
 
-Port of `loopRotate` (go1.27.3; docs/PASSES2.md, loop rotate, #411). On the cached loop nest
-(`f.loopnest()`; regalloc has computed it), unless it has an irreducible loop or no loop: the
-loops, sorted by depth descending with Go's unstable `slices.SortFunc` (equal depths tie), each
-pick the last `Plain` predecessor of their header that belongs to the loop itself as the new top
-block `p` (hotness `HotInitial`, plus `HotPgo` in a PGO-hot function). If `p` is not the header
-(`HotNotFlowIn`), the blocks from the header up to `p` in the current order that belong to the
-loop, or are the top of a direct child loop, are placed after `p` (`after[p]`), and `p` and the
-header swap places. Finally the blocks are emitted in that order, each followed (recursively) by
-its `after` list. Only `f.Blocks` and `Hotness` change.
+Port of `loopRotate` (go1.27.3; docs/PASSES2.md, loop rotate, #411). On `f.loopnest()` (the
+cached nest, which regalloc has computed; else built and cached), unless it has an irreducible
+loop or no loop: the loops, sorted by depth descending with Go's unstable `slices.SortFunc`
+(equal depths tie), each pick the last `Plain` predecessor of their header that belongs to the
+loop itself as the new top block `p` (hotness `HotInitial`, plus `HotPgo` in a PGO-hot
+function). If `p` is not the header (`HotNotFlowIn`), the blocks from the header up to `p` in
+the current order that belong to the loop, or are the top of a direct child loop, are placed
+after `p` (`after[p]`), and `p` and the header swap places. Finally the blocks are emitted in
+that order, each followed (recursively) by its `after` list. Only `f.Blocks` and `Hotness`
+change (and the loop-nest cache, if `f.loopnest()` had to build it).
 -/
 
 namespace GoFV.Opt
@@ -42,14 +44,11 @@ end LoopRotate
 open LoopRotate in
 /-- `loopRotate(f)`. -/
 def loopRotate (env : PassEnv) (f : Func) : Except String Func := do
-  let some nest := f.cache.loopnest | throw "loopRotate: no cached loop nest"
-  if nest.irreducible || nest.loops.isEmpty then return f
+  let (nest, f) ← f.loopnest
+  if nest.hasIrreducible || nest.loops.isEmpty then return f
   let nb := max f.blockTab.size (f.bidLast + 1)
-  let mut b2l : Array (Option Nat) := Array.replicate nest.b2lSize none
-  for (b, l) in nest.b2l do
-    b2l := b2l.set! b (some l)
   let loopOf (b : ID) : Except String (Option Nat) :=
-    if h : b < b2l.size then pure b2l[b] else throw s!"loopRotate: b{b} outside b2l"
+    if h : b < nest.b2l.size then pure nest.b2l[b] else throw s!"loopRotate: b{b} outside b2l"
   let mut blocks := f.blocks
   let mut idToIdx : Array Nat := Array.replicate nb 0
   for h : i in [0:blocks.size] do
