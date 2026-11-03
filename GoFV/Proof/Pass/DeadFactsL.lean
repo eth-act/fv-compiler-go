@@ -134,7 +134,7 @@ theorem lowered_ei (hE : EI f r F) : F.lowered = f.lowered := by
 /-- **The edge removal keeps `DeadRelL`**, for any kept blocks. -/
 theorem deadRelL_of_ei {K : ID → Prop} (hE : EI f r F) : DeadRelL f F K := by
   refine ⟨fun x gv hgv => ?_, fun bid _ gb fb hgb hfb => ?_,
-    fun bid _ gb fb hgb hfb x hx hxn => ?_⟩
+    fun bid _ gb fb hgb hfb x hx hxn => ?_, fun x gv _ hgv hs => ?_⟩
   · obtain ⟨v0, hv0, hn⟩ := ei_value hE hgv
     exact ⟨v0, hv0, (noArgs_parts hn).1⟩
   · have := congrArg Block.auxInt (hE.kv bid)
@@ -142,6 +142,14 @@ theorem deadRelL_of_ei {K : ID → Prop} (hE : EI f r F) : DeadRelL f F K := by
     exact this
   · rw [← getB_of_block? hgb, ei_values hE, getB_of_block? hfb] at hxn
     exact absurd hx hxn
+  · obtain ⟨v0, hv0, hn⟩ := ei_value hE hgv
+    have hop : gv.op = v0.op := (noArgs_parts hn).1
+    have hnp : (strip v0).op ≠ .Phi := by
+      show v0.op ≠ .Phi
+      rw [← hop]; rcases hs with h | h <;> rw [h] <;> decide
+    have h1 := hE.nonphi x (strip v0) (vw_of_value? hv0) hnp
+    rw [vw_of_value? hgv] at h1
+    exact ⟨v0, hv0, strip_args (Option.some.inj h1)⟩
 
 end
 
@@ -298,7 +306,8 @@ theorem deadTail_relL {tabs : Tables} {r : Array Bool} {f g : Func}
     have hB := B.trans (freeDead_ba h)
     have hlive : live = (f.liveValuesOrder tabs r).1 := by rw [hlo]
     refine ⟨fun x gv hgv => ?_, fun bid _ gb fb hgb hfb => ?_,
-      fun bid hm gb fb hgb hfb x hx hnx fv hfv hpan => ?_⟩
+      fun bid hm gb fb hgb hfb x hx hnx fv hfv hpan => ?_,
+      fun x gv ⟨bid, gb, ⟨hbm, hgb⟩, hx⟩ hgv _ => ?_⟩
     · obtain ⟨fv, hfv, ho, -⟩ := S.value x gv (hVal x gv hgv)
       exact ⟨fv, hfv, ho⟩
     · obtain ⟨fb', hfb', e⟩ := hB bid gb hgb
@@ -311,6 +320,12 @@ theorem deadTail_relL {tabs : Tables} {r : Array Bool} {f g : Func}
       have hl := live_root (t := tabs) hsize (S.blocks ▸ hmF) hr hfb hx hfv (panickingL_root hpan)
       rw [← hlive] at hl
       exact hnx (by rw [hv, hv']; exact Array.mem_filter.2 ⟨hx, hl⟩)
+    · obtain ⟨hmF, -⟩ := hBm bid hbm
+      obtain ⟨b3, -, -, -, -, hv⟩ := hBlk bid gb hmF hgb
+      have hx' : x ∈ b3.values.filter (live.getD · false) := hv ▸ hx
+      have hl : live.getD x false = true := (Array.mem_filter.1 hx').2
+      obtain ⟨fv, hfv, -, -, -, -, -, ha⟩ := S.value x gv (hVal x gv hgv)
+      exact ⟨fv, hfv, ha hl⟩
   · cases h
 
 end GoFV.Proof.Dead

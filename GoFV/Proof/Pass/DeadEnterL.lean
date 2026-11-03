@@ -58,8 +58,9 @@ theorem evalKeptL (hlow : g.lowered = f.lowered) {md : LMode} {tabs : Tables} {e
         hwg.argListed _ _ _ _ ⟨⟨S.rel.sub bid hb, hgb⟩, hx, hgv⟩ a
           (by rw [hargs]; exact Array.mem_of_getElem? ha0)
       obtain ⟨ga, hga, -, -⟩ := hwg.valueId b' gb' hb' a ha'
-      obtain ⟨fa, hfa, hop'⟩ := L.op a ga hga
-      simp only [Option.bind_some, hga, hfa, Option.map_some, hop']
+      obtain ⟨fa, hfa, -⟩ := L.op a ga hga
+      simp only [Option.bind_some, hga, hfa, Option.map_some,
+        L.signExtendsIn_eq hwg ⟨b', gb', hb', ha'⟩ hga hfa]
 
 include S in
 /-- **The target's `Phi`s and schedule** (`targetPre` for `runL`). -/

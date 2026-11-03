@@ -169,9 +169,11 @@ Go's rules rely on in exactly two ways, and `runL` follows both:
    location's width (`atomicArgs`). Phase 1's `Val.retype` and `encode` are unchanged (§1).
 2. *Register copies of extended loads.* `(MOVBreg x:(MOVBload …)) => (MOVDreg x)` and the other
    "don't extend after proper load" / "fold double extensions" rules (`ARM64latelower.rules`)
-   pass a sign-extended narrow register on through `MOVDreg`/`MOVDnop`. These read the op of
-   their argument (`Arm64.signExtends`: a sign-extending load or extension) and sign-extend it,
-   else zero-extend (`Sem.arm64Op`).
+   pass a sign-extended narrow register on through `MOVDreg`/`MOVDnop`. These read their
+   argument (`Arm64.signExtendsIn`: a sign-extending load or extension, or a `Select0`/`Select1`
+   of `LDPSW`, since `pair` merges the `MOVWload`s of such a `MOVDreg` after `late lower`; found
+   by the regalloc checker in `runtime.checkdead`) and sign-extend it, else zero-extend
+   (`Sem.arm64Op`).
 
 Results are 64-bit (`.int .w64`), narrowed by `retypeL` to the value's type; a `W` op
 zero-extends its 32-bit result, as writing `Wd` does.

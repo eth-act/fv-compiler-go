@@ -71,20 +71,40 @@ theorem evalValueL_eraseV (md : LMode) (env : Env) (ctx : Ctx) (fr : Frame) (v :
 theorem stepTermL_eraseB (fr : Frame) (b : Block) : stepTermL fr (eraseB b) = stepTermL fr b :=
   (rfl)
 
+/-- Two value tables equal up to erasure agree on whether erasure-equal values sign-extend. -/
+theorem signExtendsIn_eraseV {val? val?' : ID → Option Value}
+    (hv : ∀ id, (val? id).map eraseV = (val?' id).map eraseV) {u u' : Value}
+    (he : eraseV u = eraseV u') : Arm64.signExtendsIn val? u = Arm64.signExtendsIn val?' u' := by
+  have hop : u.op = u'.op := by have := congrArg Value.op he; exact this
+  have hargs : u.args = u'.args := by have := congrArg Value.args he; exact this
+  have h0 : ((u'.args[0]?.bind val?).map (·.op == .ARM64LDPSW)) =
+      ((u'.args[0]?.bind val?').map (·.op == .ARM64LDPSW)) := by
+    cases u'.args[0]? with
+    | none => rfl
+    | some a =>
+      simp only [Option.bind_some]
+      rcases map_eraseV_eq (hv a) with ⟨h1, h2⟩ | ⟨w, w', h1, h2, hw⟩
+      · rw [h1, h2]
+      · have : w.op = w'.op := by have := congrArg Value.op hw; exact this
+        rw [h1, h2]; simp only [Option.map_some, this]
+  unfold Arm64.signExtendsIn
+  rw [hop, hargs]
+  congr 1
+  split <;> simp only [h0]
+
 theorem evalValueL_ctx {md : LMode} {env : Env} {ctx ctx' : Ctx} (h : CtxEq ctx ctx')
     (fr : Frame) (v : Value) : evalValueL md env ctx fr v = evalValueL md env ctx' fr v := by
-  have hop : ∀ o : Option ID, ((o.bind ctx.f.value?).map fun u => Arm64.signExtends u.op) =
-      ((o.bind ctx'.f.value?).map fun u => Arm64.signExtends u.op) := by
+  have hop : ∀ o : Option ID, ((o.bind ctx.f.value?).map (Arm64.signExtendsIn ctx.f.value?)) =
+      ((o.bind ctx'.f.value?).map (Arm64.signExtendsIn ctx'.f.value?)) := by
     intro o
     cases o with
     | none => rfl
     | some a =>
       simp only [Option.bind_some]
       rcases map_eraseV_eq (h.value a) with ⟨h1, h2⟩ | ⟨u, u', h1, h2, he⟩
+      · rw [h1, h2]; rfl
       · rw [h1, h2]
-      · rw [h1, h2]
-        have : u.op = u'.op := by have := congrArg Value.op he; exact this
-        simp only [Option.map_some, this]
+        simp only [Option.map_some, signExtendsIn_eraseV h.value he]
   obtain ⟨f, tabs, tys, sched, params, paramTys, outs, locals, act⟩ := ctx
   obtain ⟨f', tabs', tys', sched', params', paramTys', outs', locals', act'⟩ := ctx'
   obtain ⟨h1, h2, -, h4, -, -, -, h8, -, -⟩ := h
