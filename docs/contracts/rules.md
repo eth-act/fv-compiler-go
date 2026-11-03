@@ -330,7 +330,7 @@ that code too. `decompose builtin` passes `leaveDeadValues` (no dead-value reset
   `PanicBoundsC`/`PanicBoundsCC` (`auxToPanicBoundsC(C)`, `panicBoundsC(C)ToAux`: the struct
   values `{C}` / `{Cx, Cy}` stored in `Aux`).
 
-## The interpreter (`GoFV/Rules`, `GoFV/Opt/Opt.lean`)
+## The interpreter (`GoFV/Rules`, `GoFV/Opt/Opt.lean`, `GoFV/Opt/Lower.lean`)
 
 | Module | Contents |
 | --- | --- |
@@ -338,11 +338,18 @@ that code too. `decompose builtin` passes `leaveDeadValues` (no dead-value reset
 | `GoFV.Rules.Env` | `RwEnv` (pass name, `Config` values, `typs`, type order, frontend tables), `RwState` (function, tables, `pendingLines`), the monad `RwM` |
 | `GoFV.Rules.Helpers.{Types,Sym,Ptr,Magic}` | pure ports of the `rewrite.go`/`magic.go` helpers (type queries, symbols and calls, pointer analyses, magic numbers) |
 | `GoFV.Rules.Helpers.Build` | helpers that build values or objects: `rewriteStructStore`/`Load`, `imakeOfStructMake`, `devirtLECall`, `needRaceCleanup`, `clobber`, `resetCopy`, `t.PtrTo()`, `typeToAux`, symbols by name (`fe.StringData`, relocation targets: input tables, then `PassEnv.frontend`) |
+| `GoFV.Rules.Helpers.ARM64` | the helpers only the arm64 rule files use: `flagConstant` (`addFlags*`, `subFlags*`, `logicFlags*`, the `eq`…`geNoov` methods), `arm64BitField` (`armBFAuxInt`, `lsb`/`width`, `isARM64BFMask`, `arm64BFWidth`), `isARM64bitcon`/`isARM64addcon`, `rotateRight64`, `arm64Negate`/`arm64Invert`/`ccARM64Eval`, `ZeroUpper32Bits`, `flagArg`, `canonLessThan` (by `Op.goNum`), `makeJumpTableSym` (`<fn LSym>.jump<b>`; the function's `LSym` is the callee of `f.OwnAux`, which differs from `<pkg>.<f.Name>` for generic instantiations from other packages), `PanicBoundsC{…}` aux values (reused by value, as the export numbers them), `typ.Vec128` (minted by its identity key when `typs` lacks it), `types.NewTuple`, and `Config.mulRecipes` (`config.go`'s arm64 linear combinations; not exported) with `mulStrengthReduce` |
 | `GoFV.Rules.Eval` | `Eval.eval`: every `Expr` form, fields, methods, the helper calls by name |
 | `GoFV.Rules.Interp` | matcher (depth-first over the pattern in preorder, commutative choice 0 before 1, checks of not-yet-bound variables postponed to the end), result construction, block rules; `Interp.Table` (rules indexed by `Op.ctorIdx`) |
 | `GoFV.Rules.Apply` | `applyRewrite` (fixpoint loop, copy elimination, statement marks, final freeing) |
 | `GoFV.Rules.Run` | `rewritePass t removeDead : GoFV.Opt.Pass` |
 | `GoFV.Opt.Opt` | `opt` (= `middle opt`, `late opt`), `divisible`, `divmod` |
+| `GoFV.Opt.Lower` | `lower` (`ARM64.rules`, value and block rules), `late lower` (`ARM64latelower.rules`) |
+
+The arm64 configuration the rules read comes from the export's `config` lines:
+`ctxt.Flag_dynlink` (`flagdynlink`), `ctxt.Arch.ByteOrder` (`bigendian`), `base.FmaHash != nil`
+(`fmahash`; `useFMA` is true when it is 0, and a set `GOFMAHASH` is a pass error). New values
+take the position of the matched value at `Rule.pos`.
 
 Deviation: Go detects rewrite cycles by hashing and aborts compilation on a repeat; the port
 aborts after 100,000 iterations (no accepted function cycles). Parity: `docs/PARITY.md`.

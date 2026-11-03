@@ -95,4 +95,16 @@ def blockRuleOk (k : BlockKind) (r : BlockRule) : Bool :=
   s.values.all (fun (o, rs) => !rs.isEmpty && rs.all (ruleOk o)) &&
   s.blocks.all (fun (k, rs) => !rs.isEmpty && rs.all (blockRuleOk k))
 
+/-- The pattern path exists below the pattern and passes no commutative node: the interpreter
+finds the value at `Rule.pos` by the same argument indices under every commutative choice. -/
+def posPathOk : Pat → List Nat → Bool
+  | _, [] => true
+  | .op _ _ _ _ _ _ args commute, i :: is =>
+    !commute && match args[i]? with
+      | some a => posPathOk a is
+      | none => false
+  | _, _ :: _ => false
+
+#guard ruleSets.all fun s => s.values.all fun (_, rs) => rs.all fun r => posPathOk r.pat r.pos
+
 end GoFVTest.Rules.Data

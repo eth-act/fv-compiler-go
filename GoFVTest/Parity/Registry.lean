@@ -24,6 +24,7 @@ import GoFV.Opt.Prove.Pass
 import GoFV.Opt.Decompose
 import GoFV.Opt.SccpReplay
 import GoFV.Opt.SccpCheck
+import GoFV.Opt.Lower
 
 /-!
 # Registered Lean passes
@@ -72,7 +73,9 @@ def registry : Array PassEntry := #[
   { fn := "prove", names := #["prove"], run := provePass },
   { fn := "decomposeUser", names := #["decompose user"], run := Decompose.decomposeUserPass },
   { fn := "postExpandCallsDecompose", names := #["decompose builtin"],
-    run := Decompose.postExpandCallsDecomposePass }
+    run := Decompose.postExpandCallsDecomposePass },
+  { fn := "lower", names := #["lower"], run := lower },
+  { fn := "lateLower", names := #["late lower"], run := lateLower }
 ]
 
 end GoFVTest.Parity
