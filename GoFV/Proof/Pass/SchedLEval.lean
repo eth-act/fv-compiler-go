@@ -15,7 +15,8 @@ The classes of `scheduleCheck` (`GoFV.Opt.ScheduleCheck.cls`) under faulting eva
   `Cls.nil` one panics with `nilDeref` of its last argument's memory, and a load or lowered nil
   check that panics has a nil first argument (`NilBase`: faults need a nil base, a nil check of
   a wild pointer is `stuck`);
-* nil checks: an evaluated one returns its pointer (`evalValueL_nc_ok`); a lowered nil check of
+* nil checks: an evaluated one returns its pointer, outside the nil block (`evalValueL_nc_ok`,
+  `NonNil`); a lowered nil check of
   a nil pointer on a memory panics with `nilDeref` of it (`evalValueL_nc_nil`);
 * a symbolic `symAddrOp` (`MOV*load`, `MOV*store`, `MOVDaddr` at a symbol or frame variable)
   ignores its first argument's value (`evalOpL_arg0`), which `schedule`'s `SPanchored` bypass
@@ -365,8 +366,11 @@ theorem nilCheck_cases {op : Op} (h : op.nilCheck = true) :
   · exact .inl rfl
   · cases h
 
+/-- A pointer word outside the nil block: what a nil check that passes has checked. -/
+def NonNil (a : Val) : Prop := ∃ p, a.asPtrWord = some p ∧ p.blk ≠ .nil
+
 theorem memRoot_nc_ok {ctx : Ctx} {w : Value} {argv : List Val} {y : Val} (hw : w.op = .NilCheck)
-    (h : memRoot ctx w argv = .ok y) : ∃ a m, argv = [a, .mem m] ∧ y = a := by
+    (h : memRoot ctx w argv = .ok y) : ∃ a m, argv = [a, .mem m] ∧ y = a ∧ NonNil a := by
   unfold memRoot at h
   rw [hw] at h
   split at h
@@ -378,7 +382,7 @@ theorem memRoot_nc_ok {ctx : Ctx} {w : Value} {argv : List Val} {y : Val} (hw : 
          · simp [hb] at h
          · simp only [hb, Bool.false_eq_true, ite_false, Res.ok.injEq] at h
            subst h
-           exact ⟨_, _, rfl, rfl⟩
+           exact ⟨_, _, rfl, rfl, p, hp, by simpa using hb⟩
        · cases h)
     | (split at h <;> cases h)
 
@@ -408,6 +412,15 @@ theorem addr_of_asPtrWord {a : Val} {p : Ptr} (h : a.asPtrWord = some p) : Arm64
     cases w <;> simp only [Val.asPtrWord, reduceCtorEq, Option.some.injEq] at h
     subst h; simp [Arm64.addr, Arm64.reg]
   | _ => simp [Val.asPtrWord] at h
+
+/-- A pointer word outside the nil block has no nil base. -/
+theorem NonNil.not_nilBase {a : Val} (h : NonNil a) (hb : NilBase a) : False := by
+  obtain ⟨p, hp, hblk⟩ := h
+  obtain ⟨b, hab, hnil⟩ := hb
+  rw [addr_of_asPtrWord hp] at hab
+  cases hab
+  simp only [Ptr.isNil, Bool.and_eq_true, beq_iff_eq] at hnil
+  exact hblk hnil.1
 
 theorem evalOpL_ncG {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (h : v.op = .NilCheck) :
@@ -440,7 +453,8 @@ theorem evalOpL_nc_ty {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v 
 /-- An evaluated nil check returns its pointer. -/
 theorem evalOpL_nc_ok {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} {y : Val} (h : v.op.nilCheck = true)
-    (ho : evalOpL faulting env ctx fr v argv ty = .ok y) : ∃ a m, argv = [a, .mem m] ∧ y = a := by
+    (ho : evalOpL faulting env ctx fr v argv ty = .ok y) :
+    ∃ a m, argv = [a, .mem m] ∧ y = a ∧ NonNil a := by
   rcases nilCheck_cases h with h | h
   · rw [evalOpL_ncG h] at ho; exact memRoot_nc_ok h ho
   · rw [evalOpL_ncL h] at ho
@@ -716,7 +730,7 @@ theorem evalValueL_panic_info {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} 
 theorem evalValueL_nc_ok {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
     (hnc : v.op.nilCheck = true) (h : evalValueL md env ctx fr v = .ok y) :
     ∃ p yp, v.args[0]? = some p ∧ fr.regs[p]? = some (some yp) ∧
-      y = md.retype (ctx.tys[v.id]?.getD .other) yp := by
+      y = md.retype (ctx.tys[v.id]?.getD .other) yp ∧ NonNil yp := by
   obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
   rw [evalValueL_bind hm] at h
   cases ho : evalOpL md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other) with
@@ -724,10 +738,10 @@ theorem evalValueL_nc_ok {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
   | stuck msg => rw [ho] at h; cases h
   | ok r =>
     rw [ho] at h; cases h
-    obtain ⟨a, m, hargv, hra⟩ := evalOpL_nc_ok hnc ho
+    obtain ⟨a, m, hargv, hra, hnn⟩ := evalOpL_nc_ok hnc ho
     subst hargv
     obtain ⟨p, hp, hr⟩ := argsM_head hm rfl
-    exact ⟨p, a, hp, hr, by rw [hra]⟩
+    exact ⟨p, a, hp, hr, by rw [hra], hnn⟩
 
 /-- **A nil check of a nil pointer on a memory panics with `nilDeref` of it** (memory ops
 faulting). -/

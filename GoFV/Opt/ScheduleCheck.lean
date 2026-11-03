@@ -146,15 +146,20 @@ def isSPA (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op == .SPanchored)
 /-- The value `a` is a nil check. -/
 def isNC (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op.nilCheck)).getD false
 
+/-- A load whose base is a nil check's result: the check passed, so the base is a pointer
+outside the nil block and the load does not fault (`late nilcheck` later removes the check). -/
+def ncBase (f : Func) (v : Value) : Bool := ldOp v.op && (v.args[0]?.any (isNC f))
+
 /-- The source runs `x` before `y`, the target `y` before `x` (both may fail). Allowed if `x`
-never panics (so the source cannot stop at `x` with `y` not run); or `x` and `y` fault alike:
+never panics (so the source cannot stop at `x` with `y` not run: a value that never panics, or a
+load whose base is a nil check's result, `ncBase`); or `x` and `y` fault alike:
 `y` is a `faultOp` and `x` a `faultOp` or a nil check on the same memory (whichever stops first
 panics with `nilDeref` of it); or `y` is a nil check of the base of `x`, a load or nil check on
 the same memory (if `x` faults, its base is nil, so `y` panics as well). -/
 def swapOK (tabs : Tables) (f : Func) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
-    !mayPanic tabs vx ||
+    !mayPanic tabs vx || ncBase f vx ||
       ((cls tabs vx == .load || cls tabs vx == .nil) && vx.args.back? == vy.args.back? &&
         !(vx.args.back?.any (isSPA f)) &&
         (cls tabs vy == .load ||

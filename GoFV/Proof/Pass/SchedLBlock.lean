@@ -190,10 +190,12 @@ def Agree (f : Func) (F T : Frame) : Prop :=
   ∀ a, isNC f a = false → isSPA f a = false → T.regs[a]? = F.regs[a]?
 
 /-- The arguments of the block's values outside the block (lemma (D) at the block's entry): they
-have registers, and so do their bypasses, which a nil check's result equals. -/
+have registers, and so do their bypasses, which a nil check's result equals; a nil check's
+result is a pointer outside the nil block. -/
 def Out (f : Func) (S : List ID) (F : Frame) : Prop :=
   ∀ x ∈ S, ∀ a ∈ argsF f x, a ∉ S → (∃ z, F.regs[a]? = some (some z)) ∧ rep f a ∉ S ∧
-    (∃ z, F.regs[rep f a]? = some (some z)) ∧ (isNC f a = true → F.regs[rep f a]? = F.regs[a]?)
+    (∃ z, F.regs[rep f a]? = some (some z)) ∧ (isNC f a = true → F.regs[rep f a]? = F.regs[a]?) ∧
+    (isNC f a = true → ∀ z, F.regs[a]? = some (some z) → NonNil z)
 
 /-- A block entry of the simulation: source order `oS`, target order `oT`, frames after the
 `Phi`s. -/
@@ -279,12 +281,31 @@ theorem ncEq {fr : Frame} {a : ID} {va : Value} (hva : f.value? a = some va) (hi
     (hne : rep f a ≠ a) : fr.regs[rep f a]? = fr.regs[a]? := by
   obtain ⟨y, hy, hev⟩ := hev
   rw [isNC_of hva] at hnc
-  obtain ⟨p, yp, hp, hyp, hyy⟩ := evalValueL_nc_ok hnc hev
+  obtain ⟨p, yp, hp, hyp, hyy, -⟩ := evalValueL_nc_ok hnc hev
   have hrp : rep f a = p := by rw [rep_arg0 hva hne] at hp; cases hp; rfl
   rw [hrp] at hsh ⊢
   rw [hy, hyp, hyy, hid]
   congr 2
   exact (retype_shape (ht p yp hyp) hsh).symm
+
+/-- **A nil check's result is a pointer outside the nil block** in a frame where it evaluated. -/
+theorem ncNonNil {fr : Frame} {a : ID} {va : Value} (hva : f.value? a = some va) (hid : va.id = a)
+    (hnc : isNC f a = true) (hev : ∃ y, fr.regs[a]? = some (some y) ∧
+      evalValueL md env (Ctx.makeL tabs f) fr va = .ok y)
+    (ht : TypedL md (Ctx.makeL tabs f) fr)
+    (hsh : ((Ctx.makeL tabs f).tys[a]?.getD .other) = ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) ∨
+      (wordShape ((Ctx.makeL tabs f).tys[a]?.getD .other) = true ∧
+        wordShape ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) = true))
+    (hne : rep f a ≠ a) : ∀ z, fr.regs[a]? = some (some z) → NonNil z := by
+  intro z hz
+  have heq := ncEq hva hid hnc hev ht hsh hne
+  obtain ⟨y, -, hev'⟩ := hev
+  rw [isNC_of hva] at hnc
+  obtain ⟨p, yp, hp, hyp, -, hnn⟩ := evalValueL_nc_ok hnc hev'
+  have hrp : rep f a = p := by rw [rep_arg0 hva hne] at hp; cases hp; rfl
+  rw [hrp, hyp, hz] at heq
+  cases heq
+  exact hnn
 
 /-- The target frame is the source's with other registers. -/
 theorem frame_eq {frPS frPT H T : Frame} (hPT : frPT = { frPS with regs := frPT.regs })
@@ -357,7 +378,7 @@ theorem argFact (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame
           have := hTin (by rw [hr]; exact haS) (by rw [hr]; exact haP)
           rw [this, hr]
         exact ⟨⟨z, hz⟩, ⟨z, by rw [hT, hz]⟩, fun _ => hT, fun h => (by rw [hs'] at h; cases h)⟩
-  · obtain ⟨⟨z, hz⟩, hrS, ⟨z', hz'⟩, hnc⟩ := B.out y hyS a haf haS
+  · obtain ⟨⟨z, hz⟩, hrS, ⟨z', hz'⟩, hnc, -⟩ := B.out y hyS a haf haS
     have hHa : H.regs[a]? = frPS.regs[a]? := Sr.out _ (fun hP => haS (hPS _ hP))
     have hHr : H.regs[rep f a]? = frPS.regs[rep f a]? := Sr.out _ (fun hP => hrS (hPS _ hP))
     refine ⟨⟨z, by rw [hHa, hz]⟩, ⟨z', by rw [hTout hrS, hHr, hz']⟩, fun hs => ?_, hspa'⟩

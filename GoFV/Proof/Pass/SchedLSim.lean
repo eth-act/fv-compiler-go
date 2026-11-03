@@ -80,6 +80,17 @@ theorem ncFact {ce : CheckEnv} (hwf : WF ce f) {A : ID → Prop} {fr : Frame}
   obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hnc
   exact ncEq hpa.1 (placed_id hwf hpa) hnc ⟨y, hy, hev hnp⟩ ht hsh hne
 
+/-- **A nil check available in a frame holds a pointer outside the nil block.** -/
+theorem ncFactNN {ce : CheckEnv} (hwf : WF ce f) {A : ID → Prop} {fr : Frame}
+    (hD : DInvL md env (Ctx.makeL tabs f) A fr) (ht : TypedL md (Ctx.makeL tabs f) fr)
+    {a : ID} {va : Value} (hpa : Placed f a va) (hA : A va.block) {user : Option Value} {k : Nat}
+    (hu : useOK tabs (Ctx.makeL tabs f).tys f user k a = true) (hnc : isNC f a = true) :
+    ∀ z, fr.regs[a]? = some (some z) → NonNil z := by
+  obtain ⟨y, hy, hev⟩ := hD a va (by rw [makeL_f]; exact hpa) hA
+  have hnp : va.op ≠ .Phi := fun h => by rw [phi_not_nc hpa.1 h] at hnc; cases hnc
+  obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hnc
+  exact ncNonNil hpa.1 (placed_id hwf hpa) hnc ⟨y, hy, hev hnp⟩ ht hsh hne
+
 theorem symAddrOp_phi : symAddrOp .Phi = false := by decide
 
 /-! ## Block entries -/
@@ -252,7 +263,8 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
       rw [rep_self hn hs]
       have hlt : a < frS.regs.size := by rw [hA.size]; exact lt_of_value? hpa.1
       obtain ⟨-, y, -, -, hS⟩ := hSphi a haf va (by rw [hcF]; exact hpa.1) hap hlt
-      exact ⟨⟨_, hS⟩, haS, ⟨_, hS⟩, fun h => absurd (hn.symm.trans h) (by decide)⟩
+      exact ⟨⟨_, hS⟩, haS, ⟨_, hS⟩, fun h => absurd (hn.symm.trans h) (by decide),
+        fun h => absurd (hn.symm.trans h) (by decide)⟩
     · -- a value of a strict dominator
       have hstrict : Anc (make f) va.block bid ∧ va.block ≠ bid := ⟨hanc, hvb⟩
       obtain ⟨y, hy, -⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
@@ -275,10 +287,13 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
       obtain ⟨vr, hpr, hancr, hner⟩ := hrep
       obtain ⟨yr, hyr, -⟩ := hA.up (rep f a) vr (by rw [hcF]; exact hpr) ⟨hancr, hner⟩
       refine ⟨⟨y, by rw [hkeep a va hpa hvb, hy]⟩, fun hm => hnotin _ vr hpr hner ((omem _).1 hm).1,
-        ⟨yr, by rw [hkeep _ vr hpr hner, hyr]⟩, fun hn => ?_⟩
-      show (setPhis ps frS.regs)[rep f a]? = (setPhis ps frS.regs)[a]?
-      rw [hkeep _ vr hpr hner, hkeep a va hpa hvb]
-      exact ncFact hwf hA.up hA.typed hpa hstrict hu hn
+        ⟨yr, by rw [hkeep _ vr hpr hner, hyr]⟩, fun hn => ?_, fun hn z hz => ?_⟩
+      · show (setPhis ps frS.regs)[rep f a]? = (setPhis ps frS.regs)[a]?
+        rw [hkeep _ vr hpr hner, hkeep a va hpa hvb]
+        exact ncFact hwf hA.up hA.typed hpa hstrict hu hn
+      · have hz' : frS.regs[a]? = some (some z) := by
+          rw [← hkeep a va hpa hvb]; exact hz
+        exact ncFactNN hwf hA.up hA.typed hpa hstrict hu hn z hz'
   -- the target order's members
   have htmem : ∀ x, x ∈ oT.toList ↔ x ∈ oS.toList ∧ isSPA f x = false := by
     intro x
