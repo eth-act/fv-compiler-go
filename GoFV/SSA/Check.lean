@@ -303,7 +303,7 @@ def checkKind (e : CheckEnv) (f : Func) (b : Block) : Except String Unit := do
     if b.controls.size != 0 then throw s!"plain/dead block b{b.id} has a control value"
   | .JumpTable =>
     if b.controls.size != 1 then throw s!"jumpTable block b{b.id} has no control value"
-  | .Invalid => pure ()
+  | _ => pure ()  -- Invalid and the arch kinds: no case in check.go
   if b.succs.size != 2 && b.likely != .unknown then
     throw s!"likeliness prediction {b.likely.toInt} for block b{b.id} with {b.succs.size} successors"
 

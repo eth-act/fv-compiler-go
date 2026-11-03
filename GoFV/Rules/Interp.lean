@@ -217,9 +217,11 @@ def buildNodeF : Nat → Scope → Array RNode → ID → Pos → Nat → ID →
     modF fun f => f.modV id fun x => { x with aux := a }
   let mut built := built
   let mut args : Array ID := #[]
+  let mut exprs : Array (Nat × Expr) := #[]
   for a in n.args do
     match a with
     | .var x => args := args.push (← liftE (sc.binds[x]!.asVal))
+    | .expr e => exprs := exprs.push (args.size, e); args := args.push 0
     | .node k =>
       match built[k]! with
       | some c => args := args.push c
@@ -234,6 +236,9 @@ def buildNodeF : Nat → Scope → Array RNode → ID → Pos → Nat → ID →
         built := built.set! k (some c)
         built ← buildNode sc nodes blk pos k c built
         args := args.push c
+  -- Go-expression arguments are evaluated in the `AddArg` call, after the node arguments.
+  for (i, e) in exprs do
+    args := args.set! i (← liftE (← eval sc e).asVal)
   modF fun f => f.addArgs id args
   return built
 
@@ -483,10 +488,14 @@ def buildCtrlNodeF : Nat → Scope → Array RNode → ID → Pos → Nat → Rw
     let a ← toAux (← eval sc e)
     modF fun f => f.modV id fun x => { x with aux := a }
   let mut args : Array ID := #[]
+  let mut exprs : Array (Nat × Expr) := #[]
   for a in n.args do
     match a with
     | .var x => args := args.push (← liftE (sc.binds[x]!.asVal))
     | .node k => args := args.push (← buildCtrlNode sc nodes b pos k)
+    | .expr e => exprs := exprs.push (args.size, e); args := args.push 0
+  for (i, e) in exprs do
+    args := args.set! i (← liftE (← eval sc e).asVal)
   modF fun f => f.addArgs id args
   return id
 

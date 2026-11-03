@@ -47,6 +47,7 @@ def argVal (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat
     (nodes : List RNode) (f : Nat) : RArg → Val
   | .var x => (σ x).valOr (or.val (.var x))
   | .node j => nodeDenT tabs ev or σ topTy nodes f j
+  | .expr e => (ev e).valOr (or.val e)
 
 theorem nodeDen_succ (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat → DV)
     (topTy : Ty) (nodes : List RNode) (f k : Nat) (n : RNode) (hk : nodes[k]? = some n) :

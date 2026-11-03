@@ -85,6 +85,7 @@ def nodeDenT (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) 
       let argv := n.args.map fun
         | .var x => (σ x).valOr (or.val (.var x))
         | .node j => nodeDenT tabs ev or σ topTy nodes fuel j
+        | .expr e => (ev e).valOr (or.val e)
       (opVal tabs n.op t ai ax argv).retype t
 
 /-- The value `v` has after the rewrite (`resDen` with `nodeDenT`). -/

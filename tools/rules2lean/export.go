@@ -47,8 +47,30 @@ func init() {
 	os.Exit(0)
 }
 
-// ruleFiles are the generic rule sets exported, in the order of the arch names.
-var ruleFiles = []string{"generic", "dec", "divisible", "divmod"}
+// ruleFile is a rule file `_gen/<arch><suffix>.rules`, rewritten by rewriteValue<arch><suffix>.
+type ruleFile struct{ arch, suffix string }
+
+func (f ruleFile) name() string { return f.arch + f.suffix }
+
+// ruleFiles are the rule sets exported: the machine-independent ones (Phase 1) and the arm64
+// lowering rules ("lower", "late lower").
+var ruleFiles = []ruleFile{{"generic", ""}, {"dec", ""}, {"divisible", ""}, {"divmod", ""}, {"ARM64", ""}, {"ARM64", "latelower"}}
+
+// simdOps are the SIMD ops (Go constant names without "Op"; GOEXPERIMENT=simd only, left out of
+// GoFV.SSA.Op by tools/opsgen): the generic SIMD ops and those of simdARM64ops.go. The rules
+// of simdARM64.rules, which rulegen appends to ARM64.rules, all start at one of them and are
+// not exported (loadRules).
+var simdOps = func() map[string]bool {
+	m := map[string]bool{}
+	for _, o := range simdGenericOps() {
+		m[o.name] = true
+	}
+	var r regInfo
+	for _, o := range simdARM64Ops(r, r, r, r, r, r) {
+		m["ARM64"+o.name] = true
+	}
+	return m
+}()
 
 // ---------------------------------------------------------------------------------------
 // Export model
@@ -90,8 +112,9 @@ type xPat struct {
 }
 
 type xRArg struct {
-	Kind string // var | node
+	Kind string // var | node | expr
 	N    int
+	E    *slot // expr: a Go expression of type *Value (`flagArg(x)`), evaluated at AddArg time
 }
 
 type xNode struct {
@@ -140,6 +163,9 @@ type xRule struct {
 	// cross-check data
 	declNames []string
 	allocOps  []string
+	posVar    string   // value rules: Go variable whose Pos new values get ("" = v)
+	allocPos  []string // Go position expression of each NewValue0, in order
+	rawKind   string   // block rules: the kind as written in the rule file ("EQ")
 }
 
 func (r *xRule) newSlot(role, src, stmt string, ex func(ast.Stmt) ast.Expr) *slot {
@@ -168,18 +194,25 @@ type locRule struct {
 	line int
 }
 
-func loadRules(a arch) (ops []string, oprules map[string][]locRule, blocks []string, blockrules map[string][]locRule) {
+// loadRules reads _gen/<arch><suffix>.rules (and, as rulegen does for suffix "", the arch's
+// simd<arch>.rules). The rules of the SIMD file are dropped after checking that each starts at
+// a SIMD op (simdOps) and that no other rule does; simdSkipped returns the ops (Go constant
+// names) whose rewrite functions rulegen generated for them only.
+func loadRules(a arch, suffix string) (ops []string, oprules map[string][]locRule, blocks []string, blockrules map[string][]locRule, simdSkipped map[string]bool) {
 	var readers []NamedReader
-	name := a.name + ".rules"
+	name := a.name + suffix + ".rules"
 	text, err := os.Open(name)
 	if err != nil {
 		log.Fatalf("can't read rule file: %v", err)
 	}
 	readers = append(readers, NamedReader{name, text})
 	simdname := "simd" + a.name + ".rules"
-	if simdtext, err := os.Open(simdname); err == nil {
-		readers = append(readers, NamedReader{simdname, simdtext})
+	if suffix == "" {
+		if simdtext, err := os.Open(simdname); err == nil {
+			readers = append(readers, NamedReader{simdname, simdtext})
+		}
 	}
+	simdSkipped = map[string]bool{}
 	blockrules = map[string][]locRule{}
 	oprules = map[string][]locRule{}
 	scanner := MultiScannerFromReaders(readers)
@@ -215,13 +248,23 @@ func loadRules(a arch) (ops []string, oprules map[string][]locRule, blocks []str
 		file := strings.TrimSuffix(scanner.Name(), ".rules")
 		for _, rule2 := range expandOr(rule) {
 			r := locRule{Rule{Rule: rule2, Loc: loc}, file, ruleLineno}
-			if rawop := strings.Split(rule2, " ")[0][1:]; isBlock(rawop, a) {
+			rawop := strings.Split(rule2, " ")[0][1:]
+			if isBlock(rawop, a) {
+				if scanner.Name() == simdname {
+					log.Fatalf("%s: block rule in %s", loc, simdname)
+				}
 				blockrules[rawop] = append(blockrules[rawop], r)
 				continue
 			}
 			match, _, _ := r.parse()
 			op, oparch, _, _, _, _ := parseValue(match, a, loc)
 			opname := fmt.Sprintf("Op%s%s", oparch, op.name)
+			if isSimd := simdOps[oparch+op.name]; isSimd != (scanner.Name() == simdname) {
+				log.Fatalf("%s: rule for op %s (SIMD: %v) in %s", loc, opname, isSimd, scanner.Name())
+			} else if isSimd {
+				simdSkipped[opname] = true
+				continue
+			}
 			oprules[opname] = append(oprules[opname], r)
 		}
 		rule = ""
@@ -311,10 +354,7 @@ func (m *matcher) gen(match, gv string, path []int, pregenTop bool) (*xPat, stri
 		log.Fatalf("%s: non-compound expr in genMatch0: %q", m.r.loc(), match)
 	}
 	op, oparch, typ, auxint, aux, args := parseValue(match, m.a, m.r.loc())
-	if oparch != "" {
-		log.Fatalf("%s: arch op %s", m.r.loc(), op.name)
-	}
-	p := &xPat{Kind: "op", Op: op.name, Name: -1, Arity: "fixed"}
+	p := &xPat{Kind: "op", Op: leanOp(m.r, oparch, op.name), Name: -1, Arity: "fixed"}
 	var pos string
 	var posPath []int
 	if op.faultOnNilArg0 || op.faultOnNilArg1 {
@@ -460,12 +500,23 @@ func (m *matcher) leafBind(name string) *xPat {
 // Result side: a mirror of genResult0 producing value nodes in allocation order.
 
 type resulter struct {
-	r      *xRule
-	a      arch
-	nodes  []*xNode
-	allocs []string
-	cse    map[string]int // nil: no sharing (block rules)
-	block  bool
+	r        *xRule
+	a        arch
+	nodes    []*xNode
+	allocs   []string
+	allocPos []string       // Go position expression of each allocation (cross-check)
+	pos      string         // position new values get (rulegen's pos/newpos)
+	cse      map[string]int // nil: no sharing (block rules)
+	block    bool
+}
+
+// leanOp is the GoFV.SSA.Op constructor of an op parseValue resolved: the Go constant without
+// "Op" (arch prefix and name). SIMD ops have no constructor.
+func leanOp(r *xRule, oparch, name string) string {
+	if simdOps[oparch+name] {
+		log.Fatalf("%s: SIMD op %s%s", r.loc(), oparch, name)
+	}
+	return oparch + name
 }
 
 func (g *resulter) ex(stmt string, f func(ast.Stmt) ast.Expr) (string, func(ast.Stmt) ast.Expr) {
@@ -494,11 +545,14 @@ func (g *resulter) gen(result string, top, move bool) xRArg {
 		if top {
 			log.Fatalf("%s: internal: top variable handled by caller", g.r.loc())
 		}
-		v, ok := g.r.varIdx[result]
-		if !ok {
+		if v, ok := g.r.varIdx[result]; ok {
+			return xRArg{Kind: "var", N: v}
+		}
+		if token.IsIdentifier(result) {
 			log.Fatalf("%s: result argument %q is not a rule variable", g.r.loc(), result)
 		}
-		return xRArg{Kind: "var", N: v}
+		// rulegen passes any other argument text through as a Go expression (AddArg(e)).
+		return xRArg{Kind: "expr", E: g.r.newSlot("resArg", result, "v.AddArg((%s))", callArg(0))}
 	}
 	w := normalizeWhitespace(result)
 	if g.cse != nil {
@@ -510,14 +564,12 @@ func (g *resulter) gen(result string, top, move bool) xRArg {
 		log.Fatalf("%s: named result node %s unsupported", g.r.loc(), resname)
 	}
 	op, oparch, typ, auxint, aux, args := parseValue(result, g.a, g.r.loc())
-	if oparch != "" {
-		log.Fatalf("%s: arch op %s", g.r.loc(), op.name)
-	}
+	lop := leanOp(g.r, oparch, op.name)
 	typeOverride := typ != ""
 	if typ == "" && op.typ != "" {
 		typ = typeName(op.typ)
 	}
-	n := &xNode{Op: op.name}
+	n := &xNode{Op: lop}
 	idx := len(g.nodes)
 	g.nodes = append(g.nodes, n)
 	if top && !move {
@@ -533,7 +585,8 @@ func (g *resulter) gen(result string, top, move bool) xRArg {
 			pos = "b.Pos"
 		}
 		n.Ty = g.r.newSlot("resType", typ, "_ = b.NewValue0("+pos+", OpInvalid, (%s))", callArg(2))
-		g.allocs = append(g.allocs, op.name)
+		g.allocs = append(g.allocs, lop)
+		g.allocPos = append(g.allocPos, g.pos)
 	}
 	if auxint != "" {
 		n.AuxInt = g.r.newSlot("resAuxInt", auxint, "_ = "+unTitle(op.auxIntType())+"ToAuxInt((%s))", callArg(0))
@@ -563,7 +616,7 @@ func buildValueRule(a arch, lr locRule, op string) *xRule {
 	m := &matcher{r: r, a: a, declared: map[string]bool{}, cnt: varCount(rr)}
 	argLen := opByName(a, op).argLength
 	pat, pos, posPath := m.gen(match, "v", nil, argLen >= 0)
-	_ = pos
+	r.posVar = pos
 	r.Pat = pat
 	r.Pos = posPath
 	r.declNames = m.decls
@@ -577,7 +630,10 @@ func buildValueRule(a arch, lr locRule, op string) *xRule {
 		r.Move = r.newSlot("block", s[0], "b = (%s)", rhs0)
 		res = s[1]
 	}
-	g := &resulter{r: r, a: a, cse: map[string]int{}}
+	g := &resulter{r: r, a: a, cse: map[string]int{}, pos: "v.Pos"}
+	if pos != "" {
+		g.pos = pos + ".Pos"
+	}
 	switch {
 	case res[0] == '{':
 		r.Result = xResult{Kind: "copy", Copy: r.newSlot("copy", res[1:len(res)-1], "v.copyOf((%s))", callArg(0))}
@@ -588,7 +644,7 @@ func buildValueRule(a arch, lr locRule, op string) *xRule {
 		g.gen(res, true, move)
 		r.Result = xResult{Kind: "build", Nodes: g.nodes}
 	}
-	r.allocOps = g.allocs
+	r.allocOps, r.allocPos = g.allocs, g.allocPos
 	return r
 }
 
@@ -599,8 +655,15 @@ func buildEllipsisRule(a arch, lr locRule, op, eop string) *xRule {
 	return r
 }
 
+// leanBlock is the GoFV.SSA.BlockKind constructor of a block kind of a rule (rulegen's
+// getBlockInfo name without "Block": "If", "ARM64EQ").
+func leanBlock(kind string, a arch) string {
+	name, _ := getBlockInfo(kind, a)
+	return strings.TrimPrefix(name, "Block")
+}
+
 func buildBlockRule(a arch, lr locRule, kind string) *xRule {
-	r := &xRule{Arch: &a, File: lr.file, Line: lr.line, Text: normalizeSpaces(lr.Rule.Rule), Op: kind, Block: true, varIdx: map[string]int{}}
+	r := &xRule{Arch: &a, File: lr.file, Line: lr.line, Text: normalizeSpaces(lr.Rule.Rule), Op: leanBlock(kind, a), rawKind: kind, Block: true, varIdx: map[string]int{}}
 	_, data := getBlockInfo(kind, a)
 	match, cond, result := lr.parse()
 	_, _, auxint, aux, s := extract(match)
@@ -609,6 +672,7 @@ func buildBlockRule(a arch, lr locRule, kind string) *xRule {
 	}
 	m := &matcher{r: r, a: a, declared: map[string]bool{}, cnt: nil, block: true}
 	pos := make([]string, data.controls)
+	goPos := make([]string, data.controls) // rulegen's pos[i]
 	for i, arg := range s[:data.controls] {
 		if strings.Contains(arg, "(") {
 			vname, expr := splitNameExpr(arg)
@@ -617,7 +681,7 @@ func buildBlockRule(a arch, lr locRule, kind string) *xRule {
 				vname = fmt.Sprintf("v_%v", i)
 			}
 			m.declare(vname)
-			p, _, pp := m.gen(expr, vname, []int{i}, false)
+			p, pv, pp := m.gen(expr, vname, []int{i}, false)
 			if named {
 				p.Name = r.addVar(vname, "value", "b.Controls[0]")
 			}
@@ -627,10 +691,15 @@ func buildBlockRule(a arch, lr locRule, kind string) *xRule {
 			} else {
 				pos[i] = "ctrl:" + pathString([]int{i})
 			}
+			goPos[i] = vname + ".Pos"
+			if pv != "" {
+				goPos[i] = pv + ".Pos"
+			}
 		} else {
 			m.declare(arg)
 			r.Ctrls = append(r.Ctrls, m.leafBind(arg))
 			pos[i] = "ctrl:" + pathString([]int{i})
+			goPos[i] = arg + ".Pos"
 		}
 	}
 	r.BAuxInt = blockField(m, auxint, "AuxInt", data.auxIntType())
@@ -641,7 +710,7 @@ func buildBlockRule(a arch, lr locRule, kind string) *xRule {
 	}
 	outop, _, oauxint, oaux, t := extract(result)
 	_, outdata := getBlockInfo(outop, a)
-	r.NewKind = outop
+	r.NewKind = leanBlock(outop, a)
 	if len(t) < outdata.controls {
 		log.Fatalf("%s: too few result controls", r.loc())
 	}
@@ -650,8 +719,10 @@ func buildBlockRule(a arch, lr locRule, kind string) *xRule {
 	g := &resulter{r: r, a: a, cse: nil, block: true}
 	for i, control := range t[:outdata.controls] {
 		newpos := "block"
+		g.pos = "b.Pos"
 		if i < len(pos) && pos[i] != "" {
 			newpos = pos[i]
+			g.pos = goPos[i]
 		}
 		start := len(g.nodes)
 		if control[0] != '(' {
@@ -680,7 +751,7 @@ func buildBlockRule(a arch, lr locRule, kind string) *xRule {
 			r.Swap = true
 		}
 	}
-	r.allocOps = g.allocs
+	r.allocOps, r.allocPos = g.allocs, g.allocPos
 	return r
 }
 
@@ -709,25 +780,33 @@ func pathString(p []int) string {
 	return strings.Join(s, ".")
 }
 
-// crossCheck runs rulegen's real code generator on the rule and compares the sequence of
-// declared names and of allocated ops with the mirror's.
+// crossCheck runs rulegen's real code generator on the rule and compares the sequences of
+// declared names, of allocated ops and of their positions, and the position genMatch chose,
+// with the mirror's.
 func crossCheck(a arch, lr locRule, r *xRule, op string) {
 	rr := &RuleRewrite{Loc: lr.Loc}
 	if r.Block {
-		_, data := getBlockInfo(r.Op, a)
+		_, data := getBlockInfo(r.rawKind, a)
 		rr = genBlockRewrite(lr.Rule, a, data)
 	} else {
 		rr.Match, rr.Cond, rr.Result = lr.parse()
 		pos, _ := genMatch(rr, a, rr.Match, opByName(a, op).argLength >= 0)
+		want := "v.Pos"
+		if r.posVar != "" {
+			want = r.posVar + ".Pos"
+		}
 		if pos == "" {
 			pos = "v.Pos"
+		}
+		if pos != want {
+			log.Fatalf("%s: position mismatch: rulegen %s, mirror %s", r.loc(), pos, want)
 		}
 		if rr.Cond != "" {
 			rr.add(breakf("!(%s)", rr.Cond))
 		}
 		genResult(rr, a, rr.Result, pos)
 	}
-	var decls, allocs []string
+	var decls, allocs, allocPos []string
 	for _, s := range rr.List {
 		d, ok := s.(*Declare)
 		if !ok {
@@ -736,6 +815,7 @@ func crossCheck(a arch, lr locRule, r *xRule, op string) {
 		if c, ok := d.Value.(*ast.CallExpr); ok {
 			if sel, ok := c.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "NewValue0" {
 				allocs = append(allocs, strings.TrimPrefix(c.Args[1].(*ast.Ident).Name, "Op"))
+				allocPos = append(allocPos, types.ExprString(c.Args[0]))
 				continue
 			}
 		}
@@ -746,6 +826,9 @@ func crossCheck(a arch, lr locRule, r *xRule, op string) {
 	}
 	if strings.Join(allocs, ",") != strings.Join(r.allocOps, ",") {
 		log.Fatalf("%s: allocation order mismatch:\n rulegen %v\n mirror  %v", r.loc(), allocs, r.allocOps)
+	}
+	if strings.Join(allocPos, ",") != strings.Join(r.allocPos, ",") {
+		log.Fatalf("%s: allocation position mismatch:\n rulegen %v\n mirror  %v", r.loc(), allocPos, r.allocPos)
 	}
 }
 
@@ -1179,6 +1262,26 @@ func (rd *renderer) expr(e ast.Expr) string {
 	case *ast.StarExpr:
 		rd.inv.add("operators", "deref "+types.TypeString(rd.info.Types[unparen(e.X)].Type, qual), "", rd.r)
 		return fmt.Sprintf("(.deref %s %s)", rd.expr(e.X), rd.goTy(tv.Type))
+	case *ast.CompositeLit:
+		// A keyed struct literal T{f1: e1, f2: e2} is exported as the pseudo-call
+		// `.call "T{f1,f2}" [e1, e2] T` (fields in source order, unnamed fields zero): a pure
+		// function of its field values (docs/contracts/rules.md).
+		var keys []string
+		var vals []ast.Expr
+		for _, el := range e.Elts {
+			kv, ok := el.(*ast.KeyValueExpr)
+			if !ok {
+				log.Fatalf("%s: unkeyed composite literal", rd.r.loc())
+			}
+			keys = append(keys, kv.Key.(*ast.Ident).Name)
+			vals = append(vals, kv.Value)
+		}
+		if _, ok := tv.Type.Underlying().(*types.Struct); !ok {
+			log.Fatalf("%s: composite literal of non-struct type %s", rd.r.loc(), tv.Type)
+		}
+		name := types.TypeString(tv.Type, qual) + "{" + strings.Join(keys, ",") + "}"
+		rd.inv.add("composite literals", name, "", rd.r)
+		return fmt.Sprintf("(.call %s %s %s)", leanStr(name), rd.args(vals), rd.goTy(tv.Type))
 	}
 	log.Fatalf("%s: unsupported expression %T", rd.r.loc(), e)
 	return ""
@@ -1322,9 +1425,12 @@ func (rd *renderer) nodes(ns []*xNode, base int) string {
 	for _, n := range ns {
 		var as []string
 		for _, a := range n.Args {
-			if a.Kind == "var" {
+			switch a.Kind {
+			case "var":
 				as = append(as, fmt.Sprintf(".var %d", a.N))
-			} else {
+			case "expr":
+				as = append(as, fmt.Sprintf(".expr %s", rd.slotExpr(a.E)))
+			default:
 				as = append(as, fmt.Sprintf(".node %d", a.N-base))
 			}
 		}
@@ -1445,7 +1551,8 @@ const header = "-- Generated by tools/rules2lean from the pinned Go %s (_gen/%s.
 const rulesPerModule = 120
 
 type opGroup struct {
-	op    string
+	op    string // Lean constructor (Op / BlockKind)
+	raw   string // block groups: the kind as written in the rule file
 	rules []*xRule
 }
 
@@ -1465,19 +1572,19 @@ func rules2leanMain() {
 	}
 	var all []*xRule
 	var datas []*fileData
-	for _, fname := range ruleFiles {
+	for _, rf := range ruleFiles {
 		var a arch
 		found := false
 		for _, x := range archs {
-			if x.name == fname {
+			if x.name == rf.arch {
 				a, found = x, true
 			}
 		}
 		if !found {
-			log.Fatalf("no arch %s", fname)
+			log.Fatalf("no arch %s", rf.arch)
 		}
-		fd := &fileData{name: fname}
-		ops, oprules, blocks, blockrules := loadRules(a)
+		fd := &fileData{name: rf.name()}
+		ops, oprules, blocks, blockrules, simdSkipped := loadRules(a, rf.suffix)
 		ids := map[string]int{}
 		leanId := func(lr locRule) string {
 			base := fmt.Sprintf("r_%s_%d", lr.file, lr.line)
@@ -1506,7 +1613,7 @@ func rules2leanMain() {
 			fd.values = append(fd.values, g)
 		}
 		for _, kind := range blocks {
-			g := opGroup{op: kind}
+			g := opGroup{op: leanBlock(kind, a), raw: kind}
 			for _, lr := range blockrules[kind] {
 				r := buildBlockRule(a, lr, kind)
 				crossCheck(a, lr, r, "")
@@ -1516,7 +1623,7 @@ func rules2leanMain() {
 			all = append(all, g.rules...)
 			fd.blocks = append(fd.blocks, g)
 		}
-		checkGenerated(fd.name, fd.values, fd.blocks, oprules, blockrules)
+		checkGenerated(fd.name, fd.values, fd.blocks, oprules, blockrules, simdSkipped)
 		datas = append(datas, fd)
 	}
 	info := typecheck(goroot, all)
@@ -1658,10 +1765,15 @@ func writeInventory(path string, inv *inventory, all []*xRule) {
 		}
 		fmt.Fprintf(&w, "\n#### %s\n\n", strings.ToUpper(c[:1])+c[1:])
 		withSig := c == "functions" || c == "methods" || c == "fields" || c == "package variables" || c == "named constants" || c == "reserved names"
+		var fileNames []string
+		for _, rf := range ruleFiles {
+			fileNames = append(fileNames, rf.name())
+		}
+		cols := strings.Join(fileNames, " / ")
 		if withSig {
-			w.WriteString("| Name | Go type | Uses | Rules | generic / dec / divisible / divmod |\n| --- | --- | --: | --: | --- |\n")
+			w.WriteString("| Name | Go type | Uses | Rules | " + cols + " |\n| --- | --- | --: | --: | --- |\n")
 		} else {
-			w.WriteString("| Form | Uses | Rules | generic / dec / divisible / divmod |\n| --- | --: | --: | --- |\n")
+			w.WriteString("| Form | Uses | Rules | " + cols + " |\n| --- | --: | --: | --- |\n")
 		}
 		var names []string
 		for n := range m {
@@ -1675,7 +1787,11 @@ func writeInventory(path string, inv *inventory, all []*xRule) {
 		})
 		for _, n := range names {
 			e := m[n]
-			per := fmt.Sprintf("%d / %d / %d / %d", e.files["generic"], e.files["dec"], e.files["divisible"], e.files["divmod"])
+			var counts []string
+			for _, f := range fileNames {
+				counts = append(counts, strconv.Itoa(e.files[f]))
+			}
+			per := strings.Join(counts, " / ")
 			if withSig {
 				fmt.Fprintf(&w, "| `%s` | `%s` | %d | %d | %s |\n", n, strings.ReplaceAll(e.sig, "|", "\\|"), e.count, len(e.rules), per)
 			} else {
@@ -1690,6 +1806,32 @@ func writeInventory(path string, inv *inventory, all []*xRule) {
 		}
 		sort.Strings(names)
 		fmt.Fprintf(&w, "\n#### Op constants in expressions\n\n%s\n", "`"+strings.Join(names, "`, `")+"`")
+	}
+	// Forms the machine-independent rule files (Phase 1, already interpreted) never use: what
+	// the interpreter needs in addition for the arm64 lowering rules.
+	var newForms []string
+	for _, c := range cats {
+		if c == "expression roles" || c == "reserved names" {
+			continue
+		}
+		var names []string
+		for n, e := range inv.cats[c] {
+			old := 0
+			for _, f := range []string{"generic", "dec", "divisible", "divmod"} {
+				old += e.files[f]
+			}
+			if old == 0 {
+				names = append(names, n)
+			}
+		}
+		if len(names) == 0 {
+			continue
+		}
+		sort.Strings(names)
+		newForms = append(newForms, fmt.Sprintf("- %s%s (%d): `%s`", strings.ToUpper(c[:1]), c[1:], len(names), strings.ReplaceAll(strings.Join(names, "`, `"), "|", "\\|")))
+	}
+	if len(newForms) > 0 {
+		fmt.Fprintf(&w, "\n#### Used only by the arm64 rule files\n\nForms of the tables above with no use in `generic` / `dec` / `divisible` / `divmod`, i.e. what the\ninterpreter needs beyond Phase 1 for `ARM64` and `ARM64latelower`:\n\n%s\n", strings.Join(newForms, "\n"))
 	}
 	w.WriteString("\n" + invEnd)
 	doc, err := os.ReadFile(path)
@@ -1713,18 +1855,27 @@ const (
 
 // checkGenerated compares the exported rule order with the pinned compiler's generated
 // rewrite<file>.go: per function (op) and per block kind, the sequence of
-// "// match:", "// cond:", "// result:" comments must equal the exported rules' text.
-func checkGenerated(name string, values, blocks []opGroup, oprules, blockrules map[string][]locRule) {
+// "// match:", "// cond:", "// result:" comments must equal the exported rules' text; the
+// dispatch switch of rewriteValue<file> must have a case for exactly the exported ops, calling
+// the op's function or, for an ellipsis rule, setting the exported op. Functions and cases of
+// the dropped SIMD ops (simdSkipped) are ignored.
+func checkGenerated(name string, values, blocks []opGroup, oprules, blockrules map[string][]locRule, simdSkipped map[string]bool) {
 	src, err := os.ReadFile(filepath.Join("..", "rewrite"+name+".go"))
 	if err != nil {
 		log.Fatal(err)
 	}
 	fnRe := regexp.MustCompile(`^func rewriteValue` + name + `_Op(\w+)\(`)
 	blockFnRe := regexp.MustCompile(`^func rewriteBlock` + name + `\(`)
+	dispatchRe := regexp.MustCompile(`^func rewriteValue` + name + `\(v \*Value\) bool \{$`)
 	caseRe := regexp.MustCompile(`^\tcase Block(\w+):`)
-	got := map[string][]string{} // "v:Op" / "b:Kind" -> rule texts
+	opCaseRe := regexp.MustCompile(`^\tcase Op(\w+):$`)
+	callRe := regexp.MustCompile(`^\t\treturn rewriteValue` + name + `_Op(\w+)\(v\)$`)
+	setRe := regexp.MustCompile(`^\t\tv\.Op = Op(\w+)$`)
+	got := map[string][]string{}    // "v:Op" / "b:Kind" -> rule texts
+	dispatch := map[string]string{} // Op -> "fn" | "set:<Op>"
 	key := ""
-	inBlock := false
+	inBlock, inDispatch := false, false
+	dcase := ""
 	cur := ""
 	flush := func() {
 		if cur != "" {
@@ -1735,12 +1886,27 @@ func checkGenerated(name string, values, blocks []opGroup, oprules, blockrules m
 	for _, line := range strings.Split(string(src), "\n") {
 		if m := fnRe.FindStringSubmatch(line); m != nil {
 			flush()
-			key, inBlock = "v:"+m[1], false
+			key, inBlock, inDispatch = "v:"+m[1], false, false
 			continue
 		}
 		if blockFnRe.MatchString(line) {
 			flush()
-			key, inBlock = "", true
+			key, inBlock, inDispatch = "", true, false
+			continue
+		}
+		if dispatchRe.MatchString(line) {
+			flush()
+			key, inBlock, inDispatch = "", false, true
+			continue
+		}
+		if inDispatch {
+			if m := opCaseRe.FindStringSubmatch(line); m != nil {
+				dcase = m[1]
+			} else if m := callRe.FindStringSubmatch(line); m != nil && dcase == m[1] {
+				dispatch[dcase] = "fn"
+			} else if m := setRe.FindStringSubmatch(line); m != nil && dcase != "" {
+				dispatch[dcase] = "set:" + m[1]
+			}
 			continue
 		}
 		if inBlock {
@@ -1768,17 +1934,32 @@ func checkGenerated(name string, values, blocks []opGroup, oprules, blockrules m
 		}
 		return s + " | result: " + r
 	}
+	for op := range simdSkipped {
+		delete(got, "v:"+strings.TrimPrefix(op, "Op"))
+		delete(dispatch, strings.TrimPrefix(op, "Op"))
+	}
 	want := map[string][]string{}
 	for _, g := range values {
+		d := "fn"
 		if g.rules[0].Result.Kind == "setOp" {
+			d = "set:" + g.rules[0].Result.SetOp
+		}
+		if dispatch[g.op] != d {
+			log.Fatalf("%s: dispatch of Op%s in rewrite%s.go is %q, exported %q", name, g.op, name, dispatch[g.op], d)
+		}
+		delete(dispatch, g.op)
+		if d != "fn" {
 			continue // ellipsis rules have no function
 		}
 		for _, lr := range oprules["Op"+g.op] {
 			want["v:"+g.op] = append(want["v:"+g.op], text(lr))
 		}
 	}
+	if len(dispatch) != 0 {
+		log.Fatalf("%s: ops dispatched in rewrite%s.go but not exported: %v", name, name, dispatch)
+	}
 	for _, g := range blocks {
-		for _, lr := range blockrules[g.op] {
+		for _, lr := range blockrules[g.raw] {
 			want["b:"+g.op] = append(want["b:"+g.op], text(lr))
 		}
 	}
@@ -1793,5 +1974,5 @@ func checkGenerated(name string, values, blocks []opGroup, oprules, blockrules m
 		}
 		n += len(w)
 	}
-	log.Printf("%s: %d rules match rewrite%s.go in order", name, n, name)
+	log.Printf("%s: %d rules match rewrite%s.go in order (%d SIMD ops skipped)", name, n, name, len(simdSkipped))
 }

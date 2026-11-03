@@ -267,17 +267,15 @@ theorem memRoot_nilCheck_res {ctx : Ctx} {v : Value} {argv : List Val} {res : Re
 `NilCheck`. -/
 def Panicking (op : Op) : Prop := op.call = true ∨ op = .NilCheck
 
-theorem nilCheck_eq {op : Op} (h : op.nilCheck = true) : op = .NilCheck := by
-  unfold Op.nilCheck at h; split at h
-  · rfl
-  · cases h
+theorem nilCheck_eq {op : Op} (h : op.nilCheck = true) : op = .NilCheck ∨ op = .ARM64LoweredNilCheck := by
+  unfold Op.nilCheck at h; split at h <;> first | exact .inl rfl | exact .inr rfl | cases h
 
 /-- Calls are scheduled as side-effecting roots. -/
 theorem prio_call {op : Op} (h : op.call = true) : prio op = 2 := by
   unfold prio isRoot
   cases hn : op.nilCheck
   · simp [h]
-  · rw [nilCheck_eq hn] at h; exact absurd h (by decide)
+  · rcases nilCheck_eq hn with rfl | rfl <;> exact absurd h (by decide)
 
 /-- A value that can panic is not pure. -/
 theorem prio_panicking {op : Op} (h : Panicking op) : prio op ≠ 0 := by

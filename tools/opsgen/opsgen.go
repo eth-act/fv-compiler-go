@@ -439,8 +439,8 @@ func main() {
 			log.Fatalf("unexpected arch %s", a.name)
 		}
 		archNames = append(archNames, a.name)
-		name := a.name
-		if a.generic {
+		name := a.name // arch.Name()
+		if a.name == "generic" {
 			name = ""
 		}
 		if a.name == "ARM64" {
