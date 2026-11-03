@@ -23,6 +23,15 @@ avoiding): the problem, the trick, the numbers, where it is used.
   finish within the default heartbeats (25 s CPU). So evaluate `Op` metadata on concrete ops
   with `decide`/`rfl`; never `simp [Op.argLen]` on an op variable (see the
   `lean-proof-performance` skill, "stuck match").
+- **Phase 2 (ARM64 ops, #380):** one extended `Op` (800 constructors: 354 non-SIMD ARM64 + 445
+  generic + `Invalid`; the 306 ARM64 SIMD ops left out like the generic ones), 25 metadata
+  functions, `DecidableEq`: 13 s / 0.88 GB, 47 MB `.olean` (was 7.5 s / 0.56 GB / 16 MB). The
+  size is the compiled `match`es: each metadata function's `_sparseCasesOn_1` is ~11k Expr nodes
+  (`scripts/olean-top.lean`). The
+  per-op register info (`Op.regInfo`, `asm`, `scale`) lives in the separate `GoFV.SSA.OpARM64`
+  (1.5 MB) so Phase 1 modules do not load it. A split `generic | arm64` inductive was not
+  needed; its cost would have been rewriting every Phase 1 `match` on `Op`. With the arch ops,
+  statements about all ops must cover them (`Eval.nilCheck_eq` now has two cases).
 
 #### Large `match` on a variable: keep `simp` off it, generate equations in the defining module
 - **Problem:** `GoFV.SSA.Op` has 446 constructors and its 20 metadata functions are 446-arm
