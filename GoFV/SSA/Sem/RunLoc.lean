@@ -26,7 +26,8 @@ not evaluated as SSA: `runLoc` keeps a machine state and never reads data by val
 * **Moves.** `Copy`, `LoadReg` (slot to register) and `StoreReg` (register to slot) move their
   argument. A slot write kills the slots of the same variable it overlaps. `MOVDreg`/`MOVDnop`
   copy the upper bits of their argument's register (`movdLoc`): a `LoadReg` sign-extends exactly
-  the signed narrow types (`loadByType`), a `Copy` keeps its argument's bits.
+  the signed narrow types (`loadByType`), a `Copy` keeps its argument's bits, any other producer
+  as under `runL` (`Arm64.signExtendsIn`).
 * **`ZERO`** reads as the 0 of the reader's shape and ignores writes: regalloc homes zero
   constants of every type there (a `bool` `false` and an `int64` `0` share it).
 * **Clobbers.** After a value, the registers its op clobbers (`regInfo.clobbers`: every

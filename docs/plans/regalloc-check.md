@@ -150,19 +150,17 @@ lemmas (`GoFV/Proof/RefineLoc.lean`, #445) and the L1/L2 `clamp` witness (`Clamp
 
 | corpus | functions | accepted | rejected |
 | --- | --- | --- | --- |
-| quick-v5 | 9,297 | 9,296 | 1 |
-| full-v6 | 96,553 | 96,549 | 4 |
+| quick-v5 | 9,297 | 9,297 | 0 |
+| full-v6 | 96,553 | 96,552 | 1 |
 
-The quick-v5 rejection (`runtime.checkdead`, `sign`) is a `runL` semantics gap, not a
-regalloc error: late lower turned `MOVWreg x:(MOVWload)` into `MOVDreg x`, then `pair` merged the
-load into `LDPSW`, so `x` is `Select1 (LDPSW …)`, which `Arm64.signExtends` does not recognise
-(zero extension under `runSched`) although the machine sign-extends; `regalloc` reloads `x` with
-a sign-extending `MOVW`, so the two semantics differ. Fix belongs to `runL` (`signExtends`
-through the selectors of signed pair loads). full-v6: `checkdead` and `pkgbits.(*Encoder).Flush`
-are this case (`MOVDnop (Select0 (LDPSW …))`); `ssa.(*regAllocState).regalloc` and
-`json/v2.parseDurationBase10` are not yet classified (the failure cascades through the
-certificate: `certify` propagates an empty fact set out of a failing block; first step for a
-continuation: skip failing blocks in `certify` to expose the root failure).
+`runtime.checkdead` and `pkgbits.(*Encoder).Flush`, rejected before #453, were a `runL`
+semantics gap, not regalloc errors: late lower turned `MOVWreg x:(MOVWload)` into `MOVDreg x`,
+then `pair` merged the load into `LDPSW`, so `x` is `Select1 (LDPSW …)`; `regalloc` reloads `x`
+with a sign-extending `MOVW`. #453 made `runL` sign-extend through the selectors of `LDPSW`
+(`Arm64.signExtendsIn`), and `LocCtx.signOf` and `signOK` follow it. Remaining full-v6 rejection:
+`json/v2.parseDurationBase10` (`missing-flags`, not yet classified; the failure may cascade
+through the certificate: `certify` propagates an empty fact set out of a failing block; first
+step for a continuation: skip failing blocks in `certify` to expose the root failure).
 
 What the probe found on the way (each now handled, above): `ZERO` homes for zero constants of
 every type and moves out of it; duplicate and rematerialised frame constants (`Cx.canon`); the
