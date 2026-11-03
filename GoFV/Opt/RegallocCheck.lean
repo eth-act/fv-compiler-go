@@ -112,14 +112,16 @@ def kOp : Op → Bool
   | .ARM64MOVDaddr | .ARM64ZERO | .SP | .SB => true
   | _ => false
 
-/-- `v` is a frame constant of `f`: a frame-constant op whose arguments are `SP`/`SB`. -/
+/-- `v` is a frame constant of `f`: a frame-constant op whose arguments are `SP`/`SB` (each the
+value of its own ID). -/
 def isKVal (f : Func) (v : Value) : Bool :=
   kOp v.op && v.args.all fun a => match f.value? a with
-    | some u => (u.op == .SP || u.op == .SB) && u.args.isEmpty
+    | some u => u.id == a && (u.op == .SP || u.op == .SB) && u.args.isEmpty
     | none => false
 
+/-- Source value `id` is a frame constant (the value of its own ID). -/
 def Cx.isK (cx : Cx) (id : ID) : Bool := match cx.f.value? id with
-  | some v => isKVal cx.f v
+  | some v => v.id == id && isKVal cx.f v
   | none => false
 
 /-- The representatives of the frame constants of `f` (the first with each key, in value-table
@@ -141,12 +143,12 @@ def Cx.make (tabs : Tables) (f g : Func) : Cx :=
 /-- Frame constants with the same op, aux, auxint, type and arguments have the same value: facts
 name them by one representative. -/
 def Cx.canon (cx : Cx) (u : ID) : ID :=
-  match cx.krep[u]?, cx.f.value? u with
-  | some r, some v =>
-    match cx.f.value? r with
-    | some x => if r != u && isKVal cx.f v && isKVal cx.f x && sameConst x v then r else u
-    | none => u
-  | _, _ => u
+  match cx.krep[u]? with
+  | some r =>
+    match cx.f.value? u, cx.f.value? r with
+    | some v, some x => if r != u && cx.isK u && cx.isK r && sameConst x v then r else u
+    | _, _ => u
+  | none => u
 
 /-- The word shapes (`int64` and pointers), which have the same values (`Val.hasTy`). -/
 def isWord : Ty → Bool
@@ -157,19 +159,30 @@ def isWord : Ty → Bool
 def shapeEq (t t' : Ty) : Bool :=
   (isWord t && isWord t') || Ty.beq t t'
 
-/-- Reading at shape `t'` and then at `t` is reading at `t` (`LMode.retype`): equal shapes, or an
-integer `t` no wider than the integer `t'` (a phi or move of a narrower type takes the low
-bits). -/
-def composes (t t' : Ty) : Bool :=
+/-- Reading any value at shape `t'` and then at `t` is reading it at `t` (`LMode.retype`; `low`:
+a lowered function): equal shapes, or integers `t` no wider than `t'`, both narrower than 64
+bits (a phi or move of a narrower type takes the low bits; a 64-bit integer shape keeps a
+pointer's word, which a narrower one makes `poison`). -/
+def composes (low : Bool) (t t' : Ty) : Bool :=
   shapeEq t t' ||
-    match t, t' with
-    | .int w, .int w' => decide (w.bits ≤ w'.bits)
-    | _, _ => false
+    (low && match t, t' with
+      | .int w, .int w' => decide (w.bits ≤ w'.bits) && decide (w'.bits < 64)
+      | _, _ => false)
+
+/-- `composes` for the values of shape `t` only (a value already read at `t`): integers `t` no
+wider than `t'` (`low`). -/
+def composesAt (low : Bool) (t t' : Ty) : Bool :=
+  shapeEq t t' ||
+    (low && match t, t' with
+      | .int w, .int w' => decide (w.bits ≤ w'.bits)
+      | _, _ => false)
 
 /-- Source value `id` is a zero constant (`MOVDconst [0]`, `ZERO`), which `regalloc` homes in
 `ZERO`. -/
 def Cx.isZeroConst (cx : Cx) (id : ID) : Bool := match cx.f.value? id with
-  | some v => (v.op == .ARM64ZERO || (v.op == .ARM64MOVDconst && v.auxInt == 0)) && v.args.isEmpty
+  | some v =>
+    cx.isK id && (v.op == .ARM64ZERO || (v.op == .ARM64MOVDconst && v.auxInt == 0)) &&
+      v.args.isEmpty
   | none => false
 
 /-- The shape of a fact's origin. -/
@@ -277,12 +290,20 @@ def clobberFacts (cx : Cx) (S : Facts) (w : Value) : Facts :=
     | none => S
   if w.op.clobberFlags then S.filter (·.1 != .flags) else S
 
+/-- The facts that survive a write of a value of home `h` and shape `t`. -/
+def killAll (cx : Cx) (h : Option Location) (t : Ty) (S : Facts) : Facts :=
+  (killLocs h t).foldl (fun S l => killLoc cx.tabs l S) S
+
 /-- The facts after target value `w`'s result, with origin `id`, is written. -/
 def writeFacts (cx : Cx) (S : Facts) (w : Value) (id : ID) : Facts :=
   let h := cx.lc.home w.id
   let t := cx.gty w.id
-  let S := (killLocs h t).foldl (fun S l => killLoc cx.tabs l S) S
-  (writeLocs h t).map (fun (l, j) => exactF l id j) ++ S
+  (writeLocs h t).map (fun (l, j) => exactF l id j) ++ killAll cx h t S
+
+/-- A write of a value of home `h` and shape `t` changes each of its locations once (no two
+components in one register). -/
+def writesNodup (h : Option Location) (t : Ty) : Bool :=
+  decide ((writeLocs h t).map (·.1)).Nodup
 
 /-! ## Reads -/
 
@@ -317,12 +338,18 @@ def selIndex (v : Value) : Option Nat :=
   | .SelectN => if v.auxInt.toInt < 0 then none else some v.auxInt.toInt.toNat
   | _ => none
 
+/-- The target arguments `as'` hold the source arguments `as` (the first one's component `sel`
+only). -/
+def argsOKL (cx : Cx) (S : Facts) : List ID → List ID → Option Nat → Except String Unit
+  | a' :: as', a :: as, sel => do
+    argOK cx S a' a sel
+    argsOKL cx S as' as none
+  | _, _, _ => pure ()
+
 /-- The arguments of kept value `w` (source value `u`) hold `u`'s arguments. -/
-def argsOK (cx : Cx) (S : Facts) (w u : Value) : Except String Unit := do
+def argsOK (cx : Cx) (S : Facts) (w u : Value) : Except String Unit :=
   if w.args.size != u.args.size then throw s!"arity v{w.id}"
-  for h : j in [0:w.args.size] do
-    let sel := if j == 0 then selIndex u else none
-    argOK cx S w.args[j] (u.args[j]!) sel
+  else argsOKL cx S w.args.toList u.args.toList (selIndex u)
 
 /-! ## Values -/
 
@@ -364,46 +391,106 @@ def Cx.redefine (cx : Cx) (S : Facts) (u : ID) : Facts :=
   if cx.isK u then S else
   S.filter fun (l, o) => o.id != u && !(l == .avail && cx.reads o.id u)
 
-/-- A kept value: target value `w` is source value `u` (same ID). An available source value with
-the op, aux, auxint, type and arguments of `u` has `u`'s new value: the locations `u` is written
-to hold it too. -/
-def keptStep (cx : Cx) (S : Facts) (w u : Value) : Except String Facts := do
-  argsOK cx S w u
-  if !signOK cx w u then throw s!"sign v{w.id}: MOVDreg argument changes its producer"
-  if !shapeEq (cx.gty w.id) (cx.fty u.id) then throw s!"shape v{w.id}"
-  let pure' := pureArm64 u.op && !u.args.contains u.id
-  let eqs : List ID := if !pure' then [] else S.filterMap fun (l, o) =>
+/-- The source values whose availability the check records (`(avail, v)`: `v`'s value is its op
+applied to the current values of its arguments): the pure arm64 ops (`flagalloc`'s
+recomputations), the selectors and `MakeResult` (a `Ret` reads it at the block end). -/
+def availOp (u : Value) : Bool :=
+  pureArm64 u.op || u.op == .MakeResult || (selIndex u).isSome
+
+/-- Selector `u` (target `w`) reads component `i` of its argument from location `l`, which holds
+that component of `u`'s source argument exactly: every available selector `v` with `u`'s op, aux,
+auxint and type whose argument's component `i` is at `l` too has `u`'s new value. -/
+def selEqs (cx : Cx) (S : Facts) (w u : Value) : List ID :=
+  match selIndex u, u.args.toList, w.args[0]? with
+  | some i, [a], some a' =>
+    match readLoc (cx.lc.home a') (cx.gty a') with
+    | some (.tuple ls) =>
+      match ls.find? (·.2 == i) with
+      | some (l, _) =>
+        if !S.contains (l, ⟨a, some i, false⟩) then [] else
+        S.filterMap fun (l0, o) =>
+          if l0 == .avail && o.comp.isNone && o.id != u.id then
+            match cx.f.value? o.id with
+            | some v =>
+              match v.args.toList with
+              | [x] =>
+                if v.op == u.op && v.aux == u.aux && v.auxInt == u.auxInt && v.type == u.type &&
+                    x != u.id && S.contains (l, ⟨x, some i, false⟩) then some o.id
+                else none
+              | _ => none
+            | none => none
+          else none
+      | none => []
+    | _ => []
+  | _, _, _ => []
+
+/-- The available pure arm64 values with the op, aux, auxint, type and arguments of `u`. -/
+def pureEqs (cx : Cx) (S : Facts) (u : Value) : List ID :=
+  if !(pureArm64 u.op && !u.args.contains u.id) then [] else S.filterMap fun (l, o) =>
     if l == .avail && o.comp.isNone && o.id != u.id &&
         ((cx.f.value? o.id).map (sameConst · u)).getD false then some o.id else none
-  let S := clobberFacts cx S w
-  let S := cx.redefine S u.id
-  let S ← if u.op == .MakeResult then
-    -- the components are the arguments, read from the locations they are written to: those
-    -- locations hold the arguments exactly afterwards
-    let h := cx.lc.home w.id
-    let t := cx.gty w.id
-    let ts := match t with | .tuple ts => ts | _ => []
-    let same (l : Loc) (j : Nat) : Bool :=
-      match w.args[j]?, u.args[j]? with
-      | some a', some a =>
-        (match readLoc (cx.lc.home a') (cx.gty a') with
-          | some (.loc l') => l' == l
-          | _ => false) &&
-        S.holds l (cx.canon a) && shapeEq (ts.getD j .other) (cx.fty a) &&
-          shapeEq (cx.gty a') (cx.fty a)
-      | _, _ => false
-    let ws := writeLocs h t
-    let isTup := match t with | .tuple _ => true | _ => false
-    if isTup && ws.all (fun (l, j) => match j with | some j => same l j | none => false) then
-      let S := (killLocs h t).foldl (fun S l => killLoc cx.tabs l S) S
-      pure ((ws.flatMap fun (l, j) => match j.bind (u.args[·]?) with
-        | some a => [exactF l u.id j, exactF l (cx.canon a)]
-        | none => []) ++ S)
-    else pure (writeFacts cx S w (cx.canon u.id))
-  else pure (writeFacts cx S w (cx.canon u.id))
+
+/-- `MakeResult` `u` (target `w`, components of shapes `ts`): component `j` is written to location
+`l`, which is where its argument is read from and holds the source argument. -/
+def mrSame (cx : Cx) (S : Facts) (w u : Value) (ts : List Ty) (l : Loc) (j : Nat) : Bool :=
+  match w.args[j]?, u.args[j]? with
+  | some a', some a =>
+    a != u.id &&
+    (match readLoc (cx.lc.home a') (cx.gty a') with
+      | some (.loc l') => l' == l
+      | _ => false) &&
+    S.holds l (cx.canon a) && shapeEq (ts.getD j .other) (cx.fty a) &&
+      shapeEq (cx.gty a') (cx.fty a)
+  | _, _ => false
+
+/-- A `MakeResult` whose components are written where their arguments are read from. -/
+def mrOK (cx : Cx) (S : Facts) (w u : Value) : Bool :=
+  u.op == .MakeResult &&
+    match cx.gty w.id with
+    | .tuple ts =>
+      decide (ts.length ≤ u.args.size) &&
+        (writeLocs (cx.lc.home w.id) (cx.gty w.id)).all fun (l, j) => match j with
+          | some j => mrSame cx S w u ts l j
+          | none => false
+    | _ => false
+
+/-- The facts after such a `MakeResult`: its components' locations hold the components and the
+arguments, exactly. -/
+def mrFacts (cx : Cx) (S : Facts) (w u : Value) : Facts :=
+  let h := cx.lc.home w.id
+  let t := cx.gty w.id
+  ((writeLocs h t).flatMap fun (l, j) => match j.bind (u.args[·]?) with
+    | some a => [exactF l u.id j, exactF l (cx.canon a)]
+    | none => []) ++ killAll cx h t S
+
+/-- The facts after kept value `w` (source value `u`). An available source value with the op,
+aux, auxint, type and arguments of `u` (`pureEqs`; for a selector, the same component of a tuple
+at the same location, `selEqs`) has `u`'s new value: the locations `u` is written to hold it
+too. -/
+def keptFacts (cx : Cx) (S : Facts) (w u : Value) : Facts :=
+  let eqs := pureEqs cx S u ++ selEqs cx S w u
+  let S2 := cx.redefine (clobberFacts cx S w) u.id
+  let S3 := if mrOK cx S2 w u then mrFacts cx S2 w u else writeFacts cx S2 w (cx.canon u.id)
   let written := (writeLocs (cx.lc.home w.id) (cx.gty w.id)).flatMap fun (l, j) =>
     eqs.map fun v => exactF l v j
-  pure (written ++ (if pure' then [exactF .avail u.id] else []) ++ S)
+  let av := availOp u && !u.args.contains u.id
+  written ++ (if av then [exactF .avail u.id] else []) ++ S3
+
+/-- What a kept value needs: not a move in the source, arguments that hold `u`'s, the same sign
+extension for `MOVDreg`/`MOVDnop`, the same shape. -/
+def keptChecks (cx : Cx) (S : Facts) (w u : Value) : Except String Unit :=
+  if u.op == .LoadReg || u.op == .StoreReg then throw s!"kept v{w.id}: a {u.op.name} in the source"
+  else match argsOK cx S w u with
+    | .error e => .error e
+    | .ok () =>
+      if !signOK cx w u then throw s!"sign v{w.id}: MOVDreg argument changes its producer"
+      else if !shapeEq (cx.gty w.id) (cx.fty u.id) then throw s!"shape v{w.id}"
+      else pure ()
+
+/-- A kept value: target value `w` is source value `u` (same ID). -/
+def keptStep (cx : Cx) (S : Facts) (w u : Value) : Except String Facts := do
+  keptChecks cx S w u
+  pure (keptFacts cx S w u)
 
 /-- `regalloc` turns a `KeepAlive x mem` whose `x` is in a register or rematerialisable into
 `Copy mem`, or into `VarLive {name} mem` when `x` is the address of a stack object
@@ -412,50 +499,80 @@ def isKeepAliveCopy (u w : Value) : Bool :=
   u.op == .KeepAlive && (w.op == .Copy || w.op == .VarLive) && u.type == w.type &&
     u.args.size == 2 && w.args.size == 1
 
+/-- What a kept `KeepAlive` that became `Copy mem` or `VarLive mem` needs: its memory argument
+holds `u`'s, the same shape. -/
+def keepAliveChecks (cx : Cx) (S : Facts) (w u : Value) : Except String Unit :=
+  match w.args[0]?, u.args[1]? with
+  | some a', some a =>
+    match argOK cx S a' a none with
+    | .error e => .error e
+    | .ok () => if !shapeEq (cx.gty w.id) (cx.fty u.id) then throw s!"shape v{w.id}" else pure ()
+  | _, _ => throw s!"keepalive v{w.id}"
+
 /-- A kept `KeepAlive` that became `Copy mem` or `VarLive mem`. -/
 def keepAliveStep (cx : Cx) (S : Facts) (w u : Value) : Except String Facts := do
-  let (some a', some a) := (w.args[0]?, u.args[1]?) | throw s!"keepalive v{w.id}"
-  argOK cx S a' a none
-  if !shapeEq (cx.gty w.id) (cx.fty u.id) then throw s!"shape v{w.id}"
-  let S := cx.redefine (clobberFacts cx S w) u.id
-  pure (writeFacts cx S w u.id)
+  keepAliveChecks cx S w u
+  pure (writeFacts cx (cx.redefine (clobberFacts cx S w) u.id) w u.id)
+
+/-- A fact's component, if any, is one of its tuple shape's. -/
+def Cx.compOK (cx : Cx) (o : Orig) : Bool :=
+  match o.comp, cx.fty o.id with
+  | none, _ => true
+  | some j, .tuple ts => decide (j < ts.length)
+  | some _, _ => false
+
+/-- The source values a move's destination holds: the facts of the argument `a'`'s location at
+the move's shape `t` (exactly), or the zero constant `zo` (the source constant the argument is,
+if any) for a move out of `ZERO`. -/
+def moveSrc (cx : Cx) (S : Facts) (a' : ID) (t : Ty) (zo : Option ID) : List Orig :=
+  match readLoc (cx.lc.home a') (cx.gty a') with
+  | some (.loc l) =>
+    -- an exact fact holds a value of its shape, a weak one any value
+    let low := cx.f.lowered
+    S.filterMap fun (l', o) =>
+      if l' == l && cx.compOK o && shapeEq (cx.origTy o) t &&
+          (if o.weak then composes low (cx.origTy o) (cx.gty a')
+           else composesAt low (cx.origTy o) (cx.gty a')) then
+        some { o with weak := false }
+      else none
+  | some .zero =>
+    match zo with
+    | some u =>
+      if cx.isZeroConst u && shapeEq (cx.gty a') t && shapeEq (cx.fty u) t then
+        [⟨cx.canon u, none, false⟩]
+      else []
+    | none => []
+  | _ => []
+
+/-- The facts after move `w` of argument `a'`. -/
+def moveFacts (cx : Cx) (S : Facts) (w : Value) (a' : ID) (zo : Option ID) : Facts :=
+  let h := cx.lc.home w.id
+  let t := cx.gty w.id
+  let src := moveSrc cx S a' t zo
+  ((writeLocs h t).flatMap fun (l, j) => match j with
+    | none => src.map (l, ·)
+    | some _ => []) ++ killAll cx h t (clobberFacts cx S w)
 
 /-- A move (`Copy`, `LoadReg`, `StoreReg`): the facts of the argument's location, at the value's
-shape, are copied to the destination. A move out of `ZERO` holds the zero constant `zo` (the
-source constant the argument is, if any). -/
-def moveStep (cx : Cx) (S : Facts) (w : Value) (zo : Option ID) : Except String Facts := do
-  let some a' := w.args[0]? | throw s!"move v{w.id} without argument"
-  if w.args.size != 1 then throw s!"move v{w.id} arity"
-  let t := cx.gty w.id
-  let src : List Orig ← match readLoc (cx.lc.home a') (cx.gty a') with
-    | none => throw s!"stuck-read v{a'} has no home"
-    | some (.loc l) =>
-      pure (S.filterMap fun (l', o) =>
-        if l' == l && shapeEq (cx.origTy o) t && composes (cx.origTy o) (cx.gty a') then
-          some { o with weak := false }
-        else none)
-    | some .zero =>
-      pure (match zo with
-        | some u =>
-          if cx.isZeroConst u && shapeEq (cx.gty a') t && shapeEq (cx.fty u) t then
-            [⟨cx.canon u, none, false⟩]
-          else []
-        | none => [])
-    | some _ => pure []
-  let S := clobberFacts cx S w
-  let h := cx.lc.home w.id
-  let S := (killLocs h t).foldl (fun S l => killLoc cx.tabs l S) S
-  let new := (writeLocs h t).flatMap fun (l, j) => match j with
-    | none => src.map (l, ·)
-    | some _ => []
-  pure (new ++ S)
+shape, are copied to the destination (`moveSrc`). -/
+def moveStep (cx : Cx) (S : Facts) (w : Value) (zo : Option ID) : Except String Facts :=
+  match w.args.toList with
+  | [a'] =>
+    if (readLoc (cx.lc.home a') (cx.gty a')).isNone then throw s!"stuck-read v{a'} has no home"
+    else pure (moveFacts cx S w a' zo)
+  | _ => throw s!"move v{w.id} arity"
+
+/-- What a rematerialised frame constant `w` (source constant `u`) needs: `u`'s op, aux, auxint,
+type and arity, arguments that hold `u`'s. -/
+def rematChecks (cx : Cx) (S : Facts) (w u : Value) : Except String Unit :=
+  if !cx.isK u.id then throw s!"remat v{w.id}: v{u.id} is not a frame constant"
+  else if !sameOp u w then throw s!"remat v{w.id}: differs from v{u.id}"
+  else if !shapeEq (cx.gty w.id) (cx.fty u.id) then throw s!"shape v{w.id}"
+  else argsOK cx S w u
 
 /-- A rematerialised frame constant: target value `w` recomputes source constant `u`. -/
 def rematStep (cx : Cx) (S : Facts) (w u : Value) : Except String Facts := do
-  if !isKVal cx.f u then throw s!"remat v{w.id}: v{u.id} is not a frame constant"
-  if !sameOp u w then throw s!"remat v{w.id}: differs from v{u.id}"
-  if !shapeEq (cx.gty w.id) (cx.fty u.id) then throw s!"shape v{w.id}"
-  argsOK cx S w u
+  rematChecks cx S w u
   pure (writeFacts cx (clobberFacts cx S w) w (cx.canon u.id))
 
 /-- The certificate: each block's entry facts (after its phis), and for each new target value the
@@ -472,26 +589,30 @@ def constOf (cx : Cx) (cert : Cert) (a' : ID) : Option ID :=
   | _, _ => (cert.remat[a']?).join
 
 /-- A new target value (not a source value): a move or a rematerialised constant. -/
-def newStep (cx : Cx) (cert : Cert) (S : Facts) (w : Value) : Except String Facts := do
+def newStep (cx : Cx) (cert : Cert) (S : Facts) (w : Value) : Except String Facts :=
   if w.op == .Copy || w.op == .LoadReg || w.op == .StoreReg then
     moveStep cx S w (w.args[0]?.bind (constOf cx cert))
   else
-    let some u := ((cert.remat[w.id]?).join <|> some w.id).bind cx.f.value?
-      | throw s!"new v{w.id} ({w.op.name}) has no source"
-    rematStep cx S w u
+    let r := ((cert.remat[w.id]?).join).getD w.id
+    match cx.f.value? r with
+    | none => throw s!"new v{w.id} ({w.op.name}) has no source"
+    | some u => if u.id != r then throw s!"new v{w.id}: v{r} is not its own value" else rematStep cx S w u
 
 /-- Run target value `d` against the source order `os`: the facts after it and the source
 values left. -/
 def stepValue (cx : Cx) (cert : Cert) (S : Facts) (d : ID) (os : List ID) :
     Except String (Facts × List ID) := do
   let some w := cx.g.value? d | throw s!"stuck v{d} is not in the target"
+  if w.id != d then throw s!"v{d} is not its own value in the target"
   if w.op == .Phi then
     if w.args.all (cx.lc.home · == cx.lc.home d) then pure (S, os)
     else throw s!"phi v{d}: an argument has another home"
   else
+    if !writesNodup (cx.lc.home d) (cx.gty d) then throw s!"home v{d}: a location twice"
     match cx.f.value? d with
     | some u =>
       if os.contains d then
+        if u.id != d then throw s!"v{d} is not its own value in the source"
         if !sameOp u w && !isKeepAliveCopy u w then throw s!"kept v{d} differs from the source"
         -- the source frame constants the target does not issue before `d`
         let pre := os.takeWhile (· != d)
@@ -510,39 +631,50 @@ def walk (cx : Cx) (cert : Cert) : Facts → List ID → List ID → Except Stri
     let (S, os) ← stepValue cx cert S d os
     walk cx cert S ds os
 
+/-- Source value `id` is a phi. -/
+def Cx.isPhi (cx : Cx) (id : ID) : Bool := ((cx.f.value? id).map (·.op == .Phi)).getD false
+
+/-- The facts about the phis `ids` of a block entered along its `i`th incoming edge, from the
+facts `S` at the end of the predecessor: every phi's home holds its `i`th argument (`pb`: the
+predecessor, for the message). -/
+def phiFacts (cx : Cx) (S : Facts) (i : Nat) (pb : Option ID) : List ID → Except String Facts
+  | [] => pure []
+  | id :: ids => do
+    let rest ← phiFacts cx S i pb ids
+    match cx.f.value? id with
+    | none => pure rest
+    | some p =>
+      if p.op != .Phi then pure rest else
+      let some a := p.args[i]? | throw s!"phi v{id}: no argument {i}"
+      match readLoc (cx.lc.home id) (cx.fty id) with
+      | some (.loc l) =>
+        let a := cx.canon a
+        let tp := cx.fty id
+        let ta := cx.fty a
+        -- exact: the phi is its argument at the phi's shape, which reading `l` at that shape
+        -- gives; weak: only when that composes with the argument's shape
+        if S.holdsExact l a then pure ((l, ⟨id, none, !shapeEq tp ta⟩) :: rest)
+        else if S.holds l a then
+          if !composes cx.f.lowered tp ta then throw s!"phi-shape v{id} v{a}"
+          pure ((l, ⟨id, none, true⟩) :: rest)
+        else throw s!"phi-edge v{id} ({repr l}) does not hold v{a} at the end of b{pb}"
+      | _ => throw s!"phi-home v{id} has no single location"
+
 /-- The facts at the entry of block `s` along its `i`th incoming edge, from the facts `S` at the
 end of the predecessor: every phi's home holds its `i`th argument; then the phis take their
-values. -/
+values (facts about them, and availability of values reading them, are dropped). -/
 def phiEdge (cx : Cx) (S : Facts) (s : ID) (i : Nat) : Except String Facts := do
   let some sb := cx.f.block? s | throw s!"edge to b{s}, which is not in the source"
-  let phis := sb.values.toList.filterMap fun id => match cx.f.value? id with
-    | some p => if p.op == .Phi then some p else none
-    | none => none
-  let mut new : Facts := []
-  for p in phis do
-    let some a := p.args[i]? | throw s!"phi v{p.id}: no argument {i}"
-    match readLoc (cx.lc.home p.id) (cx.fty p.id) with
-    | some (.loc l) =>
-      let a := cx.canon a
-      let tp := cx.fty p.id
-      let ta := cx.fty a
-      -- exact: the phi is its argument at the phi's shape, which reading `l` at that shape
-      -- gives; weak: only when that composes with the argument's shape
-      if S.holdsExact l a then
-        new := (l, ⟨p.id, none, !shapeEq tp ta⟩) :: new
-      else if S.holds l a then
-        if !composes tp ta then throw s!"phi-shape v{p.id} v{a}"
-        new := (l, ⟨p.id, none, true⟩) :: new
-      else
-        throw s!"phi-edge v{p.id} ({repr l}) does not hold v{a} at the end of b{sb.preds[i]?.map (·.b)}"
-    | _ => throw s!"phi-home v{p.id} has no single location"
-  let ids := phis.map (·.id)
+  let new ← phiFacts cx S i (sb.preds[i]?.map (·.b)) sb.values.toList
+  let ids := sb.values.toList.filter cx.isPhi
   pure (new ++ S.filter fun (l, o) =>
     !ids.contains o.id && !(l == .avail && ids.any (cx.reads o.id ·)))
 
-/-- Facts `T` hold whenever facts `S` do (a weak fact follows from the exact one). -/
+/-- Facts `T` hold whenever facts `S` do (a weak fact about a whole value follows from the exact
+one). -/
 def sub (T S : Facts) : Bool :=
-  T.all fun (l, o) => S.contains (l, o) || (o.weak && S.contains (l, { o with weak := false }))
+  T.all fun (l, o) =>
+    S.contains (l, o) || (o.weak && o.comp.isNone && S.contains (l, { o with weak := false }))
 
 /-- `stepTermL` reads control `j` of a block of kind `k` (control 0 of an arm64 kind, `If`,
 `JumpTable`, `Ret`). -/
@@ -552,30 +684,49 @@ def readsControl (k : BlockKind) (j : Nat) : Bool :=
 /-- Target value `a'` can be read (`LocState.read` is not `stuck`). -/
 def readable (cx : Cx) (a' : ID) : Bool := (readLoc (cx.lc.home a') (cx.gty a')).isSome
 
+/-- The controls `cs` of source block `bid` (kind `k`) from index `j` on and the target's `cs'`:
+the target's controls that `stepTermL` reads hold the source's (a `MakeResult` is available, so
+its source value is its arguments' current values, which its target arguments hold); the
+others are read from their homes by `stepTermLoc` and must not be `stuck`. -/
+def ctrlOK (cx : Cx) (S : Facts) (bid : ID) (k : BlockKind) :
+    Nat → List ID → List ID → Except String Unit
+  | j, c :: cs, c' :: cs' => do
+    match cx.f.value? c, cx.g.value? c' with
+    | some u, some w =>
+      if w.op == .MakeResult then
+        if readsControl k j then
+          if c' != c || !sameOp u w then throw s!"control b{bid}: MakeResult differs"
+          if !S.contains (.avail, ⟨c, none, false⟩) then
+            throw s!"control b{bid}: MakeResult v{c} is not available"
+          argsOKL cx S w.args.toList u.args.toList none
+        else if !w.args.all (readable cx) then throw s!"stuck-read control b{bid}"
+      else if readsControl k j then argOK cx S c' c none
+      else if !readable cx c' then throw s!"stuck-read control b{bid}"
+    | _, _ => throw s!"control b{bid}: v{c}/v{c'} missing"
+    ctrlOK cx S bid k (j + 1) cs cs'
+  | _, _, _ => pure ()
+
 /-- The terminators of source block `b` and target block `b'` agree on everything `stepTermL`
-reads, and the target's controls that it reads hold the source's (the others are read from
-their homes by `stepTermLoc` and must not be `stuck`). -/
+reads, and their controls agree (`ctrlOK`). -/
 def termOK (cx : Cx) (S : Facts) (b b' : Block) : Except String Unit := do
   if !(b.kind == b'.kind && b.auxInt == b'.auxInt && b.aux == b'.aux && b.succs == b'.succs &&
       b.controls.size == b'.controls.size) then
     throw s!"block b{b.id} differs from the source"
-  for h : j in [0:b.controls.size] do
-    let c := b.controls[j]
-    let c' := b'.controls[j]!
-    match cx.f.value? c, cx.g.value? c' with
-    | some u, some w =>
-      if w.op == .MakeResult then
-        if readsControl b.kind j then
-          if c' != c || !sameOp u w then throw s!"control b{b.id}: MakeResult differs"
-          for h : k in [0:w.args.size] do argOK cx S w.args[k] (u.args[k]!) none
-        else if !w.args.all (readable cx) then throw s!"stuck-read control b{b.id}"
-      else if readsControl b.kind j then argOK cx S c' c none
-      else if !readable cx c' then throw s!"stuck-read control b{b.id}"
-    | _, _ => throw s!"control b{b.id}: v{c}/v{c'} missing"
+  ctrlOK cx S b.id b.kind 0 b.controls.toList b'.controls.toList
+
+/-- Every outgoing edge `es` of block `bid`, with facts `S` at its end, implies the certified
+entry facts of its successor. -/
+def edgesOK (cx : Cx) (cert : Cert) (bid : ID) (S : Facts) : List Edge → Except String Unit
+  | [] => pure ()
+  | e :: es => do
+    let E ← phiEdge cx S e.b e.i
+    if !sub (cert.ins.getD e.b []) E then throw s!"cert b{bid}->b{e.b}: entry facts not implied"
+    edgesOK cx cert bid S es
 
 /-- Check block `bid` from its certified entry facts: values, terminator, outgoing edges. -/
 def checkBlock (cx : Cx) (cert : Cert) (bid : ID) : Except String Unit := do
-  let some b := cx.f.block? bid | throw s!"b{bid} is not in the source"
+  let some b := cx.f.block? bid | pure ()
+  if b.id != bid then throw s!"b{bid} is not its own block in the source"
   let some b' := cx.g.block? bid | throw s!"b{bid} is not in the target"
   -- a block whose source order is not a schedule is stuck in the source
   let some order := (cx.sc.sched[bid]?).join | pure ()
@@ -583,16 +734,21 @@ def checkBlock (cx : Cx) (cert : Cert) (bid : ID) : Except String Unit := do
   let (S, rest) ← walk cx cert S0 b'.values.toList order.toList
   if !rest.all cx.isK then throw s!"order b{bid}: source values {rest.filter (!cx.isK ·)} missing"
   termOK cx S b b'
-  for e in b.succs do
-    let E ← phiEdge cx S e.b e.i
-    if !sub (cert.ins.getD e.b []) E then throw s!"cert b{bid}->b{e.b}: entry facts not implied"
+  edgesOK cx cert bid S b.succs.toList
 
-/-- The whole check against a certificate. -/
+/-- `checkBlock` on each of `bids`. -/
+def checkBlocks (cx : Cx) (cert : Cert) : List ID → Except String Unit
+  | [] => pure ()
+  | bid :: bids => do
+    checkBlock cx cert bid
+    checkBlocks cx cert bids
+
+/-- The whole check against a certificate (every block of the source's block table). -/
 def checkWith (cx : Cx) (cert : Cert) : Except String Unit := do
   if cx.f.lowered != cx.g.lowered then throw "lowered: source and target differ in Func.lowered"
   if cx.g.entry != cx.f.entry || cx.g.ownAux != cx.f.ownAux then throw "entry or signature differs"
   if !(cert.ins.getD cx.f.entry []).isEmpty then throw "cert: entry facts"
-  for bid in cx.f.blocks do checkBlock cx cert bid
+  checkBlocks cx cert (List.range cx.f.blockTab.size)
 
 /-! ## The untrusted certificate -/
 
@@ -634,13 +790,11 @@ def certify (cx : Cx) (passes : Nat := 64) : Cert := Id.run do
       let some b := cx.f.block? bid | continue
       let some b' := cx.g.block? bid | continue
       let some order := (cx.sc.sched[bid]?).join | continue
-      let S := match walk cx cert S0 b'.values.toList order.toList with
-        | .ok (S, _) => S
-        | .error _ => []
+      -- a block or edge that fails propagates nothing (its failure is reported by the check,
+      -- not hidden behind empty entry facts of its successors)
+      let .ok (S, _) := walk cx cert S0 b'.values.toList order.toList | continue
       for e in b.succs do
-        let E := match phiEdge cx S e.b e.i with
-          | .ok E => E
-          | .error _ => []
+        let .ok E := phiEdge cx S e.b e.i | continue
         let old := (ins[e.b]?).join
         let new := match old with
           | none => E
