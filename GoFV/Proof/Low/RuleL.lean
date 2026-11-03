@@ -143,11 +143,11 @@ def sigmaL (tabs : Tables) (e : PEnv) (pat : Pat) (x : Nat) : DV :=
 a type. -/
 def nodeTyL (ev : Expr → DV) (or : Oracle) (topTy : Ty) : Option Expr → Ty
   | some te =>
-    match ev te with
-    | .ty t => t
+    match te with
+    | .glob "types.TypeFlags" _ => Ty.flags
     | _ =>
-      match te with
-      | .glob "types.TypeFlags" _ => Ty.flags
+      match ev te with
+      | .ty t => t
       | _ => or.ty te
   | none => topTy
 
