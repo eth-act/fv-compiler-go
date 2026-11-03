@@ -154,3 +154,7 @@ root = "GoFVTest.CriticalProbe"
 [[lean_exe]]
 name = "trim-probe"
 root = "GoFVTest.TrimProbe"
+
+[[lean_exe]]
+name = "move-probe"
+root = "GoFVTest.MoveProbe"
