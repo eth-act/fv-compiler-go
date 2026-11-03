@@ -214,7 +214,7 @@ structure BStep (tabs : Tables) (f g : Func) (md : LMode) (oS oT : List ID)
   out : Out f oS frPS
   swap : ∀ (i j : Nat) (x y : ID), i < j → oT[i]? = some y → oT[j]? = some x →
     mayFail tabs f y = true → mayFail tabs f x = true → ∀ (k l : Nat), k < l → oS[k]? = some x →
-    oS[l]? = some y → swapOK tabs (Ctx.makeL tabs f).tys f x y = true
+    oS[l]? = some y → swapOK tabs f x y = true
 
 /-- The source after the prefix `P` of its order. -/
 structure Src (tabs : Tables) (f : Func) (md : LMode) (env : Env) (frPS H : Frame) (P : List ID) :

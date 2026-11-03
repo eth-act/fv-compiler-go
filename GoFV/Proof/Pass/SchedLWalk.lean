@@ -209,8 +209,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
   · obtain ⟨hnc, hsz2⟩ := cls_nil hnil
     obtain ⟨p, hp0⟩ : ∃ p, fv.args[0]? = some p := ⟨fv.args[0], by simp [hsz2]⟩
     rw [hp0] at hall
-    simp only [Option.all_some, Bool.and_eq_true, Bool.not_eq_true'] at hall
-    obtain ⟨hpspa, hpw⟩ := hall
+    have hpspa : isSPA f p = false := by simpa using hall
     have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
     have hfargs : fv.args = #[p, ℓ] := arr_two hsz2 hp0 hf1
     have hgargs : gv.args = #[rep f p, rep f ℓ] := by rw [hrv.args, hfargs]; simp
@@ -219,17 +218,12 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       · exact .inl (mem_of_decide h)
       · exact .inr h)
     rw [h0, hp0] at hp'; cases hp'
-    have hta : a.hasTy ((Ctx.makeL tabs f).tys[p]?.getD .other) = true :=
-      hasTy_of_typedL (Sr.typed p a hHp)
-    obtain ⟨q, hq⟩ := asPtrWord_of_ptrIsh hpw hta hpa
     obtain ⟨hg0, hg0m⟩ := argsF_g hgv hrv hp0
     have hTp : T.regs[rep f p]? = some (some a) := by
       obtain ⟨-, -, hns, -⟩ := argFact S B Sr hPS hPc I hDo hvr hrS hdoneR (k := 0) (by rw [h0, hp0])
         (fun hm => topo_before B.tTopo hyj hg0m hm)
       rw [hns hpspa, hHp]
-    rcases evalValueL_nc_word (env := env) (ctx := Ctx.makeSched tabs g) hf (hrv.op.trans hnc)
-        hgargs hTp hq hTℓ with ⟨z, hz⟩ | hz
-    · exact .inr ⟨z, hz, fun h => absurd h hyP⟩
-    · exact .inl hz
+    exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf (hrv.op.trans hnc)
+      hgargs hTp hpa hTℓ)
 
 end GoFV.Proof.SchedL

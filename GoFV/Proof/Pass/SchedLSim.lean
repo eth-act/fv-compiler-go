@@ -121,7 +121,7 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
     (hperm : gb.values.toList.Perm (fb.values.toList.filter (!isSPA f ·)))
     {oS oT : Array ID} (hsS : schedule f fb = some oS)
     (hoT : oT.toList = gb.values.toList.filter (!isPhi g ·)) (htopoT : topoB g oT.toList = true)
-    (hord : orderOK tabs (Ctx.makeL tabs f).tys f f.valueTab.size oS oT = true)
+    (hord : orderOK tabs f f.valueTab.size oS oT = true)
     {ps : List (ID × Val)}
     (hps : fb.values.toList.filterMapM (phiStepL md (Ctx.makeL tabs f) frS i) = .ok ps) :
     ∃ psT, gb.values.toList.filterMapM (phiStepL md (Ctx.makeSched tabs g) frT i) = .ok psT ∧

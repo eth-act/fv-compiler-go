@@ -172,7 +172,7 @@ theorem order {b : ID} {fb : Block} (hb : f.block? b = some fb) :
     ∃ oS oT gb, ((Ctx.makeL tabs f).sched[b]?).join = some oS ∧
       ((Ctx.makeSched tabs g).sched[b]?).join = some oT ∧ g.block? b = some gb ∧
       oT.toList = gb.values.toList.filter (!isPhi g ·) ∧ topoB g oT.toList = true ∧
-      orderOK tabs (Ctx.makeL tabs f).tys f f.valueTab.size oS oT = true := by
+      orderOK tabs f f.valueTab.size oS oT = true := by
   have := S.orders
   unfold ordersOK at this
   simp only [List.all_eq_true, List.mem_range] at this
@@ -231,12 +231,12 @@ where
 
 /-- **What `orderOK` gives**: failing values `y` before `x` in the target order, with `x`
 before `y` in the source order, satisfy `swapOK`. -/
-theorem orderOK_swap {tabs : Tables} {tys : Array Ty} {f : Func} {n : Nat} {oS oT : Array ID}
-    (h : orderOK tabs tys f n oS oT = true) (hnd : oS.toList.Nodup) (hlt : ∀ x ∈ oS.toList, x < n)
+theorem orderOK_swap {tabs : Tables} {f : Func} {n : Nat} {oS oT : Array ID}
+    (h : orderOK tabs f n oS oT = true) (hnd : oS.toList.Nodup) (hlt : ∀ x ∈ oS.toList, x < n)
     {i j : Nat} {x y : ID} (hij : i < j) (hy : oT.toList[i]? = some y) (hx : oT.toList[j]? = some x)
     (hfy : mayFail tabs f y = true) (hfx : mayFail tabs f x = true)
     {k l : Nat} (hkl : k < l) (hxk : oS.toList[k]? = some x) (hyl : oS.toList[l]? = some y) :
-    swapOK tabs tys f x y = true := by
+    swapOK tabs f x y = true := by
   unfold orderOK at h
   have hp := of_decide_eq_true h
   rw [List.pairwise_filter, List.pairwise_iff_getElem] at hp

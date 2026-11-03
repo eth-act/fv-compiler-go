@@ -12,12 +12,13 @@ The classes of `scheduleCheck` (`GoFV.Opt.ScheduleCheck.cls`) under faulting eva
 * `evalValueL_load`: a `Cls.load` value (`faultOp`) evaluates or panics with `nilDeref` of its
   last argument's memory;
 * `evalValueL_panic_info`: a value that panics may panic (`mayPanic`); a `Cls.load` or
-  `Cls.nil` one panics with `nilDeref` of its last argument's memory, and a load or nil check
-  that panics has a pointer-like first argument;
-* nil checks: an evaluated one returns its pointer (`evalValueL_nc_ok`); a nil check of a
-  pointer word on a memory evaluates or panics with `nilDeref` of it (`evalValueL_nc_word`);
+  `Cls.nil` one panics with `nilDeref` of its last argument's memory, and a load or lowered nil
+  check that panics has a nil first argument (`NilBase`: faults need a nil base, a nil check of
+  a wild pointer is `stuck`);
+* nil checks: an evaluated one returns its pointer (`evalValueL_nc_ok`); a lowered nil check of
+  a nil pointer on a memory panics with `nilDeref` of it (`evalValueL_nc_nil`);
 * a symbolic `symAddrOp` (`MOV*load`, `MOV*store`, `MOVDaddr` at a symbol or frame variable)
-  ignores its first argument's value (`evalValueL_arg0`), which `schedule`'s `SPanchored` bypass
+  ignores its first argument's value (`evalOpL_arg0`), which `schedule`'s `SPanchored` bypass
   changes.
 -/
 
@@ -148,62 +149,70 @@ theorem mem_of_decide {op : Op} {l : List Op} (h : decide (op ∈ l) = true) : o
 
 /-! ## `nilFaults` -/
 
+/-- An access through `a` faults when its address is in the nil page (`nilFaults`): `a`'s base
+is the nil pointer. -/
+def NilBase (a : Val) : Prop := ∃ b, Arm64.addr a 0 = some b ∧ b.isNil = true
+
+theorem nilAccesses_nil_of {ctx : Ctx} {v : Value} {argv : List Val}
+    (h0 : v.op.faultOnNilArg0 = false) (h1 : v.op.faultOnNilArg1 = false) :
+    nilAccesses ctx v argv = [] := by
+  unfold nilAccesses; simp [h0, h1]
+
 theorem nilFaults_none_of {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val}
     (h0 : v.op.faultOnNilArg0 = false) (h1 : v.op.faultOnNilArg1 = false) :
     nilFaults faulting ctx v argv = none := by
   unfold nilFaults
+  rw [nilAccesses_nil_of h0 h1]
   split
   · rfl
-  · split
-    · simp [h0, h1]
-    · rfl
+  · split <;> simp
 
 theorem nilFaults_mem {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val} {m : Mem}
     (h : nilFaults faulting ctx v argv = some m) : argv.getLast? = some (.mem m) := by
-  cases faulting
-  · simp [nilFaults] at h
-  · simp only [nilFaults, Bool.not_true, Bool.false_eq_true, ite_false] at h
-    cases hl : argv.getLast? with
-    | none => rw [hl] at h; simp at h
-    | some x =>
-      rw [hl] at h
-      cases x with
-      | mem m' =>
-        simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
-        rw [h.2]
-      | _ => simp at h
+  unfold nilFaults at h
+  split at h
+  · cases h
+  · split at h
+    · rename_i m' hl
+      split at h
+      · cases h; exact hl
+      · cases h
+    · cases h
 
 /-- The access `nilFaults` finds through the first argument, for an op that does not fault on
-its second. -/
-theorem nilFaults_at0 {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val} {m : Mem}
+its second: a nil base and an address in the nil page. -/
+theorem nilFaults_base0 {faulting : Bool} {ctx : Ctx} {v : Value} {argv : List Val} {m : Mem}
     (h1 : v.op.faultOnNilArg1 = false) (h : nilFaults faulting ctx v argv = some m) :
-    ∃ a q, argv.head? = some a ∧ q.nilFault = true ∧
-      (if v.op.auxType == .SymOff then symAddr ctx v a else Arm64.addr a 0) = some q := by
-  cases faulting
-  · simp [nilFaults] at h
-  · simp only [nilFaults, Bool.not_true, Bool.false_eq_true, ite_false] at h
-    cases hl : argv.getLast? with
-    | none => rw [hl] at h; simp at h
-    | some x =>
-      rw [hl] at h
-      cases x with
-      | mem m' =>
-        simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
-        obtain ⟨hc, -⟩ := h
-        simp only [h1, Bool.not_false, ite_true, Option.map_none, Option.getD_none,
-          Bool.or_false, Bool.and_eq_true] at hc
-        obtain ⟨-, hc⟩ := hc
-        split at hc
-        · simp at hc
-        · cases hh : argv.head? with
-          | none => rw [hh] at hc; simp at hc
-          | some a =>
-            rw [hh] at hc
-            simp only [Option.bind_some] at hc
-            cases hq : (if v.op.auxType == .SymOff then symAddr ctx v a else Arm64.addr a 0) with
-            | none => rw [hq] at hc; simp at hc
-            | some q => rw [hq] at hc; exact ⟨a, q, rfl, by simpa using hc, hq⟩
-      | _ => simp at h
+    ∃ a b q, argv.head? = some a ∧ Arm64.addr a 0 = some b ∧ b.isNil = true ∧
+      q.nilFault = true ∧
+      (if v.op.auxType == .SymOff then symAddr ctx v a else some b) = some q := by
+  have hsel : ∀ (c : Bool) (l : List (Ptr × Ptr)) (x : Ptr × Ptr),
+      x ∈ (if c = true then l else []) → x ∈ l := by
+    intro c l x hx; cases c <;> simp_all
+  unfold nilFaults at h
+  split at h
+  · cases h
+  · split at h
+    · split at h
+      · rename_i hany
+        obtain ⟨⟨b, q⟩, hm, hbq⟩ := List.any_eq_true.1 hany
+        simp only [Bool.and_eq_true] at hbq
+        unfold nilAccesses at hm
+        dsimp only at hm
+        rcases List.mem_append.1 (hsel _ _ _ hm) with hm | hm
+        · have h0 : v.op.faultOnNilArg0 = true := by
+            cases h0 : v.op.faultOnNilArg0
+            · rw [h0] at hm; simp at hm
+            · rfl
+          rw [h0] at hm
+          simp only [Bool.not_true, Bool.false_eq_true, ite_false, Option.mem_toList,
+            Option.bind_eq_some_iff, Option.map_eq_some_iff] at hm
+          obtain ⟨a, ha, b', hb', q', hq', heq⟩ := hm
+          cases heq
+          exact ⟨a, b, q, ha, hb', hbq.1, hbq.2, hq'⟩
+        · simp [h1] at hm
+      · cases h
+    · cases h
 
 /-- A symbolic value's address (`symAddr`) is a global or frame address, whatever its base. -/
 theorem symAddr_symbolic {ctx : Ctx} {v : Value} (h : symbolic ctx.tabs v = true) :
@@ -255,37 +264,16 @@ theorem nilFaults_symbolic {faulting : Bool} {ctx : Ctx} {v : Value} {argv : Lis
   cases hn : nilFaults faulting ctx v argv with
   | none => rfl
   | some m =>
-    obtain ⟨a, q', -, hq', hs'⟩ := nilFaults_at0 hf.1 hn
+    obtain ⟨a, b, q', -, -, -, hq', hs'⟩ := nilFaults_base0 hf.1 hn
     rw [hf.2, hall a] at hs'
-    simp at hs'; subst hs'
+    simp only [beq_self_eq_true, ite_true, Option.some.injEq] at hs'
+    subst hs'
     simp [Ptr.nilFault, hq] at hq'
 
-/-! ## Pointer-like arguments -/
-
-/-- An address can be formed from `a` (`Arm64.addr`). -/
-def PtrIsh (a : Val) : Prop := ∃ k q, Arm64.addr a k = some q
-
-/-- A pointer-like value of a word shape is a pointer word. -/
-theorem asPtrWord_of_ptrIsh {a : Val} {t : Ty} (hw : wordShape t = true) (ht : a.hasTy t = true)
-    (h : PtrIsh a ∨ ∃ q, a.asPtrWord = some q) : ∃ q, a.asPtrWord = some q := by
-  rcases h with ⟨k, q, hq⟩ | h
-  · cases a with
-    | ptr p => exact ⟨p, rfl⟩
-    | int w x =>
-      cases t with
-      | int w' =>
-        cases w' <;> simp [wordShape] at hw
-        simp only [Val.hasTy, beq_iff_eq] at ht; subst ht; exact ⟨_, rfl⟩
-      | ptr e => cases w <;> simp [Val.hasTy] at ht; exact ⟨_, rfl⟩
-      | _ => simp [wordShape] at hw
-    | poison => simp [Arm64.addr, Arm64.reg] at hq
-    | bool b =>
-      cases t with
-      | int w' => simp [Val.hasTy] at ht
-      | ptr e => simp [Val.hasTy] at ht
-      | _ => simp [wordShape] at hw
-    | _ => simp [Arm64.addr, Arm64.reg] at hq
-  · exact h
+/-- A nil base's address is in the nil page. -/
+theorem Ptr.nilFault_of_isNil {b : Ptr} (h : b.isNil = true) : b.nilFault = true := by
+  simp only [Ptr.isNil, Bool.and_eq_true, beq_iff_eq] at h
+  simp [Ptr.nilFault, h.1, h.2, minZeroPage]
 
 /-! ## `arm64Op` by class (faulting) -/
 
@@ -340,11 +328,11 @@ theorem arm64Op_symld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : L
     ∃ y, arm64Op true env ctx fr v argv ty = .ok y :=
   arm64Op_fault_none (ldOps_sub h).1 (nilFaults_symbolic (ldOps_sub h).2.1 hs)
 
-/-- A load panics only with `nilDeref` of its memory, at a pointer-like base. -/
+/-- A load panics only with `nilDeref` of its memory, at a nil base. -/
 theorem arm64Op_ld_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} {e : Panic} {m : Mem} (h : v.op ∈ ldOps)
     (hp : arm64Op true env ctx fr v argv ty = .panic e m) :
-    e = .nilDeref ∧ argv.getLast? = some (.mem m) ∧ ∃ a, argv.head? = some a ∧ PtrIsh a := by
+    e = .nilDeref ∧ argv.getLast? = some (.mem m) ∧ ∃ a, argv.head? = some a ∧ NilBase a := by
   obtain ⟨hf, -, -, h1, hsym⟩ := ldOps_sub h
   cases hnf : nilFaults true ctx v argv with
   | none =>
@@ -355,11 +343,8 @@ theorem arm64Op_ld_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv 
       unfold arm64Op; simp only [hnf]
     rw [hp'] at hp; cases hp
     refine ⟨rfl, nilFaults_mem hnf, ?_⟩
-    obtain ⟨a, q, ha, hq, hs⟩ := nilFaults_at0 h1 hnf
-    rw [hsym] at hs
-    simp only [beq_self_eq_true, ite_true] at hs
-    obtain ⟨k, hk⟩ := symAddr_nilFault hs hq
-    exact ⟨a, ha, k, q, hk⟩
+    obtain ⟨a, b, -, ha, hb, hnil, -⟩ := nilFaults_base0 h1 hnf
+    exact ⟨a, ha, b, hb, hnil⟩
 
 /-- A `faultOp` panics only with `nilDeref` of its memory. -/
 theorem arm64Op_fault_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
@@ -399,7 +384,7 @@ theorem memRoot_nc_ok {ctx : Ctx} {w : Value} {argv : List Val} {y : Val} (hw : 
 
 theorem memRoot_nc_panic {ctx : Ctx} {w : Value} {argv : List Val} {e : Panic} {m : Mem}
     (hw : w.op = .NilCheck) (h : memRoot ctx w argv = .panic e m) :
-    e = .nilDeref ∧ ∃ a, argv = [a, .mem m] ∧ ∃ p, a.asPtrWord = some p := by
+    e = .nilDeref ∧ ∃ a, argv = [a, .mem m] ∧ ∃ p, a.asPtrWord = some p ∧ p.blk = .nil := by
   unfold memRoot at h
   rw [hw] at h
   split at h
@@ -410,20 +395,19 @@ theorem memRoot_nc_panic {ctx : Ctx} {w : Value} {argv : List Val} {e : Panic} {
          by_cases hb : (p.blk == .nil) = true
          · simp only [hb, ite_true, Res.panic.injEq] at h
            obtain ⟨rfl, rfl⟩ := h
-           exact ⟨rfl, _, rfl, p, hp⟩
+           exact ⟨rfl, _, rfl, p, hp, by simpa using hb⟩
          · simp [hb] at h
        · cases h)
     | (split at h <;> cases h)
 
-theorem memRoot_nc_word {ctx : Ctx} {w : Value} {a : Val} {m : Mem} {p : Ptr}
-    (hw : w.op = .NilCheck) (hp : a.asPtrWord = some p) :
-    memRoot ctx w [a, .mem m] = .ok a ∨ memRoot ctx w [a, .mem m] = .panic .nilDeref m := by
-  unfold memRoot
-  rw [hw]
-  simp only [hp]
-  split
-  · exact .inr rfl
-  · exact .inl rfl
+/-- The base of a pointer word is the pointer. -/
+theorem addr_of_asPtrWord {a : Val} {p : Ptr} (h : a.asPtrWord = some p) : Arm64.addr a 0 = some p := by
+  cases a with
+  | ptr q => simp only [Val.asPtrWord, Option.some.injEq] at h; subst h; simp [Arm64.addr, Ptr.add]
+  | int w x =>
+    cases w <;> simp only [Val.asPtrWord, reduceCtorEq, Option.some.injEq] at h
+    subst h; simp [Arm64.addr, Arm64.reg]
+  | _ => simp [Val.asPtrWord] at h
 
 theorem evalOpL_ncG {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (h : v.op = .NilCheck) :
@@ -437,7 +421,9 @@ theorem evalOpL_ncL {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
     evalOpL faulting env ctx fr v argv ty =
       match nilFaults faulting ctx v argv with
       | some m => .panic .nilDeref m
-      | none => memRoot ctx { v with op := .NilCheck } argv := by
+      | none =>
+        if faulting && wildNil argv then .stuck s!"v{v.id}: {v.op.name}: nil check of a wild pointer"
+        else memRoot ctx { v with op := .NilCheck } argv := by
   rw [evalOpL_act (by rw [h]; decide)]
   unfold arm64Op
   rw [h]
@@ -460,46 +446,52 @@ theorem evalOpL_nc_ok {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v 
   · rw [evalOpL_ncL h] at ho
     split at ho
     · cases ho
-    · exact memRoot_nc_ok rfl ho
+    · split at ho
+      · cases ho
+      · exact memRoot_nc_ok rfl ho
 
-/-- A nil check that panics: `nilDeref` of its memory, at a pointer-like pointer. -/
+/-- A lowered nil check that panics (memory ops faulting): `nilDeref` of its memory, at a nil
+pointer. -/
 theorem evalOpL_nc_panic {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
-    {argv : List Val} {ty : Ty} {e : Panic} {m : Mem} (h : v.op.nilCheck = true)
+    {argv : List Val} {ty : Ty} {e : Panic} {m : Mem} (h : v.op = .ARM64LoweredNilCheck)
     (ho : evalOpL true env ctx fr v argv ty = .panic e m) :
-    e = .nilDeref ∧ argv.getLast? = some (.mem m) ∧
-      ∃ a, argv.head? = some a ∧ (PtrIsh a ∨ ∃ p, a.asPtrWord = some p) := by
-  have hm : ∀ a, argv = [a, .mem m] → argv.getLast? = some (.mem m) := by
-    intro a h; subst h; rfl
-  rcases nilCheck_cases h with h | h
-  · rw [evalOpL_ncG h] at ho
-    obtain ⟨he, a, ha, p, hp⟩ := memRoot_nc_panic h ho
-    exact ⟨he, hm a ha, a, by rw [ha]; rfl, .inr ⟨p, hp⟩⟩
-  · rw [evalOpL_ncL h] at ho
-    split at ho
-    · rename_i m' hnf
-      cases ho
-      refine ⟨rfl, nilFaults_mem hnf, ?_⟩
-      obtain ⟨a, q, ha, hq, hs⟩ := nilFaults_at0 (by rw [h]; rfl) hnf
-      have hat : (Op.ARM64LoweredNilCheck.auxType == .SymOff) = false := rfl
-      rw [h, hat] at hs
-      exact ⟨a, ha, .inl ⟨0, q, by simpa using hs⟩⟩
-    · obtain ⟨he, a, ha, p, hp⟩ := memRoot_nc_panic rfl ho
-      exact ⟨he, hm a ha, a, by rw [ha]; rfl, .inr ⟨p, hp⟩⟩
-
-/-- A lowered nil check of a pointer word on a memory evaluates or panics with `nilDeref` of it. -/
-theorem evalOpL_nc_word {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} {a : Val}
-    {m : Mem} {p : Ptr} (h : v.op = .ARM64LoweredNilCheck) (hp : a.asPtrWord = some p) :
-    (∃ y, evalOpL true env ctx fr v [a, .mem m] ty = .ok y) ∨
-      evalOpL true env ctx fr v [a, .mem m] ty = .panic .nilDeref m := by
-  rw [evalOpL_ncL h]
-  split
+    e = .nilDeref ∧ argv.getLast? = some (.mem m) ∧ ∃ a, argv.head? = some a ∧ NilBase a := by
+  rw [evalOpL_ncL h] at ho
+  split at ho
   · rename_i m' hnf
-    have := nilFaults_mem hnf
-    simp at this; subst this
-    exact .inr rfl
-  · rcases memRoot_nc_word (ctx := ctx) (w := { v with op := .NilCheck }) (m := m) rfl hp with h | h
-    · exact .inl ⟨a, h⟩
-    · exact .inr h
+    cases ho
+    refine ⟨rfl, nilFaults_mem hnf, ?_⟩
+    obtain ⟨a, b, -, ha, hb, hnil, -⟩ := nilFaults_base0 (by rw [h]; rfl) hnf
+    exact ⟨a, ha, b, hb, hnil⟩
+  · split at ho
+    · cases ho
+    · rename_i hw
+      obtain ⟨he, a, ha, p, hp, hblk⟩ := memRoot_nc_panic rfl ho
+      subst ha
+      refine ⟨he, rfl, a, rfl, p, addr_of_asPtrWord hp, ?_⟩
+      simp only [Bool.true_and, wildNil, List.head?_cons, Option.bind_some,
+        addr_of_asPtrWord hp, Option.map_some, Option.getD_some, Ptr.wild, hblk,
+        beq_self_eq_true, Bool.not_eq_true'] at hw
+      simpa using hw
+
+/-- **A lowered nil check of a nil pointer panics** with `nilDeref` of its memory (memory ops
+faulting). -/
+theorem evalOpL_nc_nil {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} {a : Val}
+    {m : Mem} (h : v.op = .ARM64LoweredNilCheck) (hb : NilBase a) :
+    evalOpL true env ctx fr v [a, .mem m] ty = .panic .nilDeref m := by
+  obtain ⟨b, hab, hnil⟩ := hb
+  have hnf : nilFaults true ctx v [a, .mem m] = some m := by
+    have h0 : Op.ARM64LoweredNilCheck.faultOnNilArg0 = true := rfl
+    have h1 : Op.ARM64LoweredNilCheck.faultOnNilArg1 = false := rfl
+    have hs : (Op.ARM64LoweredNilCheck.auxType == .SymOff) = false := rfl
+    have hacc : nilAccesses ctx v [a, .mem m] = [(b, b)] := by
+      unfold nilAccesses
+      simp only [h, h0, h1, hs, Bool.not_true, Bool.not_false, Bool.false_eq_true, ite_true,
+        ite_false, List.head?_cons, Option.bind_some, hab, Option.map_some, Option.toList_some,
+        Option.toList_none, List.append_nil]
+    unfold nilFaults
+    simp [hacc, hnil, Ptr.nilFault_of_isNil hnil]
+  rw [evalOpL_ncL h, hnf]
 
 /-! ## Symbolic `symAddrOp`s ignore their base -/
 
@@ -682,8 +674,7 @@ theorem evalValueL_panic_info {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} 
       ((cls ctx.tabs v = .load ∨ cls ctx.tabs v = .nil) →
         e = .nilDeref ∧ ∃ ℓ, v.args.back? = some ℓ ∧ fr.regs[ℓ]? = some (some (.mem m))) ∧
       ((v.op ∈ ldOps ∨ cls ctx.tabs v = .nil) →
-        ∃ p a, v.args[0]? = some p ∧ fr.regs[p]? = some (some a) ∧
-          (PtrIsh a ∨ ∃ q, a.asPtrWord = some q)) := by
+        ∃ p a, v.args[0]? = some p ∧ fr.regs[p]? = some (some a) ∧ NilBase a) := by
   obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
   rw [evalValueL_bind hm, hf] at h
   generalize ctx.tys[v.id]?.getD .other = ty at h
@@ -709,15 +700,15 @@ theorem evalValueL_panic_info {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} 
       obtain ⟨he, hl⟩ := arm64Op_fault_panic hfo ho
       exact ⟨he, argsM_last hm hl⟩
     · obtain ⟨hnc, -⟩ := cls_nil hc
-      obtain ⟨he, hl, -⟩ := evalOpL_nc_panic (by rw [hnc]; rfl) ho
+      obtain ⟨he, hl, -⟩ := evalOpL_nc_panic hnc ho
       exact ⟨he, argsM_last hm hl⟩
   · rcases hc with hc | hc
     · rw [evalOpL_act (ldOps_sub hc).2.2.1] at ho
       obtain ⟨-, -, a, ha, hpa⟩ := arm64Op_ld_panic hc ho
       obtain ⟨p, hp, hr⟩ := argsM_head hm ha
-      exact ⟨p, a, hp, hr, .inl hpa⟩
+      exact ⟨p, a, hp, hr, hpa⟩
     · obtain ⟨hnc, -⟩ := cls_nil hc
-      obtain ⟨-, -, a, ha, hpa⟩ := evalOpL_nc_panic (by rw [hnc]; rfl) ho
+      obtain ⟨-, -, a, ha, hpa⟩ := evalOpL_nc_panic hnc ho
       obtain ⟨p, hp, hr⟩ := argsM_head hm ha
       exact ⟨p, a, hp, hr, hpa⟩
 
@@ -738,22 +729,20 @@ theorem evalValueL_nc_ok {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
     obtain ⟨p, hp, hr⟩ := argsM_head hm rfl
     exact ⟨p, a, hp, hr, by rw [hra]⟩
 
-/-- **A nil check of a pointer word on a memory evaluates or panics with `nilDeref` of it.** -/
-theorem evalValueL_nc_word {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
-    {p ℓ : ID} {a : Val} {q : Ptr} {m : Mem} (hf : md.faulting = true)
+/-- **A nil check of a nil pointer on a memory panics with `nilDeref` of it** (memory ops
+faulting). -/
+theorem evalValueL_nc_nil {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {p ℓ : ID} {a : Val} {m : Mem} (hf : md.faulting = true)
     (hop : v.op = .ARM64LoweredNilCheck) (hargs : v.args = #[p, ℓ])
-    (hp : fr.regs[p]? = some (some a)) (hq : a.asPtrWord = some q)
+    (hp : fr.regs[p]? = some (some a)) (hb : NilBase a)
     (hl : fr.regs[ℓ]? = some (some (.mem m))) :
-    (∃ y, evalValueL md env ctx fr v = .ok y) ∨ evalValueL md env ctx fr v = .panic .nilDeref m := by
+    evalValueL md env ctx fr v = .panic .nilDeref m := by
   have hm : argsM fr v = .ok [a, .mem m] := by
     simp only [argsM, hargs]
     simp [hp, hl, Res.ofOption]
     rfl
-  rw [evalValueL_bind hm, hf]
-  rcases evalOpL_nc_word (env := env) (ctx := ctx) (fr := fr) (ty := ctx.tys[v.id]?.getD .other)
-    (m := m) hop hq with ⟨y, hy⟩ | hy
-  · rw [hy]; exact .inl ⟨_, rfl⟩
-  · rw [hy]; exact .inr rfl
+  rw [evalValueL_bind hm, hf, evalOpL_nc_nil hop hb]
+  rfl
 
 /-! ## Value correspondence -/
 

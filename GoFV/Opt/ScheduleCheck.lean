@@ -150,9 +150,8 @@ def isNC (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op.nilCheck)).getD 
 never panics (so the source cannot stop at `x` with `y` not run); or `x` and `y` fault alike:
 `y` is a `faultOp` and `x` a `faultOp` or a nil check on the same memory (whichever stops first
 panics with `nilDeref` of it); or `y` is a nil check of the base of `x`, a load or nil check on
-the same memory, of a word shape (`tys`: `f`'s `runL` shapes; if `x` faults, `y`'s pointer is a
-pointer word, so `y` is not stuck). -/
-def swapOK (tabs : Tables) (tys : Array Ty) (f : Func) (x y : ID) : Bool :=
+the same memory (if `x` faults, its base is nil, so `y` panics as well). -/
+def swapOK (tabs : Tables) (f : Func) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
     !mayPanic tabs vx ||
@@ -160,7 +159,7 @@ def swapOK (tabs : Tables) (tys : Array Ty) (f : Func) (x y : ID) : Bool :=
         !(vx.args.back?.any (isSPA f)) &&
         (cls tabs vy == .load ||
           cls tabs vy == .nil && (ldOp vx.op || cls tabs vx == .nil) && vx.args[0]? == vy.args[0]? &&
-            (vy.args[0]?.all fun p => !isSPA f p && wordShape (tys[p]?.getD .other))))
+            (vy.args[0]?.all fun p => !isSPA f p)))
   | _, _ => false
 
 /-- `posFill l i a`: `a` with each element of `l` set to its position (from `i`). -/
@@ -170,11 +169,11 @@ def posFill : List ID → Nat → Array Nat → Array Nat
 
 /-- The values of the block that may fail keep their source order up to `swapOK`: for failing
 values `y` before `x` in the target order `oT`, if the source order `oS` runs `x` before `y`
-then `swapOK tabs tys f x y`. `n`: the size of the value table. -/
-def orderOK (tabs : Tables) (tys : Array Ty) (f : Func) (n : Nat) (oS oT : Array ID) : Bool :=
+then `swapOK tabs f x y`. `n`: the size of the value table. -/
+def orderOK (tabs : Tables) (f : Func) (n : Nat) (oS oT : Array ID) : Bool :=
   let pS := posFill oS.toList 0 (Array.replicate n 0)
   decide ((oT.toList.filter (mayFail tabs f)).Pairwise
-    fun y x => (!(pS[x]! < pS[y]!) || swapOK tabs tys f x y) = true)
+    fun y x => (!(pS[x]! < pS[y]!) || swapOK tabs f x y) = true)
 
 /-- The arguments of value `x` of `f` (none if `x` is not in `f`). -/
 def argsOf (f : Func) (x : ID) : List ID := ((f.value? x).map (·.args.toList)).getD []
@@ -255,7 +254,7 @@ def ordersOK (tabs : Tables) (f g : Func) : Bool :=
       match cS.sched[b]?.join, sT[b]?.join, g.block? b with
       | some oS, some oT, some gb =>
         oT.toList == gb.values.toList.filter (!isPhi g ·) && topoB g oT.toList &&
-          orderOK tabs cS.tys f f.valueTab.size oS oT
+          orderOK tabs f f.valueTab.size oS oT
       | _, _, _ => false
 
 /-- The shape conditions of `scheduleCheck` (see the module doc). -/
