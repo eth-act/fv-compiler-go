@@ -28,6 +28,19 @@ def movdRes (sx : Bool) (argv : List Val) (ty : Ty) : Val :=
     | a => Arm64.regVal ty a
   | _ => .poison
 
+/-- An op that faults on no nil argument accesses nothing `nilFaults` checks. -/
+theorem nilFaults_none {fa : Bool} {ctx : Ctx} {v : Value} {argv : List Val}
+    (h0 : v.op.faultOnNilArg0 = false) (h1 : v.op.faultOnNilArg1 = false) :
+    nilFaults fa ctx v argv = none := by
+  have hacc : nilAccesses ctx v argv = [] := by
+    unfold nilAccesses
+    simp [h0, h1]
+  unfold nilFaults
+  rw [hacc]
+  split
+  · rfl
+  · split <;> simp
+
 theorem kOp_cases {op : Op} (h : kOp op = true) :
     op = .ARM64MOVDconst ∨ op = .ARM64FMOVSconst ∨ op = .ARM64FMOVDconst ∨
       op = .ARM64LoweredGetCallerPC ∨ op = .ARM64MOVDaddr ∨ op = .ARM64ZERO ∨ op = .SP ∨
@@ -62,12 +75,7 @@ theorem evalOpL_kop_eq {fa : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Val
   unfold arm64Op
   have hnf : ∀ w : Value, w.op = .ARM64MOVDaddr → nilFaults fa ctx w argv = none := by
     intro w hw
-    unfold nilFaults
-    simp only [hw, show Op.faultOnNilArg0 .ARM64MOVDaddr = false from by decide,
-      show Op.faultOnNilArg1 .ARM64MOVDaddr = false from by decide]
-    split
-    · rfl
-    · split <;> simp
+    exact nilFaults_none (by rw [hw]; decide) (by rw [hw]; decide)
   rw [hnf _ rfl]
   simp only [kRes]
   match argv with
@@ -162,15 +170,7 @@ theorem evalOpL_movd {fa : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value
         (Arm64.signExtendsIn ctx.f.value?)).getD false) argv ty) := by
   have hnf : ∀ (fa : Bool) (ctx : Ctx) (argv : List Val), nilFaults fa ctx v argv = none := by
     intro fa ctx argv
-    unfold nilFaults
-    rcases hm with h | h <;>
-    · simp only [h, show Op.faultOnNilArg0 .ARM64MOVDreg = false from by decide,
-        show Op.faultOnNilArg1 .ARM64MOVDreg = false from by decide,
-        show Op.faultOnNilArg0 .ARM64MOVDnop = false from by decide,
-        show Op.faultOnNilArg1 .ARM64MOVDnop = false from by decide]
-      split
-      · rfl
-      · split <;> simp
+    rcases hm with h | h <;> exact nilFaults_none (by rw [h]; decide) (by rw [h]; decide)
   unfold evalOpL
   rcases hm with h | h
   · rw [h]

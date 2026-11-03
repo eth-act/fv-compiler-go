@@ -250,7 +250,7 @@ theorem compOK_shaped {cx : Cx} {env : Env} {frA : Frame} {S : Facts} {fr : Fram
   split at hc
   · rename_i hn; rw [hn]; exact hsh
   · rename_i j ts hj ht
-    rw [hj, ht]
+    rw [hj]
     simp only [decide_eq_true_eq] at hc
     rw [ht] at hsh
     have := comp_shaped _ hsh hc
@@ -274,24 +274,26 @@ theorem moveSrc_ok {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : LocSt
     rw [List.mem_filterMap] at ho
     obtain ⟨⟨l', o⟩, hF, he⟩ := ho
     dsimp only at he
-    split at he
-    · rename_i hcond
-      cases he
+    cases hw : o.weak
+    · simp only [hw, Bool.false_eq_true, ite_false, Option.ite_none_right_eq_some,
+        Option.some.injEq] at he
+      obtain ⟨hcond, rfl⟩ := he
       simp only [Bool.and_eq_true, beq_iff_eq] at hcond
       obtain ⟨⟨⟨rfl, hco⟩, hsh⟩, hcmp⟩ := hcond
       refine ⟨rfl, ?_⟩
       have hfo := (factOK_loc (readLoc_loc_ne hr0)).1 (h.facts _ hF) x hx
-      rw [← retype_shapeEq _ hsh]
-      split at hcmp
-      · rename_i hw
-        simp only [hw, ite_true] at hfo
-        rw [retype_composes hcmp]
-        exact hfo
-      · rename_i hw
-        simp only [hw, Bool.false_eq_true, ite_false] at hfo
-        rw [hfo]
-        exact retype_composesAt hcmp (compOK_shaped h hco hx)
-    · cases he
+      simp only [hw, Bool.false_eq_true, ite_false] at hfo
+      rw [← retype_shapeEq _ hsh, hfo]
+      exact retype_composesAt hcmp (compOK_shaped h hco hx)
+    · simp only [hw, ite_true, Option.ite_none_right_eq_some, Option.some.injEq] at he
+      obtain ⟨hcond, rfl⟩ := he
+      simp only [Bool.and_eq_true, beq_iff_eq] at hcond
+      obtain ⟨⟨⟨rfl, hco⟩, hsh⟩, hcmp⟩ := hcond
+      refine ⟨rfl, ?_⟩
+      have hfo := (factOK_loc (readLoc_loc_ne hr0)).1 (h.facts _ hF) x hx
+      simp only [hw, ite_true] at hfo
+      rw [← retype_shapeEq _ hsh, retype_composes hcmp]
+      exact hfo
   · rename_i hr0
     rw [raw_zero hr0] at hraw
     cases hraw
@@ -313,8 +315,8 @@ theorem moveSrc_ok {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : LocSt
         rw [hkv]
         unfold LMode.retype
         simp only [hlowt, ite_true]
-        rw [Val.retypeL_idem, show (Cx.make tabs f g).lc.ty a' = (Cx.make tabs f g).gty a' from rfl,
-          zero_retypeL hsa, Val.retypeL_idem, zero_retypeL hsu]
+        rw [show (Cx.make tabs f g).lc.ty a' = (Cx.make tabs f g).gty a' from rfl,
+          Val.retypeL_idem, zero_retypeL hsa, Val.retypeL_idem, zero_retypeL hsu]
       · simp at ho
     · simp at ho
   · simp at ho
@@ -450,11 +452,6 @@ theorem remat_sim {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : LocSta
             rw [hsv] at hx; cases hx
             simp only [exactF, Bool.false_eq_true, ite_false]
             rw [putRes_at_write h.regs hnd hl, hY]
-            have hnt : ∀ ts, (Cx.make tabs f g).lc.ty w.id ≠ .tuple ts := by
-              intro ts ht
-              sorry
-            rw [writeLocs_none hl hnt]
-            rfl
           · obtain ⟨hFS, hat⟩ := putRes_at_kill h.regs hF
             exact factOK_at (h.facts F hFS) (fun _ => hat)
 

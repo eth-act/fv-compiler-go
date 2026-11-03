@@ -32,13 +32,37 @@ def SimRes {α β : Type} (P : α → β → Prop) : Res α → Res β → Prop
 
 theorem SimRes.bind {α β γ δ : Type} {P : α → β → Prop} {Q : γ → δ → Prop} {r : Res α}
     {t : Res β} {k : α → Res γ} {k' : β → Res δ} (h : SimRes P r t)
-    (hk : ∀ x y, P x y → SimRes Q (k x) (k' y)) :
-    SimRes Q (match r with | .ok x => k x | .panic e m => .panic e m | .stuck msg => .stuck msg)
-      (match t with | .ok y => k' y | .panic e m => .panic e m | .stuck msg => .stuck msg) := by
+    (hk : ∀ x y, P x y → SimRes Q (k x) (k' y)) : SimRes Q (Res.bind r k) (Res.bind t k') := by
   cases r with
   | ok x => obtain ⟨y, rfl, hP⟩ := h; exact hk x y hP
   | panic e m => cases h; exact rfl
   | stuck msg => trivial
+
+theorem exc_bind_ok {ε α β : Type} {x : Except ε α} {k : α → Except ε β} {y : β}
+    (h : (x >>= k) = .ok y) : ∃ a, x = .ok a ∧ k a = .ok y := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+theorem res_bind_ok {α β : Type} {x : Res α} {k : α → Res β} {y : β}
+    (h : (x >>= k) = .ok y) : ∃ a, x = .ok a ∧ k a = .ok y := by
+  cases x with
+  | ok a => exact ⟨a, rfl, h⟩
+  | panic e m => cases h
+  | stuck msg => cases h
+
+theorem evalAllL_append' (md : LMode) (env : Env) (ctx : Ctx) (l1 l2 : List ID) (fr : Frame) :
+    evalAllL md env ctx fr (l1 ++ l2) =
+      (evalAllL md env ctx fr l1).bind fun fr' => evalAllL md env ctx fr' l2 := by
+  rw [evalAllL_append]
+  cases evalAllL md env ctx fr l1 <;> rfl
+
+theorem enterListLoc_cons' {env : Env} {lc : LocCtx} {s : LocState} {d : ID} {ds : List ID}
+    {w : Value} (hw : lc.ctx.f.value? d = some w) :
+    enterListLoc env lc s (d :: ds) =
+      (stepLoc env lc s w).bind fun s' => enterListLoc env lc s' ds := by
+  simp only [enterListLoc, hw]
+  cases stepLoc env lc s w <;> rfl
 
 /-! ## Source frame constants -/
 
@@ -205,76 +229,68 @@ theorem stepValue_spec {cx : Cx} {cert : Cert} {S S1 : Facts} {d : ID} {os os1 :
              (sameOp u w = false ∧ isKeepAliveCopy u w = true ∧ keepAliveStep cx S w u = .ok S1))) ∨
          (os1 = os ∧ newStep cx cert S w = .ok S1)))) := by
   unfold stepValue at h
-  simp only [bind, Except.bind, pure, Except.pure] at h
-  split at h
-  · cases h
-  · rename_i w hw
-    refine ⟨w, hw, ?_⟩
-    split at h
-    · cases h
-    · rename_i hid
-      simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hid
-      refine ⟨hid, ?_⟩
-      split at h
-      · rename_i hphi
-        split at h
-        · rename_i hh
-          cases h
-          exact .inl ⟨by simpa using hphi, hh, rfl, rfl⟩
-        · cases h
-      · rename_i hphi
-        have hphi' : w.op ≠ .Phi := by simpa using hphi
-        split at h
-        · cases h
-        · rename_i hnd
-          have hnd' : writesNodup (cx.lc.home d) (cx.gty d) = true := by simpa using hnd
-          refine .inr ⟨hphi', hnd', ?_⟩
-          split at h
-          · rename_i u hu
-            split at h
-            · rename_i hin
-              split at h
-              · cases h
-              · rename_i hud
-                simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hud
-                split at h
-                · cases h
-                · rename_i hso
-                  split at h
-                  · cases h
-                  · rename_i hpre
-                    simp only [Bool.not_eq_true', Bool.not_eq_false] at hpre
-                    have hpre' : ∀ x ∈ os.takeWhile (· != d), cx.isK x = true := by
-                      simpa [List.all_eq_true] using hpre
-                    refine .inl ⟨u, hu, hud, by simpa using hin, hpre', ?_⟩
-                    split at h
-                    · rename_i hs
-                      split at h
-                      · cases h
-                      · rename_i S2 hS2
-                        cases h
-                        exact ⟨rfl, .inl ⟨hs, hS2⟩⟩
-                    · rename_i hs
-                      split at h
-                      · cases h
-                      · rename_i S2 hS2
-                        cases h
-                        simp only [Bool.not_eq_true] at hs
-                        have hka : isKeepAliveCopy u w = true := by
-                          simp only [hs, Bool.not_false, Bool.true_and, Bool.not_eq_true',
-                            Bool.not_eq_false] at hso
-                          revert hso; cases isKeepAliveCopy u w <;> simp
-                        exact ⟨rfl, .inr ⟨hs, hka, hS2⟩⟩
-            · split at h
-              · cases h
-              · rename_i S2 hS2
-                cases h
-                exact .inr ⟨rfl, hS2⟩
-          · split at h
-            · cases h
-            · rename_i S2 hS2
-              cases h
-              exact .inr ⟨rfl, hS2⟩
+  cases hw : cx.g.value? d with
+  | none => rw [hw] at h; cases h
+  | some w =>
+  rw [hw] at h
+  dsimp only at h
+  refine ⟨w, rfl, ?_⟩
+  by_cases hid : (w.id != d) = true
+  · rw [if_pos hid] at h; cases h
+  rw [if_neg hid] at h
+  refine ⟨by simpa using hid, ?_⟩
+  by_cases hphi : (w.op == .Phi) = true
+  · rw [if_pos hphi] at h
+    by_cases hh : (w.args.all fun x => cx.lc.home x == cx.lc.home d) = true
+    · rw [if_pos hh] at h; cases h
+      exact .inl ⟨by simpa using hphi, hh, rfl, rfl⟩
+    · rw [if_neg hh] at h; cases h
+  rw [if_neg hphi] at h
+  by_cases hnd : (!writesNodup (cx.lc.home d) (cx.gty d)) = true
+  · rw [if_pos hnd] at h; cases h
+  rw [if_neg hnd] at h
+  refine .inr ⟨by simpa using hphi, by simpa using hnd, ?_⟩
+  cases hu : cx.f.value? d with
+  | none =>
+    rw [hu] at h
+    dsimp only at h
+    obtain ⟨S2, hS2, h⟩ := exc_bind_ok h
+    cases h
+    exact .inr ⟨rfl, hS2⟩
+  | some u =>
+  rw [hu] at h
+  dsimp only at h
+  by_cases hin : os.contains d = true
+  · rw [if_pos hin] at h
+    by_cases hud : (u.id != d) = true
+    · rw [if_pos hud] at h; cases h
+    rw [if_neg hud] at h
+    by_cases hso : (!sameOp u w && !isKeepAliveCopy u w) = true
+    · rw [if_pos hso] at h; cases h
+    rw [if_neg hso] at h
+    by_cases hpre : (!(List.takeWhile (fun x => x != d) os).all cx.isK) = true
+    · rw [if_pos hpre] at h; cases h
+    rw [if_neg hpre] at h
+    have hpre' : ∀ x ∈ os.takeWhile (· != d), cx.isK x = true := by
+      simpa [List.all_eq_true] using hpre
+    refine .inl ⟨u, rfl, by simpa using hud, by simpa using hin, hpre', ?_⟩
+    by_cases hs : sameOp u w = true
+    · rw [if_pos hs] at h
+      obtain ⟨S2, hS2, h⟩ := exc_bind_ok h
+      cases h
+      exact ⟨rfl, .inl ⟨hs, hS2⟩⟩
+    · rw [if_neg hs] at h
+      obtain ⟨S2, hS2, h⟩ := exc_bind_ok h
+      cases h
+      have hs' : sameOp u w = false := by simpa using hs
+      have hka : isKeepAliveCopy u w = true := by
+        simp only [hs', Bool.not_false, Bool.true_and] at hso
+        simpa using hso
+      exact ⟨rfl, .inr ⟨hs', hka, hS2⟩⟩
+  · rw [if_neg hin] at h
+    obtain ⟨S2, hS2, h⟩ := exc_bind_ok h
+    cases h
+    exact .inr ⟨rfl, hS2⟩
 
 theorem dropWhile_ne_of_mem {d : ID} : ∀ {os : List ID}, d ∈ os →
     os.dropWhile (· != d) = d :: (os.dropWhile (· != d)).drop 1
@@ -321,13 +337,12 @@ theorem stepValue_sim {env : Env} {frA : Frame} {cert : Cert} {S S1 : Facts} {fr
   · obtain ⟨u, hu, hud, hin, hpre, rfl, hstep⟩ := hk
     have hu' : f.value? d = some u := hu
     refine ⟨w, os.takeWhile (· != d) ++ [d], hw', split_at hin, ?_⟩
-    rw [evalAllL_append]
+    rw [evalAllL_append']
     have hK := kAll_sim (S := S) (s := s) (env := env) (frA := frA) _ fr hpre h
-    have := SimRes.bind (k := fun fr' => evalAllL (Cx.make tabs f g).md env (Cx.make tabs f g).sc fr' [d])
+    have hb := SimRes.bind (Q := fun fr' s' => Match (Cx.make tabs f g) env frA S1 fr' s')
+      (k := fun fr' => evalAllL (Cx.make tabs f g).md env (Cx.make tabs f g).sc fr' [d])
       (k' := fun s' => stepLoc env (Cx.make tabs f g).lc s' w) hK ?_
-    · revert this
-      cases evalAllL (Cx.make tabs f g).md env (Cx.make tabs f g).sc fr (os.takeWhile (· != d)) <;>
-        exact id
+    · rwa [Res.bind_ok] at hb
     · intro fr' s' h'
       rw [evalAllL_one (by rw [sc_value]; exact hu')]
       rcases hstep with ⟨hso, hks⟩ | ⟨-, hka, hks⟩
@@ -346,14 +361,16 @@ theorem stepValue_sim {env : Env} {frA : Frame} {cert : Cert} {S S1 : Facts} {fr
           cases hks
           exact keepAlive_sim' h' hlow hu' hw' hud hwd hka hnd hchk
   · refine ⟨w, [], hw', rfl, ?_⟩
-    show ∃ s', _ = .ok s' ∧ _
+    change ∃ s', stepLoc env (Cx.make tabs f g).lc s w = Res.ok s' ∧
+      Match (Cx.make tabs f g) env frA S1 fr s'
     unfold newStep at hnew
     split at hnew
     · rename_i hmv
       have hmv' : w.op = .Copy ∨ w.op = .LoadReg ∨ w.op = .StoreReg := by
         simpa [Bool.or_eq_true, beq_iff_eq, or_assoc] using hmv
       exact move_sim h hlow hmv' (by rw [hwd]; exact hnd) hnew
-    · split at hnew
+    · dsimp only at hnew
+      split at hnew
       · cases hnew
       · rename_i u hu
         split at hnew
@@ -399,16 +416,10 @@ theorem walk_sim {env : Env} {frA : Frame} {cert : Cert} (hlow : f.lowered = g.l
   | d :: ds, S, os, S', rest, fr, s, hw, hrest, h => by
     obtain ⟨S1, os1, hsv, hw1⟩ := walk_cons hw
     obtain ⟨w, c, hwv, rfl, hsim⟩ := stepValue_sim h hlow hown hsv
-    rw [evalAllL_append]
+    rw [evalAllL_append']
     have hlv : (Cx.make tabs f g).lc.ctx.f.value? d = some w := by rw [lc_f]; exact hwv
-    have : enterListLoc env (Cx.make tabs f g).lc s (d :: ds) =
-        match stepLoc env (Cx.make tabs f g).lc s w with
-        | .ok s' => enterListLoc env (Cx.make tabs f g).lc s' ds
-        | .panic e m => .panic e m
-        | .stuck msg => .stuck msg := by
-      simp only [enterListLoc, hlv]
-    rw [this]
-    exact SimRes.bind hsim fun fr' s' h' => walk_sim ds S1 os1 S' rest fr' s' hw1 hrest h'
+    rw [enterListLoc_cons' hlv]
+    exact SimRes.bind hsim fun fr' s' h' => walk_sim hlow hown ds S1 os1 S' rest fr' s' hw1 hrest h'
 
 /-! ## Phis -/
 
@@ -425,13 +436,13 @@ theorem setPhis_mem' : ∀ (ps : List (ID × Val)) (r : Array (Option Val)) (z :
       subst hx'
       exact setPhis_mem' ps _ _ _ hp (fun q hq' => hq q (List.mem_cons_of_mem _ hq'))
         (by simpa [Array.set!] using hlt)
-    · have hzid : (id, y) = (z, x) := by
-        rcases List.mem_cons.1 hm with h | h
-        · exact h.symm
+    · simp only [List.mem_cons, Prod.mk.injEq] at hm
+      have hzid : id = z ∧ y = x := by
+        rcases hm with h | h
+        · exact ⟨h.1.symm, h.2.symm⟩
         · exact absurd (List.mem_map.2 ⟨_, h, rfl⟩) hin
-      cases hzid
-      show (setPhis ps (r.set! z (some x)))[z]? = _
-      rw [setPhis_not_mem ps _ z hin]
+      obtain ⟨rfl, rfl⟩ := hzid
+      refine (setPhis_not_mem ps _ id hin).trans ?_
       simp [Array.set!, Array.getElem?_setIfInBounds, hlt]
 
 /-- The source's `Phi`s along edge `i` of block `b`: the registers of the block's other values
@@ -567,44 +578,53 @@ theorem phiFacts_mem {cx : Cx} {S : Facts} {i : Nat} {pb : Option ID} :
     simp only [phiFacts, pure, Except.pure, Except.ok.injEq] at h
     subst h; simp
   | id :: ids, N, h => by
-    simp only [phiFacts, bind, Except.bind, pure, Except.pure] at h
-    split at h
-    · cases h
-    · rename_i rest hrest
-      have ih : ∀ F ∈ rest, F.2.id ∈ id :: ids ∧ PhiFact cx S i F := fun F hF =>
-        ⟨List.mem_cons_of_mem _ (phiFacts_mem hrest F hF).1, (phiFacts_mem hrest F hF).2⟩
-      split at h
-      · cases h; exact ih
-      · rename_i p hp
-        split at h
-        · cases h; exact ih
-        · rename_i hphi
-          have hphi' : p.op = .Phi := by simpa using hphi
-          split at h
-          · cases h
-          · rename_i a ha
-            split at h
-            · rename_i l hl
-              split at h
-              · rename_i hex
-                cases h
-                intro F hF
-                rcases List.mem_cons.1 hF with rfl | hF
-                · exact ⟨List.mem_cons_self, p, a, l, hp, hphi', ha, hl, rfl, rfl, .inl ⟨hex, rfl⟩⟩
-                · exact ih F hF
-              · split at h
-                · rename_i hho
-                  split at h
-                  · cases h
-                  · rename_i hco
-                    cases h
-                    intro F hF
-                    rcases List.mem_cons.1 hF with rfl | hF
-                    · exact ⟨List.mem_cons_self, p, a, l, hp, hphi', ha, hl, rfl, rfl,
-                        .inr ⟨hho, rfl, by simpa using hco⟩⟩
-                    · exact ih F hF
-                · cases h
-            · cases h
+    rw [phiFacts.eq_2] at h
+    obtain ⟨rest, hrest, h⟩ := exc_bind_ok h
+    have ih : ∀ F ∈ rest, F.2.id ∈ id :: ids ∧ PhiFact cx S i F := fun F hF =>
+      ⟨List.mem_cons_of_mem _ (phiFacts_mem hrest F hF).1, (phiFacts_mem hrest F hF).2⟩
+    cases hp : cx.f.value? id with
+    | none => rw [hp] at h; cases h; exact ih
+    | some p =>
+    rw [hp] at h
+    dsimp only at h
+    by_cases hphi : (p.op != Op.Phi) = true
+    · rw [if_pos hphi] at h; cases h; exact ih
+    rw [if_neg hphi] at h
+    have hphi' : p.op = .Phi := by simpa using hphi
+    cases ha : p.args[i]? with
+    | none => rw [ha] at h; cases h
+    | some a =>
+    rw [ha] at h
+    dsimp only at h
+    cases hl : readLoc (cx.lc.home id) (cx.fty id) with
+    | none => rw [hl] at h; cases h
+    | some r =>
+    cases r with
+    | zero => rw [hl] at h; cases h
+    | tuple ls => rw [hl] at h; cases h
+    | poison => rw [hl] at h; cases h
+    | loc l =>
+    rw [hl] at h
+    dsimp only at h
+    by_cases hex : S.holdsExact l (cx.canon a) = true
+    · rw [if_pos hex] at h; cases h
+      intro F hF
+      rcases List.mem_cons.1 hF with rfl | hF
+      · exact ⟨List.mem_cons_self, p, a, l, hp, hphi', ha, hl, rfl, rfl, .inl ⟨hex, rfl⟩⟩
+      · exact ih F hF
+    rw [if_neg hex] at h
+    by_cases hho : S.holds l (cx.canon a) = true
+    · rw [if_pos hho] at h
+      by_cases hco : (!composes cx.f.lowered (cx.fty id) (cx.fty (cx.canon a))) = true
+      · rw [if_pos hco] at h; cases h
+      rw [if_neg hco] at h
+      cases h
+      intro F hF
+      rcases List.mem_cons.1 hF with rfl | hF
+      · exact ⟨List.mem_cons_self, p, a, l, hp, hphi', ha, hl, rfl, rfl,
+          .inr ⟨hho, rfl, by simpa using hco⟩⟩
+      · exact ih F hF
+    · rw [if_neg hho] at h; cases h
 
 /-- **The source's `Phi`s along an edge `phiEdge` accepted**: `Match` with the edge's facts. -/
 theorem phiEdge_sim {env : Env} {frA : Frame} {S E : Facts} {fr : Frame} {s : LocState}
@@ -615,115 +635,112 @@ theorem phiEdge_sim {env : Env} {frA : Frame} {S E : Facts} {fr : Frame} {s : Lo
       (phiStepL (Cx.make tabs f g).md (Cx.make tabs f g).sc fr i) = .ok ps) :
     Match (Cx.make tabs f g) env frA E { fr with regs := setPhis ps fr.regs } s := by
   unfold phiEdge at he
-  simp only [bind, Except.bind, pure, Except.pure] at he
-  split at he
-  · cases he
-  · rename_i sb hsb
-    have hsb' : f.block? bid = some sb := hsb
-    rw [hb] at hsb'; cases hsb'
-    split at he
-    · cases he
-    · rename_i N hN
-      cases he
-      obtain ⟨hsz, hsome, hother, hphis⟩ := phis_spec hps
-      -- the registers of values other than the block's phis are unchanged
-      have hkeep : ∀ z, z ∉ b.values.toList.filter (Cx.make tabs f g).isPhi →
-          (setPhis ps fr.regs)[z]? = fr.regs[z]? := by
+  rw [show (Cx.make tabs f g).f.block? bid = some b from hb] at he
+  dsimp only at he
+  obtain ⟨N, hN, he⟩ := exc_bind_ok he
+  cases he
+  obtain ⟨hsz, hsome, hother, hphis⟩ := phis_spec hps
+  -- the registers of values other than the block's phis are unchanged
+  have hkeep : ∀ z, z ∉ b.values.toList.filter (Cx.make tabs f g).isPhi →
+      (setPhis ps fr.regs)[z]? = fr.regs[z]? := by
+    intro z hz
+    apply hother
+    by_cases hzb : z ∈ b.values
+    · have := hsome z hzb
+      rw [sc_value] at this
+      obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 this
+      refine .inr ⟨v, by rw [sc_value]; exact hv, fun hphi => hz ?_⟩
+      rw [List.mem_filter]
+      refine ⟨Array.mem_toList_iff.2 hzb, ?_⟩
+      unfold Cx.isPhi
+      rw [show (Cx.make tabs f g).f = f from rfl, hv]
+      simp [hphi]
+    · exact .inl hzb
+  apply phis_match h hps
+  intro F hF
+  rcases List.mem_append.1 hF with hF | hF
+  · obtain ⟨hid, p, a, l, hp, hphi, ha, hl, hF1, hcomp, hcase⟩ := phiFacts_mem hN F hF
+    obtain ⟨l', o⟩ := F
+    simp only at hF1 hcomp hid hp hl hcase ⊢
+    subst l'
+    rw [factOK_loc (readLoc_loc_ne hl)]
+    intro x hx
+    have hnk : (Cx.make tabs f g).isK o.id = false := by
+      cases hk : (Cx.make tabs f g).isK o.id
+      · rfl
+      · exact absurd hphi (isK_not_phi hk hp)
+    unfold srcVal at hx
+    rw [if_neg (by simp [hnk])] at hx
+    have hlt : o.id < fr.regs.size := by
+      rw [← hsz]
+      exact (Array.getElem?_eq_some_iff.1 (Option.join_eq_some_iff.1 hx)).1
+    obtain ⟨a', y, ha', hy, hset⟩ :=
+      hphis o.id (Array.mem_toList_iff.1 hid) p (by rw [sc_value]; exact hp) hphi hlt
+    rw [ha] at ha'; cases ha'
+    simp only at hx
+    rw [hset] at hx
+    cases hx
+    have hsy : srcVal (Cx.make tabs f g) env frA fr a = some y :=
+      srcVal_of_reg h (by rw [hy]; rfl)
+    have hfa := (srcVal_canon hsy).2
+    have hya := srcVal_shaped h hsy
+    simp only [comp, Cx.origTy, hcomp]
+    rcases hcase with ⟨hex, hw⟩ | ⟨hho, hw, hco⟩
+    · have hex' := holdsExact_iff.1 hex
+      have hat : s.at l = y := by
+        have := (factOK_loc (readLoc_loc_ne hl)).1 (h.facts _ hex') y (srcVal_canon hsy).1
+        simpa [comp] using this
+      rw [hw, hat]
+      cases hsh : shapeEq ((Cx.make tabs f g).fty o.id) ((Cx.make tabs f g).fty ((Cx.make tabs f g).canon a))
+      · rfl
+      · simp only [Bool.not_true, Bool.false_eq_true, ite_false]
+        show y = (Cx.make tabs f g).md.retype ((Cx.make tabs f g).fty o.id) y
+        rw [retype_shapeEq _ hsh, hfa, hya]
+    · rw [hw]
+      simp only [ite_true]
+      show (Cx.make tabs f g).md.retype ((Cx.make tabs f g).fty o.id) (s.at l) =
+        (Cx.make tabs f g).md.retype ((Cx.make tabs f g).fty o.id) y
+      have hr := holds_read h (readLoc_loc_ne hl) hho hsy
+      rw [← hfa] at hr
+      rw [← hr, retype_composes (md := (Cx.make tabs f g).md) hco]
+  · rw [List.mem_filter] at hF
+    obtain ⟨hFS, hc⟩ := hF
+    obtain ⟨l, o⟩ := F
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+    obtain ⟨hc1, hc2⟩ := hc
+    have hnid : o.id ∉ b.values.toList.filter (Cx.make tabs f g).isPhi := fun hm =>
+      absurd (List.contains_iff_mem.2 hm) (by rw [hc1]; decide)
+    have hfac := h.facts _ hFS
+    by_cases hl : l = .avail
+    · subst hl
+      have hany : ∀ z ∈ b.values.toList.filter (Cx.make tabs f g).isPhi,
+          (Cx.make tabs f g).reads o.id z = false := by
         intro z hz
-        apply hother
-        by_cases hzb : z ∈ b.values
-        · have := hsome z hzb
-          rw [sc_value] at this
-          obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 this
-          refine .inr ⟨v, by rw [sc_value]; exact hv, fun hphi => hz ?_⟩
-          rw [List.mem_filter]
-          refine ⟨Array.mem_toList_iff.2 hzb, ?_⟩
-          unfold Cx.isPhi
-          rw [show (Cx.make tabs f g).f = f from rfl, hv]
-          simp [hphi]
-        · exact .inl hzb
-      apply phis_match h hps
-      intro F hF
-      rcases List.mem_append.1 hF with hF | hF
-      · obtain ⟨hid, p, a, l, hp, hphi, ha, hl, hF1, hcomp, hcase⟩ := phiFacts_mem hN F hF
-        obtain ⟨⟨l', o⟩⟩ := F
-        simp only at hF1 hcomp hid hp hl hcase ⊢
-        subst hF1
-        rw [factOK_loc (readLoc_loc_ne hl)]
-        intro x hx
-        have hnk : (Cx.make tabs f g).isK o.id = false := by
-          cases hk : (Cx.make tabs f g).isK o.id
-          · rfl
-          · exact absurd hphi (isK_not_phi hk hp)
-        unfold srcVal at hx
-        rw [if_neg (by simp [hnk])] at hx
-        have hlt : o.id < fr.regs.size := by
-          rw [← hsz]
-          exact (Array.getElem?_eq_some_iff.1 (Option.join_eq_some_iff.1 hx)).1
-        obtain ⟨a', y, ha', hy, hset⟩ :=
-          hphis o.id (Array.mem_toList_iff.1 hid) p (by rw [sc_value]; exact hp) hphi hlt
-        rw [ha] at ha'; cases ha'
+        cases hr : (Cx.make tabs f g).reads o.id z
+        · rfl
+        · exfalso
+          have : (b.values.toList.filter (Cx.make tabs f g).isPhi).any
+              ((Cx.make tabs f g).reads o.id ·) = true := List.any_eq_true.2 ⟨z, hz, hr⟩
+          simp [this] at hc2
+      obtain ⟨v, y, hv, hvid, hreg, hev⟩ := factOK_avail.1 hfac
+      refine factOK_avail.2 ⟨v, y, hv, hvid, ?_, ?_⟩
+      · show ((setPhis ps fr.regs)[o.id]?).join = some y
+        rw [hkeep o.id hnid]; exact hreg
+      · rw [← hev]
+        refine (evalValueL_congr rfl fun a ha => (hkeep a fun hm => ?_).symm).symm
+        have := hany a hm
+        unfold Cx.reads at this
+        rw [hv] at this
+        simp [ha] at this
+    · rw [factOK_loc hl] at hfac ⊢
+      intro x hx
+      apply hfac x
+      unfold srcVal at hx ⊢
+      split
+      · rename_i hk; rw [if_pos hk] at hx; exact hx
+      · rename_i hk; rw [if_neg hk] at hx
         simp only at hx
-        rw [hset] at hx
-        cases hx
-        have hsy : srcVal (Cx.make tabs f g) env frA fr a = some y :=
-          srcVal_of_reg h (by rw [hy]; rfl)
-        have hfa := (srcVal_canon hsy).2
-        have hya := srcVal_shaped h hsy
-        simp only [comp, Cx.origTy, hcomp]
-        rcases hcase with ⟨hex, hw⟩ | ⟨hho, hw, hco⟩
-        · have hex' := holdsExact_iff.1 hex
-          have hat : s.at l = y := by
-            have := (factOK_loc (readLoc_loc_ne hl)).1 (h.facts _ hex') y (srcVal_canon hsy).1
-            simpa [comp] using this
-          rw [hw, hat]
-          cases hsh : shapeEq ((Cx.make tabs f g).fty o.id) ((Cx.make tabs f g).fty ((Cx.make tabs f g).canon a))
-          · rfl
-          · simp only [Bool.not_true, Bool.false_eq_true, ite_false]
-            rw [retype_shapeEq _ hsh, hfa, hya]
-        · rw [hw]
-          simp only [ite_true]
-          have hr := holds_read h (readLoc_loc_ne hl) hho hsy
-          rw [← hfa] at hr
-          rw [← retype_composes hco, hr]
-      · rw [List.mem_filter] at hF
-        obtain ⟨hFS, hc⟩ := hF
-        obtain ⟨l, o⟩ := F
-        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
-        obtain ⟨hc1, hc2⟩ := hc
-        have hnid : o.id ∉ b.values.toList.filter (Cx.make tabs f g).isPhi := fun hm =>
-          absurd (List.contains_iff_mem.2 hm) (by rw [hc1]; decide)
-        have hfac := h.facts _ hFS
-        by_cases hl : l = .avail
-        · subst hl
-          have hany : ∀ z ∈ b.values.toList.filter (Cx.make tabs f g).isPhi,
-              (Cx.make tabs f g).reads o.id z = false := by
-            intro z hz
-            cases hr : (Cx.make tabs f g).reads o.id z
-            · rfl
-            · exfalso
-              have : (b.values.toList.filter (Cx.make tabs f g).isPhi).any
-                  ((Cx.make tabs f g).reads o.id ·) = true := List.any_eq_true.2 ⟨z, hz, hr⟩
-              simp [this] at hc2
-          obtain ⟨v, y, hv, hvid, hreg, hev⟩ := factOK_avail.1 hfac
-          refine factOK_avail.2 ⟨v, y, hv, hvid, ?_, ?_⟩
-          · show ((setPhis ps fr.regs)[o.id]?).join = some y
-            rw [hkeep o.id hnid]; exact hreg
-          · rw [← hev]
-            refine (evalValueL_congr rfl fun a ha => (hkeep a fun hm => ?_).symm).symm
-            have := hany a hm
-            unfold Cx.reads at this
-            rw [hv] at this
-            simp [ha] at this
-        · rw [factOK_loc hl] at hfac ⊢
-          intro x hx
-          apply hfac x
-          unfold srcVal at hx ⊢
-          split
-          · rename_i hk; rw [if_pos hk] at hx; exact hx
-          · rename_i hk; rw [if_neg hk] at hx
-            simp only at hx
-            rw [hkeep o.id hnid] at hx; exact hx
+        rw [hkeep o.id hnid] at hx; exact hx
 
 /-! ## Terminators -/
 
@@ -755,27 +772,55 @@ theorem ctrlOK_cons {cx : Cx} {S : Facts} {bid : ID} {k : BlockKind} {j : Nat} {
     {cs cs' : List ID} (h : ctrlOK cx S bid k j (c :: cs) (c' :: cs') = .ok ()) :
     ∃ u w, cx.f.value? c = some u ∧ cx.g.value? c' = some w ∧ CtrlOne cx S k j c c' u w ∧
       ctrlOK cx S bid k (j + 1) cs cs' = .ok () := by
-  simp only [ctrlOK, bind, Except.bind] at h
-  split at h
-  · cases h
-  · rename_i r hr
-    cases r
-    refine ⟨?_⟩
-    split at hr
-    · rename_i u w hu hw
-      refine ⟨u, w, hu, hw, ?_, h⟩
-      refine ⟨fun hm hrd => ?_, fun hm hrd => ?_, fun hm hrd => ?_, fun hm hrd => ?_⟩
-      · rw [if_pos (by simp [hm]), if_pos hrd] at hr
-        simp only [bind, Except.bind] at hr
-        split at hr
-        · rename_i hb
-          simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hb
-          sorry
-        · sorry
-      · sorry
-      · sorry
-      · sorry
-    · cases hr
+  rw [ctrlOK.eq_1] at h
+  cases hu : cx.f.value? c with
+  | none => rw [hu] at h; cases h
+  | some u =>
+  cases hw : cx.g.value? c' with
+  | none => rw [hu, hw] at h; cases h
+  | some w =>
+  rw [hu, hw] at h
+  dsimp only at h
+  refine ⟨u, w, rfl, rfl, ?_⟩
+  by_cases hm : (w.op == .MakeResult) = true
+  · have hm' : w.op = .MakeResult := by simpa using hm
+    rw [if_pos hm] at h
+    by_cases hrd : readsControl k j = true
+    · rw [if_pos hrd] at h
+      by_cases h1 : (c' != c || !sameOp u w) = true
+      · rw [if_pos h1] at h; cases h
+      rw [if_neg h1] at h
+      by_cases h2 : (!List.contains S (Loc.avail, { id := c, comp := none, weak := false })) = true
+      · rw [if_pos h2] at h; cases h
+      rw [if_neg h2] at h
+      obtain ⟨r, hr, h⟩ := exc_bind_ok h
+      cases r
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true', not_or,
+        Decidable.not_not, Bool.not_eq_false] at h1
+      simp only [Bool.not_eq_true', Bool.not_eq_false, List.contains_iff_mem] at h2
+      refine ⟨⟨fun _ _ => ⟨h1.1, h1.2, h2, hr⟩, fun _ hf => absurd hrd (by rw [hf]; decide),
+        fun hn => absurd hm' hn, fun hn => absurd hm' hn⟩, h⟩
+    · rw [if_neg hrd] at h
+      by_cases h1 : (!w.args.all (readable cx)) = true
+      · rw [if_pos h1] at h; cases h
+      rw [if_neg h1] at h
+      simp only [Bool.not_eq_true', Bool.not_eq_false, Array.all_eq_true_iff_forall_mem] at h1
+      refine ⟨⟨fun _ ht => absurd ht hrd, fun _ _ => h1, fun hn => absurd hm' hn,
+        fun hn => absurd hm' hn⟩, h⟩
+  · have hm' : w.op ≠ .MakeResult := by simpa using hm
+    rw [if_neg hm] at h
+    by_cases hrd : readsControl k j = true
+    · rw [if_pos hrd] at h
+      obtain ⟨r, hr, h⟩ := exc_bind_ok h
+      cases r
+      refine ⟨⟨fun hn => absurd hn hm', fun hn => absurd hn hm', fun _ _ => hr,
+        fun _ hf => absurd hrd (by rw [hf]; decide)⟩, h⟩
+    · rw [if_neg hrd] at h
+      by_cases h1 : (!readable cx c') = true
+      · rw [if_pos h1] at h; cases h
+      rw [if_neg h1] at h
+      refine ⟨⟨fun hn => absurd hn hm', fun hn => absurd hn hm', fun _ ht => absurd ht hrd,
+        fun _ _ => by simpa using h1⟩, h⟩
 
 theorem argOK_readable {cx : Cx} {S : Facts} {a' a : ID} {sel : Option Nat} {s : LocState}
     (h : argOK cx S a' a sel = .ok ()) : ∃ x, s.read cx.lc a' = .ok x := by
@@ -867,6 +912,54 @@ theorem forIn_stage {lc : LocCtx} {s : LocState} {val : ID → Val} :
     rw [h c List.mem_cons_self]
     exact forIn_stage cs _ fun c' hc' => h c' (List.mem_cons_of_mem _ hc')
 
+theorem succ_rel {b b' : Block} (hs : b'.succs = b.succs) {j : Nat} {n : Next}
+    (h : succ b j = .ok n) : succ b' j = .ok n := by
+  obtain ⟨e, he, rfl⟩ := Dead.succ_ok h
+  unfold succ; rw [hs, he]; rfl
+
+/-- A generic terminator of the same kind and successors whose control value (when read) is the
+same continues alike. -/
+theorem stepTerm_ctl {fr fr' : Frame} {b b' : Block} (hk : b'.kind = b.kind)
+    (hs : b'.succs = b.succs)
+    (hc : (b.kind = .If ∨ b.kind = .JumpTable ∨ b.kind = .Ret) → ∀ x,
+      Sem.control fr b 0 = .ok x → Sem.control fr' b' 0 = .ok x)
+    {n : Next} (h : stepTerm fr b = .ok n) : stepTerm fr' b' = .ok n := by
+  unfold stepTerm at h ⊢
+  rw [hk]
+  cases hb : b.kind <;> simp only [hb] at h ⊢
+  case Plain => exact succ_rel hs h
+  case First => exact succ_rel hs h
+  case Defer => exact succ_rel hs h
+  case If =>
+    obtain ⟨x, hx, h'⟩ := res_bind_ok h
+    rw [hc (.inl hb) x hx]
+    simp only [bind, Res.bind] at h' ⊢
+    split at h'
+    · exact succ_rel hs h'
+    · exact succ_rel hs h'
+    · cases h'
+  case JumpTable =>
+    obtain ⟨x, hx, h'⟩ := res_bind_ok h
+    rw [hc (.inr (.inl hb)) x hx]
+    simp only [bind, Res.bind] at h' ⊢
+    split at h'
+    · exact succ_rel hs h'
+    · cases h'
+  case Ret =>
+    obtain ⟨x, hx, h'⟩ := res_bind_ok h
+    rw [hc (.inr (.inr hb)) x hx]
+    simp only [bind, Res.bind] at h' ⊢
+    split at h'
+    · split at h'
+      · split at h'
+        · cases h'
+        · rename_i hp
+          rw [if_neg hp]
+          exact h'
+      · cases h'
+    · cases h'
+  all_goals cases h
+
 /-- A terminator of the same kind, `auxInt` and successors whose control value (when read) is the
 same continues alike. -/
 theorem stepTermL_ctl {fr fr' : Frame} {b b' : Block} (hk : b'.kind = b.kind)
@@ -874,35 +967,16 @@ theorem stepTermL_ctl {fr fr' : Frame} {b b' : Block} (hk : b'.kind = b.kind)
     (hc : readsControl b.kind 0 = true → ∀ x, Sem.control fr b 0 = .ok x →
       Sem.control fr' b' 0 = .ok x)
     {n : Next} (h : stepTermL fr b = .ok n) : stepTermL fr' b' = .ok n := by
-  have hsucc : ∀ j n, succ b j = .ok n → succ b' j = .ok n := by
-    intro j n hj
-    obtain ⟨e, he, rfl⟩ := Dead.succ_ok hj
-    unfold succ; rw [hs, he]; rfl
   by_cases har : b.kind.isArm64 = true
   · obtain ⟨v, j, hcv, hsj, hT⟩ := Dead.stepTermL_arm har h
     have hrc : readsControl b.kind 0 = true := by simp [readsControl, har]
     rw [hT fr' b' hk ha (hc hrc v hcv)]
-    exact hsucc j n hsj
+    exact succ_rel hs hsj
   · have har' : b'.kind.isArm64 = false := by rw [hk]; exact Bool.eq_false_iff.2 har
     rw [stepTermL_generic fr (Bool.eq_false_iff.2 har)] at h
     rw [stepTermL_generic fr' har']
-    unfold stepTerm at h ⊢
-    rw [hk]
-    cases hb : b.kind <;> simp only [hb] at h ⊢
-    all_goals first
-      | (cases h; done)
-      | exact hsucc _ _ h
-      | (have hrc : readsControl b.kind 0 = true := by simp [readsControl, hb]
-         cases hc0 : Sem.control fr b 0 with
-         | ok v =>
-           rw [hc hrc v hc0]; rw [hc0] at h
-           simp only [bind, Res.bind] at h ⊢
-           split at h <;> first
-             | (cases h; done)
-             | exact hsucc _ _ h
-             | (split at h <;> first | (cases h; done) | (split at h <;> first | (cases h; done) | exact h)))
-         | panic e m => exact absurd hc0 Dead.control_not_panic
-         | stuck msg => rw [hc0] at h; cases h)
+    refine stepTerm_ctl hk hs (fun hkd => hc ?_) h
+    rcases hkd with hkd | hkd | hkd <;> simp [readsControl, hkd]
 
 theorem control_ok_of {s : LocState} {c' : ID} {w : Value}
     (hw : g.value? c' = some w) (hone : w.op = .MakeResult →
@@ -954,7 +1028,8 @@ theorem ctrl_head_val {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : Lo
   dsimp only
   by_cases hm : w.op = .MakeResult
   · rw [if_pos (by simp [hm])]
-    obtain ⟨rfl, hso, hav, hargs⟩ := h1 hm hrd
+    obtain ⟨hcc, hso, hav, hargs⟩ := h1 hm hrd
+    subst c'
     obtain ⟨hop, -, -, hty, hsz⟩ := sameOp_spec hso
     obtain ⟨v, y, hv, hvid, hreg, hev⟩ := factOK_avail.1 (h.facts _ hav)
     have hv' : f.value? c = some v := hv
@@ -970,10 +1045,12 @@ theorem ctrl_head_val {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : Lo
     subst he
     show Res.bind _ _ = _
     rw [hargv']
-    show Res.ok _ = _
-    rw [loc_md hlow, show (Cx.make tabs f g).lc.ty u.id = (Cx.make tabs f g).gty u.id from rfl,
-      hvid, gty_eq_fty hlow hu hw hty]
-    rfl
+    have hmd : LMode.loc g = (Cx.make tabs f g).md := by
+      have := loc_md (tabs := tabs) hlow; rwa [lc_f] at this
+    have hvid' : u.id = c := hvid
+    show Res.ok ((LMode.loc g).retype ((Cx.make tabs f g).gty c) (Val.tuple argv')) =
+      Res.ok ((Cx.make tabs f g).md.retype ((Cx.make tabs f g).fty u.id) (Val.tuple argv'))
+    rw [hmd, hvid', gty_eq_fty hlow hu hw hty]
   · rw [if_neg (by simp [hm])]
     obtain ⟨x', hx', hrel⟩ := argOK_read h hlow (h3 hm hrd) (srcVal_of_reg h hx)
     rw [hx', hrel]
@@ -1009,6 +1086,7 @@ theorem term_sim {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : LocStat
     | none => rw [hc0] at hcx; cases hcx
     | some c =>
       rw [hc0] at hcx
+      dsimp only at hcx
       obtain ⟨cs, hl⟩ := list_cons_of_getElem? (by rw [Array.getElem?_toList]; exact hc0)
       have hpos : 0 < b'.controls.toList.length := by
         rw [Array.length_toList, hcs, ← Array.length_toList, hl]; simp
@@ -1018,6 +1096,7 @@ theorem term_sim {env : Env} {frA : Frame} {S : Facts} {fr : Frame} {s : LocStat
         | cons c' cs' => exact ⟨c', cs', rfl⟩
       have hc0' : b'.controls[0]? = some c' := by rw [← Array.getElem?_toList, hl']; rfl
       rw [hc0']
+      dsimp only
       rw [hl, hl'] at hctl
       obtain ⟨u, w, hu, hw, hone, -⟩ := ctrlOK_cons hctl
       have hx : (fr.regs[c]?).join = some x := by

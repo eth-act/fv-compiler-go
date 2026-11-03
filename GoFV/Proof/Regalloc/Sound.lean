@@ -35,30 +35,25 @@ theorem edgesOK_spec {cx : Cx} {cert : Cert} {bid : ID} {S : Facts} :
       ∃ E, phiEdge cx S e.b e.i = .ok E ∧ sub (cert.ins.getD e.b []) E = true
   | [], _, _, he => absurd he List.not_mem_nil
   | e :: es, h, e', he' => by
-    simp only [edgesOK, bind, Except.bind] at h
+    simp only [edgesOK] at h
+    obtain ⟨E, hE, h⟩ := exc_bind_ok h
     split at h
     · cases h
-    · rename_i E hE
-      split at h
-      · cases h
-      · rename_i hsub
-        rcases List.mem_cons.1 he' with rfl | he'
-        · exact ⟨E, hE, by simpa using hsub⟩
-        · exact edgesOK_spec h e' he'
-      all_goals sorry
+    · rename_i hs
+      rcases List.mem_cons.1 he' with rfl | he'
+      · exact ⟨E, hE, by simpa using hs⟩
+      · exact edgesOK_spec h e' he'
 
 theorem checkBlocks_spec {cx : Cx} {cert : Cert} :
     ∀ {bids : List ID}, checkBlocks cx cert bids = .ok () → ∀ bid ∈ bids,
       checkBlock cx cert bid = .ok ()
   | [], _, _, h => absurd h List.not_mem_nil
   | b :: bids, h, bid, hb => by
-    simp only [checkBlocks, bind, Except.bind] at h
-    split at h
-    · cases h
-    · rename_i r hr
-      rcases List.mem_cons.1 hb with rfl | hb
-      · cases r; exact hr
-      · exact checkBlocks_spec h bid hb
+    simp only [checkBlocks] at h
+    obtain ⟨r, hr, h⟩ := exc_bind_ok h
+    rcases List.mem_cons.1 hb with rfl | hb
+    · cases r; exact hr
+    · exact checkBlocks_spec h bid hb
 
 theorem checkBlock_spec {cx : Cx} {cert : Cert} {bid : ID} (h : checkBlock cx cert bid = .ok ())
     {b : Block} (hb : cx.f.block? bid = some b) :
@@ -67,19 +62,61 @@ theorem checkBlock_spec {cx : Cx} {cert : Cert} {bid : ID} (h : checkBlock cx ce
         walk cx cert (cert.ins.getD bid []) b'.values.toList order.toList = .ok (S, rest) ∧
         (∀ x ∈ rest, cx.isK x = true) ∧ termOK cx S b b' = .ok () ∧
         edgesOK cx cert bid S b.succs.toList = .ok () := by
-  sorry
+  unfold checkBlock at h
+  rw [hb] at h
+  dsimp only at h
+  split at h
+  · cases h
+  · rename_i hid
+    simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hid
+    refine ⟨hid, ?_⟩
+    split at h
+    · rename_i b' hb'
+      refine ⟨b', hb', fun order ho => ?_⟩
+      rw [ho] at h
+      dsimp only at h
+      obtain ⟨⟨S, rest⟩, hw, h⟩ := exc_bind_ok h
+      dsimp only at h
+      split at h
+      · cases h
+      · rename_i hr
+        obtain ⟨u, ht, h⟩ := exc_bind_ok h
+        cases u
+        refine ⟨S, rest, hw, ?_, ht, h⟩
+        simpa [List.all_eq_true] using hr
+    · cases h
 
 theorem checkWith_spec {cx : Cx} {cert : Cert} (h : checkWith cx cert = .ok ()) :
     cx.f.lowered = cx.g.lowered ∧ cx.g.entry = cx.f.entry ∧ cx.g.ownAux = cx.f.ownAux ∧
       cert.ins.getD cx.f.entry [] = [] ∧
       checkBlocks cx cert (List.range cx.f.blockTab.size) = .ok () := by
-  sorry
+  unfold checkWith at h
+  dsimp only at h
+  split at h
+  · cases h
+  · rename_i h1
+    split at h
+    · cases h
+    · rename_i h2
+      split at h
+      · cases h
+      · rename_i h3
+        simp only [bne_iff_ne, ne_eq, Decidable.not_not, Bool.or_eq_true, not_or,
+          Bool.not_eq_true', List.isEmpty_eq_false_iff, Bool.not_eq_false] at h1 h2 h3
+        simp_all
 
 /-! ## The target's frame -/
 
 theorem stepLoc_fr {env : Env} {lc : LocCtx} {s s' : LocState} {v : Value}
     (h : stepLoc env lc s v = .ok s') : s'.fr = s.fr := by
-  sorry
+  unfold stepLoc at h
+  split at h
+  · split at h
+    · cases h; rfl
+    · cases h
+  · obtain ⟨argv, -, h⟩ := res_bind_ok h
+    dsimp only at h
+    split at h <;> (obtain ⟨r, -, h⟩ := res_bind_ok h; cases h; rw [write_fr, clobber_fr])
 
 theorem enterListLoc_fr {env : Env} {lc : LocCtx} :
     ∀ {s s' : LocState} {l : List ID}, enterListLoc env lc s l = .ok s' → s'.fr = s.fr
@@ -122,17 +159,16 @@ theorem loop_sim {cert : Cert} (hc : checkWith (Cx.make tabs f g) cert = .ok ())
     have hown' : f.ownAux = g.ownAux := hown.symm
     rw [runLoopL_succ] at hd ⊢
     rw [runLoopLoc_succ]
-    rw [sc_f] at hd ⊢
     cases hb : f.block? bid with
-    | none => rw [hb] at hd; exact hd.elim
+    | none =>
+      rw [show (Cx.make tabs f g).sc.f.block? bid = none by rw [sc_f]; exact hb] at hd
+      exact hd.elim
     | some b =>
-      rw [hb] at hd ⊢
-      dsimp only at hd ⊢
       obtain ⟨hbid, b', hb', hrest⟩ :=
         checkBlock_spec (checkBlocks_spec hcb bid (List.mem_range.2 (block?_lt hb))) hb
-      have hb'' : g.block? bid = some b' := hb'
-      rw [lc_f, hb'']
-      dsimp only
+      rw [show (Cx.make tabs f g).sc.f.block? bid = some b by rw [sc_f]; exact hb] at hd ⊢
+      rw [show (Cx.make tabs f g).lc.ctx.f.block? bid = some b' by rw [lc_f]; exact hb']
+      dsimp only at hd ⊢
       rw [enterBlockLoc_eq]
       cases hps : b.values.toList.filterMapM
           (phiStepL (Cx.make tabs f g).md (Cx.make tabs f g).sc fr i) with
@@ -145,9 +181,7 @@ theorem loop_sim {cert : Cert} (hc : checkWith (Cx.make tabs f g) cert = .ok ())
         cases ho : ((Cx.make tabs f g).sc.sched[b.id]?).join with
         | none =>
           rw [enterBlockL_eq, hps] at hd
-          change match Res.bind (Res.ofOption _ ((Cx.make tabs f g).sc.sched[b.id]?).join) _ with
-            | _ => _ at hd
-          rw [ho] at hd
+          simp only [Res.bind_ok, ho] at hd
           exact hd.elim
         | some order =>
           have hord : ((Cx.make tabs f g).sc.sched[bid]?).join = some order := by
@@ -166,10 +200,10 @@ theorem loop_sim {cert : Cert} (hc : checkWith (Cx.make tabs f g) cert = .ok ())
           revert hsim hd
           cases evalAllL (Cx.make tabs f g).md env (Cx.make tabs f g).sc
               { fr with regs := setPhis ps fr.regs } order.toList with
-          | stuck msg => intro _ hd; exact hd.elim
-          | panic e m => intro hsim _; simp only [SimRes] at hsim; rw [hsim]
+          | stuck msg => intro hd _; exact hd.elim
+          | panic e m => intro _ hsim; simp only [SimRes] at hsim; rw [hsim]
           | ok fr2 =>
-            intro ⟨s2, hs2, hM2⟩ hd
+            intro hd ⟨s2, hs2, hM2⟩
             rw [hs2]
             dsimp only at hd ⊢
             have hsz2 : s2.fr.regs.size = g.valueTab.size := by rw [enterListLoc_fr hs2]; exact hsz
@@ -184,13 +218,20 @@ theorem loop_sim {cert : Cert} (hc : checkWith (Cx.make tabs f g) cert = .ok ())
               | ret rs m => rfl
               | goto e =>
                 dsimp only at hd ⊢
-                refine loop_sim hc fuel fr2 s3 e.b e.i ⟨hsz3, ?_⟩ hd
+                refine loop_sim (env := env) (frA := frA) hc fuel fr2 s3 e.b e.i ⟨hsz3, ?_⟩ hd
                 intro b2 ps2 hb2 hps2
                 have he : e ∈ b.succs := Dead.stepTermL_goto_mem hn
                 obtain ⟨E, hE, hsubE⟩ := edgesOK_spec hed e (Array.mem_toList_iff.2 he)
                 exact sub_sound (phiEdge_sim hM3 hE hb2 hps2) hsubE
 
 /-! ## The theorem -/
+
+theorem replicate_none_join {n id : Nat} {x : Val} :
+    ((Array.replicate n (none : Option Val))[id]?).join ≠ some x := by
+  intro h
+  by_cases hi : id < n
+  · rw [Array.getElem?_replicate, if_pos hi] at h; cases h
+  · rw [Array.getElem?_replicate, if_neg hi] at h; cases h
 
 theorem checkWith_sound {cert : Cert} (h : checkWith (Cx.make tabs f g) cert = .ok ()) :
     RefinesLS tabs g tabs f := by
@@ -216,35 +257,37 @@ theorem checkWith_sound {cert : Cert} (h : checkWith (Cx.make tabs f g) cert = .
       show (Ctx.makeL tabs g).defers = (Ctx.makeL tabs f).defers; rw [hctx]
     have hact : (LocCtx.make tabs g).ctx.act = (Ctx.makeSched tabs f).act := by
       show (Ctx.makeL tabs g).act = (Ctx.makeL tabs f).act; rw [hctx]
+    have hsf : (Ctx.makeSched tabs f).f = f := makeL_f tabs f
     have hentry : (LocCtx.make tabs g).ctx.f.entry = (Ctx.makeSched tabs f).f.entry := by
-      rw [show (LocCtx.make tabs g).ctx.f = g from lc_f (f := f), sc_f (g := g)]; exact hent
+      rw [show (LocCtx.make tabs g).ctx.f = g from lc_f (f := f), hsf]; exact hent
     rw [houts, hdef, hact, hentry]
     congr 1
     let frA := entryFrame env (Ctx.makeSched tabs f) args mem
     have hs0 : (initLoc env (LocCtx.make tabs g) args mem).fr =
         { frA with regs := (initLoc env (LocCtx.make tabs g) args mem).fr.regs } := by
-      show entryFrame env (Ctx.makeL tabs g) args mem = _
-      rw [entryFrameL_eq hown']
+      have hX : (initLoc env (LocCtx.make tabs g) args mem).fr =
+          { entryFrame env (Ctx.makeL tabs f) args mem with
+            regs := Array.replicate g.valueTab.size none } := entryFrameL_eq hown' args mem
+      rw [hX]
       rfl
     have hfr0 : frA.regs = Array.replicate f.valueTab.size none := by
       show Array.replicate (Ctx.makeSched tabs f).f.valueTab.size none = _
-      rw [sc_f (g := g)]
+      rw [hsf]
     have hM0 : Match (Cx.make tabs f g) env frA [] frA (initLoc env (LocCtx.make tabs g) args mem) :=
       { facts := fun F hF => absurd hF List.not_mem_nil
         fr_eq := rfl
         s_fr := hs0
-        shaped := fun id x hx => by rw [hfr0] at hx; simp [Array.getElem?_replicate] at hx
-        kinv := fun id x _ hx => by rw [hfr0] at hx; simp [Array.getElem?_replicate] at hx
+        shaped := fun id x hx => by rw [hfr0] at hx; exact absurd hx replicate_none_join
+        kinv := fun id x _ hx => by rw [hfr0] at hx; exact absurd hx replicate_none_join
         regs := by simp [RegsOK, initLoc]
-        fsize := by rw [hfr0]; simp }
-    refine loop_sim h fuel frA _ _ 0 ⟨?_, ?_⟩ hdl
+        fsize := by rw [hfr0, Array.size_replicate]; rfl }
+    refine loop_sim (env := env) (frA := frA) h fuel frA _ _ 0 ⟨?_, ?_⟩ hdl
     · show (entryFrame env (Ctx.makeL tabs g) args mem).regs.size = _
       rw [entryFrameL_eq hown']
       simp
     · intro b ps hb hps
-      rw [show (Ctx.makeSched tabs f).f.entry = f.entry from by rw [sc_f (g := g)]] at hb
       rw [show cert.ins.getD (Ctx.makeSched tabs f).f.entry [] = [] from by
-        rw [show (Ctx.makeSched tabs f).f.entry = f.entry from by rw [sc_f (g := g)]]; exact hins]
+        rw [hsf]; exact hins]
       exact phis_match hM0 hps fun F hF => absurd hF List.not_mem_nil
 
 /-- **The regalloc checker is sound**: when `checkRA tabs f g` accepts the allocated `g` of the
