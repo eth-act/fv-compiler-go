@@ -1,16 +1,12 @@
 --- a/src/cmd/compile/internal/ssa/compile.go
 +++ b/src/cmd/compile/internal/ssa/compile.go
-@@ -68,7 +68,8 @@
+@@ -68,10 +68,14 @@
  	}
  	const logMemStats = false
  	gofv := gofvBegin(f) // gofv SSA exporter (GOFV_SSA_EXPORT)
 -	for _, p := range passes {
 +	drv := gofvDriverStart(f) // gofv driver: Lean pipeline (GOFV_SSA_DRIVER)
 +	for i, p := range passes {
- 		if gofv != nil && p.name == "lower" {
- 			gofv.finish()
- 			gofv = nil
-@@ -76,6 +77,9 @@
  		if !f.Config.optimize && !p.required || p.disabled {
  			continue
  		}
@@ -20,7 +16,7 @@
  		f.pass = &p
  		phaseName = p.name
  		if f.Log() {
-@@ -168,6 +172,10 @@
+@@ -167,6 +171,10 @@
  		fmt.Print(buf.String())
  	}
  
@@ -558,7 +554,7 @@
 +			continue
 +		}
 +		switch toks[0] {
-+		case "type", "aux", "slot", "posbase", "field", "abiparam", "reloc", "rtype":
++		case "type", "aux", "slot", "posbase", "field", "abiparam", "callreg", "reloc", "rtype":
 +			if len(r.defs) == 0 {
 +				return nil, fmt.Errorf("sub-line before a definition: %q", s)
 +			}
