@@ -53,6 +53,10 @@ private def rtField (e : PassEnv) (name : String) : Except String (String × Sym
     | _, _, _ => throw s!"config rttype.{name}: bad value {w}"
   | _ => throw s!"config rttype.{name}: bad value {w}"
 
+/-- A `0`/`1` config flag that older export formats lack (`none` then). -/
+private def optFlag (e : PassEnv) (key : String) : Except String (Option Bool) :=
+  if (e.config? key).isSome then some <$> e.flag key else pure none
+
 /-- The rewrite context of a pass. -/
 def ofPassEnv (e : PassEnv) : Except String RwEnv := do
   let fields ← ["Size_", "PtrBytes", "Hash", "Kind_", "GCData"].mapM (rtField e)
@@ -72,7 +76,10 @@ def ofPassEnv (e : PassEnv) : Except String RwEnv := do
     typs := e.typs
     typeOrder := e.typeOrder
     frontend := e.frontend
-    ptrCache := e.ptrCache }
+    ptrCache := e.ptrCache
+    flagDynlink := ← optFlag e "flagdynlink"
+    fmaHash := ← optFlag e "fmahash"
+    fnSym := e.pkg ++ GoStr.ofString "." ++ e.funcName }
 
 end RwEnv
 

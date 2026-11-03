@@ -2,6 +2,7 @@ import GoFV.Rules.GoVal
 import GoFV.Rules.Helpers.Build
 import GoFV.Rules.Helpers.Magic
 import GoFV.Rules.Helpers.Ptr
+import GoFV.Rules.Helpers.ARM64
 
 /-!
 # Evaluation of rule expressions
@@ -97,14 +98,20 @@ def field (x : GVal) (name : String) : RwM GVal := do
   | .val v, "Block" => return .blk (← val v).block
   | .val v, "Aux" => return .aux (← val v).aux
   | .val v, "Args" => return .args v
+  | .rsv .typ, "Vec128" => return .typ (← Arm64.vec128)
   | .rsv .typ, n => return .typ (← typ n)
   | .rsv .config, "PtrSize" => return .int (← read).ptrSize
   | .rsv .config, "RegSize" => return .int (← read).regSize
   | .rsv .config, "ctxt" => return .ctxt
   | .ctxt, "Arch" => return .arch
   | .arch, "ByteOrder" => return .byteOrder
+  | .ctxt, "Flag_dynlink" =>
+    match (← read).flagDynlink with
+    | some d => return .bool d
+    | none => throw "config flagdynlink missing"
   | .blk _, "Func" => return .func
   | .func, "pass" => return .pass
+  | .func, "Entry" => return .blk (← getF).entry
   | .pass, "name" => return .str (← read).passName.toUTF8
   | .irSyms, "Zerobase" =>
     let z := (← read).zerobase
@@ -381,6 +388,7 @@ def evalF : Nat → Scope → Expr → RwM GVal
   | .glob name _ =>
     match name with
     | "types.TypeMem" => return .typ (← typ "Mem")
+    | "types.TypeFlags" => return .typ (← typ "Flags")
     | "ir.Syms" => return .irSyms
     | "types.Types" => return .rsv .typ  -- only indexed, see `.index`
     | n => throw s!"unsupported global {n}"
@@ -459,6 +467,9 @@ def methodF : Nat → Scope → GVal → String → List Expr → RwM GVal
     | "IsBoolean", [] => return .bool (← tq (Ty.isKind .BOOL · t))
     | "IsStruct", [] => return .bool (← tq (Ty.isKind .STRUCT · t))
     | "IsSIMD", [] => return .bool false
+    | "IsFloat", [] => return .bool (← tq (Ty.isFloat · t))
+    | "IsPtr", [] => return .bool (← tq (Ty.isKind .PTR · t))
+    | "HasPointers", [] => return .bool (← tq (Ty.hasPointers · t))
     | "Compare", [u] =>
       let u ← lift (← eval sc u).asTyp
       return .int (match (← read).typeOrder.compare t u with
@@ -469,6 +480,24 @@ def methodF : Nat → Scope → GVal → String → List Expr → RwM GVal
     | "Debug_checknil", [] => return .bool (← read).debugNil
     | "StringData", [s] => return .aux (some (← stringData (← lift (← eval sc s).asStr)))
     | n, _ => throw s!"unsupported method Frontend.{n}"
+  | .func =>
+    match name, args with
+    | "useFMA", [_] =>
+      match (← read).fmaHash with
+      | some false => return .bool true
+      | some true => throw "useFMA: base.FmaHash (GOFMAHASH) is not modelled"
+      | none => throw "config fmahash missing"
+    | n, _ => throw s!"unsupported method *Func.{n}"
+  -- `arm64BitField` and `flagConstant` values are integers
+  | .int i =>
+    match name, args with
+    | "lsb", [] => return .int (Arm64.bfLsb i)
+    | "width", [] => return .int (Arm64.bfWidth i)
+    | n, [] =>
+      match Arm64.fcMethod? n i with
+      | some r => return .bool r
+      | none => throw s!"unsupported method {n} of an integer"
+    | n, _ => throw s!"unsupported method {n} of an integer"
   | _ => throw s!"unsupported method {name}"
 
 /-- A call of a package-level function. -/
@@ -707,6 +736,74 @@ def callF : Nat → Scope → String → List Expr → GoTy → RwM GVal
   | "devirtLECall", [v, s] => let v ← vl v; let s ← ax s; return .val (← Helpers.devirtLECall v s)
   | "isDirectAndComparableType", [v] => return .bool (← isDirectAndComparableType 9 (← vl v) true)
   | "isDirectAndComparableIface", [v] => return .bool (← isDirectAndComparableIface 9 (← vl v) true)
+  -- helpers of the arm64 rule files
+  | "b2i", [x] => return .int (if ← lift (← ev x).asBool then 1 else 0)
+  | "isPtr", [t] => return .bool (← lift (Ty.isPtrShaped tabs (← tp t)))
+  | "canMergeSym", [x, y] => let x ← ax x; let y ← ax y; return .bool (x.isNone || y.isNone)
+  | "mergeSym", [x, y] =>
+    match ← ax x, ← ax y with
+    | none, y => return .aux y
+    | x, none => return .aux x
+    | _, _ => throw "mergeSym with two non-nil syms"
+  | "clobberIfDead", [v] =>
+    let v ← vl v
+    if (← val v).uses == 1 then reset v .Invalid
+    return .bool true
+  | "flagArg", [v] =>
+    let v ← vl v
+    match Arm64.flagArg (← getF) (← typ "Flags") v with
+    | some a => return .val a
+    | none => return .nil
+  | "canonLessThan", [x, y] =>
+    let x ← vl x; let y ← vl y
+    return .bool (Arm64.canonLessThan (← getF) x y)
+  | "ccARM64Eval", [o, fl] =>
+    let .op o ← ev o | throw "ccARM64Eval: expected an op"
+    let fl ← vl fl
+    return .int (← lift (Arm64.ccARM64Eval (← getF) o fl))
+  | "arm64Negate", [o] =>
+    let .op o ← ev o | throw "arm64Negate: expected an op"
+    return .op (← lift (Arm64.arm64Negate o))
+  | "arm64Invert", [o] =>
+    let .op o ← ev o | throw "arm64Invert: expected an op"
+    return .op (← lift (Arm64.arm64Invert o))
+  | "ZeroUpper32Bits", [x, d] =>
+    let x ← vl x; let d ← int d
+    return .bool (← lift (Arm64.zeroUpper32Bits (← getF) tabs env.arch x d.toNat))
+  | "addFlags64", [x, y] => let x ← int x; let y ← int y; return .int (Arm64.addFlags64 x y)
+  | "subFlags64", [x, y] => let x ← int x; let y ← int y; return .int (Arm64.subFlags64 x y)
+  | "addFlags32", [x, y] => let x ← int x; let y ← int y; return .int (Arm64.addFlags32 x y)
+  | "subFlags32", [x, y] => let x ← int x; let y ← int y; return .int (Arm64.subFlags32 x y)
+  | "logicFlags64", [x] => return .int (Arm64.logicFlags64 (← int x))
+  | "logicFlags32", [x] => return .int (Arm64.logicFlags32 (← int x))
+  | "armBFAuxInt", [l, w] =>
+    let l ← int l; let w ← int w
+    return .int (← lift (Arm64.armBFAuxInt l w))
+  | "isARM64BFMask", [l, m, r] =>
+    let l ← int l; let m ← int m; let r ← int r
+    return .bool (Arm64.isARM64BFMask l m r)
+  | "arm64BFWidth", [m, r] =>
+    let m ← int m; let r ← int r
+    return .int (← lift (Arm64.arm64BFWidth m r))
+  | "rotateRight64", [v, r] => let v ← int v; let r ← int r; return .int (Arm64.rotateRight64 v r)
+  | "isARM64bitcon", [x] => return .bool (Arm64.isARM64bitcon (← int x))
+  | "isARM64addcon", [x] => return .bool (Arm64.isARM64addcon (← int x))
+  | "canMulStrengthReduce", [_, x] | "canMulStrengthReduce32", [_, x] =>
+    return .bool (Arm64.canMulStrengthReduce (← int x))
+  | "mulStrengthReduce", [m, v, x] | "mulStrengthReduce32", [m, v, x] =>
+    let m ← vl m; let v ← vl v; let x ← int x
+    return .val (← Arm64.mulStrengthReduce m v x)
+  | "logLargeCopy", [v, s] => let _ ← vl v; let _ ← int s; return .bool true
+  | "makeJumpTableSym", [b] =>
+    let .blk b ← ev b | throw "makeJumpTableSym: expected a block"
+    return .aux (some (← Arm64.makeJumpTableSym b))
+  | "types.NewTuple", [t1, t2] =>
+    let t1 ← tp t1; let t2 ← tp t2
+    return .typ (← Arm64.newTuple t1 t2)
+  | "PanicBoundsC{C}", [c] => return .strct [("C", .int (← int c))]
+  | "PanicBoundsCC{Cx,Cy}", [x, y] =>
+    let x ← int x; let y ← int y
+    return .strct [("Cx", .int x), ("Cy", .int y)]
   | f, _ => throw s!"unsupported helper {f}"
 
 end

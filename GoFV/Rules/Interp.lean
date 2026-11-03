@@ -32,10 +32,17 @@ def auxIntVal (aty : AuxType) (i : Int64) : Except String GVal :=
   | .Int8 => .ok (.int (wrapInt 8 true x))
   | .Int16 => .ok (.int (wrapInt 16 true x))
   | .Int32 | .SymOff | .CallOff => .ok (.int (wrapInt 32 true x))
-  | .Int64 | .TypSize => .ok (.int x)
+  | .Int64 | .TypSize | .PanicBoundsC | .PanicBoundsCC => .ok (.int x)
   | .UInt8 => .ok (.int (wrapInt 8 false x))
   | .Float32 => .ok (.f32 (f64OfBits x).toFloat32)
   | .Float64 => .ok (.f64 (f64OfBits x))
+  | .ARM64BitField => .ok (.int x)
+  | .FlagConstant => .ok (.int (wrapInt 8 false x))
+  | .CCop =>
+    -- `auxIntToOp`: Go's opcode number
+    match (if x < 0 then none else Op.ofGoNum? x.toNat) with
+    | some o => .ok (.op o)
+    | none => .error s!"auxIntToOp: no op numbered {x}"
   | a => .error s!"auxInt of aux type {repr a}"
 
 /-- `<T>ToAuxInt(x)`. -/
@@ -45,6 +52,7 @@ def toAuxInt (aty : AuxType) (x : GVal) : Except String Int64 :=
   | .UInt8, .int i => .ok (Int64.ofInt (wrapInt 8 true i))
   | .Float32, .f32 f => .ok (Int64.ofInt (f64Bits f.toFloat))
   | .Float64, .f64 f => .ok (Int64.ofInt (f64Bits f))
+  | .CCop, .op o => .ok (Int64.ofNat o.goNum)
   | _, .int i => .ok (Int64.ofInt i)
   | a, _ => .error s!"bad auxInt value for aux type {repr a}"
 
@@ -57,6 +65,12 @@ def auxVal (tabs : Tables) (aty : AuxType) (a : Option AuxRef) : Except String G
     | .str s _ => return .str s.bytes
     | _ => throw s!"aux a{a} is not a string"
   | .Typ | .TypSize => return .typ (← Ty.ofAux tabs a)
+  | .PanicBoundsC | .PanicBoundsCC =>
+    let some a := a | throw "auxToPanicBoundsC of nil"
+    match (← Sym.auxDef tabs a).kind with
+    | .pbc c => return .strct [("C", .int c)]
+    | .pbcc cx cy => return .strct [("Cx", .int cx), ("Cy", .int cy)]
+    | _ => throw s!"aux a{a} is not a PanicBoundsC"
   | _ => return .aux a
 
 /-- `<T>ToAux(x)`. -/
@@ -65,6 +79,8 @@ def toAux (x : GVal) : RwM (Option AuxRef) := do
   | .aux a => return a
   | .nil => return none
   | .typ t => return some (← typeAux t)
+  | .strct [("C", .int c)] => return some (← Arm64.panicBoundsAux (.pbc c))
+  | .strct [("Cx", .int cx), ("Cy", .int cy)] => return some (← Arm64.panicBoundsAux (.pbcc cx cy))
   | _ => throw "unsupported aux value"
 
 mutual
@@ -247,6 +263,14 @@ def buildNode (sc : Scope) (nodes : Array RNode) (blk : ID) (pos : Pos) (j : Nat
     (built : Array (Option ID)) : RwM (Array (Option ID)) :=
   buildNodeF (nodes.size + 1) sc nodes blk pos j id built
 
+/-- The value at `path` below `root` (argument indices). -/
+def valueAt (root : ID) : List Nat → RwM ID
+  | [] => pure root
+  | i :: is => do
+    match (← val root).args[i]? with
+    | some a => valueAt a is
+    | none => throw "bad control position path"
+
 /-- Apply the result of a fired value rule to `v`; returns the values of the result's nodes in
 node order (`Result.build`; empty otherwise). -/
 def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM (Array (Option ID)) := do
@@ -261,7 +285,9 @@ def applyResult (sc : Scope) (r : Rule) (v : ID) : RwM (Array (Option ID)) := do
   | .build nodes =>
     let nodes := nodes.toArray
     let x ← val v
-    let pos := x.pos
+    -- the position of the matched value at `r.pos` (the last faulting op of the pattern); the
+    -- path has no commutative node on it, so it reads the same argument indices
+    let pos := (← val (← valueAt v r.pos)).pos
     let n0 := nodes[0]!
     let built0 : Array (Option ID) := Array.replicate nodes.size none
     match r.block with
@@ -459,14 +485,6 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   return false
 
 /-! ## Block rules -/
-
-/-- The value at `path` below `root` (argument indices). -/
-def valueAt (root : ID) : List Nat → RwM ID
-  | [] => pure root
-  | i :: is => do
-    match (← val root).args[i]? with
-    | some a => valueAt a is
-    | none => throw "bad control position path"
 
 /-- Build a new block control (`NewControl.build`): nodes created in `b`, node 0 is the
 control, no sharing; `fuel` bounds the depth. -/

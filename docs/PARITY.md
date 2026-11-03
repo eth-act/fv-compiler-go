@@ -167,3 +167,5 @@ Corpus `gofv-corpus/2aae1000ea1d/plain` as regenerated with the #52 fix (types k
 | insert resched checks | insertLoopReschedChecks | — | — | 0 | disabled in 9297 | `exp.preemptibleloops 0` |
 | cpufeatures | cpufeatures | — | — | 0 | disabled in 9297 | `exp.simd 0` |
 | rewrite tern | rewriteTern | — | — | 0 | disabled in 9297 | `exp.simd 0` |
+| lower | lower | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 9057 functions changed by the pass |
+| late lower | lateLower | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 3985 functions changed by the pass |

@@ -47,6 +47,12 @@ structure RwEnv where
   frontend : Tables := {}
   /-- `PassEnv.ptrCache`: whether `t.PtrTo()` returns a shared object. -/
   ptrCache : TypeRef → Bool := fun _ => false
+  /-- `ctxt.Flag_dynlink` (`config flagdynlink`; `none` if the export lacks it). -/
+  flagDynlink : Option Bool := none
+  /-- `base.FmaHash != nil` (`config fmahash`, format 5; `none` if the export lacks it). -/
+  fmaHash : Option Bool := none
+  /-- `fe.Func().LSym.Name`: `<pkg>.<function name>`. -/
+  fnSym : GoStr := GoStr.ofString ""
   deriving Inhabited
 
 /-- One step of a rewrite pass, as the rewrite validator replays it (`GoFV.Opt.RewriteCheck`,
