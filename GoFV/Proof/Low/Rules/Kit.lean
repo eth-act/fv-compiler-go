@@ -513,8 +513,19 @@ theorem termVL_arm (o : Op) (hg : o.generic = false) (hm : (o == .ARM64MOVDaddr)
     (ht : (armTerm o && !actOp o && !isRoot o) = true) :
     ∀ tabs (v : Value), v.op = o → termVL tabs v = true := by
   intro tabs v hv
-  have hl : ldOp? o = none := ldOp?_of_act (by simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2)
-  simp only [termVL, hv, hg, hm, hl, Option.isSome_none, Bool.false_eq_true, ite_false, ht]
+  have hact : actOp o = false := by
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2
+  have hl : ldOp? o = none := ldOp?_of_act hact
+  simp only [termVL, hv, hg, hm, hl, ldarOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
+    ite_false, ht]
+
+theorem termVL_ldar (o : Op) (hd : ldarOp o = true) :
+    ∀ tabs (v : Value), v.op = o → termVL tabs v = true := by
+  intro tabs v hv
+  have hg : o.generic = false := by rcases ldarOp_cases hd with rfl | rfl | rfl <;> rfl
+  have hm : (o == .ARM64MOVDaddr) = false := by rcases ldarOp_cases hd with rfl | rfl | rfl <;> rfl
+  simp only [termVL, hv, hg, hm, ldOp?_of_ldar hd, hd, Option.isSome_none, Bool.false_eq_true,
+    ite_false, ite_true]
 
 /-- An ellipsis rule `(o ...) => (o' ...)` on terms with `SetOpSound o o'`. -/
 theorem checked_setOp {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)

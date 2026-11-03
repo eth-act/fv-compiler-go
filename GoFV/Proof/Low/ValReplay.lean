@@ -109,9 +109,10 @@ theorem termVL_gen {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = true) 
   unfold termVL; rw [hv]; simp only [hg, ite_true]
 
 theorem termVL_arm {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = false)
-    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = none) (hv : v.op = o) :
+    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = none)
+    (hd : GoFV.Opt.LowerTerm.ldarOp o = false) (hv : v.op = o) :
     termVL tabs v = (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) := by
-  unfold termVL; rw [hv]; simp only [hg, hm, hl, Option.isSome_none, Bool.false_eq_true, ite_false]
+  unfold termVL; rw [hv]; simp only [hg, hm, hl, hd, Option.isSome_none, Bool.false_eq_true, ite_false]
 
 theorem renameOp_src {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v : Value)
     (hv : v.op = o) : termVL tabs v = false := by
@@ -119,7 +120,7 @@ theorem renameOp_src {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v :
   split at h <;> first
     | (cases h; done)
     | (rw [termVL_gen (by decide) hv]; decide)
-    | (rw [termVL_arm (by decide) (by decide) (by decide) hv]; decide)
+    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
 
 theorem renameOp_dst {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v : Value)
     (hv : v.op = o') : termVL tabs v = false := by
@@ -127,7 +128,7 @@ theorem renameOp_dst {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v :
   split at h <;> first
     | (cases h; done)
     | (rw [termVL_gen (by decide) hv]; decide)
-    | (rw [termVL_arm (by decide) (by decide) (by decide) hv]; decide)
+    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
 
 /-- A renamed atom is no `MOVDaddr`. -/
 theorem renameOp_src_ne {o o' : Op} (h : renameOp o o' = true) : o ≠ .ARM64MOVDaddr := by
@@ -176,7 +177,7 @@ theorem termVL_st (tabs : Tables) (v : Value) {o : Op} (ho : (stSize o).isSome =
   unfold stSize at ho
   split at ho <;> first
     | (cases ho; done)
-    | (rw [termVL_arm (by decide) (by decide) (by decide) h]; decide)
+    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) h]; decide)
 
 /-- The atoms `ArmRule.Mem` rules match. -/
 theorem termVL_mem (tabs : Tables) (v : Value) {o : Op}

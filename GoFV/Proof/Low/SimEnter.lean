@@ -554,7 +554,8 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
   · exact h
   · exfalso
-    rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ <;>
+    rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
+        ⟨-, h2⟩ <;>
       rw [h2] at hg <;> exact absurd hg (by decide)
   · exfalso
     obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases h
@@ -618,7 +619,12 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
           obtain ⟨p, hp⟩ := Option.isSome_iff_exists.1 hl
           rcases ldOp?_mem hp with h | h | h | h | h | h | h <;> rw [h] at this <;>
             exact absurd this (by decide)
-        · simp [this]
+        · have hd : ldarOp wr.op = false := by
+            cases hd : ldarOp wr.op
+            · rfl
+            · rcases ldarOp_cases hd with h | h | h <;> rw [h] at this <;>
+                exact absurd this (by decide)
+          simp [hd, this]
   obtain ⟨u, hu, -, hpair, -, hpwr⟩ := atomL_sched H B hrog.1 hwr hwrt
   rw [hur] at hu; cases hu
   -- the `Phi`s and the frames after them

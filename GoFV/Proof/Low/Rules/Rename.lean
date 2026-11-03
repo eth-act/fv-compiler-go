@@ -2,14 +2,17 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames (`ARM64.rules:442-449`)
+# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:442-455`, `482-485`)
 
-`ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls and nil checks.
+`ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
+checks and the closure pointer. `ArmRule.SetOp` of the atomic loads: `AtomicLoad{8,32,64,Ptr}`
+and the acquiring loads `LDAR{B,W,}` they lower to are terms (`ldarOp`), both Phase 1's
+`atomicLoad` (`armPure_ldar`).
 -/
 
 namespace GoFV.Proof.Low.Rules
 
-open GoFV.SSA GoFV.Rules GoFV.Proof.Low
+open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low GoFV.Opt.LowerTerm
 open GoFV.Rules.Generated.ARM64
 
 /-- `ARM64.rules:442`: `(StaticCall ...) => (CALLstatic ...)` -/
@@ -24,8 +27,50 @@ theorem r_ARM64_443_sound : ArmRule.Checked r_ARM64_443 :=
 theorem r_ARM64_444_sound : ArmRule.Checked r_ARM64_444 :=
   checked_rename .InterCall .ARM64CALLinter rfl rfl rfl rfl rfl
 
+/-- `ARM64.rules:445`: `(TailCall ...) => (CALLtail ...)` -/
+theorem r_ARM64_445_sound : ArmRule.Checked r_ARM64_445 :=
+  checked_rename .TailCall .ARM64CALLtail rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:446`: `(TailCallInter ...) => (CALLtailinter ...)` -/
+theorem r_ARM64_446_sound : ArmRule.Checked r_ARM64_446 :=
+  checked_rename .TailCallInter .ARM64CALLtailinter rfl rfl rfl rfl rfl
+
 /-- `ARM64.rules:449`: `(NilCheck ...) => (LoweredNilCheck ...)` -/
 theorem r_ARM64_449_sound : ArmRule.Checked r_ARM64_449 :=
   checked_rename .NilCheck .ARM64LoweredNilCheck rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:455`: `(GetClosurePtr ...) => (LoweredGetClosurePtr ...)` -/
+theorem r_ARM64_455_sound : ArmRule.Checked r_ARM64_455 :=
+  checked_rename .GetClosurePtr .ARM64LoweredGetClosurePtr rfl rfl rfl rfl rfl
+
+/-- An atomic load `o` lowered to an acquiring load `o'`: both `atomicLoad`. -/
+private theorem setOpSound_ldar {o o' : Op} (hg : o.generic = true) (hf : frameOp o = false)
+    (hd : ldarOp o' = true) (he : ∀ ty ai ax args, evalPure o ty ai ax args = atomicLoad ty args) :
+    SetOpSound o o' := by
+  intro tabs ty ai ax args _
+  have hg' : o'.generic = false := by rcases ldarOp_cases hd with rfl | rfl | rfl <;> rfl
+  have hm : (o' == .ARM64MOVDaddr) = false := by rcases ldarOp_cases hd with rfl | rfl | rfl <;> rfl
+  rw [opValL_gen hg hf, opValL_arm hg' hm (ldOp?_of_ldar hd), armPure_ldar hd, he]
+  exact Refines.refl _
+
+/-- `ARM64.rules:482`: `(AtomicLoad8 ...) => (LDARB ...)` -/
+theorem r_ARM64_482_sound : ArmRule.Checked r_ARM64_482 :=
+  checked_setOp .AtomicLoad8 .ARM64LDARB rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+
+/-- `ARM64.rules:483`: `(AtomicLoad32 ...) => (LDARW ...)` -/
+theorem r_ARM64_483_sound : ArmRule.Checked r_ARM64_483 :=
+  checked_setOp .AtomicLoad32 .ARM64LDARW rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+
+/-- `ARM64.rules:484`: `(AtomicLoad64 ...) => (LDAR ...)` -/
+theorem r_ARM64_484_sound : ArmRule.Checked r_ARM64_484 :=
+  checked_setOp .AtomicLoad64 .ARM64LDAR rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+
+/-- `ARM64.rules:485`: `(AtomicLoadPtr ...) => (LDAR ...)` -/
+theorem r_ARM64_485_sound : ArmRule.Checked r_ARM64_485 :=
+  checked_setOp .AtomicLoadPtr .ARM64LDAR rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
 
 end GoFV.Proof.Low.Rules

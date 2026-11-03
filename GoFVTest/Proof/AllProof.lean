@@ -686,6 +686,7 @@ import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Witness.LoopRotateLoc
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
+import GoFV.Proof.Witness.LowerAtomic
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerLoadFold
 import GoFV.Proof.Witness.LowerLoadStore

@@ -27,8 +27,9 @@ theorem r_ARM64_308_sound : ArmRule.Checked r_ARM64_308 := by
   left
   arm_unfold
   arm_shape
-  arm_norm
-  exact refines_addr_movAddr _ _ _ _
+  all_goals
+    arm_norm
+    exact refines_addr_movAddr _ _ _ _
 
 /-- A value of a shape has every compatible shape (`copyCompat`: the same, or another pointer
 shape). -/

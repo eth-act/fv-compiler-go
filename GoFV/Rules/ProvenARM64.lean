@@ -58,7 +58,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 180 proven value rules and 43 proven block rules. -/
+/-- `ARM64.rules` restricted to its 187 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
@@ -84,6 +84,10 @@ def lower : RuleSet where
     (.And32, [Generated.ARM64.r_ARM64_43_2]),
     (.And64, [Generated.ARM64.r_ARM64_43_3]),
     (.And8, [Generated.ARM64.r_ARM64_43_4]),
+    (.AtomicLoad32, [Generated.ARM64.r_ARM64_483]),
+    (.AtomicLoad64, [Generated.ARM64.r_ARM64_484]),
+    (.AtomicLoad8, [Generated.ARM64.r_ARM64_482]),
+    (.AtomicLoadPtr, [Generated.ARM64.r_ARM64_485]),
     (.ClosureCall, [Generated.ARM64.r_ARM64_443]),
     (.Com16, [Generated.ARM64.r_ARM64_50]),
     (.Com32, [Generated.ARM64.r_ARM64_50_2]),
@@ -101,6 +105,7 @@ def lower : RuleSet where
     (.Eq64, [Generated.ARM64.r_ARM64_242]),
     (.Eq64F, [Generated.ARM64.r_ARM64_245]),
     (.Eq8, [Generated.ARM64.r_ARM64_239]),
+    (.GetClosurePtr, [Generated.ARM64.r_ARM64_455]),
     (.InterCall, [Generated.ARM64.r_ARM64_444]),
     (.IsInBounds, [Generated.ARM64.r_ARM64_451]),
     (.IsSliceInBounds, [Generated.ARM64.r_ARM64_452]),
@@ -194,6 +199,8 @@ def lower : RuleSet where
     (.Sub32, [Generated.ARM64.r_ARM64_8_2]),
     (.Sub64, [Generated.ARM64.r_ARM64_8_3]),
     (.Sub8, [Generated.ARM64.r_ARM64_8_4]),
+    (.TailCall, [Generated.ARM64.r_ARM64_445]),
+    (.TailCallInter, [Generated.ARM64.r_ARM64_446]),
     (.Trunc16to8, [Generated.ARM64.r_ARM64_191]),
     (.Trunc32to16, [Generated.ARM64.r_ARM64_193]),
     (.Trunc32to8, [Generated.ARM64.r_ARM64_192]),

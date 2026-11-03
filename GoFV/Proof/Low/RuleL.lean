@@ -103,11 +103,32 @@ theorem ldOp?_mem {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
   unfold ldOp? at h
   split at h <;> simp_all
 
+theorem ldarOp_cases {o : Op} (h : ldarOp o = true) :
+    o = .ARM64LDAR ∨ o = .ARM64LDARB ∨ o = .ARM64LDARW := by
+  unfold ldarOp at h
+  split at h <;> simp_all
+
+/-- The acquiring loads are activation ops (`Sem.arm64Op`). -/
+theorem ldarOp_of_act {o : Op} (h : actOp o = false) : ldarOp o = false := by
+  cases hd : ldarOp o
+  · rfl
+  · rcases ldarOp_cases hd with rfl | rfl | rfl <;> exact absurd h (by decide)
+
+/-- The acquiring loads are no integer loads. -/
+theorem ldOp?_of_ldar {o : Op} (h : ldarOp o = true) : ldOp? o = none := by
+  rcases ldarOp_cases h with rfl | rfl | rfl <;> rfl
+
+/-- An acquiring load is Phase 1's `atomicLoad` (`Arm64.evalPure`). -/
+theorem armPure_ldar {op : Op} (h : ldarOp op = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
+    (as : List Val) : Arm64.evalPure op ty k ax as = atomicLoad ty as := by
+  rcases ldarOp_cases h with rfl | rfl | rfl <;> rfl
+
 /-- The value `v` is a term of a lowered function (module doc of `GoFV.Opt.LowerTerm`). -/
 def termVL (tabs : Tables) (v : Value) : Bool :=
   if v.op.generic then GoFV.Opt.RewriteCheck.termOp v.op
   else if v.op == .ARM64MOVDaddr then !auxIsName tabs v.aux
   else if (ldOp? v.op).isSome then !auxIsName tabs v.aux
+  else if ldarOp v.op then true
   else armTerm v.op && !actOp v.op && !isRoot v.op
 
 /-! ## Commutation choices -/
@@ -232,12 +253,25 @@ def resDenL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Orac
   | .build nodes => nodeDenL tabs e pat ev or σ topTy nodes nodes.length 0
   | .setOp o => or.val (.op o)
 
+/-- A word shape: a pointer or a 64-bit integer. -/
+def wordShape : Ty → Bool
+  | .ptr _ | .int .w64 => true
+  | _ => false
+
+/-- The atomic loads (`atomicLoad`: the location's value and the memory at the tuple shape). -/
+def atomicLoadOp : Op → Bool
+  | .AtomicLoad8 | .AtomicLoad32 | .AtomicLoad64 | .AtomicLoadPtr => true
+  | _ => false
+
 /-- A generic top op produces a value of its type's shape (Phase 1's `RewriteCheck.topOK`: Go types
 these values at their op's width, and a narrow generic op read at a wider shape would be widened by
-`retypeL` where the arm64 op keeps its register), as does `Load` (`loadOp` decodes at the shape);
+`retypeL` where the arm64 op keeps its register), as do `Load` (`loadOp` decodes at the shape) and
+the atomic loads (`atomicLoad`, likewise), and `Addr` at a word shape (a `uintptr`-typed `Addr`:
+the symbol's address, which `MOVDaddr` computes alike, `refines_addr_movAddr` at every shape);
 arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
 def topOKL (o : Op) (ty : Ty) : Bool :=
-  !o.generic || o == .Load || GoFV.Opt.RewriteCheck.topOK o ty
+  !o.generic || o == .Load || atomicLoadOp o || (o == .Addr && wordShape ty) ||
+    GoFV.Opt.RewriteCheck.topOK o ty
 
 /-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
 def Pat.topOKL (ty : Ty) : Pat → Bool
@@ -282,11 +316,6 @@ def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
 def provOp (o : Op) : Bool :=
   o matches .ARM64ADD | .ARM64ADDconst | .ARM64SUB | .ARM64SUBconst | .ARM64ADDshiftLL |
     .ARM64ADDshiftRL | .ARM64ADDshiftRA | .ARM64SUBshiftLL | .ARM64SUBshiftRL | .ARM64SUBshiftRA
-
-/-- A word shape: a pointer or a 64-bit integer. -/
-def wordShape : Ty → Bool
-  | .ptr _ | .int .w64 => true
-  | _ => false
 
 mutual
 /-- Every argument of every arm64 op node of the pattern at `p` holds the low bits the op reads
@@ -408,6 +437,8 @@ def renameOp : Op → Op → Bool
   | .ClosureCall, .ARM64CALLclosure => true
   | .InterCall, .ARM64CALLinter => true
   | .GetClosurePtr, .ARM64LoweredGetClosurePtr => true
+  | .TailCall, .ARM64CALLtail => true
+  | .TailCallInter, .ARM64CALLtailinter => true
   | _, _ => false
 
 /-- An ellipsis rule without a condition renaming an atom (`renameOp`). -/

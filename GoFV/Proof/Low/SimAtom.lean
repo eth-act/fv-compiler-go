@@ -332,21 +332,53 @@ theorem callOp_fit {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {k : Nat}
 theorem renameOp_cases {a b : Op} (h : renameOp a b = true) :
     (a = .NilCheck ∧ b = .ARM64LoweredNilCheck) ∨ (a = .StaticCall ∧ b = .ARM64CALLstatic) ∨
       (a = .ClosureCall ∧ b = .ARM64CALLclosure) ∨ (a = .InterCall ∧ b = .ARM64CALLinter) ∨
-      (a = .GetClosurePtr ∧ b = .ARM64LoweredGetClosurePtr) := by
+      (a = .GetClosurePtr ∧ b = .ARM64LoweredGetClosurePtr) ∨
+      (a = .TailCall ∧ b = .ARM64CALLtail) ∨ (a = .TailCallInter ∧ b = .ARM64CALLtailinter) := by
   unfold renameOp at h
   split at h <;> simp_all
 
+/-- A root `atomicRoot` does not model (a tail call) is `stuck`. -/
+theorem atomicRoot_tail {v : Value} (hv : v.op = .TailCall ∨ v.op = .TailCallInter)
+    (argv : List Val) : ∃ msg, atomicRoot v argv = .stuck msg := by
+  have hb : v.op ≠ .PubBarrier := by rcases hv with h | h <;> rw [h] <;> decide
+  have hp : ¬ (v.op = .PrefetchCache ∨ v.op = .PrefetchCacheStreamed) := by
+    rcases hv with h | h <;> rw [h] <;> decide
+  have hi : Atomic.info? v.op = none := by rcases hv with h | h <;> rw [h] <;> rfl
+  have hc : Atomic.casWidth? v.op = none := by rcases hv with h | h <;> rw [h] <;> rfl
+  unfold atomicRoot
+  split
+  · unfold Atomic.barrier; split
+    · rw [if_neg hb]; exact ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+  · unfold Atomic.prefetch; split
+    · rw [if_neg hp]; exact ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+  · unfold Atomic.rmwRoot; split
+    · split
+      · next h => rw [hi] at h; cases h
+      · exact ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+  · unfold Atomic.casRoot; split
+    · split
+      · next h => rw [hc] at h; cases h
+      · exact ⟨_, rfl⟩
+    · exact ⟨_, rfl⟩
+  · exact ⟨_, rfl⟩
+
 /-- A renamed atom evaluates as the generic op it renames (`arm64Op`), on fitted pieces for a
-call. -/
+call; the generic tail calls are `stuck` (`atomicRoot`). -/
 theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
     {o : Op} (h : renameOp o w.op = true) :
     (∃ k, PostCall o k ∧ evalOpL false env ctx fr w argv ty =
         callOp env ctx { w with op := o } (fitArgs ctx.tabs { w with op := o } k argv)) ∨
       ((o = .NilCheck ∨ o = .GetClosurePtr) ∧
-        evalOpL false env ctx fr w argv ty = evalOp env ctx fr { w with op := o } argv ty) := by
+        evalOpL false env ctx fr w argv ty = evalOp env ctx fr { w with op := o } argv ty) ∨
+      ((o = .TailCall ∨ o = .TailCallInter) ∧
+        ∃ msg, evalOp env ctx fr { w with op := o } argv ty = .stuck msg) := by
   have h0 : nilFaults false ctx w argv = none := rfl
-  rcases renameOp_cases h with ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩
-  · refine .inr ⟨.inl rfl, ?_⟩
+  rcases renameOp_cases h with ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ |
+    ⟨rfl, -⟩ | ⟨rfl, -⟩
+  · refine .inr (.inl ⟨.inl rfl, ?_⟩)
     have hg : Op.ARM64LoweredNilCheck.generic = false := by decide
     unfold evalOpL
     rw [hw]
@@ -387,7 +419,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     dsimp only
     rw [hw]
     rfl
-  · refine .inr ⟨.inr rfl, ?_⟩
+  · refine .inr (.inl ⟨.inr rfl, ?_⟩)
     have hg : Op.ARM64LoweredGetClosurePtr.generic = false := by decide
     unfold evalOpL
     rw [hw]
@@ -398,6 +430,14 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     rw [hw]
     unfold evalOp
     rfl
+  · refine .inr (.inr ⟨.inl rfl, ?_⟩)
+    have : evalOp env ctx fr { w with op := .TailCall } argv ty =
+        atomicRoot { w with op := .TailCall } argv := rfl
+    rw [this]; exact atomicRoot_tail (.inl rfl) argv
+  · refine .inr (.inr ⟨.inr rfl, ?_⟩)
+    have : evalOp env ctx fr { w with op := .TailCallInter } argv ty =
+        atomicRoot { w with op := .TailCallInter } argv := rfl
+    rw [this]; exact atomicRoot_tail (.inr rfl) argv
 
 /-- A call of a post-`expand calls` generic op evaluates by `callOp`. -/
 theorem evalOp_postCall {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
