@@ -86,7 +86,8 @@ def ctxLocB (f g : Func) : Bool :=
     f.low.tempRegs == g.low.tempRegs && f.valueTab.size == g.valueTab.size &&
     f.lowered == g.lowered
 
-/-- **values**, for value `id`. -/
+/-- **values**, for value `id`; a `Select0`/`Select1` of `g` also has its arguments in `g` (a
+`MOVDreg` of it reads whether it selects from `LDPSW`, `Arm64.signExtendsIn`). -/
 def valLocB (f g : Func) (id : ID) : Bool :=
   match g.value? id with
   | none => true
@@ -94,7 +95,8 @@ def valLocB (f g : Func) (id : ID) : Bool :=
     match f.value? id with
     | none => false
     | some v => v'.id == id && v.op == v'.op && v.type == v'.type &&
-      (v'.op == .Phi || eraseVT v == eraseVT v')
+      (v'.op == .Phi || eraseVT v == eraseVT v') &&
+      (!(v'.op == .Select0 || v'.op == .Select1) || v'.args.all fun a => (g.value? a).isSome)
 
 /-- **kept**, for block `K'` of `g`. -/
 def keptLocB (f g : Func) (K' : Block) : Bool :=

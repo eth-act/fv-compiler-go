@@ -113,6 +113,32 @@ def LMode.retype (md : LMode) (t : Ty) (v : Val) : Val := if md.low then v.retyp
 
 /-! ## Lowered arm64 ops that need the activation (§3, §4 (c.4)) -/
 
+/-- Value `u` (of a function whose values are `val?`) holds a sign-extended register: its op
+sign-extends (`Arm64.signExtends`), or it is a component (`Select0`/`Select1`) of `LDPSW`, the
+pair load `pair` makes of two `MOVWload`s, which `late lower` may already have made `MOVDreg`'s
+arguments (`(MOVWreg x:(MOVWload …)) => (MOVDreg x)`, then `pair`). -/
+def Arm64.signExtendsIn (val? : ID → Option Value) (u : Value) : Bool :=
+  Arm64.signExtends u.op ||
+    match u.op with
+    | .Select0 | .Select1 => ((u.args[0]?.bind val?).map (·.op == .ARM64LDPSW)).getD false
+    | _ => false
+
+/-- `signExtendsIn` reads of `u` its op and, for a `Select0`/`Select1`, the op of its first
+argument. -/
+theorem Arm64.signExtendsIn_congr {val? val?' : ID → Option Value} {u u' : Value}
+    (hop : u.op = u'.op)
+    (hsel : (u.op = .Select0 ∨ u.op = .Select1) →
+      ((u.args[0]?.bind val?).map (·.op == .ARM64LDPSW)) =
+        ((u'.args[0]?.bind val?').map (·.op == .ARM64LDPSW))) :
+    Arm64.signExtendsIn val? u = Arm64.signExtendsIn val?' u' := by
+  unfold Arm64.signExtendsIn
+  rw [hop]
+  congr 1
+  split
+  next h => rw [hsel (Or.inl (hop.trans h))]
+  next h => rw [hsel (Or.inr (hop.trans h))]
+  next => rfl
+
 /-- The address `base + auxInt + aux` of a `SymOff` op (`MOV*load`, `MOV*store`, `LDP`, `STP`,
 `MOVDaddr`, …): the aux's global symbol or frame variable at the offset (the base is then `SB` or
 `SP`, `addressing modes`' `mergeSym`), else the base moved by the offset. -/
@@ -197,7 +223,8 @@ on the Phase 1 memory (`Sem/Arm64/Mem.lean`). A load is pure (`poison` on an inv
 store `stuck` on an invalid one, as Phase 1's `Load`/`Store`.
 
 `MOVDreg x`/`MOVDnop x` copy `x`'s register; when `x` has a narrow type its upper bits are those
-of its producer (`Arm64.signExtends`: a sign-extending load or extension; otherwise zero, the
+of its producer (`Arm64.signExtendsIn`: a sign-extending load or extension, or a component of the
+sign-extending pair load `LDPSW`; otherwise zero, the
 invariant of every rule that drops an extension, `ZeroUpper32Bits` and the boolean producers).
 
 The other memory ops (`LDAR*`, `LoweredZero`/`LoweredMove` and their loops) are
@@ -297,7 +324,7 @@ def arm64Op (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (
     | _ => .ok .poison
   | .ARM64MOVDreg | .ARM64MOVDnop => match argv with
     | [a] =>
-      let sx := ((v.args[0]?.bind ctx.f.value?).map fun u => Arm64.signExtends u.op).getD false
+      let sx := ((v.args[0]?.bind ctx.f.value?).map (Arm64.signExtendsIn ctx.f.value?)).getD false
       match a with
       | .int w x => .ok (Arm64.res ty (if sx then x.signExtend 64 else x.setWidth 64))
       | a => .ok (Arm64.regVal ty a)

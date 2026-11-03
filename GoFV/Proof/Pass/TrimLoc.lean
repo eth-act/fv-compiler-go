@@ -112,7 +112,8 @@ structure Facts (f g : Func) : Prop where
   size : f.valueTab.size = g.valueTab.size
   lowered : f.lowered = g.lowered
   value : ∀ id v', g.value? id = some v' → ∃ v, f.value? id = some v ∧ v'.id = id ∧
-    v.op = v'.op ∧ v.type = v'.type ∧ (v'.op ≠ .Phi → eraseVT v = eraseVT v')
+    v.op = v'.op ∧ v.type = v'.type ∧ (v'.op ≠ .Phi → eraseVT v = eraseVT v') ∧
+    ((v'.op = .Select0 ∨ v'.op = .Select1) → ∀ a ∈ v'.args, hasV g a = true)
   entryOK : entryLocB f g f.entry g.entry = true
   block : ∀ t T, g.block? t = some T → T.id = t ∧ keptLocB f g T = true ∧
     closedLocB g T = true ∧ phisLocB g (locHomes g) T = true
@@ -148,11 +149,19 @@ theorem facts_of_trimRelB {f g : Func} (h : trimRelB f g = true) : Facts f g := 
     | some v =>
       rw [hf] at this
       simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at this
-      obtain ⟨⟨⟨hid, hop⟩, hty⟩, hor⟩ := this
-      refine ⟨v, rfl, hid, hop, hty, fun hne => ?_⟩
-      rcases hor with hp | hp
-      · exact absurd hp hne
-      · exact hp
+      obtain ⟨⟨⟨⟨hid, hop⟩, hty⟩, hor⟩, hsel⟩ := this
+      refine ⟨v, rfl, hid, hop, hty, fun hne => ?_, fun hs a ha => ?_⟩
+      · rcases hor with hp | hp
+        · exact absurd hp hne
+        · exact hp
+      · have hs' : (v'.op == .Select0 || v'.op == .Select1) = true := by
+          rcases hs with h | h <;> simp [h]
+        rw [hs'] at hsel
+        simp only [Bool.not_true, Array.all_eq_true] at hsel
+        obtain ⟨i, hi, rfl⟩ := Array.getElem_of_mem ha
+        rcases hsel with h | h
+        · cases h
+        · exact h i hi
   · intro t T ht
     have hm : (t, T) ∈ blocksIdx g := by
       unfold blocksIdx
@@ -279,7 +288,7 @@ theorem stepLoc_trim (env : Env) (s : LocState) {id : ID} {v' : Value}
     (hg : g.value? id = some v') (hnp : v'.op ≠ .Phi) (hargs : ∀ a ∈ v'.args, hasV g a = true)
     {v : Value} (hf : f.value? id = some v) :
     stepLoc env (LocCtx.make tabs f) s v = stepLoc env (LocCtx.make tabs g) s v' := by
-  obtain ⟨v1, hf1, hid, -, -, he⟩ := F.value id v' hg
+  obtain ⟨v1, hf1, hid, -, -, he, -⟩ := F.value id v' hg
   rw [hf] at hf1; cases hf1
   have he := he hnp
   have hw := locCtxW_trim tabs F.ownAux F.size F.regAlloc F.tempRegs
@@ -302,8 +311,23 @@ theorem stepLoc_trim (env : Env) (s : LocState) {id : ID} {v' : Value}
   | none => rfl
   | some a =>
     obtain ⟨u', hu⟩ := hpres a (Array.mem_of_getElem? h0)
-    obtain ⟨u, hu', -, hop, -⟩ := F.value a u' hu
-    simp only [Option.bind_some, hu, hu', Option.map_some, hop]
+    obtain ⟨u, hu', -, hop, -, heu, hsel⟩ := F.value a u' hu
+    simp only [Option.bind_some, hu, hu', Option.map_some, Option.some.injEq]
+    refine Arm64.signExtendsIn_congr hop fun hs => ?_
+    have hs' : u'.op = .Select0 ∨ u'.op = .Select1 := hop ▸ hs
+    have hnp' : u'.op ≠ .Phi := by rcases hs' with h | h <;> rw [h] <;> decide
+    have hargs' : u.args = u'.args := by have := congrArg Value.args (heu hnp'); exact this
+    rw [hargs']
+    cases hc : u'.args[0]? with
+    | none => rfl
+    | some c =>
+      have hcv := hsel hs' c (Array.mem_of_getElem? hc)
+      unfold hasV at hcv
+      cases hw' : g.value? c with
+      | none => rw [hw'] at hcv; cases hcv
+      | some w' =>
+        obtain ⟨w, hw, -, hopw, -⟩ := F.value c w' hw'
+        simp only [Option.bind_some, hw, hw', Option.map_some, hopw]
 
 /-- A list of non-`Phi` values of `g` with arguments in `g` runs alike in both contexts. -/
 theorem enterList_trim (env : Env) :
@@ -372,7 +396,7 @@ include F
 theorem control_trim (s : LocState) {c : ID} {v' : Value} (hg : g.value? c = some v')
     (hmr : v'.op = .MakeResult → ∀ a ∈ v'.args, hasV g a = true) :
     s.control (LocCtx.make tabs f) c = s.control (LocCtx.make tabs g) c := by
-  obtain ⟨v, hf, -, hop, -, he⟩ := F.value c v' hg
+  obtain ⟨v, hf, -, hop, -, he, -⟩ := F.value c v' hg
   have hw := locCtxW_trim tabs F.ownAux F.size F.regAlloc F.tempRegs
   unfold LocState.control
   rw [mk_f, mk_f, hf, hg]

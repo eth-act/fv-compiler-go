@@ -8,7 +8,7 @@ import GoFV.Proof.Eval
 `GoFV.Proof.Frame` and `GoFV.Proof.Eval` for `runL`'s value evaluation: a value reads the
 registers of its arguments only (`evalValueL_regs`, `evalValueL_congr`); it reads of itself its
 op, aux, auxint and ID, of the context the tables, parameters, activation and shapes, and of the
-function only whether its first argument sign-extends (`MOVDreg`/`MOVDnop`, `Arm64.signExtends`:
+function only whether its first argument sign-extends (`MOVDreg`/`MOVDnop`, `Arm64.signExtendsIn`:
 `evalOpL_congr`, `evalValueL_eq_of_args`); one that does not get stuck has its arguments
 (`evalValueL_args_def`); only calls, nil checks and, when memory ops fault, arm64 ops panic
 (`PanickingL`, `evalValueL_panic_op`).
@@ -21,7 +21,7 @@ open GoFV.SSA GoFV.SSA.Sem
 /-- What the evaluation of `v` reads of the function `f` beyond `v`: whether its first argument
 sign-extends. -/
 def sxOf (f : Func) (v : Value) : Option Bool :=
-  (v.args[0]?.bind f.value?).map fun u => Arm64.signExtends u.op
+  (v.args[0]?.bind f.value?).map (Arm64.signExtendsIn f.value?)
 
 theorem evalOpL_frame (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame)
     (r : Array (Option Val)) (v : Value) (argv : List Val) (ty : Ty) :

@@ -9,8 +9,9 @@ Beyond `DeadRel`, `runL` reads three things of the functions (`DeadRelL`):
 
 * an arm64 terminator reads its block's `auxInt` (`Arm64.taken`, `TBZ`/`TBNZ`): kept blocks keep
   it (`auxInt`);
-* `MOVDreg`/`MOVDnop` read whether their argument's op sign-extends (`sxOf`): every value of `g`
-  has its op in `f` (`op`);
+* `MOVDreg`/`MOVDnop` read whether their argument sign-extends (`sxOf`, `Arm64.signExtendsIn`):
+  every value of `g` has its op in `f` (`op`), and a listed `Select0`/`Select1` of `g` keeps its
+  arguments (`sel`: it may select from `LDPSW`), so `signExtendsIn` agrees (`signExtendsIn_eq`);
 * the ops that panic under `runL` are `PanickingL false` (calls, `NilCheck` and
   `LoweredNilCheck`, not only Phase 1's `Panicking`): a dropped value of a kept block is none
   (`dropped`).
@@ -34,6 +35,42 @@ structure DeadRelL (f g : Func) (K : ID → Prop) : Prop where
   /-- A dropped value of a kept block cannot panic under `runL`. -/
   dropped : ∀ bid, K bid → ∀ gb fb, g.block? bid = some gb → f.block? bid = some fb →
     ∀ x ∈ fb.values, x ∉ gb.values → ∀ fv, f.value? x = some fv → ¬ PanickingL false fv.op
+  /-- A listed `Select0`/`Select1` of `g` has the arguments of `f`'s. -/
+  sel : ∀ x gv, Listed g x → g.value? x = some gv → (gv.op = .Select0 ∨ gv.op = .Select1) →
+    ∃ fv, f.value? x = some fv ∧ gv.args = fv.args
+
+/-- A listed value of `g` and its `f` counterpart hold the same sign extension. -/
+theorem DeadRelL.signExtendsIn_eq {f g : Func} {K : ID → Prop} (L : DeadRelL f g K)
+    {ce : CheckEnv} (hwg : WF ce g) {a : ID} {ga fa : Value} (hl : Listed g a)
+    (hga : g.value? a = some ga) (hfa : f.value? a = some fa) :
+    Arm64.signExtendsIn g.value? ga = Arm64.signExtendsIn f.value? fa := by
+  obtain ⟨fa', hfa', hop⟩ := L.op a ga hga
+  rw [hfa] at hfa'; cases hfa'
+  unfold Arm64.signExtendsIn
+  rw [hop]
+  congr 1
+  by_cases hs : fa.op = .Select0 ∨ fa.op = .Select1
+  · obtain ⟨fa'', hfa'', hargs⟩ := L.sel a ga hl hga (hop ▸ hs)
+    rw [hfa] at hfa''; cases hfa''
+    have hsel : ∀ c ∈ ga.args, ((g.value? c).map (·.op == .ARM64LDPSW)) =
+        ((f.value? c).map (·.op == .ARM64LDPSW)) := by
+      intro c hc
+      obtain ⟨bid, b, hbi, hmem⟩ := hl
+      obtain ⟨c', b', hbi', hc'⟩ := hwg.argListed bid b a ga ⟨hbi, hmem, hga⟩ c hc
+      obtain ⟨gc, hgc, -, -⟩ := hwg.valueId c' b' hbi' c hc'
+      obtain ⟨fc, hfc, hopc⟩ := L.op c gc hgc
+      simp only [hgc, hfc, Option.map_some, hopc]
+    have h0 : ((ga.args[0]?.bind g.value?).map (·.op == .ARM64LDPSW)) =
+        ((fa.args[0]?.bind f.value?).map (·.op == .ARM64LDPSW)) := by
+      rw [← hargs]
+      cases hc : ga.args[0]? with
+      | none => rfl
+      | some c => exact hsel c (Array.mem_of_getElem? hc)
+    split <;> simp only [h0]
+  · split
+    · exact absurd (Or.inl ‹_›) hs
+    · exact absurd (Or.inr ‹_›) hs
+    · rfl
 
 /-- A value that may panic under `runL` is not pure. -/
 theorem prio_panickingL {op : Op} (h : PanickingL false op) : prio op ≠ 0 := by
