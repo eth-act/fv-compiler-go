@@ -122,6 +122,7 @@ import GoFV.Proof.Pass.DeadLive
 import GoFV.Proof.Pass.DeadRank
 import GoFV.Proof.Pass.DeadReach
 import GoFV.Proof.Pass.DeadRel
+import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Pass.DeadSim
 import GoFV.Proof.Pass.DeadTail
 import GoFV.Proof.Pass.DeadcodePass
