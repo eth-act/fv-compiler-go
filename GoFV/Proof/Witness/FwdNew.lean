@@ -121,7 +121,8 @@ theorem fn_checkedRewrite :
       (out.func.value? 12).map (·.args) = some #[6, 7] ∧
       check fnCheckEnv fnFunc = .ok () ∧
       check { tabs := out.tables, typs := fnTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre fnPassEnv.tables fnFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre fnPassEnv.tables fnPassEnv.frontend fnFunc)
+        out.tables out.func
         fnPassEnv.tables fnFunc := by
   obtain ⟨h1, h2⟩ := fn_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet fmRules) fnPassEnv fnFunc with
@@ -139,20 +140,20 @@ theorem fn_checkedRewrite :
 def fnEnv : Env :=
   { Env.p1 with globals := [("type:[2]int", typeDescAlloc fnTabs 4 (some fnRType))] }
 
-theorem fn_roSyms : RewriteCheck.roSyms fnTabs fnFunc =
+theorem fn_roPass : RewriteCheck.roPass fnTabs fnPassEnv.frontend fnFunc =
     [("type:[2]int", typeDescAlloc fnTabs 4 (some fnRType))] := by
   decide +kernel
 
 /-- **Non-vacuity of `RwPre` with the type descriptor**: on `Env.p1` with the descriptor in the
 global image and an empty memory, `newArr`'s read-only symbol holds its image. -/
 theorem fn_rwPre (args : List Val) :
-    GoFV.Proof.Pass.Rewrite.RwPre fnTabs fnFunc fnEnv args {} := by
+    GoFV.Proof.Pass.Rewrite.RwPre fnTabs fnPassEnv.frontend fnFunc fnEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
     fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
   · rw [show NilCheck.dictParams fnTabs fnFunc = [] by decide +kernel]
     exact DictArgs.nil args
-  · rw [fn_roSyms]
+  · rw [fn_roPass]
     intro n a h
     simp only [List.mem_singleton, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h

@@ -39,9 +39,10 @@ pipeline runs it (`Verified.Step`):
 - `proven run rel guard`: `run` is the pass (or its checked, proven-only variant: `optChecked`,
   `proveChecked`, …) whose refinement theorem concludes `rel` (`Refines`, `RefinesUnder
   Env.Mono`, `RefinesFrom (FrameSafe ∧ InitAvoids)` or, for the checked rewrite passes,
-  `RefinesFrom (RwPre tabs f)`: also malloc-family contracts that return non-nil pointers,
+  `RefinesFrom (RwPre tabs fe f)`: also malloc-family contracts that return non-nil pointers,
   non-nil dictionary arguments of the input, the runtime's `memclrNoHeapPointers`/`memmove`
-  contracts, if present, and the input's read-only symbols holding their exported bytes, issue
+  contracts, if present, and the input's and the frontend's read-only symbols holding their
+  exported bytes, issue
   #151) when the input and the output pass
   `check` and `guard` (the theorem's fragment hypothesis, decided) accepts the input;
 - `stock run`: the stock port; no theorem.
@@ -82,11 +83,12 @@ inductive Rel where
   | mono
   /-- `RefinesFrom (fun env args mem => env.FrameSafe ∧ InitAvoids env args mem)`. -/
   | frameSafe
-  /-- `RefinesFrom (RwPre tabs f)` on the pass's input `f` in `tabs` (the checked rewrite passes):
-  monotone contracts, malloc-family contracts that return non-nil pointers
-  (`Env.AllocNonNil`), non-nil dictionary arguments (`NilCheck.dictParams tabs f`), the
-  runtime's `memclrNoHeapPointers`/`memmove` contracts, if present (`Env.MemOps`), and the
-  read-only symbols `RewriteCheck.roSyms tabs f` holding their exported bytes (`RoImage`). -/
+  /-- `RefinesFrom (RwPre tabs fe f)` on the pass's input `f` in `tabs` with the frontend tables
+  `fe` (the checked rewrite passes): monotone contracts, malloc-family contracts that return
+  non-nil pointers (`Env.AllocNonNil`), non-nil dictionary arguments
+  (`NilCheck.dictParams tabs f`), the runtime's `memclrNoHeapPointers`/`memmove` contracts, if
+  present (`Env.MemOps`), and the read-only symbols `RewriteCheck.roPass tabs fe f` holding their
+  exported bytes (`RoImage`). -/
   | rw
   /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
   read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/

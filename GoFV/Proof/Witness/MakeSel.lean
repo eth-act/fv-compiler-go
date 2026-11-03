@@ -109,7 +109,8 @@ theorem mks_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[3, 1] ∧
       check mksCheckEnv mksFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mksPassEnv.tables mksFunc) out.tables out.func mksPassEnv.tables mksFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mksPassEnv.tables mksPassEnv.frontend mksFunc)
+      out.tables out.func mksPassEnv.tables mksFunc := by
   obtain ⟨h1, h2⟩ := mks_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet mksRules) mksPassEnv mksFunc with
   | error e => rw [hc] at h2; cases h2
@@ -280,7 +281,8 @@ theorem drp_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[2, 1] ∧
       check drpCheckEnv drpFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre drpPassEnv.tables drpFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre drpPassEnv.tables drpPassEnv.frontend drpFunc)
+      out.tables out.func
         drpPassEnv.tables drpFunc := by
   obtain ⟨h1, h2⟩ := drp_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet drpRules) drpPassEnv drpFunc with

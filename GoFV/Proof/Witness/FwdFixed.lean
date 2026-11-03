@@ -99,7 +99,8 @@ theorem ff_checkedRewrite :
       (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.Addr, #[3]) ∧
       check ffCheckEnv ffFunc = .ok () ∧
       check { tabs := out.tables, typs := fnTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre ffPassEnv.tables ffFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre ffPassEnv.tables ffPassEnv.frontend ffFunc)
+        out.tables out.func
         ffPassEnv.tables ffFunc := by
   obtain ⟨h1, h2⟩ := ff_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet ffRules) ffPassEnv ffFunc with
@@ -118,19 +119,20 @@ def ffAlloc : Alloc := rodataAlloc (ByteArray.mk (Array.replicate 16 0)) 16 #[ff
 /-- `Env.p1` with the global image's allocation of `main..dict.f`. -/
 def ffEnv : Env := { Env.p1 with globals := [("main..dict.f", ffAlloc)] }
 
-theorem ff_roSyms : RewriteCheck.roSyms ffTabs ffFunc = [("main..dict.f", ffAlloc)] := by
+theorem ff_roPass :
+    RewriteCheck.roPass ffTabs ffPassEnv.frontend ffFunc = [("main..dict.f", ffAlloc)] := by
   decide +kernel
 
 /-- **Non-vacuity of `RwPre` with the read-only symbol**: on `Env.p1` with the symbol in the
 global image and an empty memory, `dictEntry`'s read-only symbol holds its image. -/
 theorem ff_rwPre (args : List Val) :
-    GoFV.Proof.Pass.Rewrite.RwPre ffTabs ffFunc ffEnv args {} := by
+    GoFV.Proof.Pass.Rewrite.RwPre ffTabs ffPassEnv.frontend ffFunc ffEnv args {} := by
   refine ⟨fun n c h => Env.p1_mono n c h, ⟨fun n c hm h => Env.p1_allocNonNil n c hm h, ?_⟩,
     ⟨fun c h => Env.p1_memOps.1 c h, fun c h => Env.p1_memOps.2 c h⟩,
     fun n c hm h => Env.p1_allocZero n c hm h, fun n c h => Env.p1_keepsRo n c h, ?_⟩
   · rw [show NilCheck.dictParams ffTabs ffFunc = [] by decide +kernel]
     exact DictArgs.nil args
-  · rw [ff_roSyms]
+  · rw [ff_roPass]
     intro n a h
     simp only [List.mem_singleton, Prod.mk.injEq] at h
     obtain ⟨rfl, rfl⟩ := h

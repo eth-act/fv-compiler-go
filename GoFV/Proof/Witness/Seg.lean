@@ -109,7 +109,8 @@ theorem zp_checkedRewrite :
       (out.func.value? 8).map (·.args) = some #[7, 3, 10] ∧
       check zpCheckEnv zpFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre zpPassEnv.tables zpFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre zpPassEnv.tables zpPassEnv.frontend zpFunc)
+      out.tables out.func
         zpPassEnv.tables zpFunc := by
   obtain ⟨h1, h2⟩ := zp_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet zpRules) zpPassEnv zpFunc with

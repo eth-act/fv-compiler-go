@@ -92,7 +92,8 @@ theorem fz_checkedRewrite :
       (out.func.value? 12).map (·.args) = some #[6, 7] ∧
       check fmCheckEnv fzFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre fzPassEnv.tables fzFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre fzPassEnv.tables fzPassEnv.frontend fzFunc)
+      out.tables out.func
         fzPassEnv.tables fzFunc := by
   obtain ⟨h1, h2⟩ := fz_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet fzRules) fzPassEnv fzFunc with

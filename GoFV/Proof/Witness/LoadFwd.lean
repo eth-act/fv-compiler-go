@@ -112,7 +112,8 @@ theorem sl_checkedRewrite :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet slRules) slPassEnv slFunc = .ok out ∧
       (out.func.value? 6).map (·.args) = some #[3, 4] ∧
       check slCheckEnv slFunc = .ok () ∧ check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slPassEnv.tables slFunc) out.tables out.func slPassEnv.tables slFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slPassEnv.tables slPassEnv.frontend slFunc)
+      out.tables out.func slPassEnv.tables slFunc := by
   obtain ⟨h1, h2⟩ := sl_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet slRules) slPassEnv slFunc with
   | error e => rw [hc] at h2; cases h2
@@ -227,7 +228,8 @@ theorem sl2_checkedRewrite :
       (out.func.value? 9).map (·.args) = some #[3, 7] ∧
       check sl2CheckEnv sl2Func = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre sl2PassEnv.tables sl2Func) out.tables out.func sl2PassEnv.tables sl2Func := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre sl2PassEnv.tables sl2PassEnv.frontend sl2Func)
+      out.tables out.func sl2PassEnv.tables sl2Func := by
   obtain ⟨h1, h2⟩ := sl2_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet sl2Rules) sl2PassEnv sl2Func with
   | error e => rw [hc] at h2; cases h2
@@ -338,7 +340,8 @@ theorem sls_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[3, 4] ∧
       check slsCheckEnv slsFunc = .ok () ∧
       check { tabs := out.tables, typs := slsTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slsPassEnv.tables slsFunc) out.tables out.func slsPassEnv.tables slsFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slsPassEnv.tables slsPassEnv.frontend slsFunc)
+      out.tables out.func slsPassEnv.tables slsFunc := by
   obtain ⟨h1, h2⟩ := sls_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet slRules) slsPassEnv slsFunc with
   | error e => rw [hc] at h2; cases h2
@@ -464,7 +467,8 @@ theorem slp_checkedRewrite :
       (out.func.value? 6).map (·.args) = some #[3, 4] ∧
       check slpCheckEnv slpFunc = .ok () ∧
       check { tabs := out.tables, typs := slsTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slpPassEnv.tables slpFunc) out.tables out.func slpPassEnv.tables slpFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slpPassEnv.tables slpPassEnv.frontend slpFunc)
+      out.tables out.func slpPassEnv.tables slpFunc := by
   obtain ⟨-, h1, h2⟩ := slp_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet slRules) slpPassEnv slpFunc with
   | error e => rw [hc] at h2; cases h2

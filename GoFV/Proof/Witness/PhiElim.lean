@@ -113,7 +113,8 @@ theorem pz_checkedRewrite :
       RewriteCheck.noPhiElim r.2.2 = false) ∧
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) pePassEnv pz = .ok out ∧
       (out.func.value? 7).map (·.args) = some #[3, 1] ∧
-      RefinesFrom (Pass.Rewrite.RwPre pePassEnv.tables pz) out.tables out.func pePassEnv.tables pz := by
+      RefinesFrom (Pass.Rewrite.RwPre pePassEnv.tables pePassEnv.frontend pz)
+      out.tables out.func pePassEnv.tables pz := by
   obtain ⟨h1, hl, h2⟩ := pz_checks
   refine ⟨?_, ?_⟩
   · cases hr : rewriteRun (Interp.Table.ofRuleSet azRules) true true pePassEnv pz with
@@ -213,7 +214,7 @@ result refines the input. -/
 theorem pa_checkedRewrite :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa = .ok out ∧
       (out.func.value? 7).map (·.args) = some #[4, 1] ∧
-      RefinesFrom (Pass.Rewrite.RwPre peaPassEnv.tables pa) out.tables out.func
+      RefinesFrom (Pass.Rewrite.RwPre peaPassEnv.tables peaPassEnv.frontend pa) out.tables out.func
         peaPassEnv.tables pa := by
   obtain ⟨h1, -, h2, -⟩ := pa_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet azRules) peaPassEnv pa with

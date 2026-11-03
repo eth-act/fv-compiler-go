@@ -119,7 +119,8 @@ theorem ls_checkedRewrite :
       (out.func.value? 3).map (fun v => (v.op, v.args.size)) = some (.StringMake, 2) ∧
       check lsCheckEnv lsFunc = .ok () ∧
       check { tabs := out.tables, typs := lsTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lsPassEnv.tables lsFunc) out.tables out.func lsPassEnv.tables lsFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lsPassEnv.tables lsPassEnv.frontend lsFunc)
+      out.tables out.func lsPassEnv.tables lsFunc := by
   obtain ⟨h1, h2⟩ := ls_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet lsRules) lsPassEnv lsFunc with
   | error e => rw [hc] at h2; cases h2
@@ -205,7 +206,8 @@ theorem lc_checkedRewrite :
       (out.func.value? 3).map (fun v => (v.op, v.args.size)) = some (.ComplexMake, 2) ∧
       check lcCheckEnv lcFunc = .ok () ∧
       check { tabs := out.tables, typs := lcTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lcPassEnv.tables lcFunc) out.tables out.func lcPassEnv.tables lcFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lcPassEnv.tables lcPassEnv.frontend lcFunc)
+      out.tables out.func lcPassEnv.tables lcFunc := by
   obtain ⟨h1, h2⟩ := lc_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet lcRules) lcPassEnv lcFunc with
   | error e => rw [hc] at h2; cases h2

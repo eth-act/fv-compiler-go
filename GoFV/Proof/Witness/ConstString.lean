@@ -126,7 +126,8 @@ theorem hi_checkedRewrite :
       (∃ log, RewriteCheck.validate out.tables (Interp.Table.ofRuleSet hiRules) hiFunc out.func
         log = true) ∧
       check hiCheckEnv hiFunc = .ok () ∧ check { tabs := out.tables, typs := hiTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre hiPassEnv.tables hiFunc) out.tables out.func hiPassEnv.tables hiFunc := by
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre hiPassEnv.tables hiPassEnv.frontend hiFunc)
+      out.tables out.func hiPassEnv.tables hiFunc := by
   obtain ⟨h1, h2⟩ := hi_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet hiRules) hiPassEnv hiFunc with
   | error e => rw [hc] at h2; cases h2

@@ -75,7 +75,8 @@ theorem fc_checkedRewrite :
       (out.func.value? 7).map (·.args) = some #[3, 5] ∧
       check slCheckEnv fcFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slPassEnv.tables fcFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre slPassEnv.tables slPassEnv.frontend fcFunc)
+      out.tables out.func
         slPassEnv.tables fcFunc := by
   obtain ⟨-, h1, h2⟩ := fc_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet slRules) slPassEnv fcFunc with
@@ -172,7 +173,8 @@ theorem pi_checkedRewrite :
       (out.func.value? 12).map (·.args) = some #[3, 10] ∧
       check piCheckEnv piFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre piPassEnv.tables piFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre piPassEnv.tables piPassEnv.frontend piFunc)
+      out.tables out.func
         piPassEnv.tables piFunc := by
   obtain ⟨-, -, h1, h2⟩ := pi_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet sl2Rules) piPassEnv piFunc with
@@ -278,7 +280,8 @@ theorem cf_checkedRewrite :
       (out.func.value? 5).map (fun v => (v.op, v.auxInt)) = some (.Const64F, 4609434218613702656) ∧
       check cfCheckEnv cfFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre cfPassEnv.tables cfFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre cfPassEnv.tables cfPassEnv.frontend cfFunc)
+      out.tables out.func
         cfPassEnv.tables cfFunc := by
   obtain ⟨h1, h2⟩ := cf_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet cfRules) cfPassEnv cfFunc with
@@ -390,7 +393,8 @@ theorem ml_checkedRewrite :
       (out.func.value? 7).map (·.args) = some #[8, 4] ∧
       check mlCheckEnv mlFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mlPassEnv.tables mlFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre mlPassEnv.tables mlPassEnv.frontend mlFunc)
+      out.tables out.func
         mlPassEnv.tables mlFunc := by
   obtain ⟨h1, h2⟩ := ml_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet mlRules) mlPassEnv mlFunc with

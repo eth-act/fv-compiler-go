@@ -47,7 +47,8 @@ theorem xs_checkedRewrite :
       (((out.func.value? 5).bind (·.args[0]?)).bind out.func.value?).map (·.op == Op.Load) =
         some true ∧
       check { tabs := out.tables, typs := lsTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lsPassEnv.tables lsFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lsPassEnv.tables lsPassEnv.frontend lsFunc)
+      out.tables out.func
         lsPassEnv.tables lsFunc := by
   have h1 := ls_checks.1
   have h2 := xs_checks
@@ -88,7 +89,8 @@ theorem lsel_checkedRewrite :
       (((out.func.value? 5).bind (·.args[0]?)).bind out.func.value?).map (·.op == Op.Load) =
         some true ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lfPassEnv.tables lfFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre lfPassEnv.tables lfPassEnv.frontend lfFunc)
+      out.tables out.func
         lfPassEnv.tables lfFunc := by
   have h1 := lf_checks.1
   have h2 := lsel_checks
@@ -191,7 +193,8 @@ theorem ita_checkedRewrite :
         some true ∧
       check itaCheckEnv itaFunc = .ok () ∧
       check { tabs := out.tables, typs := itaTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre itaPassEnv.tables itaFunc) out.tables out.func
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre itaPassEnv.tables itaPassEnv.frontend itaFunc)
+      out.tables out.func
         itaPassEnv.tables itaFunc := by
   obtain ⟨h1, h2, -⟩ := ita_checks
   cases hc : checkedRewrite (Interp.Table.ofRuleSet itaRules) itaPassEnv itaFunc with
