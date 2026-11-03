@@ -1,0 +1,367 @@
+# Plan: semantics of lowered arm64 SSA (Phase 2, milestone H6)
+
+Status: plan (milestone H6, #384; tracking #387). Phase 1 semantics: `docs/plans/semantics.md`
+(`GoFV.SSA.run`, `GoFV/SSA/Sem/*`). Pass survey: `docs/PASSES2.md`. Source of truth for the
+ops: `third_party/go/src/cmd/compile/internal/ssa/_gen/ARM64Ops.go` (354 ops, plus 306 SIMD
+ops that only `GOEXPERIMENT=simd` produces; 25 block kinds; "AO line" below), the rules
+`_gen/ARM64.rules` (1,233 source rules) and `_gen/ARM64latelower.rules` (69), and, for what an
+op means on the machine, the instructions `ssaGenValue`/`ssaGenBlock` emit for it
+(`cmd/compile/internal/arm64/ssa.go`, 2,223 lines). AArch64 model for reuse: clifv's `FV/Arm`
+(eth-act/clifv; `docs/contracts/arm.md`, `docs/decisions/arm-model.md` there).
+
+## 1. The three forms of lowered SSA
+
+Phase 2 code passes through three forms with different evaluation rules. Each gets a semantics;
+each pass is proven against the form it consumes and produces.
+
+| Form | Produced by | What changes | Semantics |
+| --- | --- | --- | --- |
+| **L0, unscheduled lowered SSA** | `lower` … `layout` | ARM64 ops and block kinds replace generic ones; flags values; tuple results (`ADDSflags`, `LoweredMuluhilo`, …). Still SSA with explicit memory values; `b.Values` order is not an execution order. | `run` (Phase 1), extended with the ARM64 ops and block kinds (§3–§5) |
+| **L1, scheduled SSA** | `schedule`, `late nilcheck`, `flagalloc` | `b.Values` is the execution order; memory is linear (at most one memory value live, loads before the store that kills their memory); `late nilcheck` relies on faulting loads/stores replacing explicit nil checks; `flagalloc` keeps at most one flags value live. | `runSched` (§6): `b.Values` order, one current memory, faulting memory ops |
+| **L2, allocated SSA** | `regalloc`, `loop rotate`, `trim` | Every value has a home (`f.RegAlloc`): a register, a stack slot (`LocalSlot`), a pair or a result list. New `Copy`, `LoadReg`, `StoreReg` and rematerialised values; phis whose args share the phi's home. **Args no longer dominate uses** (`check.go:451-454` skips the dominance check once `f.RegAlloc != nil`): the function is not SSA any more, and evaluating it as SSA is wrong. | `runLoc` (§7): a machine state of registers, flags, stack slots and memory |
+
+The forms nest: L0 ⊇ generic SSA (Phase 1 ops stay legal), and a function in L1 or L2 is still
+a `GoFV.SSA.Func`. The point of three semantics instead of one machine semantics is reuse: every
+pass from `lower` to `layout` is proven against the **same** `run` as Phase 1, so the Phase 1
+machinery (`Refines`, `RefinesFrom`, `VPre`, `verifiedPipeline`, `check`, the rule interpreter's
+soundness #113) extends to it by adding op cases, not by restarting.
+
+## 2. Correctness criterion
+
+As Phase 1 (`docs/PLAN.md` §1): a pass `p` is correct when every returning or panicking run of
+`p f` is, up to refinement, a run of `f` (`GoFV.Proof.Refines`, backward from target outcomes via
+determinism and fuel monotonicity). Across forms the two runs use different semantics:
+
+```
+Refines₀₀ (p f) f  :=  Refines over run      / run          -- lower … layout (L0 → L0)
+Refines₀₁ (schedule f) f   over runSched / run              -- the schedule pass (L0 → L1)
+Refines₁₁ (p f) f   over runSched / runSched                -- late nilcheck, flagalloc
+Refines₁₂ (regalloc f) f   over runLoc / runSched           -- regalloc (L1 → L2)
+Refines₂₂ (p f) f   over runLoc / runLoc                    -- loop rotate, trim
+```
+
+All five share `Outcome`, `Val.Refines`, `Mem.Refines` and `OutcomeRefines`, so they compose
+into the Phase 2 end-to-end statement (H7/H8):
+
+> for `f` the input of `lower` and `g` the Lean pipeline's output after `trim`,
+> `RefinesFrom VPre₂ (runLoc g) (run f)`, and with Phase 1's `verifiedPipeline_refines`,
+> `runLoc g` refines `run f₀` for the ssagen output `f₀`.
+
+`VPre₂` is Phase 1's `VPre` plus the lowered-code preconditions (§8): the runtime contracts hold
+for register-passed arguments, `g` (x28) is preserved by callees, and memory below
+`minZeroPage` (4,096, `nilcheck.go:192`) is unmapped.
+
+## 3. Values: flags and the lowered domain
+
+Phase 1's `Val` (`GoFV/SSA/Sem/Val.lean:93`) already has the right shapes for lowered code:
+integers and floats are `Val.int w bits` (floats as IEEE bit patterns since P4, exactly what
+the registers hold), booleans `Val.bool`, pointers `Val.ptr` with provenance, tuples, memory
+snapshots, `poison`.
+
+**Flags.** Lowered compares produce values of type `flags` (`CMP`, `CMPconst`, `TST`, `FCMPD`,
+`CCMP`, …, and the second result of `ADDS`/`SUBS`/`ADCS`/`SBCS`/`NEGS` tuples). A flags value
+is the four bits N, Z, C, V, as `PSTATE.NZCV` in clifv's model (`Arm.PFlag`). Two encodings:
+
+1. a new constructor `Val.flags (nzcv : BitVec 4)`; clean, but every Phase 1 proof that does
+   `cases v` gets a new case (`Val` is matched exhaustively in `Val.Refines`, `retype`,
+   `hasTy`, `encode`, the ABI pieces);
+2. a shape `Ty.flags` over existing constructors, `Val.agg [.bool n, .bool z, .bool c, .bool v]`
+   (`Flags.toVal`/`Flags.ofVal`), with `retype`/`hasTy` cases for the shape only.
+
+**Choose 2.** It leaves every Phase 1 lemma untouched (flags never reach memory, the ABI or
+`decode`), and `Flags` is a plain Lean structure with `ConditionHolds` on it. Revisit only if
+a proof is measurably easier with 1.
+
+**Pointer arithmetic.** `lower` turns `AddPtr`, `SubPtr`, `OffPtr` and pointer compares into
+integer ops (`_gen/ARM64.rules:5,8,243,251,305-306,450`): `(Add(Ptr|64|…) ...) => (ADD ...)`,
+`(OffPtr [off] ptr:(SP)) => (MOVDaddr [int32(off)] ptr)` else `(ADDconst [off] ptr)`,
+`(EqPtr x y) => (Equal (CMP x y))`, `(IsNonNil p) => (NotEqual (CMPconst [0] p))`; `Convert`
+stays generic (`checkLower`'s whitelist, `lower.go:31-34`). So the integer ops of L0 must keep
+provenance where the generic op did. Rule: every 64-bit ARM64 integer op is defined on words,
+through one lifting `liftW`, with these provenance cases taken first:
+
+- `ADD p i`, `ADD i p`, `ADDconst [c] p`, `SUB p i`, `SUBconst [c] p`, `MOVDaddr [c] p` (and
+  `ADDshiftLL p i [s]`, which the addressing rules produce) with `p` a pointer and `i` an
+  integer give the pointer `p + i` (Phase 1 `AddPtr`/`OffPtr`);
+- `SUB p q` of two pointers is Phase 1's `SubPtr`; `CMP p q`/`CMPconst [0] p` compare as
+  Phase 1's `EqPtr`/`IsNonNil` where those are defined (same block, or nil), and otherwise by
+  concrete addresses (`Ptr.addr?`);
+- any other op reads pointers as concrete words (`Ptr.addr?`; no address ⇒ `poison`), and its
+  64-bit integer result keeps its word at a pointer shape (Phase 1 §3.2: an integer is read back
+  as a pointer through `Ptr.ofAddr`).
+
+This inherits Phase 1's open points on concrete addresses (#156: out-of-window arithmetic, nil
+comparison by block, `Convert` round-trips). Lowered code adds one: an `ADD p i` whose `i` is
+itself an address (rare; `unsafe` code) is computed on words.
+
+**Totality.** ARM64 ops are total, as the instructions are: `UDIV`/`SDIV` by zero give 0, shifts
+take the amount modulo the width, `CLZ`/`RBIT` of 0 are defined. Passes rely on it: `loop
+invariant` hoists every `earlyOk` op (division included, `_gen/ARM64Ops.go:198-219`) out of
+loops without a guard, so a lowered op must not be `poison` where the machine instruction is
+defined. `poison` arises only from `poison` inputs whose bits the op uses and from the pointer
+cases above.
+
+**Booleans.** Lowered boolean producers (`Equal`, `LessThan`, …, `CSET`-like, `MOVBUreg` of a
+bool) keep type `bool`; the semantics returns `Val.bool` at `bool` type and `Val.int .w8 0/1`
+at `uint8`, as `retype` already does. `Val.retype` total shaping (Phase 1 #108) covers every
+lowered op unchanged.
+
+## 4. Op semantics: options
+
+### (a) Define each ARM64 op directly
+
+`evalArm64 : Op → AuxInt → Aux → Ty → List Val → Val`, one definition per op family on
+`BitVec`, written from the AO comments (`ARM64Ops.go`) and the ASL of the instruction the op
+emits, in the style of Phase 1's `evalPure` (one `match`, one module per family so a rule
+lemma unfolds only its family).
+
+- For: the same style, value domain and proof tooling as Phase 1; the 1,302 lowering rules get
+  lemmas of the form `evalPure (generic op) … = evalArm64 (arm64 ops) …` by `bv_decide`/`rfl`,
+  cheap per rule; pointer and poison cases are explicit.
+- Against: ~330 new trusted definitions. The AO comments are informal (e.g. the semantics of
+  `ARM64ConditionalParams`, of the `noov` conditions, of the `Variant` atomics); a definition
+  error is invisible to proofs and only an oracle catches it.
+
+### (b) Define lowered ops by clifv's `FV/Arm` instruction semantics
+
+The meaning of an op is the run of the instruction(s) `ssaGenValue` emits for it, executed by
+`Arm.exec` on a canonical `ArmState` holding the arguments in fixed registers (exactly clifv's
+`csem` approach for its register allocator, `docs/contracts/regalloc-proof.md`: "no
+per-instruction formula is hand-written").
+
+- For: no new trusted per-op definitions; the model is ASL-transcribed and co-simulated
+  against `qemu-aarch64-static` (760 forms, 152,000 vectors, 0 failures in clifv); Phase 3
+  (`genssa`) then needs only the encoding and the frame, not the op semantics.
+- Against:
+  1. **Domain mismatch.** `ArmState` is concrete: 64-bit registers, flat byte memory. Phase 1
+     values have provenance pointers, memory snapshots, aggregates and `poison`, and Phase 1's
+     proofs rely on them (provenance makes frame slots unobservable; `poison` makes `dse`,
+     `dead auto elim`, rule side conditions sound). Every op needs a wrapper that concretises
+     its arguments and abstracts its results; `poison` cannot be represented (an op with a
+     poison input must be declared poison, which is wrong for `CSEL` whose unselected input is
+     poison).
+  2. **Memory ops cannot use the Arm memory** before Phase 3: loads, stores, `DUFFZERO`,
+     `LoweredZero`/`LoweredMove`, atomics, calls, nil checks would still need a definition on
+     the Phase 1 memory model. That is about a third of the ops that matter.
+  3. **Proof cost.** A rule lemma would unfold LNSym-style decode/execute (`decode_raw_inst`,
+     nested matches over encoding fields) under `sym_n`: every rule lemma would pay for a
+     fetch/decode/execute unfolding per instruction instead of one `BitVec` goal, and there are
+     1,302 rules.
+  4. **Coverage.** clifv's model lacks the LSE atomics Go emits for the `Variant` atomics
+     (`LDADDAL`, `LDCLRAL`, `LDORAL`, `SWPAL`, `CASAL`; no file under `FV/Arm` implements them)
+     and treats `PRFM` as `Unimplemented`. The forms it has (`LDAXR`/`STLXR`, `CNT`/`UADDLV`
+     for popcount, `LDP`/`STP` of q registers, `DMB`, the scalar ALU and FP classes) were
+     co-simulated on Cranelift's encodings; Go's assembler (`cmd/internal/obj/arm64`) produces
+     the words here, so co-simulation must be redone on Go's encodings anyway.
+
+### (c) Mixed
+
+Direct definitions as in (a) — the proof-facing semantics, in Phase 1's domain — **validated
+against** clifv's model:
+
+1. Every ARM64 op is defined directly (a), built from the same ASL helper functions the Arm
+   model uses (`AddWithCarry`, `DecodeBitMasks`, the bitfield move, `ConditionHolds` on
+   `Flags`; floats on `GoFV.IEEE`, which Phase 1 already ported from clifv's `FV/Float`).
+2. For each op whose `ssaGenValue` case emits one instruction on registers (integer ALU,
+   shifts, bitfields, extends, multiplies/divides, compares, conditional selects/compares,
+   float arithmetic, compare and conversion: about 250 ops), an **agreement theorem**
+   `evalArm64 op args = result of Arm.exec (the instruction) on the canonical state`, for all
+   inputs, by `bv_decide` after one symbolic step. This removes those definitions from the
+   trusted base, and is exactly the per-op lemma Phase 3 (`genssa`) needs.
+3. A **co-simulation** harness (clifv's `arm-cosim` design) runs the same instructions, as
+   words produced by Go's assembler, under `qemu-aarch64-static`, so the model itself is
+   checked on Go's encodings, including the forms (b.4) lists, which are added to the vendored
+   model in clifv's style (ASL-transcribed, co-simulated).
+4. Pseudo and multi-instruction ops — memory ops, calls (`CALLstatic`, `CALLclosure`,
+   `CALLinter`, `CALLtail*`), `LoweredNilCheck`, `DUFFZERO`/`DUFFCOPY`,
+   `LoweredZero`/`LoweredMove`, atomics, `LoweredGetClosurePtr`/`GetCallerSP`/`GetCallerPC`,
+   `GetG` (left generic on arm64, `lower.go:39-43`), `MOVDaddr` of a symbol, `LoweredPanicBounds*`, `LoweredMemEq`,
+   `LoweredRound*F`, write barrier calls — are defined on the Phase 1 memory model as the
+   generic op they come from (often literally `evalPure`/`evalValue` of that op), their
+   instruction sequences proven in Phase 3.
+5. The native semantic difftest (`scripts/sem-difftest.sh`) is extended to the lowered sections
+   (after every pass from `lower` to `trim`, under `run`, `runSched`, `runLoc` as appropriate):
+   the same inputs must give the same outcome on every section and natively.
+
+### Recommendation: (c)
+
+It keeps one `run` for generic and unscheduled lowered SSA (all of Phase 1 carries over), keeps
+the rule lemmas at `BitVec` cost, and still discharges the trust in ~250 op definitions against
+an ASL-derived, co-simulated model — with lemmas Phase 3 reuses. (b)'s advantages arrive
+through (c.2) without its domain and cost problems.
+
+**Reusing clifv's `FV/Arm`.** It is LNSym-derived, Apache-2.0 (copyright Amazon.com; clifv's
+own additions are released under Apache-2.0 too, `third_party/NOTICE-lnsym.md` in clifv), 70
+modules, 14.8k lines, Lean core + `Std` only, pinned to the same `v4.34.1`. It imports
+`FV.Float`, of which GoFV already has a port (`GoFV.IEEE`, `GoFV/SSA/Sem/Float/*`). Two ways:
+
+- **Vendor** the needed subset into `GoFV/Arm` (as clifv vendored LNSym): keep every
+  copyright header, add a "Modified by fv-compiler-go" line to changed files, add
+  `third_party/NOTICE-lnsym.md` and a clifv notice, and point its float instructions at
+  `GoFV.IEEE`. **Recommended.**
+- `require` clifv in `lakefile.toml` at a pinned commit and import `FV.Arm` only: no copy, but
+  two IEEE cores (`FV.Float` and `GoFV.IEEE`) would need a bridge, and clifv's main moves
+  daily.
+
+fv-compiler-go has no `LICENSE` file; vendoring Apache-2.0 code into it is permitted with the
+notices above, but the repository owner should pick the project licence before the copy lands
+(H6 issue).
+
+## 5. Block kinds
+
+The 25 ARM64 block kinds (AO 795-839) branch on a control value:
+
+| Kinds | Control | Taken (`Succs[0]`) when |
+| --- | --- | --- |
+| `EQ NE LT LE GT GE ULT ULE UGT UGE` | flags | `ConditionHolds` of the condition |
+| `LTnoov LEnoov GTnoov GEnoov` | flags | the condition ignoring V (`N`, `N∨Z`, …; AO comments) |
+| `FLT FLE FGT FGE` | flags (float compare) | the ordered float condition (`MI`, `LS`, `GT`, `GE`) |
+| `Z NZ` / `ZW NZW` | 64-/32-bit integer | control = 0 / ≠ 0 |
+| `TBZ TBNZ` [bit] | integer | bit `AuxInt` clear / set |
+| `JUMPTABLE` {sym} | index, table address | as generic `JumpTable` (index < n) |
+
+A flags control that is `poison` is `stuck`, as Phase 1's `If`. Generic `Plain`, `Ret`,
+`RetJmp`, `Exit`, `First`, `Defer` keep their Phase 1 meaning.
+
+## 6. `runSched`: scheduled SSA (L1)
+
+Phase 1's `run` computes its own evaluation order of a block (`GoFV/SSA/Sem/Run.lean:13-16`,
+`kahn`: ready pure values first, then a ready `NilCheck`, then other roots by ID), so it ignores
+`b.Values` order. That is what makes `schedule` (which only permutes `b.Values`) invisible, and
+it is right for L0. From `schedule` on two things change:
+
+- **Faulting memory ops.** `late nilcheck` (`nilcheckelim2`) deletes a `LoweredNilCheck` of `p`
+  when a later value in the same block faults on a nil `p` (`faultOnNilArg0/1`, offset within
+  `minZeroPage`) before any value with side effects. Under `run`, a load from `nil + off` is
+  `poison` (Phase 1 §3.4), so the deletion would turn a panic into a continuation: not a
+  refinement. `runSched` gives every op with `faultOnNilArg0/1` the machine behaviour: an access
+  through a pointer in `Blk.nil` with offset in `[0, minZeroPage)` is `panicked nilDeref`.
+- **Order is the schedule.** `runSched` evaluates the non-phi values in `b.Values` order (no
+  `kahn`), with one current memory (a memory-typed value updates it; a memory argument must be
+  the current memory or a load's memory still current at that point, else `stuck`).
+
+Theorem for the `schedule` pass: if `b.Values` of `f'` is a topological order of `f`'s block
+values, memory-linear, and `f'` is otherwise `f` (validated by a checker, as Phase 1 does for
+`dominators`), then `Refines (runSched f') (run f)`. The pass also rewires every use of a
+`LoweredNilCheck`'s result (and of `SPanchored`) to the checked pointer and turns the check
+`Void` (`schedule.go:327-373`); under `run` a check that does not panic returns its pointer, so
+this is the identity on non-panicking runs. A subtlety to settle first: two ready roots
+not ordered by their arguments (e.g. a `LoweredNilCheck` and a `LoweredPanicBounds*` on the
+same memory) are run nil check first by `run`'s rank but may be ordered the other way by Go's
+`schedule` score; the outcomes differ (`nilDeref` vs `bounds`). Phase 1 hit the same question
+(#96, canonical rank tie-break for NilCheck/roots); the fix is either a `run` rank that matches
+`schedule`'s scores or a semantics that admits either panic (nondeterministic choice among ready
+panicking roots, with `Refines` allowing any). Decide this at the start of H6.
+
+## 7. `runLoc`: allocated SSA (L2)
+
+State: a register file `Reg → Val` indexed by Go's register numbers (`Config.registers`; their
+`objNum` maps to Arm `GPR i`/`SFP i` in Phase 3), the flags register (`Flags`), stack slots
+`LocalSlot → Val` (a write kills overlapping slots of the same `N`: `Off`/size ranges, splits
+via `SplitOf`/`SplitOffset`), the current memory (`Mem`, as `runSched`), and the
+activation's frame. `runLoc` never consults SSA value IDs for data — only homes:
+
+- a value reads each argument from `Home(arg)` and writes its result to `Home(v)` (`LocPair`/
+  `LocResults` for tuples; `f.tempRegs[v]` is clobbered);
+- `Copy` moves between homes; `StoreReg` writes a slot, `LoadReg` reads one; a rematerialised
+  value is recomputed;
+- a `Phi` does nothing (Go's regalloc gives a phi and all its arguments one home, edge copies
+  placed at the end of predecessors, `CheckLoweredPhi` in `ssagen`);
+- flags producers write the flags register, flags consumers (`CSEL`, conditional branches,
+  `ADC`/`SBC`) read it, ops with `clobberFlags` destroy it (`poison`);
+- `ArgIntReg`/`ArgFloatReg` read the ABI's entry registers; `Arg` reads its parameter's incoming
+  stack slot (`stackalloc.go:196`, `LocalSlot{N: param, Off: AuxInt}`), which is the parameter's
+  Phase 1 frame allocation;
+- a call reads its register arguments per `AuxCall.Reg` (fixed registers), stores nothing new,
+  and afterwards every allocatable register except the result registers holds `poison` (Go's
+  ABIInternal has no callee-saved registers besides `g`, `SP`, `ZR`); results arrive in their
+  fixed registers; `MakeResult` reads the ABI result registers.
+
+**Refinement L1 → L2 (regalloc), recommended design: a certified checker**, in the style of
+clifv's `checkAlloc` (`FV/Backend/RegallocCheck.lean`, `checkAlloc_sound`,
+`docs/contracts/regalloc{,-proof}.md`), adapted to Go's in-place form:
+
+1. *Origins.* Every value of the allocated `g` gets an origin in the pre-regalloc `f`: a value
+   kept by regalloc is its own origin (same ID, op, aux, auxint; its args' origins are the
+   original args); `Copy`/`LoadReg`/`StoreReg` take the origin of their argument; a
+   rematerialised clone of a rematerializeable value (`v.rematerializeable()`: the op flag and
+   every argument `fixedReg`, `regalloc.go:2923-2935`; constants, `MOVDaddr` of `SP`/`SB`) takes
+   the origin of the original (same op/aux/auxint/args); so does a flag generator `flagalloc`
+   recomputed (`copyFlags`, `flagalloc.go:258`), recursively through its tuple/flags arguments.
+   `Arg` values are pre-spilled: their home is the parameter's incoming slot.
+2. *Abstract state.* For each location (register, flags, slot) the set of origins it surely
+   holds. Transfer per value: kill the destination, `tempRegs` and clobbers, then add `origin(v)`
+   at `Home(v)`; at a call, kill everything except the results. Meet: intersection. The fixpoint
+   is computed untrusted; the checker only verifies the in-state certificate per block (clifv's
+   `CheckCtx.verify`), so the proof needs no fixpoint theory.
+3. *Checks.* Each argument's origin is in its home's set at the use (phi arguments at the end of
+   the predecessor); fixed-register constraints (ABI call args/results, `resultInArg0`,
+   op `regInfo` input/output masks) hold; every memory argument is the current memory; slots
+   are frame slots no `LocalAddr`/`Addr` of `g` refers to (spills are unobservable through
+   memory); `f.RegAlloc` covers every value that needs a home.
+4. *Theorem.* `checkRegalloc f g = true → Refines (runLoc g) (runSched f)`, by a simulation
+   whose relation is "every location's set member equals that origin's value in the source
+   run" (clifv's `Match`), with `runSched f` driving.
+
+Go's own validation is weaker and is not a substitute: `checkFunc` skips dominance after
+regalloc, and `ssagen` only checks phi homes. A *direct* simulation proof of Go's 3,623-line
+allocator is not attempted: it is heuristic-heavy (eviction by next use, spill placement, edge
+shuffles), and the checker makes its heuristics irrelevant to correctness — parity (H5) still
+requires porting them exactly, but the port is untrusted.
+
+**flagalloc under this plan.** `flagalloc` (L1 → L1) only appends pure recomputations of flag
+generators and redirects flag arguments and controls to them; under `runSched`, where flags are
+ordinary SSA values, that is a refinement by a short argument (equal pure recomputation). Its
+real content — at most one flags value live, so one physical flags register suffices, including
+the unlinked recomputations at block ends that have no SSA uses (`flagalloc.go:179-191`) — is
+checked by the regalloc checker, which tracks the flags register as a location.
+
+`loop rotate` (block order only) and `trim` (removal of Plain blocks into their successor,
+including non-empty blocks whose successor has one predecessor, with phi-argument splicing) are
+proven over `runLoc` directly; block order is not semantic until Phase 3 (fallthrough).
+
+## 8. Environment changes for lowered code
+
+- **Calls.** `CALLstatic {AuxCall}` etc. keep Phase 1's post-`expand calls` meaning (Go-typed
+  arguments decoded from register pieces and the outgoing area via `abiparam`), so the Phase 1
+  `Contract`s are reused unchanged. In `runLoc` the register pieces come from the ABI registers.
+- **`g` and `GetG`.** `GetG` stays generic on arm64 (`hasGReg`, `lower.go:39-43`) and reads x28;
+  callees and contracts preserve it
+  (`VPre₂`).
+- **Nil page.** `VPre₂` assumes no allocation lies in `[0, minZeroPage)`, so faulting accesses
+  there are exactly the nil dereferences.
+- **Atomics.** Lowered atomics (`LoweredAtomic*`, `*Variant`) keep Phase 1 §9.5's
+  single-threaded meaning (as clifv's trusted single-core assumption, `docs/decisions/arm-model.md`).
+
+## 9. Modules (proposed)
+
+| Module | Content |
+| --- | --- |
+| `GoFV/SSA/Sem/Flags.lean` | `Flags`, `ConditionHolds`, `AddWithCarry`, `Ty.flags` encoding |
+| `GoFV/SSA/Sem/Arm64/{Int,Shift,Bitfield,Mul,Cond,Float,Conv}.lean` | `evalArm64` per family, on `liftW` |
+| `GoFV/SSA/Sem/Arm64/Mem.lean` | lowered loads/stores/pairs/zero/move on the Phase 1 memory, faulting variants |
+| `GoFV/SSA/Sem/Arm64/Pseudo.lean` | calls, nil check, `GetG`, atomics, `MOVDaddr` of symbols, panics |
+| `GoFV/SSA/Sem/RunSched.lean`, `RunLoc.lean` | §6, §7 |
+| `GoFV/Arm/**` | vendored clifv `FV/Arm` subset (Apache-2.0, notices) |
+| `GoFV/Proof/Arm64Agree/*.lean` | §4 (c.2) agreement theorems, one module per family |
+| `GoFV/Proof/Regalloc/*.lean` | the checker, `Match`, `checkRegalloc_sound` |
+
+## 10. Phasing (H6)
+
+1. `Flags`, block kinds, `evalArm64` for the integer families; difftest on `lower` sections.
+2. Memory and pseudo ops; difftest on all L0 sections.
+3. `runSched`, faulting ops, the schedule tie-break decision (§6); difftest on L1 sections.
+4. `runLoc`; difftest on L2 sections (requires the H1 export of homes).
+5. Vendored `GoFV/Arm`, Go-encoding co-simulation, agreement theorems (c.2–3).
+
+## 11. Open questions and risks
+
+- Ready-root order (§6, #96) at `schedule`.
+- Concrete addresses for lowered pointer compares and arithmetic (#156).
+- Float ops whose lowering is not one instruction (`LoweredRound32F/64F`, `FMOVDgpfp` moves,
+  `FMADD` fusion under `useFMA`): the fusion rules change rounding (Go permits FMA fusion;
+  Phase 1's `evalPure` has unfused `Mul`/`Add`), so the fused rules are refinements only under a
+  semantics that allows fusion; decide like the NaN-sign question of #176.
+- Popcount and other SIMD-register sequences (`VCNT`, `VUADDLV`) in the vendored model.
+- Build cost of `GoFV/Arm` (70 modules, 14.8k lines in clifv): keep it out of the pass proofs'
+  imports by depending on it only from `Arm64Agree`; measure it into `perf/` when it lands.
