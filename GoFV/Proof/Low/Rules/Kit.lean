@@ -1,5 +1,6 @@
 import GoFV.Proof.Low.RuleL
 import GoFV.Proof.Rules.Tactic
+import GoFV.Proof.Low.Rules.Attr
 
 /-!
 # Lemma kit for the lowering rule lemmas (issue #385)
@@ -259,6 +260,239 @@ macro "arm_top" : tactic => `(tactic| (
   cases ty with
   | int w' => cases w' <;> first | rfl | exact absurd h Bool.false_ne_true
   | _ => exact absurd h Bool.false_ne_true))
+
+/-! ## Arm64 families (`arm_sem`) -/
+
+attribute [arm_sem] Arm64.imm Arm64.addK Arm64.res32 Arm64.reg32 Option.map_some
+  BitVec.setWidth_eq
+
+/-- `opValL` of `Addr`: the global the symbol names. -/
+@[arm_sem] theorem opValL_addr (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
+    (args : List Val) : opValL tabs .Addr ty ai ax args = addrVal tabs ax := by
+  simp only [opValL, show Op.generic .Addr = true from rfl, ite_true, opVal_addr]
+
+/-- `opValL` of `MOVDaddr`: `movAddr`. -/
+@[arm_sem] theorem opValL_movDaddr (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
+    (args : List Val) : opValL tabs .ARM64MOVDaddr ty ai ax args = movAddr tabs ai ax args := by
+  simp only [opValL, show Op.generic .ARM64MOVDaddr = false from rfl, Bool.false_eq_true,
+    ite_false, beq_self_eq_true, ite_true]
+
+/-- `Addr {sym}` as `MOVDaddr {sym} base`: the same global. -/
+theorem refines_addr_movAddr (T : Ty) (tabs : Tables) (ax : Option AuxRef) (base : Val) :
+    Refines ((addrVal tabs ax).retypeL T) ((movAddr tabs 0 ax [base]).retypeL T) := by
+  cases ax with
+  | none => simp only [addrVal, Option.bind_none, retypeL_poison]; exact .poison _
+  | some n =>
+    simp only [addrVal, Option.bind_some, movAddr, movPtr]
+    rcases hx : tabs.aux? n with _ | ⟨fmt, k⟩
+    · rw [retypeL_poison]; exact .poison _
+    · cases k with
+      | sym name =>
+        have : PtrOps.ptrRes ⟨.global name.toStringLossy, BitVec.ofInt 64 (0 : Int64).toInt⟩ =
+            .ptr ⟨.global name.toStringLossy, 0⟩ := rfl
+        simp only [Option.elim, this]
+        exact Refines.refl _
+      | _ => rw [retypeL_poison]; exact .poison _
+
+/-- The low `n` bits of a 64-bit immediate. -/
+@[arm_sem] theorem setWidth_ofInt_le {n m : Nat} (h : n ≤ m) (x : Int) :
+    (BitVec.ofInt m x).setWidth n = BitVec.ofInt n x := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_setWidth, BitVec.toNat_ofInt]
+  have h2 : ((2 ^ n : Nat) : Int) ∣ ((2 ^ m : Nat) : Int) :=
+    Int.natCast_dvd_natCast.mpr (Nat.pow_dvd_pow 2 h)
+  have hm : (0 : Int) < ((2 ^ m : Nat) : Int) := by
+    have := Nat.two_pow_pos m; omega
+  have hn : (0 : Int) < ((2 ^ n : Nat) : Int) := by
+    have := Nat.two_pow_pos n; omega
+  have hy := Int.emod_nonneg x (Int.ne_of_gt hm)
+  have hy' := Int.emod_nonneg x (Int.ne_of_gt hn)
+  have key : (((x % ((2 ^ m : Nat) : Int)).toNat % 2 ^ n : Nat) : Int) =
+      (((x % ((2 ^ n : Nat) : Int)).toNat : Nat) : Int) := by
+    rw [Int.natCast_emod, Int.toNat_of_nonneg hy, Int.toNat_of_nonneg hy']
+    exact Int.emod_emod_of_dvd x h2
+  exact_mod_cast key
+
+/-- A narrow constant: the register holding its low bits at its own shape. -/
+theorem refines_top_int (w : Width) (x : BitVec w.bits) (r : BitVec 64)
+    (h : r.setWidth w.bits = x) :
+    Refines ((Val.int w x).retypeL (.int w)) ((Arm64.res (.int w) r).retypeL (.int w)) := by
+  rw [retypeL_int_self, retypeL_res_int, h]; exact Refines.refl _
+
+/-- `OffPtr [k] v` as `ADDconst [k] v` at a pointer shape. -/
+theorem refines_offPtr (el : Option Nat) (k : Int64) (v : Val) :
+    Refines ((PtrOps.offPtr k [v]).retypeL (.ptr el))
+      ((Arm64.addK (.ptr el) (BitVec.ofInt 64 k.toInt) [v]).retypeL (.ptr el)) := by
+  cases v with
+  | ptr q => exact Refines.refl _
+  | int w x =>
+    cases w with
+    | w64 =>
+      simp only [PtrOps.offPtr, PtrOps.wordRes, Arm64.addK, Arm64.addP, Arm64.reg, Arm64.res,
+        BitVec.setWidth_eq]
+      split
+      · exact Refines.refl _
+      · rw [retypeL_poison]; exact .poison _
+    | _ => rw [show PtrOps.offPtr k [.int _ x] = .poison from rfl, retypeL_poison]; exact .poison _
+  | _ => rw [show PtrOps.offPtr k [_] = .poison from rfl, retypeL_poison]; exact .poison _
+
+/-- `ADDconst [0] v` at `v`'s own shape is `v` (or `poison`). -/
+theorem refines_addP_zero (T : Ty) (v : Val) (h : v.hasTy T = true) :
+    Refines ((Arm64.addP T v 0).retypeL T) v := by
+  have hz : ∀ y : BitVec 64, y + 0 = y := fun y => by simp
+  cases v with
+  | poison =>
+    rw [show Arm64.addP T .poison 0 = .poison from rfl, retypeL_poison]; exact .poison _
+  | ptr q =>
+    have hc : q.convertible = false := by
+      cases T <;> (try (rename_i w; cases w)) <;> simp_all [Val.hasTy]
+    have hw : q.word = .ptr q := by simp [Ptr.word, hc]
+    have hq : ({ blk := q.blk, off := q.off } : Ptr) = q := rfl
+    simp only [Arm64.addP, PtrOps.ptrRes, Ptr.add, hz, hq]
+    split
+    · rw [hw]
+      cases T with
+      | ptr el => show Refines q.word _; rw [hw]; exact Refines.refl _
+      | int w =>
+        cases w <;> simp [Val.hasTy] at h
+        show Refines q.word _; rw [hw]; exact Refines.refl _
+      | _ => simp [Val.hasTy] at h
+    · rw [retypeL_poison]; exact .poison _
+  | int w x =>
+    cases T with
+    | int w' =>
+      have : w = w' := by simpa [Val.hasTy] using h
+      subst this
+      simp only [Arm64.addP, Arm64.reg, hz]
+      rw [retypeL_res_int, BitVec.setWidth_setWidth_of_le _ (by cases w <;> decide),
+        BitVec.setWidth_eq]
+      exact Refines.refl _
+    | ptr el =>
+      cases w <;> simp [Val.hasTy] at h
+      simp only [Arm64.addP, Arm64.reg, Arm64.res, hz, BitVec.setWidth_eq]
+      exact Refines.refl _
+    | _ => simp [Val.hasTy] at h
+  | bool b =>
+    cases T <;> simp [Val.hasTy] at h
+    cases b <;> exact Refines.refl _
+  | _ => rw [show Arm64.addP T _ 0 = .poison from rfl, retypeL_poison]; exact .poison _
+
+/-! ## Block controls -/
+
+/-- Bit 0 of a register result read back at its shape: bit 0 of the register. -/
+theorem reg_res_retypeL (T : Ty) (r x : BitVec 64)
+    (h : Arm64.reg ((Arm64.res T r).retypeL T) = some x) : x.getLsbD 0 = r.getLsbD 0 := by
+  cases T with
+  | int w =>
+    rw [retypeL_res_int] at h
+    simp only [Arm64.reg, Option.some.injEq] at h
+    subst h
+    cases w <;> simp
+  | bool =>
+    have e : (Arm64.res .bool r).retypeL .bool = .bool (r.getLsbD 0) := rfl
+    rw [e] at h
+    simp only [Arm64.reg, Option.some.injEq] at h
+    subst h
+    cases r.getLsbD 0 <;> simp
+  | ptr el =>
+    have e : (Arm64.res (.ptr el) r).retypeL (.ptr el) = .int .w64 r := rfl
+    rw [e] at h
+    simp only [Arm64.reg, Option.some.injEq, BitVec.setWidth_eq] at h
+    subst h; rfl
+  | _ => exact absurd h (by simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Arm64.reg])
+
+/-- `TBNZ [0]` on a `CSET` (`Equal`, `NotEqual`, …) of flags `f`: the condition on `f`. -/
+theorem tbnz_cset {T : Ty} {op : Op} {f : Val} {ai : Int64} {b : Bool} (hai : ai.toInt = 0)
+    (h : brVal .ARM64TBNZ ai ((Arm64.cset T op [f]).retypeL T) = some b) :
+    (Cond.ofOp op).bind (·.onVal f) = some b := by
+  have e : ∀ v, brVal .ARM64TBNZ ai v = (Arm64.reg v).map (fun x => x.getLsbD ai.toInt.toNat) :=
+    fun _ => rfl
+  rw [e, hai] at h
+  rcases hcond : (Cond.ofOp op).bind (·.onVal f) with _ | c
+  · have : Arm64.cset T op [f] = .poison := by simp only [Arm64.cset, hcond]
+    rw [this, retypeL_poison] at h
+    simp [Arm64.reg] at h
+  · have : Arm64.cset T op [f] = Arm64.res T (if c then 1 else 0) := by
+      simp only [Arm64.cset, hcond]
+    rw [this] at h
+    rcases ho : Arm64.reg ((Arm64.res T (if c = true then 1 else 0)).retypeL T) with _ | x <;>
+      rw [ho] at h
+    · simp at h
+    · have := reg_res_retypeL T _ x ho
+      simp only [Option.map_some, Option.some.injEq] at h
+      subst h
+      simp only [Int.toNat_zero, this]; cases c <;> rfl
+
+/-- `If` on a `CSET` of flags `f`: the condition on `f`. -/
+theorem if_cset {T : Ty} {op : Op} {f : Val} {ai : Int64} {b : Bool}
+    (h : brVal .If ai ((Arm64.cset T op [f]).retypeL T) = some b) :
+    (Cond.ofOp op).bind (·.onVal f) = some b := by
+  have e : ∀ v, brVal .If ai v = (match v with | .bool b => some b | _ => none) := fun _ => rfl
+  rw [e] at h
+  rcases hcond : (Cond.ofOp op).bind (·.onVal f) with _ | c
+  · have : Arm64.cset T op [f] = .poison := by simp only [Arm64.cset, hcond]
+    rw [this, retypeL_poison] at h
+    simp at h
+  · have : Arm64.cset T op [f] = Arm64.res T (if c then 1 else 0) := by
+      simp only [Arm64.cset, hcond]
+    rw [this] at h
+    cases T with
+    | bool =>
+      have e : (Arm64.res .bool (if c = true then 1 else 0)).retypeL .bool = .bool c := by
+        cases c <;> rfl
+      rw [e] at h; simpa using h
+    | int w => rw [retypeL_res_int] at h; simp at h
+    | _ => exact absurd h (by simp [Arm64.res, Val.retypeL, Val.widen, Val.retype])
+
+/-- `If` on a boolean as `TBNZ [0]`. -/
+theorem tbnz_of_if {v : Val} {ai ai' : Int64} {b : Bool} (hai : ai'.toInt = 0)
+    (h : brVal .If ai v = some b) : brVal .ARM64TBNZ ai' v = some b := by
+  have e : ∀ v, brVal .If ai v = (match v with | .bool b => some b | _ => none) := fun _ => rfl
+  have e' : ∀ v, brVal .ARM64TBNZ ai' v =
+      (Arm64.reg v).map (fun x => x.getLsbD ai'.toInt.toNat) := fun _ => rfl
+  rw [e] at h
+  rw [e', hai]
+  cases v with
+  | bool c =>
+    simp only [Option.some.injEq] at h; subst h
+    cases c <;> rfl
+  | _ => simp at h
+
+/-- `NZ` on a `CSET` of flags `f`: the condition on `f`. -/
+theorem nz_cset {T : Ty} {op : Op} {f : Val} {ai : Int64} {b : Bool}
+    (h : brVal .ARM64NZ ai ((Arm64.cset T op [f]).retypeL T) = some b) :
+    (Cond.ofOp op).bind (·.onVal f) = some b := by
+  have e : ∀ v, brVal .ARM64NZ ai v = (Arm64.isZero v).map (!·) := fun _ => rfl
+  rw [e] at h
+  rcases hcond : (Cond.ofOp op).bind (·.onVal f) with _ | c
+  · have : Arm64.cset T op [f] = .poison := by simp only [Arm64.cset, hcond]
+    rw [this, retypeL_poison] at h
+    simp [Arm64.isZero, Arm64.reg] at h
+  · have : Arm64.cset T op [f] = Arm64.res T (if c then 1 else 0) := by
+      simp only [Arm64.cset, hcond]
+    rw [this] at h
+    cases T with
+    | bool =>
+      have e : (Arm64.res .bool (if c = true then 1 else 0)).retypeL .bool = .bool c := by
+        cases c <;> rfl
+      rw [e] at h; cases c <;> simpa [Arm64.isZero, Arm64.reg] using h
+    | int w =>
+      rw [retypeL_res_int] at h
+      cases w <;> cases c <;>
+        simpa (config := { decide := true }) [Arm64.isZero, Arm64.reg, Width.bits] using h
+    | ptr el =>
+      have e : (Arm64.res (.ptr el) (if c = true then 1 else 0)).retypeL (.ptr el) =
+          .int .w64 (if c = true then 1 else 0) := rfl
+      rw [e] at h; cases c <;>
+        simpa (config := { decide := true }) [Arm64.isZero, Arm64.reg, Width.bits] using h
+    | _ => exact absurd h (by simp [Arm64.res, Val.retypeL, Val.widen, Val.retype,
+        Arm64.isZero, Arm64.reg])
+
+/-- The arm64 flags kinds as their condition on the control. -/
+theorem brVal_cond {k : BlockKind} {op : Op} {f : Val} {b : Bool} (ai : Int64)
+    (hk : ∀ ai v, brVal k ai v = (Cond.ofOp op).bind (·.onVal v))
+    (h : (Cond.ofOp op).bind (·.onVal f) = some b) : brVal k ai f = some (b != false) := by
+  rw [hk, h, Bool.bne_false]
 
 /-! ## Term facts and the shapes of `ArmRule.Checked` -/
 
