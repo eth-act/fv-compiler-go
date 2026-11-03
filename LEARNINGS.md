@@ -118,6 +118,10 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (`../gofv-lake-cache/outputs/gofv/<depHash>.json`; `depHash` is in the module's `.trace`) made
   the next build store the clean one. The artifact files themselves are left alone, because
   worktrees hard-link them.
+  Later `constructorNameAsVariable` (a local `h` named like a constructor `LdOp.h`) leaked a
+  path into `GoFV.Proof.Low.SimMem` the same way; it and `defProp` are now in `weakLeanArgs`
+  as well (clifv's list). To check which linters warn anywhere:
+  `grep -o "set_option linter\.[A-Za-z.]* false" perf/raw/*/*.log | sort | uniq -c`.
 
 #### `exact lemma args` can spend seconds in a failed unification; `have h := lemma args; exact h`
 - **Problem:** `ecc_storeObl` (`GoFV.Proof.Pass.ECCall`) closed a goal stated over
