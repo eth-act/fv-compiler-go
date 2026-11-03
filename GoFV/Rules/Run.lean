@@ -78,8 +78,7 @@ def ofPassEnv (e : PassEnv) : Except String RwEnv := do
     frontend := e.frontend
     ptrCache := e.ptrCache
     flagDynlink := ← optFlag e "flagdynlink"
-    fmaHash := ← optFlag e "fmahash"
-    fnSym := e.pkg ++ GoStr.ofString "." ++ e.funcName }
+    fmaHash := ← optFlag e "fmahash" }
 
 end RwEnv
 

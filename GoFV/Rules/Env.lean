@@ -51,8 +51,6 @@ structure RwEnv where
   flagDynlink : Option Bool := none
   /-- `base.FmaHash != nil` (`config fmahash`, format 5; `none` if the export lacks it). -/
   fmaHash : Option Bool := none
-  /-- `fe.Func().LSym.Name`: `<pkg>.<function name>`. -/
-  fnSym : GoStr := GoStr.ofString ""
   deriving Inhabited
 
 /-- One step of a rewrite pass, as the rewrite validator replays it (`GoFV.Opt.RewriteCheck`,

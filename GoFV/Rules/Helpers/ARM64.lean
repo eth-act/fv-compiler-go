@@ -276,10 +276,21 @@ def canonLessThan (f : Func) (x y : ID) : Bool :=
 
 /-! ## Objects -/
 
+/-- `fe.Func().LSym.Name`: the callee symbol of `f.OwnAux` (`ssagen` builds it as
+`OwnAuxCall(fn.LSym, …)`). -/
+def fnSymName : RwM GoStr := do
+  let tabs ← tables
+  let some own := (← getF).ownAux | throw "makeJumpTableSym: function has no OwnAux"
+  let .call (some fn) _ := (← liftE (Sym.auxDef tabs own)).kind
+    | throw s!"makeJumpTableSym: OwnAux a{own} is not a call with a callee"
+  let .sym name .. := (← liftE (Sym.auxDef tabs fn)).kind
+    | throw s!"makeJumpTableSym: callee a{fn} is not a symbol"
+  return name
+
 /-- `makeJumpTableSym(b)`: `base.Ctxt.Lookup("<fn LSym>.jump<b.ID>")`, a symbol whose contents
 the export does not carry. -/
 def makeJumpTableSym (b : ID) : RwM AuxRef := do
-  let name := (← read).fnSym ++ GoStr.ofString s!".jump{b}"
+  let name := (← fnSymName) ++ GoStr.ofString s!".jump{b}"
   symAux name (some 0) (plainSym name)
 
 /-- The aux of a `PanicBoundsC`/`PanicBoundsCC` value: Go keeps the struct itself in `Aux`, and
