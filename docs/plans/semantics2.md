@@ -307,7 +307,18 @@ it is right for L0. From `schedule` on two things change:
   `minZeroPage`) before any value with side effects. Under `run`, a load from `nil + off` is
   `poison` (Phase 1 §3.4), so the deletion would turn a panic into a continuation: not a
   refinement. `runSched` gives every op with `faultOnNilArg0/1` the machine behaviour: an access
-  through a pointer in `Blk.nil` with offset in `[0, minZeroPage)` is `panicked nilDeref`.
+  whose base is nil (`Ptr.isNil`) and whose address (base plus the op's offset) lies in
+  `[0, minZeroPage)` is `panicked nilDeref` (`nilFaults`). **Wild pointers (decision, #385):** a
+  pointer into `Blk.nil` other than nil itself (`Ptr.wild`: an integer address below the heap,
+  or nil moved by an offset) is undefined behaviour at a nil check: under `runSched` a
+  `LoweredNilCheck` of a wild pointer is `stuck` (`wildNil`), and an access through a wild base
+  does not fault. Why: the machine faults with a nil dereference only in the nil page, so a
+  check of `nil + X` may fault where the access at `nil + X + k` (`X + k ≥ minZeroPage`) that
+  `late nilcheck` puts in its place does not; Go's nil-check removal (and `schedule`'s moving a
+  check before an access at `p + k`) presumes no wild pointer (an invalid `unsafe.Pointer`).
+  With it a check panics exactly when an access at `p + k` (`k < minZeroPage`) faults: when `p`
+  is nil. `runL` (L0) keeps Phase 1's `NilCheck` (every `Blk.nil` pointer panics); `runLF`
+  (`GoFV.Proof.RefineSched`) differs from `runL` by these faults and stuck wild checks.
 - **Order is the schedule.** `runSched` evaluates the non-phi values in `b.Values` order (no
   `kahn`), with one current memory (a memory-typed value updates it; a memory argument must be
   the current memory or a load's memory still current at that point, else `stuck`).

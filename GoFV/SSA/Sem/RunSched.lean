@@ -14,10 +14,11 @@ From `schedule` on, `b.Values` is the execution order (`schedule`, `late nilchec
   invalid), or, before the block defines one, the one memory live into the block. A block whose
   order is not one is `stuck` on entry (its `sched` entry is `none`).
 * **Faulting memory ops** (`LMode.faulting`). Every op with `faultOnNilArg0`/`faultOnNilArg1`
-  whose address argument lies in the nil page (`Ptr.nilFault`, below `minZeroPage`) panics with
-  `nilDeref` (`nilFaults`, `Sem/RunL.lean`), as the machine does. `late nilcheck` deletes the
-  `LoweredNilCheck`s these faults make redundant; under `runL` the access would be an invalid
-  load (`poison`), not a panic.
+  whose address argument has base nil and lies in the nil page (`Ptr.nilFault`, below
+  `minZeroPage`) panics with `nilDeref` (`nilFaults`, `Sem/RunL.lean`), as the machine does; a
+  `LoweredNilCheck` of a wild pointer (`Ptr.wild`, into the nil block but not nil) is undefined
+  (`stuck`, `wildNil`). `late nilcheck` deletes the `LoweredNilCheck`s these faults make
+  redundant; under `runL` the access would be an invalid load (`poison`), not a panic.
 
 The ready-root order question of the `schedule` pass (#96) is about relating `runSched` of the
 pass's output to `run` of its input; `runSched` itself does not depend on it.

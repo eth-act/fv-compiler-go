@@ -159,26 +159,45 @@ def minZeroPage : Nat := 4096
 /-- An access at `p` faults: `p` points into the unmapped page at address 0. -/
 def Ptr.nilFault (p : Ptr) : Bool := p.blk == .nil && decide (p.off.toNat < minZeroPage)
 
+/-- A wild pointer: into the nil block (`Blk.nil`, no allocation) but not nil itself, i.e. an
+integer address below the heap or nil moved by an offset. -/
+def Ptr.wild (p : Ptr) : Bool := p.blk == .nil && !p.isNil
+
+/-- The accesses of an op that faults on a nil argument (`faultOnNilArg0`/`faultOnNilArg1`, the
+facts `late nilcheck` relies on; `LoweredNilCheck` is one, its access at the pointer): for each
+such argument, its base (`Arm64.addr a 0`) and its address (for a `SymOff` op with its offset and
+symbol, `symAddr`). `LoweredMemEq p q n` (`runtime.memequal`, `internal/bytealg/equal_arm64.s`)
+reads only if `n ≠ 0` and `p ≠ q`: none then. -/
+def nilAccesses (ctx : Ctx) (v : Value) (argv : List Val) : List (Ptr × Ptr) :=
+  let at0 : Option (Ptr × Ptr) := if !v.op.faultOnNilArg0 then none else
+    argv.head?.bind fun a => (Arm64.addr a 0).bind fun b =>
+      (if v.op.auxType == .SymOff then symAddr ctx v a else some b).map (b, ·)
+  let at1 : Option (Ptr × Ptr) := if !v.op.faultOnNilArg1 then none else
+    argv[1]?.bind fun a => (Arm64.addr a 0).map fun b => (b, b)
+  let reads : Bool := match v.op, argv with
+    | .ARM64LoweredMemEq, [_, _, n, _] => Arm64.reg n != some 0 && at0.map (·.2) != at1.map (·.2)
+    | _, _ => true
+  if reads then at0.toList ++ at1.toList else []
+
 /-- When memory ops fault (`faulting`, `runSched`), the memory of an op that faults on a nil
-argument (`faultOnNilArg0`/`faultOnNilArg1`, the facts `late nilcheck` relies on): its address
-argument (for a `SymOff` op with its offset and symbol, `symAddr`) is in the nil page.
-`LoweredMemEq p q n` (`runtime.memequal`, `internal/bytealg/equal_arm64.s`) reads only if
-`n ≠ 0` and `p ≠ q`. -/
+argument: an access whose base is nil and whose address is in the nil page (a nil
+dereference, `nilDeref`). An access through a wild base (`Ptr.wild`) does not fault: the
+machine faults with a nil dereference only in the nil page, which a wild base plus an offset
+may or may not reach. -/
 def nilFaults (faulting : Bool) (ctx : Ctx) (v : Value) (argv : List Val) : Option Mem :=
   if !faulting then none else
   match argv.getLast? with
   | some (.mem m) =>
-    let at0 : Option Ptr := if !v.op.faultOnNilArg0 then none else
-      argv.head?.bind fun a => if v.op.auxType == .SymOff then symAddr ctx v a else Arm64.addr a 0
-    let at1 : Option Ptr := if !v.op.faultOnNilArg1 then none else
-      argv[1]?.bind fun a => Arm64.addr a 0
-    let reads : Bool := match v.op, argv with
-      | .ARM64LoweredMemEq, [_, _, n, _] => Arm64.reg n != some 0 && at0 != at1
-      | _, _ => true
-    if reads && ((at0.map Ptr.nilFault).getD false || (at1.map Ptr.nilFault).getD false) then
-      some m
-    else none
+    if (nilAccesses ctx v argv).any (fun (b, p) => b.isNil && p.nilFault) then some m else none
   | _ => none
+
+/-- The pointer of a nil check (its base, `Arm64.addr p 0`) is wild (`Ptr.wild`). When memory
+ops fault such a check is undefined (`stuck`; Go: an invalid `unsafe.Pointer`): `late nilcheck`
+replaces a check of `p` by an access at `p + k` (`k < minZeroPage`) and `schedule` moves a check
+of `p` before an access at `p + k`, both sound only if the check panics exactly when the access
+faults, i.e. when `p` is nil (`nilFaults`). -/
+def wildNil (argv : List Val) : Bool :=
+  ((argv.head?.bind fun a => Arm64.addr a 0).map Ptr.wild).getD false
 
 /-- The operands of the generic atomic `g` a lowered atomic runs as, at the width of its location
 (`Val.retypeL`): the instruction uses the register's low bits, and lowering drops truncations
@@ -229,7 +248,8 @@ invariant of every rule that drops an extension, `ZeroUpper32Bits` and the boole
 
 The other memory ops (`LDAR*`, `LoweredZero`/`LoweredMove` and their loops) are
 `Arm64.evalPure`'s; they are here for `nilFaults`, which makes every op that faults on a nil
-argument a `nilDeref` panic when memory ops fault (`runSched`) and changes nothing otherwise. -/
+argument a `nilDeref` panic on a nil base in the nil page when memory ops fault (`runSched`)
+and changes nothing otherwise. A nil check of a wild pointer is then `stuck` (`wildNil`). -/
 def arm64Op (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val)
     (ty : Ty) : Res Val :=
   let what := s!"v{v.id}: {v.op.name}"
@@ -334,7 +354,9 @@ def arm64Op (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (
   | .ARM64CALLstatic => call .StaticCall 0
   | .ARM64CALLclosure => call .ClosureCall 2
   | .ARM64CALLinter => call .InterCall 1
-  | .ARM64LoweredNilCheck => memRoot ctx (gen .NilCheck) argv
+  | .ARM64LoweredNilCheck =>
+    if faulting && wildNil argv then .stuck s!"{what}: nil check of a wild pointer"
+    else memRoot ctx (gen .NilCheck) argv
   | .ARM64LoweredPanicBoundsRR => panicBounds v.auxInt argv
   | .ARM64LoweredPanicBoundsRC => match argv, pbc v.aux with
     | [x, m], some c => panicBounds v.auxInt [x, .i64 (BitVec.ofInt 64 c), m]
