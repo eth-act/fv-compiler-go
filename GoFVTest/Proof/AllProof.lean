@@ -676,6 +676,7 @@ import GoFV.Proof.Witness.LoopRotateLoc
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.LowerLoadStore
+import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine

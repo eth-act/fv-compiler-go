@@ -58,7 +58,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 159 proven value rules and 43 proven block rules. -/
+/-- `ARM64.rules` restricted to its 161 proven value rules and 43 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_1201]),
@@ -112,6 +112,7 @@ def lower : RuleSet where
     (.Less8, [Generated.ARM64.r_ARM64_254_2]),
     (.Less8U, [Generated.ARM64.r_ARM64_276]),
     (.Load, [Generated.ARM64.r_ARM64_313, Generated.ARM64.r_ARM64_314, Generated.ARM64.r_ARM64_315, Generated.ARM64.r_ARM64_316, Generated.ARM64.r_ARM64_317, Generated.ARM64.r_ARM64_318, Generated.ARM64.r_ARM64_319, Generated.ARM64.r_ARM64_320]),
+    (.LocalAddr, [Generated.ARM64.r_ARM64_309, Generated.ARM64.r_ARM64_310]),
     (.Lsh64x16, [Generated.ARM64.r_ARM64_152, Generated.ARM64.r_ARM64_171]),
     (.Lsh64x32, [Generated.ARM64.r_ARM64_152_2, Generated.ARM64.r_ARM64_170]),
     (.Lsh64x64, [Generated.ARM64.r_ARM64_152_3, Generated.ARM64.r_ARM64_169]),

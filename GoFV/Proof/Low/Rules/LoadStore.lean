@@ -3,7 +3,8 @@ import GoFV.Proof.Low.SimMem
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: integer loads and scalar stores (`ARM64.rules:313-320`, `326-331`)
+# Lowering rule lemmas: frame addresses, integer loads and scalar stores (`ARM64.rules:309-310`,
+`313-320`, `326-331`)
 
 `(Load <t> ptr mem) && … => (MOV{B,BU,H,HU,W,WU,D}load ptr mem)`: the integer loads are lowered
 terms (`termVL`, `opValL`'s `ldVal`), and at offset 0 without aux `ldVal` is `Sim.ldRes`, so the
@@ -15,6 +16,11 @@ fit is the validator's instance check `resFitsL` (the obligation's `hfit`). The 
 `(Store {t} ptr val mem) && t.Size() == n … => (MOV{B,H,W,D}store ptr val mem)` and
 `FMOV{S,D}store`: stores are atoms, the validator pairs each lowered store with the `Store` it
 lowers (`memLower`, `Sim.store_lower_eval`), so these rules are `ArmRule.Mem` (`checked_store`).
+
+`(LocalAddr {sym} base mem) => (MOVDaddr {sym} (SPanchored base mem))` and `(MOVDaddr {sym}
+base)`: frame addresses are atoms, the validator pairs each `MOVDaddr` with the `LocalAddr` it
+lowers (`addrLower`, `addr_lower_eval`: the frame variable's address, whatever the argument), so
+these rules are `ArmRule.Mem` (`checked_localAddr`).
 
 Not covered: the float loads (`FMOV{S,D}load`, 321-322) and `FMOVQload` (323) are atoms;
 `FMOVQstore` (332) stores a 16-byte shape `memLower` does not pair.
@@ -57,6 +63,12 @@ theorem refines_ld {o : Op} {n : Nat} {s : Bool} (hl : ldOp? o = some (n, s))
       ((opValL tabs o T 0 none args).retypeL T) := by
   rw [opValL_load, opValL_ld hg hm hl, ldVal_zero]
   exact Sim.ld_ref (fitsB_loadFits hfit) s args
+
+/-- `ARM64.rules:309`: `(LocalAddr <t> {sym} base mem) && t.Elem().HasPointers() => (MOVDaddr {sym} (SPanchored base mem))` -/
+theorem r_ARM64_309_sound : ArmRule.Checked r_ARM64_309 := checked_localAddr rfl
+
+/-- `ARM64.rules:310`: `(LocalAddr <t> {sym} base _) && !t.Elem().HasPointers() => (MOVDaddr {sym} base)` -/
+theorem r_ARM64_310_sound : ArmRule.Checked r_ARM64_310 := checked_localAddr rfl
 
 /-- `ARM64.rules:313`: `(Load <t> ptr mem) && t.IsBoolean() => (MOVBUload ptr mem)` -/
 theorem r_ARM64_313_sound : ArmRule.Checked r_ARM64_313 := by

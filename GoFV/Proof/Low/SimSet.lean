@@ -120,7 +120,7 @@ theorem gatomL {a : ID} {w : Value} (hp : Placed g a w) (ht : termVL tabs w = fa
   obtain ⟨fc, gc, hfc, hgc, hBA⟩ := H.ok.block w.block hbm'
   rw [hblk] at hgc; cases hgc
   obtain ⟨hxf, u, hu, hut, hs⟩ := hBA.sub a hx w hw ht
-  have hub : u.block = w.block := (atomPair_spec hs).2.2.2.1
+  have hub : u.block = w.block := (atomPair_spec hs).2.2.1
   exact ⟨u, ⟨hu, by rw [hub]; exact hbm', fc, by rw [hub]; exact hfc, hxf⟩, hut, hs⟩
 
 /-- An atom the target defines has the source's shape. -/
@@ -186,12 +186,13 @@ theorem termStepRefL_regs {b : ID} (hb : b ∈ g.blocks) {fb gb : Block} (hfb : 
     (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) (H.ctrls b hb fb gb hfb hgb).2 hx hy
 
 /-- **Corresponding atoms, given the frames' relation** (the only use of `AtomArgsRefL`): their
-arguments' registers refine where both frames hold them as terms over the atoms, and a non-`Phi`
-pair whose arguments the frames hold evaluates to refinements (`atomPair_eval`). -/
+arguments' registers refine where both frames hold them as terms over the atoms (unless `w` reads
+no argument, `argFree`), and a non-`Phi` pair whose arguments the frames hold evaluates to
+refinements (`atomPair_eval`, `addr_lower_eval`). -/
 theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
     {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (ht : termVL tabs w = false) :
     atomPair tabs u w = true ∧
-    (∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
+    (argFree tabs w = false → ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
       Sem.Refines (rv G u.args[i]!) (rv T w.args[i]!)) ∧
     (∀ env : Env, env.Mono → (∀ a ∈ u.args, VS a) → (∀ a ∈ w.args, VT a) → w.op ≠ .Phi →
       Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u)
@@ -199,21 +200,42 @@ theorem atom_ref (hfr : T = { G with regs := T.regs }) {x : ID}
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
   obtain ⟨u', hu', hpair, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
   rw [hu] at hu'; cases hu'
-  obtain ⟨-, hty, hsz, -, hid⟩ := atomPair_spec hpair
-  have hargs : ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
-      Sem.Refines (rv G u.args[i]!) (rv T w.args[i]!) := fun i hi h1 h2 =>
-    termRefL_regs H hDS hDT hVT hrel htyS htyT (hTR i hi) h1 h2
+  obtain ⟨-, hty, -, hid⟩ := atomPair_spec hpair
+  have hargs : argFree tabs w = false → ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
+      Sem.Refines (rv G u.args[i]!) (rv T w.args[i]!) := fun hf i hi h1 h2 => by
+    rcases hTR with hf' | hTR
+    · rw [hf] at hf'; cases hf'
+    · exact termRefL_regs H hDS hDT hVT hrel htyS htyT (hTR i hi) h1 h2
   refine ⟨hpair, hargs, fun env hE hS hT _ => ?_⟩
   obtain ⟨w', hw', hwid, -⟩ := H.wg.valueId w.block blk ⟨hbm, hblk⟩ x hx
   rw [hw] at hw'; cases hw'
   have hut : termVL tabs u = false := by
     obtain ⟨u2, hpu, hut, -⟩ := gatomL H ⟨hw, hbm, blk, hblk, hx⟩ ht
     rw [hpu.1] at hu; cases hu; exact hut
-  refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair (H.gen x u hu hut) ?_
-    (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
-  · rw [hid, hwid, tysL_of_value hw, tysL_of_value hu, H.shp x u hu, hty]
-  · have hi' : i < w.args.size := hsz ▸ hi
-    exact hargs i hi' (hS _ (getElem!_mem' hi)) (hT _ (getElem!_mem' hi'))
+  have hty' : (Ctx.makeL tabs g).tys[w.id]?.getD .other =
+      (Ctx.makeL tabs f).tys[u.id]?.getD .other := by
+    rw [hid, hwid, tysL_of_value hw, tysL_of_value hu, H.shp x u hu, hty]
+  cases hal : addrLower tabs u w
+  · have hf : argFree tabs w = false := by
+      cases hf : argFree tabs w
+      · rfl
+      · exfalso
+        rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha
+        · have hg := H.gen x u hu hut
+          rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
+        · have hw' := (argFree_cases hf).1
+          rcases renameOp_cases hop with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ <;>
+            rw [h2] at hw' <;> cases hw'
+        · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
+          rw [(argFree_cases hf).1] at hs; cases hs
+        · rw [hal] at ha; cases ha
+    have hsz := atomPair_size hpair hal
+    refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair hal (H.gen x u hu hut) hty'
+      (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
+    have hi' : i < w.args.size := hsz ▸ hi
+    exact hargs hf i hi' (hS _ (getElem!_mem' hi)) (hT _ (getElem!_mem' hi'))
+  · exact addr_lower_eval H.ok.ownAux H.glow hal hty'
+      (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1)
 
 end
 
@@ -224,7 +246,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
     (hp : atomPair tabs u w = true) (hgen : u.op.generic = true) (hr : isRoot w.op = false)
     (ha : w.op ≠ .Arg) (hai : w.op ≠ .ArgIntReg) :
     ∃ y, evalOpL false env ctx fr w argv ty = .ok y := by
-  rcases (atomPair_spec hp).1 with ⟨hop | hop, -⟩ | hm
+  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
@@ -238,6 +260,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
           (by rw [ho]; decide) (by rw [ho]; decide)
   · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
     rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
+  · exact evalOpL_movDaddr_ok (addrLower_cases ha).2.1
 
 end
 

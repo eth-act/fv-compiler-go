@@ -211,6 +211,53 @@ theorem arm64Op_movAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv :
     | nil => dsimp only; rw [symAddr_eq hn]
     | cons => rfl
 
+/-- `Sem.symAddr` with a frame variable aux: the variable's frame block at the offset (the base is
+not read). -/
+theorem symAddr_name {ctx : Ctx} {v : Value} {a : Val} {n : AuxRef} (hax : v.aux = some n)
+    (hn : auxIsName ctx.tabs v.aux = true) :
+    symAddr ctx v a = some ⟨frameBlk ctx.tabs ctx.act n, BitVec.ofInt 64 v.auxInt.toInt⟩ := by
+  unfold symAddr
+  unfold auxIsName at hn
+  rw [hax] at hn ⊢
+  simp only [Option.bind_some] at hn
+  dsimp only
+  cases h : ctx.tabs.aux? n with
+  | none => rw [h] at hn; cases hn
+  | some d =>
+    rw [h] at hn
+    rcases d with ⟨fmt, kind⟩
+    cases kind <;> simp_all
+
+/-- `evalOpL` of a `MOVDaddr` with one argument: the address `symAddr` as a pointer-arithmetic
+result. -/
+theorem evalOpL_movDaddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {a : Val} {ty : Ty}
+    (hop : v.op = .ARM64MOVDaddr) :
+    evalOpL false env ctx fr v [a] ty = .ok ((symAddr ctx v a).elim .poison PtrOps.ptrRes) := by
+  have hg' : Op.ARM64MOVDaddr.generic = false := by decide
+  have h1 : evalOpL false env ctx fr v [a] ty = arm64Op false env ctx fr v [a] ty := by
+    unfold evalOpL; rw [hop]; simp only [hg', Bool.false_eq_true, ite_false]
+  have h0 : nilFaults false ctx v [a] = none := rfl
+  rw [h1]
+  unfold arm64Op
+  rw [h0]
+  dsimp only
+  rw [hop]
+
+/-- A `MOVDaddr` evaluates (non-faulting mode). -/
+theorem evalOpL_movDaddr_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
+    {ty : Ty} (hop : v.op = .ARM64MOVDaddr) : ∃ y, evalOpL false env ctx fr v argv ty = .ok y := by
+  have hg' : Op.ARM64MOVDaddr.generic = false := by decide
+  have h1 : evalOpL false env ctx fr v argv ty = arm64Op false env ctx fr v argv ty := by
+    unfold evalOpL; rw [hop]; simp only [hg', Bool.false_eq_true, ite_false]
+  have h0 : nilFaults false ctx v argv = none := rfl
+  rw [h1]
+  unfold arm64Op
+  rw [h0]
+  dsimp only
+  rw [hop]
+  dsimp only
+  split <;> exact ⟨_, rfl⟩
+
 /-- An integer load without a frame variable aux evaluates to `ldVal`. -/
 theorem arm64Op_ld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     {p : Nat × Bool} (hl : ldOp? v.op = some p) (hn : auxIsName ctx.tabs v.aux = false) :
