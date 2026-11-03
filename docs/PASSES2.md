@@ -535,6 +535,22 @@ accepts 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked, 67 change
 
 **Issue summary:** Implement **enabled-by-default** index-45 LICM, limited to reducible leaf loops with two-predecessor headers. Port the exact earlyOk/non-pointer dependence closure, first-eligible-predecessor selection, lazy preheader creation, stable source compaction, and local-nest/cache behavior. Do not confuse its availability with the separately disabled merge-conditional-branches pass (`compile.go:504-508`; `licm.go:36-159`).
 
+**Proof (#385):** `GoFV.Proof.MoveL.licm_refinesL` (`GoFV/Proof/Pass/LicmL.lean`):
+`licmPass penv f = .ok out`, `check ce f = .ok ()`, `check ce' out.func = .ok ()`,
+`check ce' (unhoist f out.func) = .ok ()`, `Crit.critRelB f (unhoist f out.func) = true` and
+`moveB (unhoist f out.func) out.func = true` give `RefinesL out.tables out.func penv.tables f`
+(`runL`). `unhoist f g` is `g`'s CFG with `f`'s value table and placement (the new preheaders
+empty), so the pass splits into two validated steps composed by `RefinesL.trans`: preheader
+insertion, an edge split by an empty `Plain` block (`GoFV.Proof.Crit.refinesL_of_critRel`, see
+critical), then hoisting on a fixed CFG (`refinesL_of_move`, see tighten; hoisted values are
+total ops). Witness `GoFV.Proof.Witness.licmL_witness` (`licmLoop`: a counting loop whose body
+computes the invariant step `x + 1`; licm splits the non-`Plain` entry edge with a preheader
+`b6`, hoists the step there, and the output returns 12 for `x = 2, n = 10`). Coverage (`lake exe
+move-probe`, all three checked hypotheses): quick-v7 9,297 sections, 8,643 checked, 193
+changed, accepted 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked, 3,300 changed,
+accepted 90,656 (0 rejections); not counted: inputs failing `check`
+(654 and 5,904).
+
 ### late phielim and copyelim — issue #399
 
 **Function / files:** `copyelim`, `copyelim.go:10-32`; `copySource`, `copyelimValue`, `phielim`, `phielimValue` in `copyelim.go:36-157`. Identical to Phase 1 (`compile.go:459,505`).

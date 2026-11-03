@@ -4,7 +4,7 @@ import GoFV.Proof.Witness.TightenL
 /-!
 # Non-vacuity witness: loop invariant on a lowered loop
 
-`loopL` (lowered: arm64 `MOVDconst`, `CMP`, `ADD`, `ADDconst`, block kind `LT`), with `x`, `n`
+`licmLoop` (lowered: arm64 `MOVDconst`, `CMP`, `ADD`, `ADDconst`, block kind `LT`), with `x`, `n`
 its first two arguments:
 
 ```
@@ -17,7 +17,7 @@ b4: Ret v51               b5: Ret v50
 `loop invariant` (`licmPass`) hoists the invariant `v52` out of the leaf loop: the header's
 outside predecessor `b1` is not `Plain`, so it splits the edge `b1 → b2` with a new `Plain`
 preheader `b6` and moves `v52` there. Input and output pass `check`, and so does
-`unhoist loopL out` (the output's CFG with the input's values); the edge split is validated by
+`unhoist licmLoop out` (the output's CFG with the input's values); the edge split is validated by
 `critRelB`, the move by `moveB`; all by kernel evaluation, so `licm_refinesL` applies: the
 output returns 12 for `x = 2, n = 10` (`i` steps by 3 from 0) under `runL`, as the input does.
 -/
@@ -26,7 +26,7 @@ namespace GoFV.Proof.Witness
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof GoFV.Proof.MoveL
 
-def loopLValues : Array (Option Value) :=
+def licmLoopValues : Array (Option Value) :=
   let t := Array.replicate 59 (none : Option Value)
   let t := t.set! 1 (some (mkV 1 .InitMem 28 none p0 2 #[] 1))
   let t := t.set! 8 (some (mkVI 8 .ArgIntReg 2 0 (some 7) (pos 2 22 7 0) 1 #[] 1))
@@ -40,7 +40,7 @@ def loopLValues : Array (Option Value) :=
   let t := t.set! 56 (some (mkV 56 .MakeResult 33 none (pos 2 25 3 1) 1 #[51, 1] 4))
   t.set! 58 (some (mkV 58 .MakeResult 33 none (pos 2 26 3 1) 1 #[50, 1] 5))
 
-def loopLBlocks : Array (Option Block) := #[none,
+def licmLoopBlocks : Array (Option Block) := #[none,
   some (mkB 1 .ARM64LT (pos 2 22 7 0) #[57] #[⟨2, 0⟩, ⟨5, 0⟩] #[] #[1, 8, 9, 50, 57]),
   some (mkB 2 .ARM64LT (pos 2 23 3 0) #[55] #[⟨3, 0⟩, ⟨4, 0⟩] #[⟨1, 0⟩, ⟨3, 0⟩] #[51, 55]),
   some (mkB 3 .Plain (pos 2 24 3 0) #[] #[⟨2, 1⟩] #[⟨2, 0⟩] #[52, 53]),
@@ -48,15 +48,15 @@ def loopLBlocks : Array (Option Block) := #[none,
   some (mkB 5 .Ret (pos 2 26 3 1) #[58] #[] #[⟨1, 1⟩] #[58])]
 
 /-- A counting loop with an invariant step `x + 1`. -/
-def loopL : Func where
+def licmLoop : Func where
   entry := 1
   type := 1
   ownAux := some 1
   vidLast := 58
   bidLast := 5
   blocks := #[1, 2, 3, 4, 5]
-  blockTab := loopLBlocks
-  valueTab := loopLValues
+  blockTab := licmLoopBlocks
+  valueTab := licmLoopValues
   names := #[]
   namedx := #[]
   splits := #[]
@@ -66,39 +66,39 @@ def loopL : Func where
   freeBlocks := []
   cache := {}
 
-def loopLPassEnv : PassEnv := { clampTLPassEnv with passName := "loop invariant" }
+def licmLoopPassEnv : PassEnv := { clampTLPassEnv with passName := "loop invariant" }
 
-def loopLArgs : List Val := [.i64 2, .i64 10, .i64 10]
+def licmLoopArgs : List Val := [.i64 2, .i64 10, .i64 10]
 
-/-- The kernel-evaluated facts: `loopL` passes `check` and returns 12 for `x = 2, n = 10`
-under `runL`; licm's output and `unhoist loopL out` pass `check`, `critRelB` and `moveB` accept,
+/-- The kernel-evaluated facts: `licmLoop` passes `check` and returns 12 for `x = 2, n = 10`
+under `runL`; licm's output and `unhoist licmLoop out` pass `check`, `critRelB` and `moveB` accept,
 and the output lists the hoisted `v52` in the new preheader `b6`. -/
-theorem loopL_facts :
-    (check clampTLCheckEnv loopL).toBool = true ∧
-    returnsInt (runL Env.p1 clampLTabs loopL loopLArgs {} 12) 12 = true ∧
-    ((licmPass loopLPassEnv loopL).toOption.map fun o =>
+theorem licmLoop_facts :
+    (check clampTLCheckEnv licmLoop).toBool = true ∧
+    returnsInt (runL Env.p1 clampLTabs licmLoop licmLoopArgs {} 12) 12 = true ∧
+    ((licmPass licmLoopPassEnv licmLoop).toOption.map fun o =>
       decide ((check clampTLCheckEnv o.func).toBool = true ∧
-        (check clampTLCheckEnv (unhoist loopL o.func)).toBool = true ∧
-        Crit.critRelB loopL (unhoist loopL o.func) = true ∧
-        moveB (unhoist loopL o.func) o.func = true ∧
+        (check clampTLCheckEnv (unhoist licmLoop o.func)).toBool = true ∧
+        Crit.critRelB licmLoop (unhoist licmLoop o.func) = true ∧
+        moveB (unhoist licmLoop o.func) o.func = true ∧
         (o.func.block? 6).map (·.values) = some #[52])) = some true := by
   decide +kernel
 
-/-- **`loop invariant` on lowered `loopL`**: it hoists `v52` into a new preheader, and its output
+/-- **`loop invariant` on lowered `licmLoop`**: it hoists `v52` into a new preheader, and its output
 returns 12 under `runL` (`licm_refinesL`). -/
 theorem licmL_witness :
-    ∃ out, licmPass loopLPassEnv loopL = .ok out ∧
+    ∃ out, licmPass licmLoopPassEnv licmLoop = .ok out ∧
       (out.func.block? 6).map (·.values) = some #[52] ∧
-      ∃ fuel m, runL Env.p1 out.tables out.func loopLArgs {} fuel = .returned [.i64 12] m := by
-  obtain ⟨h1, h2, h3⟩ := loopL_facts
+      ∃ fuel m, runL Env.p1 out.tables out.func licmLoopArgs {} fuel = .returned [.i64 12] m := by
+  obtain ⟨h1, h2, h3⟩ := licmLoop_facts
   obtain ⟨m, hm⟩ := returnsInt_iff.1 h2
-  have hf : check clampTLCheckEnv loopL = .ok () := by
-    revert h1; cases check clampTLCheckEnv loopL <;> simp [Except.toBool]
+  have hf : check clampTLCheckEnv licmLoop = .ok () := by
+    revert h1; cases check clampTLCheckEnv licmLoop <;> simp [Except.toBool]
   obtain ⟨out, hp, hg, hu, hc, hmv, h6⟩ := ok_of_toOption h3
   have hg' : check clampTLCheckEnv out.func = .ok () := by
     revert hg; cases check clampTLCheckEnv out.func <;> simp [Except.toBool]
-  have hu' : check clampTLCheckEnv (unhoist loopL out.func) = .ok () := by
-    revert hu; cases check clampTLCheckEnv (unhoist loopL out.func) <;> simp [Except.toBool]
+  have hu' : check clampTLCheckEnv (unhoist licmLoop out.func) = .ok () := by
+    revert hu; cases check clampTLCheckEnv (unhoist licmLoop out.func) <;> simp [Except.toBool]
   exact ⟨out, hp, h6, RefinesL.returned_int (licm_refinesL hp hf hg' hu' hc hmv) hm⟩
 
 end GoFV.Proof.Witness

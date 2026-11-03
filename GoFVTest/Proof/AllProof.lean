@@ -239,6 +239,7 @@ import GoFV.Proof.Pass.KnownBitsInv
 import GoFV.Proof.Pass.KnownBitsKind
 import GoFV.Proof.Pass.KnownBitsShift
 import GoFV.Proof.Pass.KnownBitsTerm
+import GoFV.Proof.Pass.LicmL
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.LoadFwdArg
 import GoFV.Proof.Pass.LoadFwdDrop
@@ -284,6 +285,7 @@ import GoFV.Proof.Pass.PhiOptSched
 import GoFV.Proof.Pass.PhiOptSetup
 import GoFV.Proof.Pass.PhiSelRel
 import GoFV.Proof.Pass.PhiSelSim
+import GoFV.Proof.Pass.PhiTightenL
 import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
@@ -343,6 +345,7 @@ import GoFV.Proof.Pass.StructStoreSrc
 import GoFV.Proof.Pass.TightenL
 import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Pass.TrimLocCheck
+import GoFV.Proof.Pass.TupleSelL
 import GoFV.Proof.Pass.WBAll
 import GoFV.Proof.Pass.WBArgs
 import GoFV.Proof.Pass.WBBlock
@@ -635,6 +638,7 @@ import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
+import GoFV.Proof.Witness.LicmL
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Witness.LoadSel
 import GoFV.Proof.Witness.LoadSplit
@@ -654,6 +658,7 @@ import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PhiElim
 import GoFV.Proof.Witness.PhiOpt
+import GoFV.Proof.Witness.PhiTightenL
 import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.RoZero
@@ -674,6 +679,7 @@ import GoFV.Proof.Witness.TabsAgreeMod
 import GoFV.Proof.Witness.TightenL
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.TrimLoc
+import GoFV.Proof.Witness.TupleSelL
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.Witness.WFCheck
