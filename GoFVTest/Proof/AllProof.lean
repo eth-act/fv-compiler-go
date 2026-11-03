@@ -331,6 +331,7 @@ import GoFV.Proof.PureMono
 import GoFV.Proof.Refine
 import GoFV.Proof.RefineL
 import GoFV.Proof.Retype
+import GoFV.Proof.RetypeL
 import GoFV.Proof.RoImage
 import GoFV.Proof.Rules.Add
 import GoFV.Proof.Rules.Add2
