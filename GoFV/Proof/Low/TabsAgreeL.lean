@@ -38,7 +38,7 @@ theorem symAddr_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (a : Val) :
 
 theorem nilFaults_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (faulting : Bool) (argv : List Val) :
     nilFaults faulting { ctx with tabs := tabs' } v argv = nilFaults faulting ctx v argv := by
-  unfold nilFaults
+  unfold nilFaults nilAccesses
   simp only [symAddr_tabs h]
 
 theorem fitPieces_tabs (ps : List ABIParam) (hP : ∀ p ∈ ps, tabs'.ty p.type = ctx.tabs.ty p.type) :
