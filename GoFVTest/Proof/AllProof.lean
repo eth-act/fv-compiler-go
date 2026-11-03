@@ -307,6 +307,12 @@ import GoFV.Proof.Pass.Sccp
 import GoFV.Proof.Pass.SccpDead
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.SccpTerm
+import GoFV.Proof.Pass.SchedLBlock
+import GoFV.Proof.Pass.SchedLEval
+import GoFV.Proof.Pass.SchedLPass
+import GoFV.Proof.Pass.SchedLRel
+import GoFV.Proof.Pass.SchedLSim
+import GoFV.Proof.Pass.SchedLWalk
 import GoFV.Proof.Pass.SegBlock
 import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.SegCallSeg
@@ -569,6 +575,7 @@ import GoFV.Proof.Rules.Xor3
 import GoFV.Proof.Rules.Xor4
 import GoFV.Proof.Rules.XorCom
 import GoFV.Proof.Rules.ZeroExt
+import GoFV.Proof.RunLFCases
 import GoFV.Proof.RunMono
 import GoFV.Proof.Sched
 import GoFV.Proof.SchedFast
@@ -666,6 +673,7 @@ import GoFV.Proof.Witness.RunL
 import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.SchedL
+import GoFV.Proof.Witness.ScheduleL
 import GoFV.Proof.Witness.Seg
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
