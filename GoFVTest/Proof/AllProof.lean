@@ -97,6 +97,12 @@ import GoFV.Proof.Pass.CSEBlockSpec
 import GoFV.Proof.Pass.CSEClass
 import GoFV.Proof.Pass.CSEComm
 import GoFV.Proof.Pass.CSEEval
+import GoFV.Proof.Pass.CSELBlock
+import GoFV.Proof.Pass.CSELClass
+import GoFV.Proof.Pass.CSELOp
+import GoFV.Proof.Pass.CSELPass
+import GoFV.Proof.Pass.CSELRel
+import GoFV.Proof.Pass.CSELSim
 import GoFV.Proof.Pass.CSEMem
 import GoFV.Proof.Pass.CSEMemBytes
 import GoFV.Proof.Pass.CSEMemChain
@@ -610,6 +616,7 @@ import GoFV.Proof.Witness.Atomic
 import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
 import GoFV.Proof.Witness.CSE
+import GoFV.Proof.Witness.CSEL
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.ClampL
 import GoFV.Proof.Witness.ClampRA

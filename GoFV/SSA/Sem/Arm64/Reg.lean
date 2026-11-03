@@ -110,8 +110,11 @@ def addP (ty : Ty) (a : Val) (k : BitVec 64) : Val :=
     | some x => res ty (x + k)
     | none => .poison
 
-/-- `ADD a b` with the provenance cases `ADD p i`, `ADD i p`. -/
+/-- `ADD a b` with the provenance cases `ADD p i`, `ADD i p`; two pointers add as words (the sum
+of their addresses, `semantics2.md` §3), so `ADD` is symmetric, as its `commutative` flag says
+(cse swaps its arguments). -/
 def add (ty : Ty) : List Val → Val
+  | [.ptr p, .ptr q] => op2 ty (· + ·) [.ptr p, .ptr q]
   | [.ptr p, b] => match reg b with
     | some k => PtrOps.ptrRes (p.add k)
     | none => .poison

@@ -170,3 +170,7 @@ root = "GoFVTest.RegallocProbe"
 [[lean_exe]]
 name = "nillate-probe"
 root = "GoFVTest.NilLateProbe"
+
+[[lean_exe]]
+name = "csel-probe"
+root = "GoFVTest.CseLProbe"
