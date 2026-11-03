@@ -77,9 +77,7 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
           | _ => false) then "top"
         else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !leavesOK M I [] r.pat then "leaves"
-        else if !resultOK tabs M ev or σ I r x defs then
-          s!"result (defs {defs.map fun (u : Value) => (u.id, u.op.name, u.args.toList, u.type)}, inst \
-            {I}, args {x.args.toList.map fun a => ((M.get? a).map fun (y : Value) => (y.op.name, y.type))})"
+        else if !resultOK tabs M ev or σ I r x defs then "result"
         else if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frame"
         else if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) then "condFrame"
         else "ok"
@@ -156,7 +154,7 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
         match M.get? x, g.value? x with
         | some m, some u =>
           if !(u.op == m.op && u.type == m.type && u.auxInt == m.auxInt && u.aux == m.aux) then
-            return s!"final: v{x} fields {m.op.name}->{u.op.name} ({m.type}/{u.type} {m.auxInt}/{u.auxInt} {m.aux.isSome}/{u.aux.isSome} args {m.args}/{u.args})"
+            return s!"final: v{x} fields {m.op.name}->{u.op.name} ⟨types {m.type}/{u.type} auxInt {m.auxInt}/{u.auxInt} aux {m.aux.isSome}/{u.aux.isSome}⟩"
           for (a, a') in m.args.toList.zip u.args.toList do
             if !copyReach tabs M M.size a a' then
               return s!"final: v{x} {u.op.name} arg v{a}({((M.get? a).map (·.op.name)).getD "-"})->v{a'}"
