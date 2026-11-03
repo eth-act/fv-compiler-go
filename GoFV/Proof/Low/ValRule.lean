@@ -194,7 +194,7 @@ structure CopyResL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List V
   hop : u.op = .Copy
   hargs : u.args = #[F.I.at p]
   hty : (M.get? (F.I.at p)).any (fun y => y.type == u.type &&
-    GoFV.Opt.CSE.tyEq (shpL tabs y.type) (shpL tabs F.xv.type)) = true
+    GoFV.Opt.RewriteCheck.copyCompat (shpL tabs y.type) (shpL tabs F.xv.type)) = true
   hne : F.I.at p ≠ v
 
 /-- The shape of a `build` result: node 0 is `v` (in place), the other nodes fresh. -/
