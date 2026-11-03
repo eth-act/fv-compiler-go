@@ -82,7 +82,7 @@
  		// Ensure we write any pending phases to the html
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1662 @@
+@@ -0,0 +1,1663 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -462,10 +462,11 @@
 +	return fmt.Sprintf("%x", m.v1)
 +}
 +
-+// opName is the exported name of op: Op.String() for generic ops, the architecture prefix
-+// of the Go constant (OpARM64ADD) followed by Op.String() for machine ops.
++// opName is the exported name of op: Op.String() for generic ops and OpInvalid (values freed
++// in place), the architecture prefix of the Go constant (OpARM64ADD) followed by Op.String()
++// for machine ops.
 +func (x *gofvExporter) opName(op Op) string {
-+	if opcodeTable[op].generic {
++	if opcodeTable[op].generic || op == OpInvalid {
 +		return op.String()
 +	}
 +	return x.archPrefix() + op.String()
