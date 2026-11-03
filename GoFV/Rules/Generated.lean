@@ -3,3 +3,5 @@ import GoFV.Rules.Generated.Generic
 import GoFV.Rules.Generated.Dec
 import GoFV.Rules.Generated.Divisible
 import GoFV.Rules.Generated.Divmod
+import GoFV.Rules.Generated.ARM64
+import GoFV.Rules.Generated.ARM64latelower

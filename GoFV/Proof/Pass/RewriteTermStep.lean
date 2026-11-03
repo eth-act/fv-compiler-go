@@ -47,6 +47,7 @@ def argVal (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat
     (nodes : List RNode) (f : Nat) : RArg → Val
   | .var x => (σ x).valOr (or.val (.var x))
   | .node j => nodeDenT tabs ev or σ topTy nodes f j
+  | .expr e => (ev e).valOr (or.val e)
 
 theorem nodeDen_succ (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (or : Oracle) (σ : Nat → DV)
     (topTy : Ty) (nodes : List RNode) (f k : Nat) (n : RNode) (hk : nodes[k]? = some n) :
@@ -235,6 +236,9 @@ theorem RuleFacts.frame (F : RuleFacts tabs M r v defs) :
         rw [hn] at harg
         simp only [argID] at harg
         exact .inr (List.mem_cons_of_mem _ (List.mem_of_getElem? harg))
+      | expr _ =>
+        rw [hn] at harg
+        simp [argID] at harg
 
 end Step
 
@@ -649,6 +653,9 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundTop r)
           rw [← hj'e]
           simp only [List.getElem_map]
           exact ih j' (R.hlen ▸ hj')
+        | expr _ =>
+          rw [hn] at harg
+          simp [argID] at harg
     have h0 := key R.nodes.length 0 R.len
     have hid := R.id0 (R.hlen ▸ R.len)
     simp only [hid] at h0

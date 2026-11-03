@@ -180,6 +180,7 @@ def propagate (b : ID) : M Unit := do
       let some e := blk.succs[idx.toNat]? | throw s!"sccp: b{b}: no successor {idx}"
       modify fun w => { w with edges := w.edges.push e }
     | .top => pure ()
+  | _ => throw s!"sccp: b{b}: All kind of block should be processed above."
 
 /-- `addUses(v)`. -/
 def addUses (v : ID) : M Unit := do

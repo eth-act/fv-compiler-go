@@ -168,12 +168,15 @@ inductive Pat where
       (commute : Bool)
   deriving Repr, Inhabited
 
-/-- Argument of a result node: a rule variable or an earlier/later node of the same result
-(index into the node list). -/
+/-- Argument of a result node: a rule variable, an earlier/later node of the same result
+(index into the node list), or a Go expression of type `*Value` that rulegen passes through
+(`flagArg(x)` in `ARM64.rules`; evaluated when the node's arguments are added, after its node
+arguments are built). -/
 inductive RArg where
   | var (x : Nat)
   | node (j : Nat)
-  deriving DecidableEq, Repr, Inhabited
+  | expr (e : Expr)
+  deriving Repr, Inhabited
 
 /-- A value built by a result. `ty = none` only for the top node of an in-place rewrite
 without `<type>` (the value keeps its type). `auxInt`/`aux` are stored with

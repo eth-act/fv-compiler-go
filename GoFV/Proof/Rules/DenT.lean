@@ -85,6 +85,7 @@ def nodeDenT (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) 
       let argv := n.args.map fun
         | .var x => (σ x).valOr (or.val (.var x))
         | .node j => nodeDenT tabs ev or σ topTy nodes fuel j
+        | .expr e => (ev e).valOr (or.val e)
       (opVal tabs n.op t ai ax argv).retype t
 
 /-- The value `v` has after the rewrite (`resDen` with `nodeDenT`). -/
@@ -300,6 +301,7 @@ theorem nodeDenT_pure (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat
       cases a with
       | var x => rfl
       | node j => exact nodeDenT_pure tabs ev or σ topTy h fuel j
+      | expr _ => rfl
 
 theorem resDenT_pure (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (topTy : Ty)
     {res : Result} (h : res.nodes.all (fun n => !frameOp n.op) = true) :

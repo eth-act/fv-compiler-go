@@ -415,10 +415,11 @@ def leavessOK (M : Defs) (I : Inst) (p : Path) (i : Nat) : List Pat → Bool
   | q :: qs => leavesOK M I (i :: p) q && leavessOK M I p (i + 1) qs
 end
 
-/-- The value a result argument refers to. -/
+/-- The value a result argument refers to (`none` for a Go-expression argument: not checked). -/
 def argID (σ : Nat → DV) (I : Inst) (ids : List ID) : RArg → Option ID
   | .var x => (DV.pos? (σ x)).map I.at
   | .node j => ids[j]?
+  | .expr _ => none
 
 /-- Result node `n` was built as `u` (`nodeDen`'s fields; `topTy`: the shape of `v`'s type). -/
 def nodeOK (tabs : Tables) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (I : Inst)

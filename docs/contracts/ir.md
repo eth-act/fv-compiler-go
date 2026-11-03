@@ -7,8 +7,10 @@ the semantics (G5) and the proofs (G6). Input format: `docs/contracts/export.md`
 
 | Module | Content |
 | --- | --- |
-| `GoFV.SSA.OpInfo` | `AuxType` (Go `aux*` constants, same order), `SymEffect` |
+| `GoFV.SSA.OpInfo` | `AuxType` (Go `aux*` constants, same order), `SymEffect`, `RegMask`, `RegIdx` (`inputInfo`/`outputInfo`), `RegInfo`, `Register` |
 | `GoFV.SSA.Op` | **generated** by `scripts/gen-ops.sh` (`tools/opsgen`): `Op`, `BlockKind` and their `opcodeTable`/`blockData` metadata |
+| `GoFV.SSA.OpARM64` | **generated**: per-op `Op.regInfo`, `Op.asm`, `Op.scale` (the backend fields of `opcodeTable`) |
+| `GoFV.SSA.RegARM64` | **generated**: `ARM64.registers` (`registersARM64`: number, name), `paramIntReg`/`paramFloatReg`, `gpRegMask`/`fpRegMask`/`simdRegMask`/`specialRegMask`, `framepointerReg`, `linkReg`; imports only `OpInfo` |
 | `GoFV.SSA.GoStr` | `GoStr`: Go strings as bytes, with the export's quoting |
 | `GoFV.SSA.Pos` | `Pos` (`src.XPos`, raw `lico` fields), `PosBase`; `isStmt`/`withStmt` with Go's `lico == 0` rules, `sameFileAndLine` |
 | `GoFV.SSA.Type` | `TypeRef`, `TypeKind`, `TypeFlags`, `Field`, `TypeTail`, `TypeDef` |
@@ -37,18 +39,28 @@ the semantics (G5) and the proofs (G6). Input format: `docs/contracts/export.md`
 
 ## Ops and block kinds
 
-- `Op` has one constructor per generic op, named as Go's without the `Op` prefix
-  (`OpAdd64` ↔ `Op.Add64`), in `opcodeTable` order, `Op.Invalid` first (`OpInvalid`). The SIMD
-  generic ops (`simdgenericOps.go`) are not included: they exist only under
-  `GOEXPERIMENT=simd`, which the corpus does not use; parsing one fails ("unknown op").
-- Metadata are `match` functions, one per `opInfo` field: `Op.name` (`Op.String()`),
-  `argLen` (−1 = variadic), `auxType`, `typ` (default result type as written in `_gen`),
-  `symEffect`, and each Bool field (`commutative`, `resultInArg0`, `call`, `nilCheck`,
-  `hasSideEffects`, `zeroWidth`, `fixedReg`, …). `Op.all` lists every op.
-- `BlockKind` likewise (`BlockIf` ↔ `BlockKind.If`), with `name`, `controls`, `auxIntType`.
+- `Op` has one constructor per generic and ARM64 op, named as Go's constant without the `Op`
+  prefix (`OpAdd64` ↔ `Op.Add64`, `OpARM64MOVDload` ↔ `Op.ARM64MOVDload`), in `opcodeTable`
+  order: `Op.Invalid` first (`OpInvalid`), then the 354 ARM64 ops, then the 445 generic ops, so
+  `ctorIdx` orders ops as Go's opcode numbers do (CSE sorts by op). The other archs and the
+  SIMD ops (`simdgenericOps.go`, `simdARM64ops.go`) are not included: the SIMD ops exist only
+  under `GOEXPERIMENT=simd`, which the corpus does not use; parsing one fails ("unknown op").
+  `scripts/gen-ops.sh` checks every op, flag and register table against the pinned `opGen.go`.
+- Metadata are `match` functions, one per `opInfo` field: `Op.name` (`Op.String()`: `"ADD"` for
+  `OpARM64ADD`), `archName` (`"ARM64"` or `""`), `exportName` (`archName ++ name`, the export's
+  spelling, unique), `generic`, `argLen` (−1 = variadic), `auxType`, `typ` (default result type
+  as written in `_gen`), `symEffect`, and each Bool field (`commutative`, `resultInArg0`,
+  `clobberFlags`, `call`, `nilCheck`, `faultOnNilArg0`, …). `Op.all` lists every op.
+  `Op.goNum` is Go's opcode value in the pinned `opGen.go` (it differs from `ctorIdx` because
+  of the left-out archs and SIMD ops; an `auxType = .CCop` AuxInt holds it), `Op.ofGoNum?` its
+  inverse.
+- `BlockKind` likewise (`BlockIf` ↔ `BlockKind.If`, `BlockARM64EQ` ↔ `BlockKind.ARM64EQ`), with
+  `name`, `archName`, `exportName`, `controls`, `auxIntType`, `aux`, `goNum`/`ofGoNum?`.
 - Proofs: evaluate metadata on concrete ops with `decide`/`rfl`. Avoid `simp [Op.argLen]` on
-  an op variable: it generates the equation lemmas of a 446-arm `match` (quadratic, see the
-  `lean-proof-performance` skill); case on the op or state per-op lemmas instead.
+  an op variable: it generates the equation lemmas of an 800-arm `match` (quadratic, see the
+  `lean-proof-performance` skill); case on the op or state per-op lemmas instead. A statement
+  about all ops must account for the ARM64 ops (e.g. `nilCheck` holds for `NilCheck` and
+  `ARM64LoweredNilCheck`).
 
 ## Function representation
 

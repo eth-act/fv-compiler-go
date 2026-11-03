@@ -16,14 +16,23 @@ example : Generic.counts = (1651, 3) := rfl
 example : Dec.counts = (47, 0) := rfl
 example : Divisible.counts = (32, 0) := rfl
 example : Divmod.counts = (29, 0) := rfl
+-- `rewriteARM64.go` (SIMD ops left out): 1097 value rules in functions + 171 ellipsis rules
+-- (dispatch-switch cases `v.Op = OpARM64…`) + 222 block rules; `rewriteARM64latelower.go`: 82.
+example : ARM64.counts = (1268, 222) := rfl
+example : ARM64latelower.counts = (82, 0) := rfl
 
 #guard Generic.ruleSet.values.length == 241
 #guard (Generic.ruleSet.rulesOf .Add64).length == 23
 #guard (Generic.ruleSet.rulesOf .Store).length == 21
 #guard (Generic.ruleSet.blockRulesOf .If).length == 3
+#guard ARM64.ruleSet.values.length == 506 && ARM64.ruleSet.blocks.length == 26
+#guard match ARM64.ruleSet.rulesOf .Add64 with
+  | [r] => match r.result with | .setOp .ARM64ADD => true | _ => false
+  | _ => false
 
 def ruleSets : List RuleSet :=
-  [Generic.ruleSet, Dec.ruleSet, Divisible.ruleSet, Divmod.ruleSet]
+  [Generic.ruleSet, Dec.ruleSet, Divisible.ruleSet, Divmod.ruleSet, ARM64.ruleSet,
+    ARM64latelower.ruleSet]
 
 /-- Variable indices of an expression are in range. -/
 partial def exprOk (nv : Nat) : Expr → Bool
@@ -61,6 +70,7 @@ def nodesOk (nv : Nat) (ns : List RNode) : Bool :=
     n.args.all fun
       | .var x => x < nv
       | .node j => j < ns.length
+      | .expr e => exprOk nv e
 
 def ruleOk (o : Op) (r : Rule) : Bool :=
   let nv := r.vars.length
@@ -70,11 +80,12 @@ def ruleOk (o : Op) (r : Rule) : Bool :=
   match r.result with
   | .copy e => exprOk nv e
   | .build ns => !ns.isEmpty && nodesOk nv ns
-  | .setOp _ => true
+  | .setOp o' => o'.argLen == o.argLen || o'.argLen == -1
 
 def blockRuleOk (k : BlockKind) (r : BlockRule) : Bool :=
   let nv := r.vars.length
-  r.kind == k && r.controls.all (patOk nv) && fieldOk nv r.auxInt && fieldOk nv r.aux &&
+  r.kind == k && r.controls.length == k.controls && r.newControls.length == r.newKind.controls &&
+  r.controls.all (patOk nv) && fieldOk nv r.auxInt && fieldOk nv r.aux &&
   r.cond.all (exprOk nv) &&
   r.newControls.all fun
     | (.var x, _) => x < nv

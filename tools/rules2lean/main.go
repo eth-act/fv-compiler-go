@@ -1,6 +1,6 @@
-// Command rules2lean exports the pinned Go compiler's generic SSA rewrite rules
-// (_gen/generic.rules, dec.rules, divisible.rules, divmod.rules) to Lean data under
-// GoFV/Rules/Generated (docs/contracts/rules.md).
+// Command rules2lean exports the pinned Go compiler's SSA rewrite rules (_gen/generic.rules,
+// dec.rules, divisible.rules, divmod.rules, and the arm64 lowering rules ARM64.rules and
+// ARM64latelower.rules) to Lean data under GoFV/Rules/Generated (docs/contracts/rules.md).
 //
 // It adds export.go to the pinned rulegen package with `go run -overlay`, so the export runs
 // rulegen's own parser and op tables; third_party/go is not modified.

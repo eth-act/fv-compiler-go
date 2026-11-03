@@ -837,6 +837,7 @@ def nodeDen (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (topTy : Ty) (nod
       let argv := n.args.map fun
         | .var x => (σ x).valOr (or.val (.var x))
         | .node j => nodeDen ev or σ topTy nodes fuel j
+        | .expr e => (ev e).valOr (or.val e)
       (evalPure n.op t ai ax argv).retype t
 
 /-- The value `v` has after the rewrite. -/
