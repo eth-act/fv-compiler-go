@@ -539,6 +539,37 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
          · rfl)
   · rfl
 
+/-- `armSub f t`: a value of shape `f` has shape `t`. -/
+theorem armSub_hasTy {f t : Ty} (h : armSub f t = true) {v : Val} (hv : v.hasTy f = true) :
+    v.hasTy t = true := by
+  unfold armSub at h
+  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
+  rcases h with h | ⟨hf, ht⟩
+  · exact compSub_hasTy h hv
+  · obtain ⟨el, rfl⟩ := eq_of_isPtrTy hf
+    cases t <;> simp only [GoFV.Proof.Rules.isInt64Ty, Bool.false_eq_true] at ht
+    rename_i w
+    cases w <;> simp only [Bool.false_eq_true] at ht
+    cases v with
+    | int w x => cases w <;> simp_all [Val.hasTy]
+    | _ => simp_all [Val.hasTy]
+
+/-- A `CondSelect` checked by `condTop` has the top type's shape: its value is an arm or
+`poison`. -/
+theorem condSelect_hasTy {ty t0 t1 : Ty} (h0 : armSub t0 ty = true) (h1 : armSub t1 ty = true) :
+    ∀ {args : List Val}, (∀ a, args[0]? = some a → a.hasTy t0 = true) →
+      (∀ a, args[1]? = some a → a.hasTy t1 = true) → (Cmp.condSelect args).hasTy ty = true
+  | [x, y, c], hx, hy => by
+    simp only [Cmp.condSelect]
+    cases c.asBool with
+    | none => rfl
+    | some b =>
+      cases b
+      · exact armSub_hasTy h1 (hy y rfl)
+      · exact armSub_hasTy h0 (hx x rfl)
+  | [], _, _ | [_], _, _ | [_, _], _, _ | _ :: _ :: _ :: _ :: _, _, _ => by
+    simp only [Cmp.condSelect, Val.hasTy]
+
 /-- **`topAll`**: the raw value of a pattern whose top op `topAll` accepts has the top type's
 shape. -/
 theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Option Nat}
@@ -548,7 +579,7 @@ theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Op
     (ha : GoFV.Proof.Rules.Pat.argsOK e.ty [] (.op o nm pty pai pax par args cm) = true) :
     (GoFV.Proof.Rules.Pat.rawT tabs e (.op o nm pty pai pax par args cm)).hasTy (e.ty []) = true := by
   simp only [topAll, Bool.or_eq_true] at hp
-  rcases hp with (hp | hp) | hp
+  rcases hp with ((hp | hp) | hp) | hp
   · exact raw_topOK hp ht ha
   · exact raw_selTop hp ht
   · simp only [loadTop, Bool.and_eq_true, beq_iff_eq] at hp
@@ -556,6 +587,31 @@ theorem raw_topAll {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : Op
     simp only [GoFV.Proof.Rules.Pat.rawT,
       GoFV.Proof.Rules.opVal_pure (op := .Load) (by decide)]
     exact loadOp_hasTy hp _
+  · simp only [condTop, Bool.and_eq_true, beq_iff_eq] at hp
+    obtain ⟨⟨rfl, h0⟩, h1⟩ := hp
+    simp only [GoFV.Proof.Rules.Pat.rawT,
+      GoFV.Proof.Rules.opVal_pure (op := .CondSelect) (by decide)]
+    apply condSelect_hasTy h0 h1
+    · intro a hh
+      cases args with
+      | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
+      | cons q qs =>
+        simp only [GoFV.Proof.Rules.Pat.densT, List.getElem?_cons_zero, Option.some.injEq] at hh
+        subst hh
+        simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
+        exact den_hasTy_typed _ _ ht.1
+    · intro a hh
+      cases args with
+      | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
+      | cons q qs =>
+        cases qs with
+        | nil => simp [GoFV.Proof.Rules.Pat.densT] at hh
+        | cons q1 qs =>
+          simp only [GoFV.Proof.Rules.Pat.densT, List.getElem?_cons_succ, List.getElem?_cons_zero,
+            Option.some.injEq] at hh
+          subst hh
+          simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
+          exact den_hasTy_typed _ _ ht.2.1
 
 /-- A value of a slice's data pointer shape keeps `retypePtr`, one of `int64` `retypeI64`. -/
 theorem retype_slice_three {el : Option Nat} {p l c : Val} (hp : p.hasTy (.ptr el) = true)
