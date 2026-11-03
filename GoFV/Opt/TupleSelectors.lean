@@ -1,6 +1,7 @@
 import GoFV.Opt.Pass
 import GoFV.SSA.CopyInto
 import GoFV.SSA.TypePred
+import Std.Data.TreeMap
 
 /-!
 # tighten tuple selectors (`tuple.go:14-71`, `tightenTupleSelectors`)
@@ -18,11 +19,15 @@ namespace GoFV.Opt
 
 open GoFV.SSA
 
+/-- A total order on selector keys `(generator ID, index)`. -/
+def selKeyCmp (a b : ID × Int) : Ordering := (compare a.1 b.1).then (compare a.2 b.2)
 
 /-- `tightenTupleSelectors(f)`. -/
 def tightenTupleSelectors (tabs : Tables) (isMem : TypeRef → Bool) (f : Func) :
     Except String Func := do
-  let mut sel : Std.HashMap (ID × Int) ID := {}
+  -- Go's map is only searched, so any key order gives the same result; a `TreeMap`, which the
+  -- kernel can evaluate (non-vacuity witnesses), unlike a `HashMap`.
+  let mut sel : Std.TreeMap (ID × Int) ID selKeyCmp := {}
   let mut f := f
   for b in f.blocks do
     for v in (f.getB b).values do

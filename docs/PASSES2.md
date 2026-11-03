@@ -436,6 +436,21 @@ For comparison only, supported architectures combine the pointer expression into
 
 **Issue summary:** Implement required index-42 selector repair using encounter-ordered `(generator,index)` canonicalization. Clone misplaced selectors into producer blocks, retain originals as Copies, clear clone statement marks, and reproduce ID/append/Uses effects. Follow with the existing required deadcode pass (`tuple.go:14-71`; `value.go:429-458`; `compile.go:501-502`).
 
+**Proof (#385):** `GoFV.Proof.MoveL.tightenTupleSelectors_refinesL`
+(`GoFV/Proof/Pass/TupleSelL.lean`): `tightenTupleSelectorsPass penv f = .ok out`,
+`check ce f = .ok ()`, `check ce' out.func = .ok ()` and `moveB f out.func = true` give
+`RefinesL out.tables out.func penv.tables f` (`runL`), through `refinesL_of_move` (see tighten):
+the clone in the tuple's block is a total op (`Select0`/`Select1`/`SelectN`) with the selector's
+op, type, aux, auxint and argument; the original, now `Copy clone`, and a later duplicate,
+`Copy first`, stand for the source selector through `relB`'s copy case. The port's
+`(generator, index)` map is a `Std.TreeMap` (lookup only, so parity is unchanged: quick-v7
+9,297/9,297, full-v9 96,560/96,560) so that the kernel evaluates the pass. Witness
+`GoFV.Proof.Witness.tupleSelL_witness` (`tupL`: `Select0 (ADDSflags x lo)` in the block after
+the tuple's; the selector is cloned into the tuple's block, the output returns `5 + 3 = 8`).
+Coverage (`lake exe move-probe`): quick-v7 9,297 sections, 8,643 checked, 7 changed, `moveB`
+accepts 8,643 (0 rejections); full-v9 96,560 sections, 90,656 checked, 67 changed, accepted
+90,656 (0 rejections); not counted: inputs failing `check` (654 and 5,904).
+
 ### lowered deadcode — issue #396
 
 **Function / files:** Same `deadcode` implementation as Phase 1 and index 39 (`deadcode.go:161-313`; `compile.go:502`).
@@ -733,6 +748,18 @@ fails `check` (654 and 5,904).
 **Proof strategy & difficulty:** **Parity S / proof M:** prove eligible expressions can be recomputed from universally available fixed-register arguments; relate each clone to its source along the phi predecessor edge. Include symbolic-address and caller-PC semantics rather than proving only literal constants (`regalloc.go:2923-2935`; `_gen/ARM64Ops.go:385-389,655-662`).
 
 **Issue summary:** Implement optional index-50 phi argument cloning after critical-edge splitting. Use exact rematerializeable-plus-fixedReg eligibility, clone per occurrence without deduplication, preserve appended value/ID order and cleared statement marks, and update only the selected phi edge. No physical allocation or frame changes occur (`tighten.go:181-200`; `regalloc.go:2923-2935`; `value.go:446-458`).
+
+**Proof (#385):** `GoFV.Proof.MoveL.phiTighten_refinesL` (`GoFV/Proof/Pass/PhiTightenL.lean`):
+`phiTightenPass penv f = .ok out`, `check ce f = .ok ()`, `check ce' out.func = .ok ()` and
+`moveB f out.func = true` give `RefinesL out.tables out.func penv.tables f` (`runL`), through
+`refinesL_of_move` (the value-motion validator, see tighten): a clone in the predecessor is a
+total op with the source value's op, type, aux, auxint and arguments, and the `Phi` reading it
+is related to the source `Phi` edge-wise. Witness `GoFV.Proof.Witness.phiTightenL_witness`
+(`phiTL`: `Phi (MOVDconst [7]) x` after an `EQ` split into two `Plain` predecessors; the
+constant is cloned into `b2`, the output returns 7 for `x = 0`). Coverage (`lake exe
+move-probe`): quick-v7 9,297 sections, 8,643 checked, 280 changed, `moveB` accepts 8,643 (0
+rejections); full-v9 96,560 sections, 90,656 checked, 6,018 changed, accepted 90,656 (0
+rejections); not counted: inputs failing `check` (654 and 5,904).
 
 ### likelyadjust — issue #405
 

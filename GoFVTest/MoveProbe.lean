@@ -3,7 +3,7 @@ import GoFV.SSA.Check
 import GoFV.Opt.Tighten
 import GoFV.Opt.TupleSelectors
 import GoFV.Opt.Licm
-import GoFV.Proof.Pass.MoveLCheck
+import GoFV.Proof.Pass.LicmL
 import GoFVTest.Parity.Compare
 
 /-!
@@ -12,8 +12,9 @@ import GoFVTest.Parity.Compare
 For every section of `tighten`, `phi tighten`, `tighten tuple selectors` and `loop invariant`
 (input: the previous section), runs the Lean pass on the input and counts the sections, those
 whose input and output pass `check`, those the pass changed, and those `moveB` accepts (for
-`loop invariant`: `moveB (unhoist f g) g`); reports the first failing condition of `moveB` by
-count and small witness candidates (changed and accepted).
+`loop invariant`, the hypotheses of `licm_refinesL`: `unhoist f g` passes `check`,
+`critRelB f (unhoist f g)` and `moveB (unhoist f g) g`); reports the first failing condition
+by count and small witness candidates (changed and accepted).
 -/
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof.MoveL GoFVTest.Parity
@@ -94,14 +95,6 @@ def Stats.merge (a b : Stats) : Stats :=
 def listedCount (f : Func) : Nat :=
   f.blocks.foldl (fun n bid => n + (((f.block? bid).map (·.values.size)).getD 0)) 0
 
-/-- `licm`'s output with the input's value placement: `g`'s CFG, `f`'s values, the new blocks
-empty (`GoFV.Proof.MoveL.unhoist` once it exists; here only the probe's copy). -/
-def unhoist (f g : Func) : Func :=
-  { g with
-    valueTab := f.valueTab
-    blockTab := g.blockTab.map fun ob => ob.map fun gb =>
-      { gb with values := ((f.block? gb.id).map (·.values)).getD #[] } }
-
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let data ← IO.FS.readBinFile path
   match parseExportExt data with
@@ -138,10 +131,18 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         c := { c with inFails := if okf then 0 else 1, outFails := if okf && !okg then 1 else 0 }
         if okf && okg then
           let changed := g.blockTab != f.blockTab || g.valueTab != f.valueTab
-          let f0 := if name == "loop invariant" then unhoist f g else f
+          let licm := name == "loop invariant"
+          let f0 := if licm then unhoist f g else f
           let ok := okCert f0 g
-          let acc := moveWith ok f0 g
-          let w := why ok f0 g
+          -- loop invariant: `f` to `unhoist f g` by `critRelB`, then `moveB`
+          let pre : Option String :=
+            if !licm then none
+            else if !(check ce f0).toBool then some "unhoist fails check"
+            else if !GoFV.Proof.Crit.critRelB f f0 then some "critRelB"
+            else none
+          let w := pre <|> why ok f0 g
+          let acc := (!licm || ((check ce f0).toBool && GoFV.Proof.Crit.critRelB f f0)) &&
+            moveWith ok f0 g
           if acc != w.isNone then st := { st with bugs := st.bugs + 1 }
           c := { c with checked := 1, changed := if changed then 1 else 0
                         accepted := if acc then 1 else 0
