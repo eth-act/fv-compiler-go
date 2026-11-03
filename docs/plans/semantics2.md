@@ -349,6 +349,30 @@ activation's frame. `runLoc` never consults SSA value IDs for data — only home
   ABIInternal has no callee-saved registers besides `g`, `SP`, `ZR`); results arrive in their
   fixed registers; `MakeResult` reads the ABI result registers.
 
+**As implemented (H6, `GoFV/SSA/Sem/RunLoc.lean`, `GoFV.SSA.runLoc`).**
+- `runLoc` runs `b.Values` in order on a `LocState`. The state holds the register file by Go's
+  register number, the flags register, the stack slots written so far (a write kills the
+  overlapping slots of the same variable) and the current memory. Each value reads its
+  arguments from their homes and writes its result to its home. Its op is `runL`'s (`evalOpL`,
+  faulting as under `runSched`), so every op means what it means in L0/L1 and `Arg`/`ArgIntReg`
+  read their parameter as there.
+- A tuple's components go to the home's registers (`LocPair`, `LocResults`) in order; a memory
+  component is the current memory and a flags component the flags register. A value of type
+  `mem` or `flags` has no home: it is the current memory or the flags register. So a flags value
+  computed in one block and read as the control of another reads the register, including
+  `flagalloc`'s unlinked recomputations.
+- `LoadReg`/`StoreReg`/`Copy` move their argument.
+- `ZERO` reads as the 0 of the reader's shape and ignores writes. Regalloc homes zero constants of
+  every type there; the first corpus run found 24 functions in which a `bool` `false` read an
+  `int64` `0` from it.
+- Before a value's result is written, these hold `poison`: the registers in its op's
+  `regInfo.clobbers` (the caller-saved set for calls), its argument registers it clobbers
+  (`clobbersArg0`/`clobbersArg1`), its `f.tempRegs` register, and the flags register for an op
+  with `clobberFlags`.
+- A `Phi` does nothing; one whose argument has another home is `stuck`.
+- Controls are read from their homes for `stepTermL`. A `Ret`'s `MakeResult` (home
+  `LocResults []`) is its arguments read from their homes.
+
 **Refinement L1 → L2 (regalloc), recommended design: a certified checker**, in the style of
 clifv's `checkAlloc` (`FV/Backend/RegallocCheck.lean`, `checkAlloc_sound`,
 `docs/contracts/regalloc{,-proof}.md`), adapted to Go's in-place form:
@@ -425,7 +449,8 @@ proven over `runLoc` directly; block order is not semantic until Phase 3 (fallth
 1. `Flags`, block kinds, `evalArm64` for the integer families; difftest on `lower` sections.
 2. Memory and pseudo ops; difftest on all L0 sections.
 3. `runSched`, faulting ops, the schedule tie-break decision (§6); difftest on L1 sections.
-4. `runLoc`; difftest on L2 sections (requires the H1 export of homes).
+4. `runLoc`; difftest on L2 sections (requires the H1 export of homes). Done: `runLoc`, and the
+   difftest runs `regalloc`, `loop rotate` and `trim` with it.
 5. Co-simulation harness on Go's encodings (c.2), run per op family as the families land.
 6. After the licence decision only: an ASL-derived Lean model and agreement theorems (c.5).
 

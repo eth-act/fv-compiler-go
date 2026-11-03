@@ -1,5 +1,6 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Sem.RunSched
+import GoFV.SSA.Sem.RunLoc
 import GoFV.SSA.Sem.Image
 import GoFV.SSA.Sem.Runtime
 import Std.Data.HashMap
@@ -13,10 +14,10 @@ Three modes (driven by `scripts/sem-difftest.sh`):
   print `n` calls `<func>\t<arg>...` with random and edge-case arguments of its parameter
   types.
 - `run <dir> <calls> <native>`: run every call of `<calls>` on **every section** of the
-  function's export before `regalloc` (the generic sections with `GoFV.SSA.run`, the lowered
-  ones, `lower` … `layout`, with `GoFV.SSA.runL` and `schedule` … `flagalloc` with
-  `GoFV.SSA.runSched`, `docs/plans/semantics2.md` L0/L1), and compare each outcome with the
-  native result
+  function's export (the generic sections with `GoFV.SSA.run`, the lowered ones, `lower` …
+  `layout`, with `GoFV.SSA.runL`, `schedule` … `flagalloc` with `GoFV.SSA.runSched`, and
+  `regalloc` … `trim` with `GoFV.SSA.runLoc`, `docs/plans/semantics2.md` L0/L1/L2), and compare
+  each outcome with the native result
   (`<native>`, the output of `tools/semdiff/prog` under `qemu-aarch64-static`, one line
   `<call> -> <outcome>` per call). Exit status 1 on any disagreement.
 - `corpus <n> <seed> <dir>...`: for every export file below the directories whose function's
@@ -298,39 +299,45 @@ structure Loaded where
   sections : Array (String × Tables × Func × Ctx)
   /-- Each section's mode (`runCtxL`): lowered functions read registers, L1 sections fault. -/
   modes : Array LMode
+  /-- The `runLoc` context of each allocated section (L2, from `regalloc` on). -/
+  locs : Array (Option LocCtx)
   params : Array TypeRef
   results : Array TypeRef
   env : Env
 
-/-- The first section not run: `regalloc` assigns homes and needs `runLoc` (L2). -/
-def stopPass : String := "regalloc"
+/-- The first section run as allocated code (`runLoc`, L2): `regalloc` assigns homes. -/
+def locPass : String := "regalloc"
 
 /-- The first section run as scheduled SSA (`runSched`'s context, L1). -/
 def schedPass : String := "schedule"
 
 def load (path : System.FilePath) : IO (Except String Loaded) := do
   let data ← IO.FS.readBinFile path
-  match parseExportUntil stopPass data with
+  match parseExport data with
   | .error e => return .error s!"{path}: {e}"
   | .ok e =>
     let mut tabs : Tables := {}
     let mut secs := #[]
     let mut modes := #[]
+    let mut locs := #[]
     let mut sched := false
+    let mut alloc := false
     for s in e.sections do
       tabs := tabs.addAll s.defs
       let pass := s.pass.toStringLossy
       if pass == schedPass then sched := true
+      if pass == locPass then alloc := true
       let ctx := if sched then Ctx.makeSched tabs s.func else Ctx.makeL tabs s.func
       secs := secs.push (pass, tabs, s.func, ctx)
       modes := modes.push ⟨s.func.lowered, sched⟩
+      locs := locs.push (if alloc then some (LocCtx.make tabs s.func) else none)
     match secs[0]? with
     | none => return .error s!"{path}: no sections"
     | some (_, t0, f0, _) =>
       match signature t0 f0 with
       | none => return .error s!"{path}: signature outside the difftest's types"
       | some (ps, rs) =>
-        return .ok { sections := secs, modes, params := ps, results := rs,
+        return .ok { sections := secs, modes, locs, params := ps, results := rs,
                      env := { Env.runtime with globals := globalImage e } }
 
 /-- Program functions of an export directory, for calls (`Env.withFuncs`): each file's
@@ -389,7 +396,10 @@ def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel)
     | .error e => s!"stuck: bad arguments: {e}"
     | .ok (imgs, mem) =>
       let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)
-      match runCtxL (l.modes[k]?.getD ⟨false, false⟩) l.env ctx args mem fuel with
+      let out := match l.locs[k]? with
+        | some (some lc) => runCtxLoc l.env lc args mem fuel
+        | _ => runCtxL (l.modes[k]?.getD ⟨false, false⟩) l.env ctx args mem fuel
+      match out with
       | .returned rs m =>
         let rsT := (rs.zip l.results.toList).map fun (v, t) =>
           renderBytes tabs m 8 t (encode (tabs.ty t) v) 0
@@ -604,12 +614,15 @@ structure CStats where
   stuckEx : Std.HashMap String String := {}
   /-- Slowest files (ms). -/
   slow : Array (Nat × String) := #[]
-  /-- Runs of the unscheduled lowered sections (`lower` … `layout`, L0) and of the scheduled ones
-  (`schedule` … `flagalloc`, L1), and how many agree with section 0. -/
+  /-- Runs of the unscheduled lowered sections (`lower` … `layout`, L0), of the scheduled ones
+  (`schedule` … `flagalloc`, L1) and of the allocated ones (`regalloc` …, L2), and how many agree
+  with section 0. -/
   l0Runs : Nat := 0
   l0Agree : Nat := 0
   l1Runs : Nat := 0
   l1Agree : Nat := 0
+  l2Runs : Nat := 0
+  l2Agree : Nat := 0
   /-- Per pass name: gaps and differences of its sections. -/
   byPass : Std.HashMap String (Nat × Nat) := {}
   /-- Gap reasons (stuck messages of later sections), with a first example. -/
@@ -668,13 +681,16 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
           let pass := l.sections[k]!.1
           if pass == "lower" then form := 1
           if pass == schedPass then form := 2
+          if pass == locPass then form := 3
           st := { st with sectionRuns := st.sectionRuns + 1 }
           if form == 1 then st := { st with l0Runs := st.l0Runs + 1 }
           if form == 2 then st := { st with l1Runs := st.l1Runs + 1 }
+          if form == 3 then st := { st with l2Runs := st.l2Runs + 1 }
           if r == r0 then
             st := { st with agree := st.agree + 1 }
             if form == 1 then st := { st with l0Agree := st.l0Agree + 1 }
             if form == 2 then st := { st with l1Agree := st.l1Agree + 1 }
+            if form == 3 then st := { st with l2Agree := st.l2Agree + 1 }
           else
             let (g, df) := st.byPass.getD pass (0, 0)
             if r.startsWith "stuck" then
@@ -708,7 +724,8 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
     {st.agree} agree, {st.diffs} differ, {st.contracted} differ by FMA contraction, {st.gaps} \
     stuck (gaps, in {st.gapFuncs} functions); \
     L0 sections (lower … layout): {st.l0Runs} runs, {st.l0Agree} agree; L1 sections \
-    (schedule … flagalloc, runSched): {st.l1Runs} runs, {st.l1Agree} agree"
+    (schedule … flagalloc, runSched): {st.l1Runs} runs, {st.l1Agree} agree; L2 sections \
+    (regalloc …, runLoc): {st.l2Runs} runs, {st.l2Agree} agree"
   IO.println "gaps and differences by pass:"
   for (p, (g, df)) in st.byPass.toList do IO.println s!"  {p}: {g} gaps, {df} differences"
   IO.println "gap reasons (top 30):"
