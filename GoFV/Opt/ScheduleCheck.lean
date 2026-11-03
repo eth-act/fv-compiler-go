@@ -150,7 +150,17 @@ def isNC (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op.nilCheck)).getD 
 outside the nil block and the load does not fault (`late nilcheck` later removes the check). -/
 def ncBase (f : Func) (v : Value) : Bool := ldOp v.op && (v.args[0]?.any (isNC f))
 
-/-- The source runs `x` before `y`, the target `y` before `x` (both may fail). Allowed if `x`
+/-- A register argument piece (`ArgIntReg`) of a parameter of the function (`params`: its
+input parameters' names, `Ctx.params`): it reads the parameter's image, which every frame of the
+activation has, so it evaluates. -/
+def argOK (tabs : Tables) (params : Array (Option AuxRef)) (v : Value) : Bool :=
+  v.op == .ArgIntReg && v.args.isEmpty &&
+    match v.aux.bind tabs.aux? with
+    | some { kind := .nameOff n _, .. } => params.contains (some n)
+    | _ => false
+
+/-- The source runs `x` before `y`, the target `y` before `x` (both may fail). Allowed if `y`
+evaluates (a parameter's register piece, `argOK`); or if `x`
 never panics (so the source cannot stop at `x` with `y` not run: a value that never panics, or a
 load whose base is a nil check's result, `ncBase`); or `x` and `y` fault alike:
 `y` is a `faultOp` and `x` a `faultOp` or a nil check on the same memory (whichever stops first
@@ -159,7 +169,7 @@ the same memory (if `x` faults, its base is nil, so `y` panics as well). -/
 def swapOK (tabs : Tables) (f : Func) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
-    !mayPanic tabs vx || ncBase f vx ||
+    argOK tabs (Ctx.makeL tabs f).params vy || !mayPanic tabs vx || ncBase f vx ||
       ((cls tabs vx == .load || cls tabs vx == .nil) && vx.args.back? == vy.args.back? &&
         !(vx.args.back?.any (isSPA f)) &&
         (cls tabs vy == .load ||

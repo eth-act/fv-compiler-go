@@ -761,6 +761,40 @@ theorem evalValueL_nc_nil {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v :
   rw [evalValueL_bind hm, hf, evalOpL_nc_nil hop hb]
   rfl
 
+/-! ## Parameter pieces -/
+
+/-- **A parameter's register piece evaluates** (`argOK`) in a frame with an image per
+parameter. -/
+theorem evalValueL_argOK {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    (h : argOK ctx.tabs ctx.params v = true) (himg : fr.images.size = ctx.params.size) :
+    ∃ y, evalValueL md env ctx fr v = .ok y := by
+  unfold argOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨hop, hargs⟩, haux⟩ := h
+  have hm : argsM fr v = .ok [] := by
+    have h0 : v.args = #[] := by simpa using hargs
+    simp only [argsM, h0]; rfl
+  rw [evalValueL_bind hm]
+  have hg : v.op.generic = true := by rw [hop]; rfl
+  rw [evalOpL_generic _ _ _ _ _ _ hg]
+  split at haux
+  · rename_i d n off hx
+    have hex : ∃ x, x ∈ ctx.params ∧ (x == some n) = true :=
+      ⟨some n, Array.mem_of_contains_eq_true haux, by simp⟩
+    have hi := Array.findIdx?_eq_some_of_exists hex
+    have hlt := Array.findIdx_lt_size_of_exists hex
+    have hev : evalOp env ctx fr v [] (ctx.tys[v.id]?.getD .other) =
+        argVal ctx fr n off (ctx.tys[v.id]?.getD .other) := by
+      unfold evalOp; rw [hop]; dsimp only; rw [hx]
+    rw [hev]
+    unfold argVal
+    rw [hi]
+    dsimp only
+    rw [Array.getElem?_eq_getElem (by rw [himg]; exact hlt)]
+    dsimp only
+    split <;> exact ⟨_, rfl⟩
+  · cases haux
+
 /-! ## Value correspondence -/
 
 /-- `evalOpL` of a symbolic `symAddrOp` ignores its first argument. -/
