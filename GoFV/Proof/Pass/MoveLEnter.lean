@@ -66,7 +66,7 @@ theorem moveWith_spec (h : moveWith ok f g = true) :
 theorem blockOK_spec {b : ID} (h : blockOK ok f g b = true) :
     ∃ fb gb oT oS, f.block? b = some fb ∧ g.block? b = some gb ∧ gb.kind = fb.kind ∧
       gb.auxInt = fb.auxInt ∧ gb.succs = fb.succs ∧ gb.preds = fb.preds ∧
-      gb.controls = fb.controls ∧ (∀ c ∈ gb.controls, okAt ok c = true) ∧
+      gb.controls = fb.controls ∧ (∀ c ∈ gb.controls, relB ok f g relFuel c c = true) ∧
       (∀ x ∈ gb.values, valueOK ok g fb x = true) ∧ schedule g gb = some oT ∧
       schedule f fb = some oS ∧ orderOK ok f g oT.toList oS.toList = true := by
   unfold blockOK at h
