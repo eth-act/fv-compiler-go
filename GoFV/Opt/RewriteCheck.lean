@@ -1574,10 +1574,10 @@ def valPath : List Nat → Sem.Val → Sem.Val
 
 /-- Component `ps` of `x`'s value is a `zeroVal`, at most `k` deep: a constant term
 (`termConst`) whose component is one, a selection (`ECCheck.selIdx?`) of an argument whose
-component `i :: ps` is, or a composite built by a make op (`ECCheck.isMake`) whose argument `i`
-has a zero component `ps'` (`ps = i :: ps'`) or all of whose arguments are zero (`ps = []`).
-E.g. `SliceLen (SliceMake p (Const64 [0]) c)`, `ITab (StructSelect [0] (StructMake
-(ConstInterface) x))`. -/
+component `i :: ps` is, a `Copy` of an argument whose component `ps` is, or a composite built by
+a make op (`ECCheck.isMake`) whose argument `i` has a zero component `ps'` (`ps = i :: ps'`) or
+all of whose arguments are zero (`ps = []`). E.g. `SliceLen (SliceMake p (Const64 [0]) c)`,
+`ITab (StructSelect [0] (StructMake (ConstInterface) x))`. -/
 def zeroAt (tabs : Tables) (f : Func) : Nat → List Nat → ID → Bool
   | 0, _, _ => false
   | k + 1, ps, x =>
@@ -1589,10 +1589,11 @@ def zeroAt (tabs : Tables) (f : Func) : Nat → List Nat → ID → Bool
       match ECCheck.selIdx? v with
       | some i => v.args.size == 1 && zeroAt tabs f k (i :: ps) v.args[0]!
       | none =>
-        ECCheck.isMake v.op &&
-        match ps with
-        | [] => v.args.toList.all (zeroAt tabs f k [])
-        | i :: ps' => decide (i < v.args.size) && zeroAt tabs f k ps' v.args[i]!
+        (v.op == .Copy && v.args.size == 1 && zeroAt tabs f k ps v.args[0]!) ||
+        (ECCheck.isMake v.op &&
+          match ps with
+          | [] => v.args.toList.all (zeroAt tabs f k [])
+          | i :: ps' => decide (i < v.args.size) && zeroAt tabs f k ps' v.args[i]!)
     | none => false
 
 /-- A term whose value is zero (`zeroAt`, ten deep): `Const64 [0]`, `ConstBool [0]`, `ConstNil`,
@@ -2111,14 +2112,42 @@ def ssApply (f : Func) (v : ID) (w : Value) (ds : List Value) : Func :=
     else f
   | none => f
 
+/-- The events `evs` replace argument `i` of `v` (copy elimination). -/
+def copyArgOf (evs : Array RwEvent) (v : ID) (i : Nat) : Bool :=
+  evs.any fun | .copyArg y j _ => y == v && j == i | _ => false
+
+/-- The first store of a split's logged chain: of its stores (`w` itself when in place, the fresh
+values `ds`), the one whose memory is none of them. -/
+def ssFirst (v : ID) (w : Value) (ds : List Value) : Option ID :=
+  let sts := (if w.op == .Store then w :: ds else ds).filter (·.op == .Store)
+  let ids := v :: sts.map (·.id)
+  (sts.find? fun s => !ids.contains (s.args[2]?.getD 0)).map (·.id)
+
 /-- One event of `ssPre`: a split of a `Store` of `f` is applied, any other event kept (a split of
-a fresh field store of an earlier split, a nested struct, is left to a later layer), but for the
-copy-argument replacements of the split `Store` logged before it (copy elimination on its
-arguments, which the split validated in `f` through copies replaces). -/
+a fresh field store of an earlier split, a nested struct, or a second split of a `Store` this
+layer split in place, `(Store dst (ArrayMake1 (StructMake …)) mem)`, is left to a later layer),
+but for the copy-argument replacements of the split `Store` logged before it (copy elimination on
+its arguments, which the split validated in `f` through copies replaces). A replacement of its
+memory gave the chain's first store the copy's source (another split `Store`'s last store, in any
+block, or the memory a split without fields stands for): that store starts from the `Store`'s
+memory in `f` instead, and the replacements move to it, for `validate` to replay. -/
 def ssStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
     Func × Array RwEvent :=
   match ssEvent? t f ev with
-  | some (v, w, ds) => (ssApply p.1 v w ds, p.2.filter fun | .copyArg y _ _ => y != v | _ => true)
+  | some (v, w, ds) =>
+    if !((p.1.value? v).any fun u => (f.value? v).any fun fv => u.op == fv.op && u.args == fv.args)
+    then (p.1, p.2.push ev)
+    else
+    let memArg := copyArgOf p.2 v 2
+    match (if memArg then ssFirst v w ds else none), (f.value? v).bind (·.args[2]?) with
+    | some s0, some m =>
+      let fix := fun (u : Value) =>
+        if u.id == s0 then { u with args := u.args.set! 2 m } else u
+      (ssApply p.1 v (fix w) (ds.map fix), p.2.filterMap fun
+        | .copyArg y i src => if y != v then some (.copyArg y i src)
+            else if i == 2 then some (.copyArg s0 2 src) else none
+        | e => some e)
+    | _, _ => (ssApply p.1 v w ds, p.2.filter fun | .copyArg y _ _ => y != v | _ => true)
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's struct-store splits of its `Store`s applied, and the remaining
@@ -2203,18 +2232,6 @@ def ssLink (tabs : Tables) (f g : Func) (b dst x : ID) (fs : List (Nat × Sem.Ty
     | _, _ => false
   | _, _, _ => false
 
-/-- The memory `m0` a split's chain starts from is the split `Store`'s memory `mem` (in block
-`b`): `mem` reaches it through copies in `f`, or `mem` stands through copies for another split
-`Store` of `b` with fields (in `g` its `Copy` of `m0`, the last store of its chain). -/
-def ssStart (tabs : Tables) (f g : Func) (b mem m0 : ID) : Bool :=
-  copyReach tabs f.valueTab f.valueTab.size mem m0 ||
-  let y := copyEnd tabs f.valueTab f.valueTab.size mem
-  match f.value? y, g.value? y with
-  | some yv, some gy =>
-    yv.op == .Store && yv.block == b && gy.op == .Copy && gy.args == #[m0] &&
-      ((Sem.auxTy tabs yv.aux).asAgg matches .agg (_ :: _) _)
-  | _, _ => false
-
 /-- The `Make` ops: `StructMake`, `StringMake`, `SliceMake`, `IMake`, `ComplexMake`,
 `ArrayMake1` (`Comp.make`: the aggregate of the arguments). -/
 def ssMakeOp : Op → Bool
@@ -2225,8 +2242,9 @@ def ssMakeOp : Op → Bool
 aggregate shape `agg fs n` (a string or slice by its layout `Ty.asAgg`; every field inside it,
 `layoutsOK`, at an offset below `n`) of a
 `Make` (`ssMakeOp`, up to copies, `copyEnd`) of that shape; in `g` `Copy` of the last store of
-the chain (`ssWalk`), or (in place) that last store itself, each field linked (`ssLink`), from
-the `Store`'s memory (`ssStart`). The chain's pairs. -/
+the chain (`ssWalk`), or (in place) that last store itself, each field linked (`ssLink`), from a
+memory the `Store`'s memory reaches through copies (`ssStep` rebases the chain there). The
+chain's pairs. -/
 def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
   match f.value? x, g.value? x with
   | some fv, some gv =>
@@ -2244,7 +2262,7 @@ def ssSplit? (tabs : Tables) (f g : Func) (x : ID) : Option (List (ID × ID)) :=
             (if copy then gv.args.size == 1 && gv.aux == none && gv.auxInt == 0
              else gv.op == .Store && 0 < fs.length) &&
             r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2 &&
-            ssStart tabs f g fv.block mem r.2 &&
+            copyReach tabs f.valueTab f.valueTab.size mem r.2 &&
             (List.range fs.length).all (ssLink tabs f g fv.block dst x fs smv.args r.1 r.2) then
           some r.1
         else none
@@ -2902,16 +2920,48 @@ applies the log's expansions that `structLoadOK` validates on the layer's input 
 becomes the `StructMake`, the fresh `OffPtr`s and `Load`s are put in), and the layer is related
 to its input by `validate` with those events alone. -/
 
+/-- A struct-load expansion's logged values on the `Load` `v`'s arguments in `f`: when copy
+elimination replaced the `Load`'s pointer (argument 0) or memory (argument 1) before the expansion
+(in `prior`), the fresh `OffPtr`s (`Load`s) took the copy's source; they take the `Load`'s argument
+instead (`slMove` moves the replacements to them). -/
+def slRebase (f : Func) (v : ID) (prior : Array RwEvent) (defs : List Value) : List Value :=
+  match f.value? v, defs with
+  | some u, x' :: ds =>
+    let p0 := copyArgOf prior v 0
+    let p1 := copyArgOf prior v 1
+    x' :: ds.map fun d =>
+      if p0 && d.op == .OffPtr && d.args.size == 1 then { d with args := #[u.args[0]?.getD 0] }
+      else if p1 && d.op == .Load && d.args.size == 2 then
+        { d with args := d.args.set! 1 (u.args[1]?.getD 0) }
+      else d
+  | _, _ => defs
+
+/-- The events `evs` after the expansion of `v` with the fresh values `ds`: the replacements of
+`v`'s pointer (memory) moved to each fresh `OffPtr` (`Load`), `v`'s others dropped. -/
+def slMove (v : ID) (ds : List Value) (evs : Array RwEvent) : Array RwEvent :=
+  evs.foldl (fun acc e => match e with
+    | .copyArg y i src =>
+      if y != v then acc.push e
+      else if i == 0 then
+        ds.foldl (fun a d => if d.op == .OffPtr then a.push (.copyArg d.id 0 src) else a) acc
+      else if i == 1 then
+        ds.foldl (fun a d => if d.op == .Load then a.push (.copyArg d.id 1 src) else a) acc
+      else acc
+    | e => acc.push e) #[]
+
 /-- The `Load` `v` of `f` that event `ev` expands (a `structLoads` rule event, `structLoadShapeOK`)
-and the logged definitions, if `structLoadOK` validates them on `f`'s definitions. -/
-def slEvent? (t : Interp.Table) (tabs : Tables) (f : Func) : RwEvent → Option (ID × List Value)
+and the logged definitions rebased on its arguments (`slRebase`, after the events `prior`), if
+`structLoadOK` validates them on `f`'s definitions. -/
+def slEvent? (t : Interp.Table) (tabs : Tables) (f : Func) (prior : Array RwEvent) :
+    RwEvent → Option (ID × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
       let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
+      let ds := slRebase f v prior defs.toList
       if u.op == .Load && n + t.loads.size ≤ i &&
           (t.structLoads[i - n - t.loads.size]?).any (structLoadShapeOK ·.rule) &&
-          structLoadOK tabs f.valueTab v defs.toList then some (v, defs.toList)
+          structLoadOK tabs f.valueTab v ds then some (v, ds)
       else none
     | none => none
   | _ => none
@@ -2930,22 +2980,35 @@ def slApply (f : Func) (v : ID) : List Value → Func
         { w with op := x'.op, type := x'.type, auxInt := x'.auxInt, aux := x'.aux, args := x'.args }
     | none => f
 
-/-- One event of `slPre`: an expansion of `f` is applied, any other event kept, but for the
-copy-argument replacements of the expanded `Load` logged before it. -/
-def slStep (t : Interp.Table) (tabs : Tables) (f : Func) (p : Func × Array RwEvent)
-    (ev : RwEvent) : Func × Array RwEvent :=
-  match slEvent? t tabs f ev with
-  | some (v, ds) => (slApply p.1 v ds, p.2.filter fun | .copyArg w _ _ => w != v | _ => true)
-  | none => (p.1, p.2.push ev)
+/-- A rule event with the definitions `ds` instead of the logged ones. -/
+def evWithDefs : RwEvent → List Value → RwEvent
+  | .rule v i b _, ds => .rule v i b ds.toArray
+  | e, _ => e
+
+/-- One event of `slPre` (state: the function, the kept events, the applied expansions): an
+expansion of `f` is applied and taken (as rebased), any other event kept, the copy-argument
+replacements of the expanded `Load` logged before it moved (`slMove`). -/
+def slStep (t : Interp.Table) (tabs : Tables) (f : Func)
+    (p : Func × Array RwEvent × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent × Array RwEvent :=
+  match slEvent? t tabs f p.2.1 ev with
+  | some (v, ds) => (slApply p.1 v ds, slMove v ds.tail p.2.1, p.2.2.push (evWithDefs ev ds))
+  | none => (p.1, p.2.1.push ev, p.2.2)
+
+/-- `slStep` over the log of the layer's input `f`. -/
+def slRun (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) :
+    Func × Array RwEvent × Array RwEvent :=
+  log.foldl (slStep t tabs f) (f, #[], #[])
 
 /-- The input with the log's validated struct-load expansions applied, and the remaining events. -/
 def slPre (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) :
     Func × Array RwEvent :=
-  log.foldl (slStep t tabs f) (f, #[])
+  let r := slRun t tabs f log
+  (r.1, r.2.1)
 
-/-- The expansions `slPre` applies. -/
+/-- The expansions `slPre` applies, as rebased. -/
 def slTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) : Array RwEvent :=
-  log.filter fun ev => (slEvent? t tabs f ev).isSome
+  (slRun t tabs f log).2.2
 
 /-! ## Value-rule `Load` expansions as a layer (issue #17)
 
@@ -3062,12 +3125,13 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .seg => segPre t
   | .ps => psPre t
 
-/-- The layers of `RewriteCheck.accepts`, in order (a second split layer for nested structs;
-selective forwarding rounds after the segments for forwardings through `Move`s whose sources
-earlier forwardings changed). -/
+/-- The layers of `RewriteCheck.accepts`, in order (a second struct-load layer and a second split
+layer for nested structs; the value-rule `Load` expansions and selections of `Make`s and `Load`s
+before the splits, which store their results; selective forwarding rounds after the segments for
+forwardings through `Move`s whose sources earlier forwardings changed). -/
 def layers : List Layer :=
-  [.ps, .nil true, .fwd true, .sl, .ss, .ss, .seg, .fwd true, .fwd true, .fwd true, .fwd true,
-   .fwd false, .nil false]
+  [.ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .ss, .seg, .fwd true, .fwd true, .fwd true,
+   .fwd true, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/

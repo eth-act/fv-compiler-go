@@ -125,7 +125,7 @@ structure SplitD (tabs : Tables) (f g : Func) (x : ID) (ps : List (ID × ID)) wh
   hgty : gv.type = fv.type
   hgbl : gv.block = fv.block
   hlen : ps.length = fs.length
-  hm0 : ssStart tabs f g fv.block mem m0 = true
+  hm0 : copyReach tabs f.valueTab f.valueTab.size mem m0 = true
   hlink : ∀ k < fs.length, ssLink tabs f g fv.block dst x fs smv.args ps m0 k = true
   hsplit : ssSplit? tabs f g x = some ps
 
@@ -194,29 +194,6 @@ theorem ssSplit_spec {x : ID} {ps : List (ID × ID)} (h : ssSplit? tabs f g x = 
       next => simp at h
     next => simp at h
   next => simp at h
-
-/-- What `ssStart` says: the chain starts at a memory the split `Store`'s reaches through copies,
-or at the last store of another split `Store` of the block (with fields) that `mem` stands for. -/
-theorem ssStart_cases {b mem m0 : ID} (h : ssStart tabs f g b mem m0 = true) :
-    copyReach tabs f.valueTab f.valueTab.size mem m0 = true ∨
-      ∃ yv gy, f.value? (copyEnd tabs f.valueTab f.valueTab.size mem) = some yv ∧
-        g.value? (copyEnd tabs f.valueTab f.valueTab.size mem) = some gy ∧ yv.op = .Store ∧
-        yv.block = b ∧ gy.op = .Copy ∧ gy.args = #[m0] ∧
-        ∃ q fs n, (auxTy tabs yv.aux).asAgg = .agg (q :: fs) n := by
-  unfold ssStart at h
-  simp only [Bool.or_eq_true] at h
-  rcases h with h | h
-  · exact .inl h
-  · right
-    split at h
-    next yv gy hyv hgy =>
-      simp only [Bool.and_eq_true, beq_iff_eq] at h
-      obtain ⟨⟨⟨⟨hop, hb⟩, hg⟩, ha⟩, hax⟩ := h
-      refine ⟨yv, gy, hyv, hgy, hop, hb, hg, ha, ?_⟩
-      split at hax
-      · next q fs n heq => exact ⟨q, fs, n, heq⟩
-      · cases hax
-    next => cases h
 
 /-- A well laid-out aggregate's fields lie inside it. -/
 theorem layoutsOK_in {n : Nat} : {fs : List (Nat × Ty)} → layoutsOK n fs = true →

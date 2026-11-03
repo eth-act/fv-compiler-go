@@ -112,7 +112,7 @@ def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
       return "layout"
     if !(gv.id == x && gv.type == fv.type && gv.block == fv.block) then return "target header"
     if !(r.1.length == fs.length && last == (r.1.getLast?.map (·.2)).getD r.2) then return "walk"
-    if !RewriteCheck.ssStart tabs f g fv.block mem r.2 then return "start"
+    if !RewriteCheck.copyReach tabs f.valueTab f.valueTab.size mem r.2 then return "start"
     for k in List.range fs.length do
       if !RewriteCheck.ssLink tabs f g fv.block dst x fs smv.args r.1 r.2 k then
         let (o, t) := fs[k]!

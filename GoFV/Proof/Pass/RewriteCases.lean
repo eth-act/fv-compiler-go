@@ -352,7 +352,7 @@ theorem psPre_none {t : Interp.Table} (h : t.phiSels = #[]) (f : Func) (log : Ar
 /-- A table without struct-load expansions (`Interp.Table.structLoads`) has no expansion
 events. -/
 theorem slEvent?_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Tables) (f : Func)
-    (ev : RwEvent) : RewriteCheck.slEvent? t tabs f ev = none := by
+    (prior : Array RwEvent) (ev : RwEvent) : RewriteCheck.slEvent? t tabs f prior ev = none := by
   cases ev with
   | rule v i b d =>
     simp only [RewriteCheck.slEvent?, h]
@@ -363,17 +363,90 @@ theorem slEvent?_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Table
 
 theorem slPre_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Tables) (f : Func)
     (log : Array RwEvent) : RewriteCheck.slPre t tabs f log = (f, log) := by
-  have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.slStep t tabs f) (f, acc) = (f, acc ++ l.toArray) := by
+  have key : ∀ (l : List RwEvent) (acc tk : Array RwEvent),
+      l.foldl (RewriteCheck.slStep t tabs f) (f, acc, tk) = (f, acc ++ l.toArray, tk) := by
     intro l
     induction l with
-    | nil => intro acc; simp
+    | nil => intro acc tk; simp
     | cons ev l ih =>
-      intro acc
+      intro acc tk
       rw [List.foldl_cons, RewriteCheck.slStep, slEvent?_none h]
       dsimp only
       rw [ih]; simp
-  unfold RewriteCheck.slPre
+  unfold RewriteCheck.slPre RewriteCheck.slRun
+  rw [← Array.foldl_toList, key]
+  simp
+
+/-- A function without `Load`s and `Make`s (`RewriteCheck.ssMakeOp`) has no value-rule `Load`
+expansion events nor copy-argument replacements of a `Load`'s argument or by a `Load`. -/
+theorem ldPre_none {t : Interp.Table} {tabs : Tables} {f : Func}
+    (hf : f.valueTab.all (fun o => o.all fun w =>
+      w.op != .Load && !RewriteCheck.ssMakeOp w.op) = true)
+    (log : Array RwEvent) : RewriteCheck.ldPre t tabs f log = (f, log) := by
+  have hget : ∀ y w, RewriteCheck.Defs.get? f.valueTab y = some w →
+      w.op ≠ .Load ∧ RewriteCheck.ssMakeOp w.op = false := by
+    intro y w h
+    unfold RewriteCheck.Defs.get? at h
+    cases hy : f.valueTab[y]? with
+    | none => rw [hy] at h; cases h
+    | some o =>
+      rw [hy] at h
+      have hall := (Array.all_eq_true_iff_forall_mem.1 hf) o (Array.mem_of_getElem? hy)
+      cases o with
+      | none => cases h
+      | some w' =>
+        simp only [Option.join_some, Option.some.injEq] at h
+        subst h
+        simpa using hall
+  have hTgt : ∀ y u, RewriteCheck.Defs.get? f.valueTab y = some u →
+      RewriteCheck.ldTarget f.valueTab u = false := by
+    intro y u hu
+    unfold RewriteCheck.ldTarget
+    obtain ⟨h1, -⟩ := hget y u hu
+    have h1' : (u.op == .Load) = false := by simpa using h1
+    rw [h1', Bool.false_or]
+    cases ha : u.args[0]? with
+    | none => simp
+    | some a =>
+      cases hw : RewriteCheck.Defs.get? f.valueTab a with
+      | none => simp [hw]
+      | some w =>
+        obtain ⟨h2, h3⟩ := hget a w hw
+        simp [hw, h2, h3]
+  have key : ∀ (l : List RwEvent) (rest : Array RwEvent),
+      l.foldl (RewriteCheck.ldStep t tabs f)
+          { g := f, M := f.valueTab, taken := #[], rest := rest } =
+        { g := f, M := f.valueTab, taken := #[], rest := rest ++ l.toArray } := by
+    intro l
+    induction l with
+    | nil => intro rest; simp
+    | cons ev l ih =>
+      intro rest
+      rw [List.foldl_cons]
+      have hstep : RewriteCheck.ldStep t tabs f
+          { g := f, M := f.valueTab, taken := #[], rest := rest } ev =
+          { g := f, M := f.valueTab, taken := #[], rest := rest.push ev } := by
+        unfold RewriteCheck.ldStep
+        cases ev with
+        | rule v i b d =>
+          dsimp only
+          cases hv : RewriteCheck.Defs.get? f.valueTab v with
+          | none => rfl
+          | some u => simp [hTgt v u hv]
+        | copyArg v i src =>
+          dsimp only
+          cases hv : RewriteCheck.Defs.get? f.valueTab v with
+          | none => rfl
+          | some u =>
+            cases hs : RewriteCheck.Defs.get? f.valueTab src with
+            | none => rfl
+            | some w =>
+              obtain ⟨h1, -⟩ := hget v u hv
+              obtain ⟨h2, -⟩ := hget src w hs
+              simp [h1, h2]
+        | _ => rfl
+      rw [hstep, ih]; simp
+  unfold RewriteCheck.ldPre RewriteCheck.ldRun
   rw [← Array.foldl_toList, key]
   simp
 
@@ -390,12 +463,14 @@ theorem layersOK_none {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pas
     exact layersOK_none Ls (fun L' hL' => h L' (List.mem_cons_of_mem _ hL'))
 
 /-- `checkedRewrite_cases` for a table without nil-check eliminations, forwardings, struct-load
-expansions, struct-store splits, segment rules and `Phi` selections, on a function whose
-rewrite logs no phi elimination. -/
+expansions, struct-store splits, segment rules and `Phi` selections, on a function without
+`Load`s and `Make`s whose rewrite logs no phi elimination. -/
 theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
     (h1 : t.loads = #[]) (h2 : t.structStores = #[]) (h4 : t.structLoads = #[])
     (h5 : t.segs = #[]) (h6 : t.phiSels = #[]) {penv : PassEnv}
     {f : Func} {out : PassOut}
+    (hld : f.valueTab.all (fun o => o.all fun w =>
+      w.op != .Load && !RewriteCheck.ssMakeOp w.op) = true)
     (hphi : ∀ r, rewriteRun t true true penv f = .ok r → RewriteCheck.noPhiElim r.2.2 = true)
     (h : checkedRewrite t penv f = .ok out) :
     (out.func = f ∧ out.tables = penv.tables) ∨
@@ -442,7 +517,7 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
             | fwd sel => exact fwdPre_none h1 _ sel f log
             | sl => exact slPre_none h4 _ f log
             | ss => exact ssPre_none h2 f log
-            | ld => simp [RewriteCheck.layers] at hL
+            | ld => exact ldPre_none hld log
             | seg => exact segPre_none h5 f log
             | ps => exact psPre_none h6 f log
         · cases h3
