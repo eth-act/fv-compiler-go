@@ -178,3 +178,7 @@ root = "GoFVTest.CseLProbe"
 [[lean_exe]]
 name = "unread-probe"
 root = "GoFVTest.UnreadProbe"
+
+[[lean_exe]]
+name = "lowfrag-probe"
+root = "GoFVTest.LowFragProbe"
