@@ -19,11 +19,12 @@ matches the swapped pattern argument for argument; no op symmetry is needed, so 
 cases need not commute), every instance whose checks and condition hold, whose leaves have their
 shapes and whose op nodes' arguments the shapes `argShapeOk` asks for, the rewritten value
 refines the matched one, both at the matched value's shape. Unlike Phase 1 the top is compared
-after `retypeL` (an arm64 op computes a 64-bit register that `retypeL` narrows to a narrow type),
-so there is no `hasTy` assumption on the top.
+after `retypeL` (an arm64 op computes a 64-bit register that `retypeL` narrows to a narrow type);
+a generic top op is assumed to produce its shape (`topOKL`, Phase 1's `topOK`).
 
 `SetOpSound o o'`: the ellipsis rule `(o ...) => (o' ...)` on a term (same arguments, type and
-fields). `BlockRuleL.Sound`: a block rule `(K ctrl) && cond => (K' x)` (or `First`, successors
+fields), at shapes where a generic `o` produces its shape (`topOKL`). `BlockRuleL.Sound`: a block
+rule `(K ctrl) && cond => (K' x)` (or `First`, successors
 possibly swapped) on one control, of a conditional kind (`If` or an arm64 flags/register kind):
 whenever the old block takes a successor (`brVal`), the new one takes the same edge.
 -/
@@ -187,6 +188,17 @@ def resDenL (tabs : Tables) (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Orac
   | .build nodes => nodeDenL tabs e pat ev or σ topTy nodes nodes.length 0
   | .setOp o => or.val (.op o)
 
+/-- A generic top op produces a value of its type's shape (Phase 1's `RewriteCheck.topOK`: Go types
+these values at their op's width, and a narrow generic op read at a wider shape would be widened by
+`retypeL` where the arm64 op keeps its register); arm64 tops are unconstrained (`retypeL` narrows
+their 64-bit register). -/
+def topOKL (o : Op) (ty : Ty) : Bool := !o.generic || GoFV.Opt.RewriteCheck.topOK o ty
+
+/-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
+def Pat.topOKL (ty : Ty) : Pat → Bool
+  | .op o _ _ _ _ _ _ _ => GoFV.Proof.Low.topOKL o ty
+  | _ => true
+
 /-- **The obligation of one swapped form of a value rule** (module doc). -/
 def ArmRule.Sound1 (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
@@ -198,6 +210,7 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     condHolds ev r.cond →
     Pat.typed e [] r.pat →
     Pat.argsOK e.ty [] r.pat = true →
+    Pat.topOKL (e.ty []) r.pat = true →
     Refines ((Pat.rawL tabs e r.pat).retypeL (e.ty []))
       (resDenL tabs e r.pat ev or σ (e.ty []) r.result)
 
@@ -215,6 +228,7 @@ def ellipsisOn (o : Op) : Pat → Bool
 shape and fields, `o'` at the shape refines `o` at the shape. -/
 def SetOpSound (o o' : Op) : Prop :=
   ∀ (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val),
+    topOKL o ty = true →
     Refines ((opValL tabs o ty ai ax args).retypeL ty) ((opValL tabs o' ty ai ax args).retypeL ty)
 
 /-- An ellipsis rule without a condition, from `o` to `o'`, both term ops of every value
@@ -286,7 +300,8 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
       let σ := sigmaL tabs e pat'
       let ev := evalE (br.vars.map (·.ty)) σ or e (Pat.denL tabs e [] pat')
       Pat.wf e [] pat' → Pat.cons ev σ e [] pat' → condHolds ev br.cond →
-      Pat.typed e [] pat' → Pat.argsOK e.ty [] pat' = true → blockAuxOK br.auxInt ai →
+      Pat.typed e [] pat' → Pat.argsOK e.ty [] pat' = true → Pat.topOKL (e.ty []) pat' = true →
+      blockAuxOK br.auxInt ai →
       newAuxL ev br.newAuxInt = some ai' →
       ∀ b, brVal br.kind ai (Pat.denL tabs e [] pat') = some b →
         (match br.newKind, br.newControls with

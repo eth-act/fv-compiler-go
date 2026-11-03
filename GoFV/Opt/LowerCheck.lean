@@ -143,7 +143,7 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
     (match r.cond with
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
-    Pat.argsOK e.ty [] r.pat &&
+    Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat &&
     leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
@@ -163,6 +163,7 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
   | some x, .setOp o' =>
     let x' := { x with op := o' }
     if x.id == v && ellipsisOn x.op r.pat && r.cond.isNone && r.block.isNone &&
+        topOKL x.op (shpL tabs x.type) &&
         ((termVL tabs x && termVL tabs x') || (renameOp x.op o' && !termVL tabs x)) then some x'
     else none
   | _, _ => none
@@ -237,7 +238,8 @@ def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStat
         (match br.cond with
           | some cd => match ev cd with | .bool true => true | _ => false
           | none => true) &&
-        Pat.argsOK e.ty [] pat && leavesOK M I [] pat && blockAuxOKB br.auxInt st.auxInt &&
+        Pat.argsOK e.ty [] pat && Pat.topOKL (e.ty []) pat && leavesOK M I [] pat &&
+        blockAuxOKB br.auxInt st.auxInt &&
         ctrlsOK then
       match newAuxL ev br.newAuxInt with
       | some ai' => some { kind := br.newKind, ctrls := nc, auxInt := ai',
