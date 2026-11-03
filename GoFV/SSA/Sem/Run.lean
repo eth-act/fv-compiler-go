@@ -421,6 +421,9 @@ structure Ctx where
   act : Nat := 0
   /-- The open-coded defers (`deferInfo`). -/
   defers : DeferInfo := {}
+  /-- Memory ops fault on the nil page (`runSched`, L1: `docs/plans/semantics2.md` §6); `false`
+  in `run` (L0 and generic SSA), where such an access is an invalid one. -/
+  faulting : Bool := false
   deriving Inhabited
 
 /-- A variable whose address the function converts to an integer (`addrconv`, export format
@@ -1003,6 +1006,194 @@ def frameVal (ctx : Ctx) (v : Value) : Option Val :=
     | _ => some .poison
   | _ => none
 
+/-! ## Lowered arm64 ops that need the activation (`docs/plans/semantics2.md` §3, §4 (c.4)) -/
+
+/-- The address `base + auxInt + aux` of a `SymOff` op (`MOV*load`, `MOV*store`, `LDP`, `STP`,
+`MOVDaddr`, …): the aux's global symbol or frame variable at the offset (the base is then `SB` or
+`SP`, `addressing modes`' `mergeSym`), else the base moved by the offset. -/
+def symAddr (ctx : Ctx) (v : Value) (base : Val) : Option Ptr :=
+  let off := BitVec.ofInt 64 v.auxInt.toInt
+  match v.aux with
+  | some n =>
+    match ctx.tabs.aux? n with
+    | some { kind := .sym name .., .. } => some ⟨.global name.toStringLossy, off⟩
+    | some { kind := .name .., .. } => some ⟨frameBlk ctx.tabs ctx.act n, off⟩
+    | _ => none
+  | none => Arm64.addr base off
+
+/-- `minZeroPage` (`nilcheck.go:192`): the lowest mapped address (`VPre₂`: no allocation below
+it), so an access below it is a nil dereference. -/
+def minZeroPage : Nat := 4096
+
+/-- An access at `p` faults: `p` points into the unmapped page at address 0. -/
+def Ptr.nilFault (p : Ptr) : Bool := p.blk == .nil && decide (p.off.toNat < minZeroPage)
+
+/-- Under `runSched` (`ctx.faulting`), the memory of an op that faults on a nil argument
+(`faultOnNilArg0`/`faultOnNilArg1`, the facts `late nilcheck` relies on): its address argument
+(for a `SymOff` op with its offset and symbol, `symAddr`) is in the nil page. `LoweredMemEq p q n`
+(`runtime.memequal`, `internal/bytealg/equal_arm64.s`) reads only if `n ≠ 0` and `p ≠ q`. -/
+def nilFaults (ctx : Ctx) (v : Value) (argv : List Val) : Option Mem :=
+  if !ctx.faulting then none else
+  match argv.getLast? with
+  | some (.mem m) =>
+    let at0 : Option Ptr := if !v.op.faultOnNilArg0 then none else
+      argv.head?.bind fun a => if v.op.auxType == .SymOff then symAddr ctx v a else Arm64.addr a 0
+    let at1 : Option Ptr := if !v.op.faultOnNilArg1 then none else
+      argv[1]?.bind fun a => Arm64.addr a 0
+    let reads : Bool := match v.op, argv with
+      | .ARM64LoweredMemEq, [_, _, n, _] => Arm64.reg n != some 0 && at0 != at1
+      | _, _ => true
+    if reads && ((at0.map Ptr.nilFault).getD false || (at1.map Ptr.nilFault).getD false) then
+      some m
+    else none
+  | _ => none
+
+/-- The operands of the generic atomic `g` a lowered atomic runs as, at the width of its location:
+the instruction uses the register's low bits, and lowering drops truncations
+(`(Trunc64to32 x) => (Copy x)`), so an operand may be wider than the location. -/
+def atomicArgs (g : Op) (argv : List Val) : List Val :=
+  match argv, Atomic.info? g, Atomic.casWidth? g with
+  | [a, x, m], some (_, t), _ => [a, x.retype t, m]
+  | [a, o, n, m], _, some w => [a, o.retype (.int w), n.retype (.int w), m]
+  | _, _, _ => argv
+
+/-- The arm64 ops `evalOp` evaluates with the activation: `SymOff` loads and stores, indexed
+stores, `MOVDaddr`, `MOVDreg`/`MOVDnop`, the closure pointer and caller SP, calls, nil checks,
+bounds panics, `LoweredMemEq`, atomics, `DMB`, `PRFM`. Each is Phase 1's meaning of the generic op
+it lowers (calls, nil checks, atomics run as that op; `memRoot`/`callOp`/`atomicRoot`), or an
+access on the Phase 1 memory (`Sem/Arm64/Mem.lean`). A load is pure (`poison` on an invalid
+access), a store `stuck` on an invalid one, as Phase 1's `Load`/`Store`.
+
+`MOVDreg x`/`MOVDnop x` copy `x`'s register; when `x` has a narrow type its upper bits are those
+of its producer (`Arm64.signExtends`: a sign-extending load or extension; otherwise zero, the
+invariant of every rule that drops an extension, `ZeroUpper32Bits` and the boolean producers).
+
+The other memory ops (`LDAR*`, `LoweredZero`/`LoweredMove` and their loops) are
+`Arm64.evalPure`'s; they are here for `nilFaults`, which makes every op that faults on a nil
+argument a `nilDeref` panic under `runSched` and changes nothing under `run`. -/
+def arm64Op (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (ty : Ty) :
+    Res Val :=
+  let what := s!"v{v.id}: {v.op.name}"
+  let ld (n : Nat) (signed : Bool) : Res Val := match argv with
+    | [a, .mem m] => .ok ((symAddr ctx v a).elim .poison (Arm64.loadN ty n signed m))
+    | _ => .ok .poison
+  let ldPair (n : Nat) (signed : Bool) : Res Val := match argv with
+    | [a, .mem m] => .ok ((symAddr ctx v a).elim .poison (Arm64.loadPair ty n signed m))
+    | _ => .ok .poison
+  let ld16 : Res Val := match argv with
+    | [a, .mem m] => .ok ((symAddr ctx v a).elim .poison (Arm64.load16 m))
+    | _ => .ok .poison
+  let bad : Res Val :=
+    if argv.any (fun | .poison => true | _ => false) then .stuck s!"{what}: poison argument"
+    else .stuck s!"{what}: undefined or ill-typed arguments"
+  let st (n : Nat) : Res Val := match argv with
+    | [a, x, .mem m] => match symAddr ctx v a with
+      | some p => writeRes what (Arm64.storeN n p x m)
+      | none => bad
+    | _ => bad
+  let stPair (n : Nat) : Res Val := match argv with
+    | [a, x, y, .mem m] => match symAddr ctx v a with
+      | some p => writeRes what (Arm64.storePair n p x y m)
+      | none => bad
+    | _ => bad
+  let stIdx (n scale : Nat) : Res Val := match argv with
+    | [a, i, x, .mem m] =>
+      let s := if scale = 1 then Arm64.add .other [a, i] else
+        match Arm64.reg i with
+        | some k => Arm64.add .other [a, .int .w64 (k * BitVec.ofNat 64 scale)]
+        | none => .poison
+      match Arm64.addr s 0 with
+      | some p => writeRes what (Arm64.storeN n p x m)
+      | none => bad
+    | _ => bad
+  let pbc (n : Option AuxRef) : Option Int := match n.bind ctx.tabs.aux? with
+    | some { kind := .pbc c, .. } => some c
+    | _ => none
+  let pbcc (n : Option AuxRef) : Option (Int × Int) := match n.bind ctx.tabs.aux? with
+    | some { kind := .pbcc cx cy, .. } => some (cx, cy)
+    | _ => none
+  let gen (op : Op) : Value := { v with op }
+  match nilFaults ctx v argv with
+  | some m => .panic .nilDeref m
+  | none =>
+  match v.op with
+  | .ARM64MOVBload => ld 1 true
+  | .ARM64MOVBUload => ld 1 false
+  | .ARM64MOVHload => ld 2 true
+  | .ARM64MOVHUload => ld 2 false
+  | .ARM64MOVWload => ld 4 true
+  | .ARM64MOVWUload => ld 4 false
+  | .ARM64MOVDload => ld 8 false
+  | .ARM64FMOVSload => ld 4 false
+  | .ARM64FMOVDload => ld 8 false
+  | .ARM64FMOVQload => ld16
+  | .ARM64LDP => ldPair 8 false
+  | .ARM64LDPW => ldPair 4 false
+  | .ARM64LDPSW => ldPair 4 true
+  | .ARM64FLDPD => ldPair 8 false
+  | .ARM64FLDPS => ldPair 4 false
+  | .ARM64FLDPQ => ldPair 16 false
+  | .ARM64MOVBstore => st 1
+  | .ARM64MOVHstore => st 2
+  | .ARM64MOVWstore => st 4
+  | .ARM64MOVDstore => st 8
+  | .ARM64FMOVSstore => st 4
+  | .ARM64FMOVDstore => st 8
+  | .ARM64FMOVQstore => st 16
+  | .ARM64STP => stPair 8
+  | .ARM64STPW => stPair 4
+  | .ARM64FSTPD => stPair 8
+  | .ARM64FSTPS => stPair 4
+  | .ARM64FSTPQ => stPair 16
+  | .ARM64MOVBstoreidx => stIdx 1 1
+  | .ARM64MOVHstoreidx => stIdx 2 1
+  | .ARM64MOVWstoreidx => stIdx 4 1
+  | .ARM64MOVDstoreidx => stIdx 8 1
+  | .ARM64FMOVSstoreidx => stIdx 4 1
+  | .ARM64FMOVDstoreidx => stIdx 8 1
+  | .ARM64MOVHstoreidx2 => stIdx 2 2
+  | .ARM64MOVWstoreidx4 => stIdx 4 4
+  | .ARM64MOVDstoreidx8 => stIdx 8 8
+  | .ARM64FMOVSstoreidx4 => stIdx 4 4
+  | .ARM64FMOVDstoreidx8 => stIdx 8 8
+  | .ARM64MOVDaddr => match argv with
+    | [a] => .ok ((symAddr ctx v a).elim .poison PtrOps.ptrRes)
+    | _ => .ok .poison
+  | .ARM64MOVDreg | .ARM64MOVDnop => match argv with
+    | [a] =>
+      let sx := ((v.args[0]?.bind ctx.f.value?).map fun u => Arm64.signExtends u.op).getD false
+      match a with
+      | .int w x => .ok (Arm64.res ty (if sx then x.signExtend 64 else x.setWidth 64))
+      | a => .ok (Arm64.regVal ty a)
+    | _ => .ok .poison
+  | .ARM64LoweredGetClosurePtr => .ok (fr.closure.getD .poison)
+  | .ARM64LoweredGetCallerSP => .ok ((frameVal ctx (gen .GetCallerSP)).getD .poison)
+  | .ARM64CALLstatic => callOp env ctx (gen .StaticCall) argv
+  | .ARM64CALLclosure => callOp env ctx (gen .ClosureCall) argv
+  | .ARM64CALLinter => callOp env ctx (gen .InterCall) argv
+  | .ARM64LoweredNilCheck => memRoot ctx (gen .NilCheck) argv
+  | .ARM64LoweredPanicBoundsRR => panicBounds v.auxInt argv
+  | .ARM64LoweredPanicBoundsRC => match argv, pbc v.aux with
+    | [x, m], some c => panicBounds v.auxInt [x, .i64 (BitVec.ofInt 64 c), m]
+    | _, _ => bad
+  | .ARM64LoweredPanicBoundsCR => match argv, pbc v.aux with
+    | [y, m], some c => panicBounds v.auxInt [.i64 (BitVec.ofInt 64 c), y, m]
+    | _, _ => bad
+  | .ARM64LoweredPanicBoundsCC => match argv, pbcc v.aux with
+    | [m], some (cx, cy) =>
+      panicBounds v.auxInt [.i64 (BitVec.ofInt 64 cx), .i64 (BitVec.ofInt 64 cy), m]
+    | _, _ => bad
+  | .ARM64LoweredMemEq => .ok (memEq argv)
+  | .ARM64DMB => match argv with
+    | [.mem m] => .ok (.mem m)
+    | _ => bad
+  | .ARM64PRFM => match argv with
+    | [_, .mem m] => .ok (.mem m)
+    | _ => bad
+  | op => match Arm64.atomicOf op with
+    | some g => atomicRoot (gen g) (atomicArgs g argv)
+    | none => .ok (Arm64.evalPure op ty v.auxInt v.aux argv)
+
 /-- The result of value `v` from its evaluated arguments `argv`, before it takes the shape
 `ty` of its type (`evalValue`). -/
 def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (ty : Ty) :
@@ -1022,6 +1213,32 @@ def evalOp (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val) (t
   | .StaticLECall | .StaticCall | .ClosureLECall | .ClosureCall | .InterLECall | .InterCall =>
     callOp env ctx v argv
   | .GetClosurePtr => pure (fr.closure.getD .poison)
+  | .ARM64MOVBload | .ARM64MOVBUload | .ARM64MOVHload | .ARM64MOVHUload | .ARM64MOVWload
+  | .ARM64MOVWUload | .ARM64MOVDload | .ARM64FMOVSload | .ARM64FMOVDload | .ARM64FMOVQload
+  | .ARM64LDP | .ARM64LDPW | .ARM64LDPSW | .ARM64FLDPD | .ARM64FLDPS | .ARM64FLDPQ
+  | .ARM64MOVBstore | .ARM64MOVHstore | .ARM64MOVWstore | .ARM64MOVDstore | .ARM64FMOVSstore
+  | .ARM64FMOVDstore | .ARM64FMOVQstore | .ARM64STP | .ARM64STPW | .ARM64FSTPD | .ARM64FSTPS
+  | .ARM64FSTPQ | .ARM64MOVBstoreidx | .ARM64MOVHstoreidx | .ARM64MOVWstoreidx
+  | .ARM64MOVDstoreidx | .ARM64FMOVSstoreidx | .ARM64FMOVDstoreidx | .ARM64MOVHstoreidx2
+  | .ARM64MOVWstoreidx4 | .ARM64MOVDstoreidx8 | .ARM64FMOVSstoreidx4 | .ARM64FMOVDstoreidx8
+  | .ARM64MOVDaddr | .ARM64MOVDreg | .ARM64MOVDnop | .ARM64LoweredGetClosurePtr
+  | .ARM64LoweredGetCallerSP | .ARM64CALLstatic | .ARM64CALLclosure | .ARM64CALLinter
+  | .ARM64LoweredNilCheck | .ARM64LoweredPanicBoundsRR | .ARM64LoweredPanicBoundsRC
+  | .ARM64LoweredPanicBoundsCR | .ARM64LoweredPanicBoundsCC | .ARM64LoweredMemEq | .ARM64DMB
+  | .ARM64PRFM | .ARM64STLRB | .ARM64STLRW | .ARM64STLR | .ARM64LoweredAtomicExchange8
+  | .ARM64LoweredAtomicExchange32 | .ARM64LoweredAtomicExchange64
+  | .ARM64LoweredAtomicExchange8Variant | .ARM64LoweredAtomicExchange32Variant
+  | .ARM64LoweredAtomicExchange64Variant | .ARM64LoweredAtomicAdd32 | .ARM64LoweredAtomicAdd64
+  | .ARM64LoweredAtomicAdd32Variant | .ARM64LoweredAtomicAdd64Variant
+  | .ARM64LoweredAtomicCas32 | .ARM64LoweredAtomicCas64 | .ARM64LoweredAtomicCas32Variant
+  | .ARM64LoweredAtomicCas64Variant | .ARM64LoweredAtomicAnd8 | .ARM64LoweredAtomicAnd32
+  | .ARM64LoweredAtomicAnd64 | .ARM64LoweredAtomicOr8 | .ARM64LoweredAtomicOr32
+  | .ARM64LoweredAtomicOr64 | .ARM64LoweredAtomicAnd8Variant | .ARM64LoweredAtomicAnd32Variant
+  | .ARM64LoweredAtomicAnd64Variant | .ARM64LoweredAtomicOr8Variant
+  | .ARM64LoweredAtomicOr32Variant | .ARM64LoweredAtomicOr64Variant | .ARM64LDAR | .ARM64LDARB
+  | .ARM64LDARW | .ARM64LoweredZero | .ARM64LoweredZeroLoop | .ARM64LoweredMove
+  | .ARM64LoweredMoveLoop =>
+    arm64Op env ctx fr v argv ty
   | .Store | .StoreWB | .Move | .MoveWB | .Zero | .ZeroWB | .VarDef | .VarLive | .KeepAlive
   | .WBend | .NilCheck => memRoot ctx v argv
   | op =>
@@ -1113,6 +1330,19 @@ def stepTerm (fr : Frame) (b : Block) : Res Next :=
   | .Exit => .stuck s!"b{b.id}: Exit reached (a non-returning call returned)"
   -- `deferproc` returned: the normal path (a recovery returns through `finish`, §9.7)
   | .Defer => succ b 0
+  -- lowered arm64 kinds (`docs/plans/semantics2.md` §5): a poison control is `stuck`, as `If`'s
+  | .ARM64EQ | .ARM64NE | .ARM64LT | .ARM64LE | .ARM64GT | .ARM64GE | .ARM64ULT | .ARM64ULE
+  | .ARM64UGT | .ARM64UGE | .ARM64Z | .ARM64NZ | .ARM64ZW | .ARM64NZW | .ARM64TBZ | .ARM64TBNZ
+  | .ARM64FLT | .ARM64FLE | .ARM64FGT | .ARM64FGE | .ARM64LTnoov | .ARM64LEnoov | .ARM64GTnoov
+  | .ARM64GEnoov => do
+    match Arm64.taken b.kind b.auxInt (← control fr b 0) with
+    | some true => succ b 0
+    | some false => succ b 1
+    | none => .stuck s!"b{b.id}: {b.kind.name} on poison or an ill-typed control"
+  | .ARM64JUMPTABLE => do
+    match Arm64.reg (← control fr b 0) with
+    | some x => succ b x.toNat
+    | none => .stuck s!"b{b.id}: JUMPTABLE on poison or non-int"
   | k => .stuck s!"b{b.id}: block kind {k.name} is not in phase P1"
 
 /-- Run from the entry of block `b` (entered along edge index `i`) with at most `fuel` block

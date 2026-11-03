@@ -131,8 +131,28 @@ cases above.
 
 **Booleans.** Lowered boolean producers (`Equal`, `LessThan`, …, `CSET`-like, `MOVBUreg` of a
 bool) keep type `bool`; the semantics returns `Val.bool` at `bool` type and `Val.int .w8 0/1`
-at `uint8`, as `retype` already does. `Val.retype` total shaping (Phase 1 #108) covers every
-lowered op unchanged.
+at `uint8`. An arm64 op whose type is `bool` yields the boolean of bit 0 of its register (the
+bit Go branches on, `(If c) => (TBNZ [0] c)`).
+
+**Narrow values in registers (as implemented, H6).** A value of a type narrower than 64 bits is
+held at its type's width (Phase 1's `retype`), but the register it lives in has upper bits that
+Go's rules rely on in exactly two ways, and the semantics follows both:
+
+1. *Dropped zero extensions.* `(MOVWUreg x) && ZeroUpper32Bits(x, 3) => x`,
+   `(MOVBUreg x:(Equal …)) => x` and `(CvtBoolToUint8 x) => (Copy x)` hand a narrower (or
+   boolean) value to a use of a wider type. An arm64 op reads any narrower integer or boolean
+   zero-extended (`Arm64.reg`), and Phase 1's `Val.retype` and `encode` now zero-extend a
+   narrower integer and a boolean at an integer shape (they were `poison`; generic code never
+   has one, so Phase 1 outcomes are unchanged: the generic sections' difftest numbers are the
+   same).
+2. *Register copies of extended loads.* `(MOVBreg x:(MOVBload …)) => (MOVDreg x)` and the other
+   "don't extend after proper load" / "fold double extensions" rules (`ARM64latelower.rules`)
+   pass a sign-extended narrow register on through `MOVDreg`/`MOVDnop`. These read the op of
+   their argument (`Arm64.signExtends`: a sign-extending load or extension) and sign-extend it,
+   else zero-extend (`Sem.arm64Op`).
+
+Results are 64-bit (`.int .w64`), narrowed by `retype` to the value's type; a `W` op
+zero-extends its 32-bit result, as writing `Wd` does.
 
 ## 4. Op semantics: options
 

@@ -278,9 +278,12 @@ def encodeWords (buf : Array Byte) : List Nat → List Val → Array Byte
 
 mutual
 /-- The bytes of value `v` stored as shape `t` (exactly `t.size` bytes): `poison` bytes for
-`poison`, for padding, and for a value of another shape. -/
+`poison`, for padding, and for a value of another shape. An integer of another width stores its
+low bytes, zero-extended, and a boolean at an integer shape 0 or 1, as `Val.retype` reads them
+(lowered code, `docs/plans/semantics2.md` §3). -/
 def encode : Ty → Val → Array Byte
-  | .int w, .int w' x => if w' == w then intBytes w.bytes x.toNat else Array.replicate w.bytes .poison
+  | .int w, .int _ x => intBytes w.bytes x.toNat
+  | .int w, .bool b => intBytes w.bytes (if b then 1 else 0)
   | .int .w64, .ptr p => ptrBytes p
   | .bool, .bool b => #[.b (if b then 1 else 0)]
   | .ptr _, .ptr p => ptrBytes p

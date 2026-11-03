@@ -1,5 +1,6 @@
 import GoFV.SSA.Export
 import GoFV.SSA.Sem.Mem
+import GoFV.SSA.Sem.Flags
 
 /-!
 # Type shapes (`docs/plans/semantics.md` §3.1)
@@ -75,7 +76,12 @@ def tyOf (tabs : Tables) : Nat → TypeRef → Ty
         | some 8 => .agg [(0, .int .w32), (4, .int .w32)] 8
         | some 16 => .agg [(0, .int .w64), (8, .int .w64)] 16
         | _ => .other
-      | .SSA => if d.str == GoStr.ofString "mem" then .mem else .other
+      -- lowered SSA (Phase 2): `flags` as `Ty.flags`, a `Vec128` register as its 16 bytes
+      | .SSA =>
+        if d.str == GoStr.ofString "mem" then .mem
+        else if d.str == GoStr.ofString "flags" then Ty.flags
+        else if d.str == GoStr.ofString "vec128" then .blob 16
+        else .other
       | .TUPLE =>
         match d.tail with
         | .tuple a b => .tuple [tyOf tabs fuel a, tyOf tabs fuel b]
@@ -106,8 +112,12 @@ def Val.retypeI64 : Val → Val
 mutual
 /-- A value as a value of type shape `t` (§3.2). Go types a value by its `Type`, not by its
 op: rules build e.g. `(Rsh64x64 <t> …)` with `t` = `int32` (`divmod.rules`), whose meaning is
-the low 32 bits of the 64-bit shift. An integer narrower than the op keeps the low bits; a
-wider type would expose undefined high bits and is `poison`. The two word shapes (`.int .w64`
+the low 32 bits of the 64-bit shift. An integer narrower than the op keeps the low bits. A
+narrower integer or a boolean at an integer shape is zero-extended: generic code never has one
+(its values have their type's width), and lowered code has them exactly where a rule dropped an
+extension of a producer whose upper register bits are zero (`ARM64latelower.rules`:
+`ZeroUpper32Bits`, the boolean-generating instructions; `CvtBoolToUint8 => Copy`;
+`docs/plans/semantics2.md` §3). The two word shapes (`.int .w64`
 and pointers) retype alike (§3.2, #290): a 64-bit integer keeps its word, and a pointer becomes
 its word (`Ptr.word`): its concrete address if it converts back to itself
 (`Ptr.convertible`), else the pointer (a global, which has no concrete address, a frame
@@ -121,7 +131,8 @@ so `(v.retype t).hasTy t` always holds (#108). A string or slice whose length or
 is not a valid signed `int` (`Val.strOK`, `Val.sliceOK`: `0 ≤ len ≤ cap`) is `poison`. -/
 def Val.retype : Ty → Val → Val
   | _, .poison => .poison
-  | .int w', .int w x => if w'.bits ≤ w.bits then .int w' (x.setWidth w'.bits) else .poison
+  | .int w', .int _ x => .int w' (x.setWidth w'.bits)
+  | .int w', .bool b => .int w' (if b then 1 else 0)
   | .int .w64, .ptr p => p.word
   | .ptr _, .int .w64 a => .int .w64 a
   | .ptr _, .ptr p => p.word

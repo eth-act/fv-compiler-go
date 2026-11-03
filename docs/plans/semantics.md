@@ -78,10 +78,13 @@ type integer results narrower than their op — `divmod.rules` builds `(Rsh64x64
 `(Rsh32x64 <t> …)` with `t` = `int32`/`int16` (found by the P1 difftest: `divconst` at section
 `divmod`; 990 such values in the corpus, all `Rsh64x64`/`Rsh32x64`, none wider than the op).
 So every produced integer is retyped to its value's width (`Val.retype`, `Sem/Layout.lean`):
-a narrower type keeps the low bits; a wider one would expose undefined high bits and is
-`poison`. `retype` is **total-shaping** (#108): every value that does not fit the shape is
-`poison` (a non-boolean at `bool`, a boolean or memory at an integer shape, a 32-bit integer at a
-pointer shape, …), composites are retyped componentwise, so `(v.retype t).hasTy t` always holds
+a narrower type keeps the low bits. A wider integer type, and an integer type of a boolean,
+zero-extend (Phase 2, `docs/plans/semantics2.md` §3: generic code never has either, lowered code
+has them where a rule dropped a zero extension, e.g. `ZeroUpper32Bits`); `encode` stores such a
+value's low bytes zero-extended alike. `retype` is **total-shaping** (#108): every value that
+does not fit the shape is `poison` (a non-boolean at `bool`, a memory at an integer shape, a
+32-bit integer at a pointer shape, …), composites are retyped componentwise, so
+`(v.retype t).hasTy t` always holds
 (`Val.retype_hasTy`, `GoFV/Proof/Retype.lean`) and every register has its value's shape
 (`GoFV.Proof.evalValue_hasTy`, `Typed.hasTy`). Well-typed producers yield values of their shape
 anyway: total shaping left every difftest outcome unchanged (native 11,900 calls; corpus 39,131

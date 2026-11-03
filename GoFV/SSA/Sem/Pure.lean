@@ -4,6 +4,7 @@ import GoFV.SSA.Sem.Shift
 import GoFV.SSA.Sem.Conv
 import GoFV.SSA.Sem.Ptr
 import GoFV.SSA.Sem.Float
+import GoFV.SSA.Sem.Arm64
 
 /-!
 # `evalPure`: the pure ops (`docs/plans/semantics.md` §4)
@@ -19,7 +20,8 @@ layout a `Load` decodes. `aux` is unused: the ops that read symbols or names (`A
 
 One arm per op, each calling its family's definition (`Sem/Int`, `Sem/Shift`, `Sem/Cmp`,
 `Sem/Conv`, `Sem/Float`), so a rule lemma unfolds `evalPure` at a concrete op and then only its
-family.
+family. Every other op is the lowered arm64 op of `Arm64.evalPure` (`Sem/Arm64.lean`,
+`docs/plans/semantics2.md`), `poison` if it is not one.
 Never `simp [evalPure]` on an op variable (446-arm match, `docs/contracts/ir.md`).
 -/
 
@@ -30,7 +32,8 @@ def Ty.width? : Ty → Option Width
   | .int w => some w
   | _ => none
 
-/-- The value of pure op `op` (P1, P2 and P4 subsets; every other op is `poison`). -/
+/-- The value of pure op `op` (P1, P2 and P4 subsets, and the pure lowered arm64 ops; every other
+op is `poison`). -/
 def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : List Val) :
     Val :=
   let flag := auxInt == 1
@@ -341,6 +344,6 @@ def evalPure (op : Op) (ty : Ty) (auxInt : Int64) (aux : Option AuxRef) (args : 
   | .Cvt64Fto32F => FOps.f64to32 args
   | .Const32F => FOps.const32 auxInt
   | .Const64F => FOps.const64 auxInt
-  | _ => .poison
+  | op => Arm64.evalPure op ty auxInt aux args
 
 end GoFV.SSA.Sem

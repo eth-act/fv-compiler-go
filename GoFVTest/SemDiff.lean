@@ -1,5 +1,5 @@
 import GoFV.SSA.Parse
-import GoFV.SSA.Sem.Run
+import GoFV.SSA.Sem.RunSched
 import GoFV.SSA.Sem.Image
 import GoFV.SSA.Sem.Runtime
 import Std.Data.HashMap
@@ -13,7 +13,9 @@ Three modes (driven by `scripts/sem-difftest.sh`):
   print `n` calls `<func>\t<arg>...` with random and edge-case arguments of its parameter
   types.
 - `run <dir> <calls> <native>`: run every call of `<calls>` on **every section** of the
-  function's export with `GoFV.SSA.run`, and compare each outcome with the native result
+  function's export up to `schedule` (the generic sections and the lowered ones, `lower` …
+  `layout`, `docs/plans/semantics2.md` L0) with `GoFV.SSA.run`, and compare each outcome with the
+  native result
   (`<native>`, the output of `tools/semdiff/prog` under `qemu-aarch64-static`, one line
   `<call> -> <outcome>` per call). Exit status 1 on any disagreement.
 - `corpus <n> <seed> <dir>...`: for every export file below the directories whose function's
@@ -297,16 +299,26 @@ structure Loaded where
   results : Array TypeRef
   env : Env
 
+/-- The first section not run: `regalloc` assigns homes and needs `runLoc` (L2). -/
+def stopPass : String := "regalloc"
+
+/-- The first section run as scheduled SSA (`runSched`'s context, L1). -/
+def schedPass : String := "schedule"
+
 def load (path : System.FilePath) : IO (Except String Loaded) := do
   let data ← IO.FS.readBinFile path
-  match parseExportUntil "lower" data with
+  match parseExportUntil stopPass data with
   | .error e => return .error s!"{path}: {e}"
   | .ok e =>
     let mut tabs : Tables := {}
     let mut secs := #[]
+    let mut sched := false
     for s in e.sections do
       tabs := tabs.addAll s.defs
-      secs := secs.push (s.pass.toStringLossy, tabs, s.func, Ctx.make tabs s.func)
+      let pass := s.pass.toStringLossy
+      if pass == schedPass then sched := true
+      let ctx := if sched then Ctx.makeSched tabs s.func else Ctx.make tabs s.func
+      secs := secs.push (pass, tabs, s.func, ctx)
     match secs[0]? with
     | none => return .error s!"{path}: no sections"
     | some (_, t0, f0, _) =>
@@ -587,6 +599,29 @@ structure CStats where
   stuckEx : Std.HashMap String String := {}
   /-- Slowest files (ms). -/
   slow : Array (Nat × String) := #[]
+  /-- Runs of the unscheduled lowered sections (`lower` … `layout`, L0) and of the scheduled ones
+  (`schedule` … `flagalloc`, L1), and how many agree with section 0. -/
+  l0Runs : Nat := 0
+  l0Agree : Nat := 0
+  l1Runs : Nat := 0
+  l1Agree : Nat := 0
+  /-- Per pass name: gaps and differences of its sections. -/
+  byPass : Std.HashMap String (Nat × Nat) := {}
+  /-- Gap reasons (stuck messages of later sections), with a first example. -/
+  gapMsgs : Std.HashMap String Nat := {}
+  gapEx : Std.HashMap String String := {}
+  /-- Differences of lowered sections whose function holds a fused multiply-add (`Contract`). -/
+  contracted : Nat := 0
+
+/-- The fused multiply-adds `lower` contracts `a ± x*y` into (the 12 `useFMA` rules,
+`docs/plans/semantics2.md` §2.1). -/
+def fusedOp (op : Op) : Bool :=
+  [Op.ARM64FMADDS, .ARM64FMADDD, .ARM64FMSUBS, .ARM64FMSUBD, .ARM64FNMADDS, .ARM64FNMADDD,
+    .ARM64FNMSUBS, .ARM64FNMSUBD].contains op
+
+/-- `f` holds a fused multiply-add: its float results may differ from the unfused section 0's by
+the rounding the Go spec lets an implementation omit. -/
+def hasFused (f : Func) : Bool := f.valueTab.any fun o => (o.map (fusedOp ·.op)).getD false
 
 /-- A stuck message without value/block IDs (for a histogram). -/
 def stuckKey (msg : String) : String :=
@@ -622,19 +657,38 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
           continue
         st := { st with defined0 := st.defined0 + 1 }
         definedHere := true
+        let mut form := 0
         for k in [1:l.sections.size] do
           let r := runSection l k c corpusFuel
+          let pass := l.sections[k]!.1
+          if pass == "lower" then form := 1
+          if pass == schedPass then form := 2
           st := { st with sectionRuns := st.sectionRuns + 1 }
-          if r == r0 then st := { st with agree := st.agree + 1 }
-          else if r.startsWith "stuck" then
-            if !gapHere then
-              IO.println s!"GAP {path} section {k} ({l.sections[k]!.1}) {c}: {r} (section 0: {r0})"
-            st := { st with gaps := st.gaps + 1 }
-            gapHere := true
+          if form == 1 then st := { st with l0Runs := st.l0Runs + 1 }
+          if form == 2 then st := { st with l1Runs := st.l1Runs + 1 }
+          if r == r0 then
+            st := { st with agree := st.agree + 1 }
+            if form == 1 then st := { st with l0Agree := st.l0Agree + 1 }
+            if form == 2 then st := { st with l1Agree := st.l1Agree + 1 }
           else
-            if st.diffs < 30 then
-              IO.println s!"DIFF {path} section {k} ({l.sections[k]!.1}) {c}: {r} (section 0: {r0})"
-            st := { st with diffs := st.diffs + 1 }
+            let (g, df) := st.byPass.getD pass (0, 0)
+            if r.startsWith "stuck" then
+              if !gapHere then
+                IO.println s!"GAP {path} section {k} ({pass}) {c}: {r} (section 0: {r0})"
+              let gk := pass ++ ": " ++ stuckKey (r.drop 7).toString
+              st := { st with gaps := st.gaps + 1, byPass := st.byPass.insert pass (g + 1, df),
+                              gapMsgs := st.gapMsgs.insert gk (st.gapMsgs.getD gk 0 + 1),
+                              gapEx := if st.gapEx.contains gk then st.gapEx
+                                else st.gapEx.insert gk s!"{path} {c}" }
+              gapHere := true
+            else if form ≥ 1 && hasFused l.sections[k]!.2.2.1 then
+              if st.contracted < 10 then
+                IO.println s!"CONTRACT {path} section {k} ({pass}) {c}: {r} (section 0: {r0})"
+              st := { st with contracted := st.contracted + 1 }
+            else
+              if st.diffs < 30 then
+                IO.println s!"DIFF {path} section {k} ({pass}) {c}: {r} (section 0: {r0})"
+              st := { st with diffs := st.diffs + 1, byPass := st.byPass.insert pass (g, df + 1) }
       if gapHere then st := { st with gapFuncs := st.gapFuncs + 1 }
       if definedHere then st := { st with definedFuncs := st.definedFuncs + 1 }
       let dt := (← IO.monoMsNow) - t0
@@ -646,7 +700,15 @@ def corpus (n seed : Nat) (dirs : List String) : IO UInt32 := do
   IO.println s!"sem-difftest corpus: {st.files} files, {st.eligible} with supported signatures, \
     {st.calls} calls (section 0: {", ".intercalate kinds}); {st.defined0} calls defined at \
     section 0 (in {st.definedFuncs} functions), {st.sectionRuns} later-section runs of them: \
-    {st.agree} agree, {st.diffs} differ, {st.gaps} stuck (gaps, in {st.gapFuncs} functions)"
+    {st.agree} agree, {st.diffs} differ, {st.contracted} differ by FMA contraction, {st.gaps} \
+    stuck (gaps, in {st.gapFuncs} functions); \
+    L0 sections (lower … layout): {st.l0Runs} runs, {st.l0Agree} agree; L1 sections \
+    (schedule … flagalloc, runSched): {st.l1Runs} runs, {st.l1Agree} agree"
+  IO.println "gaps and differences by pass:"
+  for (p, (g, df)) in st.byPass.toList do IO.println s!"  {p}: {g} gaps, {df} differences"
+  IO.println "gap reasons (top 30):"
+  for (k, c) in ((st.gapMsgs.toList.toArray.qsort (fun a b => a.2 > b.2)).toList.take 30) do
+    IO.println s!"  {c} {k}    e.g. {st.gapEx.getD k ""}"
   IO.println "slowest files (ms):"
   for (ms, p) in ((st.slow.qsort (fun a b => a.1 > b.1)).toList.take 10) do
     IO.println s!"  {ms} {p}"
