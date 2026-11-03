@@ -52,6 +52,13 @@ structure PassEnv where
   /-- The file's `ptrcache`: whether `types.NewPtr` of a type number returns a shared object
   (else a fresh one; #101). -/
   ptrCache : TypeRef → Bool := fun _ => false
+  /-- The file's `typelink` groups as a key: types with the same `LinkString()` map to the same
+  number (`stackalloc` keys its reusable slots by `LinkString`). -/
+  typeLink : TypeRef → TypeRef := id
+  /-- `len(curfn.Dcl)` when the pass starts: `f.NewLocal` names its autos `.autotmp_<n>` from
+  it (`typecheck.TempAt`). Not in the export: the driver reads it from the frontend; parity takes
+  it from the stock section's first new auto (`docs/PARITY.md`). -/
+  dclLen : Nat := 0
 
 /-- A frontend side effect of a pass: compiler state outside the function and the definition
 tables that the stock pass changes (`docs/DRIVER.md`, "Effects"). The driver replays the

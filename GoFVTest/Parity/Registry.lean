@@ -40,6 +40,7 @@ import GoFV.Opt.Tighten
 import GoFV.Opt.Critical
 import GoFV.Opt.LikelyAdjust
 import GoFV.Opt.Layout
+import GoFV.Opt.Regalloc
 
 /-!
 # Registered Lean passes
@@ -110,7 +111,8 @@ def registry : Array PassEntry := #[
   { fn := "nilcheckelim2", names := #["late nilcheck"], run := nilcheckelim2Pass },
   { fn := "flagalloc", names := #["flagalloc"], run := flagallocPass },
   { fn := "loopRotate", names := #["loop rotate"], run := loopRotatePass },
-  { fn := "trim", names := #["trim"], run := trimPass }
+  { fn := "trim", names := #["trim"], run := trimPass },
+  { fn := "regalloc", names := #["regalloc"], run := Regalloc.regallocPass }
 ]
 
 end GoFVTest.Parity
