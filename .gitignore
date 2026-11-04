@@ -4,3 +4,4 @@
 /perf/raw/
 /tmp/
 *.olean
+.amp/portals/*
