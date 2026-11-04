@@ -71,7 +71,11 @@ theorem trimLoc_witness :
         simp only [trimPass, Pass.ofFunc, ht]
         rfl
       refine ⟨_, _, hp1, hp2, hrel, hb, ?_⟩
-      exact refinesLoc_returned_int'
-        ((loopRotate_refinesLoc hp1).trans (trim_refinesLoc hp2 hrel)) hm
+      -- each part by `have` first: an argument elaborated against `RefinesLoc ?_ ?_ …` failed a
+      -- 4.5 s unification
+      have h1 := loopRotate_refinesLoc hp1
+      have h2 := trim_refinesLoc hp2 hrel
+      have hr := h1.trans h2
+      exact refinesLoc_returned_int' hr hm
 
 end GoFV.Proof.Witness

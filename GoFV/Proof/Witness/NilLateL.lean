@@ -103,8 +103,11 @@ theorem nilLateL_witness :
       simp only [nilcheckelim2Pass, Pass.ofFunc]
       rw [hc]; rfl
     refine ⟨_, hp, hg12, hf12, ?_⟩
-    have hr : RefinesSched clampLTabs g clampLTabs ncL :=
-      nilcheckelim2_refinesSched hp (check_ok_of_toBool' h1) hv
+    -- `have` first: against the stated type, the elaborator spent 3.4 s in a failed
+    -- unification before elaborating the arguments
+    have hr : RefinesSched clampLTabs g clampLTabs ncL := by
+      have h := nilcheckelim2_refinesSched hp (check_ok_of_toBool' h1) hv
+      exact h
     cases hs : runSched Env.p1 clampLTabs ncL (clampArgs 0) {} 2 with
     | panicked e m =>
       rw [hs] at h3
