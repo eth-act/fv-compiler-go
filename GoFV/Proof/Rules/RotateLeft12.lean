@@ -23,11 +23,11 @@ theorem r_generic_2245_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_gener
 
 
 /-- `generic.rules:2246`: `(RotateLeft8 (RotateLeft8 x c) d) && c.Type.Size() == 4 && d.Type.Size() == 4 => (RotateLeft8 x (Add32 <c.Type> c d))` -/
-theorem r_generic_2246_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_2246_4 := by rule_auto
+theorem r_generic_2246_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_2246_4 := by rule_auto_dec
 
 
 /-- `generic.rules:2247`: `(RotateLeft8 (RotateLeft8 x c) d) && c.Type.Size() == 2 && d.Type.Size() == 2 => (RotateLeft8 x (Add16 <c.Type> c d))` -/
-theorem r_generic_2247_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_2247_4 := by rule_auto
+theorem r_generic_2247_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_2247_4 := by rule_auto_dec
 
 
 /-- `generic.rules:2248`: `(RotateLeft8 (RotateLeft8 x c) d) && c.Type.Size() == 1 && d.Type.Size() == 1 => (RotateLeft8 x (Add8 <c.Type> c d))` -/

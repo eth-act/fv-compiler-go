@@ -1688,6 +1688,12 @@ identity per bit (`ext`, `simp`) after all-ones constants become `BitVec.allOnes
 folds (`GoFV.Rules.bitwise` on 64-bit patterns) are pushed into `BitVec` by `rule_arith`
 (`ofNat_pat64`, `BitVec.ofNat_and`, …).
 
+`rule_norm` runs without `decide := true` (the `Int` literal simprocs decide `if 8 == 0` and the
+like); `rule_auto_dec` is `rule_auto` with `decide := true` (option `gofv.ruleNorm.decide`), for
+the proofs that need it (the nested rotations `generic.rules:2246`, `:2247`); `rule_auto` falls
+back to it when the fast attempt fails. A new proof that only `rule_auto_dec` closes should call
+it directly (LEARNINGS.md, "Rule tactics").
+
 Amounts and comparisons without `bv_decide` (#69, RuleProofs4): `rule_rotamt` (a rotation by
 two amounts, nested rotations, `x.rotateLeft a = x`: `rotateLeft_congr`,
 `rotateLeft_rotateLeft`, `rotateLeft_eq_self`; a rotation reads its amount at any width modulo

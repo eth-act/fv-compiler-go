@@ -126,9 +126,19 @@ attribute [rule_close_s] GoFV.Proof.Rules.reduceIntInfo Option.getD_some Nat.red
   GoFV.SSA.Sem.Width.bits GoFV.Proof.Rules.DV.int.injEq GoFV.Proof.Rules.DV.bool.injEq
 
 /-- `simp_all` with the semantics simp set: the families become `BitVec`/`Bool` terms, case
-facts propagate, `hasTy` facts become type equations. -/
-macro "rule_norm" : tactic => `(tactic|
-  simp_all (config := { decide := true }) only [rule_sem, rule_helper, rule_norm_s])
+facts propagate, `hasTy` facts become type equations. `decide := true` only under the option
+`gofv.ruleNorm.decide` (`rule_auto`'s fallback): it evaluates a `Decidable` instance at every
+proposition, most of them stuck on leaf reads (`e.ty p`), 10–15% of a rule module's time. What
+it decided in most proofs were `Int` literal (in)equations (`if 8 == 0`), which the four `Int`
+simprocs decide. -/
+elab "rule_norm" : tactic => do
+  if gofv.ruleNorm.decide.get (← getOptions) then
+    evalTactic (← `(tactic|
+      simp_all (config := { decide := true }) only [rule_sem, rule_helper, rule_norm_s]))
+  else
+    evalTactic (← `(tactic|
+      simp_all only [rule_sem, rule_helper, rule_norm_s, Int.reduceEq, Int.reduceNe,
+        Int.reduceBEq, Int.reduceBNe]))
 
 /-- The subterms of `e` satisfying `p`, each once. -/
 partial def subtermsWith (p : Lean.Expr → Bool) (e : Lean.Expr) : Array Lean.Expr :=
@@ -659,10 +669,10 @@ elab "rule_pow2" : tactic => withMainContext do
         obtain ⟨k, hp2, hk⟩ := GoFV.Proof.Rules.isPow2_signed (T := $T) (w := $w) (c := $c) rfl
           (by decide) (by omega) (by omega) $hs
         first
-        | exact GoFV.Proof.Rules.divisible_pow2_u _ _ _ hp2
-        | exact GoFV.Proof.Rules.divisible_pow2_s _ _ _ hp2 hk
-        | exact GoFV.Proof.Rules.divisible_pow2_u_ne _ _ _ hp2
-        | exact GoFV.Proof.Rules.divisible_pow2_s_ne _ _ _ hp2 hk)))
+        | with_reducible exact GoFV.Proof.Rules.divisible_pow2_u _ _ _ hp2
+        | with_reducible exact GoFV.Proof.Rules.divisible_pow2_s _ _ _ hp2 hk
+        | with_reducible exact GoFV.Proof.Rules.divisible_pow2_u_ne _ _ _ hp2
+        | with_reducible exact GoFV.Proof.Rules.divisible_pow2_s_ne _ _ _ hp2 hk)))
       return
     unless inner.isAppOfArity ``GoFV.Rules.wrapInt 3 do continue
     let T ← Term.exprToSyntax (ap.getArg! 0)
@@ -716,7 +726,7 @@ macro "rule_close" : tactic => `(tactic| (
   | fail "rule_close: no closer applies (bv_decide is not used: scripts/axioms-audit.sh)"))
 
 /-- `rule_unfold`, the case splits, then `rule_close` on every remaining case. -/
-macro "rule_auto" : tactic => `(tactic| (
+macro "rule_auto_core" : tactic => `(tactic| (
   rule_unfold
   (try rule_ands)
   (try rule_clear_oracle)
@@ -725,6 +735,19 @@ macro "rule_auto" : tactic => `(tactic| (
   all_goals (repeat rule_split1)
   all_goals (try rule_widths)
   all_goals rule_close))
+
+/-- `rule_auto_core` with `rule_norm`'s `decide := true` (`gofv.ruleNorm.decide`). Needed by the
+nested rotations by sized amounts (`generic.rules:2246`, `:2247`, RotateLeft6/8/10/12): their
+splits leave cases that only `decide` closes. Call it there directly: `rule_auto` would first
+spend a failed `rule_auto_core` (6.5 of 9.9 s CPU for `r_generic_2246_2_sound`). -/
+macro "rule_auto_dec" : tactic => `(tactic|
+  set_option gofv.ruleNorm.decide true in rule_auto_core)
+
+/-- `rule_auto_core`, and `rule_auto_dec` if that fails (proofs written against the old
+`rule_norm`, which always used `decide := true`). -/
+macro "rule_auto" : tactic => `(tactic| first
+  | rule_auto_core
+  | rule_auto_dec)
 
 -- The congruence equations of the `match`es `simp` meets in the rule lemmas, generated here
 -- once: generated in two rule modules they are two public declarations of the same name, and
