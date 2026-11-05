@@ -19,12 +19,13 @@ namespace GoFV.Proof.Low.Rules
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low
 open Lean Meta Elab Tactic
 
-/-- `ArmRule.Sound r`: one goal per commutation choice, unfolded (module doc). -/
+/-- `ArmRule.Sound r` (`r` a constant, or a constant applied to closed arguments): one goal per
+commutation choice, unfolded (module doc). -/
 elab "arm_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
   let some r := ty.getAppArgs[0]? | throwError "arm_unfold: goal is not `ArmRule.Sound r`"
-  let some rn := r.constName? | throwError "arm_unfold: rule is not a constant"
+  let some rn := r.getAppFn.constName? | throwError "arm_unfold: rule is not a constant"
   let rid := mkIdent rn
   let n ← withTransparency .all <| reduce
     (mkApp (mkConst ``GoFV.Opt.RewriteCheck.Pat.commutes) (mkApp (mkConst ``GoFV.Rules.Rule.pat) r))
