@@ -535,10 +535,11 @@ def liveOKL (tabs : Tables) (h : Func) (L : Array Bool) : Bool :=
     | none => true
 
 /-- The output's bounds panic `u` with constant operands at `x` keeps the other arguments of the
-replayed `LoweredPanicBoundsRR` `m` (up to copies; `pbKeep`), with its type and auxint. -/
-def pbFinal (tabs : Tables) (M : Defs) (n : Nat) (x : ID) (m u : Value) : Bool :=
+replayed `LoweredPanicBoundsRR` `m` (up to copies; `pbKeep`), with its type and auxint, and lowers
+`f`'s `PanicBounds` at `x` (`pbLower`). -/
+def pbFinal (tabs : Tables) (f : Func) (M : Defs) (n : Nat) (x : ID) (m u : Value) : Bool :=
   u.id == x && m.id == x && m.op == .ARM64LoweredPanicBoundsRR && u.type == m.type &&
-    u.auxInt == m.auxInt && m.args.size == 3 &&
+    u.auxInt == m.auxInt && m.args.size == 3 && (f.value? x).any (pbLower · u) &&
     match pbKeep u.op with
     | some ks => u.args.size == ks.length &&
         (ks.zip u.args.toList).all fun (k, a') => copyReachL tabs M n m.args[k]! a'
@@ -566,7 +567,7 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
           (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
             u.aux == m.aux && u.args.size == m.args.size &&
             (m.args.toList.zip u.args.toList).all fun (a, a') => copyReachL tabs M n a a') ||
-          (termVL tabs u && L[x]? != some true) || pbFinal tabs M n x m u
+          (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u
         | _, _ => false
     | _, _, _ => false
 

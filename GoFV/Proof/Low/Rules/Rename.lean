@@ -2,10 +2,11 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:442-455`, `482-485`, `507`, `512`)
+# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:442-455`, `482-485`, `507`, `512-516`)
 
 `ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
-checks, the closure pointer and the bounds panic. `ArmRule.SetOp` of the write barrier (`WB` and
+checks, the closure pointer and the bounds panic; the rules folding a constant operand into a
+lowered bounds panic (`ArmRule.Mem`, `pbAtom`). `ArmRule.SetOp` of the write barrier (`WB` and
 `LoweredWB` are terms, both `wbOp`) and of the atomic loads: `AtomicLoad{8,32,64,Ptr}`
 and the acquiring loads `LDAR{B,W,}` they lower to are terms (`ldarOp`), both Phase 1's
 `atomicLoad` (`armPure_ldar`).
@@ -26,6 +27,23 @@ theorem r_ARM64_507_sound : ArmRule.Checked r_ARM64_507 :=
 /-- `ARM64.rules:512`: `(PanicBounds ...) => (LoweredPanicBoundsRR ...)` -/
 theorem r_ARM64_512_sound : ArmRule.Checked r_ARM64_512 :=
   checked_rename .PanicBounds .ARM64LoweredPanicBoundsRR rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:513`: `(LoweredPanicBoundsRR [kind] x (MOVDconst [c]) mem) =>
+(LoweredPanicBoundsRC [kind] x {PanicBoundsC{C:c}} mem)`, a rule on a lowered bounds panic
+(`pbAtom`; the validator checks its result, `GoFV.Opt.LowerCheck.pbFoldEv`). -/
+theorem r_ARM64_513_sound : ArmRule.Checked r_ARM64_513 := checked_pb rfl rfl
+
+/-- `ARM64.rules:514`: `(LoweredPanicBoundsRR [kind] (MOVDconst [c]) y mem) =>
+(LoweredPanicBoundsCR [kind] {PanicBoundsC{C:c}} y mem)` (`pbAtom`). -/
+theorem r_ARM64_514_sound : ArmRule.Checked r_ARM64_514 := checked_pb rfl rfl
+
+/-- `ARM64.rules:515`: `(LoweredPanicBoundsRC [kind] {p} (MOVDconst [c]) mem) =>
+(LoweredPanicBoundsCC [kind] {PanicBoundsCC{Cx:c, Cy:p.C}} mem)` (`pbAtom`). -/
+theorem r_ARM64_515_sound : ArmRule.Checked r_ARM64_515 := checked_pb rfl rfl
+
+/-- `ARM64.rules:516`: `(LoweredPanicBoundsCR [kind] {p} (MOVDconst [c]) mem) =>
+(LoweredPanicBoundsCC [kind] {PanicBoundsCC{Cx:p.C, Cy:c}} mem)` (`pbAtom`). -/
+theorem r_ARM64_516_sound : ArmRule.Checked r_ARM64_516 := checked_pb rfl rfl
 
 /-- `ARM64.rules:442`: `(StaticCall ...) => (CALLstatic ...)` -/
 theorem r_ARM64_442_sound : ArmRule.Checked r_ARM64_442 :=

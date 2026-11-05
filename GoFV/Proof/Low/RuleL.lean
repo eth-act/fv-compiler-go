@@ -532,9 +532,41 @@ one for a bounds panic with constant operands (`pbLower`), else `i`. -/
 def argIx (u w : Value) (i : Nat) : Nat :=
   if pbLower u w then ((pbKeep w.op).getD [])[i]?.getD i else i
 
+/-- What `pbKeep` says. -/
+theorem pbKeep_cases {o : Op} {ks : List Nat} (h : pbKeep o = some ks) :
+    (o = .ARM64LoweredPanicBoundsRC ∧ ks = [0, 2]) ∨ (o = .ARM64LoweredPanicBoundsCR ∧ ks = [1, 2]) ∨
+      (o = .ARM64LoweredPanicBoundsCC ∧ ks = [2]) := by
+  unfold pbKeep at h
+  split at h <;> simp_all
+
+/-- What `pbLower` says. -/
+theorem pbLower_cases {u w : Value} (h : pbLower u w = true) :
+    u.op = .PanicBounds ∧ u.args.size = 3 ∧ u.auxInt = w.auxInt ∧
+      ∃ ks, pbKeep w.op = some ks ∧ w.args.size = ks.length := by
+  unfold pbLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Option.any_eq_true] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, ks, hk, hs⟩ := h
+  exact ⟨h1, h2, h3, ks, hk, by simpa using hs⟩
+
 /-- `argIx` is the identity unless `w` lowers a bounds panic with constant operands. -/
 theorem argIx_of_not {u w : Value} (h : pbLower u w = false) (i : Nat) : argIx u w i = i := by
   simp [argIx, h]
+
+/-- `argIx` of a bounds panic with constant operands: the kept argument. -/
+theorem argIx_of_pb {u w : Value} (h : pbLower u w = true) {ks : List Nat}
+    (hk : pbKeep w.op = some ks) {i : Nat} (hi : i < ks.length) : argIx u w i = ks[i] := by
+  simp [argIx, h, hk, hi]
+
+/-- The kept arguments are among the three of `PanicBounds`. -/
+theorem pbKeep_lt {o : Op} {ks : List Nat} (h : pbKeep o = some ks) {i : Nat} (hi : i < ks.length) :
+    ks[i] < 3 := by
+  rcases pbKeep_cases h with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ <;>
+    (simp only [List.length_cons, List.length_nil] at hi) <;> (rcases i with _ | _ | i) <;>
+    first | omega | simp
+
+/-- A bounds panic with constant operands keeps fewer than the three arguments. -/
+theorem pbKeep_len {o : Op} {ks : List Nat} (h : pbKeep o = some ks) : ks.length < 3 := by
+  rcases pbKeep_cases h with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> decide
 
 /-- An atom whose value reads no argument: `MOVDaddr` of a frame variable (a `.name` aux,
 `Sem.symAddr`). -/

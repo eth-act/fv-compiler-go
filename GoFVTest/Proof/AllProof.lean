@@ -698,6 +698,7 @@ import GoFV.Proof.Witness.LowerLoadStore
 import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerNegOff
+import GoFV.Proof.Witness.LowerPanicConst
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreSym
 import GoFV.Proof.Witness.LowerWBPanic

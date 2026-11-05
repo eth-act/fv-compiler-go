@@ -187,6 +187,14 @@ theorem termVL_pb (tabs : Tables) (v : Value) {o : Op} (ho : pbAtom o = true)
     | (cases ho; done)
     | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) h]; decide)
 
+/-- The lowered bounds panics with constant operands are atoms. -/
+theorem termVL_pbKeep (tabs : Tables) (v : Value) {o : Op} {ks : List Nat} (hk : pbKeep o = some ks)
+    (h : v.op = o) : termVL tabs v = false := by
+  unfold pbKeep at hk
+  split at hk <;> first
+    | (cases hk; done)
+    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) h]; decide)
+
 /-- The atoms `ArmRule.Mem` rules match. -/
 theorem termVL_mem (tabs : Tables) (v : Value) {o : Op}
     (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true ∨ pbAtom o = true)
@@ -1179,6 +1187,9 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     split at h
     · cases h
     rename_i x hx
+    split at h
+    · -- a constant folded into a lowered bounds panic (`pbFoldEv`): no change
+      exact replayL_inv hs hD evs M M' B B' C h hI hB
     split at h
     · cases h
     rename_i cr hcr

@@ -240,7 +240,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       for x in gb.values do
         match M.get? x, g.value? x with
         | some m, some u =>
-          if pbFinal tabs M M.size x m u then continue
+          if pbFinal tabs f M M.size x m u then continue
           if !(u.op == m.op && u.type == m.type && u.auxInt == m.auxInt && u.aux == m.aux) then
             if !(termVL tabs u && L[x]? != some true) then
               return s!"final: v{x} fields {m.op.name}->{u.op.name}"
