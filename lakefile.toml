@@ -182,3 +182,8 @@ root = "GoFVTest.UnreadProbe"
 [[lean_exe]]
 name = "lowfrag-probe"
 root = "GoFVTest.LowFragProbe"
+
+[[lean_exe]]
+name = "axioms-audit"
+root = "GoFVTest.AxiomsAudit"
+supportInterpreter = true

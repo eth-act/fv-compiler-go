@@ -6,7 +6,7 @@
 #             every GoFV/Proof module imports together (no name declared twice)
 #   no-sorry  scripts/no-sorry.py
 #   reverts   scripts/scan-history-reverts.sh: no recent squash merge silently undid earlier work
-#   axioms    scripts/axioms-audit.sh (every theorem under GoFV.Proof)
+#   axioms    scripts/axioms-audit.sh --replay (every constant of GoFV and GoFVTest; kernel replay)
 #   ssa-check ssa-check on the full corpus
 #   parity    scripts/parity.sh on the full corpus
 #   check     whole-pipeline gofv-ssa-opt --check on the full corpus
@@ -208,7 +208,7 @@ gate_steps() {
   step no-sorry python3 scripts/no-sorry.py
   step reverts scripts/scan-history-reverts.sh 80
   if [ "$built" = 1 ]; then
-    step axioms scripts/axioms-audit.sh --out "$run/axioms"
+    step axioms scripts/axioms-audit.sh --replay --out "$run/axioms"
   else
     skip axioms "build failed"
   fi
