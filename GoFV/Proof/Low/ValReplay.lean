@@ -1093,13 +1093,13 @@ theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : I
     rcases hcase with ⟨hl0, hop, hxa, hsz, huargs⟩ | ⟨hop, huop, hsz, hw, huargs⟩
     · obtain ⟨⟨sz, sg⟩, hl⟩ := Option.isSome_iff_exists.1 hl0
       obtain ⟨hg, hmd⟩ := ldOp_arm hl
-      have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := by rw [args_two hsz]
+      have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := congrArg Array.toList (args_two hsz)
       have hul : u.args.toList = [m.args[0]!, x.args[1]!] := by rw [huargs]
       rw [hop, hxa, hxl, hul]
       simp only [List.map_cons, List.map_nil]
       rw [opValL_ld hg hmd hl, opValL_ld hg hmd hl]
       exact retypeL_mono _ (ldVal_frameFold hname hk hF (hFG _) _ _ _ _)
-    · have hxl : x.args.toList = [x.args[0]!] := by rw [args_one hsz]
+    · have hxl : x.args.toList = [x.args[0]!] := congrArg Array.toList (args_one hsz)
       have hul : u.args.toList = [m.args[0]!] := by rw [huargs]
       rw [hop, huop, hxl, hul]
       simp only [List.map_cons, List.map_nil, opValL_addConst, opValL_movDaddr]
