@@ -492,23 +492,34 @@ theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = tr
 
 theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     (((((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
-        memLower tabs u w = true) ∧ u.args.size = w.args.size) ∨ addrLower tabs u w = true) ∧
+        memLower tabs u w = true) ∧ u.args.size = w.args.size) ∨ addrLower tabs u w = true ∨
+        pbLower u w = true) ∧
       u.type = w.type ∧ u.block = w.block ∧ u.id = w.id := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
   refine ⟨?_, h2, h3, h4⟩
-  rcases h1 with ⟨⟨⟨h1, h6⟩, h7⟩ | h1, hs⟩ | h1
+  rcases h1 with (⟨⟨⟨h1, h6⟩, h7⟩ | h1, hs⟩ | h1) | h1
   · exact .inl ⟨.inl ⟨h1, h6, h7⟩, hs⟩
   · exact .inl ⟨.inr h1, hs⟩
-  · exact .inr h1
+  · exact .inr (.inl h1)
+  · exact .inr (.inr h1)
 
-/-- Corresponding atoms other than a lowered frame address have as many arguments. -/
+/-- A bounds panic with constant operands and the `PanicBounds` it lowers: no `Phi`s, both
+roots. -/
+theorem pbLower_ops {u w : Value} (h : pbLower u w = true) :
+    u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot w.op = isRoot u.op := by
+  obtain ⟨hu, -, -, ks, hk, -⟩ := pbLower_cases h
+  rcases pbKeep_cases hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hu, hw] <;> decide
+
+/-- Corresponding atoms other than a lowered frame address or a bounds panic with constant
+operands have as many arguments. -/
 theorem atomPair_size {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
-    (hn : addrLower tabs u w = false) : u.args.size = w.args.size := by
-  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha
+    (hn : addrLower tabs u w = false) (hb : pbLower u w = false) : u.args.size = w.args.size := by
+  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha | ha
   · exact hs
   · rw [hn] at ha; cases ha
+  · rw [hb] at ha; cases ha
 
 /-- A lowered store and the `Store` it lowers: no `Phi`s, both roots. -/
 theorem memLower_ops {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
@@ -526,7 +537,7 @@ theorem addrLower_ops {tabs : Tables} {u w : Value} (h : addrLower tabs u w = tr
 /-- Corresponding atoms are both `Phi`s or neither. -/
 theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     w.op = .Phi ↔ u.op = .Phi := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
@@ -535,17 +546,20 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := addrLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
+  · obtain ⟨h1, h2, -⟩ := pbLower_ops h
+    exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
 
 /-- Corresponding atoms are both roots or neither. -/
 theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     isRoot w.op = isRoot u.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
       rw [h1, h2] <;> decide
   · exact (memLower_ops h).2.2
   · exact (addrLower_ops h).2.2
+  · exact (pbLower_ops h).2.2
 
 theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
   unfold Ctx.makeL; split <;> rfl
@@ -641,7 +655,8 @@ in `f`'s mode. -/
 theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
-    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hgen : u.op.generic = true)
+    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
+    (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
@@ -649,7 +664,7 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
-  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn]; decide)
+  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn, hb]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
   have hrel : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
       ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i) (rv GS a) (rv GT a') :=
@@ -712,6 +727,151 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
         exact resRefines_trans hmono hfit
       · rw [he]; exact hmono
       · rw [he] at hmono; exact resRefines_trans hmono (.stuck msg _)
+  exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
+
+
+/-! ### Bounds panics with constant operands (`pbLower`) -/
+
+section
+variable {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty} {a : AuxDef}
+
+/-- `LoweredPanicBoundsRC [kind] {c} x mem` panics as `PanicBounds [kind] x c mem`. -/
+theorem evalOpL_pbRC (hw : w.op = .ARM64LoweredPanicBoundsRC)
+    (ha : w.aux.bind ctx.tabs.aux? = some a) {c : Int} (hk : a.kind = .pbc c) (x m : Val) :
+    evalOpL false env ctx fr w [x, m] ty = panicBounds w.auxInt [x, .i64 (BitVec.ofInt 64 c), m] := by
+  have h0 : nilFaults false ctx w [x, m] = none := rfl
+  have hg : Op.ARM64LoweredPanicBoundsRC.generic = false := by decide
+  cases a; cases hk
+  unfold evalOpL
+  rw [hw]
+  simp only [hg, Bool.false_eq_true, ite_false]
+  unfold arm64Op
+  rw [h0]
+  dsimp only
+  rw [hw, ha]
+
+/-- `LoweredPanicBoundsCR [kind] {c} y mem` panics as `PanicBounds [kind] c y mem`. -/
+theorem evalOpL_pbCR (hw : w.op = .ARM64LoweredPanicBoundsCR)
+    (ha : w.aux.bind ctx.tabs.aux? = some a) {c : Int} (hk : a.kind = .pbc c) (y m : Val) :
+    evalOpL false env ctx fr w [y, m] ty = panicBounds w.auxInt [.i64 (BitVec.ofInt 64 c), y, m] := by
+  have h0 : nilFaults false ctx w [y, m] = none := rfl
+  have hg : Op.ARM64LoweredPanicBoundsCR.generic = false := by decide
+  cases a; cases hk
+  unfold evalOpL
+  rw [hw]
+  simp only [hg, Bool.false_eq_true, ite_false]
+  unfold arm64Op
+  rw [h0]
+  dsimp only
+  rw [hw, ha]
+
+/-- `LoweredPanicBoundsCC [kind] {cx cy} mem` panics as `PanicBounds [kind] cx cy mem`. -/
+theorem evalOpL_pbCC (hw : w.op = .ARM64LoweredPanicBoundsCC)
+    (ha : w.aux.bind ctx.tabs.aux? = some a) {cx cy : Int} (hk : a.kind = .pbcc cx cy) (m : Val) :
+    evalOpL false env ctx fr w [m] ty =
+      panicBounds w.auxInt [.i64 (BitVec.ofInt 64 cx), .i64 (BitVec.ofInt 64 cy), m] := by
+  have h0 : nilFaults false ctx w [m] = none := rfl
+  have hg : Op.ARM64LoweredPanicBoundsCC.generic = false := by decide
+  cases a; cases hk
+  unfold evalOpL
+  rw [hw]
+  simp only [hg, Bool.false_eq_true, ite_false]
+  unfold arm64Op
+  rw [h0]
+  dsimp only
+  rw [hw, ha]
+
+end
+
+/-- What `pbConsts` says. -/
+theorem pbConsts_cases {tabs : Tables} {w : Value} {l : List (Nat × Int)} (h : pbConsts tabs w = some l) :
+    ∃ a, w.aux.bind tabs.aux? = some a ∧
+      ((w.op = .ARM64LoweredPanicBoundsRC ∧ ∃ k, a.kind = .pbc k ∧ l = [(1, k)]) ∨
+       (w.op = .ARM64LoweredPanicBoundsCR ∧ ∃ k, a.kind = .pbc k ∧ l = [(0, k)]) ∨
+       (w.op = .ARM64LoweredPanicBoundsCC ∧ ∃ kx ky, a.kind = .pbcc kx ky ∧ l = [(0, kx), (1, ky)])) := by
+  unfold pbConsts at h
+  split at h <;> simp_all
+  exact ⟨_, _, ⟨rfl, rfl⟩, h.symm⟩
+
+private theorem args3 {xs : Array ID} (h : xs.size = 3) : ∃ a0 a1 a2, xs = #[a0, a1, a2] := by
+  rcases xs with ⟨l⟩
+  match l, h with | [a0, a1, a2], _ => exact ⟨a0, a1, a2, rfl⟩
+
+private theorem args2 {xs : Array ID} (h : xs.size = 2) : ∃ a0 a1, xs = #[a0, a1] := by
+  rcases xs with ⟨l⟩
+  match l, h with | [a0, a1], _ => exact ⟨a0, a1, rfl⟩
+
+private theorem args1 {xs : Array ID} (h : xs.size = 1) : ∃ a0, xs = #[a0] := by
+  rcases xs with ⟨l⟩
+  match l, h with | [a0], _ => exact ⟨a0, rfl⟩
+
+/-- **A bounds panic with constant operands refines the `PanicBounds` it lowers** (`pbLower`):
+both panic with `panicBounds` at the same kind, the kept arguments refined (`argIx`) and the
+dropped ones refined by the aux constants (`pbConsts`). -/
+theorem pb_lower_eval {tabs : Tables} {f g : Func} {env : Env}
+    (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
+    {GS GT : Frame} {u w : Value} (hb : pbLower u w = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    (hargs : ∀ i < w.args.size, Sem.Refines (rv GS u.args[argIx u w i]!) (rv GT w.args[i]!))
+    {l : List (Nat × Int)} (hcs : pbConsts tabs w = some l)
+    (hc : ∀ p ∈ l, Sem.Refines (rv GS u.args[p.1]!) (.i64 (BitVec.ofInt 64 p.2))) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  obtain ⟨hu, h3, hai, ks, hks, hsz⟩ := pbLower_cases hb
+  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
+  generalize (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
+  have hsrc : evalOpL false env (Ctx.makeL tabs f) GS u (u.args.toList.map (rv GS)) ty =
+      panicBounds w.auxInt (u.args.toList.map (rv GS)) := by
+    rw [evalOpL_generic _ _ _ _ _ _ (by rw [hu]; decide), ← hai]
+    simp only [evalOp, hu]
+  have hix : ∀ i (hi : i < ks.length), argIx u w i = ks[i] := fun i hi => argIx_of_pb hb hks hi
+  have htabs : (Ctx.makeL tabs g).tabs = tabs := makeL_tabs tabs g
+  obtain ⟨a0, a1, a2, hua⟩ := args3 h3
+  have hev : Res.Refines (evalOpL false env (Ctx.makeL tabs f) GS u (u.args.toList.map (rv GS)) ty)
+      (evalOpL false env (Ctx.makeL tabs g) GT w (w.args.toList.map (rv GT)) ty) := by
+    rw [hsrc]
+    obtain ⟨a, hax, hcase⟩ := pbConsts_cases hcs
+    rw [← htabs] at hax
+    rcases hcase with ⟨hw, k, hk, rfl⟩ | ⟨hw, k, hk, rfl⟩ | ⟨hw, kx, ky, hk, rfl⟩
+    · obtain rfl : ks = [0, 2] := by rw [hw] at hks; exact (Option.some.inj hks).symm
+      obtain ⟨b0, b1, hwa⟩ := args2 hsz
+      have e0 := hargs 0 (by rw [hwa]; simp)
+      have e1 := hargs 1 (by rw [hwa]; simp)
+      rw [hix 0 (by decide), hua, hwa] at e0
+      rw [hix 1 (by decide), hua, hwa] at e1
+      have e2 := hc (1, k) (by simp)
+      rw [hua] at e2
+      simp at e0 e1 e2
+      rw [hwa, hua]
+      simp only [List.toList_toArray, List.map_cons, List.map_nil]
+      rw [evalOpL_pbRC hw hax hk]
+      exact panicBounds_mono _ (.cons e0 (.cons e2 (.cons e1 .nil)))
+    · obtain rfl : ks = [1, 2] := by rw [hw] at hks; exact (Option.some.inj hks).symm
+      obtain ⟨b0, b1, hwa⟩ := args2 hsz
+      have e0 := hargs 0 (by rw [hwa]; simp)
+      have e1 := hargs 1 (by rw [hwa]; simp)
+      rw [hix 0 (by decide), hua, hwa] at e0
+      rw [hix 1 (by decide), hua, hwa] at e1
+      have e2 := hc (0, k) (by simp)
+      rw [hua] at e2
+      simp at e0 e1 e2
+      rw [hwa, hua]
+      simp only [List.toList_toArray, List.map_cons, List.map_nil]
+      rw [evalOpL_pbCR hw hax hk]
+      exact panicBounds_mono _ (.cons e2 (.cons e0 (.cons e1 .nil)))
+    · obtain rfl : ks = [2] := by rw [hw] at hks; exact (Option.some.inj hks).symm
+      obtain ⟨b0, hwa⟩ := args1 hsz
+      have e0 := hargs 0 (by rw [hwa]; simp)
+      rw [hix 0 (by decide), hua, hwa] at e0
+      have ex := hc (0, kx) (by simp)
+      have ey := hc (1, ky) (by simp)
+      rw [hua] at ex ey
+      simp at e0 ex ey
+      rw [hwa, hua]
+      simp only [List.toList_toArray, List.map_cons, List.map_nil]
+      rw [evalOpL_pbCC hw hax hk]
+      exact panicBounds_mono _ (.cons ex (.cons ey (.cons e0 .nil)))
   exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
 
 end GoFV.Proof.Low

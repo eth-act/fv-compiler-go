@@ -8,9 +8,10 @@ initial memory, `v5 = Select1 <mem> v4` its memory, `v6 = PanicBounds [0] v2 v3 
 the index `v2 = Const64 [5]` and the length `v3 = Const64 [3]`. The checked lower fires
 `(WB ...) => (LoweredWB ...)` (507, a term of lowered SSA on both sides, `wbOp`) and
 `(PanicBounds ...) => (LoweredPanicBoundsRR ...)` (512, an atom rename, `panicBounds` on both
-sides), and the constants' `(Const64 [val]) => (MOVDconst [val])`. By `lower_refines` every
-returning or panicking `run` of `wbp` is, up to refinement, a `runL` of the result; both panic
-with the index error `5` out of range `3`.
+sides), the constants' `(Const64 [val]) => (MOVDconst [val])`, and folds both constant operands
+into the bounds panic's aux (513, then 515: `LoweredPanicBoundsCC [0] {5, 3} v5`). By
+`lower_refines` every returning or panicking `run` of `wbp` is, up to refinement, a `runL` of the
+result; both panic with the index error `5` out of range `3`.
 -/
 
 namespace GoFV.Proof.Witness
@@ -63,28 +64,28 @@ theorem wbp_noFma : GoFV.Opt.FmaContract.contractAll wbpFunc = wbpFunc := by dec
 set_option synthInstance.maxSize 2048 in
 set_option synthInstance.maxHeartbeats 200000 in
 /-- By kernel evaluation: the checked lower keeps a lowered result whose `v4` is
-`LoweredWB [1] v1` and whose `v6` is `LoweredPanicBoundsRR [0] v2 v3 v5`, and `wbp` panics with
+`LoweredWB [1] v1` and whose `v6` is `LoweredPanicBoundsCC [0] v5`, and `wbp` panics with
 the index error under `run` of the input and `runL` of the result. -/
 theorem wbp_checks :
     (lowerChecked wbpPassEnv wbpFunc).toOption.map (fun o =>
       ((o.func.value? 4).map (fun v => (v.op, v.auxInt, v.args)),
         (o.func.value? 6).map (fun v => (v.op, v.auxInt, v.args)), o.func.lowered,
         panicsIdx53 (runL Env.p1 o.tables o.func [] {} 1))) =
-      some (some (.ARM64LoweredWB, 1, #[1]), some (.ARM64LoweredPanicBoundsRR, 0, #[2, 3, 5]),
+      some (some (.ARM64LoweredWB, 1, #[1]), some (.ARM64LoweredPanicBoundsCC, 0, #[5]),
         true, true) ∧
     panicsIdx53 (run Env.p1 wbpTabs wbpFunc [] {} 1) = true := by
   decide +kernel
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a write barrier and a
-bounds panic: on `wbp`, the checked lower lowers `WB` to `LoweredWB` and `PanicBounds` to
-`LoweredPanicBoundsRR`, and every returning or panicking `run` of `wbp` is, up to refinement, a
-`runL` of the result. -/
+bounds panic: on `wbp`, the checked lower lowers `WB` to `LoweredWB` and `PanicBounds` on two
+constants to `LoweredPanicBoundsCC`, and every returning or panicking `run` of `wbp` is, up to
+refinement, a `runL` of the result. -/
 theorem wbp_lower :
     ∃ out, lowerChecked wbpPassEnv wbpFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 4).map (fun v => (v.op, v.auxInt, v.args)) =
         some (.ARM64LoweredWB, 1, #[1]) ∧
       (out.func.value? 6).map (fun v => (v.op, v.auxInt, v.args)) =
-        some (.ARM64LoweredPanicBoundsRR, 0, #[2, 3, 5]) ∧
+        some (.ARM64LoweredPanicBoundsCC, 0, #[5]) ∧
       (∃ f', GoFV.Proof.Low.Contract wbpFunc f' ∧
         RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func wbpPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem fuel, (run env wbpTabs wbpFunc args mem fuel).Defined →

@@ -85,12 +85,44 @@ theorem atomsOKL_spec {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = true
       obtain ⟨hxb, u, hu, hut⟩ := mem_atomsOfL.1 hxf
       refine ⟨hxb, u, hu, hut, ?_⟩
       rw [hu, hw] at h2
-      exact h2
+      simp only [Bool.and_eq_true] at h2
+      exact h2.1
     · split at hsch
       · rename_i of og hof hog
         exact ⟨of, og, hof, hog, beq_iff_eq.1 hsch⟩
       · cases hsch
   · cases h
+
+/-- What `constArg` says. -/
+theorem constArg_cases {tabs : Tables} {f : Func} {u : Value} {i : Nat} {k : Int} (h : constArg tabs f u i k = true) :
+    ∃ y, f.value? u.args[i]! = some y ∧ y.op = .Const64 ∧ y.auxInt.toInt = k ∧ y.args.size = 0 ∧
+      shp f.lowered tabs y.type = .int .w64 := by
+  unfold constArg at h
+  split at h
+  · rename_i y hy
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+    refine ⟨y, hy, h1, h2, h3, ?_⟩
+    revert h4; cases shp f.lowered tabs y.type <;> simp
+    rename_i w; cases w <;> simp
+  · cases h
+
+/-- A register holding a `Const64` (at the 64-bit integer shape) holds the constant. -/
+theorem rv_const64 {tabs : Tables} {low : Bool} {D : ID → Option Value} {fr : Frame} {V : ID → Prop}
+    (hD : DenOKL low D tabs fr V) {y : ID} {v : Value} (hy : V y) (hv : D y = some v)
+    (hop : v.op = .Const64) (hs : shp low tabs v.type = .int .w64) :
+    rv fr y = .i64 (BitVec.ofInt 64 v.auxInt.toInt) := by
+  obtain ⟨-, h⟩ := hD y hy
+  obtain ⟨N, hN⟩ := h (rv fr) (fun _ _ _ => rfl)
+  have hg : Op.Const64.generic = true := by decide
+  have ht' : GoFV.Opt.RewriteCheck.termOp .Const64 = true := by decide
+  have ht : termVL tabs v = true := by unfold termVL; simp only [hop, hg, ht', ite_true]
+  have e1 : ∀ args, opValL tabs .Const64 (.int .w64) v.auxInt v.aux args =
+      .int .w64 (BitVec.ofInt 64 v.auxInt.toInt) := fun args => by
+    simp only [opValL, hg, ite_true]
+    rw [GoFV.Proof.Rules.opVal_pure (by decide)]; rfl
+  rw [← hN (N + 1) (by omega), denL_succ_term hv ht, hs, hop, e1]
+  cases low <;> simp [rty, Val.retypeL, Val.widen, Val.retype]
 
 /-! ## The hypotheses -/
 
@@ -198,17 +230,18 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
     {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u)
     (ht : termVL tabs w = false) :
     atomPair tabs u w = true ∧
-    (argFree tabs w = false → ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
-      ArgRel tabs 0 (stArg u w i) (rv G u.args[i]!) (rv T w.args[i]!)) ∧
+    (argFree tabs w = false → ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
+      ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!)) ∧
     (∀ env : Env, env.Mono → (∀ a ∈ u.args, VS a) → (∀ a ∈ w.args, VT a) → w.op ≠ .Phi →
       Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u)
         (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) T w)) := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
-  obtain ⟨u', hu', hpair, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
+  obtain ⟨u', hu', hpair, hpc, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
   rw [hu] at hu'; cases hu'
   obtain ⟨-, hty, -, hid⟩ := atomPair_spec hpair
-  have hargs : argFree tabs w = false → ∀ i < w.args.size, VS u.args[i]! → VT w.args[i]! →
-      ArgRel tabs 0 (stArg u w i) (rv G u.args[i]!) (rv T w.args[i]!) := fun hf i hi h1 h2 => by
+  have hargs : argFree tabs w = false → ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
+      ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!) :=
+    fun hf i hi h1 h2 => by
     rcases hTR with hf' | hTR
     · rw [hf] at hf'; cases hf'
     · exact argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS (hTR i hi) h1 h2
@@ -226,7 +259,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
       cases hf : argFree tabs w
       · rfl
       · exfalso
-        rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha
+        rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha | hb
         · have hg := H.gen x u hu hut
           rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
         · have hw' := (argFree_cases hf).1
@@ -236,12 +269,42 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
         · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
           rw [(argFree_cases hf).1] at hs; cases hs
         · rw [hal] at ha; cases ha
-    have hsz := atomPair_size hpair hal
-    refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair hal (H.gen x u hu hut) hty'
-      (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
-    have hi' : i < w.args.size := hsz ▸ hi
-    rw [makeL_act]
-    exact hargs hf i hi' (hS _ (getElem!_mem' hi)) (hT _ (getElem!_mem' hi'))
+        · obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases hb
+          rw [(argFree_cases hf).1] at hks; cases hks
+    cases hpb : pbLower u w
+    · have hsz := atomPair_size hpair hal hpb
+      refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair hal hpb (H.gen x u hu hut) hty'
+        (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
+      have hi' : i < w.args.size := hsz ▸ hi
+      rw [makeL_act]
+      have := hargs hf i hi' (by rw [argIx_of_not hpb]; exact hS _ (getElem!_mem' hi))
+        (hT _ (getElem!_mem' hi'))
+      rwa [argIx_of_not hpb] at this
+    · -- a bounds panic with constant operands
+      obtain ⟨hu3, h3, -, ks, hks, hsz⟩ := pbLower_cases hpb
+      have hpc' : ∃ l, pbConsts tabs w = some l ∧ ∀ p ∈ l, constArg tabs f u p.1 p.2 = true := by
+        unfold pbConstOK at hpc
+        rw [hpb] at hpc
+        simp only [Bool.not_true, Bool.false_or] at hpc
+        split at hpc
+        · rename_i l hl
+          exact ⟨l, hl, fun p hp => List.all_eq_true.1 hpc p hp⟩
+        · cases hpc
+      obtain ⟨l, hl, hcl⟩ := hpc'
+      refine pb_lower_eval H.low H.glow hpb hty' (fun a ha => (hDS a (hS a ha)).1)
+        (fun a ha => (hDT a (hT a ha)).1) (fun i hi => ?_) hl fun p hp => ?_
+      · have hik : i < ks.length := hsz ▸ hi
+        have hk3 := pbKeep_lt hks hik
+        have := hargs hf i hi (hS _ (getElem!_mem' (by rw [argIx_of_pb hpb hks hik, h3]; exact hk3)))
+          (hT _ (getElem!_mem' hi))
+        rwa [stArg_of_ne (by rw [hu3]; decide)] at this
+      · obtain ⟨y, hy, hop, hk, -, hs⟩ := constArg_cases (hcl p hp)
+        have hp3 : p.1 < u.args.size := by
+          obtain ⟨a, -, hcase⟩ := pbConsts_cases hl
+          rcases hcase with ⟨-, k, -, rfl⟩ | ⟨-, k, -, rfl⟩ | ⟨-, kx, ky, -, rfl⟩ <;>
+            simp at hp <;> rcases hp with rfl | rfl <;> simp [h3]
+        rw [rv_const64 hDS (hS _ (getElem!_mem' hp3)) hy hop hs, hk]
+        exact Sem.Refines.refl _
   · exact addr_lower_eval H.ok.ownAux H.glow hal hty'
       (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1)
 
@@ -254,7 +317,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
     (hp : atomPair tabs u w = true) (hgen : u.op.generic = true) (hr : isRoot w.op = false)
     (ha : w.op ≠ .Arg) (hai : w.op ≠ .ArgIntReg) :
     ∃ y, evalOpL false env ctx fr w argv ty = .ok y := by
-  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha
+  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha | hb
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
@@ -272,6 +335,8 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
   · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
     rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
   · exact evalOpL_movDaddr_ok (addrLower_cases ha).2.1
+  · obtain ⟨hu, -⟩ := pbLower_cases hb
+    rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
 
 end
 

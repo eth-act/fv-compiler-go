@@ -36,7 +36,8 @@ theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hai : u.
 theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = true) :
     f.blocks = g.blocks ∧ ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ fb, f.block? b = some fb ∧
       fb.id = gb.id ∧ ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termVL tabs w = false →
-        x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ atomPair tabs u w = true ∧ termVL tabs u = false := by
+        x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ atomPair tabs u w = true ∧
+          pbConstOK tabs f u w = true ∧ termVL tabs u = false := by
   unfold atomsOKL at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨-, hbl⟩, -⟩, h⟩ := h
@@ -64,7 +65,8 @@ theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = tru
       obtain rfl := Option.some.inj hw'
       rw [hu] at hat
       simp only [isAtomL, Bool.not_eq_true'] at hat
-      exact ⟨u, hu, hfd, hat⟩
+      simp only [Bool.and_eq_true] at hfd
+      exact ⟨u, hu, hfd.1, hfd.2, hat⟩
     · cases hfd
   · cases this
 
@@ -105,10 +107,13 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
       (∀ k (h1 : k < st.ctrls.size) (h2 : k < gb.controls.size),
         copyReachL tabs M M.size st.ctrls[k] gb.controls[k] = true) ∧
       ∀ x ∈ gb.values, (LiveL tabs g x ∨ ∀ u, g.value? x = some u → termVL tabs u = false) →
-        ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.op = m.op ∧
-        u.type = m.type ∧ u.auxInt = m.auxInt ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
-        ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
-          copyReachL tabs M M.size m.args[j] u.args[j] = true := by
+        ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.type = m.type ∧ u.auxInt = m.auxInt ∧
+        ((u.op = m.op ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
+          ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
+            copyReachL tabs M M.size m.args[j] u.args[j] = true) ∨
+         (m.op = .ARM64LoweredPanicBoundsRR ∧ m.args.size = 3 ∧ (f.value? x).any (pbLower · u) ∧
+          ∃ ks, pbKeep u.op = some ks ∧ u.args.size = ks.length ∧
+            ∀ j (h : j < ks.length), copyReachL tabs M M.size m.args[ks[j]]! u.args[j]! = true)) := by
   unfold finalOKL at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨hlive, h⟩ := h
@@ -133,15 +138,29 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
       split at this
       · rename_i m u hm hu
         simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at this
-        rcases this with this | ⟨ht, hr⟩
+        rcases this with (this | ⟨ht, hr⟩) | hpb
         · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
-          refine ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, fun j h1 h2 => ?_⟩
+          refine ⟨m, u, hm, hu, hty, hai, .inl ⟨hop, hax, hsz, fun j h1 h2 => ?_⟩⟩
           have := zip_all_get (f := fun x : ID × ID => copyReachL tabs M M.size x.1 x.2) hargs
             (by simp [hsz]) j (by simpa using h1) (by simpa using h2)
           simpa using this
         · rcases hrd with hrd | hrd
           · exact absurd hrd hr
           · rw [hrd u hu] at ht; cases ht
+        · unfold pbFinal at hpb
+          simp only [Bool.and_eq_true, beq_iff_eq] at hpb
+          obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hm3⟩, hpl⟩, hk⟩ := hpb
+          refine ⟨m, u, hm, hu, hty, hai, .inr ⟨hop, hm3, hpl, ?_⟩⟩
+          split at hk
+          · rename_i ks hks
+            simp only [Bool.and_eq_true, beq_iff_eq] at hk
+            obtain ⟨hsz, hargs⟩ := hk
+            refine ⟨ks, hks, hsz, fun j hj => ?_⟩
+            have hj' : j < u.args.size := hsz ▸ hj
+            have := zip_all_get (f := fun x : Nat × ID => copyReachL tabs M M.size m.args[x.1]! x.2)
+              hargs (by simp [hsz]) j hj (by simpa using hj')
+            simpa [getElem!_pos u.args j hj'] using this
+          · cases hk
       · cases this
   · cases this
 
@@ -161,8 +180,20 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     obtain ⟨b, hb, gb, hgb, hxv, -, -, -⟩ := id hmk
     obtain ⟨hlive, hfacts⟩ := finalOKL_facts hfin
     obtain ⟨-, -, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
-    obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv (.inl hr)
+    obtain ⟨m, u, hm, hu, hty, hai, hcase⟩ := hvals x hxv (.inl hr)
     have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
+    rcases hcase with ⟨hop, hax, hsz, hargs⟩ | ⟨hop, -, -, ks, hks, -, -⟩
+    case inr =>
+      -- a bounds panic with constant operands: an atom on both sides
+      have h1 : ¬ IsTermL tabs M.get? x := fun ⟨w, hw, hw'⟩ => by
+        rw [Option.some.inj (hw.symm.trans hm),
+          termVL_pb tabs m (o := .ARM64LoweredPanicBoundsRR) rfl hop] at hw'
+        cases hw'
+      have hut := termVL_pbKeep tabs u hks rfl
+      have h2 : ¬ IsTermL tabs (listedDefs g) x := fun ⟨w, hw, hw'⟩ => by
+        rw [hL] at hw; cases hw; rw [hut] at hw'; cases hw'
+      rw [denL_succ_atom h1, denL_succ_atom h2]
+      exact hρ x u hL hut
     have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
     have htt := termVL_congr (tabs := tabs) hop hai hax
     by_cases ht : termVL tabs m = true
@@ -304,7 +335,7 @@ theorem mid_le_target {tabs : Tables} {f g : Func} (hA : atomsOKL tabs f g = tru
         rw [hgb] at hbv
         simp only [Option.any_some, Array.contains_iff_mem] at hbv
         obtain ⟨fb, -, -, hat⟩ := (atomsOKL_facts hA).2 w.block hb' gb hgb
-        obtain ⟨-, u', hu', hp, hu't⟩ := hat a hbv w hg hut
+        obtain ⟨-, u', hu', hp, -, hu't⟩ := hat a hbv w hg hut
         have hty := atomPair_type hp
         simp only [midVal, hu', hu't, Bool.false_eq_true, ite_false]
         have hL' : listedDefs g a = some w := by
@@ -353,21 +384,58 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
     constructor
     · intro b hb gb hgb a ha u hu hat
       obtain ⟨fb, hfb, -, hatoms⟩ := hAf b hb gb hgb
-      obtain ⟨haf, u', hu', hp, hu't⟩ := hatoms a ha u hu hat
-      refine ⟨u', hu', hp, ?_⟩
+      obtain ⟨haf, u', hu', hp, hpc, hu't⟩ := hatoms a ha u hu hat
+      refine ⟨u', hu', hp, hpc, ?_⟩
       have hbf : b ∈ f.blocks := hbl ▸ hb
       have hargsf := (closedOK_facts hcf b hbf fb hfb).2 a haf u' hu'
       obtain ⟨a'', ha'', -, hrest⟩ := hI.atoms a u' hu' hu't hargsf
       obtain ⟨-, -, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
-      obtain ⟨m, w, hm, hw, hop, -, hai, hax, hszw, hargs⟩ := hvals a ha
+      obtain ⟨m, w, hm, hw, -, hai, hcase⟩ := hvals a ha
         (.inr fun w hw => by rw [hu] at hw; cases hw; exact hat)
       have hma : m = a'' := Option.some.inj (hm.symm.trans ha'')
       subst hma
       have huw : u = w := Option.some.inj (hu.symm.trans hw)
       subst huw
+      rcases hcase with ⟨hop, hax, hszw, hargs⟩ | ⟨hmop, hm3, hpl, ks, hks, hszk, hargs⟩
+      case inr =>
+        -- a bounds panic with constant operands: the kept arguments of the replayed
+        -- `LoweredPanicBoundsRR`, which are `f`'s (`argIx`)
+        rw [hu'] at hpl
+        have hpl' : pbLower u' u = true := by simpa using hpl
+        rcases hrest with hfree | ⟨hsz'', hrest⟩
+        · rw [(argFree_cases hfree).1] at hmop; cases hmop
+        have hu'op := (pbLower_cases hpl').1
+        refine .inr fun i hi => ?_
+        have hik : i < ks.length := hszk ▸ hi
+        have hix := argIx_of_pb hpl' hks hik
+        have hk3 := pbKeep_lt hks hik
+        have hk' : ks[i] < u'.args.size := by omega
+        have hcopy := hargs i hik
+        rw [getElem!_pos u.args i hi] at hcopy
+        have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
+        have hlv : LiveL tabs g u.args[i] :=
+          (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)
+        intro n
+        obtain ⟨k, hk⟩ := (hrest ks[i] hk').2 n
+        refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+        rw [hgl] at hT'
+        rw [hgl, getElem!_pos u.args i hi, hix, stArg_of_ne (by rw [hu'op]; decide)]
+        have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+        rw [stArg_of_ne (by rw [hu'op]; decide)] at h1
+        exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
+          ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))
       rcases hrest with hfree | ⟨hsz'', hrest⟩
       · exact .inl (by rw [argFree_congr hop hax]; exact hfree)
+      have hnpb : pbLower u' u = false := by
+        cases hpb : pbLower u' u
+        · rfl
+        · exfalso
+          obtain ⟨-, h3, -, ks, hks, hsk⟩ := pbLower_cases hpb
+          have := pbKeep_len hks
+          omega
       refine .inr fun i hi => ?_
+      rw [argIx_of_not hnpb]
       have hi' : i < u'.args.size := by omega
       have hcopy := hargs i (by omega) hi
       have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)

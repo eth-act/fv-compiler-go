@@ -133,10 +133,14 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     obtain ⟨u, hpu, -, hs⟩ := gatomL H hpw ht
     have huph : u.op = .Phi := (atomPair_phi hs).1 hph
     obtain ⟨-, hty, hblk, -⟩ := atomPair_spec hs
+    have hnpb : pbLower u w = false := by
+      cases hb : pbLower u w
+      · rfl
+      · exact absurd huph (pbLower_ops hb).1
     have hsz : u.args.size = w.args.size := atomPair_size hs (by
       cases hal : addrLower tabs u w
       · rfl
-      · exact absurd huph (addrLower_ops hal).1)
+      · exact absurd huph (addrLower_ops hal).1) hnpb
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -156,8 +160,8 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       (by cases hf : argFree tabs w
           · rfl
           · exact absurd hph (by rw [(argFree_cases hf).1]; decide)) i hi'
-      (by rw [hai]; exact hVSa) (by rw [hai']; exact hVTa)
-    rw [hai, hai', rv_of hy, stArg_of_ne (by rw [huph]; decide)] at hr
+      (by rw [argIx_of_not hnpb, hai]; exact hVSa) (by rw [hai']; exact hVTa)
+    rw [argIx_of_not hnpb, hai, hai', rv_of hy, stArg_of_ne (by rw [huph]; decide)] at hr
     have hshape : (Ctx.makeL tabs g).tys[z]?.getD .other = (Ctx.makeL tabs f).tys[z]?.getD .other := by
       rw [tysL_of_value hw, tysL_of_value hpu.1, H.shp z u hpu.1, hty]
     rw [hshape]
@@ -552,7 +556,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -563,6 +567,9 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     generalize w.op = o at hs hg; cases hs <;> exact absurd hg (by decide)
   · exfalso
     rw [(addrLower_cases h).2.1] at hg; exact absurd hg (by decide)
+  · exfalso
+    obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases h
+    rcases pbKeep_cases hks with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rw [h2] at hg <;> exact absurd hg (by decide)
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')

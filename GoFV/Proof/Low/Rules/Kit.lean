@@ -548,6 +548,12 @@ theorem checked_localAddr {r : Rule} {n ty ai ax ar args c}
 theorem checked_armStore {r : Rule} {o n ty ai ax ar args c}
     (hp : r.pat = .op o n ty ai ax ar args c) (ho : (stSize o).isSome = true) :
     ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr ho)⟩))
+  .inr (.inr (.inr ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inl ho))⟩))
+
+/-- A rule on a lowered bounds panic (`ArmRule.Mem`, `pbAtom`). -/
+theorem checked_pb {r : Rule} {o n ty ai ax ar args c}
+    (hp : r.pat = .op o n ty ai ax ar args c) (ho : pbAtom o = true) :
+    ArmRule.Checked r :=
+  .inr (.inr (.inr ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr ho))⟩))
 
 end GoFV.Proof.Low.Rules

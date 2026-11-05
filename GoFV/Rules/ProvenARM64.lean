@@ -61,7 +61,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 207 proven value rules and 47 proven block rules. -/
+/-- `ARM64.rules` restricted to its 211 proven value rules and 47 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
@@ -70,6 +70,9 @@ def lower : RuleSet where
     (.ARM64CMPW, [Generated.ARM64.r_ARM64_992]),
     (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776, Generated.ARM64.r_ARM64_905]),
     (.ARM64FMOVSstore, [Generated.ARM64.r_ARM64_773, Generated.ARM64.r_ARM64_901]),
+    (.ARM64LoweredPanicBoundsCR, [Generated.ARM64.r_ARM64_516]),
+    (.ARM64LoweredPanicBoundsRC, [Generated.ARM64.r_ARM64_515]),
+    (.ARM64LoweredPanicBoundsRR, [Generated.ARM64.r_ARM64_513, Generated.ARM64.r_ARM64_514]),
     (.ARM64MOVBUload, [Generated.ARM64.r_ARM64_661, Generated.ARM64.r_ARM64_836]),
     (.ARM64MOVBload, [Generated.ARM64.r_ARM64_658, Generated.ARM64.r_ARM64_832]),
     (.ARM64MOVBstore, [Generated.ARM64.r_ARM64_758, Generated.ARM64.r_ARM64_881]),
