@@ -415,6 +415,8 @@ structure Opts where
   verified : Bool := false
   /-- `--vstats FILE` (driver mode with `--verified`): append the function's verdicts. -/
   vstats : Option String := none
+  /-- `--profile` (driver mode with `--verified`): time the pipeline's pieces (stderr). -/
+  profile : Bool := false
   paths : Array String := #[]
 
 partial def parseArgs : List String → Opts → Except String Opts
@@ -436,13 +438,14 @@ partial def parseArgs : List String → Opts → Except String Opts
   | "--table" :: p :: rest, o => parseArgs rest { o with table := some p }
   | "--verified" :: rest, o => parseArgs rest { o with verified := true }
   | "--vstats" :: p :: rest, o => parseArgs rest { o with vstats := some p }
+  | "--profile" :: rest, o => parseArgs rest { o with profile := true }
   | a :: rest, o =>
     if a.startsWith "--" then throw s!"unknown option {a}"
     else parseArgs rest { o with paths := o.paths.push a }
 
 def usage : String :=
   "usage: gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>\n       \
-   gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] <in.ssa>\n       gofv-ssa-opt --list\n       \
+   gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>\n       gofv-ssa-opt --list\n       \
    gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
    gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
 
@@ -493,6 +496,38 @@ def firstUnverified? (st : VState) : Option (String × Verdict) :=
 /-- The first run whose verdict is not `Verdict.ok`. -/
 def firstUnverifiedFull? (st : VState) : Option (String × Verdict) := st.log.find? (!·.2.ok)
 
+/-- The ops `Sem.evalOp` does not hand to `atomicRoot`: its explicit arms and `frameVal`'s. -/
+def evalOpArms : List Op :=
+  [.InitMem, .Arg, .ArgIntReg, .ArgFloatReg, .PanicBounds, .StaticLECall, .StaticCall,
+   .ClosureLECall, .ClosureCall, .InterLECall, .InterCall, .GetClosurePtr, .Store, .StoreWB,
+   .Move, .MoveWB, .Zero, .ZeroWB, .VarDef, .VarLive, .KeepAlive, .WBend, .NilCheck, .SP,
+   .GetCallerSP, .LocalAddr, .Addr, .ConstString]
+
+/-- `run` leaves a value of op `op` `stuck` whatever its arguments: a root (`Sem.isRoot`) that
+`evalOp` hands to `atomicRoot` and that `atomicRoot` does not model (`Sem.Atomic.modelled`):
+`GetG`, `TailLECall`, …. -/
+def stuckOp (op : Op) : Bool :=
+  Sem.isRoot op && !evalOpArms.contains op && !Sem.Atomic.modelled op
+
+/-- `run` leaves a terminator of kind `k` `stuck` (`Sem.stepTerm`'s last arm; `Exit` is not
+counted: it is reached only when a non-returning call returns). -/
+def stuckKind (k : BlockKind) : Bool :=
+  ![BlockKind.Plain, .First, .If, .JumpTable, .Ret, .Exit, .Defer].contains k
+
+/-- The ops and block kinds of `f` that `run` leaves `stuck` (`stuckOp`, `stuckKind`), each once.
+A refinement of `run f` says nothing about the inputs that reach one: a function containing one
+is verified vacuously there. -/
+def unmodelledIn (f : Func) : Array String := Id.run do
+  let mut out : Array String := #[]
+  for o in f.valueTab do
+    if let some v := o then
+      if stuckOp v.op && !out.contains v.op.name then out := out.push v.op.name
+  for o in f.blockTab do
+    if let some b := o then
+      let k := s!"block {b.kind.name}"
+      if stuckKind b.kind && !out.contains k then out := out.push k
+  return out
+
 /-- The `--vstats` fields of a verified-pipeline result (tab-separated): `verified` or
 `unverified "<pass>: <verdict>"` (the first unverified run before `lower`), the number of runs
 per verdict kind before `lower`, `lowered=<n>` (runs from `lower` on), and `trim=verified` or
@@ -528,6 +563,55 @@ def optimiseVerified (e : ExportFile) (x : ExportExt) (start : Nat) : String × 
     let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
                            func := st.func, typs := none, zvar := #[], warns := #[] }
     ("status ok\n" ++ resultText e x sec st.effects fs.dclLen, vstatsFields fs)
+
+/-- `k ()` and the milliseconds it took (not inlined, so the result is computed here). -/
+@[noinline] def timed (k : Unit → α) : IO (α × Nat) := do
+  let t ← IO.monoNanosNow
+  let r ← IO.lazyPure k
+  return (r, ((← IO.monoNanosNow) - t) / 1000000)
+
+/-- `--verified --profile`: where the verified pipeline spends its time on the first section of
+`e` (stderr, ms): `verifiedPipeline` (through `rewrite tern`), then per pass from `lower` on its
+run, the stock port of a checked variant, `check` of the result and the theorem's guard (for
+`regalloc`: `tabsAgreeL`, `RegallocCheck.certify`, `RegallocCheck.checkWith`), each timed alone;
+`runPassL` then advances the chain (so each piece runs twice). -/
+def profileVerified (e : ExportFile) (x : ExportExt) : IO Unit := do
+  let some s0 := e.sections[0]? | IO.eprintln "profile: no section"
+  let tables := padTables (({} : Tables).addAll s0.defs) e.frontendTables
+  let env := baseEnv e tables (wholeFile := true)
+  let (r, ms) ← timed fun _ => verifiedPipeline env s0.func 0 s0.zvar
+  let .ok st := r | IO.eprintln s!"profile: verifiedPipeline: error after {ms} ms"
+  IO.eprintln s!"profile: verifiedPipeline {ms} ms, {st.func.valueTab.size} values, {st.func.blocks.size} blocks, verified {st.verified}"
+  let mut fs : FState :=
+    { st, dclLen := (x.dclLen? 0).getD 0 + newAutos env.tables st.tables, genVerified := st.verified }
+  for p in loweredVPasses do
+    let penv := fs.passEnv env p.name
+    let run := match p.step with | .proven run .. | .stock run => run
+    let (out, tRun) ← timed fun _ => run penv fs.st.func
+    let mut line := s!"{p.name}: run {tRun}"
+    if let some full := p.full then
+      let (so, t) ← timed fun _ => full penv fs.st.func
+      line := line ++ s!", stock {t} ({so.isOk})"
+    if let .ok out := out then
+      let (wf, t) ← timed fun _ => outWf env p out
+      line := line ++ s!", check {t} ({wf})"
+      if let .proven _ _ _ guard := p.step then
+        if p.name == "regalloc" then
+          let (ag, t1) ← timed fun _ => LowerCheck.tabsAgreeL penv.tables out.tables fs.st.func
+          let (cx, t2) ← timed fun _ => RegallocCheck.Cx.make out.tables fs.st.func out.func
+          let (cert, t3) ← timed fun _ => RegallocCheck.certify cx
+          let (ok, t4) ← timed fun _ => RegallocCheck.checkWith cx cert
+          line := line ++ s!", tabsAgreeL {t1} ({ag}), Cx.make {t2} ({cx.krep.size}), \
+            certify {t3} ({cert.ins.size}), checkWith {t4} ({ok.toBool})"
+        else
+          let (g, t) ← timed fun _ => guard penv fs.st.func out
+          line := line ++ s!", guard {t} ({g})"
+    let (r, t) ← timed fun _ => runPassL env fs p
+    IO.eprintln s!"profile: {line}; runPassL {t} ms"
+    match r with
+    | .ok fs' => fs := fs'
+    | .error err => IO.eprintln s!"profile: error {err.pass}: {err.msg}"; return
+  IO.eprintln s!"profile: fully verified {fs.fullyVerified}"
 
 /-- One function through the verified pipeline, against the stock file. -/
 structure VFile where
@@ -647,6 +731,14 @@ structure VStats where
   same : Nat := 0
   both : Nat := 0
   bothFull : Nat := 0
+  /-- Of `verified` / `verifiedFull`: those whose input has an op or block kind `run` leaves
+  `stuck` (`unmodelledIn`): verified vacuously on the inputs that reach one. -/
+  vacuous : Nat := 0
+  vacuousFull : Nat := 0
+  /-- The vacuously verified functions (through `rewrite tern`, through `trim`) by each such op
+  or block kind of their input. -/
+  vacuousBy : Std.HashMap String Nat := {}
+  vacuousByFull : Std.HashMap String Nat := {}
   /-- Unverified functions by their first unverified run before `lower` (`pass: verdict`). -/
   firstUnverified : Std.HashMap String Nat := {}
   /-- Functions verified through `rewrite tern` but not through `trim`, by their first unverified
@@ -673,6 +765,8 @@ def VStats.merge (a b : VStats) : VStats :=
     errors := mm a.errors b.errors, verified := a.verified + b.verified
     verifiedFull := a.verifiedFull + b.verifiedFull, same := a.same + b.same
     both := a.both + b.both, bothFull := a.bothFull + b.bothFull
+    vacuous := a.vacuous + b.vacuous, vacuousFull := a.vacuousFull + b.vacuousFull
+    vacuousBy := mm a.vacuousBy b.vacuousBy, vacuousByFull := mm a.vacuousByFull b.vacuousByFull
     firstUnverified := mm a.firstUnverified b.firstUnverified
     firstUnverifiedLow := mm a.firstUnverifiedLow b.firstUnverifiedLow
     reasons := mm a.reasons b.reasons, diverged := mm a.diverged b.diverged
@@ -688,13 +782,14 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
     if (st.reports.filter (·.2.1 == kind)).size < maxReport then
       { st with reports := st.reports.push (path.toString, kind, detail) }
     else st
-  match parseExportExt data >>= fun (e, x) => verifiedExport wholeFile e x with
+  match parseExportExt data >>= fun (e, x) =>
+      (verifiedExport wholeFile e x).map fun r => (r, (e.sections[0]?.map (unmodelledIn ·.func)).getD #[]) with
   | .error m =>
     IO.eprintln s!"PARSE ERROR {path}: {m}"
     return { st with parseErrors := st.parseErrors + 1 }
-  | .ok (.error err) =>
+  | .ok (.error err, _) =>
     return report { st with errors := bumpMap st.errors err.pass } s!"error {err.pass}" err.msg
-  | .ok (.ok r) =>
+  | .ok (.ok r, stuck) =>
     let mut st := st
     let log := r.st.st.log
     for (name, v) in log do
@@ -714,6 +809,13 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
                     same := st.same + (if r.same then 1 else 0)
                     both := st.both + (if verified && r.same then 1 else 0)
                     bothFull := st.bothFull + (if full && r.same then 1 else 0) }
+    if !stuck.isEmpty then
+      if verified then
+        st := { st with vacuous := st.vacuous + 1
+                        vacuousBy := stuck.foldl (fun m k => bumpMap m k) st.vacuousBy }
+      if full then
+        st := { st with vacuousFull := st.vacuousFull + 1
+                        vacuousByFull := stuck.foldl (fun m k => bumpMap m k) st.vacuousByFull }
     if let some (p, v) := firstUnverified? r.st.st then
       st := { st with firstUnverified := bumpMap st.firstUnverified s!"{p}: {v}" }
     else if !full then
@@ -755,8 +857,13 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
   for (p, c) in sortedPassMap st.errors do out := out ++ s!"  - error at `{p}`: {c}\n"
   out := out ++ "\n| | through `rewrite tern` | through `trim` |\n| --- | ---: | ---: |\n"
   out := out ++ s!"| fully verified (every run proven, identity or skipped) | {st.verified} | {st.verifiedFull} |\n"
+  out := out ++ s!"| … verified (vacuous: unmodelled op), input has an op or block kind `run` leaves stuck | {st.vacuous} | {st.vacuousFull} |\n"
+  out := out ++ s!"| … verified, no unmodelled op | {st.verified - st.vacuous} | {st.verifiedFull - st.vacuousFull} |\n"
   out := out ++ s!"| … and identical to stock after `trim` | {st.both} | {st.bothFull} |\n\n"
   out := out ++ s!"- verified-pipeline output identical to stock after `trim` (compared as the importer): {st.same}\n"
+  out := out ++ s!"- verified (vacuous: unmodelled op), by op or block kind (through `rewrite tern` / through `trim`):\n"
+  let keys := (st.vacuousBy.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)).map (·.1)
+  for k in keys do out := out ++ s!"  - `{k}`: {st.vacuousBy.getD k 0} / {st.vacuousByFull.getD k 0}\n"
   out := out ++ s!"- unverified functions by first unverified run before `lower`: {n st.firstUnverified}\n"
   for (k, c) in sortedPassMap st.firstUnverified do out := out ++ s!"  - `{k}`: {c}\n"
   out := out ++ s!"- verified through `rewrite tern`, not through `trim`, by first unverified run: {n st.firstUnverifiedLow}\n"
@@ -844,6 +951,9 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"status error \"parse\" {GoStr.quote e}"
     return 0
   | .ok (e, x) =>
+    if o.verified && o.profile then
+      profileVerified e x
+      return 0
     if o.verified then
       let (out, fields) ← IO.lazyPure fun _ => optimiseVerified e x start
       (← IO.getStdout).putStr out

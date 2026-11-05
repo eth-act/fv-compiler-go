@@ -28,7 +28,7 @@ get the file's `typelink` groups (`PassEnv.typeLink`).
 
 ```
 gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
-gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] <in.ssa>
+gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>
 gofv-ssa-opt --list
 gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
@@ -200,8 +200,13 @@ verified pipeline through `trim` from section 0 (driver export environment and t
 `--check`), the state after each pass compared with the stock section until the first difference
 (from `lower` on also the chain's `dcllen`; the stock tables without their call-register caches),
 and the final state compared with the last stock section (`trim`'s). It prints the functions fully
-verified through `rewrite tern` and through `trim` (and of those, the ones whose final state
-equals stock), the functions whose final state equals stock, the unverified functions by first
+verified through `rewrite tern` and through `trim`; of those, the ones verified vacuously (the
+input has an op or block kind that `run` leaves `stuck` whatever its arguments: a root that
+`evalOp` hands to `atomicRoot` and `Atomic.modelled` does not cover, such as `TailLECall`, or a
+block kind outside `stepTerm`'s arms other than `Exit`, such as `RetJmp`; `unmodelledIn` in
+`GoFVTest/Driver/Main.lean`; the theorems say nothing about the inputs that reach one), listed by
+op or block kind, and the ones whose final state equals stock. Then the functions whose final
+state equals stock, the unverified functions by first
 unverified run before `lower`, the functions verified through `rewrite tern` but not through
 `trim` by their first unverified run, the functions by first difference (pass and its verdict), a
 per-pass table of verdicts, and the skipped and unverified runs by reason. For deadcode and
@@ -210,6 +215,12 @@ copyelim runs before `lower` outside their fragment it adds which conditions of
 and type shapes): per run, for first unverified runs, and for functions whose only unverified
 runs are such deadcode runs. It exits 1 only for parse errors or no input. The nightly gate runs
 it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
+
+`gofv-ssa-opt --verified --profile <in.ssa>` prints to stderr where the verified pipeline spends
+its time on one function (ms): `verifiedPipeline` through `rewrite tern`, then per pass from
+`lower` on its run, the stock port of a checked variant, `check` of the result and the theorem's
+guard (for `regalloc`: `tabsAgreeL`, `Cx.make`, `certify`, `checkWith`). Each piece is timed
+alone, then `runPassL` advances the chain, so it takes about twice a normal run.
 
 ## Whole-pipeline parity (`gofv-ssa-opt --check`)
 

@@ -134,21 +134,23 @@ def sxOKB (f g : Func) (x : ID) : Bool :=
     !(gv.op == .ARM64MOVDreg || gv.op == .ARM64MOVDnop) || decide (sxOf g gv = sxOf f fv)
   | _, _ => true
 
-/-- Decides `CopyLFrag.shape` for value `x`. -/
-def shapeOKB (tabs : Tables) (g : Func) (x : ID) : Bool :=
-  !g.lowered ||
+/-- Decides `CopyLFrag.shape` for value `x` (`low`: `g.lowered`; `tys`: the shapes of
+`Ctx.makeL tabs g`, computed once per function by `copyLFragB`). -/
+def shapeOKB (low : Bool) (tys : Array Ty) (g : Func) (x : ID) : Bool :=
+  !low ||
     match g.value? x with
     | some gv =>
       !(gv.op == .Copy) ||
         match gv.args.toList with
-        | [w] => Ty.beq ((Ctx.makeL tabs g).tys[w]?.getD .other)
-            ((Ctx.makeL tabs g).tys[x]?.getD .other)
+        | [w] => Ty.beq (tys[w]?.getD .other) (tys[x]?.getD .other)
         | _ => true
     | none => true
 
 /-- Decides `CopyLFrag`. -/
 def copyLFragB (tabs : Tables) (f g : Func) : Bool :=
   let C := make f
+  let low := g.lowered
+  let tys := (Ctx.makeL tabs g).tys
   f.blocks.all fun bid =>
     !C.inTree bid ||
     match f.block? bid with
@@ -157,7 +159,7 @@ def copyLFragB (tabs : Tables) (f g : Func) : Bool :=
       (match g.block? bid with
        | some gb => decide (gb.auxInt = fb.auxInt)
        | none => true) &&
-      fb.values.all fun x => sxOKB f g x && shapeOKB tabs g x
+      fb.values.all fun x => sxOKB f g x && shapeOKB low tys g x
 
 theorem copyLFrag_of {tabs : Tables} {f g : Func} (h : copyLFragB tabs f g = true) :
     CopyLFrag tabs f g := by
@@ -168,7 +170,7 @@ theorem copyLFrag_of {tabs : Tables} {f g : Func} (h : copyLFragB tabs f g = tru
       (match g.block? bid with
        | some gb => decide (gb.auxInt = fb.auxInt)
        | none => true) = true ∧
-      ∀ x ∈ fb.values, sxOKB f g x = true ∧ shapeOKB tabs g x = true := by
+      ∀ x ∈ fb.values, sxOKB f g x = true ∧ shapeOKB g.lowered (Ctx.makeL tabs g).tys g x = true := by
     intro bid hbt fb hfb
     have h := h bid hbt.1
     simp only [DomCert.Cert.inTree, hbt.2, Bool.not_true, Bool.false_or, hfb, Bool.and_eq_true,
