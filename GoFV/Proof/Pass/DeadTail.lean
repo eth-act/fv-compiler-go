@@ -207,7 +207,7 @@ theorem unlink_sk {r live : Array Bool} {f g : Func} {p p' : XPosMap}
   · obtain ⟨t, ht, hb⟩ := CheckFacts.bind_ok hb
     cases Except.ok.inj hb
     refine CheckFacts.forIn_array_inv (fun _ t => Sk r live f t.1) ?_ ?_ ht
-    · first | exact hI | exact hI.resetControls (bnot_ne ‹_›)
+    · first | exact hI | exact hI.resetControls (bnot_ne (by with_reducible assumption))
     · intro pre x t t' hI hb
       split at hb
       · rename_i hc

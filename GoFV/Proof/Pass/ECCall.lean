@@ -1482,8 +1482,10 @@ theorem ecc_moveObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HS HT
     have hlk : ((u.args.extract 0 k).toList.map (rv G)).length = k := by
       simp only [List.length_map, Array.length_toList, Array.size_extract]; omega
     obtain ⟨m, hm, hokm⟩ : ∃ m, rv G u.args[u.args.size - 1]! = .mem m ∧
-        outargsOK tabs 0 m (insOf abi) = true :=
-      ecc_callOp_outargs hpre habi (ecc_callTarget_rest hmap hlk) (ecc_bind_def hrc)
+        outargsOK tabs 0 m (insOf abi) = true := by
+      -- `have` first, as in `ecc_storeObl` (two failed unifications of ~6 s each otherwise)
+      have h := ecc_callOp_outargs hpre habi (ecc_callTarget_rest hmap hlk) (ecc_bind_def hrc)
+      exact h
     have hnp := ecc_callOp_noPoison hpre habi (ecc_callTarget_rest hmap hlk) (ecc_bind_def hrc)
     have hnpa : (rv G a).hasPoison = false := by
       cases hh : (rv G a).hasPoison with

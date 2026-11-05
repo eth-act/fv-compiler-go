@@ -142,6 +142,21 @@ avoiding): the problem, the trick, the numbers, where it is used.
   `match`, `GoFV/SSA/Sem/RunL.lean`) inside `simp` costs seconds per call even when `hg` decides
   the `if` first. `Low.SimDen.evalValueL_localAddr` 7.5 s → 0.2 s by
   `simp only [evalOpL_generic _ _ _ _ _ _ hg, …]` (module 8.5 → 2.1 s CPU, #1).
+- **Find them all at once:** `lean -Dtrace.profiler=true -Dtrace.profiler.threshold=500` on
+  every module, keeping each topmost failing `[Meta.isDefEq]`/`[Elab.app.propagateExpectedType]`
+  ❌ node ≥ 0.5 s with its declaration and enclosing tactic step (lean-skills
+  `maintaining-lean-projects`). At 4b4765c, 985 modules, 3 at a time on a 4-core orb, ~45 min:
+  87 s in 38 declarations (1.7% of 5,143 CPU-s). One-line fixes (CPU, module alone):
+  `ecc_moveObl`, the sibling of `ecc_storeObl` above, ECCall 23.4 → 12.7 s; witnesses whose
+  term met `RefinesLoc ?_ ?_`/`RefinesSched` before its arguments (`have` each part, then
+  `exact`): TrimLoc 4.8 → 1.0 s, NilLateL 4.2 → 1.6 s; `first | exact hI | exact
+  hI.resetControls …` after a `split` (`with_reducible exact hI`) DeadFactsL 5.0 → 2.3 s, and its
+  `‹_›` (`by with_reducible assumption`) DeadTail 8.1 → 4.9 s. Left: ~20 declarations at 1–2 s
+  each where `evalAll_spec`'s `TopoRem (argsF ctx.f)` argument is elaborated before the last
+  argument fixes the implicit `ctx` (fix: reorder the lemma's arguments, a statement change);
+  failed structure eta inside successful `rfl`s (DeadEdge `removePred_spec`/`removeSucc_spec`,
+  7.7 s); a failing `rule_close` branch unfolding `ushiftRight` in Rsh `r_generic_561_sound`
+  (8.8 s).
 
 #### `bv_decide` certificates dominate rule-proof `.olean`s; try `grind` first on ring identities
 - **Problem:** PR #91's Add-family rule lemmas (87 theorems, `rule_auto` closing with

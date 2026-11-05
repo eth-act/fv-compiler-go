@@ -212,7 +212,7 @@ theorem unlink_ba {r live : Array Bool} {f g : Func} {p p' : XPosMap}
   · obtain ⟨t, ht, hb⟩ := CheckFacts.bind_ok hb
     cases Except.ok.inj hb
     refine CheckFacts.forIn_array_inv (fun _ t => BA f t.1) ?_ ?_ ht
-    · first | exact hI | exact hI.resetControls _
+    · first | with_reducible exact hI | exact hI.resetControls _
     · intro pre x t t' hI hb
       split at hb
       · have hI2 := hI.resetArgs x
