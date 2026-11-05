@@ -1,6 +1,7 @@
 import GoFV.Proof.Low.TermL
 import GoFV.Proof.Low.ArmMono
 import GoFV.Proof.AtomSimDen
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # Basic facts about `denL` (issue #385)
@@ -327,12 +328,7 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
       simp only [hd, Bool.false_eq_true, ite_false, Bool.and_eq_true, Bool.not_eq_true'] at ht
       obtain ⟨⟨-, ha⟩, hr⟩ := ht
       have : evalOpL false env ctx fr v argv ty = pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
-        unfold evalOpL
-        simp only [hg, Bool.false_eq_true, ite_false]
-        split
-        all_goals first
-          | (rename_i h; rw [h] at ha; exact absurd ha (by decide))
-          | (rw [hr]; rfl)
+        rw [evalOpL_of_not_actOp (by simpa using hg) (by simpa using ha), hr]; rfl
       rw [this]
       simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, pure]
 

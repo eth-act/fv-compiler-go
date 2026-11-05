@@ -1,6 +1,7 @@
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.RefineL
 import GoFV.Proof.Low.DenL
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # Running a lowered function in extended tables (`runL_tabsAgreeL`, issue #385)
@@ -77,7 +78,7 @@ theorem evalOpL_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (faulting : Bool) (env 
     (fr : Frame) (argv : List Val) (ty : Ty) :
     evalOpL faulting env { ctx with tabs := tabs' } fr v argv ty =
       evalOpL faulting env ctx fr v argv ty := by
-  unfold evalOpL
+  rw [evalOpL_eq, evalOpL_eq]
   simp only [evalOp_tabs h, arm64Op_tabs h]
 
 theorem evalValueL_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (md : LMode) (env : Env) (fr : Frame) :

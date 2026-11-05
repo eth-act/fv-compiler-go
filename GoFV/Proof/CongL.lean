@@ -2,6 +2,7 @@ import GoFV.Proof.RefineL
 import GoFV.Proof.Cong
 import GoFV.SSA.Analysis.CfgCache
 import GoFV.SSA.Alloc
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # `runL` ignores block order, positions, predictions, caches and the lowered-pass state
@@ -110,7 +111,7 @@ theorem evalValueL_ctx {md : LMode} {env : Env} {ctx ctx' : Ctx} (h : CtxEq ctx 
   obtain ⟨h1, h2, -, h4, -, -, -, h8, -, -⟩ := h
   dsimp only at h1 h2 h4 h8 hop
   subst h1 h2 h4 h8
-  simp only [evalValueL, evalOpL, arm64Op, hop]
+  simp only [evalValueL, evalOpL_eq, arm64Op, hop]
   rfl
 
 theorem evalAllL_congr {md : LMode} {env : Env} {ctx ctx' : Ctx} (h : CtxEq ctx ctx') :

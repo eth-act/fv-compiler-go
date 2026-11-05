@@ -2,6 +2,7 @@ import GoFV.Proof.Pass.CSEComm
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.EvalL
 import GoFV.Opt.LoweredCSECheck
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # lowered cse: facts about `evalOpL` at single ops
@@ -167,17 +168,17 @@ theorem comm_plain {op : Op} (h : op.commutative = true) :
     isRoot op = false ∧ CSEL.arm64Act op = false := by
   cases op <;> first | exact absurd h Bool.false_ne_true | exact ⟨by decide, rfl⟩
 
+/-- `CSEL.arm64Act` is `LowerTerm.actOp` (`evalOpL_eq`): the same 91 ops. -/
+private theorem arm64Act_eq_actOp (op : Op) :
+    GoFV.Opt.CSEL.arm64Act op = GoFV.Opt.LowerTerm.actOp op := by
+  cases op <;> rfl
+
 /-- An arm64 op outside `CSEL.arm64Act` is `Arm64.evalPure` (`atomicRoot` for a root). -/
 theorem evalOpL_tail {fl : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (ha : CSEL.arm64Act v.op = false) :
     evalOpL fl env ctx fr v argv ty =
       if isRoot v.op then atomicRoot v argv else pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
-  unfold evalOpL
-  rw [hg]
-  simp only [Bool.false_eq_true, ↓reduceIte]
-  generalize v.op = op at ha ⊢
-  cases op
-  all_goals first | exact absurd ha (by decide) | rfl
+  exact evalOpL_of_not_actOp hg (by rw [← arm64Act_eq_actOp]; exact ha)
 
 /-- **Swapping the first two arguments of a commutative op keeps its lowered result.** -/
 theorem evalOpL_swap {fl : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {a b : Val}
@@ -205,12 +206,7 @@ theorem arm64Op_id {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (i : ID)
 theorem evalOpL_act {fl : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (ha : CSEL.arm64Act v.op = true) :
     evalOpL fl env ctx fr v argv ty = arm64Op fl env ctx fr v argv ty := by
-  unfold evalOpL
-  rw [hg]
-  simp only [Bool.false_eq_true, ↓reduceIte]
-  generalize v.op = op at ha ⊢
-  cases op
-  all_goals first | exact absurd ha Bool.false_ne_true | rfl
+  exact evalOpL_of_actOp hg (by rw [← arm64Act_eq_actOp]; exact ha)
 
 theorem isRoot_of_substOp {op : Op} (hs : CSEL.substOp op = true)
     (hn : op ≠ .ARM64LoweredNilCheck) (hm : op ≠ .ARM64LoweredMemEq) : isRoot op = false := by
@@ -288,14 +284,7 @@ theorem evalOpL_ok_id {env : Env} {ctx : Ctx} {fr : Frame} {u v : Value} {argv :
 theorem arm64Op_total {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} (ha : CSEL.arm64Act v.op = true) (hr : isRoot v.op = false) :
     ∃ r, arm64Op false env ctx fr v argv ty = .ok r := by
-  obtain ⟨id, op, type, auxInt, aux, pos, uses, args, block⟩ := v
-  dsimp only at ha hr
-  cases op
-  all_goals first | exact absurd ha Bool.false_ne_true | exact absurd hr (by decide) | skip
-  all_goals
-    delta arm64Op nilFaults
-    simp only [Bool.not_false, ↓reduceIte]
-    first | exact ⟨_, rfl⟩ | ((repeat' split) <;> exact ⟨_, rfl⟩)
+  exact arm64Op_total_of_actOp (by rw [← arm64Act_eq_actOp]; exact ha) hr
 
 /-- **A non-root lowered value evaluates**, unless it is `Arg`/`ArgIntReg` (a parameter
 lookup). -/

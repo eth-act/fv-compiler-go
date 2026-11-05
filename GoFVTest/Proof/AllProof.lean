@@ -32,6 +32,7 @@ import GoFV.Proof.DomRel
 import GoFV.Proof.Enter
 import GoFV.Proof.Eval
 import GoFV.Proof.EvalL
+import GoFV.Proof.EvalOpLDispatch
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
 import GoFV.Proof.FrameKeep

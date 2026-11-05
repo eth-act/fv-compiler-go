@@ -1,6 +1,7 @@
 import GoFV.Proof.Pass.UnreadLStep
 import GoFV.Proof.AvailL
 import GoFV.Proof.SimL
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # elim unread autos on `runL`: one block's evaluation
@@ -29,18 +30,12 @@ open GoFV.Proof.CSE (Base Node)
 theorem evalOpL_total {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hr : isRoot v.op = false) (ha : v.op ≠ .Arg) (hb : v.op ≠ .ArgIntReg) :
     ∃ r, evalOpL false env ctx fr v argv ty = .ok r := by
-  unfold evalOpL
+  rw [evalOpL_eq]
   split
   · exact CSE.evalOp_total hr ha hb
   · split
-    all_goals first
-      | (rename_i heq; rw [heq] at hr; exact absurd hr (by decide))
-      | (rename_i heq
-         unfold arm64Op
-         simp only [nilFaults, Bool.not_false, ite_true, heq]
-         repeat' split
-         all_goals first | exact ⟨_, rfl⟩ | cases ‹Arm64.atomicOf _ = some _›)
-      | (simp only [hr, Bool.false_eq_true, ite_false]; exact ⟨_, rfl⟩)
+    · exact arm64Op_total_of_actOp ‹_› hr
+    · simp only [hr, Bool.false_eq_true, ite_false]; exact ⟨_, rfl⟩
 
 theorem prio_panickingL' {op : Op} (h : PanickingL false op) : prio op ≠ 0 := by
   rcases h with h | h | ⟨h, -⟩

@@ -1,6 +1,7 @@
 import GoFV.Proof.RetypeL
 import GoFV.Proof.Speculate
 import GoFV.Opt.ScheduleCheck
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # `schedule` on `runSched`: what a value's class says about its evaluation
@@ -133,17 +134,19 @@ theorem evalOpL_act {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
   rcases h with h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h <;>
     rw [h] <;> rfl
 
+/-- An op `LowerTerm.actOp` accepts is in `actOps` (the same 91 ops; for `evalOpL_eq`). -/
+private theorem lowerActOp_mem (op : Op) (h : GoFV.Opt.LowerTerm.actOp op = true) : op ∈ actOps := by
+  cases op <;> first | exact absurd h Bool.false_ne_true | decide +kernel
+
 /-- `evalOpL` of an arm64 op not in `actOps`: `atomicRoot` for a root, else `Arm64.evalPure`. -/
 theorem evalOpL_nonact {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (h : v.op ∉ actOps) :
     evalOpL faulting env ctx fr v argv ty =
       if isRoot v.op then atomicRoot v argv else pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
-  unfold evalOpL
-  simp only [hg, Bool.false_eq_true, ite_false]
-  split
-  all_goals first
-    | rfl
-    | (rename_i heq; exact absurd (by rw [heq]; decide) h)
+  apply evalOpL_of_not_actOp hg
+  cases ha : GoFV.Opt.LowerTerm.actOp v.op
+  · rfl
+  · exact absurd (lowerActOp_mem _ ha) h
 
 theorem mem_of_decide {op : Op} {l : List Op} (h : decide (op ∈ l) = true) : op ∈ l :=
   of_decide_eq_true h
