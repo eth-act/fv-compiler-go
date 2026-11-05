@@ -141,10 +141,6 @@ theorem stepL (S : SetupL md tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : 
 
 /-! ## Refinement -/
 
-private theorem entryFrame_makeL_copy (env : Env) (tabs : Tables) (f : Func) (args : List Val)
-    (mem : Mem) : entryFrame env (Ctx.makeL tabs f) args mem = entryFrame env (Ctx.make tabs f) args mem := by
-  unfold Ctx.makeL; split <;> rfl
-
 private theorem defers_makeL_copy (tabs : Tables) (f : Func) :
     (Ctx.makeL tabs f).defers = (Ctx.make tabs f).defers := by
   unfold Ctx.makeL; split <;> rfl
@@ -169,7 +165,7 @@ theorem refinesL_of_rel (S : Setup tabs f g) (hlow : g.lowered = f.lowered)
       S.rel.vsize
     have hentry : entryFrame env (Ctx.makeL tabs g) args mem =
         entryFrame env (Ctx.makeL tabs f) args mem := by
-      rw [entryFrame_makeL_copy, entryFrame_makeL_copy]
+      rw [entryFrame_makeL, entryFrame_makeL]
       unfold entryFrame frameMem frameAllocs
       rw [S.paramTys, S.locals, hsz]; rfl
     have hout : (Ctx.makeL tabs g).outs = (Ctx.makeL tabs f).outs := by

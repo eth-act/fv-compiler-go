@@ -347,11 +347,6 @@ theorem stepL {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f)
 
 /-! ## Refinement -/
 
-private theorem entryFrame_makeL_cse (env : Env) (tabs : Tables) (f : Func) (args : List Val)
-    (mem : Mem) :
-    entryFrame env (Ctx.makeL tabs f) args mem = entryFrame env (Ctx.make tabs f) args mem := by
-  unfold Ctx.makeL; split <;> rfl
-
 private theorem defers_makeL_cse (tabs : Tables) (f : Func) :
     (Ctx.makeL tabs f).defers = (Ctx.make tabs f).defers := by
   unfold Ctx.makeL; split <;> rfl
@@ -374,7 +369,7 @@ theorem refinesL_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : CRelL ta
       hrel.vsize
     have hentry : entryFrame env (Ctx.makeL tabs g) args mem =
         entryFrame env (Ctx.makeL tabs f) args mem := by
-      rw [entryFrame_makeL_cse, entryFrame_makeL_cse]
+      rw [entryFrame_makeL, entryFrame_makeL]
       unfold entryFrame frameMem frameAllocs
       simp only [Ctx.make, abiParams, hrel.ownAux]
       rw [show g.valueTab.size = f.valueTab.size from hrel.vsize]
@@ -389,7 +384,7 @@ theorem refinesL_of_rel (hwf : ∃ ce, WF ce f) (hc : CertOK f) (hrel : CRelL ta
     rw [hentry, hout, hdef, hact, hent]
     have hA0 : SimAtL ⟨f.lowered, false⟩ env tabs f rw
         (entryFrame env (Ctx.makeL tabs f) args mem) f.entry 0 :=
-      ⟨by rw [entryFrame_makeL_cse]; simp [Ctx.make, entryFrame], .inl rfl⟩
+      ⟨by rw [entryFrame_makeL]; simp [Ctx.make, entryFrame], .inl rfl⟩
     exact finish_refines hd (runLoopL_sim (RL ⟨f.lowered, false⟩ env tabs f rw)
       (fun frS frT bid i ⟨h1, h2⟩ => by
         subst h1

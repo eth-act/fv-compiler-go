@@ -401,11 +401,6 @@ theorem runLoopL_simD {U : Blk → Prop} {mdS mdT : LMode} {ctxS ctxT : Ctx}
       exact .panic e hm he hmA
     | stuck => exact absurd hd (s1 hS)
 
-private theorem entryFrame_makeL_unread (env : Env) (tabs : Tables) (f : Func) (args : List Val)
-    (mem : Mem) :
-    entryFrame env (Ctx.makeL tabs f) args mem = entryFrame env (Ctx.make tabs f) args mem := by
-  unfold Ctx.makeL; split <;> rfl
-
 private theorem defers_makeL_unread (tabs : Tables) (f : Func) :
     (Ctx.makeL tabs f).defers = deferInfo tabs := by
   unfold Ctx.makeL; split <;> rfl
@@ -415,7 +410,7 @@ theorem entryL_ok {args : List Val} {mem : Mem} (hinit : InitAvoids env args mem
     SimAtL env tabs f E (entryFrame env (Ctx.makeL tabs f) args mem)
       (entryFrame env (Ctx.makeL tabs f) args mem) f.entry 0 := by
   have h0 := DAE.entry_ok (env := env) (tabs := tabs) (f := f) (T := fun _ => none) (E := E) hinit
-  rw [entryFrame_makeL_unread]
+  rw [entryFrame_makeL]
   refine ⟨h0.size, rfl, rfl, h0.agree, fun z y h => ?_, h0.fok, .inl rfl⟩
   simp [entryFrame, Array.getElem?_replicate] at h
 
@@ -459,7 +454,7 @@ theorem refinesL_of_urel {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) (R : UR
     have hsz : (Ctx.make tabs g).f.valueTab.size = (Ctx.make tabs f).f.valueTab.size := R.vsize
     have hentry : entryFrame env (Ctx.makeL tabs g) args mem =
         entryFrame env (Ctx.makeL tabs f) args mem := by
-      rw [entryFrame_makeL_unread, entryFrame_makeL_unread]
+      rw [entryFrame_makeL, entryFrame_makeL]
       unfold entryFrame frameMem frameAllocs
       rw [hpty, hloc, hsz]; rfl
     rw [hentry, houts, defers_makeL_unread, defers_makeL_unread, act_makeL0, act_makeL0,
