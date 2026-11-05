@@ -202,7 +202,7 @@ gate_steps() {
     return 0
   }
 
-  step build scripts/memcap.sh lake build GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check
+  step build gate_lake GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check
   [ "${results[-1]}" = pass ] || built=0
   step allproof gate_allproof
   step no-sorry python3 scripts/no-sorry.py
@@ -271,7 +271,15 @@ gate_steps() {
 # module its author did not add is covered too; the next run's checkout resets the file).
 gate_allproof() {
   scripts/gen-allproof.sh --check || scripts/gen-allproof.sh || return
-  scripts/memcap.sh lake build GoFVTest.Proof.AllProof
+  gate_lake GoFVTest.Proof.AllProof
+}
+
+# gate_lake <targets>: `lake build` at $GATE_BUILD_MEMCAP (default 16G) under ../gofv-heavy.lock
+# (AGENTS.md: above 8G only under that lock). At 8G a cold -j4 build of the whole tree was
+# memcg-OOM-killed (2026-11-05, #487): four lean processes at ~4 GB RSS each.
+gate_lake() {
+  flock -w 10800 "$parent/gofv-heavy.lock" \
+    env FV_MEMCAP="${GATE_BUILD_MEMCAP:-16G}" scripts/memcap.sh lake build "$@"
 }
 
 # gate_e2e <run>: the driver toolchain for this commit's patches (rebuilt when they changed),
