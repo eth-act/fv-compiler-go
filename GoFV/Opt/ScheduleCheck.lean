@@ -18,10 +18,12 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   sizes and `Func.lowered` are kept.
 * **Order** (`orderOK`): `runSched`'s order of `g`'s block (`schedOrder`) exists, and the values
   that may fail keep `runL`'s order (`kahn`, `Sem.schedule`) of `f`'s block: if the target runs
-  `y` before `x` and the source runs `x` before `y`, one of them never fails (`Cls.safe`), or `y`
-  is a load and `x` a load or nil check on the same memory, so that whichever fails first fails
-  with `nilDeref` of that memory (`swapOK`). This is the ready-root rule (#96) for runs where
-  memory ops fault (`LMode.faulting`).
+  `y` before `x` and the source runs `x` before `y`, `y` is a parameter's register piece (it
+  evaluates, `argOK`), or `x` never fails (`Cls.safe`) or never faults (a load or nil check whose
+  pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`), or `y` is a
+  load and `x` a load or nil check on the same memory, so that whichever fails first fails with
+  `nilDeref` of that memory (`swapOK`). This is the ready-root rule (#96) for runs where memory
+  ops fault (`LMode.faulting`).
 -/
 
 namespace GoFV.Opt.ScheduleCheck
@@ -146,9 +148,20 @@ def isSPA (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op == .SPanchored)
 /-- The value `a` is a nil check. -/
 def isNC (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op.nilCheck)).getD false
 
-/-- A load whose base is a nil check's result: the check passed, so the base is a pointer
-outside the nil block and the load does not fault (`late nilcheck` later removes the check). -/
-def ncBase (f : Func) (v : Value) : Bool := ldOp v.op && (v.args[0]?.any (isNC f))
+/-- Value `a`, once evaluated, holds no nil base: a nil check (it passed), an `SP` (the
+outgoing-arguments area) or `GetG` (the current goroutine) at a word shape (`tys`: `f`'s `runL`
+shapes), or the closure pointer (`poison`: a run of the function itself has no closure
+context). -/
+def isNN (tys : Array Ty) (f : Func) (a : ID) : Bool :=
+  match f.value? a with
+  | some v => v.op.nilCheck || v.op == .ARM64LoweredGetClosurePtr ||
+      (v.op == .SP || v.op == .GetG) && wordShape (tys[a]?.getD .other)
+  | none => false
+
+/-- A load or nil check whose pointer is `isNN`: its base is not nil, so it does not fault
+(`late nilcheck` later removes a check of a nil check's result). -/
+def nnBase (tabs : Tables) (tys : Array Ty) (f : Func) (v : Value) : Bool :=
+  (ldOp v.op || cls tabs v == .nil) && (v.args[0]?.any (isNN tys f))
 
 /-- A register argument piece (`ArgIntReg`) of a parameter of the function (`params`: its
 input parameters' names, `Ctx.params`): it reads the parameter's image, which every frame of the
@@ -160,16 +173,18 @@ def argOK (tabs : Tables) (params : Array (Option AuxRef)) (v : Value) : Bool :=
     | _ => false
 
 /-- The source runs `x` before `y`, the target `y` before `x` (both may fail). Allowed if `y`
-evaluates (a parameter's register piece, `argOK`); or if `x`
-never panics (so the source cannot stop at `x` with `y` not run: a value that never panics, or a
-load whose base is a nil check's result, `ncBase`); or `x` and `y` fault alike:
-`y` is a `faultOp` and `x` a `faultOp` or a nil check on the same memory (whichever stops first
-panics with `nilDeref` of it); or `y` is a nil check of the base of `x`, a load or nil check on
-the same memory (if `x` faults, its base is nil, so `y` panics as well). -/
-def swapOK (tabs : Tables) (f : Func) (x y : ID) : Bool :=
+evaluates (a parameter's register piece, `argOK`; `params`: `f`'s input parameters'
+names); or if `x` never panics (so the source cannot stop at `x` with `y` not run: a value that
+never panics, or a load or nil check whose base is not nil, `nnBase`; `tys`: `f`'s `runL`
+shapes); or `x` and `y` fault alike: `y` is a `faultOp` and `x` a `faultOp` or a nil check on the
+same memory (whichever stops first panics with `nilDeref` of it); or `y` is a nil check of the
+base of `x`, a load or nil check on the same memory (if `x` faults, its base is nil, so `y` panics
+as well). -/
+def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
+    (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
-    argOK tabs (Ctx.makeL tabs f).params vy || !mayPanic tabs vx || ncBase f vx ||
+    argOK tabs params vy || !mayPanic tabs vx || nnBase tabs tys f vx ||
       ((cls tabs vx == .load || cls tabs vx == .nil) && vx.args.back? == vy.args.back? &&
         !(vx.args.back?.any (isSPA f)) &&
         (cls tabs vy == .load ||
@@ -184,11 +199,12 @@ def posFill : List ID → Nat → Array Nat → Array Nat
 
 /-- The values of the block that may fail keep their source order up to `swapOK`: for failing
 values `y` before `x` in the target order `oT`, if the source order `oS` runs `x` before `y`
-then `swapOK tabs f x y`. `n`: the size of the value table. -/
-def orderOK (tabs : Tables) (f : Func) (n : Nat) (oS oT : Array ID) : Bool :=
+then `swapOK tabs params tys f x y`. `n`: the size of the value table. -/
+def orderOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func) (n : Nat)
+    (oS oT : Array ID) : Bool :=
   let pS := posFill oS.toList 0 (Array.replicate n 0)
   decide ((oT.toList.filter (mayFail tabs f)).Pairwise
-    fun y x => (!(pS[x]! < pS[y]!) || swapOK tabs f x y) = true)
+    fun y x => (!(pS[x]! < pS[y]!) || swapOK tabs params tys f x y) = true)
 
 /-- The arguments of value `x` of `f` (none if `x` is not in `f`). -/
 def argsOf (f : Func) (x : ID) : List ID := ((f.value? x).map (·.args.toList)).getD []
@@ -269,7 +285,7 @@ def ordersOK (tabs : Tables) (f g : Func) : Bool :=
       match cS.sched[b]?.join, sT[b]?.join, g.block? b with
       | some oS, some oT, some gb =>
         oT.toList == gb.values.toList.filter (!isPhi g ·) && topoB g oT.toList &&
-          orderOK tabs f f.valueTab.size oS oT
+          orderOK tabs cS.params cS.tys f f.valueTab.size oS oT
       | _, _, _ => false
 
 /-- The shape conditions of `scheduleCheck` (see the module doc). -/

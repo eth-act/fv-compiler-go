@@ -45,6 +45,10 @@ structure AtS (md : LMode) (env : Env) (tabs : Tables) (f : Func) (frS frT : Fra
   phi : ∀ blk z v a, f.block? bid = some blk → z ∈ blk.values → f.value? z = some v →
     v.op = .Phi → v.args[i]? = some a →
     (∃ y, frS.regs[a]? = some (some y)) ∧ (isNC f a = true → frS.regs[rep f a]? = frS.regs[a]?)
+  /-- An image per parameter (`argOK` pieces evaluate). -/
+  img : frS.images.size = (Ctx.makeL tabs f).params.size
+  /-- No closure context (`GetClosurePtr` is `poison`). -/
+  clo : frS.closure = none
 
 /-! ## Facts of `f` -/
 
@@ -132,7 +136,8 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
     (hperm : gb.values.toList.Perm (fb.values.toList.filter (!isSPA f ·)))
     {oS oT : Array ID} (hsS : schedule f fb = some oS)
     (hoT : oT.toList = gb.values.toList.filter (!isPhi g ·)) (htopoT : topoB g oT.toList = true)
-    (hord : orderOK tabs f f.valueTab.size oS oT = true)
+    (hord : orderOK tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f f.valueTab.size oS oT =
+      true)
     {ps : List (ID × Val)}
     (hps : fb.values.toList.filterMapM (phiStepL md (Ctx.makeL tabs f) frS i) = .ok ps) :
     ∃ psT, gb.values.toList.filterMapM (phiStepL md (Ctx.makeSched tabs g) frT i) = .ok psT ∧
@@ -233,7 +238,7 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
         · exact .inl hag)
       rw [hkS, hkT, hA.agree a hn hs]
   -- the arguments from outside the block
-  have hout : Out f oS.toList { frS with regs := setPhis ps frS.regs } := by
+  have hout : Out (Ctx.makeL tabs f).tys f oS.toList { frS with regs := setPhis ps frS.regs } := by
     intro x hx a ha haS
     obtain ⟨hxf, v, hv, hnp⟩ := (omem x).1 hx
     have hav : a ∈ v.args := by rw [argsF_of hv] at ha; exact Array.mem_toList_iff.1 ha
@@ -263,8 +268,17 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
       rw [rep_self hn hs]
       have hlt : a < frS.regs.size := by rw [hA.size]; exact lt_of_value? hpa.1
       obtain ⟨-, y, -, -, hS⟩ := hSphi a haf va (by rw [hcF]; exact hpa.1) hap hlt
+      have hnn : isNN (Ctx.makeL tabs f).tys f a = false := by
+        cases h : isNN (Ctx.makeL tabs f).tys f a
+        · rfl
+        · obtain ⟨v', hv', hcs⟩ := isNN_cases h
+          rw [hpa.1] at hv'; cases hv'
+          rcases hcs with h' | hop | ⟨hop, -⟩
+          · exact absurd (hn.symm.trans h') (by decide)
+          · rw [hap] at hop; cases hop
+          · rcases hop with h' | h' <;> rw [hap] at h' <;> cases h'
       exact ⟨⟨_, hS⟩, haS, ⟨_, hS⟩, fun h => absurd (hn.symm.trans h) (by decide),
-        fun h => absurd (hn.symm.trans h) (by decide)⟩
+        fun h => absurd (hnn.symm.trans h) (by decide)⟩
     · -- a value of a strict dominator
       have hstrict : Anc (make f) va.block bid ∧ va.block ≠ bid := ⟨hanc, hvb⟩
       obtain ⟨y, hy, -⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
@@ -293,7 +307,18 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
         exact ncFact hwf hA.up hA.typed hpa hstrict hu hn
       · have hz' : frS.regs[a]? = some (some z) := by
           rw [← hkeep a va hpa hvb]; exact hz
-        exact ncFactNN hwf hA.up hA.typed hpa hstrict hu hn z hz'
+        obtain ⟨va', hva', hcs⟩ := isNN_cases hn
+        rw [hpa.1] at hva'; cases hva'
+        rcases hcs with hnc | hop | ⟨hop, hw⟩
+        · exact (ncFactNN hwf hA.up hA.typed hpa hstrict hu hnc z hz').not_nilBase
+        · have hnp : va.op ≠ .Phi := by rw [hop]; decide
+          obtain ⟨y', hy', hev⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
+          rw [hz'] at hy'; cases hy'
+          exact evalValueL_clo hop hA.clo (hev hnp)
+        · have hnp : va.op ≠ .Phi := by rcases hop with h | h <;> rw [h] <;> decide
+          obtain ⟨y', hy', hev⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
+          rw [hz'] at hy'; cases hy'
+          exact (evalValueL_spg hop (by rw [placed_id hwf hpa]; exact hw) (hev hnp)).not_nilBase
   -- the target order's members
   have htmem : ∀ x, x ∈ oT.toList ↔ x ∈ oS.toList ∧ isSPA f x = false := by
     intro x
@@ -312,7 +337,7 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
     by rw [hA.frEq], by simp [setPhis_size, hA.sizeT], by simp [setPhis_size, hA.size], hagree, ?_,
     hout, fun i j x y hij hy hx hfy hfx k l hkl hxk hyl => orderOK_swap hord ond
       (fun z hz => by obtain ⟨-, v, hv, -⟩ := (omem z).1 hz; exact lt_of_value? hv)
-      hij hy hx hfy hfx hkl hxk hyl⟩
+      hij hy hx hfy hfx hkl hxk hyl, hA.img, hA.clo⟩
   · obtain ⟨hxf, -⟩ := (omem x).1 hx
     obtain ⟨v', hv', hid⟩ := hown x hxf
     rw [hv] at hv'; cases hv'; exact hid
@@ -426,8 +451,11 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
       obtain ⟨kk, hkk⟩ := Array.mem_iff_getElem?.1 hem
       obtain ⟨heb, cblk, hcblk, hcp⟩ := hwf.succLink bid fb ⟨hb, hfb⟩ kk e hkk
       have hedge := Dom.edge hc hb hfb htr hem
+      have himg : GS.images = frS.images := by rw [e1]
+      have hclo : GS.closure = frS.closure := by rw [e1]
       refine ⟨GT, rfl, ⟨heb, hedge.2.1⟩, by rw [hGSsz, hA.size], hGTsz, hGTfr, hGSty,
-        dinvL_edge hc hb hfb htr hem hD, hagree, ?_⟩
+        dinvL_edge hc hb hfb htr hem hD, hagree, ?_, by rw [himg]; exact hA.img,
+        by rw [hclo]; exact hA.clo⟩
       intro blk z v a hblk hz hv hp ha
       rw [hcblk] at hblk; cases hblk
       have hanc := hc.domRel.phiUse heb hcblk hedge.2.1 hz hv hp ha hcp htr
@@ -467,13 +495,20 @@ theorem entryFrame_sched (S : SchedRel tabs f g) (env : Env) (args : List Val) (
   unfold entryFrame frameMem frameAllocs
   rw [hpt, hloc, hsz, makeSched_tabs, tabs_makeL, hact]
 
-/-- The invariant at the entry block. -/
-theorem atS_entry (Su : Setup tabs f g) (env : Env) (args : List Val) (mem : Mem) :
+/-- The invariant at the entry block (`hn`: `runCtxL`'s arity check). -/
+theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem)
+    (hn : args.length = (Ctx.makeL tabs f).params.size) :
     AtS ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem)
       (entryFrame env (Ctx.makeL tabs f) args mem) f.entry 0 := by
   obtain ⟨ce, hwf⟩ := Su.wf
+  have hps : (Ctx.makeL tabs f).paramTys.size = (Ctx.makeL tabs f).params.size := by
+    unfold Ctx.makeL; split <;> simp [Ctx.make]
+  have himg : (entryFrame env (Ctx.makeL tabs f) args mem).images.size =
+      (Ctx.makeL tabs f).params.size := by
+    simp only [entryFrame, Array.size_map, Array.size_zip, List.size_toArray, hps, hn,
+      Nat.min_self]
   refine ⟨⟨hwf.entry, Su.cf.domRel.entry⟩, by simp [entryFrame, makeL_f], rfl, rfl,
-    typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_⟩
+    typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_, himg, rfl⟩
   intro blk z v a hblk hz hv hp ha
   have h1 := hwf.phiArity _ _ _ _ ⟨⟨hwf.entry, hblk⟩, hz, hv⟩ hp
   have h2 := hwf.entryPreds blk hblk
@@ -493,6 +528,7 @@ theorem refinesSchedLF_of_rel (Su : Setup tabs f g) : RefinesSchedLF tabs g tabs
   · rename_i hn
     simp only [hn] at hd
     try simp only [hn]
+    have hlen : args.length = (Ctx.makeL tabs f).params.size := by simpa using hn
     have hout : (Ctx.makeSched tabs g).outs = (Ctx.makeL tabs f).outs := by
       show (Ctx.makeL tabs g).outs = _
       rw [outs_makeL, outs_makeL]; simp only [Ctx.make, abiParams, S.ownAux]
@@ -506,6 +542,6 @@ theorem refinesSchedLF_of_rel (Su : Setup tabs f g) : RefinesSchedLF tabs g tabs
     exact finish_refines hd (runLoopL_sim
       (fun frS frT b i => AtS ⟨f.lowered, true⟩ env tabs f frS frT b i)
       (fun _ _ _ _ hR => stepS Su rfl hR) fuel _ _ _ _
-      (by rw [makeL_f]; exact atS_entry Su env args mem) (finish_defined hd))
+      (by rw [makeL_f]; exact atS_entry Su env mem hlen) (finish_defined hd))
 
 end GoFV.Proof.SchedL

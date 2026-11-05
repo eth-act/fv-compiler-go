@@ -2,6 +2,7 @@ import GoFV.Proof.RetypeL
 import GoFV.Proof.Speculate
 import GoFV.Opt.ScheduleCheck
 import GoFV.Proof.EvalOpLDispatch
+import GoFV.Proof.PtrAddr
 
 /-!
 # `schedule` on `runSched`: what a value's class says about its evaluation
@@ -794,6 +795,61 @@ theorem evalValueL_argOK {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
     dsimp only
     split <;> exact ⟨_, rfl⟩
   · cases haux
+
+/-! ## Pointers outside the nil block -/
+
+/-- A pointer outside the nil block is one at a word shape. -/
+theorem nonNil_retype_ptr (md : LMode) {t : Ty} (ht : wordShape t = true) {p : Ptr}
+    (hp : p.blk ≠ .nil) : NonNil (md.retype t (.ptr p)) := by
+  refine ⟨p, ?_, hp⟩
+  unfold wordShape at ht
+  split at ht
+  · cases md with
+    | mk low faulting =>
+      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord]
+  · cases md with
+    | mk low faulting =>
+      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord]
+  · cases ht
+
+/-- **`SP` and `GetG` hold pointers outside the nil block** at a word shape: the
+outgoing-arguments area and the current goroutine. -/
+theorem evalValueL_spg {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hop : v.op = .SP ∨ v.op = .GetG) (hw : wordShape (ctx.tys[v.id]?.getD .other) = true)
+    (h : evalValueL md env ctx fr v = .ok y) : NonNil y := by
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm] at h
+  have hg : v.op.generic = true := by rcases hop with h | h <;> rw [h] <;> rfl
+  rw [evalOpL_generic _ _ _ _ _ _ hg] at h
+  rcases hop with hop | hop
+  · have he : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) =
+        .ok (.ptr ⟨.outargs ctx.act, 0⟩) := by
+      unfold evalOp; rw [hop]; simp only [frameVal, hop]; rfl
+    rw [he] at h; cases h
+    exact nonNil_retype_ptr md hw (by simp)
+  · have he : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) =
+        .ok (.ptr ⟨.global "runtime.g", 0⟩) := by
+      unfold evalOp; rw [hop]; simp only [frameVal, hop]; rfl
+    rw [he] at h; cases h
+    exact nonNil_retype_ptr md hw (by simp)
+
+/-- **Without a closure context** (a run of the function itself: `entryFrame` sets none),
+`GetClosurePtr` is `poison`, which has no nil base. -/
+theorem evalValueL_clo {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hop : v.op = .ARM64LoweredGetClosurePtr) (hc : fr.closure = none)
+    (h : evalValueL md env ctx fr v = .ok y) : ¬ NilBase y := by
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm, evalOpL_act (by rw [hop]; decide)] at h
+  have he : arm64Op md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other) = .ok .poison := by
+    have hnf : nilFaults md.faulting ctx v argv = none := by
+      apply nilFaults_none_of <;> rw [hop] <;> rfl
+    unfold arm64Op; simp only [hnf]; rw [hop]; dsimp only; rw [hc]; rfl
+  rw [he] at h; cases h
+  rintro ⟨b, hb, -⟩
+  cases md with
+  | mk low faulting =>
+    cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Arm64.addr,
+      Arm64.reg] at hb
 
 /-! ## Value correspondence -/
 

@@ -191,11 +191,12 @@ def Agree (f : Func) (F T : Frame) : Prop :=
 
 /-- The arguments of the block's values outside the block (lemma (D) at the block's entry): they
 have registers, and so do their bypasses, which a nil check's result equals; a nil check's
-result is a pointer outside the nil block. -/
-def Out (f : Func) (S : List ID) (F : Frame) : Prop :=
+result, an `SP`, a `GetG` or the closure pointer (`isNN`; `tys`: `f`'s shapes) has no nil
+base. -/
+def Out (tys : Array Ty) (f : Func) (S : List ID) (F : Frame) : Prop :=
   ∀ x ∈ S, ∀ a ∈ argsF f x, a ∉ S → (∃ z, F.regs[a]? = some (some z)) ∧ rep f a ∉ S ∧
     (∃ z, F.regs[rep f a]? = some (some z)) ∧ (isNC f a = true → F.regs[rep f a]? = F.regs[a]?) ∧
-    (isNC f a = true → ∀ z, F.regs[a]? = some (some z) → NonNil z)
+    (isNN tys f a = true → ∀ z, F.regs[a]? = some (some z) → ¬ NilBase z)
 
 /-- A block entry of the simulation: source order `oS`, target order `oT`, frames after the
 `Phi`s. -/
@@ -213,10 +214,14 @@ structure BStep (tabs : Tables) (f g : Func) (md : LMode) (oS oT : List ID)
   sizeS : frPS.regs.size = f.valueTab.size
   agree : Agree f frPS frPT
   typed : TypedL md (Ctx.makeL tabs f) frPS
-  out : Out f oS frPS
+  out : Out (Ctx.makeL tabs f).tys f oS frPS
   swap : ∀ (i j : Nat) (x y : ID), i < j → oT[i]? = some y → oT[j]? = some x →
     mayFail tabs f y = true → mayFail tabs f x = true → ∀ (k l : Nat), k < l → oS[k]? = some x →
-    oS[l]? = some y → swapOK tabs f x y = true
+    oS[l]? = some y → swapOK tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f x y = true
+  /-- An image per parameter (`argOK` pieces evaluate). -/
+  img : frPS.images.size = (Ctx.makeL tabs f).params.size
+  /-- No closure context (`GetClosurePtr` is `poison`). -/
+  clo : frPS.closure = none
 
 /-- The source after the prefix `P` of its order. -/
 structure Src (tabs : Tables) (f : Func) (md : LMode) (env : Env) (frPS H : Frame) (P : List ID) :
@@ -407,6 +412,27 @@ theorem cls_congr {fv gv : Value} (hr : VRel f g fv gv) :
   have hsz : gv.args.size = fv.args.size := by rw [hr.args, Array.size_map]
   unfold cls symbolic
   rw [hr.op, hr.aux, hsz]
+
+theorem argOK_congr {fv gv : Value} (hr : VRel f g fv gv) (params : Array (Option AuxRef)) :
+    argOK tabs params gv = argOK tabs params fv := by
+  have hsz : gv.args.isEmpty = fv.args.isEmpty := by
+    rw [hr.args]; cases fv.args; simp
+  unfold argOK
+  rw [hr.op, hr.aux, hsz]
+
+theorem isNN_cases {tys : Array Ty} {a : ID} (h : isNN tys f a = true) :
+    ∃ v, f.value? a = some v ∧ (isNC f a = true ∨ v.op = .ARM64LoweredGetClosurePtr ∨
+      ((v.op = .SP ∨ v.op = .GetG) ∧ wordShape (tys[a]?.getD .other) = true)) := by
+  unfold isNN at h
+  split at h
+  · rename_i v hv
+    refine ⟨v, hv, ?_⟩
+    simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+    rcases h with (h | h) | h
+    · exact .inl (by rw [isNC_of hv]; exact h)
+    · exact .inr (.inl h)
+    · exact .inr (.inr h)
+  · cases h
 
 theorem tval (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT : Frame}
     (B : BStep tabs f g md oS oT frPS frPT) {x : ID} (hx : x ∈ oT) :
