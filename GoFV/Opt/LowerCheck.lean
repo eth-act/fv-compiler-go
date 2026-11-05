@@ -23,8 +23,9 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   controls the rule's variables, the new auxint the rule's;
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
-  arm64 store (`memLower`), or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event
-  lowering a store or a frame address, or folding an `ADDconst` offset (`stFold`) or a global
+  arm64 store (`memLower`), or a `Zero` lowered to `LoweredZero`/`LoweredZeroLoop` (`zeroLower`),
+  or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event lowering a store, a `Zero` or
+  a frame address, or folding an `ADDconst` offset (`stFold`) or a global
   symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, is replayed as its
   new definitions (`atomDef`); a rule event folding a lowered frame address into an integer load
   (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`);
@@ -32,6 +33,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
   `Const64` operands of `f`'s `PanicBounds` (`pbLower`, `pbConstOK`);
+* each block evaluates `f`'s roots in the same order in `g` (a lowered `Zero` is not a root of
+  lowered SSA: `g` may evaluate it earlier, which never fails without faulting memory);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/
@@ -221,6 +224,7 @@ def stFoldAddr (tabs : Tables) (f : Func) (M : Defs) (x u : Value) : Bool :=
 lists the reset value, then the nodes, as for any `build`), with `v`'s type:
 * a lowered store (`memLower` at offset 0 without aux: `(Store {t} ptr val mem) => (MOVDstore ptr
   val mem)` and the other sizes), on `v`'s arguments;
+* a lowered `Zero` (`zeroLower`: `LoweredZero`, `LoweredZeroLoop`), on `v`'s arguments;
 * an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
   or frame variable's address (`stFoldAddr`);
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
@@ -233,6 +237,7 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
   | some x, [_, u] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
         (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
+          u.args == x.args && zeroLower x u ||
           u.args.all x.args.contains && addrLower tabs x u ||
           (stFold tabs M x u || stFoldAddr tabs f M x u) && (f.value? v).any (·.op == .Store))
         then some (u, none)
@@ -450,11 +455,13 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 
 /-- The atom `w` of `g` corresponds to the atom `u` of `f`: the same fields, or `w` renames `u`
 (`renameOp`) with the same type, auxint, aux and number of arguments, or `w` lowers the store `u`
-(`memLower`) with the same type and number of arguments, or the frame address `u` (`addrLower`)
-with the same type. -/
+(`memLower`) or the `Zero` `u` (`zeroLower`) with the same type and number of arguments, or the
+frame address `u` (`addrLower`) or the bounds panic `u` with constant operands (`pbLower`) with the
+same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
-    memLower tabs u w) && u.args.size == w.args.size || addrLower tabs u w || pbLower u w) &&
+    memLower tabs u w || zeroLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
+    pbLower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
 /-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands
@@ -484,7 +491,8 @@ def pbConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
 
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux; every atom of `g`
 corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtom`), and each block
-evaluates its roots in the same order (`Sem.schedule`). -/
+evaluates `f`'s roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered
+`Zero`, which is not a root of lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
@@ -500,7 +508,8 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       match Sem.schedule f fb, Sem.schedule g gb with
       | some of, some og =>
         of.toList.filter (fun x => (f.value? x).any (Sem.isRoot ·.op)) ==
-          og.toList.filter (fun x => (g.value? x).any (Sem.isRoot ·.op))
+          og.toList.filter (fun x => (f.value? x).any (Sem.isRoot ·.op) &&
+            (g.value? x).any (fun w => !termVL tabs w))
       | _, _ => false
     | _, _ => false
 

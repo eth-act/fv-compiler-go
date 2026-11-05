@@ -6,7 +6,9 @@ import GoFV.Proof.Pass.RewriteTermDen
 
 `AtomsL`: what `LowerCheck.atomsOKL` says (`atomsOKL_spec`): the same entry, blocks and own aux,
 per block the same ID, every atom listed in `g` listed in the same block of `f` as a
-corresponding atom (`atomPair`), and both schedules listing their roots in the same sequence.
+corresponding atom (`atomPair`), and both schedules listing `f`'s roots, atoms of `g`, in the same
+sequence (`rootAtL`; a lowered `Zero` is not a root of `g`, which evaluates it earlier, and never
+fails there, `evalOpL_safeL`).
 `Hyp`: both functions well formed with certified dominator trees, `AtomsL`, the validator's term
 relations (`AtomArgsRefL`, `TermStepRefL`), `f`'s mode implies `g`'s, `f`'s atoms are generic
 and `f`'s values have the same shape in both modes.
@@ -36,13 +38,17 @@ theorem makeL_act (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).act = 0 := by
 /-- `x` is a root of `h` (the schedules' filter in `atomsOKL`). -/
 def rootL (h : Func) (x : ID) : Bool := (h.value? x).any (Sem.isRoot ·.op)
 
+/-- `x` is a root of `f` and an atom of `g` (the filter of `g`'s schedule in `atomsOKL`). -/
+def rootAtL (tabs : Tables) (f g : Func) (x : ID) : Bool :=
+  rootL f x && (g.value? x).any (fun w => !termVL tabs w)
+
 /-- One block of `atomsOKL`. -/
 structure BlockAtomsL (tabs : Tables) (f g : Func) (fb gb : Block) : Prop where
   id : fb.id = gb.id
   sub : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termVL tabs w = false →
     x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ termVL tabs u = false ∧ atomPair tabs u w = true
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
-    of.toList.filter (rootL f) = og.toList.filter (rootL g)
+    of.toList.filter (rootL f) = og.toList.filter (rootAtL tabs f g)
 
 /-- `atomsOKL` as propositions. -/
 structure AtomsL (tabs : Tables) (f g : Func) : Prop where
@@ -259,7 +265,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
       cases hf : argFree tabs w
       · rfl
       · exfalso
-        rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha | hb
+        rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm | hz, -⟩ | ha | hb
         · have hg := H.gen x u hu hut
           rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
         · have hw' := (argFree_cases hf).1
@@ -268,6 +274,8 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
             rw [h2] at hw' <;> cases hw'
         · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
           rw [(argFree_cases hf).1] at hs; cases hs
+        · obtain ⟨-, hzw, -⟩ := zeroLower_cases hz
+          rw [(argFree_cases hf).1] at hzw; rcases hzw with h | h <;> cases h
         · rw [hal] at ha; cases ha
         · obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases hb
           rw [(argFree_cases hf).1] at hks; cases hks
@@ -317,26 +325,31 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
     (hp : atomPair tabs u w = true) (hgen : u.op.generic = true) (hr : isRoot w.op = false)
     (ha : w.op ≠ .Arg) (hai : w.op ≠ .ArgIntReg) :
     ∃ y, evalOpL false env ctx fr w argv ty = .ok y := by
-  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm, -⟩ | ha | hb
+  cases hz : zeroLower u w
+  case true => exact ⟨_, evalOpL_zero (zeroLower_cases hz).2.1⟩
+  have hr' : isRoot u.op = false := by
+    rcases atomPair_isRoot hp with h | h
+    · rw [← h]; exact hr
+    · rw [hz] at h; cases h
+  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm | hz', -⟩ | ha | hb
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
       ⟨k, hk, -⟩ | ⟨ho, he⟩ | ⟨ho, -⟩
-    · rw [atomPair_isRoot hp] at hr
-      rcases hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hr <;> exact absurd hr (by decide)
+    · rcases hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hr' <;> exact absurd hr' (by decide)
     · rw [he]
       rcases ho with ho | ho | ho
-      · rw [atomPair_isRoot hp, ho] at hr; exact absurd hr (by decide)
+      · rw [ho] at hr'; exact absurd hr' (by decide)
       · exact evalOp_safe (v := { w with op := u.op }) (by rw [ho]; decide)
           (by rw [ho]; decide) (by rw [ho]; decide)
-      · rw [atomPair_isRoot hp, ho] at hr; exact absurd hr (by decide)
-    · rw [atomPair_isRoot hp] at hr
-      rcases ho with ho | ho <;> rw [ho] at hr <;> exact absurd hr (by decide)
+      · rw [ho] at hr'; exact absurd hr' (by decide)
+    · rcases ho with ho | ho <;> rw [ho] at hr' <;> exact absurd hr' (by decide)
   · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
-    rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
+    rw [hu] at hr'; exact absurd hr' (by decide)
+  · rw [hz] at hz'; cases hz'
   · exact evalOpL_movDaddr_ok (addrLower_cases ha).2.1
   · obtain ⟨hu, -⟩ := pbLower_cases hb
-    rw [atomPair_isRoot hp, hu] at hr; exact absurd hr (by decide)
+    rw [hu] at hr'; exact absurd hr' (by decide)
 
 end
 

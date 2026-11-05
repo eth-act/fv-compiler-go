@@ -511,6 +511,21 @@ def addrLower (tabs : Tables) (u w : Value) : Bool :=
   u.op == .LocalAddr && w.op == .ARM64MOVDaddr && w.auxInt == 0 && w.aux == u.aux &&
     auxIsName tabs u.aux && w.args.size == 1
 
+/-- The atom `w` lowers `Zero {t} [n] ptr mem` to `LoweredZero [n] ptr mem` (`ARM64.rules:376`; from
+192 bytes `LoweredZeroLoop`, `377`): the same size; both zero `n` bytes at `ptr`
+(`GoFV.Proof.Low.Sim.zero_lower_eval`). The validator keeps the arguments (`atomDef`). -/
+def zeroLower (u w : Value) : Bool :=
+  u.op == .Zero && (w.op == .ARM64LoweredZero || w.op == .ARM64LoweredZeroLoop) &&
+    u.auxInt == w.auxInt
+
+/-- What `zeroLower` says. -/
+theorem zeroLower_cases {u w : Value} (h : zeroLower u w = true) :
+    u.op = .Zero ∧ (w.op = .ARM64LoweredZero ∨ w.op = .ARM64LoweredZeroLoop) ∧
+      u.auxInt = w.auxInt := by
+  unfold zeroLower at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+  exact ⟨h.1.1, h.1.2, h.2⟩
+
 /-- The arguments of `PanicBounds [kind] x y mem` that a lowering with constant operands folded
 into its aux keeps (`ARM64.rules:513-516`): `LoweredPanicBoundsRC [kind] {C} x mem` keeps `x` and
 `mem`, `CR` keeps `y` and `mem`, `CC` keeps `mem`. -/
@@ -689,7 +704,7 @@ into a bounds panic, which the replay keeps as the renamed atom (`GoFV.Opt.Lower
 its own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
-    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o)
+    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o ∨ o = .Zero)
 
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
 ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/

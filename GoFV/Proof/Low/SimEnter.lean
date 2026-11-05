@@ -51,7 +51,7 @@ structure BlockData (tabs : Tables) (f g : Func) (b : ID) (fb gb : Block) (of og
   vT : gb.values.toList.Nodup
   sS : schedule f fb = some of
   sT : schedule g gb = some og
-  fl : of.toList.filter (rootL f) = og.toList.filter (rootL g)
+  fl : of.toList.filter (rootL f) = og.toList.filter (rootAtL tabs f g)
   ndS : of.toList.Nodup
   tpS : TopoRem (argsF f) of.toList
   mS : ∀ x, x ∈ of.toList ↔ x ∈ fb.values ∧ ∃ v, f.value? x = some v ∧ v.op ≠ .Phi
@@ -556,7 +556,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -565,6 +565,9 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   · exfalso
     obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases h
     generalize w.op = o at hs hg; cases hs <;> exact absurd hg (by decide)
+  · exfalso
+    obtain ⟨-, hw, -⟩ := zeroLower_cases h
+    rcases hw with h2 | h2 <;> rw [h2] at hg <;> exact absurd hg (by decide)
   · exfalso
     rw [(addrLower_cases h).2.1] at hg; exact absurd hg (by decide)
   · exfalso
@@ -593,7 +596,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
   have hrp : prio ur.op ≠ 0 := prio_of_panickingL (evalValueL_panic_op hevr)
   have hrof : r ∈ of.toList := by rw [hof]; simp
   have hrS : rootL f r = true := by simp [rootL, hur, isRoot_of_prio hrp]
-  have hrog : r ∈ og.toList ∧ rootL g r = true := by
+  have hrog : r ∈ og.toList ∧ rootAtL tabs f g r = true := by
     have : r ∈ of.toList.filter (rootL f) := List.mem_filter.2 ⟨hrof, hrS⟩
     rw [B.fl] at this; exact List.mem_filter.1 this
   obtain ⟨preT, postT, hog⟩ := List.append_of_mem hrog.1
@@ -603,36 +606,15 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
   have hrpreT : r ∉ preT := fun hm => by
     have := B.ndT; rw [hog] at this
     exact (List.nodup_append.1 this).2.2 r hm r List.mem_cons_self rfl
-  have hfl : pre.filter (rootL f) = preT.filter (rootL g) := by
+  have hfl : pre.filter (rootL f) = preT.filter (rootAtL tabs f g) := by
     have := B.fl; rw [hof, hog] at this
     exact filter_prefix this hrS hrog.2 hrpre hrpreT
-  obtain ⟨wr, hwr⟩ : ∃ wr, g.value? r = some wr := by
-    have := hrog.2; unfold rootL at this
+  obtain ⟨wr, hwr, hwrt⟩ : ∃ wr, g.value? r = some wr ∧ termVL tabs wr = false := by
+    have := hrog.2; simp only [rootAtL, Bool.and_eq_true] at this
+    have h2 := this.2
     cases h : g.value? r with
-    | none => rw [h] at this; cases this
-    | some wr => exact ⟨wr, rfl⟩
-  have hwrt : termVL tabs wr = false := by
-    have := hrog.2; simp only [rootL, hwr, Option.any_some] at this
-    unfold termVL
-    split
-    · simp [GoFV.Opt.RewriteCheck.termOp, this]
-    · split
-      · rename_i hm
-        exfalso
-        simp only [beq_iff_eq] at hm
-        rw [hm] at this; exact absurd this (by decide)
-      · split
-        · rename_i hl
-          exfalso
-          obtain ⟨p, hp⟩ := Option.isSome_iff_exists.1 hl
-          rcases ldOp?_mem hp with h | h | h | h | h | h | h <;> rw [h] at this <;>
-            exact absurd this (by decide)
-        · have hd : ldarOp wr.op = false := by
-            cases hd : ldarOp wr.op
-            · rfl
-            · rcases ldarOp_cases hd with h | h | h <;> rw [h] at this <;>
-                exact absurd this (by decide)
-          simp [hd, this]
+    | none => rw [h] at h2; cases h2
+    | some wr => rw [h] at h2; exact ⟨wr, rfl, by simpa using h2⟩
   obtain ⟨u, hu, -, hpair, -, hpwr⟩ := atomL_sched H B hrog.1 hwr hwrt
   rw [hur] at hu; cases hu
   -- the `Phi`s and the frames after them
@@ -706,7 +688,8 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
         cases hroot : isRoot w.op
         · rfl
         · exfalso
-          have : x ∈ preT.filter (rootL g) := List.mem_filter.2 ⟨hx, by simp [rootL, hw, hroot]⟩
+          have : x ∈ preT.filter (rootAtL tabs f g) := List.mem_filter.2 ⟨hx, by
+            simp [rootAtL, rootL, hw, hu, ht, atomPair_root hs' hroot]⟩
           rw [← hfl] at this
           exact hxp (List.mem_filter.1 this).1)
   -- the root `r` in the target

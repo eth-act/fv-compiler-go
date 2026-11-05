@@ -465,6 +465,55 @@ theorem store_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
   · exact Res.Rel.bind (resRefines_trans (memRoot_mono ctx u (.cons (Sem.Refines.refl a) hr))
       (st_ref hu hst hfit ha r')) fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
 
+/-- `LoweredZero [n]` (and `LoweredZeroLoop`) zeroes `n` bytes at its address (`Arm64.zero`). -/
+theorem evalOpL_zero {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
+    (hw : w.op = .ARM64LoweredZero ∨ w.op = .ARM64LoweredZeroLoop) :
+    evalOpL false env ctx fr w argv ty = .ok (Arm64.zero w.auxInt argv) := by
+  have h0 : nilFaults false ctx w argv = none := rfl
+  rcases hw with hw | hw <;>
+  · unfold evalOpL
+    rw [hw, if_neg (by decide)]
+    dsimp only
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [hw]
+    rfl
+
+/-- **`Zero` lowered to `LoweredZero`** (`ARM64.rules:376-377`): on refined arguments, the
+lowered zeroing refines the generic one (`memRoot`: `stuck` on an undefined address or an invalid
+write, where `Arm64.zero` is `poison`). -/
+theorem zero_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Value}
+    (hu : u.op = .Zero) (hw : w.op = .ARM64LoweredZero ∨ w.op = .ARM64LoweredZeroLoop)
+    (hai : u.auxInt = w.auxInt) {ty : Ty} {argv argv' : List Val} (h : RefinesList argv argv') :
+    Res.Refines (evalOp env ctx fr u argv ty) (evalOpL false env ctx' fr' w argv' ty) := by
+  have hS : evalOp env ctx fr u argv ty = memRoot ctx u argv := by
+    unfold evalOp; rw [hu]
+  rw [hS, evalOpL_zero hw]
+  refine resRefines_trans (memRoot_mono ctx u h) ?_
+  rcases argv' with _ | ⟨a, _ | ⟨y, _ | ⟨z, l⟩⟩⟩
+  · unfold memRoot; rw [hu]; exact stuck_ite _
+  · unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases y with
+    | mem m =>
+      have hm : memRoot ctx u [a, .mem m] = match a.asPtrWord with
+          | some p => writeRes s!"v{u.id}: {u.op.name}"
+              (m.write p (Array.replicate u.auxInt.toInt.toNat (.b 0)))
+          | none => .stuck s!"v{u.id}: {u.op.name}: undefined or ill-typed address" := by
+        unfold memRoot; rw [hu]; rfl
+      rw [hm]
+      cases hp : a.asPtrWord with
+      | none => exact .stuck _ _
+      | some p =>
+        dsimp only
+        cases hwr : m.write p (Array.replicate u.auxInt.toInt.toNat (.b 0)) with
+        | none => exact .stuck _ _
+        | some m1 =>
+          simp only [writeRes, Arm64.zero, addr_of_asPtrWord hp, ← hai, hwr]
+          exact .ok (Sem.Refines.refl _)
+    | _ => unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases a <;> cases y <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
+
 /-! ## `memLower` and `atomPair` -/
 
 open GoFV.Opt.LowerCheck
@@ -492,16 +541,17 @@ theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = tr
 
 theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     (((((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
-        memLower tabs u w = true) ∧ u.args.size = w.args.size) ∨ addrLower tabs u w = true ∨
-        pbLower u w = true) ∧
+        memLower tabs u w = true ∨ zeroLower u w = true) ∧ u.args.size = w.args.size) ∨
+        addrLower tabs u w = true ∨ pbLower u w = true) ∧
       u.type = w.type ∧ u.block = w.block ∧ u.id = w.id := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
   refine ⟨?_, h2, h3, h4⟩
-  rcases h1 with (⟨⟨⟨h1, h6⟩, h7⟩ | h1, hs⟩ | h1) | h1
+  rcases h1 with (⟨(⟨⟨h1, h6⟩, h7⟩ | h1) | h1, hs⟩ | h1) | h1
   · exact .inl ⟨.inl ⟨h1, h6, h7⟩, hs⟩
-  · exact .inl ⟨.inr h1, hs⟩
+  · exact .inl ⟨.inr (.inl h1), hs⟩
+  · exact .inl ⟨.inr (.inr h1), hs⟩
   · exact .inr (.inl h1)
   · exact .inr (.inr h1)
 
@@ -534,32 +584,51 @@ theorem addrLower_ops {tabs : Tables} {u w : Value} (h : addrLower tabs u w = tr
   obtain ⟨hu, hw, -⟩ := addrLower_cases h
   rw [hu, hw]; decide
 
+/-- A lowered `Zero` and the `Zero` it lowers: no `Phi`s; the `Zero` is a root, the lowered one
+is not (`LoweredZero` has no memory type in the op table). -/
+theorem zeroLower_ops {u w : Value} (h : zeroLower u w = true) :
+    u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot u.op = true ∧ isRoot w.op = false := by
+  obtain ⟨hu, hw, -⟩ := zeroLower_cases h
+  rw [hu]; rcases hw with hw | hw <;> rw [hw] <;> decide
+
 /-- Corresponding atoms are both `Phi`s or neither. -/
 theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     w.op = .Phi ↔ u.op = .Phi := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
       rw [h1, h2] <;> decide
   · obtain ⟨h1, h2, -⟩ := memLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
+  · obtain ⟨h1, h2, -⟩ := zeroLower_ops h
+    exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := addrLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := pbLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
 
-/-- Corresponding atoms are both roots or neither. -/
+/-- Corresponding atoms are both roots or neither, except a lowered `Zero` (`zeroLower`), which is
+not a root where the `Zero` is. -/
 theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
-    isRoot w.op = isRoot u.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
-  · rw [h]
-  · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
+    isRoot w.op = isRoot u.op ∨ zeroLower u w = true := by
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h
+  · exact .inl (by rw [h])
+  · left
+    rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
       rw [h1, h2] <;> decide
-  · exact (memLower_ops h).2.2
-  · exact (addrLower_ops h).2.2
-  · exact (pbLower_ops h).2.2
+  · exact .inl (memLower_ops h).2.2
+  · exact .inr h
+  · exact .inl (addrLower_ops h).2.2
+  · exact .inl (pbLower_ops h).2.2
+
+/-- An atom of `g` that is a root corresponds to a root of `f`. -/
+theorem atomPair_root {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
+    (hr : isRoot w.op = true) : isRoot u.op = true := by
+  rcases atomPair_isRoot h with h' | h'
+  · rw [← h']; exact hr
+  · exact (zeroLower_ops h').2.2.1
 
 theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
   unfold Ctx.makeL; split <;> rfl
@@ -675,8 +744,18 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     have := hargs i hi
     rwa [getElem!_pos u.args i hi, getElem!_pos w.args i hi'] at this
   generalize hty' : (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
-  rcases hk with ⟨hop, hai, hax⟩ | hm
-  case inr =>
+  rcases hk with ⟨hop, hai, hax⟩ | hm | hz
+  case inr.inr =>
+    -- a lowered `Zero`
+    obtain ⟨hu, hw, hai⟩ := zeroLower_cases hz
+    have hwst : stSize w.op = none := by rcases hw with h | h <;> rw [h] <;> rfl
+    have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
+      refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
+        have := hrel i a a' ha ha'
+        rwa [stArg_none hwst] at this
+    rw [evalOpL_generic _ _ _ _ _ _ hgen]
+    exact Res.Rel.bind (zero_lower_eval hu hw hai hlist) fun x y hxy => .ok (rty_le hl ty hxy)
+  case inr.inl =>
     -- a lowered store
     obtain ⟨-, -, hu, n, hst, hfit⟩ := memLower_cases hm
     rw [hgl, evalOpL_generic _ _ _ _ _ _ hgen]
