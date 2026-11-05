@@ -81,14 +81,14 @@ theorem ldVal_mono (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64)
   | nil =>
   cases h2 with
   | mem hm =>
-    have hp : movPtr tabs ai ax a = none ∨ movPtr tabs ai ax a = movPtr tabs ai ax a' := by
+    have hp : symPtr tabs ai ax a = none ∨ symPtr tabs ai ax a = symPtr tabs ai ax a' := by
       cases ax with
       | some _ => exact .inr rfl
       | none => cases h1 <;> first | exact .inr rfl | exact .inl rfl
     rcases hp with he | he
     · simp only [ldVal, he, Option.elim]; exact .poison _
     · simp only [ldVal, he]
-      cases movPtr tabs ai ax a' with
+      cases symPtr tabs ai ax a' with
       | none => exact .poison _
       | some p => exact loadN_mono hm ty n s p
   | _ => first | exact .poison _ | exact Sem.Refines.refl _
@@ -178,27 +178,16 @@ theorem denL_congr {low : Bool} {D : ID → Option Value} {tabs : Tables} {C : I
 
 /-! ## Terms in `runL` frames -/
 
-/-- `Sem.symAddr` without a frame variable aux does not read the frame (`movPtr`). -/
-theorem symAddr_eq {ctx : Ctx} {v : Value} {a : Val} (hn : auxIsName ctx.tabs v.aux = false) :
-    symAddr ctx v a = movPtr ctx.tabs v.auxInt v.aux a := by
-  unfold symAddr movPtr
-  cases hax : v.aux with
-  | none => rfl
-  | some n =>
-    unfold auxIsName at hn
-    rw [hax] at hn
-    simp only [Option.bind_some] at hn
-    dsimp only
-    cases h : ctx.tabs.aux? n with
-    | none => rfl
-    | some d =>
-      rw [h] at hn
-      rcases d with ⟨fmt, kind⟩
-      cases kind <;> simp_all
+/-- `Sem.symAddr` in activation 0 is `symPtr`. -/
+theorem symAddr_ld {ctx : Ctx} {v : Value} {a : Val} (hact : ctx.act = 0) :
+    symAddr ctx v a = symPtr ctx.tabs v.auxInt v.aux a := by
+  unfold symAddr symPtr
+  rw [hact]
+  rfl
 
-/-- `arm64Op` of `MOVDaddr` without a frame variable aux is `movAddr`. -/
+/-- `arm64Op` of `MOVDaddr` in activation 0 is `movAddr`. -/
 theorem arm64Op_movAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
-    {ty : Ty} (hop : v.op = .ARM64MOVDaddr) (hn : auxIsName ctx.tabs v.aux = false) :
+    {ty : Ty} (hop : v.op = .ARM64MOVDaddr) (hact : ctx.act = 0) :
     arm64Op false env ctx fr v argv ty = .ok (movAddr ctx.tabs v.auxInt v.aux argv) := by
   have h0 : nilFaults false ctx v argv = none := rfl
   unfold arm64Op
@@ -211,7 +200,7 @@ theorem arm64Op_movAddr {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv :
   | nil => rfl
   | cons a l =>
     cases l with
-    | nil => dsimp only; rw [symAddr_eq hn]
+    | nil => dsimp only; rw [symAddr_ld hact]
     | cons => rfl
 
 /-- `Sem.symAddr` with a frame variable aux: the variable's frame block at the offset (the base is
@@ -261,12 +250,12 @@ theorem evalOpL_movDaddr_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ar
   dsimp only
   split <;> exact ⟨_, rfl⟩
 
-/-- An integer load without a frame variable aux evaluates to `ldVal`. -/
+/-- An integer load evaluates to `ldVal` in activation 0. -/
 theorem arm64Op_ld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
-    {p : Nat × Bool} (hl : ldOp? v.op = some p) (hn : auxIsName ctx.tabs v.aux = false) :
+    {p : Nat × Bool} (hl : ldOp? v.op = some p) (hact : ctx.act = 0) :
     evalOpL false env ctx fr v argv ty = .ok (ldVal ctx.tabs p.1 p.2 ty v.auxInt v.aux argv) := by
   have h0 : nilFaults false ctx v argv = none := rfl
-  have hs := fun a => symAddr_eq (ctx := ctx) (v := v) (a := a) hn
+  have hs := fun a => symAddr_ld (ctx := ctx) (v := v) (a := a) hact
   rcases ldOp?_mem hl with h | h | h | h | h | h | h <;> rw [h] at hl <;> cases hl <;>
   · unfold evalOpL
     rw [h, if_neg (by decide)]
@@ -294,10 +283,11 @@ theorem arm64Op_ldar {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Li
     rw [h]
     rfl
 
-/-- A term value evaluates by `opValL` (`Sem.evalOpL`: Phase 1's `evalOp` of a generic term
-op, `arm64Op` of `MOVDaddr` and of an integer load, `Arm64.evalPure` of an `armTerm` op). -/
+/-- A term value evaluates by `opValL` in activation 0 (`Sem.evalOpL`: Phase 1's `evalOp` of a
+generic term op, `arm64Op` of `MOVDaddr` and of an integer load, `Arm64.evalPure` of an `armTerm`
+op). -/
 theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
-    {ty : Ty} (ht : termVL ctx.tabs v = true) :
+    {ty : Ty} (ht : termVL ctx.tabs v = true) (hact : ctx.act = 0) :
     evalOpL false env ctx fr v argv ty = .ok (opValL ctx.tabs v.op ty v.auxInt v.aux argv) := by
   unfold termVL at ht
   by_cases hg : v.op.generic = true
@@ -307,18 +297,16 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
     simp only [opValL, hg, ite_true]
   · simp only [hg, Bool.false_eq_true, ite_false] at ht
     by_cases hm : v.op = .ARM64MOVDaddr
-    · simp only [hm, beq_self_eq_true, ite_true, Bool.not_eq_true'] at ht
-      have hg' : Op.ARM64MOVDaddr.generic = false := by rw [← hm]; simpa using hg
+    · have hg' : Op.ARM64MOVDaddr.generic = false := by rw [← hm]; simpa using hg
       have : evalOpL false env ctx fr v argv ty = arm64Op false env ctx fr v argv ty := by
         unfold evalOpL; rw [hm]; simp only [hg', Bool.false_eq_true, ite_false]
-      rw [this, arm64Op_movAddr hm ht]
+      rw [this, arm64Op_movAddr hm hact]
       simp only [opValL, hm, hg', Bool.false_eq_true, ite_false, beq_self_eq_true, ite_true]
     · have hm' : (v.op == .ARM64MOVDaddr) = false := by simpa using hm
       simp only [hm', Bool.false_eq_true, ite_false] at ht
       cases hl : ldOp? v.op with
       | some p =>
-        simp only [hl, Option.isSome_some, ite_true, Bool.not_eq_true'] at ht
-        rw [arm64Op_ld hl ht]
+        rw [arm64Op_ld hl hact]
         simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl]
       | none =>
       simp only [hl, Option.isSome_none, Bool.false_eq_true, ite_false] at ht

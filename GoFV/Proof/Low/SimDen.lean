@@ -252,24 +252,25 @@ end
 
 /-! ## Term values of a lowered frame -/
 
-/-- A term value evaluates by `opValL` at its shape, shaped (`evalOpL_termVL`). -/
+/-- A term value evaluates by `opValL` at its shape, shaped (`evalOpL_termVL`, activation 0). -/
 theorem evalValueL_termL {low : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
-    (ht : termVL ctx.tabs v = true) (h : evalValueL ⟨low, false⟩ env ctx fr v = .ok y) :
+    (ht : termVL ctx.tabs v = true) (hact : ctx.act = 0)
+    (h : evalValueL ⟨low, false⟩ env ctx fr v = .ok y) :
     y = rty low (ctx.tys[v.id]?.getD .other) (opValL ctx.tabs v.op (ctx.tys[v.id]?.getD .other)
       v.auxInt v.aux (v.args.toList.map (rv fr))) := by
   rw [evalValueL_of_regs (regsL_of_ok h)] at h
   change ((evalOpL false env ctx fr v _ _).bind _) = _ at h
-  rw [evalOpL_termVL ht] at h
+  rw [evalOpL_termVL ht hact] at h
   cases h; rfl
 
 theorem evalValueL_termL_eq {low : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
-    (ht : termVL ctx.tabs v = true) (hreg : ∀ a ∈ v.args, Reg fr a) :
+    (ht : termVL ctx.tabs v = true) (hact : ctx.act = 0) (hreg : ∀ a ∈ v.args, Reg fr a) :
     evalValueL ⟨low, false⟩ env ctx fr v = .ok (rty low (ctx.tys[v.id]?.getD .other)
       (opValL ctx.tabs v.op (ctx.tys[v.id]?.getD .other) v.auxInt v.aux
         (v.args.toList.map (rv fr)))) := by
   rw [evalValueL_of_regs hreg]
   change ((evalOpL false env ctx fr v _ _).bind _) = _
-  rw [evalOpL_termVL ht]; rfl
+  rw [evalOpL_termVL ht hact]; rfl
 
 /-! ## Frame addresses in registers -/
 
@@ -365,13 +366,13 @@ private theorem vals_exist : ∃ ρ ρ' : ID → Val, ValRef ρ ρ' ∧ TypedL l
       simp only [ρ', h1, h3, false_and, and_self, ite_true, ite_false]
       exact rty_idem _ _ _
 
-/-- **`ArgTermRefL` on registers**, the source's frame addresses those of activation `act`. -/
-theorem argTermRefL_apply {act : Nat} (hfr : RegsFrame tabs act D FS)
+/-- **`ArgTermRefL` on registers**, the source's frame addresses those of activation 0. -/
+theorem argTermRefL_apply (hfr : RegsFrame tabs 0 D FS)
     {o : Option (Int64 × Option AuxRef)} {x y : ID}
     (hT : ArgTermRefL o lowS D tabs x lowT E tabs y) (hxS : VS x) (hyT : VT y) :
-    ArgRel tabs act o (rv FS x) (rv FT y) := by
+    ArgRel tabs 0 o (rv FS x) (rv FT y) := by
   obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', hρp⟩ := vals_exist hl hS hG hrel htyS htyT hsh
-  have hF : FrameVals tabs act D ρ := fun a l n hl' hop hax => by
+  have hF : FrameVals tabs 0 D ρ := fun a l n hl' hop hax => by
     by_cases h : VS a ∧ ¬ IsTermL tabs D a
     · rw [hρ a h.1 h.2]
       obtain ⟨z, hz⟩ := (hS a h.1).1
@@ -381,25 +382,34 @@ theorem argTermRefL_apply {act : Nat} (hfr : RegsFrame tabs act D FS)
   obtain ⟨N, hN⟩ := (hS x hxS).2 ρ hρ
   obtain ⟨M, hM⟩ := (hG y hyT).2 ρ' hρ'
   obtain ⟨m, h⟩ := hT N
-  have h := h act ρ ρ' hval htD htE hF
+  have h := h ρ ρ' hval htD htE hF
   rw [hN N (Nat.le_refl N)] at h
   rw [← hM (max m M) (Nat.le_max_right m M)]
   exact h.trans_right (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M))
 
-/-- **The terminators on registers**, as functions of their controls' terms. -/
-theorem termStepRefL_apply {fb gb : Block}
+/-- **The terminators on registers**, as functions of their controls' terms, the source's frame
+addresses those of activation 0. -/
+theorem termStepRefL_apply (hfr : RegsFrame tabs 0 D FS) {fb gb : Block}
     (hT : ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowS D tabs ρ → TypedL lowT E tabs ρ' →
+      FrameVals tabs 0 D ρ →
       Res.Rel Next.Refines (stepValsL fb (fb.controls.toList.map (denL lowS D tabs ρ n)))
         (stepValsL gb (gb.controls.toList.map (denL lowT E tabs ρ' m))))
     (hxS : ∀ c ∈ fb.controls, VS c) (hyT : ∀ c ∈ gb.controls, VT c) :
     Res.Rel Next.Refines (stepTermL FS fb) (stepTermL FT gb) := by
-  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', -⟩ := vals_exist hl hS hG hrel htyS htyT hsh
+  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', hρp⟩ := vals_exist hl hS hG hrel htyS htyT hsh
+  have hF : FrameVals tabs 0 D ρ := fun a l n hl' hop hax => by
+    by_cases h : VS a ∧ ¬ IsTermL tabs D a
+    · rw [hρ a h.1 h.2]
+      obtain ⟨z, hz⟩ := (hS a h.1).1
+      rw [rv_of hz]
+      exact hfr a l n z hl' hop hax hz
+    · rw [hρp a h]; exact .inl rfl
   obtain ⟨N, hN⟩ := hS.list hρ (l := fb.controls.toList)
     fun a ha => hxS a (Array.mem_toList_iff.1 ha)
   obtain ⟨M, hM⟩ := hG.list hρ' (l := gb.controls.toList)
     fun a ha => hyT a (Array.mem_toList_iff.1 ha)
   obtain ⟨m, h⟩ := hT N
-  have h := h ρ ρ' hval htD htE
+  have h := h ρ ρ' hval htD htE hF
   rw [hN N (Nat.le_refl N)] at h
   have h2 := Res.Rel.trans_next h (stepValsL_mono gb (RefinesList.map _ _
     (fun c => denL_fuel_mono lowT E tabs ρ' m (max m M) c (Nat.le_max_left m M)) gb.controls.toList))

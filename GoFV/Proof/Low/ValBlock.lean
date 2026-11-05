@@ -248,12 +248,13 @@ theorem bstateL_cons (f : Func) (B : BMapL) (b b' : ID) (st : BStateL) :
 
 /-- The replayed terminators refine the input's: for every block of `f` whose controls are in
 `C₀`, its replayed terminator `st` (swapped only with two successors) has its controls in `C`,
-and as a function of its controls' lowered denotations in `M` it refines the input's in `D₀`. -/
+and as a function of its controls' lowered denotations in `M` it refines the input's in `D₀`,
+the valuation holding the frame addresses of activation 0 (`FrameVals`). -/
 def BInvL (tabs : Tables) (f : Func) (D₀ : ID → Option Value) (C₀ : ID → Prop) (M : Defs)
     (C : ID → Prop) (B : BMapL) : Prop :=
   ∀ b fb st, f.block? b = some fb → (∀ c ∈ fb.controls, C₀ c) → bstateL f B b = some st →
     (st.swapped = true → fb.succs.size = 2) ∧ (∀ c ∈ st.ctrls, C c) ∧
-    ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ →
+    ∀ n, ∃ m, ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ →
       Res.Rel Next.Refines (stepValsL fb (fb.controls.toList.map (denL true D₀ tabs ρ n)))
         (stepValsL (stBlockL fb st) (st.ctrls.toList.map (denL true M.get? tabs ρ m)))
 
@@ -262,26 +263,28 @@ theorem BInvL.init (tabs : Tables) (f : Func) (C₀ : ID → Prop) :
   intro b fb st hfb hc hst
   simp only [bstateL, List.lookup_nil, hfb, Option.map_some, Option.some.injEq] at hst
   subst hst
-  refine ⟨fun h => (by cases h), hc, fun n => ⟨n, fun ρ _ => ?_⟩⟩
+  refine ⟨fun h => (by cases h), hc, fun n => ⟨n, fun ρ _ _ => ?_⟩⟩
   dsimp only
   rw [stBlockL_init]
   exact stepValsL_mono rfl rfl rfl rfl (RefinesList.refl _)
 
-/-- A step `M → M'` that refines the denotations of `C ⊆ C'` keeps `BInvL`. -/
+/-- A step `M → M'` that refines the denotations of `C ⊆ C'` (the valuation holding `D₀`'s frame
+addresses of activation 0) keeps `BInvL`. -/
 theorem BInvL.mono {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
     (hsub : ∀ y, C y → C' y) (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
-    {g : Nat → Nat} (hstep : ∀ ρ, TypedL true M.get? tabs ρ → ∀ n y, C y →
+    {g : Nat → Nat} (hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
       Sem.Refines (denL true M.get? tabs ρ n y) (denL true M'.get? tabs ρ (g n) y)) :
     BInvL tabs f D₀ C₀ M' C' B := by
   intro b fb st hfb hc hst
   obtain ⟨h1, h2, h3⟩ := h b fb st hfb hc hst
   refine ⟨h1, fun c hc' => hsub c (h2 c hc'), fun n => ?_⟩
   obtain ⟨m, hm⟩ := h3 n
-  refine ⟨g m, fun ρ hρ => Res.Rel.trans_next (hm ρ hρ) (stepValsL_mono rfl rfl rfl rfl ?_)⟩
+  refine ⟨g m, fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF)
+    (stepValsL_mono rfl rfl rfl rfl ?_)⟩
   refine refinesList_idx (by simp) fun j hj1 hj2 => ?_
   simp only [Array.getElem_toList]
-  exact hstep ρ (hty ρ hρ) m _ (h2 _ (Array.getElem_mem _))
+  exact hstep ρ (hty ρ hρ) hF m _ (h2 _ (Array.getElem_mem _))
 
 /-- Retarget the replayed terminator of `b` to `st'` when it refines `st`'s. -/
 theorem BInvL.retarget {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
@@ -306,7 +309,7 @@ theorem BInvL.retarget {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {
     refine ⟨n1, n2, fun n => ?_⟩
     obtain ⟨m, hm⟩ := h3 n
     obtain ⟨m', hm'⟩ := n3 m
-    exact ⟨m', fun ρ hρ => Res.Rel.trans_next (hm ρ hρ) (hm' ρ (hty ρ hρ))⟩
+    exact ⟨m', fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF) (hm' ρ (hty ρ hρ))⟩
   · simp only [hb, ite_false] at hst'
     exact h b' fb st'' hfb hc hst'
 

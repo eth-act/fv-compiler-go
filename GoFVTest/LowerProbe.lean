@@ -142,7 +142,10 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
             else match atomDef tabs f M v defs.toList with
               | some (u, none) => M := M.put v u
               | some (u, some s) => M := (M.put s.id s).put v u
-              | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
+              | none =>
+                match frameFold tabs f M v defs.toList with
+                | some u => M := M.put v u
+                | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
     | .copyArg v i src =>
       match M.get? v with
       | none => return "copyArg missing"

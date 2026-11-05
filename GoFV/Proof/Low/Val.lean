@@ -29,9 +29,9 @@ open GoFV.Proof.Pass.Rewrite (LM Marked listedMarks_sound listedDefs_of_marked c
 
 /-! ## `atomsOKL`, `liveOKL`, `finalOKL` -/
 
-theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hax : u.aux = m.aux) :
-    termVL tabs u = termVL tabs m := by
-  unfold termVL; rw [hop, hax]
+theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hai : u.auxInt = m.auxInt)
+    (hax : u.aux = m.aux) : termVL tabs u = termVL tabs m := by
+  unfold termVL; rw [hop, hai, hax]
 
 theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = true) :
     f.blocks = g.blocks ∧ ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ fb, f.block? b = some fb ∧
@@ -164,7 +164,7 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     obtain ⟨m, u, hm, hu, hop, hty, hai, hax, hsz, hargs⟩ := hvals x hxv (.inl hr)
     have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
     have hcl := (closedOK_facts hcg b hb gb hgb).2 x hxv u hu
-    have htt := termVL_congr (tabs := tabs) hop hax
+    have htt := termVL_congr (tabs := tabs) hop hai hax
     by_cases ht : termVL tabs m = true
     · rw [denT_succ hm ht, denT_succ hL (htt ▸ ht), hop, hty, hai, hax]
       apply retypeL_mono; apply opValL_mono_term ht
@@ -375,10 +375,10 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)
       intro n
       obtain ⟨k, hk⟩ := (hrest i hi').2 n
-      refine ⟨k, fun act ρ ρ' hρ hT hT' hF => ?_⟩
+      refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
       rw [hgl] at hT'
       rw [hgl, getElem!_pos u.args i hi]
-      have h1 := hk act (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+      have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
       rw [getElem!_pos m.args i (by omega),
         stArg_congr (u := u') (i := i) hop.symm hai.symm hax.symm] at h1
       exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
@@ -404,11 +404,11 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           · right; rw [getElem!_pos fb.succs 0 hj]
           · left; rw [getElem!_pos fb.succs 1 hj]
       · obtain ⟨m, hm⟩ := hrel n
-        refine ⟨m, fun ρ ρ' hρ hT hT' => ?_⟩
+        refine ⟨m, fun ρ ρ' hρ hT hT' hF => ?_⟩
         rw [hgl] at hT' ⊢
         refine Res.Rel.trans_next (stepValsL_mono rfl rfl rfl rfl
           (GoFV.Proof.AtomSim.refinesList_map fun c _ => bridge_den hsh hT n c)) ?_
-        refine Res.Rel.trans_next (hm (midVal tabs f ρ) (mid_typed tabs f ρ))
+        refine Res.Rel.trans_next (hm (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF))
           (stepValsL_mono (b := stBlockL fb st) hk hai hsu hid.symm ?_)
         refine refinesList_idx (by simp [hsz]) fun k h1 h2 => ?_
         simp only [Array.getElem_toList]

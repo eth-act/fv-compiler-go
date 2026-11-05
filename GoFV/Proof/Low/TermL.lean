@@ -13,9 +13,10 @@ registers, `Val.retypeL`, at the lowered shapes, `Sem.tyOfL`).
 
 `ArgTermRefL o lowD D x lowE E y`: for every fuel on the left there is one on the right such that
 for valuations `ρ ⊑ ρ'` whose atom values are fixed by `rty` at their shapes (`TypedL`) and whose
-frame addresses (`LocalAddr {n}` atoms of `D`) hold `n`'s address in some activation `act`
-(`FrameVals`), `denL lowD D … x` and `denL lowE E … y` are related by `ArgRel act o`: refinement,
-or (`o = some (k, ax)`, the address of an arm64 store lowering a `Store`, `stArg`) `AddrRef act ax
+frame addresses (`LocalAddr {n}` atoms of `D`) hold `n`'s address in activation 0 (`FrameVals`;
+`runL`'s activation, where the integer loads of a frame variable read, `ldVal`), `denL lowD D … x`
+and `denL lowE E … y` are related by `ArgRel 0 o`: refinement,
+or (`o = some (k, ax)`, the address of an arm64 store lowering a `Store`, `stArg`) `AddrRef 0 ax
 k`: the store's address on the second (`addrAt`, `Sem.symAddr`: a global symbol's or frame
 variable's at the offset, or the base moved by it) is, as an address, the pointer word the first
 is. `AtomArgsRefL` and `TermStepRefL` are the premises of the atom simulation
@@ -128,12 +129,14 @@ def FrameVals (tabs : Tables) (act : Nat) (D : ID → Option Value) (ρ : ID →
     ρ a = .poison ∨ (ρ a = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)
 
 /-- `y` in `E` (mode `lowE`) is related by `ArgRel o` to `x` in `D` (mode `lowD`) as a term over
-the atoms, in every activation whose frame addresses the valuation of `D` holds (`FrameVals`). -/
+the atoms, the valuation of `D` holding its frame addresses in activation 0 (`FrameVals`; `runL`
+runs a function in activation 0, `Ctx.makeL`, where the integer loads of a frame variable read,
+`ldVal`). -/
 def ArgTermRefL (o : Option (Int64 × Option AuxRef)) (lowD : Bool) (D : ID → Option Value)
     (tabs : Tables) (x : ID) (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) :
     Prop :=
-  ∀ n, ∃ m, ∀ act ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
-    FrameVals tabs act D ρ → ArgRel tabs act o (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
+  ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs 0 D ρ → ArgRel tabs 0 o (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
 
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
@@ -220,13 +223,14 @@ def stepValsL (b : Block) (cs : List Val) : Res Next :=
       | none => .stuck s!"b{b.id}: {k.name} on poison or an ill-typed control"
   else stepVals b cs
 
-/-- The terminator of every block of `g`, as a function of its controls' terms over the atoms,
-refines that of `f`'s block, and the successors of `f`'s block are successors of `g`'s. -/
+/-- The terminator of every block of `g`, as a function of its controls' terms over the atoms
+(`f`'s frame addresses those of activation 0, `FrameVals`), refines that of `f`'s block, and the
+successors of `f`'s block are successors of `g`'s. -/
 def TermStepRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
     (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
     ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL f.lowered f.value? tabs ρ →
-      TypedL g.lowered (listedDefs g) tabs ρ' →
+      TypedL g.lowered (listedDefs g) tabs ρ' → FrameVals tabs 0 f.value? ρ →
       Res.Rel Next.Refines (stepValsL fb (fb.controls.toList.map (denL f.lowered f.value? tabs ρ n)))
         (stepValsL gb (gb.controls.toList.map (denL g.lowered (listedDefs g) tabs ρ' m)))
 

@@ -42,7 +42,7 @@ theorem vt_placedL : ∀ x, (V1 g b gb x ∨ x ∈ og.toList) → ∃ w, Placed 
 theorem term_simL {frS frT : Frame} {i : Nat} (R : BRel tabs f g frS frT b i) {FS FT : Frame}
     (E : EndRel tabs f g b fb gb of og FS FT) :
     Res.Rel Next.Refines (stepTermL FS fb) (stepTermL FT gb) :=
-  termStepRefL_regs H E.dS E.dT (vt_placedL H B) E.rel E.tyS E.tyT B.bmT B.hfb B.hgb
+  termStepRefL_regs H E.dS E.dT (vt_placedL H B) E.rel E.tyS E.tyT E.frames B.bmT B.hfb B.hgb
     (fun _ hc => (ctrl_in H.wf H.cf B.bmS B.hfb R.treeS B.mS hc).1)
     (fun _ hc => (ctrl_in H.wg H.cg B.bmT B.hgb R.treeT B.mT hc).1)
 

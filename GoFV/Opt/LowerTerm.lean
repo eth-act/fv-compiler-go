@@ -9,11 +9,12 @@ arguments' values, `GoFV.Proof.Low.denL`) rather than atoms (`GoFV.Proof.Low.Ato
 * a generic op: Phase 1's `RewriteCheck.termOp`;
 * an arm64 op `runL` evaluates without the activation (`Sem.evalOpL`: not `actOp`, not a root)
   whose `Arm64.evalPure` is proven monotone (`armTerm`, `GoFV.Proof.Low.armPure_mono`);
-* `MOVDaddr` without a frame variable aux (`auxIsName`): its value is its base moved by its
-  offset, or a global symbol's address at its offset, both from the tables alone
-  (`Sem.symAddr`);
-* an integer load `MOV{B,BU,H,HU,W,WU,D}load` without a frame variable aux: the memory argument
-  read at that address (`GoFV.Proof.Low.ldVal`), as Phase 1's `Load` is a term;
+* `MOVDaddr` unless it is a frame variable's address at offset 0 (`auxIsName`, the `LocalAddr`
+  it lowers, an atom): its value is its base moved by its offset, or a global symbol's or frame
+  variable's address at its offset (`Sem.symAddr`; a frame variable's address is the
+  activation's, and `runL` runs a function in activation 0, `Sem.Ctx.makeL`);
+* an integer load `MOV{B,BU,H,HU,W,WU,D}load`: the memory argument read at its address
+  (`GoFV.Proof.Low.ldVal`, activation 0 likewise), as Phase 1's `Load` is a term;
 * an acquiring load `LDAR`/`LDARB`/`LDARW` (`ldarOp`): `Sem.arm64Op` runs it in non-faulting mode
   as `Arm64.evalPure`, Phase 1's `atomicLoad` (the `AtomicLoad*` it lowers are terms).
 

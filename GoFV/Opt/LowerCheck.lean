@@ -9,8 +9,8 @@ log of `applyRewrite` with a lowering rule table is replayed on a map of definit
 input `f`, and the output `g` must have the replayed definitions. The differences:
 
 * terms are the values `termVL` says (generic term ops, the monotone pure arm64 ops, `MOVDaddr`
-  and the integer loads `MOV{B,BU,H,HU,W,WU,D}load` without a frame variable), shaped by their
-  lowered shapes (`shpL`);
+  without a frame variable and the integer loads `MOV{B,BU,H,HU,W,WU,D}load`, of a frame variable
+  in activation 0), shaped by their lowered shapes (`shpL`);
 * a rule event is checked as an instance of one commutation choice of the rule (`ruleOKL`: the
   swapped pattern `Rule.swapC` matched argument for argument, `matchPatL`), for the obligation
   `ArmRule.Sound`; result nodes take the type `nodeTyL` gives (Go's `types.TypeFlags` is the
@@ -26,7 +26,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   arm64 store (`memLower`), or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event
   lowering a store or a frame address, or folding an `ADDconst` offset (`stFold`) or a global
   symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, is replayed as its
-  new definitions (`atomDef`);
+  new definitions (`atomDef`); a rule event folding a lowered frame address into an integer load
+  (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/
@@ -152,7 +153,7 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
     Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && Pat.argsOKL e.ty [] r.pat &&
-    resFitsL (e.ty []) r.result && Pat.addrOKL e.aux e.auxInt [] r.pat && leavesOK M I [] r.pat &&
+    resFitsL (e.ty []) r.result && Pat.addrOKL e.ty e.aux e.auxInt [] r.pat && leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
 /-- The rule event `(v, r, defs)` is a sound instance of one commutation choice of `r` on `M`
@@ -237,6 +238,33 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
         addrLower tabs x u && u.args == #[s.id] && s.id != v && (M.get? s.id).isNone &&
         termVL tabs s && s.args.all x.args.contains then some (u, some s)
     else none
+  | _, _ => none
+
+/-- A rule event at the term `x` at `v` replayed as the term `u` that folds `x`'s address
+argument, the lowered frame address `MOVDaddr {sym} b` of a `LocalAddr {sym}` of `f` (an atom,
+offset 0), into its aux, with `x`'s type and offset (small and non-negative, `offOK`), `u` with
+the `MOVDaddr`'s aux and `b` for the address:
+* an integer load without aux (`(MOV…load [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) &&
+  canMergeSym(sym1,sym2) … => (MOV…load [off1+off2] {mergeSym(sym1,sym2)} ptr mem)`,
+  `ARM64.rules:832-856`), the same op;
+* an `ADDconst` at a word shape (`(ADDconst [off1] (MOVDaddr [off2] {sym} ptr)) && … =>
+  (MOVDaddr [int32(off1)+off2] {sym} ptr)`, `650`), a `MOVDaddr` term. -/
+def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
+    Option Value :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    match M.get? x.args[0]! with
+    | some m =>
+      if x.id == v && u.id == v && u.type == x.type && u.auxInt == x.auxInt && offOK x.auxInt &&
+          termVL tabs x && termVL tabs u && m.op == .ARM64MOVDaddr && !termVL tabs m &&
+          m.args.size == 1 && u.aux == m.aux &&
+          (f.value? x.args[0]!).any (fun l => l.op == .LocalAddr && l.aux == m.aux) &&
+          ((ldOp? x.op).isSome && u.op == x.op && x.aux == none && x.args.size == 2 &&
+              u.args == #[m.args[0]!, x.args[1]!] ||
+            x.op == .ARM64ADDconst && u.op == .ARM64MOVDaddr && x.args.size == 1 &&
+              wordShape (shpL tabs x.type) && u.args == #[m.args[0]!])
+      then some u else none
+    | none => none
   | _, _ => none
 
 /-! ## Copies -/
@@ -359,7 +387,10 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
           else match atomDef tabs f M v defs.toList with
             | some (u, none) => replayL tabs t f (M.put v u) B evs
             | some (u, some s) => replayL tabs t f ((M.put s.id s).put v u) B evs
-            | none => none
+            | none =>
+              match frameFold tabs f M v defs.toList with
+              | some u => replayL tabs t f (M.put v u) B evs
+              | none => none
   | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none

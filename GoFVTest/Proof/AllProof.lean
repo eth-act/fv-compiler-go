@@ -693,6 +693,7 @@ import GoFV.Proof.Witness.LowerAtomic
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerLoadFold
 import GoFV.Proof.Witness.LowerLoadStore
+import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerStoreFold

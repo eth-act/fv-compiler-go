@@ -298,7 +298,8 @@ theorem src_evalL {env : Env} (htree : ((make f).depthOf b).isSome) {frP G : Fra
     · exact .inr h
   · obtain ⟨v', y, hv', hy, hevy⟩ := e4 x hx
     rw [hv] at hv'; cases hv'
-    have hy' := evalValueL_termL (ctx := Ctx.makeL tabs f) (by rw [makeL_tabs]; exact hop) hevy
+    have hy' := evalValueL_termL (ctx := Ctx.makeL tabs f) (by rw [makeL_tabs]; exact hop)
+      (makeL_act tabs f) hevy
     rw [makeL_tabs, (hown x hx v hv).1, tysL_of_value hv] at hy'
     rw [hy, hy']; rfl
 
