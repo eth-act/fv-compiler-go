@@ -118,7 +118,8 @@ theorem symPtr_movFold (tabs : Tables) {T0 T1 : Ty} {k1 k2 : Int64} (hk1 : offOK
       · left; rfl
     · rename_i hd
       simp only [Option.elim, hd, imm_fold hk1 hk2]
-      simp only [PtrOps.ptrRes, frame_inWindow tabs 0 a (show _ < 2 ^ 24 by omega), ite_true]
+      simp only [PtrOps.ptrRes,
+        frame_inWindow tabs 0 a (k := BitVec.ofInt 64 k2.toInt) (by omega), ite_true]
       rcases retypeL_word_wide ⟨frameBlk tabs 0 a, BitVec.ofInt 64 k2.toInt⟩ hT1 with hw | hw <;>
         rw [hw]
       · right; left
