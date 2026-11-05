@@ -288,6 +288,19 @@ theorem makeL_f (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).f = f := by
 theorem sched_makeL (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).sched = (Ctx.make tabs f).sched := by
   unfold Ctx.makeL; split <;> rfl
 
+/-- `entryFrame` does not read `tys`: by `rfl` at an arbitrary context, so the kernel never
+unfolds a concrete `Ctx.make`. -/
+theorem entryFrame_tys (env : Env) (c : Ctx) (t : Array Ty) (args : List Val) (mem : Mem) :
+    entryFrame env { c with tys := t } args mem = entryFrame env c args mem := rfl
+
+/-- `entryFrame` under `Ctx.makeL` is `Ctx.make`'s. Proved by `split <;> rfl` in three pass
+modules, each check took the kernel ~41 s (the `rfl` unfolded `Ctx.make tabs f`). -/
+theorem entryFrame_makeL (env : Env) (tabs : Tables) (f : Func) (args : List Val) (mem : Mem) :
+    entryFrame env (Ctx.makeL tabs f) args mem = entryFrame env (Ctx.make tabs f) args mem := by
+  unfold Ctx.makeL; split
+  · exact entryFrame_tys ..
+  · rfl
+
 theorem sched_of_blockL {tabs : Tables} {f : Func} {bid : ID} {b : Block}
     (hb : f.block? bid = some b) : ((Ctx.makeL tabs f).sched[bid]?).join = schedule f b := by
   rw [sched_makeL]; exact sched_of_block hb

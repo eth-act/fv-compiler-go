@@ -343,7 +343,7 @@ theorem grOK_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
       exact ⟨v, y', hv, hy', hev⟩
     · exfalso
       rw [hsplit] at ond otopo
-      obtain ⟨-, -, e3, -⟩ := evalAll_spec (List.nodup_append.1 ond).1 (topoRem_prefix otopo)
+      obtain ⟨-, -, e3, -⟩ := evalAll_spec (List.nodup_append.1 ond).1 (by exact topoRem_prefix otopo)
         ((setPhis_size ps frS.regs).trans hA.sizeS) hpre
       rw [e3 a hap] at hy
       change (setPhis ps frS.regs)[a]? = some (some y) at hy

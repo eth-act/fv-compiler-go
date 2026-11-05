@@ -1,6 +1,7 @@
 import GoFV.Proof.RefineSched
 import GoFV.Proof.SimL
 import GoFV.Proof.Pass.SchedLEval
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # `runLF` against `runL` (`runLF_cases`)
@@ -45,11 +46,12 @@ theorem arm64Op_faults (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : 
 
 theorem evalOpL_faults (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (argv : List Val)
     (ty : Ty) : FaultsOr (evalOpL true env ctx fr v argv ty) (evalOpL false env ctx fr v argv ty) := by
-  unfold evalOpL
+  rw [evalOpL_eq, evalOpL_eq]
   split
   · exact .inl rfl
   · split
-    all_goals first | exact arm64Op_faults env ctx fr v argv ty | exact .inl rfl
+    · exact arm64Op_faults env ctx fr v argv ty
+    · exact .inl rfl
 
 theorem evalValueL_faults (low : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) :
     FaultsOr (evalValueL ⟨low, true⟩ env ctx fr v) (evalValueL ⟨low, false⟩ env ctx fr v) := by

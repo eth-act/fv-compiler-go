@@ -1,6 +1,7 @@
 import GoFV.Proof.SimL
 import GoFV.Proof.Frame
 import GoFV.Proof.Eval
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # Evaluating a lowered value (`evalValueL`): locality, congruence, panics
@@ -52,8 +53,7 @@ theorem evalOpL_congr {faulting : Bool} {env : Env} {ctx ctx' : Ctx} {fr : Frame
     (hpar : ctx'.params = ctx.params) (hact : ctx'.act = ctx.act)
     (hsx : sxOf ctx'.f v' = sxOf ctx.f v) :
     evalOpL faulting env ctx' fr v' argv ty = evalOpL faulting env ctx fr v argv ty := by
-  unfold evalOpL
-  rw [hop]
+  rw [evalOpL_eq, evalOpL_eq, hop]
   split
   · exact evalOp_congr hop haux hai hid htabs hpar hact
   · obtain ⟨f, tabs, tys, sched, params, paramTys, outs, locals, act⟩ := ctx
@@ -187,16 +187,15 @@ theorem evalValueL_panic_op {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v
     | ok r => rw [ho] at h; cases h
     | stuck msg => rw [ho] at h; cases h
     | panic e' m' =>
-      unfold evalOpL at ho
+      rw [evalOpL_eq] at ho
       split at ho
       · exact .of_panicking (evalOp_panic_op ho)
       · rename_i hg
         have hg' : v.op.generic = false := by simpa using hg
         split at ho
-        all_goals first
-          | exact arm64Op_panic_op hg' ho
-          | (split at ho
-             · exact absurd ho atomicRoot_ne_panic
-             · cases ho)
+        · exact arm64Op_panic_op hg' ho
+        · split at ho
+          · exact absurd ho atomicRoot_ne_panic
+          · cases ho
 
 end GoFV.Proof

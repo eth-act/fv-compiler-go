@@ -479,7 +479,7 @@ theorem segStep (hE : env.Mono) {S T : Frame} {k j : Nat}
         have := (List.getElem?_eq_some_iff.1 hia).1; simp at this; omega
       exact ⟨i', hi'l, by rwa [List.getElem?_take_of_lt hi'l] at hia⟩
     · exact absurd haL h
-  obtain ⟨hfr', -, hout', hall⟩ := evalAll_spec hnd htopo (by rw [ext_size hszg]; rfl) hev
+  obtain ⟨hfr', -, hout', hall⟩ := evalAll_spec hnd (by exact htopo) (by rw [ext_size hszg]; rfl) hev
   obtain ⟨gv, y0, hgv, hy0, hev0⟩ := hall n hn
   change g.value? n = some gv at hgv
   -- the position of `n` in the segment

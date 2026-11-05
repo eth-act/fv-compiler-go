@@ -32,6 +32,7 @@ import GoFV.Proof.DomRel
 import GoFV.Proof.Enter
 import GoFV.Proof.Eval
 import GoFV.Proof.EvalL
+import GoFV.Proof.EvalOpLDispatch
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
 import GoFV.Proof.FrameKeep
@@ -452,6 +453,7 @@ import GoFV.Proof.Rules.AndB
 import GoFV.Proof.Rules.AndB2
 import GoFV.Proof.Rules.AndB3
 import GoFV.Proof.Rules.AndB4
+import GoFV.Proof.Rules.ArgShapeProc
 import GoFV.Proof.Rules.ArrayLoad
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.AttrCond

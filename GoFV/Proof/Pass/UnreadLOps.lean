@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.UnreadLSrc
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # elim unread autos on `runL`: the kept memory ops on related memories
@@ -412,25 +413,26 @@ theorem armP_generic {op : Op} (h : op ∈ armP) : op.generic = false ∧ isRoot
 theorem evalOpL_armA {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op ∈ armA) :
     evalOpL false env ctx fr v argv ty = arm64Op false env ctx fr v argv ty := by
-  unfold evalOpL
-  rw [ite_eq_right (by simp [armA_generic hop])]
-  split
-  all_goals first
-    | rfl
-    | (exfalso; simp only [armA, List.mem_cons, List.not_mem_nil, or_false] at hop; simp_all; done)
+  exact evalOpL_of_actOp (armA_generic hop)
+    (List.all_eq_true.1 (by decide +kernel : armA.all GoFV.Opt.LowerTerm.actOp = true) _ hop)
 
 theorem evalOpL_armP {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hop : v.op ∈ armP) :
     evalOpL false env ctx fr v argv ty = .ok (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
   obtain ⟨hg, hr⟩ := armP_generic hop
-  unfold evalOpL
-  rw [ite_eq_right (by simp [hg])]
-  split
-  all_goals first
-    | (rw [ite_eq_right (by simp [hr])]; rfl)
-    | (rename_i heq; rw [heq] at hop; exact absurd hop (by decide))
-    | (rename_i heq; unfold arm64Op; simp only [nilFaults, Bool.not_false, ite_true]
-       rw [heq]; rfl)
+  cases ha : GoFV.Opt.LowerTerm.actOp v.op
+  · rw [evalOpL_of_not_actOp hg ha, hr]; rfl
+  · -- the seven `armP` ops `evalOpL` sends to `arm64Op`, which evaluates them purely
+    have h7 := List.all_eq_true.1 (by decide +kernel : armP.all (fun o =>
+      !GoFV.Opt.LowerTerm.actOp o || decide (o ∈ [.ARM64LDAR, .ARM64LDARB, .ARM64LDARW,
+        .ARM64LoweredZero, .ARM64LoweredZeroLoop, .ARM64LoweredMove, .ARM64LoweredMoveLoop]))
+      = true) _ hop
+    rw [ha] at h7
+    simp only [Bool.not_true, Bool.false_or, decide_eq_true_eq, List.mem_cons, List.not_mem_nil,
+      or_false] at h7
+    rw [evalOpL_of_actOp hg ha]
+    unfold arm64Op
+    rcases h7 with h | h | h | h | h | h | h <;> rw [h] <;> rfl
 
 theorem evalOpL_spanchored {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
     {ty : Ty} (hop : v.op = .SPanchored) : evalOpL false env ctx fr v argv ty = .ok .poison := by

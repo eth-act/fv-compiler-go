@@ -162,6 +162,16 @@ theorem bview_updAt (x : ID) (g : Block → Block) (G : ID → Block) (y : ID)
   · exact hg _
   · rfl
 
+/-- Field equations of `modB` and `invalidateCFG`, by `rfl` at an arbitrary function: the same
+`rfl` on a concrete `removePred`/`removeSucc` result tried structure eta on the whole `Func`
+first (~1.2 s per goal). -/
+private theorem modB_valueTab (F : Func) (x : ID) (g : Block → Block) :
+    (F.modB x g).valueTab = F.valueTab := rfl
+private theorem modB_blocks (F : Func) (x : ID) (g : Block → Block) :
+    (F.modB x g).blocks = F.blocks := rfl
+private theorem invalidateCFG_valueTab (F : Func) : F.invalidateCFG.valueTab = F.valueTab := rfl
+private theorem invalidateCFG_blocks (F : Func) : F.invalidateCFG.blocks = F.blocks := rfl
+
 /-- **`removeSucc b i`**: `b`'s successors lose slot `i` (the last, `n`, moves there), the
 moved edge's predecessor entry gets back index `i`; nothing else changes. -/
 theorem removeSucc_spec (hX : XL F B) (hb : b ∈ B) (hn : n + 1 = (F.getB b).succs.size)
@@ -278,11 +288,11 @@ theorem removeSucc_spec (hX : XL F B) (hb : b ∈ B) (hn : n + 1 = (F.getB b).su
     by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
       simp only [h, ite_true, ite_false, Bool.false_eq_true, isSome_modB]
   · unfold Func.removeSucc
-    by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
-      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+    simp only [invalidateCFG_valueTab, invalidateCFG_blocks, modB_valueTab, modB_blocks]
+    split <;> simp only [modB_valueTab, modB_blocks]
   · unfold Func.removeSucc
-    by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
-      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+    simp only [invalidateCFG_valueTab, invalidateCFG_blocks, modB_valueTab, modB_blocks]
+    split <;> simp only [modB_valueTab, modB_blocks]
 
 /-- `XL` except at the predecessor slot `(c, j)` of the edge being removed: no successor points
 there, and its entry need not point back. -/
@@ -442,11 +452,11 @@ theorem removePred_spec (hX : XLx F B c j) (hc : c ∈ B) (hm : m + 1 = (F.getB 
     by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
       simp only [h, ite_true, ite_false, Bool.false_eq_true, isSome_modB]
   · unfold Func.removePred
-    by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
-      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+    simp only [invalidateCFG_valueTab, invalidateCFG_blocks, modB_valueTab, modB_blocks]
+    split <;> simp only [modB_valueTab, modB_blocks]
   · unfold Func.removePred
-    by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
-      simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+    simp only [invalidateCFG_valueTab, invalidateCFG_blocks, modB_valueTab, modB_blocks]
+    split <;> simp only [modB_valueTab, modB_blocks]
 
 theorem succIdx_lt {i n k : Nat} (hi : i ≤ n) (hk : k < n) : succIdx i n k < n + 1 := by
   unfold succIdx; split <;> omega

@@ -355,7 +355,7 @@ theorem sim_step {env : Env} (n : Nat)
           obtain ⟨b', hb', hid⟩ := S.wf.blockId bT hBm; rw [hfB] at hb'; cases hb'; exact hid
         rw [hfid, sched_of_block hfB] at ho
         obtain ⟨ond, otopo, -⟩ := schedule_topo (valuesOwn S.wf hBm hfB) hnd ho
-        obtain ⟨-, e2, -, -⟩ := evalAll_spec ond otopo (by rw [hPs, hsS]; rfl) hev
+        obtain ⟨-, e2, -, -⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hsS]; rfl) hev
         rw [e2, hPs, hsS]
       obtain ⟨hem, C, hC, hcp⟩ := S.wf.succLink bT gB ⟨hBm, hfB⟩ k e hek
       have hBg : bT ∈ g.blocks := by rw [S.gblocks]; exact hBm

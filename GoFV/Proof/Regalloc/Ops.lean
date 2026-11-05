@@ -1,4 +1,5 @@
 import GoFV.Proof.Regalloc.Match
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # Regalloc checker soundness: the ops the checker reasons about
@@ -103,6 +104,12 @@ theorem evalOpL_kop {fa : Bool} {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {v
     evalOpL fa env ctx' fr' v' argv ty = evalOpL fa env ctx fr v argv ty := by
   rw [evalOpL_kop_eq hk, evalOpL_kop_eq (hop ▸ hk), kRes_congr hop haux hai htabs hact]
 
+
+/-- A `pureArm64` op is not one `evalOpL` sends to `arm64Op` (`LowerTerm.actOp`, `evalOpL_eq`). -/
+private theorem actOp_of_pureArm64 (op : Op) (hp : pureArm64 op = true) :
+    GoFV.Opt.LowerTerm.actOp op = false := by
+  cases op <;> first | rfl | exact absurd hp (by decide)
+
 theorem evalOpL_pure {fa : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hp : pureArm64 v.op = true) :
     evalOpL fa env ctx fr v argv ty = .ok (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
@@ -110,12 +117,7 @@ theorem evalOpL_pure {fa : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value
     unfold pureArm64 at hp; revert hp; cases v.op.generic <;> simp
   have hr : isRoot v.op = false := by
     unfold pureArm64 at hp; revert hp; cases isRoot v.op <;> simp
-  unfold evalOpL
-  simp only [hg, Bool.false_eq_true, ite_false]
-  split
-  all_goals first
-    | (rename_i h; rw [h] at hp; exact absurd hp (by decide))
-    | (rename_i op _; simp only [hr]; rfl)
+  rw [evalOpL_of_not_actOp hg (actOp_of_pureArm64 _ hp), hr]; rfl
 
 theorem evalOpL_sel {fa : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} {i : Nat} (hs : selIndex v = some i) :

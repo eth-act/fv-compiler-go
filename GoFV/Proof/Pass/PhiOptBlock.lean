@@ -69,7 +69,7 @@ theorem targetRun (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID} {
   have otopo' := otopo
   rw [hsplit] at ond' otopo'
   obtain ⟨p1, p2, p3, p4⟩ := evalAll_spec (List.nodup_append.1 ond').1
-    (topoRem_append_left otopo') (by simp [hszS, hA.size]; rfl) hpre
+    (by exact topoRem_append_left otopo') (by simp [hszS, hA.size]; rfl) hpre
   have hpreS : ∀ x ∈ pre, x ∈ oS.toList := fun x hx => by rw [hsplit]; exact List.mem_append_left _ hx
   have hGsz : Gp.regs.size = f.valueTab.size := by rw [p2]; simp [hszS, hA.size]
   have hout : ∀ z, z ∉ fb.values → Gp.regs[z]? = fr.regs[z]? := fun z hz => by

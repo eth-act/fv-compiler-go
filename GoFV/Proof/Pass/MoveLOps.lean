@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.MoveLCheck
 import GoFV.Proof.Pass.CSEOp
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # Total ops (`totalOp`) under `runL`
@@ -13,29 +14,22 @@ namespace GoFV.Proof.MoveL
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof
 
+/-- `actOp` is `LowerTerm.actOp` (`evalOpL_eq`): the same 91 ops. -/
+private theorem actOp_eq_lowerActOp (op : Op) : actOp op = GoFV.Opt.LowerTerm.actOp op := by
+  cases op <;> rfl
+
 /-- `evalOpL`'s last arm, for an arm64 op outside `actOp`. -/
 theorem evalOpL_pure {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (ha : actOp v.op = false) :
     evalOpL faulting env ctx fr v argv ty =
       if isRoot v.op then atomicRoot v argv else pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
-  unfold evalOpL
-  rw [ite_eq_right (by rw [hg]; decide)]
-  split
-  all_goals first
-    | rfl
-    | (rename_i heq; rw [heq] at ha; exact absurd ha (by decide))
+  exact evalOpL_of_not_actOp hg (by rw [← actOp_eq_lowerActOp]; exact ha)
 
 /-- `evalOpL` at an `actOp` op is `arm64Op`. -/
 theorem evalOpL_act {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (ha : actOp v.op = true) :
     evalOpL faulting env ctx fr v argv ty = arm64Op faulting env ctx fr v argv ty := by
-  unfold evalOpL
-  rw [ite_eq_right (by rw [hg]; decide)]
-  generalize v.op = op at ha ⊢
-  cases op
-  all_goals first
-    | exact absurd ha (by decide)
-    | rfl
+  exact evalOpL_of_actOp hg (by rw [← actOp_eq_lowerActOp]; exact ha)
 
 /-- `arm64Op` (not faulting) at an `actTotal` op: `.ok`, independently of the value's ID. -/
 theorem arm64Op_total {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}

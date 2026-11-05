@@ -137,7 +137,7 @@ theorem enter_ok (H : Hyp tabs f g ce ce') {env : Env} (hE : env.Mono) {S T : Fr
   have hndF := H.wf.valuesNodup b fb ⟨hb, hfb⟩
   obtain ⟨ofn, oft, ofm⟩ := schedule_topo (valuesOwn H.wf hb hfb) hndF ho
   obtain ⟨pS1, -, -, -⟩ := phis_spec hndF hps
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ofn oft (by rw [pS1, hA.szS]; rfl) hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ofn (by exact oft) (by rw [pS1, hA.szS]; rfl) hev
   have hGt := typed_enter H.wf hb hfb hA.szS hA.typed hen
   obtain ⟨gb, og, psT, hgb, hsg, -, B, hentT⟩ := bh_of H (env := env) hA hfb hps ho
     (G := GS) (by rw [e1]) e3 hGt
@@ -179,7 +179,7 @@ theorem enter_panic (H : Hyp tabs f g ce ce') {env : Env} (hE : env.Mono) {S T :
   obtain ⟨pre, r, post, G, hof, hpre, hstep⟩ := evalAll_panic_split hev
   have hpren : pre.Nodup := (List.nodup_append.1 (hof ▸ ofn)).1
   have hpret : TopoRem (argsF f) pre := topoRem_prefix (hof ▸ oft)
-  obtain ⟨g1, -, g3, g4⟩ := evalAll_spec hpren hpret (by rw [pS1, hA.szS]; rfl) hpre
+  obtain ⟨g1, -, g3, g4⟩ := evalAll_spec hpren (by exact hpret) (by rw [pS1, hA.szS]; rfl) hpre
   have hpreo : ∀ x ∈ pre, x ∈ o.toList := fun x hx => by
     rw [hof]; exact List.mem_append_left _ hx
   have hGt : Typed (Ctx.make tabs f) G :=

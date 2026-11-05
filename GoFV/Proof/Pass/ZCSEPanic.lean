@@ -47,7 +47,7 @@ theorem enter_panic (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID}
   have otopo' := otopo
   rw [hsplit] at ond' otopo'
   obtain ⟨p1, p2, p3, p4⟩ := evalAll_spec (List.nodup_append.1 ond').1
-    (topoRem_append_left otopo') (by simp [hszS, hA.size]; rfl) hpre
+    (by exact topoRem_append_left otopo') (by simp [hszS, hA.size]; rfl) hpre
   have hG : Gpre = { fr with regs := Gpre.regs } := by rw [p1]
   have hszG : Gpre.regs.size = f.valueTab.size := by rw [p2, hszS, hA.size]
   have himG : Gpre.images.size = (Ctx.make tabs f).params.size := by rw [hG]; exact hA.images

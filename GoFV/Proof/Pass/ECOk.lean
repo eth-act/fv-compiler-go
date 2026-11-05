@@ -345,7 +345,7 @@ theorem enter_ok (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE : e
   obtain ⟨-, -, ogm⟩ := schedule_topo (valuesOwn H.wg hbm' hgb) hndG hsg
   obtain ⟨pS1, -, pS3, -⟩ := phis_spec hndF hps
   obtain ⟨pT1, -, -, -⟩ := phis_spec hndG hpsT
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ofn oft (by rw [pS1, hA.szS]; rfl) hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ofn (by exact oft) (by rw [pS1, hA.szS]; rfl) hev
   have hGSok : RegsOK (Ctx.make tabs f) GS :=
     regsOK_block H hbm hfb hps hA.ok (fun x hx => ((ofm x).1 hx).1) hev
   have hGSq := ecQ_enter hK H.wf hbm hfb hA.slots hen

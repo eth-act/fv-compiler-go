@@ -36,7 +36,7 @@ theorem enter_keep {ce : CheckEnv} (hwf : WF ce f) {b : ID} {blk : Block} (hb : 
   obtain ⟨frP, o, ho, hev, -, hPs, -, hkeep, -⟩ := enterBlock_spec hnd h
   rw [hid, sched_of_block hbb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
-  obtain ⟨-, -, e3, -⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  obtain ⟨-, -, e3, -⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hs]; rfl) hev
   intro z hz
   rw [e3 z (fun hm => hz ((omem z).1 hm).1), hkeep z (.inl hz)]
 

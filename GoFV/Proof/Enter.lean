@@ -45,7 +45,7 @@ theorem enter_ok_facts (hwf : WF ce f) {bid : ID} {B : Block} (hb : bid ∈ f.bl
   obtain ⟨frP, o, ho, hev, hP, hPs, -, hkeep, hphi⟩ := enterBlock_spec hnd h
   rw [hid, sched_of_block hB] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hs]; rfl) hev
   refine ⟨by rw [e1, hP], by rw [e2, hPs], fun z hz => ?_, fun x hx v hv hp => ?_,
     fun x hx v hv hp => ?_⟩
   · rw [e3 z (fun hm => hz ((omem z).1 hm).1), hkeep z (.inl hz)]
@@ -88,7 +88,7 @@ theorem enter_panic_facts (hwf : WF ce f) {bid : ID} {B : Block} (hb : bid ∈ f
   obtain ⟨hPs, -, hkeep, hphi⟩ := phis_spec hnd hps
   rw [hsplit] at ond otopo
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (List.nodup_append.1 ond).1
-    (topoRem_prefix otopo) (by simp [hPs, hs]; rfl) hpre
+    (by exact topoRem_prefix otopo) (by simp [hPs, hs]; rfl) hpre
   have hrS : r ∈ o.toList := by rw [hsplit]; simp
   obtain ⟨hrB, rv, hrv, hrnp⟩ := (omem r).1 hrS
   have hpo : ∀ z, z ∈ pre → z ∈ o.toList := fun z hz => by rw [hsplit]; simp [hz]

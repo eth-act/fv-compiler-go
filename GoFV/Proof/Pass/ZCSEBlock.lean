@@ -90,7 +90,7 @@ theorem enter_ok (S : Setup tabs f g) {env : Env} {fr frT : Frame} {bid : ID} {i
   obtain ⟨-, otopoT, omemT⟩ := schedule_topo (valuesOwn hwg hbg hgbb) hndG hoT
   obtain ⟨ond, otopo, omem⟩ := schedule_topo (valuesOwn hwf hbt.1 hfb) hndF hsched
   obtain ⟨hszS, -, -, -⟩ := phis_spec hndF hpsS
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by simp [hszS, hA.size]; rfl) h
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by simp [hszS, hA.size]; rfl) h
   have hG : G = { fr with regs := G.regs } := by rw [e1]
   have hszG : G.regs.size = f.valueTab.size := by rw [e2, hszS, hA.size]
   have himG : G.images.size = (Ctx.make tabs f).params.size := by rw [hG]; exact hA.images

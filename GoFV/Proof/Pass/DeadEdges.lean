@@ -106,15 +106,17 @@ theorem removeDeadEdges_eq (r : Array Bool) (f : Func) :
 theorem blocks_modB (F : Func) (x : ID) (g : Block → Block) : (F.modB x g).blocks = F.blocks :=
   rfl
 
+private theorem invalidateCFG_blocks' (F : Func) : F.invalidateCFG.blocks = F.blocks := rfl
+
 theorem blocks_removeSucc (F : Func) (b : ID) (i : Nat) : (F.removeSucc b i).blocks = F.blocks := by
   unfold Func.removeSucc
-  by_cases h : (i != (F.getB b).succs.size - 1) = true <;>
-    simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+  simp only [invalidateCFG_blocks', blocks_modB]
+  split <;> simp only [blocks_modB]
 
 theorem blocks_removePred (F : Func) (c : ID) (j : Nat) : (F.removePred c j).blocks = F.blocks := by
   unfold Func.removePred
-  by_cases h : (j != (F.getB c).preds.size - 1) = true <;>
-    simp only [h, ite_true, ite_false, Bool.false_eq_true] <;> rfl
+  simp only [invalidateCFG_blocks', blocks_modB]
+  split <;> simp only [blocks_modB]
 
 theorem blocks_removeEdgeG (el : Bool) (F : Func) (b : ID) (i : Nat) :
     (removeEdgeG el F b i).blocks = F.blocks := by

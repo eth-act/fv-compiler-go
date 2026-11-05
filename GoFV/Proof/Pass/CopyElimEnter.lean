@@ -249,7 +249,7 @@ theorem mid_of (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : Nat
   rw [hsplit] at ond otopo
   obtain ⟨hszP, hall, hkeep, hphi⟩ := phis_spec hndF hpsS
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (List.nodup_append.1 ond).1
-    (topoRem_append_left otopo) (by simp [hszP, hA.size]; rfl) hev
+    (by exact topoRem_append_left otopo) (by simp [hszP, hA.size]; rfl) hev
   refine ⟨⟨hkeep, hphi, hsched, ⟨R, hsplit⟩, e3, e4, ?_⟩, by rw [e1], by rw [e2]; simpa using hszP⟩
   refine typed_evalAll (typed_phis hA.tyS (by simpa using hszP) hkeep hphi hall)
     (fun x hx v hv => ?_) e3 e4

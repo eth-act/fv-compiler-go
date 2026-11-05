@@ -286,7 +286,7 @@ theorem inv_next (hwf : WF ce f) (env : Env) {fr fr' : Frame} {y : ID} {Y : Bloc
   obtain ⟨frP, o, ho, hev, hfrP, hszP, -, hkeep, -⟩ := enterBlock_spec hnd he
   rw [hid, sched_of_block hY.2] at ho
   have ht := schedule_topo (valuesOwn hwg hY.1 hY.2) hnd ho
-  obtain ⟨-, hsz', hout, hin⟩ := evalAll_spec ht.1 ht.2.1 (by rw [hszP, hsz]; rfl) hev
+  obtain ⟨-, hsz', hout, hin⟩ := evalAll_spec ht.1 (by exact ht.2.1) (by rw [hszP, hsz]; rfl) hev
   have hem : e ∈ Y.succs := stepTerm_goto_mem hst
   obtain ⟨k0, hk0⟩ := Array.mem_iff_getElem?.1 hem
   refine ⟨(hwg.succLink y Y hY k0 e hk0).1, by rw [hsz', hszP, hsz], ?_, fun _ => ?_⟩

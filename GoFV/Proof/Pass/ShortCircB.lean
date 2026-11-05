@@ -181,7 +181,7 @@ theorem bstep {env : Env} {G G' : Frame} {e : Edge} (hA : ZCSE.ArglessInv env (C
   obtain ⟨PS, o, ho, hev, hPf, hPs, -, hPk, hPp⟩ := enterBlock_spec hnd hen
   rw [hbid, sched_of_block hBb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo (valuesOwn S.wf hbm hBb) hnd ho
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hs]; rfl) hev
   have hG'1 : G' = { G with regs := G'.regs } := (SameAct.of e1).trans (SameAct.of hPf) |>.eq
   have hG'P : ∀ z, z ∉ o.toList → G'.regs[z]? = PS.regs[z]? := e3
   -- the control phi holds `c`'s boolean

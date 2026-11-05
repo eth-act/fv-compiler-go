@@ -3,6 +3,7 @@ import GoFV.Proof.RefineLoc
 import GoFV.Proof.Frame
 import GoFV.Proof.FrameL
 import GoFV.Proof.SimLocSign
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # `runLoc` ignores block order, positions, predictions, caches and the lowered-pass flags
@@ -53,7 +54,7 @@ theorem evalOpL_ctxW {fa : Bool} {env : Env} {ctx ctx' : Ctx} (ht : ctx.tabs = c
   subst ht hp hpt ho hl ha hd
   unfold sxArgLoc at hsx
   dsimp only at hsx
-  simp only [evalOpL, arm64Op, hsx]
+  simp only [evalOpL_eq, arm64Op, hsx]
   rfl
 
 theorem evalOpL_eraseV (fa : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value)

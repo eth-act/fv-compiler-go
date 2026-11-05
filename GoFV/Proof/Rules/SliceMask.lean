@@ -77,7 +77,7 @@ theorem r_generic_1053_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   simp only [resDenT, nodeDenT, List.length_cons, List.length_nil, List.getElem?_cons_zero,
     List.getElem?_cons_succ, List.map_cons, List.map_nil, opVal, reduceCtorEq, ite_false,
     reduceEvalPure]
-  simp only [GoFV.Rules.Generated.Generic.r_generic_1053, Pat.argsOK, Pat.argsOKs, argShapeOk,
+  simp only [GoFV.Rules.Generated.Generic.r_generic_1053, Pat.argsOK, Pat.argsOKs, reduceArgShapeOk,
     Nat.zero_add, beq_self_eq_true, ↓reduceIte, Nat.reduceBEq, Nat.reduceBNe, Bool.false_or,
     Bool.and_eq_true, and_true, Bool.false_eq_true, Nat.reduceAdd] at hargs
   simp only [GoFV.Rules.Generated.Generic.r_generic_1053, Pat.typed, Pat.typeds,

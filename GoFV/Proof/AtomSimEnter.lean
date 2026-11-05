@@ -195,7 +195,7 @@ theorem src_eval {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
   have hnd : P.Nodup := (List.nodup_append.1 (hPQ ▸ B.ndS)).1
   have htp : TopoRem (argsF f) P := topoRem_prefix (hPQ ▸ B.tpS)
   have hPof : ∀ x ∈ P, x ∈ of.toList := fun x hx => by rw [hPQ]; exact List.mem_append_left _ hx
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec hnd htp hsz hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec hnd (by exact htp) hsz hev
   have hown : ∀ x ∈ P, ∀ v, f.value? x = some v → v.id = x ∧ v.op ≠ .Phi ∧ x ∈ fb.values :=
     fun x hx v hv => by
       obtain ⟨hxb, v', hv', hph⟩ := (B.mS x).1 (hPof x hx)

@@ -80,7 +80,7 @@ theorem dinv_enter_rel {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} {T
   obtain ⟨frP, o, ho, hev, hP, hPs, -, hkeep, hphi⟩ := enterBlock_spec hnd h
   rw [hid, sched_of_block hbb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hs]; rfl) hev
   have hcf : (Ctx.make tabs f).f = f := rfl
   rw [hcf] at hkeep hphi e4
   have hfr' : fr' = { fr with regs := fr'.regs } := by rw [e1, hP]
@@ -195,7 +195,7 @@ theorem typed_enter {ce : CheckEnv} {tabs : Tables} {f : Func} {env : Env} (hwf 
   obtain ⟨frP, o, ho, hev, -, hPs, hall, hkeep, hphi⟩ := enterBlock_spec hnd h
   rw [hid, sched_of_block hbb] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo hown hnd ho
-  obtain ⟨-, -, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hs]; rfl) hev
+  obtain ⟨-, -, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hs]; rfl) hev
   refine typed_evalAll (typed_phis ht hPs hkeep hphi hall) (fun x hx v hv => ?_) e3 e4
   obtain ⟨v', hv', hvid⟩ := hown x ((omem x).1 hx).1
   change f.value? x = some v at hv

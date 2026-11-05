@@ -1,5 +1,6 @@
 import GoFV.Proof.Pass.UnreadLPure
 import GoFV.Proof.EvalL
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # elim unread autos on `runL`: the source's values avoid the eliminated variables
@@ -89,15 +90,14 @@ theorem evalOpL_av {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     (hloc : ∀ n, v.op = .LocalAddr → v.aux = some n → ¬ U (frameBlk ctx.tabs ctx.act n))
     {argv : List Val} {ty : Ty} {r : Val} (hargs : ∀ z ∈ argv, Val.Avoids U z)
     (h : evalOpL false env ctx fr v argv ty = .ok r) : Val.Avoids U r := by
-  unfold evalOpL at h
+  rw [evalOpL_eq] at h
   split at h
   · exact evalOp_avoids hU hfr (callOp_avoids hfs hU hargs) hloc hargs h
   · split at h
-    all_goals first
-      | exact arm64Op_av hfs hU hfr hs hargs h
-      | (split at h
-         · exact atomicRoot_avoids hU hargs h
-         · cases h; exact evalPure_av hU _ _ _ _ hargs)
+    · exact arm64Op_av hfs hU hfr hs hargs h
+    · split at h
+      · exact atomicRoot_avoids hU hargs h
+      · cases h; exact evalPure_av hU _ _ _ _ hargs
 
 /-- A panicking `panicBounds` panics with its memory argument. -/
 theorem panicBounds_av {k : Int64} {argv : List Val} (hargs : ∀ z ∈ argv, Val.Avoids U z)
@@ -132,15 +132,14 @@ theorem evalOpL_panic_av {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx :
     {fr : Frame} {v : Value} {argv : List Val} {ty : Ty} (hargs : ∀ z ∈ argv, Val.Avoids U z)
     {e : Panic} {m : Mem} (h : evalOpL false env ctx fr v argv ty = .panic e m) :
     e.Avoids U ∧ m.Avoids U := by
-  unfold evalOpL at h
+  rw [evalOpL_eq] at h
   split at h
   · exact evalOp_panic_avoids hfs hU hargs h
   · split at h
-    all_goals first
-      | exact arm64Op_panic_av hfs hU hargs h
-      | (split at h
-         · exact absurd h atomicRoot_ne_panic
-         · cases h)
+    · exact arm64Op_panic_av hfs hU hargs h
+    · split at h
+      · exact absurd h atomicRoot_ne_panic
+      · cases h
 
 /-- **A lowered value keeps values avoiding `U`.** -/
 theorem evalValueL_av {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {md : LMode}

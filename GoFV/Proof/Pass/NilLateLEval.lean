@@ -1,5 +1,6 @@
 import GoFV.Opt.NilLateCheck
 import GoFV.Proof.EvalL
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # `late nilcheck` under `runSched`: the values
@@ -19,21 +20,21 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Proof GoFV.Opt.NilLate
 
 /-! ## Dispatch of `evalOpL` -/
 
+/-- `arm64Listed` is `LowerTerm.actOp` (`evalOpL_eq`, `GoFV/Proof/EvalOpLDispatch.lean`): the same
+91 ops. Splitting either `match` on a variable op instead costs ~13 s per module. -/
+private theorem arm64Listed_eq_actOp (op : Op) : arm64Listed op = GoFV.Opt.LowerTerm.actOp op := by
+  cases op <;> rfl
+
 theorem evalOpL_listed {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (hl : arm64Listed v.op = true) :
     evalOpL faulting env ctx fr v argv ty = arm64Op faulting env ctx fr v argv ty := by
-  unfold arm64Listed at hl
-  unfold evalOpL
-  simp only [hg, Bool.false_eq_true, ite_false]
-  split at hl <;> first | (rename_i heq; rw [heq]) | exact absurd hl (by decide)
+  exact evalOpL_of_actOp hg (by rw [← arm64Listed_eq_actOp]; exact hl)
 
 theorem evalOpL_unlisted {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
     {argv : List Val} {ty : Ty} (hg : v.op.generic = false) (hl : arm64Listed v.op = false) :
     evalOpL faulting env ctx fr v argv ty =
       if isRoot v.op then atomicRoot v argv else pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
-  unfold evalOpL
-  simp only [hg, Bool.false_eq_true, ite_false]
-  split <;> first | rfl | (rename_i heq; rw [heq] at hl; exact absurd hl (by decide))
+  exact evalOpL_of_not_actOp hg (by rw [← arm64Listed_eq_actOp]; exact hl)
 
 /-! ## Addresses -/
 
@@ -300,7 +301,7 @@ theorem safe_res {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List V
     beq_iff_eq] at hs
   rcases hs with ((⟨⟨⟨⟨hg, hroot⟩, hArg⟩, hAIR⟩, hPB⟩ | ⟨⟨hg, hl⟩, hroot⟩) | hok) | ⟨hld, hback⟩
   · left
-    unfold evalOpL
+    rw [evalOpL_eq]
     simp only [hg, ite_true]
     unfold evalOp
     split <;> first

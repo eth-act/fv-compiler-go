@@ -163,7 +163,7 @@ theorem enter_ok {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb : Bl
   obtain ⟨ond, otopo, omemS⟩ := schedule_topo (valuesOwn hwf hbf hfb) hndF hso
   obtain ⟨ondT, otopoT, omemT⟩ := schedule_topo (valuesOwn hwg hbm hgb) hndG hoT
   obtain ⟨hszP, -, -, -⟩ := phis_spec hndF hpsS
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by simp [hszP, hsz]; rfl) h
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by simp [hszP, hsz]; rfl) h
   -- the kept values outside the target's schedule agree with `G`
   have hout : ∀ a, Listed g a → a ∉ oT.toList → (setPhis psT frT.regs)[a]? = G.regs[a]? := by
     intro a hl ha
@@ -224,7 +224,7 @@ theorem enter_panic {tabs : Tables} {env : Env} {bid : ID} (hb : K bid) {gb fb :
   obtain ⟨hszP, -, -, -⟩ := phis_spec hndF hpsS
   rw [hsplit] at ond otopo
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (List.nodup_append.1 ond).1
-    (topoRem_append_left otopo) (by simp [hszP, hsz]; rfl) hpre
+    (by exact topoRem_append_left otopo) (by simp [hszP, hsz]; rfl) hpre
   -- the panicking root is kept
   have hrS : r ∈ oS.toList := by rw [hsplit]; simp
   obtain ⟨hrf, fvr, hfvr, hrnph⟩ := (omemS r).1 hrS

@@ -94,7 +94,7 @@ theorem kenter {env : Env} {G : Frame}
   have hPS : PhiData tabs f fB _ frS PS := ⟨hPf, hPs, hPk, hPp⟩
   rw [hfid, sched_of_block hfB] at ho
   obtain ⟨ond, otopo, omem⟩ := schedule_topo (valuesOwn S.wf hBm hfB) hndf ho
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by rw [hPs, hsS]; rfl) hev
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by rw [hPs, hsS]; rfl) hev
   -- the target's `Phi`s
   obtain ⟨ps, hps⟩ := phisT_ok S hBm hfB hgB hph hrel hsrc' hPS hsS hsz
   have hPT := phiData_of (tabs := tabs) hndg hps
@@ -237,7 +237,7 @@ theorem kenter_panic {env : Env} {e : Panic} {m : Mem}
   obtain ⟨pre, r, post, Gp, hsplit, hpre, hr⟩ := evalAll_panic_split h
   have hndp : pre.Nodup := by rw [hsplit] at ond; exact (List.nodup_append.1 ond).1
   have htp : TopoRem (argsF f) pre := by rw [hsplit] at otopo; exact topoRem_prefix otopo
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (ctx := Ctx.make tabs f) hndp htp
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (ctx := Ctx.make tabs f) hndp (by exact htp)
     (by rw [hPS.size, hsS]; rfl) hpre
   have hrm : r ∈ o.toList := by rw [hsplit]; simp
   have hrs := (hOS r).1 hrm

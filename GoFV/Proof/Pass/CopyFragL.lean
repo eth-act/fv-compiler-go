@@ -2,6 +2,7 @@ import GoFV.Proof.Pass.CopyElimSim
 import GoFV.Proof.RetypeL
 import GoFV.Proof.EvalL
 import GoFV.SSA.Sem.TyEq
+import GoFV.Proof.EvalOpLDispatch
 
 /-!
 # copyelim on lowered code: the fragment `CopyLFrag`
@@ -46,10 +47,12 @@ theorem evalOpL_f {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Va
     {argv : List Val} {ty : Ty} (F : Func) (hm : v.op ≠ .ARM64MOVDreg)
     (hn : v.op ≠ .ARM64MOVDnop) :
     evalOpL faulting env { ctx with f := F } fr v argv ty = evalOpL faulting env ctx fr v argv ty := by
-  unfold evalOpL
+  rw [evalOpL_eq, evalOpL_eq]
   split
   · exact evalOp_congr rfl rfl rfl rfl rfl rfl rfl
-  · split <;> first | exact arm64Op_f F hm hn | rfl
+  · split
+    · exact arm64Op_f F hm hn
+    · rfl
 
 theorem sxOf_default (v : Value) : sxOf default v = none := by
   unfold sxOf

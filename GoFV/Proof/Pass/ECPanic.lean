@@ -40,7 +40,7 @@ theorem enter_panic (H : Hyp tabs f g cv isNew front RR ce ce') {env : Env} (hE 
   obtain ⟨pre, r, post, G, hof, hpre, hstep⟩ := evalAll_panic_split hev
   have hpren : pre.Nodup := (List.nodup_append.1 (hof ▸ ofn)).1
   have hpret : TopoRem (argsF f) pre := topoRem_prefix (hof ▸ oft)
-  obtain ⟨g1, -, g3, g4⟩ := evalAll_spec hpren hpret (by rw [pS1, hA.szS]; rfl) hpre
+  obtain ⟨g1, -, g3, g4⟩ := evalAll_spec hpren (by exact hpret) (by rw [pS1, hA.szS]; rfl) hpre
   have hpreo : ∀ x ∈ pre, x ∈ oS.toList := fun x hx => by
     rw [hof]; exact List.mem_append_left _ hx
   -- the panicking node
