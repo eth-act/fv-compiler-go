@@ -28,6 +28,13 @@ def key (r : Rule) : String := s!"{r.loc.file}:{r.loc.line} {r.op.name}"
 
 def blockKey (r : BlockRule) : String := s!"{r.loc.file}:{r.loc.line} block {r.kind.name}"
 
+/-- `lowerTable` with the rules the proven set lists in a derived form (`Derive.flagSplit`, which
+rewrites the same instances) in that form: the table of the validator's ceiling. -/
+def ceilTable : Interp.Table :=
+  Interp.Table.ofRuleSet { GoFV.Rules.Generated.ARM64.ruleSet with
+    values := GoFV.Rules.Generated.ARM64.ruleSet.values.map fun (o, rs) =>
+      (o, rs.flatMap GoFV.Rules.Derive.flagSplit) }
+
 /-- The keys of the rules a log fires, replaying ops and block kinds only. -/
 def firedKeys (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String := Id.run do
   let mut M : GoFV.Opt.RewriteCheck.Defs := f.valueTab
@@ -97,9 +104,53 @@ def ruleWhyL (tabs : Tables) (M : Defs) (r0 : Rule) (v : ID) (defs : List Value)
         else if !resFitsL (e.ty []) r.result then s!"fits {repr (e.ty [])}"
         else if !leavesOK M I [] r.pat then "leaves"
         else if !resultOKL tabs M e r.pat ev or σ I r x defs then
-          s!"result defs={defs.map fun u => (u.id, u.op.name, u.args.toList, u.type)} x={(x.id, x.type)}"
+          let nodeWhy : String := match r.result, defs with
+            | .build (n :: _), _ :: u :: _ =>
+              let ai := match n.auxInt with
+                | some ae => (toAuxIntL n.op.auxType (ev ae)).getD (or.auxInt ae)
+                | none => 0
+              s!"op={u.op == n.op} term={termVL tabs u} ty={GoFV.Opt.CSE.tyEq (shpL tabs u.type) (nodeTyL ev or (shpL tabs x.type) n.ty)} ai={u.auxInt}/{ai} aux={u.aux == nodeAuxL e r.pat or n.aux} args={(n.args.zip u.args.toList).map fun (a, w) => (argID σ I ((defs.drop 1).map fun (d : Value) => d.id) a, w)}"
+            | _, _ => ""
+          s!"result defs={defs.map fun u => (u.id, u.op.name, u.args.toList, u.type)} x={(x.id, x.type)} {nodeWhy}"
         else "ok"
     s!"{rs}"
+
+open GoFV.Opt.LowerCheck GoFV.Opt.RewriteCheck GoFV.Proof.Low GoFV.Proof.Rules in
+/-- Which check of `blockOKL` fails, per commutation choice (diagnostics). -/
+def blockWhyL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL) (nc : Array ID) :
+    String :=
+  match br.controls, st.ctrls.toList with
+  | [pat0], [c] =>
+    if !(st.kind == br.kind && condKind br.kind && br.aux matches .any && br.newAux.isNone) then
+      "kind/aux"
+    else
+      let rs := (choices (Pat.commutes pat0)).map fun sw =>
+        let pat := (Pat.swapC pat0 sw).1
+        if !Pat.arityOk pat then "arity" else
+        match matchPatL tabs M pat [] c with
+        | none => "nomatch"
+        | some I =>
+          let e := envL tabs M I
+          let vtys := br.vars.map (·.ty)
+          let σ := sigmaL tabs e pat
+          let or := oracleL vtys tabs ((br.cond.map (negAtoms false)).getD []) []
+          let ev := evalE vtys σ or e (Pat.denL tabs e [] pat)
+          if !(Pat.sames pat).all (fun x => !(Pat.opNames pat).contains x) then "sames"
+          else if !consOK ev σ e I [] pat then "cons"
+          else if !wfOK e [] pat then "wf"
+          else if !(match br.cond with
+            | some cd => match ev cd with | .bool true => true | _ => false
+            | none => true) then "cond"
+          else if !Pat.argsOK e.ty [] pat then "args"
+          else if !Pat.topOKL (e.ty []) pat then s!"top {repr (e.ty [])}"
+          else if !Pat.argsOKL e.ty [] pat then
+            s!"argsL {(List.range 4).map fun i => repr (e.ty [i])} {(List.range 2).map fun i => repr (e.ty [i, 0])}"
+          else if !leavesOK M I [] pat then "leaves"
+          else if !blockAuxOKB br.auxInt st.auxInt then "aux"
+          else if (newAuxL ev br.newAuxInt).isNone then "newAux"
+          else "ctrls"
+      s!"{rs}"
+  | _, _ => "controls"
 
 open GoFV.Opt.LowerCheck GoFV.Opt.RewriteCheck GoFV.Proof.Low in
 /-- Why `validateL` rejects (diagnostics). -/
@@ -172,7 +223,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
         | some br =>
           match blockOKL tabs M br st nc with
           | some st' => B := (b, st') :: B
-          | none => return s!"blockRule {blockKey br}"
+          | none => return s!"blockRule {blockKey br} {blockWhyL tabs M br st nc}"
   if !finalOKL tabs f g M B then
     let L := liveMarksL tabs g
     if !liveOKL tabs g L then return "final: live"
@@ -230,7 +281,7 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     let env := { base with passName := "lower", tables := prev }
     -- the checked lower against stock
     let full := (← IO.getEnv "LOWER_PROBE_FULL").isSome
-    let tbl := if full then lowerTable else lowerProvenTable
+    let tbl := if full then ceilTable else lowerProvenTable
     match GoFV.Opt.LowerCheck.checkedLowerWith tbl env (GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func) with
     | .ok co =>
       if (GoFVTest.Parity.compare prev co tables s).isNone then
@@ -243,9 +294,9 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
           IO.println s!"MISS\t{whyL o2.tables tbl fc o2.func log2}\t{path}"
         | .error _ => pure ()
     | .error _ => pure ()
-    match rewriteRun lowerTable true true env e.sections[k-1]!.func with
+    match rewriteRun ceilTable true true env e.sections[k-1]!.func with
     | .ok (out, _, log) =>
-      let w := whyL out.tables lowerTable e.sections[k-1]!.func out.func log
+      let w := whyL out.tables ceilTable e.sections[k-1]!.func out.func log
       let w := if w == "ok" then
           (match check { tabs := out.tables, typs := env.typs } out.func with
             | .ok () => "ok"
@@ -254,7 +305,7 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
       if !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
       let w := if w.startsWith "rule" || w.startsWith "setOp" || w.startsWith "blockRule" || w.startsWith "atoms" || w.startsWith "final" then (w.splitOn " v").head! else w
       S := { S with why := S.why.insert w (S.why.getD w 0 + 1), accepted := if w == "ok" then S.accepted + 1 else S.accepted }
-      let ks := firedKeys lowerTable e.sections[k-1]!.func log
+      let ks := firedKeys ceilTable e.sections[k-1]!.func log
       let mut fs : Std.HashSet String := {}
       for x in ks do
         S := { S with firings := S.firings.insert x (S.firings.getD x 0 + 1) }

@@ -26,6 +26,12 @@ theorem ForallL.mem {α : Type} {P : α → Prop} : ∀ {l : List α}, ForallL P
   | _ :: _, ⟨h, _⟩, _, .head _ => h
   | _ :: _, ⟨_, t⟩, a, .tail _ hm => ForallL.mem t a hm
 
+theorem ForallL.append_iff {α : Type} {P : α → Prop} :
+    ∀ {l₁ l₂ : List α}, ForallL P (l₁ ++ l₂) ↔ ForallL P l₁ ∧ ForallL P l₂
+  | [], _ => ⟨fun h => ⟨trivial, h⟩, fun h => h.2⟩
+  | _ :: _, _ => ⟨fun ⟨h, t⟩ => ⟨⟨h, (append_iff.1 t).1⟩, (append_iff.1 t).2⟩,
+      fun ⟨⟨h, t⟩, t'⟩ => ⟨h, append_iff.2 ⟨t, t'⟩⟩⟩
+
 /-- The selection ops (`Comp.select`, `Comp.selectAux`): `StringPtr`, `StringLen`, `SlicePtr`,
 `SlicePtrUnchecked`, `SliceLen`, `SliceCap`, `ITab`, `IData`, `ComplexReal`, `ComplexImag`,
 `StructSelect`, `ArraySelect`. -/

@@ -4,6 +4,7 @@ import GoFV.Rules.ProvenARM64
 import GoFV.Proof.Low.Rules.BlockCset
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
+import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
 import GoFV.Proof.Low.Rules.Fold
@@ -29,7 +30,7 @@ set_option maxRecDepth 4096 in
 /-- Every rule of `ProvenARM64.lower` is sound. -/
 theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   refine ⟨?_, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · simp only [ProvenARM64.lower, ForallL]
+  · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
     exact ⟨⟨r_ARM64_650_sound, r_ARM64_1000_sound, r_ARM64_1201_sound, trivial⟩,
       ⟨r_ARM64_972_sound, trivial⟩,
       ⟨r_ARM64_990_sound, trivial⟩,
@@ -70,6 +71,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_50_2_sound, trivial⟩,
       ⟨r_ARM64_50_3_sound, trivial⟩,
       ⟨r_ARM64_50_4_sound, trivial⟩,
+      r_ARM64_302_flag_sound,
       ⟨r_ARM64_182_sound, trivial⟩,
       ⟨r_ARM64_182_2_sound, trivial⟩,
       ⟨r_ARM64_182_3_sound, trivial⟩,
@@ -194,7 +196,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_199_sound, trivial⟩,
       ⟨r_ARM64_200_sound, trivial⟩,
       ⟨r_ARM64_202_sound, trivial⟩, trivial⟩
-  · simp only [ProvenARM64.lower, ForallL]
+  · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
     exact ⟨⟨r_ARM64_600_sound, r_ARM64_601_sound, trivial⟩,
       ⟨r_ARM64_461_sound, r_ARM64_462_sound, r_ARM64_463_sound, r_ARM64_464_sound, r_ARM64_465_sound, r_ARM64_466_sound, r_ARM64_467_sound, r_ARM64_468_sound, r_ARM64_469_sound, r_ARM64_470_sound, r_ARM64_471_sound, r_ARM64_472_sound, r_ARM64_473_sound, r_ARM64_474_sound, r_ARM64_476_sound, trivial⟩,
       ⟨r_ARM64_600_2_sound, r_ARM64_601_2_sound, trivial⟩,

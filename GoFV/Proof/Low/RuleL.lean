@@ -284,11 +284,12 @@ def atomicLoadOp : Op → Bool
 /-- A generic top op produces a value of its type's shape (Phase 1's `RewriteCheck.topOK`: Go types
 these values at their op's width, and a narrow generic op read at a wider shape would be widened by
 `retypeL` where the arm64 op keeps its register), as do `Load` (`loadOp` decodes at the shape) and
-the atomic loads (`atomicLoad`, likewise), and `Addr` at a word shape (a `uintptr`-typed `Addr`:
-the symbol's address, which `MOVDaddr` computes alike, `refines_addr_movAddr` at every shape);
-arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
+the atomic loads (`atomicLoad`, likewise), `Addr` at a word shape (a `uintptr`-typed `Addr`:
+the symbol's address, which `MOVDaddr` computes alike, `refines_addr_movAddr` at every shape),
+and `CondSelect` at a word shape (an arm, which `CSEL` moves as its register, `regVal`, and a word
+shape reads back whole); arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
 def topOKL (o : Op) (ty : Ty) : Bool :=
-  !o.generic || o == .Load || atomicLoadOp o || (o == .Addr && wordShape ty) ||
+  !o.generic || o == .Load || atomicLoadOp o || ((o == .Addr || o == .CondSelect) && wordShape ty) ||
     GoFV.Opt.RewriteCheck.topOK o ty
 
 /-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
