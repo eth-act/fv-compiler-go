@@ -62,6 +62,7 @@ def why (tabs : Tables) (cert : Array (Option ID)) (f g : Func) : Option String 
   let dc := make f
   for b in f.blocks do
     let (some fb, some gb) := (f.block? b, g.block? b) | return some "block missing"
+    if !ownB g b gb then return some "g block not well formed (ownB)"
     if gb.kind != fb.kind then return some "kind"
     if gb.auxInt != fb.auxInt then return some "auxInt"
     if gb.succs != fb.succs then return some "succs"
@@ -156,7 +157,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
         let okf := (check ce f).toBool
         let okg := (check ce g).toBool
         c := { c with inFails := if okf then 0 else 1, outFails := if okf && !okg then 1 else 0 }
-        if okf && okg then
+        if okf then
           let changed := g.blockTab != f.blockTab || g.valueTab != f.valueTab
           let cert := origCert f g
           let acc := flagAllocWith out.tables cert f g
@@ -198,7 +199,7 @@ def main (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln s!"worker failed: {e}"; return 2
   IO.println s!"files {files.size}, parse errors {st.parseErrors}, probe bugs {st.bugs}"
   let x := st.cnt
-  IO.println s!"flagalloc: sections {x.secs}, pass errors {x.errors}, input fails check {x.inFails}, output (only) fails check {x.outFails}, both checked {x.checked}, changed {x.changed}, flagAllocB accepts {x.accepted} (changed {x.acceptedChanged}), rejects {x.checked - x.accepted}, clones {x.clones}"
+  IO.println s!"flagalloc: sections {x.secs}, pass errors {x.errors}, input fails check {x.inFails}, output (only) fails check {x.outFails} (not needed), input checked {x.checked}, changed {x.changed}, flagAllocB accepts {x.accepted} (changed {x.acceptedChanged}), rejects {x.checked - x.accepted}, clones {x.clones}"
   IO.println "clone ops:"
   for (k, n) in st.cloneOps.toList.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"  {n} {k}"
