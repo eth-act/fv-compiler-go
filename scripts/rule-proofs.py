@@ -616,8 +616,8 @@ def fire(corpus, jobs):
 
 
 def axioms():
-    """The gate's audit, scripts/axioms-audit.sh: the axioms of every theorem of GoFV/Proof
-    (built first); only propext, Classical.choice, Quot.sound and the `_native` axioms listed in
+    """The gate's audit, scripts/axioms-audit.sh: the axioms of every constant of GoFV and
+    GoFVTest (which must be built and up to date: `lake build GoFV GoFVTest`); only propext, Classical.choice, Quot.sound and the `_native` axioms listed in
     scripts/axioms-allowlist.txt are allowed. Exits non-zero on anything else."""
     r = subprocess.run([os.path.join(ROOT, "scripts", "axioms-audit.sh")], cwd=ROOT)
     if r.returncode != 0:

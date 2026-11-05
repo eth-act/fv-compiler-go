@@ -1,8 +1,14 @@
-# Allowlist of scripts/axioms-audit.sh (docs/GATE.md): the `_native` axioms that bv_decide or
-# native_decide generate (e.g. `GoFV.Proof.Foo.bar._native.bv_decide.ax_1_3`), one exact name
-# per line, each for a deliberate use (docs/PLAN.md §0). propext, Classical.choice and
+# Allowlist of scripts/axioms-audit.sh (docs/GATE.md, GoFVTest/AxiomsAudit.lean): the `_native`
+# axioms that bv_decide or native_decide generate (e.g. `GoFV.Proof.Foo.bar._native.bv_decide.ax_1_3`),
+# one per line as `NAME PIN` (the SHA-256 of its statement's `repr`, which the audit prints when it
+# does not match), each for a deliberate use (docs/PLAN.md §0). propext, Classical.choice and
 # Quot.sound are always allowed; every other axiom is a violation. Add an entry in the PR that
 # introduces the use, with a comment naming the theorem.
 # verifiedPipeline_witness (GoFV/Proof/Witness/Pipeline.lean, #189): the whole verified pipeline on
 # plF; `decide +kernel` gets stuck comparing the pass results' CFG caches (`Func` equality).
-GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1
+GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 1f320ce2d98198174271e0fabc0e82337bc7616fa6320b8bbe729124185d298c
+
+# `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
+# `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
+# test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
+implemented_by GoFVTest.Parity.sameObj _private.GoFVTest.Parity.Compare.0.GoFVTest.Parity.sameObjImpl 38dd296984bed7246910175a8c849fbda0ed17dd3a164835e181a401e0312771

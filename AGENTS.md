@@ -23,7 +23,9 @@
 - Never `git stash` (shared across worktrees). Commit on your own branch instead.
 - Merge: the author merges. Once the per-PR checks pass (build of affected modules,
   parity on the corpus for touched passes, `#print axioms` of new theorems), rebase on
-  origin/main, run `scripts/check-reverts.sh` (it fails if the branch silently undoes work
+  origin/main, run `scripts/axioms-audit.sh --replay-changed` after `lake build GoFV GoFVTest`
+  on the rebased branch (it trusts the modules it does not replay as they are on main), run
+  `scripts/check-reverts.sh` (it fails if the branch silently undoes work
   already on main, as #191 undid #190; fix the rebase, or pass `--allow <path>` and say why in
   the PR body for an intended revert; then, right after the squash merge, add the merge commit's
   short hash with the PR number and reason to `scripts/reverts-ack.txt`, or the nightly gate's

@@ -18,7 +18,7 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
 | `allproof` | `scripts/gen-allproof.sh` if `--check` says the file is stale, then `lake build GoFVTest.Proof.AllProof` | two proof modules declare the same name |
 | `no-sorry` | `scripts/no-sorry.py` | `sorry` or `admit` appears in a tracked `.lean` file, outside comments and strings |
 | `reverts` | `scripts/scan-history-reverts.sh 80` | a recent squash merge deleted a file added by one of the 8 commits before it, or set a file back to its state before the previous commit that touched it (#191 undid #190); acknowledge a known incident in `scripts/reverts-ack.txt` with its restore issue, or an intended revert (`check-reverts.sh --allow`) with its PR |
-| `axioms` | `scripts/axioms-audit.sh` | a theorem under `GoFV.Proof` depends on any axiom other than `propext`, `Classical.choice`, `Quot.sound` and the `_native` axioms listed in `scripts/axioms-allowlist.txt` |
+| `axioms` | `scripts/axioms-audit.sh --replay` | a constant of `GoFV` or `GoFVTest` depends on any axiom other than `propext`, `Classical.choice`, `Quot.sound` and the `_native` axioms listed in `scripts/axioms-allowlist.txt`, an `@[implemented_by]`/`@[extern]`/`@[export]` declaration is not listed there, or the kernel rejects one of their constants on replay |
 | `ssa-check` | `ssa-check <full corpus>` | a section is not well formed (`GoFV.SSA.check`) |
 | `parity` | `scripts/parity.sh <full corpus>` | a registered pass mismatches the stock pass, or reports an error |
 | `check` | `gofv-ssa-opt --check --jobs 4 <full corpus>` | the whole pipeline diverges from stock, or a Lean pass fails (docs/DRIVER.md) |
@@ -35,11 +35,62 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
   `build` builds the committed file (it is in `GoFVTest`). If that file is stale, `allproof`
   regenerates it in the gate worktree first (its log says so), so a new module is covered
   either way.
-- The axioms audit (`scripts/axioms-audit.sh`) imports every module `GoFV/Proof/**/*.lean` in
-  one `lean` process. It runs Lean's `collectAxioms`, the function behind `#print axioms`, on
-  every theorem declared in those modules, auxiliary theorems included. `sorryAx` and declared
-  axioms are always violations. A deliberate `bv_decide`/`native_decide` use adds its
-  `…._native.…` axiom names to `scripts/axioms-allowlist.txt` in the same PR (docs/PLAN.md §0).
+- The axioms audit (`scripts/axioms-audit.sh`) decides with the compiled program `axioms-audit`
+  (`GoFVTest/AxiomsAudit.lean`), so no code of an audited module runs while it decides: it
+  imports the modules with `importModules` and never enables initializers (a `#eval` audit file
+  ran every imported `initialize`, which could print a passing result and exit). It audits every
+  constant, of every kind (theorems, definitions including `partial`/`unsafe` ones, opaques,
+  axioms), declared in `GoFV/**` and `GoFVTest/**` (the executable roots, which define `main`,
+  read one by one from their `.olean`s), with the traversal of Lean's `collectAxioms`, the
+  function behind `#print axioms`. Not only `GoFV/Proof` (as until 2026-11-05): the `@[csimp]`
+  lemmas in `GoFV/Opt` and `GoFV/SSA` (`rng_eq_rngFast`, `depB_eq_depBFast`, …) decide which code
+  the compiled checkers run, and `GoFVTest` holds the driver. The verdict is the program's exit
+  code, decided on `Name`s (a theorem name with a newline cannot split a report line). `sorryAx`,
+  `Lean.trustCompiler` and declared axioms are always violations, also when unused. A deliberate
+  `bv_decide`/`native_decide` use adds its `…._native.…` axiom names to
+  `scripts/axioms-allowlist.txt` in the same PR (docs/PLAN.md §0); each entry must have the
+  shape of one (an axiom named `…._native.(native_decide|bv_decide).ax_…`, declared in a library
+  module, of type `_ = true`, `decide _ = true` for `native_decide`), and pins its
+  statement together with every definition of `GoFV`/`GoFVTest` the statement reaches (`NAME PIN`,
+  a SHA-256 of their structural serialization, names component by component: `toString` prints a
+  look-alike `«a.b»` as `a.b`; the audit prints the pin when it does not match). The shape does
+  not prove the tactic generated it: Lean records nothing that distinguishes a hand-written
+  `axiom ….native_decide.ax_1 : decide False = true`. The allowlist is the trust boundary: the
+  audit prints every allowlist line that differs from `origin/main`, and the pin makes a change
+  of an entry's statement, or of a definition it names (`plF`, the pipeline), such a line. An `@[implemented_by]`, `@[extern]` or `@[export]`
+  declaration (it replaces or exports compiled code, as a `@[csimp]` lemma does) is a violation
+  unless the allowlist lists it with its argument (`implemented_by NAME TARGET PIN`, the
+  target pinned the same way, `extern NAME`, `export NAME SYMBOL`); an entry that matches nothing is an error. Every module imported by an audited
+  module or an executable root must be audited or part of Lean read from the toolchain's
+  `lib/lean` (module names come from paths, so a path component with a dot, a space or a control
+  character is refused), and every `lean_exe` and `lean_lib` of `lakefile.toml` must be audited.
+  The audit refuses a build that is not up to date (`lake build --no-build GoFV GoFVTest`), and
+  needs every `GoFV` module and every `GoFVTest` module without `main` to import together. A theorem
+  that several modules declare (an equation lemma realized in each) has one copy in the imported
+  environment; the audit follows every copy. `scripts/axioms-audit-selftest.sh`
+  plants each of these cases as a module and checks that the audit fails on it.
+- Kernel replay. A `.olean` holds whatever the elaborator added: `set_option debug.skipKernelTC
+  true` with `addDecl` puts a proof of `False` there that no kernel checked, and reading
+  declarations (the audit, `#print axioms`) cannot tell. `axioms-audit --replay` sends the
+  constants of `GoFV`/`GoFVTest` to the kernel again, every copy of a theorem several modules
+  declare included (the extra copies under fresh names); unsafe and partial constants are not
+  replayed, as in `leanchecker` (a checked constant that uses one fails). The nightly run replays
+  the whole tree (`--replay`, on `Init`/`Std`/`Lean` alone: about 20 minutes and 5.3 GB, one
+  thread). Per PR, `--replay-changed` replays the modules that differ from the merge base with
+  `origin/main` and every module importing one (their elaboration ran the changed code), on the
+  other modules, which an earlier replay checked; the whole tree when `lakefile.toml`,
+  `lean-toolchain` or `lake-manifest.json` changed. It runs after the rebase onto `origin/main`,
+  right before the merge (what it trusts is main). A leaf proof module takes seconds, a core
+  module most of the 20 minutes. `lakefile.toml` must not mention `skipKernelTC`, and no module
+  may be a symlink (its source could change with no diff under `GoFV`/`GoFVTest`). Trust rests on
+  sources: a module whose elaboration does IO (`run_meta`/`include_str` reading a repository file
+  outside `GoFV`/`GoFVTest`, the directory, the environment, the clock) is trusted as unchanged
+  until the nightly replay. (Lean's
+  `leanchecker GoFV GoFVTest` checks the same, but imports each module's dependencies anew in
+  parallel tasks: killed at 6 GiB after 11 minutes.)
+- The audit program and scripts, and the allowlist, are built from the PR they check: a change to
+  `GoFVTest/AxiomsAudit.lean`, `scripts/axioms-audit*.sh` or `scripts/axioms-allowlist.txt` needs
+  a reviewer's look as much as a new axiom does.
 - `no-sorry` also catches files that no target builds. The axioms audit catches a `sorry` that
   is hidden from the text, for example one inside a macro.
 - `e2e` rebuilds the driver toolchain (`GOFV_GO_DRIVER=1 scripts/build-go.sh` into the gate
