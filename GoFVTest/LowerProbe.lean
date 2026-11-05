@@ -10,12 +10,15 @@ import GoFV.Opt.LowerChecked
 
 For every `lower` section of the given export files, runs `lower` (`GoFV.Opt.lower`'s table) with
 its log and records, per function, the rules it fires (`ARM64:<line> <Op>`, block rules
-`ARM64:<line> block <Kind>`). Output: one `RULE key firings functions` row per rule (by
+`ARM64:<line> block <Kind>`). Output: `WHY n class` rows, the validator's first rejection with the
+full table (the ceiling; `whyL`, classed by `whyClass`), and `FAMILY n family` rows (`whyFamily`);
+one `RULE key firings functions` row per rule (by
 firings), then `GREEDY k key covered` rows: rules added greedily by the number of functions whose
 fired rules all lie in the set so far (the order in which proving rules makes the checked lower
 reproduce stock on whole functions), then `NEXT k key covered completes` rows: the same greedy
 cover starting from the proven rules (`GoFV.Opt.lowerProvenTable`; row 0), the next rules to prove.
-`--next-md FILE` writes the `NEXT` table as a markdown document (`docs/proofs/lower-next.md`).
+`--next-md FILE` writes the `NEXT` table and the ceiling's rejection classes as a markdown
+document (`docs/proofs/lower-next.md`).
 
 Usage: `lower-probe [--jobs N] [--next-md FILE] <dir|file>...`.
 -/
@@ -248,6 +251,70 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
     return "final: succs"
   return "ok"
 
+/-- `s` without its value IDs (`v` and digits after a character that is no letter or digit). -/
+def dropIDs (s : String) : String := Id.run do
+  let cs := s.toList.toArray
+  let mut out : String := ""
+  let mut i := 0
+  while i < cs.size do
+    let c := cs[i]!
+    let prevOK := i == 0 || !(cs[i-1]!.isAlphanum)
+    if c == 'v' && prevOK && i + 1 < cs.size && cs[i+1]!.isDigit then
+      let mut j := i + 1
+      while j < cs.size && cs[j]!.isDigit do j := j + 1
+      -- a dropped ID token takes its following space with it
+      i := if j < cs.size && cs[j]! == ' ' && (out.isEmpty || out.back == ' ') then j + 1 else j
+    else
+      out := out.push c
+      i := i + 1
+  return out.trimAscii.toString
+
+/-- The elements of a bracketed list `[a, b, …]`'s contents, split at the top-level commas. -/
+def splitTop (s : String) : List String := Id.run do
+  let mut out : Array String := #[]
+  let mut cur : String := ""
+  let mut depth : Int := 0
+  for c in s.toList do
+    if c == ',' && depth == 0 then
+      out := out.push cur.trimAscii.toString
+      cur := ""
+    else
+      if c == '[' || c == '(' then depth := depth + 1
+      if c == ']' || c == ')' then depth := depth - 1
+      cur := cur.push c
+  out := out.push cur.trimAscii.toString
+  return out.toList
+
+/-- One per-commutation reason of `ruleWhyL`/`blockWhyL`, short: its first word, with the
+offending shape for `top`/`fits`. -/
+def shortReason (r : String) : String :=
+  let r := (r.replace "GoFV.SSA.Sem.Ty." "").replace "GoFV.SSA.Sem.Width." ""
+  if r.startsWith "top" || r.startsWith "fits" then r
+  else (r.splitOn " ").head!
+
+/-- **The class of a first rejection** (`whyL`): the reason without value IDs, a rule's
+per-commutation reasons shortened (`shortReason`) and deduplicated. -/
+def whyClass (w : String) : String :=
+  let w := dropIDs w
+  match w.splitOn " [" with
+  | head :: rest@(_ :: _) =>
+    let body := " [".intercalate rest
+    let body := if body.endsWith "]" then (body.dropEnd 1).toString else body
+    let rs := (splitTop body).map shortReason
+    let rs := rs.foldl (fun acc r => if acc.contains r then acc else acc ++ [r]) []
+    s!"{head} [{", ".intercalate rs}]"
+  | _ => w
+
+/-- The family of a rejection class: the rule (value or block), the atom's input op, the final
+check, or the class itself. -/
+def whyFamily (c : String) : String :=
+  if c.startsWith "rule " || c.startsWith "blockRule " then (c.splitOn " [").head!
+  else if c.startsWith "atoms: " && (c.splitOn " -> ").length == 2 then
+    s!"{(c.splitOn " -> ").head!} -> *"
+  else if c.startsWith "final: " then
+    s!"final: {(((c.drop 7).toString.splitOn " ").head!)}"
+  else c
+
 structure St where
   firings : Std.HashMap String Nat := {}
   fns : Array (Array String) := #[]
@@ -303,7 +370,7 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
             | .error m => s!"check out: {m.take 50}") else w
       let w := if w == "ok" && !tabsAgree prev out.tables e.sections[k-1]!.func then "tabsAgree" else w
       if !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
-      let w := if w.startsWith "rule" || w.startsWith "setOp" || w.startsWith "blockRule" || w.startsWith "atoms" || w.startsWith "final" then (w.splitOn " v").head! else w
+      let w := whyClass w
       S := { S with why := S.why.insert w (S.why.getD w 0 + 1), accepted := if w == "ok" then S.accepted + 1 else S.accepted }
       let ks := firedKeys ceilTable e.sections[k-1]!.func log
       let mut fs : Std.HashSet String := {}
@@ -368,18 +435,42 @@ def greedy (S0 : Std.HashSet String) (fns : Array (Array String)) (limit : Nat) 
       rows := rows.push (step, k, covered, done.size)
   return (done0.size, rows)
 
-/-- The `NEXT` table as a markdown document. -/
+/-- The classes `why` counts (`whyClass`, with `ok` the accepted functions) rolled up by
+`whyFamily`, by functions. -/
+def families (why : Std.HashMap String Nat) : Array (String × Nat) :=
+  (why.fold (fun m k n => if k == "ok" then m else
+    let f := whyFamily k; m.insert f (m.getD f 0 + n)) ({} : Std.HashMap String Nat)).toArray.qsort
+    (fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1))
+
+/-- The classes of first rejections, by functions (`ok`, the accepted functions, left out). -/
+def classes (why : Std.HashMap String Nat) : Array (String × Nat) :=
+  (why.toArray.filter (·.1 != "ok")).qsort (fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1))
+
+/-- The `NEXT` table and the validator's ceiling (`classes`, `families`) as a markdown document. -/
 def nextMarkdown (paths : Array String) (nfns checked : Nat) (base : Nat)
-    (rows : Array (Nat × String × Nat × Nat)) (nfn : Std.HashMap String Nat) : String := Id.run do
+    (rows : Array (Nat × String × Nat × Nat)) (nfn : Std.HashMap String Nat) (accepted : Nat)
+    (why : Std.HashMap String Nat) : String := Id.run do
   let mut s := "<!-- Generated by `lake exe lower-probe --next-md` (GoFVTest/LowerProbe.lean). Do not edit. -->\n\n"
   s := s ++ "# The next `ARM64.rules` rules to prove for the checked lower (issue #385)\n\n"
   let short (p : String) : String :=
     "/".intercalate ((p.splitOn "/").filter (· != "") |>.reverse.take 2 |>.reverse)
   s := s ++ s!"Corpus: {", ".intercalate (paths.toList.map fun p => s!"`{short p}`")}; {nfns} `lower` sections.\n\n"
-  s := s ++ s!"The checked lower (proven rules) equals stock on {checked} of them. `lower` fires only proven rules on {base}: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it.\n\n"
+  s := s ++ s!"The checked lower (proven rules) equals stock on {checked} of them. `lower` fires only proven rules on {base}: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.\n\n"
   s := s ++ "| step | rule | covered | completes | fired in |\n|---:|---|---:|---:|---:|\n"
   for (step, k, covered, gained) in rows do
     s := s ++ s!"| {step} | `{k}` | {covered} | {gained} | {nfn.getD k 0} |\n"
+  s := s ++ "\n## The validator's ceiling\n\n"
+  s := s ++ s!"With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts {accepted} of the {nfns} functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.\n\n"
+  s := s ++ "### By family (the rule, the atom's input op, the final check)\n\n| rank | family | functions |\n|---:|---|---:|\n"
+  let fs := families why
+  for i in [0:min 30 fs.size] do
+    let (k, n) := fs[i]!
+    s := s ++ s!"| {i + 1} | `{k}` | {n} |\n"
+  s := s ++ "\n### By class\n\n| rank | class | functions |\n|---:|---|---:|\n"
+  let cs := classes why
+  for i in [0:min 80 cs.size] do
+    let (k, n) := cs[i]!
+    s := s ++ s!"| {i + 1} | `{k}` | {n} |\n"
   return s
 
 def main (args : List String) : IO UInt32 := do
@@ -407,8 +498,10 @@ def main (args : List String) : IO UInt32 := do
     for x in fs do nfn := nfn.insert x (nfn.getD x 0 + 1)
   IO.println s!"functions {acc.fns.size} errors {acc.errors} without firings {(acc.fns.filter (·.isEmpty)).size} validator accepts (full table) {acc.accepted}"
   IO.println s!"checked lower (proven rules) at stock: {acc.checkedSame} of {acc.fns.size}, of which proven (not the input): {acc.checkedProven}"
-  for (k, n) in acc.why.toArray.qsort (fun a b => a.2 > b.2) do
+  for (k, n) in classes acc.why do
     IO.println s!"WHY\t{n}\t{k}"
+  for (k, n) in families acc.why do
+    IO.println s!"FAMILY\t{n}\t{k}"
   for (k, n) in acc.firings.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"RULE\t{k}\t{n}\t{nfn.getD k 0}"
   -- greedy cover from no rules
@@ -420,7 +513,8 @@ def main (args : List String) : IO UInt32 := do
   for (step, k, covered, gained) in next do
     IO.println s!"NEXT\t{step}\t{k}\t{covered}\t{gained}"
   if let some md := a.nextMd then
-    IO.FS.writeFile md (nextMarkdown a.paths acc.fns.size acc.checkedSame base next nfn)
+    IO.FS.writeFile md (nextMarkdown a.paths acc.fns.size acc.checkedSame base next nfn
+      acc.accepted acc.why)
   return 0
 
 end GoFVTest.LowerProbe
