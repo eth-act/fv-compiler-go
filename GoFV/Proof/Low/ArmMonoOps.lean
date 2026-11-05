@@ -901,6 +901,10 @@ theorem evalPure_ARM64FMOVSfpgp (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr :
     Refines (Arm64.evalPure .ARM64FMOVSfpgp ty k ax as) (Arm64.evalPure .ARM64FMOVSfpgp ty k ax bs) :=
   fmov_mono .w32 ty hr
 
+theorem evalPure_ARM64LoweredWB (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64LoweredWB ty k ax as) (Arm64.evalPure .ARM64LoweredWB ty k ax bs) :=
+  GoFV.SSA.Sem.wbOp_mono k hr
+
 theorem armPure_cases {op : Op} (h : armTerm op = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
     (hr : RefinesList as bs) :
     Refines (Arm64.evalPure op ty k ax as) (Arm64.evalPure op ty k ax bs) := by
@@ -1124,5 +1128,6 @@ theorem armPure_cases {op : Op} (h : armTerm op = true) (ty : Ty) (k : Int64) (a
   case ARM64FMOVDfpgp => exact evalPure_ARM64FMOVDfpgp ty k ax hr
   case ARM64FMOVSgpfp => exact evalPure_ARM64FMOVSgpfp ty k ax hr
   case ARM64FMOVSfpgp => exact evalPure_ARM64FMOVSfpgp ty k ax hr
+  case ARM64LoweredWB => exact evalPure_ARM64LoweredWB ty k ax hr
 
 end GoFV.Proof.Low.Mono

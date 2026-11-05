@@ -556,7 +556,7 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
-        ⟨-, h2⟩ <;>
+        ⟨-, h2⟩ | ⟨-, h2⟩ <;>
       rw [h2] at hg <;> exact absurd hg (by decide)
   · exfalso
     obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases h

@@ -61,7 +61,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 205 proven value rules and 47 proven block rules. -/
+/-- `ARM64.rules` restricted to its 207 proven value rules and 47 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
@@ -167,6 +167,7 @@ def lower : RuleSet where
     (.Or32, [Generated.ARM64.r_ARM64_44_2]),
     (.Or64, [Generated.ARM64.r_ARM64_44_3]),
     (.Or8, [Generated.ARM64.r_ARM64_44_4]),
+    (.PanicBounds, [Generated.ARM64.r_ARM64_512]),
     (.Rsh16Ux16, [Generated.ARM64.r_ARM64_163]),
     (.Rsh16Ux32, [Generated.ARM64.r_ARM64_163_2]),
     (.Rsh16Ux64, [Generated.ARM64.r_ARM64_163_3]),
@@ -219,6 +220,7 @@ def lower : RuleSet where
     (.Trunc64to16, [Generated.ARM64.r_ARM64_195]),
     (.Trunc64to32, [Generated.ARM64.r_ARM64_196]),
     (.Trunc64to8, [Generated.ARM64.r_ARM64_194]),
+    (.WB, [Generated.ARM64.r_ARM64_507]),
     (.Xor16, [Generated.ARM64.r_ARM64_45]),
     (.Xor32, [Generated.ARM64.r_ARM64_45_2]),
     (.Xor64, [Generated.ARM64.r_ARM64_45_3]),
