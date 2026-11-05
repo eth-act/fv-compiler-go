@@ -179,7 +179,7 @@ theorem sfacts {pre : List ID} {G : Frame} (hpre : ∃ post, oS.toList = pre ++ 
   obtain ⟨ond, otopo, -⟩ := schedule_topo K.ownF K.ndF K.hoS
   rw [hpost] at ond otopo
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (List.nodup_append.1 ond).1
-    (topoRem_append_left otopo) (by rw [K.size]; rfl) h
+    (by exact topoRem_append_left otopo) (by rw [K.size]; rfl) h
   exact ⟨e1, e2, e3, e4⟩
 
 /-- The source's registers stay typed. -/

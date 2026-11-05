@@ -409,7 +409,7 @@ theorem enter_ok {tabs : Tables} {env : Env} {frS frT : Frame} (hA : Agr X frS f
   obtain ⟨ondT, otopoT, omemT⟩ := schedule_topo hownG hndG hoT
   obtain ⟨hszS, -, -, -⟩ := phis_spec hndF hpsS
   obtain ⟨-, -, hkeepT, -⟩ := phis_spec hndG hpsT
-  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond otopo (by simp [hszS, hsz]; rfl) h
+  obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec ond (by exact otopo) (by simp [hszS, hsz]; rfl) h
   have hnotS : ∀ a, X a = false → a ∉ oT.toList → a ∉ oS.toList := by
     intro a haX ha hm
     obtain ⟨haf, fv, hfv, hfp⟩ := (omemS a).1 hm
@@ -513,7 +513,7 @@ theorem enter_panic {tabs : Tables} {env : Env} {frS frT : Frame} (hA : Agr X fr
   have hsplit' := hsplit
   rw [hsplit] at ond otopo
   obtain ⟨e1, e2, e3, e4⟩ := evalAll_spec (List.nodup_append.1 ond).1
-    (topoRem_append_left otopo) (by simp [hszS, hsz]; rfl) hpre
+    (by exact topoRem_append_left otopo) (by simp [hszS, hsz]; rfl) hpre
   -- the panicking root, outside `X`
   have hrS : r ∈ oS.toList := by rw [hsplit']; simp
   obtain ⟨hrf, fvr, hfvr, hrnph⟩ := (omemS r).1 hrS

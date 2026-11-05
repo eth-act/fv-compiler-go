@@ -226,7 +226,7 @@ theorem newFrame (S : Setup tabs f g) {env : Env} {fr : Frame} {bid : ID} {i : N
       · exact .inr (hfl _ hav)
       · exact .inr (hfl _ hav)
       · exact .inl (List.mem_append_left _ hA)) hEsz
-  obtain ⟨h1, h2, h3, h4⟩ := evalAll_spec hnd htopo hEsz hH
+  obtain ⟨h1, h2, h3, h4⟩ := evalAll_spec hnd (by exact htopo) hEsz hH
   refine ⟨H, by rw [h1]; rfl, by rw [h2, hEsz], fun x hx => ?_, fun x hx v hv => ?_⟩
   · obtain ⟨w, hw⟩ := listed_some hwf hx
     have hxL : x ∉ L := fun hm => by
