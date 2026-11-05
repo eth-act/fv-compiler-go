@@ -139,7 +139,7 @@ theorem r_generic_1011_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     simp [ev, σ, evalE, sigmaT, GoFV.Rules.Generated.Generic.r_generic_1011, Pat.bindsT,
       Pat.bindssT]
   simp only [GoFV.Rules.Generated.Generic.r_generic_1011, Pat.rawT, Pat.densT, Pat.denT, Pat.typed,
-    Pat.typeds, Pat.argsOK, Pat.argsOKs, argShapeOk, Bool.and_eq_true] at hlt hat ⊢
+    Pat.typeds, Pat.argsOK, Pat.argsOKs, reduceArgShapeOk, Bool.and_eq_true] at hlt hat ⊢
   simp only [resDenT, nodeDenT, List.length_cons, List.length_nil, List.getElem?_cons_zero,
     List.map_cons, List.map_nil, ht, hax, opVal_addr]
   simp only [opVal, reduceCtorEq, ite_false, ite_true, reduceEvalPure]

@@ -126,7 +126,7 @@ theorem r_generic_1689_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     opVal_addr] at hty ⊢
   simp only [resDenT, nodeDenT, List.length_cons, List.length_nil, List.getElem?_cons_zero,
     List.map_nil]
-  simp only [GoFV.Rules.Generated.Generic.r_generic_1689, Pat.argsOK, Pat.argsOKs, argShapeOk,
+  simp only [GoFV.Rules.Generated.Generic.r_generic_1689, Pat.argsOK, Pat.argsOKs, reduceArgShapeOk,
     Bool.and_eq_true, and_true, bne_self_eq_false, Bool.false_or, Bool.or_eq_true, isPtrTy_iff,
     isInt64Ty_iff] at hargs
   obtain ⟨hr, -⟩ := wordShape_ptr hargs

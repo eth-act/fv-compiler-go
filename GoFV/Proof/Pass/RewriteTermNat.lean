@@ -2,6 +2,7 @@ import GoFV.Opt.RewriteCheck
 import GoFV.Proof.Retype
 import GoFV.Proof.Pass.RewriteTermDen
 import GoFV.Proof.Rules.DecShape
+import GoFV.Proof.Rules.ArgShapeProc
 
 /-!
 # `natShape`: the op's raw result has the value's shape (issue #113)
@@ -268,7 +269,7 @@ theorem evalPure_ptrTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) (a
     split
     · rename_i x m
       obtain ⟨t, ht, hx⟩ := h0 _ rfl
-      simp only [GoFV.Proof.Rules.argShapeOk, bne_self_eq_false, Bool.false_or,
+      simp only [GoFV.Proof.Rules.reduceArgShapeOk, bne_self_eq_false, Bool.false_or,
         GoFV.Proof.Rules.convArgOk] at ht
       split
       · split <;> rfl
@@ -652,7 +653,7 @@ theorem raw_makeTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm : O
   all_goals try (right; simp [GoFV.Proof.Rules.Pat.densT, Comp.make, Val.retype]; done)
   simp only [GoFV.Proof.Rules.Pat.typed, GoFV.Proof.Rules.Pat.typeds] at ht
   simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
-    GoFV.Proof.Rules.argShapeOk, hel, Bool.and_eq_true] at ha
+    GoFV.Proof.Rules.reduceArgShapeOk, hel, Bool.and_eq_true] at ha
   obtain ⟨⟨⟨-, h0⟩, -⟩, ⟨⟨-, h1⟩, -⟩, ⟨⟨-, h2⟩, -⟩, -⟩ := ha
   simp only [GoFV.Proof.Rules.makeArgOk, GoFV.Proof.Rules.fieldShape?, Ty.asAgg, Ty.sliceAgg,
     List.getElem?_cons_zero, List.getElem?_cons_succ, Option.map_some] at h0 h1 h2

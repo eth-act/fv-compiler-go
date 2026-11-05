@@ -453,6 +453,7 @@ import GoFV.Proof.Rules.AndB
 import GoFV.Proof.Rules.AndB2
 import GoFV.Proof.Rules.AndB3
 import GoFV.Proof.Rules.AndB4
+import GoFV.Proof.Rules.ArgShapeProc
 import GoFV.Proof.Rules.ArrayLoad
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.AttrCond

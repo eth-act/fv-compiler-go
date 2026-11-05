@@ -528,10 +528,11 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Problem:** the rule modules are half of a cold `lake build` of `GoFV` (perf/history.tsv at
   2ac1805: 1,489 of 2,987 CPU-s), spread over 170 modules of one-line `by rule_auto`/`rule_range`
   proofs. `trace.profiler` on OrB2 and Xor2: 65–75% in `rule_norm`, the `simp_all` after every
-  case split (38 calls in one `rule_range` proof). `diagnostics`: few lemma attempts, but the
-  projections `PEnv.ty`/`auxInt`/`leaf` unfolded 40,851/24,176/12,355 times in one theorem —
-  `decide := true` evaluating a `Decidable` instance at every proposition, most of them stuck on
-  leaf reads. In Neq5, 23 elaborations of `rule_pow2`'s `first | exact divisible_pow2_u … | … |
+  case split (38 calls in one `rule_range` proof). `decide := true` evaluated a `Decidable`
+  instance at every proposition, most of them stuck on leaf reads. (Correction: the
+  `diagnostics` counts first quoted here, `PEnv.ty`/`auxInt`/`leaf` unfolded 40,851/24,176/12,355
+  times in one theorem, are the same without `decide`; they are projection reductions while `simp`
+  indexes terms, not `decide`'s work.) In Neq5, 23 elaborations of `rule_pow2`'s `first | exact divisible_pow2_u … | … |
   exact divisible_pow2_s_ne …` took 20 s: on a signed `!=` goal the `_u_ne` attempt failed after
   ~2.85 s of default-transparency unification through `bne` and `BitVec.sdiv`.
 - **Trick:** `rule_norm` without `decide`, with `Int.reduceEq/Ne/BEq/BNe`, which decide what
@@ -547,6 +548,36 @@ avoiding): the problem, the trick, the numbers, where it is used.
   modules (`lake env lean`, CPU): Neq5 40.9 → 20.6 s, Xor2 34.0 → 28.3 s, OrB2 26.0 → 21.9 s,
   RotateLeft4 10.9 → 9.7 s, RotateLeft8 19.9 → 21.9 s. Types of all 11,318 `GoFV` constants the
   rule modules see unchanged (two new syntax constants), axioms audit 0 violations.
+
+#### Whole-tree profile: private `match` equations regenerated per module, kernel-heavy `rfl`s
+- **Problem** (`lean -Dprofiler=true` on all 985 modules at f53b580, 4-core orb: 4,906 CPU-s; 28%
+  `simp`, 22% kernel, 20% tactics, 12.5% import): (a) ~21,000 private `match` equations and
+  splitters across the tree. A `split`/`simp` on a big `match` on a variable realizes them in the
+  module doing it, and generating them upstream does not help (they are private to the
+  generating module; checked with a two-module scratch build). `evalOpL` (91-arm) in 15 modules,
+  ~12 s each; `argShapeOk` (64 equations) once per *theorem* in the rule modules that use it
+  (asynchronous elaboration: 20 times in FloatRules, 88 s of 300 s profiled). (b) Three private
+  copies of `entryFrame_makeL` proved by `split <;> rfl` on the concrete `Ctx.make tabs f`: ~41 s
+  of kernel each. (c) Field equations of a concrete `removePred`/`removeSucc` by `rfl`: structure
+  eta on the whole `Func` first.
+- **Trick:** (a) state the `match` once as an `if` chain on a `Bool` predicate
+  (`GoFV/Proof/EvalOpLDispatch.lean`, `evalOpL_eq`, by cases on the op) and rewrite with it; the
+  four local copies of the 91-op set get one-line bridges (`cases op <;> rfl`, ~3 s; for a list,
+  `cases op <;> first | exact absurd h Bool.false_ne_true | decide +kernel`, 4 s, where `decide`
+  on membership for all 800 ops took 26 s). For `argShapeOk`, always applied to a constructor, a
+  dsimproc (`reduceArgShapeOk`, like `reduceCallH`). (b) `entryFrame_tys` by `rfl` at an
+  arbitrary context. (c) the same field equations at an arbitrary `Func`. Also `evalAll_spec`
+  calls pass the `TopoRem` argument as `(by exact h)`, elaborated after the argument that fixes
+  the implicit `ctx` (Enter, Avail 3.0 → 0.6 s).
+- **Effect:** cold `lake build` of `GoFV` (989 jobs, no Lake cache, 4-core 8G orb, two modules at
+  a time: `LEAN_NUM_THREADS=2`, as three or four were OOM-killed by the orb's 6 GiB workload
+  cap), main f53b580 then this change, back to back: 1,797.7 s wall / 5,098 CPU-s → 1,536.4 s /
+  4,406 CPU-s (−14.5% / −13.6%). CPU, module alone, before → after: CopyElimL/CSELSim/UnreadLSim ~42 → 1 s each;
+  NilLateLEval 43.6 → 16.6, UnreadLOps 53.1 → 34.1, CSELOp 33.3 → 18.2, EvalL 31.9 → 20.6,
+  MoveLOps 20.3 → 8.9, CopyFragL 14.5 → 4.9, FloatRules 50.8 → 38.8, RewriteTermNat 66.3 → 56.8,
+  DeadEdge 7.1 → 3.2. Not fixed: `arm64Op`'s matcher (3–4 s in ~12 modules; its 25 arms differ, so
+  no single dispatch lemma), and `rule_norm` itself: all 38 of its `simp_all` calls in a
+  `rule_range` proof make progress, so skipping unproductive ones gains nothing.
 
 #### prove validator: `rng` evaluated once per level and value via `@[csimp]` (#189, #24)
 - **Problem:** `gofv-ssa-opt --check --verified` on quick-v3 did not finish in 90 min:

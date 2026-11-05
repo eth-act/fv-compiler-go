@@ -63,7 +63,28 @@ theorem r_generic_488_3_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generi
 theorem r_generic_521_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_521 := by rule_auto
 
 /-- `generic.rules:561`: `(Rsh32Ux64 (Lsh32x64 x (Const64 [16])) (Const64 [16])) => (ZeroExt16to32 (Trunc32to16 <typ.UInt16> x))` -/
-theorem r_generic_561_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_561 := by rule_auto
+theorem r_generic_561_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_561 := by
+  -- `rule_auto`, with `bv_normalize` tried before `rule_close`'s closers: there its per-bit closer
+  -- (`ext`, `simp`) fails after ~2.5 s on each of the three cases first (7.6 s of the module)
+  rule_unfold
+  (try rule_ands)
+  (try rule_clear_oracle)
+  (try rule_norm)
+  (try rule_ands)
+  all_goals (repeat rule_split1)
+  all_goals (try rule_widths)
+  all_goals (
+    repeat rule_gen1
+    try simp only [GoFV.Proof.Rules.DV.int.injEq, GoFV.Proof.Rules.DV.bool.injEq] at *
+    try rule_ands
+    try rule_subst
+    try rule_norm
+    try simp_all only [rule_arith, rule_close_s]
+    first
+    | done
+    | with_reducible rfl
+    | (bv_normalize (config := { enums := false, structures := false }); done)
+    | rule_close)
 
 /-- `generic.rules:488`: `(Rsh32Ux8 (Const32 [0]) _) => (Const32 [0])` -/
 theorem r_generic_488_4_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_488_4 := by rule_auto

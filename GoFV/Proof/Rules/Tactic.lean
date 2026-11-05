@@ -1,6 +1,7 @@
 import Lean
 import GoFV.Proof.Rules.Lemmas
 import GoFV.Proof.Rules.Names
+import GoFV.Proof.Rules.ArgShapeProc
 
 /-!
 # Tactics for the rule lemmas (`docs/proofs/rules.md`, "Proof method")
@@ -286,7 +287,7 @@ elab "rule_unfold" : tactic => do
     rule_cond_bool)))
   if usesArgShape then
     evalTactic (← `(tactic| try simp only [GoFV.Proof.Rules.Pat.argsOK, GoFV.Proof.Rules.Pat.argsOKs,
-      GoFV.Proof.Rules.argShapeOk, GoFV.Proof.Rules.isPtrTy_iff, GoFV.Proof.Rules.isInt64Ty_iff,
+      GoFV.Proof.Rules.reduceArgShapeOk, GoFV.Proof.Rules.isPtrTy_iff, GoFV.Proof.Rules.isInt64Ty_iff,
       GoFV.Proof.Rules.isIntWTy_iff, GoFV.Proof.Rules.isSliceTy_iff,
       GoFV.Proof.Rules.convArgOk, GoFV.Proof.Rules.ifaceArgOk, Bool.and_eq_true, Bool.or_eq_true,
       bne_iff_ne, ne_eq,
