@@ -6,9 +6,10 @@ import GoFV.Opt.FlagAlloc
 /-!
 # flagalloc refines its input under `runSched` (`flagalloc_refinesSched`, issue #385)
 
-If `flagAllocB` accepts `g` for `f` (`GoFV.Proof.Pass.FlagAllocLCheck`: same CFG, `f`'s values
-in order up to removed pure ones, plus clones of available values with related arguments), every
-`runSched` of `f` is one of `g` (`refinesSched_of_flagAlloc`). The proof is a lock-step
+If `f` passes `check` and `flagAllocB` accepts `g` for `f` (`GoFV.Proof.Pass.FlagAllocLCheck`:
+same CFG, `f`'s values in order up to removed pure ones, plus clones of available values with
+related arguments; `g` need not pass `check`), every `runSched` of `f` is one of `g`
+(`refinesSched_of_flagAlloc`). The proof is a lock-step
 simulation (`runLoopL_sim`) along the same blocks and edges with the relation `St`: kept values
 have equal registers in both frames, and the values of `f` placed in strict dominators of the
 current block re-evaluate to their registers (lemma (D) for `runSched`). A block entry sets the
@@ -38,7 +39,6 @@ structure St (tabs : Tables) (f g : Func) (md : LMode) (env : Env) (S T : Frame)
 /-- The facts the simulation uses. -/
 structure Setup (tabs : Tables) (cert : Array (Option ID)) (f g : Func) : Prop where
   wf : ∃ ce, WF ce f
-  wg : ∃ ce', WF ce' g
   cf : CertOK f
   ok : flagAllocWith tabs cert f g = true
 
@@ -65,12 +65,12 @@ private theorem filterMapM_congr {α : Type} {s1 s2 : ID → Res (Option α)} :
     rw [List.filterMapM_cons, List.filterMapM_cons, h z List.mem_cons_self,
       filterMapM_congr (fun y hy => h y (List.mem_cons_of_mem _ hy))]
 
-private theorem phiStep_nonphi {ce : CheckEnv} {h : Func} (hwf : WF ce h) {tabs : Tables} {b : ID}
-    {blk : Block} (hb : b ∈ h.blocks) (hbb : h.block? b = some blk) (S : Frame) (i : Nat) :
+private theorem phiStep_nonphi {h : Func} {tabs : Tables} {blk : Block}
+    (hid : ∀ x ∈ blk.values, ∃ v, h.value? x = some v) (S : Frame) (i : Nat) :
     ∀ z ∈ blk.values.toList, isPhiIn h z = false →
       phiStepL md (Ctx.makeSched tabs h) S i z = .ok none := by
   intro z hz hp
-  obtain ⟨v, hv, -, -⟩ := hwf.valueId b blk ⟨hb, hbb⟩ z (Array.mem_toList_iff.1 hz)
+  obtain ⟨v, hv⟩ := hid z (Array.mem_toList_iff.1 hz)
   unfold isPhiIn at hp
   rw [hv] at hp
   have hp' : (v.op == .Phi) = false := by simpa using hp
@@ -79,14 +79,16 @@ private theorem phiStep_nonphi {ce : CheckEnv} {h : Func} (hwf : WF ce h) {tabs 
   simp only [hp', Bool.false_eq_true, ite_false]
 
 /-- **The `Phi`s of a block entry**: `g` collects `f`'s. -/
-theorem phis_eq {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b fb gb)
+theorem phis_eq {ce : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce f g b fb gb)
     (hph : phisOK f g fb gb = true) {S T : Frame}
     (hkept : ∀ x, keptB f g x = true → T.regs[x]? = S.regs[x]?) {i : Nat} {ps : List (ID × Val)}
     (hps : fb.values.toList.filterMapM (phiStepL md (Ctx.makeSched tabs f) S i) = .ok ps) :
     gb.values.toList.filterMapM (phiStepL md (Ctx.makeSched tabs g) T i) = .ok ps := by
   obtain ⟨hl, hv⟩ := phisOK_spec hph
-  rw [filterMapM_filter (p := isPhiIn f) (phiStep_nonphi H.wf H.hb H.hfb S i)] at hps
-  rw [filterMapM_filter (p := isPhiIn g) (phiStep_nonphi H.wg H.hbg H.hgb T i), ← hps,
+  rw [filterMapM_filter (p := isPhiIn f) (phiStep_nonphi (fun x hx =>
+    (H.wf.valueId b fb ⟨H.hb, H.hfb⟩ x hx).imp fun _ h => h.1) S i)] at hps
+  rw [filterMapM_filter (p := isPhiIn g) (phiStep_nonphi (fun x hx =>
+    (H.og.valueId x hx).imp fun _ h => h.1) T i), ← hps,
     ← Array.toList_filter, ← Array.toList_filter, ← hl]
   refine filterMapM_congr fun z hz => ?_
   obtain ⟨fv, gv, hfv, hgv, hop, hty, hargs, hk⟩ := hv z (Array.mem_toList_iff.1 hz)
@@ -124,16 +126,12 @@ theorem stepB {cert : Array (Option ID)} (SU : Setup tabs cert f g) {S T : Frame
       (blockStepL md env (Ctx.makeSched tabs f) S b i)
       (blockStepL md env (Ctx.makeSched tabs g) T b i) := by
   obtain ⟨ce, hwf⟩ := SU.wf
-  obtain ⟨ce', hwg⟩ := SU.wg
-  obtain ⟨-, hbl, hown, hlow, hall⟩ := flagAllocWith_spec SU.ok
-  obtain ⟨fb, gb, hfb, hgb, hk, hai, hsu, -, hph, hoG, hoF, hW⟩ := blockB_spec (hall b hR.hb)
-  have hbg : b ∈ g.blocks := hbl ▸ hR.hb
-  have H : BHyp ce ce' f g b fb gb :=
-    ⟨hwf, hwg, SU.cf, hR.hb, hbg, hfb, hgb, hR.tree, hlow, hown⟩
+  obtain ⟨-, -, hown, hlow, hall⟩ := flagAllocWith_spec SU.ok
+  obtain ⟨fb, gb, hfb, hgb, hO, hk, hai, hsu, -, hph, hoG, hoF, hW⟩ := blockB_spec (hall b hR.hb)
+  have H : BHyp ce f g b fb gb := ⟨hwf, hO, SU.cf, hR.hb, hfb, hgb, hR.tree, hlow, hown⟩
   obtain ⟨fb', hfb', hfid⟩ := hwf.blockId b hR.hb
   rw [hfb] at hfb'; cases hfb'
-  obtain ⟨gb', hgb', hgid⟩ := hwg.blockId b hbg
-  rw [hgb] at hgb'; cases hgb'
+  have hgid := hO.id
   unfold blockStepL
   rw [makeSched_f, makeSched_f, hfb, hgb]
   dsimp only
@@ -189,7 +187,7 @@ theorem stepB {cert : Array (Option ID)} (SU : Setup tabs cert f g) {S T : Frame
       (gb.values.filter (!isPhiIn g ·)).toList [] { S with regs := setPhis ps S.regs }
       { T with regs := setPhis ps T.regs } := by
     refine ⟨frame_rel hR.fr _ _, by simp [setPhis_size, hR.szT],
-      (hwg.valuesNodup b gb ⟨hbg, hgb⟩).sublist (by rw [Array.toList_filter]; exact List.filter_sublist),
+      hO.nd.sublist (by rw [Array.toList_filter]; exact List.filter_sublist),
       fun x hx => ?_, fun x hx => ?_, fun c o hc => absurd hc List.not_mem_nil⟩
     · rw [Array.toList_filter] at hx
       exact Array.mem_toList_iff.1 ((List.mem_filter.1 hx).1)
@@ -340,22 +338,21 @@ theorem refinesSched_of_flagAllocWith {cert : Array (Option ID)} (SU : Setup tab
       (fun _ _ _ _ hR => stepB SU hR) fuel _ _ _ _ h0 (finish_defined hd))
 
 /-- **flagalloc's rewrites validated by `flagAllocB` refine under `runSched`.** -/
-theorem refinesSched_of_flagAlloc {ce ce' : CheckEnv} {tabs : Tables} {f g : Func}
-    (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (hv : flagAllocB tabs f g = true) :
+theorem refinesSched_of_flagAlloc {ce : CheckEnv} {tabs : Tables} {f g : Func}
+    (hf : check ce f = .ok ()) (hv : flagAllocB tabs f g = true) :
     RefinesSched tabs g tabs f :=
-  refinesSched_of_flagAllocWith ⟨⟨ce, check_wf hf⟩, ⟨ce', check_wf hg⟩,
-    certOK_of_check (check_domCert hf), hv⟩
+  refinesSched_of_flagAllocWith ⟨⟨ce, check_wf hf⟩, certOK_of_check (check_domCert hf), hv⟩
 
-/-- **flagalloc refines its input under `runSched`** (issue #385): for an input and output
-that pass `check` and a pair the validator `flagAllocB` accepts. -/
-theorem flagalloc_refinesSched {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
+/-- **flagalloc refines its input under `runSched`** (issue #385): for an input that passes
+`check` and a pair the validator `flagAllocB` accepts. -/
+theorem flagalloc_refinesSched {penv : PassEnv} {f : Func} {out : PassOut} {ce : CheckEnv}
     (h : flagallocPass penv f = .ok out) (hf : check ce f = .ok ())
-    (hg : check ce' out.func = .ok ()) (hv : flagAllocB penv.tables f out.func = true) :
+    (hv : flagAllocB penv.tables f out.func = true) :
     RefinesSched out.tables out.func penv.tables f := by
   simp only [flagallocPass, Pass.ofFunc, bind, Except.bind, pure, Except.pure] at h
   split at h
   · cases h
   · cases h
-    exact refinesSched_of_flagAlloc hf hg hv
+    exact refinesSched_of_flagAlloc hf hv
 
 end GoFV.Proof.FlagAllocL

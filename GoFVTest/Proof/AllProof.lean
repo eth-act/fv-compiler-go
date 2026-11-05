@@ -219,6 +219,10 @@ import GoFV.Proof.Pass.ECStruct
 import GoFV.Proof.Pass.ECTree
 import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.ECWide
+import GoFV.Proof.Pass.FlagAllocL
+import GoFV.Proof.Pass.FlagAllocLCheck
+import GoFV.Proof.Pass.FlagAllocLEval
+import GoFV.Proof.Pass.FlagAllocLWalk
 import GoFV.Proof.Pass.FuseCmp
 import GoFV.Proof.Pass.FuseCmpPres
 import GoFV.Proof.Pass.FuseCmpRel
@@ -672,6 +676,7 @@ import GoFV.Proof.Witness.Defer
 import GoFV.Proof.Witness.DomCertFast
 import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.ExpandCalls
+import GoFV.Proof.Witness.FlagAllocL
 import GoFV.Proof.Witness.FormatBool
 import GoFV.Proof.Witness.FuseEarly
 import GoFV.Proof.Witness.FuseIf

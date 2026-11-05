@@ -23,7 +23,8 @@ flags arguments and controls to them, and drops replaced generators left without
 * **Order** (`walkB`): `f`'s and `g`'s `b.Values` orders (`schedOrder`; `g`'s must be one) agree
   on the kept values; every value `f` evaluates has no argument it evaluates later or itself
   (`f`'s order is a schedule). Controls are related like arguments (a redirected one only for an
-  arm64 kind).
+  arm64 kind). Each block of `g` has its ID and lists each value once, with its ID and block
+  (`ownB`), so `g` itself need not pass `check`.
 -/
 
 namespace GoFV.Proof.FlagAllocL
@@ -134,11 +135,20 @@ def phisOK (f g : Func) (fb gb : Block) : Bool :=
           gv.args == fv.args && gv.block == fv.block && fv.args.all (keptB f g)
       | _, _ => false
 
-/-- Block `b`: same kind, `auxInt`, edges, `Phi`s; `g`'s order is a schedule; the walk. -/
+/-- `g`'s block `b` is well formed: its ID, its values listed once, each `g`'s with its ID and
+block. -/
+def ownB (g : Func) (b : ID) (gb : Block) : Bool :=
+  gb.id == b && decide gb.values.toList.Nodup &&
+    gb.values.all fun x => match g.value? x with
+      | some v => v.id == x && v.block == b
+      | none => false
+
+/-- Block `b`: well formed in `g`; same kind, `auxInt`, edges, `Phi`s; `g`'s order is a
+schedule; the walk. -/
 def blockB (tabs : Tables) (dc : Cert) (f g : Func) (cert : Array (Option ID)) (b : ID) : Bool :=
   match f.block? b, g.block? b with
   | some fb, some gb =>
-    gb.kind == fb.kind && gb.auxInt == fb.auxInt && gb.succs == fb.succs &&
+    ownB g b gb && gb.kind == fb.kind && gb.auxInt == fb.auxInt && gb.succs == fb.succs &&
       gb.preds == fb.preds && phisOK f g fb gb &&
       let LF := fb.values.filter (!isPhiIn f ·)
       let LG := gb.values.filter (!isPhiIn g ·)

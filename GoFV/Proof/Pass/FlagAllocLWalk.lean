@@ -19,12 +19,11 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof GoFV.Proof.MoveL Dom
 variable {tabs : Tables} {f g : Func} {md : LMode} {env : Env}
 
 /-- The facts of block `b` the walk uses. -/
-structure BHyp (ce ce' : CheckEnv) (f g : Func) (b : ID) (fb gb : Block) : Prop where
+structure BHyp (ce : CheckEnv) (f g : Func) (b : ID) (fb gb : Block) : Prop where
   wf : WF ce f
-  wg : WF ce' g
+  og : GOwn g b gb
   cf : CertOK f
   hb : b ∈ f.blocks
-  hbg : b ∈ g.blocks
   hfb : f.block? b = some fb
   hgb : g.block? b = some gb
   tree : ((make f).depthOf b).isSome
@@ -65,7 +64,7 @@ theorem fr_set {S T : Frame} (h : T = { S with regs := T.regs }) (z : ID) (y : V
 /-! ## Steps -/
 
 /-- `f` evaluates the next value `z` of its order. -/
-theorem FInv.step {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b fb gb)
+theorem FInv.step {ce : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce f g b fb gb)
     {LF' P : List ID} {z : ID} {S : Frame} (hF : FInv tabs f md env b fb (z :: LF') P S)
     {fz : Value} (hfz : f.value? z = some fz) {y : Val}
     (he : evalValueL md env (Ctx.makeSched tabs f) S fz = .ok y) (ht : ∀ a ∈ fz.args, a ∉ z :: LF') :
@@ -172,7 +171,7 @@ theorem argRel_regs {gb : Block} {LF LG : List ID} {C : List (ID × ID)} {S T : 
     rw [hS] at h2; cases h2; exact h1
 
 /-- **A kept value evaluates in `g` as in `f`** (when `f`'s does not get stuck). -/
-theorem keptEval {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b fb gb)
+theorem keptEval {ce : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce f g b fb gb)
     {LF LG : List ID} {C : List (ID × ID)} {S T : Frame} (hR : RInv f g gb LF LG C S T) {z : ID}
     (hzf : z ∈ fb.values) (hzg : z ∈ gb.values) (hk : keptOK f g C z = true) {fz gz : Value}
     (hfz : f.value? z = some fz) (hgz : g.value? z = some gz)
@@ -183,7 +182,7 @@ theorem keptEval {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f
   rw [hgz] at hgz'; cases hgz'
   obtain ⟨fz2, hfz2, hfid, -⟩ := H.wf.valueId b fb ⟨H.hb, H.hfb⟩ z hzf
   rw [hfz] at hfz2; cases hfz2
-  obtain ⟨gz2, hgz2, hgid, -⟩ := H.wg.valueId b gb ⟨H.hbg, H.hgb⟩ z hzg
+  obtain ⟨gz2, hgz2, hgid, -⟩ := H.og.valueId z hzg
   rw [hgz] at hgz2; cases hgz2
   obtain ⟨hlen, hk2⟩ := args2_spec hargs
   refine evalValueL_eq_of_args hop haux hai (hgid.trans hfid.symm) (by simpa using hlen)
@@ -196,7 +195,7 @@ theorem keptEval {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f
 
 /-- **A clone evaluates to its original's register**, which `f` does not evaluate again in the
 block. -/
-theorem cloneEval {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b fb gb)
+theorem cloneEval {ce : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce f g b fb gb)
     {LF LG P : List ID} {C : List (ID × ID)} {S T : Frame}
     (hF : FInv tabs f md env b fb LF P S) (hR : RInv f g gb LF LG C S T) {x o : ID}
     (hxg : x ∈ gb.values) (hc : cloneOK (make f) f g b P C x o = true) :
@@ -204,7 +203,7 @@ theorem cloneEval {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' 
       evalValueL md env (Ctx.makeSched tabs g) T gx = .ok y ∧ S.regs[o]? = some (some y) ∧ o ∉ LF := by
   obtain ⟨ov, gx, hov, hgx, hcl, hop, hty, haux, hai, hargs, hav⟩ := cloneOK_spec hc
   have hph : ov.op ≠ .Phi := fun h => by rw [hop, h] at hcl; cases hcl
-  obtain ⟨gx2, hgx2, hgid, -⟩ := H.wg.valueId b gb ⟨H.hbg, H.hgb⟩ x hxg
+  obtain ⟨gx2, hgx2, hgid, -⟩ := H.og.valueId x hxg
   rw [hgx] at hgx2; cases hgx2
   -- the original is available
   obtain ⟨y, hSo, hev, hoid, hoL⟩ : ∃ y, S.regs[o]? = some (some y) ∧
@@ -250,7 +249,7 @@ def WEnd (tabs : Tables) (f g : Func) (md : LMode) (env : Env) (b : ID) (fb gb :
   ∃ P C, FInv tabs f md env b fb [] P S ∧ RInv f g gb [] [] C S T ∧ ctrlsOK f g fb gb C = true
 
 /-- **The walk of block `b`**: `g`'s evaluation of its order simulates `f`'s. -/
-theorem walk {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b fb gb)
+theorem walk {ce : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce f g b fb gb)
     {cert : Array (Option ID)} :
     ∀ (n : Nat) (LF LG P : List ID) (C : List (ID × ID)) (S T : Frame),
       LF.length + LG.length = n → walkB (make f) f g cert b fb gb LF LG P C = true →
@@ -271,7 +270,7 @@ theorem walk {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b
     subst hLG
     have hxg : x ∈ gb.values := hR.lg x List.mem_cons_self
     obtain ⟨gx, y, hgx, hev, hSo, hoL⟩ := cloneEval H hF hR hxg hc
-    have hk := not_kept_g H.wg H.hbg H.hfb H.hgb hxg hxf
+    have hk := not_kept_g H.og H.hfb hxg hxf
     have hxT : x < T.regs.size := hR.sz ▸ lt_of_value? hgx
     rw [evalAllL_cons, stepVL_of (by rw [makeSched_f]; exact hgx), hev]
     exact ih _ (by simp at hn; omega) LF LG' P ((x, o) :: C) S (T.set x y) rfl hW' hF
@@ -305,7 +304,7 @@ theorem walk {ce ce' : CheckEnv} {b : ID} {fb gb : Block} (H : BHyp ce ce' f g b
           simp only [hxc, ite_true, Bool.and_eq_true, beq_iff_eq] at hW
           obtain ⟨⟨⟨hxz, hk⟩, ht⟩, hW⟩ := hW
           subst hxz
-          obtain ⟨gx, hgx, -, -⟩ := H.wg.valueId b gb ⟨H.hbg, H.hgb⟩ x hzg
+          obtain ⟨gx, hgx, -, -⟩ := H.og.valueId x hzg
           obtain ⟨fz', hfz', hta⟩ := topoOK_spec ht
           rw [hfz] at hfz'; cases hfz'
           rw [evalAllL_cons, stepVL_of (by rw [makeSched_f]; exact hfz), evalAllL_cons,

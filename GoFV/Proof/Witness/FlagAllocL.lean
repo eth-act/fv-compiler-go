@@ -51,11 +51,9 @@ theorem flagallocL_witness :
   obtain ⟨m, hm⟩ := returnsInt_iff.1 h2
   have hf : check clampTLCheckEnv clampTL = .ok () := by
     revert h1; cases check clampTLCheckEnv clampTL <;> simp [Except.toBool]
-  obtain ⟨out, hp, hg, hv, h22, h14, -⟩ := ok_of_toOption h3
-  have hg' : check clampTLCheckEnv out.func = .ok () := by
-    revert hg; cases check clampTLCheckEnv out.func <;> simp [Except.toBool]
+  obtain ⟨out, hp, -, hv, h22, h14, -⟩ := ok_of_toOption h3
   have htabs : clampFLPassEnv.tables = clampLTabs := rfl
-  have hr := flagalloc_refinesSched hp hf hg' hv
+  have hr := flagalloc_refinesSched hp hf hv
   rw [htabs] at hr
   exact ⟨out, hp, h22, h14, hr.returned_int hm⟩
 

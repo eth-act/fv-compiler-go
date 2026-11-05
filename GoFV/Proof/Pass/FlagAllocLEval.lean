@@ -45,6 +45,24 @@ theorem listedIn_of {f : Func} {b x : ID} {blk : Block} (hb : f.block? b = some 
     (hx : x ∈ blk.values) : listedIn f b x = true := by
   unfold listedIn; rw [hb]; simpa using hx
 
+/-- `g`'s block `b` is well formed (`ownB`). -/
+structure GOwn (g : Func) (b : ID) (gb : Block) : Prop where
+  id : gb.id = b
+  nd : gb.values.toList.Nodup
+  valueId : ∀ x ∈ gb.values, ∃ v, g.value? x = some v ∧ v.id = x ∧ v.block = b
+
+theorem ownB_spec {g : Func} {b : ID} {gb : Block} (h : ownB g b gb = true) : GOwn g b gb := by
+  unfold ownB at h
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨h1, h2⟩, h3⟩ := h
+  refine ⟨h1, h2, fun x hx => ?_⟩
+  have := (Array.all_eq_true_iff_forall_mem.1 h3) x hx
+  split at this
+  · rename_i v hv
+    simp only [Bool.and_eq_true, beq_iff_eq] at this
+    exact ⟨v, hv, this.1, this.2⟩
+  · cases this
+
 theorem keptB_spec {f g : Func} {x : ID} (h : keptB f g x = true) :
     ∃ fv gv, f.value? x = some fv ∧ g.value? x = some gv ∧ fv.block = gv.block ∧
       listedIn f fv.block x = true ∧ listedIn g gv.block x = true := by
@@ -55,26 +73,15 @@ theorem keptB_spec {f g : Func} {x : ID} (h : keptB f g x = true) :
     exact ⟨fv, gv, hf, hg, h.1.1, h.1.2, h.2⟩
   · cases h
 
-/-- A value listed in the same block of `f` and `g` is kept. -/
-theorem keptB_of {ce ce' : CheckEnv} {f g : Func} (hwf : WF ce f) (hwg : WF ce' g) {b : ID}
-    {fb gb : Block} (hb : b ∈ f.blocks) (hbg : b ∈ g.blocks) (hfb : f.block? b = some fb)
-    (hgb : g.block? b = some gb) {x : ID} (hxf : x ∈ fb.values) (hxg : x ∈ gb.values) :
-    keptB f g x = true := by
-  obtain ⟨fv, hfv, -, hfvb⟩ := hwf.valueId b fb ⟨hb, hfb⟩ x hxf
-  obtain ⟨gv, hgv, -, hgvb⟩ := hwg.valueId b gb ⟨hbg, hgb⟩ x hxg
-  unfold keptB
-  rw [hfv, hgv]
-  simp [hfvb, hgvb, listedIn_of hfb hxf, listedIn_of hgb hxg]
-
 /-- A value of `g`'s block not in `f`'s is not kept. -/
-theorem not_kept_g {ce' : CheckEnv} {f g : Func} (hwg : WF ce' g) {b : ID} {fb gb : Block}
-    (hbg : b ∈ g.blocks) (hfb : f.block? b = some fb) (hgb : g.block? b = some gb) {x : ID}
+theorem not_kept_g {f g : Func} {b : ID} {fb gb : Block} (hO : GOwn g b gb)
+    (hfb : f.block? b = some fb) {x : ID}
     (hxg : x ∈ gb.values) (hxf : x ∉ fb.values) : keptB f g x = false := by
   cases hk : keptB f g x with
   | false => rfl
   | true =>
     obtain ⟨fv, gv, -, hgv, hbl, hlf, -⟩ := keptB_spec hk
-    obtain ⟨gv', hgv', -, hgvb⟩ := hwg.valueId b gb ⟨hbg, hgb⟩ x hxg
+    obtain ⟨gv', hgv', -, hgvb⟩ := hO.valueId x hxg
     rw [hgv] at hgv'; cases hgv'
     rw [hbl, hgvb] at hlf
     obtain ⟨blk, hblk, hx⟩ := listedIn_spec hlf
@@ -176,7 +183,7 @@ theorem phisOK_spec {f g : Func} {fb gb : Block} (h : phisOK f g fb gb = true) :
 /-- What `blockB` checks of block `b`. -/
 theorem blockB_spec {tabs : Tables} {dc : Cert} {f g : Func} {cert : Array (Option ID)} {b : ID}
     (h : blockB tabs dc f g cert b = true) :
-    ∃ fb gb, f.block? b = some fb ∧ g.block? b = some gb ∧ gb.kind = fb.kind ∧
+    ∃ fb gb, f.block? b = some fb ∧ g.block? b = some gb ∧ GOwn g b gb ∧ gb.kind = fb.kind ∧
       gb.auxInt = fb.auxInt ∧ gb.succs = fb.succs ∧ gb.preds = fb.preds ∧ phisOK f g fb gb = true ∧
       schedOrder g (Ctx.makeL tabs g).tys gb = some (gb.values.filter (!isPhiIn g ·)) ∧
       (schedOrder f (Ctx.makeL tabs f).tys fb = none ∨
@@ -187,8 +194,8 @@ theorem blockB_spec {tabs : Tables} {dc : Cert} {f g : Func} {cert : Array (Opti
   split at h
   · rename_i fb gb hf hg
     simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at h
-    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, ⟨⟨h7, h8⟩, h9⟩⟩ := h
-    exact ⟨fb, gb, hf, hg, h1, h2, h3, h4, h5, h7, h8, h9⟩
+    obtain ⟨⟨⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩, h5⟩, ⟨⟨h7, h8⟩, h9⟩⟩ := h
+    exact ⟨fb, gb, hf, hg, ownB_spec h0, h1, h2, h3, h4, h5, h7, h8, h9⟩
   · cases h
 
 /-- What `flagAllocWith` checks. -/
