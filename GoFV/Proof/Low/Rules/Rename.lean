@@ -2,10 +2,11 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:442-455`, `482-485`)
+# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:442-455`, `482-485`, `507`, `512`)
 
 `ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
-checks and the closure pointer. `ArmRule.SetOp` of the atomic loads: `AtomicLoad{8,32,64,Ptr}`
+checks, the closure pointer and the bounds panic. `ArmRule.SetOp` of the write barrier (`WB` and
+`LoweredWB` are terms, both `wbOp`) and of the atomic loads: `AtomicLoad{8,32,64,Ptr}`
 and the acquiring loads `LDAR{B,W,}` they lower to are terms (`ldarOp`), both Phase 1's
 `atomicLoad` (`armPure_ldar`).
 -/
@@ -14,6 +15,17 @@ namespace GoFV.Proof.Low.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low GoFV.Opt.LowerTerm
 open GoFV.Rules.Generated.ARM64
+
+/-- `ARM64.rules:507`: `(WB ...) => (LoweredWB ...)` -/
+theorem r_ARM64_507_sound : ArmRule.Checked r_ARM64_507 :=
+  checked_setOp .WB .ARM64LoweredWB rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_arm _ rfl rfl rfl) fun tabs ty ai ax args _ => by
+      rw [opValL_gen rfl rfl, opValL_arm rfl rfl rfl]
+      exact Refines.refl _
+
+/-- `ARM64.rules:512`: `(PanicBounds ...) => (LoweredPanicBoundsRR ...)` -/
+theorem r_ARM64_512_sound : ArmRule.Checked r_ARM64_512 :=
+  checked_rename .PanicBounds .ARM64LoweredPanicBoundsRR rfl rfl rfl rfl rfl
 
 /-- `ARM64.rules:442`: `(StaticCall ...) => (CALLstatic ...)` -/
 theorem r_ARM64_442_sound : ArmRule.Checked r_ARM64_442 :=

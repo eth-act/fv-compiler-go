@@ -287,10 +287,11 @@ these values at their op's width, and a narrow generic op read at a wider shape 
 the atomic loads (`atomicLoad`, likewise), `Addr` at a word shape (a `uintptr`-typed `Addr`:
 the symbol's address, which `MOVDaddr` computes alike, `refines_addr_movAddr` at every shape),
 and `CondSelect` at a word shape (an arm, which `CSEL` moves as its register, `regVal`, and a word
-shape reads back whole); arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
+shape reads back whole), and `WB` (`wbOp`, which `LoweredWB` computes alike, at every shape);
+arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
 def topOKL (o : Op) (ty : Ty) : Bool :=
   !o.generic || o == .Load || atomicLoadOp o || ((o == .Addr || o == .CondSelect) && wordShape ty) ||
-    GoFV.Opt.RewriteCheck.topOK o ty
+    o == .WB || GoFV.Opt.RewriteCheck.topOK o ty
 
 /-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
 def Pat.topOKL (ty : Ty) : Pat → Bool
@@ -458,7 +459,8 @@ def ArmRule.SetOp (r : Rule) : Prop :=
 
 /-- The atom ellipsis rules the atom simulation relates by itself (`GoFV.Opt.LowerCheck.atomPair`):
 the input atom and its renamed output have the same arguments and fields, and the output's
-evaluation refines the input's (`GoFV.Proof.Low.atomPair_eval`). -/
+evaluation refines the input's (`GoFV.Proof.Low.atomPair_eval`): calls, tail calls, nil checks,
+the closure pointer and the bounds panic (`panicBounds` on both sides). -/
 def renameOp : Op → Op → Bool
   | .NilCheck, .ARM64LoweredNilCheck => true
   | .StaticCall, .ARM64CALLstatic => true
@@ -467,6 +469,7 @@ def renameOp : Op → Op → Bool
   | .GetClosurePtr, .ARM64LoweredGetClosurePtr => true
   | .TailCall, .ARM64CALLtail => true
   | .TailCallInter, .ARM64CALLtailinter => true
+  | .PanicBounds, .ARM64LoweredPanicBoundsRR => true
   | _, _ => false
 
 /-- An ellipsis rule without a condition renaming an atom (`renameOp`). -/

@@ -333,7 +333,8 @@ theorem renameOp_cases {a b : Op} (h : renameOp a b = true) :
     (a = .NilCheck ∧ b = .ARM64LoweredNilCheck) ∨ (a = .StaticCall ∧ b = .ARM64CALLstatic) ∨
       (a = .ClosureCall ∧ b = .ARM64CALLclosure) ∨ (a = .InterCall ∧ b = .ARM64CALLinter) ∨
       (a = .GetClosurePtr ∧ b = .ARM64LoweredGetClosurePtr) ∨
-      (a = .TailCall ∧ b = .ARM64CALLtail) ∨ (a = .TailCallInter ∧ b = .ARM64CALLtailinter) := by
+      (a = .TailCall ∧ b = .ARM64CALLtail) ∨ (a = .TailCallInter ∧ b = .ARM64CALLtailinter) ∨
+      (a = .PanicBounds ∧ b = .ARM64LoweredPanicBoundsRR) := by
   unfold renameOp at h
   split at h <;> simp_all
 
@@ -371,13 +372,13 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     {o : Op} (h : renameOp o w.op = true) :
     (∃ k, PostCall o k ∧ evalOpL false env ctx fr w argv ty =
         callOp env ctx { w with op := o } (fitArgs ctx.tabs { w with op := o } k argv)) ∨
-      ((o = .NilCheck ∨ o = .GetClosurePtr) ∧
+      ((o = .NilCheck ∨ o = .GetClosurePtr ∨ o = .PanicBounds) ∧
         evalOpL false env ctx fr w argv ty = evalOp env ctx fr { w with op := o } argv ty) ∨
       ((o = .TailCall ∨ o = .TailCallInter) ∧
         ∃ msg, evalOp env ctx fr { w with op := o } argv ty = .stuck msg) := by
   have h0 : nilFaults false ctx w argv = none := rfl
   rcases renameOp_cases h with ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ |
-    ⟨rfl, -⟩ | ⟨rfl, -⟩
+    ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hw⟩
   · refine .inr (.inl ⟨.inl rfl, ?_⟩)
     have hg : Op.ARM64LoweredNilCheck.generic = false := by decide
     unfold evalOpL
@@ -419,7 +420,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     dsimp only
     rw [hw]
     rfl
-  · refine .inr (.inl ⟨.inr rfl, ?_⟩)
+  · refine .inr (.inl ⟨.inr (.inl rfl), ?_⟩)
     have hg : Op.ARM64LoweredGetClosurePtr.generic = false := by decide
     unfold evalOpL
     rw [hw]
@@ -438,6 +439,17 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     have : evalOp env ctx fr { w with op := .TailCallInter } argv ty =
         atomicRoot { w with op := .TailCallInter } argv := rfl
     rw [this]; exact atomicRoot_tail (.inr rfl) argv
+  · refine .inr (.inl ⟨.inr (.inr rfl), ?_⟩)
+    have hg : Op.ARM64LoweredPanicBoundsRR.generic = false := by decide
+    unfold evalOpL
+    rw [hw]
+    simp only [hg, Bool.false_eq_true, ite_false]
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [hw]
+    unfold evalOp
+    rfl
 
 /-- A call of a post-`expand calls` generic op evaluates by `callOp`. -/
 theorem evalOp_postCall {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}

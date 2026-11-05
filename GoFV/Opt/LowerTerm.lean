@@ -111,7 +111,9 @@ def armTerm : Op → Bool
   | .ARM64SCVTFD | .ARM64UCVTFS | .ARM64UCVTFD | .ARM64FCVTZSSW | .ARM64FCVTZSDW
   | .ARM64FCVTZUSW | .ARM64FCVTZUDW | .ARM64FCVTZSS | .ARM64FCVTZSD | .ARM64FCVTZUS
   | .ARM64FCVTZUD | .ARM64FMOVSconst | .ARM64FMOVDconst | .ARM64FMOVDgpfp | .ARM64FMOVDfpgp
-  | .ARM64FMOVSgpfp | .ARM64FMOVSfpgp => true
+  | .ARM64FMOVSgpfp | .ARM64FMOVSfpgp
+  -- the write barrier's buffer allocation (`wbOp`, Phase 1's `WB`, a term there too)
+  | .ARM64LoweredWB => true
   | _ => false
 
 /-- The aux names a frame variable (`Sem.symAddr` then needs the activation). -/

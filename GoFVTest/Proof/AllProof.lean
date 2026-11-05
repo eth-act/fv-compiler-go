@@ -700,6 +700,7 @@ import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreSym
+import GoFV.Proof.Witness.LowerWBPanic
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
