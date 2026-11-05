@@ -511,6 +511,31 @@ def addrLower (tabs : Tables) (u w : Value) : Bool :=
   u.op == .LocalAddr && w.op == .ARM64MOVDaddr && w.auxInt == 0 && w.aux == u.aux &&
     auxIsName tabs u.aux && w.args.size == 1
 
+/-- The arguments of `PanicBounds [kind] x y mem` that a lowering with constant operands folded
+into its aux keeps (`ARM64.rules:513-516`): `LoweredPanicBoundsRC [kind] {C} x mem` keeps `x` and
+`mem`, `CR` keeps `y` and `mem`, `CC` keeps `mem`. -/
+def pbKeep : Op → Option (List Nat)
+  | .ARM64LoweredPanicBoundsRC => some [0, 2]
+  | .ARM64LoweredPanicBoundsCR => some [1, 2]
+  | .ARM64LoweredPanicBoundsCC => some [2]
+  | _ => none
+
+/-- The atom `w` lowers the bounds panic `u` with constant operands folded into its aux
+(`pbKeep`): the same auxint (the bounds kind), and `w` has one argument per kept one of `u`'s three.
+`GoFV.Opt.LowerCheck.pbConstOK` relates the aux to `u`'s dropped operands. -/
+def pbLower (u w : Value) : Bool :=
+  u.op == .PanicBounds && u.args.size == 3 && u.auxInt == w.auxInt &&
+    (pbKeep w.op).any (w.args.size == ·.length)
+
+/-- The argument of the atom `u` that argument `i` of its corresponding atom `w` reads: the kept
+one for a bounds panic with constant operands (`pbLower`), else `i`. -/
+def argIx (u w : Value) (i : Nat) : Nat :=
+  if pbLower u w then ((pbKeep w.op).getD [])[i]?.getD i else i
+
+/-- `argIx` is the identity unless `w` lowers a bounds panic with constant operands. -/
+theorem argIx_of_not {u w : Value} (h : pbLower u w = false) (i : Nat) : argIx u w i = i := by
+  simp [argIx, h]
+
 /-- An atom whose value reads no argument: `MOVDaddr` of a frame variable (a `.name` aux,
 `Sem.symAddr`). -/
 def argFree (tabs : Tables) (w : Value) : Bool :=
@@ -618,13 +643,21 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
 
 /-! ## Rule sets -/
 
+/-- The bounds-panic atoms a rule folds a constant operand of (`ARM64.rules:513-516`). -/
+def pbAtom : Op → Bool
+  | .ARM64LoweredPanicBoundsRR | .ARM64LoweredPanicBoundsRC | .ARM64LoweredPanicBoundsCR => true
+  | _ => false
+
 /-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`, an
-arm64 store `stSize` knows): the validator accepts its events only as a lowered store, a folded
-store offset or a frame address it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`,
-`memLower`, `stFold`, `addrLower`), so the rule carries no obligation of its own. -/
+arm64 store `stSize` knows) or on a lowered bounds panic (`pbAtom`): the validator accepts its
+events only as a lowered store, a folded store offset or a frame address it pairs with the atom
+itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `stFold`, `addrLower`), or as a constant folded
+into a bounds panic, which the replay keeps as the renamed atom (`GoFV.Opt.LowerCheck.pbFoldEv`;
+`finalOKL` and `atomsOKL` relate the result, `pbLower`), so the rule carries no obligation of
+its own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
-    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome)
+    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o)
 
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
 ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/

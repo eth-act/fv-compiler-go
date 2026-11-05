@@ -492,23 +492,50 @@ theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = tr
 
 theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     (((((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
-        memLower tabs u w = true) ∧ u.args.size = w.args.size) ∨ addrLower tabs u w = true) ∧
+        memLower tabs u w = true) ∧ u.args.size = w.args.size) ∨ addrLower tabs u w = true ∨
+        pbLower u w = true) ∧
       u.type = w.type ∧ u.block = w.block ∧ u.id = w.id := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
   refine ⟨?_, h2, h3, h4⟩
-  rcases h1 with ⟨⟨⟨h1, h6⟩, h7⟩ | h1, hs⟩ | h1
+  rcases h1 with (⟨⟨⟨h1, h6⟩, h7⟩ | h1, hs⟩ | h1) | h1
   · exact .inl ⟨.inl ⟨h1, h6, h7⟩, hs⟩
   · exact .inl ⟨.inr h1, hs⟩
-  · exact .inr h1
+  · exact .inr (.inl h1)
+  · exact .inr (.inr h1)
 
-/-- Corresponding atoms other than a lowered frame address have as many arguments. -/
+/-- What `pbKeep` says. -/
+theorem pbKeep_cases {o : Op} {ks : List Nat} (h : pbKeep o = some ks) :
+    (o = .ARM64LoweredPanicBoundsRC ∧ ks = [0, 2]) ∨ (o = .ARM64LoweredPanicBoundsCR ∧ ks = [1, 2]) ∨
+      (o = .ARM64LoweredPanicBoundsCC ∧ ks = [2]) := by
+  unfold pbKeep at h
+  split at h <;> simp_all
+
+/-- What `pbLower` says. -/
+theorem pbLower_cases {u w : Value} (h : pbLower u w = true) :
+    u.op = .PanicBounds ∧ u.args.size = 3 ∧ u.auxInt = w.auxInt ∧
+      ∃ ks, pbKeep w.op = some ks ∧ w.args.size = ks.length := by
+  unfold pbLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Option.any_eq_true] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, ks, hk, hs⟩ := h
+  exact ⟨h1, h2, h3, ks, hk, by simpa using hs⟩
+
+/-- A bounds panic with constant operands and the `PanicBounds` it lowers: no `Phi`s, both
+roots. -/
+theorem pbLower_ops {u w : Value} (h : pbLower u w = true) :
+    u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot w.op = isRoot u.op := by
+  obtain ⟨hu, -, -, ks, hk, -⟩ := pbLower_cases h
+  rcases pbKeep_cases hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hu, hw] <;> decide
+
+/-- Corresponding atoms other than a lowered frame address or a bounds panic with constant
+operands have as many arguments. -/
 theorem atomPair_size {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
-    (hn : addrLower tabs u w = false) : u.args.size = w.args.size := by
-  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha
+    (hn : addrLower tabs u w = false) (hb : pbLower u w = false) : u.args.size = w.args.size := by
+  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha | ha
   · exact hs
   · rw [hn] at ha; cases ha
+  · rw [hb] at ha; cases ha
 
 /-- A lowered store and the `Store` it lowers: no `Phi`s, both roots. -/
 theorem memLower_ops {tabs : Tables} {u w : Value} (h : memLower tabs u w = true) :
@@ -526,7 +553,7 @@ theorem addrLower_ops {tabs : Tables} {u w : Value} (h : addrLower tabs u w = tr
 /-- Corresponding atoms are both `Phi`s or neither. -/
 theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     w.op = .Phi ↔ u.op = .Phi := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
@@ -535,17 +562,20 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := addrLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
+  · obtain ⟨h1, h2, -⟩ := pbLower_ops h
+    exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
 
 /-- Corresponding atoms are both roots or neither. -/
 theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     isRoot w.op = isRoot u.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h, -⟩ | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
       rw [h1, h2] <;> decide
   · exact (memLower_ops h).2.2
   · exact (addrLower_ops h).2.2
+  · exact (pbLower_ops h).2.2
 
 theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
   unfold Ctx.makeL; split <;> rfl
@@ -641,7 +671,8 @@ in `f`'s mode. -/
 theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
-    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hgen : u.op.generic = true)
+    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
+    (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
@@ -649,7 +680,7 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
-  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn]; decide)
+  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn, hb]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
   have hrel : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
       ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i) (rv GS a) (rv GT a') :=

@@ -166,7 +166,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       | some fb, some gb =>
         for x in atomsOfL tabs g gb do
           match f.value? x, g.value? x with
-          | some u, some w => if !atomPair tabs u w then return s!"atoms: {u.op.name} -> {w.op.name} v{x}"
+          | some u, some w =>
+            if !(atomPair tabs u w && pbConstOK tabs f u w) then
+              return s!"atoms: {u.op.name} -> {w.op.name} v{x}"
           | none, some w => return s!"atoms: new atom {w.op.name} v{x}"
           | _, _ => return s!"atoms: v{x}?"
         for x in atomsOfL tabs f fb do
@@ -183,6 +185,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       match M.get? v with
       | none => return s!"rule at missing v{v}"
       | some x =>
+        if pbFoldEv M v defs.toList then continue
         match ((t.values[x.op.ctorIdx]?).bind (·[i]?) : Option Interp.CRule) with
         | none => return "no rule"
         | some cr =>
@@ -237,6 +240,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       for x in gb.values do
         match M.get? x, g.value? x with
         | some m, some u =>
+          if pbFinal tabs M M.size x m u then continue
           if !(u.op == m.op && u.type == m.type && u.auxInt == m.auxInt && u.aux == m.aux) then
             if !(termVL tabs u && L[x]? != some true) then
               return s!"final: v{x} fields {m.op.name}->{u.op.name}"

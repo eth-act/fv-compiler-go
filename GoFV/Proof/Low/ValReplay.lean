@@ -179,14 +179,23 @@ theorem termVL_st (tabs : Tables) (v : Value) {o : Op} (ho : (stSize o).isSome =
     | (cases ho; done)
     | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) h]; decide)
 
+/-- The lowered bounds panics are atoms. -/
+theorem termVL_pb (tabs : Tables) (v : Value) {o : Op} (ho : pbAtom o = true)
+    (h : v.op = o) : termVL tabs v = false := by
+  unfold pbAtom at ho
+  split at ho <;> first
+    | (cases ho; done)
+    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) h]; decide)
+
 /-- The atoms `ArmRule.Mem` rules match. -/
 theorem termVL_mem (tabs : Tables) (v : Value) {o : Op}
-    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true)
+    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true ∨ pbAtom o = true)
     (h : v.op = o) : termVL tabs v = false := by
-  rcases ho with rfl | rfl | ho
+  rcases ho with rfl | rfl | ho | ho
   · exact termVL_store tabs v h
   · exact termVL_localAddr tabs v h
   · exact termVL_st tabs v ho h
+  · exact termVL_pb tabs v ho h
 
 theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
     ∃ a, o = some a ∧ a.op = .Store := by

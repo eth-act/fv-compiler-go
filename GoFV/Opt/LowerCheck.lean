@@ -28,6 +28,10 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, is replayed as its
   new definitions (`atomDef`); a rule event folding a lowered frame address into an integer load
   (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`);
+* a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
+  replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
+  replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
+  `Const64` operands of `f`'s `PanicBounds` (`pbLower`, `pbConstOK`);
 * copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
   reject.
 -/
@@ -267,6 +271,15 @@ def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value)
     | none => none
   | _, _ => none
 
+/-- A rule event at the renamed bounds panic `LoweredPanicBoundsRR` at `v` building a lowered
+bounds panic with constant operands (`pbKeep`; `ARM64.rules:513-516`, the later ones on the
+result of the first): the replay keeps `v`'s definition, which `finalOKL` relates to the output's
+(`pbFinal`). -/
+def pbFoldEv (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [_, u] => x.op == .ARM64LoweredPanicBoundsRR && u.id == v && (pbKeep u.op).isSome
+  | _, _ => false
+
 /-! ## Copies -/
 
 /-- A `Copy` of shape `s` of a value of shape `t` is the identity on it (`RewriteCheck.copyCompat`
@@ -373,6 +386,7 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
     match M.get? v with
     | none => none
     | some x =>
+      if pbFoldEv M v defs.toList then replayL tabs t f M B evs else
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
       | none => none
       | some cr =>
@@ -440,10 +454,35 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 with the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
-    memLower tabs u w) && u.args.size == w.args.size || addrLower tabs u w) &&
+    memLower tabs u w) && u.args.size == w.args.size || addrLower tabs u w || pbLower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
-/-- `RewriteCheck.atomsOK` with `atomPair`: the same entry, blocks and own aux; every atom of `g`
+/-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands
+carries in its aux (`Sem.arm64Op`'s `pbc`/`pbcc`): `RC` `y` (operand 1), `CR` `x` (0), `CC` both;
+`none` for another op or aux. -/
+def pbConsts (tabs : Tables) (w : Value) : Option (List (Nat × Int)) :=
+  match w.op, w.aux.bind tabs.aux? with
+  | .ARM64LoweredPanicBoundsRC, some { kind := .pbc k, .. } => some [(1, k)]
+  | .ARM64LoweredPanicBoundsCR, some { kind := .pbc k, .. } => some [(0, k)]
+  | .ARM64LoweredPanicBoundsCC, some { kind := .pbcc kx ky, .. } => some [(0, kx), (1, ky)]
+  | _, _ => none
+
+/-- Operand `i` of `u` is, in `f`, a `Const64 [k]` at the 64-bit integer shape of `f`'s mode. -/
+def constArg (tabs : Tables) (f : Func) (u : Value) (i : Nat) (k : Int) : Bool :=
+  match f.value? u.args[i]! with
+  | some y => y.op == .Const64 && y.auxInt.toInt == k && y.args.size == 0 &&
+      (shp f.lowered tabs y.type matches .int .w64)
+  | none => false
+
+/-- The aux constants of a bounds panic `w` with constant operands folded in are `f`'s operands
+of the `PanicBounds` `u` it lowers (`pbLower`, `constArg`). Every other pair is unconstrained. -/
+def pbConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  !pbLower u w ||
+    match pbConsts tabs w with
+    | some l => l.all fun (i, k) => constArg tabs f u i k
+    | none => false
+
+/-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux; every atom of `g`
 corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtom`), and each block
 evaluates its roots in the same order (`Sem.schedule`). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
@@ -455,7 +494,7 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       let af := atomsOfL tabs f fb
       let ag := atomsOfL tabs g gb
       ag.all (fun x => af.contains x && match f.value? x, g.value? x with
-        | some u, some w => atomPair tabs u w
+        | some u, some w => atomPair tabs u w && pbConstOK tabs f u w
         | _, _ => false) &&
       af.all (fun x => ag.contains x || (f.value? x).any (dropAtom ·.op)) &&
       match Sem.schedule f fb, Sem.schedule g gb with
@@ -495,7 +534,18 @@ def liveOKL (tabs : Tables) (h : Func) (L : Array Bool) : Bool :=
         (termVL tabs u && L[x]? != some true) || u.args.all fun a => L[a]? == some true
     | none => true
 
-/-- Every value listed in `g` has its replayed definition up to copies in its arguments, or is a
+/-- The output's bounds panic `u` with constant operands at `x` keeps the other arguments of the
+replayed `LoweredPanicBoundsRR` `m` (up to copies; `pbKeep`), with its type and auxint. -/
+def pbFinal (tabs : Tables) (M : Defs) (n : Nat) (x : ID) (m u : Value) : Bool :=
+  u.id == x && m.id == x && m.op == .ARM64LoweredPanicBoundsRR && u.type == m.type &&
+    u.auxInt == m.auxInt && m.args.size == 3 &&
+    match pbKeep u.op with
+    | some ks => u.args.size == ks.length &&
+        (ks.zip u.args.toList).all fun (k, a') => copyReachL tabs M n m.args[k]! a'
+    | none => false
+
+/-- Every value listed in `g` has its replayed definition up to copies in its arguments (a bounds
+panic with constant operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`), or is a
 term `g` does not read; every block of `g` its replayed terminator (kind, auxint, successors as
 the replay swapped them, controls up to copies). -/
 def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
@@ -516,7 +566,7 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
           (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
             u.aux == m.aux && u.args.size == m.args.size &&
             (m.args.toList.zip u.args.toList).all fun (a, a') => copyReachL tabs M n a a') ||
-          (termVL tabs u && L[x]? != some true)
+          (termVL tabs u && L[x]? != some true) || pbFinal tabs M n x m u
         | _, _ => false
     | _, _, _ => false
 
