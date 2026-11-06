@@ -118,6 +118,18 @@ def ArgRel (tabs : Tables) (act : Nat) : Option (Int64 × Option AuxRef) → Val
   | none, x, y => Sem.Refines x y
   | some (k, ax), x, y => AddrRef tabs act ax k x y
 
+/-- The address an indexed store at the scale `s` writes at on the base `a` and the index `i`
+(`Sem.arm64Op`'s `stIdx`, at offset 0): `a + i` (`Arm64.add`), or `a` moved by `i`'s register
+times `s`. -/
+def idxAddr (s : Nat) (a i : Val) : Val :=
+  if s = 1 then Arm64.add .other [a, i] else
+    match Arm64.reg i with
+    | some k => Arm64.add .other [a, .int .w64 (k * BitVec.ofNat 64 s)]
+    | none => .poison
+
+/-- The scale of the indexed store `o` (`idxStore`). -/
+def idxScale (o : Op) : Nat := ((idxStore o).map (·.2)).getD 1
+
 /-- The address of the frame variable `n` in activation `act` (`Sem.frameVal`). -/
 def framePtr (tabs : Tables) (act : Nat) (n : AuxRef) : Ptr := ⟨frameBlk tabs act n, 0⟩
 
@@ -185,6 +197,15 @@ def ArgTermFitL (t : Ty) (lowD : Bool) (D : ID → Option Value) (tabs : Tables)
     FrameVals tabs 0 D ρ →
       Sem.Refines (fitPiece t (denL lowD D tabs ρ n x)) (fitPiece t (denL lowE E tabs' ρ' m y))
 
+/-- The base `y` and the index `z` in `E` give at the scale `s` (`idxAddr`, an indexed store's
+address) the address the pointer word `x` in `D` is (`AddrRef` at offset 0 without aux), as terms
+over the atoms (as `ArgTermRefL`). -/
+def ArgTermIdxL (s : Nat) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID)
+    (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y z : ID) : Prop :=
+  ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs 0 D ρ → AddrRef tabs 0 none 0 (denL lowD D tabs ρ n x)
+      (idxAddr s (denL lowE E tabs' ρ' m y) (denL lowE E tabs' ρ' m z))
+
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
     (hp : x.asPtrWord = some p) : y = x := by
@@ -249,15 +270,24 @@ corresponds to (`atomPair`: the same ID and fields, a renamed op, or a lowered s
 is related by `AddrRef` at its offset, `stArg`; a bounds panic with constant operands reads the
 kept ones, `argIx`, and its constants are `f`'s, `pbConstOK`), or, for a lowered call's register
 piece, refine fitted to its leaf (`callFitTy`, `ArgTermFitL`), unless the atom of `g` reads no
-argument (`argFree`: a lowered frame address). -/
+argument (`argFree`: a lowered frame address); a `Store` lowered to an indexed store
+(`idxLower`) has its address given by the base and the index (`ArgTermIdxL`), and its value and
+memory refined. -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false →
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
-      (argFree tabs u = true ∨ ∀ i < u.args.size, ArgTermRefL (stArg u' u i)
+      (argFree tabs u = true ∨ (∀ i < u.args.size, ArgTermRefL (stArg u' u i)
         f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]! ∨
         ∃ t, callFitTy tabs u i = some t ∧ ArgTermFitL t
-          f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]!)
+          f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]!) ∨
+        (idxLower tabs u' u = true ∧
+          ArgTermIdxL (idxScale u.op) f.lowered f.value? tabs u'.args[0]! g.lowered (listedDefs g)
+            tabs u.args[0]! u.args[1]! ∧
+          ArgTermRefL none f.lowered f.value? tabs u'.args[1]! g.lowered (listedDefs g) tabs
+            u.args[2]! ∧
+          ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
+            u.args[3]!))
 
 /-- The terminator of `b` (`Sem.stepTermL`) on the control values `cs`. -/
 def stepValsL (b : Block) (cs : List Val) : Res Next :=

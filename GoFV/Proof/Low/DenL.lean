@@ -304,4 +304,16 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
       rw [this]
       simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, pure]
 
+/-- `idxAddr` is monotone. -/
+theorem idxAddr_mono (s : Nat) {a a' i i' : Val} (ha : Sem.Refines a a') (hi : Sem.Refines i i') :
+    Sem.Refines (idxAddr s a i) (idxAddr s a' i') := by
+  unfold idxAddr
+  split
+  · exact Mono.add_mono _ (.cons ha (.cons hi .nil))
+  · cases hk : Arm64.reg i with
+    | none => exact .poison _
+    | some k =>
+      rw [Mono.reg_of hi hk]
+      exact Mono.add_mono _ (.cons ha (.cons (Sem.Refines.refl _) .nil))
+
 end GoFV.Proof.Low

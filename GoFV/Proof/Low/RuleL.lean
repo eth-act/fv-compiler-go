@@ -578,6 +578,31 @@ def memLower (tabs : Tables) (u w : Value) : Bool :=
   offOK w.auxInt && stAux tabs w.aux && u.op == .Store &&
     (stSize w.op).any (fitsB (auxTy tabs u.aux))
 
+/-- The indexed arm64 stores, with the store each indexes and the index's scale: `MOV…storeidx
+ptr idx val mem` stores as `MOV…store` at `ptr + idx`, `MOV…storeidx{2,4,8}` at `ptr + idx*scale`
+(`Sem.arm64Op`'s `stIdx`). -/
+def idxStore : Op → Option (Op × Nat)
+  | .ARM64MOVBstoreidx => some (.ARM64MOVBstore, 1)
+  | .ARM64MOVHstoreidx => some (.ARM64MOVHstore, 1)
+  | .ARM64MOVWstoreidx => some (.ARM64MOVWstore, 1)
+  | .ARM64MOVDstoreidx => some (.ARM64MOVDstore, 1)
+  | .ARM64FMOVSstoreidx => some (.ARM64FMOVSstore, 1)
+  | .ARM64FMOVDstoreidx => some (.ARM64FMOVDstore, 1)
+  | .ARM64MOVHstoreidx2 => some (.ARM64MOVHstore, 2)
+  | .ARM64MOVWstoreidx4 => some (.ARM64MOVWstore, 4)
+  | .ARM64MOVDstoreidx8 => some (.ARM64MOVDstore, 8)
+  | .ARM64FMOVSstoreidx4 => some (.ARM64FMOVSstore, 4)
+  | .ARM64FMOVDstoreidx8 => some (.ARM64FMOVDstore, 8)
+  | _ => none
+
+/-- The atom `w` lowers the `Store` `u` to an indexed store (`idxStore`; `ARM64.rules:786-791`,
+`806-808` index the arm64 store lowering it): no offset or aux, `u`'s three arguments and `w`'s four
+(`ptr idx val mem`), a scalar `Store` type of the indexed store's size
+(`GoFV.Proof.Low.Sim.idx_lower_eval`). -/
+def idxLower (tabs : Tables) (u w : Value) : Bool :=
+  u.op == .Store && u.args.size == 3 && w.args.size == 4 && w.auxInt == 0 && w.aux == none &&
+    (idxStore w.op).any fun p => (stSize p.1).any (fitsB (auxTy tabs u.aux))
+
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
 `.name` aux) at offset 0 and one argument, whose value it ignores
@@ -679,6 +704,24 @@ theorem memLower_op {tabs : Tables} {u w : Value} (h : memLower tabs u w = true)
   unfold memLower at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   exact h.1.2
+
+/-- An indexed store (`idxStore`): an arm64 root, no plain arm64 store, `Phi`, `MOVDaddr` or
+bounds panic, indexing an arm64 store at the scale 1, 2, 4 or 8. -/
+theorem idxStore_facts {o p : Op} {s : Nat} (h : idxStore o = some (p, s)) :
+    o.generic = false ∧ stSize o = none ∧ (stSize p).isSome = true ∧ isRoot o = true ∧
+      o ≠ .Phi ∧ o ≠ .ARM64MOVDaddr ∧ pbKeep o = none ∧ (s = 1 ∨ s = 2 ∨ s = 4 ∨ s = 8) := by
+  unfold idxStore at h
+  split at h <;> first | (cases h; done) | (cases h; decide)
+
+/-- What `idxLower` says. -/
+theorem idxLower_cases {tabs : Tables} {u w : Value} (h : idxLower tabs u w = true) :
+    u.op = .Store ∧ u.args.size = 3 ∧ w.args.size = 4 ∧ w.auxInt = 0 ∧ w.aux = none ∧
+      ∃ p s n, idxStore w.op = some (p, s) ∧ stSize p = some n ∧
+        fitsB (auxTy tabs u.aux) n = true := by
+  unfold idxLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Option.any_eq_true] at h
+  obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, ⟨p, s⟩, hp, n, hn, hf⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, p, s, n, hp, hn, hf⟩
 
 /-- An arm64 atomic and the generic atomic it is (`Arm64.atomicOf`): a generic root
 `atomicRoot` models and an arm64 root, neither an arm64 store, a `Phi` or `MOVDaddr`. -/

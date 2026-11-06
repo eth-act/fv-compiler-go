@@ -277,6 +277,27 @@ def stFoldAddr (tabs : Tables) (f : Func) (M : Defs) (x u : Value) : Bool :=
        (f.value? a).any fun l => l.op == .LocalAddr && l.aux == m.aux
    | none => false)
 
+/-- The scale of an index shifted left by `k` in `ADDshiftLL [k] ptr idx` that an indexed store
+takes (`ARM64.rules:806-808`). -/
+def idxShift (k : Int64) : Option Nat :=
+  if k == 1 then some 2 else if k == 2 then some 4 else if k == 3 then some 8 else none
+
+/-- The atom `u` indexes the arm64 store `x` (offset 0, no aux) whose address (`x`'s argument 0
+in `M`) is the term `ADD ptr idx` or `ADDshiftLL [k] ptr idx` at a word shape (`(MOV…store [off]
+{sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOV…storeidx ptr idx val mem)`,
+`ARM64.rules:786-791`; `ADDshiftLL [3]`, `[2]`, `[1]` to `MOVDstoreidx8`, `MOVWstoreidx4`,
+`MOVHstoreidx2`, `806-808`): `u` indexes `x`'s op (`idxStore`) at the scale 1 or `2^k`
+(`idxShift`), with `x`'s type, no offset or aux, and the arguments `ptr idx val mem`. -/
+def stIdxFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
+  (stSize x.op).isSome && u.type == x.type && x.auxInt == 0 && x.aux == none && u.auxInt == 0 &&
+  u.aux == none && x.args.size == 3 &&
+  match M.get? x.args[0]!, idxStore u.op with
+  | some y, some (o, s) =>
+    o == x.op && termVL tabs y && y.args.size == 2 && wordShape (shpL tabs y.type) &&
+      (y.op == .ARM64ADD && s == 1 || y.op == .ARM64ADDshiftLL && idxShift y.auxInt == some s) &&
+      u.args == #[y.args[0]!, y.args[1]!, x.args[1]!, x.args[2]!]
+  | _, _ => false
+
 /-- A rule event at the atom `v` replayed as the atom its top result node `u` defines (the log
 lists the reset value, then the nodes, as for any `build`), with `v`'s type:
 * a lowered store (`memLower` at offset 0 without aux: `(Store {t} ptr val mem) => (MOVDstore ptr
@@ -284,7 +305,7 @@ lists the reset value, then the nodes, as for any `build`), with `v`'s type:
 * a lowered `Zero` or `Move` (`bulkLower`: `LoweredZero`, `LoweredZeroLoop`, `LoweredMove`,
   `LoweredMoveLoop`), on `v`'s arguments;
 * an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
-  or frame variable's address (`stFoldAddr`);
+  or frame variable's address (`stFoldAddr`), or the store indexed (`stIdxFold`);
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
   some of `v`'s arguments, or `(MOVDaddr {sym} (SPanchored base mem))`, whose second node `s` is a
   fresh term on some of `v`'s arguments (`u` reads no argument, `argFree`).
@@ -297,7 +318,8 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
         (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
           u.args == x.args && bulkLower x u ||
           u.args.all x.args.contains && addrLower tabs x u ||
-          (stFold tabs M x u || stFoldAddr tabs f M x u) && (f.value? v).any (·.op == .Store))
+          (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
+            (f.value? v).any (·.op == .Store))
         then some (u, none)
     else none
   | some x, [_, u, s] =>
@@ -680,12 +702,12 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 /-- The atom `w` of `g` corresponds to the atom `u` of `f`: the same fields, or `w` renames `u`
 (`renameOp`) with the same type, auxint, aux and number of arguments, or `w` lowers the store `u`
 (`memLower`) or the `Zero` or `Move` `u` (`bulkLower`) with the same type and number of
-arguments, or the frame address `u` (`addrLower`) or the bounds panic `u` with constant operands
-(`pbLower`) with the same type. -/
+arguments, or the frame address `u` (`addrLower`), the bounds panic `u` with constant operands
+(`pbLower`) or the store `u` to an indexed store (`idxLower`) with the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
     memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
-    pbLower u w) &&
+    pbLower u w || idxLower tabs u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
 /-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands

@@ -407,6 +407,28 @@ theorem argTermFitL_apply (hfr : RegsFrame tabs 0 D FS) {t : Ty} {x y : ID}
   rw [← hM (max m M) (Nat.le_max_right m M)]
   exact h.trans (fitPiece_mono t (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M)))
 
+/-- **`ArgTermIdxL` on registers**, the source's frame addresses those of activation 0. -/
+theorem argTermIdxL_apply (hfr : RegsFrame tabs 0 D FS) {s : Nat} {x y z : ID}
+    (hT : ArgTermIdxL s lowS D tabs x lowT E tabs y z) (hxS : VS x) (hyT : VT y) (hzT : VT z) :
+    AddrRef tabs 0 none 0 (rv FS x) (idxAddr s (rv FT y) (rv FT z)) := by
+  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', hρp⟩ := vals_exist hl hS hG hrel htyS htyT hsh
+  have hF : FrameVals tabs 0 D ρ := fun a l n hl' hop hax => by
+    by_cases h : VS a ∧ ¬ IsTermL tabs D a
+    · rw [hρ a h.1 h.2]
+      obtain ⟨z, hz⟩ := (hS a h.1).1
+      rw [rv_of hz]
+      exact hfr a l n z hl' hop hax hz
+    · rw [hρp a h]; exact .inl rfl
+  obtain ⟨N, hN⟩ := (hS x hxS).2 ρ hρ
+  obtain ⟨M1, hM1⟩ := (hG y hyT).2 ρ' hρ'
+  obtain ⟨M2, hM2⟩ := (hG z hzT).2 ρ' hρ'
+  obtain ⟨m, h⟩ := hT N
+  have h := h ρ ρ' hval htD htE hF
+  rw [hN N (Nat.le_refl N)] at h
+  rw [← hM1 (max m (max M1 M2)) (by omega), ← hM2 (max m (max M1 M2)) (by omega)]
+  exact ArgRel.trans_right (o := some (0, none)) h (idxAddr_mono s
+    (denL_fuel_mono lowT E tabs ρ' m _ y (by omega)) (denL_fuel_mono lowT E tabs ρ' m _ z (by omega)))
+
 /-- **The terminators on registers**, as functions of their controls' terms, the source's frame
 addresses those of activation 0. -/
 theorem termStepRefL_apply (hfr : RegsFrame tabs 0 D FS) {fb gb : Block}
