@@ -17,6 +17,7 @@ import GoFV.Proof.Pass.NilLateL
 import GoFV.Proof.Pass.SchedLPass
 import GoFV.Proof.Pass.FlagAllocL
 import GoFV.Proof.Pass.LateLowerL
+import GoFV.Proof.Pass.PairL
 import GoFV.Proof.Pass.LoopRotateLoc
 import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Regalloc.Sound
@@ -188,7 +189,9 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
   -- late lower
   · exact ⟨rfl, fun _ _ _ h _ hg => low_of (LateLowerL.lateLower_refinesL h hg)⟩
   -- pair
-  · trivial
+  · refine ⟨rfl, fun penv f out h hw hg => ?_⟩
+    obtain ⟨hf, hg'⟩ := hw rfl
+    exact low_of (MoveL.pair_refinesL h hf hg' hg)
   -- lowered deadcode for cse
   · exact deadcodeStepL_sound _ rfl rfl
   -- lowered cse

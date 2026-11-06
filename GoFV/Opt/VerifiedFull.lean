@@ -4,6 +4,7 @@ import GoFV.Opt.Lower
 import GoFV.Opt.LateLowerCheck
 import GoFV.Opt.CheckLower
 import GoFV.Opt.Pair
+import GoFV.Opt.PairCheck
 import GoFV.Opt.LoweredCSE
 import GoFV.Opt.LoweredCSECheck
 import GoFV.Opt.ElimUnreadAutos
@@ -43,10 +44,10 @@ runs as a `LStep`:
 - `proven run rel wf guard`: `run` is the pass (for `lower`, the checked `lowerChecked`) with a
   theorem concluding `rel` (an `LRel`: the layers of its input and output and its
   precondition), on inputs and outputs that pass `check` (when `wf`) and that `guard` (the
-  theorem's remaining hypotheses: fragments, validators such as `renameB`, `moveB`, `critRelB`,
-  `scheduleCheck`, `nilLateB`, `flagAllocB`, `checkRA`, `trimRelB`, decided after the run)
-  accepts;
-- `stock run`: the stock port; no theorem.
+  theorem's remaining hypotheses: fragments, validators such as `renameB`, `pairB`, `moveB`,
+  `critRelB`, `scheduleCheck`, `nilLateB`, `flagAllocB`, `checkRA`, `trimRelB`, decided after the
+  run) accepts;
+- `stock run`: the stock port; no theorem (no pass of the table uses it now).
 
 A proven run whose hypotheses fail is dropped when the pass is optional (`skipped`) and kept
 `unverified` when it is required, as in `verifiedPipeline`. A result equal to the input (function
@@ -208,7 +209,9 @@ def loweredVPasses : Array LPass := #[
   { name := "late lower", required := true, out := .low,
     step := .proven lateLower .low false fun penv f out =>
       LateLowerCheck.renameB penv.tables out.tables f out.func },
-  { name := "pair", out := .low, step := .stock pairPass },
+  { name := "pair", out := .low,
+    step := .proven pairPass .low true fun penv f out =>
+      PairCheck.pairB penv.tables out.tables f out.func },
   { name := "lowered deadcode for cse", out := .low, step := deadcodeStepL },
   { name := "lowered cse", out := .low,
     step := .proven loweredCsePass .low true fun penv f _ => CSEL.frag penv f },
