@@ -19,6 +19,8 @@ namespace GoFV.Proof.Low.Rules
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low
 open Lean Meta Elab Tactic
 
+attribute [rule_unfold_ds] GoFV.Proof.Low.auxIntDVL
+
 /-- `ArmRule.Sound r` (`r` a constant, or a constant applied to closed arguments): one goal per
 commutation choice, unfolded (module doc). -/
 elab "arm_unfold" : tactic => do

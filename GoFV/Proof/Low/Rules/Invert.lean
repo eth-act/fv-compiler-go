@@ -169,4 +169,51 @@ theorem r_ARM64_1382_sound : ArmRule.Checked r_ARM64_1382 := by
 theorem r_ARM64_1383_sound : ArmRule.Checked r_ARM64_1383 := by
   left; arm_unfold; arm_norm; exact refines_cset_invert rfl rfl rfl _ _ _
 
+/-! ## Conditional ops on `InvertFlags`, split by the condition (`Derive.ccSplit`) -/
+
+/-- A `CCop` auxint that binds the op `X` (`auxIntDVL`) decides as `X`'s condition. -/
+theorem ofAux_of_dvl {k : Int64} {X : Op} (h : auxIntDVL .CCop k = .op X) :
+    Cond.ofAux k = Cond.ofOp X := by
+  unfold auxIntDVL at h
+  unfold Cond.ofAux
+  split at h
+  · rename_i o ho
+    cases h
+    split at ho
+    · cases ho
+    · rename_i hk; simp only [hk, if_false, ho, Option.bind_some]
+  · cases h
+
+/-- An integer condition auxint on `InvertFlags f` decides as the swapped one on `f`. -/
+theorem condOn_invert {k k' : Int64} {c c' : Cond} (hk : Cond.ofAux k = some c)
+    (hk' : Cond.ofAux k' = some c') (hs : c.swapInt = some c') (T0 : Ty) (f : Val) :
+    ∀ b, Arm64.condOn k ((invertFlags f).retypeL T0) = some b → Arm64.condOn k' f = some b := by
+  intro b h
+  simp only [Arm64.condOn, hk, hk', Option.bind_some] at h ⊢
+  exact invertFlags_cond hs (Mono.onVal_of (retypeL_invertFlags_ref _ _) h)
+
+theorem refines_csel_cond {ty : Ty} {k k' : Int64} {g : Option (BitVec 64 → BitVec 64)}
+    {x y A B : Val} (h : ∀ b, Arm64.condOn k A = some b → Arm64.condOn k' B = some b) (T : Ty) :
+    Refines ((Arm64.csel ty k g [x, y, A]).retypeL T) ((Arm64.csel ty k' g [x, y, B]).retypeL T) := by
+  simp only [Arm64.csel]
+  cases hA : Arm64.condOn k A with
+  | none => simp only [retypeL_poison]; exact .poison _
+  | some b => rw [h b hA]; exact Refines.refl _
+
+theorem refines_csel0_cond {ty : Ty} {k k' : Int64} {x A B : Val}
+    (h : ∀ b, Arm64.condOn k A = some b → Arm64.condOn k' B = some b) (T : Ty) :
+    Refines ((Arm64.csel0 ty k [x, A]).retypeL T) ((Arm64.csel0 ty k' [x, B]).retypeL T) := by
+  simp only [Arm64.csel0]
+  cases hA : Arm64.condOn k A with
+  | none => simp only [retypeL_poison]; exact .poison _
+  | some b => rw [h b hA]; exact Refines.refl _
+
+theorem refines_csetm_cond {ty : Ty} {k k' : Int64} {A B : Val}
+    (h : ∀ b, Arm64.condOn k A = some b → Arm64.condOn k' B = some b) (T : Ty) :
+    Refines ((Arm64.csetm ty k [A]).retypeL T) ((Arm64.csetm ty k' [B]).retypeL T) := by
+  simp only [Arm64.csetm]
+  cases hA : Arm64.condOn k A with
+  | none => simp only [retypeL_poison]; exact .poison _
+  | some b => rw [h b hA]; exact Refines.refl _
+
 end GoFV.Proof.Low.Rules

@@ -13,7 +13,9 @@ r_ARM64_<n>)`, and the rule set lists `b2iNorm r_ARM64_<n>` (`b2iNorm` is emitte
 set module). A rule whose result reads `b.Op` and `flagArg(b)` of a bound value `b` is proven in
 its split form by `r_ARM64_<n>_flag_sound : ForallL ArmRule.Checked (flagSplit r_ARM64_<n>)`
 (`GoFV.Rules.Derive.flagSplit`: one rule per condition op), and the rule set lists the rules of
-`flagSplit r_ARM64_<n>` in its place. The rule set keeps the generated
+`flagSplit r_ARM64_<n>` in its place; likewise a rule whose result reads `arm64Invert(cc)` of
+its `CCop` auxint by `r_ARM64_<n>_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_<n>)`
+(`GoFV.Rules.Derive.ccSplit`: one rule per integer condition op). The rule set keeps the generated
 matching order (`GoFV.Rules.Generated.ARM64.ruleSet`: ops by Go name, rules per op as rulegen
 tries them; block kinds likewise) restricted to the proven rules.
 """
@@ -29,28 +31,28 @@ OUT_PROOF = ROOT / "GoFV/Proof/Low/ProvenARM64.lean"
 
 
 def proven():
-    vals, blocks, norm, flag, mods = set(), set(), set(), set(), []
+    vals, blocks, norm, split, mods = set(), set(), set(), {}, []
     pat = re.compile(r"^theorem (r_ARM64_\w+)_sound : (ArmRule\.Checked|BlockRuleL\.Sound) ", re.M)
     npat = re.compile(r"^theorem (r_ARM64_\w+)_b2i_sound : ArmRule\.Checked \(b2iNorm (r_ARM64_\w+)\)",
                       re.M)
-    fpat = re.compile(r"^theorem (r_ARM64_\w+)_flag_sound : ForallL ArmRule\.Checked "
-                      r"\(flagSplit (r_ARM64_\w+)\)", re.M)
+    spat = re.compile(r"^theorem (r_ARM64_\w+)_(flag|cc)_sound : ForallL ArmRule\.Checked "
+                      r"\((flagSplit|ccSplit) (r_ARM64_\w+)\)", re.M)
     for f in sorted(LEMMAS.glob("*.lean")):
         text = f.read_text()
         found = pat.findall(text)
         nfound = npat.findall(text)
-        ffound = fpat.findall(text)
-        if found or nfound or ffound:
+        sfound = spat.findall(text)
+        if found or nfound or sfound:
             mods.append("GoFV.Proof.Low.Rules." + f.stem)
         for name, kind in found:
             (vals if kind == "ArmRule.Checked" else blocks).add(name)
         for name, r in nfound:
             assert name == r, (name, r)
             norm.add(name)
-        for name, r in ffound:
-            assert name == r, (name, r)
-            flag.add(name)
-    return vals, blocks, norm, flag, mods
+        for name, kind, fn, r in sfound:
+            assert name == r and fn == kind + "Split", (name, kind, fn, r)
+            split[name] = kind
+    return vals, blocks, norm, split, mods
 
 
 def lists(kind):
@@ -79,7 +81,7 @@ def main():
     blocks = [(k, [r for r in bls[l] if r in pb]) for k, l in bord]
     blocks = [(k, rs) for k, rs in blocks if rs]
     nv = sum(len(rs) for _, rs in values)
-    assert not ((pn | pf) - {r for _, rs in values for r in rs}), pn | pf
+    assert not ((pn | set(pf)) - {r for _, rs in values for r in rs}), (pn, pf)
     nb = sum(len(rs) for _, rs in blocks)
     q = "Generated.ARM64."
 
@@ -87,11 +89,11 @@ def main():
         return "b2iNorm " + q + r if r in pn else q + r
 
     def segments(rs):
-        """Runs of rules listed as such, and the split rules (`flagSplit`), in order."""
+        """Runs of rules listed as such, and the split rules (`flagSplit`, `ccSplit`), in order."""
         out = []
         for r in rs:
             if r in pf:
-                out.append(("flag", r))
+                out.append((pf[r], r))
             elif out and out[-1][0] == "plain":
                 out[-1][1].append(r)
             else:
@@ -100,7 +102,8 @@ def main():
 
     def listExpr(rs):
         return " ++ ".join(
-            "Derive.flagSplit " + q + x if kind == "flag" else "[%s]" % ", ".join(ref(r) for r in x)
+            "Derive.%sSplit " % kind + q + x if kind != "plain"
+            else "[%s]" % ", ".join(ref(r) for r in x)
             for kind, x in segments(rs))
 
     def entries(xs):
@@ -119,7 +122,8 @@ import GoFV.Rules.Derive
 `ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Sound`; `GoFV/Proof/Low/ProvenARM64.lean`), in
 matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A rule on a
 condition's op and flags (`flagArg`) is listed split by the condition op
-(`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances.
+(`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` of
+its `CCop` auxint is listed split by the integer condition ops (`GoFV.Rules.Derive.ccSplit`).
 -/
 
 namespace GoFV.Rules.ProvenARM64
@@ -181,8 +185,8 @@ end GoFV.Rules.ProvenARM64
 """)
 
     def segProof(kind, x):
-        if kind == "flag":
-            return x + "_flag_sound"
+        if kind != "plain":
+            return x + "_" + kind + "_sound"
         return "⟨" + ", ".join(r + ("_b2i_sound" if r in pn else "_sound") for r in x) + ", trivial⟩"
 
     def opProof(rs):

@@ -22,6 +22,11 @@ open GoFV.Proof.Pass.Rewrite (KeysAt KeysFrom append_cons_ne append_cons_inj ins
   good_of_flat lookup_mem lookup_map auxIntDV_flat ArgClosed isOpPat)
 open GoFV.Proof.Rules (Path PEnv DV)
 
+theorem auxIntDVL_flat (aty : AuxType) (i : Int64) : (auxIntDVL aty i).flat = true := by
+  unfold auxIntDVL; split
+  · split <;> rfl
+  · exact auxIntDV_flat _ _
+
 /-- `denL` in lowered mode at a term node. -/
 theorem denT_succ {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val} {n : Nat} {x : ID}
     {v : Value} (hx : D x = some v) (ht : termVL tabs v = true) :
@@ -344,7 +349,7 @@ theorem bindsL_good (hQ : ∀ i p, Q (i :: p))
     · cases ty <;> simp at hy
       subst hy; exact good_of_flat rfl
     · cases ai <;> simp at hy
-      subst hy; exact good_of_flat (auxIntDV_flat _ _)
+      subst hy; exact good_of_flat (auxIntDVL_flat _ _)
     · obtain ⟨-, x, -, -, -, hs⟩ := hm
       exact bindssL_good hQ hleafP hopP args p 0 _ hs
         (by simp only [GoFV.Proof.Pass.Rewrite.Pat.sz] at hsz; omega) y hy
@@ -397,7 +402,7 @@ theorem sigmaL_good_top (hQ : ∀ i p, Q (i :: p))
     · cases ty <;> simp at hy
       obtain ⟨-, rfl⟩ := hy; exact good_of_flat rfl
     · cases ai <;> simp at hy
-      obtain ⟨-, rfl⟩ := hy; exact good_of_flat (auxIntDV_flat _ _)
+      obtain ⟨-, rfl⟩ := hy; exact good_of_flat (auxIntDVL_flat _ _)
     · obtain ⟨-, x, -, -, -, hs⟩ := hm
       exact bindssL_good hQ hleafP hopP args [] 0 _ hs
         (by simp only [GoFV.Proof.Pass.Rewrite.Pat.sz] at hS; omega) _ hy
@@ -428,7 +433,7 @@ theorem bindsL_leaf : ∀ (q : Pat) (p : Path), ∀ y ∈ Pat.bindsL tabs e p q,
     · cases ty <;> simp at hy
       subst hy; cases h
     · cases ai <;> simp at hy
-      subst hy; have := auxIntDV_flat o.auxType (e.auxInt p); simp only at h; rw [h] at this
+      subst hy; have := auxIntDVL_flat o.auxType (e.auxInt p); simp only at h; rw [h] at this
       cases this
     · refine bindssL_leaf args p 0 y hy w p' h ?_
       intro hc; apply hn

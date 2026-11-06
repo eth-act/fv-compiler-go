@@ -186,6 +186,15 @@ def Pat.rawL (tabs : Tables) (e : PEnv) : Pat → Val
     opValL tabs o (e.ty []) (e.auxInt []) (e.aux []) (Pat.densL tabs e [] 0 args)
   | _ => e.leaf []
 
+/-- `auxIntDV` for lowered ops: a `CCop` auxint (`CSEL [cc]`) is the op of that Go opcode number
+(Go's `auxIntToOp`, `GoFV.Rules.Interp.auxIntVal`), so a rule can test and rewrite `cc`. -/
+def auxIntDVL (aty : AuxType) (i : Int64) : DV :=
+  match aty with
+  | .CCop => match (if i.toInt < 0 then none else Op.ofGoNum? i.toInt.toNat) with
+    | some o => .op o
+    | none => .other
+  | _ => auxIntDV aty i
+
 mutual
 /-- `Pat.binds` with `Pat.denL` for named op nodes. -/
 def Pat.bindsL (tabs : Tables) (e : PEnv) (p : Path) : Pat → List (Nat × DV)
@@ -194,7 +203,7 @@ def Pat.bindsL (tabs : Tables) (e : PEnv) (p : Path) : Pat → List (Nat × DV)
   | pat@(.op o name ty ai _ _ args _) =>
     (match name with | some x => [(x, .val (Pat.denL tabs e p pat) (some p))] | none => []) ++
     (match ty with | .bind x => [(x, .ty (e.ty p))] | _ => []) ++
-    (match ai with | .bind x => [(x, auxIntDV o.auxType (e.auxInt p))] | _ => []) ++
+    (match ai with | .bind x => [(x, auxIntDVL o.auxType (e.auxInt p))] | _ => []) ++
     Pat.bindssL tabs e p 0 args
 def Pat.bindssL (tabs : Tables) (e : PEnv) (p : Path) (i : Nat) : List Pat → List (Nat × DV)
   | [] => []
