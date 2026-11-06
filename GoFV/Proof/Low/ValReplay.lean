@@ -117,23 +117,43 @@ theorem termVL_arm {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = false)
 theorem renameOp_src {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v : Value)
     (hv : v.op = o) : termVL tabs v = false := by
   unfold renameOp at h
-  split at h <;> first
-    | (cases h; done)
-    | (rw [termVL_gen (by decide) hv]; decide)
-    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> first
+      | (cases h; done)
+      | (rw [termVL_gen (by decide) hv]; decide)
+      | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
+  · unfold Arm64.atomicOf at h
+    split at h <;> first
+      | (cases h; done)
+      | (cases h; rw [termVL_gen (by decide) hv]; decide)
 
 theorem renameOp_dst {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v : Value)
     (hv : v.op = o') : termVL tabs v = false := by
   unfold renameOp at h
-  split at h <;> first
-    | (cases h; done)
-    | (rw [termVL_gen (by decide) hv]; decide)
-    | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> first
+      | (cases h; done)
+      | (rw [termVL_gen (by decide) hv]; decide)
+      | (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
+  · unfold Arm64.atomicOf at h
+    split at h <;> first
+      | (cases h; done)
+      | (cases h; rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
 
 /-- A renamed atom is no `MOVDaddr`. -/
 theorem renameOp_src_ne {o o' : Op} (h : renameOp o o' = true) : o ≠ .ARM64MOVDaddr := by
   unfold renameOp at h
-  split at h <;> first | (cases h; done) | (intro h'; cases h')
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> first | (cases h; done) | (intro h'; cases h')
+  · intro h'
+    have := (atomicOf_facts h).1
+    rw [h'] at this; exact absurd this (by decide)
 
 /-- What `setOpDef` establishes. -/
 theorem setOpDef_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {x' : Value}

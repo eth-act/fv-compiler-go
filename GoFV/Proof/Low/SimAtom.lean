@@ -334,9 +334,13 @@ theorem renameOp_cases {a b : Op} (h : renameOp a b = true) :
       (a = .ClosureCall ∧ b = .ARM64CALLclosure) ∨ (a = .InterCall ∧ b = .ARM64CALLinter) ∨
       (a = .GetClosurePtr ∧ b = .ARM64LoweredGetClosurePtr) ∨
       (a = .TailCall ∧ b = .ARM64CALLtail) ∨ (a = .TailCallInter ∧ b = .ARM64CALLtailinter) ∨
-      (a = .PanicBounds ∧ b = .ARM64LoweredPanicBoundsRR) := by
+      (a = .PanicBounds ∧ b = .ARM64LoweredPanicBoundsRR) ∨ Arm64.atomicOf b = some a := by
   unfold renameOp at h
-  split at h <;> simp_all
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> simp_all
+  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr h)))))))
 
 /-- A root `atomicRoot` does not model (a tail call) is `stuck`. -/
 theorem atomicRoot_tail {v : Value} (hv : v.op = .TailCall ∨ v.op = .TailCallInter)

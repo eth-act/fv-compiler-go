@@ -495,11 +495,9 @@ def ArmRule.SetOp (r : Rule) : Prop :=
     (∀ tabs (v : Value), v.op = o → termVL tabs v = true) ∧
     (∀ tabs (v : Value), v.op = o' → termVL tabs v = true) ∧ SetOpSoundT o o'
 
-/-- The atom ellipsis rules the atom simulation relates by itself (`GoFV.Opt.LowerCheck.atomPair`):
-the input atom and its renamed output have the same arguments and fields, and the output's
-evaluation refines the input's (`GoFV.Proof.Low.atomPair_eval`): calls, tail calls, nil checks,
-the closure pointer and the bounds panic (`panicBounds` on both sides). -/
-def renameOp : Op → Op → Bool
+/-- The calls, tail calls, nil checks, the closure pointer and the bounds panic `renameOp`
+relates (`panicBounds` on both sides for the bounds panic). -/
+def callRename : Op → Op → Bool
   | .NilCheck, .ARM64LoweredNilCheck => true
   | .StaticCall, .ARM64CALLstatic => true
   | .ClosureCall, .ARM64CALLclosure => true
@@ -509,6 +507,13 @@ def renameOp : Op → Op → Bool
   | .TailCallInter, .ARM64CALLtailinter => true
   | .PanicBounds, .ARM64LoweredPanicBoundsRR => true
   | _, _ => false
+
+/-- The atom ellipsis rules the atom simulation relates by itself (`GoFV.Opt.LowerCheck.atomPair`):
+the input atom and its renamed output have the same arguments and fields, and the output's
+evaluation refines the input's (`GoFV.Proof.Low.atomPair_eval`): `callRename`'s, and an arm64
+atomic of the generic atomic it is (`Arm64.atomicOf`, `ARM64.rules:487-504`; `Sem.arm64Op` runs
+it as that atomic on its operands fitted to the location, `Sem.atomicArgs`). -/
+def renameOp (o o' : Op) : Bool := callRename o o' || Arm64.atomicOf o' == some o
 
 /-- An ellipsis rule without a condition renaming an atom (`renameOp`). -/
 def ArmRule.Rename (r : Rule) : Prop :=
@@ -643,11 +648,25 @@ theorem memLower_op {tabs : Tables} {u w : Value} (h : memLower tabs u w = true)
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   exact h.1.2
 
+/-- An arm64 atomic and the generic atomic it is (`Arm64.atomicOf`): a generic root
+`atomicRoot` models and an arm64 root, neither an arm64 store, a `Phi` or `MOVDaddr`. -/
+theorem atomicOf_facts {o o' : Op} (h : Arm64.atomicOf o' = some o) :
+    o.generic = true ∧ o'.generic = false ∧ stSize o = none ∧ stSize o' = none ∧
+      isRoot o = true ∧ isRoot o' = true ∧ o ≠ .Phi ∧ o' ≠ .Phi ∧ o' ≠ .ARM64MOVDaddr ∧
+      ((Atomic.info? o).isSome || (Atomic.casWidth? o).isSome) = true := by
+  unfold Arm64.atomicOf at h
+  split at h <;> first | (cases h; done) | (cases h; decide)
+
 /-- Renamed atoms are no arm64 stores. -/
 theorem renameOp_stSize {o o' : Op} (h : renameOp o o' = true) :
     stSize o = none ∧ stSize o' = none := by
   unfold renameOp at h
-  split at h <;> first | (cases h; done) | exact ⟨rfl, rfl⟩
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> first | (cases h; done) | exact ⟨rfl, rfl⟩
+  · obtain ⟨-, -, h1, h2, -⟩ := atomicOf_facts h
+    exact ⟨h1, h2⟩
 
 /-- Generic ops are no arm64 stores. -/
 theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by

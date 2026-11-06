@@ -215,16 +215,6 @@ faults, i.e. when `p` is nil (`nilFaults`). -/
 def wildNil (argv : List Val) : Bool :=
   ((argv.head?.bind fun a => Arm64.addr a 0).map Ptr.wild).getD false
 
-/-- The operands of the generic atomic `g` a lowered atomic runs as, at the width of its location
-(`Val.retypeL`): the instruction uses the register's low bits, and lowering drops truncations
-(`(Trunc64to32 x) => (Copy x)`) and zero extensions, so an operand may be wider or narrower than
-the location. -/
-def atomicArgs (g : Op) (argv : List Val) : List Val :=
-  match argv, Atomic.info? g, Atomic.casWidth? g with
-  | [a, x, m], some (_, t), _ => [a, x.retypeL t, m]
-  | [a, o, n, m], _, some w => [a, o.retypeL (.int w), n.retypeL (.int w), m]
-  | _, _, _ => argv
-
 /-- A register piece `x` of a lowered call at the shape `t` of the leaf it passes: lowering drops
 truncations and zero extensions, so an integer piece may be wider or narrower than its leaf, or a
 boolean; the callee reads the register's low bits (`Val.retypeL`), which Phase 1's `encode`
@@ -235,6 +225,17 @@ def fitPiece (t : Ty) (x : Val) : Val :=
   | .int w _, .ptr _ => if w == .w64 then x else x.retypeL t
   | .bool _, .int _ | .bool _, .ptr _ => x.retypeL t
   | _, _ => x
+
+/-- The operands of the generic atomic `g` a lowered atomic runs as, fitted to the shape of its
+location (`fitPiece`): the instruction uses the register's low bits, and lowering drops
+truncations (`(Trunc64to32 x) => (Copy x)`) and zero extensions, so an integer operand may be
+wider or narrower than the location; every other operand is unchanged (Phase 1's `encode` reads
+it as the generic atomic does). -/
+def atomicArgs (g : Op) (argv : List Val) : List Val :=
+  match argv, Atomic.info? g, Atomic.casWidth? g with
+  | [a, x, m], some (_, t), _ => [a, fitPiece t x, m]
+  | [a, o, n, m], _, some w => [a, fitPiece (.int w) o, fitPiece (.int w) n, m]
+  | _, _, _ => argv
 
 /-- The register pieces `pieces` of a lowered call's input parameters (`decodeArgs`' order) at
 their leaves' shapes (`fitPiece`); the memory and any piece beyond the register parameters'
