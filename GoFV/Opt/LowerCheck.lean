@@ -30,7 +30,9 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   a frame address, or folding an `ADDconst` offset (`stFold`) or a global
   symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, is replayed as its
   new definitions (`atomDef`); a rule event folding a lowered frame address into an integer load
-  (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`);
+  (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`); one folding
+  `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
+  atom) is replayed as no change (`addrFoldEv`), and the later folds see through it (`frameAddr`);
 * a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
@@ -209,25 +211,47 @@ def stFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
       u.args == #[y.args[0]!, x.args[1]!, x.args[2]!]
   | none => false
 
+/-- The value `p` of `M` is a lowered frame address: the atom `m` (`MOVDaddr {sym}` at offset 0) at
+`a = p`, or a term `ADDconst [0]` at a word shape of the atom `m` at `a` (`650` at offset 0, which
+the replay keeps unchanged, `addrFoldEv`). -/
+def frameAddr (tabs : Tables) (M : Defs) (p : ID) : Option (ID × Value) :=
+  match M.get? p with
+  | some y =>
+    if y.op == .ARM64MOVDaddr && !termVL tabs y then some (p, y)
+    else if y.op == .ARM64ADDconst && y.auxInt == 0 && termVL tabs y &&
+        wordShape (shpL tabs y.type) && y.args.size == 1 then
+      match y.args[0]? with
+      | some a =>
+        match M.get? a with
+        | some m => if m.op == .ARM64MOVDaddr && !termVL tabs m then some (a, m) else none
+        | none => none
+      | none => none
+    else none
+  | none => none
+
 /-- The atom `u` folds the address `MOVDaddr [k2] {sym} b` of the arm64 store `x` (`x`'s argument
 0 in `M`) into its offset and aux (`(MOV…store [k1] {sym1} (MOVDaddr [k2] {sym2} ptr) val mem) &&
 canMergeSym(sym1,sym2) … => (MOV…store [k1+k2] {mergeSym(sym1,sym2)} ptr val mem)`,
 `ARM64.rules:881-905`): the same op and type, `x` without aux, `u` with the `MOVDaddr`'s, `b` for
 the address, the offset `k1 + k2` (`k1` and the sum small and non-negative, `offOK`); the
-`MOVDaddr` either a term (a global symbol, at a word shape) or, at offset 0, the lowered frame
-address of the `LocalAddr` of `f` with the same aux (a frame variable). -/
+`MOVDaddr` either a term (a global symbol, at a word shape) or the lowered frame address
+(`frameAddr`, offset 0) of the `LocalAddr` of `f` at its ID with the same aux (a frame variable). -/
 def stFoldAddr (tabs : Tables) (f : Func) (M : Defs) (x u : Value) : Bool :=
   (stSize x.op).isSome && u.op == x.op && u.type == x.type && x.aux == none &&
   x.args.size == 3 && offOK x.auxInt && offOK u.auxInt &&
-  match M.get? x.args[0]! with
-  | some m =>
-    m.op == .ARM64MOVDaddr && m.args.size == 1 && m.aux.isSome && u.aux == m.aux &&
-      u.auxInt.toInt == x.auxInt.toInt + m.auxInt.toInt &&
-      u.args == #[m.args[0]!, x.args[1]!, x.args[2]!] &&
-      (termVL tabs m && wordShape (shpL tabs m.type) ||
-        !termVL tabs m && m.auxInt == 0 &&
-          (f.value? x.args[0]!).any fun l => l.op == .LocalAddr && l.aux == m.aux)
-  | none => false
+  ((match M.get? x.args[0]! with
+    | some m =>
+      m.op == .ARM64MOVDaddr && m.args.size == 1 && m.aux.isSome && u.aux == m.aux &&
+        u.auxInt.toInt == x.auxInt.toInt + m.auxInt.toInt &&
+        u.args == #[m.args[0]!, x.args[1]!, x.args[2]!] &&
+        termVL tabs m && wordShape (shpL tabs m.type)
+    | none => false) ||
+   match frameAddr tabs M x.args[0]! with
+   | some (a, m) =>
+     m.args.size == 1 && m.aux.isSome && u.aux == m.aux && u.auxInt == x.auxInt &&
+       u.args == #[m.args[0]!, x.args[1]!, x.args[2]!] &&
+       (f.value? a).any fun l => l.op == .LocalAddr && l.aux == m.aux
+   | none => false)
 
 /-- A rule event at the atom `v` replayed as the atom its top result node `u` defines (the log
 lists the reset value, then the nodes, as for any `build`), with `v`'s type:
@@ -259,9 +283,9 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
   | _, _ => none
 
 /-- A rule event at the term `x` at `v` replayed as the term `u` that folds `x`'s address
-argument, the lowered frame address `MOVDaddr {sym} b` of a `LocalAddr {sym}` of `f` (an atom,
-offset 0), into its aux, with `x`'s type and offset (small and non-negative, `offOK`), `u` with
-the `MOVDaddr`'s aux and `b` for the address:
+argument, a lowered frame address (`frameAddr`: the atom `MOVDaddr {sym} b` at offset 0 of a
+`LocalAddr {sym}` of `f`, or `ADDconst [0]` of it), into its aux, with `x`'s type and offset (small
+and non-negative, `offOK`), `u` with the `MOVDaddr`'s aux and `b` for the address:
 * an integer load without aux (`(MOV…load [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) &&
   canMergeSym(sym1,sym2) … => (MOV…load [off1+off2] {mergeSym(sym1,sym2)} ptr mem)`,
   `ARM64.rules:832-856`), the same op;
@@ -275,12 +299,11 @@ def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value)
   | some x, [_, u] =>
     match x.args[0]? with
     | none => none
-    | some a =>
-    match M.get? a with
-    | some m =>
+    | some p =>
+    match frameAddr tabs M p with
+    | some (a, m) =>
       if x.id == v && u.id == v && u.type == x.type && u.auxInt == x.auxInt && offOK x.auxInt &&
-          termVL tabs x && termVL tabs u && m.op == .ARM64MOVDaddr && !termVL tabs m &&
-          m.args.size == 1 && u.aux == m.aux &&
+          termVL tabs x && termVL tabs u && m.args.size == 1 && u.aux == m.aux &&
           (f.value? a).any (fun l => l.op == .LocalAddr && l.aux == m.aux) &&
           ((ldOp? x.op).isSome && u.op == x.op && x.aux == none && x.args.size == 2 &&
               u.args == #[m.args[0]!, x.args[1]!] ||
@@ -297,6 +320,18 @@ result of the first): the replay keeps `v`'s definition, which `finalOKL` relate
 def pbFoldEv (M : Defs) (v : ID) (defs : List Value) : Bool :=
   match M.get? v, defs with
   | some x, [_, u] => x.op == .ARM64LoweredPanicBoundsRR && u.id == v && (pbKeep u.op).isSome
+  | _, _ => false
+
+/-- A rule event folding `ADDconst [0]` at `v` into the lowered frame address it reads (`650` at
+offset 0: its result, `MOVDaddr {sym}` at offset 0, is an atom, not a term): the replay keeps
+`v`'s definition, which `frameAddr` sees through when a later event folds the address into a load,
+a store or an offset; `finalOKL` compares it with the output's (`lower` deletes `v` once nothing
+reads it). -/
+def addrFoldEv (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    x.op == .ARM64ADDconst && u.id == v && u.op == .ARM64MOVDaddr && !termVL tabs u &&
+      (frameAddr tabs M v).any fun (_, m) => u.aux == m.aux && u.args == m.args
   | _, _ => false
 
 /-! ## Copies -/
@@ -435,7 +470,8 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
     match M.get? v with
     | none => none
     | some x =>
-      if pbFoldEv M v defs.toList then replayL tabs t f M B evs else
+      if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList then replayL tabs t f M B evs
+      else
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
       | none => none
       | some cr =>
