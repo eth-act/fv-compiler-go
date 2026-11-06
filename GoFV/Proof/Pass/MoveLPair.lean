@@ -1,4 +1,5 @@
 import GoFV.Proof.Pass.MoveLRel
+import GoFV.Proof.Pass.MoveLPairMem
 
 /-!
 # `pair`'s cases of `relB`: selectors of pair loads and pair stores evaluate as their sources
@@ -8,7 +9,8 @@ widths up, `evalValueL_selPair`): the pair load addresses its elements by `pairA
 `symAddr` of each element's offset, and at a two-component tuple shape whose components are the
 selectors' shapes its components are the loads at those shapes. A pair store evaluates as the
 second of its two adjacent stores (`evalValueL_stPair`): it writes the two elements in order at
-the two stores' addresses (`Arm64.storePair`).
+the two stores' addresses (`Arm64.storePair`). When the higher store came first
+(`evalValueL_stPairRev`), the two writes are disjoint and commute (`write_adj_comm`).
 -/
 
 namespace GoFV.Proof.MoveL
@@ -301,6 +303,78 @@ theorem evalValueL_stPair {md : LMode} (hnf : md.faulting = false) {env : Env}
     unfold Arm64.storePair
     unfold Arm64.storeN at hs1 hs2
     rw [hs1]; exact hs2
+  rw [evalValueL_of_regs (L := [zp, za, zb, _]) (by
+      rw [hga]; exact ⟨h1, h2, h3, h4, trivial⟩),
+    hnf, evalOpL_act (hop ▸ hpg) (hop ▸ hpa), hstp _ _ _ _ _ _ _ _ _ _ _ _ hop hpq hsp, hty]
+  rfl
+
+private theorem stPairOf_width {op pop : Op} {w : Nat} (h : stPairOf op = some (w, pop)) :
+    0 < w ∧ w ≤ 8 := by
+  cases op <;> simp only [stPairOf, reduceCtorEq, Option.some.injEq, Prod.mk.injEq] at h <;>
+    omega
+
+private theorem storeBytes_size' {n : Nat} (hn : n ≤ 8) (v : Val) :
+    (Arm64.storeBytes n v).size = n := by
+  unfold Arm64.storeBytes
+  split
+  · simp [ptrBytes]
+  · split
+    · next h => simpa using h
+    · simp
+  · split
+    · simp [hn, intBytes]
+    · simp
+
+/-- **A pair store evaluates as the second of two reversed stores** (`relB`'s reversed
+pair-store case): the source stores the element one width up first; the two writes are
+disjoint and commute. -/
+theorem evalValueL_stPairRev {md : LMode} (hnf : md.faulting = false) {env : Env}
+    {ctxT ctxS : Ctx} (htabs : ctxT.tabs = ctxS.tabs) (hact : ctxT.act = ctxS.act)
+    {gv fv mv : Value} {w : Nat} {pop : Op} {p' a' b' m' p a ym b mm : ID}
+    (hw : stPairOf fv.op = some (w, pop)) (hga : gv.args.toList = [p', a', b', m'])
+    (hfa : fv.args.toList = [p, a, ym]) (hop : gv.op = pop) (hmop : mv.op = fv.op)
+    (hmaux : mv.aux = fv.aux) (hgaux : gv.aux = fv.aux) (hgai : gv.auxInt = fv.auxInt)
+    (hmai : mv.auxInt = fv.auxInt + Int64.ofNat w) (hma : mv.args.toList = [p, b, mm])
+    (hty : ctxT.tys[gv.id]? = ctxS.tys[fv.id]?) {frT frS : Frame} {zp za zb zm rm wv : Val}
+    (h1 : frT.regs[p']? = some (some zp)) (h1' : frS.regs[p]? = some (some zp))
+    (h2 : frT.regs[a']? = some (some za)) (h2' : frS.regs[a]? = some (some za))
+    (h3 : frT.regs[b']? = some (some zb)) (h3' : frS.regs[b]? = some (some zb))
+    (h4 : frT.regs[m']? = some (some zm)) (h4' : frS.regs[mm]? = some (some zm))
+    (hym : frS.regs[ym]? = some (some rm)) (hmev : evalValueL md env ctxS frS mv = .ok rm)
+    (hfev : evalValueL md env ctxS frS fv = .ok wv) :
+    evalValueL md env ctxT frT gv = .ok wv := by
+  obtain ⟨hfg, hfa', hpg, hpa, hst, hstp⟩ := arm64Op_stPair hw
+  -- the first store, one width up
+  rw [evalValueL_of_regs (L := [zp, zb, zm]) (by rw [hma]; exact ⟨h1', h3', h4', trivial⟩),
+    hnf, evalOpL_act (hmop ▸ hfg) (hmop ▸ hfa')] at hmev
+  obtain ⟨r0, hr0, rfl⟩ := res_bind_ok hmev
+  obtain ⟨M0, Q, M1, rfl, hQ, hs1, rfl⟩ := hst _ _ _ _ _ _ _ _ _ hmop hr0
+  -- the second store
+  rw [evalValueL_of_regs (L := [zp, za, _]) (by rw [hfa]; exact ⟨h1', h2', hym, trivial⟩),
+    hnf, evalOpL_act hfg hfa'] at hfev
+  obtain ⟨r1, hr1, rfl⟩ := res_bind_ok hfev
+  obtain ⟨M1', P, M2, hM1, hP, hs2, rfl⟩ := hst _ _ _ _ _ _ _ _ _ rfl hr1
+  have e := retype_mem hM1
+  subst e
+  -- the two writes commute
+  have hQf : symAddr ctxS { fv with auxInt := fv.auxInt + Int64.ofNat w } zp = some Q := by
+    rw [symAddr_congr (v' := { fv with auxInt := fv.auxInt + Int64.ofNat w }) (v := mv) rfl rfl
+      hmaux.symm hmai.symm, hQ]
+  obtain ⟨hw0, hw8⟩ := stPairOf_width hw
+  unfold Arm64.storeN at hs1 hs2
+  obtain ⟨M1'', hs1', hs2'⟩ := write_adj_comm hw0 (by omega) hP hQf (storeBytes_size' hw8 _)
+    (storeBytes_size' hw8 _) hs1 hs2
+  -- the pair store
+  have hP' : symAddr ctxT gv zp = some P := by
+    rw [symAddr_congr htabs hact hgaux hgai, hP]
+  have hQ' : symAddr ctxT { gv with auxInt := gv.auxInt + Int64.ofNat w } zp = some Q := by
+    rw [symAddr_congr (v' := { gv with auxInt := gv.auxInt + Int64.ofNat w }) (v := mv) htabs hact
+      (hgaux.trans hmaux.symm) (by rw [hgai, hmai]), hQ]
+  obtain ⟨Q', hpq, hq'⟩ := pairAddr_some (n := w) hP'
+  rw [hq'] at hQ'; cases hQ'
+  have hsp : Arm64.storePair w P Q za zb M0 = some M2 := by
+    unfold Arm64.storePair
+    rw [hs1']; exact hs2'
   rw [evalValueL_of_regs (L := [zp, za, zb, _]) (by
       rw [hga]; exact ⟨h1, h2, h3, h4, trivial⟩),
     hnf, evalOpL_act (hop ▸ hpg) (hop ▸ hpa), hstp _ _ _ _ _ _ _ _ _ _ _ _ hop hpq hsp, hty]

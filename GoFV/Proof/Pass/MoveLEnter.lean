@@ -92,6 +92,21 @@ theorem blockOK_spec {b : ID} (h : blockOK pr ok f g b = true) :
 theorem pairSrc_spec {fb : Block} {x y : ID} (h : pairSrc f fb x = some y) :
     y ∈ fb.values ∧ ∃ fv, f.value? y = some fv ∧ fv.op ≠ .Phi := by
   unfold pairSrc at h
+  split at h
+  · rename_i hr
+    cases h
+    simp only [Bool.and_eq_true, Array.contains_iff_mem] at hr
+    refine ⟨hr.2, ?_⟩
+    have hr := hr.1
+    unfold revStore at hr
+    cases hfv : f.value? x with
+    | none => rw [hfv] at hr; cases hr
+    | some fv =>
+      rw [hfv] at hr
+      dsimp only at hr
+      cases hw : stPairOf fv.op with
+      | none => rw [hw] at hr; cases hr
+      | some wp => obtain ⟨w, pop⟩ := wp; exact ⟨fv, rfl, stPairOf_ne_phi hw⟩
   have hm := Array.mem_of_find?_eq_some h
   have hp := Array.find?_some h
   refine ⟨hm, ?_⟩

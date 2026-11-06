@@ -12,6 +12,10 @@ pair load `v10 = LDP [0] p v5` and `v4` the pair store `STP [0] p 5 5 mem`, `v5`
 Input and output pass `check`, and the `pair` validator `PairCheck.pairB` accepts the pair, all by
 kernel evaluation, so `pair_refinesL` applies: on a 16-byte heap block the output returns 10 under
 `runL`, as the input does.
+
+`prr` stores in the other order (`v4 = MOVDstore [8] p 5 mem`, `v5 = MOVDstore [0] p 7 v4`):
+`pair` makes `v5` the pair store `STP [0] p 7 5 v4` and `v4` a `Copy` of `mem`, which `pairB`
+accepts by its reversed store case (the two writes commute); the output returns 12.
 -/
 
 namespace GoFV.Proof.Witness
@@ -86,5 +90,51 @@ theorem pairL_witness :
   have hg' : check (prwCheckEnv out.tables) out.func = .ok () := by
     revert hg; cases check (prwCheckEnv out.tables) out.func <;> simp [Except.toBool]
   exact ⟨out, hp, h4, h10, RefinesL.returned_int (pair_refinesL hp hf hg' hv) hm⟩
+
+/-- `prr`, lowered: stores of 5 at `p + 8` and then 7 at `p`, two loads of them, their sum. -/
+def prrFunc : Func :=
+  { prwFunc with
+    valueTab := #[none,
+      some (mkV 1 .InitMem 28 none p0 1 #[] 1),
+      some (mkVI 2 .ArgIntReg 3 0 (some 5) p0 4 #[] 1),
+      some (mkVI 3 .ARM64MOVDconst 2 5 none p0 1 #[] 1),
+      some (mkVI 4 .ARM64MOVDstore 28 8 none p0 1 #[2, 3, 1] 1),
+      some (mkVI 5 .ARM64MOVDstore 28 0 none p0 3 #[2, 11, 4] 1),
+      some (mkVI 6 .ARM64MOVDload 2 0 none p0 1 #[2, 5] 1),
+      some (mkVI 7 .ARM64MOVDload 2 8 none p0 1 #[2, 5] 1),
+      some (mkV 8 .ARM64ADD 2 none p0 1 #[6, 7] 1),
+      some (mkV 9 .MakeResult 33 none p0 1 #[8, 5] 1),
+      none,
+      some (mkVI 11 .ARM64MOVDconst 2 7 none p0 1 #[] 1)]
+    vidLast := 11
+    blockTab := #[none,
+      some (mkB 1 .Ret p0 #[9] #[] #[] #[1, 2, 3, 11, 4, 5, 6, 7, 8, 9])] }
+
+/-- The kernel-evaluated facts: `prr` passes `check` and returns 12 under `runL`; `pair`'s output
+passes `check`, `pairB` accepts the pair, and the output's `v5` is `STP`, `v4` a `Copy`. -/
+theorem prr_facts :
+    (check (prwCheckEnv ldsTabs) prrFunc).toBool = true ∧
+    returnsInt (runL Env.p1 ldsTabs prrFunc ldsArgs prwMem 1) 12 = true ∧
+    ((pairPass prwPassEnv prrFunc).toOption.map fun o =>
+      decide ((check (prwCheckEnv o.tables) o.func).toBool = true ∧
+        PairCheck.pairB prwPassEnv.tables o.tables prrFunc o.func = true ∧
+        (o.func.value? 5).map (·.op) = some .ARM64STP ∧
+        (o.func.value? 4).map (·.op) = some .Copy)) = some true := by
+  decide +kernel
+
+/-- **`pair_refinesL` covers reversed stores**: `pair` merges `prr`'s two stores, the higher
+one first, into an `STP`, and its output returns 12 under `runL` (`pair_refinesL`). -/
+theorem pairL_witness_rev :
+    ∃ out, pairPass prwPassEnv prrFunc = .ok out ∧
+      (out.func.value? 5).map (·.op) = some .ARM64STP ∧
+      ∃ fuel m, runL Env.p1 out.tables out.func ldsArgs prwMem fuel = .returned [.i64 12] m := by
+  obtain ⟨h1, h2, h3⟩ := prr_facts
+  obtain ⟨m, hm⟩ := returnsInt_iff.1 h2
+  have hf : check (prwCheckEnv ldsTabs) prrFunc = .ok () := by
+    revert h1; cases check (prwCheckEnv ldsTabs) prrFunc <;> simp [Except.toBool]
+  obtain ⟨out, hp, hg, hv, h5, -⟩ := ok_of_toOption h3
+  have hg' : check (prwCheckEnv out.tables) out.func = .ok () := by
+    revert hg; cases check (prwCheckEnv out.tables) out.func <;> simp [Except.toBool]
+  exact ⟨out, hp, h5, RefinesL.returned_int (pair_refinesL hp hf hg' hv) hm⟩
 
 end GoFV.Proof.Witness

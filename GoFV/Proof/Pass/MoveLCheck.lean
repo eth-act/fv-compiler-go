@@ -126,8 +126,10 @@ def cloneB (ok : Array Bool) (f g : Func) (gv fv : Value) : Bool :=
 /-- **Related values** `x ≈ y` (`x` of `g`, `y` of `f`), following at most `n` copies. With
 `pr` (`pair`), also a selector `Select_i l` of a pair load `l` for the load `y` of element `i`
 (the same aux, `y`'s offset `i` widths above `l`'s, related pointer and memory), and a pair
-store for the second store `y` of two adjacent stores (`y`'s memory the first store, at one
-width below `y`'s offset with `y`'s pointer; related pointer, values and memory). -/
+store for the second store `y` of two adjacent stores with `y`'s pointer, in order (`y`'s memory
+the first store, at one width below `y`'s offset) or reversed (`y`'s memory the store one width
+above `y`'s offset; the two writes are disjoint and commute); related pointer, values and
+memory. -/
 def relB (pr : Bool) (ok : Array Bool) (f g : Func) : Nat → ID → ID → Bool
   | n, x, y =>
     (x == y && okAt ok x) ||
@@ -161,6 +163,19 @@ def relB (pr : Bool) (ok : Array Bool) (f g : Func) : Nat → ID → ID → Bool
                     gv.auxInt == mv.auxInt && fv.auxInt == mv.auxInt + Int64.ofNat w &&
                     match mv.args.toList with
                     | [p1, a, m] =>
+                      p1 == p2 && relB pr ok f g n p' p1 && relB pr ok f g n a' a &&
+                        relB pr ok f g n b' b && relB pr ok f g n m' m
+                    | _ => false
+                | none => false
+              | _, _, _ => false) ||
+            (match stPairOf fv.op, gv.args.toList, fv.args.toList with
+              | some (w, pop), [p', a', b', m'], [p2, a, ym] =>
+                match f.value? ym with
+                | some mv =>
+                  gv.op == pop && mv.op == fv.op && mv.aux == fv.aux && gv.aux == fv.aux &&
+                    gv.auxInt == fv.auxInt && mv.auxInt == fv.auxInt + Int64.ofNat w &&
+                    match mv.args.toList with
+                    | [p1, b, m] =>
                       p1 == p2 && relB pr ok f g n p' p1 && relB pr ok f g n a' a &&
                         relB pr ok f g n b' b && relB pr ok f g n m' m
                     | _ => false
@@ -199,10 +214,25 @@ def nonTotal (f : Func) (x : ID) : Bool := match f.value? x with
   | some v => !totalOp v.op
   | none => true
 
-/-- The store of `f`'s block `fb` a pair store `x` of `g` stands for (`relB`'s store case): a
-pairable store whose memory is `x`, the first of the two stores `pair` merged into `x`. -/
+/-- `x` is, in `f`, a pairable store on a store of the same op one width above it: the second
+of two reversed adjacent stores `pair` merged into `x` (`relB`'s reversed store case). -/
+def revStore (f : Func) (x : ID) : Bool :=
+  match f.value? x with
+  | some fv =>
+    match stPairOf fv.op, fv.args.back? with
+    | some (w, _), some ym =>
+      match f.value? ym with
+      | some mv => mv.op == fv.op && mv.auxInt == fv.auxInt + Int64.ofNat w
+      | none => false
+    | _, _ => false
+  | none => false
+
+/-- The store of `f`'s block `fb` a pair store `x` of `g` stands for (`relB`'s store cases): `x`
+itself if it is the second of two reversed stores (`revStore`), else a pairable store whose
+memory is `x`, the first of the two stores `pair` merged into `x`. -/
 def pairSrc (f : Func) (fb : Block) (x : ID) : Option ID :=
-  fb.values.find? fun y => match f.value? y with
+  if revStore f x && fb.values.contains x then some x
+  else fb.values.find? fun y => match f.value? y with
     | some fv => (stPairOf fv.op).isSome && fv.args.back? == some x
     | none => false
 

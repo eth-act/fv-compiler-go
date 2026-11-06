@@ -78,8 +78,19 @@ def StRel (pr : Bool) (ok : Array Bool) (f g : Func) (m : Nat) (gv fv : Value) :
     relB pr ok f g m p' p = true ∧ relB pr ok f g m a' a = true ∧
     relB pr ok f g m b' b = true ∧ relB pr ok f g m m' mm = true
 
+/-- `relB`'s reversed pair-store case: `gv` is the pair store of the stores `fv` (at `gv`'s
+offset) and `mv` (one width up, under `fv`), with related pointer, values and memory (fuel
+`m`). -/
+def RevRel (pr : Bool) (ok : Array Bool) (f g : Func) (m : Nat) (gv fv : Value) : Prop :=
+  ∃ w pop p' a' b' m' p a ym mv b mm, stPairOf fv.op = some (w, pop) ∧
+    gv.args.toList = [p', a', b', m'] ∧ fv.args.toList = [p, a, ym] ∧ f.value? ym = some mv ∧
+    gv.op = pop ∧ mv.op = fv.op ∧ mv.aux = fv.aux ∧ gv.aux = fv.aux ∧ gv.auxInt = fv.auxInt ∧
+    mv.auxInt = fv.auxInt + Int64.ofNat w ∧ mv.args.toList = [p, b, mm] ∧
+    relB pr ok f g m p' p = true ∧ relB pr ok f g m a' a = true ∧
+    relB pr ok f g m b' b = true ∧ relB pr ok f g m m' mm = true
+
 /-- **Inversion of `relB`**: identity in the certificate, a clone, a `Copy`, or with `pr` a
-selector of a pair load or a pair store. -/
+selector of a pair load or a pair store (in order or reversed). -/
 theorem relB_cases {n : Nat} {x y : ID} (h : relB pr ok f g n x y = true) :
     (x = y ∧ okAt ok x = true) ∨
     (∃ gv fv, g.value? x = some gv ∧ f.value? y = some fv ∧ cloneB ok f g gv fv = true) ∨
@@ -87,7 +98,7 @@ theorem relB_cases {n : Nat} {x y : ID} (h : relB pr ok f g n x y = true) :
       gv.type = fv.type ∧ gv.args.toList = [z] ∧ n = m + 1 ∧ relB pr ok f g m z y = true) ∨
     (∃ gv fv m, g.value? x = some gv ∧ f.value? y = some fv ∧ pr = true ∧ gv.type = fv.type ∧
       n = m + 1 ∧
-      (SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv)) := by
+      (SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv ∨ RevRel pr ok f g m gv fv)) := by
   rw [relB] at h
   simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
   rcases h with h | h
@@ -113,7 +124,7 @@ theorem relB_cases {n : Nat} {x y : ID} (h : relB pr ok f g n x y = true) :
       · rename_i m
         refine ⟨gv, fv, m, rfl, rfl, hpr, hty, rfl, ?_⟩
         simp only [Bool.or_eq_true] at hm
-        rcases hm with hm | hm
+        rcases hm with (hm | hm) | hm
         · refine .inl ?_
           split at hm
           · rename_i i l w pop hi hl hw
@@ -129,7 +140,7 @@ theorem relB_cases {n : Nat} {x y : ID} (h : relB pr ok f g n x y = true) :
               · cases hm
             · cases hm
           · cases hm
-        · refine .inr ?_
+        · refine .inr (.inl ?_)
           split at hm
           · rename_i w pop p' a' b' m' p b ym hw hga hfa
             split at hm
@@ -141,6 +152,22 @@ theorem relB_cases {n : Nat} {x y : ID} (h : relB pr ok f g n x y = true) :
                 simp only [Bool.and_eq_true, beq_iff_eq] at hm
                 obtain ⟨⟨⟨⟨rfl, h1⟩, h2⟩, h3⟩, h4⟩ := hm
                 exact ⟨w, pop, p', a', b', m', _, b, ym, mv, a, mm, hw, hga, hfa, hmv, hop, hmop,
+                  hmaux, hgaux, hgai, hfai, hma, h1, h2, h3, h4⟩
+              · cases hm
+            · cases hm
+          · cases hm
+        · refine .inr (.inr ?_)
+          split at hm
+          · rename_i w pop p' a' b' m' p a ym hw hga hfa
+            split at hm
+            · rename_i mv hmv
+              simp only [Bool.and_eq_true, beq_iff_eq] at hm
+              obtain ⟨⟨⟨⟨⟨⟨hop, hmop⟩, hmaux⟩, hgaux⟩, hgai⟩, hfai⟩, hm⟩ := hm
+              split at hm
+              · rename_i p1 b mm hma
+                simp only [Bool.and_eq_true, beq_iff_eq] at hm
+                obtain ⟨⟨⟨⟨rfl, h1⟩, h2⟩, h3⟩, h4⟩ := hm
+                exact ⟨w, pop, p', a', b', m', _, a, ym, mv, b, mm, hw, hga, hfa, hmv, hop, hmop,
                   hmaux, hgaux, hgai, hfai, hma, h1, h2, h3, h4⟩
               · cases hm
             · cases hm
@@ -196,8 +223,10 @@ theorem rel_phi_left {x y : ID} {gv : Value} (h : Rel pr ok f g x y) (hg : g.val
   · rw [hg] at hg'; cases hg'; rw [hp] at hc; cases hc
   · rw [hg] at hg'; cases hg'
     rcases hs with ⟨i, -, -, -, -, -, -, -, -, hi, -⟩ |
+      ⟨w, pop, -, -, -, -, -, -, -, -, -, -, hw, -, -, -, hop, -⟩ |
       ⟨w, pop, -, -, -, -, -, -, -, -, -, -, hw, -, -, -, hop, -⟩
     · exact absurd hp (selIdx_ne_phi hi)
+    · exact absurd (hop ▸ hp) (stPairOf_pop_ne_phi hw)
     · exact absurd (hop ▸ hp) (stPairOf_pop_ne_phi hw)
 
 /-- A `Phi` of `f` is related only to itself. -/
@@ -213,8 +242,10 @@ theorem rel_phi_right {x y : ID} {fv : Value} (h : Rel pr ok f g x y) (hf : f.va
   · rw [hf] at hf'; cases hf'; exact absurd hp hne
   · rw [hf] at hf'; cases hf'
     rcases hs with ⟨-, -, -, w, pop, -, -, -, -, -, -, hw, -⟩ |
+      ⟨w, pop, -, -, -, -, -, -, -, -, -, -, hw, -⟩ |
       ⟨w, pop, -, -, -, -, -, -, -, -, -, -, hw, -⟩
     · exact absurd hp (ldPairOf_ne_phi hw)
+    · exact absurd hp (stPairOf_ne_phi hw)
     · exact absurd hp (stPairOf_ne_phi hw)
 
 /-! ## Evaluation -/

@@ -147,22 +147,25 @@ theorem tysT_of (H : Hyp pr ok f g tabs md) (hpr : pr = true) {x : ID} {v : Valu
   rfl
 
 theorem pairRel_ne_phi {m : Nat} {gv fv : Value}
-    (hs : SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv) : gv.op ≠ .Phi ∧ fv.op ≠ .Phi := by
+    (hs : SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv ∨ RevRel pr ok f g m gv fv) :
+    gv.op ≠ .Phi ∧ fv.op ≠ .Phi := by
   rcases hs with ⟨i, -, -, w, pop, -, -, -, -, hi, -, hw, -⟩ |
+    ⟨w, pop, -, -, -, -, -, -, -, -, -, -, hw, -, -, -, hop, -⟩ |
     ⟨w, pop, -, -, -, -, -, -, -, -, -, -, hw, -, -, -, hop, -⟩
   · exact ⟨selIdx_ne_phi hi, ldPairOf_ne_phi hw⟩
   · exact ⟨hop ▸ stPairOf_pop_ne_phi hw, stPairOf_ne_phi hw⟩
+  · exact ⟨hop ▸ stPairOf_pop_ne_phi hw, stPairOf_ne_phi hw⟩
 
-/-- **`relB`'s pair cases evaluate alike**: a selector of a pair load, or a pair store, whose
-arguments are available in the target evaluates as the related source value whose arguments
-are available in the source. -/
+/-- **`relB`'s pair cases evaluate alike**: a selector of a pair load, or a pair store (in order
+or reversed), whose arguments are available in the target evaluates as the related source value
+whose arguments are available in the source. -/
 theorem pair_eval (H : Hyp pr ok f g tabs md) {XT XS : ID → Prop} {frT frS : Frame}
     (hAvT : Av md env (Ctx.makeL tabs g) XT frT) (hclT : Closed g XT)
     (hAvS : Av md env (Ctx.makeL tabs f) XS frS) (hclS : Closed f XS)
     (hag : Agree pr ok f g XT XS frT frS) {x y : ID} {gv fv : Value} {m : Nat}
     (hgv : g.value? x = some gv) (hgid : gv.id = x) (hfv : f.value? y = some fv)
     (hfid : fv.id = y) (hpr : pr = true) (hty : gv.type = fv.type)
-    (hs : SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv)
+    (hs : SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv ∨ RevRel pr ok f g m gv fv)
     (hT : ∀ a ∈ gv.args, XT a) (hS : ∀ b ∈ fv.args, XS b) {w : Val}
     (hev : evalValueL md env (Ctx.makeL tabs f) frS fv = .ok w) :
     evalValueL md env (Ctx.makeL tabs g) frT gv = .ok w := by
@@ -183,7 +186,9 @@ theorem pair_eval (H : Hyp pr ok f g tabs md) {XT XS : ID → Prop} {frT frS : F
   rcases hs with ⟨i, l, lv, wd, pop, p', m', p, mm, hsel, hgl, hld, hlv, hlop, haux, hai, hla, hfa,
       hrp, hrm⟩ |
     ⟨wd, pop, p', a', b', m', p, b, ym, mv, a, mm, hw, hga, hfa, hmv, hop, hmop, hmaux, hgaux,
-      hgai, hfai, hma, h1, h2, h3, h4⟩
+      hgai, hfai, hma, h1, h2, h3, h4⟩ |
+    ⟨wd, pop, p', a', b', m', p, a, ym, mv, b, mm, hw, hga, hfa, hmv, hop, hmop, hmaux, hgaux,
+      hgai, hmai, hma, h1, h2, h3, h4⟩
   · obtain ⟨hlow, -, hsh⟩ := H.sel hpr
     have hlx : XT l := hT l (memL hgl (by simp))
     obtain ⟨lv', rl, hlv', hlid, hrl, hrle⟩ := hAvT l hlx
@@ -217,6 +222,21 @@ theorem pair_eval (H : Hyp pr ok f g tabs md) {XT XS : ID → Prop} {frT frS : F
       pairReg m' mm (hT m' (memL hga (by simp))) (hSm mm (memL hma (by simp))) h4
     exact evalValueL_stPair H.nf htabs hact hw hga hfa hop hmop hmaux hgaux hgai hfai hma hty'
       hzp hzp' hza hza' hzb hzb' hzm hzm' hrm (hrme hmph) hev
+  · have hymS : XS ym := hS ym (memL hfa (by simp))
+    obtain ⟨mv', rm, hmv', -, hrm, hrme⟩ := hAvS ym hymS
+    rw [hcF, hmv] at hmv'; cases hmv'
+    have hmph : mv.op ≠ .Phi := hmop ▸ stPairOf_ne_phi hw
+    have hSm := hclS ym mv hymS hmv hmph
+    obtain ⟨zp, hzp, hzp'⟩ :=
+      pairReg p' p (hT p' (memL hga (by simp))) (hS p (memL hfa (by simp))) h1
+    obtain ⟨za, hza, hza'⟩ :=
+      pairReg a' a (hT a' (memL hga (by simp))) (hS a (memL hfa (by simp))) h2
+    obtain ⟨zb, hzb, hzb'⟩ :=
+      pairReg b' b (hT b' (memL hga (by simp))) (hSm b (memL hma (by simp))) h3
+    obtain ⟨zm, hzm, hzm'⟩ :=
+      pairReg m' mm (hT m' (memL hga (by simp))) (hSm mm (memL hma (by simp))) h4
+    exact evalValueL_stPairRev H.nf htabs hact hw hga hfa hop hmop hmaux hgaux hgai hmai hma
+      hty' hzp hzp' hza hza' hzb hzb' hzm hzm' hrm (hrme hmph) hev
 
 /-! ## The source evaluates a value -/
 
@@ -403,7 +423,7 @@ theorem stepT (H : Hyp pr ok f g tabs md) {XT XS : ID → Prop} {frT GS : Frame}
           (hdefS y fv hy hfv hfph))
         (by rw [hid, hfid]; exact tys_eq H hgv hfv hty) hsx H.own
   have pairY : ∀ y fv m, XS y → f.value? y = some fv → pr = true → gv.type = fv.type →
-      (SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv) →
+      (SelRel pr ok f g m gv fv ∨ StRel pr ok f g m gv fv ∨ RevRel pr ok f g m gv fv) →
       ∃ w, GS.regs[y]? = some (some w) ∧ evalValueL md env (Ctx.makeL tabs g) frT gv = .ok w := by
     intro y fv m hy hfv hpr hty hs
     obtain ⟨fv', w, hfv', hfid, hw, hwe⟩ := hAvS y hy

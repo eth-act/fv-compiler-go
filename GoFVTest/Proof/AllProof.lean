@@ -286,6 +286,7 @@ import GoFV.Proof.Pass.MoveLCheck
 import GoFV.Proof.Pass.MoveLEnter
 import GoFV.Proof.Pass.MoveLOps
 import GoFV.Proof.Pass.MoveLPair
+import GoFV.Proof.Pass.MoveLPairMem
 import GoFV.Proof.Pass.MoveLPhase
 import GoFV.Proof.Pass.MoveLRel
 import GoFV.Proof.Pass.NilBlock
