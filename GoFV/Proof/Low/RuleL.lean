@@ -359,8 +359,11 @@ def provOp (o : Op) : Bool :=
 
 mutual
 /-- Every argument of every arm64 op node of the pattern at `p` holds the low bits the op reads
-(`armReadW`, `argWidth`), by the instance's types `ty`, and a provenance op (`provOp`) with a
-pointer-shaped argument has a word shape: Go types the operands of these ops at least as wide. -/
+(`armReadW`, `argWidth`), by the instance's types `ty`, and a provenance op (`provOp`) at a
+non-word shape has no word-shaped argument (the shapes a pointer without an integer form has,
+`Val.hasTy`): its register then holds the low bits its result keeps, where a pointer argument's
+provenance case (`Arm64.add`, `addP`) moves the pointer by the other argument's whole register,
+which a narrow argument zero-extends (`ARM64.rules:970`). -/
 def Pat.argsOKL (ty : Path → Ty) (p : Path) : Pat → Bool
   | .op o _ _ _ _ _ args _ => Pat.argsOKLs ty p o 0 args
   | _ => true
@@ -368,7 +371,7 @@ def Pat.argsOKL (ty : Path → Ty) (p : Path) : Pat → Bool
 def Pat.argsOKLs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat → Bool
   | [] => true
   | q :: qs => (o.generic || decide (armReadW o (ty p) i ≤ argWidth (ty (i :: p)))) &&
-      (!provOp o || !isPtrTy (ty (i :: p)) || wordShape (ty p)) &&
+      (!provOp o || !wordShape (ty (i :: p)) || wordShape (ty p)) &&
       Pat.argsOKL ty (i :: p) q && Pat.argsOKLs ty p o (i + 1) qs
 end
 
