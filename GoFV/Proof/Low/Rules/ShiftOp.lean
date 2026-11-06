@@ -272,4 +272,200 @@ theorem r_ARM64_1182_sound : ArmRule.Checked r_ARM64_1182 := by
   rw [eon_eq]
   exact refines_op1_op2 _ _ (fun b b' h => not_low _ b b' h) (armReadW_mvn _ ▸ harg.1) _ _
 
+/-! ## `ADD`/`SUB` with a shifted operand -/
+
+private theorem add_low {n : Nat} (hn : n ≤ 64) (a b b' : BitVec 64)
+    (h : b.setWidth n = b'.setWidth n) : (a + b).setWidth n = (a + b').setWidth n := by
+  rw [BitVec.setWidth_add _ _ hn, BitVec.setWidth_add _ _ hn, h]
+
+private theorem sub_low {n : Nat} (hn : n ≤ 64) (a b b' : BitVec 64)
+    (h : b.setWidth n = b'.setWidth n) : (a - b).setWidth n = (a - b').setWidth n := by
+  rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.setWidth_add _ _ hn,
+    BitVec.setWidth_add _ _ hn, BitVec.setWidth_neg_of_le hn, BitVec.setWidth_neg_of_le hn, h]
+
+/-- A register result read at its shape is never a pointer. -/
+private theorem retypeL_op1_nonptr (T : Ty) (g : BitVec 64 → BitVec 64) (y : Val) (p : Ptr) :
+    (Arm64.op1 T g [y]).retypeL T ≠ .ptr p := by
+  intro h
+  cases hy : Arm64.reg y <;> simp only [Arm64.op1, hy, retypeL_poison, reduceCtorEq] at h
+  cases T with
+  | int w => rw [retypeL_res_int] at h; cases h
+  | bool => cases h
+  | ptr el => cases h
+  | _ => simp [Arm64.res, Val.retypeL, Val.widen, Val.retype] at h
+
+private theorem add_nonptr (T : Ty) {x v : Val} (hx : ∀ p, x ≠ .ptr p) (hv : ∀ p, v ≠ .ptr p) :
+    Arm64.add T [x, v] = Arm64.op2 T (· + ·) [x, v] := by
+  cases x <;> cases v <;> first | rfl | exact absurd rfl (hx _) | exact absurd rfl (hv _)
+
+private theorem sub_nonptr (T : Ty) {x v : Val} (hx : ∀ p, x ≠ .ptr p) :
+    Arm64.sub T [x, v] = Arm64.op2 T (· - ·) [x, v] := by
+  cases x <;> first | rfl | exact absurd rfl (hx _)
+
+private theorem addP_nonptr (T : Ty) {x : Val} (hx : ∀ p, x ≠ .ptr p) (k : BitVec 64) :
+    Arm64.addP T x k = match Arm64.reg x with
+      | some a => Arm64.res T (a + k)
+      | none => .poison := by
+  cases x <;> first | rfl | exact absurd rfl (hx _)
+
+private theorem addSh_nonptr (T : Ty) (sh : Arm64.Shift) (k : Int64) {x : Val}
+    (hx : ∀ p, x ≠ .ptr p) (y : Val) :
+    Arm64.addSh T sh k [x, y] = Arm64.op2 T (fun a b => a + sh.apply b (Arm64.amt k)) [x, y] := by
+  cases hy : Arm64.reg y <;> cases hr : Arm64.reg x <;>
+    simp only [Arm64.addSh, Arm64.op2, Arm64.shifted, hy, hr, addP_nonptr T hx]
+
+private theorem subSh_nonptr (T : Ty) (sh : Arm64.Shift) (k : Int64) {x : Val}
+    (hx : ∀ p, x ≠ .ptr p) (y : Val) :
+    Arm64.subSh T sh k [x, y] = Arm64.op2 T (fun a b => a - sh.apply b (Arm64.amt k)) [x, y] := by
+  cases hy : Arm64.reg y <;> cases hr : Arm64.reg x <;>
+    simp only [Arm64.subSh, Arm64.op2, Arm64.shifted, hy, hr, addP_nonptr T hx,
+      BitVec.sub_eq_add_neg]
+
+/-- A pointer of shape `T0` (`hasTy`): `T0` is a word shape. -/
+private theorem wordShape_of_ptr {p : Ptr} {T0 : Ty} (h : (Val.ptr p).hasTy T0 = true) :
+    wordShape T0 = true := by
+  cases T0 with
+  | int w => cases w <;> simp_all [Val.hasTy, wordShape]
+  | ptr _ => rfl
+  | _ => simp [Val.hasTy] at h
+
+private theorem lowW_word {T : Ty} (h : wordShape T = true) : lowW T = 64 := by
+  cases T with
+  | int w => cases w <;> simp_all [wordShape, lowW, Width.bits]
+  | ptr _ => rfl
+  | _ => simp [wordShape] at h
+
+/-- `ADD x (g y)` (the shifted operand computed at shape `T1`) as `ADDshift x y` (`Arm64.addSh`):
+a pointer `x` has a word shape `T0`, so the result has a word shape (`hp`, the validator's
+provenance clause) and the operand is read whole; otherwise only the low `lowW T` bits count. -/
+theorem refines_addSh {T T0 T1 : Ty} (sh : Arm64.Shift) (k : Int64)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (x y : Val) (hx : x.hasTy T0 = true) :
+    Refines ((Arm64.add T [x, (Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1]).retypeL T)
+      ((Arm64.addSh T sh (Int64.ofInt k.toInt) [x, y]).retypeL T) := by
+  rw [Int64.ofInt_toInt]
+  by_cases hxp : ∃ p, x = .ptr p
+  · obtain ⟨p, rfl⟩ := hxp
+    have hT : wordShape T = true := by
+      have := wordShape_of_ptr hx
+      rcases hp with h | h
+      · simp [this] at h
+      · exact h
+    have h64 : 64 ≤ argWidth T1 := lowW_word hT ▸ hw
+    cases hy : Arm64.reg y with
+    | none =>
+      simp only [Arm64.op1, Arm64.addSh, hy, retypeL_poison]
+      simp only [Arm64.add, show Arm64.reg .poison = none from rfl, retypeL_poison]
+      exact .poison _
+    | some v =>
+      simp only [Arm64.op1, hy]
+      rcases retypeL_res_wide h64 (sh.apply v (Arm64.amt k)) with h | h <;> rw [h]
+      · simp only [Arm64.addSh, Arm64.addP, Arm64.shifted, hy]
+        simp only [Arm64.add, Arm64.reg, BitVec.setWidth_eq]
+        exact Refines.refl _
+      · simp only [Arm64.add, show Arm64.reg .poison = none from rfl, retypeL_poison]
+        exact .poison _
+  · have hx' : ∀ p, x ≠ .ptr p := fun p h => hxp ⟨p, h⟩
+    rw [add_nonptr T hx' (retypeL_op1_nonptr T1 _ y), addSh_nonptr T sh k hx']
+    exact refines_op2_op1 (· + ·) _ (fun a b b' h => add_low (lowW_pos T).2 a b b' h) hw x y
+
+/-- `refines_addSh` with the shifted operand first. -/
+theorem refines_addSh_swap {T T0 T1 : Ty} (sh : Arm64.Shift) (k : Int64)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (x y : Val) (hx : x.hasTy T0 = true) :
+    Refines ((Arm64.add T [(Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1, x]).retypeL T)
+      ((Arm64.addSh T sh (Int64.ofInt k.toInt) [x, y]).retypeL T) := by
+  have hc : Arm64.add T [(Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1, x] =
+      Arm64.add T [x, (Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1] := by
+    have hv := retypeL_op1_nonptr T1 (fun b => sh.apply b (Arm64.amt k)) y
+    generalize (Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1 = v at hv ⊢
+    cases x with
+    | ptr p => cases v <;> first | rfl | exact absurd rfl (hv _)
+    | _ =>
+      rw [add_nonptr T (fun p h => by cases h) hv, add_nonptr T hv (fun p h => by cases h)]
+      exact op2_swap T (fun a b => BitVec.add_comm a b) _ _
+  rw [hc]
+  exact refines_addSh sh k hw hp x y hx
+
+/-- `SUB x (g y)` as `SUBshift x y` (`Arm64.subSh`), as `refines_addSh`. -/
+theorem refines_subSh {T T0 T1 : Ty} (sh : Arm64.Shift) (k : Int64)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (x y : Val) (hx : x.hasTy T0 = true) :
+    Refines ((Arm64.sub T [x, (Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1]).retypeL T)
+      ((Arm64.subSh T sh (Int64.ofInt k.toInt) [x, y]).retypeL T) := by
+  rw [Int64.ofInt_toInt]
+  by_cases hxp : ∃ p, x = .ptr p
+  · obtain ⟨p, rfl⟩ := hxp
+    have hT : wordShape T = true := by
+      have := wordShape_of_ptr hx
+      rcases hp with h | h
+      · simp [this] at h
+      · exact h
+    have h64 : 64 ≤ argWidth T1 := lowW_word hT ▸ hw
+    cases hy : Arm64.reg y with
+    | none =>
+      simp only [Arm64.op1, Arm64.subSh, hy, retypeL_poison]
+      simp only [Arm64.sub, show Arm64.reg .poison = none from rfl, retypeL_poison]
+      exact .poison _
+    | some v =>
+      simp only [Arm64.op1, hy]
+      rcases retypeL_res_wide h64 (sh.apply v (Arm64.amt k)) with h | h <;> rw [h]
+      · simp only [Arm64.subSh, Arm64.addP, Arm64.shifted, hy]
+        simp only [Arm64.sub, Arm64.reg, BitVec.setWidth_eq]
+        exact Refines.refl _
+      · simp only [Arm64.sub, show Arm64.reg .poison = none from rfl, retypeL_poison]
+        exact .poison _
+  · have hx' : ∀ p, x ≠ .ptr p := fun p h => hxp ⟨p, h⟩
+    rw [sub_nonptr T hx', subSh_nonptr T sh k hx']
+    exact refines_op2_op1 (· - ·) _ (fun a b b' h => sub_low (lowW_pos T).2 a b b' h) hw x y
+
+private theorem armReadW_addSub (o : Op) (T : Ty) (i : Nat)
+    (ho : o = .ARM64ADD ∨ o = .ARM64SUB) : armReadW o T i = lowW T := by
+  rcases ho with rfl | rfl <;> cases T <;> rfl
+
+/-- `ARM64.rules:1433`: `(ADD x0 x1:(SLLconst [c] y)) && clobberIfDead(x1) => (ADDshiftLL x0 y [c])` -/
+theorem r_ARM64_1433_sound : ArmRule.Checked r_ARM64_1433 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · exact refines_addSh .ll _ (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1) harg.1.2
+      _ _ hty.1
+  · exact refines_addSh_swap .ll _ (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1)
+      harg.2.2 _ _ hty.2
+
+/-- `ARM64.rules:1434`: `(ADD x0 x1:(SRLconst [c] y)) && clobberIfDead(x1) => (ADDshiftRL x0 y [c])` -/
+theorem r_ARM64_1434_sound : ArmRule.Checked r_ARM64_1434 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · exact refines_addSh .rl _ (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1) harg.1.2
+      _ _ hty.1
+  · exact refines_addSh_swap .rl _ (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1)
+      harg.2.2 _ _ hty.2
+
+/-- `ARM64.rules:1435`: `(ADD x0 x1:(SRAconst [c] y)) && clobberIfDead(x1) => (ADDshiftRA x0 y [c])` -/
+theorem r_ARM64_1435_sound : ArmRule.Checked r_ARM64_1435 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · exact refines_addSh .ra _ (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1) harg.1.2
+      _ _ hty.1
+  · exact refines_addSh_swap .ra _ (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1)
+      harg.2.2 _ _ hty.2
+
+/-- `ARM64.rules:1436`: `(SUB x0 x1:(SLLconst [c] y)) && clobberIfDead(x1) => (SUBshiftLL x0 y [c])` -/
+theorem r_ARM64_1436_sound : ArmRule.Checked r_ARM64_1436 := by
+  left; arm_unfold; arm_norm
+  exact refines_subSh .ll _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
+    _ _ hty.1
+
+/-- `ARM64.rules:1437`: `(SUB x0 x1:(SRLconst [c] y)) && clobberIfDead(x1) => (SUBshiftRL x0 y [c])` -/
+theorem r_ARM64_1437_sound : ArmRule.Checked r_ARM64_1437 := by
+  left; arm_unfold; arm_norm
+  exact refines_subSh .rl _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
+    _ _ hty.1
+
+/-- `ARM64.rules:1438`: `(SUB x0 x1:(SRAconst [c] y)) && clobberIfDead(x1) => (SUBshiftRA x0 y [c])` -/
+theorem r_ARM64_1438_sound : ArmRule.Checked r_ARM64_1438 := by
+  left; arm_unfold; arm_norm
+  exact refines_subSh .ra _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
+    _ _ hty.1
+
 end GoFV.Proof.Low.Rules
