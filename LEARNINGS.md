@@ -619,6 +619,20 @@ avoiding): the problem, the trick, the numbers, where it is used.
   (list-based facts), but `tabsAgreeL` rejects that function first; on the other profiled giants
   (`ppc64asm.init` 69k values, `(*regAllocState).regalloc`) they take under 7 s.
 
+#### Verified pipeline: `flagAllocB` built `Ctx.makeL` once per block (#385)
+- **Problem:** with flagalloc wired into `loweredVPasses`, `--verified --profile` on
+  `(*Builder).build` (4,761 values, 486 blocks) put 5.8 s in flagalloc's guard, and on
+  `obj/arm64/init` (33,194 values, 2,739 blocks) the guard did not finish in 15 min.
+  `blockB` read `(Ctx.makeL tabs f).tys` and `(Ctx.makeL tabs g).tys` per block, so every block
+  rebuilt both contexts (with every block's schedule). Same pattern as the two entries above.
+- **Trick:** `blockB tf tg` takes the shapes; `flagAllocWith` binds them with a `let` outside
+  `f.blocks.all` (`blockB_spec`/`flagAllocWith_spec` state them as `(Ctx.makeL tabs _).tys`).
+- **Effect:** the guard 5.8 s → 12 ms on `(*Builder).build`, > 800 s → 1.1 s on
+  `obj/arm64/init`; full-v9 `--check --verified --jobs 4` with all four passes wired 81 min
+  (4,859 s, 1.67 GB peak, on a loaded machine). `pairB` (MoveL's `okCert` fixpoint, about n
+  rounds of n values on rejected functions) took 15–23 s on `obj/arm64/init`; P2ProofPair2's
+  worklist `okCert` (agent/pairperf) brings that file to 3 s.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,

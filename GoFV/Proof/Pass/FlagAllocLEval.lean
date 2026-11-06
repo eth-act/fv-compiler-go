@@ -182,7 +182,7 @@ theorem phisOK_spec {f g : Func} {fb gb : Block} (h : phisOK f g fb gb = true) :
 
 /-- What `blockB` checks of block `b`. -/
 theorem blockB_spec {tabs : Tables} {dc : Cert} {f g : Func} {cert : Array (Option ID)} {b : ID}
-    (h : blockB tabs dc f g cert b = true) :
+    (h : blockB (Ctx.makeL tabs f).tys (Ctx.makeL tabs g).tys dc f g cert b = true) :
     ∃ fb gb, f.block? b = some fb ∧ g.block? b = some gb ∧ GOwn g b gb ∧ gb.kind = fb.kind ∧
       gb.auxInt = fb.auxInt ∧ gb.succs = fb.succs ∧ gb.preds = fb.preds ∧ phisOK f g fb gb = true ∧
       schedOrder g (Ctx.makeL tabs g).tys gb = some (gb.values.filter (!isPhiIn g ·)) ∧
@@ -202,7 +202,8 @@ theorem blockB_spec {tabs : Tables} {dc : Cert} {f g : Func} {cert : Array (Opti
 theorem flagAllocWith_spec {tabs : Tables} {cert : Array (Option ID)} {f g : Func}
     (h : flagAllocWith tabs cert f g = true) :
     g.entry = f.entry ∧ g.blocks = f.blocks ∧ g.ownAux = f.ownAux ∧ g.lowered = f.lowered ∧
-      ∀ b ∈ f.blocks, blockB tabs (make f) f g cert b = true := by
+      ∀ b ∈ f.blocks,
+        blockB (Ctx.makeL tabs f).tys (Ctx.makeL tabs g).tys (make f) f g cert b = true := by
   unfold flagAllocWith at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h

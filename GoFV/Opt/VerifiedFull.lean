@@ -1,8 +1,10 @@
 import GoFV.Opt.Verified
 import GoFV.Opt.LowerChecked
 import GoFV.Opt.Lower
+import GoFV.Opt.LateLowerCheck
 import GoFV.Opt.CheckLower
 import GoFV.Opt.Pair
+import GoFV.Opt.PairCheck
 import GoFV.Opt.LoweredCSE
 import GoFV.Opt.LoweredCSECheck
 import GoFV.Opt.ElimUnreadAutos
@@ -27,6 +29,7 @@ import GoFV.Proof.Pass.MoveLCheck
 import GoFV.Proof.Pass.CriticalL
 import GoFV.Proof.Pass.LicmL
 import GoFV.Proof.Pass.TrimLocCheck
+import GoFV.Proof.Pass.FlagAllocLCheck
 
 /-!
 # The verified pipeline through `trim` (issues #385, #189)
@@ -41,9 +44,10 @@ runs as a `LStep`:
 - `proven run rel wf guard`: `run` is the pass (for `lower`, the checked `lowerChecked`) with a
   theorem concluding `rel` (an `LRel`: the layers of its input and output and its
   precondition), on inputs and outputs that pass `check` (when `wf`) and that `guard` (the
-  theorem's remaining hypotheses: fragments, validators such as `moveB`, `critRelB`,
-  `scheduleCheck`, `nilLateB`, `checkRA`, `trimRelB`, decided after the run) accepts;
-- `stock run`: the stock port; no theorem.
+  theorem's remaining hypotheses: fragments, validators such as `renameB`, `pairB`, `moveB`,
+  `critRelB`, `scheduleCheck`, `nilLateB`, `flagAllocB`, `checkRA`, `trimRelB`, decided after the
+  run) accepts;
+- `stock run`: the stock port; no theorem (no pass of the table uses it now).
 
 A proven run whose hypotheses fail is dropped when the pass is optional (`skipped`) and kept
 `unverified` when it is required, as in `verifiedPipeline`. A result equal to the input (function
@@ -200,9 +204,14 @@ open Verified GoFV.Proof in
 def loweredVPasses : Array LPass := #[
   { name := "lower", required := true, out := .low,
     step := .proven lowerChecked .lower false lowerGuard, full := some lower },
-  { name := "addressing modes", out := .low, step := .stock addressingModesPass },
-  { name := "late lower", required := true, out := .low, step := .stock lateLower },
-  { name := "pair", out := .low, step := .stock pairPass },
+  { name := "addressing modes", out := .low,
+    step := .proven addressingModesPass .low false noGuardL },
+  { name := "late lower", required := true, out := .low,
+    step := .proven lateLower .low false fun penv f out =>
+      LateLowerCheck.renameB penv.tables out.tables f out.func },
+  { name := "pair", out := .low,
+    step := .proven pairPass .low true fun penv f out =>
+      PairCheck.pairB penv.tables out.tables f out.func },
   { name := "lowered deadcode for cse", out := .low, step := deadcodeStepL },
   { name := "lowered cse", out := .low,
     step := .proven loweredCsePass .low true fun penv f _ => CSEL.frag penv f },
@@ -231,7 +240,9 @@ def loweredVPasses : Array LPass := #[
   { name := "late nilcheck", out := .sched,
     step := .proven nilcheckelim2Pass .schedS true fun penv f out =>
       NilLate.nilLateB penv.tables f out.func },
-  { name := "flagalloc", required := true, out := .sched, step := .stock flagallocPass },
+  { name := "flagalloc", required := true, out := .sched,
+    step := .proven flagallocPass .schedS true fun penv f out =>
+      FlagAllocL.flagAllocB penv.tables f out.func },
   { name := "regalloc", required := true, out := .loc,
     step := .proven regallocV .ls false regallocGuard },
   { name := "loop rotate", out := .loc, step := .proven loopRotatePass .loc false noGuardL },

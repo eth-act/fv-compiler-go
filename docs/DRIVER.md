@@ -267,11 +267,12 @@ and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, e
   functions go through Lean from `number lines` to `trim`, with 0 fallbacks: PASS (17 min).
 - `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock. 40,887 of 42,899
   functions are fully verified, with 0 pass errors and 0 fallbacks: PASS (18 min).
-- Through `trim` (#385; main 60367c8 plus the verified pipeline through `trim`):
-  `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock, 44,189 functions through
-  Lean, 0 fallbacks, 0 pass errors; of 42,899 functions, 40,897 fully verified before `lower` and
-  12,830 through `trim`: PASS (28 min). `--check --verified --jobs 4`: quick-v7 8,885 / 2,873
-  (through `rewrite tern` / through `trim`), full-v9 the table in `docs/PASSES2.md` §0.
+- Through `trim` (#385; main a717e6db plus addressing modes, late lower, pair and flagalloc as
+  proven steps): `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock, 44,189
+  functions through Lean, 0 fallbacks, 0 pass errors; of 42,899 functions, 40,897 fully verified
+  before `lower` and 23,941 through `trim` (12,830 at #503): PASS (27 min). `--check --verified
+  --jobs 4`: quick-v7 8,885 / 5,138 (through `rewrite tern` / through `trim`), full-v9 the table
+  in `docs/PASSES2.md` §0.
 
 State of the known gaps:
 
