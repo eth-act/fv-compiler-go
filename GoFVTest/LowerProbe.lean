@@ -228,7 +228,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
         | none => return "no block rule"
         | some br =>
           match blockOKL tabs M br st nc with
-          | some st' => B := (b, st') :: B
+          | some (st', us) =>
+            M := us.foldl (fun M u => M.put u.id u) M
+            B := (b, st') :: B
           | none => return s!"blockRule {blockKey br} {blockWhyL tabs M br st nc}"
   if !finalOKL tabs f g M B then
     let L := liveMarksL tabs g

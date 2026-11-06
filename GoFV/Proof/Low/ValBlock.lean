@@ -347,7 +347,7 @@ theorem sel_edge {s : Array Edge} (h2 : s.size = 2) (sw swS b : Bool) :
 
 /-- What `blockOKL` establishes about a block-rule event. -/
 structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL) (nc : Array ID)
-    (st' : BStateL) where
+    (st' : BStateL) (us : List Value) where
   pat : Pat
   sw : List Bool
   c : ID
@@ -373,11 +373,12 @@ structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL)
   hargsL : Pat.argsOKL (envL tabs M I).ty [] (Pat.swapC pat sw).1 = true
   hleaves : leavesOK M I [] (Pat.swapC pat sw).1 = true
   hauxB : blockAuxOKB br.auxInt st.auxInt = true
-  hctrls : (match br.newKind, br.newControls, nc.toList with
-      | .First, [], [] => true
-      | k, [(.var x, _)], [c'] => k != .First &&
-          (DV.pos? (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1 x)).map I.at == some c'
-      | _, _, _ => false) = true
+  hbuilt : builtL tabs M br (envL tabs M I) (Pat.swapC pat sw).1
+      (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
+        (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
+        (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1))
+      (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
+      (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1) I c nc = some us
   ai' : Int64
   hai' : newAuxL (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
       (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
@@ -385,7 +386,8 @@ structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL)
   hst' : st' = { kind := br.newKind, ctrls := nc, auxInt := ai', swapped := st.swapped != br.swapSuccs }
 
 theorem blockFactsL {tabs : Tables} {M : Defs} {br : BlockRule} {st st' : BStateL} {nc : Array ID}
-    (h : blockOKL tabs M br st nc = some st') : Nonempty (BlockFactsL tabs M br st nc st') := by
+    {us : List Value} (h : blockOKL tabs M br st nc = some (st', us)) :
+    Nonempty (BlockFactsL tabs M br st nc st' us) := by
   unfold blockOKL at h
   split at h
   · rename_i pat c hctl hc
@@ -403,14 +405,14 @@ theorem blockFactsL {tabs : Tables} {M : Defs} {br : BlockRule} {st st' : BState
       rw [Option.ite_none_right_eq_some] at h1
       obtain ⟨hok, h1⟩ := h1
       · simp only [Bool.and_eq_true] at hok
-        obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hsames, hcons⟩, hwf⟩, hcond⟩, hargs⟩, htop⟩, hargsL⟩, hleaves⟩, hauxB⟩, hctrls⟩ := hok
+        obtain ⟨⟨⟨⟨⟨⟨⟨⟨hsames, hcons⟩, hwf⟩, hcond⟩, hargs⟩, htop⟩, hargsL⟩, hleaves⟩, hauxB⟩ := hok
         simp only [List.all_eq_true, Bool.not_eq_true', List.contains_eq_mem,
           decide_eq_false_iff_not] at hsames
         split at h1
-        · rename_i ai' hai'
+        · rename_i us' ai' hbuilt hai'
           cases h1
           refine ⟨⟨pat, sw, c, I, hctl, hsw, hc, hkind, hm, hcons, hwf, hsames, ?_, hargs, htop,
-            hargsL, hleaves, hauxB, hctrls, ai', hai', rfl⟩⟩
+            hargsL, hleaves, hauxB, hbuilt, ai', hai', rfl⟩⟩
           intro cd hcd
           split at hcond
           · rename_i cd' hcd'
@@ -441,24 +443,56 @@ theorem newAuxL_eq {ev ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (ev x).erase 
     · rw [h]
     · rw [h, h']; rfl
 
-theorem ctrls_var {k : BlockKind} {x : Nat} {pos : CtrlPos} {l : List ID}
-    {g : Nat → Option ID}
-    (h : (match k, [(NewControl.var x, pos)], l with
-      | .First, [], [] => true
-      | k, [(.var x, _)], [c'] => k != .First && g x == some c'
-      | _, _, _ => false) = true) (hk : k ≠ .First) : ∃ c', l = [c'] ∧ g x = some c' := by
-  rcases l with _ | ⟨c', _ | ⟨_, _⟩⟩
-  · cases k <;> simp at h
-  · refine ⟨c', rfl, ?_⟩
-    cases k <;> first | exact absurd rfl hk | simpa using h
-  · cases k <;> simp at h
+/-- The three shapes of `builtL`: `First`, a rule variable's value, a node built at a fresh value. -/
+theorem builtL_cases {tabs : Tables} {M : Defs} {br : BlockRule} {e : PEnv} {pat : Pat}
+    {ev : GoFV.Rules.Expr → DV} {or : Oracle} {σ : Nat → DV} {I : Inst} {c : ID} {nc : Array ID}
+    {us : List Value} (h : builtL tabs M br e pat ev or σ I c nc = some us) :
+    (br.newKind = .First ∧ nc.toList = [] ∧ us = []) ∨
+    (∃ x pos c', br.newKind ≠ .First ∧ br.newControls = [(.var x, pos)] ∧ nc.toList = [c'] ∧
+      (DV.pos? (σ x)).map I.at = some c' ∧ us = []) ∨
+    (∃ n pos c' xv, br.newKind ≠ .First ∧ br.newControls = [(.build [n], pos)] ∧
+      nc.toList = [c'] ∧ M.get? c = some xv ∧ M.get? c' = none ∧
+      nodeOKL tabs e pat ev or σ I [c'] .other n (ctrlDefL e pat ev or σ I n xv c') = true ∧
+      us = [ctrlDefL e pat ev or σ I n xv c']) := by
+  unfold builtL at h
+  split at h
+  · rename_i hk _ hnc; cases h; exact .inl ⟨hk, hnc, rfl⟩
+  · rename_i k x pos c' hk hnc hl
+    split at h
+    · rename_i hok
+      cases h
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hok
+      exact .inr (.inl ⟨x, pos, c', fun h' => hok.1 (by rw [← hk]; exact h'), hnc, hl, hok.2, rfl⟩)
+    · cases h
+  · rename_i k n pos c' hk hnc hl
+    split at h
+    · rename_i xv hxv
+      split at h
+      · rename_i hok
+        cases h
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none] at hok
+        exact .inr (.inr ⟨n, pos, c', xv, fun h' => hok.1.1.1 (by rw [← hk]; exact h'), hnc, hl,
+          hxv, hok.1.2, hok.2, rfl⟩)
+      · cases h
+    · cases h
+  · cases h
 
 theorem obl_var {k : BlockKind} {x : Nat} {pos : CtrlPos} {ai' : Int64}
-    {σ : Nat → DV} {r : Option Bool}
+    {σ : Nat → DV} {r : Option Bool} {d : Val}
     (h : (match k, [(NewControl.var x, pos)] with
           | .First, _ => some true
           | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
+          | k, [(.build [_], _)] => brVal k ai' d
           | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' ((σ x).valOr .poison) = r := by
+  cases k <;> first | exact absurd rfl hk | exact h
+
+theorem obl_build {k : BlockKind} {n : RNode} {pos : CtrlPos} {ai' : Int64}
+    {σ : Nat → DV} {r : Option Bool} {d : Val}
+    (h : (match k, [(NewControl.build [n], pos)] with
+          | .First, _ => some true
+          | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
+          | k, [(.build [_], _)] => brVal k ai' d
+          | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' d = r := by
   cases k <;> first | exact absurd rfl hk | exact h
 
 /-- **A block-rule event** keeps `BInvL` (`BlockRuleL.Sound`). -/
@@ -467,7 +501,7 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
     (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ) {b : ID} {st st' : BStateL}
     (hst : bstateL f B b = some st) (h2 : (f.block? b).map (·.succs.size) = some 2)
     {br : BlockRule} (hsd : BlockRuleL.Sound br) {nc : Array ID}
-    (hok : blockOKL tabs M br st nc = some st') :
+    (hok : blockOKL tabs M br st nc = some (st', [])) :
     BInvL tabs f D₀ C₀ M C ((b, st') :: B) := by
   obtain ⟨F⟩ := blockFactsL hok
   obtain ⟨hk, hnk, pat0, hctl0, -, -, -, hfirst, hvar, hall⟩ := hsd
@@ -508,19 +542,16 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
   · -- the new controls are matched values
     intro a ha
     rw [F.hst'] at ha
-    have hctrls := F.hctrls
-    split at hctrls
-    · rename_i hnc
-      simp only at ha
-      rw [← Array.mem_toList_iff, hnc] at ha; cases ha
-    · rename_i k x pos c' _ hnc
-      simp only at ha
-      rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
+    simp only at ha
+    rcases builtL_cases F.hbuilt with ⟨-, hnc, -⟩ | ⟨x, pos, c', -, -, hnc, hpc, -⟩ |
+      ⟨n, pos, c', xv, -, -, -, -, -, -, hus⟩
+    · rw [← Array.mem_toList_iff, hnc] at ha; cases ha
+    · rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
       subst ha
-      simp only [Bool.and_eq_true, beq_iff_eq, Option.map_eq_some_iff] at hctrls
-      obtain ⟨-, p, hp, rfl⟩ := hctrls
+      simp only [Option.map_eq_some_iff] at hpc
+      obtain ⟨p, hp, rfl⟩ := hpc
       exact hIC _ (hpos (hσs x) hp)
-    · cases hctrls
+    · cases hus
   · -- the new terminator takes the old one's edge
     refine ⟨m + GoFV.Proof.Pass.Rewrite.Pat.sz pat', fun ρ hρ => ?_⟩
     let e' := semEnvL tabs M F.I (denL true M.get? tabs ρ m)
@@ -572,7 +603,6 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
         swapS fb.succs else fb.succs)[j]? := by
       intro j; rw [F.hst']; rfl
     rw [succ_ok (b := stBlockL fb st) he1]
-    have hctrls := F.hctrls
     by_cases hnf : br.newKind = .First
     · -- `First`
       have hnc0 : br.newControls = [] := hfirst hnf
@@ -588,9 +618,12 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
         exact stepVals_first hkT _
       rw [hsT, succ_ok (e := e) (by rw [hT]; rw [← hob'] at he2; simpa using he2)]
       exact .ok (.goto _)
-    · obtain ⟨x, pos, hnc⟩ := hvar hnf
-      rw [hnc] at hctrls hob'
-      obtain ⟨c', hnc', hpc0⟩ := ctrls_var hctrls hnf
+    · rcases builtL_cases F.hbuilt with ⟨hf, -, -⟩ | ⟨x, pos, c', -, hnc, hnc', hpc0, -⟩ |
+        ⟨n, pos, c', xv, -, -, -, -, -, -, hus⟩
+      · exact absurd hf hnf
+      pick_goal 2
+      · cases hus
+      rw [hnc] at hob'
       have hob2 := obl_var hob' hnf
       simp only [Option.map_eq_some_iff] at hpc0
       obtain ⟨p, hp, hpc⟩ := hpc0
