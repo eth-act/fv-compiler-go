@@ -179,6 +179,18 @@ theorem brVal_eq (k : BlockKind) (ai : Int64) (c : Val) : brVal k ai c =
     else if k.isArm64 then Arm64.taken k ai c else none := by
   cases k <;> first | rfl | (cases c <;> rfl)
 
+/-- `ZW`/`NZW` read the low 32 bits of their control's register. -/
+theorem brVal_r32 {k : BlockKind} (hk : k = .ARM64ZW ∨ k = .ARM64NZW) {ai : Int64} {w y : Val}
+    {b : Bool} (h : brVal k ai w = some b)
+    (hr : ∀ x, Arm64.reg32 w = some x → Arm64.reg32 y = some x) : brVal k ai y = some b := by
+  rcases hk with rfl | rfl <;>
+  · rw [brVal_eq] at h ⊢
+    simp only [reduceCtorEq, ite_false, show BlockKind.ARM64ZW.isArm64 = true from rfl,
+      show BlockKind.ARM64NZW.isArm64 = true from rfl, ite_true, Arm64.taken] at h ⊢
+    cases hw : Arm64.reg32 w with
+    | none => rw [hw] at h; cases h
+    | some x => rw [hw] at h; rw [hr x hw]; exact h
+
 theorem brVal_mono {k : BlockKind} {ai : Int64} {w y : Val} (hr : Sem.Refines w y) {b : Bool}
     (h : brVal k ai w = some b) : brVal k ai y = some b := by
   rw [brVal_eq] at h ⊢
@@ -446,13 +458,17 @@ theorem newAuxL_eq {ev ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (ev x).erase 
     · rw [h]
     · rw [h, h']; rfl
 
-/-- The three shapes of `builtL`: `First`, a rule variable's value, a node built at a fresh value. -/
+/-- The three shapes of `builtL`: `First`, a rule variable's value (or, for `ZW`/`NZW`, the source
+of a narrowing `Copy` of at least 32 bits it is), a node built at a fresh value. -/
 theorem builtL_cases {tabs : Tables} {M : Defs} {br : BlockRule} {e : PEnv} {pat : Pat}
     {ev : GoFV.Rules.Expr → DV} {or : Oracle} {σ : Nat → DV} {I : Inst} {c : ID} {nc : Array ID}
     {us : List Value} (h : builtL tabs M br e pat ev or σ I c nc = some us) :
     (br.newKind = .First ∧ nc.toList = [] ∧ us = []) ∨
     (∃ x pos c', br.newKind ≠ .First ∧ br.newControls = [(.var x, pos)] ∧ nc.toList = [c'] ∧
-      (DV.pos? (σ x)).map I.at = some c' ∧ us = []) ∨
+      ((DV.pos? (σ x)).map I.at = some c' ∨
+        ((br.newKind = .ARM64ZW ∨ br.newKind = .ARM64NZW) ∧
+          ∃ p, DV.pos? (σ x) = some p ∧ truncFromL tabs M M.size 32 (I.at p) c' = true)) ∧
+      us = []) ∨
     (∃ n pos c' xv, br.newKind ≠ .First ∧ br.newControls = [(.build [n], pos)] ∧
       nc.toList = [c'] ∧ M.get? c = some xv ∧ M.get? c' = none ∧
       ctrlNodeOK (.build [n]) = true ∧
@@ -465,8 +481,12 @@ theorem builtL_cases {tabs : Tables} {M : Defs} {br : BlockRule} {e : PEnv} {pat
     split at h
     · rename_i hok
       cases h
-      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hok
-      exact .inr (.inl ⟨x, pos, c', hok.1, hnc, hl, hok.2, rfl⟩)
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.or_eq_true, beq_iff_eq,
+        Option.any_eq_true] at hok
+      refine .inr (.inl ⟨x, pos, c', hok.1, hnc, hl, ?_, rfl⟩)
+      rcases hok.2 with h | ⟨hk, p, hp, ht⟩
+      · exact .inl h
+      · exact .inr ⟨hk, p, hp, ht⟩
     · cases h
   · rename_i _ _ _ n pos c' hnc hl
     split at h
@@ -639,9 +659,11 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
     · rw [← Array.mem_toList_iff, hnc] at ha; cases ha
     · rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
       subst ha
-      simp only [Option.map_eq_some_iff] at hpc
-      obtain ⟨p, hp, rfl⟩ := hpc
-      exact hsub _ (hIC _ (hpos (hσs x) hp))
+      rcases hpc with hpc | ⟨-, p, hp, ht⟩
+      · simp only [Option.map_eq_some_iff] at hpc
+        obtain ⟨p, hp, rfl⟩ := hpc
+        exact hsub _ (hIC _ (hpos (hσs x) hp))
+      · exact hsub _ (truncFrom_closed hC ht (hIC _ (hpos (hσs x) hp)))
     · rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
       subst ha
       rw [hus'] at hus
@@ -755,21 +777,45 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
     · -- a rule variable
       rw [hnc] at hob'
       have hob2 := obl_var hob' hnf
-      simp only [Option.map_eq_some_iff] at hpc0
-      obtain ⟨p, hp, hpc⟩ := hpc0
-      obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
-      rw [show sigmaL tabs e' (Pat.swapC F.pat F.sw).1 x = .val wv (some p) from hwv] at hob2
-      simp only [DV.valOr] at hob2
-      have hctl' : st'.ctrls.toList = [F.I.at p] :=
-        (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans
-          (by show nc.toList = _; rw [hnc', hpc])
-      rw [hctl']
-      simp only [List.map_cons, List.map_nil]
-      rw [new_step hcT (by
-        rw [hkT, haT]
-        exact brVal_mono (hwr.trans (denL_fuel_mono _ _ _ _ _ _ _ (Nat.le_succ _))) hob2)]
-      rw [succ_ok (e := e) (by rw [hT]; exact he2)]
-      exact .ok (.goto _)
+      rcases hpc0 with hpc0 | ⟨hzw, p, hp, htr⟩
+      · simp only [Option.map_eq_some_iff] at hpc0
+        obtain ⟨p, hp, hpc⟩ := hpc0
+        obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
+        rw [show sigmaL tabs e' (Pat.swapC F.pat F.sw).1 x = .val wv (some p) from hwv] at hob2
+        simp only [DV.valOr] at hob2
+        have hctl' : st'.ctrls.toList = [F.I.at p] :=
+          (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans
+            (by show nc.toList = _; rw [hnc', hpc])
+        rw [hctl']
+        simp only [List.map_cons, List.map_nil]
+        rw [new_step hcT (by
+          rw [hkT, haT]
+          exact brVal_mono (hwr.trans (denL_fuel_mono _ _ _ _ _ _ _ (Nat.le_succ _))) hob2)]
+        rw [succ_ok (e := e) (by rw [hT]; exact he2)]
+        exact .ok (.goto _)
+      · -- `ZW`/`NZW` on the source `c'` of the narrowing `Copy` the variable's value is: the
+        -- same `W` register (`reg32_truncFrom`)
+        obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
+        rw [show sigmaL tabs e' (Pat.swapC F.pat F.sw).1 x = .val wv (some p) from hwv] at hob2
+        simp only [DV.valOr] at hob2
+        have hCp : C (F.I.at p) := hIC _ (hpos (hσs x) hp)
+        have hCc : C c' := truncFrom_closed hC htr hCp
+        have hctl' : st'.ctrls.toList = [c'] :=
+          (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans
+            (by show nc.toList = _; rw [hnc'])
+        rw [hctl']
+        simp only [List.map_cons, List.map_nil]
+        have hr32 : ∀ y, Arm64.reg32 wv = some y → Arm64.reg32 (denL true M'.get? tabs ρ
+            (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat' + 1) c') = some y := by
+          intro y hy
+          have h1 := Mono.reg32_of hwr hy
+          rw [hden ρ _ _ hCp] at h1
+          have h2 := reg32_truncFrom hρ htr _ y h1
+          rw [← hden ρ _ _ hCc] at h2
+          exact Mono.reg32_of (denL_fuel_mono _ _ _ _ _ _ _ (Nat.le_succ _)) h2
+        rw [new_step hcT (by rw [hkT, haT]; exact brVal_r32 hzw hob2 hr32)]
+        rw [succ_ok (e := e) (by rw [hT]; exact he2)]
+        exact .ok (.goto _)
     · -- the built control, defined at the fresh `c'`
       rw [hnc] at hob'
       have hob2 := obl_build hob' hnf

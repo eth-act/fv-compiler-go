@@ -132,6 +132,78 @@ theorem copyReachL_closed {tabs : Tables} {M : Defs} {C : ID → Prop} (hC : Def
         exact copyReachL_closed hC N _ w hr (hargs _ (Array.mem_toList_iff.1 (by
           rw [toList_of_size_one hsz]; exact List.mem_singleton_self _)))
 
+/-- Zero-extending to `w ≥ n` bits, then to 64, is zero-extending to 64. -/
+theorem setWidth_setWidth_wide {n : Nat} (w m : Nat) (hn : n ≤ w) (x : BitVec n) :
+    (x.setWidth w).setWidth m = x.setWidth m := by
+  ext i hi
+  simp only [← BitVec.getLsbD_eq_getElem, BitVec.getLsbD_setWidth]
+  by_cases h : i < w
+  · simp [h]
+  · have : x.getLsbD i = false := BitVec.getLsbD_of_ge x i (by omega)
+    simp [h, this]
+
+/-- A narrowing to 32 bits keeps the `W` register. -/
+theorem reg32_retypeL_w32 {X : Val} {x : BitVec 32}
+    (h : Arm64.reg32 (X.retypeL (.int .w32)) = some x) : Arm64.reg32 X = some x := by
+  cases X with
+  | int w v =>
+    cases w <;> simp_all [Val.retypeL, Val.widen, Val.retype, Arm64.reg32, Arm64.reg, Width.bits,
+      setWidth_setWidth_wide, BitVec.setWidth_setWidth_of_le]
+  | bool b => cases b <;> simp_all [Val.retypeL, Val.widen, Val.retype, Arm64.reg32, Arm64.reg]
+  | _ => simp [Val.retypeL, Val.widen, Val.retype, Arm64.reg32, Arm64.reg] at h
+
+/-- A narrowing `Copy` in lowered mode: the copied value at the copy's shape. -/
+theorem copy_den {tabs : Tables} {M : Defs} {ρ : ID → Val} {n : Nat} {a : ID} {c : Value}
+    {w : Width} (hc : M.get? a = some c) (hcop : c.op = .Copy) (hcsz : c.args.size = 1)
+    (hsh : shpL tabs c.type = .int w) :
+    denL true M.get? tabs ρ (n + 1) a = (denL true M.get? tabs ρ n c.args[0]!).retypeL (.int w) := by
+  rw [denT_succ hc (termVL_of_copy hcop), toList_of_size_one hcsz, hcop, hsh]
+  simp only [List.map_cons, List.map_nil, opValL_copy]
+
+/-- What `truncFromL` says. -/
+theorem truncFromL_cases {tabs : Tables} {M : Defs} {n k : Nat} {a a' : ID}
+    (h : truncFromL tabs M n k a a' = true) :
+    ∃ c w, M.get? a = some c ∧ c.op = .Copy ∧ c.args.size = 1 ∧
+      shpL tabs c.type = .int w ∧ k ≤ w.bits ∧ w ≠ .w64 ∧
+      copyReachL tabs M n c.args[0]! a' = true := by
+  unfold truncFromL at h
+  split at h
+  · rename_i c hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨hop, hsz⟩, hsh⟩, hr⟩ := h
+    split at hsh
+    · rename_i w hw
+      simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hsh
+      exact ⟨c, w, hc, hop, hsz, hw, hsh.1, hsh.2, hr⟩
+    · cases hsh
+  · cases h
+
+/-- The source of a narrowing `Copy` of at least 32 bits holds the copy's `W` register. -/
+theorem reg32_truncFrom {tabs : Tables} {M : Defs} {ρ : ID → Val} (hT : TypedL true M.get? tabs ρ)
+    {N : Nat} {a c' : ID} (h : truncFromL tabs M N 32 a c' = true) :
+    ∀ n (y : BitVec 32), Arm64.reg32 (denL true M.get? tabs ρ n a) = some y →
+      Arm64.reg32 (denL true M.get? tabs ρ n c') = some y := by
+  obtain ⟨c, w, hc, hcop, hcsz, hsh, hkw, hw64, hcr⟩ := truncFromL_cases h
+  have hw32 : w = .w32 := by
+    cases w <;> first | rfl | exact absurd rfl hw64 | simp [Width.bits] at hkw
+  subst hw32
+  intro n y hy
+  cases n with
+  | zero => cases hy
+  | succ n =>
+    rw [copy_den hc hcop hcsz hsh] at hy
+    exact Mono.reg32_of ((denL_fuel_mono true M.get? tabs ρ n (n + 1) _ (by omega)).trans
+      (copyReachL_den hT _ _ _ hcr (n + 1))) (reg32_retypeL_w32 hy)
+
+/-- The source of a narrowing `Copy` of a value of `C` is in `C`. -/
+theorem truncFrom_closed {tabs : Tables} {M : Defs} {C : ID → Prop} (hC : DefClosed M C)
+    {N k : Nat} {a c' : ID} (h : truncFromL tabs M N k a c' = true) (ha : C a) : C c' := by
+  obtain ⟨c, w, hc, -, hcsz, -, -, -, hcr⟩ := truncFromL_cases h
+  obtain ⟨m, hm, hargs⟩ := hC a ha
+  rw [hc] at hm; cases hm
+  exact copyReachL_closed hC N _ c' hcr (hargs _ (Array.mem_toList_iff.1 (by
+    rw [toList_of_size_one hcsz]; exact List.mem_singleton_self _)))
+
 /-! ## The denotations of a rule event -/
 
 /-- The semantic instance: the leaves are `L` of the matched values. -/
