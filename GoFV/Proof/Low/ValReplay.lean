@@ -1400,8 +1400,18 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     rename_i br hbr
     split at h
     · cases h
-    rename_i st' hok
-    exact replayL_inv hs hD evs M M' _ B' C h hI
-      (hB.block hI.closed hI.typed hst h2' (ofRuleSetL_blockSound hs hbr) hok)
+    rename_i st' us hok
+    have hsd := ofRuleSetL_blockSound hs hbr
+    rcases blockOKL_us hI.closed hok with rfl | ⟨u, rfl, hk, ht, hcl⟩
+    · exact replayL_inv hs hD evs M M' _ B' C h hI
+        (hB.block hI.closed hI.typed (fun _ h => h) (fun _ _ _ _ => rfl) hst h2' hsd hok
+          (fun _ hu => by cases hu))
+    · simp only [List.foldl_cons, List.foldl_nil] at h
+      exact replayL_inv hs hD evs _ M' _ B' _ h (hI.fresh (P := ∀ c ∈ st.ctrls, C c) hk ht hcl)
+        (hB.block hI.closed hI.typed (fun _ h => .inl h)
+          (fun _ n y hy => denL_put_fresh hk hI.closed n y hy) hst h2' hsd hok
+          (fun u' hu => by
+            rw [List.mem_singleton] at hu; subst hu
+            exact ⟨by rw [get?_put]; simp, fun hp => .inr ⟨hp, rfl⟩⟩))
 
 end GoFV.Proof.Low.Val
