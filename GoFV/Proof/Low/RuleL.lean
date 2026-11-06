@@ -296,12 +296,13 @@ these values at their op's width, and a narrow generic op read at a wider shape 
 `retypeL` where the arm64 op keeps its register), as do `Load` (`loadOp` decodes at the shape) and
 the atomic loads (`atomicLoad`, likewise), `Addr` at a word shape (a `uintptr`-typed `Addr`:
 the symbol's address, which `MOVDaddr` computes alike, `refines_addr_movAddr` at every shape),
-and `CondSelect` at a word shape (an arm, which `CSEL` moves as its register, `regVal`, and a word
-shape reads back whole), and `WB` (`wbOp`, which `LoweredWB` computes alike, at every shape);
-arm64 tops are unconstrained (`retypeL` narrows their 64-bit register). -/
+and `CondSelect` at a word or integer shape (an arm, which `CSEL` moves as its register, `regVal`,
+and such a shape reads back as the arm's own reading), and `WB` (`wbOp`, which `LoweredWB`
+computes alike, at every shape); arm64 tops are unconstrained (`retypeL` narrows their 64-bit
+register). -/
 def topOKL (o : Op) (ty : Ty) : Bool :=
   !o.generic || o == .Load || atomicLoadOp o || ((o == .Addr || o == .CondSelect) && wordShape ty) ||
-    o == .WB || GoFV.Opt.RewriteCheck.topOK o ty
+    (o == .CondSelect && ty matches .int _) || o == .WB || GoFV.Opt.RewriteCheck.topOK o ty
 
 /-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
 def Pat.topOKL (ty : Ty) : Pat → Bool
@@ -369,6 +370,42 @@ def Pat.argsOKLs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat →
       (!provOp o || !wordShape (ty (i :: p)) || wordShape (ty p)) &&
       Pat.argsOKL ty (i :: p) q && Pat.argsOKLs ty p o (i + 1) qs
 end
+
+/-- An op node of a pattern (not a leaf: `wild`, `bind`, `same`). -/
+def Pat.isOpL : Pat → Bool
+  | .op .. => true
+  | _ => false
+
+mutual
+/-- `Pat.argsOKL` without the width check at a leaf argument: an op may read more bits of a bound
+value than its shape holds, which `Arm64.reg` zero-extends (the provenance check stays). -/
+def Pat.argsOKLn (ty : Path → Ty) (p : Path) : Pat → Bool
+  | .op o _ _ _ _ _ args _ => Pat.argsOKLns ty p o 0 args
+  | _ => true
+/-- `Pat.argsOKLn` of the arguments `i, i+1, …` of an `o` node at `p`. -/
+def Pat.argsOKLns (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat → Bool
+  | [] => true
+  | q :: qs => (o.generic || !Pat.isOpL q || decide (armReadW o (ty p) i ≤ argWidth (ty (i :: p)))) &&
+      (!provOp o || !wordShape (ty (i :: p)) || wordShape (ty p)) &&
+      Pat.argsOKLn ty (i :: p) q && Pat.argsOKLns ty p o (i + 1) qs
+end
+
+/-- The rules whose obligation holds when an op of the pattern reads more bits of a bound value
+than its shape holds (`Pat.argsOKLn`; their proofs read no leaf's width): `(cc (CMPWconst [0]
+x:(ANDconst [c] y)))` as `(cc (TSTWconst [int32(c)] y))` (`ARM64.rules:561`, `566`) reads `y`'s
+register on both sides, where Go builds the `ANDconst` at 32 bits on a narrow `y` (`(MOVBUreg
+(ANDconst [c] y)) => (ANDconst [c&(1<<8-1)] y)`); then `(EQ|NE (TSTWconst [c] x))` as `TBZ`/`TBNZ`
+on `x`'s register (`623`, `624`); the conditional selects on `InvertFlags` move their arms'
+registers alike (`1352`-`1357`). -/
+def leafWideL (loc : Loc) : Bool :=
+  (loc.line == 561 || loc.line == 566 || loc.line == 623 || loc.line == 624 ||
+    loc.line == 1352 || loc.line == 1353 || loc.line == 1354 || loc.line == 1355 ||
+    loc.line == 1356 || loc.line == 1357) && loc.file == "ARM64"
+
+/-- The argument check of the rule at `loc` on the pattern `pat`: `Pat.argsOKLn` for the rules
+of `leafWideL`, `Pat.argsOKL` otherwise. -/
+def argsOKLr (loc : Loc) (ty : Path → Ty) (pat : Pat) : Bool :=
+  if leafWideL loc then Pat.argsOKLn ty [] pat else Pat.argsOKL ty [] pat
 
 /-- A `copy` result copies a value of a shape compatible with the matched value's
 (`RewriteCheck.copyCompat`: the same shape, or two pointer shapes). -/
@@ -443,7 +480,7 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     Pat.typed e [] r.pat →
     Pat.argsOK e.ty [] r.pat = true →
     Pat.topOKL (e.ty []) r.pat = true →
-    Pat.argsOKL e.ty [] r.pat = true →
+    argsOKLr r.loc e.ty r.pat = true →
     copyShapeOK ev e r.result →
     resFitsL (e.ty []) r.result = true →
     Pat.addrOKL e.ty e.aux e.auxInt [] r.pat = true →
@@ -750,7 +787,7 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
       let ev := evalE (br.vars.map (·.ty)) σ or e (Pat.denL tabs e [] pat')
       Pat.wf e [] pat' → Pat.cons ev σ e [] pat' → condHolds ev br.cond →
       Pat.typed e [] pat' → Pat.argsOK e.ty [] pat' = true → Pat.topOKL (e.ty []) pat' = true →
-      Pat.argsOKL e.ty [] pat' = true → blockAuxOK br.auxInt ai →
+      argsOKLr br.loc e.ty pat' = true → blockAuxOK br.auxInt ai →
       newAuxL ev br.newAuxInt = some ai' →
       ∀ b, brVal br.kind ai (Pat.denL tabs e [] pat') = some b →
         (match br.newKind, br.newControls with

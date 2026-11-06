@@ -679,32 +679,32 @@ theorem r_ARM64_564_6_sound : ArmRule.Checked r_ARM64_564_6 := by
 /-- `ARM64.rules:566`: `(Equal (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (Equal (TSTWconst [int32(c)] y))` -/
 theorem r_ARM64_566_sound : ArmRule.Checked r_ARM64_566 := by
   left; arm_unfold; all_goals arm_norm
-  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
+  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2 _ _ _ hc
 
 /-- `ARM64.rules:566`: `(GreaterEqual (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (GreaterEqual (TSTWconst [int32(c)] y))` -/
 theorem r_ARM64_566_2_sound : ArmRule.Checked r_ARM64_566_2 := by
   left; arm_unfold; all_goals arm_norm
-  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
+  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2 _ _ _ hc
 
 /-- `ARM64.rules:566`: `(GreaterThan (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (GreaterThan (TSTWconst [int32(c)] y))` -/
 theorem r_ARM64_566_3_sound : ArmRule.Checked r_ARM64_566_3 := by
   left; arm_unfold; all_goals arm_norm
-  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
+  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2 _ _ _ hc
 
 /-- `ARM64.rules:566`: `(LessEqual (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (LessEqual (TSTWconst [int32(c)] y))` -/
 theorem r_ARM64_566_4_sound : ArmRule.Checked r_ARM64_566_4 := by
   left; arm_unfold; all_goals arm_norm
-  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
+  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2 _ _ _ hc
 
 /-- `ARM64.rules:566`: `(LessThan (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (LessThan (TSTWconst [int32(c)] y))` -/
 theorem r_ARM64_566_5_sound : ArmRule.Checked r_ARM64_566_5 := by
   left; arm_unfold; all_goals arm_norm
-  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
+  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2 _ _ _ hc
 
 /-- `ARM64.rules:566`: `(NotEqual (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (NotEqual (TSTWconst [int32(c)] y))` -/
 theorem r_ARM64_566_6_sound : ArmRule.Checked r_ARM64_566_6 := by
   left; arm_unfold; all_goals arm_norm
-  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
+  all_goals exact refines_tstw_const rfl (fun _ _ _ _ _ => rfl) harg.2 _ _ _ hc
 
 /-- `ARM64.rules:568`: `(Equal (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (Equal (TSTW x y))` -/
 theorem r_ARM64_568_sound : ArmRule.Checked r_ARM64_568 := by

@@ -373,7 +373,7 @@ structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL)
       (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1) cd = .bool true
   hargs : GoFV.Proof.Rules.Pat.argsOK (envL tabs M I).ty [] (Pat.swapC pat sw).1 = true
   htop : Pat.topOKL ((envL tabs M I).ty []) (Pat.swapC pat sw).1 = true
-  hargsL : Pat.argsOKL (envL tabs M I).ty [] (Pat.swapC pat sw).1 = true
+  hargsL : argsOKLr br.loc (envL tabs M I).ty (Pat.swapC pat sw).1 = true
   hleaves : leavesOK M I [] (Pat.swapC pat sw).1 = true
   hauxB : blockAuxOKB br.auxInt st.auxInt = true
   hbuilt : builtL tabs M br (envL tabs M I) (Pat.swapC pat sw).1

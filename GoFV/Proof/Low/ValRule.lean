@@ -63,7 +63,7 @@ structure RuleFactsL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List
   hcond : ∀ c, r.cond = some c → stEvL tabs M r defs I c = .bool true
   hargs : GoFV.Proof.Rules.Pat.argsOK (envL tabs M I).ty [] r.pat = true
   htop : Pat.topOKL ((envL tabs M I).ty []) r.pat = true
-  hargsL : Pat.argsOKL (envL tabs M I).ty [] r.pat = true
+  hargsL : argsOKLr r.loc (envL tabs M I).ty r.pat = true
   hfit : resFitsL ((envL tabs M I).ty []) r.result = true
   hadr : Pat.addrOKL (envL tabs M I).ty (envL tabs M I).aux (envL tabs M I).auxInt [] r.pat = true
   hleaves : leavesOK M I [] r.pat = true

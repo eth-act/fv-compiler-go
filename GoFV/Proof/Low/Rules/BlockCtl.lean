@@ -61,9 +61,9 @@ local macro "arm_bbuild" : tactic => `(tactic| (
     simp only [nodeDenL, nodeTyL, nodeAuxL, toAuxIntL, List.getElem?_cons_zero, DV.valOr, sigmaL,
       Pat.bindsL, Pat.bindssL, rule_unfold_ds, rule_helper, rule_unfold_s] at ⊢
     arm_norm
-    (try simp (config := { decide := true }) only [Pat.argsOKL, Pat.argsOKLs, Bool.and_eq_true,
-      Bool.or_eq_true, decide_eq_true_eq, and_true, true_and, false_or, true_or, or_true,
-      Nat.reduceAdd] at harg)
+    (try simp (config := { decide := true }) only [Pat.argsOKL, Pat.argsOKLs, Pat.argsOKLn,
+      Pat.argsOKLns, Pat.isOpL, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, and_true,
+      true_and, false_or, true_or, or_true, Nat.reduceAdd] at harg)
     (try simp only [DV.int.injEq] at hc)
     simp (config := { decide := true }) only [brVal, Arm64.taken, ite_true, Bool.bne_false]
       at hbr ⊢)))
@@ -157,7 +157,7 @@ set_option hygiene false in
 /-- `(K (CMPWconst [0] x:(ANDconst [c] y))) => (K (TSTWconst [int32(c)] y))`. -/
 local macro "arm_tstwc" : tactic => `(tactic| (
   arm_bbuild
-  have hw : 32 ≤ argWidth (e.ty [0]) := harg.1
+  have hw : 32 ≤ argWidth (e.ty [0]) := harg
   rw [imm32_of_zero hc] at hbr
   rw [imm32_wrap]
   obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)

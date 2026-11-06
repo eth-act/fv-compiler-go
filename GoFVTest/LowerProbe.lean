@@ -103,10 +103,10 @@ def ruleWhyL (tabs : Tables) (M : Defs) (r0 : Rule) (v : ID) (defs : List Value)
           | none => true) then "cond"
         else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !Pat.topOKL (e.ty []) r.pat then s!"top {repr (e.ty [])}"
-        else if !Pat.argsOKL e.ty [] r.pat then "argsL"
+        else if !argsOKLr r.loc e.ty r.pat then "argsL"
         else if !resFitsL (e.ty []) r.result then s!"fits {repr (e.ty [])}"
         else if !leavesOK M I [] r.pat then "leaves"
-        else if !resultOKL tabs M e r.pat ev or σ I r x defs then
+        else if !resultOKL tabs M e r.pat ev or σ I r x (ruleDefsL tabs M r v defs) then
           let nodeWhy : String := match r.result, defs with
             | .build (n :: _), _ :: u :: _ =>
               let ai := match n.auxInt with
@@ -146,7 +146,7 @@ def blockWhyL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL) (nc : A
             | none => true) then "cond"
           else if !Pat.argsOK e.ty [] pat then "args"
           else if !Pat.topOKL (e.ty []) pat then s!"top {repr (e.ty [])}"
-          else if !Pat.argsOKL e.ty [] pat then
+          else if !argsOKLr br.loc e.ty pat then
             s!"argsL {(List.range 4).map fun i => repr (e.ty [i])} {(List.range 2).map fun i => repr (e.ty [i, 0])}"
           else if !leavesOK M I [] pat then "leaves"
           else if !blockAuxOKB br.auxInt st.auxInt then "aux"
@@ -195,8 +195,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
             | some x' => M := M.put v x'
             | none => return s!"setOp {key cr.rule}"
           | _ =>
-            if ruleOKL tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
-            else match atomDef tabs f M v defs.toList with
+            match ruleOKL tabs M cr.rule v defs.toList with
+            | some ds => M := ds.foldl (fun M u => M.put u.id u) M
+            | none => match atomDef tabs f M v defs.toList with
               | some (u, none) => M := M.put v u
               | some (u, some s) => M := (M.put s.id s).put v u
               | none =>
@@ -250,8 +251,8 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
             if !(termVL tabs u && L[x]? != some true) then
               return s!"final: v{x} fields {m.op.name}->{u.op.name}"
           else
-            for (a, a') in m.args.toList.zip u.args.toList do
-              if !copyReachL tabs M M.size a a' && !truncReachL tabs M M.size m.op a a' &&
+            for ((a, a'), j) in (m.args.toList.zip u.args.toList).zipIdx do
+              if !copyReachL tabs M M.size a a' && !truncReachL tabs M M.size m.op j a a' &&
                   !(termVL tabs u && L[x]? != some true) then
                 let d := fun (y : ID) => ((M.get? y).map (·.op.name)).getD "-"
                 return s!"final: v{x} {u.op.name} arg v{a}({d a})->v{a'}({d a'})"
