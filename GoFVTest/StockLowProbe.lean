@@ -70,7 +70,7 @@ def whyLate (tabs tabs' : Tables) (f g : Func) : String := Id.run do
       return match f.value? i, g.value? i with
         | some u, some w =>
           let a := match u.args[0]? with
-            | some x => ((f.value? x).map (·.op.name)).getD "-"
+            | some x => ((f.value? x).map fun (v : Value) => v.op.name).getD "-"
             | none => "-"
           s!"value {u.op.name}({a}) -> {w.op.name}"
         | some u, none => s!"value {u.op.name} removed"
