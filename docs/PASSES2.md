@@ -80,7 +80,7 @@ output, `guard` its remaining hypotheses, decided after the run on the input and
 | lower | `lowerChecked`, `run` → `runL` under `Env.Mono`; stock `lower` as `full` | generic input without fused multiply-add shapes (`contractAll f = f`) | `Low.lower_refines_run` |
 | addressing modes | `addressingModesPass`, `RefinesL` (the identity on arm64) | — | `addressingModes_refinesL` |
 | late lower | `lateLower`, `RefinesL` | `renameB` (rules 91 and 98 only) | `LateLowerL.lateLower_refinesL` |
-| pair | stock | — | — |
+| pair | `pairPass`, `RefinesL` | `pairB` (`tabsAgreeL`, pair loads and stores) | `MoveL.pair_refinesL` |
 | lowered deadcode for cse, lowered deadcode, late deadcode | `deadcodePass`, `RefinesL` | `deadFragB`, `deadFragLB`, form kept | `Dead.deadcode_refinesL` |
 | lowered cse | `loweredCsePass`, `RefinesL` | `CSEL.frag` | `CSEL.loweredCse_refinesL` |
 | elim unread autos | `elimUnreadAutosPass`, `RefinesLFrom (FrameSafe ∧ InitAvoids)` | `unreadLFrag` | `UnreadL.elimUnreadAutos_refinesL` |
