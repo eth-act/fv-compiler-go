@@ -63,7 +63,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 377 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 379 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435]),
@@ -211,6 +211,7 @@ def lower : RuleSet where
     (.Lsh64x8, [Generated.ARM64.r_ARM64_152_4, Generated.ARM64.r_ARM64_171_2]),
     (.Mod64, [Generated.ARM64.r_ARM64_33]),
     (.Mod64u, [Generated.ARM64.r_ARM64_35]),
+    (.Move, [Generated.ARM64.r_ARM64_438, Generated.ARM64.r_ARM64_439]),
     (.Mul16, [Generated.ARM64.r_ARM64_12]),
     (.Mul32, [Generated.ARM64.r_ARM64_12_2]),
     (.Mul64, [Generated.ARM64.r_ARM64_11]),

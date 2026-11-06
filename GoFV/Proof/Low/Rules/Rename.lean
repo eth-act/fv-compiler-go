@@ -2,15 +2,15 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:376-377`, `442-455`, `482-485`, `507`, `512-516`)
+# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:376-377`, `438-439`, `442-455`, `482-485`, `507`, `512-516`)
 
 `ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
 checks, the closure pointer and the bounds panic; the rules folding a constant operand into a
 lowered bounds panic (`ArmRule.Mem`, `pbAtom`) and lowering a `Zero` to `LoweredZero` or
-`LoweredZeroLoop` (`ArmRule.Mem`). `ArmRule.SetOp` of the write barrier (`WB` and
-`LoweredWB` are terms, both `wbOp`) and of the atomic loads: `AtomicLoad{8,32,64,Ptr}`
-and the acquiring loads `LDAR{B,W,}` they lower to are terms (`ldarOp`), both Phase 1's
-`atomicLoad` (`armPure_ldar`).
+`LoweredZeroLoop` or a `Move` to `LoweredMove` or `LoweredMoveLoop` (`ArmRule.Mem`).
+`ArmRule.SetOp` of the write barrier (`WB` and `LoweredWB` are terms, both `wbOp`) and of the
+atomic loads: `AtomicLoad{8,32,64,Ptr}` and the acquiring loads `LDAR{B,W,}` they lower to are
+terms (`ldarOp`), both Phase 1's `atomicLoad` (`armPure_ldar`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -47,12 +47,21 @@ theorem r_ARM64_515_sound : ArmRule.Checked r_ARM64_515 := checked_pb rfl rfl
 theorem r_ARM64_516_sound : ArmRule.Checked r_ARM64_516 := checked_pb rfl rfl
 
 /-- `ARM64.rules:376`: `(Zero [s] ptr mem) && s > 16 && s < 192 => (LoweredZero [s] ptr mem)`, a rule
-on a `Zero` (`ArmRule.Mem`; the validator pairs the result with the `Zero`, `zeroLower`). -/
+on a `Zero` (`ArmRule.Mem`; the validator pairs the result with the `Zero`, `bulkLower`). -/
 theorem r_ARM64_376_sound : ArmRule.Checked r_ARM64_376 := checked_zero rfl
 
 /-- `ARM64.rules:377`: `(Zero [s] ptr mem) && s >= 192 => (LoweredZeroLoop [s] ptr mem)`
-(`ArmRule.Mem`, `zeroLower`). -/
+(`ArmRule.Mem`, `bulkLower`). -/
 theorem r_ARM64_377_sound : ArmRule.Checked r_ARM64_377 := checked_zero rfl
+
+/-- `ARM64.rules:438`: `(Move [s] dst src mem) && s > 64 && s < 192 && logLargeCopy(v, s) =>
+(LoweredMove [s] dst src mem)`, a rule on a `Move` (`ArmRule.Mem`; the validator pairs the result
+with the `Move`, `bulkLower`). -/
+theorem r_ARM64_438_sound : ArmRule.Checked r_ARM64_438 := checked_move rfl
+
+/-- `ARM64.rules:439`: `(Move [s] dst src mem) && s >= 192 && logLargeCopy(v, s) =>
+(LoweredMoveLoop [s] dst src mem)` (`ArmRule.Mem`, `bulkLower`). -/
+theorem r_ARM64_439_sound : ArmRule.Checked r_ARM64_439 := checked_move rfl
 
 /-- `ARM64.rules:442`: `(StaticCall ...) => (CALLstatic ...)` -/
 theorem r_ARM64_442_sound : ArmRule.Checked r_ARM64_442 :=

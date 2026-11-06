@@ -171,6 +171,10 @@ theorem termVL_store (tabs : Tables) (v : Value) (h : v.op = .Store) : termVL ta
 theorem termVL_zero (tabs : Tables) (v : Value) (h : v.op = .Zero) : termVL tabs v = false := by
   rw [termVL_gen (by decide) h]; decide
 
+/-- `Move`s are atoms. -/
+theorem termVL_move (tabs : Tables) (v : Value) (h : v.op = .Move) : termVL tabs v = false := by
+  rw [termVL_gen (by decide) h]; decide
+
 /-- `LocalAddr`s are atoms. -/
 theorem termVL_localAddr (tabs : Tables) (v : Value) (h : v.op = .LocalAddr) :
     termVL tabs v = false := by
@@ -202,14 +206,16 @@ theorem termVL_pbKeep (tabs : Tables) (v : Value) {o : Op} {ks : List Nat} (hk :
 
 /-- The atoms `ArmRule.Mem` rules match. -/
 theorem termVL_mem (tabs : Tables) (v : Value) {o : Op}
-    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true ∨ pbAtom o = true ∨ o = .Zero)
+    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true ∨ pbAtom o = true ∨ o = .Zero ∨
+      o = .Move)
     (h : v.op = o) : termVL tabs v = false := by
-  rcases ho with rfl | rfl | ho | ho | rfl
+  rcases ho with rfl | rfl | ho | ho | rfl | rfl
   · exact termVL_store tabs v h
   · exact termVL_localAddr tabs v h
   · exact termVL_st tabs v ho h
   · exact termVL_pb tabs v ho h
   · exact termVL_zero tabs v h
+  · exact termVL_move tabs v h
 
 theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
     ∃ a, o = some a ∧ a.op = .Store := by
@@ -224,7 +230,7 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
     (h : atomDef tabs f M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧
       termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
       ((u.args = x.args ∧ memLower tabs x u = true ∧ u.auxInt = 0 ∧ u.aux = none) ∨
-        (u.args = x.args ∧ zeroLower x u = true) ∨
+        (u.args = x.args ∧ bulkLower x u = true) ∨
         ((∀ a ∈ u.args, a ∈ x.args) ∧ addrLower tabs x u = true) ∨
         ((stFold tabs M x u = true ∨ stFoldAddr tabs f M x u = true) ∧
           ∃ a, f.value? v = some a ∧ a.op = .Store)) := by
@@ -1584,18 +1590,24 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (heq ▸ ha))
                 (.inr ⟨heq, fun hf =>
                   absurd ((memLower_op hm).symm.trans (argFree_cases hf).1) (by decide), hrel⟩)) hB'
-          · -- a lowered `Zero` on the same arguments
-            obtain ⟨hzu, hzw, -⟩ := zeroLower_cases hz
-            have hst : stSize u.op = none := by rcases hzw with h | h <;> rw [h] <;> rfl
+          · -- a lowered `Zero` or `Move` on the same arguments
+            have hx0op : x0.op = .Zero ∨ x0.op = .Move := by
+              rcases (bulkLower_cases hz).1 with ⟨h, -⟩ | ⟨h, -⟩
+              · exact .inl h
+              · exact .inr h
+            have hst : stSize u.op = none := by
+              rcases bulkLower_op hz with h | h | h | h <;> rw [h] <;> rfl
+            have hst0 : stSize x0.op = none := by rcases hx0op with h | h <;> rw [h] <;> rfl
             have hrel : ∀ (a : Value) (i act : Nat) (s t : Val),
                 ArgRel tabs act (stArg a x0 i) s t → ArgRel tabs act (stArg a u i) s t :=
               fun a i act s t h => by
-                rw [stArg_none (by rw [hzu]; rfl)] at h
+                rw [stArg_none hst0] at h
                 rw [stArg_none hst]; exact h
             exact replayL_inv hs hD evs _ M' B B' C h
               (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (heq ▸ ha))
-                (.inr ⟨heq, fun hf =>
-                  absurd (hzu.symm.trans (argFree_cases hf).1) (by decide), hrel⟩)) hB'
+                (.inr ⟨heq, fun hf => by
+                  rcases hx0op with h0 | h0 <;>
+                    exact absurd (h0.symm.trans (argFree_cases hf).1) (by decide), hrel⟩)) hB'
           · exact replayL_inv hs hD evs _ M' B B' C h
               (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (hsub a ha))
                 (.inl (argFree_of_addrLower hal))) hB'

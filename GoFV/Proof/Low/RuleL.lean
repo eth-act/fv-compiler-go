@@ -550,19 +550,29 @@ def addrLower (tabs : Tables) (u w : Value) : Bool :=
     auxIsName tabs u.aux && w.args.size == 1
 
 /-- The atom `w` lowers `Zero {t} [n] ptr mem` to `LoweredZero [n] ptr mem` (`ARM64.rules:376`; from
-192 bytes `LoweredZeroLoop`, `377`): the same size; both zero `n` bytes at `ptr`
-(`GoFV.Proof.Low.Sim.zero_lower_eval`). The validator keeps the arguments (`atomDef`). -/
-def zeroLower (u w : Value) : Bool :=
-  u.op == .Zero && (w.op == .ARM64LoweredZero || w.op == .ARM64LoweredZeroLoop) &&
+192 bytes `LoweredZeroLoop`, `377`), or `Move {t} [n] dst src mem` to `LoweredMove [n] dst src
+mem` (`438`; from 192 bytes `LoweredMoveLoop`, `439`): the same size; both zero or copy `n` bytes
+(`GoFV.Proof.Low.Sim.zero_lower_eval`, `move_lower_eval`). The validator keeps the arguments
+(`atomDef`). -/
+def bulkLower (u w : Value) : Bool :=
+  (u.op == .Zero && (w.op == .ARM64LoweredZero || w.op == .ARM64LoweredZeroLoop) ||
+    u.op == .Move && (w.op == .ARM64LoweredMove || w.op == .ARM64LoweredMoveLoop)) &&
     u.auxInt == w.auxInt
 
-/-- What `zeroLower` says. -/
-theorem zeroLower_cases {u w : Value} (h : zeroLower u w = true) :
-    u.op = .Zero ∧ (w.op = .ARM64LoweredZero ∨ w.op = .ARM64LoweredZeroLoop) ∧
+/-- What `bulkLower` says. -/
+theorem bulkLower_cases {u w : Value} (h : bulkLower u w = true) :
+    (u.op = .Zero ∧ (w.op = .ARM64LoweredZero ∨ w.op = .ARM64LoweredZeroLoop) ∨
+      u.op = .Move ∧ (w.op = .ARM64LoweredMove ∨ w.op = .ARM64LoweredMoveLoop)) ∧
       u.auxInt = w.auxInt := by
-  unfold zeroLower at h
+  unfold bulkLower at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+  exact h
+
+/-- The ops a lowered `Zero` or `Move` (`bulkLower`) is. -/
+theorem bulkLower_op {u w : Value} (h : bulkLower u w = true) :
+    w.op = .ARM64LoweredZero ∨ w.op = .ARM64LoweredZeroLoop ∨ w.op = .ARM64LoweredMove ∨
+      w.op = .ARM64LoweredMoveLoop := by
+  rcases (bulkLower_cases h).1 with ⟨-, h | h⟩ | ⟨-, h | h⟩ <;> simp [h]
 
 /-- The arguments of `PanicBounds [kind] x y mem` that a lowering with constant operands folded
 into its aux keeps (`ARM64.rules:513-516`): `LoweredPanicBoundsRC [kind] {C} x mem` keeps `x` and
@@ -743,15 +753,15 @@ def pbAtom : Op → Bool
   | _ => false
 
 /-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`, an
-arm64 store `stSize` knows) or on a lowered bounds panic (`pbAtom`): the validator accepts its
-events only as a lowered store, a folded store offset or a frame address it pairs with the atom
-itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `stFold`, `addrLower`), or as a constant folded
-into a bounds panic, which the replay keeps as the renamed atom (`GoFV.Opt.LowerCheck.pbFoldEv`;
-`finalOKL` and `atomsOKL` relate the result, `pbLower`), so the rule carries no obligation of
-its own. -/
+arm64 store `stSize` knows, a `Zero` or a `Move`) or on a lowered bounds panic (`pbAtom`): the
+validator accepts its events only as a lowered store, `Zero` or `Move`, a folded store offset or a
+frame address it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`,
+`bulkLower`, `stFold`, `addrLower`), or as a constant folded into a bounds panic, which the replay
+keeps as the renamed atom (`GoFV.Opt.LowerCheck.pbFoldEv`; `finalOKL` and `atomsOKL` relate the
+result, `pbLower`), so the rule carries no obligation of its own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
-    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o ∨ o = .Zero)
+    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o ∨ o = .Zero ∨ o = .Move)
 
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
 ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/
