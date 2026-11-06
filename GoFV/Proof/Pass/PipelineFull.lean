@@ -15,6 +15,8 @@ import GoFV.Proof.Pass.CriticalL
 import GoFV.Proof.Pass.PhiTightenL
 import GoFV.Proof.Pass.NilLateL
 import GoFV.Proof.Pass.SchedLPass
+import GoFV.Proof.Pass.FlagAllocL
+import GoFV.Proof.Pass.LateLowerL
 import GoFV.Proof.Pass.LoopRotateLoc
 import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Regalloc.Sound
@@ -181,9 +183,11 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
     simp only [lowerGuard, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hg
     intro env args mem hM fuel hd
     exact Low.lower_refines_run h hg.1 hg.2 hM hd
-  -- addressing modes, late lower, pair
-  · trivial
-  · trivial
+  -- addressing modes
+  · exact ⟨rfl, fun _ _ _ h _ _ => low_of (addressingModes_refinesL h)⟩
+  -- late lower
+  · exact ⟨rfl, fun _ _ _ h _ hg => low_of (LateLowerL.lateLower_refinesL h hg)⟩
+  -- pair
   · trivial
   -- lowered deadcode for cse
   · exact deadcodeStepL_sound _ rfl rfl
@@ -237,7 +241,8 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
   · refine ⟨rfl, fun penv f out h hw hg => ?_⟩
     exact fun env args mem _ => NilLateL.nilcheckelim2_refinesSched h (hw rfl).1 hg env args mem
   -- flagalloc
-  · trivial
+  · refine ⟨rfl, fun penv f out h hw hg => ?_⟩
+    exact fun env args mem _ => FlagAllocL.flagalloc_refinesSched h (hw rfl).1 hg env args mem
   -- regalloc
   · refine ⟨rfl, fun penv f out _ _ hg => ?_⟩
     simp only [regallocGuard, Bool.and_eq_true] at hg
