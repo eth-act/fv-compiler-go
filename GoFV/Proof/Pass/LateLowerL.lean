@@ -555,8 +555,8 @@ theorem evalAll_sim (H : Hyp T f g) {env : Env} :
           exact ⟨wc, hwc, by rw [Frame.set_regs_ne hcx]; exact hr⟩
       | panic e m =>
         rw [hpan e m hev]
-        exact ⟨fun _ h => by cases h, fun _ _ h => by cases h; rfl⟩
-      | stuck msg => exact ⟨fun _ h => by cases h, fun _ _ h => by cases h⟩
+        exact ⟨fun _ h => (by cases h), fun _ _ h => by cases h; rfl⟩
+      | stuck msg => exact ⟨fun _ h => (by cases h), fun _ _ h => by cases h⟩
 
 /-! ## `Phi`s -/
 
@@ -633,17 +633,18 @@ theorem phis_eq (H : Hyp T f g) (R : FRel T f g frS frT) {fb gb : Block} (i : Na
     rw [makeL_f, hw]
     simp [hop]
 
-theorem FRel.setPhis (H : Hyp T f g) (R : FRel T f g frS frT) :
-    ∀ (ps : List (ID × Val)), (∀ p ∈ ps, ∃ u, f.value? p.1 = some u ∧ u.op = .Phi) →
+theorem FRel.setPhis (H : Hyp T f g) :
+    ∀ (ps : List (ID × Val)) {frS frT : Frame}, FRel T f g frS frT →
+      (∀ p ∈ ps, ∃ u, f.value? p.1 = some u ∧ u.op = .Phi) →
       FRel T f g { frS with regs := setPhis ps frS.regs } { frT with regs := setPhis ps frT.regs }
-  | [], _ => by
+  | [], _, _, R, _ => by
     obtain ⟨hfr, hag, hs, ht, hpr⟩ := R
-    exact ⟨by rw [hfr]; rfl, hag, hs, ht, hpr⟩
-  | (id, x) :: ps, hps => by
+    exact ⟨by rw [hfr], hag, hs, ht, hpr⟩
+  | (id, x) :: ps, _, _, R, hps => by
     obtain ⟨u, hu, hphi⟩ := hps (id, x) List.mem_cons_self
     obtain ⟨w, hw, -⟩ := valOK_some H hu
     have R1 := R.set hu hw (y := x) fun s k hk => by rw [hphi, prodSig_phi] at hk; cases hk
-    exact FRel.setPhis H R1 ps fun p hp => hps p (List.mem_cons_of_mem _ hp)
+    exact FRel.setPhis H ps R1 fun p hp => hps p (List.mem_cons_of_mem _ hp)
 
 /-! ## Blocks -/
 
@@ -691,7 +692,7 @@ theorem sched_rel (H : Hyp T f g) (b : ID) :
           rw [hsf, hsg] at hs
           simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true] at hs
           obtain ⟨⟨h1, h2⟩, h3⟩ := hs
-          refine .inr ⟨oS, oT, rfl, rfl, h1, h3, fun x hx => ?_⟩
+          refine .inr ⟨oS, oT, by simp [hsf], by simp [hsg], h1, h3, fun x hx => ?_⟩
           obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.1 hx
           simpa using h2 i (by simpa using hi)
 
@@ -756,7 +757,7 @@ theorem block_sim (H : Hyp T f g) {env : Env} (R : FRel T f g frS frT) (bid : ID
     obtain ⟨-, v, -, -, hv, hphi, -⟩ := phiStepL_some (h2 p hp)
     rw [makeL_f] at hv
     exact ⟨v, hv, hphi⟩
-  have R0 := R.setPhis H ps hps'
+  have R0 := FRel.setPhis H ps R hps'
   rcases sched_rel H fb.id with ⟨h1, h2⟩ | ⟨oS, oT, h1, h2, hfil, hfb', hallT⟩
   · rw [h1, h2]; exact True.intro
   rw [h1, h2]
@@ -765,7 +766,7 @@ theorem block_sim (H : Hyp T f g) {env : Env} (R : FRel T f g frS frT) (bid : ID
     (fun c hc => absurd hc List.not_mem_nil) hfb' hallT
   rw [hfil] at hok hpan
   cases hev : evalAllL mdL env (Ctx.makeL T f) { frS with regs := setPhis ps frS.regs } oS.toList with
-  | panic e m => rw [hpan e m hev]
+  | panic e m => rw [hpan e m hev]; exact rfl
   | stuck msg => exact True.intro
   | ok frS' =>
   obtain ⟨frT', hT, R'⟩ := hok frS' hev
@@ -798,7 +799,7 @@ theorem entry_rel (H : Hyp T f g) (env : Env) (args : List Val) (mem : Mem) :
     have h2 := lt_of_value? hw
     simp [entryFrame, makeL_f, h1, h2]
   · simp [entryFrame, makeL_f]
-  · simp [entryFrame, makeL_f] at hy
+  · simp [entryFrame, makeL_f, Array.getElem?_replicate] at hy
 
 theorem refinesL_of_hyp (H : Hyp T f g) : RefinesL T g T f := by
   intro env args mem fuel hd
@@ -809,13 +810,13 @@ theorem refinesL_of_hyp (H : Hyp T f g) : RefinesL T g T f := by
   split
   · rename_i hn; simp only [hn] at hd; exact hd.elim
   · rename_i hn
-    simp only [hn] at hd
+    simp only [hn, Bool.false_eq_true, ite_false] at hd
     have hc := ctxT_eq H
     have hout : (Ctx.makeL T g).outs = (Ctx.makeL T f).outs := by rw [hc]
     have hdef : (Ctx.makeL T g).defers = (Ctx.makeL T f).defers := by rw [hc]
     have hent : (Ctx.makeL T g).f.entry = (Ctx.makeL T f).f.entry := by
       rw [makeL_f, makeL_f]; exact H.entry
-    rw [hout, hdef, act_eq, hent]
+    rw [hout, hdef, act_eq (f := f) (g := g), hent]
     exact finish_refines hd (runLoopL_sim (fun S T' _ _ => FRel T f g S T')
       (fun _ _ bid i R => block_sim H R bid i) fuel _ _ _ _ (entry_rel H env args mem)
       (finish_defined hd))

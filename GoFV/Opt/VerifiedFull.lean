@@ -44,7 +44,7 @@ runs as a `LStep`:
 - `proven run rel wf guard`: `run` is the pass (for `lower`, the checked `lowerChecked`) with a
   theorem concluding `rel` (an `LRel`: the layers of its input and output and its
   precondition), on inputs and outputs that pass `check` (when `wf`) and that `guard` (the
-  theorem's remaining hypotheses: fragments, validators such as `renameB`, `pairB`, `moveB`,
+  theorem's remaining hypotheses: fragments, validators such as `lateB`, `pairB`, `moveB`,
   `critRelB`, `scheduleCheck`, `nilLateB`, `flagAllocB`, `checkRA`, `trimRelB`, decided after the
   run) accepts;
 - `stock run`: the stock port; no theorem (no pass of the table uses it now).
@@ -208,7 +208,7 @@ def loweredVPasses : Array LPass := #[
     step := .proven addressingModesPass .low false noGuardL },
   { name := "late lower", required := true, out := .low,
     step := .proven lateLower .low false fun penv f out =>
-      LateLowerCheck.renameB penv.tables out.tables f out.func },
+      LateLowerCheck.lateB penv.tables out.tables f out.func },
   { name := "pair", out := .low,
     step := .proven pairPass .low true fun penv f out =>
       PairCheck.pairB penv.tables out.tables f out.func },
