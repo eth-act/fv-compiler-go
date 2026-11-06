@@ -285,6 +285,8 @@ import GoFV.Proof.Pass.MoveL
 import GoFV.Proof.Pass.MoveLCheck
 import GoFV.Proof.Pass.MoveLEnter
 import GoFV.Proof.Pass.MoveLOps
+import GoFV.Proof.Pass.MoveLPair
+import GoFV.Proof.Pass.MoveLPairMem
 import GoFV.Proof.Pass.MoveLPhase
 import GoFV.Proof.Pass.MoveLRel
 import GoFV.Proof.Pass.NilBlock
@@ -298,6 +300,7 @@ import GoFV.Proof.Pass.NilRel
 import GoFV.Proof.Pass.NilSeeds
 import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Pass.NumberLines
+import GoFV.Proof.Pass.PairL
 import GoFV.Proof.Pass.PhiOpt
 import GoFV.Proof.Pass.PhiOptBlock
 import GoFV.Proof.Pass.PhiOptCore
@@ -731,6 +734,7 @@ import GoFV.Proof.Witness.NilLateL
 import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
+import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiElim
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.PhiTightenL

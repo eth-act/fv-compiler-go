@@ -2,6 +2,7 @@ import GoFV.SSA.Parse
 import GoFV.Opt.Lower
 import GoFV.Opt.Pair
 import GoFV.Opt.LateLowerCheck
+import GoFV.Opt.PairCheck
 
 /-!
 # `lake exe stocklow-probe [--jobs N] <dir>...`: what `late lower` and `pair` change
@@ -11,7 +12,8 @@ rewrite log and counts the sections it changes, those `renameB` accepts (`late l
 renames, `GoFV.Opt.LateLowerCheck`) and, per `ARM64latelower.rules` rule (by source line), the
 sections where it fires (and where it fires in a rejected section); for every `pair` section, the
 sections `pair` changes and the ops of the values it adds (`LDP*`, `STP*`, selectors, copies),
-split into sections that only pair loads within a block and the rest.
+split into sections that only pair loads within a block and the rest, and the changed sections
+the `pair` validator `PairCheck.pairB` accepts (by the same kinds, with a file per rejected kind).
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Rules
@@ -31,6 +33,10 @@ structure Cnt where
   prErr : Nat := 0
   prChanged : Nat := 0
   prKinds : Std.HashMap String Nat := {}
+  prAcc : Nat := 0
+  prRejKinds : Std.HashMap String Nat := {}
+  /-- A rejected section's file per kind. -/
+  prRejEx : Std.HashMap String String := {}
 
 def bump (m : Std.HashMap String Nat) (k : String) : Std.HashMap String Nat :=
   m.insert k (m.getD k 0 + 1)
@@ -42,7 +48,9 @@ def Cnt.merge (a b : Cnt) : Cnt :=
     llAcc := a.llAcc + b.llAcc, llAccChanged := a.llAccChanged + b.llAccChanged
     llRejRules := mg a.llRejRules b.llRejRules
     llSets := mg a.llSets b.llSets, prSecs := a.prSecs + b.prSecs, prErr := a.prErr + b.prErr
-    prChanged := a.prChanged + b.prChanged, prKinds := mg a.prKinds b.prKinds }
+    prChanged := a.prChanged + b.prChanged, prKinds := mg a.prKinds b.prKinds
+    prAcc := a.prAcc + b.prAcc, prRejKinds := mg a.prRejKinds b.prRejKinds
+    prRejEx := b.prRejEx.fold (fun m k p => if m.contains k then m else m.insert k p) a.prRejEx }
 
 /-- The source lines of the rules the log fired (replaying the ops to index the table's rows). -/
 def firedRules (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String := Id.run do
@@ -119,7 +127,13 @@ def doFile (path : System.FilePath) (c : Cnt) : IO Cnt := do
       | .error _ => c := { c with prErr := c.prErr + 1 }
       | .ok out =>
         if out.func.valueTab != f.valueTab || out.func.blockTab != f.blockTab then
-          c := { c with prChanged := c.prChanged + 1, prKinds := bump c.prKinds (pairKind f out.func) }
+          let k := pairKind f out.func
+          c := { c with prChanged := c.prChanged + 1, prKinds := bump c.prKinds k }
+          if PairCheck.pairB prev out.tables f out.func then c := { c with prAcc := c.prAcc + 1 }
+          else
+            c := { c with prRejKinds := bump c.prRejKinds k
+                          prRejEx := if c.prRejEx.contains k then c.prRejEx
+                            else c.prRejEx.insert k path.toString }
   return c
 
 def files (args : List String) : IO (Array System.FilePath) := do
@@ -159,6 +173,9 @@ def main (args : List String) : IO UInt32 := do
   for (k, n) in (sorted c.llSets).extract 0 40 do IO.println s!"  {n} {k}"
   IO.println s!"pair: sections {c.prSecs}, errors {c.prErr}, changed {c.prChanged}"
   for (k, n) in (sorted c.prKinds).extract 0 40 do IO.println s!"  {n} {k}"
+  IO.println s!"pairB accepts {c.prAcc} of {c.prChanged} changed; rejected by kind:"
+  for (k, n) in (sorted c.prRejKinds).extract 0 40 do
+    IO.println s!"  {n} {k}    e.g. {c.prRejEx.getD k ""}"
   return 0
 
 end GoFVTest.StockLowProbe

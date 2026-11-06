@@ -650,6 +650,11 @@ None of these weaken what is proven: every compiler theorem still prints only `p
 - **Trick:** run the tactic's `assumption` with reducible transparency.
 - **Effect:** the file compiles in about 30 s.
 
+#### Feed `omega` the `div_add_mod` facts for nested `%`/`/` by large powers
+- **Problem:** `ofAddr_adj` (`GoFV/Proof/Pass/MoveLPairMem.lean`) needs `(r + w) % 2^24 = r % 2^24 + w` from equal `r / 2^42` and `r % 2^42 / 2^24`. `omega` elaborates it, but the kernel rejects the proof term: `(kernel) deep recursion detected` (raising `maxRecDepth` does not help, and the elaboration took 57 s).
+- **Trick:** state the decompositions yourself (`Nat.div_add_mod x (2^42)`, `Nat.div_add_mod (x % 2^42) (2^24)`, `Nat.mod_mod_of_dvd`, `Nat.mod_lt`) and give `omega` the linear facts.
+- **Effect:** the lemma checks in about a second, and the whole module in about 2 s.
+
 ### Module structure and imports
 
 #### Don't import umbrella modules from hub files

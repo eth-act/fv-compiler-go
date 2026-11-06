@@ -32,7 +32,7 @@ def why (ok : Array Bool) (f g : Func) : Option String := Id.run do
   if g.blocks != f.blocks then return some "blocks"
   if g.ownAux != f.ownAux then return some "ownAux"
   if g.lowered != f.lowered then return some "lowered"
-  if !certValid ok f g then return some "certValid"
+  if !certValid false ok f g then return some "certValid"
   for b in f.blocks do
     let (some fb, some gb) := (f.block? b, g.block? b) | return some "block missing"
     if gb.kind != fb.kind then return some "kind"
@@ -40,15 +40,16 @@ def why (ok : Array Bool) (f g : Func) : Option String := Id.run do
     if gb.succs != fb.succs then return some "succs"
     if gb.preds != fb.preds then return some "preds"
     if gb.controls != fb.controls then return some "controls"
-    if !gb.controls.all (fun c => relB ok f g relFuel c c) then return some "control not related"
+    if !gb.controls.all (fun c => relB false ok f g relFuel c c) then
+      return some "control not related"
     for x in gb.values do
-      if !valueOK ok g fb x then
+      if !valueOK false ok f g fb x then
         let gv := g.getV x
         let k := if gv.op == .Phi then "phi" else if fb.values.contains x then "in place" else "moved"
         return some s!"value ({k}, {gv.op.exportName}, ok {okAt ok x})"
     match schedule g gb, schedule f fb with
     | some oT, some oS =>
-      if !orderOK ok f g oT.toList oS.toList then
+      if !orderOK false ok f g fb oT.toList oS.toList then
         let bad := oS.toList.find? fun r => mayPanic f r && !(okAt ok r && oT.toList.contains r &&
           (before oT.toList r).all fun x => !nonTotal g x || (before oS.toList r).contains x)
         let detail := match bad with
@@ -133,7 +134,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
           let changed := g.blockTab != f.blockTab || g.valueTab != f.valueTab
           let licm := name == "loop invariant"
           let f0 := if licm then unhoist f g else f
-          let ok := okCert f0 g
+          let ok := okCert false f0 g
           -- loop invariant: `f` to `unhoist f g` by `critRelB`, then `moveB`
           let pre : Option String :=
             if !licm then none
@@ -142,7 +143,7 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
             else none
           let w := pre <|> why ok f0 g
           let acc := (!licm || ((check ce f0).toBool && GoFV.Proof.Crit.critRelB f f0)) &&
-            moveWith ok f0 g
+            moveWith false ok f0 g
           if acc != w.isNone then st := { st with bugs := st.bugs + 1 }
           c := { c with checked := 1, changed := if changed then 1 else 0
                         accepted := if acc then 1 else 0
