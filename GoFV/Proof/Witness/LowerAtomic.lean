@@ -9,7 +9,7 @@ SB`, `v4 = AtomicLoad64 <(int,mem)> v3 v1`, its selectors `v5`/`v6`, `v7 = Addr 
 `v8 = Store {uintptr} v3 v7 v6`, returned by `v9 = MakeResult v5 v8`): the checked lower fires
 `(Addr {sym} base) => (MOVDaddr {sym} base)` (308) at the pointer shape and at the `uintptr` shape
 (`topOKL`'s word shapes), `(AtomicLoad64 ...) => (LDAR ...)` (484, a term of lowered SSA,
-`ldarOp`) and the store lowering with the global's address folded in (329, 893). By
+`pureActOp`) and the store lowering with the global's address folded in (329, 893). By
 `lower_refines` every returning or panicking `run` of `ald` is, up to refinement, a `runL` of the
 result; with `g = 5` both return 5.
 -/

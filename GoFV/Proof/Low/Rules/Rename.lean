@@ -2,7 +2,7 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames and atomics (`ARM64.rules:376-377`, `438-439`, `442-455`, `482-489`, `492-504`, `507`, `512-516`)
+# Lowering rule lemmas: atom renames, atomics and `MemEq` (`ARM64.rules:376-377`, `438-439`, `442-458`, `482-489`, `492-504`, `507`, `512-516`)
 
 `ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
 checks, the closure pointer, the bounds panic and the atomics (`Arm64.atomicOf`: an arm64 atomic
@@ -11,8 +11,9 @@ rules folding a constant operand into a lowered bounds panic (`ArmRule.Mem`, `pb
 lowering a `Zero` to `LoweredZero` or `LoweredZeroLoop` or a `Move` to `LoweredMove` or
 `LoweredMoveLoop` (`ArmRule.Mem`).
 `ArmRule.SetOp` of the write barrier (`WB` and `LoweredWB` are terms, both `wbOp`) and of the
-atomic loads: `AtomicLoad{8,32,64,Ptr}` and the acquiring loads `LDAR{B,W,}` they lower to are
-terms (`ldarOp`), both Phase 1's `atomicLoad` (`armPure_ldar`).
+atomic loads and `MemEq`: `AtomicLoad{8,32,64,Ptr}` and the acquiring loads `LDAR{B,W,}` they
+lower to are terms (`pureActOp`), both Phase 1's `atomicLoad`, and so are `MemEq` and
+`LoweredMemEq`, both `memEq` (`setOpSound_pureAct`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -93,35 +94,44 @@ theorem r_ARM64_449_sound : ArmRule.Checked r_ARM64_449 :=
 theorem r_ARM64_455_sound : ArmRule.Checked r_ARM64_455 :=
   checked_rename .GetClosurePtr .ARM64LoweredGetClosurePtr rfl rfl rfl rfl rfl
 
-/-- An atomic load `o` lowered to an acquiring load `o'`: both `atomicLoad`. -/
-private theorem setOpSound_ldar {o o' : Op} (hg : o.generic = true) (hf : frameOp o = false)
-    (hd : ldarOp o' = true) (he : ∀ ty ai ax args, evalPure o ty ai ax args = atomicLoad ty args) :
+/-- A generic term op `o` lowered to an activation op `o'` that `Sem.arm64Op` runs as its
+`Arm64.evalPure` (`pureActOp`) with the same value: an atomic load and its acquiring load (both
+`atomicLoad`), `MemEq` and `LoweredMemEq` (both `memEq`). -/
+private theorem setOpSound_pureAct {o o' : Op} (hg : o.generic = true) (hf : frameOp o = false)
+    (hd : pureActOp o' = true)
+    (he : ∀ ty ai ax args, evalPure o ty ai ax args = Arm64.evalPure o' ty ai ax args) :
     SetOpSound o o' := by
   intro tabs ty ai ax args _
-  have hg' : o'.generic = false := by rcases ldarOp_cases hd with rfl | rfl | rfl <;> rfl
-  have hm : (o' == .ARM64MOVDaddr) = false := by rcases ldarOp_cases hd with rfl | rfl | rfl <;> rfl
-  rw [opValL_gen hg hf, opValL_arm hg' hm (ldOp?_of_ldar hd), armPure_ldar hd, he]
+  have hg' : o'.generic = false := by rcases pureActOp_cases hd with rfl | rfl | rfl | rfl <;> rfl
+  have hm : (o' == .ARM64MOVDaddr) = false := by
+    rcases pureActOp_cases hd with rfl | rfl | rfl | rfl <;> rfl
+  rw [opValL_gen hg hf, opValL_arm hg' hm (ldOp?_of_pureAct hd), he]
   exact Refines.refl _
 
 /-- `ARM64.rules:482`: `(AtomicLoad8 ...) => (LDARB ...)` -/
 theorem r_ARM64_482_sound : ArmRule.Checked r_ARM64_482 :=
   checked_setOp .AtomicLoad8 .ARM64LDARB rfl rfl rfl rfl (termVL_generic _ rfl rfl)
-    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+    (termVL_pureAct _ rfl) (setOpSound_pureAct rfl rfl rfl fun _ _ _ _ => rfl)
 
 /-- `ARM64.rules:483`: `(AtomicLoad32 ...) => (LDARW ...)` -/
 theorem r_ARM64_483_sound : ArmRule.Checked r_ARM64_483 :=
   checked_setOp .AtomicLoad32 .ARM64LDARW rfl rfl rfl rfl (termVL_generic _ rfl rfl)
-    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+    (termVL_pureAct _ rfl) (setOpSound_pureAct rfl rfl rfl fun _ _ _ _ => rfl)
 
 /-- `ARM64.rules:484`: `(AtomicLoad64 ...) => (LDAR ...)` -/
 theorem r_ARM64_484_sound : ArmRule.Checked r_ARM64_484 :=
   checked_setOp .AtomicLoad64 .ARM64LDAR rfl rfl rfl rfl (termVL_generic _ rfl rfl)
-    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+    (termVL_pureAct _ rfl) (setOpSound_pureAct rfl rfl rfl fun _ _ _ _ => rfl)
 
 /-- `ARM64.rules:485`: `(AtomicLoadPtr ...) => (LDAR ...)` -/
 theorem r_ARM64_485_sound : ArmRule.Checked r_ARM64_485 :=
   checked_setOp .AtomicLoadPtr .ARM64LDAR rfl rfl rfl rfl (termVL_generic _ rfl rfl)
-    (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+    (termVL_pureAct _ rfl) (setOpSound_pureAct rfl rfl rfl fun _ _ _ _ => rfl)
+
+/-- `ARM64.rules:458`: `(MemEq ...) => (LoweredMemEq ...)` -/
+theorem r_ARM64_458_sound : ArmRule.Checked r_ARM64_458 :=
+  checked_setOp .MemEq .ARM64LoweredMemEq rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_pureAct _ rfl) (setOpSound_pureAct rfl rfl rfl fun _ _ _ _ => rfl)
 
 /-- `ARM64.rules:487`: `(AtomicStore8 ...) => (STLRB ...)` -/
 theorem r_ARM64_487_sound : ArmRule.Checked r_ARM64_487 :=

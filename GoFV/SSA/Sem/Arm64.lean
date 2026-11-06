@@ -8,6 +8,7 @@ import GoFV.SSA.Sem.Arm64.Mem
 The arm64 ops `runL` evaluates without the activation (no symbol, frame or closure): the
 arithmetic, logic, shift, bitfield, multiply/divide, compare, conditional, float and conversion
 ops, the register-indexed loads (`MOV*loadidx*`, no symbol), `LDAR*` (Phase 1's `AtomicLoad*`),
+`LoweredMemEq` (Phase 1's `MemEq`; `Sem.arm64Op` runs it so, after its nil check),
 `LoweredZero`/`LoweredMove` and their loop forms, `LoweredWB` (Phase 1's `WB`), `FlagConstant`,
 `InvertFlags` (`invertFlags`, the flags of the swapped compare; Go fails if one reaches codegen);
 `poison` for every other op. The ops that need the activation (loads and stores with a symbol,
@@ -322,6 +323,7 @@ def evalPure (op : Op) (ty : Ty) (k : Int64) (_aux : Option AuxRef) (args : List
   | .ARM64FMOVDloadidx8 => loadIdx ty 8 8 false args
   -- memory pseudo-ops without a symbol
   | .ARM64LDAR | .ARM64LDARB | .ARM64LDARW => atomicLoad ty args
+  | .ARM64LoweredMemEq => memEq args
   | .ARM64LoweredZero | .ARM64LoweredZeroLoop => zero k args
   | .ARM64LoweredMove | .ARM64LoweredMoveLoop => move k args
   | .ARM64LoweredWB => wbOp k args

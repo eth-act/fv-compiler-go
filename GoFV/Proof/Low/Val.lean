@@ -134,7 +134,7 @@ theorem termVL_ext {tabs : Tables} {v : Value} {k : Nat} (h : extReadW v.op = so
   obtain ⟨-, -, hg, hm, hl, ht⟩ := extReadW_cases h
   have hact : GoFV.Opt.LowerTerm.actOp v.op = false := by
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2
-  simp only [termVL, hg, hm, hl, ldarOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
+  simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
     ite_false, ht]
 
 /-- What `truncReachL` says. -/
