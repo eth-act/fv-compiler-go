@@ -329,6 +329,9 @@ structure St where
   fns : Array (Array String) := #[]
   /-- The fired rules of the functions the validator accepts with every rule (`accepted`). -/
   fnsOk : Array (Array String) := #[]
+  /-- Per function: its first-rejection class (`whyClass`, `ok` if accepted), whether the checked
+  lower equals stock, its fired rules (`--dump`). -/
+  rows : Array (String × Bool × Array String) := #[]
   errors : Nat := 0
   accepted : Nat := 0
   checkedSame : Nat := 0
@@ -337,7 +340,7 @@ structure St where
 
 def St.merge (a b : St) : St :=
   { firings := b.firings.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.firings
-    fns := a.fns ++ b.fns, fnsOk := a.fnsOk ++ b.fnsOk, errors := a.errors + b.errors, accepted := a.accepted + b.accepted, checkedSame := a.checkedSame + b.checkedSame, checkedProven := a.checkedProven + b.checkedProven
+    fns := a.fns ++ b.fns, fnsOk := a.fnsOk ++ b.fnsOk, rows := a.rows ++ b.rows, errors := a.errors + b.errors, accepted := a.accepted + b.accepted, checkedSame := a.checkedSame + b.checkedSame, checkedProven := a.checkedProven + b.checkedProven
     why := b.why.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.why }
 
 def checkFile (path : System.FilePath) (S : St) : IO St := do
@@ -360,9 +363,11 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     -- the checked lower against stock
     let full := (← IO.getEnv "LOWER_PROBE_FULL").isSome
     let tbl := if full then ceilTable else lowerProvenTable
+    let mut same := false
     match GoFV.Opt.LowerCheck.checkedLowerWith tbl env (GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func) with
     | .ok co =>
       if (GoFVTest.Parity.compare prev co tables s).isNone then
+        same := true
         S := { S with checkedSame := S.checkedSame + 1
                       checkedProven := if co.func == e.sections[k-1]!.func then S.checkedProven else S.checkedProven + 1 }
       else if (← IO.getEnv "LOWER_PROBE_MISS").isSome then
@@ -389,7 +394,8 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
         S := { S with firings := S.firings.insert x (S.firings.getD x 0 + 1) }
         fs := fs.insert x
       S := { S with fns := S.fns.push fs.toArray
-                    fnsOk := if w == "ok" then S.fnsOk.push fs.toArray else S.fnsOk }
+                    fnsOk := if w == "ok" then S.fnsOk.push fs.toArray else S.fnsOk
+                    rows := S.rows.push (w, same, fs.toArray) }
     | .error _ => S := { S with errors := S.errors + 1 }
   return S
 
@@ -542,10 +548,11 @@ def main (args : List String) : IO UInt32 := do
   if let some md := a.nextMd then
     IO.FS.writeFile md (nextMarkdown a.paths acc.fns.size acc.checkedSame base next nfn
       acc.accepted baseOk nextOk acc.why)
-  -- the fired rules per function (`F`), and per function the validator accepts with every rule (`A`)
+  -- per function: its first-rejection class (`ok` if accepted), whether the checked lower equals
+  -- stock (1/0), its fired rules
   if let some d := a.dump then
-    let line (tag : String) (fs : Array String) := s!"{tag}\t{"|".intercalate fs.toList}\n"
-    IO.FS.writeFile d (String.join ((acc.fns.map (line "F")) ++ (acc.fnsOk.map (line "A"))).toList)
+    IO.FS.writeFile d (String.join (acc.rows.map fun (w, same, fs) =>
+      s!"{w}\t{if same then 1 else 0}\t{"|".intercalate fs.toList}\n").toList)
   return 0
 
 end GoFVTest.LowerProbe
