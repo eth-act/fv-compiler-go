@@ -567,6 +567,11 @@ theorem checked_pb {r : Rule} {o n ty ai ax ar args c}
 /-- A rule on a `Zero` (`ArmRule.Mem`). -/
 theorem checked_zero {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .Zero n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨.Zero, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr rfl)))⟩))
+  .inr (.inr (.inr ⟨.Zero, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inl rfl))))⟩))
+
+/-- A rule on a `Move` (`ArmRule.Mem`). -/
+theorem checked_move {r : Rule} {n ty ai ax ar args c}
+    (hp : r.pat = .op .Move n ty ai ax ar args c) : ArmRule.Checked r :=
+  .inr (.inr (.inr ⟨.Move, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inr rfl))))⟩))
 
 end GoFV.Proof.Low.Rules

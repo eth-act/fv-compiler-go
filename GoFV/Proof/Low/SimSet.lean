@@ -274,8 +274,8 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
             rw [h2] at hw' <;> cases hw'
         · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
           rw [(argFree_cases hf).1] at hs; cases hs
-        · obtain ⟨-, hzw, -⟩ := zeroLower_cases hz
-          rw [(argFree_cases hf).1] at hzw; rcases hzw with h | h <;> cases h
+        · have hzw := bulkLower_op hz
+          rw [(argFree_cases hf).1] at hzw; rcases hzw with h | h | h | h <;> cases h
         · rw [hal] at ha; cases ha
         · obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases hb
           rw [(argFree_cases hf).1] at hks; cases hks
@@ -325,8 +325,8 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
     (hp : atomPair tabs u w = true) (hgen : u.op.generic = true) (hr : isRoot w.op = false)
     (ha : w.op ≠ .Arg) (hai : w.op ≠ .ArgIntReg) :
     ∃ y, evalOpL false env ctx fr w argv ty = .ok y := by
-  cases hz : zeroLower u w
-  case true => exact ⟨_, evalOpL_zero (zeroLower_cases hz).2.1⟩
+  cases hz : bulkLower u w
+  case true => exact evalOpL_bulk hz
   have hr' : isRoot u.op = false := by
     rcases atomPair_isRoot hp with h | h
     · rw [← h]; exact hr

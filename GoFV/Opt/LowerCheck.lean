@@ -25,10 +25,11 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   (`ctrlDefL`), the new auxint the rule's;
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
-  arm64 store (`memLower`), or a `Zero` lowered to `LoweredZero`/`LoweredZeroLoop` (`zeroLower`),
-  or a `LocalAddr` lowered to `MOVDaddr` (`addrLower`); a rule event lowering a store, a `Zero` or
-  a frame address, or folding an `ADDconst` offset (`stFold`) or a global
-  symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, is replayed as its
+  arm64 store (`memLower`), or a `Zero` or `Move` lowered to `LoweredZero`/`LoweredZeroLoop` or
+  `LoweredMove`/`LoweredMoveLoop` (`bulkLower`), or a `LocalAddr` lowered to `MOVDaddr`
+  (`addrLower`); a rule event lowering a store, a `Zero`, a `Move` or a frame address, or folding
+  an `ADDconst` offset (`stFold`) or a global symbol's or frame variable's `MOVDaddr`
+  (`stFoldAddr`) into an arm64 store, is replayed as its
   new definitions (`atomDef`); a rule event folding a lowered frame address into an integer load
   (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`); one folding
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
@@ -39,10 +40,11 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
   `Const64` operands of `f`'s `PanicBounds` (`pbLower`, `pbConstOK`);
-* each block evaluates `f`'s roots in the same order in `g` (a lowered `Zero` is not a root of
-  lowered SSA: `g` may evaluate it earlier, which never fails without faulting memory);
-* copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
-  reject.
+* each block evaluates `f`'s roots in the same order in `g` (a lowered `Zero` or `Move` is not a
+  root of lowered SSA: `g` may evaluate it earlier, which never fails without faulting memory);
+* copies are compatible at the lowered shapes (`copyCompatL`); the output's sign or zero extension
+  may also read the value a narrowing integer `Copy` of its replayed argument copies, when the
+  `Copy` keeps the bits the extension reads (`truncReachL`); phi eliminations and snapshots reject.
 -/
 
 namespace GoFV.Opt.LowerCheck
@@ -260,7 +262,8 @@ def stFoldAddr (tabs : Tables) (f : Func) (M : Defs) (x u : Value) : Bool :=
 lists the reset value, then the nodes, as for any `build`), with `v`'s type:
 * a lowered store (`memLower` at offset 0 without aux: `(Store {t} ptr val mem) => (MOVDstore ptr
   val mem)` and the other sizes), on `v`'s arguments;
-* a lowered `Zero` (`zeroLower`: `LoweredZero`, `LoweredZeroLoop`), on `v`'s arguments;
+* a lowered `Zero` or `Move` (`bulkLower`: `LoweredZero`, `LoweredZeroLoop`, `LoweredMove`,
+  `LoweredMoveLoop`), on `v`'s arguments;
 * an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
   or frame variable's address (`stFoldAddr`);
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
@@ -273,7 +276,7 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
   | some x, [_, u] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
         (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
-          u.args == x.args && zeroLower x u ||
+          u.args == x.args && bulkLower x u ||
           u.args.all x.args.contains && addrLower tabs x u ||
           (stFold tabs M x u || stFoldAddr tabs f M x u) && (f.value? v).any (·.op == .Store))
         then some (u, none)
@@ -391,6 +394,31 @@ def copyReachL (tabs : Tables) (M : Defs) : Nat → ID → ID → Bool
         | some y => copyCompatL (shpL tabs x.type) (shpL tabs y.type)
         | none => false) &&
       copyReachL tabs M n x.args[0]! w
+    | none => false
+
+/-- The sign and zero extensions `MOV{B,H,W}{,U}reg` and the low bits of their argument they read
+(`Arm64.ext`). -/
+def extReadW : Op → Option Nat
+  | .ARM64MOVBreg | .ARM64MOVBUreg => some 8
+  | .ARM64MOVHreg | .ARM64MOVHUreg => some 16
+  | .ARM64MOVWreg | .ARM64MOVWUreg => some 32
+  | _ => none
+
+/-- An argument `a` of the extension op `o` (`extReadW`) in the replay, a `Copy` at an integer shape
+narrower than 64 bits that keeps the bits `o` reads (lowering a truncation, `(Trunc64to32 x) =>
+x`), whose argument reaches `a'` through at most `n` compatible copies: `o` reads the same bits of
+`a'` (`GoFV.Proof.Low.Val.op1_ext_retypeL`). `lower` eliminates such a copy while the extension is
+still generic, which the replay cannot follow (`copyReachL`); `finalOKL` accepts the output's
+`a'`. -/
+def truncReachL (tabs : Tables) (M : Defs) (n : Nat) (o : Op) (a a' : ID) : Bool :=
+  (extReadW o).any fun k =>
+    match M.get? a with
+    | some c =>
+      c.op == .Copy && c.args.size == 1 &&
+        (match shpL tabs c.type with
+          | .int w => decide (k ≤ w.bits) && w != .w64
+          | _ => false) &&
+        copyReachL tabs M n c.args[0]! a'
     | none => false
 
 /-! ## Blocks -/
@@ -577,12 +605,12 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 
 /-- The atom `w` of `g` corresponds to the atom `u` of `f`: the same fields, or `w` renames `u`
 (`renameOp`) with the same type, auxint, aux and number of arguments, or `w` lowers the store `u`
-(`memLower`) or the `Zero` `u` (`zeroLower`) with the same type and number of arguments, or the
-frame address `u` (`addrLower`) or the bounds panic `u` with constant operands (`pbLower`) with the
-same type. -/
+(`memLower`) or the `Zero` or `Move` `u` (`bulkLower`) with the same type and number of
+arguments, or the frame address `u` (`addrLower`) or the bounds panic `u` with constant operands
+(`pbLower`) with the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
-    memLower tabs u w || zeroLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
+    memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
     pbLower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
@@ -620,7 +648,7 @@ def dropAtomL (op : Op) : Bool := GoFV.Opt.RewriteCheck.dropAtom op || op == .In
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux; every atom of `g`
 corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtomL`), and each block
 evaluates `f`'s roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered
-`Zero`, which is not a root of lowered SSA, earlier). -/
+`Zero` or `Move`, which is not a root of lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
@@ -682,10 +710,11 @@ def pbFinal (tabs : Tables) (f : Func) (M : Defs) (n : Nat) (x : ID) (m u : Valu
         (ks.zip u.args.toList).all fun (k, a') => copyReachL tabs M n m.args[k]! a'
     | none => false
 
-/-- Every value listed in `g` has its replayed definition up to copies in its arguments (a bounds
-panic with constant operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`), or is a
-term `g` does not read; every block of `g` its replayed terminator (kind, auxint, successors as
-the replay swapped them, controls up to copies). -/
+/-- Every value listed in `g` has its replayed definition up to copies in its arguments (an
+extension's argument also up to a narrowing `Copy`, `truncReachL`; a bounds panic with constant
+operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`), or is a term `g` does not read; every
+block of `g` its replayed terminator (kind, auxint, successors as the replay swapped them, controls
+up to copies). -/
 def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
   let n := M.size
   let L := liveMarksL tabs g
@@ -703,7 +732,8 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
         | some m, some u =>
           (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
             u.aux == m.aux && u.args.size == m.args.size &&
-            (m.args.toList.zip u.args.toList).all fun (a, a') => copyReachL tabs M n a a') ||
+            (m.args.toList.zip u.args.toList).all fun (a, a') =>
+              copyReachL tabs M n a a' || truncReachL tabs M n m.op a a') ||
           (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u
         | _, _ => false
     | _, _, _ => false

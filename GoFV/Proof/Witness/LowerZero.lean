@@ -8,7 +8,7 @@ import GoFV.Proof.Witness.LowerStoreSym
 v4`). The checked lower fires `(Addr {sym} base) => (MOVDaddr {sym} base)` (308) and `(Zero [s]
 ptr mem) && s > 16 && s < 192 => (LoweredZero [s] ptr mem)` (376): `v4` becomes `LoweredZero [32]
 v3 v1`, which is not a root of lowered SSA (the validator compares the order of `f`'s roots,
-`atomsOKL`, and pairs it with the `Zero`, `zeroLower`). By `lower_refines` every returning or
+`atomsOKL`, and pairs it with the `Zero`, `bulkLower`). By `lower_refines` every returning or
 panicking `run` of `gzr` is, up to refinement, a `runL` of the result; on `g` holding 5 both
 return 0.
 -/

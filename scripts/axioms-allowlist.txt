@@ -9,7 +9,7 @@
 GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 1f320ce2d98198174271e0fabc0e82337bc7616fa6320b8bbe729124185d298c
 # verifiedPipelineFull_witness (GoFV/Proof/Witness/PipelineFull.lean, #385/#189): the verified
 # pipeline through `trim` on isNaN; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 aa95e5badbfad95abd5f054fb270b3ac1c894438dacc2c2535f10d81756edc54
+GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 12c5f410b161d63eab1fd2fbdedde00ce9fdbfc14804bcde5e98f2f28e760baa
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

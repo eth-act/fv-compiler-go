@@ -25,13 +25,137 @@ namespace GoFV.Proof.Low.Val
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Opt.RewriteCheck GoFV.Opt.LowerCheck GoFV.Proof.Term
 open GoFV.Proof.Low
 open GoFV.Proof.Pass.Rewrite (LM Marked listedMarks_sound listedDefs_of_marked closedOK_facts
-  marked_closed zip_all_get zip_all_get' refinesList_idx)
+  marked_closed zip_all_get zip_all_get' refinesList_idx toList_of_size_one)
 
 /-! ## `atomsOKL`, `liveOKL`, `finalOKL` -/
 
 theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hai : u.auxInt = m.auxInt)
     (hax : u.aux = m.aux) : termVL tabs u = termVL tabs m := by
   unfold termVL; rw [hop, hai, hax]
+
+/-! ## An extension's argument through a narrowing copy (`truncReachL`) -/
+
+/-- The low `k ≤ w` bits of a `w`-bit truncation are the value's. -/
+theorem and_mask_setWidth {n : Nat} (k w : Nat) (hk : k ≤ w) (x : BitVec n) :
+    (x.setWidth w).setWidth 64 &&& Arm64.mask k = x.setWidth 64 &&& Arm64.mask k := by
+  ext i hi
+  simp only [BitVec.getElem_and, BitVec.getElem_setWidth, Arm64.mask, ← BitVec.getLsbD_eq_getElem]
+  simp only [BitVec.getLsbD_and, BitVec.getLsbD_setWidth, BitVec.getLsbD_ofNat,
+    Nat.testBit_two_pow_sub_one]
+  by_cases hik : i < k
+  · have : i < w := by omega
+    simp [this, hik]
+  · simp [hik]
+
+/-- Zero-extending to `w ≥ n` bits, then to 64, is zero-extending to 64. -/
+theorem setWidth_setWidth_wide {n : Nat} (w m : Nat) (hn : n ≤ w) (x : BitVec n) :
+    (x.setWidth w).setWidth m = x.setWidth m := by
+  ext i hi
+  simp only [← BitVec.getLsbD_eq_getElem, BitVec.getLsbD_setWidth]
+  by_cases h : i < w
+  · simp [h]
+  · have : x.getLsbD i = false := BitVec.getLsbD_of_ge x i (by omega)
+    simp [h, this]
+
+/-- An extension of the low `k ≤ w` bits reads the same bits of a `w`-bit truncation. -/
+theorem ext_setWidth {n : Nat} (s : Bool) (k w : Nat) (hk : k ≤ w) (x : BitVec n) :
+    Arm64.ext s k ((x.setWidth w).setWidth 64) = Arm64.ext s k (x.setWidth 64) := by
+  unfold Arm64.ext Arm64.sext
+  rw [and_mask_setWidth k w hk]
+
+/-- **An extension of the low `k` bits of a register refines through a narrowing to `w ≥ k`
+bits** (`Val.retypeL` at `int w`, `w < 64`: the value's low `w` bits, `poison` for a pointer). -/
+theorem op1_ext_retypeL (s : Bool) (k : Nat) {w : Width} (hk : k ≤ w.bits) (hw : w ≠ .w64)
+    (ty : Ty) (B : Val) :
+    Sem.Refines (Arm64.op1 ty (Arm64.ext s k) [B.retypeL (.int w)])
+      (Arm64.op1 ty (Arm64.ext s k) [B]) := by
+  cases B with
+  | int w' x =>
+    by_cases hlt : w'.bits < w.bits
+    · have : (Val.int w' x).retypeL (.int w) = .int w (x.setWidth w.bits) := by
+        unfold Val.retypeL Val.widen
+        rw [if_pos hlt]
+        unfold Val.retype
+        rw [if_pos (Nat.le_refl _), BitVec.setWidth_eq]
+      rw [this]
+      simp only [Arm64.op1, Arm64.reg]
+      rw [setWidth_setWidth_wide _ _ (by omega)]
+      exact Sem.Refines.refl _
+    · have hle : w.bits ≤ w'.bits := by omega
+      have : (Val.int w' x).retypeL (.int w) = .int w (x.setWidth w.bits) := by
+        unfold Val.retypeL Val.widen
+        rw [if_neg hlt]
+        unfold Val.retype
+        rw [if_pos hle]
+      rw [this]
+      simp only [Arm64.op1, Arm64.reg]
+      rw [ext_setWidth s k w.bits hk]
+      exact Sem.Refines.refl _
+  | bool b =>
+    have : (Val.bool b).retypeL (.int w) = .int w (if b then 1 else 0) := by
+      simp [Val.retypeL, Val.widen, Val.retype]
+    rw [this]
+    cases w <;> cases b <;> first | exact absurd rfl hw | exact Sem.Refines.refl _
+  | ptr p =>
+    have : (Val.ptr p).retypeL (.int w) = .poison := by
+      cases w <;> simp_all [Val.retypeL, Val.widen, Val.retype]
+    rw [this]; exact .poison _
+  | _ => simp [Val.retypeL, Val.widen, Val.retype, Arm64.op1, Arm64.reg]; exact .poison _
+
+theorem extReadW_mem {o : Op} {k : Nat} (h : extReadW o = some k) :
+    (o = .ARM64MOVBreg ∧ k = 8) ∨ (o = .ARM64MOVBUreg ∧ k = 8) ∨ (o = .ARM64MOVHreg ∧ k = 16) ∨
+      (o = .ARM64MOVHUreg ∧ k = 16) ∨ (o = .ARM64MOVWreg ∧ k = 32) ∨ (o = .ARM64MOVWUreg ∧ k = 32) := by
+  unfold extReadW at h
+  split at h <;> simp_all
+
+theorem extReadW_cases {o : Op} {k : Nat} (h : extReadW o = some k) :
+    ∃ s, (∀ ty ai (ax : Option AuxRef) args,
+        Arm64.evalPure o ty ai ax args = Arm64.op1 ty (Arm64.ext s k) args) ∧
+      o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none ∧
+      (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) = true := by
+  rcases extReadW_mem h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
+      ⟨rfl, rfl⟩
+  · exact ⟨true, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
+  · exact ⟨false, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
+  · exact ⟨true, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
+  · exact ⟨false, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
+  · exact ⟨true, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
+  · exact ⟨false, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
+
+/-- An extension is a term (`armTerm`), whose `opValL` is `Arm64.ext` of its register. -/
+theorem opValL_ext {o : Op} {k : Nat} (h : extReadW o = some k) :
+    ∃ s, ∀ tabs ty ai ax args, opValL tabs o ty ai ax args = Arm64.op1 ty (Arm64.ext s k) args := by
+  obtain ⟨s, he, hg, hm, hl, -⟩ := extReadW_cases h
+  exact ⟨s, fun tabs ty ai ax args => by
+    simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]; exact he ty ai ax args⟩
+
+theorem termVL_ext {tabs : Tables} {v : Value} {k : Nat} (h : extReadW v.op = some k) :
+    termVL tabs v = true := by
+  obtain ⟨-, -, hg, hm, hl, ht⟩ := extReadW_cases h
+  have hact : GoFV.Opt.LowerTerm.actOp v.op = false := by
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2
+  simp only [termVL, hg, hm, hl, ldarOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
+    ite_false, ht]
+
+/-- What `truncReachL` says. -/
+theorem truncReachL_cases {tabs : Tables} {M : Defs} {n : Nat} {o : Op} {a a' : ID}
+    (h : truncReachL tabs M n o a a' = true) :
+    ∃ k c w, extReadW o = some k ∧ M.get? a = some c ∧ c.op = .Copy ∧ c.args.size = 1 ∧
+      shpL tabs c.type = .int w ∧ k ≤ w.bits ∧ w ≠ .w64 ∧
+      copyReachL tabs M n c.args[0]! a' = true := by
+  unfold truncReachL at h
+  simp only [Option.any_eq_true] at h
+  obtain ⟨k, hk, h⟩ := h
+  split at h
+  · rename_i c hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨hop, hsz⟩, hsh⟩, hr⟩ := h
+    split at hsh
+    · rename_i w hw
+      simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hsh
+      exact ⟨k, c, w, hk, hc, hop, hsz, hw, hsh.1, hsh.2, hr⟩
+    · cases hsh
+  · cases h
 
 theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = true) :
     f.blocks = g.blocks ∧ ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ fb, f.block? b = some fb ∧
@@ -110,7 +234,8 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         ∃ m u, M.get? x = some m ∧ g.value? x = some u ∧ u.type = m.type ∧ u.auxInt = m.auxInt ∧
         ((u.op = m.op ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
           ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
-            copyReachL tabs M M.size m.args[j] u.args[j] = true) ∨
+            copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
+              truncReachL tabs M M.size m.op m.args[j] u.args[j] = true) ∨
          (m.op = .ARM64LoweredPanicBoundsRR ∧ m.args.size = 3 ∧ (f.value? x).any (pbLower · u) ∧
           ∃ ks, pbKeep u.op = some ks ∧ u.args.size = ks.length ∧
             ∀ j (h : j < ks.length), copyReachL tabs M M.size m.args[ks[j]]! u.args[j]! = true)) := by
@@ -141,7 +266,8 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         rcases this with (this | ⟨ht, hr⟩) | hpb
         · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
           refine ⟨m, u, hm, hu, hty, hai, .inl ⟨hop, hax, hsz, fun j h1 h2 => ?_⟩⟩
-          have := zip_all_get (f := fun x : ID × ID => copyReachL tabs M M.size x.1 x.2) hargs
+          have := zip_all_get (f := fun x : ID × ID =>
+              copyReachL tabs M M.size x.1 x.2 || truncReachL tabs M M.size m.op x.1 x.2) hargs
             (by simp [hsz]) j (by simpa using h1) (by simpa using h2)
           simpa using this
         · rcases hrd with hrd | hrd
@@ -198,12 +324,61 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     have htt := termVL_congr (tabs := tabs) hop hai hax
     by_cases ht : termVL tabs m = true
     · rw [denT_succ hm ht, denT_succ hL (htt ▸ ht), hop, hty, hai, hax]
-      apply retypeL_mono; apply opValL_mono_term ht
-      refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
-      simp only [Array.getElem_toList]
-      exact (copyReachL_den hT _ _ _ (hargs j (by simpa using h1) (by simpa using h2)) n).trans
-        (final_denL hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem _))
-          ((liveOKL_facts hlive) b hb gb hgb |>.2 x hxv u hu (.inr hr) _ (Array.getElem_mem _)))
+      apply retypeL_mono
+      have hrec : ∀ j (h2 : j < u.args.size), Sem.Refines (denL true M.get? tabs ρ n u.args[j])
+          (denL true (listedDefs g) tabs ρ' n u.args[j]) := fun j h2 =>
+        final_denL hfin hcg hρ hT n _ (hcl _ (Array.getElem_mem h2))
+          ((liveOKL_facts hlive) b hb gb hgb |>.2 x hxv u hu (.inr hr) _ (Array.getElem_mem h2))
+      by_cases hall : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
+          copyReachL tabs M M.size m.args[j] u.args[j] = true
+      · apply opValL_mono_term ht
+        refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
+        simp only [Array.getElem_toList]
+        exact (copyReachL_den hT _ _ _ (hall j (by simpa using h1) (by simpa using h2)) n).trans
+          (hrec j (by simpa using h2))
+      · -- an extension whose argument is a narrowing `Copy` (`truncReachL`)
+        simp only [Classical.not_forall] at hall
+        obtain ⟨j, h1, h2, hj⟩ := hall
+        obtain ⟨k, c, w, hk, hc, hcop, hcsz, hsh, hkw, hw64, hcr⟩ :=
+          truncReachL_cases ((hargs j h1 h2).resolve_left (by simpa using hj))
+        obtain ⟨s, hs⟩ := opValL_ext hk
+        by_cases hsz1 : m.args.size = 1
+        · have hj0 : j = 0 := by omega
+          subst hj0
+          have hl : m.args.toList = [m.args[0]!] := toList_of_size_one hsz1
+          have hl' : u.args.toList = [u.args[0]!] := toList_of_size_one (hsz.trans hsz1)
+          rw [getElem!_pos m.args 0 h1] at hl
+          rw [getElem!_pos u.args 0 h2] at hl'
+          rw [hl, hl']
+          simp only [List.map_cons, List.map_nil]
+          cases n with
+          | zero =>
+            rw [hs, hs]
+            show Sem.Refines (Arm64.op1 _ _ [.poison]) _
+            exact .poison _
+          | succ n =>
+            have hct : termVL tabs c = true := termVL_of_copy hcop
+            have hcl1 : c.args.toList = [c.args[0]!] := toList_of_size_one hcsz
+            have hden : denL true M.get? tabs ρ (n + 1) m.args[0] =
+                (denL true M.get? tabs ρ n c.args[0]!).retypeL (.int w) := by
+              rw [denT_succ hc hct, hcl1, hcop, hsh]
+              simp only [List.map_cons, List.map_nil, opValL_copy]
+            rw [hden]
+            have hX : Sem.Refines (denL true M.get? tabs ρ n c.args[0]!)
+                (denL true (listedDefs g) tabs ρ' (n + 1) u.args[0]) :=
+              (denL_fuel_mono true M.get? tabs ρ n (n + 1) _ (by omega)).trans
+                ((copyReachL_den hT _ _ _ hcr (n + 1)).trans (hrec 0 h2))
+            refine (opValL_mono_term ht _ (.cons (retypeL_mono _ hX) .nil)).trans ?_
+            rw [hs, hs]
+            exact op1_ext_retypeL s k hkw hw64 _ _
+        · rw [hs, hs]
+          have hlen : (m.args.toList.map (denL true M.get? tabs ρ n)).length ≠ 1 := by
+            simpa using hsz1
+          generalize m.args.toList.map (denL true M.get? tabs ρ n) = l at hlen
+          rcases l with _ | ⟨a, _ | ⟨a', l⟩⟩
+          · exact .poison _
+          · exact absurd rfl hlen
+          · exact .poison _
     · have hmf : termVL tabs m = false := by simpa using ht
       have h1 : ¬ IsTermL tabs M.get? x := fun ⟨w, hw, hw'⟩ => by
         rw [hm] at hw; cases hw; exact ht hw'
@@ -437,7 +612,10 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       refine .inr fun i hi => ?_
       rw [argIx_of_not hnpb]
       have hi' : i < u'.args.size := by omega
-      have hcopy := hargs i (by omega) hi
+      have hcopy := (hargs i (by omega) hi).resolve_right fun htr => by
+        obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases htr
+        rw [← hop] at hk
+        rw [termVL_ext hk] at hat; cases hat
       have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
       have hlv : LiveL tabs g u.args[i] :=
         (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)

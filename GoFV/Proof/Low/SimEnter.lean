@@ -566,8 +566,7 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases h
     generalize w.op = o at hs hg; cases hs <;> exact absurd hg (by decide)
   · exfalso
-    obtain ⟨-, hw, -⟩ := zeroLower_cases h
-    rcases hw with h2 | h2 <;> rw [h2] at hg <;> exact absurd hg (by decide)
+    rcases bulkLower_op h with h2 | h2 | h2 | h2 <;> rw [h2] at hg <;> exact absurd hg (by decide)
   · exfalso
     rw [(addrLower_cases h).2.1] at hg; exact absurd hg (by decide)
   · exfalso

@@ -514,6 +514,82 @@ theorem zero_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Val
     | _ => unfold memRoot; rw [hu]; exact stuck_ite _
   · cases a <;> cases y <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
 
+/-- `LoweredMove [n]` (and `LoweredMoveLoop`) copies `n` bytes (`Arm64.move`). -/
+theorem evalOpL_move {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
+    (hw : w.op = .ARM64LoweredMove ∨ w.op = .ARM64LoweredMoveLoop) :
+    evalOpL false env ctx fr w argv ty = .ok (Arm64.move w.auxInt argv) := by
+  have h0 : nilFaults false ctx w argv = none := rfl
+  rcases hw with hw | hw <;>
+  · unfold evalOpL
+    rw [hw, if_neg (by decide)]
+    dsimp only
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [hw]
+    rfl
+
+/-- **`Move` lowered to `LoweredMove`** (`ARM64.rules:438-439`): on refined arguments, the
+lowered copy refines the generic one (`memRoot`: `stuck` on an undefined address, an invalid
+source or an invalid write, where `Arm64.move` is `poison`). -/
+theorem move_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Value}
+    (hu : u.op = .Move) (hw : w.op = .ARM64LoweredMove ∨ w.op = .ARM64LoweredMoveLoop)
+    (hai : u.auxInt = w.auxInt) {ty : Ty} {argv argv' : List Val} (h : RefinesList argv argv') :
+    Res.Refines (evalOp env ctx fr u argv ty) (evalOpL false env ctx' fr' w argv' ty) := by
+  have hS : evalOp env ctx fr u argv ty = memRoot ctx u argv := by
+    unfold evalOp; rw [hu]
+  rw [hS, evalOpL_move hw]
+  refine resRefines_trans (memRoot_mono ctx u h) ?_
+  rcases argv' with _ | ⟨a, _ | ⟨b, _ | ⟨y, _ | ⟨z, l⟩⟩⟩⟩
+  · unfold memRoot; rw [hu]; exact stuck_ite _
+  · unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases a <;> cases b <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
+  · cases y with
+    | mem m =>
+      have hm : memRoot ctx u [a, b, .mem m] = match a.asPtrWord, b.asPtrWord with
+          | some d, some s =>
+            match m.read s u.auxInt.toInt.toNat with
+            | some bs => writeRes s!"v{u.id}: {u.op.name}" (m.write d bs)
+            | none => .stuck s!"v{u.id}: {u.op.name}: invalid source"
+          | _, _ => .stuck s!"v{u.id}: {u.op.name}: undefined or ill-typed address" := by
+        unfold memRoot; rw [hu]; rfl
+      rw [hm]
+      cases hd : a.asPtrWord with
+      | none => exact .stuck _ _
+      | some d =>
+        cases hs : b.asPtrWord with
+        | none => exact .stuck _ _
+        | some s =>
+          dsimp only
+          cases hr : m.read s u.auxInt.toInt.toNat with
+          | none => exact .stuck _ _
+          | some bs =>
+            dsimp only
+            cases hwr : m.write d bs with
+            | none => exact .stuck _ _
+            | some m1 =>
+              simp only [writeRes, Arm64.move, addr_of_asPtrWord hd, addr_of_asPtrWord hs, ← hai,
+                hr, hwr]
+              exact .ok (Sem.Refines.refl _)
+    | _ => unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases y <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
+
+/-- A lowered `Zero` or `Move` evaluates (non-faulting mode). -/
+theorem evalOpL_bulk {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv : List Val}
+    {ty : Ty} (h : bulkLower u w = true) : ∃ y, evalOpL false env ctx fr w argv ty = .ok y := by
+  rcases (bulkLower_cases h).1 with ⟨-, hw⟩ | ⟨-, hw⟩
+  · exact ⟨_, evalOpL_zero hw⟩
+  · exact ⟨_, evalOpL_move hw⟩
+
+/-- **A lowered `Zero` or `Move` refines the op it lowers** on refined arguments (`bulkLower`). -/
+theorem bulk_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Value}
+    (h : bulkLower u w = true) {ty : Ty} {argv argv' : List Val} (hl : RefinesList argv argv') :
+    Res.Refines (evalOp env ctx fr u argv ty) (evalOpL false env ctx' fr' w argv' ty) := by
+  obtain ⟨hc, hai⟩ := bulkLower_cases h
+  rcases hc with ⟨hu, hw⟩ | ⟨hu, hw⟩
+  · exact zero_lower_eval hu hw hai hl
+  · exact move_lower_eval hu hw hai hl
+
 /-! ## `memLower` and `atomPair` -/
 
 open GoFV.Opt.LowerCheck
@@ -541,7 +617,7 @@ theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = tr
 
 theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     (((((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
-        memLower tabs u w = true ∨ zeroLower u w = true) ∧ u.args.size = w.args.size) ∨
+        memLower tabs u w = true ∨ bulkLower u w = true) ∧ u.args.size = w.args.size) ∨
         addrLower tabs u w = true ∨ pbLower u w = true) ∧
       u.type = w.type ∧ u.block = w.block ∧ u.id = w.id := by
   unfold atomPair at h
@@ -584,12 +660,11 @@ theorem addrLower_ops {tabs : Tables} {u w : Value} (h : addrLower tabs u w = tr
   obtain ⟨hu, hw, -⟩ := addrLower_cases h
   rw [hu, hw]; decide
 
-/-- A lowered `Zero` and the `Zero` it lowers: no `Phi`s; the `Zero` is a root, the lowered one
-is not (`LoweredZero` has no memory type in the op table). -/
-theorem zeroLower_ops {u w : Value} (h : zeroLower u w = true) :
+/-- A lowered `Zero` or `Move` and the op it lowers: no `Phi`s; the `Zero` or `Move` is a root,
+the lowered one is not (`LoweredZero`, `LoweredMove` have no memory type in the op table). -/
+theorem bulkLower_ops {u w : Value} (h : bulkLower u w = true) :
     u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot u.op = true ∧ isRoot w.op = false := by
-  obtain ⟨hu, hw, -⟩ := zeroLower_cases h
-  rw [hu]; rcases hw with hw | hw <;> rw [hw] <;> decide
+  rcases (bulkLower_cases h).1 with ⟨hu, hw | hw⟩ | ⟨hu, hw | hw⟩ <;> rw [hu, hw] <;> decide
 
 /-- Corresponding atoms are both `Phi`s or neither. -/
 theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
@@ -601,17 +676,17 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
       rw [h1, h2] <;> decide
   · obtain ⟨h1, h2, -⟩ := memLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
-  · obtain ⟨h1, h2, -⟩ := zeroLower_ops h
+  · obtain ⟨h1, h2, -⟩ := bulkLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := addrLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := pbLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
 
-/-- Corresponding atoms are both roots or neither, except a lowered `Zero` (`zeroLower`), which is
-not a root where the `Zero` is. -/
+/-- Corresponding atoms are both roots or neither, except a lowered `Zero` or `Move`
+(`bulkLower`), which is not a root where the `Zero` or `Move` is. -/
 theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
-    isRoot w.op = isRoot u.op ∨ zeroLower u w = true := by
+    isRoot w.op = isRoot u.op ∨ bulkLower u w = true := by
   rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h
   · exact .inl (by rw [h])
   · left
@@ -628,7 +703,7 @@ theorem atomPair_root {tabs : Tables} {u w : Value} (h : atomPair tabs u w = tru
     (hr : isRoot w.op = true) : isRoot u.op = true := by
   rcases atomPair_isRoot h with h' | h'
   · rw [← h']; exact hr
-  · exact (zeroLower_ops h').2.2.1
+  · exact (bulkLower_ops h').2.2.1
 
 theorem makeL_tabs (tabs : Tables) (f : Func) : (Ctx.makeL tabs f).tabs = tabs := by
   unfold Ctx.makeL; split <;> rfl
@@ -746,15 +821,15 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
   generalize hty' : (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
   rcases hk with ⟨hop, hai, hax⟩ | hm | hz
   case inr.inr =>
-    -- a lowered `Zero`
-    obtain ⟨hu, hw, hai⟩ := zeroLower_cases hz
-    have hwst : stSize w.op = none := by rcases hw with h | h <;> rw [h] <;> rfl
+    -- a lowered `Zero` or `Move`
+    have hwst : stSize w.op = none := by
+      rcases bulkLower_op hz with h | h | h | h <;> rw [h] <;> rfl
     have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
       refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
         have := hrel i a a' ha ha'
         rwa [stArg_none hwst] at this
     rw [evalOpL_generic _ _ _ _ _ _ hgen]
-    exact Res.Rel.bind (zero_lower_eval hu hw hai hlist) fun x y hxy => .ok (rty_le hl ty hxy)
+    exact Res.Rel.bind (bulk_lower_eval hz hlist) fun x y hxy => .ok (rty_le hl ty hxy)
   case inr.inl =>
     -- a lowered store
     obtain ⟨-, -, hu, n, hst, hfit⟩ := memLower_cases hm
