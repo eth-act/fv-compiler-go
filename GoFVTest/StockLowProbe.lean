@@ -1,15 +1,17 @@
 import GoFV.SSA.Parse
 import GoFV.Opt.Lower
 import GoFV.Opt.Pair
+import GoFV.Opt.LateLowerCheck
 
 /-!
 # `lake exe stocklow-probe [--jobs N] <dir>...`: what `late lower` and `pair` change
 
 For every `late lower` section (input: the previous section), runs the Lean `late lower` with its
-rewrite log and counts the sections it changes and, per `ARM64latelower.rules` rule (by source
-line), the sections where it fires; for every `pair` section, the sections `pair` changes and the
-ops of the values it adds (`LDP*`, `STP*`, selectors, copies), split into sections that only pair
-loads within a block and the rest.
+rewrite log and counts the sections it changes, those `renameB` accepts (`late lower`'s checked
+renames, `GoFV.Opt.LateLowerCheck`) and, per `ARM64latelower.rules` rule (by source line), the
+sections where it fires (and where it fires in a rejected section); for every `pair` section, the
+sections `pair` changes and the ops of the values it adds (`LDP*`, `STP*`, selectors, copies),
+split into sections that only pair loads within a block and the rest.
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Rules
@@ -20,6 +22,9 @@ structure Cnt where
   llSecs : Nat := 0
   llErr : Nat := 0
   llChanged : Nat := 0
+  llAcc : Nat := 0
+  llAccChanged : Nat := 0
+  llRejRules : Std.HashMap String Nat := {}
   llRules : Std.HashMap String Nat := {}
   llSets : Std.HashMap String Nat := {}
   prSecs : Nat := 0
@@ -34,6 +39,8 @@ def Cnt.merge (a b : Cnt) : Cnt :=
   let mg (x y : Std.HashMap String Nat) := y.fold (fun m k n => m.insert k (m.getD k 0 + n)) x
   { llSecs := a.llSecs + b.llSecs, llErr := a.llErr + b.llErr
     llChanged := a.llChanged + b.llChanged, llRules := mg a.llRules b.llRules
+    llAcc := a.llAcc + b.llAcc, llAccChanged := a.llAccChanged + b.llAccChanged
+    llRejRules := mg a.llRejRules b.llRejRules
     llSets := mg a.llSets b.llSets, prSecs := a.prSecs + b.prSecs, prErr := a.prErr + b.prErr
     prChanged := a.prChanged + b.prChanged, prKinds := mg a.prKinds b.prKinds }
 
@@ -96,10 +103,16 @@ def doFile (path : System.FilePath) (c : Cnt) : IO Cnt := do
       match rewriteRun lateLowerTable true true env f with
       | .error _ => c := { c with llErr := c.llErr + 1 }
       | .ok (out, _, log) =>
-        if out.func.valueTab != f.valueTab || out.func.blockTab != f.blockTab then
+        let acc := LateLowerCheck.renameB prev out.tables f out.func
+        let changed := out.func.valueTab != f.valueTab || out.func.blockTab != f.blockTab
+        if acc then c := { c with llAcc := c.llAcc + 1 }
+        if changed then
           let rs := (firedRules lateLowerTable f log).qsort (· < ·)
           c := { c with llChanged := c.llChanged + 1, llSets := bump c.llSets s!"{rs}" }
-          for r in rs do c := { c with llRules := bump c.llRules r }
+          if acc then c := { c with llAccChanged := c.llAccChanged + 1 }
+          for r in rs do
+            c := { c with llRules := bump c.llRules r }
+            if !acc then c := { c with llRejRules := bump c.llRejRules r }
     else if name == "pair" then
       c := { c with prSecs := c.prSecs + 1 }
       match pairPass env f with
@@ -137,8 +150,11 @@ def main (args : List String) : IO UInt32 := do
     | .ok x => c := c.merge x
     | .error err => IO.eprintln s!"task error: {err}"; return 1
   IO.println s!"late lower: sections {c.llSecs}, errors {c.llErr}, changed {c.llChanged}"
+  IO.println s!"renameB accepts {c.llAcc} (changed {c.llAccChanged}), rejects {c.llSecs - c.llErr - c.llAcc}"
   IO.println "rules (ARM64latelower.rules line, sections where fired):"
   for (k, n) in sorted c.llRules do IO.println s!"  {n} {k}"
+  IO.println "rules in rejected sections (line, sections):"
+  for (k, n) in sorted c.llRejRules do IO.println s!"  {n} {k}"
   IO.println "rule sets (sections):"
   for (k, n) in (sorted c.llSets).extract 0 40 do IO.println s!"  {n} {k}"
   IO.println s!"pair: sections {c.prSecs}, errors {c.prErr}, changed {c.prChanged}"

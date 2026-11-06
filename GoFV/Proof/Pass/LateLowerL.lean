@@ -182,7 +182,6 @@ theorem evalOpL_normV (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v 
     unfold arm64Op
     simp only [e1, e2]
     rw [ho]
-    rfl
   · rw [h, evalOpL_eq, evalOpL_eq, ho]
     simp only [show Op.generic .ARM64MOVDconst = false by rfl, show Op.generic .ARM64ZERO = false by rfl,
       show GoFV.Opt.LowerTerm.actOp .ARM64MOVDconst = false by rfl,
@@ -193,8 +192,7 @@ theorem evalOpL_normV (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v 
 
 theorem evalValueL_normV (md : LMode) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) :
     evalValueL md env ctx fr (normV v) = evalValueL md env ctx fr v := by
-  unfold evalValueL
-  rw [normV_args, normV_id, evalOpL_normV]
+  simp only [evalValueL, normV_args, normV_id, evalOpL_normV]
 
 /-- The function of the context is read only through the first argument's sign extension. -/
 theorem evalValueL_normCtx (md : LMode) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) :
@@ -282,9 +280,8 @@ theorem runL_normF (env : Env) (tabs : Tables) (f : Func) (args : List Val) (mem
   · rfl
   · have he : entryFrame env { Ctx.makeL tabs f with f := normF f } args mem =
         entryFrame env (Ctx.makeL tabs f) args mem := by
-      unfold entryFrame
+      unfold entryFrame frameMem frameAllocs
       simp only [normF, Array.size_map]
-      rfl
     have hf : (Ctx.makeL tabs f).f = f := by unfold Ctx.makeL; split <;> rfl
     have hrl := runLoopL_normF ⟨f.lowered, false⟩ env (Ctx.makeL tabs f)
     rw [hf] at hrl
