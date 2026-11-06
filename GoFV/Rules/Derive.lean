@@ -1,4 +1,5 @@
 import GoFV.Rules.Syntax
+import GoFV.Rules.Helpers.ARM64
 
 /-!
 # Derived forms of `ARM64.rules` rules for the checked `lower` (issue #385)
@@ -17,6 +18,12 @@ exactly the same instances (the rewrite engine evaluates the same Go expressions
 * `spLeaf r`: a rule whose pattern names an `SP` node (`(OffPtr [off] ptr:(SP)) && is32Bit(off) =>
   (MOVDaddr [int32(off)] ptr)`, `305`), with that node a leaf `ptr` and `ptr.Op == OpSP` added
   to the condition: `SP` is an atom of lowered SSA, which the validator matches only as a leaf.
+* `ccSplit r`: a rule whose top node binds a `CCop` auxint `cc` and whose result reads
+  `arm64Invert(cc)` (`(CSEL [cc] x y (InvertFlags cmp)) => (CSEL [arm64Invert(cc)] x y cmp)`,
+  `1352`), as one rule per integer condition op `X` (`intCondOps`): the condition `cc == X` added,
+  `arm64Invert(cc)` the op `arm64Invert(X)`. It rewrites the instances whose `cc` is an integer
+  condition; on a float condition the swap does not hold under the flags semantics
+  (`docs/proofs/rules.md` "Findings").
 -/
 
 namespace GoFV.Rules.Derive
@@ -175,5 +182,42 @@ def spLeaf (r : Rule) : Rule :=
         | some c => .binop .land (spCond k) c .bool
         | none => spCond k) }
   | none => r
+
+/-- The integer condition ops (`EQ` … `UGE`), which `arm64Invert` swaps among themselves. -/
+def intCondOps : List Op :=
+  [.ARM64Equal, .ARM64NotEqual, .ARM64LessThan, .ARM64LessEqual, .ARM64GreaterThan,
+   .ARM64GreaterEqual, .ARM64LessThanU, .ARM64LessEqualU, .ARM64GreaterThanU,
+   .ARM64GreaterEqualU]
+
+/-- `k == cc`. -/
+def ccCond (k : Nat) (cc : Op) : Expr := .binop .eq (.var k) (.op cc) .bool
+
+/-- `arm64Invert(var k)` as the op it gives on `cc`; any other expression unchanged. -/
+def ccInvert (k : Nat) (cc : Op) : Expr → Expr
+  | e@(.call fn [.var x] _) =>
+    if fn == "arm64Invert" && x == k then
+      match Arm64.arm64Invert cc with
+      | .ok o => .op o
+      | .error _ => e
+    else e
+  | e => e
+
+/-- The form of `r` on the condition op `cc` of its `CCop` auxint variable `k` (module doc). -/
+def ccAt (r : Rule) (k : Nat) (cc : Op) : Rule :=
+  { r with
+    cond := some (match r.cond with
+      | some c => .binop .land (ccCond k cc) c .bool
+      | none => ccCond k cc)
+    result := match r.result with
+      | .build ns => .build (ns.map fun n => { n with auxInt := n.auxInt.map (ccInvert k cc) })
+      | res => res }
+
+/-- `r` as one rule per integer condition op if its top node binds an auxint of Go type `Op`,
+else itself (module doc). -/
+def ccSplit (r : Rule) : List Rule :=
+  match r.pat with
+  | .op _ _ _ (.bind k) _ _ _ _ =>
+    if (r.vars[k]?.map (·.ty)) == some (.named "Op") then intCondOps.map (ccAt r k) else [r]
+  | _ => [r]
 
 end GoFV.Rules.Derive

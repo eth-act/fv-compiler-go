@@ -266,17 +266,22 @@ the `MOVDaddr`'s aux and `b` for the address:
   canMergeSym(sym1,sym2) … => (MOV…load [off1+off2] {mergeSym(sym1,sym2)} ptr mem)`,
   `ARM64.rules:832-856`), the same op;
 * an `ADDconst` at a word shape (`(ADDconst [off1] (MOVDaddr [off2] {sym} ptr)) && … =>
-  (MOVDaddr [int32(off1)+off2] {sym} ptr)`, `650`), a `MOVDaddr` term. -/
+  (MOVDaddr [int32(off1)+off2] {sym} ptr)`, `650`), a `MOVDaddr` term.
+
+`x` without arguments is rejected before its address argument is read (no panic default). -/
 def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
     Option Value :=
   match M.get? v, defs with
   | some x, [_, u] =>
-    match M.get? x.args[0]! with
+    match x.args[0]? with
+    | none => none
+    | some a =>
+    match M.get? a with
     | some m =>
       if x.id == v && u.id == v && u.type == x.type && u.auxInt == x.auxInt && offOK x.auxInt &&
           termVL tabs x && termVL tabs u && m.op == .ARM64MOVDaddr && !termVL tabs m &&
           m.args.size == 1 && u.aux == m.aux &&
-          (f.value? x.args[0]!).any (fun l => l.op == .LocalAddr && l.aux == m.aux) &&
+          (f.value? a).any (fun l => l.op == .LocalAddr && l.aux == m.aux) &&
           ((ldOp? x.op).isSome && u.op == x.op && x.aux == none && x.args.size == 2 &&
               u.args == #[m.args[0]!, x.args[1]!] ||
             x.op == .ARM64ADDconst && u.op == .ARM64MOVDaddr && x.args.size == 1 &&

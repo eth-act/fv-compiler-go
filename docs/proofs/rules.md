@@ -2029,7 +2029,20 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     function of it; the swap holds for integer conditions only (`invertFlags_cond`).
   - `:1352`–`:1357` as whole rules (`(CSEL [cc] x y (InvertFlags cmp)) => (CSEL
     [arm64Invert(cc)] x y cmp)`, `CSEL0`/`CSETM`/`CSINC`/`CSINV`/`CSNEG`): `cc` may be a float
-    condition (as for 1342-1345); they are provable split by `cc` on the integer conditions.
+    condition (as for 1342-1345); they are provable split by `cc` on the integer conditions
+    (`GoFV.Rules.Derive.ccSplit`, `r_ARM64_1352_cc_sound` … `r_ARM64_1357_cc_sound`).
+
+- **Compares false under the lowered semantics** (#385; model limits, not Go bugs; module doc of
+  `GoFV/Proof/Low/Rules/CmpNeg.lean`). `CMP` compares a pointer without a concrete address with
+  an integer as unequal (`Arm64.cmp`, `Z` clear). `CMN` and `CMPshift*` read registers only
+  (`Arm64.cmp1`/`cmp2`), so they leave that case `poison`, and a 64-bit word may hold such a
+  pointer (`Val.hasTy`). False, so left out of `GoFV.Rules.ProvenARM64`:
+  - `:597`'s `CMPconst` form (`(CMPconst [c] y) && c < 0 && c != -1<<63 => (CMNconst [-c] y)`).
+    Its `CMNconst → CMPconst` form and both forms of `:598` (`CMPWconst`↔`CMNWconst`) are
+    proven (`subFlags_eq_cmn`).
+  - `:1463`–`:1468` (`(CMP x0 x1:(SLLconst [c] y)) && … => (CMPshiftLL x0 y [c])`, `(CMP
+    x0:(SLLconst [c] y) x1) && … => (InvertFlags (CMPshiftLL x1 y [c]))`, and the `SRL`/`SRA`
+    forms).
 
 ## Narrow result types
 

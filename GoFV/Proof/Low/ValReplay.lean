@@ -961,6 +961,11 @@ theorem frameFold_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
   split at h
   · rename_i x _ u' hx
     split at h
+    · cases h
+    rename_i a ha
+    have e : x.args[0]! = a := by simp [getElem!_def, ha]
+    subst e
+    split at h
     · rename_i m hm
       split at h
       · rename_i hc
