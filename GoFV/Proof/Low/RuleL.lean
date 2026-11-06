@@ -682,17 +682,25 @@ def newAuxL (ev : Expr → DV) : Option Expr → Option Int64
   | some ae => toAuxIntD .Int64 (ev ae)
   | none => some 0
 
+/-- A new block control the validator relates: a rule variable, or one built node (`build [n]`)
+on rule variables (`ctrlDefL`). -/
+def ctrlNodeOK : NewControl → Bool
+  | .var _ => true
+  | .build [n] => n.args.all (fun a => (a matches .var _))
+  | _ => false
+
 /-- **The obligation of a block rule** `(K ctrl) && cond => (K' x…)` on one control of a
-conditional kind: the new controls are rule variables (none for `First`, one otherwise), and
-for every instance of `ctrl` whose checks and condition hold (leaves of their shapes, op nodes'
-arguments of the checked shapes), with the block auxint `ai` the rule asks for and the new one
-`ai'`: if the old block takes an edge, the new one takes the same (`brVal`, `First` always its
-first successor, swapped successors flip it). -/
+conditional kind: the new controls are a rule variable or a node built on rule variables
+(`ctrlNodeOK`; none for `First`, one otherwise), and for every instance of `ctrl` whose checks
+and condition hold (leaves of their shapes, op nodes' arguments of the checked shapes), with the
+block auxint `ai` the rule asks for and the new one `ai'`: if the old block takes an edge, the
+new one takes the same (`brVal` of the variable's value or of the built node's, `nodeDenL`;
+`First` always its first successor, swapped successors flip it). -/
 def BlockRuleL.Sound (br : BlockRule) : Prop :=
   condKind br.kind = true ∧ (br.newKind == .First || condKind br.newKind) = true ∧
   ∃ pat, br.controls = [pat] ∧ Pat.arityOk pat = true ∧ br.aux = .any ∧ br.newAux = none ∧
   (br.newKind = .First → br.newControls = []) ∧
-  (br.newKind ≠ .First → ∃ x pos, br.newControls = [(.var x, pos)]) ∧
+  (br.newKind ≠ .First → ∃ nc pos, br.newControls = [(nc, pos)] ∧ ctrlNodeOK nc = true) ∧
   ∀ sw ∈ GoFV.Opt.RewriteCheck.choices (GoFV.Opt.RewriteCheck.Pat.commutes pat),
     let pat' := (Pat.swapC pat sw).1
     Pat.arityOk pat' = true ∧
@@ -707,6 +715,7 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
         (match br.newKind, br.newControls with
           | .First, _ => some true
           | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
+          | k, [(.build [n], _)] => brVal k ai' (nodeDenL tabs e pat' ev or σ .other [n] 1 0)
           | _, _ => none) = some (b != br.swapSuccs)
 
 /-! ## Rule sets -/

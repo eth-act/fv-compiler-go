@@ -108,7 +108,7 @@ elab "arm_bunfold" : tactic => do
       fun h => absurd rfl h, ?_⟩))
   else
     evalTactic (← `(tactic| refine ⟨rfl, rfl, _, rfl, rfl, rfl, rfl,
-      fun h => absurd h (by decide), fun _ => ⟨_, _, rfl⟩, ?_⟩))
+      fun h => absurd h (by decide), fun _ => ⟨_, _, rfl, rfl⟩, ?_⟩))
   let pat ← withTransparency .all <| whnf (mkApp (mkConst ``GoFV.Rules.BlockRule.controls) r)
   let some p := (pat.getAppArgs[1]?) | throwError "arm_bunfold: controls"
   let n ← withTransparency .all <| reduce

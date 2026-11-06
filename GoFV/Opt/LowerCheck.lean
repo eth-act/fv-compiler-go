@@ -21,7 +21,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   64-bit integer shape (`setArgsOK`), or on an atom renamed by `renameOp` (`ArmRule.Rename`);
 * a block rule event is checked by `blockOKL` against `BlockRuleL.Sound`: one control matched by
   the rule's control pattern, the block's auxint (tracked in `BStateL`) as the rule asks, the new
-  controls the rule's variables, the new auxint the rule's;
+  control a rule variable or a node built on them, which the replay defines at its fresh value
+  (`ctrlDefL`), the new auxint the rule's;
 * atoms of `g` correspond to atoms of `f` by `atomPair`: the same fields, or an atom renamed by
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
   arm64 store (`memLower`), or a `Zero` lowered to `LoweredZero`/`LoweredZeroLoop` (`zeroLower`),
@@ -341,11 +342,46 @@ def blockAuxOKB (fl : GoFV.Rules.Field) (ai : Int64) : Bool :=
   | .eq (.lit _ (.int i)) => ai.toInt == i
   | _ => false
 
+/-- The definition of the control a block rule builds (`build [n]` on rule variables, `ctrlNodeOK`)
+at the fresh `c'`: `n`'s op, auxint and aux on the bound values (`nodeDenL`'s fields), with the
+fields of the matched control `x` otherwise (its type: Go's flags type, which `nodeOKL` checks
+against `n`'s). -/
+def ctrlDefL (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Oracle) (σ : Nat → DV) (I : Inst)
+    (n : RNode) (x : Value) (c' : ID) : Value :=
+  { x with
+    id := c'
+    op := n.op
+    auxInt := (match n.auxInt with
+      | some ae => (toAuxIntL n.op.auxType (ev ae)).getD (or.auxInt ae)
+      | none => 0)
+    aux := nodeAuxL e pat or n.aux
+    args := (n.args.filterMap fun a => argID σ I [c'] a).toArray }
+
+/-- The new control of a block-rule event (new controls `nc`, matched control `c`): none for
+`First`, a rule variable's value, or one node built on rule variables at a fresh value
+(`ctrlDefL`, `nodeOKL`); the definitions the replay adds (the built one). -/
+def builtL (tabs : Tables) (M : Defs) (br : BlockRule) (e : PEnv) (pat : Pat) (ev : Expr → DV)
+    (or : Oracle) (σ : Nat → DV) (I : Inst) (c : ID) (nc : Array ID) : Option (List Value) :=
+  match br.newKind, br.newControls, nc.toList with
+  | .First, [], [] => some []
+  | k, [(.var x, _)], [c'] =>
+    if k != .First && (DV.pos? (σ x)).map I.at == some c' then some [] else none
+  | k, [(.build [n], _)], [c'] =>
+    match M.get? c with
+    | some x =>
+      if k != .First && ctrlNodeOK (.build [n]) && (M.get? c').isNone &&
+          nodeOKL tabs e pat ev or σ I [c'] .other n (ctrlDefL e pat ev or σ I n x c') then
+        some [ctrlDefL e pat ev or σ I n x c']
+      else none
+    | none => none
+  | _, _, _ => none
+
 /-- One commutation choice of a block-rule event: the swapped control pattern `pat` matches the
-control `c`, its checks and condition hold, the block auxint is as the rule asks, the new controls
-are the rule's variables and the new auxint the rule's. -/
+control `c`, its checks and condition hold, the block auxint is as the rule asks, the new control
+is as `builtL` asks, and the new auxint the rule's. The result: the new terminator and the built
+definitions. -/
 def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStateL) (c : ID)
-    (nc : Array ID) : Option BStateL :=
+    (nc : Array ID) : Option (BStateL × List Value) :=
   if !Pat.arityOk pat then none else
   match matchPatL tabs M pat [] c with
   | none => none
@@ -355,10 +391,6 @@ def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStat
     let σ := sigmaL tabs e pat
     let or := oracleL vtys tabs ((br.cond.map (negAtoms false)).getD []) []
     let ev := evalE vtys σ or e (Pat.denL tabs e [] pat)
-    let ctrlsOK : Bool := match br.newKind, br.newControls, nc.toList with
-      | .First, [], [] => true
-      | k, [(.var x, _)], [c'] => k != .First && (DV.pos? (σ x)).map I.at == some c'
-      | _, _, _ => false
     if (Pat.sames pat).all (fun x => !(Pat.opNames pat).contains x) &&
         consOK ev σ e I [] pat && wfOK e [] pat &&
         (match br.cond with
@@ -366,19 +398,18 @@ def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStat
           | none => true) &&
         Pat.argsOK e.ty [] pat && Pat.topOKL (e.ty []) pat && Pat.argsOKL e.ty [] pat &&
         leavesOK M I [] pat &&
-        blockAuxOKB br.auxInt st.auxInt &&
-        ctrlsOK then
-      match newAuxL ev br.newAuxInt with
-      | some ai' => some { kind := br.newKind, ctrls := nc, auxInt := ai',
-                           swapped := st.swapped != br.swapSuccs }
-      | none => none
+        blockAuxOKB br.auxInt st.auxInt then
+      match builtL tabs M br e pat ev or σ I c nc, newAuxL ev br.newAuxInt with
+      | some us, some ai' => some ({ kind := br.newKind, ctrls := nc, auxInt := ai',
+                                     swapped := st.swapped != br.swapSuccs }, us)
+      | _, _ => none
     else none
 
 /-- A block-rule event (rule `br`, new controls `nc`) on the replayed terminator `st`
 (`BlockRuleL.Sound`): `st` has `br`'s kind, a conditional kind (`condKind`), and one control,
 and some commutation choice of the control pattern validates (`blockOK1`). -/
 def blockOKL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL) (nc : Array ID) :
-    Option BStateL :=
+    Option (BStateL × List Value) :=
   match br.controls, st.ctrls.toList with
   | [pat], [c] =>
     if st.kind == br.kind && condKind br.kind && br.aux matches .any && br.newAux.isNone then
@@ -448,7 +479,7 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
       | some br =>
         match blockOKL tabs M br st nc with
         | none => none
-        | some st' => replayL tabs t f M ((b, st') :: B) evs
+        | some (st', us) => replayL tabs t f (us.foldl (fun M u => M.put u.id u) M) ((b, st') :: B) evs
 
 /-! ## The output -/
 

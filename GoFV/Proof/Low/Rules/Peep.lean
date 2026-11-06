@@ -111,7 +111,7 @@ theorem r_ARM64_985_sound : ArmRule.Checked r_ARM64_985 := by
     exact Refines.refl _
   · rw [op2_poison, retypeL_poison]; exact .poison _
 
-private theorem imm32_wrap (c : Int) : Arm64.imm32 (Int64.ofInt (wrapInt 32 true c)) = BitVec.ofInt 32 c := by
+theorem imm32_wrap (c : Int) : Arm64.imm32 (Int64.ofInt (wrapInt 32 true c)) = BitVec.ofInt 32 c := by
   simp only [Arm64.imm32, wrapInt, ite_true]
   have h1 := Int.le_bmod (x := c) (m := 2 ^ 32) (by decide)
   have h2 := Int.bmod_lt (x := c) (m := 2 ^ 32) (by decide)
@@ -121,7 +121,7 @@ private theorem imm32_wrap (c : Int) : Arm64.imm32 (Int64.ofInt (wrapInt 32 true
   rw [Int.bmod_emod]
 
 /-- A 64-bit constant register read at a shape with at least 32 bits: its low word, or `poison`. -/
-private theorem retypeL_res_w32 {T : Ty} (h : 32 ≤ argWidth T) (k : BitVec 64) :
+theorem retypeL_res_w32 {T : Ty} (h : 32 ≤ argWidth T) (k : BitVec 64) :
     Arm64.reg32 ((Arm64.res T k).retypeL T) = some (k.setWidth 32) ∨
       (Arm64.res T k).retypeL T = .poison := by
   cases T with

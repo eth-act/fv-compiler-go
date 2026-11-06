@@ -9,7 +9,8 @@ defined, `taken_mono`). `BInvL`: along the replay the replayed terminators (`BSt
 controls, auxint, swapped successors), as functions of their controls' lowered denotations in
 the replayed definitions, refine the input's. A block-rule event (`blockOKL`) keeps it by
 `BlockRuleL.Sound`: the old block, when it takes a successor, decides it by `brVal` of the matched
-control's pattern denotation; the new one takes the same edge (`BInvL.block`).
+control's pattern denotation; the new one takes the same edge (`BInvL.block`), on a rule variable
+or on the control the rule builds, which the replay defines at a fresh value (`ctrlDefL`).
 -/
 
 namespace GoFV.Proof.Low.Val
@@ -347,7 +348,7 @@ theorem sel_edge {s : Array Edge} (h2 : s.size = 2) (sw swS b : Bool) :
 
 /-- What `blockOKL` establishes about a block-rule event. -/
 structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL) (nc : Array ID)
-    (st' : BStateL) where
+    (st' : BStateL) (us : List Value) where
   pat : Pat
   sw : List Bool
   c : ID
@@ -373,11 +374,12 @@ structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL)
   hargsL : Pat.argsOKL (envL tabs M I).ty [] (Pat.swapC pat sw).1 = true
   hleaves : leavesOK M I [] (Pat.swapC pat sw).1 = true
   hauxB : blockAuxOKB br.auxInt st.auxInt = true
-  hctrls : (match br.newKind, br.newControls, nc.toList with
-      | .First, [], [] => true
-      | k, [(.var x, _)], [c'] => k != .First &&
-          (DV.pos? (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1 x)).map I.at == some c'
-      | _, _, _ => false) = true
+  hbuilt : builtL tabs M br (envL tabs M I) (Pat.swapC pat sw).1
+      (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
+        (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
+        (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1))
+      (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
+      (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1) I c nc = some us
   ai' : Int64
   hai' : newAuxL (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
       (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
@@ -385,7 +387,8 @@ structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL)
   hst' : st' = { kind := br.newKind, ctrls := nc, auxInt := ai', swapped := st.swapped != br.swapSuccs }
 
 theorem blockFactsL {tabs : Tables} {M : Defs} {br : BlockRule} {st st' : BStateL} {nc : Array ID}
-    (h : blockOKL tabs M br st nc = some st') : Nonempty (BlockFactsL tabs M br st nc st') := by
+    {us : List Value} (h : blockOKL tabs M br st nc = some (st', us)) :
+    Nonempty (BlockFactsL tabs M br st nc st' us) := by
   unfold blockOKL at h
   split at h
   · rename_i pat c hctl hc
@@ -403,14 +406,14 @@ theorem blockFactsL {tabs : Tables} {M : Defs} {br : BlockRule} {st st' : BState
       rw [Option.ite_none_right_eq_some] at h1
       obtain ⟨hok, h1⟩ := h1
       · simp only [Bool.and_eq_true] at hok
-        obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hsames, hcons⟩, hwf⟩, hcond⟩, hargs⟩, htop⟩, hargsL⟩, hleaves⟩, hauxB⟩, hctrls⟩ := hok
+        obtain ⟨⟨⟨⟨⟨⟨⟨⟨hsames, hcons⟩, hwf⟩, hcond⟩, hargs⟩, htop⟩, hargsL⟩, hleaves⟩, hauxB⟩ := hok
         simp only [List.all_eq_true, Bool.not_eq_true', List.contains_eq_mem,
           decide_eq_false_iff_not] at hsames
         split at h1
-        · rename_i ai' hai'
+        · rename_i us' ai' hbuilt hai'
           cases h1
           refine ⟨⟨pat, sw, c, I, hctl, hsw, hc, hkind, hm, hcons, hwf, hsames, ?_, hargs, htop,
-            hargsL, hleaves, hauxB, hctrls, ai', hai', rfl⟩⟩
+            hargsL, hleaves, hauxB, hbuilt, ai', hai', rfl⟩⟩
           intro cd hcd
           split at hcond
           · rename_i cd' hcd'
@@ -441,34 +444,154 @@ theorem newAuxL_eq {ev ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (ev x).erase 
     · rw [h]
     · rw [h, h']; rfl
 
-theorem ctrls_var {k : BlockKind} {x : Nat} {pos : CtrlPos} {l : List ID}
-    {g : Nat → Option ID}
-    (h : (match k, [(NewControl.var x, pos)], l with
-      | .First, [], [] => true
-      | k, [(.var x, _)], [c'] => k != .First && g x == some c'
-      | _, _, _ => false) = true) (hk : k ≠ .First) : ∃ c', l = [c'] ∧ g x = some c' := by
-  rcases l with _ | ⟨c', _ | ⟨_, _⟩⟩
-  · cases k <;> simp at h
-  · refine ⟨c', rfl, ?_⟩
-    cases k <;> first | exact absurd rfl hk | simpa using h
-  · cases k <;> simp at h
+/-- The three shapes of `builtL`: `First`, a rule variable's value, a node built at a fresh value. -/
+theorem builtL_cases {tabs : Tables} {M : Defs} {br : BlockRule} {e : PEnv} {pat : Pat}
+    {ev : GoFV.Rules.Expr → DV} {or : Oracle} {σ : Nat → DV} {I : Inst} {c : ID} {nc : Array ID}
+    {us : List Value} (h : builtL tabs M br e pat ev or σ I c nc = some us) :
+    (br.newKind = .First ∧ nc.toList = [] ∧ us = []) ∨
+    (∃ x pos c', br.newKind ≠ .First ∧ br.newControls = [(.var x, pos)] ∧ nc.toList = [c'] ∧
+      (DV.pos? (σ x)).map I.at = some c' ∧ us = []) ∨
+    (∃ n pos c' xv, br.newKind ≠ .First ∧ br.newControls = [(.build [n], pos)] ∧
+      nc.toList = [c'] ∧ M.get? c = some xv ∧ M.get? c' = none ∧
+      ctrlNodeOK (.build [n]) = true ∧
+      nodeOKL tabs e pat ev or σ I [c'] .other n (ctrlDefL e pat ev or σ I n xv c') = true ∧
+      us = [ctrlDefL e pat ev or σ I n xv c']) := by
+  unfold builtL at h
+  split at h
+  · rename_i hk _ hnc; cases h; exact .inl ⟨hk, hnc, rfl⟩
+  · rename_i _ _ _ x pos c' hnc hl
+    split at h
+    · rename_i hok
+      cases h
+      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hok
+      exact .inr (.inl ⟨x, pos, c', hok.1, hnc, hl, hok.2, rfl⟩)
+    · cases h
+  · rename_i _ _ _ n pos c' hnc hl
+    split at h
+    · rename_i xv hxv
+      split at h
+      · rename_i hok
+        cases h
+        simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none] at hok
+        exact .inr (.inr ⟨n, pos, c', xv, hok.1.1.1, hnc, hl,
+          hxv, hok.1.2, hok.1.1.2, hok.2, rfl⟩)
+      · cases h
+    · cases h
+  · cases h
 
 theorem obl_var {k : BlockKind} {x : Nat} {pos : CtrlPos} {ai' : Int64}
-    {σ : Nat → DV} {r : Option Bool}
+    {σ : Nat → DV} {r : Option Bool} {d : RNode → Val}
     (h : (match k, [(NewControl.var x, pos)] with
           | .First, _ => some true
           | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
+          | k, [(.build [n], _)] => brVal k ai' (d n)
           | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' ((σ x).valOr .poison) = r := by
   cases k <;> first | exact absurd rfl hk | exact h
 
-/-- **A block-rule event** keeps `BInvL` (`BlockRuleL.Sound`). -/
+theorem obl_build {k : BlockKind} {n : RNode} {pos : CtrlPos} {ai' : Int64}
+    {σ : Nat → DV} {r : Option Bool} {d : RNode → Val}
+    (h : (match k, [(NewControl.build [n], pos)] with
+          | .First, _ => some true
+          | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
+          | k, [(.build [n], _)] => brVal k ai' (d n)
+          | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' (d n) = r := by
+  cases k <;> first | exact absurd rfl hk | exact h
+
+/-- Retarget the replayed terminator of `b` to `st'` along a step `M → M'` (`C ⊆ C'`) that keeps
+the denotations of `C`. -/
+theorem BInvL.retargetStep {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
+    {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
+    (hsub : ∀ y, C y → C' y) (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hden : ∀ ρ n y, C y → denL true M'.get? tabs ρ n y = denL true M.get? tabs ρ n y)
+    {b : ID} {st st' : BStateL} (hst : bstateL f B b = some st)
+    (hnew : ∀ fb, f.block? b = some fb → (st.swapped = true → fb.succs.size = 2) →
+      (∀ c ∈ st.ctrls, C c) →
+      (st'.swapped = true → fb.succs.size = 2) ∧ (∀ c ∈ st'.ctrls, C' c) ∧
+      ∀ m, ∃ m', ∀ ρ, TypedL true M.get? tabs ρ →
+        Res.Rel Next.Refines
+          (stepValsL (stBlockL fb st) (st.ctrls.toList.map (denL true M.get? tabs ρ m)))
+          (stepValsL (stBlockL fb st') (st'.ctrls.toList.map (denL true M'.get? tabs ρ m')))) :
+    BInvL tabs f D₀ C₀ M' C' ((b, st') :: B) := by
+  have hB := h.mono (M' := M') (C' := C') (g := id) hsub hty fun ρ _ _ n y hy => by
+    show Sem.Refines _ (denL true M'.get? tabs ρ n y)
+    rw [hden ρ n y hy]; exact Sem.Refines.refl _
+  intro b' fb st'' hfb hc hst'
+  rw [bstateL_cons] at hst'
+  by_cases hb : b' = b
+  · subst hb
+    simp only [ite_true, Option.some.injEq] at hst'
+    subst hst'
+    obtain ⟨h1, h2, h3⟩ := h b' fb st hfb hc hst
+    obtain ⟨n1, n2, n3⟩ := hnew fb hfb h1 h2
+    refine ⟨n1, n2, fun n => ?_⟩
+    obtain ⟨m, hm⟩ := h3 n
+    obtain ⟨m', hm'⟩ := n3 m
+    exact ⟨m', fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF) (hm' ρ (hty ρ hρ))⟩
+  · simp only [hb, ite_false] at hst'
+    exact hB b' fb st'' hfb hc hst'
+
+/-- A rule variable bound at position `p` of a block-rule match is a matched value. -/
+theorem BlockFactsL.pos {tabs : Tables} {M : Defs} {br : BlockRule} {st : BStateL} {nc : Array ID}
+    {st' : BStateL} {us : List Value} (F : BlockFactsL tabs M br st nc st' us) {x : Nat} {p : Path}
+    (hp : DV.pos? (sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x) = some p) :
+    (p, F.I.at p) ∈ F.I := by
+  obtain ⟨hmo, -, hnd, -⟩ := matchPatL_ok F.hmatch
+  have hat : ∀ p w, (p, w) ∈ F.I → F.I.at p = w := fun p w h => inst_at h hnd
+  have hσs : Good (InI F.I) (sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x) :=
+    sigmaL_good (Q := fun _ => True) (S := GoFV.Proof.Pass.Rewrite.Pat.sz (Pat.swapC F.pat F.sw).1)
+      (fun _ _ => trivial) (fun p w h _ => ⟨w, h⟩) (fun _ p w h _ _ => ⟨w, h.mem⟩) hmo trivial
+      (Nat.le_refl _) x
+  revert hσs hp
+  cases sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x <;>
+    simp only [DV.pos?, reduceCtorEq, false_implies]
+  rename_i w p'
+  intro h hd
+  subst h
+  obtain ⟨w', hw⟩ := hd.1 w p rfl
+  rw [hat _ _ hw]; exact hw
+
+/-- The definitions a block-rule event adds: none, or the built control `u` at a fresh value, a
+term whose arguments are matched values (in `C` when the matched control is). -/
+theorem blockOKL_us {tabs : Tables} {M : Defs} {C : ID → Prop} (hC : DefClosed M C)
+    {br : BlockRule} {st st' : BStateL} {nc : Array ID} {us : List Value}
+    (hok : blockOKL tabs M br st nc = some (st', us)) :
+    us = [] ∨ ∃ u, us = [u] ∧ M.get? u.id = none ∧ termVL tabs u = true ∧
+      ((∀ c ∈ st.ctrls, C c) → ∀ a ∈ u.args, C a) := by
+  obtain ⟨F⟩ := blockFactsL hok
+  rcases builtL_cases F.hbuilt with ⟨-, -, hus⟩ | ⟨-, -, -, -, -, -, -, hus⟩ |
+    ⟨n, pos, c', xv, -, -, -, -, hfr, hcn, hnode, hus⟩
+  · exact .inl hus
+  · exact .inl hus
+  refine .inr ⟨_, hus, hfr, (nodeOKL_facts hnode).2.1, fun hctls a ha => ?_⟩
+  have hcmem : F.c ∈ st.ctrls := by
+    rw [← Array.mem_toList_iff, F.hc]; exact List.mem_singleton_self _
+  have hIC : ∀ y ∈ F.I, C y.2 := matchPatL_closed hC.arg F.hmatch (hctls _ hcmem)
+  simp only [ctrlDefL, List.mem_toArray, List.mem_filterMap] at ha
+  obtain ⟨r, hr0, hr⟩ := ha
+  simp only [ctrlNodeOK, List.all_eq_true] at hcn
+  have hrv := hcn r hr0
+  cases r with
+  | var x =>
+    simp only [argID, Option.map_eq_some_iff] at hr
+    obtain ⟨p, hp, rfl⟩ := hr
+    exact hIC _ (F.pos hp)
+  | node j => simp at hrv
+  | expr _ => simp at hrv
+
+/-- **A block-rule event** keeps `BInvL` (`BlockRuleL.Sound`), along a step `M → M'` that keeps
+the denotations of `C ⊆ C'` and defines the built control (`us`, in `C'` when the old controls
+are in `C`). -/
 theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
-    {M : Defs} {C : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B) (hC : DefClosed M C)
-    (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ) {b : ID} {st st' : BStateL}
+    {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
+    (hC : DefClosed M C) (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hsub : ∀ y, C y → C' y)
+    (hden : ∀ ρ n y, C y → denL true M'.get? tabs ρ n y = denL true M.get? tabs ρ n y)
+    {b : ID} {st st' : BStateL}
     (hst : bstateL f B b = some st) (h2 : (f.block? b).map (·.succs.size) = some 2)
-    {br : BlockRule} (hsd : BlockRuleL.Sound br) {nc : Array ID}
-    (hok : blockOKL tabs M br st nc = some st') :
-    BInvL tabs f D₀ C₀ M C ((b, st') :: B) := by
+    {br : BlockRule} (hsd : BlockRuleL.Sound br) {nc : Array ID} {us : List Value}
+    (hok : blockOKL tabs M br st nc = some (st', us))
+    (hus : ∀ u ∈ us, M'.get? u.id = some u ∧ ((∀ c ∈ st.ctrls, C c) → C' u.id)) :
+    BInvL tabs f D₀ C₀ M' C' ((b, st') :: B) := by
   obtain ⟨F⟩ := blockFactsL hok
   obtain ⟨hk, hnk, pat0, hctl0, -, -, -, hfirst, hvar, hall⟩ := hsd
   rw [F.hctl] at hctl0; cases hctl0
@@ -500,29 +623,29 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
     subst h
     obtain ⟨w', hw⟩ := hd.1 w p rfl
     rw [hat _ _ hw]; exact hw
-  refine h.retarget hst hty fun fb hfb hsw1 hctls => ?_
+  refine h.retargetStep hsub hty hden hst fun fb hfb hsw1 hctls => ?_
   have hfb2 : fb.succs.size = 2 := by rw [hfb] at h2; simpa using h2
   have hIC : ∀ y ∈ F.I, C y.2 :=
     matchPatL_closed hC.arg F.hmatch (hctls _ hcmem)
   refine ⟨fun _ => hfb2, ?_, fun m => ?_⟩
-  · -- the new controls are matched values
+  · -- the new controls are matched values, or the built one
     intro a ha
     rw [F.hst'] at ha
-    have hctrls := F.hctrls
-    split at hctrls
-    · rename_i hnc
-      simp only at ha
-      rw [← Array.mem_toList_iff, hnc] at ha; cases ha
-    · rename_i k x pos c' _ hnc
-      simp only at ha
-      rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
+    simp only at ha
+    rcases builtL_cases F.hbuilt with ⟨-, hnc, -⟩ | ⟨x, pos, c', -, -, hnc, hpc, -⟩ |
+      ⟨n, pos, c', xv, -, -, hnc, -, -, -, -, hus'⟩
+    · rw [← Array.mem_toList_iff, hnc] at ha; cases ha
+    · rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
       subst ha
-      simp only [Bool.and_eq_true, beq_iff_eq, Option.map_eq_some_iff] at hctrls
-      obtain ⟨-, p, hp, rfl⟩ := hctrls
-      exact hIC _ (hpos (hσs x) hp)
-    · cases hctrls
+      simp only [Option.map_eq_some_iff] at hpc
+      obtain ⟨p, hp, rfl⟩ := hpc
+      exact hsub _ (hIC _ (hpos (hσs x) hp))
+    · rw [← Array.mem_toList_iff, hnc, List.mem_singleton] at ha
+      subst ha
+      rw [hus'] at hus
+      exact (hus _ (List.mem_singleton_self _)).2 hctls
   · -- the new terminator takes the old one's edge
-    refine ⟨m + GoFV.Proof.Pass.Rewrite.Pat.sz pat', fun ρ hρ => ?_⟩
+    refine ⟨m + GoFV.Proof.Pass.Rewrite.Pat.sz pat' + 1, fun ρ hρ => ?_⟩
     let e' := semEnvL tabs M F.I (denL true M.get? tabs ρ m)
     have hσ : ∀ x, (sigmaL tabs (envL tabs M F.I) pat' x).erase = (sigmaL tabs e' pat' x).erase :=
       sigmaL_erase (e := envL tabs M F.I) (e' := e') rfl rfl pat'
@@ -553,48 +676,12 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
       rw [← newAuxL_eq hev]; exact F.hai'
     have hob := hsound tabs e' or st.auxInt F.ai' hbt hwf hcons hcond htyped F.hargs F.htop F.hargsL
       (blockAuxOK_of F.hauxB) hai'
-    -- the old block
-    have hlow : Sem.Refines (denL true M.get? tabs ρ m F.c) (Pat.denL tabs e' [] pat') :=
-      den_le_patDenL (n := m) hF (fun p w hmm k hk => by
-          show Sem.Refines _ (denL true _ tabs ρ m (F.I.at p))
-          rw [hat _ _ hmm]; exact denL_fuel_mono _ _ _ _ _ _ _ hk)
-        pat' [] F.c m hmo (Nat.le_succ _) (.inl (Nat.le_refl _))
-    have hSk : (stBlockL fb st).kind = br.kind := F.hkind
-    rw [F.hc]
-    simp only [List.map_cons, List.map_nil]
-    rcases old_step (hSk ▸ hk) hlow with ⟨msg, hm⟩ | ⟨bb, hbb, hstep⟩
-    · rw [hm]; exact .stuck _ _
-    rw [hstep]
-    rw [hSk] at hbb
-    have hob' := hob bb hbb
-    obtain ⟨e, he1, he2⟩ := sel_edge hfb2 st.swapped br.swapSuccs bb
-    have hT : ∀ (j : Nat), (stBlockL fb st').succs[j]? = (if (st.swapped != br.swapSuccs) then
-        swapS fb.succs else fb.succs)[j]? := by
-      intro j; rw [F.hst']; rfl
-    rw [succ_ok (b := stBlockL fb st) he1]
-    have hctrls := F.hctrls
-    by_cases hnf : br.newKind = .First
-    · -- `First`
-      have hnc0 : br.newControls = [] := hfirst hnf
-      rw [hnf] at hob'
-      simp only [Option.some.injEq] at hob'
-      have hsT : stepValsL (stBlockL fb st') ((st'.ctrls.toList).map
-          (denL true M.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat'))) =
-          Sem.succ (stBlockL fb st') 0 := by
-        have hkT : (stBlockL fb st').kind = .First :=
-          (congrArg (fun s => (stBlockL fb s).kind) F.hst').trans hnf
-        have hna : (stBlockL fb st').kind.isArm64 = false := by rw [hkT]; rfl
-        simp only [stepValsL, hna]
-        exact stepVals_first hkT _
-      rw [hsT, succ_ok (e := e) (by rw [hT]; rw [← hob'] at he2; simpa using he2)]
-      exact .ok (.goto _)
-    · obtain ⟨x, pos, hnc⟩ := hvar hnf
-      rw [hnc] at hctrls hob'
-      obtain ⟨c', hnc', hpc0⟩ := ctrls_var hctrls hnf
-      have hob2 := obl_var hob' hnf
-      simp only [Option.map_eq_some_iff] at hpc0
-      obtain ⟨p, hp, hpc⟩ := hpc0
-      -- the bound control
+    -- a bound variable's value refines its matched value's denotation in `M'`
+    have hvar : ∀ x p, DV.pos? (sigmaL tabs (envL tabs M F.I) pat' x) = some p →
+        ∃ wv, sigmaL tabs e' pat' x = .val wv (some p) ∧
+          Sem.Refines wv (denL true M'.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat')
+            (F.I.at p)) := by
+      intro x p hp
       obtain ⟨w0, hw0⟩ : ∃ w0, sigmaL tabs (envL tabs M F.I) pat' x = .val w0 (some p) := by
         revert hp; cases sigmaL tabs (envL tabs M F.I) pat' x <;> simp [DV.pos?]
       have hx := hσ x
@@ -616,25 +703,112 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
                 rw [hat _ _ hmm]; exact Sem.Refines.refl _)
               q p w _ hmm trivial (by omega))
           hmo trivial (Nat.le_refl _) x
-      obtain ⟨wv, hwv, hwr⟩ : ∃ wv, sigmaL tabs e' pat' x = .val wv (some p) ∧
-          Sem.Refines wv (denL true M.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat')
-            (F.I.at p)) := by
-        rcases DV.erase_eq_cases hx with h2 | ⟨v1, v2, p1, h1, h2⟩
-        · exact ⟨w0, h2.symm, hσ2.1 w0 p h2.symm⟩
-        · cases h1; exact ⟨v2, h2, hσ2.1 v2 p h2⟩
+      rw [hden ρ _ _ (hIC _ (hpos (hσs x) hp))]
+      rcases DV.erase_eq_cases hx with h2 | ⟨v1, v2, p1, h1, h2⟩
+      · exact ⟨w0, h2.symm, hσ2.1 w0 p h2.symm⟩
+      · cases h1; exact ⟨v2, h2, hσ2.1 v2 p h2⟩
+    -- the old block
+    have hlow : Sem.Refines (denL true M.get? tabs ρ m F.c) (Pat.denL tabs e' [] pat') :=
+      den_le_patDenL (n := m) hF (fun p w hmm k hk => by
+          show Sem.Refines _ (denL true _ tabs ρ m (F.I.at p))
+          rw [hat _ _ hmm]; exact denL_fuel_mono _ _ _ _ _ _ _ hk)
+        pat' [] F.c m hmo (Nat.le_succ _) (.inl (Nat.le_refl _))
+    have hSk : (stBlockL fb st).kind = br.kind := F.hkind
+    rw [F.hc]
+    simp only [List.map_cons, List.map_nil]
+    rcases old_step (hSk ▸ hk) hlow with ⟨msg, hm⟩ | ⟨bb, hbb, hstep⟩
+    · rw [hm]; exact .stuck _ _
+    rw [hstep]
+    rw [hSk] at hbb
+    have hob' := hob bb hbb
+    obtain ⟨e, he1, he2⟩ := sel_edge hfb2 st.swapped br.swapSuccs bb
+    have hT : ∀ (j : Nat), (stBlockL fb st').succs[j]? = (if (st.swapped != br.swapSuccs) then
+        swapS fb.succs else fb.succs)[j]? := by
+      intro j; rw [F.hst']; rfl
+    rw [succ_ok (b := stBlockL fb st) he1]
+    by_cases hnf : br.newKind = .First
+    · -- `First`
+      have hnc0 : br.newControls = [] := hfirst hnf
+      rw [hnf] at hob'
+      simp only [Option.some.injEq] at hob'
+      have hsT : stepValsL (stBlockL fb st') ((st'.ctrls.toList).map
+          (denL true M'.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat' + 1))) =
+          Sem.succ (stBlockL fb st') 0 := by
+        have hkT : (stBlockL fb st').kind = .First :=
+          (congrArg (fun s => (stBlockL fb s).kind) F.hst').trans hnf
+        have hna : (stBlockL fb st').kind.isArm64 = false := by rw [hkT]; rfl
+        simp only [stepValsL, hna]
+        exact stepVals_first hkT _
+      rw [hsT, succ_ok (e := e) (by rw [hT]; rw [← hob'] at he2; simpa using he2)]
+      exact .ok (.goto _)
+    have hkT : (stBlockL fb st').kind = br.newKind :=
+      congrArg (fun s => (stBlockL fb s).kind) F.hst'
+    have haT : (stBlockL fb st').auxInt = F.ai' :=
+      congrArg (fun s => (stBlockL fb s).auxInt) F.hst'
+    have hcT : condKind (stBlockL fb st').kind = true := by
+      rw [hkT]; simpa [hnf] using hnk
+    rcases builtL_cases F.hbuilt with ⟨hf, -, -⟩ | ⟨x, pos, c', -, hnc, hnc', hpc0, -⟩ |
+      ⟨n, pos, c', xv, -, hnc, hnc', -, -, hcn, hnode, hus'⟩
+    · exact absurd hf hnf
+    · -- a rule variable
+      rw [hnc] at hob'
+      have hob2 := obl_var hob' hnf
+      simp only [Option.map_eq_some_iff] at hpc0
+      obtain ⟨p, hp, hpc⟩ := hpc0
+      obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
       rw [show sigmaL tabs e' (Pat.swapC F.pat F.sw).1 x = .val wv (some p) from hwv] at hob2
       simp only [DV.valOr] at hob2
-      have hkT : (stBlockL fb st').kind = br.newKind :=
-        congrArg (fun s => (stBlockL fb s).kind) F.hst'
-      have haT : (stBlockL fb st').auxInt = F.ai' :=
-        congrArg (fun s => (stBlockL fb s).auxInt) F.hst'
-      have hcT : condKind (stBlockL fb st').kind = true := by
-        rw [hkT]; simpa [hnf] using hnk
       have hctl' : st'.ctrls.toList = [F.I.at p] :=
-        (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans (by show nc.toList = _; rw [hnc', hpc])
+        (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans
+          (by show nc.toList = _; rw [hnc', hpc])
       rw [hctl']
       simp only [List.map_cons, List.map_nil]
-      rw [new_step hcT (by rw [hkT, haT]; exact brVal_mono hwr hob2)]
+      rw [new_step hcT (by
+        rw [hkT, haT]
+        exact brVal_mono (hwr.trans (denL_fuel_mono _ _ _ _ _ _ _ (Nat.le_succ _))) hob2)]
+      rw [succ_ok (e := e) (by rw [hT]; exact he2)]
+      exact .ok (.goto _)
+    · -- the built control, defined at the fresh `c'`
+      rw [hnc] at hob'
+      have hob2 := obl_build hob' hnf
+      obtain ⟨hop, ht, hty', hai, hax, hsz, hargs⟩ := nodeOKL_facts hnode
+      have hget : M'.get? c' = some _ := (hus _ (by rw [hus']; exact List.mem_singleton_self _)).1
+      have hnd1 := nodeDenL_succ tabs e' pat' (evalE vtys (sigmaL tabs e' pat') or e'
+        (Pat.denL tabs e' [] pat')) or (sigmaL tabs e' pat') .other [n] 0 0 n rfl
+      have hcv : ∀ a ∈ n.args, ∃ x, a = .var x := by
+        intro a ha
+        simp only [ctrlNodeOK, List.all_eq_true] at hcn
+        have := hcn a ha
+        cases a <;> simp_all
+      have hden' : Sem.Refines (nodeDenL tabs e' pat' (evalE vtys (sigmaL tabs e' pat') or e'
+          (Pat.denL tabs e' [] pat')) or (sigmaL tabs e' pat') .other [n] 1 0)
+          (denL true M'.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat' + 1) c') := by
+        rw [hnd1, denT_succ hget ht]
+        rw [← tySelL_eq hev, ← aiSelL_eq hev, ← hty', ← hai, ← hop]
+        have hax' : nodeAuxL e' pat' or n.aux = (ctrlDefL (envL tabs M F.I) pat'
+            (evalE vtys (sigmaL tabs (envL tabs M F.I) pat') or (envL tabs M F.I)
+              (Pat.denL tabs (envL tabs M F.I) [] pat')) or
+            (sigmaL tabs (envL tabs M F.I) pat') F.I n xv c').aux := by
+          rw [hax]; rfl
+        rw [hax']
+        apply retypeL_mono
+        apply opValL_mono_term ht
+        refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
+        have harg := hargs j h1 (by simpa using h2)
+        simp only [Array.getElem_toList]
+        obtain ⟨x, hn⟩ := hcv _ (List.getElem_mem h1)
+        rw [hn] at harg
+        simp only [argID, Option.map_eq_some_iff] at harg
+        obtain ⟨p, hp, hpa⟩ := harg
+        simp only [List.getElem_map, hn, argValL]
+        obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
+        rw [hwv, ← hpa]
+        exact hwr
+      have hctl' : st'.ctrls.toList = [c'] :=
+        (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans (by show nc.toList = _; rw [hnc'])
+      rw [hctl']
+      simp only [List.map_cons, List.map_nil]
+      rw [new_step hcT (by rw [hkT, haT]; exact brVal_mono hden' hob2)]
       rw [succ_ok (e := e) (by rw [hT]; exact he2)]
       exact .ok (.goto _)
 
