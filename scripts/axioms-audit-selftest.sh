@@ -228,7 +228,7 @@ case_ impl-collision '^VIOLATION "zzImplSlow" "@\[implemented_by\] zzImplFast [0
 
 # 8b. a theorem added without the kernel (`debug.skipKernelTC`): the axioms audit cannot see it
 # (no axiom), the kernel replay must. Per PR (`--replay-changed`): a change to ZzAuditSkipA
-# replays ZzAuditSkipB, which imports it, on the unchanged modules. (The whole tree takes 20
+# replays ZzAuditSkipB, which imports it, on the unchanged modules. (The whole tree takes 8 to 30
 # minutes: not here.)
 plant GoFV/SSA/ZzAuditSkipA.lean <<'EOF'
 def zzSkipA : Nat := 1

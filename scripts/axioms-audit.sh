@@ -24,7 +24,10 @@
 # --replay (the nightly gate): also send every constant of the audited modules to the kernel again
 # (`axioms-audit --replay`, DIR/replay.out): a declaration added under
 # `set_option debug.skipKernelTC true` is in the .olean unchecked, and only a replay notices.
-# About 20 minutes and 5.3 GB on the whole tree.
+# The replay checks $GOFV_REPLAY_JOBS modules at a time (default: one per 4 GB of $FV_MEMCAP, so 2
+# at memcap.sh's default 8G; a module whose proofs the kernel evaluates holds about 3 GB). The
+# whole tree on an orb: 8.2 minutes and 14.3 GB peak RSS at FV_MEMCAP=16G (4 at a time; the
+# nightly gate), 14.4 minutes and 9.0 GB at 8G, 30.5 minutes and 6.5 GB one at a time.
 # --replay-changed (per PR): replay only the modules that differ from the merge base with
 # origin/main and every module that imports one (`axioms-audit --replay-changed`); the whole tree
 # when lakefile.toml, lean-toolchain or lake-manifest.json changed or there is no origin/main.
@@ -119,6 +122,11 @@ if grep -qi 'skipKernelTC' lakefile.toml; then
   echo "axioms-audit: lakefile.toml mentions skipKernelTC" >&2; exit 1
 fi
 rstatus=0
+if [[ ${FV_MEMCAP:-8G} =~ ^([0-9]+)[Gg]$ ]] && [ "${BASH_REMATCH[1]}" -ge 8 ]; then
+  export GOFV_REPLAY_JOBS=${GOFV_REPLAY_JOBS:-$(( BASH_REMATCH[1] / 4 ))}
+else
+  export GOFV_REPLAY_JOBS=${GOFV_REPLAY_JOBS:-1}
+fi
 if [ "$replay" = changed ]; then
   changed=""
   if mb=$(git merge-base origin/main HEAD 2>/dev/null) &&
