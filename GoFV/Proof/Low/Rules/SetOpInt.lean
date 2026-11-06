@@ -374,6 +374,30 @@ theorem r_ARM64_50_4_sound : ArmRule.Checked r_ARM64_50_4 :=
   checked_setOp .Com8 .ARM64MVN rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
     s_Com8_ARM64MVN
 
+/-- `CvtBoolToUint8` as `Copy` at its own shape `int8` (`topOKL`): the boolean's register read at
+8 bits (`Val.widen`) is its 0/1 byte; any other argument makes `CvtBoolToUint8` `poison`. -/
+private theorem s_CvtBoolToUint8_Copy : SetOpSound .CvtBoolToUint8 .Copy := by
+  intro tabs ty ai ax args ht
+  obtain rfl : ty = .int .w8 :=
+    (show ∀ ty, topOKL .CvtBoolToUint8 ty = true → ty = .int .w8 by arm_top) ty ht
+  have h1 : opValL tabs .CvtBoolToUint8 (.int .w8) ai ax args = Conv.boolToUint8 args := rfl
+  rw [h1]
+  by_cases hb : ∃ b, args = [.bool b]
+  · obtain ⟨b, rfl⟩ := hb
+    rw [show opValL tabs .Copy (.int .w8) ai ax [.bool b] = .bool b from rfl]
+    cases b <;> exact Refines.refl _
+  · have hp : Conv.boolToUint8 args = .poison := by
+      match args, hb with
+      | [a], hb => cases a <;> first | rfl | exact absurd ⟨_, rfl⟩ hb
+      | [], _ => rfl
+      | _ :: _ :: _, _ => rfl
+    rw [hp, retypeL_poison]; exact .poison _
+
+/-- `ARM64.rules:233`: `(CvtBoolToUint8 ...) => (Copy ...)` -/
+theorem r_ARM64_233_sound : ArmRule.Checked r_ARM64_233 :=
+  checked_setOp .CvtBoolToUint8 .Copy rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_generic _ rfl rfl) s_CvtBoolToUint8_Copy
+
 /-- `ARM64.rules:191`: `(Trunc16to8 ...) => (Copy ...)` -/
 theorem r_ARM64_191_sound : ArmRule.Checked r_ARM64_191 :=
   checked_setOp .Trunc16to8 .Copy rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_generic _ rfl rfl)
