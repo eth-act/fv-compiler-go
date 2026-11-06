@@ -49,6 +49,7 @@ import GoFV.Proof.Low.ProvenARM64
 import GoFV.Proof.Low.RuleL
 import GoFV.Proof.Low.Rules.Attr
 import GoFV.Proof.Low.Rules.BlockCset
+import GoFV.Proof.Low.Rules.BlockCtl
 import GoFV.Proof.Low.Rules.BlockFlags
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF

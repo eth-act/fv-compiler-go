@@ -459,43 +459,44 @@ theorem builtL_cases {tabs : Tables} {M : Defs} {br : BlockRule} {e : PEnv} {pat
   unfold builtL at h
   split at h
   · rename_i hk _ hnc; cases h; exact .inl ⟨hk, hnc, rfl⟩
-  · rename_i k x pos c' hk hnc hl
+  · rename_i _ _ _ x pos c' hnc hl
     split at h
     · rename_i hok
       cases h
       simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, beq_iff_eq] at hok
-      exact .inr (.inl ⟨x, pos, c', fun h' => hok.1 (by rw [← hk]; exact h'), hnc, hl, hok.2, rfl⟩)
+      exact .inr (.inl ⟨x, pos, c', hok.1, hnc, hl, hok.2, rfl⟩)
     · cases h
-  · rename_i k n pos c' hk hnc hl
+  · rename_i _ _ _ n pos c' hnc hl
     split at h
     · rename_i xv hxv
       split at h
       · rename_i hok
         cases h
         simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none] at hok
-        exact .inr (.inr ⟨n, pos, c', xv, fun h' => hok.1.1.1 (by rw [← hk]; exact h'), hnc, hl,
+        exact .inr (.inr ⟨n, pos, c', xv, hok.1.1.1, hnc, hl,
           hxv, hok.1.2, hok.1.1.2, hok.2, rfl⟩)
       · cases h
     · cases h
   · cases h
 
 theorem obl_var {k : BlockKind} {x : Nat} {pos : CtrlPos} {ai' : Int64}
-    {σ : Nat → DV} {r : Option Bool} {d : Val}
+    {σ : Nat → DV} {r : Option Bool} {d : RNode → Val}
     (h : (match k, [(NewControl.var x, pos)] with
           | .First, _ => some true
           | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
-          | k, [(.build [_], _)] => brVal k ai' d
+          | k, [(.build [n], _)] => brVal k ai' (d n)
           | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' ((σ x).valOr .poison) = r := by
   cases k <;> first | exact absurd rfl hk | exact h
 
 theorem obl_build {k : BlockKind} {n : RNode} {pos : CtrlPos} {ai' : Int64}
-    {σ : Nat → DV} {r : Option Bool} {d : Val}
+    {σ : Nat → DV} {r : Option Bool} {d : RNode → Val}
     (h : (match k, [(NewControl.build [n], pos)] with
           | .First, _ => some true
           | k, [(.var x, _)] => brVal k ai' ((σ x).valOr .poison)
-          | k, [(.build [_], _)] => brVal k ai' d
-          | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' d = r := by
+          | k, [(.build [n], _)] => brVal k ai' (d n)
+          | _, _ => none) = r) (hk : k ≠ .First) : brVal k ai' (d n) = r := by
   cases k <;> first | exact absurd rfl hk | exact h
+
 /-- Retarget the replayed terminator of `b` to `st'` along a step `M → M'` (`C ⊆ C'`) that keeps
 the denotations of `C`. -/
 theorem BInvL.retargetStep {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
@@ -512,6 +513,7 @@ theorem BInvL.retargetStep {tabs : Tables} {f : Func} {D₀ : ID → Option Valu
           (stepValsL (stBlockL fb st') (st'.ctrls.toList.map (denL true M'.get? tabs ρ m')))) :
     BInvL tabs f D₀ C₀ M' C' ((b, st') :: B) := by
   have hB := h.mono (M' := M') (C' := C') (g := id) hsub hty fun ρ _ _ n y hy => by
+    show Sem.Refines _ (denL true M'.get? tabs ρ n y)
     rw [hden ρ n y hy]; exact Sem.Refines.refl _
   intro b' fb st'' hfb hc hst'
   rw [bstateL_cons] at hst'
@@ -541,9 +543,9 @@ theorem BlockFactsL.pos {tabs : Tables} {M : Defs} {br : BlockRule} {st : BState
       (Nat.le_refl _) x
   revert hσs hp
   cases sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x <;>
-    simp only [DV.pos?, reduceCtorEq, false_implies, implies_true]
+    simp only [DV.pos?, reduceCtorEq, false_implies]
   rename_i w p'
-  intro hd h
+  intro h hd
   subst h
   obtain ⟨w', hw⟩ := hd.1 w p rfl
   rw [hat _ _ hw]; exact hw
@@ -770,11 +772,14 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
       rw [hnc] at hob'
       have hob2 := obl_build hob' hnf
       obtain ⟨hop, ht, hty', hai, hax, hsz, hargs⟩ := nodeOKL_facts hnode
-      have hget := (hus _ (by rw [hus']; exact List.mem_singleton_self _)).1
+      have hget : M'.get? c' = some _ := (hus _ (by rw [hus']; exact List.mem_singleton_self _)).1
       have hnd1 := nodeDenL_succ tabs e' pat' (evalE vtys (sigmaL tabs e' pat') or e'
         (Pat.denL tabs e' [] pat')) or (sigmaL tabs e' pat') .other [n] 0 0 n rfl
-      have hcv : ∀ a ∈ n.args, a matches .var _ := by
-        simpa [ctrlNodeOK, List.all_eq_true] using hcn
+      have hcv : ∀ a ∈ n.args, ∃ x, a = .var x := by
+        intro a ha
+        simp only [ctrlNodeOK, List.all_eq_true] at hcn
+        have := hcn a ha
+        cases a <;> simp_all
       have hden' : Sem.Refines (nodeDenL tabs e' pat' (evalE vtys (sigmaL tabs e' pat') or e'
           (Pat.denL tabs e' [] pat')) or (sigmaL tabs e' pat') .other [n] 1 0)
           (denL true M'.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat' + 1) c') := by
@@ -791,18 +796,14 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
         refine refinesList_idx (by simp [hsz]) fun j h1 h2 => ?_
         have harg := hargs j h1 (by simpa using h2)
         simp only [Array.getElem_toList]
-        have hj := hcv _ (List.getElem_mem h1)
-        cases hn : n.args[j] with
-        | var x =>
-          rw [hn] at harg
-          simp only [argID, Option.map_eq_some_iff] at harg
-          obtain ⟨p, hp, hpa⟩ := harg
-          simp only [List.getElem_map, hn, argValL]
-          obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
-          rw [hwv, ← hpa]
-          exact hwr
-        | node _ => rw [hn] at hj; simp at hj
-        | expr _ => rw [hn] at hj; simp at hj
+        obtain ⟨x, hn⟩ := hcv _ (List.getElem_mem h1)
+        rw [hn] at harg
+        simp only [argID, Option.map_eq_some_iff] at harg
+        obtain ⟨p, hp, hpa⟩ := harg
+        simp only [List.getElem_map, hn, argValL]
+        obtain ⟨wv, hwv, hwr⟩ := hvar x p hp
+        rw [hwv, ← hpa]
+        exact hwr
       have hctl' : st'.ctrls.toList = [c'] :=
         (congrArg (fun s : BStateL => s.ctrls.toList) F.hst').trans (by show nc.toList = _; rw [hnc'])
       rw [hctl']
