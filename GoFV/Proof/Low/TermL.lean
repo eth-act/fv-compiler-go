@@ -269,10 +269,10 @@ theorem addrRef_zero {tabs : Tables} {act : Nat} {x y : Val} (h : Sem.Refines x 
 corresponds to (`atomPair`: the same ID and fields, a renamed op, or a lowered store, whose address
 is related by `AddrRef` at its offset, `stArg`; a bounds panic with constant operands reads the
 kept ones, `argIx`, and its constants are `f`'s, `pbConstOK`), or, for a lowered call's register
-piece, refine fitted to its leaf (`callFitTy`, `ArgTermFitL`), unless the atom of `g` reads no
-argument (`argFree`: a lowered frame address); a `Store` lowered to an indexed store
-(`idxLower`) has its address given by the base and the index (`ArgTermIdxL`), and its value and
-memory refined. -/
+piece or a `Phi`'s argument, refine fitted to the leaf it is read at (`argFitTy`, `ArgTermFitL`),
+unless the atom of `g` reads no argument (`argFree`: a lowered frame address); a `Store` lowered to
+an indexed store (`idxLower`) has its address given by the base and the index (`ArgTermIdxL`), and
+its value and memory refined. -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false →
@@ -280,7 +280,7 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
       (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ ∀ i < u.args.size, ArgTermRefL
         (stArg u' u i) f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs
           u.args[i]! ∨
-        ∃ t, callFitTy tabs u i = some t ∧ ArgTermFitL t
+        ∃ t, argFitTy tabs u i = some t ∧ ArgTermFitL t
           f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]!) ∨
         (idxLower tabs u' u = true ∧
           ArgTermIdxL (idxScale u.op) f.lowered f.value? tabs u'.args[0]! g.lowered (listedDefs g)

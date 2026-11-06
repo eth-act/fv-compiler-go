@@ -316,4 +316,58 @@ theorem idxAddr_mono (s : Nat) {a a' i i' : Val} (ha : Sem.Refines a a') (hi : S
       rw [Mono.reg_of hi hk]
       exact Mono.add_mono _ (.cons ha (.cons (Sem.Refines.refl _) .nil))
 
+theorem termVL_phi {tabs : Tables} {v : Value} (h : v.op = .Phi) : termVL tabs v = false := by
+  have hg : Op.Phi.generic = true := by decide
+  have ht : GoFV.Opt.RewriteCheck.termOp .Phi = false := by decide
+  unfold termVL
+  simp only [h, hg, ht, ite_true]
+
+theorem termVL_makeResult {tabs : Tables} {v : Value} (h : v.op = .MakeResult) :
+    termVL tabs v = true := by
+  have hg : Op.MakeResult.generic = true := by decide
+  have ht : GoFV.Opt.RewriteCheck.termOp .MakeResult = true := by decide
+  unfold termVL
+  simp only [h, hg, ht, ite_true]
+
+/-- An atom other than a `Phi` reads its arguments at most at a lowered call's fit (`argFitTy`). -/
+theorem argFitTy_atom {tabs : Tables} {v : Value} {i : Nat} (ht : termVL tabs v = false)
+    (hp : v.op ≠ .Phi) : argFitTy tabs v i = callFitTy tabs v i := by
+  unfold argFitTy
+  cases hk : callLead v.op with
+  | some k => rfl
+  | none =>
+    have hr : v.op ≠ .MakeResult := fun hr => by rw [termVL_makeResult hr] at ht; cases ht
+    simp only [show (v.op == .Phi) = false by simpa using hp,
+      show (v.op == .MakeResult) = false by simpa using hr, Bool.false_eq_true, ite_false]
+    simp [callFitTy, hk]
+
+/-- Read at a shape, a piece fitted to it (`fitPiece`) is the piece. -/
+theorem retypeL_fitPiece (t : Ty) (x : Val) : (fitPiece t x).retypeL t = x.retypeL t := by
+  unfold fitPiece
+  split <;> (try split) <;> simp only [retypeL_idem]
+
+/-- Where `argFitTy` comes from: a lowered call (`callFitTy`), a `Phi` (its shape) or a
+`MakeResult` (its tuple leaf). -/
+theorem argFitTy_cases {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
+    (h : argFitTy tabs v i = some t) :
+    ((callLead v.op).isSome ∧ callFitTy tabs v i = some t) ∨ (v.op = .Phi ∧ t = shpL tabs v.type) ∨
+      (v.op = .MakeResult ∧ ∃ ts, shpL tabs v.type = .tuple ts ∧ ts[i]? = some t) := by
+  unfold argFitTy at h
+  cases hk : callLead v.op with
+  | some k => rw [hk] at h; exact .inl ⟨rfl, h⟩
+  | none =>
+    rw [hk] at h
+    simp only at h
+    by_cases hp : v.op = .Phi
+    · rw [if_pos (by simp [hp])] at h
+      exact .inr (.inl ⟨hp, (Option.some.inj h).symm⟩)
+    · rw [if_neg (by simp [hp])] at h
+      by_cases hr : v.op = .MakeResult
+      · rw [if_pos (by simp [hr])] at h
+        split at h
+        · rename_i ts hts
+          exact .inr (.inr ⟨hr, ts, hts, h⟩)
+        · cases h
+      · rw [if_neg (by simp [hr])] at h; cases h
+
 end GoFV.Proof.Low

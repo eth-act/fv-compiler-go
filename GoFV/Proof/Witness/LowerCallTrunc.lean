@@ -10,7 +10,7 @@ MakeResult v7 v8`). The checked lower fires `(Trunc64to32 ...) => (Copy ...)` (1
 `(StaticCall ...) => (CALLstatic ...)`; `applyRewrite` eliminates the `Copy` inline, so the built
 `v6` is `CALLstatic {f} v4 v1`: the validator accepts the call's argument, which the narrowing
 `Copy` `v5` copies and which keeps the 32 bits of the `int32` leaf the call fits its register
-piece at (`truncCallL`, `GoFV.Proof.Low.fitPiece_retypeL`). By `lower_refines` every returning or
+piece at (`truncFitL`, `GoFV.Proof.Low.fitPiece_retypeL`). By `lower_refines` every returning or
 panicking `run` of `tcl` is, up to refinement, a `runL` of the result; on `g` holding `2^32 - 5`
 and `f` returning its argument, both return `-5`.
 -/
@@ -92,7 +92,7 @@ theorem tcl_checks :
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a call of a
 truncation: on `tcl`, the checked lower's `v6` is `CALLstatic {f} v4 v1` (the narrowing `Copy` it
-read is gone, `truncCallL`), and every returning or panicking `run` of `tcl` is, up to
+read is gone, `truncFitL`), and every returning or panicking `run` of `tcl` is, up to
 refinement, a `runL` of the result. -/
 theorem tcl_lower :
     ∃ out, lowerChecked tclPassEnv tclFunc = .ok out ∧ out.func.lowered = true ∧

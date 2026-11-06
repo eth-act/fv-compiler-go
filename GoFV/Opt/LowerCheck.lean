@@ -510,13 +510,57 @@ def fitTys (tabs : Tables) : List ABIParam → List (Option Sem.Ty)
 def callFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
   (callLead v.op).bind fun k => if i < k then none else ((fitTys tabs (callIns tabs v))[i - k]?).join
 
-/-- Argument `i` of the lowered call `v` in the replay is `a`, a narrowing `Copy` keeping the bits
-of the integer leaf the call fits the argument at (`callFitTy`, `truncFromL`), and the output's
-is `a'`: the callee reads the same leaf (`GoFV.Proof.Low.Val.fitPiece_retypeL`). -/
-def truncCallL (tabs : Tables) (M : Defs) (n : Nat) (v : Value) (i : Nat) (a a' : ID) : Bool :=
-  match callFitTy tabs v i with
+/-- The shape the atom `v` reads its argument `i` at, for the atoms that read no more of it: a
+lowered call the leaf it fits the register piece at (`callFitTy`, `fitPieces`), a `Phi` its own
+shape, a `MakeResult` its result's (`Val.retypeL` of the value's shape). -/
+def argFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
+  match callLead v.op with
+  | some _ => callFitTy tabs v i
+  | none =>
+    if v.op == .Phi then some (shpL tabs v.type)
+    else if v.op == .MakeResult then
+      match shpL tabs v.type with
+      | .tuple ts => ts[i]?
+      | _ => none
+    else none
+
+/-- Argument `i` of the atom `v` in the replay is `a`, a narrowing `Copy` keeping the bits of the
+integer shape `v` reads the argument at (`argFitTy`, `truncFromL`), and the output's is `a'`: `v`
+reads the same bits (`GoFV.Proof.Low.Val.fitPiece_retypeL`). -/
+def truncFitL (tabs : Tables) (M : Defs) (n : Nat) (v : Value) (i : Nat) (a a' : ID) : Bool :=
+  match argFitTy tabs v i with
   | some (.int w) => truncFromL tabs M n w.bits a a'
   | _ => false
+
+/-- The ops whose value at a narrow integer shape `int w` (`w < 64`) is a function of the low `w`
+bits of their first `d` arguments' registers when none is a pointer (`Arm64.evalPure`: `op1`/`op2`
+of a ring or bitwise operation, `ADD`/`SUB`/`addK` on registers, the operands `CSEL` selects),
+with `d` (the others, `CSEL`'s flags, read whole). -/
+def lowOpArgs : Op → Option Nat
+  | .ARM64ADD | .ARM64SUB | .ARM64MUL | .ARM64MNEG | .ARM64AND | .ARM64OR | .ARM64XOR | .ARM64BIC
+  | .ARM64CSEL => some 2
+  | .ARM64ADDconst | .ARM64SUBconst | .ARM64NEG | .ARM64MVN | .ARM64ANDconst | .ARM64ORconst
+  | .ARM64XORconst => some 1
+  | _ => none
+
+/-- The low bits `m` reads of its first `d` arguments (`lowOpArgs`): `m` is at a narrow integer
+shape `int w`, and each of those arguments has a narrow integer shape in `M` (so none is a
+pointer). -/
+def lowShape (tabs : Tables) (M : Defs) (m : Value) : Option Nat :=
+  match shpL tabs m.type, lowOpArgs m.op with
+  | .int w, some d =>
+    if w != .w64 && d ≤ m.args.size && (List.range d).all (fun j =>
+        (M.get? m.args[j]!).any fun y =>
+          match shpL tabs y.type with
+          | .int w' => w' != .w64
+          | _ => false) then some w.bits
+    else none
+  | _, _ => none
+
+/-- Argument `j` of `m` in the replay is `a`, one of the arguments `m` reads the low bits of
+(`lowShape`), a narrowing `Copy` keeping those bits (`truncFromL`), and the output's is `a'`. -/
+def lowReachL (tabs : Tables) (M : Defs) (n : Nat) (m : Value) (j : Nat) (a a' : ID) : Bool :=
+  (lowShape tabs M m).any fun k => decide (j < (lowOpArgs m.op).getD 0) && truncFromL tabs M n k a a'
 
 /-! ## Blocks -/
 
@@ -833,7 +877,8 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
             (List.range m.args.size).all fun j =>
               copyReachL tabs M n m.args[j]! u.args[j]! ||
                 truncReachL tabs M n m.op j m.args[j]! u.args[j]! ||
-                truncCallL tabs M n m j m.args[j]! u.args[j]!) ||
+                truncFitL tabs M n m j m.args[j]! u.args[j]! ||
+                lowReachL tabs M n m j m.args[j]! u.args[j]!) ||
           (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u
         | _, _ => false
     | _, _, _ => false
