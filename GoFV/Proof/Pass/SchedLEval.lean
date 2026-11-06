@@ -800,7 +800,9 @@ theorem evalValueL_nc_pass {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v 
     · rfl
     · simp [hacc, hqn]
   have hw : wildNil [a, .mem m] = false := by
-    simp [wildNil, addr_of_asPtrWord hq, Ptr.wild, hblk]
+    simp only [wildNil, List.head?_cons, Option.bind_some, addr_of_asPtrWord hq, Option.map_some,
+      Option.getD_some, Ptr.wild]
+    simp [hblk]
   rw [evalValueL_bind hm, evalOpL_ncL hop, hnf]
   simp only [hw, Bool.and_false, Bool.false_eq_true, ite_false]
   cases hr : memRoot ctx { v with op := .NilCheck } [a, .mem m] with

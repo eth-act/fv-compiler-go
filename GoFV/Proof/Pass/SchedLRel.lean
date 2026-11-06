@@ -240,8 +240,7 @@ theorem srcPos_get {n : Nat} {l : List ID} (hnd : l.Nodup) (hlt : ∀ x ∈ l, x
 theorem srcPos_out {n : Nat} {l : List ID} {x : ID} (hx : x ∉ l) : (srcPos n l)[x]! = 0 := by
   unfold srcPos
   rw [posFill_get.posFill_out l 1 _ x hx]
-  simp [getElem!_def, Array.getElem?_replicate]
-  split <;> rfl
+  by_cases h : x < n <;> simp [getElem!_def, Array.getElem?_replicate, h]
 
 /-- A value at a positive source position before `x`'s is listed before `x`. -/
 theorem srcPos_before {n : Nat} {l : List ID} (hnd : l.Nodup) (hlt : ∀ x ∈ l, x < n) {k : Nat}

@@ -302,7 +302,12 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       exact hpok.1.1
     have hpnc : isNC f p = false := by rw [isNC_of hvp, hpop]; rfl
     have hpspa : isSPA f p = false := by rw [isSPA_of hvp, hpop]; rfl
-    have hrepp : rep f p = p := by unfold rep; rw [hvp, hpop]; rfl
+    have hrepp : rep f p = p := by
+      unfold rep
+      rw [hvp]
+      dsimp only
+      rw [hpop]
+      rfl
     -- the source's value of `p`: nil or a pointer that is not wild
     obtain ⟨vp', z, hvp', hHz, hevz⟩ := Sr.eval p hpP
     rw [hvp] at hvp'; cases hvp'

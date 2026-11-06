@@ -106,14 +106,25 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
               let sameMem := match f.value? x, f.value? y with
                 | some vx, some vy => s!"{vx.args.back? == vy.args.back?}, same ptr {vx.args[0]? == vy.args[0]?}, y ptr {(vy.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)} x base {(vx.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)}"
                 | _, _ => "?"
-              return s!"order: src {opName tabs f x} before {opName tabs f y} (same mem {sameMem})"
+              -- a nil check of a parameter piece: where the piece is, and whether it is `argPtr`
+              let ap := match f.value? y with
+                | some vy => match vy.args[0]? with
+                  | some p =>
+                    if ((f.value? p).map fun (u : Value) => u.op == Op.ArgIntReg).getD false then
+                      let pos := if pS[p]! == 0 then "outside the block"
+                        else if pS[p]! < pS[x]! then "before x" else "after x"
+                      s!"; y's ArgIntReg {pos}, argPtr {argPtr tabs cS.params cS.tys f p}"
+                    else ""
+                  | none => ""
+                | none => ""
+              return s!"order: src {opName tabs f x} before {opName tabs f y} (same mem {sameMem}){ap}"
         return "order ?"
     | none, _ => return "no runL order"
     | _, none => return "no runSched order"
   return "accepted"
 
 /-- Some block of `f` needs `swapOK`'s `argPtr` case: a pair the target swaps that `swapOK`
-allows only with the source positions (without them, `pS = #[]`, the case never holds). -/
+allows only with the source positions (without them, all 0, the case never holds). -/
 def needsArgPtr (tabs : Tables) (f g : Func) : Bool := Id.run do
   let cS := Ctx.makeL tabs f
   let sS := cS.sched
@@ -127,7 +138,9 @@ def needsArgPtr (tabs : Tables) (f g : Func) : Bool := Id.run do
         for k in List.range l do
           let x := ns[l]!
           let y := ns[k]!
-          if pS[x]! < pS[y]! && !swapOK tabs cS.params cS.tys f #[] x y then return true
+          if pS[x]! < pS[y]! &&
+              !swapOK tabs cS.params cS.tys f (Array.replicate f.valueTab.size 0) x y then
+            return true
     | _, _ => pure ()
   return false
 
