@@ -53,9 +53,11 @@ variant incomplete)`. A `schedule` run adds its input to `FState.nnf`: the refin
 `schedule` holds on the inputs on which that function does not fault in the nil page
 (`NoNilFault`, `GoFV.Proof.RefinesSchedLF.schedL`), a precondition of the end-to-end theorem.
 
-The result is `fullyVerified` when every verdict is `proven`, `identity` or `skipped` and the
-state is allocated (`loc`); then `runLoc` of it refines `run` of the input
-(`GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`).
+The result is `fullyVerified` when every verdict is `proven`, `identity` or `skipped`, the
+state is allocated (`loc`) and it has no `InvertFlags` (`Func.noInvertFlags`, as Go's codegen
+requires); then `runLoc` of it refines `run` of the input
+(`GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`), and its flags are machine `NZCV`: only
+`InvertFlags` reads their ghost component (`docs/plans/semantics2.md` §3).
 -/
 
 namespace GoFV.Opt
@@ -251,8 +253,16 @@ structure FState where
   /-- Every verdict of the passes before `lower` is `Verdict.ok`. -/
   genVerified : Bool := true
 
-/-- Every verdict is `ok` and the state is allocated: its `runLoc` refines the input's `run`. -/
-def FState.fullyVerified (s : FState) : Bool := s.st.verified && s.layer == .loc
+/-- `f` has no `InvertFlags`: Go's codegen fails on one (`ssaGenValue`), and it is the only op
+that reads a flags value's ghost component `g` (`Sem.invertFlags`), so the machine-level flags of
+an `InvertFlags`-free function are its `NZCV`. -/
+def _root_.GoFV.SSA.Func.noInvertFlags (f : Func) : Bool :=
+  f.valueTab.all fun | some v => v.op != .ARM64InvertFlags | none => true
+
+/-- Every verdict is `ok`, the state is allocated (its `runLoc` refines the input's `run`), and
+it has no `InvertFlags` (`Func.noInvertFlags`). -/
+def FState.fullyVerified (s : FState) : Bool :=
+  s.st.verified && s.layer == .loc && s.st.func.noInvertFlags
 
 /-- Whether pass `p`'s result `out` passes `check` (not tried on allocated functions, which are
 not SSA, and whose theorems do not ask for it). -/

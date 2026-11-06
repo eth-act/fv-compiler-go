@@ -462,7 +462,7 @@ theorem verifiedPipelineFull_layer {env : PassEnv} {f : Func} {start : Nat}
 
 /-- **The verified pipeline through `trim` refines its input** (H7/H8): when
 `verifiedPipelineFull` from `number lines` returns a `fullyVerified` state (every run proven,
-identity or skipped, and the state allocated), every returning or panicking `run` of the input
+identity or skipped, the state allocated and free of `InvertFlags`), every returning or panicking `run` of the input
 `f` (with the environment's tables) is, up to refinement, a `runLoc` of the result after `trim`,
 on every environment and input in Phase 1's `VPre` (with `f`'s dictionary parameters and
 read-only symbols) on which the recorded `schedule` inputs do not fault in the nil page. -/
@@ -475,8 +475,8 @@ theorem verifiedPipelineFull_refines {env : PassEnv} {f : Func} {zv : Array (ID 
     ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run e env.tables f args mem fuel)
       (runLoc e r.st.tables r.st.func args mem fuel') := by
   simp only [FState.fullyVerified, Bool.and_eq_true, beq_iff_eq] at hv
-  have R := verifiedPipelineFull_layer h hv.1
-  rw [hv.2, show startLayer 0 = .gen by simp [startLayer]] at R
+  have R := verifiedPipelineFull_layer h hv.1.1
+  rw [hv.1.2, show startLayer 0 = .gen by simp [startLayer]] at R
   exact R e args mem ⟨hP, hn⟩ fuel hd
 
 end GoFV.Proof.PipelineFull
