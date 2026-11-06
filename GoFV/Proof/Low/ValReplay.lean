@@ -1445,17 +1445,26 @@ theorem ReplayInvL.ldOffFold {v : ID} {defs : List Value} {u : Value}
 end Inv
 
 /-- What `ruleOKL` establishes: the matched value is a term and some commutation choice
-validates. -/
-theorem ruleOKL_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
-    (h : ruleOKL tabs M r v defs = true) : ∃ sw ∈ choices (GoFV.Opt.RewriteCheck.Pat.commutes r.pat),
-      Nonempty (RuleFactsL tabs M (Rule.swapC r sw) v defs) := by
+validates the definitions it returns. -/
+theorem ruleOKL_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs ds : List Value}
+    (h : ruleOKL tabs M r v defs = some ds) :
+    ∃ sw ∈ choices (GoFV.Opt.RewriteCheck.Pat.commutes r.pat),
+      Nonempty (RuleFactsL tabs M (Rule.swapC r sw) v ds) := by
   unfold ruleOKL at h
   split at h
   · cases h
   · rename_i x hx
-    simp only [Bool.and_eq_true, beq_iff_eq, List.any_eq_true] at h
-    obtain ⟨⟨ht, hid⟩, sw, hsw, h1⟩ := h
-    exact ⟨sw, hsw, ruleFactsL hx ht hid h1⟩
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨sw, hsw, h1⟩ := List.exists_of_findSome?_eq_some h
+      dsimp only at h1
+      split at h1
+      · rename_i h2
+        cases h1
+        exact ⟨sw, hsw, ruleFactsL hx hc.1 hc.2 h2⟩
+      · cases h1
+    · cases h
 
 /-- **Replay**: a successful replay of the log keeps `ReplayInvL` and `BInvL` (from `D₀`, `f`'s
 definitions). -/
@@ -1526,7 +1535,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · -- value rules
       rename_i hnot
       split at h
-      · rename_i hok
+      · rename_i ds hok
         obtain ⟨sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
         have hsd : ArmRule.Sound1 (Rule.swapC cr.rule sw) := by
           rcases hck with hsd | ⟨o, o3, -, hr3, -⟩ | ⟨o, o3, -, hr3, -⟩ |
@@ -1543,7 +1552,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
             injection hp' with ho
             obtain ⟨-, x', hx', hop, ht', -⟩ := hm
             rw [termVL_mem tabs x' hom (hop.trans ho)] at ht'; cases ht'
-        have hput : defs.foldl (fun M u => M.put u.id u) M = putAll M defs.toList := by
+        have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
         exact replayL_inv hs hD evs _ M' B B' _ h (hI.rule hsd F)

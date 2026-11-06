@@ -106,7 +106,7 @@ def ruleWhyL (tabs : Tables) (M : Defs) (r0 : Rule) (v : ID) (defs : List Value)
         else if !Pat.argsOKL e.ty [] r.pat then "argsL"
         else if !resFitsL (e.ty []) r.result then s!"fits {repr (e.ty [])}"
         else if !leavesOK M I [] r.pat then "leaves"
-        else if !resultOKL tabs M e r.pat ev or σ I r x defs then
+        else if !resultOKL tabs M e r.pat ev or σ I r x (ruleDefsL tabs M r v defs) then
           let nodeWhy : String := match r.result, defs with
             | .build (n :: _), _ :: u :: _ =>
               let ai := match n.auxInt with
@@ -195,8 +195,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
             | some x' => M := M.put v x'
             | none => return s!"setOp {key cr.rule}"
           | _ =>
-            if ruleOKL tabs M cr.rule v defs.toList then M := defs.foldl (fun M u => M.put u.id u) M
-            else match atomDef tabs f M v defs.toList with
+            match ruleOKL tabs M cr.rule v defs.toList with
+            | some ds => M := ds.foldl (fun M u => M.put u.id u) M
+            | none => match atomDef tabs f M v defs.toList with
               | some (u, none) => M := M.put v u
               | some (u, some s) => M := (M.put s.id s).put v u
               | none =>
